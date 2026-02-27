@@ -1,3 +1,5 @@
+> **アーカイブ**: CLI パーサ初期調査資料。cli-parser-mega-survey.md の実施前の予備調査であり、mega-survey に内容が包含されている。
+
 # CLI 引数パーサ初期調査
 
 ## 既存ライブラリ
