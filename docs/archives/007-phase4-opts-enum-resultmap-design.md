@@ -166,11 +166,27 @@ enum Opts {
 > reducer の ReduceAction に生の文字列が来て、reducer 自身が --port=8080 を分解するか、-abc を展開するか判断する。
 > あーその1個ずつの特定パターンの分解に関してだけはリデューサーに渡る前に適切に分解サポートはしてあげたいとこだね。特定タイプだけのケアだからそのパターンが出てきた時のスコープ中のLongOだけ見てマッチするなら分解するだけで良さそう。同じくショートパターンもカレントスコープのShortOだけ集めてそれに対して完全に分解可能か？だけチェックして完全な判断ができるなら事前分解してやれば良い。ただしエラー設計に絡むとこで生の引数と分解したやつは区別して個別に持っとかないとエラー箇所表示の際に変なバグになる可能性は注意。引数全体の整理とかはまではもう不要。
 
+### Step 12: Parser struct + getter 方式の検討
+
+cobra-style とハイブリッド方式を統合する新方向性:
+
+- Parser struct が ID 空間と ref ストレージを一元管理
+- Opt[T] は `getter: (Int) -> T` クロージャで型消去を解決（slots は getter 内に隠蔽）
+- Opt[T] は `id` のみ持つ。`template_id` は持たない — clone 関係は `Parser.clone_map` で管理
+- 全 ID は同一 seq から採番（デバッグ時の混乱防止）
+- `enum RefV { Value(ErasedRef) | Array(Array[ErasedRef]) }` で `Map[Int, RefV]` に一元保存
+
+ユーザー:
+> Opt[T] は id を持ってるんだから opt.val() は resultMap に自分のidを問い合わせて返せば良いからimmutableにできるのでは？
+> 例えばこういうのを用意してoptもこれ由来のメソッドから作る方式だとid空間の分離もできる？ struct Parser { seq: Int, resultMap:, }
+> idとtemplate_idのseqは共有して良い気がする。enum RefV{Value(EracedRef),Array[ErasedRef]} で Map[Int,RefV] に一元保存。デバッグの時にid=1とtemplate_id=1みたいに同じidが要ると紛らわしいのでくらいの理由ですが…。
+> template_id自体は持たなくても良い？clone時にid->templateOpt.idのmap登録を行うことでOpt自体はidを持つだけで良い気がする。
+
+検証結果: 基本 parse+get は実現可能。グループは Parser.refs + clone_map で管理。テスト分離は完全に解決。PoC 実装は未実施。
+
 ## 未解決事項
 
-- ~~ResultMap 内部の型消去された値の保持方法~~ → **解決済み**: Ref[T] クロージャキャプチャ方式
 - `or` の結果型と required の関係
-- ~~`--` の tokenize/parse 間の接続方式~~ → **方針決定**: トークナイザ廃止、スコープ認識の局所分解に置換
 
 ## 付録: 生チャットログ
 

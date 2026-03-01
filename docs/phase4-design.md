@@ -502,10 +502,68 @@ pub(all) struct OptMeta {
 4. **ヘルプ生成** — reducer からヘルプテキストをどう生成するか
 5. **kind の区別のユーザー API 表現** — `long:` vs `name:` vs `kind: Option` 等
 
-### コア設計の検討中課題
+### コア設計の検討中課題: Parser struct + getter 方式
 
-- **cobra-style Ref 直接書き込み方式** — 判断未定
-- **ハイブリッド方式** — ErasedNode struct は採用済みだが ResultMap との責務分担を再検討（判断未定）
+cobra-style (#3) とハイブリッド (#4) を統合する新方向性。
+
+**概要**: Parser struct が ID 空間と ref ストレージを一元管理。Opt[T] は getter クロージャで型消去を解決。
+
+```moonbit
+struct Parser {
+  mut seq : Int              // ローカル ID カウンタ（テスト分離）
+  refs : Map[Int, RefV]      // id → 値の一元管理
+  clone_map : Map[Int, Int]  // clone_id → template_id（clone 時に登録）
+}
+
+enum RefV {
+  Value(ErasedRef)           // 個別 opt インスタンス
+  Array(Array[ErasedRef])    // グループの全インスタンス一覧
+}
+
+struct Opt[T] {
+  id : Int                   // 一意 ID（これだけ）
+  initial : InitialValue[T]
+  reducer : (T, ReduceAction) -> T?!ParseError
+  meta : OptMeta
+  getter : (Int) -> T        // instance_id を受け取り T を返す（内部で Map[Int, Ref[T]] をキャプチャ）
+  // slots は struct フィールドから消え、getter クロージャ内に隠蔽
+  // template_id は持たない — clone 関係は Parser.clone_map で管理
+}
+```
+
+**全 ID は同一 seq から採番**（デバッグ時の混乱防止）:
+```
+seq=1: port      → refs[1] = Value(ref)
+seq=2: upstream  → refs[2] = Array([])           グループ雛形
+seq=3: clone 0   → refs[3] = Value(ref_a)        clone_map[3] = 2
+seq=4: clone 1   → refs[4] = Value(ref_b)        clone_map[4] = 2
+                    refs[2] = Array([ref_a, ref_b])
+```
+
+**API**:
+```moonbit
+let p = Parser::new()
+let port = p.int(name="port")
+p.parse(args, opts([port]))
+p.get(port)                          // port.getter(p.root_result_id)
+let groups = p.get_groups(upstream)   // refs[upstream.id] の Array
+groups[0].get(port)                  // port.getter(groups[0].id)
+```
+
+**メリット**:
+- Opt[T] struct フィールドは全て不変（getter クロージャの参照先が mutable なだけ）
+- slots が struct から消え、getter クロージャ内に隠蔽される
+- ref 管理が Parser に一元化（slots メモリリーク問題が構造的に解消）
+- Parser ローカル seq でテスト分離・並行処理対応
+- `enum RefV` で Map[Int, RefV] に一元保存
+
+**検証結果**:
+- 基本 parse+get: 実現可能（getter クロージャ）
+- グループ: Parser.refs + clone_map で管理
+- defaults マルチソース: Parser 内部で ResultMap.clone 相当を管理
+- テスト分離: 完全に解決（Parser ローカル seq）
+
+**未検証**: PoC 実装で実際に動くかの確認
 
 ### 将来実装（優先度はその時の気分）
 
@@ -515,8 +573,6 @@ pub(all) struct OptMeta {
 - **mutual exclusion** — 排他オプション
 - **dependent options** — 条件付きオプション有効化
 - **リザルト取得サポート** — シンプル JSON 出力等。バリデーションはユーザー側に委ねる思想
-- **slots メモリリーク対策** — Opt[T].slots の未解放エントリ
-- **グローバル ID カウンタ改善** — テスト分離・並行処理への対応
 - **ヘルプ生成の詳細設計**
 - **補完生成の詳細設計**
 
