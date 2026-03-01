@@ -530,6 +530,28 @@ pub(all) struct OptMeta {
 5. **ヘルプ生成** — reducer からヘルプテキストをどう生成するか
 6. **kind の区別のユーザー API 表現** — `long:` vs `name:` vs `kind: Option` 等
 
+### コア設計の検討中課題
+
+- **Opts::Map 削除** — opts() API で名前は meta.name から自動取得。Map 不要
+- **トークナイザ廃止** — reducer が生の引数リスト Array[String] を直接消費。Token 型不要
+- **ErasedNode → struct（クロージャ束）化** — trait object 排除
+- **opts([port, verbose]) API 簡素化** — 名前二重指定・.erased() ノイズ解消
+- **cobra-style Ref 直接書き込み方式** — 判断未定
+- **ハイブリッド方式** — ErasedNode だけ消して ResultMap 維持（判断未定）
+
+### 将来実装（優先度はその時の気分）
+
+- **did you mean? サジェスト** — Levenshtein 距離によるスペルミス候補提示
+- **エラーメッセージ品質** — 既存最高峰以上を目指す
+- **中間 rest 対応** — `mv file... dir` パターン（rest の後に固定パラメータ）
+- **mutual exclusion** — 排他オプション
+- **dependent options** — 条件付きオプション有効化
+- **リザルト取得サポート** — シンプル JSON 出力等。バリデーションはユーザー側に委ねる思想
+- **slots メモリリーク対策** — Opt[T].slots の未解放エントリ
+- **グローバル ID カウンタ改善** — テスト分離・並行処理への対応
+- **ヘルプ生成の詳細設計**
+- **補完生成の詳細設計**
+
 ---
 
 ## 大統一設計の概念一覧
