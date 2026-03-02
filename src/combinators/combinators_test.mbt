@@ -328,3 +328,250 @@ test "each combinator gets unique id" {
   assert_true(opt2.id != opt3.id)
   assert_true(opt3.id != opt4.id)
 }
+
+// ============================================================
+// 12. count の生成テスト
+// ============================================================
+
+///|
+test "count: meta has kind=Option, arity=0" {
+  let parser = @core.Parser::new()
+  let (_opt, erased) = @combinators.count(parser, name="verbose")
+  inspect(erased.meta.kind, content="Option")
+  inspect(erased.arity, content="0")
+  inspect(erased.meta.name, content="verbose")
+}
+
+///|
+test "count: reducer Value(None) increments by 1" {
+  let parser = @core.Parser::new()
+  let (opt, _erased) = @combinators.count(parser, name="verbose")
+  let ctx : @core.ReduceCtx[Int] = { current: 0, action: Value(None) }
+  inspect((opt.reducer)(ctx), content="Some(1)")
+}
+
+///|
+test "count: reducer multiple Value(None) increments" {
+  let parser = @core.Parser::new()
+  let (opt, erased) = @combinators.count(parser, name="verbose")
+  // 初期値は 0
+  inspect((opt.getter)(0), content="0")
+  // 1回目: 0 -> 1
+  let result = (erased.try_reduce)(@core.ReduceAction::Value(None), 0)
+  match result {
+    Some(rr) => (erased.commit_reduce)(rr)
+    None => ()
+  }
+  inspect((opt.getter)(0), content="1")
+  // 2回目: 1 -> 2
+  let result2 = (erased.try_reduce)(@core.ReduceAction::Value(None), 0)
+  match result2 {
+    Some(rr) => (erased.commit_reduce)(rr)
+    None => ()
+  }
+  inspect((opt.getter)(0), content="2")
+  // 3回目: 2 -> 3
+  let result3 = (erased.try_reduce)(@core.ReduceAction::Value(None), 0)
+  match result3 {
+    Some(rr) => (erased.commit_reduce)(rr)
+    None => ()
+  }
+  inspect((opt.getter)(0), content="3")
+}
+
+///|
+test "count: reducer Negate resets to 0" {
+  let parser = @core.Parser::new()
+  let (opt, _erased) = @combinators.count(parser, name="verbose")
+  let ctx : @core.ReduceCtx[Int] = { current: 3, action: Negate }
+  inspect((opt.reducer)(ctx), content="Some(0)")
+}
+
+// ============================================================
+// 13. append の生成テスト
+// ============================================================
+
+///|
+test "append: meta has kind=Option, arity=1" {
+  let parser = @core.Parser::new()
+  let (_opt, erased) = @combinators.append(parser, name="tag")
+  inspect(erased.meta.kind, content="Option")
+  inspect(erased.arity, content="1")
+  inspect(erased.meta.name, content="tag")
+}
+
+///|
+test "append: reducer Value(Some(s)) accumulates" {
+  let parser = @core.Parser::new()
+  let (opt, erased) = @combinators.append(parser, name="tag")
+  // 初期値は []
+  inspect((opt.getter)(0), content="[]")
+  // 1回目: [] -> ["a"]
+  let result = (erased.try_reduce)(@core.ReduceAction::Value(Some("a")), 0)
+  match result {
+    Some(rr) => (erased.commit_reduce)(rr)
+    None => ()
+  }
+  inspect((opt.getter)(0), content="[\"a\"]")
+}
+
+///|
+test "append: reducer multiple calls accumulate" {
+  let parser = @core.Parser::new()
+  let (opt, erased) = @combinators.append(parser, name="tag")
+  // 1回目: [] -> ["a"]
+  let result = (erased.try_reduce)(@core.ReduceAction::Value(Some("a")), 0)
+  match result {
+    Some(rr) => (erased.commit_reduce)(rr)
+    None => ()
+  }
+  // 2回目: ["a"] -> ["a", "b"]
+  let result2 = (erased.try_reduce)(@core.ReduceAction::Value(Some("b")), 0)
+  match result2 {
+    Some(rr) => (erased.commit_reduce)(rr)
+    None => ()
+  }
+  inspect((opt.getter)(0), content="[\"a\", \"b\"]")
+}
+
+///|
+test "append: reducer Negate resets to empty" {
+  let parser = @core.Parser::new()
+  let (opt, erased) = @combinators.append(parser, name="tag")
+  // 蓄積する
+  let result = (erased.try_reduce)(@core.ReduceAction::Value(Some("a")), 0)
+  match result {
+    Some(rr) => (erased.commit_reduce)(rr)
+    None => ()
+  }
+  inspect((opt.getter)(0), content="[\"a\"]")
+  // Negate でリセット
+  let result2 = (erased.try_reduce)(@core.ReduceAction::Negate, 0)
+  match result2 {
+    Some(rr) => (erased.commit_reduce)(rr)
+    None => ()
+  }
+  inspect((opt.getter)(0), content="[]")
+}
+
+///|
+test "append: reducer Value(None) returns None (no match)" {
+  let parser = @core.Parser::new()
+  let (_opt, erased) = @combinators.append(parser, name="tag")
+  let result = (erased.try_reduce)(@core.ReduceAction::Value(None), 0)
+  assert_true(result is None)
+}
+
+// ============================================================
+// 14. custom の生成テスト
+// ============================================================
+
+///|
+test "custom: custom Int parser" {
+  let parser = @core.Parser::new()
+  let (opt, erased) = @combinators.custom(parser, name="port", initial=0, reducer=ctx => {
+    match ctx.action {
+      Value(Some(s)) =>
+        // 簡易パース: 数字文字列を Int に
+        Some(@strconv.parse_int(s)) catch {
+          _ =>
+            raise @core.ParseError::InvalidValue(
+              name="port",
+              value=s,
+              reason="not a valid integer",
+            )
+        }
+      Negate => Some(0)
+      Value(None) => None
+    }
+  })
+  // 初期値は 0
+  inspect((opt.getter)(0), content="0")
+  // Value(Some("8080")) で 8080 に
+  let result = (erased.try_reduce)(@core.ReduceAction::Value(Some("8080")), 0)
+  match result {
+    Some(rr) => (erased.commit_reduce)(rr)
+    None => ()
+  }
+  inspect((opt.getter)(0), content="8080")
+}
+
+// ============================================================
+// 15. never の生成テスト
+// ============================================================
+
+///|
+test "never: meta has kind=Positional" {
+  let parser = @core.Parser::new()
+  let (_opt, erased) = @combinators.never(parser)
+  inspect(erased.meta.kind, content="Positional")
+  inspect(erased.arity, content="1")
+}
+
+///|
+test "never: reducer always raises ParseError" {
+  let parser = @core.Parser::new()
+  let (_opt, erased) = @combinators.never(parser)
+  let result : Result[@core.ReduceResult?, @core.ParseError] = Ok(
+    (erased.try_reduce)(@core.ReduceAction::Value(Some("anything")), 0),
+  ) catch {
+    e => Err(e)
+  }
+  match result {
+    Err(Custom(_)) => () // expected
+    _ => assert_true(false)
+  }
+}
+
+// ============================================================
+// 16. cmd の生成テスト
+// ============================================================
+
+///|
+test "cmd: meta has kind=Command, arity=0" {
+  let parser = @core.Parser::new()
+  let children_opts = @combinators.opts([])
+  let (_opt, erased) = @combinators.cmd(
+    parser,
+    name="build",
+    children=children_opts,
+  )
+  inspect(erased.meta.kind, content="Command")
+  inspect(erased.arity, content="0")
+  inspect(erased.meta.name, content="build")
+}
+
+///|
+test "cmd: children returns correct nodes" {
+  let parser = @core.Parser::new()
+  let (_child_opt, child_erased) = @combinators.flag(parser, name="verbose")
+  let children_opts = @combinators.opts([@core.Opts::Node(child_erased)])
+  let (_opt, erased) = @combinators.cmd(
+    parser,
+    name="build",
+    children=children_opts,
+  )
+  let child_nodes = (erased.children)()
+  inspect(child_nodes.length(), content="1")
+  inspect(child_nodes[0].meta.name, content="verbose")
+}
+
+///|
+test "cmd: reducer Value(None) -> true" {
+  let parser = @core.Parser::new()
+  let children_opts = @combinators.opts([])
+  let (opt, erased) = @combinators.cmd(
+    parser,
+    name="build",
+    children=children_opts,
+  )
+  // 初期値は false
+  inspect((opt.getter)(0), content="false")
+  // Value(None) で true に
+  let result = (erased.try_reduce)(@core.ReduceAction::Value(None), 0)
+  match result {
+    Some(rr) => (erased.commit_reduce)(rr)
+    None => ()
+  }
+  inspect((opt.getter)(0), content="true")
+}
