@@ -411,3 +411,114 @@ test "parse: subcommand with global and positional" {
   inspect((debug_opt.getter)(0), content="true")
   inspect((file_opt.getter)(0), content="Some(\"app.tar.gz\")")
 }
+
+// ============================================================
+// 25. 短縮オプション展開: ["-abc"] -> a=true, b=true, c=true
+// ============================================================
+
+///|
+test "parse: short combined flags -abc" {
+  let parser = @core.Parser::new()
+  let (a_opt, a_node) = @combinators.flag(parser, name="all", shorts=[
+    { char: 'a' },
+  ])
+  let (b_opt, b_node) = @combinators.flag(parser, name="brief", shorts=[
+    { char: 'b' },
+  ])
+  let (c_opt, c_node) = @combinators.flag(parser, name="color", shorts=[
+    { char: 'c' },
+  ])
+  let root = @combinators.opts([
+    @core.Opts::Node(a_node),
+    @core.Opts::Node(b_node),
+    @core.Opts::Node(c_node),
+  ])
+  @parse.parse(["-abc"], root)
+  inspect((a_opt.getter)(0), content="true")
+  inspect((b_opt.getter)(0), content="true")
+  inspect((c_opt.getter)(0), content="true")
+}
+
+// ============================================================
+// 26. 短縮オプション展開 + count: ["-vvv"] -> verbose=3
+// ============================================================
+
+///|
+test "parse: short combined count -vvv" {
+  let parser = @core.Parser::new()
+  let (verbose_opt, verbose_node) = @combinators.count(parser, name="verbose", shorts=[
+    { char: 'v' },
+  ])
+  let root = @combinators.opts([@core.Opts::Node(verbose_node)])
+  @parse.parse(["-vvv"], root)
+  inspect((verbose_opt.getter)(0), content="3")
+}
+
+// ============================================================
+// 27. 短縮オプション展開 + arity>0: ["-p8080"] -> port=Some(8080)
+// ============================================================
+
+///|
+test "parse: short combined with value -p8080" {
+  let parser = @core.Parser::new()
+  let (port_opt, port_node) = @combinators.int_opt(parser, name="port", shorts=[
+    { char: 'p' },
+  ])
+  let root = @combinators.opts([@core.Opts::Node(port_node)])
+  @parse.parse(["-p8080"], root)
+  inspect((port_opt.getter)(0), content="Some(8080)")
+}
+
+// ============================================================
+// 28. 混合: ["-vp8080"] -> verbose=true, port=Some(8080)
+// ============================================================
+
+///|
+test "parse: short combined mixed flag and value -vp8080" {
+  let parser = @core.Parser::new()
+  let (verbose_opt, verbose_node) = @combinators.flag(parser, name="verbose", shorts=[
+    { char: 'v' },
+  ])
+  let (port_opt, port_node) = @combinators.int_opt(parser, name="port", shorts=[
+    { char: 'p' },
+  ])
+  let root = @combinators.opts([
+    @core.Opts::Node(verbose_node),
+    @core.Opts::Node(port_node),
+  ])
+  @parse.parse(["-vp8080"], root)
+  inspect((verbose_opt.getter)(0), content="true")
+  inspect((port_opt.getter)(0), content="Some(8080)")
+}
+
+// ============================================================
+// 29. マッチしない文字: ["-xyz"] -> UnknownOption
+// ============================================================
+
+///|
+test "parse: short combined unknown char" {
+  let parser = @core.Parser::new()
+  let (_verbose_opt, verbose_node) = @combinators.flag(parser, name="verbose", shorts=[
+    { char: 'v' },
+  ])
+  let root = @combinators.opts([@core.Opts::Node(verbose_node)])
+  let result : Result[Unit, @core.ParseError] = Ok(@parse.parse(["-xyz"], root)) catch {
+    e => Err(e)
+  }
+  inspect(result, content="Err(UnknownOption(\"-xyz\"))")
+}
+
+// ============================================================
+// 30. 単一ショート -v は展開しない（既存動作）
+// ============================================================
+
+///|
+test "parse: single short -v unchanged" {
+  let parser = @core.Parser::new()
+  let (verbose_opt, verbose_node) = @combinators.flag(parser, name="verbose", shorts=[
+    { char: 'v' },
+  ])
+  let root = @combinators.opts([@core.Opts::Node(verbose_node)])
+  @parse.parse(["-v"], root)
+  inspect((verbose_opt.getter)(0), content="true")
+}
