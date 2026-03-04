@@ -39,5 +39,5 @@
 
 ## 参考資料
 
-- docs/phase4-design.md 「実装計画」セクション
-- docs/phase4-design.md 「パースライフサイクルとフックアーキテクチャ」セクション
+- docs/DESIGN.md 「実装計画」セクション
+- docs/DESIGN.md 「パースライフサイクルとフックアーキテクチャ」セクション

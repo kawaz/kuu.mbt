@@ -170,8 +170,8 @@ PoC 検証で判明した制約:
 
 ## 参考資料
 
-- `docs/error-message-survey.md` — 5パーサのエラーメッセージ調査
-- `docs/result-api-survey.md` — 7パーサのリザルト取得API調査
-- `docs/help-format-survey.md` — 8パーサのヘルプ出力フォーマット調査
-- `docs/phase4-design.md` — 設計書本体
+- `docs/research/error-message-survey.md` — 5パーサのエラーメッセージ調査
+- `docs/research/result-api-survey.md` — 7パーサのリザルト取得API調査
+- `docs/research/help-format-survey.md` — 8パーサのヘルプ出力フォーマット調査
+- `docs/DESIGN.md` — 設計書本体
 - DR-007 (`docs/archives/007-phase4-opts-enum-resultmap-design.md`) — 前回の設計決定（Opts enum + ResultMap）

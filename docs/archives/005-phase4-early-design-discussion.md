@@ -2,7 +2,7 @@
 
 この文書は Phase 4 の初期段階の設計議論の記録です。
 その後の検証・議論で設計が大幅に発展したため、アーカイブに移動しました。
-最新の設計は `docs/phase4-design.md` を参照してください。
+最新の設計は `docs/DESIGN.md` を参照してください。
 
 主な変更点:
 - reducer シグネチャ: `(T, String?) -> T` → `(ReduceContext, ReduceAction) -> Array[String]`

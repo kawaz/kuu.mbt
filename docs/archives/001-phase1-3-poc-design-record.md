@@ -9,7 +9,7 @@
 ## 1. 概要
 
 MoonBit でフルスクラッチの CLI 引数パーサライブラリ `kawaz/cli` を設計・実装する。
-28 パーサの大規模横断調査（`../main/docs/cli-parser-mega-survey.md`）の知見を踏まえ、理想のパーサを目指す。
+28 パーサの大規模横断調査（`../research/cli-parser-mega-survey.md`）の知見を踏まえ、理想のパーサを目指す。
 
 ### Phase 1 スコープ
 
