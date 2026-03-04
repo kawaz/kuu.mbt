@@ -1,1 +1,5 @@
+import {
+  "kawaz/kuu/src/core",
+}
 
+warnings = "-29"
