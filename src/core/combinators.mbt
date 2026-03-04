@@ -272,6 +272,9 @@ pub fn opts_to_erased_nodes(o : Opts) -> Array[ErasedNode] {
 
 ///|
 /// Opt[T] を Opts::Node に変換する
+// Design rationale: to_opts() は呼び出しごとに新しい committed 状態を持つ ErasedNode を生成する。
+// 同一の Opt[T] に対して to_opts() を複数回呼ぶと、各 ErasedNode が独立した is_set 状態を持つ。
+// Validate 制約（exclusive 等）と parse() に渡す Opts は同一インスタンスを使用すること。
 pub fn[T] Opt::to_opts(self : Opt[T]) -> Opts {
   let initial_val = match self.initial {
     Val(v) => v

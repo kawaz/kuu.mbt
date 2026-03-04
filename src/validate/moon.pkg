@@ -1,1 +1,7 @@
+import {
+  "kawaz/kuu/src/core",
+}
 
+import "test" {
+  "kawaz/kuu/src/parse",
+}
