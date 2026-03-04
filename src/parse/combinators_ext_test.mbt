@@ -180,3 +180,65 @@ test "custom: カスタム reducer で独自ロジック" {
   @parse.parse(p, ["--upper", "hello"], o)
   assert_eq!((upper.getter)(0), Some("hello".to_upper()))
 }
+
+// ======== 連結ショート・ショートオプション追加テスト ========
+
+///|
+test "R-039: -abfVALUE 連結（フラグ+値混在）" {
+  let p = @core.Parser::new()
+  let a = p.flag(name="all", shorts=[{ char: 'a' }])
+  let b = p.flag(name="bold", shorts=[{ char: 'b' }])
+  let f = p.string(name="file", shorts=[{ char: 'f' }])
+  let o = @core.opts([a.to_opts(), b.to_opts(), f.to_opts()])
+  @parse.parse(p, ["-abfoutput.txt"], o)
+  assert_eq!((a.getter)(0), true)
+  assert_eq!((b.getter)(0), true)
+  assert_eq!((f.getter)(0), Some("output.txt"))
+}
+
+///|
+test "R-055: append ショート -e x -e y → [x, y]" {
+  let p = @core.Parser::new()
+  let expr = p.append(name="expr", shorts=[{ char: 'e' }])
+  let o = @core.opts([expr.to_opts()])
+  @parse.parse(p, ["-e", "x", "-e", "y"], o)
+  assert_eq!((expr.getter)(0), ["x", "y"])
+}
+
+///|
+test "R-069: count ショート単独 -v → 1" {
+  let p = @core.Parser::new()
+  let verbose = p.count(name="verbose", shorts=[{ char: 'v' }])
+  let o = @core.opts([verbose.to_opts()])
+  @parse.parse(p, ["-v"], o)
+  assert_eq!((verbose.getter)(0), 1)
+}
+
+///|
+test "R-071: count 混在合算 -v -v --verbose → 3" {
+  let p = @core.Parser::new()
+  let verbose = p.count(name="verbose", shorts=[{ char: 'v' }])
+  let o = @core.opts([verbose.to_opts()])
+  @parse.parse(p, ["-v", "-v", "--verbose"], o)
+  assert_eq!((verbose.getter)(0), 3)
+}
+
+///|
+test "R-073: count リセット後再加算 -vv --no-verbose -v → 1" {
+  let p = @core.Parser::new()
+  let verbose = p.count(name="verbose", shorts=[{ char: 'v' }], inversion=Some(@core.FlagInversion::No))
+  let o = @core.opts([verbose.to_opts()])
+  @parse.parse(p, ["-vv", "--no-verbose", "-v"], o)
+  assert_eq!((verbose.getter)(0), 1)
+}
+
+///|
+test "R-075: count -vxv 別オプション混在 → v=2, x=1" {
+  let p = @core.Parser::new()
+  let verbose = p.count(name="verbose", shorts=[{ char: 'v' }])
+  let extra = p.flag(name="extra", shorts=[{ char: 'x' }])
+  let o = @core.opts([verbose.to_opts(), extra.to_opts()])
+  @parse.parse(p, ["-vxv"], o)
+  assert_eq!((verbose.getter)(0), 2)
+  assert_eq!((extra.getter)(0), true)
+}

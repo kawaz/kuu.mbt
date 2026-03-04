@@ -169,7 +169,10 @@ fn handle_short(
           }
           @core.TryReduceResult::Reject => {
             // フラグではない → 値オプション
+            // Design rationale: 連結ショートオプションで値オプションが途中に出現した場合、
+            // 残りの文字列をその値として消費する（POSIX/GNU 準拠: -abfVALUE → a=flag, b=flag, f=VALUE）。
             if is_last {
+              // 最後の文字 → 次の引数を値として取得
               if pos.val + 1 < args.length() {
                 let next_val = args[pos.val + 1]
                 let action2 = @core.ReduceAction::Value(Some(next_val))
@@ -192,6 +195,27 @@ fn handle_short(
                   "missing value for -\{ch_str}",
                   @core.ErrorContext::{ option_name: ch_str },
                 )
+              }
+            } else {
+              // 途中の文字 → 残りの文字列を値として消費
+              let remaining = StringBuilder::new()
+              for j = i + 1; j < chars.length(); j = j + 1 {
+                remaining.write_char(chars[j])
+              }
+              let rest_val = remaining.to_string()
+              let action2 = @core.ReduceAction::Value(Some(rest_val))
+              let result2 = (node.try_reduce)(action2, rm)
+              match result2 {
+                @core.TryReduceResult::Accept(consumed~, result~) => {
+                  ignore(consumed)
+                  (node.commit_reduce)(result, rm)
+                  found = true
+                  // 残りの文字は全て消費済みなのでループを終了
+                  pos.val = pos.val + 1
+                  return
+                }
+                @core.TryReduceResult::Reject => ()
+                @core.TryReduceResult::Error(e) => raise e
               }
             }
           }

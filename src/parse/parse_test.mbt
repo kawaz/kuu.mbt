@@ -598,3 +598,43 @@ test "Finalize フックが nodes を受け取る" {
   @parse.parse(p, [], o)
   assert_eq(node_count.val, 2)
 }
+
+// ======== エッジケーステスト ========
+
+///|
+test "単独 - は位置引数: - → positional" {
+  let p = @core.Parser::new()
+  let file = p.positional(name="file")
+  let o = @core.opts([file.to_opts()])
+  @parse.parse(p, ["-"], o)
+  assert_eq!((file.getter)(0), Some("-"))
+}
+
+///|
+test "空文字列引数: '' → positional" {
+  let p = @core.Parser::new()
+  let file = p.positional(name="file")
+  let o = @core.opts([file.to_opts()])
+  @parse.parse(p, [""], o)
+  assert_eq!((file.getter)(0), Some(""))
+}
+
+///|
+test "-- のみ: positional は空" {
+  let p = @core.Parser::new()
+  let verbose = p.flag(name="verbose")
+  let file = p.positional(name="file")
+  let o = @core.opts([verbose.to_opts(), file.to_opts()])
+  @parse.parse(p, ["--"], o)
+  assert_eq!((verbose.getter)(0), false)
+  assert_eq!((file.getter)(0), None)
+}
+
+///|
+test "値としての --: --output -- → output は '--'" {
+  let p = @core.Parser::new()
+  let output = p.string(name="output")
+  let o = @core.opts([output.to_opts()])
+  @parse.parse(p, ["--output", "--"], o)
+  assert_eq!((output.getter)(0), Some("--"))
+}
