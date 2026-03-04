@@ -27,12 +27,15 @@ test "flag reducer - Negate returns false" {
 }
 
 ///|
-test "flag reducer - Value(Some(_)) returns None" {
+test "flag reducer - Value(Some(_)) with invalid value raises ParseError" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   let ctx = ReduceCtx::{ current: false, action: Value(Some("x")) }
-  let result = (verbose.reducer)(ctx)
-  assert_eq(result, None)
+  let result : Result[Bool?, _] = try { Ok((verbose.reducer)(ctx)) } catch {
+    ParseError::Usage(kind, _, _) => Err(kind)
+    _ => Err(ErrorKind::InvalidValue)
+  }
+  assert_eq(result, Err(ErrorKind::InvalidValue))
 }
 
 ///|
@@ -349,7 +352,7 @@ test "ErasedNode commit_reduce applies the value" {
 }
 
 ///|
-test "ErasedNode try_reduce returns Reject for unmatched action" {
+test "ErasedNode try_reduce returns Error for invalid flag value" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   let node = verbose.to_opts()
@@ -358,8 +361,8 @@ test "ErasedNode try_reduce returns Reject for unmatched action" {
       let rm = ResultMap::{ id: 0, clone_fns: {} }
       let result = (erased.try_reduce)(Value(Some("unexpected")), rm)
       match result {
-        Reject => ()
-        _ => fail("expected Reject")
+        Error(_) => ()
+        _ => fail("expected Error")
       }
     }
     _ => fail("expected Node")

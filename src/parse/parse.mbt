@@ -360,14 +360,22 @@ pub fn parse(
   // これは「最初のエラーで即座に中断」という設計意図に合致する。
 
   // Phase 3: Validate — constraints を順に実行
+  // Design rationale: 組み込みの制約チェック（exclusive/at_least_one/check_required）は
+  // 環境変数適用後に実行する必要があるため Phase 4b（finalizers）に登録される。
+  // Phase 3 の constraints はユーザーが add_constraint で登録する構文レベルの制約チェック
+  //（env 適用前の状態で判定すべきケース）のために残している。
   // Design rationale: nodes はサブコマンド遷移後の「最終アクティブスコープ」のノード（子 + global）。
   // 親スコープの非 global ノードは含まれない。Validate/Finalize はアクティブスコープに対してのみ動作する。
   let validate_ctx = @core.ValidateCtx::{ nodes }
   for constraint in parser.constraints {
     (constraint.check)(validate_ctx)
   }
-  // Phase 4: Finalize — finalizers を順に実行
+  // Phase 4a: EnvFinalize — 環境変数適用フックを実行
   let finalize_ctx = @core.FinalizeCtx::{ nodes }
+  for hook in parser.env_finalizers {
+    hook(finalize_ctx)
+  }
+  // Phase 4b: Finalize — 制約チェック等のフックを実行
   for finalizer in parser.finalizers {
     finalizer(finalize_ctx)
   }
