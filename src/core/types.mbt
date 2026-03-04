@@ -126,6 +126,7 @@ pub(all) struct ErasedNode {
   try_reduce : (ReduceAction, ResultMap) -> TryReduceResult
   commit_reduce : (ReduceResult, ResultMap) -> Unit
   reset_to_initial : (ResultMap) -> Unit
+  is_set : () -> Bool
   children : () -> Array[ErasedNode]
 }
 
@@ -170,11 +171,37 @@ pub(all) struct ResultMap {
   clone_fns : Map[Int, (Int, Int) -> Unit]
 }
 
+// Design rationale: Step 4 では最小限の構造。get/set メソッドは Step 5（Validate）/Step 6（Finalize）で追加する。
+
+///|
+pub(all) struct ValidateCtx {
+  nodes : Array[ErasedNode]
+}
+
+///|
+pub(all) struct FinalizeCtx {
+  nodes : Array[ErasedNode]
+}
+
+///|
+pub(all) struct Constraint {
+  check : (ValidateCtx) -> Unit raise
+  help_hint : String
+}
+
 ///|
 pub(all) struct Parser {
   mut seq : Int
   refs : Map[Int, RefV]
   clone_map : Map[Int, Int]
+  // フック配列
+  preprocessors : Array[(Array[String]) -> Array[String]]
+  // Design rationale: Step 4 では Resolve フックの登録 API のみ提供し、実際の呼び出しは Step 8（did-you-mean サジェスト）で実装する。
+  // 理由: Resolve フックの型シグネチャは名前解決の介入タイミング（解決前/解決失敗後）によって変わる可能性があり、
+  // Step 8 の具体的なユースケース（did-you-mean、あいまいマッチ）実装時に確定させる。
+  resolve_hooks : Array[(String, Array[ErasedNode]) -> Array[ErasedNode]?]
+  constraints : Array[Constraint]
+  finalizers : Array[(FinalizeCtx) -> Unit raise]
 }
 
 ///|
@@ -185,7 +212,15 @@ pub(all) enum RefV {
 
 ///|
 pub fn Parser::new() -> Parser {
-  { seq: 0, refs: {}, clone_map: {} }
+  {
+    seq: 0,
+    refs: {},
+    clone_map: {},
+    preprocessors: [],
+    resolve_hooks: [],
+    constraints: [],
+    finalizers: [],
+  }
 }
 
 ///|
