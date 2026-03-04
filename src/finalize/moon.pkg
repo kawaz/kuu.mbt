@@ -1,1 +1,10 @@
+import {
+  "kawaz/kuu/src/core",
+  "kawaz/kuu/src/parse",
+}
 
+import "test" {
+  "kawaz/kuu/src/validate",
+}
+
+warnings = "-29"

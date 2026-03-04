@@ -34,11 +34,21 @@ pub fn Parser::flag(
   {
     id,
     initial: Val(false),
-    reducer: fn(ctx) {
+    reducer: fn(ctx) raise {
       match ctx.action {
         Value(None) => Some(true)
+        Value(Some(s)) =>
+          match s {
+            "true" | "1" | "yes" => Some(true)
+            "false" | "0" | "no" => Some(false)
+            _ =>
+              raise ParseError::Usage(
+                ErrorKind::InvalidValue,
+                "invalid boolean value: " + s + " (expected: true/false/1/0/yes/no)",
+                ErrorContext::{ option_name: name },
+              )
+          }
         Negate => Some(false)
-        _ => None
       }
     },
     meta,

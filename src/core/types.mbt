@@ -201,7 +201,9 @@ pub(all) struct Parser {
   // Step 8 の具体的なユースケース（did-you-mean、あいまいマッチ）実装時に確定させる。
   resolve_hooks : Array[(String, Array[ErasedNode]) -> Array[ErasedNode]?]
   constraints : Array[Constraint]
+  env_finalizers : Array[(FinalizeCtx) -> Unit raise]
   finalizers : Array[(FinalizeCtx) -> Unit raise]
+  mut env_lookup : ((String) -> String?)?
 }
 
 ///|
@@ -219,7 +221,9 @@ pub fn Parser::new() -> Parser {
     preprocessors: [],
     resolve_hooks: [],
     constraints: [],
+    env_finalizers: [],
     finalizers: [],
+    env_lookup: None,
   }
 }
 
