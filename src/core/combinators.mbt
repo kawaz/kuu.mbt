@@ -332,6 +332,200 @@ pub fn[T] Opt::to_opts(self : Opt[T]) -> Opts {
 }
 
 ///|
+/// count コンビネータ: カウンタオプションを作成する（-vvv → 3）
+pub fn Parser::count(
+  self : Parser,
+  name~ : String,
+  help? : String = "",
+  shorts? : Array[ShortEntry] = [],
+  aliases? : Array[AliasEntry] = [],
+  inversion? : FlagInversion? = None,
+  visibility? : Visibility = Visible,
+  global? : Bool = false,
+) -> Opt[Int] {
+  let id = self.next_id()
+  let store : Ref[Int] = Ref::new(0)
+  let meta = OptMeta::{
+    name,
+    kind: Kind::Option,
+    help,
+    shorts,
+    aliases,
+    inversion,
+    env: None,
+    auto_env: None,
+    choices: [],
+    value_name: "",
+    required: false,
+    visibility,
+    global,
+    greedy: false,
+  }
+  {
+    id,
+    initial: Val(0),
+    reducer: fn(ctx) raise {
+      match ctx.action {
+        Value(None) => Some(ctx.current + 1)
+        Value(Some(s)) => {
+          let n = @strconv.parse_int(s[:]) catch {
+            _ =>
+              raise ParseError::Usage(
+                ErrorKind::InvalidValue,
+                "invalid integer: " + s,
+                ErrorContext::{ option_name: name },
+              )
+          }
+          Some(n)
+        }
+        Negate => Some(0)
+      }
+    },
+    meta,
+    getter: fn(_instance_id) { store.val },
+    setter: fn(_instance_id, val) { store.val = val },
+    children_opts: Opts::Array([]),
+  }
+}
+
+///|
+/// append コンビネータ: 繰り返し蓄積オプションを作成する（--tag a --tag b → ["a", "b"]）
+pub fn Parser::append(
+  self : Parser,
+  name~ : String,
+  help? : String = "",
+  shorts? : Array[ShortEntry] = [],
+  aliases? : Array[AliasEntry] = [],
+  inversion? : FlagInversion? = None,
+  env? : String? = None,
+  auto_env? : Bool? = None,
+  value_name? : String = "STRING",
+  required? : Bool = false,
+  visibility? : Visibility = Visible,
+  global? : Bool = false,
+) -> Opt[Array[String]] {
+  let id = self.next_id()
+  let store : Ref[Array[String]] = Ref::new([])
+  let meta = OptMeta::{
+    name,
+    kind: Kind::Option,
+    help,
+    shorts,
+    aliases,
+    inversion,
+    env,
+    auto_env,
+    choices: [],
+    value_name,
+    required,
+    visibility,
+    global,
+    greedy: false,
+  }
+  {
+    id,
+    initial: Thunk(fn() { [] }),
+    reducer: fn(ctx) {
+      match ctx.action {
+        Value(Some(s)) => {
+          let new_arr : Array[String] = []
+          for item in ctx.current {
+            new_arr.push(item)
+          }
+          new_arr.push(s)
+          Some(new_arr)
+        }
+        Value(None) => None
+        Negate => Some([])
+      }
+    },
+    meta,
+    getter: fn(_instance_id) { store.val },
+    setter: fn(_instance_id, val) { store.val = val },
+    children_opts: Opts::Array([]),
+  }
+}
+
+///|
+/// optional_value コンビネータ: 値省略可能オプションを作成する（--color → "auto", --color=always → "always"）
+pub fn Parser::optional_value(
+  self : Parser,
+  name~ : String,
+  default_value~ : String,
+  help? : String = "",
+  shorts? : Array[ShortEntry] = [],
+  aliases? : Array[AliasEntry] = [],
+  inversion? : FlagInversion? = None,
+  choices? : Array[String] = [],
+  value_name? : String = "VALUE",
+  visibility? : Visibility = Visible,
+  global? : Bool = false,
+) -> Opt[String?] {
+  let id = self.next_id()
+  let store : Ref[String?] = Ref::new(None)
+  let meta = OptMeta::{
+    name,
+    kind: Kind::Option,
+    help,
+    shorts,
+    aliases,
+    inversion,
+    env: None,
+    auto_env: None,
+    choices,
+    value_name,
+    required: false,
+    visibility,
+    global,
+    greedy: false,
+  }
+  {
+    id,
+    initial: Val(None),
+    reducer: fn(ctx) {
+      match ctx.action {
+        Value(None) => Some(Some(default_value))
+        Value(Some(s)) => Some(Some(s))
+        Negate => Some(None)
+      }
+    },
+    meta,
+    getter: fn(_instance_id) { store.val },
+    setter: fn(_instance_id, val) { store.val = val },
+    children_opts: Opts::Array([]),
+  }
+}
+
+///|
+/// custom コンビネータ: ユーザー定義 reducer による汎用オプション
+// Design rationale: initial が Thunk の場合、to_opts() 内の reset_to_initial が呼ばれるたびに
+// Thunk が再評価され異なるインスタンスが生成される問題を防ぐため、ここで Val に正規化する。
+// store の初期値と Opt.initial が同一の評価結果を共有し、二重評価を回避する。
+pub fn Parser::custom[T](
+  self : Parser,
+  name~ : String,
+  initial~ : InitialValue[T],
+  reducer~ : (ReduceCtx[T]) -> T? raise,
+  meta~ : OptMeta,
+) -> Opt[T] {
+  let id = self.next_id()
+  let initial_val = match initial {
+    Val(v) => v
+    Thunk(f) => f()
+  }
+  let store : Ref[T] = Ref::new(initial_val)
+  {
+    id,
+    initial: Val(initial_val),
+    reducer,
+    meta,
+    getter: fn(_instance_id) { store.val },
+    setter: fn(_instance_id, val) { store.val = val },
+    children_opts: Opts::Array([]),
+  }
+}
+
+///|
 /// opts ヘルパー: Array[Opts] を Opts::Array にラップする
 pub fn opts(items : Array[Opts]) -> Opts {
   Opts::Array(items)
