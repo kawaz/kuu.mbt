@@ -16,6 +16,73 @@ pub fn Parser::new() -> Parser {
 }
 
 ///|
+fn make_flag_node(
+  name : String,
+  on_match : () -> () -> Unit,
+  reset : () -> Unit,
+) -> ExactNode {
+  ExactNode::{
+    name,
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() {
+        Reject
+      } else if args[pos] == name {
+        let commit = on_match()
+        Accept(consumed=1, commit~)
+      } else {
+        Reject
+      }
+    },
+    reset,
+  }
+}
+
+///|
+fn make_value_node(
+  name : String,
+  on_match : (String) -> Result[() -> Unit, ParseError],
+  reset : () -> Unit,
+) -> ExactNode {
+  ExactNode::{
+    name,
+    needs_value: true,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() {
+        Reject
+      } else if args[pos] == name {
+        if pos + 1 >= args.length() {
+          Error(ParseError("missing value for " + name))
+        } else {
+          match on_match(args[pos + 1]) {
+            Ok(commit) => Accept(consumed=2, commit~)
+            Err(e) => Error(e)
+          }
+        }
+      } else {
+        Reject
+      }
+    },
+    reset,
+  }
+}
+
+///|
+fn Parser::register_option(
+  self : Parser,
+  node : ExactNode,
+  no_node : ExactNode,
+  global : Bool,
+) -> Unit {
+  self.nodes.push(node)
+  self.nodes.push(no_node)
+  if global {
+    self.global_nodes.push(node)
+    self.global_nodes.push(no_node)
+  }
+}
+
+///|
 pub fn Parser::flag(
   self : Parser,
   name~ : String,
@@ -25,45 +92,24 @@ pub fn Parser::flag(
   let id = (self.next_id)()
   let cell : Ref[Bool] = { val: default }
   let initial_val = default
-  let flag_name = "--" + name
   let pending : Ref[Bool] = { val: default }
-  let node = ExactNode::{
-    name: flag_name,
-    needs_value: false,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == flag_name {
-        pending.val = true
-        Accept(consumed=1, commit=fn() { cell.val = pending.val })
-      } else {
-        Reject
-      }
+  let node = make_flag_node(
+    "--" + name,
+    fn() {
+      pending.val = true
+      fn() { cell.val = pending.val }
     },
-    reset: fn() { cell.val = initial_val },
-  }
-  self.nodes.push(node)
-  let no_flag_name = "--no-" + name
-  let no_node = ExactNode::{
-    name: no_flag_name,
-    needs_value: false,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == no_flag_name {
-        pending.val = false
-        Accept(consumed=1, commit=fn() { cell.val = pending.val })
-      } else {
-        Reject
-      }
+    fn() { cell.val = initial_val },
+  )
+  let no_node = make_flag_node(
+    "--no-" + name,
+    fn() {
+      pending.val = false
+      fn() { cell.val = pending.val }
     },
-    reset: fn() { cell.val = initial_val },
-  }
-  self.nodes.push(no_node)
-  if global {
-    self.global_nodes.push(node)
-    self.global_nodes.push(no_node)
-  }
+    fn() { cell.val = initial_val },
+  )
+  self.register_option(node, no_node, global)
   { id, getter: fn() -> Bool { cell.val } }
 }
 
@@ -77,49 +123,24 @@ pub fn Parser::string_opt(
   let id = (self.next_id)()
   let cell : Ref[String] = { val: default }
   let initial_val = default
-  let opt_name = "--" + name
   let pending : Ref[String] = { val: default }
-  let node = ExactNode::{
-    name: opt_name,
-    needs_value: true,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == opt_name {
-        if pos + 1 >= args.length() {
-          Error(ParseError("missing value for " + opt_name))
-        } else {
-          pending.val = args[pos + 1]
-          Accept(consumed=2, commit=fn() { cell.val = pending.val })
-        }
-      } else {
-        Reject
-      }
+  let node = make_value_node(
+    "--" + name,
+    fn(s) {
+      pending.val = s
+      Ok(fn() { cell.val = pending.val })
     },
-    reset: fn() { cell.val = initial_val },
-  }
-  self.nodes.push(node)
-  let no_opt_name = "--no-" + name
-  let no_node = ExactNode::{
-    name: no_opt_name,
-    needs_value: false,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == no_opt_name {
-        pending.val = initial_val
-        Accept(consumed=1, commit=fn() { cell.val = pending.val })
-      } else {
-        Reject
-      }
+    fn() { cell.val = initial_val },
+  )
+  let no_node = make_flag_node(
+    "--no-" + name,
+    fn() {
+      pending.val = initial_val
+      fn() { cell.val = pending.val }
     },
-    reset: fn() { cell.val = initial_val },
-  }
-  self.nodes.push(no_node)
-  if global {
-    self.global_nodes.push(node)
-    self.global_nodes.push(no_node)
-  }
+    fn() { cell.val = initial_val },
+  )
+  self.register_option(node, no_node, global)
   { id, getter: fn() -> String { cell.val } }
 }
 
@@ -135,60 +156,30 @@ pub fn Parser::int_opt(
   let initial_val = default
   let opt_name = "--" + name
   let pending : Ref[Int] = { val: default }
-  let node = ExactNode::{
-    name: opt_name,
-    needs_value: true,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == opt_name {
-        if pos + 1 >= args.length() {
-          Error(ParseError("missing value for " + opt_name))
-        } else {
-          let parse_result : Result[Int, _] = try? @strconv.parse_int(
-            args[pos + 1].view(),
-          )
-          match parse_result {
-            Ok(v) => {
-              pending.val = v
-              Accept(consumed=2, commit=fn() { cell.val = pending.val })
-            }
-            Err(_) =>
-              Error(
-                ParseError(
-                  "invalid integer value for " + opt_name + ": " + args[pos + 1],
-                ),
-              )
-          }
+  let node = make_value_node(
+    opt_name,
+    fn(s) {
+      let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+      match r {
+        Ok(v) => {
+          pending.val = v
+          Ok(fn() { cell.val = pending.val })
         }
-      } else {
-        Reject
+        Err(_) =>
+          Err(ParseError("invalid integer value for " + opt_name + ": " + s))
       }
     },
-    reset: fn() { cell.val = initial_val },
-  }
-  self.nodes.push(node)
-  let no_opt_name = "--no-" + name
-  let no_node = ExactNode::{
-    name: no_opt_name,
-    needs_value: false,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == no_opt_name {
-        pending.val = initial_val
-        Accept(consumed=1, commit=fn() { cell.val = pending.val })
-      } else {
-        Reject
-      }
+    fn() { cell.val = initial_val },
+  )
+  let no_node = make_flag_node(
+    "--no-" + name,
+    fn() {
+      pending.val = initial_val
+      fn() { cell.val = pending.val }
     },
-    reset: fn() { cell.val = initial_val },
-  }
-  self.nodes.push(no_node)
-  if global {
-    self.global_nodes.push(node)
-    self.global_nodes.push(no_node)
-  }
+    fn() { cell.val = initial_val },
+  )
+  self.register_option(node, no_node, global)
   { id, getter: fn() -> Int { cell.val } }
 }
 
@@ -200,47 +191,17 @@ pub fn Parser::append_string(
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
-  let opt_name = "--" + name
-  let node = ExactNode::{
-    name: opt_name,
-    needs_value: true,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == opt_name {
-        if pos + 1 >= args.length() {
-          Error(ParseError("missing value for " + opt_name))
-        } else {
-          let value = args[pos + 1]
-          Accept(consumed=2, commit=fn() { cell.val.push(value) })
-        }
-      } else {
-        Reject
-      }
-    },
-    reset: fn() { cell.val = [] },
-  }
-  self.nodes.push(node)
-  let no_opt_name = "--no-" + name
-  let no_node = ExactNode::{
-    name: no_opt_name,
-    needs_value: false,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == no_opt_name {
-        Accept(consumed=1, commit=fn() { cell.val = [] })
-      } else {
-        Reject
-      }
-    },
-    reset: fn() { cell.val = [] },
-  }
-  self.nodes.push(no_node)
-  if global {
-    self.global_nodes.push(node)
-    self.global_nodes.push(no_node)
-  }
+  let node = make_value_node(
+    "--" + name,
+    fn(s) { Ok(fn() { cell.val.push(s) }) },
+    fn() { cell.val = [] },
+  )
+  let no_node = make_flag_node(
+    "--no-" + name,
+    fn() { fn() { cell.val = [] } },
+    fn() { cell.val = [] },
+  )
+  self.register_option(node, no_node, global)
   { id, getter: fn() -> Array[String] { cell.val } }
 }
 
@@ -253,56 +214,24 @@ pub fn Parser::append_int(
   let id = (self.next_id)()
   let cell : Ref[Array[Int]] = { val: [] }
   let opt_name = "--" + name
-  let node = ExactNode::{
-    name: opt_name,
-    needs_value: true,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == opt_name {
-        if pos + 1 >= args.length() {
-          Error(ParseError("missing value for " + opt_name))
-        } else {
-          let parse_result : Result[Int, _] = try? @strconv.parse_int(
-            args[pos + 1].view(),
-          )
-          match parse_result {
-            Ok(v) => Accept(consumed=2, commit=fn() { cell.val.push(v) })
-            Err(_) =>
-              Error(
-                ParseError(
-                  "invalid integer value for " + opt_name + ": " + args[pos + 1],
-                ),
-              )
-          }
-        }
-      } else {
-        Reject
+  let node = make_value_node(
+    opt_name,
+    fn(s) {
+      let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+      match r {
+        Ok(v) => Ok(fn() { cell.val.push(v) })
+        Err(_) =>
+          Err(ParseError("invalid integer value for " + opt_name + ": " + s))
       }
     },
-    reset: fn() { cell.val = [] },
-  }
-  self.nodes.push(node)
-  let no_opt_name = "--no-" + name
-  let no_node = ExactNode::{
-    name: no_opt_name,
-    needs_value: false,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == no_opt_name {
-        Accept(consumed=1, commit=fn() { cell.val = [] })
-      } else {
-        Reject
-      }
-    },
-    reset: fn() { cell.val = [] },
-  }
-  self.nodes.push(no_node)
-  if global {
-    self.global_nodes.push(node)
-    self.global_nodes.push(no_node)
-  }
+    fn() { cell.val = [] },
+  )
+  let no_node = make_flag_node(
+    "--no-" + name,
+    fn() { fn() { cell.val = [] } },
+    fn() { cell.val = [] },
+  )
+  self.register_option(node, no_node, global)
   { id, getter: fn() -> Array[Int] { cell.val } }
 }
 
