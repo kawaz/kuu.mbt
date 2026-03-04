@@ -1,0 +1,6 @@
+import {
+  "moonbitlang/core/int",
+  "moonbitlang/core/strconv",
+}
+
+warnings = "-1"

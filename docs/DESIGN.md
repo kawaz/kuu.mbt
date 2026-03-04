@@ -272,7 +272,7 @@ pub(all) struct ErasedNode {
   meta : OptMeta
   try_reduce : (ReduceAction, ResultMap) -> TryReduceResult
   // 投機実行: 判定のみ行い ResultMap には書き込まない。成功なら Accept に確定値を保持
-  // 内部で try? → catch → Reject とし、例外は投げない
+  // 内部で try? → catch し、reducer が None を返せば Reject、raise ParseError すれば Error(ParseError) を返す
   commit_reduce : (ReduceResult, ResultMap) -> Unit
   // 確定モード: try_reduce で得た結果を ResultMap に書き込む（候補が1つに確定した後に呼ぶ）
   // 内部: ReduceCtx[T] { current: ref.val, action, ... } を構築して reducer を呼ぶ
@@ -285,6 +285,7 @@ pub(all) struct ErasedNode {
 enum TryReduceResult {
   Accept(consumed~ : Int, result~ : ReduceResult)
   Reject
+  Error(ParseError)  // reducer が raise した ParseError を呼び出し元に伝播するために使用
 }
 
 // ReduceResult は型消去された一時結果。commit_reduce でのみ使用
@@ -379,6 +380,7 @@ kind の優先度: Option = Command > Positional
    - 各ノードの try_reduce 内で名前解決を行う（各ノードが自分の名前マッチングを知っている）
    - TryReduceResult::Accept(consumed, result) → 候補残留
    - TryReduceResult::Reject → 候補脱落
+   - TryReduceResult::Error(ParseError) → reducer が raise したエラーを伝播
 
 4. greedy フィルタ
    残留候補に greedy=true があれば greedy=false を除去
@@ -844,7 +846,7 @@ struct CompletionCandidate {
 | force_positional | `--` Accept 時に true 遷移。Option を候補から除外 |
 | 結果保持 | `ResultMap`（Opt immutable、ID ベース） |
 | reducer コンテキスト | `ReduceCtx[T]` — 1引数方式で後方互換 |
-| 投機実行結果 | `TryReduceResult` — Accept(consumed, result) / Reject |
+| 投機実行結果 | `TryReduceResult` — Accept(consumed, result) / Reject / Error(ParseError) |
 | 先食い最長一致 | 全候補に try_reduce → consumed 最大を選択 → commit_reduce で確定 |
 | 表示制御 | `Visibility` (Visible/Advanced/Deprecated/Hidden) |
 | 排他オプション | `parser.exclusive([...])` — Validate フェーズの制約フック |
@@ -897,7 +899,7 @@ PoC3, PoC4 検証済みの型をプロダクション品質で実装する。
 - `OptMeta` — name, kind, shorts, aliases, inversion, visibility, global, greedy 等
 - `InitialValue[T]` — Immediate / Lazy
 - `ErasedNode` — 型消去 struct（PoC3, PoC4 検証済み）。try_reduce は TryReduceResult を返す
-- `TryReduceResult` — Accept(consumed, result) / Reject
+- `TryReduceResult` — Accept(consumed, result) / Reject / Error(ParseError)
 - `Parser` struct — seq, refs, clone_map（PoC4 の ID 空間一元管理）
 - `ReduceCtx[T]` — 1引数方式（PoC4 検証済み）
 - `ValueSource` — Initial / Default / Environment / CommandLine
