@@ -258,14 +258,27 @@ fn command_name_matches(meta : @core.OptMeta, arg : String) -> Bool {
 }
 
 ///| パース実行
-pub fn parse(args : Array[String], opts : @core.Opts) -> Unit raise {
+pub fn parse(
+  parser : @core.Parser,
+  args : Array[String],
+  opts : @core.Opts
+) -> Unit raise {
+  // Phase 1: PreProcess — preprocessors を順に実行して args を変換
+  let mut processed_args = args
+  for hook in parser.preprocessors {
+    processed_args = hook(processed_args)
+  }
+  // Phase 2: Reduce — 既存の消費ループ
+  // Design rationale: resolve_hooks は Step 8 で名前解決に組み込む予定。Step 4 では呼び出さない。
   let mut nodes = @core.opts_to_erased_nodes(opts)
   let force_positional : Ref[Bool] = Ref::new(false)
+  // Design rationale: p_mode は「Positional を1つ以上消費した後は Command マッチを無効化」するフラグ。
+  // 例: `app file.txt cmd` では file.txt 消費後に cmd はサブコマンドではなく Positional として扱う。
   let p_mode : Ref[Bool] = Ref::new(false)
   let pos : Ref[Int] = Ref::new(0)
   let positional_idx : Ref[Int] = Ref::new(0)
-  while pos.val < args.length() {
-    let arg = args[pos.val]
+  while pos.val < processed_args.length() {
+    let arg = processed_args[pos.val]
     // Step 1: "--" セパレータ処理
     if arg == "--" && not(force_positional.val) {
       force_positional.val = true
@@ -294,10 +307,10 @@ pub fn parse(args : Array[String], opts : @core.Opts) -> Unit raise {
     // Step 4: 投機実行
     if is_long && not(force_positional.val) {
       let (name, eq_value) = decompose_long(arg)
-      handle_long(name, eq_value, args, pos, oc_candidates)
+      handle_long(name, eq_value, processed_args, pos, oc_candidates)
     } else if is_short && not(force_positional.val) {
       let chars = decompose_short(arg)
-      handle_short(chars, oc_candidates, args, pos)
+      handle_short(chars, oc_candidates, processed_args, pos)
     } else {
       // bare token: まず Command 候補を名前完全一致でチェック
       let mut command_matched = false
@@ -341,5 +354,21 @@ pub fn parse(args : Array[String], opts : @core.Opts) -> Unit raise {
         p_mode.val = true
       }
     }
+  }
+  // Design rationale: constraint.check が raise した場合、MoonBit の例外伝播により
+  // parse() 関数全体が終了するため、後続の Validate/Finalize フックは実行されない。
+  // これは「最初のエラーで即座に中断」という設計意図に合致する。
+
+  // Phase 3: Validate — constraints を順に実行
+  // Design rationale: nodes はサブコマンド遷移後の「最終アクティブスコープ」のノード（子 + global）。
+  // 親スコープの非 global ノードは含まれない。Validate/Finalize はアクティブスコープに対してのみ動作する。
+  let validate_ctx = @core.ValidateCtx::{ nodes }
+  for constraint in parser.constraints {
+    (constraint.check)(validate_ctx)
+  }
+  // Phase 4: Finalize — finalizers を順に実行
+  let finalize_ctx = @core.FinalizeCtx::{ nodes }
+  for finalizer in parser.finalizers {
+    finalizer(finalize_ctx)
   }
 }

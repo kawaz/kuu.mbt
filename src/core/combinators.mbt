@@ -281,6 +281,7 @@ pub fn[T] Opt::to_opts(self : Opt[T]) -> Opts {
   let store_setter = self.setter
   let reducer = self.reducer
   let children_opts = self.children_opts
+  let committed : Ref[Bool] = Ref::new(false)
   Opts::Node(ErasedNode::{
     meta: self.meta,
     try_reduce: fn(action, _result_map) {
@@ -304,8 +305,15 @@ pub fn[T] Opt::to_opts(self : Opt[T]) -> Opts {
         _ => Error(ParseError::Internal("unexpected error in reducer"))
       }
     },
-    commit_reduce: fn(result, _result_map) { (result.commit)() },
-    reset_to_initial: fn(_result_map) { store_setter(0, initial_val) },
+    commit_reduce: fn(result, _result_map) {
+      (result.commit)()
+      committed.val = true
+    },
+    reset_to_initial: fn(_result_map) {
+      store_setter(0, initial_val)
+      committed.val = false
+    },
+    is_set: fn() { committed.val },
     children: fn() { opts_to_erased_nodes(children_opts) },
   })
 }
