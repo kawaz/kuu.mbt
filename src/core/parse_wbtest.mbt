@@ -586,3 +586,74 @@ test "ParseResult::get before parse returns None" {
   let result : ParseResult = { kind: One, parser: p }
   inspect(result.get(verbose), content="None")
 }
+
+///|
+test "ParseResult child navigation" {
+  let p = Parser::new()
+  let port_opt : Ref[Opt[Int]?] = { val: None }
+  let _serve = p.cmd(name="serve", setup=fn(child) {
+    port_opt.val = Some(child.int_opt(name="port", default=8080))
+  })
+  let result = p.parse(["serve", "--port", "3000"])
+  // child で serve の ParseResult にナビゲート
+  match result.child("serve") {
+    Some(serve_result) => {
+      inspect(serve_result.get(port_opt.val.unwrap()), content="Some(3000)")
+    }
+    None => abort("serve child should exist")
+  }
+}
+
+///|
+test "ParseResult child not found" {
+  let p = Parser::new()
+  let _serve = p.cmd(name="serve", setup=fn(child) {
+    let _ = child.int_opt(name="port", default=8080)
+  })
+  let result = p.parse(["serve", "--port", "3000"])
+  inspect(result.child("build").is_empty(), content="true")
+}
+
+///|
+test "ParseResult as_map with subcommand" {
+  let p = Parser::new()
+  let _serve = p.cmd(name="serve", setup=fn(child) {
+    let _ = child.int_opt(name="port", default=8080)
+  })
+  let result = p.parse(["serve"])
+  inspect(result.as_map().is_empty(), content="false")
+}
+
+///|
+test "ParseResult as_map without subcommand" {
+  let p = Parser::new()
+  let _verbose = p.flag(name="verbose")
+  let result = p.parse(["--verbose"])
+  // cmd 登録がなければ One のまま
+  inspect(result.as_map().is_empty(), content="true")
+}
+
+///|
+test "ParseResult nested child navigation" {
+  let p = Parser::new()
+  let name_opt : Ref[Opt[String]?] = { val: None }
+  let _remote = p.cmd(name="remote", setup=fn(remote_parser) {
+    let _add = remote_parser.cmd(name="add", setup=fn(add_parser) {
+      name_opt.val = Some(add_parser.string_opt(name="name", default=""))
+    })
+  })
+  let result = p.parse(["remote", "add", "--name", "origin"])
+  match result.child("remote") {
+    Some(remote_result) => {
+      match remote_result.child("add") {
+        Some(add_result) => {
+          inspect(add_result.get(name_opt.val.unwrap()), content=(
+            #|Some("origin")
+          ))
+        }
+        None => abort("add child should exist")
+      }
+    }
+    None => abort("remote child should exist")
+  }
+}

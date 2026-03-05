@@ -90,5 +90,10 @@ pub fn Parser::parse(
     }
   }
   self.parsed.val = true
-  { kind: One, parser: self }
+  let kind = if self.children.length() > 0 {
+    Map_(self.children)
+  } else {
+    One
+  }
+  { kind, parser: self }
 }

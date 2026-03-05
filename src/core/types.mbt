@@ -33,6 +33,7 @@ pub(all) struct Parser {
   current_positional : Ref[Int]
   force_positional : Ref[Bool]
   parsed : Ref[Bool]
+  children : Map[String, ParseResult]
 }
 
 ///|

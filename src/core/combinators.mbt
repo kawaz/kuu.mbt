@@ -13,6 +13,7 @@ pub fn Parser::new() -> Parser {
     current_positional: { val: 0 },
     force_positional: { val: false },
     parsed: { val: false },
+    children: Map::new(),
   }
 }
 
@@ -303,6 +304,7 @@ pub fn Parser::cmd(
     current_positional: { val: 0 },
     force_positional: { val: false },
     parsed: { val: false },
+    children: Map::new(),
   }
   setup(child)
   let cmd_name = name
@@ -316,8 +318,14 @@ pub fn Parser::cmd(
         let rest_args = Array::from_iter(args.view(start=pos + 1).iter())
         let parse_result : Result[ParseResult, _] = try? child.parse(rest_args)
         match parse_result {
-          Ok(_) =>
-            Accept(consumed=args.length() - pos, commit=fn() { cell.val = true })
+          Ok(child_result) =>
+            Accept(
+              consumed=args.length() - pos,
+              commit=fn() {
+                cell.val = true
+                self.children.set(cmd_name, child_result)
+              },
+            )
           Err(e) => Error(e)
         }
       } else {
@@ -328,6 +336,43 @@ pub fn Parser::cmd(
   }
   self.nodes.push(node)
   { id, getter: fn() -> Bool { cell.val } }
+}
+
+///|
+pub fn ParseResult::as_map(self : ParseResult) -> Map[String, ParseResult]? {
+  match self.kind {
+    Map_(m) => Some(m)
+    _ => None
+  }
+}
+
+///|
+pub fn ParseResult::as_list(self : ParseResult) -> Array[ParseResult]? {
+  match self.kind {
+    List_(l) => Some(l)
+    _ => None
+  }
+}
+
+///|
+pub fn ParseResult::child(self : ParseResult, key : String) -> ParseResult? {
+  match self.kind {
+    Map_(m) => m.get(key)
+    _ => None
+  }
+}
+
+///|
+pub fn ParseResult::at(self : ParseResult, index : Int) -> ParseResult? {
+  match self.kind {
+    List_(l) =>
+      if index >= 0 && index < l.length() {
+        Some(l[index])
+      } else {
+        None
+      }
+    _ => None
+  }
 }
 
 ///|
