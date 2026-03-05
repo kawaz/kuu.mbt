@@ -1066,3 +1066,57 @@ test "description shown in help" {
     _ => inspect(false, content="true")
   }
 }
+
+///|
+test "parse error includes help_text" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", short='v', description="Enable verbose output")
+  let _ = p.int_opt(name="port", default=8080, description="Set port number")
+  let result : Result[ParseResult, _] = try? p.parse(["--unknown"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.message, content=(
+        #|unexpected argument: --unknown
+      ))
+      // help_text が空でないことを確認
+      inspect(info.help_text.is_empty(), content="false")
+      // help_text にオプション情報が含まれること
+      inspect(info.help_text.contains("--verbose"), content="true")
+      inspect(info.help_text.contains("--port"), content="true")
+    }
+    _ => abort("expected ParseError")
+  }
+}
+
+///|
+test "ParseErrorInfo::to_string format" {
+  let info = ParseErrorInfo::{ message: "unexpected argument: --foo", help_text: "" }
+  inspect(info.to_string(), content=(
+    #|error: unexpected argument: --foo
+  ))
+  let info2 = ParseErrorInfo::{ message: "unexpected argument: --foo", help_text: "Options:\n  --help\n" }
+  let expected = "error: unexpected argument: --foo\n\nOptions:\n  --help\n"
+  inspect(info2.to_string() == expected, content="true")
+}
+
+///|
+test "subcommand error has child help_text" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose mode")
+  let _ = p.cmd(name="serve", setup=fn(child) {
+    let _ = child.int_opt(name="port", default=8080, description="Set port")
+  }, description="Start server")
+  let result : Result[ParseResult, _] = try? p.parse(["serve", "--unknown"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.message, content=(
+        #|unexpected argument: --unknown
+      ))
+      // 子パーサ (serve) の help_text が設定されている
+      inspect(info.help_text.contains("--port"), content="true")
+      // 親パーサのオプション (--verbose) は含まれない（子のヘルプが優先）
+      inspect(info.help_text.contains("--verbose"), content="false")
+    }
+    _ => abort("expected ParseError")
+  }
+}

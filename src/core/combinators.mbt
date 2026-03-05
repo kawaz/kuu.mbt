@@ -1,4 +1,9 @@
 ///|
+fn parse_error(message : String) -> ParseError {
+  ParseError(ParseErrorInfo::{ message, help_text: "" })
+}
+
+///|
 fn to_upper(s : String) -> String {
   let buf = StringBuilder::new()
   for c in s {
@@ -76,7 +81,7 @@ fn make_value_node(
         Reject
       } else if args[pos] == name {
         if pos + 1 >= args.length() {
-          Error(ParseError("missing value for " + name))
+          Error(parse_error("missing value for " + name))
         } else {
           match on_match(args[pos + 1]) {
             Ok(commit) => Accept(consumed=2, commit~)
@@ -305,7 +310,7 @@ pub fn Parser::int_opt(
           Ok(fn() { cell.val = pending.val })
         }
         Err(_) =>
-          Err(ParseError("invalid integer value for " + opt_name + ": " + s))
+          Err(parse_error("invalid integer value for " + opt_name + ": " + s))
       }
     },
     fn() { cell.val = initial_val },
@@ -332,7 +337,7 @@ pub fn Parser::int_opt(
           }
           Err(_) =>
             Err(
-              ParseError(
+              parse_error(
                 "invalid integer value for " + alt_opt_name + ": " + s,
               ),
             )
@@ -364,7 +369,7 @@ pub fn Parser::int_opt(
           }
           Err(_) =>
             Err(
-              ParseError(
+              parse_error(
                 "invalid integer value for " + short_opt_name + ": " + s,
               ),
             )
@@ -478,7 +483,7 @@ pub fn Parser::append_int(
       match r {
         Ok(v) => Ok(fn() { cell.val.push(v) })
         Err(_) =>
-          Err(ParseError("invalid integer value for " + opt_name + ": " + s))
+          Err(parse_error("invalid integer value for " + opt_name + ": " + s))
       }
     },
     fn() { cell.val = [] },
@@ -499,7 +504,7 @@ pub fn Parser::append_int(
           Ok(v) => Ok(fn() { cell.val.push(v) })
           Err(_) =>
             Err(
-              ParseError(
+              parse_error(
                 "invalid integer value for " + alt_opt_name + ": " + s,
               ),
             )
@@ -525,7 +530,7 @@ pub fn Parser::append_int(
           Ok(v) => Ok(fn() { cell.val.push(v) })
           Err(_) =>
             Err(
-              ParseError(
+              parse_error(
                 "invalid integer value for " + short_opt_name + ": " + s,
               ),
             )

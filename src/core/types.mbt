@@ -1,6 +1,12 @@
 ///|
+pub(all) struct ParseErrorInfo {
+  message : String
+  help_text : String
+}
+
+///|
 pub(all) suberror ParseError {
-  ParseError(String)
+  ParseError(ParseErrorInfo)
   HelpRequested(String)
 }
 

@@ -188,3 +188,16 @@ fn write_opt_section(buf : StringBuilder, metas : Array[OptMeta]) -> Unit {
     buf.write_char('\n')
   }
 }
+
+///|
+pub fn ParseErrorInfo::to_string(self : ParseErrorInfo) -> String {
+  let buf = StringBuilder::new()
+  buf.write_string("error: ")
+  buf.write_string(self.message)
+  if not(self.help_text.is_empty()) {
+    buf.write_char('\n')
+    buf.write_char('\n')
+    buf.write_string(self.help_text)
+  }
+  buf.to_string()
+}

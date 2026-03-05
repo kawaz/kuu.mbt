@@ -78,7 +78,7 @@ fn Parser::try_short_combine(
                 _ => return Reject
               }
             } else {
-              return Error(ParseError("missing value for " + short_name))
+              return Error(parse_error("missing value for " + short_name))
             }
           }
         } else {
@@ -105,7 +105,7 @@ fn Parser::try_short_combine(
 }
 
 ///|
-pub fn Parser::parse(
+fn Parser::parse_raw(
   self : Parser,
   args : Array[String],
 ) -> ParseResult raise ParseError {
@@ -167,7 +167,7 @@ pub fn Parser::parse(
         }
       }
       if ambiguous {
-        raise ParseError("ambiguous argument: " + args[pos])
+        raise parse_error("ambiguous argument: " + args[pos])
       }
     }
     // Try short option combining if no ExactNode matched
@@ -201,11 +201,11 @@ pub fn Parser::parse(
               }
               pos = pos + consumed
             }
-            Reject => raise ParseError("unexpected argument: " + args[pos])
+            Reject => raise parse_error("unexpected argument: " + args[pos])
             Error(e) => raise e
           }
         } else {
-          raise ParseError("unexpected argument: " + args[pos])
+          raise parse_error("unexpected argument: " + args[pos])
         }
     }
   }
@@ -216,4 +216,22 @@ pub fn Parser::parse(
     One
   }
   { kind, parser: self }
+}
+
+///|
+pub fn Parser::parse(
+  self : Parser,
+  args : Array[String],
+) -> ParseResult raise ParseError {
+  let result : Result[ParseResult, ParseError] = try? self.parse_raw(args)
+  match result {
+    Ok(r) => r
+    Err(ParseError(info)) =>
+      if info.help_text.is_empty() {
+        raise ParseError(ParseErrorInfo::{ ..info, help_text: self.generate_help() })
+      } else {
+        raise ParseError(info)
+      }
+    Err(e) => raise e
+  }
 }
