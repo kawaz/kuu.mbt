@@ -673,6 +673,56 @@ test "opt.get cobra-style" {
 }
 
 ///|
+test "alias for flag" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", aliases=["v"])
+  ignore(p.parse!(["--v"]))
+  inspect!(p.get(verbose), content="Some(true)")
+}
+
+///|
+test "alias no-prefix" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", aliases=["v"])
+  ignore(p.parse!(["--v", "--no-v"]))
+  inspect!(p.get(verbose), content="Some(false)")
+}
+
+///|
+test "alias for string option" {
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost", aliases=["H"])
+  ignore(p.parse!(["--H", "example.com"]))
+  inspect!(p.get(host), content=(
+    #|Some("example.com")
+  ))
+}
+
+///|
+test "alias for int option" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=8080, aliases=["p"])
+  ignore(p.parse!(["--p", "3000"]))
+  inspect!(p.get(port), content="Some(3000)")
+}
+
+///|
+test "multiple aliases" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", aliases=["v", "verb"])
+  ignore(p.parse!(["--verb"]))
+  inspect!(p.get(verbose), content="Some(true)")
+}
+
+///|
+test "alias with equals syntax" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=8080, aliases=["p"])
+  ignore(p.parse!(["--p=3000"]))
+  inspect!(p.get(port), content="Some(3000)")
+}
+
+///|
 test "opt.get with subcommand" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", global=true)

@@ -672,6 +672,7 @@ enum FlagInversion {
 5. **kind の区別のユーザー API 表現** — コンビネータ（opt::flag, opt::int, cmd() 等）で暗黙決定する方式で進行中
 6. **複数値パラメータは常に Array** — `aliases`, `shorts` 等は MoonBit コアでは常に `Array` で受ける。ターゲット別ラッパー（TS なら `string | string[]` 等）で各言語の慣用的 DX を提供
 7. **中間 rest 対応** — `mv file... dir` パターン。ReduceCtx.ahead() で先読みする設計案あり（「将来実装」参照）。実装時期・優先度は未定
+8. **パース後のリソース解放** — Parser/ParseResult/Opt がクロージャで相互参照を持つため、ユーザーが Opt や ParseResult を長期保持するとパース関連の全コンテキストが GC 回収されない。`ParseResult::extract()` 的な「全値を取り出して kuu の参照を切る」ヘルパーの提供、またはチュートリアルで「値を自分の struct に詰めたら kuu 関連はスコープ外に持ち出さない」お作法を推奨する等。他のパーサライブラリでも共通の課題
 
 ### コア設計: Parser struct + getter 方式（PoC4 検証済み・採用）
 

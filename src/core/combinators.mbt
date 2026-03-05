@@ -90,6 +90,7 @@ pub fn Parser::flag(
   name~ : String,
   default? : Bool = false,
   global? : Bool = false,
+  aliases? : Array[String] = [],
 ) -> Opt[Bool] {
   let id = (self.next_id)()
   let cell : Ref[Bool] = { val: default }
@@ -112,6 +113,25 @@ pub fn Parser::flag(
     fn() { cell.val = initial_val },
   )
   self.register_option(node, no_node, global)
+  for alt in aliases {
+    let alt_node = make_flag_node(
+      "--" + alt,
+      fn() {
+        pending.val = true
+        fn() { cell.val = pending.val }
+      },
+      fn() { cell.val = initial_val },
+    )
+    let alt_no_node = make_flag_node(
+      "--no-" + alt,
+      fn() {
+        pending.val = false
+        fn() { cell.val = pending.val }
+      },
+      fn() { cell.val = initial_val },
+    )
+    self.register_option(alt_node, alt_no_node, global)
+  }
   { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
 }
 
@@ -130,6 +150,7 @@ pub fn Parser::string_opt(
   name~ : String,
   default~ : String,
   global? : Bool = false,
+  aliases? : Array[String] = [],
 ) -> Opt[String] {
   let id = (self.next_id)()
   let cell : Ref[String] = { val: default }
@@ -152,6 +173,25 @@ pub fn Parser::string_opt(
     fn() { cell.val = initial_val },
   )
   self.register_option(node, no_node, global)
+  for alt in aliases {
+    let alt_node = make_value_node(
+      "--" + alt,
+      fn(s) {
+        pending.val = s
+        Ok(fn() { cell.val = pending.val })
+      },
+      fn() { cell.val = initial_val },
+    )
+    let alt_no_node = make_flag_node(
+      "--no-" + alt,
+      fn() {
+        pending.val = initial_val
+        fn() { cell.val = pending.val }
+      },
+      fn() { cell.val = initial_val },
+    )
+    self.register_option(alt_node, alt_no_node, global)
+  }
   { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
 }
 
@@ -161,6 +201,7 @@ pub fn Parser::int_opt(
   name~ : String,
   default~ : Int,
   global? : Bool = false,
+  aliases? : Array[String] = [],
 ) -> Opt[Int] {
   let id = (self.next_id)()
   let cell : Ref[Int] = { val: default }
@@ -191,6 +232,37 @@ pub fn Parser::int_opt(
     fn() { cell.val = initial_val },
   )
   self.register_option(node, no_node, global)
+  for alt in aliases {
+    let alt_opt_name = "--" + alt
+    let alt_node = make_value_node(
+      alt_opt_name,
+      fn(s) {
+        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+        match r {
+          Ok(v) => {
+            pending.val = v
+            Ok(fn() { cell.val = pending.val })
+          }
+          Err(_) =>
+            Err(
+              ParseError(
+                "invalid integer value for " + alt_opt_name + ": " + s,
+              ),
+            )
+        }
+      },
+      fn() { cell.val = initial_val },
+    )
+    let alt_no_node = make_flag_node(
+      "--no-" + alt,
+      fn() {
+        pending.val = initial_val
+        fn() { cell.val = pending.val }
+      },
+      fn() { cell.val = initial_val },
+    )
+    self.register_option(alt_node, alt_no_node, global)
+  }
   { id, getter: fn() -> Int { cell.val }, parsed: self.parsed }
 }
 
@@ -199,6 +271,7 @@ pub fn Parser::append_string(
   self : Parser,
   name~ : String,
   global? : Bool = false,
+  aliases? : Array[String] = [],
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
@@ -213,6 +286,19 @@ pub fn Parser::append_string(
     fn() { cell.val = [] },
   )
   self.register_option(node, no_node, global)
+  for alt in aliases {
+    let alt_node = make_value_node(
+      "--" + alt,
+      fn(s) { Ok(fn() { cell.val.push(s) }) },
+      fn() { cell.val = [] },
+    )
+    let alt_no_node = make_flag_node(
+      "--no-" + alt,
+      fn() { fn() { cell.val = [] } },
+      fn() { cell.val = [] },
+    )
+    self.register_option(alt_node, alt_no_node, global)
+  }
   { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
 }
 
@@ -221,6 +307,7 @@ pub fn Parser::append_int(
   self : Parser,
   name~ : String,
   global? : Bool = false,
+  aliases? : Array[String] = [],
 ) -> Opt[Array[Int]] {
   let id = (self.next_id)()
   let cell : Ref[Array[Int]] = { val: [] }
@@ -243,6 +330,31 @@ pub fn Parser::append_int(
     fn() { cell.val = [] },
   )
   self.register_option(node, no_node, global)
+  for alt in aliases {
+    let alt_opt_name = "--" + alt
+    let alt_node = make_value_node(
+      alt_opt_name,
+      fn(s) {
+        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+        match r {
+          Ok(v) => Ok(fn() { cell.val.push(v) })
+          Err(_) =>
+            Err(
+              ParseError(
+                "invalid integer value for " + alt_opt_name + ": " + s,
+              ),
+            )
+        }
+      },
+      fn() { cell.val = [] },
+    )
+    let alt_no_node = make_flag_node(
+      "--no-" + alt,
+      fn() { fn() { cell.val = [] } },
+      fn() { cell.val = [] },
+    )
+    self.register_option(alt_node, alt_no_node, global)
+  }
   { id, getter: fn() -> Array[Int] { cell.val }, parsed: self.parsed }
 }
 
