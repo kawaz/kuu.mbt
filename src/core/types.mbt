@@ -32,6 +32,7 @@ pub(all) struct Parser {
   positionals : Array[((Array[String], Int) -> TryResult, Bool)]
   current_positional : Ref[Int]
   force_positional : Ref[Bool]
+  parsed : Ref[Bool]
 }
 
 ///|

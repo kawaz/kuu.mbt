@@ -89,4 +89,5 @@ pub fn Parser::parse(
         }
     }
   }
+  self.parsed.val = true
 }

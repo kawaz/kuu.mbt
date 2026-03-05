@@ -3,7 +3,7 @@ test "single flag" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   p.parse(["--verbose"])
-  inspect(p.get(verbose), content="true")
+  inspect(p.get(verbose), content="Some(true)")
 }
 
 ///|
@@ -11,7 +11,7 @@ test "flag default is false" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   p.parse([])
-  inspect(p.get(verbose), content="false")
+  inspect(p.get(verbose), content="Some(false)")
 }
 
 ///|
@@ -28,8 +28,8 @@ test "multiple flags" {
   let verbose = p.flag(name="verbose")
   let debug = p.flag(name="debug")
   p.parse(["--verbose", "--debug"])
-  inspect(p.get(verbose), content="true")
-  inspect(p.get(debug), content="true")
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(debug), content="Some(true)")
 }
 
 ///|
@@ -37,7 +37,7 @@ test "no-prefix negation" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   p.parse(["--verbose", "--no-verbose"])
-  inspect(p.get(verbose), content="false")
+  inspect(p.get(verbose), content="Some(false)")
 }
 
 ///|
@@ -45,7 +45,7 @@ test "no-prefix with default true" {
   let p = Parser::new()
   let color = p.flag(name="color", default=true)
   p.parse([])
-  inspect(p.get(color), content="true")
+  inspect(p.get(color), content="Some(true)")
 }
 
 ///|
@@ -53,7 +53,7 @@ test "no-prefix resets to default" {
   let p = Parser::new()
   let color = p.flag(name="color", default=true)
   p.parse(["--no-color"])
-  inspect(p.get(color), content="false")
+  inspect(p.get(color), content="Some(false)")
 }
 
 ///|
@@ -61,7 +61,9 @@ test "string option" {
   let p = Parser::new()
   let host = p.string_opt(name="host", default="localhost")
   p.parse(["--host", "example.com"])
-  inspect(p.get(host), content="example.com")
+  inspect(p.get(host), content=(
+    #|Some("example.com")
+  ))
 }
 
 ///|
@@ -69,7 +71,9 @@ test "string option default" {
   let p = Parser::new()
   let host = p.string_opt(name="host", default="localhost")
   p.parse([])
-  inspect(p.get(host), content="localhost")
+  inspect(p.get(host), content=(
+    #|Some("localhost")
+  ))
 }
 
 ///|
@@ -77,7 +81,7 @@ test "int option" {
   let p = Parser::new()
   let port = p.int_opt(name="port", default=8080)
   p.parse(["--port", "3000"])
-  inspect(p.get(port), content="3000")
+  inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
@@ -85,7 +89,7 @@ test "int option default" {
   let p = Parser::new()
   let port = p.int_opt(name="port", default=8080)
   p.parse([])
-  inspect(p.get(port), content="8080")
+  inspect(p.get(port), content="Some(8080)")
 }
 
 ///|
@@ -111,9 +115,11 @@ test "int and string combined" {
   let host = p.string_opt(name="host", default="localhost")
   let verbose = p.flag(name="verbose")
   p.parse(["--port", "3000", "--verbose", "--host", "example.com"])
-  inspect(p.get(port), content="3000")
-  inspect(p.get(host), content="example.com")
-  inspect(p.get(verbose), content="true")
+  inspect(p.get(port), content="Some(3000)")
+  inspect(p.get(host), content=(
+    #|Some("example.com")
+  ))
+  inspect(p.get(verbose), content="Some(true)")
 }
 
 ///|
@@ -121,7 +127,9 @@ test "no-prefix resets string option" {
   let p = Parser::new()
   let host = p.string_opt(name="host", default="localhost")
   p.parse(["--host", "example.com", "--no-host"])
-  inspect(p.get(host), content="localhost")
+  inspect(p.get(host), content=(
+    #|Some("localhost")
+  ))
 }
 
 ///|
@@ -129,7 +137,7 @@ test "no-prefix resets int option" {
   let p = Parser::new()
   let port = p.int_opt(name="port", default=8080)
   p.parse(["--port", "3000", "--no-port"])
-  inspect(p.get(port), content="8080")
+  inspect(p.get(port), content="Some(8080)")
 }
 
 ///|
@@ -137,7 +145,9 @@ test "equals syntax for string" {
   let p = Parser::new()
   let host = p.string_opt(name="host", default="localhost")
   p.parse(["--host=example.com"])
-  inspect(p.get(host), content="example.com")
+  inspect(p.get(host), content=(
+    #|Some("example.com")
+  ))
 }
 
 ///|
@@ -145,7 +155,7 @@ test "equals syntax for int" {
   let p = Parser::new()
   let port = p.int_opt(name="port", default=8080)
   p.parse(["--port=3000"])
-  inspect(p.get(port), content="3000")
+  inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
@@ -162,8 +172,10 @@ test "equals syntax mixed with space syntax" {
   let port = p.int_opt(name="port", default=8080)
   let host = p.string_opt(name="host", default="localhost")
   p.parse(["--port=3000", "--host", "example.com"])
-  inspect(p.get(port), content="3000")
-  inspect(p.get(host), content="example.com")
+  inspect(p.get(port), content="Some(3000)")
+  inspect(p.get(host), content=(
+    #|Some("example.com")
+  ))
 }
 
 ///|
@@ -172,8 +184,8 @@ test "equals syntax with flag" {
   let verbose = p.flag(name="verbose")
   let port = p.int_opt(name="port", default=8080)
   p.parse(["--verbose", "--port=3000"])
-  inspect(p.get(verbose), content="true")
-  inspect(p.get(port), content="3000")
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
@@ -184,7 +196,7 @@ test "append string" {
   inspect(
     p.get(tags),
     content=(
-      #|["a", "b"]
+      #|Some(["a", "b"])
     ),
   )
 }
@@ -197,7 +209,7 @@ test "append string default empty" {
   inspect(
     p.get(tags),
     content=(
-      #|[]
+      #|Some([])
     ),
   )
 }
@@ -210,7 +222,7 @@ test "append string negate" {
   inspect(
     p.get(tags),
     content=(
-      #|["b"]
+      #|Some(["b"])
     ),
   )
 }
@@ -223,7 +235,7 @@ test "append int" {
   inspect(
     p.get(nums),
     content=(
-      #|[1, 2, 3]
+      #|Some([1, 2, 3])
     ),
   )
 }
@@ -244,7 +256,7 @@ test "append with equals syntax" {
   inspect(
     p.get(tags),
     content=(
-      #|["a", "b"]
+      #|Some(["a", "b"])
     ),
   )
 }
@@ -254,7 +266,9 @@ test "positional arg" {
   let p = Parser::new()
   let file = p.positional(name="file")
   p.parse(["input.txt"])
-  inspect(p.get(file), content="input.txt")
+  inspect(p.get(file), content=(
+    #|Some("input.txt")
+  ))
 }
 
 ///|
@@ -263,8 +277,10 @@ test "positional with option before" {
   let verbose = p.flag(name="verbose")
   let file = p.positional(name="file")
   p.parse(["--verbose", "input.txt"])
-  inspect(p.get(verbose), content="true")
-  inspect(p.get(file), content="input.txt")
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(file), content=(
+    #|Some("input.txt")
+  ))
 }
 
 ///|
@@ -273,8 +289,10 @@ test "positional with option after" {
   let verbose = p.flag(name="verbose")
   let file = p.positional(name="file")
   p.parse(["input.txt", "--verbose"])
-  inspect(p.get(verbose), content="true")
-  inspect(p.get(file), content="input.txt")
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(file), content=(
+    #|Some("input.txt")
+  ))
 }
 
 ///|
@@ -282,7 +300,9 @@ test "positional default empty" {
   let p = Parser::new()
   let file = p.positional(name="file")
   p.parse([])
-  inspect(p.get(file), content="")
+  inspect(p.get(file), content=(
+    #|Some("")
+  ))
 }
 
 ///|
@@ -291,8 +311,12 @@ test "serial positional" {
   let input = p.positional(name="input")
   let output = p.positional(name="output")
   p.parse(["input.txt", "output.txt"])
-  inspect(p.get(input), content="input.txt")
-  inspect(p.get(output), content="output.txt")
+  inspect(p.get(input), content=(
+    #|Some("input.txt")
+  ))
+  inspect(p.get(output), content=(
+    #|Some("output.txt")
+  ))
 }
 
 ///|
@@ -302,9 +326,13 @@ test "serial positional with option between" {
   let input = p.positional(name="input")
   let output = p.positional(name="output")
   p.parse(["input.txt", "--verbose", "output.txt"])
-  inspect(p.get(verbose), content="true")
-  inspect(p.get(input), content="input.txt")
-  inspect(p.get(output), content="output.txt")
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(input), content=(
+    #|Some("input.txt")
+  ))
+  inspect(p.get(output), content=(
+    #|Some("output.txt")
+  ))
 }
 
 ///|
@@ -313,7 +341,9 @@ test "serial positional partial" {
   let input = p.positional(name="input")
   let _output = p.positional(name="output")
   p.parse(["input.txt"])
-  inspect(p.get(input), content="input.txt")
+  inspect(p.get(input), content=(
+    #|Some("input.txt")
+  ))
 }
 
 ///|
@@ -323,9 +353,15 @@ test "serial three positionals" {
   let b = p.positional(name="b")
   let c = p.positional(name="c")
   p.parse(["x", "y", "z"])
-  inspect(p.get(a), content="x")
-  inspect(p.get(b), content="y")
-  inspect(p.get(c), content="z")
+  inspect(p.get(a), content=(
+    #|Some("x")
+  ))
+  inspect(p.get(b), content=(
+    #|Some("y")
+  ))
+  inspect(p.get(c), content=(
+    #|Some("z")
+  ))
 }
 
 ///|
@@ -336,7 +372,7 @@ test "rest collects remaining args" {
   inspect(
     p.get(files),
     content=(
-      #|["file1", "file2", "file3"]
+      #|Some(["file1", "file2", "file3"])
     ),
   )
 }
@@ -346,7 +382,7 @@ test "rest default empty" {
   let p = Parser::new()
   let files = p.rest(name="files")
   p.parse([])
-  inspect(p.get(files), content="[]")
+  inspect(p.get(files), content="Some([])")
 }
 
 ///|
@@ -355,11 +391,11 @@ test "rest with option" {
   let verbose = p.flag(name="verbose")
   let files = p.rest(name="files")
   p.parse(["--verbose", "file1", "file2"])
-  inspect(p.get(verbose), content="true")
+  inspect(p.get(verbose), content="Some(true)")
   inspect(
     p.get(files),
     content=(
-      #|["file1", "file2"]
+      #|Some(["file1", "file2"])
     ),
   )
 }
@@ -370,11 +406,11 @@ test "double dash forces positional" {
   let verbose = p.flag(name="verbose")
   let files = p.rest(name="files")
   p.parse(["--verbose", "--", "--not-a-flag", "file1"])
-  inspect(p.get(verbose), content="true")
+  inspect(p.get(verbose), content="Some(true)")
   inspect(
     p.get(files),
     content=(
-      #|["--not-a-flag", "file1"]
+      #|Some(["--not-a-flag", "file1"])
     ),
   )
 }
@@ -385,7 +421,7 @@ test "double dash with no rest args" {
   let _verbose = p.flag(name="verbose")
   let files = p.rest(name="files")
   p.parse(["--"])
-  inspect(p.get(files), content="[]")
+  inspect(p.get(files), content="Some([])")
 }
 
 ///|
@@ -394,11 +430,13 @@ test "rest after positional" {
   let input = p.positional(name="input")
   let extras = p.rest(name="extras")
   p.parse(["input.txt", "a", "b"])
-  inspect(p.get(input), content="input.txt")
+  inspect(p.get(input), content=(
+    #|Some("input.txt")
+  ))
   inspect(
     p.get(extras),
     content=(
-      #|["a", "b"]
+      #|Some(["a", "b"])
     ),
   )
 }
@@ -411,8 +449,8 @@ test "subcommand basic" {
     port_opt.val = Some(child.int_opt(name="port", default=8080))
   })
   p.parse(["serve", "--port", "3000"])
-  inspect(p.get(serve), content="true")
-  inspect(p.get(port_opt.val.unwrap()), content="3000")
+  inspect(p.get(serve), content="Some(true)")
+  inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
 }
 
 ///|
@@ -424,8 +462,8 @@ test "subcommand not matched" {
   })
   let build = p.cmd(name="build", setup=fn(_child) {  })
   p.parse(["build"])
-  inspect(p.get(serve), content="false")
-  inspect(p.get(build), content="true")
+  inspect(p.get(serve), content="Some(false)")
+  inspect(p.get(build), content="Some(true)")
 }
 
 ///|
@@ -437,8 +475,8 @@ test "subcommand with parent flag" {
     port_opt.val = Some(child.int_opt(name="port", default=8080))
   })
   p.parse(["--verbose", "serve", "--port", "3000"])
-  inspect(p.get(verbose), content="true")
-  inspect(p.get(port_opt.val.unwrap()), content="3000")
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
 }
 
 ///|
@@ -462,7 +500,9 @@ test "nested subcommand" {
   })
   p.parse(["remote", "add", "--name", "origin"])
   match name_opt.val {
-    Some(opt) => inspect(p.get(opt), content="origin")
+    Some(opt) => inspect(p.get(opt), content=(
+      #|Some("origin")
+    ))
     None => abort("unreachable")
   }
 }
@@ -478,7 +518,9 @@ test "nested subcommand with parent option" {
   })
   p.parse(["remote", "add", "--url", "https://example.com"])
   match url_opt.val {
-    Some(opt) => inspect(p.get(opt), content="https://example.com")
+    Some(opt) => inspect(p.get(opt), content=(
+      #|Some("https://example.com")
+    ))
     None => abort("unreachable")
   }
 }
@@ -492,8 +534,8 @@ test "global flag in subcommand" {
     port_opt.val = Some(child.int_opt(name="port", default=8080))
   })
   p.parse(["serve", "--verbose", "--port", "3000"])
-  inspect(p.get(verbose), content="true")
-  inspect(p.get(port_opt.val.unwrap()), content="3000")
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
 }
 
 ///|
@@ -505,8 +547,8 @@ test "global flag before subcommand" {
     port_opt.val = Some(child.int_opt(name="port", default=8080))
   })
   p.parse(["--verbose", "serve", "--port", "3000"])
-  inspect(p.get(verbose), content="true")
-  inspect(p.get(port_opt.val.unwrap()), content="3000")
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
 }
 
 ///|
@@ -520,9 +562,11 @@ test "global flag in nested subcommand" {
     })
   })
   p.parse(["remote", "add", "--verbose", "--name", "origin"])
-  inspect(p.get(verbose), content="true")
+  inspect(p.get(verbose), content="Some(true)")
   match name_opt.val {
-    Some(opt) => inspect(p.get(opt), content="origin")
+    Some(opt) => inspect(p.get(opt), content=(
+      #|Some("origin")
+    ))
     None => abort("unreachable")
   }
 }

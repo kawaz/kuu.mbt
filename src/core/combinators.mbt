@@ -12,6 +12,7 @@ pub fn Parser::new() -> Parser {
     positionals: [],
     current_positional: { val: 0 },
     force_positional: { val: false },
+    parsed: { val: false },
   }
 }
 
@@ -301,6 +302,7 @@ pub fn Parser::cmd(
     positionals: [],
     current_positional: { val: 0 },
     force_positional: { val: false },
+    parsed: { val: false },
   }
   setup(child)
   let cmd_name = name
@@ -329,7 +331,10 @@ pub fn Parser::cmd(
 }
 
 ///|
-pub fn[T] Parser::get(self : Parser, opt : Opt[T]) -> T {
-  ignore(self)
-  (opt.getter)()
+pub fn[T] Parser::get(self : Parser, opt : Opt[T]) -> T? {
+  if not(self.parsed.val) {
+    None
+  } else {
+    Some((opt.getter)())
+  }
 }
