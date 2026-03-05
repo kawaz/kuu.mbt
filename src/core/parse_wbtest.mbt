@@ -657,3 +657,32 @@ test "ParseResult nested child navigation" {
     None => abort("remote child should exist")
   }
 }
+
+///|
+test "opt.get cobra-style" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let port = p.int_opt(name="port", default=8080)
+  // parse 前は None
+  inspect!(verbose.get(), content="None")
+  inspect!(port.get(), content="None")
+  // parse 後は Some
+  ignore(p.parse!(["--verbose", "--port", "3000"]))
+  inspect!(verbose.get(), content="Some(true)")
+  inspect!(port.get(), content="Some(3000)")
+}
+
+///|
+test "opt.get with subcommand" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", global=true)
+  let port_opt : Ref[Opt[Int]?] = { val: None }
+  let _serve = p.cmd(name="serve", setup=fn(child) {
+    port_opt.val = Some(child.int_opt(name="port", default=8080))
+  })
+  ignore(p.parse!(["serve", "--verbose", "--port", "3000"]))
+  // global flag は親の parsed で判定
+  inspect!(verbose.get(), content="Some(true)")
+  // 子パーサの opt も子の parsed で判定
+  inspect!(port_opt.val.unwrap().get(), content="Some(3000)")
+}

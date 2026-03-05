@@ -40,6 +40,7 @@ pub(all) struct Parser {
 pub(all) struct Opt[T] {
   id : Int
   getter : () -> T
+  parsed : Ref[Bool]
 }
 
 ///|

@@ -112,7 +112,16 @@ pub fn Parser::flag(
     fn() { cell.val = initial_val },
   )
   self.register_option(node, no_node, global)
-  { id, getter: fn() -> Bool { cell.val } }
+  { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
+}
+
+///|
+pub fn[T] Opt::get(self : Opt[T]) -> T? {
+  if self.parsed.val {
+    Some((self.getter)())
+  } else {
+    None
+  }
 }
 
 ///|
@@ -143,7 +152,7 @@ pub fn Parser::string_opt(
     fn() { cell.val = initial_val },
   )
   self.register_option(node, no_node, global)
-  { id, getter: fn() -> String { cell.val } }
+  { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
 }
 
 ///|
@@ -182,7 +191,7 @@ pub fn Parser::int_opt(
     fn() { cell.val = initial_val },
   )
   self.register_option(node, no_node, global)
-  { id, getter: fn() -> Int { cell.val } }
+  { id, getter: fn() -> Int { cell.val }, parsed: self.parsed }
 }
 
 ///|
@@ -204,7 +213,7 @@ pub fn Parser::append_string(
     fn() { cell.val = [] },
   )
   self.register_option(node, no_node, global)
-  { id, getter: fn() -> Array[String] { cell.val } }
+  { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
 }
 
 ///|
@@ -234,7 +243,7 @@ pub fn Parser::append_int(
     fn() { cell.val = [] },
   )
   self.register_option(node, no_node, global)
-  { id, getter: fn() -> Array[Int] { cell.val } }
+  { id, getter: fn() -> Array[Int] { cell.val }, parsed: self.parsed }
 }
 
 ///|
@@ -257,7 +266,7 @@ pub fn Parser::positional(self : Parser, name~ : String) -> Opt[String] {
     }
   }
   self.positionals.push((handler, false))
-  { id, getter: fn() -> String { cell.val } }
+  { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
 }
 
 ///|
@@ -279,7 +288,7 @@ pub fn Parser::rest(self : Parser, name~ : String) -> Opt[Array[String]] {
     }
   }
   self.positionals.push((handler, true))
-  { id, getter: fn() -> Array[String] { cell.val } }
+  { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
 }
 
 ///|
@@ -335,7 +344,7 @@ pub fn Parser::cmd(
     reset: fn() { cell.val = false },
   }
   self.nodes.push(node)
-  { id, getter: fn() -> Bool { cell.val } }
+  { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
 }
 
 ///|
