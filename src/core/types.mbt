@@ -1,6 +1,7 @@
 ///|
 pub(all) suberror ParseError {
   ParseError(String)
+  HelpRequested(String)
 }
 
 ///|
@@ -34,6 +35,8 @@ pub(all) struct Parser {
   force_positional : Ref[Bool]
   parsed : Ref[Bool]
   children : Map[String, ParseResult]
+  metas : Array[OptMeta]
+  description : Ref[String]
 }
 
 ///|
@@ -55,4 +58,26 @@ pub(all) struct ParseResult {
   kind : ParseResultKind
   // opt の getter を保持するため、このスコープの parser への参照が必要
   parser : Parser // このスコープの Parser（get(opt) で使う）
+}
+
+///|
+pub(all) enum OptKind {
+  Flag
+  ValueOpt
+  Command
+  Positional
+  Rest
+} derive(Show, Eq)
+
+///|
+pub(all) struct OptMeta {
+  kind : OptKind
+  name : String
+  help : String
+  value_name : String
+  default_display : String
+  global : Bool
+  short : Char?
+  aliases : Array[String]
+  hidden : Bool
 }

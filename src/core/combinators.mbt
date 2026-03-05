@@ -1,7 +1,25 @@
 ///|
+fn to_upper(s : String) -> String {
+  let buf = StringBuilder::new()
+  for c in s {
+    if c >= 'a' && c <= 'z' {
+      buf.write_char((c.to_int() - 32).unsafe_to_char())
+    } else {
+      buf.write_char(c)
+    }
+  }
+  buf.to_string()
+}
+
+///|
+pub fn Parser::set_description(self : Parser, desc : String) -> Unit {
+  self.description.val = desc
+}
+
+///|
 pub fn Parser::new() -> Parser {
   let seq : Ref[Int] = { val: 0 }
-  {
+  let p : Parser = {
     next_id: fn() -> Int {
       let id = seq.val
       seq.val = id + 1
@@ -14,7 +32,11 @@ pub fn Parser::new() -> Parser {
     force_positional: { val: false },
     parsed: { val: false },
     children: Map::new(),
+    metas: [],
+    description: { val: "" },
   }
+  inject_help_node(p)
+  p
 }
 
 ///|
@@ -92,6 +114,8 @@ pub fn Parser::flag(
   global? : Bool = false,
   aliases? : Array[String] = [],
   short? : Char = '\u0000',
+  description? : String = "",
+  hidden? : Bool = false,
 ) -> Opt[Bool] {
   let id = (self.next_id)()
   let cell : Ref[Bool] = { val: default }
@@ -148,6 +172,17 @@ pub fn Parser::flag(
       self.global_nodes.push(short_node)
     }
   }
+  self.metas.push(OptMeta::{
+    kind: Flag,
+    name,
+    help: description,
+    value_name: "",
+    default_display: "",
+    global,
+    short: if short != '\u0000' { Some(short) } else { None },
+    aliases,
+    hidden,
+  })
   { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
 }
 
@@ -168,6 +203,9 @@ pub fn Parser::string_opt(
   global? : Bool = false,
   aliases? : Array[String] = [],
   short? : Char = '\u0000',
+  description? : String = "",
+  value_name? : String = "",
+  hidden? : Bool = false,
 ) -> Opt[String] {
   let id = (self.next_id)()
   let cell : Ref[String] = { val: default }
@@ -224,6 +262,19 @@ pub fn Parser::string_opt(
       self.global_nodes.push(short_node)
     }
   }
+  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  let display_default = if default == "" { "" } else { default }
+  self.metas.push(OptMeta::{
+    kind: ValueOpt,
+    name,
+    help: description,
+    value_name: display_value_name,
+    default_display: display_default,
+    global,
+    short: if short != '\u0000' { Some(short) } else { None },
+    aliases,
+    hidden,
+  })
   { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
 }
 
@@ -235,6 +286,9 @@ pub fn Parser::int_opt(
   global? : Bool = false,
   aliases? : Array[String] = [],
   short? : Char = '\u0000',
+  description? : String = "",
+  value_name? : String = "",
+  hidden? : Bool = false,
 ) -> Opt[Int] {
   let id = (self.next_id)()
   let cell : Ref[Int] = { val: default }
@@ -323,6 +377,19 @@ pub fn Parser::int_opt(
       self.global_nodes.push(short_node)
     }
   }
+  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  let display_default = if default == 0 { "" } else { default.to_string() }
+  self.metas.push(OptMeta::{
+    kind: ValueOpt,
+    name,
+    help: description,
+    value_name: display_value_name,
+    default_display: display_default,
+    global,
+    short: if short != '\u0000' { Some(short) } else { None },
+    aliases,
+    hidden,
+  })
   { id, getter: fn() -> Int { cell.val }, parsed: self.parsed }
 }
 
@@ -333,6 +400,9 @@ pub fn Parser::append_string(
   global? : Bool = false,
   aliases? : Array[String] = [],
   short? : Char = '\u0000',
+  description? : String = "",
+  value_name? : String = "",
+  hidden? : Bool = false,
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
@@ -372,6 +442,18 @@ pub fn Parser::append_string(
       self.global_nodes.push(short_node)
     }
   }
+  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  self.metas.push(OptMeta::{
+    kind: ValueOpt,
+    name,
+    help: description,
+    value_name: display_value_name,
+    default_display: "",
+    global,
+    short: if short != '\u0000' { Some(short) } else { None },
+    aliases,
+    hidden,
+  })
   { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
 }
 
@@ -382,6 +464,9 @@ pub fn Parser::append_int(
   global? : Bool = false,
   aliases? : Array[String] = [],
   short? : Char = '\u0000',
+  description? : String = "",
+  value_name? : String = "",
+  hidden? : Bool = false,
 ) -> Opt[Array[Int]] {
   let id = (self.next_id)()
   let cell : Ref[Array[Int]] = { val: [] }
@@ -453,6 +538,18 @@ pub fn Parser::append_int(
       self.global_nodes.push(short_node)
     }
   }
+  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  self.metas.push(OptMeta::{
+    kind: ValueOpt,
+    name,
+    help: description,
+    value_name: display_value_name,
+    default_display: "",
+    global,
+    short: if short != '\u0000' { Some(short) } else { None },
+    aliases,
+    hidden,
+  })
   { id, getter: fn() -> Array[Int] { cell.val }, parsed: self.parsed }
 }
 
@@ -463,6 +560,8 @@ pub fn Parser::count(
   global? : Bool = false,
   aliases? : Array[String] = [],
   short? : Char = '\u0000',
+  description? : String = "",
+  hidden? : Bool = false,
 ) -> Opt[Int] {
   let id = (self.next_id)()
   let cell : Ref[Int] = { val: 0 }
@@ -524,11 +623,22 @@ pub fn Parser::count(
       self.global_nodes.push(short_node)
     }
   }
+  self.metas.push(OptMeta::{
+    kind: Flag,
+    name,
+    help: description,
+    value_name: "",
+    default_display: "",
+    global,
+    short: if short != '\u0000' { Some(short) } else { None },
+    aliases,
+    hidden,
+  })
   { id, getter: fn() -> Int { cell.val }, parsed: self.parsed }
 }
 
 ///|
-pub fn Parser::positional(self : Parser, name~ : String) -> Opt[String] {
+pub fn Parser::positional(self : Parser, name~ : String, description? : String = "") -> Opt[String] {
   let id = (self.next_id)()
   let cell : Ref[String] = { val: "" }
   let pending : Ref[String] = { val: "" }
@@ -547,11 +657,22 @@ pub fn Parser::positional(self : Parser, name~ : String) -> Opt[String] {
     }
   }
   self.positionals.push((handler, false))
+  self.metas.push(OptMeta::{
+    kind: Positional,
+    name,
+    help: description,
+    value_name: "",
+    default_display: "",
+    global: false,
+    short: None,
+    aliases: [],
+    hidden: false,
+  })
   { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
 }
 
 ///|
-pub fn Parser::rest(self : Parser, name~ : String) -> Opt[Array[String]] {
+pub fn Parser::rest(self : Parser, name~ : String, description? : String = "") -> Opt[Array[String]] {
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
   ignore(name)
@@ -569,6 +690,17 @@ pub fn Parser::rest(self : Parser, name~ : String) -> Opt[Array[String]] {
     }
   }
   self.positionals.push((handler, true))
+  self.metas.push(OptMeta::{
+    kind: Rest,
+    name,
+    help: description,
+    value_name: "",
+    default_display: "",
+    global: false,
+    short: None,
+    aliases: [],
+    hidden: false,
+  })
   { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
 }
 
@@ -577,6 +709,7 @@ pub fn Parser::cmd(
   self : Parser,
   name~ : String,
   setup~ : (Parser) -> Unit,
+  description? : String = "",
 ) -> Opt[Bool] {
   let id = (self.next_id)()
   let cell : Ref[Bool] = { val: false }
@@ -595,8 +728,11 @@ pub fn Parser::cmd(
     force_positional: { val: false },
     parsed: { val: false },
     children: Map::new(),
+    metas: [],
+    description: { val: "" },
   }
   setup(child)
+  inject_help_node(child)
   let cmd_name = name
   let node = ExactNode::{
     name: cmd_name,
@@ -625,6 +761,17 @@ pub fn Parser::cmd(
     reset: fn() { cell.val = false },
   }
   self.nodes.push(node)
+  self.metas.push(OptMeta::{
+    kind: Command,
+    name,
+    help: description,
+    value_name: "",
+    default_display: "",
+    global: false,
+    short: None,
+    aliases: [],
+    hidden: false,
+  })
   { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
 }
 

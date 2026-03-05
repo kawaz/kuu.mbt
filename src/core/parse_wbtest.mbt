@@ -912,3 +912,157 @@ test "complex short combining: flags and int" {
   inspect!(p.get(a_opt), content="Some(1)")
   inspect!(p.get(b_opt), content="Some(1)")
 }
+
+///|
+test "generate_help basic" {
+  let p = Parser::new()
+  p.set_description("My CLI tool")
+  let _ = p.flag(name="verbose", short='v', description="Enable verbose output")
+  let _ = p.int_opt(name="port", default=8080, description="Set port number")
+  let help = p.generate_help()
+  inspect(help.contains("My CLI tool"), content="true")
+  inspect(help.contains("--verbose"), content="true")
+  inspect(help.contains("-v"), content="true")
+  inspect(help.contains("--port"), content="true")
+  inspect(help.contains("[default: 8080]"), content="true")
+}
+
+///|
+test "help flag raises HelpRequested" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Enable verbose")
+  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(_)) => inspect(true, content="true")
+    _ => inspect(false, content="true")
+  }
+}
+
+///|
+test "short help flag raises HelpRequested" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Enable verbose")
+  let result : Result[ParseResult, _] = try? p.parse(["-h"])
+  match result {
+    Err(HelpRequested(_)) => inspect(true, content="true")
+    _ => inspect(false, content="true")
+  }
+}
+
+///|
+test "HelpRequested text contains flag description" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", short='v', description="Enable verbose output")
+  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("--verbose"), content="true")
+      inspect(text.contains("-v"), content="true")
+      inspect(text.contains("Enable verbose output"), content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+///|
+test "string_opt default shown in help" {
+  let p = Parser::new()
+  let _ = p.string_opt(name="host", default="localhost", description="Set host")
+  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("--host"), content="true")
+      inspect(text.contains("[default: localhost]"), content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+///|
+test "global option in Global Options section" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", global=true, description="Verbose mode")
+  let _ = p.flag(name="debug", description="Debug mode")
+  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("Global Options:"), content="true")
+      inspect(text.contains("Options:"), content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+///|
+test "cmd shown in Commands section" {
+  let p = Parser::new()
+  let _ = p.cmd(name="serve", setup=fn(_child) {  }, description="Start server")
+  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("Commands:"), content="true")
+      inspect(text.contains("serve"), content="true")
+      inspect(text.contains("Start server"), content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+///|
+test "short option format in help" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", short='v', description="Verbose")
+  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("-v, --verbose"), content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+///|
+test "subcommand help shows own scope" {
+  let p = Parser::new()
+  let _ = p.cmd(name="serve", setup=fn(child) {
+    let _ = child.int_opt(name="port", default=8080, description="Set port")
+  }, description="Start server")
+  let result : Result[ParseResult, _] = try? p.parse(["serve", "--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("--port"), content="true")
+      // serve のヘルプには Commands: セクションがない
+      inspect(text.contains("Commands:"), content="false")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+///|
+test "hidden option not shown in help" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose")
+  let _ = p.flag(name="secret", description="Secret option", hidden=true)
+  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("--verbose"), content="true")
+      inspect(text.contains("--secret"), content="false")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+///|
+test "description shown in help" {
+  let p = Parser::new()
+  p.set_description("My awesome CLI")
+  let _ = p.flag(name="verbose", description="Verbose")
+  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("My awesome CLI"), content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
