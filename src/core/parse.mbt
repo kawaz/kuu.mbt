@@ -2,7 +2,7 @@
 pub fn Parser::parse(
   self : Parser,
   args : Array[String],
-) -> Unit raise ParseError {
+) -> ParseResult raise ParseError {
   let mut pos = 0
   while pos < args.length() {
     // Handle `--` separator: enable force_positional and consume `--`
@@ -90,4 +90,5 @@ pub fn Parser::parse(
     }
   }
   self.parsed.val = true
+  { kind: One, parser: self }
 }

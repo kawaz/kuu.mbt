@@ -40,3 +40,17 @@ pub(all) struct Opt[T] {
   id : Int
   getter : () -> T
 }
+
+///|
+pub(all) enum ParseResultKind {
+  One // 単一値（このスコープの opt 群の結果）
+  Map_(Map[String, ParseResult]) // サブコマンド名 → 子の ParseResult
+  List_(Array[ParseResult]) // serial/rest の位置別 ParseResult
+}
+
+///|
+pub(all) struct ParseResult {
+  kind : ParseResultKind
+  // opt の getter を保持するため、このスコープの parser への参照が必要
+  parser : Parser // このスコープの Parser（get(opt) で使う）
+}

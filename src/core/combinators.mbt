@@ -314,7 +314,7 @@ pub fn Parser::cmd(
         Reject
       } else if args[pos] == cmd_name {
         let rest_args = Array::from_iter(args.view(start=pos + 1).iter())
-        let parse_result : Result[Unit, _] = try? child.parse(rest_args)
+        let parse_result : Result[ParseResult, _] = try? child.parse(rest_args)
         match parse_result {
           Ok(_) =>
             Accept(consumed=args.length() - pos, commit=fn() { cell.val = true })
@@ -328,6 +328,11 @@ pub fn Parser::cmd(
   }
   self.nodes.push(node)
   { id, getter: fn() -> Bool { cell.val } }
+}
+
+///|
+pub fn[T] ParseResult::get(self : ParseResult, opt : Opt[T]) -> T? {
+  self.parser.get(opt)
 }
 
 ///|
