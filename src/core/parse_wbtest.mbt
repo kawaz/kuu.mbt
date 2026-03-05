@@ -736,3 +736,49 @@ test "opt.get with subcommand" {
   // 子パーサの opt も子の parsed で判定
   inspect!(port_opt.val.unwrap().get(), content="Some(3000)")
 }
+
+///|
+test "short flag" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", short='v')
+  ignore(p.parse!(["-v"]))
+  inspect!(p.get(verbose), content="Some(true)")
+}
+
+///|
+test "short int option" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=8080, short='p')
+  ignore(p.parse!(["-p", "3000"]))
+  inspect!(p.get(port), content="Some(3000)")
+}
+
+///|
+test "short string option" {
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost", short='H')
+  ignore(p.parse!(["-H", "example.com"]))
+  inspect!(p.get(host), content=(
+    #|Some("example.com")
+  ))
+}
+
+///|
+test "short with long mixed" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", short='v')
+  let port = p.int_opt(name="port", default=8080, short='p')
+  ignore(p.parse!(["-v", "--port", "3000"]))
+  inspect!(p.get(verbose), content="Some(true)")
+  inspect!(p.get(port), content="Some(3000)")
+}
+
+///|
+test "short append" {
+  let p = Parser::new()
+  let tags = p.append_string(name="tag", short='t')
+  ignore(p.parse!(["-t", "a", "-t", "b"]))
+  inspect!(p.get(tags), content=(
+    #|Some(["a", "b"])
+  ))
+}

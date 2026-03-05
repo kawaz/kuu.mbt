@@ -91,6 +91,7 @@ pub fn Parser::flag(
   default? : Bool = false,
   global? : Bool = false,
   aliases? : Array[String] = [],
+  short? : Char = '\u0000',
 ) -> Opt[Bool] {
   let id = (self.next_id)()
   let cell : Ref[Bool] = { val: default }
@@ -132,6 +133,21 @@ pub fn Parser::flag(
     )
     self.register_option(alt_node, alt_no_node, global)
   }
+  if short != '\u0000' {
+    let short_name = "-" + short.to_string()
+    let short_node = make_flag_node(
+      short_name,
+      fn() {
+        pending.val = true
+        fn() { cell.val = pending.val }
+      },
+      fn() { cell.val = initial_val },
+    )
+    self.nodes.push(short_node)
+    if global {
+      self.global_nodes.push(short_node)
+    }
+  }
   { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
 }
 
@@ -151,6 +167,7 @@ pub fn Parser::string_opt(
   default~ : String,
   global? : Bool = false,
   aliases? : Array[String] = [],
+  short? : Char = '\u0000',
 ) -> Opt[String] {
   let id = (self.next_id)()
   let cell : Ref[String] = { val: default }
@@ -192,6 +209,21 @@ pub fn Parser::string_opt(
     )
     self.register_option(alt_node, alt_no_node, global)
   }
+  if short != '\u0000' {
+    let short_name = "-" + short.to_string()
+    let short_node = make_value_node(
+      short_name,
+      fn(s) {
+        pending.val = s
+        Ok(fn() { cell.val = pending.val })
+      },
+      fn() { cell.val = initial_val },
+    )
+    self.nodes.push(short_node)
+    if global {
+      self.global_nodes.push(short_node)
+    }
+  }
   { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
 }
 
@@ -202,6 +234,7 @@ pub fn Parser::int_opt(
   default~ : Int,
   global? : Bool = false,
   aliases? : Array[String] = [],
+  short? : Char = '\u0000',
 ) -> Opt[Int] {
   let id = (self.next_id)()
   let cell : Ref[Int] = { val: default }
@@ -263,6 +296,33 @@ pub fn Parser::int_opt(
     )
     self.register_option(alt_node, alt_no_node, global)
   }
+  if short != '\u0000' {
+    let short_name = "-" + short.to_string()
+    let short_opt_name = short_name
+    let short_node = make_value_node(
+      short_name,
+      fn(s) {
+        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+        match r {
+          Ok(v) => {
+            pending.val = v
+            Ok(fn() { cell.val = pending.val })
+          }
+          Err(_) =>
+            Err(
+              ParseError(
+                "invalid integer value for " + short_opt_name + ": " + s,
+              ),
+            )
+        }
+      },
+      fn() { cell.val = initial_val },
+    )
+    self.nodes.push(short_node)
+    if global {
+      self.global_nodes.push(short_node)
+    }
+  }
   { id, getter: fn() -> Int { cell.val }, parsed: self.parsed }
 }
 
@@ -272,6 +332,7 @@ pub fn Parser::append_string(
   name~ : String,
   global? : Bool = false,
   aliases? : Array[String] = [],
+  short? : Char = '\u0000',
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
@@ -299,6 +360,18 @@ pub fn Parser::append_string(
     )
     self.register_option(alt_node, alt_no_node, global)
   }
+  if short != '\u0000' {
+    let short_name = "-" + short.to_string()
+    let short_node = make_value_node(
+      short_name,
+      fn(s) { Ok(fn() { cell.val.push(s) }) },
+      fn() { cell.val = [] },
+    )
+    self.nodes.push(short_node)
+    if global {
+      self.global_nodes.push(short_node)
+    }
+  }
   { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
 }
 
@@ -308,6 +381,7 @@ pub fn Parser::append_int(
   name~ : String,
   global? : Bool = false,
   aliases? : Array[String] = [],
+  short? : Char = '\u0000',
 ) -> Opt[Array[Int]] {
   let id = (self.next_id)()
   let cell : Ref[Array[Int]] = { val: [] }
@@ -354,6 +428,30 @@ pub fn Parser::append_int(
       fn() { cell.val = [] },
     )
     self.register_option(alt_node, alt_no_node, global)
+  }
+  if short != '\u0000' {
+    let short_name = "-" + short.to_string()
+    let short_opt_name = short_name
+    let short_node = make_value_node(
+      short_name,
+      fn(s) {
+        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+        match r {
+          Ok(v) => Ok(fn() { cell.val.push(v) })
+          Err(_) =>
+            Err(
+              ParseError(
+                "invalid integer value for " + short_opt_name + ": " + s,
+              ),
+            )
+        }
+      },
+      fn() { cell.val = [] },
+    )
+    self.nodes.push(short_node)
+    if global {
+      self.global_nodes.push(short_node)
+    }
   }
   { id, getter: fn() -> Array[Int] { cell.val }, parsed: self.parsed }
 }

@@ -1,0 +1,80 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/src/core"
+
+// Values
+
+// Errors
+pub(all) suberror ParseError {
+  ParseError(String)
+}
+
+// Types and methods
+pub(all) struct ExactNode {
+  name : String
+  needs_value : Bool
+  try_reduce : (Array[String], Int) -> TryResult
+  reset : () -> Unit
+}
+
+pub(all) struct Opt[T] {
+  id : Int
+  getter : () -> T
+  parsed : Ref[Bool]
+}
+pub fn[T] Opt::get(Self[T]) -> T?
+
+pub(all) struct ParseResult {
+  kind : ParseResultKind
+  parser : Parser
+}
+pub fn ParseResult::as_list(Self) -> Array[Self]?
+pub fn ParseResult::as_map(Self) -> Map[String, Self]?
+pub fn ParseResult::at(Self, Int) -> Self?
+pub fn ParseResult::child(Self, String) -> Self?
+pub fn[T] ParseResult::get(Self, Opt[T]) -> T?
+
+pub(all) enum ParseResultKind {
+  One
+  Map_(Map[String, ParseResult])
+  List_(Array[ParseResult])
+}
+
+pub(all) struct Parser {
+  next_id : () -> Int
+  nodes : Array[ExactNode]
+  global_nodes : Array[ExactNode]
+  positionals : Array[((Array[String], Int) -> TryResult, Bool)]
+  current_positional : Ref[Int]
+  force_positional : Ref[Bool]
+  parsed : Ref[Bool]
+  children : Map[String, ParseResult]
+}
+pub fn Parser::append_int(Self, name~ : String, global? : Bool, aliases? : Array[String]) -> Opt[Array[Int]]
+pub fn Parser::append_string(Self, name~ : String, global? : Bool, aliases? : Array[String]) -> Opt[Array[String]]
+pub fn Parser::cmd(Self, name~ : String, setup~ : (Self) -> Unit) -> Opt[Bool]
+pub fn Parser::flag(Self, name~ : String, default? : Bool, global? : Bool, aliases? : Array[String]) -> Opt[Bool]
+pub fn[T] Parser::get(Self, Opt[T]) -> T?
+pub fn Parser::int_opt(Self, name~ : String, default~ : Int, global? : Bool, aliases? : Array[String]) -> Opt[Int]
+pub fn Parser::new() -> Self
+pub fn Parser::parse(Self, Array[String]) -> ParseResult raise ParseError
+pub fn Parser::positional(Self, name~ : String) -> Opt[String]
+pub fn Parser::rest(Self, name~ : String) -> Opt[Array[String]]
+pub fn Parser::string_opt(Self, name~ : String, default~ : String, global? : Bool, aliases? : Array[String]) -> Opt[String]
+
+pub(all) enum ReduceAction {
+  Value(String?)
+  Negate
+}
+pub impl Eq for ReduceAction
+pub impl Show for ReduceAction
+
+pub(all) enum TryResult {
+  Accept(consumed~ : Int, commit~ : () -> Unit)
+  Reject
+  Error(ParseError)
+}
+
+// Type aliases
+
+// Traits
+
