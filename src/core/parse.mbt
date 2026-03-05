@@ -1,4 +1,84 @@
 ///|
+fn Parser::try_short_combine(
+  self : Parser,
+  args : Array[String],
+  pos : Int,
+) -> TryResult {
+  let arg = args[pos]
+  // chars = arg without leading '-'
+  let chars = arg.unsafe_substring(start=1, end=arg.length())
+  let commits : Array[() -> Unit] = []
+  let mut total_consumed = 1 // at least the original arg
+  let mut i = 0
+  while i < chars.length() {
+    let ch = chars[i].to_int().unsafe_to_char()
+    let short_name = "-" + ch.to_string()
+    // Find the node with this short name
+    let mut found : ExactNode? = None
+    for node in self.nodes {
+      if node.name == short_name {
+        found = Some(node)
+        break
+      }
+    }
+    match found {
+      None => return Reject // unknown short option, abandon combining
+      Some(node) =>
+        if node.needs_value {
+          // Value option: consume remaining chars or next arg as value
+          let remaining = chars.unsafe_substring(start=i + 1, end=chars.length())
+          if remaining.length() > 0 {
+            // Use remaining string as value: e.g. -oArg -> [-o, Arg]
+            let synth_args = [short_name, remaining]
+            match (node.try_reduce)(synth_args, 0) {
+              Accept(commit~, ..) => {
+                commits.push(commit)
+                i = chars.length() // consumed all remaining chars
+              }
+              Error(e) => return Error(e)
+              _ => return Reject
+            }
+          } else {
+            // No remaining chars, consume next arg as value
+            if pos + 1 < args.length() {
+              let synth_args = [short_name, args[pos + 1]]
+              match (node.try_reduce)(synth_args, 0) {
+                Accept(commit~, ..) => {
+                  commits.push(commit)
+                  total_consumed = 2
+                  i = chars.length() // done
+                }
+                Error(e) => return Error(e)
+                _ => return Reject
+              }
+            } else {
+              return Error(ParseError("missing value for " + short_name))
+            }
+          }
+        } else {
+          // Flag option
+          let synth_args = [short_name]
+          match (node.try_reduce)(synth_args, 0) {
+            Accept(commit~, ..) => commits.push(commit)
+            Error(e) => return Error(e)
+            _ => return Reject
+          }
+          i = i + 1
+        }
+    }
+  }
+  // All chars consumed successfully
+  Accept(
+    consumed=total_consumed,
+    commit=fn() {
+      for c in commits {
+        c()
+      }
+    },
+  )
+}
+
+///|
 pub fn Parser::parse(
   self : Parser,
   args : Array[String],
@@ -62,6 +142,20 @@ pub fn Parser::parse(
       }
       if ambiguous {
         raise ParseError("ambiguous argument: " + args[pos])
+      }
+    }
+    // Try short option combining if no ExactNode matched
+    if best_commit.is_empty() && not(self.force_positional.val) {
+      let arg = args[pos]
+      if arg.has_prefix("-") && not(arg.has_prefix("--")) && arg.length() > 2 {
+        match self.try_short_combine(args, pos) {
+          Accept(consumed~, commit~) => {
+            best_consumed = consumed
+            best_commit = Some(commit)
+          }
+          Error(e) => raise e
+          Reject => ()
+        }
       }
     }
     match best_commit {

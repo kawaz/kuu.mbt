@@ -49,17 +49,17 @@ pub(all) struct Parser {
   parsed : Ref[Bool]
   children : Map[String, ParseResult]
 }
-pub fn Parser::append_int(Self, name~ : String, global? : Bool, aliases? : Array[String]) -> Opt[Array[Int]]
-pub fn Parser::append_string(Self, name~ : String, global? : Bool, aliases? : Array[String]) -> Opt[Array[String]]
+pub fn Parser::append_int(Self, name~ : String, global? : Bool, aliases? : Array[String], short? : Char) -> Opt[Array[Int]]
+pub fn Parser::append_string(Self, name~ : String, global? : Bool, aliases? : Array[String], short? : Char) -> Opt[Array[String]]
 pub fn Parser::cmd(Self, name~ : String, setup~ : (Self) -> Unit) -> Opt[Bool]
-pub fn Parser::flag(Self, name~ : String, default? : Bool, global? : Bool, aliases? : Array[String]) -> Opt[Bool]
+pub fn Parser::flag(Self, name~ : String, default? : Bool, global? : Bool, aliases? : Array[String], short? : Char) -> Opt[Bool]
 pub fn[T] Parser::get(Self, Opt[T]) -> T?
-pub fn Parser::int_opt(Self, name~ : String, default~ : Int, global? : Bool, aliases? : Array[String]) -> Opt[Int]
+pub fn Parser::int_opt(Self, name~ : String, default~ : Int, global? : Bool, aliases? : Array[String], short? : Char) -> Opt[Int]
 pub fn Parser::new() -> Self
 pub fn Parser::parse(Self, Array[String]) -> ParseResult raise ParseError
 pub fn Parser::positional(Self, name~ : String) -> Opt[String]
 pub fn Parser::rest(Self, name~ : String) -> Opt[Array[String]]
-pub fn Parser::string_opt(Self, name~ : String, default~ : String, global? : Bool, aliases? : Array[String]) -> Opt[String]
+pub fn Parser::string_opt(Self, name~ : String, default~ : String, global? : Bool, aliases? : Array[String], short? : Char) -> Opt[String]
 
 pub(all) enum ReduceAction {
   Value(String?)

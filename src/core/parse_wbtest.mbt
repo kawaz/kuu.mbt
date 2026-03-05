@@ -782,3 +782,67 @@ test "short append" {
     #|Some(["a", "b"])
   ))
 }
+
+///|
+test "short flag combining" {
+  let p = Parser::new()
+  let a = p.flag(name="aaa", short='a')
+  let b = p.flag(name="bbb", short='b')
+  let c = p.flag(name="ccc", short='c')
+  ignore(p.parse!(["-abc"]))
+  inspect!(p.get(a), content="Some(true)")
+  inspect!(p.get(b), content="Some(true)")
+  inspect!(p.get(c), content="Some(true)")
+}
+
+///|
+test "short combining with value at end" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", short='v')
+  let port = p.int_opt(name="port", default=8080, short='p')
+  ignore(p.parse!(["-vp3000"]))
+  inspect!(p.get(verbose), content="Some(true)")
+  inspect!(p.get(port), content="Some(3000)")
+}
+
+///|
+test "short combining value next arg" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", short='v')
+  let port = p.int_opt(name="port", default=8080, short='p')
+  ignore(p.parse!(["-vp", "3000"]))
+  inspect!(p.get(verbose), content="Some(true)")
+  inspect!(p.get(port), content="Some(3000)")
+}
+
+///|
+test "short combining with string value" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", short='v')
+  let host = p.string_opt(name="host", default="localhost", short='H')
+  ignore(p.parse!(["-vHexample.com"]))
+  inspect!(p.get(verbose), content="Some(true)")
+  inspect!(p.get(host), content=(
+    #|Some("example.com")
+  ))
+}
+
+///|
+test "short combining unknown char error" {
+  let p = Parser::new()
+  let _a = p.flag(name="aaa", short='a')
+  let result : Result[ParseResult, _] = try? p.parse(["-ax"])
+  inspect!(result.is_err(), content="true")
+}
+
+///|
+test "short combining all flags" {
+  let p = Parser::new()
+  let e = p.flag(name="errexit", short='e')
+  let u = p.flag(name="nounset", short='u')
+  let o = p.flag(name="ooo", short='o')
+  ignore(p.parse!(["-euo"]))
+  inspect!(p.get(e), content="Some(true)")
+  inspect!(p.get(u), content="Some(true)")
+  inspect!(p.get(o), content="Some(true)")
+}
