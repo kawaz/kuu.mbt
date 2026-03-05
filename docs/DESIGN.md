@@ -624,7 +624,7 @@ pub(all) struct OptMeta {
   help : String
   shorts : Array[ShortEntry]
   aliases : Array[AliasEntry]
-  inversion : FlagInversion?
+  // inversion は廃止 — Convention レイヤーで ExactNode 展開時に処理（DR-014）
   env : String?
   auto_env : Bool?          // None=親Cmdに従う, Some(true)=有効, Some(false)=無効
   choices : Array[String]
@@ -654,11 +654,7 @@ struct AliasEntry {
   deprecated : Bool  // deprecated 別名の警告表示
 }
 
-enum FlagInversion {
-  No                         // --no-xxx
-  EnableDisable              // --enable-xxx / --disable-xxx
-  Custom(String, String)     // カスタムプレフィックスペア
-}
+// 旧設計: FlagInversion enum は廃止。以下の2軸分解に置換（DR-014）
 ```
 
 ---
