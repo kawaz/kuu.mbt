@@ -28,15 +28,41 @@ fn Parser::try_short_combine(
           // Value option: consume remaining chars or next arg as value
           let remaining = chars.unsafe_substring(start=i + 1, end=chars.length())
           if remaining.length() > 0 {
-            // Use remaining string as value: e.g. -oArg -> [-o, Arg]
-            let synth_args = [short_name, remaining]
-            match (node.try_reduce)(synth_args, 0) {
-              Accept(commit~, ..) => {
-                commits.push(commit)
-                i = chars.length() // consumed all remaining chars
+            // Try progressively shorter prefixes as value.
+            // This allows e.g. -cA1gcc to parse A with value "1" and continue
+            // combining with "gcc".
+            let mut value_accepted = false
+            let mut try_len = remaining.length()
+            while try_len > 0 {
+              let try_value = remaining.unsafe_substring(
+                start=0,
+                end=try_len,
+              )
+              let synth_args = [short_name, try_value]
+              match (node.try_reduce)(synth_args, 0) {
+                Accept(commit~, ..) => {
+                  commits.push(commit)
+                  i = i + 1 + try_len
+                  value_accepted = true
+                  break
+                }
+                Error(_) =>
+                  // Try shorter prefix
+                  if try_len > 1 {
+                    try_len = try_len - 1
+                  } else {
+                    // Even single char failed; report error with full remaining
+                    let full_synth = [short_name, remaining]
+                    match (node.try_reduce)(full_synth, 0) {
+                      Error(e) => return Error(e)
+                      _ => return Reject
+                    }
+                  }
+                _ => return Reject
               }
-              Error(e) => return Error(e)
-              _ => return Reject
+            }
+            if not(value_accepted) {
+              return Reject
             }
           } else {
             // No remaining chars, consume next arg as value
@@ -67,7 +93,7 @@ fn Parser::try_short_combine(
         }
     }
   }
-  // All chars consumed successfully
+  // All chars consumed successfully — commit all in order
   Accept(
     consumed=total_consumed,
     commit=fn() {

@@ -846,3 +846,69 @@ test "short combining all flags" {
   inspect!(p.get(u), content="Some(true)")
   inspect!(p.get(o), content="Some(true)")
 }
+
+///|
+test "count basic" {
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", short='v')
+  ignore(p.parse!(["--verbose", "--verbose", "--verbose"]))
+  inspect!(p.get(verbose), content="Some(3)")
+}
+
+///|
+test "count default zero" {
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", short='v')
+  ignore(p.parse!([]))
+  inspect!(p.get(verbose), content="Some(0)")
+}
+
+///|
+test "count short" {
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", short='v')
+  ignore(p.parse!(["-v", "-v"]))
+  inspect!(p.get(verbose), content="Some(2)")
+}
+
+///|
+test "count short combining -vvv" {
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", short='v')
+  ignore(p.parse!(["-vvv"]))
+  inspect!(p.get(verbose), content="Some(3)")
+}
+
+///|
+test "count reset with no-prefix" {
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", short='v')
+  ignore(p.parse!(["-vvv", "--no-verbose", "-v"]))
+  inspect!(p.get(verbose), content="Some(1)")
+}
+
+///|
+test "complex short combining: count + int + flag" {
+  let p = Parser::new()
+  let c = p.count(name="ccc", short='c')
+  let a_opt = p.int_opt(name="aaa", default=0, short='A')
+  let g = p.flag(name="ggg", short='g')
+  // -cA1gcc → c(count) A(int=1) g(flag) c(count) c(count)
+  ignore(p.parse!(["-cA1gcc"]))
+  inspect!(p.get(c), content="Some(3)")
+  inspect!(p.get(a_opt), content="Some(1)")
+  inspect!(p.get(g), content="Some(true)")
+}
+
+///|
+test "complex short combining: flags and int" {
+  let p = Parser::new()
+  let v = p.flag(name="verbose", short='v')
+  let a_opt = p.int_opt(name="after", default=0, short='A')
+  let b_opt = p.int_opt(name="before", default=0, short='B')
+  // -vA1 -B1 なら動く
+  ignore(p.parse!(["-vA1", "-B1"]))
+  inspect!(p.get(v), content="Some(true)")
+  inspect!(p.get(a_opt), content="Some(1)")
+  inspect!(p.get(b_opt), content="Some(1)")
+}

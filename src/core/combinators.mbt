@@ -457,6 +457,77 @@ pub fn Parser::append_int(
 }
 
 ///|
+pub fn Parser::count(
+  self : Parser,
+  name~ : String,
+  global? : Bool = false,
+  aliases? : Array[String] = [],
+  short? : Char = '\u0000',
+) -> Opt[Int] {
+  let id = (self.next_id)()
+  let cell : Ref[Int] = { val: 0 }
+  let pending : Ref[Int] = { val: 0 }
+  let reset = fn() {
+    cell.val = 0
+    pending.val = 0
+  }
+  let node = make_flag_node(
+    "--" + name,
+    fn() {
+      pending.val = pending.val + 1
+      fn() { cell.val = pending.val }
+    },
+    reset,
+  )
+  let no_node = make_flag_node(
+    "--no-" + name,
+    fn() {
+      pending.val = 0
+      fn() { cell.val = pending.val }
+    },
+    reset,
+  )
+  self.register_option(node, no_node, global)
+  // aliases
+  for alt in aliases {
+    let alt_node = make_flag_node(
+      "--" + alt,
+      fn() {
+        pending.val = pending.val + 1
+        fn() { cell.val = pending.val }
+      },
+      reset,
+    )
+    let alt_no_node = make_flag_node(
+      "--no-" + alt,
+      fn() {
+        pending.val = 0
+        fn() { cell.val = pending.val }
+      },
+      reset,
+    )
+    self.register_option(alt_node, alt_no_node, global)
+  }
+  // short option
+  if short != '\u0000' {
+    let short_name = "-" + short.to_string()
+    let short_node = make_flag_node(
+      short_name,
+      fn() {
+        pending.val = pending.val + 1
+        fn() { cell.val = pending.val }
+      },
+      reset,
+    )
+    self.nodes.push(short_node)
+    if global {
+      self.global_nodes.push(short_node)
+    }
+  }
+  { id, getter: fn() -> Int { cell.val }, parsed: self.parsed }
+}
+
+///|
 pub fn Parser::positional(self : Parser, name~ : String) -> Opt[String] {
   let id = (self.next_id)()
   let cell : Ref[String] = { val: "" }
