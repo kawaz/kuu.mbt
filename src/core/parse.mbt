@@ -209,7 +209,6 @@ fn Parser::parse_raw(
   self : Parser,
   args : Array[String],
 ) -> ParseResult raise ParseError {
-  self.install_separator_node()
   self.install_eq_split_node()
   self.install_short_combine_node()
   let mut pos = 0

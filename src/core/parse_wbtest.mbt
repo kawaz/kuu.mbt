@@ -1130,6 +1130,130 @@ test "short combining append_int" {
 }
 
 ///|
+test "dashdash basic" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.dashdash()
+  ignore(p.parse(["--", "file1", "file2"]))
+  inspect(dd.get(), content=(
+    #|Some(["file1", "file2"])
+  ))
+}
+
+///|
+test "dashdash with rest before" {
+  let p = Parser::new(dashdash=false)
+  let files = p.rest(name="files")
+  let dd = p.dashdash()
+  ignore(p.parse(["ccc", "--", "hoge", "fuga"]))
+  inspect(files.get(), content=(
+    #|Some(["ccc"])
+  ))
+  inspect(dd.get(), content=(
+    #|Some(["hoge", "fuga"])
+  ))
+}
+
+///|
+test "dashdash with flag" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose")
+  let dd = p.dashdash()
+  ignore(p.parse(["--verbose", "--", "--not-a-flag", "file1"]))
+  inspect(verbose.get(), content="Some(true)")
+  inspect(dd.get(), content=(
+    #|Some(["--not-a-flag", "file1"])
+  ))
+}
+
+///|
+test "dashdash empty" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.dashdash()
+  ignore(p.parse(["--"]))
+  inspect(dd.get(), content="Some([])")
+}
+
+///|
+test "dashdash no separator" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.dashdash()
+  ignore(p.parse([]))
+  inspect(dd.get(), content="Some([])")
+}
+
+///|
+test "dashdash custom separator" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.dashdash(separator=":::")
+  ignore(p.parse([":::", "a", "b"]))
+  inspect(dd.get(), content=(
+    #|Some(["a", "b"])
+  ))
+}
+
+///|
+test "append_dashdash basic" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.append_dashdash()
+  ignore(p.parse(["--", "a", "b", "--", "c", "d"]))
+  inspect(dd.get(), content=(
+    #|Some([["a", "b"], ["c", "d"]])
+  ))
+}
+
+///|
+test "append_dashdash with rest" {
+  let p = Parser::new(dashdash=false)
+  let files = p.rest(name="files")
+  let dd = p.append_dashdash()
+  ignore(p.parse(["ccc", "--", "hoge", "fuga", "--", "aaa"]))
+  inspect(files.get(), content=(
+    #|Some(["ccc"])
+  ))
+  inspect(dd.get(), content=(
+    #|Some([["hoge", "fuga"], ["aaa"]])
+  ))
+}
+
+///|
+test "append_dashdash no separator" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.append_dashdash()
+  ignore(p.parse([]))
+  inspect(dd.get(), content="Some([])")
+}
+
+///|
+test "append_dashdash single group" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.append_dashdash()
+  ignore(p.parse(["--", "a", "b"]))
+  inspect(dd.get(), content=(
+    #|Some([["a", "b"]])
+  ))
+}
+
+///|
+test "append_dashdash empty group" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.append_dashdash()
+  ignore(p.parse(["--", "--", "a"]))
+  inspect(dd.get(), content=(
+    #|Some([[], ["a"]])
+  ))
+}
+
+///|
+test "append_dashdash custom separator" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.append_dashdash(separator=":::")
+  ignore(p.parse([":::", "x", ":::", "y", "z"]))
+  inspect(dd.get(), content=(
+    #|Some([["x"], ["y", "z"]])
+  ))
+}
+
+///|
 test "short combining append_int inline" {
   let p = Parser::new()
   let v = p.flag(name="verbose", short='v')

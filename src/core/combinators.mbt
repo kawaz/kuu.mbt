@@ -22,7 +22,7 @@ pub fn Parser::set_description(self : Parser, desc : String) -> Unit {
 }
 
 ///|
-pub fn Parser::new() -> Parser {
+pub fn Parser::new(dashdash? : Bool = true) -> Parser {
   let seq : Ref[Int] = { val: 0 }
   let p : Parser = {
     next_id: fn() -> Int {
@@ -40,6 +40,9 @@ pub fn Parser::new() -> Parser {
     description: { val: "" },
   }
   inject_help_node(p)
+  if dashdash {
+    p.install_separator_node()
+  }
   p
 }
 
@@ -678,6 +681,7 @@ pub fn Parser::cmd(
   name~ : String,
   setup~ : (Parser) -> Unit,
   description? : String = "",
+  dashdash? : Bool = true,
 ) -> Opt[Bool] {
   let id = (self.next_id)()
   let cell : Ref[Bool] = { val: false }
@@ -700,6 +704,9 @@ pub fn Parser::cmd(
   }
   setup(child)
   inject_help_node(child)
+  if dashdash {
+    child.install_separator_node()
+  }
   let cmd_name = name
   let node = ExactNode::{
     name: cmd_name,
@@ -740,6 +747,78 @@ pub fn Parser::cmd(
     hidden: false,
   })
   { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
+}
+
+///|
+pub fn Parser::dashdash(
+  self : Parser,
+  separator? : String = "--",
+) -> Opt[Array[String]] {
+  let id = (self.next_id)()
+  let cell : Ref[Array[String]] = { val: [] }
+  let sep = separator
+  let dashdash_node = ExactNode::{
+    name: sep,
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != sep {
+        return Reject
+      }
+      // セパレータ以降の全 args を収集
+      let collected : Array[String] = []
+      let mut p = pos + 1
+      while p < args.length() {
+        collected.push(args[p])
+        p += 1
+      }
+      Accept(
+        consumed=p - pos,
+        commit=fn() {
+          for v in collected {
+            cell.val.push(v)
+          }
+        },
+      )
+    },
+    reset: fn() { cell.val = [] },
+  }
+  self.nodes.push(dashdash_node)
+  { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
+}
+
+///|
+pub fn Parser::append_dashdash(
+  self : Parser,
+  separator? : String = "--",
+) -> Opt[Array[Array[String]]] {
+  let id = (self.next_id)()
+  let cell : Ref[Array[Array[String]]] = { val: [] }
+  let sep = separator
+  let node = ExactNode::{
+    name: sep,
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != sep {
+        return Reject
+      }
+      let group : Array[String] = []
+      let mut p = pos + 1
+      while p < args.length() {
+        if args[p] == sep {
+          break
+        }
+        group.push(args[p])
+        p += 1
+      }
+      Accept(
+        consumed=p - pos,
+        commit=fn() { cell.val.push(group) },
+      )
+    },
+    reset: fn() { cell.val = [] },
+  }
+  self.nodes.push(node)
+  { id, getter: fn() -> Array[Array[String]] { cell.val }, parsed: self.parsed }
 }
 
 ///|
