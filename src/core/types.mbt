@@ -38,7 +38,6 @@ pub(all) struct Parser {
   global_nodes : Array[ExactNode]
   positionals : Array[((Array[String], Int) -> TryResult, Bool)]
   current_positional : Ref[Int]
-  force_positional : Ref[Bool]
   parsed : Ref[Bool]
   children : Map[String, ParseResult]
   metas : Array[OptMeta]

@@ -34,7 +34,6 @@ pub fn Parser::new() -> Parser {
     global_nodes: [],
     positionals: [],
     current_positional: { val: 0 },
-    force_positional: { val: false },
     parsed: { val: false },
     children: Map::new(),
     metas: [],
@@ -216,52 +215,23 @@ pub fn Parser::string_opt(
   let cell : Ref[String] = { val: default }
   let initial_val = default
   let pending : Ref[String] = { val: default }
-  let node = make_value_node(
-    "--" + name,
-    fn(s) {
-      pending.val = s
-      Ok(fn() { cell.val = pending.val })
-    },
-    fn() { cell.val = initial_val },
-  )
-  let no_node = make_flag_node(
-    "--no-" + name,
-    fn() {
-      pending.val = initial_val
-      fn() { cell.val = pending.val }
-    },
-    fn() { cell.val = initial_val },
-  )
+  let reset = fn() { cell.val = initial_val }
+  let accum : Accumulator[String, String] = fn(_current, piece) { piece }
+  let identity_pre : FilterChain[String, String] = Filter::map(fn(s) { s })
+  let reducer = make_reducer(identity_pre, accum, initial_val)
+  let opt_name = "--" + name
+  let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
+  let no_node = make_reduced_negate_node("--no-" + name, reducer, cell, pending, reset)
   self.register_option(node, no_node, global)
   for alt in aliases {
-    let alt_node = make_value_node(
-      "--" + alt,
-      fn(s) {
-        pending.val = s
-        Ok(fn() { cell.val = pending.val })
-      },
-      fn() { cell.val = initial_val },
-    )
-    let alt_no_node = make_flag_node(
-      "--no-" + alt,
-      fn() {
-        pending.val = initial_val
-        fn() { cell.val = pending.val }
-      },
-      fn() { cell.val = initial_val },
-    )
+    let alt_opt_name = "--" + alt
+    let alt_node = make_reduced_value_node(alt_opt_name, reducer, cell, pending, reset)
+    let alt_no_node = make_reduced_negate_node("--no-" + alt, reducer, cell, pending, reset)
     self.register_option(alt_node, alt_no_node, global)
   }
   if short != '\u0000' {
     let short_name = "-" + short.to_string()
-    let short_node = make_value_node(
-      short_name,
-      fn(s) {
-        pending.val = s
-        Ok(fn() { cell.val = pending.val })
-      },
-      fn() { cell.val = initial_val },
-    )
+    let short_node = make_reduced_value_node(short_name, reducer, cell, pending, reset)
     self.nodes.push(short_node)
     if global {
       self.global_nodes.push(short_node)
@@ -682,8 +652,6 @@ pub fn Parser::rest(self : Parser, name~ : String, description? : String = "") -
   ) -> TryResult {
     if pos >= args.length() {
       Reject
-    } else if args[pos].has_prefix("--") && not(self.force_positional.val) {
-      Reject
     } else {
       let value = args[pos]
       Accept(consumed=1, commit=fn() { cell.val.push(value) })
@@ -725,7 +693,6 @@ pub fn Parser::cmd(
     global_nodes: child_global_nodes,
     positionals: [],
     current_positional: { val: 0 },
-    force_positional: { val: false },
     parsed: { val: false },
     children: Map::new(),
     metas: [],

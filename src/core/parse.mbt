@@ -1,3 +1,64 @@
+///| self.nodes から --name=value 形式を処理する ExactNode を構築して追加
+fn Parser::install_eq_split_node(self : Parser) -> Unit {
+  // needs_value=true かつ name が "--" で始まるノードを収集
+  let value_nodes : Array[ExactNode] = []
+  for node in self.nodes {
+    if node.needs_value && node.name.has_prefix("--") {
+      value_nodes.push(node)
+    }
+  }
+  if value_nodes.is_empty() {
+    return
+  }
+  let eq_node = ExactNode::{
+    name: "",
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() {
+        return Reject
+      }
+      let arg = args[pos]
+      if not(arg.has_prefix("--")) {
+        return Reject
+      }
+      // "=" を探す
+      let eq_pos = match arg.find("=") {
+        None => return Reject
+        Some(p) => p
+      }
+      let name = arg.unsafe_substring(start=0, end=eq_pos)
+      let value = arg.unsafe_substring(start=eq_pos + 1, end=arg.length())
+      // value_nodes から name にマッチするものを探す（最長一致）
+      let mut best_consumed = 0
+      let mut best_commit : (() -> Unit)? = None
+      let mut ambiguous = false
+      for node in value_nodes {
+        match (node.try_reduce)([name, value], 0) {
+          Accept(consumed~, commit~) =>
+            if consumed > best_consumed {
+              best_consumed = consumed
+              best_commit = Some(commit)
+              ambiguous = false
+            } else if consumed == best_consumed && consumed > 0 {
+              ambiguous = true
+            }
+          Error(e) => return Error(e)
+          Reject => ()
+        }
+      }
+      if ambiguous {
+        return Error(parse_error("ambiguous argument: " + arg))
+      }
+      match best_commit {
+        Some(commit) => Accept(consumed=1, commit~)
+        None => Reject
+      }
+    },
+    reset: fn() {},
+  }
+  self.nodes.push(eq_node)
+}
+
 ///| self.nodes から short option ノードを収集し、結合ノードを構築して self.nodes に追加
 fn Parser::install_short_combine_node(self : Parser) -> Unit {
   let short_nodes : Array[ExactNode] = []
@@ -92,72 +153,87 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
   self.nodes.push(combine_node)
 }
 
+///| `--` セパレータを greedy な ExactNode として構築し self.nodes に追加。
+///| `--` を検出したら残りの args を positionals で serial に消費する。
+fn Parser::install_separator_node(self : Parser) -> Unit {
+  let positionals = self.positionals
+  let current_positional = self.current_positional
+  let separator_node = ExactNode::{
+    name: "--",
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != "--" {
+        return Reject
+      }
+      let mut p = pos + 1
+      let commits : Array[() -> Unit] = []
+      let mut next_pos_idx = current_positional.val
+      while p < args.length() {
+        if next_pos_idx >= positionals.length() {
+          break
+        }
+        let (handler, is_rest) = positionals[next_pos_idx]
+        match handler(args, p) {
+          Accept(consumed~, commit~) => {
+            commits.push(commit)
+            if not(is_rest) {
+              next_pos_idx += 1
+            }
+            p += consumed
+          }
+          Reject => break
+          Error(e) => return Error(e)
+        }
+      }
+      if p < args.length() {
+        return Error(parse_error("unexpected argument: " + args[p]))
+      }
+      let final_pos_idx = next_pos_idx
+      Accept(
+        consumed=p - pos,
+        commit=fn() {
+          for c in commits {
+            c()
+          }
+          current_positional.val = final_pos_idx
+        },
+      )
+    },
+    reset: fn() {},
+  }
+  self.nodes.push(separator_node)
+}
+
 ///|
 fn Parser::parse_raw(
   self : Parser,
   args : Array[String],
 ) -> ParseResult raise ParseError {
+  self.install_separator_node()
+  self.install_eq_split_node()
   self.install_short_combine_node()
   let mut pos = 0
   while pos < args.length() {
-    // Handle `--` separator: enable force_positional and consume `--`
-    if args[pos] == "--" && not(self.force_positional.val) {
-      self.force_positional.val = true
-      pos = pos + 1
-      continue
-    }
     let mut best_consumed = 0
     let mut best_commit : (() -> Unit)? = None
     let mut ambiguous = false
-    // When force_positional is active, skip ExactNode matching
-    if not(self.force_positional.val) {
-      // Check if current arg contains '=' for --name=value syntax
-      // Only apply eq_split to args starting with "--" (not commands or positionals)
-      let eq_split : (Array[String], Int)? = if args[pos].has_prefix("--") {
-        args[pos]
-        .find("=")
-        .map(fn(eq_pos) {
-          let name = args[pos].unsafe_substring(start=0, end=eq_pos)
-          let value = args[pos].unsafe_substring(
-            start=eq_pos + 1,
-            end=args[pos].length(),
-          )
-          ([name, value], 1)
-        })
-      } else {
-        None
+    for node in self.nodes {
+      let result = (node.try_reduce)(args, pos)
+      match result {
+        Accept(consumed~, commit~) =>
+          if consumed > best_consumed {
+            best_consumed = consumed
+            best_commit = Some(commit)
+            ambiguous = false
+          } else if consumed == best_consumed && consumed > 0 {
+            ambiguous = true
+          }
+        Reject => ()
+        Error(e) => raise e
       }
-      for node in self.nodes {
-        // Try with equals-split args first, then original args
-        let result = match eq_split {
-          Some((split_args, actual_consumed)) =>
-            match (node.try_reduce)(split_args, 0) {
-              Accept(consumed~, commit~) =>
-                if consumed > 0 {
-                  Accept(consumed=actual_consumed, commit~)
-                } else {
-                  Reject
-                }
-              other => other
-            }
-          None => (node.try_reduce)(args, pos)
-        }
-        match result {
-          Accept(consumed~, commit~) =>
-            if consumed > best_consumed {
-              best_consumed = consumed
-              best_commit = Some(commit)
-              ambiguous = false
-            } else if consumed == best_consumed && consumed > 0 {
-              ambiguous = true
-            }
-          Reject => ()
-          Error(e) => raise e
-        }
-      }
-      if ambiguous {
-        raise parse_error("ambiguous argument: " + args[pos])
-      }
+    }
+    if ambiguous {
+      raise parse_error("ambiguous argument: " + args[pos])
     }
     match best_commit {
       Some(commit) => {
