@@ -12,7 +12,7 @@ fn main {
   let _serve = p.cmd(name="serve", setup=fn(child) {
     let _ = child.int_opt(name="port", default=3000)
   }, description="Serve")
-  let result : Result[@core.ParseResult, _] = try? p.parse(["--verbose"])
+  let result : Result[_, _] = try? p.parse(["--verbose"])
   match result {
     Ok(r) => {
       let _ = r.get(_verbose)

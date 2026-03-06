@@ -1,107 +1,95 @@
-///|
-fn Parser::try_short_combine(
-  self : Parser,
-  args : Array[String],
-  pos : Int,
-) -> TryResult {
-  let arg = args[pos]
-  // chars = arg without leading '-'
-  let chars = arg.unsafe_substring(start=1, end=arg.length())
-  let commits : Array[() -> Unit] = []
-  let mut total_consumed = 1 // at least the original arg
-  let mut i = 0
-  while i < chars.length() {
-    let ch = chars[i].to_int().unsafe_to_char()
-    let short_name = "-" + ch.to_string()
-    // Find the node with this short name
-    let mut found : ExactNode? = None
-    for node in self.nodes {
-      if node.name == short_name {
-        found = Some(node)
-        break
-      }
-    }
-    match found {
-      None => return Reject // unknown short option, abandon combining
-      Some(node) =>
-        if node.needs_value {
-          // Value option: consume remaining chars or next arg as value
-          let remaining = chars.unsafe_substring(start=i + 1, end=chars.length())
-          if remaining.length() > 0 {
-            // Try progressively shorter prefixes as value.
-            // This allows e.g. -cA1gcc to parse A with value "1" and continue
-            // combining with "gcc".
-            let mut value_accepted = false
-            let mut try_len = remaining.length()
-            while try_len > 0 {
-              let try_value = remaining.unsafe_substring(
-                start=0,
-                end=try_len,
-              )
-              let synth_args = [short_name, try_value]
-              match (node.try_reduce)(synth_args, 0) {
-                Accept(commit~, ..) => {
-                  commits.push(commit)
-                  i = i + 1 + try_len
-                  value_accepted = true
-                  break
-                }
-                Error(_) =>
-                  // Try shorter prefix
-                  if try_len > 1 {
-                    try_len = try_len - 1
-                  } else {
-                    // Even single char failed; report error with full remaining
-                    let full_synth = [short_name, remaining]
-                    match (node.try_reduce)(full_synth, 0) {
-                      Error(e) => return Error(e)
-                      _ => return Reject
-                    }
-                  }
-                _ => return Reject
-              }
-            }
-            if not(value_accepted) {
-              return Reject
-            }
-          } else {
-            // No remaining chars, consume next arg as value
-            if pos + 1 < args.length() {
-              let synth_args = [short_name, args[pos + 1]]
-              match (node.try_reduce)(synth_args, 0) {
-                Accept(commit~, ..) => {
-                  commits.push(commit)
-                  total_consumed = 2
-                  i = chars.length() // done
-                }
-                Error(e) => return Error(e)
-                _ => return Reject
-              }
-            } else {
-              return Error(parse_error("missing value for " + short_name))
-            }
-          }
-        } else {
-          // Flag option
-          let synth_args = [short_name]
-          match (node.try_reduce)(synth_args, 0) {
-            Accept(commit~, ..) => commits.push(commit)
-            Error(e) => return Error(e)
-            _ => return Reject
-          }
-          i = i + 1
-        }
+///| self.nodes から short option ノードを収集し、結合ノードを構築して self.nodes に追加
+fn Parser::install_short_combine_node(self : Parser) -> Unit {
+  let short_nodes : Array[ExactNode] = []
+  for node in self.nodes {
+    if node.name.length() == 2 && node.name.has_prefix("-") && not(node.name.has_prefix("--")) {
+      short_nodes.push(node)
     }
   }
-  // All chars consumed successfully — commit all in order
-  Accept(
-    consumed=total_consumed,
-    commit=fn() {
-      for c in commits {
-        c()
+  if short_nodes.is_empty() { return }
+
+  let combine_node = ExactNode::{
+    name: "",
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() { return Reject }
+      let arg = args[pos]
+      if arg.length() <= 2 || not(arg.has_prefix("-")) || arg.has_prefix("--") {
+        return Reject
       }
+      let rest = arg.unsafe_substring(start=1, end=arg.length())
+      let commits : Array[() -> Unit] = []
+      let mut total_consumed = 1
+      let mut ri = 0
+
+      while ri < rest.length() {
+        let ch = rest[ri].to_int().unsafe_to_char()
+        let short_name = "-" + ch.to_string()
+
+        let mut found : ExactNode? = None
+        for sn in short_nodes {
+          if sn.name == short_name { found = Some(sn); break }
+        }
+        match found {
+          None => return Reject
+          Some(node) => {
+            // Step 1: フラグとして試行
+            match (node.try_reduce)([short_name], 0) {
+              Accept(commit~, ..) => { commits.push(commit); ri += 1; continue }
+              Error(_) | Reject => ()
+            }
+
+            // Step 2: 値を取るオプションとして試行
+            let remaining = rest.unsafe_substring(start=ri + 1, end=rest.length())
+
+            if remaining.length() > 0 {
+              let mut value_accepted = false
+              let mut try_len = remaining.length()
+              while try_len > 0 {
+                let try_value = remaining.unsafe_substring(start=0, end=try_len)
+                match (node.try_reduce)([short_name, try_value], 0) {
+                  Accept(commit~, ..) => {
+                    commits.push(commit)
+                    ri = ri + 1 + try_len
+                    value_accepted = true
+                    break
+                  }
+                  Error(_) =>
+                    if try_len > 1 { try_len -= 1 }
+                    else {
+                      match (node.try_reduce)([short_name, remaining], 0) {
+                        Error(e) => return Error(e)
+                        _ => return Reject
+                      }
+                    }
+                  _ => return Reject
+                }
+              }
+              if not(value_accepted) { return Reject }
+            } else {
+              if pos + 1 < args.length() {
+                match (node.try_reduce)([short_name, args[pos + 1]], 0) {
+                  Accept(commit~, ..) => {
+                    commits.push(commit)
+                    total_consumed = 2
+                    ri = rest.length()
+                  }
+                  Error(e) => return Error(e)
+                  _ => return Reject
+                }
+              } else {
+                return Error(parse_error("missing value for " + short_name))
+              }
+            }
+          }
+        }
+      }
+
+      Accept(consumed=total_consumed, commit=fn() { for c in commits { c() } })
     },
-  )
+    reset: fn() {},
+  }
+  self.nodes.push(combine_node)
 }
 
 ///|
@@ -109,6 +97,7 @@ fn Parser::parse_raw(
   self : Parser,
   args : Array[String],
 ) -> ParseResult raise ParseError {
+  self.install_short_combine_node()
   let mut pos = 0
   while pos < args.length() {
     // Handle `--` separator: enable force_positional and consume `--`
@@ -170,20 +159,6 @@ fn Parser::parse_raw(
         raise parse_error("ambiguous argument: " + args[pos])
       }
     }
-    // Try short option combining if no ExactNode matched
-    if best_commit.is_empty() && not(self.force_positional.val) {
-      let arg = args[pos]
-      if arg.has_prefix("-") && not(arg.has_prefix("--")) && arg.length() > 2 {
-        match self.try_short_combine(args, pos) {
-          Accept(consumed~, commit~) => {
-            best_consumed = consumed
-            best_commit = Some(commit)
-          }
-          Error(e) => raise e
-          Reject => ()
-        }
-      }
-    }
     match best_commit {
       Some(commit) => {
         commit()
@@ -227,7 +202,7 @@ pub fn Parser::parse(
   match result {
     Ok(r) => r
     Err(ParseError(info)) =>
-      if info.help_text.is_empty() {
+      if info.help_text == "" {
         raise ParseError(ParseErrorInfo::{ ..info, help_text: self.generate_help() })
       } else {
         raise ParseError(info)

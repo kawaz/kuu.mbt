@@ -18,8 +18,8 @@ test "flag default is false" {
 test "unknown arg raises error" {
   let p = Parser::new()
   let _verbose = p.flag(name="verbose")
-  let result : Result[ParseResult, _] = try? p.parse(["--unknown"])
-  inspect(result.is_err(), content="true")
+  let result : Result[_, _] = try? p.parse(["--unknown"])
+  inspect(result is Err(_), content="true")
 }
 
 ///|
@@ -96,16 +96,16 @@ test "int option default" {
 test "int parse error" {
   let p = Parser::new()
   let _port = p.int_opt(name="port", default=8080)
-  let result : Result[ParseResult, _] = try? p.parse(["--port", "abc"])
-  inspect(result.is_err(), content="true")
+  let result : Result[_, _] = try? p.parse(["--port", "abc"])
+  inspect(result is Err(_), content="true")
 }
 
 ///|
 test "missing value error" {
   let p = Parser::new()
   let _host = p.string_opt(name="host", default="localhost")
-  let result : Result[ParseResult, _] = try? p.parse(["--host"])
-  inspect(result.is_err(), content="true")
+  let result : Result[_, _] = try? p.parse(["--host"])
+  inspect(result is Err(_), content="true")
 }
 
 ///|
@@ -162,8 +162,8 @@ test "equals syntax for int" {
 test "equals syntax int parse error" {
   let p = Parser::new()
   let _port = p.int_opt(name="port", default=8080)
-  let result : Result[ParseResult, _] = try? p.parse(["--port=abc"])
-  inspect(result.is_err(), content="true")
+  let result : Result[_, _] = try? p.parse(["--port=abc"])
+  inspect(result is Err(_), content="true")
 }
 
 ///|
@@ -244,8 +244,8 @@ test "append int" {
 test "append int parse error" {
   let p = Parser::new()
   let _nums = p.append_int(name="num")
-  let result : Result[ParseResult, _] = try? p.parse(["--num", "abc"])
-  inspect(result.is_err(), content="true")
+  let result : Result[_, _] = try? p.parse(["--num", "abc"])
+  inspect(result is Err(_), content="true")
 }
 
 ///|
@@ -485,8 +485,8 @@ test "subcommand unknown option error" {
   let _serve = p.cmd(name="serve", setup=fn(child) {
     let _ = child.int_opt(name="port", default=8080)
   })
-  let result : Result[ParseResult, _] = try? p.parse(["serve", "--unknown"])
-  inspect(result.is_err(), content="true")
+  let result : Result[_, _] = try? p.parse(["serve", "--unknown"])
+  inspect(result is Err(_), content="true")
 }
 
 ///|
@@ -611,7 +611,7 @@ test "ParseResult child not found" {
     let _ = child.int_opt(name="port", default=8080)
   })
   let result = p.parse(["serve", "--port", "3000"])
-  inspect(result.child("build").is_empty(), content="true")
+  inspect(result.child("build") is None, content="true")
 }
 
 ///|
@@ -621,7 +621,7 @@ test "ParseResult as_map with subcommand" {
     let _ = child.int_opt(name="port", default=8080)
   })
   let result = p.parse(["serve"])
-  inspect(result.as_map().is_empty(), content="false")
+  inspect(result.as_map() is None, content="false")
 }
 
 ///|
@@ -630,7 +630,7 @@ test "ParseResult as_map without subcommand" {
   let _verbose = p.flag(name="verbose")
   let result = p.parse(["--verbose"])
   // cmd 登録がなければ One のまま
-  inspect(result.as_map().is_empty(), content="true")
+  inspect(result.as_map() is None, content="true")
 }
 
 ///|
@@ -664,36 +664,36 @@ test "opt.get cobra-style" {
   let verbose = p.flag(name="verbose")
   let port = p.int_opt(name="port", default=8080)
   // parse 前は None
-  inspect!(verbose.get(), content="None")
-  inspect!(port.get(), content="None")
+  inspect(verbose.get(), content="None")
+  inspect(port.get(), content="None")
   // parse 後は Some
-  ignore(p.parse!(["--verbose", "--port", "3000"]))
-  inspect!(verbose.get(), content="Some(true)")
-  inspect!(port.get(), content="Some(3000)")
+  ignore(p.parse(["--verbose", "--port", "3000"]))
+  inspect(verbose.get(), content="Some(true)")
+  inspect(port.get(), content="Some(3000)")
 }
 
 ///|
 test "alias for flag" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", aliases=["v"])
-  ignore(p.parse!(["--v"]))
-  inspect!(p.get(verbose), content="Some(true)")
+  ignore(p.parse(["--v"]))
+  inspect(p.get(verbose), content="Some(true)")
 }
 
 ///|
 test "alias no-prefix" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", aliases=["v"])
-  ignore(p.parse!(["--v", "--no-v"]))
-  inspect!(p.get(verbose), content="Some(false)")
+  ignore(p.parse(["--v", "--no-v"]))
+  inspect(p.get(verbose), content="Some(false)")
 }
 
 ///|
 test "alias for string option" {
   let p = Parser::new()
   let host = p.string_opt(name="host", default="localhost", aliases=["H"])
-  ignore(p.parse!(["--H", "example.com"]))
-  inspect!(p.get(host), content=(
+  ignore(p.parse(["--H", "example.com"]))
+  inspect(p.get(host), content=(
     #|Some("example.com")
   ))
 }
@@ -702,24 +702,24 @@ test "alias for string option" {
 test "alias for int option" {
   let p = Parser::new()
   let port = p.int_opt(name="port", default=8080, aliases=["p"])
-  ignore(p.parse!(["--p", "3000"]))
-  inspect!(p.get(port), content="Some(3000)")
+  ignore(p.parse(["--p", "3000"]))
+  inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
 test "multiple aliases" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", aliases=["v", "verb"])
-  ignore(p.parse!(["--verb"]))
-  inspect!(p.get(verbose), content="Some(true)")
+  ignore(p.parse(["--verb"]))
+  inspect(p.get(verbose), content="Some(true)")
 }
 
 ///|
 test "alias with equals syntax" {
   let p = Parser::new()
   let port = p.int_opt(name="port", default=8080, aliases=["p"])
-  ignore(p.parse!(["--p=3000"]))
-  inspect!(p.get(port), content="Some(3000)")
+  ignore(p.parse(["--p=3000"]))
+  inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
@@ -730,35 +730,35 @@ test "opt.get with subcommand" {
   let _serve = p.cmd(name="serve", setup=fn(child) {
     port_opt.val = Some(child.int_opt(name="port", default=8080))
   })
-  ignore(p.parse!(["serve", "--verbose", "--port", "3000"]))
+  ignore(p.parse(["serve", "--verbose", "--port", "3000"]))
   // global flag は親の parsed で判定
-  inspect!(verbose.get(), content="Some(true)")
+  inspect(verbose.get(), content="Some(true)")
   // 子パーサの opt も子の parsed で判定
-  inspect!(port_opt.val.unwrap().get(), content="Some(3000)")
+  inspect(port_opt.val.unwrap().get(), content="Some(3000)")
 }
 
 ///|
 test "short flag" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", short='v')
-  ignore(p.parse!(["-v"]))
-  inspect!(p.get(verbose), content="Some(true)")
+  ignore(p.parse(["-v"]))
+  inspect(p.get(verbose), content="Some(true)")
 }
 
 ///|
 test "short int option" {
   let p = Parser::new()
   let port = p.int_opt(name="port", default=8080, short='p')
-  ignore(p.parse!(["-p", "3000"]))
-  inspect!(p.get(port), content="Some(3000)")
+  ignore(p.parse(["-p", "3000"]))
+  inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
 test "short string option" {
   let p = Parser::new()
   let host = p.string_opt(name="host", default="localhost", short='H')
-  ignore(p.parse!(["-H", "example.com"]))
-  inspect!(p.get(host), content=(
+  ignore(p.parse(["-H", "example.com"]))
+  inspect(p.get(host), content=(
     #|Some("example.com")
   ))
 }
@@ -768,17 +768,17 @@ test "short with long mixed" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", short='v')
   let port = p.int_opt(name="port", default=8080, short='p')
-  ignore(p.parse!(["-v", "--port", "3000"]))
-  inspect!(p.get(verbose), content="Some(true)")
-  inspect!(p.get(port), content="Some(3000)")
+  ignore(p.parse(["-v", "--port", "3000"]))
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
 test "short append" {
   let p = Parser::new()
   let tags = p.append_string(name="tag", short='t')
-  ignore(p.parse!(["-t", "a", "-t", "b"]))
-  inspect!(p.get(tags), content=(
+  ignore(p.parse(["-t", "a", "-t", "b"]))
+  inspect(p.get(tags), content=(
     #|Some(["a", "b"])
   ))
 }
@@ -789,10 +789,10 @@ test "short flag combining" {
   let a = p.flag(name="aaa", short='a')
   let b = p.flag(name="bbb", short='b')
   let c = p.flag(name="ccc", short='c')
-  ignore(p.parse!(["-abc"]))
-  inspect!(p.get(a), content="Some(true)")
-  inspect!(p.get(b), content="Some(true)")
-  inspect!(p.get(c), content="Some(true)")
+  ignore(p.parse(["-abc"]))
+  inspect(p.get(a), content="Some(true)")
+  inspect(p.get(b), content="Some(true)")
+  inspect(p.get(c), content="Some(true)")
 }
 
 ///|
@@ -800,9 +800,9 @@ test "short combining with value at end" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", short='v')
   let port = p.int_opt(name="port", default=8080, short='p')
-  ignore(p.parse!(["-vp3000"]))
-  inspect!(p.get(verbose), content="Some(true)")
-  inspect!(p.get(port), content="Some(3000)")
+  ignore(p.parse(["-vp3000"]))
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
@@ -810,9 +810,9 @@ test "short combining value next arg" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", short='v')
   let port = p.int_opt(name="port", default=8080, short='p')
-  ignore(p.parse!(["-vp", "3000"]))
-  inspect!(p.get(verbose), content="Some(true)")
-  inspect!(p.get(port), content="Some(3000)")
+  ignore(p.parse(["-vp", "3000"]))
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
@@ -820,9 +820,9 @@ test "short combining with string value" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", short='v')
   let host = p.string_opt(name="host", default="localhost", short='H')
-  ignore(p.parse!(["-vHexample.com"]))
-  inspect!(p.get(verbose), content="Some(true)")
-  inspect!(p.get(host), content=(
+  ignore(p.parse(["-vHexample.com"]))
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(p.get(host), content=(
     #|Some("example.com")
   ))
 }
@@ -831,8 +831,8 @@ test "short combining with string value" {
 test "short combining unknown char error" {
   let p = Parser::new()
   let _a = p.flag(name="aaa", short='a')
-  let result : Result[ParseResult, _] = try? p.parse(["-ax"])
-  inspect!(result.is_err(), content="true")
+  let result : Result[_, _] = try? p.parse(["-ax"])
+  inspect(result is Err(_), content="true")
 }
 
 ///|
@@ -841,50 +841,50 @@ test "short combining all flags" {
   let e = p.flag(name="errexit", short='e')
   let u = p.flag(name="nounset", short='u')
   let o = p.flag(name="ooo", short='o')
-  ignore(p.parse!(["-euo"]))
-  inspect!(p.get(e), content="Some(true)")
-  inspect!(p.get(u), content="Some(true)")
-  inspect!(p.get(o), content="Some(true)")
+  ignore(p.parse(["-euo"]))
+  inspect(p.get(e), content="Some(true)")
+  inspect(p.get(u), content="Some(true)")
+  inspect(p.get(o), content="Some(true)")
 }
 
 ///|
 test "count basic" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", short='v')
-  ignore(p.parse!(["--verbose", "--verbose", "--verbose"]))
-  inspect!(p.get(verbose), content="Some(3)")
+  ignore(p.parse(["--verbose", "--verbose", "--verbose"]))
+  inspect(p.get(verbose), content="Some(3)")
 }
 
 ///|
 test "count default zero" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", short='v')
-  ignore(p.parse!([]))
-  inspect!(p.get(verbose), content="Some(0)")
+  ignore(p.parse([]))
+  inspect(p.get(verbose), content="Some(0)")
 }
 
 ///|
 test "count short" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", short='v')
-  ignore(p.parse!(["-v", "-v"]))
-  inspect!(p.get(verbose), content="Some(2)")
+  ignore(p.parse(["-v", "-v"]))
+  inspect(p.get(verbose), content="Some(2)")
 }
 
 ///|
 test "count short combining -vvv" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", short='v')
-  ignore(p.parse!(["-vvv"]))
-  inspect!(p.get(verbose), content="Some(3)")
+  ignore(p.parse(["-vvv"]))
+  inspect(p.get(verbose), content="Some(3)")
 }
 
 ///|
 test "count reset with no-prefix" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", short='v')
-  ignore(p.parse!(["-vvv", "--no-verbose", "-v"]))
-  inspect!(p.get(verbose), content="Some(1)")
+  ignore(p.parse(["-vvv", "--no-verbose", "-v"]))
+  inspect(p.get(verbose), content="Some(1)")
 }
 
 ///|
@@ -894,10 +894,10 @@ test "complex short combining: count + int + flag" {
   let a_opt = p.int_opt(name="aaa", default=0, short='A')
   let g = p.flag(name="ggg", short='g')
   // -cA1gcc → c(count) A(int=1) g(flag) c(count) c(count)
-  ignore(p.parse!(["-cA1gcc"]))
-  inspect!(p.get(c), content="Some(3)")
-  inspect!(p.get(a_opt), content="Some(1)")
-  inspect!(p.get(g), content="Some(true)")
+  ignore(p.parse(["-cA1gcc"]))
+  inspect(p.get(c), content="Some(3)")
+  inspect(p.get(a_opt), content="Some(1)")
+  inspect(p.get(g), content="Some(true)")
 }
 
 ///|
@@ -907,10 +907,10 @@ test "complex short combining: flags and int" {
   let a_opt = p.int_opt(name="after", default=0, short='A')
   let b_opt = p.int_opt(name="before", default=0, short='B')
   // -vA1 -B1 なら動く
-  ignore(p.parse!(["-vA1", "-B1"]))
-  inspect!(p.get(v), content="Some(true)")
-  inspect!(p.get(a_opt), content="Some(1)")
-  inspect!(p.get(b_opt), content="Some(1)")
+  ignore(p.parse(["-vA1", "-B1"]))
+  inspect(p.get(v), content="Some(true)")
+  inspect(p.get(a_opt), content="Some(1)")
+  inspect(p.get(b_opt), content="Some(1)")
 }
 
 ///|
@@ -931,7 +931,7 @@ test "generate_help basic" {
 test "help flag raises HelpRequested" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", description="Enable verbose")
-  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(_)) => inspect(true, content="true")
     _ => inspect(false, content="true")
@@ -942,7 +942,7 @@ test "help flag raises HelpRequested" {
 test "short help flag raises HelpRequested" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", description="Enable verbose")
-  let result : Result[ParseResult, _] = try? p.parse(["-h"])
+  let result : Result[_, _] = try? p.parse(["-h"])
   match result {
     Err(HelpRequested(_)) => inspect(true, content="true")
     _ => inspect(false, content="true")
@@ -953,7 +953,7 @@ test "short help flag raises HelpRequested" {
 test "HelpRequested text contains flag description" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", short='v', description="Enable verbose output")
-  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(text)) => {
       inspect(text.contains("--verbose"), content="true")
@@ -968,7 +968,7 @@ test "HelpRequested text contains flag description" {
 test "string_opt default shown in help" {
   let p = Parser::new()
   let _ = p.string_opt(name="host", default="localhost", description="Set host")
-  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(text)) => {
       inspect(text.contains("--host"), content="true")
@@ -983,7 +983,7 @@ test "global option in Global Options section" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", global=true, description="Verbose mode")
   let _ = p.flag(name="debug", description="Debug mode")
-  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(text)) => {
       inspect(text.contains("Global Options:"), content="true")
@@ -997,7 +997,7 @@ test "global option in Global Options section" {
 test "cmd shown in Commands section" {
   let p = Parser::new()
   let _ = p.cmd(name="serve", setup=fn(_child) {  }, description="Start server")
-  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(text)) => {
       inspect(text.contains("Commands:"), content="true")
@@ -1012,7 +1012,7 @@ test "cmd shown in Commands section" {
 test "short option format in help" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", short='v', description="Verbose")
-  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(text)) => {
       inspect(text.contains("-v, --verbose"), content="true")
@@ -1027,7 +1027,7 @@ test "subcommand help shows own scope" {
   let _ = p.cmd(name="serve", setup=fn(child) {
     let _ = child.int_opt(name="port", default=8080, description="Set port")
   }, description="Start server")
-  let result : Result[ParseResult, _] = try? p.parse(["serve", "--help"])
+  let result : Result[_, _] = try? p.parse(["serve", "--help"])
   match result {
     Err(HelpRequested(text)) => {
       inspect(text.contains("--port"), content="true")
@@ -1043,7 +1043,7 @@ test "hidden option not shown in help" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", description="Verbose")
   let _ = p.flag(name="secret", description="Secret option", hidden=true)
-  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(text)) => {
       inspect(text.contains("--verbose"), content="true")
@@ -1058,7 +1058,7 @@ test "description shown in help" {
   let p = Parser::new()
   p.set_description("My awesome CLI")
   let _ = p.flag(name="verbose", description="Verbose")
-  let result : Result[ParseResult, _] = try? p.parse(["--help"])
+  let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(text)) => {
       inspect(text.contains("My awesome CLI"), content="true")
@@ -1072,14 +1072,14 @@ test "parse error includes help_text" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", short='v', description="Enable verbose output")
   let _ = p.int_opt(name="port", default=8080, description="Set port number")
-  let result : Result[ParseResult, _] = try? p.parse(["--unknown"])
+  let result : Result[_, _] = try? p.parse(["--unknown"])
   match result {
     Err(ParseError(info)) => {
       inspect(info.message, content=(
         #|unexpected argument: --unknown
       ))
       // help_text が空でないことを確認
-      inspect(info.help_text.is_empty(), content="false")
+      inspect(info.help_text == "", content="false")
       // help_text にオプション情報が含まれること
       inspect(info.help_text.contains("--verbose"), content="true")
       inspect(info.help_text.contains("--port"), content="true")
@@ -1106,7 +1106,7 @@ test "subcommand error has child help_text" {
   let _ = p.cmd(name="serve", setup=fn(child) {
     let _ = child.int_opt(name="port", default=8080, description="Set port")
   }, description="Start server")
-  let result : Result[ParseResult, _] = try? p.parse(["serve", "--unknown"])
+  let result : Result[_, _] = try? p.parse(["serve", "--unknown"])
   match result {
     Err(ParseError(info)) => {
       inspect(info.message, content=(
@@ -1119,4 +1119,22 @@ test "subcommand error has child help_text" {
     }
     _ => abort("expected ParseError")
   }
+}
+
+///|
+test "short combining append_int" {
+  let p = Parser::new()
+  let nums = p.append_int(name="num", short='n')
+  ignore(p.parse(["-n1", "-n2"]))
+  inspect(p.get(nums), content="Some([1, 2])")
+}
+
+///|
+test "short combining append_int inline" {
+  let p = Parser::new()
+  let v = p.flag(name="verbose", short='v')
+  let nums = p.append_int(name="num", short='n')
+  ignore(p.parse(["-vn1"]))
+  inspect(p.get(v), content="Some(true)")
+  inspect(p.get(nums), content="Some([1])")
 }

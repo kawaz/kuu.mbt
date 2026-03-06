@@ -5,7 +5,8 @@ package "kawaz/kuu/src/core"
 
 // Errors
 pub(all) suberror ParseError {
-  ParseError(String)
+  ParseError(ParseErrorInfo)
+  HelpRequested(String)
 }
 
 // Types and methods
@@ -16,12 +17,60 @@ pub(all) struct ExactNode {
   reset : () -> Unit
 }
 
+pub(all) struct Filter {
+}
+pub fn[A, B] Filter::each(FilterChain[A, B]) -> FilterChain[Array[A], Array[B]]
+pub fn Filter::in_range(Int, Int) -> FilterChain[Int, Int]
+pub fn[A, B] Filter::map((A) -> B) -> FilterChain[A, B]
+pub fn Filter::non_empty() -> FilterChain[String, String]
+pub fn Filter::one_of(Array[String]) -> FilterChain[String, String]
+pub fn[A, B] Filter::parse((A) -> B raise ParseError) -> FilterChain[A, B]
+pub fn Filter::parse_float() -> FilterChain[String, Double]
+pub fn Filter::parse_int() -> FilterChain[String, Int]
+pub fn Filter::split(String) -> FilterChain[String, Array[String]]
+pub fn Filter::to_lower() -> FilterChain[String, String]
+pub fn Filter::trim() -> FilterChain[String, String]
+pub fn[A] Filter::validate((A) -> Unit raise ParseError) -> FilterChain[A, A]
+
+pub(all) struct FilterChain[A, B] {
+  run : (A) -> B raise ParseError
+}
+pub fn[A, B, C] FilterChain::then(Self[A, B], Self[B, C]) -> Self[A, C]
+
 pub(all) struct Opt[T] {
   id : Int
   getter : () -> T
   parsed : Ref[Bool]
 }
 pub fn[T] Opt::get(Self[T]) -> T?
+
+pub(all) enum OptKind {
+  Flag
+  ValueOpt
+  Command
+  Positional
+  Rest
+}
+pub impl Eq for OptKind
+pub impl Show for OptKind
+
+pub(all) struct OptMeta {
+  kind : OptKind
+  name : String
+  help : String
+  value_name : String
+  default_display : String
+  global : Bool
+  short : Char?
+  aliases : Array[String]
+  hidden : Bool
+}
+
+pub(all) struct ParseErrorInfo {
+  message : String
+  help_text : String
+}
+pub fn ParseErrorInfo::to_string(Self) -> String
 
 pub(all) struct ParseResult {
   kind : ParseResultKind
@@ -48,18 +97,23 @@ pub(all) struct Parser {
   force_positional : Ref[Bool]
   parsed : Ref[Bool]
   children : Map[String, ParseResult]
+  metas : Array[OptMeta]
+  description : Ref[String]
 }
-pub fn Parser::append_int(Self, name~ : String, global? : Bool, aliases? : Array[String], short? : Char) -> Opt[Array[Int]]
-pub fn Parser::append_string(Self, name~ : String, global? : Bool, aliases? : Array[String], short? : Char) -> Opt[Array[String]]
-pub fn Parser::cmd(Self, name~ : String, setup~ : (Self) -> Unit) -> Opt[Bool]
-pub fn Parser::flag(Self, name~ : String, default? : Bool, global? : Bool, aliases? : Array[String], short? : Char) -> Opt[Bool]
+pub fn Parser::append_int(Self, name~ : String, global? : Bool, aliases? : Array[String], short? : Char, description? : String, value_name? : String, hidden? : Bool) -> Opt[Array[Int]]
+pub fn Parser::append_string(Self, name~ : String, global? : Bool, aliases? : Array[String], short? : Char, description? : String, value_name? : String, hidden? : Bool) -> Opt[Array[String]]
+pub fn Parser::cmd(Self, name~ : String, setup~ : (Self) -> Unit, description? : String) -> Opt[Bool]
+pub fn Parser::count(Self, name~ : String, global? : Bool, aliases? : Array[String], short? : Char, description? : String, hidden? : Bool) -> Opt[Int]
+pub fn Parser::flag(Self, name~ : String, default? : Bool, global? : Bool, aliases? : Array[String], short? : Char, description? : String, hidden? : Bool) -> Opt[Bool]
+pub fn Parser::generate_help(Self) -> String
 pub fn[T] Parser::get(Self, Opt[T]) -> T?
-pub fn Parser::int_opt(Self, name~ : String, default~ : Int, global? : Bool, aliases? : Array[String], short? : Char) -> Opt[Int]
+pub fn Parser::int_opt(Self, name~ : String, default~ : Int, global? : Bool, aliases? : Array[String], short? : Char, description? : String, value_name? : String, hidden? : Bool) -> Opt[Int]
 pub fn Parser::new() -> Self
-pub fn Parser::parse(Self, Array[String]) -> ParseResult raise ParseError
-pub fn Parser::positional(Self, name~ : String) -> Opt[String]
-pub fn Parser::rest(Self, name~ : String) -> Opt[Array[String]]
-pub fn Parser::string_opt(Self, name~ : String, default~ : String, global? : Bool, aliases? : Array[String], short? : Char) -> Opt[String]
+pub fn Parser::parse(Self, Array[String]) -> Result[ParseResult, ParseError]
+pub fn Parser::positional(Self, name~ : String, description? : String) -> Opt[String]
+pub fn Parser::rest(Self, name~ : String, description? : String) -> Opt[Array[String]]
+pub fn Parser::set_description(Self, String) -> Unit
+pub fn Parser::string_opt(Self, name~ : String, default~ : String, global? : Bool, aliases? : Array[String], short? : Char, description? : String, value_name? : String, hidden? : Bool) -> Opt[String]
 
 pub(all) enum ReduceAction {
   Value(String?)
@@ -75,6 +129,7 @@ pub(all) enum TryResult {
 }
 
 // Type aliases
+pub type Accumulator[T, U] = (T, U) -> T
 
 // Traits
 

@@ -283,6 +283,51 @@ pub fn Parser::string_opt(
   { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
 }
 
+///| reducer を ExactNode (値を受け取る) に変換するアダプタ
+fn[T] make_reduced_value_node(
+  name : String,
+  reducer : (ReduceCtx[T]) -> T? raise ParseError,
+  cell : Ref[T],
+  pending : Ref[T],
+  reset : () -> Unit,
+) -> ExactNode {
+  make_value_node(name, fn(s) {
+    let ctx : ReduceCtx[T] = { current: cell.val, action: Value(Some(s)) }
+    let r : Result[T?, ParseError] = try? reducer(ctx)
+    match r {
+      Ok(Some(v)) => { pending.val = v; Ok(fn() { cell.val = pending.val }) }
+      Ok(None) => Err(parse_error("unexpected: reducer returned None for Value"))
+      Err(e) => Err(e)
+    }
+  }, reset)
+}
+
+///| reducer を ExactNode (negate) に変換するアダプタ
+fn[T] make_reduced_negate_node(
+  name : String,
+  reducer : (ReduceCtx[T]) -> T? raise ParseError,
+  cell : Ref[T],
+  pending : Ref[T],
+  reset : () -> Unit,
+) -> ExactNode {
+  // make_flag_node は commit を返す () -> () -> Unit 型だが、
+  // reducer は raise ParseError を含むため直接 ExactNode を構築する
+  ExactNode::{
+    name, needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != name { return Reject }
+      let ctx : ReduceCtx[T] = { current: cell.val, action: Negate }
+      let r : Result[T?, ParseError] = try? reducer(ctx)
+      match r {
+        Ok(Some(v)) => { pending.val = v; Accept(consumed=1, commit=fn() { cell.val = pending.val }) }
+        Ok(None) => Error(parse_error("unexpected: negate reducer failed for " + name))
+        Err(e) => Error(e)
+      }
+    },
+    reset,
+  }
+}
+
 ///|
 pub fn Parser::int_opt(
   self : Parser,
@@ -298,85 +343,35 @@ pub fn Parser::int_opt(
   let id = (self.next_id)()
   let cell : Ref[Int] = { val: default }
   let initial_val = default
-  let opt_name = "--" + name
   let pending : Ref[Int] = { val: default }
-  let node = make_value_node(
-    opt_name,
-    fn(s) {
+  let reset = fn() { cell.val = initial_val }
+  let accum : Accumulator[Int, Int] = fn(_current, piece) { piece }
+  // オプション名を含むエラーメッセージ用の FilterChain を生成するヘルパー
+  fn make_int_pre(opt_name : String) -> FilterChain[String, Int] {
+    Filter::parse(fn(s) raise ParseError {
       let r : Result[Int, _] = try? @strconv.parse_int(s.view())
       match r {
-        Ok(v) => {
-          pending.val = v
-          Ok(fn() { cell.val = pending.val })
-        }
-        Err(_) =>
-          Err(parse_error("invalid integer value for " + opt_name + ": " + s))
+        Ok(v) => v
+        Err(_) => raise parse_error("invalid integer value for " + opt_name + ": " + s)
       }
-    },
-    fn() { cell.val = initial_val },
-  )
-  let no_node = make_flag_node(
-    "--no-" + name,
-    fn() {
-      pending.val = initial_val
-      fn() { cell.val = pending.val }
-    },
-    fn() { cell.val = initial_val },
-  )
+    })
+  }
+  let opt_name = "--" + name
+  let reducer = make_reducer(make_int_pre(opt_name), accum, initial_val)
+  let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
+  let no_node = make_reduced_negate_node("--no-" + name, reducer, cell, pending, reset)
   self.register_option(node, no_node, global)
   for alt in aliases {
     let alt_opt_name = "--" + alt
-    let alt_node = make_value_node(
-      alt_opt_name,
-      fn(s) {
-        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
-        match r {
-          Ok(v) => {
-            pending.val = v
-            Ok(fn() { cell.val = pending.val })
-          }
-          Err(_) =>
-            Err(
-              parse_error(
-                "invalid integer value for " + alt_opt_name + ": " + s,
-              ),
-            )
-        }
-      },
-      fn() { cell.val = initial_val },
-    )
-    let alt_no_node = make_flag_node(
-      "--no-" + alt,
-      fn() {
-        pending.val = initial_val
-        fn() { cell.val = pending.val }
-      },
-      fn() { cell.val = initial_val },
-    )
+    let alt_reducer = make_reducer(make_int_pre(alt_opt_name), accum, initial_val)
+    let alt_node = make_reduced_value_node(alt_opt_name, alt_reducer, cell, pending, reset)
+    let alt_no_node = make_reduced_negate_node("--no-" + alt, alt_reducer, cell, pending, reset)
     self.register_option(alt_node, alt_no_node, global)
   }
   if short != '\u0000' {
     let short_name = "-" + short.to_string()
-    let short_opt_name = short_name
-    let short_node = make_value_node(
-      short_name,
-      fn(s) {
-        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
-        match r {
-          Ok(v) => {
-            pending.val = v
-            Ok(fn() { cell.val = pending.val })
-          }
-          Err(_) =>
-            Err(
-              parse_error(
-                "invalid integer value for " + short_opt_name + ": " + s,
-              ),
-            )
-        }
-      },
-      fn() { cell.val = initial_val },
-    )
+    let short_reducer = make_reducer(make_int_pre(short_name), accum, initial_val)
+    let short_node = make_reduced_value_node(short_name, short_reducer, cell, pending, reset)
     self.nodes.push(short_node)
     if global {
       self.global_nodes.push(short_node)
@@ -747,7 +742,7 @@ pub fn Parser::cmd(
         Reject
       } else if args[pos] == cmd_name {
         let rest_args = Array::from_iter(args.view(start=pos + 1).iter())
-        let parse_result : Result[ParseResult, _] = try? child.parse(rest_args)
+        let parse_result : Result[ParseResult, ParseError] = try? child.parse(rest_args)
         match parse_result {
           Ok(child_result) =>
             Accept(

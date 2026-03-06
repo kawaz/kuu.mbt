@@ -87,3 +87,20 @@ pub(all) struct OptMeta {
   aliases : Array[String]
   hidden : Bool
 }
+
+///| A → B の変換ステップ（ParseError を伝搬できる）
+pub(all) struct FilterChain[A, B] {
+  run : (A) -> B raise ParseError
+}
+
+///| 片 U を現在の累積値 T にマージする関数
+pub type Accumulator[T, U] = (T, U) -> T
+
+///| reducer に渡すコンテキスト。将来メソッド追加してもシグネチャ不変（DR-008）
+pub(all) struct ReduceCtx[T] {
+  current : T
+  action : ReduceAction
+}
+
+///| Filter 名前空間用（コンストラクタの名前空間として使用）
+pub(all) struct Filter {}
