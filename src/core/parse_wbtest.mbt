@@ -1122,6 +1122,168 @@ test "subcommand error has child help_text" {
 }
 
 ///|
+test "choices valid value" {
+  let p = Parser::new()
+  let fmt = p.string_opt(name="format", default="json", choices=["json", "csv", "yaml"])
+  ignore(p.parse(["--format", "csv"]))
+  inspect(fmt.get(), content=(
+    #|Some("csv")
+  ))
+}
+
+///|
+test "choices invalid value error" {
+  let p = Parser::new()
+  let _fmt = p.string_opt(name="format", default="json", choices=["json", "csv", "yaml"])
+  let result : Result[_, _] = try? p.parse(["--format", "xml"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "choices with equals syntax" {
+  let p = Parser::new()
+  let fmt = p.string_opt(name="format", default="json", choices=["json", "csv", "yaml"])
+  ignore(p.parse(["--format=yaml"]))
+  inspect(fmt.get(), content=(
+    #|Some("yaml")
+  ))
+}
+
+///|
+test "choices default value" {
+  let p = Parser::new()
+  let fmt = p.string_opt(name="format", default="json", choices=["json", "csv", "yaml"])
+  ignore(p.parse([]))
+  inspect(fmt.get(), content=(
+    #|Some("json")
+  ))
+}
+
+///|
+test "choices shown in help" {
+  let p = Parser::new()
+  let _ = p.string_opt(name="format", default="json", choices=["json", "csv", "yaml"], description="Output format")
+  let result : Result[_, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("json"), content="true")
+      inspect(text.contains("csv"), content="true")
+      inspect(text.contains("yaml"), content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+///|
+test "implicit_value basic" {
+  let p = Parser::new()
+  let color = p.string_opt(
+    name="color", default="auto",
+    implicit_value=Some("always"), choices=["always", "none", "auto"],
+  )
+  ignore(p.parse(["--color"]))
+  inspect(color.get(), content=(
+    #|Some("always")
+  ))
+}
+
+///|
+test "implicit_value with explicit value" {
+  let p = Parser::new()
+  let color = p.string_opt(
+    name="color", default="auto",
+    implicit_value=Some("always"), choices=["always", "none", "auto"],
+  )
+  ignore(p.parse(["--color", "none"]))
+  inspect(color.get(), content=(
+    #|Some("none")
+  ))
+}
+
+///|
+test "implicit_value with equals" {
+  let p = Parser::new()
+  let color = p.string_opt(
+    name="color", default="auto",
+    implicit_value=Some("always"), choices=["always", "none", "auto"],
+  )
+  ignore(p.parse(["--color=none"]))
+  inspect(color.get(), content=(
+    #|Some("none")
+  ))
+}
+
+///|
+test "implicit_value default when not specified" {
+  let p = Parser::new()
+  let color = p.string_opt(
+    name="color", default="auto",
+    implicit_value=Some("always"), choices=["always", "none", "auto"],
+  )
+  ignore(p.parse([]))
+  inspect(color.get(), content=(
+    #|Some("auto")
+  ))
+}
+
+///|
+test "implicit_value with other flag after" {
+  let p = Parser::new()
+  let color = p.string_opt(
+    name="color", default="auto",
+    implicit_value=Some("always"), choices=["always", "none", "auto"],
+  )
+  let verbose = p.flag(name="verbose")
+  ignore(p.parse(["--color", "--verbose"]))
+  inspect(color.get(), content=(
+    #|Some("always")
+  ))
+  inspect(verbose.get(), content="Some(true)")
+}
+
+///|
+test "implicit_value typo goes to next loop" {
+  let p = Parser::new()
+  let _color = p.string_opt(
+    name="color", default="auto",
+    implicit_value=Some("always"), choices=["always", "none", "auto"],
+  )
+  // "rander" is not in choices → serial Reject → exact consumed=1 → implicit
+  // "rander" goes to next loop → no positional → error
+  let result : Result[_, _] = try? p.parse(["--color", "rander"])
+  inspect(result is Err(_), content="true")
+  // but if there's a positional, "rander" goes there
+  let p2 = Parser::new()
+  let color2 = p2.string_opt(
+    name="color", default="auto",
+    implicit_value=Some("always"), choices=["always", "none", "auto"],
+  )
+  let file = p2.positional(name="file")
+  ignore(p2.parse(["--color", "rander"]))
+  inspect(color2.get(), content=(
+    #|Some("always")
+  ))
+  inspect(file.get(), content=(
+    #|Some("rander")
+  ))
+}
+
+///|
+test "implicit_value at end of args" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let color = p.string_opt(
+    name="color", default="auto",
+    implicit_value=Some("always"), choices=["always", "none", "auto"],
+  )
+  ignore(p.parse(["--verbose", "--color"]))
+  inspect(verbose.get(), content="Some(true)")
+  inspect(color.get(), content=(
+    #|Some("always")
+  ))
+}
+
+///|
 test "short combining append_int" {
   let p = Parser::new()
   let nums = p.append_int(name="num", short='n')

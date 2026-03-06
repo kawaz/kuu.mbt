@@ -189,6 +189,7 @@ pub fn Parser::flag(
     short: if short != '\u0000' { Some(short) } else { None },
     aliases,
     hidden,
+    choices: [],
   })
   { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
 }
@@ -213,31 +214,144 @@ pub fn Parser::string_opt(
   description? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
+  choices? : Array[String] = [],
+  implicit_value? : String? = None,
 ) -> Opt[String] {
   let id = (self.next_id)()
   let cell : Ref[String] = { val: default }
   let initial_val = default
   let pending : Ref[String] = { val: default }
   let reset = fn() { cell.val = initial_val }
-  let accum : Accumulator[String, String] = fn(_current, piece) { piece }
-  let identity_pre : FilterChain[String, String] = Filter::map(fn(s) { s })
-  let reducer = make_reducer(identity_pre, accum, initial_val)
-  let opt_name = "--" + name
-  let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
-  let no_node = make_reduced_negate_node("--no-" + name, reducer, cell, pending, reset)
-  self.register_option(node, no_node, global)
-  for alt in aliases {
-    let alt_opt_name = "--" + alt
-    let alt_node = make_reduced_value_node(alt_opt_name, reducer, cell, pending, reset)
-    let alt_no_node = make_reduced_negate_node("--no-" + alt, reducer, cell, pending, reset)
-    self.register_option(alt_node, alt_no_node, global)
-  }
-  if short != '\u0000' {
-    let short_name = "-" + short.to_string()
-    let short_node = make_reduced_value_node(short_name, reducer, cell, pending, reset)
-    self.nodes.push(short_node)
-    if global {
-      self.global_nodes.push(short_node)
+  match implicit_value {
+    None => {
+      // 従来パス: value node のみ（choices は Error で弾く）
+      let accum : Accumulator[String, String] = fn(_current, piece) { piece }
+      let pre : FilterChain[String, String] = if choices.length() > 0 {
+        Filter::validate(fn(s) raise ParseError {
+          if not(choices.contains(s)) {
+            let allowed = choices.iter().map(fn(c) { c }).collect()
+            raise parse_error(
+              "invalid value for --" + name + ": " + s + " (choices: " +
+              allowed.to_string() + ")",
+            )
+          }
+        })
+      } else {
+        Filter::map(fn(s) { s })
+      }
+      let reducer = make_reducer(pre, accum, initial_val)
+      let opt_name = "--" + name
+      let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
+      let no_node = make_reduced_negate_node(
+        "--no-" + name, reducer, cell, pending, reset,
+      )
+      self.register_option(node, no_node, global)
+      for alt in aliases {
+        let alt_opt_name = "--" + alt
+        let alt_node = make_reduced_value_node(
+          alt_opt_name, reducer, cell, pending, reset,
+        )
+        let alt_no_node = make_reduced_negate_node(
+          "--no-" + alt, reducer, cell, pending, reset,
+        )
+        self.register_option(alt_node, alt_no_node, global)
+      }
+      if short != '\u0000' {
+        let short_name = "-" + short.to_string()
+        let short_node = make_reduced_value_node(
+          short_name, reducer, cell, pending, reset,
+        )
+        self.nodes.push(short_node)
+        if global {
+          self.global_nodes.push(short_node)
+        }
+      }
+    }
+    Some(iv) => {
+      // implicit_value パス: value node (Reject on choices mismatch) + flag node の2ノード展開
+      let all_names : Array[String] = ["--" + name]
+      for alt in aliases {
+        all_names.push("--" + alt)
+      }
+      if short != '\u0000' {
+        all_names.push("-" + short.to_string())
+      }
+      for opt_name in all_names {
+        // Value node: choices マッチなら consumed=2, 不一致なら Reject
+        let value_node = ExactNode::{
+          name: opt_name,
+          needs_value: true,
+          try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+            if pos >= args.length() || args[pos] != opt_name {
+              return Reject
+            }
+            if pos + 1 >= args.length() {
+              return Reject
+            }
+            let value = args[pos + 1]
+            if choices.length() > 0 && not(choices.contains(value)) {
+              return Reject
+            }
+            let v = value
+            pending.val = v
+            Accept(consumed=2, commit=fn() { cell.val = pending.val })
+          },
+          reset,
+        }
+        // Flag node: consumed=1, implicit_value を commit
+        let flag_node = ExactNode::{
+          name: opt_name,
+          needs_value: false,
+          try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+            if pos >= args.length() || args[pos] != opt_name {
+              return Reject
+            }
+            Accept(consumed=1, commit=fn() { cell.val = iv })
+          },
+          reset,
+        }
+        self.nodes.push(value_node)
+        self.nodes.push(flag_node)
+        if global {
+          self.global_nodes.push(value_node)
+          self.global_nodes.push(flag_node)
+        }
+      }
+      // negate nodes
+      let no_name = "--no-" + name
+      let no_node = ExactNode::{
+        name: no_name,
+        needs_value: false,
+        try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+          if pos >= args.length() || args[pos] != no_name {
+            return Reject
+          }
+          Accept(consumed=1, commit=fn() { cell.val = initial_val })
+        },
+        reset,
+      }
+      self.nodes.push(no_node)
+      if global {
+        self.global_nodes.push(no_node)
+      }
+      for alt in aliases {
+        let alt_no_name = "--no-" + alt
+        let alt_no_node = ExactNode::{
+          name: alt_no_name,
+          needs_value: false,
+          try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+            if pos >= args.length() || args[pos] != alt_no_name {
+              return Reject
+            }
+            Accept(consumed=1, commit=fn() { cell.val = initial_val })
+          },
+          reset,
+        }
+        self.nodes.push(alt_no_node)
+        if global {
+          self.global_nodes.push(alt_no_node)
+        }
+      }
     }
   }
   let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
@@ -252,6 +366,7 @@ pub fn Parser::string_opt(
     short: if short != '\u0000' { Some(short) } else { None },
     aliases,
     hidden,
+    choices,
   })
   { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
 }
@@ -362,6 +477,7 @@ pub fn Parser::int_opt(
     short: if short != '\u0000' { Some(short) } else { None },
     aliases,
     hidden,
+    choices: [],
   })
   { id, getter: fn() -> Int { cell.val }, parsed: self.parsed }
 }
@@ -426,6 +542,7 @@ pub fn Parser::append_string(
     short: if short != '\u0000' { Some(short) } else { None },
     aliases,
     hidden,
+    choices: [],
   })
   { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
 }
@@ -522,6 +639,7 @@ pub fn Parser::append_int(
     short: if short != '\u0000' { Some(short) } else { None },
     aliases,
     hidden,
+    choices: [],
   })
   { id, getter: fn() -> Array[Int] { cell.val }, parsed: self.parsed }
 }
@@ -606,6 +724,7 @@ pub fn Parser::count(
     short: if short != '\u0000' { Some(short) } else { None },
     aliases,
     hidden,
+    choices: [],
   })
   { id, getter: fn() -> Int { cell.val }, parsed: self.parsed }
 }
@@ -640,6 +759,7 @@ pub fn Parser::positional(self : Parser, name~ : String, description? : String =
     short: None,
     aliases: [],
     hidden: false,
+    choices: [],
   })
   { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
 }
@@ -671,6 +791,7 @@ pub fn Parser::rest(self : Parser, name~ : String, description? : String = "") -
     short: None,
     aliases: [],
     hidden: false,
+    choices: [],
   })
   { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
 }
@@ -745,6 +866,7 @@ pub fn Parser::cmd(
     short: None,
     aliases: [],
     hidden: false,
+    choices: [],
   })
   { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
 }

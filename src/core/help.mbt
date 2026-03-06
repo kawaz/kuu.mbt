@@ -41,6 +41,7 @@ fn inject_help_node(parser : Parser) -> Unit {
       short: Some('h'),
       aliases: [],
       hidden: false,
+      choices: [],
     },
   )
 }
@@ -144,7 +145,16 @@ fn format_opt_left(meta : OptMeta) -> String {
       buf.write_string(meta.name)
     }
   }
-  if not(meta.value_name.is_empty()) {
+  if meta.choices.length() > 0 {
+    buf.write_string(" <")
+    for i, c in meta.choices {
+      if i > 0 {
+        buf.write_char('|')
+      }
+      buf.write_string(c)
+    }
+    buf.write_char('>')
+  } else if not(meta.value_name.is_empty()) {
     buf.write_string(" <")
     buf.write_string(meta.value_name)
     buf.write_char('>')
