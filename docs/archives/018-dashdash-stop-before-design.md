@@ -123,3 +123,23 @@ mv の例: `mv -f -- -f dest -- f1 f2 d3 dest2`
 
 `--` は POSIX の慣習だが、仕組み上は任意の文字列を指定可能。
 デフォルトは `--`（省略可能な位置パラメータ）。
+
+## 実装状況
+
+### 実装済み
+
+- `Parser::dashdash(separator?="--")` → `Opt[Array[String]]`: セパレータ以降の全 args を収集
+- `Parser::append_dashdash(separator?="--")` → `Opt[Array[Array[String]]]`: セパレータで区切った複数グループを収集
+- `Parser::new(dashdash?=true)` / `cmd(dashdash?=true)`: デフォルトで install_separator_node を初期化時に登録。dashdash()/append_dashdash() を使う場合は `dashdash=false` にする
+- カスタムセパレータ対応
+- append_dashdash の self-stop（自身のセパレータで自動グループ分割）
+
+### 設計のみ（未実装）
+
+- `stop_before` パラメータ: dashdash/append_dashdash/rest への汎用停止条件。現在は append_dashdash が自身のセパレータで自動停止する実装のみ
+- rest の結果を先頭グループとして含む動作: dashdash の commit 時に rest.val() を unshift する設計。現在は rest と dashdash は完全に独立した opt
+- `serial(exact(sep), p_opts)` による positional serial 消費: 現在の dashdash は単純に全残り args を Array に収集する実装
+
+### 設計と実装の差分
+
+設計では dashdash を `serial(exact(sep), p_opts)` の sugar として位置付けているが、実装は positional 管理を介さず直接 args を収集するシンプルな方式。P 終端復帰や positional serial 消費は install_separator_node（デフォルトの POSIX `--` 処理）が担う。ユーザー向けコンビネータは直接的な Array 収集で十分なユースケースをカバーする。
