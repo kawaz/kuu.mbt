@@ -42,6 +42,7 @@ pub(all) struct Parser {
   children : Map[String, ParseResult]
   metas : Array[OptMeta]
   description : Ref[String]
+  post_hooks : Array[() -> Unit raise ParseError]
 }
 
 ///|
@@ -86,6 +87,7 @@ pub(all) struct OptMeta {
   aliases : Array[String]
   hidden : Bool
   choices : Array[String]
+  implicit_value_display : String
 }
 
 ///| A → B の変換ステップ（ParseError を伝搬できる）

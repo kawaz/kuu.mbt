@@ -260,6 +260,10 @@ fn Parser::parse_raw(
     }
   }
   self.parsed.val = true
+  // post hooks: parse 完了後の値変換・遅延バリデーション
+  for hook in self.post_hooks {
+    hook()
+  }
   let kind = if self.children.length() > 0 {
     Map_(self.children)
   } else {
