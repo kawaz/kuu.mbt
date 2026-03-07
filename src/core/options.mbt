@@ -3,6 +3,7 @@ pub fn Parser::flag(
   self : Parser,
   name~ : String,
   default? : Bool = false,
+  default_fn? : (() -> Bool)? = None,
   global? : Bool = false,
   aliases? : Array[String] = [],
   short? : Char = '\u0000',
@@ -22,9 +23,13 @@ pub fn Parser::flag(
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   let id = (self.next_id)()
-  let cell : Ref[Bool] = { val: default }
-  let initial_val = default
-  let pending : Ref[Bool] = { val: default }
+  // default_fn があれば default を上書き
+  let initial_val = match default_fn {
+    Some(f) => f()
+    None => default
+  }
+  let cell : Ref[Bool] = { val: initial_val }
+  let pending : Ref[Bool] = { val: initial_val }
   let was_set : Ref[Bool] = { val: false }
   let reset_fn = fn() { cell.val = initial_val; pending.val = initial_val }
   let positive_match = fn() {
@@ -110,6 +115,7 @@ pub fn Parser::string_opt(
   self : Parser,
   name~ : String,
   default~ : String,
+  default_fn? : (() -> String)? = None,
   global? : Bool = false,
   aliases? : Array[String] = [],
   short? : Char = '\u0000',
@@ -133,8 +139,12 @@ pub fn Parser::string_opt(
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   let id = (self.next_id)()
-  let cell : Ref[String] = { val: default }
-  let initial_val = default
+  // default_fn があれば default を上書き
+  let initial_val = match default_fn {
+    Some(f) => f()
+    None => default
+  }
+  let cell : Ref[String] = { val: initial_val }
   let has_choices = choices.length() > 0
   let has_implicit = match implicit_value {
     Some(_) => true
@@ -224,7 +234,7 @@ pub fn Parser::string_opt(
     )
   } else if has_choices {
     // ケース2: choices only → 既存パス + one_of バリデーション
-    let pending : Ref[String] = { val: default }
+    let pending : Ref[String] = { val: initial_val }
     let reset = fn() { cell.val = initial_val }
     let accum : Accumulator[String, String] = fn(_current, piece) { piece }
     let one_of_pre : FilterChain[String, String] = Filter::one_of(choices)
@@ -249,7 +259,7 @@ pub fn Parser::string_opt(
     )
   } else {
     // ケース4: 既存パス (choices 空 + implicit_value なし)
-    let pending : Ref[String] = { val: default }
+    let pending : Ref[String] = { val: initial_val }
     let reset = fn() { cell.val = initial_val }
     let accum : Accumulator[String, String] = fn(_current, piece) { piece }
     let identity_pre : FilterChain[String, String] = Filter::map(fn(s) { s })
@@ -315,6 +325,7 @@ pub fn Parser::int_opt(
   self : Parser,
   name~ : String,
   default~ : Int,
+  default_fn? : (() -> Int)? = None,
   global? : Bool = false,
   aliases? : Array[String] = [],
   short? : Char = '\u0000',
@@ -336,8 +347,12 @@ pub fn Parser::int_opt(
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   let id = (self.next_id)()
-  let cell : Ref[Int] = { val: default }
-  let initial_val = default
+  // default_fn があれば default を上書き
+  let initial_val = match default_fn {
+    Some(f) => f()
+    None => default
+  }
+  let cell : Ref[Int] = { val: initial_val }
   let has_implicit = match implicit_value {
     Some(_) => true
     None => false
@@ -440,7 +455,7 @@ pub fn Parser::int_opt(
     )
   } else {
     // implicit_value なし: 既存パス
-    let pending : Ref[Int] = { val: default }
+    let pending : Ref[Int] = { val: initial_val }
     let reset = fn() { cell.val = initial_val }
     let accum : Accumulator[Int, Int] = fn(_current, piece) { piece }
     fn make_int_pre(opt_n : String) -> FilterChain[String, Int] {

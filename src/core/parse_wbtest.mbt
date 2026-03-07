@@ -3023,3 +3023,74 @@ test "append_string variation_reset sugar" {
   inspect(includes.get(), content="Some([])") // Reset → empty
   inspect((includes.is_set)(), content="true")
 }
+
+// ============ default_fn tests ============
+
+///|
+test "flag default_fn" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", default_fn=Some(fn() { true }))
+  ignore(p.parse([])) // no args
+  inspect(verbose.get(), content="Some(true)") // default_fn で true
+  inspect((verbose.is_set)(), content="false") // 明示指定なし
+}
+
+///|
+test "flag default_fn overrides default" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", default_fn=Some(fn() { true }))
+  ignore(p.parse(["--verbose"]))
+  // Main = !initial_val = !true = false
+  inspect(verbose.get(), content="Some(false)")
+  inspect((verbose.is_set)(), content="true")
+}
+
+///|
+test "string_opt default_fn" {
+  let p = Parser::new()
+  let color = p.string_opt(
+    name="color",
+    default="auto",
+    default_fn=Some(fn() { "always" }),
+  )
+  ignore(p.parse([])) // no args
+  inspect(
+    color.get(),
+    content=(
+      #|Some("always")
+    ),
+  ) // default_fn が優先
+  inspect((color.is_set)(), content="false")
+}
+
+///|
+test "int_opt default_fn" {
+  let p = Parser::new()
+  let port = p.int_opt(
+    name="port",
+    default=80,
+    default_fn=Some(fn() { 8080 }),
+  )
+  ignore(p.parse([])) // no args
+  inspect(port.get(), content="Some(8080)") // default_fn が優先
+  inspect((port.is_set)(), content="false")
+}
+
+///|
+test "string_opt default_fn with reset variation" {
+  let p = Parser::new()
+  let color = p.string_opt(
+    name="color",
+    default="auto",
+    default_fn=Some(fn() { "always" }),
+    variation_reset=Some("no"),
+  )
+  ignore(p.parse(["--color", "never", "--no-color"]))
+  inspect(
+    color.get(),
+    content=(
+      #|Some("always")
+    ),
+  ) // Reset → default_fn の値に戻る
+  inspect((color.is_set)(), content="true")
+}
