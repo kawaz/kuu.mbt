@@ -100,6 +100,176 @@ fn make_value_node(
 }
 
 ///|
+/// choices の各候補に対する consumed=2 の ExactNode（名前一致 + 値一致でのみ Accept）
+fn make_choice_value_node(
+  opt_name : String,
+  choice : String,
+  cell : Ref[String],
+  committed : Ref[Bool],
+  initial_val : String,
+) -> ExactNode {
+  ExactNode::{
+    name: opt_name,
+    needs_value: true,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != opt_name {
+        return Reject
+      }
+      if pos + 1 >= args.length() || args[pos + 1] != choice {
+        return Reject
+      }
+      Accept(consumed=2, commit=fn() {
+        cell.val = choice
+        committed.val = true
+      })
+    },
+    reset: fn() {
+      cell.val = initial_val
+      committed.val = false
+    },
+  }
+}
+
+///|
+/// consumed=1 の implicit value ノード（名前マッチのみで Accept）
+fn[T] make_implicit_flag_node(
+  name : String,
+  implicit : Initial[T],
+  cell : Ref[T],
+  committed : Ref[Bool],
+  initial_val : T,
+) -> ExactNode {
+  ExactNode::{
+    name,
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != name {
+        return Reject
+      }
+      Accept(consumed=1, commit=fn() {
+        cell.val = implicit.resolve()
+        committed.val = true
+      })
+    },
+    reset: fn() {
+      cell.val = initial_val
+      committed.val = false
+    },
+  }
+}
+
+///| implicit_value 共存時の any-string value node。
+
+///|
+/// 値が無い場合は Error ではなく Reject を返す（implicit node にフォールバックさせるため）
+fn make_soft_value_node(
+  name : String,
+  cell : Ref[String],
+  committed : Ref[Bool],
+  initial_val : String,
+) -> ExactNode {
+  ExactNode::{
+    name,
+    needs_value: true,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != name {
+        return Reject
+      }
+      if pos + 1 >= args.length() {
+        return Reject // Error ではなく Reject（implicit にフォールバック）
+      }
+      let val = args[pos + 1]
+      // 次の引数が -- で始まる場合もReject（implicit にフォールバック）
+      // "-foo" や "-123" のような合法な値は通す
+      if val.has_prefix("--") {
+        return Reject
+      }
+      Accept(consumed=2, commit=fn() {
+        cell.val = val
+        committed.val = true
+      })
+    },
+    reset: fn() {
+      cell.val = initial_val
+      committed.val = false
+    },
+  }
+}
+
+///|
+/// consumed=0 の default fallback ノード（finalize パスで commit）
+fn[T] make_default_fallback_node(
+  default_val : T,
+  cell : Ref[T],
+  committed : Ref[Bool],
+  initial_val : T,
+) -> ExactNode {
+  ExactNode::{
+    name: "",
+    needs_value: false,
+    try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult {
+      if committed.val {
+        return Reject
+      }
+      Accept(consumed=0, commit=fn() { cell.val = default_val })
+    },
+    reset: fn() {
+      cell.val = initial_val
+      committed.val = false
+    },
+  }
+}
+
+///|
+/// 複数の子 ExactNode の最長一致で Accept を返すコンポジットノード
+fn make_or_node(
+  name : String,
+  needs_value : Bool,
+  children : Array[ExactNode],
+) -> ExactNode {
+  ExactNode::{
+    name,
+    needs_value,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      let mut best_consumed = 0
+      let mut best_commit : (() -> Unit)? = None
+      let mut ambiguous = false
+      for child in children {
+        match (child.try_reduce)(args, pos) {
+          Accept(consumed~, commit~) =>
+            if consumed > best_consumed {
+              best_consumed = consumed
+              best_commit = Some(commit)
+              ambiguous = false
+            } else if consumed == best_consumed && consumed > 0 {
+              ambiguous = true
+            }
+          Error(e) => return Error(e)
+          Reject => ()
+        }
+      }
+      if ambiguous {
+        return Error(
+          parse_error(
+            "ambiguous argument: " +
+            (if pos < args.length() { args[pos] } else { "" }),
+          ),
+        )
+      }
+      match best_commit {
+        Some(commit) => Accept(consumed=best_consumed, commit~)
+        None => Reject
+      }
+    },
+    reset: fn() {
+      for child in children {
+        (child.reset)()
+      }
+    },
+  }
+}
+
+///|
 fn Parser::register_option(
   self : Parser,
   node : ExactNode,
@@ -187,7 +357,11 @@ pub fn Parser::flag(
     value_name: "",
     default_display: "",
     global,
-    short: if short != '\u0000' { Some(short) } else { None },
+    short: if short != '\u0000' {
+      Some(short)
+    } else {
+      None
+    },
     aliases,
     hidden,
   })
@@ -215,34 +389,201 @@ pub fn Parser::string_opt(
   value_name? : String = "",
   hidden? : Bool = false,
   post? : FilterChain[String, String]? = None,
+  choices? : Array[String] = [],
+  implicit_value? : Initial[String]? = None,
 ) -> Opt[String] {
   let id = (self.next_id)()
   let cell : Ref[String] = { val: default }
   let initial_val = default
-  let pending : Ref[String] = { val: default }
-  let reset = fn() { cell.val = initial_val }
-  let accum : Accumulator[String, String] = fn(_current, piece) { piece }
-  let identity_pre : FilterChain[String, String] = Filter::map(fn(s) { s })
-  let reducer = make_reducer(identity_pre, accum, initial_val)
   let opt_name = "--" + name
-  let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
-  let no_node = make_reduced_negate_node("--no-" + name, reducer, cell, pending, reset)
-  self.register_option(node, no_node, global)
-  for alt in aliases {
-    let alt_opt_name = "--" + alt
-    let alt_node = make_reduced_value_node(alt_opt_name, reducer, cell, pending, reset)
-    let alt_no_node = make_reduced_negate_node("--no-" + alt, reducer, cell, pending, reset)
-    self.register_option(alt_node, alt_no_node, global)
+  let has_choices = choices.length() > 0
+  let has_implicit = match implicit_value {
+    Some(_) => true
+    None => false
   }
-  if short != '\u0000' {
-    let short_name = "-" + short.to_string()
-    let short_node = make_reduced_value_node(short_name, reducer, cell, pending, reset)
-    self.nodes.push(short_node)
-    if global {
-      self.global_nodes.push(short_node)
+  // ケース1,3: choices+implicit or implicit only → committed ベースの展開
+  // ケース2: choices only → reducer + one_of バリデーション
+  // ケース4: 既存パス (neither)
+  if has_implicit {
+    // ケース1 or ケース3: committed ベース
+    let committed : Ref[Bool] = { val: false }
+    let iv = match implicit_value {
+      Some(v) => v
+      None => Val(default) // unreachable だが型システムのため
+    }
+    // ノード登録用ヘルパー（長オプション名ごとに composite node を作って push）
+    // is_main: メインの opt_name の場合 true（default fallback を含める）
+    fn register_long(opt_n : String, is_main : Bool) {
+      let children : Array[ExactNode] = []
+      if has_choices {
+        for choice in choices {
+          children.push(
+            make_choice_value_node(opt_n, choice, cell, committed, initial_val),
+          )
+        }
+      } else {
+        children.push(make_soft_value_node(opt_n, cell, committed, initial_val))
+      }
+      children.push(
+        make_implicit_flag_node(opt_n, iv, cell, committed, initial_val),
+      )
+      if is_main {
+        children.push(
+          make_default_fallback_node(default, cell, committed, initial_val),
+        )
+      }
+      let composite = make_or_node(opt_n, true, children)
+      self.nodes.push(composite)
+      if global {
+        self.global_nodes.push(composite)
+      }
+      // negate node: --no-{name} は composite の外（名前が異なるため）
+      let no_name = if opt_n.has_prefix("--") {
+        "--no-" + opt_n.unsafe_substring(start=2, end=opt_n.length())
+      } else {
+        "--no-" + opt_n
+      }
+      let no_node = make_flag_node(
+        no_name,
+        fn() {
+          fn() {
+            cell.val = initial_val
+            committed.val = true
+          }
+        },
+        fn() {
+          cell.val = initial_val
+          committed.val = false
+        },
+      )
+      self.nodes.push(no_node)
+      if global {
+        self.global_nodes.push(no_node)
+      }
+    }
+
+    // メインの opt_name（default fallback を含む）
+    register_long(opt_name, true)
+    // aliases（default fallback は含めない）
+    for alt in aliases {
+      register_long("--" + alt, false)
+    }
+    // short option: 個別ノードをそのまま登録（composite にしない）
+    if short != '\u0000' {
+      let short_name = "-" + short.to_string()
+      if has_choices {
+        for choice in choices {
+          let node = make_choice_value_node(
+            short_name, choice, cell, committed, initial_val,
+          )
+          self.nodes.push(node)
+          if global {
+            self.global_nodes.push(node)
+          }
+        }
+      } else {
+        let node = make_soft_value_node(
+          short_name, cell, committed, initial_val,
+        )
+        self.nodes.push(node)
+        if global {
+          self.global_nodes.push(node)
+        }
+      }
+      let imp_node = make_implicit_flag_node(
+        short_name, iv, cell, committed, initial_val,
+      )
+      self.nodes.push(imp_node)
+      if global {
+        self.global_nodes.push(imp_node)
+      }
+    }
+  } else if has_choices {
+    // ケース2: choices only → 既存パス + one_of バリデーション
+    let pending : Ref[String] = { val: default }
+    let reset = fn() { cell.val = initial_val }
+    let accum : Accumulator[String, String] = fn(_current, piece) { piece }
+    let one_of_pre : FilterChain[String, String] = Filter::one_of(choices)
+    let reducer = make_reducer(one_of_pre, accum, initial_val)
+    let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
+    let no_node = make_reduced_negate_node(
+      "--no-" + name,
+      reducer,
+      cell,
+      pending,
+      reset,
+    )
+    self.register_option(node, no_node, global)
+    for alt in aliases {
+      let alt_opt_name = "--" + alt
+      let alt_node = make_reduced_value_node(
+        alt_opt_name, reducer, cell, pending, reset,
+      )
+      let alt_no_node = make_reduced_negate_node(
+        "--no-" + alt,
+        reducer,
+        cell,
+        pending,
+        reset,
+      )
+      self.register_option(alt_node, alt_no_node, global)
+    }
+    if short != '\u0000' {
+      let short_name = "-" + short.to_string()
+      let short_node = make_reduced_value_node(
+        short_name, reducer, cell, pending, reset,
+      )
+      self.nodes.push(short_node)
+      if global {
+        self.global_nodes.push(short_node)
+      }
+    }
+  } else {
+    // ケース4: 既存パス (choices 空 + implicit_value なし)
+    let pending : Ref[String] = { val: default }
+    let reset = fn() { cell.val = initial_val }
+    let accum : Accumulator[String, String] = fn(_current, piece) { piece }
+    let identity_pre : FilterChain[String, String] = Filter::map(fn(s) { s })
+    let reducer = make_reducer(identity_pre, accum, initial_val)
+    let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
+    let no_node = make_reduced_negate_node(
+      "--no-" + name,
+      reducer,
+      cell,
+      pending,
+      reset,
+    )
+    self.register_option(node, no_node, global)
+    for alt in aliases {
+      let alt_opt_name = "--" + alt
+      let alt_node = make_reduced_value_node(
+        alt_opt_name, reducer, cell, pending, reset,
+      )
+      let alt_no_node = make_reduced_negate_node(
+        "--no-" + alt,
+        reducer,
+        cell,
+        pending,
+        reset,
+      )
+      self.register_option(alt_node, alt_no_node, global)
+    }
+    if short != '\u0000' {
+      let short_name = "-" + short.to_string()
+      let short_node = make_reduced_value_node(
+        short_name, reducer, cell, pending, reset,
+      )
+      self.nodes.push(short_node)
+      if global {
+        self.global_nodes.push(short_node)
+      }
     }
   }
-  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  let display_value_name = if value_name == "" {
+    to_upper(name)
+  } else {
+    value_name
+  }
   let display_default = if default == "" { "" } else { default }
   self.metas.push(OptMeta::{
     kind: ValueOpt,
@@ -251,7 +592,11 @@ pub fn Parser::string_opt(
     value_name: display_value_name,
     default_display: display_default,
     global,
-    short: if short != '\u0000' { Some(short) } else { None },
+    short: if short != '\u0000' {
+      Some(short)
+    } else {
+      None
+    },
     aliases,
     hidden,
   })
@@ -265,7 +610,8 @@ pub fn Parser::string_opt(
   { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
 }
 
-///| reducer を ExactNode (値を受け取る) に変換するアダプタ
+///|
+/// reducer を ExactNode (値を受け取る) に変換するアダプタ
 fn[T] make_reduced_value_node(
   name : String,
   reducer : (ReduceCtx[T]) -> T? raise ParseError,
@@ -273,18 +619,27 @@ fn[T] make_reduced_value_node(
   pending : Ref[T],
   reset : () -> Unit,
 ) -> ExactNode {
-  make_value_node(name, fn(s) {
-    let ctx : ReduceCtx[T] = { current: cell.val, action: Value(Some(s)) }
-    let r : Result[T?, ParseError] = try? reducer(ctx)
-    match r {
-      Ok(Some(v)) => { pending.val = v; Ok(fn() { cell.val = pending.val }) }
-      Ok(None) => Err(parse_error("unexpected: reducer returned None for Value"))
-      Err(e) => Err(e)
-    }
-  }, reset)
+  make_value_node(
+    name,
+    fn(s) {
+      let ctx : ReduceCtx[T] = { current: cell.val, action: Value(Some(s)) }
+      let r : Result[T?, ParseError] = try? reducer(ctx)
+      match r {
+        Ok(Some(v)) => {
+          pending.val = v
+          Ok(fn() { cell.val = pending.val })
+        }
+        Ok(None) =>
+          Err(parse_error("unexpected: reducer returned None for Value"))
+        Err(e) => Err(e)
+      }
+    },
+    reset,
+  )
 }
 
-///| reducer を ExactNode (negate) に変換するアダプタ
+///|
+/// reducer を ExactNode (negate) に変換するアダプタ
 fn[T] make_reduced_negate_node(
   name : String,
   reducer : (ReduceCtx[T]) -> T? raise ParseError,
@@ -295,14 +650,21 @@ fn[T] make_reduced_negate_node(
   // make_flag_node は commit を返す () -> () -> Unit 型だが、
   // reducer は raise ParseError を含むため直接 ExactNode を構築する
   ExactNode::{
-    name, needs_value: false,
+    name,
+    needs_value: false,
     try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() || args[pos] != name { return Reject }
+      if pos >= args.length() || args[pos] != name {
+        return Reject
+      }
       let ctx : ReduceCtx[T] = { current: cell.val, action: Negate }
       let r : Result[T?, ParseError] = try? reducer(ctx)
       match r {
-        Ok(Some(v)) => { pending.val = v; Accept(consumed=1, commit=fn() { cell.val = pending.val }) }
-        Ok(None) => Error(parse_error("unexpected: negate reducer failed for " + name))
+        Ok(Some(v)) => {
+          pending.val = v
+          Accept(consumed=1, commit=fn() { cell.val = pending.val })
+        }
+        Ok(None) =>
+          Error(parse_error("unexpected: negate reducer failed for " + name))
         Err(e) => Error(e)
       }
     },
@@ -321,45 +683,192 @@ pub fn Parser::int_opt(
   description? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
+  implicit_value? : Initial[Int]? = None,
 ) -> Opt[Int] {
   let id = (self.next_id)()
   let cell : Ref[Int] = { val: default }
   let initial_val = default
-  let pending : Ref[Int] = { val: default }
-  let reset = fn() { cell.val = initial_val }
-  let accum : Accumulator[Int, Int] = fn(_current, piece) { piece }
-  // オプション名を含むエラーメッセージ用の FilterChain を生成するヘルパー
-  fn make_int_pre(opt_name : String) -> FilterChain[String, Int] {
-    Filter::parse(fn(s) raise ParseError {
-      let r : Result[Int, _] = try? @strconv.parse_int(s.view())
-      match r {
-        Ok(v) => v
-        Err(_) => raise parse_error("invalid integer value for " + opt_name + ": " + s)
-      }
-    })
-  }
   let opt_name = "--" + name
-  let reducer = make_reducer(make_int_pre(opt_name), accum, initial_val)
-  let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
-  let no_node = make_reduced_negate_node("--no-" + name, reducer, cell, pending, reset)
-  self.register_option(node, no_node, global)
-  for alt in aliases {
-    let alt_opt_name = "--" + alt
-    let alt_reducer = make_reducer(make_int_pre(alt_opt_name), accum, initial_val)
-    let alt_node = make_reduced_value_node(alt_opt_name, alt_reducer, cell, pending, reset)
-    let alt_no_node = make_reduced_negate_node("--no-" + alt, alt_reducer, cell, pending, reset)
-    self.register_option(alt_node, alt_no_node, global)
+  let has_implicit = match implicit_value {
+    Some(_) => true
+    None => false
   }
-  if short != '\u0000' {
-    let short_name = "-" + short.to_string()
-    let short_reducer = make_reducer(make_int_pre(short_name), accum, initial_val)
-    let short_node = make_reduced_value_node(short_name, short_reducer, cell, pending, reset)
-    self.nodes.push(short_node)
-    if global {
-      self.global_nodes.push(short_node)
+  if has_implicit {
+    // implicit_value あり: committed ベースの展開
+    let committed : Ref[Bool] = { val: false }
+    let iv = match implicit_value {
+      Some(v) => v
+      None => Val(default) // unreachable
+    }
+    // int パースを試み、失敗時は Reject を返す soft value node
+    fn make_soft_int_value_node(
+      opt_n : String,
+      cell : Ref[Int],
+      committed : Ref[Bool],
+      initial_val : Int,
+    ) -> ExactNode {
+      ExactNode::{
+        name: opt_n,
+        needs_value: true,
+        try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+          if pos >= args.length() || args[pos] != opt_n {
+            return Reject
+          }
+          if pos + 1 >= args.length() {
+            return Reject
+          }
+          let s = args[pos + 1]
+          let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+          match r {
+            Ok(v) =>
+              Accept(consumed=2, commit=fn() {
+                cell.val = v
+                committed.val = true
+              })
+            Err(_) => Reject // int パース失敗 → Reject（implicit にフォールバック）
+          }
+        },
+        reset: fn() {
+          cell.val = initial_val
+          committed.val = false
+        },
+      }
+    }
+
+    // is_main: メインの opt_name の場合 true（default fallback を含める）
+    fn register_long_int(opt_n : String, is_main : Bool) {
+      let children : Array[ExactNode] = []
+      children.push(
+        make_soft_int_value_node(opt_n, cell, committed, initial_val),
+      )
+      children.push(
+        make_implicit_flag_node(opt_n, iv, cell, committed, initial_val),
+      )
+      if is_main {
+        children.push(
+          make_default_fallback_node(default, cell, committed, initial_val),
+        )
+      }
+      let composite = make_or_node(opt_n, true, children)
+      self.nodes.push(composite)
+      if global {
+        self.global_nodes.push(composite)
+      }
+      // negate node: composite の外
+      let no_name = if opt_n.has_prefix("--") {
+        "--no-" + opt_n.unsafe_substring(start=2, end=opt_n.length())
+      } else {
+        "--no-" + opt_n
+      }
+      let no_node = make_flag_node(
+        no_name,
+        fn() {
+          fn() {
+            cell.val = initial_val
+            committed.val = true
+          }
+        },
+        fn() {
+          cell.val = initial_val
+          committed.val = false
+        },
+      )
+      self.nodes.push(no_node)
+      if global {
+        self.global_nodes.push(no_node)
+      }
+    }
+
+    register_long_int(opt_name, true)
+    for alt in aliases {
+      register_long_int("--" + alt, false)
+    }
+    // short option: 個別ノードをそのまま登録（composite にしない）
+    if short != '\u0000' {
+      let short_name = "-" + short.to_string()
+      let node = make_soft_int_value_node(
+        short_name, cell, committed, initial_val,
+      )
+      self.nodes.push(node)
+      if global {
+        self.global_nodes.push(node)
+      }
+      let imp_node = make_implicit_flag_node(
+        short_name, iv, cell, committed, initial_val,
+      )
+      self.nodes.push(imp_node)
+      if global {
+        self.global_nodes.push(imp_node)
+      }
+    }
+  } else {
+    // implicit_value なし: 既存パス
+    let pending : Ref[Int] = { val: default }
+    let reset = fn() { cell.val = initial_val }
+    let accum : Accumulator[Int, Int] = fn(_current, piece) { piece }
+    fn make_int_pre(opt_name : String) -> FilterChain[String, Int] {
+      Filter::parse(fn(s) raise ParseError {
+        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+        match r {
+          Ok(v) => v
+          Err(_) =>
+            raise parse_error(
+              "invalid integer value for " + opt_name + ": " + s,
+            )
+        }
+      })
+    }
+
+    let reducer = make_reducer(make_int_pre(opt_name), accum, initial_val)
+    let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
+    let no_node = make_reduced_negate_node(
+      "--no-" + name,
+      reducer,
+      cell,
+      pending,
+      reset,
+    )
+    self.register_option(node, no_node, global)
+    for alt in aliases {
+      let alt_opt_name = "--" + alt
+      let alt_reducer = make_reducer(
+        make_int_pre(alt_opt_name),
+        accum,
+        initial_val,
+      )
+      let alt_node = make_reduced_value_node(
+        alt_opt_name, alt_reducer, cell, pending, reset,
+      )
+      let alt_no_node = make_reduced_negate_node(
+        "--no-" + alt,
+        alt_reducer,
+        cell,
+        pending,
+        reset,
+      )
+      self.register_option(alt_node, alt_no_node, global)
+    }
+    if short != '\u0000' {
+      let short_name = "-" + short.to_string()
+      let short_reducer = make_reducer(
+        make_int_pre(short_name),
+        accum,
+        initial_val,
+      )
+      let short_node = make_reduced_value_node(
+        short_name, short_reducer, cell, pending, reset,
+      )
+      self.nodes.push(short_node)
+      if global {
+        self.global_nodes.push(short_node)
+      }
     }
   }
-  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  let display_value_name = if value_name == "" {
+    to_upper(name)
+  } else {
+    value_name
+  }
   let display_default = if default == 0 { "" } else { default.to_string() }
   self.metas.push(OptMeta::{
     kind: ValueOpt,
@@ -368,7 +877,11 @@ pub fn Parser::int_opt(
     value_name: display_value_name,
     default_display: display_default,
     global,
-    short: if short != '\u0000' { Some(short) } else { None },
+    short: if short != '\u0000' {
+      Some(short)
+    } else {
+      None
+    },
     aliases,
     hidden,
   })
@@ -424,7 +937,11 @@ pub fn Parser::append_string(
       self.global_nodes.push(short_node)
     }
   }
-  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  let display_value_name = if value_name == "" {
+    to_upper(name)
+  } else {
+    value_name
+  }
   self.metas.push(OptMeta::{
     kind: ValueOpt,
     name,
@@ -432,7 +949,11 @@ pub fn Parser::append_string(
     value_name: display_value_name,
     default_display: "",
     global,
-    short: if short != '\u0000' { Some(short) } else { None },
+    short: if short != '\u0000' {
+      Some(short)
+    } else {
+      None
+    },
     aliases,
     hidden,
   })
@@ -520,7 +1041,11 @@ pub fn Parser::append_int(
       self.global_nodes.push(short_node)
     }
   }
-  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  let display_value_name = if value_name == "" {
+    to_upper(name)
+  } else {
+    value_name
+  }
   self.metas.push(OptMeta::{
     kind: ValueOpt,
     name,
@@ -528,7 +1053,11 @@ pub fn Parser::append_int(
     value_name: display_value_name,
     default_display: "",
     global,
-    short: if short != '\u0000' { Some(short) } else { None },
+    short: if short != '\u0000' {
+      Some(short)
+    } else {
+      None
+    },
     aliases,
     hidden,
   })
@@ -612,7 +1141,11 @@ pub fn Parser::count(
     value_name: "",
     default_display: "",
     global,
-    short: if short != '\u0000' { Some(short) } else { None },
+    short: if short != '\u0000' {
+      Some(short)
+    } else {
+      None
+    },
     aliases,
     hidden,
   })
@@ -620,7 +1153,11 @@ pub fn Parser::count(
 }
 
 ///|
-pub fn Parser::positional(self : Parser, name~ : String, description? : String = "") -> Opt[String] {
+pub fn Parser::positional(
+  self : Parser,
+  name~ : String,
+  description? : String = "",
+) -> Opt[String] {
   let id = (self.next_id)()
   let cell : Ref[String] = { val: "" }
   let pending : Ref[String] = { val: "" }
@@ -654,7 +1191,11 @@ pub fn Parser::positional(self : Parser, name~ : String, description? : String =
 }
 
 ///|
-pub fn Parser::rest(self : Parser, name~ : String, description? : String = "") -> Opt[Array[String]] {
+pub fn Parser::rest(
+  self : Parser,
+  name~ : String,
+  description? : String = "",
+) -> Opt[Array[String]] {
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
   ignore(name)
@@ -726,16 +1267,15 @@ pub fn Parser::cmd(
         Reject
       } else if args[pos] == cmd_name {
         let rest_args = Array::from_iter(args.view(start=pos + 1).iter())
-        let parse_result : Result[ParseResult, ParseError] = try? child.parse(rest_args)
+        let parse_result : Result[ParseResult, ParseError] = try? child.parse(
+          rest_args,
+        )
         match parse_result {
           Ok(child_result) =>
-            Accept(
-              consumed=args.length() - pos,
-              commit=fn() {
-                cell.val = true
-                self.children.set(cmd_name, child_result)
-              },
-            )
+            Accept(consumed=args.length() - pos, commit=fn() {
+              cell.val = true
+              self.children.set(cmd_name, child_result)
+            })
           Err(e) => Error(e)
         }
       } else {
@@ -781,14 +1321,11 @@ pub fn Parser::dashdash(
         collected.push(args[p])
         p += 1
       }
-      Accept(
-        consumed=p - pos,
-        commit=fn() {
-          for v in collected {
-            cell.val.push(v)
-          }
-        },
-      )
+      Accept(consumed=p - pos, commit=fn() {
+        for v in collected {
+          cell.val.push(v)
+        }
+      })
     },
     reset: fn() { cell.val = [] },
   }
@@ -820,10 +1357,7 @@ pub fn Parser::append_dashdash(
         group.push(args[p])
         p += 1
       }
-      Accept(
-        consumed=p - pos,
-        commit=fn() { cell.val.push(group) },
-      )
+      Accept(consumed=p - pos, commit=fn() { cell.val.push(group) })
     },
     reset: fn() { cell.val = [] },
   }

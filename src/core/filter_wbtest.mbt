@@ -74,9 +74,9 @@ test "then composition — trim then parse_int" {
 
 ///|
 test "then type chain — trim then split then each(parse_int)" {
-  let chain = Filter::trim().then(Filter::split(",")).then(
-    Filter::each(Filter::parse_int()),
-  )
+  let chain = Filter::trim()
+    .then(Filter::split(","))
+    .then(Filter::each(Filter::parse_int()))
   let result : Result[Array[Int], _] = try? (chain.run)(" 1,2,3 ")
   match result {
     Ok(v) => inspect(v, content="[1, 2, 3]")
@@ -233,7 +233,8 @@ test "to_lower — converts to lowercase" {
 ///|
 test "make_reducer — Value(Some(s)) applies pre and accumulates" {
   let pre = Filter::trim().then(Filter::parse_int())
-  let accum : Accumulator[Int, Int] = ((fn(cur, piece) { cur + piece }) : Accumulator[_, _])
+  let accum : Accumulator[Int, Int] = (
+    fn(cur, piece) { cur + piece } : Accumulator[_, _])
   let reducer = make_reducer(pre, accum, 0)
   let ctx = ReduceCtx::{ current: 10, action: Value(Some("  5  ")) }
   let result : Result[Int?, _] = try? reducer(ctx)
@@ -246,7 +247,8 @@ test "make_reducer — Value(Some(s)) applies pre and accumulates" {
 ///|
 test "make_reducer — Negate returns initial value" {
   let pre = Filter::parse_int()
-  let accum : Accumulator[Int, Int] = ((fn(cur, piece) { cur + piece }) : Accumulator[_, _])
+  let accum : Accumulator[Int, Int] = (
+    fn(cur, piece) { cur + piece } : Accumulator[_, _])
   let reducer = make_reducer(pre, accum, 0)
   let ctx = ReduceCtx::{ current: 42, action: Negate }
   let result : Result[Int?, _] = try? reducer(ctx)
@@ -259,7 +261,8 @@ test "make_reducer — Negate returns initial value" {
 ///|
 test "make_reducer — Value(None) returns None" {
   let pre = Filter::parse_int()
-  let accum : Accumulator[Int, Int] = ((fn(cur, piece) { cur + piece }) : Accumulator[_, _])
+  let accum : Accumulator[Int, Int] = (
+    fn(cur, piece) { cur + piece } : Accumulator[_, _])
   let reducer = make_reducer(pre, accum, 0)
   let ctx = ReduceCtx::{ current: 10, action: Value(None) }
   let result : Result[Int?, _] = try? reducer(ctx)
@@ -272,7 +275,8 @@ test "make_reducer — Value(None) returns None" {
 ///|
 test "make_reducer — pre error propagation" {
   let pre = Filter::parse_int()
-  let accum : Accumulator[Int, Int] = ((fn(cur, piece) { cur + piece }) : Accumulator[_, _])
+  let accum : Accumulator[Int, Int] = (
+    fn(cur, piece) { cur + piece } : Accumulator[_, _])
   let reducer = make_reducer(pre, accum, 0)
   let ctx = ReduceCtx::{ current: 10, action: Value(Some("not_a_number")) }
   let result : Result[Int?, _] = try? reducer(ctx)
@@ -281,10 +285,11 @@ test "make_reducer — pre error propagation" {
 
 ///|
 test "make_reducer — FilterChain composition: trim.then(parse_int).then(in_range)" {
-  let pre = Filter::trim().then(Filter::parse_int()).then(
-    Filter::in_range(1, 65535),
-  )
-  let accum : Accumulator[Int, Int] = ((fn(_cur, piece) { piece }) : Accumulator[_, _])
+  let pre = Filter::trim()
+    .then(Filter::parse_int())
+    .then(Filter::in_range(1, 65535))
+  let accum : Accumulator[Int, Int] = (
+    fn(_cur, piece) { piece } : Accumulator[_, _])
   let reducer = make_reducer(pre, accum, 0)
   // Valid value in range
   let ctx1 = ReduceCtx::{ current: 0, action: Value(Some("  8080  ")) }

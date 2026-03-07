@@ -30,19 +30,17 @@ fn inject_help_node(parser : Parser) -> Unit {
   }
   parser.nodes.push(help_node)
   parser.nodes.push(short_help_node)
-  parser.metas.push(
-    OptMeta::{
-      kind: Flag,
-      name: "help",
-      help: "Print help",
-      value_name: "",
-      default_display: "",
-      global: false,
-      short: Some('h'),
-      aliases: [],
-      hidden: false,
-    },
-  )
+  parser.metas.push(OptMeta::{
+    kind: Flag,
+    name: "help",
+    help: "Print help",
+    value_name: "",
+    default_display: "",
+    global: false,
+    short: Some('h'),
+    aliases: [],
+    hidden: false,
+  })
 }
 
 ///|
@@ -66,16 +64,15 @@ pub fn Parser::generate_help(self : Parser) -> String {
     match meta.kind {
       Command => commands.push(meta)
       Positional | Rest => continue
-      _ =>
-        if meta.global {
-          globals.push(meta)
-        } else {
-          options.push(meta)
-        }
+      _ => if meta.global { globals.push(meta) } else { options.push(meta) }
     }
   }
   // Helper: compute left column for a command entry
-  let need_sections = (commands.length() > 0, options.length() > 0, globals.length() > 0)
+  let need_sections = (
+    commands.length() > 0,
+    options.length() > 0,
+    globals.length() > 0,
+  )
   let is_first_section : Ref[Bool] = { val: true }
   // Commands section
   if commands.length() > 0 {

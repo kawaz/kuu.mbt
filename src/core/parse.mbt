@@ -1,4 +1,5 @@
-///| self.nodes から --name=value 形式を処理する ExactNode を構築して追加
+///|
+/// self.nodes から --name=value 形式を処理する ExactNode を構築して追加
 fn Parser::install_eq_split_node(self : Parser) -> Unit {
   // needs_value=true かつ name が "--" で始まるノードを収集
   let value_nodes : Array[ExactNode] = []
@@ -35,7 +36,10 @@ fn Parser::install_eq_split_node(self : Parser) -> Unit {
       for node in value_nodes {
         match (node.try_reduce)([name, value], 0) {
           Accept(consumed~, commit~) =>
-            if consumed > best_consumed {
+            // eq-split は [name, value] (長さ2) で try_reduce を呼ぶ。
+            // composite node が implicit (consumed=1) を返した場合、
+            // 値が消費されていないので無視すべき。
+            if consumed >= 2 && consumed > best_consumed {
               best_consumed = consumed
               best_commit = Some(commit)
               ambiguous = false
@@ -54,26 +58,33 @@ fn Parser::install_eq_split_node(self : Parser) -> Unit {
         None => Reject
       }
     },
-    reset: fn() {},
+    reset: fn() {  },
   }
   self.nodes.push(eq_node)
 }
 
-///| self.nodes から short option ノードを収集し、結合ノードを構築して self.nodes に追加
+///|
+/// self.nodes から short option ノードを収集し、結合ノードを構築して self.nodes に追加
 fn Parser::install_short_combine_node(self : Parser) -> Unit {
   let short_nodes : Array[ExactNode] = []
   for node in self.nodes {
-    if node.name.length() == 2 && node.name.has_prefix("-") && not(node.name.has_prefix("--")) {
+    if node.name.length() == 2 &&
+      node.name.has_prefix("-") &&
+      not(node.name.has_prefix("--")) {
       short_nodes.push(node)
     }
   }
-  if short_nodes.is_empty() { return }
+  if short_nodes.is_empty() {
+    return
+  }
 
   let combine_node = ExactNode::{
     name: "",
     needs_value: false,
     try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() { return Reject }
+      if pos >= args.length() {
+        return Reject
+      }
       let arg = args[pos]
       if arg.length() <= 2 || not(arg.has_prefix("-")) || arg.has_prefix("--") {
         return Reject
@@ -87,74 +98,133 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
         let ch = rest[ri].to_int().unsafe_to_char()
         let short_name = "-" + ch.to_string()
 
-        let mut found : ExactNode? = None
+        // 同一 short 名の全ノードを収集
+        let matching : Array[ExactNode] = []
         for sn in short_nodes {
-          if sn.name == short_name { found = Some(sn); break }
+          if sn.name == short_name {
+            matching.push(sn)
+          }
         }
-        match found {
-          None => return Reject
-          Some(node) => {
-            // Step 1: フラグとして試行
-            match (node.try_reduce)([short_name], 0) {
-              Accept(commit~, ..) => { commits.push(commit); ri += 1; continue }
-              Error(_) | Reject => ()
-            }
+        if matching.is_empty() {
+          return Reject
+        }
 
-            // Step 2: 値を取るオプションとして試行
-            let remaining = rest.unsafe_substring(start=ri + 1, end=rest.length())
+        let remaining = rest.unsafe_substring(start=ri + 1, end=rest.length())
 
-            if remaining.length() > 0 {
-              let mut value_accepted = false
-              let mut try_len = remaining.length()
-              while try_len > 0 {
-                let try_value = remaining.unsafe_substring(start=0, end=try_len)
-                match (node.try_reduce)([short_name, try_value], 0) {
-                  Accept(commit~, ..) => {
+        if remaining.length() > 0 {
+          // remaining がある場合: まず value trial を needs_value=true のノードのみで試す
+          let mut value_accepted = false
+          let mut try_len = remaining.length()
+          while try_len > 0 {
+            let try_value = remaining.unsafe_substring(start=0, end=try_len)
+            let mut found_accept = false
+            let mut found_error : ParseError? = None
+            for node in matching {
+              // needs_value=false のノード（flag/implicit）は value trial で呼ばない
+              // try_reduce の副作用（count の pending 増加等）を防ぐため
+              if not(node.needs_value) {
+                continue
+              }
+              match (node.try_reduce)([short_name, try_value], 0) {
+                Accept(consumed~, commit~) =>
+                  if consumed >= 2 {
                     commits.push(commit)
                     ri = ri + 1 + try_len
                     value_accepted = true
+                    found_accept = true
                     break
                   }
-                  Error(_) =>
-                    if try_len > 1 { try_len -= 1 }
-                    else {
-                      match (node.try_reduce)([short_name, remaining], 0) {
-                        Error(e) => return Error(e)
-                        _ => return Reject
-                      }
-                    }
-                  _ => return Reject
-                }
+                Error(e) => found_error = Some(e)
+                _ => ()
               }
-              if not(value_accepted) { return Reject }
+            }
+            if found_accept {
+              break
+            }
+            if try_len > 1 {
+              try_len -= 1
             } else {
-              if pos + 1 < args.length() {
+              match found_error {
+                Some(e) => return Error(e)
+                None => () // value trial 全 Reject → flag trial へ
+              }
+              break
+            }
+          }
+          if not(value_accepted) {
+            // value trial 全失敗 → flag trial を全ノードで試す
+            let mut flag_accepted = false
+            for node in matching {
+              match (node.try_reduce)([short_name], 0) {
+                Accept(commit~, ..) => {
+                  commits.push(commit)
+                  ri += 1
+                  flag_accepted = true
+                  break
+                }
+                Error(_) | Reject => ()
+              }
+            }
+            if not(flag_accepted) {
+              return Reject
+            }
+          }
+        } else {
+          // remaining なし: flag trial を全ノードで試す
+          let mut flag_accepted = false
+          for node in matching {
+            match (node.try_reduce)([short_name], 0) {
+              Accept(commit~, ..) => {
+                commits.push(commit)
+                ri += 1
+                flag_accepted = true
+                break
+              }
+              Error(_) | Reject => ()
+            }
+          }
+          if not(flag_accepted) {
+            // flag trial 全失敗 → 次の外引数で value trial
+            if pos + 1 < args.length() {
+              let mut ext_accepted = false
+              for node in matching {
                 match (node.try_reduce)([short_name, args[pos + 1]], 0) {
                   Accept(commit~, ..) => {
                     commits.push(commit)
                     total_consumed = 2
                     ri = rest.length()
+                    ext_accepted = true
+                    break
                   }
                   Error(e) => return Error(e)
-                  _ => return Reject
+                  Reject => ()
                 }
-              } else {
+              }
+              if not(ext_accepted) {
                 return Error(parse_error("missing value for " + short_name))
               }
+            } else {
+              return Error(parse_error("missing value for " + short_name))
             }
           }
         }
       }
 
-      Accept(consumed=total_consumed, commit=fn() { for c in commits { c() } })
+      Accept(consumed=total_consumed, commit=fn() {
+        for c in commits {
+          c()
+        }
+      })
     },
-    reset: fn() {},
+    reset: fn() {  },
   }
   self.nodes.push(combine_node)
 }
 
 ///| `--` セパレータを greedy な ExactNode として構築し self.nodes に追加。
-///| `--` を検出したら残りの args を positionals で serial に消費する。
+
+///|
+/// `--` を検出したら残りの args を positionals で serial に消費する。
 fn Parser::install_separator_node(self : Parser) -> Unit {
   let positionals = self.positionals
   let current_positional = self.current_positional
@@ -189,17 +259,14 @@ fn Parser::install_separator_node(self : Parser) -> Unit {
         return Error(parse_error("unexpected argument: " + args[p]))
       }
       let final_pos_idx = next_pos_idx
-      Accept(
-        consumed=p - pos,
-        commit=fn() {
-          for c in commits {
-            c()
-          }
-          current_positional.val = final_pos_idx
-        },
-      )
+      Accept(consumed=p - pos, commit=fn() {
+        for c in commits {
+          c()
+        }
+        current_positional.val = final_pos_idx
+      })
     },
-    reset: fn() {},
+    reset: fn() {  },
   }
   self.nodes.push(separator_node)
 }
@@ -272,11 +339,7 @@ fn Parser::parse_raw(
   for hook in self.post_hooks {
     hook()
   }
-  let kind = if self.children.length() > 0 {
-    Map_(self.children)
-  } else {
-    One
-  }
+  let kind = if self.children.length() > 0 { Map_(self.children) } else { One }
   { kind, parser: self }
 }
 
@@ -290,7 +353,10 @@ pub fn Parser::parse(
     Ok(r) => r
     Err(ParseError(info)) =>
       if info.help_text == "" {
-        raise ParseError(ParseErrorInfo::{ ..info, help_text: self.generate_help() })
+        raise ParseError(ParseErrorInfo::{
+          ..info,
+          help_text: self.generate_help(),
+        })
       } else {
         raise ParseError(info)
       }

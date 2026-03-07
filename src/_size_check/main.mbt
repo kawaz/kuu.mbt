@@ -1,3 +1,4 @@
+///|
 fn main {
   let p = @core.Parser::new()
   p.set_description("test")
@@ -9,9 +10,11 @@ fn main {
   let _count = p.count(name="count", short='c', description="Count")
   let _file = p.positional(name="file", description="File")
   let _rest = p.rest(name="args", description="Rest args")
-  let _serve = p.cmd(name="serve", setup=fn(child) {
-    let _ = child.int_opt(name="port", default=3000)
-  }, description="Serve")
+  let _serve = p.cmd(
+    name="serve",
+    setup=fn(child) { let _ = child.int_opt(name="port", default=3000) },
+    description="Serve",
+  )
   let result : Result[_, _] = try? p.parse(["--verbose"])
   match result {
     Ok(r) => {

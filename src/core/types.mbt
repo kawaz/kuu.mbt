@@ -88,19 +88,39 @@ pub(all) struct OptMeta {
   hidden : Bool
 }
 
-///| A → B の変換ステップ（ParseError を伝搬できる）
+///|
+/// A → B の変換ステップ（ParseError を伝搬できる）
 pub(all) struct FilterChain[A, B] {
   run : (A) -> B raise ParseError
 }
 
-///| 片 U を現在の累積値 T にマージする関数
+///|
+/// 片 U を現在の累積値 T にマージする関数
 pub type Accumulator[T, U] = (T, U) -> T
 
-///| reducer に渡すコンテキスト。将来メソッド追加してもシグネチャ不変（DR-008）
+///|
+/// reducer に渡すコンテキスト。将来メソッド追加してもシグネチャ不変（DR-008）
 pub(all) struct ReduceCtx[T] {
   current : T
   action : ReduceAction
 }
 
-///| Filter 名前空間用（コンストラクタの名前空間として使用）
+///|
+/// Filter 名前空間用（コンストラクタの名前空間として使用）
 pub(all) struct Filter {}
+
+///|
+/// 遅延評価可能な初期値。Val は即値、Thunk は遅延評価
+pub(all) enum Initial[T] {
+  Val(T)
+  Thunk(() -> T)
+}
+
+///|
+/// Initial[T] を評価して値を取得
+pub fn[T] Initial::resolve(self : Initial[T]) -> T {
+  match self {
+    Val(v) => v
+    Thunk(f) => f()
+  }
+}
