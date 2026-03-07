@@ -1195,10 +1195,12 @@ pub fn Parser::rest(
   self : Parser,
   name~ : String,
   description? : String = "",
+  stop_before? : Array[String] = [],
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
   ignore(name)
+  let stop = stop_before
   let handler : (Array[String], Int) -> TryResult = fn(
     args : Array[String],
     pos : Int,
@@ -1207,6 +1209,11 @@ pub fn Parser::rest(
       Reject
     } else {
       let value = args[pos]
+      for token in stop {
+        if value == token {
+          return Reject
+        }
+      }
       Accept(consumed=1, commit=fn() { cell.val.push(value) })
     }
   }
@@ -1303,10 +1310,12 @@ pub fn Parser::cmd(
 pub fn Parser::dashdash(
   self : Parser,
   separator? : String = "--",
+  stop_before? : Array[String] = [],
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
   let sep = separator
+  let stop = stop_before
   let dashdash_node = ExactNode::{
     name: sep,
     needs_value: false,
@@ -1318,6 +1327,16 @@ pub fn Parser::dashdash(
       let collected : Array[String] = []
       let mut p = pos + 1
       while p < args.length() {
+        let mut should_stop = false
+        for token in stop {
+          if args[p] == token {
+            should_stop = true
+            break
+          }
+        }
+        if should_stop {
+          break
+        }
         collected.push(args[p])
         p += 1
       }
@@ -1337,10 +1356,12 @@ pub fn Parser::dashdash(
 pub fn Parser::append_dashdash(
   self : Parser,
   separator? : String = "--",
+  stop_before? : Array[String] = [],
 ) -> Opt[Array[Array[String]]] {
   let id = (self.next_id)()
   let cell : Ref[Array[Array[String]]] = { val: [] }
   let sep = separator
+  let stop = stop_before
   let node = ExactNode::{
     name: sep,
     needs_value: false,
@@ -1352,6 +1373,16 @@ pub fn Parser::append_dashdash(
       let mut p = pos + 1
       while p < args.length() {
         if args[p] == sep {
+          break
+        }
+        let mut should_stop = false
+        for token in stop {
+          if args[p] == token {
+            should_stop = true
+            break
+          }
+        }
+        if should_stop {
           break
         }
         group.push(args[p])

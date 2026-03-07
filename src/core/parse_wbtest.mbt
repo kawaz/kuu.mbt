@@ -2128,3 +2128,98 @@ test "string_opt choices+implicit: --color=invalid → error" {
   let result : Result[_, _] = try? p.parse(["--color=invalid"])
   inspect(result is Err(_), content="true")
 }
+
+// === stop_before テスト ===
+
+///|
+test "rest stop_before stops at marker" {
+  let p = Parser::new(dashdash=false)
+  let files = p.rest(name="files", stop_before=["++"])
+  let dd = p.dashdash(separator="++")
+  ignore(p.parse(["a", "b", "++", "c", "d"]))
+  inspect(
+    p.get(files),
+    content=(
+      #|Some(["a", "b"])
+    ),
+  )
+  inspect(
+    p.get(dd),
+    content=(
+      #|Some(["c", "d"])
+    ),
+  )
+}
+
+///|
+test "rest stop_before multiple tokens" {
+  let p = Parser::new(dashdash=false)
+  let files = p.rest(name="files", stop_before=["++", "@@"])
+  let dd = p.dashdash(separator="++")
+  ignore(p.parse(["a", "++", "b"]))
+  inspect(
+    p.get(files),
+    content=(
+      #|Some(["a"])
+    ),
+  )
+  inspect(
+    p.get(dd),
+    content=(
+      #|Some(["b"])
+    ),
+  )
+}
+
+///|
+test "rest stop_before empty array no effect" {
+  let p = Parser::new(dashdash=false)
+  let files = p.rest(name="files", stop_before=[])
+  ignore(p.parse(["a", "b", "c"]))
+  inspect(
+    p.get(files),
+    content=(
+      #|Some(["a", "b", "c"])
+    ),
+  )
+}
+
+///|
+test "dashdash stop_before stops collection" {
+  let p = Parser::new(dashdash=false)
+  let dd1 = p.dashdash(separator="--", stop_before=["++"])
+  let dd2 = p.dashdash(separator="++")
+  ignore(p.parse(["--", "a", "b", "++", "c"]))
+  inspect(
+    p.get(dd1),
+    content=(
+      #|Some(["a", "b"])
+    ),
+  )
+  inspect(
+    p.get(dd2),
+    content=(
+      #|Some(["c"])
+    ),
+  )
+}
+
+///|
+test "append_dashdash stop_before stops group" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.append_dashdash(separator="--", stop_before=["++"])
+  let extra = p.dashdash(separator="++")
+  ignore(p.parse(["--", "a", "b", "++", "c"]))
+  inspect(
+    p.get(dd),
+    content=(
+      #|Some([["a", "b"]])
+    ),
+  )
+  inspect(
+    p.get(extra),
+    content=(
+      #|Some(["c"])
+    ),
+  )
+}
