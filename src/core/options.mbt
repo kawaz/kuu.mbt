@@ -9,7 +9,18 @@ pub fn Parser::flag(
   description? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
+  variation_toggle? : String? = None,
+  variation_true? : String? = None,
+  variation_false? : String? = None,
+  variation_reset? : String? = None,
+  variation_unset? : String? = None,
 ) -> Opt[Bool] {
+  // Sugar params → variations に追加
+  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
+  if variation_true is Some(p) { variations.push(True(p)) }
+  if variation_false is Some(p) { variations.push(False(p)) }
+  if variation_reset is Some(p) { variations.push(Reset(p)) }
+  if variation_unset is Some(p) { variations.push(Unset(p)) }
   let id = (self.next_id)()
   let cell : Ref[Bool] = { val: default }
   let initial_val = default
@@ -109,7 +120,18 @@ pub fn Parser::string_opt(
   choices? : Array[String] = [],
   implicit_value? : Lazy[String]? = None,
   variations? : Array[Variation] = [],
+  variation_toggle? : String? = None,
+  variation_true? : String? = None,
+  variation_false? : String? = None,
+  variation_reset? : String? = None,
+  variation_unset? : String? = None,
 ) -> Opt[String] {
+  // Sugar params → variations に追加
+  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
+  if variation_true is Some(p) { variations.push(True(p)) }
+  if variation_false is Some(p) { variations.push(False(p)) }
+  if variation_reset is Some(p) { variations.push(Reset(p)) }
+  if variation_unset is Some(p) { variations.push(Unset(p)) }
   let id = (self.next_id)()
   let cell : Ref[String] = { val: default }
   let initial_val = default
@@ -301,7 +323,18 @@ pub fn Parser::int_opt(
   hidden? : Bool = false,
   implicit_value? : Lazy[Int]? = None,
   variations? : Array[Variation] = [],
+  variation_toggle? : String? = None,
+  variation_true? : String? = None,
+  variation_false? : String? = None,
+  variation_reset? : String? = None,
+  variation_unset? : String? = None,
 ) -> Opt[Int] {
+  // Sugar params → variations に追加
+  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
+  if variation_true is Some(p) { variations.push(True(p)) }
+  if variation_false is Some(p) { variations.push(False(p)) }
+  if variation_reset is Some(p) { variations.push(Reset(p)) }
+  if variation_unset is Some(p) { variations.push(Unset(p)) }
   let id = (self.next_id)()
   let cell : Ref[Int] = { val: default }
   let initial_val = default
@@ -491,7 +524,18 @@ pub fn Parser::append_string(
   value_name? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
+  variation_toggle? : String? = None,
+  variation_true? : String? = None,
+  variation_false? : String? = None,
+  variation_reset? : String? = None,
+  variation_unset? : String? = None,
 ) -> Opt[Array[String]] {
+  // Sugar params → variations に追加
+  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
+  if variation_true is Some(p) { variations.push(True(p)) }
+  if variation_false is Some(p) { variations.push(False(p)) }
+  if variation_reset is Some(p) { variations.push(Reset(p)) }
+  if variation_unset is Some(p) { variations.push(Unset(p)) }
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
   let was_set : Ref[Bool] = { val: false }
@@ -567,7 +611,18 @@ pub fn Parser::append_int(
   value_name? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
+  variation_toggle? : String? = None,
+  variation_true? : String? = None,
+  variation_false? : String? = None,
+  variation_reset? : String? = None,
+  variation_unset? : String? = None,
 ) -> Opt[Array[Int]] {
+  // Sugar params → variations に追加
+  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
+  if variation_true is Some(p) { variations.push(True(p)) }
+  if variation_false is Some(p) { variations.push(False(p)) }
+  if variation_reset is Some(p) { variations.push(Reset(p)) }
+  if variation_unset is Some(p) { variations.push(Unset(p)) }
   let id = (self.next_id)()
   let cell : Ref[Array[Int]] = { val: [] }
   let was_set : Ref[Bool] = { val: false }
@@ -653,7 +708,18 @@ pub fn Parser::count(
   description? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
+  variation_toggle? : String? = None,
+  variation_true? : String? = None,
+  variation_false? : String? = None,
+  variation_reset? : String? = None,
+  variation_unset? : String? = None,
 ) -> Opt[Int] {
+  // Sugar params → variations に追加
+  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
+  if variation_true is Some(p) { variations.push(True(p)) }
+  if variation_false is Some(p) { variations.push(False(p)) }
+  if variation_reset is Some(p) { variations.push(Reset(p)) }
+  if variation_unset is Some(p) { variations.push(Unset(p)) }
   let id = (self.next_id)()
   let cell : Ref[Int] = { val: 0 }
   let pending : Ref[Int] = { val: 0 }

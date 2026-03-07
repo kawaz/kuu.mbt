@@ -2953,3 +2953,73 @@ test "flag Main = not default (default=false)" {
   // Main with default=false: sets to !false = true
   inspect(p.get(color), content="Some(true)")
 }
+
+// ============ Sugar parameter tests ============
+
+///|
+test "flag variation_reset sugar" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", variation_reset=Some("no"))
+  ignore(p.parse(["--verbose", "--no-verbose"]))
+  inspect(verbose.get(), content="Some(false)") // Reset → default(false)
+  inspect((verbose.is_set)(), content="true")
+}
+
+///|
+test "string_opt variation_reset sugar" {
+  let p = Parser::new()
+  let fmt = p.string_opt(name="format", default="json", variation_reset=Some("no"))
+  ignore(p.parse(["--format", "xml", "--no-format"]))
+  inspect(
+    fmt.get(),
+    content=(
+      #|Some("json")
+    ),
+  ) // Reset → default
+  inspect((fmt.is_set)(), content="true")
+}
+
+///|
+test "sugar params append to variations" {
+  let p = Parser::new()
+  let verbose = p.flag(
+    name="verbose",
+    variations=[Toggle("toggle")],
+    variation_reset=Some("no"),
+  )
+  // Toggle + Reset 両方が存在
+  ignore(p.parse(["--toggle-verbose", "--no-verbose"]))
+  inspect(verbose.get(), content="Some(false)") // Reset → default
+  inspect((verbose.is_set)(), content="true")
+}
+
+///|
+test "flag variation_true and variation_false sugar" {
+  let p = Parser::new()
+  let color = p.flag(name="color", default=true, variation_true=Some("force"), variation_false=Some("no"))
+  ignore(p.parse(["--no-color"]))
+  inspect(color.get(), content="Some(false)") // False → always false
+  //
+  let p2 = Parser::new()
+  let color2 = p2.flag(name="color", default=true, variation_true=Some("force"), variation_false=Some("no"))
+  ignore(p2.parse(["--no-color", "--force-color"]))
+  inspect(color2.get(), content="Some(true)") // True → always true
+}
+
+///|
+test "count variation_reset sugar" {
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", variation_reset=Some("no"))
+  ignore(p.parse(["--verbose", "--verbose", "--no-verbose"]))
+  inspect(verbose.get(), content="Some(0)") // Reset → default(0)
+  inspect((verbose.is_set)(), content="true")
+}
+
+///|
+test "append_string variation_reset sugar" {
+  let p = Parser::new()
+  let includes = p.append_string(name="include", variation_reset=Some("no"))
+  ignore(p.parse(["--include", "a", "--include", "b", "--no-include"]))
+  inspect(includes.get(), content="Some([])") // Reset → empty
+  inspect((includes.is_set)(), content="true")
+}
