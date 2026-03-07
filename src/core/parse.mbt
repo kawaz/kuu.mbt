@@ -259,6 +259,14 @@ fn Parser::parse_raw(
         }
     }
   }
+  // consumed=0 finalize: ループ後に全ノードを1回試行し、
+  // consumed=0 の Accept を返すノード（未確定のデフォルト等）を commit
+  for node in self.nodes {
+    match (node.try_reduce)(args, args.length()) {
+      Accept(consumed=0, commit~) => commit()
+      _ => ()
+    }
+  }
   self.parsed.val = true
   // post hooks: parse 完了後の値変換・遅延バリデーション
   for hook in self.post_hooks {

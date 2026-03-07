@@ -84,7 +84,29 @@ consumed=0 は or 内部に限らず、トップレベル ExactNode としても
 
 parse_raw のメインループは `pos += consumed` で進むため、consumed=0 で pos が進まないが、commit で状態が変わるため次のイテレーションでは同じノードが Reject を返す（or 通常のノードと同じ）。無限ループにはならない。
 
-ただし現行の parse_raw は consumed=0 を拾うロジックがないため、対応するには best_consumed の初期値やフォールバック処理の変更が必要。
+#### メインループでの扱い — finalize 方式
+
+consumed=0 をメインループの最長一致（best_consumed=-1 初期値等）に組み込む案を検討したが、以下の問題により棄却:
+
+1. **pos が進まない**: `pos += 0` でループが停滞。committed フラグで次は Reject させれば無限ループは回避できるが…
+2. **複数 consumed=0 の共存**: implicit_value 持ちのオプションが複数あると consumed=0 ノードも複数。これらは異なるオプションの default であり ambiguous ではない
+3. **親ノードの伝搬**: 複数 consumed=0 を含む親（or 等）も Accept(consumed=0) を返し、問題が連鎖
+
+consumed=0 はトークン消費ループとは本質的に異質。**finalize 方式**（ループ後に全ノードを1回試行し consumed=0 を commit）が自然:
+
+```moonbit
+// メインループ後
+for node in self.nodes {
+  match (node.try_reduce)(args, args.length()) {
+    Accept(consumed=0, commit~) => commit()
+    _ => ()
+  }
+}
+```
+
+- メインループ: `best_consumed=0` 初期値、consumed>0 のみ競争
+- finalize: 各ノード独立に試行、consumed=0 は各自の cell に commit
+- 複数 consumed=0 が共存しても問題なし（各自独立）
 
 ### Initial[T]（Val / Thunk）
 

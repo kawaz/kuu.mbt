@@ -1309,3 +1309,229 @@ test "post filter validation error" {
   let result : Result[_, _] = try? p.parse([])
   inspect(result is Err(_), content="true")
 }
+
+// === consumed=0 + enum or パターン PoC ===
+
+///|
+enum TestColor {
+  Red
+  Green
+  Blue
+  RGB(Int, Int, Int)
+  Auto
+} derive(Show, Eq)
+
+///| ヘルパー: --color <name> → TestColor (consumed=2) の ExactNode を生成
+fn make_color_exact(
+  opt_name : String,
+  value_str : String,
+  color : TestColor,
+  cell : Ref[TestColor],
+  committed : Ref[Bool],
+) -> ExactNode {
+  ExactNode::{
+    name: opt_name,
+    needs_value: true,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != opt_name {
+        return Reject
+      }
+      if pos + 1 >= args.length() || args[pos + 1] != value_str {
+        return Reject
+      }
+      Accept(consumed=2, commit=fn() {
+        cell.val = color
+        committed.val = true
+      })
+    },
+    reset: fn() {
+      cell.val = Auto
+      committed.val = false
+    },
+  }
+}
+
+///| ヘルパー: --color rgb R G B → RGB(r,g,b) (consumed=5) の ExactNode
+fn make_color_rgb_node(
+  opt_name : String,
+  cell : Ref[TestColor],
+  committed : Ref[Bool],
+) -> ExactNode {
+  ExactNode::{
+    name: opt_name,
+    needs_value: true,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != opt_name {
+        return Reject
+      }
+      if pos + 1 >= args.length() || args[pos + 1] != "rgb" {
+        return Reject
+      }
+      if pos + 4 >= args.length() {
+        return Reject
+      }
+      let parse_int = fn(s : String) -> Int? {
+        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+        match r {
+          Ok(v) => Some(v)
+          Err(_) => None
+        }
+      }
+      match (parse_int(args[pos + 2]), parse_int(args[pos + 3]), parse_int(args[pos + 4])) {
+        (Some(r), Some(g), Some(b)) =>
+          Accept(consumed=5, commit=fn() {
+            cell.val = RGB(r, g, b)
+            committed.val = true
+          })
+        _ => Reject
+      }
+    },
+    reset: fn() {
+      cell.val = Auto
+      committed.val = false
+    },
+  }
+}
+
+///| ヘルパー: --color だけ (consumed=1) → implicit value
+fn make_color_implicit_node(
+  opt_name : String,
+  implicit : TestColor,
+  cell : Ref[TestColor],
+  committed : Ref[Bool],
+) -> ExactNode {
+  ExactNode::{
+    name: opt_name,
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != opt_name {
+        return Reject
+      }
+      Accept(consumed=1, commit=fn() {
+        cell.val = implicit
+        committed.val = true
+      })
+    },
+    reset: fn() {
+      cell.val = Auto
+      committed.val = false
+    },
+  }
+}
+
+///| ヘルパー: consumed=0 の default fallback ノード
+fn make_color_default_node(
+  default_ : TestColor,
+  cell : Ref[TestColor],
+  committed : Ref[Bool],
+) -> ExactNode {
+  ExactNode::{
+    name: "",
+    needs_value: false,
+    try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult {
+      // 既に consumed>0 で commit 済みなら Reject
+      if committed.val {
+        return Reject
+      }
+      Accept(consumed=0, commit=fn() { cell.val = default_ })
+    },
+    reset: fn() {
+      cell.val = Auto
+      committed.val = false
+    },
+  }
+}
+
+///| 全ノードを Parser に登録するヘルパー
+fn setup_color_opt(p : Parser) -> (Ref[TestColor], Ref[Bool]) {
+  let cell : Ref[TestColor] = { val: Auto }
+  let committed : Ref[Bool] = { val: false }
+  let nodes : Array[ExactNode] = [
+    make_color_exact("--color", "red", Red, cell, committed),
+    make_color_exact("--color", "green", Green, cell, committed),
+    make_color_exact("--color", "blue", Blue, cell, committed),
+    make_color_rgb_node("--color", cell, committed),
+    make_color_implicit_node("--color", Red, cell, committed),
+    make_color_default_node(Auto, cell, committed),
+  ]
+  for node in nodes {
+    p.nodes.push(node)
+  }
+  (cell, committed)
+}
+
+///|
+test "enum or: --color red" {
+  let p = Parser::new()
+  let (cell, _) = setup_color_opt(p)
+  ignore(p.parse(["--color", "red"]))
+  inspect(cell.val, content="Red")
+}
+
+///|
+test "enum or: --color green" {
+  let p = Parser::new()
+  let (cell, _) = setup_color_opt(p)
+  ignore(p.parse(["--color", "green"]))
+  inspect(cell.val, content="Green")
+}
+
+///|
+test "enum or: --color rgb 255 128 0" {
+  let p = Parser::new()
+  let (cell, _) = setup_color_opt(p)
+  ignore(p.parse(["--color", "rgb", "255", "128", "0"]))
+  inspect(cell.val, content="RGB(255, 128, 0)")
+}
+
+///|
+test "enum or: --color (implicit → Red)" {
+  let p = Parser::new()
+  let (cell, _) = setup_color_opt(p)
+  ignore(p.parse(["--color"]))
+  inspect(cell.val, content="Red")
+}
+
+///|
+test "enum or: no --color (consumed=0 default → Auto)" {
+  let p = Parser::new()
+  let (cell, _) = setup_color_opt(p)
+  ignore(p.parse([]))
+  inspect(cell.val, content="Auto")
+}
+
+///|
+test "enum or: --color red wins over implicit" {
+  let p = Parser::new()
+  let (cell, _) = setup_color_opt(p)
+  ignore(p.parse(["--color", "red"]))
+  inspect(cell.val, content="Red")
+}
+
+///|
+test "enum or: --color with other flag → implicit" {
+  let p = Parser::new()
+  let (cell, _) = setup_color_opt(p)
+  let verbose = p.flag(name="verbose")
+  ignore(p.parse(["--color", "--verbose"]))
+  inspect(cell.val, content="Red")
+  inspect(verbose.get(), content="Some(true)")
+}
+
+///|
+test "enum or: --color rgb with args then other opt" {
+  let p = Parser::new()
+  let (cell, _) = setup_color_opt(p)
+  let verbose = p.flag(name="verbose")
+  ignore(p.parse(["--color", "rgb", "10", "20", "30", "--verbose"]))
+  inspect(cell.val, content="RGB(10, 20, 30)")
+  inspect(verbose.get(), content="Some(true)")
+}
+
+///|
+test "enum or: consumed=0 default not used when --color specified" {
+  let p = Parser::new()
+  let (cell, _) = setup_color_opt(p)
+  ignore(p.parse(["--color", "blue"]))
+  inspect(cell.val, content="Blue")
+}
