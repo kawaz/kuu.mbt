@@ -69,6 +69,8 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     metas: [],
     description: { val: "" },
     post_hooks: [],
+    registered_names: {},
+    duplicate_errors: [],
   }
   if dashdash {
     p.install_separator_node()
@@ -98,11 +100,35 @@ fn Parser::expand_and_register(
     }
   }
 
-  register(make_long_nodes("--" + name))
+  fn check_and_register_names(nodes : Array[ExactNode]) {
+    // Check against previously registered names (cross-combinator duplicates)
+    for node in nodes {
+      if node.name != "" && self.registered_names.contains(node.name) {
+        self.duplicate_errors.push(
+          "duplicate option name: " + node.name,
+        )
+        break // report once per batch
+      }
+    }
+    // Register all names from this batch
+    for node in nodes {
+      if node.name != "" {
+        self.registered_names[node.name] = true
+      }
+    }
+  }
+
+  let long_nodes = make_long_nodes("--" + name)
+  check_and_register_names(long_nodes)
+  register(long_nodes)
   for alt in aliases {
-    register(make_long_nodes("--" + alt))
+    let alt_nodes = make_long_nodes("--" + alt)
+    check_and_register_names(alt_nodes)
+    register(alt_nodes)
   }
   if short != '\u0000' {
-    register(make_short_nodes("-" + short.to_string()))
+    let short_nodes = make_short_nodes("-" + short.to_string())
+    check_and_register_names(short_nodes)
+    register(short_nodes)
   }
 }

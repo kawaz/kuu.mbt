@@ -1,4 +1,11 @@
 ///|
+fn Parser::validate_no_duplicate_names(self : Parser) -> Unit raise ParseError {
+  if self.duplicate_errors.length() > 0 {
+    raise parse_error(self.duplicate_errors[0])
+  }
+}
+
+///|
 /// self.nodes から --name=value 形式を処理する ExactNode を構築して追加
 fn Parser::install_eq_split_node(self : Parser) -> Unit {
   // needs_value=true かつ name が "--" で始まるノードを収集
@@ -280,6 +287,7 @@ fn Parser::parse_raw(
     raise parse_error("Parser::parse can only be called once")
   }
   inject_help_node(self)
+  self.validate_no_duplicate_names()
   self.install_eq_split_node()
   self.install_short_combine_node()
   let mut pos = 0

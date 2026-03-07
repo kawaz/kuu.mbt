@@ -3094,3 +3094,41 @@ test "string_opt default_fn with reset variation" {
   ) // Reset → default_fn の値に戻る
   inspect((color.is_set)(), content="true")
 }
+
+// ============ duplicate name validation tests ============
+
+///|
+test "duplicate option name detected" {
+  let p = Parser::new()
+  let _ = p.flag(name="no-verbose")
+  let _ = p.flag(name="verbose", variation_reset=Some("no"))
+  // --no-verbose が2つのコンビネータから生成される
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("duplicate option name"), content="true")
+    _ => abort("expected duplicate name error")
+  }
+}
+
+///|
+test "no duplicate when names differ" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", variation_reset=Some("no"))
+  let _ = p.flag(name="quiet", variation_reset=Some("no"))
+  // --no-verbose と --no-quiet は異なるので OK
+  ignore(p.parse([]))
+}
+
+///|
+test "duplicate alias name detected" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose")
+  let _ = p.flag(name="verb", aliases=["verbose"])
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("duplicate option name"), content="true")
+    _ => abort("expected duplicate name error")
+  }
+}

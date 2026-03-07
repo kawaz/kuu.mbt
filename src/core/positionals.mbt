@@ -124,6 +124,8 @@ pub fn Parser::serial(self : Parser, setup~ : (Parser) -> Unit) -> Unit {
     metas: [],
     description: { val: "" },
     post_hooks: [],
+    registered_names: {},
+    duplicate_errors: [],
   }
   setup(sub)
   // sub.positionals を greedy な compound handler にまとめる。

@@ -51,6 +51,8 @@ pub(all) struct Parser {
   metas : Array[OptMeta]
   description : Ref[String]
   post_hooks : Array[() -> Unit raise ParseError]
+  registered_names : Map[String, Bool]
+  duplicate_errors : Array[String]
 }
 
 ///|

@@ -25,6 +25,8 @@ pub fn Parser::cmd(
     metas: [],
     description: { val: "" },
     post_hooks: [],
+    registered_names: {},
+    duplicate_errors: [],
   }
   setup(child)
   if dashdash {
