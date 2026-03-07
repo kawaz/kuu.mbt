@@ -48,8 +48,21 @@ pub(all) struct Parser {
 ///|
 pub(all) struct Opt[T] {
   id : Int
+  name : String
   getter : () -> T
   parsed : Ref[Bool]
+  is_set : () -> Bool
+}
+
+///|
+pub(all) struct OptRef {
+  name : String
+  is_set : () -> Bool
+}
+
+///|
+pub fn[T] Opt::as_ref(self : Opt[T]) -> OptRef {
+  { name: self.name, is_set: self.is_set }
 }
 
 ///|

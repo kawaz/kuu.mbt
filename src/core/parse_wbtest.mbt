@@ -2223,3 +2223,113 @@ test "append_dashdash stop_before stops group" {
     ),
   )
 }
+
+// === exclusive / required / is_set テスト ===
+
+///|
+test "exclusive flags pass when only one set" {
+  let p = Parser::new()
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  p.exclusive([json.as_ref(), csv.as_ref()])
+  ignore(p.parse(["--json"]))
+  inspect(p.get(json), content="Some(true)")
+  inspect(p.get(csv), content="Some(false)")
+}
+
+///|
+test "exclusive flags error when both set" {
+  let p = Parser::new()
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  p.exclusive([json.as_ref(), csv.as_ref()])
+  let result : Result[_, _] = try? p.parse(["--json", "--csv"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "exclusive allows none set" {
+  let p = Parser::new()
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  p.exclusive([json.as_ref(), csv.as_ref()])
+  ignore(p.parse([]))
+  inspect(p.get(json), content="Some(false)")
+}
+
+///|
+test "required option present" {
+  let p = Parser::new()
+  let output = p.string_opt(name="output", default="")
+  p.required(output.as_ref())
+  ignore(p.parse(["--output", "file.txt"]))
+  inspect(
+    p.get(output),
+    content=(
+      #|Some("file.txt")
+    ),
+  )
+}
+
+///|
+test "required option missing" {
+  let p = Parser::new()
+  let output = p.string_opt(name="output", default="")
+  p.required(output.as_ref())
+  let result : Result[_, _] = try? p.parse(["--other"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "is_set false for default fallback" {
+  let p = Parser::new(dashdash=false)
+  let color = p.string_opt(
+    name="color",
+    default="auto",
+    implicit_value=Some(Val("always")),
+  )
+  ignore(p.parse([]))
+  inspect((color.is_set)(), content="false")
+  inspect(
+    p.get(color),
+    content=(
+      #|Some("auto")
+    ),
+  )
+}
+
+///|
+test "is_set true for explicit value" {
+  let p = Parser::new(dashdash=false)
+  let color = p.string_opt(
+    name="color",
+    default="auto",
+    implicit_value=Some(Val("always")),
+  )
+  ignore(p.parse(["--color", "never"]))
+  inspect((color.is_set)(), content="true")
+  inspect(
+    p.get(color),
+    content=(
+      #|Some("never")
+    ),
+  )
+}
+
+///|
+test "is_set true for implicit value" {
+  let p = Parser::new(dashdash=false)
+  let color = p.string_opt(
+    name="color",
+    default="auto",
+    implicit_value=Some(Val("always")),
+  )
+  ignore(p.parse(["--color"]))
+  inspect((color.is_set)(), content="true")
+  inspect(
+    p.get(color),
+    content=(
+      #|Some("always")
+    ),
+  )
+}

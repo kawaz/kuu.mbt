@@ -4,6 +4,36 @@ fn parse_error(message : String) -> ParseError {
 }
 
 ///|
+/// ExactNode の commit (consumed > 0) を was_set フラグでラップする。
+/// consumed=0 (デフォルトフォールバック) では was_set を true にしない。
+fn wrap_node_with_set(node : ExactNode, was_set : Ref[Bool]) -> ExactNode {
+  let orig_try_reduce = node.try_reduce
+  let orig_reset = node.reset
+  ExactNode::{
+    name: node.name,
+    needs_value: node.needs_value,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      match orig_try_reduce(args, pos) {
+        Accept(consumed~, commit~) =>
+          if consumed > 0 {
+            Accept(consumed~, commit=fn() {
+              commit()
+              was_set.val = true
+            })
+          } else {
+            Accept(consumed~, commit~)
+          }
+        other => other
+      }
+    },
+    reset: fn() {
+      orig_reset()
+      was_set.val = false
+    },
+  }
+}
+
+///|
 fn to_upper(s : String) -> String {
   let buf = StringBuilder::new()
   for c in s {
@@ -299,21 +329,34 @@ pub fn Parser::flag(
   let cell : Ref[Bool] = { val: default }
   let initial_val = default
   let pending : Ref[Bool] = { val: default }
+  let was_set : Ref[Bool] = { val: false }
   let node = make_flag_node(
     "--" + name,
     fn() {
       pending.val = true
-      fn() { cell.val = pending.val }
+      fn() {
+        cell.val = pending.val
+        was_set.val = true
+      }
     },
-    fn() { cell.val = initial_val },
+    fn() {
+      cell.val = initial_val
+      was_set.val = false
+    },
   )
   let no_node = make_flag_node(
     "--no-" + name,
     fn() {
       pending.val = false
-      fn() { cell.val = pending.val }
+      fn() {
+        cell.val = pending.val
+        was_set.val = true
+      }
     },
-    fn() { cell.val = initial_val },
+    fn() {
+      cell.val = initial_val
+      was_set.val = false
+    },
   )
   self.register_option(node, no_node, global)
   for alt in aliases {
@@ -321,17 +364,29 @@ pub fn Parser::flag(
       "--" + alt,
       fn() {
         pending.val = true
-        fn() { cell.val = pending.val }
+        fn() {
+          cell.val = pending.val
+          was_set.val = true
+        }
       },
-      fn() { cell.val = initial_val },
+      fn() {
+        cell.val = initial_val
+        was_set.val = false
+      },
     )
     let alt_no_node = make_flag_node(
       "--no-" + alt,
       fn() {
         pending.val = false
-        fn() { cell.val = pending.val }
+        fn() {
+          cell.val = pending.val
+          was_set.val = true
+        }
       },
-      fn() { cell.val = initial_val },
+      fn() {
+        cell.val = initial_val
+        was_set.val = false
+      },
     )
     self.register_option(alt_node, alt_no_node, global)
   }
@@ -341,9 +396,15 @@ pub fn Parser::flag(
       short_name,
       fn() {
         pending.val = true
-        fn() { cell.val = pending.val }
+        fn() {
+          cell.val = pending.val
+          was_set.val = true
+        }
       },
-      fn() { cell.val = initial_val },
+      fn() {
+        cell.val = initial_val
+        was_set.val = false
+      },
     )
     self.nodes.push(short_node)
     if global {
@@ -365,7 +426,13 @@ pub fn Parser::flag(
     aliases,
     hidden,
   })
-  { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name: "--" + name,
+    getter: fn() -> Bool { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
 }
 
 ///|
@@ -401,6 +468,16 @@ pub fn Parser::string_opt(
     Some(_) => true
     None => false
   }
+  let was_set : Ref[Bool] = { val: false }
+  // ノードを self.nodes (と global_nodes) に登録するヘルパー。was_set ラップ付き。
+  fn push_node(node : ExactNode, is_global : Bool) {
+    let wrapped = wrap_node_with_set(node, was_set)
+    self.nodes.push(wrapped)
+    if is_global {
+      self.global_nodes.push(wrapped)
+    }
+  }
+
   // ケース1,3: choices+implicit or implicit only → committed ベースの展開
   // ケース2: choices only → reducer + one_of バリデーション
   // ケース4: 既存パス (neither)
@@ -433,10 +510,7 @@ pub fn Parser::string_opt(
         )
       }
       let composite = make_or_node(opt_n, true, children)
-      self.nodes.push(composite)
-      if global {
-        self.global_nodes.push(composite)
-      }
+      push_node(composite, global)
       // negate node: --no-{name} は composite の外（名前が異なるため）
       let no_name = if opt_n.has_prefix("--") {
         "--no-" + opt_n.unsafe_substring(start=2, end=opt_n.length())
@@ -456,10 +530,7 @@ pub fn Parser::string_opt(
           committed.val = false
         },
       )
-      self.nodes.push(no_node)
-      if global {
-        self.global_nodes.push(no_node)
-      }
+      push_node(no_node, global)
     }
 
     // メインの opt_name（default fallback を含む）
@@ -476,27 +547,18 @@ pub fn Parser::string_opt(
           let node = make_choice_value_node(
             short_name, choice, cell, committed, initial_val,
           )
-          self.nodes.push(node)
-          if global {
-            self.global_nodes.push(node)
-          }
+          push_node(node, global)
         }
       } else {
         let node = make_soft_value_node(
           short_name, cell, committed, initial_val,
         )
-        self.nodes.push(node)
-        if global {
-          self.global_nodes.push(node)
-        }
+        push_node(node, global)
       }
       let imp_node = make_implicit_flag_node(
         short_name, iv, cell, committed, initial_val,
       )
-      self.nodes.push(imp_node)
-      if global {
-        self.global_nodes.push(imp_node)
-      }
+      push_node(imp_node, global)
     }
   } else if has_choices {
     // ケース2: choices only → 既存パス + one_of バリデーション
@@ -505,33 +567,32 @@ pub fn Parser::string_opt(
     let accum : Accumulator[String, String] = fn(_current, piece) { piece }
     let one_of_pre : FilterChain[String, String] = Filter::one_of(choices)
     let reducer = make_reducer(one_of_pre, accum, initial_val)
-    let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
-    let no_node = make_reduced_negate_node(
-      "--no-" + name,
-      reducer,
-      cell,
-      pending,
-      reset,
+    let node = wrap_node_with_set(
+      make_reduced_value_node(opt_name, reducer, cell, pending, reset),
+      was_set,
+    )
+    let no_node = wrap_node_with_set(
+      make_reduced_negate_node("--no-" + name, reducer, cell, pending, reset),
+      was_set,
     )
     self.register_option(node, no_node, global)
     for alt in aliases {
       let alt_opt_name = "--" + alt
-      let alt_node = make_reduced_value_node(
-        alt_opt_name, reducer, cell, pending, reset,
+      let alt_node = wrap_node_with_set(
+        make_reduced_value_node(alt_opt_name, reducer, cell, pending, reset),
+        was_set,
       )
-      let alt_no_node = make_reduced_negate_node(
-        "--no-" + alt,
-        reducer,
-        cell,
-        pending,
-        reset,
+      let alt_no_node = wrap_node_with_set(
+        make_reduced_negate_node("--no-" + alt, reducer, cell, pending, reset),
+        was_set,
       )
       self.register_option(alt_node, alt_no_node, global)
     }
     if short != '\u0000' {
       let short_name = "-" + short.to_string()
-      let short_node = make_reduced_value_node(
-        short_name, reducer, cell, pending, reset,
+      let short_node = wrap_node_with_set(
+        make_reduced_value_node(short_name, reducer, cell, pending, reset),
+        was_set,
       )
       self.nodes.push(short_node)
       if global {
@@ -545,33 +606,32 @@ pub fn Parser::string_opt(
     let accum : Accumulator[String, String] = fn(_current, piece) { piece }
     let identity_pre : FilterChain[String, String] = Filter::map(fn(s) { s })
     let reducer = make_reducer(identity_pre, accum, initial_val)
-    let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
-    let no_node = make_reduced_negate_node(
-      "--no-" + name,
-      reducer,
-      cell,
-      pending,
-      reset,
+    let node = wrap_node_with_set(
+      make_reduced_value_node(opt_name, reducer, cell, pending, reset),
+      was_set,
+    )
+    let no_node = wrap_node_with_set(
+      make_reduced_negate_node("--no-" + name, reducer, cell, pending, reset),
+      was_set,
     )
     self.register_option(node, no_node, global)
     for alt in aliases {
       let alt_opt_name = "--" + alt
-      let alt_node = make_reduced_value_node(
-        alt_opt_name, reducer, cell, pending, reset,
+      let alt_node = wrap_node_with_set(
+        make_reduced_value_node(alt_opt_name, reducer, cell, pending, reset),
+        was_set,
       )
-      let alt_no_node = make_reduced_negate_node(
-        "--no-" + alt,
-        reducer,
-        cell,
-        pending,
-        reset,
+      let alt_no_node = wrap_node_with_set(
+        make_reduced_negate_node("--no-" + alt, reducer, cell, pending, reset),
+        was_set,
       )
       self.register_option(alt_node, alt_no_node, global)
     }
     if short != '\u0000' {
       let short_name = "-" + short.to_string()
-      let short_node = make_reduced_value_node(
-        short_name, reducer, cell, pending, reset,
+      let short_node = wrap_node_with_set(
+        make_reduced_value_node(short_name, reducer, cell, pending, reset),
+        was_set,
       )
       self.nodes.push(short_node)
       if global {
@@ -607,7 +667,13 @@ pub fn Parser::string_opt(
       })
     None => ()
   }
-  { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name: "--" + name,
+    getter: fn() -> String { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
 }
 
 ///|
@@ -693,6 +759,15 @@ pub fn Parser::int_opt(
     Some(_) => true
     None => false
   }
+  let was_set : Ref[Bool] = { val: false }
+  fn push_node(node : ExactNode, is_global : Bool) {
+    let wrapped = wrap_node_with_set(node, was_set)
+    self.nodes.push(wrapped)
+    if is_global {
+      self.global_nodes.push(wrapped)
+    }
+  }
+
   if has_implicit {
     // implicit_value あり: committed ベースの展開
     let committed : Ref[Bool] = { val: false }
@@ -750,10 +825,7 @@ pub fn Parser::int_opt(
         )
       }
       let composite = make_or_node(opt_n, true, children)
-      self.nodes.push(composite)
-      if global {
-        self.global_nodes.push(composite)
-      }
+      push_node(composite, global)
       // negate node: composite の外
       let no_name = if opt_n.has_prefix("--") {
         "--no-" + opt_n.unsafe_substring(start=2, end=opt_n.length())
@@ -773,10 +845,7 @@ pub fn Parser::int_opt(
           committed.val = false
         },
       )
-      self.nodes.push(no_node)
-      if global {
-        self.global_nodes.push(no_node)
-      }
+      push_node(no_node, global)
     }
 
     register_long_int(opt_name, true)
@@ -789,17 +858,11 @@ pub fn Parser::int_opt(
       let node = make_soft_int_value_node(
         short_name, cell, committed, initial_val,
       )
-      self.nodes.push(node)
-      if global {
-        self.global_nodes.push(node)
-      }
+      push_node(node, global)
       let imp_node = make_implicit_flag_node(
         short_name, iv, cell, committed, initial_val,
       )
-      self.nodes.push(imp_node)
-      if global {
-        self.global_nodes.push(imp_node)
-      }
+      push_node(imp_node, global)
     }
   } else {
     // implicit_value なし: 既存パス
@@ -820,13 +883,13 @@ pub fn Parser::int_opt(
     }
 
     let reducer = make_reducer(make_int_pre(opt_name), accum, initial_val)
-    let node = make_reduced_value_node(opt_name, reducer, cell, pending, reset)
-    let no_node = make_reduced_negate_node(
-      "--no-" + name,
-      reducer,
-      cell,
-      pending,
-      reset,
+    let node = wrap_node_with_set(
+      make_reduced_value_node(opt_name, reducer, cell, pending, reset),
+      was_set,
+    )
+    let no_node = wrap_node_with_set(
+      make_reduced_negate_node("--no-" + name, reducer, cell, pending, reset),
+      was_set,
     )
     self.register_option(node, no_node, global)
     for alt in aliases {
@@ -836,15 +899,19 @@ pub fn Parser::int_opt(
         accum,
         initial_val,
       )
-      let alt_node = make_reduced_value_node(
-        alt_opt_name, alt_reducer, cell, pending, reset,
+      let alt_node = wrap_node_with_set(
+        make_reduced_value_node(alt_opt_name, alt_reducer, cell, pending, reset),
+        was_set,
       )
-      let alt_no_node = make_reduced_negate_node(
-        "--no-" + alt,
-        alt_reducer,
-        cell,
-        pending,
-        reset,
+      let alt_no_node = wrap_node_with_set(
+        make_reduced_negate_node(
+          "--no-" + alt,
+          alt_reducer,
+          cell,
+          pending,
+          reset,
+        ),
+        was_set,
       )
       self.register_option(alt_node, alt_no_node, global)
     }
@@ -855,8 +922,9 @@ pub fn Parser::int_opt(
         accum,
         initial_val,
       )
-      let short_node = make_reduced_value_node(
-        short_name, short_reducer, cell, pending, reset,
+      let short_node = wrap_node_with_set(
+        make_reduced_value_node(short_name, short_reducer, cell, pending, reset),
+        was_set,
       )
       self.nodes.push(short_node)
       if global {
@@ -885,7 +953,13 @@ pub fn Parser::int_opt(
     aliases,
     hidden,
   })
-  { id, getter: fn() -> Int { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name: "--" + name,
+    getter: fn() -> Int { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
 }
 
 ///|
@@ -901,36 +975,42 @@ pub fn Parser::append_string(
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
-  let node = make_value_node(
-    "--" + name,
-    fn(s) { Ok(fn() { cell.val.push(s) }) },
-    fn() { cell.val = [] },
+  let was_set : Ref[Bool] = { val: false }
+  let node = wrap_node_with_set(
+    make_value_node("--" + name, fn(s) { Ok(fn() { cell.val.push(s) }) }, fn() {
+      cell.val = []
+    }),
+    was_set,
   )
-  let no_node = make_flag_node(
-    "--no-" + name,
-    fn() { fn() { cell.val = [] } },
-    fn() { cell.val = [] },
+  let no_node = wrap_node_with_set(
+    make_flag_node("--no-" + name, fn() { fn() { cell.val = [] } }, fn() {
+      cell.val = []
+    }),
+    was_set,
   )
   self.register_option(node, no_node, global)
   for alt in aliases {
-    let alt_node = make_value_node(
-      "--" + alt,
-      fn(s) { Ok(fn() { cell.val.push(s) }) },
-      fn() { cell.val = [] },
+    let alt_node = wrap_node_with_set(
+      make_value_node("--" + alt, fn(s) { Ok(fn() { cell.val.push(s) }) }, fn() {
+        cell.val = []
+      }),
+      was_set,
     )
-    let alt_no_node = make_flag_node(
-      "--no-" + alt,
-      fn() { fn() { cell.val = [] } },
-      fn() { cell.val = [] },
+    let alt_no_node = wrap_node_with_set(
+      make_flag_node("--no-" + alt, fn() { fn() { cell.val = [] } }, fn() {
+        cell.val = []
+      }),
+      was_set,
     )
     self.register_option(alt_node, alt_no_node, global)
   }
   if short != '\u0000' {
     let short_name = "-" + short.to_string()
-    let short_node = make_value_node(
-      short_name,
-      fn(s) { Ok(fn() { cell.val.push(s) }) },
-      fn() { cell.val = [] },
+    let short_node = wrap_node_with_set(
+      make_value_node(short_name, fn(s) { Ok(fn() { cell.val.push(s) }) }, fn() {
+        cell.val = []
+      }),
+      was_set,
     )
     self.nodes.push(short_node)
     if global {
@@ -957,7 +1037,13 @@ pub fn Parser::append_string(
     aliases,
     hidden,
   })
-  { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name: "--" + name,
+    getter: fn() -> Array[String] { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
 }
 
 ///|
@@ -974,67 +1060,79 @@ pub fn Parser::append_int(
   let id = (self.next_id)()
   let cell : Ref[Array[Int]] = { val: [] }
   let opt_name = "--" + name
-  let node = make_value_node(
-    opt_name,
-    fn(s) {
-      let r : Result[Int, _] = try? @strconv.parse_int(s.view())
-      match r {
-        Ok(v) => Ok(fn() { cell.val.push(v) })
-        Err(_) =>
-          Err(parse_error("invalid integer value for " + opt_name + ": " + s))
-      }
-    },
-    fn() { cell.val = [] },
-  )
-  let no_node = make_flag_node(
-    "--no-" + name,
-    fn() { fn() { cell.val = [] } },
-    fn() { cell.val = [] },
-  )
-  self.register_option(node, no_node, global)
-  for alt in aliases {
-    let alt_opt_name = "--" + alt
-    let alt_node = make_value_node(
-      alt_opt_name,
+  let was_set : Ref[Bool] = { val: false }
+  let node = wrap_node_with_set(
+    make_value_node(
+      opt_name,
       fn(s) {
         let r : Result[Int, _] = try? @strconv.parse_int(s.view())
         match r {
           Ok(v) => Ok(fn() { cell.val.push(v) })
           Err(_) =>
-            Err(
-              parse_error(
-                "invalid integer value for " + alt_opt_name + ": " + s,
-              ),
-            )
+            Err(parse_error("invalid integer value for " + opt_name + ": " + s))
         }
       },
       fn() { cell.val = [] },
+    ),
+    was_set,
+  )
+  let no_node = wrap_node_with_set(
+    make_flag_node("--no-" + name, fn() { fn() { cell.val = [] } }, fn() {
+      cell.val = []
+    }),
+    was_set,
+  )
+  self.register_option(node, no_node, global)
+  for alt in aliases {
+    let alt_opt_name = "--" + alt
+    let alt_node = wrap_node_with_set(
+      make_value_node(
+        alt_opt_name,
+        fn(s) {
+          let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+          match r {
+            Ok(v) => Ok(fn() { cell.val.push(v) })
+            Err(_) =>
+              Err(
+                parse_error(
+                  "invalid integer value for " + alt_opt_name + ": " + s,
+                ),
+              )
+          }
+        },
+        fn() { cell.val = [] },
+      ),
+      was_set,
     )
-    let alt_no_node = make_flag_node(
-      "--no-" + alt,
-      fn() { fn() { cell.val = [] } },
-      fn() { cell.val = [] },
+    let alt_no_node = wrap_node_with_set(
+      make_flag_node("--no-" + alt, fn() { fn() { cell.val = [] } }, fn() {
+        cell.val = []
+      }),
+      was_set,
     )
     self.register_option(alt_node, alt_no_node, global)
   }
   if short != '\u0000' {
     let short_name = "-" + short.to_string()
     let short_opt_name = short_name
-    let short_node = make_value_node(
-      short_name,
-      fn(s) {
-        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
-        match r {
-          Ok(v) => Ok(fn() { cell.val.push(v) })
-          Err(_) =>
-            Err(
-              parse_error(
-                "invalid integer value for " + short_opt_name + ": " + s,
-              ),
-            )
-        }
-      },
-      fn() { cell.val = [] },
+    let short_node = wrap_node_with_set(
+      make_value_node(
+        short_name,
+        fn(s) {
+          let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+          match r {
+            Ok(v) => Ok(fn() { cell.val.push(v) })
+            Err(_) =>
+              Err(
+                parse_error(
+                  "invalid integer value for " + short_opt_name + ": " + s,
+                ),
+              )
+          }
+        },
+        fn() { cell.val = [] },
+      ),
+      was_set,
     )
     self.nodes.push(short_node)
     if global {
@@ -1061,7 +1159,13 @@ pub fn Parser::append_int(
     aliases,
     hidden,
   })
-  { id, getter: fn() -> Array[Int] { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name: "--" + name,
+    getter: fn() -> Array[Int] { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
 }
 
 ///|
@@ -1077,57 +1181,73 @@ pub fn Parser::count(
   let id = (self.next_id)()
   let cell : Ref[Int] = { val: 0 }
   let pending : Ref[Int] = { val: 0 }
+  let was_set : Ref[Bool] = { val: false }
   let reset = fn() {
     cell.val = 0
     pending.val = 0
   }
-  let node = make_flag_node(
-    "--" + name,
-    fn() {
-      pending.val = pending.val + 1
-      fn() { cell.val = pending.val }
-    },
-    reset,
-  )
-  let no_node = make_flag_node(
-    "--no-" + name,
-    fn() {
-      pending.val = 0
-      fn() { cell.val = pending.val }
-    },
-    reset,
-  )
-  self.register_option(node, no_node, global)
-  // aliases
-  for alt in aliases {
-    let alt_node = make_flag_node(
-      "--" + alt,
+  let node = wrap_node_with_set(
+    make_flag_node(
+      "--" + name,
       fn() {
         pending.val = pending.val + 1
         fn() { cell.val = pending.val }
       },
       reset,
-    )
-    let alt_no_node = make_flag_node(
-      "--no-" + alt,
+    ),
+    was_set,
+  )
+  let no_node = wrap_node_with_set(
+    make_flag_node(
+      "--no-" + name,
       fn() {
         pending.val = 0
         fn() { cell.val = pending.val }
       },
       reset,
+    ),
+    was_set,
+  )
+  self.register_option(node, no_node, global)
+  // aliases
+  for alt in aliases {
+    let alt_node = wrap_node_with_set(
+      make_flag_node(
+        "--" + alt,
+        fn() {
+          pending.val = pending.val + 1
+          fn() { cell.val = pending.val }
+        },
+        reset,
+      ),
+      was_set,
+    )
+    let alt_no_node = wrap_node_with_set(
+      make_flag_node(
+        "--no-" + alt,
+        fn() {
+          pending.val = 0
+          fn() { cell.val = pending.val }
+        },
+        reset,
+      ),
+      was_set,
     )
     self.register_option(alt_node, alt_no_node, global)
   }
   // short option
   if short != '\u0000' {
     let short_name = "-" + short.to_string()
-    let short_node = make_flag_node(
-      short_name,
-      fn() {
-        pending.val = pending.val + 1
-        fn() { cell.val = pending.val }
-      },
-      reset,
+    let short_node = wrap_node_with_set(
+      make_flag_node(
+        short_name,
+        fn() {
+          pending.val = pending.val + 1
+          fn() { cell.val = pending.val }
+        },
+        reset,
+      ),
+      was_set,
     )
     self.nodes.push(short_node)
     if global {
@@ -1149,7 +1269,13 @@ pub fn Parser::count(
     aliases,
     hidden,
   })
-  { id, getter: fn() -> Int { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name: "--" + name,
+    getter: fn() -> Int { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
 }
 
 ///|
@@ -1161,6 +1287,7 @@ pub fn Parser::positional(
   let id = (self.next_id)()
   let cell : Ref[String] = { val: "" }
   let pending : Ref[String] = { val: "" }
+  let was_set : Ref[Bool] = { val: false }
   ignore(name)
   let handler : (Array[String], Int) -> TryResult = fn(
     args : Array[String],
@@ -1172,7 +1299,10 @@ pub fn Parser::positional(
       Reject
     } else {
       pending.val = args[pos]
-      Accept(consumed=1, commit=fn() { cell.val = pending.val })
+      Accept(consumed=1, commit=fn() {
+        cell.val = pending.val
+        was_set.val = true
+      })
     }
   }
   self.positionals.push((handler, false))
@@ -1187,7 +1317,13 @@ pub fn Parser::positional(
     aliases: [],
     hidden: false,
   })
-  { id, getter: fn() -> String { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name,
+    getter: fn() -> String { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
 }
 
 ///|
@@ -1199,6 +1335,7 @@ pub fn Parser::rest(
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
   let cell : Ref[Array[String]] = { val: [] }
+  let was_set : Ref[Bool] = { val: false }
   ignore(name)
   let stop = stop_before
   let handler : (Array[String], Int) -> TryResult = fn(
@@ -1214,7 +1351,10 @@ pub fn Parser::rest(
           return Reject
         }
       }
-      Accept(consumed=1, commit=fn() { cell.val.push(value) })
+      Accept(consumed=1, commit=fn() {
+        cell.val.push(value)
+        was_set.val = true
+      })
     }
   }
   self.positionals.push((handler, true))
@@ -1229,7 +1369,13 @@ pub fn Parser::rest(
     aliases: [],
     hidden: false,
   })
-  { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name,
+    getter: fn() -> Array[String] { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
 }
 
 ///|
@@ -1266,6 +1412,7 @@ pub fn Parser::cmd(
     child.install_separator_node()
   }
   let cmd_name = name
+  let was_set : Ref[Bool] = { val: false }
   let node = ExactNode::{
     name: cmd_name,
     needs_value: false,
@@ -1281,6 +1428,7 @@ pub fn Parser::cmd(
           Ok(child_result) =>
             Accept(consumed=args.length() - pos, commit=fn() {
               cell.val = true
+              was_set.val = true
               self.children.set(cmd_name, child_result)
             })
           Err(e) => Error(e)
@@ -1289,7 +1437,10 @@ pub fn Parser::cmd(
         Reject
       }
     },
-    reset: fn() { cell.val = false },
+    reset: fn() {
+      cell.val = false
+      was_set.val = false
+    },
   }
   self.nodes.push(node)
   self.metas.push(OptMeta::{
@@ -1303,7 +1454,13 @@ pub fn Parser::cmd(
     aliases: [],
     hidden: false,
   })
-  { id, getter: fn() -> Bool { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name,
+    getter: fn() -> Bool { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
 }
 
 ///|
@@ -1316,6 +1473,7 @@ pub fn Parser::dashdash(
   let cell : Ref[Array[String]] = { val: [] }
   let sep = separator
   let stop = stop_before
+  let was_set : Ref[Bool] = { val: false }
   let dashdash_node = ExactNode::{
     name: sep,
     needs_value: false,
@@ -1344,12 +1502,22 @@ pub fn Parser::dashdash(
         for v in collected {
           cell.val.push(v)
         }
+        was_set.val = true
       })
     },
-    reset: fn() { cell.val = [] },
+    reset: fn() {
+      cell.val = []
+      was_set.val = false
+    },
   }
   self.nodes.push(dashdash_node)
-  { id, getter: fn() -> Array[String] { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name: separator,
+    getter: fn() -> Array[String] { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
 }
 
 ///|
@@ -1362,6 +1530,7 @@ pub fn Parser::append_dashdash(
   let cell : Ref[Array[Array[String]]] = { val: [] }
   let sep = separator
   let stop = stop_before
+  let was_set : Ref[Bool] = { val: false }
   let node = ExactNode::{
     name: sep,
     needs_value: false,
@@ -1388,12 +1557,50 @@ pub fn Parser::append_dashdash(
         group.push(args[p])
         p += 1
       }
-      Accept(consumed=p - pos, commit=fn() { cell.val.push(group) })
+      Accept(consumed=p - pos, commit=fn() {
+        cell.val.push(group)
+        was_set.val = true
+      })
     },
-    reset: fn() { cell.val = [] },
+    reset: fn() {
+      cell.val = []
+      was_set.val = false
+    },
   }
   self.nodes.push(node)
-  { id, getter: fn() -> Array[Array[String]] { cell.val }, parsed: self.parsed }
+  {
+    id,
+    name: separator,
+    getter: fn() -> Array[Array[String]] { cell.val },
+    parsed: self.parsed,
+    is_set: fn() { was_set.val },
+  }
+}
+
+///|
+pub fn Parser::exclusive(self : Parser, opts : Array[OptRef]) -> Unit {
+  let refs = opts
+  self.post_hooks.push(fn() raise ParseError {
+    let set_names : Array[String] = []
+    for opt_ref in refs {
+      if (opt_ref.is_set)() {
+        set_names.push(opt_ref.name)
+      }
+    }
+    if set_names.length() > 1 {
+      raise parse_error("mutually exclusive options: " + set_names.join(", "))
+    }
+  })
+}
+
+///|
+pub fn Parser::required(self : Parser, opt : OptRef) -> Unit {
+  let opt_ref = opt
+  self.post_hooks.push(fn() raise ParseError {
+    if not((opt_ref.is_set)()) {
+      raise parse_error("required option missing: " + opt_ref.name)
+    }
+  })
 }
 
 ///|
