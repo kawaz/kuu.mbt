@@ -41,8 +41,6 @@ fn inject_help_node(parser : Parser) -> Unit {
       short: Some('h'),
       aliases: [],
       hidden: false,
-      choices: [],
-      implicit_value_display: "",
     },
   )
 }
@@ -146,53 +144,7 @@ fn format_opt_left(meta : OptMeta) -> String {
       buf.write_string(meta.name)
     }
   }
-  if meta.choices.length() > 0 {
-    let has_implicit = not(meta.implicit_value_display.is_empty())
-    let default_val = meta.default_display
-    if has_implicit {
-      // implicit_value あり: [=iv|c1|c2|[=default]] 形式
-      buf.write_string(" [")
-      let mut first = true
-      // implicit_value を先頭に = マーカー付きで
-      buf.write_char('=')
-      buf.write_string(meta.implicit_value_display)
-      first = false
-      for c in meta.choices {
-        if c == meta.implicit_value_display {
-          continue // implicit_value は既に出力済み
-        }
-        if c == default_val && not(default_val.is_empty()) {
-          if not(first) {
-            buf.write_char('|')
-          }
-          buf.write_string("[=")
-          buf.write_string(c)
-          buf.write_char(']')
-          first = false
-          continue
-        }
-        if not(first) {
-          buf.write_char('|')
-        }
-        buf.write_string(c)
-        first = false
-      }
-      buf.write_char(']')
-    } else {
-      // choices のみ: <c1|c2|=default> 形式
-      buf.write_string(" <")
-      for i, c in meta.choices {
-        if i > 0 {
-          buf.write_char('|')
-        }
-        if c == default_val && not(default_val.is_empty()) {
-          buf.write_char('=')
-        }
-        buf.write_string(c)
-      }
-      buf.write_char('>')
-    }
-  } else if not(meta.value_name.is_empty()) {
+  if not(meta.value_name.is_empty()) {
     buf.write_string(" <")
     buf.write_string(meta.value_name)
     buf.write_char('>')
@@ -221,7 +173,7 @@ fn write_opt_section(buf : StringBuilder, metas : Array[OptMeta]) -> Unit {
     if not(meta.help.is_empty()) {
       right_buf.write_string(meta.help)
     }
-    if not(meta.default_display.is_empty()) && meta.choices.length() == 0 {
+    if not(meta.default_display.is_empty()) {
       right_buf.write_string(" [default: ")
       right_buf.write_string(meta.default_display)
       right_buf.write_char(']')

@@ -86,8 +86,6 @@ pub(all) struct OptMeta {
   short : Char?
   aliases : Array[String]
   hidden : Bool
-  choices : Array[String]
-  implicit_value_display : String
 }
 
 ///| A → B の変換ステップ（ParseError を伝搬できる）
