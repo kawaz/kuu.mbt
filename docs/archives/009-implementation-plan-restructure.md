@@ -41,3 +41,11 @@
 
 - docs/DESIGN.md 「実装計画」セクション
 - docs/DESIGN.md 「パースライフサイクルとフックアーキテクチャ」セクション
+
+## 実装注記（2026-03-07 更新）
+
+### パッケージ分割 → src/core/ 統合
+
+本 DR で計画した `core/`, `combinators/`, `parse/`, `resolve/`, `validate/`, `finalize/`, `preprocess/`, `output/` のパッケージ分割は採用せず、`src/core/` に統合して実装。MVP フェーズではパッケージ分割のオーバーヘッドが不要であり、ファイル単位での責務分離（`types.mbt`, `combinators.mbt`, `parse_raw.mbt` 等）で十分な見通しが得られている。
+
+パッケージ分割は将来の拡張フェーズで必要に応じて実施する方針。

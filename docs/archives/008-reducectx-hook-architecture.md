@@ -175,3 +175,25 @@ PoC 検証で判明した制約:
 - `docs/research/help-format-survey.md` — 8パーサのヘルプ出力フォーマット調査
 - `docs/DESIGN.md` — 設計書本体
 - DR-007 (`docs/archives/007-phase4-opts-enum-resultmap-design.md`) — 前回の設計決定（Opts enum + ResultMap）
+
+## 実装注記（2026-03-07 更新）
+
+本 DR の設計の多くは将来の拡張フェーズ向けであり、現在の実装とは乖離がある。以下に現状を記録する。
+
+### 6フェーズパイプライン → 現実の実装
+
+本 DR で設計した `PreProcess → Resolve → Reduce → Validate → Finalize → Output` の6フェーズパイプラインは、現在の実装では以下の3段階に簡略化されている:
+
+1. **parse_raw**: トークン消費ループ（Resolve + Reduce を統合した最長一致ループ）
+2. **consumed=0 finalize**: メインループ後に consumed=0 ノードを commit（デフォルト値適用）
+3. **post_hooks**: parse 完了後のフック実行（値変換・遅延バリデーション）
+
+PreProcess（`--foo=bar` 分割）は `install_eq_split_node` として消費ループ内に統合。Validate / Output フェーズは未実装。
+
+### Visibility 4段階 → hidden: Bool
+
+本 DR で設計した `Visible | Advanced | Deprecated | Hidden` の4段階 Visibility enum は、現在の実装では `hidden: Bool` として簡略化。`--help-all` による Advanced / Deprecated 表示等は将来の拡張フェーズで対応。
+
+### ReduceCtx[T] 1引数方式
+
+ReduceCtx[T] 統一シグネチャの設計はそのまま採用・実装済み。

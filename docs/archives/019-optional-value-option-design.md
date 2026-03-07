@@ -291,3 +291,22 @@ choices + implicit_value の実装は一度完了したが、`choices: Array[Str
 post_hooks インフラと post パラメータは独立して有用なため残留。
 
 詳細は DR-020 を参照。
+
+## 実装状況（2026-03-07 更新）
+
+DR-020 方針に基づき再実装完了。本 DR で設計した choices + implicit_value のコンセプトは、DR-020 の汎用 or コンビネータ設計を経て、以下の形で実装された。
+
+### 実装済みの機能
+
+- **string_opt**: `choices: Array[String]` + `implicit_value: Initial[String]?` パラメータとして実装
+- **int_opt**: `implicit_value: Initial[Int]?` パラメータとして実装
+- **内部展開**: `make_or_node` による composite ExactNode 展開（DR-020 の汎用 or 設計に基づく）
+  - `make_choice_value_node` — choices からの値マッチノード生成
+  - `make_implicit_flag_node` — 値省略時の implicit_value 適用ノード生成
+  - `make_soft_value_node` — choices なしの柔軟な値マッチノード生成
+  - `make_default_fallback_node` — consumed=0 のデフォルト値 fallback ノード生成
+
+### 設計原則に基づく修正
+
+- **OptMeta からの choices / has_implicit_value 削除**: ワークアラウンドフィールド排除の原則に従い、OptMeta にはパース制御用のフィールドを持たせない。choices と implicit_value はノード展開時に消費され、ExactNode の構造として表現される
+- **post_hooks**: `Parser.post_hooks: Array[() -> Unit!ParseError]` として実装済み。parse_raw 末尾で全 hooks を実行。string_opt の `post` パラメータから登録される

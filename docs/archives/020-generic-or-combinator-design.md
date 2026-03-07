@@ -153,3 +153,32 @@ pub(all) enum Initial[T] {
 - `uwptxwyy` feat: choices バリデーション + implicit_value (optional value option) 実装 (DR-019)
 - `xmqslovn` feat: implicit_value 全コンビネータ展開 + post フィルタ + = マーカーヘルプ (DR-019)
 - `lropsuzo` revert: choices/implicit_value 実装を撤回（post_hooks は残留）
+
+## 実装状況（2026-03-07 更新）
+
+本 DR の設計方針に基づき、choices + implicit_value が再実装された。596 tests passing（全ターゲット）。
+
+### 実装済みコンポーネント
+
+| コンポーネント | ファイル | 状態 |
+|---|---|---|
+| `Initial[T]` (Val/Thunk) | `src/core/types.mbt` | 実装済み |
+| `make_or_node` | `src/core/combinators.mbt` | 実装済み — 最長一致で子ノードを統合 |
+| `make_choice_value_node` | `src/core/combinators.mbt` | 実装済み — choices からの ExactNode 生成 |
+| `make_implicit_flag_node` | `src/core/combinators.mbt` | 実装済み — 値省略時の implicit_value ノード |
+| `make_soft_value_node` | `src/core/combinators.mbt` | 実装済み — choices なしの柔軟な値マッチ |
+| `make_default_fallback_node` | `src/core/combinators.mbt` | 実装済み — consumed=0 のデフォルト fallback |
+| consumed=0 finalize | `src/core/parse_raw` 329-336行 | 実装済み — メインループ後に consumed=0 ノードを commit |
+| `install_eq_split_node` consumed>=2 gate | `src/core/parse_raw` | 実装済み — consumed>=2 のノードのみ eq_split 展開 |
+| `install_short_combine_node` 全ノード試行 | `src/core/parse_raw` | 実装済み — 短縮結合で全ノードを試行 |
+| `post_hooks` | `src/core/parse_raw` | 実装済み — parse 完了後に全 hooks 実行 |
+
+### 設計方針との対応
+
+- **sub-parser の配列としての choices**: `make_or_node` が複数の子 ExactNode を受け取り、最長一致で統合。DR-019 の `Array[String]` 固定から脱却
+- **consumed=0 の finalize 方式**: メインループ外で独立に試行する設計をそのまま実装（本 DR の「finalize 方式」セクション参照）
+- **OptMeta の肥大化回避**: choices / has_implicit_value を OptMeta に持たせず、ノード展開時に構造として表現
+
+### 未実装
+
+- **汎用 or（任意型 sub-parser の or パターン）**: `enum Color { Red | Green | Blue | RGB(Int, Int, Int) }` のように候補ごとに異なる型・consumed 数を持つ or パターンは未実装。現在の実装は string_opt / int_opt の Convention 層展開に限定されており、本 DR の「汎用 or コンビネータ」セクションで示した完全な形（任意型の sub-parser を or で合成）は将来の拡張フェーズ向け
