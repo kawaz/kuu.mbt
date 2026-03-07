@@ -281,3 +281,13 @@ string_opt(name="color", implicit_value="always", choices=[...])   # Sugar
 初版の対応として space 形式廃止（`--name=value` のみ）を採用したが、これは過剰な制約。
 
 **最終対応**: 既存パーツ（or, serial, exact）の組み合わせで解決。serial 内の or(choices) が門番となり、不正な値は Reject。最長一致で serial(consumed=2) が exact(consumed=1) に勝つため、有効な値がある場合は正しく消費される。単一 ExactNode で頑張る必要がなかった。
+
+## 実装撤回 → DR-020 へ
+
+choices + implicit_value の実装は一度完了したが、`choices: Array[String]` が String 固定で汎用性がないことが判明し撤回。
+
+**問題**: 候補が `exact(s) → s` のような単純文字列マッチに限定される。実際には `serial("rgb", int, int, int) → RGB(r,g,b)` のように、候補ごとにパーサの構造が異なるケースがある。値の受け口はコンビネータの組み合わせ（`or` of sub-parsers）であるべき。
+
+post_hooks インフラと post パラメータは独立して有用なため残留。
+
+詳細は DR-020 を参照。
