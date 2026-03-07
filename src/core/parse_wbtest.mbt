@@ -35,7 +35,7 @@ test "multiple flags" {
 ///|
 test "no-prefix negation" {
   let p = Parser::new()
-  let verbose = p.flag(name="verbose")
+  let verbose = p.flag(name="verbose", variations=[False("no")])
   ignore(p.parse(["--verbose", "--no-verbose"]))
   inspect(p.get(verbose), content="Some(false)")
 }
@@ -51,7 +51,7 @@ test "no-prefix with default true" {
 ///|
 test "no-prefix resets to default" {
   let p = Parser::new()
-  let color = p.flag(name="color", default=true)
+  let color = p.flag(name="color", default=true, variations=[False("no")])
   ignore(p.parse(["--no-color"]))
   inspect(p.get(color), content="Some(false)")
 }
@@ -134,7 +134,7 @@ test "int and string combined" {
 ///|
 test "no-prefix resets string option" {
   let p = Parser::new()
-  let host = p.string_opt(name="host", default="localhost")
+  let host = p.string_opt(name="host", default="localhost", variations=[Reset("no")])
   ignore(p.parse(["--host", "example.com", "--no-host"]))
   inspect(
     p.get(host),
@@ -147,7 +147,7 @@ test "no-prefix resets string option" {
 ///|
 test "no-prefix resets int option" {
   let p = Parser::new()
-  let port = p.int_opt(name="port", default=8080)
+  let port = p.int_opt(name="port", default=8080, variations=[Reset("no")])
   ignore(p.parse(["--port", "3000", "--no-port"]))
   inspect(p.get(port), content="Some(8080)")
 }
@@ -235,7 +235,7 @@ test "append string default empty" {
 ///|
 test "append string negate" {
   let p = Parser::new()
-  let tags = p.append_string(name="tag")
+  let tags = p.append_string(name="tag", variations=[Reset("no")])
   ignore(p.parse(["--tag", "a", "--no-tag", "--tag", "b"]))
   inspect(
     p.get(tags),
@@ -752,7 +752,7 @@ test "alias for flag" {
 ///|
 test "alias no-prefix" {
   let p = Parser::new()
-  let verbose = p.flag(name="verbose", aliases=["v"])
+  let verbose = p.flag(name="verbose", aliases=["v"], variations=[False("no")])
   ignore(p.parse(["--v", "--no-v"]))
   inspect(p.get(verbose), content="Some(false)")
 }
@@ -963,7 +963,7 @@ test "count short combining -vvv" {
 ///|
 test "count reset with no-prefix" {
   let p = Parser::new()
-  let verbose = p.count(name="verbose", short='v')
+  let verbose = p.count(name="verbose", short='v', variations=[Reset("no")])
   ignore(p.parse(["-vvv", "--no-verbose", "-v"]))
   inspect(p.get(verbose), content="Some(1)")
 }
@@ -1452,7 +1452,7 @@ test "post filter validation error" {
   inspect(result is Err(_), content="true")
 }
 
-// === consumed=0 + enum or パターン PoC ===
+// === enum or パターン PoC ===
 
 ///|
 enum TestColor {
@@ -1470,7 +1470,6 @@ fn make_color_exact(
   value_str : String,
   color : TestColor,
   cell : Ref[TestColor],
-  committed : Ref[Bool],
 ) -> ExactNode {
   ExactNode::{
     name: opt_name,
@@ -1484,12 +1483,10 @@ fn make_color_exact(
       }
       Accept(consumed=2, commit=fn() {
         cell.val = color
-        committed.val = true
       })
     },
     reset: fn() {
       cell.val = Auto
-      committed.val = false
     },
   }
 }
@@ -1499,7 +1496,6 @@ fn make_color_exact(
 fn make_color_rgb_node(
   opt_name : String,
   cell : Ref[TestColor],
-  committed : Ref[Bool],
 ) -> ExactNode {
   ExactNode::{
     name: opt_name,
@@ -1530,14 +1526,12 @@ fn make_color_rgb_node(
         (Some(r), Some(g), Some(b)) =>
           Accept(consumed=5, commit=fn() {
             cell.val = RGB(r, g, b)
-            committed.val = true
           })
         _ => Reject
       }
     },
     reset: fn() {
       cell.val = Auto
-      committed.val = false
     },
   }
 }
@@ -1548,7 +1542,6 @@ fn make_color_implicit_node(
   opt_name : String,
   implicit : TestColor,
   cell : Ref[TestColor],
-  committed : Ref[Bool],
 ) -> ExactNode {
   ExactNode::{
     name: opt_name,
@@ -1559,63 +1552,35 @@ fn make_color_implicit_node(
       }
       Accept(consumed=1, commit=fn() {
         cell.val = implicit
-        committed.val = true
       })
     },
     reset: fn() {
       cell.val = Auto
-      committed.val = false
-    },
-  }
-}
-
-///|
-/// ヘルパー: consumed=0 の default fallback ノード
-fn make_color_default_node(
-  default_ : TestColor,
-  cell : Ref[TestColor],
-  committed : Ref[Bool],
-) -> ExactNode {
-  ExactNode::{
-    name: "",
-    needs_value: false,
-    try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult {
-      // 既に consumed>0 で commit 済みなら Reject
-      if committed.val {
-        return Reject
-      }
-      Accept(consumed=0, commit=fn() { cell.val = default_ })
-    },
-    reset: fn() {
-      cell.val = Auto
-      committed.val = false
     },
   }
 }
 
 ///|
 /// 全ノードを Parser に登録するヘルパー
-fn setup_color_opt(p : Parser) -> (Ref[TestColor], Ref[Bool]) {
+fn setup_color_opt(p : Parser) -> Ref[TestColor] {
   let cell : Ref[TestColor] = { val: Auto }
-  let committed : Ref[Bool] = { val: false }
   let nodes : Array[ExactNode] = [
-    make_color_exact("--color", "red", Red, cell, committed),
-    make_color_exact("--color", "green", Green, cell, committed),
-    make_color_exact("--color", "blue", Blue, cell, committed),
-    make_color_rgb_node("--color", cell, committed),
-    make_color_implicit_node("--color", Red, cell, committed),
-    make_color_default_node(Auto, cell, committed),
+    make_color_exact("--color", "red", Red, cell),
+    make_color_exact("--color", "green", Green, cell),
+    make_color_exact("--color", "blue", Blue, cell),
+    make_color_rgb_node("--color", cell),
+    make_color_implicit_node("--color", Red, cell),
   ]
   for node in nodes {
     p.nodes.push(node)
   }
-  (cell, committed)
+  cell
 }
 
 ///|
 test "enum or: --color red" {
   let p = Parser::new()
-  let (cell, _) = setup_color_opt(p)
+  let cell = setup_color_opt(p)
   ignore(p.parse(["--color", "red"]))
   inspect(cell.val, content="Red")
 }
@@ -1623,7 +1588,7 @@ test "enum or: --color red" {
 ///|
 test "enum or: --color green" {
   let p = Parser::new()
-  let (cell, _) = setup_color_opt(p)
+  let cell = setup_color_opt(p)
   ignore(p.parse(["--color", "green"]))
   inspect(cell.val, content="Green")
 }
@@ -1631,7 +1596,7 @@ test "enum or: --color green" {
 ///|
 test "enum or: --color rgb 255 128 0" {
   let p = Parser::new()
-  let (cell, _) = setup_color_opt(p)
+  let cell = setup_color_opt(p)
   ignore(p.parse(["--color", "rgb", "255", "128", "0"]))
   inspect(cell.val, content="RGB(255, 128, 0)")
 }
@@ -1639,15 +1604,15 @@ test "enum or: --color rgb 255 128 0" {
 ///|
 test "enum or: --color (implicit → Red)" {
   let p = Parser::new()
-  let (cell, _) = setup_color_opt(p)
+  let cell = setup_color_opt(p)
   ignore(p.parse(["--color"]))
   inspect(cell.val, content="Red")
 }
 
 ///|
-test "enum or: no --color (consumed=0 default → Auto)" {
+test "enum or: no --color (default → Auto)" {
   let p = Parser::new()
-  let (cell, _) = setup_color_opt(p)
+  let cell = setup_color_opt(p)
   ignore(p.parse([]))
   inspect(cell.val, content="Auto")
 }
@@ -1655,7 +1620,7 @@ test "enum or: no --color (consumed=0 default → Auto)" {
 ///|
 test "enum or: --color red wins over implicit" {
   let p = Parser::new()
-  let (cell, _) = setup_color_opt(p)
+  let cell = setup_color_opt(p)
   ignore(p.parse(["--color", "red"]))
   inspect(cell.val, content="Red")
 }
@@ -1663,7 +1628,7 @@ test "enum or: --color red wins over implicit" {
 ///|
 test "enum or: --color with other flag → implicit" {
   let p = Parser::new()
-  let (cell, _) = setup_color_opt(p)
+  let cell = setup_color_opt(p)
   let verbose = p.flag(name="verbose")
   ignore(p.parse(["--color", "--verbose"]))
   inspect(cell.val, content="Red")
@@ -1673,7 +1638,7 @@ test "enum or: --color with other flag → implicit" {
 ///|
 test "enum or: --color rgb with args then other opt" {
   let p = Parser::new()
-  let (cell, _) = setup_color_opt(p)
+  let cell = setup_color_opt(p)
   let verbose = p.flag(name="verbose")
   ignore(p.parse(["--color", "rgb", "10", "20", "30", "--verbose"]))
   inspect(cell.val, content="RGB(10, 20, 30)")
@@ -1681,9 +1646,9 @@ test "enum or: --color rgb with args then other opt" {
 }
 
 ///|
-test "enum or: consumed=0 default not used when --color specified" {
+test "enum or: default not used when --color specified" {
   let p = Parser::new()
-  let (cell, _) = setup_color_opt(p)
+  let cell = setup_color_opt(p)
   ignore(p.parse(["--color", "blue"]))
   inspect(cell.val, content="Blue")
 }
@@ -1785,6 +1750,7 @@ test "string_opt choices+implicit: --no-color resets" {
     default="auto",
     choices=["always", "none", "auto"],
     implicit_value=Some(Val("always")),
+    variations=[Reset("no")],
   )
   ignore(p.parse(["--color", "none", "--no-color"]))
   inspect(
@@ -1917,7 +1883,7 @@ test "string_opt choices+implicit with post filter" {
 }
 
 ///|
-test "string_opt choices+implicit: multiple opts with consumed=0" {
+test "string_opt choices+implicit: multiple opts with implicit default" {
   let p = Parser::new()
   let color = p.string_opt(
     name="color",
@@ -2465,4 +2431,525 @@ test "serial with rest inside" {
       #|Some(["a", "b", "c"])
     ),
   )
+}
+
+///|
+test "sub basic — no Ref needed" {
+  let p = Parser::new()
+  let clone = p.sub(name="clone")
+  let url = clone.positional(name="url")
+  let depth = clone.int_opt(name="depth", default=0)
+  let result = p.parse(["clone", "https://example.com", "--depth", "3"])
+  inspect(result.child("clone") is Some(_), content="true")
+  inspect(url.get(), content="Some(\"https://example.com\")")
+  inspect(depth.get(), content="Some(3)")
+}
+
+///|
+test "sub nested — remote add without Ref" {
+  let p = Parser::new()
+  let remote = p.sub(name="remote")
+  let add = remote.sub(name="add")
+  let name_opt = add.positional(name="name")
+  let url_opt = add.positional(name="url")
+  let result = p.parse(["remote", "add", "origin", "https://example.com"])
+  match result.child("remote") {
+    Some(remote_result) =>
+      match remote_result.child("add") {
+        Some(_) => {
+          inspect(
+            name_opt.get(),
+            content=(
+              #|Some("origin")
+            ),
+          )
+          inspect(
+            url_opt.get(),
+            content=(
+              #|Some("https://example.com")
+            ),
+          )
+        }
+        None => abort("add child should exist")
+      }
+    None => abort("remote child should exist")
+  }
+}
+
+///|
+test "sub with global option propagation" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", global=true)
+  let clone = p.sub(name="clone")
+  let url = clone.positional(name="url")
+  ignore(p.parse(["clone", "--verbose", "https://example.com"]))
+  inspect(verbose.get(), content="Some(true)")
+  inspect(
+    url.get(),
+    content=(
+      #|Some("https://example.com")
+    ),
+  )
+}
+
+///|
+test "sub help shows options after help flag" {
+  let p = Parser::new()
+  let clone = p.sub(name="clone", description="Clone a repo")
+  let _ = clone.flag(name="depth", description="Shallow clone")
+  let result : Result[_, _] = try? p.parse(["clone", "--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("--depth"), content="true")
+      inspect(text.contains("--help"), content="true")
+    }
+    _ => abort("expected HelpRequested")
+  }
+}
+
+///|
+test "sub with required and exclusive" {
+  let p = Parser::new()
+  let config = p.sub(name="config")
+  let global_flag = config.flag(name="global")
+  let local_flag = config.flag(name="local")
+  config.exclusive([global_flag.as_ref(), local_flag.as_ref()])
+  let key = config.positional(name="key")
+  config.required(key.as_ref())
+  // valid: --global with key
+  let result = p.parse(["config", "--global", "user.name"])
+  inspect(result.child("config") is Some(_), content="true")
+  inspect(global_flag.get(), content="Some(true)")
+  inspect(local_flag.get(), content="Some(false)")
+  inspect(
+    key.get(),
+    content=(
+      #|Some("user.name")
+    ),
+  )
+}
+
+///|
+test "sub exclusive error" {
+  let p = Parser::new()
+  let config = p.sub(name="config")
+  let global_flag = config.flag(name="global")
+  let local_flag = config.flag(name="local")
+  config.exclusive([global_flag.as_ref(), local_flag.as_ref()])
+  let result : Result[_, _] = try? p.parse(["config", "--global", "--local"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "sub required missing error" {
+  let p = Parser::new()
+  let config = p.sub(name="config")
+  let key = config.positional(name="key")
+  config.required(key.as_ref())
+  let result : Result[_, _] = try? p.parse(["config"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "sub with serial and never" {
+  let p = Parser::new()
+  let add = p.sub(name="add")
+  let mut src : Opt[String]? = None
+  let mut dst : Opt[String]? = None
+  add.serial(setup=fn(sub) {
+    src = Some(sub.positional(name="src"))
+    dst = Some(sub.positional(name="dst"))
+    sub.never()
+  })
+  ignore(p.parse(["add", "a.txt", "b.txt"]))
+  inspect(
+    src.unwrap().get(),
+    content=(
+      #|Some("a.txt")
+    ),
+  )
+  inspect(
+    dst.unwrap().get(),
+    content=(
+      #|Some("b.txt")
+    ),
+  )
+}
+
+///|
+test "sub with dashdash" {
+  let p = Parser::new()
+  let stash = p.sub(name="stash", dashdash=false)
+  let msg = stash.string_opt(name="message", default="", short='m')
+  let files = stash.dashdash()
+  ignore(p.parse(["stash", "-m", "wip", "--", "file1", "file2"]))
+  inspect(
+    msg.get(),
+    content=(
+      #|Some("wip")
+    ),
+  )
+  inspect(
+    files.get(),
+    content=(
+      #|Some(["file1", "file2"])
+    ),
+  )
+}
+
+///|
+test "require_cmd errors when no subcommand" {
+  let p = Parser::new()
+  let _ = p.sub(name="clone", description="Clone a repo")
+  let _ = p.sub(name="commit", description="Commit changes")
+  p.require_cmd()
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.message, content="subcommand required")
+      inspect(info.help_text.contains("clone"), content="true")
+      inspect(info.help_text.contains("commit"), content="true")
+    }
+    _ => abort("expected ParseError")
+  }
+}
+
+///|
+test "require_cmd passes when subcommand selected" {
+  let p = Parser::new()
+  let clone = p.sub(name="clone")
+  let _ = clone.positional(name="url")
+  p.require_cmd()
+  let result = p.parse(["clone", "https://example.com"])
+  inspect(result.child("clone") is Some(_), content="true")
+}
+
+///|
+test "require_cmd errors with flags but no subcommand" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose")
+  let _ = p.sub(name="serve", description="Start server")
+  p.require_cmd()
+  let result : Result[_, _] = try? p.parse(["--verbose"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.message, content="subcommand required")
+      inspect(info.help_text.contains("serve"), content="true")
+    }
+    _ => abort("expected ParseError")
+  }
+}
+
+///|
+test "require_cmd errors on nested sub" {
+  let p = Parser::new()
+  let remote = p.sub(name="remote")
+  let _ = remote.sub(name="add", description="Add remote")
+  remote.require_cmd()
+  let result : Result[_, _] = try? p.parse(["remote"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.message, content="subcommand required")
+      inspect(info.help_text.contains("add"), content="true")
+    }
+    _ => abort("expected ParseError")
+  }
+}
+
+///|
+test "sub + serial positionals" {
+  let p = Parser::new()
+  let remote = p.sub(name="remote")
+  let mut remote_name : Opt[String]? = None
+  let mut remote_url : Opt[String]? = None
+  remote.serial(setup=fn(sub) {
+    remote_name = Some(sub.positional(name="name"))
+    remote_url = Some(sub.positional(name="url"))
+    sub.never()
+  })
+  let result = p.parse(["remote", "origin", "https://example.com"])
+  inspect(result.child("remote") is Some(_), content="true")
+  inspect(
+    remote_name.unwrap().get(),
+    content=(
+      #|Some("origin")
+    ),
+  )
+  inspect(
+    remote_url.unwrap().get(),
+    content=(
+      #|Some("https://example.com")
+    ),
+  )
+}
+
+///|
+test "parse called twice raises error" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose")
+  ignore(p.parse([]))
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(
+        info.message.contains("can only be called once"),
+        content="true",
+      )
+    _ => abort("expected ParseError")
+  }
+}
+
+///|
+test "require_cmd with no commands defined" {
+  let p = Parser::new()
+  p.require_cmd()
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => inspect(info.message, content="subcommand required")
+    _ => abort("expected ParseError")
+  }
+}
+
+///|
+test "require_cmd with --help still shows help" {
+  let p = Parser::new()
+  let _ = p.sub(name="serve", description="Start server")
+  p.require_cmd()
+  let result : Result[_, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => inspect(text.contains("serve"), content="true")
+    _ => abort("expected HelpRequested")
+  }
+}
+
+// ============ Variation tests ============
+
+///|
+test "variation: False flag with default=true" {
+  let p = Parser::new()
+  let color = p.flag(name="color", default=true, variations=[False("no")])
+  ignore(p.parse(["--no-color"]))
+  inspect(p.get(color), content="Some(false)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: False flag with default=false" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", default=false, variations=[False("no")])
+  ignore(p.parse(["--no-verbose"]))
+  // False sets cell=false (same as default), but was_set=true
+  inspect(p.get(verbose), content="Some(false)")
+  inspect((verbose.is_set)(), content="true")
+}
+
+///|
+test "variation: Reset flag resets to default" {
+  let p = Parser::new()
+  let color = p.flag(name="color", default=true, variations=[Reset("reset")])
+  // First set to true (positive), then reset
+  ignore(p.parse(["--color", "--reset-color"]))
+  inspect(p.get(color), content="Some(true)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: Unset flag resets value and was_set" {
+  let p = Parser::new()
+  let color = p.flag(name="color", variations=[Unset("unset")])
+  ignore(p.parse(["--color", "--unset-color"]))
+  inspect(p.get(color), content="Some(false)")
+  inspect((color.is_set)(), content="false")
+}
+
+///|
+test "variation: True/False flag with enable/disable" {
+  let p = Parser::new()
+  let color = p.flag(name="color", variations=[True("enable"), False("disable")])
+  ignore(p.parse(["--enable-color"]))
+  inspect(p.get(color), content="Some(true)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: True/False flag disable" {
+  let p = Parser::new()
+  let color = p.flag(name="color", variations=[True("enable"), False("disable")])
+  ignore(p.parse(["--disable-color"]))
+  inspect(p.get(color), content="Some(false)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: True/False flag enable then disable" {
+  let p = Parser::new()
+  let color = p.flag(name="color", variations=[True("enable"), False("disable")])
+  ignore(p.parse(["--enable-color", "--disable-color"]))
+  inspect(p.get(color), content="Some(false)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: count with Reset" {
+  let p = Parser::new()
+  let v = p.count(name="verbose", variations=[Reset("no")])
+  ignore(p.parse(["--verbose", "--verbose", "--no-verbose"]))
+  inspect(p.get(v), content="Some(0)")
+  inspect((v.is_set)(), content="true")
+}
+
+///|
+test "variation: string_opt with Reset" {
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost", variations=[Reset("no")])
+  ignore(p.parse(["--host", "example.com", "--no-host"]))
+  inspect(
+    p.get(host),
+    content=(
+      #|Some("localhost")
+    ),
+  )
+  inspect((host.is_set)(), content="true")
+}
+
+///|
+test "variation: string_opt with Unset" {
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost", variations=[Unset("unset")])
+  ignore(p.parse(["--host", "example.com", "--unset-host"]))
+  inspect(
+    p.get(host),
+    content=(
+      #|Some("localhost")
+    ),
+  )
+  inspect((host.is_set)(), content="false")
+}
+
+///|
+test "variation: int_opt with Reset" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=8080, variations=[Reset("no")])
+  ignore(p.parse(["--port", "3000", "--no-port"]))
+  inspect(p.get(port), content="Some(8080)")
+  inspect((port.is_set)(), content="true")
+}
+
+///|
+test "variation: append_string with Reset" {
+  let p = Parser::new()
+  let tags = p.append_string(name="tag", variations=[Reset("no")])
+  ignore(p.parse(["--tag", "a", "--tag", "b", "--no-tag"]))
+  inspect(p.get(tags), content="Some([])")
+  inspect((tags.is_set)(), content="true")
+}
+
+///|
+test "variation: append_int with Reset" {
+  let p = Parser::new()
+  let ids = p.append_int(name="id", variations=[Reset("no")])
+  ignore(p.parse(["--id", "1", "--id", "2", "--no-id"]))
+  inspect(p.get(ids), content="Some([])")
+  inspect((ids.is_set)(), content="true")
+}
+
+///|
+test "variation: flag alias also gets variation" {
+  let p = Parser::new()
+  let color = p.flag(name="color", aliases=["colour"], variations=[False("no")])
+  ignore(p.parse(["--no-colour"]))
+  inspect(p.get(color), content="Some(false)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: multiple variations" {
+  let p = Parser::new()
+  let color = p.flag(
+    name="color",
+    variations=[False("no"), True("enable"), False("disable")],
+  )
+  ignore(p.parse(["--disable-color"]))
+  inspect(p.get(color), content="Some(false)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: empty variations means no --no- prefix" {
+  let p = Parser::new()
+  let _color = p.flag(name="color", variations=[])
+  let result : Result[_, _] = try? p.parse(["--no-color"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("unexpected argument"), content="true")
+    _ => abort("expected ParseError for unexpected argument --no-color")
+  }
+}
+
+///|
+test "variation: Toggle basic" {
+  let p = Parser::new()
+  let color = p.flag(name="color", variations=[Toggle("toggle")])
+  ignore(p.parse(["--color", "--toggle-color"]))
+  // --color sets true (=!default), --toggle-color flips to false
+  inspect(p.get(color), content="Some(false)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: Toggle double toggles back" {
+  let p = Parser::new()
+  let color = p.flag(name="color", variations=[Toggle("toggle")])
+  ignore(p.parse(["--color", "--toggle-color", "--toggle-color"]))
+  // --color → true, --toggle → false, --toggle → true
+  inspect(p.get(color), content="Some(true)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: Toggle with default=true" {
+  let p = Parser::new()
+  let color = p.flag(name="color", default=true, variations=[Toggle("toggle")])
+  ignore(p.parse(["--toggle-color"]))
+  // default=true, toggle → false
+  inspect(p.get(color), content="Some(false)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: True sets true regardless of default" {
+  let p = Parser::new()
+  let color = p.flag(name="color", default=true, variations=[True("enable")])
+  // Main (--color) with default=true sets to !default = false
+  ignore(p.parse(["--color", "--enable-color"]))
+  // --color → false, --enable-color → true
+  inspect(p.get(color), content="Some(true)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "variation: False sets false regardless of default" {
+  let p = Parser::new()
+  let color = p.flag(name="color", default=true, variations=[False("disable")])
+  ignore(p.parse(["--disable-color"]))
+  inspect(p.get(color), content="Some(false)")
+  inspect((color.is_set)(), content="true")
+}
+
+///|
+test "flag Main = not default (default=true)" {
+  let p = Parser::new()
+  let color = p.flag(name="color", default=true)
+  ignore(p.parse(["--color"]))
+  // Main with default=true: sets to !true = false
+  inspect(p.get(color), content="Some(false)")
+}
+
+///|
+test "flag Main = not default (default=false)" {
+  let p = Parser::new()
+  let color = p.flag(name="color", default=false)
+  ignore(p.parse(["--color"]))
+  // Main with default=false: sets to !false = true
+  inspect(p.get(color), content="Some(true)")
 }

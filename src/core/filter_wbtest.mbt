@@ -245,20 +245,6 @@ test "make_reducer — Value(Some(s)) applies pre and accumulates" {
 }
 
 ///|
-test "make_reducer — Negate returns initial value" {
-  let pre = Filter::parse_int()
-  let accum : Accumulator[Int, Int] = (
-    fn(cur, piece) { cur + piece } : Accumulator[_, _])
-  let reducer = make_reducer(pre, accum, 0)
-  let ctx = ReduceCtx::{ current: 42, action: Negate }
-  let result : Result[Int?, _] = try? reducer(ctx)
-  match result {
-    Ok(Some(v)) => inspect(v, content="0")
-    _ => fail("expected Ok(Some(0))")
-  }
-}
-
-///|
 test "make_reducer — Value(None) returns None" {
   let pre = Filter::parse_int()
   let accum : Accumulator[Int, Int] = (
@@ -302,4 +288,24 @@ test "make_reducer — FilterChain composition: trim.then(parse_int).then(in_ran
   let ctx2 = ReduceCtx::{ current: 0, action: Value(Some("  99999  ")) }
   let r2 : Result[Int?, _] = try? reducer(ctx2)
   inspect(r2 is Err(_), content="true")
+}
+
+///|
+test "in_range at lower boundary" {
+  let chain = Filter::in_range(1, 10)
+  let result : Result[Int, _] = try? (chain.run)(1)
+  match result {
+    Ok(v) => inspect(v, content="1")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "in_range at upper boundary" {
+  let chain = Filter::in_range(1, 10)
+  let result : Result[Int, _] = try? (chain.run)(10)
+  match result {
+    Ok(v) => inspect(v, content="10")
+    Err(_) => fail("expected Ok")
+  }
 }

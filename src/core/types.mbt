@@ -11,9 +11,17 @@ pub(all) suberror ParseError {
 }
 
 ///|
+pub(all) enum Variation {
+  Toggle(String) // --{p}-{name}: !current（トグル）。Bool 専用。偶数回で元に戻る
+  True(String) // --{p}-{name}: 常に true（Bool 専用、冪等）
+  False(String) // --{p}-{name}: 常に false（Bool 専用、冪等）
+  Reset(String) // --{p}-{name}: cell=default, was_set=true
+  Unset(String) // --{p}-{name}: cell=default, was_set=false
+} derive(Show, Eq)
+
+///|
 pub(all) enum ReduceAction {
   Value(String?)
-  Negate
 } derive(Show, Eq)
 
 ///|
@@ -123,15 +131,15 @@ pub(all) struct ReduceCtx[T] {
 pub(all) struct Filter {}
 
 ///|
-/// 遅延評価可能な初期値。Val は即値、Thunk は遅延評価
-pub(all) enum Initial[T] {
+/// 遅延評価可能な値。Val は即値、Thunk は遅延評価
+pub(all) enum Lazy[T] {
   Val(T)
   Thunk(() -> T)
 }
 
 ///|
-/// Initial[T] を評価して値を取得
-pub fn[T] Initial::resolve(self : Initial[T]) -> T {
+/// Lazy[T] を評価して値を取得
+pub fn[T] Lazy::resolve(self : Lazy[T]) -> T {
   match self {
     Val(v) => v
     Thunk(f) => f()

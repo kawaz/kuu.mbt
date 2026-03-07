@@ -1,5 +1,11 @@
 ///|
 fn inject_help_node(parser : Parser) -> Unit {
+  // Idempotent: skip if already injected
+  for meta in parser.metas {
+    if meta.name == "help" {
+      return
+    }
+  }
   let help_node = ExactNode::{
     name: "--help",
     needs_value: false,

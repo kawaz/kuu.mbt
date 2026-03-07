@@ -276,6 +276,10 @@ fn Parser::parse_raw(
   self : Parser,
   args : Array[String],
 ) -> ParseResult raise ParseError {
+  if self.parsed.val {
+    raise parse_error("Parser::parse can only be called once")
+  }
+  inject_help_node(self)
   self.install_eq_split_node()
   self.install_short_combine_node()
   let mut pos = 0
@@ -324,14 +328,6 @@ fn Parser::parse_raw(
         } else {
           raise parse_error("unexpected argument: " + args[pos])
         }
-    }
-  }
-  // consumed=0 finalize: ループ後に全ノードを1回試行し、
-  // consumed=0 の Accept を返すノード（未確定のデフォルト等）を commit
-  for node in self.nodes {
-    match (node.try_reduce)(args, args.length()) {
-      Accept(consumed=0, commit~) => commit()
-      _ => ()
     }
   }
   self.parsed.val = true

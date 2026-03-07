@@ -149,7 +149,6 @@ pub fn[T, U] make_reducer(
         let f : (T, U) -> T = (accum : (T, U) -> T)
         Some(f(ctx.current, piece))
       }
-      Negate => Some(initial)
       _ => None
     }
   }
