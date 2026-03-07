@@ -1379,6 +1379,78 @@ pub fn Parser::rest(
 }
 
 ///|
+pub fn Parser::never(self : Parser) -> Unit {
+  let handler : (Array[String], Int) -> TryResult = fn(args, pos) {
+    if pos < args.length() {
+      Error(parse_error("unexpected argument: " + args[pos]))
+    } else {
+      Reject
+    }
+  }
+  self.positionals.push((handler, false))
+}
+
+///|
+pub fn Parser::serial(self : Parser, setup~ : (Parser) -> Unit) -> Unit {
+  // serial 用の軽量 sub-parser を直接構築（Parser::new は --help 等を登録してしまうため）
+  let sub : Parser = {
+    next_id: self.next_id, // 親と ID 空間共有
+    nodes: [],
+    global_nodes: [],
+    positionals: [],
+    current_positional: { val: 0 },
+    parsed: self.parsed, // 親と parsed 共有
+    children: Map::new(),
+    metas: [],
+    description: { val: "" },
+    post_hooks: [],
+  }
+  setup(sub)
+  // sub.positionals を greedy な compound handler にまとめる。
+  // 1回の呼び出しで sub 内の全 positional を可能な限り消費する。
+  let sub_positionals = sub.positionals
+  let sub_current : Ref[Int] = { val: 0 }
+  let handler : (Array[String], Int) -> TryResult = fn(args, pos) {
+    if sub_current.val >= sub_positionals.length() {
+      return Reject
+    }
+    let mut p = pos
+    let commits : Array[() -> Unit] = []
+    let mut next_pos_idx = sub_current.val
+    while p < args.length() && next_pos_idx < sub_positionals.length() {
+      let (sub_handler, is_rest) = sub_positionals[next_pos_idx]
+      match sub_handler(args, p) {
+        Accept(consumed~, commit~) => {
+          commits.push(commit)
+          if not(is_rest) {
+            next_pos_idx += 1
+          }
+          p += consumed
+        }
+        Reject => break
+        Error(e) => return Error(e)
+      }
+    }
+    if p == pos {
+      // 1つも消費できなかった
+      return Reject
+    }
+    let final_pos_idx = next_pos_idx
+    Accept(consumed=p - pos, commit=fn() {
+      for c in commits {
+        c()
+      }
+      sub_current.val = final_pos_idx
+    })
+  }
+  // sub の中に rest がある場合、serial 全体を is_rest=true にする
+  // （rest がなくても serial は greedy に全消費するので通常 is_rest=false でよい）
+  let has_rest = sub_positionals.length() > 0 &&
+    sub_positionals[sub_positionals.length() - 1].1
+  self.positionals.push((handler, has_rest))
+}
+
+///|
 pub fn Parser::cmd(
   self : Parser,
   name~ : String,

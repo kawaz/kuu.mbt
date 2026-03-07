@@ -2333,3 +2333,136 @@ test "is_set true for implicit value" {
     ),
   )
 }
+
+// === never コンビネータテスト ===
+
+///|
+test "never rejects extra positional args" {
+  let p = Parser::new(dashdash=false)
+  let _file = p.positional(name="file")
+  p.never()
+  let result : Result[_, _] = try? p.parse(["a", "b"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "never allows exact positional count" {
+  let p = Parser::new(dashdash=false)
+  let file = p.positional(name="file")
+  p.never()
+  ignore(p.parse(["hello"]))
+  inspect(
+    p.get(file),
+    content=(
+      #|Some("hello")
+    ),
+  )
+}
+
+///|
+test "never allows zero args" {
+  let p = Parser::new(dashdash=false)
+  p.never()
+  ignore(p.parse([]))
+}
+
+// === serial コンビネータテスト ===
+
+///|
+test "serial basic positional grouping" {
+  let p = Parser::new(dashdash=false)
+  let src = p.positional(name="src")
+  let dst = p.positional(name="dst")
+  // serial を使わなくても順序消費は動く（比較用）
+  ignore(p.parse(["hello", "world"]))
+  inspect(
+    p.get(src),
+    content=(
+      #|Some("hello")
+    ),
+  )
+  inspect(
+    p.get(dst),
+    content=(
+      #|Some("world")
+    ),
+  )
+}
+
+///|
+test "serial with never prevents extra args" {
+  let p = Parser::new(dashdash=false)
+  let mut src : Opt[String]? = None
+  let mut dst : Opt[String]? = None
+  p.serial(setup=fn(sub) {
+    src = Some(sub.positional(name="src"))
+    dst = Some(sub.positional(name="dst"))
+    sub.never()
+  })
+  ignore(p.parse(["a", "b"]))
+  inspect(
+    src.unwrap().get(),
+    content=(
+      #|Some("a")
+    ),
+  )
+  inspect(
+    dst.unwrap().get(),
+    content=(
+      #|Some("b")
+    ),
+  )
+}
+
+///|
+test "serial with never rejects extra" {
+  let p = Parser::new(dashdash=false)
+  p.serial(setup=fn(sub) {
+    ignore(sub.positional(name="src"))
+    ignore(sub.positional(name="dst"))
+    sub.never()
+  })
+  let result : Result[_, _] = try? p.parse(["a", "b", "c"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "serial inside dashdash separator context" {
+  // -- の後で serial グループが機能することを確認
+  let p = Parser::new(dashdash=true)
+  let flag = p.flag(name="verbose")
+  let mut src : Opt[String]? = None
+  let mut dst : Opt[String]? = None
+  p.serial(setup=fn(sub) {
+    src = Some(sub.positional(name="src"))
+    dst = Some(sub.positional(name="dst"))
+  })
+  ignore(p.parse(["--verbose", "--", "hello", "world"]))
+  inspect(p.get(flag), content="Some(true)")
+  inspect(
+    src.unwrap().get(),
+    content=(
+      #|Some("hello")
+    ),
+  )
+  inspect(
+    dst.unwrap().get(),
+    content=(
+      #|Some("world")
+    ),
+  )
+}
+
+///|
+test "serial with rest inside" {
+  let p = Parser::new(dashdash=false)
+  let mut files : Opt[Array[String]]? = None
+  p.serial(setup=fn(sub) { files = Some(sub.rest(name="files")) })
+  ignore(p.parse(["a", "b", "c"]))
+  inspect(
+    files.unwrap().get(),
+    content=(
+      #|Some(["a", "b", "c"])
+    ),
+  )
+}
