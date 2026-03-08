@@ -1,0 +1,14 @@
+[project]
+name = "mycargo"
+version = "0.1.0"
+description = "cargo CLI argument parser demo using kuu WASM bridge"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["src"]
