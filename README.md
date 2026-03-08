@@ -7,6 +7,13 @@
 MoonBit製CLIパーサライブラリ [kuu](https://github.com/kawaz/kuu.mbt) を使って、
 Docker CLI のサブコマンド構造を Go から引数パースする実証コード。
 
+## 前提条件
+
+- **Node.js v23+** (v25.5.0 推奨、JS String Builtins 対応)
+- **Go 1.25+** (go.mod: 1.25.7)
+- **MoonBit toolchain** (`moon` コマンド)
+- **just** (justfile runner)
+
 ### 検証内容
 
 - **10サブコマンド**: run, build, ps, images, pull, push, exec, compose, network, volume
