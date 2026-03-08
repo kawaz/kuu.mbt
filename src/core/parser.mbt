@@ -79,6 +79,52 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
 }
 
 ///|
+/// コンビネータの共通パイプライン: メインノード生成 → was_set ラップ → variation展開 → 登録 → OptMeta → Opt[T]
+fn[T] Parser::register_option(
+  self : Parser,
+  name~ : String,
+  aliases~ : Array[String],
+  short~ : Char,
+  global~ : Bool,
+  help~ : String,
+  value_name~ : String,
+  default_display~ : String,
+  hidden~ : Bool,
+  kind~ : OptKind,
+  variations~ : Array[Variation],
+  was_set~ : Ref[Bool],
+  make_main_node~ : (String) -> ExactNode,
+  make_node_for_variation~ : (String, Variation) -> ExactNode,
+  getter~ : () -> T,
+) -> Opt[T] {
+  let id = (self.next_id)()
+  self.expand_and_register(
+    name, aliases, short, global,
+    make_long_nodes=fn(opt_name) {
+      let nodes : Array[ExactNode] = []
+      nodes.push(wrap_node_with_set(make_main_node(opt_name), was_set))
+      expand_variation_nodes(opt_name, variations, nodes, make_node_for_variation)
+      nodes
+    },
+    make_short_nodes=fn(short_name) {
+      [wrap_node_with_set(make_main_node(short_name), was_set)]
+    },
+  )
+  self.metas.push(OptMeta::{
+    kind,
+    name,
+    help,
+    value_name,
+    default_display,
+    global,
+    short: if short != '\u0000' { Some(short) } else { None },
+    aliases,
+    hidden,
+  })
+  { id, name: "--" + name, getter, parsed: self.parsed, is_set: fn() { was_set.val } }
+}
+
+///|
 /// コンビネータの共通パターン: メイン名 → aliases → short の展開 + ノード登録
 fn Parser::expand_and_register(
   self : Parser,

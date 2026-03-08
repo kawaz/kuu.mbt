@@ -22,7 +22,6 @@ pub fn Parser::flag(
   if variation_false is Some(p) { variations.push(False(p)) }
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
-  let id = (self.next_id)()
   // default_fn があれば default を上書き
   let initial_val = match default_fn {
     Some(f) => f()
@@ -36,78 +35,37 @@ pub fn Parser::flag(
     pending.val = not(initial_val)
     fn() { cell.val = pending.val }
   }
-  self.expand_and_register(
-    name, aliases, short, global,
-    make_long_nodes=fn(opt_name) {
-      let nodes : Array[ExactNode] = []
-      nodes.push(wrap_node_with_set(
-        make_flag_node(opt_name, positive_match, reset_fn), was_set,
-      ))
-      let base = opt_name.unsafe_substring(start=2, end=opt_name.length())
-      for v in variations {
-        match v {
-          Toggle(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              fn() { cell.val = not(cell.val); was_set.val = true }
-            }, fn() { cell.val = initial_val; was_set.val = false }))
-          }
-          True(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              fn() { cell.val = true; was_set.val = true }
-            }, fn() { cell.val = initial_val; was_set.val = false }))
-          }
-          False(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              fn() { cell.val = false; was_set.val = true }
-            }, fn() { cell.val = initial_val; was_set.val = false }))
-          }
-          Reset(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              fn() { cell.val = initial_val; was_set.val = true }
-            }, fn() { cell.val = initial_val; was_set.val = false }))
-          }
-          Unset(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              fn() { cell.val = initial_val; was_set.val = false }
-            }, fn() { cell.val = initial_val; was_set.val = false }))
-          }
-        }
+  self.register_option(
+    name~, aliases~, short~, global~, hidden~,
+    help=description, value_name="", default_display="",
+    kind=Flag, variations~, was_set~,
+    make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
+    make_node_for_variation=fn(vn, v) {
+      match v {
+        Toggle(_) =>
+          make_flag_node(vn, fn() {
+            fn() { cell.val = not(cell.val); was_set.val = true }
+          }, fn() { cell.val = initial_val; was_set.val = false })
+        True(_) =>
+          make_flag_node(vn, fn() {
+            fn() { cell.val = true; was_set.val = true }
+          }, fn() { cell.val = initial_val; was_set.val = false })
+        False(_) =>
+          make_flag_node(vn, fn() {
+            fn() { cell.val = false; was_set.val = true }
+          }, fn() { cell.val = initial_val; was_set.val = false })
+        Reset(_) =>
+          make_flag_node(vn, fn() {
+            fn() { cell.val = initial_val; was_set.val = true }
+          }, fn() { cell.val = initial_val; was_set.val = false })
+        Unset(_) =>
+          make_flag_node(vn, fn() {
+            fn() { cell.val = initial_val; was_set.val = false }
+          }, fn() { cell.val = initial_val; was_set.val = false })
       }
-      nodes
     },
-    make_short_nodes=fn(short_name) {
-      [wrap_node_with_set(
-        make_flag_node(short_name, positive_match, reset_fn), was_set,
-      )]
-    },
+    getter=fn() { cell.val },
   )
-  self.metas.push(OptMeta::{
-    kind: Flag,
-    name,
-    help: description,
-    value_name: "",
-    default_display: "",
-    global,
-    short: if short != '\u0000' {
-      Some(short)
-    } else {
-      None
-    },
-    aliases,
-    hidden,
-  })
-  {
-    id,
-    name: "--" + name,
-    getter: fn() -> Bool { cell.val },
-    parsed: self.parsed,
-    is_set: fn() { was_set.val },
-  }
 }
 
 ///|
@@ -138,186 +96,12 @@ pub fn Parser::string_opt(
   if variation_false is Some(p) { variations.push(False(p)) }
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
-  let id = (self.next_id)()
-  // default_fn があれば default を上書き
-  let initial_val = match default_fn {
-    Some(f) => f()
-    None => default
-  }
-  let cell : Ref[String] = { val: initial_val }
-  let has_choices = choices.length() > 0
-  let has_implicit = match implicit_value {
-    Some(_) => true
-    None => false
-  }
-  let was_set : Ref[Bool] = { val: false }
-
-  // variation ノードを生成する共通ヘルパー
-  fn make_variation_nodes(
-    opt_name : String,
-    nodes : Array[ExactNode],
-  ) {
-    let base = opt_name.unsafe_substring(start=2, end=opt_name.length())
-    for v in variations {
-      match v {
-        Reset(p) | Toggle(p) | True(p) | False(p) => {
-          let vn = "--" + p + "-" + base
-          nodes.push(wrap_node_with_set(
-            make_flag_node(vn, fn() {
-              fn() { cell.val = initial_val }
-            }, fn() { cell.val = initial_val }),
-            was_set,
-          ))
-        }
-        Unset(p) => {
-          let vn = "--" + p + "-" + base
-          nodes.push(make_flag_node(vn, fn() {
-            fn() { cell.val = initial_val; was_set.val = false }
-          }, fn() { cell.val = initial_val; was_set.val = false }))
-        }
-      }
-    }
-  }
-
-  // ケース1,3: choices+implicit or implicit only → implicit ベースの展開
-  // ケース2: choices only → reducer + one_of バリデーション
-  // ケース4: 既存パス (neither)
-  if has_implicit {
-    // ケース1 or ケース3
-    let iv = match implicit_value {
-      Some(v) => v
-      None => Val(default) // unreachable だが型システムのため
-    }
-    self.expand_and_register(
-      name, aliases, short, global,
-      make_long_nodes=fn(opt_name) {
-        let nodes : Array[ExactNode] = []
-        let children : Array[ExactNode] = []
-        if has_choices {
-          for choice in choices {
-            children.push(
-              make_choice_value_node(opt_name, choice, cell, initial_val),
-            )
-          }
-        } else {
-          children.push(make_soft_value_node(opt_name, cell, initial_val))
-        }
-        children.push(
-          make_implicit_flag_node(opt_name, iv, cell, initial_val),
-        )
-        let composite = make_or_node(opt_name, true, children)
-        nodes.push(wrap_node_with_set(composite, was_set))
-        make_variation_nodes(opt_name, nodes)
-        nodes
-      },
-      make_short_nodes=fn(short_name) {
-        let nodes : Array[ExactNode] = []
-        if has_choices {
-          for choice in choices {
-            nodes.push(wrap_node_with_set(
-              make_choice_value_node(short_name, choice, cell, initial_val),
-              was_set,
-            ))
-          }
-        } else {
-          nodes.push(wrap_node_with_set(
-            make_soft_value_node(short_name, cell, initial_val),
-            was_set,
-          ))
-        }
-        nodes.push(wrap_node_with_set(
-          make_implicit_flag_node(short_name, iv, cell, initial_val),
-          was_set,
-        ))
-        nodes
-      },
-    )
-  } else if has_choices {
-    // ケース2: choices only → 既存パス + one_of バリデーション
-    let pending : Ref[String] = { val: initial_val }
-    let reset = fn() { cell.val = initial_val }
-    let accum : Accumulator[String, String] = fn(_current, piece) { piece }
-    let one_of_pre : FilterChain[String, String] = Filter::one_of(choices)
-    let reducer = make_reducer(one_of_pre, accum, initial_val)
-    self.expand_and_register(
-      name, aliases, short, global,
-      make_long_nodes=fn(opt_name) {
-        let nodes : Array[ExactNode] = []
-        nodes.push(wrap_node_with_set(
-          make_reduced_value_node(opt_name, reducer, cell, pending, reset),
-          was_set,
-        ))
-        make_variation_nodes(opt_name, nodes)
-        nodes
-      },
-      make_short_nodes=fn(short_name) {
-        [wrap_node_with_set(
-          make_reduced_value_node(short_name, reducer, cell, pending, reset),
-          was_set,
-        )]
-      },
-    )
-  } else {
-    // ケース4: 既存パス (choices 空 + implicit_value なし)
-    let pending : Ref[String] = { val: initial_val }
-    let reset = fn() { cell.val = initial_val }
-    let accum : Accumulator[String, String] = fn(_current, piece) { piece }
-    let identity_pre : FilterChain[String, String] = Filter::map(fn(s) { s })
-    let reducer = make_reducer(identity_pre, accum, initial_val)
-    self.expand_and_register(
-      name, aliases, short, global,
-      make_long_nodes=fn(opt_name) {
-        let nodes : Array[ExactNode] = []
-        nodes.push(wrap_node_with_set(
-          make_reduced_value_node(opt_name, reducer, cell, pending, reset),
-          was_set,
-        ))
-        make_variation_nodes(opt_name, nodes)
-        nodes
-      },
-      make_short_nodes=fn(short_name) {
-        [wrap_node_with_set(
-          make_reduced_value_node(short_name, reducer, cell, pending, reset),
-          was_set,
-        )]
-      },
-    )
-  }
-  let display_value_name = if value_name == "" {
-    to_upper(name)
-  } else {
-    value_name
-  }
-  let display_default = default
-  self.metas.push(OptMeta::{
-    kind: ValueOpt,
-    name,
-    help: description,
-    value_name: display_value_name,
-    default_display: display_default,
-    global,
-    short: if short != '\u0000' {
-      Some(short)
-    } else {
-      None
-    },
-    aliases,
-    hidden,
-  })
-  match post {
-    Some(filter) =>
-      self.post_hooks.push(fn() raise ParseError {
-        cell.val = (filter.run)(cell.val)
-      })
-    None => ()
-  }
-  {
-    id,
-    name: "--" + name,
-    getter: fn() -> String { cell.val },
-    parsed: self.parsed,
-    is_set: fn() { was_set.val },
-  }
+  self.custom(
+    name~, aliases~, short~, global~, hidden~, variations~,
+    help=description, value_name~, default_display=default,
+    default~, default_fn~, post~, choices~, implicit_value~,
+    pre=Filter::map(fn(s) { s }),
+  )
 }
 
 ///|
@@ -346,186 +130,13 @@ pub fn Parser::int_opt(
   if variation_false is Some(p) { variations.push(False(p)) }
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
-  let id = (self.next_id)()
-  // default_fn があれば default を上書き
-  let initial_val = match default_fn {
-    Some(f) => f()
-    None => default
-  }
-  let cell : Ref[Int] = { val: initial_val }
-  let has_implicit = match implicit_value {
-    Some(_) => true
-    None => false
-  }
-  let was_set : Ref[Bool] = { val: false }
-
-  // variation ノードを生成する共通ヘルパー
-  fn make_variation_nodes(
-    opt_name : String,
-    nodes : Array[ExactNode],
-  ) {
-    let base = opt_name.unsafe_substring(start=2, end=opt_name.length())
-    for v in variations {
-      match v {
-        Reset(p) | Toggle(p) | True(p) | False(p) => {
-          let vn = "--" + p + "-" + base
-          nodes.push(wrap_node_with_set(
-            make_flag_node(vn, fn() {
-              fn() { cell.val = initial_val }
-            }, fn() { cell.val = initial_val }),
-            was_set,
-          ))
-        }
-        Unset(p) => {
-          let vn = "--" + p + "-" + base
-          nodes.push(make_flag_node(vn, fn() {
-            fn() { cell.val = initial_val; was_set.val = false }
-          }, fn() { cell.val = initial_val; was_set.val = false }))
-        }
-      }
-    }
-  }
-
-  if has_implicit {
-    // implicit_value あり
-    let iv = match implicit_value {
-      Some(v) => v
-      None => Val(default) // unreachable
-    }
-    // int パースを試み、失敗時は Reject を返す soft value node
-    fn make_soft_int_value_node(
-      opt_n : String,
-      cell : Ref[Int],
-      initial_val : Int,
-    ) -> ExactNode {
-      ExactNode::{
-        name: opt_n,
-        needs_value: true,
-        try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-          if pos >= args.length() || args[pos] != opt_n {
-            return Reject
-          }
-          if pos + 1 >= args.length() {
-            return Reject
-          }
-          let s = args[pos + 1]
-          let r : Result[Int, _] = try? @strconv.parse_int(s.view())
-          match r {
-            Ok(v) =>
-              Accept(consumed=2, commit=fn() {
-                cell.val = v
-              })
-            Err(_) => Reject // int パース失敗 → Reject（implicit にフォールバック）
-          }
-        },
-        reset: fn() {
-          cell.val = initial_val
-        },
-      }
-    }
-
-    self.expand_and_register(
-      name, aliases, short, global,
-      make_long_nodes=fn(opt_name) {
-        let nodes : Array[ExactNode] = []
-        let children : Array[ExactNode] = []
-        children.push(
-          make_soft_int_value_node(opt_name, cell, initial_val),
-        )
-        children.push(
-          make_implicit_flag_node(opt_name, iv, cell, initial_val),
-        )
-        let composite = make_or_node(opt_name, true, children)
-        nodes.push(wrap_node_with_set(composite, was_set))
-        make_variation_nodes(opt_name, nodes)
-        nodes
-      },
-      make_short_nodes=fn(short_name) {
-        let nodes : Array[ExactNode] = []
-        nodes.push(wrap_node_with_set(
-          make_soft_int_value_node(short_name, cell, initial_val),
-          was_set,
-        ))
-        nodes.push(wrap_node_with_set(
-          make_implicit_flag_node(short_name, iv, cell, initial_val),
-          was_set,
-        ))
-        nodes
-      },
-    )
-  } else {
-    // implicit_value なし: 既存パス
-    let pending : Ref[Int] = { val: initial_val }
-    let reset = fn() { cell.val = initial_val }
-    let accum : Accumulator[Int, Int] = fn(_current, piece) { piece }
-    fn make_int_pre(opt_n : String) -> FilterChain[String, Int] {
-      Filter::parse(fn(s) raise ParseError {
-        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
-        match r {
-          Ok(v) => v
-          Err(_) =>
-            raise parse_error(
-              "invalid integer value for " + opt_n + ": " + s,
-            )
-        }
-      })
-    }
-
-    self.expand_and_register(
-      name, aliases, short, global,
-      make_long_nodes=fn(opt_name) {
-        let nodes : Array[ExactNode] = []
-        let this_reducer = make_reducer(
-          make_int_pre(opt_name), accum, initial_val,
-        )
-        nodes.push(wrap_node_with_set(
-          make_reduced_value_node(opt_name, this_reducer, cell, pending, reset),
-          was_set,
-        ))
-        make_variation_nodes(opt_name, nodes)
-        nodes
-      },
-      make_short_nodes=fn(short_name) {
-        let short_reducer = make_reducer(
-          make_int_pre(short_name), accum, initial_val,
-        )
-        [wrap_node_with_set(
-          make_reduced_value_node(
-            short_name, short_reducer, cell, pending, reset,
-          ),
-          was_set,
-        )]
-      },
-    )
-  }
-  let display_value_name = if value_name == "" {
-    to_upper(name)
-  } else {
-    value_name
-  }
   let display_default = if default == 0 { "" } else { default.to_string() }
-  self.metas.push(OptMeta::{
-    kind: ValueOpt,
-    name,
-    help: description,
-    value_name: display_value_name,
-    default_display: display_default,
-    global,
-    short: if short != '\u0000' {
-      Some(short)
-    } else {
-      None
-    },
-    aliases,
-    hidden,
-  })
-  {
-    id,
-    name: "--" + name,
-    getter: fn() -> Int { cell.val },
-    parsed: self.parsed,
-    is_set: fn() { was_set.val },
-  }
+  self.custom(
+    name~, aliases~, short~, global~, hidden~, variations~,
+    help=description, value_name~, default_display=display_default,
+    default~, default_fn~, implicit_value~,
+    pre=Filter::parse_int(),
+  )
 }
 
 ///|
@@ -551,68 +162,11 @@ pub fn Parser::append_string(
   if variation_false is Some(p) { variations.push(False(p)) }
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
-  let id = (self.next_id)()
-  let cell : Ref[Array[String]] = { val: [] }
-  let was_set : Ref[Bool] = { val: false }
-  let reset_fn = fn() { cell.val = [] }
-  let make_main = fn(opt_n : String) -> ExactNode {
-    make_value_node(opt_n, fn(s) { Ok(fn() { cell.val.push(s) }) }, reset_fn)
-  }
-  self.expand_and_register(
-    name, aliases, short, global,
-    make_long_nodes=fn(opt_name) {
-      let nodes : Array[ExactNode] = []
-      nodes.push(wrap_node_with_set(make_main(opt_name), was_set))
-      let base = opt_name.unsafe_substring(start=2, end=opt_name.length())
-      for v in variations {
-        match v {
-          Reset(p) | Toggle(p) | True(p) | False(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              fn() { cell.val = []; was_set.val = true }
-            }, fn() { cell.val = []; was_set.val = false }))
-          }
-          Unset(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              fn() { cell.val = []; was_set.val = false }
-            }, fn() { cell.val = []; was_set.val = false }))
-          }
-        }
-      }
-      nodes
-    },
-    make_short_nodes=fn(short_name) {
-      [wrap_node_with_set(make_main(short_name), was_set)]
-    },
+  self.custom_append(
+    name~, aliases~, short~, global~, hidden~, variations~,
+    help=description, value_name~,
+    pre=Filter::map(fn(s) { s }),
   )
-  let display_value_name = if value_name == "" {
-    to_upper(name)
-  } else {
-    value_name
-  }
-  self.metas.push(OptMeta::{
-    kind: ValueOpt,
-    name,
-    help: description,
-    value_name: display_value_name,
-    default_display: "",
-    global,
-    short: if short != '\u0000' {
-      Some(short)
-    } else {
-      None
-    },
-    aliases,
-    hidden,
-  })
-  {
-    id,
-    name: "--" + name,
-    getter: fn() -> Array[String] { cell.val },
-    parsed: self.parsed,
-    is_set: fn() { was_set.val },
-  }
 }
 
 ///|
@@ -638,79 +192,11 @@ pub fn Parser::append_int(
   if variation_false is Some(p) { variations.push(False(p)) }
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
-  let id = (self.next_id)()
-  let cell : Ref[Array[Int]] = { val: [] }
-  let was_set : Ref[Bool] = { val: false }
-  let reset_fn = fn() { cell.val = [] }
-  let make_main = fn(opt_n : String) -> ExactNode {
-    make_value_node(
-      opt_n,
-      fn(s) {
-        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
-        match r {
-          Ok(v) => Ok(fn() { cell.val.push(v) })
-          Err(_) =>
-            Err(parse_error("invalid integer value for " + opt_n + ": " + s))
-        }
-      },
-      reset_fn,
-    )
-  }
-  self.expand_and_register(
-    name, aliases, short, global,
-    make_long_nodes=fn(opt_name) {
-      let nodes : Array[ExactNode] = []
-      nodes.push(wrap_node_with_set(make_main(opt_name), was_set))
-      let base = opt_name.unsafe_substring(start=2, end=opt_name.length())
-      for v in variations {
-        match v {
-          Reset(p) | Toggle(p) | True(p) | False(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              fn() { cell.val = []; was_set.val = true }
-            }, fn() { cell.val = []; was_set.val = false }))
-          }
-          Unset(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              fn() { cell.val = []; was_set.val = false }
-            }, fn() { cell.val = []; was_set.val = false }))
-          }
-        }
-      }
-      nodes
-    },
-    make_short_nodes=fn(short_name) {
-      [wrap_node_with_set(make_main(short_name), was_set)]
-    },
+  self.custom_append(
+    name~, aliases~, short~, global~, hidden~, variations~,
+    help=description, value_name~,
+    pre=Filter::parse_int(),
   )
-  let display_value_name = if value_name == "" {
-    to_upper(name)
-  } else {
-    value_name
-  }
-  self.metas.push(OptMeta::{
-    kind: ValueOpt,
-    name,
-    help: description,
-    value_name: display_value_name,
-    default_display: "",
-    global,
-    short: if short != '\u0000' {
-      Some(short)
-    } else {
-      None
-    },
-    aliases,
-    hidden,
-  })
-  {
-    id,
-    name: "--" + name,
-    getter: fn() -> Array[Int] { cell.val },
-    parsed: self.parsed,
-    is_set: fn() { was_set.val },
-  }
 }
 
 ///|
@@ -735,7 +221,6 @@ pub fn Parser::count(
   if variation_false is Some(p) { variations.push(False(p)) }
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
-  let id = (self.next_id)()
   let cell : Ref[Int] = { val: 0 }
   let pending : Ref[Int] = { val: 0 }
   let was_set : Ref[Bool] = { val: false }
@@ -744,60 +229,177 @@ pub fn Parser::count(
     pending.val = pending.val + 1
     fn() { cell.val = pending.val }
   }
-  self.expand_and_register(
-    name, aliases, short, global,
-    make_long_nodes=fn(opt_name) {
-      let nodes : Array[ExactNode] = []
-      nodes.push(wrap_node_with_set(
-        make_flag_node(opt_name, positive_match, reset_fn), was_set,
-      ))
-      let base = opt_name.unsafe_substring(start=2, end=opt_name.length())
-      for v in variations {
-        match v {
-          Reset(p) | Toggle(p) | True(p) | False(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              pending.val = 0
-              fn() { cell.val = pending.val; was_set.val = true }
-            }, fn() { cell.val = 0; pending.val = 0; was_set.val = false }))
-          }
-          Unset(p) => {
-            let vn = "--" + p + "-" + base
-            nodes.push(make_flag_node(vn, fn() {
-              pending.val = 0
-              fn() { cell.val = pending.val; was_set.val = false }
-            }, fn() { cell.val = 0; pending.val = 0; was_set.val = false }))
-          }
-        }
+  self.register_option(
+    name~, aliases~, short~, global~, hidden~,
+    help=description, value_name="", default_display="",
+    kind=Flag, variations~, was_set~,
+    make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
+    make_node_for_variation=fn(vn, v) {
+      match v {
+        Reset(_) | Toggle(_) | True(_) | False(_) =>
+          make_flag_node(vn, fn() {
+            pending.val = 0
+            fn() { cell.val = pending.val; was_set.val = true }
+          }, fn() { cell.val = 0; pending.val = 0; was_set.val = false })
+        Unset(_) =>
+          make_flag_node(vn, fn() {
+            pending.val = 0
+            fn() { cell.val = pending.val; was_set.val = false }
+          }, fn() { cell.val = 0; pending.val = 0; was_set.val = false })
       }
-      nodes
     },
-    make_short_nodes=fn(short_name) {
-      [wrap_node_with_set(
-        make_flag_node(short_name, positive_match, reset_fn), was_set,
-      )]
-    },
+    getter=fn() { cell.val },
   )
-  self.metas.push(OptMeta::{
-    kind: Flag,
-    name,
-    help: description,
-    value_name: "",
-    default_display: "",
-    global,
-    short: if short != '\u0000' {
-      Some(short)
-    } else {
-      None
-    },
-    aliases,
-    hidden,
-  })
-  {
-    id,
-    name: "--" + name,
-    getter: fn() -> Int { cell.val },
-    parsed: self.parsed,
-    is_set: fn() { was_set.val },
+}
+
+///|
+pub fn[T] Parser::custom(
+  self : Parser,
+  name~ : String,
+  aliases? : Array[String] = [],
+  short? : Char = '\u0000',
+  global? : Bool = false,
+  help? : String = "",
+  value_name? : String = "",
+  default_display? : String = "",
+  hidden? : Bool = false,
+  variations? : Array[Variation] = [],
+  default~ : T,
+  default_fn? : (() -> T)? = None,
+  pre~ : FilterChain[String, T],
+  post? : FilterChain[T, T]? = None,
+  choices? : Array[String] = [],
+  implicit_value? : Lazy[T]? = None,
+) -> Opt[T] {
+  let initial_val = match default_fn {
+    Some(f) => f()
+    None => default
   }
+  let cell : Ref[T] = { val: initial_val }
+  let was_set : Ref[Bool] = { val: false }
+  let has_choices = choices.length() > 0
+  let has_implicit = match implicit_value {
+    Some(_) => true
+    None => false
+  }
+
+  // variation ノード: Toggle/True/False は Reset 相当にフォールバック（値コンビネータに Bool 反転の意味論なし）
+  let make_var_node = fn(vn : String, v : Variation) -> ExactNode {
+    match v {
+      Reset(_) | Toggle(_) | True(_) | False(_) =>
+        wrap_node_with_set(
+          make_flag_node(vn, fn() {
+            fn() { cell.val = initial_val }
+          }, fn() { cell.val = initial_val }),
+          was_set,
+        )
+      Unset(_) =>
+        make_flag_node(vn, fn() {
+          fn() { cell.val = initial_val; was_set.val = false }
+        }, fn() { cell.val = initial_val; was_set.val = false })
+    }
+  }
+
+  let make_main : (String) -> ExactNode = if has_implicit {
+    let iv = match implicit_value {
+      Some(v) => v
+      None => Val(default) // unreachable
+    }
+    fn(opt_name : String) -> ExactNode {
+      let children : Array[ExactNode] = []
+      if has_choices {
+        for choice in choices {
+          children.push(
+            make_custom_choice_value_node(opt_name, choice, pre, cell, initial_val),
+          )
+        }
+      } else {
+        children.push(make_soft_custom_value_node(opt_name, pre, cell, initial_val))
+      }
+      children.push(make_implicit_flag_node(opt_name, iv, cell, initial_val))
+      make_or_node(opt_name, true, children)
+    }
+  } else {
+    let pending : Ref[T] = { val: initial_val }
+    let reset = fn() { cell.val = initial_val }
+    let accum : Accumulator[T, T] = fn(_current, piece) { piece }
+    // choices がある場合は one_of → pre の合成。FilterChain::then で Kleisli composition
+    let effective_pre : FilterChain[String, T] = if has_choices {
+      Filter::one_of(choices).then(pre)
+    } else {
+      pre
+    }
+    let reducer = make_reducer(effective_pre, accum, initial_val)
+    fn(opt_name : String) -> ExactNode {
+      make_reduced_value_node(opt_name, reducer, cell, pending, reset)
+    }
+  }
+
+  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  let opt = self.register_option(
+    name~, aliases~, short~, global~, hidden~,
+    help~, value_name=display_value_name, default_display~,
+    kind=ValueOpt, variations~, was_set~,
+    make_main_node=make_main,
+    make_node_for_variation=make_var_node,
+    getter=fn() { cell.val },
+  )
+  match post {
+    Some(filter) =>
+      self.post_hooks.push(fn() raise ParseError {
+        cell.val = (filter.run)(cell.val)
+      })
+    None => ()
+  }
+  opt
+}
+
+///|
+pub fn[T] Parser::custom_append(
+  self : Parser,
+  name~ : String,
+  aliases? : Array[String] = [],
+  short? : Char = '\u0000',
+  global? : Bool = false,
+  help? : String = "",
+  value_name? : String = "",
+  hidden? : Bool = false,
+  variations? : Array[Variation] = [],
+  pre~ : FilterChain[String, T],
+) -> Opt[Array[T]] {
+  let cell : Ref[Array[T]] = { val: [] }
+  let was_set : Ref[Bool] = { val: false }
+  let reset_fn = fn() { cell.val = [] }
+  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  self.register_option(
+    name~, aliases~, short~, global~, hidden~,
+    help~, value_name=display_value_name, default_display="",
+    kind=ValueOpt, variations~, was_set~,
+    make_main_node=fn(opt_n) {
+      make_value_node(
+        opt_n,
+        fn(s) {
+          let r : Result[T, ParseError] = try? (pre.run)(s)
+          match r {
+            Ok(v) => Ok(fn() { cell.val.push(v) })
+            Err(e) => Err(e)
+          }
+        },
+        reset_fn,
+      )
+    },
+    make_node_for_variation=fn(vn, v) {
+      match v {
+        Reset(_) | Toggle(_) | True(_) | False(_) =>
+          make_flag_node(vn, fn() {
+            fn() { cell.val = []; was_set.val = true }
+          }, fn() { cell.val = []; was_set.val = false })
+        Unset(_) =>
+          make_flag_node(vn, fn() {
+            fn() { cell.val = []; was_set.val = false }
+          }, fn() { cell.val = []; was_set.val = false })
+      }
+    },
+    getter=fn() { cell.val },
+  )
 }

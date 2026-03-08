@@ -51,34 +51,6 @@ fn make_value_node(
 }
 
 ///|
-/// choices の各候補に対する consumed=2 の ExactNode（名前一致 + 値一致でのみ Accept）
-fn make_choice_value_node(
-  opt_name : String,
-  choice : String,
-  cell : Ref[String],
-  initial_val : String,
-) -> ExactNode {
-  ExactNode::{
-    name: opt_name,
-    needs_value: true,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() || args[pos] != opt_name {
-        return Reject
-      }
-      if pos + 1 >= args.length() || args[pos + 1] != choice {
-        return Reject
-      }
-      Accept(consumed=2, commit=fn() {
-        cell.val = choice
-      })
-    },
-    reset: fn() {
-      cell.val = initial_val
-    },
-  }
-}
-
-///|
 /// consumed=1 の implicit value ノード（名前マッチのみで Accept）
 fn[T] make_implicit_flag_node(
   name : String,
@@ -95,41 +67,6 @@ fn[T] make_implicit_flag_node(
       }
       Accept(consumed=1, commit=fn() {
         cell.val = implicit.resolve()
-      })
-    },
-    reset: fn() {
-      cell.val = initial_val
-    },
-  }
-}
-
-///| implicit_value 共存時の any-string value node。
-
-///|
-/// 値が無い場合は Error ではなく Reject を返す（implicit node にフォールバックさせるため）
-fn make_soft_value_node(
-  name : String,
-  cell : Ref[String],
-  initial_val : String,
-) -> ExactNode {
-  ExactNode::{
-    name,
-    needs_value: true,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() || args[pos] != name {
-        return Reject
-      }
-      if pos + 1 >= args.length() {
-        return Reject // Error ではなく Reject（implicit にフォールバック）
-      }
-      let val = args[pos + 1]
-      // 次の引数が -- で始まる場合もReject（implicit にフォールバック）
-      // "-foo" や "-123" のような合法な値は通す
-      if val.has_prefix("--") {
-        return Reject
-      }
-      Accept(consumed=2, commit=fn() {
-        cell.val = val
       })
     },
     reset: fn() {
@@ -188,6 +125,26 @@ fn make_or_node(
 }
 
 ///|
+/// 各コンビネータに散在する variation 展開ロジックの統一関数。
+/// opt_name から base を抽出し、各 Variation のプレフィックスと組み合わせて
+/// "--{prefix}-{base}" の名前を生成し、コールバックで ExactNode を生成して push する。
+fn expand_variation_nodes(
+  opt_name : String,
+  variations : Array[Variation],
+  nodes : Array[ExactNode],
+  make_node_for_variation : (String, Variation) -> ExactNode,
+) -> Unit {
+  let base = opt_name.unsafe_substring(start=2, end=opt_name.length())
+  for v in variations {
+    let prefix = match v {
+      Toggle(p) | True(p) | False(p) | Reset(p) | Unset(p) => p
+    }
+    let vn = "--" + prefix + "-" + base
+    nodes.push(make_node_for_variation(vn, v))
+  }
+}
+
+///|
 /// reducer を ExactNode (値を受け取る) に変換するアダプタ
 fn[T] make_reduced_value_node(
   name : String,
@@ -213,5 +170,69 @@ fn[T] make_reduced_value_node(
     },
     reset,
   )
+}
+
+///|
+/// implicit_value 共存時の汎用 soft value node。
+/// pre で String→T 変換を試み、失敗時は Reject（implicit にフォールバック）
+fn[T] make_soft_custom_value_node(
+  opt_n : String,
+  pre : FilterChain[String, T],
+  cell : Ref[T],
+  initial_val : T,
+) -> ExactNode {
+  ExactNode::{
+    name: opt_n,
+    needs_value: true,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != opt_n {
+        return Reject
+      }
+      if pos + 1 >= args.length() {
+        return Reject
+      }
+      let s = args[pos + 1]
+      if s.has_prefix("--") {
+        return Reject
+      }
+      let r : Result[T, ParseError] = try? (pre.run)(s)
+      match r {
+        Ok(v) =>
+          Accept(consumed=2, commit=fn() { cell.val = v })
+        Err(_) => Reject
+      }
+    },
+    reset: fn() { cell.val = initial_val },
+  }
+}
+
+///|
+/// choices + implicit_value 共存時のノード。raw string の choice 値にマッチ → pre で T に変換
+fn[T] make_custom_choice_value_node(
+  opt_name : String,
+  choice : String,
+  pre : FilterChain[String, T],
+  cell : Ref[T],
+  initial_val : T,
+) -> ExactNode {
+  ExactNode::{
+    name: opt_name,
+    needs_value: true,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos >= args.length() || args[pos] != opt_name {
+        return Reject
+      }
+      if pos + 1 >= args.length() || args[pos + 1] != choice {
+        return Reject
+      }
+      let r : Result[T, ParseError] = try? (pre.run)(choice)
+      match r {
+        Ok(v) =>
+          Accept(consumed=2, commit=fn() { cell.val = v })
+        Err(e) => Error(e)
+      }
+    },
+    reset: fn() { cell.val = initial_val },
+  }
 }
 

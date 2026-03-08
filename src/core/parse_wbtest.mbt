@@ -506,7 +506,7 @@ test "subcommand basic" {
     port_opt.val = Some(child.int_opt(name="port", default=8080))
   })
   ignore(p.parse(["serve", "--port", "3000"]))
-  inspect(p.get(serve), content="Some(true)")
+  assert_true((serve.is_set)())
   inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
 }
 
@@ -519,8 +519,8 @@ test "subcommand not matched" {
   })
   let build = p.cmd(name="build", setup=fn(_child) {  })
   ignore(p.parse(["build"]))
-  inspect(p.get(serve), content="Some(false)")
-  inspect(p.get(build), content="Some(true)")
+  assert_false((serve.is_set)())
+  assert_true((build.is_set)())
 }
 
 ///|
@@ -3131,4 +3131,176 @@ test "duplicate alias name detected" {
       inspect(info.message.contains("duplicate option name"), content="true")
     _ => abort("expected duplicate name error")
   }
+}
+
+// --- custom[T] / custom_append[T] tests ---
+
+///|
+test "custom_string_basic" {
+  let p = Parser::new()
+  let name = p.custom(name="name", default="world", pre=Filter::map(fn(s) { s }))
+  p.parse(["--name", "alice"]) |> ignore
+  inspect((name.getter)(), content="alice")
+}
+
+///|
+test "custom_string_default" {
+  let p = Parser::new()
+  let name = p.custom(name="name", default="world", pre=Filter::map(fn(s) { s }))
+  p.parse([]) |> ignore
+  inspect((name.getter)(), content="world")
+}
+
+///|
+test "custom_int_basic" {
+  let p = Parser::new()
+  let port = p.custom(name="port", default=8080, pre=Filter::parse_int())
+  p.parse(["--port", "3000"]) |> ignore
+  inspect((port.getter)(), content="3000")
+}
+
+///|
+test "custom_int_default" {
+  let p = Parser::new()
+  let port = p.custom(name="port", default=8080, pre=Filter::parse_int())
+  p.parse([]) |> ignore
+  inspect((port.getter)(), content="8080")
+}
+
+///|
+test "custom_int_invalid" {
+  let p = Parser::new()
+  let _ = p.custom(name="port", default=8080, pre=Filter::parse_int())
+  let result : Result[_, _] = try? p.parse(["--port", "abc"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "custom_double_basic" {
+  let p = Parser::new()
+  let rate = p.custom(name="rate", default=1.0, pre=Filter::parse_float())
+  p.parse(["--rate", "3.14"]) |> ignore
+  inspect((rate.getter)(), content="3.14")
+}
+
+///|
+test "custom_with_choices" {
+  let p = Parser::new()
+  let level = p.custom(
+    name="level", default="info",
+    pre=Filter::map(fn(s) { s }),
+    choices=["debug", "info", "warn", "error"],
+  )
+  p.parse(["--level", "warn"]) |> ignore
+  inspect((level.getter)(), content="warn")
+}
+
+///|
+test "custom_with_choices_invalid" {
+  let p = Parser::new()
+  let _ = p.custom(
+    name="level", default="info",
+    pre=Filter::map(fn(s) { s }),
+    choices=["debug", "info", "warn", "error"],
+  )
+  let result : Result[_, _] = try? p.parse(["--level", "trace"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "custom_with_implicit_value" {
+  let p = Parser::new()
+  let verbose = p.custom(
+    name="verbose", default=0,
+    pre=Filter::parse_int(),
+    implicit_value=Some(Val(1)),
+  )
+  // implicit: --verbose のみで implicit_value=1 が使われる
+  p.parse(["--verbose"]) |> ignore
+  inspect((verbose.getter)(), content="1")
+}
+
+///|
+test "custom_with_implicit_value_explicit" {
+  let p = Parser::new()
+  let verbose = p.custom(
+    name="verbose", default=0,
+    pre=Filter::parse_int(),
+    implicit_value=Some(Val(1)),
+  )
+  // explicit: --verbose 3 で明示値 3 が使われる
+  p.parse(["--verbose", "3"]) |> ignore
+  inspect((verbose.getter)(), content="3")
+}
+
+///|
+test "custom_with_choices_and_implicit" {
+  let p = Parser::new()
+  let color = p.custom(
+    name="color", default="auto",
+    pre=Filter::map(fn(s) { s }),
+    choices=["always", "never", "auto"],
+    implicit_value=Some(Val("always")),
+  )
+  // implicit: --color のみで implicit_value="always"
+  p.parse(["--color"]) |> ignore
+  inspect((color.getter)(), content="always")
+}
+
+///|
+test "custom_with_choices_and_implicit_explicit" {
+  let p = Parser::new()
+  let color = p.custom(
+    name="color", default="auto",
+    pre=Filter::map(fn(s) { s }),
+    choices=["always", "never", "auto"],
+    implicit_value=Some(Val("always")),
+  )
+  // explicit: --color never で明示値
+  p.parse(["--color", "never"]) |> ignore
+  inspect((color.getter)(), content="never")
+}
+
+///|
+test "custom_with_post" {
+  let p = Parser::new()
+  let name = p.custom(
+    name="name", default="world",
+    pre=Filter::map(fn(s) { s }),
+    post=Some(Filter::map(fn(s : String) { s.to_upper() })),
+  )
+  p.parse(["--name", "alice"]) |> ignore
+  inspect((name.getter)(), content="ALICE")
+}
+
+///|
+test "custom_append_string_basic" {
+  let p = Parser::new()
+  let tags = p.custom_append(name="tag", pre=Filter::map(fn(s) { s }))
+  p.parse(["--tag", "a", "--tag", "b"]) |> ignore
+  inspect((tags.getter)(), content="[\"a\", \"b\"]")
+}
+
+///|
+test "custom_append_string_empty" {
+  let p = Parser::new()
+  let tags = p.custom_append(name="tag", pre=Filter::map(fn(s) { s }))
+  p.parse([]) |> ignore
+  inspect((tags.getter)(), content="[]")
+}
+
+///|
+test "custom_append_int_basic" {
+  let p = Parser::new()
+  let nums = p.custom_append(name="num", pre=Filter::parse_int())
+  p.parse(["--num", "1", "--num", "2", "--num", "3"]) |> ignore
+  inspect((nums.getter)(), content="[1, 2, 3]")
+}
+
+///|
+test "custom_append_int_invalid" {
+  let p = Parser::new()
+  let _ = p.custom_append(name="num", pre=Filter::parse_int())
+  let result : Result[_, _] = try? p.parse(["--num", "abc"])
+  inspect(result is Err(_), content="true")
 }
