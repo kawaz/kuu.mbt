@@ -10,7 +10,9 @@
 
 ## 作業手順
 
-1. APP、LANG の指示がまだならQAツールを使ってユーザに確認する
+1. APP、LANG、バリエーションの指示がまだならQAツールを使ってユーザに確認する。
+  - 選択肢は既存examplesや`jj workspace list`も確認し、被りも多少は気にしつつ面白そうな組み合わせやチャレンジを提案する
+  - ユーザは面倒くさがりなのでこのQAの各項目の最初の選択肢に「エキサイティングな組み合わせを自由に選んんで」を置くこと
 2. 作業場所の確認
 3. 作業指示に従い作業を開始する
 
@@ -42,6 +44,12 @@ jj workspace add "{wsname}" -r main@""
 # ワークスペースの最初のコミットに説明を付けつつ作業用の空コミットを作っておく
 jj -R "{wsname}@" -m "chore: START {wsname}"
 jj -R "{wsname}@" new
+
+
+# 作業ディレクトリの作成
+mkdir -p "{workdir}"
+
+# ユーザ指示の引き継ぎを兼ねる ""{workdir}/README.md" まで用意しておくこと（新規セッションでスタートするので）
 ```
 
 ### 新規セッションの開始依頼
@@ -49,8 +57,14 @@ jj -R "{wsname}@" new
 新規タブや分割で以下を貼り付けて新規セッションを開始してください。とユーザに依頼する。
 
 ```
-( cd /path/to/{workspace} && claude --allow-dangerously-skip-permissions /itumono-example )
+cd "/path/to/{workspace}" &&
+claude \
+  --add-dir "{repo}" \
+  --dangerously-skip-permissions \
+  '/itumono-example {workdir} を見て作業開始'
 ```
+
+画面に表示しつつQAツールでクリップボードに入れますか？ と確認し、OKなら pbcopy にぶち込む
 
 ### 付録：ユーザのディレクトリ構成
 

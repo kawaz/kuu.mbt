@@ -1,0 +1,11 @@
+{
+  "name": "kuu-example-git-typescript",
+  "version": "0.1.0",
+  "description": "git CLI argument parser demo using kuu WASM bridge",
+  "type": "module",
+  "scripts": {
+    "build:wasm": "cd ../.. && moon build --target wasm-gc --release",
+    "start": "node --experimental-strip-types src/main.ts",
+    "test": "node --experimental-strip-types --test src/main.test.ts"
+  }
+}

@@ -1,0 +1,38 @@
+default:
+    just --list
+
+# WASM モジュールをビルド
+build-wasm:
+    cd ../.. && moon build --target wasm-gc --release
+
+# 実行（引数はそのまま渡す）
+run *ARGS:
+    node --experimental-strip-types src/main.ts {{ARGS}}
+
+# テスト実行
+test:
+    node --experimental-strip-types --test src/main.test.ts
+
+# ヘルプ表示
+help:
+    just run --help
+
+# 使用例
+demo:
+    @echo "=== clone ==="
+    node --experimental-strip-types src/main.ts clone https://github.com/foo/bar --depth 5 -b main
+    @echo ""
+    @echo "=== commit ==="
+    node --experimental-strip-types src/main.ts commit -m "fix bug" -a
+    @echo ""
+    @echo "=== log ==="
+    node --experimental-strip-types src/main.ts log --oneline -n 10 --graph
+    @echo ""
+    @echo "=== status ==="
+    node --experimental-strip-types src/main.ts -vv status -sb
+    @echo ""
+    @echo "=== remote add ==="
+    node --experimental-strip-types src/main.ts remote add origin https://github.com/foo/bar
+    @echo ""
+    @echo "=== stash push ==="
+    node --experimental-strip-types src/main.ts stash push -m wip
