@@ -138,11 +138,19 @@ fn format_opt_left(meta : OptMeta) -> String {
   if meta.shorts.length() > 0 {
     buf.write_string("  -")
     buf.write_char(meta.shorts[0])
+    for i in 1..<meta.shorts.length() {
+      buf.write_string(", -")
+      buf.write_char(meta.shorts[i])
+    }
     buf.write_string(", --")
     buf.write_string(meta.name)
   } else {
     buf.write_string("      --")
     buf.write_string(meta.name)
+  }
+  for alt in meta.aliases {
+    buf.write_string(", --")
+    buf.write_string(alt)
   }
   if not(meta.value_name.is_empty()) {
     buf.write_string(" <")
