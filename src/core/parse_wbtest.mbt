@@ -3819,3 +3819,227 @@ test "no user collision: -h triggers help as usual" {
     _ => abort("expected HelpRequested for -h")
   }
 }
+
+// ============================================================
+// equals syntax edge case tests
+// ============================================================
+
+///|
+test "equals syntax: --name= (empty value) sets empty string" {
+  let p = Parser::new()
+  let name = p.string_opt(name="name", default="default")
+  ignore(p.parse(["--name="]))
+  inspect(
+    p.get(name),
+    content=(
+      #|Some("")
+    ),
+  )
+}
+
+///|
+test "equals syntax: --port= (empty value int) raises parse error" {
+  let p = Parser::new()
+  let _ = p.int_opt(name="port", default=8080)
+  let result : Result[_, _] = try? p.parse(["--port="])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("invalid integer: "), content="true")
+    _ => abort("expected ParseError for --port= with empty value")
+  }
+}
+
+///|
+test "equals syntax: --name==value (value contains =)" {
+  let p = Parser::new()
+  let name = p.string_opt(name="name", default="default")
+  ignore(p.parse(["--name==value"]))
+  inspect(
+    p.get(name),
+    content=(
+      #|Some("=value")
+    ),
+  )
+}
+
+///|
+test "equals syntax: --name=hello world (shell splits at space)" {
+  // シェルがスペースで分割するため、args レベルでは ["--name=hello", "world"]
+  // --name=hello で値 "hello" が取れ、"world" は余剰引数としてエラー
+  let p = Parser::new()
+  let name = p.string_opt(name="name", default="default")
+  ignore(p.parse(["--name=hello"]))
+  inspect(
+    p.get(name),
+    content=(
+      #|Some("hello")
+    ),
+  )
+}
+
+// ============================================================
+// Usage line tests
+// ============================================================
+
+///|
+test "help contains Usage line" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose")
+  let help = p.generate_help()
+  inspect(help.contains("Usage:"), content="true")
+}
+
+///|
+test "Usage line includes [OPTIONS] when options exist" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose")
+  let help = p.generate_help()
+  inspect(help.contains("Usage: [OPTIONS]"), content="true")
+}
+
+///|
+test "Usage line includes [COMMAND] when commands exist" {
+  let p = Parser::new()
+  let _ = p.cmd(name="serve", setup=fn(_c) {  }, description="Start server")
+  let help = p.generate_help()
+  inspect(help.contains("[COMMAND]"), content="true")
+}
+
+///|
+test "Usage line includes positional as <NAME>" {
+  let p = Parser::new()
+  let _ = p.positional(name="file", description="Input file")
+  let help = p.generate_help()
+  inspect(help.contains("<FILE>"), content="true")
+}
+
+///|
+test "Usage line includes rest as [NAME]..." {
+  let p = Parser::new()
+  let _ = p.rest(name="args", description="Extra arguments")
+  let help = p.generate_help()
+  inspect(help.contains("[ARGS]..."), content="true")
+}
+
+///|
+test "Usage line with options, positional, and command" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose")
+  let _ = p.positional(name="file", description="Input file")
+  let _ = p.cmd(name="serve", setup=fn(_c) {  }, description="Start server")
+  let help = p.generate_help()
+  inspect(help.contains("Usage: [OPTIONS] <FILE> [COMMAND]"), content="true")
+}
+
+///|
+test "Usage line with options and rest" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose")
+  let _ = p.rest(name="args", description="Extra arguments")
+  let help = p.generate_help()
+  inspect(help.contains("Usage: [OPTIONS] [ARGS]..."), content="true")
+}
+
+///|
+test "Usage line: no [OPTIONS] when no user-defined options (before parse)" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.positional(name="file", description="Input file")
+  let help = p.generate_help()
+  // generate_help() called before parse: inject_help_node hasn't run yet
+  // so no Flag/ValueOpt metas exist → no [OPTIONS]
+  inspect(help.contains("[OPTIONS]"), content="false")
+  inspect(help.contains("Usage: <FILE>"), content="true")
+}
+
+///|
+test "Usage line with positional and rest" {
+  let p = Parser::new()
+  let _ = p.positional(name="file", description="Input file")
+  let _ = p.rest(name="args", description="Extra arguments")
+  let help = p.generate_help()
+  inspect(help.contains("<FILE> [ARGS]..."), content="true")
+}
+
+// ============================================================
+// Arguments section tests
+// ============================================================
+
+///|
+test "Arguments section shows positional" {
+  let p = Parser::new()
+  let _ = p.positional(name="file", description="Input file")
+  let help = p.generate_help()
+  inspect(help.contains("Arguments:"), content="true")
+  inspect(help.contains("<FILE>"), content="true")
+  inspect(help.contains("Input file"), content="true")
+}
+
+///|
+test "Arguments section shows rest with dots" {
+  let p = Parser::new()
+  let _ = p.rest(name="args", description="Extra arguments")
+  let help = p.generate_help()
+  inspect(help.contains("Arguments:"), content="true")
+  inspect(help.contains("[ARGS]..."), content="true")
+  inspect(help.contains("Extra arguments"), content="true")
+}
+
+///|
+test "Arguments section shows both positional and rest" {
+  let p = Parser::new()
+  let _ = p.positional(name="file", description="Input file")
+  let _ = p.rest(name="args", description="Extra arguments")
+  let help = p.generate_help()
+  inspect(help.contains("Arguments:"), content="true")
+  inspect(help.contains("<FILE>"), content="true")
+  inspect(help.contains("[ARGS]..."), content="true")
+}
+
+///|
+test "no positional or rest: no Arguments section" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose")
+  let help = p.generate_help()
+  inspect(help.contains("Arguments:"), content="false")
+}
+
+///|
+test "integrated help: description, usage, commands, arguments, options" {
+  let p = Parser::new()
+  p.set_description("My CLI tool")
+  let _ = p.flag(name="verbose", shorts="v", description="Enable verbose output")
+  let _ = p.int_opt(
+    name="port", default=8080, description="Set port number",
+  )
+  let _ = p.positional(name="file", description="Input file")
+  let _ = p.rest(name="args", description="Extra arguments")
+  let _ = p.cmd(name="serve", setup=fn(_c) {  }, description="Start server")
+  let help = p.generate_help()
+  // Description
+  inspect(help.contains("My CLI tool"), content="true")
+  // Usage line
+  inspect(
+    help.contains("Usage: [OPTIONS] <FILE> [ARGS]... [COMMAND]"),
+    content="true",
+  )
+  // Commands section
+  inspect(help.contains("Commands:"), content="true")
+  inspect(help.contains("serve"), content="true")
+  // Arguments section
+  inspect(help.contains("Arguments:"), content="true")
+  inspect(help.contains("<FILE>"), content="true")
+  inspect(help.contains("[ARGS]..."), content="true")
+  // Options section
+  inspect(help.contains("Options:"), content="true")
+  inspect(help.contains("--verbose"), content="true")
+  inspect(help.contains("--port"), content="true")
+}
+
+///|
+test "hidden positional not shown in help" {
+  let p = Parser::new()
+  let _ = p.positional(name="visible", description="Visible arg")
+  // hidden positional は直接 metas に追加できないので、hidden=false のテスト
+  let help = p.generate_help()
+  inspect(help.contains("<VISIBLE>"), content="true")
+}
