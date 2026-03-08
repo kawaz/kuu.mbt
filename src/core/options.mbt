@@ -116,6 +116,8 @@ pub fn Parser::int_opt(
   description? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
+  post? : FilterChain[Int, Int]? = None,
+  choices? : Array[String] = [],
   implicit_value? : Lazy[Int]? = None,
   variations? : Array[Variation] = [],
   variation_toggle? : String? = None,
@@ -133,7 +135,7 @@ pub fn Parser::int_opt(
   self.custom(
     name~, aliases~, shorts~, global~, hidden~, variations~,
     help=description, value_name~,
-    default~, default_fn~, implicit_value~,
+    default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::parse_int(),
   )
 }
