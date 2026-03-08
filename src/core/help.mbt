@@ -115,7 +115,6 @@ pub fn Parser::generate_help(self : Parser) -> String {
   }
   buf.write_string(usage_buf.to_string())
   buf.write_char('\n')
-  let is_first_section : Ref[Bool] = { val: false }
   // Commands section
   if commands.length() > 0 {
     buf.write_char('\n')
@@ -173,19 +172,13 @@ pub fn Parser::generate_help(self : Parser) -> String {
   }
   // Options section
   if options.length() > 0 {
-    if not(is_first_section.val) {
-      buf.write_char('\n')
-    }
-    is_first_section.val = false
+    buf.write_char('\n')
     buf.write_string("Options:\n")
     write_opt_section(buf, options)
   }
   // Global Options section
   if globals.length() > 0 {
-    if not(is_first_section.val) {
-      buf.write_char('\n')
-    }
-    is_first_section.val = false
+    buf.write_char('\n')
     buf.write_string("Global Options:\n")
     write_opt_section(buf, globals)
   }
