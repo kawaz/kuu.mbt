@@ -197,9 +197,8 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Output format after transfer",
     value_name="FORMAT",
   )
-  let show_headers = p.flag(
-    name="show-headers", shorts="i",
-    aliases=["include"],
+  let include_ = p.flag(
+    name="include", shorts="i",
     description="Show response headers in output",
     variation_false=Some("no"),
   )
@@ -382,7 +381,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   print_bool("show-error (-S)", show_error)
   print_bool("verbose (-v)", verbose)
   print_str("write-out (-w)", write_out)
-  print_bool("show-headers (-i)", show_headers)
+  print_bool("include (-i)", include_)
 
   println("")
   println("=== Connection & Timeout ===")
