@@ -3,6 +3,7 @@
 // Usage: node test.mjs
 
 import { readFile } from "node:fs/promises";
+import { strictEqual, deepStrictEqual } from "node:assert";
 
 const wasmPath = new URL(
   "../../_build/wasm-gc/release/build/src/wasm/wasm.wasm",
@@ -37,10 +38,10 @@ function test(label, input) {
     ],
     args: ["--verbose", "--host", "example.com"],
   });
-  console.assert(r.ok === true);
-  console.assert(r.values.verbose === true);
-  console.assert(r.values.host === "example.com");
-  console.assert(r.values.port === 8080);
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbose, true);
+  strictEqual(r.values.host, "example.com");
+  strictEqual(r.values.port, 8080);
 }
 
 // Test 2: Positional + rest
@@ -52,9 +53,9 @@ function test(label, input) {
     ],
     args: ["input.txt", "extra1", "extra2"],
   });
-  console.assert(r.ok === true);
-  console.assert(r.values.file === "input.txt");
-  console.assert(JSON.stringify(r.values.args) === '["extra1","extra2"]');
+  strictEqual(r.ok, true);
+  strictEqual(r.values.file, "input.txt");
+  deepStrictEqual(r.values.args, ["extra1", "extra2"]);
 }
 
 // Test 3: Subcommand
@@ -71,10 +72,10 @@ function test(label, input) {
     ],
     args: ["--verbose", "serve", "--port", "9090"],
   });
-  console.assert(r.ok === true);
-  console.assert(r.values.verbose === true);
-  console.assert(r.command.name === "serve");
-  console.assert(r.command.values.port === 9090);
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbose, true);
+  strictEqual(r.command.name, "serve");
+  strictEqual(r.command.values.port, 9090);
 }
 
 // Test 4: Help request
@@ -86,9 +87,9 @@ function test(label, input) {
     ],
     args: ["--help"],
   });
-  console.assert(r.ok === false);
-  console.assert(r.help_requested === true);
-  console.assert(r.help.includes("--verbose"));
+  strictEqual(r.ok, false);
+  strictEqual(r.help_requested, true);
+  strictEqual(r.help.includes("--verbose"), true);
 }
 
 // Test 5: Parse error
@@ -97,8 +98,8 @@ function test(label, input) {
     opts: [],
     args: ["--unknown"],
   });
-  console.assert(r.ok === false);
-  console.assert(r.error !== undefined);
+  strictEqual(r.ok, false);
+  strictEqual(typeof r.error, "string");
 }
 
 // Test 6: Count + short combine
@@ -109,8 +110,8 @@ function test(label, input) {
     ],
     args: ["-vvv"],
   });
-  console.assert(r.ok === true);
-  console.assert(r.values.verbose === 3);
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbose, 3);
 }
 
 // Test 7: append_string
@@ -121,8 +122,8 @@ function test(label, input) {
     ],
     args: ["--tag", "a", "--tag", "b", "--tag", "c"],
   });
-  console.assert(r.ok === true);
-  console.assert(JSON.stringify(r.values.tag) === '["a","b","c"]');
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.tag, ["a", "b", "c"]);
 }
 
 // Test 8: String with choices
@@ -133,8 +134,66 @@ function test(label, input) {
     ],
     args: ["--color", "always"],
   });
-  console.assert(r.ok === true);
-  console.assert(r.values.color === "always");
+  strictEqual(r.ok, true);
+  strictEqual(r.values.color, "always");
+}
+
+// Test 9: Explicit version 1 (should succeed)
+{
+  const r = test("Version 1 explicit", {
+    version: 1,
+    opts: [
+      { kind: "flag", name: "verbose", description: "Verbose" },
+    ],
+    args: ["--verbose"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbose, true);
+}
+
+// Test 10: Unsupported version
+{
+  const r = test("Unsupported version", {
+    version: 2,
+    opts: [],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "unsupported schema version: 2");
+}
+
+// Test 11: Unknown opt kind
+{
+  const r = test("Unknown opt kind", {
+    opts: [
+      { kind: "boolean", name: "flag1" },
+    ],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "unknown opt kind: boolean");
+}
+
+// Test 12: Missing name in opt
+{
+  const r = test("Missing name in opt", {
+    opts: [
+      { kind: "flag" },
+    ],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "opt definition missing 'name'");
+}
+
+// Test 13: Non-string in args
+{
+  const r = test("Non-string in args", {
+    opts: [],
+    args: ["--verbose", 42],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "args must be an array of strings");
 }
 
 console.log("\n--- All tests passed ---");

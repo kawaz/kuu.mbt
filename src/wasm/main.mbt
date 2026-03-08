@@ -6,6 +6,7 @@
 ///
 /// Input JSON format:
 /// {
+///   "version": 1,
 ///   "opts": [
 ///     { "kind": "flag", "name": "verbose", "shorts": "v", "global": true, "description": "..." },
 ///     { "kind": "string", "name": "host", "default": "localhost", "description": "..." },
@@ -58,7 +59,7 @@ struct SchemaResult {
 fn build_parser(
   parser : @core.Parser,
   opts_json : Array[Json],
-) -> SchemaResult {
+) -> Result[SchemaResult, String] {
   let entries : Array[OptEntry] = []
   let children : Map[String, SchemaResult] = {}
   for opt_json in opts_json {
@@ -66,11 +67,11 @@ fn build_parser(
       Object(obj) => {
         let kind = match obj.get("kind") {
           Some(String(s)) => s
-          _ => continue
+          _ => return Err("opt definition missing 'kind'")
         }
         let name = match obj.get("name") {
           Some(String(s)) => s
-          _ => continue
+          _ => return Err("opt definition missing 'name'")
         }
         let description = match obj.get("description") {
           Some(String(s)) => s
@@ -272,16 +273,19 @@ fn build_parser(
             if child_desc != "" {
               child_parser.set_description(child_desc)
             }
-            let child_result = build_parser(child_parser, child_opts)
+            let child_result = match build_parser(child_parser, child_opts) {
+              Ok(s) => s
+              Err(e) => return Err(e)
+            }
             children[name] = child_result
           }
-          _ => ()
+          _ => return Err("unknown opt kind: " + kind)
         }
       }
       _ => ()
     }
   }
-  SchemaResult::{ entries, children }
+  Ok(SchemaResult::{ entries, children })
 }
 
 ///|
@@ -342,6 +346,18 @@ pub fn kuu_parse(input : String) -> String {
     Object(o) => o
     _ => return make_error_json("input must be a JSON object", "")
   }
+  // Validate schema version
+  match obj.get("version") {
+    Some(Number(n, ..)) => {
+      let ver = n.to_int()
+      if ver != 1 {
+        return make_error_json("unsupported schema version: " + ver.to_string(), "")
+      }
+    }
+    None => () // omitted: treat as version 1 (backward compat)
+    _ =>
+      return make_error_json("'version' must be a number", "")
+  }
   // Extract args
   let args : Array[String] = match obj.get("args") {
     Some(Array(arr)) => {
@@ -349,12 +365,13 @@ pub fn kuu_parse(input : String) -> String {
       for item in arr {
         match item {
           String(s) => result.push(s)
-          _ => ()
+          _ => return make_error_json("args must be an array of strings", "")
         }
       }
       result
     }
-    _ => []
+    Some(_) => return make_error_json("args must be an array of strings", "")
+    None => []
   }
   // Extract opts schema
   let opts_json : Array[Json] = match obj.get("opts") {
@@ -371,7 +388,10 @@ pub fn kuu_parse(input : String) -> String {
   if description != "" {
     parser.set_description(description)
   }
-  let schema = build_parser(parser, opts_json)
+  let schema = match build_parser(parser, opts_json) {
+    Ok(s) => s
+    Err(msg) => return make_error_json(msg, "")
+  }
   // Parse
   let result : Result[@core.ParseResult, @core.ParseError] = try? parser.parse(
     args,
