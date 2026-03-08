@@ -3,7 +3,7 @@
 ## 目標
 
 MoonBit でフルスクラッチの CLI 引数パーサライブラリを設計・実装する。
-各言語のパーサを大規模調査した知見（`docs/research/cli-parser-mega-survey.md`）を踏まえ、理想のパーサを作る。
+各言語のパーサを大規模調査した知見（`docs/research/2026-02-24-cli-parser-mega-survey.md`）を踏まえ、理想のパーサを作る。
 
 ## 必須要件（ユーザーの好み）
 
@@ -64,8 +64,8 @@ Environment Variables:
 
 ## 参考資料
 
-- `docs/research/cli-parser-mega-survey.md` - 28パーサの大規模調査
-- `docs/archives/004-cli-parser-initial-survey.md` - MoonBit既存パーサ評価
+- `docs/research/2026-02-24-cli-parser-mega-survey.md` - 28パーサの大規模調査
+- `docs/decision-records/DR-004-cli-parser-initial-survey.md` - MoonBit既存パーサ評価
 - `/moonbit-practice` スキル - MoonBit コーディング規約
 
 ## MoonBit の方針

@@ -1,6 +1,6 @@
 # Phase 4 設計議論 — 生チャットログ（2026-02-27）
 
-設計書 `docs/DESIGN.md` と要約版 `docs/archives/002-phase4-design-discussion-log.md` の元になった議論。
+設計書 `docs/DESIGN.md` と要約版 `docs/decision-records/DR-002-phase4-design-discussion-log.md` の元になった議論。
 無機質な設計書にまとめる際に失われがちな思考プロセス・意図・発想の連鎖を保存する目的で、生のまま記録する。
 
 ---
