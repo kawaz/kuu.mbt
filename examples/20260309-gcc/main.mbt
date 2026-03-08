@@ -94,13 +94,13 @@ fn main {
   let args4 = [
     "--no-pie",
     "--no-fexceptions",
-    // False: --no-diagnostics-color sets false
-    // Toggle: --toggle- flips !false => true
+    // False: --no-diagnostics-color => false (default was true)
     "--no-diagnostics-color",
+    // Toggle: --toggle-diagnostics-color => !current(!false) => true
     "--toggle-diagnostics-color",
-    // True: --force-diagnostics-color always sets true (idempotent)
+    // True: --force-diagnostics-color => always true (idempotent)
     "--force-diagnostics-color",
-    // Reset: --reset-debug restores debug to default (false), was_set=true
+    // Reset: --debug sets true, then --reset-debug restores default (false)
     "--debug",
     "--reset-debug",
     "test.c",

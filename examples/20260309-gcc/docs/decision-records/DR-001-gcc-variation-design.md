@@ -4,6 +4,8 @@
 
 kuu の Variation 機能（`variation_false`, `variation_toggle`, `variation_true`, `variation_reset`, `variation_unset`）の実用パターンを検証するため、gcc の CLI オプション体系をモデルにしたデモを作成する。
 
+なお、`variation_unset` は gcc のオプション体系に対応する自然なユースケースがないため、本デモでは対象外とする。Unset は「オプションが設定されたこと自体を取り消す」操作であり、gcc の `--no-flag`（値の反転）や `--reset-flag`（デフォルトへの復帰）とは異なる意味を持つ。
+
 ## 問題
 
 gcc のオプション体系には `--flag` / `--no-flag` パターンが大量に存在する:
