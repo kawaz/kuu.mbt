@@ -4,11 +4,11 @@ kuu WASM bridge を使った cargo CLI 引数パースの検証。
 """
 
 import pytest
-from kuu import kuu_parse, ParseSuccess, ParseError
+from kuu import kuu_parse, ParseSuccess, ParseError, ParseResult
 from cargo_schema import OPTS, DESCRIPTION
 
 
-def parse(args: list[str]):
+def parse(args: list[str]) -> ParseResult:
     """テスト用パースヘルパー"""
     return kuu_parse(OPTS, args, description=DESCRIPTION)
 
@@ -323,3 +323,18 @@ class TestErrors:
         result = parse(["--color", "rainbow"])
         assert isinstance(result, ParseError)
         assert result.ok is False
+
+
+# === check ===
+
+class TestCheck:
+    def test_check_simple(self):
+        result = parse(["check"])
+        assert isinstance(result, ParseSuccess)
+        assert result.command is not None
+        assert result.command.name == "check"
+
+    def test_check_release(self):
+        result = parse(["check", "--release"])
+        assert isinstance(result, ParseSuccess)
+        assert result.command.values["release"] is True

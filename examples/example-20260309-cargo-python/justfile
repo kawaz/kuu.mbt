@@ -1,3 +1,4 @@
+[private]
 default:
     just --list
 
@@ -7,11 +8,11 @@ build-wasm:
 
 # 実行するのだ（引数はそのまま渡す）
 run *ARGS:
-    python3 src/main.py {{ARGS}}
+    uv run python3 src/main.py {{ARGS}}
 
 # テスト実行なのだ
 test:
-    python3 -m pytest src/test_main.py -v
+    uv run python3 -m pytest src/test_main.py -v
 
 # ヘルプ表示なのだ
 help:
@@ -20,25 +21,25 @@ help:
 # 使用例を実行するのだ
 demo:
     @echo "=== build ==="
-    python3 src/main.py build --release --target x86_64-unknown-linux-gnu --jobs 4
+    uv run python3 src/main.py build --release --target x86_64-unknown-linux-gnu --jobs 4
     @echo ""
     @echo "=== test ==="
-    python3 src/main.py test --release --no-run --lib
+    uv run python3 src/main.py test --release --no-run --lib
     @echo ""
     @echo "=== run ==="
-    python3 src/main.py run --release --bin myapp -- arg1 arg2
+    uv run python3 src/main.py run --release --bin myapp -- arg1 arg2
     @echo ""
     @echo "=== new ==="
-    python3 src/main.py new myproject --lib --edition 2021
+    uv run python3 src/main.py new myproject --lib --edition 2021
     @echo ""
     @echo "=== clippy ==="
-    python3 src/main.py clippy --fix --allow-dirty -- -W clippy::pedantic
+    uv run python3 src/main.py clippy --fix --allow-dirty -- -W clippy::pedantic
     @echo ""
     @echo "=== install ==="
-    python3 src/main.py -vv install ripgrep --version 14.0.0 --force
+    uv run python3 src/main.py -vv install ripgrep --version 14.0.0 --force
     @echo ""
     @echo "=== fmt ==="
-    python3 src/main.py fmt --check --all
+    uv run python3 src/main.py fmt --check --all
     @echo ""
     @echo "=== doc ==="
-    python3 src/main.py doc --open --no-deps
+    uv run python3 src/main.py doc --open --no-deps

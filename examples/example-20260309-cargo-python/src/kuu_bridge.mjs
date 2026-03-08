@@ -26,10 +26,7 @@ async function main() {
     wasmBytes = await readFile(wasmPath);
   } catch (e) {
     if (e.code === "ENOENT") {
-      process.stderr.write(JSON.stringify({
-        ok: false,
-        error: `WASM module not found: ${wasmPath}\nRun 'just build-wasm' to build the WASM module first.`,
-      }));
+      process.stderr.write(`WASM module not found: ${wasmPath}\nRun 'just build-wasm' to build the WASM module first.\n`);
       process.exit(1);
     }
     throw e;
@@ -45,6 +42,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  process.stderr.write(JSON.stringify({ ok: false, error: e.message }));
+  process.stderr.write(e.message + "\n");
   process.exit(1);
 });

@@ -39,7 +39,7 @@ Python (main.py) ── JSON ──► Node.js (kuu_bridge.mjs) ──► WASM (
 just              # コマンド一覧
 just build-wasm   # WASM モジュールビルド
 just run          # サンプル実行
-just test         # テスト実行 (39件)
+just test         # テスト実行
 just demo         # 複数コマンドのデモ実行
 just help         # ヘルプ表示
 ```
