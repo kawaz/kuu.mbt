@@ -65,6 +65,12 @@ pub(all) struct Opt[T] {
 }
 
 ///|
+pub(all) struct CmdResult {
+  name : String
+  parser : Parser
+}
+
+///|
 pub(all) struct OptRef {
   name : String
   is_set : () -> Bool

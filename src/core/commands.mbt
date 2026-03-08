@@ -5,9 +5,9 @@ pub fn Parser::cmd(
   setup~ : (Parser) -> Unit,
   description? : String = "",
   dashdash? : Bool = true,
-) -> Opt[Bool] {
+) -> Opt[CmdResult] {
   let id = (self.next_id)()
-  let cell : Ref[Bool] = { val: false }
+  let cell : Ref[CmdResult?] = { val: None }
   let child_nodes : Array[ExactNode] = []
   let child_global_nodes : Array[ExactNode] = []
   for gnode in self.global_nodes {
@@ -48,7 +48,7 @@ pub fn Parser::cmd(
         match parse_result {
           Ok(child_result) =>
             Accept(consumed=args.length() - pos, commit=fn() {
-              cell.val = true
+              cell.val = Some(CmdResult::{ name: cmd_name, parser: child })
               was_set.val = true
               self.children.set(cmd_name, child_result)
             })
@@ -59,7 +59,7 @@ pub fn Parser::cmd(
       }
     },
     reset: fn() {
-      cell.val = false
+      cell.val = None
       was_set.val = false
     },
   }
@@ -78,7 +78,7 @@ pub fn Parser::cmd(
   {
     id,
     name,
-    getter: fn() -> Bool { cell.val },
+    getter: fn() -> CmdResult { cell.val.unwrap() },
     parsed: self.parsed,
     is_set: fn() { was_set.val },
   }
