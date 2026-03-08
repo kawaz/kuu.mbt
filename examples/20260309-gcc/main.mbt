@@ -5,11 +5,12 @@
 ///   - variation_false for -W/-Wno- warning control (8 warning flags)
 ///   - variation_false for -f/-fno- code generation flags (6 codegen flags)
 ///   - variation_false for --pie/--no-pie (default=true + disable)
-///   - variation_false for --debug/--no-debug
-///   - explicit variations array (Toggle, Reset) for advanced patterns
+///   - variation_false + variation_reset for --debug/--no-debug/--reset-debug
+///   - variation_false + variation_toggle + variation_true for diagnostics-color
+///   - explicit variations array for advanced patterns (fcommon, fstack-protector)
 ///   - string_opt with choices (--optimize, --std, --language)
 ///   - append_string for repeatable options (--define, --include-path, --lib, --lib-path)
-///   - exclusive constraints (--compile/--assemble/--preprocess, --shared/--static, --m32/--m64)
+///   - exclusive constraints (--compile/--assemble-only/--preprocess, --shared/--static, --m32/--m64)
 ///   - rest positionals with stop_before (source files)
 ///   - flag with shorts (-v, -c, -S, -E, -g, -o)
 fn main {
@@ -87,15 +88,21 @@ fn main {
     Err(msg) => println("ERROR: " + msg)
   }
 
-  // ─── Scenario 4: default=true + Variation disable ───
-  println("═══ Scenario 4: default=true flags disabled via --no- ═══")
+  // ─── Scenario 4: default=true + all Variation types ───
+  println("═══ Scenario 4: default=true + False/Toggle/True/Reset variations ═══")
   println("")
   let args4 = [
     "--no-pie",
     "--no-fexceptions",
+    // False: --no-diagnostics-color sets false
+    // Toggle: --toggle- flips !false => true
     "--no-diagnostics-color",
     "--toggle-diagnostics-color",
-    // toggle restores true after --no- set false, demonstrating both variations
+    // True: --force-diagnostics-color always sets true (idempotent)
+    "--force-diagnostics-color",
+    // Reset: --reset-debug restores debug to default (false), was_set=true
+    "--debug",
+    "--reset-debug",
     "test.c",
   ]
   println("Parsing: " + args4.to_string())
@@ -105,19 +112,38 @@ fn main {
     Err(msg) => println("ERROR: " + msg)
   }
 
-  // ─── Scenario 5: Exclusive constraint error ───
-  println("═══ Scenario 5: Exclusive constraint error (--compile + --assemble) ═══")
+  // ─── Scenario 5: Short option combination + equals syntax ───
+  println("═══ Scenario 5: Short option combination + equals syntax ═══")
   println("")
-  let args5 = ["--compile", "--assemble", "test.c"]
+  let args5 = [
+    "-gv",
+    "--std=c17",
+    "--optimize=2",
+    "--arch=native",
+    "hello.c",
+  ]
   println("Parsing: " + args5.to_string())
   println("")
   match run(args5) {
     Ok(_) => ()
+    Err(msg) => println("ERROR: " + msg)
+  }
+
+  // ─── Scenario 6: Exclusive constraint error ───
+  println(
+    "═══ Scenario 6: Exclusive constraint error (--compile + --assemble-only) ═══",
+  )
+  println("")
+  let args6 = ["--compile", "--assemble-only", "test.c"]
+  println("Parsing: " + args6.to_string())
+  println("")
+  match run(args6) {
+    Ok(_) => ()
     Err(msg) => println("EXPECTED ERROR: " + msg)
   }
 
-  // ─── Scenario 6: Help output ───
-  println("═══ Scenario 6: Help output ═══")
+  // ─── Scenario 7: Help output ───
+  println("═══ Scenario 7: Help output ═══")
   println("")
   match run(["--help"]) {
     Ok(_) => ()
@@ -149,7 +175,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Compile and assemble, but do not link",
   )
   let assemble_only = p.flag(
-    name="assemble",
+    name="assemble-only",
     shorts="S",
     description="Compile only; do not assemble or link",
   )
@@ -229,6 +255,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="g",
     description="Produce debugging information in the OS native format",
     variation_false=Some("no"),
+    variation_reset=Some("reset"),
   )
 
   // ─── Language Standard ───
@@ -342,8 +369,10 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── Advanced Variation demos ───
   //
-  // Toggle: repeated --toggle-diagnostics-color flips the value each time
-  // Reset: --reset-warnings restores all warning defaults but marks as "set"
+  // Toggle: --toggle-diagnostics-color flips the current value
+  // True: --force-diagnostics-color always sets true (idempotent)
+  // False: --no-diagnostics-color always sets false
+  // Reset: --reset-debug restores debug to default (false), was_set=true
 
   let diagnostics_color = p.flag(
     name="diagnostics-color",
@@ -351,6 +380,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Use color in diagnostics",
     variation_false=Some("no"),
     variation_toggle=Some("toggle"),
+    variation_true=Some("force"),
   )
 
   // ─── Machine Options ───

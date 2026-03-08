@@ -10,13 +10,15 @@ moon run examples/20260309-gcc
 
 | kuu 機能 | mygcc での実例 |
 |---|---|
-| **variation_false (sugar)** | `--wall`/`--no-wall`, `--fpic`/`--no-fpic` 等 14 フラグ |
+| **variation_false (sugar)** | `--wall`/`--no-wall`, `--fpic`/`--no-fpic` 等 15 フラグ |
 | **variations array (explicit)** | `--fcommon`/`--no-fcommon`, `--fstack-protector`/`--no-fstack-protector` |
 | **variation_toggle** | `--diagnostics-color`/`--toggle-diagnostics-color` |
-| **default=true + variation_false** | `--pie`/`--no-pie`, `--fexceptions`/`--no-fexceptions` |
+| **variation_true** | `--diagnostics-color`/`--force-diagnostics-color` |
+| **variation_reset** | `--debug`/`--reset-debug` |
+| **default=true + variation_false** | `--pie`/`--no-pie`, `--fexceptions`/`--no-fexceptions`, `--diagnostics-color`/`--no-diagnostics-color` |
 | **string_opt + choices** | `--optimize` (0,1,2,3,s,g,fast), `--std` (c11,c17,...), `--language` |
 | **append_string** | `--define`, `--undefine`, `--include-path`, `--lib`, `--lib-path` |
-| **exclusive** | `--compile`/`--assemble`/`--preprocess`, `--shared`/`--static`, `--m32`/`--m64` |
+| **exclusive** | `--compile`/`--assemble-only`/`--preprocess`, `--shared`/`--static`, `--m32`/`--m64` |
 | **rest (positional) + stop_before** | ソースファイル (`main.c util.c`) |
 | **shorts** | `-o`, `-c`, `-S`, `-E`, `-g`, `-v`, `-O`, `-D`, `-U`, `-I`, `-l`, `-L`, `-x` |
 | **flag** | `--verbose`, `--pipe`, `--shared`, `--static`, `--m32`, `--m64` |
@@ -84,3 +86,8 @@ p.exclusive([shared.as_ref(), link_static.as_ref()])
 // アーキテクチャ: 32bit か 64bit の一方のみ
 p.exclusive([m32.as_ref(), m64.as_ref()])
 ```
+
+## Disclaimer
+
+This is a demonstration program inspired by gcc's CLI interface for testing the kuu parser library.
+It is not affiliated with the GNU project or the Free Software Foundation.
