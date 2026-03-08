@@ -18,7 +18,7 @@ pub(all) struct Opt[T] {
 }
 ```
 
-**is_set の仕組み**: 各コンビネータ内で `was_set: Ref[Bool]` を作成し、commit クロージャ内で `was_set.val = true` にセット。`consumed=0` のデフォルトフォールバック（Initial[T] の解決等）では was_set を true にしない。
+**is_set の仕組み**: 各コンビネータ内で `was_set: Ref[Bool]` を作成し、wrap_node_with_set で commit をラップ。consumed > 0 の Accept のみ was_set = true にセットし、ユーザーが明示的に指定した場合のみ true になる。
 
 **name の追加理由**: エラーメッセージに opt 名を含めるため。OptMeta には id がなく逆引き不可。Opt[T] に持たせるのが最も自然。
 
@@ -47,6 +47,11 @@ pub fn Parser::required(self, opt: OptRef) -> Unit
 ### 4. wrap_node_with_set ヘルパー
 
 ExactNode の commit クロージャを was_set フラグでラップする共通ヘルパー。全コンビネータで使用。
+
+### 5. require_cmd — サブコマンド必須制約
+
+`exclusive` / `required` と同じ post_hooks パターンで、サブコマンドが1つも選ばれなかった場合にエラーにする。
+詳細は DR-026 参照。
 
 ## 不採用案
 
