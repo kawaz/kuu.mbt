@@ -91,6 +91,7 @@ fn[T] Parser::register_option(
   default_display~ : String,
   hidden~ : Bool,
   kind~ : OptKind,
+  choices~ : Array[String] = [],
   variations~ : Array[Variation],
   was_set~ : Ref[Bool],
   make_main_node~ : (String) -> ExactNode,
@@ -124,6 +125,7 @@ fn[T] Parser::register_option(
     shorts: shorts_arr,
     aliases,
     hidden,
+    choices,
   })
   { id, name: "--" + name, getter, parsed: self.parsed, is_set: fn() { was_set.val } }
 }
@@ -168,6 +170,22 @@ fn Parser::expand_and_register(
     }
   }
 
+  // Validate shorts characters
+  for ch in shorts {
+    if ch == '-' {
+      self.duplicate_errors.push(
+        "invalid short option character '-' in option --" + name,
+      )
+    } else if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+      self.duplicate_errors.push(
+        "invalid short option character (whitespace) in option --" + name,
+      )
+    } else if ch == '\u0000' {
+      self.duplicate_errors.push(
+        "invalid short option character (NUL) in option --" + name,
+      )
+    }
+  }
   let long_nodes = make_long_nodes("--" + name)
   check_and_register_names(long_nodes)
   register(long_nodes)

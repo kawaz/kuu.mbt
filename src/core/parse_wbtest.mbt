@@ -3601,3 +3601,169 @@ test "string_opt default empty: no default shown in help" {
   let help = p.generate_help()
   inspect(help.contains("[default:"), content="false")
 }
+
+// ============================================================
+// shorts validation tests
+// ============================================================
+
+///|
+test "shorts validation: hyphen rejected" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", shorts="-")
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(
+        info.message.contains("invalid short option character '-'"),
+        content="true",
+      )
+    _ => abort("expected error for hyphen in shorts")
+  }
+}
+
+///|
+test "shorts validation: space rejected" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", shorts=" ")
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(
+        info.message.contains("invalid short option character (whitespace)"),
+        content="true",
+      )
+    _ => abort("expected error for space in shorts")
+  }
+}
+
+///|
+test "shorts validation: tab rejected" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", shorts="\t")
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(
+        info.message.contains("invalid short option character (whitespace)"),
+        content="true",
+      )
+    _ => abort("expected error for tab in shorts")
+  }
+}
+
+///|
+test "shorts validation: NUL rejected" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", shorts="\u0000")
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(
+        info.message.contains("invalid short option character (NUL)"),
+        content="true",
+      )
+    _ => abort("expected error for NUL in shorts")
+  }
+}
+
+///|
+test "shorts validation: mixed valid and invalid" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", shorts="v-")
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(
+        info.message.contains("invalid short option character '-'"),
+        content="true",
+      )
+    _ => abort("expected error for hyphen in shorts")
+  }
+}
+
+///|
+test "shorts validation: unicode allowed" {
+  let p = Parser::new()
+  let opt = p.flag(name="all", shorts="あ")
+  ignore(p.parse(["-あ"]))
+  inspect(p.get(opt), content="Some(true)")
+}
+
+// ============================================================
+// Unicode short combining tests
+// ============================================================
+
+///|
+test "shorts unicode combining: two unicode flags" {
+  let p = Parser::new()
+  let a = p.flag(name="all", shorts="あ")
+  let i = p.flag(name="interactive", shorts="い")
+  ignore(p.parse(["-あい"]))
+  inspect(p.get(a), content="Some(true)")
+  inspect(p.get(i), content="Some(true)")
+}
+
+///|
+test "shorts unicode combining: unicode short + inline value" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=0, shorts="あ")
+  ignore(p.parse(["-あ3000"]))
+  inspect(p.get(port), content="Some(3000)")
+}
+
+// ============================================================
+// choices help display tests
+// ============================================================
+
+///|
+test "choices shown in help: [possible values: ...]" {
+  let p = Parser::new()
+  let _ = p.string_opt(
+    name="color", default="auto",
+    choices=["always", "auto", "never"],
+    description="Color mode",
+  )
+  let help = p.generate_help()
+  inspect(
+    help.contains("[possible values: always, auto, never]"),
+    content="true",
+  )
+}
+
+///|
+test "choices + default shown in help together" {
+  let p = Parser::new()
+  let _ = p.string_opt(
+    name="color", default="auto",
+    choices=["always", "auto", "never"],
+    description="Color mode",
+  )
+  let help = p.generate_help()
+  inspect(
+    help.contains("[possible values: always, auto, never] [default: auto]"),
+    content="true",
+  )
+}
+
+///|
+test "no choices: no possible values in help" {
+  let p = Parser::new()
+  let _ = p.string_opt(name="host", default="localhost", description="Host")
+  let help = p.generate_help()
+  inspect(help.contains("[possible values:"), content="false")
+}
+
+///|
+test "int_opt choices shown in help" {
+  let p = Parser::new()
+  let _ = p.int_opt(
+    name="level", default=1,
+    choices=["1", "2", "3"],
+    description="Log level",
+  )
+  let help = p.generate_help()
+  inspect(
+    help.contains("[possible values: 1, 2, 3]"),
+    content="true",
+  )
+}
