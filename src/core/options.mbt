@@ -98,7 +98,7 @@ pub fn Parser::string_opt(
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   self.custom(
     name~, aliases~, short~, global~, hidden~, variations~,
-    help=description, value_name~, default_display=default,
+    help=description, value_name~,
     default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::map(fn(s) { s }),
   )
@@ -130,10 +130,9 @@ pub fn Parser::int_opt(
   if variation_false is Some(p) { variations.push(False(p)) }
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
-  let display_default = if default == 0 { "" } else { default.to_string() }
   self.custom(
     name~, aliases~, short~, global~, hidden~, variations~,
-    help=description, value_name~, default_display=display_default,
+    help=description, value_name~,
     default~, default_fn~, implicit_value~,
     pre=Filter::parse_int(),
   )
@@ -253,7 +252,7 @@ pub fn Parser::count(
 }
 
 ///|
-pub fn[T] Parser::custom(
+pub fn[T : Show] Parser::custom(
   self : Parser,
   name~ : String,
   aliases? : Array[String] = [],
@@ -261,7 +260,7 @@ pub fn[T] Parser::custom(
   global? : Bool = false,
   help? : String = "",
   value_name? : String = "",
-  default_display? : String = "",
+  default_display? : String? = None,
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
   default~ : T,
@@ -274,6 +273,10 @@ pub fn[T] Parser::custom(
   let initial_val = match default_fn {
     Some(f) => f()
     None => default
+  }
+  let effective_display = match default_display {
+    Some(s) => s
+    None => initial_val.to_string()
   }
   let cell : Ref[T] = { val: initial_val }
   let was_set : Ref[Bool] = { val: false }
@@ -338,7 +341,7 @@ pub fn[T] Parser::custom(
   let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
   let opt = self.register_option(
     name~, aliases~, short~, global~, hidden~,
-    help~, value_name=display_value_name, default_display~,
+    help~, value_name=display_value_name, default_display=effective_display,
     kind=ValueOpt, variations~, was_set~,
     make_main_node=make_main,
     make_node_for_variation=make_var_node,
