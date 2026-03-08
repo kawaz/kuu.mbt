@@ -1,0 +1,6 @@
+{
+  "import": [
+    "kawaz/kuu/src/core"
+  ],
+  "is-main": true
+}
