@@ -61,3 +61,25 @@ size: build-release
 
 # Pre-release check
 release-check: fmt info check test
+
+# ─── Go Docker Example ─────────────────────────────────────
+
+# Build kuu WASM for bridge
+build-wasm:
+    moon build --target wasm-gc --release
+
+# Build Go binary
+build-go: build-wasm
+    go build -buildvcs=false -o mydocker .
+
+# Run all Docker CLI parsing scenarios
+run: build-go
+    ./mydocker
+
+# Run a specific scenario
+run-scenario name: build-go
+    ./mydocker --scenario "{{name}}"
+
+# Clean Go artifacts
+clean-go:
+    rm -f mydocker
