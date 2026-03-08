@@ -15,8 +15,6 @@ pub fn Parser::positional(
   ) -> TryResult {
     if pos >= args.length() {
       Reject
-    } else if args[pos].has_prefix("--") {
-      Reject
     } else {
       pending.val = args[pos]
       Accept(consumed=1, commit=fn() {
@@ -35,6 +33,7 @@ pub fn Parser::positional(
     global: false,
     shorts: [],
     aliases: [],
+    variation_names: [],
     hidden: false,
   })
   {
@@ -87,6 +86,7 @@ pub fn Parser::rest(
     global: false,
     shorts: [],
     aliases: [],
+    variation_names: [],
     hidden: false,
   })
   {

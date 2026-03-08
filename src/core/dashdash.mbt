@@ -46,6 +46,11 @@ pub fn Parser::dashdash(
     },
   }
   self.nodes.push(dashdash_node)
+  // 重複検出のため registered_names に登録
+  if self.registered_names.contains(sep) {
+    self.duplicate_errors.push("duplicate option name: " + sep)
+  }
+  self.registered_names[sep] = true
   {
     id,
     name: separator,
@@ -103,6 +108,11 @@ pub fn Parser::append_dashdash(
     },
   }
   self.nodes.push(node)
+  // 重複検出のため registered_names に登録
+  if self.registered_names.contains(sep) {
+    self.duplicate_errors.push("duplicate option name: " + sep)
+  }
+  self.registered_names[sep] = true
   {
     id,
     name: separator,

@@ -276,6 +276,11 @@ fn Parser::install_separator_node(self : Parser) -> Unit {
     reset: fn() {  },
   }
   self.nodes.push(separator_node)
+  // 重複検出のため registered_names に登録
+  if self.registered_names.contains("--") {
+    self.duplicate_errors.push("duplicate option name: --")
+  }
+  self.registered_names["--"] = true
 }
 
 ///|
@@ -338,11 +343,11 @@ fn Parser::parse_raw(
         }
     }
   }
-  self.parsed.val = true
   // post hooks: parse 完了後の値変換・遅延バリデーション
   for hook in self.post_hooks {
     hook()
   }
+  self.parsed.val = true
   let kind = if self.children.length() > 0 { Map_(self.children) } else { One }
   { kind, parser: self }
 }

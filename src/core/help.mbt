@@ -58,6 +58,7 @@ fn inject_help_node(parser : Parser) -> Unit {
     global: false,
     shorts,
     aliases: [],
+    variation_names: [],
     hidden: false,
   })
 }
@@ -204,6 +205,10 @@ fn format_opt_left(meta : OptMeta) -> String {
   for alt in meta.aliases {
     buf.write_string(", --")
     buf.write_string(alt)
+  }
+  for vname in meta.variation_names {
+    buf.write_string(", ")
+    buf.write_string(vname)
   }
   if not(meta.value_name.is_empty()) {
     buf.write_string(" <")

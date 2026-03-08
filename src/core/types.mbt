@@ -114,6 +114,7 @@ pub(all) struct OptMeta {
   global : Bool
   shorts : Array[Char]
   aliases : Array[String]
+  variation_names : Array[String]
   hidden : Bool
 }
 

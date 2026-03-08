@@ -114,6 +114,13 @@ fn[T] Parser::register_option(
   for ch in shorts {
     shorts_arr.push(ch)
   }
+  let var_names : Array[String] = []
+  for v in variations {
+    let prefix = match v {
+      Toggle(p) | True(p) | False(p) | Reset(p) | Unset(p) => p
+    }
+    var_names.push("--" + prefix + "-" + name)
+  }
   self.metas.push(OptMeta::{
     kind,
     name,
@@ -123,6 +130,7 @@ fn[T] Parser::register_option(
     global,
     shorts: shorts_arr,
     aliases,
+    variation_names: var_names,
     hidden,
   })
   { id, name: "--" + name, getter, parsed: self.parsed, is_set: fn() { was_set.val } }

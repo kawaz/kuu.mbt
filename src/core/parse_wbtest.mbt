@@ -3509,7 +3509,7 @@ test "custom[Int] default_display auto: shows [default: 42]" {
   let _ = p.custom(
     name="count", default=42,
     pre=Filter::parse_int(),
-    help="Item count",
+    description="Item count",
   )
   let help = p.generate_help()
   inspect(help.contains("[default: 42]"), content="true")
@@ -3521,7 +3521,7 @@ test "custom[Int] default=0: shows [default: 0] in help" {
   let _ = p.custom(
     name="count", default=0,
     pre=Filter::parse_int(),
-    help="Item count",
+    description="Item count",
   )
   let help = p.generate_help()
   inspect(help.contains("[default: 0]"), content="true")
@@ -3533,7 +3533,7 @@ test "custom[String] default empty: no default shown in help" {
   let _ = p.custom(
     name="name", default="",
     pre=Filter::map(fn(s) { s }),
-    help="User name",
+    description="User name",
   )
   let help = p.generate_help()
   inspect(help.contains("[default:"), content="false")
@@ -3545,7 +3545,7 @@ test "custom[String] default non-empty: shows [default: hello]" {
   let _ = p.custom(
     name="name", default="hello",
     pre=Filter::map(fn(s) { s }),
-    help="User name",
+    description="User name",
   )
   let help = p.generate_help()
   inspect(help.contains("[default: hello]"), content="true")
@@ -3557,7 +3557,7 @@ test "custom[Int] default_display=Some(\"\"): explicitly suppress default" {
   let _ = p.custom(
     name="count", default=42,
     pre=Filter::parse_int(),
-    help="Item count",
+    description="Item count",
     default_display=Some(""),
   )
   let help = p.generate_help()
@@ -3570,7 +3570,7 @@ test "custom[Int] default_display=Some(\"custom\"): custom display" {
   let _ = p.custom(
     name="count", default=42,
     pre=Filter::parse_int(),
-    help="Item count",
+    description="Item count",
     default_display=Some("custom"),
   )
   let help = p.generate_help()
@@ -4042,4 +4042,236 @@ test "hidden positional not shown in help" {
   // hidden positional は直接 metas に追加できないので、hidden=false のテスト
   let help = p.generate_help()
   inspect(help.contains("<VISIBLE>"), content="true")
+}
+
+// ============================================================
+// C1: unselected cmd get() returns None (not panic)
+// ============================================================
+
+///|
+test "unselected cmd get() returns None" {
+  let p = Parser::new(dashdash=false)
+  let cmd_a = p.cmd(name="a", dashdash=false, setup=fn(_) {  })
+  let cmd_b = p.cmd(name="b", dashdash=false, setup=fn(_) {  })
+  ignore(p.parse(["a"]))
+  // selected cmd: opt.get() returns Some
+  inspect((cmd_a.is_set)(), content="true")
+  inspect(cmd_a.get() is Some(_), content="true")
+  // unselected cmd: opt.get() returns None (not panic)
+  inspect((cmd_b.is_set)(), content="false")
+  inspect(cmd_b.get() is None, content="true")
+}
+
+///|
+test "no cmd selected — all cmds return None" {
+  let p = Parser::new(dashdash=false)
+  let cmd_a = p.cmd(name="a", dashdash=false, setup=fn(_) {  })
+  let cmd_b = p.cmd(name="b", dashdash=false, setup=fn(_) {  })
+  ignore(p.parse([]))
+  inspect(cmd_a.get() is None, content="true")
+  inspect(cmd_b.get() is None, content="true")
+}
+
+// ============================================================
+// C4: positional accepts --xxx (no prefix check)
+// ============================================================
+
+///|
+test "positional accepts --xxx as value" {
+  let p = Parser::new(dashdash=false)
+  let arg = p.positional(name="arg")
+  ignore(p.parse(["--unknown-flag"]))
+  inspect(
+    p.get(arg),
+    content=(
+      #|Some("--unknown-flag")
+    ),
+  )
+}
+
+///|
+test "positional accepts --xxx alongside registered options" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose")
+  let arg = p.positional(name="arg")
+  ignore(p.parse(["--verbose", "--not-registered"]))
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(
+    p.get(arg),
+    content=(
+      #|Some("--not-registered")
+    ),
+  )
+}
+
+// ============================================================
+// C3: dashdash + install_separator_node duplicate detection
+// ============================================================
+
+///|
+test "dashdash=true with explicit dashdash() raises duplicate error" {
+  let p = Parser::new(dashdash=true) // install_separator_node registers "--"
+  let _ = p.dashdash() // also registers "--"
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("duplicate option name: --"), content="true")
+    _ => abort("expected duplicate error for dashdash + install_separator_node")
+  }
+}
+
+///|
+test "dashdash=false with explicit dashdash() works without duplicate error" {
+  let p = Parser::new(dashdash=false)
+  let dd = p.dashdash()
+  ignore(p.parse(["--", "a", "b"]))
+  inspect(
+    p.get(dd),
+    content=(
+      #|Some(["a", "b"])
+    ),
+  )
+}
+
+///|
+test "append_dashdash duplicate detection with dashdash=true" {
+  let p = Parser::new(dashdash=true)
+  let _ = p.append_dashdash()
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("duplicate option name: --"), content="true")
+    _ => abort("expected duplicate error for append_dashdash + install_separator_node")
+  }
+}
+
+// ============================================================
+// #8: post_hooks failure leaves parsed=false
+// ============================================================
+
+///|
+test "post_hooks failure keeps parsed=false" {
+  let p = Parser::new(dashdash=false)
+  let name = p.string_opt(name="name", default="world")
+  // Add a post_hook that always fails
+  p.post_hooks.push(fn() raise ParseError {
+    raise parse_error("post_hook validation failed")
+  })
+  let result : Result[_, _] = try? p.parse(["--name", "alice"])
+  // parse should fail due to post_hook
+  inspect(result is Err(_), content="true")
+  // parsed should remain false because post_hook failed before setting it
+  inspect(name.parsed.val, content="false")
+}
+
+// ============================================================
+// #9: global node name collision in child parser
+// ============================================================
+
+///|
+test "child parser detects global option name collision" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.flag(name="verbose", global=true)
+  let _ = p.cmd(name="sub", dashdash=false, setup=fn(child) {
+    // child defines local --verbose which collides with parent's global --verbose
+    let _ = child.flag(name="verbose")
+  })
+  let result : Result[_, _] = try? p.parse(["sub"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("duplicate option name"), content="true")
+    _ => abort("expected duplicate error for global/local name collision")
+  }
+}
+
+///|
+test "child parser with no collision works fine" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose", global=true)
+  let _ = p.cmd(name="sub", dashdash=false, setup=fn(child) {
+    let _ = child.flag(name="quiet") // different name, no collision
+  })
+  ignore(p.parse(["sub", "--verbose", "--quiet"]))
+  inspect(p.get(verbose), content="Some(true)")
+}
+
+// ============================================================
+// C2: variation_names shown in help
+// ============================================================
+
+///|
+test "help shows --no-xxx for variation_false" {
+  let p = Parser::new()
+  let _ = p.flag(name="color", variation_false=Some("no"), description="Use color")
+  let help = p.generate_help()
+  inspect(help.contains("--no-color"), content="true")
+  inspect(help.contains("--color, --no-color"), content="true")
+}
+
+///|
+test "help shows multiple variations" {
+  let p = Parser::new()
+  let _ = p.flag(
+    name="color",
+    variations=[True("enable"), False("disable")],
+    description="Use color",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("--enable-color"), content="true")
+  inspect(help.contains("--disable-color"), content="true")
+  inspect(
+    help.contains("--color, --enable-color, --disable-color"),
+    content="true",
+  )
+}
+
+///|
+test "help shows variation with aliases" {
+  let p = Parser::new()
+  let _ = p.flag(
+    name="color", aliases=["colour"], variation_false=Some("no"),
+    description="Use color",
+  )
+  let help = p.generate_help()
+  // aliases come before variations
+  inspect(
+    help.contains("--color, --colour, --no-color"),
+    content="true",
+  )
+}
+
+///|
+test "help shows variation with shorts and aliases" {
+  let p = Parser::new()
+  let _ = p.flag(
+    name="color", shorts="c", aliases=["colour"], variation_false=Some("no"),
+    description="Use color",
+  )
+  let help = p.generate_help()
+  inspect(
+    help.contains("-c, --color, --colour, --no-color"),
+    content="true",
+  )
+}
+
+///|
+test "help shows no variation when variations is empty" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose output")
+  let help = p.generate_help()
+  // Should show just --verbose without any variation suffix
+  inspect(help.contains("--verbose"), content="true")
+  // Should not contain comma after --verbose (no aliases, no variations)
+  inspect(help.contains("--verbose,"), content="false")
+}
+
+///|
+test "help variation_reset shows --no-xxx" {
+  let p = Parser::new()
+  let _ = p.string_opt(
+    name="format", default="json", variation_reset=Some("no"),
+    description="Output format",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("--no-format"), content="true")
 }

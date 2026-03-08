@@ -117,7 +117,15 @@ pub fn Filter::one_of(allowed : Array[String]) -> FilterChain[String, String] {
         return
       }
     }
-    raise parse_error("value must be one of: " + allowed.to_string())
+    let buf = StringBuilder::new()
+    buf.write_string("value must be one of: ")
+    for i, v in allowed {
+      if i > 0 {
+        buf.write_string(", ")
+      }
+      buf.write_string(v)
+    }
+    raise parse_error(buf.to_string())
   })
 }
 

@@ -28,6 +28,12 @@ pub fn Parser::cmd(
     registered_names: {},
     duplicate_errors: [],
   }
+  // 親の global_nodes の名前を子の registered_names に登録（衝突検知のため）
+  for gnode in self.global_nodes {
+    if gnode.name != "" {
+      child.registered_names[gnode.name] = true
+    }
+  }
   setup(child)
   if dashdash {
     child.install_separator_node()
@@ -73,13 +79,14 @@ pub fn Parser::cmd(
     global: false,
     shorts: [],
     aliases: [],
+    variation_names: [],
     hidden: false,
   })
   {
     id,
     name,
     getter: fn() -> CmdResult { cell.val.unwrap() },
-    parsed: self.parsed,
+    parsed: child.parsed,
     is_set: fn() { was_set.val },
   }
 }

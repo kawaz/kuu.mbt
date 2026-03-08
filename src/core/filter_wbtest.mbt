@@ -197,6 +197,20 @@ test "one_of — invalid value" {
 }
 
 ///|
+test "one_of — error message uses join format" {
+  let chain = Filter::one_of(["red", "green", "blue"])
+  let result : Result[String, _] = try? (chain.run)("yellow")
+  match result {
+    Err(ParseError(info)) =>
+      inspect(
+        info.message,
+        content="value must be one of: red, green, blue",
+      )
+    _ => abort("expected ParseError")
+  }
+}
+
+///|
 test "each — applies filter to each element" {
   let chain = Filter::each(Filter::parse_int())
   let result : Result[Array[Int], _] = try? (chain.run)(["1", "2", "3"])

@@ -98,7 +98,7 @@ pub fn Parser::string_opt(
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   self.custom(
     name~, aliases~, shorts~, global~, hidden~, variations~,
-    help=description, value_name~,
+    description~, value_name~,
     default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::map(fn(s) { s }),
   )
@@ -134,7 +134,7 @@ pub fn Parser::int_opt(
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   self.custom(
     name~, aliases~, shorts~, global~, hidden~, variations~,
-    help=description, value_name~,
+    description~, value_name~,
     default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::parse_int(),
   )
@@ -165,7 +165,7 @@ pub fn Parser::append_string(
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   self.custom_append(
     name~, aliases~, shorts~, global~, hidden~, variations~,
-    help=description, value_name~,
+    description~, value_name~,
     pre=Filter::map(fn(s) { s }),
   )
 }
@@ -195,7 +195,7 @@ pub fn Parser::append_int(
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   self.custom_append(
     name~, aliases~, shorts~, global~, hidden~, variations~,
-    help=description, value_name~,
+    description~, value_name~,
     pre=Filter::parse_int(),
   )
 }
@@ -260,7 +260,7 @@ pub fn[T : Show] Parser::custom(
   aliases? : Array[String] = [],
   shorts? : String = "",
   global? : Bool = false,
-  help? : String = "",
+  description? : String = "",
   value_name? : String = "",
   default_display? : String? = None,
   hidden? : Bool = false,
@@ -283,7 +283,7 @@ pub fn[T : Show] Parser::custom(
   // choices 情報を help 文字列に付加（OptMeta にフィールドを持たない設計）
   let effective_help : String = if choices.length() > 0 {
     let buf = StringBuilder::new()
-    buf.write_string(help)
+    buf.write_string(description)
     buf.write_string(" [possible values: ")
     for i, choice in choices {
       if i > 0 {
@@ -294,7 +294,7 @@ pub fn[T : Show] Parser::custom(
     buf.write_char(']')
     buf.to_string()
   } else {
-    help
+    description
   }
   let cell : Ref[T] = { val: initial_val }
   let was_set : Ref[Bool] = { val: false }
@@ -382,7 +382,7 @@ pub fn[T] Parser::custom_append(
   aliases? : Array[String] = [],
   shorts? : String = "",
   global? : Bool = false,
-  help? : String = "",
+  description? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
@@ -394,7 +394,7 @@ pub fn[T] Parser::custom_append(
   let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
   self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
-    help~, value_name=display_value_name, default_display="",
+    help=description, value_name=display_value_name, default_display="",
     kind=ValueOpt, variations~, was_set~,
     make_main_node=fn(opt_n) {
       make_value_node(
