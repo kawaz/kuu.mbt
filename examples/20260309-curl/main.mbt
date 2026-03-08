@@ -7,7 +7,6 @@
 ///   - variation_false による --no-xxx 反転パターン
 ///   - flag, string_opt, int_opt の各種パラメータ
 ///   - rest による複数ポジショナル引数 (URL)
-///   - exclusive 制約
 ///   - サブコマンドなしのフラットな構造
 fn main {
   let scenarios : Array[(String, Array[String])] = [
@@ -74,12 +73,12 @@ fn main {
     ),
     ("Help display", ["--help"]),
     (
-      "Exclusive constraint error (silent + verbose)",
+      "Silent + Verbose (coexist)",
       ["-s", "-v", "https://example.com"],
     ),
   ]
-  for i = 0; i < scenarios.length(); i = i + 1 {
-    let (name, args) = scenarios[i]
+  for i, scenario in scenarios {
+    let (name, args) = scenario
     if i > 0 {
       println("")
     }
@@ -200,17 +199,22 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let show_headers = p.flag(
     name="show-headers", shorts="i",
+    aliases=["include"],
     description="Show response headers in output",
     variation_false=Some("no"),
   )
 
   // ─── Connection & Timeout ───
 
+  // Design rationale: curl は小数秒（例: 1.5）を受け付けるため string_opt を使用。
+  // kuu に float_opt がないため。
   let connect_timeout = p.string_opt(
     name="connect-timeout", default="",
     description="Connection timeout (seconds)",
     value_name="SECONDS",
   )
+  // Design rationale: curl は小数秒（例: 1.5）を受け付けるため string_opt を使用。
+  // kuu に float_opt がないため。
   let max_time = p.string_opt(
     name="max-time", default="", shorts="m",
     description="Maximum transfer time (seconds)",
@@ -330,10 +334,9 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Disable output buffering",
   )
 
-  // ─── Constraints ───
-
-  p.exclusive([silent.as_ref(), verbose.as_ref()])
-  p.exclusive([fail.as_ref(), fail_with_body.as_ref()])
+  // Design rationale: curl では -s と -v は共存可能。
+  // また exclusive + variation_false は --silent --no-verbose で誤発火するため、
+  // 排他制約は設定しない。exclusive のデモは他の example で十分カバーされている。
 
   // ─── Positional Arguments (URL) ───
 
@@ -341,14 +344,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── Parse ───
 
-  let _result = try {
-    p.parse(args)
-  } catch {
-    @core.HelpRequested(text) => {
+  let result : Result[@core.ParseResult, @core.ParseError] = try? p.parse(args)
+  match result {
+    Err(@core.HelpRequested(text)) => {
       println(text)
       return Ok(())
     }
-    @core.ParseError(info) => return Err("Error: " + info.message)
+    Err(@core.ParseError(info)) => return Err("Error: " + info.message)
+    Ok(_) => ()
   }
 
   // ─── Display Results ───
@@ -427,7 +430,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
 ///|
 fn print_str(label : String, opt : @core.Opt[String]) -> Unit {
-  let v = opt.get().unwrap_or("")
+  let v = opt.get().unwrap()
   if v != "" {
     println("  " + label + ": " + v)
   }
@@ -435,15 +438,14 @@ fn print_str(label : String, opt : @core.Opt[String]) -> Unit {
 
 ///|
 fn print_bool(label : String, opt : @core.Opt[Bool]) -> Unit {
-  let v = opt.get().unwrap_or(false)
-  if v {
+  if opt.get().unwrap() {
     println("  " + label + ": true")
   }
 }
 
 ///|
 fn print_int(label : String, opt : @core.Opt[Int]) -> Unit {
-  let v = opt.get().unwrap_or(0)
+  let v = opt.get().unwrap()
   if v != 0 {
     println("  " + label + ": " + v.to_string())
   }
@@ -451,7 +453,7 @@ fn print_int(label : String, opt : @core.Opt[Int]) -> Unit {
 
 ///|
 fn print_arr(label : String, opt : @core.Opt[Array[String]]) -> Unit {
-  let v = opt.get().unwrap_or([])
+  let v = opt.get().unwrap()
   if v.length() > 0 {
     println("  " + label + ": " + v.to_string())
   }

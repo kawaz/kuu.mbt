@@ -36,3 +36,19 @@ string_opt として定義し、値の解釈はアプリ側に委ねる。
 ### 解決策
 print_int ヘルパーが非ゼロ値のみ表示する設計のため、デフォルト50が表示される。
 これは意図的な動作。ユーザーが明示的に指定したかは `is_set()` で区別可能。
+
+## exclusive 制約の不採用
+
+### 問題
+初期実装で `--silent` と `--verbose`、`--fail` と `--fail-with-body` に exclusive 制約を設定していたが、2つの問題が判明。
+
+### 発見経緯
+Round 1 マルチペルソナレビューで、CLI/Unix 専門家と Codex から指摘。
+
+### 解決策
+exclusive 制約を削除。
+
+### 選択理由
+1. curl では `-s` と `-v` は共存可能（プログレスバー非表示 + デバッグ出力表示）。排他制約は curl の仕様に反する
+2. kuu の `exclusive` は `is_set` ベースで判定するため、`variation_false` 付きフラグの否定形（`--no-verbose`）も `is_set=true` となり、`--silent --no-verbose` のような非衝突ケースで誤発火する
+3. exclusive のデモは mygit / mydocker の example で十分カバーされている

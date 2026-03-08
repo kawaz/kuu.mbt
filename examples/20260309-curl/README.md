@@ -26,9 +26,9 @@ just fmt     # moon fmt
 - **フラット構造**: サブコマンドなし、全オプションが同一レベル
 - **append_string**: `-H`, `-d`, `-F` などリピータブルオプション
 - **variation_false**: `--no-verbose`, `--no-silent` 等の反転フラグ
-- **exclusive**: `--silent` vs `--verbose`, `--fail` vs `--fail-with-body`
 - **rest**: 末尾の URL を複数受け取り
 
 ## 関連ドキュメント
 
 - [設計書](docs/DESIGN.md)
+- [設計判断記録](docs/decision-records/DR-001-curl-option-modeling.md)
