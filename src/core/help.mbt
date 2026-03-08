@@ -6,36 +6,49 @@ fn inject_help_node(parser : Parser) -> Unit {
       return
     }
   }
-  let help_node = ExactNode::{
-    name: "--help",
-    needs_value: false,
-    try_reduce: fn(_args : Array[String], pos : Int) -> TryResult {
-      if pos >= _args.length() {
-        Reject
-      } else if _args[pos] == "--help" {
-        Error(HelpRequested(parser.generate_help()))
-      } else {
-        Reject
-      }
-    },
-    reset: fn() {  },
+  let added_long = not(parser.registered_names.contains("--help"))
+  let added_short = not(parser.registered_names.contains("-h"))
+  // Skip entirely if both names are already taken by user-defined options
+  if not(added_long) && not(added_short) {
+    return
   }
-  let short_help_node = ExactNode::{
-    name: "-h",
-    needs_value: false,
-    try_reduce: fn(_args : Array[String], pos : Int) -> TryResult {
-      if pos >= _args.length() {
-        Reject
-      } else if _args[pos] == "-h" {
-        Error(HelpRequested(parser.generate_help()))
-      } else {
-        Reject
-      }
-    },
-    reset: fn() {  },
+  if added_long {
+    let help_node = ExactNode::{
+      name: "--help",
+      needs_value: false,
+      try_reduce: fn(_args : Array[String], pos : Int) -> TryResult {
+        if pos >= _args.length() {
+          Reject
+        } else if _args[pos] == "--help" {
+          Error(HelpRequested(parser.generate_help()))
+        } else {
+          Reject
+        }
+      },
+      reset: fn() {  },
+    }
+    parser.nodes.push(help_node)
+    parser.registered_names["--help"] = true
   }
-  parser.nodes.push(help_node)
-  parser.nodes.push(short_help_node)
+  if added_short {
+    let short_help_node = ExactNode::{
+      name: "-h",
+      needs_value: false,
+      try_reduce: fn(_args : Array[String], pos : Int) -> TryResult {
+        if pos >= _args.length() {
+          Reject
+        } else if _args[pos] == "-h" {
+          Error(HelpRequested(parser.generate_help()))
+        } else {
+          Reject
+        }
+      },
+      reset: fn() {  },
+    }
+    parser.nodes.push(short_help_node)
+    parser.registered_names["-h"] = true
+  }
+  let shorts : Array[Char] = if added_short { ['h'] } else { [] }
   parser.metas.push(OptMeta::{
     kind: Flag,
     name: "help",
@@ -43,7 +56,7 @@ fn inject_help_node(parser : Parser) -> Unit {
     value_name: "",
     default_display: "",
     global: false,
-    shorts: ['h'],
+    shorts,
     aliases: [],
     hidden: false,
   })

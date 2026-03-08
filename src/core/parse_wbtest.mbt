@@ -3767,3 +3767,55 @@ test "int_opt choices shown in help" {
     content="true",
   )
 }
+
+// ============================================================
+// inject_help_node collision tests
+// ============================================================
+
+///|
+test "user-defined shorts=h takes priority over built-in -h help" {
+  let p = Parser::new()
+  let human = p.flag(name="human-readable", shorts="h", description="Human-readable")
+  ignore(p.parse(["-h"]))
+  // -h should activate the user-defined flag, not trigger help
+  inspect(p.get(human), content="Some(true)")
+}
+
+///|
+test "user-defined shorts=h: --help still works" {
+  let p = Parser::new()
+  let _ = p.flag(name="human-readable", shorts="h", description="Human-readable")
+  let result : Result[_, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(_)) => () // expected
+    _ => abort("expected HelpRequested for --help")
+  }
+}
+
+///|
+test "user-defined --help takes priority over built-in --help" {
+  let p = Parser::new()
+  let help_opt = p.flag(name="help", description="Custom help flag")
+  ignore(p.parse(["--help"]))
+  // --help should activate user-defined flag, not trigger built-in help
+  inspect(p.get(help_opt), content="Some(true)")
+}
+
+///|
+test "user-defined --help and shorts=h: both taken, no built-in help injected" {
+  let p = Parser::new()
+  let help_opt = p.flag(name="help", shorts="h", description="Custom help")
+  ignore(p.parse(["--help", "-h"]))
+  inspect(p.get(help_opt), content="Some(true)")
+}
+
+///|
+test "no user collision: -h triggers help as usual" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", shorts="v", description="Verbose")
+  let result : Result[_, _] = try? p.parse(["-h"])
+  match result {
+    Err(HelpRequested(_)) => () // expected
+    _ => abort("expected HelpRequested for -h")
+  }
+}
