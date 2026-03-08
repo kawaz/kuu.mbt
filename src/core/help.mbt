@@ -76,29 +76,49 @@ pub fn Parser::generate_help(self : Parser) -> String {
   let commands : Array[OptMeta] = []
   let options : Array[OptMeta] = []
   let globals : Array[OptMeta] = []
+  let arguments : Array[OptMeta] = []
   for meta in self.metas {
     if meta.hidden {
       continue
     }
     match meta.kind {
       Command => commands.push(meta)
-      Positional | Rest => continue
+      Positional => arguments.push(meta)
+      Rest => arguments.push(meta)
       _ => if meta.global { globals.push(meta) } else { options.push(meta) }
     }
   }
-  // Helper: compute left column for a command entry
-  let need_sections = (
-    commands.length() > 0,
-    options.length() > 0,
-    globals.length() > 0,
-  )
-  let is_first_section : Ref[Bool] = { val: true }
+  // 2. Usage line
+  let usage_buf = StringBuilder::new()
+  usage_buf.write_string("Usage:")
+  if options.length() > 0 || globals.length() > 0 {
+    usage_buf.write_string(" [OPTIONS]")
+  }
+  for arg in arguments {
+    usage_buf.write_char(' ')
+    match arg.kind {
+      Positional => {
+        usage_buf.write_char('<')
+        usage_buf.write_string(to_upper(arg.name))
+        usage_buf.write_char('>')
+      }
+      Rest => {
+        usage_buf.write_char('[')
+        usage_buf.write_string(to_upper(arg.name))
+        usage_buf.write_string("]...")
+      }
+      _ => ()
+    }
+  }
+  if commands.length() > 0 {
+    usage_buf.write_string(" [COMMAND]")
+  }
+  buf.write_string(usage_buf.to_string())
+  buf.write_char('\n')
+  let is_first_section : Ref[Bool] = { val: false }
   // Commands section
   if commands.length() > 0 {
-    if not(is_first_section.val) {
-      buf.write_char('\n')
-    }
-    is_first_section.val = false
+    buf.write_char('\n')
     buf.write_string("Commands:\n")
     // Calculate max left width for commands
     let max_left = {
@@ -123,6 +143,34 @@ pub fn Parser::generate_help(self : Parser) -> String {
       buf.write_char('\n')
     }
   }
+  // Arguments section
+  if arguments.length() > 0 {
+    buf.write_char('\n')
+    buf.write_string("Arguments:\n")
+    // Calculate max left width for arguments
+    let max_left = {
+      let m : Ref[Int] = { val: 0 }
+      for arg in arguments {
+        let left = format_arg_left(arg)
+        let w = left.char_length()
+        if w > m.val {
+          m.val = w
+        }
+      }
+      m.val
+    }
+    for arg in arguments {
+      let left = format_arg_left(arg)
+      buf.write_string(left)
+      if not(arg.help.is_empty()) {
+        let padding = max_left - left.char_length() + 2
+        let pad_str = String::make(padding, ' ')
+        buf.write_string(pad_str)
+        buf.write_string(arg.help)
+      }
+      buf.write_char('\n')
+    }
+  }
   // Options section
   if options.length() > 0 {
     if not(is_first_section.val) {
@@ -141,7 +189,6 @@ pub fn Parser::generate_help(self : Parser) -> String {
     buf.write_string("Global Options:\n")
     write_opt_section(buf, globals)
   }
-  ignore(need_sections)
   buf.to_string()
 }
 
@@ -169,6 +216,26 @@ fn format_opt_left(meta : OptMeta) -> String {
     buf.write_string(" <")
     buf.write_string(meta.value_name)
     buf.write_char('>')
+  }
+  buf.to_string()
+}
+
+///|
+fn format_arg_left(meta : OptMeta) -> String {
+  let buf = StringBuilder::new()
+  buf.write_string("  ")
+  match meta.kind {
+    Positional => {
+      buf.write_char('<')
+      buf.write_string(to_upper(meta.name))
+      buf.write_char('>')
+    }
+    Rest => {
+      buf.write_char('[')
+      buf.write_string(to_upper(meta.name))
+      buf.write_string("]...")
+    }
+    _ => ()
   }
   buf.to_string()
 }
