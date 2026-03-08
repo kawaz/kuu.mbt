@@ -1379,4 +1379,18 @@ src/core/
 src/wasm/
   main.mbt             # WASM bridge: kuu_parse（JSON schema + args → JSON result）
   test.mjs             # Node.js テスト（17ケース）
+examples/
+  mygit/               # 初期版 git CLI モック
+  20260307-mygit/      # 旧 API 保存版
+  20260308-mygit/      # 最新 API 版 git CLI モック（全機能網羅）
+  20260308-mydocker/   # Docker CLI モック
+  20260309-kubectl/    # kubectl CLI モック（DR-031）
 ```
+
+### サンプル一覧
+
+| サンプル | モデル | 主な検証対象 |
+|---|---|---|
+| 20260308-mygit | git | 全機能網羅: serial, append_*, variation_*, hidden, default_fn 等 |
+| 20260308-mydocker | docker | 深いネスト (docker compose up 等) |
+| 20260309-kubectl | kubectl | `-f` のサブコマンド別バインド, dashdash, choices, default=true フラグ |
