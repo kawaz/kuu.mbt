@@ -1,0 +1,45 @@
+[private]
+default:
+    just --list
+
+# WASM モジュールをビルドするのだ
+build-wasm:
+    cd ../.. && moon build --target wasm-gc --release
+
+# 実行するのだ（引数はそのまま渡す）
+run *ARGS:
+    uv run python3 src/main.py {{ARGS}}
+
+# テスト実行なのだ
+test:
+    uv run python3 -m pytest src/test_main.py -v
+
+# ヘルプ表示なのだ
+help:
+    just run --help
+
+# 使用例を実行するのだ
+demo:
+    @echo "=== build ==="
+    uv run python3 src/main.py build --release --target x86_64-unknown-linux-gnu --jobs 4
+    @echo ""
+    @echo "=== test ==="
+    uv run python3 src/main.py test --release --no-run --lib
+    @echo ""
+    @echo "=== run ==="
+    uv run python3 src/main.py run --release --bin myapp -- arg1 arg2
+    @echo ""
+    @echo "=== new ==="
+    uv run python3 src/main.py new myproject --lib --edition 2021
+    @echo ""
+    @echo "=== clippy ==="
+    uv run python3 src/main.py clippy --fix --allow-dirty -- -W clippy::pedantic
+    @echo ""
+    @echo "=== install ==="
+    uv run python3 src/main.py -vv install ripgrep --version 14.0.0 --force
+    @echo ""
+    @echo "=== fmt ==="
+    uv run python3 src/main.py fmt --check --all
+    @echo ""
+    @echo "=== doc ==="
+    uv run python3 src/main.py doc --open --no-deps
