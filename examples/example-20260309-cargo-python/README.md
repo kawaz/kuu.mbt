@@ -29,7 +29,8 @@ Python (main.py) ── JSON ──► Node.js (kuu_bridge.mjs) ──► WASM (
 
 - Python 3.11+
 - Node.js v25+
-- [just](https://just.systems/) — タスクランナー。`Justfile` に定義されたビルド・テストコマンドを実行する
+- [uv](https://docs.astral.sh/uv/) — Python パッケージマネージャ。依存管理と実行に使用
+- [just](https://just.systems/) — タスクランナー。`justfile` に定義されたビルド・テストコマンドを実行する
 - [moon](https://www.moonbitlang.com/) — MoonBit のビルドツール。kuu WASM モジュールのビルドに必要
 - kuu WASM モジュール (`just build-wasm` でビルド)
 

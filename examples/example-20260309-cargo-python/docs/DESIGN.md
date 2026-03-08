@@ -45,7 +45,7 @@ Python (main.py) ─────────────────────
 | publish | - | dry-run + token |
 | install | - | positional (crate) + version/git/branch |
 | clean | - | release + target 指定 |
-| update | - | package + precise バージョン指定 |
+| update | - | positional (spec) + precise バージョン指定 |
 
 ## グローバルオプション
 
@@ -66,5 +66,6 @@ Python (main.py) ─────────────────────
 
 - Python 3.11+
 - Node.js v25+ (WASM bridge 実行用)
-- pytest (テスト実行用)
+- uv (Python パッケージ管理・実行)
+- pytest (テスト実行用、uv 経由で自動インストール)
 - kuu WASM モジュール (`just build-wasm` でビルド)
