@@ -282,7 +282,7 @@ fn build_parser(
           _ => return Err("unknown opt kind: " + kind)
         }
       }
-      _ => ()
+      _ => return Err("each element in 'opts' must be an object")
     }
   }
   Ok(SchemaResult::{ entries, children })
@@ -376,7 +376,8 @@ pub fn kuu_parse(input : String) -> String {
   // Extract opts schema
   let opts_json : Array[Json] = match obj.get("opts") {
     Some(Array(arr)) => arr
-    _ => []
+    Some(_) => return make_error_json("'opts' must be an array", "")
+    None => []
   }
   // Extract description
   let description = match obj.get("description") {

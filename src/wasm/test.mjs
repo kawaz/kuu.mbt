@@ -196,4 +196,37 @@ function test(label, input) {
   strictEqual(r.error, "args must be an array of strings");
 }
 
+// Test 14: Non-object element in opts
+{
+  const r = test("Non-object element in opts", {
+    opts: [
+      { kind: "flag", name: "verbose" },
+      "not-an-object",
+    ],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "each element in 'opts' must be an object");
+}
+
+// Test 15: opts is not an array
+{
+  const r = test("opts is not an array", {
+    opts: "not-an-array",
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "'opts' must be an array");
+}
+
+// Test 16: opts is a number (not an array)
+{
+  const r = test("opts is a number", {
+    opts: 42,
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "'opts' must be an array");
+}
+
 console.log("\n--- All tests passed ---");
