@@ -17,8 +17,7 @@ moon run examples/20260309-gcc
 | **string_opt + choices** | `--optimize` (0,1,2,3,s,g,fast), `--std` (c11,c17,...), `--language` |
 | **append_string** | `--define`, `--undefine`, `--include-path`, `--lib`, `--lib-path` |
 | **exclusive** | `--compile`/`--assemble`/`--preprocess`, `--shared`/`--static`, `--m32`/`--m64` |
-| **rest (positional)** | ソースファイル (`main.c util.c`) |
-| **dashdash** | `-- -Wl,--as-needed` (リンカ引数パススルー) |
+| **rest (positional) + stop_before** | ソースファイル (`main.c util.c`) |
 | **shorts** | `-o`, `-c`, `-S`, `-E`, `-g`, `-v`, `-O`, `-D`, `-U`, `-I`, `-l`, `-L`, `-x` |
 | **flag** | `--verbose`, `--pipe`, `--shared`, `--static`, `--m32`, `--m64` |
 | **string_opt** | `--output`, `--arch`, `--tune` |

@@ -10,11 +10,13 @@
 ///   - string_opt with choices (--optimize, --std, --language)
 ///   - append_string for repeatable options (--define, --include-path, --lib, --lib-path)
 ///   - exclusive constraints (--compile/--assemble/--preprocess, --shared/--static, --m32/--m64)
-///   - rest positionals (source files)
-///   - dashdash for linker passthrough args
+///   - rest positionals with stop_before (source files)
 ///   - flag with shorts (-v, -c, -S, -E, -g, -o)
 fn main {
-  let args = [
+  // ─── Scenario 1: Typical compilation ───
+  println("═══ Scenario 1: Typical compilation with warnings + codegen flags ═══")
+  println("")
+  let args1 = [
     "--std", "c17",
     "--optimize", "2",
     "--wall",
@@ -35,12 +37,91 @@ fn main {
     "main.c",
     "util.c",
   ]
-  println("Parsing: " + args.to_string())
+  println("Parsing: " + args1.to_string())
   println("")
-  let result = run(args)
-  match result {
+  match run(args1) {
     Ok(_) => ()
-    Err(msg) => println(msg)
+    Err(msg) => println("ERROR: " + msg)
+  }
+
+  // ─── Scenario 2: Linking with libraries ───
+  println("═══ Scenario 2: Linking with libraries ═══")
+  println("")
+  let args2 = [
+    "--lib", "m",
+    "--lib", "pthread",
+    "--lib-path", "/usr/local/lib",
+    "--optimize", "3",
+    "--flto",
+    "--no-pie",
+    "--static",
+    "main.o",
+    "util.o",
+  ]
+  println("Parsing: " + args2.to_string())
+  println("")
+  match run(args2) {
+    Ok(_) => ()
+    Err(msg) => println("ERROR: " + msg)
+  }
+
+  // ─── Scenario 3: Short options ───
+  println("═══ Scenario 3: Short options ═══")
+  println("")
+  let args3 = [
+    "-o", "a.out",
+    "-O", "2",
+    "-g",
+    "-v",
+    "-D", "NDEBUG",
+    "-I", "/opt/include",
+    "-l", "ssl",
+    "-L", "/opt/lib",
+    "-x", "c",
+    "hello.c",
+  ]
+  println("Parsing: " + args3.to_string())
+  println("")
+  match run(args3) {
+    Ok(_) => ()
+    Err(msg) => println("ERROR: " + msg)
+  }
+
+  // ─── Scenario 4: default=true + Variation disable ───
+  println("═══ Scenario 4: default=true flags disabled via --no- ═══")
+  println("")
+  let args4 = [
+    "--no-pie",
+    "--no-fexceptions",
+    "--no-diagnostics-color",
+    "--toggle-diagnostics-color",
+    // toggle restores true after --no- set false, demonstrating both variations
+    "test.c",
+  ]
+  println("Parsing: " + args4.to_string())
+  println("")
+  match run(args4) {
+    Ok(_) => ()
+    Err(msg) => println("ERROR: " + msg)
+  }
+
+  // ─── Scenario 5: Exclusive constraint error ───
+  println("═══ Scenario 5: Exclusive constraint error (--compile + --assemble) ═══")
+  println("")
+  let args5 = ["--compile", "--assemble", "test.c"]
+  println("Parsing: " + args5.to_string())
+  println("")
+  match run(args5) {
+    Ok(_) => ()
+    Err(msg) => println("EXPECTED ERROR: " + msg)
+  }
+
+  // ─── Scenario 6: Help output ───
+  println("═══ Scenario 6: Help output ═══")
+  println("")
+  match run(["--help"]) {
+    Ok(_) => ()
+    Err(msg) => println("ERROR: " + msg)
   }
 }
 
@@ -268,6 +349,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="diagnostics-color",
     default=true,
     description="Use color in diagnostics",
+    variation_false=Some("no"),
     variation_toggle=Some("toggle"),
   )
 
@@ -311,11 +393,16 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── Positional arguments (source files) ───
 
-  let sources = p.rest(name="files", description="Source files to compile")
+  let sources = p.rest(
+    name="files",
+    description="Source files to compile",
+    stop_before=["--"],
+  )
 
-  // ─── Linker passthrough (after --) ───
-
-  let linker_args = p.dashdash()
+  // Design rationale: dashdash() は rest() と同一パーサで使うと built-in
+  // "--" separator node と競合して ambiguous になる（DR-001 参照）。
+  // gcc では "-Wl,--as-needed" のようにプレフィックスでリンカ引数を渡すため
+  // dashdash は不要。
 
   // ─── Parse ───
 
@@ -426,14 +513,6 @@ fn run(args : Array[String]) -> Result[Unit, String] {
       println("[Source Files]")
       println("  files: " + sources.get().unwrap().to_string())
       println("")
-
-      // Linker passthrough args
-      let largs = linker_args.get().unwrap()
-      if largs.length() > 0 {
-        println("[Linker Arguments (after --)]")
-        println("  args: " + largs.to_string())
-        println("")
-      }
 
       Ok(())
     }
