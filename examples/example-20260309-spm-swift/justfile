@@ -1,0 +1,42 @@
+# SPM CLI parser demo using kuu
+
+default: build test
+
+# Build the Swift executable
+build:
+    swift build 2>&1
+
+# Run all test scenarios
+test: build
+    @echo "=== Test Scenarios ==="
+    @echo ""
+    @echo "--- swift build --product MyApp -c release -v ---"
+    swift run spm-swift build --product MyApp -c release -v
+    @echo ""
+    @echo "--- swift test --filter ParserTests --parallel ---"
+    swift run spm-swift test --filter ParserTests --parallel --num-workers 4
+    @echo ""
+    @echo "--- swift run my-tool -- --input data.json ---"
+    swift run spm-swift run my-tool -- --input data.json --output result.json
+    @echo ""
+    @echo "--- swift package init --type executable --name MyProject ---"
+    swift run spm-swift package init --type executable --name MyProject
+    @echo ""
+    @echo "--- swift package update --dry-run ---"
+    swift run spm-swift package update --dry-run
+    @echo ""
+    @echo "--- swift package show-dependencies --format json ---"
+    swift run spm-swift package show-dependencies --format json -o /tmp/deps.json
+    @echo ""
+    @echo "--- swift --help ---"
+    swift run spm-swift --help || true
+    @echo ""
+    @echo "=== All scenarios complete ==="
+
+# Run a single scenario
+run *ARGS:
+    swift run spm-swift {{ARGS}}
+
+# Clean build artifacts
+clean:
+    swift package clean
