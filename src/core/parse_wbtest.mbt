@@ -3304,3 +3304,300 @@ test "custom_append_int_invalid" {
   let result : Result[_, _] = try? p.parse(["--num", "abc"])
   inspect(result is Err(_), content="true")
 }
+
+// ============================================================
+// shorts 複数文字テスト
+// ============================================================
+
+///|
+test "shorts multiple chars: -v and -V both work" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", shorts="vV")
+  ignore(p.parse(["-v"]))
+  inspect(p.get(verbose), content="Some(true)")
+}
+
+///|
+test "shorts multiple chars: -V works" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", shorts="vV")
+  ignore(p.parse(["-V"]))
+  inspect(p.get(verbose), content="Some(true)")
+}
+
+///|
+test "shorts multiple chars: combining -vV same flag twice (count)" {
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", shorts="vV")
+  ignore(p.parse(["-vV"]))
+  inspect(p.get(verbose), content="Some(2)")
+}
+
+///|
+test "shorts multiple chars: combining -Vv order reversed (count)" {
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", shorts="vV")
+  ignore(p.parse(["-Vv"]))
+  inspect(p.get(verbose), content="Some(2)")
+}
+
+///|
+test "shorts multiple chars: -vvV combining (count=3)" {
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", shorts="vV")
+  ignore(p.parse(["-vvV"]))
+  inspect(p.get(verbose), content="Some(3)")
+}
+
+///|
+test "shorts multiple chars: long option still works" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", shorts="vV")
+  ignore(p.parse(["--verbose"]))
+  inspect(p.get(verbose), content="Some(true)")
+}
+
+///|
+test "shorts unicode: -あ works" {
+  let p = Parser::new()
+  let opt = p.flag(name="all", shorts="あ")
+  ignore(p.parse(["-あ"]))
+  inspect(p.get(opt), content="Some(true)")
+}
+
+///|
+test "shorts unicode: combining with ASCII" {
+  let p = Parser::new()
+  let a = p.flag(name="all", shorts="あ")
+  let b = p.flag(name="bbb", shorts="b")
+  ignore(p.parse(["-bあ"]))
+  inspect(p.get(a), content="Some(true)")
+  inspect(p.get(b), content="Some(true)")
+}
+
+// ============================================================
+// aliases の help 表示テスト
+// ============================================================
+
+///|
+test "aliases shown in help: --name, --alias format" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", aliases=["verb"], description="Verbose output")
+  let help = p.generate_help()
+  inspect(help.contains("--verbose, --verb"), content="true")
+}
+
+///|
+test "aliases multiple shown in help" {
+  let p = Parser::new()
+  let _ = p.string_opt(
+    name="output", default="", aliases=["out", "o"],
+    description="Output file",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("--output, --out, --o"), content="true")
+}
+
+///|
+test "shorts + aliases combined in help: -v, -V, --verbose, --verb" {
+  let p = Parser::new()
+  let _ = p.flag(
+    name="verbose", shorts="vV", aliases=["verb"],
+    description="Verbose output",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("-v, -V, --verbose, --verb"), content="true")
+}
+
+///|
+test "aliases also parse correctly" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", aliases=["verb"])
+  ignore(p.parse(["--verb"]))
+  inspect(p.get(verbose), content="Some(true)")
+}
+
+///|
+test "aliases for value option" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=8080, aliases=["p"])
+  ignore(p.parse(["--p", "3000"]))
+  inspect(p.get(port), content="Some(3000)")
+}
+
+// ============================================================
+// int_opt の choices テスト
+// ============================================================
+
+///|
+test "int_opt with choices: valid value accepted" {
+  let p = Parser::new()
+  let level = p.int_opt(name="level", default=1, choices=["1", "2", "3"])
+  ignore(p.parse(["--level", "2"]))
+  inspect(p.get(level), content="Some(2)")
+}
+
+///|
+test "int_opt with choices: another valid value" {
+  let p = Parser::new()
+  let level = p.int_opt(name="level", default=1, choices=["1", "2", "3"])
+  ignore(p.parse(["--level", "3"]))
+  inspect(p.get(level), content="Some(3)")
+}
+
+///|
+test "int_opt with choices: invalid value rejected" {
+  let p = Parser::new()
+  let _ = p.int_opt(name="level", default=1, choices=["1", "2", "3"])
+  let result : Result[_, _] = try? p.parse(["--level", "5"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "int_opt with choices: default without args" {
+  let p = Parser::new()
+  let level = p.int_opt(name="level", default=1, choices=["1", "2", "3"])
+  ignore(p.parse([]))
+  inspect(p.get(level), content="Some(1)")
+}
+
+// ============================================================
+// int_opt の post テスト
+// ============================================================
+
+///|
+test "int_opt with post: value transformed" {
+  let p = Parser::new()
+  let num = p.int_opt(
+    name="num", default=0,
+    post=Some(Filter::map(fn(n : Int) { n * 2 })),
+  )
+  ignore(p.parse(["--num", "5"]))
+  inspect(p.get(num), content="Some(10)")
+}
+
+///|
+test "int_opt with post: default also transformed" {
+  let p = Parser::new()
+  let num = p.int_opt(
+    name="num", default=3,
+    post=Some(Filter::map(fn(n : Int) { n * 2 })),
+  )
+  ignore(p.parse([]))
+  // post hook runs on cell value unconditionally, so default 3 becomes 6
+  inspect(p.get(num), content="Some(6)")
+}
+
+///|
+test "int_opt with post: chained transform" {
+  let p = Parser::new()
+  let num = p.int_opt(
+    name="num", default=0,
+    post=Some(Filter::map(fn(n : Int) { n + 100 })),
+  )
+  ignore(p.parse(["--num", "5"]))
+  inspect(p.get(num), content="Some(105)")
+}
+
+// ============================================================
+// default_display 自動導出 (T : Show) テスト
+// ============================================================
+
+///|
+test "custom[Int] default_display auto: shows [default: 42]" {
+  let p = Parser::new()
+  let _ = p.custom(
+    name="count", default=42,
+    pre=Filter::parse_int(),
+    help="Item count",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[default: 42]"), content="true")
+}
+
+///|
+test "custom[Int] default=0: shows [default: 0] in help" {
+  let p = Parser::new()
+  let _ = p.custom(
+    name="count", default=0,
+    pre=Filter::parse_int(),
+    help="Item count",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[default: 0]"), content="true")
+}
+
+///|
+test "custom[String] default empty: no default shown in help" {
+  let p = Parser::new()
+  let _ = p.custom(
+    name="name", default="",
+    pre=Filter::map(fn(s) { s }),
+    help="User name",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[default:"), content="false")
+}
+
+///|
+test "custom[String] default non-empty: shows [default: hello]" {
+  let p = Parser::new()
+  let _ = p.custom(
+    name="name", default="hello",
+    pre=Filter::map(fn(s) { s }),
+    help="User name",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[default: hello]"), content="true")
+}
+
+///|
+test "custom[Int] default_display=Some(\"\"): explicitly suppress default" {
+  let p = Parser::new()
+  let _ = p.custom(
+    name="count", default=42,
+    pre=Filter::parse_int(),
+    help="Item count",
+    default_display=Some(""),
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[default:"), content="false")
+}
+
+///|
+test "custom[Int] default_display=Some(\"custom\"): custom display" {
+  let p = Parser::new()
+  let _ = p.custom(
+    name="count", default=42,
+    pre=Filter::parse_int(),
+    help="Item count",
+    default_display=Some("custom"),
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[default: custom]"), content="true")
+  inspect(help.contains("[default: 42]"), content="false")
+}
+
+///|
+test "int_opt default shown in help via auto derive" {
+  let p = Parser::new()
+  let _ = p.int_opt(name="port", default=8080, description="Port number")
+  let help = p.generate_help()
+  inspect(help.contains("[default: 8080]"), content="true")
+}
+
+///|
+test "int_opt default=0 shown in help" {
+  let p = Parser::new()
+  let _ = p.int_opt(name="port", default=0, description="Port number")
+  let help = p.generate_help()
+  inspect(help.contains("[default: 0]"), content="true")
+}
+
+///|
+test "string_opt default empty: no default shown in help" {
+  let p = Parser::new()
+  let _ = p.string_opt(name="host", default="", description="Host name")
+  let help = p.generate_help()
+  inspect(help.contains("[default:"), content="false")
+}
