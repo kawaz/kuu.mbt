@@ -41,11 +41,22 @@ opt AST (JSON) + args (string[])
    ParseResult (JSON)
 ```
 
-### 制約: クロージャベースの機能は export 不可
+### 動的部分は型システムがガイドする
 
-- `custom[T]` のカスタムパーサや `post` フィルタのクロージャは JSON で表現できない
-- ただし CLI 引数定義の大半はプリミティブ型 + ビルトイン制約で表現可能
-- カスタムロジックが必要な部分は consume する側の言語で後付けすればよい
+`default_fn` や `post` フィルタなどのクロージャは JSON で表現できないが、これは制約ではなく **型システムによるガイド付き組み立て** として機能する:
+
+```typescript
+// JSON import → 静的部分はすべて復元済み
+const opt = importOpt<GitOpts>("git.json");
+
+// 動的部分は undefined → 型エラーで「ここを埋めて」と伝わる
+opt.username.default_fn = () => process.getuid().toString();
+opt.log_level.post = (v) => v.toUpperCase();
+```
+
+- T がサポート対象型（プリミティブ + Map/List 等）であれば、型情報まで完全に再現される
+- クロージャのスロットは `undefined` として残り、型システムが実装を要求する
+- CLI 引数定義の大半はプリミティブ型 + ビルトイン制約で完結し、動的部分の後付けは少数
 
 ## ユースケース
 
