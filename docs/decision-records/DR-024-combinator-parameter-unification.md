@@ -90,7 +90,7 @@ pub(all) enum Variation {
 6コンビネータの展開・登録ループを `expand_and_register` に抽出。
 
 ```
-expand_and_register(name, aliases, short, global, was_set, variations,
+expand_and_register(name, aliases, shorts, global, was_set, variations,
                     make_main_nodes, make_variation_nodes)
 
 処理:
@@ -98,9 +98,11 @@ expand_and_register(name, aliases, short, global, was_set, variations,
     register(make_main_nodes("--" + name_variant), wrap=true)
     for v in variations:
       register(make_variation_nodes(name_variant, v), wrap=varies)
-  if short:
-    register(make_main_nodes("-" + short), wrap=true)
+  for ch in shorts:
+    register(make_main_nodes("-" + ch), wrap=true)
 ```
+
+**注記**: shorts は String 型（`shorts="vV"` で複数 short 対応）。各文字が独立した `-v`, `-V` ノードとして登録される。
 
 - メインノード: `wrap_node_with_set` で was_set をラップ
 - Variation ノード: Unset 以外は wrap、Unset は自前で was_set=false を処理
@@ -198,13 +200,20 @@ fn Parser::validate_no_duplicate_names(self) raise ParseError
 - parse() は既に `raise ParseError` なので自然に混ぜられる
 - 全ノード登録済みなのでグローバルに検証可能
 
-### 8. custom コンビネータの位置づけ
+### 8. custom コンビネータの位置づけ【実装済み】
 
-int_opt, string_opt 等は `custom(name, parser=(String)->T?, ...)` の sugar と整理できる。
-ただし現時点では custom コンビネータの API は未設計。将来の拡張として記録。
+int_opt, string_opt 等は `custom[T : Show](name, pre=FilterChain[String, T], ...)` の sugar と整理できる。
+
+**実装**: `custom[T : Show]` として実装完了。Show 制約により、`default_display` が未指定（None）の場合は
+`initial_val.to_string()` で自動導出される。string_opt, int_opt は明示的な `default_display` 指定が不要になった。
+
+- `default_display? : String? = None` — None 時は `T.to_string()` で自動導出
+- int_opt の「default=0 なら非表示」特殊処理は廃止（0 も表示される）
+- int_opt にも post, choices パラメータが追加され、string_opt と同等の機能を提供
+- string_opt, int_opt は pre パラメータを固定した custom のシュガー
 
 consumed=1（flag 系）と consumed=2（value 系）の軸が異なるため、
-custom は「値を取るオプション」の一般化にあたる。
+custom は「値を取るオプション」の一般化にあたる。flag/count は custom を経由しない。
 
 ## 不採用としたもの
 

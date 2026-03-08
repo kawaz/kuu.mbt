@@ -1,5 +1,10 @@
 # DR-025 実装計画: コンビネータの Compositional 分解
 
+> **実装状況**: フェーズ1-4 全て実装完了。`custom[T : Show]` / `custom_append[T]` が公開済み。
+> string_opt, int_opt は custom のシュガーとして再実装済み。
+> Show 制約により default_display の自動導出が追加された。
+> shorts パラメータは `String` 型に変更（複数 short 対応: `shorts="vV"`）。
+
 ## ゴール
 
 現在の6つのモノリシックコンビネータ（flag, string_opt, int_opt, count, append_string, append_int）を
@@ -21,7 +26,7 @@ make_*_node 群や ExactNode ベースの内部実装は **pub 化しない**。
 理由: DR-025 §4「現アーキテクチャからの距離」で指摘されている通り、ExactNode ベースから
 reducer ツリーへの将来的な移行を阻害しないため、内部表現を API 契約にしない。
 
-ユーザー向け API は `custom[T]` / `custom_append[T]` の高レベルコンビネータのみ公開する。
+ユーザー向け API は `custom[T : Show]` / `custom_append[T]` の高レベルコンビネータのみ公開する。
 
 ### choices は String 固定
 
@@ -70,11 +75,11 @@ reducer ツリーへの将来的な移行を阻害しないため、内部表現
     self: Parser,
     name~: String,
     aliases~: Array[String] = [],
-    short~: Char = '\u0000',
+    shorts~: String = "",
     global~: Bool = false,
     help~: String = "",
     value_name~: String = "",
-    default_display~: String = "",
+    default_display~: String? = None,
     hidden~: Bool = false,
     kind~: OptKind = ValueOpt,
     variations~: Array[Variation] = [],
@@ -115,15 +120,15 @@ reducer ツリーへの将来的な移行を阻害しないため、内部表現
 
 #### 3a. `Parser::custom` — 汎用値コンビネータ
 ```
-pub fn Parser::custom[T](
+pub fn Parser::custom[T : Show](
   self: Parser,
   name~: String,
   aliases~: Array[String] = [],
-  short~: Char = '\u0000',
+  shorts~: String = "",
   global~: Bool = false,
   help~: String = "",
   value_name~: String = "",
-  default_display~: String = "",
+  default_display~: String? = None,
   hidden~: Bool = false,
   variations~: Array[Variation] = [],
   default~: T,
@@ -151,7 +156,7 @@ pub fn Parser::custom_append[T](
   self: Parser,
   name~: String,
   aliases~: Array[String] = [],
-  short~: Char = '\u0000',
+  shorts~: String = "",
   global~: Bool = false,
   help~: String = "",
   value_name~: String = "",
