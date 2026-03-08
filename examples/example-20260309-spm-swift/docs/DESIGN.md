@@ -53,7 +53,7 @@ Swift (main.swift)
 - **build**: `--product`, `--target`, `--show-bin-path`, `--build-tests`, `--build-system`
 - **test**: `--filter`, `--skip` (append), `--parallel`, `--num-workers`, `--enable-code-coverage`, `--xunit-output`, `--list-tests`
 - **run**: `--skip-build`, `--build-tests`, positional `executable`, rest `arguments`
-- **package**: 10個の子サブコマンド（init, update, resolve, show-dependencies, clean, reset, edit, unedit, describe, dump-package, add-dependency, add-target）
+- **package**: 12個の子サブコマンド（init, update, resolve, show-dependencies, clean, reset, edit, unedit, describe, dump-package, add-dependency, add-target）
 
 ## 技術的制約と対応
 

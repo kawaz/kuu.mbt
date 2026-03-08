@@ -39,16 +39,23 @@ struct KuuBridge {
 
         try process.run()
 
-        stdinPipe.fileHandleForWriting.write(jsonString.data(using: .utf8)!)
-        stdinPipe.fileHandleForWriting.closeFile()
+        // Write stdin asynchronously to avoid deadlock when schema exceeds pipe buffer
+        DispatchQueue.global().async {
+            stdinPipe.fileHandleForWriting.write(jsonString.data(using: .utf8)!)
+            stdinPipe.fileHandleForWriting.closeFile()
+        }
+
+        // Read stdout/stderr BEFORE waitUntilExit() to avoid deadlock
+        // when child's output exceeds pipe buffer (typically 64KB)
+        let outputData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
 
         process.waitUntilExit()
 
-        let outputData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let output = String(data: outputData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         guard process.terminationStatus == 0 else {
-            let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
             let errOutput = String(data: errData, encoding: .utf8) ?? ""
             throw KuuError.bridgeFailed(status: process.terminationStatus, stderr: errOutput)
         }
@@ -105,6 +112,8 @@ struct ParseResult {
 }
 
 /// Subcommand result (class due to recursive structure).
+/// @unchecked Sendable rationale: all properties are `let` and values
+/// originate from JSONSerialization (only value-semantic Foundation types).
 final class CommandResult: @unchecked Sendable {
     let name: String
     let values: [String: Any]
