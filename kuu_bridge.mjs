@@ -19,12 +19,18 @@ const { instance } = await WebAssembly.instantiate(wasmBytes, {}, {
 
 const { kuu_parse } = instance.exports;
 
+process.on('SIGTERM', () => process.exit(0));
+
 const rl = createInterface({ input: process.stdin });
 
 for await (const line of rl) {
   if (!line.trim()) continue;
   try {
     const result = kuu_parse(line);
+    if (typeof result !== "string") {
+      process.stdout.write(JSON.stringify({ ok: false, error: "kuu_parse returned non-string: " + typeof result }) + "\n");
+      continue;
+    }
     process.stdout.write(result + "\n");
   } catch (err) {
     process.stdout.write(JSON.stringify({ ok: false, error: err.message }) + "\n");

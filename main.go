@@ -10,10 +10,20 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	// Default: show all demo scenarios
 	scenarios := allScenarios()
 
-	if len(os.Args) > 1 && os.Args[1] == "--scenario" && len(os.Args) > 2 {
+	if len(os.Args) > 1 && os.Args[1] == "--scenario" {
+		if len(os.Args) < 3 {
+			return fmt.Errorf("--scenario requires a value")
+		}
 		name := os.Args[2]
 		filtered := []Scenario{}
 		for _, s := range scenarios {
@@ -22,25 +32,28 @@ func main() {
 			}
 		}
 		if len(filtered) == 0 {
-			fmt.Fprintf(os.Stderr, "Unknown scenario: %s\n", name)
-			os.Exit(1)
+			return fmt.Errorf("unknown scenario: %q", name)
 		}
 		scenarios = filtered
 	}
 
 	bridge, err := NewKuuBridge()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start kuu bridge: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to start kuu bridge: %w", err)
 	}
-	defer bridge.Close()
+	defer func() {
+		if err := bridge.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: bridge close: %v\n", err)
+		}
+	}()
 
+	opts := dockerSchema()
 	passed, failed := 0, 0
 	for _, s := range scenarios {
 		schema := &Schema{
 			Version:     1,
 			Description: "mydocker - A Docker CLI subset built with kuu",
-			Opts:        dockerSchema(),
+			Opts:        opts,
 			Args:        s.Args,
 		}
 		result, err := bridge.Parse(schema)
@@ -55,6 +68,13 @@ func main() {
 
 		if result.HelpRequested {
 			fmt.Printf("  [help requested]\n")
+			if s.Validate != nil {
+				if err := s.Validate(result); err != nil {
+					fmt.Printf("  FAIL: %v\n\n", err)
+					failed++
+					continue
+				}
+			}
 			if s.ExpectHelp {
 				fmt.Printf("  PASS\n\n")
 				passed++
@@ -67,6 +87,13 @@ func main() {
 
 		if !result.OK {
 			fmt.Printf("  [error] %s\n", result.Error)
+			if s.Validate != nil {
+				if err := s.Validate(result); err != nil {
+					fmt.Printf("  FAIL: %v\n\n", err)
+					failed++
+					continue
+				}
+			}
 			if s.ExpectError {
 				fmt.Printf("  PASS\n\n")
 				passed++
@@ -77,7 +104,12 @@ func main() {
 			continue
 		}
 
-		out, _ := json.MarshalIndent(result, "  ", "  ")
+		out, err := json.MarshalIndent(result, "  ", "  ")
+		if err != nil {
+			fmt.Printf("  FAIL: marshal error: %v\n\n", err)
+			failed++
+			continue
+		}
 		fmt.Printf("  result: %s\n", out)
 
 		if s.Validate != nil {
@@ -93,15 +125,7 @@ func main() {
 
 	fmt.Printf("--- Results: %d passed, %d failed ---\n", passed, failed)
 	if failed > 0 {
-		os.Exit(1)
+		return fmt.Errorf("%d scenario(s) failed", failed)
 	}
-}
-
-// Scenario describes a test case for Docker CLI parsing.
-type Scenario struct {
-	Name        string
-	Args        []string
-	ExpectHelp  bool
-	ExpectError bool
-	Validate    func(*ParseResult) error
+	return nil
 }

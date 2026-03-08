@@ -149,11 +149,11 @@ func (c *BuildCmd) Run(ctx context.Context) error {
 type PsCmd struct {
 	_ struct{} `kuu:",desc=docker ps - List containers"`
 
-	All    bool     `kuu:"--all,-a,desc=Show all containers (default shows just running),exclusive=ps-filter"`
+	All    bool     `kuu:"--all,-a,desc=Show all containers (default shows just running),exclusive=ps-view"`
 	Quiet  bool     `kuu:"--quiet,-q,desc=Only display container IDs"`
 	Format string   `kuu:"--format,desc=Format output using a custom template,value=FORMAT"`
 	Filter []string `kuu:"--filter,-f,append,desc=Filter output based on conditions provided,value=FILTER"`
-	Last   int      `kuu:"--last,-n,default=0,desc=Show n last created containers (includes all states),value=N,exclusive=ps-filter"`
+	Last   int      `kuu:"--last,-n,default=0,desc=Show n last created containers (includes all states),value=N,exclusive=ps-view"`
 }
 
 func (c *PsCmd) Name() string        { return "ps" }

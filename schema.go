@@ -25,7 +25,9 @@ func dockerSchema() []OptDef {
 			{Kind: "string", Name: "network", Description: "Connect a container to a network"},
 			{Kind: "string", Name: "restart", Default: "no", Description: "Restart policy",
 				Choices: []string{"no", "always", "unless-stopped", "on-failure"}},
-			{Kind: "positional", Name: "image", Description: "Container image"},
+			// Required: JSON に出力されるが、WASM bridge (src/wasm/main.mbt) は required を未サポート。
+			// パーサ側が対応するまで required 制約は検証されない。
+			{Kind: "positional", Name: "image", Required: true, Description: "Container image"},
 			{Kind: "rest", Name: "command", Description: "Command to run in the container"},
 		}},
 
@@ -43,11 +45,13 @@ func dockerSchema() []OptDef {
 
 		// ps
 		{Kind: "command", Name: "ps", Description: "List containers", Opts: []OptDef{
-			{Kind: "flag", Name: "all", Shorts: "a", Description: "Show all containers (default: running only)"},
+			// Exclusive: JSON に出力されるが、WASM bridge (src/wasm/main.mbt) は exclusive を未サポート。
+			// パーサ側が対応するまで排他制約は検証されない。
+			{Kind: "flag", Name: "all", Shorts: "a", Exclusive: "ps-view", Description: "Show all containers (default: running only)"},
 			{Kind: "flag", Name: "quiet", Shorts: "q", Description: "Only display container IDs"},
 			{Kind: "string", Name: "format", Description: "Format output using a Go template"},
 			{Kind: "append_string", Name: "filter", Shorts: "f", Description: "Filter output based on conditions"},
-			{Kind: "int", Name: "last", Default: 0, Shorts: "n", Description: "Show n last created containers"},
+			{Kind: "int", Name: "last", Default: 0, Shorts: "n", Exclusive: "ps-view", Description: "Show n last created containers"},
 		}},
 
 		// images
@@ -64,14 +68,14 @@ func dockerSchema() []OptDef {
 			{Kind: "flag", Name: "all-tags", Shorts: "a", Description: "Download all tagged images"},
 			{Kind: "string", Name: "platform", Description: "Set platform"},
 			{Kind: "flag", Name: "quiet", Shorts: "q", Description: "Suppress verbose output"},
-			{Kind: "positional", Name: "image", Description: "Image name[:tag|@digest]"},
+			{Kind: "positional", Name: "image", Required: true, Description: "Image name[:tag|@digest]"},
 		}},
 
 		// push
 		{Kind: "command", Name: "push", Description: "Upload an image to a registry", Opts: []OptDef{
 			{Kind: "flag", Name: "all-tags", Shorts: "a", Description: "Push all tagged images"},
 			{Kind: "flag", Name: "quiet", Shorts: "q", Description: "Suppress verbose output"},
-			{Kind: "positional", Name: "image", Description: "Image name[:tag]"},
+			{Kind: "positional", Name: "image", Required: true, Description: "Image name[:tag]"},
 		}},
 
 		// exec
@@ -81,7 +85,7 @@ func dockerSchema() []OptDef {
 			{Kind: "string", Name: "user", Shorts: "u", Description: "Username or UID"},
 			{Kind: "string", Name: "workdir", Shorts: "w", Description: "Working directory inside the container"},
 			{Kind: "append_string", Name: "env", Shorts: "e", Description: "Set environment variables"},
-			{Kind: "positional", Name: "container", Description: "Container ID or name"},
+			{Kind: "positional", Name: "container", Required: true, Description: "Container ID or name"},
 			{Kind: "rest", Name: "command", Description: "Command and arguments"},
 		}},
 
@@ -136,7 +140,7 @@ func dockerSchema() []OptDef {
 				{Kind: "append_string", Name: "gateway", Description: "Gateway for the subnet"},
 				{Kind: "flag", Name: "internal", Description: "Restrict external access"},
 				{Kind: "append_string", Name: "label", Description: "Set metadata on the network"},
-				{Kind: "positional", Name: "name", Description: "Network name"},
+				{Kind: "positional", Name: "name", Required: true, Description: "Network name"},
 			}},
 
 			// network ls

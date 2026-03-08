@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
+	"time"
 )
 
 // KuuBridge wraps the Node.js kuu WASM bridge process.
@@ -21,15 +23,18 @@ type KuuBridge struct {
 // NewKuuBridge starts the Node.js bridge process.
 func NewKuuBridge() (*KuuBridge, error) {
 	cmd := exec.Command("node", "kuu_bridge.mjs")
+	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdin pipe: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		stdin.Close()
 		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
+		stdin.Close()
 		return nil, fmt.Errorf("start node: %w", err)
 	}
 	return &KuuBridge{
@@ -48,7 +53,7 @@ func (b *KuuBridge) Parse(schema *Schema) (*ParseResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal schema: %w", err)
 	}
-	if _, err := b.stdin.Write(append(data, '\n')); err != nil {
+	if _, err := fmt.Fprintf(b.stdin, "%s\n", data); err != nil {
 		return nil, fmt.Errorf("write to bridge: %w", err)
 	}
 
@@ -65,9 +70,21 @@ func (b *KuuBridge) Parse(schema *Schema) (*ParseResult, error) {
 }
 
 // Close shuts down the bridge process.
+// It closes stdin to signal EOF, then waits up to 5 seconds for the process
+// to exit gracefully. If the process does not exit in time, it is killed.
 func (b *KuuBridge) Close() error {
 	b.stdin.Close()
-	return b.cmd.Wait()
+	done := make(chan error, 1)
+	go func() { done <- b.cmd.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(5 * time.Second):
+		if err := b.cmd.Process.Kill(); err != nil {
+			return fmt.Errorf("bridge process did not exit in time and kill failed: %w", err)
+		}
+		return <-done // Wait for process cleanup after Kill
+	}
 }
 
 // Schema represents a kuu WASM bridge input.
@@ -85,6 +102,8 @@ type OptDef struct {
 	Description string   `json:"description,omitempty"`
 	Shorts      string   `json:"shorts,omitempty"`
 	Default     any      `json:"default,omitempty"`
+	Required    bool     `json:"required,omitempty"`
+	Exclusive   string   `json:"exclusive,omitempty"`
 	Global      bool     `json:"global,omitempty"`
 	Hidden      bool     `json:"hidden,omitempty"`
 	Aliases     []string `json:"aliases,omitempty"`

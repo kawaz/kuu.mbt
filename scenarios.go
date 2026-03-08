@@ -1,6 +1,18 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
+
+// Scenario describes a test case for Docker CLI parsing.
+type Scenario struct {
+	Name        string
+	Args        []string
+	ExpectHelp  bool
+	ExpectError bool
+	Validate    func(*ParseResult) error
+}
 
 func allScenarios() []Scenario {
 	return []Scenario{
@@ -213,6 +225,14 @@ func allScenarios() []Scenario {
 				if cmd == nil || cmd.Name != "compose" {
 					return fmt.Errorf("expected command 'compose'")
 				}
+				// compose の file オプションは指定していないので空配列であるべき
+				files, ok := cmd.Values["file"].([]any)
+				if !ok {
+					return fmt.Errorf("expected file to be []any, got %T", cmd.Values["file"])
+				}
+				if len(files) != 0 {
+					return fmt.Errorf("expected file to be empty (not set), got %v", files)
+				}
 				sub := cmd.Command
 				if sub == nil || sub.Name != "logs" {
 					return fmt.Errorf("expected subcommand 'logs'")
@@ -401,11 +421,71 @@ func allScenarios() []Scenario {
 			Name:        "error: unknown option",
 			Args:        []string{"--nonexistent"},
 			ExpectError: true,
+			Validate: func(r *ParseResult) error {
+				if !strings.Contains(r.Error, "nonexistent") {
+					return fmt.Errorf("expected error to mention 'nonexistent', got: %s", r.Error)
+				}
+				return nil
+			},
 		},
 		{
 			Name:        "error: invalid choice",
 			Args:        []string{"--log-level", "trace", "ps"},
 			ExpectError: true,
+			Validate: func(r *ParseResult) error {
+				if !strings.Contains(r.Error, "must be one of") {
+					return fmt.Errorf("expected error to mention 'must be one of', got: %s", r.Error)
+				}
+				return nil
+			},
+		},
+
+		{
+			Name: "no args: empty invocation",
+			Args: []string{},
+			Validate: func(r *ParseResult) error {
+				// require_cmd がないのでパースは成功する。コマンドなしの挙動を確認。
+				if r.Command != nil {
+					return fmt.Errorf("expected no command, got %v", r.Command.Name)
+				}
+				return nil
+			},
+		},
+		{
+			Name:        "error: int with string value",
+			Args:        []string{"ps", "--last", "abc"},
+			ExpectError: true,
+			Validate: func(r *ParseResult) error {
+				if !strings.Contains(r.Error, "abc") {
+					return fmt.Errorf("expected error to mention 'abc', got: %s", r.Error)
+				}
+				return nil
+			},
+		},
+		{
+			Name: "exec: -- separator",
+			Args: []string{"exec", "-it", "mycontainer", "--", "ls", "-la", "--help"},
+			Validate: func(r *ParseResult) error {
+				cmd := r.Command
+				if cmd == nil || cmd.Name != "exec" {
+					return fmt.Errorf("expected command 'exec'")
+				}
+				if v := cmd.Values["container"]; v != "mycontainer" {
+					return fmt.Errorf("expected container=mycontainer, got %v", v)
+				}
+				// -- 以降は rest (command) として渡される
+				rest, ok := cmd.Values["command"].([]any)
+				if !ok {
+					return fmt.Errorf("expected command to be []any, got %T", cmd.Values["command"])
+				}
+				if len(rest) != 3 {
+					return fmt.Errorf("expected 3 rest args, got %d: %v", len(rest), rest)
+				}
+				if rest[0] != "ls" || rest[1] != "-la" || rest[2] != "--help" {
+					return fmt.Errorf("expected rest=[ls, -la, --help], got %v", rest)
+				}
+				return nil
+			},
 		},
 
 		// --- Help ---
