@@ -91,7 +91,6 @@ fn[T] Parser::register_option(
   default_display~ : String,
   hidden~ : Bool,
   kind~ : OptKind,
-  choices~ : Array[String] = [],
   variations~ : Array[Variation],
   was_set~ : Ref[Bool],
   make_main_node~ : (String) -> ExactNode,
@@ -125,7 +124,6 @@ fn[T] Parser::register_option(
     shorts: shorts_arr,
     aliases,
     hidden,
-    choices,
   })
   { id, name: "--" + name, getter, parsed: self.parsed, is_set: fn() { was_set.val } }
 }

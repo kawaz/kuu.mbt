@@ -74,7 +74,6 @@ pub fn Parser::cmd(
     shorts: [],
     aliases: [],
     hidden: false,
-    choices: [],
   })
   {
     id,

@@ -280,6 +280,22 @@ pub fn[T : Show] Parser::custom(
     Some(s) => s
     None => initial_val.to_string()
   }
+  // choices 情報を help 文字列に付加（OptMeta にフィールドを持たない設計）
+  let effective_help : String = if choices.length() > 0 {
+    let buf = StringBuilder::new()
+    buf.write_string(help)
+    buf.write_string(" [possible values: ")
+    for i, choice in choices {
+      if i > 0 {
+        buf.write_string(", ")
+      }
+      buf.write_string(choice)
+    }
+    buf.write_char(']')
+    buf.to_string()
+  } else {
+    help
+  }
   let cell : Ref[T] = { val: initial_val }
   let was_set : Ref[Bool] = { val: false }
   let has_choices = choices.length() > 0
@@ -343,8 +359,8 @@ pub fn[T : Show] Parser::custom(
   let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
   let opt = self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
-    help~, value_name=display_value_name, default_display=effective_display,
-    kind=ValueOpt, choices~, variations~, was_set~,
+    help=effective_help, value_name=display_value_name, default_display=effective_display,
+    kind=ValueOpt, variations~, was_set~,
     make_main_node=make_main,
     make_node_for_variation=make_var_node,
     getter=fn() { cell.val },

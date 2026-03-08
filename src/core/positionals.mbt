@@ -36,7 +36,6 @@ pub fn Parser::positional(
     shorts: [],
     aliases: [],
     hidden: false,
-    choices: [],
   })
   {
     id,
@@ -89,7 +88,6 @@ pub fn Parser::rest(
     shorts: [],
     aliases: [],
     hidden: false,
-    choices: [],
   })
   {
     id,
