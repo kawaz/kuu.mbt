@@ -115,6 +115,7 @@ pub(all) struct OptMeta {
   shorts : Array[Char]
   aliases : Array[String]
   hidden : Bool
+  choices : Array[String]
 }
 
 ///|

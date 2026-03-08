@@ -344,7 +344,7 @@ pub fn[T : Show] Parser::custom(
   let opt = self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help~, value_name=display_value_name, default_display=effective_display,
-    kind=ValueOpt, variations~, was_set~,
+    kind=ValueOpt, choices~, variations~, was_set~,
     make_main_node=make_main,
     make_node_for_variation=make_var_node,
     getter=fn() { cell.val },

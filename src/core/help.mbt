@@ -46,6 +46,7 @@ fn inject_help_node(parser : Parser) -> Unit {
     shorts: ['h'],
     aliases: [],
     hidden: false,
+    choices: [],
   })
 }
 
@@ -180,6 +181,16 @@ fn write_opt_section(buf : StringBuilder, metas : Array[OptMeta]) -> Unit {
     let right_buf = StringBuilder::new()
     if not(meta.help.is_empty()) {
       right_buf.write_string(meta.help)
+    }
+    if meta.choices.length() > 0 {
+      right_buf.write_string(" [possible values: ")
+      for i, choice in meta.choices {
+        if i > 0 {
+          right_buf.write_string(", ")
+        }
+        right_buf.write_string(choice)
+      }
+      right_buf.write_char(']')
     }
     if not(meta.default_display.is_empty()) {
       right_buf.write_string(" [default: ")
