@@ -334,7 +334,7 @@ pub fn[T : Show] Parser::custom(
     } else {
       pre
     }
-    let reducer = make_reducer(effective_pre, accum, initial_val)
+    let reducer = make_reducer(effective_pre, accum)
     fn(opt_name : String) -> ExactNode {
       make_reduced_value_node(opt_name, reducer, cell, pending, reset)
     }

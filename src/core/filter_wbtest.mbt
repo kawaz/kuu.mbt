@@ -235,7 +235,7 @@ test "make_reducer — Value(Some(s)) applies pre and accumulates" {
   let pre = Filter::trim().then(Filter::parse_int())
   let accum : Accumulator[Int, Int] = (
     fn(cur, piece) { cur + piece } : Accumulator[_, _])
-  let reducer = make_reducer(pre, accum, 0)
+  let reducer = make_reducer(pre, accum)
   let ctx = ReduceCtx::{ current: 10, action: Value(Some("  5  ")) }
   let result : Result[Int?, _] = try? reducer(ctx)
   match result {
@@ -249,7 +249,7 @@ test "make_reducer — Value(None) returns None" {
   let pre = Filter::parse_int()
   let accum : Accumulator[Int, Int] = (
     fn(cur, piece) { cur + piece } : Accumulator[_, _])
-  let reducer = make_reducer(pre, accum, 0)
+  let reducer = make_reducer(pre, accum)
   let ctx = ReduceCtx::{ current: 10, action: Value(None) }
   let result : Result[Int?, _] = try? reducer(ctx)
   match result {
@@ -263,7 +263,7 @@ test "make_reducer — pre error propagation" {
   let pre = Filter::parse_int()
   let accum : Accumulator[Int, Int] = (
     fn(cur, piece) { cur + piece } : Accumulator[_, _])
-  let reducer = make_reducer(pre, accum, 0)
+  let reducer = make_reducer(pre, accum)
   let ctx = ReduceCtx::{ current: 10, action: Value(Some("not_a_number")) }
   let result : Result[Int?, _] = try? reducer(ctx)
   inspect(result is Err(_), content="true")
@@ -276,7 +276,7 @@ test "make_reducer — FilterChain composition: trim.then(parse_int).then(in_ran
     .then(Filter::in_range(1, 65535))
   let accum : Accumulator[Int, Int] = (
     fn(_cur, piece) { piece } : Accumulator[_, _])
-  let reducer = make_reducer(pre, accum, 0)
+  let reducer = make_reducer(pre, accum)
   // Valid value in range
   let ctx1 = ReduceCtx::{ current: 0, action: Value(Some("  8080  ")) }
   let r1 : Result[Int?, _] = try? reducer(ctx1)

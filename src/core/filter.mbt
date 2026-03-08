@@ -140,7 +140,6 @@ pub fn[A, B] Filter::each(
 pub fn[T, U] make_reducer(
   pre : FilterChain[String, U],
   accum : Accumulator[T, U],
-  initial : T,
 ) -> (ReduceCtx[T]) -> T? raise ParseError {
   fn(ctx : ReduceCtx[T]) -> T? raise ParseError {
     match ctx.action {
