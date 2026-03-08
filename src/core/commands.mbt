@@ -71,7 +71,7 @@ pub fn Parser::cmd(
     value_name: "",
     default_display: "",
     global: false,
-    short: None,
+    shorts: [],
     aliases: [],
     hidden: false,
   })

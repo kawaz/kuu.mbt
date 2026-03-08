@@ -46,7 +46,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   // count: -v / -vv / -vvv (with variation_reset)
   let verbose = p.count(
     name="verbose",
-    short='v',
+    shorts="v",
     global=true,
     description="Increase verbosity (-v, -vv, -vvv)",
     variation_reset=Some("no"),
@@ -54,7 +54,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   // flag: --quiet / -q
   let quiet = p.flag(
     name="quiet",
-    short='q',
+    shorts="q",
     global=true,
     description="Suppress output",
   )
@@ -96,7 +96,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let clone_branch = clone.string_opt(
     name="branch",
     default="",
-    short='b',
+    shorts="b",
     description="Checkout this branch",
     value_name="BRANCH",
   )
@@ -112,7 +112,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let commit_message = commit.string_opt(
     name="message",
     default="",
-    short='m',
+    shorts="m",
     description="Commit message",
     value_name="MSG",
     post=Some(@core.Filter::trim().then(@core.Filter::non_empty())),
@@ -120,7 +120,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   commit.required(commit_message.as_ref())
   let commit_all = commit.flag(
     name="all",
-    short='a',
+    shorts="a",
     description="Stage all modified files",
   )
   let commit_amend = commit.flag(
@@ -152,7 +152,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let log_max_count = log.int_opt(
     name="max-count",
     default=0,
-    short='n',
+    shorts="n",
     description="Limit number of commits",
     value_name="N",
   )
@@ -185,7 +185,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   add.set_description("mygit add - Stage files")
   let add_force = add.flag(
     name="force",
-    short='f',
+    shorts="f",
     description="Allow ignored files",
   )
   let add_dry_run = add.flag(
@@ -195,7 +195,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let add_patch = add.flag(
     name="patch",
-    short='p',
+    shorts="p",
     description="Interactively stage hunks",
   )
   let add_files = add.rest(name="files", description="Files to add")
@@ -214,7 +214,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let push_force = push.flag(
     name="force",
-    short='f',
+    shorts="f",
     description="Force push",
   )
   let push_force_lease = push.flag(
@@ -228,12 +228,12 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let push_set_upstream = push.flag(
     name="set-upstream",
-    short='u',
+    shorts="u",
     description="Set upstream for the branch",
   )
   let push_delete = push.flag(
     name="delete",
-    short='d',
+    shorts="d",
     description="Delete remote branch",
   )
 
@@ -251,7 +251,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let pull_rebase = pull.flag(
     name="rebase",
-    short='r',
+    shorts="r",
     description="Rebase instead of merge",
   )
   let pull_ff_only = pull.flag(
@@ -270,7 +270,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let branch_delete = branch.flag(
     name="delete",
-    short='d',
+    shorts="d",
     description="Delete a branch",
   )
   let branch_force_delete = branch.flag(
@@ -281,17 +281,17 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   branch.exclusive([branch_delete.as_ref(), branch_force_delete.as_ref()])
   let branch_list = branch.flag(
     name="list",
-    short='l',
+    shorts="l",
     description="List branches",
   )
   let branch_all = branch.flag(
     name="all",
-    short='a',
+    shorts="a",
     description="Show both local and remote branches",
   )
   let branch_move = branch.flag(
     name="move",
-    short='m',
+    shorts="m",
     description="Move/rename a branch",
   )
 
@@ -306,13 +306,13 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let checkout_create = checkout.string_opt(
     name="create",
     default="",
-    short='b',
+    shorts="b",
     description="Create and checkout a new branch",
     value_name="BRANCH",
   )
   let checkout_force = checkout.flag(
     name="force",
-    short='f',
+    shorts="f",
     description="Force checkout (discard local changes)",
   )
   let checkout_files = checkout.dashdash()
@@ -334,7 +334,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let diff_context = diff.int_opt(
     name="unified",
     default=3,
-    short='U',
+    shorts="U",
     description="Lines of context",
     value_name="N",
     implicit_value=Some(@core.Val(3)),
@@ -351,12 +351,12 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   status.set_description("mygit status - Show status")
   let status_short = status.flag(
     name="short",
-    short='s',
+    shorts="s",
     description="Short format output",
   )
   let status_branch = status.flag(
     name="branch",
-    short='b',
+    shorts="b",
     description="Show branch info",
   )
   let status_porcelain = status.flag(
@@ -371,22 +371,22 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Create, list, delete or verify tags",
   )
   tag.set_description("mygit tag - Manage tags")
-  let tag_list = tag.flag(name="list", short='l', description="List tags")
+  let tag_list = tag.flag(name="list", shorts="l", description="List tags")
   let tag_delete = tag.flag(
     name="delete",
-    short='d',
+    shorts="d",
     description="Delete a tag",
   )
   let tag_annotate = tag.flag(
     name="annotate",
-    short='a',
+    shorts="a",
     description="Make an annotated tag",
   )
   tag.exclusive([tag_list.as_ref(), tag_delete.as_ref(), tag_annotate.as_ref()])
   let tag_message = tag.string_opt(
     name="message",
     default="",
-    short='m',
+    shorts="m",
     description="Tag message",
     value_name="MSG",
   )
@@ -402,7 +402,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   remote_add.set_description("mygit remote add - Add a new remote")
   let remote_add_fetch = remote_add.flag(
     name="fetch",
-    short='f',
+    shorts="f",
     description="Fetch after adding",
   )
   let mut remote_add_name : @core.Opt[String]? = None
@@ -454,7 +454,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let stash_push_message = stash_push.string_opt(
     name="message",
     default="",
-    short='m',
+    shorts="m",
     description="Stash message",
     value_name="MSG",
   )

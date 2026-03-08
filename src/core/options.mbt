@@ -6,7 +6,7 @@ pub fn Parser::flag(
   default_fn? : (() -> Bool)? = None,
   global? : Bool = false,
   aliases? : Array[String] = [],
-  short? : Char = '\u0000',
+  shorts? : String = "",
   description? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
@@ -36,7 +36,7 @@ pub fn Parser::flag(
     fn() { cell.val = pending.val }
   }
   self.register_option(
-    name~, aliases~, short~, global~, hidden~,
+    name~, aliases~, shorts~, global~, hidden~,
     help=description, value_name="", default_display="",
     kind=Flag, variations~, was_set~,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
@@ -76,7 +76,7 @@ pub fn Parser::string_opt(
   default_fn? : (() -> String)? = None,
   global? : Bool = false,
   aliases? : Array[String] = [],
-  short? : Char = '\u0000',
+  shorts? : String = "",
   description? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
@@ -97,7 +97,7 @@ pub fn Parser::string_opt(
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   self.custom(
-    name~, aliases~, short~, global~, hidden~, variations~,
+    name~, aliases~, shorts~, global~, hidden~, variations~,
     help=description, value_name~,
     default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::map(fn(s) { s }),
@@ -112,7 +112,7 @@ pub fn Parser::int_opt(
   default_fn? : (() -> Int)? = None,
   global? : Bool = false,
   aliases? : Array[String] = [],
-  short? : Char = '\u0000',
+  shorts? : String = "",
   description? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
@@ -131,7 +131,7 @@ pub fn Parser::int_opt(
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   self.custom(
-    name~, aliases~, short~, global~, hidden~, variations~,
+    name~, aliases~, shorts~, global~, hidden~, variations~,
     help=description, value_name~,
     default~, default_fn~, implicit_value~,
     pre=Filter::parse_int(),
@@ -144,7 +144,7 @@ pub fn Parser::append_string(
   name~ : String,
   global? : Bool = false,
   aliases? : Array[String] = [],
-  short? : Char = '\u0000',
+  shorts? : String = "",
   description? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
@@ -162,7 +162,7 @@ pub fn Parser::append_string(
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   self.custom_append(
-    name~, aliases~, short~, global~, hidden~, variations~,
+    name~, aliases~, shorts~, global~, hidden~, variations~,
     help=description, value_name~,
     pre=Filter::map(fn(s) { s }),
   )
@@ -174,7 +174,7 @@ pub fn Parser::append_int(
   name~ : String,
   global? : Bool = false,
   aliases? : Array[String] = [],
-  short? : Char = '\u0000',
+  shorts? : String = "",
   description? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
@@ -192,7 +192,7 @@ pub fn Parser::append_int(
   if variation_reset is Some(p) { variations.push(Reset(p)) }
   if variation_unset is Some(p) { variations.push(Unset(p)) }
   self.custom_append(
-    name~, aliases~, short~, global~, hidden~, variations~,
+    name~, aliases~, shorts~, global~, hidden~, variations~,
     help=description, value_name~,
     pre=Filter::parse_int(),
   )
@@ -204,7 +204,7 @@ pub fn Parser::count(
   name~ : String,
   global? : Bool = false,
   aliases? : Array[String] = [],
-  short? : Char = '\u0000',
+  shorts? : String = "",
   description? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
@@ -229,7 +229,7 @@ pub fn Parser::count(
     fn() { cell.val = pending.val }
   }
   self.register_option(
-    name~, aliases~, short~, global~, hidden~,
+    name~, aliases~, shorts~, global~, hidden~,
     help=description, value_name="", default_display="",
     kind=Flag, variations~, was_set~,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
@@ -256,7 +256,7 @@ pub fn[T : Show] Parser::custom(
   self : Parser,
   name~ : String,
   aliases? : Array[String] = [],
-  short? : Char = '\u0000',
+  shorts? : String = "",
   global? : Bool = false,
   help? : String = "",
   value_name? : String = "",
@@ -340,7 +340,7 @@ pub fn[T : Show] Parser::custom(
 
   let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
   let opt = self.register_option(
-    name~, aliases~, short~, global~, hidden~,
+    name~, aliases~, shorts~, global~, hidden~,
     help~, value_name=display_value_name, default_display=effective_display,
     kind=ValueOpt, variations~, was_set~,
     make_main_node=make_main,
@@ -362,7 +362,7 @@ pub fn[T] Parser::custom_append(
   self : Parser,
   name~ : String,
   aliases? : Array[String] = [],
-  short? : Char = '\u0000',
+  shorts? : String = "",
   global? : Bool = false,
   help? : String = "",
   value_name? : String = "",
@@ -375,7 +375,7 @@ pub fn[T] Parser::custom_append(
   let reset_fn = fn() { cell.val = [] }
   let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
   self.register_option(
-    name~, aliases~, short~, global~, hidden~,
+    name~, aliases~, shorts~, global~, hidden~,
     help~, value_name=display_value_name, default_display="",
     kind=ValueOpt, variations~, was_set~,
     make_main_node=fn(opt_n) {

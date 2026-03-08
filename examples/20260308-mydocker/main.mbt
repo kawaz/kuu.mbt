@@ -27,20 +27,20 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   // ─── Global options ───
   let verbose = p.count(
     name="verbose",
-    short='v',
+    shorts="v",
     global=true,
     description="Increase verbosity",
   )
   let debug = p.flag(
     name="debug",
-    short='D',
+    shorts="D",
     global=true,
     description="Enable debug mode",
   )
   let log_level = p.string_opt(
     name="log-level",
     default="info",
-    short='l',
+    shorts="l",
     global=true,
     description="Set the logging level",
     choices=["debug", "info", "warn", "error", "fatal"],
@@ -48,7 +48,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let host = p.string_opt(
     name="host",
     default="",
-    short='H',
+    shorts="H",
     global=true,
     description="Daemon socket to connect to",
     value_name="HOST",
@@ -59,17 +59,17 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   run_cmd.set_description("mydocker run - Run a command in a new container")
   let run_detach = run_cmd.flag(
     name="detach",
-    short='d',
+    shorts="d",
     description="Run container in background",
   )
   let run_interactive = run_cmd.flag(
     name="interactive",
-    short='i',
+    shorts="i",
     description="Keep STDIN open",
   )
   let run_tty = run_cmd.flag(
     name="tty",
-    short='t',
+    shorts="t",
     description="Allocate a pseudo-TTY",
   )
   let run_rm = run_cmd.flag(
@@ -84,19 +84,19 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let run_publish = run_cmd.append_string(
     name="publish",
-    short='p',
+    shorts="p",
     description="Publish a container's port(s) to the host",
     value_name="HOST:CONTAINER",
   )
   let run_volume = run_cmd.append_string(
     name="volume",
-    short='V',
+    shorts="V",
     description="Bind mount a volume",
     value_name="SRC:DST",
   )
   let run_env = run_cmd.append_string(
     name="env",
-    short='e',
+    shorts="e",
     description="Set environment variables",
     value_name="KEY=VALUE",
   )
@@ -127,14 +127,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   build.set_description("mydocker build - Build an image")
   let build_tag = build.append_string(
     name="tag",
-    short='t',
+    shorts="t",
     description="Name and optionally a tag (name:tag)",
     value_name="NAME:TAG",
   )
   let build_file = build.string_opt(
     name="file",
     default="Dockerfile",
-    short='f',
+    shorts="f",
     description="Name of the Dockerfile",
     value_name="FILE",
   )
@@ -173,12 +173,12 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   ps.set_description("mydocker ps - List containers")
   let ps_all = ps.flag(
     name="all",
-    short='a',
+    shorts="a",
     description="Show all containers (default: running only)",
   )
   let ps_quiet = ps.flag(
     name="quiet",
-    short='q',
+    shorts="q",
     description="Only display container IDs",
   )
   let ps_format = ps.string_opt(
@@ -189,14 +189,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let ps_filter = ps.append_string(
     name="filter",
-    short='f',
+    shorts="f",
     description="Filter output based on conditions",
     value_name="FILTER",
   )
   let ps_last = ps.int_opt(
     name="last",
     default=0,
-    short='n',
+    shorts="n",
     description="Show n last created containers",
     value_name="N",
   )
@@ -207,12 +207,12 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   images.set_description("mydocker images - List images")
   let images_all = images.flag(
     name="all",
-    short='a',
+    shorts="a",
     description="Show all images",
   )
   let images_quiet = images.flag(
     name="quiet",
-    short='q',
+    shorts="q",
     description="Only show image IDs",
   )
   let images_format = images.string_opt(
@@ -223,7 +223,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let images_filter = images.append_string(
     name="filter",
-    short='f',
+    shorts="f",
     description="Filter output",
     value_name="FILTER",
   )
@@ -237,7 +237,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   pull.set_description("mydocker pull - Pull an image")
   let pull_all_tags = pull.flag(
     name="all-tags",
-    short='a',
+    shorts="a",
     description="Download all tagged images",
   )
   let pull_platform = pull.string_opt(
@@ -248,7 +248,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let pull_quiet = pull.flag(
     name="quiet",
-    short='q',
+    shorts="q",
     description="Suppress verbose output",
   )
   let pull_image = pull.positional(
@@ -262,12 +262,12 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   push.set_description("mydocker push - Push an image")
   let push_all_tags = push.flag(
     name="all-tags",
-    short='a',
+    shorts="a",
     description="Push all tagged images",
   )
   let push_quiet = push.flag(
     name="quiet",
-    short='q',
+    shorts="q",
     description="Suppress verbose output",
   )
   let push_image = push.positional(
@@ -284,31 +284,31 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   exec_cmd.set_description("mydocker exec - Execute in container")
   let exec_interactive = exec_cmd.flag(
     name="interactive",
-    short='i',
+    shorts="i",
     description="Keep STDIN open",
   )
   let exec_tty = exec_cmd.flag(
     name="tty",
-    short='t',
+    shorts="t",
     description="Allocate a pseudo-TTY",
   )
   let exec_user = exec_cmd.string_opt(
     name="user",
     default="",
-    short='u',
+    shorts="u",
     description="Username or UID",
     value_name="USER",
   )
   let exec_workdir = exec_cmd.string_opt(
     name="workdir",
     default="",
-    short='w',
+    shorts="w",
     description="Working directory inside the container",
     value_name="DIR",
   )
   let exec_env = exec_cmd.append_string(
     name="env",
-    short='e',
+    shorts="e",
     description="Set environment variables",
     value_name="KEY=VALUE",
   )
@@ -330,14 +330,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   compose.set_description("mydocker compose - Define and run multi-container applications")
   let compose_file = compose.append_string(
     name="file",
-    short='f',
+    shorts="f",
     description="Compose configuration files",
     value_name="FILE",
   )
   let compose_project = compose.string_opt(
     name="project-name",
     default="",
-    short='p',
+    shorts="p",
     description="Project name",
     value_name="NAME",
   )
@@ -354,7 +354,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   compose_up.set_description("mydocker compose up - Start services")
   let compose_up_detach = compose_up.flag(
     name="detach",
-    short='d',
+    shorts="d",
     description="Detached mode",
   )
   let compose_up_build = compose_up.flag(
@@ -395,7 +395,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let compose_down_volumes = compose_down.flag(
     name="volumes",
-    short='V',
+    shorts="V",
     description="Remove named volumes",
   )
   let compose_down_remove_orphans = compose_down.flag(
@@ -408,7 +408,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   compose_logs.set_description("mydocker compose logs - View logs")
   let compose_logs_follow = compose_logs.flag(
     name="follow",
-    short='f',
+    shorts="f",
     description="Follow log output",
   )
   let compose_logs_tail = compose_logs.string_opt(
@@ -419,7 +419,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let compose_logs_timestamps = compose_logs.flag(
     name="timestamps",
-    short='t',
+    shorts="t",
     description="Show timestamps",
   )
   let compose_logs_services = compose_logs.rest(
@@ -432,12 +432,12 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   compose_ps.set_description("mydocker compose ps - List compose containers")
   let compose_ps_all = compose_ps.flag(
     name="all",
-    short='a',
+    shorts="a",
     description="Show all containers",
   )
   let compose_ps_quiet = compose_ps.flag(
     name="quiet",
-    short='q',
+    shorts="q",
     description="Only display IDs",
   )
   let compose_ps_format = compose_ps.string_opt(
@@ -462,7 +462,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let net_create_driver = net_create.string_opt(
     name="driver",
     default="bridge",
-    short='d',
+    shorts="d",
     description="Driver to manage the network",
     choices=["bridge", "host", "overlay", "macvlan", "none"],
   )
@@ -502,13 +502,13 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let net_ls_filter = net_ls.append_string(
     name="filter",
-    short='f',
+    shorts="f",
     description="Filter output",
     value_name="FILTER",
   )
   let net_ls_quiet = net_ls.flag(
     name="quiet",
-    short='q',
+    shorts="q",
     description="Only display IDs",
   )
 
@@ -517,7 +517,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   net_rm.set_description("mydocker network rm - Remove networks")
   let net_rm_force = net_rm.flag(
     name="force",
-    short='f',
+    shorts="f",
     description="Do not error if network does not exist",
   )
   let net_rm_names = net_rm.rest(
@@ -534,7 +534,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let net_inspect_format = net_inspect.string_opt(
     name="format",
     default="",
-    short='f',
+    shorts="f",
     description="Format output",
     value_name="FORMAT",
   )
@@ -554,7 +554,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let vol_create_driver = vol_create.string_opt(
     name="driver",
     default="local",
-    short='d',
+    shorts="d",
     description="Volume driver",
     value_name="DRIVER",
   )
@@ -565,7 +565,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let vol_create_opt = vol_create.append_string(
     name="opt",
-    short='o',
+    shorts="o",
     description="Set driver specific options",
     value_name="KEY=VALUE",
   )
@@ -585,13 +585,13 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   )
   let vol_ls_filter = vol_ls.append_string(
     name="filter",
-    short='f',
+    shorts="f",
     description="Filter output",
     value_name="FILTER",
   )
   let vol_ls_quiet = vol_ls.flag(
     name="quiet",
-    short='q',
+    shorts="q",
     description="Only display IDs",
   )
 
@@ -600,7 +600,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   vol_rm.set_description("mydocker volume rm - Remove volumes")
   let vol_rm_force = vol_rm.flag(
     name="force",
-    short='f',
+    shorts="f",
     description="Force removal",
   )
   let vol_rm_names = vol_rm.rest(
@@ -617,7 +617,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let vol_inspect_format = vol_inspect.string_opt(
     name="format",
     default="",
-    short='f',
+    shorts="f",
     description="Format output",
     value_name="FORMAT",
   )

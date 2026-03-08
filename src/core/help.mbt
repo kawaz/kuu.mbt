@@ -43,7 +43,7 @@ fn inject_help_node(parser : Parser) -> Unit {
     value_name: "",
     default_display: "",
     global: false,
-    short: Some('h'),
+    shorts: ['h'],
     aliases: [],
     hidden: false,
   })
@@ -135,17 +135,14 @@ pub fn Parser::generate_help(self : Parser) -> String {
 ///|
 fn format_opt_left(meta : OptMeta) -> String {
   let buf = StringBuilder::new()
-  match meta.short {
-    Some(c) => {
-      buf.write_string("  -")
-      buf.write_char(c)
-      buf.write_string(", --")
-      buf.write_string(meta.name)
-    }
-    None => {
-      buf.write_string("      --")
-      buf.write_string(meta.name)
-    }
+  if meta.shorts.length() > 0 {
+    buf.write_string("  -")
+    buf.write_char(meta.shorts[0])
+    buf.write_string(", --")
+    buf.write_string(meta.name)
+  } else {
+    buf.write_string("      --")
+    buf.write_string(meta.name)
   }
   if not(meta.value_name.is_empty()) {
     buf.write_string(" <")

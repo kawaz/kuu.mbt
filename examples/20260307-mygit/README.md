@@ -55,7 +55,7 @@ let clone = p.sub(name="clone", description="Clone a repository")
 let clone_url = clone.positional(name="url", description="Repository URL")
 let clone_dir = clone.positional(name="directory", description="Target directory")
 let clone_depth = clone.int_opt(name="depth", default=0, value_name="N")
-let clone_branch = clone.string_opt(name="branch", default="", short='b')
+let clone_branch = clone.string_opt(name="branch", default="", shorts="b")
 
 // 使用時: 1段 unwrap
 clone_url.get().unwrap()

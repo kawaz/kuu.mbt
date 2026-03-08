@@ -812,7 +812,7 @@ test "opt.get with subcommand" {
 ///|
 test "short flag" {
   let p = Parser::new()
-  let verbose = p.flag(name="verbose", short='v')
+  let verbose = p.flag(name="verbose", shorts="v")
   ignore(p.parse(["-v"]))
   inspect(p.get(verbose), content="Some(true)")
 }
@@ -820,7 +820,7 @@ test "short flag" {
 ///|
 test "short int option" {
   let p = Parser::new()
-  let port = p.int_opt(name="port", default=8080, short='p')
+  let port = p.int_opt(name="port", default=8080, shorts="p")
   ignore(p.parse(["-p", "3000"]))
   inspect(p.get(port), content="Some(3000)")
 }
@@ -828,7 +828,7 @@ test "short int option" {
 ///|
 test "short string option" {
   let p = Parser::new()
-  let host = p.string_opt(name="host", default="localhost", short='H')
+  let host = p.string_opt(name="host", default="localhost", shorts="H")
   ignore(p.parse(["-H", "example.com"]))
   inspect(
     p.get(host),
@@ -841,8 +841,8 @@ test "short string option" {
 ///|
 test "short with long mixed" {
   let p = Parser::new()
-  let verbose = p.flag(name="verbose", short='v')
-  let port = p.int_opt(name="port", default=8080, short='p')
+  let verbose = p.flag(name="verbose", shorts="v")
+  let port = p.int_opt(name="port", default=8080, shorts="p")
   ignore(p.parse(["-v", "--port", "3000"]))
   inspect(p.get(verbose), content="Some(true)")
   inspect(p.get(port), content="Some(3000)")
@@ -851,7 +851,7 @@ test "short with long mixed" {
 ///|
 test "short append" {
   let p = Parser::new()
-  let tags = p.append_string(name="tag", short='t')
+  let tags = p.append_string(name="tag", shorts="t")
   ignore(p.parse(["-t", "a", "-t", "b"]))
   inspect(
     p.get(tags),
@@ -864,9 +864,9 @@ test "short append" {
 ///|
 test "short flag combining" {
   let p = Parser::new()
-  let a = p.flag(name="aaa", short='a')
-  let b = p.flag(name="bbb", short='b')
-  let c = p.flag(name="ccc", short='c')
+  let a = p.flag(name="aaa", shorts="a")
+  let b = p.flag(name="bbb", shorts="b")
+  let c = p.flag(name="ccc", shorts="c")
   ignore(p.parse(["-abc"]))
   inspect(p.get(a), content="Some(true)")
   inspect(p.get(b), content="Some(true)")
@@ -876,8 +876,8 @@ test "short flag combining" {
 ///|
 test "short combining with value at end" {
   let p = Parser::new()
-  let verbose = p.flag(name="verbose", short='v')
-  let port = p.int_opt(name="port", default=8080, short='p')
+  let verbose = p.flag(name="verbose", shorts="v")
+  let port = p.int_opt(name="port", default=8080, shorts="p")
   ignore(p.parse(["-vp3000"]))
   inspect(p.get(verbose), content="Some(true)")
   inspect(p.get(port), content="Some(3000)")
@@ -886,8 +886,8 @@ test "short combining with value at end" {
 ///|
 test "short combining value next arg" {
   let p = Parser::new()
-  let verbose = p.flag(name="verbose", short='v')
-  let port = p.int_opt(name="port", default=8080, short='p')
+  let verbose = p.flag(name="verbose", shorts="v")
+  let port = p.int_opt(name="port", default=8080, shorts="p")
   ignore(p.parse(["-vp", "3000"]))
   inspect(p.get(verbose), content="Some(true)")
   inspect(p.get(port), content="Some(3000)")
@@ -896,8 +896,8 @@ test "short combining value next arg" {
 ///|
 test "short combining with string value" {
   let p = Parser::new()
-  let verbose = p.flag(name="verbose", short='v')
-  let host = p.string_opt(name="host", default="localhost", short='H')
+  let verbose = p.flag(name="verbose", shorts="v")
+  let host = p.string_opt(name="host", default="localhost", shorts="H")
   ignore(p.parse(["-vHexample.com"]))
   inspect(p.get(verbose), content="Some(true)")
   inspect(
@@ -911,7 +911,7 @@ test "short combining with string value" {
 ///|
 test "short combining unknown char error" {
   let p = Parser::new()
-  let _a = p.flag(name="aaa", short='a')
+  let _a = p.flag(name="aaa", shorts="a")
   let result : Result[_, _] = try? p.parse(["-ax"])
   inspect(result is Err(_), content="true")
 }
@@ -919,9 +919,9 @@ test "short combining unknown char error" {
 ///|
 test "short combining all flags" {
   let p = Parser::new()
-  let e = p.flag(name="errexit", short='e')
-  let u = p.flag(name="nounset", short='u')
-  let o = p.flag(name="ooo", short='o')
+  let e = p.flag(name="errexit", shorts="e")
+  let u = p.flag(name="nounset", shorts="u")
+  let o = p.flag(name="ooo", shorts="o")
   ignore(p.parse(["-euo"]))
   inspect(p.get(e), content="Some(true)")
   inspect(p.get(u), content="Some(true)")
@@ -931,7 +931,7 @@ test "short combining all flags" {
 ///|
 test "count basic" {
   let p = Parser::new()
-  let verbose = p.count(name="verbose", short='v')
+  let verbose = p.count(name="verbose", shorts="v")
   ignore(p.parse(["--verbose", "--verbose", "--verbose"]))
   inspect(p.get(verbose), content="Some(3)")
 }
@@ -939,7 +939,7 @@ test "count basic" {
 ///|
 test "count default zero" {
   let p = Parser::new()
-  let verbose = p.count(name="verbose", short='v')
+  let verbose = p.count(name="verbose", shorts="v")
   ignore(p.parse([]))
   inspect(p.get(verbose), content="Some(0)")
 }
@@ -947,7 +947,7 @@ test "count default zero" {
 ///|
 test "count short" {
   let p = Parser::new()
-  let verbose = p.count(name="verbose", short='v')
+  let verbose = p.count(name="verbose", shorts="v")
   ignore(p.parse(["-v", "-v"]))
   inspect(p.get(verbose), content="Some(2)")
 }
@@ -955,7 +955,7 @@ test "count short" {
 ///|
 test "count short combining -vvv" {
   let p = Parser::new()
-  let verbose = p.count(name="verbose", short='v')
+  let verbose = p.count(name="verbose", shorts="v")
   ignore(p.parse(["-vvv"]))
   inspect(p.get(verbose), content="Some(3)")
 }
@@ -963,7 +963,7 @@ test "count short combining -vvv" {
 ///|
 test "count reset with no-prefix" {
   let p = Parser::new()
-  let verbose = p.count(name="verbose", short='v', variations=[Reset("no")])
+  let verbose = p.count(name="verbose", shorts="v", variations=[Reset("no")])
   ignore(p.parse(["-vvv", "--no-verbose", "-v"]))
   inspect(p.get(verbose), content="Some(1)")
 }
@@ -971,9 +971,9 @@ test "count reset with no-prefix" {
 ///|
 test "complex short combining: count + int + flag" {
   let p = Parser::new()
-  let c = p.count(name="ccc", short='c')
-  let a_opt = p.int_opt(name="aaa", default=0, short='A')
-  let g = p.flag(name="ggg", short='g')
+  let c = p.count(name="ccc", shorts="c")
+  let a_opt = p.int_opt(name="aaa", default=0, shorts="A")
+  let g = p.flag(name="ggg", shorts="g")
   // -cA1gcc → c(count) A(int=1) g(flag) c(count) c(count)
   ignore(p.parse(["-cA1gcc"]))
   inspect(p.get(c), content="Some(3)")
@@ -984,9 +984,9 @@ test "complex short combining: count + int + flag" {
 ///|
 test "complex short combining: flags and int" {
   let p = Parser::new()
-  let v = p.flag(name="verbose", short='v')
-  let a_opt = p.int_opt(name="after", default=0, short='A')
-  let b_opt = p.int_opt(name="before", default=0, short='B')
+  let v = p.flag(name="verbose", shorts="v")
+  let a_opt = p.int_opt(name="after", default=0, shorts="A")
+  let b_opt = p.int_opt(name="before", default=0, shorts="B")
   // -vA1 -B1 なら動く
   ignore(p.parse(["-vA1", "-B1"]))
   inspect(p.get(v), content="Some(true)")
@@ -998,7 +998,7 @@ test "complex short combining: flags and int" {
 test "generate_help basic" {
   let p = Parser::new()
   p.set_description("My CLI tool")
-  let _ = p.flag(name="verbose", short='v', description="Enable verbose output")
+  let _ = p.flag(name="verbose", shorts="v", description="Enable verbose output")
   let _ = p.int_opt(name="port", default=8080, description="Set port number")
   let help = p.generate_help()
   inspect(help.contains("My CLI tool"), content="true")
@@ -1033,7 +1033,7 @@ test "short help flag raises HelpRequested" {
 ///|
 test "HelpRequested text contains flag description" {
   let p = Parser::new()
-  let _ = p.flag(name="verbose", short='v', description="Enable verbose output")
+  let _ = p.flag(name="verbose", shorts="v", description="Enable verbose output")
   let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(text)) => {
@@ -1092,7 +1092,7 @@ test "cmd shown in Commands section" {
 ///|
 test "short option format in help" {
   let p = Parser::new()
-  let _ = p.flag(name="verbose", short='v', description="Verbose")
+  let _ = p.flag(name="verbose", shorts="v", description="Verbose")
   let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(text)) =>
@@ -1153,7 +1153,7 @@ test "description shown in help" {
 ///|
 test "parse error includes help_text" {
   let p = Parser::new()
-  let _ = p.flag(name="verbose", short='v', description="Enable verbose output")
+  let _ = p.flag(name="verbose", shorts="v", description="Enable verbose output")
   let _ = p.int_opt(name="port", default=8080, description="Set port number")
   let result : Result[_, _] = try? p.parse(["--unknown"])
   match result {
@@ -1226,7 +1226,7 @@ test "subcommand error has child help_text" {
 ///|
 test "short combining append_int" {
   let p = Parser::new()
-  let nums = p.append_int(name="num", short='n')
+  let nums = p.append_int(name="num", shorts="n")
   ignore(p.parse(["-n1", "-n2"]))
   inspect(p.get(nums), content="Some([1, 2])")
 }
@@ -1391,8 +1391,8 @@ test "append_dashdash custom separator" {
 ///|
 test "short combining append_int inline" {
   let p = Parser::new()
-  let v = p.flag(name="verbose", short='v')
-  let nums = p.append_int(name="num", short='n')
+  let v = p.flag(name="verbose", shorts="v")
+  let nums = p.append_int(name="num", shorts="n")
   ignore(p.parse(["-vn1"]))
   inspect(p.get(v), content="Some(true)")
   inspect(p.get(nums), content="Some([1])")
@@ -1969,11 +1969,11 @@ test "int_opt implicit: --port foo → implicit (Reject fallback)" {
 ///|
 test "string_opt choices+implicit: short combining -vc" {
   let p = Parser::new()
-  let verbose = p.flag(name="verbose", short='v')
+  let verbose = p.flag(name="verbose", shorts="v")
   let color = p.string_opt(
     name="color",
     default="auto",
-    short='c',
+    shorts="c",
     choices=["always", "none", "auto"],
     implicit_value=Some(Val("always")),
   )
@@ -1990,11 +1990,11 @@ test "string_opt choices+implicit: short combining -vc" {
 ///|
 test "string_opt choices+implicit: short combining -cv" {
   let p = Parser::new()
-  let verbose = p.flag(name="verbose", short='v')
+  let verbose = p.flag(name="verbose", shorts="v")
   let color = p.string_opt(
     name="color",
     default="auto",
-    short='c',
+    shorts="c",
     choices=["always", "none", "auto"],
     implicit_value=Some(Val("always")),
   )
@@ -2017,7 +2017,7 @@ test "string_opt choices+implicit: short -cnone (inline value)" {
   let color = p.string_opt(
     name="color",
     default="auto",
-    short='c',
+    shorts="c",
     choices=["always", "none", "auto"],
     implicit_value=Some(Val("always")),
   )
@@ -2070,11 +2070,11 @@ test "string_opt implicit_only: --output --verbose → implicit" {
 ///|
 test "int_opt implicit: short combining -vp" {
   let p = Parser::new()
-  let verbose = p.flag(name="verbose", short='v')
+  let verbose = p.flag(name="verbose", shorts="v")
   let port = p.int_opt(
     name="port",
     default=8080,
-    short='p',
+    shorts="p",
     implicit_value=Some(Val(3000)),
   )
   ignore(p.parse(["-vp"]))
@@ -2580,7 +2580,7 @@ test "sub with serial and never" {
 test "sub with dashdash" {
   let p = Parser::new()
   let stash = p.sub(name="stash", dashdash=false)
-  let msg = stash.string_opt(name="message", default="", short='m')
+  let msg = stash.string_opt(name="message", default="", shorts="m")
   let files = stash.dashdash()
   ignore(p.parse(["stash", "-m", "wip", "--", "file1", "file2"]))
   inspect(

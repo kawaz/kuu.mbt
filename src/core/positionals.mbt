@@ -33,7 +33,7 @@ pub fn Parser::positional(
     value_name: "",
     default_display: "",
     global: false,
-    short: None,
+    shorts: [],
     aliases: [],
     hidden: false,
   })
@@ -85,7 +85,7 @@ pub fn Parser::rest(
     value_name: "",
     default_display: "",
     global: false,
-    short: None,
+    shorts: [],
     aliases: [],
     hidden: false,
   })

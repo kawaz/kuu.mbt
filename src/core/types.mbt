@@ -112,7 +112,7 @@ pub(all) struct OptMeta {
   value_name : String
   default_display : String
   global : Bool
-  short : Char?
+  shorts : Array[Char]
   aliases : Array[String]
   hidden : Bool
 }

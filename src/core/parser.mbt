@@ -84,7 +84,7 @@ fn[T] Parser::register_option(
   self : Parser,
   name~ : String,
   aliases~ : Array[String],
-  short~ : Char,
+  shorts~ : String,
   global~ : Bool,
   help~ : String,
   value_name~ : String,
@@ -99,7 +99,7 @@ fn[T] Parser::register_option(
 ) -> Opt[T] {
   let id = (self.next_id)()
   self.expand_and_register(
-    name, aliases, short, global,
+    name, aliases, shorts, global,
     make_long_nodes=fn(opt_name) {
       let nodes : Array[ExactNode] = []
       nodes.push(wrap_node_with_set(make_main_node(opt_name), was_set))
@@ -110,6 +110,10 @@ fn[T] Parser::register_option(
       [wrap_node_with_set(make_main_node(short_name), was_set)]
     },
   )
+  let shorts_arr : Array[Char] = []
+  for ch in shorts {
+    shorts_arr.push(ch)
+  }
   self.metas.push(OptMeta::{
     kind,
     name,
@@ -117,7 +121,7 @@ fn[T] Parser::register_option(
     value_name,
     default_display,
     global,
-    short: if short != '\u0000' { Some(short) } else { None },
+    shorts: shorts_arr,
     aliases,
     hidden,
   })
@@ -130,7 +134,7 @@ fn Parser::expand_and_register(
   self : Parser,
   name : String,
   aliases : Array[String],
-  short : Char,
+  shorts : String,
   global : Bool,
   // long option 名（"--verbose" 等）に対して全ノード（メイン + variation）を返す
   make_long_nodes~ : (String) -> Array[ExactNode],
@@ -172,8 +176,8 @@ fn Parser::expand_and_register(
     check_and_register_names(alt_nodes)
     register(alt_nodes)
   }
-  if short != '\u0000' {
-    let short_nodes = make_short_nodes("-" + short.to_string())
+  for ch in shorts {
+    let short_nodes = make_short_nodes("-" + ch.to_string())
     check_and_register_names(short_nodes)
     register(short_nodes)
   }

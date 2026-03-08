@@ -27,14 +27,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   // count: -v / -vv / -vvv
   let verbose = p.count(
     name="verbose",
-    short='v',
+    shorts="v",
     global=true,
     description="Increase verbosity (-v, -vv, -vvv)",
   )
   // flag: --quiet / -q
   let quiet = p.flag(
     name="quiet",
-    short='q',
+    shorts="q",
     global=true,
     description="Suppress output",
   )
@@ -76,7 +76,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let clone_branch = clone.string_opt(
     name="branch",
     default="",
-    short='b',
+    shorts="b",
     description="Checkout this branch",
     value_name="BRANCH",
   )
@@ -89,7 +89,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let commit_message = commit.string_opt(
     name="message",
     default="",
-    short='m',
+    shorts="m",
     description="Commit message",
     value_name="MSG",
     post=Some(@core.Filter::trim().then(@core.Filter::non_empty())),
@@ -97,7 +97,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   commit.required(commit_message.as_ref())
   let commit_all = commit.flag(
     name="all",
-    short='a',
+    shorts="a",
     description="Stage all modified files",
   )
   let commit_amend = commit.flag(
@@ -119,7 +119,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let log_max_count = log.int_opt(
     name="max-count",
     default=0,
-    short='n',
+    shorts="n",
     description="Limit number of commits",
     value_name="N",
   )
@@ -136,7 +136,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   add.set_description("mygit add - Stage files")
   let add_force = add.flag(
     name="force",
-    short='f',
+    shorts="f",
     description="Allow ignored files",
   )
   // flag with aliases
@@ -152,22 +152,22 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   let tag = p.sub(name="tag", description="Create, list, delete or verify tags")
   tag.set_description("mygit tag - Manage tags")
-  let tag_list = tag.flag(name="list", short='l', description="List tags")
+  let tag_list = tag.flag(name="list", shorts="l", description="List tags")
   let tag_delete = tag.flag(
     name="delete",
-    short='d',
+    shorts="d",
     description="Delete a tag",
   )
   let tag_annotate = tag.flag(
     name="annotate",
-    short='a',
+    shorts="a",
     description="Make an annotated tag",
   )
   tag.exclusive([tag_list.as_ref(), tag_delete.as_ref(), tag_annotate.as_ref()])
   let tag_message = tag.string_opt(
     name="message",
     default="",
-    short='m',
+    shorts="m",
     description="Tag message",
     value_name="MSG",
   )
@@ -214,7 +214,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let stash_push_message = stash_push.string_opt(
     name="message",
     default="",
-    short='m',
+    shorts="m",
     description="Stash message",
     value_name="MSG",
   )
