@@ -38,7 +38,7 @@ view (フラグのみ), use-context (required positional), set-context (position
 
 このサンプルでカバーする kuu 機能:
 - sub, require_cmd, set_description (サブコマンド)
-- flag, string_opt, int_opt, count (基本オプション)
+- flag, string_opt, int_opt (基本オプション)
 - append_string (繰り返しオプション)
 - positional, rest (ポジショナル引数)
 - dashdash (-- セパレータ)
@@ -48,7 +48,14 @@ view (フラグのみ), use-context (required positional), set-context (position
 - variation_false (--no-xxx)
 - post filter: in_range (バリデーション)
 
+## kubectl example で発見された kuu の設計課題
+
+1. **get().unwrap() の嵐** — デフォルト値付きオプションでも `get()` は `Option[T]` を返すため `unwrap()` が必須。DX 層で `get_or(T) -> T` を提供する検討が必要（既知の課題）
+2. **セマンティック検証レイヤーの不在** — `delete` は resources または --filename のいずれかが必要だが、kuu のパーサレベルでは「AかBのいずれか必須」を表現できない。DX 層またはユーザーコードでの検証が必要
+3. **`-f` のサブコマンド別バインド** — 自然に動作することを確認。kuu のショートオプションがサブコマンドローカルである設計の正しさを実証
+
 ## 未カバー (他サンプルで検証済み)
+- count (mygit の verbose で検証済み)
 - serial (mygit の remote add/rename で検証済み)
 - append_int (mygit で検証済み)
 - variation_reset, variation_unset (mygit で検証済み)

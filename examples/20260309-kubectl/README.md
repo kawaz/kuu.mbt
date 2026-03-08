@@ -20,9 +20,9 @@ moon run examples/20260309-kubectl
 | choices + implicit_value | --output (wide/json/yaml/name) |
 | append_string (繰り返し) | --filename (複数ファイル指定) |
 | dashdash (`--`) | exec の `-- COMMAND [args...]` |
-| flag default=true + variation_false | --wait / --no-wait (delete) |
-| variation_false | --headers / --no-headers (get) |
-| required | apply の --filename、logs の pod |
+| flag default=true + variation_false | --wait / --no-wait, --headers / --no-headers, --show-events / --no-show-events |
+| exclusive (相互排他) | delete の --force vs --grace-period |
+| required | apply の --filename、logs / exec の pod |
 | rest (可変長ポジショナル) | get TYPE [NAME...] |
 | int_opt + in_range | --v (0-9)、--max-log-requests (1-100) |
 | string_opt | --kubeconfig, --since, --timeout 等 |

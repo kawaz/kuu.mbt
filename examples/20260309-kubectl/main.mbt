@@ -12,7 +12,7 @@
 ///   - dashdash for exec (-- COMMAND [args...])
 ///   - flag with default=true + variation_false (--wait / --no-wait)
 ///   - variation_false for --no-headers
-///   - exclusive constraints (--all vs --selector)
+///   - exclusive constraints (--force vs --grace-period)
 ///   - required options (apply --filename)
 ///   - count (--v verbosity)
 ///   - serial positionals (config set-context)
@@ -317,6 +317,8 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Wait timeout (e.g. 5m0s)",
     value_name="DURATION",
   )
+  // --force implies --grace-period=0, so they are mutually exclusive
+  delete.exclusive([delete_force.as_ref(), delete_grace_period.as_ref()])
 
   // ─── Subcommand: describe ───
 
