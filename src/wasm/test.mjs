@@ -229,4 +229,248 @@ function test(label, input) {
   strictEqual(r.error, "'opts' must be an array");
 }
 
+// Test 17: Flag with variations
+{
+  const r = test("Flag with variations", {
+    opts: [
+      {
+        kind: "flag", name: "wall",
+        variation_false: "no",
+        variation_toggle: "toggle",
+        variation_true: "force",
+        variation_reset: "reset",
+        variation_unset: "unset",
+      },
+    ],
+    args: ["--force-wall"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.wall, true);
+}
+
+// Test 18: Flag variation_false (--no-wall)
+{
+  const r = test("Flag variation_false", {
+    opts: [
+      {
+        kind: "flag", name: "wall", default: true,
+        variation_false: "no",
+      },
+    ],
+    args: ["--no-wall"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.wall, false);
+}
+
+// Test 19: String opt with variation_reset
+{
+  const r = test("String opt variation_reset", {
+    opts: [
+      {
+        kind: "string", name: "color", default: "auto",
+        variation_reset: "reset",
+      },
+    ],
+    args: ["--color", "always", "--reset-color"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.color, "auto");
+}
+
+// Test 20: Count with variation_unset
+{
+  const r = test("Count variation_unset", {
+    opts: [
+      {
+        kind: "count", name: "verbose", shorts: "v",
+        variation_unset: "no",
+      },
+    ],
+    args: ["-vvv", "--no-verbose"],
+  });
+  strictEqual(r.ok, true);
+  // After unset, the value returns to default (0)
+  // Note: get() returns Some(default) since parsing completed (parsed=true)
+  strictEqual(r.values.verbose, 0);
+}
+
+// Test 21: string_opt with implicit_value
+{
+  const r = test("String implicit_value", {
+    opts: [
+      { kind: "string", name: "color", default: "auto", implicit_value: "always" },
+    ],
+    args: ["--color"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.color, "always");
+}
+
+// Test 22: int_opt with implicit_value
+{
+  const r = test("Int implicit_value", {
+    opts: [
+      { kind: "int", name: "verbosity", default: 0, implicit_value: 3 },
+    ],
+    args: ["--verbosity"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbosity, 3);
+}
+
+// Test 23: dashdash kind
+{
+  const r = test("Dashdash kind", {
+    opts: [
+      { kind: "flag", name: "verbose" },
+      { kind: "dashdash" },
+    ],
+    args: ["--verbose", "--", "extra1", "extra2"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbose, true);
+  deepStrictEqual(r.values["--"], ["extra1", "extra2"]);
+}
+
+// Test 24: require_cmd at top level
+{
+  const r = test("Require cmd top level", {
+    opts: [
+      { kind: "command", name: "sub1", opts: [] },
+    ],
+    require_cmd: true,
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error.includes("subcommand required"), true);
+}
+
+// Test 25: require_cmd inside command
+{
+  const r = test("Require cmd inside command", {
+    opts: [
+      {
+        kind: "command", name: "parent",
+        require_cmd: true,
+        opts: [
+          { kind: "command", name: "child", opts: [] },
+        ],
+      },
+    ],
+    args: ["parent"],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error.includes("subcommand required"), true);
+}
+
+// Test 26: exclusive constraint
+{
+  const r = test("Exclusive constraint", {
+    opts: [
+      { kind: "flag", name: "shared" },
+      { kind: "flag", name: "static" },
+    ],
+    exclusive: [["shared", "static"]],
+    args: ["--shared", "--static"],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error.includes("mutually exclusive"), true);
+}
+
+// Test 27: required constraint
+{
+  const r = test("Required constraint", {
+    opts: [
+      { kind: "string", name: "filename", default: "" },
+      { kind: "string", name: "output", default: "" },
+    ],
+    required: ["filename"],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error.includes("required option missing"), true);
+}
+
+// Test 28: command aliases
+{
+  const r = test("Command aliases", {
+    opts: [
+      {
+        kind: "command", name: "checkout", aliases: ["co"],
+        opts: [
+          { kind: "positional", name: "branch" },
+        ],
+      },
+    ],
+    args: ["co", "main"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.command.name, "checkout");
+  strictEqual(r.command.values.branch, "main");
+}
+
+// Test 29: serial kind
+{
+  const r = test("Serial kind", {
+    opts: [
+      { kind: "serial", opts: [
+        { kind: "positional", name: "src" },
+        { kind: "positional", name: "dst" },
+      ]},
+    ],
+    args: ["a.txt", "b.txt"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.src, "a.txt");
+  strictEqual(r.values.dst, "b.txt");
+}
+
+// Test 30: post filter trim
+{
+  const r = test("Post filter trim", {
+    opts: [
+      { kind: "string", name: "name", default: "", post: "trim" },
+    ],
+    args: ["--name", "  hello  "],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.name, "hello");
+}
+
+// Test 31: post filter non_empty
+{
+  const r = test("Post filter non_empty", {
+    opts: [
+      { kind: "string", name: "name", default: "fallback", post: "non_empty" },
+    ],
+    args: ["--name", ""],
+  });
+  strictEqual(r.ok, false);
+  // non_empty should reject empty strings
+}
+
+// Test 32: post filter in_range
+{
+  const r = test("Post filter in_range", {
+    opts: [
+      { kind: "int", name: "v", default: 0, post: { in_range: [0, 9] } },
+    ],
+    args: ["--v", "5"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.v, 5);
+}
+
+// Test 33: post filter in_range error
+{
+  const r = test("Post filter in_range error", {
+    opts: [
+      { kind: "int", name: "v", default: 0, post: { in_range: [0, 9] } },
+    ],
+    args: ["--v", "10"],
+  });
+  strictEqual(r.ok, false);
+}
+
 console.log("\n--- All tests passed ---");

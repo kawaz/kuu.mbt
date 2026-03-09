@@ -5,6 +5,7 @@ pub fn Parser::cmd(
   setup~ : (Parser) -> Unit,
   description? : String = "",
   dashdash? : Bool = true,
+  aliases? : Array[String] = [],
 ) -> Opt[CmdResult] {
   let id = (self.next_id)()
   let cell : Ref[CmdResult?] = { val: None }
@@ -41,36 +42,45 @@ pub fn Parser::cmd(
   }
   let cmd_name = name
   let was_set : Ref[Bool] = { val: false }
-  let node = ExactNode::{
-    name: cmd_name,
-    needs_value: false,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() {
-        Reject
-      } else if args[pos] == cmd_name {
-        let rest_args = Array::from_iter(args.view(start=pos + 1).iter())
-        let parse_result : Result[ParseResult, ParseError] = try? child.parse(
-          rest_args,
-        )
-        match parse_result {
-          Ok(child_result) =>
-            Accept(consumed=args.length() - pos, commit=fn() {
-              cell.val = Some(CmdResult::{ name: cmd_name, parser: child })
-              was_set.val = true
-              self.children.set(cmd_name, child_result)
-            })
-          Err(e) => Error(e)
-        }
-      } else {
-        Reject
-      }
-    },
-    reset: fn() {
-      cell.val = None
-      was_set.val = false
-    },
+  // Build all command names (primary + aliases) for matching
+  let all_names : Array[String] = [cmd_name]
+  for a in aliases {
+    all_names.push(a)
   }
-  self.nodes.push(node)
+  let make_cmd_node : (String) -> ExactNode = fn(match_name) {
+    ExactNode::{
+      name: match_name,
+      needs_value: false,
+      try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+        if pos >= args.length() {
+          Reject
+        } else if args[pos] == match_name {
+          let rest_args = Array::from_iter(args.view(start=pos + 1).iter())
+          let parse_result : Result[ParseResult, ParseError] = try? child.parse(
+            rest_args,
+          )
+          match parse_result {
+            Ok(child_result) =>
+              Accept(consumed=args.length() - pos, commit=fn() {
+                cell.val = Some(CmdResult::{ name: cmd_name, parser: child })
+                was_set.val = true
+                self.children.set(cmd_name, child_result)
+              })
+            Err(e) => Error(e)
+          }
+        } else {
+          Reject
+        }
+      },
+      reset: fn() {
+        cell.val = None
+        was_set.val = false
+      },
+    }
+  }
+  for cmd in all_names {
+    self.nodes.push(make_cmd_node(cmd))
+  }
   self.metas.push(OptMeta::{
     kind: Command,
     name,
@@ -79,7 +89,7 @@ pub fn Parser::cmd(
     default_display: "",
     global: false,
     shorts: [],
-    aliases: [],
+    aliases,
     variation_names: [],
     hidden: false,
   })
@@ -106,10 +116,11 @@ pub fn Parser::sub(
   name~ : String,
   description? : String = "",
   dashdash? : Bool = true,
+  aliases? : Array[String] = [],
 ) -> Parser {
   let child_ref : Ref[Parser?] = { val: None }
   ignore(
-    self.cmd(name~, description~, dashdash~, setup=fn(child) {
+    self.cmd(name~, description~, dashdash~, aliases~, setup=fn(child) {
       child_ref.val = Some(child)
     }),
   )

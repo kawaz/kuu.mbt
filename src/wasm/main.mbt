@@ -2,7 +2,7 @@
 /// WASM bridge for kuu core.
 ///
 /// Architecture:
-///   JSON schema + args  →  kuu core (WASM)  →  JSON result
+///   JSON schema + args  ->  kuu core (WASM)  ->  JSON result
 ///
 /// Input JSON format:
 /// {
@@ -14,10 +14,15 @@
 ///     { "kind": "count", "name": "verbose", "shorts": "v", "description": "..." },
 ///     { "kind": "positional", "name": "file", "description": "..." },
 ///     { "kind": "rest", "name": "args", "description": "..." },
-///     { "kind": "command", "name": "serve", "description": "...", "opts": [...] }
+///     { "kind": "dashdash" },
+///     { "kind": "command", "name": "serve", "description": "...", "opts": [...] },
+///     { "kind": "serial", "opts": [...] }
 ///   ],
 ///   "args": ["--verbose", "--host", "example.com", "file.txt"],
-///   "description": "My CLI tool"
+///   "description": "My CLI tool",
+///   "require_cmd": true,
+///   "exclusive": [["shared", "static"]],
+///   "required": ["filename"]
 /// }
 ///
 /// Output JSON format (success):
@@ -55,13 +60,94 @@ struct SchemaResult {
   children : Map[String, SchemaResult]
 }
 
+// --- Helpers ---
+
+///|
+/// Extract optional String from JSON object field.
+fn get_opt_string(obj : Map[String, Json], key : String) -> String? {
+  match obj.get(key) {
+    Some(String(s)) => Some(s)
+    _ => None
+  }
+}
+
+///|
+/// Extract variation parameters from a JSON object.
+fn extract_variations(
+  obj : Map[String, Json],
+) -> (String?, String?, String?, String?, String?) {
+  let vf = get_opt_string(obj, "variation_false")
+  let vt = get_opt_string(obj, "variation_toggle")
+  let vtrue = get_opt_string(obj, "variation_true")
+  let vr = get_opt_string(obj, "variation_reset")
+  let vu = get_opt_string(obj, "variation_unset")
+  (vf, vt, vtrue, vr, vu)
+}
+
+///|
+/// Parse a post filter for String from JSON.
+fn parse_string_post(
+  obj : Map[String, Json],
+) -> @core.FilterChain[String, String]? {
+  match obj.get("post") {
+    Some(String("trim")) => Some(@core.Filter::trim())
+    Some(String("non_empty")) => Some(@core.Filter::non_empty())
+    _ => None
+  }
+}
+
+///|
+/// Check if an opts array contains a "dashdash" kind entry.
+fn has_dashdash_opt(opts : Array[Json]) -> Bool {
+  opts.iter().any(
+    fn(j) {
+      match j {
+        Object(o) =>
+          match o.get("kind") {
+            Some(String("dashdash")) => true
+            _ => false
+          }
+        _ => false
+      }
+    },
+  )
+}
+
+///|
+/// Parse a post filter for Int from JSON.
+fn parse_int_post(obj : Map[String, Json]) -> @core.FilterChain[Int, Int]? {
+  match obj.get("post") {
+    Some(Object(post_obj)) =>
+      match post_obj.get("in_range") {
+        Some(Array(arr)) =>
+          if arr.length() == 2 {
+            let min = match arr[0] {
+              Number(n, ..) => n.to_int()
+              _ => return None
+            }
+            let max = match arr[1] {
+              Number(n, ..) => n.to_int()
+              _ => return None
+            }
+            Some(@core.Filter::in_range(min, max))
+          } else {
+            None
+          }
+        _ => None
+      }
+    _ => None
+  }
+}
+
 ///|
 fn build_parser(
   parser : @core.Parser,
   opts_json : Array[Json],
+  scope_json : Map[String, Json],
 ) -> Result[SchemaResult, String] {
   let entries : Array[OptEntry] = []
   let children : Map[String, SchemaResult] = {}
+  let opt_refs : Map[String, @core.OptRef] = {}
   for opt_json in opts_json {
     match opt_json {
       Object(obj) => {
@@ -69,9 +155,18 @@ fn build_parser(
           Some(String(s)) => s
           _ => return Err("opt definition missing 'kind'")
         }
-        let name = match obj.get("name") {
-          Some(String(s)) => s
-          _ => return Err("opt definition missing 'name'")
+        // dashdash and serial don't need name
+        let name = match kind {
+          "dashdash" | "serial" =>
+            match obj.get("name") {
+              Some(String(s)) => s
+              _ => ""
+            }
+          _ =>
+            match obj.get("name") {
+              Some(String(s)) => s
+              _ => return Err("opt definition missing 'name'")
+            }
         }
         let description = match obj.get("description") {
           Some(String(s)) => s
@@ -102,6 +197,9 @@ fn build_parser(
           }
           _ => []
         }
+        let (variation_false, variation_toggle, variation_true, variation_reset, variation_unset) = extract_variations(
+          obj,
+        )
         match kind {
           "flag" => {
             let default_val = match obj.get("default") {
@@ -109,9 +207,20 @@ fn build_parser(
               _ => false
             }
             let opt = parser.flag(
-              name~, default=default_val, global~, shorts~,
-              description~, hidden~, aliases~,
+              name~,
+              default=default_val,
+              global~,
+              shorts~,
+              description~,
+              hidden~,
+              aliases~,
+              variation_false~,
+              variation_toggle~,
+              variation_true~,
+              variation_reset~,
+              variation_unset~,
             )
+            opt_refs[name] = opt.as_ref()
             entries.push(
               OptEntry::{
                 name,
@@ -142,10 +251,31 @@ fn build_parser(
               }
               _ => []
             }
+            let implicit_value : @core.Lazy[String]? = match obj.get(
+              "implicit_value",
+            ) {
+              Some(String(s)) => Some(@core.Val(s))
+              _ => None
+            }
+            let post = parse_string_post(obj)
             let opt = parser.string_opt(
-              name~, default=default_val, global~, shorts~,
-              description~, hidden~, aliases~, choices~,
+              name~,
+              default=default_val,
+              global~,
+              shorts~,
+              description~,
+              hidden~,
+              aliases~,
+              choices~,
+              implicit_value~,
+              post~,
+              variation_false~,
+              variation_toggle~,
+              variation_true~,
+              variation_reset~,
+              variation_unset~,
             )
+            opt_refs[name] = opt.as_ref()
             entries.push(
               OptEntry::{
                 name,
@@ -163,10 +293,30 @@ fn build_parser(
               Some(Number(n, ..)) => n.to_int()
               _ => 0
             }
+            let implicit_value : @core.Lazy[Int]? = match obj.get(
+              "implicit_value",
+            ) {
+              Some(Number(n, ..)) => Some(@core.Val(n.to_int()))
+              _ => None
+            }
+            let post = parse_int_post(obj)
             let opt = parser.int_opt(
-              name~, default=default_val, global~, shorts~,
-              description~, hidden~, aliases~,
+              name~,
+              default=default_val,
+              global~,
+              shorts~,
+              description~,
+              hidden~,
+              aliases~,
+              implicit_value~,
+              post~,
+              variation_false~,
+              variation_toggle~,
+              variation_true~,
+              variation_reset~,
+              variation_unset~,
             )
+            opt_refs[name] = opt.as_ref()
             entries.push(
               OptEntry::{
                 name,
@@ -181,8 +331,19 @@ fn build_parser(
           }
           "count" => {
             let opt = parser.count(
-              name~, global~, shorts~, description~, hidden~, aliases~,
+              name~,
+              global~,
+              shorts~,
+              description~,
+              hidden~,
+              aliases~,
+              variation_false~,
+              variation_toggle~,
+              variation_true~,
+              variation_reset~,
+              variation_unset~,
             )
+            opt_refs[name] = opt.as_ref()
             entries.push(
               OptEntry::{
                 name,
@@ -197,8 +358,19 @@ fn build_parser(
           }
           "append_string" => {
             let opt = parser.append_string(
-              name~, global~, shorts~, description~, hidden~, aliases~,
+              name~,
+              global~,
+              shorts~,
+              description~,
+              hidden~,
+              aliases~,
+              variation_false~,
+              variation_toggle~,
+              variation_true~,
+              variation_reset~,
+              variation_unset~,
             )
+            opt_refs[name] = opt.as_ref()
             entries.push(
               OptEntry::{
                 name,
@@ -214,8 +386,19 @@ fn build_parser(
           }
           "append_int" => {
             let opt = parser.append_int(
-              name~, global~, shorts~, description~, hidden~, aliases~,
+              name~,
+              global~,
+              shorts~,
+              description~,
+              hidden~,
+              aliases~,
+              variation_false~,
+              variation_toggle~,
+              variation_true~,
+              variation_reset~,
+              variation_unset~,
             )
+            opt_refs[name] = opt.as_ref()
             entries.push(
               OptEntry::{
                 name,
@@ -233,6 +416,7 @@ fn build_parser(
           }
           "positional" => {
             let opt = parser.positional(name~, description~)
+            opt_refs[name] = opt.as_ref()
             entries.push(
               OptEntry::{
                 name,
@@ -247,6 +431,7 @@ fn build_parser(
           }
           "rest" => {
             let opt = parser.rest(name~, description~)
+            opt_refs[name] = opt.as_ref()
             entries.push(
               OptEntry::{
                 name,
@@ -260,6 +445,104 @@ fn build_parser(
               },
             )
           }
+          "dashdash" => {
+            let opt = parser.dashdash()
+            entries.push(
+              OptEntry::{
+                name: "--",
+                extract: fn() -> Json {
+                  match opt.get() {
+                    Some(arr) =>
+                      Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
+                    None => Json::null()
+                  }
+                },
+              },
+            )
+          }
+          "serial" => {
+            let child_opts : Array[Json] = match obj.get("opts") {
+              Some(Array(arr)) => arr
+              _ => []
+            }
+            // serial uses a sub-parser setup function
+            // We need to collect entries from the serial's positionals
+            let serial_entries : Array[OptEntry] = []
+            let serial_opt_refs : Map[String, @core.OptRef] = {}
+            let serial_child_opts = child_opts
+            parser.serial(
+              setup=fn(sub) {
+                for sub_opt_json in serial_child_opts {
+                  match sub_opt_json {
+                    Object(sub_obj) => {
+                      let sub_kind = match sub_obj.get("kind") {
+                        Some(String(s)) => s
+                        _ => ""
+                      }
+                      let sub_name = match sub_obj.get("name") {
+                        Some(String(s)) => s
+                        _ => ""
+                      }
+                      let sub_desc = match sub_obj.get("description") {
+                        Some(String(s)) => s
+                        _ => ""
+                      }
+                      match sub_kind {
+                        "positional" => {
+                          let opt = sub.positional(
+                            name=sub_name, description=sub_desc,
+                          )
+                          serial_opt_refs[sub_name] = opt.as_ref()
+                          serial_entries.push(
+                            OptEntry::{
+                              name: sub_name,
+                              extract: fn() -> Json {
+                                match opt.get() {
+                                  Some(v) => Json::string(v)
+                                  None => Json::null()
+                                }
+                              },
+                            },
+                          )
+                        }
+                        "rest" => {
+                          let opt = sub.rest(
+                            name=sub_name, description=sub_desc,
+                          )
+                          serial_opt_refs[sub_name] = opt.as_ref()
+                          serial_entries.push(
+                            OptEntry::{
+                              name: sub_name,
+                              extract: fn() -> Json {
+                                match opt.get() {
+                                  Some(arr) =>
+                                    Json::array(
+                                      arr.map(fn(s) -> Json {
+                                        Json::string(s)
+                                      }),
+                                    )
+                                  None => Json::null()
+                                }
+                              },
+                            },
+                          )
+                        }
+                        _ => () // serial only supports positional and rest
+                      }
+                    }
+                    _ => ()
+                  }
+                }
+              },
+            )
+            // Add serial entries to parent
+            for entry in serial_entries {
+              entries.push(entry)
+            }
+            for k, v in serial_opt_refs {
+              opt_refs[k] = v
+            }
+          }
           "command" => {
             let child_opts : Array[Json] = match obj.get("opts") {
               Some(Array(arr)) => arr
@@ -269,11 +552,22 @@ fn build_parser(
               Some(String(s)) => s
               _ => ""
             }
-            let child_parser = parser.sub(name~, description~)
+            let child_dashdash = not(has_dashdash_opt(child_opts))
+            let child_parser = parser.sub(
+              name~, description~, aliases~, dashdash=child_dashdash,
+            )
             if child_desc != "" {
               child_parser.set_description(child_desc)
             }
-            let child_result = match build_parser(child_parser, child_opts) {
+            // require_cmd inside command
+            let require_cmd = match obj.get("require_cmd") {
+              Some(True) => true
+              _ => false
+            }
+            if require_cmd {
+              child_parser.require_cmd()
+            }
+            let child_result = match build_parser(child_parser, child_opts, obj) {
               Ok(s) => s
               Err(e) => return Err(e)
             }
@@ -284,6 +578,55 @@ fn build_parser(
       }
       _ => return Err("each element in 'opts' must be an object")
     }
+  }
+  // Handle require_cmd at scope level
+  let require_cmd = match scope_json.get("require_cmd") {
+    Some(True) => true
+    _ => false
+  }
+  if require_cmd {
+    parser.require_cmd()
+  }
+  // Handle exclusive constraints
+  match scope_json.get("exclusive") {
+    Some(Array(groups)) =>
+      for group in groups {
+        match group {
+          Array(names) => {
+            let refs : Array[@core.OptRef] = []
+            for name_json in names {
+              match name_json {
+                String(n) =>
+                  match opt_refs.get(n) {
+                    Some(r) => refs.push(r)
+                    None => ()
+                  }
+                _ => ()
+              }
+            }
+            if refs.length() > 1 {
+              parser.exclusive(refs)
+            }
+          }
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  // Handle required constraints
+  match scope_json.get("required") {
+    Some(Array(names)) =>
+      for name_json in names {
+        match name_json {
+          String(n) =>
+            match opt_refs.get(n) {
+              Some(r) => parser.required(r)
+              None => ()
+            }
+          _ => ()
+        }
+      }
+    _ => ()
   }
   Ok(SchemaResult::{ entries, children })
 }
@@ -351,7 +694,10 @@ pub fn kuu_parse(input : String) -> String {
     Some(Number(n, ..)) => {
       let ver = n.to_int()
       if ver != 1 {
-        return make_error_json("unsupported schema version: " + ver.to_string(), "")
+        return make_error_json(
+          "unsupported schema version: " + ver.to_string(),
+          "",
+        )
       }
     }
     None => () // omitted: treat as version 1 (backward compat)
@@ -384,12 +730,14 @@ pub fn kuu_parse(input : String) -> String {
     Some(String(s)) => s
     _ => ""
   }
+  // Check if opts contain explicit "dashdash" kind (if so, disable default separator)
+  let has_dashdash_kind = has_dashdash_opt(opts_json)
   // Build parser from schema
-  let parser = @core.Parser::new()
+  let parser = @core.Parser::new(dashdash=not(has_dashdash_kind))
   if description != "" {
     parser.set_description(description)
   }
-  let schema = match build_parser(parser, opts_json) {
+  let schema = match build_parser(parser, opts_json, obj) {
     Ok(s) => s
     Err(msg) => return make_error_json(msg, "")
   }
