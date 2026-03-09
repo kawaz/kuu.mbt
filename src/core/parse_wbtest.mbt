@@ -4275,3 +4275,317 @@ test "help variation_reset shows --no-xxx" {
   let help = p.generate_help()
   inspect(help.contains("--no-format"), content="true")
 }
+
+// ============================================================
+// OC/P 2-phase parse tests (DR-034)
+// ============================================================
+
+///|
+test "OC/P: non-greedy positional deferred to P phase" {
+  // [F1, --verbose, F2] で flag(verbose) + serial(src, dst)
+  // OC: F1→unclaimed, --verbose→flag, F2→unclaimed
+  // P: unclaimed=[F1, F2] → src=F1, dst=F2
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose")
+  let mut src : Opt[String]? = None
+  let mut dst : Opt[String]? = None
+  p.serial(setup=fn(sub) {
+    src = Some(sub.positional(name="src"))
+    dst = Some(sub.positional(name="dst"))
+  })
+  ignore(p.parse(["F1", "--verbose", "F2"]))
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(
+    src.unwrap().get(),
+    content=(
+      #|Some("F1")
+    ),
+  )
+  inspect(
+    dst.unwrap().get(),
+    content=(
+      #|Some("F2")
+    ),
+  )
+}
+
+///|
+test "OC/P: greedy positional consumed in OC" {
+  // [F1, --verbose, F2] で flag(verbose) + positional(file, greedy=true)
+  // OC: F1→greedy positional consumes, --verbose→flag, F2→no greedy left→unclaimed
+  // P: unclaimed=[F2] → no positional left → "unexpected argument" error
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose")
+  let file = p.positional(name="file", greedy=true)
+  let result : Result[_, _] = try? p.parse(["F1", "--verbose", "F2"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("unexpected argument"), content="true")
+    _ => abort("expected error for extra positional after greedy")
+  }
+  ignore(file)
+  ignore(verbose)
+}
+
+///|
+test "OC/P: dashdash forces positional in P phase" {
+  // [F1, --, F2] で serial(src, dst) + dashdash=true
+  // OC: F1→unclaimed, --→separator(force_unclaimed=[F2])
+  // P: [F1, F2] → src=F1, dst=F2 (順序正確)
+  let p = Parser::new(dashdash=true)
+  let mut src : Opt[String]? = None
+  let mut dst : Opt[String]? = None
+  p.serial(setup=fn(sub) {
+    src = Some(sub.positional(name="src"))
+    dst = Some(sub.positional(name="dst"))
+  })
+  ignore(p.parse(["F1", "--", "F2"]))
+  inspect(
+    src.unwrap().get(),
+    content=(
+      #|Some("F1")
+    ),
+  )
+  inspect(
+    dst.unwrap().get(),
+    content=(
+      #|Some("F2")
+    ),
+  )
+}
+
+///|
+test "OC/P: dashdash prevents option matching" {
+  // [--, --verbose, file] で flag(verbose) + rest(files) + dashdash=true
+  // OC: --→separator(force_unclaimed=[--verbose, file])
+  // P: rest が [--verbose, file] を全て消費。verbose flag は未設定のまま。
+  let p = Parser::new(dashdash=true)
+  let verbose = p.flag(name="verbose")
+  let files = p.rest(name="files")
+  ignore(p.parse(["--", "--verbose", "file"]))
+  inspect((verbose.is_set)(), content="false")
+  inspect(
+    p.get(files),
+    content=(
+      #|Some(["--verbose", "file"])
+    ),
+  )
+}
+
+///|
+test "OC/P: interleaved options and positionals" {
+  // [--output, out, F1, --verbose, F2] で string_opt(output) + flag(verbose) + serial(src, dst)
+  // OC: --output→string_opt(consumed 2), F1→unclaimed, --verbose→flag, F2→unclaimed
+  // P: unclaimed=[F1, F2] → src=F1, dst=F2
+  let p = Parser::new(dashdash=false)
+  let output = p.string_opt(name="output", default="")
+  let verbose = p.flag(name="verbose")
+  let mut src : Opt[String]? = None
+  let mut dst : Opt[String]? = None
+  p.serial(setup=fn(sub) {
+    src = Some(sub.positional(name="src"))
+    dst = Some(sub.positional(name="dst"))
+  })
+  ignore(p.parse(["--output", "out", "F1", "--verbose", "F2"]))
+  inspect(
+    p.get(output),
+    content=(
+      #|Some("out")
+    ),
+  )
+  inspect(p.get(verbose), content="Some(true)")
+  inspect(
+    src.unwrap().get(),
+    content=(
+      #|Some("F1")
+    ),
+  )
+  inspect(
+    dst.unwrap().get(),
+    content=(
+      #|Some("F2")
+    ),
+  )
+}
+
+///|
+test "OC/P: misspelled option consumed as positional" {
+  let p = Parser::new(dashdash=false)
+  ignore(p.flag(name="verbose"))
+  let _file = p.positional(name="file")
+  let result : Result[ParseResult, _] = try? p.parse(["--vrrbose", "file.txt"])
+  match result {
+    Err(ParseError(info)) => {
+      // --vrrbose が positional(file) に食われ、file.txt が unexpected になる
+      // ただし hint は file.txt（prefix なし）には付かない
+      inspect(info.message.contains("unexpected"), content="true")
+    }
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "OC/P: typo hint suggests closest match" {
+  let p = Parser::new(dashdash=false)
+  ignore(p.flag(name="verbose"))
+  ignore(p.flag(name="version"))
+  p.never()
+  let result : Result[ParseResult, _] = try? p.parse(["--vrrbose"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.message.contains("--verbose"), content="true")
+      inspect(info.message.contains("did you mean"), content="true")
+    }
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "OC/P: no hint for non-prefix arg" {
+  let p = Parser::new(dashdash=false)
+  ignore(p.flag(name="verbose"))
+  p.never()
+  let result : Result[ParseResult, _] = try? p.parse(["verbos"])
+  match result {
+    Err(ParseError(info)) => {
+      // prefix なしの arg には hint を付けない
+      inspect(info.message.contains("did you mean"), content="false")
+    }
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "OC/P: rest with options interleaved" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose")
+  let files = p.rest(name="files")
+  ignore(p.parse(["f1", "--verbose", "f2", "f3"]))
+  inspect((verbose.is_set)(), content="true")
+  inspect(files.get(), content="Some([\"f1\", \"f2\", \"f3\"])")
+}
+
+///|
+test "OC/P: serial(file1, rest(dir), file2) with interleaved options" {
+  // serial 内の rest は stop_before なしだと後続 positional 分の引数も取り込む。
+  // ここでは parse エラーにならないこと + option が正しく処理されることを検証。
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose")
+  let mut file1 : Opt[String]? = None
+  let mut dirs : Opt[Array[String]]? = None
+  let mut file2 : Opt[String]? = None
+  p.serial(setup=fn(s) {
+    file1 = Some(s.positional(name="file1"))
+    dirs = Some(s.rest(name="dirs"))
+    file2 = Some(s.positional(name="file2"))
+  })
+  ignore(p.parse(["F1", "--verbose", "D1", "D2", "F2"]))
+  inspect((verbose.is_set)(), content="true")
+  inspect(file1.unwrap().get(), content="Some(\"F1\")")
+  // rest が stop_before なしのため D1, D2, F2 全てを消費し file2 は未設定
+  inspect(dirs.unwrap().get(), content="Some([\"D1\", \"D2\", \"F2\"])")
+  inspect((file2.unwrap().is_set)(), content="false")
+}
+
+///|
+test "OC/P: greedy positional normal consumption" {
+  // [F1, --verbose] で flag(verbose) + positional(file, greedy=true)
+  // OC: F1→greedy positional consumes, --verbose→flag
+  // P: unclaimed なし → 正常終了
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose")
+  let file = p.positional(name="file", greedy=true)
+  ignore(p.parse(["F1", "--verbose"]))
+  inspect((verbose.is_set)(), content="true")
+  inspect(file.get(), content="Some(\"F1\")")
+}
+
+///|
+test "OC/P: greedy then non-greedy positional" {
+  // [A, --verbose, B] で flag(verbose) + positional(eager, greedy) + positional(deferred)
+  // OC: A→greedy(eager) consumes, --verbose→flag, B→no greedy left→unclaimed
+  // P: unclaimed=[B] → deferred=B
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose")
+  let eager = p.positional(name="eager", greedy=true)
+  let deferred = p.positional(name="deferred")
+  ignore(p.parse(["A", "--verbose", "B"]))
+  inspect((verbose.is_set)(), content="true")
+  inspect(eager.get(), content="Some(\"A\")")
+  inspect(deferred.get(), content="Some(\"B\")")
+}
+
+///|
+test "OC/P: serial with greedy=true consumed in OC" {
+  // [F1, --verbose, F2] で flag(verbose) + serial(src, dst, greedy=true)
+  // OC: F1→greedy serial の compound handler が呼ばれる
+  //   compound handler: src accepts F1(p=1), dst accepts --verbose(p=2) → Accept(consumed=2)
+  //   → src="F1", dst="--verbose"（compound handler は ExactNode を考慮しない）
+  // pos=2 → F2→no ExactNode, no greedy left→unclaimed
+  // P: unclaimed=[F2] → no non-greedy positional → "unexpected argument" error
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose")
+  let mut src : Opt[String]? = None
+  let mut dst : Opt[String]? = None
+  p.serial(greedy=true, setup=fn(sub) {
+    src = Some(sub.positional(name="src"))
+    dst = Some(sub.positional(name="dst"))
+  })
+  let result : Result[_, _] = try? p.parse(["F1", "--verbose", "F2"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("unexpected argument"), content="true")
+    _ => abort("expected error: compound handler consumes --verbose as dst value")
+  }
+  // parse がエラーで終了するため parsed=false、get() は None を返す。
+  // compound handler が --verbose を positional 値として消費するため flag も未設定。
+  inspect((verbose.is_set)(), content="false")
+  // commit は呼ばれているが parsed=false なので get() は None
+  inspect((src.unwrap().is_set)(), content="true")
+  inspect((dst.unwrap().is_set)(), content="true")
+}
+
+///|
+test "OC/P: serial with greedy=true normal consumption" {
+  // [F1, F2] で serial(src, dst, greedy=true)
+  // OC: F1→greedy serial → compound handler(args, 0) → src=F1, dst=F2 → Accept(consumed=2)
+  // P: unclaimed なし → 正常終了
+  let p = Parser::new(dashdash=false)
+  let mut src : Opt[String]? = None
+  let mut dst : Opt[String]? = None
+  p.serial(greedy=true, setup=fn(sub) {
+    src = Some(sub.positional(name="src"))
+    dst = Some(sub.positional(name="dst"))
+  })
+  ignore(p.parse(["F1", "F2"]))
+  inspect(src.unwrap().get(), content="Some(\"F1\")")
+  inspect(dst.unwrap().get(), content="Some(\"F2\")")
+}
+
+///|
+test "OC/P: typo hint distance threshold" {
+  // 距離 1 ("--verbos" vs "--verbose"): hint あり
+  let p = Parser::new(dashdash=false)
+  ignore(p.flag(name="verbose"))
+  p.never()
+  let r1 : Result[ParseResult, _] = try? p.parse(["--verbos"])
+  match r1 {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("did you mean"), content="true")
+    _ => fail("expected error")
+  }
+}
+
+///|
+test "OC/P: typo hint no match for distant name" {
+  // 距離 > 2 ("--xyz" vs "--verbose"): hint なし
+  let p = Parser::new(dashdash=false)
+  ignore(p.flag(name="verbose"))
+  p.never()
+  let r : Result[ParseResult, _] = try? p.parse(["--xyz"])
+  match r {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("did you mean"), content="false")
+    _ => fail("expected error")
+  }
+}

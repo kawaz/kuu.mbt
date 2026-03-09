@@ -27,6 +27,7 @@ pub fn Parser::cmd(
     post_hooks: [],
     registered_names: {},
     duplicate_errors: [],
+    force_unclaimed: [],
   }
   // 親の global_nodes の名前を子の registered_names に登録（衝突検知のため）
   for gnode in self.global_nodes {

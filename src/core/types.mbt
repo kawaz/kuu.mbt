@@ -40,11 +40,18 @@ pub(all) struct ExactNode {
 }
 
 ///|
+pub(all) struct PositionalEntry {
+  handler : (Array[String], Int) -> TryResult
+  is_rest : Bool
+  greedy : Bool
+}
+
+///|
 pub(all) struct Parser {
   next_id : () -> Int
   nodes : Array[ExactNode]
   global_nodes : Array[ExactNode]
-  positionals : Array[((Array[String], Int) -> TryResult, Bool)]
+  positionals : Array[PositionalEntry]
   current_positional : Ref[Int]
   parsed : Ref[Bool]
   children : Map[String, ParseResult]
@@ -53,6 +60,7 @@ pub(all) struct Parser {
   post_hooks : Array[() -> Unit raise ParseError]
   registered_names : Map[String, Bool]
   duplicate_errors : Array[String]
+  force_unclaimed : Array[String]
 }
 
 ///|

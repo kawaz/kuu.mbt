@@ -1,4 +1,72 @@
 ///|
+fn levenshtein(a : String, b : String) -> Int {
+  let m = a.length()
+  let n = b.length()
+  // dp[(i)] は行 i の各列の値を保持する
+  let prev : Array[Int] = Array::make(n + 1, 0)
+  let curr : Array[Int] = Array::make(n + 1, 0)
+  for j = 0; j <= n; j = j + 1 {
+    prev[j] = j
+  }
+  for i = 1; i <= m; i = i + 1 {
+    curr[0] = i
+    for j = 1; j <= n; j = j + 1 {
+      let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 }
+      let del = prev[j] + 1
+      let ins = curr[j - 1] + 1
+      let sub = prev[j - 1] + cost
+      let mut min = del
+      if ins < min {
+        min = ins
+      }
+      if sub < min {
+        min = sub
+      }
+      curr[j] = min
+    }
+    for j = 0; j <= n; j = j + 1 {
+      prev[j] = curr[j]
+    }
+  }
+  prev[n]
+}
+
+///|
+fn suggest_typo(
+  arg : String,
+  registered_names : Map[String, Bool],
+) -> String? {
+  if not(arg.has_prefix("--")) {
+    return None
+  }
+  let mut best_name : String? = None
+  let mut best_dist = 3 // threshold: distance <= 2
+  for name, _ in registered_names {
+    if not(name.has_prefix("--")) {
+      continue
+    }
+    let d = levenshtein(arg, name)
+    if d < best_dist {
+      best_dist = d
+      best_name = Some(name)
+    }
+  }
+  best_name
+}
+
+///|
+fn format_unexpected_with_hint(
+  arg : String,
+  registered_names : Map[String, Bool],
+) -> String {
+  let msg = "unexpected argument: " + arg
+  match suggest_typo(arg, registered_names) {
+    Some(suggestion) => msg + " (did you mean " + suggestion + "?)"
+    None => msg
+  }
+}
+
+///|
 fn Parser::validate_no_duplicate_names(self : Parser) -> Unit raise ParseError {
   if self.duplicate_errors.length() > 0 {
     raise parse_error(self.duplicate_errors[0])
@@ -228,13 +296,11 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
   self.nodes.push(combine_node)
 }
 
-///| `--` セパレータを greedy な ExactNode として構築し self.nodes に追加。
-
 ///|
-/// `--` を検出したら残りの args を positionals で serial に消費する。
+/// `--` を検出したら残りの args を force_unclaimed に収集する。
+/// P フェーズで positionals として消費される。
 fn Parser::install_separator_node(self : Parser) -> Unit {
-  let positionals = self.positionals
-  let current_positional = self.current_positional
+  let force_unclaimed = self.force_unclaimed
   let separator_node = ExactNode::{
     name: "--",
     needs_value: false,
@@ -242,35 +308,15 @@ fn Parser::install_separator_node(self : Parser) -> Unit {
       if pos >= args.length() || args[pos] != "--" {
         return Reject
       }
-      let mut p = pos + 1
-      let commits : Array[() -> Unit] = []
-      let mut next_pos_idx = current_positional.val
-      while p < args.length() {
-        if next_pos_idx >= positionals.length() {
-          break
+      // -- 以降の全 args を収集（OC フェーズでは消費済みとして扱う）
+      let start = pos + 1
+      let end = args.length()
+      Accept(consumed=end - pos, commit=fn() {
+        let mut p = start
+        while p < end {
+          force_unclaimed.push(args[p])
+          p += 1
         }
-        let (handler, is_rest) = positionals[next_pos_idx]
-        match handler(args, p) {
-          Accept(consumed~, commit~) => {
-            commits.push(commit)
-            if not(is_rest) {
-              next_pos_idx += 1
-            }
-            p += consumed
-          }
-          Reject => break
-          Error(e) => return Error(e)
-        }
-      }
-      if p < args.length() {
-        return Error(parse_error("unexpected argument: " + args[p]))
-      }
-      let final_pos_idx = next_pos_idx
-      Accept(consumed=p - pos, commit=fn() {
-        for c in commits {
-          c()
-        }
-        current_positional.val = final_pos_idx
       })
     },
     reset: fn() {  },
@@ -295,6 +341,9 @@ fn Parser::parse_raw(
   self.validate_no_duplicate_names()
   self.install_eq_split_node()
   self.install_short_combine_node()
+
+  // === OC Phase (Option/Command) ===
+  let unclaimed : Array[String] = []
   let mut pos = 0
   while pos < args.length() {
     let mut best_consumed = 0
@@ -323,26 +372,78 @@ fn Parser::parse_raw(
         commit()
         pos = pos + best_consumed
       }
-      None =>
+      None => {
+        // greedy positional があれば OC で消費
+        let mut consumed_by_greedy = false
         if self.current_positional.val < self.positionals.length() {
           let idx = self.current_positional.val
-          let (handler, is_rest) = self.positionals[idx]
-          match handler(args, pos) {
-            Accept(consumed~, commit~) => {
-              commit()
-              if not(is_rest) {
-                self.current_positional.val = idx + 1
+          let entry = self.positionals[idx]
+          if entry.greedy {
+            match (entry.handler)(args, pos) {
+              Accept(consumed~, commit~) => {
+                commit()
+                if not(entry.is_rest) {
+                  self.current_positional.val = idx + 1
+                }
+                pos = pos + consumed
+                consumed_by_greedy = true
               }
-              pos = pos + consumed
+              Reject => ()
+              Error(e) => raise e
             }
-            Reject => raise parse_error("unexpected argument: " + args[pos])
-            Error(e) => raise e
           }
-        } else {
-          raise parse_error("unexpected argument: " + args[pos])
         }
+        if not(consumed_by_greedy) {
+          // unclaimed — P フェーズで処理
+          unclaimed.push(args[pos])
+          pos += 1
+        }
+      }
     }
   }
+
+  // === P Phase (Positional) ===
+  // force_unclaimed (-- 以降の args) を unclaimed の後ろに結合
+  for arg in self.force_unclaimed {
+    unclaimed.push(arg)
+  }
+
+  let mut upos = 0
+  while upos < unclaimed.length() {
+    // greedy positional をスキップ（OC で消費済み or 機会を逃した）
+    while self.current_positional.val < self.positionals.length() &&
+      self.positionals[self.current_positional.val].greedy {
+      self.current_positional.val += 1
+    }
+    if self.current_positional.val >= self.positionals.length() {
+      raise parse_error(
+        format_unexpected_with_hint(unclaimed[upos], self.registered_names),
+      )
+    }
+    let idx = self.current_positional.val
+    let entry = self.positionals[idx]
+    match (entry.handler)(unclaimed, upos) {
+      Accept(consumed~, commit~) => {
+        commit()
+        if not(entry.is_rest) {
+          self.current_positional.val = idx + 1
+        }
+        upos += consumed
+      }
+      Reject => {
+        if entry.is_rest {
+          // rest が Reject（stop_before トリガー等）→ 次の positional へ
+          self.current_positional.val = idx + 1
+        } else {
+          raise parse_error(
+            format_unexpected_with_hint(unclaimed[upos], self.registered_names),
+          )
+        }
+      }
+      Error(e) => raise e
+    }
+  }
+
   // post hooks: parse 完了後の値変換・遅延バリデーション
   for hook in self.post_hooks {
     hook()

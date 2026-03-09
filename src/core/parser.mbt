@@ -71,6 +71,7 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     post_hooks: [],
     registered_names: {},
     duplicate_errors: [],
+    force_unclaimed: [],
   }
   if dashdash {
     p.install_separator_node()
