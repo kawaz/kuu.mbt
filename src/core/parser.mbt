@@ -138,6 +138,7 @@ fn[T] Parser::register_option(
   self.alias_sources[id] = AliasSource::{
     make_node: make_main_node,
     target_was_set: was_set,
+    is_global: global,
   }
   { id, name: "--" + name, getter, parsed: self.parsed, is_set: fn() { was_set.val } }
 }
@@ -145,6 +146,12 @@ fn[T] Parser::register_option(
 ///|
 /// 汎用別名コンビネータ: target の値を共有する新しい ExactNode を name で登録する。
 /// name は生文字列（"--" の自動付加なし）。opt / cmd / append 問わず使える。
+///
+/// alias_sources[target.id] に保存されたファクトリ（register_option / cmd で登録）から
+/// 新しい ExactNode を生成し、target と値を共有（getter 共有）しつつ is_set は独立。
+/// alias 使用時は alias.is_set=true に加え target.is_set=true もセットされる。
+/// チェーン alias（alias の alias）では root の target_was_set まで直接伝搬する。
+/// target が global の場合、alias も global_nodes に登録し子パーサに伝搬する。
 pub fn[T] Parser::alias(
   self : Parser,
   name : String,
@@ -153,13 +160,13 @@ pub fn[T] Parser::alias(
   let source = self.alias_sources.get(target.id)
   match source {
     None => {
+      // target がこの Parser に登録されていない（別 Parser の Opt 等）
       self.duplicate_errors.push(
         "alias target not found: " + target.name +
         " (id=" +
         target.id.to_string() +
         ")",
       )
-      // Return a dummy Opt that will never be used (parse will fail due to duplicate_errors)
       let id = (self.next_id)()
       {
         id,
@@ -170,16 +177,13 @@ pub fn[T] Parser::alias(
       }
     }
     Some(src) => {
-      // Check for duplicate names
       if self.registered_names.contains(name) {
         self.duplicate_errors.push("duplicate option name: " + name)
       }
       self.registered_names[name] = true
-      // Create new ExactNode via factory
       let node = (src.make_node)(name)
       let alias_was_set : Ref[Bool] = { val: false }
       let target_was_set = src.target_was_set
-      // Wrap: on commit, set both alias and target was_set
       let orig_try_reduce = node.try_reduce
       let orig_reset = node.reset
       let wrapped = ExactNode::{
@@ -206,11 +210,15 @@ pub fn[T] Parser::alias(
         },
       }
       self.nodes.push(wrapped)
-      // Store for chaining: propagate root factory and root was_set
+      // target が global なら alias も global — 子パーサに伝搬させる
+      if src.is_global {
+        self.global_nodes.push(wrapped)
+      }
       let id = (self.next_id)()
       self.alias_sources[id] = AliasSource::{
         make_node: src.make_node,
         target_was_set: target_was_set,
+        is_global: src.is_global,
       }
       {
         id,

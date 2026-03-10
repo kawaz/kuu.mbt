@@ -4750,3 +4750,60 @@ test "alias: unused alias default value" {
   inspect((host.is_set)(), content="false")
   inspect((h.is_set)(), content="false")
 }
+
+///|
+test "alias: global alias propagates to subcommand" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", global=true)
+  let verb = p.alias("--verb", verbose)
+  let status = p.cmd(name="status", setup=fn(_child) {  })
+  ignore(p.parse(["status", "--verb"]))
+  // global alias は子パーサでも使える
+  inspect(verbose.get(), content="Some(true)")
+  inspect(verb.get(), content="Some(true)")
+  inspect((verbose.is_set)(), content="true")
+  inspect((verb.is_set)(), content="true")
+  inspect((status.is_set)(), content="true")
+}
+
+///|
+test "alias: eq_split with double-dash alias" {
+  // --alias=value 構文が動くか
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost")
+  let h = p.alias("--h", host)
+  ignore(p.parse(["--h=example.com"]))
+  inspect(
+    host.get(),
+    content=(
+      #|Some("example.com")
+    ),
+  )
+  inspect(
+    h.get(),
+    content=(
+      #|Some("example.com")
+    ),
+  )
+}
+
+///|
+test "alias: count alias shares counter" {
+  let p = Parser::new()
+  let verbose = p.count(name="verbose")
+  let verb = p.alias("--verb", verbose)
+  ignore(p.parse(["--verbose", "--verb", "--verbose"]))
+  inspect(verbose.get(), content="Some(3)")
+  inspect(verb.get(), content="Some(3)")
+}
+
+///|
+test "alias: alias does not expand variations" {
+  // alias は variation を展開しない（DR-037: variation = alias + adjust の合成）
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", variations=[False("no")])
+  ignore(p.alias("--verb", verbose))
+  // --no-verb は存在しないのでエラー
+  let result : Result[_, _] = try? p.parse(["--no-verb"])
+  inspect(result is Err(_), content="true")
+}

@@ -85,6 +85,7 @@ pub fn Parser::cmd(
   self.alias_sources[id] = AliasSource::{
     make_node: make_cmd_node,
     target_was_set: was_set,
+    is_global: false,
   }
   self.metas.push(OptMeta::{
     kind: Command,

@@ -50,6 +50,7 @@ pub(all) struct PositionalEntry {
 pub(all) struct AliasSource {
   make_node : (String) -> ExactNode
   target_was_set : Ref[Bool]
+  is_global : Bool
 }
 
 ///|
