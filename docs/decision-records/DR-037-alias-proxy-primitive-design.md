@@ -1,4 +1,4 @@
-# DR-037: alias / proxy プリミティブ設計 — 機能分解と統合整理
+# DR-037: alias プリミティブ設計 — 直交プリミティブによる統合整理
 
 ## 背景
 
@@ -6,8 +6,8 @@
 議論の結果、これは独立した問題ではなく **name / aliases の設計上の偽の区別** に起因する
 表層的な制約であることが判明した。
 
-さらに alias / proxy / variation / long / short を機能分解した結果、
-少数のプリミティブ（exact, clone, link, or）で全てが合成可能であることがわかった。
+さらに alias / variation / long / short を機能分解した結果、
+3 つの直交プリミティブ（clone, link, adjust）で全てが合成可能であることがわかった。
 
 ## 問題
 
@@ -36,42 +36,58 @@ for alt in aliases {
 deprecated な旧名を残したい場合（`--old-name` → `--new-name`）に
 警告を出す・使用を検知するといった区別ができない。
 
-## 解決策: プリミティブ分解
+### 4. Variation が long 専用概念になっている
+
+現在の Variation（Toggle/True/False/Reset/Unset）は `--{prefix}-{name}` 形式の
+long option に特化している。しかし「振る舞いを変えた別名」は long に限らない汎用概念。
+
+## 解決策: 3 つの直交プリミティブ
 
 ### 基本プリミティブ
 
 ```
-exact(name)           -- 文字列完全一致ノード（ExactNode の核）
-clone(opt, name)      -- opt の構造コピー（新しい name、新しい Ref、フィルタは共有）
-link(opt, val_source) -- opt.val_ref = val_source.val_ref（Ref 共有）
-or([opts])            -- 最長一致（既存の make_or_node）
+clone(opt, name)      -- アイデンティティ: opt の構造コピー（新 name、新 Ref、フィルタ参照共有）
+link(opt, val_source) -- 値: opt.val_ref = val_source.val_ref（Ref 共有）
+adjust(opt,           -- 振る舞い: フィルタチェーンの前後に挿入
+  before_pre?, after_pre?,
+  before_post?, after_post?,
+  before_accum?, after_accum?)
 ```
 
-### 合成コンビネータ
+各プリミティブが管理する関心事:
 
-```
-alias(opt, name) = link(clone(opt, name), val_source=opt)
-  // clone で独立ノード作り、link で値を共有
+| プリミティブ | 関心事 | 説明 |
+|-------------|--------|------|
+| `clone` | アイデンティティ | 新しい名前、新しい Ref を持つ独立コピー |
+| `link` | 値 | 書き込み先の Ref を別の opt と共有 |
+| `adjust` | 振る舞い | pre/post/accum フィルタの前後にフィルタを挿入 |
 
-aliases(opt, names) = or(names.map(n => alias(opt, n)))
-  // 複数別名の一括展開。既存の aliases パラメータのシュガー
+3 つは完全に直交する。どの組み合わせも意味を持つ。
 
-proxy(opt, name, deprecated?, ...) = alias + 介入フック
-  // alias と同様だが commit を wrap して副作用（警告等）を差し込める
-```
+### 合成パターン
 
-### alias: 汎用プリミティブコンビネータ
+| パターン | 式 | アイデンティティ | 値 | 振る舞い |
+|---------|-----|:---:|:---:|:---:|
+| alias | `link(clone(opt, name), opt)` | 新 | 共有 | 同じ |
+| variation | `adjust(alias(opt, name), ...)` | 新 | 共有 | 変更 |
+| derived | `adjust(clone(opt, name), ...)` | 新 | 独立 | 変更 |
+| stricter | `adjust(opt, after_post=...)` | 同一 | 同一 | 変更 |
+| deprecated | `adjust(alias(opt, name), before_accum=record_deprecated)` | 新 | 共有 | 記録追加 |
 
-`alias` を opt / cmd / positional を問わず使える **Ref 共有コンビネータ** として導入する。
+### alias: 汎用別名コンビネータ
+
+`alias` = `link(clone(opt, name), opt)` — clone で独立ノードを作り、link で値を共有する。
+
+opt / cmd / positional を問わず使える。返り値は `Opt[T]`（値は target と共有、is_set は独立）。
 
 ```moonbit
 // オプションの別名
 let verbose = p.flag(name="verbose")
-p.alias("--verb", verbose)
+let verb = p.alias("--verb", verbose)
 
-// サブコマンドの別名
+// サブコマンドの別名（子パーサの setup を共有）
 let status = p.cmd(name="status", setup~)
-p.alias("st", status)
+let st = p.alias("st", status)
 
 // positional（後勝ちパターン等、汎用的に使える）
 p.serial(setup=fn(sub) {
@@ -81,25 +97,72 @@ p.serial(setup=fn(sub) {
 })
 ```
 
-**`alias` = clone + link。** target の構造をコピーし、値の書き込み先を target の Ref に統合する。
+### adjust: 振る舞い調整コンビネータ
 
-### proxy: 介入可能なラッパーコンビネータ
+フィルタチェーンの前後にフィルタを挿入する。alias なしで単独使用も可能:
 
-行動の違い（deprecated 警告、使用検知、変換等）が必要な場合は `proxy` を使う。
+```moonbit
+// 既存 opt に検証を追加
+let stricter = p.adjust(port, after_post=Filter::validate(fn(v) {
+  if v > 1024 { () } else { raise parse_error("port must be > 1024") }
+}))
+
+// clone して独立した派生を作る
+let derived = p.adjust(p.clone(opt, "new-opt"), before_pre=some_transform)
+```
+
+### variation = alias + adjust
+
+Variation を「alias + adjust」として再定義する。LongVariation（Toggle/True/False/Reset/Unset）は
+adjust の引数プリセット定数でしかない:
+
+```
+variation(opt, name, v) = adjust(alias(opt, name), ...v.adjustments)
+
+// LongVariation プリセット
+Toggle = { before_accum = fn(cur) { !cur } }
+True   = { before_accum = fn(_) { true } }
+False  = { before_accum = fn(_) { false } }
+Reset  = { before_accum = fn(_) { default } }
+Unset  = { before_accum = fn(_) { default }, was_set_override = false }
+```
+
+Variation は long に閉じない。任意の名前パターンに対して振る舞い変更を適用できる汎用概念になる。
+
+### deprecated = adjust（記録パターン）
+
+deprecated は独立コンビネータではなく、adjust の一パターン。
+トップパーサのスコープに deprecated 記録ストレージを持たせ、
+adjust の before_accum で使用記録を収集する:
+
+```
+deprecated(opt, name, msg) = adjust(alias(opt, name),
+  before_accum = fn(ctx) {
+    parser.record_deprecated(opt, msg)  // ストレージに記録
+    ctx  // ReduceAction はそのまま通す
+  }
+)
+```
+
+パース中は記録のみ、副作用なし。パース後に呼び出し側が deprecated 記録を確認して警告表示する:
 
 ```moonbit
 let verbose = p.flag(name="verbose")
-let old = p.proxy("--old-verbose", verbose, deprecated="Use --verbose")
+let old = p.deprecated("--old-verbose", verbose, msg="Use --verbose")
+
+let result = try! p.parse(args)
+// パース後: deprecated 記録を確認
+for entry in p.deprecated_warnings() {
+  eprintln("warning: " + entry.name + " is deprecated. " + entry.msg)
+}
 ```
 
-proxy は alias と同様に Ref を共有するが、commit を wrap して介入ポイントを持つ:
-
-- `--old-verbose` 使用時: `old.is_set=true`, `verbose.is_set=true`（+ deprecated 警告）
-- `--verbose` 使用時: `old.is_set=false`, `verbose.is_set=true`
+proxy という概念は不要。deprecated は adjust のプリセット + パーサの記録ストレージ。
 
 ### aliases パラメータ: alias のシュガー
 
 既存の `aliases: Array[String]` は内部で `alias()` に展開するシュガーとして残す。
+`aliases` シュガーは `"--"` 自動付加を維持（既存互換）、`p.alias()` は生文字列。
 
 ```moonbit
 // これは
@@ -132,7 +195,7 @@ short combining との干渉: `-Xcc` は combine node の対象になるが、
 `-X` ショートが未登録なら Reject → ExactNode 側が勝つ。
 両方登録されていれば ambiguous error（正しい挙動）。
 
-## long / short / variation の分解
+## long / short の分解
 
 ### long の構築
 
@@ -140,30 +203,10 @@ short combining との干渉: `-Xcc` は combine node の対象になるが、
 long(base, variations) = or([
   require_prefix(base, "--"),              // --name
   ...variations.map(v =>
-    variation(require_prefix(base, "--{v.prefix}-"), v)
+    variation(base, "--{v.prefix}-{name}", v)
   )                                         // --no-name, --toggle-name 等
 ])
 ```
-
-`require_prefix(opt, prefix)` は opt の pre フィルタにプレフィックスチェックを合成する。
-`"--"` 付加はこのプリミティブで実現され、暗黙変換が消える。
-
-### variation の再定義
-
-Variation を「alias + フィルタ合成」として再定義する。
-clone して pre/post/accum を variation 固有の振る舞いで wrap する:
-
-```
-variation(opt, v) = alias(opt) + フィルタ合成
-  // clone して振る舞いを差し替え
-```
-
-各 Variation の振る舞い:
-- Toggle → `accum = fn(cur) { !cur }`
-- True → `accum = fn(_) { true }`
-- False → `accum = fn(_) { false }`
-- Reset → `accum = fn(_) { default }`
-- Unset → `accum = fn(_) { default }` + `was_set = false`
 
 ### short の構築
 
@@ -173,15 +216,11 @@ shorts(base, chars) = chars.map(c => short(base, c))
 ```
 
 結合ショート（`-abc` → `-a -b -c`）と値吸着（`-Xcc` → `-X` + `cc`）は
-per-node ではなく **tokenizer 層** の横断的関心事として分離される。
+per-node ではなく **tokenizer 層** の横断的関心事。
 
 ```
-tokenizer 層（横断的）:
-  - short_combine: -abc → [-a, -b, -c] or [-a, bc(value)]
-  - eq_split: --foo=bar → [--foo, bar]
-
-node 層（per-node）:
-  - exact, clone, link, or, require_prefix, variation
+tokenizer 層（横断的）:  short_combine, eq_split
+node 層（per-node）:     exact, clone, link, adjust, or
 ```
 
 ### 最終合体
@@ -198,13 +237,7 @@ option(name, shorts, variations) = {
 
 ## clone とフィルタの純粋性制約
 
-### 問題
-
-clone はフィルタ（pre/post/accum）の振る舞いもコピーしたい。
-しかし FilterChain はクロージャであり、内部状態（Ref 等）をキャプチャしていると
-clone 間で状態が漏洩する。
-
-### 解決: フィルタは pure であること
+### 制約: フィルタは pure であること
 
 kuu の設計原則として **フィルタ（pre/post/accum）は純粋関数** とする。
 
@@ -212,75 +245,87 @@ kuu の設計原則として **フィルタ（pre/post/accum）は純粋関数**
 - フィルタは入力から出力への変換のみ。内部状態を持たない
 - clone はフィルタのクロージャ参照をそのまま共有しても安全
 
-この制約は DR-027（core は純粋関数）の自然な帰結でもある。
+この制約は DR-027（core は純粋関数）の自然な帰結。
 
 ### 現状の整合性
 
 現在のビルトインフィルタ（string parse, int parse, choices validation, trim, one_of 等）は
-全て pure。状態を持つのは:
-- `Ref[T]` (値セル) → clone 時に新規作成、link で明示的に共有
-- `was_set` (使用検知) → per-node で新規作成
-- `pending` (reducer 用) → per-node で新規作成
-
-フィルタ自体が状態を持つケースは存在しない。
+全て pure。状態を持つのは Ref[T] / was_set / pending のみで、全て per-node。
 
 ### 将来的な型レベルマーキング（検討）
 
-必要になった場合、FilterChain を Pure/Stateful でマーキングする:
-
-```moonbit
-enum Filter[A, B] {
-  Pure((A) -> B raise ParseError)       // clone 安全
-  Stateful((A) -> B raise ParseError)   // clone 時にエラー
-}
-```
-
-現時点では制約として文書化し、Pure をデフォルトとする。
-Stateful な振る舞いが必要な場合は reducer/accumulator パターンに誘導する。
+必要になった場合、FilterChain を Pure/Stateful でマーキングする。
+現時点では制約として文書化し、Stateful な振る舞いは reducer/accumulator に誘導する。
 
 ## 循環参照ガード
 
-alias / proxy は target の Ref chain を辿る。循環参照が発生すると無限ループになる。
+alias は target の Ref chain を辿る。循環参照が発生すると無限ループになる。
 
 基本的な alias（target が既に存在する必要がある）では直接循環は構造的に起きにくいが、
 custom reducer、append、グループ化等でユーザーが自由に Ref を触れる以上、
 間接的なループ経路は予測しきれない。
 
-**登録時に target chain を辿り、循環を検出して ParseError にする:**
+**登録時に target chain を辿り、循環を検出して ParseError にする。**
 
-```
-alias(A, B)
-  B の chain: B → C → D → 終端  ✓
-  B の chain: B → C → A → 循環  ✗ ParseError("circular alias")
-```
+## 設計判断の記録
 
-深さ制限による打ち切りでもよい。
+### alias の返り値: Opt[T]
+
+alias は `Opt[T]` を返す。値は target と共有するが is_set は独立。
+alias 側の使用検知も可能。
+
+### aliases シュガーの `"--"` 自動付加: 維持
+
+`aliases=["verb"]` → `"--verb"` の既存挙動を維持。
+`p.alias("-Xcc", opt)` は生文字列。2つの API で挙動が異なるが、
+シュガー（ロングオプション名の略記）とプリミティブ（任意文字列）の位置づけの違いとして自然。
+
+### deprecated: adjust パターン + パーサ記録ストレージ
+
+独立コンビネータ（proxy）ではなく、adjust の before_accum で使用を記録し、
+パーサのストレージに蓄積する方式。パース中は副作用なし、パース後に確認・警告。
+
+### cmd alias: 初回スコープに含める
+
+opt と cmd の両方で alias を使えるようにする。
+cmd の場合は clone ではなく同一 setup の共有で実現。
 
 ## 設計の全体像
 
-### プリミティブ
+### 直交プリミティブ
 
-| プリミティブ | 役割 |
-|-------------|------|
-| `exact(name)` | 文字列完全一致ノード |
-| `clone(opt, name)` | 構造コピー（新 Ref、フィルタ参照共有） |
-| `link(opt, val_source)` | Ref 共有（値の書き込み先を統合） |
-| `or([opts])` | 最長一致統合（既存 make_or_node） |
+| プリミティブ | 関心事 | 役割 |
+|-------------|--------|------|
+| `clone(opt, name)` | アイデンティティ | 構造コピー（新 Ref、フィルタ参照共有） |
+| `link(opt, val_source)` | 値 | Ref 共有（書き込み先を統合） |
+| `adjust(opt, ...)` | 振る舞い | フィルタチェーンの前後に挿入 |
+
+補助: `exact(name)` — 文字列完全一致ノード、`or([opts])` — 最長一致統合（既存）
 
 ### 合成コンビネータ
 
 | コンビネータ | 定義 | 用途 |
 |-------------|------|------|
-| `alias(opt, name)` | clone + link | 汎用別名（opt/cmd/positional 問わず） |
-| `proxy(opt, name, ...)` | alias + 介入フック | deprecated 警告、使用検知 |
-| `variation(opt, v)` | alias + フィルタ合成 | --no-xxx, --toggle-xxx 等 |
-| `require_prefix(opt, p)` | pre フィルタ合成 | `"--"` / `"-"` 付加 |
+| `alias(opt, name)` | link(clone(opt, name), opt) | 汎用別名（opt/cmd/positional 問わず） |
+| `adjust(opt, ...)` | フィルタ挿入 | 振る舞い変更（alias なしでも単独使用可） |
+| `variation(opt, name, v)` | adjust(alias(opt, name), ...) | 振る舞い変更付き別名 |
+| `deprecated(opt, name, msg)` | adjust(alias(...), before_accum=record) | 非推奨別名（記録パターン） |
+
+### 合成パターンの直交性
+
+| パターン | 式 | アイデンティティ | 値 | 振る舞い |
+|---------|-----|:---:|:---:|:---:|
+| alias | `link(clone(opt, name), opt)` | 新 | 共有 | 同じ |
+| variation | `adjust(alias(opt, name), ...)` | 新 | 共有 | 変更 |
+| derived | `adjust(clone(opt, name), ...)` | 新 | 独立 | 変更 |
+| stricter | `adjust(opt, after_post=...)` | 同一 | 同一 | 変更 |
+| deprecated | `adjust(alias(opt, name), before_accum=record)` | 新 | 共有 | 記録追加 |
 
 ### シュガー
 
 | シュガー | 展開先 |
 |---------|--------|
-| `aliases=["x","y"]` | `alias("x", opt)`, `alias("y", opt)` |
+| `aliases=["x","y"]` | `alias("--x", opt)`, `alias("--y", opt)` |
 | `shorts="vV"` | `short(opt, 'v')`, `short(opt, 'V')` |
 | `variation_toggle="no"` | `variations.push(Toggle("no"))` |
 
@@ -288,22 +333,23 @@ alias(A, B)
 
 ```
 tokenizer 層:  short_combine, eq_split（横断的前処理）
-node 層:       exact, clone, link, or, require_prefix, variation（per-node）
-convention 層: alias, proxy, long, short（合成パターン）
+node 層:       exact, clone, link, adjust, or（per-node プリミティブ）
+convention 層: alias, variation, deprecated, long, short（合成パターン）
 sugar 層:      flag, string_opt, cmd 等（ユーザー API）
 ```
 
 ## 解消される設計課題
 
 - ~~単一ダッシュロングオプション未対応~~ → alias で任意名登録可能
-- ~~aliases に区別がつけられない~~ → proxy で deprecated 等を表現
+- ~~aliases に区別がつけられない~~ → adjust + deprecated パターンで表現
 - ~~name / aliases の偽の区別~~ → alias プリミティブに統一
+- ~~Variation が long 専用~~ → adjust プリミティブにより汎用化
+- ~~proxy が独立概念~~ → adjust に吸収。deprecated は adjust のプリセット
 
 ## 未決事項
 
-- `proxy` の具体的な API シグネチャ（deprecated 以外にどんな介入が必要か）
-- `alias` が `Opt[T]` を返すか `Unit` を返すか（get する必要があるか）
 - positional alias の実用的なユースケースの検証
-- `aliases` シュガーで `"--"` 自動付加を残すか、呼び出し側が明示するか
 - tokenizer 層と node 層の境界の詳細設計
 - Pure/Stateful の型レベルマーキングの要否判断
+- adjust の before/after の型シグネチャ詳細
+- deprecated 記録ストレージの Parser 上の具体的な構造
