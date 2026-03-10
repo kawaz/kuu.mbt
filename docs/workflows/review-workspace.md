@@ -40,11 +40,11 @@ jj new -m "docs: yyy"
 
 以下を全て満たす場合、ユーザー確認なしで即マージしてよい:
 
-1. **変更が docs/ 配下のみ**（DR追加、DESIGN.md追記、ワークフロー更新等）
+1. **変更がドキュメント・設定のみ**（docs/, .claude/rules/, .claude/commands/ 等）
 2. **コード変更を含まない**（src/, examples/ のコード修正なし）
 3. **main@ との conflict がない**（jj が conflict を報告しない）
 
-review ワークスペースは原則ドキュメント専用なので、通常は常にこの条件を満たす。
+review ワークスペースは原則ドキュメント・設定専用なので、通常は常にこの条件を満たす。
 
 #### コード変更を含む場合
 
@@ -75,6 +75,8 @@ jj new main@
 - DESIGN.md への知見追記
 - example から得られた制限事項・改善点
 - WASM bridge の制限整理
+- .claude/rules/ のルール追加・修正
+- .claude/commands/ のスラッシュコマンド追加・修正
 
 ## 進捗確認のパターン
 
