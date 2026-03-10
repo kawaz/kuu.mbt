@@ -4725,8 +4725,8 @@ test "alias: append alias shares array" {
   let inc = p.append_string(name="include")
   let ii = p.alias("-I", inc)
   ignore(p.parse(["--include", "a", "-I", "b"]))
-  inspect(inc.get(), content="Some([a, b])")
-  inspect(ii.get(), content="Some([a, b])")
+  inspect(inc.get(), content="Some([\"a\", \"b\"])")
+  inspect(ii.get(), content="Some([\"a\", \"b\"])")
 }
 
 ///|

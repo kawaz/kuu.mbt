@@ -143,6 +143,87 @@ fn[T] Parser::register_option(
 }
 
 ///|
+/// 汎用別名コンビネータ: target の値を共有する新しい ExactNode を name で登録する。
+/// name は生文字列（"--" の自動付加なし）。opt / cmd / append 問わず使える。
+pub fn[T] Parser::alias(
+  self : Parser,
+  name : String,
+  target : Opt[T],
+) -> Opt[T] {
+  let source = self.alias_sources.get(target.id)
+  match source {
+    None => {
+      self.duplicate_errors.push(
+        "alias target not found: " + target.name +
+        " (id=" +
+        target.id.to_string() +
+        ")",
+      )
+      // Return a dummy Opt that will never be used (parse will fail due to duplicate_errors)
+      let id = (self.next_id)()
+      {
+        id,
+        name,
+        getter: target.getter,
+        parsed: target.parsed,
+        is_set: fn() { false },
+      }
+    }
+    Some(src) => {
+      // Check for duplicate names
+      if self.registered_names.contains(name) {
+        self.duplicate_errors.push("duplicate option name: " + name)
+      }
+      self.registered_names[name] = true
+      // Create new ExactNode via factory
+      let node = (src.make_node)(name)
+      let alias_was_set : Ref[Bool] = { val: false }
+      let target_was_set = src.target_was_set
+      // Wrap: on commit, set both alias and target was_set
+      let orig_try_reduce = node.try_reduce
+      let orig_reset = node.reset
+      let wrapped = ExactNode::{
+        name: node.name,
+        needs_value: node.needs_value,
+        try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+          match orig_try_reduce(args, pos) {
+            Accept(consumed~, commit~) =>
+              if consumed > 0 {
+                Accept(consumed~, commit=fn() {
+                  commit()
+                  alias_was_set.val = true
+                  target_was_set.val = true
+                })
+              } else {
+                Accept(consumed~, commit~)
+              }
+            other => other
+          }
+        },
+        reset: fn() {
+          orig_reset()
+          alias_was_set.val = false
+        },
+      }
+      self.nodes.push(wrapped)
+      // Store for chaining: propagate root factory and root was_set
+      let id = (self.next_id)()
+      self.alias_sources[id] = AliasSource::{
+        make_node: src.make_node,
+        target_was_set: target_was_set,
+      }
+      {
+        id,
+        name,
+        getter: target.getter,
+        parsed: target.parsed,
+        is_set: fn() { alias_was_set.val },
+      }
+    }
+  }
+}
+
+///|
 /// コンビネータの共通パターン: メイン名 → aliases → short の展開 + ノード登録
 fn Parser::expand_and_register(
   self : Parser,
