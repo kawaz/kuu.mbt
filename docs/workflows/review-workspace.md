@@ -32,7 +32,9 @@ jj describe -m "docs: xxx"
 jj new -m "docs: yyy"
 ```
 
-### 3. main 側から review をマージ
+### 3. main 側から review をマージ（即実行）
+
+**ドキュメント変更は完了次第すぐ main にマージする。「次のセッションで」は忘れるリスクがある。**
 
 マージ直前に main@ が動いていないか確認。動いていたら `jj new @ main@` で取り込む。
 
