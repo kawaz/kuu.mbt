@@ -47,6 +47,12 @@ pub(all) struct PositionalEntry {
 }
 
 ///|
+pub(all) struct AliasSource {
+  make_node : (String) -> ExactNode
+  target_was_set : Ref[Bool]
+}
+
+///|
 pub(all) struct Parser {
   next_id : () -> Int
   nodes : Array[ExactNode]
@@ -61,6 +67,7 @@ pub(all) struct Parser {
   registered_names : Map[String, Bool]
   duplicate_errors : Array[String]
   force_unclaimed : Array[String]
+  alias_sources : Map[Int, AliasSource]
 }
 
 ///|

@@ -29,6 +29,7 @@ pub fn Parser::cmd(
     registered_names: {},
     duplicate_errors: [],
     force_unclaimed: [],
+    alias_sources: Map::new(),
   }
   // 親の global_nodes の名前を子の registered_names に登録（衝突検知のため）
   for gnode in self.global_nodes {
@@ -80,6 +81,10 @@ pub fn Parser::cmd(
   }
   for cmd in all_names {
     self.nodes.push(make_cmd_node(cmd))
+  }
+  self.alias_sources[id] = AliasSource::{
+    make_node: make_cmd_node,
+    target_was_set: was_set,
   }
   self.metas.push(OptMeta::{
     kind: Command,

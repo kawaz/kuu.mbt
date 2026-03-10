@@ -72,6 +72,7 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     registered_names: {},
     duplicate_errors: [],
     force_unclaimed: [],
+    alias_sources: Map::new(),
   }
   if dashdash {
     p.install_separator_node()
@@ -134,6 +135,10 @@ fn[T] Parser::register_option(
     variation_names: var_names,
     hidden,
   })
+  self.alias_sources[id] = AliasSource::{
+    make_node: make_main_node,
+    target_was_set: was_set,
+  }
   { id, name: "--" + name, getter, parsed: self.parsed, is_set: fn() { was_set.val } }
 }
 

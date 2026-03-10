@@ -4589,3 +4589,164 @@ test "OC/P: typo hint no match for distant name" {
     _ => fail("expected error")
   }
 }
+
+// ============================================================
+// alias コンビネータ
+// ============================================================
+
+///|
+test "alias: flag alias shares value" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let verb = p.alias("--verb", verbose)
+  ignore(p.parse(["--verb"]))
+  // alias 経由で値が共有される
+  inspect(verbose.get(), content="Some(true)")
+  inspect(verb.get(), content="Some(true)")
+}
+
+///|
+test "alias: flag alias is_set independence" {
+  // alias 使用時は alias.is_set=true, target.is_set=true（両方セット）
+  // alias 未使用時は alias.is_set=false
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let verb = p.alias("--verb", verbose)
+  ignore(p.parse(["--verbose"]))
+  // target 使用: target.is_set=true, alias.is_set=false
+  inspect((verbose.is_set)(), content="true")
+  inspect((verb.is_set)(), content="false")
+}
+
+///|
+test "alias: flag alias sets both is_set" {
+  // alias 経由で使用した場合、alias と target の両方の is_set が true になる
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let verb = p.alias("--verb", verbose)
+  ignore(p.parse(["--verb"]))
+  inspect((verbose.is_set)(), content="true")
+  inspect((verb.is_set)(), content="true")
+}
+
+///|
+test "alias: string_opt alias shares value" {
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost")
+  let h = p.alias("--h", host)
+  ignore(p.parse(["--h", "example.com"]))
+  inspect(
+    host.get(),
+    content=(
+      #|Some("example.com")
+    ),
+  )
+  inspect(
+    h.get(),
+    content=(
+      #|Some("example.com")
+    ),
+  )
+}
+
+///|
+test "alias: single-dash long option" {
+  // -Xcc のような単一ダッシュオプションを alias で登録
+  let p = Parser::new()
+  let compiler = p.string_opt(name="compiler", default="")
+  let xcc = p.alias("-Xcc", compiler)
+  ignore(p.parse(["-Xcc", "gcc"]))
+  inspect(
+    compiler.get(),
+    content=(
+      #|Some("gcc")
+    ),
+  )
+  inspect((xcc.is_set)(), content="true")
+  inspect((compiler.is_set)(), content="true")
+}
+
+///|
+test "alias: duplicate name detected" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  // --verbose は既に登録されているので重複
+  ignore(p.alias("--verbose", verbose))
+  let result : Result[_, _] = try? p.parse([])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "alias: cmd alias shares child parser" {
+  let p = Parser::new()
+  let status = p.cmd(name="status", setup=fn(child) {
+    ignore(child.flag(name="short"))
+  })
+  let st = p.alias("st", status)
+  ignore(p.parse(["st", "--short"]))
+  inspect((status.is_set)(), content="true")
+  inspect((st.is_set)(), content="true")
+  // cmd alias でも同一子パーサが使われる
+  let cmd_result = status.get().unwrap()
+  inspect(cmd_result.name, content="status")
+}
+
+///|
+test "alias: chained alias (alias of alias)" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let verb = p.alias("--verb", verbose)
+  let v = p.alias("--v", verb)
+  ignore(p.parse(["--v"]))
+  // 全ての alias と target の値が共有される
+  inspect(verbose.get(), content="Some(true)")
+  inspect(verb.get(), content="Some(true)")
+  inspect(v.get(), content="Some(true)")
+  // is_set: v と verbose は true（alias 経由で target も true）
+  // verb は直接使っていないので false
+  inspect((verbose.is_set)(), content="true")
+  inspect((verb.is_set)(), content="false")
+  inspect((v.is_set)(), content="true")
+}
+
+///|
+test "alias: int_opt alias shares value" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=8080)
+  let pp = p.alias("-p", port)
+  ignore(p.parse(["-p", "3000"]))
+  inspect(port.get(), content="Some(3000)")
+  inspect(pp.get(), content="Some(3000)")
+}
+
+///|
+test "alias: append alias shares array" {
+  let p = Parser::new()
+  let inc = p.append_string(name="include")
+  let ii = p.alias("-I", inc)
+  ignore(p.parse(["--include", "a", "-I", "b"]))
+  inspect(inc.get(), content="Some([a, b])")
+  inspect(ii.get(), content="Some([a, b])")
+}
+
+///|
+test "alias: unused alias default value" {
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost")
+  let h = p.alias("--h", host)
+  ignore(p.parse([]))
+  inspect(
+    host.get(),
+    content=(
+      #|Some("localhost")
+    ),
+  )
+  inspect(
+    h.get(),
+    content=(
+      #|Some("localhost")
+    ),
+  )
+  inspect((host.is_set)(), content="false")
+  inspect((h.is_set)(), content="false")
+}
