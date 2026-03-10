@@ -1,0 +1,17 @@
+# mygcc example — gcc-like CLI argument parser demo
+
+# Run the example
+default:
+    moon run examples/20260309-gcc
+
+# Check for compilation errors
+check:
+    moon check --deny-warn
+
+# Run all tests
+test:
+    moon test
+
+# Format code
+fmt:
+    moon fmt

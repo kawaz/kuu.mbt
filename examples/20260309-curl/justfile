@@ -1,0 +1,21 @@
+# curl CLI Parser Example — kuu MoonBit
+
+default: check test
+
+check:
+    moon check --deny-warn
+
+test:
+    moon test
+
+test-update:
+    moon test --update
+
+run:
+    moon run examples/20260309-curl
+
+fmt:
+    moon fmt
+
+clean:
+    moon clean
