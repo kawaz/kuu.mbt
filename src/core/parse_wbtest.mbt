@@ -4952,3 +4952,327 @@ test "H-3: cmd reset restores child parser state" {
   // reset を直接呼べないため、この状態確認のみでOK
   // H-3 の修正は reset 関数に child の状態復元を追加すること
 }
+
+// ============================================================
+// H-4: ParseResult::as_list / ParseResult::at テスト
+// ============================================================
+
+///|
+test "H-4: as_list returns list for List_ variant" {
+  // List_ バリアントの ParseResult で as_list() がリストを返すこと
+  let p = Parser::new()
+  ignore(p.parse([]))
+  let inner1 : ParseResult = { kind: One, parser: p }
+  let inner2 : ParseResult = { kind: One, parser: p }
+  let list_result : ParseResult = { kind: List_([inner1, inner2]), parser: p }
+  inspect(list_result.as_list() is Some(_), content="true")
+  inspect(list_result.as_list().unwrap().length(), content="2")
+}
+
+///|
+test "H-4: as_list returns None for One variant" {
+  let p = Parser::new()
+  ignore(p.parse([]))
+  let one_result : ParseResult = { kind: One, parser: p }
+  inspect(one_result.as_list() is None, content="true")
+}
+
+///|
+test "H-4: as_list returns None for Map_ variant" {
+  let p = Parser::new()
+  let sub = p.sub(name="serve", dashdash=false)
+  ignore(sub.flag(name="short"))
+  let result = p.parse(["serve"])
+  // result.kind is Map_ (has children)
+  inspect(result.as_list() is None, content="true")
+}
+
+///|
+test "H-4: at returns element for valid index" {
+  let p = Parser::new()
+  ignore(p.parse([]))
+  let inner0 : ParseResult = { kind: One, parser: p }
+  let inner1 : ParseResult = { kind: One, parser: p }
+  let inner2 : ParseResult = { kind: One, parser: p }
+  let list_result : ParseResult = {
+    kind: List_([inner0, inner1, inner2]),
+    parser: p,
+  }
+  inspect(list_result.at(0) is Some(_), content="true")
+  inspect(list_result.at(1) is Some(_), content="true")
+  inspect(list_result.at(2) is Some(_), content="true")
+}
+
+///|
+test "H-4: at returns None for out-of-bounds index" {
+  let p = Parser::new()
+  ignore(p.parse([]))
+  let inner : ParseResult = { kind: One, parser: p }
+  let list_result : ParseResult = { kind: List_([inner]), parser: p }
+  inspect(list_result.at(1) is None, content="true")
+  inspect(list_result.at(-1) is None, content="true")
+  inspect(list_result.at(100) is None, content="true")
+}
+
+///|
+test "H-4: at returns None for non-List_ variant" {
+  let p = Parser::new()
+  ignore(p.parse([]))
+  let one_result : ParseResult = { kind: One, parser: p }
+  inspect(one_result.at(0) is None, content="true")
+}
+
+///|
+test "H-4: at returns None for empty List_" {
+  let p = Parser::new()
+  ignore(p.parse([]))
+  let empty_list : ParseResult = { kind: List_([]), parser: p }
+  inspect(empty_list.at(0) is None, content="true")
+}
+
+// ============================================================
+// H-5: cmd/sub の aliases パラメータテスト
+// ============================================================
+
+///|
+test "H-5: cmd aliases basic" {
+  // p.cmd(name="serve", aliases=["s"]) で "s" がコマンドとして動作すること
+  let p = Parser::new(dashdash=false)
+  let serve = p.cmd(name="serve", aliases=["s"], dashdash=false, setup=fn(child) {
+    ignore(child.flag(name="verbose"))
+  })
+  ignore(p.parse(["s"]))
+  inspect((serve.is_set)(), content="true")
+  inspect(serve.get().unwrap().name, content="serve")
+}
+
+///|
+test "H-5: cmd aliases primary name still works" {
+  let p = Parser::new(dashdash=false)
+  let serve = p.cmd(name="serve", aliases=["s"], dashdash=false, setup=fn(child) {
+    ignore(child.flag(name="verbose"))
+  })
+  ignore(p.parse(["serve"]))
+  inspect((serve.is_set)(), content="true")
+  inspect(serve.get().unwrap().name, content="serve")
+}
+
+///|
+test "H-5: cmd alias parses child options correctly" {
+  // alias 経由でも子パーサのオプションが正しくパースされること
+  let p = Parser::new(dashdash=false)
+  let verbose_ref : Ref[Opt[Bool]?] = { val: None }
+  let _serve = p.cmd(
+    name="serve", aliases=["s"], dashdash=false,
+    setup=fn(child) { verbose_ref.val = Some(child.flag(name="verbose")) },
+  )
+  ignore(p.parse(["s", "--verbose"]))
+  inspect(verbose_ref.val.unwrap().get(), content="Some(true)")
+}
+
+///|
+test "H-5: sub aliases basic" {
+  // p.sub(name="serve", aliases=["s"]) で "s" がコマンドとして動作すること
+  let p = Parser::new(dashdash=false)
+  let serve = p.sub(name="serve", aliases=["s"], dashdash=false)
+  let verbose = serve.flag(name="verbose")
+  ignore(p.parse(["s", "--verbose"]))
+  inspect(verbose.get(), content="Some(true)")
+}
+
+///|
+test "H-5: sub aliases primary name works" {
+  let p = Parser::new(dashdash=false)
+  let serve = p.sub(name="serve", aliases=["s"], dashdash=false)
+  let verbose = serve.flag(name="verbose")
+  ignore(p.parse(["serve", "--verbose"]))
+  inspect(verbose.get(), content="Some(true)")
+}
+
+///|
+test "H-5: sub alias parses child options correctly" {
+  // alias 経由でも子パーサの string_opt がパースされること
+  let p = Parser::new(dashdash=false)
+  let serve = p.sub(name="serve", aliases=["s"], dashdash=false)
+  let host = serve.string_opt(name="host", default="localhost")
+  ignore(p.parse(["s", "--host", "example.com"]))
+  inspect(
+    host.get(),
+    content=(
+      #|Some("example.com")
+    ),
+  )
+}
+
+///|
+test "H-5: cmd multiple aliases" {
+  let p = Parser::new(dashdash=false)
+  let serve = p.cmd(
+    name="serve", aliases=["s", "sv", "run"], dashdash=false,
+    setup=fn(_child) {  },
+  )
+  // 最短の alias で起動
+  ignore(p.parse(["sv"]))
+  inspect((serve.is_set)(), content="true")
+  inspect(serve.get().unwrap().name, content="serve")
+}
+
+// ============================================================
+// M-17: custom_append の variation テスト
+// ============================================================
+
+///|
+test "M-17: custom_append Reset variation clears array" {
+  // custom_append + Reset variation で配列がクリアされること
+  let p = Parser::new()
+  let tags = p.custom_append(
+    name="tag", pre=Filter::map(fn(s) { s }),
+    variations=[Reset("no")],
+  )
+  ignore(p.parse(["--tag", "a", "--tag", "b", "--no-tag"]))
+  inspect((tags.getter)(), content="[]")
+  inspect((tags.is_set)(), content="true")
+}
+
+///|
+test "M-17: custom_append Reset then re-add" {
+  // Reset 後に再度追加すると新しい値のみ残る
+  let p = Parser::new()
+  let tags = p.custom_append(
+    name="tag", pre=Filter::map(fn(s) { s }),
+    variations=[Reset("no")],
+  )
+  ignore(p.parse(["--tag", "a", "--no-tag", "--tag", "b"]))
+  inspect((tags.getter)(), content="[\"b\"]")
+}
+
+///|
+test "M-17: custom_append Unset variation clears and unsets" {
+  // Unset は配列クリア + is_set=false
+  let p = Parser::new()
+  let tags = p.custom_append(
+    name="tag", pre=Filter::map(fn(s) { s }),
+    variations=[Unset("un")],
+  )
+  ignore(p.parse(["--tag", "a", "--tag", "b", "--un-tag"]))
+  inspect((tags.getter)(), content="[]")
+  inspect((tags.is_set)(), content="false")
+}
+
+// ============================================================
+// M-18: count の variation テスト (Toggle/True/False)
+// ============================================================
+
+///|
+test "M-18: count Toggle variation resets to 0" {
+  // count の Toggle variation はカウンタを 0 にリセットする
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", variations=[Toggle("no")])
+  ignore(p.parse(["--verbose", "--verbose", "--no-verbose"]))
+  inspect(p.get(verbose), content="Some(0)")
+  inspect((verbose.is_set)(), content="true")
+}
+
+///|
+test "M-18: count True variation resets to 0" {
+  // count の True variation もカウンタを 0 にリセットする（Bool 特有の True は count では Reset 相当）
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", variations=[True("force")])
+  ignore(p.parse(["--verbose", "--verbose", "--force-verbose"]))
+  inspect(p.get(verbose), content="Some(0)")
+  inspect((verbose.is_set)(), content="true")
+}
+
+///|
+test "M-18: count False variation resets to 0" {
+  // count の False variation もカウンタを 0 にリセットする（Bool 特有の False は count では Reset 相当）
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", variations=[False("off")])
+  ignore(p.parse(["--verbose", "--verbose", "--verbose", "--off-verbose"]))
+  inspect(p.get(verbose), content="Some(0)")
+  inspect((verbose.is_set)(), content="true")
+}
+
+///|
+test "M-18: count Toggle then re-count" {
+  // Toggle でリセット後に再カウントで新しいカウントのみ
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", variations=[Toggle("no")])
+  ignore(p.parse(["--verbose", "--verbose", "--no-verbose", "--verbose"]))
+  inspect(p.get(verbose), content="Some(1)")
+}
+
+///|
+test "M-18: count Unset variation resets and unsets" {
+  // Unset はカウンタリセット + is_set=false
+  let p = Parser::new()
+  let verbose = p.count(name="verbose", variations=[Unset("un")])
+  ignore(p.parse(["--verbose", "--verbose", "--un-verbose"]))
+  inspect(p.get(verbose), content="Some(0)")
+  inspect((verbose.is_set)(), content="false")
+}
+
+// ============================================================
+// M-21: int_opt の post フィルタバリデーションエラーテスト
+// ============================================================
+
+///|
+test "M-21: int_opt post validation error" {
+  // int_opt に post フィルタ (in_range) を渡して範囲外でエラー
+  let p = Parser::new()
+  let _ = p.int_opt(
+    name="port", default=8080,
+    post=Some(Filter::in_range(1, 65535)),
+  )
+  let result : Result[_, _] = try? p.parse(["--port", "0"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "M-21: int_opt post validation passes for valid value" {
+  let p = Parser::new()
+  let port = p.int_opt(
+    name="port", default=8080,
+    post=Some(Filter::in_range(1, 65535)),
+  )
+  ignore(p.parse(["--port", "3000"]))
+  inspect(p.get(port), content="Some(3000)")
+}
+
+///|
+test "M-21: int_opt post validation error message contains out of range" {
+  let p = Parser::new()
+  let _ = p.int_opt(
+    name="port", default=8080,
+    post=Some(Filter::in_range(1, 65535)),
+  )
+  let result : Result[ParseResult, ParseError] = try? p.parse(["--port", "99999"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("out of range"), content="true")
+    _ => abort("expected validation error")
+  }
+}
+
+///|
+test "M-21: int_opt post validation error on negative" {
+  let p = Parser::new()
+  let _ = p.int_opt(
+    name="port", default=8080,
+    post=Some(Filter::in_range(1, 65535)),
+  )
+  let result : Result[_, _] = try? p.parse(["--port", "-1"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "M-21: int_opt post default also validated" {
+  // default 値も post フィルタを通る。default=0 で in_range(1, 65535) はエラーになる
+  let p = Parser::new()
+  let _ = p.int_opt(
+    name="port", default=0,
+    post=Some(Filter::in_range(1, 65535)),
+  )
+  let result : Result[_, _] = try? p.parse([])
+  inspect(result is Err(_), content="true")
+}
