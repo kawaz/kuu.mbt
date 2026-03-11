@@ -49,6 +49,13 @@ pub fn Parser::cmd(
   for a in aliases {
     all_names.push(a)
   }
+  // Register command names in registered_names for duplicate detection (H-2 fix)
+  for cn in all_names {
+    if self.registered_names.contains(cn) {
+      self.duplicate_errors.push("duplicate command name: " + cn)
+    }
+    self.registered_names[cn] = true
+  }
   let make_cmd_node : (String) -> ExactNode = fn(match_name) {
     ExactNode::{
       name: match_name,
@@ -77,6 +84,9 @@ pub fn Parser::cmd(
       reset: fn() {
         cell.val = None
         was_set.val = false
+        // H-3 fix: reset child parser state when cmd loses OC competition
+        child.parsed.val = false
+        child.current_positional.val = 0
       },
     }
   }
