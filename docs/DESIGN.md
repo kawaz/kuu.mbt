@@ -75,19 +75,41 @@ pub fn[T] Lazy::resolve(self : Lazy[T]) -> T {
 Design rationale: `Lazy[T]` は即値と遅延評価を統一的に扱う。implicit_value のデフォルト値や
 choices + implicit の組み合わせで、パース時に初めて評価される値を表現するために使用される。
 
+### PositionalEntry — 位置パラメータエントリ【実装済み】
+
+```moonbit
+pub(all) struct PositionalEntry {
+  handler : (Array[String], Int) -> TryResult  // 位置パラメータハンドラ
+  is_rest : Bool                                // 可変長フラグ（true なら繰り返し消費）
+  greedy : Bool                                 // OC Phase で消費するか（DR-034）
+}
+```
+
+### AliasSource — alias 生成元情報【実装済み】
+
+```moonbit
+pub(all) struct AliasSource {
+  make_node : (String) -> ExactNode   // 新しい名前で ExactNode を生成するファクトリ
+  target_was_set : Ref[Bool]          // ターゲットの was_set 参照（チェーン alias で root まで辿る）
+  is_global : Bool                    // global ノードかどうか
+}
+```
+
+alias コンビネータが alias_sources に登録し、チェーン alias（alias の alias）の循環検出に使用。
+
 ### ExactNode フラットリスト + Positional 管理
 
 パーサは2種類のノードリストを保持する:
 
 - **nodes: Array[ExactNode]** — 名前付きオプション（`--verbose`, `--no-verbose` 等は個別の ExactNode）
-- **positionals: Array[(handler, is_rest)]** — 位置パラメータハンドラ。順番消費を `current_positional` インデックスで制御
+- **positionals: Array[PositionalEntry]** — 位置パラメータエントリ。順番消費を `current_positional` インデックスで制御
 
 各コンビネータ（flag, string_opt 等）は ExactNode を生成して `parser.nodes` に直接 push する。
 `opts([...])` ヘルパーは不要（各コンビネータが Parser メソッドとして直接登録するため）。
 
 - **名前付きオプション** — ExactNode として nodes に登録。`--verbose`, `--no-verbose`, エイリアス等は個別の ExactNode
-- **Positional** — positionals 配列のハンドラとして登録。`is_rest=false` なら消費後に次へ進む
-- **rest** — `is_rest=true` の Positional。同じハンドラが繰り返し消費される
+- **Positional** — PositionalEntry として positionals に登録。`is_rest=false` なら消費後に次へ進む。`greedy=true` なら OC Phase で消費（DR-034）
+- **rest** — `is_rest=true` の PositionalEntry。同じハンドラが繰り返し消費される
 - **global** — global_nodes にも登録され、子パーサに伝播
 
 Design rationale (DR-012): ExactNode が完全一致名を持つためツリー走査が不要。`--no-verbose` 等の Variation パターンは
@@ -766,6 +788,7 @@ pub(all) struct OptMeta {
   global : Bool            // global=true ならヘルプで "Global Options" セクションに表示
   shorts : Array[Char]     // ショートオプション（複数対応。例: ['v', 'V']）
   aliases : Array[String]  // エイリアス名のリスト
+  variation_names : Array[String]  // Variation パターンの名前リスト（ヘルプ表示用）
   hidden : Bool            // true ならヘルプに表示しない
 }
 ```
@@ -803,8 +826,7 @@ pub(all) struct Parser {
   next_id : () -> Int                    // ID 採番クロージャ（子パーサと共有）
   nodes : Array[ExactNode]              // ExactNode フラットリスト（名前付きオプション）
   global_nodes : Array[ExactNode]       // global=true のノード（子パーサに伝播）
-  positionals : Array[((Array[String], Int) -> TryResult, Bool)]
-                                         // 位置パラメータハンドラ + is_rest フラグ
+  positionals : Array[PositionalEntry]  // 位置パラメータエントリ（PositionalEntry 参照）
   current_positional : Ref[Int]          // 次に消費する positional のインデックス
   parsed : Ref[Bool]                     // パース済みフラグ（opt.get() で参照）
   children : Map[String, ParseResult]    // サブコマンド名 → 子 ParseResult
@@ -813,6 +835,8 @@ pub(all) struct Parser {
   post_hooks : Array[() -> Unit raise ParseError]  // パース後フック
   registered_names : Map[String, Bool]   // 重複検出用
   duplicate_errors : Array[String]       // 遅延エラーメッセージ
+  force_unclaimed : Array[String]       // 強制 unclaimed 引数（短結合の未消費残りなど）
+  alias_sources : Map[Int, AliasSource] // alias の生成元情報（循環検出・チェーン alias 用）
 }
 ```
 
