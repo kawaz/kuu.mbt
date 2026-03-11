@@ -5389,6 +5389,7 @@ test "R2-C2: deprecated Parser::get on unselected cmd returns None" {
 
 // === R2-C1: global=true の宣言順序非依存テスト ===
 
+///|
 test "R2-C1: global defined after cmd propagates to subcommand" {
   let p = Parser::new(dashdash=false)
   let _serve = p.cmd(name="serve", dashdash=false, setup=fn(_child) {  })
@@ -5398,6 +5399,7 @@ test "R2-C1: global defined after cmd propagates to subcommand" {
   inspect(verbose.get(), content="Some(true)")
 }
 
+///|
 test "R2-C1: global alias defined after cmd propagates" {
   let p = Parser::new(dashdash=false)
   let _serve = p.cmd(name="serve", dashdash=false, setup=fn(_child) {  })
@@ -5407,6 +5409,7 @@ test "R2-C1: global alias defined after cmd propagates" {
   inspect(verbose.get(), content="Some(true)")
 }
 
+///|
 test "R2-C1: multiple globals after cmd all propagate" {
   let p = Parser::new(dashdash=false)
   let _serve = p.cmd(name="serve", dashdash=false, setup=fn(_child) {  })
@@ -5415,6 +5418,18 @@ test "R2-C1: multiple globals after cmd all propagate" {
   ignore(p.parse(["serve", "--verbose", "--debug"]))
   inspect(verbose.get(), content="Some(true)")
   inspect(debug.get(), content="Some(true)")
+}
+
+///|
+test "R2-C1: global defined after nested cmd propagates to grandchild" {
+  let p = Parser::new(dashdash=false)
+  let _remote = p.cmd(name="remote", dashdash=false, setup=fn(remote) {
+    let _add = remote.cmd(name="add", dashdash=false, setup=fn(_add) {  })
+  })
+  // global を cmd の後に定義 — 孫 cmd にも遅延同期で伝播するか確認
+  let verbose = p.flag(name="verbose", global=true)
+  ignore(p.parse(["remote", "add", "--verbose"]))
+  inspect(verbose.get(), content="Some(true)")
 }
 
 // === R2-W3: shorts 重複検出テスト ===
