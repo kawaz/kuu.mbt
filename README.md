@@ -1,72 +1,82 @@
-# mydocker — Docker CLI Argument Parsing with kuu (Go)
+# kuu
 
-青山龍星だ！kuuの実力をGoで証明するサンプルだぜ！
+MoonBit 製 CLI 引数パーサライブラリ。
 
-## 概要
+ExactNode ベースのフラット走査アーキテクチャにより、ショートオプション結合 (`-abc`)、`--name=value` 分解、choices + implicit_value の最長一致など、複雑な引数パターンを統一的に処理する。
 
-MoonBit製CLIパーサライブラリ [kuu](https://github.com/kawaz/kuu.mbt) を使って、
-Docker CLI のサブコマンド構造を Go から引数パースする実証コード。
+## Quick Start
 
-## 前提条件
+```moonbit
+let p = @core.Parser::new()
+p.set_description("myapp - A sample application")
 
-- **Node.js v23+** (v25.5.0 推奨、JS String Builtins 対応)
-- **Go 1.25+** (go.mod: 1.25.7)
-- **MoonBit toolchain** (`moon` コマンド)
-- **just** (justfile runner)
+let verbose = p.count(name="verbose", shorts="v", global=true, description="Increase verbosity")
+let output = p.string_opt(name="output", default="stdout", shorts="o", description="Output destination", value_name="FILE")
+let force = p.flag(name="force", description="Force overwrite")
 
-### 検証内容
+let file = p.positional(name="FILE", description="Input file")
 
-- **10サブコマンド**: run, build, ps, images, pull, push, exec, compose, network, volume
-- **ネストしたサブコマンド**: compose (up/down/logs/ps), network (create/ls/rm/inspect), volume (create/ls/rm/inspect)
-- **全オプション種**: flag, string, int, count, append_string, positional, rest
-- **グローバルオプション**: verbose(-vvv), debug, log-level, host
-- **制約**: choices, exclusive, required
-- **エラーハンドリング**: 不明オプション、無効な選択肢
-- **ヘルプ**: ルート/サブコマンドの --help
-
-### アーキテクチャ
-
-```
-Go プロセス (main.go)
-  │  JSON スキーマ + 引数
-  v
-Node.js ブリッジ (kuu_bridge.mjs)
-  │  WebAssembly.instantiate + builtins: ["js-string"]
-  v
-kuu core WASM (wasm-gc)
-  │  パース実行
-  v
-JSON 結果 → Go で検証
+let result = try? p.parse(args)
+match result {
+  Err(@core.HelpRequested(text)) => println(text)
+  Err(@core.ParseError(info)) => println("Error: " + info.to_string())
+  Ok(_) => {
+    println(verbose.get().unwrap().to_string())  // 0, 1, 2, ...
+    println(output.get().unwrap())                // "stdout" or user value
+    println(file.get().unwrap_or("(none)"))       // positional arg
+  }
+}
 ```
 
-wazero が wasm-gc 未対応のため Node.js ブリッジ経由 (DR-031 参照)。
+## Features
 
-## ファイル構成
+**コンビネータ:**
+`flag`, `string_opt`, `int_opt`, `count`, `append_string`, `append_int`, `custom[T]`, `custom_append[T]`
 
-| ファイル | 役割 |
-|---|---|
-| `main.go` | エントリポイント、シナリオ実行フレームワーク |
-| `schema.go` | Docker CLI の kuu JSON スキーマ定義 |
-| `scenarios.go` | 19個のテストシナリオ + バリデーション |
-| `bridge.go` | kuu WASM bridge の Go ラッパー (Node.js 経由) |
-| `kuu_bridge.mjs` | Node.js WASM ローダー (NDJSON プロトコル) |
-| `docker.go` | **デザインモック** — kuu Go API (struct tag) の理想形 |
+**位置引数:** `positional`, `rest`, `serial`, `never`
 
-## 実行方法
+**サブコマンド:** `cmd` (→ `Opt[CmdResult]`), `sub` (→ `Parser`), `require_cmd`
+
+**制約:** `exclusive`, `required`
+
+**別名:** `alias` (値共有 + is_set 独立、チェーン対応)
+
+**フィルタ:** `FilterChain` — `map`, `validate`, `parse` + `then` で Kleisli 合成
+
+**その他:** `dashdash`, `append_dashdash`, `Variation` (Toggle/True/False/Reset/Unset), `choices`, `implicit_value`, `global`, `hidden`, 自動ヘルプ生成
+
+## Build & Test
 
 ```bash
-# 1. kuu WASM をビルド
-just build-wasm
-
-# 2. 全シナリオ実行
-just run
-
-# 3. 特定シナリオのみ
-just run-scenario "compose up: detached with files"
+just          # check + test
+just fmt      # format
+just test     # run tests
+just test-all # all targets (wasm-gc, wasm, js)
+just size     # binary size report
 ```
 
-## 結果
+## Architecture
+
+4層レイヤー構造 + OC/P 2フェーズパース:
 
 ```
---- Results: 19 passed, 0 failed ---
+Sugar:       flag(), string_opt(), custom[T](), cmd(), ...
+Convention:  expand_and_register — name + aliases + shorts + variations 展開
+Pattern:     make_or_node — 最長一致で複合ノード統合
+Core:        ExactNode (try_reduce) + OC/P 消費ループ
 ```
+
+詳細は `docs/DESIGN.md` を参照。
+
+## Examples
+
+`examples/` に多言語デモあり:
+
+- `20260308-mydocker` — MoonBit: Docker CLI サブセット (sub nesting, exclusive, required)
+- `20260309-mydocker-go` — Go: kuu WASM bridge 経由での Docker CLI パース
+- `20260309-kubectl` — MoonBit: kubectl サブコマンド構造
+- 他: curl, gcc, cargo(Python), spm(Swift), git(TypeScript) 等
+
+## License
+
+MIT License, Yoshiaki Kawazu (@kawaz)
