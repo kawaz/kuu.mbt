@@ -1,5 +1,10 @@
 # DR-007: Opts enum + ResultMap + immutable Opt + greedy/never 設計（2026-03-01）
 
+> **注記**: 本 DR で設計した以下の概念は後続 DR で上書きされています:
+> - **Opts enum** (`Node(&ErasedNode) | Array | Map`): DR-012 で `ExactNode` ベースの直接保持形式に置換
+> - **ResultMap** (`Map[Int, 型消去値]`): DR-013 で `ParseResult` + `Ref[T]` による型安全アクセスに置換
+> 本 DR は設計の論理的基礎として参照価値がありますが、現在の実装は DR-012, DR-013 を参照してください。
+
 ## 概要
 
 Phase 4 設計において、ユーザー定義 struct + val() フィールドアクセス方式から、JSON-like な Opts enum + ResultMap + immutable Opt 方式への大幅な設計転換を行った。

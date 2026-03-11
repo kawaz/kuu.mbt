@@ -942,6 +942,22 @@ Options:
 
 ---
 
+### DESIGN.md への反映状況
+
+本セクションの提言は以下のように DESIGN.md に反映されています:
+
+- **セクション構成 (Description/Usage/Commands/Options/Global Options)**: 実装済み。DESIGN.md「OptKind」「ヘルプ生成」に記載
+- **Global Options サブコマンド表示**: 実装済み。`global=true` ノードの子パーサ伝搬
+- **隠しオプション (--help-all)**: DESIGN.md「Visibility」に設計案として記載。現在は `hidden: Bool` のみ実装
+- **デフォルト値表示**: 実装済み。`default_display` 自動導出
+- **ショート/エイリアス表示**: 実装済み
+- **環境変数セクション**: DESIGN.md「環境変数連携」に将来検討として記載
+- **引数なし実行 → --help 表示**: 設計方針として確定
+
+※ DESIGN.md が source of truth。本文書は調査資料としてのみ参照。
+
+---
+
 ## 参考資料
 
 - [clap - docs.rs](https://docs.rs/clap/latest/clap/)

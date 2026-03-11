@@ -770,3 +770,18 @@ Phase 4 の reducer ベース設計に対応したエラー種別:
 1. **Phase 4 初期**: 基本エラー（UnknownOption, MissingRequired, InvalidValue, MissingValue）+ 1行メッセージ
 2. **Phase 4 中期**: 4層構造 + did you mean? サジェスト + Help: 行
 3. **Phase 4 後期**: セマンティックスタイリング + FSM 曖昧さ検出 + エラーカスタマイズ API
+
+---
+
+### DESIGN.md への反映状況
+
+本セクションの提言は以下のように DESIGN.md に反映されています:
+
+- **4層構造 (error/Help/tip/Usage)**: DESIGN.md「エラーメッセージ設計」セクションに設計案として記載
+- **ErrorKind enum (11種類)**: DESIGN.md「ParseError 設計」に設計案として記載
+- **did you mean? サジェスト**: 実装済み（format_unexpected_with_hint）。DESIGN.md には未記載
+- **Help: 行インライン表示**: DESIGN.md の出力構造例に含む
+- **セマンティックスタイリング**: DESIGN.md「セマンティックスタイリング」に設計案として記載
+- **実装優先度**: DESIGN.md「実装優先度」に反映
+
+※ DESIGN.md が source of truth。本文書は調査資料としてのみ参照。

@@ -854,6 +854,20 @@ let host = opt::str_opt(name="host")       // String?（optional、未指定は 
 
 ---
 
+### DESIGN.md への反映状況
+
+本セクションの提言は以下のように DESIGN.md に反映されています:
+
+- **ValueSource enum**: DESIGN.md「リザルト取得・構造化出力」に設計案として記載。未実装
+- **result.source(opt) / result.is_explicit(opt)**: DESIGN.md に API 案として記載。未実装
+- **構造化出力 (to_entries)**: DESIGN.md に設計案として記載。未実装
+- **callback ディスパッチ方式**: DESIGN.md に未記載（cmd の setup コールバックで代替）
+- **defaults 統合の優先順位 (CLI > env > config > initial)**: DESIGN.md「defaults 優先順位」に記載
+
+※ DESIGN.md が source of truth。本文書は調査資料としてのみ参照。
+
+---
+
 ## 参考リンク
 
 - [clap ValueSource](https://docs.rs/clap/latest/clap/parser/enum.ValueSource.html)
