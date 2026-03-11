@@ -456,6 +456,15 @@ Windows では `/` がオプションプレフィックス。パス区切りも 
    - **clap (Rust)**: `num_args=0..=1` ではサブコマンドと値を区別不能。`require_equals=true` にすれば `--config`（値なし=デフォルト）と `--config=path`（値あり）が明確に区別され、`--config serve` の `serve` はサブコマンドとして正しく解釈される。
    - **argparse (Python)**: `nargs='?'` で同様の曖昧性あり。位置引数（サブコマンド）より先にオプションが消費するため、意図せずサブコマンド名がオプション値になる。
    - **一般的回避策**: `=` 必須化（`--config=path`）、または optional arg を避けてフラグ+別オプションに分離（`--use-default-config` + `--config path`）。
+   - **kuu**: `implicit_value` で3値パターンが自然に表現できる。ExactNode ベースのフラット走査で `--config` を先に消費するため、サブコマンドとの曖昧性が構造的に発生しない。
+
+     ```
+     app run                → get() = None    （設定ファイル不使用）
+     app run --config       → get() = Some(implicit_value)（デフォルトパス）
+     app run --config path  → get() = Some("path")（指定パス）
+     ```
+
+     clap が `require_equals` でワークアラウンドする問題を、kuu は設計レベルで回避している。
 
 2. **負数値の扱い**: `-1` がオプション名か負数値かの判断。`allow_negative_numbers` のようなオプトイン方式が安全。
 
