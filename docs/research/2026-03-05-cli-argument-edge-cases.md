@@ -399,6 +399,7 @@ Windows では `/` がオプションプレフィックス。パス区切りも 
 | 否定 `--no-foo` | X | X (手動) | O (BoolOptAct) | O | O | X | △ (issue) | X | O | △ (negatable) |
 | ロング省略 `--ign` | X | O | X | X | X | X | X | X | X | △ (auto_abbrev) |
 | optional arg | X | △ (`::`) | O (nargs=?) | X | O | X | O | O | O | O |
+| optional arg + subcmd | X | X | △ | X | △ (require_equals) | X | △ | △ | △ | X |
 | `--` セパレータ | O | O | O | O | O | O | O | O | O | O |
 | permutation (位置自由) | X | O (GNU) | O | O | O | X | O | O | O | O (permute) |
 | サブコマンド | X | X | O | O | O | X | O | O | O | X |
@@ -450,6 +451,11 @@ Windows では `/` がオプションプレフィックス。パス区切りも 
 ### 6.4 設計上の注意点
 
 1. **optional argument の曖昧性**: `--color auto` は `--color` の値が `auto` か、`--color` (値なし) + オペランド `auto` か区別できない。`--color=auto` の `=` 形式を必須にするか、`=` 省略時は同一argv要素内のみ許可 (GNU方式) にすべき。
+
+   **サブコマンドとの衝突**: `--config [FILE]` のようにデフォルト値ありの optional arg がサブコマンドと共存すると、パーサが `--config serve` の `serve` をオプション値かサブコマンドか区別できない。
+   - **clap (Rust)**: `num_args=0..=1` ではサブコマンドと値を区別不能。`require_equals=true` にすれば `--config`（値なし=デフォルト）と `--config=path`（値あり）が明確に区別され、`--config serve` の `serve` はサブコマンドとして正しく解釈される。
+   - **argparse (Python)**: `nargs='?'` で同様の曖昧性あり。位置引数（サブコマンド）より先にオプションが消費するため、意図せずサブコマンド名がオプション値になる。
+   - **一般的回避策**: `=` 必須化（`--config=path`）、または optional arg を避けてフラグ+別オプションに分離（`--use-default-config` + `--config path`）。
 
 2. **負数値の扱い**: `-1` がオプション名か負数値かの判断。`allow_negative_numbers` のようなオプトイン方式が安全。
 
