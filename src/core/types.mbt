@@ -51,6 +51,9 @@ pub(all) struct AliasSource {
   make_node : (String) -> ExactNode
   target_was_set : Ref[Bool]
   is_global : Bool
+  // implicit_value 付きコンビネータの eq_fallback ノード生成ファクトリ。
+  // alias 登録時に alias 名でも eq_fallback_nodes に登録するために使う。
+  make_eq_fallback : ((String) -> ExactNode)?
 }
 
 ///|

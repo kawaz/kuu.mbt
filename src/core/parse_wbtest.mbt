@@ -5276,3 +5276,97 @@ test "M-21: int_opt post default also validated" {
   let result : Result[_, _] = try? p.parse([])
   inspect(result is Err(_), content="true")
 }
+
+// === alias + implicit_value の eq_split フォールバック漏れ ===
+
+///|
+test "alias + implicit_value: eq_split via alias name (normal value)" {
+  // implicit_value 付きオプションの alias で --alias=value が正しくパースされること
+  let p = Parser::new()
+  let output = p.string_opt(
+    name="output", default="",
+    implicit_value=Some(Lazy::Val("stdout")),
+  )
+  let out = p.alias("--out", output)
+  ignore(p.parse(["--out=file.txt"]))
+  inspect(
+    output.get(),
+    content=(
+      #|Some("file.txt")
+    ),
+  )
+  inspect(
+    out.get(),
+    content=(
+      #|Some("file.txt")
+    ),
+  )
+}
+
+///|
+test "alias + implicit_value: eq_split via alias name (double-dash value)" {
+  // implicit_value 付きオプションの alias で --alias=--value が正しくパースされること
+  // alias で追加された名前は eq_fallback_nodes に登録されていないため、
+  // make_soft_custom_value_node の "--" ガードで Reject → implicit にフォールバックしていた
+  let p = Parser::new()
+  let output = p.string_opt(
+    name="output", default="",
+    implicit_value=Some(Lazy::Val("stdout")),
+  )
+  let out = p.alias("--out", output)
+  ignore(p.parse(["--out=--file.txt"]))
+  inspect(
+    output.get(),
+    content=(
+      #|Some("--file.txt")
+    ),
+  )
+  inspect(
+    out.get(),
+    content=(
+      #|Some("--file.txt")
+    ),
+  )
+}
+
+///|
+test "alias + implicit_value: eq_split via original name still works" {
+  // 修正後も元のオプション名での eq_split は引き続き動くこと
+  let p = Parser::new()
+  let output = p.string_opt(
+    name="output", default="",
+    implicit_value=Some(Lazy::Val("stdout")),
+  )
+  let _ = p.alias("--out", output)
+  ignore(p.parse(["--output=file.txt"]))
+  inspect(
+    output.get(),
+    content=(
+      #|Some("file.txt")
+    ),
+  )
+}
+
+///|
+test "alias + implicit_value: alias without eq_split uses implicit" {
+  // alias を eq_split なしで使った場合は implicit_value が使われること
+  let p = Parser::new()
+  let output = p.string_opt(
+    name="output", default="",
+    implicit_value=Some(Lazy::Val("stdout")),
+  )
+  let out = p.alias("--out", output)
+  ignore(p.parse(["--out"]))
+  inspect(
+    output.get(),
+    content=(
+      #|Some("stdout")
+    ),
+  )
+  inspect(
+    out.get(),
+    content=(
+      #|Some("stdout")
+    ),
+  )
+}
