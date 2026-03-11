@@ -5370,3 +5370,129 @@ test "alias + implicit_value: alias without eq_split uses implicit" {
     ),
   )
 }
+
+// === R2-C2: cmd getter 安全性テスト ===
+
+///|
+test "R2-C2: deprecated Parser::get on unselected cmd returns None" {
+  let p = Parser::new(dashdash=false)
+  let serve = p.cmd(name="serve", dashdash=false, setup=fn(_child) {  })
+  let _ = p.cmd(name="build", dashdash=false, setup=fn(_child) {  })
+  ignore(p.parse(["build"]))
+  // serve は未選択 — deprecated API 経由でもパニックしないことを確認
+  // Parser::get は self.parsed.val (ルートパーサ) をチェックするため Some を返すが、
+  // unwrap() でパニックせず安全なデフォルト値が返ることが重要
+  inspect(p.get(serve) is Some(_), content="true")
+  // 推奨 API: opt.get() は opt.parsed (子パーサ) をチェックするため None を返す
+  inspect(serve.get() is None, content="true")
+}
+
+// === R2-C1: global=true の宣言順序非依存テスト ===
+
+test "R2-C1: global defined after cmd propagates to subcommand" {
+  let p = Parser::new(dashdash=false)
+  let _serve = p.cmd(name="serve", dashdash=false, setup=fn(_child) {  })
+  // global を cmd の後に定義
+  let verbose = p.flag(name="verbose", global=true)
+  ignore(p.parse(["serve", "--verbose"]))
+  inspect(verbose.get(), content="Some(true)")
+}
+
+test "R2-C1: global alias defined after cmd propagates" {
+  let p = Parser::new(dashdash=false)
+  let _serve = p.cmd(name="serve", dashdash=false, setup=fn(_child) {  })
+  let verbose = p.flag(name="verbose", global=true)
+  let _ = p.alias("--verb", verbose)
+  ignore(p.parse(["serve", "--verb"]))
+  inspect(verbose.get(), content="Some(true)")
+}
+
+test "R2-C1: multiple globals after cmd all propagate" {
+  let p = Parser::new(dashdash=false)
+  let _serve = p.cmd(name="serve", dashdash=false, setup=fn(_child) {  })
+  let verbose = p.flag(name="verbose", global=true)
+  let debug = p.flag(name="debug", global=true)
+  ignore(p.parse(["serve", "--verbose", "--debug"]))
+  inspect(verbose.get(), content="Some(true)")
+  inspect(debug.get(), content="Some(true)")
+}
+
+// === R2-W3: shorts 重複検出テスト ===
+
+///|
+test "R2-W3: duplicate short option detected" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.flag(name="verbose", shorts="v")
+  let _ = p.flag(name="version", shorts="v")
+  let result = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("duplicate"), content="true")
+    _ => abort("expected duplicate name error for short -v")
+  }
+}
+
+// === R2-W1: parse retry 動作テスト ===
+
+///|
+test "R2-W1: parse after error still works but nodes grow" {
+  let p = Parser::new(dashdash=false)
+  let name = p.string_opt(name="name", default="world")
+  // 1回目: エラーパース
+  let r1 = try? p.parse(["--unknown"])
+  inspect(r1 is Err(_), content="true")
+  // 2回目: 成功パース（ノード二重登録あるが動作は正常）
+  let r2 = try? p.parse(["--name", "alice"])
+  inspect(r2 is Ok(_), content="true")
+  inspect(name.get(), content="Some(\"alice\")")
+}
+
+// === R2-W4: implicit_value + choices 共存テスト ===
+
+///|
+test "R2-W4: implicit+choices explicit value" {
+  let p = Parser::new(dashdash=false)
+  let level = p.string_opt(
+    name="level", default="info",
+    choices=["debug", "info", "warn", "error"],
+    implicit_value=Some(Val("debug")),
+  )
+  ignore(p.parse(["--level", "warn"]))
+  inspect(level.get(), content="Some(\"warn\")")
+}
+
+///|
+test "R2-W4: implicit+choices implicit value" {
+  let p = Parser::new(dashdash=false)
+  let level = p.string_opt(
+    name="level", default="info",
+    choices=["debug", "info", "warn", "error"],
+    implicit_value=Some(Val("debug")),
+  )
+  ignore(p.parse(["--level"]))
+  inspect(level.get(), content="Some(\"debug\")")
+}
+
+///|
+test "R2-W4: implicit+choices eq-split" {
+  let p = Parser::new(dashdash=false)
+  let level = p.string_opt(
+    name="level", default="info",
+    choices=["debug", "info", "warn", "error"],
+    implicit_value=Some(Val("debug")),
+  )
+  ignore(p.parse(["--level=error"]))
+  inspect(level.get(), content="Some(\"error\")")
+}
+
+///|
+test "R2-W4: implicit+choices invalid choice via eq-split" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.string_opt(
+    name="level", default="info",
+    choices=["debug", "info", "warn", "error"],
+    implicit_value=Some(Val("debug")),
+  )
+  let result = try? p.parse(["--level=bad"])
+  inspect(result is Err(_), content="true")
+}

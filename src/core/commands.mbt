@@ -42,6 +42,10 @@ pub fn Parser::cmd(
   if dashdash {
     child.install_separator_node()
   }
+  // Lazy sync: 親の global_nodes への参照と同期済み位置を保持。
+  // cmd() 時点以降に追加された global ノードを try_reduce 実行時に子へ伝播する。
+  let parent_global = self.global_nodes
+  let synced_count : Ref[Int] = { val: parent_global.length() }
   let cmd_name = name
   let was_set : Ref[Bool] = { val: false }
   // Build all command names (primary + aliases) for matching
@@ -64,6 +68,16 @@ pub fn Parser::cmd(
         if pos >= args.length() {
           Reject
         } else if args[pos] == match_name {
+          // 後から追加された親の global ノードを子に同期
+          while synced_count.val < parent_global.length() {
+            let gnode = parent_global[synced_count.val]
+            child.nodes.push(gnode)
+            child.global_nodes.push(gnode)
+            if gnode.name != "" {
+              child.registered_names[gnode.name] = true
+            }
+            synced_count.val += 1
+          }
           let rest_args = args.view(start=pos + 1).to_array()
           let parse_result : Result[ParseResult, ParseError] = try? child.parse(
             rest_args,
@@ -114,7 +128,12 @@ pub fn Parser::cmd(
   {
     id,
     name,
-    getter: fn() -> CmdResult { cell.val.unwrap() },
+    getter: fn() -> CmdResult {
+      match cell.val {
+        Some(v) => v
+        None => CmdResult::{ name: "", parser: child }
+      }
+    },
     parsed: child.parsed,
     is_set: fn() { was_set.val },
   }
