@@ -365,6 +365,23 @@ pub fn[T : Show] Parser::custom(
     make_node_for_variation=make_var_node,
     getter=fn() { cell.val },
   )
+  // H-1 fix: implicit_value 付き (choices なし) の場合、eq_split 用に
+  // "--" ガードなしの value ノードを追加。make_soft_custom_value_node の
+  // "--" prefix ガードは通常パースで必要だが、eq_split 経由の明示的な値には不要。
+  if has_implicit && not(has_choices) {
+    let eq_on_match = fn(s : String) -> Result[() -> Unit, ParseError] {
+      let r : Result[T, ParseError] = try? (pre.run)(s)
+      match r {
+        Ok(v) => Ok(fn() { cell.val = v; was_set.val = true })
+        Err(e) => Err(e)
+      }
+    }
+    let eq_reset = fn() { () }
+    self.eq_fallback_nodes.push(make_value_node("--" + name, eq_on_match, eq_reset))
+    for alt in aliases {
+      self.eq_fallback_nodes.push(make_value_node("--" + alt, eq_on_match, eq_reset))
+    }
+  }
   match post {
     Some(filter) =>
       self.post_hooks.push(fn() raise ParseError {

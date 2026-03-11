@@ -69,6 +69,10 @@ pub(all) struct Parser {
   duplicate_errors : Array[String]
   force_unclaimed : Array[String]
   alias_sources : Map[Int, AliasSource]
+  // eq_split 専用フォールバックノード。implicit_value 付きコンビネータで
+  // make_soft_custom_value_node の "--" ガードをバイパスする value ノードを保持。
+  // OC フェーズでは使われず install_eq_split_node のみが参照する。
+  eq_fallback_nodes : Array[ExactNode]
 }
 
 ///|

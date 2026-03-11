@@ -4807,3 +4807,57 @@ test "alias: alias does not expand variations" {
   let result : Result[_, _] = try? p.parse(["--no-verb"])
   inspect(result is Err(_), content="true")
 }
+
+// === H-1: --opt=--value で implicit_value にフォールバックするバグ ===
+
+///|
+test "H-1: string_opt implicit: --output=--value (eq-split, double-dash value)" {
+  // implicit_value 付きオプションで --output=--value のように
+  // = 経由で -- 始まりの値を渡した場合、値が正しく取れること
+  let p = Parser::new()
+  let output = p.string_opt(
+    name="output",
+    default="",
+    implicit_value=Some(Val("stdout")),
+  )
+  ignore(p.parse(["--output=--value"]))
+  inspect(
+    output.get(),
+    content=(
+      #|Some("--value")
+    ),
+  )
+}
+
+///|
+test "H-1: int_opt implicit: --port=--not-a-port (eq-split) → parse error" {
+  // int_opt の implicit_value 付きで --port=--not-a-port は
+  // = 経由で明示的に渡されたが Int パースに失敗するのでエラー
+  let p = Parser::new()
+  ignore(
+    p.int_opt(name="port", default=8080, implicit_value=Some(Val(3000))),
+  )
+  let result : Result[_, _] = try? p.parse(["--port=--not-a-port"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "H-1: string_opt implicit: --output --next (space-separated) → still implicit" {
+  // スペース区切りの場合は従来通り -- 始まりの次トークンは
+  // 次のオプションとして扱い、implicit にフォールバックすべき
+  let p = Parser::new()
+  let output = p.string_opt(
+    name="output",
+    default="",
+    implicit_value=Some(Val("stdout")),
+  )
+  let next = p.flag(name="next")
+  ignore(p.parse(["--output", "--next"]))
+  inspect(
+    output.get(),
+    content=(
+      #|Some("stdout")
+    ),
+  )
+  inspect(next.get(), content="Some(true)")
+}

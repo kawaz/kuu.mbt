@@ -30,6 +30,7 @@ pub fn Parser::cmd(
     duplicate_errors: [],
     force_unclaimed: [],
     alias_sources: Map::new(),
+    eq_fallback_nodes: [],
   }
   // 親の global_nodes の名前を子の registered_names に登録（衝突検知のため）
   for gnode in self.global_nodes {

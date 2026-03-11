@@ -83,7 +83,11 @@ fn Parser::install_eq_split_node(self : Parser) -> Unit {
       value_nodes.push(node)
     }
   }
-  if value_nodes.is_empty() {
+  // H-1 fix: implicit_value 付きコンビネータの eq_split 用フォールバックノード。
+  // make_soft_custom_value_node の "--" ガードをバイパスする "--" ガードなしの value ノード。
+  // value_nodes で consumed < 2 の場合のみフォールバックとして試行される。
+  let eq_fallback = self.eq_fallback_nodes
+  if value_nodes.is_empty() && eq_fallback.is_empty() {
     return
   }
   let eq_node = ExactNode::{
@@ -123,6 +127,25 @@ fn Parser::install_eq_split_node(self : Parser) -> Unit {
             }
           Error(e) => return Error(e)
           Reject => ()
+        }
+      }
+      // H-1 fix: value_nodes で consumed < 2 の場合、eq_fallback ノードを試行。
+      // implicit_value 付きの make_soft_custom_value_node が "--" ガードで
+      // Reject した場合のフォールバック（"--" ガードなしの value ノード）。
+      if best_consumed < 2 {
+        for node in eq_fallback {
+          match (node.try_reduce)([name, value], 0) {
+            Accept(consumed~, commit~) =>
+              if consumed >= 2 && consumed > best_consumed {
+                best_consumed = consumed
+                best_commit = Some(commit)
+                ambiguous = false
+              } else if consumed == best_consumed && consumed > 0 {
+                ambiguous = true
+              }
+            Error(e) => return Error(e)
+            Reject => ()
+          }
         }
       }
       if ambiguous {

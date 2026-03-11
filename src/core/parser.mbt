@@ -73,6 +73,7 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     duplicate_errors: [],
     force_unclaimed: [],
     alias_sources: Map::new(),
+    eq_fallback_nodes: [],
   }
   if dashdash {
     p.install_separator_node()

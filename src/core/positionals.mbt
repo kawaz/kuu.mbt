@@ -142,6 +142,7 @@ pub fn Parser::serial(
     duplicate_errors: [],
     force_unclaimed: [],
     alias_sources: Map::new(),
+    eq_fallback_nodes: [],
   }
   setup(sub)
   // sub.positionals を greedy な compound handler にまとめる。
