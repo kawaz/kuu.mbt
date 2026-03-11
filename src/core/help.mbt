@@ -100,12 +100,12 @@ pub fn Parser::generate_help(self : Parser) -> String {
     match arg.kind {
       Positional => {
         usage_buf.write_char('<')
-        usage_buf.write_string(to_upper(arg.name))
+        usage_buf.write_string(arg.name.to_upper())
         usage_buf.write_char('>')
       }
       Rest => {
         usage_buf.write_char('[')
-        usage_buf.write_string(to_upper(arg.name))
+        usage_buf.write_string(arg.name.to_upper())
         usage_buf.write_string("]...")
       }
       _ => ()
@@ -225,12 +225,12 @@ fn format_arg_left(meta : OptMeta) -> String {
   match meta.kind {
     Positional => {
       buf.write_char('<')
-      buf.write_string(to_upper(meta.name))
+      buf.write_string(meta.name.to_upper())
       buf.write_char('>')
     }
     Rest => {
       buf.write_char('[')
-      buf.write_string(to_upper(meta.name))
+      buf.write_string(meta.name.to_upper())
       buf.write_string("]...")
     }
     _ => ()

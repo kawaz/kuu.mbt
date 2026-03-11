@@ -13,14 +13,7 @@ fn collect_after_separator(
     if stop_at_sep && args[p] == sep {
       break
     }
-    let mut should_stop = false
-    for token in stop {
-      if args[p] == token {
-        should_stop = true
-        break
-      }
-    }
-    if should_stop {
+    if stop.contains(args[p]) {
       break
     }
     collected.push(args[p])

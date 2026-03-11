@@ -34,19 +34,6 @@ fn wrap_node_with_set(node : ExactNode, was_set : Ref[Bool]) -> ExactNode {
 }
 
 ///|
-fn to_upper(s : String) -> String {
-  let buf = StringBuilder::new()
-  for c in s {
-    if c >= 'a' && c <= 'z' {
-      buf.write_char((c.to_int() - 32).unsafe_to_char())
-    } else {
-      buf.write_char(c)
-    }
-  }
-  buf.to_string()
-}
-
-///|
 pub fn Parser::set_description(self : Parser, desc : String) -> Unit {
   self.description.val = desc
 }
@@ -113,17 +100,13 @@ fn[T] Parser::register_option(
       [wrap_node_with_set(make_main_node(short_name), was_set)]
     },
   )
-  let shorts_arr : Array[Char] = []
-  for ch in shorts {
-    shorts_arr.push(ch)
-  }
-  let var_names : Array[String] = []
-  for v in variations {
+  let shorts_arr = shorts.to_array()
+  let var_names = variations.map(fn(v) {
     let prefix = match v {
       Toggle(p) | True(p) | False(p) | Reset(p) | Unset(p) => p
     }
-    var_names.push("--" + prefix + "-" + name)
-  }
+    "--" + prefix + "-" + name
+  })
   self.metas.push(OptMeta::{
     kind,
     name,
@@ -140,6 +123,7 @@ fn[T] Parser::register_option(
     make_node: make_main_node,
     target_was_set: was_set,
     is_global: global,
+    make_eq_fallback: None,
   }
   { id, name: "--" + name, getter, parsed: self.parsed, is_set: fn() { was_set.val } }
 }
@@ -215,11 +199,17 @@ pub fn[T] Parser::alias(
       if src.is_global {
         self.global_nodes.push(wrapped)
       }
+      // implicit_value 付きコンビネータの場合、alias 名でも eq_fallback_nodes に登録
+      match src.make_eq_fallback {
+        Some(factory) => self.eq_fallback_nodes.push(factory(name))
+        None => ()
+      }
       let id = (self.next_id)()
       self.alias_sources[id] = AliasSource::{
         make_node: src.make_node,
         target_was_set: target_was_set,
         is_global: src.is_global,
+        make_eq_fallback: src.make_eq_fallback,
       }
       {
         id,

@@ -286,27 +286,14 @@ pub fn[T : Show] Parser::custom(
   }
   // choices 情報を help 文字列に付加（OptMeta にフィールドを持たない設計）
   let effective_help : String = if choices.length() > 0 {
-    let buf = StringBuilder::new()
-    buf.write_string(description)
-    buf.write_string(" [possible values: ")
-    for i, choice in choices {
-      if i > 0 {
-        buf.write_string(", ")
-      }
-      buf.write_string(choice)
-    }
-    buf.write_char(']')
-    buf.to_string()
+    description + " [possible values: " + choices.join(", ") + "]"
   } else {
     description
   }
   let cell : Ref[T] = { val: initial_val }
   let was_set : Ref[Bool] = { val: false }
   let has_choices = choices.length() > 0
-  let has_implicit = match implicit_value {
-    Some(_) => true
-    None => false
-  }
+  let has_implicit = implicit_value is Some(_)
 
   // variation ノード: Toggle/True/False は Reset 相当にフォールバック（値コンビネータに Bool 反転の意味論なし）
   let make_var_node = fn(vn : String, v : Variation) -> ExactNode {
@@ -360,7 +347,7 @@ pub fn[T : Show] Parser::custom(
     }
   }
 
-  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  let display_value_name = if value_name == "" { name.to_upper() } else { value_name }
   let opt = self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=effective_help, value_name=display_value_name, default_display=effective_display,
@@ -381,9 +368,23 @@ pub fn[T : Show] Parser::custom(
       }
     }
     let eq_reset = fn() { () }
-    self.eq_fallback_nodes.push(make_value_node("--" + name, eq_on_match, eq_reset))
+    let make_eq_fb : (String) -> ExactNode = fn(n) {
+      make_value_node(n, eq_on_match, eq_reset)
+    }
+    self.eq_fallback_nodes.push(make_eq_fb("--" + name))
     for alt in aliases {
-      self.eq_fallback_nodes.push(make_value_node("--" + alt, eq_on_match, eq_reset))
+      self.eq_fallback_nodes.push(make_eq_fb("--" + alt))
+    }
+    // alias 登録時にも eq_fallback_nodes に追加できるようファクトリを保存
+    match self.alias_sources.get(opt.id) {
+      Some(src) =>
+        self.alias_sources[opt.id] = AliasSource::{
+          make_node: src.make_node,
+          target_was_set: src.target_was_set,
+          is_global: src.is_global,
+          make_eq_fallback: Some(make_eq_fb),
+        }
+      None => ()
     }
   }
   match post {
@@ -412,7 +413,7 @@ pub fn[T] Parser::custom_append(
   let cell : Ref[Array[T]] = { val: [] }
   let was_set : Ref[Bool] = { val: false }
   let reset_fn = fn() { cell.val = [] }
-  let display_value_name = if value_name == "" { to_upper(name) } else { value_name }
+  let display_value_name = if value_name == "" { name.to_upper() } else { value_name }
   self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=description, value_name=display_value_name, default_display="",

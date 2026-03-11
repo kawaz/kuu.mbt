@@ -64,7 +64,7 @@ pub fn Parser::cmd(
         if pos >= args.length() {
           Reject
         } else if args[pos] == match_name {
-          let rest_args = Array::from_iter(args.view(start=pos + 1).iter())
+          let rest_args = args.view(start=pos + 1).to_array()
           let parse_result : Result[ParseResult, ParseError] = try? child.parse(
             rest_args,
           )
@@ -97,6 +97,7 @@ pub fn Parser::cmd(
     make_node: make_cmd_node,
     target_was_set: was_set,
     is_global: false,
+    make_eq_fallback: None,
   }
   self.metas.push(OptMeta::{
     kind: Command,

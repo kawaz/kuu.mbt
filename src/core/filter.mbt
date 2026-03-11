@@ -112,20 +112,10 @@ pub fn Filter::in_range(min : Int, max : Int) -> FilterChain[Int, Int] {
 /// Validate that String is one of the allowed values
 pub fn Filter::one_of(allowed : Array[String]) -> FilterChain[String, String] {
   Filter::validate(fn(s) raise ParseError {
-    for v in allowed {
-      if v == s {
-        return
-      }
+    if allowed.contains(s) {
+      return
     }
-    let buf = StringBuilder::new()
-    buf.write_string("value must be one of: ")
-    for i, v in allowed {
-      if i > 0 {
-        buf.write_string(", ")
-      }
-      buf.write_string(v)
-    }
-    raise parse_error(buf.to_string())
+    raise parse_error("value must be one of: " + allowed.join(", "))
   })
 }
 
@@ -135,11 +125,7 @@ pub fn[A, B] Filter::each(
   inner : FilterChain[A, B],
 ) -> FilterChain[Array[A], Array[B]] {
   Filter::parse(fn(arr) raise ParseError {
-    let result : Array[B] = []
-    for item in arr {
-      result.push((inner.run)(item))
-    }
-    result
+    arr.map(fn(item) raise ParseError { (inner.run)(item) })
   })
 }
 

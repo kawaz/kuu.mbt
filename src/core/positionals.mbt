@@ -68,10 +68,8 @@ pub fn Parser::rest(
       Reject
     } else {
       let value = args[pos]
-      for token in stop {
-        if value == token {
-          return Reject
-        }
+      if stop.contains(value) {
+        return Reject
       }
       Accept(consumed=1, commit=fn() {
         cell.val.push(value)
