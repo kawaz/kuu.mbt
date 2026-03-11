@@ -1,3 +1,19 @@
+///| Variation sugar パラメータを variations 配列に展開するヘルパー
+fn apply_variation_sugar(
+  variations : Array[Variation],
+  variation_toggle? : String? = None,
+  variation_true? : String? = None,
+  variation_false? : String? = None,
+  variation_reset? : String? = None,
+  variation_unset? : String? = None,
+) -> Unit {
+  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
+  if variation_true is Some(p) { variations.push(True(p)) }
+  if variation_false is Some(p) { variations.push(False(p)) }
+  if variation_reset is Some(p) { variations.push(Reset(p)) }
+  if variation_unset is Some(p) { variations.push(Unset(p)) }
+}
+
 ///|
 pub fn Parser::flag(
   self : Parser,
@@ -16,12 +32,10 @@ pub fn Parser::flag(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Opt[Bool] {
-  // Sugar params → variations に追加
-  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
-  if variation_true is Some(p) { variations.push(True(p)) }
-  if variation_false is Some(p) { variations.push(False(p)) }
-  if variation_reset is Some(p) { variations.push(Reset(p)) }
-  if variation_unset is Some(p) { variations.push(Unset(p)) }
+  apply_variation_sugar(
+    variations, variation_toggle~, variation_true~, variation_false~,
+    variation_reset~, variation_unset~,
+  )
   // default_fn があれば default を上書き
   let initial_val = match default_fn {
     Some(f) => f()
@@ -90,12 +104,10 @@ pub fn Parser::string_opt(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Opt[String] {
-  // Sugar params → variations に追加
-  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
-  if variation_true is Some(p) { variations.push(True(p)) }
-  if variation_false is Some(p) { variations.push(False(p)) }
-  if variation_reset is Some(p) { variations.push(Reset(p)) }
-  if variation_unset is Some(p) { variations.push(Unset(p)) }
+  apply_variation_sugar(
+    variations, variation_toggle~, variation_true~, variation_false~,
+    variation_reset~, variation_unset~,
+  )
   self.custom(
     name~, aliases~, shorts~, global~, hidden~, variations~,
     description~, value_name~,
@@ -126,12 +138,10 @@ pub fn Parser::int_opt(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Opt[Int] {
-  // Sugar params → variations に追加
-  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
-  if variation_true is Some(p) { variations.push(True(p)) }
-  if variation_false is Some(p) { variations.push(False(p)) }
-  if variation_reset is Some(p) { variations.push(Reset(p)) }
-  if variation_unset is Some(p) { variations.push(Unset(p)) }
+  apply_variation_sugar(
+    variations, variation_toggle~, variation_true~, variation_false~,
+    variation_reset~, variation_unset~,
+  )
   self.custom(
     name~, aliases~, shorts~, global~, hidden~, variations~,
     description~, value_name~,
@@ -157,12 +167,10 @@ pub fn Parser::append_string(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Opt[Array[String]] {
-  // Sugar params → variations に追加
-  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
-  if variation_true is Some(p) { variations.push(True(p)) }
-  if variation_false is Some(p) { variations.push(False(p)) }
-  if variation_reset is Some(p) { variations.push(Reset(p)) }
-  if variation_unset is Some(p) { variations.push(Unset(p)) }
+  apply_variation_sugar(
+    variations, variation_toggle~, variation_true~, variation_false~,
+    variation_reset~, variation_unset~,
+  )
   self.custom_append(
     name~, aliases~, shorts~, global~, hidden~, variations~,
     description~, value_name~,
@@ -187,12 +195,10 @@ pub fn Parser::append_int(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Opt[Array[Int]] {
-  // Sugar params → variations に追加
-  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
-  if variation_true is Some(p) { variations.push(True(p)) }
-  if variation_false is Some(p) { variations.push(False(p)) }
-  if variation_reset is Some(p) { variations.push(Reset(p)) }
-  if variation_unset is Some(p) { variations.push(Unset(p)) }
+  apply_variation_sugar(
+    variations, variation_toggle~, variation_true~, variation_false~,
+    variation_reset~, variation_unset~,
+  )
   self.custom_append(
     name~, aliases~, shorts~, global~, hidden~, variations~,
     description~, value_name~,
@@ -216,12 +222,10 @@ pub fn Parser::count(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Opt[Int] {
-  // Sugar params → variations に追加
-  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
-  if variation_true is Some(p) { variations.push(True(p)) }
-  if variation_false is Some(p) { variations.push(False(p)) }
-  if variation_reset is Some(p) { variations.push(Reset(p)) }
-  if variation_unset is Some(p) { variations.push(Unset(p)) }
+  apply_variation_sugar(
+    variations, variation_toggle~, variation_true~, variation_false~,
+    variation_reset~, variation_unset~,
+  )
   let cell : Ref[Int] = { val: 0 }
   let pending : Ref[Int] = { val: 0 }
   let was_set : Ref[Bool] = { val: false }

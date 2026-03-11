@@ -1,3 +1,43 @@
+///| セパレータ以降の引数を収集するヘルパー。
+/// stop_at_sep=true の場合、セパレータ自身でもループを停止する（append_dashdash 用）。
+fn collect_after_separator(
+  args : Array[String],
+  pos : Int,
+  sep : String,
+  stop : Array[String],
+  stop_at_sep~ : Bool = false,
+) -> (Array[String], Int) {
+  let collected : Array[String] = []
+  let mut p = pos + 1
+  while p < args.length() {
+    if stop_at_sep && args[p] == sep {
+      break
+    }
+    let mut should_stop = false
+    for token in stop {
+      if args[p] == token {
+        should_stop = true
+        break
+      }
+    }
+    if should_stop {
+      break
+    }
+    collected.push(args[p])
+    p += 1
+  }
+  (collected, p - pos)
+}
+
+///| dashdash ノードを登録し重複検出を行う共通ヘルパー
+fn Parser::register_dashdash_node(self : Parser, sep : String, node : ExactNode) -> Unit {
+  self.nodes.push(node)
+  if self.registered_names.contains(sep) {
+    self.duplicate_errors.push("duplicate option name: " + sep)
+  }
+  self.registered_names[sep] = true
+}
+
 ///|
 pub fn Parser::dashdash(
   self : Parser,
@@ -16,24 +56,8 @@ pub fn Parser::dashdash(
       if pos >= args.length() || args[pos] != sep {
         return Reject
       }
-      // セパレータ以降の全 args を収集
-      let collected : Array[String] = []
-      let mut p = pos + 1
-      while p < args.length() {
-        let mut should_stop = false
-        for token in stop {
-          if args[p] == token {
-            should_stop = true
-            break
-          }
-        }
-        if should_stop {
-          break
-        }
-        collected.push(args[p])
-        p += 1
-      }
-      Accept(consumed=p - pos, commit=fn() {
+      let (collected, consumed) = collect_after_separator(args, pos, sep, stop)
+      Accept(consumed~, commit=fn() {
         for v in collected {
           cell.val.push(v)
         }
@@ -45,12 +69,7 @@ pub fn Parser::dashdash(
       was_set.val = false
     },
   }
-  self.nodes.push(dashdash_node)
-  // 重複検出のため registered_names に登録
-  if self.registered_names.contains(sep) {
-    self.duplicate_errors.push("duplicate option name: " + sep)
-  }
-  self.registered_names[sep] = true
+  self.register_dashdash_node(sep, dashdash_node)
   {
     id,
     name: separator,
@@ -78,26 +97,10 @@ pub fn Parser::append_dashdash(
       if pos >= args.length() || args[pos] != sep {
         return Reject
       }
-      let group : Array[String] = []
-      let mut p = pos + 1
-      while p < args.length() {
-        if args[p] == sep {
-          break
-        }
-        let mut should_stop = false
-        for token in stop {
-          if args[p] == token {
-            should_stop = true
-            break
-          }
-        }
-        if should_stop {
-          break
-        }
-        group.push(args[p])
-        p += 1
-      }
-      Accept(consumed=p - pos, commit=fn() {
+      let (group, consumed) = collect_after_separator(
+        args, pos, sep, stop, stop_at_sep=true,
+      )
+      Accept(consumed~, commit=fn() {
         cell.val.push(group)
         was_set.val = true
       })
@@ -107,12 +110,7 @@ pub fn Parser::append_dashdash(
       was_set.val = false
     },
   }
-  self.nodes.push(node)
-  // 重複検出のため registered_names に登録
-  if self.registered_names.contains(sep) {
-    self.duplicate_errors.push("duplicate option name: " + sep)
-  }
-  self.registered_names[sep] = true
+  self.register_dashdash_node(sep, node)
   {
     id,
     name: separator,
