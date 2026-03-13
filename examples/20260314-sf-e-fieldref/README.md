@@ -32,7 +32,7 @@ struct Binder[S] {
 fn[S, T] make_binder(field : FieldRef[S, T], parse : (String) -> T?) -> Binder[S]
 ```
 
-### ユーザー側
+### ユーザー側（簡略化した例）
 
 ```moonbit
 struct AppConfig {
@@ -47,12 +47,16 @@ fn AppConfig::name_ref() -> FieldRef[AppConfig, String] {
 }
 
 // パーサ定義: make_binder で型消去して同じ配列に格納
-let opts = [
-  { opt_name: "--name", binder: make_binder(name_ref(), fn(s) { Some(s) }) },
-  { opt_name: "--age",  binder: make_binder(age_ref(), parse_int) },
+let opts : Array[OptDef[AppConfig]] = [
+  { opt_name: "--name", binder: make_binder(AppConfig::name_ref(), fn(raw) { Some(raw) }) },
+  { opt_name: "--age",  binder: make_binder(
+      AppConfig::age_ref(),
+      fn(raw) { try { Some(@strconv.parse_int(raw)) } catch { _ => None } },
+  ) },
 ]
 
 let result = parse_args(args, AppConfig::default(), opts)
+// result : Result[AppConfig, String]
 ```
 
 ## 検証結果
