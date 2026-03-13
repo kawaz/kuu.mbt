@@ -85,11 +85,11 @@ fn vp_append(name : String, target : Ref[Array[String]]) -> PathEntry {
   }
 }
 
-/// 簡易 Int パース（負数対応）
+/// 簡易 Int パース（負数対応、非数字文字はabort）
 fn parse_int_simple(s : String) -> Int {
   let len = s.length()
   if len == 0 {
-    return 0
+    abort("Invalid integer: empty string")
   }
   let mut result = 0
   let mut i = 0
@@ -98,8 +98,14 @@ fn parse_int_simple(s : String) -> Int {
     negative = true
     i = 1
   }
+  if i >= len {
+    abort("Invalid integer: " + s)
+  }
   while i < len {
     let c = s[i]
+    if c < '0' || c > '9' {
+      abort("Invalid integer: " + s)
+    }
     let digit = c.to_int() - '0'.to_int()
     result = result * 10 + digit
     i = i + 1
@@ -121,8 +127,20 @@ fn vp_parse(
   paths : Array[PathEntry],
   subcmds~ : Array[(String, Array[PathEntry], Ref[Array[String]]?)]? = None,
   rest_target~ : Ref[Array[String]]? = None,
-  matched_cmd~ : Ref[String]? = None
+  matched_cmd~ : Ref[String?]? = None
 ) -> Result[Unit, String] {
+  // name 重複検出
+  let mut di = 0
+  while di < paths.length() {
+    let mut dj = di + 1
+    while dj < paths.length() {
+      if paths[di].name == paths[dj].name {
+        return Err("Duplicate path entry name: " + paths[di].name)
+      }
+      dj = dj + 1
+    }
+    di = di + 1
+  }
   let len = args.length()
   let mut i = 0
   while i < len {
@@ -147,7 +165,13 @@ fn vp_parse(
             }
           }
         } else {
-          (entry.on_match)("")
+          match eq_value {
+            Some(_) =>
+              return Err(
+                "Flag " + entry.name + " does not accept a value",
+              )
+            None => (entry.on_match)("")
+          }
         }
         break
       }
@@ -164,7 +188,7 @@ fn vp_parse(
             if raw_arg == cmd_name {
               cmd_found = true
               match matched_cmd {
-                Some(r) => r.val = cmd_name
+                Some(r) => r.val = Some(cmd_name)
                 None => ()
               }
               // 残りの引数をサブコマンドに渡す

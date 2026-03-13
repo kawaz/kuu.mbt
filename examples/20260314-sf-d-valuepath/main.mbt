@@ -18,8 +18,8 @@ struct DockerConfig {
   compose_scale : Ref[Int]
   compose_services : Ref[Array[String]]
   // matched command tracking
-  matched_root_cmd : Ref[String]
-  matched_compose_cmd : Ref[String]
+  matched_root_cmd : Ref[String?]
+  matched_compose_cmd : Ref[String?]
 }
 
 fn DockerConfig::new() -> DockerConfig {
@@ -32,8 +32,8 @@ fn DockerConfig::new() -> DockerConfig {
     compose_detach: { val: false },
     compose_scale: { val: 1 },
     compose_services: { val: [] },
-    matched_root_cmd: { val: "" },
-    matched_compose_cmd: { val: "" },
+    matched_root_cmd: { val: None },
+    matched_compose_cmd: { val: None },
   }
 }
 
@@ -46,21 +46,27 @@ fn print_config(cfg : DockerConfig) -> Unit {
     println("host: " + cfg.host.val)
   }
   println("")
-  if cfg.matched_root_cmd.val == "compose" {
-    println("=== compose ===")
-    let files = cfg.compose_file.val
-    if files.length() > 0 {
-      println("file: " + files.to_string())
-    }
-    if cfg.matched_compose_cmd.val == "up" {
-      println("  --- up ---")
-      println("  detach: " + cfg.compose_detach.val.to_string())
-      println("  scale: " + cfg.compose_scale.val.to_string())
-      let svcs = cfg.compose_services.val
-      if svcs.length() > 0 {
-        println("  services: " + svcs.to_string())
+  match cfg.matched_root_cmd.val {
+    Some("compose") => {
+      println("=== compose ===")
+      let files = cfg.compose_file.val
+      if files.length() > 0 {
+        println("file: " + files.to_string())
+      }
+      match cfg.matched_compose_cmd.val {
+        Some("up") => {
+          println("  --- up ---")
+          println("  detach: " + cfg.compose_detach.val.to_string())
+          println("  scale: " + cfg.compose_scale.val.to_string())
+          let svcs = cfg.compose_services.val
+          if svcs.length() > 0 {
+            println("  services: " + svcs.to_string())
+          }
+        }
+        _ => ()
       }
     }
+    _ => ()
   }
 }
 
@@ -136,6 +142,38 @@ fn main {
     Err(msg) => println("Error: " + msg)
   }
 
+  println("")
+
+  // ─── Test case 6: --debug=true → error (flag does not accept value) ───
+  let args6 : Array[String] = ["--debug=true"]
+  println("=== Test 6: flag with =value ===")
+  println("Parsing: " + args6.to_string())
+  println("")
+  let cfg6 = DockerConfig::new()
+  let result6 = parse_docker(cfg6, args6)
+  match result6 {
+    Ok(_) => print_config(cfg6)
+    Err(msg) => println("Error: " + msg)
+  }
+  println("")
+
+  // ─── Test case 7: --scale abc → abort (invalid integer) ───
+  // PoC のため abort() で停止する。コメントのみ記載:
+  // let args7 = ["compose", "up", "--scale", "abc"]
+  // parse_docker(DockerConfig::new(), args7)  // → abort("Invalid integer: abc")
+
+  // ─── Test case 8: -v --verbose -v → verbose=3 (short/long mixed count) ───
+  let args8 = ["-v", "--verbose", "-v", "compose", "up"]
+  println("=== Test 8: short/long mixed count ===")
+  println("Parsing: " + args8.to_string())
+  println("")
+  let cfg8 = DockerConfig::new()
+  let result8 = parse_docker(cfg8, args8)
+  match result8 {
+    Ok(_) => print_config(cfg8)
+    Err(msg) => println("Error: " + msg)
+  }
+
   // TODO: --help 表示は ValuePath では未実装
   // ヘルプ生成には PathEntry にメタデータ（description 等）を持たせる拡張が必要
 }
@@ -202,7 +240,7 @@ fn parse_docker(cfg : DockerConfig, args : Array[String]) -> Result[Unit, String
   }
 
   // Step 2: compose が選択されていたら、compose 引数をパース
-  if cfg.matched_root_cmd.val == "compose" {
+  if cfg.matched_root_cmd.val == Some("compose") {
     let r2 = vp_parse(
       compose_args.val,
       compose_paths,
