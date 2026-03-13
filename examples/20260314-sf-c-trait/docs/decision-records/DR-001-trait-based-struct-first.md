@@ -58,7 +58,7 @@ FieldRegistry は内部で:
 ```moonbit
 reg.sub(
   name="run",
-  matched_fn=fn() { self.command = "run" },
+  on_match=fn() { self.command = Some(Run) },
   setup=fn(r) {
     r.flag(name="detach", apply_fn=fn(v) { self.run.detach = v })
     r.positional(name="IMAGE", apply_fn=fn(v) { self.run.image = v })

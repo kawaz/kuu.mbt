@@ -81,11 +81,12 @@ fn[T : Parseable] parse_into(args, target) -> Unit raise ParseError
 
 グローバルオプション: --verbose, --log-level
 
-全7テストケース PASS。
+全10テストケース PASS（assert_eq による値検証 + エラーパステスト）。
 
 ## 制限事項と今後の課題
 
 1. **pub(open) trait**: 外部パッケージからの impl は未検証
 2. **カスタムバリデーション**: FieldRegistry に post/choices 対応なし
+5. **サブコマンド struct の事前確保**: 全サブコマンドの struct がデフォルト値で事前確保される。サブコマンド数が多い場合は Option 型でのオンデマンド生成パターンを検討する必要がある
 3. **derive 自動生成**: 現在は手動 impl。将来的に derive マクロがあれば自動化可能
 4. **型安全性**: apply_fn の型チェックはコンパイル時に行われるが、フィールド名との対応は手動
