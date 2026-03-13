@@ -218,7 +218,7 @@ fn PosConfig::default() -> PosConfig {
 
 ///|
 impl Parseable for PosConfig with register(self, reg) {
-  reg.positional(name="FILE", apply_fn=fn(v) { self.file = v })
+  reg.positional(name="FILE", apply_fn=fn(v) { self.file = Some(v) })
 }
 
 ///|
@@ -257,6 +257,14 @@ test "rest: collects remaining args" {
   let config = RestConfig::default()
   parse_into(["a", "b", "c"], config)
   assert_eq(config.args, ["a", "b", "c"])
+}
+
+///|
+test "rest: unset preserves struct default" {
+  let config : RestConfig = { args: ["pre-populated"] }
+  parse_into([], config)
+  // rest 未指定時は apply_fn を呼ばず、struct のデフォルトを維持する
+  assert_eq(config.args, ["pre-populated"])
 }
 
 // ---- sub + require_cmd テスト ----

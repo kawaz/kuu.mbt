@@ -4,13 +4,13 @@ pub fn FieldRegistry::positional(
   self : FieldRegistry,
   name~ : String,
   description~ : String = "",
-  apply_fn~ : (String?) -> Unit,
+  apply_fn~ : (String) -> Unit,
 ) -> Unit {
   let opt = self.parser.positional(name=name, description=description)
   self.appliers.push(fn() {
     if (opt.is_set)() {
       match opt.get() {
-        Some(v) => apply_fn(Some(v))
+        Some(v) => apply_fn(v)
         None => ()
       }
     }
@@ -18,7 +18,7 @@ pub fn FieldRegistry::positional(
 }
 
 ///|
-/// 残り全引数を収集。
+/// 残り全引数を収集。未指定時は apply_fn を呼ばない（struct のデフォルトを維持）。
 pub fn FieldRegistry::rest(
   self : FieldRegistry,
   name~ : String,
@@ -27,9 +27,11 @@ pub fn FieldRegistry::rest(
 ) -> Unit {
   let opt = self.parser.rest(name=name, description=description)
   self.appliers.push(fn() {
-    match opt.get() {
-      Some(v) => apply_fn(v)
-      None => ()
+    if (opt.is_set)() {
+      match opt.get() {
+        Some(v) => apply_fn(v)
+        None => ()
+      }
     }
   })
 }
