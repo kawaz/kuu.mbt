@@ -111,7 +111,10 @@ fn FieldRegistry::positional(
   let opt = self.parser.positional(name=name, description=description)
   self.appliers.push(fn() {
     if (opt.is_set)() {
-      apply_fn(opt.get())
+      match opt.get() {
+        Some(v) => apply_fn(Some(v))
+        None => () // 防御的: is_set=true なら通常到達しない
+      }
     }
   })
 }
@@ -145,9 +148,7 @@ fn FieldRegistry::sub(
   setup~ : (FieldRegistry) -> Unit,
   on_match~ : () -> Unit = fn() {  }
 ) -> Unit {
-  let child_reg_ref : Ref[@core.Opt[@core.CmdResult]?] = { val: None }
   let child_registry_ref : Ref[FieldRegistry?] = { val: None }
-  let cmd_name = name
   let cmd = self.parser.cmd(
     name=name,
     description=description,
@@ -157,11 +158,6 @@ fn FieldRegistry::sub(
       child_registry_ref.val = Some(child_reg)
     },
   )
-  // Design rationale: cmd を Ref に入れるのは、applier クロージャ内で
-  // cmd と child_registry_ref の両方を参照するため。
-  child_reg_ref.val = Some(cmd)
-  ignore(child_reg_ref)
-  ignore(cmd_name)
   self.appliers.push(fn() {
     if (cmd.is_set)() {
       on_match()
@@ -213,7 +209,6 @@ fn[T : Parseable] parse_into(
 
 /// どのサブコマンドが選ばれたかを型安全に表現
 enum Command {
-  None_
   Run
   Build
   Ps
@@ -223,7 +218,7 @@ enum Command {
 struct DockerCli {
   mut verbose : Bool
   mut log_level : String
-  mut command : Command
+  mut command : Command?
   run : RunConfig
   build : BuildConfig
   ps : PsConfig
@@ -252,7 +247,7 @@ fn DockerCli::default() -> DockerCli {
   {
     verbose: false,
     log_level: "info",
-    command: None_,
+    command: None,
     run: {
       image: None,
       detach: false,
@@ -283,7 +278,7 @@ impl Parseable for DockerCli with register(self, reg) {
   reg.sub(
     name="run",
     description="Create and run a new container",
-    on_match=fn() { self.command = Run },
+    on_match=fn() { self.command = Some(Run) },
     setup=fn(r) {
       r.flag(
         name="detach",
@@ -317,7 +312,7 @@ impl Parseable for DockerCli with register(self, reg) {
   reg.sub(
     name="build",
     description="Build an image from a Dockerfile",
-    on_match=fn() { self.command = Build },
+    on_match=fn() { self.command = Some(Build) },
     setup=fn(r) {
       r.string(
         name="tag",
@@ -342,7 +337,7 @@ impl Parseable for DockerCli with register(self, reg) {
   reg.sub(
     name="ps",
     description="List containers",
-    on_match=fn() { self.command = Ps },
+    on_match=fn() { self.command = Some(Ps) },
     setup=fn(r) {
       r.flag(
         name="all",
@@ -426,7 +421,7 @@ fn main {
       "443:443", "nginx", "--", "echo", "hello",
     ],
     (cli) => {
-      assert_eq(cli.command, Run)
+      assert_eq(cli.command, Some(Run))
       assert_eq(cli.run.image, Some("nginx"))
       assert_eq(cli.run.detach, true)
       assert_eq(cli.run.name, "web")
@@ -440,7 +435,7 @@ fn main {
     "docker build --tag myapp:v1.0 --no-cache .",
     ["build", "--tag", "myapp:v1.0", "--no-cache", "."],
     (cli) => {
-      assert_eq(cli.command, Build)
+      assert_eq(cli.command, Some(Build))
       assert_eq(cli.build.tag, "myapp:v1.0")
       assert_eq(cli.build.no_cache, true)
       assert_eq(cli.build.path, Some("."))
@@ -452,7 +447,7 @@ fn main {
     "docker ps --all --quiet",
     ["ps", "--all", "--quiet"],
     (cli) => {
-      assert_eq(cli.command, Ps)
+      assert_eq(cli.command, Some(Ps))
       assert_eq(cli.ps.all, true)
       assert_eq(cli.ps.quiet, true)
     },
@@ -465,7 +460,7 @@ fn main {
     (cli) => {
       assert_eq(cli.verbose, true)
       assert_eq(cli.log_level, "debug")
-      assert_eq(cli.command, Run)
+      assert_eq(cli.command, Some(Run))
       assert_eq(cli.run.image, Some("nginx"))
     },
   )
@@ -475,7 +470,7 @@ fn main {
     "docker build (defaults)",
     ["build"],
     (cli) => {
-      assert_eq(cli.command, Build)
+      assert_eq(cli.command, Some(Build))
       assert_eq(cli.build.tag, "latest")
       assert_eq(cli.build.no_cache, false)
       assert_eq(cli.build.path, None)
@@ -494,7 +489,7 @@ fn main {
     "docker run alpine",
     ["run", "alpine"],
     (cli) => {
-      assert_eq(cli.command, Run)
+      assert_eq(cli.command, Some(Run))
       assert_eq(cli.run.image, Some("alpine"))
       assert_eq(cli.run.detach, false)
       assert_eq(cli.run.name, "")
@@ -508,7 +503,7 @@ fn main {
     "docker ps (defaults)",
     ["ps"],
     (cli) => {
-      assert_eq(cli.command, Ps)
+      assert_eq(cli.command, Some(Ps))
       assert_eq(cli.ps.all, false)
       assert_eq(cli.ps.quiet, false)
     },
@@ -519,13 +514,20 @@ fn main {
     "docker run nginx (build/ps state untouched)",
     ["run", "nginx"],
     (cli) => {
-      assert_eq(cli.command, Run)
+      assert_eq(cli.command, Some(Run))
       // build/ps は初期値のまま
       assert_eq(cli.build.tag, "latest")
       assert_eq(cli.build.no_cache, false)
       assert_eq(cli.ps.all, false)
       assert_eq(cli.ps.quiet, false)
     },
+  )
+
+  // Test 10: unknown subcommand (expect error)
+  assert_parse_error(
+    "docker exec (unknown subcommand)",
+    ["exec", "--interactive"],
+    expected_msg="unexpected",
   )
 
   println("")
