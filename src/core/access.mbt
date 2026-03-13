@@ -52,6 +52,14 @@ pub fn[T] ParseResult::get(self : ParseResult, opt : Opt[T]) -> T? {
 }
 
 ///|
+/// Returns the list of deprecated option usages recorded during parsing.
+/// Each entry is a (name, msg) tuple where name is the deprecated option name
+/// and msg is the deprecation message provided by the developer.
+pub fn Parser::deprecated_warnings(self : Parser) -> Array[(String, String)] {
+  self.deprecated_usages
+}
+
+///|
 /// Deprecated: Use `opt.get()` instead. This method checks this parser's parsed
 /// state, which may differ from the opt's owning parser (e.g. for subcommand opts).
 pub fn[T] Parser::get(self : Parser, opt : Opt[T]) -> T? {

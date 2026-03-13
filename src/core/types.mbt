@@ -76,6 +76,8 @@ pub(all) struct Parser {
   // make_soft_custom_value_node の "--" ガードをバイパスする value ノードを保持。
   // OC フェーズでは使われず install_eq_split_node のみが参照する。
   eq_fallback_nodes : Array[ExactNode]
+  // deprecated コンビネータで使用。deprecated な名前が使われた場合に (name, msg) を記録。
+  deprecated_usages : Array[(String, String)]
 }
 
 ///|

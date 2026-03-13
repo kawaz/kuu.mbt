@@ -61,6 +61,7 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     force_unclaimed: [],
     alias_sources: Map::new(),
     eq_fallback_nodes: [],
+    deprecated_usages: [],
   }
   if dashdash {
     p.install_separator_node()
@@ -220,6 +221,27 @@ pub fn[T] Parser::alias(
       }
     }
   }
+}
+
+///|
+/// 非推奨の別名を登録するコンビネータ。
+/// alias + post_hook で実装。使用されると deprecated_usages に (name, msg) を記録する。
+/// 値は target と共有（alias 動作）、is_set は独立。
+pub fn[T] Parser::deprecated(
+  self : Parser,
+  name : String,
+  target : Opt[T],
+  msg~ : String = "",
+) -> Opt[T] {
+  let alias_opt = self.alias(name, target)
+  let dep_name = name
+  let dep_msg = msg
+  self.post_hooks.push(fn() raise ParseError {
+    if (alias_opt.is_set)() {
+      self.deprecated_usages.push((dep_name, dep_msg))
+    }
+  })
+  alias_opt
 }
 
 ///|

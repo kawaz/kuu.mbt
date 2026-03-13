@@ -5560,3 +5560,76 @@ test "R2-W4: implicit+choices invalid choice via eq-split" {
   let result = try? p.parse(["--level=bad"])
   inspect(result is Err(_), content="true")
 }
+
+// === deprecated コンビネータテスト ===
+
+///|
+test "deprecated records usage when used" {
+  let p = Parser::new(dashdash=false)
+  let output = p.string_opt(name="output", default="")
+  let _ = p.deprecated("--out", output, msg="use --output instead")
+  ignore(p.parse(["--out", "file.txt"]))
+  inspect(p.deprecated_warnings().length(), content="1")
+  let warn = p.deprecated_warnings()[0]
+  inspect(warn.0, content="--out")
+  inspect(warn.1, content="use --output instead")
+}
+
+///|
+test "deprecated not recorded when unused" {
+  let p = Parser::new(dashdash=false)
+  let output = p.string_opt(name="output", default="")
+  let _ = p.deprecated("--out", output, msg="use --output instead")
+  ignore(p.parse(["--output", "file.txt"]))
+  inspect(p.deprecated_warnings().length(), content="0")
+}
+
+///|
+test "deprecated shares value with target" {
+  let p = Parser::new(dashdash=false)
+  let output = p.string_opt(name="output", default="default")
+  let out = p.deprecated("--out", output, msg="use --output instead")
+  ignore(p.parse(["--out", "hello"]))
+  // alias 動作: 値が共有される
+  inspect(output.get(), content="Some(\"hello\")")
+  inspect(out.get(), content="Some(\"hello\")")
+}
+
+///|
+test "deprecated is_set independent from target" {
+  let p = Parser::new(dashdash=false)
+  let output = p.string_opt(name="output", default="default")
+  let out = p.deprecated("--out", output, msg="use --output instead")
+  ignore(p.parse(["--out", "hello"]))
+  // alias 動作: is_set は独立（deprecated 側のみ true、target は target_was_set で true）
+  inspect((out.is_set)(), content="true")
+  inspect((output.is_set)(), content="true")
+}
+
+///|
+test "deprecated with cmd" {
+  let p = Parser::new(dashdash=false)
+  let serve = p.cmd(name="serve", dashdash=false, setup=fn(_child) {  })
+  let srv = p.deprecated("serve-old", serve, msg="use 'serve' instead")
+  ignore(p.parse(["serve-old"]))
+  // cmd の deprecated 別名も動作する
+  inspect(serve.get() is Some(_), content="true")
+  inspect(srv.get() is Some(_), content="true")
+  inspect(p.deprecated_warnings().length(), content="1")
+  inspect(p.deprecated_warnings()[0].0, content="serve-old")
+}
+
+///|
+test "deprecated multiple options" {
+  let p = Parser::new(dashdash=false)
+  let output = p.string_opt(name="output", default="")
+  let verbose = p.flag(name="verbose")
+  let _ = p.deprecated("--out", output, msg="use --output")
+  let _ = p.deprecated("--verb", verbose, msg="use --verbose")
+  ignore(p.parse(["--out", "f.txt", "--verb"]))
+  inspect(p.deprecated_warnings().length(), content="2")
+  // 両方記録されている
+  let names = p.deprecated_warnings().map(fn(w) { w.0 })
+  inspect(names.contains("--out"), content="true")
+  inspect(names.contains("--verb"), content="true")
+}

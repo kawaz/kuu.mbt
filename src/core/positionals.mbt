@@ -141,6 +141,7 @@ pub fn Parser::serial(
     force_unclaimed: [],
     alias_sources: Map::new(),
     eq_fallback_nodes: [],
+    deprecated_usages: [],
   }
   setup(sub)
   // sub.positionals を greedy な compound handler にまとめる。
