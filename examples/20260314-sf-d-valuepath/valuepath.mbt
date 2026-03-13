@@ -104,11 +104,9 @@ fn vp_count(name : String, target : Ref[Int]) -> PathEntry {
 }
 
 /// 文字列配列追記用のPathEntry
+/// Design rationale: vp_custom の Value は target.val を丸ごと置き換えるため、
+/// append セマンティクスには使えない。直接構築する。
 fn vp_append(name : String, target : Ref[Array[String]]) -> PathEntry {
-  vp_custom(name, target, Value(fn(s) { ([s], None) }))
-  // Design rationale: vp_append は append セマンティクスなので vp_custom の Value で
-  // 配列ごと置き換わってしまう。直接構築に戻す。
-  |> ignore
   PathEntry::{
     name,
     needs_value: true,

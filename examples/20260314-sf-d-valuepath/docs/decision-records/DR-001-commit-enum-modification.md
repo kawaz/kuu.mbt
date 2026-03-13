@@ -34,9 +34,12 @@ enum Commit[T] {
 - `(T) -> T` だと count パターン（`fn(n) { n + 1 }`）には使えるが、String → Int 変換が入る value パターンに対応できない
 - `(String) -> T` にすれば flag 以外の全パターンに統一的に対応可能
 
+## R2 追記: Value の戻り値を (T, String?) に拡張
+
+`abort()` を排除するため、`Value((String) -> T)` を `Value((String) -> (T, String?))` に変更。
+`String?` が `None` なら成功、`Some(msg)` ならエラー。これにより `on_match` の型が `(String) -> String?` に統一され、エラーが `vp_parse` の `Result` として伝搬される。
+
 ## 残課題
 
-- count パターン（`-v -v -v` で verbose カウント）は `Value((String) -> T)` では表現しにくい
-  - 現在は `vp_count` ヘルパーで `on_match` クロージャ内で直接実装
-  - 3つ目のバリアント `Accumulate((T) -> T)` の追加を検討中
-- 元スケッチの `(T) -> T` の意図を完全に汲み取れていない可能性あり
+- count パターン（`-v -v -v`）は `vp_count` ヘルパーで `PathEntry` を直接構築。`Commit[T]` では表現しきれない（現在値への参照が必要なため）
+- 元スケッチの `(T) -> T` が意図していた「現在値の変換」パターンは、`Accumulate((T) -> T)` のような3つ目のバリアントで対応可能だが、このPoC の範囲では見送り

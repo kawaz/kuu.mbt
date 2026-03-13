@@ -18,14 +18,25 @@ kuu core と同じクロージャ束縛パターンを採用:
 struct PathEntry {
   name : String
   needs_value : Bool
-  on_match : (String) -> Unit  // クロージャで型情報をキャプチャ
+  on_match : (String) -> String?  // None=成功、Some(msg)=エラー
 }
 
-// ヘルパーがジェネリック → 型消去の橋渡し
+// Commit[T] → PathEntry の橋渡し（ジェネリック → 型消去）
+fn[T] vp_custom(name : String, target : Ref[T], commit : Commit[T]) -> PathEntry {
+  match commit {
+    Exist(f) => PathEntry::{ name, needs_value: false,
+      on_match: fn(_) { target.val = f(); None } }
+    Value(f) => PathEntry::{ name, needs_value: true,
+      on_match: fn(s) { let (val, err) = f(s); match err {
+        Some(msg) => Some(msg)
+        None => { target.val = val; None }
+      }}}
+  }
+}
+
+// ヘルパーは vp_custom のラッパー
 fn vp_flag(name : String, target : Ref[Bool]) -> PathEntry {
-  // target : Ref[Bool] をクロージャ内にキャプチャ
-  // PathEntry 自体は Bool を知らない
-  PathEntry::{ name, needs_value: false, on_match: fn(_) { target.val = true } }
+  vp_custom(name, target, Exist(fn() { true }))
 }
 ```
 
