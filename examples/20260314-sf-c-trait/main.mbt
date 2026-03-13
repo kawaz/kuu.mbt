@@ -16,6 +16,9 @@
 
 /// パース結果を struct フィールドに適用するクロージャを蓄積する。
 /// kuu core の Parser をラップし、trait impl から呼ばれる登録メソッドを提供する。
+///
+/// applier は parse 成功後にのみ apply_all() で一括実行される。
+/// parse がエラーを raise した場合、apply_all() は呼ばれず target の状態はデフォルトのまま。
 struct FieldRegistry {
   parser : @core.Parser
   appliers : Array[() -> Unit]
@@ -25,6 +28,8 @@ fn FieldRegistry::new(parser : @core.Parser) -> FieldRegistry {
   { parser, appliers: [] }
 }
 
+/// Bool フラグを登録。apply_fn はパース成功後に値を受け取る。
+/// apply_fn は struct フィールドへの代入のみに使用すること。
 fn FieldRegistry::flag(
   self : FieldRegistry,
   name~ : String,
@@ -33,9 +38,15 @@ fn FieldRegistry::flag(
   apply_fn~ : (Bool) -> Unit
 ) -> Unit {
   let opt = self.parser.flag(name=name, description=description, global=global)
-  self.appliers.push(fn() { apply_fn(opt.get().unwrap()) })
+  self.appliers.push(fn() {
+    match opt.get() {
+      Some(v) => apply_fn(v)
+      None => ()
+    }
+  })
 }
 
+/// String オプションを登録。
 fn FieldRegistry::string(
   self : FieldRegistry,
   name~ : String,
@@ -46,9 +57,15 @@ fn FieldRegistry::string(
   let opt = self.parser.string_opt(
     name=name, default=default, description=description,
   )
-  self.appliers.push(fn() { apply_fn(opt.get().unwrap()) })
+  self.appliers.push(fn() {
+    match opt.get() {
+      Some(v) => apply_fn(v)
+      None => ()
+    }
+  })
 }
 
+/// Int オプションを登録。
 fn FieldRegistry::int(
   self : FieldRegistry,
   name~ : String,
@@ -59,9 +76,15 @@ fn FieldRegistry::int(
   let opt = self.parser.int_opt(
     name=name, default=default, description=description,
   )
-  self.appliers.push(fn() { apply_fn(opt.get().unwrap()) })
+  self.appliers.push(fn() {
+    match opt.get() {
+      Some(v) => apply_fn(v)
+      None => ()
+    }
+  })
 }
 
+/// 複数値収集オプションを登録。
 fn FieldRegistry::append_string(
   self : FieldRegistry,
   name~ : String,
@@ -69,9 +92,16 @@ fn FieldRegistry::append_string(
   apply_fn~ : (Array[String]) -> Unit
 ) -> Unit {
   let opt = self.parser.append_string(name=name, description=description)
-  self.appliers.push(fn() { apply_fn(opt.get().unwrap()) })
+  self.appliers.push(fn() {
+    match opt.get() {
+      Some(v) => apply_fn(v)
+      None => ()
+    }
+  })
 }
 
+/// 位置引数を登録。kuu の positional は default="" のため、
+/// is_set で未指定を判別し、未指定時は apply_fn を呼ばない（struct のデフォルトを維持）。
 fn FieldRegistry::positional(
   self : FieldRegistry,
   name~ : String,
@@ -79,8 +109,6 @@ fn FieldRegistry::positional(
   apply_fn~ : (String?) -> Unit
 ) -> Unit {
   let opt = self.parser.positional(name=name, description=description)
-  // positional は is_set で実際に値が提供されたか判別する。
-  // kuu の positional は default="" なので get() だけでは未指定と空文字を区別できない。
   self.appliers.push(fn() {
     if (opt.is_set)() {
       apply_fn(opt.get())
@@ -88,6 +116,7 @@ fn FieldRegistry::positional(
   })
 }
 
+/// 残り全引数を収集。
 fn FieldRegistry::rest(
   self : FieldRegistry,
   name~ : String,
@@ -95,37 +124,50 @@ fn FieldRegistry::rest(
   apply_fn~ : (Array[String]) -> Unit
 ) -> Unit {
   let opt = self.parser.rest(name=name, description=description)
-  self.appliers.push(fn() { apply_fn(opt.get().unwrap()) })
+  self.appliers.push(fn() {
+    match opt.get() {
+      Some(v) => apply_fn(v)
+      None => ()
+    }
+  })
 }
 
-/// サブコマンドを登録。setup クロージャで子パーサの FieldRegistry を受け取る。
-/// matched_fn は当該サブコマンドが選択された場合に呼ばれる。
+/// サブコマンドを登録。
+/// setup: 子パーサの FieldRegistry を受け取り、子のフィールドを登録する。
+/// on_match: 当該サブコマンドが選択された場合に呼ばれる追加コールバック（省略可）。
+///
+/// 選択されたサブコマンドの applier のみが実行される（未選択サブコマンドの applier は実行されない）。
+/// 子 FieldRegistry は Ref で保持し、apply_all 時に再帰的に処理する。
 fn FieldRegistry::sub(
   self : FieldRegistry,
   name~ : String,
   description~ : String = "",
   setup~ : (FieldRegistry) -> Unit,
-  matched_fn~ : () -> Unit = fn() {  }
+  on_match~ : () -> Unit = fn() {  }
 ) -> Unit {
-  let child_appliers : Array[() -> Unit] = []
-  let child_matched = matched_fn
-  let _cmd = self.parser.cmd(
+  let child_reg_ref : Ref[@core.Opt[@core.CmdResult]?] = { val: None }
+  let child_registry_ref : Ref[FieldRegistry?] = { val: None }
+  let cmd_name = name
+  let cmd = self.parser.cmd(
     name=name,
     description=description,
     setup=fn(child_parser) {
       let child_reg = FieldRegistry::new(child_parser)
       setup(child_reg)
-      // 子の appliers を親に伝搬（parse 後にまとめて実行するため）
-      for a in child_reg.appliers {
-        child_appliers.push(a)
-      }
+      child_registry_ref.val = Some(child_reg)
     },
   )
+  // Design rationale: cmd を Ref に入れるのは、applier クロージャ内で
+  // cmd と child_registry_ref の両方を参照するため。
+  child_reg_ref.val = Some(cmd)
+  ignore(child_reg_ref)
+  ignore(cmd_name)
   self.appliers.push(fn() {
-    if (_cmd.is_set)() {
-      child_matched()
-      for a in child_appliers {
-        a()
+    if (cmd.is_set)() {
+      on_match()
+      match child_registry_ref.val {
+        Some(child_reg) => child_reg.apply_all()
+        None => ()
       }
     }
   })
@@ -135,6 +177,7 @@ fn FieldRegistry::require_cmd(self : FieldRegistry) -> Unit {
   self.parser.require_cmd()
 }
 
+/// 蓄積された全 applier を実行。parse 成功後にのみ呼ぶこと。
 fn FieldRegistry::apply_all(self : FieldRegistry) -> Unit {
   for applier in self.appliers {
     applier()
@@ -145,10 +188,14 @@ fn FieldRegistry::apply_all(self : FieldRegistry) -> Unit {
 // Parseable trait
 // ============================================================
 
+/// CLI パース可能な struct が実装する trait。
+/// register メソッドで FieldRegistry にフィールド登録を行う。
 trait Parseable {
   register(Self, FieldRegistry) -> Unit
 }
 
+/// struct を対象に CLI 引数をパースし、結果を直接注入する。
+/// エラー時は target の状態はデフォルトのまま（apply_all は呼ばれない）。
 fn[T : Parseable] parse_into(
   args : Array[String],
   target : T
@@ -156,7 +203,7 @@ fn[T : Parseable] parse_into(
   let parser = @core.Parser::new()
   let registry = FieldRegistry::new(parser)
   target.register(registry)
-  let _result = parser.parse(args)
+  let _ = parser.parse(args)
   registry.apply_all()
 }
 
@@ -164,13 +211,19 @@ fn[T : Parseable] parse_into(
 // docker-like CLI: struct 定義
 // ============================================================
 
-/// トップレベル: グローバルオプション + どのサブコマンドが選ばれたか
+/// どのサブコマンドが選ばれたかを型安全に表現
+enum Command {
+  None_
+  Run
+  Build
+  Ps
+} derive(Eq, Show)
+
+/// トップレベル: グローバルオプション + サブコマンド結果
 struct DockerCli {
-  // global options
   mut verbose : Bool
   mut log_level : String
-  // subcommand results
-  mut command : String // 選ばれたサブコマンド名
+  mut command : Command
   run : RunConfig
   build : BuildConfig
   ps : PsConfig
@@ -199,7 +252,7 @@ fn DockerCli::default() -> DockerCli {
   {
     verbose: false,
     log_level: "info",
-    command: "",
+    command: None_,
     run: {
       image: None,
       detach: false,
@@ -213,7 +266,6 @@ fn DockerCli::default() -> DockerCli {
 }
 
 impl Parseable for DockerCli with register(self, reg) {
-  // グローバルオプション
   reg.flag(
     name="verbose",
     description="Enable verbose output",
@@ -231,7 +283,7 @@ impl Parseable for DockerCli with register(self, reg) {
   reg.sub(
     name="run",
     description="Create and run a new container",
-    matched_fn=fn() { self.command = "run" },
+    on_match=fn() { self.command = Run },
     setup=fn(r) {
       r.flag(
         name="detach",
@@ -265,7 +317,7 @@ impl Parseable for DockerCli with register(self, reg) {
   reg.sub(
     name="build",
     description="Build an image from a Dockerfile",
-    matched_fn=fn() { self.command = "build" },
+    on_match=fn() { self.command = Build },
     setup=fn(r) {
       r.string(
         name="tag",
@@ -290,7 +342,7 @@ impl Parseable for DockerCli with register(self, reg) {
   reg.sub(
     name="ps",
     description="List containers",
-    matched_fn=fn() { self.command = "ps" },
+    on_match=fn() { self.command = Ps },
     setup=fn(r) {
       r.flag(
         name="all",
@@ -309,30 +361,57 @@ impl Parseable for DockerCli with register(self, reg) {
 }
 
 // ============================================================
-// ヘルパー: テスト実行と結果表示
+// テスト
 // ============================================================
 
-fn run_test(
+/// パース成功を期待するテスト。check_fn で値の正しさを assert_eq で検証する。
+/// check_fn 内の assert_eq が失敗した場合は [FAIL] として報告する。
+fn assert_parse(
   label : String,
   args : Array[String],
-  expected_fn : (DockerCli) -> String
+  check_fn : (DockerCli) -> Unit raise
 ) -> Unit {
   let cli = DockerCli::default()
   let result : Result[Unit, @core.ParseError] = try? parse_into(args, cli)
   match result {
     Ok(_) => {
-      let expected = expected_fn(cli)
-      println("[PASS] \{label}")
-      println("  \{expected}")
+      // check_fn 内の assert が失敗すると panic するので try で捕捉
+      try {
+        check_fn(cli)
+        println("[PASS] \{label}")
+      } catch {
+        e => println("[FAIL] \{label}: assertion failed: \{e}")
+      }
     }
-    Err(@core.ParseError(info)) => println("[FAIL] \{label}: \{info.message}")
-    Err(@core.HelpRequested(text)) => println("[HELP] \{label}:\n\{text}")
+    Err(@core.ParseError(info)) =>
+      println("[FAIL] \{label}: unexpected error: \{info.message}")
+    Err(@core.HelpRequested(_)) =>
+      println("[FAIL] \{label}: unexpected help request")
   }
 }
 
-// ============================================================
-// メイン
-// ============================================================
+/// パースエラーを期待するテスト。
+fn assert_parse_error(
+  label : String,
+  args : Array[String],
+  expected_msg~ : String
+) -> Unit {
+  let cli = DockerCli::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into(args, cli)
+  match result {
+    Ok(_) => println("[FAIL] \{label}: expected error but succeeded")
+    Err(@core.ParseError(info)) =>
+      if info.message.contains(expected_msg) {
+        println("[PASS] \{label} (error: \{info.message})")
+      } else {
+        println(
+          "[FAIL] \{label}: expected '\{expected_msg}' but got '\{info.message}'",
+        )
+      }
+    Err(@core.HelpRequested(_)) =>
+      println("[FAIL] \{label}: expected error but got help")
+  }
+}
 
 fn main {
   println("=== struct-first CLI Parser PoC: Trait-based ===")
@@ -340,56 +419,114 @@ fn main {
   println("")
 
   // Test 1: docker run with all options
-  run_test(
+  assert_parse(
     "docker run --detach --name web --publish 8080:80 --publish 443:443 nginx -- echo hello",
     [
       "run", "--detach", "--name", "web", "--publish", "8080:80", "--publish",
       "443:443", "nginx", "--", "echo", "hello",
     ],
-    fn(cli) {
-      "cmd=\{cli.command} image=\{cli.run.image} detach=\{cli.run.detach}" +
-      " name=\{cli.run.name} publish=\{cli.run.publish} extra=\{cli.run.extra_args}"
+    (cli) => {
+      assert_eq(cli.command, Run)
+      assert_eq(cli.run.image, Some("nginx"))
+      assert_eq(cli.run.detach, true)
+      assert_eq(cli.run.name, "web")
+      assert_eq(cli.run.publish, ["8080:80", "443:443"])
+      assert_eq(cli.run.extra_args, ["echo", "hello"])
     },
   )
 
   // Test 2: docker build with tag
-  run_test(
+  assert_parse(
     "docker build --tag myapp:v1.0 --no-cache .",
     ["build", "--tag", "myapp:v1.0", "--no-cache", "."],
-    fn(cli) {
-      "cmd=\{cli.command} tag=\{cli.build.tag} no_cache=\{cli.build.no_cache}" +
-      " path=\{cli.build.path}"
+    (cli) => {
+      assert_eq(cli.command, Build)
+      assert_eq(cli.build.tag, "myapp:v1.0")
+      assert_eq(cli.build.no_cache, true)
+      assert_eq(cli.build.path, Some("."))
     },
   )
 
   // Test 3: docker ps --all --quiet
-  run_test("docker ps --all --quiet", ["ps", "--all", "--quiet"], fn(cli) {
-    "cmd=\{cli.command} all=\{cli.ps.all} quiet=\{cli.ps.quiet}"
-  })
-
-  // Test 4: global option with subcommand
-  run_test(
-    "docker --verbose --log-level debug run nginx",
-    ["--verbose", "--log-level", "debug", "run", "nginx"],
-    fn(cli) {
-      "verbose=\{cli.verbose} log_level=\{cli.log_level}" +
-      " cmd=\{cli.command} image=\{cli.run.image}"
+  assert_parse(
+    "docker ps --all --quiet",
+    ["ps", "--all", "--quiet"],
+    (cli) => {
+      assert_eq(cli.command, Ps)
+      assert_eq(cli.ps.all, true)
+      assert_eq(cli.ps.quiet, true)
     },
   )
 
-  // Test 5: docker build defaults
-  run_test("docker build (defaults)", ["build"], fn(cli) {
-    "cmd=\{cli.command} tag=\{cli.build.tag} no_cache=\{cli.build.no_cache}" +
-    " path=\{cli.build.path}"
-  })
+  // Test 4: global option with subcommand
+  assert_parse(
+    "docker --verbose --log-level debug run nginx",
+    ["--verbose", "--log-level", "debug", "run", "nginx"],
+    (cli) => {
+      assert_eq(cli.verbose, true)
+      assert_eq(cli.log_level, "debug")
+      assert_eq(cli.command, Run)
+      assert_eq(cli.run.image, Some("nginx"))
+    },
+  )
+
+  // Test 5: docker build defaults (positional not provided)
+  assert_parse(
+    "docker build (defaults)",
+    ["build"],
+    (cli) => {
+      assert_eq(cli.command, Build)
+      assert_eq(cli.build.tag, "latest")
+      assert_eq(cli.build.no_cache, false)
+      assert_eq(cli.build.path, None)
+    },
+  )
 
   // Test 6: missing subcommand (expect error)
-  run_test("docker (no subcommand - expect error)", [], fn(_cli) { "UNEXPECTED" })
+  assert_parse_error(
+    "docker (no subcommand - expect error)",
+    [],
+    expected_msg="subcommand required",
+  )
 
   // Test 7: docker run minimal
-  run_test("docker run alpine", ["run", "alpine"], fn(cli) {
-    "cmd=\{cli.command} image=\{cli.run.image} detach=\{cli.run.detach}"
-  })
+  assert_parse(
+    "docker run alpine",
+    ["run", "alpine"],
+    (cli) => {
+      assert_eq(cli.command, Run)
+      assert_eq(cli.run.image, Some("alpine"))
+      assert_eq(cli.run.detach, false)
+      assert_eq(cli.run.name, "")
+      assert_eq(cli.run.publish.length(), 0)
+      assert_eq(cli.run.extra_args.length(), 0)
+    },
+  )
+
+  // Test 8: docker ps defaults
+  assert_parse(
+    "docker ps (defaults)",
+    ["ps"],
+    (cli) => {
+      assert_eq(cli.command, Ps)
+      assert_eq(cli.ps.all, false)
+      assert_eq(cli.ps.quiet, false)
+    },
+  )
+
+  // Test 9: unselected subcommand state untouched
+  assert_parse(
+    "docker run nginx (build/ps state untouched)",
+    ["run", "nginx"],
+    (cli) => {
+      assert_eq(cli.command, Run)
+      // build/ps は初期値のまま
+      assert_eq(cli.build.tag, "latest")
+      assert_eq(cli.build.no_cache, false)
+      assert_eq(cli.ps.all, false)
+      assert_eq(cli.ps.quiet, false)
+    },
+  )
 
   println("")
   println("=== PoC Complete ===")
