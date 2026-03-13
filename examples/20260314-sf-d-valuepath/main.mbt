@@ -17,9 +17,13 @@ struct DockerConfig {
   compose_detach : Ref[Bool]
   compose_scale : Ref[Int]
   compose_services : Ref[Array[String]]
+  // network options
+  net_create_driver : Ref[String]
+  net_create_name : Ref[String?]
   // matched command tracking
   matched_root_cmd : Ref[String?]
   matched_compose_cmd : Ref[String?]
+  matched_net_cmd : Ref[String?]
 }
 
 fn DockerConfig::new() -> DockerConfig {
@@ -32,8 +36,11 @@ fn DockerConfig::new() -> DockerConfig {
     compose_detach: { val: false },
     compose_scale: { val: 1 },
     compose_services: { val: [] },
+    net_create_driver: { val: "bridge" },
+    net_create_name: { val: None },
     matched_root_cmd: { val: None },
     matched_compose_cmd: { val: None },
+    matched_net_cmd: { val: None },
   }
 }
 
@@ -66,11 +73,46 @@ fn print_config(cfg : DockerConfig) -> Unit {
         _ => ()
       }
     }
+    Some("network") => {
+      println("=== network ===")
+      match cfg.matched_net_cmd.val {
+        Some("create") => {
+          println("  --- create ---")
+          println("  driver: " + cfg.net_create_driver.val)
+          match cfg.net_create_name.val {
+            Some(name) => println("  name: " + name)
+            None => ()
+          }
+        }
+        _ => ()
+      }
+    }
     _ => ()
   }
 }
 
+/// テスト結果の検証ヘルパー
+/// is-main: true パッケージでは test ブロックが使えないため、
+/// main 関数内で期待値と実際値を比較し結果を表示する
+fn assert_eq_str(
+  label : String,
+  actual : String,
+  expected : String
+) -> Bool {
+  if actual == expected {
+    println("[PASS] " + label)
+    true
+  } else {
+    println(
+      "[FAIL] " + label + ": expected=" + expected + ", actual=" + actual,
+    )
+    false
+  }
+}
+
 fn main {
+  let mut all_pass = true
+
   // ─── Test case 1: compose up ───
   let args1 = [
     "--debug", "compose", "-f", "docker-compose.prod.yml",
@@ -83,8 +125,41 @@ fn main {
   let cfg1 = DockerConfig::new()
   let result1 = parse_docker(cfg1, args1)
   match result1 {
-    Ok(_) => print_config(cfg1)
-    Err(msg) => println("Error: " + msg)
+    Ok(_) => {
+      print_config(cfg1)
+      if not(
+        assert_eq_str("debug", cfg1.debug.val.to_string(), "true"),
+      ) {
+        all_pass = false
+      }
+      if not(
+        assert_eq_str("scale", cfg1.compose_scale.val.to_string(), "3"),
+      ) {
+        all_pass = false
+      }
+      if not(
+        assert_eq_str(
+          "matched_root_cmd",
+          cfg1.matched_root_cmd.val.to_string(),
+          "Some(compose)",
+        ),
+      ) {
+        all_pass = false
+      }
+      if not(
+        assert_eq_str(
+          "matched_compose_cmd",
+          cfg1.matched_compose_cmd.val.to_string(),
+          "Some(up)",
+        ),
+      ) {
+        all_pass = false
+      }
+    }
+    Err(msg) => {
+      println("Error: " + msg)
+      all_pass = false
+    }
   }
   println("")
 
@@ -96,8 +171,23 @@ fn main {
   let cfg2 = DockerConfig::new()
   let result2 = parse_docker(cfg2, args2)
   match result2 {
-    Ok(_) => print_config(cfg2)
-    Err(msg) => println("Error: " + msg)
+    Ok(_) => {
+      print_config(cfg2)
+      if not(
+        assert_eq_str("debug", cfg2.debug.val.to_string(), "true"),
+      ) {
+        all_pass = false
+      }
+      if not(
+        assert_eq_str("log_level", cfg2.log_level.val, "warn"),
+      ) {
+        all_pass = false
+      }
+    }
+    Err(msg) => {
+      println("Error: " + msg)
+      all_pass = false
+    }
   }
   println("")
 
@@ -112,8 +202,23 @@ fn main {
   let cfg3 = DockerConfig::new()
   let result3 = parse_docker(cfg3, args3)
   match result3 {
-    Ok(_) => print_config(cfg3)
-    Err(msg) => println("Error: " + msg)
+    Ok(_) => {
+      print_config(cfg3)
+      if not(
+        assert_eq_str("log_level", cfg3.log_level.val, "error"),
+      ) {
+        all_pass = false
+      }
+      if not(
+        assert_eq_str("scale", cfg3.compose_scale.val.to_string(), "5"),
+      ) {
+        all_pass = false
+      }
+    }
+    Err(msg) => {
+      println("Error: " + msg)
+      all_pass = false
+    }
   }
   println("")
 
@@ -125,8 +230,18 @@ fn main {
   let cfg4 = DockerConfig::new()
   let result4 = parse_docker(cfg4, args4)
   match result4 {
-    Ok(_) => print_config(cfg4)
-    Err(msg) => println("Error: " + msg)
+    Ok(_) => {
+      print_config(cfg4)
+      if not(
+        assert_eq_str("verbose", cfg4.verbose.val.to_string(), "3"),
+      ) {
+        all_pass = false
+      }
+    }
+    Err(msg) => {
+      println("Error: " + msg)
+      all_pass = false
+    }
   }
   println("")
 
@@ -138,8 +253,22 @@ fn main {
   let cfg5 = DockerConfig::new()
   let result5 = parse_docker(cfg5, args5)
   match result5 {
-    Ok(_) => print_config(cfg5)
-    Err(msg) => println("Error: " + msg)
+    Ok(_) => {
+      println("Expected error but got Ok")
+      all_pass = false
+    }
+    Err(msg) => {
+      println("Error (expected): " + msg)
+      if not(
+        assert_eq_str(
+          "error_contains_unknown",
+          (msg.contains("Unknown argument")).to_string(),
+          "true",
+        ),
+      ) {
+        all_pass = false
+      }
+    }
   }
 
   println("")
@@ -152,15 +281,51 @@ fn main {
   let cfg6 = DockerConfig::new()
   let result6 = parse_docker(cfg6, args6)
   match result6 {
-    Ok(_) => print_config(cfg6)
-    Err(msg) => println("Error: " + msg)
+    Ok(_) => {
+      println("Expected error but got Ok")
+      all_pass = false
+    }
+    Err(msg) => {
+      println("Error (expected): " + msg)
+      if not(
+        assert_eq_str(
+          "error_contains_flag",
+          (msg.contains("does not accept a value")).to_string(),
+          "true",
+        ),
+      ) {
+        all_pass = false
+      }
+    }
   }
   println("")
 
-  // ─── Test case 7: --scale abc → abort (invalid integer) ───
-  // PoC のため abort() で停止する。コメントのみ記載:
-  // let args7 = ["compose", "up", "--scale", "abc"]
-  // parse_docker(DockerConfig::new(), args7)  // → abort("Invalid integer: abc")
+  // ─── Test case 7: --scale abc → error (invalid integer, no abort) ───
+  let args7 = ["compose", "up", "--scale", "abc"]
+  println("=== Test 7: integer parse error ===")
+  println("Parsing: " + args7.to_string())
+  println("")
+  let cfg7 = DockerConfig::new()
+  let result7 = parse_docker(cfg7, args7)
+  match result7 {
+    Ok(_) => {
+      println("Expected error but got Ok")
+      all_pass = false
+    }
+    Err(msg) => {
+      println("Error (expected): " + msg)
+      if not(
+        assert_eq_str(
+          "error_contains_invalid_integer",
+          (msg.contains("Invalid integer")).to_string(),
+          "true",
+        ),
+      ) {
+        all_pass = false
+      }
+    }
+  }
+  println("")
 
   // ─── Test case 8: -v --verbose -v → verbose=3 (short/long mixed count) ───
   let args8 = ["-v", "--verbose", "-v", "compose", "up"]
@@ -170,8 +335,113 @@ fn main {
   let cfg8 = DockerConfig::new()
   let result8 = parse_docker(cfg8, args8)
   match result8 {
-    Ok(_) => print_config(cfg8)
-    Err(msg) => println("Error: " + msg)
+    Ok(_) => {
+      print_config(cfg8)
+      if not(
+        assert_eq_str("verbose", cfg8.verbose.val.to_string(), "3"),
+      ) {
+        all_pass = false
+      }
+    }
+    Err(msg) => {
+      println("Error: " + msg)
+      all_pass = false
+    }
+  }
+  println("")
+
+  // ─── Test case 9: network create (3階層ネスト実証) ───
+  let args9 = [
+    "--debug", "network", "create", "--driver", "overlay", "my-network",
+  ]
+  println("=== Test 9: network create (3-level nesting) ===")
+  println("Parsing: " + args9.to_string())
+  println("")
+  let cfg9 = DockerConfig::new()
+  let result9 = parse_docker(cfg9, args9)
+  match result9 {
+    Ok(_) => {
+      print_config(cfg9)
+      if not(
+        assert_eq_str("debug", cfg9.debug.val.to_string(), "true"),
+      ) {
+        all_pass = false
+      }
+      if not(
+        assert_eq_str(
+          "matched_root_cmd",
+          cfg9.matched_root_cmd.val.to_string(),
+          "Some(network)",
+        ),
+      ) {
+        all_pass = false
+      }
+      if not(
+        assert_eq_str(
+          "matched_net_cmd",
+          cfg9.matched_net_cmd.val.to_string(),
+          "Some(create)",
+        ),
+      ) {
+        all_pass = false
+      }
+      if not(
+        assert_eq_str("net_create_driver", cfg9.net_create_driver.val, "overlay"),
+      ) {
+        all_pass = false
+      }
+      if not(
+        assert_eq_str(
+          "net_create_name",
+          cfg9.net_create_name.val.to_string(),
+          "Some(my-network)",
+        ),
+      ) {
+        all_pass = false
+      }
+    }
+    Err(msg) => {
+      println("Error: " + msg)
+      all_pass = false
+    }
+  }
+  println("")
+
+  // ─── Test case 10: compose --debug up → error ───
+  // グローバルオプション --debug がサブコマンド内で認識されない制限の実証
+  let args10 = ["compose", "--debug", "up"]
+  println("=== Test 10: global option inside subcommand (limitation) ===")
+  println("Parsing: " + args10.to_string())
+  println("")
+  let cfg10 = DockerConfig::new()
+  let result10 = parse_docker(cfg10, args10)
+  match result10 {
+    Ok(_) => {
+      println("Expected error but got Ok")
+      all_pass = false
+    }
+    Err(msg) => {
+      println("Error (expected): " + msg)
+      // --debug はグローバルオプションだが compose レベルでは未定義なのでエラーになる
+      // struct-first の制限: グローバルオプションを各レベルに手動追加する必要がある
+      if not(
+        assert_eq_str(
+          "error_contains_unknown",
+          (msg.contains("Unknown argument")).to_string(),
+          "true",
+        ),
+      ) {
+        all_pass = false
+      }
+    }
+  }
+  println("")
+
+  // ─── Summary ───
+  if all_pass {
+    println("All tests passed.")
+  } else {
+    println("Some tests FAILED.")
   }
 
   // TODO: --help 表示は ValuePath では未実装
@@ -210,22 +480,37 @@ fn parse_docker(cfg : DockerConfig, args : Array[String]) -> Result[Unit, String
     vp_append("--file", cfg.compose_file),
   ]
 
-  // 2段階パース:
+  // ─── network create options ───
+  let net_create_paths : Array[PathEntry] = [
+    vp_string("--driver", cfg.net_create_driver),
+    vp_string("-d", cfg.net_create_driver),
+  ]
+
+  // network create の name は rest で取得
+  let net_create_rest : Ref[Array[String]] = { val: [] }
+
+  // ─── network subcommands ───
+  let net_subcmds : Array[
+    (String, Array[PathEntry], Ref[Array[String]]?),
+  ] = [("create", net_create_paths, Some(net_create_rest))]
+
+  // ─── network options (現状なし) ───
+  let net_paths : Array[PathEntry] = []
+
+  // 多段階パース:
   // 1. グローバルオプションを消費し、サブコマンドに分岐
   // 2. サブコマンド内でさらにサブコマンドに分岐
-
-  // compose サブコマンド用の中間パーサ
-  // compose は自身のオプション (-f) を持ち、さらに up/down 等のサブコマンドを持つ
-  // これを表現するために、compose 用のカスタムパースを行う
+  // 3. さらにネスト（network → create）
 
   // compose 全体の引数を受け取るためのバッファ
   let compose_args : Ref[Array[String]] = { val: [] }
+  // network 全体の引数を受け取るためのバッファ
+  let network_args : Ref[Array[String]] = { val: [] }
 
   // ルートレベルのサブコマンド
-  // compose を検出したら残り引数を compose_args に格納
   let root_subcmds : Array[
     (String, Array[PathEntry], Ref[Array[String]]?),
-  ] = [("compose", [], Some(compose_args))]
+  ] = [("compose", [], Some(compose_args)), ("network", [], Some(network_args))]
 
   // Step 1: ルートレベルをパース
   let r1 = vp_parse(
@@ -250,6 +535,29 @@ fn parse_docker(cfg : DockerConfig, args : Array[String]) -> Result[Unit, String
     match r2 {
       Err(e) => return Err(e)
       Ok(_) => ()
+    }
+  }
+
+  // Step 3: network が選択されていたら、network 引数をパース
+  // 3段階バッファリレー: root → network_args バッファ → network パース → create_rest バッファ
+  // サブコマンドを追加するたびにバッファ変数とパース呼出が線形に増加する
+  if cfg.matched_root_cmd.val == Some("network") {
+    let r3 = vp_parse(
+      network_args.val,
+      net_paths,
+      subcmds=Some(net_subcmds),
+      matched_cmd=Some(cfg.matched_net_cmd),
+    )
+    match r3 {
+      Err(e) => return Err(e)
+      Ok(_) => ()
+    }
+    // network create の name を rest から取得
+    if cfg.matched_net_cmd.val == Some("create") {
+      let rest = net_create_rest.val
+      if rest.length() > 0 {
+        cfg.net_create_name.val = Some(rest[0])
+      }
     }
   }
 

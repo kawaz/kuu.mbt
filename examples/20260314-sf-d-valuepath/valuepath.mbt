@@ -5,21 +5,19 @@
 /// CLI引数は常にStringなので (String)->T に変更。
 
 /// 値注入の戦略
-/// 現在の PoC では PathEntry のクロージャで直接実装しており
-/// Commit[T] は設計スケッチとして残している
-enum Commit[T] { //warning:ignore(unused_type_declaration)
+enum Commit[T] {
   /// フラグ: 存在したらTを返す
   Exist(() -> T)
-  /// 値: CLI文字列からTを生成
-  Value((String) -> T)
+  /// 値: CLI文字列からTを生成（エラー時は Some(msg) を返す）
+  Value((String) -> (T, String?))
 }
 
 /// 型消去されたパスエントリ（パースループ用）
-/// kuu core の ExactNode と同じ戦略: クロージャで型情報をキャプチャ
+/// on_match は None=成功、Some(msg)=エラー を返す
 struct PathEntry {
   name : String
   needs_value : Bool
-  on_match : (String) -> Unit
+  on_match : (String) -> String?
 }
 
 /// `--name=value` を分割するヘルパー
@@ -37,34 +35,60 @@ fn split_eq(arg : String) -> (String, String?) {
   (arg, None)
 }
 
+/// 汎用 PathEntry 構築（Commit[T] を実際に使用）
+fn[T] vp_custom(name : String, target : Ref[T], commit : Commit[T]) -> PathEntry {
+  match commit {
+    Exist(f) =>
+      PathEntry::{
+        name,
+        needs_value: false,
+        on_match: fn(_s) {
+          target.val = f()
+          None
+        },
+      }
+    Value(f) =>
+      PathEntry::{
+        name,
+        needs_value: true,
+        on_match: fn(s) {
+          let (val, err) = f(s)
+          match err {
+            Some(msg) => Some(msg)
+            None => {
+              target.val = val
+              None
+            }
+          }
+        },
+      }
+  }
+}
+
 /// フラグ（Bool）用のPathEntry
 fn vp_flag(name : String, target : Ref[Bool]) -> PathEntry {
-  PathEntry::{
-    name,
-    needs_value: false,
-    on_match: fn(_s) { target.val = true },
-  }
+  vp_custom(name, target, Exist(fn() { true }))
 }
 
 /// 文字列オプション用のPathEntry
 fn vp_string(name : String, target : Ref[String]) -> PathEntry {
-  PathEntry::{
-    name,
-    needs_value: true,
-    on_match: fn(s) { target.val = s },
-  }
+  vp_custom(name, target, Value(fn(s) { (s, None) }))
 }
 
 /// 整数オプション用のPathEntry
 fn vp_int(name : String, target : Ref[Int]) -> PathEntry {
-  PathEntry::{
+  vp_custom(
     name,
-    needs_value: true,
-    on_match: fn(s) {
-      // 自前の簡易 Int パース
-      target.val = parse_int_simple(s)
-    },
-  }
+    target,
+    Value(
+      fn(s) {
+        match parse_int_simple(s) {
+          Ok(n) => (n, None)
+          Err(msg) => (0, Some(msg))
+        }
+      },
+    ),
+  )
 }
 
 /// カウンタ用のPathEntry（needs_value=false, 出現回数をカウント）
@@ -72,24 +96,34 @@ fn vp_count(name : String, target : Ref[Int]) -> PathEntry {
   PathEntry::{
     name,
     needs_value: false,
-    on_match: fn(_s) { target.val = target.val + 1 },
+    on_match: fn(_s) {
+      target.val = target.val + 1
+      None
+    },
   }
 }
 
 /// 文字列配列追記用のPathEntry
 fn vp_append(name : String, target : Ref[Array[String]]) -> PathEntry {
+  vp_custom(name, target, Value(fn(s) { ([s], None) }))
+  // Design rationale: vp_append は append セマンティクスなので vp_custom の Value で
+  // 配列ごと置き換わってしまう。直接構築に戻す。
+  |> ignore
   PathEntry::{
     name,
     needs_value: true,
-    on_match: fn(s) { target.val.push(s) },
+    on_match: fn(s) {
+      target.val.push(s)
+      None
+    },
   }
 }
 
-/// 簡易 Int パース（負数対応、非数字文字はabort）
-fn parse_int_simple(s : String) -> Int {
+/// 簡易 Int パース（負数対応、非数字文字はエラー）
+fn parse_int_simple(s : String) -> Result[Int, String] {
   let len = s.length()
   if len == 0 {
-    abort("Invalid integer: empty string")
+    return Err("Invalid integer: empty string")
   }
   let mut result = 0
   let mut i = 0
@@ -99,21 +133,21 @@ fn parse_int_simple(s : String) -> Int {
     i = 1
   }
   if i >= len {
-    abort("Invalid integer: " + s)
+    return Err("Invalid integer: " + s)
   }
   while i < len {
     let c = s[i]
     if c < '0' || c > '9' {
-      abort("Invalid integer: " + s)
+      return Err("Invalid integer: " + s)
     }
     let digit = c.to_int() - '0'.to_int()
     result = result * 10 + digit
     i = i + 1
   }
   if negative {
-    -result
+    Ok(-result)
   } else {
-    result
+    Ok(result)
   }
 }
 
@@ -155,13 +189,23 @@ fn vp_parse(
         found = true
         if entry.needs_value {
           match eq_value {
-            Some(v) => (entry.on_match)(v)
+            Some(v) => {
+              let err = (entry.on_match)(v)
+              match err {
+                Some(msg) => return Err(msg)
+                None => ()
+              }
+            }
             None => {
               i = i + 1
               if i >= len {
                 return Err("Missing value for " + entry.name)
               }
-              (entry.on_match)(args[i])
+              let err = (entry.on_match)(args[i])
+              match err {
+                Some(msg) => return Err(msg)
+                None => ()
+              }
             }
           }
         } else {
@@ -170,7 +214,13 @@ fn vp_parse(
               return Err(
                 "Flag " + entry.name + " does not accept a value",
               )
-            None => (entry.on_match)("")
+            None => {
+              let err = (entry.on_match)("")
+              match err {
+                Some(msg) => return Err(msg)
+                None => ()
+              }
+            }
           }
         }
         break
