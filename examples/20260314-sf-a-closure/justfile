@@ -1,13 +1,16 @@
 # PoC: struct-first closure setter
 
+# workspace root
+root := `jj workspace root`
+
 default:
     just --list
 
 build:
-    moon build --target native examples/20260314-sf-a-closure
+    cd {{root}} && moon build --target native examples/20260314-sf-a-closure
 
 test:
-    moon test --target native examples/20260314-sf-a-closure
+    cd {{root}} && moon test --target native examples/20260314-sf-a-closure
 
 run:
-    moon run --target native examples/20260314-sf-a-closure
+    cd {{root}} && moon run --target native examples/20260314-sf-a-closure

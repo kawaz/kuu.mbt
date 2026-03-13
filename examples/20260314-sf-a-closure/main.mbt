@@ -382,14 +382,14 @@ fn setup_docker_parser(sf : StructFirst, config : DockerConfig) -> Unit {
   let up_services = up_cmd.rest(name="services")
 
   sf.add_copier(fn() {
-    // compose が選択されたか（compose_project は require_cmd 配下で必ず Some を返す）
+    // compose パーサが未実行なら parsed=false により opt.get() は None を返す。compose 選択時のみ Some
     match compose_project.get() {
       Some(_) => config.matched_cmd = "compose"
       None => ()
     }
     copy_opt(compose_files, fn(v) { config.compose.files = v })
     copy_opt(compose_project, fn(v) { config.compose.project_name = v })
-    // up の検出
+    // up パーサが未実行なら None、選択時のみ Some
     match up_scale.get() {
       Some(_) => config.matched_subcmd = "up"
       None => ()

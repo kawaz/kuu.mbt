@@ -89,7 +89,7 @@ sf.flag(name="debug", global=true, setter=fn(v) { config.global.debug = v })
 // サブコマンドは raw kuu API + copiers 直接登録
 let run_cmd = sf.parser.sub(name="run")
 let detach = run_cmd.flag(name="detach")
-sf.copiers.push(fn() {
+sf.add_copier(fn() {
   match detach.get() {
     Some(v) => config.run.detach = v
     None => ()
@@ -151,7 +151,7 @@ sf.string_opt(name="count", setter=fn(v) { config.count = v })
 
 ### サブコマンドの制約
 
-StructFirst は現状サブコマンド内のオプション登録に対応していない。`setup_docker_parser` では直接 kuu API を使い、`sf.copiers.push()` で手動登録している。
+StructFirst は現状サブコマンド内のオプション登録に対応していない。`setup_docker_parser` では直接 kuu API を使い、`sf.add_copier()` で手動登録している。
 
 改善案:
 - `StructFirst::sub()` メソッドで子ビルダーを返す設計

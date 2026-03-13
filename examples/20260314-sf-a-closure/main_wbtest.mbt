@@ -214,3 +214,20 @@ test "Docker-style: compose up with minimal args" {
   inspect(config.compose.up.services, content="[\"web\"]")
   inspect(config.compose.files, content="[]")
 }
+
+// ── Step 5: エラーパス ──
+
+test "Docker-style: no subcommand raises error (require_cmd)" {
+  let config = DockerConfig::new()
+  let sf = StructFirst::new()
+  setup_docker_parser(sf, config)
+  let result : Result[_, _] = try? sf.parse(["--debug"])
+  inspect(result is Err(_), content="true")
+}
+
+test "StructFirst.positional required raises error when missing" {
+  let sf = StructFirst::new()
+  sf.positional(name="file", required=true, setter=fn(_v) { })
+  let result : Result[_, _] = try? sf.parse([])
+  inspect(result is Err(_), content="true")
+}
