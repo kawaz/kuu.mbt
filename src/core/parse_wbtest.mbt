@@ -2247,6 +2247,55 @@ test "required option missing" {
 }
 
 ///|
+test "at_least_one passes when one set" {
+  let p = Parser::new()
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  p.at_least_one([json.as_ref(), csv.as_ref()])
+  ignore(p.parse(["--json"]))
+  inspect(p.get(json), content="Some(true)")
+  inspect(p.get(csv), content="Some(false)")
+}
+
+///|
+test "at_least_one passes when all set" {
+  let p = Parser::new()
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  p.at_least_one([json.as_ref(), csv.as_ref()])
+  ignore(p.parse(["--json", "--csv"]))
+  inspect(p.get(json), content="Some(true)")
+  inspect(p.get(csv), content="Some(true)")
+}
+
+///|
+test "at_least_one error when none set" {
+  let p = Parser::new()
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  p.at_least_one([json.as_ref(), csv.as_ref()])
+  let result : Result[_, _] = try? p.parse([])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "at_least_one with subcommand" {
+  let p = Parser::new()
+  let format_opt : Ref[Opt[Bool]?] = { val: None }
+  let verbose_opt : Ref[Opt[Bool]?] = { val: None }
+  let _serve = p.cmd(name="serve", setup=fn(child) {
+    let fmt = child.flag(name="json")
+    let vrb = child.flag(name="verbose")
+    child.at_least_one([fmt.as_ref(), vrb.as_ref()])
+    format_opt.val = Some(fmt)
+    verbose_opt.val = Some(vrb)
+  })
+  ignore(p.parse(["serve", "--verbose"]))
+  inspect(p.get(format_opt.val.unwrap()), content="Some(false)")
+  inspect(p.get(verbose_opt.val.unwrap()), content="Some(true)")
+}
+
+///|
 test "is_set false for default fallback" {
   let p = Parser::new(dashdash=false)
   let color = p.string_opt(
