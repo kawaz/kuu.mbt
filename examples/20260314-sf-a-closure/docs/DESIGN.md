@@ -65,8 +65,8 @@ sf.add_copier(fn() {
 |---|---|
 | Step 1 (2件) | mut struct + クロージャキャプチャ、型消去 |
 | Step 2 (9件) | StructFirst ラッパー（flag/string_opt/int_opt/count/positional/rest/append_string/複合/デフォルト） |
-| Step 3 (5件) | Docker 風サブコマンド（run/compose up/グローバルオプション伝搬/最小引数/compose最小） |
-| Step 4 (2件) | ネスト struct のクロージャ書き換え、パースエラー時のsetter未適用 |
+| Step 3 (3件) | Docker 風サブコマンド（run/compose up/グローバルオプション伝搬） |
+| Step 4 (4件) | ネスト struct クロージャ書き換え、run最小引数、パースエラー時setter未適用、compose最小 |
 | Step 5 (2件) | エラーパス |
 
 ## 制限事項と課題

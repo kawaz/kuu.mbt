@@ -111,7 +111,7 @@ p.string_opt(name="name", post=commit(fn(v) { config.name = v }))
 ```
 
 - **利点**: parse 中にリアルタイム反映
-- **制限**: flag/count は `post` パラメータ未対応。StructBinder との混合が必要
+- **制限**: flag/count は `post` パラメータ未対応。StructFirst との混合が必要
 
 ### StructFirst ラッパー（本方式）
 
