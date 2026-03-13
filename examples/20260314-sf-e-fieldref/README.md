@@ -25,8 +25,7 @@ struct FieldRef[S, A] {
 
 // 型消去されたバインド（クロージャで T を隠蔽）
 struct Binder[S] {
-  name : String
-  apply : (S, String) -> (S, ReduceResult)
+  apply : (S, String) -> Result[S, String]
 }
 
 // 型消去ファクトリ — T はこの関数内で消える
@@ -71,7 +70,7 @@ let result = parse_args(args, AppConfig::default(), opts)
 | **`trait AnyBind[S]` — 型パラメータ付き trait** | **NG（MoonBit 非対応）** |
 | **`&AnyBind[S]` — 型パラメータ付き trait object** | **NG（同上）** |
 
-### テスト: 全18件パス
+### テスト: 全22件パス
 
 ## 成功基準
 
@@ -92,7 +91,7 @@ moon test --package kawaz/kuu/examples/20260314-sf-e-fieldref
 ```
 examples/20260314-sf-e-fieldref/
   main.mbt          # PoC 実装 + main デモ
-  main_wbtest.mbt   # テスト 18件
+  main_wbtest.mbt   # テスト 22件
   moon.pkg           # パッケージ設定
   README.md          # 本ファイル
   docs/

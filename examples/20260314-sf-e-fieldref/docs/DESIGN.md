@@ -26,11 +26,10 @@ FieldRef[S, A]  ──→  make_binder[S, T]  ──→  Binder[S]  ──→  O
 // T はこの関数のスコープ内でのみ存在
 pub fn[S, T] make_binder(field : FieldRef[S, T], parse : (String) -> T?) -> Binder[S] {
   {
-    name: field.name,
     apply: fn(s, raw) {      // ← T はクロージャの中に閉じ込められる
       match parse(raw) {
-        Some(v) => ((field.set)(s, v), Accept)
-        None => (s, Reject("parse failed: " + raw))
+        Some(v) => Ok((field.set)(s, v))
+        None => Err("parse failed: " + raw)
       }
     },
   }
@@ -42,9 +41,8 @@ pub fn[S, T] make_binder(field : FieldRef[S, T], parse : (String) -> T?) -> Bind
 | 型 | 役割 |
 |---|---|
 | `FieldRef[S, A]` | struct S のフィールド A への型安全参照（Lens パターン） |
-| `Binder[S]` | 型消去されたフィールドバインド（apply クロージャで T を隠蔽） |
+| `Binder[S]` | 型消去されたフィールドバインド（apply クロージャで T を隠蔽、Result[S, String] を返す） |
 | `OptDef[S]` | CLI オプション名と Binder の対 |
-| `ReduceResult` | パース結果（Accept / Reject） |
 | `IntoOpt` | struct → OptDef 配列を導出する trait |
 
 ## 設計判断
@@ -61,7 +59,7 @@ pub fn[S, T] make_binder(field : FieldRef[S, T], parse : (String) -> T?) -> Bind
 
 ## テスト状況
 
-- 全18件パス
+- 全22件パス
 - FieldRef get/set、Binder 型消去、parse_args の正常/異常系、IntoOpt をカバー
 
 ## 成功基準の達成状況
@@ -80,3 +78,5 @@ pub fn[S, T] make_binder(field : FieldRef[S, T], parse : (String) -> T?) -> Bind
 - ヘルプ生成
 - kuu との統合検討
 - `derive(IntoOpt)` の将来的な自動化
+- エラーメッセージにオプション名を含める（現在は `"parse failed: {raw_value}"` のみ）
+- `--key=value` 形式対応

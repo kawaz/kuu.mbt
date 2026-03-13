@@ -47,7 +47,7 @@ test "FieldRef: Lens則 set-set" {
   let step1 = (age_ref.set)(config, 10)
   let step2 = (age_ref.set)(step1, 20)
   let direct = (age_ref.set)(config, 20)
-  inspect(step2, content=direct.to_string())
+  assert_eq!(step2, direct)
 }
 
 test "FieldRef: Lens則 get-set" {
@@ -55,7 +55,7 @@ test "FieldRef: Lens則 get-set" {
   let config : AppConfig = { name: "Bob", age: 25, verbose: true }
   let name_ref = AppConfig::name_ref()
   let roundtrip = (name_ref.set)(config, (name_ref.get)(config))
-  inspect(roundtrip, content=config.to_string())
+  assert_eq!(roundtrip, config)
 }
 
 // =============================================================

@@ -32,8 +32,7 @@ trait AnyBind[S] { apply(Self, S, String) -> (S, ReduceResult) }
 
 // OK: クロージャで型消去
 struct Binder[S] {
-  name : String
-  apply : (S, String) -> (S, ReduceResult)
+  apply : (S, String) -> Result[S, String]
 }
 ```
 
