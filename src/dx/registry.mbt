@@ -25,6 +25,7 @@ pub fn FieldRegistry::flag(
 
 ///|
 /// Bool フラグを登録し、OptRef を返す（制約登録用）。
+/// env はヘルプ表示用メタデータのみ。環境変数からの値読み取りは行わない（DR-041 Phase 1）。
 pub fn FieldRegistry::flag_ref(
   self : FieldRegistry,
   name~ : String,
@@ -46,9 +47,11 @@ pub fn FieldRegistry::flag_ref(
     hidden=hidden,
   )
   self.appliers.push(fn() {
-    match opt.get() {
-      Some(v) => apply_fn(v)
-      None => ()
+    if (opt.is_set)() {
+      match opt.get() {
+        Some(v) => apply_fn(v)
+        None => ()
+      }
     }
   })
   opt.as_ref()
@@ -85,6 +88,7 @@ pub fn FieldRegistry::string(
 
 ///|
 /// String オプションを登録し、OptRef を返す（制約登録用）。
+/// env はヘルプ表示用メタデータのみ。環境変数からの値読み取りは行わない（DR-041 Phase 1）。
 pub fn FieldRegistry::string_ref(
   self : FieldRegistry,
   name~ : String,
@@ -110,9 +114,11 @@ pub fn FieldRegistry::string_ref(
     value_name=value_name,
   )
   self.appliers.push(fn() {
-    match opt.get() {
-      Some(v) => apply_fn(v)
-      None => ()
+    if (opt.is_set)() {
+      match opt.get() {
+        Some(v) => apply_fn(v)
+        None => ()
+      }
     }
   })
   opt.as_ref()
@@ -166,9 +172,11 @@ pub fn FieldRegistry::count_ref(
     hidden=hidden,
   )
   self.appliers.push(fn() {
-    match opt.get() {
-      Some(v) => apply_fn(v)
-      None => ()
+    if (opt.is_set)() {
+      match opt.get() {
+        Some(v) => apply_fn(v)
+        None => ()
+      }
     }
   })
   opt.as_ref()
@@ -226,9 +234,11 @@ pub fn FieldRegistry::append_string_ref(
     value_name=value_name,
   )
   self.appliers.push(fn() {
-    match opt.get() {
-      Some(v) => apply_fn(v)
-      None => ()
+    if (opt.is_set)() {
+      match opt.get() {
+        Some(v) => apply_fn(v)
+        None => ()
+      }
     }
   })
   opt.as_ref()
@@ -286,9 +296,11 @@ pub fn FieldRegistry::append_int_ref(
     value_name=value_name,
   )
   self.appliers.push(fn() {
-    match opt.get() {
-      Some(v) => apply_fn(v)
-      None => ()
+    if (opt.is_set)() {
+      match opt.get() {
+        Some(v) => apply_fn(v)
+        None => ()
+      }
     }
   })
   opt.as_ref()
@@ -350,9 +362,11 @@ pub fn FieldRegistry::int_ref(
     value_name=value_name,
   )
   self.appliers.push(fn() {
-    match opt.get() {
-      Some(v) => apply_fn(v)
-      None => ()
+    if (opt.is_set)() {
+      match opt.get() {
+        Some(v) => apply_fn(v)
+        None => ()
+      }
     }
   })
   opt.as_ref()

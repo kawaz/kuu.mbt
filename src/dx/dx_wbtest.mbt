@@ -742,3 +742,127 @@ test "custom: invalid value is error" {
   )
   assert_true(result is Err(_))
 }
+
+// ============================================================
+// Phase 4 追加テスト
+// ============================================================
+
+// ---- custom_append テスト ----
+
+///|
+struct CustomAppendConfig {
+  mut values : Array[Int]
+} derive(Show, Eq)
+
+///|
+fn CustomAppendConfig::default() -> CustomAppendConfig {
+  { values: [] }
+}
+
+///|
+impl Parseable for CustomAppendConfig with register(self, reg) {
+  reg.custom_append(
+    name="value",
+    pre=@core.Filter::parse_int(),
+    apply_fn=fn(v) { self.values = v },
+  )
+}
+
+///|
+test "custom_append: collects parsed values" {
+  let config = CustomAppendConfig::default()
+  parse_into(["--value", "1", "--value", "2", "--value", "3"], config)
+  assert_eq(config.values, [1, 2, 3])
+}
+
+// ---- default 二重管理の修正検証テスト ----
+
+///|
+struct DefaultMismatchConfig {
+  mut host : String
+} derive(Show, Eq)
+
+///|
+fn DefaultMismatchConfig::default() -> DefaultMismatchConfig {
+  { host: "my-default" }
+}
+
+///|
+impl Parseable for DefaultMismatchConfig with register(self, reg) {
+  // registry の default と struct の default が異なる
+  // struct の default が source of truth であるべき
+  reg.string(name="host", default="registry-default", apply_fn=fn(v) { self.host = v })
+}
+
+///|
+test "default: struct default preserved when option not specified" {
+  let config = DefaultMismatchConfig::default()
+  parse_into([], config)
+  // struct の default "my-default" が維持される（registry の "registry-default" で上書きされない）
+  assert_eq(config.host, "my-default")
+}
+
+///|
+test "default: explicit value overrides struct default" {
+  let config = DefaultMismatchConfig::default()
+  parse_into(["--host", "explicit"], config)
+  assert_eq(config.host, "explicit")
+}
+
+// ---- ネストサブコマンドテスト ----
+
+///|
+struct NestedConfig {
+  mut cmd1 : String
+  mut cmd2 : String
+  mut value : String
+} derive(Show, Eq)
+
+///|
+fn NestedConfig::default() -> NestedConfig {
+  { cmd1: "", cmd2: "", value: "" }
+}
+
+///|
+impl Parseable for NestedConfig with register(self, reg) {
+  reg.sub(
+    name="parent",
+    on_match=fn() { self.cmd1 = "parent" },
+    setup=fn(r) {
+      r.sub(
+        name="child",
+        on_match=fn() { self.cmd2 = "child" },
+        setup=fn(r2) {
+          r2.string(name="value", apply_fn=fn(v) { self.value = v })
+        },
+      )
+      r.require_cmd()
+    },
+  )
+  reg.require_cmd()
+}
+
+///|
+test "nested sub: grandchild subcommand works" {
+  let config = NestedConfig::default()
+  parse_into(["parent", "child", "--value", "hello"], config)
+  assert_eq(config.cmd1, "parent")
+  assert_eq(config.cmd2, "child")
+  assert_eq(config.value, "hello")
+}
+
+// ---- エラーメッセージ内容テスト ----
+
+///|
+test "error message: exclusive violation mentions option names" {
+  let config = ExclusiveConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into(
+    ["--json", "--yaml"],
+    config,
+  )
+  match result {
+    Err(@core.ParseError(info)) =>
+      assert_true(info.message.contains("exclusive") || info.message.contains("--json") || info.message.contains("--yaml"))
+    _ => fail("expected ParseError")
+  }
+}
