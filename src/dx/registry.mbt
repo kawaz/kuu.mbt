@@ -41,6 +41,68 @@ pub fn FieldRegistry::string(
 }
 
 ///|
+/// カウントオプションを登録（--verbose --verbose → 2）。
+pub fn FieldRegistry::count(
+  self : FieldRegistry,
+  name~ : String,
+  description~ : String = "",
+  global~ : Bool = false,
+  apply_fn~ : (Int) -> Unit,
+) -> Unit {
+  let opt = self.parser.count(name=name, description=description, global=global)
+  self.appliers.push(fn() {
+    match opt.get() {
+      Some(v) => apply_fn(v)
+      None => ()
+    }
+  })
+}
+
+///|
+/// 複数値収集 String オプションを登録。
+pub fn FieldRegistry::append_string(
+  self : FieldRegistry,
+  name~ : String,
+  description~ : String = "",
+  global~ : Bool = false,
+  apply_fn~ : (Array[String]) -> Unit,
+) -> Unit {
+  let opt = self.parser.append_string(
+    name=name,
+    description=description,
+    global=global,
+  )
+  self.appliers.push(fn() {
+    match opt.get() {
+      Some(v) => apply_fn(v)
+      None => ()
+    }
+  })
+}
+
+///|
+/// 複数値収集 Int オプションを登録。
+pub fn FieldRegistry::append_int(
+  self : FieldRegistry,
+  name~ : String,
+  description~ : String = "",
+  global~ : Bool = false,
+  apply_fn~ : (Array[Int]) -> Unit,
+) -> Unit {
+  let opt = self.parser.append_int(
+    name=name,
+    description=description,
+    global=global,
+  )
+  self.appliers.push(fn() {
+    match opt.get() {
+      Some(v) => apply_fn(v)
+      None => ()
+    }
+  })
+}
+
+///|
 /// Int オプションを登録。
 pub fn FieldRegistry::int(
   self : FieldRegistry,

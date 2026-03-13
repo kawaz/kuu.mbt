@@ -135,3 +135,238 @@ test "string/int with default: explicit value overrides" {
   assert_eq(config.host, "example.com")
   assert_eq(config.port, 3000)
 }
+
+// ============================================================
+// Phase 2: count, append, positional, rest, sub, require_cmd
+// ============================================================
+
+// ---- count テスト ----
+
+///|
+struct CountConfig {
+  mut verbosity : Int
+} derive(Show, Eq)
+
+///|
+fn CountConfig::default() -> CountConfig {
+  { verbosity: 0 }
+}
+
+///|
+impl Parseable for CountConfig with register(self, reg) {
+  reg.count(name="verbose", apply_fn=fn(v) { self.verbosity = v })
+}
+
+///|
+test "count: multiple --verbose increments" {
+  let config = CountConfig::default()
+  parse_into(["--verbose", "--verbose", "--verbose"], config)
+  assert_eq(config.verbosity, 3)
+}
+
+///|
+test "count: default is 0" {
+  let config = CountConfig::default()
+  parse_into([], config)
+  assert_eq(config.verbosity, 0)
+}
+
+// ---- append テスト ----
+
+///|
+struct AppendConfig {
+  mut tags : Array[String]
+  mut ports : Array[Int]
+} derive(Show, Eq)
+
+///|
+fn AppendConfig::default() -> AppendConfig {
+  { tags: [], ports: [] }
+}
+
+///|
+impl Parseable for AppendConfig with register(self, reg) {
+  reg.append_string(name="tag", apply_fn=fn(v) { self.tags = v })
+  reg.append_int(name="port", apply_fn=fn(v) { self.ports = v })
+}
+
+///|
+test "append_string: multiple --tag collects values" {
+  let config = AppendConfig::default()
+  parse_into(["--tag", "a", "--tag", "b"], config)
+  assert_eq(config.tags, ["a", "b"])
+}
+
+///|
+test "append_int: multiple --port collects values" {
+  let config = AppendConfig::default()
+  parse_into(["--port", "80", "--port", "443"], config)
+  assert_eq(config.ports, [80, 443])
+}
+
+// ---- positional テスト ----
+
+///|
+struct PosConfig {
+  mut file : String?
+} derive(Show, Eq)
+
+///|
+fn PosConfig::default() -> PosConfig {
+  { file: None }
+}
+
+///|
+impl Parseable for PosConfig with register(self, reg) {
+  reg.positional(name="FILE", apply_fn=fn(v) { self.file = v })
+}
+
+///|
+test "positional: captures first arg" {
+  let config = PosConfig::default()
+  parse_into(["hello.txt"], config)
+  assert_eq(config.file, Some("hello.txt"))
+}
+
+///|
+test "positional: unset keeps None" {
+  let config = PosConfig::default()
+  parse_into([], config)
+  assert_eq(config.file, None)
+}
+
+// ---- rest テスト ----
+
+///|
+struct RestConfig {
+  mut args : Array[String]
+} derive(Show, Eq)
+
+///|
+fn RestConfig::default() -> RestConfig {
+  { args: [] }
+}
+
+///|
+impl Parseable for RestConfig with register(self, reg) {
+  reg.rest(name="ARGS", apply_fn=fn(v) { self.args = v })
+}
+
+///|
+test "rest: collects remaining args" {
+  let config = RestConfig::default()
+  parse_into(["a", "b", "c"], config)
+  assert_eq(config.args, ["a", "b", "c"])
+}
+
+// ---- sub + require_cmd テスト ----
+
+///|
+enum SubCommand {
+  Init
+  Build
+  None
+} derive(Show, Eq)
+
+///|
+struct SubConfig {
+  mut verbose : Bool
+  mut command : SubCommand
+  mut build_tag : String
+} derive(Show, Eq)
+
+///|
+fn SubConfig::default() -> SubConfig {
+  { verbose: false, command: None, build_tag: "latest" }
+}
+
+///|
+impl Parseable for SubConfig with register(self, reg) {
+  reg.flag(
+    name="verbose",
+    global=true,
+    apply_fn=fn(v) { self.verbose = v },
+  )
+  reg.sub(
+    name="init",
+    description="Initialize project",
+    on_match=fn() { self.command = Init },
+    setup=fn(_r) {  },
+  )
+  reg.sub(
+    name="build",
+    description="Build project",
+    on_match=fn() { self.command = Build },
+    setup=fn(r) {
+      r.string(
+        name="tag",
+        default="latest",
+        apply_fn=fn(v) { self.build_tag = v },
+      )
+    },
+  )
+  reg.require_cmd()
+}
+
+///|
+test "sub: init subcommand" {
+  let config = SubConfig::default()
+  parse_into(["init"], config)
+  assert_eq(config.command, Init)
+}
+
+///|
+test "sub: build with option" {
+  let config = SubConfig::default()
+  parse_into(["build", "--tag", "v1.0"], config)
+  assert_eq(config.command, Build)
+  assert_eq(config.build_tag, "v1.0")
+}
+
+///|
+test "sub: global flag with subcommand" {
+  let config = SubConfig::default()
+  parse_into(["--verbose", "build"], config)
+  assert_eq(config.verbose, true)
+  assert_eq(config.command, Build)
+}
+
+///|
+test "sub: require_cmd errors without subcommand" {
+  let config = SubConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into([], config)
+  assert_true(result is Err(_))
+}
+
+///|
+test "sub: unselected subcommand state untouched" {
+  let config = SubConfig::default()
+  parse_into(["init"], config)
+  assert_eq(config.command, Init)
+  assert_eq(config.build_tag, "latest") // build は未選択なのでデフォルト
+}
+
+// ---- set_description テスト ----
+
+///|
+struct DescConfig {
+  mut name : String
+} derive(Show, Eq)
+
+///|
+fn DescConfig::default() -> DescConfig {
+  { name: "" }
+}
+
+///|
+impl Parseable for DescConfig with register(self, reg) {
+  reg.set_description("A test CLI tool")
+  reg.string(name="name", apply_fn=fn(v) { self.name = v })
+}
+
+///|
+test "set_description: does not affect parsing" {
+  let config = DescConfig::default()
+  parse_into(["--name", "test"], config)
+  assert_eq(config.name, "test")
+}
