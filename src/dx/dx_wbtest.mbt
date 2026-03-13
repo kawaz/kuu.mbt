@@ -558,3 +558,187 @@ test "value_name: does not affect parsing" {
   parse_into(["--file", "test.txt"], config)
   assert_eq(config.file, "test.txt")
 }
+
+// ============================================================
+// Phase 4: 高度機能テスト (custom, constraints)
+// ============================================================
+
+// ---- exclusive 制約テスト ----
+
+///|
+struct ExclusiveConfig {
+  mut json : Bool
+  mut yaml : Bool
+} derive(Show, Eq)
+
+///|
+fn ExclusiveConfig::default() -> ExclusiveConfig {
+  { json: false, yaml: false }
+}
+
+///|
+impl Parseable for ExclusiveConfig with register(self, reg) {
+  let json_ref = reg.flag_ref(
+    name="json",
+    apply_fn=fn(v) { self.json = v },
+  )
+  let yaml_ref = reg.flag_ref(
+    name="yaml",
+    apply_fn=fn(v) { self.yaml = v },
+  )
+  reg.exclusive([json_ref, yaml_ref])
+}
+
+///|
+test "exclusive: single option is ok" {
+  let config = ExclusiveConfig::default()
+  parse_into(["--json"], config)
+  assert_eq(config.json, true)
+  assert_eq(config.yaml, false)
+}
+
+///|
+test "exclusive: both options is error" {
+  let config = ExclusiveConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into(
+    ["--json", "--yaml"],
+    config,
+  )
+  assert_true(result is Err(_))
+}
+
+// ---- required 制約テスト ----
+
+///|
+struct RequiredConfig {
+  mut output : String
+} derive(Show, Eq)
+
+///|
+fn RequiredConfig::default() -> RequiredConfig {
+  { output: "" }
+}
+
+///|
+impl Parseable for RequiredConfig with register(self, reg) {
+  let output_ref = reg.string_ref(
+    name="output",
+    apply_fn=fn(v) { self.output = v },
+  )
+  reg.required(output_ref)
+}
+
+///|
+test "required: provided is ok" {
+  let config = RequiredConfig::default()
+  parse_into(["--output", "file.txt"], config)
+  assert_eq(config.output, "file.txt")
+}
+
+///|
+test "required: missing is error" {
+  let config = RequiredConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into([], config)
+  assert_true(result is Err(_))
+}
+
+// ---- at_least_one 制約テスト ----
+
+///|
+struct AtLeastOneConfig {
+  mut input : String
+  mut stdin : Bool
+} derive(Show, Eq)
+
+///|
+fn AtLeastOneConfig::default() -> AtLeastOneConfig {
+  { input: "", stdin: false }
+}
+
+///|
+impl Parseable for AtLeastOneConfig with register(self, reg) {
+  let input_ref = reg.string_ref(
+    name="input",
+    apply_fn=fn(v) { self.input = v },
+  )
+  let stdin_ref = reg.flag_ref(
+    name="stdin",
+    apply_fn=fn(v) { self.stdin = v },
+  )
+  reg.at_least_one([input_ref, stdin_ref])
+}
+
+///|
+test "at_least_one: one provided is ok" {
+  let config = AtLeastOneConfig::default()
+  parse_into(["--stdin"], config)
+  assert_eq(config.stdin, true)
+}
+
+///|
+test "at_least_one: none is error" {
+  let config = AtLeastOneConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into([], config)
+  assert_true(result is Err(_))
+}
+
+// ---- custom[T] テスト ----
+
+///|
+enum LogLevel {
+  Debug
+  Info
+  Warn
+  Error_
+} derive(Show, Eq)
+
+///|
+fn LogLevel::from_string(s : String) -> LogLevel raise @core.ParseError {
+  match s {
+    "debug" => Debug
+    "info" => Info
+    "warn" => Warn
+    "error" => Error_
+    _ => raise @core.ParseError(@core.ParseErrorInfo::{
+        message: "invalid log level: \{s}",
+        help_text: "",
+      })
+  }
+}
+
+///|
+struct CustomConfig {
+  mut level : LogLevel
+} derive(Show, Eq)
+
+///|
+fn CustomConfig::default() -> CustomConfig {
+  { level: Info }
+}
+
+///|
+impl Parseable for CustomConfig with register(self, reg) {
+  reg.custom(
+    name="level",
+    default=LogLevel::Info,
+    pre={ run: LogLevel::from_string },
+    apply_fn=fn(v) { self.level = v },
+  )
+}
+
+///|
+test "custom: parses custom type" {
+  let config = CustomConfig::default()
+  parse_into(["--level", "debug"], config)
+  assert_eq(config.level, Debug)
+}
+
+///|
+test "custom: invalid value is error" {
+  let config = CustomConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into(
+    ["--level", "invalid"],
+    config,
+  )
+  assert_true(result is Err(_))
+}
