@@ -89,6 +89,10 @@ pub fn Parser::cmd(
                 cell.val = Some(CmdResult::{ name: cmd_name, parser: child })
                 was_set.val = true
                 self.children.set(cmd_name, child_result)
+                // 子パーサの deprecated_usages を親にマージ（再帰的に伝搬）
+                for pair in child.deprecated_usages {
+                  self.deprecated_usages.push(pair)
+                }
               })
             Err(e) => Error(e)
           }

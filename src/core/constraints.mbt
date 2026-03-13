@@ -18,13 +18,11 @@ pub fn Parser::exclusive(self : Parser, opts : Array[OptRef]) -> Unit {
 pub fn Parser::at_least_one(self : Parser, opts : Array[OptRef]) -> Unit {
   let refs = opts
   self.post_hooks.push(fn() raise ParseError {
+    let names : Array[String] = []
     for opt_ref in refs {
       if (opt_ref.is_set)() {
         return
       }
-    }
-    let names : Array[String] = []
-    for opt_ref in refs {
       names.push(opt_ref.name)
     }
     raise parse_error("at least one required: " + names.join(", "))

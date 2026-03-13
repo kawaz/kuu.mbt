@@ -2275,7 +2275,14 @@ test "at_least_one error when none set" {
   let csv = p.flag(name="csv")
   p.at_least_one([json.as_ref(), csv.as_ref()])
   let result : Result[_, _] = try? p.parse([])
-  inspect(result is Err(_), content="true")
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.message.contains("at least one required"), content="true")
+      inspect(info.message.contains("--json"), content="true")
+      inspect(info.message.contains("--csv"), content="true")
+    }
+    _ => abort("expected at_least_one error")
+  }
 }
 
 ///|
@@ -5620,6 +5627,64 @@ test "deprecated with cmd" {
 }
 
 ///|
+test "deprecated in subcommand propagates to parent" {
+  let p = Parser::new(dashdash=false)
+  let _serve = p.cmd(name="serve", dashdash=false, setup=fn(child) {
+    let port = child.int_opt(name="port", default=8080)
+    let _ = child.deprecated("--p", port, msg="use --port")
+  })
+  ignore(p.parse(["serve", "--p", "3000"]))
+  // サブコマンド内の deprecated 警告がルートから取得できること
+  inspect(p.deprecated_warnings().length(), content=(
+    #|1
+
+  ))
+  inspect(p.deprecated_warnings()[0].0, content="--p")
+  inspect(p.deprecated_warnings()[0].1, content="use --port")
+}
+
+///|
+test "deprecated in nested subcommand propagates to root" {
+  let p = Parser::new(dashdash=false)
+  let _remote = p.cmd(name="remote", dashdash=false, setup=fn(remote) {
+    let _add = remote.cmd(name="add", dashdash=false, setup=fn(add) {
+      let url = add.string_opt(name="url", default="")
+      let _ = add.deprecated("--uri", url, msg="use --url")
+    })
+  })
+  ignore(p.parse(["remote", "add", "--uri", "https://example.com"]))
+  // 孫コマンド内の deprecated 警告がルートから取得できること
+  inspect(p.deprecated_warnings().length(), content=(
+    #|1
+
+  ))
+  inspect(p.deprecated_warnings()[0].0, content="--uri")
+}
+
+///|
+test "deprecated in parent and subcommand both reported" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose")
+  let _ = p.deprecated("--verb", verbose, msg="use --verbose")
+  let _serve = p.cmd(name="serve", dashdash=false, setup=fn(child) {
+    let port = child.int_opt(name="port", default=8080)
+    let _ = child.deprecated("--p", port, msg="use --port")
+  })
+  ignore(p.parse(["--verb", "serve", "--p", "3000"]))
+  // 親とサブコマンド両方の警告が取得できること
+  inspect(p.deprecated_warnings().length(), content=(
+    #|2
+
+  ))
+  let names = p.deprecated_warnings().map(fn(w) { w.0 })
+  inspect(names.contains("--verb"), content="true")
+  inspect(names.contains("--p"), content=(
+    #|true
+
+  ))
+}
+
+///|
 test "deprecated multiple options" {
   let p = Parser::new(dashdash=false)
   let output = p.string_opt(name="output", default="")
@@ -5632,4 +5697,17 @@ test "deprecated multiple options" {
   let names = p.deprecated_warnings().map(fn(w) { w.0 })
   inspect(names.contains("--out"), content="true")
   inspect(names.contains("--verb"), content="true")
+}
+
+///|
+test "deprecated empty name rejected" {
+  let p = Parser::new(dashdash=false)
+  let output = p.string_opt(name="output", default="")
+  let _ = p.deprecated("", output, msg="bad")
+  let result = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("deprecated name must not be empty"), content="true")
+    _ => abort("expected error for empty deprecated name")
+  }
 }

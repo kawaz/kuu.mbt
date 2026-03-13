@@ -233,6 +233,9 @@ pub fn[T] Parser::deprecated(
   target : Opt[T],
   msg~ : String = "",
 ) -> Opt[T] {
+  if name == "" {
+    self.duplicate_errors.push("deprecated name must not be empty")
+  }
   let alias_opt = self.alias(name, target)
   let dep_name = name
   let dep_msg = msg
