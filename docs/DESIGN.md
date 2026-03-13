@@ -842,6 +842,7 @@ pub(all) struct Parser {
   force_unclaimed : Array[String]       // 強制 unclaimed 引数（短結合の未消費残りなど）
   alias_sources : Map[Int, AliasSource] // alias の生成元情報（チェーン alias 伝搬用）
   eq_fallback_nodes : Array[ExactNode]  // eq_split 用フォールバックノード（implicit_value 付きオプションの --opt=--value 対応）
+  deprecated_usages : Array[(String, String)]  // deprecated コンビネータの使用記録（name, msg）
 }
 ```
 
@@ -1015,20 +1016,20 @@ struct CompletionCandidate {
 src/
   core/           # 全機能を統合（型定義 + コンビネータ + パースロジック + ヘルプ + フィルタ）
     types.mbt      # Opt[T], Parser, ExactNode, TryResult, OptMeta, Variation, Lazy[T] 等
-    parser.mbt     # Parser::new, expand_and_register, wrap_node_with_set
-    options.mbt    # flag, string_opt, int_opt, count, append_string, append_int
+    parser.mbt     # Parser::new, register_option, alias, deprecated, expand_and_register, wrap_node_with_set
+    options.mbt    # custom, custom_append, flag, string_opt, int_opt, count, append_string, append_int
     nodes.mbt      # make_flag_node, make_value_node, make_or_node 等
     commands.mbt   # cmd, sub
-    positionals.mbt # positional, rest
+    positionals.mbt # positional, rest, serial, never
     dashdash.mbt   # dashdash, append_dashdash
-    constraints.mbt # exclusive, required, require_cmd
-    access.mbt     # Opt::get, ParseResult::get/child/at
+    constraints.mbt # exclusive, required, require_cmd, at_least_one
+    access.mbt     # Opt::get, Parser::get, deprecated_warnings, ParseResult::get/child/at
     parse.mbt      # parse_raw, install_* ノード, validate_no_duplicate_names
     help.mbt       # generate_help, inject_help_node
     filter.mbt     # FilterChain, Filter::*, make_reducer, Accumulator
   wasm/            # WASM bridge（JSON schema → kuu core → JSON result）
     main.mbt        # kuu_parse エントリポイント、build_parser、extract_values
-    test.mjs        # Node.js テスト（17ケース）
+    test.mjs        # Node.js テスト（34ケース）
 ```
 
 初期構想ではフェーズごとにパッケージ分割する予定だったが、MoonBit のパッケージ間依存制約により
@@ -1047,7 +1048,7 @@ src/
 - **パースロジック**: parse_raw（validate_no_duplicate_names + メインループ + post_hooks）、install_eq_split_node, install_short_combine_node, install_separator_node
 - **ヘルプ生成**: generate_help（Commands / Options / Global Options セクション）、inject_help_node（--help / -h 自動登録）
 - **フィルタ**: FilterChain::then, Filter::map/validate/parse, trim/to_lower/non_empty/split/parse_int/parse_float/in_range/one_of/each, make_reducer
-- **テスト**: 434/434 passed（core パッケージ）
+- **テスト**: 454/454 passed（core パッケージ）
 
 #### 計画外の追加実装（MVP 完了後）
 
@@ -1076,7 +1077,7 @@ src/
 - **choices のヘルプ表示**: custom() 内で help 文字列に `[possible values: ...]` を付加。OptMeta に choices フィールドを持たない設計を維持
 - **inject_help_node 衝突回避**: ユーザーが `name="help"` や `shorts="h"` を登録済みの場合、対応する built-in の `--help` / `-h` ノードをスキップ
 - **shorts バリデーション**: parser.mbt の expand_and_register で `-`、空白（スペース/タブ/改行/CR）、NUL 文字を拒否
-- **WASM bridge**: `src/wasm/` に実装。JSON schema + args → kuu core (WASM) → JSON result。スキーマバージョニング (`version: 1`)、入力バリデーション（不正JSON、非Object、非配列等をエラー）。テスト17ケース
+- **WASM bridge**: `src/wasm/` に実装。JSON schema + args → kuu core (WASM) → JSON result。スキーマバージョニング (`version: 1`)、入力バリデーション（不正JSON、非Object、非配列等をエラー）。テスト34ケース
 
 ---
 
@@ -1443,22 +1444,22 @@ Parser レベルで `help_all=true` を有効にすると `--help-all` フラグ
 ```
 src/core/
   types.mbt            # 型定義（Opt, Parser, ExactNode, TryResult, OptMeta, Variation, Lazy[T] 等）
-  parser.mbt           # Parser::new, expand_and_register, wrap_node_with_set
-  options.mbt          # flag, string_opt, int_opt, count, append_string, append_int
+  parser.mbt           # Parser::new, register_option, alias, deprecated, expand_and_register, wrap_node_with_set
+  options.mbt          # custom, custom_append, flag, string_opt, int_opt, count, append_string, append_int
   nodes.mbt            # make_flag_node, make_value_node, make_or_node 等
   commands.mbt         # cmd, sub
-  positionals.mbt      # positional, rest
+  positionals.mbt      # positional, rest, serial, never
   dashdash.mbt         # dashdash, append_dashdash
-  constraints.mbt      # exclusive, required, require_cmd
-  access.mbt           # Opt::get, ParseResult::get/child/at
+  constraints.mbt      # exclusive, required, require_cmd, at_least_one
+  access.mbt           # Opt::get, Parser::get, deprecated_warnings, ParseResult::get/child/at
   parse.mbt            # parse_raw, install_* ノード, validate_no_duplicate_names
   help.mbt             # generate_help, inject_help_node
-  filter.mbt           # FilterChain + make_reducer
+  filter.mbt           # FilterChain, Filter::*, make_reducer, Accumulator
   filter_wbtest.mbt    # フィルタテスト
   parse_wbtest.mbt     # パーサテスト
 src/wasm/
   main.mbt             # WASM bridge: kuu_parse（JSON schema + args → JSON result）
-  test.mjs             # Node.js テスト（17ケース）
+  test.mjs             # Node.js テスト（34ケース）
 examples/
   mygit/               # 初期版 git CLI モック
   20260307-mygit/      # 旧 API 保存版
