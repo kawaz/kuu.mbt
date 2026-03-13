@@ -6,6 +6,7 @@ pub fn FieldRegistry::sub(
   self : FieldRegistry,
   name~ : String,
   description~ : String = "",
+  aliases~ : Array[String] = [],
   setup~ : (FieldRegistry) -> Unit,
   on_match~ : () -> Unit = fn() {  },
 ) -> Unit {
@@ -13,6 +14,7 @@ pub fn FieldRegistry::sub(
   let cmd = self.parser.cmd(
     name=name,
     description=description,
+    aliases=aliases,
     setup=fn(child_parser) {
       let child_reg = FieldRegistry::new(child_parser)
       setup(child_reg)

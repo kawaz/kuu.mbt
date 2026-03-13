@@ -370,3 +370,191 @@ test "set_description: does not affect parsing" {
   parse_into(["--name", "test"], config)
   assert_eq(config.name, "test")
 }
+
+// ============================================================
+// Phase 3: パラメータ拡充テスト (shorts, aliases, env, hidden)
+// ============================================================
+
+///|
+struct ShortsConfig {
+  mut verbose : Bool
+  mut output : String
+} derive(Show, Eq)
+
+///|
+fn ShortsConfig::default() -> ShortsConfig {
+  { verbose: false, output: "" }
+}
+
+///|
+impl Parseable for ShortsConfig with register(self, reg) {
+  reg.flag(
+    name="verbose",
+    shorts="v",
+    apply_fn=fn(v) { self.verbose = v },
+  )
+  reg.string(
+    name="output",
+    shorts="o",
+    apply_fn=fn(v) { self.output = v },
+  )
+}
+
+///|
+test "shorts: -v sets verbose" {
+  let config = ShortsConfig::default()
+  parse_into(["-v"], config)
+  assert_eq(config.verbose, true)
+}
+
+///|
+test "shorts: -o sets output" {
+  let config = ShortsConfig::default()
+  parse_into(["-o", "file.txt"], config)
+  assert_eq(config.output, "file.txt")
+}
+
+// ---- aliases テスト ----
+
+///|
+struct AliasConfig {
+  mut color : String
+} derive(Show, Eq)
+
+///|
+fn AliasConfig::default() -> AliasConfig {
+  { color: "" }
+}
+
+///|
+impl Parseable for AliasConfig with register(self, reg) {
+  reg.string(
+    name="color",
+    aliases=["colour"],
+    apply_fn=fn(v) { self.color = v },
+  )
+}
+
+///|
+test "aliases: --colour works as alias for --color" {
+  let config = AliasConfig::default()
+  parse_into(["--colour", "red"], config)
+  assert_eq(config.color, "red")
+}
+
+// ---- env テスト ----
+
+///|
+struct EnvConfig {
+  mut host : String
+} derive(Show, Eq)
+
+///|
+fn EnvConfig::default() -> EnvConfig {
+  { host: "" }
+}
+
+///|
+impl Parseable for EnvConfig with register(self, reg) {
+  reg.string(
+    name="host",
+    env="APP_HOST",
+    apply_fn=fn(v) { self.host = v },
+  )
+}
+
+///|
+test "env: env parameter does not affect parsing" {
+  // env はヘルプ表示用メタデータのみ（Phase 1 DR-041）。パース動作には影響しない。
+  let config = EnvConfig::default()
+  parse_into(["--host", "example.com"], config)
+  assert_eq(config.host, "example.com")
+}
+
+// ---- hidden テスト ----
+
+///|
+struct HiddenConfig {
+  mut debug : Bool
+  mut name : String
+} derive(Show, Eq)
+
+///|
+fn HiddenConfig::default() -> HiddenConfig {
+  { debug: false, name: "" }
+}
+
+///|
+impl Parseable for HiddenConfig with register(self, reg) {
+  reg.flag(
+    name="debug",
+    hidden=true,
+    apply_fn=fn(v) { self.debug = v },
+  )
+  reg.string(name="name", apply_fn=fn(v) { self.name = v })
+}
+
+///|
+test "hidden: hidden flag still works for parsing" {
+  let config = HiddenConfig::default()
+  parse_into(["--debug"], config)
+  assert_eq(config.debug, true)
+}
+
+// ---- sub aliases テスト ----
+
+///|
+struct SubAliasConfig {
+  mut command : String
+} derive(Show, Eq)
+
+///|
+fn SubAliasConfig::default() -> SubAliasConfig {
+  { command: "" }
+}
+
+///|
+impl Parseable for SubAliasConfig with register(self, reg) {
+  reg.sub(
+    name="install",
+    aliases=["i"],
+    on_match=fn() { self.command = "install" },
+    setup=fn(_r) {  },
+  )
+  reg.require_cmd()
+}
+
+///|
+test "sub aliases: alias 'i' matches install" {
+  let config = SubAliasConfig::default()
+  parse_into(["i"], config)
+  assert_eq(config.command, "install")
+}
+
+// ---- value_name テスト ----
+
+///|
+struct ValueNameConfig {
+  mut file : String
+} derive(Show, Eq)
+
+///|
+fn ValueNameConfig::default() -> ValueNameConfig {
+  { file: "" }
+}
+
+///|
+impl Parseable for ValueNameConfig with register(self, reg) {
+  reg.string(
+    name="file",
+    value_name="PATH",
+    apply_fn=fn(v) { self.file = v },
+  )
+}
+
+///|
+test "value_name: does not affect parsing" {
+  let config = ValueNameConfig::default()
+  parse_into(["--file", "test.txt"], config)
+  assert_eq(config.file, "test.txt")
+}

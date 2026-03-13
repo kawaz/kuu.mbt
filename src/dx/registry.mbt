@@ -5,9 +5,21 @@ pub fn FieldRegistry::flag(
   name~ : String,
   description~ : String = "",
   global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
   apply_fn~ : (Bool) -> Unit,
 ) -> Unit {
-  let opt = self.parser.flag(name=name, description=description, global=global)
+  let opt = self.parser.flag(
+    name=name,
+    description=description,
+    global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+  )
   self.appliers.push(fn() {
     match opt.get() {
       Some(v) => apply_fn(v)
@@ -24,6 +36,11 @@ pub fn FieldRegistry::string(
   default~ : String = "",
   description~ : String = "",
   global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
+  value_name~ : String = "",
   apply_fn~ : (String) -> Unit,
 ) -> Unit {
   let opt = self.parser.string_opt(
@@ -31,6 +48,11 @@ pub fn FieldRegistry::string(
     default=default,
     description=description,
     global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+    value_name=value_name,
   )
   self.appliers.push(fn() {
     match opt.get() {
@@ -47,9 +69,21 @@ pub fn FieldRegistry::count(
   name~ : String,
   description~ : String = "",
   global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
   apply_fn~ : (Int) -> Unit,
 ) -> Unit {
-  let opt = self.parser.count(name=name, description=description, global=global)
+  let opt = self.parser.count(
+    name=name,
+    description=description,
+    global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+  )
   self.appliers.push(fn() {
     match opt.get() {
       Some(v) => apply_fn(v)
@@ -65,12 +99,22 @@ pub fn FieldRegistry::append_string(
   name~ : String,
   description~ : String = "",
   global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
+  value_name~ : String = "",
   apply_fn~ : (Array[String]) -> Unit,
 ) -> Unit {
   let opt = self.parser.append_string(
     name=name,
     description=description,
     global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+    value_name=value_name,
   )
   self.appliers.push(fn() {
     match opt.get() {
@@ -87,12 +131,22 @@ pub fn FieldRegistry::append_int(
   name~ : String,
   description~ : String = "",
   global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
+  value_name~ : String = "",
   apply_fn~ : (Array[Int]) -> Unit,
 ) -> Unit {
   let opt = self.parser.append_int(
     name=name,
     description=description,
     global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+    value_name=value_name,
   )
   self.appliers.push(fn() {
     match opt.get() {
@@ -110,6 +164,11 @@ pub fn FieldRegistry::int(
   default~ : Int = 0,
   description~ : String = "",
   global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
+  value_name~ : String = "",
   apply_fn~ : (Int) -> Unit,
 ) -> Unit {
   let opt = self.parser.int_opt(
@@ -117,6 +176,11 @@ pub fn FieldRegistry::int(
     default=default,
     description=description,
     global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+    value_name=value_name,
   )
   self.appliers.push(fn() {
     match opt.get() {
