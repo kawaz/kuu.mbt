@@ -54,19 +54,19 @@ sf.flag(name="debug", global=true, setter=fn(v) { config.debug = v })
 // raw kuu API（サブコマンド）
 let run = sf.parser.sub(name="run")
 let detach = run.flag(name="detach")
-sf.copiers.push(fn() {
-  match detach.get() { Some(v) => config.run.detach = v; None => () }
+sf.add_copier(fn() {
+  copy_opt(detach, fn(v) { config.run.detach = v })
 })
 ```
 
-## テスト構成
+## テスト構成（18件）
 
 | テスト | 検証内容 |
 |---|---|
 | Step 1 (2件) | mut struct + クロージャキャプチャ、型消去 |
-| Step 2 (6件) | StructFirst ラッパー（flag/string_opt/int_opt/count/複合/デフォルト） |
-| Step 3 (3件) | Docker 風サブコマンド（run/compose up/グローバルオプション伝搬） |
-| Step 4 (1件) | ネスト struct のクロージャ書き換え |
+| Step 2 (9件) | StructFirst ラッパー（flag/string_opt/int_opt/count/positional/rest/append_string/複合/デフォルト） |
+| Step 3 (5件) | Docker 風サブコマンド（run/compose up/グローバルオプション伝搬/最小引数/compose最小） |
+| Step 4 (2件) | ネスト struct のクロージャ書き換え、パースエラー時のsetter未適用 |
 
 ## 制限事項と課題
 

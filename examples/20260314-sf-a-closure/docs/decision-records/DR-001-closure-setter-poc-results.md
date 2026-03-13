@@ -123,3 +123,42 @@ p.string_opt(name="name", post=commit(fn(v) { config.name = v }))
 クロージャ Setter 方式は MoonBit + kuu で完全に動作する。struct-first DX レイヤーの基盤技術として有効。
 
 ただし、サブコマンド周りの API 設計（特にマッチ判定の隠蔽）は今後の課題。
+
+## 型安全性・エルゴノミクス評価
+
+### 型安全性
+
+setter クロージャの型は **コンパイル時に検出される**。
+
+```moonbit
+// Int フィールドに String setter → コンパイルエラー
+sf.string_opt(name="count", setter=fn(v) { config.count = v })
+// → error: String は Int に代入できない
+```
+
+- `sf.flag()` は `setter~ : (Bool) -> Unit` を期待
+- `sf.string_opt()` は `setter~ : (String) -> Unit` を期待
+- フィールドの型と setter の型が不一致なら MoonBit がコンパイル時に弾く
+- `get().unwrap()` 方式と同等の型安全性を保持
+
+### ボイラープレート比較
+
+| 層 | 現行方式 | StructFirst | 削減 |
+|---|---|---|---|
+| グローバルオプション | `.get().unwrap()` × N | setter クロージャ | 20-30% 削減 |
+| サブコマンド Lv1 | 手動 match | 手動 copier | 削減なし |
+| ネストサブコマンド | 手動 match | 手動 copier | 削減なし |
+
+### サブコマンドの制約
+
+StructFirst は現状サブコマンド内のオプション登録に対応していない。`setup_docker_parser` では直接 kuu API を使い、`sf.copiers.push()` で手動登録している。
+
+改善案:
+- `StructFirst::sub()` メソッドで子ビルダーを返す設計
+- ただし型消去がさらに複雑化するため、kuu core の post_hooks パターンのほうが適切な可能性
+
+### kuu core 統合の方針
+
+- Layer 1 (core) への統合は **非推奨**。core は最小限のパースに特化すべき
+- Layer 3 (KuuCore) または Layer 4 (DX API) で提供するのが適切
+- 他言語（Go の struct tag、TS の schema）では別パターンが自然なため、core に bake-in しない

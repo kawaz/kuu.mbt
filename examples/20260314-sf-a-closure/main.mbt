@@ -32,7 +32,7 @@ fn SimpleConfig::default() -> SimpleConfig {
 
 ///|
 fn test_closure_capture() -> Unit {
-  let config : SimpleConfig = { verbose: false, name: "", count: 0 }
+  let config = SimpleConfig::default()
 
   let set_verbose = fn() { config.verbose = true }
   let set_name = fn(v : String) { config.name = v }
@@ -65,7 +65,17 @@ fn test_closure_capture() -> Unit {
 
 // ─── Step 2: Struct-first wrapper ───
 
+///|
+fn[T] copy_opt(opt : @core.Opt[T], setter : (T) -> Unit) -> Unit {
+  match opt.get() {
+    Some(v) => setter(v)
+    None => ()
+  }
+}
+
 /// Thin wrapper: registers options on kuu Parser, copies values to user's struct after parse.
+/// `copiers` holds type-erased closures `() -> Unit` that transfer parsed values to the user's struct.
+/// Each copier reads from an `Opt[T]` and calls the user-provided setter. All copiers run after parse().
 ///|
 struct StructFirst {
   parser : @core.Parser
@@ -88,12 +98,7 @@ fn StructFirst::flag(
   setter~ : (Bool) -> Unit
 ) -> Unit {
   let opt = self.parser.flag(name~, shorts~, description~, global~, default~)
-  self.copiers.push(fn() {
-    match opt.get() {
-      Some(v) => setter(v)
-      None => ()
-    }
-  })
+  self.copiers.push(fn() { copy_opt(opt, setter) })
 }
 
 ///|
@@ -110,12 +115,7 @@ fn StructFirst::string_opt(
   let opt = self.parser.string_opt(
     name~, shorts~, description~, global~, default~, value_name~,
   )
-  self.copiers.push(fn() {
-    match opt.get() {
-      Some(v) => setter(v)
-      None => ()
-    }
-  })
+  self.copiers.push(fn() { copy_opt(opt, setter) })
 }
 
 ///|
@@ -132,12 +132,7 @@ fn StructFirst::int_opt(
   let opt = self.parser.int_opt(
     name~, shorts~, description~, global~, default~, value_name~,
   )
-  self.copiers.push(fn() {
-    match opt.get() {
-      Some(v) => setter(v)
-      None => ()
-    }
-  })
+  self.copiers.push(fn() { copy_opt(opt, setter) })
 }
 
 ///|
@@ -150,12 +145,7 @@ fn StructFirst::count(
   setter~ : (Int) -> Unit
 ) -> Unit {
   let opt = self.parser.count(name~, shorts~, description~, global~)
-  self.copiers.push(fn() {
-    match opt.get() {
-      Some(v) => setter(v)
-      None => ()
-    }
-  })
+  self.copiers.push(fn() { copy_opt(opt, setter) })
 }
 
 ///|
@@ -170,12 +160,7 @@ fn StructFirst::positional(
   if required {
     self.parser.required(opt.as_ref())
   }
-  self.copiers.push(fn() {
-    match opt.get() {
-      Some(v) => setter(v)
-      None => ()
-    }
-  })
+  self.copiers.push(fn() { copy_opt(opt, setter) })
 }
 
 ///|
@@ -186,12 +171,7 @@ fn StructFirst::rest(
   setter~ : (Array[String]) -> Unit
 ) -> Unit {
   let opt = self.parser.rest(name~, description~)
-  self.copiers.push(fn() {
-    match opt.get() {
-      Some(v) => setter(v)
-      None => ()
-    }
-  })
+  self.copiers.push(fn() { copy_opt(opt, setter) })
 }
 
 ///|
@@ -206,12 +186,12 @@ fn StructFirst::append_string(
   let opt = self.parser.append_string(
     name~, shorts~, description~, value_name~,
   )
-  self.copiers.push(fn() {
-    match opt.get() {
-      Some(v) => setter(v)
-      None => ()
-    }
-  })
+  self.copiers.push(fn() { copy_opt(opt, setter) })
+}
+
+///|
+fn StructFirst::add_copier(self : StructFirst, copier : () -> Unit) -> Unit {
+  self.copiers.push(copier)
 }
 
 ///|
@@ -235,7 +215,7 @@ fn StructFirst::parse(
 
 ///|
 fn test_struct_first_simple() -> Unit {
-  let config : SimpleConfig = { verbose: false, name: "", count: 0 }
+  let config = SimpleConfig::default()
   let sf = StructFirst::new()
 
   sf.flag(
@@ -359,7 +339,8 @@ fn setup_docker_parser(sf : StructFirst, config : DockerConfig) -> Unit {
   )
 
   // Subcommand: run
-  // For subcommands, we fall back to the raw kuu API and use copiers
+  // StructFirst ラッパーはサブコマンド内オプションの一括登録に未対応のため、
+  // raw kuu API で Opt[T] を取得し、copiers に手動登録する混合スタイルを使用。
   let run_cmd = sf.parser.sub(name="run", description="Run a container")
   let run_detach = run_cmd.flag(name="detach", shorts="d")
   let run_interactive = run_cmd.flag(name="interactive", shorts="i")
@@ -368,30 +349,17 @@ fn setup_docker_parser(sf : StructFirst, config : DockerConfig) -> Unit {
   run_cmd.required(run_image.as_ref())
   let run_command = run_cmd.rest(name="command")
 
-  sf.copiers.push(fn() {
-    match run_detach.get() {
-      Some(v) => {
-        config.matched_cmd = "run"
-        config.run.detach = v
-      }
-      None => ()
-    }
-    match run_interactive.get() {
-      Some(v) => config.run.interactive = v
-      None => ()
-    }
-    match run_tty.get() {
-      Some(v) => config.run.tty = v
-      None => ()
-    }
+  sf.add_copier(fn() {
+    // run subcommand が選択されたか判定（required な positional は必ず Some を返す）
     match run_image.get() {
-      Some(v) => config.run.image = v
+      Some(_) => config.matched_cmd = "run"
       None => ()
     }
-    match run_command.get() {
-      Some(v) => config.run.command = v
-      None => ()
-    }
+    copy_opt(run_detach, fn(v) { config.run.detach = v })
+    copy_opt(run_interactive, fn(v) { config.run.interactive = v })
+    copy_opt(run_tty, fn(v) { config.run.tty = v })
+    copy_opt(run_image, fn(v) { config.run.image = v })
+    copy_opt(run_command, fn(v) { config.run.command = v })
   })
 
   // Subcommand: compose (nested)
@@ -413,33 +381,22 @@ fn setup_docker_parser(sf : StructFirst, config : DockerConfig) -> Unit {
   let up_scale = up_cmd.int_opt(name="scale", default=1)
   let up_services = up_cmd.rest(name="services")
 
-  sf.copiers.push(fn() {
-    match compose_files.get() {
-      Some(v) => {
-        config.matched_cmd = "compose"
-        config.compose.files = v
-      }
-      None => ()
-    }
+  sf.add_copier(fn() {
+    // compose が選択されたか（compose_project は require_cmd 配下で必ず Some を返す）
     match compose_project.get() {
-      Some(v) => config.compose.project_name = v
+      Some(_) => config.matched_cmd = "compose"
       None => ()
     }
-    match up_detach.get() {
-      Some(v) => {
-        config.matched_subcmd = "up"
-        config.compose.up.detach = v
-      }
-      None => ()
-    }
+    copy_opt(compose_files, fn(v) { config.compose.files = v })
+    copy_opt(compose_project, fn(v) { config.compose.project_name = v })
+    // up の検出
     match up_scale.get() {
-      Some(v) => config.compose.up.scale = v
+      Some(_) => config.matched_subcmd = "up"
       None => ()
     }
-    match up_services.get() {
-      Some(v) => config.compose.up.services = v
-      None => ()
-    }
+    copy_opt(up_detach, fn(v) { config.compose.up.detach = v })
+    copy_opt(up_scale, fn(v) { config.compose.up.scale = v })
+    copy_opt(up_services, fn(v) { config.compose.up.services = v })
   })
 
   sf.require_cmd()
