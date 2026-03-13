@@ -1,5 +1,8 @@
-// FieldRef + AnyBind 方式 PoC
+// FieldRef + Binder 方式 PoC
 // MoonBit で struct-first CLI パーサが実現可能か検証する
+//
+// 当初 trait AnyBind[S] を使う設計だったが、MoonBit の trait は
+// 型パラメータを受け付けないため、クロージャベースの型消去に変更 (DR-001)
 
 // =============================================================
 // Step 1: FieldRef — フィールドへの型安全参照（Lens パターン）
@@ -14,7 +17,7 @@ pub(all) struct FieldRef[S, A] {
 }
 
 // =============================================================
-// Step 2: AnyBind — 型消去されたフィールドバインド
+// Step 2: Binder — クロージャベースの型消去バインド
 // =============================================================
 
 /// パース結果
@@ -23,47 +26,46 @@ pub(all) enum ReduceResult {
   Reject(String)
 } derive(Show, Eq)
 
-/// 型消去された「フィールドへの値の適用」を表す trait
-pub(all) trait AnyBind[S] {
-  apply(Self, S, String) -> (S, ReduceResult)
-  field_name(Self) -> String
+/// 型消去された「フィールドへの値の適用」
+/// T は apply クロージャの中に閉じ込められている
+pub(all) struct Binder[S] {
+  name : String
+  apply : (S, String) -> (S, ReduceResult)
 }
 
-// =============================================================
-// Step 3: FieldBind — 具体的な型を持つバインド実装
-// =============================================================
-
-/// 型あり実装: FieldRef + パーサ + 副作用
-pub(all) struct FieldBind[S, T] {
-  field : FieldRef[S, T]
+/// FieldRef + parser からクロージャベースの Binder を生成するファクトリ
+/// これが型消去のキーポイント: T はこの関数内で消える
+pub fn[S, T] make_binder(
+  field : FieldRef[S, T],
   parse : (String) -> T?
-}
-
-/// FieldBind に AnyBind を実装
-/// 検証ポイント: 2つの型パラメータを持つ型への trait 実装が動くか
-impl[S, T] AnyBind[S] for FieldBind[S, T] with apply(self, s, raw) {
-  match (self.parse)(raw) {
-    Some(v) => ((self.field.set)(s, v), Accept)
-    None => (s, Reject("parse failed: " + raw))
+) -> Binder[S] {
+  {
+    name: field.name,
+    apply: fn(s, raw) {
+      match parse(raw) {
+        Some(v) => ((field.set)(s, v), Accept)
+        None => (s, Reject("parse failed: " + raw))
+      }
+    },
   }
 }
 
-impl[S, T] AnyBind[S] for FieldBind[S, T] with field_name(self) {
-  self.field.name
-}
-
 // =============================================================
-// Step 4: OptDef — パーサ定義（オプション名 → バインドのマッピング）
+// Step 3: OptDef — オプション定義（名前 → Binder のマッピング）
 // =============================================================
 
-/// オプション定義: 名前とバインドの対
+/// オプション定義: CLI オプション名とバインダの対
 pub(all) struct OptDef[S] {
   opt_name : String
-  bind : &AnyBind[S]
+  binder : Binder[S]
 }
 
-/// パーサ本体
-pub fn parse_args[S](
+// =============================================================
+// Step 4: parse — パーサ本体
+// =============================================================
+
+/// パーサ本体: args を走査して OptDef に従い state を更新
+pub fn[S] parse_args(
   args : Array[String],
   initial : S,
   opts : Array[OptDef[S]]
@@ -72,7 +74,6 @@ pub fn parse_args[S](
   let mut i = 0
   while i < args.length() {
     let arg = args[i]
-    // オプション名で検索
     let mut found = false
     for opt in opts {
       if opt.opt_name == arg {
@@ -80,7 +81,7 @@ pub fn parse_args[S](
           println("Error: missing value for " + arg)
           return None
         }
-        let (next, result) = opt.bind.apply(state, args[i + 1])
+        let (next, result) = (opt.binder.apply)(state, args[i + 1])
         match result {
           Accept => {
             state = next
@@ -104,7 +105,7 @@ pub fn parse_args[S](
 }
 
 // =============================================================
-// Step 5: アプリケーション例 — AppConfig
+// Step 5: AppConfig — アプリケーション例
 // =============================================================
 
 /// アプリケーション設定 struct
@@ -119,7 +120,7 @@ pub fn AppConfig::default() -> AppConfig {
   { name: "", age: 0, verbose: false }
 }
 
-/// FieldRef 定義
+/// FieldRef 定義 — struct update syntax `{ ..s, field: v }` の検証
 pub fn AppConfig::name_ref() -> FieldRef[AppConfig, String] {
   {
     name: "name",
@@ -145,34 +146,32 @@ pub fn AppConfig::verbose_ref() -> FieldRef[AppConfig, Bool] {
 }
 
 /// パーサ定義を組み立てる
+/// 異なる型の FieldRef が同じ Array[OptDef[AppConfig]] に格納される — 型消去の検証
 pub fn make_app_opts() -> Array[OptDef[AppConfig]] {
   [
     {
       opt_name: "--name",
-      bind: FieldBind::{
-        field: AppConfig::name_ref(),
-        parse: fn(s) { Some(s) },
-      },
+      binder: make_binder(AppConfig::name_ref(), fn(s) { Some(s) }),
     },
     {
       opt_name: "--age",
-      bind: FieldBind::{
-        field: AppConfig::age_ref(),
-        parse: fn(s) { try { Some(@strconv.parse_int!(s)) } catch { _ => None } },
-      },
+      binder: make_binder(
+        AppConfig::age_ref(),
+        fn(s) { try { Some(@strconv.parse_int(s)) } catch { _ => None } },
+      ),
     },
     {
       opt_name: "--verbose",
-      bind: FieldBind::{
-        field: AppConfig::verbose_ref(),
-        parse: fn(s) {
+      binder: make_binder(
+        AppConfig::verbose_ref(),
+        fn(s) {
           match s {
             "true" => Some(true)
             "false" => Some(false)
             _ => None
           }
         },
-      },
+      ),
     },
   ]
 }
@@ -182,6 +181,7 @@ pub fn make_app_opts() -> Array[OptDef[AppConfig]] {
 // =============================================================
 
 /// struct からパーサ定義を導出する trait
+/// 将来 MoonBit にカスタム derive が来たら自動化可能
 pub(open) trait IntoOpt {
   opts(Self) -> Array[OptDef[Self]]
 }
@@ -192,8 +192,8 @@ impl IntoOpt for AppConfig with opts(_self) {
 }
 
 /// IntoOpt を使った便利パース関数
-pub fn parse_with[S : IntoOpt](args : Array[String], initial : S) -> S? {
-  let opts = initial.opts()
+pub fn[S : IntoOpt] parse_with(args : Array[String], initial : S) -> S? {
+  let opts = IntoOpt::opts(initial)
   parse_args(args, initial, opts)
 }
 
