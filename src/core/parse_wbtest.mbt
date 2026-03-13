@@ -5886,3 +5886,16 @@ test "env with count combinator" {
   let help = p.generate_help()
   inspect(help.contains("[env: VERBOSE]"), content="true")
 }
+
+///|
+test "env hidden option does not leak env_name in help" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.string_opt(
+    name="secret-key", default="", env="SECRET_KEY", hidden=true,
+    description="Secret",
+  )
+  let _ = p.flag(name="verbose", description="Verbose")
+  let help = p.generate_help()
+  inspect(help.contains("[env: SECRET_KEY]"), content="false")
+  inspect(help.contains("secret-key"), content="false")
+}
