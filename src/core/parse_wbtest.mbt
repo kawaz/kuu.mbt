@@ -5711,3 +5711,86 @@ test "deprecated empty name rejected" {
     _ => abort("expected error for empty deprecated name")
   }
 }
+
+// === コンビネータ組み合わせテスト ===
+
+///|
+test "deprecated alias satisfies required on target" {
+  let p = Parser::new(dashdash=false)
+  let output = p.string_opt(name="output", default="")
+  let _ = p.deprecated("--out", output, msg="use --output")
+  p.required(output.as_ref())
+  // deprecated 別名で target の required を満たせること
+  ignore(p.parse(["--out", "file.txt"]))
+  inspect(output.get(), content="Some(\"file.txt\")")
+}
+
+///|
+test "deprecated alias satisfies at_least_one on target" {
+  let p = Parser::new(dashdash=false)
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  let _ = p.deprecated("--legacy-json", json, msg="use --json")
+  p.at_least_one([json.as_ref(), csv.as_ref()])
+  // deprecated 別名で at_least_one を満たせること
+  ignore(p.parse(["--legacy-json"]))
+  inspect(json.get(), content="Some(true)")
+}
+
+///|
+test "deprecated alias triggers exclusive with target" {
+  let p = Parser::new(dashdash=false)
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  let _ = p.deprecated("--legacy-json", json, msg="use --json")
+  p.exclusive([json.as_ref(), csv.as_ref()])
+  // deprecated 別名 + 別オプションで exclusive エラーになること
+  let result = try? p.parse(["--legacy-json", "--csv"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("mutually exclusive"), content="true")
+    _ => abort("expected exclusive error")
+  }
+}
+
+///|
+test "at_least_one + exclusive = exactly one" {
+  let p = Parser::new(dashdash=false)
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  p.at_least_one([json.as_ref(), csv.as_ref()])
+  p.exclusive([json.as_ref(), csv.as_ref()])
+  // 1つだけ → OK
+  ignore(p.parse(["--json"]))
+  inspect(json.get(), content="Some(true)")
+}
+
+///|
+test "at_least_one + exclusive rejects none" {
+  let p = Parser::new(dashdash=false)
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  p.at_least_one([json.as_ref(), csv.as_ref()])
+  p.exclusive([json.as_ref(), csv.as_ref()])
+  let result = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("at least one required"), content="true")
+    _ => abort("expected at_least_one error")
+  }
+}
+
+///|
+test "at_least_one + exclusive rejects both" {
+  let p = Parser::new(dashdash=false)
+  let json = p.flag(name="json")
+  let csv = p.flag(name="csv")
+  p.at_least_one([json.as_ref(), csv.as_ref()])
+  p.exclusive([json.as_ref(), csv.as_ref()])
+  let result = try? p.parse(["--json", "--csv"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("mutually exclusive"), content="true")
+    _ => abort("expected exclusive error")
+  }
+}
