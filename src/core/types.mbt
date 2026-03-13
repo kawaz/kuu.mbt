@@ -136,6 +136,7 @@ pub(all) struct OptMeta {
   help : String
   value_name : String
   default_display : String
+  env_name : String
   global : Bool
   shorts : Array[Char]
   aliases : Array[String]

@@ -55,6 +55,7 @@ fn inject_help_node(parser : Parser) -> Unit {
     help: "Print help",
     value_name: "",
     default_display: "",
+    env_name: "",
     global: false,
     shorts,
     aliases: [],
@@ -258,6 +259,11 @@ fn write_opt_section(buf : StringBuilder, metas : Array[OptMeta]) -> Unit {
     let right_buf = StringBuilder::new()
     if not(meta.help.is_empty()) {
       right_buf.write_string(meta.help)
+    }
+    if not(meta.env_name.is_empty()) {
+      right_buf.write_string(" [env: ")
+      right_buf.write_string(meta.env_name)
+      right_buf.write_char(']')
     }
     if not(meta.default_display.is_empty()) {
       right_buf.write_string(" [default: ")

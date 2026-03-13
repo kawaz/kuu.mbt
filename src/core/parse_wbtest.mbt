@@ -5794,3 +5794,95 @@ test "at_least_one + exclusive rejects both" {
     _ => abort("expected exclusive error")
   }
 }
+
+// === DR-041: env パラメータ（ヘルプ表示）テスト ===
+
+///|
+test "env name shown in help for string_opt" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.string_opt(
+    name="port", default="8080", env="PORT", description="Server port",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[env: PORT]"), content="true")
+}
+
+///|
+test "env name shown in help for flag" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.flag(name="verbose", env="VERBOSE", description="Enable verbose")
+  let help = p.generate_help()
+  inspect(help.contains("[env: VERBOSE]"), content="true")
+}
+
+///|
+test "env name shown in help for int_opt" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.int_opt(
+    name="port", default=8080, env="PORT", description="Server port",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[env: PORT]"), content="true")
+}
+
+///|
+test "env and default both shown in help" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.string_opt(
+    name="host", default="localhost", env="HOST", description="Server host",
+  )
+  let help = p.generate_help()
+  // env は default の前に表示される（隣接して出現）
+  inspect(help.contains("[env: HOST] [default: localhost]"), content="true")
+}
+
+///|
+test "env not shown when empty" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.string_opt(name="host", default="localhost", description="Host")
+  let help = p.generate_help()
+  inspect(help.contains("[env:"), content="false")
+}
+
+///|
+test "env shown in global options section" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.flag(
+    name="verbose", global=true, env="VERBOSE", description="Verbose output",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("Global Options:"), content="true")
+  inspect(help.contains("[env: VERBOSE]"), content="true")
+}
+
+///|
+test "env with custom combinator" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.custom(
+    name="format",
+    default="json",
+    pre=Filter::map(fn(s) { s }),
+    env="OUTPUT_FORMAT",
+    description="Output format",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[env: OUTPUT_FORMAT]"), content="true")
+}
+
+///|
+test "env with append combinator" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.append_string(
+    name="include", env="INCLUDE_PATHS", description="Include paths",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[env: INCLUDE_PATHS]"), content="true")
+}
+
+///|
+test "env with count combinator" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.count(name="verbose", env="VERBOSE", description="Verbosity level")
+  let help = p.generate_help()
+  inspect(help.contains("[env: VERBOSE]"), content="true")
+}

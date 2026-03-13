@@ -124,6 +124,7 @@ pub fn Parser::cmd(
     help: description,
     value_name: "",
     default_display: "",
+    env_name: "",
     global: false,
     shorts: [],
     aliases,

@@ -24,6 +24,7 @@ pub fn Parser::flag(
   aliases? : Array[String] = [],
   shorts? : String = "",
   description? : String = "",
+  env? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
   variation_toggle? : String? = None,
@@ -51,7 +52,7 @@ pub fn Parser::flag(
   }
   self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
-    help=description, value_name="", default_display="",
+    help=description, value_name="", default_display="", env_name=env,
     kind=Flag, variations~, was_set~,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
     make_node_for_variation=fn(vn, v) {
@@ -92,6 +93,7 @@ pub fn Parser::string_opt(
   aliases? : Array[String] = [],
   shorts? : String = "",
   description? : String = "",
+  env? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
   post? : FilterChain[String, String]? = None,
@@ -110,7 +112,7 @@ pub fn Parser::string_opt(
   )
   self.custom(
     name~, aliases~, shorts~, global~, hidden~, variations~,
-    description~, value_name~,
+    description~, value_name~, env~,
     default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::map(fn(s) { s }),
   )
@@ -126,6 +128,7 @@ pub fn Parser::int_opt(
   aliases? : Array[String] = [],
   shorts? : String = "",
   description? : String = "",
+  env? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
   post? : FilterChain[Int, Int]? = None,
@@ -144,7 +147,7 @@ pub fn Parser::int_opt(
   )
   self.custom(
     name~, aliases~, shorts~, global~, hidden~, variations~,
-    description~, value_name~,
+    description~, value_name~, env~,
     default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::parse_int(),
   )
@@ -158,6 +161,7 @@ pub fn Parser::append_string(
   aliases? : Array[String] = [],
   shorts? : String = "",
   description? : String = "",
+  env? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
@@ -173,7 +177,7 @@ pub fn Parser::append_string(
   )
   self.custom_append(
     name~, aliases~, shorts~, global~, hidden~, variations~,
-    description~, value_name~,
+    description~, value_name~, env~,
     pre=Filter::map(fn(s) { s }),
   )
 }
@@ -186,6 +190,7 @@ pub fn Parser::append_int(
   aliases? : Array[String] = [],
   shorts? : String = "",
   description? : String = "",
+  env? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
@@ -201,7 +206,7 @@ pub fn Parser::append_int(
   )
   self.custom_append(
     name~, aliases~, shorts~, global~, hidden~, variations~,
-    description~, value_name~,
+    description~, value_name~, env~,
     pre=Filter::parse_int(),
   )
 }
@@ -214,6 +219,7 @@ pub fn Parser::count(
   aliases? : Array[String] = [],
   shorts? : String = "",
   description? : String = "",
+  env? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
   variation_toggle? : String? = None,
@@ -236,7 +242,7 @@ pub fn Parser::count(
   }
   self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
-    help=description, value_name="", default_display="",
+    help=description, value_name="", default_display="", env_name=env,
     kind=Flag, variations~, was_set~,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
     make_node_for_variation=fn(vn, v) {
@@ -265,6 +271,7 @@ pub fn[T : Show] Parser::custom(
   shorts? : String = "",
   global? : Bool = false,
   description? : String = "",
+  env? : String = "",
   value_name? : String = "",
   default_display? : String? = None,
   hidden? : Bool = false,
@@ -351,7 +358,7 @@ pub fn[T : Show] Parser::custom(
   let opt = self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=effective_help, value_name=display_value_name, default_display=effective_display,
-    kind=ValueOpt, variations~, was_set~,
+    env_name=env, kind=ValueOpt, variations~, was_set~,
     make_main_node=make_main,
     make_node_for_variation=make_var_node,
     getter=fn() { cell.val },
@@ -405,6 +412,7 @@ pub fn[T] Parser::custom_append(
   shorts? : String = "",
   global? : Bool = false,
   description? : String = "",
+  env? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
   variations? : Array[Variation] = [],
@@ -417,7 +425,7 @@ pub fn[T] Parser::custom_append(
   self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=description, value_name=display_value_name, default_display="",
-    kind=ValueOpt, variations~, was_set~,
+    env_name=env, kind=ValueOpt, variations~, was_set~,
     make_main_node=fn(opt_n) {
       make_value_node(
         opt_n,
