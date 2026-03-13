@@ -20,17 +20,10 @@ pub(all) struct FieldRef[S, A] {
 // Step 2: Binder — クロージャベースの型消去バインド
 // =============================================================
 
-/// パース結果
-pub(all) enum ReduceResult {
-  Accept
-  Reject(String)
-} derive(Show, Eq)
-
 /// 型消去された「フィールドへの値の適用」
 /// T は apply クロージャの中に閉じ込められている
 pub(all) struct Binder[S] {
-  name : String
-  apply : (S, String) -> (S, ReduceResult)
+  apply : (S, String) -> Result[S, String]
 }
 
 /// FieldRef + parser からクロージャベースの Binder を生成するファクトリ
@@ -40,11 +33,10 @@ pub fn[S, T] make_binder(
   parse : (String) -> T?
 ) -> Binder[S] {
   {
-    name: field.name,
     apply: fn(s, raw) {
       match parse(raw) {
-        Some(v) => ((field.set)(s, v), Accept)
-        None => (s, Reject("parse failed: " + raw))
+        Some(v) => Ok((field.set)(s, v))
+        None => Err("parse failed: " + raw)
       }
     },
   }
@@ -69,7 +61,7 @@ pub fn[S] parse_args(
   args : Array[String],
   initial : S,
   opts : Array[OptDef[S]]
-) -> S? {
+) -> Result[S, String] {
   let mut state = initial
   let mut i = 0
   while i < args.length() {
@@ -78,30 +70,24 @@ pub fn[S] parse_args(
     for opt in opts {
       if opt.opt_name == arg {
         if i + 1 >= args.length() {
-          println("Error: missing value for " + arg)
-          return None
+          return Err("missing value for " + arg)
         }
-        let (next, result) = (opt.binder.apply)(state, args[i + 1])
-        match result {
-          Accept => {
+        match (opt.binder.apply)(state, args[i + 1]) {
+          Ok(next) => {
             state = next
             i = i + 2
             found = true
             break
           }
-          Reject(msg) => {
-            println("Error: " + msg)
-            return None
-          }
+          Err(msg) => return Err(msg)
         }
       }
     }
     if not(found) {
-      println("Unknown option: " + arg)
-      return None
+      return Err("unknown option: " + arg)
     }
   }
-  Some(state)
+  Ok(state)
 }
 
 // =============================================================
@@ -151,21 +137,21 @@ pub fn make_app_opts() -> Array[OptDef[AppConfig]] {
   [
     {
       opt_name: "--name",
-      binder: make_binder(AppConfig::name_ref(), fn(s) { Some(s) }),
+      binder: make_binder(AppConfig::name_ref(), fn(raw) { Some(raw) }),
     },
     {
       opt_name: "--age",
       binder: make_binder(
         AppConfig::age_ref(),
-        fn(s) { try { Some(@strconv.parse_int(s)) } catch { _ => None } },
+        fn(raw) { try { Some(@strconv.parse_int(raw)) } catch { _ => None } },
       ),
     },
     {
       opt_name: "--verbose",
       binder: make_binder(
         AppConfig::verbose_ref(),
-        fn(s) {
-          match s {
+        fn(raw) {
+          match raw {
             "true" => Some(true)
             "false" => Some(false)
             _ => None
@@ -192,7 +178,10 @@ impl IntoOpt for AppConfig with opts(_self) {
 }
 
 /// IntoOpt を使った便利パース関数
-pub fn[S : IntoOpt] parse_with(args : Array[String], initial : S) -> S? {
+pub fn[S : IntoOpt] parse_with(
+  args : Array[String],
+  initial : S,
+) -> Result[S, String] {
   let opts = IntoOpt::opts(initial)
   parse_args(args, initial, opts)
 }
@@ -207,14 +196,14 @@ fn main {
   // 方法1: 明示的にオプション定義を渡す
   let result = parse_args(args, AppConfig::default(), make_app_opts())
   match result {
-    Some(config) => println("Result: " + config.to_string())
-    None => println("Parse failed")
+    Ok(config) => println("Result: " + config.to_string())
+    Err(msg) => println("Parse failed: " + msg)
   }
 
   // 方法2: IntoOpt trait を使う
   let result2 = parse_with(args, AppConfig::default())
   match result2 {
-    Some(config) => println("IntoOpt: " + config.to_string())
-    None => println("IntoOpt parse failed")
+    Ok(config) => println("IntoOpt: " + config.to_string())
+    Err(msg) => println("IntoOpt parse failed: " + msg)
   }
 }

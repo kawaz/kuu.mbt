@@ -29,45 +29,74 @@ test "FieldRef: get/set ラウンドトリップ" {
 }
 
 // =============================================================
+// FieldRef: Lens 則テスト
+// =============================================================
+
+test "FieldRef: Lens則 set-get" {
+  // get(set(s, a)) == a
+  let config = AppConfig::default()
+  let name_ref = AppConfig::name_ref()
+  let updated = (name_ref.set)(config, "Alice")
+  inspect((name_ref.get)(updated), content="Alice")
+}
+
+test "FieldRef: Lens則 set-set" {
+  // set(set(s, a), b) == set(s, b)
+  let config = AppConfig::default()
+  let age_ref = AppConfig::age_ref()
+  let step1 = (age_ref.set)(config, 10)
+  let step2 = (age_ref.set)(step1, 20)
+  let direct = (age_ref.set)(config, 20)
+  inspect(step2, content=direct.to_string())
+}
+
+test "FieldRef: Lens則 get-set" {
+  // set(s, get(s)) == s
+  let config : AppConfig = { name: "Bob", age: 25, verbose: true }
+  let name_ref = AppConfig::name_ref()
+  let roundtrip = (name_ref.set)(config, (name_ref.get)(config))
+  inspect(roundtrip, content=config.to_string())
+}
+
+// =============================================================
 // Binder テスト — 型消去の検証
 // =============================================================
 
 test "make_binder: String フィールドへのバインド" {
-  let binder = make_binder(AppConfig::name_ref(), fn(s) { Some(s) })
+  let binder = make_binder(AppConfig::name_ref(), fn(raw) { Some(raw) })
   let config = AppConfig::default()
-  let (updated, result) = (binder.apply)(config, "Alice")
-  inspect(result, content="Accept")
+  let result = (binder.apply)(config, "Alice")
+  guard result is Ok(updated) else { fail("unexpected Err") }
   inspect(updated.name, content="Alice")
 }
 
 test "make_binder: Int フィールドへのバインド" {
   let binder = make_binder(
     AppConfig::age_ref(),
-    fn(s) { try { Some(@strconv.parse_int(s)) } catch { _ => None } },
+    fn(raw) { try { Some(@strconv.parse_int(raw)) } catch { _ => None } },
   )
   let config = AppConfig::default()
-  let (updated, result) = (binder.apply)(config, "42")
-  inspect(result, content="Accept")
+  let result = (binder.apply)(config, "42")
+  guard result is Ok(updated) else { fail("unexpected Err") }
   inspect(updated.age, content="42")
 }
 
-test "make_binder: パース失敗時は Reject" {
+test "make_binder: パース失敗時は Err" {
   let binder = make_binder(
     AppConfig::age_ref(),
-    fn(s) { try { Some(@strconv.parse_int(s)) } catch { _ => None } },
+    fn(raw) { try { Some(@strconv.parse_int(raw)) } catch { _ => None } },
   )
   let config = AppConfig::default()
-  let (updated, result) = (binder.apply)(config, "not_a_number")
-  inspect(result, content="Reject(\"parse failed: not_a_number\")")
-  // state は変更されない
-  inspect(updated.age, content="0")
+  let result = (binder.apply)(config, "not_a_number")
+  guard result is Err(msg) else { fail("unexpected Ok") }
+  inspect(msg, content="parse failed: not_a_number")
 }
 
 test "make_binder: Bool フィールドへのバインド" {
   let binder = make_binder(
     AppConfig::verbose_ref(),
-    fn(s) {
-      match s {
+    fn(raw) {
+      match raw {
         "true" => Some(true)
         "false" => Some(false)
         _ => None
@@ -75,8 +104,8 @@ test "make_binder: Bool フィールドへのバインド" {
     },
   )
   let config = AppConfig::default()
-  let (updated, result) = (binder.apply)(config, "true")
-  inspect(result, content="Accept")
+  let result = (binder.apply)(config, "true")
+  guard result is Ok(updated) else { fail("unexpected Err") }
   inspect(updated.verbose, content="true")
 }
 
@@ -85,27 +114,26 @@ test "make_binder: Bool フィールドへのバインド" {
 // =============================================================
 
 test "型消去: 異なる型の Binder を Array[Binder[AppConfig]] に格納" {
+  // Note: このテストでは Bool パーサが make_app_opts() と異なり
+  // "true" 以外を全て false とする簡易版を使用している（型消去の検証が目的のため）
   let binders : Array[Binder[AppConfig]] = [
-    make_binder(AppConfig::name_ref(), fn(s) { Some(s) }),
+    make_binder(AppConfig::name_ref(), fn(raw) { Some(raw) }),
     make_binder(
       AppConfig::age_ref(),
-      fn(s) { try { Some(@strconv.parse_int(s)) } catch { _ => None } },
+      fn(raw) { try { Some(@strconv.parse_int(raw)) } catch { _ => None } },
     ),
     make_binder(
       AppConfig::verbose_ref(),
-      fn(s) {
-        match s {
+      fn(raw) {
+        match raw {
           "true" => Some(true)
           _ => Some(false)
         }
       },
     ),
   ]
+  // 異なる型のバインダが共存できることを検証
   inspect(binders.length(), content="3")
-  // 異なる型のバインダが共存できる
-  inspect(binders[0].name, content="name")
-  inspect(binders[1].name, content="age")
-  inspect(binders[2].name, content="verbose")
 }
 
 // =============================================================
@@ -117,7 +145,7 @@ test "parse_args: 全オプション指定" {
   let result = parse_args(args, AppConfig::default(), make_app_opts())
   inspect(
     result,
-    content="Some({name: \"Alice\", age: 30, verbose: true})",
+    content="Ok({name: \"Alice\", age: 30, verbose: true})",
   )
 }
 
@@ -126,7 +154,7 @@ test "parse_args: 部分的なオプション指定" {
   let result = parse_args(args, AppConfig::default(), make_app_opts())
   inspect(
     result,
-    content="Some({name: \"Bob\", age: 0, verbose: false})",
+    content="Ok({name: \"Bob\", age: 0, verbose: false})",
   )
 }
 
@@ -135,26 +163,26 @@ test "parse_args: 空引数" {
   let result = parse_args(args, AppConfig::default(), make_app_opts())
   inspect(
     result,
-    content="Some({name: \"\", age: 0, verbose: false})",
+    content="Ok({name: \"\", age: 0, verbose: false})",
   )
 }
 
 test "parse_args: 未知のオプション" {
   let args = ["--unknown", "value"]
   let result = parse_args(args, AppConfig::default(), make_app_opts())
-  inspect(result, content="None")
+  inspect(result, content="Err(\"unknown option: --unknown\")")
 }
 
 test "parse_args: 値なしオプション" {
   let args = ["--name"]
   let result = parse_args(args, AppConfig::default(), make_app_opts())
-  inspect(result, content="None")
+  inspect(result, content="Err(\"missing value for --name\")")
 }
 
 test "parse_args: Int パース失敗" {
   let args = ["--age", "abc"]
   let result = parse_args(args, AppConfig::default(), make_app_opts())
-  inspect(result, content="None")
+  inspect(result, content="Err(\"parse failed: abc\")")
 }
 
 test "parse_args: オプション順序は自由" {
@@ -162,7 +190,16 @@ test "parse_args: オプション順序は自由" {
   let result = parse_args(args, AppConfig::default(), make_app_opts())
   inspect(
     result,
-    content="Some({name: \"Carol\", age: 25, verbose: true})",
+    content="Ok({name: \"Carol\", age: 25, verbose: true})",
+  )
+}
+
+test "parse_args: 同一オプション重複は後勝ち" {
+  let args = ["--name", "Alice", "--name", "Bob"]
+  let result = parse_args(args, AppConfig::default(), make_app_opts())
+  inspect(
+    result,
+    content="Ok({name: \"Bob\", age: 0, verbose: false})",
   )
 }
 
@@ -175,7 +212,7 @@ test "IntoOpt: parse_with で AppConfig をパース" {
   let result = parse_with(args, AppConfig::default())
   inspect(
     result,
-    content="Some({name: \"Dave\", age: 40, verbose: false})",
+    content="Ok({name: \"Dave\", age: 40, verbose: false})",
   )
 }
 

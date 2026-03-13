@@ -39,6 +39,14 @@ struct Binder[S] {
 
 これは kuu 本体の ExactNode パターン（クロージャで Ref[T] をキャプチャ）と同じアプローチ。
 
+### 補足: trait の可視性
+
+- `pub(all) trait` — 不可
+- `pub trait` — 可（パッケージ内で実装可能）
+- `pub(open) trait` — 可（外部パッケージからも impl 可能）
+
+IntoOpt trait は外部パッケージからユーザーが impl する必要があるため `pub(open)` を使用。
+
 ## 選択理由
 
 - MoonBit の型システムの制約として受け入れる
