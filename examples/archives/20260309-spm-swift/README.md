@@ -1,4 +1,4 @@
-# example-20260309-spm-swift
+# 20260309-spm-swift
 
 Swift Package Manager (SPM) CLI の引数パースを kuu WASM bridge 経由で Swift から実行するデモ。
 

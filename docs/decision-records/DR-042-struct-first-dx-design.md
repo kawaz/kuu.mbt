@@ -29,11 +29,11 @@ Layer 1: kuu core（ExactNode パースエンジン）
 
 | PoC | ワークスペース | テスト | 概要 |
 |---|---|---|---|
-| A. Closure Setter | sf-a-closure | 20 PASS | mut struct + setter クロージャ |
-| B. Ref 共有 | sf-b-ref | 33 PASS | `target=` 構文で Ref[T] 共有 |
-| **C. Trait** | **sf-c-trait** | **10 PASS** | **Parseable trait + FieldRegistry** |
-| D. ValuePath | sf-d-valuepath | 10 PASS | Commit[T] enum + 独自パーサ |
-| E. FieldRef+Binder | sf-e-fieldref | 22 PASS | Lens パターン + クロージャ型消去 |
+| A. Closure Setter | struct-first-a-closure | 20 PASS | mut struct + setter クロージャ |
+| B. Ref 共有 | struct-first-b-ref | 33 PASS | `target=` 構文で Ref[T] 共有 |
+| **C. Trait** | **struct-first-c-trait** | **10 PASS** | **Parseable trait + FieldRegistry** |
+| D. ValuePath | struct-first-d-valuepath | 10 PASS | Commit[T] enum + 独自パーサ |
+| E. FieldRef+Binder | struct-first-e-fieldref | 22 PASS | Lens パターン + クロージャ型消去 |
 
 ### 比較評価
 
