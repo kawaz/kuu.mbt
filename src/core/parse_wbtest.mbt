@@ -5899,3 +5899,48 @@ test "env hidden option does not leak env_name in help" {
   inspect(help.contains("[env: SECRET_KEY]"), content="false")
   inspect(help.contains("secret-key"), content="false")
 }
+
+///|
+test "priv setter: flag setter writes cell value" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  ignore(p.parse([]))
+  inspect(verbose.get(), content="Some(false)")
+  // priv setter で直接書き換え
+  (verbose.setter)(true)
+  inspect(verbose.get(), content="Some(true)")
+  // is_set は連動しない（setter の設計制約）
+  inspect((verbose.is_set)(), content="false")
+}
+
+///|
+test "priv setter: string_opt setter writes cell value" {
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost")
+  ignore(p.parse([]))
+  inspect(
+    host.get(),
+    content=(
+      #|Some("localhost")
+    ),
+  )
+  (host.setter)("example.com")
+  inspect(
+    host.get(),
+    content=(
+      #|Some("example.com")
+    ),
+  )
+}
+
+///|
+test "priv setter: alias shares setter with target" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let v = p.alias("-v", verbose)
+  ignore(p.parse([]))
+  // alias の setter は target と同一 cell を指す
+  (v.setter)(true)
+  inspect(verbose.get(), content="Some(true)")
+  inspect(v.get(), content="Some(true)")
+}

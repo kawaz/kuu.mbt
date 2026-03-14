@@ -70,8 +70,17 @@ pub(all) struct Opt[T] {
 ## 実装方針
 
 1. `Opt[T]` に `priv setter : (T) -> Unit` を追加
-2. 各コンビネータ（flag, custom, custom_append, count, cmd, positional, rest, dashdash 等）で `setter=fn(v) { cell.val = v }` を設定
+2. 各コンビネータで setter を設定:
+   - flag, custom, custom_append, count, positional, rest, dashdash: `setter=fn(v) { cell.val = v }`
+   - cmd: `setter=fn(v) { cell.val = Some(v) }`（内部 cell が `Ref[CmdResult?]` のため Option でラップ）
+   - alias: `target.setter` を引き継ぎ（値共有のため）
 3. DR-040 で保留の clone / adjust 解禁を検証（別 DR で扱う）
+
+## setter の使用制約
+
+- **setter は cell 値の直接書き換えのみを行う。** `was_set` フラグや `pending` 等の内部状態は更新しない。
+- **`is_set` とは連動しない。** setter 呼び出し後に `is_set` を true にする必要がある場合は、呼び出し側が `was_set.val = true` を別途行う。
+- **パース後の値変換に使用すること。** OC フェーズ中の投機実行（pending ベース）とは独立した操作であり、パース中に setter を呼ぶと pending との不整合が生じうる。
 
 ## dx 層との関係
 

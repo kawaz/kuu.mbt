@@ -85,6 +85,8 @@ pub(all) struct Opt[T] {
   id : Int
   name : String
   getter : () -> T
+  // core 内のコンビネータ間値操作（clone/adjust 等）専用。
+  // priv により外部パッケージから不可視・構築不可。(DR-043)
   priv setter : (T) -> Unit
   parsed : Ref[Bool]
   is_set : () -> Bool

@@ -108,3 +108,5 @@ pub(all) struct Opt[T] {
 - **adjust before_pre**: ノード差し替えと組み合わせ
 
 setter 追加は API の小さな拡張だが、内部設計には影響が大きいため慎重に検討する。
+
+> **2026-03-14 更新**: DR-043 で `priv setter` として実装済み。clone / adjust の実装解禁が可能。
