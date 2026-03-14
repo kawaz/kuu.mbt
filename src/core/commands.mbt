@@ -140,6 +140,7 @@ pub fn Parser::cmd(
         None => CmdResult::{ name: "", parser: child }
       }
     },
+    setter: fn(v) { cell.val = Some(v) },
     parsed: child.parsed,
     is_set: fn() { was_set.val },
   }

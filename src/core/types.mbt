@@ -85,6 +85,7 @@ pub(all) struct Opt[T] {
   id : Int
   name : String
   getter : () -> T
+  priv setter : (T) -> Unit
   parsed : Ref[Bool]
   is_set : () -> Bool
 }

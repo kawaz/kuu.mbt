@@ -80,6 +80,7 @@ pub fn Parser::flag(
       }
     },
     getter=fn() { cell.val },
+    setter=fn(v) { cell.val = v },
   )
 }
 
@@ -260,6 +261,7 @@ pub fn Parser::count(
       }
     },
     getter=fn() { cell.val },
+    setter=fn(v) { cell.val = v },
   )
 }
 
@@ -362,6 +364,7 @@ pub fn[T : Show] Parser::custom(
     make_main_node=make_main,
     make_node_for_variation=make_var_node,
     getter=fn() { cell.val },
+    setter=fn(v) { cell.val = v },
   )
   // H-1 fix: implicit_value 付き (choices なし) の場合、eq_split 用に
   // "--" ガードなしの value ノードを追加。make_soft_custom_value_node の
@@ -452,5 +455,6 @@ pub fn[T] Parser::custom_append(
       }
     },
     getter=fn() { cell.val },
+    setter=fn(v) { cell.val = v },
   )
 }

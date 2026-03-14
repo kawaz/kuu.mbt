@@ -88,6 +88,7 @@ fn[T] Parser::register_option(
   make_main_node~ : (String) -> ExactNode,
   make_node_for_variation~ : (String, Variation) -> ExactNode,
   getter~ : () -> T,
+  setter~ : (T) -> Unit,
 ) -> Opt[T] {
   let id = (self.next_id)()
   self.expand_and_register(
@@ -128,7 +129,7 @@ fn[T] Parser::register_option(
     is_global: global,
     make_eq_fallback: None,
   }
-  { id, name: "--" + name, getter, parsed: self.parsed, is_set: fn() { was_set.val } }
+  { id, name: "--" + name, getter, setter, parsed: self.parsed, is_set: fn() { was_set.val } }
 }
 
 ///|
@@ -160,6 +161,7 @@ pub fn[T] Parser::alias(
         id,
         name,
         getter: target.getter,
+        setter: target.setter,
         parsed: target.parsed,
         is_set: fn() { false },
       }
@@ -218,6 +220,7 @@ pub fn[T] Parser::alias(
         id,
         name,
         getter: target.getter,
+        setter: target.setter,
         parsed: target.parsed,
         is_set: fn() { alias_was_set.val },
       }
