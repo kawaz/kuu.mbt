@@ -6,7 +6,7 @@ kuu の WASM bridge (`src/wasm/`) を Go (wazero) から直接呼び出せない
 
 ## 発見経緯
 
-example-20260309-docker-go 作業開始時の WASM bridge 調査で発覚。
+20260309-mydocker-go（examples/archives/）作業開始時の WASM bridge 調査で発覚。
 
 ## 技術的障壁
 

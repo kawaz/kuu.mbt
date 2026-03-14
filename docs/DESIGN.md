@@ -1474,11 +1474,15 @@ src/wasm/
   main.mbt             # WASM bridge: kuu_parse（JSON schema + args → JSON result）
   test.mjs             # Node.js テスト（34ケース）
 examples/
-  mygit/               # 初期版 git CLI モック
-  20260307-mygit/      # 旧 API 保存版
-  20260308-mygit/      # 最新 API 版 git CLI モック（全機能網羅）
-  20260308-mydocker/   # Docker CLI モック
-  20260309-kubectl/    # kubectl CLI モック（DR-031）
+  archives/
+    20260302-poc12-phase1-2-string-reducer/  # Phase 1-2 String ベース PoC
+    20260302-poc3-type-erasure-comparison/   # 型消去→型復元 2方式比較
+    20260302-poc4-parser-struct-getter/      # Parser struct + getter 方式 PoC
+    20260307-mygit/      # 旧 API 保存版
+    20260308-mygit/      # 最新 API 版 git CLI モック（全機能網羅）
+    20260308-mydocker/   # Docker CLI モック
+    20260309-kubectl/    # kubectl CLI モック（DR-031）
+    ...                  # 他 20260309-* 各言語デモ
 ```
 
 ### サンプル一覧

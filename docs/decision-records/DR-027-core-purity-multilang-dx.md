@@ -2,7 +2,7 @@
 
 ## 背景
 
-examples/mygit の Before/After 比較（20260307 vs 20260308）で、以下のパターンが残存していることが判明:
+examples/archives/ の mygit Before/After 比較（20260307 vs 20260308）で、以下のパターンが残存していることが判明:
 
 1. `get().unwrap()` / `get().unwrap_or(default)` の繰り返し
 2. `match result.child("xxx")` によるディスパッチのボイラープレート
@@ -52,4 +52,4 @@ pkg/swift/      … Swift ラッパー
 
 ## 発見経緯
 
-examples/mygit の定期的な作り直し（20260307 → 20260308）で API の進化を計測する運用の中で、`get().unwrap()` 問題の本質的な解決策として浮上。
+examples/archives/ の mygit の定期的な作り直し（20260307 → 20260308）で API の進化を計測する運用の中で、`get().unwrap()` 問題の本質的な解決策として浮上。

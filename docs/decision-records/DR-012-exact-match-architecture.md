@@ -87,5 +87,5 @@ flag(name="verbose")                   # Sugar: Bool特化
 ## 影響範囲
 
 - DESIGN.md の ErasedNode/Opts セクションを全面更新必要
-- poc/poc4 の設計（Parser struct + getter方式）は継承
+- examples/archives/20260302-poc4-parser-struct-getter の設計（Parser struct + getter方式）は継承
 - 消費ループのアルゴリズム（先食い最長一致）は継承
