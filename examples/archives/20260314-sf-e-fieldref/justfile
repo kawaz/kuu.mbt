@@ -1,0 +1,16 @@
+# FieldRef + Binder 方式 PoC
+
+# デフォルト: テスト実行
+default: test
+
+# テスト実行
+test:
+    moon test --package kawaz/kuu/examples/20260314-sf-e-fieldref
+
+# デモ実行
+run:
+    moon run examples/20260314-sf-e-fieldref
+
+# コンパイルチェック
+check:
+    moon check

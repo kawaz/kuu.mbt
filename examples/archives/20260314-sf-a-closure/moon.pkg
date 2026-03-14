@@ -1,0 +1,8 @@
+import {
+  "kawaz/kuu/src/core",
+}
+
+options(
+  "is-main": true,
+  "warn-list": "-1",
+)
