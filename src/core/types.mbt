@@ -146,7 +146,7 @@ pub(all) struct Opt[T] {
   // グループ機能（Step 11）実装時に Map[Int, Ref[T]] に変更し、
   // getter/setter が instance_id を使って正しい Ref を選択するようにする。
   getter : (Int) -> T
-  setter : (Int, T) -> Unit
+  priv setter : (Int, T) -> Unit
   children_opts : Opts
 }
 

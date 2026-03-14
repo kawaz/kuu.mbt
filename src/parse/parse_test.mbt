@@ -28,16 +28,15 @@ test "eq形式: --port=8080" {
 }
 
 ///|
-test "反転フラグ: --no-verbose" {
+test "反転フラグ: --verbose --no-verbose" {
   let p = @core.Parser::new()
   let verbose = p.flag(
     name="verbose",
     inversion=Some(@core.FlagInversion::No),
   )
-  // まず true にしてから反転テスト
-  (verbose.setter)(0, true)
   let o = @core.opts([verbose.to_opts()])
-  @parse.parse(p,["--no-verbose"], o)
+  // まず --verbose で true にしてから --no-verbose で反転
+  @parse.parse(p,["--verbose", "--no-verbose"], o)
   assert_eq((verbose.getter)(0), false)
 }
 
