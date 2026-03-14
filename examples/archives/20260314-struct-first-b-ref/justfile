@@ -1,0 +1,16 @@
+# sf-b-ref: Ref バインド方式 struct-first CLIパーサ PoC
+
+default:
+  just --list
+
+# ビルド
+build:
+  moon build
+
+# テスト実行
+test:
+  moon test -p kawaz/kuu/examples/20260314-sf-b-ref
+
+# チェック（型検査）
+check:
+  moon check

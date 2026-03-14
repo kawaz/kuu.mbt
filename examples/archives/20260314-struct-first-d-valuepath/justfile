@@ -1,0 +1,16 @@
+# ValuePath PoC
+
+# ビルド
+build:
+    cd ../.. && moon build
+
+# 実行
+run:
+    cd ../.. && moon run examples/20260314-sf-d-valuepath
+
+# チェック（ビルド確認のみ、テストなし）
+check:
+    cd ../.. && moon check
+
+# デフォルト: ビルド＆実行
+default: run
