@@ -253,6 +253,49 @@ pub fn[T] Parser::deprecated(
 }
 
 ///|
+/// 値変換コンビネータ: パース後に target の値を FilterChain で変換する。
+/// target が set されている場合のみ適用（未設定の default には変換を掛けない）。
+pub fn[T] Parser::adjust(
+  self : Parser,
+  target : Opt[T],
+  after_post~ : FilterChain[T, T],
+) -> Unit {
+  self.post_hooks.push(fn() raise ParseError {
+    if (target.is_set)() {
+      (target.setter)((after_post.run)((target.getter)()))
+    }
+  })
+}
+
+///|
+/// 値転送コンビネータ: パース後に source の値を target にコピーする。
+/// source が set されている場合のみ転送。target の is_set は変更しない。
+pub fn[T] Parser::link(
+  self : Parser,
+  target : Opt[T],
+  source~ : Opt[T],
+) -> Unit {
+  self.post_hooks.push(fn() raise ParseError {
+    if (source.is_set)() {
+      (target.setter)((source.getter)())
+    }
+  })
+}
+
+///|
+/// 別名コンビネータ（独立 is_set）: v1 では alias と同等。
+/// 名前と is_set は独立、値は target と共有。
+/// 将来的に独立 cell を持つ実装に置き換え予定（DR-044）。
+pub fn[T] Parser::clone(
+  self : Parser,
+  name : String,
+  target : Opt[T],
+) -> Opt[T] {
+  // alias と同じノード共有。名前と is_set のみ独立。
+  self.alias(name, target)
+}
+
+///|
 /// コンビネータの共通パターン: メイン名 → aliases → short の展開 + ノード登録
 fn Parser::expand_and_register(
   self : Parser,
