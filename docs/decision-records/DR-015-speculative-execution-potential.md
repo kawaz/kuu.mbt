@@ -1,5 +1,7 @@
 # DR-015: 投機実行モデルによる高度な引数パターン対応
 
+type: research
+
 kuu の try_reduce 投機実行 + 最長一致モデルが、他の汎用パーサでは対応困難な引数パターンを自然に処理できるポテンシャルを持つことの記録。
 
 参考: docs/research/2026-03-05-cli-argument-edge-cases.md（CLI引数エッジケース調査）

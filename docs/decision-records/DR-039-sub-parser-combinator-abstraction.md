@@ -1,5 +1,7 @@
 # DR-039: サブパーサコンビネータの抽象化
 
+type: decision
+
 ## 背景
 
 `install_eq_split_node`（`--foo=bar` の `=` 分割）と `install_short_combine_node`（`-abc` の結合ショート分解）は、構造的に同じパターンを持つ：

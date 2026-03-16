@@ -1,5 +1,7 @@
 # DR-011: プロジェクト名の検討
 
+type: discussion
+
 ## 経緯
 
 CLI引数パーサを sandbox-moonbit から独立リポジトリに分離するにあたり、プロジェクト名を検討した。

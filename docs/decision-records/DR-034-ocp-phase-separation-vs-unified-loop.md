@@ -1,5 +1,7 @@
 # DR-034: greedy/non-greedy による OC/P フェーズ分離の再導入
 
+type: decision
+
 日付: 2026-03-09
 ステータス: **決定** — greedy/non-greedy の区別で OC/P を実現する
 

@@ -1,5 +1,7 @@
 # DR-032: Go からの kuu WASM 利用 — Node.js ブリッジ方式
 
+type: research
+
 ## 問題
 
 kuu の WASM bridge (`src/wasm/`) を Go (wazero) から直接呼び出せない。

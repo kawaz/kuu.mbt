@@ -2,6 +2,8 @@
 
 # CLI 引数パーサ初期調査
 
+type: research
+
 ## 既存ライブラリ
 
 ### TheWaWaR/clap v0.2.6（最有力）

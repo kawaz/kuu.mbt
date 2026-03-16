@@ -1,5 +1,7 @@
 # DR-031: kubectl example の設計
 
+type: decision
+
 ## 概要
 kuu の引数パース機能を検証するため、kubectl のコマンド構造をモデルにしたデモプログラムを作成した。
 

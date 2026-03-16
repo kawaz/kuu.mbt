@@ -1,5 +1,7 @@
 # DR-013: ParseResult アクセスパターン設計
 
+type: decision
+
 ParseResult ベースの階層的結果アクセスを追加し、複数のアクセス口を提供する設計判断の記録。
 
 ## 経緯

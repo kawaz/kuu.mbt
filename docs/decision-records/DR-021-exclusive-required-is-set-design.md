@@ -1,5 +1,7 @@
 # DR-021: exclusive/required バリデーション + is_set 追跡設計
 
+type: decision
+
 ## 背景
 
 排他オプション (`exclusive`) と必須オプション (`required`) のバリデーションを実装するにあたり、「そのオプションが明示的にセットされたか」を判定する仕組みが必要だった。

@@ -1,5 +1,7 @@
 # DR-018: dashdash / append_dashdash + stop_before 設計
 
+type: decision
+
 ## 背景
 
 DR-017 で `--` セパレータを greedy ExactNode 化した。この発展として、`--` を汎用コンビネータとして設計し、複数グループ化・カスタムセパレータ・greedy 系の停止条件を統一的に扱う。

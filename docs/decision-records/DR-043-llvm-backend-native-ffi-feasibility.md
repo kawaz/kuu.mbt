@@ -1,5 +1,7 @@
 # DR-043: MoonBit LLVM backend によるネイティブ FFI ライブラリの実現可能性調査
 
+type: research
+
 ## 問題
 
 kuu の多言語ブリッジは WASM-GC + js-string-builtins に依存しており、V8 系ランタイム（Node.js サブプロセス）が必須（DR-032, DR-033）。MoonBit の LLVM backend を使えば `.so` / `.a` を生成し、各言語から直接 FFI で呼び出せるのではないか。

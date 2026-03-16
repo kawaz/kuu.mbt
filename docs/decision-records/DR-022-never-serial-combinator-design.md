@@ -1,5 +1,7 @@
 # DR-022: never + serial コンビネータ設計
 
+type: decision
+
 ## 背景
 
 Step 11（拡張コンビネータ）の一環として、positional のグループ化 (serial) と固定長保証 (never) を実装。

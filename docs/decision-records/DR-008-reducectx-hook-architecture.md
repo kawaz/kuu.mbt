@@ -1,5 +1,7 @@
 # DR-008: ReduceCtx 統一 + フックアーキテクチャ
 
+type: decision
+
 > **注記**: 本 DR の以下の設計は実装時に簡略化・更新されています:
 > - **6フェーズパイプライン** (PreProcess→Resolve→Reduce→Validate→Finalize→Output): 実装では3段階 (parse_raw + consumed=0 finalize + post_hooks) に簡略化。詳細は本 DR 内の「実装注記」および DR-034 (OC/P 2フェーズ分離) を参照
 > - **Visibility 4段階** (Visible/Advanced/Deprecated/Hidden): 実装では `hidden: Bool` に簡略化

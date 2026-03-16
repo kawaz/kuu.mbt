@@ -1,5 +1,7 @@
 # DR-025: コンビネータの Compositional 分解
 
+type: decision
+
 現在の6コンビネータ（flag, string_opt, int_opt, count, append_string, append_int）は
 内部的に exact/serial/or/custom のプリミティブで構成されているが、ユーザー API としては
 モノリシックなコンビネータとして公開されている。

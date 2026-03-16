@@ -1,5 +1,7 @@
 # DR-007: Opts enum + ResultMap + immutable Opt + greedy/never 設計（2026-03-01）
 
+type: decision
+
 > **注記**: 本 DR で設計した以下の概念は後続 DR で上書きされています:
 > - **Opts enum** (`Node(&ErasedNode) | Array | Map`): DR-012 で `ExactNode` ベースの直接保持形式に置換
 > - **ResultMap** (`Map[Int, 型消去値]`): DR-013 で `ParseResult` + `Ref[T]` による型安全アクセスに置換

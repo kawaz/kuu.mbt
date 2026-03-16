@@ -1,5 +1,7 @@
 # DR-019: Optional Value Option — 値省略可能オプションの設計
 
+type: decision
+
 ## 背景
 
 `--color [always|none]` や `--md [render|source|none]` のように、オプション自体の有無と値の有無が独立して意味を持つパターンがある。現在の kuu は `flag`（値なし）と `string_opt`（値必須）の二択で、この中間を表現できない。

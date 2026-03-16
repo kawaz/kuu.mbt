@@ -1,5 +1,7 @@
 # DR-029: 言語境界を越える Serialize/Deserialize 設計構想
 
+type: decision
+
 ## 背景
 
 kuu は MoonBit core + 多言語 DX レイヤー（DR-027）の構成。各言語の DX レイヤーが core とやりとりする際、言語境界を越えるデータ表現が必要。

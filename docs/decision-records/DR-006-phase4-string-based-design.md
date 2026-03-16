@@ -3,6 +3,8 @@
 
 # Phase 4: Reducer 大統一設計
 
+type: decision
+
 ## Context
 
 Design Record セクション 9-18 で確立した Reducer パターンを MoonBit で実装する。

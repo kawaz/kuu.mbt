@@ -1,5 +1,7 @@
 # DR-024: コンビネータパラメータ共通化
 
+type: decision
+
 options.mbt（892行）の6コンビネータ（flag, string_opt, int_opt, count, append_string, append_int）が
 共有する重複パターンを共通ヘルパーに抽出し、Variation enum で否定パターンを汎用化する。
 

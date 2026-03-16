@@ -1,5 +1,7 @@
 # DR-027: core 純粋関数主義 + 多言語 DX レイヤー構想
 
+type: decision
+
 ## 背景
 
 examples/archives/ の mygit Before/After 比較（20260307 vs 20260308）で、以下のパターンが残存していることが判明:

@@ -1,5 +1,7 @@
 # DR-010: 先食い最長一致 Reducer モデルとマルチペルソナレビュー修正
 
+type: decision
+
 > **注記**: 本 DR で確立した先食い最長一致モデルは現在も有効です。
 > ただし「arity 廃止」「resolve フェーズ廃止」として設計された内容は、さらに DR-034 (OC/P 2フェーズ分離) で発展しています。
 > greedy/non-greedy positional の区別と unclaimed 蓄積による2フェーズ走査は DR-034 を参照してください。

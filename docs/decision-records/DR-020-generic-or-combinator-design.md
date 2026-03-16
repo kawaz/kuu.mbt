@@ -1,5 +1,7 @@
 # DR-020: 汎用 or コンビネータ + Initial[T] — choices/implicit_value の再設計
 
+type: decision
+
 ## 背景
 
 DR-019 で optional value option（choices + implicit_value）を実装したが、`choices: Array[String]` が String 固定で汎用性がないことが判明。実装は撤回し、設計からやり直す。

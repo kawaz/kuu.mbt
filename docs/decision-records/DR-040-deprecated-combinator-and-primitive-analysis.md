@@ -1,5 +1,7 @@
 # DR-040: deprecated コンビネータ実装 + clone/adjust 設計分析
 
+type: decision
+
 ## 背景
 
 DR-037 で設計した3直交プリミティブ（clone, link, adjust）のうち、

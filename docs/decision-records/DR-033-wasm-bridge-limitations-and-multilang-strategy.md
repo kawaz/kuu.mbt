@@ -1,5 +1,7 @@
 # DR-033: WASM bridge 制限事項と多言語ブリッジ戦略
 
+type: research
+
 ## 背景
 
 kuu の WASM bridge (`src/wasm/main.mbt`) は JSON schema → kuu core (WASM-GC) → JSON result のアーキテクチャで動作する。10個の example（5言語）を通じて、bridge の対応範囲と制限が明確になった。
