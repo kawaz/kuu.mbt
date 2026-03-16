@@ -1,0 +1,2 @@
+# Embedded binaries (platform-specific, not tracked in git)
+bin/embedded-cmd-*
