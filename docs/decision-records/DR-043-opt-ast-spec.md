@@ -1,7 +1,7 @@
 # DR-043: kuu OptAST — 公式 JSON スキーマ仕様 v2
 
 日付: 2026-03-16
-ステータス: **設計中**
+ステータス: **Draft** — alias ノードの設計は clone/link/adjust (DR-037) + sub_parser_combinator (DR-039) の完成待ち
 
 ## 背景
 
@@ -285,6 +285,13 @@ shorts, long aliases, command aliases をすべて統一的に表現する。
 > 4. **AST とコンビネータの 1:1 対応**: AST のノードが kuu の内部モデルと直接対応する方が、import/export の往復で情報が失われない
 >
 > 各ノードに `shorts` や `aliases` を埋め込むと、実装が別の方向に進化したとき AST が足枷になる。alias ノードとして外出しすれば、実装の進化に AST が追従できる。
+
+> **⚠️ alias ノードの設計は暫定**:
+> alias ノードの具体的な形（名前解決規則、short の表現方法）は、以下の完成を待って確定する:
+> - **DR-037: clone/link/adjust primitive** — alias の理論的基盤。link の具体的な API が確定すると AST の alias 表現も決まる
+> - **DR-039: sub_parser_combinator** — shorts のコンビネータ化。shorts が「特別な構文」から「alias の一種」に移行する具体的な形が決まる
+>
+> 上記以外のノード種別 (flag, string, int, count, *_list, positional, rest, separator, group, command) は確定。
 
 ---
 
