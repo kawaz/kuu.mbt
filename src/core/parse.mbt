@@ -356,10 +356,12 @@ fn Parser::install_separator_node(self : Parser) -> Unit {
 fn Parser::parse_raw(
   self : Parser,
   args : Array[String],
+  env~ : Map[String, String] = {},
 ) -> ParseResult raise ParseError {
   if self.parsed.val {
     raise parse_error("Parser::parse can only be called once")
   }
+  self.env_map.val = env
   inject_help_node(self)
   self.validate_no_duplicate_names()
   self.install_eq_split_node()
@@ -467,6 +469,13 @@ fn Parser::parse_raw(
     }
   }
 
+  // env phase: CLI で指定されなかった opt に env 値をフォールバック
+  if self.env_map.val.length() > 0 {
+    for applicator in self.env_applicators {
+      applicator(self.env_map.val)
+    }
+  }
+
   // post hooks: parse 完了後の値変換・遅延バリデーション
   for hook in self.post_hooks {
     hook()
@@ -480,8 +489,11 @@ fn Parser::parse_raw(
 pub fn Parser::parse(
   self : Parser,
   args : Array[String],
+  env~ : Map[String, String] = {},
 ) -> ParseResult raise ParseError {
-  let result : Result[ParseResult, ParseError] = try? self.parse_raw(args)
+  let result : Result[ParseResult, ParseError] = try? self.parse_raw(
+    args, env~,
+  )
   match result {
     Ok(r) => r
     Err(ParseError(info)) =>

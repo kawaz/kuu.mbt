@@ -130,6 +130,8 @@ pub fn Parser::serial(
     node_templates: Map::new(),
     eq_fallback_nodes: [],
     deprecated_usages: [],
+    env_applicators: [],
+    env_map: { val: {} },
   }
   setup(sub)
   // sub.positionals を greedy な compound handler にまとめる。

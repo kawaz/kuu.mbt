@@ -1,3 +1,27 @@
+///| env_applicator を登録する共通ヘルパー。
+/// env が非空の場合のみ、committed=false なら env から値を取得して適用する。
+fn[T] register_env_applicator(
+  parser : Parser,
+  env : String,
+  vc : ValCell[T],
+  converter : (String) -> T raise ParseError,
+) -> Unit {
+  if env != "" {
+    parser.env_applicators.push(fn(env_map) raise ParseError {
+      if not(vc.committed.val) {
+        match env_map.get(env) {
+          Some(raw) =>
+            if raw != "" {
+              vc.cell.val = converter(raw)
+              vc.committed.val = true
+            }
+          None => ()
+        }
+      }
+    })
+  }
+}
+
 ///| Variation sugar パラメータを variations 配列に展開するヘルパー
 fn apply_variation_sugar(
   variations : Array[Variation],
@@ -49,7 +73,7 @@ pub fn Parser::flag(
     pending.val = not(initial_val)
     fn() { vc.cell.val = pending.val }
   }
-  self.register_option(
+  let opt = self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=description, value_name="", default_display="", env_name=env,
     kind=Flag, variations~, valcell=vc,
@@ -79,6 +103,20 @@ pub fn Parser::flag(
       }
     },
   )
+  register_env_applicator(self, env, vc, fn(raw) {
+    let lower = raw.to_lower()
+    if lower == "true" || lower == "1" {
+      true
+    } else if lower == "false" || lower == "0" {
+      false
+    } else {
+      raise parse_error(
+        "invalid value for env " + env + ": " + raw +
+        " (expected true/false/1/0)",
+      )
+    }
+  })
+  opt
 }
 
 ///|
@@ -237,7 +275,7 @@ pub fn Parser::count(
     pending.val = pending.val + 1
     fn() { vc.cell.val = pending.val }
   }
-  self.register_option(
+  let opt = self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=description, value_name="", default_display="", env_name=env,
     kind=Flag, variations~, valcell=vc,
@@ -257,6 +295,18 @@ pub fn Parser::count(
       }
     },
   )
+  register_env_applicator(self, env, vc, fn(raw) {
+    try {
+      @strconv.parse_int(raw)
+    } catch {
+      _ =>
+        raise parse_error(
+          "invalid value for env " + env + ": " + raw +
+          " (expected integer)",
+        )
+    }
+  })
+  opt
 }
 
 ///|
@@ -394,6 +444,13 @@ pub fn[T : Show] Parser::custom(
       })
     None => ()
   }
+  // env applicator でも choices バリデーションを適用する
+  let env_pre : FilterChain[String, T] = if has_choices {
+    Filter::one_of(choices).then(pre)
+  } else {
+    pre
+  }
+  register_env_applicator(self, env, vc, fn(raw) { (env_pre.run)(raw) })
   opt
 }
 
@@ -414,7 +471,7 @@ pub fn[T] Parser::custom_append(
   let vc : ValCell[Array[T]] = ValCell::new(Thunk(fn() { [] }))
   let reset_fn = fn() { vc.cell.val = [] }
   let display_value_name = if value_name == "" { name.to_upper() } else { value_name }
-  self.register_option(
+  let opt = self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=description, value_name=display_value_name, default_display="",
     env_name=env, kind=ValueOpt, variations~, valcell=vc,
@@ -444,4 +501,12 @@ pub fn[T] Parser::custom_append(
       }
     },
   )
+  register_env_applicator(self, env, vc, fn(raw) {
+    let arr : Array[T] = []
+    for part in raw.split(",") {
+      arr.push((pre.run)(part.to_string()))
+    }
+    arr
+  })
+  opt
 }

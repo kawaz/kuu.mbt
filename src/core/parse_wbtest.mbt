@@ -5795,6 +5795,75 @@ test "at_least_one + exclusive rejects both" {
   }
 }
 
+// === requires（dependent options）テスト ===
+
+///|
+test "requires: source set without target is error" {
+  let p = Parser::new(dashdash=false)
+  let config = p.string_opt(name="config", default="")
+  let output = p.string_opt(name="output", default="")
+  p.requires(output.as_ref(), source=config.as_ref())
+  let result = try? p.parse(["--config", "a.json"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(
+        info.message.contains("--output") && info.message.contains("--config"),
+        content="true",
+      )
+    _ => abort("expected requires error")
+  }
+}
+
+///|
+test "requires: both set is ok" {
+  let p = Parser::new(dashdash=false)
+  let config = p.string_opt(name="config", default="")
+  let output = p.string_opt(name="output", default="")
+  p.requires(output.as_ref(), source=config.as_ref())
+  ignore(p.parse(["--config", "a.json", "--output", "out.txt"]))
+  inspect(config.get(), content=(
+    #|Some("a.json")
+  ))
+  inspect(output.get(), content=(
+    #|Some("out.txt")
+  ))
+}
+
+///|
+test "requires: neither set is ok" {
+  let p = Parser::new(dashdash=false)
+  let config = p.string_opt(name="config", default="")
+  let output = p.string_opt(name="output", default="")
+  p.requires(output.as_ref(), source=config.as_ref())
+  ignore(p.parse([]))
+  inspect(config.is_set(), content="false")
+  inspect(output.is_set(), content="false")
+}
+
+///|
+test "requires: target set without source is ok" {
+  let p = Parser::new(dashdash=false)
+  let config = p.string_opt(name="config", default="")
+  let output = p.string_opt(name="output", default="")
+  p.requires(output.as_ref(), source=config.as_ref())
+  ignore(p.parse(["--output", "out.txt"]))
+  inspect(output.is_set(), content="true")
+}
+
+///|
+test "requires: custom error message" {
+  let p = Parser::new(dashdash=false)
+  let config = p.string_opt(name="config", default="")
+  let output = p.string_opt(name="output", default="")
+  p.requires(output.as_ref(), source=config.as_ref(), msg="--config needs --output")
+  let result = try? p.parse(["--config", "a.json"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("--config needs --output"), content="true")
+    _ => abort("expected requires error")
+  }
+}
+
 // === variation + exclusive 複合テスト ===
 
 ///|
@@ -5961,6 +6030,172 @@ test "env hidden option does not leak env_name in help" {
   let help = p.generate_help()
   inspect(help.contains("[env: SECRET_KEY]"), content="false")
   inspect(help.contains("secret-key"), content="false")
+}
+
+// === DR-041 Phase 2: env 値取得テスト ===
+
+///|
+test "env: string_opt gets value from env when not specified on CLI" {
+  let p = Parser::new(dashdash=false)
+  let port = p.string_opt(name="port", default="8080", env="PORT")
+  ignore(p.parse([], env={"PORT": "9000"}))
+  inspect(port.get(), content=(
+    #|Some("9000")
+  ))
+}
+
+///|
+test "env: CLI arg takes precedence over env" {
+  let p = Parser::new(dashdash=false)
+  let port = p.string_opt(name="port", default="8080", env="PORT")
+  ignore(p.parse(["--port", "3000"], env={"PORT": "9000"}))
+  inspect(port.get(), content=(
+    #|Some("3000")
+  ))
+}
+
+///|
+test "env: default used when neither CLI nor env specified" {
+  let p = Parser::new(dashdash=false)
+  let port = p.string_opt(name="port", default="8080", env="PORT")
+  ignore(p.parse([], env={}))
+  inspect(port.get(), content=(
+    #|Some("8080")
+  ))
+}
+
+///|
+test "env: flag from env" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose", env="VERBOSE")
+  ignore(p.parse([], env={"VERBOSE": "true"}))
+  inspect(verbose.get(), content="Some(true)")
+}
+
+///|
+test "env: flag false from env" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose", env="VERBOSE")
+  ignore(p.parse([], env={"VERBOSE": "false"}))
+  inspect(verbose.get(), content="Some(false)")
+}
+
+///|
+test "env: int_opt from env" {
+  let p = Parser::new(dashdash=false)
+  let port = p.int_opt(name="port", default=8080, env="PORT")
+  ignore(p.parse([], env={"PORT": "9000"}))
+  inspect(port.get(), content="Some(9000)")
+}
+
+///|
+test "env: is_set true when value from env" {
+  let p = Parser::new(dashdash=false)
+  let port = p.string_opt(name="port", default="8080", env="PORT")
+  ignore(p.parse([], env={"PORT": "9000"}))
+  inspect(port.is_set(), content="true")
+}
+
+///|
+test "env: is_set false when no env and no CLI" {
+  let p = Parser::new(dashdash=false)
+  let port = p.string_opt(name="port", default="8080", env="PORT")
+  ignore(p.parse([], env={}))
+  inspect(port.is_set(), content="false")
+}
+
+///|
+test "env: required satisfied by env value" {
+  let p = Parser::new(dashdash=false)
+  let port = p.string_opt(name="port", default="8080", env="PORT")
+  p.required(port.as_ref())
+  ignore(p.parse([], env={"PORT": "9000"}))
+  inspect(port.get(), content=(
+    #|Some("9000")
+  ))
+}
+
+///|
+test "env: count from env" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.count(name="verbose", env="VERBOSE")
+  ignore(p.parse([], env={"VERBOSE": "3"}))
+  inspect(verbose.get(), content="Some(3)")
+}
+
+///|
+test "env: append_string from env (comma-separated)" {
+  let p = Parser::new(dashdash=false)
+  let includes = p.append_string(name="include", env="INCLUDES")
+  ignore(p.parse([], env={"INCLUDES": "a,b,c"}))
+  inspect(includes.get(), content=(
+    #|Some(["a", "b", "c"])
+  ))
+}
+
+///|
+test "env: append_int from env (comma-separated)" {
+  let p = Parser::new(dashdash=false)
+  let ports = p.append_int(name="port", env="PORTS")
+  ignore(p.parse([], env={"PORTS": "80,443,8080"}))
+  inspect(ports.get(), content="Some([80, 443, 8080])")
+}
+
+///|
+test "env: empty env string is ignored" {
+  let p = Parser::new(dashdash=false)
+  let port = p.string_opt(name="port", default="8080", env="PORT")
+  ignore(p.parse([], env={"PORT": ""}))
+  inspect(port.get(), content=(
+    #|Some("8080")
+  ))
+  inspect(port.is_set(), content="false")
+}
+
+///|
+test "env: invalid flag value raises error" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.flag(name="verbose", env="VERBOSE")
+  let result = try? p.parse([], env={"VERBOSE": "yes"})
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("expected true/false/1/0"), content="true")
+    _ => abort("expected parse error for invalid flag env value")
+  }
+}
+
+///|
+test "env: invalid int value raises error" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.int_opt(name="port", default=8080, env="PORT")
+  let result = try? p.parse([], env={"PORT": "abc"})
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "env: choices validation applies to env values" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.string_opt(
+    name="format", default="json", env="FORMAT", choices=["json", "yaml", "toml"],
+  )
+  let result = try? p.parse([], env={"FORMAT": "xml"})
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("value must be one of"), content="true")
+    _ => abort("expected choices validation error for env value")
+  }
+}
+
+///|
+test "env: choices validation passes for valid env value" {
+  let p = Parser::new(dashdash=false)
+  let format = p.string_opt(
+    name="format", default="json", env="FORMAT", choices=["json", "yaml", "toml"],
+  )
+  ignore(p.parse([], env={"FORMAT": "yaml"}))
+  inspect(format.get(), content=(
+    #|Some("yaml")
+  ))
 }
 
 ///|
@@ -6390,6 +6625,49 @@ test "link: propagate_set=true updates target is_set" {
   assert_true(verbose.is_set())
   assert_true(debug.is_set()) // propagate_set=true なので debug.is_set() も true
   inspect(debug.get(), content="Some(true)")
+}
+
+///|
+test "env: subcmd env option gets value from parent env map" {
+  let p = Parser::new()
+  let sub = p.sub(name="serve")
+  let port = sub.int_opt(name="port", default=8080, env="PORT")
+  ignore(p.parse(["serve"], env={"PORT": "9000"}))
+  inspect(port.get(), content="Some(9000)")
+  inspect(port.is_set(), content="true")
+}
+
+///|
+test "env: subcmd CLI arg takes precedence over env" {
+  let p = Parser::new()
+  let sub = p.sub(name="serve")
+  let port = sub.int_opt(name="port", default=8080, env="PORT")
+  ignore(p.parse(["serve", "--port", "3000"], env={"PORT": "9000"}))
+  inspect(port.get(), content="Some(3000)")
+  inspect(port.is_set(), content="true")
+}
+
+///|
+test "env: subcmd default used when neither CLI nor env specified" {
+  let p = Parser::new()
+  let sub = p.sub(name="serve")
+  let port = sub.int_opt(name="port", default=8080, env="PORT")
+  ignore(p.parse(["serve"], env={}))
+  inspect(port.get(), content="Some(8080)")
+  inspect(port.is_set(), content="false")
+}
+
+///|
+test "env: nested subcmd env propagation" {
+  let p = Parser::new()
+  let sub = p.sub(name="app")
+  let inner = sub.sub(name="serve")
+  let host = inner.string_opt(name="host", default="localhost", env="HOST")
+  ignore(p.parse(["app", "serve"], env={"HOST": "example.com"}))
+  inspect(host.get(), content=(
+    #|Some("example.com")
+  ))
+  inspect(host.is_set(), content="true")
 }
 
 ///|

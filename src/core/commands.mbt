@@ -32,6 +32,8 @@ pub fn Parser::cmd(
     node_templates: Map::new(),
     eq_fallback_nodes: [],
     deprecated_usages: [],
+    env_applicators: [],
+    env_map: { val: {} },
   }
   // 親の global_nodes の名前を子の registered_names に登録（衝突検知のため）
   for gnode in self.global_nodes {
@@ -80,7 +82,7 @@ pub fn Parser::cmd(
           }
           let rest_args = args.view(start=pos + 1).to_array()
           let parse_result : Result[ParseResult, ParseError] = try? child.parse(
-            rest_args,
+            rest_args, env=self.env_map.val,
           )
           match parse_result {
             Ok(child_result) =>

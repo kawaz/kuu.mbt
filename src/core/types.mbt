@@ -77,6 +77,12 @@ pub(all) struct Parser {
   eq_fallback_nodes : Array[ExactNode]
   // deprecated コンビネータで使用。deprecated な名前が使われた場合に (name, msg) を記録。
   deprecated_usages : Array[(String, String)]
+  // env Phase 2: 型消去された env 適用クロージャ。
+  // parse 時に env Map を受け取り、committed=false の opt に env 値を適用する。
+  env_applicators : Array[(Map[String, String]) -> Unit raise ParseError]
+  // parse_raw の冒頭で env パラメータをセットし、子パーサ（cmd）に伝搬するための共有ストア。
+  // Ref にすることで parse_raw 実行時に後からセットできる。
+  env_map : Ref[Map[String, String]]
 }
 
 ///|

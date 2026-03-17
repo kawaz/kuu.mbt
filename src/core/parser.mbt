@@ -62,6 +62,8 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     node_templates: Map::new(),
     eq_fallback_nodes: [],
     deprecated_usages: [],
+    env_applicators: [],
+    env_map: { val: {} },
   }
   if dashdash {
     p.install_separator_node()
