@@ -161,17 +161,15 @@ func terraformSchema() []OptDef {
 
 // planCommonOpts returns options shared by plan, apply, and destroy.
 func planCommonOpts() []OptDef {
-	return []OptDef{
+	return append([]OptDef{
 		{Kind: "append_string", Name: "var", Description: "Set a Terraform variable"},
 		{Kind: "append_string", Name: "var-file", Description: "Set variables from a file"},
 		{Kind: "append_string", Name: "target", Description: "Resource to target"},
 		{Kind: "append_string", Name: "replace", Description: "Resource to replace"},
-		{Kind: "string", Name: "lock", Description: "Don't hold a state lock", Default: "true", ImplicitValue: "true"},
-		{Kind: "string", Name: "lock-timeout", Description: "Duration to retry a state lock", Default: "0s"},
 		{Kind: "string", Name: "input", Description: "Ask for input for variables", Default: "true", ImplicitValue: "true"},
 		{Kind: "flag", Name: "json", Description: "Machine readable output"},
 		{Kind: "int", Name: "parallelism", Description: "Limit the number of concurrent operations", Default: 10},
-	}
+	}, stateLockOpts()...)
 }
 
 // applyOpts returns options for apply and destroy (planCommonOpts + auto-approve).

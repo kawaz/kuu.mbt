@@ -22,14 +22,15 @@ func expectCmd(r *ParseResult, name string) (*CommandResult, error) {
 }
 
 func expectSubCmd(cmd *CommandResult, name string) (*CommandResult, error) {
-	if cmd.Command == nil || cmd.Command.Name != name {
+	sub := cmd.Command
+	if sub == nil || sub.Name != name {
 		actual := "<nil>"
-		if cmd.Command != nil {
-			actual = cmd.Command.Name
+		if sub != nil {
+			actual = sub.Name
 		}
 		return nil, fmt.Errorf("expected subcommand %q, got %q", name, actual)
 	}
-	return cmd.Command, nil
+	return sub, nil
 }
 
 func expectValue(values map[string]any, key string, expected any) error {
@@ -55,8 +56,12 @@ func expectStringSlice(values map[string]any, key string, expected []string) err
 		return fmt.Errorf("value %q: expected %d items, got %d", key, len(expected), len(got))
 	}
 	for i, v := range got {
-		if fmt.Sprintf("%v", v) != expected[i] {
-			return fmt.Errorf("value %q[%d]: expected %q, got %v", key, i, expected[i], v)
+		s, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("value %q[%d]: expected string, got %T", key, i, v)
+		}
+		if s != expected[i] {
+			return fmt.Errorf("value %q[%d]: expected %q, got %q", key, i, expected[i], s)
 		}
 	}
 	return nil
