@@ -87,6 +87,34 @@ or(
 - ヘルプ表示で `--color COLOR` + `COLOR: NAME | R G B` のように段を分けて表示可能
 - エラーメッセージで `"invalid value for COLOR"` のようにグループ名を参照可能
 
+## 命名改善の方向性
+
+現在の `string_opt`, `int_opt` という命名は「opt（オプション）」と「value（値）」を混同している。
+
+- `string_opt` は「文字列値を取るオプション」の意だが、プリミティブとしての本質は「文字列値を1つ消費する」こと
+- `positional(name="FILE")` が `str("FILE")` に分解されることからも明らか — 値プリミティブとオプション（名前マッチ）は独立した概念
+
+### 命名の対応表
+
+| 現在 | プリミティブ | 備考 |
+|---|---|---|
+| `string_opt` | `string` / `str` | 値消費プリミティブ |
+| `int_opt` | `int` | 値消費プリミティブ |
+| `float_opt` | `float` | 値消費プリミティブ |
+| `append_string` | `append[String]` 相当 | 配列蓄積 |
+| `flag` | そのまま | 値なし。exact の特殊形 |
+| `count` | そのまま | 出現回数。exact の特殊形 |
+
+**Sugar 層は現在の命名を維持してよい**（後方互換 + 使いやすさ）。プリミティブ層で `string`, `int`, `float` というシンプルな名前を使い、Sugar 層がそれをラップする構造。
+
+## 既存実装との整合性
+
+kuu の「投機実行 + 最長一致」モデルはこの分解と自然に整合する:
+
+- `make_or_node` が既に or の最長一致を実装
+- `serial` は consumed の合計で表現可能（現在の「名前ノード + 値ノード」が暗黙的に serial）
+- ExactNode の try_reduce は `(args, cursor) -> TryResult` で、serial/or はこの上に構築可能
+
 ## 現時点の位置づけ
 
 この分解は kuu の設計の根幹に関わる。現在の ExactNode + 投機実行モデルとの整合性を慎重に検討する必要がある。
@@ -99,3 +127,4 @@ or(
 - serial/or の入れ子が投機実行モデルに自然に載るか
 - name コンビネータの consumed=0 が OC/P フェーズで問題にならないか
 - ヘルプ生成への影響（現在の OptMeta ベースの生成との互換性）
+- 命名リネームのタイミング — Sugar 層は互換維持、プリミティブ層で新命名を導入
