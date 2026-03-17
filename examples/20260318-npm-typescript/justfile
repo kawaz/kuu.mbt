@@ -1,0 +1,32 @@
+set dotenv-load
+
+repo_root := `git rev-parse --git-common-dir | sed 's|/\.git$||'`
+wasm_path := repo_root / "_build/wasm-gc/release/build/src/wasm/wasm.wasm"
+
+# デフォルト: ヘルプ表示
+default:
+    @just --list
+
+# 依存インストール
+setup:
+    npm install
+
+# kuu WASM ビルド（リポジトリルートで実行）
+build:
+    cd {{ repo_root / "main" }} && moon build --target wasm-gc --release
+
+# npm CLI mock 実行
+run *args:
+    WASM_PATH={{ wasm_path }} npx tsx src/main.ts {{ args }}
+
+# テスト実行
+test *args:
+    WASM_PATH={{ wasm_path }} npx vitest run {{ args }}
+
+# テスト（ウォッチモード）
+test-watch:
+    WASM_PATH={{ wasm_path }} npx vitest
+
+# 型チェック
+typecheck:
+    npx tsc --noEmit

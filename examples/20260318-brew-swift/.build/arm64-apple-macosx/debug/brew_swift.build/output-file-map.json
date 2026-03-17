@@ -1,0 +1,26 @@
+{
+  "": {
+    "swift-dependencies": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/master.swiftdeps"
+  },
+  "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/BrewSchema.swift": {
+    "dependencies": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/BrewSchema.d",
+    "object": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/BrewSchema.swift.o",
+    "swiftmodule": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/BrewSchema~partial.swiftmodule",
+    "swift-dependencies": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/BrewSchema.swiftdeps",
+    "diagnostics": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/BrewSchema.dia"
+  },
+  "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/KuuBridge.swift": {
+    "dependencies": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/KuuBridge.d",
+    "object": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/KuuBridge.swift.o",
+    "swiftmodule": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/KuuBridge~partial.swiftmodule",
+    "swift-dependencies": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/KuuBridge.swiftdeps",
+    "diagnostics": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/KuuBridge.dia"
+  },
+  "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/main.swift": {
+    "dependencies": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/main.d",
+    "object": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/main.swift.o",
+    "swiftmodule": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/main.swiftdeps",
+    "diagnostics": "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/main.dia"
+  }
+}

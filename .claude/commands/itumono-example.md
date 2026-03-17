@@ -17,11 +17,11 @@ YYYYMMDD-{app}[-{lang}][-{extra}]
 ```
 
 - `{app}`: モックする CLI 名（curl, kubectl, cargo 等）
-- `{lang}`: MoonBit 以外の言語の場合のみ付与（typescript, go, python, swift 等）
+- `{lang}`: 言語識別子（moonbit, typescript, go, python, swift, rust 等）。MoonBit の場合も省略せず付与する
 - `{extra}`: バリエーション等の補足（省略可）
 - **略称禁止**: 後で見て意味が分からない略称は使わない（例: `sf` → `struct-first` と書く）
 
-例: `20260309-cargo-python`, `20260309-curl`, `20260309-mydocker-go`
+例: `20260309-cargo-python`, `20260309-curl-moonbit`, `20260309-mydocker-go`
 
 ## 作業手順
 
