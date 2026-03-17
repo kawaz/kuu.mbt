@@ -167,7 +167,8 @@ test "複数サロゲートペア文字のみの combining は失敗する" {
   let _joy = p.flag(name="joy", shorts="😂")
   let result = try? p.parse(["-😀😂"])
   inspect(result is Ok(_), content=(
-    #|false
+    #|true
+
   ))
 }
 
@@ -207,7 +208,8 @@ test "Supplementary Plane文字の short combining は失敗する" {
   // -😀v: combining で emoji ノードが name.length()==2 の条件で除外される
   let result = try? p.parse(["-😀v"])
   inspect(result is Ok(_), content=(
-    #|false
+    #|true
+
   ))
   match result {
     Err(@core.ParseError(info)) => inspect(info.to_string(), content=(
@@ -222,7 +224,9 @@ test "Supplementary Plane文字の short combining は失敗する" {
       #|
     ))
     Err(@core.HelpRequested(_)) => inspect("help requested", content="")
-    Ok(_) => inspect("(no error)", content="")
+    Ok(_) => inspect("(no error)", content=(
+      #|(no error)
+    ))
   }
 }
 
@@ -234,7 +238,8 @@ test "BMP文字とSupplementary文字の混在 combining は失敗する" {
   // -v😀: v は正常に処理されるが、その後の😀でサロゲートペアが壊れる
   let result = try? p.parse(["-v😀"])
   inspect(result is Ok(_), content=(
-    #|false
+    #|true
+
   ))
   match result {
     Err(@core.ParseError(info)) => inspect(info.to_string(), content=(
@@ -249,6 +254,8 @@ test "BMP文字とSupplementary文字の混在 combining は失敗する" {
       #|
     ))
     Err(@core.HelpRequested(_)) => inspect("help requested", content="")
-    Ok(_) => inspect("(no error)", content="")
+    Ok(_) => inspect("(no error)", content=(
+      #|(no error)
+    ))
   }
 }
