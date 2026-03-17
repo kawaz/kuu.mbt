@@ -1,0 +1,14 @@
+default:
+    just --list
+
+run *ARGS:
+    moon run . -- {{ARGS}}
+
+test:
+    moon test .
+
+check:
+    moon check .
+
+fmt:
+    moon fmt .
