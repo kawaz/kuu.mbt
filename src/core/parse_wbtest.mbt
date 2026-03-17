@@ -5795,6 +5795,69 @@ test "at_least_one + exclusive rejects both" {
   }
 }
 
+// === variation + exclusive 複合テスト ===
+
+///|
+test "variation + exclusive: --no-verbose alone is ok" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose", variations=[False("no")])
+  let quiet = p.flag(name="quiet")
+  p.exclusive([verbose.as_ref(), quiet.as_ref()])
+  ignore(p.parse(["--no-verbose"]))
+  inspect(verbose.get(), content="Some(false)")
+  inspect(verbose.is_set(), content="true")
+  inspect(quiet.is_set(), content="false")
+}
+
+///|
+test "variation + exclusive: --no-verbose and --quiet is exclusive error" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose", variations=[False("no")])
+  let quiet = p.flag(name="quiet")
+  p.exclusive([verbose.as_ref(), quiet.as_ref()])
+  let result = try? p.parse(["--no-verbose", "--quiet"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("mutually exclusive"), content="true")
+    _ => abort("expected exclusive error")
+  }
+}
+
+///|
+test "variation + exclusive: --verbose and --quiet is exclusive error" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose", variations=[False("no")])
+  let quiet = p.flag(name="quiet")
+  p.exclusive([verbose.as_ref(), quiet.as_ref()])
+  let result = try? p.parse(["--verbose", "--quiet"])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("mutually exclusive"), content="true")
+    _ => abort("expected exclusive error")
+  }
+}
+
+///|
+test "variation + exclusive: neither set is ok" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose", variations=[False("no")])
+  let quiet = p.flag(name="quiet")
+  p.exclusive([verbose.as_ref(), quiet.as_ref()])
+  ignore(p.parse([]))
+  inspect(verbose.is_set(), content="false")
+  inspect(quiet.is_set(), content="false")
+}
+
+///|
+test "variation + at_least_one: --no-verbose satisfies at_least_one" {
+  let p = Parser::new(dashdash=false)
+  let verbose = p.flag(name="verbose", variations=[False("no")])
+  let quiet = p.flag(name="quiet")
+  p.at_least_one([verbose.as_ref(), quiet.as_ref()])
+  ignore(p.parse(["--no-verbose"]))
+  inspect(verbose.is_set(), content="true")
+}
+
 // === DR-041: env パラメータ（ヘルプ表示）テスト ===
 
 ///|
