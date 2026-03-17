@@ -77,7 +77,7 @@ fn format_unexpected_with_hint(
 ///|
 fn Parser::validate_no_duplicate_names(self : Parser) -> Unit raise ParseError {
   if self.duplicate_errors.length() > 0 {
-    raise parse_error(self.duplicate_errors[0])
+    raise parse_error(self.duplicate_errors[0], kind=DuplicateDefinition)
   }
 }
 
@@ -157,7 +157,7 @@ fn Parser::install_eq_split_node(self : Parser) -> Unit {
         }
       }
       if ambiguous {
-        return Error(parse_error("ambiguous argument: " + arg))
+        return Error(parse_error("ambiguous argument: " + arg, kind=AmbiguousMatch))
       }
       match best_commit {
         Some(commit) => Accept(consumed=1, commit~)
@@ -317,10 +317,10 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
                 }
               }
               if not(ext_accepted) {
-                return Error(parse_error("missing value for " + short_name))
+                return Error(parse_error("missing value for " + short_name, kind=MissingValue, opt_name=short_name))
               }
             } else {
-              return Error(parse_error("missing value for " + short_name))
+              return Error(parse_error("missing value for " + short_name, kind=MissingValue, opt_name=short_name))
             }
           }
         }
@@ -377,7 +377,7 @@ fn Parser::parse_raw(
   env~ : Map[String, String] = {},
 ) -> ParseResult raise ParseError {
   if self.parsed.val {
-    raise parse_error("Parser::parse can only be called once")
+    raise parse_error("Parser::parse can only be called once", kind=ParseAlreadyCalled)
   }
   self.env_map.val = env
   inject_help_node(self)
@@ -408,7 +408,7 @@ fn Parser::parse_raw(
       }
     }
     if ambiguous {
-      raise parse_error("ambiguous argument: " + args[pos])
+      raise parse_error("ambiguous argument: " + args[pos], kind=AmbiguousMatch)
     }
     match best_commit {
       Some(commit) => {
@@ -459,8 +459,11 @@ fn Parser::parse_raw(
       self.current_positional.val += 1
     }
     if self.current_positional.val >= self.positionals.length() {
+      let uarg = unclaimed[upos]
       raise parse_error(
-        format_unexpected_with_hint(unclaimed[upos], self.registered_names),
+        format_unexpected_with_hint(uarg, self.registered_names),
+        kind=if uarg.has_prefix("-") { UnknownOption } else { UnexpectedArgument },
+        opt_name=uarg,
       )
     }
     let idx = self.current_positional.val
@@ -478,8 +481,11 @@ fn Parser::parse_raw(
           // rest が Reject（stop_before トリガー等）→ 次の positional へ
           self.current_positional.val = idx + 1
         } else {
+          let uarg = unclaimed[upos]
           raise parse_error(
-            format_unexpected_with_hint(unclaimed[upos], self.registered_names),
+            format_unexpected_with_hint(uarg, self.registered_names),
+            kind=if uarg.has_prefix("-") { UnknownOption } else { UnexpectedArgument },
+            opt_name=uarg,
           )
         }
       }

@@ -92,9 +92,12 @@ pub fn Parser::never(self : Parser) -> Unit {
   let registered_names = self.registered_names
   let handler : (Array[String], Int) -> TryResult = fn(args, pos) {
     if pos < args.length() {
+      let arg = args[pos]
       Error(
         parse_error(
-          format_unexpected_with_hint(args[pos], registered_names),
+          format_unexpected_with_hint(arg, registered_names),
+          kind=if arg.has_prefix("-") { UnknownOption } else { UnexpectedArgument },
+          opt_name=arg,
         ),
       )
     } else {

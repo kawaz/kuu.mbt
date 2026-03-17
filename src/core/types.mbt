@@ -1,7 +1,25 @@
 ///|
+pub(all) enum ErrorKind {
+  UnknownOption
+  UnexpectedArgument
+  MissingRequired
+  InvalidValue
+  ArgumentConflict
+  AmbiguousMatch
+  MissingValue
+  MissingSubcommand
+  DuplicateDefinition
+  AtLeastOneRequired
+  DependencyMissing
+  ParseAlreadyCalled
+} derive(Show, Eq)
+
+///|
 pub(all) struct ParseErrorInfo {
+  kind : ErrorKind
   message : String
   help_text : String
+  opt_name : String
 }
 
 ///|

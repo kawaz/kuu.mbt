@@ -1177,8 +1177,10 @@ test "parse error includes help_text" {
 ///|
 test "ParseErrorInfo::to_string format" {
   let info = ParseErrorInfo::{
+    kind: InvalidValue,
     message: "unexpected argument: --foo",
     help_text: "",
+    opt_name: "",
   }
   inspect(
     info.to_string(),
@@ -1187,8 +1189,10 @@ test "ParseErrorInfo::to_string format" {
     ),
   )
   let info2 = ParseErrorInfo::{
+    kind: InvalidValue,
     message: "unexpected argument: --foo",
     help_text: "Options:\n  --help\n",
+    opt_name: "",
   }
   let expected = "error: unexpected argument: --foo\n\nOptions:\n  --help\n"
   inspect(info2.to_string() == expected, content="true")

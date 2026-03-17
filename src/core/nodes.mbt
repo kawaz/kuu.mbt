@@ -35,7 +35,7 @@ fn make_value_node(
         Reject
       } else if args[pos] == name {
         if pos + 1 >= args.length() {
-          Error(parse_error("missing value for " + name))
+          Error(parse_error("missing value for " + name, kind=MissingValue, opt_name=name))
         } else {
           match on_match(args[pos + 1]) {
             Ok(commit) => Accept(consumed=2, commit~)
@@ -108,6 +108,7 @@ fn make_or_node(
           parse_error(
             "ambiguous argument: " +
             (if pos < args.length() { args[pos] } else { "" }),
+            kind=AmbiguousMatch,
           ),
         )
       }

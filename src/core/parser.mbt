@@ -1,6 +1,10 @@
 ///|
-fn parse_error(message : String) -> ParseError {
-  ParseError(ParseErrorInfo::{ message, help_text: "" })
+fn parse_error(
+  message : String,
+  kind~ : ErrorKind = InvalidValue,
+  opt_name~ : String = "",
+) -> ParseError {
+  ParseError(ParseErrorInfo::{ kind, message, help_text: "", opt_name })
 }
 
 ///|

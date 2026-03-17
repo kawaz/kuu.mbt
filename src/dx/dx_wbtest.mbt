@@ -708,8 +708,10 @@ fn LogLevel::from_string(s : String) -> LogLevel raise @core.ParseError {
     "warn" => Warn
     "error" => Error_
     _ => raise @core.ParseError(@core.ParseErrorInfo::{
+        kind: InvalidValue,
         message: "invalid log level: \{s}",
         help_text: "",
+        opt_name: "",
       })
   }
 }
