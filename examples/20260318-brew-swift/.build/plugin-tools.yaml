@@ -1,0 +1,81 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "PackageStructure": ["<PackageStructure>"]
+  "brew-swift-arm64-apple-macosx26.0-debug.exe": ["<brew-swift-arm64-apple-macosx26.0-debug.exe>"]
+  "brew-swift-arm64-apple-macosx26.0-debug.module": ["<brew-swift-arm64-apple-macosx26.0-debug.module>"]
+  "main": ["<brew-swift-arm64-apple-macosx26.0-debug.exe>","<brew-swift-arm64-apple-macosx26.0-debug.module>"]
+  "test": ["<brew-swift-arm64-apple-macosx26.0-debug.exe>","<brew-swift-arm64-apple-macosx26.0-debug.module>"]
+default: "main"
+nodes:
+  "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift":
+    is-mutated: true
+commands:
+  "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift-entitlement.plist"]
+    description: "Write auxiliary file /Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift-entitlement.plist"
+
+  "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/BrewSchema.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/KuuBridge.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/main.swift.o"]
+    outputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift.product/Objects.LinkFileList"
+
+  "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/BrewSchema.swift","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/KuuBridge.swift","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/main.swift"]
+    outputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/sources"]
+    description: "Write auxiliary file /Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/sources"
+
+  "/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+
+  "<brew-swift-arm64-apple-macosx26.0-debug.exe>":
+    tool: phony
+    inputs: ["<brew-swift-arm64-apple-macosx26.0-debug.exe-CodeSigning>"]
+    outputs: ["<brew-swift-arm64-apple-macosx26.0-debug.exe>"]
+
+  "<brew-swift-arm64-apple-macosx26.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/BrewSchema.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/KuuBridge.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/main.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/Modules/brew_swift.swiftmodule"]
+    outputs: ["<brew-swift-arm64-apple-macosx26.0-debug.module>"]
+
+  "C.brew-swift-arm64-apple-macosx26.0-debug.exe":
+    tool: shell
+    inputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/BrewSchema.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/KuuBridge.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/main.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift.product/Objects.LinkFileList"]
+    outputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/brew-swift"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug","-o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift","-module-name","brew_swift","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_brew_swift_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx14.0","-Xlinker","-add_ast_path","-Xlinker","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/Modules/brew_swift.swiftmodule","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.brew-swift-arm64-apple-macosx26.0-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift-entitlement.plist"]
+    outputs: ["<brew-swift-arm64-apple-macosx26.0-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/brew-swift"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift-entitlement.plist","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew-swift"]
+
+  "C.brew-swift-arm64-apple-macosx26.0-debug.module":
+    tool: shell
+    inputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/BrewSchema.swift","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/KuuBridge.swift","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/main.swift","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/sources"]
+    outputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/BrewSchema.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/KuuBridge.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/main.swift.o","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/Modules/brew_swift.swiftmodule"]
+    description: "Compiling Swift Module 'brew_swift' (3 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","brew_swift","-emit-dependencies","-emit-module","-emit-module-path","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/Modules/brew_swift.swiftmodule","-output-file-map","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/output-file-map.json","-incremental","-c","@/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/brew_swift.build/sources","-I","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx14.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j10","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","brew_swift_main","-swift-version","6","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","_0260318_brew_swift"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Sources/","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Package.swift","/Users/kawaz/.local/share/repos/github.com/kawaz/kuu.mbt/20260318-brew-swift/examples/20260318-brew-swift/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+
