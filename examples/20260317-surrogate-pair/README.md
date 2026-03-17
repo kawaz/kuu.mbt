@@ -2,27 +2,29 @@
 
 ## テーマ
 
-kuu の short combining におけるサロゲートペア（supplementary plane 文字）の扱いを調査・検証する PoC。
+kuu における Unicode 文字処理の問題を調査・検証する PoC。
 
 ## 背景
 
 - MoonBit の String は UTF-16 内部表現
-- `length()` は UTF-16 コードユニット数を返す
-- `char_length()` は Unicode コードポイント数を返す
-- short combining（`-abc` → `-a -b -c` 展開）で supplementary plane の文字（U+10000以上）を使った場合、サロゲートペアにより正しく分割されない可能性がある
+- `length()` / `str[i]` は UTF-16 コードユニット単位で動作する
+- kuu の short combining 等でサロゲートペア文字や合成絵文字が正しく処理されない
 
-## 調査結果
+## 発見された問題
 
-### 発見された問題
+### 3層の Unicode 問題
 
-`install_short_combine_node`（`src/core/parse.mbt`）に4つの問題:
+| レイヤー | 問題 | 影響 |
+|----------|------|------|
+| L1: UTF-16 | `length()` + `str[i]` がコードユニット単位 | サロゲートペア文字で combining が壊れる |
+| L2: Grapheme cluster | 合成絵文字（🇯🇵 👨‍👩‍👧‍👦 等）が複数コードポイント | 国旗や家族絵文字が複数文字として扱われる |
+| L3: Display width | 全角/半角の表示幅 | ヘルプ表示のカラム揃え（引数パーサとしては非本質） |
 
-1. **L169**: `node.name.length() == 2` — UTF-16 基準で Supplementary Plane 文字の short node が収集漏れ
-2. **L195-196**: `rest[ri].to_int().unsafe_to_char()` — サロゲートペア分割（abort の可能性）
-3. **L210, 230, 259, 277**: コードユニット単位のインデックス算術 — 位置ずれ
-4. 壊れた Char の `to_string()` は abort せず不正な文字列を生成（Reject → "unexpected argument"）
+### 問題箇所（全9箇所）
 
-### テスト結果（13テスト全通過）
+`parse.mbt` に8箇所、`nodes.mbt` に1箇所。詳細は [DR-001](docs/decision-records/DR-001-surrogate-pair-issues.md)。
+
+### テスト結果（14テスト全通過）
 
 | テスト | 結果 | 説明 |
 |--------|------|------|
@@ -32,13 +34,33 @@ kuu の short combining におけるサロゲートペア（supplementary plane 
 | Supplementary combining `-😀v` | ParseError | name.length()==2 で除外 |
 | 混在 combining `-v😀` | ParseError | サロゲートペア分割で不正文字列 → Reject |
 
-### 実用上の影響度
+## 結論と対応方針
 
-**低**: CLI short option に絵文字等を使うケースは稀。壊れた Char の `to_string()` は abort せず不正な文字列を生成するのみ。
+### L1: UTF-16 修正
+
+`length()` → `char_length()`、`str[i]` → `iter()` / `to_array()` に変更。全9箇所。
+引数は所詮 CLI 引数で長大なデータではないので、入口で `Array[String]` を文字単位の表現に変換してしまうのが最もシンプル。
+
+### L2: Grapheme cluster 対応
+
+L1 を修正しても合成絵文字（🇯🇵 = 2コードポイント、👨‍👩‍👧‍👦 = 7コードポイント）は複数文字として扱われる。
+正しく1文字として扱うには grapheme cluster segmentation（UAX #29）が必要。
+
+MoonBit エコシステムにはこれを提供するライブラリが存在しなかったため、本 PoC の成果として独立パッケージを新規作成した:
+
+- **リポジトリ**: [kawaz/unicodegrapheme](https://github.com/kawaz/unicodegrapheme)
+- **API**: `graphemes(s) -> GraphemeView` — 元 String のゼロコピースライスとして各 grapheme cluster にアクセス
+- **現状**: Phase 0（コードポイント単位の暫定実装）。UAX #29 準拠は Phase 1 以降。
+
+### kuu への適用
+
+1. `unicodegrapheme` の UAX #29 実装が完了したら kuu に組み込む
+2. 内部表現を `Array[String]`（各要素 = 1 grapheme cluster）にすれば、L1 と L2 が同時に解決する
+3. FilterChain での文字数フィルタ等、将来の機能追加にも自然に対応できる
 
 ## ファイル構成
 
-- `main.mbt` — 13テスト（Part 1: String UTF-16, Part 2: 破壊パターン, Part 3: kuu combining）
+- `main.mbt` — 14テスト（Part 1: String UTF-16, Part 2: 破壊パターン, Part 3: kuu combining）
 - `DESIGN.md` — 詳細設計・分析
 - `docs/decision-records/DR-001-surrogate-pair-issues.md` — Design Record
 
