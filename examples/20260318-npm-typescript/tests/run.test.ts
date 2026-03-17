@@ -1,37 +1,15 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { loadKuu, type KuuParseFn, type KuuSchema } from "../src/kuu-bridge.js";
+import { type KuuParseFn, type KuuSchema } from "../src/kuu-bridge.js";
+import { runCommand } from "../src/schema.js";
+import { getParser } from "./setup.js";
 
-const runSchema: KuuSchema = {
-  require_cmd: true,
-  opts: [
-    {
-      kind: "command",
-      name: "run",
-      aliases: ["run-script"],
-      description: "Run a script",
-      opts: [
-        { kind: "positional", name: "script", description: "Script name" },
-        { kind: "dashdash" },
-        {
-          kind: "flag",
-          name: "if-present",
-          description: "Don't error if script is missing",
-        },
-        {
-          kind: "string",
-          name: "script-shell",
-          description: "Shell to use",
-        },
-      ],
-    },
-  ],
-};
+const runSchema: KuuSchema = { require_cmd: true, opts: [runCommand] };
 
 describe("npm run", () => {
   let parse: KuuParseFn;
 
   beforeAll(async () => {
-    parse = await loadKuu();
+    parse = await getParser();
   });
 
   it("npm run test → command=run, script='test'", () => {
@@ -93,7 +71,6 @@ describe("npm run", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.command?.name).toBe("run");
-      // positional 未指定時は default="" (空文字列)
       expect(result.command?.values.script).toBe("");
     }
   });

@@ -1,62 +1,15 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import {
-  loadKuu,
-  type KuuParseFn,
-  type KuuSchema,
-} from "../src/kuu-bridge.js";
+import { type KuuParseFn, type KuuSchema } from "../src/kuu-bridge.js";
+import { versionCommand } from "../src/schema.js";
+import { getParser } from "./setup.js";
 
-const versionSchema: KuuSchema = {
-  require_cmd: true,
-  opts: [
-    {
-      kind: "command",
-      name: "version",
-      description: "Bump a package version",
-      opts: [
-        {
-          kind: "positional",
-          name: "release",
-          description: "Version or release type",
-        },
-        {
-          kind: "string",
-          name: "preid",
-          description: "Prerelease identifier",
-        },
-        {
-          kind: "flag",
-          name: "allow-same-version",
-          description: "Allow same version",
-        },
-        {
-          kind: "flag",
-          name: "git-tag-version",
-          default: true,
-          description: "Tag version in git",
-          variation_false: "no",
-        },
-        {
-          kind: "flag",
-          name: "commit-hooks",
-          default: true,
-          description: "Run git commit hooks",
-          variation_false: "no",
-        },
-        {
-          kind: "flag",
-          name: "sign-git-tag",
-          description: "Sign git tag",
-        },
-      ],
-    },
-  ],
-};
+const versionSchema: KuuSchema = { require_cmd: true, opts: [versionCommand] };
 
 describe("npm version", () => {
   let parse: KuuParseFn;
 
   beforeAll(async () => {
-    parse = await loadKuu();
+    parse = await getParser();
   });
 
   it("npm version patch → command=version, release='patch'", () => {

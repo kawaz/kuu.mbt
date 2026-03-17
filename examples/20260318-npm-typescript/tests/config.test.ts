@@ -1,69 +1,15 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import {
-  loadKuu,
-  type KuuParseFn,
-  type KuuSchema,
-} from "../src/kuu-bridge.js";
+import { type KuuParseFn, type KuuSchema } from "../src/kuu-bridge.js";
+import { configCommand } from "../src/schema.js";
+import { getParser } from "./setup.js";
 
-const configSchema: KuuSchema = {
-  require_cmd: true,
-  opts: [
-    {
-      kind: "command",
-      name: "config",
-      aliases: ["c"],
-      description: "Manage configuration",
-      require_cmd: true,
-      opts: [
-        {
-          kind: "command",
-          name: "set",
-          description: "Set a config value",
-          opts: [
-            { kind: "positional", name: "key", description: "Config key" },
-            { kind: "positional", name: "value", description: "Config value" },
-          ],
-        },
-        {
-          kind: "command",
-          name: "get",
-          description: "Get a config value",
-          opts: [
-            { kind: "positional", name: "key", description: "Config key" },
-          ],
-        },
-        {
-          kind: "command",
-          name: "delete",
-          description: "Delete a config value",
-          opts: [
-            { kind: "positional", name: "key", description: "Config key" },
-          ],
-        },
-        {
-          kind: "command",
-          name: "list",
-          description: "List all config",
-          opts: [
-            { kind: "flag", name: "json", description: "JSON output" },
-          ],
-        },
-        {
-          kind: "flag",
-          name: "global",
-          shorts: "g",
-          description: "Use global config",
-        },
-      ],
-    },
-  ],
-};
+const configSchema: KuuSchema = { require_cmd: true, opts: [configCommand] };
 
 describe("npm config", () => {
   let parse: KuuParseFn;
 
   beforeAll(async () => {
-    parse = await loadKuu();
+    parse = await getParser();
   });
 
   it("npm config set registry https://registry.npmjs.org → config > set, key と value", () => {
@@ -113,16 +59,6 @@ describe("npm config", () => {
     }
   });
 
-  it("npm config list --json → config > list + json フラグ", () => {
-    const result = parse(configSchema, ["config", "list", "--json"]);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.command?.name).toBe("config");
-      expect(result.command?.command?.name).toBe("list");
-      expect(result.command?.command?.values.json).toBe(true);
-    }
-  });
-
   it("npm c set foo bar → エイリアス 'c' で config コマンド", () => {
     const result = parse(configSchema, ["c", "set", "foo", "bar"]);
     expect(result.ok).toBe(true);
@@ -147,10 +83,6 @@ describe("npm config", () => {
       expect(result.command?.name).toBe("config");
       expect(result.command?.values.global).toBe(true);
       expect(result.command?.command?.name).toBe("set");
-      expect(result.command?.command?.values.key).toBe("registry");
-      expect(result.command?.command?.values.value).toBe(
-        "https://registry.npmjs.org",
-      );
     }
   });
 

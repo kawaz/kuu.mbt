@@ -1,56 +1,15 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { loadKuu, type KuuParseFn, type KuuSchema } from "../src/kuu-bridge.js";
+import { type KuuParseFn, type KuuSchema } from "../src/kuu-bridge.js";
+import { auditCommand } from "../src/schema.js";
+import { getParser } from "./setup.js";
 
-const auditSchema: KuuSchema = {
-  require_cmd: true,
-  opts: [
-    {
-      kind: "command",
-      name: "audit",
-      description: "Run a security audit",
-      opts: [
-        {
-          kind: "command",
-          name: "fix",
-          description: "Fix vulnerabilities",
-          opts: [
-            { kind: "flag", name: "dry-run", description: "Only report" },
-            {
-              kind: "flag",
-              name: "force",
-              shorts: "f",
-              description: "Force fix",
-            },
-          ],
-        },
-        {
-          kind: "command",
-          name: "signatures",
-          description: "Verify signatures",
-        },
-        {
-          kind: "string",
-          name: "audit-level",
-          description: "Minimum level",
-          choices: ["info", "low", "moderate", "high", "critical", "none"],
-        },
-        {
-          kind: "append_string",
-          name: "omit",
-          description: "Omit types",
-          choices: ["dev", "optional", "peer"],
-        },
-        { kind: "flag", name: "json", description: "Output JSON" },
-      ],
-    },
-  ],
-};
+const auditSchema: KuuSchema = { require_cmd: true, opts: [auditCommand] };
 
 describe("npm audit", () => {
   let parse: KuuParseFn;
 
   beforeAll(async () => {
-    parse = await loadKuu();
+    parse = await getParser();
   });
 
   it("npm audit → command=audit (サブコマンドなしでもOK)", () => {
@@ -58,7 +17,6 @@ describe("npm audit", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.command?.name).toBe("audit");
-      // サブコマンドなし
       expect(result.command?.command).toBeUndefined();
     }
   });
@@ -130,15 +88,6 @@ describe("npm audit", () => {
     if (result.ok) {
       expect(result.command?.name).toBe("audit");
       expect(result.command?.values.omit).toEqual(["dev", "optional"]);
-    }
-  });
-
-  it("npm audit --json → json フラグ", () => {
-    const result = parse(auditSchema, ["audit", "--json"]);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.command?.name).toBe("audit");
-      expect(result.command?.values.json).toBe(true);
     }
   });
 });

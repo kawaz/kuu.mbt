@@ -41,7 +41,7 @@ const globalOpts: KuuOpt[] = [
 
 // --- install ---
 
-const installCommand: KuuOpt = {
+export const installCommand: KuuOpt = {
   kind: "command",
   name: "install",
   aliases: ["i", "add"],
@@ -65,7 +65,7 @@ const installCommand: KuuOpt = {
 
 // --- run ---
 
-const runCommand: KuuOpt = {
+export const runCommand: KuuOpt = {
   kind: "command",
   name: "run",
   aliases: ["run-script"],
@@ -80,7 +80,7 @@ const runCommand: KuuOpt = {
 
 // --- publish ---
 
-const publishCommand: KuuOpt = {
+export const publishCommand: KuuOpt = {
   kind: "command",
   name: "publish",
   description: "Publish a package",
@@ -100,7 +100,7 @@ const publishCommand: KuuOpt = {
 
 // --- audit ---
 
-const auditCommand: KuuOpt = {
+export const auditCommand: KuuOpt = {
   kind: "command",
   name: "audit",
   description: "Run a security audit",
@@ -136,7 +136,7 @@ const auditCommand: KuuOpt = {
 
 // --- config ---
 
-const configCommand: KuuOpt = {
+export const configCommand: KuuOpt = {
   kind: "command",
   name: "config",
   aliases: ["c"],
@@ -175,7 +175,7 @@ const configCommand: KuuOpt = {
 
 // --- version ---
 
-const versionCommand: KuuOpt = {
+export const versionCommand: KuuOpt = {
   kind: "command",
   name: "version",
   description: "Bump a package version",

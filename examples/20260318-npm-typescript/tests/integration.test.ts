@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { loadKuu, type KuuParseFn } from "../src/kuu-bridge.js";
+import { type KuuParseFn } from "../src/kuu-bridge.js";
 import { npmSchema } from "../src/schema.js";
+import { getParser } from "./setup.js";
 
 describe("npm CLI integration (full schema)", () => {
   let parse: KuuParseFn;
 
   beforeAll(async () => {
-    parse = await loadKuu();
+    parse = await getParser();
   });
 
   // --- Global options ---

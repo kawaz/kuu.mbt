@@ -1,55 +1,15 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import {
-  loadKuu,
-  type KuuParseFn,
-  type KuuSchema,
-} from "../src/kuu-bridge.js";
+import { type KuuParseFn, type KuuSchema } from "../src/kuu-bridge.js";
+import { publishCommand } from "../src/schema.js";
+import { getParser } from "./setup.js";
 
-const publishSchema: KuuSchema = {
-  require_cmd: true,
-  opts: [
-    {
-      kind: "command",
-      name: "publish",
-      description: "Publish a package",
-      opts: [
-        {
-          kind: "positional",
-          name: "tarball",
-          description: "Package tarball or directory",
-        },
-        {
-          kind: "string",
-          name: "tag",
-          default: "latest",
-          description: "Distribution tag",
-        },
-        {
-          kind: "string",
-          name: "access",
-          choices: ["public", "restricted"],
-          description: "Access level",
-        },
-        {
-          kind: "flag",
-          name: "dry-run",
-          description: "Do everything except publish",
-        },
-        {
-          kind: "string",
-          name: "otp",
-          description: "One-time password",
-        },
-      ],
-    },
-  ],
-};
+const publishSchema: KuuSchema = { require_cmd: true, opts: [publishCommand] };
 
 describe("npm publish", () => {
   let parse: KuuParseFn;
 
   beforeAll(async () => {
-    parse = await loadKuu();
+    parse = await getParser();
   });
 
   it("npm publish → デフォルト値で成功", () => {

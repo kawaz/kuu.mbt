@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { loadKuu, type KuuParseFn, type KuuSchema } from "../src/kuu-bridge.js";
+import { getParser } from "./setup.js";
 
 describe("kuu-bridge", () => {
   let parse: KuuParseFn;
 
   beforeAll(async () => {
-    parse = await loadKuu();
+    parse = await getParser();
   });
 
   it("should parse a simple flag", () => {

@@ -1,6 +1,6 @@
+import type { KuuCommandResult } from "./kuu-bridge.js";
 import { loadKuu } from "./kuu-bridge.js";
 import { npmSchema } from "./schema.js";
-import type { KuuCommandResult } from "./kuu-bridge.js";
 
 function formatValues(values: Record<string, unknown>, indent = ""): string {
   const lines: string[] = [];
