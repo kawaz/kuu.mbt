@@ -6,7 +6,7 @@ import {
 }
 
 // Values
-pub fn[T : Parseable] parse_into(Array[String], T) -> Unit raise @core.ParseError
+pub fn[T : Parseable] parse_into(Array[String], T, env? : Map[String, String]) -> Unit raise @core.ParseError
 
 // Errors
 
@@ -34,6 +34,7 @@ pub fn FieldRegistry::int_ref(Self, name~ : String, default? : Int, description?
 pub fn FieldRegistry::positional(Self, name~ : String, description? : String, apply_fn~ : (String) -> Unit) -> Unit
 pub fn FieldRegistry::require_cmd(Self) -> Unit
 pub fn FieldRegistry::required(Self, @core.OptRef) -> Unit
+pub fn FieldRegistry::requires(Self, @core.OptRef, source~ : @core.OptRef, msg? : String) -> Unit
 pub fn FieldRegistry::rest(Self, name~ : String, description? : String, apply_fn~ : (Array[String]) -> Unit) -> Unit
 pub fn FieldRegistry::set_description(Self, String) -> Unit
 pub fn FieldRegistry::string(Self, name~ : String, default? : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (String) -> Unit) -> Unit

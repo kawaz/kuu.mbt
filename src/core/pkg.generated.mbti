@@ -137,6 +137,8 @@ pub(all) struct Parser {
   node_templates : Map[Int, NodeTemplate]
   eq_fallback_nodes : Array[ExactNode]
   deprecated_usages : Array[(String, String)]
+  env_applicators : Array[(Map[String, String]) -> Unit raise ParseError]
+  env_map : @ref.Ref[Map[String, String]]
 }
 pub fn[T] Parser::adjust(Self, Opt[T], after_post~ : FilterChain[T, T]) -> Unit
 pub fn[T] Parser::alias(Self, String, Opt[T]) -> Opt[T]
@@ -160,10 +162,11 @@ pub fn Parser::int_opt(Self, name~ : String, default~ : Int, default_fn? : (() -
 pub fn[T] Parser::link(Self, Opt[T], source~ : Opt[T], propagate_set? : Bool) -> Unit
 pub fn Parser::never(Self) -> Unit
 pub fn Parser::new(dashdash? : Bool) -> Self
-pub fn Parser::parse(Self, Array[String]) -> ParseResult raise ParseError
+pub fn Parser::parse(Self, Array[String], env? : Map[String, String]) -> ParseResult raise ParseError
 pub fn Parser::positional(Self, name~ : String, description? : String, greedy? : Bool) -> Opt[String]
 pub fn Parser::require_cmd(Self) -> Unit
 pub fn Parser::required(Self, OptRef) -> Unit
+pub fn Parser::requires(Self, OptRef, source~ : OptRef, msg? : String) -> Unit
 pub fn Parser::rest(Self, name~ : String, description? : String, stop_before? : Array[String]) -> Opt[Array[String]]
 pub fn Parser::serial(Self, setup~ : (Self) -> Unit, greedy? : Bool) -> Unit
 pub fn Parser::set_description(Self, String) -> Unit
