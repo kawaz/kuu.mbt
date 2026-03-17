@@ -165,7 +165,7 @@ fn make_reducer[T, U](
 | append | `parse_int` 等 | `(acc, u) => acc + [u]`（追加） |
 | join 系 | `split(",").then(each(parse_int))` | `(acc, xs) => acc + xs`（結合） |
 
-組み込みフィルタ（32個）:
+組み込みフィルタ（31個）:
 - 文字列変換: `trim`, `to_lower`, `to_upper`, `trim_start`, `trim_end`, `replace(from, to)`, `replace_all(from, to)`
 - 文字列検証: `non_empty`, `starts_with(prefix)`, `ends_with(suffix)`, `contains(substr)`, `min_length(n)`, `max_length(n)`, `min_codepoints(n)`, `max_codepoints(n)`, `min_graphemes(n)`, `max_graphemes(n)`
 - 数値パース: `parse_int`, `parse_float`, `parse_bool`
