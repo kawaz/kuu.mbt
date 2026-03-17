@@ -1,0 +1,18 @@
+default:
+    just --list
+
+# テスト実行
+test:
+    moon test -p kawaz/kuu/examples/20260317-surrogate-pair
+
+# スナップショット更新
+update:
+    moon test -u -p kawaz/kuu/examples/20260317-surrogate-pair
+
+# フォーマット
+fmt:
+    moon fmt
+
+# チェック
+check:
+    moon check
