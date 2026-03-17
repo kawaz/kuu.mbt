@@ -284,22 +284,29 @@ fn build_cargo_schema() -> Schema {
     }
 }
 
+/// Returns true if the value is a non-trivial (non-default) parse result worth displaying.
+fn is_meaningful(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(false) => false,
+        serde_json::Value::Number(n) if n.as_f64() == Some(0.0) => false,
+        serde_json::Value::String(s) if s.is_empty() => false,
+        serde_json::Value::Array(a) if a.is_empty() => false,
+        _ => true,
+    }
+}
+
+fn display_values(values: &serde_json::Map<String, serde_json::Value>, prefix: &str) {
+    for (key, value) in values {
+        if is_meaningful(value) {
+            println!("{prefix}{key}: {value}");
+        }
+    }
+}
+
 fn display_result(result: &bridge::ParseSuccess, indent: usize) {
     let prefix = " ".repeat(indent);
-    for (key, value) in &result.values {
-        if value.is_null() {
-            continue;
-        }
-        // Skip default values for cleaner output
-        match value {
-            serde_json::Value::Bool(false) => continue,
-            serde_json::Value::Number(n) if n.as_f64() == Some(0.0) => continue,
-            serde_json::Value::String(s) if s.is_empty() => continue,
-            serde_json::Value::Array(a) if a.is_empty() => continue,
-            _ => {}
-        }
-        println!("{prefix}{key}: {value}");
-    }
+    display_values(&result.values, &prefix);
     if let Some(ref cmd) = result.command {
         display_command(cmd, indent);
     }
@@ -308,19 +315,7 @@ fn display_result(result: &bridge::ParseSuccess, indent: usize) {
 fn display_command(cmd: &bridge::CommandResult, indent: usize) {
     let prefix = " ".repeat(indent);
     println!("{prefix}[command: {}]", cmd.name);
-    for (key, value) in &cmd.values {
-        if value.is_null() {
-            continue;
-        }
-        match value {
-            serde_json::Value::Bool(false) => continue,
-            serde_json::Value::Number(n) if n.as_f64() == Some(0.0) => continue,
-            serde_json::Value::String(s) if s.is_empty() => continue,
-            serde_json::Value::Array(a) if a.is_empty() => continue,
-            _ => {}
-        }
-        println!("{prefix}  {key}: {value}");
-    }
+    display_values(&cmd.values, &format!("{prefix}  "));
     if let Some(ref nested) = cmd.command {
         display_command(nested, indent + 2);
     }

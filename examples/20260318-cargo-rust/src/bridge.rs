@@ -14,9 +14,6 @@ pub enum BridgeError {
     #[error("Node.js not found. Install Node.js v25+ with js-string builtins support.")]
     NodeNotFound,
 
-    #[error("kuu WASM not built. Run `moon build --target wasm-gc --release` first.")]
-    WasmNotBuilt,
-
     #[error("bridge process failed: {0}")]
     ProcessFailed(String),
 

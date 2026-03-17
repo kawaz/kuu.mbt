@@ -69,6 +69,7 @@ impl OptDef {
         self
     }
 
+    #[allow(dead_code)]
     pub fn default_bool(mut self, v: bool) -> Self {
         self.0["default"] = json!(v);
         self
@@ -79,6 +80,7 @@ impl OptDef {
         self
     }
 
+    #[allow(dead_code)]
     pub fn default_int(mut self, v: i64) -> Self {
         self.0["default"] = json!(v);
         self
@@ -99,11 +101,13 @@ impl OptDef {
         self
     }
 
+    #[allow(dead_code)]
     pub fn variation_false(mut self, prefix: &str) -> Self {
         self.0["variation_false"] = json!(prefix);
         self
     }
 
+    #[allow(dead_code)]
     pub fn variation_toggle(mut self, prefix: &str) -> Self {
         self.0["variation_toggle"] = json!(prefix);
         self
@@ -183,6 +187,7 @@ impl CommandDef {
         self
     }
 
+    #[allow(dead_code)]
     pub fn require_cmd(mut self) -> Self {
         self.require_cmd = true;
         self
@@ -298,24 +303,6 @@ pub fn package_opts() -> Vec<Value> {
             .build(),
         string_opt("exclude")
             .description("Exclude packages from the build")
-            .build(),
-    ]
-}
-
-/// Manifest options.
-pub fn manifest_opts() -> Vec<Value> {
-    vec![
-        flag("locked")
-            .description("Assert that Cargo.lock will remain unchanged")
-            .build(),
-        flag("offline")
-            .description("Run without accessing the network")
-            .build(),
-        flag("frozen")
-            .description("Equivalent to specifying both --locked and --offline")
-            .build(),
-        string_opt("manifest-path")
-            .description("Path to Cargo.toml")
             .build(),
     ]
 }
