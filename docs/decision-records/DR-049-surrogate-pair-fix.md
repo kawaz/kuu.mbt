@@ -11,7 +11,7 @@ MoonBit の String は UTF-16 内部表現を採用しており、`length()` や
 | レイヤー | 問題 | 対応方法 | 対応時期 |
 |----------|------|----------|----------|
 | L1: UTF-16 encoding | `length()` + `str[i]` がコードユニット単位 | unicodegrapheme 導入 | 本 DR |
-| L2: Grapheme cluster | 合成絵文字（🇯🇵 👨‍👩‍👧‍👦 等）が複数コードポイント | unicodegrapheme が将来 UAX #29 準拠になれば自動対応 | 将来 |
+| L2: Grapheme cluster | 合成絵文字（🇯🇵 👨‍👩‍👧‍👦 等）が複数コードポイント | unicodegrapheme UAX #29 対応済み → levenshtein/short combining は自動対応、shorts 登録は未対応 | 一部完了 |
 | L3: Display width | 全角/半角の表示幅 | `rami3l/unicodewidth` | 必要時 |
 
 本 DR では L1 の問題を解決する。修正手段として `char_length()` / `to_array()` ではなく `unicodegrapheme` の `graphemes()` を使うことで、将来の L2 対応時に必要なコード変更量を最小化する（ただし shorts の型変更等、別途対応が必要な箇所は残る。詳細は末尾「L2 対応時の追加変更」を参照）。
@@ -351,34 +351,33 @@ levenshtein("--😀", "--😎") == 1
 moon test --target all
 ```
 
-## 将来の L2 対応との関係
+## L2 対応との関係
 
-### 現在の unicodegrapheme（Phase 0）
+### unicodegrapheme の UAX #29 対応状況
 
-コードポイント単位の分割。L1（サロゲートペア）は解決するが、L2（grapheme cluster）は未対応:
+unicodegrapheme は UAX #29 (Unicode 16.0.0) 全対応を完了。公式テスト全1,093ケース合格済み。
 
-| 入力 | graphemes().length() | 期待値 (L2) |
-|------|---------------------|-------------|
-| `"😀"` | 1 | 1 |
-| `"🇯🇵"` | 2 | 1 |
-| `"👨‍👩‍👧‍👦"` | 7 | 1 |
+| 入力 | graphemes().length() | 備考 |
+|------|---------------------|------|
+| `"😀"` | 1 | Supplementary Plane |
+| `"🇯🇵"` | 1 | Regional Indicator × 2 (GB12/13) |
+| `"👨‍👩‍👧‍👦"` | 1 | ZWJ シーケンス (GB11) |
+| `"👋🏽"` | 1 | スキントーン修飾 (GB9 Extend) |
 
-### 将来の unicodegrapheme（UAX #29 対応後）
+### L2 対応の現状
 
-grapheme cluster 単位の分割。本 DR で修正した箇所（short combining の展開、levenshtein の距離計算）は `graphemes()` の分割粒度が変わるだけで自動的に L2 対応になる。ただし shorts の登録パス（`Array[Char]` → `Array[String]`）は別途変更が必要:
+本 DR で修正した箇所（levenshtein、short combining 展開）は unicodegrapheme の分割粒度に依存するだけなので、UAX #29 対応により **L2 も自動的に解決済み**:
 
-- levenshtein: 自動対応（grapheme cluster 単位で距離計算）
-- short combining 展開: 自動対応（grapheme cluster 単位でイテレーション）
-- shorts 登録: **要変更**（`Array[Char]` → `Array[String]`、`for ch in shorts` の書き換え）
+- levenshtein: grapheme cluster 単位で距離計算 → **対応済み**
+- short combining 展開: grapheme cluster 単位でイテレーション → **対応済み**
+- 合成絵文字テスト8件で検証済み（国旗/ZWJ/スキントーン）
 
-### kuu 側で必要な変更（L2 完全対応時）
+### kuu 側で残る L2 未対応箇所
 
-本 DR の修正（parse.mbt の short combining / levenshtein）は `graphemes()` の分割粒度が変わるだけで自動対応する。ただし、**shorts の登録パスは別途変更が必要**:
+shorts の登録パスが `Array[Char]` のままなので、合成絵文字（複数コードポイント）を short option として登録できない:
 
 - `types.mbt:150` の `shorts : Array[Char]` → `Array[String]` への型変更
-- `parser.mbt:106` の `shorts.to_array()` → `graphemes(shorts).iter().map(fn { sv => sv.to_string() }).collect()` 等
+- `parser.mbt:106` の `shorts.to_array()` → grapheme 単位分割
 - `parser.mbt:439,462` の `for ch in shorts` → grapheme 単位イテレーション
 
-これらは L2 対応（unicodegrapheme が UAX #29 準拠になった時点）で行う。本 DR のスコープ外。
-
-本 DR の修正だけでも、`char_length()` / `to_array()` ではなく `graphemes()` を使うことで、将来の L2 対応時のコード変更量が最小化される。
+これらは必要になった時点で対応する。現実的に合成絵文字を short option に使うユースケースは稀。

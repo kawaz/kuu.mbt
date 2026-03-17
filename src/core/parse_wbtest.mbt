@@ -6786,3 +6786,102 @@ test "surrogate pair: suggest_typo with emoji option" {
     _ => fail("expected ParseError")
   }
 }
+
+// ============================================================
+// Grapheme cluster (composite emoji) tests
+// ============================================================
+
+///|
+test "grapheme cluster: levenshtein with flag emoji" {
+  // 🇯🇵 (Regional Indicator × 2) は 1 grapheme cluster
+  inspect(levenshtein("--\u{1F1EF}\u{1F1F5}mode", "--\u{1F1EF}\u{1F1F5}mode"), content="0")
+  inspect(levenshtein("--\u{1F1EF}\u{1F1F5}mode", "--\u{1F1EF}\u{1F1F5}mod"), content="1")
+}
+
+///|
+test "grapheme cluster: levenshtein with family emoji" {
+  // 👨‍👩‍👧‍👦 (ZWJ sequence, 7 codepoints) は 1 grapheme cluster
+  // grapheme cluster 単位なら距離1（1 cluster の置換）
+  // コードポイント単位なら距離7以上になるはず
+  inspect(
+    levenshtein(
+      "--\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}",
+      "--\u{1F600}",
+    ),
+    content="1",
+  )
+}
+
+///|
+test "grapheme cluster: levenshtein with skin tone emoji" {
+  // 👋🏽 (wave + skin tone, 2 codepoints) は 1 grapheme cluster
+  // grapheme cluster 単位なら距離1（1 cluster の置換）
+  // コードポイント単位なら距離2になるはず
+  inspect(
+    levenshtein("--\u{1F44B}\u{1F3FD}", "--\u{1F600}"),
+    content="1",
+  )
+}
+
+///|
+test "grapheme cluster: levenshtein flag vs flag substitution" {
+  // 🇯🇵 と 🇺🇸 は各 1 grapheme cluster
+  inspect(
+    levenshtein(
+      "--\u{1F1EF}\u{1F1F5}",
+      "--\u{1F1FA}\u{1F1F8}",
+    ),
+    content="1",
+  )
+}
+
+///|
+test "grapheme cluster: long option with flag emoji" {
+  let p = Parser::new()
+  let opt = p.flag(name="\u{1F1EF}\u{1F1F5}mode")
+  ignore(p.parse(["--\u{1F1EF}\u{1F1F5}mode"]))
+  inspect(p.get(opt), content="Some(true)")
+}
+
+///|
+test "grapheme cluster: long option with family emoji" {
+  let p = Parser::new()
+  let opt = p.string_opt(
+    name="\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}-mode",
+    default="off",
+  )
+  ignore(p.parse(["--\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}-mode", "on"]))
+  inspect(
+    p.get(opt),
+    content=(
+      #|Some("on")
+    ),
+  )
+}
+
+///|
+test "grapheme cluster: suggest_typo with flag emoji" {
+  let p = Parser::new()
+  let _ = p.flag(name="\u{1F1EF}\u{1F1F5}mode")
+  let r : Result[ParseResult, _] = try? p.parse(["--\u{1F1EF}\u{1F1F5}mod"])
+  match r {
+    Err(ParseError(info)) => {
+      inspect(info.message.contains("did you mean"), content="true")
+      inspect(info.message.contains("\u{1F1EF}\u{1F1F5}mode"), content="true")
+    }
+    _ => fail("expected ParseError with typo suggestion")
+  }
+}
+
+///|
+test "grapheme cluster: eq split with flag emoji" {
+  let p = Parser::new()
+  let opt = p.string_opt(name="\u{1F1EF}\u{1F1F5}mode", default="off")
+  ignore(p.parse(["--\u{1F1EF}\u{1F1F5}mode=on"]))
+  inspect(
+    p.get(opt),
+    content=(
+      #|Some("on")
+    ),
+  )
+}
