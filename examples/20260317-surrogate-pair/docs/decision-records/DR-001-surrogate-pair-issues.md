@@ -36,7 +36,7 @@ while ri < rest.length() {
 
 `rest[ri]` は UTF-16 コードユニット単位のインデックスアクセスで、サロゲートペアの high/low を個別に取得してしまう。`unsafe_to_char()` で変換すると、不正なコードポイント（0xD800-0xDFFF）が生成される。
 
-さらに、壊れた Char の `to_string()` は **abort** を引き起こし、recover 不能。
+壊れた Char の `to_string()` は abort せず、長さ1の不正な文字列を生成する。これにより `short_name` が不正な値になり、ノード名と不一致で `Reject` が返される。
 
 **修正案**: `for ch in rest` のイテレータを使用し、位置管理を別途行う
 
@@ -69,7 +69,7 @@ let remaining = rest.unsafe_substring(start=ri + 1, end=rest.length())
 
 - short combining（`-abc` → `-a -b -c` 展開）
   - Supplementary Plane 文字の short option が combining に参加できない
-  - BMP 文字と Supplementary Plane 文字の混在 combining が失敗する（abort の可能性あり）
+  - BMP 文字と Supplementary Plane 文字の混在 combining が失敗する（Reject → "unexpected argument"）
 
 ### 影響を受けない機能
 
@@ -83,7 +83,7 @@ let remaining = rest.unsafe_substring(start=ri + 1, end=rest.length())
 **低〜中**:
 - CLI の short option にサロゲートペア文字を使うケースは極めて稀
 - 実用的には ASCII 文字（a-z, A-Z, 0-9）がほぼ全て
-- ただし `unsafe_to_char()` + `to_string()` の組み合わせが abort を引き起こす点は潜在的な安全性問題
+- `unsafe_to_char()` + `to_string()` の組み合わせは abort せず不正な文字列を生成する。結果として combining は Reject され "unexpected argument" エラーになる
 - MoonBit の String が UTF-16 であることを前提としたコードは他にも存在する可能性があり、体系的な確認が必要
 
 ## 修正方針
@@ -93,7 +93,7 @@ let remaining = rest.unsafe_substring(start=ri + 1, end=rest.length())
 1. `install_short_combine_node` の収集条件を `char_length()` ベースに変更
 2. 文字分割ループをイテレータベースに変更
 3. 位置管理をコードポイント単位ではなく、イテレータの進行に委ねる
-4. `unsafe_to_char()` の使用を排除
+4. `unsafe_to_char()` の使用を排除（不正な文字列生成の防止）
 
 ### 代替案
 

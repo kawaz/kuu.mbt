@@ -20,7 +20,7 @@ kuu の short combining におけるサロゲートペア（supplementary plane 
 1. **L169**: `node.name.length() == 2` — UTF-16 基準で Supplementary Plane 文字の short node が収集漏れ
 2. **L195-196**: `rest[ri].to_int().unsafe_to_char()` — サロゲートペア分割（abort の可能性）
 3. **L210, 230, 259, 277**: コードユニット単位のインデックス算術 — 位置ずれ
-4. 壊れた Char の `to_string()` は **abort** を引き起こす（recover 不能）
+4. 壊れた Char の `to_string()` は abort せず不正な文字列を生成（Reject → "unexpected argument"）
 
 ### テスト結果（13テスト全通過）
 
@@ -28,12 +28,13 @@ kuu の short combining におけるサロゲートペア（supplementary plane 
 |--------|------|------|
 | BMP combining `-vaf` | 正常動作 | 従来通り |
 | Supplementary 個別 `-😀` | 正常動作 | 文字列比較でマッチ |
+| 複数 Supplementary `-😀😂` | ParseError | name.length()==2 で除外 |
 | Supplementary combining `-😀v` | ParseError | name.length()==2 で除外 |
-| 混在 combining `-v😀` | ParseError | インデックスアクセスでサロゲートペア分割 |
+| 混在 combining `-v😀` | ParseError | サロゲートペア分割で不正文字列 → Reject |
 
 ### 実用上の影響度
 
-**低〜中**: CLI short option に絵文字等を使うケースは稀だが、`unsafe_to_char()` + `to_string()` が abort する潜在的安全性問題あり。
+**低**: CLI short option に絵文字等を使うケースは稀。壊れた Char の `to_string()` は abort せず不正な文字列を生成するのみ。
 
 ## ファイル構成
 
