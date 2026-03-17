@@ -14,20 +14,40 @@ const wasmPath = resolve(
   "../../../_build/wasm-gc/release/build/src/wasm/wasm.wasm"
 );
 
-const wasmBytes = await readFile(wasmPath);
-const { instance } = await WebAssembly.instantiate(wasmBytes, {}, {
-  builtins: ["js-string"],
-  importedStringConstants: "_",
-});
+try {
+  let wasmBytes;
+  try {
+    wasmBytes = await readFile(wasmPath);
+  } catch (e) {
+    const msg = JSON.stringify({
+      ok: false,
+      error: `WASM file not found: ${wasmPath}. Run \`moon build --target wasm-gc --release\` first.`,
+    });
+    process.stdout.write(msg + "\n");
+    process.exit(0);
+  }
 
-const { kuu_parse } = instance.exports;
+  const { instance } = await WebAssembly.instantiate(wasmBytes, {}, {
+    builtins: ["js-string"],
+    importedStringConstants: "_",
+  });
 
-// Read all stdin
-const chunks = [];
-for await (const chunk of process.stdin) {
-  chunks.push(chunk);
+  const { kuu_parse } = instance.exports;
+
+  // Read all stdin
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk);
+  }
+  const input = Buffer.concat(chunks).toString("utf-8");
+
+  const result = kuu_parse(input);
+  process.stdout.write(result + "\n");
+} catch (e) {
+  const msg = JSON.stringify({
+    ok: false,
+    error: `Bridge error: ${e.message}`,
+  });
+  process.stdout.write(msg + "\n");
+  process.exit(0);
 }
-const input = Buffer.concat(chunks).toString("utf-8");
-
-const result = kuu_parse(input);
-process.stdout.write(result + "\n");

@@ -59,7 +59,7 @@ fn build_cargo_schema() -> Schema {
             .build(),
         // Unstable / hidden
         string_opt("unstable-flags")
-            .aliases(&["Z"])
+            .shorts("Z")
             .hidden()
             .description("Unstable (nightly-only) flags to Cargo")
             .build(),
@@ -244,7 +244,7 @@ fn build_cargo_schema() -> Schema {
             .description("Target triple to clean output for"))
         .opt(string_opt("target-dir")
             .description("Directory for all generated artifacts")
-            .env("CARGO_TARGET_DIR"))
+            .env("CARGO_TARGET_DIR")) // NOTE: WASM bridge does not yet support env; no-op placeholder for future bridge extension
         .opt(string_opt("package")
             .shorts("p")
             .description("Package to clean artifacts for"))
@@ -351,6 +351,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
         // Demo mode: run several example invocations
+        println!("Demo mode: running example invocations...");
         let demos: Vec<Vec<&str>> = vec![
             vec!["build", "--release", "--features", "serde", "-j", "4"],
             vec!["run", "-r", "--bin", "myapp", "--", "--port", "8080"],

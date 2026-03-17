@@ -64,6 +64,7 @@ impl OptDef {
         self
     }
 
+    #[allow(dead_code)]
     pub fn aliases(mut self, a: &[&str]) -> Self {
         self.0["aliases"] = json!(a);
         self
@@ -259,18 +260,18 @@ pub fn compilation_opts() -> Vec<Value> {
         int_opt("jobs")
             .shorts("j")
             .description("Number of parallel jobs, defaults to # of CPUs")
-            .env("CARGO_BUILD_JOBS")
+            .env("CARGO_BUILD_JOBS") // NOTE: WASM bridge does not yet support env; no-op placeholder for future bridge extension
             .build(),
         flag("keep-going")
             .description("Do not abort the build as soon as there is an error")
             .build(),
-        string_opt("target")
+        append_string("target")
             .description("Build for the target triple")
-            .env("CARGO_BUILD_TARGET")
+            .env("CARGO_BUILD_TARGET") // NOTE: WASM bridge does not yet support env; no-op placeholder for future bridge extension
             .build(),
         string_opt("target-dir")
             .description("Directory for all generated artifacts")
-            .env("CARGO_TARGET_DIR")
+            .env("CARGO_TARGET_DIR") // NOTE: WASM bridge does not yet support env; no-op placeholder for future bridge extension
             .build(),
     ]
 }
@@ -301,7 +302,7 @@ pub fn package_opts() -> Vec<Value> {
         flag("workspace")
             .description("Build all packages in the workspace")
             .build(),
-        string_opt("exclude")
+        append_string("exclude")
             .description("Exclude packages from the build")
             .build(),
     ]
@@ -312,13 +313,13 @@ pub fn target_selection_opts() -> Vec<Value> {
     vec![
         flag("lib").description("Build only this package's library").build(),
         flag("bins").description("Build all binaries").build(),
-        string_opt("bin").description("Build only the specified binary").build(),
+        append_string("bin").description("Build only the specified binary").build(),
         flag("examples").description("Build all examples").build(),
-        string_opt("example").description("Build only the specified example").build(),
+        append_string("example").description("Build only the specified example").build(),
         flag("tests").description("Build all test targets").build(),
-        string_opt("test").description("Build only the specified test target").build(),
+        append_string("test").description("Build only the specified test target").build(),
         flag("benches").description("Build all bench targets").build(),
-        string_opt("bench").description("Build only the specified bench target").build(),
+        append_string("bench").description("Build only the specified bench target").build(),
         flag("all-targets").description("Build all targets").build(),
     ]
 }

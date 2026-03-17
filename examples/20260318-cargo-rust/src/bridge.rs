@@ -2,6 +2,10 @@
 //!
 //! Communicates with kuu's WASM bridge via Node.js subprocess.
 //! Input: JSON schema + args → Output: JSON parse result.
+//!
+//! Why Node.js? MoonBit's WASM output uses wasm-gc + js-string builtins,
+//! which require a V8 runtime. wasmtime and other standalone WASM runtimes
+//! do not support these features, so Node.js is used as the host.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -47,24 +51,24 @@ pub enum ParseResult {
     Error { message: String, help: Option<String> },
 }
 
-/// Resolve the bridge.mjs path relative to the current executable or source.
-fn bridge_script_path() -> PathBuf {
-    // Try relative to the source directory first (for development)
-    let candidates = [
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bridge.mjs"),
-        PathBuf::from("src/bridge.mjs"),
-    ];
-    for p in &candidates {
-        if p.exists() {
-            return p.clone();
-        }
+/// Resolve the bridge.mjs path relative to the compile-time source directory.
+/// Design rationale: Only CARGO_MANIFEST_DIR is used (no CWD fallback) to prevent
+/// executing an attacker-placed bridge.mjs in the current working directory.
+fn bridge_script_path() -> Result<PathBuf, BridgeError> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bridge.mjs");
+    if path.exists() {
+        Ok(path)
+    } else {
+        Err(BridgeError::ProcessFailed(format!(
+            "bridge.mjs not found at {}. This binary must be run from the development environment.",
+            path.display()
+        )))
     }
-    candidates[0].clone()
 }
 
 /// Call kuu's WASM bridge with the given JSON input.
 pub fn kuu_parse(input: &serde_json::Value) -> Result<ParseResult, BridgeError> {
-    let bridge_path = bridge_script_path();
+    let bridge_path = bridge_script_path()?;
 
     // Check Node.js availability
     let node = which_node()?;
@@ -79,10 +83,17 @@ pub fn kuu_parse(input: &serde_json::Value) -> Result<ParseResult, BridgeError> 
         .spawn()
         .and_then(|mut child| {
             use std::io::Write;
-            if let Some(ref mut stdin) = child.stdin {
-                stdin.write_all(input_json.as_bytes())?;
-            }
+            let write_result = child
+                .stdin
+                .as_mut()
+                .expect("stdin should be piped")
+                .write_all(input_json.as_bytes());
             drop(child.stdin.take());
+            if let Err(e) = write_result {
+                // Ensure child is cleaned up even on write failure
+                let _ = child.wait();
+                return Err(e);
+            }
             child.wait_with_output()
         })
         .map_err(|e| BridgeError::ProcessFailed(e.to_string()))?;
