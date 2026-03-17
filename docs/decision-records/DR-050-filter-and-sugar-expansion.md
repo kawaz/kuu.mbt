@@ -14,7 +14,7 @@ kuu の FilterChain は 11 個の built-in パーツを持つが、CLI パーサ
 
 ### 原則
 
-1. **FilterChain の純粋関数性を維持** — 全フィルタは `(A) -> B raise ParseError` の形
+1. **FilterChain.run の契約を維持** — 全フィルタの `run` は `(A) -> B raise ParseError` の形。フィルタ**生成時**の panic（regex パターン不正等）はこの契約の対象外
 2. **既存パーツの組み合わせで済むものは追加しない** — in_range + parse_float の組み合わせ等
 3. **正規表現パターンはフィルタ生成時に検証** — `Regex::unsafe_from_string` で不正パターンは実行時 panic（プログラミングエラー）
 4. **命名規則**: validate 系は `Filter::xxx()` (条件名)、変換系は `Filter::xxx()` (動詞)、パース系は `Filter::parse_xxx()`
@@ -37,6 +37,13 @@ kuu の FilterChain は 11 個の built-in パーツを持つが、CLI パーサ
 | `max_length(n)` | `String → String` | 文字列長 <= n を検証（UTF-16 コードユニット数） |
 | `min_codepoints(n)` | `String → String` | コードポイント数 >= n を検証（サロゲートペア対応） |
 | `max_codepoints(n)` | `String → String` | コードポイント数 <= n を検証（サロゲートペア対応） |
+| `min_graphemes(n)` | `String → String` | grapheme cluster 数 >= n を検証（ZWJ/国旗/スキントーン対応） |
+| `max_graphemes(n)` | `String → String` | grapheme cluster 数 <= n を検証（ZWJ/国旗/スキントーン対応） |
+
+文字列長フィルタは3段階の粒度を提供:
+- `length`: UTF-16 コードユニット（MoonBit の `String.length()`）
+- `codepoints`: Unicode コードポイント（`String.char_length()`）
+- `graphemes`: 書記素クラスタ（`@unicodegrapheme.graphemes()`、視覚的な「文字」数）
 
 ### B. 文字列変換
 

@@ -64,6 +64,8 @@ pub(all) struct Parser {
   node_templates : Map[Int, NodeTemplate] // alias/clone 用ノード生成ファクトリ
   eq_fallback_nodes : Array[ExactNode]  // eq_split 用フォールバックノード（implicit_value 付きの --opt=--value 対応）
   deprecated_usages : Array[(String, String)]  // deprecated 使用記録（name, msg）
+  env_applicators : Array[(Map[String, String]) -> Unit raise ParseError]  // 環境変数適用クロージャ
+  env_map : Ref[Map[String, String]]  // 環境変数マップ（parse 時に注入）
 }
 ```
 
@@ -79,11 +81,9 @@ pub(all) struct Parser {
 |---------|----------|------|------|
 | `make_flag_node` | 1 | フラグ | 名前のみマッチ。cell.val を反転/設定 |
 | `make_value_node` | 2 | 値オプション | 名前 + 次の引数を消費 |
-| `make_choice_value_node` | 2 | choices の候補 | 名前 + 値一致で Accept。値不一致で Reject |
-| `make_implicit_flag_node` | 1 | implicit_value | 名前のみで暗黙値を適用 |
-| `make_soft_value_node` | 2 or Reject | implicit 共存時の値ノード | 値が `--` prefix なら Reject（フォールバック許可） |
-| `make_soft_custom_value_node` | 2 or Reject | implicit 共存時の custom | soft_value の custom[T] 版 |
 | `make_custom_choice_value_node` | 2 or Reject | choices + implicit | choices + soft_value の合成 |
+| `make_implicit_flag_node` | 1 | implicit_value | 名前のみで暗黙値を適用 |
+| `make_soft_custom_value_node` | 2 or Reject | implicit 共存時の custom | soft_value の custom[T] 版 |
 | `make_or_node` | 最大 | コンポジット | 子ノードの最長一致。ambiguous 検出 |
 | `make_reduced_value_node` | 2 | reducer 経由 | make_reducer で生成した reducer を呼ぶ |
 
@@ -210,7 +210,7 @@ pub(all) struct OptMeta {
   default_display : String // デフォルト値の表示文字列
   env_name : String        // 環境変数名（Phase 1: ヘルプ表示のみ）
   global : Bool            // true なら "Global Options" セクション
-  shorts : Array[Char]     // ショートオプション
+  shorts : Array[String]   // ショートオプション（grapheme cluster 単位）
   aliases : Array[String]  // エイリアス名のリスト
   variation_names : Array[String]  // Variation 名のリスト
   hidden : Bool            // true ならヘルプに表示しない

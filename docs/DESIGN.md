@@ -43,8 +43,8 @@ PEG は最初にマッチした候補を採用する。kuu は全候補を投機
 
 型特化のコンビネータ:
 
-- `flag()`, `string_opt()`, `int_opt()`, `count()` — 基本型
-- `append_string()`, `append_int()` — 配列蓄積
+- `flag()`, `string_opt()`, `int_opt()`, `float_opt()`, `count()` — 基本型
+- `append_string()`, `append_int()`, `append_float()` — 配列蓄積
 - `custom[T : Show]()`, `custom_append[T]()` — 汎用型。string_opt/int_opt は custom のシュガー（DR-025）
 - `cmd()`, `sub()` — サブコマンド
 - `positional()`, `rest()`, `serial()`, `never()` — 位置引数
@@ -110,6 +110,7 @@ p.exclusive([json_opt, csv_opt, yaml_opt])  // 排他: 最大1つ
 p.at_least_one([json_opt, csv_opt])         // 最低1つ必須
 p.required(output_opt)                      // 単一必須
 p.require_cmd()                             // サブコマンド必須
+p.requires(target_opt, source~=dep_opt)     // 依存: target 使用時に source 必須
 ```
 
 全て post_hooks として実装。専用のフックパイプライン基盤は YAGNI。
@@ -164,11 +165,15 @@ fn make_reducer[T, U](
 | append | `parse_int` 等 | `(acc, u) => acc + [u]`（追加） |
 | join 系 | `split(",").then(each(parse_int))` | `(acc, xs) => acc + xs`（結合） |
 
-組み込みフィルタ:
-- 文字列: `trim`, `to_lower`, `non_empty`, `split(sep)`
-- 数値: `parse_int`, `parse_float`, `in_range(min, max)`
+組み込みフィルタ（32個）:
+- 文字列変換: `trim`, `to_lower`, `to_upper`, `trim_start`, `trim_end`, `replace(from, to)`, `replace_all(from, to)`
+- 文字列検証: `non_empty`, `starts_with(prefix)`, `ends_with(suffix)`, `contains(substr)`, `min_length(n)`, `max_length(n)`, `min_codepoints(n)`, `max_codepoints(n)`, `min_graphemes(n)`, `max_graphemes(n)`
+- 数値パース: `parse_int`, `parse_float`, `parse_bool`
+- 数値検証: `in_range(min, max)`, `float_in_range(min, max)`, `positive`, `non_negative`
+- 数値変換: `clamp(min, max)`
 - 選択: `one_of(allowed)`
-- 配列: `each(inner_filter)`
+- 配列: `each(inner_filter)`, `split(sep)`
+- 正規表現: `regex_match(pattern)`, `regex_replace(pattern, replacement)`, `regex_split(pattern)`
 
 **純粋性制約（DR-037）**: フィルタ（pre/post/accum）は純粋関数であること。値の状態管理は `Ref[T]` で行い、フィルタは入力から出力への変換のみを担う。この制約により、clone 時にフィルタのクロージャ参照を安全に共有できる（直交プリミティブの前提条件）。
 
@@ -209,7 +214,7 @@ fn make_reducer[T, U](
 
 #### 実装済みの合成コンビネータ
 
-- **alias** — `p.alias(name, target)`: 値共有 + is_set 独立の別名。チェーン alias 対応（alias の alias が root の committed まで伝搬）。global alias は子パーサに伝播
+- **alias** — `p.make_alias(name, target)`: 値共有 + is_set 独立の別名。チェーン alias 対応（alias の alias が root の committed まで伝搬）。global alias は子パーサに伝播
 - **deprecated** — `p.deprecated(name, target, msg)`: alias + post_hook 方式。パース後に `deprecated_warnings()` で `Array[(name, msg)]` を取得。サブコマンド→親への再帰的伝搬対応
 - **clone** — `p.clone(name, target)`: 構造コピー。独立した ValCell を持つが、NodeTemplate のファクトリを共有。save/restore パターンで target の cell に影響せず独立した値を保持
 - **link** — `p.link(target, source~)`: 値転送。パース後に source の値を target にコピー。`propagate_set~` で committed の伝搬を制御
@@ -470,13 +475,13 @@ ValCell[T] が値（cell）と状態（committed）とデフォルト値（defau
 src/
   core/              # 全パース機能
     types.mbt         #   型定義（Opt, Parser, ExactNode, TryResult, OptMeta, Variation, Lazy, ReduceCtx, FilterChain 等）
-    parser.mbt        #   Parser::new, register_option, alias, deprecated, expand_and_register
-    options.mbt       #   custom, custom_append, flag, string_opt, int_opt, count, append_string, append_int
+    parser.mbt        #   Parser::new, register_option, make_alias, deprecated, clone, link, adjust, expand_and_register
+    options.mbt       #   custom, custom_append, flag, string_opt, int_opt, float_opt, count, append_string, append_int, append_float
     nodes.mbt         #   make_flag_node, make_value_node, make_or_node, make_soft_custom_value_node 等
     commands.mbt      #   cmd, sub
     positionals.mbt   #   positional, rest, serial, never
     dashdash.mbt      #   dashdash, append_dashdash
-    constraints.mbt   #   exclusive, required, require_cmd, at_least_one
+    constraints.mbt   #   exclusive, required, require_cmd, at_least_one, requires
     access.mbt        #   Opt::get, Parser::get, deprecated_warnings, ParseResult アクセサ
     parse.mbt         #   parse_raw（OC/P 2フェーズ）, install_* ノード, validate_no_duplicate_names
     help.mbt          #   generate_help, inject_help_node

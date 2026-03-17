@@ -812,3 +812,88 @@ test "max_codepoints — emoji counted as 1" {
     Err(_) => fail("expected Ok: 3 codepoints should pass max_codepoints(3)")
   }
 }
+
+// --- min_graphemes ---
+
+///|
+test "min_graphemes — passes ASCII" {
+  let chain = Filter::min_graphemes(3)
+  let result : Result[String, _] = try? (chain.run)("abc")
+  match result {
+    Ok(v) => inspect(v, content="abc")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "min_graphemes — rejects too short" {
+  let chain = Filter::min_graphemes(3)
+  let result : Result[String, _] = try? (chain.run)("ab")
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "min_graphemes — ZWJ sequence counts as 1 grapheme" {
+  // 👨‍👩‍👧 = U+1F468 U+200D U+1F469 U+200D U+1F467 = 1 grapheme cluster
+  // but 5 codepoints and 11 UTF-16 code units
+  let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
+  let chain = Filter::min_graphemes(2)
+  // "a" + family = 2 graphemes
+  let result : Result[String, _] = try? (chain.run)("a" + family)
+  match result {
+    Ok(_) => () // pass
+    Err(_) => fail("expected Ok: 'a' + family emoji = 2 graphemes")
+  }
+}
+
+///|
+test "min_graphemes — ZWJ emoji alone is 1 grapheme" {
+  let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
+  let chain = Filter::min_graphemes(2)
+  let result : Result[String, _] = try? (chain.run)(family)
+  inspect(result is Err(_), content="true")
+}
+
+// --- max_graphemes ---
+
+///|
+test "max_graphemes — passes short string" {
+  let chain = Filter::max_graphemes(5)
+  let result : Result[String, _] = try? (chain.run)("hello")
+  match result {
+    Ok(v) => inspect(v, content="hello")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "max_graphemes — rejects too long" {
+  let chain = Filter::max_graphemes(5)
+  let result : Result[String, _] = try? (chain.run)("hello!")
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "max_graphemes — flag emoji is 1 grapheme" {
+  // 🇯🇵 = U+1F1EF U+1F1F5 = 1 grapheme, 2 codepoints, 4 UTF-16
+  let flag = "\u{1F1EF}\u{1F1F5}"
+  let chain = Filter::max_graphemes(2)
+  // "a" + 🇯🇵 = 2 graphemes
+  let result : Result[String, _] = try? (chain.run)("a" + flag)
+  match result {
+    Ok(_) => () // pass
+    Err(_) => fail("expected Ok: 'a' + flag = 2 graphemes")
+  }
+}
+
+///|
+test "max_graphemes — skin tone emoji is 1 grapheme" {
+  // 👋🏽 = U+1F44B U+1F3FD = 1 grapheme, 2 codepoints
+  let wave = "\u{1F44B}\u{1F3FD}"
+  let chain = Filter::max_graphemes(1)
+  let result : Result[String, _] = try? (chain.run)(wave)
+  match result {
+    Ok(_) => () // pass
+    Err(_) => fail("expected Ok: skin tone emoji = 1 grapheme")
+  }
+}
