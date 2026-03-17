@@ -103,7 +103,7 @@ fn[T] Parser::register_option(
       [wrap_node_with_set(make_main_node(short_name), valcell.committed)]
     },
   )
-  let shorts_arr = shorts.to_array()
+  let shorts_arr : Array[String] = @unicodegrapheme.graphemes(shorts).iter().map(fn(sv) { sv.to_string() }).collect()
   let var_names = variations.map(fn(v) {
     let prefix = match v {
       Toggle(p) | True(p) | False(p) | Reset(p) | Unset(p) => p
@@ -435,17 +435,19 @@ fn Parser::expand_and_register(
     }
   }
 
-  // Validate shorts characters
-  for ch in shorts {
-    if ch == '-' {
+  // Validate shorts characters (grapheme cluster units)
+  let shorts_g = @unicodegrapheme.graphemes(shorts)
+  for i = 0; i < shorts_g.length(); i = i + 1 {
+    let g = shorts_g[i].to_string()
+    if g == "-" {
       self.duplicate_errors.push(
         "invalid short option character '-' in option --" + name,
       )
-    } else if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+    } else if g == " " || g == "\t" || g == "\n" || g == "\r" {
       self.duplicate_errors.push(
         "invalid short option character (whitespace) in option --" + name,
       )
-    } else if ch == '\u0000' {
+    } else if g == "\u0000" {
       self.duplicate_errors.push(
         "invalid short option character (NUL) in option --" + name,
       )
@@ -459,8 +461,8 @@ fn Parser::expand_and_register(
     check_and_register_names(alt_nodes)
     register(alt_nodes)
   }
-  for ch in shorts {
-    let short_nodes = make_short_nodes("-" + ch.to_string())
+  for i = 0; i < shorts_g.length(); i = i + 1 {
+    let short_nodes = make_short_nodes("-" + shorts_g[i].to_string())
     check_and_register_names(short_nodes)
     register(short_nodes)
   }

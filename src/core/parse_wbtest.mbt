@@ -6885,3 +6885,53 @@ test "grapheme cluster: eq split with flag emoji" {
     ),
   )
 }
+
+// ============================================================
+// Grapheme cluster short option tests (shorts Array[String] migration)
+// ============================================================
+
+///|
+test "shorts grapheme cluster: flag emoji short option" {
+  // 🇯🇵 (Regional Indicator × 2 = 1 grapheme cluster) を short option として使う
+  let p = Parser::new()
+  let opt = p.flag(name="japan", shorts="\u{1F1EF}\u{1F1F5}")
+  ignore(p.parse(["-\u{1F1EF}\u{1F1F5}"]))
+  inspect(p.get(opt), content="Some(true)")
+}
+
+///|
+test "shorts grapheme cluster: family emoji short combining" {
+  // 👨‍👩‍👧‍👦 (ZWJ seq) + v を combining
+  let p = Parser::new()
+  let f = p.flag(name="family", shorts="\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}")
+  let v = p.flag(name="verbose", shorts="v")
+  ignore(p.parse(["-\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}v"]))
+  inspect(p.get(f), content="Some(true)")
+  inspect(p.get(v), content="Some(true)")
+}
+
+///|
+test "shorts grapheme cluster: skin tone short + inline value" {
+  // 👋🏽 (wave + skin tone = 1 grapheme cluster) を short option として使い、inline value を取る
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=0, shorts="\u{1F44B}\u{1F3FD}")
+  ignore(p.parse(["-\u{1F44B}\u{1F3FD}3000"]))
+  inspect(p.get(port), content="Some(3000)")
+}
+
+///|
+test "shorts grapheme cluster: help display" {
+  let p = Parser::new()
+  let _ = p.flag(name="japan", shorts="\u{1F1EF}\u{1F1F5}", description="Japan flag")
+  let help = p.generate_help()
+  inspect(help.contains("-\u{1F1EF}\u{1F1F5}, --japan"), content="true")
+}
+
+///|
+test "shorts grapheme cluster: multiple grapheme shorts" {
+  // shorts="🇯🇵🇺🇸" = 2 grapheme clusters → -🇯🇵 と -🇺🇸 の2つの short option
+  let p = Parser::new()
+  let opt = p.count(name="flag", shorts="\u{1F1EF}\u{1F1F5}\u{1F1FA}\u{1F1F8}")
+  ignore(p.parse(["-\u{1F1EF}\u{1F1F5}"]))
+  inspect(p.get(opt), content="Some(1)")
+}

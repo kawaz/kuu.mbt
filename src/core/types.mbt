@@ -147,7 +147,7 @@ pub(all) struct OptMeta {
   default_display : String
   env_name : String
   global : Bool
-  shorts : Array[Char]
+  shorts : Array[String]
   aliases : Array[String]
   variation_names : Array[String]
   hidden : Bool

@@ -48,7 +48,7 @@ fn inject_help_node(parser : Parser) -> Unit {
     parser.nodes.push(short_help_node)
     parser.registered_names["-h"] = true
   }
-  let shorts : Array[Char] = if added_short { ['h'] } else { [] }
+  let shorts : Array[String] = if added_short { ["h"] } else { [] }
   parser.metas.push(OptMeta::{
     kind: Flag,
     name: "help",
@@ -192,10 +192,10 @@ fn format_opt_left(meta : OptMeta) -> String {
   let buf = StringBuilder::new()
   if meta.shorts.length() > 0 {
     buf.write_string("  -")
-    buf.write_char(meta.shorts[0])
+    buf.write_string(meta.shorts[0])
     for i in 1..<meta.shorts.length() {
       buf.write_string(", -")
-      buf.write_char(meta.shorts[i])
+      buf.write_string(meta.shorts[i])
     }
     buf.write_string(", --")
     buf.write_string(meta.name)
