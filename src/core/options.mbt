@@ -103,7 +103,7 @@ pub fn Parser::flag(
       }
     },
   )
-  register_env_applicator(self, env, vc, fn(raw) {
+  register_env_applicator(self, env, vc, (raw) => {
     let lower = raw.to_lower()
     if lower == "true" || lower == "1" {
       true
@@ -359,7 +359,7 @@ pub fn Parser::count(
       }
     },
   )
-  register_env_applicator(self, env, vc, fn(raw) {
+  register_env_applicator(self, env, vc, (raw) => {
     try {
       @strconv.parse_int(raw)
     } catch {
@@ -514,7 +514,7 @@ pub fn[T : Show] Parser::custom(
   } else {
     pre
   }
-  register_env_applicator(self, env, vc, fn(raw) { (env_pre.run)(raw) })
+  register_env_applicator(self, env, vc, (raw) => { (env_pre.run)(raw) })
   opt
 }
 
@@ -565,7 +565,7 @@ pub fn[T] Parser::custom_append(
       }
     },
   )
-  register_env_applicator(self, env, vc, fn(raw) {
+  register_env_applicator(self, env, vc, (raw) => {
     let arr : Array[T] = []
     for part in raw.split(",") {
       arr.push((pre.run)(part.to_string()))

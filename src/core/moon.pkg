@@ -1,5 +1,5 @@
 import {
   "moonbitlang/core/strconv",
-  "moonbitlang/core/string" as @string,
-  "kawaz/unicodegrapheme" as @unicodegrapheme,
+  "moonbitlang/core/string" @string,
+  "kawaz/unicodegrapheme" @unicodegrapheme,
 }

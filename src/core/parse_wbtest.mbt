@@ -4654,7 +4654,7 @@ test "OC/P: typo hint no match for distant name" {
 test "alias: flag alias shares value" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
-  let verb = p.alias("--verb", verbose)
+  let verb = p.make_alias("--verb", verbose)
   ignore(p.parse(["--verb"]))
   // alias 経由で値が共有される
   inspect(verbose.get(), content="Some(true)")
@@ -4667,7 +4667,7 @@ test "alias: flag alias is_set independence" {
   // alias 未使用時は alias.is_set=false
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
-  let verb = p.alias("--verb", verbose)
+  let verb = p.make_alias("--verb", verbose)
   ignore(p.parse(["--verbose"]))
   // target 使用: target.is_set=true, alias.is_set=false
   inspect(verbose.is_set(), content="true")
@@ -4679,7 +4679,7 @@ test "alias: flag alias sets both is_set" {
   // alias 経由で使用した場合、alias と target の両方の is_set が true になる
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
-  let verb = p.alias("--verb", verbose)
+  let verb = p.make_alias("--verb", verbose)
   ignore(p.parse(["--verb"]))
   inspect(verbose.is_set(), content="true")
   inspect(verb.is_set(), content="true")
@@ -4689,7 +4689,7 @@ test "alias: flag alias sets both is_set" {
 test "alias: string_opt alias shares value" {
   let p = Parser::new()
   let host = p.string_opt(name="host", default="localhost")
-  let h = p.alias("--h", host)
+  let h = p.make_alias("--h", host)
   ignore(p.parse(["--h", "example.com"]))
   inspect(
     host.get(),
@@ -4710,7 +4710,7 @@ test "alias: single-dash long option" {
   // -Xcc のような単一ダッシュオプションを alias で登録
   let p = Parser::new()
   let compiler = p.string_opt(name="compiler", default="")
-  let xcc = p.alias("-Xcc", compiler)
+  let xcc = p.make_alias("-Xcc", compiler)
   ignore(p.parse(["-Xcc", "gcc"]))
   inspect(
     compiler.get(),
@@ -4727,7 +4727,7 @@ test "alias: duplicate name detected" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   // --verbose は既に登録されているので重複
-  ignore(p.alias("--verbose", verbose))
+  ignore(p.make_alias("--verbose", verbose))
   let result : Result[_, _] = try? p.parse([])
   inspect(result is Err(_), content="true")
 }
@@ -4738,7 +4738,7 @@ test "alias: cmd alias shares child parser" {
   let status = p.cmd(name="status", setup=fn(child) {
     ignore(child.flag(name="short"))
   })
-  let st = p.alias("st", status)
+  let st = p.make_alias("st", status)
   ignore(p.parse(["st", "--short"]))
   inspect(status.is_set(), content="true")
   inspect(st.is_set(), content="true")
@@ -4751,8 +4751,8 @@ test "alias: cmd alias shares child parser" {
 test "alias: chained alias (alias of alias)" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
-  let verb = p.alias("--verb", verbose)
-  let v = p.alias("--v", verb)
+  let verb = p.make_alias("--verb", verbose)
+  let v = p.make_alias("--v", verb)
   ignore(p.parse(["--v"]))
   // 全ての alias と target の値が共有される
   inspect(verbose.get(), content="Some(true)")
@@ -4769,7 +4769,7 @@ test "alias: chained alias (alias of alias)" {
 test "alias: int_opt alias shares value" {
   let p = Parser::new()
   let port = p.int_opt(name="port", default=8080)
-  let pp = p.alias("-p", port)
+  let pp = p.make_alias("-p", port)
   ignore(p.parse(["-p", "3000"]))
   inspect(port.get(), content="Some(3000)")
   inspect(pp.get(), content="Some(3000)")
@@ -4779,7 +4779,7 @@ test "alias: int_opt alias shares value" {
 test "alias: append alias shares array" {
   let p = Parser::new()
   let inc = p.append_string(name="include")
-  let ii = p.alias("-I", inc)
+  let ii = p.make_alias("-I", inc)
   ignore(p.parse(["--include", "a", "-I", "b"]))
   inspect(inc.get(), content="Some([\"a\", \"b\"])")
   inspect(ii.get(), content="Some([\"a\", \"b\"])")
@@ -4789,7 +4789,7 @@ test "alias: append alias shares array" {
 test "alias: unused alias default value" {
   let p = Parser::new()
   let host = p.string_opt(name="host", default="localhost")
-  let h = p.alias("--h", host)
+  let h = p.make_alias("--h", host)
   ignore(p.parse([]))
   inspect(
     host.get(),
@@ -4811,7 +4811,7 @@ test "alias: unused alias default value" {
 test "alias: global alias propagates to subcommand" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", global=true)
-  let verb = p.alias("--verb", verbose)
+  let verb = p.make_alias("--verb", verbose)
   let status = p.cmd(name="status", setup=fn(_child) {  })
   ignore(p.parse(["status", "--verb"]))
   // global alias は子パーサでも使える
@@ -4827,7 +4827,7 @@ test "alias: eq_split with double-dash alias" {
   // --alias=value 構文が動くか
   let p = Parser::new()
   let host = p.string_opt(name="host", default="localhost")
-  let h = p.alias("--h", host)
+  let h = p.make_alias("--h", host)
   ignore(p.parse(["--h=example.com"]))
   inspect(
     host.get(),
@@ -4847,7 +4847,7 @@ test "alias: eq_split with double-dash alias" {
 test "alias: count alias shares counter" {
   let p = Parser::new()
   let verbose = p.count(name="verbose")
-  let verb = p.alias("--verb", verbose)
+  let verb = p.make_alias("--verb", verbose)
   ignore(p.parse(["--verbose", "--verb", "--verbose"]))
   inspect(verbose.get(), content="Some(3)")
   inspect(verb.get(), content="Some(3)")
@@ -4858,7 +4858,7 @@ test "alias: alias does not expand variations" {
   // alias は variation を展開しない（DR-037: variation = alias + adjust の合成）
   let p = Parser::new()
   let verbose = p.flag(name="verbose", variations=[False("no")])
-  ignore(p.alias("--verb", verbose))
+  ignore(p.make_alias("--verb", verbose))
   // --no-verb は存在しないのでエラー
   let result : Result[_, _] = try? p.parse(["--no-verb"])
   inspect(result is Err(_), content="true")
@@ -5343,7 +5343,7 @@ test "alias + implicit_value: eq_split via alias name (normal value)" {
     name="output", default="",
     implicit_value=Some(Lazy::Val("stdout")),
   )
-  let out = p.alias("--out", output)
+  let out = p.make_alias("--out", output)
   ignore(p.parse(["--out=file.txt"]))
   inspect(
     output.get(),
@@ -5369,7 +5369,7 @@ test "alias + implicit_value: eq_split via alias name (double-dash value)" {
     name="output", default="",
     implicit_value=Some(Lazy::Val("stdout")),
   )
-  let out = p.alias("--out", output)
+  let out = p.make_alias("--out", output)
   ignore(p.parse(["--out=--file.txt"]))
   inspect(
     output.get(),
@@ -5393,7 +5393,7 @@ test "alias + implicit_value: eq_split via original name still works" {
     name="output", default="",
     implicit_value=Some(Lazy::Val("stdout")),
   )
-  let _ = p.alias("--out", output)
+  let _ = p.make_alias("--out", output)
   ignore(p.parse(["--output=file.txt"]))
   inspect(
     output.get(),
@@ -5411,7 +5411,7 @@ test "alias + implicit_value: alias without eq_split uses implicit" {
     name="output", default="",
     implicit_value=Some(Lazy::Val("stdout")),
   )
-  let out = p.alias("--out", output)
+  let out = p.make_alias("--out", output)
   ignore(p.parse(["--out"]))
   inspect(
     output.get(),
@@ -5460,7 +5460,7 @@ test "R2-C1: global alias defined after cmd propagates" {
   let p = Parser::new(dashdash=false)
   let _serve = p.cmd(name="serve", dashdash=false, setup=fn(_child) {  })
   let verbose = p.flag(name="verbose", global=true)
-  let _ = p.alias("--verb", verbose)
+  let _ = p.make_alias("--verb", verbose)
   ignore(p.parse(["serve", "--verb"]))
   inspect(verbose.get(), content="Some(true)")
 }
@@ -6235,7 +6235,7 @@ test "priv setter: string_opt setter writes cell value" {
 test "priv setter: alias shares setter with target" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
-  let v = p.alias("-v", verbose)
+  let v = p.make_alias("-v", verbose)
   ignore(p.parse([]))
   // alias の setter は target と同一 cell を指す
   (v.accessor.set_value)(true)
@@ -6674,8 +6674,8 @@ test "env: nested subcmd env propagation" {
 test "alias chain: root committed propagates through chained aliases" {
   let p = Parser::new()
   let opt = p.string_opt(name="host", default="localhost")
-  let alias1 = p.alias("--h1", opt)
-  let alias2 = p.alias("--h2", alias1)
+  let alias1 = p.make_alias("--h1", opt)
+  let alias2 = p.make_alias("--h2", alias1)
   ignore(p.parse(["--h2", "example.com"]))
   // alias2 使用時: opt と alias2 の is_set が true、alias1 は false（独立 is_set）
   assert_true(opt.is_set())

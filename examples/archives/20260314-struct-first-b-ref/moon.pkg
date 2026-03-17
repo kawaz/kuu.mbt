@@ -4,4 +4,5 @@ import {
 
 options(
   "is-main": true,
+  "warn-list": "-1-7",
 )

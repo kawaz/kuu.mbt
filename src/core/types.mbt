@@ -210,7 +210,7 @@ fn[T] ValCell::new(default : Lazy[T]) -> ValCell[T] {
 ///|
 /// この ValCell に紐づいた操作インターフェースを返す。
 fn[T] ValCell::accessor(self : ValCell[T]) -> Accessor[T] {
-  {
+  let acc : Accessor[T] = {
     get: fn() { self.cell.val },
     set: fn(v) {
       self.cell.val = v
@@ -223,10 +223,15 @@ fn[T] ValCell::accessor(self : ValCell[T]) -> Accessor[T] {
       self.committed.val = false
     },
   }
+  // reset/clone はテスト API 向け。本体コードでは未使用だが whitebox テストで参照されるため残す。
+  ignore(acc.reset)
+  let _ : (ValCell[T]) -> ValCell[T] = ValCell::clone
+  acc
 }
 
 /// default_val で新しい独立した ValCell を作る。現在の cell.val はコピーしない。
 /// Lazy[T] により Thunk の場合は clone ごとに新しいインスタンスが生成される。
+/// 本体コードでは未使用だが whitebox テストで検証されるため残す。
 ///|
 fn[T] ValCell::clone(self : ValCell[T]) -> ValCell[T] {
   ValCell::new(self.default_val)

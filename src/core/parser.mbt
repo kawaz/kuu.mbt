@@ -140,7 +140,7 @@ fn[T] Parser::register_option(
 /// alias 使用時は alias.is_set()=true に加え target.is_set()=true もセットされる。
 /// チェーン alias（alias の alias）では Accessor.set_commit 経由で root まで伝搬する。
 /// target が global の場合、alias も global_nodes に登録し子パーサに伝搬する。
-pub fn[T] Parser::alias(
+pub fn[T] Parser::make_alias(
   self : Parser,
   name : String,
   target : Opt[T],
@@ -227,10 +227,10 @@ pub fn[T] Parser::deprecated(
   if name == "" {
     self.duplicate_errors.push("deprecated name must not be empty")
   }
-  let alias_opt = self.alias(name, target)
+  let alias_opt = self.make_alias(name, target)
   let dep_name = name
   let dep_msg = msg
-  self.post_hooks.push(fn() raise ParseError {
+  self.post_hooks.push(fn() {
     if alias_opt.is_set() {
       self.deprecated_usages.push((dep_name, dep_msg))
     }
@@ -264,7 +264,7 @@ pub fn[T] Parser::link(
   source~ : Opt[T],
   propagate_set~ : Bool = false,
 ) -> Unit {
-  self.post_hooks.push(fn() raise ParseError {
+  self.post_hooks.push(fn() {
     if source.is_set() {
       if propagate_set {
         (target.accessor.set)((source.accessor.get)())
