@@ -84,23 +84,21 @@ fn[T] Parser::register_option(
   hidden~ : Bool,
   kind~ : OptKind,
   variations~ : Array[Variation],
-  was_set~ : Ref[Bool],
+  valcell~ : ValCell[T],
   make_main_node~ : (String) -> ExactNode,
   make_node_for_variation~ : (String, Variation) -> ExactNode,
-  getter~ : () -> T,
-  setter~ : (T) -> Unit,
 ) -> Opt[T] {
   let id = (self.next_id)()
   self.expand_and_register(
     name, aliases, shorts, global,
     make_long_nodes=fn(opt_name) {
       let nodes : Array[ExactNode] = []
-      nodes.push(wrap_node_with_set(make_main_node(opt_name), was_set))
+      nodes.push(wrap_node_with_set(make_main_node(opt_name), valcell.was_set))
       expand_variation_nodes(opt_name, variations, nodes, make_node_for_variation)
       nodes
     },
     make_short_nodes=fn(short_name) {
-      [wrap_node_with_set(make_main_node(short_name), was_set)]
+      [wrap_node_with_set(make_main_node(short_name), valcell.was_set)]
     },
   )
   let shorts_arr = shorts.to_array()
@@ -125,11 +123,11 @@ fn[T] Parser::register_option(
   })
   self.alias_sources[id] = AliasSource::{
     make_node: make_main_node,
-    target_was_set: was_set,
+    target_was_set: valcell.was_set,
     is_global: global,
     make_eq_fallback: None,
   }
-  { id, name: "--" + name, getter, setter, parsed: self.parsed, is_set: fn() { was_set.val } }
+  { id, name: "--" + name, accessor: valcell.accessor(), parsed: self.parsed }
 }
 
 ///|
@@ -137,7 +135,7 @@ fn[T] Parser::register_option(
 /// name は生文字列（"--" の自動付加なし）。opt / cmd / append 問わず使える。
 ///
 /// alias_sources[target.id] に保存されたファクトリ（register_option / cmd で登録）から
-/// 新しい ExactNode を生成し、target と値を共有（getter 共有）しつつ is_set は独立。
+/// 新しい ExactNode を生成し、target と Accessor を共有（is_set のみ独立）。
 /// alias 使用時は alias.is_set=true に加え target.is_set=true もセットされる。
 /// チェーン alias（alias の alias）では root の target_was_set まで直接伝搬する。
 /// target が global の場合、alias も global_nodes に登録し子パーサに伝搬する。
@@ -157,14 +155,7 @@ pub fn[T] Parser::alias(
         ")",
       )
       let id = (self.next_id)()
-      {
-        id,
-        name,
-        getter: target.getter,
-        setter: target.setter,
-        parsed: target.parsed,
-        is_set: fn() { false },
-      }
+      { id, name, accessor: target.accessor.with_is_set(fn() { false }), parsed: target.parsed }
     }
     Some(src) => {
       if self.registered_names.contains(name) {
@@ -216,14 +207,7 @@ pub fn[T] Parser::alias(
         is_global: src.is_global,
         make_eq_fallback: src.make_eq_fallback,
       }
-      {
-        id,
-        name,
-        getter: target.getter,
-        setter: target.setter,
-        parsed: target.parsed,
-        is_set: fn() { alias_was_set.val },
-      }
+      { id, name, accessor: target.accessor.with_is_set(fn() { alias_was_set.val }), parsed: target.parsed }
     }
   }
 }
@@ -245,7 +229,7 @@ pub fn[T] Parser::deprecated(
   let dep_name = name
   let dep_msg = msg
   self.post_hooks.push(fn() raise ParseError {
-    if (alias_opt.is_set)() {
+    if alias_opt.is_set() {
       self.deprecated_usages.push((dep_name, dep_msg))
     }
   })
@@ -261,8 +245,8 @@ pub fn[T] Parser::adjust(
   after_post~ : FilterChain[T, T],
 ) -> Unit {
   self.post_hooks.push(fn() raise ParseError {
-    if (target.is_set)() {
-      (target.setter)((after_post.run)((target.getter)()))
+    if target.is_set() {
+      (target.accessor.set_quiet)((after_post.run)((target.accessor.get)()))
     }
   })
 }
@@ -276,8 +260,8 @@ pub fn[T] Parser::link(
   source~ : Opt[T],
 ) -> Unit {
   self.post_hooks.push(fn() raise ParseError {
-    if (source.is_set)() {
-      (target.setter)((source.getter)())
+    if source.is_set() {
+      (target.accessor.set_quiet)((source.accessor.get)())
     }
   })
 }

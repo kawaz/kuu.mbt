@@ -58,7 +58,7 @@ pub fn[T : Show] FieldRegistry::custom_ref(
     value_name=value_name,
   )
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(v)
         None => ()
@@ -124,7 +124,7 @@ pub fn[T] FieldRegistry::custom_append_ref(
     value_name=value_name,
   )
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(v)
         None => ()

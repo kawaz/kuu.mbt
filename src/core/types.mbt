@@ -84,12 +84,8 @@ pub(all) struct Parser {
 pub(all) struct Opt[T] {
   id : Int
   name : String
-  getter : () -> T
-  // core 内のコンビネータ間値操作（clone/adjust 等）専用。
-  // priv により外部パッケージから不可視・構築不可。(DR-043)
-  priv setter : (T) -> Unit
+  priv accessor : Accessor[T]
   parsed : Ref[Bool]
-  is_set : () -> Bool
 }
 
 ///|
@@ -106,7 +102,7 @@ pub(all) struct OptRef {
 
 ///|
 pub fn[T] Opt::as_ref(self : Opt[T]) -> OptRef {
-  { name: self.name, is_set: self.is_set }
+  { name: self.name, is_set: self.accessor.is_set }
 }
 
 ///|
@@ -182,4 +178,67 @@ pub fn[T] Lazy::resolve(self : Lazy[T]) -> T {
     Val(v) => v
     Thunk(f) => f()
   }
+}
+
+/// 値の格納・状態管理を担う最小単位。cell + was_set + default を内包する。
+/// core 内部専用（pub にしない）。
+///
+/// 注意: default_val は cell.val と同一参照を共有する。T が Array 等の mutable 型の場合、
+/// cell.val への in-place 変更（push 等）が default_val を汚染する。
+/// そのため Accessor::reset() は immutable T（Int, Bool, String 等）でのみ安全に使用可能。
+/// mutable T のリセットは vc.cell.val = <新しい値> で直接行うこと。
+/// Phase 2+ で factory パターンへの移行を検討する。
+///|
+priv struct ValCell[T] {
+  cell : Ref[T]
+  was_set : Ref[Bool]
+  default_val : T
+}
+
+///|
+fn[T] ValCell::new(default : T) -> ValCell[T] {
+  { cell: { val: default }, was_set: { val: false }, default_val: default }
+}
+
+///|
+/// この ValCell に紐づいた操作インターフェースを返す。
+fn[T] ValCell::accessor(self : ValCell[T]) -> Accessor[T] {
+  {
+    get: fn() { self.cell.val },
+    set: fn(v) {
+      self.cell.val = v
+      self.was_set.val = true
+    },
+    set_quiet: fn(v) { self.cell.val = v },
+    is_set: fn() { self.was_set.val },
+    reset: fn() {
+      self.cell.val = self.default_val
+      self.was_set.val = false
+    },
+  }
+}
+
+/// default_val で新しい独立した ValCell を作る。現在の cell.val はコピーしない。
+/// 注意: T が mutable 型の場合、元の default_val への in-place 変更が clone にも影響する。
+///|
+fn[T] ValCell::clone(self : ValCell[T]) -> ValCell[T] {
+  ValCell::new(self.default_val)
+}
+
+///|
+/// ValCell への操作をクロージャ束として提供。Opt や post_hook から値を操作する統一 API。
+/// core 内部専用。
+priv struct Accessor[T] {
+  get : () -> T
+  set : (T) -> Unit // cell.val = v + was_set = true
+  set_quiet : (T) -> Unit // cell.val = v のみ（was_set 非更新）
+  is_set : () -> Bool
+  reset : () -> Unit // cell = default, was_set = false
+}
+
+///|
+/// is_set だけ差し替えた新しい Accessor を返す（alias 用）。
+/// get/set/set_quiet/reset は元の Accessor と共有。
+fn[T] Accessor::with_is_set(self : Accessor[T], is_set : () -> Bool) -> Accessor[T] {
+  { get: self.get, set: self.set, set_quiet: self.set_quiet, is_set, reset: self.reset }
 }

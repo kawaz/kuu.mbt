@@ -8,7 +8,7 @@ pub fn FieldRegistry::positional(
 ) -> Unit {
   let opt = self.parser.positional(name=name, description=description)
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(v)
         None => ()
@@ -27,7 +27,7 @@ pub fn FieldRegistry::rest(
 ) -> Unit {
   let opt = self.parser.rest(name=name, description=description)
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(v)
         None => ()

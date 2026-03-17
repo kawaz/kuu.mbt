@@ -8,9 +8,8 @@ pub fn Parser::positional(
   greedy~ : Bool = false,
 ) -> Opt[String] {
   let id = (self.next_id)()
-  let cell : Ref[String] = { val: "" }
+  let vc : ValCell[String] = ValCell::new("")
   let pending : Ref[String] = { val: "" }
-  let was_set : Ref[Bool] = { val: false }
   ignore(name)
   let handler : (Array[String], Int) -> TryResult = fn(
     args : Array[String],
@@ -21,8 +20,8 @@ pub fn Parser::positional(
     } else {
       pending.val = args[pos]
       Accept(consumed=1, commit=fn() {
-        cell.val = pending.val
-        was_set.val = true
+        vc.cell.val = pending.val
+        vc.was_set.val = true
       })
     }
   }
@@ -40,14 +39,7 @@ pub fn Parser::positional(
     variation_names: [],
     hidden: false,
   })
-  {
-    id,
-    name,
-    getter: fn() -> String { cell.val },
-    setter: fn(v) { cell.val = v },
-    parsed: self.parsed,
-    is_set: fn() { was_set.val },
-  }
+  { id, name, accessor: vc.accessor(), parsed: self.parsed }
 }
 
 ///|
@@ -58,8 +50,7 @@ pub fn Parser::rest(
   stop_before? : Array[String] = [],
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
-  let cell : Ref[Array[String]] = { val: [] }
-  let was_set : Ref[Bool] = { val: false }
+  let vc : ValCell[Array[String]] = ValCell::new([])
   ignore(name)
   let stop = stop_before
   let handler : (Array[String], Int) -> TryResult = fn(
@@ -74,8 +65,8 @@ pub fn Parser::rest(
         return Reject
       }
       Accept(consumed=1, commit=fn() {
-        cell.val.push(value)
-        was_set.val = true
+        vc.cell.val.push(value)
+        vc.was_set.val = true
       })
     }
   }
@@ -93,14 +84,7 @@ pub fn Parser::rest(
     variation_names: [],
     hidden: false,
   })
-  {
-    id,
-    name,
-    getter: fn() -> Array[String] { cell.val },
-    setter: fn(v) { cell.val = v },
-    parsed: self.parsed,
-    is_set: fn() { was_set.val },
-  }
+  { id, name, accessor: vc.accessor(), parsed: self.parsed }
 }
 
 ///|

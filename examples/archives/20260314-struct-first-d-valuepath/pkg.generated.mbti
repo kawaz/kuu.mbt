@@ -1,0 +1,18 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/examples/archives/20260314-struct-first-d-valuepath"
+
+// Values
+
+// Errors
+
+// Types and methods
+type Commit[T]
+
+type DockerConfig
+
+type PathEntry
+
+// Type aliases
+
+// Traits
+

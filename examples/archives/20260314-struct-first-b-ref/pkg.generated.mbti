@@ -1,0 +1,26 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/examples/archives/20260314-struct-first-b-ref"
+
+// Values
+
+// Errors
+
+// Types and methods
+type CloneOpts
+
+type CommitOpts
+
+type GitGlobal
+
+type LogOpts
+
+type RefBinder
+
+type RemoteAddOpts
+
+type RemoteRemoveOpts
+
+// Type aliases
+
+// Traits
+

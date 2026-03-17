@@ -42,45 +42,42 @@ pub fn Parser::flag(
     Some(f) => f()
     None => default
   }
-  let cell : Ref[Bool] = { val: initial_val }
+  let vc : ValCell[Bool] = ValCell::new(initial_val)
   let pending : Ref[Bool] = { val: initial_val }
-  let was_set : Ref[Bool] = { val: false }
-  let reset_fn = fn() { cell.val = initial_val; pending.val = initial_val }
+  let reset_fn = fn() { vc.cell.val = initial_val; pending.val = initial_val }
   let positive_match = fn() {
     pending.val = not(initial_val)
-    fn() { cell.val = pending.val }
+    fn() { vc.cell.val = pending.val }
   }
   self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=description, value_name="", default_display="", env_name=env,
-    kind=Flag, variations~, was_set~,
+    kind=Flag, variations~, valcell=vc,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
     make_node_for_variation=fn(vn, v) {
       match v {
         Toggle(_) =>
           make_flag_node(vn, fn() {
-            fn() { cell.val = not(cell.val); was_set.val = true }
-          }, fn() { cell.val = initial_val; was_set.val = false })
+            fn() { vc.cell.val = not(vc.cell.val); vc.was_set.val = true }
+          }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
         True(_) =>
           make_flag_node(vn, fn() {
-            fn() { cell.val = true; was_set.val = true }
-          }, fn() { cell.val = initial_val; was_set.val = false })
+            fn() { vc.cell.val = true; vc.was_set.val = true }
+          }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
         False(_) =>
           make_flag_node(vn, fn() {
-            fn() { cell.val = false; was_set.val = true }
-          }, fn() { cell.val = initial_val; was_set.val = false })
+            fn() { vc.cell.val = false; vc.was_set.val = true }
+          }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
         Reset(_) =>
           make_flag_node(vn, fn() {
-            fn() { cell.val = initial_val; was_set.val = true }
-          }, fn() { cell.val = initial_val; was_set.val = false })
+            fn() { vc.cell.val = initial_val; vc.was_set.val = true }
+          }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
         Unset(_) =>
           make_flag_node(vn, fn() {
-            fn() { cell.val = initial_val; was_set.val = false }
-          }, fn() { cell.val = initial_val; was_set.val = false })
+            fn() { vc.cell.val = initial_val; vc.was_set.val = false }
+          }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
       }
     },
-    getter=fn() { cell.val },
-    setter=fn(v) { cell.val = v },
   )
 }
 
@@ -233,35 +230,32 @@ pub fn Parser::count(
     variations, variation_toggle~, variation_true~, variation_false~,
     variation_reset~, variation_unset~,
   )
-  let cell : Ref[Int] = { val: 0 }
+  let vc : ValCell[Int] = ValCell::new(0)
   let pending : Ref[Int] = { val: 0 }
-  let was_set : Ref[Bool] = { val: false }
-  let reset_fn = fn() { cell.val = 0; pending.val = 0 }
+  let reset_fn = fn() { vc.cell.val = 0; pending.val = 0 }
   let positive_match = fn() {
     pending.val = pending.val + 1
-    fn() { cell.val = pending.val }
+    fn() { vc.cell.val = pending.val }
   }
   self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=description, value_name="", default_display="", env_name=env,
-    kind=Flag, variations~, was_set~,
+    kind=Flag, variations~, valcell=vc,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
     make_node_for_variation=fn(vn, v) {
       match v {
         Reset(_) | Toggle(_) | True(_) | False(_) =>
           make_flag_node(vn, fn() {
             pending.val = 0
-            fn() { cell.val = pending.val; was_set.val = true }
-          }, fn() { cell.val = 0; pending.val = 0; was_set.val = false })
+            fn() { vc.cell.val = pending.val; vc.was_set.val = true }
+          }, fn() { vc.cell.val = 0; pending.val = 0; vc.was_set.val = false })
         Unset(_) =>
           make_flag_node(vn, fn() {
             pending.val = 0
-            fn() { cell.val = pending.val; was_set.val = false }
-          }, fn() { cell.val = 0; pending.val = 0; was_set.val = false })
+            fn() { vc.cell.val = pending.val; vc.was_set.val = false }
+          }, fn() { vc.cell.val = 0; pending.val = 0; vc.was_set.val = false })
       }
     },
-    getter=fn() { cell.val },
-    setter=fn(v) { cell.val = v },
   )
 }
 
@@ -299,8 +293,7 @@ pub fn[T : Show] Parser::custom(
   } else {
     description
   }
-  let cell : Ref[T] = { val: initial_val }
-  let was_set : Ref[Bool] = { val: false }
+  let vc : ValCell[T] = ValCell::new(initial_val)
   let has_choices = choices.length() > 0
   let has_implicit = implicit_value is Some(_)
 
@@ -310,14 +303,14 @@ pub fn[T : Show] Parser::custom(
       Reset(_) | Toggle(_) | True(_) | False(_) =>
         wrap_node_with_set(
           make_flag_node(vn, fn() {
-            fn() { cell.val = initial_val }
-          }, fn() { cell.val = initial_val }),
-          was_set,
+            fn() { vc.cell.val = initial_val }
+          }, fn() { vc.cell.val = initial_val }),
+          vc.was_set,
         )
       Unset(_) =>
         make_flag_node(vn, fn() {
-          fn() { cell.val = initial_val; was_set.val = false }
-        }, fn() { cell.val = initial_val; was_set.val = false })
+          fn() { vc.cell.val = initial_val; vc.was_set.val = false }
+        }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
     }
   }
 
@@ -331,18 +324,18 @@ pub fn[T : Show] Parser::custom(
       if has_choices {
         for choice in choices {
           children.push(
-            make_custom_choice_value_node(opt_name, choice, pre, cell, initial_val),
+            make_custom_choice_value_node(opt_name, choice, pre, vc.cell, initial_val),
           )
         }
       } else {
-        children.push(make_soft_custom_value_node(opt_name, pre, cell, initial_val))
+        children.push(make_soft_custom_value_node(opt_name, pre, vc.cell, initial_val))
       }
-      children.push(make_implicit_flag_node(opt_name, iv, cell, initial_val))
+      children.push(make_implicit_flag_node(opt_name, iv, vc.cell, initial_val))
       make_or_node(opt_name, true, children)
     }
   } else {
     let pending : Ref[T] = { val: initial_val }
-    let reset = fn() { cell.val = initial_val }
+    let reset = fn() { vc.cell.val = initial_val }
     let accum : Accumulator[T, T] = fn(_current, piece) { piece }
     // choices がある場合は one_of → pre の合成。FilterChain::then で Kleisli composition
     let effective_pre : FilterChain[String, T] = if has_choices {
@@ -352,7 +345,7 @@ pub fn[T : Show] Parser::custom(
     }
     let reducer = make_reducer(effective_pre, accum)
     fn(opt_name : String) -> ExactNode {
-      make_reduced_value_node(opt_name, reducer, cell, pending, reset)
+      make_reduced_value_node(opt_name, reducer, vc.cell, pending, reset)
     }
   }
 
@@ -360,11 +353,9 @@ pub fn[T : Show] Parser::custom(
   let opt = self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=effective_help, value_name=display_value_name, default_display=effective_display,
-    env_name=env, kind=ValueOpt, variations~, was_set~,
+    env_name=env, kind=ValueOpt, variations~, valcell=vc,
     make_main_node=make_main,
     make_node_for_variation=make_var_node,
-    getter=fn() { cell.val },
-    setter=fn(v) { cell.val = v },
   )
   // H-1 fix: implicit_value 付き (choices なし) の場合、eq_split 用に
   // "--" ガードなしの value ノードを追加。make_soft_custom_value_node の
@@ -373,7 +364,7 @@ pub fn[T : Show] Parser::custom(
     let eq_on_match = fn(s : String) -> Result[() -> Unit, ParseError] {
       let r : Result[T, ParseError] = try? (pre.run)(s)
       match r {
-        Ok(v) => Ok(fn() { cell.val = v; was_set.val = true })
+        Ok(v) => Ok(fn() { vc.cell.val = v; vc.was_set.val = true })
         Err(e) => Err(e)
       }
     }
@@ -400,7 +391,7 @@ pub fn[T : Show] Parser::custom(
   match post {
     Some(filter) =>
       self.post_hooks.push(fn() raise ParseError {
-        cell.val = (filter.run)(cell.val)
+        vc.cell.val = (filter.run)(vc.cell.val)
       })
     None => ()
   }
@@ -421,21 +412,20 @@ pub fn[T] Parser::custom_append(
   variations? : Array[Variation] = [],
   pre~ : FilterChain[String, T],
 ) -> Opt[Array[T]] {
-  let cell : Ref[Array[T]] = { val: [] }
-  let was_set : Ref[Bool] = { val: false }
-  let reset_fn = fn() { cell.val = [] }
+  let vc : ValCell[Array[T]] = ValCell::new([])
+  let reset_fn = fn() { vc.cell.val = [] }
   let display_value_name = if value_name == "" { name.to_upper() } else { value_name }
   self.register_option(
     name~, aliases~, shorts~, global~, hidden~,
     help=description, value_name=display_value_name, default_display="",
-    env_name=env, kind=ValueOpt, variations~, was_set~,
+    env_name=env, kind=ValueOpt, variations~, valcell=vc,
     make_main_node=fn(opt_n) {
       make_value_node(
         opt_n,
         fn(s) {
           let r : Result[T, ParseError] = try? (pre.run)(s)
           match r {
-            Ok(v) => Ok(fn() { cell.val.push(v) })
+            Ok(v) => Ok(fn() { vc.cell.val.push(v) })
             Err(e) => Err(e)
           }
         },
@@ -446,15 +436,13 @@ pub fn[T] Parser::custom_append(
       match v {
         Reset(_) | Toggle(_) | True(_) | False(_) =>
           make_flag_node(vn, fn() {
-            fn() { cell.val = []; was_set.val = true }
-          }, fn() { cell.val = []; was_set.val = false })
+            fn() { vc.cell.val = []; vc.was_set.val = true }
+          }, fn() { vc.cell.val = []; vc.was_set.val = false })
         Unset(_) =>
           make_flag_node(vn, fn() {
-            fn() { cell.val = []; was_set.val = false }
-          }, fn() { cell.val = []; was_set.val = false })
+            fn() { vc.cell.val = []; vc.was_set.val = false }
+          }, fn() { vc.cell.val = []; vc.was_set.val = false })
       }
     },
-    getter=fn() { cell.val },
-    setter=fn(v) { cell.val = v },
   )
 }

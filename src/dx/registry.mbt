@@ -47,7 +47,7 @@ pub fn FieldRegistry::flag_ref(
     hidden=hidden,
   )
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(v)
         None => ()
@@ -114,7 +114,7 @@ pub fn FieldRegistry::string_ref(
     value_name=value_name,
   )
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(v)
         None => ()
@@ -172,7 +172,7 @@ pub fn FieldRegistry::count_ref(
     hidden=hidden,
   )
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(v)
         None => ()
@@ -234,7 +234,7 @@ pub fn FieldRegistry::append_string_ref(
     value_name=value_name,
   )
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(v)
         None => ()
@@ -296,7 +296,7 @@ pub fn FieldRegistry::append_int_ref(
     value_name=value_name,
   )
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(v)
         None => ()
@@ -362,7 +362,7 @@ pub fn FieldRegistry::int_ref(
     value_name=value_name,
   )
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(v)
         None => ()

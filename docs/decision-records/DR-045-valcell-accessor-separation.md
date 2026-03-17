@@ -1,6 +1,6 @@
 # DR-045: ValCell / Accessor 分離 — Opt[T] から値のライフサイクルを独立させる
 
-**ステータス: discussion**
+**ステータス: accepted (Phase 1+2 implemented)**
 
 ## 背景
 
@@ -346,11 +346,12 @@ Opt の構築時に `getter: accessor.get, setter: accessor.set, is_set: accesso
 `Opt::get()` / `Opt::is_set()` メソッドが既に存在するため、
 フィールドアクセスをメソッドアクセスに統一する移行が必要。
 
-#### Phase 3: clone の完全実装
+#### Phase 3: clone の完全実装 + AliasSource リネーム
 
 1. `Parser::clone` を `ValCell.clone()` ベースに書き換え
 2. clone が独立した cell を持つことを検証するテスト追加
 3. DR-044 の「clone は alias のラッパー（v1）」制約を解消
+4. `AliasSource` → `NodeTemplate` リネーム（`target_was_set` の ValCell 吸収を含む）
 
 #### Phase 4: link / adjust の Accessor 統合
 

@@ -1,10 +1,15 @@
 ///|
 pub fn[T] Opt::get(self : Opt[T]) -> T? {
   if self.parsed.val {
-    Some((self.getter)())
+    Some((self.accessor.get)())
   } else {
     None
   }
+}
+
+///|
+pub fn[T] Opt::is_set(self : Opt[T]) -> Bool {
+  (self.accessor.is_set)()
 }
 
 ///|
@@ -66,6 +71,6 @@ pub fn[T] Parser::get(self : Parser, opt : Opt[T]) -> T? {
   if not(self.parsed.val) {
     None
   } else {
-    Some((opt.getter)())
+    Some((opt.accessor.get)())
   }
 }

@@ -22,7 +22,7 @@ pub fn FieldRegistry::sub(
     },
   )
   self.appliers.push(fn() {
-    if (cmd.is_set)() {
+    if cmd.is_set() {
       on_match()
       match child_registry_ref.val {
         Some(child_reg) => child_reg.apply_all()

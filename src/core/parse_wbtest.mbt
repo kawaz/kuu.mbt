@@ -506,7 +506,7 @@ test "subcommand basic" {
     port_opt.val = Some(child.int_opt(name="port", default=8080))
   })
   ignore(p.parse(["serve", "--port", "3000"]))
-  assert_true((serve.is_set)())
+  assert_true(serve.is_set())
   inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
 }
 
@@ -519,8 +519,8 @@ test "subcommand not matched" {
   })
   let build = p.cmd(name="build", setup=fn(_child) {  })
   ignore(p.parse(["build"]))
-  assert_false((serve.is_set)())
-  assert_true((build.is_set)())
+  assert_false(serve.is_set())
+  assert_true(build.is_set())
 }
 
 ///|
@@ -2311,7 +2311,7 @@ test "is_set false for default fallback" {
     implicit_value=Some(Val("always")),
   )
   ignore(p.parse([]))
-  inspect((color.is_set)(), content="false")
+  inspect(color.is_set(), content="false")
   inspect(
     p.get(color),
     content=(
@@ -2329,7 +2329,7 @@ test "is_set true for explicit value" {
     implicit_value=Some(Val("always")),
   )
   ignore(p.parse(["--color", "never"]))
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
   inspect(
     p.get(color),
     content=(
@@ -2347,7 +2347,7 @@ test "is_set true for implicit value" {
     implicit_value=Some(Val("always")),
   )
   ignore(p.parse(["--color"]))
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
   inspect(
     p.get(color),
     content=(
@@ -2786,7 +2786,7 @@ test "variation: False flag with default=true" {
   let color = p.flag(name="color", default=true, variations=[False("no")])
   ignore(p.parse(["--no-color"]))
   inspect(p.get(color), content="Some(false)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2796,7 +2796,7 @@ test "variation: False flag with default=false" {
   ignore(p.parse(["--no-verbose"]))
   // False sets cell=false (same as default), but was_set=true
   inspect(p.get(verbose), content="Some(false)")
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
 }
 
 ///|
@@ -2806,7 +2806,7 @@ test "variation: Reset flag resets to default" {
   // First set to true (positive), then reset
   ignore(p.parse(["--color", "--reset-color"]))
   inspect(p.get(color), content="Some(true)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2815,7 +2815,7 @@ test "variation: Unset flag resets value and was_set" {
   let color = p.flag(name="color", variations=[Unset("unset")])
   ignore(p.parse(["--color", "--unset-color"]))
   inspect(p.get(color), content="Some(false)")
-  inspect((color.is_set)(), content="false")
+  inspect(color.is_set(), content="false")
 }
 
 ///|
@@ -2824,7 +2824,7 @@ test "variation: True/False flag with enable/disable" {
   let color = p.flag(name="color", variations=[True("enable"), False("disable")])
   ignore(p.parse(["--enable-color"]))
   inspect(p.get(color), content="Some(true)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2833,7 +2833,7 @@ test "variation: True/False flag disable" {
   let color = p.flag(name="color", variations=[True("enable"), False("disable")])
   ignore(p.parse(["--disable-color"]))
   inspect(p.get(color), content="Some(false)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2842,7 +2842,7 @@ test "variation: True/False flag enable then disable" {
   let color = p.flag(name="color", variations=[True("enable"), False("disable")])
   ignore(p.parse(["--enable-color", "--disable-color"]))
   inspect(p.get(color), content="Some(false)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2851,7 +2851,7 @@ test "variation: count with Reset" {
   let v = p.count(name="verbose", variations=[Reset("no")])
   ignore(p.parse(["--verbose", "--verbose", "--no-verbose"]))
   inspect(p.get(v), content="Some(0)")
-  inspect((v.is_set)(), content="true")
+  inspect(v.is_set(), content="true")
 }
 
 ///|
@@ -2865,7 +2865,7 @@ test "variation: string_opt with Reset" {
       #|Some("localhost")
     ),
   )
-  inspect((host.is_set)(), content="true")
+  inspect(host.is_set(), content="true")
 }
 
 ///|
@@ -2879,7 +2879,7 @@ test "variation: string_opt with Unset" {
       #|Some("localhost")
     ),
   )
-  inspect((host.is_set)(), content="false")
+  inspect(host.is_set(), content="false")
 }
 
 ///|
@@ -2888,7 +2888,7 @@ test "variation: int_opt with Reset" {
   let port = p.int_opt(name="port", default=8080, variations=[Reset("no")])
   ignore(p.parse(["--port", "3000", "--no-port"]))
   inspect(p.get(port), content="Some(8080)")
-  inspect((port.is_set)(), content="true")
+  inspect(port.is_set(), content="true")
 }
 
 ///|
@@ -2897,7 +2897,7 @@ test "variation: append_string with Reset" {
   let tags = p.append_string(name="tag", variations=[Reset("no")])
   ignore(p.parse(["--tag", "a", "--tag", "b", "--no-tag"]))
   inspect(p.get(tags), content="Some([])")
-  inspect((tags.is_set)(), content="true")
+  inspect(tags.is_set(), content="true")
 }
 
 ///|
@@ -2906,7 +2906,7 @@ test "variation: append_int with Reset" {
   let ids = p.append_int(name="id", variations=[Reset("no")])
   ignore(p.parse(["--id", "1", "--id", "2", "--no-id"]))
   inspect(p.get(ids), content="Some([])")
-  inspect((ids.is_set)(), content="true")
+  inspect(ids.is_set(), content="true")
 }
 
 ///|
@@ -2915,7 +2915,7 @@ test "variation: flag alias also gets variation" {
   let color = p.flag(name="color", aliases=["colour"], variations=[False("no")])
   ignore(p.parse(["--no-colour"]))
   inspect(p.get(color), content="Some(false)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2927,7 +2927,7 @@ test "variation: multiple variations" {
   )
   ignore(p.parse(["--disable-color"]))
   inspect(p.get(color), content="Some(false)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2949,7 +2949,7 @@ test "variation: Toggle basic" {
   ignore(p.parse(["--color", "--toggle-color"]))
   // --color sets true (=!default), --toggle-color flips to false
   inspect(p.get(color), content="Some(false)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2959,7 +2959,7 @@ test "variation: Toggle double toggles back" {
   ignore(p.parse(["--color", "--toggle-color", "--toggle-color"]))
   // --color → true, --toggle → false, --toggle → true
   inspect(p.get(color), content="Some(true)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2969,7 +2969,7 @@ test "variation: Toggle with default=true" {
   ignore(p.parse(["--toggle-color"]))
   // default=true, toggle → false
   inspect(p.get(color), content="Some(false)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2980,7 +2980,7 @@ test "variation: True sets true regardless of default" {
   ignore(p.parse(["--color", "--enable-color"]))
   // --color → false, --enable-color → true
   inspect(p.get(color), content="Some(true)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -2989,7 +2989,7 @@ test "variation: False sets false regardless of default" {
   let color = p.flag(name="color", default=true, variations=[False("disable")])
   ignore(p.parse(["--disable-color"]))
   inspect(p.get(color), content="Some(false)")
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 ///|
@@ -3018,7 +3018,7 @@ test "flag variation_reset sugar" {
   let verbose = p.flag(name="verbose", variation_reset=Some("no"))
   ignore(p.parse(["--verbose", "--no-verbose"]))
   inspect(verbose.get(), content="Some(false)") // Reset → default(false)
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
 }
 
 ///|
@@ -3032,7 +3032,7 @@ test "string_opt variation_reset sugar" {
       #|Some("json")
     ),
   ) // Reset → default
-  inspect((fmt.is_set)(), content="true")
+  inspect(fmt.is_set(), content="true")
 }
 
 ///|
@@ -3046,7 +3046,7 @@ test "sugar params append to variations" {
   // Toggle + Reset 両方が存在
   ignore(p.parse(["--toggle-verbose", "--no-verbose"]))
   inspect(verbose.get(), content="Some(false)") // Reset → default
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
 }
 
 ///|
@@ -3068,7 +3068,7 @@ test "count variation_reset sugar" {
   let verbose = p.count(name="verbose", variation_reset=Some("no"))
   ignore(p.parse(["--verbose", "--verbose", "--no-verbose"]))
   inspect(verbose.get(), content="Some(0)") // Reset → default(0)
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
 }
 
 ///|
@@ -3077,7 +3077,7 @@ test "append_string variation_reset sugar" {
   let includes = p.append_string(name="include", variation_reset=Some("no"))
   ignore(p.parse(["--include", "a", "--include", "b", "--no-include"]))
   inspect(includes.get(), content="Some([])") // Reset → empty
-  inspect((includes.is_set)(), content="true")
+  inspect(includes.is_set(), content="true")
 }
 
 // ============ default_fn tests ============
@@ -3088,7 +3088,7 @@ test "flag default_fn" {
   let verbose = p.flag(name="verbose", default_fn=Some(fn() { true }))
   ignore(p.parse([])) // no args
   inspect(verbose.get(), content="Some(true)") // default_fn で true
-  inspect((verbose.is_set)(), content="false") // 明示指定なし
+  inspect(verbose.is_set(), content="false") // 明示指定なし
 }
 
 ///|
@@ -3098,7 +3098,7 @@ test "flag default_fn overrides default" {
   ignore(p.parse(["--verbose"]))
   // Main = !initial_val = !true = false
   inspect(verbose.get(), content="Some(false)")
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
 }
 
 ///|
@@ -3116,7 +3116,7 @@ test "string_opt default_fn" {
       #|Some("always")
     ),
   ) // default_fn が優先
-  inspect((color.is_set)(), content="false")
+  inspect(color.is_set(), content="false")
 }
 
 ///|
@@ -3129,7 +3129,7 @@ test "int_opt default_fn" {
   )
   ignore(p.parse([])) // no args
   inspect(port.get(), content="Some(8080)") // default_fn が優先
-  inspect((port.is_set)(), content="false")
+  inspect(port.is_set(), content="false")
 }
 
 ///|
@@ -3148,7 +3148,7 @@ test "string_opt default_fn with reset variation" {
       #|Some("always")
     ),
   ) // Reset → default_fn の値に戻る
-  inspect((color.is_set)(), content="true")
+  inspect(color.is_set(), content="true")
 }
 
 // ============ duplicate name validation tests ============
@@ -3196,7 +3196,7 @@ test "custom_string_basic" {
   let p = Parser::new()
   let name = p.custom(name="name", default="world", pre=Filter::map(fn(s) { s }))
   p.parse(["--name", "alice"]) |> ignore
-  inspect((name.getter)(), content="alice")
+  inspect((name.accessor.get)(), content="alice")
 }
 
 ///|
@@ -3204,7 +3204,7 @@ test "custom_string_default" {
   let p = Parser::new()
   let name = p.custom(name="name", default="world", pre=Filter::map(fn(s) { s }))
   p.parse([]) |> ignore
-  inspect((name.getter)(), content="world")
+  inspect((name.accessor.get)(), content="world")
 }
 
 ///|
@@ -3212,7 +3212,7 @@ test "custom_int_basic" {
   let p = Parser::new()
   let port = p.custom(name="port", default=8080, pre=Filter::parse_int())
   p.parse(["--port", "3000"]) |> ignore
-  inspect((port.getter)(), content="3000")
+  inspect((port.accessor.get)(), content="3000")
 }
 
 ///|
@@ -3220,7 +3220,7 @@ test "custom_int_default" {
   let p = Parser::new()
   let port = p.custom(name="port", default=8080, pre=Filter::parse_int())
   p.parse([]) |> ignore
-  inspect((port.getter)(), content="8080")
+  inspect((port.accessor.get)(), content="8080")
 }
 
 ///|
@@ -3236,7 +3236,7 @@ test "custom_double_basic" {
   let p = Parser::new()
   let rate = p.custom(name="rate", default=1.0, pre=Filter::parse_float())
   p.parse(["--rate", "3.14"]) |> ignore
-  inspect((rate.getter)(), content="3.14")
+  inspect((rate.accessor.get)(), content="3.14")
 }
 
 ///|
@@ -3248,7 +3248,7 @@ test "custom_with_choices" {
     choices=["debug", "info", "warn", "error"],
   )
   p.parse(["--level", "warn"]) |> ignore
-  inspect((level.getter)(), content="warn")
+  inspect((level.accessor.get)(), content="warn")
 }
 
 ///|
@@ -3273,7 +3273,7 @@ test "custom_with_implicit_value" {
   )
   // implicit: --verbose のみで implicit_value=1 が使われる
   p.parse(["--verbose"]) |> ignore
-  inspect((verbose.getter)(), content="1")
+  inspect((verbose.accessor.get)(), content="1")
 }
 
 ///|
@@ -3286,7 +3286,7 @@ test "custom_with_implicit_value_explicit" {
   )
   // explicit: --verbose 3 で明示値 3 が使われる
   p.parse(["--verbose", "3"]) |> ignore
-  inspect((verbose.getter)(), content="3")
+  inspect((verbose.accessor.get)(), content="3")
 }
 
 ///|
@@ -3300,7 +3300,7 @@ test "custom_with_choices_and_implicit" {
   )
   // implicit: --color のみで implicit_value="always"
   p.parse(["--color"]) |> ignore
-  inspect((color.getter)(), content="always")
+  inspect((color.accessor.get)(), content="always")
 }
 
 ///|
@@ -3314,7 +3314,7 @@ test "custom_with_choices_and_implicit_explicit" {
   )
   // explicit: --color never で明示値
   p.parse(["--color", "never"]) |> ignore
-  inspect((color.getter)(), content="never")
+  inspect((color.accessor.get)(), content="never")
 }
 
 ///|
@@ -3326,7 +3326,7 @@ test "custom_with_post" {
     post=Some(Filter::map(fn(s : String) { s.to_upper() })),
   )
   p.parse(["--name", "alice"]) |> ignore
-  inspect((name.getter)(), content="ALICE")
+  inspect((name.accessor.get)(), content="ALICE")
 }
 
 ///|
@@ -3334,7 +3334,7 @@ test "custom_append_string_basic" {
   let p = Parser::new()
   let tags = p.custom_append(name="tag", pre=Filter::map(fn(s) { s }))
   p.parse(["--tag", "a", "--tag", "b"]) |> ignore
-  inspect((tags.getter)(), content="[\"a\", \"b\"]")
+  inspect((tags.accessor.get)(), content="[\"a\", \"b\"]")
 }
 
 ///|
@@ -3342,7 +3342,7 @@ test "custom_append_string_empty" {
   let p = Parser::new()
   let tags = p.custom_append(name="tag", pre=Filter::map(fn(s) { s }))
   p.parse([]) |> ignore
-  inspect((tags.getter)(), content="[]")
+  inspect((tags.accessor.get)(), content="[]")
 }
 
 ///|
@@ -3350,7 +3350,7 @@ test "custom_append_int_basic" {
   let p = Parser::new()
   let nums = p.custom_append(name="num", pre=Filter::parse_int())
   p.parse(["--num", "1", "--num", "2", "--num", "3"]) |> ignore
-  inspect((nums.getter)(), content="[1, 2, 3]")
+  inspect((nums.accessor.get)(), content="[1, 2, 3]")
 }
 
 ///|
@@ -4111,10 +4111,10 @@ test "unselected cmd get() returns None" {
   let cmd_b = p.cmd(name="b", dashdash=false, setup=fn(_) {  })
   ignore(p.parse(["a"]))
   // selected cmd: opt.get() returns Some
-  inspect((cmd_a.is_set)(), content="true")
+  inspect(cmd_a.is_set(), content="true")
   inspect(cmd_a.get() is Some(_), content="true")
   // unselected cmd: opt.get() returns None (not panic)
-  inspect((cmd_b.is_set)(), content="false")
+  inspect(cmd_b.is_set(), content="false")
   inspect(cmd_b.get() is None, content="true")
 }
 
@@ -4419,7 +4419,7 @@ test "OC/P: dashdash prevents option matching" {
   let verbose = p.flag(name="verbose")
   let files = p.rest(name="files")
   ignore(p.parse(["--", "--verbose", "file"]))
-  inspect((verbose.is_set)(), content="false")
+  inspect(verbose.is_set(), content="false")
   inspect(
     p.get(files),
     content=(
@@ -4517,7 +4517,7 @@ test "OC/P: rest with options interleaved" {
   let verbose = p.flag(name="verbose")
   let files = p.rest(name="files")
   ignore(p.parse(["f1", "--verbose", "f2", "f3"]))
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
   inspect(files.get(), content="Some([\"f1\", \"f2\", \"f3\"])")
 }
 
@@ -4536,11 +4536,11 @@ test "OC/P: serial(file1, rest(dir), file2) with interleaved options" {
     file2 = Some(s.positional(name="file2"))
   })
   ignore(p.parse(["F1", "--verbose", "D1", "D2", "F2"]))
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
   inspect(file1.unwrap().get(), content="Some(\"F1\")")
   // rest が stop_before なしのため D1, D2, F2 全てを消費し file2 は未設定
   inspect(dirs.unwrap().get(), content="Some([\"D1\", \"D2\", \"F2\"])")
-  inspect((file2.unwrap().is_set)(), content="false")
+  inspect(file2.unwrap().is_set(), content="false")
 }
 
 ///|
@@ -4552,7 +4552,7 @@ test "OC/P: greedy positional normal consumption" {
   let verbose = p.flag(name="verbose")
   let file = p.positional(name="file", greedy=true)
   ignore(p.parse(["F1", "--verbose"]))
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
   inspect(file.get(), content="Some(\"F1\")")
 }
 
@@ -4566,7 +4566,7 @@ test "OC/P: greedy then non-greedy positional" {
   let eager = p.positional(name="eager", greedy=true)
   let deferred = p.positional(name="deferred")
   ignore(p.parse(["A", "--verbose", "B"]))
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
   inspect(eager.get(), content="Some(\"A\")")
   inspect(deferred.get(), content="Some(\"B\")")
 }
@@ -4595,10 +4595,10 @@ test "OC/P: serial with greedy=true consumed in OC" {
   }
   // parse がエラーで終了するため parsed=false、get() は None を返す。
   // compound handler が --verbose を positional 値として消費するため flag も未設定。
-  inspect((verbose.is_set)(), content="false")
+  inspect(verbose.is_set(), content="false")
   // commit は呼ばれているが parsed=false なので get() は None
-  inspect((src.unwrap().is_set)(), content="true")
-  inspect((dst.unwrap().is_set)(), content="true")
+  inspect(src.unwrap().is_set(), content="true")
+  inspect(dst.unwrap().is_set(), content="true")
 }
 
 ///|
@@ -4670,8 +4670,8 @@ test "alias: flag alias is_set independence" {
   let verb = p.alias("--verb", verbose)
   ignore(p.parse(["--verbose"]))
   // target 使用: target.is_set=true, alias.is_set=false
-  inspect((verbose.is_set)(), content="true")
-  inspect((verb.is_set)(), content="false")
+  inspect(verbose.is_set(), content="true")
+  inspect(verb.is_set(), content="false")
 }
 
 ///|
@@ -4681,8 +4681,8 @@ test "alias: flag alias sets both is_set" {
   let verbose = p.flag(name="verbose")
   let verb = p.alias("--verb", verbose)
   ignore(p.parse(["--verb"]))
-  inspect((verbose.is_set)(), content="true")
-  inspect((verb.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
+  inspect(verb.is_set(), content="true")
 }
 
 ///|
@@ -4718,8 +4718,8 @@ test "alias: single-dash long option" {
       #|Some("gcc")
     ),
   )
-  inspect((xcc.is_set)(), content="true")
-  inspect((compiler.is_set)(), content="true")
+  inspect(xcc.is_set(), content="true")
+  inspect(compiler.is_set(), content="true")
 }
 
 ///|
@@ -4740,8 +4740,8 @@ test "alias: cmd alias shares child parser" {
   })
   let st = p.alias("st", status)
   ignore(p.parse(["st", "--short"]))
-  inspect((status.is_set)(), content="true")
-  inspect((st.is_set)(), content="true")
+  inspect(status.is_set(), content="true")
+  inspect(st.is_set(), content="true")
   // cmd alias でも同一子パーサが使われる
   let cmd_result = status.get().unwrap()
   inspect(cmd_result.name, content="status")
@@ -4760,9 +4760,9 @@ test "alias: chained alias (alias of alias)" {
   inspect(v.get(), content="Some(true)")
   // is_set: v と verbose は true（alias 経由で target も true）
   // verb は直接使っていないので false
-  inspect((verbose.is_set)(), content="true")
-  inspect((verb.is_set)(), content="false")
-  inspect((v.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
+  inspect(verb.is_set(), content="false")
+  inspect(v.is_set(), content="true")
 }
 
 ///|
@@ -4803,8 +4803,8 @@ test "alias: unused alias default value" {
       #|Some("localhost")
     ),
   )
-  inspect((host.is_set)(), content="false")
-  inspect((h.is_set)(), content="false")
+  inspect(host.is_set(), content="false")
+  inspect(h.is_set(), content="false")
 }
 
 ///|
@@ -4817,9 +4817,9 @@ test "alias: global alias propagates to subcommand" {
   // global alias は子パーサでも使える
   inspect(verbose.get(), content="Some(true)")
   inspect(verb.get(), content="Some(true)")
-  inspect((verbose.is_set)(), content="true")
-  inspect((verb.is_set)(), content="true")
-  inspect((status.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
+  inspect(verb.is_set(), content="true")
+  inspect(status.is_set(), content="true")
 }
 
 ///|
@@ -5098,7 +5098,7 @@ test "H-5: cmd aliases basic" {
     ignore(child.flag(name="verbose"))
   })
   ignore(p.parse(["s"]))
-  inspect((serve.is_set)(), content="true")
+  inspect(serve.is_set(), content="true")
   inspect(serve.get().unwrap().name, content="serve")
 }
 
@@ -5109,7 +5109,7 @@ test "H-5: cmd aliases primary name still works" {
     ignore(child.flag(name="verbose"))
   })
   ignore(p.parse(["serve"]))
-  inspect((serve.is_set)(), content="true")
+  inspect(serve.is_set(), content="true")
   inspect(serve.get().unwrap().name, content="serve")
 }
 
@@ -5169,7 +5169,7 @@ test "H-5: cmd multiple aliases" {
   )
   // 最短の alias で起動
   ignore(p.parse(["sv"]))
-  inspect((serve.is_set)(), content="true")
+  inspect(serve.is_set(), content="true")
   inspect(serve.get().unwrap().name, content="serve")
 }
 
@@ -5186,8 +5186,8 @@ test "M-17: custom_append Reset variation clears array" {
     variations=[Reset("no")],
   )
   ignore(p.parse(["--tag", "a", "--tag", "b", "--no-tag"]))
-  inspect((tags.getter)(), content="[]")
-  inspect((tags.is_set)(), content="true")
+  inspect((tags.accessor.get)(), content="[]")
+  inspect(tags.is_set(), content="true")
 }
 
 ///|
@@ -5199,7 +5199,7 @@ test "M-17: custom_append Reset then re-add" {
     variations=[Reset("no")],
   )
   ignore(p.parse(["--tag", "a", "--no-tag", "--tag", "b"]))
-  inspect((tags.getter)(), content="[\"b\"]")
+  inspect((tags.accessor.get)(), content="[\"b\"]")
 }
 
 ///|
@@ -5211,8 +5211,8 @@ test "M-17: custom_append Unset variation clears and unsets" {
     variations=[Unset("un")],
   )
   ignore(p.parse(["--tag", "a", "--tag", "b", "--un-tag"]))
-  inspect((tags.getter)(), content="[]")
-  inspect((tags.is_set)(), content="false")
+  inspect((tags.accessor.get)(), content="[]")
+  inspect(tags.is_set(), content="false")
 }
 
 // ============================================================
@@ -5226,7 +5226,7 @@ test "M-18: count Toggle variation resets to 0" {
   let verbose = p.count(name="verbose", variations=[Toggle("no")])
   ignore(p.parse(["--verbose", "--verbose", "--no-verbose"]))
   inspect(p.get(verbose), content="Some(0)")
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
 }
 
 ///|
@@ -5236,7 +5236,7 @@ test "M-18: count True variation resets to 0" {
   let verbose = p.count(name="verbose", variations=[True("force")])
   ignore(p.parse(["--verbose", "--verbose", "--force-verbose"]))
   inspect(p.get(verbose), content="Some(0)")
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
 }
 
 ///|
@@ -5246,7 +5246,7 @@ test "M-18: count False variation resets to 0" {
   let verbose = p.count(name="verbose", variations=[False("off")])
   ignore(p.parse(["--verbose", "--verbose", "--verbose", "--off-verbose"]))
   inspect(p.get(verbose), content="Some(0)")
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
 }
 
 ///|
@@ -5265,7 +5265,7 @@ test "M-18: count Unset variation resets and unsets" {
   let verbose = p.count(name="verbose", variations=[Unset("un")])
   ignore(p.parse(["--verbose", "--verbose", "--un-verbose"]))
   inspect(p.get(verbose), content="Some(0)")
-  inspect((verbose.is_set)(), content="false")
+  inspect(verbose.is_set(), content="false")
 }
 
 // ============================================================
@@ -5609,8 +5609,8 @@ test "deprecated is_set independent from target" {
   let out = p.deprecated("--out", output, msg="use --output instead")
   ignore(p.parse(["--out", "hello"]))
   // alias 動作: is_set は独立（deprecated 側のみ true、target は target_was_set で true）
-  inspect((out.is_set)(), content="true")
-  inspect((output.is_set)(), content="true")
+  inspect(out.is_set(), content="true")
+  inspect(output.is_set(), content="true")
 }
 
 ///|
@@ -5907,10 +5907,10 @@ test "priv setter: flag setter writes cell value" {
   ignore(p.parse([]))
   inspect(verbose.get(), content="Some(false)")
   // priv setter で直接書き換え
-  (verbose.setter)(true)
+  (verbose.accessor.set_quiet)(true)
   inspect(verbose.get(), content="Some(true)")
   // is_set は連動しない（setter の設計制約）
-  inspect((verbose.is_set)(), content="false")
+  inspect(verbose.is_set(), content="false")
 }
 
 ///|
@@ -5924,7 +5924,7 @@ test "priv setter: string_opt setter writes cell value" {
       #|Some("localhost")
     ),
   )
-  (host.setter)("example.com")
+  (host.accessor.set_quiet)("example.com")
   inspect(
     host.get(),
     content=(
@@ -5940,7 +5940,7 @@ test "priv setter: alias shares setter with target" {
   let v = p.alias("-v", verbose)
   ignore(p.parse([]))
   // alias の setter は target と同一 cell を指す
-  (v.setter)(true)
+  (v.accessor.set_quiet)(true)
   inspect(verbose.get(), content="Some(true)")
   inspect(v.get(), content="Some(true)")
 }
@@ -6028,8 +6028,8 @@ test "clone: independent is_set" {
   let verbose = p.flag(name="verbose")
   let verb = p.clone("--verb", verbose)
   ignore(p.parse(["--verb"]))
-  inspect((verb.is_set)(), content="true")
-  inspect((verbose.is_set)(), content="true") // alias 動作: target も set
+  inspect(verb.is_set(), content="true")
+  inspect(verbose.is_set(), content="true") // alias 動作: target も set
   inspect(verbose.get(), content="Some(true)")
   inspect(verb.get(), content="Some(true)")
 }
@@ -6040,7 +6040,7 @@ test "clone: only target used" {
   let verbose = p.flag(name="verbose")
   let _verb = p.clone("--verb", verbose)
   ignore(p.parse(["--verbose"]))
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
   inspect(verbose.get(), content="Some(true)")
 }
 
@@ -6066,8 +6066,8 @@ test "clone: both unused" {
   let verbose = p.flag(name="verbose")
   let verb = p.clone("--verb", verbose)
   ignore(p.parse([]))
-  inspect((verbose.is_set)(), content="false")
-  inspect((verb.is_set)(), content="false")
+  inspect(verbose.is_set(), content="false")
+  inspect(verb.is_set(), content="false")
   inspect(verbose.get(), content="Some(false)")
   inspect(verb.get(), content="Some(false)")
 }
@@ -6091,7 +6091,7 @@ test "clone + link: clone with independent forwarding" {
   let tgt = p.flag(name="target")
   p.link(tgt, source=cloned)
   ignore(p.parse(["--cloned"]))
-  inspect((cloned.is_set)(), content="true")
+  inspect(cloned.is_set(), content="true")
   inspect(tgt.get(), content="Some(true)")
 }
 
@@ -6124,9 +6124,9 @@ test "practical: link for verbose implies debug" {
   ignore(p.parse(["--verbose"]))
   inspect(verbose.get(), content="Some(true)")
   inspect(debug.get(), content="Some(true)")
-  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.is_set(), content="true")
   // debug は link で値が書き込まれるが is_set は false（パースで set されたわけではない）
-  inspect((debug.is_set)(), content="false")
+  inspect(debug.is_set(), content="false")
 }
 
 ///|
@@ -6140,4 +6140,133 @@ test "practical: clone + adjust for derived option" {
   inspect(secure_port.get(), content="Some(543)")
   // clone は alias ベースなので port にも反映される（v1 制約）
   inspect(port.get(), content="Some(543)")
+}
+
+// ===== ValCell / Accessor tests (DR-045) =====
+
+///|
+test "ValCell: new creates cell with default value and was_set=false" {
+  let vc : ValCell[Int] = ValCell::new(42)
+  assert_eq(vc.cell.val, 42)
+  assert_eq(vc.was_set.val, false)
+}
+
+///|
+test "ValCell: accessor get returns cell value" {
+  let vc = ValCell::new(10)
+  let acc = vc.accessor()
+  assert_eq((acc.get)(), 10)
+}
+
+///|
+test "ValCell: accessor set updates value and was_set" {
+  let vc = ValCell::new(0)
+  let acc = vc.accessor()
+  (acc.set)(99)
+  assert_eq((acc.get)(), 99)
+  assert_eq((acc.is_set)(), true)
+}
+
+///|
+test "ValCell: accessor set_quiet updates value without was_set" {
+  let vc = ValCell::new(0)
+  let acc = vc.accessor()
+  (acc.set_quiet)(99)
+  assert_eq((acc.get)(), 99)
+  assert_eq((acc.is_set)(), false)
+}
+
+///|
+test "ValCell: accessor reset restores default and clears was_set" {
+  let vc = ValCell::new(42)
+  let acc = vc.accessor()
+  (acc.set)(100)
+  assert_eq((acc.get)(), 100)
+  assert_eq((acc.is_set)(), true)
+  (acc.reset)()
+  assert_eq((acc.get)(), 42)
+  assert_eq((acc.is_set)(), false)
+}
+
+///|
+test "ValCell: clone creates independent cell with same default" {
+  let vc1 = ValCell::new(5)
+  let acc1 = vc1.accessor()
+  (acc1.set)(10)
+  let vc2 = vc1.clone()
+  let acc2 = vc2.accessor()
+  // vc2 is independent: default value, was_set=false
+  assert_eq((acc2.get)(), 5)
+  assert_eq((acc2.is_set)(), false)
+  // vc1 is unchanged
+  assert_eq((acc1.get)(), 10)
+  assert_eq((acc1.is_set)(), true)
+}
+
+///|
+test "ValCell: multiple accessors share same cell" {
+  let vc = ValCell::new(0)
+  let acc1 = vc.accessor()
+  let acc2 = vc.accessor()
+  (acc1.set)(42)
+  assert_eq((acc2.get)(), 42)
+  assert_eq((acc2.is_set)(), true)
+}
+
+///|
+test "ValCell: set → reset → set cycle" {
+  let vc = ValCell::new(42)
+  let acc = vc.accessor()
+  (acc.set)(99)
+  assert_eq((acc.get)(), 99)
+  assert_eq((acc.is_set)(), true)
+  (acc.reset)()
+  assert_eq((acc.get)(), 42)
+  assert_eq((acc.is_set)(), false)
+  (acc.set)(77)
+  assert_eq((acc.get)(), 77)
+  assert_eq((acc.is_set)(), true)
+}
+
+///|
+test "ValCell: clone bidirectional independence" {
+  let vc1 = ValCell::new(0)
+  let acc1 = vc1.accessor()
+  let vc2 = vc1.clone()
+  let acc2 = vc2.accessor()
+  // vc1 → vc2 独立
+  (acc1.set)(10)
+  assert_eq((acc2.get)(), 0)
+  assert_eq((acc2.is_set)(), false)
+  // vc2 → vc1 独立
+  (acc2.set)(20)
+  assert_eq((acc1.get)(), 10)
+  assert_eq((acc1.is_set)(), true)
+}
+
+///|
+test "ValCell: set_quiet then set updates was_set" {
+  let vc = ValCell::new(0)
+  let acc = vc.accessor()
+  // set_quiet: 値は変わるが was_set は false
+  (acc.set_quiet)(50)
+  assert_eq((acc.get)(), 50)
+  assert_eq((acc.is_set)(), false)
+  // set: 値も was_set も更新
+  (acc.set)(100)
+  assert_eq((acc.get)(), 100)
+  assert_eq((acc.is_set)(), true)
+}
+
+///|
+test "ValCell: reset on shared accessors propagates" {
+  let vc = ValCell::new(0)
+  let acc1 = vc.accessor()
+  let acc2 = vc.accessor()
+  (acc1.set)(42)
+  assert_eq((acc2.get)(), 42)
+  assert_eq((acc2.is_set)(), true)
+  (acc1.reset)()
+  assert_eq((acc2.get)(), 0)
+  assert_eq((acc2.is_set)(), false)
 }

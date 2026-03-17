@@ -38,10 +38,9 @@ pub fn Parser::dashdash(
   stop_before? : Array[String] = [],
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
-  let cell : Ref[Array[String]] = { val: [] }
+  let vc : ValCell[Array[String]] = ValCell::new([])
   let sep = separator
   let stop = stop_before
-  let was_set : Ref[Bool] = { val: false }
   let dashdash_node = ExactNode::{
     name: sep,
     needs_value: false,
@@ -52,25 +51,18 @@ pub fn Parser::dashdash(
       let (collected, consumed) = collect_after_separator(args, pos, sep, stop)
       Accept(consumed~, commit=fn() {
         for v in collected {
-          cell.val.push(v)
+          vc.cell.val.push(v)
         }
-        was_set.val = true
+        vc.was_set.val = true
       })
     },
     reset: fn() {
-      cell.val = []
-      was_set.val = false
+      vc.cell.val = []
+      vc.was_set.val = false
     },
   }
   self.register_dashdash_node(sep, dashdash_node)
-  {
-    id,
-    name: separator,
-    getter: fn() -> Array[String] { cell.val },
-    setter: fn(v) { cell.val = v },
-    parsed: self.parsed,
-    is_set: fn() { was_set.val },
-  }
+  { id, name: separator, accessor: vc.accessor(), parsed: self.parsed }
 }
 
 ///|
@@ -80,10 +72,9 @@ pub fn Parser::append_dashdash(
   stop_before? : Array[String] = [],
 ) -> Opt[Array[Array[String]]] {
   let id = (self.next_id)()
-  let cell : Ref[Array[Array[String]]] = { val: [] }
+  let vc : ValCell[Array[Array[String]]] = ValCell::new([])
   let sep = separator
   let stop = stop_before
-  let was_set : Ref[Bool] = { val: false }
   let node = ExactNode::{
     name: sep,
     needs_value: false,
@@ -95,22 +86,15 @@ pub fn Parser::append_dashdash(
         args, pos, sep, stop, stop_at_sep=true,
       )
       Accept(consumed~, commit=fn() {
-        cell.val.push(group)
-        was_set.val = true
+        vc.cell.val.push(group)
+        vc.was_set.val = true
       })
     },
     reset: fn() {
-      cell.val = []
-      was_set.val = false
+      vc.cell.val = []
+      vc.was_set.val = false
     },
   }
   self.register_dashdash_node(sep, node)
-  {
-    id,
-    name: separator,
-    getter: fn() -> Array[Array[String]] { cell.val },
-    setter: fn(v) { cell.val = v },
-    parsed: self.parsed,
-    is_set: fn() { was_set.val },
-  }
+  { id, name: separator, accessor: vc.accessor(), parsed: self.parsed }
 }

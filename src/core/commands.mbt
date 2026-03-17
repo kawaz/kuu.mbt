@@ -8,7 +8,7 @@ pub fn Parser::cmd(
   aliases? : Array[String] = [],
 ) -> Opt[CmdResult] {
   let id = (self.next_id)()
-  let cell : Ref[CmdResult?] = { val: None }
+  let vc : ValCell[CmdResult?] = ValCell::new(None)
   let child_nodes : Array[ExactNode] = []
   let child_global_nodes : Array[ExactNode] = []
   for gnode in self.global_nodes {
@@ -48,7 +48,6 @@ pub fn Parser::cmd(
   let parent_global = self.global_nodes
   let synced_count : Ref[Int] = { val: parent_global.length() }
   let cmd_name = name
-  let was_set : Ref[Bool] = { val: false }
   // Build all command names (primary + aliases) for matching
   let all_names : Array[String] = [cmd_name]
   for a in aliases {
@@ -86,8 +85,8 @@ pub fn Parser::cmd(
           match parse_result {
             Ok(child_result) =>
               Accept(consumed=args.length() - pos, commit=fn() {
-                cell.val = Some(CmdResult::{ name: cmd_name, parser: child })
-                was_set.val = true
+                vc.cell.val = Some(CmdResult::{ name: cmd_name, parser: child })
+                vc.was_set.val = true
                 self.children.set(cmd_name, child_result)
                 // 子パーサの deprecated_usages を親にマージ（再帰的に伝搬）
                 for pair in child.deprecated_usages {
@@ -101,8 +100,8 @@ pub fn Parser::cmd(
         }
       },
       reset: fn() {
-        cell.val = None
-        was_set.val = false
+        vc.cell.val = None
+        vc.was_set.val = false
         // H-3 fix: reset child parser state when cmd loses OC competition
         child.parsed.val = false
         child.current_positional.val = 0
@@ -114,7 +113,7 @@ pub fn Parser::cmd(
   }
   self.alias_sources[id] = AliasSource::{
     make_node: make_cmd_node,
-    target_was_set: was_set,
+    target_was_set: vc.was_set,
     is_global: false,
     make_eq_fallback: None,
   }
@@ -131,19 +130,19 @@ pub fn Parser::cmd(
     variation_names: [],
     hidden: false,
   })
-  {
-    id,
-    name,
-    getter: fn() -> CmdResult {
-      match cell.val {
+  let cmd_acc : Accessor[CmdResult] = {
+    get: fn() -> CmdResult {
+      match vc.cell.val {
         Some(v) => v
         None => CmdResult::{ name: "", parser: child }
       }
     },
-    setter: fn(v) { cell.val = Some(v) },
-    parsed: child.parsed,
-    is_set: fn() { was_set.val },
+    set: fn(v) { vc.cell.val = Some(v); vc.was_set.val = true },
+    set_quiet: fn(v) { vc.cell.val = Some(v) },
+    is_set: fn() { vc.was_set.val },
+    reset: fn() { vc.cell.val = None; vc.was_set.val = false },
   }
+  { id, name, accessor: cmd_acc, parsed: child.parsed }
 }
 
 ///|

@@ -1,0 +1,49 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/examples/archives/20260314-struct-first-e-fieldref"
+
+// Values
+pub fn make_app_opts() -> Array[OptDef[AppConfig]]
+
+pub fn[S, T] make_binder(FieldRef[S, T], (String) -> T?) -> Binder[S]
+
+pub fn[S] parse_args(Array[String], S, Array[OptDef[S]]) -> Result[S, String]
+
+pub fn[S : IntoOpt] parse_with(Array[String], S) -> Result[S, String]
+
+// Errors
+
+// Types and methods
+pub(all) struct AppConfig {
+  name : String
+  age : Int
+  verbose : Bool
+}
+pub fn AppConfig::age_ref() -> FieldRef[Self, Int]
+pub fn AppConfig::default() -> Self
+pub fn AppConfig::name_ref() -> FieldRef[Self, String]
+pub fn AppConfig::verbose_ref() -> FieldRef[Self, Bool]
+pub impl Eq for AppConfig
+pub impl Show for AppConfig
+
+pub(all) struct Binder[S] {
+  apply : (S, String) -> Result[S, String]
+}
+
+pub(all) struct FieldRef[S, A] {
+  name : String
+  get : (S) -> A
+  set : (S, A) -> S
+}
+
+pub(all) struct OptDef[S] {
+  opt_name : String
+  binder : Binder[S]
+}
+
+// Type aliases
+
+// Traits
+pub(open) trait IntoOpt {
+  opts(Self) -> Array[OptDef[Self]]
+}
+

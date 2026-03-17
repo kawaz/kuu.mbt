@@ -110,7 +110,7 @@ fn FieldRegistry::positional(
 ) -> Unit {
   let opt = self.parser.positional(name=name, description=description)
   self.appliers.push(fn() {
-    if (opt.is_set)() {
+    if opt.is_set() {
       match opt.get() {
         Some(v) => apply_fn(Some(v))
         None => () // 防御的: is_set=true なら通常到達しない
@@ -159,7 +159,7 @@ fn FieldRegistry::sub(
     },
   )
   self.appliers.push(fn() {
-    if (cmd.is_set)() {
+    if cmd.is_set() {
       on_match()
       match child_registry_ref.val {
         Some(child_reg) => child_reg.apply_all()

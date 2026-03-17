@@ -1,0 +1,27 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/examples/archives/20260314-struct-first-c-trait"
+
+// Values
+
+// Errors
+
+// Types and methods
+type BuildConfig
+
+type Command
+pub impl Eq for Command
+pub impl Show for Command
+
+type DockerCli
+
+type FieldRegistry
+
+type PsConfig
+
+type RunConfig
+
+// Type aliases
+
+// Traits
+trait Parseable
+

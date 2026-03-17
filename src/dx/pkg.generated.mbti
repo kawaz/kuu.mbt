@@ -1,0 +1,49 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/src/dx"
+
+import {
+  "kawaz/kuu/src/core",
+}
+
+// Values
+pub fn[T : Parseable] parse_into(Array[String], T) -> Unit raise @core.ParseError
+
+// Errors
+
+// Types and methods
+pub(all) struct FieldRegistry {
+  parser : @core.Parser
+  appliers : Array[() -> Unit]
+}
+pub fn FieldRegistry::append_int(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[Int]) -> Unit) -> Unit
+pub fn FieldRegistry::append_int_ref(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[Int]) -> Unit) -> @core.OptRef
+pub fn FieldRegistry::append_string(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[String]) -> Unit) -> Unit
+pub fn FieldRegistry::append_string_ref(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[String]) -> Unit) -> @core.OptRef
+pub fn FieldRegistry::at_least_one(Self, Array[@core.OptRef]) -> Unit
+pub fn FieldRegistry::count(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, apply_fn~ : (Int) -> Unit) -> Unit
+pub fn FieldRegistry::count_ref(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, apply_fn~ : (Int) -> Unit) -> @core.OptRef
+pub fn[T : Show] FieldRegistry::custom(Self, name~ : String, default~ : T, pre~ : @core.FilterChain[String, T], description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (T) -> Unit) -> Unit
+pub fn[T] FieldRegistry::custom_append(Self, name~ : String, pre~ : @core.FilterChain[String, T], description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[T]) -> Unit) -> Unit
+pub fn[T] FieldRegistry::custom_append_ref(Self, name~ : String, pre~ : @core.FilterChain[String, T], description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[T]) -> Unit) -> @core.OptRef
+pub fn[T : Show] FieldRegistry::custom_ref(Self, name~ : String, default~ : T, pre~ : @core.FilterChain[String, T], description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (T) -> Unit) -> @core.OptRef
+pub fn FieldRegistry::exclusive(Self, Array[@core.OptRef]) -> Unit
+pub fn FieldRegistry::flag(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, apply_fn~ : (Bool) -> Unit) -> Unit
+pub fn FieldRegistry::flag_ref(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, apply_fn~ : (Bool) -> Unit) -> @core.OptRef
+pub fn FieldRegistry::int(Self, name~ : String, default? : Int, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Int) -> Unit) -> Unit
+pub fn FieldRegistry::int_ref(Self, name~ : String, default? : Int, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Int) -> Unit) -> @core.OptRef
+pub fn FieldRegistry::positional(Self, name~ : String, description? : String, apply_fn~ : (String) -> Unit) -> Unit
+pub fn FieldRegistry::require_cmd(Self) -> Unit
+pub fn FieldRegistry::required(Self, @core.OptRef) -> Unit
+pub fn FieldRegistry::rest(Self, name~ : String, description? : String, apply_fn~ : (Array[String]) -> Unit) -> Unit
+pub fn FieldRegistry::set_description(Self, String) -> Unit
+pub fn FieldRegistry::string(Self, name~ : String, default? : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (String) -> Unit) -> Unit
+pub fn FieldRegistry::string_ref(Self, name~ : String, default? : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (String) -> Unit) -> @core.OptRef
+pub fn FieldRegistry::sub(Self, name~ : String, description? : String, aliases? : Array[String], setup~ : (Self) -> Unit, on_match? : () -> Unit) -> Unit
+
+// Type aliases
+
+// Traits
+pub(open) trait Parseable {
+  register(Self, FieldRegistry) -> Unit
+}
+

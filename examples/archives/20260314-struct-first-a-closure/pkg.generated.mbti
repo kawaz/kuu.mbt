@@ -1,0 +1,26 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/examples/archives/20260314-struct-first-a-closure"
+
+// Values
+
+// Errors
+
+// Types and methods
+type ComposeUp
+
+type DockerCompose
+
+type DockerConfig
+
+type DockerGlobal
+
+type DockerRun
+
+type SimpleConfig
+
+type StructFirst
+
+// Type aliases
+
+// Traits
+

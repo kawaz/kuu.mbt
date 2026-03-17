@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "kawaz/kuu/poc/poc1-2"
+package "kawaz/kuu/examples/archives/20260302-poc12-phase1-2-string-reducer"
 
 import {
   "moonbitlang/core/debug",
