@@ -4,6 +4,8 @@ fn levenshtein(a : String, b : String) -> Int {
   let bg = @unicodegrapheme.graphemes(b)
   let m = ag.length()
   let n = bg.length()
+  let a_chars : Array[String] = Array::makei(m, fn(i) { ag[i].to_string() })
+  let b_chars : Array[String] = Array::makei(n, fn(i) { bg[i].to_string() })
   // dp[(i)] は行 i の各列の値を保持する
   let prev : Array[Int] = Array::make(n + 1, 0)
   let curr : Array[Int] = Array::make(n + 1, 0)
@@ -13,7 +15,7 @@ fn levenshtein(a : String, b : String) -> Int {
   for i = 1; i <= m; i = i + 1 {
     curr[0] = i
     for j = 1; j <= n; j = j + 1 {
-      let cost = if ag[i - 1].to_string() == bg[j - 1].to_string() {
+      let cost = if a_chars[i - 1] == b_chars[j - 1] {
         0
       } else {
         1
@@ -216,21 +218,19 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
           return Reject
         }
 
-        let remaining_parts : Array[String] = []
+        let remaining_strs : Array[String] = []
         for j = ri + 1; j < rest_g.length(); j = j + 1 {
-          remaining_parts.push(rest_g[j].to_string())
+          remaining_strs.push(rest_g[j].to_string())
         }
-        let remaining = remaining_parts.join("")
 
-        if remaining.length() > 0 {
+        if remaining_strs.length() > 0 {
           // remaining がある場合: まず value trial を needs_value=true のノードのみで試す
           let mut value_accepted = false
-          let remaining_g = @unicodegrapheme.graphemes(remaining)
-          let mut try_len = remaining_g.length()
+          let mut try_len = remaining_strs.length()
           while try_len > 0 {
             let try_value_parts : Array[String] = []
             for j = 0; j < try_len; j = j + 1 {
-              try_value_parts.push(remaining_g[j].to_string())
+              try_value_parts.push(remaining_strs[j])
             }
             let try_value = try_value_parts.join("")
             let mut found_accept = false
