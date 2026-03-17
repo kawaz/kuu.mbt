@@ -8,7 +8,7 @@
 ///   - deprecated (--compress → --gzip)
 ///   - variation (--wildcards/--no-wildcards, --acls/--no-acls, etc.)
 ///   - variation_reset (--no-verbose)
-///   - variation_false (--no-recursion)
+///   - variation_false (--no-wildcards, --no-acls, etc.)
 ///   - count (-v/-vv/-vvv)
 ///   - append_string (--exclude, -C)
 ///   - int_opt + post filter (--strip-components)

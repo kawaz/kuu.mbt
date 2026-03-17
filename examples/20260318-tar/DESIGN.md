@@ -28,7 +28,7 @@ GNU tar コマンドの引数パースを kuu で再現するデモ。tar の実
 | 詳細度 (-v) | 1 |
 | フィルタ・制御 (exclude/exclude-from/files-from/strip-components/transform/directory) | 6 |
 | Format (format/label/blocking-factor) | 3 |
-| フラグ (preserve-permissions/keep-old-files/touch/unlink-first/verify/interactive/absolute-names/sparse/dereference/numeric-owner/overwrite/recursion/one-file-system/totals/full-time) | 15 |
+| フラグ (preserve-permissions/keep-old-files/touch/unlink-first/verify/interactive/absolute-names/sparse/dereference/numeric-owner/overwrite/no-recursion/one-file-system/totals/full-time) | 15 |
 | Metadata override (owner/group/mode) | 3 |
 | Variation flags (wildcards/anchored/acls/selinux/xattrs) | 5 |
 | 位置引数 (FILES...) | 1 |
