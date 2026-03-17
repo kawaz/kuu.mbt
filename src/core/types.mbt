@@ -47,9 +47,8 @@ pub(all) struct PositionalEntry {
 }
 
 ///|
-pub(all) struct AliasSource {
+pub(all) struct NodeTemplate {
   make_node : (String) -> ExactNode
-  target_was_set : Ref[Bool]
   is_global : Bool
   // implicit_value 付きコンビネータの eq_fallback ノード生成ファクトリ。
   // alias 登録時に alias 名でも eq_fallback_nodes に登録するために使う。
@@ -71,7 +70,7 @@ pub(all) struct Parser {
   registered_names : Map[String, Bool]
   duplicate_errors : Array[String]
   force_unclaimed : Array[String]
-  alias_sources : Map[Int, AliasSource]
+  node_templates : Map[Int, NodeTemplate]
   // eq_split 専用フォールバックノード。implicit_value 付きコンビネータで
   // make_soft_custom_value_node の "--" ガードをバイパスする value ノードを保持。
   // OC フェーズでは使われず install_eq_split_node のみが参照する。
@@ -208,6 +207,7 @@ fn[T] ValCell::accessor(self : ValCell[T]) -> Accessor[T] {
     },
     set_quiet: fn(v) { self.cell.val = v },
     is_set: fn() { self.was_set.val },
+    mark_set: fn() { self.was_set.val = true },
     reset: fn() {
       self.cell.val = self.default_val.resolve()
       self.was_set.val = false
@@ -230,12 +230,17 @@ priv struct Accessor[T] {
   set : (T) -> Unit // cell.val = v + was_set = true
   set_quiet : (T) -> Unit // cell.val = v のみ（was_set 非更新）
   is_set : () -> Bool
+  mark_set : () -> Unit // was_set = true のみ（cell 非更新）
   reset : () -> Unit // cell = default, was_set = false
 }
 
 ///|
 /// is_set だけ差し替えた新しい Accessor を返す（alias 用）。
 /// get/set/set_quiet/reset は元の Accessor と共有。
+/// is_set だけ差し替えた新しい Accessor を返す（alias 用）。
+/// get/set/set_quiet/mark_set/reset は元の Accessor と共有。
+/// mark_set は set と同じスコープ（root の was_set）に対応するため、
+/// is_set とは異なり差し替えない。
 fn[T] Accessor::with_is_set(self : Accessor[T], is_set : () -> Bool) -> Accessor[T] {
-  { get: self.get, set: self.set, set_quiet: self.set_quiet, is_set, reset: self.reset }
+  { get: self.get, set: self.set, set_quiet: self.set_quiet, is_set, mark_set: self.mark_set, reset: self.reset }
 }

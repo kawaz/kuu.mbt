@@ -377,11 +377,10 @@ pub fn[T : Show] Parser::custom(
       self.eq_fallback_nodes.push(make_eq_fb("--" + alt))
     }
     // alias 登録時にも eq_fallback_nodes に追加できるようファクトリを保存
-    match self.alias_sources.get(opt.id) {
+    match self.node_templates.get(opt.id) {
       Some(src) =>
-        self.alias_sources[opt.id] = AliasSource::{
+        self.node_templates[opt.id] = NodeTemplate::{
           make_node: src.make_node,
-          target_was_set: src.target_was_set,
           is_global: src.is_global,
           make_eq_fallback: Some(make_eq_fb),
         }

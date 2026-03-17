@@ -6023,25 +6023,27 @@ test "link: string value forwarding" {
 }
 
 ///|
-test "clone: independent is_set" {
+test "clone: independent cell - clone set does not affect target" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
-  let verb = p.clone("--verb", verbose)
+  let v = p.clone("--verb", verbose)
   ignore(p.parse(["--verb"]))
-  inspect(verb.is_set(), content="true")
-  inspect(verbose.is_set(), content="true") // alias 動作: target も set
-  inspect(verbose.get(), content="Some(true)")
-  inspect(verb.get(), content="Some(true)")
+  assert_true(v.is_set())
+  assert_false(verbose.is_set())
+  inspect(v.get(), content="Some(true)")
+  inspect(verbose.get(), content="Some(false)")
 }
 
 ///|
-test "clone: only target used" {
+test "clone: independent cell - target set does not affect clone" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
-  let _verb = p.clone("--verb", verbose)
+  let v = p.clone("--verb", verbose)
   ignore(p.parse(["--verbose"]))
-  inspect(verbose.is_set(), content="true")
+  assert_true(verbose.is_set())
+  assert_false(v.is_set())
   inspect(verbose.get(), content="Some(true)")
+  inspect(v.get(), content="Some(false)")
 }
 
 ///|
@@ -6070,6 +6072,30 @@ test "clone: both unused" {
   inspect(verb.is_set(), content="false")
   inspect(verbose.get(), content="Some(false)")
   inspect(verb.get(), content="Some(false)")
+}
+
+///|
+test "clone: both set independently" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=80)
+  let clone_port = p.clone("--port2", port)
+  ignore(p.parse(["--port", "3000", "--port2", "8080"]))
+  inspect(port.get(), content="Some(3000)")
+  inspect(clone_port.get(), content="Some(8080)")
+}
+
+///|
+test "clone: string_opt independent cell" {
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost")
+  let host2 = p.clone("--host2", host)
+  ignore(p.parse(["--host2", "example.com"]))
+  inspect(host.get(), content=(
+    #|Some("localhost")
+  ))
+  inspect(host2.get(), content=(
+    #|Some("example.com")
+  ))
 }
 
 ///|
@@ -6138,8 +6164,8 @@ test "practical: clone + adjust for derived option" {
   p.adjust(secure_port, after_post=Filter::map(fn(v) { v + 443 }))
   ignore(p.parse(["--secure-port", "100"]))
   inspect(secure_port.get(), content="Some(543)")
-  // clone は alias ベースなので port にも反映される（v1 制約）
-  inspect(port.get(), content="Some(543)")
+  // clone は独立 cell: port は影響を受けない
+  inspect(port.get(), content="Some(80)")
 }
 
 // ===== ValCell / Accessor tests (DR-045) =====
@@ -6269,4 +6295,39 @@ test "ValCell: reset on shared accessors propagates" {
   (acc1.reset)()
   assert_eq((acc2.get)(), 0)
   assert_eq((acc2.is_set)(), false)
+}
+
+///|
+test "link: propagate_set=true updates target is_set" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let debug = p.flag(name="debug")
+  p.link(debug, source=verbose, propagate_set=true)
+  ignore(p.parse(["--verbose"]))
+  assert_true(verbose.is_set())
+  assert_true(debug.is_set()) // propagate_set=true なので debug.is_set() も true
+  inspect(debug.get(), content="Some(true)")
+}
+
+///|
+test "alias chain: root was_set propagates through chained aliases" {
+  let p = Parser::new()
+  let opt = p.string_opt(name="host", default="localhost")
+  let alias1 = p.alias("--h1", opt)
+  let alias2 = p.alias("--h2", alias1)
+  ignore(p.parse(["--h2", "example.com"]))
+  // alias2 使用時: opt と alias2 の is_set が true、alias1 は false（独立 is_set）
+  assert_true(opt.is_set())
+  assert_true(alias2.is_set())
+  assert_false(alias1.is_set())
+  // 値は全て共有（alias は Accessor 共有）
+  inspect(opt.get(), content=(
+    #|Some("example.com")
+  ))
+  inspect(alias1.get(), content=(
+    #|Some("example.com")
+  ))
+  inspect(alias2.get(), content=(
+    #|Some("example.com")
+  ))
 }

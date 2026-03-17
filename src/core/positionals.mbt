@@ -127,7 +127,7 @@ pub fn Parser::serial(
     registered_names: {},
     duplicate_errors: [],
     force_unclaimed: [],
-    alias_sources: Map::new(),
+    node_templates: Map::new(),
     eq_fallback_nodes: [],
     deprecated_usages: [],
   }

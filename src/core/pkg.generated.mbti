@@ -15,13 +15,6 @@ pub(all) suberror ParseError {
 }
 
 // Types and methods
-pub(all) struct AliasSource {
-  make_node : (String) -> ExactNode
-  target_was_set : @ref.Ref[Bool]
-  is_global : Bool
-  make_eq_fallback : ((String) -> ExactNode)?
-}
-
 pub(all) struct CmdResult {
   name : String
   parser : Parser
@@ -59,6 +52,12 @@ pub(all) enum Lazy[T] {
   Thunk(() -> T)
 }
 pub fn[T] Lazy::resolve(Self[T]) -> T
+
+pub(all) struct NodeTemplate {
+  make_node : (String) -> ExactNode
+  is_global : Bool
+  make_eq_fallback : ((String) -> ExactNode)?
+}
 
 pub(all) struct Opt[T] {
   id : Int
@@ -135,7 +134,7 @@ pub(all) struct Parser {
   registered_names : Map[String, Bool]
   duplicate_errors : Array[String]
   force_unclaimed : Array[String]
-  alias_sources : Map[Int, AliasSource]
+  node_templates : Map[Int, NodeTemplate]
   eq_fallback_nodes : Array[ExactNode]
   deprecated_usages : Array[(String, String)]
 }
@@ -158,7 +157,7 @@ pub fn Parser::flag(Self, name~ : String, default? : Bool, default_fn? : (() -> 
 pub fn Parser::generate_help(Self) -> String
 pub fn[T] Parser::get(Self, Opt[T]) -> T?
 pub fn Parser::int_opt(Self, name~ : String, default~ : Int, default_fn? : (() -> Int)?, global? : Bool, aliases? : Array[String], shorts? : String, description? : String, env? : String, value_name? : String, hidden? : Bool, post? : FilterChain[Int, Int]?, choices? : Array[String], implicit_value? : Lazy[Int]?, variations? : Array[Variation], variation_toggle? : String?, variation_true? : String?, variation_false? : String?, variation_reset? : String?, variation_unset? : String?) -> Opt[Int]
-pub fn[T] Parser::link(Self, Opt[T], source~ : Opt[T]) -> Unit
+pub fn[T] Parser::link(Self, Opt[T], source~ : Opt[T], propagate_set? : Bool) -> Unit
 pub fn Parser::never(Self) -> Unit
 pub fn Parser::new(dashdash? : Bool) -> Self
 pub fn Parser::parse(Self, Array[String]) -> ParseResult raise ParseError

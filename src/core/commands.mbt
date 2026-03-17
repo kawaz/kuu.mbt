@@ -29,7 +29,7 @@ pub fn Parser::cmd(
     registered_names: {},
     duplicate_errors: [],
     force_unclaimed: [],
-    alias_sources: Map::new(),
+    node_templates: Map::new(),
     eq_fallback_nodes: [],
     deprecated_usages: [],
   }
@@ -111,9 +111,8 @@ pub fn Parser::cmd(
   for cmd in all_names {
     self.nodes.push(make_cmd_node(cmd))
   }
-  self.alias_sources[id] = AliasSource::{
+  self.node_templates[id] = NodeTemplate::{
     make_node: make_cmd_node,
-    target_was_set: vc.was_set,
     is_global: false,
     make_eq_fallback: None,
   }
@@ -140,6 +139,7 @@ pub fn Parser::cmd(
     set: fn(v) { vc.cell.val = Some(v); vc.was_set.val = true },
     set_quiet: fn(v) { vc.cell.val = Some(v) },
     is_set: fn() { vc.was_set.val },
+    mark_set: fn() { vc.was_set.val = true },
     reset: fn() { vc.cell.val = None; vc.was_set.val = false },
   }
   { id, name, accessor: cmd_acc, parsed: child.parsed }
