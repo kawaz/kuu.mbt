@@ -120,4 +120,24 @@ describe("npm CLI integration (full schema)", () => {
     const result = parse(npmSchema, []);
     expect(result.ok).toBe(false);
   });
+
+  // --- = 形式のオプション指定 ---
+
+  it("npm publish --tag=beta → = 形式でオプション指定", () => {
+    const result = parse(npmSchema, ["publish", "--tag=beta"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("publish");
+      expect(result.command?.values.tag).toBe("beta");
+    }
+  });
+
+  it("npm install --omit=dev → = 形式で append_string", () => {
+    const result = parse(npmSchema, ["install", "--omit=dev"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("install");
+      expect(result.command?.values.omit).toEqual(["dev"]);
+    }
+  });
 });

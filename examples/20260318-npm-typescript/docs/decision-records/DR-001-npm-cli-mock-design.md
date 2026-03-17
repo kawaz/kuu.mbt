@@ -76,6 +76,20 @@ examples/20260318-npm-typescript/
 - **Vitest**: テストフレームワーク
 - **tsx**: TypeScript 直接実行
 
-## 発見・課題（実装中に追記）
+## 発見・課題
 
-（実装しながら追記予定）
+### kuu WASM bridge の能力確認
+
+1. **command 内の exclusive が正常動作**: install の save フラグ群（6個相互排他）が期待通り機能
+2. **ネストコマンドの結果構造が明確**: `result.command.command` で audit > fix のような2段ネストを取得可能
+3. **variation_false がオプトレベルで機能**: version の `--no-git-tag-version` が正しく `false` を返す
+4. **global:true オプションがコマンド前後どちらでも有効**: `--json install` も `install --json` も動作
+5. **= 形式のオプション指定が動作**: `--tag=beta` のような形式もパース可能
+6. **dashdash 後の引数なしケースも正常**: `npm run test --` で `["--"]` が空配列
+
+### TypeScript DX の課題
+
+1. **WASM-GC の型定義が未整備**: `WebAssembly.instantiate` の第3引数に `@ts-expect-error` が必要
+2. **結果の values が `Record<string, unknown>`**: 型安全な値取得には型ガードが必要
+3. **positional 未指定時のデフォルトが空文字列**: `""` が返る（null や undefined ではない）
+4. **env フィールドはヘルプ表示用のみ**: WASM bridge の JSON API では実際の環境変数値取得は別途 env map を渡す必要がある

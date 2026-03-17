@@ -50,3 +50,16 @@ kuu-bridge.ts (WASM ロード + パース)
 - 各コマンドごとにテストファイルを分離
 - TDD: テストを先に書き、スキーマ定義を後から実装
 - kuu_parse の JSON API を直接テスト（結果の values/command を検証）
+
+## テスト構成（79件）
+
+| ファイル | 件数 | 検証内容 |
+|---------|------|---------|
+| kuu-bridge.test.ts | 6 | WASM bridge 基本動作 |
+| install.test.ts | 17 | exclusive, shorts, append_string, rest |
+| run.test.ts | 9 | dashdash, positional, エッジケース |
+| publish.test.ts | 9 | choices, flag, positional |
+| audit.test.ts | 9 | nested command, shorts |
+| config.test.ts | 8 | nested command, require_cmd |
+| version.test.ts | 9 | variation, default 値 |
+| integration.test.ts | 12 | global opts, cross-command, = 形式 |
