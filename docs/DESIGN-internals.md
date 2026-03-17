@@ -4,6 +4,46 @@
 
 ---
 
+## パースライフサイクル
+
+```
+引数入力
+  → [parsed ガード] — 同一 Parser での2回呼び出しを禁止（DR-026）
+  → [validate_no_duplicate_names] — 重複名を検出して ParseError
+  → [install_eq_split_node] — --name=value 対応
+  → [install_short_combine_node] — -abc 対応
+  → [OC Phase] — ExactNode 走査 + 最長一致 + greedy positional
+  → [P Phase] — force_unclaimed + unclaimed を non-greedy positional で消費
+  → [post_hooks] — 値変換・遅延バリデーション（exclusive, required 等）
+  → [parsed = true]
+```
+
+post_hooks は `Parser.post_hooks: Array[() -> Unit raise ParseError]` として実装されており、string_opt の `post` パラメータや exclusive/required の制約チェックなど、パース後のクロスカッティングな処理に使用。
+
+---
+
+## register_option — 共通登録パイプライン（DR-025）
+
+全コンビネータが使う統一的な登録パイプライン:
+
+```
+register_option[T](name, shorts, aliases, variations, global, hidden, ...):
+  1. wrap_node_with_set — committed 追跡のラッパーを付与
+  2. expand_and_register — 以下を展開:
+     a. "--{name}" のメインノードを登録
+     b. shorts 文字列の各文字を "-{c}" として登録
+     c. aliases の各名前を "--{alias}" として登録
+     d. variations の各パターンを "--{prefix}-{name}" として登録
+     e. 名前重複を registered_names に記録（遅延検証用）
+  3. OptMeta を metas に追加
+  4. NodeTemplate を node_templates に登録（alias/clone 用）
+  5. Opt[T] を生成して返却
+```
+
+custom[T : Show] がこのパイプラインの汎用入口。string_opt, int_opt は custom のシュガー。flag, count は consumed 値が異なるため register_option を直接使用。
+
+---
+
 ## Parser struct
 
 ```moonbit
@@ -159,24 +199,6 @@ fn make_reducer[T, U](
 
 ---
 
-## パースライフサイクル
-
-```
-引数入力
-  → [parsed ガード] — 同一 Parser での2回呼び出しを禁止（DR-026）
-  → [validate_no_duplicate_names] — 重複名を検出して ParseError
-  → [install_eq_split_node] — --name=value 対応
-  → [install_short_combine_node] — -abc 対応
-  → [OC Phase] — ExactNode 走査 + 最長一致 + greedy positional
-  → [P Phase] — force_unclaimed + unclaimed を non-greedy positional で消費
-  → [post_hooks] — 値変換・遅延バリデーション（exclusive, required 等）
-  → [parsed = true]
-```
-
-post_hooks は `Parser.post_hooks: Array[() -> Unit raise ParseError]` として実装されており、string_opt の `post` パラメータや exclusive/required の制約チェックなど、パース後のクロスカッティングな処理に使用。
-
----
-
 ## OptMeta — ヘルプ生成用メタ情報
 
 ```moonbit
@@ -207,28 +229,6 @@ pub(all) struct OptMeta {
 5. Options / Global Options セクション
 
 `inject_help_node()` が `--help` / `-h` を ExactNode として自動登録。ユーザーが `name="help"` や `shorts="h"` を登録済みの場合、衝突する built-in ノードをスキップ。
-
----
-
-## register_option — 共通登録パイプライン（DR-025）
-
-全コンビネータが使う統一的な登録パイプライン:
-
-```
-register_option[T](name, shorts, aliases, variations, global, hidden, ...):
-  1. wrap_node_with_set — committed 追跡のラッパーを付与
-  2. expand_and_register — 以下を展開:
-     a. "--{name}" のメインノードを登録
-     b. shorts 文字列の各文字を "-{c}" として登録
-     c. aliases の各名前を "--{alias}" として登録
-     d. variations の各パターンを "--{prefix}-{name}" として登録
-     e. 名前重複を registered_names に記録（遅延検証用）
-  3. OptMeta を metas に追加
-  4. NodeTemplate を node_templates に登録（alias/clone 用）
-  5. Opt[T] を生成して返却
-```
-
-custom[T : Show] がこのパイプラインの汎用入口。string_opt, int_opt は custom のシュガー。flag, count は consumed 値が異なるため register_option を直接使用。
 
 ---
 

@@ -241,6 +241,37 @@ clap で `num_args=0..=1` + サブコマンド衝突が起きる問題を、kuu 
 
 **ブロッカー**: なし（既存の implicit_value + custom[T] で PoC 可能）
 
+### リファレンス品質の examples
+
+現状: examples/ トップレベルは空（全て archives/ に移動済み）。
+
+#### 新規 example の方針
+
+API が安定したら、リファレンス品質の example を作成する:
+
+| example | モデル | 検証対象 |
+|---------|--------|---------|
+| docker | Docker CLI | deep nesting, exclusive, required, global |
+| kubectl | kubectl | `-f` のサブコマンド別バインド, dashdash, choices |
+| git | git | 複雑なサブコマンド構造, positional, rest |
+| cargo | cargo | ワークスペース系, --manifest-path |
+| curl | curl | 大量の単発オプション, `--data @file` |
+
+**ブロッカー**: API 安定化
+
+#### 多言語 example
+
+同一 CLI 仕様を複数言語で実装し、DX の比較素材にする:
+
+```
+examples/
+  {date}-{name}-moonbit/   # MoonBit 版
+  {date}-{name}-typescript/ # TypeScript 版
+  {date}-{name}-go/         # Go 版
+```
+
+**ブロッカー**: 各言語 DX の最低限の動作
+
 ---
 
 ## 多言語展開（構想）
@@ -601,39 +632,6 @@ WASM bridge を npm パッケージとして公開。`@kawaz/kuu` または `kuu
 
 ---
 
-## リファレンス品質の examples
-
-現状: examples/ トップレベルは空（全て archives/ に移動済み）。
-
-### 新規 example の方針
-
-API が安定したら、リファレンス品質の example を作成する:
-
-| example | モデル | 検証対象 |
-|---------|--------|---------|
-| docker | Docker CLI | deep nesting, exclusive, required, global |
-| kubectl | kubectl | `-f` のサブコマンド別バインド, dashdash, choices |
-| git | git | 複雑なサブコマンド構造, positional, rest |
-| cargo | cargo | ワークスペース系, --manifest-path |
-| curl | curl | 大量の単発オプション, `--data @file` |
-
-**ブロッカー**: API 安定化
-
-### 多言語 example
-
-同一 CLI 仕様を複数言語で実装し、DX の比較素材にする:
-
-```
-examples/
-  {date}-{name}-moonbit/   # MoonBit 版
-  {date}-{name}-typescript/ # TypeScript 版
-  {date}-{name}-go/         # Go 版
-```
-
-**ブロッカー**: 各言語 DX の最低限の動作
-
----
-
 ## 長期
 
 ### @file 展開
@@ -703,9 +701,7 @@ struct Config {
 
 **ブロッカー**: MoonBit 言語機能の追加
 
----
-
-## パースライフサイクルの将来形
+### パースライフサイクルの将来形
 
 ```
 引数入力 → [PreProcess] → [Reduce] → [Validate] → [Finalize] → [Output]

@@ -34,9 +34,7 @@ match result {
 
 **統一的な処理**: `-abc` ショート結合、`--color`/`--color=always` の共存、choices バリデーションが全て同一のアルゴリズムで解決される。メインのパースループに特殊分岐が一切ない。
 
-**4層レイヤー**: Sugar（`flag()` 等のユーザーAPI）→ Convention（名前展開）→ Pattern（最長一致統合）→ Core（ExactNode 走査）。各層は ExactNode の生成と登録に統一。
-
-**型安全**: `Opt[T]` が返す値はコンビネータ定義時の型がそのまま保持される。ダウンキャスト不要、ResultMap 不要。
+**型安全**: `Opt[T]` が返す値はコンビネータ定義時の型がそのまま保持される。型キャスト不要。
 
 **直交コンビネータ**: alias / clone / link / adjust の合成で、複雑なオプション関係（別名、値転送、値変換、非推奨など）を宣言的に表現できる。
 
@@ -47,30 +45,15 @@ match result {
 
 **位置引数:** `positional`, `rest`, `serial`, `never`
 
-**サブコマンド:** `cmd` (→ `Opt[CmdResult]`), `sub` (→ `Parser`), `require_cmd`
+**サブコマンド:** `cmd`, `sub`, `require_cmd` -- ネストしたサブコマンドにも対応
 
 **制約:** `exclusive`, `required`, `at_least_one`
 
-**別名・合成:** `alias` (値共有 + is_set 独立、チェーン対応), `deprecated` (非推奨警告付き), `clone` (構造コピー), `link` (値転送), `adjust` (値変換)
+**別名・合成:** `alias` (別名定義、チェーン対応), `deprecated` (非推奨警告付き), `clone` (独立コピー), `link` (値転送), `adjust` (値変換)
 
-**フィルタ:** `FilterChain` — `map`, `validate`, `parse` + `then` で Kleisli 合成。Accumulator で変換と蓄積を分離
+**フィルタ:** `FilterChain` -- `map`, `validate`, `parse` を連鎖して型変換やバリデーションを宣言的に合成
 
 **その他:** `dashdash`, `append_dashdash`, `Variation` (Toggle/True/False/Reset/Unset), `choices`, `implicit_value`, `global`, `hidden`, `stop_before`, `default_fn`, 自動ヘルプ生成
-
-## Architecture
-
-コア内部は4層レイヤー + OC/P 2フェーズパースで構成:
-
-```
-Sugar:       flag(), string_opt(), custom[T](), cmd(), ...
-Convention:  expand_and_register — name + aliases + shorts + variations 展開
-Pattern:     make_or_node — 最長一致で複合ノード統合
-Core:        ExactNode (try_reduce) + OC/P 消費ループ
-```
-
-OC Phase で ExactNode を投機実行 + 最長一致マッチ。P Phase で unclaimed 引数を non-greedy positional に割り当て。install ノード（eq_split, short_combine, separator）が特殊構文を ExactNode に変換し、メインループから特殊分岐を完全に排除する。
-
-詳細は `docs/DESIGN-v2.md` を参照。
 
 ## Build & Test
 
@@ -84,12 +67,21 @@ just size     # binary size report
 
 ## Examples
 
-`examples/` に多言語デモあり:
+`examples/` にサンプルコードあり:
 
-- `20260308-mydocker` — MoonBit: Docker CLI サブセット (sub nesting, exclusive, required)
-- `20260309-mydocker-go` — Go: kuu WASM bridge 経由での Docker CLI パース
-- `20260309-kubectl` — MoonBit: kubectl サブコマンド構造
+- `20260308-mydocker` -- MoonBit: Docker CLI サブセット (サブコマンドネスト, exclusive, required)
+- `20260309-kubectl` -- MoonBit: kubectl サブコマンド構造
+
+`examples/archives/` には WASM bridge (PoC) 経由で他言語から kuu を利用する実験的なデモも含む:
+
+- `20260309-mydocker-go` -- Go + WASM bridge 経由での Docker CLI パース
 - 他: curl, gcc, cargo(Python), spm(Swift), git(TypeScript) 等
+
+> **Note**: 多言語対応 (WASM bridge, 各言語向け DX API) は構想・PoC 段階です。安定した API として MoonBit から直接利用できます。
+
+## Architecture
+
+内部設計の詳細は `docs/DESIGN-v2.md` を参照。
 
 ## License
 

@@ -217,9 +217,56 @@ fn make_reducer[T, U](
 
 ---
 
+## 多言語エンジン基盤（構想）
+
+> 以下は設計構想であり、確定事項ではない。詳細は各 DR を参照。
+
+core は純粋関数ベースの薄いパースエンジンに留め、言語固有の型安全アクセスは各言語の DX 層で提供する。依存方向は `dx → core` の一方向。core は dx を知らない。
+
+### 多言語基盤の4層アーキテクチャ（DR-036 構想）
+
+```
+DX API (各言語)  ← 言語イディオムに沿った型安全 API
+  ↓
+KuuCore (各言語) ← JSON 力学を隠蔽。コールバック仲介。バックエンド抽象化
+  ↓
+Bridge           ← core との接続層（方式は言語ごとに異なる、下記参照）
+  ↓
+Core (MoonBit)   ← 純粋パースエンジン
+```
+
+### 各言語への提供形式（検討中）
+
+core を各言語から利用する方式は未確定。言語ごとに最適な方式が異なり、ランタイムの成熟度にも依存する（DR-033, DR-046, DR-047）:
+
+| 方式 | 概要 | 現状 |
+|------|------|------|
+| V8 WASM-GC | JS/TS から直接ロード | PoC 実装あり（src/wasm/）。JSON schema → core → JSON result |
+| wasmtime 埋め込み | Rust, Python から WASM-GC バイナリをロード | wasmtime v27+ で WASM-GC 対応。PoC 未着手 |
+| Node.js サブプロセス | Go, Swift 等。JSON ブリッジ | PoC 実装あり。プロセス起動オーバーヘッドあり |
+| MoonBit native → C FFI | 全言語から C FFI で接続 | MoonBit native バックエンド成熟待ち |
+| core 再実装 | 各言語でネイティブ実装 | テストケース共有で品質保証する構想 |
+
+### MoonBit DX 層（DR-042、実装済み）
+
+struct-first 方式。Parseable trait + FieldRegistry + parse_into の2フェーズ:
+
+1. **register フェーズ**: ユーザーの struct が `Parseable` trait を実装し、`register(self, registry)` で各フィールドを登録。registry は core の Parser にオプションを登録しつつ、apply_fn クロージャを蓄積
+2. **apply フェーズ**: parse 成功後、蓄積した apply_fn を順に実行してユーザーの struct に値を注入。parse 失敗時は apply されない（トランザクショナル）
+
+apply_fn パターンにより、core 側の Ref[T] が DX 層に漏洩しない。
+
+### Opt 定義の AST 可搬性（DR-029, DR-030 構想）
+
+Opt 定義は純粋データ（定義レベルではクロージャなし）。JSON にシリアライズして他言語に転送可能な構想:
+- 静的定義（flag, string_opt, int_opt, count, append, choices, implicit_value, variations, aliases）: JSON で完全表現
+- 動的部分（custom[T], post フィルタ）: ターゲット言語側で実装する未定義スロットとして表現。型システムが補完をガイド
+
+---
+
 ## 投機実行 + 最長一致パースモデル
 
-### コア内部4層レイヤーアーキテクチャ
+### パースエンジン内部の4層構造
 
 ```
 Sugar:       flag(), string_opt(), custom[T](), cmd(), ...
@@ -413,53 +460,6 @@ ValCell[T] が値（cell）と状態（committed）とデフォルト値（defau
 - **Opt.used**: この Opt 名が使われたかを示すクロージャ（DR-048）。通常は `vc.committed` と同値、alias/clone では独立した `opt_used` フラグ
 
 この分離により、clone は独立した ValCell + 独自の Accessor を持ち、alias は target の Accessor を共有しつつ used のみ独立させる、という構成が自然に表現される。
-
----
-
-## 多言語エンジン基盤（構想）
-
-> 以下は設計構想であり、確定事項ではない。詳細は各 DR を参照。
-
-core は純粋関数ベースの薄いパースエンジンに留め、言語固有の型安全アクセスは各言語の DX 層で提供する。依存方向は `dx → core` の一方向。core は dx を知らない。
-
-### 多言語基盤の4層アーキテクチャ（DR-036 構想）
-
-```
-DX API (各言語)  ← 言語イディオムに沿った型安全 API
-  ↓
-KuuCore (各言語) ← JSON 力学を隠蔽。コールバック仲介。バックエンド抽象化
-  ↓
-Bridge           ← core との接続層（方式は言語ごとに異なる、下記参照）
-  ↓
-Core (MoonBit)   ← 純粋パースエンジン
-```
-
-### 各言語への提供形式（検討中）
-
-core を各言語から利用する方式は未確定。言語ごとに最適な方式が異なり、ランタイムの成熟度にも依存する（DR-033, DR-046, DR-047）:
-
-| 方式 | 概要 | 現状 |
-|------|------|------|
-| V8 WASM-GC | JS/TS から直接ロード | PoC 実装あり（src/wasm/）。JSON schema → core → JSON result |
-| wasmtime 埋め込み | Rust, Python から WASM-GC バイナリをロード | wasmtime v27+ で WASM-GC 対応。PoC 未着手 |
-| Node.js サブプロセス | Go, Swift 等。JSON ブリッジ | PoC 実装あり。プロセス起動オーバーヘッドあり |
-| MoonBit native → C FFI | 全言語から C FFI で接続 | MoonBit native バックエンド成熟待ち |
-| core 再実装 | 各言語でネイティブ実装 | テストケース共有で品質保証する構想 |
-
-### MoonBit DX 層（DR-042、実装済み）
-
-struct-first 方式。Parseable trait + FieldRegistry + parse_into の2フェーズ:
-
-1. **register フェーズ**: ユーザーの struct が `Parseable` trait を実装し、`register(self, registry)` で各フィールドを登録。registry は core の Parser にオプションを登録しつつ、apply_fn クロージャを蓄積
-2. **apply フェーズ**: parse 成功後、蓄積した apply_fn を順に実行してユーザーの struct に値を注入。parse 失敗時は apply されない（トランザクショナル）
-
-apply_fn パターンにより、core 側の Ref[T] が DX 層に漏洩しない。
-
-### Opt 定義の AST 可搬性（DR-029, DR-030 構想）
-
-Opt 定義は純粋データ（定義レベルではクロージャなし）。JSON にシリアライズして他言語に転送可能な構想:
-- 静的定義（flag, string_opt, int_opt, count, append, choices, implicit_value, variations, aliases）: JSON で完全表現
-- 動的部分（custom[T], post フィルタ）: ターゲット言語側で実装する未定義スロットとして表現。型システムが補完をガイド
 
 ---
 
