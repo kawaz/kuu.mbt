@@ -1,3 +1,5 @@
+> **Deprecation Notice**: このドキュメントは旧設計書（Phase 1-4）です。現行設計は [DESIGN.md](DESIGN.md) を参照してください。
+
 # CLI 引数パーサ設計書
 
 ## Context
