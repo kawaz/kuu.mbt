@@ -6146,21 +6146,21 @@ test "practical: clone + adjust for derived option" {
 
 ///|
 test "ValCell: new creates cell with default value and was_set=false" {
-  let vc : ValCell[Int] = ValCell::new(42)
+  let vc : ValCell[Int] = ValCell::new(Val(42))
   assert_eq(vc.cell.val, 42)
   assert_eq(vc.was_set.val, false)
 }
 
 ///|
 test "ValCell: accessor get returns cell value" {
-  let vc = ValCell::new(10)
+  let vc = ValCell::new(Val(10))
   let acc = vc.accessor()
   assert_eq((acc.get)(), 10)
 }
 
 ///|
 test "ValCell: accessor set updates value and was_set" {
-  let vc = ValCell::new(0)
+  let vc = ValCell::new(Val(0))
   let acc = vc.accessor()
   (acc.set)(99)
   assert_eq((acc.get)(), 99)
@@ -6169,7 +6169,7 @@ test "ValCell: accessor set updates value and was_set" {
 
 ///|
 test "ValCell: accessor set_quiet updates value without was_set" {
-  let vc = ValCell::new(0)
+  let vc = ValCell::new(Val(0))
   let acc = vc.accessor()
   (acc.set_quiet)(99)
   assert_eq((acc.get)(), 99)
@@ -6178,7 +6178,7 @@ test "ValCell: accessor set_quiet updates value without was_set" {
 
 ///|
 test "ValCell: accessor reset restores default and clears was_set" {
-  let vc = ValCell::new(42)
+  let vc = ValCell::new(Val(42))
   let acc = vc.accessor()
   (acc.set)(100)
   assert_eq((acc.get)(), 100)
@@ -6190,7 +6190,7 @@ test "ValCell: accessor reset restores default and clears was_set" {
 
 ///|
 test "ValCell: clone creates independent cell with same default" {
-  let vc1 = ValCell::new(5)
+  let vc1 = ValCell::new(Val(5))
   let acc1 = vc1.accessor()
   (acc1.set)(10)
   let vc2 = vc1.clone()
@@ -6205,7 +6205,7 @@ test "ValCell: clone creates independent cell with same default" {
 
 ///|
 test "ValCell: multiple accessors share same cell" {
-  let vc = ValCell::new(0)
+  let vc = ValCell::new(Val(0))
   let acc1 = vc.accessor()
   let acc2 = vc.accessor()
   (acc1.set)(42)
@@ -6215,7 +6215,7 @@ test "ValCell: multiple accessors share same cell" {
 
 ///|
 test "ValCell: set → reset → set cycle" {
-  let vc = ValCell::new(42)
+  let vc = ValCell::new(Val(42))
   let acc = vc.accessor()
   (acc.set)(99)
   assert_eq((acc.get)(), 99)
@@ -6230,7 +6230,7 @@ test "ValCell: set → reset → set cycle" {
 
 ///|
 test "ValCell: clone bidirectional independence" {
-  let vc1 = ValCell::new(0)
+  let vc1 = ValCell::new(Val(0))
   let acc1 = vc1.accessor()
   let vc2 = vc1.clone()
   let acc2 = vc2.accessor()
@@ -6246,7 +6246,7 @@ test "ValCell: clone bidirectional independence" {
 
 ///|
 test "ValCell: set_quiet then set updates was_set" {
-  let vc = ValCell::new(0)
+  let vc = ValCell::new(Val(0))
   let acc = vc.accessor()
   // set_quiet: 値は変わるが was_set は false
   (acc.set_quiet)(50)
@@ -6260,7 +6260,7 @@ test "ValCell: set_quiet then set updates was_set" {
 
 ///|
 test "ValCell: reset on shared accessors propagates" {
-  let vc = ValCell::new(0)
+  let vc = ValCell::new(Val(0))
   let acc1 = vc.accessor()
   let acc2 = vc.accessor()
   (acc1.set)(42)

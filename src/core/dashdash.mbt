@@ -38,7 +38,7 @@ pub fn Parser::dashdash(
   stop_before? : Array[String] = [],
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
-  let vc : ValCell[Array[String]] = ValCell::new([])
+  let vc : ValCell[Array[String]] = ValCell::new(Thunk(fn() { [] }))
   let sep = separator
   let stop = stop_before
   let dashdash_node = ExactNode::{
@@ -72,7 +72,7 @@ pub fn Parser::append_dashdash(
   stop_before? : Array[String] = [],
 ) -> Opt[Array[Array[String]]] {
   let id = (self.next_id)()
-  let vc : ValCell[Array[Array[String]]] = ValCell::new([])
+  let vc : ValCell[Array[Array[String]]] = ValCell::new(Thunk(fn() { [] }))
   let sep = separator
   let stop = stop_before
   let node = ExactNode::{

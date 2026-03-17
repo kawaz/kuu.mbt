@@ -42,7 +42,7 @@ pub fn Parser::flag(
     Some(f) => f()
     None => default
   }
-  let vc : ValCell[Bool] = ValCell::new(initial_val)
+  let vc : ValCell[Bool] = ValCell::new(Val(initial_val))
   let pending : Ref[Bool] = { val: initial_val }
   let reset_fn = fn() { vc.cell.val = initial_val; pending.val = initial_val }
   let positive_match = fn() {
@@ -230,7 +230,7 @@ pub fn Parser::count(
     variations, variation_toggle~, variation_true~, variation_false~,
     variation_reset~, variation_unset~,
   )
-  let vc : ValCell[Int] = ValCell::new(0)
+  let vc : ValCell[Int] = ValCell::new(Val(0))
   let pending : Ref[Int] = { val: 0 }
   let reset_fn = fn() { vc.cell.val = 0; pending.val = 0 }
   let positive_match = fn() {
@@ -293,7 +293,7 @@ pub fn[T : Show] Parser::custom(
   } else {
     description
   }
-  let vc : ValCell[T] = ValCell::new(initial_val)
+  let vc : ValCell[T] = ValCell::new(Val(initial_val))
   let has_choices = choices.length() > 0
   let has_implicit = implicit_value is Some(_)
 
@@ -412,7 +412,7 @@ pub fn[T] Parser::custom_append(
   variations? : Array[Variation] = [],
   pre~ : FilterChain[String, T],
 ) -> Opt[Array[T]] {
-  let vc : ValCell[Array[T]] = ValCell::new([])
+  let vc : ValCell[Array[T]] = ValCell::new(Thunk(fn() { [] }))
   let reset_fn = fn() { vc.cell.val = [] }
   let display_value_name = if value_name == "" { name.to_upper() } else { value_name }
   self.register_option(

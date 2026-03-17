@@ -8,7 +8,7 @@ pub fn Parser::positional(
   greedy~ : Bool = false,
 ) -> Opt[String] {
   let id = (self.next_id)()
-  let vc : ValCell[String] = ValCell::new("")
+  let vc : ValCell[String] = ValCell::new(Val(""))
   let pending : Ref[String] = { val: "" }
   ignore(name)
   let handler : (Array[String], Int) -> TryResult = fn(
@@ -50,7 +50,7 @@ pub fn Parser::rest(
   stop_before? : Array[String] = [],
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
-  let vc : ValCell[Array[String]] = ValCell::new([])
+  let vc : ValCell[Array[String]] = ValCell::new(Thunk(fn() { [] }))
   ignore(name)
   let stop = stop_before
   let handler : (Array[String], Int) -> TryResult = fn(

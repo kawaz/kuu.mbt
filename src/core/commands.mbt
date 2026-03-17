@@ -8,7 +8,7 @@ pub fn Parser::cmd(
   aliases? : Array[String] = [],
 ) -> Opt[CmdResult] {
   let id = (self.next_id)()
-  let vc : ValCell[CmdResult?] = ValCell::new(None)
+  let vc : ValCell[CmdResult?] = ValCell::new(Val(None))
   let child_nodes : Array[ExactNode] = []
   let child_global_nodes : Array[ExactNode] = []
   for gnode in self.global_nodes {

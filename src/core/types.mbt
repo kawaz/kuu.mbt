@@ -183,21 +183,18 @@ pub fn[T] Lazy::resolve(self : Lazy[T]) -> T {
 /// 値の格納・状態管理を担う最小単位。cell + was_set + default を内包する。
 /// core 内部専用（pub にしない）。
 ///
-/// 注意: default_val は cell.val と同一参照を共有する。T が Array 等の mutable 型の場合、
-/// cell.val への in-place 変更（push 等）が default_val を汚染する。
-/// そのため Accessor::reset() は immutable T（Int, Bool, String 等）でのみ安全に使用可能。
-/// mutable T のリセットは vc.cell.val = <新しい値> で直接行うこと。
-/// Phase 2+ で factory パターンへの移行を検討する。
+/// default_val は Lazy[T] で保持する。Thunk を使えば reset のたびに新しいインスタンスを
+/// 生成できるため、Array 等の mutable T でも参照共有問題が起きない。
 ///|
 priv struct ValCell[T] {
   cell : Ref[T]
   was_set : Ref[Bool]
-  default_val : T
+  default_val : Lazy[T]
 }
 
 ///|
-fn[T] ValCell::new(default : T) -> ValCell[T] {
-  { cell: { val: default }, was_set: { val: false }, default_val: default }
+fn[T] ValCell::new(default : Lazy[T]) -> ValCell[T] {
+  { cell: { val: default.resolve() }, was_set: { val: false }, default_val: default }
 }
 
 ///|
@@ -212,14 +209,14 @@ fn[T] ValCell::accessor(self : ValCell[T]) -> Accessor[T] {
     set_quiet: fn(v) { self.cell.val = v },
     is_set: fn() { self.was_set.val },
     reset: fn() {
-      self.cell.val = self.default_val
+      self.cell.val = self.default_val.resolve()
       self.was_set.val = false
     },
   }
 }
 
 /// default_val で新しい独立した ValCell を作る。現在の cell.val はコピーしない。
-/// 注意: T が mutable 型の場合、元の default_val への in-place 変更が clone にも影響する。
+/// Lazy[T] により Thunk の場合は clone ごとに新しいインスタンスが生成される。
 ///|
 fn[T] ValCell::clone(self : ValCell[T]) -> ValCell[T] {
   ValCell::new(self.default_val)
