@@ -21,10 +21,13 @@ pub(all) enum ErrorKind {
   DuplicateDefinition // オプション定義の重複（プログラミングエラー）
   AtLeastOneRequired  // at_least_one 制約違反
   DependencyMissing   // requires 制約違反
-  DeprecatedUsage     // deprecated オプション使用（warning 級だが記録は必要）
   ParseAlreadyCalled  // Parser::parse の二重呼び出し
 } derive(Show, Eq)
 ```
+
+**不採用: DeprecatedUsage** — deprecated は ParseError を raise せず `deprecated_usages: Array[(String, String)]` に warning として記録する設計。ErrorKind の対象外。
+
+**将来の拡張注意**: ErrorKind は `pub(all) enum` のため、バリアント追加は exhaustive match を壊す。ユーザーにはワイルドカード `_` のフォールバックを推奨。
 
 ### ParseErrorInfo の拡張
 
@@ -33,9 +36,20 @@ pub(all) struct ParseErrorInfo {
   kind : ErrorKind    // NEW: エラー種別
   message : String    // 既存: 人間向けメッセージ
   help_text : String  // 既存: ヘルプテキスト
-  opt_name : String   // NEW: 関連オプション名（空文字列 = なし）
+  opt_name : String   // NEW: 関連情報（下記参照）
 }
 ```
+
+### opt_name の付与ポリシー
+
+`opt_name` の意味は ErrorKind により異なる:
+
+| ErrorKind | opt_name の内容 |
+|---|---|
+| UnknownOption, UnexpectedArgument | ユーザーが入力した引数文字列（例: `"--typo"`） |
+| MissingRequired, DependencyMissing | 該当オプションの定義名（例: `"output"`） |
+| MissingValue | 値が不足しているオプション名（例: `"--output"`, `"-o"`） |
+| その他 | 空文字列（複数オプション関与、または特定オプションに紐づかない） |
 
 ### parse_error ヘルパーの拡張
 
@@ -43,17 +57,17 @@ pub(all) struct ParseErrorInfo {
 fn parse_error(message : String, kind~ : ErrorKind = InvalidValue, opt_name~ : String = "") -> ParseError
 ```
 
-既存の `parse_error(message)` 呼び出しは互換性維持（kind=InvalidValue がデフォルト）。
-
-## 実装方針
-
-1. **後方互換**: `parse_error("msg")` の既存呼び出しは変更不要（デフォルト kind=InvalidValue）
-2. **段階的移行**: まず型定義とヘルパーを追加、次に各呼び出し箇所の kind を正しく設定
-3. **テスト**: 既存テストは message ベースで検証しているため壊れない。kind ベースの新テストを追加
-4. **filter のエラー**: filter.mbt のバリデーション系は全て InvalidValue
+既存の `parse_error(message)` 呼び出しは互換性維持（kind=InvalidValue がデフォルト）。filter.mbt のバリデーション系は全て InvalidValue で、kind を明示指定する必要がない。
 
 ## 影響
 
-- ParseErrorInfo にフィールド追加 → 構造体を直接参照しているテスト箇所は修正必要
+- ParseErrorInfo にフィールド追加 → `pub(all) struct` のため、直接構築している外部コードは breaking change。mooncakes.io 公開前なので許容
 - suberror ParseError の構造自体は変更なし
-- WASM bridge は ParseErrorInfo.message を使っているのみ → 影響なし
+- HelpRequested は suberror の別バリアントとして分離維持（エラーではなく制御フロー的脱出）
+- WASM bridge は ParseErrorInfo.message のみ使用 → 影響なし
+
+## テスト
+
+- ErrorKind 12バリアント × kind 検証テスト（11件実パース + 1件 enum 構築確認）
+- 既存テスト（49件 message 検証）は変更なし
+- テスト: 1194 → 1206件（+12件）

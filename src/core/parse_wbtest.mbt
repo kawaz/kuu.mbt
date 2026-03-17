@@ -7176,3 +7176,11 @@ test "ErrorKind: ParseAlreadyCalled for double parse" {
     _ => fail("expected ParseError")
   }
 }
+
+///|
+test "ErrorKind: AmbiguousMatch enum variant exists" {
+  // AmbiguousMatch は make_or_node 内部の同率最長一致で発生するエッジケース。
+  // 直接トリガーは困難なため、kind enum の構築可能性を確認。
+  let kind : ErrorKind = AmbiguousMatch
+  inspect(kind, content="AmbiguousMatch")
+}
