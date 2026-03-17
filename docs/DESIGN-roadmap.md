@@ -1,6 +1,6 @@
 # kuu 将来計画・未実装設計
 
-[DESIGN-v2.md](DESIGN-v2.md) のアーキテクチャ概要を前提とした、将来の実装計画と設計案。
+[DESIGN.md](DESIGN.md) のアーキテクチャ概要を前提とした、将来の実装計画と設計案。
 
 > **注意**: 以下は全て設計案であり、実装時に変更される可能性がある。
 
@@ -576,7 +576,7 @@ WASM bridge を npm パッケージとして公開。`@kawaz/kuu` または `kuu
 /cookbook/docker       # Docker CLI クローン
 /cookbook/kubectl      # kubectl クローン
 /reference/           # API リファレンス（自動生成）
-/design/              # 設計ドキュメント（DESIGN-v2.md 等）
+/design/              # 設計ドキュメント（DESIGN.md 等）
 /multilang/           # 多言語ガイド
 /multilang/typescript # TypeScript での利用
 /multilang/go         # Go での利用
@@ -600,7 +600,7 @@ WASM bridge を npm パッケージとして公開。`@kawaz/kuu` または `kuu
 5. 多言語コードタブ（kuu の多言語ポジショニングに必須）
 6. Playground/REPL（kuu は WASM でブラウザ上のデモが可能 — 差別化要素）
 
-**ブロッカー**: コンテンツの準備（DESIGN-v2.md ベースで skeleton は作れる）
+**ブロッカー**: コンテンツの準備（DESIGN.md ベースで skeleton は作れる）
 
 ### ランディングページ
 

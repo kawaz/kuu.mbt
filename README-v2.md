@@ -81,7 +81,7 @@ just size     # binary size report
 
 ## Architecture
 
-内部設計の詳細は `docs/DESIGN-v2.md` を参照。
+内部設計の詳細は `docs/DESIGN.md` を参照。
 
 ## License
 
