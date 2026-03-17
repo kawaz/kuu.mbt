@@ -138,7 +138,7 @@ func printHeader(_ title: String) {
     print("\n[\(title)]")
 }
 
-func printKV(_ key: String, _ value: Any) {
+func printKV(_ key: String, _ value: some CustomStringConvertible) {
     print("  \(key): \(value)")
 }
 

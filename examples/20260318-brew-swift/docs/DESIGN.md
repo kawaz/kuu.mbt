@@ -32,7 +32,7 @@ ParseResult / CommandResult
 |---|---|---|
 | `install` | 複雑なフラグ群、rest 引数 | exclusive (--formula/--cask), aliases, rest |
 | `search` | 位置引数、フィルタフラグ | positional, exclusive |
-| `tap` | オプショナル位置引数 | positional (optional), serial |
+| `tap` | オプショナル位置引数 | positional (optional) |
 | `upgrade` | install 類似 + greedy 系 | flag variations, rest |
 | `list` | 表示制御フラグ群 | 多数の flag, exclusive |
 
@@ -115,11 +115,12 @@ brew list [options] [formula|cask ...]
 1. **グローバルオプション**: 全サブコマンドで `--verbose`, `--debug`, `--quiet` が使える
 2. **exclusive 制約**: `--formula` と `--cask` の排他制御
 3. **aliases**: `--formulae` → `--formula`, `--casks` → `--cask`
-4. **rest 引数**: `install`, `upgrade`, `list` で複数パッケージ名を受け取る
-5. **位置引数**: `search` のクエリ、`tap` の user/repo
-6. **短形式結合**: `-fs` = `-f -s`
-7. **値付きオプション**: `--cc=gcc-9` 形式
-8. **ネストなし**: brew は1階層のサブコマンドのみ（シンプル）
+4. **コマンドエイリアス**: `ls` → `list`
+5. **rest 引数**: `install`, `upgrade`, `list` で複数パッケージ名を受け取る
+6. **位置引数**: `search` のクエリ、`tap` の user/repo
+7. **短形式結合**: `-fs` = `-f -s`
+8. **値付きオプション**: `--cc=gcc-9` 形式
+9. **ネストなし**: brew は1階層のサブコマンドのみ（シンプル）
 
 ## ディレクトリ構成
 

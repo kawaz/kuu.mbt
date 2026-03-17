@@ -197,12 +197,22 @@ enum BrewSchema {
         return opt
     }
 
-    private static func positional(_ name: String) -> [String: Any] {
-        ["kind": "positional", "name": name]
+    private static func positional(
+        _ name: String,
+        description: String? = nil
+    ) -> [String: Any] {
+        var opt: [String: Any] = ["kind": "positional", "name": name]
+        if let d = description { opt["description"] = d }
+        return opt
     }
 
-    private static func rest(_ name: String) -> [String: Any] {
-        ["kind": "rest", "name": name]
+    private static func rest(
+        _ name: String,
+        description: String? = nil
+    ) -> [String: Any] {
+        var opt: [String: Any] = ["kind": "rest", "name": name]
+        if let d = description { opt["description"] = d }
+        return opt
     }
 
     private static func command(

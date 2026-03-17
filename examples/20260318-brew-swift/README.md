@@ -2,10 +2,15 @@
 
 Homebrew `brew` コマンドの引数パースデモ。Swift + kuu WASM bridge で実装。
 
+> **Note**: 実際の brew の全オプションを網羅していない近似的なデモです。
+> kuu の多言語対応能力と複雑な CLI 構造の扱いを検証する目的で作成しています。
+
 ## 必要環境
 
 - Swift 6.0+
 - [bun](https://bun.sh/) (WASM bridge ランタイム)
+- `wasm/kuu.wasm` — kuu リポジトリルートで `moon build --target wasm-gc --release` 後、
+  `_build/wasm-gc/release/build/src/wasm/wasm.wasm` を `wasm/kuu.wasm` にコピー
 
 ## ビルド & テスト
 
@@ -57,6 +62,11 @@ Swift → bun subprocess → kuu.wasm → JSON 結果
 - グローバルオプション (--verbose, --debug, --quiet)
 - exclusive 制約 (--formula vs --cask)
 - aliases (--formulae → --formula)
+- コマンドエイリアス (ls → list)
 - rest 引数 (複数パッケージ名)
 - 短形式結合 (-fs = -f -s)
 - 値付きオプション (--cc=gcc-9)
+
+## ライセンス
+
+`wasm/kuu.wasm` は [kuu](https://github.com/kawaz/kuu.mbt) (MIT License) からビルドしたバイナリです。

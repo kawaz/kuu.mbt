@@ -9,54 +9,95 @@ build:
 # Run all test scenarios
 test: build
     @echo "=== brew-swift Test Scenarios ==="
+
     @echo ""
-    @echo "--- brew install --verbose --formula node npm typescript ---"
-    swift run brew-swift install --verbose --formula node npm typescript
-    @echo ""
-    @echo "--- brew install --force --build-from-source --cask firefox ---"
-    swift run brew-swift install --force --build-from-source --cask firefox
-    @echo ""
-    @echo "--- brew install -fsn --HEAD --cc=gcc-9 openssl ---"
-    swift run brew-swift install -fsn --HEAD --cc=gcc-9 openssl
-    @echo ""
-    @echo "--- brew search --desc json ---"
-    swift run brew-swift search --desc json
-    @echo ""
-    @echo "--- brew search --formula node ---"
-    swift run brew-swift search --formula node
-    @echo ""
-    @echo "--- brew tap homebrew/cask ---"
-    swift run brew-swift tap homebrew/cask
-    @echo ""
-    @echo "--- brew tap user/repo https://example.com/repo.git ---"
-    swift run brew-swift tap user/repo https://example.com/repo.git
-    @echo ""
-    @echo "--- brew upgrade --dry-run --greedy ---"
-    swift run brew-swift upgrade --dry-run --greedy
-    @echo ""
-    @echo "--- brew upgrade --formula node npm ---"
-    swift run brew-swift upgrade --formula node npm
-    @echo ""
-    @echo "--- brew list --versions --formula ---"
-    swift run brew-swift list --versions --formula
-    @echo ""
-    @echo "--- brew list --pinned ---"
-    swift run brew-swift list --pinned
-    @echo ""
-    @echo "--- brew ls --full-name --one-per-line ---"
-    swift run brew-swift ls --full-name --one-per-line
-    @echo ""
-    @echo "--- brew list -1lrt (short flag combining) ---"
-    swift run brew-swift list -1lrt
-    @echo ""
-    @echo "--- brew --help ---"
+    @echo "--- [help] brew --help ---"
     swift run brew-swift --help || true
+
     @echo ""
-    @echo "--- brew install --help ---"
+    @echo "--- [help] brew install --help ---"
     swift run brew-swift install --help || true
+
     @echo ""
-    @echo "--- exclusive error: brew install --formula --cask node ---"
+    @echo "--- [no subcommand] brew (no args) ---"
+    swift run brew-swift || true
+
+    @echo ""
+    @echo "--- [global] brew --verbose --debug install node ---"
+    swift run brew-swift --verbose --debug install node
+
+    @echo ""
+    @echo "--- [install] basic: --formula node npm typescript ---"
+    swift run brew-swift install --verbose --formula node npm typescript
+
+    @echo ""
+    @echo "--- [install] cask: --force --build-from-source --cask firefox ---"
+    swift run brew-swift install --force --build-from-source --cask firefox
+
+    @echo ""
+    @echo "--- [install] short combining + eq value: -fsn --HEAD --cc=gcc-9 openssl ---"
+    swift run brew-swift install -fsn --HEAD --cc=gcc-9 openssl
+
+    @echo ""
+    @echo "--- [search] desc: --desc json ---"
+    swift run brew-swift search --desc json
+
+    @echo ""
+    @echo "--- [search] formula filter: --formula node ---"
+    swift run brew-swift search --formula node
+
+    @echo ""
+    @echo "--- [tap] single repo: homebrew/cask ---"
+    swift run brew-swift tap homebrew/cask
+
+    @echo ""
+    @echo "--- [tap] repo + url: user/repo https://example.com/repo.git ---"
+    swift run brew-swift tap user/repo https://example.com/repo.git
+
+    @echo ""
+    @echo "--- [tap] flags: --force --repair ---"
+    swift run brew-swift tap --force --repair
+
+    @echo ""
+    @echo "--- [upgrade] dry-run + greedy: --dry-run --greedy ---"
+    swift run brew-swift upgrade --dry-run --greedy
+
+    @echo ""
+    @echo "--- [upgrade] formula packages: --formula node npm ---"
+    swift run brew-swift upgrade --formula node npm
+
+    @echo ""
+    @echo "--- [upgrade] greedy variants: --greedy-latest --greedy-auto-updates ---"
+    swift run brew-swift upgrade --greedy-latest --greedy-auto-updates
+
+    @echo ""
+    @echo "--- [list] versions: --versions --formula ---"
+    swift run brew-swift list --versions --formula
+
+    @echo ""
+    @echo "--- [list] pinned: --pinned ---"
+    swift run brew-swift list --pinned
+
+    @echo ""
+    @echo "--- [list] alias: ls --full-name --one-per-line ---"
+    swift run brew-swift ls --full-name --one-per-line
+
+    @echo ""
+    @echo "--- [list] short combining: -1lrt ---"
+    swift run brew-swift list -1lrt
+
+    @echo ""
+    @echo "--- [error] exclusive: install --formula --cask node ---"
     swift run brew-swift install --formula --cask node 2>&1 || true
+
+    @echo ""
+    @echo "--- [error] unknown subcommand: brew unknown ---"
+    swift run brew-swift unknown 2>&1 || true
+
+    @echo ""
+    @echo "--- [alias] --formulae (alias for --formula): install --formulae node ---"
+    swift run brew-swift install --formulae node
+
     @echo ""
     @echo "=== All scenarios complete ==="
 

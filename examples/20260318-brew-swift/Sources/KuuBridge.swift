@@ -20,8 +20,8 @@ struct KuuBridge {
     func parse(schema: [String: Any], args: [String]) throws -> ParseResult {
         var input = schema
         input["args"] = args
+        // JSONSerialization safely escapes all user input — never hand-build JSON strings.
         let jsonData = try JSONSerialization.data(withJSONObject: input)
-        let jsonString = String(data: jsonData, encoding: .utf8)!
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -38,7 +38,7 @@ struct KuuBridge {
 
         // Write stdin asynchronously to avoid deadlock when schema exceeds pipe buffer
         DispatchQueue.global().async {
-            stdinPipe.fileHandleForWriting.write(jsonString.data(using: .utf8)!)
+            stdinPipe.fileHandleForWriting.write(jsonData)
             stdinPipe.fileHandleForWriting.closeFile()
         }
 
@@ -79,8 +79,20 @@ enum KuuError: Error, CustomStringConvertible {
     }
 }
 
+/// Common value-access methods for parsed results.
+protocol ValuesAccessible {
+    var values: [String: Any] { get }
+}
+
+extension ValuesAccessible {
+    func string(_ key: String) -> String? { values[key] as? String }
+    func bool(_ key: String) -> Bool { values[key] as? Bool ?? false }
+    func int(_ key: String) -> Int? { values[key] as? Int }
+    func strings(_ key: String) -> [String] { values[key] as? [String] ?? [] }
+}
+
 /// Parsed result from kuu.
-struct ParseResult {
+struct ParseResult: ValuesAccessible {
     let ok: Bool
     let values: [String: Any]
     let command: CommandResult?
@@ -100,17 +112,12 @@ struct ParseResult {
             self.command = nil
         }
     }
-
-    func string(_ key: String) -> String? { values[key] as? String }
-    func bool(_ key: String) -> Bool { values[key] as? Bool ?? false }
-    func int(_ key: String) -> Int? { values[key] as? Int }
-    func strings(_ key: String) -> [String] { values[key] as? [String] ?? [] }
 }
 
 /// Subcommand result (class due to recursive structure).
 /// @unchecked Sendable rationale: all properties are `let` and values
 /// originate from JSONSerialization (only value-semantic Foundation types).
-final class CommandResult: @unchecked Sendable {
+final class CommandResult: ValuesAccessible, @unchecked Sendable {
     let name: String
     let values: [String: Any]
     let command: CommandResult?
@@ -124,9 +131,4 @@ final class CommandResult: @unchecked Sendable {
             self.command = nil
         }
     }
-
-    func string(_ key: String) -> String? { values[key] as? String }
-    func bool(_ key: String) -> Bool { values[key] as? Bool ?? false }
-    func int(_ key: String) -> Int? { values[key] as? Int }
-    func strings(_ key: String) -> [String] { values[key] as? [String] ?? [] }
 }

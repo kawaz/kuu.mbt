@@ -12,8 +12,16 @@ WASM bridge に直接 JSON を送って再現確認。
 
 ## 解決策
 
-現在の kuu ソースから `moon build --target wasm-gc --release` でリビルドし、
-生成された `wasm.wasm` を `wasm/kuu.wasm` として配置。
+現在の kuu ソースから以下の手順でリビルド:
+
+```bash
+# kuu リポジトリルート（ワークスペース内）で
+moon build --target wasm-gc --release
+
+# 生成先: _build/wasm-gc/release/build/src/wasm/wasm.wasm
+# コピー先: examples/20260318-brew-swift/wasm/kuu.wasm
+cp _build/wasm-gc/release/build/src/wasm/wasm.wasm examples/20260318-brew-swift/wasm/kuu.wasm
+```
 
 ## 選択理由
 
