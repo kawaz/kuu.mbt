@@ -1,8 +1,8 @@
 # kuu
 
-MoonBit 製 CLI 引数パースエンジン。多言語基盤としても設計されている。
+MoonBit 製 CLI 引数パースエンジン。
 
-全 OptKind を `initial + reducer` で統一し、ExactNode の**投機実行 + 最長一致**で消費する。消費ループは型を知らず、名前解決も持たない。全ての複雑さはコンビネータ層で ExactNode に事前展開される。
+投機実行と最長一致で曖昧さを構造的に解決する。定義順序に依存せず、`-abc` ショート結合も `--color`/`--color=always` の共存も同一アルゴリズムで処理する。
 
 ## Quick Start
 
@@ -30,15 +30,15 @@ match result {
 
 ## なぜ kuu か
 
-**投機実行 + 最長一致**: 各 ExactNode が「自分が消費できるか」を自己判定し、最長 consumed の候補が勝つ。PEG の ordered choice とは異なり、順序非依存で曖昧さも検出できる。
+**投機実行 + 最長一致**: 各オプションが「自分が消費できるか」を自己判定し、最長消費の候補が勝つ。定義の順序に依存しない。曖昧な入力（同率候補）も検出してエラーにできる。
 
-**統一的な処理**: `-abc` ショート結合、`--color`/`--color=always` の共存、choices バリデーションが全て同一のアルゴリズムで解決される。個別の特殊分岐が parse_raw のメインループに一切ない。
+**統一的な処理**: `-abc` ショート結合、`--color`/`--color=always` の共存、choices バリデーションが全て同一のアルゴリズムで解決される。メインのパースループに特殊分岐が一切ない。
 
-**4層レイヤー**: Sugar（`flag()` 等）→ Convention（名前展開）→ Pattern（最長一致統合）→ Core（ExactNode 走査）。各層は ExactNode の生成と登録という単一操作に統一。
+**4層レイヤー**: Sugar（`flag()` 等のユーザーAPI）→ Convention（名前展開）→ Pattern（最長一致統合）→ Core（ExactNode 走査）。各層は ExactNode の生成と登録に統一。
 
-**型安全**: `Opt[T]` の Accessor と ExactNode の try_reduce/commit クロージャが同じ ValCell を共有。ダウンキャスト不要、ResultMap 不要。
+**型安全**: `Opt[T]` が返す値はコンビネータ定義時の型がそのまま保持される。ダウンキャスト不要、ResultMap 不要。
 
-**多言語基盤**: core は純粋パースエンジン。DX 層を言語別に提供（MoonBit: Parseable trait、他言語: WASM bridge 経由）。
+**直交コンビネータ**: alias / clone / link / adjust の合成で、複雑なオプション関係（別名、値転送、値変換、非推奨など）を宣言的に表現できる。
 
 ## Features
 
@@ -59,7 +59,7 @@ match result {
 
 ## Architecture
 
-4層レイヤー + OC/P 2フェーズパース:
+コア内部は4層レイヤー + OC/P 2フェーズパースで構成:
 
 ```
 Sugar:       flag(), string_opt(), custom[T](), cmd(), ...

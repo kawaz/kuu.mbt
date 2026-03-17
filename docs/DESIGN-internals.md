@@ -270,7 +270,9 @@ pub fn parse_into[T : Parseable](args : Array[String], target : T) -> ...
 
 ---
 
-## WASM bridge の実装構造
+## WASM bridge の実装構造（PoC）
+
+> 以下は PoC レベルの実装。設計は未確定であり、多言語展開の方式決定に伴い変更される可能性がある。
 
 ### エントリポイント
 

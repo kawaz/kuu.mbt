@@ -243,7 +243,9 @@ clap で `num_args=0..=1` + サブコマンド衝突が起きる問題を、kuu 
 
 ---
 
-## 多言語展開
+## 多言語展開（構想）
+
+> 以下は構想・調査段階であり、確定事項ではない。各項目の確定度は「ステータス」欄で示す。
 
 ### 調査: 多言語展開する CLI パーサの先行事例
 
@@ -409,19 +411,19 @@ property wrapper / Codable。WasmKit の WASM-GC 対応状況次第。
 
 **ブロッカー**: FFI 調査、Swift SDK (KuuCore) の設計
 
-### KuuCore — 言語別 SDK 共通基盤（DR-036）
+### KuuCore — 言語別 SDK 共通基盤（DR-036 構想）
 
 ```
-Core (MoonBit)   ← 純粋パースエンジン
-  ↑
-WASM bridge      ← JSON schema → core → JSON result
-  ↑
-KuuCore (各言語) ← JSON 力学を隠蔽。コールバック仲介。バックエンド抽象化
-  ↑
 DX API (各言語)  ← 言語イディオムに沿った型安全 API
+  ↓
+KuuCore (各言語) ← JSON 力学を隠蔽。コールバック仲介。バックエンド抽象化
+  ↓
+Bridge           ← core との接続層（方式は言語ごとに異なる）
+  ↓
+Core (MoonBit)   ← 純粋パースエンジン
 ```
 
-KuuCore の責務:
+KuuCore の責務（構想）:
 1. JSON schema の構築（DX 層からの宣言を受けて JSON を組み立て）
 2. WASM bridge / サブプロセス / native FFI のバックエンド抽象化
 3. custom[T] や post フィルタのコールバック仲介
@@ -429,9 +431,9 @@ KuuCore の責務:
 
 **ブロッカー**: FFI 調査、WASM bridge の安定化
 
-### WASM bridge 拡張
+### WASM bridge 拡張（PoC）
 
-DR-035 で主要機能は実装済み（variations, command aliases, exclusive, required, require_cmd, implicit_value, dashdash, serial, post フィルタ）。残りの拡張:
+DR-035 で主要機能の PoC は実装済み（variations, command aliases, exclusive, required, require_cmd, implicit_value, dashdash, serial, post フィルタ）。多言語展開の方式確定後に設計を見直す可能性がある。残りの拡張:
 - clone / link / adjust の JSON 表現
 - プリセット post フィルタの追加（parse_duration, parse_timespec 等）
 
