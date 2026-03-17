@@ -1,7 +1,11 @@
 ///|
 fn levenshtein(a : String, b : String) -> Int {
-  let m = a.length()
-  let n = b.length()
+  let ag = @unicodegrapheme.graphemes(a)
+  let bg = @unicodegrapheme.graphemes(b)
+  let m = ag.length()
+  let n = bg.length()
+  let a_chars : Array[String] = Array::makei(m, fn(i) { ag[i].to_string() })
+  let b_chars : Array[String] = Array::makei(n, fn(i) { bg[i].to_string() })
   // dp[(i)] は行 i の各列の値を保持する
   let prev : Array[Int] = Array::make(n + 1, 0)
   let curr : Array[Int] = Array::make(n + 1, 0)
@@ -11,7 +15,11 @@ fn levenshtein(a : String, b : String) -> Int {
   for i = 1; i <= m; i = i + 1 {
     curr[0] = i
     for j = 1; j <= n; j = j + 1 {
-      let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 }
+      let cost = if a_chars[i - 1] == b_chars[j - 1] {
+        0
+      } else {
+        1
+      }
       let del = prev[j] + 1
       let ins = curr[j - 1] + 1
       let sub = prev[j - 1] + cost
@@ -166,7 +174,7 @@ fn Parser::install_eq_split_node(self : Parser) -> Unit {
 fn Parser::install_short_combine_node(self : Parser) -> Unit {
   let short_nodes : Array[ExactNode] = []
   for node in self.nodes {
-    if node.name.length() == 2 &&
+    if @unicodegrapheme.graphemes(node.name).length() == 2 &&
       node.name.has_prefix("-") &&
       not(node.name.has_prefix("--")) {
       short_nodes.push(node)
@@ -184,17 +192,20 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
         return Reject
       }
       let arg = args[pos]
-      if arg.length() <= 2 || not(arg.has_prefix("-")) || arg.has_prefix("--") {
+      if @unicodegrapheme.graphemes(arg).length() <= 2 ||
+        not(arg.has_prefix("-")) ||
+        arg.has_prefix("--") {
         return Reject
       }
       let rest = arg.unsafe_substring(start=1, end=arg.length())
+      let rest_g = @unicodegrapheme.graphemes(rest)
       let commits : Array[() -> Unit] = []
       let mut total_consumed = 1
       let mut ri = 0
 
-      while ri < rest.length() {
-        let ch = rest[ri].to_int().unsafe_to_char()
-        let short_name = "-" + ch.to_string()
+      while ri < rest_g.length() {
+        let cluster = rest_g[ri]
+        let short_name = "-" + cluster.to_string()
 
         // 同一 short 名の全ノードを収集
         let matching : Array[ExactNode] = []
@@ -207,14 +218,21 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
           return Reject
         }
 
-        let remaining = rest.unsafe_substring(start=ri + 1, end=rest.length())
+        let remaining_strs : Array[String] = []
+        for j = ri + 1; j < rest_g.length(); j = j + 1 {
+          remaining_strs.push(rest_g[j].to_string())
+        }
 
-        if remaining.length() > 0 {
+        if remaining_strs.length() > 0 {
           // remaining がある場合: まず value trial を needs_value=true のノードのみで試す
           let mut value_accepted = false
-          let mut try_len = remaining.length()
+          let mut try_len = remaining_strs.length()
           while try_len > 0 {
-            let try_value = remaining.unsafe_substring(start=0, end=try_len)
+            let try_value_parts : Array[String] = []
+            for j = 0; j < try_len; j = j + 1 {
+              try_value_parts.push(remaining_strs[j])
+            }
+            let try_value = try_value_parts.join("")
             let mut found_accept = false
             let mut found_error : ParseError? = None
             for node in matching {
@@ -290,7 +308,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
                   Accept(commit~, ..) => {
                     commits.push(commit)
                     total_consumed = 2
-                    ri = rest.length()
+                    ri = rest_g.length()
                     ext_accepted = true
                     break
                   }

@@ -1,0 +1,24 @@
+# Terraform Go Example — kuu WASM bridge demo
+
+kuu_root := justfile_directory() + "/../.."
+main_root := justfile_directory() + "/../../../main"
+
+# Build kuu WASM for bridge (uses main workspace where _build exists)
+build-wasm:
+    (cd {{main_root}} && moon build src/wasm --target wasm-gc --release)
+
+# Build Go binary
+build-go: build-wasm
+    go build -buildvcs=false -o myterraform .
+
+# Run all Terraform CLI parsing scenarios
+run: build-go
+    ./myterraform
+
+# Run a specific scenario
+run-scenario name: build-go
+    ./myterraform --scenario "{{name}}"
+
+# Clean build artifacts
+clean:
+    rm -f myterraform

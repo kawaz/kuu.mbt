@@ -6692,3 +6692,97 @@ test "alias chain: root committed propagates through chained aliases" {
     #|Some("example.com")
   ))
 }
+
+// ============================================================
+// Surrogate pair (Supplementary Plane) tests
+// ============================================================
+
+///|
+test "levenshtein: emoji identical strings" {
+  inspect(levenshtein("--😀mode", "--😀mode"), content="0")
+}
+
+///|
+test "levenshtein: emoji one char diff" {
+  inspect(levenshtein("--😀mode", "--😀mod"), content="1")
+}
+
+///|
+test "levenshtein: emoji substitution" {
+  inspect(levenshtein("--😀", "--😎"), content="1")
+}
+
+///|
+test "levenshtein: ascii vs emoji" {
+  inspect(levenshtein("--a", "--😀"), content="1")
+}
+
+///|
+test "surrogate pair: single emoji short option" {
+  let p = Parser::new()
+  let opt = p.flag(name="smile", shorts="😀")
+  ignore(p.parse(["-😀"]))
+  inspect(p.get(opt), content="Some(true)")
+}
+
+///|
+test "surrogate pair: emoji short combining two flags" {
+  let p = Parser::new()
+  let a = p.flag(name="smile", shorts="😀")
+  let b = p.flag(name="cool", shorts="😎")
+  ignore(p.parse(["-😀😎"]))
+  inspect(p.get(a), content="Some(true)")
+  inspect(p.get(b), content="Some(true)")
+}
+
+///|
+test "surrogate pair: emoji + ascii combining" {
+  let p = Parser::new()
+  let v = p.flag(name="verbose", shorts="v")
+  let e = p.flag(name="emoji", shorts="😀")
+  ignore(p.parse(["-v😀"]))
+  inspect(p.get(v), content="Some(true)")
+  inspect(p.get(e), content="Some(true)")
+}
+
+///|
+test "surrogate pair: emoji first then ascii combining" {
+  let p = Parser::new()
+  let v = p.flag(name="verbose", shorts="v")
+  let e = p.flag(name="emoji", shorts="😀")
+  ignore(p.parse(["-😀v"]))
+  inspect(p.get(e), content="Some(true)")
+  inspect(p.get(v), content="Some(true)")
+}
+
+///|
+test "surrogate pair: emoji short with inline value" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=0, shorts="😀")
+  ignore(p.parse(["-😀3000"]))
+  inspect(p.get(port), content="Some(3000)")
+}
+
+///|
+test "surrogate pair: emoji combining flag then value" {
+  let p = Parser::new()
+  let v = p.flag(name="verbose", shorts="v")
+  let port = p.int_opt(name="port", default=0, shorts="😀")
+  ignore(p.parse(["-v😀3000"]))
+  inspect(p.get(v), content="Some(true)")
+  inspect(p.get(port), content="Some(3000)")
+}
+
+///|
+test "surrogate pair: suggest_typo with emoji option" {
+  let p = Parser::new()
+  let _ = p.flag(name="😀mode")
+  let r : Result[ParseResult, _] = try? p.parse(["--😎mode"])
+  match r {
+    Err(ParseError(info)) => {
+      inspect(info.message.contains("did you mean"), content="true")
+      inspect(info.message.contains("😀mode"), content="true")
+    }
+    _ => fail("expected ParseError")
+  }
+}
