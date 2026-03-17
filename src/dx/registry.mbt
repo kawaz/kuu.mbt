@@ -88,7 +88,6 @@ pub fn FieldRegistry::string(
 
 ///|
 /// String オプションを登録し、OptRef を返す（制約登録用）。
-/// env はヘルプ表示用メタデータのみ。環境変数からの値読み取りは行わない（DR-041 Phase 1）。
 pub fn FieldRegistry::string_ref(
   self : FieldRegistry,
   name~ : String,
@@ -102,9 +101,10 @@ pub fn FieldRegistry::string_ref(
   value_name~ : String = "",
   apply_fn~ : (String) -> Unit,
 ) -> @core.OptRef {
-  let opt = self.parser.string_opt(
+  self.custom_ref(
     name=name,
     default=default,
+    pre=@core.Filter::map(fn(s) { s }),
     description=description,
     global=global,
     shorts=shorts,
@@ -112,16 +112,8 @@ pub fn FieldRegistry::string_ref(
     env=env,
     hidden=hidden,
     value_name=value_name,
+    apply_fn=apply_fn,
   )
-  self.appliers.push(fn() {
-    if opt.is_set() {
-      match opt.get() {
-        Some(v) => apply_fn(v)
-        None => ()
-      }
-    }
-  })
-  opt.as_ref()
 }
 
 ///|
@@ -223,8 +215,9 @@ pub fn FieldRegistry::append_string_ref(
   value_name~ : String = "",
   apply_fn~ : (Array[String]) -> Unit,
 ) -> @core.OptRef {
-  let opt = self.parser.append_string(
+  self.custom_append_ref(
     name=name,
+    pre=@core.Filter::map(fn(s) { s }),
     description=description,
     global=global,
     shorts=shorts,
@@ -232,16 +225,8 @@ pub fn FieldRegistry::append_string_ref(
     env=env,
     hidden=hidden,
     value_name=value_name,
+    apply_fn=apply_fn,
   )
-  self.appliers.push(fn() {
-    if opt.is_set() {
-      match opt.get() {
-        Some(v) => apply_fn(v)
-        None => ()
-      }
-    }
-  })
-  opt.as_ref()
 }
 
 ///|
@@ -285,7 +270,35 @@ pub fn FieldRegistry::append_int_ref(
   value_name~ : String = "",
   apply_fn~ : (Array[Int]) -> Unit,
 ) -> @core.OptRef {
-  let opt = self.parser.append_int(
+  self.custom_append_ref(
+    name=name,
+    pre=@core.Filter::parse_int(),
+    description=description,
+    global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+    value_name=value_name,
+    apply_fn=apply_fn,
+  )
+}
+
+///|
+/// 複数値収集 Double オプションを登録。
+pub fn FieldRegistry::append_float(
+  self : FieldRegistry,
+  name~ : String,
+  description~ : String = "",
+  global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
+  value_name~ : String = "",
+  apply_fn~ : (Array[Double]) -> Unit,
+) -> Unit {
+  ignore(self.append_float_ref(
     name=name,
     description=description,
     global=global,
@@ -294,16 +307,36 @@ pub fn FieldRegistry::append_int_ref(
     env=env,
     hidden=hidden,
     value_name=value_name,
+    apply_fn=apply_fn,
+  ))
+}
+
+///|
+/// 複数値収集 Double オプションを登録し、OptRef を返す（制約登録用）。
+pub fn FieldRegistry::append_float_ref(
+  self : FieldRegistry,
+  name~ : String,
+  description~ : String = "",
+  global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
+  value_name~ : String = "",
+  apply_fn~ : (Array[Double]) -> Unit,
+) -> @core.OptRef {
+  self.custom_append_ref(
+    name=name,
+    pre=@core.Filter::parse_float(),
+    description=description,
+    global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+    value_name=value_name,
+    apply_fn=apply_fn,
   )
-  self.appliers.push(fn() {
-    if opt.is_set() {
-      match opt.get() {
-        Some(v) => apply_fn(v)
-        None => ()
-      }
-    }
-  })
-  opt.as_ref()
 }
 
 ///|
@@ -350,7 +383,37 @@ pub fn FieldRegistry::int_ref(
   value_name~ : String = "",
   apply_fn~ : (Int) -> Unit,
 ) -> @core.OptRef {
-  let opt = self.parser.int_opt(
+  self.custom_ref(
+    name=name,
+    default=default,
+    pre=@core.Filter::parse_int(),
+    description=description,
+    global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+    value_name=value_name,
+    apply_fn=apply_fn,
+  )
+}
+
+///|
+/// Double オプションを登録。
+pub fn FieldRegistry::float(
+  self : FieldRegistry,
+  name~ : String,
+  default~ : Double = 0.0,
+  description~ : String = "",
+  global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
+  value_name~ : String = "",
+  apply_fn~ : (Double) -> Unit,
+) -> Unit {
+  ignore(self.float_ref(
     name=name,
     default=default,
     description=description,
@@ -360,14 +423,36 @@ pub fn FieldRegistry::int_ref(
     env=env,
     hidden=hidden,
     value_name=value_name,
+    apply_fn=apply_fn,
+  ))
+}
+
+///|
+/// Double オプションを登録し、OptRef を返す（制約登録用）。
+pub fn FieldRegistry::float_ref(
+  self : FieldRegistry,
+  name~ : String,
+  default~ : Double = 0.0,
+  description~ : String = "",
+  global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
+  value_name~ : String = "",
+  apply_fn~ : (Double) -> Unit,
+) -> @core.OptRef {
+  self.custom_ref(
+    name=name,
+    default=default,
+    pre=@core.Filter::parse_float(),
+    description=description,
+    global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+    value_name=value_name,
+    apply_fn=apply_fn,
   )
-  self.appliers.push(fn() {
-    if opt.is_set() {
-      match opt.get() {
-        Some(v) => apply_fn(v)
-        None => ()
-      }
-    }
-  })
-  opt.as_ref()
 }

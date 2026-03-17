@@ -253,7 +253,7 @@ struct FieldRegistry {
 }
 ```
 
-各メソッド（flag, string, int, count, append_*, custom, positional, rest, sub）は:
+各メソッド（flag, string, int, float, count, append_*, custom, positional, rest, sub）は:
 1. core の対応コンビネータを呼び出して `Opt[T]` を取得
 2. `apply_fn` クロージャを appliers に蓄積: `fn() { apply_fn(opt.get().unwrap()) }`
 3. `_ref` バリアントは `OptRef` を返し、constraints 登録に使用
@@ -307,9 +307,9 @@ pub fn parse_into[T : Parseable](args : Array[String], target : T) -> ...
 
 JSON スキーマを再帰的に Parser に変換。OptEntry（name + extraction クロージャ）を蓄積し、extract_values で結果を JSON に変換。
 
-対応 kind: flag, string, int, count, append_string, append_int, positional, rest, dashdash, append_dashdash, serial, command
+対応 kind: flag, string, int, float, count, append_string, append_int, append_float, positional, rest, dashdash, append_dashdash, serial, command
 
-対応フィルタ（JSON 表現）: "trim", "non_empty", {"in_range": [min, max]}
+対応フィルタ（JSON 表現）: "trim", "non_empty", {"in_range": [min, max]}, {"float_in_range": [min, max]}
 
 ---
 

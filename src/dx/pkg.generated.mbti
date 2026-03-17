@@ -15,6 +15,8 @@ pub(all) struct FieldRegistry {
   parser : @core.Parser
   appliers : Array[() -> Unit]
 }
+pub fn FieldRegistry::append_float(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[Double]) -> Unit) -> Unit
+pub fn FieldRegistry::append_float_ref(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[Double]) -> Unit) -> @core.OptRef
 pub fn FieldRegistry::append_int(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[Int]) -> Unit) -> Unit
 pub fn FieldRegistry::append_int_ref(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[Int]) -> Unit) -> @core.OptRef
 pub fn FieldRegistry::append_string(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Array[String]) -> Unit) -> Unit
@@ -29,6 +31,8 @@ pub fn[T : Show] FieldRegistry::custom_ref(Self, name~ : String, default~ : T, p
 pub fn FieldRegistry::exclusive(Self, Array[@core.OptRef]) -> Unit
 pub fn FieldRegistry::flag(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, apply_fn~ : (Bool) -> Unit) -> Unit
 pub fn FieldRegistry::flag_ref(Self, name~ : String, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, apply_fn~ : (Bool) -> Unit) -> @core.OptRef
+pub fn FieldRegistry::float(Self, name~ : String, default? : Double, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Double) -> Unit) -> Unit
+pub fn FieldRegistry::float_ref(Self, name~ : String, default? : Double, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Double) -> Unit) -> @core.OptRef
 pub fn FieldRegistry::int(Self, name~ : String, default? : Int, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Int) -> Unit) -> Unit
 pub fn FieldRegistry::int_ref(Self, name~ : String, default? : Int, description? : String, global? : Bool, shorts? : String, aliases? : Array[String], env? : String, hidden? : Bool, value_name? : String, apply_fn~ : (Int) -> Unit) -> @core.OptRef
 pub fn FieldRegistry::positional(Self, name~ : String, description? : String, apply_fn~ : (String) -> Unit) -> Unit

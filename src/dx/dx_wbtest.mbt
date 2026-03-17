@@ -8,11 +8,12 @@ struct SimpleConfig {
   mut verbose : Bool
   mut name : String
   mut count : Int
+  mut rate : Double
 } derive(Show, Eq)
 
 ///|
 fn SimpleConfig::default() -> SimpleConfig {
-  { verbose: false, name: "", count: 0 }
+  { verbose: false, name: "", count: 0, rate: 0.0 }
 }
 
 ///|
@@ -20,6 +21,7 @@ impl Parseable for SimpleConfig with register(self, reg) {
   reg.flag(name="verbose", apply_fn=fn(v) { self.verbose = v })
   reg.string(name="name", apply_fn=fn(v) { self.name = v })
   reg.int(name="count", apply_fn=fn(v) { self.count = v })
+  reg.float(name="rate", apply_fn=fn(v) { self.rate = v })
 }
 
 // ---- flag テスト ----
@@ -70,15 +72,35 @@ test "int: default is 0" {
   assert_eq(config.count, 0)
 }
 
+// ---- float テスト ----
+
+///|
+test "float: --rate sets value" {
+  let config = SimpleConfig::default()
+  parse_into(["--rate", "3.14"], config)
+  assert_eq(config.rate, 3.14)
+}
+
+///|
+test "float: default is 0.0" {
+  let config = SimpleConfig::default()
+  parse_into([], config)
+  assert_eq(config.rate, 0.0)
+}
+
 // ---- 複合テスト ----
 
 ///|
 test "all options together" {
   let config = SimpleConfig::default()
-  parse_into(["--verbose", "--name", "bob", "--count", "5"], config)
+  parse_into(
+    ["--verbose", "--name", "bob", "--count", "5", "--rate", "2.5"],
+    config,
+  )
   assert_eq(config.verbose, true)
   assert_eq(config.name, "bob")
   assert_eq(config.count, 5)
+  assert_eq(config.rate, 2.5)
 }
 
 // ---- エラー安全性テスト ----
@@ -95,6 +117,7 @@ test "parse error leaves struct at default" {
   assert_eq(config.verbose, false)
   assert_eq(config.name, "")
   assert_eq(config.count, 0)
+  assert_eq(config.rate, 0.0)
 }
 
 // ---- default パラメータテスト ----
@@ -103,11 +126,12 @@ test "parse error leaves struct at default" {
 struct WithDefaults {
   mut host : String
   mut port : Int
+  mut timeout : Double
 } derive(Show, Eq)
 
 ///|
 fn WithDefaults::default() -> WithDefaults {
-  { host: "localhost", port: 8080 }
+  { host: "localhost", port: 8080, timeout: 30.0 }
 }
 
 ///|
@@ -118,22 +142,32 @@ impl Parseable for WithDefaults with register(self, reg) {
     apply_fn=fn(v) { self.host = v },
   )
   reg.int(name="port", default=8080, apply_fn=fn(v) { self.port = v })
+  reg.float(
+    name="timeout",
+    default=30.0,
+    apply_fn=fn(v) { self.timeout = v },
+  )
 }
 
 ///|
-test "string/int with default: unset keeps struct default" {
+test "string/int/float with default: unset keeps struct default" {
   let config = WithDefaults::default()
   parse_into([], config)
   assert_eq(config.host, "localhost")
   assert_eq(config.port, 8080)
+  assert_eq(config.timeout, 30.0)
 }
 
 ///|
-test "string/int with default: explicit value overrides" {
+test "string/int/float with default: explicit value overrides" {
   let config = WithDefaults::default()
-  parse_into(["--host", "example.com", "--port", "3000"], config)
+  parse_into(
+    ["--host", "example.com", "--port", "3000", "--timeout", "5.5"],
+    config,
+  )
   assert_eq(config.host, "example.com")
   assert_eq(config.port, 3000)
+  assert_eq(config.timeout, 5.5)
 }
 
 // ============================================================
@@ -177,17 +211,19 @@ test "count: default is 0" {
 struct AppendConfig {
   mut tags : Array[String]
   mut ports : Array[Int]
+  mut scores : Array[Double]
 } derive(Show, Eq)
 
 ///|
 fn AppendConfig::default() -> AppendConfig {
-  { tags: [], ports: [] }
+  { tags: [], ports: [], scores: [] }
 }
 
 ///|
 impl Parseable for AppendConfig with register(self, reg) {
   reg.append_string(name="tag", apply_fn=fn(v) { self.tags = v })
   reg.append_int(name="port", apply_fn=fn(v) { self.ports = v })
+  reg.append_float(name="score", apply_fn=fn(v) { self.scores = v })
 }
 
 ///|
@@ -202,6 +238,13 @@ test "append_int: multiple --port collects values" {
   let config = AppendConfig::default()
   parse_into(["--port", "80", "--port", "443"], config)
   assert_eq(config.ports, [80, 443])
+}
+
+///|
+test "append_float: multiple --score collects values" {
+  let config = AppendConfig::default()
+  parse_into(["--score", "1.5", "--score", "2.7"], config)
+  assert_eq(config.scores, [1.5, 2.7])
 }
 
 // ---- positional テスト ----

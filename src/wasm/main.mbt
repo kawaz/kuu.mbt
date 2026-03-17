@@ -11,6 +11,7 @@
 ///     { "kind": "flag", "name": "verbose", "shorts": "v", "global": true, "description": "..." },
 ///     { "kind": "string", "name": "host", "default": "localhost", "description": "..." },
 ///     { "kind": "int", "name": "port", "default": 8080, "description": "..." },
+///     { "kind": "float", "name": "rate", "default": 1.0, "description": "..." },
 ///     { "kind": "count", "name": "verbose", "shorts": "v", "description": "..." },
 ///     { "kind": "positional", "name": "file", "description": "..." },
 ///     { "kind": "rest", "name": "args", "description": "..." },
@@ -130,6 +131,34 @@ fn parse_int_post(obj : Map[String, Json]) -> @core.FilterChain[Int, Int]? {
               _ => return None
             }
             Some(@core.Filter::in_range(min, max))
+          } else {
+            None
+          }
+        _ => None
+      }
+    _ => None
+  }
+}
+
+///|
+/// Parse a post filter for Double from JSON.
+fn parse_float_post(
+  obj : Map[String, Json],
+) -> @core.FilterChain[Double, Double]? {
+  match obj.get("post") {
+    Some(Object(post_obj)) =>
+      match post_obj.get("float_in_range") {
+        Some(Array(arr)) =>
+          if arr.length() == 2 {
+            let min = match arr[0] {
+              Number(n, ..) => n
+              _ => return None
+            }
+            let max = match arr[1] {
+              Number(n, ..) => n
+              _ => return None
+            }
+            Some(@core.Filter::float_in_range(min, max))
           } else {
             None
           }
@@ -329,6 +358,47 @@ fn build_parser(
               },
             )
           }
+          "float" => {
+            let default_val = match obj.get("default") {
+              Some(Number(n, ..)) => n
+              _ => 0.0
+            }
+            let implicit_value : @core.Lazy[Double]? = match obj.get(
+              "implicit_value",
+            ) {
+              Some(Number(n, ..)) => Some(@core.Val(n))
+              _ => None
+            }
+            let post = parse_float_post(obj)
+            let opt = parser.float_opt(
+              name~,
+              default=default_val,
+              global~,
+              shorts~,
+              description~,
+              hidden~,
+              aliases~,
+              implicit_value~,
+              post~,
+              variation_false~,
+              variation_toggle~,
+              variation_true~,
+              variation_reset~,
+              variation_unset~,
+            )
+            opt_refs[name] = opt.as_ref()
+            entries.push(
+              OptEntry::{
+                name,
+                extract: fn() -> Json {
+                  match opt.get() {
+                    Some(v) => Json::number(v)
+                    None => Json::null()
+                  }
+                },
+              },
+            )
+          }
           "count" => {
             let opt = parser.count(
               name~,
@@ -408,6 +478,34 @@ fn build_parser(
                       Json::array(
                         arr.map(fn(n) -> Json { Json::number(n.to_double()) }),
                       )
+                    None => Json::null()
+                  }
+                },
+              },
+            )
+          }
+          "append_float" => {
+            let opt = parser.append_float(
+              name~,
+              global~,
+              shorts~,
+              description~,
+              hidden~,
+              aliases~,
+              variation_false~,
+              variation_toggle~,
+              variation_true~,
+              variation_reset~,
+              variation_unset~,
+            )
+            opt_refs[name] = opt.as_ref()
+            entries.push(
+              OptEntry::{
+                name,
+                extract: fn() -> Json {
+                  match opt.get() {
+                    Some(arr) =>
+                      Json::array(arr.map(fn(n) -> Json { Json::number(n) }))
                     None => Json::null()
                   }
                 },

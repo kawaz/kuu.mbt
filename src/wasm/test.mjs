@@ -473,4 +473,98 @@ function test(label, input) {
   strictEqual(r.ok, false);
 }
 
+// Test 34: float kind basic
+{
+  const r = test("Float kind basic", {
+    opts: [
+      { kind: "float", name: "rate", default: 1.0, description: "Rate" },
+    ],
+    args: ["--rate", "3.14"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.rate, 3.14);
+}
+
+// Test 35: float kind default
+{
+  const r = test("Float kind default", {
+    opts: [
+      { kind: "float", name: "rate", default: 2.5 },
+    ],
+    args: [],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.rate, 2.5);
+}
+
+// Test 36: float kind with float_in_range post filter
+{
+  const r = test("Float kind with float_in_range post", {
+    opts: [
+      { kind: "float", name: "rate", default: 0.0, post: { float_in_range: [0.0, 1.0] } },
+    ],
+    args: ["--rate", "0.5"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.rate, 0.5);
+}
+
+// Test 37: float kind with float_in_range error
+{
+  const r = test("Float kind float_in_range error", {
+    opts: [
+      { kind: "float", name: "rate", default: 0.0, post: { float_in_range: [0.0, 1.0] } },
+    ],
+    args: ["--rate", "1.5"],
+  });
+  strictEqual(r.ok, false);
+}
+
+// Test 38: append_float kind
+{
+  const r = test("Append float kind", {
+    opts: [
+      { kind: "append_float", name: "score", description: "Scores" },
+    ],
+    args: ["--score", "1.5", "--score", "2.7"],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.score, [1.5, 2.7]);
+}
+
+// Test 39: append_float kind empty
+{
+  const r = test("Append float kind empty", {
+    opts: [
+      { kind: "append_float", name: "score" },
+    ],
+    args: [],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.score, []);
+}
+
+// Test 40: float kind invalid value
+{
+  const r = test("Float kind invalid value", {
+    opts: [
+      { kind: "float", name: "rate", default: 0.0 },
+    ],
+    args: ["--rate", "abc"],
+  });
+  strictEqual(r.ok, false);
+}
+
+// Test 41: float kind with implicit_value
+{
+  const r = test("Float implicit_value", {
+    opts: [
+      { kind: "float", name: "threshold", default: 0.0, implicit_value: 0.5 },
+    ],
+    args: ["--threshold"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.threshold, 0.5);
+}
+
 console.log("\n--- All tests passed ---");
