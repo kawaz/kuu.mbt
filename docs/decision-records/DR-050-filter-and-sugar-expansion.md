@@ -33,8 +33,10 @@ kuu の FilterChain は 11 個の built-in パーツを持つが、CLI パーサ
 | `starts_with(prefix)` | `String → String` | prefix で始まることを検証 |
 | `ends_with(suffix)` | `String → String` | suffix で終わることを検証 |
 | `contains(substr)` | `String → String` | 部分文字列を含むことを検証 |
-| `min_length(n)` | `String → String` | 文字列長 >= n を検証 |
-| `max_length(n)` | `String → String` | 文字列長 <= n を検証 |
+| `min_length(n)` | `String → String` | 文字列長 >= n を検証（UTF-16 コードユニット数） |
+| `max_length(n)` | `String → String` | 文字列長 <= n を検証（UTF-16 コードユニット数） |
+| `min_codepoints(n)` | `String → String` | コードポイント数 >= n を検証（サロゲートペア対応） |
+| `max_codepoints(n)` | `String → String` | コードポイント数 <= n を検証（サロゲートペア対応） |
 
 ### B. 文字列変換
 

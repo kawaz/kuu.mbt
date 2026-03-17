@@ -743,3 +743,72 @@ test "clamp — above max clamped" {
     Err(_) => fail("expected Ok")
   }
 }
+
+// --- min_codepoints ---
+
+///|
+test "min_codepoints — passes ASCII" {
+  let chain = Filter::min_codepoints(3)
+  let result : Result[String, _] = try? (chain.run)("abc")
+  match result {
+    Ok(v) => inspect(v, content="abc")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "min_codepoints — rejects too short" {
+  let chain = Filter::min_codepoints(3)
+  let result : Result[String, _] = try? (chain.run)("ab")
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "min_codepoints — counts emoji as 1 codepoint" {
+  // 🎉 = 1 codepoint (U+1F389) but 2 UTF-16 code units
+  let chain = Filter::min_codepoints(2)
+  let result : Result[String, _] = try? (chain.run)("a\u{1F389}")
+  match result {
+    Ok(v) => inspect(v, content="a\u{1F389}")
+    Err(_) => fail("expected Ok: emoji is 1 codepoint + a = 2 codepoints")
+  }
+}
+
+///|
+test "min_codepoints — emoji counted correctly vs min_length" {
+  // "🎉" has char_length()=1 but length()=2
+  // min_codepoints(2) should reject single emoji
+  let chain = Filter::min_codepoints(2)
+  let result : Result[String, _] = try? (chain.run)("\u{1F389}")
+  inspect(result is Err(_), content="true")
+}
+
+// --- max_codepoints ---
+
+///|
+test "max_codepoints — passes short string" {
+  let chain = Filter::max_codepoints(5)
+  let result : Result[String, _] = try? (chain.run)("hello")
+  match result {
+    Ok(v) => inspect(v, content="hello")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "max_codepoints — rejects too long" {
+  let chain = Filter::max_codepoints(5)
+  let result : Result[String, _] = try? (chain.run)("hello!")
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "max_codepoints — emoji counted as 1" {
+  // "a🎉b" = 3 codepoints, but length()=4 (UTF-16)
+  let chain = Filter::max_codepoints(3)
+  let result : Result[String, _] = try? (chain.run)("a\u{1F389}b")
+  match result {
+    Ok(v) => inspect(v, content="a\u{1F389}b")
+    Err(_) => fail("expected Ok: 3 codepoints should pass max_codepoints(3)")
+  }
+}

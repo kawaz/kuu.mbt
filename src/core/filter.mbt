@@ -199,6 +199,40 @@ pub fn Filter::max_length(n : Int) -> FilterChain[String, String] {
   })
 }
 
+///|
+/// Validate minimum codepoint count (Unicode codepoints, handles surrogate pairs correctly)
+pub fn Filter::min_codepoints(n : Int) -> FilterChain[String, String] {
+  Filter::validate(fn(s) raise ParseError {
+    let cp = s.char_length()
+    if cp < n {
+      raise parse_error(
+        "value too short (got " +
+        cp.to_string() +
+        ", minimum " +
+        n.to_string() +
+        " codepoints)",
+      )
+    }
+  })
+}
+
+///|
+/// Validate maximum codepoint count (Unicode codepoints, handles surrogate pairs correctly)
+pub fn Filter::max_codepoints(n : Int) -> FilterChain[String, String] {
+  Filter::validate(fn(s) raise ParseError {
+    let cp = s.char_length()
+    if cp > n {
+      raise parse_error(
+        "value too long (got " +
+        cp.to_string() +
+        ", maximum " +
+        n.to_string() +
+        " codepoints)",
+      )
+    }
+  })
+}
+
 // --- String transformation ---
 
 ///|
