@@ -323,3 +323,423 @@ test "in_range at upper boundary" {
     Err(_) => fail("expected Ok")
   }
 }
+
+// --- to_upper ---
+
+///|
+test "to_upper — converts to uppercase" {
+  let chain = Filter::to_upper()
+  let result : Result[String, _] = try? (chain.run)("hello")
+  match result {
+    Ok(v) => inspect(v, content="HELLO")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "to_upper — preserves non-alpha" {
+  let chain = Filter::to_upper()
+  let result : Result[String, _] = try? (chain.run)("abc-123")
+  match result {
+    Ok(v) => inspect(v, content="ABC-123")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+// --- starts_with ---
+
+///|
+test "starts_with — passes matching prefix" {
+  let chain = Filter::starts_with("http")
+  let result : Result[String, _] = try? (chain.run)("https://example.com")
+  match result {
+    Ok(v) => inspect(v, content="https://example.com")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "starts_with — rejects non-matching prefix" {
+  let chain = Filter::starts_with("http")
+  let result : Result[String, _] = try? (chain.run)("ftp://example.com")
+  inspect(result is Err(_), content="true")
+}
+
+// --- ends_with ---
+
+///|
+test "ends_with — passes matching suffix" {
+  let chain = Filter::ends_with(".json")
+  let result : Result[String, _] = try? (chain.run)("config.json")
+  match result {
+    Ok(v) => inspect(v, content="config.json")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "ends_with — rejects non-matching suffix" {
+  let chain = Filter::ends_with(".json")
+  let result : Result[String, _] = try? (chain.run)("config.yaml")
+  inspect(result is Err(_), content="true")
+}
+
+// --- contains ---
+
+///|
+test "contains — passes when substring present" {
+  let chain = Filter::contains("world")
+  let result : Result[String, _] = try? (chain.run)("hello world")
+  match result {
+    Ok(v) => inspect(v, content="hello world")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "contains — rejects when substring absent" {
+  let chain = Filter::contains("world")
+  let result : Result[String, _] = try? (chain.run)("hello there")
+  inspect(result is Err(_), content="true")
+}
+
+// --- min_length ---
+
+///|
+test "min_length — passes when long enough" {
+  let chain = Filter::min_length(3)
+  let result : Result[String, _] = try? (chain.run)("abc")
+  match result {
+    Ok(v) => inspect(v, content="abc")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "min_length — rejects when too short" {
+  let chain = Filter::min_length(3)
+  let result : Result[String, _] = try? (chain.run)("ab")
+  inspect(result is Err(_), content="true")
+}
+
+// --- max_length ---
+
+///|
+test "max_length — passes when short enough" {
+  let chain = Filter::max_length(5)
+  let result : Result[String, _] = try? (chain.run)("hello")
+  match result {
+    Ok(v) => inspect(v, content="hello")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "max_length — rejects when too long" {
+  let chain = Filter::max_length(5)
+  let result : Result[String, _] = try? (chain.run)("hello!")
+  inspect(result is Err(_), content="true")
+}
+
+// --- trim_start ---
+
+///|
+test "trim_start — removes leading whitespace" {
+  let chain = Filter::trim_start()
+  let result : Result[String, _] = try? (chain.run)("  hello  ")
+  match result {
+    Ok(v) => inspect(v, content="hello  ")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+// --- trim_end ---
+
+///|
+test "trim_end — removes trailing whitespace" {
+  let chain = Filter::trim_end()
+  let result : Result[String, _] = try? (chain.run)("  hello  ")
+  match result {
+    Ok(v) => inspect(v, content="  hello")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+// --- replace ---
+
+///|
+test "replace — replaces first occurrence" {
+  let chain = Filter::replace("o", "0")
+  let result : Result[String, _] = try? (chain.run)("foobar")
+  match result {
+    Ok(v) => inspect(v, content="f0obar")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+// --- replace_all ---
+
+///|
+test "replace_all — replaces all occurrences" {
+  let chain = Filter::replace_all("o", "0")
+  let result : Result[String, _] = try? (chain.run)("foobar")
+  match result {
+    Ok(v) => inspect(v, content="f00bar")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+// --- regex_match ---
+
+///|
+test "regex_match — passes when pattern matches" {
+  let chain = Filter::regex_match("[[:digit:]]+")
+  let result : Result[String, _] = try? (chain.run)("abc123def")
+  match result {
+    Ok(v) => inspect(v, content="abc123def")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "regex_match — rejects when pattern does not match" {
+  let chain = Filter::regex_match("^[[:digit:]]+$")
+  let result : Result[String, _] = try? (chain.run)("abc")
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "regex_match — full match with anchors" {
+  let chain = Filter::regex_match("^[[:alpha:]]+$")
+  let result : Result[String, _] = try? (chain.run)("hello")
+  match result {
+    Ok(v) => inspect(v, content="hello")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+// --- regex_replace ---
+
+///|
+test "regex_replace — replaces all matches" {
+  let chain = Filter::regex_replace("[[:digit:]]+", "NUM")
+  let result : Result[String, _] = try? (chain.run)("a12b3c")
+  match result {
+    Ok(v) => inspect(v, content="aNUMbNUMc")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "regex_replace — no match returns original" {
+  let chain = Filter::regex_replace("[[:digit:]]+", "NUM")
+  let result : Result[String, _] = try? (chain.run)("abc")
+  match result {
+    Ok(v) => inspect(v, content="abc")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+// --- regex_split ---
+
+///|
+test "regex_split — splits by pattern" {
+  let chain = Filter::regex_split("[,;]+")
+  let result : Result[Array[String], _] = try? (chain.run)("a,b;;c")
+  match result {
+    Ok(v) => inspect(v, content="[\"a\", \"b\", \"c\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "regex_split — no match returns single element" {
+  let chain = Filter::regex_split("[,;]+")
+  let result : Result[Array[String], _] = try? (chain.run)("abc")
+  match result {
+    Ok(v) => inspect(v, content="[\"abc\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+// --- parse_bool ---
+
+///|
+test "parse_bool — true" {
+  let chain = Filter::parse_bool()
+  let result : Result[Bool, _] = try? (chain.run)("true")
+  match result {
+    Ok(v) => inspect(v, content="true")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "parse_bool — false" {
+  let chain = Filter::parse_bool()
+  let result : Result[Bool, _] = try? (chain.run)("false")
+  match result {
+    Ok(v) => inspect(v, content="false")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "parse_bool — 1" {
+  let chain = Filter::parse_bool()
+  let result : Result[Bool, _] = try? (chain.run)("1")
+  match result {
+    Ok(v) => inspect(v, content="true")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "parse_bool — 0" {
+  let chain = Filter::parse_bool()
+  let result : Result[Bool, _] = try? (chain.run)("0")
+  match result {
+    Ok(v) => inspect(v, content="false")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "parse_bool — case insensitive" {
+  let chain = Filter::parse_bool()
+  let result : Result[Bool, _] = try? (chain.run)("TRUE")
+  match result {
+    Ok(v) => inspect(v, content="true")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "parse_bool — invalid" {
+  let chain = Filter::parse_bool()
+  let result : Result[Bool, _] = try? (chain.run)("maybe")
+  inspect(result is Err(_), content="true")
+}
+
+// --- float_in_range ---
+
+///|
+test "float_in_range — within range" {
+  let chain = Filter::float_in_range(0.0, 1.0)
+  let result : Result[Double, _] = try? (chain.run)(0.5)
+  match result {
+    Ok(v) => inspect(v, content="0.5")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "float_in_range — at boundaries" {
+  let chain = Filter::float_in_range(0.0, 1.0)
+  let r1 : Result[Double, _] = try? (chain.run)(0.0)
+  inspect(r1 is Ok(_), content="true")
+  let r2 : Result[Double, _] = try? (chain.run)(1.0)
+  inspect(r2 is Ok(_), content="true")
+}
+
+///|
+test "float_in_range — out of range" {
+  let chain = Filter::float_in_range(0.0, 1.0)
+  let result : Result[Double, _] = try? (chain.run)(1.5)
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "float_in_range — rejects NaN" {
+  let chain = Filter::float_in_range(0.0, 1.0)
+  let nan = 0.0 / 0.0
+  let result : Result[Double, _] = try? (chain.run)(nan)
+  inspect(result is Err(_), content="true")
+}
+
+// --- positive ---
+
+///|
+test "positive — passes positive" {
+  let chain = Filter::positive()
+  let result : Result[Int, _] = try? (chain.run)(1)
+  match result {
+    Ok(v) => inspect(v, content="1")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "positive — rejects zero" {
+  let chain = Filter::positive()
+  let result : Result[Int, _] = try? (chain.run)(0)
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "positive — rejects negative" {
+  let chain = Filter::positive()
+  let result : Result[Int, _] = try? (chain.run)(-1)
+  inspect(result is Err(_), content="true")
+}
+
+// --- non_negative ---
+
+///|
+test "non_negative — passes zero" {
+  let chain = Filter::non_negative()
+  let result : Result[Int, _] = try? (chain.run)(0)
+  match result {
+    Ok(v) => inspect(v, content="0")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "non_negative — passes positive" {
+  let chain = Filter::non_negative()
+  let result : Result[Int, _] = try? (chain.run)(5)
+  match result {
+    Ok(v) => inspect(v, content="5")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "non_negative — rejects negative" {
+  let chain = Filter::non_negative()
+  let result : Result[Int, _] = try? (chain.run)(-1)
+  inspect(result is Err(_), content="true")
+}
+
+// --- clamp ---
+
+///|
+test "clamp — within range unchanged" {
+  let chain = Filter::clamp(0, 10)
+  let result : Result[Int, _] = try? (chain.run)(5)
+  match result {
+    Ok(v) => inspect(v, content="5")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "clamp — below min clamped" {
+  let chain = Filter::clamp(0, 10)
+  let result : Result[Int, _] = try? (chain.run)(-5)
+  match result {
+    Ok(v) => inspect(v, content="0")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "clamp — above max clamped" {
+  let chain = Filter::clamp(0, 10)
+  let result : Result[Int, _] = try? (chain.run)(15)
+  match result {
+    Ok(v) => inspect(v, content="10")
+    Err(_) => fail("expected Ok")
+  }
+}

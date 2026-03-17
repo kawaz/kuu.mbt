@@ -190,6 +190,41 @@ pub fn Parser::int_opt(
 }
 
 ///|
+pub fn Parser::float_opt(
+  self : Parser,
+  name~ : String,
+  default~ : Double,
+  default_fn? : (() -> Double)? = None,
+  global? : Bool = false,
+  aliases? : Array[String] = [],
+  shorts? : String = "",
+  description? : String = "",
+  env? : String = "",
+  value_name? : String = "",
+  hidden? : Bool = false,
+  post? : FilterChain[Double, Double]? = None,
+  choices? : Array[String] = [],
+  implicit_value? : Lazy[Double]? = None,
+  variations? : Array[Variation] = [],
+  variation_toggle? : String? = None,
+  variation_true? : String? = None,
+  variation_false? : String? = None,
+  variation_reset? : String? = None,
+  variation_unset? : String? = None,
+) -> Opt[Double] {
+  apply_variation_sugar(
+    variations, variation_toggle~, variation_true~, variation_false~,
+    variation_reset~, variation_unset~,
+  )
+  self.custom(
+    name~, aliases~, shorts~, global~, hidden~, variations~,
+    description~, value_name~, env~,
+    default~, default_fn~, post~, choices~, implicit_value~,
+    pre=Filter::parse_float(),
+  )
+}
+
+///|
 pub fn Parser::append_string(
   self : Parser,
   name~ : String,
@@ -244,6 +279,35 @@ pub fn Parser::append_int(
     name~, aliases~, shorts~, global~, hidden~, variations~,
     description~, value_name~, env~,
     pre=Filter::parse_int(),
+  )
+}
+
+///|
+pub fn Parser::append_float(
+  self : Parser,
+  name~ : String,
+  global? : Bool = false,
+  aliases? : Array[String] = [],
+  shorts? : String = "",
+  description? : String = "",
+  env? : String = "",
+  value_name? : String = "",
+  hidden? : Bool = false,
+  variations? : Array[Variation] = [],
+  variation_toggle? : String? = None,
+  variation_true? : String? = None,
+  variation_false? : String? = None,
+  variation_reset? : String? = None,
+  variation_unset? : String? = None,
+) -> Opt[Array[Double]] {
+  apply_variation_sugar(
+    variations, variation_toggle~, variation_true~, variation_false~,
+    variation_reset~, variation_unset~,
+  )
+  self.custom_append(
+    name~, aliases~, shorts~, global~, hidden~, variations~,
+    description~, value_name~, env~,
+    pre=Filter::parse_float(),
   )
 }
 

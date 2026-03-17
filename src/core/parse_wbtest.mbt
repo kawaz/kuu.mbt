@@ -6935,3 +6935,93 @@ test "shorts grapheme cluster: multiple grapheme shorts" {
   ignore(p.parse(["-\u{1F1EF}\u{1F1F5}"]))
   inspect(p.get(opt), content="Some(1)")
 }
+
+// === float_opt ===
+
+///|
+test "float_opt: --threshold 0.5" {
+  let p = Parser::new()
+  let threshold = p.float_opt(name="threshold", default=0.0)
+  ignore(p.parse(["--threshold", "0.5"]))
+  inspect(p.get(threshold), content="Some(0.5)")
+}
+
+///|
+test "float_opt: default value" {
+  let p = Parser::new()
+  let threshold = p.float_opt(name="threshold", default=3.14)
+  ignore(p.parse([]))
+  inspect(p.get(threshold), content="Some(3.14)")
+}
+
+///|
+test "float_opt: invalid value" {
+  let p = Parser::new()
+  let _ = p.float_opt(name="threshold", default=0.0)
+  let result : Result[_, _] = try? p.parse(["--threshold", "abc"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "float_opt: --threshold=1.5 eq form" {
+  let p = Parser::new()
+  let threshold = p.float_opt(name="threshold", default=0.0)
+  ignore(p.parse(["--threshold=1.5"]))
+  inspect(p.get(threshold), content="Some(1.5)")
+}
+
+///|
+test "float_opt: with post filter" {
+  let p = Parser::new()
+  let rate = p.float_opt(
+    name="rate", default=0.5,
+    post=Some(Filter::float_in_range(0.0, 1.0)),
+  )
+  ignore(p.parse(["--rate", "0.7"]))
+  inspect(p.get(rate), content="Some(0.7)")
+}
+
+///|
+test "float_opt: post filter rejects out of range" {
+  let p = Parser::new()
+  let _ = p.float_opt(
+    name="rate", default=0.5,
+    post=Some(Filter::float_in_range(0.0, 1.0)),
+  )
+  let result : Result[_, _] = try? p.parse(["--rate", "1.5"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "float_opt: negative value" {
+  let p = Parser::new()
+  let temp = p.float_opt(name="temperature", default=0.0)
+  ignore(p.parse(["--temperature", "-40.5"]))
+  inspect(p.get(temp), content="Some(-40.5)")
+}
+
+// === append_float ===
+
+///|
+test "append_float: multiple values" {
+  let p = Parser::new()
+  let coords = p.append_float(name="coord")
+  ignore(p.parse(["--coord", "1.5", "--coord", "2.5", "--coord", "3.0"]))
+  inspect(p.get(coords), content="Some([1.5, 2.5, 3])")
+}
+
+///|
+test "append_float: empty" {
+  let p = Parser::new()
+  let coords = p.append_float(name="coord")
+  ignore(p.parse([]))
+  inspect(p.get(coords), content="Some([])")
+}
+
+///|
+test "append_float: invalid value" {
+  let p = Parser::new()
+  let _ = p.append_float(name="coord")
+  let result : Result[_, _] = try? p.parse(["--coord", "abc"])
+  inspect(result is Err(_), content="true")
+}
