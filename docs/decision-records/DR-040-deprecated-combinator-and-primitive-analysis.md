@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-040: deprecated コンビネータ実装 + clone/adjust 設計分析
 
 ## 背景

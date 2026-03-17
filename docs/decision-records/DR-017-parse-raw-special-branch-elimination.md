@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-017: parse_raw 特殊分岐の ExactNode 化
 
 parse_raw のメインループから特殊分岐を排除し、全ての引数処理を ExactNode の投機実行ループに統一する。

@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-034: greedy/non-greedy による OC/P フェーズ分離の再導入
 
 日付: 2026-03-09

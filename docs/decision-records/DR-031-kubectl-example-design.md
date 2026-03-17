@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-031: kubectl example の設計
 
 ## 概要

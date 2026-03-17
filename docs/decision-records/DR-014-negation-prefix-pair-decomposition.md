@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 > **注意**: この DR は DR-024（コンビネータパラメータ共通化）の Variation enum で置き換え済み。2軸分解（negate × prefix_pair）は採用されず、1軸の Variation リストに統合された。
 
 # DR-014: 否定パターンとプレフィックスペアの2軸分解

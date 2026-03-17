@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-042: struct-first DX 層設計 — Parseable trait + apply_fn 方式
 
 ## ステータス: 採択

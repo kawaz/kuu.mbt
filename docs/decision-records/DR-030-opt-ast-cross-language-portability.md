@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-030: opt AST の言語間ポータビリティ
 
 ## 背景

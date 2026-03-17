@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-026: sub() API / require_cmd() / parse 単一呼び出し制約
 
 ## sub() — cmd() のシュガー

@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-022: never + serial コンビネータ設計
 
 ## 背景

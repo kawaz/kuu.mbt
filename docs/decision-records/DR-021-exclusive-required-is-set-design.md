@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-021: exclusive/required バリデーション + is_set 追跡設計
 
 ## 背景

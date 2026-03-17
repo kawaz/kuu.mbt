@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-035: WASM bridge 拡張 — JSON 表現可能な全機能の対応
 
 日付: 2026-03-09

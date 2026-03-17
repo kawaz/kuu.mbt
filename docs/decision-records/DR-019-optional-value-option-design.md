@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-019: Optional Value Option — 値省略可能オプションの設計
 
 ## 背景

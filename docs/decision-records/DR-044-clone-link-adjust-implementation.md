@@ -1,4 +1,10 @@
+---
+type: decision
+---
+
 # DR-044: clone / link / adjust コンビネータ実装
+
+> **Note**: DR-045 で大幅に進化。clone は alias ラッパー(v1)から独立 cell の save/restore パターンに変更。link に propagate_set~ パラメータ追加。alias の commit は Accessor.set_commit 経由に統合。
 
 ## 背景
 

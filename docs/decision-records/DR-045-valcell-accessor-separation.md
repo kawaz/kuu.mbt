@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-045: ValCell / Accessor 分離 — Opt[T] から値のライフサイクルを独立させる
 
 **ステータス: accepted (Phase 1-4 implemented)**

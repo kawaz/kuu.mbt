@@ -1,3 +1,7 @@
+---
+type: discussion
+---
+
 # Phase 4 設計議論 — 生チャットログ（2026-02-27）
 
 設計書 `docs/DESIGN.md` と要約版 `docs/decision-records/DR-002-phase4-design-discussion-log.md` の元になった議論。

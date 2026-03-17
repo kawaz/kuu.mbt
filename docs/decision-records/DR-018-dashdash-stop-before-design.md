@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-018: dashdash / append_dashdash + stop_before 設計
 
 ## 背景

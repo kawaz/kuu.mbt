@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-029: 言語境界を越える Serialize/Deserialize 設計構想
 
 ## 背景

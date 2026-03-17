@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-020: 汎用 or コンビネータ + Initial[T] — choices/implicit_value の再設計
 
 ## 背景

@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-025: コンビネータの Compositional 分解
 
 現在の6コンビネータ（flag, string_opt, int_opt, count, append_string, append_int）は

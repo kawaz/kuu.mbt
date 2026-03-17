@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-012: ExactNode アーキテクチャへの設計転換
 
 DESIGN.md の ErasedNode/Opts 構造から、ExactNode ベースの4層レイヤーアーキテクチャに転換した設計判断の記録。

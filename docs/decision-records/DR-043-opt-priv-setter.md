@@ -1,4 +1,10 @@
+---
+type: decision
+---
+
 # DR-043: Opt[T] に priv setter を追加
+
+> **Note**: DR-045 で ValCell/Accessor に発展的統合された。setter は Accessor.set / set_value / set_commit に吸収され、Opt[T] の priv setter フィールドは priv accessor: Accessor[T] に置換された。
 
 ## 背景
 

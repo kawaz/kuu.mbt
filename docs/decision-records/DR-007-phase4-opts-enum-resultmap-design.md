@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-007: Opts enum + ResultMap + immutable Opt + greedy/never 設計（2026-03-01）
 
 > **注記**: 本 DR で設計した以下の概念は後続 DR で上書きされています:

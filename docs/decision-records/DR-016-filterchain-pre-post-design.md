@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-016: FilterChain による pre/post フィルタ設計
 
 reducer の前処理・後処理を型安全に合成可能なパーツとして分離する設計の記録。

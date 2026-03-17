@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 > **Archive**: 2026-02-27 にアーカイブ。String ベース中間表現 + `Map[String, Array[String]]` の
 > ParseResult 方式の旧設計。`&Trait` (trait object) による Opt ツリー直接保持方式に移行したため置き換え。
 

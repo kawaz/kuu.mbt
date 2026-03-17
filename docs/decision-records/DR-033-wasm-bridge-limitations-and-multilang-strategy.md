@@ -1,3 +1,7 @@
+---
+type: research
+---
+
 # DR-033: WASM bridge 制限事項と多言語ブリッジ戦略
 
 ## 背景

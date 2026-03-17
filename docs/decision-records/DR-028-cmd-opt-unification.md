@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-028: cmd → Opt[CmdResult] 統合
 
 > **ステータス**: 実装済み。`Opt[CmdResult]` は src/core/commands.mbt, src/core/types.mbt に実装されています。
