@@ -90,4 +90,14 @@ describe("npm audit", () => {
       expect(result.command?.values.omit).toEqual(["dev", "optional"]);
     }
   });
+
+  it("npm audit fix -f → shorts で force", () => {
+    const result = parse(auditSchema, ["audit", "fix", "-f"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("audit");
+      expect(result.command?.command?.name).toBe("fix");
+      expect(result.command?.command?.values.force).toBe(true);
+    }
+  });
 });

@@ -75,6 +75,33 @@ describe("npm run", () => {
     }
   });
 
+  it("npm run test --if-present -- --arg → オプション + dashdash 複合", () => {
+    const result = parse(runSchema, [
+      "run",
+      "test",
+      "--if-present",
+      "--",
+      "--arg",
+    ]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("run");
+      expect(result.command?.values.script).toBe("test");
+      expect(result.command?.values["if-present"]).toBe(true);
+      expect(result.command?.values["--"]).toEqual(["--arg"]);
+    }
+  });
+
+  it("npm run test -- → dashdash のみ、引数なし", () => {
+    const result = parse(runSchema, ["run", "test", "--"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("run");
+      expect(result.command?.values.script).toBe("test");
+      expect(result.command?.values["--"]).toEqual([]);
+    }
+  });
+
   it("npm run test --help → ヘルプ表示", () => {
     const result = parse(runSchema, ["run", "test", "--help"]);
     expect(result.ok).toBe(false);

@@ -49,8 +49,11 @@ export const installCommand: KuuOpt = {
   opts: [
     { kind: "rest", name: "packages" },
     { kind: "flag", name: "save", shorts: "S", description: "Save to dependencies" },
+    { kind: "flag", name: "no-save", description: "Don't save to dependencies" },
+    { kind: "flag", name: "save-prod", description: "Save to dependencies (default)" },
     { kind: "flag", name: "save-dev", shorts: "D", description: "Save to devDependencies" },
     { kind: "flag", name: "save-optional", shorts: "O", description: "Save to optionalDependencies" },
+    { kind: "flag", name: "save-peer", description: "Save to peerDependencies" },
     { kind: "flag", name: "save-exact", shorts: "E", description: "Save exact version" },
     { kind: "flag", name: "global", shorts: "g", description: "Install globally" },
     {
@@ -60,7 +63,7 @@ export const installCommand: KuuOpt = {
       choices: ["dev", "optional", "peer"],
     },
   ],
-  exclusive: [["save", "save-dev", "save-optional"]],
+  exclusive: [["save", "no-save", "save-prod", "save-dev", "save-optional", "save-peer"]],
 };
 
 // --- run ---

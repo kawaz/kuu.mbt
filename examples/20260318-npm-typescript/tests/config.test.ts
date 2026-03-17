@@ -86,6 +86,14 @@ describe("npm config", () => {
     }
   });
 
+  it("npm config (サブコマンドなし) → require_cmd でエラー", () => {
+    const result = parse(configSchema, ["config"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok && "error" in result) {
+      expect(result.error).toBeTruthy();
+    }
+  });
+
   it("npm config --help → ヘルプ表示", () => {
     const result = parse(configSchema, ["config", "--help"]);
     expect(result.ok).toBe(false);

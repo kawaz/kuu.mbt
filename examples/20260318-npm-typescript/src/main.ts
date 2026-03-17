@@ -27,27 +27,34 @@ function formatCommand(cmd: KuuCommandResult, depth = 0): string {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  const parse = await loadKuu();
-  const result = parse(npmSchema, args);
+  try {
+    const args = process.argv.slice(2);
+    const parse = await loadKuu();
+    const result = parse(npmSchema, args);
 
-  if (result.ok) {
-    console.log("Parse successful!");
-    const globalStr = formatValues(result.values, "  ");
-    if (globalStr) {
-      console.log("globals:");
-      console.log(globalStr);
+    if (result.ok) {
+      console.log("Parse successful!");
+      const globalStr = formatValues(result.values, "  ");
+      if (globalStr) {
+        console.log("globals:");
+        console.log(globalStr);
+      }
+      if (result.command) {
+        console.log(formatCommand(result.command));
+      }
+    } else if ("help_requested" in result && result.help_requested) {
+      console.log(result.help);
+    } else if ("error" in result) {
+      console.error(`Error: ${result.error}`);
+      if (result.help) {
+        console.error("\n" + result.help);
+      }
+      process.exitCode = 1;
     }
-    if (result.command) {
-      console.log(formatCommand(result.command));
-    }
-  } else if ("help_requested" in result && result.help_requested) {
-    console.log(result.help);
-  } else if ("error" in result) {
-    console.error(`Error: ${result.error}`);
-    if (result.help) {
-      console.error("\n" + result.help);
-    }
+  } catch (error) {
+    console.error(
+      `Fatal: ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exitCode = 1;
   }
 }

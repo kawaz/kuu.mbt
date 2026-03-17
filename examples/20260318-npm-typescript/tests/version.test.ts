@@ -78,6 +78,17 @@ describe("npm version", () => {
     }
   });
 
+  it("npm version patch → git-tag-version デフォルト=true, commit-hooks デフォルト=true", () => {
+    const result = parse(versionSchema, ["version", "patch"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("version");
+      expect(result.command?.values.release).toBe("patch");
+      expect(result.command?.values["git-tag-version"]).toBe(true);
+      expect(result.command?.values["commit-hooks"]).toBe(true);
+    }
+  });
+
   it("npm version --help → ヘルプ表示", () => {
     const result = parse(versionSchema, ["version", "--help"]);
     expect(result.ok).toBe(false);

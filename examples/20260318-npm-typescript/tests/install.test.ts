@@ -106,6 +106,76 @@ describe("npm install", () => {
     }
   });
 
+  it("npm install --save --save-optional → exclusive 制約違反でエラー", () => {
+    const result = parse(npmSchema, ["install", "--save", "--save-optional"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok && "error" in result) {
+      expect(result.error).toBeTruthy();
+    }
+  });
+
+  it("npm install --save-dev --save-optional → exclusive 制約違反でエラー", () => {
+    const result = parse(npmSchema, [
+      "install",
+      "--save-dev",
+      "--save-optional",
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok && "error" in result) {
+      expect(result.error).toBeTruthy();
+    }
+  });
+
+  it("npm install -S express → shorts で save", () => {
+    const result = parse(npmSchema, ["install", "-S", "express"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("install");
+      expect(result.command?.values.save).toBe(true);
+      expect(result.command?.values.packages).toEqual(["express"]);
+    }
+  });
+
+  it("npm install -O lodash → shorts で save-optional", () => {
+    const result = parse(npmSchema, ["install", "-O", "lodash"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("install");
+      expect(result.command?.values["save-optional"]).toBe(true);
+      expect(result.command?.values.packages).toEqual(["lodash"]);
+    }
+  });
+
+  it("npm install -E typescript → shorts で save-exact", () => {
+    const result = parse(npmSchema, ["install", "-E", "typescript"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("install");
+      expect(result.command?.values["save-exact"]).toBe(true);
+      expect(result.command?.values.packages).toEqual(["typescript"]);
+    }
+  });
+
+  it("npm install -g typescript → shorts で global", () => {
+    const result = parse(npmSchema, ["install", "-g", "typescript"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("install");
+      expect(result.command?.values.global).toBe(true);
+      expect(result.command?.values.packages).toEqual(["typescript"]);
+    }
+  });
+
+  it("npm install --no-save express → no-save フラグ", () => {
+    const result = parse(npmSchema, ["install", "--no-save", "express"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command?.name).toBe("install");
+      expect(result.command?.values["no-save"]).toBe(true);
+      expect(result.command?.values.packages).toEqual(["express"]);
+    }
+  });
+
   it("npm install --help → ヘルプ表示", () => {
     const result = parse(npmSchema, ["install", "--help"]);
     expect(result.ok).toBe(false);
