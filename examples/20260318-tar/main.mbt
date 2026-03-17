@@ -5,62 +5,54 @@
 ///   - exclusive + at_least_one (operation modes)
 ///   - exclusive (compression methods)
 ///   - aliases (--extract/--get, --catenate/--concatenate, etc.)
+///   - deprecated (--compress → --gzip)
 ///   - variation (--wildcards/--no-wildcards, --acls/--no-acls, etc.)
+///   - variation_reset (--no-verbose)
+///   - variation_false (--no-recursion)
 ///   - count (-v/-vv/-vvv)
 ///   - append_string (--exclude, -C)
 ///   - int_opt + post filter (--strip-components)
 ///   - string_opt + choices (--format)
 ///   - rest (FILES...)
 ///   - dashdash (--)
-///   - env (TAR_OPTIONS metadata)
+///   - env (TAPE)
+///   - required (--file)
 fn main {
-  println("=== Test 1: create archive ===")
+  println("=== Demo 1: create archive ===")
   run_test([
     "-cvzf", "archive.tar.gz", "--exclude", "*.o", "--exclude", "*.tmp", "src/",
     "lib/",
   ])
   println("")
-  println("=== Test 2: extract archive ===")
+  println("=== Demo 2: extract archive with verbose ===")
   run_test([
-    "-xvf", "archive.tar", "--strip-components", "1", "-C", "/tmp/out",
+    "-xvvf", "archive.tar", "--strip-components", "1", "-C", "/tmp/out",
   ])
   println("")
-  println("=== Test 3: list archive ===")
-  run_test(["-tvf", "archive.tar"])
-  println("")
-  println("=== Test 4: help ===")
+  println("=== Demo 3: help ===")
   run_test(["--help"])
-  println("")
-  println("=== Test 5: exclusive error (create + extract) ===")
-  run_test(["-cxf", "archive.tar"])
-  println("")
-  println("=== Test 6: compression exclusive error (gzip + xz) ===")
-  run_test(["-czJf", "archive.tar.gz", "."])
-  println("")
-  println("=== Test 7: missing mode error ===")
-  run_test(["-f", "archive.tar"])
-  println("")
-  println("=== Test 8: variation (--no-wildcards) ===")
-  run_test(["-cf", "archive.tar", "--no-wildcards", "--exclude", "literal*", "."])
-  println("")
-  println("=== Test 9: dashdash ===")
-  run_test(["-cf", "archive.tar", "--", "--weird-filename"])
-  println("")
-  println("=== Test 10: short bundling (-cvzf) ===")
-  run_test(["-cvzf", "archive.tar.gz", "."])
 }
 
 ///|
-fn run_test(args : Array[String]) -> Unit {
+fn run_test(
+  args : Array[String],
+  env~ : Map[String, String] = {},
+) -> Unit {
   println("  args: " + args.to_string())
-  match build_and_parse(args) {
+  if env.length() > 0 {
+    println("  env: " + env.to_string())
+  }
+  match build_and_parse(args, env=env) {
     Ok(info) => println(info)
     Err(msg) => println("  ERROR: " + msg)
   }
 }
 
 ///|
-fn build_and_parse(args : Array[String]) -> Result[String, String] {
+fn build_and_parse(
+  args : Array[String],
+  env~ : Map[String, String] = {},
+) -> Result[String, String] {
   let p = @core.Parser::new()
   p.set_description("mytar - A GNU tar CLI mock built with kuu")
 
@@ -144,11 +136,14 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     shorts="J",
     description="Filter the archive through xz",
   )
-  let compress = p.flag(
-    name="compress",
-    shorts="Z",
-    aliases=["uncompress"],
-    description="Filter the archive through compress",
+  // Design rationale: -Z short option is omitted because `deprecated` creates an
+  // alias that shares value with the target (gzip). Short options on deprecated
+  // aliases are not supported by kuu's deprecated combinator. Users should use
+  // --gzip/-z instead.
+  let _compress_deprecated = p.deprecated(
+    "--compress",
+    gzip,
+    msg="use --gzip instead",
   )
   let zstd = p.flag(name="zstd", description="Filter the archive through zstd")
   let lzip = p.flag(
@@ -175,11 +170,12 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     description="Filter through COMMAND",
     value_name="COMMAND",
   )
+  // Note: compress is now a deprecated alias for gzip, so it's excluded from
+  // the exclusive group (it shares gzip's value and doesn't need separate tracking).
   p.exclusive([
     gzip.as_ref(),
     bzip2.as_ref(),
     xz.as_ref(),
-    compress.as_ref(),
     zstd.as_ref(),
     lzip.as_ref(),
     lzma.as_ref(),
@@ -192,12 +188,13 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 
   let file = p.string_opt(
     name="file",
-    default="-",
+    default="",
     shorts="f",
     description="Use archive file or device ARCHIVE",
     value_name="ARCHIVE",
-    env="TAR_ARCHIVE",
+    env="TAPE",
   )
+  p.required(file.as_ref())
 
   // ─── Common options ───
 
@@ -205,6 +202,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     name="verbose",
     shorts="v",
     description="Verbosely list files processed (-v, -vv, -vvv)",
+    variation_reset=Some("no"),
   )
   let directory = p.append_string(
     name="directory",
@@ -327,9 +325,11 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     name="overwrite",
     description="Overwrite existing files when extracting",
   )
-  let no_recursion = p.flag(
-    name="no-recursion",
-    description="Avoid descending automatically in directories",
+  let recursion = p.flag(
+    name="recursion",
+    default=true,
+    description="Recurse into directories (default: true)",
+    variation_false=Some("no"),
   )
   let one_file_system = p.flag(
     name="one-file-system",
@@ -402,15 +402,26 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 
   // ─── Parse ───
 
-  let result : Result[@core.ParseResult, @core.ParseError] = try? p.parse(args)
+  let result : Result[@core.ParseResult, @core.ParseError] = try? p.parse(
+    args, env=env,
+  )
   match result {
     Err(@core.HelpRequested(text)) => {
-      println(text)
-      Ok("  (help displayed)")
+      let buf = StringBuilder::new()
+      buf.write_string(text)
+      Ok(buf.to_string())
     }
     Err(@core.ParseError(info)) => Err(info.to_string())
     Ok(_) => {
       let buf = StringBuilder::new()
+
+      // Deprecated warnings
+      let warnings = p.deprecated_warnings()
+      for warn in warnings {
+        buf.write_string(
+          "  [deprecated] " + warn.0 + ": " + warn.1 + "\n",
+        )
+      }
 
       // Operation mode
       let mode_name = if create.get().unwrap() {
@@ -434,15 +445,13 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       }
       buf.write_string("  mode: " + mode_name + "\n")
 
-      // Compression
+      // Compression (deprecated --compress shares gzip's value, so no separate branch needed)
       let comp = if gzip.get().unwrap() {
         "gzip"
       } else if bzip2.get().unwrap() {
         "bzip2"
       } else if xz.get().unwrap() {
         "xz"
-      } else if compress.get().unwrap() {
-        "compress"
       } else if zstd.get().unwrap() {
         "zstd"
       } else if lzip.get().unwrap() {
@@ -539,7 +548,6 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
         ("dereference", dereference.get().unwrap()),
         ("numeric-owner", numeric_owner.get().unwrap()),
         ("overwrite", overwrite.get().unwrap()),
-        ("no-recursion", no_recursion.get().unwrap()),
         ("one-file-system", one_file_system.get().unwrap()),
         ("totals", totals.get().unwrap()),
         ("full-time", full_time.get().unwrap()),
@@ -548,6 +556,11 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
         if pair.1 {
           buf.write_string("  " + pair.0 + ": true\n")
         }
+      }
+
+      // Recursion (default=true, show only when false)
+      if not(recursion.get().unwrap()) {
+        buf.write_string("  recursion: false\n")
       }
 
       // Metadata override
@@ -598,4 +611,143 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       Ok(buf.to_string())
     }
   }
+}
+
+test "basic create" {
+  let result = build_and_parse(["-cf", "archive.tar", "file1", "file2"])
+  inspect!(result, content=(
+    #|Ok("  mode: create\n  compression: none\n  file: archive.tar\n  files: [\"file1\", \"file2\"]\n")
+  ))
+}
+
+test "extract with alias --get" {
+  let result = build_and_parse(["--get", "-f", "archive.tar"])
+  inspect!(result, content=(
+    #|Ok("  mode: extract\n  compression: none\n  file: archive.tar\n")
+  ))
+}
+
+test "list with verbose count" {
+  let result = build_and_parse(["-tvvf", "archive.tar"])
+  inspect!(result, content=(
+    #|Ok("  mode: list\n  compression: none\n  file: archive.tar\n  verbose: 2\n")
+  ))
+}
+
+test "create with gzip compression" {
+  let result = build_and_parse(["-czf", "archive.tar.gz", "dir/"])
+  inspect!(result, content=(
+    #|Ok("  mode: create\n  compression: gzip\n  file: archive.tar.gz\n  files: [\"dir/\"]\n")
+  ))
+}
+
+test "exclusive error: create + extract" {
+  let result = build_and_parse(["-cxf", "archive.tar"])
+  inspect!(result, content=(
+    #|Err("error: mutually exclusive options: --create, --extract\n\nmytar - A GNU tar CLI mock built with kuu\n\nUsage: [OPTIONS] [FILES]...\n\nArguments:\n  [FILES]...  Files or directory members to archive/extract\n\nOptions:\n  -c, --create                                    Create a new archive\n  -x, --extract, --get                            Extract files from an archive\n  -t, --list                                      List the contents of an archive\n  -r, --append                                    Append files to the end of an archive\n  -u, --update                                    Only append files newer than copy in archive\n  -d, --diff, --compare                           Find differences between archive and file system\n  -A, --catenate, --concatenate                   Append tar files to an archive\n      --delete                                    Delete from the archive\n      --test-label                                Test the archive volume label\n  -z, --gzip, --gunzip, --ungzip                  Filter the archive through gzip\n  -j, --bzip2                                     Filter the archive through bzip2\n  -J, --xz                                        Filter the archive through xz\n      --zstd                                      Filter the archive through zstd\n      --lzip                                      Filter the archive through lzip\n      --lzma                                      Filter the archive through lzma\n      --lzop                                      Filter the archive through lzop\n  -a, --auto-compress                             Use archive suffix to determine the compression program\n  -I, --use-compress-program <COMMAND>            Filter through COMMAND\n  -f, --file <ARCHIVE>                            Use archive file or device ARCHIVE [env: TAPE]\n  -v, --verbose, --no-verbose                     Verbosely list files processed (-v, -vv, -vvv)\n  -C, --directory <DIR>                           Change to DIR before performing any operations\n      --exclude <PATTERN>                         Exclude files matching PATTERN\n  -X, --exclude-from <FILE>                       Exclude patterns listed in FILE\n  -T, --files-from <FILE>                         Get names to extract or create from FILE\n      --strip-components <NUMBER>                 Strip NUMBER leading components from file names on extraction [default: 0]\n      --transform, --xform <EXPRESSION>           Use sed replace EXPRESSION to transform file names\n  -H, --format <FORMAT>                           Create archive of the given format [possible values: gnu, oldgnu, pax, posix, ustar, v7]\n  -V, --label <TEXT>                              Create archive with volume name TEXT\n  -b, --blocking-factor <BLOCKS>                  Set record size to BLOCKSx512 bytes [default: 20]\n  -p, --preserve-permissions, --same-permissions  Extract information about file permissions\n  -k, --keep-old-files                            Don't replace existing files when extracting\n  -m, --touch                                     Don't extract file modified time\n  -U, --unlink-first                              Remove each file prior to extracting over it\n  -W, --verify                                    Attempt to verify the archive after writing it\n  -w, --interactive, --confirmation               Ask for confirmation for every action\n  -P, --absolute-names                            Don't strip leading '/' from file names\n  -S, --sparse                                    Handle sparse files efficiently\n  -h, --dereference                               Follow symlinks; archive the files they point to\n      --numeric-owner                             Always use numbers for user/group names\n      --overwrite                                 Overwrite existing files when extracting\n      --recursion, --no-recursion                 Recurse into directories (default: true)\n      --one-file-system                           Stay in local file system when creating archive\n      --totals                                    Print total bytes after processing the archive\n      --full-time                                 Print file time to its full resolution\n      --owner <NAME[:UID]>                        Force NAME as owner for added files\n      --group <NAME[:GID]>                        Force NAME as group for added files\n      --mode <CHANGES>                            Force permission CHANGES for added files\n      --wildcards, --no-wildcards                 Use wildcards (default for --exclude)\n      --anchored, --no-anchored                   Patterns match file name start\n      --acls, --no-acls                           Enable POSIX ACLs support\n      --selinux, --no-selinux                     Enable SELinux context support\n      --xattrs, --no-xattrs                       Enable extended attributes support\n      --help                                      Print help\n")
+  ))
+}
+
+test "compression exclusive error: gzip + xz" {
+  let result = build_and_parse(["-czJf", "archive.tar.gz", "."])
+  inspect!(result, content=(
+    #|Err("error: mutually exclusive options: --gzip, --xz\n\nmytar - A GNU tar CLI mock built with kuu\n\nUsage: [OPTIONS] [FILES]...\n\nArguments:\n  [FILES]...  Files or directory members to archive/extract\n\nOptions:\n  -c, --create                                    Create a new archive\n  -x, --extract, --get                            Extract files from an archive\n  -t, --list                                      List the contents of an archive\n  -r, --append                                    Append files to the end of an archive\n  -u, --update                                    Only append files newer than copy in archive\n  -d, --diff, --compare                           Find differences between archive and file system\n  -A, --catenate, --concatenate                   Append tar files to an archive\n      --delete                                    Delete from the archive\n      --test-label                                Test the archive volume label\n  -z, --gzip, --gunzip, --ungzip                  Filter the archive through gzip\n  -j, --bzip2                                     Filter the archive through bzip2\n  -J, --xz                                        Filter the archive through xz\n      --zstd                                      Filter the archive through zstd\n      --lzip                                      Filter the archive through lzip\n      --lzma                                      Filter the archive through lzma\n      --lzop                                      Filter the archive through lzop\n  -a, --auto-compress                             Use archive suffix to determine the compression program\n  -I, --use-compress-program <COMMAND>            Filter through COMMAND\n  -f, --file <ARCHIVE>                            Use archive file or device ARCHIVE [env: TAPE]\n  -v, --verbose, --no-verbose                     Verbosely list files processed (-v, -vv, -vvv)\n  -C, --directory <DIR>                           Change to DIR before performing any operations\n      --exclude <PATTERN>                         Exclude files matching PATTERN\n  -X, --exclude-from <FILE>                       Exclude patterns listed in FILE\n  -T, --files-from <FILE>                         Get names to extract or create from FILE\n      --strip-components <NUMBER>                 Strip NUMBER leading components from file names on extraction [default: 0]\n      --transform, --xform <EXPRESSION>           Use sed replace EXPRESSION to transform file names\n  -H, --format <FORMAT>                           Create archive of the given format [possible values: gnu, oldgnu, pax, posix, ustar, v7]\n  -V, --label <TEXT>                              Create archive with volume name TEXT\n  -b, --blocking-factor <BLOCKS>                  Set record size to BLOCKSx512 bytes [default: 20]\n  -p, --preserve-permissions, --same-permissions  Extract information about file permissions\n  -k, --keep-old-files                            Don't replace existing files when extracting\n  -m, --touch                                     Don't extract file modified time\n  -U, --unlink-first                              Remove each file prior to extracting over it\n  -W, --verify                                    Attempt to verify the archive after writing it\n  -w, --interactive, --confirmation               Ask for confirmation for every action\n  -P, --absolute-names                            Don't strip leading '/' from file names\n  -S, --sparse                                    Handle sparse files efficiently\n  -h, --dereference                               Follow symlinks; archive the files they point to\n      --numeric-owner                             Always use numbers for user/group names\n      --overwrite                                 Overwrite existing files when extracting\n      --recursion, --no-recursion                 Recurse into directories (default: true)\n      --one-file-system                           Stay in local file system when creating archive\n      --totals                                    Print total bytes after processing the archive\n      --full-time                                 Print file time to its full resolution\n      --owner <NAME[:UID]>                        Force NAME as owner for added files\n      --group <NAME[:GID]>                        Force NAME as group for added files\n      --mode <CHANGES>                            Force permission CHANGES for added files\n      --wildcards, --no-wildcards                 Use wildcards (default for --exclude)\n      --anchored, --no-anchored                   Patterns match file name start\n      --acls, --no-acls                           Enable POSIX ACLs support\n      --selinux, --no-selinux                     Enable SELinux context support\n      --xattrs, --no-xattrs                       Enable extended attributes support\n      --help                                      Print help\n")
+  ))
+}
+
+test "missing mode error" {
+  let result = build_and_parse(["-f", "archive.tar"])
+  inspect!(result, content=(
+    #|Err("error: at least one required: --create, --extract, --list, --append, --update, --diff, --catenate, --delete, --test-label\n\nmytar - A GNU tar CLI mock built with kuu\n\nUsage: [OPTIONS] [FILES]...\n\nArguments:\n  [FILES]...  Files or directory members to archive/extract\n\nOptions:\n  -c, --create                                    Create a new archive\n  -x, --extract, --get                            Extract files from an archive\n  -t, --list                                      List the contents of an archive\n  -r, --append                                    Append files to the end of an archive\n  -u, --update                                    Only append files newer than copy in archive\n  -d, --diff, --compare                           Find differences between archive and file system\n  -A, --catenate, --concatenate                   Append tar files to an archive\n      --delete                                    Delete from the archive\n      --test-label                                Test the archive volume label\n  -z, --gzip, --gunzip, --ungzip                  Filter the archive through gzip\n  -j, --bzip2                                     Filter the archive through bzip2\n  -J, --xz                                        Filter the archive through xz\n      --zstd                                      Filter the archive through zstd\n      --lzip                                      Filter the archive through lzip\n      --lzma                                      Filter the archive through lzma\n      --lzop                                      Filter the archive through lzop\n  -a, --auto-compress                             Use archive suffix to determine the compression program\n  -I, --use-compress-program <COMMAND>            Filter through COMMAND\n  -f, --file <ARCHIVE>                            Use archive file or device ARCHIVE [env: TAPE]\n  -v, --verbose, --no-verbose                     Verbosely list files processed (-v, -vv, -vvv)\n  -C, --directory <DIR>                           Change to DIR before performing any operations\n      --exclude <PATTERN>                         Exclude files matching PATTERN\n  -X, --exclude-from <FILE>                       Exclude patterns listed in FILE\n  -T, --files-from <FILE>                         Get names to extract or create from FILE\n      --strip-components <NUMBER>                 Strip NUMBER leading components from file names on extraction [default: 0]\n      --transform, --xform <EXPRESSION>           Use sed replace EXPRESSION to transform file names\n  -H, --format <FORMAT>                           Create archive of the given format [possible values: gnu, oldgnu, pax, posix, ustar, v7]\n  -V, --label <TEXT>                              Create archive with volume name TEXT\n  -b, --blocking-factor <BLOCKS>                  Set record size to BLOCKSx512 bytes [default: 20]\n  -p, --preserve-permissions, --same-permissions  Extract information about file permissions\n  -k, --keep-old-files                            Don't replace existing files when extracting\n  -m, --touch                                     Don't extract file modified time\n  -U, --unlink-first                              Remove each file prior to extracting over it\n  -W, --verify                                    Attempt to verify the archive after writing it\n  -w, --interactive, --confirmation               Ask for confirmation for every action\n  -P, --absolute-names                            Don't strip leading '/' from file names\n  -S, --sparse                                    Handle sparse files efficiently\n  -h, --dereference                               Follow symlinks; archive the files they point to\n      --numeric-owner                             Always use numbers for user/group names\n      --overwrite                                 Overwrite existing files when extracting\n      --recursion, --no-recursion                 Recurse into directories (default: true)\n      --one-file-system                           Stay in local file system when creating archive\n      --totals                                    Print total bytes after processing the archive\n      --full-time                                 Print file time to its full resolution\n      --owner <NAME[:UID]>                        Force NAME as owner for added files\n      --group <NAME[:GID]>                        Force NAME as group for added files\n      --mode <CHANGES>                            Force permission CHANGES for added files\n      --wildcards, --no-wildcards                 Use wildcards (default for --exclude)\n      --anchored, --no-anchored                   Patterns match file name start\n      --acls, --no-acls                           Enable POSIX ACLs support\n      --selinux, --no-selinux                     Enable SELinux context support\n      --xattrs, --no-xattrs                       Enable extended attributes support\n      --help                                      Print help\n")
+  ))
+}
+
+test "file required error" {
+  let result = build_and_parse(["-c", "file"])
+  inspect!(result, content=(
+    #|Err("error: required option missing: --file\n\nmytar - A GNU tar CLI mock built with kuu\n\nUsage: [OPTIONS] [FILES]...\n\nArguments:\n  [FILES]...  Files or directory members to archive/extract\n\nOptions:\n  -c, --create                                    Create a new archive\n  -x, --extract, --get                            Extract files from an archive\n  -t, --list                                      List the contents of an archive\n  -r, --append                                    Append files to the end of an archive\n  -u, --update                                    Only append files newer than copy in archive\n  -d, --diff, --compare                           Find differences between archive and file system\n  -A, --catenate, --concatenate                   Append tar files to an archive\n      --delete                                    Delete from the archive\n      --test-label                                Test the archive volume label\n  -z, --gzip, --gunzip, --ungzip                  Filter the archive through gzip\n  -j, --bzip2                                     Filter the archive through bzip2\n  -J, --xz                                        Filter the archive through xz\n      --zstd                                      Filter the archive through zstd\n      --lzip                                      Filter the archive through lzip\n      --lzma                                      Filter the archive through lzma\n      --lzop                                      Filter the archive through lzop\n  -a, --auto-compress                             Use archive suffix to determine the compression program\n  -I, --use-compress-program <COMMAND>            Filter through COMMAND\n  -f, --file <ARCHIVE>                            Use archive file or device ARCHIVE [env: TAPE]\n  -v, --verbose, --no-verbose                     Verbosely list files processed (-v, -vv, -vvv)\n  -C, --directory <DIR>                           Change to DIR before performing any operations\n      --exclude <PATTERN>                         Exclude files matching PATTERN\n  -X, --exclude-from <FILE>                       Exclude patterns listed in FILE\n  -T, --files-from <FILE>                         Get names to extract or create from FILE\n      --strip-components <NUMBER>                 Strip NUMBER leading components from file names on extraction [default: 0]\n      --transform, --xform <EXPRESSION>           Use sed replace EXPRESSION to transform file names\n  -H, --format <FORMAT>                           Create archive of the given format [possible values: gnu, oldgnu, pax, posix, ustar, v7]\n  -V, --label <TEXT>                              Create archive with volume name TEXT\n  -b, --blocking-factor <BLOCKS>                  Set record size to BLOCKSx512 bytes [default: 20]\n  -p, --preserve-permissions, --same-permissions  Extract information about file permissions\n  -k, --keep-old-files                            Don't replace existing files when extracting\n  -m, --touch                                     Don't extract file modified time\n  -U, --unlink-first                              Remove each file prior to extracting over it\n  -W, --verify                                    Attempt to verify the archive after writing it\n  -w, --interactive, --confirmation               Ask for confirmation for every action\n  -P, --absolute-names                            Don't strip leading '/' from file names\n  -S, --sparse                                    Handle sparse files efficiently\n  -h, --dereference                               Follow symlinks; archive the files they point to\n      --numeric-owner                             Always use numbers for user/group names\n      --overwrite                                 Overwrite existing files when extracting\n      --recursion, --no-recursion                 Recurse into directories (default: true)\n      --one-file-system                           Stay in local file system when creating archive\n      --totals                                    Print total bytes after processing the archive\n      --full-time                                 Print file time to its full resolution\n      --owner <NAME[:UID]>                        Force NAME as owner for added files\n      --group <NAME[:GID]>                        Force NAME as group for added files\n      --mode <CHANGES>                            Force permission CHANGES for added files\n      --wildcards, --no-wildcards                 Use wildcards (default for --exclude)\n      --anchored, --no-anchored                   Patterns match file name start\n      --acls, --no-acls                           Enable POSIX ACLs support\n      --selinux, --no-selinux                     Enable SELinux context support\n      --xattrs, --no-xattrs                       Enable extended attributes support\n      --help                                      Print help\n")
+  ))
+}
+
+test "multiple exclude" {
+  let result = build_and_parse([
+    "-cf", "a.tar", "--exclude", "*.log", "--exclude", "*.tmp", ".",
+  ])
+  inspect!(result, content=(
+    #|Ok("  mode: create\n  compression: none\n  file: a.tar\n  exclude: [\"*.log\", \"*.tmp\"]\n  files: [\".\"]\n")
+  ))
+}
+
+test "strip-components" {
+  let result = build_and_parse(["-xf", "a.tar", "--strip-components", "1"])
+  inspect!(result, content=(
+    #|Ok("  mode: extract\n  compression: none\n  file: a.tar\n  strip-components: 1\n")
+  ))
+}
+
+test "format choices valid" {
+  let result = build_and_parse(["-cf", "a.tar", "--format", "pax", "."])
+  inspect!(result, content=(
+    #|Ok("  mode: create\n  compression: none\n  file: a.tar\n  format: pax\n  files: [\".\"]\n")
+  ))
+}
+
+test "format choices invalid" {
+  let result = build_and_parse(["-cf", "a.tar", "--format", "zip", "."])
+  inspect!(result, content=(
+    #|Err("error: value must be one of: gnu, oldgnu, pax, posix, ustar, v7\n\nmytar - A GNU tar CLI mock built with kuu\n\nUsage: [OPTIONS] [FILES]...\n\nArguments:\n  [FILES]...  Files or directory members to archive/extract\n\nOptions:\n  -c, --create                                    Create a new archive\n  -x, --extract, --get                            Extract files from an archive\n  -t, --list                                      List the contents of an archive\n  -r, --append                                    Append files to the end of an archive\n  -u, --update                                    Only append files newer than copy in archive\n  -d, --diff, --compare                           Find differences between archive and file system\n  -A, --catenate, --concatenate                   Append tar files to an archive\n      --delete                                    Delete from the archive\n      --test-label                                Test the archive volume label\n  -z, --gzip, --gunzip, --ungzip                  Filter the archive through gzip\n  -j, --bzip2                                     Filter the archive through bzip2\n  -J, --xz                                        Filter the archive through xz\n      --zstd                                      Filter the archive through zstd\n      --lzip                                      Filter the archive through lzip\n      --lzma                                      Filter the archive through lzma\n      --lzop                                      Filter the archive through lzop\n  -a, --auto-compress                             Use archive suffix to determine the compression program\n  -I, --use-compress-program <COMMAND>            Filter through COMMAND\n  -f, --file <ARCHIVE>                            Use archive file or device ARCHIVE [env: TAPE]\n  -v, --verbose, --no-verbose                     Verbosely list files processed (-v, -vv, -vvv)\n  -C, --directory <DIR>                           Change to DIR before performing any operations\n      --exclude <PATTERN>                         Exclude files matching PATTERN\n  -X, --exclude-from <FILE>                       Exclude patterns listed in FILE\n  -T, --files-from <FILE>                         Get names to extract or create from FILE\n      --strip-components <NUMBER>                 Strip NUMBER leading components from file names on extraction [default: 0]\n      --transform, --xform <EXPRESSION>           Use sed replace EXPRESSION to transform file names\n  -H, --format <FORMAT>                           Create archive of the given format [possible values: gnu, oldgnu, pax, posix, ustar, v7]\n  -V, --label <TEXT>                              Create archive with volume name TEXT\n  -b, --blocking-factor <BLOCKS>                  Set record size to BLOCKSx512 bytes [default: 20]\n  -p, --preserve-permissions, --same-permissions  Extract information about file permissions\n  -k, --keep-old-files                            Don't replace existing files when extracting\n  -m, --touch                                     Don't extract file modified time\n  -U, --unlink-first                              Remove each file prior to extracting over it\n  -W, --verify                                    Attempt to verify the archive after writing it\n  -w, --interactive, --confirmation               Ask for confirmation for every action\n  -P, --absolute-names                            Don't strip leading '/' from file names\n  -S, --sparse                                    Handle sparse files efficiently\n  -h, --dereference                               Follow symlinks; archive the files they point to\n      --numeric-owner                             Always use numbers for user/group names\n      --overwrite                                 Overwrite existing files when extracting\n      --recursion, --no-recursion                 Recurse into directories (default: true)\n      --one-file-system                           Stay in local file system when creating archive\n      --totals                                    Print total bytes after processing the archive\n      --full-time                                 Print file time to its full resolution\n      --owner <NAME[:UID]>                        Force NAME as owner for added files\n      --group <NAME[:GID]>                        Force NAME as group for added files\n      --mode <CHANGES>                            Force permission CHANGES for added files\n      --wildcards, --no-wildcards                 Use wildcards (default for --exclude)\n      --anchored, --no-anchored                   Patterns match file name start\n      --acls, --no-acls                           Enable POSIX ACLs support\n      --selinux, --no-selinux                     Enable SELinux context support\n      --xattrs, --no-xattrs                       Enable extended attributes support\n      --help                                      Print help\n")
+  ))
+}
+
+test "deprecated --compress" {
+  let result = build_and_parse(["-cf", "a.tar", "--compress", "."])
+  inspect!(result, content=(
+    #|Ok("  [deprecated] --compress: use --gzip instead\n  mode: create\n  compression: gzip\n  file: a.tar\n  files: [\".\"]\n")
+
+
+  ))
+}
+
+test "variation --no-recursion" {
+  let result = build_and_parse(["-cf", "a.tar", "--no-recursion", "."])
+  inspect!(result, content=(
+    #|Ok("  mode: create\n  compression: none\n  file: a.tar\n  recursion: false\n  files: [\".\"]\n")
+  ))
+}
+
+test "variation --no-verbose" {
+  let result = build_and_parse(["-tvf", "a.tar", "--no-verbose"])
+  inspect!(result, content=(
+    #|Ok("  mode: list\n  compression: none\n  file: a.tar\n")
+  ))
+}
+
+test "variation --no-wildcards" {
+  let result = build_and_parse([
+    "-cf", "a.tar", "--no-wildcards", "--exclude", "literal*", ".",
+  ])
+  inspect!(result, content=(
+    #|Ok("  mode: create\n  compression: none\n  file: a.tar\n  exclude: [\"literal*\"]\n  wildcards: false\n  files: [\".\"]\n")
+  ))
+}
+
+test "short option combining" {
+  let result = build_and_parse(["-czvf", "archive.tar.gz", "dir/"])
+  inspect!(result, content=(
+    #|Ok("  mode: create\n  compression: gzip\n  file: archive.tar.gz\n  verbose: 1\n  files: [\"dir/\"]\n")
+  ))
+}
+
+test "env TAPE fallback for --file" {
+  let result = build_and_parse(["-c", "file1"], env={ "TAPE": "backup.tar" })
+  inspect!(result, content=(
+    #|Ok("  mode: create\n  compression: none\n  file: backup.tar\n  files: [\"file1\"]\n")
+  ))
+}
+
+test "help display" {
+  let result = build_and_parse(["--help"])
+  inspect!(result, content=(
+    #|Ok("mytar - A GNU tar CLI mock built with kuu\n\nUsage: [OPTIONS] [FILES]...\n\nArguments:\n  [FILES]...  Files or directory members to archive/extract\n\nOptions:\n  -c, --create                                    Create a new archive\n  -x, --extract, --get                            Extract files from an archive\n  -t, --list                                      List the contents of an archive\n  -r, --append                                    Append files to the end of an archive\n  -u, --update                                    Only append files newer than copy in archive\n  -d, --diff, --compare                           Find differences between archive and file system\n  -A, --catenate, --concatenate                   Append tar files to an archive\n      --delete                                    Delete from the archive\n      --test-label                                Test the archive volume label\n  -z, --gzip, --gunzip, --ungzip                  Filter the archive through gzip\n  -j, --bzip2                                     Filter the archive through bzip2\n  -J, --xz                                        Filter the archive through xz\n      --zstd                                      Filter the archive through zstd\n      --lzip                                      Filter the archive through lzip\n      --lzma                                      Filter the archive through lzma\n      --lzop                                      Filter the archive through lzop\n  -a, --auto-compress                             Use archive suffix to determine the compression program\n  -I, --use-compress-program <COMMAND>            Filter through COMMAND\n  -f, --file <ARCHIVE>                            Use archive file or device ARCHIVE [env: TAPE]\n  -v, --verbose, --no-verbose                     Verbosely list files processed (-v, -vv, -vvv)\n  -C, --directory <DIR>                           Change to DIR before performing any operations\n      --exclude <PATTERN>                         Exclude files matching PATTERN\n  -X, --exclude-from <FILE>                       Exclude patterns listed in FILE\n  -T, --files-from <FILE>                         Get names to extract or create from FILE\n      --strip-components <NUMBER>                 Strip NUMBER leading components from file names on extraction [default: 0]\n      --transform, --xform <EXPRESSION>           Use sed replace EXPRESSION to transform file names\n  -H, --format <FORMAT>                           Create archive of the given format [possible values: gnu, oldgnu, pax, posix, ustar, v7]\n  -V, --label <TEXT>                              Create archive with volume name TEXT\n  -b, --blocking-factor <BLOCKS>                  Set record size to BLOCKSx512 bytes [default: 20]\n  -p, --preserve-permissions, --same-permissions  Extract information about file permissions\n  -k, --keep-old-files                            Don't replace existing files when extracting\n  -m, --touch                                     Don't extract file modified time\n  -U, --unlink-first                              Remove each file prior to extracting over it\n  -W, --verify                                    Attempt to verify the archive after writing it\n  -w, --interactive, --confirmation               Ask for confirmation for every action\n  -P, --absolute-names                            Don't strip leading '/' from file names\n  -S, --sparse                                    Handle sparse files efficiently\n  -h, --dereference                               Follow symlinks; archive the files they point to\n      --numeric-owner                             Always use numbers for user/group names\n      --overwrite                                 Overwrite existing files when extracting\n      --recursion, --no-recursion                 Recurse into directories (default: true)\n      --one-file-system                           Stay in local file system when creating archive\n      --totals                                    Print total bytes after processing the archive\n      --full-time                                 Print file time to its full resolution\n      --owner <NAME[:UID]>                        Force NAME as owner for added files\n      --group <NAME[:GID]>                        Force NAME as group for added files\n      --mode <CHANGES>                            Force permission CHANGES for added files\n      --wildcards, --no-wildcards                 Use wildcards (default for --exclude)\n      --anchored, --no-anchored                   Patterns match file name start\n      --acls, --no-acls                           Enable POSIX ACLs support\n      --selinux, --no-selinux                     Enable SELinux context support\n      --xattrs, --no-xattrs                       Enable extended attributes support\n      --help                                      Print help\n")
+  ))
 }

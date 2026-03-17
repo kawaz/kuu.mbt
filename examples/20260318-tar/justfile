@@ -1,14 +1,19 @@
-default:
-    just --list
-
-run *ARGS:
-    moon run . -- {{ARGS}}
-
-test:
-    moon test .
+default: check test
 
 check:
-    moon check .
+    moon check --deny-warn
+
+test:
+    moon test
+
+test-update:
+    moon test --update
+
+run:
+    moon run examples/20260318-tar
 
 fmt:
-    moon fmt .
+    moon fmt
+
+clean:
+    moon clean
