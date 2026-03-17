@@ -47,7 +47,7 @@ func terraformSchema() []OptDef {
 				{Kind: "flag", Name: "reconfigure", Description: "Reconfigure a backend"},
 				{Kind: "flag", Name: "migrate-state", Description: "Reconfigure a backend and attempt to migrate state"},
 				{Kind: "string", Name: "plugin-dir", Description: "Directory containing plugin binaries"},
-				{Kind: "string", Name: "lockfile", Description: "Set a dependency lockfile mode", Choices: []string{"readonly"}},
+				{Kind: "string", Name: "lockfile", Description: "Set a dependency lockfile mode", Choices: []string{"readonly", "skip"}},
 				{Kind: "string", Name: "from-module", Description: "Copy contents of the given module into the target directory"},
 			},
 			Exclusive: [][]string{{"reconfigure", "migrate-state"}},

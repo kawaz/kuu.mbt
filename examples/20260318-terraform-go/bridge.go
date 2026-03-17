@@ -35,6 +35,7 @@ func NewKuuBridge() (*KuuBridge, error) {
 	}
 	if err := cmd.Start(); err != nil {
 		stdin.Close()
+		stdout.Close()
 		return nil, fmt.Errorf("start node: %w", err)
 	}
 	return &KuuBridge{

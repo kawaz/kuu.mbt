@@ -449,5 +449,15 @@ func allScenarios() []Scenario {
 			Args:        []string{"plan", "--unknown-option"},
 			ExpectError: true,
 		},
+		{
+			Name:        "error: plan destroy and replace exclusive",
+			Args:        []string{"plan", "--destroy", "--replace", "aws_instance.web"},
+			ExpectError: true,
+		},
+		{
+			Name:        "error: output json and raw exclusive",
+			Args:        []string{"output", "--json", "--raw"},
+			ExpectError: true,
+		},
 	}
 }
