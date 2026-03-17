@@ -15,8 +15,8 @@ pub(all) enum Variation {
   Toggle(String) // --{p}-{name}: !current（トグル）。Bool 専用。偶数回で元に戻る
   True(String) // --{p}-{name}: 常に true（Bool 専用、冪等）
   False(String) // --{p}-{name}: 常に false（Bool 専用、冪等）
-  Reset(String) // --{p}-{name}: cell=default, was_set=true
-  Unset(String) // --{p}-{name}: cell=default, was_set=false
+  Reset(String) // --{p}-{name}: cell=default, committed=true
+  Unset(String) // --{p}-{name}: cell=default, committed=false
 } derive(Show, Eq)
 
 ///|
@@ -179,7 +179,7 @@ pub fn[T] Lazy::resolve(self : Lazy[T]) -> T {
   }
 }
 
-/// 値の格納・状態管理を担う最小単位。cell + was_set + default を内包する。
+/// 値の格納・状態管理を担う最小単位。cell + committed + default を内包する。
 /// core 内部専用（pub にしない）。
 ///
 /// default_val は Lazy[T] で保持する。Thunk を使えば reset のたびに新しいインスタンスを
@@ -187,13 +187,13 @@ pub fn[T] Lazy::resolve(self : Lazy[T]) -> T {
 ///|
 priv struct ValCell[T] {
   cell : Ref[T]
-  was_set : Ref[Bool]
+  committed : Ref[Bool]
   default_val : Lazy[T]
 }
 
 ///|
 fn[T] ValCell::new(default : Lazy[T]) -> ValCell[T] {
-  { cell: { val: default.resolve() }, was_set: { val: false }, default_val: default }
+  { cell: { val: default.resolve() }, committed: { val: false }, default_val: default }
 }
 
 ///|
@@ -203,14 +203,14 @@ fn[T] ValCell::accessor(self : ValCell[T]) -> Accessor[T] {
     get: fn() { self.cell.val },
     set: fn(v) {
       self.cell.val = v
-      self.was_set.val = true
+      self.committed.val = true
     },
-    set_quiet: fn(v) { self.cell.val = v },
-    is_set: fn() { self.was_set.val },
-    mark_set: fn() { self.was_set.val = true },
+    set_value: fn(v) { self.cell.val = v },
+    is_set: fn() { self.committed.val },
+    set_commit: fn() { self.committed.val = true },
     reset: fn() {
       self.cell.val = self.default_val.resolve()
-      self.was_set.val = false
+      self.committed.val = false
     },
   }
 }
@@ -225,22 +225,25 @@ fn[T] ValCell::clone(self : ValCell[T]) -> ValCell[T] {
 ///|
 /// ValCell への操作をクロージャ束として提供。Opt や post_hook から値を操作する統一 API。
 /// core 内部専用。
+///
+/// - set(v)      : value と committed の両方を更新。set(v) = set_value(v) + set_commit()
+/// - set_value(v): value のみセット。committed マークは変更しない
+/// - set_commit(): committed マークのみセット。value は変更しない
+/// - reset()     : value も committed もリセットする（value = default, committed = false）
 priv struct Accessor[T] {
   get : () -> T
-  set : (T) -> Unit // cell.val = v + was_set = true
-  set_quiet : (T) -> Unit // cell.val = v のみ（was_set 非更新）
+  set : (T) -> Unit
+  set_value : (T) -> Unit
   is_set : () -> Bool
-  mark_set : () -> Unit // was_set = true のみ（cell 非更新）
-  reset : () -> Unit // cell = default, was_set = false
+  set_commit : () -> Unit
+  reset : () -> Unit
 }
 
 ///|
 /// is_set だけ差し替えた新しい Accessor を返す（alias 用）。
-/// get/set/set_quiet/reset は元の Accessor と共有。
-/// is_set だけ差し替えた新しい Accessor を返す（alias 用）。
-/// get/set/set_quiet/mark_set/reset は元の Accessor と共有。
-/// mark_set は set と同じスコープ（root の was_set）に対応するため、
+/// get/set/set_value/set_commit/reset は元の Accessor と共有。
+/// set_commit は set と同じスコープ（root の committed）に対応するため、
 /// is_set とは異なり差し替えない。
 fn[T] Accessor::with_is_set(self : Accessor[T], is_set : () -> Bool) -> Accessor[T] {
-  { get: self.get, set: self.set, set_quiet: self.set_quiet, is_set, mark_set: self.mark_set, reset: self.reset }
+  { get: self.get, set: self.set, set_value: self.set_value, is_set, set_commit: self.set_commit, reset: self.reset }
 }

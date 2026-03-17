@@ -4,9 +4,9 @@ fn parse_error(message : String) -> ParseError {
 }
 
 ///|
-/// ExactNode の commit (consumed > 0) を was_set フラグでラップする。
-/// consumed=0 (デフォルトフォールバック) では was_set を true にしない。
-fn wrap_node_with_set(node : ExactNode, was_set : Ref[Bool]) -> ExactNode {
+/// ExactNode の commit (consumed > 0) を committed フラグでラップする。
+/// consumed=0 (デフォルトフォールバック) では committed を true にしない。
+fn wrap_node_with_set(node : ExactNode, committed : Ref[Bool]) -> ExactNode {
   let orig_try_reduce = node.try_reduce
   let orig_reset = node.reset
   ExactNode::{
@@ -18,7 +18,7 @@ fn wrap_node_with_set(node : ExactNode, was_set : Ref[Bool]) -> ExactNode {
           if consumed > 0 {
             Accept(consumed~, commit=fn() {
               commit()
-              was_set.val = true
+              committed.val = true
             })
           } else {
             Accept(consumed~, commit~)
@@ -28,7 +28,7 @@ fn wrap_node_with_set(node : ExactNode, was_set : Ref[Bool]) -> ExactNode {
     },
     reset: fn() {
       orig_reset()
-      was_set.val = false
+      committed.val = false
     },
   }
 }
@@ -70,7 +70,7 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
 }
 
 ///|
-/// コンビネータの共通パイプライン: メインノード生成 → was_set ラップ → variation展開 → 登録 → OptMeta → Opt[T]
+/// コンビネータの共通パイプライン: メインノード生成 → committed ラップ → variation展開 → 登録 → OptMeta → Opt[T]
 fn[T] Parser::register_option(
   self : Parser,
   name~ : String,
@@ -93,12 +93,12 @@ fn[T] Parser::register_option(
     name, aliases, shorts, global,
     make_long_nodes=fn(opt_name) {
       let nodes : Array[ExactNode] = []
-      nodes.push(wrap_node_with_set(make_main_node(opt_name), valcell.was_set))
+      nodes.push(wrap_node_with_set(make_main_node(opt_name), valcell.committed))
       expand_variation_nodes(opt_name, variations, nodes, make_node_for_variation)
       nodes
     },
     make_short_nodes=fn(short_name) {
-      [wrap_node_with_set(make_main_node(short_name), valcell.was_set)]
+      [wrap_node_with_set(make_main_node(short_name), valcell.committed)]
     },
   )
   let shorts_arr = shorts.to_array()
@@ -162,7 +162,7 @@ pub fn[T] Parser::alias(
       }
       self.registered_names[name] = true
       let node = (src.make_node)(name)
-      let alias_was_set : Ref[Bool] = { val: false }
+      let opt_used : Ref[Bool] = { val: false }
       let target_acc = target.accessor
       let orig_try_reduce = node.try_reduce
       let orig_reset = node.reset
@@ -175,10 +175,10 @@ pub fn[T] Parser::alias(
               if consumed > 0 {
                 Accept(consumed~, commit=fn() {
                   commit()
-                  alias_was_set.val = true
-                  // target の was_set を更新。チェーン alias でも
-                  // Accessor.mark_set 経由で root まで伝搬する。
-                  (target_acc.mark_set)()
+                  opt_used.val = true
+                  // target の committed を更新。チェーン alias でも
+                  // Accessor.set_commit 経由で root まで伝搬する。
+                  (target_acc.set_commit)()
                 })
               } else {
                 Accept(consumed~, commit~)
@@ -188,7 +188,7 @@ pub fn[T] Parser::alias(
         },
         reset: fn() {
           orig_reset()
-          alias_was_set.val = false
+          opt_used.val = false
         },
       }
       self.nodes.push(wrapped)
@@ -207,7 +207,7 @@ pub fn[T] Parser::alias(
         is_global: src.is_global,
         make_eq_fallback: src.make_eq_fallback,
       }
-      { id, name, accessor: target.accessor.with_is_set(fn() { alias_was_set.val }), parsed: target.parsed }
+      { id, name, accessor: target.accessor.with_is_set(fn() { opt_used.val }), parsed: target.parsed }
     }
   }
 }
@@ -246,7 +246,7 @@ pub fn[T] Parser::adjust(
 ) -> Unit {
   self.post_hooks.push(fn() raise ParseError {
     if target.is_set() {
-      (target.accessor.set_quiet)((after_post.run)((target.accessor.get)()))
+      (target.accessor.set_value)((after_post.run)((target.accessor.get)()))
     }
   })
 }
@@ -267,7 +267,7 @@ pub fn[T] Parser::link(
       if propagate_set {
         (target.accessor.set)((source.accessor.get)())
       } else {
-        (target.accessor.set_quiet)((source.accessor.get)())
+        (target.accessor.set_value)((source.accessor.get)())
       }
     }
   })
@@ -303,16 +303,16 @@ pub fn[T] Parser::clone(
         self.duplicate_errors.push("duplicate option name: " + name)
       }
       self.registered_names[name] = true
-      // 独立した cell と was_set。初期値は clone 宣言時点の target 値（= parse 前なので default）。
+      // 独立した cell と committed。初期値は clone 宣言時点の target 値（= parse 前なので default）。
       let initial_val = (target.accessor.get)()
       let clone_cell : Ref[T] = { val: initial_val }
-      let clone_was_set : Ref[Bool] = { val: false }
+      let opt_used : Ref[Bool] = { val: false }
       let target_acc = target.accessor
-      // clone の cell/was_set をリセットする共通関数（ExactNode.reset と Accessor.reset で共用）
+      // clone の cell/committed をリセットする共通関数（ExactNode.reset と Accessor.reset で共用）
       // initial_val を直接使い、target_acc.get() への依存を避ける
       let reset_clone = fn() {
         clone_cell.val = initial_val
-        clone_was_set.val = false
+        opt_used.val = false
       }
       let node = (src.make_node)(name)
       let orig_try_reduce = node.try_reduce
@@ -330,8 +330,8 @@ pub fn[T] Parser::clone(
                 let saved = (target_acc.get)()
                 commit()
                 clone_cell.val = (target_acc.get)()
-                clone_was_set.val = true
-                (target_acc.set_quiet)(saved)
+                opt_used.val = true
+                (target_acc.set_value)(saved)
               })
             } else {
               Accept(consumed~, commit~)
@@ -380,11 +380,11 @@ pub fn[T] Parser::clone(
         get: fn() { clone_cell.val },
         set: fn(v) {
           clone_cell.val = v
-          clone_was_set.val = true
+          opt_used.val = true
         },
-        set_quiet: fn(v) { clone_cell.val = v },
-        is_set: fn() { clone_was_set.val },
-        mark_set: fn() { clone_was_set.val = true },
+        set_value: fn(v) { clone_cell.val = v },
+        is_set: fn() { opt_used.val },
+        set_commit: fn() { opt_used.val = true },
         reset: reset_clone,
       }
       { id, name, accessor: clone_acc, parsed: target.parsed }

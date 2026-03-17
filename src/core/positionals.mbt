@@ -21,7 +21,7 @@ pub fn Parser::positional(
       pending.val = args[pos]
       Accept(consumed=1, commit=fn() {
         vc.cell.val = pending.val
-        vc.was_set.val = true
+        vc.committed.val = true
       })
     }
   }
@@ -66,7 +66,7 @@ pub fn Parser::rest(
       }
       Accept(consumed=1, commit=fn() {
         vc.cell.val.push(value)
-        vc.was_set.val = true
+        vc.committed.val = true
       })
     }
   }

@@ -86,7 +86,7 @@ pub fn Parser::cmd(
             Ok(child_result) =>
               Accept(consumed=args.length() - pos, commit=fn() {
                 vc.cell.val = Some(CmdResult::{ name: cmd_name, parser: child })
-                vc.was_set.val = true
+                vc.committed.val = true
                 self.children.set(cmd_name, child_result)
                 // 子パーサの deprecated_usages を親にマージ（再帰的に伝搬）
                 for pair in child.deprecated_usages {
@@ -101,7 +101,7 @@ pub fn Parser::cmd(
       },
       reset: fn() {
         vc.cell.val = None
-        vc.was_set.val = false
+        vc.committed.val = false
         // H-3 fix: reset child parser state when cmd loses OC competition
         child.parsed.val = false
         child.current_positional.val = 0
@@ -136,11 +136,11 @@ pub fn Parser::cmd(
         None => CmdResult::{ name: "", parser: child }
       }
     },
-    set: fn(v) { vc.cell.val = Some(v); vc.was_set.val = true },
-    set_quiet: fn(v) { vc.cell.val = Some(v) },
-    is_set: fn() { vc.was_set.val },
-    mark_set: fn() { vc.was_set.val = true },
-    reset: fn() { vc.cell.val = None; vc.was_set.val = false },
+    set: fn(v) { vc.cell.val = Some(v); vc.committed.val = true },
+    set_value: fn(v) { vc.cell.val = Some(v) },
+    is_set: fn() { vc.committed.val },
+    set_commit: fn() { vc.committed.val = true },
+    reset: fn() { vc.cell.val = None; vc.committed.val = false },
   }
   { id, name, accessor: cmd_acc, parsed: child.parsed }
 }

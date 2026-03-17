@@ -58,24 +58,24 @@ pub fn Parser::flag(
       match v {
         Toggle(_) =>
           make_flag_node(vn, fn() {
-            fn() { vc.cell.val = not(vc.cell.val); vc.was_set.val = true }
-          }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
+            fn() { vc.cell.val = not(vc.cell.val); vc.committed.val = true }
+          }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
         True(_) =>
           make_flag_node(vn, fn() {
-            fn() { vc.cell.val = true; vc.was_set.val = true }
-          }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
+            fn() { vc.cell.val = true; vc.committed.val = true }
+          }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
         False(_) =>
           make_flag_node(vn, fn() {
-            fn() { vc.cell.val = false; vc.was_set.val = true }
-          }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
+            fn() { vc.cell.val = false; vc.committed.val = true }
+          }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
         Reset(_) =>
           make_flag_node(vn, fn() {
-            fn() { vc.cell.val = initial_val; vc.was_set.val = true }
-          }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
+            fn() { vc.cell.val = initial_val; vc.committed.val = true }
+          }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
         Unset(_) =>
           make_flag_node(vn, fn() {
-            fn() { vc.cell.val = initial_val; vc.was_set.val = false }
-          }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
+            fn() { vc.cell.val = initial_val; vc.committed.val = false }
+          }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
       }
     },
   )
@@ -247,13 +247,13 @@ pub fn Parser::count(
         Reset(_) | Toggle(_) | True(_) | False(_) =>
           make_flag_node(vn, fn() {
             pending.val = 0
-            fn() { vc.cell.val = pending.val; vc.was_set.val = true }
-          }, fn() { vc.cell.val = 0; pending.val = 0; vc.was_set.val = false })
+            fn() { vc.cell.val = pending.val; vc.committed.val = true }
+          }, fn() { vc.cell.val = 0; pending.val = 0; vc.committed.val = false })
         Unset(_) =>
           make_flag_node(vn, fn() {
             pending.val = 0
-            fn() { vc.cell.val = pending.val; vc.was_set.val = false }
-          }, fn() { vc.cell.val = 0; pending.val = 0; vc.was_set.val = false })
+            fn() { vc.cell.val = pending.val; vc.committed.val = false }
+          }, fn() { vc.cell.val = 0; pending.val = 0; vc.committed.val = false })
       }
     },
   )
@@ -305,12 +305,12 @@ pub fn[T : Show] Parser::custom(
           make_flag_node(vn, fn() {
             fn() { vc.cell.val = initial_val }
           }, fn() { vc.cell.val = initial_val }),
-          vc.was_set,
+          vc.committed,
         )
       Unset(_) =>
         make_flag_node(vn, fn() {
-          fn() { vc.cell.val = initial_val; vc.was_set.val = false }
-        }, fn() { vc.cell.val = initial_val; vc.was_set.val = false })
+          fn() { vc.cell.val = initial_val; vc.committed.val = false }
+        }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
     }
   }
 
@@ -364,7 +364,7 @@ pub fn[T : Show] Parser::custom(
     let eq_on_match = fn(s : String) -> Result[() -> Unit, ParseError] {
       let r : Result[T, ParseError] = try? (pre.run)(s)
       match r {
-        Ok(v) => Ok(fn() { vc.cell.val = v; vc.was_set.val = true })
+        Ok(v) => Ok(fn() { vc.cell.val = v; vc.committed.val = true })
         Err(e) => Err(e)
       }
     }
@@ -435,12 +435,12 @@ pub fn[T] Parser::custom_append(
       match v {
         Reset(_) | Toggle(_) | True(_) | False(_) =>
           make_flag_node(vn, fn() {
-            fn() { vc.cell.val = []; vc.was_set.val = true }
-          }, fn() { vc.cell.val = []; vc.was_set.val = false })
+            fn() { vc.cell.val = []; vc.committed.val = true }
+          }, fn() { vc.cell.val = []; vc.committed.val = false })
         Unset(_) =>
           make_flag_node(vn, fn() {
-            fn() { vc.cell.val = []; vc.was_set.val = false }
-          }, fn() { vc.cell.val = []; vc.was_set.val = false })
+            fn() { vc.cell.val = []; vc.committed.val = false }
+          }, fn() { vc.cell.val = []; vc.committed.val = false })
       }
     },
   )

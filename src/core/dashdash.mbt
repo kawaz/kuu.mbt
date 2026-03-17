@@ -53,12 +53,12 @@ pub fn Parser::dashdash(
         for v in collected {
           vc.cell.val.push(v)
         }
-        vc.was_set.val = true
+        vc.committed.val = true
       })
     },
     reset: fn() {
       vc.cell.val = []
-      vc.was_set.val = false
+      vc.committed.val = false
     },
   }
   self.register_dashdash_node(sep, dashdash_node)
@@ -87,12 +87,12 @@ pub fn Parser::append_dashdash(
       )
       Accept(consumed~, commit=fn() {
         vc.cell.val.push(group)
-        vc.was_set.val = true
+        vc.committed.val = true
       })
     },
     reset: fn() {
       vc.cell.val = []
-      vc.was_set.val = false
+      vc.committed.val = false
     },
   }
   self.register_dashdash_node(sep, node)

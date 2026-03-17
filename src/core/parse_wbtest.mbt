@@ -2794,7 +2794,7 @@ test "variation: False flag with default=false" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", default=false, variations=[False("no")])
   ignore(p.parse(["--no-verbose"]))
-  // False sets cell=false (same as default), but was_set=true
+  // False sets cell=false (same as default), but committed=true
   inspect(p.get(verbose), content="Some(false)")
   inspect(verbose.is_set(), content="true")
 }
@@ -2810,7 +2810,7 @@ test "variation: Reset flag resets to default" {
 }
 
 ///|
-test "variation: Unset flag resets value and was_set" {
+test "variation: Unset flag resets value and committed" {
   let p = Parser::new()
   let color = p.flag(name="color", variations=[Unset("unset")])
   ignore(p.parse(["--color", "--unset-color"]))
@@ -5608,7 +5608,7 @@ test "deprecated is_set independent from target" {
   let output = p.string_opt(name="output", default="default")
   let out = p.deprecated("--out", output, msg="use --output instead")
   ignore(p.parse(["--out", "hello"]))
-  // alias 動作: is_set は独立（deprecated 側のみ true、target は target_was_set で true）
+  // alias 動作: is_set は独立（deprecated 側のみ true、target は set_commit で true）
   inspect(out.is_set(), content="true")
   inspect(output.is_set(), content="true")
 }
@@ -5907,7 +5907,7 @@ test "priv setter: flag setter writes cell value" {
   ignore(p.parse([]))
   inspect(verbose.get(), content="Some(false)")
   // priv setter で直接書き換え
-  (verbose.accessor.set_quiet)(true)
+  (verbose.accessor.set_value)(true)
   inspect(verbose.get(), content="Some(true)")
   // is_set は連動しない（setter の設計制約）
   inspect(verbose.is_set(), content="false")
@@ -5924,7 +5924,7 @@ test "priv setter: string_opt setter writes cell value" {
       #|Some("localhost")
     ),
   )
-  (host.accessor.set_quiet)("example.com")
+  (host.accessor.set_value)("example.com")
   inspect(
     host.get(),
     content=(
@@ -5940,7 +5940,7 @@ test "priv setter: alias shares setter with target" {
   let v = p.alias("-v", verbose)
   ignore(p.parse([]))
   // alias の setter は target と同一 cell を指す
-  (v.accessor.set_quiet)(true)
+  (v.accessor.set_value)(true)
   inspect(verbose.get(), content="Some(true)")
   inspect(v.get(), content="Some(true)")
 }
@@ -6171,10 +6171,10 @@ test "practical: clone + adjust for derived option" {
 // ===== ValCell / Accessor tests (DR-045) =====
 
 ///|
-test "ValCell: new creates cell with default value and was_set=false" {
+test "ValCell: new creates cell with default value and committed=false" {
   let vc : ValCell[Int] = ValCell::new(Val(42))
   assert_eq(vc.cell.val, 42)
-  assert_eq(vc.was_set.val, false)
+  assert_eq(vc.committed.val, false)
 }
 
 ///|
@@ -6185,7 +6185,7 @@ test "ValCell: accessor get returns cell value" {
 }
 
 ///|
-test "ValCell: accessor set updates value and was_set" {
+test "ValCell: accessor set updates value and committed" {
   let vc = ValCell::new(Val(0))
   let acc = vc.accessor()
   (acc.set)(99)
@@ -6194,16 +6194,16 @@ test "ValCell: accessor set updates value and was_set" {
 }
 
 ///|
-test "ValCell: accessor set_quiet updates value without was_set" {
+test "ValCell: accessor set_value updates value without committed" {
   let vc = ValCell::new(Val(0))
   let acc = vc.accessor()
-  (acc.set_quiet)(99)
+  (acc.set_value)(99)
   assert_eq((acc.get)(), 99)
   assert_eq((acc.is_set)(), false)
 }
 
 ///|
-test "ValCell: accessor reset restores default and clears was_set" {
+test "ValCell: accessor reset restores default and clears committed" {
   let vc = ValCell::new(Val(42))
   let acc = vc.accessor()
   (acc.set)(100)
@@ -6221,7 +6221,7 @@ test "ValCell: clone creates independent cell with same default" {
   (acc1.set)(10)
   let vc2 = vc1.clone()
   let acc2 = vc2.accessor()
-  // vc2 is independent: default value, was_set=false
+  // vc2 is independent: default value, committed=false
   assert_eq((acc2.get)(), 5)
   assert_eq((acc2.is_set)(), false)
   // vc1 is unchanged
@@ -6271,14 +6271,14 @@ test "ValCell: clone bidirectional independence" {
 }
 
 ///|
-test "ValCell: set_quiet then set updates was_set" {
+test "ValCell: set_value then set updates committed" {
   let vc = ValCell::new(Val(0))
   let acc = vc.accessor()
-  // set_quiet: 値は変わるが was_set は false
-  (acc.set_quiet)(50)
+  // set_value: 値は変わるが committed は false
+  (acc.set_value)(50)
   assert_eq((acc.get)(), 50)
   assert_eq((acc.is_set)(), false)
-  // set: 値も was_set も更新
+  // set: 値も committed も更新
   (acc.set)(100)
   assert_eq((acc.get)(), 100)
   assert_eq((acc.is_set)(), true)
@@ -6310,7 +6310,7 @@ test "link: propagate_set=true updates target is_set" {
 }
 
 ///|
-test "alias chain: root was_set propagates through chained aliases" {
+test "alias chain: root committed propagates through chained aliases" {
   let p = Parser::new()
   let opt = p.string_opt(name="host", default="localhost")
   let alias1 = p.alias("--h1", opt)
