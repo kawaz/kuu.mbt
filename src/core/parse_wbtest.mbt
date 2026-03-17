@@ -7029,3 +7029,150 @@ test "append_float: invalid value" {
   let result : Result[_, _] = try? p.parse(["--coord", "abc"])
   inspect(result is Err(_), content="true")
 }
+
+// === ErrorKind tests ===
+
+///|
+test "ErrorKind: UnknownOption for unknown --option" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose")
+  let result : Result[_, _] = try? p.parse(["--unknown"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="UnknownOption")
+      inspect(info.opt_name, content="--unknown")
+    }
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "ErrorKind: UnexpectedArgument for extra positional" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose")
+  let result : Result[_, _] = try? p.parse(["extra"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="UnexpectedArgument")
+      inspect(info.opt_name, content="extra")
+    }
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "ErrorKind: MissingValue for option without value" {
+  let p = Parser::new()
+  let _ = p.string_opt(name="output", default="")
+  let result : Result[_, _] = try? p.parse(["--output"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="MissingValue")
+      inspect(info.opt_name, content="--output")
+    }
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "ErrorKind: InvalidValue for bad integer" {
+  let p = Parser::new()
+  let _ = p.int_opt(name="count", default=0)
+  let result : Result[_, _] = try? p.parse(["--count", "abc"])
+  match result {
+    Err(ParseError(info)) => inspect(info.kind, content="InvalidValue")
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "ErrorKind: MissingRequired for required option" {
+  let p = Parser::new()
+  let opt = p.string_opt(name="output", default="")
+  p.required(opt.as_ref())
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="MissingRequired")
+      inspect(info.opt_name, content="--output")
+    }
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "ErrorKind: ArgumentConflict for exclusive options" {
+  let p = Parser::new()
+  let a = p.flag(name="json")
+  let b = p.flag(name="yaml")
+  p.exclusive([a.as_ref(), b.as_ref()])
+  let result : Result[_, _] = try? p.parse(["--json", "--yaml"])
+  match result {
+    Err(ParseError(info)) => inspect(info.kind, content="ArgumentConflict")
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "ErrorKind: DuplicateDefinition for duplicate option name" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose")
+  let _ = p.flag(name="verbose")
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => inspect(info.kind, content="DuplicateDefinition")
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "ErrorKind: MissingSubcommand for require_cmd" {
+  let p = Parser::new()
+  let _ = p.sub(name="init")
+  p.require_cmd()
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => inspect(info.kind, content="MissingSubcommand")
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "ErrorKind: AtLeastOneRequired for at_least_one" {
+  let p = Parser::new()
+  let a = p.flag(name="json")
+  let b = p.flag(name="yaml")
+  p.at_least_one([a.as_ref(), b.as_ref()])
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => inspect(info.kind, content="AtLeastOneRequired")
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "ErrorKind: DependencyMissing for requires" {
+  let p = Parser::new()
+  let target = p.string_opt(name="output", default="")
+  let source = p.flag(name="verbose")
+  p.requires(target.as_ref(), source=source.as_ref())
+  let result : Result[_, _] = try? p.parse(["--verbose"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="DependencyMissing")
+      inspect(info.opt_name, content="--output")
+    }
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "ErrorKind: ParseAlreadyCalled for double parse" {
+  let p = Parser::new()
+  ignore(p.parse([]))
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => inspect(info.kind, content="ParseAlreadyCalled")
+    _ => fail("expected ParseError")
+  }
+}
