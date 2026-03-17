@@ -78,27 +78,65 @@ let remaining = rest.unsafe_substring(start=ri + 1, end=rest.length())
 - shorts パラメータの登録: `for ch in shorts` イテレータ使用で安全
 - `String.to_array()`: Char（コードポイント）配列を返すので安全
 
-## 実用上の影響度
+## 全体スキャン結果
 
-**低〜中**:
-- CLI の short option にサロゲートペア文字を使うケースは極めて稀
-- 実用的には ASCII 文字（a-z, A-Z, 0-9）がほぼ全て
-- `unsafe_to_char()` + `to_string()` の組み合わせは abort せず不正な文字列を生成する。結果として combining は Reject され "unexpected argument" エラーになる
-- MoonBit の String が UTF-16 であることを前提としたコードは他にも存在する可能性があり、体系的な確認が必要
+`install_short_combine_node` 以外にも問題箇所が見つかった。テストファイルを除く全ソースをスキャンした結果:
+
+| # | ファイル:行 | 問題 | 影響 |
+|---|------------|------|------|
+| 1 | parse.mbt:3-4 | `levenshtein()` で `length()` を文字数として使用 | タイプ補完の距離計算がずれる |
+| 2 | parse.mbt:14 | `levenshtein()` で `a[i-1] == b[j-1]` インデックスアクセス | 文字比較が誤る |
+| 3 | parse.mbt:169 | `name.length() == 2` で short node 収集 | Supplementary Plane short が除外 |
+| 4 | parse.mbt:187 | `arg.length() <= 2` で combining 判定 | 判定がずれる |
+| 5 | parse.mbt:190 | `unsafe_substring` + `arg.length()` | 部分文字列の範囲がずれる |
+| 6 | parse.mbt:195-196 | `rest[ri]` + `unsafe_to_char()` ループ | サロゲートペア分割 |
+| 7 | parse.mbt:210 | `unsafe_substring(start=ri+1, ...)` | 位置ずれ |
+| 8 | parse.mbt:217 | `unsafe_substring(start=0, end=try_len)` | 値候補のカット位置がずれる |
+| 9 | nodes.mbt:137 | `unsafe_substring(start=2, end=opt_name.length())` | Variation 名の基本名抽出がずれる |
+
+## 3層の Unicode 問題
+
+| レイヤー | 問題 | 修正方法 | 時期 |
+|----------|------|----------|------|
+| L1: UTF-16 encoding | `length()` + `str[i]` がコードユニット単位 | `char_length()` + `iter()` / `to_array()` | 即時対応 |
+| L2: Grapheme cluster | 合成絵文字（🇯🇵 👨‍👩‍👧‍👦 等）が複数コードポイント | grapheme cluster segmentation (UAX #29) | 将来対応 |
+| L3: Display width | 全角/半角の表示幅 | `rami3l/unicodewidth` | 必要時 |
+
+### L2: Grapheme cluster の詳細
+
+合成絵文字の例:
+
+| 見た目 | コードポイント数 | 構成 |
+|--------|-----------------|------|
+| 😀 | 1 | U+1F600 |
+| 🇯🇵 | 2 | U+1F1EF U+1F1F5 (Regional Indicator) |
+| 👋🏽 | 2 | U+1F44B U+1F3FD (Skin tone modifier) |
+| 👨‍👩‍👧‍👦 | 7 | 4 emoji + 3 ZWJ |
+
+L1 修正後も `shorts="🇯🇵"` は `for ch in shorts` で 2 つの short option として登録されてしまう。
+
+**MoonBit エコシステムの現状**: grapheme cluster segmentation ライブラリは存在しない。
+- `moonbit-community/unicode_data` に `is_grapheme_extend()` はあるが `Grapheme_Cluster_Break` テーブルはない
+- `rami3l/unicodewidth` は表示幅計算のみ
+- 将来的には `unicode_data` ジェネレータ拡張 or UAX #29 自前実装が必要
 
 ## 修正方針
 
-### 最小修正（推奨）
+### Phase 1: UTF-16 修正（即時）
 
-1. `install_short_combine_node` の収集条件を `char_length()` ベースに変更
-2. 文字分割ループをイテレータベースに変更
-3. 位置管理をコードポイント単位ではなく、イテレータの進行に委ねる
-4. `unsafe_to_char()` の使用を排除（不正な文字列生成の防止）
+上記9箇所を修正。主な手法:
 
-### 代替案
+1. `length()` → `char_length()`
+2. `str[i]` ループ → `to_array()` で `Array[Char]` に変換してからイテレート
+3. `unsafe_substring` + UTF-16 インデックス → char 配列ベースの部分文字列構築
+4. `unsafe_to_char()` の排除
+5. `levenshtein()` は配列化してから DP 計算
 
-- short option を ASCII 文字に制限するバリデーション追加（実用的だが制約が増える）
+### Phase 2: Grapheme cluster 対応（将来）
+
+shorts 登録・short combining・文字カウント全般を grapheme cluster 単位に。
+ライブラリ整備が前提。
 
 ## 決定
 
-本 PoC で問題を検証・記録。修正は本 PoC のスコープ外とし、別ワークスペースで対応する。
+本 PoC で問題の全体像を検証・記録。修正は別ワークスペースで Phase 1 から着手する。
