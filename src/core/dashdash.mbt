@@ -62,7 +62,7 @@ pub fn Parser::dashdash(
     },
   }
   self.register_dashdash_node(sep, dashdash_node)
-  { id, name: separator, accessor: vc.accessor(), parsed: self.parsed }
+  { id, name: separator, accessor: vc.accessor(), parsed: self.parsed, used: fn() { vc.committed.val } }
 }
 
 ///|
@@ -96,5 +96,5 @@ pub fn Parser::append_dashdash(
     },
   }
   self.register_dashdash_node(sep, node)
-  { id, name: separator, accessor: vc.accessor(), parsed: self.parsed }
+  { id, name: separator, accessor: vc.accessor(), parsed: self.parsed, used: fn() { vc.committed.val } }
 }

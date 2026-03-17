@@ -209,7 +209,7 @@ pub(all) struct Opt[T] {
 
 ユーザーは `opt.get() -> T?` で値を取得。パース前なら `None`、パース後なら `Some(T)`。`opt.is_set() -> Bool` で明示指定されたかを確認できる。
 
-Opt は薄い参照型。initial / reducer / meta はコンビネータ内のクロージャにキャプチャされ、Opt 自体には含まれない。内部の `Accessor[T]` は ValCell から生成されたクロージャ束で、get/set/set_value/is_set/set_commit/reset の操作を提供する。ExactNode の try_reduce/commit と同じ ValCell を共有するため、型安全性は静的に保証される。
+Opt は薄い参照型。initial / reducer / meta はコンビネータ内のクロージャにキャプチャされ、Opt 自体には含まれない。内部の `Accessor[T]` は ValCell から生成されたクロージャ束で、get/set/set_value/set_commit/reset の5操作を提供する（DR-048 で is_set を Opt.used に分離）。ExactNode の try_reduce/commit と同じ ValCell を共有するため、型安全性は静的に保証される。
 
 ### 結果アクセスの3つの口（DR-013）
 
@@ -347,14 +347,14 @@ fn make_reducer[T, U](
 
 ValCell[T] が値（cell）と状態（committed）とデフォルト値（default_val）を内包し、Accessor[T] がその操作インターフェースをクロージャ束として提供する:
 
-- **Accessor[T]**: get/set/set_value/is_set/set_commit/reset の6操作
+- **Accessor[T]**: get/set/set_value/set_commit/reset の5操作（値操作に純化、DR-048）
   - `set(v)` = `set_value(v)` + `set_commit()`: 値と committed の両方を更新
   - `set_value(v)`: 値のみセット。committed は変更しない
   - `set_commit()`: committed マークのみセット。値は変更しない
   - `reset()`: value も committed もリセット（value = default, committed = false）
-- **Accessor::with_is_set**: is_set だけ差し替えた新しい Accessor を返す（alias 用）。get/set/set_value/set_commit/reset は元の Accessor と共有
+- **Opt.used**: この Opt 名が使われたかを示すクロージャ（DR-048）。通常は `vc.committed` と同値、alias/clone では独立した `opt_used` フラグ
 
-この分離により、clone は独立した ValCell + 独自の Accessor を持ち、alias は target の Accessor を共有しつつ is_set のみ独立させる、という構成が自然に表現される。
+この分離により、clone は独立した ValCell + 独自の Accessor を持ち、alias は target の Accessor を共有しつつ used のみ独立させる、という構成が自然に表現される。
 
 ---
 

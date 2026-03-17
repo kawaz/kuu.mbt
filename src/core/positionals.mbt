@@ -39,7 +39,7 @@ pub fn Parser::positional(
     variation_names: [],
     hidden: false,
   })
-  { id, name, accessor: vc.accessor(), parsed: self.parsed }
+  { id, name, accessor: vc.accessor(), parsed: self.parsed, used: fn() { vc.committed.val } }
 }
 
 ///|
@@ -84,7 +84,7 @@ pub fn Parser::rest(
     variation_names: [],
     hidden: false,
   })
-  { id, name, accessor: vc.accessor(), parsed: self.parsed }
+  { id, name, accessor: vc.accessor(), parsed: self.parsed, used: fn() { vc.committed.val } }
 }
 
 ///|
