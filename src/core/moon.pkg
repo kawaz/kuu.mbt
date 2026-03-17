@@ -1,4 +1,4 @@
 import {
   "moonbitlang/core/strconv",
-  "kawaz/unicodegrapheme/src" as @unicodegrapheme,
+  "kawaz/unicodegrapheme" as @unicodegrapheme,
 }

@@ -89,9 +89,9 @@ kuu 機能: `flag` x 7、`--recursion` には `variation_false=Some("no")`
 |---|---|---|
 | `-C` | `--directory=DIR` | ディレクトリ変更 |
 
-kuu 機能: `string_opt` + `value_name="DIR"`
+kuu 機能: `append_string` + `value_name="DIR"`
 
-注: 実際の tar では `-C` は位置依存（出現位置によって対象が変わる）だが、本デモでは単純なオプションとして扱う。
+注: 実際の tar では `-C` は位置依存（出現位置によって対象が変わる）だが、本デモでは `append_string` で収集しアプリ側で処理する方式で代替する。
 
 #### 位置引数
 
@@ -105,10 +105,10 @@ kuu 機能: `rest`
 |---|---|
 | `flag` | -c, -x, -t, -r, -u, -p, -k, -m, -P, -w, --totals, --recursion, -z, -j, -J, --zstd, -a |
 | `count` | -v (verbose) |
-| `string_opt` | -f (file), -C (directory) |
+| `string_opt` | -f (file) |
 | `string_opt` + `choices` | --format |
 | `int_opt` | --strip-components |
-| `append_string` | --exclude |
+| `append_string` | --exclude, -C (directory) |
 | `rest` | [FILE]... |
 | `exclusive` | モード群、圧縮群 |
 | `at_least_one` | モード群 |
@@ -186,6 +186,6 @@ kuu 本体への機能追加は不要。
 
 ### -C の位置依存セマンティクス
 
-実際の tar では `-C dir1 file1 -C dir2 file2` のように `-C` の出現位置が後続のファイル引数に影響する。本デモではこの位置依存セマンティクスは再現せず、単純な `string_opt` として扱う。
+実際の tar では `-C dir1 file1 -C dir2 file2` のように `-C` の出現位置が後続のファイル引数に影響する。本デモでは `append_string` で収集しアプリ側で処理する方式で代替する。
 
 位置依存パースは kuu の `post` フック等で部分的に再現可能だが、デモの焦点ではないため除外した。

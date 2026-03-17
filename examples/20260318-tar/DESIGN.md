@@ -9,7 +9,7 @@ GNU tar コマンドの引数パースを kuu で再現するデモ。tar の実
 - **排他制約**: `exclusive` + `at_least_one` による操作モードの排他的必須選択
 - **圧縮オプション排他**: `exclusive` のみ（任意選択）
 - **count 重ね掛け**: `-v` の複数指定で詳細度が増す
-- **env 環境変数**: `TAR_ARCHIVE` によるデフォルトアーカイブファイル指定
+- **env 環境変数**: `TAPE` によるデフォルトアーカイブファイル指定
 - **deprecated**: 廃止予定オプションの警告表示
 - **alias**: `--extract`/`--get`, `--catenate`/`--concatenate` 等の同義オプション
 - **variation_false**: `--wildcards`/`--no-wildcards` 等の対称フラグ
@@ -22,15 +22,17 @@ GNU tar コマンドの引数パースを kuu で再現するデモ。tar の実
 
 | 分類 | 数 |
 |---|---|
-| 動作モード (create/extract/list/append/update) | 5 |
-| 圧縮 (gzip/bzip2/xz/compress/zstd/lzip) | 6 |
+| 動作モード (create/extract/list/append/update/diff/catenate/delete/test-label) | 9 |
+| 圧縮 (gzip/bzip2/xz/deprecated compress/zstd/lzip/lzma/lzop/auto-compress/use-compress-program) | 10 |
 | ファイル指定 (-f) | 1 |
 | 詳細度 (-v) | 1 |
-| フィルタ・制御 (exclude/strip-components/transform) | 3 |
-| フラグ (preserve-permissions/keep-old-files/touch/verify/interactive/overwrite/no-recursion) | 7 |
-| ディレクトリ変更 (-C) | 1 |
+| フィルタ・制御 (exclude/exclude-from/files-from/strip-components/transform/directory) | 6 |
+| Format (format/label/blocking-factor) | 3 |
+| フラグ (preserve-permissions/keep-old-files/touch/unlink-first/verify/interactive/absolute-names/sparse/dereference/numeric-owner/overwrite/recursion/one-file-system/totals/full-time) | 15 |
+| Metadata override (owner/group/mode) | 3 |
+| Variation flags (wildcards/anchored/acls/selinux/xattrs) | 5 |
 | 位置引数 (FILES...) | 1 |
-| **合計** | **25** |
+| **合計** | **54** |
 
 ## 設計判断
 
