@@ -7184,3 +7184,272 @@ test "ErrorKind: AmbiguousMatch enum variant exists" {
   let kind : ErrorKind = AmbiguousMatch
   inspect(kind, content="AmbiguousMatch")
 }
+
+// ============================================================
+// coverage: テストカバレッジ改善用テスト
+// ============================================================
+
+///|
+test "coverage: ParseResult::child on non-Map result returns None" {
+  // access.mbt:35 — ParseResult::child で Map 以外に対して呼ぶと None
+  let p = Parser::new()
+  let _ = p.flag(name="verbose")
+  let result = p.parse([])
+  // result.kind は One（子コマンドなし）なので child は None を返す
+  inspect(result.child("anything") is None, content="true")
+}
+
+///|
+test "coverage: inject_help_node skips when both --help and -h are taken" {
+  // help.mbt:13 — --help と -h の両方がユーザー定義で占有されていると help 注入をスキップ
+  // name="help" ではないので meta idempotent check を通過し、registered_names チェックに到達
+  let p = Parser::new()
+  let h1 = p.flag(name="my-help", aliases=["help"])
+  let h2 = p.flag(name="short-h", shorts="h")
+  ignore(p.parse(["--my-help", "-h"]))
+  // 両方 true で、HelpRequested にならずに正常パース完了
+  inspect(h1.get(), content="Some(true)")
+  inspect(h2.get(), content="Some(true)")
+}
+
+///|
+test "coverage: variation_toggle sugar for flag" {
+  // options.mbt:34 — variation_toggle sugar
+  let p = Parser::new()
+  let flag = p.flag(name="color", variation_toggle=Some("toggle"))
+  ignore(p.parse(["--toggle-color"]))
+  inspect(flag.get(), content="Some(true)")
+}
+
+///|
+test "coverage: variation_unset sugar for flag" {
+  // options.mbt:38 — variation_unset sugar
+  let p = Parser::new()
+  let flag = p.flag(name="color", variation_unset=Some("unset"))
+  ignore(p.parse(["--color", "--unset-color"]))
+  // unset は committed=false にするので is_set は false、値は default に戻る
+  inspect(flag.is_set(), content="false")
+}
+
+///|
+test "coverage: count env with invalid integer" {
+  // options.mbt:367 — count の env で無効な整数値
+  let p = Parser::new()
+  let _ = p.count(name="verbose", env="VERBOSE_COUNT")
+  let result : Result[_, _] = try? p.parse([], env={"VERBOSE_COUNT": "abc"})
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("invalid value for env"), content="true")
+    _ => fail("expected ParseError for invalid count env")
+  }
+}
+
+///|
+test "coverage: register_env_applicator with missing env key" {
+  // options.mbt:18 — env_map にキーがない場合 None => ()
+  let p = Parser::new()
+  let opt = p.string_opt(name="name", default="default", env="MY_NAME")
+  // env に MY_NAME キーがないが、別のキーはある
+  ignore(p.parse([], env={"OTHER_KEY": "value"}))
+  // env にキーなしなので default のまま
+  inspect(
+    opt.get(),
+    content=(
+      #|Some("default")
+    ),
+  )
+}
+
+///|
+test "coverage: duplicate dashdash separator detection" {
+  // parse.mbt:368 — dashdash() を呼んだ後 install_separator_node() が重複 -- を検出
+  let p = Parser::new() // dashdash=true がデフォルトで -- が install される
+  let _ = p.dashdash() // さらに手動で dashdash() を呼ぶ → 重複 -- が発生
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("duplicate"), content="true")
+    _ => fail("expected ParseError for duplicate --")
+  }
+}
+
+///|
+test "coverage: rest stop_before triggers Reject then next positional" {
+  // positionals.mbt:65 + parse.mbt:479-482 — rest が stop_before で Reject → 次の positional へ
+  // rest が "END" で Reject → current_positional++ → 次の positional が "END" を消費
+  let p = Parser::new(dashdash=false)
+  let files = p.rest(name="files", stop_before=["END"])
+  let last = p.positional(name="last")
+  ignore(p.parse(["a", "b", "END"]))
+  inspect(
+    files.get(),
+    content=(
+      #|Some(["a", "b"])
+    ),
+  )
+  inspect(
+    last.get(),
+    content=(
+      #|Some("END")
+    ),
+  )
+}
+
+///|
+test "coverage: P phase skips greedy positional" {
+  // parse.mbt:459 — P Phase で greedy positional をスキップ
+  // greedy positional は OC phase で消費。P Phase で unclaimed が残った場合、
+  // greedy をスキップして次の non-greedy positional に渡す。
+  let p = Parser::new()
+  let greedy_pos = p.positional(name="greedy", greedy=true)
+  let normal_pos = p.positional(name="normal")
+  let opt = p.flag(name="verbose")
+  // "first" は OC phase で greedy が消費、"--verbose" は OC phase でフラグが消費、
+  // "second" は unclaimed → P phase で greedy をスキップ → normal が消費
+  ignore(p.parse(["first", "--verbose", "second"]))
+  inspect(
+    greedy_pos.get(),
+    content=(
+      #|Some("first")
+    ),
+  )
+  inspect(opt.get(), content="Some(true)")
+  inspect(
+    normal_pos.get(),
+    content=(
+      #|Some("second")
+    ),
+  )
+}
+
+///|
+test "coverage: short combine last short needs value, no more args" {
+  // parse.mbt:323 — 短縮組み合わせの最後の short が value 必要で引数なし
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", shorts="v")
+  let _ = p.string_opt(name="name", shorts="n", default="")
+  let result : Result[_, _] = try? p.parse(["-vn"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="MissingValue")
+      inspect(info.opt_name, content="-n")
+    }
+    _ => fail("expected MissingValue for -vn without value")
+  }
+}
+
+///|
+test "coverage: short combine value trial error propagation with choices" {
+  // parse.mbt:264 — short combine で value trial が Error (choices バリデーション失敗)
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", shorts="v")
+  let _ = p.string_opt(
+    name="format", shorts="f", default="text", choices=["text", "json"],
+  )
+  // -vfxml: v はフラグ、f は value opt で choices=["text","json"]。
+  // value trial で "xml" を試すが choices バリデーション失敗 → Error 伝搬
+  let result : Result[_, _] = try? p.parse(["-vfxml"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "coverage: clone duplicate name detection" {
+  // parser.mbt:309 — clone で既に登録済みの名前を使用
+  let p = Parser::new()
+  let opt = p.flag(name="verbose")
+  let _ = p.clone("--verbose", opt) // 重複名
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) =>
+      inspect(info.message.contains("duplicate"), content="true")
+    _ => fail("expected duplicate error")
+  }
+}
+
+///|
+test "coverage: clone with global flag propagates to child" {
+  // parser.mbt:361 — clone の target が global の場合、clone も global_nodes に追加
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose", global=true)
+  let v_clone = p.clone("--debug", verbose)
+  let sub_ran = p.cmd(
+    name="sub",
+    setup=fn(sub) {
+      // global なので子パーサーでも --debug が使える
+      let _ = sub.flag(name="local-flag")
+    },
+  )
+  ignore(p.parse(["sub", "--debug"]))
+  inspect(sub_ran.get() is Some(_), content="true")
+  inspect(v_clone.get(), content="Some(true)")
+}
+
+///|
+test "coverage: clone with implicit_value creates eq_fallback" {
+  // parser.mbt:365-375 — clone で implicit_value 付きコンビネータの eq_fallback
+  let p = Parser::new()
+  let color = p.string_opt(
+    name="color",
+    default="auto",
+    implicit_value=Some(Val("always")),
+  )
+  let colour = p.clone("--colour", color)
+  // eq_split 形式で clone 名を使う
+  ignore(p.parse(["--colour=never"]))
+  inspect(
+    colour.get(),
+    content=(
+      #|Some("never")
+    ),
+  )
+  // target は変更されない
+  inspect(
+    color.get(),
+    content=(
+      #|Some("auto")
+    ),
+  )
+}
+
+///|
+test "coverage: serial sub_current exhausted returns Reject" {
+  // positionals.mbt:146 — serial の sub_current が全消費済みで再呼び出し
+  // serial(positional("a")) の後に positional("b") がある場合、
+  // serial は 1つだけ消費して終了し、2つ目は serial 外の positional が取る
+  let p = Parser::new(dashdash=false)
+  p.serial(
+    setup=fn(sub) {
+      let _ = sub.positional(name="first")
+    },
+  )
+  let second = p.positional(name="second")
+  ignore(p.parse(["hello", "world"]))
+  inspect(
+    second.get(),
+    content=(
+      #|Some("world")
+    ),
+  )
+}
+
+///|
+test "coverage: serial Reject mid-sequence breaks loop" {
+  // positionals.mbt:161 — serial 内の rest が stop_before で途中 Reject
+  // serial(first, rest(stop=END)) の rest が "END" で Reject → break → serial は "a","b" を消費
+  // 残りの "END" は外の positional が消費
+  let p = Parser::new(dashdash=false)
+  p.serial(
+    setup=fn(sub) {
+      let _ = sub.positional(name="first")
+      let _ = sub.rest(name="mid", stop_before=["END"])
+    },
+  )
+  let last = p.positional(name="last")
+  ignore(p.parse(["a", "b", "END"]))
+  inspect(
+    last.get(),
+    content=(
+      #|Some("END")
+    ),
+  )
+}

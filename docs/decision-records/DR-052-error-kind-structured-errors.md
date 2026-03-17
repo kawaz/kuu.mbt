@@ -61,10 +61,17 @@ fn parse_error(message : String, kind~ : ErrorKind = InvalidValue, opt_name~ : S
 
 ## 影響
 
-- ParseErrorInfo にフィールド追加 → `pub(all) struct` のため、直接構築している外部コードは breaking change。mooncakes.io 公開前なので許容
+- ParseErrorInfo にフィールド追加 → `pub(all) struct` のため、直接構築している箇所（commands.mbt, dx_wbtest.mbt 等）は全て修正済み
+- mooncakes.io 公開前のため外部ユーザーへの破壊的影響はなし
 - suberror ParseError の構造自体は変更なし
 - HelpRequested は suberror の別バリアントとして分離維持（エラーではなく制御フロー的脱出）
 - WASM bridge は ParseErrorInfo.message のみ使用 → 影響なし
+- **全46箇所の parse_error 呼び出しを一括マッピング済み**（段階的移行ではなく初回リリース時点で完全）
+
+### 将来の拡張候補
+
+- `opt_name: String` → `opt_names: Array[String]` 化（制約系エラーで複数オプション関与を構造的に表現）
+- filter のコンテキスト伝搬（InvalidValue に opt_name を付与）
 
 ## テスト
 
