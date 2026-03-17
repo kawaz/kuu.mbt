@@ -24,3 +24,14 @@ pub fn FieldRegistry::at_least_one(
 ) -> Unit {
   self.parser.at_least_one(refs)
 }
+
+///|
+/// 依存制約: source が指定された場合、target も必須。
+pub fn FieldRegistry::requires(
+  self : FieldRegistry,
+  target : @core.OptRef,
+  source~ : @core.OptRef,
+  msg~ : String = ""
+) -> Unit {
+  self.parser.requires(target, source~, msg~)
+}

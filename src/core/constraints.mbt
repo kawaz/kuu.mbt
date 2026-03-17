@@ -38,3 +38,24 @@ pub fn Parser::required(self : Parser, opt : OptRef) -> Unit {
     }
   })
 }
+
+///|
+pub fn Parser::requires(
+  self : Parser,
+  target : OptRef,
+  source~ : OptRef,
+  msg~ : String = ""
+) -> Unit {
+  let target_ref = target
+  let source_ref = source
+  self.post_hooks.push(fn() raise ParseError {
+    if (source_ref.is_set)() && not((target_ref.is_set)()) {
+      let message = if msg != "" {
+        msg
+      } else {
+        source_ref.name + " requires " + target_ref.name
+      }
+      raise parse_error(message)
+    }
+  })
+}
