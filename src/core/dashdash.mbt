@@ -67,6 +67,7 @@ pub fn Parser::dashdash(
     id,
     name: separator,
     getter: fn() -> Array[String] { cell.val },
+    setter: fn(v) { cell.val = v },
     parsed: self.parsed,
     is_set: fn() { was_set.val },
   }
@@ -108,6 +109,7 @@ pub fn Parser::append_dashdash(
     id,
     name: separator,
     getter: fn() -> Array[Array[String]] { cell.val },
+    setter: fn(v) { cell.val = v },
     parsed: self.parsed,
     is_set: fn() { was_set.val },
   }

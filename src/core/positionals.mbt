@@ -44,6 +44,7 @@ pub fn Parser::positional(
     id,
     name,
     getter: fn() -> String { cell.val },
+    setter: fn(v) { cell.val = v },
     parsed: self.parsed,
     is_set: fn() { was_set.val },
   }
@@ -96,6 +97,7 @@ pub fn Parser::rest(
     id,
     name,
     getter: fn() -> Array[String] { cell.val },
+    setter: fn(v) { cell.val = v },
     parsed: self.parsed,
     is_set: fn() { was_set.val },
   }

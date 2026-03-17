@@ -5899,3 +5899,245 @@ test "env hidden option does not leak env_name in help" {
   inspect(help.contains("[env: SECRET_KEY]"), content="false")
   inspect(help.contains("secret-key"), content="false")
 }
+
+///|
+test "priv setter: flag setter writes cell value" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  ignore(p.parse([]))
+  inspect(verbose.get(), content="Some(false)")
+  // priv setter で直接書き換え
+  (verbose.setter)(true)
+  inspect(verbose.get(), content="Some(true)")
+  // is_set は連動しない（setter の設計制約）
+  inspect((verbose.is_set)(), content="false")
+}
+
+///|
+test "priv setter: string_opt setter writes cell value" {
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost")
+  ignore(p.parse([]))
+  inspect(
+    host.get(),
+    content=(
+      #|Some("localhost")
+    ),
+  )
+  (host.setter)("example.com")
+  inspect(
+    host.get(),
+    content=(
+      #|Some("example.com")
+    ),
+  )
+}
+
+///|
+test "priv setter: alias shares setter with target" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let v = p.alias("-v", verbose)
+  ignore(p.parse([]))
+  // alias の setter は target と同一 cell を指す
+  (v.setter)(true)
+  inspect(verbose.get(), content="Some(true)")
+  inspect(v.get(), content="Some(true)")
+}
+
+///|
+test "adjust: after_post transforms value when set" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=0)
+  p.adjust(port, after_post=Filter::map(fn(v) { v + 1000 }))
+  ignore(p.parse(["--port", "80"]))
+  inspect(port.get(), content="Some(1080)")
+}
+
+///|
+test "adjust: after_post skips when not set" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=8080)
+  p.adjust(port, after_post=Filter::map(fn(v) { v + 1000 }))
+  ignore(p.parse([]))
+  // default 値には変換を掛けない
+  inspect(port.get(), content="Some(8080)")
+}
+
+///|
+test "adjust: after_post validation raises error" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=0)
+  p.adjust(port, after_post={ run: fn(v) raise ParseError {
+    if v > 1024 {
+      v
+    } else {
+      raise parse_error("port must be > 1024")
+    }
+  } })
+  let result : Result[_, _] = try? p.parse(["--port", "80"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "link: copies value from source to target when source is set" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let debug = p.flag(name="debug")
+  p.link(debug, source=verbose)
+  ignore(p.parse(["--verbose"]))
+  inspect(verbose.get(), content="Some(true)")
+  inspect(debug.get(), content="Some(true)")
+}
+
+///|
+test "link: does not copy when source is not set" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let debug = p.flag(name="debug")
+  p.link(debug, source=verbose)
+  ignore(p.parse([]))
+  inspect(verbose.get(), content="Some(false)")
+  inspect(debug.get(), content="Some(false)")
+}
+
+///|
+test "link: string value forwarding" {
+  let p = Parser::new()
+  let host = p.string_opt(name="host", default="localhost")
+  let server = p.string_opt(name="server", default="default-server")
+  p.link(server, source=host)
+  ignore(p.parse(["--host", "example.com"]))
+  inspect(
+    host.get(),
+    content=(
+      #|Some("example.com")
+    ),
+  )
+  inspect(
+    server.get(),
+    content=(
+      #|Some("example.com")
+    ),
+  )
+}
+
+///|
+test "clone: independent is_set" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let verb = p.clone("--verb", verbose)
+  ignore(p.parse(["--verb"]))
+  inspect((verb.is_set)(), content="true")
+  inspect((verbose.is_set)(), content="true") // alias 動作: target も set
+  inspect(verbose.get(), content="Some(true)")
+  inspect(verb.get(), content="Some(true)")
+}
+
+///|
+test "clone: only target used" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let _verb = p.clone("--verb", verbose)
+  ignore(p.parse(["--verbose"]))
+  inspect((verbose.is_set)(), content="true")
+  inspect(verbose.get(), content="Some(true)")
+}
+
+///|
+test "link: overwrites target when both source and target are set" {
+  let p = Parser::new()
+  let src = p.string_opt(name="source", default="s-default")
+  let tgt = p.string_opt(name="target", default="t-default")
+  p.link(tgt, source=src)
+  ignore(p.parse(["--source", "from-src", "--target", "from-tgt"]))
+  // source が set なので target は source の値で上書きされる
+  inspect(
+    tgt.get(),
+    content=(
+      #|Some("from-src")
+    ),
+  )
+}
+
+///|
+test "clone: both unused" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let verb = p.clone("--verb", verbose)
+  ignore(p.parse([]))
+  inspect((verbose.is_set)(), content="false")
+  inspect((verb.is_set)(), content="false")
+  inspect(verbose.get(), content="Some(false)")
+  inspect(verb.get(), content="Some(false)")
+}
+
+///|
+test "adjust: multiple adjusts on same target execute in order" {
+  let p = Parser::new()
+  let val = p.int_opt(name="val", default=0)
+  p.adjust(val, after_post=Filter::map(fn(v) { v * 2 }))
+  p.adjust(val, after_post=Filter::map(fn(v) { v + 1 }))
+  ignore(p.parse(["--val", "5"]))
+  // 5 * 2 = 10, 10 + 1 = 11 (登録順に実行)
+  inspect(val.get(), content="Some(11)")
+}
+
+///|
+test "clone + link: clone with independent forwarding" {
+  let p = Parser::new()
+  let src = p.flag(name="source")
+  let cloned = p.clone("--cloned", src)
+  let tgt = p.flag(name="target")
+  p.link(tgt, source=cloned)
+  ignore(p.parse(["--cloned"]))
+  inspect((cloned.is_set)(), content="true")
+  inspect(tgt.get(), content="Some(true)")
+}
+
+///|
+test "practical: deprecated alias with adjust validation" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=8080)
+  let _old_port = p.deprecated("--old-port", port, msg="Use --port instead")
+  p.adjust(port, after_post={ run: fn(v) raise ParseError {
+    if v >= 1 && v <= 65535 {
+      v
+    } else {
+      raise parse_error("port must be 1-65535")
+    }
+  } })
+  // deprecated alias でもパースは成功し、adjust の検証も通る
+  ignore(p.parse(["--old-port", "3000"]))
+  inspect(port.get(), content="Some(3000)")
+  let warnings = p.deprecated_warnings()
+  inspect(warnings.length(), content="1")
+}
+
+///|
+test "practical: link for verbose implies debug" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let debug = p.flag(name="debug")
+  // --verbose が指定されたら --debug も自動で有効にする
+  p.link(debug, source=verbose)
+  ignore(p.parse(["--verbose"]))
+  inspect(verbose.get(), content="Some(true)")
+  inspect(debug.get(), content="Some(true)")
+  inspect((verbose.is_set)(), content="true")
+  // debug は link で値が書き込まれるが is_set は false（パースで set されたわけではない）
+  inspect((debug.is_set)(), content="false")
+}
+
+///|
+test "practical: clone + adjust for derived option" {
+  let p = Parser::new()
+  let port = p.int_opt(name="port", default=80)
+  let secure_port = p.clone("--secure-port", port)
+  // secure-port には +443 のオフセットを付ける
+  p.adjust(secure_port, after_post=Filter::map(fn(v) { v + 443 }))
+  ignore(p.parse(["--secure-port", "100"]))
+  inspect(secure_port.get(), content="Some(543)")
+  // clone は alias ベースなので port にも反映される（v1 制約）
+  inspect(port.get(), content="Some(543)")
+}
