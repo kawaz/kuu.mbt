@@ -1,0 +1,46 @@
+# cargo-kuu-example task runner
+
+# Default: build WASM + run tests
+default: build-wasm test
+
+# Build kuu WASM bridge (from workspace root)
+build-wasm:
+    (cd ../.. && moon build --target wasm-gc --release)
+
+# Build the Rust binary
+build:
+    cargo build
+
+# Run with arguments
+run *ARGS:
+    cargo run -- {{ARGS}}
+
+# Run integration tests
+test:
+    cargo test
+
+# Run demo scenarios
+demo:
+    @echo "=== build --release ===" && cargo run -- build --release --features serde -j 4
+    @echo ""
+    @echo "=== run with dashdash ===" && cargo run -- run -r --bin myapp -- --port 8080
+    @echo ""
+    @echo "=== test with filter ===" && cargo run -- test integration --no-fail-fast -- --nocapture
+    @echo ""
+    @echo "=== new project ===" && cargo run -- new my-project --lib --edition 2024
+    @echo ""
+    @echo "=== add deps ===" && cargo run -- add serde tokio --features derive --dev
+    @echo ""
+    @echo "=== remove dep ===" && cargo run -- rm old-dep --dev -n
+    @echo ""
+    @echo "=== clean ===" && cargo run -- clean --release --doc
+    @echo ""
+    @echo "=== verbose build ===" && cargo run -- -vv build --color=never --locked
+    @echo ""
+    @echo "=== help ===" && cargo run -- --help
+    @echo ""
+    @echo "=== build help ===" && cargo run -- build --help
+
+# Show help
+help:
+    cargo run -- --help
