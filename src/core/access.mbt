@@ -9,7 +9,7 @@ pub fn[T] Opt::get(self : Opt[T]) -> T? {
 
 ///|
 pub fn[T] Opt::is_set(self : Opt[T]) -> Bool {
-  (self.accessor.is_set)()
+  (self.used)()
 }
 
 ///|

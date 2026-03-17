@@ -4,7 +4,7 @@ type: decision
 
 # DR-048: Accessor.is_set を Opt.used に分離 — 値の committed と opt の used は別概念
 
-**ステータス: accepted（未実装）**
+**ステータス: accepted（実装済み）**
 
 ## 問題
 

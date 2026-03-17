@@ -16,7 +16,6 @@
   │  get()       : () -> T       cell.val を返す         │
   │  set(v)      : (T) -> Unit   set_value + set_commit  │
   │  set_value(v): (T) -> Unit   cell=v のみ             │
-  │  is_set()    : () -> Bool    committed を返す         │
   │  set_commit(): () -> Unit    committed=true のみ     │
   │  reset()     : () -> Unit    cell=default, committed=false │
   └───────────┬─────────────────────────────────────────┘
@@ -27,12 +26,13 @@
   │  id       : Int          ← NodeTemplate 参照キー     │
   │  name     : String       ← "--verbose" 等           │
   │  accessor : Accessor[T]  ← 値の読み書きインターフェース │
+  │  used     : () -> Bool   ← この Opt 名が使われたか    │
   │  parsed   : Ref[Bool]    ← Parser.parsed を共有      │
   └─────────────────────────────────────────────────────┘
         │                        │
         │ .get()                 │ .is_set()
         ▼                        ▼
-   parsed=true なら            accessor.is_set() を
+   parsed=true なら            (self.used)() を
    Some(accessor.get())        そのまま返す
    parsed=false なら None
 ```
@@ -41,21 +41,21 @@
 
 ```
   alias の場合:
-  ┌──────────┐     ┌──────────┐
-  │ target   │     │ alias    │
-  │ Opt[T]   │     │ Opt[T]   │
-  └────┬─────┘     └────┬─────┘
-       │                │
-       ▼                ▼
-  ┌──────────┐     ┌──────────────────────────┐
-  │Accessor A│     │Accessor A'               │
-  │ get ─────┤─共有─┤ get                      │
-  │ set ─────┤─共有─┤ set                      │
-  │ set_value┤─共有─┤ set_value                │
-  │ is_set ──┤     │ is_set ← opt_used        │ ← 独立
-  │ set_commit┤─共有┤ set_commit               │
-  │ reset ───┤─共有─┤ reset                    │
-  └──────────┘     └──────────────────────────┘
+  ┌──────────────┐     ┌──────────────┐
+  │ target       │     │ alias        │
+  │ Opt[T]       │     │ Opt[T]       │
+  │ used ← committed│  │ used ← opt_used│ ← 独立
+  └────┬─────────┘     └────┬─────────┘
+       │                    │
+       ▼                    ▼
+  ┌──────────┐         ┌──────────┐
+  │Accessor A│─── 共有 ─│Accessor A│  ← 同一 Accessor を直接共有
+  │ get      │         │ get      │
+  │ set      │         │ set      │
+  │ set_value│         │ set_value│
+  │ set_commit│        │ set_commit│
+  │ reset    │         │ reset    │
+  └──────────┘         └──────────┘
        │
        ▼
   ┌──────────┐
@@ -87,7 +87,15 @@
 | `ValCell.committed` | 値レベル | この値がユーザー入力で commit されたか（どの名前経由でも） |
 | `opt_used` (alias/clone 内ローカル) | Opt レベル | この特定の Opt 名がコマンドラインで使われたか |
 
-primary Opt では `is_set()` が `committed` を読む。alias Opt では `is_set()` が `opt_used` を読む。
+### Opt.used の実装
+
+| Opt の種類 | `used` の実装 | 説明 |
+|---|---|---|
+| 通常 Opt | `fn() { vc.committed.val }` | committed と同値 |
+| alias Opt | `fn() { opt_used.val }` | 独立した使用フラグ |
+| clone Opt | `fn() { opt_used.val }` | 独立した使用フラグ |
+
+`Opt::is_set()` は `(self.used)()` を返す。`as_ref()` で `OptRef` を取ると `is_set` は `Opt.used` をキャプチャする。alias の `OptRef` は alias 固有の `opt_used` を返し、target の `committed` ではない。exclusive/required 制約で alias の `OptRef` を使う場合、alias 名でのみ `is_set=true` になることに注意。
 
 サブコマンド構造では、子が committed なら親も必ず committed（再帰パースの構造的不変条件）。
 
@@ -123,7 +131,7 @@ primary Opt では `is_set()` が `committed` を読む。alias Opt では `is_s
 
 | コンビネータ | Accessor 関係 | 主な操作 |
 |---|---|---|
-| alias | `with_is_set` で共有（is_set のみ独立） | commit 時に `set_commit()` で target まで伝搬 |
+| alias | target.accessor を直接共有。used は独立した opt_used | commit 時に `set_commit()` で target まで伝搬 |
 | clone | 完全独立 ValCell | save/restore パターンで target の cell を一時利用 |
 | adjust | target の Accessor を `post_hooks` でキャプチャ | `is_set` チェック → `set_value` で値変換 |
 | link | source/target 両方の Accessor をキャプチャ | `source.is_set` チェック → `set_value`/`set` で値転送 |
@@ -214,17 +222,17 @@ OC + P フェーズ完了後、`post_hooks` を順に実行する。
 // get(): parsed=true なら Some(accessor.get()) を返す
 let verbose = opt_verbose.get()  // Some(true) or Some(false)
 
-// is_set(): committed をそのまま返す（parsed 非依存）
+// is_set(): used をそのまま返す（parsed 非依存）
 let explicitly_set = opt_verbose.is_set()  // true: ユーザーが指定した
 
-// as_ref(): 制約登録用の OptRef を返す
+// as_ref(): 制約登録用の OptRef を返す（is_set は Opt.used にバインド）
 let ref = opt_verbose.as_ref()  // OptRef { name, is_set }
 ```
 
 **get と is_set の意味の違い:**
 
 - `get()` は「パース済みか」のガード（`parsed` チェック）。パース前は常に `None`
-- `is_set()` は「ユーザーが明示的に指定したか」。default で値があっても `is_set = false`
+- `is_set()` は「ユーザーが明示的に指定したか」（`Opt.used` 経由）。default で値があっても `is_set = false`
 
 ## 4. Accessor メソッド一覧表
 
@@ -233,9 +241,10 @@ let ref = opt_verbose.as_ref()  // OptRef { name, is_set }
 | `get()` | なし（読み取り） | なし | Phase 5-6 | `Opt::get`, adjust, link, clone の save/restore |
 | `set(v)` | `cell = v` | `true` | Phase 5 | link (propagate_set=true), clone の Accessor |
 | `set_value(v)` | `cell = v` | 変更なし | Phase 5 | adjust, link (propagate_set=false), clone の save/restore |
-| `is_set()` | なし | なし（読み取り） | Phase 5-6 | `Opt::is_set`, adjust, link, deprecated, constraints |
 | `set_commit()` | なし | `true` | Phase 3 | alias の commit（target の committed を連鎖更新） |
 | `reset()` | `cell = default` | `false` | Phase 3 | ExactNode.reset（OC 競合敗者のリセット） |
+
+> **注:** `is_set` は Accessor ではなく `Opt.used` で管理される（DR-048）。
 
 ### set と set_value の使い分け
 
@@ -246,7 +255,7 @@ let ref = opt_verbose.as_ref()  // OptRef { name, is_set }
 
 alias の commit では、alias 自体の `opt_used = true` に加えて target の `committed = true` も必要。しかし alias は target の cell を共有しているため、`set` を呼ぶと二重書き込みになる。`set_commit` は committed のみを更新する。
 
-`with_is_set` で Accessor を分岐する際、`set_commit` は差し替えない。これは `set_commit` が root（元の ValCell）の `committed` を更新する責務を持つため。チェーン alias（alias の alias）でも `set_commit` 経由で root まで伝搬する。
+alias は target の Accessor を直接共有するため、`set_commit` は常に root（元の ValCell）の `committed` を更新する。チェーン alias（alias の alias）でも `set_commit` 経由で root まで伝搬する。
 
 ## 5. コンビネータ別 ValCell 使用パターン
 
@@ -364,9 +373,9 @@ let v = p.alias("-v", verbose)
 
 **構造:**
 
-- `v` の Accessor は `verbose` の Accessor を `with_is_set` で複製
+- `v` の Accessor は `verbose` の Accessor を直接共有（同一インスタンス）
 - `get`, `set`, `set_value`, `set_commit`, `reset` は全て共有 → 同じ `cell` を操作
-- `is_set` のみ `opt_used` を参照（独立）
+- `used` のみ独立（`opt_used`）、Accessor は完全共有
 
 **commit 時の動作:**
 
@@ -382,7 +391,7 @@ let b = p.alias("--bbb", a)      // opt_used = Y, set_commit → X = true
 let c = p.alias("--ccc", b)      // opt_used = Z, set_commit → Y = true ... ?
 ```
 
-`c` の commit で `b.accessor.set_commit()` が呼ばれる。`b` の Accessor は `with_is_set` で `is_set` のみ差し替えているが、`set_commit` は元の Accessor（= `a` の ValCell）のものを共有している。そのため `c` の commit は `a` の `committed` を直接 true にする。
+`c` の commit で `b.accessor.set_commit()` が呼ばれる。`b` の Accessor は `a` の Accessor を直接共有しているため、`set_commit` は `a` の ValCell の `committed` を操作する。そのため `c` の commit は `a` の `committed` を直接 true にする。
 
 ただし `b` 自身の `opt_used` は更新されない。これは `set_commit` が root の `committed` を操作するためで、中間 alias の `opt_used` には伝搬しない。
 
@@ -408,7 +417,7 @@ let v = p.clone("-v", verbose)
 1. `saved = target_acc.get()` — target の現在値を退避
 2. 元ノードの `commit()` — target の cell に値を書き込み（ノードのクロージャが target の cell をキャプチャしているため）
 3. `clone_cell = target_acc.get()` — 書き込まれた値を clone にコピー
-4. `opt_used = true`, `set_commit()`（root まで伝搬）
+4. `opt_used = true`（clone 専用の使用フラグ。root への伝搬はしない）
 5. `target_acc.set_value(saved)` — target を元に戻す
 
 この方式は、ノードの `commit` が常に target の cell に書き込む前提で動作する。clone は独自の cell を持つが、ノードの振る舞いは target のものを再利用するため、一時的に target を経由する。
@@ -418,7 +427,7 @@ let v = p.clone("-v", verbose)
 | 特性 | alias | clone |
 |---|---|---|
 | cell | 共有 | 独立 |
-| committed | 独立（opt_used） + root 伝搬 | 独立（opt_used） + root 伝搬 |
+| committed | 独立（opt_used） + root 伝搬 | 独立（opt_used）、root 伝搬なし |
 | 値の独立性 | なし（同じ値） | あり（別の値） |
 | ノードファクトリ | 共有 | 共有（save/restore でラップ） |
 | `--name=value` 対応 | eq_fallback 登録 | eq_fallback を save/restore でラップ |

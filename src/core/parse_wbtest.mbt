@@ -6190,7 +6190,7 @@ test "ValCell: accessor set updates value and committed" {
   let acc = vc.accessor()
   (acc.set)(99)
   assert_eq((acc.get)(), 99)
-  assert_eq((acc.is_set)(), true)
+  assert_eq(vc.committed.val, true)
 }
 
 ///|
@@ -6199,7 +6199,7 @@ test "ValCell: accessor set_value updates value without committed" {
   let acc = vc.accessor()
   (acc.set_value)(99)
   assert_eq((acc.get)(), 99)
-  assert_eq((acc.is_set)(), false)
+  assert_eq(vc.committed.val, false)
 }
 
 ///|
@@ -6208,10 +6208,10 @@ test "ValCell: accessor reset restores default and clears committed" {
   let acc = vc.accessor()
   (acc.set)(100)
   assert_eq((acc.get)(), 100)
-  assert_eq((acc.is_set)(), true)
+  assert_eq(vc.committed.val, true)
   (acc.reset)()
   assert_eq((acc.get)(), 42)
-  assert_eq((acc.is_set)(), false)
+  assert_eq(vc.committed.val, false)
 }
 
 ///|
@@ -6223,10 +6223,10 @@ test "ValCell: clone creates independent cell with same default" {
   let acc2 = vc2.accessor()
   // vc2 is independent: default value, committed=false
   assert_eq((acc2.get)(), 5)
-  assert_eq((acc2.is_set)(), false)
+  assert_eq(vc2.committed.val, false)
   // vc1 is unchanged
   assert_eq((acc1.get)(), 10)
-  assert_eq((acc1.is_set)(), true)
+  assert_eq(vc1.committed.val, true)
 }
 
 ///|
@@ -6236,7 +6236,7 @@ test "ValCell: multiple accessors share same cell" {
   let acc2 = vc.accessor()
   (acc1.set)(42)
   assert_eq((acc2.get)(), 42)
-  assert_eq((acc2.is_set)(), true)
+  assert_eq(vc.committed.val, true)
 }
 
 ///|
@@ -6245,13 +6245,33 @@ test "ValCell: set → reset → set cycle" {
   let acc = vc.accessor()
   (acc.set)(99)
   assert_eq((acc.get)(), 99)
-  assert_eq((acc.is_set)(), true)
+  assert_eq(vc.committed.val, true)
   (acc.reset)()
   assert_eq((acc.get)(), 42)
-  assert_eq((acc.is_set)(), false)
+  assert_eq(vc.committed.val, false)
   (acc.set)(77)
   assert_eq((acc.get)(), 77)
-  assert_eq((acc.is_set)(), true)
+  assert_eq(vc.committed.val, true)
+}
+
+///|
+test "ValCell: set_commit only updates committed without changing value" {
+  let vc = ValCell::new(Val(42))
+  let acc = vc.accessor()
+  // 初期状態: committed = false
+  assert_eq(vc.committed.val, false)
+  assert_eq((acc.get)(), 42)
+  // set_value で値を変えてから set_commit
+  (acc.set_value)(99)
+  assert_eq(vc.committed.val, false) // set_value は committed を変えない
+  assert_eq((acc.get)(), 99)
+  (acc.set_commit)()
+  assert_eq(vc.committed.val, true) // set_commit で committed = true
+  assert_eq((acc.get)(), 99) // 値は set_value で設定した 99 のまま
+  // reset で committed と値の両方がデフォルトに戻る
+  (acc.reset)()
+  assert_eq(vc.committed.val, false)
+  assert_eq((acc.get)(), 42) // 99 → 42 に戻ったことで reset が効いた証明
 }
 
 ///|
@@ -6263,11 +6283,11 @@ test "ValCell: clone bidirectional independence" {
   // vc1 → vc2 独立
   (acc1.set)(10)
   assert_eq((acc2.get)(), 0)
-  assert_eq((acc2.is_set)(), false)
+  assert_eq(vc2.committed.val, false)
   // vc2 → vc1 独立
   (acc2.set)(20)
   assert_eq((acc1.get)(), 10)
-  assert_eq((acc1.is_set)(), true)
+  assert_eq(vc1.committed.val, true)
 }
 
 ///|
@@ -6277,11 +6297,11 @@ test "ValCell: set_value then set updates committed" {
   // set_value: 値は変わるが committed は false
   (acc.set_value)(50)
   assert_eq((acc.get)(), 50)
-  assert_eq((acc.is_set)(), false)
+  assert_eq(vc.committed.val, false)
   // set: 値も committed も更新
   (acc.set)(100)
   assert_eq((acc.get)(), 100)
-  assert_eq((acc.is_set)(), true)
+  assert_eq(vc.committed.val, true)
 }
 
 ///|
@@ -6291,10 +6311,10 @@ test "ValCell: reset on shared accessors propagates" {
   let acc2 = vc.accessor()
   (acc1.set)(42)
   assert_eq((acc2.get)(), 42)
-  assert_eq((acc2.is_set)(), true)
+  assert_eq(vc.committed.val, true)
   (acc1.reset)()
   assert_eq((acc2.get)(), 0)
-  assert_eq((acc2.is_set)(), false)
+  assert_eq(vc.committed.val, false)
 }
 
 ///|

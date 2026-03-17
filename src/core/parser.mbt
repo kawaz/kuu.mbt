@@ -126,7 +126,7 @@ fn[T] Parser::register_option(
     is_global: global,
     make_eq_fallback: None,
   }
-  { id, name: "--" + name, accessor: valcell.accessor(), parsed: self.parsed }
+  { id, name: "--" + name, accessor: valcell.accessor(), parsed: self.parsed, used: fn() { valcell.committed.val } }
 }
 
 ///|
@@ -134,9 +134,9 @@ fn[T] Parser::register_option(
 /// name は生文字列（"--" の自動付加なし）。opt / cmd / append 問わず使える。
 ///
 /// node_templates[target.id] に保存されたファクトリ（register_option / cmd で登録）から
-/// 新しい ExactNode を生成し、target と Accessor を共有（is_set のみ独立）。
-/// alias 使用時は alias.is_set=true に加え target.is_set=true もセットされる。
-/// チェーン alias（alias の alias）では Accessor.set 経由で root まで伝搬する。
+/// 新しい ExactNode を生成し、target と Accessor を共有（used のみ独立）。
+/// alias 使用時は alias.is_set()=true に加え target.is_set()=true もセットされる。
+/// チェーン alias（alias の alias）では Accessor.set_commit 経由で root まで伝搬する。
 /// target が global の場合、alias も global_nodes に登録し子パーサに伝搬する。
 pub fn[T] Parser::alias(
   self : Parser,
@@ -154,7 +154,7 @@ pub fn[T] Parser::alias(
         ")",
       )
       let id = (self.next_id)()
-      { id, name, accessor: target.accessor.with_is_set(fn() { false }), parsed: target.parsed }
+      { id, name, accessor: target.accessor, parsed: target.parsed, used: fn() { false } }
     }
     Some(src) => {
       if self.registered_names.contains(name) {
@@ -207,7 +207,7 @@ pub fn[T] Parser::alias(
         is_global: src.is_global,
         make_eq_fallback: src.make_eq_fallback,
       }
-      { id, name, accessor: target.accessor.with_is_set(fn() { opt_used.val }), parsed: target.parsed }
+      { id, name, accessor: target.accessor, parsed: target.parsed, used: fn() { opt_used.val } }
     }
   }
 }
@@ -296,7 +296,7 @@ pub fn[T] Parser::clone(
         ")",
       )
       let id = (self.next_id)()
-      { id, name, accessor: target.accessor.with_is_set(fn() { false }), parsed: target.parsed }
+      { id, name, accessor: target.accessor, parsed: target.parsed, used: fn() { false } }
     }
     Some(src) => {
       if self.registered_names.contains(name) {
@@ -376,6 +376,8 @@ pub fn[T] Parser::clone(
         is_global: src.is_global,
         make_eq_fallback: src.make_eq_fallback,
       }
+      // clone は ValCell の Accessor を使わずカスタム Accessor を手動構築するため、
+      // opt_used が committed 兼 used の役割を担う。set/set_commit は opt_used を直接操作する。
       let clone_acc : Accessor[T] = {
         get: fn() { clone_cell.val },
         set: fn(v) {
@@ -383,11 +385,10 @@ pub fn[T] Parser::clone(
           opt_used.val = true
         },
         set_value: fn(v) { clone_cell.val = v },
-        is_set: fn() { opt_used.val },
         set_commit: fn() { opt_used.val = true },
         reset: reset_clone,
       }
-      { id, name, accessor: clone_acc, parsed: target.parsed }
+      { id, name, accessor: clone_acc, parsed: target.parsed, used: fn() { opt_used.val } }
     }
   }
 }

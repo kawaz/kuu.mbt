@@ -80,11 +80,16 @@ pub(all) struct Parser {
 }
 
 ///|
+/// パーサに登録されたオプションへのハンドル。
+/// - accessor: 値の読み書き（ValCell 経由）
+/// - used: この Opt 名が CLI で使われたかを返す。
+///   通常 Opt では committed と同値、alias/clone では独立して管理される。
 pub(all) struct Opt[T] {
   id : Int
   name : String
   priv accessor : Accessor[T]
   parsed : Ref[Bool]
+  priv used : () -> Bool
 }
 
 ///|
@@ -101,7 +106,7 @@ pub(all) struct OptRef {
 
 ///|
 pub fn[T] Opt::as_ref(self : Opt[T]) -> OptRef {
-  { name: self.name, is_set: self.accessor.is_set }
+  { name: self.name, is_set: self.used }
 }
 
 ///|
@@ -206,7 +211,6 @@ fn[T] ValCell::accessor(self : ValCell[T]) -> Accessor[T] {
       self.committed.val = true
     },
     set_value: fn(v) { self.cell.val = v },
-    is_set: fn() { self.committed.val },
     set_commit: fn() { self.committed.val = true },
     reset: fn() {
       self.cell.val = self.default_val.resolve()
@@ -234,16 +238,7 @@ priv struct Accessor[T] {
   get : () -> T
   set : (T) -> Unit
   set_value : (T) -> Unit
-  is_set : () -> Bool
   set_commit : () -> Unit
   reset : () -> Unit
 }
 
-///|
-/// is_set だけ差し替えた新しい Accessor を返す（alias 用）。
-/// get/set/set_value/set_commit/reset は元の Accessor と共有。
-/// set_commit は set と同じスコープ（root の committed）に対応するため、
-/// is_set とは異なり差し替えない。
-fn[T] Accessor::with_is_set(self : Accessor[T], is_set : () -> Bool) -> Accessor[T] {
-  { get: self.get, set: self.set, set_value: self.set_value, is_set, set_commit: self.set_commit, reset: self.reset }
-}

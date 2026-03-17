@@ -138,11 +138,10 @@ pub fn Parser::cmd(
     },
     set: fn(v) { vc.cell.val = Some(v); vc.committed.val = true },
     set_value: fn(v) { vc.cell.val = Some(v) },
-    is_set: fn() { vc.committed.val },
     set_commit: fn() { vc.committed.val = true },
     reset: fn() { vc.cell.val = None; vc.committed.val = false },
   }
-  { id, name, accessor: cmd_acc, parsed: child.parsed }
+  { id, name, accessor: cmd_acc, parsed: child.parsed, used: fn() { vc.committed.val } }
 }
 
 ///|
