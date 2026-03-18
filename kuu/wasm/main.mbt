@@ -73,16 +73,30 @@ fn get_opt_string(obj : Map[String, Json], key : String) -> String? {
 }
 
 ///|
-/// Extract variation parameters from a JSON object.
-fn extract_variations(
-  obj : Map[String, Json],
-) -> (String?, String?, String?, String?, String?) {
-  let vf = get_opt_string(obj, "variation_false")
-  let vt = get_opt_string(obj, "variation_toggle")
-  let vtrue = get_opt_string(obj, "variation_true")
-  let vr = get_opt_string(obj, "variation_reset")
-  let vu = get_opt_string(obj, "variation_unset")
-  (vf, vt, vtrue, vr, vu)
+/// Extract variation parameters from a JSON object and build Variation array.
+fn extract_variations(obj : Map[String, Json]) -> Array[@core.Variation] {
+  let variations : Array[@core.Variation] = []
+  match get_opt_string(obj, "variation_toggle") {
+    Some(p) => variations.push(@core.Toggle(p))
+    None => ()
+  }
+  match get_opt_string(obj, "variation_true") {
+    Some(p) => variations.push(@core.True(p))
+    None => ()
+  }
+  match get_opt_string(obj, "variation_false") {
+    Some(p) => variations.push(@core.False(p))
+    None => ()
+  }
+  match get_opt_string(obj, "variation_reset") {
+    Some(p) => variations.push(@core.Reset(p))
+    None => ()
+  }
+  match get_opt_string(obj, "variation_unset") {
+    Some(p) => variations.push(@core.Unset(p))
+    None => ()
+  }
+  variations
 }
 
 ///|
@@ -226,9 +240,7 @@ fn build_parser(
           }
           _ => []
         }
-        let (variation_false, variation_toggle, variation_true, variation_reset, variation_unset) = extract_variations(
-          obj,
-        )
+        let variations = extract_variations(obj)
         match kind {
           "flag" => {
             let default_val = match obj.get("default") {
@@ -243,11 +255,7 @@ fn build_parser(
               description~,
               hidden~,
               aliases~,
-              variation_false~,
-              variation_toggle~,
-              variation_true~,
-              variation_reset~,
-              variation_unset~,
+              variations~,
             )
             opt_refs[name] = opt.as_ref()
             entries.push(
@@ -287,7 +295,7 @@ fn build_parser(
               _ => None
             }
             let post = parse_string_post(obj)
-            let opt = parser.string(
+            let opt = parser.custom(
               name~,
               default=default_val,
               global~,
@@ -298,11 +306,8 @@ fn build_parser(
               choices~,
               implicit_value~,
               post~,
-              variation_false~,
-              variation_toggle~,
-              variation_true~,
-              variation_reset~,
-              variation_unset~,
+              variations~,
+              pre=@core.Filter::map(fn(s) { s }),
             )
             opt_refs[name] = opt.as_ref()
             entries.push(
@@ -329,7 +334,7 @@ fn build_parser(
               _ => None
             }
             let post = parse_int_post(obj)
-            let opt = parser.int(
+            let opt = parser.custom(
               name~,
               default=default_val,
               global~,
@@ -339,11 +344,8 @@ fn build_parser(
               aliases~,
               implicit_value~,
               post~,
-              variation_false~,
-              variation_toggle~,
-              variation_true~,
-              variation_reset~,
-              variation_unset~,
+              variations~,
+              pre=@core.Filter::parse_int(),
             )
             opt_refs[name] = opt.as_ref()
             entries.push(
@@ -370,7 +372,7 @@ fn build_parser(
               _ => None
             }
             let post = parse_float_post(obj)
-            let opt = parser.float(
+            let opt = parser.custom(
               name~,
               default=default_val,
               global~,
@@ -380,11 +382,8 @@ fn build_parser(
               aliases~,
               implicit_value~,
               post~,
-              variation_false~,
-              variation_toggle~,
-              variation_true~,
-              variation_reset~,
-              variation_unset~,
+              variations~,
+              pre=@core.Filter::parse_float(),
             )
             opt_refs[name] = opt.as_ref()
             entries.push(
@@ -411,7 +410,7 @@ fn build_parser(
               Some(False) => Some(@core.Val(false))
               _ => None
             }
-            let opt = parser.boolean(
+            let opt = parser.custom(
               name~,
               default=default_val,
               global~,
@@ -420,11 +419,8 @@ fn build_parser(
               hidden~,
               aliases~,
               implicit_value~,
-              variation_false~,
-              variation_toggle~,
-              variation_true~,
-              variation_reset~,
-              variation_unset~,
+              variations~,
+              pre=@core.Filter::parse_bool(),
             )
             opt_refs[name] = opt.as_ref()
             entries.push(
@@ -447,11 +443,7 @@ fn build_parser(
               description~,
               hidden~,
               aliases~,
-              variation_false~,
-              variation_toggle~,
-              variation_true~,
-              variation_reset~,
-              variation_unset~,
+              variations~,
             )
             opt_refs[name] = opt.as_ref()
             entries.push(
@@ -467,18 +459,15 @@ fn build_parser(
             )
           }
           "append_string" => {
-            let opt = parser.append_string(
+            let opt = parser.custom_append(
               name~,
               global~,
               shorts~,
               description~,
               hidden~,
               aliases~,
-              variation_false~,
-              variation_toggle~,
-              variation_true~,
-              variation_reset~,
-              variation_unset~,
+              variations~,
+              pre=@core.Filter::map(fn(s) { s }),
             )
             opt_refs[name] = opt.as_ref()
             entries.push(
@@ -495,18 +484,15 @@ fn build_parser(
             )
           }
           "append_int" => {
-            let opt = parser.append_int(
+            let opt = parser.custom_append(
               name~,
               global~,
               shorts~,
               description~,
               hidden~,
               aliases~,
-              variation_false~,
-              variation_toggle~,
-              variation_true~,
-              variation_reset~,
-              variation_unset~,
+              variations~,
+              pre=@core.Filter::parse_int(),
             )
             opt_refs[name] = opt.as_ref()
             entries.push(
@@ -525,18 +511,15 @@ fn build_parser(
             )
           }
           "append_float" => {
-            let opt = parser.append_float(
+            let opt = parser.custom_append(
               name~,
               global~,
               shorts~,
               description~,
               hidden~,
               aliases~,
-              variation_false~,
-              variation_toggle~,
-              variation_true~,
-              variation_reset~,
-              variation_unset~,
+              variations~,
+              pre=@core.Filter::parse_float(),
             )
             opt_refs[name] = opt.as_ref()
             entries.push(

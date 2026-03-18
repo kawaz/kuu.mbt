@@ -125,9 +125,6 @@ pub fn Parser::string(
   name~ : String,
   default~ : String,
   default_fn? : (() -> String)? = None,
-  global? : Bool = false,
-  aliases? : Array[String] = [],
-  shorts? : String = "",
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
@@ -135,19 +132,9 @@ pub fn Parser::string(
   post? : FilterChain[String, String]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[String]? = None,
-  variations? : Array[Variation] = [],
-  variation_toggle? : String? = None,
-  variation_true? : String? = None,
-  variation_false? : String? = None,
-  variation_reset? : String? = None,
-  variation_unset? : String? = None,
 ) -> Opt[String] {
-  apply_variation_sugar(
-    variations, variation_toggle~, variation_true~, variation_false~,
-    variation_reset~, variation_unset~,
-  )
   self.custom(
-    name~, aliases~, shorts~, global~, hidden~, variations~,
+    name~, hidden~,
     description~, value_name~, env~,
     default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::map(fn(s) { s }),
@@ -160,9 +147,6 @@ pub fn Parser::int(
   name~ : String,
   default~ : Int,
   default_fn? : (() -> Int)? = None,
-  global? : Bool = false,
-  aliases? : Array[String] = [],
-  shorts? : String = "",
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
@@ -170,19 +154,9 @@ pub fn Parser::int(
   post? : FilterChain[Int, Int]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[Int]? = None,
-  variations? : Array[Variation] = [],
-  variation_toggle? : String? = None,
-  variation_true? : String? = None,
-  variation_false? : String? = None,
-  variation_reset? : String? = None,
-  variation_unset? : String? = None,
 ) -> Opt[Int] {
-  apply_variation_sugar(
-    variations, variation_toggle~, variation_true~, variation_false~,
-    variation_reset~, variation_unset~,
-  )
   self.custom(
-    name~, aliases~, shorts~, global~, hidden~, variations~,
+    name~, hidden~,
     description~, value_name~, env~,
     default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::parse_int(),
@@ -195,9 +169,6 @@ pub fn Parser::float(
   name~ : String,
   default~ : Double,
   default_fn? : (() -> Double)? = None,
-  global? : Bool = false,
-  aliases? : Array[String] = [],
-  shorts? : String = "",
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
@@ -205,19 +176,9 @@ pub fn Parser::float(
   post? : FilterChain[Double, Double]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[Double]? = None,
-  variations? : Array[Variation] = [],
-  variation_toggle? : String? = None,
-  variation_true? : String? = None,
-  variation_false? : String? = None,
-  variation_reset? : String? = None,
-  variation_unset? : String? = None,
 ) -> Opt[Double] {
-  apply_variation_sugar(
-    variations, variation_toggle~, variation_true~, variation_false~,
-    variation_reset~, variation_unset~,
-  )
   self.custom(
-    name~, aliases~, shorts~, global~, hidden~, variations~,
+    name~, hidden~,
     description~, value_name~, env~,
     default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::parse_float(),
@@ -230,9 +191,6 @@ pub fn Parser::boolean(
   name~ : String,
   default~ : Bool = false,
   default_fn? : (() -> Bool)? = None,
-  global? : Bool = false,
-  aliases? : Array[String] = [],
-  shorts? : String = "",
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
@@ -240,19 +198,9 @@ pub fn Parser::boolean(
   post? : FilterChain[Bool, Bool]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[Bool]? = None,
-  variations? : Array[Variation] = [],
-  variation_toggle? : String? = None,
-  variation_true? : String? = None,
-  variation_false? : String? = None,
-  variation_reset? : String? = None,
-  variation_unset? : String? = None,
 ) -> Opt[Bool] {
-  apply_variation_sugar(
-    variations, variation_toggle~, variation_true~, variation_false~,
-    variation_reset~, variation_unset~,
-  )
   self.custom(
-    name~, aliases~, shorts~, global~, hidden~, variations~,
+    name~, hidden~,
     description~, value_name~, env~,
     default~, default_fn~, post~, choices~, implicit_value~,
     pre=Filter::parse_bool(),
@@ -263,26 +211,13 @@ pub fn Parser::boolean(
 pub fn Parser::append_string(
   self : Parser,
   name~ : String,
-  global? : Bool = false,
-  aliases? : Array[String] = [],
-  shorts? : String = "",
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
-  variations? : Array[Variation] = [],
-  variation_toggle? : String? = None,
-  variation_true? : String? = None,
-  variation_false? : String? = None,
-  variation_reset? : String? = None,
-  variation_unset? : String? = None,
 ) -> Opt[Array[String]] {
-  apply_variation_sugar(
-    variations, variation_toggle~, variation_true~, variation_false~,
-    variation_reset~, variation_unset~,
-  )
   self.custom_append(
-    name~, aliases~, shorts~, global~, hidden~, variations~,
+    name~, hidden~,
     description~, value_name~, env~,
     pre=Filter::map(fn(s) { s }),
   )
@@ -292,26 +227,13 @@ pub fn Parser::append_string(
 pub fn Parser::append_int(
   self : Parser,
   name~ : String,
-  global? : Bool = false,
-  aliases? : Array[String] = [],
-  shorts? : String = "",
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
-  variations? : Array[Variation] = [],
-  variation_toggle? : String? = None,
-  variation_true? : String? = None,
-  variation_false? : String? = None,
-  variation_reset? : String? = None,
-  variation_unset? : String? = None,
 ) -> Opt[Array[Int]] {
-  apply_variation_sugar(
-    variations, variation_toggle~, variation_true~, variation_false~,
-    variation_reset~, variation_unset~,
-  )
   self.custom_append(
-    name~, aliases~, shorts~, global~, hidden~, variations~,
+    name~, hidden~,
     description~, value_name~, env~,
     pre=Filter::parse_int(),
   )
@@ -321,26 +243,13 @@ pub fn Parser::append_int(
 pub fn Parser::append_float(
   self : Parser,
   name~ : String,
-  global? : Bool = false,
-  aliases? : Array[String] = [],
-  shorts? : String = "",
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
   hidden? : Bool = false,
-  variations? : Array[Variation] = [],
-  variation_toggle? : String? = None,
-  variation_true? : String? = None,
-  variation_false? : String? = None,
-  variation_reset? : String? = None,
-  variation_unset? : String? = None,
 ) -> Opt[Array[Double]] {
-  apply_variation_sugar(
-    variations, variation_toggle~, variation_true~, variation_false~,
-    variation_reset~, variation_unset~,
-  )
   self.custom_append(
-    name~, aliases~, shorts~, global~, hidden~, variations~,
+    name~, hidden~,
     description~, value_name~, env~,
     pre=Filter::parse_float(),
   )

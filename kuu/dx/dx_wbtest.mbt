@@ -482,9 +482,11 @@ impl Parseable for ShortsConfig with register(self, reg) {
     shorts="v",
     set=fn(v) { self.verbose = v },
   )
-  reg.string(
+  reg.custom(
     name="output",
+    default="",
     shorts="o",
+    pre=@core.Filter::map(fn(s) { s }),
     set=fn(v) { self.output = v },
   )
 }
@@ -517,9 +519,11 @@ fn AliasConfig::default() -> AliasConfig {
 
 ///|
 impl Parseable for AliasConfig with register(self, reg) {
-  reg.string(
+  reg.custom(
     name="color",
+    default="",
     aliases=["colour"],
+    pre=@core.Filter::map(fn(s) { s }),
     set=fn(v) { self.color = v },
   )
 }

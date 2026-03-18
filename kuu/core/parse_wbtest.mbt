@@ -134,7 +134,7 @@ test "int and string combined" {
 ///|
 test "no-prefix resets string option" {
   let p = Parser::new()
-  let host = p.string(name="host", default="localhost", variations=[Reset("no")])
+  let host = p.custom(name="host", default="localhost", variations=[Reset("no")], pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["--host", "example.com", "--no-host"]))
   inspect(
     p.get(host),
@@ -147,7 +147,7 @@ test "no-prefix resets string option" {
 ///|
 test "no-prefix resets int option" {
   let p = Parser::new()
-  let port = p.int(name="port", default=8080, variations=[Reset("no")])
+  let port = p.custom(name="port", default=8080, variations=[Reset("no")], pre=Filter::parse_int())
   ignore(p.parse(["--port", "3000", "--no-port"]))
   inspect(p.get(port), content="Some(8080)")
 }
@@ -235,7 +235,7 @@ test "append string default empty" {
 ///|
 test "append string negate" {
   let p = Parser::new()
-  let tags = p.append_string(name="tag", variations=[Reset("no")])
+  let tags = p.custom_append(name="tag", variations=[Reset("no")], pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["--tag", "a", "--no-tag", "--tag", "b"]))
   inspect(
     p.get(tags),
@@ -760,7 +760,7 @@ test "alias no-prefix" {
 ///|
 test "alias for string option" {
   let p = Parser::new()
-  let host = p.string(name="host", default="localhost", aliases=["H"])
+  let host = p.custom(name="host", default="localhost", aliases=["H"], pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["--H", "example.com"]))
   inspect(
     p.get(host),
@@ -773,7 +773,7 @@ test "alias for string option" {
 ///|
 test "alias for int option" {
   let p = Parser::new()
-  let port = p.int(name="port", default=8080, aliases=["p"])
+  let port = p.custom(name="port", default=8080, aliases=["p"], pre=Filter::parse_int())
   ignore(p.parse(["--p", "3000"]))
   inspect(p.get(port), content="Some(3000)")
 }
@@ -789,7 +789,7 @@ test "multiple aliases" {
 ///|
 test "alias with equals syntax" {
   let p = Parser::new()
-  let port = p.int(name="port", default=8080, aliases=["p"])
+  let port = p.custom(name="port", default=8080, aliases=["p"], pre=Filter::parse_int())
   ignore(p.parse(["--p=3000"]))
   inspect(p.get(port), content="Some(3000)")
 }
@@ -820,7 +820,7 @@ test "short flag" {
 ///|
 test "short int option" {
   let p = Parser::new()
-  let port = p.int(name="port", default=8080, shorts="p")
+  let port = p.custom(name="port", default=8080, shorts="p", pre=Filter::parse_int())
   ignore(p.parse(["-p", "3000"]))
   inspect(p.get(port), content="Some(3000)")
 }
@@ -828,7 +828,7 @@ test "short int option" {
 ///|
 test "short string option" {
   let p = Parser::new()
-  let host = p.string(name="host", default="localhost", shorts="H")
+  let host = p.custom(name="host", default="localhost", shorts="H", pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["-H", "example.com"]))
   inspect(
     p.get(host),
@@ -842,7 +842,7 @@ test "short string option" {
 test "short with long mixed" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", shorts="v")
-  let port = p.int(name="port", default=8080, shorts="p")
+  let port = p.custom(name="port", default=8080, shorts="p", pre=Filter::parse_int())
   ignore(p.parse(["-v", "--port", "3000"]))
   inspect(p.get(verbose), content="Some(true)")
   inspect(p.get(port), content="Some(3000)")
@@ -851,7 +851,7 @@ test "short with long mixed" {
 ///|
 test "short append" {
   let p = Parser::new()
-  let tags = p.append_string(name="tag", shorts="t")
+  let tags = p.custom_append(name="tag", shorts="t", pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["-t", "a", "-t", "b"]))
   inspect(
     p.get(tags),
@@ -877,7 +877,7 @@ test "short flag combining" {
 test "short combining with value at end" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", shorts="v")
-  let port = p.int(name="port", default=8080, shorts="p")
+  let port = p.custom(name="port", default=8080, shorts="p", pre=Filter::parse_int())
   ignore(p.parse(["-vp3000"]))
   inspect(p.get(verbose), content="Some(true)")
   inspect(p.get(port), content="Some(3000)")
@@ -887,7 +887,7 @@ test "short combining with value at end" {
 test "short combining value next arg" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", shorts="v")
-  let port = p.int(name="port", default=8080, shorts="p")
+  let port = p.custom(name="port", default=8080, shorts="p", pre=Filter::parse_int())
   ignore(p.parse(["-vp", "3000"]))
   inspect(p.get(verbose), content="Some(true)")
   inspect(p.get(port), content="Some(3000)")
@@ -897,7 +897,7 @@ test "short combining value next arg" {
 test "short combining with string value" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", shorts="v")
-  let host = p.string(name="host", default="localhost", shorts="H")
+  let host = p.custom(name="host", default="localhost", shorts="H", pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["-vHexample.com"]))
   inspect(p.get(verbose), content="Some(true)")
   inspect(
@@ -972,7 +972,7 @@ test "count reset with no-prefix" {
 test "complex short combining: count + int + flag" {
   let p = Parser::new()
   let c = p.count(name="ccc", shorts="c")
-  let a_opt = p.int(name="aaa", default=0, shorts="A")
+  let a_opt = p.custom(name="aaa", default=0, shorts="A", pre=Filter::parse_int())
   let g = p.flag(name="ggg", shorts="g")
   // -cA1gcc → c(count) A(int=1) g(flag) c(count) c(count)
   ignore(p.parse(["-cA1gcc"]))
@@ -985,8 +985,8 @@ test "complex short combining: count + int + flag" {
 test "complex short combining: flags and int" {
   let p = Parser::new()
   let v = p.flag(name="verbose", shorts="v")
-  let a_opt = p.int(name="after", default=0, shorts="A")
-  let b_opt = p.int(name="before", default=0, shorts="B")
+  let a_opt = p.custom(name="after", default=0, shorts="A", pre=Filter::parse_int())
+  let b_opt = p.custom(name="before", default=0, shorts="B", pre=Filter::parse_int())
   // -vA1 -B1 なら動く
   ignore(p.parse(["-vA1", "-B1"]))
   inspect(p.get(v), content="Some(true)")
@@ -1230,7 +1230,7 @@ test "subcommand error has child help_text" {
 ///|
 test "short combining append_int" {
   let p = Parser::new()
-  let nums = p.append_int(name="num", shorts="n")
+  let nums = p.custom_append(name="num", shorts="n", pre=Filter::parse_int())
   ignore(p.parse(["-n1", "-n2"]))
   inspect(p.get(nums), content="Some([1, 2])")
 }
@@ -1396,7 +1396,7 @@ test "append_dashdash custom separator" {
 test "short combining append_int inline" {
   let p = Parser::new()
   let v = p.flag(name="verbose", shorts="v")
-  let nums = p.append_int(name="num", shorts="n")
+  let nums = p.custom_append(name="num", shorts="n", pre=Filter::parse_int())
   ignore(p.parse(["-vn1"]))
   inspect(p.get(v), content="Some(true)")
   inspect(p.get(nums), content="Some([1])")
@@ -1749,12 +1749,13 @@ test "string choices+implicit: --color rander → implicit then unexpected" {
 ///|
 test "string choices+implicit: --no-color resets" {
   let p = Parser::new()
-  let color = p.string(
+  let color = p.custom(
     name="color",
     default="auto",
     choices=["always", "none", "auto"],
     implicit_value=Some(Val("always")),
     variations=[Reset("no")],
+    pre=Filter::map(fn(s) { s }),
   )
   ignore(p.parse(["--color", "none", "--no-color"]))
   inspect(
@@ -1974,12 +1975,13 @@ test "int implicit: --port foo → implicit (Reject fallback)" {
 test "string choices+implicit: short combining -vc" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", shorts="v")
-  let color = p.string(
+  let color = p.custom(
     name="color",
     default="auto",
     shorts="c",
     choices=["always", "none", "auto"],
     implicit_value=Some(Val("always")),
+    pre=Filter::map(fn(s) { s }),
   )
   ignore(p.parse(["-vc"]))
   inspect(verbose.get(), content="Some(true)")
@@ -1995,12 +1997,13 @@ test "string choices+implicit: short combining -vc" {
 test "string choices+implicit: short combining -cv" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", shorts="v")
-  let color = p.string(
+  let color = p.custom(
     name="color",
     default="auto",
     shorts="c",
     choices=["always", "none", "auto"],
     implicit_value=Some(Val("always")),
+    pre=Filter::map(fn(s) { s }),
   )
   // -cv → c は remaining="v" あり → value trial: "v" は choice にない → Reject
   //      → flag trial: implicit Accept(consumed=1) → OK
@@ -2018,12 +2021,13 @@ test "string choices+implicit: short combining -cv" {
 ///|
 test "string choices+implicit: short -cnone (inline value)" {
   let p = Parser::new()
-  let color = p.string(
+  let color = p.custom(
     name="color",
     default="auto",
     shorts="c",
     choices=["always", "none", "auto"],
     implicit_value=Some(Val("always")),
+    pre=Filter::map(fn(s) { s }),
   )
   // -cnone → c は remaining="none" → value trial: choice "none" Accept(consumed=2)
   ignore(p.parse(["-cnone"]))
@@ -2075,11 +2079,12 @@ test "string implicit_only: --output --verbose → implicit" {
 test "int implicit: short combining -vp" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", shorts="v")
-  let port = p.int(
+  let port = p.custom(
     name="port",
     default=8080,
     shorts="p",
     implicit_value=Some(Val(3000)),
+    pre=Filter::parse_int(),
   )
   ignore(p.parse(["-vp"]))
   inspect(verbose.get(), content="Some(true)")
@@ -2640,7 +2645,7 @@ test "sub with serial and never" {
 test "sub with dashdash" {
   let p = Parser::new()
   let stash = p.sub(name="stash", dashdash=false)
-  let msg = stash.string(name="message", default="", shorts="m")
+  let msg = stash.custom(name="message", default="", shorts="m", pre=Filter::map(fn(s) { s }))
   let files = stash.dashdash()
   ignore(p.parse(["stash", "-m", "wip", "--", "file1", "file2"]))
   inspect(
@@ -2861,7 +2866,7 @@ test "variation: count with Reset" {
 ///|
 test "variation: string with Reset" {
   let p = Parser::new()
-  let host = p.string(name="host", default="localhost", variations=[Reset("no")])
+  let host = p.custom(name="host", default="localhost", variations=[Reset("no")], pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["--host", "example.com", "--no-host"]))
   inspect(
     p.get(host),
@@ -2875,7 +2880,7 @@ test "variation: string with Reset" {
 ///|
 test "variation: string with Unset" {
   let p = Parser::new()
-  let host = p.string(name="host", default="localhost", variations=[Unset("unset")])
+  let host = p.custom(name="host", default="localhost", variations=[Unset("unset")], pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["--host", "example.com", "--unset-host"]))
   inspect(
     p.get(host),
@@ -2889,7 +2894,7 @@ test "variation: string with Unset" {
 ///|
 test "variation: int with Reset" {
   let p = Parser::new()
-  let port = p.int(name="port", default=8080, variations=[Reset("no")])
+  let port = p.custom(name="port", default=8080, variations=[Reset("no")], pre=Filter::parse_int())
   ignore(p.parse(["--port", "3000", "--no-port"]))
   inspect(p.get(port), content="Some(8080)")
   inspect(port.is_set(), content="true")
@@ -2898,7 +2903,7 @@ test "variation: int with Reset" {
 ///|
 test "variation: append_string with Reset" {
   let p = Parser::new()
-  let tags = p.append_string(name="tag", variations=[Reset("no")])
+  let tags = p.custom_append(name="tag", variations=[Reset("no")], pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["--tag", "a", "--tag", "b", "--no-tag"]))
   inspect(p.get(tags), content="Some([])")
   inspect(tags.is_set(), content="true")
@@ -2907,7 +2912,7 @@ test "variation: append_string with Reset" {
 ///|
 test "variation: append_int with Reset" {
   let p = Parser::new()
-  let ids = p.append_int(name="id", variations=[Reset("no")])
+  let ids = p.custom_append(name="id", variations=[Reset("no")], pre=Filter::parse_int())
   ignore(p.parse(["--id", "1", "--id", "2", "--no-id"]))
   inspect(p.get(ids), content="Some([])")
   inspect(ids.is_set(), content="true")
@@ -3028,7 +3033,7 @@ test "flag variation_reset sugar" {
 ///|
 test "string variation_reset sugar" {
   let p = Parser::new()
-  let fmt = p.string(name="format", default="json", variation_reset=Some("no"))
+  let fmt = p.custom(name="format", default="json", variations=[Reset("no")], pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["--format", "xml", "--no-format"]))
   inspect(
     fmt.get(),
@@ -3078,7 +3083,7 @@ test "count variation_reset sugar" {
 ///|
 test "append_string variation_reset sugar" {
   let p = Parser::new()
-  let includes = p.append_string(name="include", variation_reset=Some("no"))
+  let includes = p.custom_append(name="include", variations=[Reset("no")], pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["--include", "a", "--include", "b", "--no-include"]))
   inspect(includes.get(), content="Some([])") // Reset → empty
   inspect(includes.is_set(), content="true")
@@ -3139,11 +3144,12 @@ test "int default_fn" {
 ///|
 test "string default_fn with reset variation" {
   let p = Parser::new()
-  let color = p.string(
+  let color = p.custom(
     name="color",
     default="auto",
     default_fn=Some(fn() { "always" }),
-    variation_reset=Some("no"),
+    variations=[Reset("no")],
+    pre=Filter::map(fn(s) { s }),
   )
   ignore(p.parse(["--color", "never", "--no-color"]))
   inspect(
@@ -3450,9 +3456,10 @@ test "aliases shown in help: --name, --alias format" {
 ///|
 test "aliases multiple shown in help" {
   let p = Parser::new()
-  let _ = p.string(
+  let _ = p.custom(
     name="output", default="", aliases=["out", "o"],
     description="Output file",
+    pre=Filter::map(fn(s) { s }),
   )
   let help = p.generate_help()
   inspect(help.contains("--output, --out, --o"), content="true")
@@ -3480,7 +3487,7 @@ test "aliases also parse correctly" {
 ///|
 test "aliases for value option" {
   let p = Parser::new()
-  let port = p.int(name="port", default=8080, aliases=["p"])
+  let port = p.custom(name="port", default=8080, aliases=["p"], pre=Filter::parse_int())
   ignore(p.parse(["--p", "3000"]))
   inspect(p.get(port), content="Some(3000)")
 }
@@ -3766,7 +3773,7 @@ test "shorts unicode combining: two unicode flags" {
 ///|
 test "shorts unicode combining: unicode short + inline value" {
   let p = Parser::new()
-  let port = p.int(name="port", default=0, shorts="あ")
+  let port = p.custom(name="port", default=0, shorts="あ", pre=Filter::parse_int())
   ignore(p.parse(["-あ3000"]))
   inspect(p.get(port), content="Some(3000)")
 }
@@ -4328,9 +4335,10 @@ test "help shows no variation when variations is empty" {
 ///|
 test "help variation_reset shows --no-xxx" {
   let p = Parser::new()
-  let _ = p.string(
-    name="format", default="json", variation_reset=Some("no"),
+  let _ = p.custom(
+    name="format", default="json", variations=[Reset("no")],
     description="Output format",
+    pre=Filter::map(fn(s) { s }),
   )
   let help = p.generate_help()
   inspect(help.contains("--no-format"), content="true")
@@ -6762,7 +6770,7 @@ test "surrogate pair: emoji first then ascii combining" {
 ///|
 test "surrogate pair: emoji short with inline value" {
   let p = Parser::new()
-  let port = p.int(name="port", default=0, shorts="😀")
+  let port = p.custom(name="port", default=0, shorts="😀", pre=Filter::parse_int())
   ignore(p.parse(["-😀3000"]))
   inspect(p.get(port), content="Some(3000)")
 }
@@ -6771,7 +6779,7 @@ test "surrogate pair: emoji short with inline value" {
 test "surrogate pair: emoji combining flag then value" {
   let p = Parser::new()
   let v = p.flag(name="verbose", shorts="v")
-  let port = p.int(name="port", default=0, shorts="😀")
+  let port = p.custom(name="port", default=0, shorts="😀", pre=Filter::parse_int())
   ignore(p.parse(["-v😀3000"]))
   inspect(p.get(v), content="Some(true)")
   inspect(p.get(port), content="Some(3000)")
@@ -6918,7 +6926,7 @@ test "shorts grapheme cluster: family emoji short combining" {
 test "shorts grapheme cluster: skin tone short + inline value" {
   // 👋🏽 (wave + skin tone = 1 grapheme cluster) を short option として使い、inline value を取る
   let p = Parser::new()
-  let port = p.int(name="port", default=0, shorts="\u{1F44B}\u{1F3FD}")
+  let port = p.custom(name="port", default=0, shorts="\u{1F44B}\u{1F3FD}", pre=Filter::parse_int())
   ignore(p.parse(["-\u{1F44B}\u{1F3FD}3000"]))
   inspect(p.get(port), content="Some(3000)")
 }
@@ -7377,7 +7385,7 @@ test "coverage: short combine last short needs value, no more args" {
   // parse.mbt:323 — 短縮組み合わせの最後の short が value 必要で引数なし
   let p = Parser::new()
   let _ = p.flag(name="verbose", shorts="v")
-  let _ = p.string(name="name", shorts="n", default="")
+  let _ = p.custom(name="name", shorts="n", default="", pre=Filter::map(fn(s) { s }))
   let result : Result[_, _] = try? p.parse(["-vn"])
   match result {
     Err(ParseError(info)) => {
@@ -7393,8 +7401,9 @@ test "coverage: short combine value trial error propagation with choices" {
   // parse.mbt:264 — short combine で value trial が Error (choices バリデーション失敗)
   let p = Parser::new()
   let _ = p.flag(name="verbose", shorts="v")
-  let _ = p.string(
+  let _ = p.custom(
     name="format", shorts="f", default="text", choices=["text", "json"],
+    pre=Filter::map(fn(s) { s }),
   )
   // -vfxml: v はフラグ、f は value opt で choices=["text","json"]。
   // value trial で "xml" を試すが choices バリデーション失敗 → Error 伝搬
