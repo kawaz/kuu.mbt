@@ -26,7 +26,7 @@ jj new main@
 jj describe -m "docs: xxx"
 
 # ファイルを追加・編集
-# (例: docs/decision-records/DR-xxx.md, docs/DESIGN.md への追記)
+# (例: docs/records/decisions/DR-xxx.md, docs/DESIGN.md への追記)
 
 # 複数の知見がある場合は更にコミットを分ける
 jj new -m "docs: yyy"

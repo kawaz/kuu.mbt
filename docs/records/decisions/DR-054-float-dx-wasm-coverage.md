@@ -1,3 +1,7 @@
+---
+type: implementation
+---
+
 # DR-054: float DX層・WASM bridge 対応
 
 ## 背景

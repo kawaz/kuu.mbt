@@ -1,5 +1,5 @@
 ---
-type: decision
+type: review
 ---
 
 # DR-038: 多角的コードレビュー（5ペルソナ）の知見

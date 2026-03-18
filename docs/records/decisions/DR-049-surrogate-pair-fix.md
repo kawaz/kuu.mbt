@@ -1,3 +1,7 @@
+---
+type: implementation
+---
+
 # DR-049: サロゲートペア対応（unicodegrapheme 導入）
 
 ## 概要

@@ -1,5 +1,5 @@
 ---
-type: decision
+type: implementation
 ---
 
 # DR-031: kubectl example の設計

@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-053: プリミティブ分解 — name/exact/serial/or によるオプション構造の一般化
 
 ## 背景

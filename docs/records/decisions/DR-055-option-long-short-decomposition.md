@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-055: register_option の option/long/short 分解
 
 ## 背景

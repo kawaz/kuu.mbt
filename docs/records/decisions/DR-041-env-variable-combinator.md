@@ -1,5 +1,5 @@
 ---
-type: decision
+type: vision
 ---
 
 # DR-041: 環境変数コンビネータ設計構想

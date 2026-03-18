@@ -1,3 +1,7 @@
+---
+type: implementation
+---
+
 # DR-050: Filter 充実 + Sugar コンビネータ追加
 
 ## 背景

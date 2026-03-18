@@ -96,12 +96,11 @@ claude \
     examples/
       archives/         # 完了済み example のアーカイブ
     docs/
-      decision-records/ # 方針や決定を行った際の経緯や理由を記録
-        DR-001-xxx.md
-      plans/
-      knowledge/
-        YYYYMMDD-xxx.md
-      research/
+      records/
+        decisions/ # 方針や決定を行った際の経緯や理由を記録
+          DR-001-xxx.md
+        research/
+          YYYYMMDD-xxx.md
         YYYYMMDD-xxx.md
       DESIGN.md
 ```

@@ -1,3 +1,7 @@
+---
+type: implementation
+---
+
 # DR-056: WASM bridge 機能ギャップ解消
 
 ## 背景

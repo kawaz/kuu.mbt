@@ -1,3 +1,7 @@
+---
+type: decision
+---
+
 # DR-052: ErrorKind 構造化エラー
 
 ## 背景

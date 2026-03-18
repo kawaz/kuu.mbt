@@ -1,3 +1,7 @@
+---
+type: review
+---
+
 # DR-051: 20260318 Example レビュー知見 — kuu API 課題と進化の記録
 
 ## 背景

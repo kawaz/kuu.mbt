@@ -1,5 +1,5 @@
 ---
-type: plan
+type: decision
 ---
 
 # DR-009: 実装計画の再構築
