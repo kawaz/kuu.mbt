@@ -163,7 +163,7 @@ fn build_and_parse(
     shorts="a",
     description="Use archive suffix to determine the compression program",
   )
-  let compress_program = p.string_opt(
+  let compress_program = p.string(
     name="use-compress-program",
     default="",
     shorts="I",
@@ -186,7 +186,7 @@ fn build_and_parse(
 
   // ─── Archive file ───
 
-  let file = p.string_opt(
+  let file = p.string(
     name="file",
     default="",
     shorts="f",
@@ -215,21 +215,21 @@ fn build_and_parse(
     description="Exclude files matching PATTERN",
     value_name="PATTERN",
   )
-  let exclude_from = p.string_opt(
+  let exclude_from = p.string(
     name="exclude-from",
     default="",
     shorts="X",
     description="Exclude patterns listed in FILE",
     value_name="FILE",
   )
-  let files_from = p.string_opt(
+  let files_from = p.string(
     name="files-from",
     default="",
     shorts="T",
     description="Get names to extract or create from FILE",
     value_name="FILE",
   )
-  let strip_components = p.int_opt(
+  let strip_components = p.int(
     name="strip-components",
     default=0,
     description="Strip NUMBER leading components from file names on extraction",
@@ -245,7 +245,7 @@ fn build_and_parse(
 
   // ─── Format ───
 
-  let format = p.string_opt(
+  let format = p.string(
     name="format",
     default="",
     shorts="H",
@@ -253,14 +253,14 @@ fn build_and_parse(
     choices=["gnu", "oldgnu", "pax", "posix", "ustar", "v7"],
     value_name="FORMAT",
   )
-  let label = p.string_opt(
+  let label = p.string(
     name="label",
     default="",
     shorts="V",
     description="Create archive with volume name TEXT",
     value_name="TEXT",
   )
-  let blocking_factor = p.int_opt(
+  let blocking_factor = p.int(
     name="blocking-factor",
     default=20,
     shorts="b",
@@ -348,19 +348,19 @@ fn build_and_parse(
 
   // ─── Metadata override ───
 
-  let owner = p.string_opt(
+  let owner = p.string(
     name="owner",
     default="",
     description="Force NAME as owner for added files",
     value_name="NAME[:UID]",
   )
-  let group = p.string_opt(
+  let group = p.string(
     name="group",
     default="",
     description="Force NAME as group for added files",
     value_name="NAME[:GID]",
   )
-  let mode = p.string_opt(
+  let mode = p.string(
     name="mode",
     default="",
     description="Force permission CHANGES for added files",

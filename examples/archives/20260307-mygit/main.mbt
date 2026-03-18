@@ -41,7 +41,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   // exclusive: --verbose and --quiet cannot be used together
   p.exclusive([verbose.as_ref(), quiet.as_ref()])
   // string_opt with choices + implicit_value
-  let color = p.string_opt(
+  let color = p.string(
     name="color",
     default="auto",
     global=true,
@@ -67,13 +67,13 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="directory",
     description="Target directory",
   )
-  let clone_depth = clone.int_opt(
+  let clone_depth = clone.int(
     name="depth",
     default=0,
     description="Shallow clone with N commits",
     value_name="N",
   )
-  let clone_branch = clone.string_opt(
+  let clone_branch = clone.string(
     name="branch",
     default="",
     shorts="b",
@@ -86,7 +86,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let commit = p.sub(name="commit", description="Record changes")
   commit.set_description("mygit commit - Record changes")
   // string_opt with post filter: trim + non_empty validation
-  let commit_message = commit.string_opt(
+  let commit_message = commit.string(
     name="message",
     default="",
     shorts="m",
@@ -116,7 +116,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   let log = p.sub(name="log", description="Show commit logs")
   log.set_description("mygit log - Show commit logs")
   let log_oneline = log.flag(name="oneline", description="One line per commit")
-  let log_max_count = log.int_opt(
+  let log_max_count = log.int(
     name="max-count",
     default=0,
     shorts="n",
@@ -164,7 +164,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Make an annotated tag",
   )
   tag.exclusive([tag_list.as_ref(), tag_delete.as_ref(), tag_annotate.as_ref()])
-  let tag_message = tag.string_opt(
+  let tag_message = tag.string(
     name="message",
     default="",
     shorts="m",
@@ -211,7 +211,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     dashdash=false,
   )
   stash_push.set_description("mygit stash push - Save to stash")
-  let stash_push_message = stash_push.string_opt(
+  let stash_push_message = stash_push.string(
     name="message",
     default="",
     shorts="m",
@@ -222,7 +222,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   // stash pop: int_opt with implicit_value
   let stash_pop = stash.sub(name="pop", description="Apply and remove stash")
   stash_pop.set_description("mygit stash pop - Pop from stash")
-  let stash_pop_index = stash_pop.int_opt(
+  let stash_pop_index = stash_pop.int(
     name="index",
     default=0,
     description="Stash index",

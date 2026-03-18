@@ -1,11 +1,15 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "kawaz/kuu/src/_size_check"
+package "kawaz/kuu/wasm"
 
 // Values
+pub fn kuu_parse(String) -> String
 
 // Errors
 
 // Types and methods
+type OptEntry
+
+type SchemaResult
 
 // Type aliases
 

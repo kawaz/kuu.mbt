@@ -37,7 +37,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     global=true,
     description="Enable debug mode",
   )
-  let log_level = p.string_opt(
+  let log_level = p.string(
     name="log-level",
     default="info",
     shorts="l",
@@ -45,7 +45,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Set the logging level",
     choices=["debug", "info", "warn", "error", "fatal"],
   )
-  let host = p.string_opt(
+  let host = p.string(
     name="host",
     default="",
     shorts="H",
@@ -76,7 +76,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="rm",
     description="Automatically remove container when it exits",
   )
-  let run_name = run_cmd.string_opt(
+  let run_name = run_cmd.string(
     name="name",
     default="",
     description="Assign a name to the container",
@@ -100,13 +100,13 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Set environment variables",
     value_name="KEY=VALUE",
   )
-  let run_network = run_cmd.string_opt(
+  let run_network = run_cmd.string(
     name="network",
     default="",
     description="Connect a container to a network",
     value_name="NETWORK",
   )
-  let run_restart = run_cmd.string_opt(
+  let run_restart = run_cmd.string(
     name="restart",
     default="no",
     description="Restart policy to apply",
@@ -131,7 +131,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Name and optionally a tag (name:tag)",
     value_name="NAME:TAG",
   )
-  let build_file = build.string_opt(
+  let build_file = build.string(
     name="file",
     default="Dockerfile",
     shorts="f",
@@ -151,13 +151,13 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Set build-time variables",
     value_name="KEY=VALUE",
   )
-  let build_target = build.string_opt(
+  let build_target = build.string(
     name="target",
     default="",
     description="Set the target build stage",
     value_name="STAGE",
   )
-  let build_platform = build.string_opt(
+  let build_platform = build.string(
     name="platform",
     default="",
     description="Set platform (e.g. linux/amd64)",
@@ -181,7 +181,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="q",
     description="Only display container IDs",
   )
-  let ps_format = ps.string_opt(
+  let ps_format = ps.string(
     name="format",
     default="",
     description="Format output using a Go template",
@@ -193,7 +193,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Filter output based on conditions",
     value_name="FILTER",
   )
-  let ps_last = ps.int_opt(
+  let ps_last = ps.int(
     name="last",
     default=0,
     shorts="n",
@@ -215,7 +215,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="q",
     description="Only show image IDs",
   )
-  let images_format = images.string_opt(
+  let images_format = images.string(
     name="format",
     default="",
     description="Format output",
@@ -240,7 +240,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="a",
     description="Download all tagged images",
   )
-  let pull_platform = pull.string_opt(
+  let pull_platform = pull.string(
     name="platform",
     default="",
     description="Set platform",
@@ -292,14 +292,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="t",
     description="Allocate a pseudo-TTY",
   )
-  let exec_user = exec_cmd.string_opt(
+  let exec_user = exec_cmd.string(
     name="user",
     default="",
     shorts="u",
     description="Username or UID",
     value_name="USER",
   )
-  let exec_workdir = exec_cmd.string_opt(
+  let exec_workdir = exec_cmd.string(
     name="workdir",
     default="",
     shorts="w",
@@ -334,14 +334,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Compose configuration files",
     value_name="FILE",
   )
-  let compose_project = compose.string_opt(
+  let compose_project = compose.string(
     name="project-name",
     default="",
     shorts="p",
     description="Project name",
     value_name="NAME",
   )
-  let compose_env_file = compose.string_opt(
+  let compose_env_file = compose.string(
     name="env-file",
     default="",
     description="Environment file path",
@@ -369,7 +369,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="no-deps",
     description="Don't start linked services",
   )
-  let compose_up_scale = compose_up.int_opt(
+  let compose_up_scale = compose_up.int(
     name="scale",
     default=1,
     description="Number of containers for a service",
@@ -386,7 +386,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Stop and remove containers, networks",
   )
   compose_down.set_description("mydocker compose down - Stop services")
-  let compose_down_rmi = compose_down.string_opt(
+  let compose_down_rmi = compose_down.string(
     name="rmi",
     default="",
     description="Remove images (all or local)",
@@ -411,7 +411,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="f",
     description="Follow log output",
   )
-  let compose_logs_tail = compose_logs.string_opt(
+  let compose_logs_tail = compose_logs.string(
     name="tail",
     default="all",
     description="Number of lines to show from the end",
@@ -440,7 +440,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="q",
     description="Only display IDs",
   )
-  let compose_ps_format = compose_ps.string_opt(
+  let compose_ps_format = compose_ps.string(
     name="format",
     default="",
     description="Format output",
@@ -459,7 +459,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   // network create
   let net_create = network.sub(name="create", description="Create a network")
   net_create.set_description("mydocker network create - Create a network")
-  let net_create_driver = net_create.string_opt(
+  let net_create_driver = net_create.string(
     name="driver",
     default="bridge",
     shorts="d",
@@ -494,7 +494,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   // network ls
   let net_ls = network.sub(name="ls", description="List networks")
   net_ls.set_description("mydocker network ls - List networks")
-  let net_ls_format = net_ls.string_opt(
+  let net_ls_format = net_ls.string(
     name="format",
     default="",
     description="Format output",
@@ -531,7 +531,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Display detailed information on networks",
   )
   net_inspect.set_description("mydocker network inspect - Inspect networks")
-  let net_inspect_format = net_inspect.string_opt(
+  let net_inspect_format = net_inspect.string(
     name="format",
     default="",
     shorts="f",
@@ -551,7 +551,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   // volume create
   let vol_create = volume.sub(name="create", description="Create a volume")
   vol_create.set_description("mydocker volume create - Create a volume")
-  let vol_create_driver = vol_create.string_opt(
+  let vol_create_driver = vol_create.string(
     name="driver",
     default="local",
     shorts="d",
@@ -577,7 +577,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   // volume ls
   let vol_ls = volume.sub(name="ls", description="List volumes")
   vol_ls.set_description("mydocker volume ls - List volumes")
-  let vol_ls_format = vol_ls.string_opt(
+  let vol_ls_format = vol_ls.string(
     name="format",
     default="",
     description="Format output",
@@ -614,7 +614,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Display detailed information on volumes",
   )
   vol_inspect.set_description("mydocker volume inspect - Inspect volumes")
-  let vol_inspect_format = vol_inspect.string_opt(
+  let vol_inspect_format = vol_inspect.string(
     name="format",
     default="",
     shorts="f",

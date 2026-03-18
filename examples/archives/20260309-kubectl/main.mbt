@@ -49,21 +49,21 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── Global options ───
 
-  let kubeconfig = p.string_opt(
+  let kubeconfig = p.string(
     name="kubeconfig",
     default="",
     global=true,
     description="Path to the kubeconfig file",
     value_name="PATH",
   )
-  let context = p.string_opt(
+  let context = p.string(
     name="context",
     default="",
     global=true,
     description="The name of the kubeconfig context to use",
     value_name="NAME",
   )
-  let ns = p.string_opt(
+  let ns = p.string(
     name="namespace",
     default="default",
     shorts="n",
@@ -71,7 +71,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Namespace scope for this request",
     value_name="NS",
   )
-  let verbosity = p.int_opt(
+  let verbosity = p.int(
     name="v",
     default=0,
     global=true,
@@ -89,7 +89,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="resources",
     description="Resource type and optional name(s)",
   )
-  let get_output = get.string_opt(
+  let get_output = get.string(
     name="output",
     default="",
     shorts="o",
@@ -98,14 +98,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     choices=["wide", "json", "yaml", "name"],
     implicit_value=Some(@core.Val("json")),
   )
-  let get_selector = get.string_opt(
+  let get_selector = get.string(
     name="selector",
     default="",
     shorts="l",
     description="Label selector (e.g. app=nginx)",
     value_name="SELECTOR",
   )
-  let get_field_selector = get.string_opt(
+  let get_field_selector = get.string(
     name="field-selector",
     default="",
     description="Field selector (e.g. status.phase=Running)",
@@ -131,7 +131,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Print column headers (--no-headers to hide)",
     variation_false=Some("no"),
   )
-  let get_sort_by = get.string_opt(
+  let get_sort_by = get.string(
     name="sort-by",
     default="",
     description="Sort by JSONPath expression",
@@ -148,7 +148,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="R",
     description="Process directory recursively with -f",
   )
-  let get_chunk_size = get.int_opt(
+  let get_chunk_size = get.int(
     name="chunk-size",
     default=500,
     description="Chunk size for pagination",
@@ -176,21 +176,21 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="R",
     description="Process directory recursively",
   )
-  let apply_kustomize = apply.string_opt(
+  let apply_kustomize = apply.string(
     name="kustomize",
     default="",
     shorts="k",
     description="Kustomize directory",
     value_name="DIR",
   )
-  let apply_selector = apply.string_opt(
+  let apply_selector = apply.string(
     name="selector",
     default="",
     shorts="l",
     description="Label selector to filter on",
     value_name="SELECTOR",
   )
-  let apply_dry_run = apply.string_opt(
+  let apply_dry_run = apply.string(
     name="dry-run",
     default="none",
     description="Dry run mode",
@@ -205,7 +205,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="server-side",
     description="Server-side apply",
   )
-  let apply_field_manager = apply.string_opt(
+  let apply_field_manager = apply.string(
     name="field-manager",
     default="",
     description="Field manager name",
@@ -215,14 +215,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="prune",
     description="Prune resources not in files",
   )
-  let apply_validate = apply.string_opt(
+  let apply_validate = apply.string(
     name="validate",
     default="strict",
     description="Validation mode",
     value_name="MODE",
     choices=["strict", "warn", "ignore"],
   )
-  let apply_output = apply.string_opt(
+  let apply_output = apply.string(
     name="output",
     default="",
     shorts="o",
@@ -253,7 +253,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="R",
     description="Process directory recursively",
   )
-  let delete_selector = delete.string_opt(
+  let delete_selector = delete.string(
     name="selector",
     default="",
     shorts="l",
@@ -269,14 +269,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="A",
     description="All namespaces",
   )
-  let delete_cascade = delete.string_opt(
+  let delete_cascade = delete.string(
     name="cascade",
     default="background",
     description="Cascade deletion mode",
     value_name="MODE",
     choices=["background", "orphan", "foreground"],
   )
-  let delete_grace_period = delete.int_opt(
+  let delete_grace_period = delete.int(
     name="grace-period",
     default=-1,
     description="Grace period in seconds (-1 for server default)",
@@ -292,14 +292,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Wait for deletion to complete (--no-wait to skip)",
     variation_false=Some("no"),
   )
-  let delete_dry_run = delete.string_opt(
+  let delete_dry_run = delete.string(
     name="dry-run",
     default="none",
     description="Dry run mode",
     value_name="MODE",
     choices=["none", "client", "server"],
   )
-  let delete_output = delete.string_opt(
+  let delete_output = delete.string(
     name="output",
     default="",
     shorts="o",
@@ -311,7 +311,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="ignore-not-found",
     description="Treat \"not found\" as success",
   )
-  let delete_timeout = delete.string_opt(
+  let delete_timeout = delete.string(
     name="timeout",
     default="0s",
     description="Wait timeout (e.g. 5m0s)",
@@ -333,7 +333,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="resources",
     description="Resource type and optional name prefix",
   )
-  let describe_selector = describe.string_opt(
+  let describe_selector = describe.string(
     name="selector",
     default="",
     shorts="l",
@@ -362,7 +362,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Show events (--no-show-events to hide)",
     variation_false=Some("no"),
   )
-  let describe_chunk_size = describe.int_opt(
+  let describe_chunk_size = describe.int(
     name="chunk-size",
     default=500,
     description="Chunk size for pagination",
@@ -379,7 +379,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   logs.set_description("mykubectl logs - Print container logs")
   let logs_pod = logs.positional(name="pod", description="Pod name")
   logs.required(logs_pod.as_ref())
-  let logs_container = logs.string_opt(
+  let logs_container = logs.string(
     name="container",
     default="",
     shorts="c",
@@ -397,13 +397,13 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     shorts="p",
     description="Previous terminated container logs",
   )
-  let logs_since = logs.string_opt(
+  let logs_since = logs.string(
     name="since",
     default="",
     description="Logs newer than a relative duration (e.g. 5s, 2m, 3h)",
     value_name="DURATION",
   )
-  let logs_since_time = logs.string_opt(
+  let logs_since_time = logs.string(
     name="since-time",
     default="",
     description="Logs after a specific date (RFC3339)",
@@ -413,7 +413,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="timestamps",
     description="Include timestamps in output",
   )
-  let logs_tail = logs.int_opt(
+  let logs_tail = logs.int(
     name="tail",
     default=-1,
     description="Lines of recent log to display (-1 for all)",
@@ -427,14 +427,14 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="prefix",
     description="Prefix each log line with pod/container name",
   )
-  let logs_selector = logs.string_opt(
+  let logs_selector = logs.string(
     name="selector",
     default="",
     shorts="l",
     description="Label selector for multiple pods",
     value_name="SELECTOR",
   )
-  let logs_max_log_requests = logs.int_opt(
+  let logs_max_log_requests = logs.int(
     name="max-log-requests",
     default=5,
     description="Max concurrent log requests",
@@ -452,7 +452,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
   exec.set_description("mykubectl exec - Execute a command in a container")
   let exec_pod = exec.positional(name="pod", description="Pod name")
   exec.required(exec_pod.as_ref())
-  let exec_container = exec.string_opt(
+  let exec_container = exec.string(
     name="container",
     default="",
     shorts="c",
@@ -501,7 +501,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="flatten",
     description="Flatten the resulting kubeconfig",
   )
-  let config_view_output = config_view.string_opt(
+  let config_view_output = config_view.string(
     name="output",
     default="yaml",
     shorts="o",
@@ -537,19 +537,19 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Context name",
   )
   config_set_ctx.required(config_set_ctx_name.as_ref())
-  let config_set_ctx_cluster = config_set_ctx.string_opt(
+  let config_set_ctx_cluster = config_set_ctx.string(
     name="cluster",
     default="",
     description="Cluster for the context",
     value_name="NAME",
   )
-  let config_set_ctx_user = config_set_ctx.string_opt(
+  let config_set_ctx_user = config_set_ctx.string(
     name="user",
     default="",
     description="User for the context",
     value_name="NAME",
   )
-  let config_set_ctx_ns = config_set_ctx.string_opt(
+  let config_set_ctx_ns = config_set_ctx.string(
     name="namespace",
     default="",
     description="Default namespace for the context",

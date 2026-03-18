@@ -120,7 +120,7 @@ pub fn Parser::flag(
 }
 
 ///|
-pub fn Parser::string_opt(
+pub fn Parser::string(
   self : Parser,
   name~ : String,
   default~ : String,
@@ -155,7 +155,7 @@ pub fn Parser::string_opt(
 }
 
 ///|
-pub fn Parser::int_opt(
+pub fn Parser::int(
   self : Parser,
   name~ : String,
   default~ : Int,
@@ -190,7 +190,7 @@ pub fn Parser::int_opt(
 }
 
 ///|
-pub fn Parser::float_opt(
+pub fn Parser::float(
   self : Parser,
   name~ : String,
   default~ : Double,

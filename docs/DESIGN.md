@@ -41,13 +41,14 @@ PEG は最初にマッチした候補を採用する。kuu は全候補を投機
 
 ### Sugar 層 — ユーザー向けコンビネータ
 
-型特化のコンビネータ:
+型特化のコンビネータ。`name~` は `--name` や `<NAME>` の生成に直結するため必須パラメータ（デフォルトなし）:
 
-- `flag()`, `string_opt()`, `int_opt()`, `float_opt()`, `count()` — 基本型
+- `flag()`, `string()`, `int()`, `float()`, `count()` — 基本型
 - `append_string()`, `append_int()`, `append_float()` — 配列蓄積
-- `custom[T : Show]()`, `custom_append[T]()` — 汎用型。string_opt/int_opt は custom のシュガー（DR-025）
+- `custom[T : Show]()`, `custom_append[T]()` — 汎用型。string/int/float は custom のシュガー（DR-025）
 - `cmd()`, `sub()` — サブコマンド
-- `positional()`, `rest()`, `serial()`, `never()` — 位置引数
+- `positional()`, `rest()` — 位置引数（name はヘルプ `<NAME>` 表示に使用）
+- `serial()`, `never()` — name パラメータなし
 
 ### 統一: 全 OptKind = initial + reducer
 
@@ -57,7 +58,7 @@ PEG は最初にマッチした候補を採用する。kuu は全候補を投機
 |------|---------|-------------------|
 | flag | `false` | `_ => true`（名前だけで値確定） |
 | count | `0` | `current + 1`（出現ごとにインクリメント） |
-| string_opt | `default` | `Value(Some(s)) => s`（次の引数を値として取得） |
+| string | `default` | `Value(Some(s)) => s`（次の引数を値として取得） |
 | append | `[]` | `Value(Some(s)) => acc + [s]`（配列に追加） |
 | choices | `default` | 値が選択肢に含まれれば Accept、含まれなければ Reject |
 | implicit_value | `default` | 値なし→implicit、値あり→その値（make_or_node で最長一致） |
@@ -77,11 +78,11 @@ let verbose = p.flag(name="verbose", global=true)  // 全スコープで有効
 
 // sub(): 子パーサ直接返却（DR-026）
 let serve = p.sub(name="serve", description="Start server")
-let port = serve.int_opt(name="port", default=8080)
+let port = serve.int(name="port", default=8080)
 
 // cmd(): setup コールバック方式
 let deploy_cmd = p.cmd(name="deploy", setup=fn(child) {
-  let target = child.string_opt(name="target", default="")
+  let target = child.string(name="target", default="")
 })
 
 let result = try? p.parse(args)
@@ -264,7 +265,7 @@ apply_fn パターンにより、core 側の Ref[T] が DX 層に漏洩しない
 ### Opt 定義の AST 可搬性（DR-029, DR-030 構想）
 
 Opt 定義は純粋データ（定義レベルではクロージャなし）。JSON にシリアライズして他言語に転送可能な構想:
-- 静的定義（flag, string_opt, int_opt, count, append, choices, implicit_value, variations, aliases）: JSON で完全表現
+- 静的定義（flag, string, int, count, append, choices, implicit_value, variations, aliases）: JSON で完全表現
 - 動的部分（custom[T], post フィルタ）: ターゲット言語側で実装する未定義スロットとして表現。型システムが補完をガイド
 
 ---
@@ -274,7 +275,7 @@ Opt 定義は純粋データ（定義レベルではクロージャなし）。J
 ### パースエンジン内部の4層構造
 
 ```
-Sugar:       flag(), string_opt(), custom[T](), cmd(), ...
+Sugar:       flag(), string(), custom[T](), cmd(), ...
 Convention:  expand_and_register — name + aliases + shorts + variations 展開
 Pattern:     make_or_node — 最長一致で複合ノード統合
 Core:        ExactNode (try_reduce) + OC/P 消費ループ + 直交プリミティブ（clone, link, adjust）
@@ -403,7 +404,7 @@ CLI パーサは `Opt[Bool]`、`Opt[Int]`、`Opt[String]`、`Opt[Array[String]]`
 各コンビネータ内で `ValCell[T]` を生成し、そこから `Accessor[T]`（クロージャ束）を取得する。**ExactNode と Opt[T] が同じ ValCell を操作する**:
 
 ```
-コンビネータ（例: string_opt）内部:
+コンビネータ（例: string）内部:
   let valcell : ValCell[String] = ValCell::new(default)
   let acc : Accessor[String] = valcell.accessor()
 
@@ -476,7 +477,7 @@ src/
   core/              # 全パース機能
     types.mbt         #   型定義（Opt, Parser, ExactNode, TryResult, OptMeta, Variation, Lazy, ReduceCtx, FilterChain 等）
     parser.mbt        #   Parser::new, register_option, make_alias, deprecated, clone, link, adjust, expand_and_register
-    options.mbt       #   custom, custom_append, flag, string_opt, int_opt, float_opt, count, append_string, append_int, append_float
+    options.mbt       #   custom, custom_append, flag, string, int, float, count, append_string, append_int, append_float
     nodes.mbt         #   make_flag_node, make_value_node, make_or_node, make_soft_custom_value_node 等
     commands.mbt      #   cmd, sub
     positionals.mbt   #   positional, rest, serial, never

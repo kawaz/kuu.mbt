@@ -102,7 +102,7 @@ fn StructFirst::flag(
 }
 
 ///|
-fn StructFirst::string_opt(
+fn StructFirst::string(
   self : StructFirst,
   name~ : String,
   shorts~ : String = "",
@@ -112,14 +112,14 @@ fn StructFirst::string_opt(
   value_name~ : String = "",
   setter~ : (String) -> Unit
 ) -> Unit {
-  let opt = self.parser.string_opt(
+  let opt = self.parser.string(
     name~, shorts~, description~, global~, default~, value_name~,
   )
   self.copiers.push(fn() { copy_opt(opt, setter) })
 }
 
 ///|
-fn StructFirst::int_opt(
+fn StructFirst::int(
   self : StructFirst,
   name~ : String,
   shorts~ : String = "",
@@ -129,7 +129,7 @@ fn StructFirst::int_opt(
   value_name~ : String = "",
   setter~ : (Int) -> Unit
 ) -> Unit {
-  let opt = self.parser.int_opt(
+  let opt = self.parser.int(
     name~, shorts~, description~, global~, default~, value_name~,
   )
   self.copiers.push(fn() { copy_opt(opt, setter) })
@@ -224,14 +224,14 @@ fn test_struct_first_simple() -> Unit {
     description="Enable verbose output",
     setter=fn(v) { config.verbose = v },
   )
-  sf.string_opt(
+  sf.string(
     name="name",
     shorts="n",
     default="world",
     description="Name to greet",
     setter=fn(v) { config.name = v },
   )
-  sf.int_opt(
+  sf.int(
     name="count",
     shorts="c",
     default=1,
@@ -331,7 +331,7 @@ fn setup_docker_parser(sf : StructFirst, config : DockerConfig) -> Unit {
     global=true,
     setter=fn(v) { config.global.verbose = v },
   )
-  sf.string_opt(
+  sf.string(
     name="log-level",
     default="info",
     global=true,
@@ -368,7 +368,7 @@ fn setup_docker_parser(sf : StructFirst, config : DockerConfig) -> Unit {
     description="Compose commands",
   )
   let compose_files = compose_cmd.append_string(name="file", shorts="f")
-  let compose_project = compose_cmd.string_opt(
+  let compose_project = compose_cmd.string(
     name="project-name",
     default="",
     shorts="p",
@@ -378,7 +378,7 @@ fn setup_docker_parser(sf : StructFirst, config : DockerConfig) -> Unit {
   // compose up
   let up_cmd = compose_cmd.sub(name="up", description="Start containers")
   let up_detach = up_cmd.flag(name="detach", shorts="d")
-  let up_scale = up_cmd.int_opt(name="scale", default=1)
+  let up_scale = up_cmd.int(name="scale", default=1)
   let up_services = up_cmd.rest(name="services")
 
   sf.add_copier(fn() {

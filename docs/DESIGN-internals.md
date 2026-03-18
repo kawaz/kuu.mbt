@@ -18,7 +18,7 @@
   → [parsed = true]
 ```
 
-post_hooks は `Parser.post_hooks: Array[() -> Unit raise ParseError]` として実装されており、string_opt の `post` パラメータや exclusive/required の制約チェックなど、パース後のクロスカッティングな処理に使用。
+post_hooks は `Parser.post_hooks: Array[() -> Unit raise ParseError]` として実装されており、string の `post` パラメータや exclusive/required の制約チェックなど、パース後のクロスカッティングな処理に使用。
 
 ---
 
@@ -40,7 +40,7 @@ register_option[T](name, shorts, aliases, variations, global, hidden, ...):
   5. Opt[T] を生成して返却
 ```
 
-custom[T : Show] がこのパイプラインの汎用入口。string_opt, int_opt は custom のシュガー。flag, count は consumed 値が異なるため register_option を直接使用。
+custom[T : Show] がこのパイプラインの汎用入口。string, int は custom のシュガー。flag, count は consumed 値が異なるため register_option を直接使用。
 
 ---
 

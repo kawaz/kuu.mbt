@@ -43,18 +43,18 @@ test "StructFirst.flag sets struct field after parse" {
   inspect(config.verbose, content="true")
 }
 
-test "StructFirst.string_opt sets struct field after parse" {
+test "StructFirst.string sets struct field after parse" {
   let config = SimpleConfig::default()
   let sf = StructFirst::new()
-  sf.string_opt(name="name", default="", setter=fn(v) { config.name = v })
+  sf.string(name="name", default="", setter=fn(v) { config.name = v })
   ignore(sf.parse(["--name", "alice"]))
   inspect(config.name, content="alice")
 }
 
-test "StructFirst.int_opt sets struct field after parse" {
+test "StructFirst.int sets struct field after parse" {
   let config = SimpleConfig::default()
   let sf = StructFirst::new()
-  sf.int_opt(name="count", default=0, setter=fn(v) { config.count = v })
+  sf.int(name="count", default=0, setter=fn(v) { config.count = v })
   ignore(sf.parse(["--count", "42"]))
   inspect(config.count, content="42")
 }
@@ -63,8 +63,8 @@ test "StructFirst with multiple opts" {
   let config = SimpleConfig::default()
   let sf = StructFirst::new()
   sf.flag(name="verbose", setter=fn(v) { config.verbose = v })
-  sf.string_opt(name="name", default="", setter=fn(v) { config.name = v })
-  sf.int_opt(name="count", default=0, setter=fn(v) { config.count = v })
+  sf.string(name="name", default="", setter=fn(v) { config.name = v })
+  sf.int(name="count", default=0, setter=fn(v) { config.count = v })
   ignore(sf.parse(["--verbose", "--name", "bob", "--count", "7"]))
   inspect(config.verbose, content="true")
   inspect(config.name, content="bob")
@@ -75,12 +75,12 @@ test "StructFirst preserves defaults when options not specified" {
   let config = SimpleConfig::default()
   let sf = StructFirst::new()
   sf.flag(name="verbose", setter=fn(v) { config.verbose = v })
-  sf.string_opt(
+  sf.string(
     name="name",
     default="default_name",
     setter=fn(v) { config.name = v },
   )
-  sf.int_opt(name="count", default=5, setter=fn(v) { config.count = v })
+  sf.int(name="count", default=5, setter=fn(v) { config.count = v })
   ignore(sf.parse([]))
   inspect(config.verbose, content="false")
   inspect(config.name, content="default_name")
@@ -198,7 +198,7 @@ test "Docker-style: run with no flags (minimal)" {
 test "StructFirst does not apply setters on parse error" {
   let config = SimpleConfig::default()
   let sf = StructFirst::new()
-  sf.int_opt(name="count", default=0, setter=fn(v) { config.count = v })
+  sf.int(name="count", default=0, setter=fn(v) { config.count = v })
   let result : Result[_, _] = try? sf.parse(["--count", "not-a-number"])
   inspect(result is Err(_), content="true")
   inspect(config.count, content="0")

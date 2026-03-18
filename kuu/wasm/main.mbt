@@ -287,7 +287,7 @@ fn build_parser(
               _ => None
             }
             let post = parse_string_post(obj)
-            let opt = parser.string_opt(
+            let opt = parser.string(
               name~,
               default=default_val,
               global~,
@@ -329,7 +329,7 @@ fn build_parser(
               _ => None
             }
             let post = parse_int_post(obj)
-            let opt = parser.int_opt(
+            let opt = parser.int(
               name~,
               default=default_val,
               global~,
@@ -370,7 +370,7 @@ fn build_parser(
               _ => None
             }
             let post = parse_float_post(obj)
-            let opt = parser.float_opt(
+            let opt = parser.float(
               name~,
               default=default_val,
               global~,

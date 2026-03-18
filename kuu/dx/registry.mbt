@@ -1,5 +1,5 @@
 ///|
-/// Bool フラグを登録。apply_fn はパース成功後に値を受け取る。
+/// Bool フラグを登録。set はパース成功後に値を受け取る。
 pub fn FieldRegistry::flag(
   self : FieldRegistry,
   name~ : String,
@@ -9,7 +9,7 @@ pub fn FieldRegistry::flag(
   aliases~ : Array[String] = [],
   env~ : String = "",
   hidden~ : Bool = false,
-  apply_fn~ : (Bool) -> Unit,
+  set~ : (Bool) -> Unit,
 ) -> Unit {
   ignore(self.flag_ref(
     name=name,
@@ -19,7 +19,7 @@ pub fn FieldRegistry::flag(
     aliases=aliases,
     env=env,
     hidden=hidden,
-    apply_fn=apply_fn,
+    set=set,
   ))
 }
 
@@ -35,7 +35,7 @@ pub fn FieldRegistry::flag_ref(
   aliases~ : Array[String] = [],
   env~ : String = "",
   hidden~ : Bool = false,
-  apply_fn~ : (Bool) -> Unit,
+  set~ : (Bool) -> Unit,
 ) -> @core.OptRef {
   let opt = self.parser.flag(
     name=name,
@@ -49,7 +49,7 @@ pub fn FieldRegistry::flag_ref(
   self.appliers.push(fn() {
     if opt.is_set() {
       match opt.get() {
-        Some(v) => apply_fn(v)
+        Some(v) => set(v)
         None => ()
       }
     }
@@ -70,7 +70,7 @@ pub fn FieldRegistry::string(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (String) -> Unit,
+  set~ : (String) -> Unit,
 ) -> Unit {
   ignore(self.string_ref(
     name=name,
@@ -82,7 +82,7 @@ pub fn FieldRegistry::string(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   ))
 }
 
@@ -99,7 +99,7 @@ pub fn FieldRegistry::string_ref(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (String) -> Unit,
+  set~ : (String) -> Unit,
 ) -> @core.OptRef {
   self.custom_ref(
     name=name,
@@ -112,7 +112,7 @@ pub fn FieldRegistry::string_ref(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   )
 }
 
@@ -127,7 +127,7 @@ pub fn FieldRegistry::count(
   aliases~ : Array[String] = [],
   env~ : String = "",
   hidden~ : Bool = false,
-  apply_fn~ : (Int) -> Unit,
+  set~ : (Int) -> Unit,
 ) -> Unit {
   ignore(self.count_ref(
     name=name,
@@ -137,7 +137,7 @@ pub fn FieldRegistry::count(
     aliases=aliases,
     env=env,
     hidden=hidden,
-    apply_fn=apply_fn,
+    set=set,
   ))
 }
 
@@ -152,7 +152,7 @@ pub fn FieldRegistry::count_ref(
   aliases~ : Array[String] = [],
   env~ : String = "",
   hidden~ : Bool = false,
-  apply_fn~ : (Int) -> Unit,
+  set~ : (Int) -> Unit,
 ) -> @core.OptRef {
   let opt = self.parser.count(
     name=name,
@@ -166,7 +166,7 @@ pub fn FieldRegistry::count_ref(
   self.appliers.push(fn() {
     if opt.is_set() {
       match opt.get() {
-        Some(v) => apply_fn(v)
+        Some(v) => set(v)
         None => ()
       }
     }
@@ -186,7 +186,7 @@ pub fn FieldRegistry::append_string(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Array[String]) -> Unit,
+  set~ : (Array[String]) -> Unit,
 ) -> Unit {
   ignore(self.append_string_ref(
     name=name,
@@ -197,7 +197,7 @@ pub fn FieldRegistry::append_string(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   ))
 }
 
@@ -213,7 +213,7 @@ pub fn FieldRegistry::append_string_ref(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Array[String]) -> Unit,
+  set~ : (Array[String]) -> Unit,
 ) -> @core.OptRef {
   self.custom_append_ref(
     name=name,
@@ -225,7 +225,7 @@ pub fn FieldRegistry::append_string_ref(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   )
 }
 
@@ -241,7 +241,7 @@ pub fn FieldRegistry::append_int(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Array[Int]) -> Unit,
+  set~ : (Array[Int]) -> Unit,
 ) -> Unit {
   ignore(self.append_int_ref(
     name=name,
@@ -252,7 +252,7 @@ pub fn FieldRegistry::append_int(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   ))
 }
 
@@ -268,7 +268,7 @@ pub fn FieldRegistry::append_int_ref(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Array[Int]) -> Unit,
+  set~ : (Array[Int]) -> Unit,
 ) -> @core.OptRef {
   self.custom_append_ref(
     name=name,
@@ -280,7 +280,7 @@ pub fn FieldRegistry::append_int_ref(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   )
 }
 
@@ -296,7 +296,7 @@ pub fn FieldRegistry::append_float(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Array[Double]) -> Unit,
+  set~ : (Array[Double]) -> Unit,
 ) -> Unit {
   ignore(self.append_float_ref(
     name=name,
@@ -307,7 +307,7 @@ pub fn FieldRegistry::append_float(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   ))
 }
 
@@ -323,7 +323,7 @@ pub fn FieldRegistry::append_float_ref(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Array[Double]) -> Unit,
+  set~ : (Array[Double]) -> Unit,
 ) -> @core.OptRef {
   self.custom_append_ref(
     name=name,
@@ -335,7 +335,7 @@ pub fn FieldRegistry::append_float_ref(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   )
 }
 
@@ -352,7 +352,7 @@ pub fn FieldRegistry::int(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Int) -> Unit,
+  set~ : (Int) -> Unit,
 ) -> Unit {
   ignore(self.int_ref(
     name=name,
@@ -364,7 +364,7 @@ pub fn FieldRegistry::int(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   ))
 }
 
@@ -381,7 +381,7 @@ pub fn FieldRegistry::int_ref(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Int) -> Unit,
+  set~ : (Int) -> Unit,
 ) -> @core.OptRef {
   self.custom_ref(
     name=name,
@@ -394,7 +394,7 @@ pub fn FieldRegistry::int_ref(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   )
 }
 
@@ -411,7 +411,7 @@ pub fn FieldRegistry::float(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Double) -> Unit,
+  set~ : (Double) -> Unit,
 ) -> Unit {
   ignore(self.float_ref(
     name=name,
@@ -423,7 +423,7 @@ pub fn FieldRegistry::float(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   ))
 }
 
@@ -440,7 +440,7 @@ pub fn FieldRegistry::float_ref(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Double) -> Unit,
+  set~ : (Double) -> Unit,
 ) -> @core.OptRef {
   self.custom_ref(
     name=name,
@@ -453,6 +453,6 @@ pub fn FieldRegistry::float_ref(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   )
 }

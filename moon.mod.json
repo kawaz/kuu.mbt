@@ -1,6 +1,7 @@
 {
   "name": "kawaz/kuu",
   "version": "0.1.0",
+  "source": "kuu",
   "deps": {
     "kawaz/unicodegrapheme": {
       "path": "../../unicodegrapheme/main"

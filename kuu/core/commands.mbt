@@ -153,7 +153,7 @@ pub fn Parser::cmd(
 /// Example:
 ///   let clone = p.sub(name="clone", description="Clone a repo")
 ///   let url = clone.positional(name="url")
-///   let depth = clone.int_opt(name="depth", default=0)
+///   let depth = clone.int(name="depth", default=0)
 ///   // After parse: url.get(), depth.get() — no Ref needed
 pub fn Parser::sub(
   self : Parser,

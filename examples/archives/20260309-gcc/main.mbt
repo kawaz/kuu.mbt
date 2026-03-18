@@ -162,7 +162,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── Output Control ───
 
-  let output = p.string_opt(
+  let output = p.string(
     name="output",
     default="a.out",
     shorts="o",
@@ -191,7 +191,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── Optimization ───
 
-  let optimize = p.string_opt(
+  let optimize = p.string(
     name="optimize",
     default="0",
     shorts="O",
@@ -260,7 +260,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── Language Standard ───
 
-  let std = p.string_opt(
+  let std = p.string(
     name="std",
     default="gnu17",
     choices=[
@@ -385,13 +385,13 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── Machine Options ───
 
-  let arch = p.string_opt(
+  let arch = p.string(
     name="arch",
     default="",
     description="Generate code for the specified machine architecture",
     value_name="CPU",
   )
-  let tune = p.string_opt(
+  let tune = p.string(
     name="tune",
     default="",
     description="Optimize for the specified CPU without breaking compatibility",
@@ -412,7 +412,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="pipe",
     description="Use pipes rather than temporary files between stages",
   )
-  let language = p.string_opt(
+  let language = p.string(
     name="language",
     default="",
     shorts="x",

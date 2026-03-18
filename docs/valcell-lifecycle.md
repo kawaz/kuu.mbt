@@ -110,7 +110,7 @@
 
 ### Phase 1: コンビネータ登録
 
-ユーザーが `p.flag()`, `p.string_opt()`, `p.custom()` 等を呼ぶフェーズ。
+ユーザーが `p.flag()`, `p.string()`, `p.custom()` 等を呼ぶフェーズ。
 
 **何が起きるか:**
 
@@ -285,7 +285,7 @@ reset:      cell = 0, pending = 0
 - 複数回の try_reduce で pending が累積。最後に勝った commit で cell に反映
 - `wrap_node_with_set` で commit 時に `committed = true`
 
-### custom (string_opt / int_opt)
+### custom (string / int)
 
 ```
 ValCell[T] + pending: Ref[T]

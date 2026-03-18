@@ -37,7 +37,7 @@ fn RefBinder::string(
   description? : String = "",
   shorts? : String = "",
 ) -> Unit {
-  let opt = self.parser.string_opt(name~, default~, global~, description~, shorts~)
+  let opt = self.parser.string(name~, default~, global~, description~, shorts~)
   self.copiers.push(fn() {
     match opt.get() {
       Some(v) => target.val = v
@@ -55,7 +55,7 @@ fn RefBinder::int(
   description? : String = "",
   shorts? : String = "",
 ) -> Unit {
-  let opt = self.parser.int_opt(name~, default~, global~, description~, shorts~)
+  let opt = self.parser.int(name~, default~, global~, description~, shorts~)
   self.copiers.push(fn() {
     match opt.get() {
       Some(v) => target.val = v
@@ -148,7 +148,7 @@ fn RefBinder::sub_string(
   description? : String = "",
   shorts? : String = "",
 ) -> Unit {
-  let opt = parser.string_opt(name~, default~, description~, shorts~)
+  let opt = parser.string(name~, default~, description~, shorts~)
   self.copiers.push(fn() {
     match opt.get() {
       Some(v) => target.val = v
@@ -166,7 +166,7 @@ fn RefBinder::sub_int(
   description? : String = "",
   shorts? : String = "",
 ) -> Unit {
-  let opt = parser.int_opt(name~, default~, description~, shorts~)
+  let opt = parser.int(name~, default~, description~, shorts~)
   self.copiers.push(fn() {
     match opt.get() {
       Some(v) => target.val = v

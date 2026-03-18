@@ -12,7 +12,7 @@ pub fn[T : Show] FieldRegistry::custom(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (T) -> Unit,
+  set~ : (T) -> Unit,
 ) -> Unit {
   ignore(self.custom_ref(
     name=name,
@@ -25,7 +25,7 @@ pub fn[T : Show] FieldRegistry::custom(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   ))
 }
 
@@ -43,7 +43,7 @@ pub fn[T : Show] FieldRegistry::custom_ref(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (T) -> Unit,
+  set~ : (T) -> Unit,
 ) -> @core.OptRef {
   let opt = self.parser.custom(
     name=name,
@@ -60,7 +60,7 @@ pub fn[T : Show] FieldRegistry::custom_ref(
   self.appliers.push(fn() {
     if opt.is_set() {
       match opt.get() {
-        Some(v) => apply_fn(v)
+        Some(v) => set(v)
         None => ()
       }
     }
@@ -81,7 +81,7 @@ pub fn[T] FieldRegistry::custom_append(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Array[T]) -> Unit,
+  set~ : (Array[T]) -> Unit,
 ) -> Unit {
   ignore(self.custom_append_ref(
     name=name,
@@ -93,7 +93,7 @@ pub fn[T] FieldRegistry::custom_append(
     env=env,
     hidden=hidden,
     value_name=value_name,
-    apply_fn=apply_fn,
+    set=set,
   ))
 }
 
@@ -110,7 +110,7 @@ pub fn[T] FieldRegistry::custom_append_ref(
   env~ : String = "",
   hidden~ : Bool = false,
   value_name~ : String = "",
-  apply_fn~ : (Array[T]) -> Unit,
+  set~ : (Array[T]) -> Unit,
 ) -> @core.OptRef {
   let opt = self.parser.custom_append(
     name=name,
@@ -126,7 +126,7 @@ pub fn[T] FieldRegistry::custom_append_ref(
   self.appliers.push(fn() {
     if opt.is_set() {
       match opt.get() {
-        Some(v) => apply_fn(v)
+        Some(v) => set(v)
         None => ()
       }
     }

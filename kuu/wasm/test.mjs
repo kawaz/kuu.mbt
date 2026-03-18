@@ -295,7 +295,7 @@ function test(label, input) {
   strictEqual(r.values.verbose, 0);
 }
 
-// Test 21: string_opt with implicit_value
+// Test 21: string with implicit_value
 {
   const r = test("String implicit_value", {
     opts: [
@@ -307,7 +307,7 @@ function test(label, input) {
   strictEqual(r.values.color, "always");
 }
 
-// Test 22: int_opt with implicit_value
+// Test 22: int with implicit_value
 {
   const r = test("Int implicit_value", {
     opts: [

@@ -110,8 +110,8 @@ let timeout = p.custom(
 **3. TimeRange の2引数パターン（post_hooks 活用）**:
 
 ```moonbit
-let since = p.string_opt(name="since", default="")
-let until = p.string_opt(name="until", default="")
+let since = p.string(name="since", default="")
+let until = p.string(name="until", default="")
 // post_hook で parse_range に渡し、バリデーション + アンカー解決
 ```
 
@@ -231,7 +231,7 @@ let groups = result.get_groups(upstream)  // Array[ParseResult]
 
 ### file コンビネータ
 
-`string_opt` / `int_opt` と並ぶファイルパス特化コンビネータ。`implicit_value` との組み合わせで3値パターン:
+`string` / `int` と並ぶファイルパス特化コンビネータ。`implicit_value` との組み合わせで3値パターン:
 
 - 未指定 → None
 - フラグのみ（`--config`）→ デフォルトパス（`~/.config/xxx/xxx.toml`）

@@ -1,12 +1,12 @@
-# DR-054: float_opt DX層・WASM bridge 対応
+# DR-054: float DX層・WASM bridge 対応
 
 ## 背景
 
-DR-050 で `float_opt` / `append_float` コンビネータがコア層 (src/core/options.mbt) に追加されたが、DX層 (src/dx/) と WASM bridge (src/wasm/) への反映が漏れている。
+DR-050 で `float` / `append_float` コンビネータがコア層 (src/core/options.mbt) に追加されたが、DX層 (src/dx/) と WASM bridge (src/wasm/) への反映が漏れている。
 
 ## 現状のギャップ
 
-| レイヤー | float_opt | append_float |
+| レイヤー | float | append_float |
 |---|---|---|
 | Core (options.mbt) | ✓ 実装済み | ✓ 実装済み |
 | Core env Phase 2 | ✓ custom() 経由で自動登録 | ✓ custom_append() 経由で自動登録 |
@@ -18,7 +18,7 @@ DR-050 で `float_opt` / `append_float` コンビネータがコア層 (src/core
 
 ### 1. DX層: float / float_ref
 
-int / int_ref (L311-373) と同一パターン。型を Int → Double、parser.int_opt → parser.float_opt に変更するだけ。
+int / int_ref (L311-373) と同一パターン。型を Int → Double、parser.int → parser.float に変更するだけ。
 
 ```
 pub fn FieldRegistry::float(self, name~, default~ = 0.0, ..., apply_fn) -> Unit

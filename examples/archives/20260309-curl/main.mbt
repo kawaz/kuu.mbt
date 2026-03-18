@@ -103,7 +103,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── HTTP Method & Request Control ───
 
-  let request = p.string_opt(
+  let request = p.string(
     name="request", default="", shorts="X",
     description="HTTP method to use",
     value_name="METHOD",
@@ -128,7 +128,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="json",
     description="JSON POST data (sets Content-Type automatically)",
   )
-  let upload_file = p.string_opt(
+  let upload_file = p.string(
     name="upload-file", default="", shorts="T",
     description="Upload file via PUT",
     value_name="FILE",
@@ -140,22 +140,22 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="header", shorts="H",
     description="Custom request header",
   )
-  let user_agent = p.string_opt(
+  let user_agent = p.string(
     name="user-agent", default="", shorts="A",
     description="User-Agent header",
     value_name="AGENT",
   )
-  let referer = p.string_opt(
+  let referer = p.string(
     name="referer", default="", shorts="e",
     description="Referer header",
     value_name="URL",
   )
-  let user = p.string_opt(
+  let user = p.string(
     name="user", default="", shorts="u",
     description="Server user:password",
     value_name="USER:PASS",
   )
-  let oauth2_bearer = p.string_opt(
+  let oauth2_bearer = p.string(
     name="oauth2-bearer", default="",
     description="OAuth 2.0 Bearer token",
     value_name="TOKEN",
@@ -163,7 +163,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── Output Control ───
 
-  let output = p.string_opt(
+  let output = p.string(
     name="output", default="", shorts="o",
     description="Write output to file",
     value_name="FILE",
@@ -172,7 +172,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     name="remote-name", shorts="O",
     description="Save with remote filename",
   )
-  let output_dir = p.string_opt(
+  let output_dir = p.string(
     name="output-dir", default="",
     description="Output directory",
     value_name="DIR",
@@ -192,7 +192,7 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Verbose output",
     variation_false=Some("no"),
   )
-  let write_out = p.string_opt(
+  let write_out = p.string(
     name="write-out", default="", shorts="w",
     description="Output format after transfer",
     value_name="FORMAT",
@@ -207,34 +207,34 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // Design rationale: curl は小数秒（例: 1.5）を受け付けるため string_opt を使用。
   // kuu に float_opt がないため。
-  let connect_timeout = p.string_opt(
+  let connect_timeout = p.string(
     name="connect-timeout", default="",
     description="Connection timeout (seconds)",
     value_name="SECONDS",
   )
   // Design rationale: curl は小数秒（例: 1.5）を受け付けるため string_opt を使用。
   // kuu に float_opt がないため。
-  let max_time = p.string_opt(
+  let max_time = p.string(
     name="max-time", default="", shorts="m",
     description="Maximum transfer time (seconds)",
     value_name="SECONDS",
   )
-  let retry = p.int_opt(
+  let retry = p.int(
     name="retry", default=0,
     description="Number of retries on transient errors",
     value_name="NUM",
   )
-  let retry_delay = p.int_opt(
+  let retry_delay = p.int(
     name="retry-delay", default=0,
     description="Delay between retries (seconds)",
     value_name="SECONDS",
   )
-  let retry_max_time = p.int_opt(
+  let retry_max_time = p.int(
     name="retry-max-time", default=0,
     description="Maximum retry time (seconds)",
     value_name="SECONDS",
   )
-  let limit_rate = p.string_opt(
+  let limit_rate = p.string(
     name="limit-rate", default="",
     description="Transfer speed limit (e.g. 100K, 1M)",
     value_name="SPEED",
@@ -247,12 +247,12 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Allow insecure SSL connections",
     variation_false=Some("no"),
   )
-  let cacert = p.string_opt(
+  let cacert = p.string(
     name="cacert", default="",
     description="CA certificate file",
     value_name="FILE",
   )
-  let cert = p.string_opt(
+  let cert = p.string(
     name="cert", default="", shorts="E",
     description="Client certificate",
     value_name="CERT[:PASSWD]",
@@ -260,17 +260,17 @@ fn run(args : Array[String]) -> Result[Unit, String] {
 
   // ─── Proxy ───
 
-  let proxy = p.string_opt(
+  let proxy = p.string(
     name="proxy", default="", shorts="x",
     description="Proxy server",
     value_name="[protocol://]host[:port]",
   )
-  let proxy_user = p.string_opt(
+  let proxy_user = p.string(
     name="proxy-user", default="", shorts="U",
     description="Proxy authentication",
     value_name="USER:PASS",
   )
-  let noproxy = p.string_opt(
+  let noproxy = p.string(
     name="noproxy", default="",
     description="Hosts that bypass proxy (comma-separated)",
     value_name="HOSTS",
@@ -283,17 +283,17 @@ fn run(args : Array[String]) -> Result[Unit, String] {
     description="Follow redirects",
     variation_false=Some("no"),
   )
-  let max_redirs = p.int_opt(
+  let max_redirs = p.int(
     name="max-redirs", default=50,
     description="Maximum number of redirects",
     value_name="NUM",
   )
-  let cookie = p.string_opt(
+  let cookie = p.string(
     name="cookie", default="", shorts="b",
     description="Send cookies (name=value or filename)",
     value_name="DATA|FILE",
   )
-  let cookie_jar = p.string_opt(
+  let cookie_jar = p.string(
     name="cookie-jar", default="", shorts="c",
     description="Save cookies to file",
     value_name="FILE",

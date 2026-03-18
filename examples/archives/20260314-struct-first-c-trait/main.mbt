@@ -54,7 +54,7 @@ fn FieldRegistry::string(
   description~ : String = "",
   apply_fn~ : (String) -> Unit
 ) -> Unit {
-  let opt = self.parser.string_opt(
+  let opt = self.parser.string(
     name=name, default=default, description=description,
   )
   self.appliers.push(fn() {
@@ -73,7 +73,7 @@ fn FieldRegistry::int(
   description~ : String = "",
   apply_fn~ : (Int) -> Unit
 ) -> Unit {
-  let opt = self.parser.int_opt(
+  let opt = self.parser.int(
     name=name, default=default, description=description,
   )
   self.appliers.push(fn() {
