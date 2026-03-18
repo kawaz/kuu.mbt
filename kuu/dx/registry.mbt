@@ -58,6 +58,65 @@ pub fn FieldRegistry::flag_ref(
 }
 
 ///|
+/// Bool 値オプションを登録（true/false/on/off/t/f/1/0）。flag と違い値を取る。
+pub fn FieldRegistry::boolean(
+  self : FieldRegistry,
+  name~ : String,
+  default~ : Bool = false,
+  description~ : String = "",
+  global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
+  value_name~ : String = "",
+  set~ : (Bool) -> Unit,
+) -> Unit {
+  ignore(self.boolean_ref(
+    name=name,
+    default=default,
+    description=description,
+    global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+    value_name=value_name,
+    set=set,
+  ))
+}
+
+///|
+/// Bool 値オプションを登録し、OptRef を返す（制約登録用）。
+pub fn FieldRegistry::boolean_ref(
+  self : FieldRegistry,
+  name~ : String,
+  default~ : Bool = false,
+  description~ : String = "",
+  global~ : Bool = false,
+  shorts~ : String = "",
+  aliases~ : Array[String] = [],
+  env~ : String = "",
+  hidden~ : Bool = false,
+  value_name~ : String = "",
+  set~ : (Bool) -> Unit,
+) -> @core.OptRef {
+  self.custom_ref(
+    name=name,
+    default=default,
+    pre=@core.Filter::parse_bool(),
+    description=description,
+    global=global,
+    shorts=shorts,
+    aliases=aliases,
+    env=env,
+    hidden=hidden,
+    value_name=value_name,
+    set=set,
+  )
+}
+
+///|
 /// String オプションを登録。
 pub fn FieldRegistry::string(
   self : FieldRegistry,

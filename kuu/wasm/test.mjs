@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { strictEqual, deepStrictEqual } from "node:assert";
 
 const wasmPath = new URL(
-  "../../_build/wasm-gc/release/build/src/wasm/wasm.wasm",
+  "../../_build/wasm-gc/release/build/wasm/wasm.wasm",
   import.meta.url
 );
 
@@ -166,12 +166,12 @@ function test(label, input) {
 {
   const r = test("Unknown opt kind", {
     opts: [
-      { kind: "boolean", name: "flag1" },
+      { kind: "unknown_kind_xyz", name: "flag1" },
     ],
     args: [],
   });
   strictEqual(r.ok, false);
-  strictEqual(r.error, "unknown opt kind: boolean");
+  strictEqual(r.error, "unknown opt kind: unknown_kind_xyz");
 }
 
 // Test 12: Missing name in opt
@@ -565,6 +565,53 @@ function test(label, input) {
   });
   strictEqual(r.ok, true);
   strictEqual(r.values.threshold, 0.5);
+}
+
+// Test 42: boolean kind basic
+{
+  const r = test("Boolean kind basic", {
+    opts: [
+      { kind: "boolean", name: "debug", description: "Debug mode" },
+    ],
+    args: ["--debug", "true"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.debug, true);
+}
+
+// Test 43: boolean kind false
+{
+  const r = test("Boolean kind false", {
+    opts: [
+      { kind: "boolean", name: "debug" },
+    ],
+    args: ["--debug", "off"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.debug, false);
+}
+
+// Test 44: boolean kind default
+{
+  const r = test("Boolean kind default", {
+    opts: [
+      { kind: "boolean", name: "debug" },
+    ],
+    args: [],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.debug, false);
+}
+
+// Test 45: boolean kind invalid
+{
+  const r = test("Boolean kind invalid", {
+    opts: [
+      { kind: "boolean", name: "debug" },
+    ],
+    args: ["--debug", "maybe"],
+  });
+  strictEqual(r.ok, false);
 }
 
 console.log("\n--- All tests passed ---");

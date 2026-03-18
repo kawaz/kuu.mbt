@@ -72,6 +72,44 @@ test "int: default is 0" {
   assert_eq(config.count, 0)
 }
 
+// ---- boolean テスト ----
+
+///|
+struct BoolConfig {
+  mut debug : Bool
+} derive(Show, Eq)
+
+///|
+fn BoolConfig::default() -> BoolConfig {
+  { debug: false }
+}
+
+///|
+impl Parseable for BoolConfig with register(self, reg) {
+  reg.boolean(name="debug", set=fn(v) { self.debug = v })
+}
+
+///|
+test "boolean: --debug true" {
+  let config = BoolConfig::default()
+  parse_into(["--debug", "true"], config)
+  assert_eq(config.debug, true)
+}
+
+///|
+test "boolean: --debug off" {
+  let config = BoolConfig::default()
+  parse_into(["--debug", "off"], config)
+  assert_eq(config.debug, false)
+}
+
+///|
+test "boolean: default is false" {
+  let config = BoolConfig::default()
+  parse_into([], config)
+  assert_eq(config.debug, false)
+}
+
 // ---- float テスト ----
 
 ///|

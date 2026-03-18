@@ -400,6 +400,70 @@ pub fn[T] Parser::clone(
 }
 
 ///|
+/// long オプションのノード展開: --{name} のメインノード + aliases の --{alias} ノードを生成し、
+/// 各バッチを check_and_register_names で重複検査・名前登録する。
+fn expand_long(
+  name : String,
+  aliases : Array[String],
+  make_long_nodes~ : (String) -> Array[ExactNode],
+  check_and_register_names~ : (Array[ExactNode]) -> Unit,
+) -> Array[ExactNode] {
+  let result : Array[ExactNode] = []
+  let main_nodes = make_long_nodes("--" + name)
+  check_and_register_names(main_nodes)
+  for node in main_nodes {
+    result.push(node)
+  }
+  for alt in aliases {
+    let alt_nodes = make_long_nodes("--" + alt)
+    check_and_register_names(alt_nodes)
+    for node in alt_nodes {
+      result.push(node)
+    }
+  }
+  result
+}
+
+///|
+/// short オプションのノード展開: shorts 文字列を grapheme 分解し、バリデーション後に
+/// 各 grapheme を -{c} ノードに変換する。
+/// report_error で不正文字（"-", whitespace, NUL）を報告し、name はエラーメッセージ用。
+fn expand_short(
+  name : String,
+  shorts : String,
+  make_short_nodes~ : (String) -> Array[ExactNode],
+  check_and_register_names~ : (Array[ExactNode]) -> Unit,
+  report_error~ : (String) -> Unit,
+) -> Array[ExactNode] {
+  let result : Array[ExactNode] = []
+  let shorts_g = @unicodegrapheme.graphemes(shorts)
+  for i = 0; i < shorts_g.length(); i = i + 1 {
+    let g = shorts_g[i].to_string()
+    if g == "-" {
+      report_error(
+        "invalid short option character '-' in option --" + name,
+      )
+    } else if g == " " || g == "\t" || g == "\n" || g == "\r" {
+      report_error(
+        "invalid short option character (whitespace) in option --" + name,
+      )
+    } else if g == "\u0000" {
+      report_error(
+        "invalid short option character (NUL) in option --" + name,
+      )
+    }
+  }
+  for i = 0; i < shorts_g.length(); i = i + 1 {
+    let short_nodes = make_short_nodes("-" + shorts_g[i].to_string())
+    check_and_register_names(short_nodes)
+    for node in short_nodes {
+      result.push(node)
+    }
+  }
+  result
+}
+
+///|
 /// コンビネータの共通パターン: メイン名 → aliases → short の展開 + ノード登録
 fn Parser::expand_and_register(
   self : Parser,
@@ -439,35 +503,19 @@ fn Parser::expand_and_register(
     }
   }
 
-  // Validate shorts characters (grapheme cluster units)
-  let shorts_g = @unicodegrapheme.graphemes(shorts)
-  for i = 0; i < shorts_g.length(); i = i + 1 {
-    let g = shorts_g[i].to_string()
-    if g == "-" {
-      self.duplicate_errors.push(
-        "invalid short option character '-' in option --" + name,
-      )
-    } else if g == " " || g == "\t" || g == "\n" || g == "\r" {
-      self.duplicate_errors.push(
-        "invalid short option character (whitespace) in option --" + name,
-      )
-    } else if g == "\u0000" {
-      self.duplicate_errors.push(
-        "invalid short option character (NUL) in option --" + name,
-      )
-    }
-  }
-  let long_nodes = make_long_nodes("--" + name)
-  check_and_register_names(long_nodes)
+  let long_nodes = expand_long(
+    name,
+    aliases,
+    make_long_nodes~,
+    check_and_register_names~,
+  )
   register(long_nodes)
-  for alt in aliases {
-    let alt_nodes = make_long_nodes("--" + alt)
-    check_and_register_names(alt_nodes)
-    register(alt_nodes)
-  }
-  for i = 0; i < shorts_g.length(); i = i + 1 {
-    let short_nodes = make_short_nodes("-" + shorts_g[i].to_string())
-    check_and_register_names(short_nodes)
-    register(short_nodes)
-  }
+  let short_nodes = expand_short(
+    name,
+    shorts,
+    make_short_nodes~,
+    check_and_register_names~,
+    report_error=fn(msg) { self.duplicate_errors.push(msg) },
+  )
+  register(short_nodes)
 }

@@ -7030,6 +7030,56 @@ test "append_float: invalid value" {
   inspect(result is Err(_), content="true")
 }
 
+// === boolean ===
+
+///|
+test "boolean: --flag true" {
+  let p = Parser::new()
+  let debug = p.boolean(name="debug")
+  ignore(p.parse(["--debug", "true"]))
+  inspect(p.get(debug), content="Some(true)")
+}
+
+///|
+test "boolean: --flag false" {
+  let p = Parser::new()
+  let debug = p.boolean(name="debug")
+  ignore(p.parse(["--debug", "false"]))
+  inspect(p.get(debug), content="Some(false)")
+}
+
+///|
+test "boolean: default is false" {
+  let p = Parser::new()
+  let debug = p.boolean(name="debug")
+  ignore(p.parse([]))
+  inspect(p.get(debug), content="Some(false)")
+}
+
+///|
+test "boolean: accepts on/off/t/f/1/0" {
+  let p = Parser::new()
+  let debug = p.boolean(name="debug")
+  ignore(p.parse(["--debug", "on"]))
+  inspect(p.get(debug), content="Some(true)")
+  let p2 = Parser::new()
+  let d2 = p2.boolean(name="debug")
+  ignore(p2.parse(["--debug", "OFF"]))
+  inspect(p2.get(d2), content="Some(false)")
+  let p3 = Parser::new()
+  let d3 = p3.boolean(name="debug")
+  ignore(p3.parse(["--debug", "1"]))
+  inspect(p3.get(d3), content="Some(true)")
+}
+
+///|
+test "boolean: invalid value" {
+  let p = Parser::new()
+  let _ = p.boolean(name="debug")
+  let result : Result[_, _] = try? p.parse(["--debug", "maybe"])
+  inspect(result is Err(_), content="true")
+}
+
 // === ErrorKind tests ===
 
 ///|

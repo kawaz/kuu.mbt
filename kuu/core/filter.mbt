@@ -302,17 +302,17 @@ pub fn Filter::replace_all(
 // --- Type parsing ---
 
 ///|
-/// Parse string to Bool (true/false/1/0, case insensitive)
+/// Parse string to Bool (true/t/on/1, false/f/off/0, case insensitive)
 pub fn Filter::parse_bool() -> FilterChain[String, Bool] {
   Filter::parse(fn(s) raise ParseError {
     let lower = s.to_lower()
-    if lower == "true" || lower == "1" {
+    if lower == "true" || lower == "t" || lower == "on" || lower == "1" {
       true
-    } else if lower == "false" || lower == "0" {
+    } else if lower == "false" || lower == "f" || lower == "off" || lower == "0" {
       false
     } else {
       raise parse_error(
-        "invalid boolean: " + s + " (expected true/false/1/0)",
+        "invalid boolean: " + s + " (expected true/false/t/f/on/off/1/0)",
       )
     }
   })

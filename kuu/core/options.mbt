@@ -225,6 +225,41 @@ pub fn Parser::float(
 }
 
 ///|
+pub fn Parser::boolean(
+  self : Parser,
+  name~ : String,
+  default~ : Bool = false,
+  default_fn? : (() -> Bool)? = None,
+  global? : Bool = false,
+  aliases? : Array[String] = [],
+  shorts? : String = "",
+  description? : String = "",
+  env? : String = "",
+  value_name? : String = "",
+  hidden? : Bool = false,
+  post? : FilterChain[Bool, Bool]? = None,
+  choices? : Array[String] = [],
+  implicit_value? : Lazy[Bool]? = None,
+  variations? : Array[Variation] = [],
+  variation_toggle? : String? = None,
+  variation_true? : String? = None,
+  variation_false? : String? = None,
+  variation_reset? : String? = None,
+  variation_unset? : String? = None,
+) -> Opt[Bool] {
+  apply_variation_sugar(
+    variations, variation_toggle~, variation_true~, variation_false~,
+    variation_reset~, variation_unset~,
+  )
+  self.custom(
+    name~, aliases~, shorts~, global~, hidden~, variations~,
+    description~, value_name~, env~,
+    default~, default_fn~, post~, choices~, implicit_value~,
+    pre=Filter::parse_bool(),
+  )
+}
+
+///|
 pub fn Parser::append_string(
   self : Parser,
   name~ : String,

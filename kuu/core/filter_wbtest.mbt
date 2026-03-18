@@ -621,6 +621,36 @@ test "parse_bool — invalid" {
   inspect(result is Err(_), content="true")
 }
 
+///|
+test "parse_bool — t/on accepted as true" {
+  let chain = Filter::parse_bool()
+  let r : Result[Bool, _] = try? (chain.run)("t")
+  match r {
+    Ok(v) => inspect(v, content="true")
+    Err(_) => fail("expected Ok for 't'")
+  }
+  let r2 : Result[Bool, _] = try? (chain.run)("on")
+  match r2 {
+    Ok(v) => inspect(v, content="true")
+    Err(_) => fail("expected Ok for 'on'")
+  }
+}
+
+///|
+test "parse_bool — f/off accepted as false" {
+  let chain = Filter::parse_bool()
+  let r : Result[Bool, _] = try? (chain.run)("f")
+  match r {
+    Ok(v) => inspect(v, content="false")
+    Err(_) => fail("expected Ok for 'f'")
+  }
+  let r2 : Result[Bool, _] = try? (chain.run)("off")
+  match r2 {
+    Ok(v) => inspect(v, content="false")
+    Err(_) => fail("expected Ok for 'off'")
+  }
+}
+
 // --- float_in_range ---
 
 ///|

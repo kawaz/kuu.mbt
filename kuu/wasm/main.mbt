@@ -399,6 +399,46 @@ fn build_parser(
               },
             )
           }
+          "boolean" => {
+            let default_val = match obj.get("default") {
+              Some(True) => true
+              _ => false
+            }
+            let implicit_value : @core.Lazy[Bool]? = match obj.get(
+              "implicit_value",
+            ) {
+              Some(True) => Some(@core.Val(true))
+              Some(False) => Some(@core.Val(false))
+              _ => None
+            }
+            let opt = parser.boolean(
+              name~,
+              default=default_val,
+              global~,
+              shorts~,
+              description~,
+              hidden~,
+              aliases~,
+              implicit_value~,
+              variation_false~,
+              variation_toggle~,
+              variation_true~,
+              variation_reset~,
+              variation_unset~,
+            )
+            opt_refs[name] = opt.as_ref()
+            entries.push(
+              OptEntry::{
+                name,
+                extract: fn() -> Json {
+                  match opt.get() {
+                    Some(v) => Json::boolean(v)
+                    None => Json::null()
+                  }
+                },
+              },
+            )
+          }
           "count" => {
             let opt = parser.count(
               name~,
