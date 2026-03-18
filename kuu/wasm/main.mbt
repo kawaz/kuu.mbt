@@ -8,8 +8,8 @@
 /// {
 ///   "version": 1,
 ///   "opts": [
-///     { "kind": "flag", "name": "verbose", "shorts": "v", "global": true, "description": "..." },
-///     { "kind": "string", "name": "host", "default": "localhost", "description": "..." },
+///     { "kind": "flag", "name": "verbose", "shorts": "v", "global": true, "description": "...", "env": "VERBOSE" },
+///     { "kind": "string", "name": "host", "default": "localhost", "description": "...", "env": "HOST" },
 ///     { "kind": "int", "name": "port", "default": 8080, "description": "..." },
 ///     { "kind": "float", "name": "rate", "default": 1.0, "description": "..." },
 ///     { "kind": "count", "name": "verbose", "shorts": "v", "description": "..." },
@@ -17,20 +17,25 @@
 ///     { "kind": "rest", "name": "args", "description": "..." },
 ///     { "kind": "dashdash" },
 ///     { "kind": "command", "name": "serve", "description": "...", "opts": [...] },
-///     { "kind": "serial", "opts": [...] }
+///     { "kind": "serial", "opts": [...] },
+///     { "kind": "deprecated", "name": "--old", "target": "host", "msg": "Use --host" }
 ///   ],
 ///   "args": ["--verbose", "--host", "example.com", "file.txt"],
+///   "env": { "VERBOSE": "1", "HOST": "fallback.example.com" },
 ///   "description": "My CLI tool",
 ///   "require_cmd": true,
 ///   "exclusive": [["shared", "static"]],
-///   "required": ["filename"]
+///   "required": ["filename"],
+///   "at_least_one": [["json", "csv"]],
+///   "requires": [{ "source": "key_file", "target": "output" }]
 /// }
 ///
 /// Output JSON format (success):
 /// {
 ///   "ok": true,
 ///   "values": { "verbose": true, "host": "example.com", "port": 8080, "file": "file.txt" },
-///   "command": { "name": "serve", "values": { ... } }
+///   "command": { "name": "serve", "values": { ... } },
+///   "deprecated_warnings": [{ "name": "--old", "msg": "Use --host" }]
 /// }
 ///
 /// Output JSON format (error):
@@ -191,12 +196,21 @@ fn build_parser(
   let entries : Array[OptEntry] = []
   let children : Map[String, SchemaResult] = {}
   let opt_refs : Map[String, @core.OptRef] = {}
+  // deprecated 2パス用: opt 名 → deprecated 登録クロージャ（型消去済み）
+  let deprecate_fns : Map[String, (String, String) -> Unit] = {}
+  // deprecated エントリを遅延処理するために収集
+  let deferred_deprecated : Array[Map[String, Json]] = []
   for opt_json in opts_json {
     match opt_json {
       Object(obj) => {
         let kind = match obj.get("kind") {
           Some(String(s)) => s
           _ => return Err("opt definition missing 'kind'")
+        }
+        // deprecated は pass 2 で処理するため収集して skip
+        if kind == "deprecated" {
+          deferred_deprecated.push(obj)
+          continue
         }
         // dashdash and serial don't need name
         let name = match kind {
@@ -241,6 +255,10 @@ fn build_parser(
           _ => []
         }
         let variations = extract_variations(obj)
+        let env = match obj.get("env") {
+          Some(String(s)) => s
+          _ => ""
+        }
         match kind {
           "flag" => {
             let default_val = match obj.get("default") {
@@ -256,8 +274,12 @@ fn build_parser(
               hidden~,
               aliases~,
               variations~,
+              env~,
             )
             opt_refs[name] = opt.as_ref()
+            deprecate_fns[name] = fn(alias_name, dep_msg) {
+              let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
             entries.push(
               OptEntry::{
                 name,
@@ -307,9 +329,13 @@ fn build_parser(
               implicit_value~,
               post~,
               variations~,
+              env~,
               pre=@core.Filter::map(fn(s) { s }),
             )
             opt_refs[name] = opt.as_ref()
+            deprecate_fns[name] = fn(alias_name, dep_msg) {
+              let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
             entries.push(
               OptEntry::{
                 name,
@@ -345,9 +371,13 @@ fn build_parser(
               implicit_value~,
               post~,
               variations~,
+              env~,
               pre=@core.Filter::parse_int(),
             )
             opt_refs[name] = opt.as_ref()
+            deprecate_fns[name] = fn(alias_name, dep_msg) {
+              let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
             entries.push(
               OptEntry::{
                 name,
@@ -383,9 +413,13 @@ fn build_parser(
               implicit_value~,
               post~,
               variations~,
+              env~,
               pre=@core.Filter::parse_float(),
             )
             opt_refs[name] = opt.as_ref()
+            deprecate_fns[name] = fn(alias_name, dep_msg) {
+              let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
             entries.push(
               OptEntry::{
                 name,
@@ -420,9 +454,13 @@ fn build_parser(
               aliases~,
               implicit_value~,
               variations~,
+              env~,
               pre=@core.Filter::parse_bool(),
             )
             opt_refs[name] = opt.as_ref()
+            deprecate_fns[name] = fn(alias_name, dep_msg) {
+              let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
             entries.push(
               OptEntry::{
                 name,
@@ -444,8 +482,12 @@ fn build_parser(
               hidden~,
               aliases~,
               variations~,
+              env~,
             )
             opt_refs[name] = opt.as_ref()
+            deprecate_fns[name] = fn(alias_name, dep_msg) {
+              let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
             entries.push(
               OptEntry::{
                 name,
@@ -467,9 +509,13 @@ fn build_parser(
               hidden~,
               aliases~,
               variations~,
+              env~,
               pre=@core.Filter::map(fn(s) { s }),
             )
             opt_refs[name] = opt.as_ref()
+            deprecate_fns[name] = fn(alias_name, dep_msg) {
+              let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
             entries.push(
               OptEntry::{
                 name,
@@ -492,9 +538,13 @@ fn build_parser(
               hidden~,
               aliases~,
               variations~,
+              env~,
               pre=@core.Filter::parse_int(),
             )
             opt_refs[name] = opt.as_ref()
+            deprecate_fns[name] = fn(alias_name, dep_msg) {
+              let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
             entries.push(
               OptEntry::{
                 name,
@@ -519,9 +569,13 @@ fn build_parser(
               hidden~,
               aliases~,
               variations~,
+              env~,
               pre=@core.Filter::parse_float(),
             )
             opt_refs[name] = opt.as_ref()
+            deprecate_fns[name] = fn(alias_name, dep_msg) {
+              let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
             entries.push(
               OptEntry::{
                 name,
@@ -749,6 +803,80 @@ fn build_parser(
       }
     _ => ()
   }
+  // Handle at_least_one constraints
+  match scope_json.get("at_least_one") {
+    Some(Array(groups)) =>
+      for group in groups {
+        match group {
+          Array(names) => {
+            let refs : Array[@core.OptRef] = []
+            for name_json in names {
+              match name_json {
+                String(n) =>
+                  match opt_refs.get(n) {
+                    Some(r) => refs.push(r)
+                    None => ()
+                  }
+                _ => ()
+              }
+            }
+            if refs.length() > 1 {
+              parser.at_least_one(refs)
+            }
+          }
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  // Handle requires constraints
+  match scope_json.get("requires") {
+    Some(Array(items)) =>
+      for item in items {
+        match item {
+          Object(req_obj) => {
+            let source_name = match req_obj.get("source") {
+              Some(String(s)) => s
+              _ => continue
+            }
+            let target_name = match req_obj.get("target") {
+              Some(String(s)) => s
+              _ => continue
+            }
+            let msg = match req_obj.get("msg") {
+              Some(String(s)) => s
+              _ => ""
+            }
+            match (opt_refs.get(source_name), opt_refs.get(target_name)) {
+              (Some(source_ref), Some(target_ref)) =>
+                parser.requires(target_ref, source=source_ref, msg~)
+              _ => ()
+            }
+          }
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  // Pass 2: Handle deprecated entries (deferred from pass 1)
+  for dep_obj in deferred_deprecated {
+    let dep_name = match dep_obj.get("name") {
+      Some(String(s)) => s
+      _ => return Err("deprecated opt missing 'name'")
+    }
+    let target_name = match dep_obj.get("target") {
+      Some(String(s)) => s
+      _ => return Err("deprecated opt missing 'target'")
+    }
+    let dep_msg = match dep_obj.get("msg") {
+      Some(String(s)) => s
+      _ => ""
+    }
+    match deprecate_fns.get(target_name) {
+      Some(register_fn) => register_fn(dep_name, dep_msg)
+      None => return Err("deprecated target not found: " + target_name)
+    }
+  }
   Ok(SchemaResult::{ entries, children })
 }
 
@@ -862,14 +990,45 @@ pub fn kuu_parse(input : String) -> String {
     Ok(s) => s
     Err(msg) => return make_error_json(msg, "")
   }
+  // Extract env (environment variables)
+  let env_map : Map[String, String] = match obj.get("env") {
+    Some(Object(env_obj)) => {
+      let m : Map[String, String] = {}
+      for k, v in env_obj {
+        match v {
+          String(s) => m[k] = s
+          _ => ()
+        }
+      }
+      m
+    }
+    _ => {}
+  }
   // Parse
   let result : Result[@core.ParseResult, @core.ParseError] = try? parser.parse(
-    args,
+    args, env=env_map,
   )
   match result {
     Ok(parse_result) => {
       let output = extract_values(schema, parse_result)
-      output.stringify()
+      // Append deprecated_warnings if any
+      match output {
+        Object(result_obj) => {
+          let warnings = parser.deprecated_warnings()
+          if warnings.length() > 0 {
+            let warn_arr : Array[Json] = []
+            for pair in warnings {
+              let w : Map[String, Json] = {}
+              w["name"] = Json::string(pair.0)
+              w["msg"] = Json::string(pair.1)
+              warn_arr.push(Json::object(w))
+            }
+            result_obj["deprecated_warnings"] = Json::array(warn_arr)
+          }
+          Json::object(result_obj).stringify()
+        }
+        other => other.stringify()
+      }
     }
     Err(@core.HelpRequested(text)) => make_help_json(text)
     Err(@core.ParseError(info)) =>

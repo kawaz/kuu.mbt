@@ -614,4 +614,231 @@ function test(label, input) {
   strictEqual(r.ok, false);
 }
 
+// === env (environment variables) tests ===
+
+// Test 46: env sets value when CLI arg not provided
+{
+  const r = test("Env sets value", {
+    opts: [
+      { kind: "string", name: "host", default: "localhost", env: "HOST" },
+    ],
+    args: [],
+    env: { HOST: "env-host.example.com" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.host, "env-host.example.com");
+}
+
+// Test 47: CLI arg overrides env
+{
+  const r = test("CLI overrides env", {
+    opts: [
+      { kind: "string", name: "host", default: "localhost", env: "HOST" },
+    ],
+    args: ["--host", "cli-host"],
+    env: { HOST: "env-host" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.host, "cli-host");
+}
+
+// Test 48: env not provided uses default
+{
+  const r = test("Env absent uses default", {
+    opts: [
+      { kind: "string", name: "host", default: "localhost", env: "HOST" },
+    ],
+    args: [],
+    env: {},
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.host, "localhost");
+}
+
+// Test 49: env with flag (true/1)
+{
+  const r = test("Env flag true", {
+    opts: [
+      { kind: "flag", name: "verbose", env: "VERBOSE" },
+    ],
+    args: [],
+    env: { VERBOSE: "1" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbose, true);
+}
+
+// Test 50: env without env field in schema (no effect)
+{
+  const r = test("Env field absent in schema", {
+    opts: [
+      { kind: "string", name: "host", default: "localhost" },
+    ],
+    args: [],
+    env: { HOST: "should-not-apply" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.host, "localhost");
+}
+
+// === at_least_one tests ===
+
+// Test 51: at_least_one passes when one is set
+{
+  const r = test("At least one passes", {
+    opts: [
+      { kind: "flag", name: "json" },
+      { kind: "flag", name: "csv" },
+    ],
+    at_least_one: [["json", "csv"]],
+    args: ["--json"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.json, true);
+}
+
+// Test 52: at_least_one error when none set
+{
+  const r = test("At least one error", {
+    opts: [
+      { kind: "flag", name: "json" },
+      { kind: "flag", name: "csv" },
+    ],
+    at_least_one: [["json", "csv"]],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error.includes("at least one required"), true);
+}
+
+// Test 53: at_least_one passes when all set
+{
+  const r = test("At least one all set", {
+    opts: [
+      { kind: "flag", name: "json" },
+      { kind: "flag", name: "csv" },
+    ],
+    at_least_one: [["json", "csv"]],
+    args: ["--json", "--csv"],
+  });
+  strictEqual(r.ok, true);
+}
+
+// === requires tests ===
+
+// Test 54: requires passes when both set
+{
+  const r = test("Requires passes", {
+    opts: [
+      { kind: "string", name: "key_file", default: "" },
+      { kind: "string", name: "output", default: "" },
+    ],
+    requires: [{ source: "key_file", target: "output" }],
+    args: ["--key_file", "id_rsa", "--output", "result.txt"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.key_file, "id_rsa");
+  strictEqual(r.values.output, "result.txt");
+}
+
+// Test 55: requires error when source set but target not
+{
+  const r = test("Requires error", {
+    opts: [
+      { kind: "string", name: "key_file", default: "" },
+      { kind: "string", name: "output", default: "" },
+    ],
+    requires: [{ source: "key_file", target: "output" }],
+    args: ["--key_file", "id_rsa"],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error.includes("requires"), true);
+}
+
+// Test 56: requires passes when source not set
+{
+  const r = test("Requires passes source unset", {
+    opts: [
+      { kind: "string", name: "key_file", default: "" },
+      { kind: "string", name: "output", default: "" },
+    ],
+    requires: [{ source: "key_file", target: "output" }],
+    args: [],
+  });
+  strictEqual(r.ok, true);
+}
+
+// Test 57: requires with custom message
+{
+  const r = test("Requires custom msg", {
+    opts: [
+      { kind: "string", name: "key_file", default: "" },
+      { kind: "string", name: "output", default: "" },
+    ],
+    requires: [{ source: "key_file", target: "output", msg: "--key_file requires --output to be specified" }],
+    args: ["--key_file", "id_rsa"],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "--key_file requires --output to be specified");
+}
+
+// === deprecated tests ===
+
+// Test 58: deprecated records warning when used
+{
+  const r = test("Deprecated records warning", {
+    opts: [
+      { kind: "string", name: "output", default: "" },
+      { kind: "deprecated", name: "--out", target: "output", msg: "Use --output instead" },
+    ],
+    args: ["--out", "file.txt"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.output, "file.txt");
+  strictEqual(r.deprecated_warnings.length, 1);
+  strictEqual(r.deprecated_warnings[0].name, "--out");
+  strictEqual(r.deprecated_warnings[0].msg, "Use --output instead");
+}
+
+// Test 59: deprecated not used - no warnings
+{
+  const r = test("Deprecated not used", {
+    opts: [
+      { kind: "string", name: "output", default: "" },
+      { kind: "deprecated", name: "--out", target: "output", msg: "Use --output instead" },
+    ],
+    args: ["--output", "file.txt"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.output, "file.txt");
+  strictEqual(r.deprecated_warnings, undefined);
+}
+
+// Test 60: deprecated target not found error
+{
+  const r = test("Deprecated target not found", {
+    opts: [
+      { kind: "deprecated", name: "--old", target: "nonexistent", msg: "gone" },
+    ],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "deprecated target not found: nonexistent");
+}
+
+// Test 61: deprecated with flag target
+{
+  const r = test("Deprecated flag", {
+    opts: [
+      { kind: "flag", name: "verbose" },
+      { kind: "deprecated", name: "--verb", target: "verbose", msg: "Use --verbose" },
+    ],
+    args: ["--verb"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbose, true);
+  strictEqual(r.deprecated_warnings.length, 1);
+  strictEqual(r.deprecated_warnings[0].name, "--verb");
+}
+
 console.log("\n--- All tests passed ---");
