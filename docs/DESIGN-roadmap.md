@@ -6,14 +6,69 @@
 
 ---
 
+## 実装済み
+
+以下は設計案として記載されていたが、既に実装が完了した項目。
+
+### 環境変数連携 Phase 2 基本機能（DR-041）
+
+- Phase 1（ヘルプ表示用 `env` メタデータ）: 実装済み
+- Phase 2 基本（`Parser::parse(args, env~)` による環境変数フォールバック）: 実装済み
+  - `env_map` + `env_applicators` による CLI > env > default の優先度
+  - サブコマンドへの `env_map` 伝搬
+
+### ErrorKind 構造化エラー（DR-052）
+
+`ParseErrorInfo` に `kind : ErrorKind` フィールドを追加。12種の ErrorKind enum を実装:
+
+UnknownOption, UnexpectedArgument, MissingRequired, InvalidValue, ArgumentConflict, AmbiguousMatch, MissingValue, MissingSubcommand, DuplicateDefinition, AtLeastOneRequired, DependencyMissing, ParseAlreadyCalled
+
+### did you mean? サジェスト
+
+Levenshtein 距離ベース。grapheme cluster 対応済み（DR-049）。
+
+### 値コンビネータ追加
+
+- `boolean` — `true/false/yes/no/1/0/t/f/on/off` をパース（`Filter::parse_bool`）
+- `float` / `append_float` — `Double` 型の値コンビネータ（DR-054）
+
+### 制約コンビネータ追加
+
+- `deprecated` — 非推奨別名。alias + post_hook 方式で実装（DR-040）
+- `at_least_one` — 排他の対称。指定グループから最低1つ必須（DR-040）
+- `requires` — 依存制約。OptRef 間の依存関係を宣言
+
+### clone / link / adjust / make_alias（DR-037, DR-044, DR-045）
+
+- `clone` — Opt の独立コピー（独立 ValCell + save/restore パターン）
+- `link` — 値の片方向伝搬（`propagate_set~` オプション付き）
+- `adjust` — parse 後の値変換（`after_post~` FilterChain 適用）
+- `make_alias` — 既存 Opt の別名（値共有 + is_set 独立）
+
+### サロゲートペア / 合成絵文字対応（DR-049）
+
+- `kawaz/unicodegrapheme` 導入
+- Levenshtein 距離計算、short option combining を grapheme cluster 単位に修正
+- `shorts` の型を `Array[Char]` → `Array[String]` に変更（合成絵文字を short option に対応）
+- `Filter::min_codepoints` / `Filter::max_codepoints` — Unicode codepoint 単位のバリデーション
+- `Filter::min_graphemes` / `Filter::max_graphemes` — grapheme cluster 単位のバリデーション
+
+### WASM bridge 機能ギャップ解消（DR-056）
+
+DR-051 で指摘された4件の未対応機能を実装:
+- `env` — JSON スキーマの `"env"` フィールドから `parser.parse(args, env~)` に渡す
+- `at_least_one` — exclusive と同じ形式の JSON 表現
+- `requires` — `{ "source": ..., "target": ... }` 形式
+- `deprecated` — 2パス処理（通常 opt 登録後に deprecated を処理）
+
+---
+
 ## 短期（次に実装する可能性が高いもの）
 
-### 環境変数連携 Phase 2（DR-041）
+### 環境変数連携 Phase 3（DR-041 拡張）
 
-Phase 1（実装済み）: `env` パラメータでヘルプ表示用メタデータのみ。
+Phase 2 基本（env~ パラメータによるフォールバック）は実装済み。残り:
 
-Phase 2:
-- 実際の環境変数読み取り（Finalize フェーズで適用）
 - `env_prefix` — コマンドのプレフィックスと env を結合（例: `MYAPP_PORT`）
 - `auto_env` — 全フラグを自動バインド（デフォルト無効）
 - Opt レベルの `auto_env : Bool?` で個別制御
@@ -21,13 +76,13 @@ Phase 2:
 
 優先順位: CLI > 環境変数 > 設定ファイル > initial
 
-**ブロッカー**: MoonBit の環境変数アクセス API（ターゲット別の分岐が必要: JS は `process.env`、WASM は import、native は libc `getenv`）
+**ブロッカー**: 設計検討（env_prefix のスコーピングルール等）
 
 ### エラーメッセージ品質向上
 
-現状: `ParseErrorInfo { message, help_text }` のフラット文字列。
+ErrorKind（DR-052）は実装済み。残り:
 
-目標: 4層構造 + ErrorKind enum
+#### 4層エラー表示
 
 ```
 error: unknown option '--prot'
@@ -39,19 +94,9 @@ For more information, try '--help'.
 
 **ブロッカー**: なし（独立して進められる）
 
-#### ErrorKind（設計案）
+#### bpaf 式コンテキスト認識サジェスト
 
-```moonbit
-enum ErrorKind {
-  UnknownOption; UnexpectedArgument; MissingRequired; InvalidValue
-  ArgumentConflict; AmbiguousMatch; MissingValue; TooManyValues
-  MissingSubcommand; PositionalAsFlag; MultipleUse
-}
-```
-
-#### did you mean? サジェスト
-
-Levenshtein 距離ベース（実装済み）。bpaf 式のコンテキスト認識（"not expected in this context"）は未実装。
+"not expected in this context" 等のコンテキスト情報付きサジェスト。
 
 #### セマンティックスタイリング
 
@@ -171,7 +216,7 @@ CLI:               --tags c
 → merge: port=8080, tags=[c]
 ```
 
-**ブロッカー**: 環境変数連携 Phase 2（ValueSource トラッキングと共通基盤）
+**ブロッカー**: ValueSource トラッキング（環境変数 Phase 2 基本は実装済み）
 
 ### ValueSource トラッキング
 
@@ -186,7 +231,7 @@ enum ValueSource {
 
 `result.source(opt) -> ValueSource` で値の出所を追跡。`result.is_explicit(opt) -> Bool`。
 
-**ブロッカー**: 環境変数連携 Phase 2
+**ブロッカー**: 設計検討（ValCell/Accessor アーキテクチャとの統合方式）
 
 ### Visibility — 4段階表示制御
 
@@ -194,12 +239,14 @@ enum ValueSource {
 enum Visibility {
   Visible      // デフォルト
   Advanced     // help ✗, 補完 ✓（パワーユーザー向け）
-  Deprecated   // help ✓（注記）, 補完 ✗
+  Deprecated   // help ✓（注記）, 補完 ✗（deprecated コンビネータは実装済み）
   Hidden       // help ✗, 補完 ✗（現在は hidden: Bool で部分実装済み）
 }
 ```
 
 `--help-all` で Hidden/Advanced を含む全エントリ表示。auto-env との連動（Hidden/Advanced → auto-env デフォルト Off）。
+
+> **注**: `deprecated` はコンビネータとして実装済み（DR-040）。Visibility enum としての統合は未実装。
 
 **ブロッカー**: 補完生成（Visibility の全4段階の意味が確定するため）
 
@@ -215,7 +262,7 @@ let upstream = opt::group(name="upstream", [upstream_host, upstream_timeout])
 let groups = result.get_groups(upstream)  // Array[ParseResult]
 ```
 
-**ブロッカー**: group の消費モデル設計（clone プリミティブは実装済み）
+**ブロッカー**: group の消費モデル設計（clone / link / adjust プリミティブは実装済み — DR-045）
 
 ### mergeable_list（DR-023）
 
@@ -243,25 +290,29 @@ clap で `num_args=0..=1` + サブコマンド衝突が起きる問題を、kuu 
 
 ### リファレンス品質の examples
 
-現状: examples/ トップレベルは空（全て archives/ に移動済み）。
+現状: examples/ トップレベルに5言語デモ example が存在:
+- `20260318-tar` — MoonBit 版 tar CLI
+- `20260318-npm-typescript` — TypeScript DX デモ
+- `20260318-terraform-go` — Go DX デモ
+- `20260318-cargo-rust` — Rust DX デモ
+- `20260318-brew-swift` — Swift DX デモ
 
-#### 新規 example の方針
+#### 追加 example の候補
 
-API が安定したら、リファレンス品質の example を作成する:
+より複雑な CLI パターンの検証用:
 
 | example | モデル | 検証対象 |
 |---------|--------|---------|
 | docker | Docker CLI | deep nesting, exclusive, required, global |
 | kubectl | kubectl | `-f` のサブコマンド別バインド, dashdash, choices |
 | git | git | 複雑なサブコマンド構造, positional, rest |
-| cargo | cargo | ワークスペース系, --manifest-path |
 | curl | curl | 大量の単発オプション, `--data @file` |
 
 **ブロッカー**: API 安定化
 
 #### 多言語 example
 
-同一 CLI 仕様を複数言語で実装し、DX の比較素材にする:
+同一 CLI 仕様を複数言語で実装し、DX の比較素材にする（5言語デモ example で部分的に着手済み）:
 
 ```
 examples/
@@ -367,7 +418,7 @@ result.serve?.dir;  // string | undefined
 
 TypeScript の union/infer/conditional types で型レベル解決。WASM bridge 経由で kuu core を呼ぶか、pure TS 実装にするかは FFI 調査結果次第。
 
-**ブロッカー**: FFI 調査の完了、WASM bridge の全機能カバー（DR-035）
+**ブロッカー**: FFI 調査の完了（WASM bridge の主要機能ギャップは DR-056 で解消済み）
 
 #### Go DX
 
@@ -460,11 +511,11 @@ KuuCore の責務（構想）:
 3. custom[T] や post フィルタのコールバック仲介
 4. 型安全な結果アクセスの提供
 
-**ブロッカー**: FFI 調査、WASM bridge の安定化
+**ブロッカー**: FFI 調査（WASM bridge は DR-035 + DR-056 で主要機能対応済み）
 
-### WASM bridge 拡張（PoC）
+### WASM bridge 拡張
 
-DR-035 で主要機能の PoC は実装済み（variations, command aliases, exclusive, required, require_cmd, implicit_value, dashdash, serial, post フィルタ）。多言語展開の方式確定後に設計を見直す可能性がある。残りの拡張:
+DR-035 で主要機能の PoC を実装。DR-056 で機能ギャップ4件（env, at_least_one, requires, deprecated）を解消済み。残りの拡張:
 - clone / link / adjust の JSON 表現
 - プリセット post フィルタの追加（parse_duration, parse_timespec 等）
 
@@ -712,7 +763,7 @@ struct Config {
 | PreProcess | @file 展開等 | 未実装 | @file 設計 |
 | Reduce | 消費ループ | 実装済み（parse_raw） | — |
 | Validate | exclusive, requires 等 | post_hooks で実装済み | — |
-| Finalize | デフォルト適用・環境変数連携 | post_hooks で実装可能 | 環境変数 Phase 2 |
+| Finalize | デフォルト適用・環境変数連携 | 実装済み（env_applicators + post_hooks） | env Phase 3 拡張 |
 | Output | ヘルプ・補完・エラー表示 | 基本実装済み | ヘルプ拡張・補完生成 |
 
 post_hooks が将来の Validate/Finalize フェーズの実質基盤として機能する。

@@ -43,9 +43,9 @@ PEG は最初にマッチした候補を採用する。kuu は全候補を投機
 
 型特化のコンビネータ。`name~` は `--name` や `<NAME>` の生成に直結するため必須パラメータ（デフォルトなし）:
 
-- `flag()`, `string()`, `int()`, `float()`, `count()` — 基本型
+- `flag()`, `string()`, `int()`, `float()`, `boolean()`, `count()` — 基本型
 - `append_string()`, `append_int()`, `append_float()` — 配列蓄積
-- `custom[T : Show]()`, `custom_append[T]()` — 汎用型。string/int/float は custom のシュガー（DR-025）
+- `custom[T : Show]()`, `custom_append[T]()` — 汎用型。string/int/float/boolean は custom のシュガー（DR-025）
 - `cmd()`, `sub()` — サブコマンド
 - `positional()`, `rest()` — 位置引数（name はヘルプ `<NAME>` 表示に使用）
 - `serial()`, `never()` — name パラメータなし
@@ -477,7 +477,7 @@ src/
   core/              # 全パース機能
     types.mbt         #   型定義（Opt, Parser, ExactNode, TryResult, OptMeta, Variation, Lazy, ReduceCtx, FilterChain 等）
     parser.mbt        #   Parser::new, register_option, make_alias, deprecated, clone, link, adjust, expand_and_register
-    options.mbt       #   custom, custom_append, flag, string, int, float, count, append_string, append_int, append_float
+    options.mbt       #   custom, custom_append, flag, string, int, float, boolean, count, append_string, append_int, append_float
     nodes.mbt         #   make_flag_node, make_value_node, make_or_node, make_soft_custom_value_node 等
     commands.mbt      #   cmd, sub
     positionals.mbt   #   positional, rest, serial, never
@@ -499,8 +499,7 @@ src/
 |-------------|------|
 | [DESIGN-internals.md](DESIGN-internals.md) | 詳細実装仕様（Parser struct 全フィールド、ExactNode 種類一覧、install ノードアルゴリズム、ヘルプ生成） |
 | [DESIGN-roadmap.md](DESIGN-roadmap.md) | 将来計画・未実装設計（エラー構造化、環境変数連携、補完生成、group、defaults マルチソース等） |
-| [DESIGN-v1.md](DESIGN-v1.md) | 旧設計書（Phase 1-4 の記録） |
 | [valcell-lifecycle.md](valcell-lifecycle.md) | ValCell/Accessor ライフサイクル詳細 |
 | [kuu-essence.md](kuu-essence.md) | プロジェクトの本質・ポジショニング |
 | [kuu-showcase.md](kuu-showcase.md) | ユースケース事例集（作成中） |
-| `docs/decision-records/` | 個別の設計判断記録（DR-001 以降） |
+| `docs/decisions/` | 個別の設計判断記録（DR-001 以降） |

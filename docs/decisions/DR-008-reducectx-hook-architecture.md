@@ -183,7 +183,7 @@ PoC 検証で判明した制約:
 - `docs/research/2026-03-02-result-api-survey.md` — 7パーサのリザルト取得API調査
 - `docs/research/2026-03-02-help-format-survey.md` — 8パーサのヘルプ出力フォーマット調査
 - `docs/DESIGN.md` — 設計書本体
-- DR-007 (`docs/decision-records/DR-007-phase4-opts-enum-resultmap-design.md`) — 前回の設計決定（Opts enum + ResultMap）
+- DR-007 (`docs/decisions/DR-007-phase4-opts-enum-resultmap-design.md`) — 前回の設計決定（Opts enum + ResultMap）
 
 ## 実装注記（2026-03-07 更新）
 
