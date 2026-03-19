@@ -61,6 +61,32 @@ DR-051 で指摘された4件の未対応機能を実装:
 - `requires` — `{ "source": ..., "target": ... }` 形式
 - `deprecated` — 2パス処理（通常 opt 登録後に deprecated を処理）
 
+### file コンビネータ
+
+`Parser::file(name~, default~, default_path~)` — `string` / `int` と並ぶファイルパス特化コンビネータ。`implicit_value` との組み合わせで3値パターン:
+
+- 未指定 → `default` 値
+- フラグのみ（`--config`）→ `default_path`（デフォルトパス）
+- 値指定（`--config path`）→ 指定パス
+
+内部的には `custom` + `implicit_value=Some(Val(default_path))` のシュガー。
+
+### mergeable_list フィルタ（DR-023）
+
+`Filter::mergeable_list(base~, separator~)` — `+/-/...` 修飾子によるベース相対変更:
+
+```
+--fields "name,age"      → [name, age]（上書き）
+--fields "+extra"        → base + [extra]（追加）
+--fields "-name"         → base - [name]（除外）
+```
+
+### CI/CD
+
+GitHub Actions ワークフロー（`.github/workflows/ci.yml`）を整備:
+- `moon check --deny-warn` + `moon test`
+- `moon fmt` チェック
+
 ---
 
 ## 短期（次に実装する可能性が高いもの）
@@ -116,6 +142,8 @@ sub_parser_combinator(
 ```
 
 **ブロッカー**: なし（リファクタリング。現状の install ノードは動作している）
+
+**調査の結論**: 現時点では優先度低。API 安定化後に検討。
 
 ### kawaz/timespec 連携 — 時間系フィルタの組み込み
 
@@ -263,30 +291,6 @@ let groups = result.get_groups(upstream)  // Array[ParseResult]
 ```
 
 **ブロッカー**: group の消費モデル設計（clone / link / adjust プリミティブは実装済み — DR-045）
-
-### mergeable_list（DR-023）
-
-`+/-/...` 修飾子によるベース相対変更:
-
-```
---fields "name,age"      → [name, age]（上書き）
---fields "+extra"        → base + [extra]（追加）
---fields "-name"         → base - [name]（除外）
-```
-
-**ブロッカー**: なし（FilterChain で実装可能）
-
-### file コンビネータ
-
-`string` / `int` と並ぶファイルパス特化コンビネータ。`implicit_value` との組み合わせで3値パターン:
-
-- 未指定 → None
-- フラグのみ（`--config`）→ デフォルトパス（`~/.config/xxx/xxx.toml`）
-- 値指定（`--config path`）→ 指定パス
-
-clap で `num_args=0..=1` + サブコマンド衝突が起きる問題を、kuu は ExactNode 走査 + make_or_node で構造的に回避。
-
-**ブロッカー**: なし（既存の implicit_value + custom[T] で PoC 可能）
 
 ### リファレンス品質の examples
 
@@ -581,13 +585,11 @@ WASM bridge を npm パッケージとして公開。`@kawaz/kuu` または `kuu
 
 ### CI/CD
 
-現状: ローカル開発のみ。GitHub Actions なし。
+GitHub Actions ワークフロー（`.github/workflows/ci.yml`）は実装済み（`moon check --deny-warn` + `moon test` + `moon fmt` チェック）。
 
-**やること**:
-- GitHub Actions ワークフロー
-  - `moon check --deny-warn` + `moon test`（全ターゲット: wasm-gc, wasm, js）
-  - バイナリサイズ計測（`just size` 相当）+ PR コメントでサイズ差分表示
-  - `moon fmt` チェック
+**残りのやること**:
+- 全ターゲットテスト（wasm-gc, wasm, js）
+- バイナリサイズ計測（`just size` 相当）+ PR コメントでサイズ差分表示
 - リリースワークフロー
   - タグプッシュ → mooncakes.io publish + npm publish
   - CHANGELOG 自動生成
@@ -732,7 +734,7 @@ CLI > 環境変数 > 設定ファイル > initial
 
 設定ファイルのパスは `--config` オプション（file コンビネータ）で指定。
 
-**ブロッカー**: defaults マルチソースマージ、file コンビネータ
+**ブロッカー**: defaults マルチソースマージ（file コンビネータは実装済み）
 
 ### MoonBit derive マクロ対応
 

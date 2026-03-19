@@ -44,6 +44,7 @@ PEG は最初にマッチした候補を採用する。kuu は全候補を投機
 型特化のコンビネータ。`name~` は `--name` や `<NAME>` の生成に直結するため必須パラメータ（デフォルトなし）:
 
 - `flag()`, `string()`, `int()`, `float()`, `boolean()`, `count()` — 基本型
+- `file()` — ファイルパス特化。`default` + `default_path` + `implicit_value` で3値パターン（未指定/フラグのみ/値指定）
 - `append_string()`, `append_int()`, `append_float()` — 配列蓄積
 - `custom[T : Show]()`, `custom_append[T]()` — 汎用型。string/int/float/boolean は custom のシュガー（DR-025）
 - `cmd()`, `sub()` — サブコマンド
@@ -166,14 +167,14 @@ fn make_reducer[T, U](
 | append | `parse_int` 等 | `(acc, u) => acc + [u]`（追加） |
 | join 系 | `split(",").then(each(parse_int))` | `(acc, xs) => acc + xs`（結合） |
 
-組み込みフィルタ（31個）:
+組み込みフィルタ（32個）:
 - 文字列変換: `trim`, `to_lower`, `to_upper`, `trim_start`, `trim_end`, `replace(from, to)`, `replace_all(from, to)`
 - 文字列検証: `non_empty`, `starts_with(prefix)`, `ends_with(suffix)`, `contains(substr)`, `min_length(n)`, `max_length(n)`, `min_codepoints(n)`, `max_codepoints(n)`, `min_graphemes(n)`, `max_graphemes(n)`
 - 数値パース: `parse_int`, `parse_float`, `parse_bool`
 - 数値検証: `in_range(min, max)`, `float_in_range(min, max)`, `positive`, `non_negative`
 - 数値変換: `clamp(min, max)`
 - 選択: `one_of(allowed)`
-- 配列: `each(inner_filter)`, `split(sep)`
+- 配列: `each(inner_filter)`, `split(sep)`, `mergeable_list(base, separator)` — `+/-/...` 修飾子でベース相対変更（DR-023）
 - 正規表現: `regex_match(pattern)`, `regex_replace(pattern, replacement)`, `regex_split(pattern)`
 
 **純粋性制約（DR-037）**: フィルタ（pre/post/accum）は純粋関数であること。値の状態管理は `Ref[T]` で行い、フィルタは入力から出力への変換のみを担う。この制約により、clone 時にフィルタのクロージャ参照を安全に共有できる（直交プリミティブの前提条件）。
@@ -477,7 +478,7 @@ src/
   core/              # 全パース機能
     types.mbt         #   型定義（Opt, Parser, ExactNode, TryResult, OptMeta, Variation, Lazy, ReduceCtx, FilterChain 等）
     parser.mbt        #   Parser::new, register_option, make_alias, deprecated, clone, link, adjust, expand_and_register
-    options.mbt       #   custom, custom_append, flag, string, int, float, boolean, count, append_string, append_int, append_float
+    options.mbt       #   custom, custom_append, flag, string, int, float, boolean, count, file, append_string, append_int, append_float
     nodes.mbt         #   make_flag_node, make_value_node, make_or_node, make_soft_custom_value_node 等
     commands.mbt      #   cmd, sub
     positionals.mbt   #   positional, rest, serial, never
