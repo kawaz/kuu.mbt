@@ -264,24 +264,18 @@ test "structured error: UnknownOption with suggestion" {
       inspect(info.message, content="unexpected argument: --prot")
       // tip にサジェスト情報
       inspect(info.tip, content="--port")
-      // to_string 出力を検証
-      let display = info.to_string()
+      // to_string 出力を全文 snapshot 検証
       inspect(
-        display.contains("error: unexpected argument: --prot"),
-        content="true",
-      )
-      inspect(display.contains("  help:"), content="true")
-      inspect(display.contains("--port"), content="true")
-      inspect(display.contains("ポート番号を指定"), content="true")
-      inspect(display.contains("[default: 8080]"), content="true")
-      inspect(
-        display.contains("  tip: a similar option exists: '--port'"),
-        content="true",
-      )
-      inspect(display.contains("Usage:"), content="true")
-      inspect(
-        display.contains("For more information, try '--help'."),
-        content="true",
+        info.to_string(),
+        content=(
+          #|error: unexpected argument: --prot
+          #|  help:       --port <PORT>  ポート番号を指定 [default: 8080]
+          #|  tip: a similar option exists: '--port'
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
       )
     }
     _ => fail("expected ParseError")
@@ -297,12 +291,17 @@ test "structured error: UnknownOption without suggestion" {
     Err(ParseError(info)) => {
       inspect(info.message, content="unexpected argument: --xyz")
       inspect(info.tip, content="")
-      let display = info.to_string()
-      // tip 行がないこと
-      inspect(display.contains("tip:"), content="false")
-      // Usage と footer は表示される
-      inspect(display.contains("Usage:"), content="true")
-      inspect(display.contains("For more information"), content="true")
+      // to_string 出力を全文 snapshot 検証（tip 行なし）
+      inspect(
+        info.to_string(),
+        content=(
+          #|error: unexpected argument: --xyz
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
+      )
     }
     _ => fail("expected ParseError")
   }
@@ -317,10 +316,18 @@ test "structured error: MissingRequired" {
   match result {
     Err(ParseError(info)) => {
       inspect(info.kind, content="MissingRequired")
-      let display = info.to_string()
-      inspect(display.contains("error:"), content="true")
-      inspect(display.contains("Usage:"), content="true")
-      inspect(display.contains("For more information"), content="true")
+      // to_string 出力を全文 snapshot 検証
+      inspect(
+        info.to_string(),
+        content=(
+          #|error: required option missing: --config
+          #|  help:       --config <CONFIG>  Config file path
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
+      )
     }
     _ => fail("expected ParseError")
   }
@@ -334,10 +341,17 @@ test "structured error: InvalidValue" {
   match result {
     Err(ParseError(info)) => {
       inspect(info.kind, content="InvalidValue")
-      let display = info.to_string()
-      inspect(display.contains("error:"), content="true")
-      inspect(display.contains("Usage:"), content="true")
-      inspect(display.contains("For more information"), content="true")
+      // to_string 出力を全文 snapshot 検証
+      inspect(
+        info.to_string(),
+        content=(
+          #|error: invalid integer: abc
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
+      )
     }
     _ => fail("expected ParseError")
   }
@@ -352,14 +366,18 @@ test "structured error: MissingValue" {
     Err(ParseError(info)) => {
       inspect(info.kind, content="MissingValue")
       inspect(info.opt_name, content="--output")
-      let display = info.to_string()
-      inspect(display.contains("error:"), content="true")
-      // opt_name が設定されているので help 行が表示される
-      inspect(display.contains("  help:"), content="true")
-      inspect(display.contains("--output"), content="true")
-      inspect(display.contains("Output file"), content="true")
-      inspect(display.contains("Usage:"), content="true")
-      inspect(display.contains("For more information"), content="true")
+      // to_string 出力を全文 snapshot 検証
+      inspect(
+        info.to_string(),
+        content=(
+          #|error: missing value for --output
+          #|  help:       --output <OUTPUT>  Output file
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
+      )
     }
     _ => fail("expected ParseError")
   }
@@ -375,10 +393,17 @@ test "structured error: ArgumentConflict" {
   match result {
     Err(ParseError(info)) => {
       inspect(info.kind, content="ArgumentConflict")
-      let display = info.to_string()
-      inspect(display.contains("error:"), content="true")
-      inspect(display.contains("Usage:"), content="true")
-      inspect(display.contains("For more information"), content="true")
+      // to_string 出力を全文 snapshot 検証
+      inspect(
+        info.to_string(),
+        content=(
+          #|error: mutually exclusive options: --json, --yaml
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
+      )
     }
     _ => fail("expected ParseError")
   }
@@ -399,11 +424,19 @@ test "structured error: help line for short option" {
     Err(ParseError(info)) => {
       // tip にサジェスト先のオプション名
       inspect(info.tip, content="--output")
-      let display = info.to_string()
-      // help 行にサジェスト先オプションの詳細が表示される
-      inspect(display.contains("-o, --output"), content="true")
-      inspect(display.contains("Output path"), content="true")
-      inspect(display.contains("[default: out.txt]"), content="true")
+      // to_string 出力を全文 snapshot 検証
+      inspect(
+        info.to_string(),
+        content=(
+          #|error: unexpected argument: --otuput
+          #|  help:   -o, --output <OUTPUT>  Output path [default: out.txt]
+          #|  tip: a similar option exists: '--output'
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
+      )
     }
     _ => fail("expected ParseError")
   }
@@ -420,10 +453,17 @@ test "structured error: UnexpectedArgument (non-option)" {
       inspect(info.kind, content="UnexpectedArgument")
       inspect(info.message, content="unexpected argument: hello")
       inspect(info.tip, content="")
-      let display = info.to_string()
-      inspect(display.contains("error:"), content="true")
-      inspect(display.contains("tip:"), content="false")
-      inspect(display.contains("Usage:"), content="true")
+      // to_string 出力を全文 snapshot 検証（tip 行なし）
+      inspect(
+        info.to_string(),
+        content=(
+          #|error: unexpected argument: hello
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
+      )
     }
     _ => fail("expected ParseError")
   }
@@ -472,13 +512,14 @@ test "structured error: format_opt_help_line" {
     pre=Filter::parse_int(),
   )
   match p.find_meta_by_opt_name("--port") {
-    Some(meta) => {
-      let line = format_opt_help_line(meta)
-      inspect(line.contains("-p, --port"), content="true")
-      inspect(line.contains("Set port"), content="true")
-      inspect(line.contains("[env: PORT]"), content="true")
-      inspect(line.contains("[default: 8080]"), content="true")
-    }
+    Some(meta) =>
+      // format_opt_help_line 出力を全文 snapshot 検証
+      inspect(
+        format_opt_help_line(meta),
+        content=(
+          #|  -p, --port <PORT>  Set port [env: PORT] [default: 8080]
+        ),
+      )
     None => fail("meta not found")
   }
 }
@@ -497,19 +538,20 @@ test "C-1: MissingSubcommand 4-layer display with Commands section" {
   match result {
     Err(ParseError(info)) => {
       inspect(info.kind, content="MissingSubcommand")
-      let display = info.to_string()
-      // Commands section が含まれる
-      inspect(display.contains("Commands:"), content="true")
-      inspect(display.contains("init"), content="true")
-      inspect(display.contains("build"), content="true")
-      inspect(display.contains("Initialize project"), content="true")
-      inspect(display.contains("Build project"), content="true")
-      // Usage + footer が含まれる
-      inspect(display.contains("Usage:"), content="true")
-      inspect(display.contains("[COMMAND]"), content="true")
+      // to_string 出力を全文 snapshot 検証
       inspect(
-        display.contains("For more information, try '--help'."),
-        content="true",
+        info.to_string(),
+        content=(
+          #|error: subcommand required
+          #|
+          #|Commands:
+          #|  init   Initialize project
+          #|  build  Build project
+          #|
+          #|Usage: [OPTIONS] [COMMAND]
+          #|
+          #|For more information, try '--help'.
+        ),
       )
     }
     _ => fail("expected ParseError")
@@ -526,12 +568,16 @@ test "C-1: AtLeastOneRequired 4-layer display" {
   match result {
     Err(ParseError(info)) => {
       inspect(info.kind, content="AtLeastOneRequired")
-      let display = info.to_string()
-      inspect(display.contains("error:"), content="true")
-      inspect(display.contains("Usage:"), content="true")
+      // to_string 出力を全文 snapshot 検証
       inspect(
-        display.contains("For more information, try '--help'."),
-        content="true",
+        info.to_string(),
+        content=(
+          #|error: at least one required: --json, --yaml
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
       )
     }
     _ => fail("expected ParseError")
@@ -549,16 +595,17 @@ test "C-1: DependencyMissing 4-layer display" {
     Err(ParseError(info)) => {
       inspect(info.kind, content="DependencyMissing")
       inspect(info.opt_name, content="--output")
-      let display = info.to_string()
-      inspect(display.contains("error:"), content="true")
-      // opt_name が設定されているので help 行が表示される
-      inspect(display.contains("  help:"), content="true")
-      inspect(display.contains("--output"), content="true")
-      inspect(display.contains("Output path"), content="true")
-      inspect(display.contains("Usage:"), content="true")
+      // to_string 出力を全文 snapshot 検証
       inspect(
-        display.contains("For more information, try '--help'."),
-        content="true",
+        info.to_string(),
+        content=(
+          #|error: --verbose requires --output
+          #|  help:       --output <OUTPUT>  Output path
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
       )
     }
     _ => fail("expected ParseError")
@@ -575,15 +622,17 @@ test "C-1: MissingRequired help line display" {
     Err(ParseError(info)) => {
       inspect(info.kind, content="MissingRequired")
       inspect(info.opt_name, content="--config")
-      let display = info.to_string()
-      // opt_name が設定されているので help 行が表示される
-      inspect(display.contains("  help:"), content="true")
-      inspect(display.contains("--config"), content="true")
-      inspect(display.contains("Config file path"), content="true")
-      inspect(display.contains("Usage:"), content="true")
+      // to_string 出力を全文 snapshot 検証
       inspect(
-        display.contains("For more information, try '--help'."),
-        content="true",
+        info.to_string(),
+        content=(
+          #|error: required option missing: --config
+          #|  help:       --config <CONFIG>  Config file path
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
       )
     }
     _ => fail("expected ParseError")
@@ -599,12 +648,18 @@ test "C-3: hidden option not shown in error help line" {
     Err(ParseError(info)) => {
       // typo suggestion で --secret が tip に入る
       inspect(info.tip, content="--secret")
-      let display = info.to_string()
-      // hidden なので help 行は表示されない
-      inspect(display.contains("  help:"), content="false")
-      // tip 行は表示される（サジェスト自体は有用）
-      inspect(display.contains("tip:"), content="true")
-      inspect(display.contains("Usage:"), content="true")
+      // to_string 出力を全文 snapshot 検証（hidden なので help 行なし、tip 行あり）
+      inspect(
+        info.to_string(),
+        content=(
+          #|error: unexpected argument: --secrt
+          #|  tip: a similar option exists: '--secret'
+          #|
+          #|Usage: [OPTIONS]
+          #|
+          #|For more information, try '--help'.
+        ),
+      )
     }
     _ => fail("expected ParseError")
   }
@@ -662,7 +717,11 @@ test "generate_usage includes [COMMAND] when commands exist" {
   let _ = p.flag(name="verbose")
   let _ = p.sub(name="init")
   let _ = p.sub(name="build")
-  let usage = p.generate_usage()
-  inspect(usage.contains("[COMMAND]"), content="true")
-  inspect(usage.contains("[OPTIONS]"), content="true")
+  // generate_usage 出力を全文 snapshot 検証
+  inspect(
+    p.generate_usage(),
+    content=(
+      #|Usage: [OPTIONS] [COMMAND]
+    ),
+  )
 }

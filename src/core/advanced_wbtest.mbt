@@ -3003,3 +3003,129 @@ test "shorts grapheme cluster: multiple grapheme shorts" {
   ignore(p.parse(["-\u{1F1EF}\u{1F1F5}"]))
   inspect(p.get(opt), content="Some(1)")
 }
+
+// === mergeable_list (DR-023) ===
+
+///|
+test "mergeable_list: overwrite — plain list replaces base" {
+  // base=["x","y"], input "a,b" → ["a", "b"]（修飾子なしはフル上書き）
+  let chain = Filter::mergeable_list(base=["x", "y"])
+  let result : Result[Array[String], _] = try? (chain.run)("a,b")
+  match result {
+    Ok(v) => inspect(v, content="[\"a\", \"b\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "mergeable_list: add — '+' prefix appends to base" {
+  // base=["a","b"], input "+c" → ["a", "b", "c"]
+  let chain = Filter::mergeable_list(base=["a", "b"])
+  let result : Result[Array[String], _] = try? (chain.run)("+c")
+  match result {
+    Ok(v) => inspect(v, content="[\"a\", \"b\", \"c\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "mergeable_list: remove — '-' prefix excludes from base" {
+  // base=["a","b","c"], input "-a" → ["b", "c"]
+  let chain = Filter::mergeable_list(base=["a", "b", "c"])
+  let result : Result[Array[String], _] = try? (chain.run)("-a")
+  match result {
+    Ok(v) => inspect(v, content="[\"b\", \"c\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "mergeable_list: mixed add/remove" {
+  // base=["a","b"], input "+c,-a" → ["b", "c"]
+  let chain = Filter::mergeable_list(base=["a", "b"])
+  let result : Result[Array[String], _] = try? (chain.run)("+c,-a")
+  match result {
+    Ok(v) => inspect(v, content="[\"b\", \"c\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "mergeable_list: custom separator" {
+  // separator=":", input "a:b:c" → ["a", "b", "c"]
+  let chain = Filter::mergeable_list(base=["x"], separator=":")
+  let result : Result[Array[String], _] = try? (chain.run)("a:b:c")
+  match result {
+    Ok(v) => inspect(v, content="[\"a\", \"b\", \"c\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "mergeable_list: add deduplicates" {
+  // base=["a","b"], input "+a,+c" → ["a", "b", "c"]（a は既に存在するので no-op）
+  let chain = Filter::mergeable_list(base=["a", "b"])
+  let result : Result[Array[String], _] = try? (chain.run)("+a,+c")
+  match result {
+    Ok(v) => inspect(v, content="[\"a\", \"b\", \"c\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "mergeable_list: remove nonexistent is no-op" {
+  // base=["a","b"], input "-z" → ["a", "b"]（存在しない要素の除外は no-op）
+  let chain = Filter::mergeable_list(base=["a", "b"])
+  let result : Result[Array[String], _] = try? (chain.run)("-z")
+  match result {
+    Ok(v) => inspect(v, content="[\"a\", \"b\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "mergeable_list: empty base with add" {
+  // base=[], input "+a,+b" → ["a", "b"]
+  let chain = Filter::mergeable_list()
+  let result : Result[Array[String], _] = try? (chain.run)("+a,+b")
+  match result {
+    Ok(v) => inspect(v, content="[\"a\", \"b\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "mergeable_list: rest expansion with '...'" {
+  // base=["a","b","c"], input "x,...,-b" → ["x", "a", "c"]
+  // ... expands remaining base items (not yet listed), then -b removes
+  let chain = Filter::mergeable_list(base=["a", "b", "c"])
+  let result : Result[Array[String], _] = try? (chain.run)("x,...,-b")
+  match result {
+    Ok(v) => inspect(v, content="[\"x\", \"a\", \"c\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "mergeable_list: rest at end" {
+  // base=["a","b","c"], input "x,..." → ["x", "a", "b", "c"]
+  // x は base にないので ... は全 base 要素を展開
+  let chain = Filter::mergeable_list(base=["a", "b", "c"])
+  let result : Result[Array[String], _] = try? (chain.run)("x,...")
+  match result {
+    Ok(v) => inspect(v, content="[\"x\", \"a\", \"b\", \"c\"]")
+    Err(_) => fail("expected Ok")
+  }
+}
+
+///|
+test "mergeable_list: rest with reorder" {
+  // base=["a","b","c"], input "c,..." → ["c", "a", "b"]
+  // c が先頭、... で残り(a,b)を展開
+  let chain = Filter::mergeable_list(base=["a", "b", "c"])
+  let result : Result[Array[String], _] = try? (chain.run)("c,...")
+  match result {
+    Ok(v) => inspect(v, content="[\"c\", \"a\", \"b\"]")
+    Err(_) => fail("expected Ok")
+  }
+}

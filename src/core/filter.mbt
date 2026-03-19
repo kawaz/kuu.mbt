@@ -409,6 +409,101 @@ pub fn Filter::regex_split(
   })
 }
 
+// --- Mergeable list (DR-023) ---
+
+///|
+/// Parse a +/-/... prefixed list string into Array[String] by merging with base.
+///
+/// - Plain list (no +/- or ... in any element): full overwrite (base is ignored)
+/// - `+item`: append to base (deduplicated)
+/// - `-item`: remove from base
+/// - `...`: expand remaining base items not yet listed
+///
+/// Elements are split by `separator` (default: ",").
+pub fn Filter::mergeable_list(
+  base? : Array[String] = [],
+  separator? : String = ",",
+) -> FilterChain[String, Array[String]] {
+  Filter::map(fn(input) {
+    let parts : Array[String] = input
+      .split(separator.to_string_view())
+      .map(fn(sv) { sv.to_string() })
+      .collect()
+    // Detect mode: if any element starts with +/- or is "...", it's merge mode
+    let is_merge = parts
+      .iter()
+      .any(fn(p) { p.has_prefix("+") || p.has_prefix("-") || p == "..." })
+    if not(is_merge) {
+      // Full overwrite: return split parts as-is
+      return parts
+    }
+    // Check if "..." is present
+    let has_rest = parts.iter().any(fn(p) { p == "..." })
+    if has_rest {
+      // "..." mode: two-pass processing
+      // First pass: collect all explicitly mentioned names and removals
+      let mentioned : Array[String] = []
+      let removals : Array[String] = []
+      for part in parts {
+        if part == "..." {
+          continue
+        } else if part.has_prefix("+") {
+          mentioned.push(part[1:].to_string())
+        } else if part.has_prefix("-") {
+          let name = part[1:].to_string()
+          mentioned.push(name)
+          removals.push(name)
+        } else {
+          mentioned.push(part)
+        }
+      }
+      // Second pass: build result in order
+      let result : Array[String] = []
+      for part in parts {
+        if part == "..." {
+          // Expand base items not explicitly mentioned
+          for b in base {
+            if not(mentioned.contains(b)) && not(result.contains(b)) {
+              result.push(b)
+            }
+          }
+        } else if part.has_prefix("+") {
+          let name = part[1:].to_string()
+          if not(removals.contains(name)) && not(result.contains(name)) {
+            result.push(name)
+          }
+        } else if part.has_prefix("-") {
+          // Removal: handled by final removals filter below
+          ()
+        } else if not(removals.contains(part)) && not(result.contains(part)) {
+          result.push(part)
+        }
+      }
+      // Apply removals to the final result
+      result.filter(fn(item) { not(removals.contains(item)) })
+    } else {
+      // No "...", pure +/- mode: start from base, apply operations left-to-right
+      let result : Array[String] = base.copy()
+      for part in parts {
+        if part.has_prefix("+") {
+          let name = part[1:].to_string()
+          if not(result.contains(name)) {
+            result.push(name)
+          }
+        } else if part.has_prefix("-") {
+          let name = part[1:].to_string()
+          let filtered = result.filter(fn(item) { item != name })
+          result.clear()
+          for item in filtered {
+            result.push(item)
+          }
+        }
+      }
+      result
+    }
+  })
+}
+
 ///|
 /// FilterChain + Accumulator → reducer 関数を自動生成
 pub fn[T, U] make_reducer(
