@@ -100,6 +100,8 @@ function test(label, input) {
   });
   strictEqual(r.ok, false);
   strictEqual(typeof r.error, "string");
+  strictEqual(r.kind, "UnknownOption");
+  strictEqual(r.tip, undefined); // no options to suggest
 }
 
 // Test 6: Count + short combine
@@ -344,6 +346,7 @@ function test(label, input) {
   });
   strictEqual(r.ok, false);
   strictEqual(r.error.includes("subcommand required"), true);
+  strictEqual(r.kind, "MissingSubcommand");
 }
 
 // Test 25: require_cmd inside command
@@ -362,6 +365,7 @@ function test(label, input) {
   });
   strictEqual(r.ok, false);
   strictEqual(r.error.includes("subcommand required"), true);
+  strictEqual(r.kind, "MissingSubcommand");
 }
 
 // Test 26: exclusive constraint
@@ -376,6 +380,7 @@ function test(label, input) {
   });
   strictEqual(r.ok, false);
   strictEqual(r.error.includes("mutually exclusive"), true);
+  strictEqual(r.kind, "ArgumentConflict");
 }
 
 // Test 27: required constraint
@@ -390,6 +395,7 @@ function test(label, input) {
   });
   strictEqual(r.ok, false);
   strictEqual(r.error.includes("required option missing"), true);
+  strictEqual(r.kind, "MissingRequired");
 }
 
 // Test 28: command aliases
@@ -447,6 +453,7 @@ function test(label, input) {
     args: ["--name", ""],
   });
   strictEqual(r.ok, false);
+  strictEqual(r.kind, "InvalidValue");
   // non_empty should reject empty strings
 }
 
@@ -471,6 +478,7 @@ function test(label, input) {
     args: ["--v", "10"],
   });
   strictEqual(r.ok, false);
+  strictEqual(r.kind, "InvalidValue");
 }
 
 // Test 34: float kind basic
@@ -518,6 +526,7 @@ function test(label, input) {
     args: ["--rate", "1.5"],
   });
   strictEqual(r.ok, false);
+  strictEqual(r.kind, "InvalidValue");
 }
 
 // Test 38: append_float kind
@@ -553,6 +562,7 @@ function test(label, input) {
     args: ["--rate", "abc"],
   });
   strictEqual(r.ok, false);
+  strictEqual(r.kind, "InvalidValue");
 }
 
 // Test 41: float kind with implicit_value
@@ -612,6 +622,7 @@ function test(label, input) {
     args: ["--debug", "maybe"],
   });
   strictEqual(r.ok, false);
+  strictEqual(r.kind, "InvalidValue");
 }
 
 // === env (environment variables) tests ===
@@ -709,6 +720,7 @@ function test(label, input) {
   });
   strictEqual(r.ok, false);
   strictEqual(r.error.includes("at least one required"), true);
+  strictEqual(r.kind, "AtLeastOneRequired");
 }
 
 // Test 53: at_least_one passes when all set
@@ -753,6 +765,7 @@ function test(label, input) {
   });
   strictEqual(r.ok, false);
   strictEqual(r.error.includes("requires"), true);
+  strictEqual(r.kind, "DependencyMissing");
 }
 
 // Test 56: requires passes when source not set
@@ -780,6 +793,7 @@ function test(label, input) {
   });
   strictEqual(r.ok, false);
   strictEqual(r.error, "--key_file requires --output to be specified");
+  strictEqual(r.kind, "DependencyMissing");
 }
 
 // === deprecated tests ===
@@ -839,6 +853,34 @@ function test(label, input) {
   strictEqual(r.values.verbose, true);
   strictEqual(r.deprecated_warnings.length, 1);
   strictEqual(r.deprecated_warnings[0].name, "--verb");
+}
+
+// === error tip/kind tests ===
+
+// Test 62: tip field with typo suggestion
+{
+  const r = test("Error tip with typo", {
+    opts: [
+      { kind: "int", name: "port", default: 8080 },
+    ],
+    args: ["--prot"],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.kind, "UnknownOption");
+  strictEqual(r.tip, "--port");
+}
+
+// Test 63: schema validation errors have no kind/tip
+{
+  const r = test("Schema error no kind", {
+    opts: [
+      { kind: "flag" },
+    ],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.kind, undefined);
+  strictEqual(r.tip, undefined);
 }
 
 console.log("\n--- All tests passed ---");

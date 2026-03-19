@@ -42,7 +42,9 @@
 /// {
 ///   "ok": false,
 ///   "error": "error message",
-///   "help": "help text"
+///   "help": "help text",
+///   "tip": "suggested option (omitted if empty)",
+///   "kind": "UnknownOption"
 /// }
 ///
 /// Output JSON format (help):
@@ -995,17 +997,34 @@ pub fn kuu_parse(input : String) -> String {
       }
     }
     Err(@core.HelpRequested(text)) => make_help_json(text)
-    Err(@core.ParseError(info)) => make_error_json(info.message, info.help_text)
+    Err(@core.ParseError(info)) =>
+      make_error_json(
+        info.message,
+        info.help_text,
+        tip=info.tip,
+        kind=info.kind.to_string(),
+      )
   }
 }
 
 ///|
-fn make_error_json(message : String, help_text : String) -> String {
+fn make_error_json(
+  message : String,
+  help_text : String,
+  tip? : String = "",
+  kind? : String = "",
+) -> String {
   let obj : Map[String, Json] = {}
   obj["ok"] = Json::boolean(false)
   obj["error"] = Json::string(message)
   if help_text != "" {
     obj["help"] = Json::string(help_text)
+  }
+  if tip != "" {
+    obj["tip"] = Json::string(tip)
+  }
+  if kind != "" {
+    obj["kind"] = Json::string(kind)
   }
   Json::object(obj).stringify()
 }
