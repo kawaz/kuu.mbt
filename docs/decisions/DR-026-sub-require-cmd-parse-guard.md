@@ -72,7 +72,7 @@ pub fn Parser::require_cmd(self : Parser) -> Unit {
     if self.children.length() == 0 {
       raise ParseError(ParseErrorInfo::{
         message: "subcommand required",
-        help_text: self.generate_help(),
+        error_context: self.generate_help(),
       })
     }
   })
@@ -83,7 +83,7 @@ pub fn Parser::require_cmd(self : Parser) -> Unit {
 
 - **post_hooks ベース**: exclusive/required と同じパターン（DR-021）。専用の仕組み不要
 - **ParseError（HelpRequested でなく）**: サブコマンド未指定は usage エラーであり、正常なヘルプ要求ではない
-- **help_text 自動付与**: エラー時にヘルプを表示するため、generate_help() を呼ぶ
+- **error_context 自動付与**: エラー時にヘルプを表示するため、generate_help() を呼ぶ
 
 ---
 

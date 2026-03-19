@@ -9,8 +9,8 @@ status: draft
 
 DR-052 で ErrorKind による構造化エラーの基盤を整備した。しかし、エラーの**表示フォーマット**は依然として改善の余地がある:
 
-- `ParseErrorInfo::to_string()` は `"error: " + message + "\n\n" + help_text` のフラット構造
-- `help_text` に全ヘルプ出力をダンプしており、不要な情報が多い
+- `ParseErrorInfo::to_string()` は `"error: " + message + "\n\n" + error_context` のフラット構造
+- `error_context` に全ヘルプ出力をダンプしており、不要な情報が多い
 - サジェスト（did you mean）が message に埋め込まれている
 - Usage 行がエラー表示に含まれない
 
@@ -45,13 +45,13 @@ For more information, try '--help'.
 pub(all) struct ParseErrorInfo {
   kind : ErrorKind
   message : String
-  help_text : String  // 用途変更: 全ヘルプ → 構造化エラーコンテキスト
+  error_context : String  // 構造化エラーコンテキスト
   opt_name : String
   tip : String        // NEW: サジェスト/ヒント用
 }
 ```
 
-`help_text` の用途を変更: 全ヘルプダンプ → 構造化エラーコンテキスト（help 行 + Usage + footer）。
+`error_context` の用途: 構造化エラーコンテキスト（help 行 + Usage + footer）。旧名 `help_text` からリネーム。
 
 ### 新メソッド
 
@@ -73,15 +73,15 @@ pub(all) struct ParseErrorInfo {
 
 ```
 error: {message}
-[  help: {opt_help_line}]    // help_text の先頭部分
+[  help: {opt_help_line}]    // error_context の先頭部分
 [  tip: {tip}]               // tip が非空の場合
 
-[Usage: ...]                  // help_text の残り部分
+[Usage: ...]                  // error_context の残り部分
 
 For more information, try '--help'.
 ```
 
-実装方針: tip を分離してフィールド化。コンテキスト（help 行 + Usage + footer）は `Parser::parse()` で `help_text` に格納。`to_string()` は message + tip + help_text を組み合わせて出力。
+実装方針: tip を分離してフィールド化。コンテキスト（help 行 + Usage + footer）は `Parser::parse()` で `error_context` に格納。`to_string()` は message + tip + error_context を組み合わせて出力。
 
 ### ErrorKind 別のコンテキスト
 

@@ -134,19 +134,9 @@ pub fn Parser::generate_help(self : Parser) -> String {
   if commands.length() > 0 {
     buf.write_char('\n')
     buf.write_string("Commands:\n")
-    // Calculate max left width for commands
-    let max_left = {
-      let m : Ref[Int] = { val: 0 }
-      for cmd in commands {
-        let w = 2 + cmd.name.char_length()
-        if w > m.val {
-          m.val = w
-        }
-      }
-      m.val
-    }
+    let max_left = calculate_max_width(commands, format_cmd_left)
     for cmd in commands {
-      let left = "  " + cmd.name
+      let left = format_cmd_left(cmd)
       buf.write_string(left)
       if not(cmd.help.is_empty()) {
         let padding = max_left - left.char_length() + 2
@@ -161,18 +151,7 @@ pub fn Parser::generate_help(self : Parser) -> String {
   if arguments.length() > 0 {
     buf.write_char('\n')
     buf.write_string("Arguments:\n")
-    // Calculate max left width for arguments
-    let max_left = {
-      let m : Ref[Int] = { val: 0 }
-      for arg in arguments {
-        let left = format_arg_left(arg)
-        let w = left.char_length()
-        if w > m.val {
-          m.val = w
-        }
-      }
-      m.val
-    }
+    let max_left = calculate_max_width(arguments, format_arg_left)
     for arg in arguments {
       let left = format_arg_left(arg)
       buf.write_string(left)
@@ -198,6 +177,26 @@ pub fn Parser::generate_help(self : Parser) -> String {
     write_opt_section(buf, globals)
   }
   buf.to_string()
+}
+
+///|
+fn calculate_max_width(
+  metas : Array[OptMeta],
+  format_left : (OptMeta) -> String,
+) -> Int {
+  let max = Ref::new(0)
+  for meta in metas {
+    let w = format_left(meta).char_length()
+    if w > max.val {
+      max.val = w
+    }
+  }
+  max.val
+}
+
+///|
+fn format_cmd_left(meta : OptMeta) -> String {
+  "  " + meta.name
 }
 
 ///|
@@ -273,18 +272,7 @@ fn format_arg_left(meta : OptMeta) -> String {
 
 ///|
 fn write_opt_section(buf : StringBuilder, metas : Array[OptMeta]) -> Unit {
-  // Calculate max left width
-  let max_left = {
-    let m : Ref[Int] = { val: 0 }
-    for meta in metas {
-      let left = format_opt_left(meta)
-      let w = left.char_length()
-      if w > m.val {
-        m.val = w
-      }
-    }
-    m.val
-  }
+  let max_left = calculate_max_width(metas, format_opt_left)
   for meta in metas {
     let left = format_opt_left(meta)
     buf.write_string(left)
@@ -371,11 +359,14 @@ fn Parser::format_error_context(self : Parser, info : ParseErrorInfo) -> String 
     if commands.length() > 0 {
       buf.write_char('\n')
       buf.write_string("Commands:\n")
+      let max_left = calculate_max_width(commands, format_cmd_left)
       for cmd in commands {
-        buf.write_string("  ")
-        buf.write_string(cmd.name)
+        let left = format_cmd_left(cmd)
+        buf.write_string(left)
         if not(cmd.help.is_empty()) {
-          buf.write_string("  ")
+          let padding = max_left - left.char_length() + 2
+          let pad_str = String::make(padding, ' ')
+          buf.write_string(pad_str)
           buf.write_string(cmd.help)
         }
         buf.write_char('\n')
@@ -402,9 +393,9 @@ pub fn ParseErrorInfo::to_string(self : ParseErrorInfo) -> String {
   let buf = StringBuilder::new()
   buf.write_string("error: ")
   buf.write_string(self.message)
-  if not(self.help_text.is_empty()) {
+  if not(self.error_context.is_empty()) {
     buf.write_char('\n')
-    buf.write_string(self.help_text)
+    buf.write_string(self.error_context)
   }
   buf.to_string()
 }

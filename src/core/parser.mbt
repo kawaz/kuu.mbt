@@ -5,7 +5,7 @@ fn parse_error(
   opt_name? : String = "",
   tip? : String = "",
 ) -> ParseError {
-  ParseError(ParseErrorInfo::{ kind, message, help_text: "", opt_name, tip })
+  ParseError(ParseErrorInfo::{ kind, message, error_context: "", opt_name, tip })
 }
 
 ///|

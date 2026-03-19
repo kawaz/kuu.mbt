@@ -543,10 +543,10 @@ pub fn Parser::parse(
   match result {
     Ok(r) => r
     Err(ParseError(info)) =>
-      if info.help_text == "" {
+      if info.error_context == "" {
         raise ParseError(ParseErrorInfo::{
           ..info,
-          help_text: self.format_error_context(info),
+          error_context: self.format_error_context(info),
         })
       } else {
         raise ParseError(info)

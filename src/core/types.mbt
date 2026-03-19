@@ -18,7 +18,7 @@ pub(all) enum ErrorKind {
 pub(all) struct ParseErrorInfo {
   kind : ErrorKind
   message : String
-  help_text : String
+  error_context : String
   opt_name : String
   tip : String
 }

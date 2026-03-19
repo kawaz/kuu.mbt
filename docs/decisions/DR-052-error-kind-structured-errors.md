@@ -6,7 +6,7 @@ type: decision
 
 ## 背景
 
-現在の `ParseErrorInfo { message, help_text }` はフラット文字列で、エラー種別のプログラム的判別ができない。CLIライブラリとしてエラーハンドリングの基盤が必要。
+現在の `ParseErrorInfo { message, error_context }` はフラット文字列で、エラー種別のプログラム的判別ができない。CLIライブラリとしてエラーハンドリングの基盤が必要。
 
 ## 設計
 
@@ -39,7 +39,7 @@ pub(all) enum ErrorKind {
 pub(all) struct ParseErrorInfo {
   kind : ErrorKind    // NEW: エラー種別
   message : String    // 既存: 人間向けメッセージ
-  help_text : String  // 既存: ヘルプテキスト
+  error_context : String  // 既存: エラーコンテキスト
   opt_name : String   // NEW: 関連情報（下記参照）
 }
 ```

@@ -1237,7 +1237,7 @@ test "description shown in help" {
 }
 
 ///|
-test "parse error includes help_text" {
+test "parse error includes error_context" {
   let p = Parser::new()
   let _ = p.flag(
     name="verbose",
@@ -1254,12 +1254,12 @@ test "parse error includes help_text" {
           #|unexpected argument: --unknown
         ),
       )
-      // help_text が空でないことを確認
-      inspect(info.help_text == "", content="false")
-      // help_text に Usage と footer が含まれること
-      inspect(info.help_text.contains("Usage:"), content="true")
+      // error_context が空でないことを確認
+      inspect(info.error_context == "", content="false")
+      // error_context に Usage と footer が含まれること
+      inspect(info.error_context.contains("Usage:"), content="true")
       inspect(
-        info.help_text.contains("For more information, try '--help'."),
+        info.error_context.contains("For more information, try '--help'."),
         content="true",
       )
     }
@@ -1272,7 +1272,7 @@ test "ParseErrorInfo::to_string format" {
   let info = ParseErrorInfo::{
     kind: InvalidValue,
     message: "unexpected argument: --foo",
-    help_text: "",
+    error_context: "",
     opt_name: "",
     tip: "",
   }
@@ -1285,7 +1285,7 @@ test "ParseErrorInfo::to_string format" {
   let info2 = ParseErrorInfo::{
     kind: InvalidValue,
     message: "unexpected argument: --foo",
-    help_text: "\nUsage: [OPTIONS]\n\nFor more information, try '--help'.",
+    error_context: "\nUsage: [OPTIONS]\n\nFor more information, try '--help'.",
     opt_name: "",
     tip: "",
   }
@@ -1294,7 +1294,7 @@ test "ParseErrorInfo::to_string format" {
 }
 
 ///|
-test "subcommand error has child help_text" {
+test "subcommand error has child error_context" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", description="Verbose mode")
   let _ = p.cmd(
@@ -1313,14 +1313,14 @@ test "subcommand error has child help_text" {
           #|unexpected argument: --unknown
         ),
       )
-      // 子パーサ (serve) の help_text が設定されている（Usage と footer を含む）
-      inspect(info.help_text.contains("Usage:"), content="true")
+      // 子パーサ (serve) の error_context が設定されている（Usage と footer を含む）
+      inspect(info.error_context.contains("Usage:"), content="true")
       inspect(
-        info.help_text.contains("For more information, try '--help'."),
+        info.error_context.contains("For more information, try '--help'."),
         content="true",
       )
       // 親パーサのオプション (--verbose) は含まれない（子のコンテキストが優先）
-      inspect(info.help_text.contains("--verbose"), content="false")
+      inspect(info.error_context.contains("--verbose"), content="false")
     }
     _ => abort("expected ParseError")
   }
@@ -2745,8 +2745,8 @@ test "require_cmd errors when no subcommand" {
   match result {
     Err(ParseError(info)) => {
       inspect(info.message, content="subcommand required")
-      inspect(info.help_text.contains("clone"), content="true")
-      inspect(info.help_text.contains("commit"), content="true")
+      inspect(info.error_context.contains("clone"), content="true")
+      inspect(info.error_context.contains("commit"), content="true")
     }
     _ => abort("expected ParseError")
   }
@@ -2772,7 +2772,7 @@ test "require_cmd errors with flags but no subcommand" {
   match result {
     Err(ParseError(info)) => {
       inspect(info.message, content="subcommand required")
-      inspect(info.help_text.contains("serve"), content="true")
+      inspect(info.error_context.contains("serve"), content="true")
     }
     _ => abort("expected ParseError")
   }
@@ -2788,7 +2788,7 @@ test "require_cmd errors on nested sub" {
   match result {
     Err(ParseError(info)) => {
       inspect(info.message, content="subcommand required")
-      inspect(info.help_text.contains("add"), content="true")
+      inspect(info.error_context.contains("add"), content="true")
     }
     _ => abort("expected ParseError")
   }
