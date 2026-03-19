@@ -3,8 +3,9 @@ fn parse_error(
   message : String,
   kind? : ErrorKind = InvalidValue,
   opt_name? : String = "",
+  tip? : String = "",
 ) -> ParseError {
-  ParseError(ParseErrorInfo::{ kind, message, help_text: "", opt_name })
+  ParseError(ParseErrorInfo::{ kind, message, help_text: "", opt_name, tip })
 }
 
 ///|

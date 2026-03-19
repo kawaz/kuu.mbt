@@ -59,11 +59,11 @@ fn suggest_typo(arg : String, registered_names : Map[String, Bool]) -> String? {
 fn format_unexpected_with_hint(
   arg : String,
   registered_names : Map[String, Bool],
-) -> String {
+) -> (String, String) {
   let msg = "unexpected argument: " + arg
   match suggest_typo(arg, registered_names) {
-    Some(suggestion) => msg + " (did you mean " + suggestion + "?)"
-    None => msg
+    Some(suggestion) => (msg, suggestion)
+    None => (msg, "")
   }
 }
 
@@ -470,14 +470,16 @@ fn Parser::parse_raw(
     }
     if self.current_positional.val >= self.positionals.length() {
       let uarg = unclaimed[upos]
+      let (msg, tip) = format_unexpected_with_hint(uarg, self.registered_names)
       raise parse_error(
-        format_unexpected_with_hint(uarg, self.registered_names),
+        msg,
         kind=if uarg.has_prefix("-") {
           UnknownOption
         } else {
           UnexpectedArgument
         },
         opt_name=uarg,
+        tip~,
       )
     }
     let idx = self.current_positional.val
@@ -496,14 +498,19 @@ fn Parser::parse_raw(
           self.current_positional.val = idx + 1
         } else {
           let uarg = unclaimed[upos]
+          let (msg, tip) = format_unexpected_with_hint(
+            uarg,
+            self.registered_names,
+          )
           raise parse_error(
-            format_unexpected_with_hint(uarg, self.registered_names),
+            msg,
             kind=if uarg.has_prefix("-") {
               UnknownOption
             } else {
               UnexpectedArgument
             },
             opt_name=uarg,
+            tip~,
           )
         }
       Error(e) => raise e
@@ -539,7 +546,7 @@ pub fn Parser::parse(
       if info.help_text == "" {
         raise ParseError(ParseErrorInfo::{
           ..info,
-          help_text: self.generate_help(),
+          help_text: self.format_error_context(info),
         })
       } else {
         raise ParseError(info)

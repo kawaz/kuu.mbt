@@ -190,12 +190,7 @@ pub fn Parser::sub(
 pub fn Parser::require_cmd(self : Parser) -> Unit {
   self.post_hooks.push(fn() raise ParseError {
     if self.children.length() == 0 {
-      raise ParseError(ParseErrorInfo::{
-        kind: MissingSubcommand,
-        message: "subcommand required",
-        help_text: self.generate_help(),
-        opt_name: "",
-      })
+      raise parse_error("subcommand required", kind=MissingSubcommand)
     }
   })
 }

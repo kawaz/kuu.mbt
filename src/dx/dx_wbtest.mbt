@@ -751,6 +751,7 @@ fn LogLevel::from_string(s : String) -> LogLevel raise @core.ParseError {
         message: "invalid log level: \{s}",
         help_text: "",
         opt_name: "",
+        tip: "",
       })
   }
 }

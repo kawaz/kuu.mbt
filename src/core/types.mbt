@@ -20,6 +20,7 @@ pub(all) struct ParseErrorInfo {
   message : String
   help_text : String
   opt_name : String
+  tip : String
 }
 
 ///|
