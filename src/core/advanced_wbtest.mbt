@@ -3129,3 +3129,65 @@ test "mergeable_list: rest with reorder" {
     Err(_) => fail("expected Ok")
   }
 }
+
+// === file コンビネータ ===
+
+///|
+test "file: value specified" {
+  let p = Parser::new()
+  let config = p.file(
+    name="config",
+    default="",
+    default_path="./config.toml",
+    description="config file path",
+  )
+  p.parse(["--config", "/etc/app.conf"]) |> ignore
+  inspect(config.get(), content="Some(\"/etc/app.conf\")")
+}
+
+///|
+test "file: flag only uses default_path (implicit_value)" {
+  let p = Parser::new()
+  let config = p.file(
+    name="config",
+    default="",
+    default_path="./config.toml",
+    description="config file path",
+  )
+  p.parse(["--config"]) |> ignore
+  inspect(config.get(), content="Some(\"./config.toml\")")
+}
+
+///|
+test "file: not specified uses default" {
+  let p = Parser::new()
+  let config = p.file(
+    name="config",
+    default="",
+    default_path="./config.toml",
+    description="config file path",
+  )
+  p.parse([]) |> ignore
+  inspect(config.get(), content="Some(\"\")")
+}
+
+///|
+test "file: shorts support" {
+  let p = Parser::new()
+  let config = p.file(
+    name="config",
+    default="",
+    default_path="./config.toml",
+    shorts="c",
+  )
+  p.parse(["-c", "/path/to/file"]) |> ignore
+  inspect(config.get(), content="Some(\"/path/to/file\")")
+}
+
+///|
+test "file: equals syntax" {
+  let p = Parser::new()
+  let config = p.file(name="config", default="", default_path="./config.toml")
+  p.parse(["--config=/path/to/file"]) |> ignore
+  inspect(config.get(), content="Some(\"/path/to/file\")")
+}

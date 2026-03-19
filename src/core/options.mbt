@@ -201,6 +201,44 @@ pub fn Parser::flag(
 }
 
 ///|
+/// File path sugar combinator. Wraps `custom[String]` with `implicit_value`
+/// to support a 3-state pattern: not specified → default, flag-only → default_path,
+/// value specified → the given path.
+pub fn Parser::file(
+  self : Parser,
+  name~ : String,
+  default~ : String,
+  default_path~ : String,
+  default_fn? : (() -> String)? = None,
+  description? : String = "",
+  env? : String = "",
+  value_name? : String = "PATH",
+  hidden? : Bool = false,
+  aliases? : Array[String] = [],
+  shorts? : String = "",
+  global? : Bool = false,
+  post? : FilterChain[String, String]? = None,
+  choices? : Array[String] = [],
+) -> Opt[String] {
+  self.custom(
+    name~,
+    hidden~,
+    description~,
+    value_name~,
+    env~,
+    default~,
+    default_fn~,
+    aliases~,
+    shorts~,
+    global~,
+    post~,
+    choices~,
+    implicit_value=Some(Val(default_path)),
+    pre=Filter::map(fn(s) { s }),
+  )
+}
+
+///|
 pub fn Parser::string(
   self : Parser,
   name~ : String,
