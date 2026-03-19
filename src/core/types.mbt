@@ -213,6 +213,7 @@ pub fn[T] Lazy::resolve(self : Lazy[T]) -> T {
 ///
 /// default_val は Lazy[T] で保持する。Thunk を使えば reset のたびに新しいインスタンスを
 /// 生成できるため、Array 等の mutable T でも参照共有問題が起きない。
+
 ///|
 priv struct ValCell[T] {
   cell : Ref[T]
@@ -222,7 +223,11 @@ priv struct ValCell[T] {
 
 ///|
 fn[T] ValCell::new(default : Lazy[T]) -> ValCell[T] {
-  { cell: { val: default.resolve() }, committed: { val: false }, default_val: default }
+  {
+    cell: { val: default.resolve() },
+    committed: { val: false },
+    default_val: default,
+  }
 }
 
 ///|
@@ -250,6 +255,7 @@ fn[T] ValCell::accessor(self : ValCell[T]) -> Accessor[T] {
 /// default_val で新しい独立した ValCell を作る。現在の cell.val はコピーしない。
 /// Lazy[T] により Thunk の場合は clone ごとに新しいインスタンスが生成される。
 /// 本体コードでは未使用だが whitebox テストで検証されるため残す。
+
 ///|
 fn[T] ValCell::clone(self : ValCell[T]) -> ValCell[T] {
   ValCell::new(self.default_val)
@@ -270,4 +276,3 @@ priv struct Accessor[T] {
   set_commit : () -> Unit
   reset : () -> Unit
 }
-

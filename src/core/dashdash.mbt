@@ -1,11 +1,12 @@
-///| セパレータ以降の引数を収集するヘルパー。
+///|
+/// セパレータ以降の引数を収集するヘルパー。
 /// stop_at_sep=true の場合、セパレータ自身でもループを停止する（append_dashdash 用）。
 fn collect_after_separator(
   args : Array[String],
   pos : Int,
   sep : String,
   stop : Array[String],
-  stop_at_sep~ : Bool = false,
+  stop_at_sep? : Bool = false,
 ) -> (Array[String], Int) {
   let collected : Array[String] = []
   let mut p = pos + 1
@@ -22,8 +23,13 @@ fn collect_after_separator(
   (collected, p - pos)
 }
 
-///| dashdash ノードを登録し重複検出を行う共通ヘルパー
-fn Parser::register_dashdash_node(self : Parser, sep : String, node : ExactNode) -> Unit {
+///|
+/// dashdash ノードを登録し重複検出を行う共通ヘルパー
+fn Parser::register_dashdash_node(
+  self : Parser,
+  sep : String,
+  node : ExactNode,
+) -> Unit {
   self.nodes.push(node)
   if self.registered_names.contains(sep) {
     self.duplicate_errors.push("duplicate option name: " + sep)
@@ -62,7 +68,13 @@ pub fn Parser::dashdash(
     },
   }
   self.register_dashdash_node(sep, dashdash_node)
-  { id, name: separator, accessor: vc.accessor(), parsed: self.parsed, used: fn() { vc.committed.val } }
+  {
+    id,
+    name: separator,
+    accessor: vc.accessor(),
+    parsed: self.parsed,
+    used: fn() { vc.committed.val },
+  }
 }
 
 ///|
@@ -83,7 +95,11 @@ pub fn Parser::append_dashdash(
         return Reject
       }
       let (group, consumed) = collect_after_separator(
-        args, pos, sep, stop, stop_at_sep=true,
+        args,
+        pos,
+        sep,
+        stop,
+        stop_at_sep=true,
       )
       Accept(consumed~, commit=fn() {
         vc.cell.val.push(group)
@@ -96,5 +112,11 @@ pub fn Parser::append_dashdash(
     },
   }
   self.register_dashdash_node(sep, node)
-  { id, name: separator, accessor: vc.accessor(), parsed: self.parsed, used: fn() { vc.committed.val } }
+  {
+    id,
+    name: separator,
+    accessor: vc.accessor(),
+    parsed: self.parsed,
+    used: fn() { vc.committed.val },
+  }
 }

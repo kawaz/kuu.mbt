@@ -3,24 +3,26 @@
 pub fn FieldRegistry::flag(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  global~ : Bool = false,
-  shorts~ : String = "",
-  aliases~ : Array[String] = [],
-  env~ : String = "",
-  hidden~ : Bool = false,
+  description? : String = "",
+  global? : Bool = false,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  env? : String = "",
+  hidden? : Bool = false,
   set~ : (Bool) -> Unit,
 ) -> Unit {
-  ignore(self.flag_ref(
-    name=name,
-    description=description,
-    global=global,
-    shorts=shorts,
-    aliases=aliases,
-    env=env,
-    hidden=hidden,
-    set=set,
-  ))
+  ignore(
+    self.flag_ref(
+      name~,
+      description~,
+      global~,
+      shorts~,
+      aliases~,
+      env~,
+      hidden~,
+      set~,
+    ),
+  )
 }
 
 ///|
@@ -29,22 +31,22 @@ pub fn FieldRegistry::flag(
 pub fn FieldRegistry::flag_ref(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  global~ : Bool = false,
-  shorts~ : String = "",
-  aliases~ : Array[String] = [],
-  env~ : String = "",
-  hidden~ : Bool = false,
+  description? : String = "",
+  global? : Bool = false,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  env? : String = "",
+  hidden? : Bool = false,
   set~ : (Bool) -> Unit,
 ) -> @core.OptRef {
   let opt = self.parser.flag(
-    name=name,
-    description=description,
-    global=global,
-    shorts=shorts,
-    aliases=aliases,
-    env=env,
-    hidden=hidden,
+    name~,
+    description~,
+    global~,
+    shorts~,
+    aliases~,
+    env~,
+    hidden~,
   )
   self.appliers.push(fn() {
     if opt.is_set() {
@@ -62,22 +64,24 @@ pub fn FieldRegistry::flag_ref(
 pub fn FieldRegistry::boolean(
   self : FieldRegistry,
   name~ : String,
-  default~ : Bool = false,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  default? : Bool = false,
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Bool) -> Unit,
 ) -> Unit {
-  ignore(self.boolean_ref(
-    name=name,
-    default=default,
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
-  ))
+  ignore(
+    self.boolean_ref(
+      name~,
+      default~,
+      description~,
+      env~,
+      hidden~,
+      value_name~,
+      set~,
+    ),
+  )
 }
 
 ///|
@@ -85,22 +89,22 @@ pub fn FieldRegistry::boolean(
 pub fn FieldRegistry::boolean_ref(
   self : FieldRegistry,
   name~ : String,
-  default~ : Bool = false,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  default? : Bool = false,
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Bool) -> Unit,
 ) -> @core.OptRef {
   self.custom_ref(
-    name=name,
-    default=default,
+    name~,
+    default~,
     pre=@core.Filter::parse_bool(),
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
+    description~,
+    env~,
+    hidden~,
+    value_name~,
+    set~,
   )
 }
 
@@ -109,22 +113,24 @@ pub fn FieldRegistry::boolean_ref(
 pub fn FieldRegistry::string(
   self : FieldRegistry,
   name~ : String,
-  default~ : String = "",
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  default? : String = "",
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (String) -> Unit,
 ) -> Unit {
-  ignore(self.string_ref(
-    name=name,
-    default=default,
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
-  ))
+  ignore(
+    self.string_ref(
+      name~,
+      default~,
+      description~,
+      env~,
+      hidden~,
+      value_name~,
+      set~,
+    ),
+  )
 }
 
 ///|
@@ -132,22 +138,22 @@ pub fn FieldRegistry::string(
 pub fn FieldRegistry::string_ref(
   self : FieldRegistry,
   name~ : String,
-  default~ : String = "",
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  default? : String = "",
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (String) -> Unit,
 ) -> @core.OptRef {
   self.custom_ref(
-    name=name,
-    default=default,
+    name~,
+    default~,
     pre=@core.Filter::map(fn(s) { s }),
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
+    description~,
+    env~,
+    hidden~,
+    value_name~,
+    set~,
   )
 }
 
@@ -156,24 +162,26 @@ pub fn FieldRegistry::string_ref(
 pub fn FieldRegistry::count(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  global~ : Bool = false,
-  shorts~ : String = "",
-  aliases~ : Array[String] = [],
-  env~ : String = "",
-  hidden~ : Bool = false,
+  description? : String = "",
+  global? : Bool = false,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  env? : String = "",
+  hidden? : Bool = false,
   set~ : (Int) -> Unit,
 ) -> Unit {
-  ignore(self.count_ref(
-    name=name,
-    description=description,
-    global=global,
-    shorts=shorts,
-    aliases=aliases,
-    env=env,
-    hidden=hidden,
-    set=set,
-  ))
+  ignore(
+    self.count_ref(
+      name~,
+      description~,
+      global~,
+      shorts~,
+      aliases~,
+      env~,
+      hidden~,
+      set~,
+    ),
+  )
 }
 
 ///|
@@ -181,22 +189,22 @@ pub fn FieldRegistry::count(
 pub fn FieldRegistry::count_ref(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  global~ : Bool = false,
-  shorts~ : String = "",
-  aliases~ : Array[String] = [],
-  env~ : String = "",
-  hidden~ : Bool = false,
+  description? : String = "",
+  global? : Bool = false,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  env? : String = "",
+  hidden? : Bool = false,
   set~ : (Int) -> Unit,
 ) -> @core.OptRef {
   let opt = self.parser.count(
-    name=name,
-    description=description,
-    global=global,
-    shorts=shorts,
-    aliases=aliases,
-    env=env,
-    hidden=hidden,
+    name~,
+    description~,
+    global~,
+    shorts~,
+    aliases~,
+    env~,
+    hidden~,
   )
   self.appliers.push(fn() {
     if opt.is_set() {
@@ -214,20 +222,22 @@ pub fn FieldRegistry::count_ref(
 pub fn FieldRegistry::append_string(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Array[String]) -> Unit,
 ) -> Unit {
-  ignore(self.append_string_ref(
-    name=name,
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
-  ))
+  ignore(
+    self.append_string_ref(
+      name~,
+      description~,
+      env~,
+      hidden~,
+      value_name~,
+      set~,
+    ),
+  )
 }
 
 ///|
@@ -235,20 +245,20 @@ pub fn FieldRegistry::append_string(
 pub fn FieldRegistry::append_string_ref(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Array[String]) -> Unit,
 ) -> @core.OptRef {
   self.custom_append_ref(
-    name=name,
+    name~,
     pre=@core.Filter::map(fn(s) { s }),
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
+    description~,
+    env~,
+    hidden~,
+    value_name~,
+    set~,
   )
 }
 
@@ -257,20 +267,15 @@ pub fn FieldRegistry::append_string_ref(
 pub fn FieldRegistry::append_int(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Array[Int]) -> Unit,
 ) -> Unit {
-  ignore(self.append_int_ref(
-    name=name,
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
-  ))
+  ignore(
+    self.append_int_ref(name~, description~, env~, hidden~, value_name~, set~),
+  )
 }
 
 ///|
@@ -278,20 +283,20 @@ pub fn FieldRegistry::append_int(
 pub fn FieldRegistry::append_int_ref(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Array[Int]) -> Unit,
 ) -> @core.OptRef {
   self.custom_append_ref(
-    name=name,
+    name~,
     pre=@core.Filter::parse_int(),
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
+    description~,
+    env~,
+    hidden~,
+    value_name~,
+    set~,
   )
 }
 
@@ -300,20 +305,15 @@ pub fn FieldRegistry::append_int_ref(
 pub fn FieldRegistry::append_float(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Array[Double]) -> Unit,
 ) -> Unit {
-  ignore(self.append_float_ref(
-    name=name,
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
-  ))
+  ignore(
+    self.append_float_ref(name~, description~, env~, hidden~, value_name~, set~),
+  )
 }
 
 ///|
@@ -321,20 +321,20 @@ pub fn FieldRegistry::append_float(
 pub fn FieldRegistry::append_float_ref(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Array[Double]) -> Unit,
 ) -> @core.OptRef {
   self.custom_append_ref(
-    name=name,
+    name~,
     pre=@core.Filter::parse_float(),
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
+    description~,
+    env~,
+    hidden~,
+    value_name~,
+    set~,
   )
 }
 
@@ -343,22 +343,24 @@ pub fn FieldRegistry::append_float_ref(
 pub fn FieldRegistry::int(
   self : FieldRegistry,
   name~ : String,
-  default~ : Int = 0,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  default? : Int = 0,
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Int) -> Unit,
 ) -> Unit {
-  ignore(self.int_ref(
-    name=name,
-    default=default,
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
-  ))
+  ignore(
+    self.int_ref(
+      name~,
+      default~,
+      description~,
+      env~,
+      hidden~,
+      value_name~,
+      set~,
+    ),
+  )
 }
 
 ///|
@@ -366,22 +368,22 @@ pub fn FieldRegistry::int(
 pub fn FieldRegistry::int_ref(
   self : FieldRegistry,
   name~ : String,
-  default~ : Int = 0,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  default? : Int = 0,
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Int) -> Unit,
 ) -> @core.OptRef {
   self.custom_ref(
-    name=name,
-    default=default,
+    name~,
+    default~,
     pre=@core.Filter::parse_int(),
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
+    description~,
+    env~,
+    hidden~,
+    value_name~,
+    set~,
   )
 }
 
@@ -390,22 +392,24 @@ pub fn FieldRegistry::int_ref(
 pub fn FieldRegistry::float(
   self : FieldRegistry,
   name~ : String,
-  default~ : Double = 0.0,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  default? : Double = 0.0,
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Double) -> Unit,
 ) -> Unit {
-  ignore(self.float_ref(
-    name=name,
-    default=default,
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
-  ))
+  ignore(
+    self.float_ref(
+      name~,
+      default~,
+      description~,
+      env~,
+      hidden~,
+      value_name~,
+      set~,
+    ),
+  )
 }
 
 ///|
@@ -413,21 +417,21 @@ pub fn FieldRegistry::float(
 pub fn FieldRegistry::float_ref(
   self : FieldRegistry,
   name~ : String,
-  default~ : Double = 0.0,
-  description~ : String = "",
-  env~ : String = "",
-  hidden~ : Bool = false,
-  value_name~ : String = "",
+  default? : Double = 0.0,
+  description? : String = "",
+  env? : String = "",
+  hidden? : Bool = false,
+  value_name? : String = "",
   set~ : (Double) -> Unit,
 ) -> @core.OptRef {
   self.custom_ref(
-    name=name,
-    default=default,
+    name~,
+    default~,
     pre=@core.Filter::parse_float(),
-    description=description,
-    env=env,
-    hidden=hidden,
-    value_name=value_name,
-    set=set,
+    description~,
+    env~,
+    hidden~,
+    value_name~,
+    set~,
   )
 }

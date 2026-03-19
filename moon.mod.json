@@ -1,10 +1,8 @@
 {
   "name": "kawaz/kuu",
   "version": "0.1.0",
-  "source": "src",
   "deps": {
-    "kawaz/unicodegrapheme": {
-      "path": "../../unicodegrapheme/main"
-    }
-  }
+    "kawaz/unicodegrapheme": "0.7.1"
+  },
+  "source": "src"
 }

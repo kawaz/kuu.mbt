@@ -1,8 +1,8 @@
 ///|
 fn parse_error(
   message : String,
-  kind~ : ErrorKind = InvalidValue,
-  opt_name~ : String = "",
+  kind? : ErrorKind = InvalidValue,
+  opt_name? : String = "",
 ) -> ParseError {
   ParseError(ParseErrorInfo::{ kind, message, help_text: "", opt_name })
 }
@@ -96,18 +96,28 @@ fn[T] Parser::register_option(
 ) -> Opt[T] {
   let id = (self.next_id)()
   self.expand_and_register(
-    name, aliases, shorts, global,
+    name,
+    aliases,
+    shorts,
+    global,
     make_long_nodes=fn(opt_name) {
       let nodes : Array[ExactNode] = []
-      nodes.push(wrap_node_with_set(make_main_node(opt_name), valcell.committed))
-      expand_variation_nodes(opt_name, variations, nodes, make_node_for_variation)
+      nodes.push(
+        wrap_node_with_set(make_main_node(opt_name), valcell.committed),
+      )
+      expand_variation_nodes(
+        opt_name, variations, nodes, make_node_for_variation,
+      )
       nodes
     },
     make_short_nodes=fn(short_name) {
       [wrap_node_with_set(make_main_node(short_name), valcell.committed)]
     },
   )
-  let shorts_arr : Array[String] = @unicodegrapheme.graphemes(shorts).iter().map(fn(sv) { sv.to_string() }).collect()
+  let shorts_arr : Array[String] = @unicodegrapheme.graphemes(shorts)
+    .iter()
+    .map(fn(sv) { sv.to_string() })
+    .collect()
   let var_names = variations.map(fn(v) {
     let prefix = match v {
       Toggle(p) | True(p) | False(p) | Reset(p) | Unset(p) => p
@@ -132,7 +142,13 @@ fn[T] Parser::register_option(
     is_global: global,
     make_eq_fallback: None,
   }
-  { id, name: "--" + name, accessor: valcell.accessor(), parsed: self.parsed, used: fn() { valcell.committed.val } }
+  {
+    id,
+    name: "--" + name,
+    accessor: valcell.accessor(),
+    parsed: self.parsed,
+    used: fn() { valcell.committed.val },
+  }
 }
 
 ///|
@@ -154,13 +170,20 @@ pub fn[T] Parser::make_alias(
     None => {
       // target がこの Parser に登録されていない（別 Parser の Opt 等）
       self.duplicate_errors.push(
-        "alias target not found: " + target.name +
+        "alias target not found: " +
+        target.name +
         " (id=" +
         target.id.to_string() +
         ")",
       )
       let id = (self.next_id)()
-      { id, name, accessor: target.accessor, parsed: target.parsed, used: fn() { false } }
+      {
+        id,
+        name,
+        accessor: target.accessor,
+        parsed: target.parsed,
+        used: fn() { false },
+      }
     }
     Some(src) => {
       if self.registered_names.contains(name) {
@@ -213,7 +236,13 @@ pub fn[T] Parser::make_alias(
         is_global: src.is_global,
         make_eq_fallback: src.make_eq_fallback,
       }
-      { id, name, accessor: target.accessor, parsed: target.parsed, used: fn() { opt_used.val } }
+      {
+        id,
+        name,
+        accessor: target.accessor,
+        parsed: target.parsed,
+        used: fn() { opt_used.val },
+      }
     }
   }
 }
@@ -226,7 +255,7 @@ pub fn[T] Parser::deprecated(
   self : Parser,
   name : String,
   target : Opt[T],
-  msg~ : String = "",
+  msg? : String = "",
 ) -> Opt[T] {
   if name == "" {
     self.duplicate_errors.push("deprecated name must not be empty")
@@ -266,7 +295,7 @@ pub fn[T] Parser::link(
   self : Parser,
   target : Opt[T],
   source~ : Opt[T],
-  propagate_set~ : Bool = false,
+  propagate_set? : Bool = false,
 ) -> Unit {
   self.post_hooks.push(fn() {
     if source.is_set() {
@@ -296,13 +325,20 @@ pub fn[T] Parser::clone(
   match source {
     None => {
       self.duplicate_errors.push(
-        "clone target not found: " + target.name +
+        "clone target not found: " +
+        target.name +
         " (id=" +
         target.id.to_string() +
         ")",
       )
       let id = (self.next_id)()
-      { id, name, accessor: target.accessor, parsed: target.parsed, used: fn() { false } }
+      {
+        id,
+        name,
+        accessor: target.accessor,
+        parsed: target.parsed,
+        used: fn() { false },
+      }
     }
     Some(src) => {
       if self.registered_names.contains(name) {
@@ -326,9 +362,7 @@ pub fn[T] Parser::clone(
       // save/restore パターン: 元のノードの commit は target の cell に書き込むため、
       // commit 前に target を保存し、commit 後に clone の cell にコピーしてから target を復元する。
       // clone_commit_wrap: 任意の try_reduce 結果を save/restore でラップする共通関数
-      let clone_commit_wrap = fn(
-        result : TryResult,
-      ) -> TryResult {
+      let clone_commit_wrap = fn(result : TryResult) -> TryResult {
         match result {
           Accept(consumed~, commit~) =>
             if consumed > 0 {
@@ -394,7 +428,13 @@ pub fn[T] Parser::clone(
         set_commit: fn() { opt_used.val = true },
         reset: reset_clone,
       }
-      { id, name, accessor: clone_acc, parsed: target.parsed, used: fn() { opt_used.val } }
+      {
+        id,
+        name,
+        accessor: clone_acc,
+        parsed: target.parsed,
+        used: fn() { opt_used.val },
+      }
     }
   }
 }
@@ -440,17 +480,13 @@ fn expand_short(
   for i = 0; i < shorts_g.length(); i = i + 1 {
     let g = shorts_g[i].to_string()
     if g == "-" {
-      report_error(
-        "invalid short option character '-' in option --" + name,
-      )
+      report_error("invalid short option character '-' in option --" + name)
     } else if g == " " || g == "\t" || g == "\n" || g == "\r" {
       report_error(
         "invalid short option character (whitespace) in option --" + name,
       )
     } else if g == "\u0000" {
-      report_error(
-        "invalid short option character (NUL) in option --" + name,
-      )
+      report_error("invalid short option character (NUL) in option --" + name)
     }
   }
   for i = 0; i < shorts_g.length(); i = i + 1 {
@@ -489,9 +525,7 @@ fn Parser::expand_and_register(
     // Check against previously registered names (cross-combinator duplicates)
     for node in nodes {
       if node.name != "" && self.registered_names.contains(node.name) {
-        self.duplicate_errors.push(
-          "duplicate option name: " + node.name,
-        )
+        self.duplicate_errors.push("duplicate option name: " + node.name)
         break // report once per batch
       }
     }

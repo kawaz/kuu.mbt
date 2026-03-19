@@ -1,11 +1,12 @@
-///| Registers a positional argument.
+///|
+/// Registers a positional argument.
 /// `greedy` — if true, consumed eagerly during OC phase (before option matching completes);
 /// if false (default), deferred to P phase and receives unclaimed args.
 pub fn Parser::positional(
   self : Parser,
   name~ : String,
   description? : String = "",
-  greedy~ : Bool = false,
+  greedy? : Bool = false,
 ) -> Opt[String] {
   let id = (self.next_id)()
   let vc : ValCell[String] = ValCell::new(Val(""))
@@ -39,7 +40,13 @@ pub fn Parser::positional(
     variation_names: [],
     hidden: false,
   })
-  { id, name, accessor: vc.accessor(), parsed: self.parsed, used: fn() { vc.committed.val } }
+  {
+    id,
+    name,
+    accessor: vc.accessor(),
+    parsed: self.parsed,
+    used: fn() { vc.committed.val },
+  }
 }
 
 ///|
@@ -70,7 +77,11 @@ pub fn Parser::rest(
       })
     }
   }
-  self.positionals.push(PositionalEntry::{ handler, is_rest: true, greedy: false })
+  self.positionals.push(PositionalEntry::{
+    handler,
+    is_rest: true,
+    greedy: false,
+  })
   self.metas.push(OptMeta::{
     kind: Rest,
     name,
@@ -84,7 +95,13 @@ pub fn Parser::rest(
     variation_names: [],
     hidden: false,
   })
-  { id, name, accessor: vc.accessor(), parsed: self.parsed, used: fn() { vc.committed.val } }
+  {
+    id,
+    name,
+    accessor: vc.accessor(),
+    parsed: self.parsed,
+    used: fn() { vc.committed.val },
+  }
 }
 
 ///|
@@ -96,7 +113,11 @@ pub fn Parser::never(self : Parser) -> Unit {
       Error(
         parse_error(
           format_unexpected_with_hint(arg, registered_names),
-          kind=if arg.has_prefix("-") { UnknownOption } else { UnexpectedArgument },
+          kind=if arg.has_prefix("-") {
+            UnknownOption
+          } else {
+            UnexpectedArgument
+          },
           opt_name=arg,
         ),
       )
@@ -104,16 +125,21 @@ pub fn Parser::never(self : Parser) -> Unit {
       Reject
     }
   }
-  self.positionals.push(PositionalEntry::{ handler, is_rest: false, greedy: false })
+  self.positionals.push(PositionalEntry::{
+    handler,
+    is_rest: false,
+    greedy: false,
+  })
 }
 
-///| Groups multiple positionals into a compound handler that consumes them sequentially.
+///|
+/// Groups multiple positionals into a compound handler that consumes them sequentially.
 /// `greedy` — if true, the compound handler runs during OC phase; note that it consumes
 /// args without considering ExactNode matching, so option-like args may be consumed as values.
 pub fn Parser::serial(
   self : Parser,
   setup~ : (Parser) -> Unit,
-  greedy~ : Bool = false,
+  greedy? : Bool = false,
 ) -> Unit {
   // serial 用の軽量 sub-parser を直接構築（Parser::new は --help 等を登録してしまうため）
   let sub : Parser = {

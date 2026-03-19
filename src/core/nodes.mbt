@@ -35,7 +35,13 @@ fn make_value_node(
         Reject
       } else if args[pos] == name {
         if pos + 1 >= args.length() {
-          Error(parse_error("missing value for " + name, kind=MissingValue, opt_name=name))
+          Error(
+            parse_error(
+              "missing value for " + name,
+              kind=MissingValue,
+              opt_name=name,
+            ),
+          )
         } else {
           match on_match(args[pos + 1]) {
             Ok(commit) => Accept(consumed=2, commit~)
@@ -65,13 +71,9 @@ fn[T] make_implicit_flag_node(
       if pos >= args.length() || args[pos] != name {
         return Reject
       }
-      Accept(consumed=1, commit=fn() {
-        cell.val = implicit.resolve()
-      })
+      Accept(consumed=1, commit=fn() { cell.val = implicit.resolve() })
     },
-    reset: fn() {
-      cell.val = initial_val
-    },
+    reset: fn() { cell.val = initial_val },
   }
 }
 
@@ -198,8 +200,7 @@ fn[T] make_soft_custom_value_node(
       }
       let r : Result[T, ParseError] = try? (pre.run)(s)
       match r {
-        Ok(v) =>
-          Accept(consumed=2, commit=fn() { cell.val = v })
+        Ok(v) => Accept(consumed=2, commit=fn() { cell.val = v })
         Err(_) => Reject
       }
     },
@@ -228,12 +229,10 @@ fn[T] make_custom_choice_value_node(
       }
       let r : Result[T, ParseError] = try? (pre.run)(choice)
       match r {
-        Ok(v) =>
-          Accept(consumed=2, commit=fn() { cell.val = v })
+        Ok(v) => Accept(consumed=2, commit=fn() { cell.val = v })
         Err(e) => Error(e)
       }
     },
     reset: fn() { cell.val = initial_val },
   }
 }
-

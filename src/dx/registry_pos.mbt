@@ -3,10 +3,10 @@
 pub fn FieldRegistry::positional(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
+  description? : String = "",
   set~ : (String) -> Unit,
 ) -> Unit {
-  let opt = self.parser.positional(name=name, description=description)
+  let opt = self.parser.positional(name~, description~)
   self.appliers.push(fn() {
     if opt.is_set() {
       match opt.get() {
@@ -22,10 +22,10 @@ pub fn FieldRegistry::positional(
 pub fn FieldRegistry::rest(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
+  description? : String = "",
   set~ : (Array[String]) -> Unit,
 ) -> Unit {
-  let opt = self.parser.rest(name=name, description=description)
+  let opt = self.parser.rest(name~, description~)
   self.appliers.push(fn() {
     if opt.is_set() {
       match opt.get() {

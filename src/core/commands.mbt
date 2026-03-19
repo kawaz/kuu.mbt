@@ -82,7 +82,8 @@ pub fn Parser::cmd(
           }
           let rest_args = args.view(start=pos + 1).to_array()
           let parse_result : Result[ParseResult, ParseError] = try? child.parse(
-            rest_args, env=self.env_map.val,
+            rest_args,
+            env=self.env_map.val,
           )
           match parse_result {
             Ok(child_result) =>
@@ -138,12 +139,24 @@ pub fn Parser::cmd(
         None => CmdResult::{ name: "", parser: child }
       }
     },
-    set: fn(v) { vc.cell.val = Some(v); vc.committed.val = true },
+    set: fn(v) {
+      vc.cell.val = Some(v)
+      vc.committed.val = true
+    },
     set_value: fn(v) { vc.cell.val = Some(v) },
     set_commit: fn() { vc.committed.val = true },
-    reset: fn() { vc.cell.val = None; vc.committed.val = false },
+    reset: fn() {
+      vc.cell.val = None
+      vc.committed.val = false
+    },
   }
-  { id, name, accessor: cmd_acc, parsed: child.parsed, used: fn() { vc.committed.val } }
+  {
+    id,
+    name,
+    accessor: cmd_acc,
+    parsed: child.parsed,
+    used: fn() { vc.committed.val },
+  }
 }
 
 ///|
@@ -177,14 +190,12 @@ pub fn Parser::sub(
 pub fn Parser::require_cmd(self : Parser) -> Unit {
   self.post_hooks.push(fn() raise ParseError {
     if self.children.length() == 0 {
-      raise ParseError(
-        ParseErrorInfo::{
-          kind: MissingSubcommand,
-          message: "subcommand required",
-          help_text: self.generate_help(),
-          opt_name: "",
-        },
-      )
+      raise ParseError(ParseErrorInfo::{
+        kind: MissingSubcommand,
+        message: "subcommand required",
+        help_text: self.generate_help(),
+        opt_name: "",
+      })
     }
   })
 }

@@ -15,11 +15,7 @@ fn levenshtein(a : String, b : String) -> Int {
   for i = 1; i <= m; i = i + 1 {
     curr[0] = i
     for j = 1; j <= n; j = j + 1 {
-      let cost = if a_chars[i - 1] == b_chars[j - 1] {
-        0
-      } else {
-        1
-      }
+      let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 }
       let del = prev[j] + 1
       let ins = curr[j - 1] + 1
       let sub = prev[j - 1] + cost
@@ -40,10 +36,7 @@ fn levenshtein(a : String, b : String) -> Int {
 }
 
 ///|
-fn suggest_typo(
-  arg : String,
-  registered_names : Map[String, Bool],
-) -> String? {
+fn suggest_typo(arg : String, registered_names : Map[String, Bool]) -> String? {
   if not(arg.has_prefix("--")) {
     return None
   }
@@ -157,7 +150,9 @@ fn Parser::install_eq_split_node(self : Parser) -> Unit {
         }
       }
       if ambiguous {
-        return Error(parse_error("ambiguous argument: " + arg, kind=AmbiguousMatch))
+        return Error(
+          parse_error("ambiguous argument: " + arg, kind=AmbiguousMatch),
+        )
       }
       match best_commit {
         Some(commit) => Accept(consumed=1, commit~)
@@ -317,10 +312,22 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
                 }
               }
               if not(ext_accepted) {
-                return Error(parse_error("missing value for " + short_name, kind=MissingValue, opt_name=short_name))
+                return Error(
+                  parse_error(
+                    "missing value for " + short_name,
+                    kind=MissingValue,
+                    opt_name=short_name,
+                  ),
+                )
               }
             } else {
-              return Error(parse_error("missing value for " + short_name, kind=MissingValue, opt_name=short_name))
+              return Error(
+                parse_error(
+                  "missing value for " + short_name,
+                  kind=MissingValue,
+                  opt_name=short_name,
+                ),
+              )
             }
           }
         }
@@ -374,10 +381,13 @@ fn Parser::install_separator_node(self : Parser) -> Unit {
 fn Parser::parse_raw(
   self : Parser,
   args : Array[String],
-  env~ : Map[String, String] = {},
+  env? : Map[String, String] = {},
 ) -> ParseResult raise ParseError {
   if self.parsed.val {
-    raise parse_error("Parser::parse can only be called once", kind=ParseAlreadyCalled)
+    raise parse_error(
+      "Parser::parse can only be called once",
+      kind=ParseAlreadyCalled,
+    )
   }
   self.env_map.val = env
   inject_help_node(self)
@@ -455,14 +465,18 @@ fn Parser::parse_raw(
   while upos < unclaimed.length() {
     // greedy positional をスキップ（OC で消費済み or 機会を逃した）
     while self.current_positional.val < self.positionals.length() &&
-      self.positionals[self.current_positional.val].greedy {
+          self.positionals[self.current_positional.val].greedy {
       self.current_positional.val += 1
     }
     if self.current_positional.val >= self.positionals.length() {
       let uarg = unclaimed[upos]
       raise parse_error(
         format_unexpected_with_hint(uarg, self.registered_names),
-        kind=if uarg.has_prefix("-") { UnknownOption } else { UnexpectedArgument },
+        kind=if uarg.has_prefix("-") {
+          UnknownOption
+        } else {
+          UnexpectedArgument
+        },
         opt_name=uarg,
       )
     }
@@ -476,7 +490,7 @@ fn Parser::parse_raw(
         }
         upos += consumed
       }
-      Reject => {
+      Reject =>
         if entry.is_rest {
           // rest が Reject（stop_before トリガー等）→ 次の positional へ
           self.current_positional.val = idx + 1
@@ -484,11 +498,14 @@ fn Parser::parse_raw(
           let uarg = unclaimed[upos]
           raise parse_error(
             format_unexpected_with_hint(uarg, self.registered_names),
-            kind=if uarg.has_prefix("-") { UnknownOption } else { UnexpectedArgument },
+            kind=if uarg.has_prefix("-") {
+              UnknownOption
+            } else {
+              UnexpectedArgument
+            },
             opt_name=uarg,
           )
         }
-      }
       Error(e) => raise e
     }
   }
@@ -513,11 +530,9 @@ fn Parser::parse_raw(
 pub fn Parser::parse(
   self : Parser,
   args : Array[String],
-  env~ : Map[String, String] = {},
+  env? : Map[String, String] = {},
 ) -> ParseResult raise ParseError {
-  let result : Result[ParseResult, ParseError] = try? self.parse_raw(
-    args, env~,
-  )
+  let result : Result[ParseResult, ParseError] = try? self.parse_raw(args, env~)
   match result {
     Ok(r) => r
     Err(ParseError(info)) =>

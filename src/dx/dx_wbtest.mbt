@@ -174,17 +174,9 @@ fn WithDefaults::default() -> WithDefaults {
 
 ///|
 impl Parseable for WithDefaults with register(self, reg) {
-  reg.string(
-    name="host",
-    default="localhost",
-    set=fn(v) { self.host = v },
-  )
+  reg.string(name="host", default="localhost", set=fn(v) { self.host = v })
   reg.int(name="port", default=8080, set=fn(v) { self.port = v })
-  reg.float(
-    name="timeout",
-    default=30.0,
-    set=fn(v) { self.timeout = v },
-  )
+  reg.float(name="timeout", default=30.0, set=fn(v) { self.timeout = v })
 }
 
 ///|
@@ -371,11 +363,7 @@ fn SubConfig::default() -> SubConfig {
 
 ///|
 impl Parseable for SubConfig with register(self, reg) {
-  reg.flag(
-    name="verbose",
-    global=true,
-    set=fn(v) { self.verbose = v },
-  )
+  reg.flag(name="verbose", global=true, set=fn(v) { self.verbose = v })
   reg.sub(
     name="init",
     description="Initialize project",
@@ -387,11 +375,7 @@ impl Parseable for SubConfig with register(self, reg) {
     description="Build project",
     on_match=fn() { self.command = Build },
     setup=fn(r) {
-      r.string(
-        name="tag",
-        default="latest",
-        set=fn(v) { self.build_tag = v },
-      )
+      r.string(name="tag", default="latest", set=fn(v) { self.build_tag = v })
     },
   )
   reg.require_cmd()
@@ -477,11 +461,7 @@ fn ShortsConfig::default() -> ShortsConfig {
 
 ///|
 impl Parseable for ShortsConfig with register(self, reg) {
-  reg.flag(
-    name="verbose",
-    shorts="v",
-    set=fn(v) { self.verbose = v },
-  )
+  reg.flag(name="verbose", shorts="v", set=fn(v) { self.verbose = v })
   reg.custom(
     name="output",
     default="",
@@ -549,11 +529,7 @@ fn EnvConfig::default() -> EnvConfig {
 
 ///|
 impl Parseable for EnvConfig with register(self, reg) {
-  reg.string(
-    name="host",
-    env="APP_HOST",
-    set=fn(v) { self.host = v },
-  )
+  reg.string(name="host", env="APP_HOST", set=fn(v) { self.host = v })
 }
 
 ///|
@@ -579,11 +555,7 @@ fn HiddenConfig::default() -> HiddenConfig {
 
 ///|
 impl Parseable for HiddenConfig with register(self, reg) {
-  reg.flag(
-    name="debug",
-    hidden=true,
-    set=fn(v) { self.debug = v },
-  )
+  reg.flag(name="debug", hidden=true, set=fn(v) { self.debug = v })
   reg.string(name="name", set=fn(v) { self.name = v })
 }
 
@@ -638,11 +610,7 @@ fn ValueNameConfig::default() -> ValueNameConfig {
 
 ///|
 impl Parseable for ValueNameConfig with register(self, reg) {
-  reg.string(
-    name="file",
-    value_name="PATH",
-    set=fn(v) { self.file = v },
-  )
+  reg.string(name="file", value_name="PATH", set=fn(v) { self.file = v })
 }
 
 ///|
@@ -671,14 +639,8 @@ fn ExclusiveConfig::default() -> ExclusiveConfig {
 
 ///|
 impl Parseable for ExclusiveConfig with register(self, reg) {
-  let json_ref = reg.flag_ref(
-    name="json",
-    set=fn(v) { self.json = v },
-  )
-  let yaml_ref = reg.flag_ref(
-    name="yaml",
-    set=fn(v) { self.yaml = v },
-  )
+  let json_ref = reg.flag_ref(name="json", set=fn(v) { self.json = v })
+  let yaml_ref = reg.flag_ref(name="yaml", set=fn(v) { self.yaml = v })
   reg.exclusive([json_ref, yaml_ref])
 }
 
@@ -714,10 +676,7 @@ fn RequiredConfig::default() -> RequiredConfig {
 
 ///|
 impl Parseable for RequiredConfig with register(self, reg) {
-  let output_ref = reg.string_ref(
-    name="output",
-    set=fn(v) { self.output = v },
-  )
+  let output_ref = reg.string_ref(name="output", set=fn(v) { self.output = v })
   reg.required(output_ref)
 }
 
@@ -750,14 +709,8 @@ fn AtLeastOneConfig::default() -> AtLeastOneConfig {
 
 ///|
 impl Parseable for AtLeastOneConfig with register(self, reg) {
-  let input_ref = reg.string_ref(
-    name="input",
-    set=fn(v) { self.input = v },
-  )
-  let stdin_ref = reg.flag_ref(
-    name="stdin",
-    set=fn(v) { self.stdin = v },
-  )
+  let input_ref = reg.string_ref(name="input", set=fn(v) { self.input = v })
+  let stdin_ref = reg.flag_ref(name="stdin", set=fn(v) { self.stdin = v })
   reg.at_least_one([input_ref, stdin_ref])
 }
 
@@ -792,7 +745,8 @@ fn LogLevel::from_string(s : String) -> LogLevel raise @core.ParseError {
     "info" => Info
     "warn" => Warn
     "error" => Error_
-    _ => raise @core.ParseError(@core.ParseErrorInfo::{
+    _ =>
+      raise @core.ParseError(@core.ParseErrorInfo::{
         kind: InvalidValue,
         message: "invalid log level: \{s}",
         help_text: "",
@@ -856,11 +810,9 @@ fn CustomAppendConfig::default() -> CustomAppendConfig {
 
 ///|
 impl Parseable for CustomAppendConfig with register(self, reg) {
-  reg.custom_append(
-    name="value",
-    pre=@core.Filter::parse_int(),
-    set=fn(v) { self.values = v },
-  )
+  reg.custom_append(name="value", pre=@core.Filter::parse_int(), set=fn(v) {
+    self.values = v
+  })
 }
 
 ///|
@@ -886,7 +838,9 @@ fn DefaultMismatchConfig::default() -> DefaultMismatchConfig {
 impl Parseable for DefaultMismatchConfig with register(self, reg) {
   // registry の default と struct の default が異なる
   // struct の default が source of truth であるべき
-  reg.string(name="host", default="registry-default", set=fn(v) { self.host = v })
+  reg.string(name="host", default="registry-default", set=fn(v) {
+    self.host = v
+  })
 }
 
 ///|
@@ -920,20 +874,12 @@ fn NestedConfig::default() -> NestedConfig {
 
 ///|
 impl Parseable for NestedConfig with register(self, reg) {
-  reg.sub(
-    name="parent",
-    on_match=fn() { self.cmd1 = "parent" },
-    setup=fn(r) {
-      r.sub(
-        name="child",
-        on_match=fn() { self.cmd2 = "child" },
-        setup=fn(r2) {
-          r2.string(name="value", set=fn(v) { self.value = v })
-        },
-      )
-      r.require_cmd()
-    },
-  )
+  reg.sub(name="parent", on_match=fn() { self.cmd1 = "parent" }, setup=fn(r) {
+    r.sub(name="child", on_match=fn() { self.cmd2 = "child" }, setup=fn(r2) {
+      r2.string(name="value", set=fn(v) { self.value = v })
+    })
+    r.require_cmd()
+  })
   reg.require_cmd()
 }
 
@@ -957,7 +903,11 @@ test "error message: exclusive violation mentions option names" {
   )
   match result {
     Err(@core.ParseError(info)) =>
-      assert_true(info.message.contains("exclusive") || info.message.contains("--json") || info.message.contains("--yaml"))
+      assert_true(
+        info.message.contains("exclusive") ||
+        info.message.contains("--json") ||
+        info.message.contains("--yaml"),
+      )
     _ => fail("expected ParseError")
   }
 }

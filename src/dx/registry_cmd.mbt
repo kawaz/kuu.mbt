@@ -5,22 +5,19 @@
 pub fn FieldRegistry::sub(
   self : FieldRegistry,
   name~ : String,
-  description~ : String = "",
-  aliases~ : Array[String] = [],
+  description? : String = "",
+  aliases? : Array[String] = [],
   setup~ : (FieldRegistry) -> Unit,
-  on_match~ : () -> Unit = fn() {  },
+  on_match? : () -> Unit = fn() {  },
 ) -> Unit {
   let child_registry_ref : Ref[FieldRegistry?] = { val: None }
-  let cmd = self.parser.cmd(
-    name=name,
-    description=description,
-    aliases=aliases,
-    setup=fn(child_parser) {
-      let child_reg = FieldRegistry::new(child_parser)
-      setup(child_reg)
-      child_registry_ref.val = Some(child_reg)
-    },
-  )
+  let cmd = self.parser.cmd(name~, description~, aliases~, setup=fn(
+    child_parser,
+  ) {
+    let child_reg = FieldRegistry::new(child_parser)
+    setup(child_reg)
+    child_registry_ref.val = Some(child_reg)
+  })
   self.appliers.push(fn() {
     if cmd.is_set() {
       on_match()

@@ -1,4 +1,5 @@
-///| env_applicator を登録する共通ヘルパー。
+///|
+/// env_applicator を登録する共通ヘルパー。
 /// env が非空の場合のみ、committed=false なら env から値を取得して適用する。
 fn[T] register_env_applicator(
   parser : Parser,
@@ -22,7 +23,8 @@ fn[T] register_env_applicator(
   }
 }
 
-///| Variation sugar パラメータを variations 配列に展開するヘルパー
+///|
+/// Variation sugar パラメータを variations 配列に展開するヘルパー
 fn apply_variation_sugar(
   variations : Array[Variation],
   variation_toggle? : String? = None,
@@ -31,11 +33,21 @@ fn apply_variation_sugar(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Unit {
-  if variation_toggle is Some(p) { variations.push(Toggle(p)) }
-  if variation_true is Some(p) { variations.push(True(p)) }
-  if variation_false is Some(p) { variations.push(False(p)) }
-  if variation_reset is Some(p) { variations.push(Reset(p)) }
-  if variation_unset is Some(p) { variations.push(Unset(p)) }
+  if variation_toggle is Some(p) {
+    variations.push(Toggle(p))
+  }
+  if variation_true is Some(p) {
+    variations.push(True(p))
+  }
+  if variation_false is Some(p) {
+    variations.push(False(p))
+  }
+  if variation_reset is Some(p) {
+    variations.push(Reset(p))
+  }
+  if variation_unset is Some(p) {
+    variations.push(Unset(p))
+  }
 }
 
 ///|
@@ -58,8 +70,12 @@ pub fn Parser::flag(
   variation_unset? : String? = None,
 ) -> Opt[Bool] {
   apply_variation_sugar(
-    variations, variation_toggle~, variation_true~, variation_false~,
-    variation_reset~, variation_unset~,
+    variations,
+    variation_toggle~,
+    variation_true~,
+    variation_false~,
+    variation_reset~,
+    variation_unset~,
   )
   // default_fn があれば default を上書き
   let initial_val = match default_fn {
@@ -68,42 +84,104 @@ pub fn Parser::flag(
   }
   let vc : ValCell[Bool] = ValCell::new(Val(initial_val))
   let pending : Ref[Bool] = { val: initial_val }
-  let reset_fn = fn() { vc.cell.val = initial_val; pending.val = initial_val }
+  let reset_fn = fn() {
+    vc.cell.val = initial_val
+    pending.val = initial_val
+  }
   let positive_match = fn() {
     pending.val = not(initial_val)
     fn() { vc.cell.val = pending.val }
   }
   let opt = self.register_option(
-    name~, aliases~, shorts~, global~, hidden~,
-    help=description, value_name="", default_display="", env_name=env,
-    kind=Flag, variations~, valcell=vc,
+    name~,
+    aliases~,
+    shorts~,
+    global~,
+    hidden~,
+    help=description,
+    value_name="",
+    default_display="",
+    env_name=env,
+    kind=Flag,
+    variations~,
+    valcell=vc,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
     make_node_for_variation=fn(vn, v) {
       match v {
         Toggle(_) =>
-          make_flag_node(vn, fn() {
-            fn() { vc.cell.val = not(vc.cell.val); vc.committed.val = true }
-          }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
+          make_flag_node(
+            vn,
+            fn() {
+              fn() {
+                vc.cell.val = not(vc.cell.val)
+                vc.committed.val = true
+              }
+            },
+            fn() {
+              vc.cell.val = initial_val
+              vc.committed.val = false
+            },
+          )
         True(_) =>
-          make_flag_node(vn, fn() {
-            fn() { vc.cell.val = true; vc.committed.val = true }
-          }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
+          make_flag_node(
+            vn,
+            fn() {
+              fn() {
+                vc.cell.val = true
+                vc.committed.val = true
+              }
+            },
+            fn() {
+              vc.cell.val = initial_val
+              vc.committed.val = false
+            },
+          )
         False(_) =>
-          make_flag_node(vn, fn() {
-            fn() { vc.cell.val = false; vc.committed.val = true }
-          }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
+          make_flag_node(
+            vn,
+            fn() {
+              fn() {
+                vc.cell.val = false
+                vc.committed.val = true
+              }
+            },
+            fn() {
+              vc.cell.val = initial_val
+              vc.committed.val = false
+            },
+          )
         Reset(_) =>
-          make_flag_node(vn, fn() {
-            fn() { vc.cell.val = initial_val; vc.committed.val = true }
-          }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
+          make_flag_node(
+            vn,
+            fn() {
+              fn() {
+                vc.cell.val = initial_val
+                vc.committed.val = true
+              }
+            },
+            fn() {
+              vc.cell.val = initial_val
+              vc.committed.val = false
+            },
+          )
         Unset(_) =>
-          make_flag_node(vn, fn() {
-            fn() { vc.cell.val = initial_val; vc.committed.val = false }
-          }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
+          make_flag_node(
+            vn,
+            fn() {
+              fn() {
+                vc.cell.val = initial_val
+                vc.committed.val = false
+              }
+            },
+            fn() {
+              vc.cell.val = initial_val
+              vc.committed.val = false
+            },
+          )
       }
     },
   )
-  register_env_applicator(self, env, vc, (raw) => {
+  register_env_applicator(self, env, vc, raw => {
     let lower = raw.to_lower()
     if lower == "true" || lower == "1" {
       true
@@ -111,7 +189,10 @@ pub fn Parser::flag(
       false
     } else {
       raise parse_error(
-        "invalid value for env " + env + ": " + raw +
+        "invalid value for env " +
+        env +
+        ": " +
+        raw +
         " (expected true/false/1/0)",
       )
     }
@@ -134,9 +215,16 @@ pub fn Parser::string(
   implicit_value? : Lazy[String]? = None,
 ) -> Opt[String] {
   self.custom(
-    name~, hidden~,
-    description~, value_name~, env~,
-    default~, default_fn~, post~, choices~, implicit_value~,
+    name~,
+    hidden~,
+    description~,
+    value_name~,
+    env~,
+    default~,
+    default_fn~,
+    post~,
+    choices~,
+    implicit_value~,
     pre=Filter::map(fn(s) { s }),
   )
 }
@@ -156,9 +244,16 @@ pub fn Parser::int(
   implicit_value? : Lazy[Int]? = None,
 ) -> Opt[Int] {
   self.custom(
-    name~, hidden~,
-    description~, value_name~, env~,
-    default~, default_fn~, post~, choices~, implicit_value~,
+    name~,
+    hidden~,
+    description~,
+    value_name~,
+    env~,
+    default~,
+    default_fn~,
+    post~,
+    choices~,
+    implicit_value~,
     pre=Filter::parse_int(),
   )
 }
@@ -178,9 +273,16 @@ pub fn Parser::float(
   implicit_value? : Lazy[Double]? = None,
 ) -> Opt[Double] {
   self.custom(
-    name~, hidden~,
-    description~, value_name~, env~,
-    default~, default_fn~, post~, choices~, implicit_value~,
+    name~,
+    hidden~,
+    description~,
+    value_name~,
+    env~,
+    default~,
+    default_fn~,
+    post~,
+    choices~,
+    implicit_value~,
     pre=Filter::parse_float(),
   )
 }
@@ -189,7 +291,7 @@ pub fn Parser::float(
 pub fn Parser::boolean(
   self : Parser,
   name~ : String,
-  default~ : Bool = false,
+  default? : Bool = false,
   default_fn? : (() -> Bool)? = None,
   description? : String = "",
   env? : String = "",
@@ -200,9 +302,16 @@ pub fn Parser::boolean(
   implicit_value? : Lazy[Bool]? = None,
 ) -> Opt[Bool] {
   self.custom(
-    name~, hidden~,
-    description~, value_name~, env~,
-    default~, default_fn~, post~, choices~, implicit_value~,
+    name~,
+    hidden~,
+    description~,
+    value_name~,
+    env~,
+    default~,
+    default_fn~,
+    post~,
+    choices~,
+    implicit_value~,
     pre=Filter::parse_bool(),
   )
 }
@@ -217,8 +326,11 @@ pub fn Parser::append_string(
   hidden? : Bool = false,
 ) -> Opt[Array[String]] {
   self.custom_append(
-    name~, hidden~,
-    description~, value_name~, env~,
+    name~,
+    hidden~,
+    description~,
+    value_name~,
+    env~,
     pre=Filter::map(fn(s) { s }),
   )
 }
@@ -233,8 +345,11 @@ pub fn Parser::append_int(
   hidden? : Bool = false,
 ) -> Opt[Array[Int]] {
   self.custom_append(
-    name~, hidden~,
-    description~, value_name~, env~,
+    name~,
+    hidden~,
+    description~,
+    value_name~,
+    env~,
     pre=Filter::parse_int(),
   )
 }
@@ -249,8 +364,11 @@ pub fn Parser::append_float(
   hidden? : Bool = false,
 ) -> Opt[Array[Double]] {
   self.custom_append(
-    name~, hidden~,
-    description~, value_name~, env~,
+    name~,
+    hidden~,
+    description~,
+    value_name~,
+    env~,
     pre=Filter::parse_float(),
   )
 }
@@ -273,44 +391,79 @@ pub fn Parser::count(
   variation_unset? : String? = None,
 ) -> Opt[Int] {
   apply_variation_sugar(
-    variations, variation_toggle~, variation_true~, variation_false~,
-    variation_reset~, variation_unset~,
+    variations,
+    variation_toggle~,
+    variation_true~,
+    variation_false~,
+    variation_reset~,
+    variation_unset~,
   )
   let vc : ValCell[Int] = ValCell::new(Val(0))
   let pending : Ref[Int] = { val: 0 }
-  let reset_fn = fn() { vc.cell.val = 0; pending.val = 0 }
+  let reset_fn = fn() {
+    vc.cell.val = 0
+    pending.val = 0
+  }
   let positive_match = fn() {
     pending.val = pending.val + 1
     fn() { vc.cell.val = pending.val }
   }
   let opt = self.register_option(
-    name~, aliases~, shorts~, global~, hidden~,
-    help=description, value_name="", default_display="", env_name=env,
-    kind=Flag, variations~, valcell=vc,
+    name~,
+    aliases~,
+    shorts~,
+    global~,
+    hidden~,
+    help=description,
+    value_name="",
+    default_display="",
+    env_name=env,
+    kind=Flag,
+    variations~,
+    valcell=vc,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
     make_node_for_variation=fn(vn, v) {
       match v {
         Reset(_) | Toggle(_) | True(_) | False(_) =>
-          make_flag_node(vn, fn() {
-            pending.val = 0
-            fn() { vc.cell.val = pending.val; vc.committed.val = true }
-          }, fn() { vc.cell.val = 0; pending.val = 0; vc.committed.val = false })
+          make_flag_node(
+            vn,
+            fn() {
+              pending.val = 0
+              fn() {
+                vc.cell.val = pending.val
+                vc.committed.val = true
+              }
+            },
+            fn() {
+              vc.cell.val = 0
+              pending.val = 0
+              vc.committed.val = false
+            },
+          )
         Unset(_) =>
-          make_flag_node(vn, fn() {
-            pending.val = 0
-            fn() { vc.cell.val = pending.val; vc.committed.val = false }
-          }, fn() { vc.cell.val = 0; pending.val = 0; vc.committed.val = false })
+          make_flag_node(
+            vn,
+            fn() {
+              pending.val = 0
+              fn() {
+                vc.cell.val = pending.val
+                vc.committed.val = false
+              }
+            },
+            fn() {
+              vc.cell.val = 0
+              pending.val = 0
+              vc.committed.val = false
+            },
+          )
       }
     },
   )
-  register_env_applicator(self, env, vc, (raw) => {
-    try {
-      @strconv.parse_int(raw)
-    } catch {
+  register_env_applicator(self, env, vc, raw => {
+    @strconv.parse_int(raw) catch {
       _ =>
         raise parse_error(
-          "invalid value for env " + env + ": " + raw +
-          " (expected integer)",
+          "invalid value for env " + env + ": " + raw + " (expected integer)",
         )
     }
   })
@@ -360,15 +513,25 @@ pub fn[T : Show] Parser::custom(
     match v {
       Reset(_) | Toggle(_) | True(_) | False(_) =>
         wrap_node_with_set(
-          make_flag_node(vn, fn() {
-            fn() { vc.cell.val = initial_val }
-          }, fn() { vc.cell.val = initial_val }),
+          make_flag_node(vn, fn() { fn() { vc.cell.val = initial_val } }, fn() {
+            vc.cell.val = initial_val
+          }),
           vc.committed,
         )
       Unset(_) =>
-        make_flag_node(vn, fn() {
-          fn() { vc.cell.val = initial_val; vc.committed.val = false }
-        }, fn() { vc.cell.val = initial_val; vc.committed.val = false })
+        make_flag_node(
+          vn,
+          fn() {
+            fn() {
+              vc.cell.val = initial_val
+              vc.committed.val = false
+            }
+          },
+          fn() {
+            vc.cell.val = initial_val
+            vc.committed.val = false
+          },
+        )
     }
   }
 
@@ -382,11 +545,19 @@ pub fn[T : Show] Parser::custom(
       if has_choices {
         for choice in choices {
           children.push(
-            make_custom_choice_value_node(opt_name, choice, pre, vc.cell, initial_val),
+            make_custom_choice_value_node(
+              opt_name,
+              choice,
+              pre,
+              vc.cell,
+              initial_val,
+            ),
           )
         }
       } else {
-        children.push(make_soft_custom_value_node(opt_name, pre, vc.cell, initial_val))
+        children.push(
+          make_soft_custom_value_node(opt_name, pre, vc.cell, initial_val),
+        )
       }
       children.push(make_implicit_flag_node(opt_name, iv, vc.cell, initial_val))
       make_or_node(opt_name, true, children)
@@ -407,11 +578,24 @@ pub fn[T : Show] Parser::custom(
     }
   }
 
-  let display_value_name = if value_name == "" { name.to_upper() } else { value_name }
+  let display_value_name = if value_name == "" {
+    name.to_upper()
+  } else {
+    value_name
+  }
   let opt = self.register_option(
-    name~, aliases~, shorts~, global~, hidden~,
-    help=effective_help, value_name=display_value_name, default_display=effective_display,
-    env_name=env, kind=ValueOpt, variations~, valcell=vc,
+    name~,
+    aliases~,
+    shorts~,
+    global~,
+    hidden~,
+    help=effective_help,
+    value_name=display_value_name,
+    default_display=effective_display,
+    env_name=env,
+    kind=ValueOpt,
+    variations~,
+    valcell=vc,
     make_main_node=make_main,
     make_node_for_variation=make_var_node,
   )
@@ -422,7 +606,11 @@ pub fn[T : Show] Parser::custom(
     let eq_on_match = fn(s : String) -> Result[() -> Unit, ParseError] {
       let r : Result[T, ParseError] = try? (pre.run)(s)
       match r {
-        Ok(v) => Ok(fn() { vc.cell.val = v; vc.committed.val = true })
+        Ok(v) =>
+          Ok(fn() {
+            vc.cell.val = v
+            vc.committed.val = true
+          })
         Err(e) => Err(e)
       }
     }
@@ -458,7 +646,7 @@ pub fn[T : Show] Parser::custom(
   } else {
     pre
   }
-  register_env_applicator(self, env, vc, (raw) => { (env_pre.run)(raw) })
+  register_env_applicator(self, env, vc, raw => (env_pre.run)(raw))
   opt
 }
 
@@ -478,11 +666,24 @@ pub fn[T] Parser::custom_append(
 ) -> Opt[Array[T]] {
   let vc : ValCell[Array[T]] = ValCell::new(Thunk(fn() { [] }))
   let reset_fn = fn() { vc.cell.val = [] }
-  let display_value_name = if value_name == "" { name.to_upper() } else { value_name }
+  let display_value_name = if value_name == "" {
+    name.to_upper()
+  } else {
+    value_name
+  }
   let opt = self.register_option(
-    name~, aliases~, shorts~, global~, hidden~,
-    help=description, value_name=display_value_name, default_display="",
-    env_name=env, kind=ValueOpt, variations~, valcell=vc,
+    name~,
+    aliases~,
+    shorts~,
+    global~,
+    hidden~,
+    help=description,
+    value_name=display_value_name,
+    default_display="",
+    env_name=env,
+    kind=ValueOpt,
+    variations~,
+    valcell=vc,
     make_main_node=fn(opt_n) {
       make_value_node(
         opt_n,
@@ -499,17 +700,37 @@ pub fn[T] Parser::custom_append(
     make_node_for_variation=fn(vn, v) {
       match v {
         Reset(_) | Toggle(_) | True(_) | False(_) =>
-          make_flag_node(vn, fn() {
-            fn() { vc.cell.val = []; vc.committed.val = true }
-          }, fn() { vc.cell.val = []; vc.committed.val = false })
+          make_flag_node(
+            vn,
+            fn() {
+              fn() {
+                vc.cell.val = []
+                vc.committed.val = true
+              }
+            },
+            fn() {
+              vc.cell.val = []
+              vc.committed.val = false
+            },
+          )
         Unset(_) =>
-          make_flag_node(vn, fn() {
-            fn() { vc.cell.val = []; vc.committed.val = false }
-          }, fn() { vc.cell.val = []; vc.committed.val = false })
+          make_flag_node(
+            vn,
+            fn() {
+              fn() {
+                vc.cell.val = []
+                vc.committed.val = false
+              }
+            },
+            fn() {
+              vc.cell.val = []
+              vc.committed.val = false
+            },
+          )
       }
     },
   )
-  register_env_applicator(self, env, vc, (raw) => {
+  register_env_applicator(self, env, vc, raw => {
     let arr : Array[T] = []
     for part in raw.split(",") {
       arr.push((pre.run)(part.to_string()))

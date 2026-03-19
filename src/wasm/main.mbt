@@ -119,18 +119,18 @@ fn parse_string_post(
 ///|
 /// Check if an opts array contains a "dashdash" kind entry.
 fn has_dashdash_opt(opts : Array[Json]) -> Bool {
-  opts.iter().any(
-    fn(j) {
-      match j {
-        Object(o) =>
-          match o.get("kind") {
-            Some(String("dashdash")) => true
-            _ => false
-          }
-        _ => false
-      }
-    },
-  )
+  opts
+  .iter()
+  .any(fn(j) {
+    match j {
+      Object(o) =>
+        match o.get("kind") {
+          Some(String("dashdash")) => true
+          _ => false
+        }
+      _ => false
+    }
+  })
 }
 
 ///|
@@ -280,17 +280,15 @@ fn build_parser(
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
             }
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(v) => Json::boolean(v)
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(v) => Json::boolean(v)
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "string" => {
             let default_val = match obj.get("default") {
@@ -310,9 +308,8 @@ fn build_parser(
               }
               _ => []
             }
-            let implicit_value : @core.Lazy[String]? = match obj.get(
-              "implicit_value",
-            ) {
+            let implicit_value : @core.Lazy[String]? = match
+              obj.get("implicit_value") {
               Some(String(s)) => Some(@core.Val(s))
               _ => None
             }
@@ -336,26 +333,23 @@ fn build_parser(
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
             }
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(v) => Json::string(v)
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(v) => Json::string(v)
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "int" => {
             let default_val = match obj.get("default") {
               Some(Number(n, ..)) => n.to_int()
               _ => 0
             }
-            let implicit_value : @core.Lazy[Int]? = match obj.get(
-              "implicit_value",
-            ) {
+            let implicit_value : @core.Lazy[Int]? = match
+              obj.get("implicit_value") {
               Some(Number(n, ..)) => Some(@core.Val(n.to_int()))
               _ => None
             }
@@ -378,26 +372,23 @@ fn build_parser(
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
             }
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(v) => Json::number(v.to_double())
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(v) => Json::number(v.to_double())
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "float" => {
             let default_val = match obj.get("default") {
               Some(Number(n, ..)) => n
               _ => 0.0
             }
-            let implicit_value : @core.Lazy[Double]? = match obj.get(
-              "implicit_value",
-            ) {
+            let implicit_value : @core.Lazy[Double]? = match
+              obj.get("implicit_value") {
               Some(Number(n, ..)) => Some(@core.Val(n))
               _ => None
             }
@@ -420,26 +411,23 @@ fn build_parser(
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
             }
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(v) => Json::number(v)
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(v) => Json::number(v)
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "boolean" => {
             let default_val = match obj.get("default") {
               Some(True) => true
               _ => false
             }
-            let implicit_value : @core.Lazy[Bool]? = match obj.get(
-              "implicit_value",
-            ) {
+            let implicit_value : @core.Lazy[Bool]? = match
+              obj.get("implicit_value") {
               Some(True) => Some(@core.Val(true))
               Some(False) => Some(@core.Val(false))
               _ => None
@@ -461,17 +449,15 @@ fn build_parser(
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
             }
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(v) => Json::boolean(v)
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(v) => Json::boolean(v)
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "count" => {
             let opt = parser.count(
@@ -488,17 +474,15 @@ fn build_parser(
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
             }
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(v) => Json::number(v.to_double())
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(v) => Json::number(v.to_double())
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "append_string" => {
             let opt = parser.custom_append(
@@ -516,18 +500,16 @@ fn build_parser(
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
             }
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(arr) =>
-                      Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(arr) =>
+                    Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "append_int" => {
             let opt = parser.custom_append(
@@ -545,20 +527,18 @@ fn build_parser(
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
             }
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(arr) =>
-                      Json::array(
-                        arr.map(fn(n) -> Json { Json::number(n.to_double()) }),
-                      )
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(arr) =>
+                    Json::array(
+                      arr.map(fn(n) -> Json { Json::number(n.to_double()) }),
+                    )
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "append_float" => {
             let opt = parser.custom_append(
@@ -576,64 +556,56 @@ fn build_parser(
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
             }
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(arr) =>
-                      Json::array(arr.map(fn(n) -> Json { Json::number(n) }))
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(arr) =>
+                    Json::array(arr.map(fn(n) -> Json { Json::number(n) }))
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "positional" => {
             let opt = parser.positional(name~, description~)
             opt_refs[name] = opt.as_ref()
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(v) => Json::string(v)
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(v) => Json::string(v)
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "rest" => {
             let opt = parser.rest(name~, description~)
             opt_refs[name] = opt.as_ref()
-            entries.push(
-              OptEntry::{
-                name,
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(arr) =>
-                      Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name,
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(arr) =>
+                    Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "dashdash" => {
             let opt = parser.dashdash()
-            entries.push(
-              OptEntry::{
-                name: "--",
-                extract: fn() -> Json {
-                  match opt.get() {
-                    Some(arr) =>
-                      Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
-                    None => Json::null()
-                  }
-                },
+            entries.push(OptEntry::{
+              name: "--",
+              extract: fn() -> Json {
+                match opt.get() {
+                  Some(arr) =>
+                    Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
+                  None => Json::null()
+                }
               },
-            )
+            })
           }
           "serial" => {
             let child_opts : Array[Json] = match obj.get("opts") {
@@ -645,71 +617,62 @@ fn build_parser(
             let serial_entries : Array[OptEntry] = []
             let serial_opt_refs : Map[String, @core.OptRef] = {}
             let serial_child_opts = child_opts
-            parser.serial(
-              setup=fn(sub) {
-                for sub_opt_json in serial_child_opts {
-                  match sub_opt_json {
-                    Object(sub_obj) => {
-                      let sub_kind = match sub_obj.get("kind") {
-                        Some(String(s)) => s
-                        _ => ""
-                      }
-                      let sub_name = match sub_obj.get("name") {
-                        Some(String(s)) => s
-                        _ => ""
-                      }
-                      let sub_desc = match sub_obj.get("description") {
-                        Some(String(s)) => s
-                        _ => ""
-                      }
-                      match sub_kind {
-                        "positional" => {
-                          let opt = sub.positional(
-                            name=sub_name, description=sub_desc,
-                          )
-                          serial_opt_refs[sub_name] = opt.as_ref()
-                          serial_entries.push(
-                            OptEntry::{
-                              name: sub_name,
-                              extract: fn() -> Json {
-                                match opt.get() {
-                                  Some(v) => Json::string(v)
-                                  None => Json::null()
-                                }
-                              },
-                            },
-                          )
-                        }
-                        "rest" => {
-                          let opt = sub.rest(
-                            name=sub_name, description=sub_desc,
-                          )
-                          serial_opt_refs[sub_name] = opt.as_ref()
-                          serial_entries.push(
-                            OptEntry::{
-                              name: sub_name,
-                              extract: fn() -> Json {
-                                match opt.get() {
-                                  Some(arr) =>
-                                    Json::array(
-                                      arr.map(fn(s) -> Json {
-                                        Json::string(s)
-                                      }),
-                                    )
-                                  None => Json::null()
-                                }
-                              },
-                            },
-                          )
-                        }
-                        _ => () // serial only supports positional and rest
-                      }
+            parser.serial(setup=fn(sub) {
+              for sub_opt_json in serial_child_opts {
+                match sub_opt_json {
+                  Object(sub_obj) => {
+                    let sub_kind = match sub_obj.get("kind") {
+                      Some(String(s)) => s
+                      _ => ""
                     }
-                    _ => ()
+                    let sub_name = match sub_obj.get("name") {
+                      Some(String(s)) => s
+                      _ => ""
+                    }
+                    let sub_desc = match sub_obj.get("description") {
+                      Some(String(s)) => s
+                      _ => ""
+                    }
+                    match sub_kind {
+                      "positional" => {
+                        let opt = sub.positional(
+                          name=sub_name,
+                          description=sub_desc,
+                        )
+                        serial_opt_refs[sub_name] = opt.as_ref()
+                        serial_entries.push(OptEntry::{
+                          name: sub_name,
+                          extract: fn() -> Json {
+                            match opt.get() {
+                              Some(v) => Json::string(v)
+                              None => Json::null()
+                            }
+                          },
+                        })
+                      }
+                      "rest" => {
+                        let opt = sub.rest(name=sub_name, description=sub_desc)
+                        serial_opt_refs[sub_name] = opt.as_ref()
+                        serial_entries.push(OptEntry::{
+                          name: sub_name,
+                          extract: fn() -> Json {
+                            match opt.get() {
+                              Some(arr) =>
+                                Json::array(
+                                  arr.map(fn(s) -> Json { Json::string(s) }),
+                                )
+                              None => Json::null()
+                            }
+                          },
+                        })
+                      }
+                      _ => () // serial only supports positional and rest
+                    }
                   }
+                  _ => ()
                 }
-              },
-            )
+              }
+            })
             // Add serial entries to parent
             for entry in serial_entries {
               entries.push(entry)
@@ -729,7 +692,10 @@ fn build_parser(
             }
             let child_dashdash = not(has_dashdash_opt(child_opts))
             let child_parser = parser.sub(
-              name~, description~, aliases~, dashdash=child_dashdash,
+              name~,
+              description~,
+              aliases~,
+              dashdash=child_dashdash,
             )
             if child_desc != "" {
               child_parser.set_description(child_desc)
@@ -742,7 +708,8 @@ fn build_parser(
             if require_cmd {
               child_parser.require_cmd()
             }
-            let child_result = match build_parser(child_parser, child_opts, obj) {
+            let child_result = match
+              build_parser(child_parser, child_opts, obj) {
               Ok(s) => s
               Err(e) => return Err(e)
             }
@@ -926,13 +893,10 @@ fn extract_values(
 /// Uses wasm-gc + js-builtin-string for direct String interop.
 pub fn kuu_parse(input : String) -> String {
   // Parse input JSON
-  let parse_json_result : Result[Json, _] = try? (
-    @json.parse(input.view())
-  )
+  let parse_json_result : Result[Json, _] = try? @json.parse(input.view())
   let json : Json = match parse_json_result {
     Ok(j) => j
-    Err(_) =>
-      return make_error_json("invalid input JSON", "")
+    Err(_) => return make_error_json("invalid input JSON", "")
   }
   let obj = match json {
     Object(o) => o
@@ -950,8 +914,7 @@ pub fn kuu_parse(input : String) -> String {
       }
     }
     None => () // omitted: treat as version 1 (backward compat)
-    _ =>
-      return make_error_json("'version' must be a number", "")
+    _ => return make_error_json("'version' must be a number", "")
   }
   // Extract args
   let args : Array[String] = match obj.get("args") {
@@ -1006,7 +969,8 @@ pub fn kuu_parse(input : String) -> String {
   }
   // Parse
   let result : Result[@core.ParseResult, @core.ParseError] = try? parser.parse(
-    args, env=env_map,
+    args,
+    env=env_map,
   )
   match result {
     Ok(parse_result) => {
@@ -1031,8 +995,7 @@ pub fn kuu_parse(input : String) -> String {
       }
     }
     Err(@core.HelpRequested(text)) => make_help_json(text)
-    Err(@core.ParseError(info)) =>
-      make_error_json(info.message, info.help_text)
+    Err(@core.ParseError(info)) => make_error_json(info.message, info.help_text)
   }
 }
 

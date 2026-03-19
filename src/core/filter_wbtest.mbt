@@ -202,10 +202,7 @@ test "one_of — error message uses join format" {
   let result : Result[String, _] = try? (chain.run)("yellow")
   match result {
     Err(ParseError(info)) =>
-      inspect(
-        info.message,
-        content="value must be one of: red, green, blue",
-      )
+      inspect(info.message, content="value must be one of: red, green, blue")
     _ => abort("expected ParseError")
   }
 }

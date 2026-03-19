@@ -367,15 +367,7 @@ pub fn Filter::non_negative() -> FilterChain[Int, Int] {
 /// Clamp Int to [min, max] range (transformation, not validation).
 /// Requires min <= max; behavior is undefined otherwise.
 pub fn Filter::clamp(min : Int, max : Int) -> FilterChain[Int, Int] {
-  Filter::map(fn(v) {
-    if v < min {
-      min
-    } else if v > max {
-      max
-    } else {
-      v
-    }
-  })
+  Filter::map(fn(v) { if v < min { min } else if v > max { max } else { v } })
 }
 
 // --- Regex filters ---
@@ -400,7 +392,9 @@ pub fn Filter::regex_replace(
   replacement : String,
 ) -> FilterChain[String, String] {
   let regex = @string.Regex::unsafe_from_string(pattern)
-  Filter::map(fn(s) { regex.replace_by(s[:], fn(_m) { replacement[:] }).to_string() })
+  Filter::map(fn(s) {
+    regex.replace_by(s[:], fn(_m) { replacement[:] }).to_string()
+  })
 }
 
 ///|
