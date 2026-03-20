@@ -54,6 +54,8 @@
 | DR-057 | kuu-cli 言語非依存の独立コマンド構想 | vision | active |
 | DR-058 | 構造化エラー表示 (clap v4 準拠4層フォーマット) | implementation | draft |
 | DR-059 | kuu-cli Native CLI 実装 | decision | draft |
+| DR-060 | 20260320 MoonBit Example レビュー知見 | review | active |
+| DR-061 | コンビネータの合成的分解設計 | decision | active |
 
 ### Superseded の経緯
 
