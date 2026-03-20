@@ -52,6 +52,8 @@
 | DR-055 | register_option の option/long/short 分解 | decision | active |
 | DR-056 | WASM bridge 機能ギャップ解消 | implementation | active |
 | DR-057 | kuu-cli 言語非依存の独立コマンド構想 | vision | active |
+| DR-058 | 構造化エラー表示 (clap v4 準拠4層フォーマット) | implementation | draft |
+| DR-059 | kuu-cli Native CLI 実装 | decision | draft |
 
 ### Superseded の経緯
 
