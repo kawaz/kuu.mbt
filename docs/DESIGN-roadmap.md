@@ -10,12 +10,17 @@
 
 以下は設計案として記載されていたが、既に実装が完了した項目。
 
-### 環境変数連携 Phase 2 基本機能（DR-041）
+### 環境変数連携 Phase 1〜3（DR-041）
 
 - Phase 1（ヘルプ表示用 `env` メタデータ）: 実装済み
 - Phase 2 基本（`Parser::parse(args, env~)` による環境変数フォールバック）: 実装済み
   - `env_map` + `env_applicators` による CLI > env > default の優先度
   - サブコマンドへの `env_map` 伝搬
+- Phase 3 `env_prefix`: 実装済み
+  - `Parser::env_prefix(prefix)` — コマンドのプレフィックスと env を結合（例: `MYAPP` + `PORT` → `MYAPP_PORT`）
+  - サブコマンドの自動ネスト（`MYAPP` → `MYAPP_SERVE` → `MYAPP_SERVE_DB`）
+  - ヘルプ表示に `[env: MYAPP_PORT]` 形式で反映
+  - WASM bridge 対応済み（JSON スキーマの `"env_prefix"` フィールド）
 
 ### ErrorKind 構造化エラー（DR-052）
 
@@ -109,18 +114,16 @@ GitHub Actions ワークフロー（`.github/workflows/ci.yml`）を整備:
 
 ## 短期（次に実装する可能性が高いもの）
 
-### 環境変数連携 Phase 3（DR-041 拡張）
+### 環境変数連携 Phase 4（DR-041 拡張）
 
-Phase 2 基本（env~ パラメータによるフォールバック）は実装済み。残り:
+Phase 1〜3（env メタデータ、env~ フォールバック、env_prefix）は実装済み。残り:
 
-- `env_prefix` — コマンドのプレフィックスと env を結合（例: `MYAPP_PORT`）
-- `auto_env` — 全フラグを自動バインド（デフォルト無効）
-- Opt レベルの `auto_env : Bool?` で個別制御
-- サブコマンドのプレフィックスネスト（`MYAPP_SERVE_PORT`）
+- `auto_env` — 全オプションの `--name` を自動で `PREFIX_NAME` 環境変数にバインド（デフォルト無効）
+- Opt レベルの `auto_env : Bool?` で個別制御（auto_env 有効時に特定 opt を除外、または無効時に特定 opt のみ有効化）
 
 優先順位: CLI > 環境変数 > 設定ファイル > initial
 
-**ブロッカー**: 設計検討（env_prefix のスコーピングルール等）
+**ブロッカー**: 設計検討（auto_env の命名規則、hidden/advanced opt との連動等）
 
 ### エラーメッセージ品質向上
 
@@ -741,7 +744,7 @@ struct Config {
 | PreProcess | @file 展開等 | 未実装 | @file 設計 |
 | Reduce | 消費ループ | 実装済み（parse_raw） | — |
 | Validate | exclusive, requires 等 | post_hooks で実装済み | — |
-| Finalize | デフォルト適用・環境変数連携 | 実装済み（env_applicators + post_hooks） | env Phase 3 拡張 |
+| Finalize | デフォルト適用・環境変数連携 | 実装済み（env_applicators + post_hooks + env_prefix） | auto_env 拡張 |
 | Output | ヘルプ・補完・エラー表示 | 基本実装済み | ヘルプ拡張・補完生成 |
 
 post_hooks が将来の Validate/Finalize フェーズの実質基盤として機能する。

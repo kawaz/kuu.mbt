@@ -66,6 +66,7 @@ pub(all) struct Parser {
   deprecated_usages : Array[(String, String)]  // deprecated 使用記録（name, msg）
   env_applicators : Array[(Map[String, String]) -> Unit raise ParseError]  // 環境変数適用クロージャ
   env_map : Ref[Map[String, String]]  // 環境変数マップ（parse 時に注入）
+  env_prefix : Ref[String]           // 環境変数プレフィックス（例: "MYAPP"）。子パーサに自動ネスト伝搬
 }
 ```
 

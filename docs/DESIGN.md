@@ -117,6 +117,24 @@ p.requires(target_opt, source~=dep_opt)     // 依存: target 使用時に sourc
 
 全て post_hooks として実装。専用のフックパイプライン基盤は YAGNI。
 
+### 環境変数連携（DR-041）
+
+各コンビネータの `env~` パラメータで環境変数名を指定し、`Parser::parse(args, env~)` で環境変数マップを渡す。優先順位は CLI > 環境変数 > default:
+
+```moonbit
+let p = Parser::new()
+p.env_prefix("MYAPP")  // プレフィックス設定
+let port = p.int(name="port", default=8080, env="PORT")
+
+// env_prefix により MYAPP_PORT を参照
+let result = try? p.parse(args, env={"MYAPP_PORT": "3000"})
+port.get()  // Some(3000)
+```
+
+- `Parser::env_prefix(prefix)` — 環境変数名にプレフィックスを付加。`env="PORT"` → `MYAPP_PORT` として参照
+- サブコマンドの自動ネスト — `MYAPP` → `MYAPP_SERVE` → `MYAPP_SERVE_DB`（サブコマンド名を大文字化して連結）
+- ヘルプ表示に `[env: MYAPP_PORT]` 形式で反映（プレフィックス付き）
+
 ### 値の取得
 
 ```moonbit
@@ -477,7 +495,7 @@ ValCell[T] が値（cell）と状態（committed）とデフォルト値（defau
 src/
   core/              # 全パース機能
     types.mbt         #   型定義（Opt, Parser, ExactNode, TryResult, OptMeta, Variation, Lazy, ReduceCtx, FilterChain 等）
-    parser.mbt        #   Parser::new, register_option, make_alias, deprecated, clone, link, adjust, expand_and_register
+    parser.mbt        #   Parser::new, register_option, make_alias, deprecated, clone, link, adjust, expand_and_register, env_prefix
     options.mbt       #   custom, custom_append, flag, string, int, float, boolean, count, file, append_string, append_int, append_float
     nodes.mbt         #   make_flag_node, make_value_node, make_or_node, make_soft_custom_value_node 等
     commands.mbt      #   cmd, sub
