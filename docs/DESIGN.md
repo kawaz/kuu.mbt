@@ -486,10 +486,12 @@ src/
     constraints.mbt   #   exclusive, required, require_cmd, at_least_one, requires
     access.mbt        #   Opt::get, Parser::get, deprecated_warnings, ParseResult アクセサ
     parse.mbt         #   parse_raw（OC/P 2フェーズ）, install_* ノード, validate_no_duplicate_names
-    help.mbt          #   generate_help, inject_help_node
+    help.mbt          #   generate_help, inject_help_node, help_header, help_footer
     filter.mbt        #   FilterChain, Filter::*, make_reducer, Accumulator, 組み込みフィルタ
   dx/                # struct-first DX 層（Parseable trait + FieldRegistry + parse_into）
   wasm/              # WASM bridge PoC（JSON schema → kuu core → JSON result）
+  contrib/
+    timespec/        # kawaz/timespec 連携フィルタ（parse_duration, parse_timespec, parse_timespec_optional）
 ```
 
 ---

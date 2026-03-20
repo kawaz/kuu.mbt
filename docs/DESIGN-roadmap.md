@@ -81,6 +81,24 @@ DR-051 で指摘された4件の未対応機能を実装:
 --fields "-name"         → base - [name]（除外）
 ```
 
+### ヘルプ生成 Level 1（header/footer フック）
+
+`Parser::help_header(text)`, `Parser::help_footer(text)` メソッドでヘルプ出力の先頭・末尾にカスタムテキストを挿入可能:
+
+- **Level 0**: 自動生成（従来の実装）
+- **Level 1**: 部分フック（header/footer のカスタマイズ）← 実装済み
+- Level 2（全面差し替え）は未実装
+
+### timespec 連携フィルタ（contrib/timespec）
+
+`kuu/contrib/timespec/` パッケージとして実装。`kawaz/timespec` を依存に持ち、FilterChain パイプラインと統合:
+
+- `parse_duration` — `FilterChain[String, @timespec.Duration]`
+- `parse_timespec` — `FilterChain[String, @timespec.TimeSpec]`
+- `parse_timespec_optional` — `FilterChain[String, @timespec.TimeSpec]`（空文字列許容）
+
+contrib パッケージ方式を採用し、core の依存を最小に保つ（推奨方式通り）。
+
 ### CI/CD
 
 GitHub Actions ワークフロー（`.github/workflows/ci.yml`）を整備:
@@ -145,42 +163,11 @@ sub_parser_combinator(
 
 **調査の結論**: 現時点では優先度低。API 安定化後に検討。
 
-### kawaz/timespec 連携 — 時間系フィルタの組み込み
+### kawaz/timespec 連携 — 追加構想
 
-[kawaz/timespec.mbt](https://github.com/kawaz/timespec.mbt) は CLI 用途に特化した時間指定パーサ。kuu の FilterChain パイプラインと高い親和性がある。
+基本的な FilterChain 統合は contrib/timespec パッケージとして実装済み（→ 実装済みセクション参照）。残りの構想:
 
-#### 連携方式
-
-**1. FilterChain 組み込みフィルタ**:
-
-```moonbit
-// kuu/contrib/timespec/ または kuu core の optional dependency として
-let parse_duration_filter : FilterChain[String, @timespec.Duration] =
-  Filter::parse(fn(s) { @timespec.parse_duration(s)! })
-
-let parse_timespec_filter : FilterChain[String, @timespec.TimeSpec] =
-  Filter::parse(fn(s) { @timespec.parse_timespec(s, default_sign=Minus)! })
-```
-
-**2. custom[T] コンビネータでの利用**:
-
-```moonbit
-// --since 5m / --since "2026-03-15T12:00:00Z" / --since "3 hours ago"
-let since = p.custom(
-  name="since",
-  pre=Filter::parse(fn(s) { @timespec.parse_timespec(s, default_sign=Minus)! }),
-  default=@timespec.TimeSpec::Relative(@timespec.EpochTime(0L), @timespec.Duration(0L)),
-)
-
-// --timeout 30s / --timeout 1m30s
-let timeout = p.custom(
-  name="timeout",
-  pre=Filter::parse(fn(s) { @timespec.parse_duration(s)! }),
-  default=@timespec.Duration(30_000L),
-)
-```
-
-**3. TimeRange の2引数パターン（post_hooks 活用）**:
+**TimeRange の2引数パターン（post_hooks 活用）**:
 
 ```moonbit
 let since = p.string(name="since", default="")
@@ -188,32 +175,21 @@ let until = p.string(name="until", default="")
 // post_hook で parse_range に渡し、バリデーション + アンカー解決
 ```
 
-**4. WASM bridge プリセットフィルタ候補**:
+**WASM bridge プリセットフィルタ候補**:
 
 JSON スキーマに `"parse_duration"`, `"parse_timespec"` を追加し、多言語からも利用可能にする。
 
-**ブロッカー**: timespec の mooncakes.io パッケージ公開（`moon add kawaz/timespec` を可能にする）
-
-#### 提供形態の検討
-
-| 方式 | メリット | デメリット |
-|------|---------|-----------|
-| core に組み込み | ゼロコスト利用 | core の依存が増える。dx → core 一方向依存の原則に反する |
-| contrib パッケージ | 依存を選択可能 | ユーザーが追加で `moon add` する手間 |
-| example/recipe として提供 | core に影響なし | コピペが必要 |
-
-**推奨**: contrib パッケージ（`kawaz/kuu-timespec`）または kuu ドキュメントの cookbook セクション。core の依存は最小に保つ。
+**ブロッカー**: なし（個別に追加可能）
 
 ---
 
 ## 中期
 
-### ヘルプ生成の拡張
+### ヘルプ生成の拡張（Level 2）
 
-3段階カスタマイズ:
-- **Level 0**: 自動生成（現在の実装）
-- **Level 1**: 部分フック（セクション単位のカスタマイズ）
-- **Level 2**: 全面差し替え（テンプレート方式）
+Level 0（自動生成）と Level 1（header/footer フック）は実装済み。残り:
+
+- **Level 2**: 全面差し替え（テンプレート方式）— セクションごとのカスタムレンダラーや完全なテンプレートエンジン方式
 
 **ブロッカー**: なし
 
@@ -230,7 +206,7 @@ struct CompletionCandidate {
 
 3段階カスタマイズ + シェル別出力形式（bash/zsh/fish）。
 
-**ブロッカー**: ヘルプ生成拡張（Level 1 以上）が先にあると設計の見通しが良い
+**ブロッカー**: なし（ヘルプ生成 Level 1 は実装済み。設計の見通しは確保された）
 
 ### defaults マルチソースマージ
 

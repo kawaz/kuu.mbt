@@ -883,4 +883,310 @@ function test(label, input) {
   strictEqual(r.tip, undefined);
 }
 
+// === clone tests ===
+
+// Test 64: clone basic - clone_port gets same parse behavior as port but independent value
+{
+  const r = test("Clone basic", {
+    opts: [
+      { kind: "int", name: "port", default: 8080 },
+      { kind: "clone", name: "clone_port", clone_of: "port" },
+    ],
+    args: ["--port", "3000", "--clone_port", "9090"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.port, 3000);
+  strictEqual(r.values.clone_port, 9090);
+}
+
+// Test 65: clone uses target default when not specified
+{
+  const r = test("Clone default", {
+    opts: [
+      { kind: "int", name: "port", default: 8080 },
+      { kind: "clone", name: "clone_port", clone_of: "port" },
+    ],
+    args: ["--port", "3000"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.port, 3000);
+  strictEqual(r.values.clone_port, 8080);
+}
+
+// Test 66: clone of string opt
+{
+  const r = test("Clone string", {
+    opts: [
+      { kind: "string", name: "host", default: "localhost" },
+      { kind: "clone", name: "alt_host", clone_of: "host" },
+    ],
+    args: ["--alt_host", "example.com"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.host, "localhost");
+  strictEqual(r.values.alt_host, "example.com");
+}
+
+// Test 67: clone of flag
+{
+  const r = test("Clone flag", {
+    opts: [
+      { kind: "flag", name: "verbose" },
+      { kind: "clone", name: "debug_verbose", clone_of: "verbose" },
+    ],
+    args: ["--debug_verbose"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbose, false);
+  strictEqual(r.values.debug_verbose, true);
+}
+
+// Test 68: clone target not found
+{
+  const r = test("Clone target not found", {
+    opts: [
+      { kind: "clone", name: "orphan", clone_of: "nonexistent" },
+    ],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "clone target not found: nonexistent");
+}
+
+// === link tests ===
+
+// Test 69: link basic - source value copied to target when source is set
+{
+  const r = test("Link basic", {
+    opts: [
+      { kind: "int", name: "verbose_level", default: 0 },
+      { kind: "int", name: "debug_level", default: 0 },
+    ],
+    links: [{ source: "verbose_level", target: "debug_level" }],
+    args: ["--verbose_level", "3"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbose_level, 3);
+  strictEqual(r.values.debug_level, 3);
+}
+
+// Test 70: link not triggered when source unset
+{
+  const r = test("Link source unset", {
+    opts: [
+      { kind: "int", name: "verbose_level", default: 0 },
+      { kind: "int", name: "debug_level", default: 5 },
+    ],
+    links: [{ source: "verbose_level", target: "debug_level" }],
+    args: [],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.verbose_level, 0);
+  strictEqual(r.values.debug_level, 5);
+}
+
+// Test 71: link with propagate_set
+{
+  const r = test("Link propagate_set", {
+    opts: [
+      { kind: "string", name: "src", default: "" },
+      { kind: "string", name: "dst", default: "" },
+    ],
+    links: [{ source: "src", target: "dst", propagate_set: true }],
+    required: ["dst"],
+    args: ["--src", "hello"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.src, "hello");
+  strictEqual(r.values.dst, "hello");
+}
+
+// Test 72: link without propagate_set does not satisfy required
+{
+  const r = test("Link no propagate_set required fails", {
+    opts: [
+      { kind: "string", name: "src", default: "" },
+      { kind: "string", name: "dst", default: "" },
+    ],
+    links: [{ source: "src", target: "dst" }],
+    required: ["dst"],
+    args: ["--src", "hello"],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.kind, "MissingRequired");
+}
+
+// Test 73: link source not found error
+{
+  const r = test("Link source not found", {
+    opts: [
+      { kind: "string", name: "dst", default: "" },
+    ],
+    links: [{ source: "nonexistent", target: "dst" }],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "link source not found: nonexistent");
+}
+
+// Test 74: link target not found error
+{
+  const r = test("Link target not found", {
+    opts: [
+      { kind: "string", name: "src", default: "" },
+    ],
+    links: [{ source: "src", target: "nonexistent" }],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "link target not found: nonexistent");
+}
+
+// Test 75: link type mismatch error (int -> string)
+{
+  const r = test("Link type mismatch", {
+    opts: [
+      { kind: "int", name: "count", default: 0 },
+      { kind: "string", name: "name", default: "" },
+    ],
+    links: [{ source: "count", target: "name" }],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "link type mismatch: count and name must be the same type");
+}
+
+// === adjust tests ===
+
+// Test 76: adjust with in_range filter on int
+{
+  const r = test("Adjust in_range", {
+    opts: [
+      { kind: "int", name: "port", default: 8080 },
+    ],
+    adjusts: [{ target: "port", filter: { in_range: [1, 65535] } }],
+    args: ["--port", "3000"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.port, 3000);
+}
+
+// Test 77: adjust in_range error
+{
+  const r = test("Adjust in_range error", {
+    opts: [
+      { kind: "int", name: "port", default: 8080 },
+    ],
+    adjusts: [{ target: "port", filter: { in_range: [1, 65535] } }],
+    args: ["--port", "0"],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.kind, "InvalidValue");
+}
+
+// Test 78: adjust with clamp filter on int
+{
+  const r = test("Adjust clamp", {
+    opts: [
+      { kind: "int", name: "port", default: 8080 },
+    ],
+    adjusts: [{ target: "port", filter: { clamp: [1, 65535] } }],
+    args: ["--port", "0"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.port, 1);
+}
+
+// Test 79: adjust with trim filter on string
+{
+  const r = test("Adjust trim", {
+    opts: [
+      { kind: "string", name: "name", default: "" },
+    ],
+    adjusts: [{ target: "name", filter: "trim" }],
+    args: ["--name", "  hello  "],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.name, "hello");
+}
+
+// Test 80: adjust with non_empty filter on string
+{
+  const r = test("Adjust non_empty", {
+    opts: [
+      { kind: "string", name: "name", default: "" },
+    ],
+    adjusts: [{ target: "name", filter: "non_empty" }],
+    args: ["--name", ""],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.kind, "InvalidValue");
+}
+
+// Test 81: adjust with float_in_range filter
+{
+  const r = test("Adjust float_in_range", {
+    opts: [
+      { kind: "float", name: "rate", default: 0.5 },
+    ],
+    adjusts: [{ target: "rate", filter: { float_in_range: [0.0, 1.0] } }],
+    args: ["--rate", "0.7"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.rate, 0.7);
+}
+
+// Test 82: adjust target not found
+{
+  const r = test("Adjust target not found", {
+    opts: [
+      { kind: "int", name: "port", default: 8080 },
+    ],
+    adjusts: [{ target: "nonexistent", filter: { in_range: [1, 65535] } }],
+    args: [],
+  });
+  strictEqual(r.ok, false);
+  strictEqual(r.error, "adjust target not found: nonexistent");
+}
+
+// Test 83: adjust not applied when target unset
+{
+  const r = test("Adjust unset not applied", {
+    opts: [
+      { kind: "int", name: "port", default: 0 },
+    ],
+    adjusts: [{ target: "port", filter: { in_range: [1, 65535] } }],
+    args: [],
+  });
+  strictEqual(r.ok, true);
+  // adjust is only applied when target is_set, so default=0 passes through unchanged
+  strictEqual(r.values.port, 0);
+}
+
+// Test 84: adjust with to_lower filter on string
+{
+  const r = test("Adjust to_lower", {
+    opts: [
+      { kind: "string", name: "mode", default: "" },
+    ],
+    adjusts: [{ target: "mode", filter: "to_lower" }],
+    args: ["--mode", "DEBUG"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.mode, "debug");
+}
+
+// Test 85: adjust with to_upper filter on string
+{
+  const r = test("Adjust to_upper", {
+    opts: [
+      { kind: "string", name: "mode", default: "" },
+    ],
+    adjusts: [{ target: "mode", filter: "to_upper" }],
+    args: ["--mode", "debug"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.mode, "DEBUG");
+}
+
 console.log("\n--- All tests passed ---");

@@ -18,7 +18,8 @@
 ///     { "kind": "dashdash" },
 ///     { "kind": "command", "name": "serve", "description": "...", "opts": [...] },
 ///     { "kind": "serial", "opts": [...] },
-///     { "kind": "deprecated", "name": "--old", "target": "host", "msg": "Use --host" }
+///     { "kind": "deprecated", "name": "--old", "target": "host", "msg": "Use --host" },
+///     { "kind": "clone", "name": "alt_host", "clone_of": "host" }
 ///   ],
 ///   "args": ["--verbose", "--host", "example.com", "file.txt"],
 ///   "env": { "VERBOSE": "1", "HOST": "fallback.example.com" },
@@ -27,7 +28,9 @@
 ///   "exclusive": [["shared", "static"]],
 ///   "required": ["filename"],
 ///   "at_least_one": [["json", "csv"]],
-///   "requires": [{ "source": "key_file", "target": "output" }]
+///   "requires": [{ "source": "key_file", "target": "output" }],
+///   "links": [{ "source": "verbose", "target": "debug", "propagate_set": true }],
+///   "adjusts": [{ "target": "port", "filter": { "in_range": [1, 65535] } }]
 /// }
 ///
 /// Output JSON format (success):
@@ -60,6 +63,22 @@
 struct OptEntry {
   name : String
   extract : () -> Json // produces the JSON value after parse
+}
+
+///|
+/// Type-erased opt handle for clone/link/adjust operations.
+/// Stores closures that capture the typed Opt[T] to enable cross-opt
+/// operations without exposing generic type parameters.
+struct OptHandle {
+  // clone: create a new opt with same parse behavior but independent value
+  clone_fn : (String) -> (OptEntry, @core.OptRef)
+  // link_as_target: register link from named source to this opt.
+  // Captures the target Opt[T], looks up source from typed maps.
+  // (source_name, propagate_set) -> Result
+  link_as_target_fn : (String, Bool) -> Result[Unit, String]
+  // adjust: register post-parse filter on this opt.
+  // Takes filter spec (String or Object) and returns Err on invalid filter.
+  adjust_fn : (Json) -> Result[Unit, String]
 }
 
 ///|
@@ -136,11 +155,25 @@ fn has_dashdash_opt(opts : Array[Json]) -> Bool {
 }
 
 ///|
-/// Parse a post filter for Int from JSON.
-fn parse_int_post(obj : Map[String, Json]) -> @core.FilterChain[Int, Int]? {
-  match obj.get("post") {
-    Some(Object(post_obj)) =>
-      match post_obj.get("in_range") {
+/// Parse a string filter from JSON spec.
+/// Supports: "trim", "non_empty", "to_lower", "to_upper"
+fn parse_string_filter(filter : Json) -> @core.FilterChain[String, String]? {
+  match filter {
+    String("trim") => Some(@core.Filter::trim())
+    String("non_empty") => Some(@core.Filter::non_empty())
+    String("to_lower") => Some(@core.Filter::to_lower())
+    String("to_upper") => Some(@core.Filter::to_upper())
+    _ => None
+  }
+}
+
+///|
+/// Parse an int filter from JSON spec.
+/// Supports: { "in_range": [min, max] }, { "clamp": [min, max] }
+fn parse_int_filter(filter : Json) -> @core.FilterChain[Int, Int]? {
+  match filter {
+    Object(obj) => {
+      match obj.get("in_range") {
         Some(Array(arr)) =>
           if arr.length() == 2 {
             let min = match arr[0] {
@@ -151,24 +184,38 @@ fn parse_int_post(obj : Map[String, Json]) -> @core.FilterChain[Int, Int]? {
               Number(n, ..) => n.to_int()
               _ => return None
             }
-            Some(@core.Filter::in_range(min, max))
-          } else {
-            None
+            return Some(@core.Filter::in_range(min, max))
           }
-        _ => None
+        _ => ()
       }
+      match obj.get("clamp") {
+        Some(Array(arr)) =>
+          if arr.length() == 2 {
+            let min = match arr[0] {
+              Number(n, ..) => n.to_int()
+              _ => return None
+            }
+            let max = match arr[1] {
+              Number(n, ..) => n.to_int()
+              _ => return None
+            }
+            return Some(@core.Filter::clamp(min, max))
+          }
+        _ => ()
+      }
+      None
+    }
     _ => None
   }
 }
 
 ///|
-/// Parse a post filter for Double from JSON.
-fn parse_float_post(
-  obj : Map[String, Json],
-) -> @core.FilterChain[Double, Double]? {
-  match obj.get("post") {
-    Some(Object(post_obj)) =>
-      match post_obj.get("float_in_range") {
+/// Parse a float filter from JSON spec.
+/// Supports: { "float_in_range": [min, max] }
+fn parse_float_filter(filter : Json) -> @core.FilterChain[Double, Double]? {
+  match filter {
+    Object(obj) =>
+      match obj.get("float_in_range") {
         Some(Array(arr)) =>
           if arr.length() == 2 {
             let min = match arr[0] {
@@ -190,6 +237,26 @@ fn parse_float_post(
 }
 
 ///|
+/// Parse a post filter for Int from JSON.
+fn parse_int_post(obj : Map[String, Json]) -> @core.FilterChain[Int, Int]? {
+  match obj.get("post") {
+    Some(filter) => parse_int_filter(filter)
+    _ => None
+  }
+}
+
+///|
+/// Parse a post filter for Double from JSON.
+fn parse_float_post(
+  obj : Map[String, Json],
+) -> @core.FilterChain[Double, Double]? {
+  match obj.get("post") {
+    Some(filter) => parse_float_filter(filter)
+    _ => None
+  }
+}
+
+///|
 fn build_parser(
   parser : @core.Parser,
   opts_json : Array[Json],
@@ -200,8 +267,20 @@ fn build_parser(
   let opt_refs : Map[String, @core.OptRef] = {}
   // deprecated 2パス用: opt 名 → deprecated 登録クロージャ（型消去済み）
   let deprecate_fns : Map[String, (String, String) -> Unit] = {}
+  // clone/link/adjust 用: opt 名 → 型消去済みハンドル
+  let opt_handles : Map[String, OptHandle] = {}
+  // 型別 Opt マップ（link で source/target の型マッチングに使用）
+  let opts_bool : Map[String, @core.Opt[Bool]] = {}
+  let opts_string : Map[String, @core.Opt[String]] = {}
+  let opts_int : Map[String, @core.Opt[Int]] = {}
+  let opts_double : Map[String, @core.Opt[Double]] = {}
+  let opts_arr_string : Map[String, @core.Opt[Array[String]]] = {}
+  let opts_arr_int : Map[String, @core.Opt[Array[Int]]] = {}
+  let opts_arr_double : Map[String, @core.Opt[Array[Double]]] = {}
   // deprecated エントリを遅延処理するために収集
   let deferred_deprecated : Array[Map[String, Json]] = []
+  // clone エントリを遅延処理するために収集
+  let deferred_clones : Array[Map[String, Json]] = []
   for opt_json in opts_json {
     match opt_json {
       Object(obj) => {
@@ -209,9 +288,13 @@ fn build_parser(
           Some(String(s)) => s
           _ => return Err("opt definition missing 'kind'")
         }
-        // deprecated は pass 2 で処理するため収集して skip
+        // deprecated, clone は pass 2 で処理するため収集して skip
         if kind == "deprecated" {
           deferred_deprecated.push(obj)
+          continue
+        }
+        if kind == "clone" {
+          deferred_clones.push(obj)
           continue
         }
         // dashdash and serial don't need name
@@ -279,8 +362,47 @@ fn build_parser(
               env~,
             )
             opt_refs[name] = opt.as_ref()
+            opts_bool[name] = opt
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
+            let flag_name = name
+            opt_handles[name] = OptHandle::{
+              clone_fn: fn(new_name) {
+                let cloned = parser.clone("--" + new_name, opt)
+                opt_refs[new_name] = cloned.as_ref()
+                opts_bool[new_name] = cloned
+                let entry = OptEntry::{
+                  name: new_name,
+                  extract: fn() -> Json {
+                    match cloned.get() {
+                      Some(v) => Json::boolean(v)
+                      None => Json::null()
+                    }
+                  },
+                }
+                (entry, cloned.as_ref())
+              },
+              link_as_target_fn: fn(source_name, propagate_set) {
+                match opts_bool.get(source_name) {
+                  Some(source) => {
+                    parser.link(opt, source~, propagate_set~)
+                    Ok(())
+                  }
+                  None =>
+                    Err(
+                      "link type mismatch: " +
+                      source_name +
+                      " and " +
+                      flag_name +
+                      " must be the same type",
+                    )
+                }
+              },
+              adjust_fn: fn(_filter) {
+                // Bool opts don't have meaningful adjust filters
+                Err("adjust not supported for flag type")
+              },
             }
             entries.push(OptEntry::{
               name,
@@ -332,8 +454,52 @@ fn build_parser(
               pre=@core.Filter::map(fn(s) { s }),
             )
             opt_refs[name] = opt.as_ref()
+            opts_string[name] = opt
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
+            let str_name = name
+            opt_handles[name] = OptHandle::{
+              clone_fn: fn(new_name) {
+                let cloned = parser.clone("--" + new_name, opt)
+                opt_refs[new_name] = cloned.as_ref()
+                opts_string[new_name] = cloned
+                let entry = OptEntry::{
+                  name: new_name,
+                  extract: fn() -> Json {
+                    match cloned.get() {
+                      Some(v) => Json::string(v)
+                      None => Json::null()
+                    }
+                  },
+                }
+                (entry, cloned.as_ref())
+              },
+              link_as_target_fn: fn(source_name, propagate_set) {
+                match opts_string.get(source_name) {
+                  Some(source) => {
+                    parser.link(opt, source~, propagate_set~)
+                    Ok(())
+                  }
+                  None =>
+                    Err(
+                      "link type mismatch: " +
+                      source_name +
+                      " and " +
+                      str_name +
+                      " must be the same type",
+                    )
+                }
+              },
+              adjust_fn: fn(filter) {
+                match parse_string_filter(filter) {
+                  Some(chain) => {
+                    parser.adjust(opt, after_post=chain)
+                    Ok(())
+                  }
+                  None => Err("unsupported adjust filter for string type")
+                }
+              },
             }
             entries.push(OptEntry::{
               name,
@@ -371,8 +537,52 @@ fn build_parser(
               pre=@core.Filter::parse_int(),
             )
             opt_refs[name] = opt.as_ref()
+            opts_int[name] = opt
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
+            let int_name = name
+            opt_handles[name] = OptHandle::{
+              clone_fn: fn(new_name) {
+                let cloned = parser.clone("--" + new_name, opt)
+                opt_refs[new_name] = cloned.as_ref()
+                opts_int[new_name] = cloned
+                let entry = OptEntry::{
+                  name: new_name,
+                  extract: fn() -> Json {
+                    match cloned.get() {
+                      Some(v) => Json::number(v.to_double())
+                      None => Json::null()
+                    }
+                  },
+                }
+                (entry, cloned.as_ref())
+              },
+              link_as_target_fn: fn(source_name, propagate_set) {
+                match opts_int.get(source_name) {
+                  Some(source) => {
+                    parser.link(opt, source~, propagate_set~)
+                    Ok(())
+                  }
+                  None =>
+                    Err(
+                      "link type mismatch: " +
+                      source_name +
+                      " and " +
+                      int_name +
+                      " must be the same type",
+                    )
+                }
+              },
+              adjust_fn: fn(filter) {
+                match parse_int_filter(filter) {
+                  Some(chain) => {
+                    parser.adjust(opt, after_post=chain)
+                    Ok(())
+                  }
+                  None => Err("unsupported adjust filter for int type")
+                }
+              },
             }
             entries.push(OptEntry::{
               name,
@@ -410,8 +620,52 @@ fn build_parser(
               pre=@core.Filter::parse_float(),
             )
             opt_refs[name] = opt.as_ref()
+            opts_double[name] = opt
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
+            let float_name = name
+            opt_handles[name] = OptHandle::{
+              clone_fn: fn(new_name) {
+                let cloned = parser.clone("--" + new_name, opt)
+                opt_refs[new_name] = cloned.as_ref()
+                opts_double[new_name] = cloned
+                let entry = OptEntry::{
+                  name: new_name,
+                  extract: fn() -> Json {
+                    match cloned.get() {
+                      Some(v) => Json::number(v)
+                      None => Json::null()
+                    }
+                  },
+                }
+                (entry, cloned.as_ref())
+              },
+              link_as_target_fn: fn(source_name, propagate_set) {
+                match opts_double.get(source_name) {
+                  Some(source) => {
+                    parser.link(opt, source~, propagate_set~)
+                    Ok(())
+                  }
+                  None =>
+                    Err(
+                      "link type mismatch: " +
+                      source_name +
+                      " and " +
+                      float_name +
+                      " must be the same type",
+                    )
+                }
+              },
+              adjust_fn: fn(filter) {
+                match parse_float_filter(filter) {
+                  Some(chain) => {
+                    parser.adjust(opt, after_post=chain)
+                    Ok(())
+                  }
+                  None => Err("unsupported adjust filter for float type")
+                }
+              },
             }
             entries.push(OptEntry::{
               name,
@@ -448,8 +702,46 @@ fn build_parser(
               pre=@core.Filter::parse_bool(),
             )
             opt_refs[name] = opt.as_ref()
+            opts_bool[name] = opt
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
+            let bool_name = name
+            opt_handles[name] = OptHandle::{
+              clone_fn: fn(new_name) {
+                let cloned = parser.clone("--" + new_name, opt)
+                opt_refs[new_name] = cloned.as_ref()
+                opts_bool[new_name] = cloned
+                let entry = OptEntry::{
+                  name: new_name,
+                  extract: fn() -> Json {
+                    match cloned.get() {
+                      Some(v) => Json::boolean(v)
+                      None => Json::null()
+                    }
+                  },
+                }
+                (entry, cloned.as_ref())
+              },
+              link_as_target_fn: fn(source_name, propagate_set) {
+                match opts_bool.get(source_name) {
+                  Some(source) => {
+                    parser.link(opt, source~, propagate_set~)
+                    Ok(())
+                  }
+                  None =>
+                    Err(
+                      "link type mismatch: " +
+                      source_name +
+                      " and " +
+                      bool_name +
+                      " must be the same type",
+                    )
+                }
+              },
+              adjust_fn: fn(_filter) {
+                Err("adjust not supported for boolean type")
+              },
             }
             entries.push(OptEntry::{
               name,
@@ -473,8 +765,52 @@ fn build_parser(
               env~,
             )
             opt_refs[name] = opt.as_ref()
+            opts_int[name] = opt
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
+            let count_name = name
+            opt_handles[name] = OptHandle::{
+              clone_fn: fn(new_name) {
+                let cloned = parser.clone("--" + new_name, opt)
+                opt_refs[new_name] = cloned.as_ref()
+                opts_int[new_name] = cloned
+                let entry = OptEntry::{
+                  name: new_name,
+                  extract: fn() -> Json {
+                    match cloned.get() {
+                      Some(v) => Json::number(v.to_double())
+                      None => Json::null()
+                    }
+                  },
+                }
+                (entry, cloned.as_ref())
+              },
+              link_as_target_fn: fn(source_name, propagate_set) {
+                match opts_int.get(source_name) {
+                  Some(source) => {
+                    parser.link(opt, source~, propagate_set~)
+                    Ok(())
+                  }
+                  None =>
+                    Err(
+                      "link type mismatch: " +
+                      source_name +
+                      " and " +
+                      count_name +
+                      " must be the same type",
+                    )
+                }
+              },
+              adjust_fn: fn(filter) {
+                match parse_int_filter(filter) {
+                  Some(chain) => {
+                    parser.adjust(opt, after_post=chain)
+                    Ok(())
+                  }
+                  None => Err("unsupported adjust filter for count type")
+                }
+              },
             }
             entries.push(OptEntry::{
               name,
@@ -499,8 +835,47 @@ fn build_parser(
               pre=@core.Filter::map(fn(s) { s }),
             )
             opt_refs[name] = opt.as_ref()
+            opts_arr_string[name] = opt
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
+            let astr_name = name
+            opt_handles[name] = OptHandle::{
+              clone_fn: fn(new_name) {
+                let cloned = parser.clone("--" + new_name, opt)
+                opt_refs[new_name] = cloned.as_ref()
+                opts_arr_string[new_name] = cloned
+                let entry = OptEntry::{
+                  name: new_name,
+                  extract: fn() -> Json {
+                    match cloned.get() {
+                      Some(arr) =>
+                        Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
+                      None => Json::null()
+                    }
+                  },
+                }
+                (entry, cloned.as_ref())
+              },
+              link_as_target_fn: fn(source_name, propagate_set) {
+                match opts_arr_string.get(source_name) {
+                  Some(source) => {
+                    parser.link(opt, source~, propagate_set~)
+                    Ok(())
+                  }
+                  None =>
+                    Err(
+                      "link type mismatch: " +
+                      source_name +
+                      " and " +
+                      astr_name +
+                      " must be the same type",
+                    )
+                }
+              },
+              adjust_fn: fn(_filter) {
+                Err("adjust not supported for append_string type")
+              },
             }
             entries.push(OptEntry::{
               name,
@@ -526,8 +901,49 @@ fn build_parser(
               pre=@core.Filter::parse_int(),
             )
             opt_refs[name] = opt.as_ref()
+            opts_arr_int[name] = opt
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
+            let aint_name = name
+            opt_handles[name] = OptHandle::{
+              clone_fn: fn(new_name) {
+                let cloned = parser.clone("--" + new_name, opt)
+                opt_refs[new_name] = cloned.as_ref()
+                opts_arr_int[new_name] = cloned
+                let entry = OptEntry::{
+                  name: new_name,
+                  extract: fn() -> Json {
+                    match cloned.get() {
+                      Some(arr) =>
+                        Json::array(
+                          arr.map(fn(n) -> Json { Json::number(n.to_double()) }),
+                        )
+                      None => Json::null()
+                    }
+                  },
+                }
+                (entry, cloned.as_ref())
+              },
+              link_as_target_fn: fn(source_name, propagate_set) {
+                match opts_arr_int.get(source_name) {
+                  Some(source) => {
+                    parser.link(opt, source~, propagate_set~)
+                    Ok(())
+                  }
+                  None =>
+                    Err(
+                      "link type mismatch: " +
+                      source_name +
+                      " and " +
+                      aint_name +
+                      " must be the same type",
+                    )
+                }
+              },
+              adjust_fn: fn(_filter) {
+                Err("adjust not supported for append_int type")
+              },
             }
             entries.push(OptEntry::{
               name,
@@ -555,8 +971,47 @@ fn build_parser(
               pre=@core.Filter::parse_float(),
             )
             opt_refs[name] = opt.as_ref()
+            opts_arr_double[name] = opt
             deprecate_fns[name] = fn(alias_name, dep_msg) {
               let _ = parser.deprecated(alias_name, opt, msg=dep_msg)
+            }
+            let afloat_name = name
+            opt_handles[name] = OptHandle::{
+              clone_fn: fn(new_name) {
+                let cloned = parser.clone("--" + new_name, opt)
+                opt_refs[new_name] = cloned.as_ref()
+                opts_arr_double[new_name] = cloned
+                let entry = OptEntry::{
+                  name: new_name,
+                  extract: fn() -> Json {
+                    match cloned.get() {
+                      Some(arr) =>
+                        Json::array(arr.map(fn(n) -> Json { Json::number(n) }))
+                      None => Json::null()
+                    }
+                  },
+                }
+                (entry, cloned.as_ref())
+              },
+              link_as_target_fn: fn(source_name, propagate_set) {
+                match opts_arr_double.get(source_name) {
+                  Some(source) => {
+                    parser.link(opt, source~, propagate_set~)
+                    Ok(())
+                  }
+                  None =>
+                    Err(
+                      "link type mismatch: " +
+                      source_name +
+                      " and " +
+                      afloat_name +
+                      " must be the same type",
+                    )
+                }
+              },
+              adjust_fn: fn(_filter) {
+                Err("adjust not supported for append_float type")
+              },
             }
             entries.push(OptEntry::{
               name,
@@ -731,6 +1186,113 @@ fn build_parser(
   if require_cmd {
     parser.require_cmd()
   }
+  // Pass 2: Handle deprecated entries (deferred from pass 1)
+  for dep_obj in deferred_deprecated {
+    let dep_name = match dep_obj.get("name") {
+      Some(String(s)) => s
+      _ => return Err("deprecated opt missing 'name'")
+    }
+    let target_name = match dep_obj.get("target") {
+      Some(String(s)) => s
+      _ => return Err("deprecated opt missing 'target'")
+    }
+    let dep_msg = match dep_obj.get("msg") {
+      Some(String(s)) => s
+      _ => ""
+    }
+    match deprecate_fns.get(target_name) {
+      Some(register_fn) => register_fn(dep_name, dep_msg)
+      None => return Err("deprecated target not found: " + target_name)
+    }
+  }
+  // Pass 3: Handle clone entries (deferred from pass 1)
+  for clone_obj in deferred_clones {
+    let clone_name = match clone_obj.get("name") {
+      Some(String(s)) => s
+      _ => return Err("clone opt missing 'name'")
+    }
+    let clone_of = match clone_obj.get("clone_of") {
+      Some(String(s)) => s
+      _ => return Err("clone opt missing 'clone_of'")
+    }
+    match opt_handles.get(clone_of) {
+      Some(handle) => {
+        // clone_fn internally calls Parser::clone which expects "--" prefix,
+        // but the entry name should be bare for the values map key.
+        let (entry, opt_ref) = (handle.clone_fn)(clone_name)
+        entries.push(entry)
+        opt_refs[clone_name] = opt_ref
+      }
+      None => return Err("clone target not found: " + clone_of)
+    }
+  }
+  // Pass 4: Handle link entries
+  match scope_json.get("links") {
+    Some(Array(items)) =>
+      for item in items {
+        match item {
+          Object(link_obj) => {
+            let source_name = match link_obj.get("source") {
+              Some(String(s)) => s
+              _ => continue
+            }
+            let target_name = match link_obj.get("target") {
+              Some(String(s)) => s
+              _ => continue
+            }
+            let propagate_set = match link_obj.get("propagate_set") {
+              Some(True) => true
+              _ => false
+            }
+            // Validate source exists
+            match opt_handles.get(source_name) {
+              None => return Err("link source not found: " + source_name)
+              Some(_) => ()
+            }
+            // Look up target handle and call link_as_target_fn
+            match opt_handles.get(target_name) {
+              None => return Err("link target not found: " + target_name)
+              Some(handle) =>
+                match (handle.link_as_target_fn)(source_name, propagate_set) {
+                  Ok(_) => ()
+                  Err(msg) => return Err(msg)
+                }
+            }
+          }
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  // Pass 5: Handle adjust entries
+  match scope_json.get("adjusts") {
+    Some(Array(items)) =>
+      for item in items {
+        match item {
+          Object(adj_obj) => {
+            let target_name = match adj_obj.get("target") {
+              Some(String(s)) => s
+              _ => continue
+            }
+            let filter = match adj_obj.get("filter") {
+              Some(f) => f
+              _ => continue
+            }
+            match opt_handles.get(target_name) {
+              None => return Err("adjust target not found: " + target_name)
+              Some(handle) =>
+                match (handle.adjust_fn)(filter) {
+                  Ok(_) => ()
+                  Err(msg) => return Err(msg)
+                }
+            }
+          }
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  // Pass 6: Handle constraints (after link/adjust so that propagated values are visible)
   // Handle exclusive constraints
   match scope_json.get("exclusive") {
     Some(Array(groups)) =>
@@ -826,25 +1388,6 @@ fn build_parser(
         }
       }
     _ => ()
-  }
-  // Pass 2: Handle deprecated entries (deferred from pass 1)
-  for dep_obj in deferred_deprecated {
-    let dep_name = match dep_obj.get("name") {
-      Some(String(s)) => s
-      _ => return Err("deprecated opt missing 'name'")
-    }
-    let target_name = match dep_obj.get("target") {
-      Some(String(s)) => s
-      _ => return Err("deprecated opt missing 'target'")
-    }
-    let dep_msg = match dep_obj.get("msg") {
-      Some(String(s)) => s
-      _ => ""
-    }
-    match deprecate_fns.get(target_name) {
-      Some(register_fn) => register_fn(dep_name, dep_msg)
-      None => return Err("deprecated target not found: " + target_name)
-    }
   }
   Ok(SchemaResult::{ entries, children })
 }
