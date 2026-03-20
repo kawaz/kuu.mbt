@@ -153,8 +153,41 @@ moonbit_string_t read_file(moonbit_string_t path) {
     return moonbit_make_string(0, 0);
   }
 
-  fseek(f, 0, SEEK_END);
+  if (fseek(f, 0, SEEK_END) != 0) {
+    // Not seekable (e.g. /dev/fd, process substitution): incremental read
+    size_t capacity = 4096;
+    size_t total = 0;
+    unsigned char *buf = (unsigned char *)malloc(capacity);
+    if (!buf) {
+      fclose(f);
+      return moonbit_make_string(0, 0);
+    }
+    while (1) {
+      size_t n = fread(buf + total, 1, capacity - total, f);
+      total += n;
+      if (n == 0) break;
+      if (total == capacity) {
+        capacity *= 2;
+        unsigned char *newbuf = (unsigned char *)realloc(buf, capacity);
+        if (!newbuf) {
+          free(buf);
+          fclose(f);
+          return moonbit_make_string(0, 0);
+        }
+        buf = newbuf;
+      }
+    }
+    fclose(f);
+    moonbit_string_t result = utf8_to_moonbit_string(buf, (int)total);
+    free(buf);
+    return result;
+  }
+
   long fsize = ftell(f);
+  if (fsize < 0) {
+    fclose(f);
+    return moonbit_make_string(0, 0);
+  }
   fseek(f, 0, SEEK_SET);
 
   unsigned char *buf = (unsigned char *)malloc(fsize);

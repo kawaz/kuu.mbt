@@ -56,7 +56,7 @@ fn main {
     Ok(parse_result) => {
       // --version
       if version_flag.get() == Some(true) {
-        println("kuu 0.1.0")
+        println(get_program_name() + " 0.1.0")
         return
       }
       // parse subcommand
