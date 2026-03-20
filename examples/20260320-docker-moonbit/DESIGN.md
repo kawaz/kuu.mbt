@@ -16,7 +16,7 @@ kuu の以下の機能をリファレンス品質で検証:
 7. **exclusive**: `--force-recreate` vs `--no-recreate`
 8. **required / positional / rest / serial**: IMAGE, COMMAND, ARG... の位置引数
 9. **implicit_value**: `--rmi` (値省略時 "all")
-10. **variation_false**: `--no-cache`, `--no-deps` 等
+10. **variation_false**: `--no-deps` (compose up の deps フラグの否定形)
 11. **env**: `DOCKER_HOST` 等の環境変数
 12. **require_cmd**: 中間サブコマンドは子コマンド必須
 

@@ -11,7 +11,7 @@
 ///   - exclusive (--force-recreate vs --no-recreate)
 ///   - required + positional + rest + serial (IMAGE COMMAND ARG...)
 ///   - implicit_value (--rmi)
-///   - variation_false (--no-cache, --no-deps)
+///   - variation_false (--no-deps)
 ///   - env (DOCKER_HOST)
 ///   - require_cmd (container, image, compose need a subcommand)
 fn main {

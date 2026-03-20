@@ -3,7 +3,7 @@
 ///
 /// Structure:
 ///   docker [GLOBAL] container {run|ls|exec|stop|rm|logs} [OPTS] [ARGS]
-///   docker [GLOBAL] image {build|ls|pull|push} [OPTS] [ARGS]
+///   docker [GLOBAL] image {build|ls|pull|push|rm} [OPTS] [ARGS]
 ///   docker [GLOBAL] compose [-f FILE] {up|down} [OPTS] [ARGS]
 ///   docker [GLOBAL] network {create|ls|rm} [OPTS] [ARGS]
 ///   docker [GLOBAL] volume {create|ls|rm} [OPTS] [ARGS]
@@ -29,10 +29,11 @@ let str_pre : @core.FilterChain[String, String] = @core.Filter::map(fn(s) { s })
 let int_pre : @core.FilterChain[String, Int] = @core.Filter::parse_int()
 
 ///|
-/// Append a line "  {key}: {value}" to buf if value is truthy.
+/// Append "    {key}: true\n" to buf if the flag is set to true.
 fn write_flag(buf : StringBuilder, key : String, opt : @core.Opt[Bool]) -> Unit {
-  if opt.get().unwrap() {
-    buf.write_string("    " + key + ": true\n")
+  match opt.get() {
+    Some(true) => buf.write_string("    " + key + ": true\n")
+    _ => ()
   }
 }
 
@@ -228,7 +229,7 @@ fn setup_exec_options(exec : @core.Parser) -> Unit {
   )
   // Positional: CONTAINER COMMAND [ARG...]
   // serial: 位置引数を順序保証付きで定義するAPI。
-  // IMAGE を先に消費し、残りを COMMAND ARG... として rest で取得。
+  // CONTAINER を先に消費し、残りを COMMAND ARG... として rest で取得。
   // sub.never(): serial サブパーサが「完了」しないことを宣言（全引数を消費し続ける）。
   let mut container_opt : @core.Opt[String]? = None
   let mut _cmd_opt : @core.Opt[Array[String]]? = None
@@ -795,12 +796,9 @@ fn build_and_parse(
   )
   setup_push_options(i_push)
 
-  // image rm
-  let i_rm = image.sub(
-    name="rm",
-    aliases=["rmi"],
-    description="Remove one or more images",
-  )
+  // image rm (Note: docker image rmi does NOT exist in real Docker CLI.
+  // docker rmi is a top-level shortcut only, handled separately below.)
+  let i_rm = image.sub(name="rm", description="Remove one or more images")
   i_rm.set_description("mydocker image rm - Remove images")
   let _irm_force = i_rm.flag(
     name="force",
@@ -1007,15 +1005,9 @@ fn build_and_parse(
       write_str(buf, "context", context)
       write_str(buf, "host", host)
       write_str(buf, "log-level", log_level)
-      if debug.get().unwrap() {
-        buf.write_string("  debug: true\n")
-      }
-      if tls.get().unwrap() {
-        buf.write_string("  tls: true\n")
-      }
-      if tlsverify.get().unwrap() {
-        buf.write_string("  tlsverify: true\n")
-      }
+      write_flag(buf, "debug", debug)
+      write_flag(buf, "tls", tls)
+      write_flag(buf, "tlsverify", tlsverify)
 
       // ─── Command dispatch ───
 
