@@ -912,3 +912,322 @@ test "error message: exclusive violation mentions option names" {
     _ => fail("expected ParseError")
   }
 }
+
+// ============================================================
+// Phase 5: テスト拡充 — カバレッジギャップ補完
+// ============================================================
+
+// ---- requires 制約テスト ----
+
+///|
+struct RequiresConfig {
+  mut output : String
+  mut format : String
+} derive(Show, Eq)
+
+///|
+fn RequiresConfig::default() -> RequiresConfig {
+  { output: "", format: "" }
+}
+
+///|
+impl Parseable for RequiresConfig with register(self, reg) {
+  let output_ref = reg.string_ref(name="output", set=fn(v) { self.output = v })
+  let format_ref = reg.string_ref(name="format", set=fn(v) { self.format = v })
+  reg.requires(output_ref, source=format_ref)
+}
+
+///|
+test "requires: source without target is error" {
+  let config = RequiresConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into(
+    ["--format", "json"],
+    config,
+  )
+  assert_true(result is Err(_))
+}
+
+///|
+test "requires: both provided is ok" {
+  let config = RequiresConfig::default()
+  parse_into(["--format", "json", "--output", "file.txt"], config)
+  assert_eq(config.format, "json")
+  assert_eq(config.output, "file.txt")
+}
+
+///|
+test "requires: neither provided is ok" {
+  let config = RequiresConfig::default()
+  parse_into([], config)
+  assert_eq(config.format, "")
+  assert_eq(config.output, "")
+}
+
+// ---- = 構文テスト ----
+
+///|
+test "string: --name=value syntax" {
+  let config = SimpleConfig::default()
+  parse_into(["--name=alice"], config)
+  assert_eq(config.name, "alice")
+}
+
+///|
+test "int: --count=42 syntax" {
+  let config = SimpleConfig::default()
+  parse_into(["--count=42"], config)
+  assert_eq(config.count, 42)
+}
+
+///|
+test "float: --rate=1.5 syntax" {
+  let config = SimpleConfig::default()
+  parse_into(["--rate=1.5"], config)
+  assert_eq(config.rate, 1.5)
+}
+
+// ---- count shorts テスト ----
+
+///|
+struct CountShortsConfig {
+  mut verbosity : Int
+} derive(Show, Eq)
+
+///|
+fn CountShortsConfig::default() -> CountShortsConfig {
+  { verbosity: 0 }
+}
+
+///|
+impl Parseable for CountShortsConfig with register(self, reg) {
+  reg.count(name="verbose", shorts="v", set=fn(v) { self.verbosity = v })
+}
+
+///|
+test "count shorts: -v -v -v increments via short" {
+  let config = CountShortsConfig::default()
+  parse_into(["-v", "-v", "-v"], config)
+  assert_eq(config.verbosity, 3)
+}
+
+///|
+test "count shorts: -vvv combined short" {
+  let config = CountShortsConfig::default()
+  parse_into(["-vvv"], config)
+  assert_eq(config.verbosity, 3)
+}
+
+// ---- exclusive: neither provided is ok ----
+
+///|
+test "exclusive: neither option is ok" {
+  let config = ExclusiveConfig::default()
+  parse_into([], config)
+  assert_eq(config.json, false)
+  assert_eq(config.yaml, false)
+}
+
+// ---- at_least_one: both provided is ok ----
+
+///|
+test "at_least_one: both provided is ok" {
+  let config = AtLeastOneConfig::default()
+  parse_into(["--input", "file.txt", "--stdin"], config)
+  assert_eq(config.input, "file.txt")
+  assert_eq(config.stdin, true)
+}
+
+// ---- env パラメータ（Phase 2: 実際の値取得）テスト ----
+
+///|
+struct EnvPhase2Config {
+  mut host : String
+  mut port : Int
+} derive(Show, Eq)
+
+///|
+fn EnvPhase2Config::default() -> EnvPhase2Config {
+  { host: "", port: 0 }
+}
+
+///|
+impl Parseable for EnvPhase2Config with register(self, reg) {
+  reg.string(name="host", env="APP_HOST", set=fn(v) { self.host = v })
+  reg.int(name="port", env="APP_PORT", set=fn(v) { self.port = v })
+}
+
+///|
+test "env: env var sets value when option not provided" {
+  let config = EnvPhase2Config::default()
+  parse_into([], config, env={ "APP_HOST": "envhost", "APP_PORT": "9090" })
+  assert_eq(config.host, "envhost")
+  assert_eq(config.port, 9090)
+}
+
+///|
+test "env: CLI arg overrides env var" {
+  let config = EnvPhase2Config::default()
+  parse_into(["--host", "clihost"], config, env={ "APP_HOST": "envhost" })
+  assert_eq(config.host, "clihost")
+}
+
+///|
+test "env: unset env var keeps default" {
+  let config = EnvPhase2Config::default()
+  parse_into([], config, env={})
+  assert_eq(config.host, "")
+  assert_eq(config.port, 0)
+}
+
+// ---- dashdash (--) セパレータテスト ----
+
+///|
+struct DashdashConfig {
+  mut verbose : Bool
+  mut args : Array[String]
+} derive(Show, Eq)
+
+///|
+fn DashdashConfig::default() -> DashdashConfig {
+  { verbose: false, args: [] }
+}
+
+///|
+impl Parseable for DashdashConfig with register(self, reg) {
+  reg.flag(name="verbose", set=fn(v) { self.verbose = v })
+  reg.rest(name="ARGS", set=fn(v) { self.args = v })
+}
+
+///|
+test "dashdash: -- separates options from rest args" {
+  let config = DashdashConfig::default()
+  parse_into(["--verbose", "--", "--not-an-option", "file"], config)
+  assert_eq(config.verbose, true)
+  assert_eq(config.args, ["--not-an-option", "file"])
+}
+
+// ---- custom_append エラーテスト ----
+
+///|
+test "custom_append: invalid value is error" {
+  let config = CustomAppendConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into(
+    ["--value", "abc"],
+    config,
+  )
+  assert_true(result is Err(_))
+}
+
+///|
+test "custom_append: empty is ok" {
+  let config = CustomAppendConfig::default()
+  parse_into([], config)
+  assert_eq(config.values, [])
+}
+
+// ---- global flag: サブコマンドの後ろからも指定可能 ----
+
+///|
+test "global flag: after subcommand" {
+  let config = SubConfig::default()
+  parse_into(["build", "--verbose"], config)
+  assert_eq(config.verbose, true)
+  assert_eq(config.command, Build)
+}
+
+// ---- positional + option 組み合わせ ----
+
+///|
+struct PosOptionConfig {
+  mut file : String?
+  mut output : String
+} derive(Show, Eq)
+
+///|
+fn PosOptionConfig::default() -> PosOptionConfig {
+  { file: None, output: "" }
+}
+
+///|
+impl Parseable for PosOptionConfig with register(self, reg) {
+  reg.positional(name="FILE", set=fn(v) { self.file = Some(v) })
+  reg.string(name="output", set=fn(v) { self.output = v })
+}
+
+///|
+test "positional + option: both work together" {
+  let config = PosOptionConfig::default()
+  parse_into(["input.txt", "--output", "out.txt"], config)
+  assert_eq(config.file, Some("input.txt"))
+  assert_eq(config.output, "out.txt")
+}
+
+///|
+test "positional + option: option before positional" {
+  let config = PosOptionConfig::default()
+  parse_into(["--output", "out.txt", "input.txt"], config)
+  assert_eq(config.file, Some("input.txt"))
+  assert_eq(config.output, "out.txt")
+}
+
+// ---- sub + positional 組み合わせ ----
+
+///|
+struct SubPosConfig {
+  mut command : String
+  mut file : String?
+} derive(Show, Eq)
+
+///|
+fn SubPosConfig::default() -> SubPosConfig {
+  { command: "", file: None }
+}
+
+///|
+impl Parseable for SubPosConfig with register(self, reg) {
+  reg.sub(name="add", on_match=fn() { self.command = "add" }, setup=fn(r) {
+    r.positional(name="FILE", set=fn(v) { self.file = Some(v) })
+  })
+}
+
+///|
+test "sub + positional: subcommand with positional arg" {
+  let config = SubPosConfig::default()
+  parse_into(["add", "readme.md"], config)
+  assert_eq(config.command, "add")
+  assert_eq(config.file, Some("readme.md"))
+}
+
+// ---- error: int に不正な文字列 ----
+
+///|
+test "int: non-numeric value is error" {
+  let config = SimpleConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into(
+    ["--count", "abc"],
+    config,
+  )
+  assert_true(result is Err(_))
+}
+
+// ---- error: float に不正な文字列 ----
+
+///|
+test "float: non-numeric value is error" {
+  let config = SimpleConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into(
+    ["--rate", "xyz"],
+    config,
+  )
+  assert_true(result is Err(_))
+}
+
+// ---- error: required missing keeps struct default ----
+
+///|
+test "required: missing keeps struct default" {
+  let config = RequiredConfig::default()
+  let result : Result[Unit, @core.ParseError] = try? parse_into([], config)
+  assert_true(result is Err(_))
+  assert_eq(config.output, "")
+}

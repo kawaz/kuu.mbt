@@ -163,6 +163,8 @@ pub fn Parser::serial(
     deprecated_usages: [],
     env_applicators: [],
     env_map: { val: {} },
+    help_header_text: { val: "" },
+    help_footer_text: { val: "" },
   }
   setup(sub)
   // sub.positionals を greedy な compound handler にまとめる。

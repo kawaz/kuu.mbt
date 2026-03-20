@@ -34,6 +34,8 @@ pub fn Parser::cmd(
     deprecated_usages: [],
     env_applicators: [],
     env_map: { val: {} },
+    help_header_text: { val: "" },
+    help_footer_text: { val: "" },
   }
   // 親の global_nodes の名前を子の registered_names に登録（衝突検知のため）
   for gnode in self.global_nodes {

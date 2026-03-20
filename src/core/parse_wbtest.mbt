@@ -3274,3 +3274,57 @@ test "coverage: serial Reject mid-sequence breaks loop" {
     ),
   )
 }
+
+///|
+test "help_header: custom text appears before description" {
+  let p = Parser::new()
+  p.set_description("A test tool")
+  p.help_header("MyApp v1.0.0\n")
+  let help = p.generate_help()
+  // header should appear at the very beginning
+  inspect(help.has_prefix("MyApp v1.0.0\n"), content="true")
+  // description should come after header
+  inspect(help.contains("A test tool"), content="true")
+}
+
+///|
+test "help_footer: custom text appears at the end" {
+  let p = Parser::new()
+  p.set_description("A test tool")
+  p.help_footer("\nSee https://example.com for more info.")
+  let help = p.generate_help()
+  // footer should appear at the very end
+  inspect(
+    help.has_suffix("\nSee https://example.com for more info.\n"),
+    content="true",
+  )
+}
+
+///|
+test "help_header and help_footer: both specified" {
+  let p = Parser::new()
+  p.set_description("A test tool")
+  p.help_header("=== HEADER ===\n")
+  p.help_footer("\n=== FOOTER ===")
+  let help = p.generate_help()
+  // header at the beginning
+  inspect(help.has_prefix("=== HEADER ===\n"), content="true")
+  // footer at the end
+  inspect(help.has_suffix("\n=== FOOTER ===\n"), content="true")
+  // description still present
+  inspect(help.contains("A test tool"), content="true")
+}
+
+///|
+test "help_header and help_footer: unset defaults to empty (no change)" {
+  let p = Parser::new()
+  p.set_description("A test tool")
+  let _ = p.flag(name="verbose", description="Verbose output")
+  // parse triggers inject_help_node, so --help option appears in help
+  ignore(p.parse([]))
+  let help = p.generate_help()
+  // Should start with description (no header)
+  inspect(help.has_prefix("A test tool\n"), content="true")
+  // Should end with the help option line (no footer)
+  inspect(help.has_suffix("Print help\n"), content="true")
+}

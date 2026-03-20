@@ -102,6 +102,10 @@ pub(all) struct Parser {
   // parse_raw の冒頭で env パラメータをセットし、子パーサ（cmd）に伝搬するための共有ストア。
   // Ref にすることで parse_raw 実行時に後からセットできる。
   env_map : Ref[Map[String, String]]
+  // Level 1 ヘルプカスタマイズ: generate_help() の冒頭に挿入するテキスト
+  help_header_text : Ref[String]
+  // Level 1 ヘルプカスタマイズ: generate_help() の末尾に追加するテキスト
+  help_footer_text : Ref[String]
 }
 
 ///|

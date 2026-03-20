@@ -117,8 +117,23 @@ pub fn Parser::generate_usage(self : Parser) -> String {
 }
 
 ///|
+pub fn Parser::help_header(self : Parser, text : String) -> Unit {
+  self.help_header_text.val = text
+}
+
+///|
+pub fn Parser::help_footer(self : Parser, text : String) -> Unit {
+  self.help_footer_text.val = text
+}
+
+///|
 pub fn Parser::generate_help(self : Parser) -> String {
   let buf = StringBuilder::new()
+  // 0. Header (Level 1 customization)
+  let header = self.help_header_text.val
+  if not(header.is_empty()) {
+    buf.write_string(header)
+  }
   // 1. Description
   let desc = self.description.val
   if not(desc.is_empty()) {
@@ -175,6 +190,12 @@ pub fn Parser::generate_help(self : Parser) -> String {
     buf.write_char('\n')
     buf.write_string("Global Options:\n")
     write_opt_section(buf, globals)
+  }
+  // Footer (Level 1 customization)
+  let footer = self.help_footer_text.val
+  if not(footer.is_empty()) {
+    buf.write_string(footer)
+    buf.write_char('\n')
   }
   buf.to_string()
 }
