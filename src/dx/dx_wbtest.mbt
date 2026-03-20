@@ -1232,6 +1232,139 @@ test "required: missing keeps struct default" {
   assert_eq(config.output, "")
 }
 
+// ---- env_prefix テスト ----
+
+///|
+struct EnvPrefixConfig {
+  mut host : String
+  mut port : Int
+} derive(Show, Eq)
+
+///|
+fn EnvPrefixConfig::default() -> EnvPrefixConfig {
+  { host: "", port: 0 }
+}
+
+///|
+impl Parseable for EnvPrefixConfig with register(self, reg) {
+  reg.parser.env_prefix("MYAPP")
+  reg.string(name="host", env="HOST", set=fn(v) { self.host = v })
+  reg.int(name="port", env="PORT", set=fn(v) { self.port = v })
+}
+
+///|
+test "env_prefix: MYAPP_PORT sets value via prefixed env" {
+  let config = EnvPrefixConfig::default()
+  parse_into([], config, env={ "MYAPP_PORT": "3000" })
+  assert_eq(config.port, 3000)
+}
+
+///|
+test "env_prefix: unprefixed env var is not matched" {
+  let config = EnvPrefixConfig::default()
+  parse_into([], config, env={ "PORT": "3000" })
+  assert_eq(config.port, 0)
+}
+
+///|
+test "env_prefix: CLI takes precedence over prefixed env" {
+  let config = EnvPrefixConfig::default()
+  parse_into(["--port", "8080"], config, env={ "MYAPP_PORT": "3000" })
+  assert_eq(config.port, 8080)
+}
+
+///|
+test "env_prefix: multiple opts with prefix" {
+  let config = EnvPrefixConfig::default()
+  parse_into([], config, env={ "MYAPP_HOST": "db.local", "MYAPP_PORT": "5432" })
+  assert_eq(config.host, "db.local")
+  assert_eq(config.port, 5432)
+}
+
+// ---- auto_env テスト ----
+
+///|
+struct AutoEnvConfig {
+  mut host : String
+  mut port : Int
+} derive(Show, Eq)
+
+///|
+fn AutoEnvConfig::default() -> AutoEnvConfig {
+  { host: "", port: 0 }
+}
+
+///|
+impl Parseable for AutoEnvConfig with register(self, reg) {
+  reg.parser.auto_env(true)
+  reg.string(name="host", set=fn(v) { self.host = v })
+  reg.int(name="port", set=fn(v) { self.port = v })
+}
+
+///|
+test "auto_env: PORT auto-binds to --port" {
+  let config = AutoEnvConfig::default()
+  parse_into([], config, env={ "PORT": "9090" })
+  assert_eq(config.port, 9090)
+}
+
+///|
+test "auto_env: HOST auto-binds to --host" {
+  let config = AutoEnvConfig::default()
+  parse_into([], config, env={ "HOST": "autohost" })
+  assert_eq(config.host, "autohost")
+}
+
+///|
+test "auto_env: CLI takes precedence over auto_env" {
+  let config = AutoEnvConfig::default()
+  parse_into(["--port", "8080"], config, env={ "PORT": "3000" })
+  assert_eq(config.port, 8080)
+}
+
+///|
+test "auto_env: unset env keeps default" {
+  let config = AutoEnvConfig::default()
+  parse_into([], config, env={})
+  assert_eq(config.host, "")
+  assert_eq(config.port, 0)
+}
+
+// ---- auto_env + env_prefix 組み合わせテスト ----
+
+///|
+struct AutoEnvPrefixConfig {
+  mut host : String
+  mut port : Int
+} derive(Show, Eq)
+
+///|
+fn AutoEnvPrefixConfig::default() -> AutoEnvPrefixConfig {
+  { host: "", port: 0 }
+}
+
+///|
+impl Parseable for AutoEnvPrefixConfig with register(self, reg) {
+  reg.parser.env_prefix("APP")
+  reg.parser.auto_env(true)
+  reg.string(name="host", set=fn(v) { self.host = v })
+  reg.int(name="port", set=fn(v) { self.port = v })
+}
+
+///|
+test "auto_env + env_prefix: APP_PORT sets value" {
+  let config = AutoEnvPrefixConfig::default()
+  parse_into([], config, env={ "APP_PORT": "4000" })
+  assert_eq(config.port, 4000)
+}
+
+///|
+test "auto_env + env_prefix: unprefixed PORT not matched" {
+  let config = AutoEnvPrefixConfig::default()
+  parse_into([], config, env={ "PORT": "4000" })
+  assert_eq(config.port, 0)
+}
+
 // ---- file コンビネータテスト ----
 
 ///|
