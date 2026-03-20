@@ -1,0 +1,26 @@
+default: build test
+
+build:
+    moon build
+
+test: build
+    moon test -p kawaz/kuu/examples/20260320-git-moonbit
+
+check:
+    moon check
+
+demo:
+    @echo "=== Demo 1: git commit ==="
+    moon run examples/20260320-git-moonbit -- commit -m "initial commit" --amend
+    @echo ""
+    @echo "=== Demo 2: git push ==="
+    moon run examples/20260320-git-moonbit -- push origin main --force
+    @echo ""
+    @echo "=== Demo 3: git log ==="
+    moon run examples/20260320-git-moonbit -- log --oneline --graph -n 10
+    @echo ""
+    @echo "=== Demo 4: git remote add ==="
+    moon run examples/20260320-git-moonbit -- remote add upstream https://github.com/upstream/repo.git
+    @echo ""
+    @echo "=== Demo 5: git help ==="
+    moon run examples/20260320-git-moonbit -- --help
