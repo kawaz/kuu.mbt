@@ -3313,3 +3313,164 @@ test "env_prefix: append_string from prefixed env" {
     ),
   )
 }
+
+// === auto_env ===
+
+///|
+test "auto_env: basic — string opt auto-bound to env" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let port = p.string(name="port", default="8080")
+  ignore(p.parse([], env={ "PORT": "3000" }))
+  inspect(port.get(), content="Some(\"3000\")")
+  inspect(port.is_set(), content="true")
+}
+
+///|
+test "auto_env: explicit env takes precedence" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let port = p.string(name="port", default="8080", env="CUSTOM_PORT")
+  ignore(p.parse([], env={ "CUSTOM_PORT": "3000", "PORT": "9999" }))
+  // CUSTOM_PORT should be used, not auto-generated PORT
+  inspect(port.get(), content="Some(\"3000\")")
+}
+
+///|
+test "auto_env: env_prefix combined" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  p.auto_env(true)
+  let port = p.string(name="port", default="8080")
+  ignore(p.parse([], env={ "MYAPP_PORT": "3000" }))
+  inspect(port.get(), content="Some(\"3000\")")
+}
+
+///|
+test "auto_env: disabled by default — no auto binding" {
+  let p = Parser::new()
+  // auto_env not called, default is false
+  let port = p.string(name="port", default="8080")
+  ignore(p.parse([], env={ "PORT": "3000" }))
+  // Should use default since no env binding
+  inspect(port.get(), content="Some(\"8080\")")
+  inspect(port.is_set(), content="false")
+}
+
+///|
+test "auto_env: hidden opt excluded" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let secret = p.string(name="secret", default="none", hidden=true)
+  ignore(p.parse([], env={ "SECRET": "hidden_val" }))
+  // hidden opt should NOT be auto-bound
+  inspect(secret.get(), content="Some(\"none\")")
+  inspect(secret.is_set(), content="false")
+}
+
+///|
+test "auto_env: hyphenated name converts to underscore" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let port = p.string(name="server-port", default="8080")
+  ignore(p.parse([], env={ "SERVER_PORT": "3000" }))
+  inspect(port.get(), content="Some(\"3000\")")
+}
+
+///|
+test "auto_env: flag auto-bound" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let verbose = p.flag(name="verbose")
+  ignore(p.parse([], env={ "VERBOSE": "true" }))
+  inspect(verbose.get(), content="Some(true)")
+  inspect(verbose.is_set(), content="true")
+}
+
+///|
+test "auto_env: int auto-bound" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let count = p.int(name="count", default=0)
+  ignore(p.parse([], env={ "COUNT": "42" }))
+  inspect(count.get(), content="Some(42)")
+}
+
+///|
+test "auto_env: count combinator auto-bound" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let verbosity = p.count(name="verbosity")
+  ignore(p.parse([], env={ "VERBOSITY": "3" }))
+  inspect(verbosity.get(), content="Some(3)")
+}
+
+///|
+test "auto_env: append_string auto-bound" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let includes = p.append_string(name="include")
+  ignore(p.parse([], env={ "INCLUDE": "a,b,c" }))
+  inspect(
+    includes.get(),
+    content=(
+      #|Some(["a", "b", "c"])
+    ),
+  )
+}
+
+///|
+test "auto_env: CLI takes precedence over auto_env" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let port = p.string(name="port", default="8080")
+  ignore(p.parse(["--port", "4000"], env={ "PORT": "3000" }))
+  inspect(port.get(), content="Some(\"4000\")")
+}
+
+///|
+test "auto_env: help shows auto-generated env name" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let _ = p.string(name="port", default="8080", description="Server port")
+  let help = p.generate_help()
+  inspect(help.contains("[env: PORT]"), content="true")
+}
+
+///|
+test "auto_env: help with env_prefix shows prefixed auto env" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  p.auto_env(true)
+  let _ = p.string(name="port", default="8080", description="Server port")
+  let help = p.generate_help()
+  inspect(help.contains("[env: MYAPP_PORT]"), content="true")
+}
+
+///|
+test "auto_env: subcmd inherits auto_env" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let child = p.sub(name="serve")
+  let port = child.string(name="port", default="8080")
+  ignore(p.parse(["serve"], env={ "PORT": "3000" }))
+  inspect(port.get(), content="Some(\"3000\")")
+}
+
+///|
+test "auto_env: float auto-bound" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let rate = p.float(name="rate", default=1.0)
+  ignore(p.parse([], env={ "RATE": "2.5" }))
+  inspect(rate.get(), content="Some(2.5)")
+}
+
+///|
+test "auto_env: boolean auto-bound" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let debug = p.boolean(name="debug", default=false)
+  ignore(p.parse([], env={ "DEBUG": "true" }))
+  inspect(debug.get(), content="Some(true)")
+}

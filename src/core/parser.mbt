@@ -53,6 +53,33 @@ pub fn Parser::env_prefix(self : Parser, prefix : String) -> Unit {
 }
 
 ///|
+/// auto_env を有効/無効にする。有効時、env パラメータ未設定かつ非 hidden の全オプションに
+/// name.to_upper() (ハイフン→アンダースコア変換) の環境変数を自動バインドする。
+pub fn Parser::auto_env(self : Parser, enabled : Bool) -> Unit {
+  self.auto_env_enabled.val = enabled
+}
+
+///|
+/// env パラメータと auto_env 設定から実効的な env 名を算出する。
+/// - env が非空: そのまま返す（明示的指定が優先）
+/// - auto_env_enabled かつ非 hidden: name のハイフンをアンダースコアに変換し大文字化
+/// - それ以外: "" を返す
+fn Parser::effective_env_name(
+  self : Parser,
+  env : String,
+  name : String,
+  hidden : Bool,
+) -> String {
+  if env != "" {
+    env
+  } else if self.auto_env_enabled.val && not(hidden) {
+    name.replace_all(old="-", new="_").to_upper()
+  } else {
+    ""
+  }
+}
+
+///|
 pub fn Parser::new(dashdash? : Bool = true) -> Parser {
   let seq : Ref[Int] = { val: 0 }
   let p : Parser = {
@@ -81,6 +108,7 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     help_header_text: { val: "" },
     help_footer_text: { val: "" },
     env_prefix: { val: "" },
+    auto_env_enabled: { val: false },
   }
   if dashdash {
     p.install_separator_node()

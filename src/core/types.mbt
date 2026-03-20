@@ -109,6 +109,9 @@ pub(all) struct Parser {
   // env Phase 3: 環境変数プレフィックス。env パラメータ付き opt の参照キーに prefix + "_" を付加する。
   // サブコマンドは親の prefix + "_" + uppercase(cmd_name) を継承する。
   env_prefix : Ref[String]
+  // env Phase 4: auto_env。true なら env 未指定の全非 hidden オプションに
+  // name.to_upper().replace("-", "_") の環境変数を自動バインドする。
+  auto_env_enabled : Ref[Bool]
 }
 
 ///|

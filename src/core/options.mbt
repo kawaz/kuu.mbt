@@ -76,6 +76,7 @@ pub fn Parser::flag(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Opt[Bool] {
+  let env = self.effective_env_name(env, name, hidden)
   apply_variation_sugar(
     variations,
     variation_toggle~,
@@ -435,6 +436,7 @@ pub fn Parser::count(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Opt[Int] {
+  let env = self.effective_env_name(env, name, hidden)
   apply_variation_sugar(
     variations,
     variation_toggle~,
@@ -535,6 +537,7 @@ pub fn[T : Show] Parser::custom(
   choices? : Array[String] = [],
   implicit_value? : Lazy[T]? = None,
 ) -> Opt[T] {
+  let env = self.effective_env_name(env, name, hidden)
   let initial_val = match default_fn {
     Some(f) => f()
     None => default
@@ -709,6 +712,7 @@ pub fn[T] Parser::custom_append(
   variations? : Array[Variation] = [],
   pre~ : FilterChain[String, T],
 ) -> Opt[Array[T]] {
+  let env = self.effective_env_name(env, name, hidden)
   let vc : ValCell[Array[T]] = ValCell::new(Thunk(fn() { [] }))
   let reset_fn = fn() { vc.cell.val = [] }
   let display_value_name = if value_name == "" {

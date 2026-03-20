@@ -166,6 +166,7 @@ pub fn Parser::serial(
     help_header_text: { val: "" },
     help_footer_text: { val: "" },
     env_prefix: { val: "" },
+    auto_env_enabled: { val: self.auto_env_enabled.val },
   }
   setup(sub)
   // sub.positionals を greedy な compound handler にまとめる。

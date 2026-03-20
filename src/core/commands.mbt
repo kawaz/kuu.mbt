@@ -37,6 +37,7 @@ pub fn Parser::cmd(
     help_header_text: { val: "" },
     help_footer_text: { val: "" },
     env_prefix: { val: "" },
+    auto_env_enabled: { val: self.auto_env_enabled.val },
   }
   // 親の global_nodes の名前を子の registered_names に登録（衝突検知のため）
   for gnode in self.global_nodes {
