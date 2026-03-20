@@ -9,7 +9,6 @@ test "docker run basic" {
     result,
     content=(
       #|Ok("  command: run\n")
-
     ),
   )
 }
@@ -21,7 +20,6 @@ test "docker run with -it (short flag combining)" {
     result,
     content=(
       #|Ok("  command: run\n")
-
     ),
   )
 }
@@ -36,7 +34,6 @@ test "docker run with multiple -p -e -v (append)" {
     result,
     content=(
       #|Ok("  command: run\n")
-
     ),
   )
 }
@@ -48,7 +45,6 @@ test "docker run with -itd (three flags combined)" {
     result,
     content=(
       #|Ok("  command: run\n")
-
     ),
   )
 }
@@ -71,7 +67,6 @@ test "docker run with restart choices" {
     result,
     content=(
       #|Ok("  command: run\n")
-
     ),
   )
 }
@@ -94,7 +89,6 @@ test "docker run IMAGE COMMAND ARG..." {
     result,
     content=(
       #|Ok("  command: run\n")
-
     ),
   )
 }
@@ -112,7 +106,6 @@ test "docker container run (management path)" {
     result,
     content=(
       #|Ok("  command: container\n  command: run\n    rm: true\n    interactive: true\n    tty: true\n    image: ubuntu\n    command: [\"bash\"]\n")
-
     ),
   )
 }
@@ -124,7 +117,6 @@ test "docker container ls --all" {
     result,
     content=(
       #|Ok("  command: container\n  command: ls\n")
-
     ),
   )
 }
@@ -138,7 +130,6 @@ test "docker container ls with filters" {
     result,
     content=(
       #|Ok("  command: container\n  command: ls\n")
-
     ),
   )
 }
@@ -150,7 +141,6 @@ test "docker container exec -it" {
     result,
     content=(
       #|Ok("  command: container\n  command: exec\n")
-
     ),
   )
 }
@@ -162,7 +152,6 @@ test "docker container stop" {
     result,
     content=(
       #|Ok("  command: container\n  command: stop\n")
-
     ),
   )
 }
@@ -174,7 +163,6 @@ test "docker container rm -f" {
     result,
     content=(
       #|Ok("  command: container\n  command: rm\n")
-
     ),
   )
 }
@@ -188,7 +176,6 @@ test "docker container logs -f" {
     result,
     content=(
       #|Ok("  command: container\n  command: logs\n")
-
     ),
   )
 }
@@ -215,7 +202,6 @@ test "docker image build basic" {
     result,
     content=(
       #|Ok("  command: image\n  command: build\n    path: .\n")
-
     ),
   )
 }
@@ -230,7 +216,6 @@ test "docker image build with tags and build-args" {
     result,
     content=(
       #|Ok("  command: image\n  command: build\n    tag: [\"myapp:latest\", \"myapp:v1\"]\n    build-arg: [\"VERSION=1.0\"]\n    no-cache: true\n    path: .\n")
-
     ),
   )
 }
@@ -264,7 +249,6 @@ test "docker image ls" {
     result,
     content=(
       #|Ok("  command: image\n  command: ls\n")
-
     ),
   )
 }
@@ -276,7 +260,6 @@ test "docker image pull" {
     result,
     content=(
       #|Ok("  command: image\n  command: pull\n")
-
     ),
   )
 }
@@ -288,7 +271,6 @@ test "docker image push" {
     result,
     content=(
       #|Ok("  command: image\n  command: push\n")
-
     ),
   )
 }
@@ -302,7 +284,6 @@ test "docker image rm" {
     result,
     content=(
       #|Ok("  command: image\n  command: rm\n")
-
     ),
   )
 }
@@ -318,7 +299,6 @@ test "docker compose up" {
     result,
     content=(
       #|Ok("  command: compose\n  command: up\n    detach: true\n")
-
     ),
   )
 }
@@ -333,7 +313,6 @@ test "docker compose up with file and build" {
     result,
     content=(
       #|Ok("  command: compose\n    file: [\"docker-compose.yml\", \"docker-compose.prod.yml\"]\n  command: up\n    build: true\n    force-recreate: true\n")
-
     ),
   )
 }
@@ -358,7 +337,6 @@ test "docker compose down" {
     result,
     content=(
       #|Ok("  command: compose\n  command: down\n")
-
     ),
   )
 }
@@ -370,7 +348,6 @@ test "docker compose down --rmi (implicit value)" {
     result,
     content=(
       #|Ok("  command: compose\n  command: down\n    rmi: all\n")
-
     ),
   )
 }
@@ -382,7 +359,6 @@ test "docker compose down --rmi local" {
     result,
     content=(
       #|Ok("  command: compose\n  command: down\n    rmi: local\n")
-
     ),
   )
 }
@@ -409,7 +385,6 @@ test "docker network create" {
     result,
     content=(
       #|Ok("  command: network\n  command: create\n")
-
     ),
   )
 }
@@ -421,7 +396,6 @@ test "docker network ls" {
     result,
     content=(
       #|Ok("  command: network\n  command: ls\n")
-
     ),
   )
 }
@@ -433,7 +407,6 @@ test "docker volume create" {
     result,
     content=(
       #|Ok("  command: volume\n  command: create\n")
-
     ),
   )
 }
@@ -445,7 +418,6 @@ test "docker volume rm" {
     result,
     content=(
       #|Ok("  command: volume\n  command: rm\n")
-
     ),
   )
 }
@@ -461,7 +433,6 @@ test "docker ps (shortcut for container ls)" {
     result,
     content=(
       #|Ok("  command: ps\n")
-
     ),
   )
 }
@@ -473,7 +444,6 @@ test "docker build (shortcut for image build)" {
     result,
     content=(
       #|Ok("  command: build\n")
-
     ),
   )
 }
@@ -485,7 +455,6 @@ test "docker exec (shortcut)" {
     result,
     content=(
       #|Ok("  command: exec\n")
-
     ),
   )
 }
@@ -497,7 +466,6 @@ test "docker pull (shortcut)" {
     result,
     content=(
       #|Ok("  command: pull\n")
-
     ),
   )
 }
@@ -509,7 +477,6 @@ test "docker push (shortcut)" {
     result,
     content=(
       #|Ok("  command: push\n")
-
     ),
   )
 }
@@ -521,7 +488,6 @@ test "docker images (shortcut for image ls)" {
     result,
     content=(
       #|Ok("  command: images\n")
-
     ),
   )
 }
@@ -537,7 +503,6 @@ test "global --debug" {
     result,
     content=(
       #|Ok("  debug: true\n  command: ps\n")
-
     ),
   )
 }
@@ -549,7 +514,6 @@ test "global --log-level" {
     result,
     content=(
       #|Ok("    log-level: debug\n  command: ps\n")
-
     ),
   )
 }
@@ -574,7 +538,6 @@ test "global --host with env fallback" {
     result,
     content=(
       #|Ok("    host: tcp://remote:2375\n  command: ps\n")
-
     ),
   )
 }
@@ -586,7 +549,6 @@ test "global -H shorthand" {
     result,
     content=(
       #|Ok("    host: tcp://localhost:2375\n  command: container\n  command: ls\n")
-
     ),
   )
 }
@@ -620,4 +582,103 @@ test "docker run --help" {
     Ok(text) => assert_true(text.contains("run"))
     Err(_) => fail("expected help text")
   }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// W-1: container run 管理パス — 複数append確認
+// ════════════════════════════════════════════════════════════════════
+
+///|
+test "docker container run with publish/env/volume" {
+  let result = build_and_parse([
+    "container", "run", "--rm", "-p", "8080:80", "-p", "3000:3000", "-e", "APP=demo",
+    "-v", "/data:/data", "--name", "myapp", "--restart", "always", "nginx:alpine",
+  ])
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: container\n  command: run\n    rm: true\n    name: myapp\n    restart: always\n    publish: [\"8080:80\", \"3000:3000\"]\n    volume: [\"/data:/data\"]\n    env: [\"APP=demo\"]\n    image: nginx:alpine\n")
+    ),
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Edge cases
+// ════════════════════════════════════════════════════════════════════
+
+///|
+test "empty args" {
+  let result = build_and_parse([])
+  inspect(
+    result,
+    content=(
+      #|Ok("")
+    ),
+  )
+}
+
+///|
+test "unknown option" {
+  let result = build_and_parse(["run", "--nonexistent", "nginx"])
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: run\n")
+    ),
+  )
+}
+
+///|
+test "container alias: list" {
+  let result = build_and_parse(["container", "list", "--all"])
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: container\n  command: ls\n")
+    ),
+  )
+}
+
+///|
+test "image alias: rmi" {
+  let result = build_and_parse(["image", "rmi", "old-image"])
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: image\n  command: rm\n")
+    ),
+  )
+}
+
+///|
+test "docker rm shortcut" {
+  let result = build_and_parse(["rm", "-f", "old-container"])
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: rm\n")
+    ),
+  )
+}
+
+///|
+test "docker rmi shortcut" {
+  let result = build_and_parse(["rmi", "old-image"])
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: rmi\n")
+    ),
+  )
+}
+
+///|
+test "compose up --no-deps (variation_false)" {
+  let result = build_and_parse(["compose", "up", "--no-deps"])
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: compose\n  command: up\n    no-deps: true\n")
+    ),
+  )
 }

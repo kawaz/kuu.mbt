@@ -7,14 +7,17 @@
 ///   docker [GLOBAL] compose [-f FILE] {up|down} [OPTS] [ARGS]
 ///   docker [GLOBAL] network {create|ls|rm} [OPTS] [ARGS]
 ///   docker [GLOBAL] volume {create|ls|rm} [OPTS] [ARGS]
-///   docker [GLOBAL] {run|ps|build|exec|pull|push} (shortcuts)
+///   docker [GLOBAL] {run|ps|build|exec|pull|push|images|rm|rmi} (shortcuts)
 
 // ════════════════════════════════════════════════════════════════════
 // Helpers
 // ════════════════════════════════════════════════════════════════════
 
-// Design rationale: kuu の値プリミティブ (string/int) は shorts/global を持たない。
-// shorts や global が必要な場合は custom コンビネータに pre filter を渡す。
+// Design rationale: kuu の string()/int() は "値だけを受け取る" シンプルなコンビネータで、
+// shorts(-p等)や global を持たない。shorts/global が必要な場合は custom() に "昇格" させる。
+// custom() は文字列→型T への変換フィルタ (pre) が必須:
+//   - str_pre: 文字列をそのまま返す恒等変換 (String → String)
+//   - int_pre: 文字列を整数にパースする変換 (String → Int)
 // トップレベル定数で1回だけ生成し、全箇所で共有する。
 
 ///|
@@ -171,6 +174,9 @@ fn setup_run_options(run : @core.Parser) -> Unit {
     value_name="VAR",
   )
   // Positional: IMAGE [COMMAND] [ARG...]
+  // serial: 位置引数を順序保証付きで定義するAPI。
+  // IMAGE を先に消費し、残りを COMMAND ARG... として rest で取得。
+  // sub.never(): serial サブパーサが「完了」しないことを宣言（全引数を消費し続ける）。
   let mut image_opt : @core.Opt[String]? = None
   let mut _cmd_opt : @core.Opt[Array[String]]? = None
   run.serial(setup=fn(sub) {
@@ -221,6 +227,9 @@ fn setup_exec_options(exec : @core.Parser) -> Unit {
     value_name="DIR",
   )
   // Positional: CONTAINER COMMAND [ARG...]
+  // serial: 位置引数を順序保証付きで定義するAPI。
+  // IMAGE を先に消費し、残りを COMMAND ARG... として rest で取得。
+  // sub.never(): serial サブパーサが「完了」しないことを宣言（全引数を消費し続ける）。
   let mut container_opt : @core.Opt[String]? = None
   let mut _cmd_opt : @core.Opt[Array[String]]? = None
   exec.serial(setup=fn(sub) {
@@ -465,6 +474,14 @@ fn build_and_parse(
     description="Location of client config files",
     value_name="DIR",
   )
+  let context = p.custom(
+    name="context",
+    default="",
+    global=true,
+    pre=str_pre,
+    description="Name of the context to use",
+    value_name="NAME",
+  )
   let host = p.custom(
     name="host",
     shorts="H",
@@ -601,6 +618,9 @@ fn build_and_parse(
     description="Set environment variables",
     value_name="VAR",
   )
+  // serial: 位置引数を順序保証付きで定義するAPI。
+  // IMAGE を先に消費し、残りを COMMAND ARG... として rest で取得。
+  // sub.never(): serial サブパーサが「完了」しないことを宣言（全引数を消費し続ける）。
   let mut run_image : @core.Opt[String]? = None
   let mut run_cmd : @core.Opt[Array[String]]? = None
   c_run.serial(setup=fn(sub) {
@@ -836,6 +856,12 @@ fn build_and_parse(
     description="Don't recreate containers if they already exist",
   )
   co_up.exclusive([up_force_recreate.as_ref(), up_no_recreate.as_ref()])
+  let up_deps = co_up.flag(
+    name="deps",
+    default=true,
+    variation_false=Some("no"),
+    description="Start linked services (--no-deps to disable)",
+  )
   let up_scale = co_up.append_string(
     name="scale",
     description="Scale SERVICE to NUM instances",
@@ -938,6 +964,32 @@ fn build_and_parse(
   )
   setup_image_ls_options(s_images)
 
+  // docker rm (shortcut for container rm)
+  let s_rm = p.sub(name="rm", description="Remove one or more containers")
+  s_rm.set_description("mydocker rm - Remove containers")
+  let _srm_force = s_rm.flag(
+    name="force",
+    shorts="f",
+    description="Force the removal",
+  )
+  let _srm_containers = s_rm.rest(
+    name="containers",
+    description="Container name(s) or ID(s)",
+  )
+
+  // docker rmi (shortcut for image rm)
+  let s_rmi = p.sub(name="rmi", description="Remove one or more images")
+  s_rmi.set_description("mydocker rmi - Remove images")
+  let _srmi_force = s_rmi.flag(
+    name="force",
+    shorts="f",
+    description="Force removal",
+  )
+  let _srmi_images = s_rmi.rest(
+    name="images",
+    description="Image name(s) or ID(s)",
+  )
+
   // ─── Parse ───
 
   let result : Result[@core.ParseResult, @core.ParseError] = try? p.parse(
@@ -952,6 +1004,7 @@ fn build_and_parse(
 
       // Global options (show only when explicitly set)
       write_str(buf, "config", config)
+      write_str(buf, "context", context)
       write_str(buf, "host", host)
       write_str(buf, "log-level", log_level)
       if debug.get().unwrap() {
@@ -1039,6 +1092,9 @@ fn build_and_parse(
               write_flag(buf, "build", up_build)
               write_flag(buf, "force-recreate", up_force_recreate)
               write_flag(buf, "no-recreate", up_no_recreate)
+              if up_deps.is_set() && not(up_deps.get().unwrap()) {
+                buf.write_string("    no-deps: true\n")
+              }
               write_arr(buf, "scale", up_scale)
               write_arr(buf, "services", up_services)
             }
@@ -1088,6 +1144,8 @@ fn build_and_parse(
       format_child_name(buf, pr, "pull")
       format_child_name(buf, pr, "push")
       format_child_name(buf, pr, "images")
+      format_child_name(buf, pr, "rm")
+      format_child_name(buf, pr, "rmi")
 
       Ok(buf.to_string())
     }
