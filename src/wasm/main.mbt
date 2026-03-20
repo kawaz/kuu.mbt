@@ -24,6 +24,7 @@
 ///   "args": ["--verbose", "--host", "example.com", "file.txt"],
 ///   "env": { "VERBOSE": "1", "HOST": "fallback.example.com" },
 ///   "description": "My CLI tool",
+///   "env_prefix": "MYAPP",
 ///   "require_cmd": true,
 ///   "exclusive": [["shared", "static"]],
 ///   "required": ["filename"],
@@ -1493,6 +1494,11 @@ pub fn kuu_parse(input : String) -> String {
   let parser = @core.Parser::new(dashdash=not(has_dashdash_kind))
   if description != "" {
     parser.set_description(description)
+  }
+  // Handle env_prefix
+  match obj.get("env_prefix") {
+    Some(String(prefix)) => parser.env_prefix(prefix)
+    _ => ()
   }
   let schema = match build_parser(parser, opts_json, obj) {
     Ok(s) => s

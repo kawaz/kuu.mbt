@@ -1189,4 +1189,81 @@ function test(label, input) {
   strictEqual(r.values.mode, "DEBUG");
 }
 
+// === env_prefix tests ===
+
+// Test 86: env_prefix applies PREFIX_ to env lookup
+{
+  const r = test("Env prefix basic", {
+    env_prefix: "MYAPP",
+    opts: [
+      { kind: "int", name: "port", default: 8080, env: "PORT" },
+    ],
+    args: [],
+    env: { MYAPP_PORT: "3000" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.port, 3000);
+}
+
+// Test 87: env_prefix - unprefixed env not matched
+{
+  const r = test("Env prefix unprefixed not matched", {
+    env_prefix: "MYAPP",
+    opts: [
+      { kind: "string", name: "host", default: "localhost", env: "HOST" },
+    ],
+    args: [],
+    env: { HOST: "should-not-apply" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.host, "localhost");
+}
+
+// Test 88: env_prefix - CLI overrides prefixed env
+{
+  const r = test("Env prefix CLI overrides", {
+    env_prefix: "MYAPP",
+    opts: [
+      { kind: "int", name: "port", default: 8080, env: "PORT" },
+    ],
+    args: ["--port", "9090"],
+    env: { MYAPP_PORT: "3000" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.port, 9090);
+}
+
+// Test 89: env_prefix - subcmd auto-nesting (MYAPP_SERVE_PORT)
+{
+  const r = test("Env prefix subcmd nesting", {
+    env_prefix: "MYAPP",
+    opts: [
+      {
+        kind: "command", name: "serve",
+        opts: [
+          { kind: "int", name: "port", default: 8080, env: "PORT" },
+        ],
+      },
+    ],
+    args: ["serve"],
+    env: { MYAPP_SERVE_PORT: "4000" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.command.name, "serve");
+  strictEqual(r.command.values.port, 4000);
+}
+
+// Test 90: env_prefix - no prefix behaves as before
+{
+  const r = test("No env_prefix behaves as before", {
+    opts: [
+      { kind: "string", name: "host", default: "localhost", env: "HOST" },
+    ],
+    args: [],
+    env: { HOST: "env-host" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.host, "env-host");
+}
+
 console.log("\n--- All tests passed ---");
