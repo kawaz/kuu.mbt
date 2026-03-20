@@ -3328,3 +3328,116 @@ test "help_header and help_footer: unset defaults to empty (no change)" {
   // Should end with the help option line (no footer)
   inspect(help.has_suffix("Print help\n"), content="true")
 }
+
+// ============================================================
+// generate_completions tests
+// ============================================================
+
+///|
+test "generate_completions: flag and string basic candidates" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose output")
+  let _ = p.string(name="output", default="", description="Output file")
+  let candidates = p.generate_completions()
+  // --verbose
+  let verbose_candidates = candidates.filter(fn(c) { c.value == "--verbose" })
+  inspect(verbose_candidates.length(), content="1")
+  inspect(verbose_candidates[0].description, content="Verbose output")
+  inspect(verbose_candidates[0].group, content="Options")
+  // --output
+  let output_candidates = candidates.filter(fn(c) { c.value == "--output" })
+  inspect(output_candidates.length(), content="1")
+  inspect(output_candidates[0].description, content="Output file")
+  inspect(output_candidates[0].group, content="Options")
+}
+
+///|
+test "generate_completions: shorts are included as candidates" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", shorts="v", description="Verbose output")
+  let candidates = p.generate_completions()
+  // -v should be a separate candidate
+  let short_candidates = candidates.filter(fn(c) { c.value == "-v" })
+  inspect(short_candidates.length(), content="1")
+  inspect(short_candidates[0].description, content="Verbose output")
+  inspect(short_candidates[0].group, content="Options")
+}
+
+///|
+test "generate_completions: aliases are included as candidates" {
+  let p = Parser::new()
+  let _ = p.custom(
+    name="output",
+    default="",
+    aliases=["out"],
+    description="Output file",
+    pre=Filter::map(fn(s) { s }),
+  )
+  let candidates = p.generate_completions()
+  let alias_candidates = candidates.filter(fn(c) { c.value == "--out" })
+  inspect(alias_candidates.length(), content="1")
+  inspect(alias_candidates[0].description, content="Output file")
+}
+
+///|
+test "generate_completions: command candidates" {
+  let p = Parser::new()
+  let _ = p.sub(name="serve", description="Start the server")
+  let _ = p.sub(name="build", description="Build the project")
+  let candidates = p.generate_completions()
+  let serve_candidates = candidates.filter(fn(c) { c.value == "serve" })
+  inspect(serve_candidates.length(), content="1")
+  inspect(serve_candidates[0].description, content="Start the server")
+  inspect(serve_candidates[0].group, content="Commands")
+  let build_candidates = candidates.filter(fn(c) { c.value == "build" })
+  inspect(build_candidates.length(), content="1")
+}
+
+///|
+test "generate_completions: hidden options are excluded" {
+  let p = Parser::new()
+  let _ = p.flag(name="visible", description="Visible flag")
+  let _ = p.flag(name="secret", description="Secret flag", visibility=Hidden)
+  let candidates = p.generate_completions()
+  let secret_candidates = candidates.filter(fn(c) { c.value == "--secret" })
+  inspect(secret_candidates.length(), content="0")
+  // visible should be present
+  let visible_candidates = candidates.filter(fn(c) { c.value == "--visible" })
+  inspect(visible_candidates.length(), content="1")
+}
+
+///|
+test "generate_completions: advanced options are included" {
+  let p = Parser::new()
+  let _ = p.flag(
+    name="advanced-opt",
+    description="Advanced option",
+    visibility=Advanced,
+  )
+  let candidates = p.generate_completions()
+  let adv_candidates = candidates.filter(fn(c) { c.value == "--advanced-opt" })
+  inspect(adv_candidates.length(), content="1")
+  inspect(adv_candidates[0].description, content="Advanced option")
+}
+
+///|
+test "generate_completions: description is set correctly" {
+  let p = Parser::new()
+  let _ = p.int(name="port", default=8080, description="Server port")
+  let candidates = p.generate_completions()
+  let port_candidates = candidates.filter(fn(c) { c.value == "--port" })
+  inspect(port_candidates.length(), content="1")
+  inspect(port_candidates[0].description, content="Server port")
+}
+
+///|
+test "generate_completions: group is correctly set for global options" {
+  let p = Parser::new()
+  let _ = p.flag(name="local-opt", description="Local option")
+  let _ = p.flag(name="global-opt", description="Global option", global=true)
+  let candidates = p.generate_completions()
+  let local_candidates = candidates.filter(fn(c) { c.value == "--local-opt" })
+  inspect(local_candidates[0].group, content="Options")
+  let global_candidates = candidates.filter(fn(c) { c.value == "--global-opt" })
+  inspect(global_candidates[0].group, content="Global Options")
+}

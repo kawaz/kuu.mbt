@@ -159,6 +159,13 @@ pub(all) struct ParseResult {
 }
 
 ///|
+pub(all) struct CompletionCandidate {
+  value : String
+  description : String
+  group : String
+}
+
+///|
 pub(all) enum OptKind {
   Flag
   ValueOpt

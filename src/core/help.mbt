@@ -201,6 +201,71 @@ pub fn Parser::generate_help(self : Parser) -> String {
 }
 
 ///|
+pub fn Parser::generate_completions(
+  self : Parser,
+) -> Array[CompletionCandidate] {
+  let candidates : Array[CompletionCandidate] = []
+  for meta in self.metas {
+    if meta.visibility == Hidden {
+      continue
+    }
+    match meta.kind {
+      Command => {
+        // Primary command name
+        candidates.push(CompletionCandidate::{
+          value: meta.name,
+          description: meta.help,
+          group: "Commands",
+        })
+        // Command aliases
+        for alt in meta.aliases {
+          candidates.push(CompletionCandidate::{
+            value: alt,
+            description: meta.help,
+            group: "Commands",
+          })
+        }
+      }
+      Flag | ValueOpt => {
+        let group = if meta.global { "Global Options" } else { "Options" }
+        // Primary --name
+        candidates.push(CompletionCandidate::{
+          value: "--" + meta.name,
+          description: meta.help,
+          group,
+        })
+        // Short options
+        for s in meta.shorts {
+          candidates.push(CompletionCandidate::{
+            value: "-" + s,
+            description: meta.help,
+            group,
+          })
+        }
+        // Aliases
+        for alt in meta.aliases {
+          candidates.push(CompletionCandidate::{
+            value: "--" + alt,
+            description: meta.help,
+            group,
+          })
+        }
+        // Variation names (already include -- prefix in the name)
+        for vname in meta.variation_names {
+          candidates.push(CompletionCandidate::{
+            value: vname,
+            description: meta.help,
+            group,
+          })
+        }
+      }
+      Positional | Rest => ()
+    }
+  }
+  candidates
+}
+
+///|
 fn calculate_max_width(
   metas : Array[OptMeta],
   format_left : (OptMeta) -> String,
