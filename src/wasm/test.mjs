@@ -16,7 +16,7 @@ const { instance } = await WebAssembly.instantiate(wasmBytes, {}, {
   importedStringConstants: "_",
 });
 
-const { kuu_parse } = instance.exports;
+const { kuu_parse, kuu_completions } = instance.exports;
 
 function test(label, input) {
   console.log(`\n=== ${label} ===`);
@@ -1294,6 +1294,91 @@ function test(label, input) {
   });
   strictEqual(r.ok, true);
   strictEqual(r.values.host, "explicit-host");
+}
+
+// === kuu_completions tests ===
+
+function testCompletions(label, schema, shell, commandName) {
+  console.log(`\n=== ${label} ===`);
+  console.log("Schema:", JSON.stringify(schema));
+  console.log("Shell:", shell, "Command:", commandName);
+  const result = kuu_completions(JSON.stringify(schema), shell, commandName);
+  console.log("Output:", result);
+  return result;
+}
+
+// Test 93: bash completion script generation
+{
+  const script = testCompletions("Bash completion", {
+    opts: [
+      { kind: "flag", name: "verbose", shorts: "v", description: "Verbose output" },
+      { kind: "string", name: "host", default: "localhost", description: "Host" },
+    ],
+  }, "bash", "myapp");
+  strictEqual(script.includes("complete -F _myapp myapp"), true);
+  strictEqual(script.includes("_myapp()"), true);
+  strictEqual(script.includes("--verbose"), true);
+  strictEqual(script.includes("--host"), true);
+}
+
+// Test 94: zsh completion script generation
+{
+  const script = testCompletions("Zsh completion", {
+    opts: [
+      { kind: "flag", name: "verbose", shorts: "v", description: "Verbose output" },
+      { kind: "int", name: "port", default: 8080, description: "Server port" },
+    ],
+  }, "zsh", "myapp");
+  strictEqual(script.includes("#compdef myapp"), true);
+  strictEqual(script.includes("_myapp()"), true);
+  strictEqual(script.includes("--verbose"), true);
+  strictEqual(script.includes("--port"), true);
+}
+
+// Test 95: fish completion script generation
+{
+  const script = testCompletions("Fish completion", {
+    opts: [
+      { kind: "flag", name: "verbose", shorts: "v", description: "Verbose output" },
+      { kind: "string", name: "output", default: "", description: "Output file" },
+    ],
+  }, "fish", "myapp");
+  strictEqual(script.includes("complete -c myapp"), true);
+  strictEqual(script.includes("-l verbose"), true);
+  strictEqual(script.includes("-s v"), true);
+  strictEqual(script.includes("-l output"), true);
+}
+
+// Test 96: completion with subcommands
+{
+  const script = testCompletions("Completion with subcommands", {
+    opts: [
+      { kind: "flag", name: "verbose", description: "Verbose" },
+      { kind: "command", name: "serve", description: "Start server", opts: [] },
+      { kind: "command", name: "build", description: "Build project", opts: [] },
+    ],
+  }, "bash", "mycli");
+  strictEqual(script.includes("serve"), true);
+  strictEqual(script.includes("build"), true);
+  strictEqual(script.includes("--verbose"), true);
+}
+
+// Test 97: unsupported shell returns error comment
+{
+  const script = testCompletions("Unsupported shell", {
+    opts: [
+      { kind: "flag", name: "verbose", description: "Verbose" },
+    ],
+  }, "powershell", "myapp");
+  strictEqual(script.includes("Unsupported shell: powershell"), true);
+}
+
+// Test 98: invalid JSON returns error comment
+{
+  console.log("\n=== Invalid JSON completion ===");
+  const result = kuu_completions("not valid json", "bash", "myapp");
+  console.log("Output:", result);
+  strictEqual(result.includes("Error"), true);
 }
 
 console.log("\n--- All tests passed ---");

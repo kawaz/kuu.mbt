@@ -6,6 +6,9 @@ import {
 options(
   "is-main": true,
   link: {
-    "wasm-gc": { "exports": [ "kuu_parse" ], "use-js-builtin-string": true },
+    "wasm-gc": {
+      "exports": [ "kuu_parse", "kuu_completions" ],
+      "use-js-builtin-string": true,
+    },
   },
 )

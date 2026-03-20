@@ -1600,6 +1600,62 @@ fn make_help_json(help_text : String) -> String {
 }
 
 ///|
+/// Completion script generation entry point.
+/// Input:
+///   schema_json: JSON schema (same format as kuu_parse input, opts/commands etc.)
+///   shell: "bash" / "zsh" / "fish"
+///   command_name: CLI command name
+/// Output: completion script string
+pub fn kuu_completions(
+  schema_json : String,
+  shell : String,
+  command_name : String,
+) -> String {
+  // Parse schema JSON
+  let parse_json_result : Result[Json, _] = try? @json.parse(schema_json.view())
+  let json : Json = match parse_json_result {
+    Ok(j) => j
+    Err(_) => return "# Error: invalid schema JSON\n"
+  }
+  let obj = match json {
+    Object(o) => o
+    _ => return "# Error: schema must be a JSON object\n"
+  }
+  // Extract opts schema
+  let opts_json : Array[Json] = match obj.get("opts") {
+    Some(Array(arr)) => arr
+    _ => []
+  }
+  // Extract description
+  let description = match obj.get("description") {
+    Some(String(s)) => s
+    _ => ""
+  }
+  // Check for explicit dashdash
+  let has_dashdash_kind = has_dashdash_opt(opts_json)
+  // Build parser from schema
+  let parser = @core.Parser::new(dashdash=not(has_dashdash_kind))
+  if description != "" {
+    parser.set_description(description)
+  }
+  // Handle env_prefix
+  match obj.get("env_prefix") {
+    Some(String(prefix)) => parser.env_prefix(prefix)
+    _ => ()
+  }
+  // Handle auto_env
+  match obj.get("auto_env") {
+    Some(True) => parser.auto_env(true)
+    _ => ()
+  }
+  match build_parser(parser, opts_json, obj) {
+    Ok(_) => ()
+    Err(msg) => return "# Error: " + msg + "\n"
+  }
+  parser.generate_completion_script(shell~, command_name~)
+}
+
+///|
 fn main {
-  // Required by is-main; actual entry point is the exported kuu_parse function.
+  // Required by is-main; actual entry point is the exported kuu_parse / kuu_completions functions.
 }
