@@ -282,6 +282,15 @@ struct-first 方式。Parseable trait + FieldRegistry + parse_into の2フェー
 
 apply_fn パターンにより、core 側の Ref[T] が DX 層に漏洩しない。
 
+### TypeScript DX 層（pkg/ts/、PoC）
+
+WASM-GC ラッパー + Schema DSL + 型推論の PoC 実装。`kuu()` で宣言的にスキーマを定義し、`InferResult<O>` でパース結果の型を自動導出する:
+
+- **Schema DSL**: `flag()`, `stringOpt()`, `intOpt()`, `count()`, `sub()`, `positional()`, `rest()`, `dashdash()` 等のコンビネータファクトリ
+- **InferResult 型推論**: required → non-optional、choices `as const` → リテラルユニオン型、サブコマンド → discriminated union
+- **WASM-GC 直接ロード**: V8 の WASM-GC builtins + js-string を利用。JSON protocol 経由で kuu core を呼び出す
+- 30 テスト通過。npm publish は未実施
+
 ### Opt 定義の AST 可搬性（DR-029, DR-030 構想）
 
 Opt 定義は純粋データ（定義レベルではクロージャなし）。JSON にシリアライズして他言語に転送可能な構想:
@@ -536,6 +545,8 @@ src/
   wasm/              # WASM bridge PoC（JSON schema → kuu core → JSON result）
   contrib/
     timespec/        # kawaz/timespec 連携フィルタ（parse_duration, parse_timespec, parse_timespec_optional）
+pkg/
+  ts/                # TypeScript DX PoC（WASM-GC ラッパー + Schema DSL + InferResult 型推論）
 ```
 
 ---

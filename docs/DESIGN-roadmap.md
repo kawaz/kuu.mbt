@@ -160,6 +160,16 @@ pub fn Parser::generate_completion_script(self : Parser, shell~ : String, comman
 
 contrib パッケージ方式を採用し、core の依存を最小に保つ（推奨方式通り）。
 
+### TypeScript DX PoC（pkg/ts/）
+
+`pkg/ts/` にスケルトン実装:
+
+- **WASM-GC ラッパー**: `loadWasm()` で kuu の WASM-GC バイナリを Node.js V8 上で直接ロード。JSON protocol 経由で kuu core を呼び出す
+- **Schema DSL**: `kuu()` + コンビネータファクトリ（`flag`, `stringOpt`, `intOpt`, `count`, `sub`, `positional`, `rest`, `dashdash` 等）でパーサスキーマを宣言的に定義
+- **型推論 (`InferResult`)**: スキーマ定義から TypeScript の型レベルで結果型を自動導出。required → non-optional、choices `as const` → リテラルユニオン型、サブコマンド → discriminated union
+- **30 テスト通過**（vitest）: コンビネータ登録、パース実行、型推論、サブコマンドディスパッチ等
+- npm publish はまだ（パッケージ名 `@kawaz/kuu` は確保済み）
+
 ### CI/CD
 
 GitHub Actions ワークフロー（`.github/workflows/ci.yml`）を整備:
@@ -412,9 +422,9 @@ result.verbose;  // number（型推論で解決）
 result.serve?.dir;  // string | undefined
 ```
 
-TypeScript の union/infer/conditional types で型レベル解決。WASM bridge 経由で kuu core を呼ぶか、pure TS 実装にするかは FFI 調査結果次第。
+TypeScript の union/infer/conditional types で型レベル解決。WASM-GC ラッパー + Schema DSL + `InferResult` 型推論の PoC は `pkg/ts/` に実装済み（→ 実装済みセクション参照）。
 
-**ブロッカー**: FFI 調査の完了（WASM bridge の主要機能ギャップは DR-056 で解消済み）
+**ブロッカー**: npm パッケージ整備（ESM エントリポイント、WASM バイナリ同梱方式）、型定義の完全化
 
 #### Go DX
 
