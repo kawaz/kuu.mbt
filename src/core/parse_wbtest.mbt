@@ -956,7 +956,7 @@ test "subcommand help shows own scope" {
 test "hidden option not shown in help" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", description="Verbose")
-  let _ = p.flag(name="secret", description="Secret option", hidden=true)
+  let _ = p.flag(name="secret", description="Secret option", visibility=Hidden)
   let result : Result[_, _] = try? p.parse(["--help"])
   match result {
     Err(HelpRequested(text)) => {

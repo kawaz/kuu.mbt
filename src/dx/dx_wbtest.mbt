@@ -555,7 +555,7 @@ fn HiddenConfig::default() -> HiddenConfig {
 
 ///|
 impl Parseable for HiddenConfig with register(self, reg) {
-  reg.flag(name="debug", hidden=true, set=fn(v) { self.debug = v })
+  reg.flag(name="debug", visibility=Hidden, set=fn(v) { self.debug = v })
   reg.string(name="name", set=fn(v) { self.name = v })
 }
 

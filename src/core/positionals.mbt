@@ -38,7 +38,7 @@ pub fn Parser::positional(
     shorts: [],
     aliases: [],
     variation_names: [],
-    hidden: false,
+    visibility: Visible,
   })
   {
     id,
@@ -93,7 +93,7 @@ pub fn Parser::rest(
     shorts: [],
     aliases: [],
     variation_names: [],
-    hidden: false,
+    visibility: Visible,
   })
   {
     id,

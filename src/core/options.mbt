@@ -68,7 +68,7 @@ pub fn Parser::flag(
   shorts? : String = "",
   description? : String = "",
   env? : String = "",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
   variations? : Array[Variation] = [],
   variation_toggle? : String? = None,
   variation_true? : String? = None,
@@ -76,7 +76,7 @@ pub fn Parser::flag(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Opt[Bool] {
-  let env = self.effective_env_name(env, name, hidden)
+  let env = self.effective_env_name(env, name, visibility)
   apply_variation_sugar(
     variations,
     variation_toggle~,
@@ -105,7 +105,7 @@ pub fn Parser::flag(
     aliases~,
     shorts~,
     global~,
-    hidden~,
+    visibility~,
     help=description,
     value_name="",
     default_display="",
@@ -221,7 +221,7 @@ pub fn Parser::file(
   description? : String = "",
   env? : String = "",
   value_name? : String = "PATH",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
   aliases? : Array[String] = [],
   shorts? : String = "",
   global? : Bool = false,
@@ -230,7 +230,7 @@ pub fn Parser::file(
 ) -> Opt[String] {
   self.custom(
     name~,
-    hidden~,
+    visibility~,
     description~,
     value_name~,
     env~,
@@ -255,14 +255,14 @@ pub fn Parser::string(
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
   post? : FilterChain[String, String]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[String]? = None,
 ) -> Opt[String] {
   self.custom(
     name~,
-    hidden~,
+    visibility~,
     description~,
     value_name~,
     env~,
@@ -284,14 +284,14 @@ pub fn Parser::int(
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
   post? : FilterChain[Int, Int]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[Int]? = None,
 ) -> Opt[Int] {
   self.custom(
     name~,
-    hidden~,
+    visibility~,
     description~,
     value_name~,
     env~,
@@ -313,14 +313,14 @@ pub fn Parser::float(
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
   post? : FilterChain[Double, Double]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[Double]? = None,
 ) -> Opt[Double] {
   self.custom(
     name~,
-    hidden~,
+    visibility~,
     description~,
     value_name~,
     env~,
@@ -342,14 +342,14 @@ pub fn Parser::boolean(
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
   post? : FilterChain[Bool, Bool]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[Bool]? = None,
 ) -> Opt[Bool] {
   self.custom(
     name~,
-    hidden~,
+    visibility~,
     description~,
     value_name~,
     env~,
@@ -369,11 +369,11 @@ pub fn Parser::append_string(
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
 ) -> Opt[Array[String]] {
   self.custom_append(
     name~,
-    hidden~,
+    visibility~,
     description~,
     value_name~,
     env~,
@@ -388,11 +388,11 @@ pub fn Parser::append_int(
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
 ) -> Opt[Array[Int]] {
   self.custom_append(
     name~,
-    hidden~,
+    visibility~,
     description~,
     value_name~,
     env~,
@@ -407,11 +407,11 @@ pub fn Parser::append_float(
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
 ) -> Opt[Array[Double]] {
   self.custom_append(
     name~,
-    hidden~,
+    visibility~,
     description~,
     value_name~,
     env~,
@@ -428,7 +428,7 @@ pub fn Parser::count(
   shorts? : String = "",
   description? : String = "",
   env? : String = "",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
   variations? : Array[Variation] = [],
   variation_toggle? : String? = None,
   variation_true? : String? = None,
@@ -436,7 +436,7 @@ pub fn Parser::count(
   variation_reset? : String? = None,
   variation_unset? : String? = None,
 ) -> Opt[Int] {
-  let env = self.effective_env_name(env, name, hidden)
+  let env = self.effective_env_name(env, name, visibility)
   apply_variation_sugar(
     variations,
     variation_toggle~,
@@ -460,7 +460,7 @@ pub fn Parser::count(
     aliases~,
     shorts~,
     global~,
-    hidden~,
+    visibility~,
     help=description,
     value_name="",
     default_display="",
@@ -528,7 +528,7 @@ pub fn[T : Show] Parser::custom(
   env? : String = "",
   value_name? : String = "",
   default_display? : String? = None,
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
   variations? : Array[Variation] = [],
   default~ : T,
   default_fn? : (() -> T)? = None,
@@ -537,7 +537,7 @@ pub fn[T : Show] Parser::custom(
   choices? : Array[String] = [],
   implicit_value? : Lazy[T]? = None,
 ) -> Opt[T] {
-  let env = self.effective_env_name(env, name, hidden)
+  let env = self.effective_env_name(env, name, visibility)
   let initial_val = match default_fn {
     Some(f) => f()
     None => default
@@ -636,7 +636,7 @@ pub fn[T : Show] Parser::custom(
     aliases~,
     shorts~,
     global~,
-    hidden~,
+    visibility~,
     help=effective_help,
     value_name=display_value_name,
     default_display=effective_display,
@@ -708,11 +708,11 @@ pub fn[T] Parser::custom_append(
   description? : String = "",
   env? : String = "",
   value_name? : String = "",
-  hidden? : Bool = false,
+  visibility? : Visibility = Visible,
   variations? : Array[Variation] = [],
   pre~ : FilterChain[String, T],
 ) -> Opt[Array[T]] {
-  let env = self.effective_env_name(env, name, hidden)
+  let env = self.effective_env_name(env, name, visibility)
   let vc : ValCell[Array[T]] = ValCell::new(Thunk(fn() { [] }))
   let reset_fn = fn() { vc.cell.val = [] }
   let display_value_name = if value_name == "" {
@@ -725,7 +725,7 @@ pub fn[T] Parser::custom_append(
     aliases~,
     shorts~,
     global~,
-    hidden~,
+    visibility~,
     help=description,
     value_name=display_value_name,
     default_display="",

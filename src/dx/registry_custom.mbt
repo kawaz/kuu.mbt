@@ -10,7 +10,7 @@ pub fn[T : Show] FieldRegistry::custom(
   shorts? : String = "",
   aliases? : Array[String] = [],
   env? : String = "",
-  hidden? : Bool = false,
+  visibility? : @core.Visibility = Visible,
   value_name? : String = "",
   set~ : (T) -> Unit,
 ) -> Unit {
@@ -24,7 +24,7 @@ pub fn[T : Show] FieldRegistry::custom(
       shorts~,
       aliases~,
       env~,
-      hidden~,
+      visibility~,
       value_name~,
       set~,
     ),
@@ -43,7 +43,7 @@ pub fn[T : Show] FieldRegistry::custom_ref(
   shorts? : String = "",
   aliases? : Array[String] = [],
   env? : String = "",
-  hidden? : Bool = false,
+  visibility? : @core.Visibility = Visible,
   value_name? : String = "",
   set~ : (T) -> Unit,
 ) -> @core.OptRef {
@@ -56,7 +56,7 @@ pub fn[T : Show] FieldRegistry::custom_ref(
     shorts~,
     aliases~,
     env~,
-    hidden~,
+    visibility~,
     value_name~,
   )
   self.appliers.push(fn() {
@@ -81,7 +81,7 @@ pub fn[T] FieldRegistry::custom_append(
   shorts? : String = "",
   aliases? : Array[String] = [],
   env? : String = "",
-  hidden? : Bool = false,
+  visibility? : @core.Visibility = Visible,
   value_name? : String = "",
   set~ : (Array[T]) -> Unit,
 ) -> Unit {
@@ -94,7 +94,7 @@ pub fn[T] FieldRegistry::custom_append(
       shorts~,
       aliases~,
       env~,
-      hidden~,
+      visibility~,
       value_name~,
       set~,
     ),
@@ -112,7 +112,7 @@ pub fn[T] FieldRegistry::custom_append_ref(
   shorts? : String = "",
   aliases? : Array[String] = [],
   env? : String = "",
-  hidden? : Bool = false,
+  visibility? : @core.Visibility = Visible,
   value_name? : String = "",
   set~ : (Array[T]) -> Unit,
 ) -> @core.OptRef {
@@ -124,7 +124,7 @@ pub fn[T] FieldRegistry::custom_append_ref(
     shorts~,
     aliases~,
     env~,
-    hidden~,
+    visibility~,
     value_name~,
   )
   self.appliers.push(fn() {

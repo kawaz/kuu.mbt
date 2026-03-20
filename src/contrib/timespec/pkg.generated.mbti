@@ -1,0 +1,22 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/contrib/timespec"
+
+import {
+  "kawaz/kuu/core",
+}
+
+// Values
+pub fn parse_duration(default_sign? : @kawaz/timespec.Sign) -> @core.FilterChain[String, @kawaz/timespec.Duration]
+
+pub fn parse_timespec(default_sign? : @kawaz/timespec.Sign, now? : () -> UInt64) -> @core.FilterChain[String, @kawaz/timespec.TimeSpec]
+
+pub fn parse_timespec_optional(default_sign? : @kawaz/timespec.Sign, now? : () -> UInt64) -> @core.FilterChain[String, @kawaz/timespec.TimeSpec?]
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+

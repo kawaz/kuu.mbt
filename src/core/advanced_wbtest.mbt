@@ -2023,7 +2023,7 @@ test "env hidden option does not leak env_name in help" {
     name="secret-key",
     default="",
     env="SECRET_KEY",
-    hidden=true,
+    visibility=Hidden,
     description="Secret",
   )
   let _ = p.flag(name="verbose", description="Verbose")
@@ -3361,7 +3361,7 @@ test "auto_env: disabled by default — no auto binding" {
 test "auto_env: hidden opt excluded" {
   let p = Parser::new()
   p.auto_env(true)
-  let secret = p.string(name="secret", default="none", hidden=true)
+  let secret = p.string(name="secret", default="none", visibility=Hidden)
   ignore(p.parse([], env={ "SECRET": "hidden_val" }))
   // hidden opt should NOT be auto-bound
   inspect(secret.get(), content="Some(\"none\")")
@@ -3473,4 +3473,145 @@ test "auto_env: boolean auto-bound" {
   let debug = p.boolean(name="debug", default=false)
   ignore(p.parse([], env={ "DEBUG": "true" }))
   inspect(debug.get(), content="Some(true)")
+}
+
+// === Visibility enum テスト ===
+
+///|
+test "visibility: Visible option shown in help (default)" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose output")
+  let result : Result[_, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("--verbose"), content="true")
+      inspect(text.contains("Verbose output"), content="true")
+    }
+    _ => fail("expected HelpRequested")
+  }
+}
+
+///|
+test "visibility: Hidden option not shown in help" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose output")
+  let _ = p.flag(name="secret", description="Secret option", visibility=Hidden)
+  let result : Result[_, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("--verbose"), content="true")
+      inspect(text.contains("--secret"), content="false")
+      inspect(text.contains("Secret option"), content="false")
+    }
+    _ => fail("expected HelpRequested")
+  }
+}
+
+///|
+test "visibility: Hidden option still works for parsing" {
+  let p = Parser::new()
+  let secret = p.flag(
+    name="secret",
+    description="Secret option",
+    visibility=Hidden,
+  )
+  ignore(p.parse(["--secret"]))
+  inspect(secret.get(), content="Some(true)")
+}
+
+///|
+test "visibility: Advanced option not shown in help" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Verbose output")
+  let _ = p.string(
+    name="internal-format",
+    default="json",
+    description="Internal format",
+    visibility=Advanced,
+  )
+  let result : Result[_, _] = try? p.parse(["--help"])
+  match result {
+    Err(HelpRequested(text)) => {
+      inspect(text.contains("--verbose"), content="true")
+      inspect(text.contains("--internal-format"), content="false")
+      inspect(text.contains("Internal format"), content="false")
+    }
+    _ => fail("expected HelpRequested")
+  }
+}
+
+///|
+test "visibility: Advanced option still works for parsing" {
+  let p = Parser::new()
+  let fmt = p.string(
+    name="internal-format",
+    default="json",
+    description="Internal format",
+    visibility=Advanced,
+  )
+  ignore(p.parse(["--internal-format", "yaml"]))
+  inspect(fmt.get(), content="Some(\"yaml\")")
+}
+
+///|
+test "visibility: Hidden option not shown in usage" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.flag(name="secret", visibility=Hidden)
+  let usage = p.generate_usage()
+  // Hidden option should not cause [OPTIONS] to appear
+  inspect(usage.contains("[OPTIONS]"), content="false")
+}
+
+///|
+test "visibility: Advanced option not shown in usage" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.flag(name="debug", visibility=Advanced)
+  let usage = p.generate_usage()
+  // Advanced option should not cause [OPTIONS] to appear
+  inspect(usage.contains("[OPTIONS]"), content="false")
+}
+
+///|
+test "visibility: Visible option shown in usage" {
+  let p = Parser::new(dashdash=false)
+  let _ = p.flag(name="verbose")
+  let usage = p.generate_usage()
+  inspect(usage.contains("[OPTIONS]"), content="true")
+}
+
+///|
+test "visibility: auto_env excludes Advanced opt" {
+  let p = Parser::new()
+  p.auto_env(true)
+  let internal = p.string(name="internal", default="none", visibility=Advanced)
+  ignore(p.parse([], env={ "INTERNAL": "test_val" }))
+  // Advanced opt should NOT be auto-bound (same as Hidden)
+  inspect(internal.get(), content="Some(\"none\")")
+  inspect(internal.is_set(), content="false")
+}
+
+///|
+test "visibility: Hidden option not shown in error help line" {
+  let p = Parser::new()
+  let _ = p.string(name="secret", default="", visibility=Hidden)
+  let result : Result[ParseResult, _] = try? p.parse(["--secrt"])
+  match result {
+    Err(ParseError(info)) => {
+      // typo suggestion still works
+      inspect(info.tip, content="--secret")
+      // but help line for hidden option is not shown
+      inspect(info.to_string().contains("help:"), content="false")
+    }
+    _ => fail("expected ParseError")
+  }
+}
+
+///|
+test "visibility: derive Show/Eq for Visibility" {
+  inspect(Visibility::Visible, content="Visible")
+  inspect(Visibility::Advanced, content="Advanced")
+  inspect(Visibility::Hidden, content="Hidden")
+  inspect(Visibility::Visible == Visibility::Visible, content="true")
+  inspect(Visibility::Visible == Visibility::Hidden, content="false")
+  inspect(Visibility::Advanced == Visibility::Advanced, content="true")
 }

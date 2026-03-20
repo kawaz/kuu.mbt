@@ -53,7 +53,7 @@ pub fn Parser::env_prefix(self : Parser, prefix : String) -> Unit {
 }
 
 ///|
-/// auto_env を有効/無効にする。有効時、env パラメータ未設定かつ非 hidden の全オプションに
+/// auto_env を有効/無効にする。有効時、env パラメータ未設定かつ Visible の全オプションに
 /// name.to_upper() (ハイフン→アンダースコア変換) の環境変数を自動バインドする。
 pub fn Parser::auto_env(self : Parser, enabled : Bool) -> Unit {
   self.auto_env_enabled.val = enabled
@@ -62,17 +62,17 @@ pub fn Parser::auto_env(self : Parser, enabled : Bool) -> Unit {
 ///|
 /// env パラメータと auto_env 設定から実効的な env 名を算出する。
 /// - env が非空: そのまま返す（明示的指定が優先）
-/// - auto_env_enabled かつ非 hidden: name のハイフンをアンダースコアに変換し大文字化
+/// - auto_env_enabled かつ Visible: name のハイフンをアンダースコアに変換し大文字化
 /// - それ以外: "" を返す
 fn Parser::effective_env_name(
   self : Parser,
   env : String,
   name : String,
-  hidden : Bool,
+  visibility : Visibility,
 ) -> String {
   if env != "" {
     env
-  } else if self.auto_env_enabled.val && not(hidden) {
+  } else if self.auto_env_enabled.val && visibility == Visible {
     name.replace_all(old="-", new="_").to_upper()
   } else {
     ""
@@ -128,7 +128,7 @@ fn[T] Parser::register_option(
   value_name~ : String,
   default_display~ : String,
   env_name~ : String,
-  hidden~ : Bool,
+  visibility~ : Visibility,
   kind~ : OptKind,
   variations~ : Array[Variation],
   valcell~ : ValCell[T],
@@ -176,7 +176,7 @@ fn[T] Parser::register_option(
     shorts: shorts_arr,
     aliases,
     variation_names: var_names,
-    hidden,
+    visibility,
   })
   self.node_templates[id] = NodeTemplate::{
     make_node: make_main_node,

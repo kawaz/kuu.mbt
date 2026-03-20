@@ -139,7 +139,7 @@ pub fn Parser::cmd(
     shorts: [],
     aliases,
     variation_names: [],
-    hidden: false,
+    visibility: Visible,
   })
   let cmd_acc : Accessor[CmdResult] = {
     get: fn() -> CmdResult {

@@ -324,9 +324,15 @@ fn build_parser(
           Some(True) => true
           _ => false
         }
-        let hidden = match obj.get("hidden") {
-          Some(True) => true
-          _ => false
+        let visibility : @core.Visibility = match obj.get("visibility") {
+          Some(String("hidden")) => Hidden
+          Some(String("advanced")) => Advanced
+          _ =>
+            // backward compat: "hidden": true → Hidden
+            match obj.get("hidden") {
+              Some(True) => Hidden
+              _ => Visible
+            }
         }
         let aliases : Array[String] = match obj.get("aliases") {
           Some(Array(arr)) => {
@@ -358,7 +364,7 @@ fn build_parser(
               global~,
               shorts~,
               description~,
-              hidden~,
+              visibility~,
               aliases~,
               variations~,
               env~,
@@ -446,7 +452,7 @@ fn build_parser(
               global~,
               shorts~,
               description~,
-              hidden~,
+              visibility~,
               aliases~,
               choices~,
               implicit_value~,
@@ -530,7 +536,7 @@ fn build_parser(
               global~,
               shorts~,
               description~,
-              hidden~,
+              visibility~,
               aliases~,
               implicit_value~,
               post~,
@@ -613,7 +619,7 @@ fn build_parser(
               global~,
               shorts~,
               description~,
-              hidden~,
+              visibility~,
               aliases~,
               implicit_value~,
               post~,
@@ -696,7 +702,7 @@ fn build_parser(
               global~,
               shorts~,
               description~,
-              hidden~,
+              visibility~,
               aliases~,
               implicit_value~,
               variations~,
@@ -761,7 +767,7 @@ fn build_parser(
               global~,
               shorts~,
               description~,
-              hidden~,
+              visibility~,
               aliases~,
               variations~,
               env~,
@@ -830,7 +836,7 @@ fn build_parser(
               global~,
               shorts~,
               description~,
-              hidden~,
+              visibility~,
               aliases~,
               variations~,
               env~,
@@ -896,7 +902,7 @@ fn build_parser(
               global~,
               shorts~,
               description~,
-              hidden~,
+              visibility~,
               aliases~,
               variations~,
               env~,
@@ -966,7 +972,7 @@ fn build_parser(
               global~,
               shorts~,
               description~,
-              hidden~,
+              visibility~,
               aliases~,
               variations~,
               env~,

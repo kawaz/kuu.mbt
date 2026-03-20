@@ -642,7 +642,7 @@ test "C-1: MissingRequired help line display" {
 ///|
 test "C-3: hidden option not shown in error help line" {
   let p = Parser::new()
-  let _ = p.string(name="secret", default="", hidden=true)
+  let _ = p.string(name="secret", default="", visibility=Hidden)
   let result : Result[ParseResult, _] = try? p.parse(["--secrt"])
   match result {
     Err(ParseError(info)) => {

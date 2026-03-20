@@ -9,6 +9,8 @@ pub fn kuu_parse(String) -> String
 // Types and methods
 type OptEntry
 
+type OptHandle
+
 type SchemaResult
 
 // Type aliases

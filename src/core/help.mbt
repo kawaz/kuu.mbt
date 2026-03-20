@@ -60,7 +60,7 @@ fn inject_help_node(parser : Parser) -> Unit {
     shorts,
     aliases: [],
     variation_names: [],
-    hidden: false,
+    visibility: Visible,
   })
 }
 
@@ -73,7 +73,7 @@ fn Parser::split_metas(
   let globals : Array[OptMeta] = []
   let arguments : Array[OptMeta] = []
   for meta in self.metas {
-    if meta.hidden {
+    if meta.visibility != Visible {
       continue
     }
     match meta.kind {
@@ -373,8 +373,9 @@ fn Parser::format_error_context(self : Parser, info : ParseErrorInfo) -> String 
     match self.find_meta_by_opt_name(search_name) {
       Some(meta) =>
         // C-2: Flag/ValueOpt のみ help 行を表示（Command/Positional/Rest は除外）
-        // C-3: hidden オプションは help 行を表示しない
-        if not(meta.hidden) && (meta.kind == Flag || meta.kind == ValueOpt) {
+        // C-3: 非 Visible オプションは help 行を表示しない
+        if meta.visibility == Visible &&
+          (meta.kind == Flag || meta.kind == ValueOpt) {
           buf.write_string("  help: ")
           buf.write_string(
             format_opt_help_line(meta, env_prefix=self.env_prefix.val),

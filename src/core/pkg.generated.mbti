@@ -56,6 +56,7 @@ pub fn[A, B] Filter::map((A) -> B) -> FilterChain[A, B]
 pub fn Filter::max_codepoints(Int) -> FilterChain[String, String]
 pub fn Filter::max_graphemes(Int) -> FilterChain[String, String]
 pub fn Filter::max_length(Int) -> FilterChain[String, String]
+pub fn Filter::mergeable_list(base? : Array[String], separator? : String) -> FilterChain[String, Array[String]]
 pub fn Filter::min_codepoints(Int) -> FilterChain[String, String]
 pub fn Filter::min_graphemes(Int) -> FilterChain[String, String]
 pub fn Filter::min_length(Int) -> FilterChain[String, String]
@@ -129,7 +130,7 @@ pub(all) struct OptMeta {
   shorts : Array[String]
   aliases : Array[String]
   variation_names : Array[String]
-  hidden : Bool
+  visibility : Visibility
 }
 
 pub(all) struct OptRef {
@@ -181,29 +182,38 @@ pub(all) struct Parser {
   deprecated_usages : Array[(String, String)]
   env_applicators : Array[(Map[String, String]) -> Unit raise ParseError]
   env_map : @ref.Ref[Map[String, String]]
+  help_header_text : @ref.Ref[String]
+  help_footer_text : @ref.Ref[String]
+  env_prefix : @ref.Ref[String]
+  auto_env_enabled : @ref.Ref[Bool]
 }
 pub fn[T] Parser::adjust(Self, Opt[T], after_post~ : FilterChain[T, T]) -> Unit
 pub fn Parser::append_dashdash(Self, separator? : String, stop_before? : Array[String]) -> Opt[Array[Array[String]]]
-pub fn Parser::append_float(Self, name~ : String, description? : String, env? : String, value_name? : String, hidden? : Bool) -> Opt[Array[Double]]
-pub fn Parser::append_int(Self, name~ : String, description? : String, env? : String, value_name? : String, hidden? : Bool) -> Opt[Array[Int]]
-pub fn Parser::append_string(Self, name~ : String, description? : String, env? : String, value_name? : String, hidden? : Bool) -> Opt[Array[String]]
+pub fn Parser::append_float(Self, name~ : String, description? : String, env? : String, value_name? : String, visibility? : Visibility) -> Opt[Array[Double]]
+pub fn Parser::append_int(Self, name~ : String, description? : String, env? : String, value_name? : String, visibility? : Visibility) -> Opt[Array[Int]]
+pub fn Parser::append_string(Self, name~ : String, description? : String, env? : String, value_name? : String, visibility? : Visibility) -> Opt[Array[String]]
 pub fn Parser::at_least_one(Self, Array[OptRef]) -> Unit
-pub fn Parser::boolean(Self, name~ : String, default? : Bool, default_fn? : (() -> Bool)?, description? : String, env? : String, value_name? : String, hidden? : Bool, post? : FilterChain[Bool, Bool]?, choices? : Array[String], implicit_value? : Lazy[Bool]?) -> Opt[Bool]
+pub fn Parser::auto_env(Self, Bool) -> Unit
+pub fn Parser::boolean(Self, name~ : String, default? : Bool, default_fn? : (() -> Bool)?, description? : String, env? : String, value_name? : String, visibility? : Visibility, post? : FilterChain[Bool, Bool]?, choices? : Array[String], implicit_value? : Lazy[Bool]?) -> Opt[Bool]
 pub fn[T] Parser::clone(Self, String, Opt[T]) -> Opt[T]
 pub fn Parser::cmd(Self, name~ : String, setup~ : (Self) -> Unit, description? : String, dashdash? : Bool, aliases? : Array[String]) -> Opt[CmdResult]
-pub fn Parser::count(Self, name~ : String, global? : Bool, aliases? : Array[String], shorts? : String, description? : String, env? : String, hidden? : Bool, variations? : Array[Variation], variation_toggle? : String?, variation_true? : String?, variation_false? : String?, variation_reset? : String?, variation_unset? : String?) -> Opt[Int]
-pub fn[T : Show] Parser::custom(Self, name~ : String, aliases? : Array[String], shorts? : String, global? : Bool, description? : String, env? : String, value_name? : String, default_display? : String?, hidden? : Bool, variations? : Array[Variation], default~ : T, default_fn? : (() -> T)?, pre~ : FilterChain[String, T], post? : FilterChain[T, T]?, choices? : Array[String], implicit_value? : Lazy[T]?) -> Opt[T]
-pub fn[T] Parser::custom_append(Self, name~ : String, aliases? : Array[String], shorts? : String, global? : Bool, description? : String, env? : String, value_name? : String, hidden? : Bool, variations? : Array[Variation], pre~ : FilterChain[String, T]) -> Opt[Array[T]]
+pub fn Parser::count(Self, name~ : String, global? : Bool, aliases? : Array[String], shorts? : String, description? : String, env? : String, visibility? : Visibility, variations? : Array[Variation], variation_toggle? : String?, variation_true? : String?, variation_false? : String?, variation_reset? : String?, variation_unset? : String?) -> Opt[Int]
+pub fn[T : Show] Parser::custom(Self, name~ : String, aliases? : Array[String], shorts? : String, global? : Bool, description? : String, env? : String, value_name? : String, default_display? : String?, visibility? : Visibility, variations? : Array[Variation], default~ : T, default_fn? : (() -> T)?, pre~ : FilterChain[String, T], post? : FilterChain[T, T]?, choices? : Array[String], implicit_value? : Lazy[T]?) -> Opt[T]
+pub fn[T] Parser::custom_append(Self, name~ : String, aliases? : Array[String], shorts? : String, global? : Bool, description? : String, env? : String, value_name? : String, visibility? : Visibility, variations? : Array[Variation], pre~ : FilterChain[String, T]) -> Opt[Array[T]]
 pub fn Parser::dashdash(Self, separator? : String, stop_before? : Array[String]) -> Opt[Array[String]]
 pub fn[T] Parser::deprecated(Self, String, Opt[T], msg? : String) -> Opt[T]
 pub fn Parser::deprecated_warnings(Self) -> Array[(String, String)]
+pub fn Parser::env_prefix(Self, String) -> Unit
 pub fn Parser::exclusive(Self, Array[OptRef]) -> Unit
-pub fn Parser::flag(Self, name~ : String, default? : Bool, default_fn? : (() -> Bool)?, global? : Bool, aliases? : Array[String], shorts? : String, description? : String, env? : String, hidden? : Bool, variations? : Array[Variation], variation_toggle? : String?, variation_true? : String?, variation_false? : String?, variation_reset? : String?, variation_unset? : String?) -> Opt[Bool]
-pub fn Parser::float(Self, name~ : String, default~ : Double, default_fn? : (() -> Double)?, description? : String, env? : String, value_name? : String, hidden? : Bool, post? : FilterChain[Double, Double]?, choices? : Array[String], implicit_value? : Lazy[Double]?) -> Opt[Double]
+pub fn Parser::file(Self, name~ : String, default~ : String, default_path~ : String, default_fn? : (() -> String)?, description? : String, env? : String, value_name? : String, visibility? : Visibility, aliases? : Array[String], shorts? : String, global? : Bool, post? : FilterChain[String, String]?, choices? : Array[String]) -> Opt[String]
+pub fn Parser::flag(Self, name~ : String, default? : Bool, default_fn? : (() -> Bool)?, global? : Bool, aliases? : Array[String], shorts? : String, description? : String, env? : String, visibility? : Visibility, variations? : Array[Variation], variation_toggle? : String?, variation_true? : String?, variation_false? : String?, variation_reset? : String?, variation_unset? : String?) -> Opt[Bool]
+pub fn Parser::float(Self, name~ : String, default~ : Double, default_fn? : (() -> Double)?, description? : String, env? : String, value_name? : String, visibility? : Visibility, post? : FilterChain[Double, Double]?, choices? : Array[String], implicit_value? : Lazy[Double]?) -> Opt[Double]
 pub fn Parser::generate_help(Self) -> String
 pub fn Parser::generate_usage(Self) -> String
 pub fn[T] Parser::get(Self, Opt[T]) -> T?
-pub fn Parser::int(Self, name~ : String, default~ : Int, default_fn? : (() -> Int)?, description? : String, env? : String, value_name? : String, hidden? : Bool, post? : FilterChain[Int, Int]?, choices? : Array[String], implicit_value? : Lazy[Int]?) -> Opt[Int]
+pub fn Parser::help_footer(Self, String) -> Unit
+pub fn Parser::help_header(Self, String) -> Unit
+pub fn Parser::int(Self, name~ : String, default~ : Int, default_fn? : (() -> Int)?, description? : String, env? : String, value_name? : String, visibility? : Visibility, post? : FilterChain[Int, Int]?, choices? : Array[String], implicit_value? : Lazy[Int]?) -> Opt[Int]
 pub fn[T] Parser::link(Self, Opt[T], source~ : Opt[T], propagate_set? : Bool) -> Unit
 pub fn[T] Parser::make_alias(Self, String, Opt[T]) -> Opt[T]
 pub fn Parser::never(Self) -> Unit
@@ -216,7 +226,7 @@ pub fn Parser::requires(Self, OptRef, source~ : OptRef, msg? : String) -> Unit
 pub fn Parser::rest(Self, name~ : String, description? : String, stop_before? : Array[String]) -> Opt[Array[String]]
 pub fn Parser::serial(Self, setup~ : (Self) -> Unit, greedy? : Bool) -> Unit
 pub fn Parser::set_description(Self, String) -> Unit
-pub fn Parser::string(Self, name~ : String, default~ : String, default_fn? : (() -> String)?, description? : String, env? : String, value_name? : String, hidden? : Bool, post? : FilterChain[String, String]?, choices? : Array[String], implicit_value? : Lazy[String]?) -> Opt[String]
+pub fn Parser::string(Self, name~ : String, default~ : String, default_fn? : (() -> String)?, description? : String, env? : String, value_name? : String, visibility? : Visibility, post? : FilterChain[String, String]?, choices? : Array[String], implicit_value? : Lazy[String]?) -> Opt[String]
 pub fn Parser::sub(Self, name~ : String, description? : String, dashdash? : Bool, aliases? : Array[String]) -> Self
 
 pub(all) struct PositionalEntry {
@@ -251,6 +261,14 @@ pub(all) enum Variation {
 }
 pub impl Eq for Variation
 pub impl Show for Variation
+
+pub(all) enum Visibility {
+  Visible
+  Advanced
+  Hidden
+}
+pub impl Eq for Visibility
+pub impl Show for Visibility
 
 // Type aliases
 pub type Accumulator[T, U] = (T, U) -> T
