@@ -1,0 +1,5 @@
+import {
+  "kawaz/kuu/core" @core,
+  "kawaz/timespec" @ts,
+  "moonbitlang/core/env",
+}
