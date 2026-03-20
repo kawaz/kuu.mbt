@@ -3,6 +3,10 @@
 #include <string.h>
 #include <moonbit.h>
 
+#ifdef __APPLE__
+#include <crt_externs.h>
+#endif
+
 // UTF-8 byte sequence to a single Unicode code point.
 // Returns the code point and advances *pos by the number of bytes consumed.
 static uint32_t utf8_decode(const unsigned char *buf, int len, int *pos) {
@@ -164,4 +168,151 @@ moonbit_string_t read_file(moonbit_string_t path) {
   moonbit_string_t result = utf8_to_moonbit_string(buf, (int)nread);
   free(buf);
   return result;
+}
+
+// --- argv access ---
+
+#ifdef __APPLE__
+// macOS: use _NSGetArgc / _NSGetArgv (always available, no constructor needed)
+int get_argc(void) {
+  return *_NSGetArgc();
+}
+
+moonbit_string_t get_argv_item(int index) {
+  int argc = *_NSGetArgc();
+  char **argv = *_NSGetArgv();
+  if (index < 0 || index >= argc) {
+    return moonbit_make_string(0, 0);
+  }
+  const char *arg = argv[index];
+  int len = 0;
+  while (arg[len]) len++;
+  return utf8_to_moonbit_string((const unsigned char *)arg, len);
+}
+
+#elif defined(__linux__)
+// Linux: parse /proc/self/cmdline
+static int linux_argc = -1;
+static char **linux_argv = NULL;
+
+static void ensure_argv_loaded(void) {
+  if (linux_argc >= 0) return;
+  linux_argc = 0;
+  linux_argv = NULL;
+
+  FILE *f = fopen("/proc/self/cmdline", "rb");
+  if (!f) return;
+
+  // Read entire cmdline
+  size_t capacity = 4096;
+  size_t len = 0;
+  char *buf = (char *)malloc(capacity);
+  if (!buf) { fclose(f); return; }
+  while (1) {
+    size_t n = fread(buf + len, 1, capacity - len, f);
+    len += n;
+    if (n == 0) break;
+    if (len == capacity) {
+      capacity *= 2;
+      char *newbuf = (char *)realloc(buf, capacity);
+      if (!newbuf) { free(buf); fclose(f); return; }
+      buf = newbuf;
+    }
+  }
+  fclose(f);
+
+  // Count args (null-separated)
+  int count = 0;
+  for (size_t i = 0; i < len; i++) {
+    if (buf[i] == '\0') count++;
+  }
+
+  linux_argv = (char **)malloc(sizeof(char *) * count);
+  if (!linux_argv) { free(buf); return; }
+
+  int idx = 0;
+  size_t start = 0;
+  for (size_t i = 0; i < len; i++) {
+    if (buf[i] == '\0') {
+      size_t arglen = i - start;
+      linux_argv[idx] = (char *)malloc(arglen + 1);
+      if (linux_argv[idx]) {
+        memcpy(linux_argv[idx], buf + start, arglen);
+        linux_argv[idx][arglen] = '\0';
+      }
+      idx++;
+      start = i + 1;
+    }
+  }
+  linux_argc = count;
+  free(buf);
+}
+
+int get_argc(void) {
+  ensure_argv_loaded();
+  return linux_argc;
+}
+
+moonbit_string_t get_argv_item(int index) {
+  ensure_argv_loaded();
+  if (index < 0 || index >= linux_argc || !linux_argv[index]) {
+    return moonbit_make_string(0, 0);
+  }
+  const char *arg = linux_argv[index];
+  int len = 0;
+  while (arg[len]) len++;
+  return utf8_to_moonbit_string((const unsigned char *)arg, len);
+}
+
+#else
+// Fallback: no argv access
+int get_argc(void) {
+  return 0;
+}
+
+moonbit_string_t get_argv_item(int index) {
+  (void)index;
+  return moonbit_make_string(0, 0);
+}
+#endif
+
+// --- stderr output ---
+void write_stderr(moonbit_string_t msg) {
+  int msg_len = (int)Moonbit_array_length(msg);
+  for (int i = 0; i < msg_len; i++) {
+    uint16_t ch = msg[i];
+    uint32_t cp;
+    if (ch >= 0xD800 && ch <= 0xDBFF && i + 1 < msg_len) {
+      uint16_t lo = msg[i + 1];
+      if (lo >= 0xDC00 && lo <= 0xDFFF) {
+        cp = 0x10000 + ((uint32_t)(ch - 0xD800) << 10) + (lo - 0xDC00);
+        i++;
+      } else {
+        cp = ch;
+      }
+    } else {
+      cp = ch;
+    }
+    // Encode as UTF-8
+    if (cp < 0x80) {
+      fputc((int)cp, stderr);
+    } else if (cp < 0x800) {
+      fputc((int)(0xC0 | (cp >> 6)), stderr);
+      fputc((int)(0x80 | (cp & 0x3F)), stderr);
+    } else if (cp < 0x10000) {
+      fputc((int)(0xE0 | (cp >> 12)), stderr);
+      fputc((int)(0x80 | ((cp >> 6) & 0x3F)), stderr);
+      fputc((int)(0x80 | (cp & 0x3F)), stderr);
+    } else {
+      fputc((int)(0xF0 | (cp >> 18)), stderr);
+      fputc((int)(0x80 | ((cp >> 12) & 0x3F)), stderr);
+      fputc((int)(0x80 | ((cp >> 6) & 0x3F)), stderr);
+      fputc((int)(0x80 | (cp & 0x3F)), stderr);
+    }
+  }
+}
+
+// --- exit ---
+void exit_process(int code) {
+  exit(code);
 }
