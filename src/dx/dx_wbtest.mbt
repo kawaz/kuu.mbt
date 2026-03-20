@@ -797,7 +797,7 @@ test "custom: invalid value is error" {
 // Phase 4 追加テスト
 // ============================================================
 
-// ---- custom_append テスト ----
+// ---- append テスト ----
 
 ///|
 struct CustomAppendConfig {
@@ -811,13 +811,13 @@ fn CustomAppendConfig::default() -> CustomAppendConfig {
 
 ///|
 impl Parseable for CustomAppendConfig with register(self, reg) {
-  reg.custom_append(name="value", pre=@core.Filter::parse_int(), set=fn(v) {
+  reg.append(name="value", pre=@core.Filter::parse_int(), set=fn(v) {
     self.values = v
   })
 }
 
 ///|
-test "custom_append: collects parsed values" {
+test "append: collects parsed values" {
   let config = CustomAppendConfig::default()
   parse_into(["--value", "1", "--value", "2", "--value", "3"], config)
   assert_eq(config.values, [1, 2, 3])
@@ -1106,10 +1106,10 @@ test "dashdash: -- separates options from rest args" {
   assert_eq(config.args, ["--not-an-option", "file"])
 }
 
-// ---- custom_append エラーテスト ----
+// ---- append エラーテスト ----
 
 ///|
-test "custom_append: invalid value is error" {
+test "append: invalid value is error" {
   let config = CustomAppendConfig::default()
   let result : Result[Unit, @core.ParseError] = try? parse_into(
     ["--value", "abc"],
@@ -1119,7 +1119,7 @@ test "custom_append: invalid value is error" {
 }
 
 ///|
-test "custom_append: empty is ok" {
+test "append: empty is ok" {
   let config = CustomAppendConfig::default()
   parse_into([], config)
   assert_eq(config.values, [])

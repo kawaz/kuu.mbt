@@ -371,7 +371,7 @@ pub fn Parser::append_string(
   value_name? : String = "",
   visibility? : Visibility = Visible,
 ) -> Opt[Array[String]] {
-  self.custom_append(
+  self.append(
     name~,
     visibility~,
     description~,
@@ -390,7 +390,7 @@ pub fn Parser::append_int(
   value_name? : String = "",
   visibility? : Visibility = Visible,
 ) -> Opt[Array[Int]] {
-  self.custom_append(
+  self.append(
     name~,
     visibility~,
     description~,
@@ -409,7 +409,7 @@ pub fn Parser::append_float(
   value_name? : String = "",
   visibility? : Visibility = Visible,
 ) -> Opt[Array[Double]] {
-  self.custom_append(
+  self.append(
     name~,
     visibility~,
     description~,
@@ -699,7 +699,7 @@ pub fn[T : Show] Parser::custom(
 }
 
 ///|
-pub fn[T] Parser::custom_append(
+pub fn[T] Parser::append(
   self : Parser,
   name~ : String,
   aliases? : Array[String] = [],

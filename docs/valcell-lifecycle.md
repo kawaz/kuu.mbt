@@ -298,7 +298,7 @@ reset:      cell = initial_val
 - `implicit_value` 付きの場合は or_node（soft_value + implicit_flag）構成
 - `post` フィルタは post_hooks として登録（Phase 5 で無条件適用）
 
-### custom_append (append_string / append_int)
+### append (append_string / append_int)
 
 ```
 ValCell[Array[T]]  ← Thunk(fn() { [] }) で初期化
@@ -449,11 +449,11 @@ ValCell::new(Thunk(fn() { [] }))
 ValCell::new(Val([]))
 ```
 
-`custom_append`, `rest`, `dashdash`, `append_dashdash` は全て `Thunk` を使用している。ただしコンビネータ内で `reset` を個別に `fn() { cell.val = [] }` と定義している場合、`default_val.resolve()` ではなく直接空配列を生成しているケースもある。
+`append`, `rest`, `dashdash`, `append_dashdash` は全て `Thunk` を使用している。ただしコンビネータ内で `reset` を個別に `fn() { cell.val = [] }` と定義している場合、`default_val.resolve()` ではなく直接空配列を生成しているケースもある。
 
 ### clone の save/restore と append 型
 
-clone の save/restore パターンは「commit 前に target を保存 → commit 後に clone にコピー → target を復元」という流れ。append 型（`custom_append` 等）では commit が `cell.push(v)` を行うため:
+clone の save/restore パターンは「commit 前に target を保存 → commit 後に clone にコピー → target を復元」という流れ。append 型（`append` 等）では commit が `cell.push(v)` を行うため:
 
 1. saved = target の Array（参照コピー）
 2. commit → saved と同じ Array に push

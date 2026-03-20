@@ -831,7 +831,7 @@ fn build_parser(
             })
           }
           "append_string" => {
-            let opt = parser.custom_append(
+            let opt = parser.append(
               name~,
               global~,
               shorts~,
@@ -897,7 +897,7 @@ fn build_parser(
             })
           }
           "append_int" => {
-            let opt = parser.custom_append(
+            let opt = parser.append(
               name~,
               global~,
               shorts~,
@@ -967,7 +967,7 @@ fn build_parser(
             })
           }
           "append_float" => {
-            let opt = parser.custom_append(
+            let opt = parser.append(
               name~,
               global~,
               shorts~,

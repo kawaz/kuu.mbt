@@ -251,7 +251,7 @@ pub fn FieldRegistry::append_string_ref(
   value_name? : String = "",
   set~ : (Array[String]) -> Unit,
 ) -> @core.OptRef {
-  self.custom_append_ref(
+  self.append_ref(
     name~,
     pre=@core.Filter::map(fn(s) { s }),
     description~,
@@ -296,7 +296,7 @@ pub fn FieldRegistry::append_int_ref(
   value_name? : String = "",
   set~ : (Array[Int]) -> Unit,
 ) -> @core.OptRef {
-  self.custom_append_ref(
+  self.append_ref(
     name~,
     pre=@core.Filter::parse_int(),
     description~,
@@ -341,7 +341,7 @@ pub fn FieldRegistry::append_float_ref(
   value_name? : String = "",
   set~ : (Array[Double]) -> Unit,
 ) -> @core.OptRef {
-  self.custom_append_ref(
+  self.append_ref(
     name~,
     pre=@core.Filter::parse_float(),
     description~,

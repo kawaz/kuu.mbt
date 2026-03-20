@@ -46,7 +46,7 @@ PEG は最初にマッチした候補を採用する。kuu は全候補を投機
 - `flag()`, `string()`, `int()`, `float()`, `boolean()`, `count()` — 基本型
 - `file()` — ファイルパス特化。`default` + `default_path` + `implicit_value` で3値パターン（未指定/フラグのみ/値指定）
 - `append_string()`, `append_int()`, `append_float()` — 配列蓄積
-- `custom[T : Show]()`, `custom_append[T]()` — 汎用型。string/int/float/boolean は custom のシュガー（DR-025）
+- `custom[T : Show]()`, `append[T]()` — 汎用型。string/int/float/boolean は custom のシュガー（DR-025）
 - `cmd()`, `sub()` — サブコマンド
 - `positional()`, `rest()` — 位置引数（name はヘルプ `<NAME>` 表示に使用）
 - `serial()`, `never()` — name パラメータなし
@@ -546,7 +546,7 @@ src/
   core/              # Layer 1: パースエンジン
     types.mbt         #   型定義（Opt, Parser, ExactNode, TryResult, OptMeta, Visibility, CompletionCandidate, Variation, Lazy, ReduceCtx, FilterChain 等）
     parser.mbt        #   Parser::new, register_option, make_alias, deprecated, clone, link, adjust, expand_and_register, env_prefix
-    options.mbt       #   custom, custom_append, flag, string, int, float, boolean, count, file, append_string, append_int, append_float
+    options.mbt       #   custom, append, flag, string, int, float, boolean, count, file, append_string, append_int, append_float
     nodes.mbt         #   make_flag_node, make_value_node, make_or_node, make_soft_custom_value_node 等
     commands.mbt      #   cmd, sub
     positionals.mbt   #   positional, rest, serial, never

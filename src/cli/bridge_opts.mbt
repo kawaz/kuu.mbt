@@ -843,7 +843,7 @@ fn register_append_string(
   opt_handles~ : Map[String, OptHandle],
   opts_arr_string~ : Map[String, @core.Opt[Array[String]]],
 ) -> Result[Unit, String] {
-  let opt = parser.custom_append(
+  let opt = parser.append(
     name~,
     global~,
     shorts~,
@@ -927,7 +927,7 @@ fn register_append_int(
   opt_handles~ : Map[String, OptHandle],
   opts_arr_int~ : Map[String, @core.Opt[Array[Int]]],
 ) -> Result[Unit, String] {
-  let opt = parser.custom_append(
+  let opt = parser.append(
     name~,
     global~,
     shorts~,
@@ -1015,7 +1015,7 @@ fn register_append_float(
   opt_handles~ : Map[String, OptHandle],
   opts_arr_double~ : Map[String, @core.Opt[Array[Double]]],
 ) -> Result[Unit, String] {
-  let opt = parser.custom_append(
+  let opt = parser.append(
     name~,
     global~,
     shorts~,

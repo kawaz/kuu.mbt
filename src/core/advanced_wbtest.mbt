@@ -575,7 +575,7 @@ test "variation: int with Reset" {
 ///|
 test "variation: append_string with Reset" {
   let p = Parser::new()
-  let tags = p.custom_append(
+  let tags = p.append(
     name="tag",
     variations=[Reset("no")],
     pre=Filter::map(fn(s) { s }),
@@ -588,7 +588,7 @@ test "variation: append_string with Reset" {
 ///|
 test "variation: append_int with Reset" {
   let p = Parser::new()
-  let ids = p.custom_append(
+  let ids = p.append(
     name="id",
     variations=[Reset("no")],
     pre=Filter::parse_int(),
@@ -779,7 +779,7 @@ test "count variation_reset sugar" {
 ///|
 test "append_string variation_reset sugar" {
   let p = Parser::new()
-  let includes = p.custom_append(
+  let includes = p.append(
     name="include",
     variations=[Reset("no")],
     pre=Filter::map(fn(s) { s }),
@@ -857,7 +857,7 @@ test "string default_fn with reset variation" {
   inspect(color.is_set(), content="true")
 }
 
-// --- custom[T] / custom_append[T] tests ---
+// --- custom[T] / append[T] tests ---
 
 ///|
 test "custom_string_basic" {
@@ -1010,33 +1010,33 @@ test "custom_with_post" {
 }
 
 ///|
-test "custom_append_string_basic" {
+test "append_string_basic" {
   let p = Parser::new()
-  let tags = p.custom_append(name="tag", pre=Filter::map(fn(s) { s }))
+  let tags = p.append(name="tag", pre=Filter::map(fn(s) { s }))
   p.parse(["--tag", "a", "--tag", "b"]) |> ignore
   inspect((tags.accessor.get)(), content="[\"a\", \"b\"]")
 }
 
 ///|
-test "custom_append_string_empty" {
+test "append_string_empty" {
   let p = Parser::new()
-  let tags = p.custom_append(name="tag", pre=Filter::map(fn(s) { s }))
+  let tags = p.append(name="tag", pre=Filter::map(fn(s) { s }))
   p.parse([]) |> ignore
   inspect((tags.accessor.get)(), content="[]")
 }
 
 ///|
-test "custom_append_int_basic" {
+test "append_int_basic" {
   let p = Parser::new()
-  let nums = p.custom_append(name="num", pre=Filter::parse_int())
+  let nums = p.append(name="num", pre=Filter::parse_int())
   p.parse(["--num", "1", "--num", "2", "--num", "3"]) |> ignore
   inspect((nums.accessor.get)(), content="[1, 2, 3]")
 }
 
 ///|
-test "custom_append_int_invalid" {
+test "append_int_invalid" {
   let p = Parser::new()
-  let _ = p.custom_append(name="num", pre=Filter::parse_int())
+  let _ = p.append(name="num", pre=Filter::parse_int())
   let result : Result[_, _] = try? p.parse(["--num", "abc"])
   inspect(result is Err(_), content="true")
 }
@@ -1399,14 +1399,14 @@ test "H-1: string implicit: --output --next (space-separated) → still implicit
 }
 
 // ============================================================
-// M-17: custom_append の variation テスト
+// M-17: append の variation テスト
 // ============================================================
 
 ///|
-test "M-17: custom_append Reset variation clears array" {
-  // custom_append + Reset variation で配列がクリアされること
+test "M-17: append Reset variation clears array" {
+  // append + Reset variation で配列がクリアされること
   let p = Parser::new()
-  let tags = p.custom_append(name="tag", pre=Filter::map(fn(s) { s }), variations=[
+  let tags = p.append(name="tag", pre=Filter::map(fn(s) { s }), variations=[
     Reset("no"),
   ])
   ignore(p.parse(["--tag", "a", "--tag", "b", "--no-tag"]))
@@ -1415,10 +1415,10 @@ test "M-17: custom_append Reset variation clears array" {
 }
 
 ///|
-test "M-17: custom_append Reset then re-add" {
+test "M-17: append Reset then re-add" {
   // Reset 後に再度追加すると新しい値のみ残る
   let p = Parser::new()
-  let tags = p.custom_append(name="tag", pre=Filter::map(fn(s) { s }), variations=[
+  let tags = p.append(name="tag", pre=Filter::map(fn(s) { s }), variations=[
     Reset("no"),
   ])
   ignore(p.parse(["--tag", "a", "--no-tag", "--tag", "b"]))
@@ -1426,10 +1426,10 @@ test "M-17: custom_append Reset then re-add" {
 }
 
 ///|
-test "M-17: custom_append Unset variation clears and unsets" {
+test "M-17: append Unset variation clears and unsets" {
   // Unset は配列クリア + is_set=false
   let p = Parser::new()
-  let tags = p.custom_append(name="tag", pre=Filter::map(fn(s) { s }), variations=[
+  let tags = p.append(name="tag", pre=Filter::map(fn(s) { s }), variations=[
     Unset("un"),
   ])
   ignore(p.parse(["--tag", "a", "--tag", "b", "--un-tag"]))

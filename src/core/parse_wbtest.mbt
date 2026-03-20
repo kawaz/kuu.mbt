@@ -245,7 +245,7 @@ test "append string default empty" {
 ///|
 test "append string negate" {
   let p = Parser::new()
-  let tags = p.custom_append(
+  let tags = p.append(
     name="tag",
     variations=[Reset("no")],
     pre=Filter::map(fn(s) { s }),
@@ -639,7 +639,7 @@ test "short with long mixed" {
 ///|
 test "short append" {
   let p = Parser::new()
-  let tags = p.custom_append(
+  let tags = p.append(
     name="tag",
     shorts="t",
     pre=Filter::map(fn(s) { s }),
@@ -983,7 +983,7 @@ test "description shown in help" {
 ///|
 test "short combining append_int" {
   let p = Parser::new()
-  let nums = p.custom_append(name="num", shorts="n", pre=Filter::parse_int())
+  let nums = p.append(name="num", shorts="n", pre=Filter::parse_int())
   ignore(p.parse(["-n1", "-n2"]))
   inspect(p.get(nums), content="Some([1, 2])")
 }
@@ -1149,7 +1149,7 @@ test "append_dashdash custom separator" {
 test "short combining append_int inline" {
   let p = Parser::new()
   let v = p.flag(name="verbose", shorts="v")
-  let nums = p.custom_append(name="num", shorts="n", pre=Filter::parse_int())
+  let nums = p.append(name="num", shorts="n", pre=Filter::parse_int())
   ignore(p.parse(["-vn1"]))
   inspect(p.get(v), content="Some(true)")
   inspect(p.get(nums), content="Some([1])")
