@@ -133,6 +133,4 @@ jj describe -R "{wsdir}" -m "chore: END {wsname}"
 ## タグを付ける（名前はワークスペース名と同じ）
 jj tag set "{wsname}" -r "{wsname}@"
 
-## 完了した example を archives に移動
-mv "{wsdir}/examples/{wsname}" "{repo}/main/examples/archives/{wsname}"
 ```
