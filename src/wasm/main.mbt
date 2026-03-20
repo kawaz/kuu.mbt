@@ -24,6 +24,7 @@
 ///   "args": ["--verbose", "--host", "example.com", "file.txt"],
 ///   "env": { "VERBOSE": "1", "HOST": "fallback.example.com" },
 ///   "description": "My CLI tool",
+///   "auto_env": true,
 ///   "env_prefix": "MYAPP",
 ///   "require_cmd": true,
 ///   "exclusive": [["shared", "static"]],
@@ -1495,9 +1496,14 @@ pub fn kuu_parse(input : String) -> String {
   if description != "" {
     parser.set_description(description)
   }
-  // Handle env_prefix
+  // Handle env_prefix (must be before build_parser — used during opt registration)
   match obj.get("env_prefix") {
     Some(String(prefix)) => parser.env_prefix(prefix)
+    _ => ()
+  }
+  // Handle auto_env (must be before build_parser — used during opt registration)
+  match obj.get("auto_env") {
+    Some(True) => parser.auto_env(true)
     _ => ()
   }
   let schema = match build_parser(parser, opts_json, obj) {

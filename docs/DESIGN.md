@@ -134,6 +134,7 @@ port.get()  // Some(3000)
 - `Parser::env_prefix(prefix)` — 環境変数名にプレフィックスを付加。`env="PORT"` → `MYAPP_PORT` として参照
 - サブコマンドの自動ネスト — `MYAPP` → `MYAPP_SERVE` → `MYAPP_SERVE_DB`（サブコマンド名を大文字化して連結）
 - ヘルプ表示に `[env: MYAPP_PORT]` 形式で反映（プレフィックス付き）
+- `Parser::auto_env(enabled)` — opt の name からハイフン→アンダースコア変換 + 大文字化で自動バインド（例: `--port` → `PORT`）。hidden opt は対象外。explicit `env~` が優先。`env_prefix` と組み合わせ可能。サブコマンドに継承
 
 ### 値の取得
 

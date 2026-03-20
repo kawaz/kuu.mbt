@@ -10,7 +10,7 @@
 
 以下は設計案として記載されていたが、既に実装が完了した項目。
 
-### 環境変数連携 Phase 1〜3（DR-041）
+### 環境変数連携 Phase 1〜4（DR-041）
 
 - Phase 1（ヘルプ表示用 `env` メタデータ）: 実装済み
 - Phase 2 基本（`Parser::parse(args, env~)` による環境変数フォールバック）: 実装済み
@@ -21,6 +21,12 @@
   - サブコマンドの自動ネスト（`MYAPP` → `MYAPP_SERVE` → `MYAPP_SERVE_DB`）
   - ヘルプ表示に `[env: MYAPP_PORT]` 形式で反映
   - WASM bridge 対応済み（JSON スキーマの `"env_prefix"` フィールド）
+- Phase 4 `auto_env`: 実装済み
+  - `Parser::auto_env(enabled)` — opt の name からハイフン→アンダースコア変換 + 大文字化で自動バインド（例: `--port` → `PORT`）
+  - hidden opt は対象外（自動バインドされない）
+  - explicit `env~` パラメータが優先（手動指定がある場合は auto_env の自動命名を上書き）
+  - `env_prefix` と組み合わせ可能（`auto_env` + `env_prefix("MYAPP")` → `MYAPP_PORT`）
+  - サブコマンドに継承
 
 ### ErrorKind 構造化エラー（DR-052）
 
@@ -113,17 +119,6 @@ GitHub Actions ワークフロー（`.github/workflows/ci.yml`）を整備:
 ---
 
 ## 短期（次に実装する可能性が高いもの）
-
-### 環境変数連携 Phase 4（DR-041 拡張）
-
-Phase 1〜3（env メタデータ、env~ フォールバック、env_prefix）は実装済み。残り:
-
-- `auto_env` — 全オプションの `--name` を自動で `PREFIX_NAME` 環境変数にバインド（デフォルト無効）
-- Opt レベルの `auto_env : Bool?` で個別制御（auto_env 有効時に特定 opt を除外、または無効時に特定 opt のみ有効化）
-
-優先順位: CLI > 環境変数 > 設定ファイル > initial
-
-**ブロッカー**: 設計検討（auto_env の命名規則、hidden/advanced opt との連動等）
 
 ### エラーメッセージ品質向上
 
@@ -251,7 +246,7 @@ enum Visibility {
 }
 ```
 
-`--help-all` で Hidden/Advanced を含む全エントリ表示。auto-env との連動（Hidden/Advanced → auto-env デフォルト Off）。
+`--help-all` で Hidden/Advanced を含む全エントリ表示。auto_env との連動（Hidden は既に auto_env 対象外。Advanced → auto_env デフォルト Off は Visibility enum 統合時に検討）。
 
 > **注**: `deprecated` はコンビネータとして実装済み（DR-040）。Visibility enum としての統合は未実装。
 
@@ -744,7 +739,7 @@ struct Config {
 | PreProcess | @file 展開等 | 未実装 | @file 設計 |
 | Reduce | 消費ループ | 実装済み（parse_raw） | — |
 | Validate | exclusive, requires 等 | post_hooks で実装済み | — |
-| Finalize | デフォルト適用・環境変数連携 | 実装済み（env_applicators + post_hooks + env_prefix） | auto_env 拡張 |
+| Finalize | デフォルト適用・環境変数連携 | 実装済み（env_applicators + post_hooks + env_prefix + auto_env） | — |
 | Output | ヘルプ・補完・エラー表示 | 基本実装済み | ヘルプ拡張・補完生成 |
 
 post_hooks が将来の Validate/Finalize フェーズの実質基盤として機能する。

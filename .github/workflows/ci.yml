@@ -31,6 +31,19 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: moon test --target "$TARGET"
 
+  wasm-test:
+    name: WASM Integration Test
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: chawyehsu/setup-moonup@v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: moon build --target wasm-gc
+      - run: node src/wasm/test.mjs
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest

@@ -1266,4 +1266,34 @@ function test(label, input) {
   strictEqual(r.values.host, "env-host");
 }
 
+// === auto_env tests ===
+
+// Test 91: auto_env binds NAME to env automatically
+{
+  const r = test("Auto env binds NAME", {
+    auto_env: true,
+    opts: [
+      { kind: "string", name: "name", default: "" },
+    ],
+    args: [],
+    env: { NAME: "from-env" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.name, "from-env");
+}
+
+// Test 92: explicit env takes priority over auto_env
+{
+  const r = test("Explicit env overrides auto_env", {
+    auto_env: true,
+    opts: [
+      { kind: "string", name: "host", default: "localhost", env: "MY_HOST" },
+    ],
+    args: [],
+    env: { MY_HOST: "explicit-host", HOST: "auto-host" },
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.host, "explicit-host");
+}
+
 console.log("\n--- All tests passed ---");
