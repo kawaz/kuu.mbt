@@ -791,22 +791,8 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       match result.child("push") {
         Some(_) => {
           buf.write_string("  command: push\n")
-          match push_remote_opt {
-            Some(opt) =>
-              match opt.get() {
-                Some(v) => buf.write_string("  remote: " + v + "\n")
-                None => ()
-              }
-            None => ()
-          }
-          match push_branch_opt {
-            Some(opt) =>
-              match opt.get() {
-                Some(v) => buf.write_string("  branch: " + v + "\n")
-                None => ()
-              }
-            None => ()
-          }
+          write_serial(buf, push_remote_opt, "remote")
+          write_serial(buf, push_branch_opt, "branch")
           if push_force.get().unwrap() {
             buf.write_string("  force: true\n")
           }
@@ -835,22 +821,8 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       match result.child("pull") {
         Some(_) => {
           buf.write_string("  command: pull\n")
-          match pull_remote_opt {
-            Some(opt) =>
-              match opt.get() {
-                Some(v) => buf.write_string("  remote: " + v + "\n")
-                None => ()
-              }
-            None => ()
-          }
-          match pull_branch_opt {
-            Some(opt) =>
-              match opt.get() {
-                Some(v) => buf.write_string("  branch: " + v + "\n")
-                None => ()
-              }
-            None => ()
-          }
+          write_serial(buf, pull_remote_opt, "remote")
+          write_serial(buf, pull_branch_opt, "branch")
           if pull_rebase.is_set() {
             buf.write_string(
               "  rebase: " + pull_rebase.get().unwrap().to_string() + "\n",
@@ -869,10 +841,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       match result.child("checkout") {
         Some(_) => {
           buf.write_string("  command: checkout\n")
-          match checkout_branch.get() {
-            Some(v) => buf.write_string("  branch: " + v + "\n")
-            None => ()
-          }
+          write_positional(buf, checkout_branch, "branch")
           let nb = checkout_new_branch.get().unwrap()
           if nb != "" {
             buf.write_string("  new-branch: " + nb + "\n")
@@ -894,10 +863,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       match result.child("switch") {
         Some(_) => {
           buf.write_string("  command: switch\n")
-          match switch_branch.get() {
-            Some(v) => buf.write_string("  branch: " + v + "\n")
-            None => ()
-          }
+          write_positional(buf, switch_branch, "branch")
           let sc = switch_create.get().unwrap()
           if sc != "" {
             buf.write_string("  create: " + sc + "\n")
@@ -936,10 +902,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       match result.child("branch") {
         Some(_) => {
           buf.write_string("  command: branch\n")
-          match branch_name.get() {
-            Some(v) => buf.write_string("  name: " + v + "\n")
-            None => ()
-          }
+          write_positional(buf, branch_name, "name")
           if branch_delete.get().unwrap() {
             buf.write_string("  delete: true\n")
           }
@@ -1064,10 +1027,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       match result.child("merge") {
         Some(_) => {
           buf.write_string("  command: merge\n")
-          match merge_branch.get() {
-            Some(v) => buf.write_string("  branch: " + v + "\n")
-            None => ()
-          }
+          write_positional(buf, merge_branch, "branch")
           if merge_no_ff.get().unwrap() {
             buf.write_string("  no-ff: true\n")
           }
@@ -1091,10 +1051,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       match result.child("rebase") {
         Some(_) => {
           buf.write_string("  command: rebase\n")
-          match rebase_upstream.get() {
-            Some(v) => buf.write_string("  upstream: " + v + "\n")
-            None => ()
-          }
+          write_positional(buf, rebase_upstream, "upstream")
           let onto = rebase_onto.get().unwrap()
           if onto != "" {
             buf.write_string("  onto: " + onto + "\n")
@@ -1118,10 +1075,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       match result.child("tag") {
         Some(_) => {
           buf.write_string("  command: tag\n")
-          match tag_name.get() {
-            Some(v) => buf.write_string("  name: " + v + "\n")
-            None => ()
-          }
+          write_positional(buf, tag_name, "name")
           if tag_annotate.get().unwrap() {
             buf.write_string("  annotate: true\n")
           }
@@ -1148,22 +1102,8 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           match remote_result.child("add") {
             Some(_) => {
               buf.write_string("  subcommand: add\n")
-              match remote_add_name_opt {
-                Some(opt) =>
-                  match opt.get() {
-                    Some(v) => buf.write_string("  name: " + v + "\n")
-                    None => ()
-                  }
-                None => ()
-              }
-              match remote_add_url_opt {
-                Some(opt) =>
-                  match opt.get() {
-                    Some(v) => buf.write_string("  url: " + v + "\n")
-                    None => ()
-                  }
-                None => ()
-              }
+              write_serial(buf, remote_add_name_opt, "name")
+              write_serial(buf, remote_add_url_opt, "url")
               if remote_add_fetch.get().unwrap() {
                 buf.write_string("  fetch: true\n")
               }
@@ -1173,42 +1113,22 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           match remote_result.child("remove") {
             Some(_) => {
               buf.write_string("  subcommand: remove\n")
-              match remote_remove_name.get() {
-                Some(v) => buf.write_string("  name: " + v + "\n")
-                None => ()
-              }
+              write_positional(buf, remote_remove_name, "name")
             }
             None => ()
           }
           match remote_result.child("rename") {
             Some(_) => {
               buf.write_string("  subcommand: rename\n")
-              match remote_rename_old_opt {
-                Some(opt) =>
-                  match opt.get() {
-                    Some(v) => buf.write_string("  old: " + v + "\n")
-                    None => ()
-                  }
-                None => ()
-              }
-              match remote_rename_new_opt {
-                Some(opt) =>
-                  match opt.get() {
-                    Some(v) => buf.write_string("  new: " + v + "\n")
-                    None => ()
-                  }
-                None => ()
-              }
+              write_serial(buf, remote_rename_old_opt, "old")
+              write_serial(buf, remote_rename_new_opt, "new")
             }
             None => ()
           }
           match remote_result.child("show") {
             Some(_) => {
               buf.write_string("  subcommand: show\n")
-              match remote_show_name.get() {
-                Some(v) => buf.write_string("  name: " + v + "\n")
-                None => ()
-              }
+              write_positional(buf, remote_show_name, "name")
             }
             None => ()
           }
@@ -1239,30 +1159,21 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           match stash_result.child("pop") {
             Some(_) => {
               buf.write_string("  subcommand: pop\n")
-              match stash_pop_ref.get() {
-                Some(v) => buf.write_string("  stash: " + v + "\n")
-                None => ()
-              }
+              write_positional(buf, stash_pop_ref, "stash")
             }
             None => ()
           }
           match stash_result.child("apply") {
             Some(_) => {
               buf.write_string("  subcommand: apply\n")
-              match stash_apply_ref.get() {
-                Some(v) => buf.write_string("  stash: " + v + "\n")
-                None => ()
-              }
+              write_positional(buf, stash_apply_ref, "stash")
             }
             None => ()
           }
           match stash_result.child("drop") {
             Some(_) => {
               buf.write_string("  subcommand: drop\n")
-              match stash_drop_ref.get() {
-                Some(v) => buf.write_string("  stash: " + v + "\n")
-                None => ()
-              }
+              write_positional(buf, stash_drop_ref, "stash")
             }
             None => ()
           }
@@ -1273,10 +1184,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           match stash_result.child("show") {
             Some(_) => {
               buf.write_string("  subcommand: show\n")
-              match stash_show_ref.get() {
-                Some(v) => buf.write_string("  stash: " + v + "\n")
-                None => ()
-              }
+              write_positional(buf, stash_show_ref, "stash")
             }
             None => ()
           }
@@ -1286,6 +1194,34 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 
       Ok(buf.to_string())
     }
+  }
+}
+
+// ─── Dispatch helpers ───
+
+///|
+/// Write "  {label}: {value}\n" if the positional opt has a value.
+fn write_positional(
+  buf : StringBuilder,
+  opt : @core.Opt[String],
+  label : String
+) -> Unit {
+  match opt.get() {
+    Some(v) => buf.write_string("  " + label + ": " + v + "\n")
+    None => ()
+  }
+}
+
+///|
+/// Write "  {label}: {value}\n" from a serial positional opt (Opt[String]?).
+fn write_serial(
+  buf : StringBuilder,
+  opt : @core.Opt[String]?,
+  label : String
+) -> Unit {
+  match opt {
+    Some(o) => write_positional(buf, o, label)
+    None => ()
   }
 }
 
