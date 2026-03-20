@@ -427,6 +427,66 @@ pub fn FieldRegistry::float(
 }
 
 ///|
+/// File パスオプションを登録。implicit_value で --opt だけならデフォルトパスが使われる。
+pub fn FieldRegistry::file(
+  self : FieldRegistry,
+  name~ : String,
+  default? : String = "",
+  default_path~ : String,
+  description? : String = "",
+  env? : String = "",
+  visibility? : @core.Visibility = Visible,
+  value_name? : String = "PATH",
+  set~ : (String) -> Unit,
+) -> Unit {
+  ignore(
+    self.file_ref(
+      name~,
+      default~,
+      default_path~,
+      description~,
+      env~,
+      visibility~,
+      value_name~,
+      set~,
+    ),
+  )
+}
+
+///|
+/// File パスオプションを登録し、OptRef を返す（制約登録用）。
+pub fn FieldRegistry::file_ref(
+  self : FieldRegistry,
+  name~ : String,
+  default? : String = "",
+  default_path~ : String,
+  description? : String = "",
+  env? : String = "",
+  visibility? : @core.Visibility = Visible,
+  value_name? : String = "PATH",
+  set~ : (String) -> Unit,
+) -> @core.OptRef {
+  let opt = self.parser.file(
+    name~,
+    default~,
+    default_path~,
+    description~,
+    env~,
+    value_name~,
+    visibility~,
+  )
+  self.appliers.push(fn() {
+    if opt.is_set() {
+      match opt.get() {
+        Some(v) => set(v)
+        None => ()
+      }
+    }
+  })
+  opt.as_ref()
+}
+
+///|
 /// Double オプションを登録し、OptRef を返す（制約登録用）。
 pub fn FieldRegistry::float_ref(
   self : FieldRegistry,

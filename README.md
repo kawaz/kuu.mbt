@@ -130,6 +130,102 @@ p.exclusive([json.as_ref(), csv.as_ref()])   // at most one
 p.required(output.as_ref())                  // must be specified
 ```
 
+### Environment variables
+
+Options can read values from environment variables. CLI arguments take priority over env vars, which take priority over defaults.
+
+```moonbit
+let p = @core.Parser::new()
+p.env_prefix("MYAPP")
+let port = p.int(name="port", default=8080, env="PORT")
+
+// Priority: CLI > MYAPP_PORT > default (8080)
+let _ = try? p.parse(["--port", "3000"], env={ "MYAPP_PORT": "9090" })
+port.get()  //=> Some(3000)  -- CLI wins
+```
+
+With `auto_env`, every `Visible` option is automatically bound to an env var derived from its name:
+
+```moonbit
+let p = @core.Parser::new()
+p.env_prefix("MYAPP")
+p.auto_env(true)
+let log_level = p.string(name="log-level", default="info")
+
+// auto-binds to MYAPP_LOG_LEVEL (hyphens → underscores, uppercased)
+let _ = try? p.parse([], env={ "MYAPP_LOG_LEVEL": "debug" })
+log_level.get()  //=> Some("debug")
+```
+
+### Shell completion
+
+Generate completion scripts for bash, zsh, and fish:
+
+```moonbit
+let p = @core.Parser::new()
+let _ = p.flag(name="verbose", shorts="v", description="Verbose output")
+let _ = p.string(name="output", default="", description="Output file")
+p.sub(name="build", description="Build project") |> ignore
+
+let script = p.generate_completion_script(shell="zsh", command_name="myapp")
+```
+
+Hidden options are excluded from completions; Advanced options are included.
+
+### Visibility
+
+Control whether options appear in help output and completions:
+
+```moonbit
+let p = @core.Parser::new()
+let verbose = p.flag(name="verbose", description="Verbose output")          // Visible (default)
+let debug   = p.flag(name="debug", description="Debug mode", visibility=Advanced) // hidden from help, included in completions
+let secret  = p.flag(name="secret", visibility=Hidden)                       // hidden from both help and completions
+```
+
+| Level | Help | Completions | Parsing |
+|-------|------|-------------|---------|
+| `Visible` | shown | included | works |
+| `Advanced` | hidden | included | works |
+| `Hidden` | hidden | excluded | works |
+
+### File combinator
+
+Three-value pattern for file path options -- `--config` (no value) uses a default path, `--config path` uses the given path, omitted entirely uses the default:
+
+```moonbit
+let p = @core.Parser::new()
+let config = p.file(name="config", default="", default_path="~/.config/myapp/config.toml")
+
+let _ = try? p.parse(["--config"])
+config.get()  //=> Some("~/.config/myapp/config.toml")  -- implicit default_path
+
+let _ = try? p.parse(["--config", "/etc/app.conf"])
+config.get()  //=> Some("/etc/app.conf")  -- explicit path
+
+let _ = try? p.parse([])
+config.get()  //=> Some("")  -- not specified, uses default
+```
+
+### Mergeable list filter
+
+`Filter::mergeable_list` supports `+`/`-`/`...` modifiers to add, remove, and reorder items relative to a base list:
+
+```moonbit
+let p = @core.Parser::new()
+let fields = p.custom(
+  name="fields",
+  default=["id", "name"],
+  pre=@core.Filter::mergeable_list(base=["id", "name"]),
+)
+
+let _ = try? p.parse(["--fields", "+email,-id"])
+fields.get()  //=> Some(["name", "email"])
+
+let _ = try? p.parse(["--fields", "email,..."])
+fields.get()  //=> Some(["email", "id", "name"])  -- "..." expands remaining base items
+```
+
 ## FilterChain
 
 Type-safe transformation pipeline from `String` to any target type. Three constructors -- `map` (pure), `validate` (check + keep type), `parse` (convert + may fail) -- compose via `then`:

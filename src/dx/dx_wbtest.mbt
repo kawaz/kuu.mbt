@@ -1231,3 +1231,43 @@ test "required: missing keeps struct default" {
   assert_true(result is Err(_))
   assert_eq(config.output, "")
 }
+
+// ---- file コンビネータテスト ----
+
+///|
+struct FileConfig {
+  mut output : String
+} derive(Show, Eq)
+
+///|
+fn FileConfig::default() -> FileConfig {
+  { output: "" }
+}
+
+///|
+impl Parseable for FileConfig with register(self, reg) {
+  reg.file(name="output", default_path="./out.log", set=fn(v) {
+    self.output = v
+  })
+}
+
+///|
+test "file: --output /tmp/a.log sets value" {
+  let config = FileConfig::default()
+  parse_into(["--output", "/tmp/a.log"], config)
+  assert_eq(config.output, "/tmp/a.log")
+}
+
+///|
+test "file: --output (flag-only) uses default_path" {
+  let config = FileConfig::default()
+  parse_into(["--output"], config)
+  assert_eq(config.output, "./out.log")
+}
+
+///|
+test "file: unset keeps default empty" {
+  let config = FileConfig::default()
+  parse_into([], config)
+  assert_eq(config.output, "")
+}
