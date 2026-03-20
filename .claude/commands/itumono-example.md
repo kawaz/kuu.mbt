@@ -71,14 +71,10 @@ mkdir -p "{workdir}"
 新規タブや分割で以下を貼り付けて新規セッションを開始してください。とユーザに依頼する。
 
 ```
-cd "/path/to/{wsdir}" &&
-claude \
-  --add-dir "{repo}" \
-  --dangerously-skip-permissions \
-  '/itumono-example {workdir} を見て作業開始'
+cd "{wsdir}" && claude --add-dir "{repo}" --dangerously-skip-permissions '/itumono-example {workdir} を見て作業開始'
 ```
 
-画面に表示しつつQAツールでクリップボードに入れますか？ と確認し、OKなら pbcopy にぶち込む
+画面に表示しつつQAツールでクリップボードに入れますか？ と確認し、OKなら pbcopy にぶち込む（複数行に分割しないこと。ペースト時に改行が壊れる）
 
 ### 付録：ユーザのディレクトリ構成
 
