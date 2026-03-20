@@ -488,6 +488,31 @@ ValCell[T] が値（cell）と状態（committed）とデフォルト値（defau
 
 この分離により、clone は独立した ValCell + 独自の Accessor を持ち、alias は target の Accessor を共有しつつ used のみ独立させる、という構成が自然に表現される。
 
+### Visibility — 表示制御
+
+```moonbit
+pub(all) enum Visibility {
+  Visible      // デフォルト。ヘルプ表示 ✓、補完候補 ✓
+  Advanced     // ヘルプ表示 ✗、補完候補 ✓（パワーユーザー向け）
+  Hidden       // ヘルプ表示 ✗、補完候補 ✗
+}
+```
+
+OptMeta の `visibility` フィールドとして全コンビネータの `visibility~` パラメータで指定。旧 `hidden: Bool` を置換し、3段階の表示制御を提供する。`auto_env` は `Hidden` を対象外とする（従来の hidden 互換）。
+
+### 補完候補生成
+
+```moonbit
+pub(all) struct CompletionCandidate {
+  value : String        // 補完候補文字列（"--verbose", "-v", "serve" 等）
+  description : String  // 説明文（OptMeta.help から取得）
+  group : String        // グループ（"Options", "Global Options", "Commands"）
+}
+```
+
+- `Parser::generate_completions()` — 全候補を `Array[CompletionCandidate]` として返す。`Hidden` は除外、`Advanced` は含む
+- `Parser::generate_completion_script(shell~, command_name~)` — bash/zsh/fish のシェル補完スクリプトを生成。内部で `generate_completions()` を呼び、シェル固有の形式に変換する
+
 ---
 
 ## パッケージ構成
@@ -495,7 +520,7 @@ ValCell[T] が値（cell）と状態（committed）とデフォルト値（defau
 ```
 src/
   core/              # 全パース機能
-    types.mbt         #   型定義（Opt, Parser, ExactNode, TryResult, OptMeta, Variation, Lazy, ReduceCtx, FilterChain 等）
+    types.mbt         #   型定義（Opt, Parser, ExactNode, TryResult, OptMeta, Visibility, CompletionCandidate, Variation, Lazy, ReduceCtx, FilterChain 等）
     parser.mbt        #   Parser::new, register_option, make_alias, deprecated, clone, link, adjust, expand_and_register, env_prefix
     options.mbt       #   custom, custom_append, flag, string, int, float, boolean, count, file, append_string, append_int, append_float
     nodes.mbt         #   make_flag_node, make_value_node, make_or_node, make_soft_custom_value_node 等
@@ -505,7 +530,7 @@ src/
     constraints.mbt   #   exclusive, required, require_cmd, at_least_one, requires
     access.mbt        #   Opt::get, Parser::get, deprecated_warnings, ParseResult アクセサ
     parse.mbt         #   parse_raw（OC/P 2フェーズ）, install_* ノード, validate_no_duplicate_names
-    help.mbt          #   generate_help, inject_help_node, help_header, help_footer
+    help.mbt          #   generate_help, inject_help_node, help_header, help_footer, generate_completions, generate_completion_script
     filter.mbt        #   FilterChain, Filter::*, make_reducer, Accumulator, 組み込みフィルタ
   dx/                # struct-first DX 層（Parseable trait + FieldRegistry + parse_into）
   wasm/              # WASM bridge PoC（JSON schema → kuu core → JSON result）
@@ -520,7 +545,7 @@ src/
 | ドキュメント | 内容 |
 |-------------|------|
 | [DESIGN-internals.md](DESIGN-internals.md) | 詳細実装仕様（Parser struct 全フィールド、ExactNode 種類一覧、install ノードアルゴリズム、ヘルプ生成） |
-| [DESIGN-roadmap.md](DESIGN-roadmap.md) | 将来計画・未実装設計（エラー構造化、環境変数連携、補完生成、group、defaults マルチソース等） |
+| [DESIGN-roadmap.md](DESIGN-roadmap.md) | 将来計画・未実装設計（エラー構造化、group、defaults マルチソース、多言語展開等） |
 | [valcell-lifecycle.md](valcell-lifecycle.md) | ValCell/Accessor ライフサイクル詳細 |
 | [kuu-essence.md](kuu-essence.md) | プロジェクトの本質・ポジショニング |
 | [kuu-showcase.md](kuu-showcase.md) | ユースケース事例集（作成中） |

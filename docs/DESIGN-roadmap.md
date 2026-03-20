@@ -100,6 +100,56 @@ DR-051 で指摘された4件の未対応機能を実装:
 - **Level 1**: 部分フック（header/footer のカスタマイズ）← 実装済み
 - Level 2（全面差し替え）は未実装
 
+### Visibility enum — 3段階表示制御
+
+`hidden: Bool` を `visibility: Visibility` enum に置換。OptMeta のフィールドとして全コンビネータの `visibility~` パラメータで指定:
+
+```moonbit
+pub(all) enum Visibility {
+  Visible      // デフォルト。ヘルプ表示 ✓、補完候補 ✓
+  Advanced     // ヘルプ表示 ✗、補完候補 ✓（パワーユーザー向け）
+  Hidden       // ヘルプ表示 ✗、補完候補 ✗
+}
+```
+
+- `auto_env` との連動: `Hidden` は auto_env 対象外（従来の hidden 互換）
+- ヘルプ表示: `Visible` のみ表示。`Advanced` / `Hidden` は非表示
+- 補完候補: `Visible` / `Advanced` は候補に含まれる。`Hidden` は除外
+
+> **注**: ロードマップ旧版では4段階（Deprecated を含む）を構想していたが、`deprecated` は独立コンビネータとして実装済み（DR-040）のため、Visibility enum には含めない設計とした。
+
+### 補完候補生成
+
+`CompletionCandidate` 型と `Parser::generate_completions()` メソッドで補完候補データを取得。`Parser::generate_completion_script(shell~, command_name~)` で bash/zsh/fish のシェル補完スクリプトを生成:
+
+```moonbit
+pub(all) struct CompletionCandidate {
+  value : String        // 補完候補の文字列（"--verbose", "-v", "serve" 等）
+  description : String  // 説明文（OptMeta.help から取得）
+  group : String        // グループ分け（"Options", "Global Options", "Commands"）
+}
+
+// 補完候補データの取得
+pub fn Parser::generate_completions(self : Parser) -> Array[CompletionCandidate]
+
+// シェル補完スクリプトの生成（bash, zsh, fish 対応）
+pub fn Parser::generate_completion_script(self : Parser, shell~ : String, command_name~ : String) -> String
+```
+
+候補生成の仕様:
+- `Visible` / `Advanced` の opt/cmd が候補に含まれる。`Hidden` は除外
+- long option (`--name`)、short option (`-v`)、aliases (`--alt`)、variation names (`--no-verbose`) を個別候補として出力
+- サブコマンドは primary name + aliases を出力
+- group は `"Options"` / `"Global Options"` / `"Commands"` の3種
+
+シェル別スクリプト生成:
+- **bash**: `complete -F` + `compgen -W` 方式
+- **zsh**: `#compdef` + `_arguments` + `_describe` 方式（option/command をグループ分け、`[description]` 付き）
+- **fish**: `complete -c` 方式（`-l`/`-s`/`-d` フラグ対応）
+- 未知のシェル名にはコメント形式のエラーメッセージを返す
+
+> **制限**: 現在はトップレベルパーサの候補のみ生成。サブコマンドの深いネスト対応（コンテキスト認識補完）は将来課題。
+
 ### timespec 連携フィルタ（contrib/timespec）
 
 `kuu/contrib/timespec/` パッケージとして実装。`kawaz/timespec` を依存に持ち、FilterChain パイプラインと統合:
@@ -191,21 +241,6 @@ Level 0（自動生成）と Level 1（header/footer フック）は実装済み
 
 **ブロッカー**: なし
 
-### 補完生成
-
-```moonbit
-struct CompletionCandidate {
-  value : String
-  description : String?       // zsh/fish の説明表示
-  group : String?             // zsh のグループ分け
-  style : CompletionStyle?    // 警告色等
-}
-```
-
-3段階カスタマイズ + シェル別出力形式（bash/zsh/fish）。
-
-**ブロッカー**: なし（ヘルプ生成 Level 1 は実装済み。設計の見通しは確保された）
-
 ### defaults マルチソースマージ
 
 各デフォルトソースは独立。各ソースごとに新しい Parser で parse し、**明示指定のみ後勝ちマージ**:
@@ -234,23 +269,6 @@ enum ValueSource {
 `result.source(opt) -> ValueSource` で値の出所を追跡。`result.is_explicit(opt) -> Bool`。
 
 **ブロッカー**: 設計検討（ValCell/Accessor アーキテクチャとの統合方式）
-
-### Visibility — 4段階表示制御
-
-```moonbit
-enum Visibility {
-  Visible      // デフォルト
-  Advanced     // help ✗, 補完 ✓（パワーユーザー向け）
-  Deprecated   // help ✓（注記）, 補完 ✗（deprecated コンビネータは実装済み）
-  Hidden       // help ✗, 補完 ✗（現在は hidden: Bool で部分実装済み）
-}
-```
-
-`--help-all` で Hidden/Advanced を含む全エントリ表示。auto_env との連動（Hidden は既に auto_env 対象外。Advanced → auto_env デフォルト Off は Visibility enum 統合時に検討）。
-
-> **注**: `deprecated` はコンビネータとして実装済み（DR-040）。Visibility enum としての統合は未実装。
-
-**ブロッカー**: 補完生成（Visibility の全4段階の意味が確定するため）
 
 ### group — 繰り返しオプション群
 
@@ -740,7 +758,7 @@ struct Config {
 | Reduce | 消費ループ | 実装済み（parse_raw） | — |
 | Validate | exclusive, requires 等 | post_hooks で実装済み | — |
 | Finalize | デフォルト適用・環境変数連携 | 実装済み（env_applicators + post_hooks + env_prefix + auto_env） | — |
-| Output | ヘルプ・補完・エラー表示 | 基本実装済み | ヘルプ拡張・補完生成 |
+| Output | ヘルプ・補完・エラー表示 | 基本実装済み（ヘルプ Level 0-1、補完生成） | ヘルプ拡張 Level 2 |
 
 post_hooks が将来の Validate/Finalize フェーズの実質基盤として機能する。
 
