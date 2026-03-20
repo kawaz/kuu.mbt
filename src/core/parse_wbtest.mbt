@@ -3441,3 +3441,87 @@ test "generate_completions: group is correctly set for global options" {
   let global_candidates = candidates.filter(fn(c) { c.value == "--global-opt" })
   inspect(global_candidates[0].group, content="Global Options")
 }
+
+// ============================================================
+// generate_completion_script tests
+// ============================================================
+
+///|
+test "generate_completion_script: bash output contains complete -F" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Enable verbose")
+  let _ = p.int(name="port", default=8080, description="Server port")
+  let script = p.generate_completion_script(shell="bash", command_name="myapp")
+  inspect(script.contains("complete -F _myapp myapp"), content="true")
+  inspect(script.contains("_myapp()"), content="true")
+  inspect(script.contains("--verbose"), content="true")
+  inspect(script.contains("--port"), content="true")
+}
+
+///|
+test "generate_completion_script: zsh output contains #compdef" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Enable verbose")
+  let _ = p.int(name="port", default=8080, description="Server port")
+  let script = p.generate_completion_script(shell="zsh", command_name="myapp")
+  inspect(script.contains("#compdef myapp"), content="true")
+  inspect(script.contains("_myapp()"), content="true")
+  inspect(script.contains("'--verbose[Enable verbose]'"), content="true")
+  inspect(script.contains("'--port[Server port]'"), content="true")
+  inspect(script.contains("_myapp"), content="true")
+}
+
+///|
+test "generate_completion_script: fish output contains complete -c" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Enable verbose")
+  let _ = p.int(name="port", default=8080, description="Server port")
+  let script = p.generate_completion_script(shell="fish", command_name="myapp")
+  inspect(script.contains("complete -c myapp"), content="true")
+  inspect(script.contains("-l verbose"), content="true")
+  inspect(script.contains("-d 'Enable verbose'"), content="true")
+  inspect(script.contains("-l port"), content="true")
+  inspect(script.contains("-d 'Server port'"), content="true")
+}
+
+///|
+test "generate_completion_script: unknown shell returns error message" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Enable verbose")
+  let script = p.generate_completion_script(
+    shell="powershell",
+    command_name="myapp",
+  )
+  inspect(script.contains("Unsupported shell: powershell"), content="true")
+}
+
+///|
+test "generate_completion_script: fish with shorts includes -s flag" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", shorts="v", description="Enable verbose")
+  let script = p.generate_completion_script(shell="fish", command_name="myapp")
+  inspect(script.contains("-s v"), content="true")
+  inspect(script.contains("-l verbose"), content="true")
+}
+
+///|
+test "generate_completion_script: subcommands are included" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose", description="Enable verbose")
+  let _ = p.sub(name="serve", description="Start server")
+  let _ = p.sub(name="build", description="Build project")
+  // bash
+  let bash = p.generate_completion_script(shell="bash", command_name="myapp")
+  inspect(bash.contains("serve"), content="true")
+  inspect(bash.contains("build"), content="true")
+  // zsh
+  let zsh = p.generate_completion_script(shell="zsh", command_name="myapp")
+  inspect(zsh.contains("'serve:Start server'"), content="true")
+  inspect(zsh.contains("'build:Build project'"), content="true")
+  // fish
+  let fish = p.generate_completion_script(shell="fish", command_name="myapp")
+  inspect(fish.contains("-a serve"), content="true")
+  inspect(fish.contains("-d 'Start server'"), content="true")
+  inspect(fish.contains("-a build"), content="true")
+  inspect(fish.contains("-d 'Build project'"), content="true")
+}

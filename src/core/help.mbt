@@ -266,6 +266,194 @@ pub fn Parser::generate_completions(
 }
 
 ///|
+pub fn Parser::generate_completion_script(
+  self : Parser,
+  shell~ : String,
+  command_name~ : String,
+) -> String {
+  match shell {
+    "bash" => self.generate_bash_completion(command_name)
+    "zsh" => self.generate_zsh_completion(command_name)
+    "fish" => self.generate_fish_completion(command_name)
+    _ => "# Unsupported shell: " + shell + "\n"
+  }
+}
+
+///|
+fn Parser::generate_bash_completion(
+  self : Parser,
+  command_name : String,
+) -> String {
+  let candidates = self.generate_completions()
+  let words : Array[String] = []
+  for c in candidates {
+    words.push(c.value)
+  }
+  let buf = StringBuilder::new()
+  buf.write_string("_")
+  buf.write_string(command_name)
+  buf.write_string("() {\n")
+  buf.write_string("    local cur=\"$")
+  buf.write_char('{')
+  buf.write_string("COMP_WORDS[COMP_CWORD]}\"\n")
+  buf.write_string("    COMPREPLY=( $(compgen -W \"")
+  for i, w in words {
+    if i > 0 {
+      buf.write_char(' ')
+    }
+    buf.write_string(w)
+  }
+  buf.write_string("\" -- \"$cur\") )\n")
+  buf.write_string("}\n")
+  buf.write_string("complete -F _")
+  buf.write_string(command_name)
+  buf.write_char(' ')
+  buf.write_string(command_name)
+  buf.write_char('\n')
+  buf.to_string()
+}
+
+///|
+fn Parser::generate_zsh_completion(
+  self : Parser,
+  command_name : String,
+) -> String {
+  let candidates = self.generate_completions()
+  let options : Array[CompletionCandidate] = []
+  let commands : Array[CompletionCandidate] = []
+  for c in candidates {
+    if c.group == "Commands" {
+      commands.push(c)
+    } else {
+      options.push(c)
+    }
+  }
+  let buf = StringBuilder::new()
+  buf.write_string("#compdef ")
+  buf.write_string(command_name)
+  buf.write_char('\n')
+  buf.write_string("_")
+  buf.write_string(command_name)
+  buf.write_string("() {\n")
+  if options.length() > 0 {
+    buf.write_string("    local -a options\n")
+  }
+  if commands.length() > 0 {
+    buf.write_string("    local -a commands\n")
+  }
+  if options.length() > 0 {
+    buf.write_string("    options=(\n")
+    for o in options {
+      buf.write_string("        '")
+      buf.write_string(o.value)
+      buf.write_char('[')
+      buf.write_string(o.description)
+      buf.write_string("]'\n")
+    }
+    buf.write_string("    )\n")
+  }
+  if commands.length() > 0 {
+    buf.write_string("    commands=(\n")
+    for c in commands {
+      buf.write_string("        '")
+      buf.write_string(c.value)
+      buf.write_char(':')
+      buf.write_string(c.description)
+      buf.write_string("'\n")
+    }
+    buf.write_string("    )\n")
+  }
+  buf.write_string("    _arguments '*: :->args'\n")
+  buf.write_string("    case $state in\n")
+  buf.write_string("        args)")
+  if options.length() > 0 {
+    buf.write_string(" _describe 'options' options;")
+  }
+  if commands.length() > 0 {
+    buf.write_string(" _describe 'commands' commands;")
+  }
+  buf.write_string(" ;;\n")
+  buf.write_string("    esac\n")
+  buf.write_string("}\n")
+  buf.write_string("_")
+  buf.write_string(command_name)
+  buf.write_char('\n')
+  buf.to_string()
+}
+
+///|
+fn Parser::generate_fish_completion(
+  self : Parser,
+  command_name : String,
+) -> String {
+  let buf = StringBuilder::new()
+  for meta in self.metas {
+    if meta.visibility == Hidden {
+      continue
+    }
+    match meta.kind {
+      Command => {
+        buf.write_string("complete -c ")
+        buf.write_string(command_name)
+        buf.write_string(" -n '__fish_use_subcommand' -a ")
+        buf.write_string(meta.name)
+        if not(meta.help.is_empty()) {
+          buf.write_string(" -d '")
+          buf.write_string(meta.help)
+          buf.write_char('\'')
+        }
+        buf.write_char('\n')
+        // Command aliases
+        for alt in meta.aliases {
+          buf.write_string("complete -c ")
+          buf.write_string(command_name)
+          buf.write_string(" -n '__fish_use_subcommand' -a ")
+          buf.write_string(alt)
+          if not(meta.help.is_empty()) {
+            buf.write_string(" -d '")
+            buf.write_string(meta.help)
+            buf.write_char('\'')
+          }
+          buf.write_char('\n')
+        }
+      }
+      Flag | ValueOpt => {
+        buf.write_string("complete -c ")
+        buf.write_string(command_name)
+        buf.write_string(" -l ")
+        buf.write_string(meta.name)
+        // Short options (first one only for fish -s)
+        for s in meta.shorts {
+          buf.write_string(" -s ")
+          buf.write_string(s)
+        }
+        if not(meta.help.is_empty()) {
+          buf.write_string(" -d '")
+          buf.write_string(meta.help)
+          buf.write_char('\'')
+        }
+        buf.write_char('\n')
+        // Aliases as separate long options
+        for alt in meta.aliases {
+          buf.write_string("complete -c ")
+          buf.write_string(command_name)
+          buf.write_string(" -l ")
+          buf.write_string(alt)
+          if not(meta.help.is_empty()) {
+            buf.write_string(" -d '")
+            buf.write_string(meta.help)
+            buf.write_char('\'')
+          }
+          buf.write_char('\n')
+        }
+      }
+      Positional | Rest => ()
+    }
+  }
+  buf.to_string()
+}
+
+///|
 fn calculate_max_width(
   metas : Array[OptMeta],
   format_left : (OptMeta) -> String,
