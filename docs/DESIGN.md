@@ -256,9 +256,11 @@ DX API (各言語)  ← 言語イディオムに沿った型安全 API
   ↓
 KuuCore (各言語) ← JSON 力学を隠蔽。コールバック仲介。バックエンド抽象化
   ↓
-Bridge           ← core との接続層（方式は言語ごとに異なる、下記参照）
+Bridge           ← core との接続層
+  ├ Layer 2a: WASM transport  (V8/wasmtime。インプロセス)
+  └ Layer 2b: Native CLI transport (kuu-cli。stdin/stdout JSON)
   ↓
-Core (MoonBit)   ← 純粋パースエンジン
+Core (MoonBit)   ← Layer 1: 純粋パースエンジン
 ```
 
 ### 各言語への提供形式（検討中）
@@ -269,6 +271,7 @@ core を各言語から利用する方式は未確定。言語ごとに最適な
 |------|------|------|
 | V8 WASM-GC | JS/TS から直接ロード | PoC 実装あり（src/wasm/）。JSON schema → core → JSON result |
 | wasmtime 埋め込み | Rust, Python から WASM-GC バイナリをロード | wasmtime v27+ で WASM-GC 対応。PoC 未着手 |
+| Native CLI (kuu-cli) | stdin/stdout JSON プロトコル。全言語から exec | PoC 実装中（src/cli/）。WASM bridge と同一プロトコル |
 | Node.js サブプロセス | Go, Swift 等。JSON ブリッジ | PoC 実装あり。プロセス起動オーバーヘッドあり |
 | MoonBit native → C FFI | 全言語から C FFI で接続 | MoonBit native バックエンド成熟待ち |
 | core 再実装 | 各言語でネイティブ実装 | テストケース共有で品質保証する構想 |
@@ -281,6 +284,18 @@ struct-first 方式。Parseable trait + FieldRegistry + parse_into の2フェー
 2. **apply フェーズ**: parse 成功後、蓄積した apply_fn を順に実行してユーザーの struct に値を注入。parse 失敗時は apply されない（トランザクショナル）
 
 apply_fn パターンにより、core 側の Ref[T] が DX 層に漏洩しない。
+
+### kuu-cli — Native CLI Transport（DR-059、実装中）
+
+Layer 2b の Native transport。MoonBit native target (C backend) でビルドされた単一バイナリとして、stdin/stdout の JSON protocol v1 で kuu core のパース機能を提供する。WASM bridge (Layer 2a) と同一のパースロジック・プロトコルを共有する。
+
+**特徴**:
+
+- **Self-hosting**: kuu core で kuu-cli 自身の CLI 引数をパースする（`parse`, `completions`, `validate` サブコマンド + `--help`, `--version` グローバルオプション）
+- **C FFI**: MoonBit に stdin/argv API がないため、C FFI で stdin 読み込み・ファイル読み込み・argv 取得を実現。macOS では `_NSGetArgc`/`_NSGetArgv` で argv を取得
+- **UTF-8 ↔ UTF-16 変換**: C FFI 境界で UTF-8 バイト列と MoonBit String (UTF-16 LE) を相互変換
+- **embed パターン対応** (DR-047): 各言語の DX レイヤーが kuu-cli バイナリを embed し、ユーザーからは通常のライブラリとして見える
+- **独立コマンド** (DR-057): シェルスクリプト・Makefile・CI/CD から直接利用可能
 
 ### TypeScript DX 層（pkg/ts/、PoC）
 
@@ -528,7 +543,7 @@ pub(all) struct CompletionCandidate {
 
 ```
 src/
-  core/              # 全パース機能
+  core/              # Layer 1: パースエンジン
     types.mbt         #   型定義（Opt, Parser, ExactNode, TryResult, OptMeta, Visibility, CompletionCandidate, Variation, Lazy, ReduceCtx, FilterChain 等）
     parser.mbt        #   Parser::new, register_option, make_alias, deprecated, clone, link, adjust, expand_and_register, env_prefix
     options.mbt       #   custom, custom_append, flag, string, int, float, boolean, count, file, append_string, append_int, append_float
@@ -541,8 +556,9 @@ src/
     parse.mbt         #   parse_raw（OC/P 2フェーズ）, install_* ノード, validate_no_duplicate_names
     help.mbt          #   generate_help, inject_help_node, help_header, help_footer, generate_completions, generate_completion_script
     filter.mbt        #   FilterChain, Filter::*, make_reducer, Accumulator, 組み込みフィルタ
-  dx/                # struct-first DX 層（Parseable trait + FieldRegistry + parse_into）
-  wasm/              # WASM bridge PoC（JSON schema → kuu core → JSON result）
+  wasm/              # Layer 2a: WASM transport（JSON schema → kuu core → JSON result）
+  cli/               # Layer 2b: Native CLI transport（stdin/stdout JSON protocol）
+  dx/                # MoonBit DX 層（Parseable trait + FieldRegistry + parse_into）
   contrib/
     timespec/        # kawaz/timespec 連携フィルタ（parse_duration, parse_timespec, parse_timespec_optional）
 pkg/
