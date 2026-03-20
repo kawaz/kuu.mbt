@@ -44,6 +44,15 @@ pub fn Parser::set_description(self : Parser, desc : String) -> Unit {
 }
 
 ///|
+/// 環境変数プレフィックスを設定する。env パラメータ付き opt は
+/// `prefix + "_" + env_name` の環境変数を参照するようになる。
+/// サブコマンドは親の prefix を自動的に継承し、
+/// `PARENT_PREFIX_SUBCMD_NAME` のようにネストする。
+pub fn Parser::env_prefix(self : Parser, prefix : String) -> Unit {
+  self.env_prefix.val = prefix
+}
+
+///|
 pub fn Parser::new(dashdash? : Bool = true) -> Parser {
   let seq : Ref[Int] = { val: 0 }
   let p : Parser = {
@@ -71,6 +80,7 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     env_map: { val: {} },
     help_header_text: { val: "" },
     help_footer_text: { val: "" },
+    env_prefix: { val: "" },
   }
   if dashdash {
     p.install_separator_node()

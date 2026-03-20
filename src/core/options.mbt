@@ -1,6 +1,7 @@
 ///|
 /// env_applicator を登録する共通ヘルパー。
 /// env が非空の場合のみ、committed=false なら env から値を取得して適用する。
+/// env_prefix が設定されている場合は prefix + "_" + env をキーとして参照する。
 fn[T] register_env_applicator(
   parser : Parser,
   env : String,
@@ -8,9 +9,15 @@ fn[T] register_env_applicator(
   converter : (String) -> T raise ParseError,
 ) -> Unit {
   if env != "" {
+    let prefix_ref = parser.env_prefix
     parser.env_applicators.push(fn(env_map) raise ParseError {
       if not(vc.committed.val) {
-        match env_map.get(env) {
+        let key = if prefix_ref.val == "" {
+          env
+        } else {
+          prefix_ref.val + "_" + env
+        }
+        match env_map.get(key) {
           Some(raw) =>
             if raw != "" {
               vc.cell.val = converter(raw)

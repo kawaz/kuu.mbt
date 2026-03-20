@@ -183,13 +183,13 @@ pub fn Parser::generate_help(self : Parser) -> String {
   if options.length() > 0 {
     buf.write_char('\n')
     buf.write_string("Options:\n")
-    write_opt_section(buf, options)
+    write_opt_section(buf, options, env_prefix=self.env_prefix.val)
   }
   // Global Options section
   if globals.length() > 0 {
     buf.write_char('\n')
     buf.write_string("Global Options:\n")
-    write_opt_section(buf, globals)
+    write_opt_section(buf, globals, env_prefix=self.env_prefix.val)
   }
   // Footer (Level 1 customization)
   let footer = self.help_footer_text.val
@@ -253,13 +253,17 @@ fn format_opt_left(meta : OptMeta) -> String {
 }
 
 ///|
-fn format_opt_right(meta : OptMeta) -> String {
+fn format_opt_right(meta : OptMeta, env_prefix? : String = "") -> String {
   let buf = StringBuilder::new()
   if not(meta.help.is_empty()) {
     buf.write_string(meta.help)
   }
   if not(meta.env_name.is_empty()) {
     buf.write_string(" [env: ")
+    if env_prefix != "" {
+      buf.write_string(env_prefix)
+      buf.write_char('_')
+    }
     buf.write_string(meta.env_name)
     buf.write_char(']')
   }
@@ -292,12 +296,16 @@ fn format_arg_left(meta : OptMeta) -> String {
 }
 
 ///|
-fn write_opt_section(buf : StringBuilder, metas : Array[OptMeta]) -> Unit {
+fn write_opt_section(
+  buf : StringBuilder,
+  metas : Array[OptMeta],
+  env_prefix? : String = "",
+) -> Unit {
   let max_left = calculate_max_width(metas, format_opt_left)
   for meta in metas {
     let left = format_opt_left(meta)
     buf.write_string(left)
-    let right = format_opt_right(meta)
+    let right = format_opt_right(meta, env_prefix~)
     if not(right.is_empty()) {
       let padding = max_left - left.char_length() + 2
       let pad_str = String::make(padding, ' ')
@@ -341,9 +349,9 @@ fn Parser::find_meta_by_opt_name(self : Parser, opt_name : String) -> OptMeta? {
 }
 
 ///|
-fn format_opt_help_line(meta : OptMeta) -> String {
+fn format_opt_help_line(meta : OptMeta, env_prefix? : String = "") -> String {
   let left = format_opt_left(meta)
-  let right = format_opt_right(meta)
+  let right = format_opt_right(meta, env_prefix~)
   if right.is_empty() {
     left
   } else {
@@ -368,7 +376,9 @@ fn Parser::format_error_context(self : Parser, info : ParseErrorInfo) -> String 
         // C-3: hidden オプションは help 行を表示しない
         if not(meta.hidden) && (meta.kind == Flag || meta.kind == ValueOpt) {
           buf.write_string("  help: ")
-          buf.write_string(format_opt_help_line(meta))
+          buf.write_string(
+            format_opt_help_line(meta, env_prefix=self.env_prefix.val),
+          )
           buf.write_char('\n')
         }
       None => ()

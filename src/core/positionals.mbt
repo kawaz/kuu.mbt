@@ -165,6 +165,7 @@ pub fn Parser::serial(
     env_map: { val: {} },
     help_header_text: { val: "" },
     help_footer_text: { val: "" },
+    env_prefix: { val: "" },
   }
   setup(sub)
   // sub.positionals を greedy な compound handler にまとめる。

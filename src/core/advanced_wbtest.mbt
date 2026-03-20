@@ -3191,3 +3191,125 @@ test "file: equals syntax" {
   p.parse(["--config=/path/to/file"]) |> ignore
   inspect(config.get(), content="Some(\"/path/to/file\")")
 }
+
+// === env Phase 3: env_prefix テスト ===
+
+///|
+test "env_prefix: basic prefix applied to env lookup" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  let port = p.int(name="port", default=8080, env="PORT")
+  ignore(p.parse([], env={ "MYAPP_PORT": "9000" }))
+  inspect(port.get(), content="Some(9000)")
+  inspect(port.is_set(), content="true")
+}
+
+///|
+test "env_prefix: unprefixed env var is not matched" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  let port = p.int(name="port", default=8080, env="PORT")
+  ignore(p.parse([], env={ "PORT": "9000" }))
+  // prefix が設定されているので素の PORT は無視される
+  inspect(port.get(), content="Some(8080)")
+  inspect(port.is_set(), content="false")
+}
+
+///|
+test "env_prefix: no prefix behaves as before" {
+  let p = Parser::new()
+  let port = p.int(name="port", default=8080, env="PORT")
+  ignore(p.parse([], env={ "PORT": "9000" }))
+  inspect(port.get(), content="Some(9000)")
+  inspect(port.is_set(), content="true")
+}
+
+///|
+test "env_prefix: CLI takes precedence over prefixed env" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  let port = p.int(name="port", default=8080, env="PORT")
+  ignore(p.parse(["--port", "3000"], env={ "MYAPP_PORT": "9000" }))
+  inspect(port.get(), content="Some(3000)")
+  inspect(port.is_set(), content="true")
+}
+
+///|
+test "env_prefix: opt without env is not affected" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  let port = p.int(name="port", default=8080)
+  ignore(p.parse([], env={ "MYAPP_PORT": "9000" }))
+  inspect(port.get(), content="Some(8080)")
+  inspect(port.is_set(), content="false")
+}
+
+///|
+test "env_prefix: subcmd inherits parent prefix with nesting" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  let sub = p.sub(name="serve")
+  let port = sub.int(name="port", default=8080, env="PORT")
+  ignore(p.parse(["serve"], env={ "MYAPP_SERVE_PORT": "9000" }))
+  inspect(port.get(), content="Some(9000)")
+  inspect(port.is_set(), content="true")
+}
+
+///|
+test "env_prefix: nested subcmd prefix chaining" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  let app = p.sub(name="app")
+  let inner = app.sub(name="serve")
+  let host = inner.string(name="host", default="localhost", env="HOST")
+  ignore(
+    p.parse(["app", "serve"], env={ "MYAPP_APP_SERVE_HOST": "example.com" }),
+  )
+  inspect(
+    host.get(),
+    content=(
+      #|Some("example.com")
+    ),
+  )
+  inspect(host.is_set(), content="true")
+}
+
+///|
+test "env_prefix: help shows prefixed env name" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  let _ = p.string(
+    name="port",
+    default="8080",
+    env="PORT",
+    description="Server port",
+  )
+  let help = p.generate_help()
+  inspect(help.contains("[env: MYAPP_PORT]"), content="true")
+  // 素の PORT は表示されない
+  inspect(help.contains("[env: PORT]"), content="false")
+}
+
+///|
+test "env_prefix: flag from prefixed env" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  let verbose = p.flag(name="verbose", env="VERBOSE")
+  ignore(p.parse([], env={ "MYAPP_VERBOSE": "true" }))
+  inspect(verbose.get(), content="Some(true)")
+  inspect(verbose.is_set(), content="true")
+}
+
+///|
+test "env_prefix: append_string from prefixed env" {
+  let p = Parser::new()
+  p.env_prefix("MYAPP")
+  let includes = p.append_string(name="include", env="INCLUDE")
+  ignore(p.parse([], env={ "MYAPP_INCLUDE": "a,b,c" }))
+  inspect(
+    includes.get(),
+    content=(
+      #|Some(["a", "b", "c"])
+    ),
+  )
+}

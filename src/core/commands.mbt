@@ -36,6 +36,7 @@ pub fn Parser::cmd(
     env_map: { val: {} },
     help_header_text: { val: "" },
     help_footer_text: { val: "" },
+    env_prefix: { val: "" },
   }
   // 親の global_nodes の名前を子の registered_names に登録（衝突検知のため）
   for gnode in self.global_nodes {
@@ -83,6 +84,11 @@ pub fn Parser::cmd(
             synced_count.val += 1
           }
           let rest_args = args.view(start=pos + 1).to_array()
+          // env_prefix の継承: 親の prefix + "_" + uppercase(cmd_name)
+          let parent_prefix = self.env_prefix.val
+          if parent_prefix != "" {
+            child.env_prefix.val = parent_prefix + "_" + cmd_name.to_upper()
+          }
           let parse_result : Result[ParseResult, ParseError] = try? child.parse(
             rest_args,
             env=self.env_map.val,

@@ -106,6 +106,9 @@ pub(all) struct Parser {
   help_header_text : Ref[String]
   // Level 1 ヘルプカスタマイズ: generate_help() の末尾に追加するテキスト
   help_footer_text : Ref[String]
+  // env Phase 3: 環境変数プレフィックス。env パラメータ付き opt の参照キーに prefix + "_" を付加する。
+  // サブコマンドは親の prefix + "_" + uppercase(cmd_name) を継承する。
+  env_prefix : Ref[String]
 }
 
 ///|
