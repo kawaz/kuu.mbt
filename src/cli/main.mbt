@@ -65,14 +65,18 @@ fn main {
           let schema_path = match parse_schema.get() {
             Some(s) =>
               if s == "" {
-                write_stderr_ffi("error: schema path is required\n")
+                write_stderr_ffi(
+                  "error: schema path is required\nUsage: kuu parse <schema> [-- <args>...]\n",
+                )
                 exit_ffi(1)
                 return
               } else {
                 s
               }
             None => {
-              write_stderr_ffi("error: schema path is required\n")
+              write_stderr_ffi(
+                "error: schema path is required\nUsage: kuu parse <schema> [-- <args>...]\n",
+              )
               exit_ffi(1)
               return // unreachable, but needed for type checker
             }
@@ -112,14 +116,18 @@ fn main {
           let schema_path = match comp_schema.get() {
             Some(s) =>
               if s == "" {
-                write_stderr_ffi("error: schema path is required\n")
+                write_stderr_ffi(
+                  "error: schema path is required\nUsage: kuu completions [--shell <shell>] [--command <name>] <schema>\n",
+                )
                 exit_ffi(1)
                 return
               } else {
                 s
               }
             None => {
-              write_stderr_ffi("error: schema path is required\n")
+              write_stderr_ffi(
+                "error: schema path is required\nUsage: kuu completions [--shell <shell>] [--command <name>] <schema>\n",
+              )
               exit_ffi(1)
               return
             }
@@ -151,14 +159,18 @@ fn main {
           let schema_path = match val_schema.get() {
             Some(s) =>
               if s == "" {
-                write_stderr_ffi("error: schema path is required\n")
+                write_stderr_ffi(
+                  "error: schema path is required\nUsage: kuu validate <schema>\n",
+                )
                 exit_ffi(1)
                 return
               } else {
                 s
               }
             None => {
-              write_stderr_ffi("error: schema path is required\n")
+              write_stderr_ffi(
+                "error: schema path is required\nUsage: kuu validate <schema>\n",
+              )
               exit_ffi(1)
               return
             }
@@ -183,8 +195,7 @@ fn main {
         None => ()
       }
       // No subcommand: show help (same as --help)
-      write_stderr_ffi(parser.generate_help())
-      exit_ffi(1)
+      println(parser.generate_help())
     }
     Err(@core.HelpRequested(text)) => {
       println(text)

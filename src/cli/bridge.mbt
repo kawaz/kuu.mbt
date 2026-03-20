@@ -342,7 +342,10 @@ fn build_parser(
                 String(n) =>
                   match opt_refs.get(n) {
                     Some(r) => refs.push(r)
-                    None => ()
+                    None =>
+                      return Err(
+                        "constraint references unknown option: " + n,
+                      )
                   }
                 _ => ()
               }
@@ -364,7 +367,8 @@ fn build_parser(
           String(n) =>
             match opt_refs.get(n) {
               Some(r) => parser.required(r)
-              None => ()
+              None =>
+                return Err("constraint references unknown option: " + n)
             }
           _ => ()
         }
@@ -383,7 +387,10 @@ fn build_parser(
                 String(n) =>
                   match opt_refs.get(n) {
                     Some(r) => refs.push(r)
-                    None => ()
+                    None =>
+                      return Err(
+                        "constraint references unknown option: " + n,
+                      )
                   }
                 _ => ()
               }
@@ -418,7 +425,16 @@ fn build_parser(
             match (opt_refs.get(source_name), opt_refs.get(target_name)) {
               (Some(source_ref), Some(target_ref)) =>
                 parser.requires(target_ref, source=source_ref, msg~)
-              _ => ()
+              (None, _) =>
+                return Err(
+                  "requires constraint references unknown source: " +
+                  source_name,
+                )
+              (_, None) =>
+                return Err(
+                  "requires constraint references unknown target: " +
+                  target_name,
+                )
             }
           }
           _ => ()

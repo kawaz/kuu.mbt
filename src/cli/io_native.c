@@ -90,6 +90,10 @@ moonbit_string_t read_stdin(void) {
     len += n;
     if (n == 0) break;
     if (len == capacity) {
+      if (capacity > SIZE_MAX / 2) {
+        free(buf);
+        return moonbit_make_string(0, 0);
+      }
       capacity *= 2;
       unsigned char *newbuf = (unsigned char *)realloc(buf, capacity);
       if (!newbuf) {
@@ -106,14 +110,17 @@ moonbit_string_t read_stdin(void) {
 
 moonbit_string_t read_file(moonbit_string_t path) {
   // Convert MoonBit string (UTF-16) to C string (UTF-8) for file path
-  int path_len = (int)Moonbit_array_length(path);
+  size_t path_len = Moonbit_array_length(path);
+  if (path_len > SIZE_MAX / 4) {
+    return moonbit_make_string(0, 0);
+  }
   // Worst case: 4 bytes per code point
   char *cpath = (char *)malloc(path_len * 4 + 1);
   if (!cpath) {
     return moonbit_make_string(0, 0);
   }
   int out = 0;
-  for (int i = 0; i < path_len; i++) {
+  for (size_t i = 0; i < path_len; i++) {
     uint16_t ch = path[i];
     uint32_t cp;
     // Handle surrogate pairs
@@ -167,6 +174,11 @@ moonbit_string_t read_file(moonbit_string_t path) {
       total += n;
       if (n == 0) break;
       if (total == capacity) {
+        if (capacity > SIZE_MAX / 2) {
+          free(buf);
+          fclose(f);
+          return moonbit_make_string(0, 0);
+        }
         capacity *= 2;
         unsigned char *newbuf = (unsigned char *)realloc(buf, capacity);
         if (!newbuf) {
@@ -188,7 +200,10 @@ moonbit_string_t read_file(moonbit_string_t path) {
     fclose(f);
     return moonbit_make_string(0, 0);
   }
-  fseek(f, 0, SEEK_SET);
+  if (fseek(f, 0, SEEK_SET) != 0) {
+    fclose(f);
+    return moonbit_make_string(0, 0);
+  }
 
   unsigned char *buf = (unsigned char *)malloc(fsize);
   if (!buf) {
