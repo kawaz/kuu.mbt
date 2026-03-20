@@ -1,3 +1,8 @@
+import {
+  "kawaz/kuu/core",
+  "moonbitlang/core/json",
+}
+
 options(
   "is-main": true,
   "native-stub": [ "io_native.c" ],
