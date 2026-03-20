@@ -187,7 +187,7 @@ pub(all) struct Parser {
   env_prefix : @ref.Ref[String]
   auto_env_enabled : @ref.Ref[Bool]
 }
-pub fn[T] Parser::adjust(Self, Opt[T], after_post~ : FilterChain[T, T]) -> Unit
+pub fn[T] Parser::adjust(Self, Opt[T], before_pre? : FilterChain[String, String], after_pre? : FilterChain[T, T], before_post? : FilterChain[T, T], after_post? : FilterChain[T, T]) -> Unit
 pub fn Parser::append_dashdash(Self, separator? : String, stop_before? : Array[String]) -> Opt[Array[Array[String]]]
 pub fn Parser::append_float(Self, name~ : String, description? : String, env? : String, value_name? : String, visibility? : Visibility) -> Opt[Array[Double]]
 pub fn Parser::append_int(Self, name~ : String, description? : String, env? : String, value_name? : String, visibility? : Visibility) -> Opt[Array[Int]]

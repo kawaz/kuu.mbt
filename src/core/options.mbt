@@ -583,6 +583,10 @@ pub fn[T : Show] Parser::custom(
     }
   }
 
+  // before_pre_ref: adjust(before_pre=...) で後から修正可能。
+  // None = 未使用（identity として振る舞い、追加コストなし）。
+  let before_pre_ref : Ref[FilterChain[String, String]?] = { val: None }
+
   let make_main : (String) -> ExactNode = if has_implicit {
     let iv = match implicit_value {
       Some(v) => v
@@ -620,7 +624,17 @@ pub fn[T : Show] Parser::custom(
     } else {
       pre
     }
-    let reducer = make_reducer(effective_pre, accum)
+    // before_pre_ref を経由する最終 pre チェーン（None なら effective_pre をそのまま使用）
+    let final_pre : FilterChain[String, T] = {
+      run: fn(s) raise ParseError {
+        let raw = match before_pre_ref.val {
+          Some(chain) => (chain.run)(s)
+          None => s
+        }
+        (effective_pre.run)(raw)
+      },
+    }
+    let reducer = make_reducer(final_pre, accum)
     fn(opt_name : String) -> ExactNode {
       make_reduced_value_node(opt_name, reducer, vc.cell, pending, reset)
     }
@@ -647,6 +661,8 @@ pub fn[T : Show] Parser::custom(
     make_main_node=make_main,
     make_node_for_variation=make_var_node,
   )
+  // adjust(before_pre=...) 用に before_pre_ref を登録
+  self.before_pre_refs[opt.id] = before_pre_ref
   // H-1 fix: implicit_value 付き (choices なし) の場合、eq_split 用に
   // "--" ガードなしの value ノードを追加。make_soft_custom_value_node の
   // "--" prefix ガードは通常パースで必要だが、eq_split 経由の明示的な値には不要。

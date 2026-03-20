@@ -25,6 +25,7 @@ pub fn Parser::cmd(
     children: Map::new(),
     metas: [],
     description: { val: "" },
+    before_post_hooks: [],
     post_hooks: [],
     registered_names: {},
     duplicate_errors: [],
@@ -38,6 +39,7 @@ pub fn Parser::cmd(
     help_footer_text: { val: "" },
     env_prefix: { val: "" },
     auto_env_enabled: { val: self.auto_env_enabled.val },
+    before_pre_refs: {},
   }
   // 親の global_nodes の名前を子の registered_names に登録（衝突検知のため）
   for gnode in self.global_nodes {

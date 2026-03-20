@@ -2437,6 +2437,128 @@ test "adjust: multiple adjusts on same target execute in order" {
 }
 
 ///|
+test "adjust: before_pre transforms raw string before pre" {
+  let p = Parser::new()
+  // int opt: pre は parse_int。before_pre で "0x" を除去すれば数値としてパースできる
+  let val = p.custom(
+    name="val",
+    default=0,
+    pre=Filter::parse_int(),
+  )
+  p.adjust(val, before_pre=Filter::map(fn(s : String) {
+    if s.has_prefix("0x") {
+      s[2:].to_string()
+    } else {
+      s
+    }
+  }))
+  ignore(p.parse(["--val", "0x42"]))
+  inspect(val.get(), content="Some(42)")
+}
+
+///|
+test "adjust: multiple before_pre execute in registration order (FIFO)" {
+  let p = Parser::new()
+  let val = p.custom(name="val", default="", pre=Filter::map(fn(s) { s }))
+  // 1st: suffix "A" を追加
+  p.adjust(val, before_pre=Filter::map(fn(s : String) { s + "A" }))
+  // 2nd: suffix "B" を追加
+  p.adjust(val, before_pre=Filter::map(fn(s : String) { s + "B" }))
+  ignore(p.parse(["--val", "x"]))
+  // FIFO: "x" → "xA" → "xAB"
+  inspect(val.get(), content=(
+    #|Some("xAB")
+  ))
+}
+
+///|
+test "adjust: before_pre skips when not set" {
+  let p = Parser::new()
+  let val = p.custom(name="val", default=99, pre=Filter::parse_int())
+  p.adjust(val, before_pre=Filter::map(fn(s : String) { s + "0" }))
+  ignore(p.parse([]))
+  // default 値には before_pre は掛からない
+  inspect(val.get(), content="Some(99)")
+}
+
+///|
+test "adjust: before_pre error propagates as parse error" {
+  let p = Parser::new()
+  let val = p.custom(name="val", default=0, pre=Filter::parse_int())
+  p.adjust(val, before_pre={
+    run: fn(s) raise ParseError {
+      if s == "bad" {
+        raise parse_error("before_pre rejected")
+      }
+      s
+    },
+  })
+  let result : Result[_, _] = try? p.parse(["--val", "bad"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "adjust: before_post transforms value before after_post" {
+  let p = Parser::new()
+  let val = p.int(name="val", default=0)
+  // before_post: *2, after_post: +1 → (5*2)+1 = 11
+  p.adjust(val, before_post=Filter::map(fn(v) { v * 2 }))
+  p.adjust(val, after_post=Filter::map(fn(v) { v + 1 }))
+  ignore(p.parse(["--val", "5"]))
+  inspect(val.get(), content="Some(11)")
+}
+
+///|
+test "adjust: before_post skips when not set" {
+  let p = Parser::new()
+  let val = p.int(name="val", default=42)
+  p.adjust(val, before_post=Filter::map(fn(v) { v * 10 }))
+  ignore(p.parse([]))
+  inspect(val.get(), content="Some(42)")
+}
+
+///|
+test "adjust: after_pre transforms value after pre conversion" {
+  let p = Parser::new()
+  let val = p.int(name="val", default=0)
+  // after_pre: 値を常に +100
+  p.adjust(val, after_pre=Filter::map(fn(v) { v + 100 }))
+  ignore(p.parse(["--val", "5"]))
+  inspect(val.get(), content="Some(105)")
+}
+
+///|
+test "adjust: after_pre skips when not set" {
+  let p = Parser::new()
+  let val = p.int(name="val", default=7)
+  p.adjust(val, after_pre=Filter::map(fn(v) { v + 100 }))
+  ignore(p.parse([]))
+  inspect(val.get(), content="Some(7)")
+}
+
+///|
+test "adjust: all four params combined" {
+  let p = Parser::new()
+  // before_pre: "!" を除去
+  // after_pre: +10
+  // before_post: *2
+  // after_post: +1
+  let val = p.custom(name="val", default=0, pre=Filter::parse_int())
+  p.adjust(
+    val,
+    before_pre=Filter::map(fn(s : String) {
+      if s.has_prefix("!") { s[1:].to_string() } else { s }
+    }),
+    after_pre=Filter::map(fn(v) { v + 10 }),
+    before_post=Filter::map(fn(v) { v * 2 }),
+    after_post=Filter::map(fn(v) { v + 1 }),
+  )
+  ignore(p.parse(["--val", "!5"]))
+  // "!5" → before_pre → "5" → pre(parse_int) → 5 → after_pre → 15 → before_post → 30 → after_post → 31
+  inspect(val.get(), content="Some(31)")
+}
+
+///|
 test "clone + link: clone with independent forwarding" {
   let p = Parser::new()
   let src = p.flag(name="source")

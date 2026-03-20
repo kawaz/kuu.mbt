@@ -96,7 +96,9 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     children: Map::new(),
     metas: [],
     description: { val: "" },
+    before_post_hooks: [],
     post_hooks: [],
+    before_pre_refs: {},
     registered_names: {},
     duplicate_errors: [],
     force_unclaimed: [],
@@ -313,18 +315,88 @@ pub fn[T] Parser::deprecated(
 }
 
 ///|
-/// 値変換コンビネータ: パース後に target の値を FilterChain で変換する。
+/// 値変換コンビネータ: パースパイプラインの各フェーズにフィルタを挿入する。
 /// target が set されている場合のみ適用（未設定の default には変換を掛けない）。
+///
+/// - before_pre: pre 変換前の文字列加工（ノード走査時、各出現ごとに実行）
+///   - custom() で作成された opt のみ対応。flag/count/append 等では無視される。
+///   - implicit_value パス、eq_split（--opt=val）パス、env パスには適用されない（既知制限）。
+/// - after_pre: pre 変換後の値変換（post_hooks フェーズで実行）
+/// - before_post: post バリデーション前の値変換（post_hooks フェーズ、after_pre の後に実行）
+///   - 現アーキテクチャでは after_pre と同一フェーズで実行される（DR-061 ペンディング）
+/// - after_post: post バリデーション後の値変換（post_hooks フェーズ、最後に実行）
 pub fn[T] Parser::adjust(
   self : Parser,
   target : Opt[T],
-  after_post~ : FilterChain[T, T],
+  before_pre? : FilterChain[String, String],
+  after_pre? : FilterChain[T, T],
+  before_post? : FilterChain[T, T],
+  after_post? : FilterChain[T, T],
 ) -> Unit {
-  self.post_hooks.push(fn() raise ParseError {
+  // before_pre: ノード走査時の raw string 変換（Ref 経由で pre チェーンに前挿入）
+  match before_pre {
+    Some(chain) => self.append_before_pre(target.id, chain)
+    _ => ()
+  }
+  // after_pre / before_post → before_post_hooks（post_hooks より先に実行）
+  // after_pre と before_post は現アーキテクチャでは同じフェーズで実行される。
+  // 将来 per-occurrence 実行が必要になった場合に after_pre を分離する。
+  match after_pre {
+    Some(chain) => self.add_value_hook(target, chain, early=true)
+    _ => ()
+  }
+  match before_post {
+    Some(chain) => self.add_value_hook(target, chain, early=true)
+    _ => ()
+  }
+  // after_post → post_hooks（最後に実行）
+  match after_post {
+    Some(chain) => self.add_value_hook(target, chain, early=false)
+    _ => ()
+  }
+}
+
+///|
+/// adjust 内部: target が set なら chain で値変換する hook を登録。
+/// early=true → before_post_hooks、early=false → post_hooks。
+fn[T] Parser::add_value_hook(
+  self : Parser,
+  target : Opt[T],
+  chain : FilterChain[T, T],
+  early~ : Bool,
+) -> Unit {
+  let hook = fn() raise ParseError {
     if target.is_set() {
-      (target.accessor.set_value)((after_post.run)((target.accessor.get)()))
+      (target.accessor.set_value)((chain.run)((target.accessor.get)()))
     }
-  })
+  }
+  if early {
+    self.before_post_hooks.push(hook)
+  } else {
+    self.post_hooks.push(hook)
+  }
+}
+
+///|
+/// adjust(before_pre=...) 内部: before_pre_ref に chain を追加。
+/// 複数回呼び出し時は FIFO（登録順）で実行される（after_post と同じセマンティクス）。
+/// before_pre_ref が未登録（custom 以外の opt）の場合は無視。
+fn Parser::append_before_pre(
+  self : Parser,
+  opt_id : Int,
+  chain : FilterChain[String, String],
+) -> Unit {
+  match self.before_pre_refs.get(opt_id) {
+    Some(r) =>
+      r.val = match r.val {
+        Some(existing) =>
+          Some({
+            run: fn(s) raise ParseError { (chain.run)((existing.run)(s)) },
+          })
+        None => Some(chain)
+      }
+    None => ()
+  }
 }
 
 ///|

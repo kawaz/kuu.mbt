@@ -524,7 +524,12 @@ fn Parser::parse_raw(
     }
   }
 
-  // post hooks: parse 完了後の値変換・遅延バリデーション
+  // post フック実行順序:
+  //   1. before_post_hooks — adjust(after_pre=...) / adjust(before_post=...) で登録
+  //   2. post_hooks — custom(post=...) / adjust(after_post=...) で登録
+  for hook in self.before_post_hooks {
+    hook()
+  }
   for hook in self.post_hooks {
     hook()
   }

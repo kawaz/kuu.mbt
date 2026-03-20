@@ -85,7 +85,11 @@ pub(all) struct Parser {
   children : Map[String, ParseResult]
   metas : Array[OptMeta]
   description : Ref[String]
+  before_post_hooks : Array[() -> Unit raise ParseError]
   post_hooks : Array[() -> Unit raise ParseError]
+  // before_pre 用: opt id → 前処理チェーンの Ref。adjust(before_pre=...) で修正される。
+  // None = 未使用（identity、追加コストなし）。adjust 呼び出し時に Some に変更。
+  before_pre_refs : Map[Int, Ref[FilterChain[String, String]?]]
   registered_names : Map[String, Bool]
   duplicate_errors : Array[String]
   force_unclaimed : Array[String]

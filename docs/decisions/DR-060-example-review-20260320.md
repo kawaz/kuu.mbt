@@ -210,10 +210,23 @@ example での影響: docker/curl で `custom_append` と `append_string` が混
 
 **対応**: DR-037 の元設計に立ち返り、adjust の 6 パラメータを実装する。
 
+## 課題の解決状況（2026-03-21 更新）
+
+| 課題 | 状態 | 備考 |
+|---|---|---|
+| A: custom() 昇格パターン | 部分解決 | DR-061 で低レイヤ API の責務として明確化。実装は未 |
+| B: serial の二重ラッピング | 部分解決 | 低レイヤ API での高級 serial API として設計検討中 |
+| C: dispatch ボイラープレート | 部分解決 | struct-first DX（DR-042）で解決可能と評価 |
+| D: setup 関数共有の冗長性 | 部分解決 | struct-first DX で解決可能と評価 |
+| E: variation_false の命名 | 解決済み | 変更不要（variation 体系の一貫性） |
+| F: env が metadata のみ | 未解決 | DR-041 Phase 2 待ち |
+| G: implicit_value の型冗長性 | 解決済み | 変更不要（型安全性のトレードオフ） |
+| H: adjust の未実装 | **実装完了** | custom_append→append リネーム + adjust 4パラメータ追加。accum はペンディング |
+
 ## 今後のアクション
 
-1. **adjust の 6 パラメータ完全実装**（DR-037 元設計）— append 系の独立実装を解消
-2. **DX 層で shorts/global 対応ラッパー提供** — custom() 昇格パターンの解消
-3. **DX 層で serial の高級 API 検討** — クロージャ + mut パターンの隠蔽
+1. ~~**adjust の 6 パラメータ完全実装**~~ → **完了**（pre/post 4パラメータ。accum はペンディング）
+2. **低レイヤ API で shorts/global 対応ラッパー提供** — custom() 昇格パターンの解消
+3. **低レイヤ API で serial の高級 API 検討** — クロージャ + mut パターンの隠蔽
 4. **struct-first DX で同等 example の再実装** — サイズ比較で DX 層の価値を実証
 5. **DR-041 Phase 2**（env 実値取得）— docker/curl example の完全動作に必要
