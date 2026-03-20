@@ -16,6 +16,9 @@
 ///   - implicit_value (--color)
 ///   - append_string (--author for log)
 ///   - require_cmd (remote)
+///
+/// Run:   cd examples/20260320-git-moonbit && moon run .
+/// Test:  cd examples/20260320-git-moonbit && moon test
 fn main {
   println("=== Demo 1: git commit ===")
   run_test(["commit", "-m", "initial commit", "--amend"])
@@ -27,7 +30,7 @@ fn main {
   run_test(["log", "--oneline", "--graph", "-n", "10"])
   println("")
   println("=== Demo 4: git remote add ===")
-  run_test(["remote", "add", "upstream", "https://github.com/upstream/repo.git"])
+  run_test(["remote", "add", "upstream", "https://example.com/repo.git"])
   println("")
   println("=== Demo 5: git checkout with -- ===")
   run_test(["checkout", "main", "--", "file1.txt", "file2.txt"])
@@ -62,7 +65,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     name="git-dir",
     default="",
     global=true,
-    pre=@core.Filter::map(fn(s) { s }),
+    pre=@core.Filter::map(fn(s) { s }), // identity: string() は global 未対応のため custom を使用
     description="Set the path to the repository (.git directory)",
     value_name="PATH",
   )
@@ -169,6 +172,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 
   let push = p.sub(name="push", description="Update remote refs")
   push.set_description("mygit push - Update remote refs along with associated objects")
+  // serial のクロージャスコープから Opt を取り出すために Option 型の mut 変数を経由する
   let mut push_remote_opt : @core.Opt[String]? = None
   let mut push_branch_opt : @core.Opt[String]? = None
   push.serial(setup=fn(s) {
@@ -207,6 +211,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     shorts="d",
     description="Delete remote branch",
   )
+  push.exclusive([push_all.as_ref(), push_delete.as_ref()])
   let push_dry_run = push.flag(
     name="dry-run",
     shorts="n",
@@ -246,6 +251,8 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 
   // ─── checkout ───
 
+  // Design rationale: dashdash=false で自動 "--" ノードを抑制し、
+  // 手動 dashdash() で branch positional と file pathspec を明示的に分離する
   let checkout = p.sub(
     name="checkout",
     aliases=["co"],
@@ -348,7 +355,8 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     description="Delete a branch",
   )
   let branch_force_delete = branch.flag(
-    name="D",
+    name="force-delete",
+    shorts="D",
     description="Force delete a branch",
   )
   branch.exclusive([branch_delete.as_ref(), branch_force_delete.as_ref()])
@@ -358,7 +366,8 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     description="Rename a branch",
   )
   let branch_force_move = branch.flag(
-    name="M",
+    name="force-move",
+    shorts="M",
     description="Force rename a branch",
   )
   branch.exclusive([branch_move.as_ref(), branch_force_move.as_ref()])
@@ -722,17 +731,17 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       let buf = StringBuilder::new()
 
       // Global options
-      let gd = git_dir.get().unwrap()
-      if gd != "" {
-        buf.write_string("  git-dir: " + gd + "\n")
+      let git_dir_val = git_dir.get().unwrap()
+      if git_dir_val != "" {
+        buf.write_string("  git-dir: " + git_dir_val + "\n")
       }
-      let wt = work_tree.get().unwrap()
-      if wt != "" {
-        buf.write_string("  work-tree: " + wt + "\n")
+      let work_tree_val = work_tree.get().unwrap()
+      if work_tree_val != "" {
+        buf.write_string("  work-tree: " + work_tree_val + "\n")
       }
-      let cd = change_dir.get().unwrap()
-      if cd != "" {
-        buf.write_string("  -C: " + cd + "\n")
+      let change_dir_val = change_dir.get().unwrap()
+      if change_dir_val != "" {
+        buf.write_string("  -C: " + change_dir_val + "\n")
       }
       if no_pager.get().unwrap() {
         buf.write_string("  no-pager: true\n")
@@ -740,13 +749,13 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       if bare.get().unwrap() {
         buf.write_string("  bare: true\n")
       }
-      let c = color.get().unwrap()
-      if c != "auto" {
-        buf.write_string("  color: " + c + "\n")
+      let color_val = color.get().unwrap()
+      if color_val != "auto" {
+        buf.write_string("  color: " + color_val + "\n")
       }
-      let vg = verbose_global.get().unwrap()
-      if vg > 0 {
-        buf.write_string("  verbose: " + vg.to_string() + "\n")
+      let verbose_val = verbose_global.get().unwrap()
+      if verbose_val > 0 {
+        buf.write_string("  verbose: " + verbose_val.to_string() + "\n")
       }
 
       // ─── Dispatch subcommands ───
@@ -773,16 +782,16 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           if not(commit_verify.get().unwrap()) {
             buf.write_string("  no-verify: true\n")
           }
-          let auth = commit_author.get().unwrap()
-          if auth != "" {
-            buf.write_string("  author: \"" + auth + "\"\n")
+          let author_val = commit_author.get().unwrap()
+          if author_val != "" {
+            buf.write_string("  author: \"" + author_val + "\"\n")
           }
           if commit_signoff.get().unwrap() {
             buf.write_string("  signoff: true\n")
           }
-          let dt = commit_date.get().unwrap()
-          if dt != "" {
-            buf.write_string("  date: \"" + dt + "\"\n")
+          let date_val = commit_date.get().unwrap()
+          if date_val != "" {
+            buf.write_string("  date: \"" + date_val + "\"\n")
           }
         }
         None => ()
@@ -842,9 +851,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
         Some(_) => {
           buf.write_string("  command: checkout\n")
           write_positional(buf, checkout_branch, "branch")
-          let nb = checkout_new_branch.get().unwrap()
-          if nb != "" {
-            buf.write_string("  new-branch: " + nb + "\n")
+          let new_branch_val = checkout_new_branch.get().unwrap()
+          if new_branch_val != "" {
+            buf.write_string("  new-branch: " + new_branch_val + "\n")
           }
           if checkout_track.get().unwrap() {
             buf.write_string("  track: true\n")
@@ -852,9 +861,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           if checkout_force.get().unwrap() {
             buf.write_string("  force: true\n")
           }
-          let dd = checkout_dashdash.get().unwrap()
-          if dd.length() > 0 {
-            buf.write_string("  -- " + dd.to_string() + "\n")
+          let dashdash_files = checkout_dashdash.get().unwrap()
+          if dashdash_files.length() > 0 {
+            buf.write_string("  -- " + dashdash_files.to_string() + "\n")
           }
         }
         None => ()
@@ -864,9 +873,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
         Some(_) => {
           buf.write_string("  command: switch\n")
           write_positional(buf, switch_branch, "branch")
-          let sc = switch_create.get().unwrap()
-          if sc != "" {
-            buf.write_string("  create: " + sc + "\n")
+          let create_val = switch_create.get().unwrap()
+          if create_val != "" {
+            buf.write_string("  create: " + create_val + "\n")
           }
           if switch_detach.get().unwrap() {
             buf.write_string("  detach: true\n")
@@ -881,9 +890,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       match result.child("restore") {
         Some(_) => {
           buf.write_string("  command: restore\n")
-          let src = restore_source.get().unwrap()
-          if src != "" {
-            buf.write_string("  source: " + src + "\n")
+          let source_val = restore_source.get().unwrap()
+          if source_val != "" {
+            buf.write_string("  source: " + source_val + "\n")
           }
           if restore_staged.get().unwrap() {
             buf.write_string("  staged: true\n")
@@ -891,9 +900,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           if restore_worktree.get().unwrap() {
             buf.write_string("  worktree: true\n")
           }
-          let rf = restore_files.get().unwrap()
-          if rf.length() > 0 {
-            buf.write_string("  files: " + rf.to_string() + "\n")
+          let restore_file_list = restore_files.get().unwrap()
+          if restore_file_list.length() > 0 {
+            buf.write_string("  files: " + restore_file_list.to_string() + "\n")
           }
         }
         None => ()
@@ -931,9 +940,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       match result.child("log") {
         Some(_) => {
           buf.write_string("  command: log\n")
-          let mc = log_max_count.get().unwrap()
-          if mc > 0 {
-            buf.write_string("  max-count: " + mc.to_string() + "\n")
+          let max_count_val = log_max_count.get().unwrap()
+          if max_count_val > 0 {
+            buf.write_string("  max-count: " + max_count_val.to_string() + "\n")
           }
           if log_oneline.get().unwrap() {
             buf.write_string("  oneline: true\n")
@@ -944,9 +953,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           if log_all.get().unwrap() {
             buf.write_string("  all: true\n")
           }
-          let fmt = log_format.get().unwrap()
-          if fmt != "" {
-            buf.write_string("  format: " + fmt + "\n")
+          let format_val = log_format.get().unwrap()
+          if format_val != "" {
+            buf.write_string("  format: " + format_val + "\n")
           }
           let authors = log_author.get().unwrap()
           if authors.length() > 0 {
@@ -1000,9 +1009,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           if add_dry_run.get().unwrap() {
             buf.write_string("  dry-run: true\n")
           }
-          let af = add_files.get().unwrap()
-          if af.length() > 0 {
-            buf.write_string("  files: " + af.to_string() + "\n")
+          let add_file_list = add_files.get().unwrap()
+          if add_file_list.length() > 0 {
+            buf.write_string("  files: " + add_file_list.to_string() + "\n")
           }
         }
         None => ()
@@ -1037,9 +1046,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           if merge_squash.get().unwrap() {
             buf.write_string("  squash: true\n")
           }
-          let mm = merge_message.get().unwrap()
-          if mm != "" {
-            buf.write_string("  message: \"" + mm + "\"\n")
+          let merge_msg = merge_message.get().unwrap()
+          if merge_msg != "" {
+            buf.write_string("  message: \"" + merge_msg + "\"\n")
           }
           if merge_abort.get().unwrap() {
             buf.write_string("  abort: true\n")
@@ -1079,9 +1088,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           if tag_annotate.get().unwrap() {
             buf.write_string("  annotate: true\n")
           }
-          let tm = tag_message.get().unwrap()
-          if tm != "" {
-            buf.write_string("  message: \"" + tm + "\"\n")
+          let tag_msg = tag_message.get().unwrap()
+          if tag_msg != "" {
+            buf.write_string("  message: \"" + tag_msg + "\"\n")
           }
           if tag_delete.get().unwrap() {
             buf.write_string("  delete: true\n")
@@ -1142,16 +1151,16 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           match stash_result.child("push") {
             Some(_) => {
               buf.write_string("  subcommand: push\n")
-              let sm = stash_push_message.get().unwrap()
-              if sm != "" {
-                buf.write_string("  message: \"" + sm + "\"\n")
+              let stash_msg = stash_push_message.get().unwrap()
+              if stash_msg != "" {
+                buf.write_string("  message: \"" + stash_msg + "\"\n")
               }
               if stash_push_untracked.get().unwrap() {
                 buf.write_string("  include-untracked: true\n")
               }
-              let sf = stash_push_files.get().unwrap()
-              if sf.length() > 0 {
-                buf.write_string("  files: " + sf.to_string() + "\n")
+              let stash_files = stash_push_files.get().unwrap()
+              if stash_files.length() > 0 {
+                buf.write_string("  files: " + stash_files.to_string() + "\n")
               }
             }
             None => ()
@@ -1204,11 +1213,13 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 fn write_positional(
   buf : StringBuilder,
   opt : @core.Opt[String],
-  label : String
+  label : String,
 ) -> Unit {
-  match opt.get() {
-    Some(v) => buf.write_string("  " + label + ": " + v + "\n")
-    None => ()
+  if opt.is_set() {
+    match opt.get() {
+      Some(v) => buf.write_string("  " + label + ": " + v + "\n")
+      None => ()
+    }
   }
 }
 
@@ -1306,14 +1317,16 @@ test "pull: basic" {
 test "pull: rebase" {
   let result = build_and_parse(["pull", "--rebase"])
   inspect(result, content=(
-    #|Ok("  command: pull\n  remote: \n  branch: \n  rebase: true\n")
+    #|Ok("  command: pull\n  rebase: true\n")
+
   ))
 }
 
 test "pull: no-rebase" {
   let result = build_and_parse(["pull", "--no-rebase"])
   inspect(result, content=(
-    #|Ok("  command: pull\n  remote: \n  branch: \n  rebase: false\n")
+    #|Ok("  command: pull\n  rebase: false\n")
+
   ))
 }
 
@@ -1338,7 +1351,8 @@ test "checkout: branch" {
 test "checkout: new branch" {
   let result = build_and_parse(["checkout", "-b", "feature/new"])
   inspect(result, content=(
-    #|Ok("  command: checkout\n  branch: \n  new-branch: feature/new\n")
+    #|Ok("  command: checkout\n  new-branch: feature/new\n")
+
 
   ))
 }
@@ -1371,7 +1385,8 @@ test "switch: branch" {
 test "switch: create" {
   let result = build_and_parse(["switch", "-c", "feature/new"])
   inspect(result, content=(
-    #|Ok("  command: switch\n  branch: \n  create: feature/new\n")
+    #|Ok("  command: switch\n  create: feature/new\n")
+
   ))
 }
 
@@ -1394,7 +1409,8 @@ test "restore: source" {
 test "branch: list" {
   let result = build_and_parse(["branch", "--list"])
   inspect(result, content=(
-    #|Ok("  command: branch\n  name: \n  list: true\n")
+    #|Ok("  command: branch\n  list: true\n")
+
   ))
 }
 
@@ -1406,7 +1422,7 @@ test "branch: delete" {
 }
 
 test "branch: force delete" {
-  let result = build_and_parse(["branch", "--D", "old-branch"])
+  let result = build_and_parse(["branch", "-D", "old-branch"])
   inspect(result, content=(
     #|Ok("  command: branch\n  name: old-branch\n  force-delete: true\n")
   ))
@@ -1415,14 +1431,16 @@ test "branch: force delete" {
 test "branch: all" {
   let result = build_and_parse(["branch", "-a"])
   inspect(result, content=(
-    #|Ok("  command: branch\n  name: \n  all: true\n")
+    #|Ok("  command: branch\n  all: true\n")
+
   ))
 }
 
 test "branch: alias br" {
   let result = build_and_parse(["br", "--list"])
   inspect(result, content=(
-    #|Ok("  command: branch\n  name: \n  list: true\n")
+    #|Ok("  command: branch\n  list: true\n")
+
   ))
 }
 
@@ -1571,7 +1589,8 @@ test "rebase: onto" {
 test "rebase: continue" {
   let result = build_and_parse(["rebase", "--continue"])
   inspect(result, content=(
-    #|Ok("  command: rebase\n  upstream: \n  continue: true\n")
+    #|Ok("  command: rebase\n  continue: true\n")
+
   ))
 }
 
@@ -1602,25 +1621,26 @@ test "tag: delete" {
 test "tag: list" {
   let result = build_and_parse(["tag", "-l"])
   inspect(result, content=(
-    #|Ok("  command: tag\n  name: \n  list: true\n")
+    #|Ok("  command: tag\n  list: true\n")
+
   ))
 }
 
 test "remote: add" {
   let result = build_and_parse([
-    "remote", "add", "upstream", "https://github.com/upstream/repo.git",
+    "remote", "add", "upstream", "https://example.com/repo.git",
   ])
   inspect(result, content=(
-    #|Ok("  command: remote\n  subcommand: add\n  name: upstream\n  url: https://github.com/upstream/repo.git\n")
+    #|Ok("  command: remote\n  subcommand: add\n  name: upstream\n  url: https://example.com/repo.git\n")
   ))
 }
 
 test "remote: add with fetch" {
   let result = build_and_parse([
-    "remote", "add", "-f", "upstream", "https://github.com/upstream/repo.git",
+    "remote", "add", "-f", "upstream", "https://example.com/repo.git",
   ])
   inspect(result, content=(
-    #|Ok("  command: remote\n  subcommand: add\n  name: upstream\n  url: https://github.com/upstream/repo.git\n  fetch: true\n")
+    #|Ok("  command: remote\n  subcommand: add\n  name: upstream\n  url: https://example.com/repo.git\n  fetch: true\n")
   ))
 }
 
@@ -1679,7 +1699,8 @@ test "stash: push with files" {
 test "stash: pop" {
   let result = build_and_parse(["stash", "pop"])
   inspect(result, content=(
-    #|Ok("  command: stash\n  subcommand: pop\n  stash: \n")
+    #|Ok("  command: stash\n  subcommand: pop\n")
+
   ))
 }
 
@@ -1752,4 +1773,56 @@ test "help: commit" {
 test "help: remote" {
   let result = build_and_parse(["remote", "--help"])
   assert_true(result is Ok(_))
+}
+
+test "no arguments" {
+  let result = build_and_parse([])
+  inspect(result, content=(
+    #|Ok("")
+  ))
+}
+
+test "error: unknown option" {
+  match build_and_parse(["--nonexistent"]) {
+    Err(_) => ()
+    Ok(_) => fail("expected error")
+  }
+}
+
+test "stash: no subcommand" {
+  let result = build_and_parse(["stash"])
+  inspect(result, content=(
+    #|Ok("  command: stash\n")
+  ))
+}
+
+test "diff: dashdash" {
+  let result = build_and_parse(["diff", "--", "file.txt"])
+  inspect(result, content=(
+    #|Ok("  command: diff\n  paths: [\"file.txt\"]\n")
+  ))
+}
+
+test "add: dashdash" {
+  let result = build_and_parse(["add", "--", "file.txt"])
+  inspect(result, content=(
+    #|Ok("  command: add\n  files: [\"file.txt\"]\n")
+  ))
+}
+
+test "push: exclusive all vs delete" {
+  match build_and_parse(["push", "--all", "--delete"]) {
+    Err(msg) =>
+      assert_true(
+        msg.has_prefix("error: mutually exclusive options: --all, --delete"),
+      )
+    Ok(_) => fail("expected error")
+  }
+}
+
+test "branch: force delete with -D" {
+  let result = build_and_parse(["branch", "-D", "old-branch"])
+  inspect(result, content=(
+    #|Ok("  command: branch\n  name: old-branch\n  force-delete: true\n")
+  ))
 }
