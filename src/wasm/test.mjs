@@ -1697,7 +1697,31 @@ function testCompletions(label, schema, shell, commandName) {
   deepStrictEqual(r.values.include, ["src", "lib"]);
 }
 
-// Test 122: Int with variation_unset
+// Test 122: Append_int with aliases
+{
+  const r = test("Append_int with aliases", {
+    opts: [
+      { kind: "append_int", name: "port", aliases: ["listen"] },
+    ],
+    args: ["--listen", "8080", "--listen", "9090"],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.port, [8080, 9090]);
+}
+
+// Test 123: Append_float with aliases
+{
+  const r = test("Append_float with aliases", {
+    opts: [
+      { kind: "append_float", name: "weight", aliases: ["wt"] },
+    ],
+    args: ["--wt", "0.3", "--wt", "0.7"],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.weight, [0.3, 0.7]);
+}
+
+// Test 124: Int with variation_unset
 {
   const r = test("Int variation_unset", {
     opts: [
@@ -1709,7 +1733,7 @@ function testCompletions(label, schema, shell, commandName) {
   strictEqual(r.values.level, 5);
 }
 
-// Test 123: Float with variation_unset
+// Test 125: Float with variation_unset
 {
   const r = test("Float variation_unset", {
     opts: [
