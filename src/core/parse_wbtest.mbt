@@ -3728,3 +3728,66 @@ test "empty sub name raises error" {
     _ => abort("expected error for empty sub name")
   }
 }
+
+///|
+test "serial_scope: basic positional grouping" {
+  let p = Parser::new()
+  let s = p.serial_scope()
+  let src = s.positional(name="src")
+  let dst = s.positional(name="dst")
+  ignore(p.parse(["file1.txt", "file2.txt"]))
+  inspect(src.get(), content=(
+    #|Some("file1.txt")
+  ))
+  inspect(dst.get(), content=(
+    #|Some("file2.txt")
+  ))
+}
+
+///|
+test "serial_scope: with rest" {
+  let p = Parser::new()
+  let s = p.serial_scope()
+  let remote = s.positional(name="remote")
+  let branches = s.rest(name="branches")
+  ignore(p.parse(["origin", "main", "dev"]))
+  inspect(remote.get(), content=(
+    #|Some("origin")
+  ))
+  inspect(branches.get(), content=(
+    #|Some(["main", "dev"])
+  ))
+}
+
+///|
+test "serial_scope: greedy mode" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let s = p.serial_scope(greedy=true)
+  let arg1 = s.positional(name="arg1")
+  let arg2 = s.positional(name="arg2")
+  ignore(p.parse(["hello", "world", "--verbose"]))
+  inspect(arg1.get(), content=(
+    #|Some("hello")
+  ))
+  inspect(arg2.get(), content=(
+    #|Some("world")
+  ))
+  inspect(verbose.get(), content="Some(true)")
+}
+
+///|
+test "serial_scope: with sub command" {
+  let p = Parser::new()
+  let push = p.sub(name="push", description="Push changes")
+  let s = push.serial_scope()
+  let remote = s.positional(name="remote")
+  let branch = s.positional(name="branch")
+  ignore(p.parse(["push", "origin", "main"]))
+  inspect(remote.get(), content=(
+    #|Some("origin")
+  ))
+  inspect(branch.get(), content=(
+    #|Some("main")
+  ))
+}

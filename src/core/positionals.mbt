@@ -170,6 +170,37 @@ pub fn Parser::never(self : Parser) -> Unit {
 }
 
 ///|
+/// Returns a scope parser for positional grouping, eliminating the need
+/// for `Ref` wrappers. This is the serial equivalent of `sub` for commands.
+///
+/// Parameters:
+/// - `greedy` - If true, the compound handler runs during OC phase
+///
+/// Example:
+/// ```
+/// let s = parser.serial_scope()
+/// let src = s.positional(name="src")
+/// let dst = s.positional(name="dst")
+/// parser.parse!(["file1.txt", "file2.txt"])
+/// let source = src.get!()  // "file1.txt"
+/// ```
+pub fn Parser::serial_scope(
+  self : Parser,
+  greedy? : Bool = false,
+) -> Parser {
+  let scope_ref : Ref[Parser?] = { val: None }
+  self.serial(setup=fn(scope) {
+    scope_ref.val = Some(scope)
+  }, greedy~)
+  // Design rationale: setup callback is always invoked synchronously by serial(),
+  // but match is safer than unwrap() against future refactoring.
+  match scope_ref.val {
+    Some(parser) => parser
+    None => abort("Parser::serial_scope: setup callback was not executed by serial()")
+  }
+}
+
+///|
 /// Groups multiple positional arguments into a compound handler consumed sequentially.
 ///
 /// The `setup` callback receives a lightweight sub-parser where multiple
