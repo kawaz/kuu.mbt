@@ -1381,4 +1381,234 @@ function testCompletions(label, schema, shell, commandName) {
   strictEqual(result.includes("Error"), true);
 }
 
+// Test 99: String with shorts
+{
+  const r = test("String with shorts", {
+    opts: [
+      { kind: "string", name: "host", default: "localhost", shorts: "h" },
+    ],
+    args: ["-h", "example.com"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.host, "example.com");
+}
+
+// Test 100: String with aliases
+{
+  const r = test("String with aliases", {
+    opts: [
+      { kind: "string", name: "output", default: "stdout", aliases: ["out", "o"] },
+    ],
+    args: ["--out", "file.txt"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.output, "file.txt");
+}
+
+// Test 101: String with global in subcommand
+{
+  const r = test("String global in subcommand", {
+    opts: [
+      { kind: "string", name: "format", default: "text", global: true },
+      {
+        kind: "command", name: "list", description: "List items",
+        opts: [
+          { kind: "flag", name: "all", description: "Show all" },
+        ],
+      },
+    ],
+    args: ["list", "--format", "json", "--all"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.format, "json");
+  strictEqual(r.command.name, "list");
+  strictEqual(r.command.values.all, true);
+}
+
+// Test 102: String with shorts + aliases + global combined
+{
+  const r = test("String shorts+aliases+global", {
+    opts: [
+      { kind: "string", name: "config", default: "", shorts: "c", aliases: ["cfg"], global: true },
+      {
+        kind: "command", name: "run", description: "Run",
+        opts: [],
+      },
+    ],
+    args: ["run", "-c", "app.toml"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.config, "app.toml");
+  strictEqual(r.command.name, "run");
+}
+
+// Test 103: Int with shorts
+{
+  const r = test("Int with shorts", {
+    opts: [
+      { kind: "int", name: "port", default: 8080, shorts: "p" },
+    ],
+    args: ["-p", "3000"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.port, 3000);
+}
+
+// Test 104: Int with global in subcommand
+{
+  const r = test("Int global in subcommand", {
+    opts: [
+      { kind: "int", name: "timeout", default: 30, global: true },
+      {
+        kind: "command", name: "fetch", description: "Fetch data",
+        opts: [],
+      },
+    ],
+    args: ["fetch", "--timeout", "60"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.timeout, 60);
+  strictEqual(r.command.name, "fetch");
+}
+
+// Test 105: Float with shorts
+{
+  const r = test("Float with shorts", {
+    opts: [
+      { kind: "float", name: "rate", default: 1.0, shorts: "r" },
+    ],
+    args: ["-r", "0.5"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.rate, 0.5);
+}
+
+// Test 106: Float with global in subcommand
+{
+  const r = test("Float global in subcommand", {
+    opts: [
+      { kind: "float", name: "threshold", default: 0.8, global: true },
+      {
+        kind: "command", name: "analyze", description: "Analyze",
+        opts: [],
+      },
+    ],
+    args: ["analyze", "--threshold", "0.95"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.threshold, 0.95);
+  strictEqual(r.command.name, "analyze");
+}
+
+// Test 107: Int with variations (variation_reset)
+{
+  const r = test("Int variation_reset", {
+    opts: [
+      { kind: "int", name: "level", default: 5, variation_reset: "reset" },
+    ],
+    args: ["--level", "10", "--reset-level"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.level, 5);
+}
+
+// Test 108: Float with variations (variation_reset)
+{
+  const r = test("Float variation_reset", {
+    opts: [
+      { kind: "float", name: "scale", default: 1.0, variation_reset: "reset" },
+    ],
+    args: ["--scale", "2.5", "--reset-scale"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.scale, 1.0);
+}
+
+// Test 109: Boolean with variations (variation_reset)
+{
+  const r = test("Boolean variation_reset", {
+    opts: [
+      { kind: "boolean", name: "color", default: true, variation_reset: "reset" },
+    ],
+    args: ["--color", "false", "--reset-color"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.color, true);
+}
+
+// Test 110: Append_string with global in subcommand
+{
+  const r = test("Append_string global in subcommand", {
+    opts: [
+      { kind: "append_string", name: "include", global: true },
+      {
+        kind: "command", name: "build", description: "Build",
+        opts: [],
+      },
+    ],
+    args: ["build", "--include", "src", "--include", "lib"],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.include, ["src", "lib"]);
+  strictEqual(r.command.name, "build");
+}
+
+// Test 111: Append_int with global in subcommand
+{
+  const r = test("Append_int global in subcommand", {
+    opts: [
+      { kind: "append_int", name: "port", global: true },
+      {
+        kind: "command", name: "proxy", description: "Proxy",
+        opts: [],
+      },
+    ],
+    args: ["proxy", "--port", "8080", "--port", "9090"],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.port, [8080, 9090]);
+  strictEqual(r.command.name, "proxy");
+}
+
+// Test 112: Append_float with global in subcommand
+{
+  const r = test("Append_float global in subcommand", {
+    opts: [
+      { kind: "append_float", name: "weight", global: true },
+      {
+        kind: "command", name: "train", description: "Train",
+        opts: [],
+      },
+    ],
+    args: ["train", "--weight", "0.3", "--weight", "0.7"],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.weight, [0.3, 0.7]);
+  strictEqual(r.command.name, "train");
+}
+
+// Test 113: Int with shorts + aliases combined
+{
+  const r = test("Int shorts+aliases", {
+    opts: [
+      { kind: "int", name: "jobs", default: 1, shorts: "j", aliases: ["parallel"] },
+    ],
+    args: ["--parallel", "4"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.jobs, 4);
+}
+
+// Test 114: Float with shorts + aliases combined
+{
+  const r = test("Float shorts+aliases", {
+    opts: [
+      { kind: "float", name: "opacity", default: 1.0, shorts: "o", aliases: ["alpha"] },
+    ],
+    args: ["--alpha", "0.75"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.opacity, 0.75);
+}
+
 console.log("\n--- All tests passed ---");
