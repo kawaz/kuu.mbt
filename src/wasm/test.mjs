@@ -1608,4 +1608,117 @@ function testCompletions(label, schema, shell, commandName) {
   strictEqual(r.values.opacity, 0.75);
 }
 
+// Test 115: Boolean with shorts
+{
+  const r = test("Boolean with shorts", {
+    opts: [
+      { kind: "boolean", name: "color", default: true, shorts: "c" },
+    ],
+    args: ["-c", "false"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.color, false);
+}
+
+// Test 116: Boolean with aliases
+{
+  const r = test("Boolean with aliases", {
+    opts: [
+      { kind: "boolean", name: "color", default: false, aliases: ["colour"] },
+    ],
+    args: ["--colour", "true"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.color, true);
+}
+
+// Test 117: Boolean with global in subcommand
+{
+  const r = test("Boolean global in subcommand", {
+    opts: [
+      { kind: "boolean", name: "color", default: true, global: true },
+      {
+        kind: "command", name: "list", description: "List",
+        opts: [],
+      },
+    ],
+    args: ["list", "--color", "false"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.color, false);
+  strictEqual(r.command.name, "list");
+}
+
+// Test 118: Append_string with shorts
+{
+  const r = test("Append_string with shorts", {
+    opts: [
+      { kind: "append_string", name: "include", shorts: "I" },
+    ],
+    args: ["-I", "src", "-I", "lib"],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.include, ["src", "lib"]);
+}
+
+// Test 119: Append_int with shorts
+{
+  const r = test("Append_int with shorts", {
+    opts: [
+      { kind: "append_int", name: "port", shorts: "p" },
+    ],
+    args: ["-p", "8080", "-p", "9090"],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.port, [8080, 9090]);
+}
+
+// Test 120: Append_float with shorts
+{
+  const r = test("Append_float with shorts", {
+    opts: [
+      { kind: "append_float", name: "weight", shorts: "w" },
+    ],
+    args: ["-w", "0.3", "-w", "0.7"],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.weight, [0.3, 0.7]);
+}
+
+// Test 121: Append_string with aliases
+{
+  const r = test("Append_string with aliases", {
+    opts: [
+      { kind: "append_string", name: "include", aliases: ["inc"] },
+    ],
+    args: ["--inc", "src", "--inc", "lib"],
+  });
+  strictEqual(r.ok, true);
+  deepStrictEqual(r.values.include, ["src", "lib"]);
+}
+
+// Test 122: Int with variation_unset
+{
+  const r = test("Int variation_unset", {
+    opts: [
+      { kind: "int", name: "level", default: 5, variation_unset: "no" },
+    ],
+    args: ["--level", "10", "--no-level"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.level, 5);
+}
+
+// Test 123: Float with variation_unset
+{
+  const r = test("Float variation_unset", {
+    opts: [
+      { kind: "float", name: "scale", default: 1.0, variation_unset: "no" },
+    ],
+    args: ["--scale", "2.5", "--no-scale"],
+  });
+  strictEqual(r.ok, true);
+  strictEqual(r.values.scale, 1.0);
+}
+
 console.log("\n--- All tests passed ---");
