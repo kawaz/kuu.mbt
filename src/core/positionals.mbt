@@ -171,10 +171,17 @@ pub fn Parser::never(self : Parser) -> Unit {
 
 ///|
 /// Returns a scope parser for positional grouping, eliminating the need
-/// for `Ref` wrappers. This is the serial equivalent of `sub` for commands.
+/// for `Opt[T]? + mut` wrappers. This is the serial equivalent of `sub`
+/// for commands — use when you need to access positional arguments
+/// defined in the scope from outside the setup callback.
+///
+/// The returned Parser supports `positional`, `rest`, `flag`, `sub`, and
+/// other combinators, just like `serial(setup=...)`.
 ///
 /// Parameters:
-/// - `greedy` - If true, the compound handler runs during OC phase
+/// - `greedy` - If true, positionals are consumed greedily during OC phase,
+///   allowing options like `--verbose` to appear after positional arguments.
+///   Default false processes in strict positional order during P phase.
 ///
 /// Example:
 /// ```
@@ -212,6 +219,10 @@ pub fn Parser::serial_scope(
 /// - `greedy` - If true, the compound handler runs during OC phase. Note that
 ///   greedy serial consumes args without considering option matching, so
 ///   option-like arguments may be consumed as positional values.
+///
+/// For simpler use cases where you need to access positional arguments
+/// outside the setup callback without `Opt[T]? + mut` wrappers, use
+/// `serial_scope()` instead.
 ///
 /// Example:
 /// ```

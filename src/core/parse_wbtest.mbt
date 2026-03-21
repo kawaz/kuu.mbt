@@ -3791,3 +3791,51 @@ test "serial_scope: with sub command" {
     #|Some("main")
   ))
 }
+
+///|
+test "serial_scope: empty (no positionals registered)" {
+  let p = Parser::new()
+  let _ = p.serial_scope()
+  // scope に positional を登録しなかった場合でもパースは通る（引数なし）
+  ignore(p.parse([]))
+  // 引数がある場合は unclaimed として残り ParseError になる
+  let result : Result[_, _] = try? p.parse(["arg1", "arg2"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "serial_scope: insufficient arguments" {
+  let p = Parser::new(dashdash=false)
+  let s = p.serial_scope()
+  let src = s.positional(name="src")
+  let dst = s.positional(name="dst")
+  ignore(p.parse(["only-one"]))
+  inspect(src.get(), content=(
+    #|Some("only-one")
+  ))
+  // 引数不足の positional は値がセットされず、is_set=false
+  inspect(dst.is_set(), content="false")
+  // get() は parsed=true なので初期値 "" を返す（positional の ValCell 初期値）
+  inspect(dst.get(), content=(
+    #|Some("")
+  ))
+}
+
+///|
+test "serial_scope: greedy=false option between positionals" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  let s = p.serial_scope() // default greedy=false
+  let arg1 = s.positional(name="arg1")
+  let arg2 = s.positional(name="arg2")
+  // greedy=false では OC フェーズでオプションが先に消費され、
+  // P フェーズで残りの positional が処理される
+  ignore(p.parse(["hello", "--verbose", "world"]))
+  inspect(arg1.get(), content=(
+    #|Some("hello")
+  ))
+  inspect(arg2.get(), content=(
+    #|Some("world")
+  ))
+  inspect(verbose.get(), content="Some(true)")
+}
