@@ -2,6 +2,8 @@
 package "kawaz/kuu/wasm"
 
 // Values
+pub fn kuu_completions(String, String, String) -> String
+
 pub fn kuu_parse(String) -> String
 
 // Errors

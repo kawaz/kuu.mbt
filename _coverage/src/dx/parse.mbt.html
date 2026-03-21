@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <title>parse.mbt &mdash; </title>
+    <meta name="description" content="100.00% coverage in src/dx/parse.mbt">
+    <link rel="stylesheet" href="../../coverage.css"/>
+    <script src="../../highlight.pack.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+  </head>
+  <body>
+    <div id="header">
+      <h1>
+        <a href="../../index.html">
+          <span class="dirname">src/dx/</span>parse.mbt
+        </a>
+      </h1>
+      <h2>100.00%</h2>
+    </div>
+    <div id="navbar">
+    </div>
+    <div id="report">
+      <div id="lines-layer">
+        <pre>
+<a id="L1"></a><span > </span>
+<a id="L2"></a><span > </span>
+<a id="L3"></a><span > </span>
+<a id="L4"></a><span > </span>
+<a id="L5"></a><span > </span>
+<a id="L6"></a><span > </span>
+<a id="L7"></a><span > </span>
+<a id="L8"></a><span > </span>
+<a id="L9"></a><span class="visited"> </span>
+<a id="L10"></a><span class="visited"> </span>
+<a id="L11"></a><span class="visited"> </span>
+<a id="L12"></a><span class="visited"> </span>
+<a id="L13"></a><span class="visited"> </span>
+<a id="L14"></a><span > </span>
+</pre>
+      </div>
+      <div id="text-layer">
+        <pre id="line-numbers">
+<a href="#L1"> 1</a>
+<a href="#L2"> 2</a>
+<a href="#L3"> 3</a>
+<a href="#L4"> 4</a>
+<a href="#L5"> 5</a>
+<a href="#L6"> 6</a>
+<a href="#L7"> 7</a>
+<a href="#L8"> 8</a>
+<a href="#L9"> 9</a>
+<a href="#L10">10</a>
+<a href="#L11">11</a>
+<a href="#L12">12</a>
+<a href="#L13">13</a>
+<a href="#L14">14</a>
+</pre>
+<pre><code class="ocaml">///|
+/// struct を対象に CLI 引数をパースし、結果を直接注入する。
+/// エラー時は target の状態はデフォルトのまま（apply_all は呼ばれない）。
+pub fn[T : Parseable] parse_into(
+  args : Array[String],
+  target : T,
+  env? : Map[String, String] = {},
+) -&gt; Unit raise @core.ParseError {
+  <span data-count="97">l</span>et parser = <span data-count="97">@</span>core.Parser::new()
+  let registry = <span data-count="97">F</span>ieldRegistry::new(parser)
+  target.<span data-count="97">r</span>egister(registry)
+  let _ = parser.<span data-count="97">p</span>arse(args, env~)
+  registry.<span data-count="85">a</span>pply_all()
+}
+</code></pre>
+      </div>
+    </div>
+    <script src="../../coverage.js"></script>
+  </body>
+</html>
