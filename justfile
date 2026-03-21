@@ -62,9 +62,9 @@ size: build-release
     #!/usr/bin/env bash
     set -euo pipefail
     base=_build
-    wasm_gc="$base/wasm-gc/release/build/src/_size_check/_size_check.wasm"
-    wasm="$base/wasm/release/build/src/_size_check/_size_check.wasm"
-    js="$base/js/release/build/src/_size_check/_size_check.js"
+    wasm_gc="$base/wasm-gc/release/build/_size_check/_size_check.wasm"
+    wasm="$base/wasm/release/build/_size_check/_size_check.wasm"
+    js="$base/js/release/build/_size_check/_size_check.js"
     minified="/tmp/kuu-minified.js"
     bun build --minify "$js" --outfile "$minified" 2>/dev/null
     printf "%-20s %8s %8s %8s %8s\n" "Target" "Raw" "gzip-9" "zstd-22" "brotli"
