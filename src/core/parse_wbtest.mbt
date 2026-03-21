@@ -2221,6 +2221,92 @@ test "equals syntax: --name=hello world (shell splits at space)" {
 }
 
 // ============================================================
+// equals syntax: flag/count with =value
+// ============================================================
+
+///|
+test "equals syntax: --flag=true is error (flag does not accept value)" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose")
+  let result : Result[_, _] = try? p.parse(["--verbose=true"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "equals syntax: --count=3 is error (count does not accept value)" {
+  let p = Parser::new()
+  let _ = p.count(name="verbose")
+  let result : Result[_, _] = try? p.parse(["--verbose=3"])
+  inspect(result is Err(_), content="true")
+}
+
+// ============================================================
+// Empty string argument tests
+// ============================================================
+
+///|
+test "empty string: positional accepts empty string" {
+  let p = Parser::new()
+  let file = p.positional(name="file")
+  ignore(p.parse([""]))
+  inspect(
+    p.get(file),
+    content=(
+      #|Some("")
+    ),
+  )
+}
+
+///|
+test "empty string: string option accepts empty string as value" {
+  let p = Parser::new()
+  let name = p.string(name="name", default="default")
+  ignore(p.parse(["--name", ""]))
+  inspect(
+    p.get(name),
+    content=(
+      #|Some("")
+    ),
+  )
+}
+
+///|
+test "empty string: empty string without positional is error" {
+  let p = Parser::new()
+  let _ = p.flag(name="verbose")
+  let result : Result[_, _] = try? p.parse(["", "--verbose"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "empty string: empty string as positional + option" {
+  let p = Parser::new()
+  let file = p.positional(name="file")
+  let verbose = p.flag(name="verbose")
+  ignore(p.parse(["", "--verbose"]))
+  inspect(
+    p.get(file),
+    content=(
+      #|Some("")
+    ),
+  )
+  inspect(p.get(verbose), content="Some(true)")
+}
+
+///|
+test "empty string: rest collects empty strings" {
+  let p = Parser::new()
+  let args = p.rest(name="args")
+  ignore(p.parse(["", "a", ""]))
+  inspect(
+    p.get(args),
+    content=(
+      #|Some(["", "a", ""])
+    ),
+  )
+}
+
+// ============================================================
 // Usage line tests
 // ============================================================
 
