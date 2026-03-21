@@ -3737,3 +3737,201 @@ test "visibility: derive Show/Eq for Visibility" {
   inspect(Visibility::Visible == Visibility::Hidden, content="false")
   inspect(Visibility::Advanced == Visibility::Advanced, content="true")
 }
+
+// ===== adjust + combinator combination tests =====
+
+///|
+test "adjust: append opt with after_post transforms entire array" {
+  let p = Parser::new()
+  let items = p.append_string(name="items")
+  // after_post で配列をソート
+  p.adjust(items, after_post=Filter::map(fn(arr : Array[String]) {
+    arr.sort()
+    arr
+  }))
+  ignore(p.parse(["--items", "banana", "--items", "apple", "--items", "cherry"]))
+  inspect(
+    items.get(),
+    content=(
+      #|Some(["apple", "banana", "cherry"])
+    ),
+  )
+}
+
+///|
+test "adjust: append opt with before_pre is silent no-op" {
+  let p = Parser::new()
+  let items = p.append_string(name="items")
+  // append には before_pre_refs が登録されないため、before_pre は silent no-op
+  p.adjust(items, before_pre=Filter::map(fn(s : String) { s + "_modified" }))
+  ignore(p.parse(["--items", "hello"]))
+  // before_pre は無視され、値はそのまま
+  inspect(
+    items.get(),
+    content=(
+      #|Some(["hello"])
+    ),
+  )
+}
+
+///|
+test "adjust: positional with after_pre transforms value" {
+  let p = Parser::new()
+  let name = p.positional(name="name")
+  // after_pre で大文字変換
+  p.adjust(name, after_pre=Filter::map(fn(s : String) { s.to_upper() }))
+  ignore(p.parse(["hello"]))
+  inspect(
+    name.get(),
+    content=(
+      #|Some("HELLO")
+    ),
+  )
+}
+
+///|
+test "adjust: positional with before_pre is silent no-op" {
+  let p = Parser::new()
+  let name = p.positional(name="name")
+  // positional には before_pre_refs が登録されないため、silent no-op
+  p.adjust(name, before_pre=Filter::map(fn(s : String) { s + "_modified" }))
+  ignore(p.parse(["world"]))
+  // before_pre は無視され、値はそのまま
+  inspect(
+    name.get(),
+    content=(
+      #|Some("world")
+    ),
+  )
+}
+
+///|
+test "adjust: rest with after_post transforms array" {
+  let p = Parser::new()
+  let args = p.rest(name="args")
+  // after_post で要素をフィルタ（空文字列を除去）
+  p.adjust(args, after_post=Filter::map(fn(arr : Array[String]) {
+    arr.filter(fn(s) { not(s.is_empty()) })
+  }))
+  ignore(p.parse(["hello", "", "world", ""]))
+  inspect(
+    args.get(),
+    content=(
+      #|Some(["hello", "world"])
+    ),
+  )
+}
+
+///|
+test "adjust: rest with before_pre is silent no-op" {
+  let p = Parser::new()
+  let args = p.rest(name="args")
+  // rest には before_pre_refs が登録されないため、silent no-op
+  p.adjust(args, before_pre=Filter::map(fn(s : String) { s + "_mod" }))
+  ignore(p.parse(["a", "b"]))
+  // before_pre は無視され、値はそのまま
+  inspect(
+    args.get(),
+    content=(
+      #|Some(["a", "b"])
+    ),
+  )
+}
+
+///|
+test "adjust: option inside sub command" {
+  let p = Parser::new()
+  let sub = p.sub(name="serve")
+  let port = sub.int(name="port", default=8080)
+  // sub コマンドの中で定義された opt に adjust を適用
+  sub.adjust(port, after_post=Filter::map(fn(v) { v + 1000 }))
+  ignore(p.parse(["serve", "--port", "80"]))
+  inspect(port.get(), content="Some(1080)")
+}
+
+///|
+test "adjust: flag with after_post transforms bool" {
+  let p = Parser::new()
+  let verbose = p.flag(name="verbose")
+  // after_post で Bool を反転
+  p.adjust(verbose, after_post=Filter::map(fn(v : Bool) { not(v) }))
+  ignore(p.parse(["--verbose"]))
+  // true → not → false
+  inspect(verbose.get(), content="Some(false)")
+}
+
+///|
+test "adjust: count with after_post transforms count value" {
+  let p = Parser::new()
+  let verbosity = p.count(name="verbose")
+  // after_post で +100
+  p.adjust(verbosity, after_post=Filter::map(fn(v) { v + 100 }))
+  ignore(p.parse(["--verbose", "--verbose", "--verbose"]))
+  // count=3 → 3+100 = 103
+  inspect(verbosity.get(), content="Some(103)")
+}
+
+///|
+test "adjust: four-phase execution order with multiple adjusts" {
+  let p = Parser::new()
+  let log : Array[String] = []
+  let val = p.custom(name="val", default="", pre=Filter::map(fn(s) { s }))
+  // before_pre: raw 文字列の前に "[bp]" を追加
+  p.adjust(val, before_pre=Filter::map(fn(s : String) {
+    log.push("before_pre")
+    "[bp]" + s
+  }))
+  // after_pre: 値の前に "[ap]" を追加
+  p.adjust(val, after_pre=Filter::map(fn(s : String) {
+    log.push("after_pre")
+    "[ap]" + s
+  }))
+  // before_post: 値の前に "[bpo]" を追加
+  p.adjust(val, before_post=Filter::map(fn(s : String) {
+    log.push("before_post")
+    "[bpo]" + s
+  }))
+  // after_post: 値の前に "[apo]" を追加
+  p.adjust(val, after_post=Filter::map(fn(s : String) {
+    log.push("after_post")
+    "[apo]" + s
+  }))
+  ignore(p.parse(["--val", "x"]))
+  // 実行順序: before_pre → (pre) → after_pre → before_post → after_post
+  inspect(
+    log,
+    content=(
+      #|["before_pre", "after_pre", "before_post", "after_post"]
+    ),
+  )
+  // 値: "x" → before_pre "[bp]x" → pre(identity) "[bp]x" → after_pre "[ap][bp]x"
+  //   → before_post "[bpo][ap][bp]x" → after_post "[apo][bpo][ap][bp]x"
+  inspect(
+    val.get(),
+    content=(
+      #|Some("[apo][bpo][ap][bp]x")
+    ),
+  )
+}
+
+///|
+test "adjust: before_pre skipped on implicit_value path" {
+  let p = Parser::new()
+  let mode = p.custom(
+    name="mode",
+    default="off",
+    pre=Filter::map(fn(s) { s }),
+    implicit_value=Some(Val("auto")),
+  )
+  // before_pre: 変換を追加するが implicit_value パスでは before_pre は実行されない
+  p.adjust(mode, before_pre=Filter::map(fn(s : String) { s + "_MODIFIED" }))
+  // --mode だけ指定（implicit_value パス）
+  ignore(p.parse(["--mode"]))
+  // implicit_value="auto" がそのまま使われ、before_pre は適用されない
+  inspect(
+    mode.get(),
+    content=(
+      #|Some("auto")
+    ),
+  )
+}
