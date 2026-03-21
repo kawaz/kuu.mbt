@@ -256,7 +256,7 @@ struct FieldRegistry {
 
 各メソッド（flag, string, int, float, count, append_*, custom, positional, rest, sub）は:
 1. core の対応コンビネータを呼び出して `Opt[T]` を取得
-2. `apply_fn` クロージャを appliers に蓄積: `fn() { apply_fn(opt.get().unwrap()) }`
+2. `set` クロージャを appliers に蓄積: `fn() { set(opt.get().unwrap()) }`
 3. `_ref` バリアントは `OptRef` を返し、constraints 登録に使用
 
 ### parse_into

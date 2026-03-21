@@ -280,10 +280,10 @@ core を各言語から利用する方式は未確定。言語ごとに最適な
 
 struct-first 方式。Parseable trait + FieldRegistry + parse_into の2フェーズ:
 
-1. **register フェーズ**: ユーザーの struct が `Parseable` trait を実装し、`register(self, registry)` で各フィールドを登録。registry は core の Parser にオプションを登録しつつ、apply_fn クロージャを蓄積
-2. **apply フェーズ**: parse 成功後、蓄積した apply_fn を順に実行してユーザーの struct に値を注入。parse 失敗時は apply されない（トランザクショナル）
+1. **register フェーズ**: ユーザーの struct が `Parseable` trait を実装し、`register(self, registry)` で各フィールドを登録。registry は core の Parser にオプションを登録しつつ、`set` クロージャを蓄積
+2. **apply フェーズ**: parse 成功後、蓄積した `set` を順に実行してユーザーの struct に値を注入。parse 失敗時は apply されない（トランザクショナル）
 
-apply_fn パターンにより、core 側の Ref[T] が DX 層に漏洩しない。
+`set` パターン（旧名 `apply_fn`）により、core 側の Ref[T] が DX 層に漏洩しない。
 
 ### kuu-cli — Native CLI Transport（DR-059、実装中）
 

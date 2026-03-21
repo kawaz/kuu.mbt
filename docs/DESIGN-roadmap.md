@@ -752,7 +752,7 @@ struct Config {
 }
 ```
 
-現在の Parseable trait + FieldRegistry + apply_fn 方式から、derive マクロベースに移行可能。
+現在の Parseable trait + FieldRegistry + `set` 方式（旧名 `apply_fn`）から、derive マクロベースに移行可能。
 
 **ブロッカー**: MoonBit 言語機能の追加
 

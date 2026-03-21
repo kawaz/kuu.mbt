@@ -37,7 +37,7 @@
 | DR-039 | サブパーサコンビネータの抽象化 | decision | active |
 | DR-040 | deprecated コンビネータ実装 + clone/adjust 設計分析 | decision | active |
 | DR-041 | 環境変数コンビネータ設計構想 | vision | active |
-| DR-042 | struct-first DX 層設計 (Parseable trait + apply_fn 方式) | decision | active |
+| DR-042 | struct-first DX 層設計 (Parseable trait + set 方式、旧名 apply_fn) | decision | active |
 | DR-043 | Opt[T] に priv setter を追加 | decision | superseded |
 | DR-044 | clone / link / adjust コンビネータ実装 | decision | superseded |
 | DR-045 | ValCell / Accessor 分離 | decision | active |
