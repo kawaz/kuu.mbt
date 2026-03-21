@@ -930,8 +930,8 @@ pub fn[T] Parser::append(
   pre~ : FilterChain[String, T],
 ) -> Opt[Array[T]] {
   let env = self.effective_env_name(env, name, visibility)
-  let vc : ValCell[Array[T]] = ValCell::new(Thunk(fn() { [] }))
-  let reset_fn = fn() { vc.cell.val = [] }
+  // DR-061 Phase 2: make_parallel_cell で ValCell + push/reset を一括生成
+  let (vc, push_fn, reset_fn) = make_parallel_cell()
   let display_value_name = if value_name == "" {
     name.to_upper()
   } else {
@@ -956,7 +956,7 @@ pub fn[T] Parser::append(
         fn(s) {
           let r : Result[T, ParseError] = try? (pre.run)(s)
           match r {
-            Ok(v) => Ok(fn() { vc.cell.val.push(v) })
+            Ok(v) => Ok(fn() { push_fn(v) })
             Err(e) => Err(e)
           }
         },
@@ -970,28 +970,19 @@ pub fn[T] Parser::append(
             vn,
             fn() {
               fn() {
-                vc.cell.val = []
+                reset_fn()
                 vc.committed.val = true
               }
             },
-            fn() {
-              vc.cell.val = []
-              vc.committed.val = false
-            },
+            fn() { reset_fn() },
           )
         Unset(_) =>
           make_flag_node(
             vn,
             fn() {
-              fn() {
-                vc.cell.val = []
-                vc.committed.val = false
-              }
+              fn() { reset_fn() }
             },
-            fn() {
-              vc.cell.val = []
-              vc.committed.val = false
-            },
+            fn() { reset_fn() },
           )
       }
     },

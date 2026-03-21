@@ -309,6 +309,24 @@ fn[T] make_value_cell_lazy(initial~ : Lazy[T]) -> (ValCell[T], Accessor[T]) {
 }
 
 ///|
+/// Core primitive: creates a parallel accumulation cell.
+/// DR-061 Phase 2: parallel(Opt[T]) -> Opt[Array[T]] の共通基盤。
+/// append と rest が共有する「配列に要素を蓄積する」パターンを抽出。
+///
+/// Returns (valcell, push_fn, reset_fn) where:
+/// - push_fn(v) appends v to the array and marks committed
+/// - reset_fn() resets to a fresh empty array and clears committed
+fn[T] make_parallel_cell() -> (ValCell[Array[T]], (T) -> Unit, () -> Unit) {
+  let (vc, acc) = make_value_cell_lazy(initial=Thunk(fn() { [] }))
+  let push = fn(v : T) {
+    (acc.get)().push(v)
+    (acc.set_commit)()
+  }
+  let reset = fn() { (acc.reset)() }
+  (vc, push, reset)
+}
+
+///|
 /// ValCell への操作をクロージャ束として提供。Opt や post_hook から値を操作する統一 API。
 /// core 内部専用。
 ///
