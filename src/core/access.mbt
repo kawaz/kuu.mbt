@@ -10,7 +10,8 @@ pub fn[T] Opt::get(self : Opt[T]) -> T? {
 }
 
 ///|
-/// Returns `true` if this option was explicitly provided by the user (or set via env/link).
+/// Returns `true` if this option was explicitly provided by the user
+/// or resolved from an environment variable.
 /// Returns `false` if only the default value is in effect.
 pub fn[T] Opt::is_set(self : Opt[T]) -> Bool {
   (self.used)()
