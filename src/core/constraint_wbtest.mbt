@@ -420,3 +420,82 @@ test "variation + at_least_one: --no-verbose satisfies at_least_one" {
   ignore(p.parse(["--no-verbose"]))
   inspect(verbose.is_set(), content="true")
 }
+
+// === requires 循環依存テスト ===
+
+///|
+test "requires circular: neither set passes silently" {
+  let p = Parser::new(dashdash=false)
+  let a = p.string(name="a", default="")
+  let b = p.string(name="b", default="")
+  p.requires(a.as_ref(), source=b.as_ref())
+  p.requires(b.as_ref(), source=a.as_ref())
+  // 両方未指定 → source が set でないので requires 発火しない → OK
+  ignore(p.parse([]))
+  inspect(a.is_set(), content="false")
+  inspect(b.is_set(), content="false")
+}
+
+///|
+test "requires circular: one set triggers error" {
+  let p = Parser::new(dashdash=false)
+  let a = p.string(name="a", default="")
+  let b = p.string(name="b", default="")
+  p.requires(a.as_ref(), source=b.as_ref())
+  p.requires(b.as_ref(), source=a.as_ref())
+  // --a だけ指定 → requires(b, source=a) で b 未セットエラー
+  let result : Result[_, _] = try? p.parse(["--a", "val"])
+  inspect(result is Err(_), content="true")
+}
+
+// === 矛盾制約テスト ===
+
+///|
+test "required + required + exclusive is always error" {
+  // required(a) + required(b) + exclusive([a, b]) は矛盾:
+  // 両方 required なので両方セットが必要だが、exclusive で排他
+  let p = Parser::new(dashdash=false)
+  let a = p.flag(name="a")
+  let b = p.flag(name="b")
+  p.required(a.as_ref())
+  p.required(b.as_ref())
+  p.exclusive([a.as_ref(), b.as_ref()])
+  // 両方指定 → exclusive エラー
+  let result1 : Result[_, _] = try? p.parse(["--a", "--b"])
+  inspect(result1 is Err(_), content="true")
+  // 片方だけ → required エラー（b が欠けている）
+  let p2 = Parser::new(dashdash=false)
+  let a2 = p2.flag(name="a")
+  let b2 = p2.flag(name="b")
+  p2.required(a2.as_ref())
+  p2.required(b2.as_ref())
+  p2.exclusive([a2.as_ref(), b2.as_ref()])
+  let result2 : Result[_, _] = try? p2.parse(["--a"])
+  inspect(result2 is Err(_), content="true")
+  // 両方なし → required エラー（a が欠けている）
+  let p3 = Parser::new(dashdash=false)
+  let a3 = p3.flag(name="a")
+  let b3 = p3.flag(name="b")
+  p3.required(a3.as_ref())
+  p3.required(b3.as_ref())
+  p3.exclusive([a3.as_ref(), b3.as_ref()])
+  let result3 : Result[_, _] = try? p3.parse([])
+  inspect(result3 is Err(_), content="true")
+}
+
+// === 空パーサーテスト ===
+
+///|
+test "empty parser rejects unexpected argument" {
+  let p = Parser::new(dashdash=false)
+  // オプション0個 + 引数あり → unexpected argument エラー
+  let result : Result[_, _] = try? p.parse(["something"])
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "empty parser accepts no arguments" {
+  let p = Parser::new(dashdash=false)
+  // オプション0個 + 引数なし → 成功
+  ignore(p.parse([]))
+}
