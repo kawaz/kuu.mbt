@@ -1404,3 +1404,183 @@ test "file: unset keeps default empty" {
   parse_into([], config)
   assert_eq(config.output, "")
 }
+
+// ---- 値系コンビネータ shorts/aliases/global テスト ----
+
+///|
+struct ValueShortsConfig {
+  mut name : String
+  mut count : Int
+  mut rate : Double
+  mut debug : Bool
+  mut tags : Array[String]
+  mut nums : Array[Int]
+  mut weights : Array[Double]
+} derive(Show, Eq)
+
+///|
+fn ValueShortsConfig::default() -> ValueShortsConfig {
+  {
+    name: "",
+    count: 0,
+    rate: 0.0,
+    debug: false,
+    tags: [],
+    nums: [],
+    weights: [],
+  }
+}
+
+///|
+impl Parseable for ValueShortsConfig with register(self, reg) {
+  reg.string(
+    name="name",
+    shorts="n",
+    aliases=["alias-name"],
+    set=fn(v) { self.name = v },
+  )
+  reg.int(
+    name="count",
+    shorts="c",
+    set=fn(v) { self.count = v },
+  )
+  reg.float(
+    name="rate",
+    shorts="r",
+    set=fn(v) { self.rate = v },
+  )
+  reg.boolean(
+    name="debug",
+    shorts="d",
+    set=fn(v) { self.debug = v },
+  )
+  reg.append_string(
+    name="tag",
+    shorts="t",
+    aliases=["label"],
+    set=fn(v) { self.tags = v },
+  )
+  reg.append_int(
+    name="num",
+    shorts="N",
+    set=fn(v) { self.nums = v },
+  )
+  reg.append_float(
+    name="weight",
+    shorts="w",
+    set=fn(v) { self.weights = v },
+  )
+}
+
+///|
+test "value shorts: string -n sets value" {
+  let config = ValueShortsConfig::default()
+  parse_into(["-n", "alice"], config)
+  assert_eq(config.name, "alice")
+}
+
+///|
+test "value shorts: string alias --alias-name sets value" {
+  let config = ValueShortsConfig::default()
+  parse_into(["--alias-name", "bob"], config)
+  assert_eq(config.name, "bob")
+}
+
+///|
+test "value shorts: int -c sets value" {
+  let config = ValueShortsConfig::default()
+  parse_into(["-c", "7"], config)
+  assert_eq(config.count, 7)
+}
+
+///|
+test "value shorts: float -r sets value" {
+  let config = ValueShortsConfig::default()
+  parse_into(["-r", "3.14"], config)
+  assert_eq(config.rate, 3.14)
+}
+
+///|
+test "value shorts: boolean -d sets value" {
+  let config = ValueShortsConfig::default()
+  parse_into(["-d", "true"], config)
+  assert_eq(config.debug, true)
+}
+
+///|
+test "value shorts: append_string -t collects values" {
+  let config = ValueShortsConfig::default()
+  parse_into(["-t", "a", "-t", "b"], config)
+  assert_eq(config.tags, ["a", "b"])
+}
+
+///|
+test "value shorts: append_string alias --label collects values" {
+  let config = ValueShortsConfig::default()
+  parse_into(["--label", "x", "--tag", "y"], config)
+  assert_eq(config.tags, ["x", "y"])
+}
+
+///|
+test "value shorts: append_int -N collects values" {
+  let config = ValueShortsConfig::default()
+  parse_into(["-N", "1", "-N", "2"], config)
+  assert_eq(config.nums, [1, 2])
+}
+
+///|
+test "value shorts: append_float -w collects values" {
+  let config = ValueShortsConfig::default()
+  parse_into(["-w", "1.5", "-w", "2.5"], config)
+  assert_eq(config.weights, [1.5, 2.5])
+}
+
+// ---- global テスト ----
+
+///|
+struct GlobalConfig {
+  mut name : String
+  mut level : Int
+  mut sub_called : Bool
+} derive(Show, Eq)
+
+///|
+fn GlobalConfig::default() -> GlobalConfig {
+  { name: "", level: 0, sub_called: false }
+}
+
+///|
+impl Parseable for GlobalConfig with register(self, reg) {
+  reg.string(
+    name="name",
+    global=true,
+    set=fn(v) { self.name = v },
+  )
+  reg.int(
+    name="level",
+    global=true,
+    set=fn(v) { self.level = v },
+  )
+  reg.sub(
+    name="run",
+    description="Run command",
+    on_match=fn() { self.sub_called = true },
+    setup=fn(_r) {  },
+  )
+}
+
+///|
+test "global: string with global=true works after subcommand" {
+  let config = GlobalConfig::default()
+  parse_into(["run", "--name", "alice"], config)
+  assert_eq(config.name, "alice")
+  assert_eq(config.sub_called, true)
+}
+
+///|
+test "global: int with global=true works after subcommand" {
+  let config = GlobalConfig::default()
+  parse_into(["run", "--level", "5"], config)
+  assert_eq(config.level, 5)
+  assert_eq(config.sub_called, true)
+}
