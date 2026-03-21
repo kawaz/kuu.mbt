@@ -3525,3 +3525,19 @@ test "generate_completion_script: subcommands are included" {
   inspect(fish.contains("-a build"), content="true")
   inspect(fish.contains("-d 'Build project'"), content="true")
 }
+
+///|
+test "parse: calling parse twice raises ParseAlreadyCalled error" {
+  let p = Parser::new()
+  let _ = p.string(name="opt", default="")
+  ignore(p.parse(["--opt", "hello"]))
+  // 2回目の呼び出しはエラー
+  let result : Result[_, _] = try? p.parse(["--opt", "world"])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="ParseAlreadyCalled")
+      inspect(info.message.contains("can only be called once"), content="true")
+    }
+    _ => fail("expected ParseError with ParseAlreadyCalled")
+  }
+}
