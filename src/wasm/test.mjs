@@ -396,6 +396,7 @@ function test(label, input) {
   strictEqual(r.ok, false);
   strictEqual(r.error.includes("required option missing"), true);
   strictEqual(r.kind, "MissingRequired");
+  strictEqual(r.opt_name, "--filename");
 }
 
 // Test 28: command aliases

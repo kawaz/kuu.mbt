@@ -1564,6 +1564,7 @@ pub fn kuu_parse(input : String) -> String {
         info.error_context,
         tip=info.tip,
         kind=info.kind.to_string(),
+        opt_name=info.opt_name,
       )
   }
 }
@@ -1574,6 +1575,7 @@ fn make_error_json(
   error_context : String,
   tip? : String = "",
   kind? : String = "",
+  opt_name? : String = "",
 ) -> String {
   let obj : Map[String, Json] = {}
   obj["ok"] = Json::boolean(false)
@@ -1586,6 +1588,9 @@ fn make_error_json(
   }
   if kind != "" {
     obj["kind"] = Json::string(kind)
+  }
+  if opt_name != "" {
+    obj["opt_name"] = Json::string(opt_name)
   }
   Json::object(obj).stringify()
 }
