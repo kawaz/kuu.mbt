@@ -247,7 +247,7 @@ let _ = try? p.parse(["--port", " 443 "])
 port.get()  //=> Some(443)
 ```
 
-31 built-in filters: string transforms (`trim`, `to_lower`, `replace`, ...), validators (`non_empty`, `min_length`, `starts_with`, ...), numeric parsers (`parse_int`, `parse_float`, `parse_bool`), range checks (`in_range`, `positive`, `clamp`), choices (`one_of`), array operations (`split`, `each`), and regex (`regex_match`, `regex_replace`, `regex_split`).
+32 built-in filters: string transforms (`trim`, `to_lower`, `replace`, ...), validators (`non_empty`, `min_length`, `starts_with`, ...), numeric parsers (`parse_int`, `parse_float`, `parse_bool`), range checks (`in_range`, `positive`, `clamp`), choices (`one_of`), array operations (`split`, `each`), and regex (`regex_match`, `regex_replace`, `regex_split`).
 
 ## Error Display
 
