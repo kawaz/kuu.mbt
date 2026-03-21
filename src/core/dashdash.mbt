@@ -13,6 +13,9 @@ fn Parser::register_dashdash_node(
 }
 
 ///|
+/// Captures all arguments after a separator (default `--`) as a raw string array.
+/// The separator itself is consumed and not included in the result.
+/// `stop_before` lists tokens that end collection early (e.g. a subsequent separator).
 pub fn Parser::dashdash(
   self : Parser,
   separator? : String = "--",
@@ -47,6 +50,9 @@ pub fn Parser::dashdash(
 }
 
 ///|
+/// Like `dashdash`, but supports multiple separator occurrences.
+/// Each `--` ... section is collected as a separate `Array[String]`,
+/// producing `Array[Array[String]]`.
 pub fn Parser::append_dashdash(
   self : Parser,
   separator? : String = "--",

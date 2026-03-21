@@ -1,4 +1,6 @@
 ///|
+/// Declares that the given options are mutually exclusive.
+/// Raises `ParseError` if more than one is set after parsing.
 pub fn Parser::exclusive(self : Parser, opts : Array[OptRef]) -> Unit {
   let refs = opts
   self.post_hooks.push(fn() raise ParseError {
@@ -18,6 +20,8 @@ pub fn Parser::exclusive(self : Parser, opts : Array[OptRef]) -> Unit {
 }
 
 ///|
+/// Requires that at least one of the given options is set.
+/// Raises `ParseError` if none of them are provided.
 pub fn Parser::at_least_one(self : Parser, opts : Array[OptRef]) -> Unit {
   let refs = opts
   self.post_hooks.push(fn() raise ParseError {
@@ -36,6 +40,8 @@ pub fn Parser::at_least_one(self : Parser, opts : Array[OptRef]) -> Unit {
 }
 
 ///|
+/// Marks the given option as required.
+/// Raises `ParseError` if not set after parsing.
 pub fn Parser::required(self : Parser, opt : OptRef) -> Unit {
   let opt_ref = opt
   self.post_hooks.push(fn() raise ParseError {
@@ -50,6 +56,8 @@ pub fn Parser::required(self : Parser, opt : OptRef) -> Unit {
 }
 
 ///|
+/// Declares a dependency: when `source` is set, `target` must also be set.
+/// Raises `ParseError` with `msg` (or a generated message) if the dependency is violated.
 pub fn Parser::requires(
   self : Parser,
   target : OptRef,

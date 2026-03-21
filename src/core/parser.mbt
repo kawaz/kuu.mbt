@@ -39,6 +39,7 @@ fn wrap_node_with_set(node : ExactNode, committed : Ref[Bool]) -> ExactNode {
 }
 
 ///|
+/// Sets the top-level description shown in `--help` output.
 pub fn Parser::set_description(self : Parser, desc : String) -> Unit {
   self.description.val = desc
 }
