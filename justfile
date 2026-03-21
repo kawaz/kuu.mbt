@@ -93,10 +93,35 @@ doc:
 clean:
     moon clean
 
+# === WASM ===
+
+# Build WASM bridge (release)
+wasm-build:
+    moon build --target wasm-gc --package kawaz/kuu/wasm --release
+
+# Run WASM integration tests (requires Node.js)
+wasm-test: wasm-build
+    node src/wasm/test.mjs
+
+# === Examples ===
+
+# Run all MoonBit example tests
+example-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    failed=0
+    for dir in examples/*/; do
+        if [ -f "$dir/moon.mod.json" ]; then
+            echo "=== Testing $dir ==="
+            (cd "$dir" && moon test) || failed=1
+        fi
+    done
+    exit $failed
+
 # === CI ===
 
-# Full CI pipeline: lint → test → coverage
-ci: lint test coverage
+# Full CI pipeline: lint → test → wasm → examples → coverage
+ci: lint test wasm-test example-test coverage
 
-# Pre-release check: lint → test-all → info
-release-check: lint test-all info
+# Pre-release check: lint → test-all → wasm → examples → info
+release-check: lint test-all wasm-test example-test info
