@@ -539,6 +539,33 @@ fn Parser::parse_raw(
 }
 
 ///|
+/// Parses the given command-line arguments against the registered options.
+///
+/// This is the main entry point that executes the full parse pipeline:
+/// 1. **OC Phase** — Matches named options (`--flag`, `--key value`) and
+///    subcommands. Unmatched arguments are collected as unclaimed.
+/// 2. **P Phase** — Feeds unclaimed arguments to positional handlers in order.
+/// 3. **Env Phase** — Applies environment variable fallbacks for options not
+///    set via CLI.
+/// 4. **Post Phase** — Runs post-hooks (validation, `adjust`, `link`, constraints).
+///
+/// Parameters:
+/// - `args` - Array of CLI argument strings (typically without the program name)
+/// - `env` - Environment variable map for env-aware options (default: empty)
+///
+/// Returns a `ParseResult` on success. Raises `ParseError` on validation
+/// failure, unknown options, missing required values, etc.
+/// Raises `HelpRequested(text)` when `--help` is encountered.
+///
+/// Can only be called once per parser instance.
+///
+/// Example:
+/// ```
+/// let parser = Parser::new()
+/// let name = parser.string(name="name", default="world")
+/// parser.parse!(["--name", "MoonBit"])
+/// assert_eq!(name.get(), Some("MoonBit"))
+/// ```
 pub fn Parser::parse(
   self : Parser,
   args : Array[String],

@@ -80,6 +80,25 @@ fn Parser::effective_env_name(
 }
 
 ///|
+/// Creates a new CLI argument parser.
+///
+/// The parser uses a two-phase architecture: OC (Option/Command) phase for
+/// named options and subcommands, followed by P (Positional) phase for
+/// remaining arguments.
+///
+/// Parameters:
+/// - `dashdash` - If true (default), enables `--` separator support.
+///   Arguments after `--` are treated as positional regardless of prefix.
+///
+/// Returns a `Parser` on which options, subcommands, and constraints can be
+/// registered before calling `parse`.
+///
+/// Example:
+/// ```
+/// let parser = Parser::new()
+/// let name = parser.string(name="name", default="world")
+/// parser.parse!(["--name", "MoonBit"])
+/// ```
 pub fn Parser::new(dashdash? : Bool = true) -> Parser {
   let seq : Ref[Int] = { val: 0 }
   let p : Parser = {

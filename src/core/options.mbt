@@ -58,6 +58,27 @@ fn apply_variation_sugar(
 }
 
 ///|
+/// Creates a boolean flag option (no value argument).
+///
+/// When the flag is present on the command line, its value flips from the
+/// default. Repeated occurrences do not stack (use `count` for that).
+///
+/// Parameters:
+/// - `name` - Long option name (e.g. "verbose" for `--verbose`)
+/// - `default` - Default value when not specified (default: `false`)
+/// - `description` - Help text shown in `--help` output
+/// - `shorts` - Single-character aliases (e.g. "v" for `-v`)
+/// - `global` - If true, propagated to subcommand parsers
+/// - `variations` - Variation modifiers (Toggle, True, False, Reset, Unset)
+///
+/// Returns an `Opt[Bool]` that can be queried after parsing.
+///
+/// Example:
+/// ```
+/// let verbose = parser.flag(name="verbose", shorts="v", description="Enable verbose output")
+/// parser.parse!(["--verbose"])
+/// assert_eq!(verbose.get(), Some(true))
+/// ```
 pub fn Parser::flag(
   self : Parser,
   name~ : String,
@@ -247,6 +268,26 @@ pub fn Parser::file(
 }
 
 ///|
+/// Creates a string-valued option.
+///
+/// A convenience wrapper around `custom` with an identity `pre` filter.
+/// The raw CLI argument string is stored as-is without conversion.
+///
+/// Parameters:
+/// - `name` - Long option name (e.g. "output" for `--output`)
+/// - `default` - Default value when the option is not specified
+/// - `description` - Help text shown in `--help` output
+/// - `choices` - Restrict accepted values to this list
+/// - `implicit_value` - Value used when the flag is present without `=value`
+///
+/// Returns an `Opt[String]` that can be queried after parsing.
+///
+/// Example:
+/// ```
+/// let output = parser.string(name="output", default="stdout", description="Output file")
+/// parser.parse!(["--output", "result.txt"])
+/// assert_eq!(output.get(), Some("result.txt"))
+/// ```
 pub fn Parser::string(
   self : Parser,
   name~ : String,
@@ -276,6 +317,25 @@ pub fn Parser::string(
 }
 
 ///|
+/// Creates an integer-valued option.
+///
+/// A convenience wrapper around `custom` with a `parse_int` pre filter.
+/// The raw CLI string is parsed as an integer; invalid values raise `ParseError`.
+///
+/// Parameters:
+/// - `name` - Long option name (e.g. "count" for `--count`)
+/// - `default` - Default value when the option is not specified
+/// - `description` - Help text shown in `--help` output
+/// - `choices` - Restrict accepted values (as strings) to this list
+///
+/// Returns an `Opt[Int]` that can be queried after parsing.
+///
+/// Example:
+/// ```
+/// let port = parser.int(name="port", default=8080, description="Listen port")
+/// parser.parse!(["--port", "3000"])
+/// assert_eq!(port.get(), Some(3000))
+/// ```
 pub fn Parser::int(
   self : Parser,
   name~ : String,
@@ -305,6 +365,24 @@ pub fn Parser::int(
 }
 
 ///|
+/// Creates a floating-point-valued option.
+///
+/// A convenience wrapper around `custom` with a `parse_float` pre filter.
+/// The raw CLI string is parsed as a `Double`; invalid values raise `ParseError`.
+///
+/// Parameters:
+/// - `name` - Long option name (e.g. "threshold" for `--threshold`)
+/// - `default` - Default value when the option is not specified
+/// - `description` - Help text shown in `--help` output
+///
+/// Returns an `Opt[Double]` that can be queried after parsing.
+///
+/// Example:
+/// ```
+/// let rate = parser.float(name="rate", default=1.0, description="Sampling rate")
+/// parser.parse!(["--rate", "0.5"])
+/// assert_eq!(rate.get(), Some(0.5))
+/// ```
 pub fn Parser::float(
   self : Parser,
   name~ : String,
@@ -334,6 +412,25 @@ pub fn Parser::float(
 }
 
 ///|
+/// Creates a boolean-valued option that takes an explicit value argument.
+///
+/// Unlike `flag` (which toggles on presence), `boolean` requires a value
+/// such as `--color true`, `--color false`, `--color on`, `--color off`,
+/// `--color 1`, or `--color 0`.
+///
+/// Parameters:
+/// - `name` - Long option name (e.g. "color" for `--color`)
+/// - `default` - Default value when the option is not specified (default: `false`)
+/// - `description` - Help text shown in `--help` output
+///
+/// Returns an `Opt[Bool]` that can be queried after parsing.
+///
+/// Example:
+/// ```
+/// let color = parser.boolean(name="color", description="Enable color output")
+/// parser.parse!(["--color", "true"])
+/// assert_eq!(color.get(), Some(true))
+/// ```
 pub fn Parser::boolean(
   self : Parser,
   name~ : String,
@@ -363,6 +460,16 @@ pub fn Parser::boolean(
 }
 
 ///|
+/// Creates a multi-value string option that collects values into an array.
+///
+/// A convenience wrapper around `append` with an identity `pre` filter.
+///
+/// Example:
+/// ```
+/// let files = parser.append_string(name="file", description="Input files")
+/// parser.parse!(["--file", "a.txt", "--file", "b.txt"])
+/// assert_eq!(files.get(), Some(["a.txt", "b.txt"]))
+/// ```
 pub fn Parser::append_string(
   self : Parser,
   name~ : String,
@@ -382,6 +489,16 @@ pub fn Parser::append_string(
 }
 
 ///|
+/// Creates a multi-value integer option that collects values into an array.
+///
+/// A convenience wrapper around `append` with a `parse_int` pre filter.
+///
+/// Example:
+/// ```
+/// let ports = parser.append_int(name="port", description="Listen ports")
+/// parser.parse!(["--port", "80", "--port", "443"])
+/// assert_eq!(ports.get(), Some([80, 443]))
+/// ```
 pub fn Parser::append_int(
   self : Parser,
   name~ : String,
@@ -401,6 +518,16 @@ pub fn Parser::append_int(
 }
 
 ///|
+/// Creates a multi-value floating-point option that collects values into an array.
+///
+/// A convenience wrapper around `append` with a `parse_float` pre filter.
+///
+/// Example:
+/// ```
+/// let weights = parser.append_float(name="weight", description="Weight values")
+/// parser.parse!(["--weight", "0.5", "--weight", "1.5"])
+/// assert_eq!(weights.get(), Some([0.5, 1.5]))
+/// ```
 pub fn Parser::append_float(
   self : Parser,
   name~ : String,
@@ -420,6 +547,26 @@ pub fn Parser::append_float(
 }
 
 ///|
+/// Creates a counter option that increments on each occurrence.
+///
+/// Each time the flag appears on the command line, the counter increases by 1.
+/// Useful for verbosity levels like `-v`, `-vv`, `-vvv`.
+///
+/// Parameters:
+/// - `name` - Long option name (e.g. "verbose" for `--verbose`)
+/// - `shorts` - Single-character aliases (e.g. "v" for `-v`)
+/// - `description` - Help text shown in `--help` output
+/// - `global` - If true, propagated to subcommand parsers
+/// - `variations` - Variation modifiers (Reset, Unset, etc.)
+///
+/// Returns an `Opt[Int]` whose value is the number of occurrences.
+///
+/// Example:
+/// ```
+/// let verbose = parser.count(name="verbose", shorts="v", description="Increase verbosity")
+/// parser.parse!(["-vvv"])
+/// assert_eq!(verbose.get(), Some(3))
+/// ```
 pub fn Parser::count(
   self : Parser,
   name~ : String,
@@ -518,6 +665,40 @@ pub fn Parser::count(
 }
 
 ///|
+/// Creates a custom-typed option — the foundational combinator for all value options.
+///
+/// All typed option combinators (`string`, `int`, `float`, `boolean`) are
+/// thin wrappers around `custom` with appropriate `pre` filters. Use `custom`
+/// directly when you need a user-defined type or custom parsing logic.
+///
+/// Parameters:
+/// - `name` - Long option name (e.g. "format" for `--format`)
+/// - `default` - Default value when the option is not specified
+/// - `pre` - Filter chain that converts the raw CLI string to type `T`
+/// - `description` - Help text shown in `--help` output
+/// - `post` - Optional filter chain applied after parsing (validation/transform)
+/// - `choices` - Restrict accepted raw values to this list
+/// - `implicit_value` - Value used when the flag is present without `=value`
+/// - `shorts` - Single-character aliases (e.g. "f" for `-f`)
+/// - `global` - If true, propagated to subcommand parsers
+///
+/// Returns an `Opt[T]` that can be queried after parsing.
+///
+/// Example:
+/// ```
+/// let level = parser.custom(
+///   name="level",
+///   default=Level::Info,
+///   pre=Filter::map(fn(s) {
+///     match s {
+///       "debug" => Level::Debug
+///       "info" => Level::Info
+///       _ => Level::Warn
+///     }
+///   }),
+///   description="Log level",
+/// )
+/// ```
 pub fn[T : Show] Parser::custom(
   self : Parser,
   name~ : String,
@@ -715,6 +896,26 @@ pub fn[T : Show] Parser::custom(
 }
 
 ///|
+/// Creates a multi-value option that collects values into an array.
+///
+/// Each occurrence of the option on the command line appends a value to
+/// the array. The `pre` filter converts each raw string to type `T`.
+///
+/// Parameters:
+/// - `name` - Long option name (e.g. "include" for `--include`)
+/// - `pre` - Filter chain that converts each raw CLI string to type `T`
+/// - `description` - Help text shown in `--help` output
+/// - `shorts` - Single-character aliases
+/// - `global` - If true, propagated to subcommand parsers
+///
+/// Returns an `Opt[Array[T]]` that collects all occurrences.
+///
+/// Example:
+/// ```
+/// let tags = parser.append(name="tag", pre=Filter::map(fn(s) { s }), description="Add a tag")
+/// parser.parse!(["--tag", "a", "--tag", "b"])
+/// assert_eq!(tags.get(), Some(["a", "b"]))
+/// ```
 pub fn[T] Parser::append(
   self : Parser,
   name~ : String,

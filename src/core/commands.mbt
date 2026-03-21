@@ -1,4 +1,30 @@
 ///|
+/// Defines a subcommand with its own option namespace.
+///
+/// The `setup` callback receives a child `Parser` where subcommand-specific
+/// options and positional arguments can be registered. Global options from the
+/// parent parser are automatically inherited by the child.
+///
+/// When the subcommand name is matched during parsing, the remaining arguments
+/// are delegated to the child parser.
+///
+/// Parameters:
+/// - `name` - Subcommand name (e.g. "clone" matched as `app clone ...`)
+/// - `setup` - Callback to configure the child parser's options
+/// - `description` - Help text shown in `--help` output
+/// - `aliases` - Alternative names for this subcommand
+/// - `dashdash` - If true (default), enables `--` separator in the child parser
+///
+/// Returns an `Opt[CmdResult]` whose value contains the matched command name
+/// and child parser. Use `opt.get()` to check if the subcommand was selected.
+///
+/// Example:
+/// ```
+/// let clone_cmd = parser.cmd(name="clone", description="Clone a repository", setup=fn(sub) {
+///   let url = sub.positional(name="url")
+/// })
+/// parser.parse!(["clone", "https://example.com/repo"])
+/// ```
 pub fn Parser::cmd(
   self : Parser,
   name~ : String,
@@ -171,14 +197,29 @@ pub fn Parser::cmd(
 }
 
 ///|
-/// Returns the child Parser directly, eliminating the need for Ref wrappers.
-/// Opts defined on the returned Parser are accessible without closure escaping.
+/// Defines a subcommand and returns its child Parser directly.
+///
+/// A convenience alternative to `cmd` that eliminates the need for `Ref`
+/// wrappers. Options defined on the returned child Parser can be accessed
+/// directly without closure escaping.
+///
+/// Parameters:
+/// - `name` - Subcommand name (e.g. "clone" matched as `app clone ...`)
+/// - `description` - Help text shown in `--help` output
+/// - `aliases` - Alternative names for this subcommand
+/// - `dashdash` - If true (default), enables `--` separator in the child parser
+///
+/// Returns the child `Parser` on which subcommand-specific options can be
+/// registered directly.
 ///
 /// Example:
-///   let clone = p.sub(name="clone", description="Clone a repo")
-///   let url = clone.positional(name="url")
-///   let depth = clone.int(name="depth", default=0)
-///   // After parse: url.get(), depth.get() — no Ref needed
+/// ```
+/// let clone = parser.sub(name="clone", description="Clone a repo")
+/// let url = clone.positional(name="url")
+/// let depth = clone.int(name="depth", default=0)
+/// parser.parse!(["clone", "--depth", "1", "https://example.com/repo"])
+/// // url.get() and depth.get() are accessible directly
+/// ```
 pub fn Parser::sub(
   self : Parser,
   name~ : String,
@@ -201,8 +242,18 @@ pub fn Parser::sub(
 }
 
 ///|
-/// Require that at least one subcommand is selected.
-/// If no subcommand is chosen after parsing, raises ParseError with help text.
+/// Adds a constraint requiring that at least one subcommand is selected.
+///
+/// If no subcommand is chosen after parsing, raises `ParseError` with
+/// `MissingSubcommand` kind.
+///
+/// Example:
+/// ```
+/// let clone = parser.sub(name="clone", description="Clone a repo")
+/// let push = parser.sub(name="push", description="Push changes")
+/// parser.require_cmd()
+/// // parser.parse!([]) would raise ParseError(MissingSubcommand)
+/// ```
 pub fn Parser::require_cmd(self : Parser) -> Unit {
   self.post_hooks.push(fn() raise ParseError {
     if self.children.length() == 0 {

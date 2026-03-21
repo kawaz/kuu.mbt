@@ -1,7 +1,24 @@
 ///|
-/// Registers a positional argument.
-/// `greedy` — if true, consumed eagerly during OC phase (before option matching completes);
-/// if false (default), deferred to P phase and receives unclaimed args.
+/// Registers a positional argument (unnamed, position-based).
+///
+/// Positional arguments are consumed in the order they are registered.
+/// By default they are collected in the P (Positional) phase after all
+/// named options have been processed.
+///
+/// Parameters:
+/// - `name` - Identifier for this positional (used in help text and error messages)
+/// - `description` - Help text shown in `--help` output
+/// - `greedy` - If true, consumed eagerly during OC phase (before option
+///   matching completes); if false (default), deferred to P phase
+///
+/// Returns an `Opt[String]` with the captured positional value.
+///
+/// Example:
+/// ```
+/// let input = parser.positional(name="input", description="Input file")
+/// parser.parse!(["myfile.txt"])
+/// assert_eq!(input.get(), Some("myfile.txt"))
+/// ```
 pub fn Parser::positional(
   self : Parser,
   name~ : String,
@@ -50,6 +67,24 @@ pub fn Parser::positional(
 }
 
 ///|
+/// Registers a rest-args collector that captures all remaining positional arguments.
+///
+/// Unlike `positional` which captures a single value, `rest` greedily
+/// consumes all remaining unclaimed arguments into an array.
+///
+/// Parameters:
+/// - `name` - Identifier for this rest collector (used in help/errors)
+/// - `description` - Help text shown in `--help` output
+/// - `stop_before` - Stop collecting when one of these values is encountered
+///
+/// Returns an `Opt[Array[String]]` containing all collected values.
+///
+/// Example:
+/// ```
+/// let files = parser.rest(name="files", description="Input files")
+/// parser.parse!(["a.txt", "b.txt", "c.txt"])
+/// assert_eq!(files.get(), Some(["a.txt", "b.txt", "c.txt"]))
+/// ```
 pub fn Parser::rest(
   self : Parser,
   name~ : String,
@@ -135,9 +170,29 @@ pub fn Parser::never(self : Parser) -> Unit {
 }
 
 ///|
-/// Groups multiple positionals into a compound handler that consumes them sequentially.
-/// `greedy` — if true, the compound handler runs during OC phase; note that it consumes
-/// args without considering ExactNode matching, so option-like args may be consumed as values.
+/// Groups multiple positional arguments into a compound handler consumed sequentially.
+///
+/// The `setup` callback receives a lightweight sub-parser where multiple
+/// `positional` and `rest` entries can be registered. They are consumed
+/// as a single compound unit in order.
+///
+/// Parameters:
+/// - `setup` - Callback to register the positional sequence on a sub-parser
+/// - `greedy` - If true, the compound handler runs during OC phase. Note that
+///   greedy serial consumes args without considering option matching, so
+///   option-like arguments may be consumed as positional values.
+///
+/// Example:
+/// ```
+/// let src = Ref::new("")
+/// let dst = Ref::new("")
+/// parser.serial(setup=fn(s) {
+///   let s_opt = s.positional(name="src")
+///   let d_opt = s.positional(name="dst")
+///   // ... use s_opt, d_opt after parse
+/// })
+/// parser.parse!(["file1.txt", "file2.txt"])
+/// ```
 pub fn Parser::serial(
   self : Parser,
   setup~ : (Parser) -> Unit,
