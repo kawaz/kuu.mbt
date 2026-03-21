@@ -35,7 +35,7 @@ pub fn Parser::dashdash(
   )
   let rest_node = make_rest_node(
     on_commit=fn(collected) { vc.cell.val = collected },
-    reset=fn() {},
+    reset=fn() {  },
     stop_before=stop,
   )
   let dashdash_node = make_serial_node(sep, [exact_node, rest_node])
@@ -72,7 +72,7 @@ pub fn Parser::append_dashdash(
   )
   let rest_node = make_rest_node(
     on_commit=fn(collected) { vc.cell.val.push(collected) },
-    reset=fn() {},
+    reset=fn() {  },
     stop_before=stop,
     stop_at_sep=true,
     separator=sep,

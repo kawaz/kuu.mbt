@@ -197,9 +197,7 @@ fn main {
       // No subcommand: show help (same as --help)
       println(parser.generate_help())
     }
-    Err(@core.HelpRequested(text)) => {
-      println(text)
-    }
+    Err(@core.HelpRequested(text)) => println(text)
     Err(@core.ParseError(info)) => {
       write_stderr_ffi("error: " + info.message + "\n")
       if info.error_context != "" {

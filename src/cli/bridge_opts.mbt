@@ -29,57 +29,161 @@ fn register_opt_by_kind(
   match kind {
     "flag" =>
       register_flag(
-        parser, name, obj, description~, shorts~, global~, visibility~,
-        aliases~, variations~, env~, entries~, opt_refs~, deprecate_fns~,
-        opt_handles~, opts_bool~,
+        parser,
+        name,
+        obj,
+        description~,
+        shorts~,
+        global~,
+        visibility~,
+        aliases~,
+        variations~,
+        env~,
+        entries~,
+        opt_refs~,
+        deprecate_fns~,
+        opt_handles~,
+        opts_bool~,
       )
     "string" =>
       register_string(
-        parser, name, obj, description~, shorts~, global~, visibility~,
-        aliases~, variations~, env~, entries~, opt_refs~, deprecate_fns~,
-        opt_handles~, opts_string~,
+        parser,
+        name,
+        obj,
+        description~,
+        shorts~,
+        global~,
+        visibility~,
+        aliases~,
+        variations~,
+        env~,
+        entries~,
+        opt_refs~,
+        deprecate_fns~,
+        opt_handles~,
+        opts_string~,
       )
     "int" =>
       register_int(
-        parser, name, obj, description~, shorts~, global~, visibility~,
-        aliases~, variations~, env~, entries~, opt_refs~, deprecate_fns~,
-        opt_handles~, opts_int~,
+        parser,
+        name,
+        obj,
+        description~,
+        shorts~,
+        global~,
+        visibility~,
+        aliases~,
+        variations~,
+        env~,
+        entries~,
+        opt_refs~,
+        deprecate_fns~,
+        opt_handles~,
+        opts_int~,
       )
     "float" =>
       register_float(
-        parser, name, obj, description~, shorts~, global~, visibility~,
-        aliases~, variations~, env~, entries~, opt_refs~, deprecate_fns~,
-        opt_handles~, opts_double~,
+        parser,
+        name,
+        obj,
+        description~,
+        shorts~,
+        global~,
+        visibility~,
+        aliases~,
+        variations~,
+        env~,
+        entries~,
+        opt_refs~,
+        deprecate_fns~,
+        opt_handles~,
+        opts_double~,
       )
     "boolean" =>
       register_boolean(
-        parser, name, obj, description~, shorts~, global~, visibility~,
-        aliases~, variations~, env~, entries~, opt_refs~, deprecate_fns~,
-        opt_handles~, opts_bool~,
+        parser,
+        name,
+        obj,
+        description~,
+        shorts~,
+        global~,
+        visibility~,
+        aliases~,
+        variations~,
+        env~,
+        entries~,
+        opt_refs~,
+        deprecate_fns~,
+        opt_handles~,
+        opts_bool~,
       )
     "count" =>
       register_count(
-        parser, name, description~, shorts~, global~, visibility~,
-        aliases~, variations~, env~, entries~, opt_refs~, deprecate_fns~,
-        opt_handles~, opts_int~,
+        parser,
+        name,
+        description~,
+        shorts~,
+        global~,
+        visibility~,
+        aliases~,
+        variations~,
+        env~,
+        entries~,
+        opt_refs~,
+        deprecate_fns~,
+        opt_handles~,
+        opts_int~,
       )
     "append_string" =>
       register_append_string(
-        parser, name, description~, shorts~, global~, visibility~,
-        aliases~, variations~, env~, entries~, opt_refs~, deprecate_fns~,
-        opt_handles~, opts_arr_string~,
+        parser,
+        name,
+        description~,
+        shorts~,
+        global~,
+        visibility~,
+        aliases~,
+        variations~,
+        env~,
+        entries~,
+        opt_refs~,
+        deprecate_fns~,
+        opt_handles~,
+        opts_arr_string~,
       )
     "append_int" =>
       register_append_int(
-        parser, name, description~, shorts~, global~, visibility~,
-        aliases~, variations~, env~, entries~, opt_refs~, deprecate_fns~,
-        opt_handles~, opts_arr_int~,
+        parser,
+        name,
+        description~,
+        shorts~,
+        global~,
+        visibility~,
+        aliases~,
+        variations~,
+        env~,
+        entries~,
+        opt_refs~,
+        deprecate_fns~,
+        opt_handles~,
+        opts_arr_int~,
       )
     "append_float" =>
       register_append_float(
-        parser, name, description~, shorts~, global~, visibility~,
-        aliases~, variations~, env~, entries~, opt_refs~, deprecate_fns~,
-        opt_handles~, opts_arr_double~,
+        parser,
+        name,
+        description~,
+        shorts~,
+        global~,
+        visibility~,
+        aliases~,
+        variations~,
+        env~,
+        entries~,
+        opt_refs~,
+        deprecate_fns~,
+        opt_handles~,
+        opts_arr_double~,
       )
     "positional" => {
       let opt = parser.positional(name~, description~)
@@ -102,8 +206,7 @@ fn register_opt_by_kind(
         name,
         extract: fn() -> Json {
           match opt.get() {
-            Some(arr) =>
-              Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
+            Some(arr) => Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
             None => Json::null()
           }
         },
@@ -116,8 +219,7 @@ fn register_opt_by_kind(
         name: "--",
         extract: fn() -> Json {
           match opt.get() {
-            Some(arr) =>
-              Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
+            Some(arr) => Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
             None => Json::null()
           }
         },
@@ -150,10 +252,7 @@ fn register_opt_by_kind(
               }
               match sub_kind {
                 "positional" => {
-                  let opt = sub.positional(
-                    name=sub_name,
-                    description=sub_desc,
-                  )
+                  let opt = sub.positional(name=sub_name, description=sub_desc)
                   serial_opt_refs[sub_name] = opt.as_ref()
                   serial_entries.push(OptEntry::{
                     name: sub_name,
@@ -308,9 +407,7 @@ fn register_flag(
           )
       }
     },
-    adjust_fn: fn(_filter) {
-      Err("adjust not supported for flag type")
-    },
+    adjust_fn: fn(_filter) { Err("adjust not supported for flag type") },
   }
   entries.push(OptEntry::{
     name,
@@ -359,8 +456,7 @@ fn register_string(
     }
     _ => []
   }
-  let implicit_value : @core.Lazy[String]? = match
-    obj.get("implicit_value") {
+  let implicit_value : @core.Lazy[String]? = match obj.get("implicit_value") {
     Some(String(s)) => Some(@core.Val(s))
     _ => None
   }
@@ -462,8 +558,7 @@ fn register_int(
     Some(Number(n, ..)) => n.to_int()
     _ => 0
   }
-  let implicit_value : @core.Lazy[Int]? = match
-    obj.get("implicit_value") {
+  let implicit_value : @core.Lazy[Int]? = match obj.get("implicit_value") {
     Some(Number(n, ..)) => Some(@core.Val(n.to_int()))
     _ => None
   }
@@ -564,8 +659,7 @@ fn register_float(
     Some(Number(n, ..)) => n
     _ => 0.0
   }
-  let implicit_value : @core.Lazy[Double]? = match
-    obj.get("implicit_value") {
+  let implicit_value : @core.Lazy[Double]? = match obj.get("implicit_value") {
     Some(Number(n, ..)) => Some(@core.Val(n))
     _ => None
   }
@@ -666,8 +760,7 @@ fn register_boolean(
     Some(True) => true
     _ => false
   }
-  let implicit_value : @core.Lazy[Bool]? = match
-    obj.get("implicit_value") {
+  let implicit_value : @core.Lazy[Bool]? = match obj.get("implicit_value") {
     Some(True) => Some(@core.Val(true))
     Some(False) => Some(@core.Val(false))
     _ => None
@@ -723,9 +816,7 @@ fn register_boolean(
           )
       }
     },
-    adjust_fn: fn(_filter) {
-      Err("adjust not supported for boolean type")
-    },
+    adjust_fn: fn(_filter) { Err("adjust not supported for boolean type") },
   }
   entries.push(OptEntry::{
     name,
@@ -869,8 +960,7 @@ fn register_append_string(
         name: new_name,
         extract: fn() -> Json {
           match cloned.get() {
-            Some(arr) =>
-              Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
+            Some(arr) => Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
             None => Json::null()
           }
         },
@@ -901,8 +991,7 @@ fn register_append_string(
     name,
     extract: fn() -> Json {
       match opt.get() {
-        Some(arr) =>
-          Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
+        Some(arr) => Json::array(arr.map(fn(s) -> Json { Json::string(s) }))
         None => Json::null()
       }
     },
@@ -979,18 +1068,14 @@ fn register_append_int(
           )
       }
     },
-    adjust_fn: fn(_filter) {
-      Err("adjust not supported for append_int type")
-    },
+    adjust_fn: fn(_filter) { Err("adjust not supported for append_int type") },
   }
   entries.push(OptEntry::{
     name,
     extract: fn() -> Json {
       match opt.get() {
         Some(arr) =>
-          Json::array(
-            arr.map(fn(n) -> Json { Json::number(n.to_double()) }),
-          )
+          Json::array(arr.map(fn(n) -> Json { Json::number(n.to_double()) }))
         None => Json::null()
       }
     },
@@ -1041,8 +1126,7 @@ fn register_append_float(
         name: new_name,
         extract: fn() -> Json {
           match cloned.get() {
-            Some(arr) =>
-              Json::array(arr.map(fn(n) -> Json { Json::number(n) }))
+            Some(arr) => Json::array(arr.map(fn(n) -> Json { Json::number(n) }))
             None => Json::null()
           }
         },
@@ -1065,16 +1149,13 @@ fn register_append_float(
           )
       }
     },
-    adjust_fn: fn(_filter) {
-      Err("adjust not supported for append_float type")
-    },
+    adjust_fn: fn(_filter) { Err("adjust not supported for append_float type") },
   }
   entries.push(OptEntry::{
     name,
     extract: fn() -> Json {
       match opt.get() {
-        Some(arr) =>
-          Json::array(arr.map(fn(n) -> Json { Json::number(n) }))
+        Some(arr) => Json::array(arr.map(fn(n) -> Json { Json::number(n) }))
         None => Json::null()
       }
     },

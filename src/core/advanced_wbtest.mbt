@@ -2440,18 +2440,17 @@ test "adjust: multiple adjusts on same target execute in order" {
 test "adjust: before_pre transforms raw string before pre" {
   let p = Parser::new()
   // int opt: pre は parse_int。before_pre で "0x" を除去すれば数値としてパースできる
-  let val = p.custom(
-    name="val",
-    default=0,
-    pre=Filter::parse_int(),
+  let val = p.custom(name="val", default=0, pre=Filter::parse_int())
+  p.adjust(
+    val,
+    before_pre=Filter::map(fn(s : String) {
+      if s.has_prefix("0x") {
+        s[2:].to_string()
+      } else {
+        s
+      }
+    }),
   )
-  p.adjust(val, before_pre=Filter::map(fn(s : String) {
-    if s.has_prefix("0x") {
-      s[2:].to_string()
-    } else {
-      s
-    }
-  }))
   ignore(p.parse(["--val", "0x42"]))
   inspect(val.get(), content="Some(42)")
 }
@@ -2466,9 +2465,12 @@ test "adjust: multiple before_pre execute in registration order (FIFO)" {
   p.adjust(val, before_pre=Filter::map(fn(s : String) { s + "B" }))
   ignore(p.parse(["--val", "x"]))
   // FIFO: "x" → "xA" → "xAB"
-  inspect(val.get(), content=(
-    #|Some("xAB")
-  ))
+  inspect(
+    val.get(),
+    content=(
+      #|Some("xAB")
+    ),
+  )
 }
 
 ///|
@@ -2547,7 +2549,11 @@ test "adjust: all four params combined" {
   p.adjust(
     val,
     before_pre=Filter::map(fn(s : String) {
-      if s.has_prefix("!") { s[1:].to_string() } else { s }
+      if s.has_prefix("!") {
+        s[1:].to_string()
+      } else {
+        s
+      }
     }),
     after_pre=Filter::map(fn(v) { v + 10 }),
     before_post=Filter::map(fn(v) { v * 2 }),
@@ -3745,11 +3751,16 @@ test "adjust: append opt with after_post transforms entire array" {
   let p = Parser::new()
   let items = p.append_string(name="items")
   // after_post で配列をソート
-  p.adjust(items, after_post=Filter::map(fn(arr : Array[String]) {
-    arr.sort()
-    arr
-  }))
-  ignore(p.parse(["--items", "banana", "--items", "apple", "--items", "cherry"]))
+  p.adjust(
+    items,
+    after_post=Filter::map(fn(arr : Array[String]) {
+      arr.sort()
+      arr
+    }),
+  )
+  ignore(
+    p.parse(["--items", "banana", "--items", "apple", "--items", "cherry"]),
+  )
   inspect(
     items.get(),
     content=(
@@ -3810,9 +3821,12 @@ test "adjust: rest with after_post transforms array" {
   let p = Parser::new()
   let args = p.rest(name="args")
   // after_post で要素をフィルタ（空文字列を除去）
-  p.adjust(args, after_post=Filter::map(fn(arr : Array[String]) {
-    arr.filter(fn(s) { not(s.is_empty()) })
-  }))
+  p.adjust(
+    args,
+    after_post=Filter::map(fn(arr : Array[String]) {
+      arr.filter(fn(s) { not(s.is_empty()) })
+    }),
+  )
   ignore(p.parse(["hello", "", "world", ""]))
   inspect(
     args.get(),
@@ -3877,25 +3891,37 @@ test "adjust: four-phase execution order with multiple adjusts" {
   let log : Array[String] = []
   let val = p.custom(name="val", default="", pre=Filter::map(fn(s) { s }))
   // before_pre: raw 文字列の前に "[bp]" を追加
-  p.adjust(val, before_pre=Filter::map(fn(s : String) {
-    log.push("before_pre")
-    "[bp]" + s
-  }))
+  p.adjust(
+    val,
+    before_pre=Filter::map(fn(s : String) {
+      log.push("before_pre")
+      "[bp]" + s
+    }),
+  )
   // after_pre: 値の前に "[ap]" を追加
-  p.adjust(val, after_pre=Filter::map(fn(s : String) {
-    log.push("after_pre")
-    "[ap]" + s
-  }))
+  p.adjust(
+    val,
+    after_pre=Filter::map(fn(s : String) {
+      log.push("after_pre")
+      "[ap]" + s
+    }),
+  )
   // before_post: 値の前に "[bpo]" を追加
-  p.adjust(val, before_post=Filter::map(fn(s : String) {
-    log.push("before_post")
-    "[bpo]" + s
-  }))
+  p.adjust(
+    val,
+    before_post=Filter::map(fn(s : String) {
+      log.push("before_post")
+      "[bpo]" + s
+    }),
+  )
   // after_post: 値の前に "[apo]" を追加
-  p.adjust(val, after_post=Filter::map(fn(s : String) {
-    log.push("after_post")
-    "[apo]" + s
-  }))
+  p.adjust(
+    val,
+    after_post=Filter::map(fn(s : String) {
+      log.push("after_post")
+      "[apo]" + s
+    }),
+  )
   ignore(p.parse(["--val", "x"]))
   // 実行順序: before_pre → (pre) → after_pre → before_post → after_post
   inspect(
@@ -3993,15 +4019,15 @@ test "serial_node: first child Rejects => serial Rejects" {
     name: "--",
     needs_value: false,
     try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult { Reject },
-    reset: fn() {},
+    reset: fn() {  },
   }
   let child2 : ExactNode = {
     name: "rest",
     needs_value: false,
     try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult {
-      Accept(consumed=1, commit=fn() {})
+      Accept(consumed=1, commit=fn() {  })
     },
-    reset: fn() {},
+    reset: fn() {  },
   }
   let serial = make_serial_node("dashdash", [child1, child2])
   match (serial.try_reduce)(["foo", "bar"], 0) {
@@ -4031,20 +4057,19 @@ test "serial_node: second child Rejects => serial Rejects (no partial commit)" {
     needs_value: false,
     try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
       if pos < args.length() && args[pos] == "xyz" {
-        Accept(consumed=1, commit=fn() {})
+        Accept(consumed=1, commit=fn() {  })
       } else {
         Reject
       }
     },
-    reset: fn() {},
+    reset: fn() {  },
   }
   let serial = make_serial_node("test-serial", [child1, child2])
   // "--" matches child1, but "bar" doesn't match child2
   match (serial.try_reduce)(["--", "bar"], 0) {
-    Reject => {
+    Reject =>
       // child1 は Accept したが、serial 全体が Reject なので commit されない
       inspect(committed1.val, content="false")
-    }
     Accept(..) => fail("expected Reject, got Accept")
     Error(_) => fail("expected Reject, got Error")
   }
@@ -4057,12 +4082,12 @@ test "serial_node: child Error propagates" {
     needs_value: false,
     try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
       if pos < args.length() && args[pos] == "--" {
-        Accept(consumed=1, commit=fn() {})
+        Accept(consumed=1, commit=fn() {  })
       } else {
         Reject
       }
     },
-    reset: fn() {},
+    reset: fn() {  },
   }
   let child2 : ExactNode = {
     name: "error-child",
@@ -4070,7 +4095,7 @@ test "serial_node: child Error propagates" {
     try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult {
       Error(parse_error("test error", kind=InvalidValue))
     },
-    reset: fn() {},
+    reset: fn() {  },
   }
   let serial = make_serial_node("test-serial", [child1, child2])
   match (serial.try_reduce)(["--", "bar"], 0) {
@@ -4125,12 +4150,12 @@ test "serial_node: pos offset correctly forwarded to children" {
     needs_value: false,
     try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
       if pos < args.length() && args[pos] == "a" {
-        Accept(consumed=1, commit=fn() {})
+        Accept(consumed=1, commit=fn() {  })
       } else {
         Reject
       }
     },
-    reset: fn() {},
+    reset: fn() {  },
   }
   // child2: matches "b" at pos
   let child2 : ExactNode = {
@@ -4138,12 +4163,12 @@ test "serial_node: pos offset correctly forwarded to children" {
     needs_value: false,
     try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
       if pos < args.length() && args[pos] == "b" {
-        Accept(consumed=1, commit=fn() {})
+        Accept(consumed=1, commit=fn() {  })
       } else {
         Reject
       }
     },
-    reset: fn() {},
+    reset: fn() {  },
   }
   let serial = make_serial_node("ab-serial", [child1, child2])
   // Starting at pos=1, args[1]="a", args[2]="b"

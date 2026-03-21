@@ -1433,43 +1433,17 @@ fn ValueShortsConfig::default() -> ValueShortsConfig {
 
 ///|
 impl Parseable for ValueShortsConfig with register(self, reg) {
-  reg.string(
-    name="name",
-    shorts="n",
-    aliases=["alias-name"],
-    set=fn(v) { self.name = v },
-  )
-  reg.int(
-    name="count",
-    shorts="c",
-    set=fn(v) { self.count = v },
-  )
-  reg.float(
-    name="rate",
-    shorts="r",
-    set=fn(v) { self.rate = v },
-  )
-  reg.boolean(
-    name="debug",
-    shorts="d",
-    set=fn(v) { self.debug = v },
-  )
-  reg.append_string(
-    name="tag",
-    shorts="t",
-    aliases=["label"],
-    set=fn(v) { self.tags = v },
-  )
-  reg.append_int(
-    name="num",
-    shorts="N",
-    set=fn(v) { self.nums = v },
-  )
-  reg.append_float(
-    name="weight",
-    shorts="w",
-    set=fn(v) { self.weights = v },
-  )
+  reg.string(name="name", shorts="n", aliases=["alias-name"], set=fn(v) {
+    self.name = v
+  })
+  reg.int(name="count", shorts="c", set=fn(v) { self.count = v })
+  reg.float(name="rate", shorts="r", set=fn(v) { self.rate = v })
+  reg.boolean(name="debug", shorts="d", set=fn(v) { self.debug = v })
+  reg.append_string(name="tag", shorts="t", aliases=["label"], set=fn(v) {
+    self.tags = v
+  })
+  reg.append_int(name="num", shorts="N", set=fn(v) { self.nums = v })
+  reg.append_float(name="weight", shorts="w", set=fn(v) { self.weights = v })
 }
 
 ///|
@@ -1551,16 +1525,8 @@ fn GlobalConfig::default() -> GlobalConfig {
 
 ///|
 impl Parseable for GlobalConfig with register(self, reg) {
-  reg.string(
-    name="name",
-    global=true,
-    set=fn(v) { self.name = v },
-  )
-  reg.int(
-    name="level",
-    global=true,
-    set=fn(v) { self.level = v },
-  )
+  reg.string(name="name", global=true, set=fn(v) { self.name = v })
+  reg.int(name="level", global=true, set=fn(v) { self.level = v })
   reg.sub(
     name="run",
     description="Run command",

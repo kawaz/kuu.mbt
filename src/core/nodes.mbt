@@ -180,10 +180,7 @@ fn make_or_node(
 /// If any child returns Error, the serial node returns that Error immediately.
 /// Commits are collected and executed together only when all children Accept.
 /// DR-061: serial([...]) = scope creation, process children in order.
-fn make_serial_node(
-  name : String,
-  children : Array[ExactNode],
-) -> ExactNode {
+fn make_serial_node(name : String, children : Array[ExactNode]) -> ExactNode {
   ExactNode::{
     name,
     needs_value: false,
@@ -200,14 +197,11 @@ fn make_serial_node(
           Error(e) => return Error(e)
         }
       }
-      Accept(
-        consumed=total_consumed,
-        commit=fn() {
-          for c in commits {
-            c()
-          }
-        },
-      )
+      Accept(consumed=total_consumed, commit=fn() {
+        for c in commits {
+          c()
+        }
+      })
     },
     reset: fn() {
       for child in children {
@@ -223,9 +217,9 @@ fn make_serial_node(
 fn make_rest_node(
   on_commit~ : (Array[String]) -> Unit,
   reset~ : () -> Unit,
-  stop_before~ : Array[String] = [],
-  stop_at_sep~ : Bool = false,
-  separator~ : String = "--",
+  stop_before? : Array[String] = [],
+  stop_at_sep? : Bool = false,
+  separator? : String = "--",
 ) -> ExactNode {
   ExactNode::{
     name: "...",

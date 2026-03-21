@@ -185,31 +185,32 @@ fn build_parser(
           Some(String(s)) => s
           _ => ""
         }
-        match register_opt_by_kind(
-          parser,
-          kind,
-          name,
-          obj,
-          description~,
-          shorts~,
-          global~,
-          visibility~,
-          aliases~,
-          variations~,
-          env~,
-          entries~,
-          opt_refs~,
-          deprecate_fns~,
-          opt_handles~,
-          opts_bool~,
-          opts_string~,
-          opts_int~,
-          opts_double~,
-          opts_arr_string~,
-          opts_arr_int~,
-          opts_arr_double~,
-          children~,
-        ) {
+        match
+          register_opt_by_kind(
+            parser,
+            kind,
+            name,
+            obj,
+            description~,
+            shorts~,
+            global~,
+            visibility~,
+            aliases~,
+            variations~,
+            env~,
+            entries~,
+            opt_refs~,
+            deprecate_fns~,
+            opt_handles~,
+            opts_bool~,
+            opts_string~,
+            opts_int~,
+            opts_double~,
+            opts_arr_string~,
+            opts_arr_int~,
+            opts_arr_double~,
+            children~,
+          ) {
           Ok(_) => ()
           Err(e) => return Err(e)
         }
@@ -343,9 +344,7 @@ fn build_parser(
                   match opt_refs.get(n) {
                     Some(r) => refs.push(r)
                     None =>
-                      return Err(
-                        "constraint references unknown option: " + n,
-                      )
+                      return Err("constraint references unknown option: " + n)
                   }
                 _ => ()
               }
@@ -367,8 +366,7 @@ fn build_parser(
           String(n) =>
             match opt_refs.get(n) {
               Some(r) => parser.required(r)
-              None =>
-                return Err("constraint references unknown option: " + n)
+              None => return Err("constraint references unknown option: " + n)
             }
           _ => ()
         }
@@ -388,9 +386,7 @@ fn build_parser(
                   match opt_refs.get(n) {
                     Some(r) => refs.push(r)
                     None =>
-                      return Err(
-                        "constraint references unknown option: " + n,
-                      )
+                      return Err("constraint references unknown option: " + n)
                   }
                 _ => ()
               }
@@ -494,8 +490,8 @@ fn extract_values(
 fn make_error_json(
   message : String,
   error_context : String,
-  tip~ : String = "",
-  kind~ : String = "",
+  tip? : String = "",
+  kind? : String = "",
 ) -> String {
   let obj : Map[String, Json] = {}
   obj["ok"] = Json::boolean(false)

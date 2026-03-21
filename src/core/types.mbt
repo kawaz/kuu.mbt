@@ -317,7 +317,12 @@ fn[T] make_value_cell_lazy(initial~ : Lazy[T]) -> (ValCell[T], Accessor[T]) {
 /// - accessor is the raw Accessor for the underlying Array[T] cell
 /// - push_fn(v) appends v to the array and marks committed
 /// - reset_fn() resets to a fresh empty array and clears committed
-fn[T] make_parallel_cell() -> (ValCell[Array[T]], Accessor[Array[T]], (T) -> Unit, () -> Unit) {
+fn[T] make_parallel_cell() -> (
+  ValCell[Array[T]],
+  Accessor[Array[T]],
+  (T) -> Unit,
+  () -> Unit,
+) {
   let (vc, acc) = make_value_cell_lazy(initial=Thunk(fn() { [] }))
   let push = fn(v : T) {
     (acc.get)().push(v)

@@ -191,19 +191,15 @@ pub fn Parser::never(self : Parser) -> Unit {
 /// parser.parse!(["file1.txt", "file2.txt"])
 /// let source = src.get!()  // "file1.txt"
 /// ```
-pub fn Parser::serial_scope(
-  self : Parser,
-  greedy? : Bool = false,
-) -> Parser {
+pub fn Parser::serial_scope(self : Parser, greedy? : Bool = false) -> Parser {
   let scope_ref : Ref[Parser?] = { val: None }
-  self.serial(setup=fn(scope) {
-    scope_ref.val = Some(scope)
-  }, greedy~)
+  self.serial(setup=fn(scope) { scope_ref.val = Some(scope) }, greedy~)
   // Design rationale: setup callback is always invoked synchronously by serial(),
   // but match is safer than unwrap() against future refactoring.
   match scope_ref.val {
     Some(parser) => parser
-    None => abort("Parser::serial_scope: setup callback was not executed by serial()")
+    None =>
+      abort("Parser::serial_scope: setup callback was not executed by serial()")
   }
 }
 

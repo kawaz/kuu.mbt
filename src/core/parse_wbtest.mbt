@@ -639,11 +639,7 @@ test "short with long mixed" {
 ///|
 test "short append" {
   let p = Parser::new()
-  let tags = p.append(
-    name="tag",
-    shorts="t",
-    pre=Filter::map(fn(s) { s }),
-  )
+  let tags = p.append(name="tag", shorts="t", pre=Filter::map(fn(s) { s }))
   ignore(p.parse(["-t", "a", "-t", "b"]))
   inspect(
     p.get(tags),
@@ -3636,30 +3632,24 @@ test "parse: calling parse twice raises ParseAlreadyCalled error" {
 // shorts/global/aliases/variations support for string/int/float/boolean
 // ============================================================
 
+///|
 test "DR-060: string with shorts and global" {
   let p = Parser::new()
   let _ = p.sub(name="sub", description="sub")
-  let host = p.string(
-    name="host",
-    default="",
-    shorts="H",
-    global=true,
-  )
+  let host = p.string(name="host", default="", shorts="H", global=true)
   ignore(p.parse(["sub", "-H", "example.com"]))
   inspect(host.get(), content="Some(\"example.com\")")
 }
 
+///|
 test "DR-060: string with aliases" {
   let p = Parser::new()
-  let output = p.string(
-    name="output",
-    default="",
-    aliases=["out", "o"],
-  )
+  let output = p.string(name="output", default="", aliases=["out", "o"])
   ignore(p.parse(["--out", "file.txt"]))
   inspect(output.get(), content="Some(\"file.txt\")")
 }
 
+///|
 test "DR-060: int with shorts" {
   let p = Parser::new()
   let port = p.int(name="port", default=8080, shorts="p")
@@ -3667,6 +3657,7 @@ test "DR-060: int with shorts" {
   inspect(port.get(), content="Some(3000)")
 }
 
+///|
 test "DR-060: int with global across subcommand" {
   let p = Parser::new()
   let _ = p.sub(name="serve", description="serve")
@@ -3675,6 +3666,7 @@ test "DR-060: int with global across subcommand" {
   inspect(port.get(), content="Some(3000)")
 }
 
+///|
 test "DR-060: float with shorts" {
   let p = Parser::new()
   let rate = p.float(name="rate", default=1.0, shorts="r")
@@ -3682,6 +3674,7 @@ test "DR-060: float with shorts" {
   inspect(rate.get(), content="Some(0.5)")
 }
 
+///|
 test "DR-060: float with aliases and global" {
   let p = Parser::new()
   let _ = p.sub(name="run", description="run")
@@ -3695,6 +3688,7 @@ test "DR-060: float with aliases and global" {
   inspect(threshold.get(), content="Some(3.14)")
 }
 
+///|
 test "DR-060: boolean with shorts" {
   let p = Parser::new()
   let color = p.boolean(name="color", shorts="c")
@@ -3702,6 +3696,7 @@ test "DR-060: boolean with shorts" {
   inspect(color.get(), content="Some(true)")
 }
 
+///|
 test "DR-060: boolean with global" {
   let p = Parser::new()
   let _ = p.sub(name="build", description="build")
@@ -3710,18 +3705,16 @@ test "DR-060: boolean with global" {
   inspect(color.get(), content="Some(false)")
 }
 
+///|
 test "DR-060: append_string with shorts and global" {
   let p = Parser::new()
   let _ = p.sub(name="run", description="run")
-  let files = p.append_string(
-    name="file",
-    shorts="f",
-    global=true,
-  )
+  let files = p.append_string(name="file", shorts="f", global=true)
   ignore(p.parse(["run", "-f", "a.txt", "-f", "b.txt"]))
   inspect(files.get(), content="Some([\"a.txt\", \"b.txt\"])")
 }
 
+///|
 test "DR-060: append_int with shorts" {
   let p = Parser::new()
   let ports = p.append_int(name="port", shorts="p")
@@ -3729,16 +3722,15 @@ test "DR-060: append_int with shorts" {
   inspect(ports.get(), content="Some([80, 443])")
 }
 
+///|
 test "DR-060: append_float with aliases" {
   let p = Parser::new()
-  let weights = p.append_float(
-    name="weight",
-    aliases=["w"],
-  )
+  let weights = p.append_float(name="weight", aliases=["w"])
   ignore(p.parse(["--w", "0.5", "--w", "1.5"]))
   inspect(weights.get(), content="Some([0.5, 1.5])")
 }
 
+///|
 test "DR-060: string without shorts/global uses default behavior" {
   // Ensure existing behavior is preserved when new params are not used
   let p = Parser::new()
@@ -3747,14 +3739,12 @@ test "DR-060: string without shorts/global uses default behavior" {
   inspect(name.get(), content="Some(\"hello\")")
 }
 
+///|
 test "DR-060: string with variations" {
   let p = Parser::new()
-  let output = p.string(
-    name="output",
-    default="stdout",
-    shorts="o",
-    variations=[Reset("no")],
-  )
+  let output = p.string(name="output", default="stdout", shorts="o", variations=[
+    Reset("no"),
+  ])
   ignore(p.parse(["--output", "file.txt", "--no-output"]))
   // Reset variation resets to default value
   inspect(output.get(), content="Some(\"stdout\")")
@@ -3825,12 +3815,18 @@ test "serial_scope: basic positional grouping" {
   let src = s.positional(name="src")
   let dst = s.positional(name="dst")
   ignore(p.parse(["file1.txt", "file2.txt"]))
-  inspect(src.get(), content=(
-    #|Some("file1.txt")
-  ))
-  inspect(dst.get(), content=(
-    #|Some("file2.txt")
-  ))
+  inspect(
+    src.get(),
+    content=(
+      #|Some("file1.txt")
+    ),
+  )
+  inspect(
+    dst.get(),
+    content=(
+      #|Some("file2.txt")
+    ),
+  )
 }
 
 ///|
@@ -3840,12 +3836,18 @@ test "serial_scope: with rest" {
   let remote = s.positional(name="remote")
   let branches = s.rest(name="branches")
   ignore(p.parse(["origin", "main", "dev"]))
-  inspect(remote.get(), content=(
-    #|Some("origin")
-  ))
-  inspect(branches.get(), content=(
-    #|Some(["main", "dev"])
-  ))
+  inspect(
+    remote.get(),
+    content=(
+      #|Some("origin")
+    ),
+  )
+  inspect(
+    branches.get(),
+    content=(
+      #|Some(["main", "dev"])
+    ),
+  )
 }
 
 ///|
@@ -3856,12 +3858,18 @@ test "serial_scope: greedy mode" {
   let arg1 = s.positional(name="arg1")
   let arg2 = s.positional(name="arg2")
   ignore(p.parse(["hello", "world", "--verbose"]))
-  inspect(arg1.get(), content=(
-    #|Some("hello")
-  ))
-  inspect(arg2.get(), content=(
-    #|Some("world")
-  ))
+  inspect(
+    arg1.get(),
+    content=(
+      #|Some("hello")
+    ),
+  )
+  inspect(
+    arg2.get(),
+    content=(
+      #|Some("world")
+    ),
+  )
   inspect(verbose.get(), content="Some(true)")
 }
 
@@ -3873,12 +3881,18 @@ test "serial_scope: with sub command" {
   let remote = s.positional(name="remote")
   let branch = s.positional(name="branch")
   ignore(p.parse(["push", "origin", "main"]))
-  inspect(remote.get(), content=(
-    #|Some("origin")
-  ))
-  inspect(branch.get(), content=(
-    #|Some("main")
-  ))
+  inspect(
+    remote.get(),
+    content=(
+      #|Some("origin")
+    ),
+  )
+  inspect(
+    branch.get(),
+    content=(
+      #|Some("main")
+    ),
+  )
 }
 
 ///|
@@ -3899,15 +3913,21 @@ test "serial_scope: insufficient arguments" {
   let src = s.positional(name="src")
   let dst = s.positional(name="dst")
   ignore(p.parse(["only-one"]))
-  inspect(src.get(), content=(
-    #|Some("only-one")
-  ))
+  inspect(
+    src.get(),
+    content=(
+      #|Some("only-one")
+    ),
+  )
   // 引数不足の positional は値がセットされず、is_set=false
   inspect(dst.is_set(), content="false")
   // get() は parsed=true なので初期値 "" を返す（positional の ValCell 初期値）
-  inspect(dst.get(), content=(
-    #|Some("")
-  ))
+  inspect(
+    dst.get(),
+    content=(
+      #|Some("")
+    ),
+  )
 }
 
 ///|
@@ -3920,11 +3940,17 @@ test "serial_scope: greedy=false option between positionals" {
   // greedy=false では OC フェーズでオプションが先に消費され、
   // P フェーズで残りの positional が処理される
   ignore(p.parse(["hello", "--verbose", "world"]))
-  inspect(arg1.get(), content=(
-    #|Some("hello")
-  ))
-  inspect(arg2.get(), content=(
-    #|Some("world")
-  ))
+  inspect(
+    arg1.get(),
+    content=(
+      #|Some("hello")
+    ),
+  )
+  inspect(
+    arg2.get(),
+    content=(
+      #|Some("world")
+    ),
+  )
   inspect(verbose.get(), content="Some(true)")
 }
