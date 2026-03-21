@@ -16,11 +16,23 @@ A CLI argument parser for MoonBit. Speculative execution with longest-match reso
 moon add kawaz/kuu
 ```
 
+Add imports to your `moon.pkg`:
+
+```json
+import {
+  "kawaz/kuu/core",
+  "moonbitlang/core/env",
+}
+
+options("is-main": true)
+```
+
 ```moonbit
 fn main {
   let p = @core.Parser::new()
   let name = p.string(name="name", default="world")
-  let result = try? p.parse(@env.args())
+  // @env.args() includes argv[0] (binary path), so skip it
+  let result = try? p.parse(@env.args()[1:].to_array())
   match result {
     Err(@core.HelpRequested(text)) => println(text)
     Err(@core.ParseError(info)) => println(info.to_string())
