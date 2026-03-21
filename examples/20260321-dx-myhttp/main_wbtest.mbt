@@ -1,6 +1,3 @@
-// Tests for myhttp DX example.
-// Verifies that the struct-first DX API works correctly for a practical CLI.
-
 // --- GET subcommand tests ---
 
 ///|

@@ -1,3 +1,4 @@
+///|
 /// myhttp — A simple HTTP client CLI demonstrating kuu DX layer.
 ///
 /// Usage:
@@ -10,19 +11,15 @@
 /// - Various option types: flag, string, int, count, append_string, boolean
 /// - Constraints: exclusive, required
 /// - Global options, shorts, aliases
-
-/// Top-level CLI configuration.
 struct Config {
-  mut verbose : Int // count: -v -vv -vvv
-  mut format : String // "text" or "json" — exclusive with --compact
+  mut verbose : Int
+  mut format : String
   mut compact : Bool
   mut timeout : Int
   mut follow_redirects : Bool
   mut command : Command
-  // GET subcommand fields
   mut get_url : String
   mut get_accept : String
-  // POST subcommand fields
   mut post_url : String
   mut post_data : String
   mut post_content_type : String
@@ -141,8 +138,6 @@ impl @dx.Parseable for Config with register(self, reg) {
 }
 
 fn main {
-  // In a real app, args would come from the command line.
-  // This is just a demonstration of the DX layer API.
   let config = Config::default()
   let result : Result[Unit, @core.ParseError] = try? @dx.parse_into(
     ["get", "https://example.com", "--accept", "application/json", "-vv"],
@@ -150,7 +145,7 @@ fn main {
   )
   match result {
     Ok(_) => println("Config: \{config}")
-    Err(@core.ParseError(info)) => println("Error: \{info.message}")
+    Err(@core.ParseError(info)) => println("Error: \{info.to_string()}")
     Err(@core.HelpRequested(help)) => println(help)
   }
 }
