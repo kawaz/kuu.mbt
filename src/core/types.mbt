@@ -291,6 +291,24 @@ fn[T] ValCell::clone(self : ValCell[T]) -> ValCell[T] {
 }
 
 ///|
+/// Core primitive: creates a value cell with its accessor from an immediate value.
+/// This is the foundational building block for all option combinators.
+/// DR-061: value() is the only true value primitive.
+fn[T] make_value_cell(initial~ : T) -> (ValCell[T], Accessor[T]) {
+  let vc = ValCell::new(Val(initial))
+  (vc, vc.accessor())
+}
+
+///|
+/// Core primitive: creates a value cell with its accessor from a lazy value.
+/// Used for mutable defaults (e.g. Array) where each reset needs a fresh instance.
+/// DR-061: lazy variant of make_value_cell.
+fn[T] make_value_cell_lazy(initial~ : Lazy[T]) -> (ValCell[T], Accessor[T]) {
+  let vc = ValCell::new(initial)
+  (vc, vc.accessor())
+}
+
+///|
 /// ValCell への操作をクロージャ束として提供。Opt や post_hook から値を操作する統一 API。
 /// core 内部専用。
 ///

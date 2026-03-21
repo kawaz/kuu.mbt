@@ -1,4 +1,17 @@
 ///|
+/// Core primitive: creates a node that matches an exact literal string.
+/// Consumes 1 argument with no value. The on_match factory returns a commit
+/// callback that is invoked when the match is accepted.
+/// DR-061: exact(str) matches a literal, consuming 1 argument.
+fn make_exact_node(
+  name : String,
+  on_match~ : () -> () -> Unit,
+  reset~ : () -> Unit,
+) -> ExactNode {
+  make_flag_node(name, on_match, reset)
+}
+
+///|
 fn make_flag_node(
   name : String,
   on_match : () -> () -> Unit,
