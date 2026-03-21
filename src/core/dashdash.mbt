@@ -1,29 +1,4 @@
 ///|
-/// セパレータ以降の引数を収集するヘルパー。
-/// stop_at_sep=true の場合、セパレータ自身でもループを停止する（append_dashdash 用）。
-fn collect_after_separator(
-  args : Array[String],
-  pos : Int,
-  sep : String,
-  stop : Array[String],
-  stop_at_sep? : Bool = false,
-) -> (Array[String], Int) {
-  let collected : Array[String] = []
-  let mut p = pos + 1
-  while p < args.length() {
-    if stop_at_sep && args[p] == sep {
-      break
-    }
-    if stop.contains(args[p]) {
-      break
-    }
-    collected.push(args[p])
-    p += 1
-  }
-  (collected, p - pos)
-}
-
-///|
 /// dashdash ノードを登録し重複検出を行う共通ヘルパー
 fn Parser::register_dashdash_node(
   self : Parser,
@@ -47,26 +22,20 @@ pub fn Parser::dashdash(
   let vc : ValCell[Array[String]] = ValCell::new(Thunk(fn() { [] }))
   let sep = separator
   let stop = stop_before
-  let dashdash_node = ExactNode::{
-    name: sep,
-    needs_value: false,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() || args[pos] != sep {
-        return Reject
-      }
-      let (collected, consumed) = collect_after_separator(args, pos, sep, stop)
-      Accept(consumed~, commit=fn() {
-        for v in collected {
-          vc.cell.val.push(v)
-        }
-        vc.committed.val = true
-      })
-    },
-    reset: fn() {
+  let exact_node = make_exact_node(
+    sep,
+    on_match=fn() { fn() { vc.committed.val = true } },
+    reset=fn() {
       vc.cell.val = []
       vc.committed.val = false
     },
-  }
+  )
+  let rest_node = make_rest_node(
+    on_commit=fn(collected) { vc.cell.val = collected },
+    reset=fn() {},
+    stop_before=stop,
+  )
+  let dashdash_node = make_serial_node(sep, [exact_node, rest_node])
   self.register_dashdash_node(sep, dashdash_node)
   {
     id,
@@ -87,30 +56,22 @@ pub fn Parser::append_dashdash(
   let vc : ValCell[Array[Array[String]]] = ValCell::new(Thunk(fn() { [] }))
   let sep = separator
   let stop = stop_before
-  let node = ExactNode::{
-    name: sep,
-    needs_value: false,
-    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
-      if pos >= args.length() || args[pos] != sep {
-        return Reject
-      }
-      let (group, consumed) = collect_after_separator(
-        args,
-        pos,
-        sep,
-        stop,
-        stop_at_sep=true,
-      )
-      Accept(consumed~, commit=fn() {
-        vc.cell.val.push(group)
-        vc.committed.val = true
-      })
-    },
-    reset: fn() {
+  let exact_node = make_exact_node(
+    sep,
+    on_match=fn() { fn() { vc.committed.val = true } },
+    reset=fn() {
       vc.cell.val = []
       vc.committed.val = false
     },
-  }
+  )
+  let rest_node = make_rest_node(
+    on_commit=fn(collected) { vc.cell.val.push(collected) },
+    reset=fn() {},
+    stop_before=stop,
+    stop_at_sep=true,
+    separator=sep,
+  )
+  let node = make_serial_node(sep, [exact_node, rest_node])
   self.register_dashdash_node(sep, node)
   {
     id,

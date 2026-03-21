@@ -185,6 +185,40 @@ fn make_serial_node(
 }
 
 ///|
+/// Core primitive: creates a rest node that consumes remaining arguments.
+/// DR-061: rest within serial scope, consumes args from current pos.
+fn make_rest_node(
+  on_commit~ : (Array[String]) -> Unit,
+  reset~ : () -> Unit,
+  stop_before~ : Array[String] = [],
+  stop_at_sep~ : Bool = false,
+  separator~ : String = "--",
+) -> ExactNode {
+  ExactNode::{
+    name: "...",
+    needs_value: true,
+    try_reduce: fn(args, pos) {
+      let collected : Array[String] = []
+      let mut i = pos
+      while i < args.length() {
+        let arg = args[i]
+        if stop_at_sep && arg == separator {
+          break
+        }
+        if stop_before.contains(arg) {
+          break
+        }
+        collected.push(arg)
+        i += 1
+      }
+      // 0個収集も Accept（dashdash の空グループに対応）
+      Accept(consumed=collected.length(), commit=fn() { on_commit(collected) })
+    },
+    reset,
+  }
+}
+
+///|
 /// 各コンビネータに散在する variation 展開ロジックの統一関数。
 /// opt_name から base を抽出し、各 Variation のプレフィックスと組み合わせて
 /// "--{prefix}-{base}" の名前を生成し、コールバックで ExactNode を生成して push する。
