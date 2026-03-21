@@ -1,10 +1,10 @@
 {
   "name": "kawaz/kuu",
   "version": "0.1.0",
-  "license": "MIT",
   "deps": {
-    "kawaz/unicodegrapheme": "0.7.1",
+    "kawaz/grapheme": "0.10.2",
     "kawaz/timespec": "0.2.0"
   },
+  "license": "MIT",
   "source": "src"
 }

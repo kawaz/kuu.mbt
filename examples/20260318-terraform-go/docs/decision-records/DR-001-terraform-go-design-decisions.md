@@ -25,7 +25,7 @@
 
 ## 4. WASM パス: main ワークスペース参照
 
-- **問題**: moon build がワークスペース内の unicodegrapheme 依存で失敗（`for "bench"` 構文未対応）
+- **問題**: moon build がワークスペース内の grapheme 依存で失敗（`for "bench"` 構文未対応）
 - **発見経緯**: 実装中に moon build エラー
 - **解決策**: main ワークスペースの既存 `_build/` を参照するように justfile と kuu_bridge.mjs のパスを調整
 - **選択理由**: moon のバージョン問題であり、WASM 自体は正常にビルド済み

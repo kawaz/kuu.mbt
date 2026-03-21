@@ -1266,8 +1266,8 @@
 </pre>
 <pre><code class="ocaml">///|
 fn levenshtein(a : String, b : String) -&gt; Int {
-  <span data-count="86">l</span>et ag = <span data-count="86">@</span>unicodegrapheme.graphemes(a)
-  let bg = <span data-count="86">@</span>unicodegrapheme.graphemes(b)
+  <span data-count="86">l</span>et ag = <span data-count="86">@</span>grapheme.graphemes(a)
+  let bg = <span data-count="86">@</span>grapheme.graphemes(b)
   let m = ag.<span data-count="86">l</span>ength()
   let n = bg.<span data-count="86">l</span>ength()
   let a_chars : Array[String] = <span data-count="86">A</span>rray::makei(m, fn(i) { <span data-count="706">a</span>g[i].<span data-count="706">t</span>o_string() })
@@ -1445,7 +1445,7 @@ fn Parser::install_short_combine_node(self : Parser) -&gt; Unit {
   self.registered_names["__short_combine"] = true
   let short_nodes : Array[ExactNode] = []
   for node in self.nodes {
-    <span data-count="3901">i</span>f <span data-count="3901">@</span>unicodegrapheme.graphemes(node.name).<span data-count="3901">l</span>ength() == 2 &amp;&amp;
+    <span data-count="3901">i</span>f <span data-count="3901">@</span>grapheme.graphemes(node.name).<span data-count="3901">l</span>ength() == 2 &amp;&amp;
       node.name.<span data-count="1576">h</span>as_prefix("-") &amp;&amp;
       <span data-count="1570">n</span>ot(node.name.<span data-count="1570">h</span>as_prefix("--")) {
       <span data-count="935">s</span>hort_nodes.<span data-count="935">p</span>ush(node)
@@ -1463,13 +1463,13 @@ fn Parser::install_short_combine_node(self : Parser) -&gt; Unit {
         <span data-count="0">r</span>eturn Reject
       }
       let arg = args[pos]
-      if <span data-count="790">@</span>unicodegrapheme.graphemes(arg).<span data-count="790">l</span>ength() &lt;= 2 ||
+      if <span data-count="790">@</span>grapheme.graphemes(arg).<span data-count="790">l</span>ength() &lt;= 2 ||
         <span data-count="652">n</span>ot(arg.<span data-count="652">h</span>as_prefix("-")) ||
         arg.<span data-count="516">h</span>as_prefix("--") {
         <span data-count="755">r</span>eturn Reject
       }
       let rest = arg.<span data-count="35">u</span>nsafe_substring(start=1, end=arg.<span data-count="35">l</span>ength())
-      let rest_g = <span data-count="35">@</span>unicodegrapheme.graphemes(rest)
+      let rest_g = <span data-count="35">@</span>grapheme.graphemes(rest)
       let commits : Array[() -&gt; Unit] = []
       let mut total_consumed = 1
       let mut ri = 0

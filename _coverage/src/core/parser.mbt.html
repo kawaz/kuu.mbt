@@ -1615,7 +1615,7 @@ fn[T] Parser::register_option(
       <span data-count="185">[</span><span data-count="185">w</span>rap_node_with_set(<span data-count="185">m</span>ake_main_node(short_name), valcell.committed)]
     },
   )
-  let shorts_arr : Array[String] = <span data-count="923">@</span>unicodegrapheme.graphemes(shorts)
+  let shorts_arr : Array[String] = <span data-count="923">@</span>grapheme.graphemes(shorts)
     .<span data-count="923">i</span>ter()
     .<span data-count="923">m</span>ap(fn(sv) { <span data-count="185">s</span>v.<span data-count="185">t</span>o_string() })
     .<span data-count="923">c</span>ollect()
@@ -2047,7 +2047,7 @@ fn expand_short(
   report_error~ : (String) -&gt; Unit,
 ) -&gt; Array[ExactNode] {
   <span data-count="923">l</span>et result : Array[ExactNode] = []
-  let shorts_g = <span data-count="923">@</span>unicodegrapheme.graphemes(shorts)
+  let shorts_g = <span data-count="923">@</span>grapheme.graphemes(shorts)
   for i = 0; <span data-count="1108">i</span> &lt; shorts_g.<span data-count="1108">l</span>ength(); i = <span data-count="185">i</span> + 1 {
     <span data-count="185">l</span>et g = shorts_g[i].<span data-count="185">t</span>o_string()
     if g == "-" {

@@ -243,7 +243,7 @@ pub fn Filter::max_codepoints(n : Int) -> FilterChain[String, String] {
 /// Validate minimum grapheme cluster count (visual characters, handles ZWJ/flags/skin tones)
 pub fn Filter::min_graphemes(n : Int) -> FilterChain[String, String] {
   Filter::validate(fn(s) raise ParseError {
-    let gc = @unicodegrapheme.graphemes(s).length()
+    let gc = @grapheme.graphemes(s).length()
     if gc < n {
       raise parse_error(
         "value too short (got " +
@@ -260,7 +260,7 @@ pub fn Filter::min_graphemes(n : Int) -> FilterChain[String, String] {
 /// Validate maximum grapheme cluster count (visual characters, handles ZWJ/flags/skin tones)
 pub fn Filter::max_graphemes(n : Int) -> FilterChain[String, String] {
   Filter::validate(fn(s) raise ParseError {
-    let gc = @unicodegrapheme.graphemes(s).length()
+    let gc = @grapheme.graphemes(s).length()
     if gc > n {
       raise parse_error(
         "value too long (got " +

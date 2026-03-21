@@ -1334,7 +1334,7 @@ pub fn Filter::max_codepoints(n : Int) -&gt; FilterChain[String, String] {
 /// Validate minimum grapheme cluster count (visual characters, handles ZWJ/flags/skin tones)
 pub fn Filter::min_graphemes(n : Int) -&gt; FilterChain[String, String] {
   <span data-count="4">F</span>ilter::validate(fn(s) raise ParseError {
-    <span data-count="4">l</span>et gc = <span data-count="4">@</span>unicodegrapheme.graphemes(s).<span data-count="4">l</span>ength()
+    <span data-count="4">l</span>et gc = <span data-count="4">@</span>grapheme.graphemes(s).<span data-count="4">l</span>ength()
     if gc &lt; n {
       <span data-count="2">r</span>aise <span data-count="2">p</span>arse_error(
         "value too short (got " +
@@ -1351,7 +1351,7 @@ pub fn Filter::min_graphemes(n : Int) -&gt; FilterChain[String, String] {
 /// Validate maximum grapheme cluster count (visual characters, handles ZWJ/flags/skin tones)
 pub fn Filter::max_graphemes(n : Int) -&gt; FilterChain[String, String] {
   <span data-count="4">F</span>ilter::validate(fn(s) raise ParseError {
-    <span data-count="4">l</span>et gc = <span data-count="4">@</span>unicodegrapheme.graphemes(s).<span data-count="4">l</span>ength()
+    <span data-count="4">l</span>et gc = <span data-count="4">@</span>grapheme.graphemes(s).<span data-count="4">l</span>ength()
     if gc &gt; n {
       <span data-count="1">r</span>aise <span data-count="1">p</span>arse_error(
         "value too long (got " +

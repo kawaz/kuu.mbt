@@ -47,7 +47,7 @@ kuu の FilterChain は 11 個の built-in パーツを持つが、CLI パーサ
 文字列長フィルタは3段階の粒度を提供:
 - `length`: UTF-16 コードユニット（MoonBit の `String.length()`）
 - `codepoints`: Unicode コードポイント（`String.char_length()`）
-- `graphemes`: 書記素クラスタ（`@unicodegrapheme.graphemes()`、視覚的な「文字」数）
+- `graphemes`: 書記素クラスタ（`@grapheme.graphemes()`、視覚的な「文字」数）
 
 ### B. 文字列変換
 

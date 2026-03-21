@@ -58,7 +58,7 @@ Levenshtein 距離ベース。grapheme cluster 対応済み（DR-049）。
 
 ### サロゲートペア / 合成絵文字対応（DR-049）
 
-- `kawaz/unicodegrapheme` 導入
+- `kawaz/grapheme` 導入
 - Levenshtein 距離計算、short option combining を grapheme cluster 単位に修正
 - `shorts` の型を `Array[Char]` → `Array[String]` に変更（合成絵文字を short option に対応）
 - `Filter::min_codepoints` / `Filter::max_codepoints` — Unicode codepoint 単位のバリデーション

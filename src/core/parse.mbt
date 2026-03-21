@@ -1,7 +1,7 @@
 ///|
 fn levenshtein(a : String, b : String) -> Int {
-  let ag = @unicodegrapheme.graphemes(a)
-  let bg = @unicodegrapheme.graphemes(b)
+  let ag = @grapheme.graphemes(a)
+  let bg = @grapheme.graphemes(b)
   let m = ag.length()
   let n = bg.length()
   let a_chars : Array[String] = Array::makei(m, fn(i) { ag[i].to_string() })
@@ -179,7 +179,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
   self.registered_names["__short_combine"] = true
   let short_nodes : Array[ExactNode] = []
   for node in self.nodes {
-    if @unicodegrapheme.graphemes(node.name).length() == 2 &&
+    if @grapheme.graphemes(node.name).length() == 2 &&
       node.name.has_prefix("-") &&
       not(node.name.has_prefix("--")) {
       short_nodes.push(node)
@@ -197,13 +197,13 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
         return Reject
       }
       let arg = args[pos]
-      if @unicodegrapheme.graphemes(arg).length() <= 2 ||
+      if @grapheme.graphemes(arg).length() <= 2 ||
         not(arg.has_prefix("-")) ||
         arg.has_prefix("--") {
         return Reject
       }
       let rest = arg.unsafe_substring(start=1, end=arg.length())
-      let rest_g = @unicodegrapheme.graphemes(rest)
+      let rest_g = @grapheme.graphemes(rest)
       let commits : Array[() -> Unit] = []
       let mut total_consumed = 1
       let mut ri = 0

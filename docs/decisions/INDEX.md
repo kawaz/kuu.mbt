@@ -43,7 +43,7 @@
 | DR-045 | ValCell / Accessor 分離 | decision | active |
 | DR-047 | kuu-cli embed+extract+exec パターン | decision | active |
 | DR-048 | Accessor.is_set を Opt.used に分離 | decision | active |
-| DR-049 | サロゲートペア対応 (unicodegrapheme 導入) | implementation | active |
+| DR-049 | サロゲートペア対応 (grapheme 導入) | implementation | active |
 | DR-050 | Filter 充実 + Sugar コンビネータ追加 | implementation | active |
 | DR-051 | 20260318 Example レビュー知見 | review | active |
 | DR-052 | ErrorKind 構造化エラー | decision | active |

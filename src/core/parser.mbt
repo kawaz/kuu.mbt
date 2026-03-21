@@ -181,7 +181,7 @@ fn[T] Parser::register_option(
       [wrap_node_with_set(make_main_node(short_name), valcell.committed)]
     },
   )
-  let shorts_arr : Array[String] = @unicodegrapheme.graphemes(shorts)
+  let shorts_arr : Array[String] = @grapheme.graphemes(shorts)
     .iter()
     .map(fn(sv) { sv.to_string() })
     .collect()
@@ -613,7 +613,7 @@ fn expand_short(
   report_error~ : (String) -> Unit,
 ) -> Array[ExactNode] {
   let result : Array[ExactNode] = []
-  let shorts_g = @unicodegrapheme.graphemes(shorts)
+  let shorts_g = @grapheme.graphemes(shorts)
   for i = 0; i < shorts_g.length(); i = i + 1 {
     let g = shorts_g[i].to_string()
     if g == "-" {
