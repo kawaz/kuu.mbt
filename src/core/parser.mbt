@@ -156,6 +156,9 @@ fn[T] Parser::register_option(
   make_main_node~ : (String) -> ExactNode,
   make_node_for_variation~ : (String, Variation) -> ExactNode,
 ) -> Opt[T] {
+  if name == "" {
+    self.duplicate_errors.push("option name must not be empty")
+  }
   let id = (self.next_id)()
   self.expand_and_register(
     name,

@@ -3670,3 +3670,61 @@ test "DR-060: string with variations" {
   // Reset variation resets to default value
   inspect(output.get(), content="Some(\"stdout\")")
 }
+
+// ============ empty name validation tests ============
+
+///|
+test "empty option name raises error" {
+  let p = Parser::new()
+  let _ = p.string(name="", default="")
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="DuplicateDefinition")
+      inspect(info.message.contains("empty"), content="true")
+    }
+    _ => abort("expected error for empty option name")
+  }
+}
+
+///|
+test "empty flag name raises error" {
+  let p = Parser::new()
+  let _ = p.flag(name="")
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="DuplicateDefinition")
+      inspect(info.message.contains("empty"), content="true")
+    }
+    _ => abort("expected error for empty flag name")
+  }
+}
+
+///|
+test "empty cmd name raises error" {
+  let p = Parser::new()
+  let _ = p.cmd(name="", setup=fn(_sub) {  })
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="DuplicateDefinition")
+      inspect(info.message.contains("empty"), content="true")
+    }
+    _ => abort("expected error for empty command name")
+  }
+}
+
+///|
+test "empty sub name raises error" {
+  let p = Parser::new()
+  let _ = p.sub(name="")
+  let result : Result[_, _] = try? p.parse([])
+  match result {
+    Err(ParseError(info)) => {
+      inspect(info.kind, content="DuplicateDefinition")
+      inspect(info.message.contains("empty"), content="true")
+    }
+    _ => abort("expected error for empty sub name")
+  }
+}
