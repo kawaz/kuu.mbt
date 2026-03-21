@@ -3541,3 +3541,132 @@ test "parse: calling parse twice raises ParseAlreadyCalled error" {
     _ => fail("expected ParseError with ParseAlreadyCalled")
   }
 }
+
+// ============================================================
+// DR-060 Action #2: Value primitive low-layer API wrappers
+// shorts/global/aliases/variations support for string/int/float/boolean
+// ============================================================
+
+test "DR-060: string with shorts and global" {
+  let p = Parser::new()
+  let _ = p.sub(name="sub", description="sub")
+  let host = p.string(
+    name="host",
+    default="",
+    shorts="H",
+    global=true,
+  )
+  ignore(p.parse(["sub", "-H", "example.com"]))
+  inspect(host.get(), content="Some(\"example.com\")")
+}
+
+test "DR-060: string with aliases" {
+  let p = Parser::new()
+  let output = p.string(
+    name="output",
+    default="",
+    aliases=["out", "o"],
+  )
+  ignore(p.parse(["--out", "file.txt"]))
+  inspect(output.get(), content="Some(\"file.txt\")")
+}
+
+test "DR-060: int with shorts" {
+  let p = Parser::new()
+  let port = p.int(name="port", default=8080, shorts="p")
+  ignore(p.parse(["-p", "3000"]))
+  inspect(port.get(), content="Some(3000)")
+}
+
+test "DR-060: int with global across subcommand" {
+  let p = Parser::new()
+  let _ = p.sub(name="serve", description="serve")
+  let port = p.int(name="port", default=8080, shorts="p", global=true)
+  ignore(p.parse(["serve", "-p", "3000"]))
+  inspect(port.get(), content="Some(3000)")
+}
+
+test "DR-060: float with shorts" {
+  let p = Parser::new()
+  let rate = p.float(name="rate", default=1.0, shorts="r")
+  ignore(p.parse(["-r", "0.5"]))
+  inspect(rate.get(), content="Some(0.5)")
+}
+
+test "DR-060: float with aliases and global" {
+  let p = Parser::new()
+  let _ = p.sub(name="run", description="run")
+  let threshold = p.float(
+    name="threshold",
+    default=0.0,
+    aliases=["thresh"],
+    global=true,
+  )
+  ignore(p.parse(["run", "--thresh", "3.14"]))
+  inspect(threshold.get(), content="Some(3.14)")
+}
+
+test "DR-060: boolean with shorts" {
+  let p = Parser::new()
+  let color = p.boolean(name="color", shorts="c")
+  ignore(p.parse(["-c", "true"]))
+  inspect(color.get(), content="Some(true)")
+}
+
+test "DR-060: boolean with global" {
+  let p = Parser::new()
+  let _ = p.sub(name="build", description="build")
+  let color = p.boolean(name="color", global=true)
+  ignore(p.parse(["build", "--color", "false"]))
+  inspect(color.get(), content="Some(false)")
+}
+
+test "DR-060: append_string with shorts and global" {
+  let p = Parser::new()
+  let _ = p.sub(name="run", description="run")
+  let files = p.append_string(
+    name="file",
+    shorts="f",
+    global=true,
+  )
+  ignore(p.parse(["run", "-f", "a.txt", "-f", "b.txt"]))
+  inspect(files.get(), content="Some([\"a.txt\", \"b.txt\"])")
+}
+
+test "DR-060: append_int with shorts" {
+  let p = Parser::new()
+  let ports = p.append_int(name="port", shorts="p")
+  ignore(p.parse(["-p", "80", "-p", "443"]))
+  inspect(ports.get(), content="Some([80, 443])")
+}
+
+test "DR-060: append_float with aliases" {
+  let p = Parser::new()
+  let weights = p.append_float(
+    name="weight",
+    aliases=["w"],
+  )
+  ignore(p.parse(["--w", "0.5", "--w", "1.5"]))
+  inspect(weights.get(), content="Some([0.5, 1.5])")
+}
+
+test "DR-060: string without shorts/global uses default behavior" {
+  // Ensure existing behavior is preserved when new params are not used
+  let p = Parser::new()
+  let name = p.string(name="name", default="world")
+  ignore(p.parse(["--name", "hello"]))
+  inspect(name.get(), content="Some(\"hello\")")
+}
+
+test "DR-060: string with variations" {
+  let p = Parser::new()
+  let output = p.string(
+    name="output",
+    default="stdout",
+    shorts="o",
+    variations=[Reset("no")],
+  )
+  ignore(p.parse(["--output", "file.txt", "--no-output"]))
+  // Reset variation resets to default value
+  inspect(output.get(), content="Some(\"stdout\")")
+}

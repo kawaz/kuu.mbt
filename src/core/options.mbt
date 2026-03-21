@@ -279,6 +279,10 @@ pub fn Parser::file(
 /// - `description` - Help text shown in `--help` output
 /// - `choices` - Restrict accepted values to this list
 /// - `implicit_value` - Value used when the flag is present without `=value`
+/// - `shorts` - Single-character aliases (e.g. "o" for `-o`)
+/// - `aliases` - Alternative long option names
+/// - `global` - If true, propagated to subcommand parsers
+/// - `variations` - Variation modifiers (Toggle, True, False, Reset, Unset)
 ///
 /// Returns an `Opt[String]` that can be queried after parsing.
 ///
@@ -297,6 +301,10 @@ pub fn Parser::string(
   env? : String = "",
   value_name? : String = "",
   visibility? : Visibility = Visible,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  global? : Bool = false,
+  variations? : Array[Variation] = [],
   post? : FilterChain[String, String]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[String]? = None,
@@ -309,6 +317,10 @@ pub fn Parser::string(
     env~,
     default~,
     default_fn~,
+    shorts~,
+    aliases~,
+    global~,
+    variations~,
     post~,
     choices~,
     implicit_value~,
@@ -327,6 +339,10 @@ pub fn Parser::string(
 /// - `default` - Default value when the option is not specified
 /// - `description` - Help text shown in `--help` output
 /// - `choices` - Restrict accepted values (as strings) to this list
+/// - `shorts` - Single-character aliases (e.g. "p" for `-p`)
+/// - `aliases` - Alternative long option names
+/// - `global` - If true, propagated to subcommand parsers
+/// - `variations` - Variation modifiers (Toggle, True, False, Reset, Unset)
 ///
 /// Returns an `Opt[Int]` that can be queried after parsing.
 ///
@@ -345,6 +361,10 @@ pub fn Parser::int(
   env? : String = "",
   value_name? : String = "",
   visibility? : Visibility = Visible,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  global? : Bool = false,
+  variations? : Array[Variation] = [],
   post? : FilterChain[Int, Int]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[Int]? = None,
@@ -357,6 +377,10 @@ pub fn Parser::int(
     env~,
     default~,
     default_fn~,
+    shorts~,
+    aliases~,
+    global~,
+    variations~,
     post~,
     choices~,
     implicit_value~,
@@ -374,6 +398,10 @@ pub fn Parser::int(
 /// - `name` - Long option name (e.g. "threshold" for `--threshold`)
 /// - `default` - Default value when the option is not specified
 /// - `description` - Help text shown in `--help` output
+/// - `shorts` - Single-character aliases (e.g. "r" for `-r`)
+/// - `aliases` - Alternative long option names
+/// - `global` - If true, propagated to subcommand parsers
+/// - `variations` - Variation modifiers (Toggle, True, False, Reset, Unset)
 ///
 /// Returns an `Opt[Double]` that can be queried after parsing.
 ///
@@ -392,6 +420,10 @@ pub fn Parser::float(
   env? : String = "",
   value_name? : String = "",
   visibility? : Visibility = Visible,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  global? : Bool = false,
+  variations? : Array[Variation] = [],
   post? : FilterChain[Double, Double]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[Double]? = None,
@@ -404,6 +436,10 @@ pub fn Parser::float(
     env~,
     default~,
     default_fn~,
+    shorts~,
+    aliases~,
+    global~,
+    variations~,
     post~,
     choices~,
     implicit_value~,
@@ -422,6 +458,10 @@ pub fn Parser::float(
 /// - `name` - Long option name (e.g. "color" for `--color`)
 /// - `default` - Default value when the option is not specified (default: `false`)
 /// - `description` - Help text shown in `--help` output
+/// - `shorts` - Single-character aliases (e.g. "c" for `-c`)
+/// - `aliases` - Alternative long option names
+/// - `global` - If true, propagated to subcommand parsers
+/// - `variations` - Variation modifiers (Toggle, True, False, Reset, Unset)
 ///
 /// Returns an `Opt[Bool]` that can be queried after parsing.
 ///
@@ -440,6 +480,10 @@ pub fn Parser::boolean(
   env? : String = "",
   value_name? : String = "",
   visibility? : Visibility = Visible,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  global? : Bool = false,
+  variations? : Array[Variation] = [],
   post? : FilterChain[Bool, Bool]? = None,
   choices? : Array[String] = [],
   implicit_value? : Lazy[Bool]? = None,
@@ -452,6 +496,10 @@ pub fn Parser::boolean(
     env~,
     default~,
     default_fn~,
+    shorts~,
+    aliases~,
+    global~,
+    variations~,
     post~,
     choices~,
     implicit_value~,
@@ -463,6 +511,12 @@ pub fn Parser::boolean(
 /// Creates a multi-value string option that collects values into an array.
 ///
 /// A convenience wrapper around `append` with an identity `pre` filter.
+///
+/// Parameters:
+/// - `shorts` - Single-character aliases (e.g. "f" for `-f`)
+/// - `aliases` - Alternative long option names
+/// - `global` - If true, propagated to subcommand parsers
+/// - `variations` - Variation modifiers (Toggle, True, False, Reset, Unset)
 ///
 /// Example:
 /// ```
@@ -477,6 +531,10 @@ pub fn Parser::append_string(
   env? : String = "",
   value_name? : String = "",
   visibility? : Visibility = Visible,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  global? : Bool = false,
+  variations? : Array[Variation] = [],
 ) -> Opt[Array[String]] {
   self.append(
     name~,
@@ -484,6 +542,10 @@ pub fn Parser::append_string(
     description~,
     value_name~,
     env~,
+    shorts~,
+    aliases~,
+    global~,
+    variations~,
     pre=Filter::map(fn(s) { s }),
   )
 }
@@ -492,6 +554,12 @@ pub fn Parser::append_string(
 /// Creates a multi-value integer option that collects values into an array.
 ///
 /// A convenience wrapper around `append` with a `parse_int` pre filter.
+///
+/// Parameters:
+/// - `shorts` - Single-character aliases (e.g. "p" for `-p`)
+/// - `aliases` - Alternative long option names
+/// - `global` - If true, propagated to subcommand parsers
+/// - `variations` - Variation modifiers (Toggle, True, False, Reset, Unset)
 ///
 /// Example:
 /// ```
@@ -506,6 +574,10 @@ pub fn Parser::append_int(
   env? : String = "",
   value_name? : String = "",
   visibility? : Visibility = Visible,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  global? : Bool = false,
+  variations? : Array[Variation] = [],
 ) -> Opt[Array[Int]] {
   self.append(
     name~,
@@ -513,6 +585,10 @@ pub fn Parser::append_int(
     description~,
     value_name~,
     env~,
+    shorts~,
+    aliases~,
+    global~,
+    variations~,
     pre=Filter::parse_int(),
   )
 }
@@ -521,6 +597,12 @@ pub fn Parser::append_int(
 /// Creates a multi-value floating-point option that collects values into an array.
 ///
 /// A convenience wrapper around `append` with a `parse_float` pre filter.
+///
+/// Parameters:
+/// - `shorts` - Single-character aliases (e.g. "w" for `-w`)
+/// - `aliases` - Alternative long option names
+/// - `global` - If true, propagated to subcommand parsers
+/// - `variations` - Variation modifiers (Toggle, True, False, Reset, Unset)
 ///
 /// Example:
 /// ```
@@ -535,6 +617,10 @@ pub fn Parser::append_float(
   env? : String = "",
   value_name? : String = "",
   visibility? : Visibility = Visible,
+  shorts? : String = "",
+  aliases? : Array[String] = [],
+  global? : Bool = false,
+  variations? : Array[Variation] = [],
 ) -> Opt[Array[Double]] {
   self.append(
     name~,
@@ -542,6 +628,10 @@ pub fn Parser::append_float(
     description~,
     value_name~,
     env~,
+    shorts~,
+    aliases~,
+    global~,
+    variations~,
     pre=Filter::parse_float(),
   )
 }
