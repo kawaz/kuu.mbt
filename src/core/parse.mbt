@@ -229,7 +229,10 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
         }
 
         if remaining_strs.length() > 0 {
-          // remaining がある場合: まず value trial を needs_value=true のノードのみで試す
+          // remaining がある場合: value trial を needs_value=true のノードのみで試す。
+          // try_len を末尾から縮小して部分一致を試行する。
+          // 例: -p80 で remaining="80" のとき try_value="80" → "8" と短くする。
+          // choices 付きオプションで部分一致が必要なケースに対応。
           let mut value_accepted = false
           let mut try_len = remaining_strs.length()
           while try_len > 0 {
@@ -283,6 +286,9 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
                   flag_accepted = true
                   break
                 }
+                // Design rationale: flag trial では Error を無視する。
+                // flag ノード（make_flag_on_match）は通常 Error を返さないため安全。
+                // カスタムノードが Error を返す場合は value trial 側で捕捉される。
                 Error(_) | Reject => ()
               }
             }
