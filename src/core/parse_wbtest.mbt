@@ -2938,16 +2938,19 @@ test "R2-W3: duplicate short option detected" {
 // === R2-W1: parse retry 動作テスト ===
 
 ///|
-test "R2-W1: parse after error still works but nodes grow" {
+test "R2-W1: parse after error retries without node growth" {
   let p = Parser::new(dashdash=false)
   let name = p.string(name="name", default="world")
-  // 1回目: エラーパース
+  // 1回目: エラーパース（install_eq_split/short_combine が走る）
   let r1 = try? p.parse(["--unknown"])
   inspect(r1 is Err(_), content="true")
-  // 2回目: 成功パース（ノード二重登録あるが動作は正常）
+  let nodes_after_first = p.nodes.length()
+  // 2回目: 成功パース（べき等ガードによりノード数が増えない）
   let r2 = try? p.parse(["--name", "alice"])
   inspect(r2 is Ok(_), content="true")
   inspect(name.get(), content="Some(\"alice\")")
+  let nodes_after_second = p.nodes.length()
+  inspect(nodes_after_first == nodes_after_second, content="true")
 }
 
 // === float ===

@@ -77,6 +77,11 @@ fn Parser::validate_no_duplicate_names(self : Parser) -> Unit raise ParseError {
 ///|
 /// self.nodes から --name=value 形式を処理する ExactNode を構築して追加
 fn Parser::install_eq_split_node(self : Parser) -> Unit {
+  // Idempotent: skip if already installed (parse retry safety)
+  if self.registered_names.contains("__eq_split") {
+    return
+  }
+  self.registered_names["__eq_split"] = true
   // needs_value=true かつ name が "--" で始まるノードを収集
   let value_nodes : Array[ExactNode] = []
   for node in self.nodes {
@@ -167,6 +172,11 @@ fn Parser::install_eq_split_node(self : Parser) -> Unit {
 ///|
 /// self.nodes から short option ノードを収集し、結合ノードを構築して self.nodes に追加
 fn Parser::install_short_combine_node(self : Parser) -> Unit {
+  // Idempotent: skip if already installed (parse retry safety)
+  if self.registered_names.contains("__short_combine") {
+    return
+  }
+  self.registered_names["__short_combine"] = true
   let short_nodes : Array[ExactNode] = []
   for node in self.nodes {
     if @unicodegrapheme.graphemes(node.name).length() == 2 &&
