@@ -141,6 +141,50 @@ fn make_or_node(
 }
 
 ///|
+/// Core primitive: creates a serial node that tries children in sequence.
+/// All children must Accept for the serial node to Accept.
+/// If any child Rejects, the entire serial node Rejects.
+/// If any child returns Error, the serial node returns that Error immediately.
+/// Commits are collected and executed together only when all children Accept.
+/// DR-061: serial([...]) = scope creation, process children in order.
+fn make_serial_node(
+  name : String,
+  children : Array[ExactNode],
+) -> ExactNode {
+  ExactNode::{
+    name,
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      let mut total_consumed = 0
+      let commits : Array[() -> Unit] = []
+      for child in children {
+        match (child.try_reduce)(args, pos + total_consumed) {
+          Accept(consumed~, commit~) => {
+            total_consumed += consumed
+            commits.push(commit)
+          }
+          Reject => return Reject
+          Error(e) => return Error(e)
+        }
+      }
+      Accept(
+        consumed=total_consumed,
+        commit=fn() {
+          for c in commits {
+            c()
+          }
+        },
+      )
+    },
+    reset: fn() {
+      for child in children {
+        (child.reset)()
+      }
+    },
+  }
+}
+
+///|
 /// 各コンビネータに散在する variation 展開ロジックの統一関数。
 /// opt_name から base を抽出し、各 Variation のプレフィックスと組み合わせて
 /// "--{prefix}-{base}" の名前を生成し、コールバックで ExactNode を生成して push する。

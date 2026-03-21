@@ -3935,3 +3935,228 @@ test "adjust: before_pre skipped on implicit_value path" {
     ),
   )
 }
+
+// === make_serial_node テスト (DR-061 Phase 1) ===
+
+///|
+test "serial_node: all children Accept => serial Accepts with total consumed" {
+  // child1: matches "--" at pos, consumed=1
+  let committed1 : Ref[Bool] = { val: false }
+  let child1 : ExactNode = {
+    name: "--",
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos < args.length() && args[pos] == "--" {
+        Accept(consumed=1, commit=fn() { committed1.val = true })
+      } else {
+        Reject
+      }
+    },
+    reset: fn() { committed1.val = false },
+  }
+  // child2: consumes 1 argument at pos (any string), stores it
+  let captured : Ref[String] = { val: "" }
+  let child2 : ExactNode = {
+    name: "rest-value",
+    needs_value: true,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos < args.length() {
+        let v = args[pos]
+        Accept(consumed=1, commit=fn() { captured.val = v })
+      } else {
+        Reject
+      }
+    },
+    reset: fn() { captured.val = "" },
+  }
+  let serial = make_serial_node("dashdash", [child1, child2])
+  let args = ["--", "foo"]
+  match (serial.try_reduce)(args, 0) {
+    Accept(consumed~, commit~) => {
+      inspect(consumed, content="2")
+      // commit はまだ呼ばれていない
+      inspect(committed1.val, content="false")
+      inspect(captured.val, content="")
+      // commit を呼ぶと全子の commit が実行される
+      commit()
+      inspect(committed1.val, content="true")
+      inspect(captured.val, content="foo")
+    }
+    Reject => fail("expected Accept, got Reject")
+    Error(_) => fail("expected Accept, got Error")
+  }
+}
+
+///|
+test "serial_node: first child Rejects => serial Rejects" {
+  let child1 : ExactNode = {
+    name: "--",
+    needs_value: false,
+    try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult { Reject },
+    reset: fn() {},
+  }
+  let child2 : ExactNode = {
+    name: "rest",
+    needs_value: false,
+    try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult {
+      Accept(consumed=1, commit=fn() {})
+    },
+    reset: fn() {},
+  }
+  let serial = make_serial_node("dashdash", [child1, child2])
+  match (serial.try_reduce)(["foo", "bar"], 0) {
+    Reject => () // expected
+    Accept(..) => fail("expected Reject, got Accept")
+    Error(_) => fail("expected Reject, got Error")
+  }
+}
+
+///|
+test "serial_node: second child Rejects => serial Rejects (no partial commit)" {
+  let committed1 : Ref[Bool] = { val: false }
+  let child1 : ExactNode = {
+    name: "--",
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos < args.length() && args[pos] == "--" {
+        Accept(consumed=1, commit=fn() { committed1.val = true })
+      } else {
+        Reject
+      }
+    },
+    reset: fn() { committed1.val = false },
+  }
+  let child2 : ExactNode = {
+    name: "need-xyz",
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos < args.length() && args[pos] == "xyz" {
+        Accept(consumed=1, commit=fn() {})
+      } else {
+        Reject
+      }
+    },
+    reset: fn() {},
+  }
+  let serial = make_serial_node("test-serial", [child1, child2])
+  // "--" matches child1, but "bar" doesn't match child2
+  match (serial.try_reduce)(["--", "bar"], 0) {
+    Reject => {
+      // child1 は Accept したが、serial 全体が Reject なので commit されない
+      inspect(committed1.val, content="false")
+    }
+    Accept(..) => fail("expected Reject, got Accept")
+    Error(_) => fail("expected Reject, got Error")
+  }
+}
+
+///|
+test "serial_node: child Error propagates" {
+  let child1 : ExactNode = {
+    name: "--",
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos < args.length() && args[pos] == "--" {
+        Accept(consumed=1, commit=fn() {})
+      } else {
+        Reject
+      }
+    },
+    reset: fn() {},
+  }
+  let child2 : ExactNode = {
+    name: "error-child",
+    needs_value: false,
+    try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult {
+      Error(parse_error("test error", kind=InvalidValue))
+    },
+    reset: fn() {},
+  }
+  let serial = make_serial_node("test-serial", [child1, child2])
+  match (serial.try_reduce)(["--", "bar"], 0) {
+    Error(_) => () // expected
+    Accept(..) => fail("expected Error, got Accept")
+    Reject => fail("expected Error, got Reject")
+  }
+}
+
+///|
+test "serial_node: reset resets all children" {
+  let v1 : Ref[Bool] = { val: true }
+  let v2 : Ref[Bool] = { val: true }
+  let child1 : ExactNode = {
+    name: "a",
+    needs_value: false,
+    try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult { Reject },
+    reset: fn() { v1.val = false },
+  }
+  let child2 : ExactNode = {
+    name: "b",
+    needs_value: false,
+    try_reduce: fn(_args : Array[String], _pos : Int) -> TryResult { Reject },
+    reset: fn() { v2.val = false },
+  }
+  let serial = make_serial_node("test-serial", [child1, child2])
+  inspect(v1.val, content="true")
+  inspect(v2.val, content="true")
+  (serial.reset)()
+  inspect(v1.val, content="false")
+  inspect(v2.val, content="false")
+}
+
+///|
+test "serial_node: empty children => Accept with consumed=0" {
+  let serial = make_serial_node("empty-serial", [])
+  match (serial.try_reduce)(["foo"], 0) {
+    Accept(consumed~, commit~) => {
+      inspect(consumed, content="0")
+      commit() // no-op, should not crash
+    }
+    Reject => fail("expected Accept, got Reject")
+    Error(_) => fail("expected Accept, got Error")
+  }
+}
+
+///|
+test "serial_node: pos offset correctly forwarded to children" {
+  // child1: matches "a" at pos
+  let child1 : ExactNode = {
+    name: "a",
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos < args.length() && args[pos] == "a" {
+        Accept(consumed=1, commit=fn() {})
+      } else {
+        Reject
+      }
+    },
+    reset: fn() {},
+  }
+  // child2: matches "b" at pos
+  let child2 : ExactNode = {
+    name: "b",
+    needs_value: false,
+    try_reduce: fn(args : Array[String], pos : Int) -> TryResult {
+      if pos < args.length() && args[pos] == "b" {
+        Accept(consumed=1, commit=fn() {})
+      } else {
+        Reject
+      }
+    },
+    reset: fn() {},
+  }
+  let serial = make_serial_node("ab-serial", [child1, child2])
+  // Starting at pos=1, args[1]="a", args[2]="b"
+  let args = ["x", "a", "b", "y"]
+  match (serial.try_reduce)(args, 1) {
+    Accept(consumed~, ..) => inspect(consumed, content="2")
+    Reject => fail("expected Accept, got Reject")
+    Error(_) => fail("expected Accept, got Error")
+  }
+  // Starting at pos=0: args[0]="x" doesn't match "a" => Reject
+  match (serial.try_reduce)(args, 0) {
+    Reject => () // expected
+    Accept(..) => fail("expected Reject, got Accept")
+    Error(_) => fail("expected Reject, got Error")
+  }
+}
