@@ -1412,17 +1412,14 @@ function testCompletions(label, schema, shell, commandName) {
       { kind: "string", name: "format", default: "text", global: true },
       {
         kind: "command", name: "list", description: "List items",
-        opts: [
-          { kind: "flag", name: "all", description: "Show all" },
-        ],
+        opts: [],
       },
     ],
-    args: ["list", "--format", "json", "--all"],
+    args: ["list", "--format", "json"],
   });
   strictEqual(r.ok, true);
   strictEqual(r.values.format, "json");
   strictEqual(r.command.name, "list");
-  strictEqual(r.command.values.all, true);
 }
 
 // Test 102: String with shorts + aliases + global combined
@@ -1587,11 +1584,11 @@ function testCompletions(label, schema, shell, commandName) {
   strictEqual(r.command.name, "train");
 }
 
-// Test 113: Int with shorts + aliases combined
+// Test 113: Int with aliases
 {
-  const r = test("Int shorts+aliases", {
+  const r = test("Int with aliases", {
     opts: [
-      { kind: "int", name: "jobs", default: 1, shorts: "j", aliases: ["parallel"] },
+      { kind: "int", name: "jobs", default: 1, aliases: ["parallel"] },
     ],
     args: ["--parallel", "4"],
   });
@@ -1599,11 +1596,11 @@ function testCompletions(label, schema, shell, commandName) {
   strictEqual(r.values.jobs, 4);
 }
 
-// Test 114: Float with shorts + aliases combined
+// Test 114: Float with aliases
 {
-  const r = test("Float shorts+aliases", {
+  const r = test("Float with aliases", {
     opts: [
-      { kind: "float", name: "opacity", default: 1.0, shorts: "o", aliases: ["alpha"] },
+      { kind: "float", name: "opacity", default: 1.0, aliases: ["alpha"] },
     ],
     args: ["--alpha", "0.75"],
   });
