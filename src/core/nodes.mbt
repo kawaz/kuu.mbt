@@ -12,6 +12,39 @@ fn make_exact_node(
 }
 
 ///|
+/// Core primitive: creates an on_match callback for flag/count patterns.
+/// OC phase: pending.val = transform(pending.val)
+/// P phase (commit): cell.val = pending.val
+fn[T] make_flag_on_match(
+  pending : Ref[T],
+  cell : Ref[T],
+  transform : (T) -> T,
+) -> () -> () -> Unit {
+  fn() {
+    pending.val = transform(pending.val)
+    fn() { cell.val = pending.val }
+  }
+}
+
+///|
+/// Variant with explicit committed flag management (for variation nodes).
+fn[T] make_flag_on_match_with_committed(
+  pending : Ref[T],
+  cell : Ref[T],
+  committed : Ref[Bool],
+  transform : (T) -> T,
+  commit_flag : Bool,
+) -> () -> () -> Unit {
+  fn() {
+    pending.val = transform(pending.val)
+    fn() {
+      cell.val = pending.val
+      committed.val = commit_flag
+    }
+  }
+}
+
+///|
 fn make_flag_node(
   name : String,
   on_match : () -> () -> Unit,

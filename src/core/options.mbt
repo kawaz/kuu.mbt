@@ -117,10 +117,9 @@ pub fn Parser::flag(
     vc.cell.val = initial_val
     pending.val = initial_val
   }
-  let positive_match = fn() {
-    pending.val = not(initial_val)
-    fn() { vc.cell.val = pending.val }
-  }
+  let positive_match = make_flag_on_match(
+    pending, vc.cell, fn(_p) { not(initial_val) },
+  )
   let opt = self.register_option(
     name~,
     aliases~,
@@ -136,76 +135,51 @@ pub fn Parser::flag(
     valcell=vc,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
     make_node_for_variation=fn(vn, v) {
+      let var_reset = fn() {
+        vc.cell.val = initial_val
+        pending.val = initial_val
+        vc.committed.val = false
+      }
       match v {
         Toggle(_) =>
           make_flag_node(
             vn,
-            fn() {
-              fn() {
-                vc.cell.val = not(vc.cell.val)
-                vc.committed.val = true
-              }
-            },
-            fn() {
-              vc.cell.val = initial_val
-              vc.committed.val = false
-            },
+            make_flag_on_match_with_committed(
+              pending, vc.cell, vc.committed, fn(p) { not(p) }, true,
+            ),
+            var_reset,
           )
         True(_) =>
           make_flag_node(
             vn,
-            fn() {
-              fn() {
-                vc.cell.val = true
-                vc.committed.val = true
-              }
-            },
-            fn() {
-              vc.cell.val = initial_val
-              vc.committed.val = false
-            },
+            make_flag_on_match_with_committed(
+              pending, vc.cell, vc.committed, fn(_p) { true }, true,
+            ),
+            var_reset,
           )
         False(_) =>
           make_flag_node(
             vn,
-            fn() {
-              fn() {
-                vc.cell.val = false
-                vc.committed.val = true
-              }
-            },
-            fn() {
-              vc.cell.val = initial_val
-              vc.committed.val = false
-            },
+            make_flag_on_match_with_committed(
+              pending, vc.cell, vc.committed, fn(_p) { false }, true,
+            ),
+            var_reset,
           )
         Reset(_) =>
           make_flag_node(
             vn,
-            fn() {
-              fn() {
-                vc.cell.val = initial_val
-                vc.committed.val = true
-              }
-            },
-            fn() {
-              vc.cell.val = initial_val
-              vc.committed.val = false
-            },
+            make_flag_on_match_with_committed(
+              pending, vc.cell, vc.committed, fn(_p) { initial_val }, true,
+            ),
+            var_reset,
           )
         Unset(_) =>
           make_flag_node(
             vn,
-            fn() {
-              fn() {
-                vc.cell.val = initial_val
-                vc.committed.val = false
-              }
-            },
-            fn() {
-              vc.cell.val = initial_val
-              vc.committed.val = false
-            },
+            make_flag_on_match_with_committed(
+              pending, vc.cell, vc.committed, fn(_p) { initial_val }, false,
+            ),
+            var_reset,
           )
       }
     },
@@ -688,10 +662,9 @@ pub fn Parser::count(
     vc.cell.val = 0
     pending.val = 0
   }
-  let positive_match = fn() {
-    pending.val = pending.val + 1
-    fn() { vc.cell.val = pending.val }
-  }
+  let positive_match = make_flag_on_match(
+    pending, vc.cell, fn(p) { p + 1 },
+  )
   let opt = self.register_option(
     name~,
     aliases~,
@@ -707,38 +680,27 @@ pub fn Parser::count(
     valcell=vc,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
     make_node_for_variation=fn(vn, v) {
+      let var_reset = fn() {
+        vc.cell.val = 0
+        pending.val = 0
+        vc.committed.val = false
+      }
       match v {
         Reset(_) | Toggle(_) | True(_) | False(_) =>
           make_flag_node(
             vn,
-            fn() {
-              pending.val = 0
-              fn() {
-                vc.cell.val = pending.val
-                vc.committed.val = true
-              }
-            },
-            fn() {
-              vc.cell.val = 0
-              pending.val = 0
-              vc.committed.val = false
-            },
+            make_flag_on_match_with_committed(
+              pending, vc.cell, vc.committed, fn(_p) { 0 }, true,
+            ),
+            var_reset,
           )
         Unset(_) =>
           make_flag_node(
             vn,
-            fn() {
-              pending.val = 0
-              fn() {
-                vc.cell.val = pending.val
-                vc.committed.val = false
-              }
-            },
-            fn() {
-              vc.cell.val = 0
-              pending.val = 0
-              vc.committed.val = false
-            },
+            make_flag_on_match_with_committed(
+              pending, vc.cell, vc.committed, fn(_p) { 0 }, false,
+            ),
+            var_reset,
           )
       }
     },
