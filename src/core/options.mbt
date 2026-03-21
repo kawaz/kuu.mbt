@@ -111,7 +111,7 @@ pub fn Parser::flag(
     Some(f) => f()
     None => default
   }
-  let vc : ValCell[Bool] = ValCell::new(Val(initial_val))
+  let (vc, acc) = make_value_cell(initial=initial_val)
   let pending : Ref[Bool] = { val: initial_val }
   let reset_fn = fn() {
     vc.cell.val = initial_val
@@ -133,6 +133,7 @@ pub fn Parser::flag(
     kind=Flag,
     variations~,
     valcell=vc,
+    accessor=acc,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
     make_node_for_variation=fn(vn, v) {
       let var_reset = fn() {
@@ -656,7 +657,7 @@ pub fn Parser::count(
     variation_reset~,
     variation_unset~,
   )
-  let vc : ValCell[Int] = ValCell::new(Val(0))
+  let (vc, acc) = make_value_cell(initial=0)
   let pending : Ref[Int] = { val: 0 }
   let reset_fn = fn() {
     vc.cell.val = 0
@@ -678,6 +679,7 @@ pub fn Parser::count(
     kind=Flag,
     variations~,
     valcell=vc,
+    accessor=acc,
     make_main_node=fn(n) { make_flag_node(n, positive_match, reset_fn) },
     make_node_for_variation=fn(vn, v) {
       let var_reset = fn() {
@@ -785,7 +787,7 @@ pub fn[T : Show] Parser::custom(
   } else {
     description
   }
-  let vc : ValCell[T] = ValCell::new(Val(initial_val))
+  let (vc, acc) = make_value_cell(initial=initial_val)
   let has_choices = choices.length() > 0
   let has_implicit = implicit_value is Some(_)
 
@@ -891,6 +893,7 @@ pub fn[T : Show] Parser::custom(
     kind=ValueOpt,
     variations~,
     valcell=vc,
+    accessor=acc,
     make_main_node=make_main,
     make_node_for_variation=make_var_node,
   )
@@ -982,8 +985,8 @@ pub fn[T] Parser::append(
   pre~ : FilterChain[String, T],
 ) -> Opt[Array[T]] {
   let env = self.effective_env_name(env, name, visibility)
-  // DR-061 Phase 2: make_parallel_cell で ValCell + push/reset を一括生成
-  let (vc, push_fn, reset_fn) = make_parallel_cell()
+  // DR-061 Phase 2: make_parallel_cell で ValCell + accessor + push/reset を一括生成
+  let (vc, acc, push_fn, reset_fn) = make_parallel_cell()
   let display_value_name = if value_name == "" {
     name.to_upper()
   } else {
@@ -1002,6 +1005,7 @@ pub fn[T] Parser::append(
     kind=ValueOpt,
     variations~,
     valcell=vc,
+    accessor=acc,
     make_main_node=fn(opt_n) {
       make_value_node(
         opt_n,

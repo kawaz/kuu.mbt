@@ -19,7 +19,7 @@ pub fn Parser::dashdash(
   stop_before? : Array[String] = [],
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
-  let vc : ValCell[Array[String]] = ValCell::new(Thunk(fn() { [] }))
+  let (vc, acc) = make_value_cell_lazy(initial=Thunk(fn() { [] }))
   let sep = separator
   let stop = stop_before
   let exact_node = make_exact_node(
@@ -40,7 +40,7 @@ pub fn Parser::dashdash(
   {
     id,
     name: separator,
-    accessor: vc.accessor(),
+    accessor: acc,
     parsed: self.parsed,
     used: fn() { vc.committed.val },
   }
@@ -53,7 +53,7 @@ pub fn Parser::append_dashdash(
   stop_before? : Array[String] = [],
 ) -> Opt[Array[Array[String]]] {
   let id = (self.next_id)()
-  let vc : ValCell[Array[Array[String]]] = ValCell::new(Thunk(fn() { [] }))
+  let (vc, acc) = make_value_cell_lazy(initial=Thunk(fn() { [] }))
   let sep = separator
   let stop = stop_before
   let exact_node = make_exact_node(
@@ -76,7 +76,7 @@ pub fn Parser::append_dashdash(
   {
     id,
     name: separator,
-    accessor: vc.accessor(),
+    accessor: acc,
     parsed: self.parsed,
     used: fn() { vc.committed.val },
   }

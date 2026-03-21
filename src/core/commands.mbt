@@ -37,7 +37,7 @@ pub fn Parser::cmd(
     self.duplicate_errors.push("command name must not be empty")
   }
   let id = (self.next_id)()
-  let vc : ValCell[CmdResult?] = ValCell::new(Val(None))
+  let (vc, _acc) = make_value_cell(initial=(None : CmdResult?))
   let child_nodes : Array[ExactNode] = []
   let child_global_nodes : Array[ExactNode] = []
   for gnode in self.global_nodes {

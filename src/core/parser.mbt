@@ -153,6 +153,7 @@ fn[T] Parser::register_option(
   kind~ : OptKind,
   variations~ : Array[Variation],
   valcell~ : ValCell[T],
+  accessor~ : Accessor[T],
   make_main_node~ : (String) -> ExactNode,
   make_node_for_variation~ : (String, Variation) -> ExactNode,
 ) -> Opt[T] {
@@ -210,7 +211,7 @@ fn[T] Parser::register_option(
   {
     id,
     name: "--" + name,
-    accessor: valcell.accessor(),
+    accessor,
     parsed: self.parsed,
     used: fn() { valcell.committed.val },
   }

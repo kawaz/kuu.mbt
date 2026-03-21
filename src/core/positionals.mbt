@@ -26,7 +26,7 @@ pub fn Parser::positional(
   greedy? : Bool = false,
 ) -> Opt[String] {
   let id = (self.next_id)()
-  let vc : ValCell[String] = ValCell::new(Val(""))
+  let (vc, acc) = make_value_cell(initial="")
   let pending : Ref[String] = { val: "" }
   ignore(name)
   let handler : (Array[String], Int) -> TryResult = fn(
@@ -60,7 +60,7 @@ pub fn Parser::positional(
   {
     id,
     name,
-    accessor: vc.accessor(),
+    accessor: acc,
     parsed: self.parsed,
     used: fn() { vc.committed.val },
   }
@@ -92,7 +92,7 @@ pub fn Parser::rest(
   stop_before? : Array[String] = [],
 ) -> Opt[Array[String]] {
   let id = (self.next_id)()
-  let vc : ValCell[Array[String]] = ValCell::new(Thunk(fn() { [] }))
+  let (vc, acc) = make_value_cell_lazy(initial=Thunk(fn() { [] }))
   ignore(name)
   let stop = stop_before
   let handler : (Array[String], Int) -> TryResult = fn(
@@ -133,7 +133,7 @@ pub fn Parser::rest(
   {
     id,
     name,
-    accessor: vc.accessor(),
+    accessor: acc,
     parsed: self.parsed,
     used: fn() { vc.committed.val },
   }

@@ -313,17 +313,18 @@ fn[T] make_value_cell_lazy(initial~ : Lazy[T]) -> (ValCell[T], Accessor[T]) {
 /// DR-061 Phase 2: parallel(Opt[T]) -> Opt[Array[T]] の共通基盤。
 /// append と rest が共有する「配列に要素を蓄積する」パターンを抽出。
 ///
-/// Returns (valcell, push_fn, reset_fn) where:
+/// Returns (valcell, accessor, push_fn, reset_fn) where:
+/// - accessor is the raw Accessor for the underlying Array[T] cell
 /// - push_fn(v) appends v to the array and marks committed
 /// - reset_fn() resets to a fresh empty array and clears committed
-fn[T] make_parallel_cell() -> (ValCell[Array[T]], (T) -> Unit, () -> Unit) {
+fn[T] make_parallel_cell() -> (ValCell[Array[T]], Accessor[Array[T]], (T) -> Unit, () -> Unit) {
   let (vc, acc) = make_value_cell_lazy(initial=Thunk(fn() { [] }))
   let push = fn(v : T) {
     (acc.get)().push(v)
     (acc.set_commit)()
   }
   let reset = fn() { (acc.reset)() }
-  (vc, push, reset)
+  (vc, acc, push, reset)
 }
 
 ///|
