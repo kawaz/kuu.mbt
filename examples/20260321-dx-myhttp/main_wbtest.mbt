@@ -98,7 +98,7 @@ test "post: missing data is error" {
     ["post", "https://example.com"],
     c,
   )
-  assert_true(result is Err(_))
+  assert_true(result is Err(@core.ParseError(_)))
 }
 
 // --- Global option tests ---
@@ -124,7 +124,7 @@ test "global: format and compact exclusive" {
     ["get", "https://example.com", "--format", "json", "--compact"],
     c,
   )
-  assert_true(result is Err(_))
+  assert_true(result is Err(@core.ParseError(_)))
 }
 
 ///|
@@ -141,13 +141,27 @@ test "global: default follow-redirects" {
   assert_eq(c.follow_redirects, true)
 }
 
+///|
+test "global: rate-limit float" {
+  let c = Config::default()
+  @dx.parse_into(["get", "https://example.com", "--rate-limit", "2.5"], c)
+  assert_eq(c.rate_limit, 2.5)
+}
+
+///|
+test "global: rate-limit default" {
+  let c = Config::default()
+  @dx.parse_into(["get", "https://example.com"], c)
+  assert_eq(c.rate_limit, 0.0)
+}
+
 // --- Error cases ---
 
 ///|
 test "error: no subcommand" {
   let c = Config::default()
   let result : Result[Unit, @core.ParseError] = try? @dx.parse_into([], c)
-  assert_true(result is Err(_))
+  assert_true(result is Err(@core.ParseError(_)))
 }
 
 ///|
@@ -157,7 +171,7 @@ test "error: unknown option" {
     ["get", "https://example.com", "--unknown"],
     c,
   )
-  assert_true(result is Err(_))
+  assert_true(result is Err(@core.ParseError(_)))
 }
 
 // --- Isolation: unselected subcommand fields stay default ---

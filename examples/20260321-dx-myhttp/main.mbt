@@ -8,7 +8,7 @@
 /// This example showcases the struct-first DX API:
 /// - Parseable trait implementation
 /// - Subcommands with nested options
-/// - Various option types: flag, string, int, count, append_string, boolean
+/// - Various option types: flag, string, int, float, count, append_string, boolean
 /// - Constraints: exclusive, required
 /// - Global options, shorts, aliases
 struct Config {
@@ -16,6 +16,7 @@ struct Config {
   mut format : String
   mut compact : Bool
   mut timeout : Int
+  mut rate_limit : Double
   mut follow_redirects : Bool
   mut command : Command
   mut get_url : String
@@ -38,6 +39,7 @@ fn Config::default() -> Config {
     format: "text",
     compact: false,
     timeout: 30,
+    rate_limit: 0.0,
     follow_redirects: true,
     command: None,
     get_url: "",
@@ -74,6 +76,13 @@ impl @dx.Parseable for Config with register(self, reg) {
     description="Request timeout in seconds",
     global=true,
     set=fn(v) { self.timeout = v },
+  )
+  reg.float(
+    name="rate-limit",
+    default=0.0,
+    description="Request rate limit (requests/sec, 0=unlimited)",
+    global=true,
+    set=fn(v) { self.rate_limit = v },
   )
   reg.boolean(
     name="follow-redirects",

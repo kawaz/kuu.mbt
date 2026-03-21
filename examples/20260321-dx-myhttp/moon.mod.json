@@ -1,6 +1,5 @@
 {
   "name": "kawaz/myhttp",
-  "version": "0.1.0",
   "deps": {
     "kawaz/kuu": {
       "path": "../.."
