@@ -192,7 +192,12 @@ pub fn Parser::sub(
       child_ref.val = Some(child)
     }),
   )
-  child_ref.val.unwrap()
+  // Design rationale: setup callback is always invoked synchronously by cmd(),
+  // but match is safer than unwrap() against future refactoring.
+  match child_ref.val {
+    Some(parser) => parser
+    None => abort("Parser::sub: setup callback was not executed by cmd()")
+  }
 }
 
 ///|

@@ -73,7 +73,10 @@ pub fn Filter::parse_int() -> FilterChain[String, Int] {
     let r : Result[Int, _] = try? @strconv.parse_int(s.view())
     match r {
       Ok(v) => v
-      Err(_) => raise parse_error("invalid integer: " + s)
+      Err(_) =>
+        raise parse_error(
+          "invalid integer: " + s + " (expected e.g. '42', '-10')",
+        )
     }
   })
 }
@@ -85,7 +88,10 @@ pub fn Filter::parse_float() -> FilterChain[String, Double] {
     let r : Result[Double, _] = try? @strconv.parse_double(s.view())
     match r {
       Ok(v) => v
-      Err(_) => raise parse_error("invalid float: " + s)
+      Err(_) =>
+        raise parse_error(
+          "invalid float: " + s + " (expected e.g. '3.14', '-1.5e2')",
+        )
     }
   })
 }

@@ -345,7 +345,7 @@ test "structured error: InvalidValue" {
       inspect(
         info.to_string(),
         content=(
-          #|error: invalid integer: abc
+          #|error: invalid integer: abc (expected e.g. '42', '-10')
           #|
           #|Usage: [OPTIONS]
           #|
