@@ -71,7 +71,7 @@ pub fn FieldRegistry::boolean(
   aliases? : Array[String] = [],
   env? : String = "",
   visibility? : @core.Visibility = Visible,
-  value_name? : String = "",
+  value_name? : String = "BOOL",
   set~ : (Bool) -> Unit,
 ) -> Unit {
   ignore(
@@ -102,7 +102,7 @@ pub fn FieldRegistry::boolean_ref(
   aliases? : Array[String] = [],
   env? : String = "",
   visibility? : @core.Visibility = Visible,
-  value_name? : String = "",
+  value_name? : String = "BOOL",
   set~ : (Bool) -> Unit,
 ) -> @core.OptRef {
   self.custom_ref(
@@ -309,7 +309,7 @@ pub fn FieldRegistry::append_int(
   aliases? : Array[String] = [],
   env? : String = "",
   visibility? : @core.Visibility = Visible,
-  value_name? : String = "",
+  value_name? : String = "INT",
   set~ : (Array[Int]) -> Unit,
 ) -> Unit {
   ignore(
@@ -338,7 +338,7 @@ pub fn FieldRegistry::append_int_ref(
   aliases? : Array[String] = [],
   env? : String = "",
   visibility? : @core.Visibility = Visible,
-  value_name? : String = "",
+  value_name? : String = "INT",
   set~ : (Array[Int]) -> Unit,
 ) -> @core.OptRef {
   self.append_ref(
@@ -366,7 +366,7 @@ pub fn FieldRegistry::append_float(
   aliases? : Array[String] = [],
   env? : String = "",
   visibility? : @core.Visibility = Visible,
-  value_name? : String = "",
+  value_name? : String = "FLOAT",
   set~ : (Array[Double]) -> Unit,
 ) -> Unit {
   ignore(
@@ -395,7 +395,7 @@ pub fn FieldRegistry::append_float_ref(
   aliases? : Array[String] = [],
   env? : String = "",
   visibility? : @core.Visibility = Visible,
-  value_name? : String = "",
+  value_name? : String = "FLOAT",
   set~ : (Array[Double]) -> Unit,
 ) -> @core.OptRef {
   self.append_ref(
@@ -424,7 +424,7 @@ pub fn FieldRegistry::int(
   aliases? : Array[String] = [],
   env? : String = "",
   visibility? : @core.Visibility = Visible,
-  value_name? : String = "",
+  value_name? : String = "INT",
   set~ : (Int) -> Unit,
 ) -> Unit {
   ignore(
@@ -455,7 +455,7 @@ pub fn FieldRegistry::int_ref(
   aliases? : Array[String] = [],
   env? : String = "",
   visibility? : @core.Visibility = Visible,
-  value_name? : String = "",
+  value_name? : String = "INT",
   set~ : (Int) -> Unit,
 ) -> @core.OptRef {
   self.custom_ref(
@@ -485,7 +485,7 @@ pub fn FieldRegistry::float(
   aliases? : Array[String] = [],
   env? : String = "",
   visibility? : @core.Visibility = Visible,
-  value_name? : String = "",
+  value_name? : String = "FLOAT",
   set~ : (Double) -> Unit,
 ) -> Unit {
   ignore(
@@ -576,7 +576,7 @@ pub fn FieldRegistry::float_ref(
   aliases? : Array[String] = [],
   env? : String = "",
   visibility? : @core.Visibility = Visible,
-  value_name? : String = "",
+  value_name? : String = "FLOAT",
   set~ : (Double) -> Unit,
 ) -> @core.OptRef {
   self.custom_ref(

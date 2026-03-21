@@ -269,7 +269,7 @@ test "structured error: UnknownOption with suggestion" {
         info.to_string(),
         content=(
           #|error: unexpected argument: --prot
-          #|  help:       --port <PORT>  ポート番号を指定 [default: 8080]
+          #|  help:       --port <INT>  ポート番号を指定 [default: 8080]
           #|  tip: a similar option exists: '--port'
           #|
           #|Usage: [OPTIONS]
