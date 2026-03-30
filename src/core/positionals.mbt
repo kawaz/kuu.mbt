@@ -280,7 +280,7 @@ pub fn Parser::serial(
       match (entry.handler)(args, p) {
         Accept(consumed~, commit~) => {
           commits.push(commit)
-          if not(entry.is_rest) {
+          if !(entry.is_rest) {
             next_pos_idx += 1
           }
           p += consumed

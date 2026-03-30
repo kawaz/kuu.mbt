@@ -6,10 +6,10 @@ fn inject_help_node(parser : Parser) -> Unit {
       return
     }
   }
-  let added_long = not(parser.registered_names.contains("--help"))
-  let added_short = not(parser.registered_names.contains("-h"))
+  let added_long = !(parser.registered_names.contains("--help"))
+  let added_short = !(parser.registered_names.contains("-h"))
   // Skip entirely if both names are already taken by user-defined options
-  if not(added_long) && not(added_short) {
+  if !(added_long) && !(added_short) {
     return
   }
   if added_long {
@@ -131,12 +131,12 @@ pub fn Parser::generate_help(self : Parser) -> String {
   let buf = StringBuilder::new()
   // 0. Header (Level 1 customization)
   let header = self.help_header_text.val
-  if not(header.is_empty()) {
+  if !(header.is_empty()) {
     buf.write_string(header)
   }
   // 1. Description
   let desc = self.description.val
-  if not(desc.is_empty()) {
+  if !(desc.is_empty()) {
     buf.write_string(desc)
     buf.write_char('\n')
     buf.write_char('\n')
@@ -153,7 +153,7 @@ pub fn Parser::generate_help(self : Parser) -> String {
     for cmd in commands {
       let left = format_cmd_left(cmd)
       buf.write_string(left)
-      if not(cmd.help.is_empty()) {
+      if !(cmd.help.is_empty()) {
         let padding = max_left - left.char_length() + 2
         let pad_str = String::make(padding, ' ')
         buf.write_string(pad_str)
@@ -170,7 +170,7 @@ pub fn Parser::generate_help(self : Parser) -> String {
     for arg in arguments {
       let left = format_arg_left(arg)
       buf.write_string(left)
-      if not(arg.help.is_empty()) {
+      if !(arg.help.is_empty()) {
         let padding = max_left - left.char_length() + 2
         let pad_str = String::make(padding, ' ')
         buf.write_string(pad_str)
@@ -193,7 +193,7 @@ pub fn Parser::generate_help(self : Parser) -> String {
   }
   // Footer (Level 1 customization)
   let footer = self.help_footer_text.val
-  if not(footer.is_empty()) {
+  if !(footer.is_empty()) {
     buf.write_string(footer)
     buf.write_char('\n')
   }
@@ -397,7 +397,7 @@ fn Parser::generate_fish_completion(
         buf.write_string(command_name)
         buf.write_string(" -n '__fish_use_subcommand' -a ")
         buf.write_string(meta.name)
-        if not(meta.help.is_empty()) {
+        if !(meta.help.is_empty()) {
           buf.write_string(" -d '")
           buf.write_string(meta.help)
           buf.write_char('\'')
@@ -409,7 +409,7 @@ fn Parser::generate_fish_completion(
           buf.write_string(command_name)
           buf.write_string(" -n '__fish_use_subcommand' -a ")
           buf.write_string(alt)
-          if not(meta.help.is_empty()) {
+          if !(meta.help.is_empty()) {
             buf.write_string(" -d '")
             buf.write_string(meta.help)
             buf.write_char('\'')
@@ -427,7 +427,7 @@ fn Parser::generate_fish_completion(
           buf.write_string(" -s ")
           buf.write_string(s)
         }
-        if not(meta.help.is_empty()) {
+        if !(meta.help.is_empty()) {
           buf.write_string(" -d '")
           buf.write_string(meta.help)
           buf.write_char('\'')
@@ -439,7 +439,7 @@ fn Parser::generate_fish_completion(
           buf.write_string(command_name)
           buf.write_string(" -l ")
           buf.write_string(alt)
-          if not(meta.help.is_empty()) {
+          if !(meta.help.is_empty()) {
             buf.write_string(" -d '")
             buf.write_string(meta.help)
             buf.write_char('\'')
@@ -497,7 +497,7 @@ fn format_opt_left(meta : OptMeta) -> String {
     buf.write_string(", ")
     buf.write_string(vname)
   }
-  if not(meta.value_name.is_empty()) {
+  if !(meta.value_name.is_empty()) {
     buf.write_string(" <")
     buf.write_string(meta.value_name)
     buf.write_char('>')
@@ -508,10 +508,10 @@ fn format_opt_left(meta : OptMeta) -> String {
 ///|
 fn format_opt_right(meta : OptMeta, env_prefix? : String = "") -> String {
   let buf = StringBuilder::new()
-  if not(meta.help.is_empty()) {
+  if !(meta.help.is_empty()) {
     buf.write_string(meta.help)
   }
-  if not(meta.env_name.is_empty()) {
+  if !(meta.env_name.is_empty()) {
     buf.write_string(" [env: ")
     if env_prefix != "" {
       buf.write_string(env_prefix)
@@ -520,7 +520,7 @@ fn format_opt_right(meta : OptMeta, env_prefix? : String = "") -> String {
     buf.write_string(meta.env_name)
     buf.write_char(']')
   }
-  if not(meta.default_display.is_empty()) {
+  if !(meta.default_display.is_empty()) {
     buf.write_string(" [default: ")
     buf.write_string(meta.default_display)
     buf.write_char(']')
@@ -559,7 +559,7 @@ fn write_opt_section(
     let left = format_opt_left(meta)
     buf.write_string(left)
     let right = format_opt_right(meta, env_prefix~)
-    if not(right.is_empty()) {
+    if !(right.is_empty()) {
       let padding = max_left - left.char_length() + 2
       let pad_str = String::make(padding, ' ')
       buf.write_string(pad_str)
@@ -616,9 +616,9 @@ fn format_opt_help_line(meta : OptMeta, env_prefix? : String = "") -> String {
 fn Parser::format_error_context(self : Parser, info : ParseErrorInfo) -> String {
   let buf = StringBuilder::new()
   // 1. Contextual help line (opt_name から OptMeta を検索)
-  if not(info.opt_name.is_empty()) {
+  if !(info.opt_name.is_empty()) {
     // tip があればサジェスト先のオプションを表示、なければエラー対象自体を表示
-    let search_name = if not(info.tip.is_empty()) {
+    let search_name = if !(info.tip.is_empty()) {
       info.tip
     } else {
       info.opt_name
@@ -648,7 +648,7 @@ fn Parser::format_error_context(self : Parser, info : ParseErrorInfo) -> String 
       for cmd in commands {
         let left = format_cmd_left(cmd)
         buf.write_string(left)
-        if not(cmd.help.is_empty()) {
+        if !(cmd.help.is_empty()) {
           let padding = max_left - left.char_length() + 2
           let pad_str = String::make(padding, ' ')
           buf.write_string(pad_str)
@@ -659,7 +659,7 @@ fn Parser::format_error_context(self : Parser, info : ParseErrorInfo) -> String 
     }
   }
   // 2. tip line
-  if not(info.tip.is_empty()) {
+  if !(info.tip.is_empty()) {
     buf.write_string("  tip: a similar option exists: '")
     buf.write_string(info.tip)
     buf.write_string("'\n")
@@ -678,7 +678,7 @@ pub fn ParseErrorInfo::to_string(self : ParseErrorInfo) -> String {
   let buf = StringBuilder::new()
   buf.write_string("error: ")
   buf.write_string(self.message)
-  if not(self.error_context.is_empty()) {
+  if !(self.error_context.is_empty()) {
     buf.write_char('\n')
     buf.write_string(self.error_context)
   }

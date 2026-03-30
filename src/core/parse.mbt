@@ -37,13 +37,13 @@ fn levenshtein(a : String, b : String) -> Int {
 
 ///|
 fn suggest_typo(arg : String, registered_names : Map[String, Bool]) -> String? {
-  if not(arg.has_prefix("--")) {
+  if !(arg.has_prefix("--")) {
     return None
   }
   let mut best_name : String? = None
   let mut best_dist = 3 // threshold: distance <= 2
   for name, _ in registered_names {
-    if not(name.has_prefix("--")) {
+    if !(name.has_prefix("--")) {
       continue
     }
     let d = levenshtein(arg, name)
@@ -104,7 +104,7 @@ fn Parser::install_eq_split_node(self : Parser) -> Unit {
         return Reject
       }
       let arg = args[pos]
-      if not(arg.has_prefix("--")) {
+      if !(arg.has_prefix("--")) {
         return Reject
       }
       // "=" を探す
@@ -181,7 +181,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
   for node in self.nodes {
     if @grapheme.graphemes(node.name).length() == 2 &&
       node.name.has_prefix("-") &&
-      not(node.name.has_prefix("--")) {
+      !(node.name.has_prefix("--")) {
       short_nodes.push(node)
     }
   }
@@ -198,7 +198,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
       }
       let arg = args[pos]
       if @grapheme.graphemes(arg).length() <= 2 ||
-        not(arg.has_prefix("-")) ||
+        !(arg.has_prefix("-")) ||
         arg.has_prefix("--") {
         return Reject
       }
@@ -246,7 +246,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
             for node in matching {
               // needs_value=false のノード（flag/implicit）は value trial で呼ばない
               // try_reduce の副作用（count の pending 増加等）を防ぐため
-              if not(node.needs_value) {
+              if !(node.needs_value) {
                 continue
               }
               match (node.try_reduce)([short_name, try_value], 0) {
@@ -275,7 +275,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
               break
             }
           }
-          if not(value_accepted) {
+          if !(value_accepted) {
             // value trial 全失敗 → flag trial を全ノードで試す
             let mut flag_accepted = false
             for node in matching {
@@ -292,7 +292,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
                 Error(_) | Reject => ()
               }
             }
-            if not(flag_accepted) {
+            if !(flag_accepted) {
               return Reject
             }
           }
@@ -310,7 +310,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
               Error(_) | Reject => ()
             }
           }
-          if not(flag_accepted) {
+          if !(flag_accepted) {
             // flag trial 全失敗 → 次の外引数で value trial
             if pos + 1 < args.length() {
               let mut ext_accepted = false
@@ -327,7 +327,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
                   Reject => ()
                 }
               }
-              if not(ext_accepted) {
+              if !(ext_accepted) {
                 return Error(
                   parse_error(
                     "missing value for " + short_name,
@@ -451,7 +451,7 @@ fn Parser::parse_raw(
             match (entry.handler)(args, pos) {
               Accept(consumed~, commit~) => {
                 commit()
-                if not(entry.is_rest) {
+                if !(entry.is_rest) {
                   self.current_positional.val = idx + 1
                 }
                 pos = pos + consumed
@@ -462,7 +462,7 @@ fn Parser::parse_raw(
             }
           }
         }
-        if not(consumed_by_greedy) {
+        if !(consumed_by_greedy) {
           // unclaimed — P フェーズで処理
           unclaimed.push(args[pos])
           pos += 1
@@ -503,7 +503,7 @@ fn Parser::parse_raw(
     match (entry.handler)(unclaimed, upos) {
       Accept(consumed~, commit~) => {
         commit()
-        if not(entry.is_rest) {
+        if !(entry.is_rest) {
           self.current_positional.val = idx + 1
         }
         upos += consumed

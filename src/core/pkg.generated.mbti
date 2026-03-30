@@ -39,9 +39,7 @@ pub(all) enum ErrorKind {
   AtLeastOneRequired
   DependencyMissing
   ParseAlreadyCalled
-}
-pub impl Eq for ErrorKind
-pub impl Show for ErrorKind
+} derive(Eq, Show)
 
 pub(all) struct ExactNode {
   name : String
@@ -121,9 +119,7 @@ pub(all) enum OptKind {
   Command
   Positional
   Rest
-}
-pub impl Eq for OptKind
-pub impl Show for OptKind
+} derive(Eq, Show)
 
 pub(all) struct OptMeta {
   kind : OptKind
@@ -248,9 +244,7 @@ pub(all) struct PositionalEntry {
 
 pub(all) enum ReduceAction {
   Value(String?)
-}
-pub impl Eq for ReduceAction
-pub impl Show for ReduceAction
+} derive(Eq, Show)
 
 pub(all) struct ReduceCtx[T] {
   current : T
@@ -269,17 +263,13 @@ pub(all) enum Variation {
   False(String)
   Reset(String)
   Unset(String)
-}
-pub impl Eq for Variation
-pub impl Show for Variation
+} derive(Eq, Show)
 
 pub(all) enum Visibility {
   Visible
   Advanced
   Hidden
-}
-pub impl Eq for Visibility
-pub impl Show for Visibility
+} derive(Eq, Show)
 
 // Type aliases
 pub type Accumulator[T, U] = (T, U) -> T

@@ -50,7 +50,7 @@ fn make_color_rgb_node(opt_name : String, cell : Ref[TestColor]) -> ExactNode {
         return Reject
       }
       let parse_int = fn(s : String) -> Int? {
-        let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+        let r : Result[Int, _] = try? @string.parse_int(s.view())
         match r {
           Ok(v) => Some(v)
           Err(_) => None
@@ -3824,7 +3824,7 @@ test "adjust: rest with after_post transforms array" {
   p.adjust(
     args,
     after_post=Filter::map(fn(arr : Array[String]) {
-      arr.filter(fn(s) { not(s.is_empty()) })
+      arr.filter(fn(s) { !(s.is_empty()) })
     }),
   )
   ignore(p.parse(["hello", "", "world", ""]))
@@ -3868,7 +3868,7 @@ test "adjust: flag with after_post transforms bool" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   // after_post で Bool を反転
-  p.adjust(verbose, after_post=Filter::map(fn(v : Bool) { not(v) }))
+  p.adjust(verbose, after_post=Filter::map(fn(v : Bool) { !(v) }))
   ignore(p.parse(["--verbose"]))
   // true → not → false
   inspect(verbose.get(), content="Some(false)")

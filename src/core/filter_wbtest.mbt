@@ -36,7 +36,7 @@ test "Filter::validate — failure raises ParseError" {
 ///|
 test "Filter::parse — successful conversion" {
   let chain = Filter::parse(fn(s : String) raise ParseError {
-    let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+    let r : Result[Int, _] = try? @string.parse_int(s.view())
     match r {
       Ok(v) => v
       Err(_) => raise parse_error("not an int")
@@ -52,7 +52,7 @@ test "Filter::parse — successful conversion" {
 ///|
 test "Filter::parse — failure raises ParseError" {
   let chain = Filter::parse(fn(s : String) raise ParseError {
-    let r : Result[Int, _] = try? @strconv.parse_int(s.view())
+    let r : Result[Int, _] = try? @string.parse_int(s.view())
     match r {
       Ok(v) => v
       Err(_) => raise parse_error("not an int")
