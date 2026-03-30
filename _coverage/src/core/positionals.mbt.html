@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8"/>
     <title>positionals.mbt &mdash; </title>
-    <meta name="description" content="92.65% coverage in src/core/positionals.mbt">
+    <meta name="description" content="92.54% coverage in src/core/positionals.mbt">
     <link rel="stylesheet" href="../../coverage.css"/>
     <script src="../../highlight.pack.js"></script>
     <script>hljs.initHighlightingOnLoad();</script>
@@ -15,7 +15,7 @@
           <span class="dirname">src/core/</span>positionals.mbt
         </a>
       </h1>
-      <h2>92.65%</h2>
+      <h2>92.54%</h2>
     </div>
     <div id="navbar">
       <span class="unvisited" style="top:11.97%"></span>
@@ -309,7 +309,7 @@
 <a id="L280"></a><span class="visited"> </span>
 <a id="L281"></a><span class="visited"> </span>
 <a id="L282"></a><span class="visited"> </span>
-<a id="L283"></a><span class="visited"> </span>
+<a id="L283"></a><span > </span>
 <a id="L284"></a><span class="visited"> </span>
 <a id="L285"></a><span > </span>
 <a id="L286"></a><span > </span>
@@ -932,7 +932,7 @@ pub fn Parser::serial(
       match <span data-count="45">(</span>entry.handler)(args, p) {
         Accept(consumed~, commit~) =&gt; <span data-count="42">{</span>
           commits.<span data-count="42">p</span>ush(commit)
-          if <span data-count="42">n</span>ot(entry.is_rest) {
+          if !entry.is_rest {
             <span data-count="33">n</span>ext_pos_idx += 1
           }
           p += consumed

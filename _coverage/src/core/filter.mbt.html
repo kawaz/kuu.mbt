@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8"/>
     <title>filter.mbt &mdash; </title>
-    <meta name="description" content="96.19% coverage in src/core/filter.mbt">
+    <meta name="description" content="96.76% coverage in src/core/filter.mbt">
     <link rel="stylesheet" href="../../coverage.css"/>
     <script src="../../highlight.pack.js"></script>
     <script>hljs.initHighlightingOnLoad();</script>
@@ -15,7 +15,7 @@
           <span class="dirname">src/core/</span>filter.mbt
         </a>
       </h1>
-      <h2>96.19%</h2>
+      <h2>96.76%</h2>
     </div>
     <div id="navbar">
       <span class="unvisited" style="bottom:13.61%"></span>
@@ -467,7 +467,7 @@
 <a id="L439"></a><span > </span>
 <a id="L440"></a><span class="visited"> </span>
 <a id="L441"></a><span class="visited"> </span>
-<a id="L442"></a><span class="visited"> </span>
+<a id="L442"></a><span > </span>
 <a id="L443"></a><span > </span>
 <a id="L444"></a><span class="visited"> </span>
 <a id="L445"></a><span > </span>
@@ -1161,7 +1161,7 @@ pub fn Filter::split(sep : String) -&gt; FilterChain[String, Array[String]] {
 /// Parse string to Int
 pub fn Filter::parse_int() -&gt; FilterChain[String, Int] {
   <span data-count="192">F</span>ilter::parse(fn(s) raise ParseError {
-    <span data-count="133">l</span>et r : Result[Int, _] = try? <span data-count="133">@</span>strconv.parse_int(s.<span data-count="133">v</span>iew())
+    <span data-count="133">l</span>et r : Result[Int, _] = try? <span data-count="133">@</span>string.parse_int(s.<span data-count="133">v</span>iew())
     match <span data-count="133">r</span> {
       Ok(v) =&gt; <span data-count="114">v</span>
       Err(_) =&gt;
@@ -1176,7 +1176,7 @@ pub fn Filter::parse_int() -&gt; FilterChain[String, Int] {
 /// Parse string to Double
 pub fn Filter::parse_float() -&gt; FilterChain[String, Double] {
   <span data-count="55">F</span>ilter::parse(fn(s) raise ParseError {
-    <span data-count="28">l</span>et r : Result[Double, _] = try? <span data-count="28">@</span>strconv.parse_double(s.<span data-count="28">v</span>iew())
+    <span data-count="28">l</span>et r : Result[Double, _] = try? <span data-count="28">@</span>string.parse_double(s.<span data-count="28">v</span>iew())
     match <span data-count="28">r</span> {
       Ok(v) =&gt; <span data-count="24">v</span>
       Err(_) =&gt;
@@ -1238,7 +1238,7 @@ pub fn Filter::to_upper() -&gt; FilterChain[String, String] {
 /// Validate that string starts with prefix
 pub fn Filter::starts_with(prefix : String) -&gt; FilterChain[String, String] {
   <span data-count="2">F</span>ilter::validate(fn(s) raise ParseError {
-    <span data-count="2">i</span>f <span data-count="2">n</span>ot(s.<span data-count="2">h</span>as_prefix(prefix)) {
+    <span data-count="2">i</span>f !s.<span data-count="2">h</span>as_prefix(prefix) {
       <span data-count="1">r</span>aise <span data-count="1">p</span>arse_error("value must start with: " + prefix)
     }
   })
@@ -1248,7 +1248,7 @@ pub fn Filter::starts_with(prefix : String) -&gt; FilterChain[String, String] {
 /// Validate that string ends with suffix
 pub fn Filter::ends_with(suffix : String) -&gt; FilterChain[String, String] {
   <span data-count="2">F</span>ilter::validate(fn(s) raise ParseError {
-    <span data-count="2">i</span>f <span data-count="2">n</span>ot(s.<span data-count="2">h</span>as_suffix(suffix)) {
+    <span data-count="2">i</span>f !s.<span data-count="2">h</span>as_suffix(suffix) {
       <span data-count="1">r</span>aise <span data-count="1">p</span>arse_error("value must end with: " + suffix)
     }
   })
@@ -1258,7 +1258,7 @@ pub fn Filter::ends_with(suffix : String) -&gt; FilterChain[String, String] {
 /// Validate that string contains substring
 pub fn Filter::contains(substr : String) -&gt; FilterChain[String, String] {
   <span data-count="2">F</span>ilter::validate(fn(s) raise ParseError {
-    <span data-count="2">i</span>f <span data-count="2">n</span>ot(s.<span data-count="2">c</span>ontains(substr)) {
+    <span data-count="2">i</span>f !s.<span data-count="2">c</span>ontains(substr) {
       <span data-count="1">r</span>aise <span data-count="1">p</span>arse_error("value must contain: " + substr)
     }
   })
@@ -1530,7 +1530,7 @@ pub fn Filter::mergeable_list(
     let is_merge = parts
       .<span data-count="11">i</span>ter()
       .<span data-count="11">a</span>ny(fn(p) { <span data-count="17">p</span>.<span data-count="17">h</span>as_prefix("+") || p.<span data-count="13">h</span>as_prefix("-") || p == "..." })
-    if <span data-count="11">n</span>ot(is_merge) {
+    if !is_merge {
       // Full overwrite: return split parts as-is
       <span data-count="2">r</span>eturn parts
     }
@@ -1560,31 +1560,31 @@ pub fn Filter::mergeable_list(
         <span data-count="7">i</span>f part == "..." {
           // Expand base items not explicitly mentioned
           <span data-count="3">f</span>or b in base {
-            <span data-count="9">i</span>f <span data-count="9">n</span>ot(mentioned.<span data-count="9">c</span>ontains(b)) &amp;&amp; <span data-count="7">n</span>ot(result.<span data-count="7">c</span>ontains(b)) {
+            <span data-count="9">i</span>f !mentioned.<span data-count="9">c</span>ontains(b) &amp;&amp; !result.<span data-count="7">c</span>ontains(b) {
               <span data-count="7">r</span>esult.<span data-count="7">p</span>ush(b)
             }
           }
         } else <span data-count="4">i</span>f part.<span data-count="4">h</span>as_prefix("+") {
           <span data-count="0">l</span>et name = part[1:].<span data-count="0">t</span>o_string()
-          if <span data-count="0">n</span>ot(removals.<span data-count="0">c</span>ontains(name)) &amp;&amp; <span data-count="0">n</span>ot(result.<span data-count="0">c</span>ontains(name)) {
+          if !removals.<span data-count="0">c</span>ontains(name) &amp;&amp; !result.<span data-count="0">c</span>ontains(name) {
             <span data-count="0">r</span>esult.<span data-count="0">p</span>ush(name)
           }
         } else <span data-count="4">i</span>f part.<span data-count="4">h</span>as_prefix("-") {
           // Removal: handled by final removals filter below
           <span data-count="1">(</span>)
-        } else <span data-count="3">i</span>f <span data-count="3">n</span>ot(removals.<span data-count="3">c</span>ontains(part)) &amp;&amp; <span data-count="3">n</span>ot(result.<span data-count="3">c</span>ontains(part)) {
+        } else <span data-count="3">i</span>f !removals.<span data-count="3">c</span>ontains(part) &amp;&amp; !result.<span data-count="3">c</span>ontains(part) {
           <span data-count="3">r</span>esult.<span data-count="3">p</span>ush(part)
         }
       }
       // Apply removals to the final result
-      result.<span data-count="3">f</span>ilter(fn(item) { <span data-count="10">n</span>ot(removals.<span data-count="10">c</span>ontains(item)) })
+      result.<span data-count="3">f</span>ilter(fn(item) { <span data-count="10">!</span>removals.<span data-count="10">c</span>ontains(item) })
     } else {
       // No "...", pure +/- mode: start from base, apply operations left-to-right
       <span data-count="6">l</span>et result : Array[String] = base.<span data-count="6">c</span>opy()
       for part in parts {
         <span data-count="9">i</span>f part.<span data-count="9">h</span>as_prefix("+") {
           <span data-count="6">l</span>et name = part[1:].<span data-count="6">t</span>o_string()
-          if <span data-count="6">n</span>ot(result.<span data-count="6">c</span>ontains(name)) {
+          if !result.<span data-count="6">c</span>ontains(name) {
             <span data-count="5">r</span>esult.<span data-count="5">p</span>ush(name)
           }
         } else <span data-count="3">i</span>f part.<span data-count="3">h</span>as_prefix("-") {

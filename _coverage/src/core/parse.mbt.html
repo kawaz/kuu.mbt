@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8"/>
     <title>parse.mbt &mdash; </title>
-    <meta name="description" content="89.16% coverage in src/core/parse.mbt">
+    <meta name="description" content="88.64% coverage in src/core/parse.mbt">
     <link rel="stylesheet" href="../../coverage.css"/>
     <script src="../../highlight.pack.js"></script>
     <script>hljs.initHighlightingOnLoad();</script>
@@ -15,7 +15,7 @@
           <span class="dirname">src/core/</span>parse.mbt
         </a>
       </h1>
-      <h2>89.16%</h2>
+      <h2>88.64%</h2>
     </div>
     <div id="navbar">
       <span class="unvisited" style="top:17.22%"></span>
@@ -328,7 +328,7 @@
 <a id="L275"></a><span > </span>
 <a id="L276"></a><span > </span>
 <a id="L277"></a><span > </span>
-<a id="L278"></a><span class="visited"> </span>
+<a id="L278"></a><span > </span>
 <a id="L279"></a><span > </span>
 <a id="L280"></a><span class="visited"> </span>
 <a id="L281"></a><span > </span>
@@ -345,7 +345,7 @@
 <a id="L292"></a><span class="unvisited"> </span>
 <a id="L293"></a><span > </span>
 <a id="L294"></a><span > </span>
-<a id="L295"></a><span class="visited"> </span>
+<a id="L295"></a><span > </span>
 <a id="L296"></a><span class="unvisited"> </span>
 <a id="L297"></a><span > </span>
 <a id="L298"></a><span > </span>
@@ -363,7 +363,7 @@
 <a id="L310"></a><span class="visited"> </span>
 <a id="L311"></a><span > </span>
 <a id="L312"></a><span > </span>
-<a id="L313"></a><span class="visited"> </span>
+<a id="L313"></a><span > </span>
 <a id="L314"></a><span > </span>
 <a id="L315"></a><span class="visited"> </span>
 <a id="L316"></a><span class="visited"> </span>
@@ -380,7 +380,7 @@
 <a id="L327"></a><span class="unvisited"> </span>
 <a id="L328"></a><span > </span>
 <a id="L329"></a><span > </span>
-<a id="L330"></a><span class="visited"> </span>
+<a id="L330"></a><span > </span>
 <a id="L331"></a><span class="unvisited"> </span>
 <a id="L332"></a><span class="unvisited"> </span>
 <a id="L333"></a><span > </span>
@@ -504,7 +504,7 @@
 <a id="L451"></a><span class="visited"> </span>
 <a id="L452"></a><span class="visited"> </span>
 <a id="L453"></a><span class="visited"> </span>
-<a id="L454"></a><span class="visited"> </span>
+<a id="L454"></a><span > </span>
 <a id="L455"></a><span class="visited"> </span>
 <a id="L456"></a><span > </span>
 <a id="L457"></a><span > </span>
@@ -515,7 +515,7 @@
 <a id="L462"></a><span > </span>
 <a id="L463"></a><span > </span>
 <a id="L464"></a><span > </span>
-<a id="L465"></a><span class="visited"> </span>
+<a id="L465"></a><span > </span>
 <a id="L466"></a><span > </span>
 <a id="L467"></a><span class="visited"> </span>
 <a id="L468"></a><span > </span>
@@ -556,7 +556,7 @@
 <a id="L503"></a><span class="visited"> </span>
 <a id="L504"></a><span class="visited"> </span>
 <a id="L505"></a><span class="visited"> </span>
-<a id="L506"></a><span class="visited"> </span>
+<a id="L506"></a><span > </span>
 <a id="L507"></a><span class="visited"> </span>
 <a id="L508"></a><span > </span>
 <a id="L509"></a><span > </span>
@@ -1303,13 +1303,13 @@ fn levenshtein(a : String, b : String) -&gt; Int {
 
 ///|
 fn suggest_typo(arg : String, registered_names : Map[String, Bool]) -&gt; String? {
-  <span data-count="37">i</span>f <span data-count="37">n</span>ot(arg.<span data-count="37">h</span>as_prefix("--")) {
+  <span data-count="37">i</span>f !arg.<span data-count="37">h</span>as_prefix("--") {
     <span data-count="12">r</span>eturn None
   }
   let mut best_name : String? = None
   let mut best_dist = 3 // threshold: distance &lt;= 2
   for name, _ in registered_names {
-    <span data-count="154">i</span>f <span data-count="154">n</span>ot(name.<span data-count="154">h</span>as_prefix("--")) {
+    <span data-count="154">i</span>f !name.<span data-count="154">h</span>as_prefix("--") {
       <span data-count="77">c</span>ontinue
     }
     let d = <span data-count="77">l</span>evenshtein(arg, name)
@@ -1370,7 +1370,7 @@ fn Parser::install_eq_split_node(self : Parser) -&gt; Unit {
         <span data-count="0">r</span>eturn Reject
       }
       let arg = args[pos]
-      if <span data-count="362">n</span>ot(arg.<span data-count="362">h</span>as_prefix("--")) {
+      if !arg.<span data-count="362">h</span>as_prefix("--") {
         <span data-count="64">r</span>eturn Reject
       }
       // "=" を探す
@@ -1447,7 +1447,7 @@ fn Parser::install_short_combine_node(self : Parser) -&gt; Unit {
   for node in self.nodes {
     <span data-count="3901">i</span>f <span data-count="3901">@</span>grapheme.graphemes(node.name).<span data-count="3901">l</span>ength() == 2 &amp;&amp;
       node.name.<span data-count="1576">h</span>as_prefix("-") &amp;&amp;
-      <span data-count="1570">n</span>ot(node.name.<span data-count="1570">h</span>as_prefix("--")) {
+      !node.name.<span data-count="1570">h</span>as_prefix("--") {
       <span data-count="935">s</span>hort_nodes.<span data-count="935">p</span>ush(node)
     }
   }
@@ -1464,7 +1464,7 @@ fn Parser::install_short_combine_node(self : Parser) -&gt; Unit {
       }
       let arg = args[pos]
       if <span data-count="790">@</span>grapheme.graphemes(arg).<span data-count="790">l</span>ength() &lt;= 2 ||
-        <span data-count="652">n</span>ot(arg.<span data-count="652">h</span>as_prefix("-")) ||
+        !arg.<span data-count="652">h</span>as_prefix("-") ||
         arg.<span data-count="516">h</span>as_prefix("--") {
         <span data-count="755">r</span>eturn Reject
       }
@@ -1512,7 +1512,7 @@ fn Parser::install_short_combine_node(self : Parser) -&gt; Unit {
             for node in matching {
               // needs_value=false のノード（flag/implicit）は value trial で呼ばない
               // try_reduce の副作用（count の pending 増加等）を防ぐため
-              <span data-count="89">i</span>f <span data-count="89">n</span>ot(node.needs_value) {
+              <span data-count="89">i</span>f !node.needs_value {
                 <span data-count="69">c</span>ontinue
               }
               match <span data-count="20">(</span>node.try_reduce)([short_name, try_value], 0) {
@@ -1541,7 +1541,7 @@ fn Parser::install_short_combine_node(self : Parser) -&gt; Unit {
               break
             }
           }
-          if <span data-count="48">n</span>ot(value_accepted) {
+          if !value_accepted {
             // value trial 全失敗 → flag trial を全ノードで試す
             <span data-count="35">l</span>et mut flag_accepted = false
             for node in matching {
@@ -1558,7 +1558,7 @@ fn Parser::install_short_combine_node(self : Parser) -&gt; Unit {
                 Error(_) | Reject =&gt; <span data-count="0">(</span>)
               }
             }
-            if <span data-count="35">n</span>ot(flag_accepted) {
+            if !flag_accepted {
               <span data-count="0">r</span>eturn Reject
             }
           }
@@ -1576,7 +1576,7 @@ fn Parser::install_short_combine_node(self : Parser) -&gt; Unit {
               Error(_) | Reject =&gt; <span data-count="2">(</span>)
             }
           }
-          if <span data-count="20">n</span>ot(flag_accepted) {
+          if !flag_accepted {
             // flag trial 全失敗 → 次の外引数で value trial
             <span data-count="2">i</span>f pos + 1 &lt; args.<span data-count="2">l</span>ength() {
               <span data-count="1">l</span>et mut ext_accepted = false
@@ -1593,7 +1593,7 @@ fn Parser::install_short_combine_node(self : Parser) -&gt; Unit {
                   Reject =&gt; <span data-count="0">(</span>)
                 }
               }
-              if <span data-count="1">n</span>ot(ext_accepted) {
+              if !ext_accepted {
                 <span data-count="0">r</span>eturn Error(
                   <span data-count="0">p</span>arse_error(
                     "missing value for " + short_name,
@@ -1717,7 +1717,7 @@ fn Parser::parse_raw(
             <span data-count="7">m</span>atch <span data-count="7">(</span>entry.handler)(args, pos) {
               Accept(consumed~, commit~) =&gt; <span data-count="7">{</span>
                 <span data-count="7">c</span>ommit()
-                if <span data-count="7">n</span>ot(entry.is_rest) {
+                if !entry.is_rest {
                   <span data-count="7">s</span>elf.current_positional.val = idx + 1
                 }
                 pos = pos + consumed
@@ -1728,7 +1728,7 @@ fn Parser::parse_raw(
             }
           }
         }
-        if <span data-count="148">n</span>ot(consumed_by_greedy) {
+        if !consumed_by_greedy {
           // unclaimed — P フェーズで処理
           <span data-count="141">u</span>nclaimed.<span data-count="141">p</span>ush(args[pos])
           pos += 1
@@ -1769,7 +1769,7 @@ fn Parser::parse_raw(
     match <span data-count="102">(</span>entry.handler)(unclaimed, upos) {
       Accept(consumed~, commit~) =&gt; <span data-count="93">{</span>
         <span data-count="93">c</span>ommit()
-        if <span data-count="93">n</span>ot(entry.is_rest) {
+        if !entry.is_rest {
           <span data-count="52">s</span>elf.current_positional.val = idx + 1
         }
         upos += consumed

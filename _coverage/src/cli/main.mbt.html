@@ -1304,7 +1304,7 @@ fn build_parser_from_schema(
     _ =&gt; <span data-count="0">"</span>"
   }
   let has_dashdash_kind = <span data-count="0">h</span>as_dashdash_opt(opts_json)
-  let parser = <span data-count="0">@</span>core.Parser::new(dashdash=<span data-count="0">n</span>ot(has_dashdash_kind))
+  let parser = <span data-count="0">@</span>core.Parser::new(dashdash=<span data-count="0">!</span>has_dashdash_kind)
   if description != "" {
     <span data-count="0">p</span>arser.<span data-count="0">s</span>et_description(description)
   }

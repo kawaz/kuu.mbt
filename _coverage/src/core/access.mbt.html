@@ -288,7 +288,7 @@ pub fn Parser::deprecated_warnings(self : Parser) -&gt; Array[(String, String)] 
 /// Deprecated: Use `opt.get()` instead. This method checks this parser's parsed
 /// state, which may differ from the opt's owning parser (e.g. for subcommand opts).
 pub fn[T] Parser::get(self : Parser, opt : Opt[T]) -&gt; T? {
-  <span data-count="231">i</span>f <span data-count="231">n</span>ot(self.parsed.val) {
+  <span data-count="231">i</span>f !self.parsed.val {
     <span data-count="1">N</span>one
   } else {
     <span data-count="230">S</span>ome(<span data-count="230">(</span>opt.accessor.get)())

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8"/>
     <title>options.mbt &mdash; </title>
-    <meta name="description" content="93.53% coverage in src/core/options.mbt">
+    <meta name="description" content="93.48% coverage in src/core/options.mbt">
     <link rel="stylesheet" href="../../coverage.css"/>
     <script src="../../highlight.pack.js"></script>
     <script>hljs.initHighlightingOnLoad();</script>
@@ -15,7 +15,7 @@
           <span class="dirname">src/core/</span>options.mbt
         </a>
       </h1>
-      <h2>93.53%</h2>
+      <h2>93.48%</h2>
     </div>
     <div id="navbar">
       <span class="unvisited" style="top:10.89%"></span>
@@ -965,7 +965,7 @@
 <a id="L928"></a><span > </span>
 <a id="L929"></a><span > </span>
 <a id="L930"></a><span > </span>
-<a id="L931"></a><span class="visited"> </span>
+<a id="L931"></a><span > </span>
 <a id="L932"></a><span class="visited"> </span>
 <a id="L933"></a><span class="visited"> </span>
 <a id="L934"></a><span class="visited"> </span>
@@ -2201,7 +2201,7 @@ fn[T] register_env_applicator(
   <span data-count="923">i</span>f env != "" {
     <span data-count="83">l</span>et prefix_ref = parser.env_prefix
     parser.env_applicators.<span data-count="83">p</span>ush(fn(env_map) raise ParseError {
-      <span data-count="62">i</span>f <span data-count="62">n</span>ot(vc.committed.val) {
+      <span data-count="62">i</span>f !vc.committed.val {
         <span data-count="55">l</span>et key = if prefix_ref.val == "" {
           <span data-count="37">e</span>nv
         } else {
@@ -2308,7 +2308,7 @@ pub fn Parser::flag(
     pending.val = initial_val
   }
   let positive_match = <span data-count="352">m</span>ake_flag_on_match(pending, vc.cell, fn(_p) {
-    <span data-count="171">n</span>ot(initial_val)
+    <span data-count="171">!</span>initial_val
   })
   let opt = self.<span data-count="352">r</span>egister_option(
     name~,
@@ -2339,7 +2339,7 @@ pub fn Parser::flag(
               pending,
               vc.cell,
               vc.committed,
-              fn(p) { <span data-count="6">n</span>ot(p) },
+              fn(p) { <span data-count="6">!</span>p },
               true,
             ),
             var_reset,
@@ -2924,7 +2924,7 @@ pub fn Parser::count(
     },
   )
   <span data-count="28">r</span>egister_env_applicator(self, env, vc, raw =&gt; <span data-count="3">{</span>
-    <span data-count="3">@</span>strconv.parse_int(raw) catch {
+    <span data-count="3">@</span>string.parse_int(raw) catch {
       _ =&gt;
         <span data-count="1">r</span>aise <span data-count="1">p</span>arse_error(
           "invalid value for env " + env + ": " + raw + " (expected integer)",
@@ -3118,7 +3118,7 @@ pub fn[T : Show] Parser::custom(
   // H-1 fix: implicit_value 付き (choices なし) の場合、eq_split 用に
   // "--" ガードなしの value ノードを追加。make_soft_custom_value_node の
   // "--" prefix ガードは通常パースで必要だが、eq_split 経由の明示的な値には不要。
-  if has_implicit &amp;&amp; <span data-count="52">n</span>ot(has_choices) {
+  if has_implicit &amp;&amp; !has_choices {
     <span data-count="31">l</span>et eq_on_match = fn(s : String) -&gt; Result[() -&gt; Unit, ParseError] {
       <span data-count="3">l</span>et r : Result[T, ParseError] = try? <span data-count="3">(</span>pre.run)(s)
       match <span data-count="3">r</span> {

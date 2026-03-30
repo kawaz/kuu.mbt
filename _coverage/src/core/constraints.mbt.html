@@ -240,7 +240,7 @@ pub fn Parser::at_least_one(self : Parser, opts : Array[OptRef]) -&gt; Unit {
 pub fn Parser::required(self : Parser, opt : OptRef) -&gt; Unit {
   <span data-count="18">l</span>et opt_ref = opt
   self.post_hooks.<span data-count="18">p</span>ush(fn() raise ParseError {
-    <span data-count="16">i</span>f <span data-count="16">n</span>ot(<span data-count="16">(</span>opt_ref.is_set)()) {
+    <span data-count="16">i</span>f !<span data-count="16">(</span>opt_ref.is_set)() {
       <span data-count="8">r</span>aise <span data-count="8">p</span>arse_error(
         "required option missing: " + opt_ref.name,
         kind=MissingRequired,
@@ -262,7 +262,7 @@ pub fn Parser::requires(
   <span data-count="14">l</span>et target_ref = target
   let source_ref = source
   self.post_hooks.<span data-count="14">p</span>ush(fn() raise ParseError {
-    <span data-count="14">i</span>f <span data-count="14">(</span>source_ref.is_set)() &amp;&amp; <span data-count="8">n</span>ot(<span data-count="8">(</span>target_ref.is_set)()) {
+    <span data-count="14">i</span>f <span data-count="14">(</span>source_ref.is_set)() &amp;&amp; !<span data-count="8">(</span>target_ref.is_set)() {
       <span data-count="6">l</span>et message = if msg != "" {
         <span data-count="1">m</span>sg
       } else {
