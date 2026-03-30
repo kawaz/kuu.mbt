@@ -43,7 +43,7 @@ coverage:
 # Run tests with coverage (HTML report)
 coverage-html:
     moon coverage analyze -- -f html
-    @echo "Open _build/coverage/index.html"
+    @echo "Open _coverage/index.html"
 
 # Clean coverage artifacts
 coverage-clean:
