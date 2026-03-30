@@ -71,11 +71,11 @@ fn parse_scope(
     match tokens[i] {
       LongOpt(name) => {
         // --help 特殊処理: opts に help 未定義なら HelpRequested
-        if name == "help" && not(has_help_opt) {
+        if name == "help" && !(has_help_opt) {
           raise HelpRequested
         }
         // --version 特殊処理: opts に version 未定義なら VersionRequested
-        if name == "version" && not(has_version_opt) {
+        if name == "version" && !(has_version_opt) {
           raise VersionRequested
         }
         let resolved = resolve_long(scope_opts, name)
@@ -244,11 +244,11 @@ fn parse_scope(
       }
       LongOptWithValue(name, value) => {
         // --help=... も特殊処理
-        if name == "help" && not(has_help_opt) {
+        if name == "help" && !(has_help_opt) {
           raise HelpRequested
         }
         // --version=... も特殊処理
-        if name == "version" && not(has_version_opt) {
+        if name == "version" && !(has_version_opt) {
           raise VersionRequested
         }
         let resolved = resolve_long(scope_opts, name)
@@ -266,7 +266,7 @@ fn parse_scope(
             }
             let final_val = match resolved.direction {
               Normal => bool_val
-              Inverted => not(bool_val)
+              Inverted => !(bool_val)
             }
             result.values[opt.long] = FlagValue(final_val)
             explicitly_set[opt.long] = true
@@ -608,7 +608,7 @@ fn parse_scope(
               )
             }
             let def = defs[consumed]
-            if def.choices.length() > 0 && not(def.choices.contains(val)) {
+            if def.choices.length() > 0 && !(def.choices.contains(val)) {
               raise InvalidChoice(
                 option="positional '" + def.name + "'",
                 value=val,
@@ -618,7 +618,7 @@ fn parse_scope(
             result.positional.push(val)
           }
           Variadic(def) => {
-            if def.choices.length() > 0 && not(def.choices.contains(val)) {
+            if def.choices.length() > 0 && !(def.choices.contains(val)) {
               raise InvalidChoice(
                 option="positional '" + def.name + "'",
                 value=val,
@@ -725,7 +725,7 @@ fn finalize_scope(
   let own_opts = scope_opts[0:own_opts_count]
   // required チェック（自スコープの opts のみ）
   for opt in own_opts {
-    if opt.required && not(explicitly_set.contains(opt.long)) {
+    if opt.required && !(explicitly_set.contains(opt.long)) {
       raise MissingRequired("--" + opt.long)
     }
   }
@@ -734,12 +734,12 @@ fn finalize_scope(
     if opt.choices.length() > 0 {
       match result.values.get(opt.long) {
         Some(StringValue(value)) =>
-          if not(opt.choices.contains(value)) {
+          if !(opt.choices.contains(value)) {
             raise InvalidChoice(option=opt.long, value~, choices=opt.choices)
           }
         Some(ListValue(values)) =>
           for value in values {
-            if not(opt.choices.contains(value)) {
+            if !(opt.choices.contains(value)) {
               raise InvalidChoice(option=opt.long, value~, choices=opt.choices)
             }
           }
@@ -749,7 +749,7 @@ fn finalize_scope(
   }
   // デフォルト値適用（自スコープの opts のみ）
   for opt in own_opts {
-    if not(explicitly_set.contains(opt.long)) {
+    if !(explicitly_set.contains(opt.long)) {
       match opt.kind {
         Flag(default=v) => result.values[opt.long] = FlagValue(v)
         Single(default=Some(v)) => result.values[opt.long] = StringValue(v)

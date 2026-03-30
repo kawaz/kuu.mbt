@@ -264,7 +264,7 @@ pub fn ParseResult::get_string(self : ParseResult, name : String) -> String? {
 ///|
 pub fn ParseResult::get_int(self : ParseResult, name : String) -> Int? {
   match self.values.get(name) {
-    Some(StringValue(v)) => Some(@strconv.parse_int(v)) catch { _ => None }
+    Some(StringValue(v)) => Some(@string.parse_int(v)) catch { _ => None }
     Some(CountValue(v)) => Some(v)
     _ => None
   }

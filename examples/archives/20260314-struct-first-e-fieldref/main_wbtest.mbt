@@ -73,7 +73,7 @@ test "make_binder: String フィールドへのバインド" {
 test "make_binder: Int フィールドへのバインド" {
   let binder = make_binder(
     AppConfig::age_ref(),
-    fn(raw) { try { Some(@strconv.parse_int(raw)) } catch { _ => None } },
+    fn(raw) { try { Some(@string.parse_int(raw)) } catch { _ => None } },
   )
   let config = AppConfig::default()
   let result = (binder.apply)(config, "42")
@@ -84,7 +84,7 @@ test "make_binder: Int フィールドへのバインド" {
 test "make_binder: パース失敗時は Err" {
   let binder = make_binder(
     AppConfig::age_ref(),
-    fn(raw) { try { Some(@strconv.parse_int(raw)) } catch { _ => None } },
+    fn(raw) { try { Some(@string.parse_int(raw)) } catch { _ => None } },
   )
   let config = AppConfig::default()
   let result = (binder.apply)(config, "not_a_number")
@@ -120,7 +120,7 @@ test "型消去: 異なる型の Binder を Array[Binder[AppConfig]] に格納" 
     make_binder(AppConfig::name_ref(), fn(raw) { Some(raw) }),
     make_binder(
       AppConfig::age_ref(),
-      fn(raw) { try { Some(@strconv.parse_int(raw)) } catch { _ => None } },
+      fn(raw) { try { Some(@string.parse_int(raw)) } catch { _ => None } },
     ),
     make_binder(
       AppConfig::verbose_ref(),

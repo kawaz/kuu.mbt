@@ -58,7 +58,7 @@ pub fn validate_opts(opts : Array[OptDef]) -> Unit raise ParseError {
             )
           Some(c) => c
         }
-        if not(c >= 'a' && c <= 'z') && not(c >= '0' && c <= '9') && c != '-' {
+        if !(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9') && c != '-' {
           raise DefinitionError(label + " contains invalid character: " + name)
         }
       }
@@ -82,9 +82,9 @@ pub fn validate_opts(opts : Array[OptDef]) -> Unit raise ParseError {
     // 3. Short character validation and duplicate check
     for short_entry in opt.shorts {
       let c = short_entry.char
-      if not(c >= 'a' && c <= 'z') &&
-        not(c >= 'A' && c <= 'Z') &&
-        not(c >= '0' && c <= '9') {
+      if !(c >= 'a' && c <= 'z') &&
+        !(c >= 'A' && c <= 'Z') &&
+        !(c >= '0' && c <= '9') {
         raise DefinitionError("invalid short option: " + c.to_string())
       }
       if short_chars.contains(c) {
@@ -159,7 +159,7 @@ pub fn validate_opts(opts : Array[OptDef]) -> Unit raise ParseError {
     if opt.choices.length() > 0 {
       match opt.kind {
         Single(default=Some(default_val)) =>
-          if not(opt.choices.contains(default_val)) {
+          if !(opt.choices.contains(default_val)) {
             raise DefinitionError(
               "default value \"" +
               default_val +
@@ -169,7 +169,7 @@ pub fn validate_opts(opts : Array[OptDef]) -> Unit raise ParseError {
           }
         Append(defaults~, ..) =>
           for default_val in defaults {
-            if not(opt.choices.contains(default_val)) {
+            if !(opt.choices.contains(default_val)) {
               raise DefinitionError(
                 "default value \"" +
                 default_val +
@@ -185,7 +185,7 @@ pub fn validate_opts(opts : Array[OptDef]) -> Unit raise ParseError {
             opt_long : String,
             choices : Array[String],
           ) -> Unit raise ParseError {
-            if not(choices.contains(val)) {
+            if !(choices.contains(val)) {
               raise DefinitionError(
                 label +
                 " value \"" +

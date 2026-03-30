@@ -1072,7 +1072,7 @@ test "integration: authsock_filter full scenario" {
   inspect(result.get_flag("verbose"), content="true")
   // upstream は GroupValue で 2 インスタンス
   let groups = result.get_group("upstream")
-  inspect(not(groups is None), content="true")
+  inspect(!(groups is None), content="true")
   let instances = groups.unwrap()
   inspect(instances.length(), content="2")
   // u1: socket=s1, timeout=30(default), positional=["a", "b"]

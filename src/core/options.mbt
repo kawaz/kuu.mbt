@@ -11,7 +11,7 @@ fn[T] register_env_applicator(
   if env != "" {
     let prefix_ref = parser.env_prefix
     parser.env_applicators.push(fn(env_map) raise ParseError {
-      if !(vc.committed.val) {
+      if !vc.committed.val {
         let key = if prefix_ref.val == "" {
           env
         } else {
@@ -118,7 +118,7 @@ pub fn Parser::flag(
     pending.val = initial_val
   }
   let positive_match = make_flag_on_match(pending, vc.cell, fn(_p) {
-    !(initial_val)
+    !initial_val
   })
   let opt = self.register_option(
     name~,
@@ -149,7 +149,7 @@ pub fn Parser::flag(
               pending,
               vc.cell,
               vc.committed,
-              fn(p) { !(p) },
+              fn(p) { !p },
               true,
             ),
             var_reset,
@@ -928,7 +928,7 @@ pub fn[T : Show] Parser::custom(
   // H-1 fix: implicit_value 付き (choices なし) の場合、eq_split 用に
   // "--" ガードなしの value ノードを追加。make_soft_custom_value_node の
   // "--" prefix ガードは通常パースで必要だが、eq_split 経由の明示的な値には不要。
-  if has_implicit && !(has_choices) {
+  if has_implicit && !has_choices {
     let eq_on_match = fn(s : String) -> Result[() -> Unit, ParseError] {
       let r : Result[T, ParseError] = try? (pre.run)(s)
       match r {

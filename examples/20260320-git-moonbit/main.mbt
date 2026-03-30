@@ -39,7 +39,9 @@ fn main {
   run_test(["stash", "push", "-m", "WIP changes", "--include-untracked"])
   println("")
   println("=== Demo 7: global options ===")
-  run_test(["--git-dir", "/tmp/repo/.git", "-vv", "--no-pager", "status", "--short"])
+  run_test([
+    "--git-dir", "/tmp/repo/.git", "-vv", "--no-pager", "status", "--short",
+  ])
   println("")
   println("=== Demo 8: help ===")
   run_test(["--help"])
@@ -114,7 +116,10 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 
   // ─── commit ───
 
-  let commit = p.sub(name="commit", description="Record changes to the repository")
+  let commit = p.sub(
+    name="commit",
+    description="Record changes to the repository",
+  )
   commit.set_description("mygit commit - Record changes to the repository")
   let commit_message = commit.custom(
     name="message",
@@ -171,7 +176,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
   // ─── push ───
 
   let push = p.sub(name="push", description="Update remote refs")
-  push.set_description("mygit push - Update remote refs along with associated objects")
+  push.set_description(
+    "mygit push - Update remote refs along with associated objects",
+  )
   // serial のクロージャスコープから Opt を取り出すために Option 型の mut 変数を経由する
   let mut push_remote_opt : @core.Opt[String]? = None
   let mut push_branch_opt : @core.Opt[String]? = None
@@ -183,11 +190,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
       s.positional(name="branch", description="Branch to push"),
     )
   })
-  let push_force = push.flag(
-    name="force",
-    shorts="f",
-    description="Force push",
-  )
+  let push_force = push.flag(name="force", shorts="f", description="Force push")
   let push_force_lease = push.flag(
     name="force-with-lease",
     description="Safe force push",
@@ -198,14 +201,8 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     shorts="u",
     description="Set upstream for the current branch",
   )
-  let push_all = push.flag(
-    name="all",
-    description="Push all branches",
-  )
-  let push_tags = push.flag(
-    name="tags",
-    description="Push all tags",
-  )
+  let push_all = push.flag(name="all", description="Push all branches")
+  let push_tags = push.flag(name="tags", description="Push all tags")
   let push_delete = push.flag(
     name="delete",
     shorts="d",
@@ -220,7 +217,10 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 
   // ─── pull ───
 
-  let pull = p.sub(name="pull", description="Fetch and integrate remote changes")
+  let pull = p.sub(
+    name="pull",
+    description="Fetch and integrate remote changes",
+  )
   pull.set_description(
     "mygit pull - Fetch from and integrate with another repository",
   )
@@ -239,10 +239,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     description="Rebase instead of merge",
     variation_false=Some("no"),
   )
-  let pull_ff_only = pull.flag(
-    name="ff-only",
-    description="Only fast-forward",
-  )
+  let pull_ff_only = pull.flag(name="ff-only", description="Only fast-forward")
   let pull_no_ff = pull.flag(
     name="no-ff",
     description="Create a merge commit even for fast-forward",
@@ -381,10 +378,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     shorts="r",
     description="List remote branches",
   )
-  let branch_list = branch.flag(
-    name="list",
-    description="List branches",
-  )
+  let branch_list = branch.flag(name="list", description="List branches")
 
   // ─── log ───
 
@@ -403,10 +397,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     description="Shorthand for --format=oneline --abbrev-commit",
   )
   let log_graph = log.flag(name="graph", description="Draw a graph of commits")
-  let log_all = log.flag(
-    name="all",
-    description="Show all refs",
-  )
+  let log_all = log.flag(name="all", description="Show all refs")
   let log_format = log.string(
     name="format",
     default="",
@@ -433,7 +424,10 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     description="Show commits before date",
     value_name="DATE",
   )
-  let log_paths = log.rest(name="path", description="Show commits touching path")
+  let log_paths = log.rest(
+    name="path",
+    description="Show commits touching path",
+  )
 
   // ─── diff ───
 
@@ -455,10 +449,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 
   let add = p.sub(name="add", description="Add file contents to the index")
   add.set_description("mygit add - Add file contents to the index")
-  let add_files = add.rest(
-    name="pathspec",
-    description="Files to add",
-  )
+  let add_files = add.rest(name="pathspec", description="Files to add")
   let add_all = add.flag(
     name="all",
     shorts="A",
@@ -541,7 +532,9 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     name="rebase",
     description="Reapply commits on top of another base",
   )
-  rebase.set_description("mygit rebase - Reapply commits on top of another base tip")
+  rebase.set_description(
+    "mygit rebase - Reapply commits on top of another base tip",
+  )
   let rebase_upstream = rebase.positional(
     name="upstream",
     description="Upstream branch",
@@ -598,11 +591,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     shorts="d",
     description="Delete a tag",
   )
-  let tag_list = tag.flag(
-    name="list",
-    shorts="l",
-    description="List tags",
-  )
+  let tag_list = tag.flag(name="list", shorts="l", description="List tags")
   let tag_force = tag.flag(
     name="force",
     shorts="f",
@@ -611,7 +600,10 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 
   // ─── remote (nested subcommands) ───
 
-  let remote = p.sub(name="remote", description="Manage set of tracked repositories")
+  let remote = p.sub(
+    name="remote",
+    description="Manage set of tracked repositories",
+  )
   remote.set_description("mygit remote - Manage set of tracked repositories")
   remote.require_cmd()
 
@@ -659,8 +651,13 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     s.never()
   })
 
-  let remote_show = remote.sub(name="show", description="Show information about remote")
-  remote_show.set_description("mygit remote show - Show information about remote")
+  let remote_show = remote.sub(
+    name="show",
+    description="Show information about remote",
+  )
+  remote_show.set_description(
+    "mygit remote show - Show information about remote",
+  )
   let remote_show_name = remote_show.positional(
     name="name",
     description="Name of the remote",
@@ -668,11 +665,21 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
 
   // ─── stash (nested subcommands) ───
 
-  let stash = p.sub(name="stash", description="Stash changes in a dirty working directory")
-  stash.set_description("mygit stash - Stash the changes in a dirty working directory")
+  let stash = p.sub(
+    name="stash",
+    description="Stash changes in a dirty working directory",
+  )
+  stash.set_description(
+    "mygit stash - Stash the changes in a dirty working directory",
+  )
 
-  let stash_push = stash.sub(name="push", description="Save local modifications")
-  stash_push.set_description("mygit stash push - Save local modifications to a new stash")
+  let stash_push = stash.sub(
+    name="push",
+    description="Save local modifications",
+  )
+  stash_push.set_description(
+    "mygit stash push - Save local modifications to a new stash",
+  )
   let stash_push_message = stash_push.custom(
     name="message",
     default="",
@@ -698,8 +705,13 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
     description="Stash reference (e.g. stash@{0})",
   )
 
-  let stash_apply = stash.sub(name="apply", description="Apply a stash without removing")
-  stash_apply.set_description("mygit stash apply - Apply a stash without removing it")
+  let stash_apply = stash.sub(
+    name="apply",
+    description="Apply a stash without removing",
+  )
+  stash_apply.set_description(
+    "mygit stash apply - Apply a stash without removing it",
+  )
   let stash_apply_ref = stash_apply.positional(
     name="stash",
     description="Stash reference",
@@ -770,7 +782,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           if commit_amend.get().unwrap() {
             buf.write_string("  amend: true\n")
           }
-          if not(commit_edit.get().unwrap()) {
+          if !commit_edit.get().unwrap() {
             buf.write_string("  no-edit: true\n")
           }
           if commit_all.get().unwrap() {
@@ -779,7 +791,7 @@ fn build_and_parse(args : Array[String]) -> Result[String, String] {
           if commit_allow_empty.get().unwrap() {
             buf.write_string("  allow-empty: true\n")
           }
-          if not(commit_verify.get().unwrap()) {
+          if !commit_verify.get().unwrap() {
             buf.write_string("  no-verify: true\n")
           }
           let author_val = commit_author.get().unwrap()
@@ -1228,7 +1240,7 @@ fn write_positional(
 fn write_serial(
   buf : StringBuilder,
   opt : @core.Opt[String]?,
-  label : String
+  label : String,
 ) -> Unit {
   match opt {
     Some(o) => write_positional(buf, o, label)
@@ -1238,98 +1250,144 @@ fn write_serial(
 
 // ─── Tests ───
 
+///|
 test "commit: basic" {
   let result = build_and_parse(["commit", "-m", "initial commit"])
-  inspect(result, content=(
-    #|Ok("  command: commit\n  message: \"initial commit\"\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: commit\n  message: \"initial commit\"\n")
+    ),
+  )
 }
 
+///|
 test "commit: amend with no-edit" {
   let result = build_and_parse(["commit", "--amend", "--no-edit"])
-  inspect(result, content=(
-    #|Ok("  command: commit\n  amend: true\n  no-edit: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: commit\n  amend: true\n  no-edit: true\n")
+    ),
+  )
 }
 
+///|
 test "commit: no-verify" {
   let result = build_and_parse(["commit", "-m", "fix", "--no-verify"])
-  inspect(result, content=(
-    #|Ok("  command: commit\n  message: \"fix\"\n  no-verify: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: commit\n  message: \"fix\"\n  no-verify: true\n")
+    ),
+  )
 }
 
+///|
 test "commit: all options" {
   let result = build_and_parse([
-    "commit", "-a", "-m", "msg", "--author", "Test <test@example.com>",
-    "--signoff", "--date", "2024-01-01",
+    "commit", "-a", "-m", "msg", "--author", "Test <test@example.com>", "--signoff",
+    "--date", "2024-01-01",
   ])
-  inspect(result, content=(
-    #|Ok("  command: commit\n  message: \"msg\"\n  all: true\n  author: \"Test <test@example.com>\"\n  signoff: true\n  date: \"2024-01-01\"\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: commit\n  message: \"msg\"\n  all: true\n  author: \"Test <test@example.com>\"\n  signoff: true\n  date: \"2024-01-01\"\n")
+    ),
+  )
 }
 
+///|
 test "push: basic" {
   let result = build_and_parse(["push", "origin", "main"])
-  inspect(result, content=(
-    #|Ok("  command: push\n  remote: origin\n  branch: main\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: push\n  remote: origin\n  branch: main\n")
+    ),
+  )
 }
 
+///|
 test "push: force" {
   let result = build_and_parse(["push", "origin", "main", "--force"])
-  inspect(result, content=(
-    #|Ok("  command: push\n  remote: origin\n  branch: main\n  force: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: push\n  remote: origin\n  branch: main\n  force: true\n")
+    ),
+  )
 }
 
+///|
 test "push: force-with-lease" {
   let result = build_and_parse(["push", "--force-with-lease", "origin", "main"])
-  inspect(result, content=(
-    #|Ok("  command: push\n  remote: origin\n  branch: main\n  force-with-lease: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: push\n  remote: origin\n  branch: main\n  force-with-lease: true\n")
+    ),
+  )
 }
 
+///|
 test "push: exclusive force vs force-with-lease" {
   match build_and_parse(["push", "--force", "--force-with-lease"]) {
     Err(msg) =>
       assert_true(
-        msg.has_prefix("error: mutually exclusive options: --force, --force-with-lease"),
+        msg.has_prefix(
+          "error: mutually exclusive options: --force, --force-with-lease",
+        ),
       )
     Ok(_) => fail("expected error")
   }
 }
 
+///|
 test "push: set-upstream" {
   let result = build_and_parse(["push", "-u", "origin", "feature/test"])
-  inspect(result, content=(
-    #|Ok("  command: push\n  remote: origin\n  branch: feature/test\n  set-upstream: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: push\n  remote: origin\n  branch: feature/test\n  set-upstream: true\n")
+    ),
+  )
 }
 
+///|
 test "pull: basic" {
   let result = build_and_parse(["pull", "origin", "main"])
-  inspect(result, content=(
-    #|Ok("  command: pull\n  remote: origin\n  branch: main\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: pull\n  remote: origin\n  branch: main\n")
+    ),
+  )
 }
 
+///|
 test "pull: rebase" {
   let result = build_and_parse(["pull", "--rebase"])
-  inspect(result, content=(
-    #|Ok("  command: pull\n  rebase: true\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: pull\n  rebase: true\n")
+    ),
+  )
 }
 
+///|
 test "pull: no-rebase" {
   let result = build_and_parse(["pull", "--no-rebase"])
-  inspect(result, content=(
-    #|Ok("  command: pull\n  rebase: false\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: pull\n  rebase: false\n")
+    ),
+  )
 }
 
+///|
 test "pull: exclusive ff-only vs no-ff" {
   match build_and_parse(["pull", "--ff-only", "--no-ff"]) {
     Err(msg) =>
@@ -1340,221 +1398,323 @@ test "pull: exclusive ff-only vs no-ff" {
   }
 }
 
+///|
 test "checkout: branch" {
   let result = build_and_parse(["checkout", "main"])
-  inspect(result, content=(
-    #|Ok("  command: checkout\n  branch: main\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: checkout\n  branch: main\n")
+    ),
+  )
 }
 
+///|
 test "checkout: new branch" {
   let result = build_and_parse(["checkout", "-b", "feature/new"])
-  inspect(result, content=(
-    #|Ok("  command: checkout\n  new-branch: feature/new\n")
-
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: checkout\n  new-branch: feature/new\n")
+    ),
+  )
 }
 
+///|
 test "checkout: dashdash" {
   let result = build_and_parse([
     "checkout", "main", "--", "file1.txt", "file2.txt",
   ])
-  inspect(result, content=(
-    #|Ok("  command: checkout\n  branch: main\n  -- [\"file1.txt\", \"file2.txt\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: checkout\n  branch: main\n  -- [\"file1.txt\", \"file2.txt\"]\n")
+    ),
+  )
 }
 
+///|
 test "checkout: alias co" {
   let result = build_and_parse(["co", "main"])
-  inspect(result, content=(
-    #|Ok("  command: checkout\n  branch: main\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: checkout\n  branch: main\n")
+    ),
+  )
 }
 
+///|
 test "switch: branch" {
   let result = build_and_parse(["switch", "main"])
-  inspect(result, content=(
-    #|Ok("  command: switch\n  branch: main\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: switch\n  branch: main\n")
+    ),
+  )
 }
 
+///|
 test "switch: create" {
   let result = build_and_parse(["switch", "-c", "feature/new"])
-  inspect(result, content=(
-    #|Ok("  command: switch\n  create: feature/new\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: switch\n  create: feature/new\n")
+    ),
+  )
 }
 
+///|
 test "restore: staged" {
   let result = build_and_parse(["restore", "--staged", "file.txt"])
-  inspect(result, content=(
-    #|Ok("  command: restore\n  staged: true\n  files: [\"file.txt\"]\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: restore\n  staged: true\n  files: [\"file.txt\"]\n")
+    ),
+  )
 }
 
+///|
 test "restore: source" {
   let result = build_and_parse([
     "restore", "--source", "HEAD~1", "file1.txt", "file2.txt",
   ])
-  inspect(result, content=(
-    #|Ok("  command: restore\n  source: HEAD~1\n  files: [\"file1.txt\", \"file2.txt\"]\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: restore\n  source: HEAD~1\n  files: [\"file1.txt\", \"file2.txt\"]\n")
+    ),
+  )
 }
 
+///|
 test "branch: list" {
   let result = build_and_parse(["branch", "--list"])
-  inspect(result, content=(
-    #|Ok("  command: branch\n  list: true\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: branch\n  list: true\n")
+    ),
+  )
 }
 
+///|
 test "branch: delete" {
   let result = build_and_parse(["branch", "-d", "old-branch"])
-  inspect(result, content=(
-    #|Ok("  command: branch\n  name: old-branch\n  delete: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: branch\n  name: old-branch\n  delete: true\n")
+    ),
+  )
 }
 
+///|
 test "branch: force delete" {
   let result = build_and_parse(["branch", "-D", "old-branch"])
-  inspect(result, content=(
-    #|Ok("  command: branch\n  name: old-branch\n  force-delete: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: branch\n  name: old-branch\n  force-delete: true\n")
+    ),
+  )
 }
 
+///|
 test "branch: all" {
   let result = build_and_parse(["branch", "-a"])
-  inspect(result, content=(
-    #|Ok("  command: branch\n  all: true\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: branch\n  all: true\n")
+    ),
+  )
 }
 
+///|
 test "branch: alias br" {
   let result = build_and_parse(["br", "--list"])
-  inspect(result, content=(
-    #|Ok("  command: branch\n  list: true\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: branch\n  list: true\n")
+    ),
+  )
 }
 
+///|
 test "log: basic" {
   let result = build_and_parse(["log", "--oneline", "--graph", "-n", "10"])
-  inspect(result, content=(
-    #|Ok("  command: log\n  max-count: 10\n  oneline: true\n  graph: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: log\n  max-count: 10\n  oneline: true\n  graph: true\n")
+    ),
+  )
 }
 
+///|
 test "log: format" {
   let result = build_and_parse(["log", "--format", "short"])
-  inspect(result, content=(
-    #|Ok("  command: log\n  format: short\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: log\n  format: short\n")
+    ),
+  )
 }
 
+///|
 test "log: author filter" {
-  let result = build_and_parse([
-    "log", "--author", "Alice", "--author", "Bob",
-  ])
-  inspect(result, content=(
-    #|Ok("  command: log\n  author: [\"Alice\", \"Bob\"]\n")
-  ))
+  let result = build_and_parse(["log", "--author", "Alice", "--author", "Bob"])
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: log\n  author: [\"Alice\", \"Bob\"]\n")
+    ),
+  )
 }
 
+///|
 test "log: since until" {
   let result = build_and_parse([
     "log", "--since", "2024-01-01", "--until", "2024-12-31",
   ])
-  inspect(result, content=(
-    #|Ok("  command: log\n  since: 2024-01-01\n  until: 2024-12-31\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: log\n  since: 2024-01-01\n  until: 2024-12-31\n")
+    ),
+  )
 }
 
+///|
 test "diff: cached" {
   let result = build_and_parse(["diff", "--cached"])
-  inspect(result, content=(
-    #|Ok("  command: diff\n  cached: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: diff\n  cached: true\n")
+    ),
+  )
 }
 
+///|
 test "diff: staged alias" {
   let result = build_and_parse(["diff", "--staged"])
-  inspect(result, content=(
-    #|Ok("  command: diff\n  cached: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: diff\n  cached: true\n")
+    ),
+  )
 }
 
+///|
 test "diff: stat with paths" {
   let result = build_and_parse(["diff", "--stat", "src/", "lib/"])
-  inspect(result, content=(
-    #|Ok("  command: diff\n  stat: true\n  paths: [\"src/\", \"lib/\"]\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: diff\n  stat: true\n  paths: [\"src/\", \"lib/\"]\n")
+    ),
+  )
 }
 
+///|
 test "add: files" {
   let result = build_and_parse(["add", "file1.txt", "file2.txt"])
-  inspect(result, content=(
-    #|Ok("  command: add\n  files: [\"file1.txt\", \"file2.txt\"]\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: add\n  files: [\"file1.txt\", \"file2.txt\"]\n")
+    ),
+  )
 }
 
+///|
 test "add: all" {
   let result = build_and_parse(["add", "-A"])
-  inspect(result, content=(
-    #|Ok("  command: add\n  all: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: add\n  all: true\n")
+    ),
+  )
 }
 
+///|
 test "status: short branch" {
   let result = build_and_parse(["status", "-sb"])
-  inspect(result, content=(
-    #|Ok("  command: status\n  short: true\n  branch: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: status\n  short: true\n  branch: true\n")
+    ),
+  )
 }
 
+///|
 test "status: porcelain" {
   let result = build_and_parse(["status", "--porcelain"])
-  inspect(result, content=(
-    #|Ok("  command: status\n  porcelain: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: status\n  porcelain: true\n")
+    ),
+  )
 }
 
+///|
 test "status: alias st" {
   let result = build_and_parse(["st", "--short"])
-  inspect(result, content=(
-    #|Ok("  command: status\n  short: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: status\n  short: true\n")
+    ),
+  )
 }
 
+///|
 test "merge: basic" {
   let result = build_and_parse(["merge", "feature/test"])
-  inspect(result, content=(
-    #|Ok("  command: merge\n  branch: feature/test\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: merge\n  branch: feature/test\n")
+    ),
+  )
 }
 
+///|
 test "merge: no-ff" {
   let result = build_and_parse(["merge", "--no-ff", "feature/test"])
-  inspect(result, content=(
-    #|Ok("  command: merge\n  branch: feature/test\n  no-ff: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: merge\n  branch: feature/test\n  no-ff: true\n")
+    ),
+  )
 }
 
+///|
 test "merge: squash with message" {
   let result = build_and_parse([
     "merge", "--squash", "-m", "Squash merge", "feature/test",
   ])
-  inspect(result, content=(
-    #|Ok("  command: merge\n  branch: feature/test\n  squash: true\n  message: \"Squash merge\"\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: merge\n  branch: feature/test\n  squash: true\n  message: \"Squash merge\"\n")
+    ),
+  )
 }
 
+///|
 test "merge: exclusive no-ff vs ff-only" {
   match build_and_parse(["merge", "--no-ff", "--ff-only", "branch"]) {
     Err(msg) =>
@@ -1565,35 +1725,51 @@ test "merge: exclusive no-ff vs ff-only" {
   }
 }
 
+///|
 test "rebase: basic" {
   let result = build_and_parse(["rebase", "main"])
-  inspect(result, content=(
-    #|Ok("  command: rebase\n  upstream: main\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: rebase\n  upstream: main\n")
+    ),
+  )
 }
 
+///|
 test "rebase: interactive" {
   let result = build_and_parse(["rebase", "-i", "HEAD~3"])
-  inspect(result, content=(
-    #|Ok("  command: rebase\n  upstream: HEAD~3\n  interactive: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: rebase\n  upstream: HEAD~3\n  interactive: true\n")
+    ),
+  )
 }
 
+///|
 test "rebase: onto" {
   let result = build_and_parse(["rebase", "--onto", "main", "feature"])
-  inspect(result, content=(
-    #|Ok("  command: rebase\n  upstream: feature\n  onto: main\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: rebase\n  upstream: feature\n  onto: main\n")
+    ),
+  )
 }
 
+///|
 test "rebase: continue" {
   let result = build_and_parse(["rebase", "--continue"])
-  inspect(result, content=(
-    #|Ok("  command: rebase\n  continue: true\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: rebase\n  continue: true\n")
+    ),
+  )
 }
 
+///|
 test "rebase: exclusive continue vs abort" {
   match build_and_parse(["rebase", "--continue", "--abort"]) {
     Err(msg) =>
@@ -1604,184 +1780,270 @@ test "rebase: exclusive continue vs abort" {
   }
 }
 
+///|
 test "tag: create annotated" {
   let result = build_and_parse(["tag", "-a", "v1.0", "-m", "Release 1.0"])
-  inspect(result, content=(
-    #|Ok("  command: tag\n  name: v1.0\n  annotate: true\n  message: \"Release 1.0\"\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: tag\n  name: v1.0\n  annotate: true\n  message: \"Release 1.0\"\n")
+    ),
+  )
 }
 
+///|
 test "tag: delete" {
   let result = build_and_parse(["tag", "-d", "v0.9"])
-  inspect(result, content=(
-    #|Ok("  command: tag\n  name: v0.9\n  delete: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: tag\n  name: v0.9\n  delete: true\n")
+    ),
+  )
 }
 
+///|
 test "tag: list" {
   let result = build_and_parse(["tag", "-l"])
-  inspect(result, content=(
-    #|Ok("  command: tag\n  list: true\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: tag\n  list: true\n")
+    ),
+  )
 }
 
+///|
 test "remote: add" {
   let result = build_and_parse([
     "remote", "add", "upstream", "https://example.com/repo.git",
   ])
-  inspect(result, content=(
-    #|Ok("  command: remote\n  subcommand: add\n  name: upstream\n  url: https://example.com/repo.git\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: remote\n  subcommand: add\n  name: upstream\n  url: https://example.com/repo.git\n")
+    ),
+  )
 }
 
+///|
 test "remote: add with fetch" {
   let result = build_and_parse([
     "remote", "add", "-f", "upstream", "https://example.com/repo.git",
   ])
-  inspect(result, content=(
-    #|Ok("  command: remote\n  subcommand: add\n  name: upstream\n  url: https://example.com/repo.git\n  fetch: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: remote\n  subcommand: add\n  name: upstream\n  url: https://example.com/repo.git\n  fetch: true\n")
+    ),
+  )
 }
 
+///|
 test "remote: remove" {
   let result = build_and_parse(["remote", "remove", "upstream"])
-  inspect(result, content=(
-    #|Ok("  command: remote\n  subcommand: remove\n  name: upstream\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: remote\n  subcommand: remove\n  name: upstream\n")
+    ),
+  )
 }
 
+///|
 test "remote: remove alias rm" {
   let result = build_and_parse(["remote", "rm", "upstream"])
-  inspect(result, content=(
-    #|Ok("  command: remote\n  subcommand: remove\n  name: upstream\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: remote\n  subcommand: remove\n  name: upstream\n")
+    ),
+  )
 }
 
+///|
 test "remote: rename" {
   let result = build_and_parse(["remote", "rename", "origin", "upstream"])
-  inspect(result, content=(
-    #|Ok("  command: remote\n  subcommand: rename\n  old: origin\n  new: upstream\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: remote\n  subcommand: rename\n  old: origin\n  new: upstream\n")
+    ),
+  )
 }
 
+///|
 test "remote: show" {
   let result = build_and_parse(["remote", "show", "origin"])
-  inspect(result, content=(
-    #|Ok("  command: remote\n  subcommand: show\n  name: origin\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: remote\n  subcommand: show\n  name: origin\n")
+    ),
+  )
 }
 
+///|
 test "remote: missing subcommand" {
   match build_and_parse(["remote"]) {
-    Err(msg) =>
-      assert_true(msg.has_prefix("error: subcommand required"))
+    Err(msg) => assert_true(msg.has_prefix("error: subcommand required"))
     Ok(_) => fail("expected error")
   }
 }
 
+///|
 test "stash: push" {
   let result = build_and_parse([
     "stash", "push", "-m", "WIP", "--include-untracked",
   ])
-  inspect(result, content=(
-    #|Ok("  command: stash\n  subcommand: push\n  message: \"WIP\"\n  include-untracked: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: stash\n  subcommand: push\n  message: \"WIP\"\n  include-untracked: true\n")
+    ),
+  )
 }
 
+///|
 test "stash: push with files" {
   let result = build_and_parse(["stash", "push", "file1.txt", "file2.txt"])
-  inspect(result, content=(
-    #|Ok("  command: stash\n  subcommand: push\n  files: [\"file1.txt\", \"file2.txt\"]\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: stash\n  subcommand: push\n  files: [\"file1.txt\", \"file2.txt\"]\n")
+    ),
+  )
 }
 
+///|
 test "stash: pop" {
   let result = build_and_parse(["stash", "pop"])
-  inspect(result, content=(
-    #|Ok("  command: stash\n  subcommand: pop\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: stash\n  subcommand: pop\n")
+    ),
+  )
 }
 
+///|
 test "stash: pop with ref" {
   let result = build_and_parse(["stash", "pop", "stash@{1}"])
-  inspect(result, content=(
-    #|Ok("  command: stash\n  subcommand: pop\n  stash: stash@{1}\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: stash\n  subcommand: pop\n  stash: stash@{1}\n")
+    ),
+  )
 }
 
+///|
 test "stash: list" {
   let result = build_and_parse(["stash", "list"])
-  inspect(result, content=(
-    #|Ok("  command: stash\n  subcommand: list\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: stash\n  subcommand: list\n")
+    ),
+  )
 }
 
+///|
 test "stash: drop" {
   let result = build_and_parse(["stash", "drop", "stash@{0}"])
-  inspect(result, content=(
-    #|Ok("  command: stash\n  subcommand: drop\n  stash: stash@{0}\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: stash\n  subcommand: drop\n  stash: stash@{0}\n")
+    ),
+  )
 }
 
+///|
 test "global: verbose count" {
   let result = build_and_parse(["-vvv", "status"])
-  inspect(result, content=(
-    #|Ok("  verbose: 3\n  command: status\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  verbose: 3\n  command: status\n")
+    ),
+  )
 }
 
+///|
 test "global: git-dir" {
   let result = build_and_parse(["--git-dir", "/tmp/.git", "status"])
-  inspect(result, content=(
-    #|Ok("  git-dir: /tmp/.git\n  command: status\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  git-dir: /tmp/.git\n  command: status\n")
+    ),
+  )
 }
 
+///|
 test "global: no-pager with subcommand" {
   let result = build_and_parse(["--no-pager", "log", "--oneline"])
-  inspect(result, content=(
-    #|Ok("  no-pager: true\n  command: log\n  oneline: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  no-pager: true\n  command: log\n  oneline: true\n")
+    ),
+  )
 }
 
+///|
 test "global: color always" {
   let result = build_and_parse(["--color", "always", "status"])
-  inspect(result, content=(
-    #|Ok("  color: always\n  command: status\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  color: always\n  command: status\n")
+    ),
+  )
 }
 
+///|
 test "global: color implicit" {
   let result = build_and_parse(["--color", "diff"])
-  inspect(result, content=(
-    #|Ok("  color: always\n  command: diff\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  color: always\n  command: diff\n")
+    ),
+  )
 }
 
+///|
 test "help: top level" {
   let result = build_and_parse(["--help"])
   assert_true(result is Ok(_))
 }
 
+///|
 test "help: commit" {
   let result = build_and_parse(["commit", "--help"])
   assert_true(result is Ok(_))
 }
 
+///|
 test "help: remote" {
   let result = build_and_parse(["remote", "--help"])
   assert_true(result is Ok(_))
 }
 
+///|
 test "no arguments" {
   let result = build_and_parse([])
-  inspect(result, content=(
-    #|Ok("")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("")
+    ),
+  )
 }
 
+///|
 test "error: unknown option" {
   match build_and_parse(["--nonexistent"]) {
     Err(_) => ()
@@ -1789,27 +2051,40 @@ test "error: unknown option" {
   }
 }
 
+///|
 test "stash: no subcommand" {
   let result = build_and_parse(["stash"])
-  inspect(result, content=(
-    #|Ok("  command: stash\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: stash\n")
+    ),
+  )
 }
 
+///|
 test "diff: dashdash" {
   let result = build_and_parse(["diff", "--", "file.txt"])
-  inspect(result, content=(
-    #|Ok("  command: diff\n  paths: [\"file.txt\"]\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: diff\n  paths: [\"file.txt\"]\n")
+    ),
+  )
 }
 
+///|
 test "add: dashdash" {
   let result = build_and_parse(["add", "--", "file.txt"])
-  inspect(result, content=(
-    #|Ok("  command: add\n  files: [\"file.txt\"]\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: add\n  files: [\"file.txt\"]\n")
+    ),
+  )
 }
 
+///|
 test "push: exclusive all vs delete" {
   match build_and_parse(["push", "--all", "--delete"]) {
     Err(msg) =>
@@ -1820,9 +2095,13 @@ test "push: exclusive all vs delete" {
   }
 }
 
+///|
 test "branch: force delete with -D" {
   let result = build_and_parse(["branch", "-D", "old-branch"])
-  inspect(result, content=(
-    #|Ok("  command: branch\n  name: old-branch\n  force-delete: true\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: branch\n  name: old-branch\n  force-delete: true\n")
+    ),
+  )
 }

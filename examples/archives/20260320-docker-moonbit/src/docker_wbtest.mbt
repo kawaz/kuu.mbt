@@ -503,7 +503,6 @@ test "global --debug" {
     result,
     content=(
       #|Ok("    debug: true\n  command: ps\n")
-
     ),
   )
 }
@@ -643,9 +642,12 @@ test "container alias: list" {
 ///|
 test "image rm (no rmi alias at image level)" {
   let result = build_and_parse(["image", "rm", "old-image"])
-  inspect(result, content=(
-    #|Ok("  command: image\n  command: rm\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  command: image\n  command: rm\n")
+    ),
+  )
 }
 
 ///|

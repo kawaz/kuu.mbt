@@ -3824,7 +3824,7 @@ test "adjust: rest with after_post transforms array" {
   p.adjust(
     args,
     after_post=Filter::map(fn(arr : Array[String]) {
-      arr.filter(fn(s) { !(s.is_empty()) })
+      arr.filter(fn(s) { !s.is_empty() })
     }),
   )
   ignore(p.parse(["hello", "", "world", ""]))
@@ -3868,7 +3868,7 @@ test "adjust: flag with after_post transforms bool" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   // after_post で Bool を反転
-  p.adjust(verbose, after_post=Filter::map(fn(v : Bool) { !(v) }))
+  p.adjust(verbose, after_post=Filter::map(fn(v : Bool) { !v }))
   ignore(p.parse(["--verbose"]))
   // true → not → false
   inspect(verbose.get(), content="Some(false)")

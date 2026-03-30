@@ -85,8 +85,8 @@ fn scan_for_subcommand(
       LongOpt(name) =>
         // --help / --version はユーザー定義がなければ特殊処理（resolve_long を呼ばず、値も消費しない）
         // parse で特殊処理されるため、ここではスキップのみ
-        if (name == "help" && not(has_help_opt)) ||
-          (name == "version" && not(has_version_opt)) {
+        if (name == "help" && !(has_help_opt)) ||
+          (name == "version" && !(has_version_opt)) {
           () // i += 1 はループ末尾で行われる
         } else {
           let resolved = resolve_long(effective_opts, name)
@@ -103,8 +103,8 @@ fn scan_for_subcommand(
         }
       LongOptWithValue(name, _) =>
         // --help=xxx / --version=xxx もユーザー定義がなければ特殊処理（スキップのみ）
-        if (name == "help" && not(has_help_opt)) ||
-          (name == "version" && not(has_version_opt)) {
+        if (name == "help" && !(has_help_opt)) ||
+          (name == "version" && !(has_version_opt)) {
           ()
         } else {
           // resolve して存在確認のみ。値はトークン内に含まれるので追加スキップ不要
@@ -115,7 +115,7 @@ fn scan_for_subcommand(
         i += skip
       }
       Positional(name) =>
-        if not(matches_subcommand(name, subcommands) is None) {
+        if !(matches_subcommand(name, subcommands) is None) {
           return Some(i)
         } else if subcommands.length() > 0 {
           // Design rationale: サブコマンドが定義されたコマンドでは、位置引数を受け付けない。

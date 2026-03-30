@@ -12,7 +12,10 @@ test "get: basic URL" {
 ///|
 test "get: with accept header" {
   let c = Config::default()
-  @dx.parse_into(["get", "https://api.example.com", "--accept", "application/json"], c)
+  @dx.parse_into(
+    ["get", "https://api.example.com", "--accept", "application/json"],
+    c,
+  )
   assert_eq(c.get_url, "https://api.example.com")
   assert_eq(c.get_accept, "application/json")
 }

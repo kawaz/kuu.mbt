@@ -20,38 +20,32 @@ fn main {
   println("")
   println("=== Demo 2: POST with data ===")
   run_test([
-    "-X", "POST", "-H", "Content-Type: application/json", "-d",
-    "{\"key\":\"value\"}", "https://api.example.com/data",
+    "-X", "POST", "-H", "Content-Type: application/json", "-d", "{\"key\":\"value\"}",
+    "https://api.example.com/data",
   ])
   println("")
   println("=== Demo 3: file download ===")
   run_test(["-L", "-o", "output.html", "-s", "-S", "https://example.com"])
   println("")
   println("=== Demo 4: auth exclusive error ===")
-  run_test([
-    "--basic", "--digest", "-u", "user:pass", "https://example.com",
-  ])
+  run_test(["--basic", "--digest", "-u", "user:pass", "https://example.com"])
   println("")
   println("=== Demo 5: proxy + env ===")
-  run_test(
-    ["-v", "https://example.com"],
-    env={ "HTTP_PROXY": "http://proxy:8080" },
-  )
+  run_test(["-v", "https://example.com"], env={
+    "HTTP_PROXY": "http://proxy:8080",
+  })
   println("")
   println("=== Demo 6: help ===")
   run_test(["--help"])
 }
 
 ///|
-fn run_test(
-  args : Array[String],
-  env~ : Map[String, String] = {},
-) -> Unit {
+fn run_test(args : Array[String], env? : Map[String, String] = {}) -> Unit {
   println("  args: " + args.to_string())
   if env.length() > 0 {
     println("  env: " + env.to_string())
   }
-  match build_and_parse(args, env=env) {
+  match build_and_parse(args, env~) {
     Ok(info) => println(info)
     Err(msg) => println("  ERROR: " + msg)
   }
@@ -60,7 +54,7 @@ fn run_test(
 ///|
 fn build_and_parse(
   args : Array[String],
-  env~ : Map[String, String] = {},
+  env? : Map[String, String] = {},
 ) -> Result[String, String] {
   let p = @core.Parser::new()
   p.set_description("mycurl - A curl CLI mock built with kuu")
@@ -163,18 +157,12 @@ fn build_and_parse(
     description="Server user and password",
     value_name="USER:PASSWORD",
   )
-  let basic = p.flag(
-    name="basic",
-    description="Use HTTP Basic Authentication",
-  )
+  let basic = p.flag(name="basic", description="Use HTTP Basic Authentication")
   let digest = p.flag(
     name="digest",
     description="Use HTTP Digest Authentication",
   )
-  let ntlm = p.flag(
-    name="ntlm",
-    description="Use HTTP NTLM authentication",
-  )
+  let ntlm = p.flag(name="ntlm", description="Use HTTP NTLM authentication")
   let anyauth = p.flag(
     name="anyauth",
     description="Pick any authentication method",
@@ -218,11 +206,7 @@ fn build_and_parse(
     name="create-dirs",
     description="Create necessary local directory hierarchy",
   )
-  let silent = p.flag(
-    name="silent",
-    shorts="s",
-    description="Silent mode",
-  )
+  let silent = p.flag(name="silent", shorts="s", description="Silent mode")
   let show_error = p.flag(
     name="show-error",
     shorts="S",
@@ -321,14 +305,8 @@ fn build_and_parse(
     description="Private key file name",
     value_name="KEY",
   )
-  let tlsv1_2 = p.flag(
-    name="tlsv1.2",
-    description="Use TLSv1.2 or greater",
-  )
-  let tlsv1_3 = p.flag(
-    name="tlsv1.3",
-    description="Use TLSv1.3 or greater",
-  )
+  let tlsv1_2 = p.flag(name="tlsv1.2", description="Use TLSv1.2 or greater")
+  let tlsv1_3 = p.flag(name="tlsv1.3", description="Use TLSv1.3 or greater")
   let _sslv3_deprecated = p.deprecated(
     "--sslv3",
     tlsv1_2,
@@ -436,23 +414,10 @@ fn build_and_parse(
 
   // ─── HTTP version (exclusive) ───
 
-  let http1_0 = p.flag(
-    name="http1.0",
-    shorts="0",
-    description="Use HTTP 1.0",
-  )
-  let http1_1 = p.flag(
-    name="http1.1",
-    description="Use HTTP 1.1",
-  )
-  let http2 = p.flag(
-    name="http2",
-    description="Use HTTP 2",
-  )
-  let http3 = p.flag(
-    name="http3",
-    description="Use HTTP v3",
-  )
+  let http1_0 = p.flag(name="http1.0", shorts="0", description="Use HTTP 1.0")
+  let http1_1 = p.flag(name="http1.1", description="Use HTTP 1.1")
+  let http2 = p.flag(name="http2", description="Use HTTP 2")
+  let http3 = p.flag(name="http3", description="Use HTTP v3")
   p.exclusive([
     http1_0.as_ref(),
     http1_1.as_ref(),
@@ -539,15 +504,13 @@ fn build_and_parse(
 
   // ─── Positional: URL... ───
 
-  let urls = p.rest(
-    name="urls",
-    description="URL(s) to fetch",
-  )
+  let urls = p.rest(name="urls", description="URL(s) to fetch")
 
   // ─── Parse ───
 
   let result : Result[@core.ParseResult, @core.ParseError] = try? p.parse(
-    args, env=env,
+    args,
+    env~,
   )
   match result {
     Err(@core.HelpRequested(text)) => Ok(text)
@@ -558,9 +521,7 @@ fn build_and_parse(
       // Deprecated warnings
       let warnings = p.deprecated_warnings()
       for warn in warnings {
-        buf.write_string(
-          "  [deprecated] " + warn.0 + ": " + warn.1 + "\n",
-        )
+        buf.write_string("  [deprecated] " + warn.0 + ": " + warn.1 + "\n")
       }
 
       // Data (gather once for method inference and output)
@@ -622,9 +583,7 @@ fn build_and_parse(
         buf.write_string("  data-raw: " + data_raw_val.to_string() + "\n")
       }
       if data_ue_val.length() > 0 {
-        buf.write_string(
-          "  data-urlencode: " + data_ue_val.to_string() + "\n",
-        )
+        buf.write_string("  data-urlencode: " + data_ue_val.to_string() + "\n")
       }
       if json_val.length() > 0 {
         buf.write_string("  json: " + json_val.to_string() + "\n")
@@ -642,7 +601,9 @@ fn build_and_parse(
         buf.write_string("  user: " + user_val + "\n")
       }
       let auth_flags : Array[(String, @core.Opt[Bool])] = [
-        ("basic", basic), ("digest", digest), ("ntlm", ntlm),
+        ("basic", basic),
+        ("digest", digest),
+        ("ntlm", ntlm),
         ("anyauth", anyauth),
       ]
       for pair in auth_flags {
@@ -765,9 +726,7 @@ fn build_and_parse(
       // Timeout / Retry
       let ct_timeout = connect_timeout.get().unwrap()
       if ct_timeout != 0.0 {
-        buf.write_string(
-          "  connect-timeout: " + ct_timeout.to_string() + "\n",
-        )
+        buf.write_string("  connect-timeout: " + ct_timeout.to_string() + "\n")
       }
       let mt_val = max_time.get().unwrap()
       if mt_val != 0.0 {
@@ -783,9 +742,7 @@ fn build_and_parse(
       }
       let rmt_val = retry_max_time.get().unwrap()
       if rmt_val != 0 {
-        buf.write_string(
-          "  retry-max-time: " + rmt_val.to_string() + "\n",
-        )
+        buf.write_string("  retry-max-time: " + rmt_val.to_string() + "\n")
       }
       if retry_all_errors.get().unwrap() {
         buf.write_string("  retry-all-errors: true\n")
@@ -803,7 +760,9 @@ fn build_and_parse(
 
       // HTTP version
       let http_versions : Array[(String, @core.Opt[Bool])] = [
-        ("http1.0", http1_0), ("http1.1", http1_1), ("http2", http2),
+        ("http1.0", http1_0),
+        ("http1.1", http1_1),
+        ("http2", http2),
         ("http3", http3),
       ]
       for pair in http_versions {
@@ -836,9 +795,7 @@ fn build_and_parse(
       }
       if parallel_max.is_set() {
         buf.write_string(
-          "  parallel-max: " +
-            parallel_max.get().unwrap().to_string() +
-            "\n",
+          "  parallel-max: " + parallel_max.get().unwrap().to_string() + "\n",
         )
       }
       let ca_val = continue_at.get().unwrap()
@@ -885,37 +842,47 @@ fn build_and_parse(
 
 // ─── Tests ───
 
+///|
 test "basic get" {
   let result = build_and_parse(["https://example.com"])
-  inspect(result, content=(
-    #|Ok("  urls: [\"https://example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "post with data" {
   let result = build_and_parse(["-d", "key=value", "https://httpbin.org/post"])
-  inspect(result, content=(
-    #|Ok("  method: POST (implied)\n  data: [\"key=value\"]\n  urls: [\"https://httpbin.org/post\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  method: POST (implied)\n  data: [\"key=value\"]\n  urls: [\"https://httpbin.org/post\"]\n")
+    ),
+  )
 }
 
+///|
 test "multiple headers" {
   let result = build_and_parse([
-    "-H", "Accept: application/json", "-H", "X-Custom: test",
-    "https://example.com",
+    "-H", "Accept: application/json", "-H", "X-Custom: test", "https://example.com",
   ])
-  inspect(result, content=(
-    #|Ok("  headers: [\"Accept: application/json\", \"X-Custom: test\"]\n  urls: [\"https://example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  headers: [\"Accept: application/json\", \"X-Custom: test\"]\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "auth exclusive error" {
-  match build_and_parse([
-    "--basic", "--digest", "-u", "user:pass", "https://example.com",
-  ]) {
+  match
+    build_and_parse([
+      "--basic", "--digest", "-u", "user:pass", "https://example.com",
+    ]) {
     Err(msg) =>
       assert_true(
         msg.has_prefix("error: mutually exclusive options: --basic, --digest"),
@@ -924,6 +891,7 @@ test "auth exclusive error" {
   }
 }
 
+///|
 test "http version exclusive error" {
   match build_and_parse(["--http2", "--http3", "https://example.com"]) {
     Err(msg) =>
@@ -934,71 +902,85 @@ test "http version exclusive error" {
   }
 }
 
+///|
 test "file download" {
   let result = build_and_parse(["-o", "file.html", "-L", "https://example.com"])
-  inspect(result, content=(
-    #|Ok("  output: file.html\n  location: true\n  urls: [\"https://example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  output: file.html\n  location: true\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "deprecated sslv3" {
   let result = build_and_parse(["--sslv3", "https://example.com"])
-  inspect(result, content=(
-    #|Ok("  [deprecated] --sslv3: use --tlsv1.2 instead\n  tlsv1.2: true\n  urls: [\"https://example.com\"]\n")
-
-  ))
-}
-
-test "proxy via env" {
-  let result = build_and_parse(
-    ["https://example.com"],
-    env={ "HTTP_PROXY": "http://proxy:8080" },
+  inspect(
+    result,
+    content=(
+      #|Ok("  [deprecated] --sslv3: use --tlsv1.2 instead\n  tlsv1.2: true\n  urls: [\"https://example.com\"]\n")
+    ),
   )
-  inspect(result, content=(
-    #|Ok("  proxy: http://proxy:8080\n  urls: [\"https://example.com\"]\n")
-
-  ))
 }
 
+///|
+test "proxy via env" {
+  let result = build_and_parse(["https://example.com"], env={
+    "HTTP_PROXY": "http://proxy:8080",
+  })
+  inspect(
+    result,
+    content=(
+      #|Ok("  proxy: http://proxy:8080\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
+}
+
+///|
 test "proxy-user requires proxy" {
-  match build_and_parse([
-    "--proxy-user", "user:pass", "https://example.com",
-  ]) {
+  match build_and_parse(["--proxy-user", "user:pass", "https://example.com"]) {
     Err(msg) =>
       assert_true(msg.has_prefix("error: --proxy-user requires --proxy"))
     Ok(_) => fail("expected error")
   }
 }
 
+///|
 test "cert-type choices valid" {
   let result = build_and_parse([
     "--cert-type", "PEM", "--cert", "cert.pem", "https://example.com",
   ])
-  inspect(result, content=(
-    #|Ok("  cert: cert.pem\n  cert-type: PEM\n  urls: [\"https://example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  cert: cert.pem\n  cert-type: PEM\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "cert-type choices invalid" {
   match build_and_parse(["--cert-type", "INVALID", "https://example.com"]) {
-    Err(msg) =>
-      assert_true(msg.has_prefix("error: value must be one of: DER"))
+    Err(msg) => assert_true(msg.has_prefix("error: value must be one of: DER"))
     Ok(_) => fail("expected error")
   }
 }
 
+///|
 test "max-redirs range valid" {
   let result = build_and_parse([
     "--max-redirs", "10", "-L", "https://example.com",
   ])
-  inspect(result, content=(
-    #|Ok("  location: true\n  max-redirs: 10\n  urls: [\"https://example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  location: true\n  max-redirs: 10\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "max-redirs range invalid" {
   match build_and_parse(["--max-redirs", "-2", "https://example.com"]) {
     Err(msg) => assert_true(msg.has_prefix("error: value -2"))
@@ -1006,123 +988,170 @@ test "max-redirs range invalid" {
   }
 }
 
+///|
 test "short combining" {
-  let result = build_and_parse([
-    "-sSLo", "file.html", "https://example.com",
-  ])
-  inspect(result, content=(
-    #|Ok("  output: file.html\n  silent: true\n  show-error: true\n  location: true\n  urls: [\"https://example.com\"]\n")
-
-  ))
+  let result = build_and_parse(["-sSLo", "file.html", "https://example.com"])
+  inspect(
+    result,
+    content=(
+      #|Ok("  output: file.html\n  silent: true\n  show-error: true\n  location: true\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "upload file" {
-  let result = build_and_parse([
-    "-T", "data.txt", "https://example.com/upload",
-  ])
-  inspect(result, content=(
-    #|Ok("  method: PUT (implied)\n  upload-file: data.txt\n  urls: [\"https://example.com/upload\"]\n")
-
-  ))
+  let result = build_and_parse(["-T", "data.txt", "https://example.com/upload"])
+  inspect(
+    result,
+    content=(
+      #|Ok("  method: PUT (implied)\n  upload-file: data.txt\n  urls: [\"https://example.com/upload\"]\n")
+    ),
+  )
 }
 
+///|
 test "cookie send and save" {
   let result = build_and_parse([
     "-b", "session=abc123", "-c", "cookies.txt", "https://example.com",
   ])
-  inspect(result, content=(
-    #|Ok("  cookie: [\"session=abc123\"]\n  cookie-jar: cookies.txt\n  urls: [\"https://example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  cookie: [\"session=abc123\"]\n  cookie-jar: cookies.txt\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "json data" {
   let result = build_and_parse([
     "--json", "{\"key\":\"val\"}", "https://api.example.com",
   ])
-  inspect(result, content=(
-    #|Ok("  method: POST (implied)\n  json: [\"{\\\"key\\\":\\\"val\\\"}\"]\n  urls: [\"https://api.example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  method: POST (implied)\n  json: [\"{\\\"key\\\":\\\"val\\\"}\"]\n  urls: [\"https://api.example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "parallel" {
   let result = build_and_parse([
-    "-Z", "--parallel-max", "10", "https://a.example.com",
-    "https://b.example.com",
+    "-Z", "--parallel-max", "10", "https://a.example.com", "https://b.example.com",
   ])
-  inspect(result, content=(
-    #|Ok("  parallel: true\n  parallel-max: 10\n  urls: [\"https://a.example.com\", \"https://b.example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  parallel: true\n  parallel-max: 10\n  urls: [\"https://a.example.com\", \"https://b.example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "verbose and trace" {
   let result = build_and_parse([
     "-v", "--trace", "trace.log", "https://example.com",
   ])
-  inspect(result, content=(
-    #|Ok("  verbose: true\n  trace: trace.log\n  urls: [\"https://example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  verbose: true\n  trace: trace.log\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "no-keepalive variation" {
   let result = build_and_parse(["--no-keepalive", "https://example.com"])
-  inspect(result, content=(
-    #|Ok("  keepalive: false\n  urls: [\"https://example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  keepalive: false\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "ipv4" {
   let result = build_and_parse(["-4", "https://example.com"])
-  inspect(result, content=(
-    #|Ok("  ipv4: true\n  urls: [\"https://example.com\"]\n")
-
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  ipv4: true\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "explicit method DELETE" {
   let result = build_and_parse(["-X", "DELETE", "https://example.com/item/1"])
-  inspect(result, content=(
-    #|Ok("  method: DELETE\n  urls: [\"https://example.com/item/1\"]\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  method: DELETE\n  urls: [\"https://example.com/item/1\"]\n")
+    ),
+  )
 }
 
+///|
 test "head implied" {
   let result = build_and_parse(["-I", "https://example.com"])
-  inspect(result, content=(
-    #|Ok("  method: HEAD (implied)\n  head: true\n  urls: [\"https://example.com\"]\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  method: HEAD (implied)\n  head: true\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }
 
+///|
 test "form post implied" {
-  let result = build_and_parse(["-F", "file=@upload.txt", "https://example.com/upload"])
-  inspect(result, content=(
-    #|Ok("  method: POST (implied)\n  form: [\"file=@upload.txt\"]\n  urls: [\"https://example.com/upload\"]\n")
-  ))
-}
-
-test "method priority: explicit over data" {
-  let result = build_and_parse(["-X", "GET", "-d", "data", "https://example.com"])
-  inspect(result, content=(
-    #|Ok("  method: GET\n  data: [\"data\"]\n  urls: [\"https://example.com\"]\n")
-  ))
-}
-
-test "get flag overrides post implied" {
   let result = build_and_parse([
-    "-G", "-d", "query=1", "https://example.com",
+    "-F", "file=@upload.txt", "https://example.com/upload",
   ])
-  inspect(result, content=(
-    #|Ok("  method: GET (implied)\n  data: [\"query=1\"]\n  get: true\n  urls: [\"https://example.com\"]\n")
-  ))
+  inspect(
+    result,
+    content=(
+      #|Ok("  method: POST (implied)\n  form: [\"file=@upload.txt\"]\n  urls: [\"https://example.com/upload\"]\n")
+    ),
+  )
 }
 
+///|
+test "method priority: explicit over data" {
+  let result = build_and_parse([
+    "-X", "GET", "-d", "data", "https://example.com",
+  ])
+  inspect(
+    result,
+    content=(
+      #|Ok("  method: GET\n  data: [\"data\"]\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
+}
+
+///|
+test "get flag overrides post implied" {
+  let result = build_and_parse(["-G", "-d", "query=1", "https://example.com"])
+  inspect(
+    result,
+    content=(
+      #|Ok("  method: GET (implied)\n  data: [\"query=1\"]\n  get: true\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
+}
+
+///|
 test "requires normal case" {
-  let result = build_and_parse(["--proxy", "http://p:8080", "--proxy-user", "u:p", "https://example.com"])
-  inspect(result, content=(
-    #|Ok("  proxy: http://p:8080\n  proxy-user: u:p\n  urls: [\"https://example.com\"]\n")
-  ))
+  let result = build_and_parse([
+    "--proxy", "http://p:8080", "--proxy-user", "u:p", "https://example.com",
+  ])
+  inspect(
+    result,
+    content=(
+      #|Ok("  proxy: http://p:8080\n  proxy-user: u:p\n  urls: [\"https://example.com\"]\n")
+    ),
+  )
 }

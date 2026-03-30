@@ -155,7 +155,7 @@ pub fn Parser::int(
   self.register_opt(name, default, fn(_cur, action) {
     match action {
       Value(Some(s)) => {
-        let result : Result[Int, _] = try? @strconv.parse_int(s.view())
+        let result : Result[Int, _] = try? @string.parse_int(s.view())
         match result {
           Ok(v) => Some(v)
           Err(_) => None

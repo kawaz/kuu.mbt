@@ -83,7 +83,7 @@ pub fn[S] parse_args(
         }
       }
     }
-    if not(found) {
+    if !(found) {
       return Err("unknown option: " + arg)
     }
   }
@@ -143,7 +143,7 @@ pub fn make_app_opts() -> Array[OptDef[AppConfig]] {
       opt_name: "--age",
       binder: make_binder(
         AppConfig::age_ref(),
-        fn(raw) { try { Some(@strconv.parse_int(raw)) } catch { _ => None } },
+        fn(raw) { try { Some(@string.parse_int(raw)) } catch { _ => None } },
       ),
     },
     {

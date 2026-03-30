@@ -1084,7 +1084,7 @@ fn build_and_parse(
               write_flag(buf, "build", up_build)
               write_flag(buf, "force-recreate", up_force_recreate)
               write_flag(buf, "no-recreate", up_no_recreate)
-              if up_deps.is_set() && not(up_deps.get().unwrap()) {
+              if up_deps.is_set() && !up_deps.get().unwrap() {
                 buf.write_string("    no-deps: true\n")
               }
               write_arr(buf, "scale", up_scale)

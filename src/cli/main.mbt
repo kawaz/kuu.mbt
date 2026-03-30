@@ -255,7 +255,7 @@ fn build_parser_from_schema(
     _ => ""
   }
   let has_dashdash_kind = has_dashdash_opt(opts_json)
-  let parser = @core.Parser::new(dashdash=!(has_dashdash_kind))
+  let parser = @core.Parser::new(dashdash=!has_dashdash_kind)
   if description != "" {
     parser.set_description(description)
   }

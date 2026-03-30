@@ -27,12 +27,14 @@ struct Config {
   mut post_header : Array[String]
 } derive(Show, Eq)
 
+///|
 enum Command {
   None
   Get
   Post
 } derive(Show, Eq)
 
+///|
 fn Config::default() -> Config {
   {
     verbose: 0,
@@ -51,10 +53,13 @@ fn Config::default() -> Config {
   }
 }
 
+///|
 impl @dx.Parseable for Config with register(self, reg) {
   // --- Global options ---
   reg.set_description("A simple HTTP client")
-  reg.count(name="verbose", shorts="v", global=true, set=fn(v) { self.verbose = v })
+  reg.count(name="verbose", shorts="v", global=true, set=fn(v) {
+    self.verbose = v
+  })
   let format_ref = reg.string_ref(
     name="format",
     default="text",
@@ -99,7 +104,9 @@ impl @dx.Parseable for Config with register(self, reg) {
     description="Send a GET request",
     on_match=fn() { self.command = Get },
     setup=fn(r) {
-      r.positional(name="url", description="Request URL", set=fn(v) { self.get_url = v })
+      r.positional(name="url", description="Request URL", set=fn(v) {
+        self.get_url = v
+      })
       r.string(
         name="accept",
         default="*/*",
@@ -115,11 +122,9 @@ impl @dx.Parseable for Config with register(self, reg) {
     description="Send a POST request",
     on_match=fn() { self.command = Post },
     setup=fn(r) {
-      r.positional(
-        name="url",
-        description="Request URL",
-        set=fn(v) { self.post_url = v },
-      )
+      r.positional(name="url", description="Request URL", set=fn(v) {
+        self.post_url = v
+      })
       let data_ref = r.string_ref(
         name="data",
         shorts="d",
@@ -146,6 +151,7 @@ impl @dx.Parseable for Config with register(self, reg) {
   reg.require_cmd()
 }
 
+///|
 fn main {
   let config = Config::default()
   let result : Result[Unit, @core.ParseError] = try? @dx.parse_into(

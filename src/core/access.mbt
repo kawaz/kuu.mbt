@@ -81,7 +81,7 @@ pub fn Parser::deprecated_warnings(self : Parser) -> Array[(String, String)] {
 /// Deprecated: Use `opt.get()` instead. This method checks this parser's parsed
 /// state, which may differ from the opt's owning parser (e.g. for subcommand opts).
 pub fn[T] Parser::get(self : Parser, opt : Opt[T]) -> T? {
-  if !(self.parsed.val) {
+  if !self.parsed.val {
     None
   } else {
     Some((opt.accessor.get)())

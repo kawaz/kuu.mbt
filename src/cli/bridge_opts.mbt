@@ -305,7 +305,7 @@ fn register_opt_by_kind(
         Some(String(s)) => s
         _ => ""
       }
-      let child_dashdash = !(has_dashdash_opt(child_opts))
+      let child_dashdash = !has_dashdash_opt(child_opts)
       let child_parser = parser.sub(
         name~,
         description~,

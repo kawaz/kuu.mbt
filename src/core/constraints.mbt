@@ -45,7 +45,7 @@ pub fn Parser::at_least_one(self : Parser, opts : Array[OptRef]) -> Unit {
 pub fn Parser::required(self : Parser, opt : OptRef) -> Unit {
   let opt_ref = opt
   self.post_hooks.push(fn() raise ParseError {
-    if !((opt_ref.is_set)()) {
+    if !(opt_ref.is_set)() {
       raise parse_error(
         "required option missing: " + opt_ref.name,
         kind=MissingRequired,
@@ -67,7 +67,7 @@ pub fn Parser::requires(
   let target_ref = target
   let source_ref = source
   self.post_hooks.push(fn() raise ParseError {
-    if (source_ref.is_set)() && !((target_ref.is_set)()) {
+    if (source_ref.is_set)() && !(target_ref.is_set)() {
       let message = if msg != "" {
         msg
       } else {

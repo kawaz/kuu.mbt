@@ -147,7 +147,7 @@ pub fn Filter::to_upper() -> FilterChain[String, String] {
 /// Validate that string starts with prefix
 pub fn Filter::starts_with(prefix : String) -> FilterChain[String, String] {
   Filter::validate(fn(s) raise ParseError {
-    if !(s.has_prefix(prefix)) {
+    if !s.has_prefix(prefix) {
       raise parse_error("value must start with: " + prefix)
     }
   })
@@ -157,7 +157,7 @@ pub fn Filter::starts_with(prefix : String) -> FilterChain[String, String] {
 /// Validate that string ends with suffix
 pub fn Filter::ends_with(suffix : String) -> FilterChain[String, String] {
   Filter::validate(fn(s) raise ParseError {
-    if !(s.has_suffix(suffix)) {
+    if !s.has_suffix(suffix) {
       raise parse_error("value must end with: " + suffix)
     }
   })
@@ -167,7 +167,7 @@ pub fn Filter::ends_with(suffix : String) -> FilterChain[String, String] {
 /// Validate that string contains substring
 pub fn Filter::contains(substr : String) -> FilterChain[String, String] {
   Filter::validate(fn(s) raise ParseError {
-    if !(s.contains(substr)) {
+    if !s.contains(substr) {
       raise parse_error("value must contain: " + substr)
     }
   })
@@ -439,7 +439,7 @@ pub fn Filter::mergeable_list(
     let is_merge = parts
       .iter()
       .any(fn(p) { p.has_prefix("+") || p.has_prefix("-") || p == "..." })
-    if !(is_merge) {
+    if !is_merge {
       // Full overwrite: return split parts as-is
       return parts
     }
@@ -469,31 +469,31 @@ pub fn Filter::mergeable_list(
         if part == "..." {
           // Expand base items not explicitly mentioned
           for b in base {
-            if !(mentioned.contains(b)) && !(result.contains(b)) {
+            if !mentioned.contains(b) && !result.contains(b) {
               result.push(b)
             }
           }
         } else if part.has_prefix("+") {
           let name = part[1:].to_string()
-          if !(removals.contains(name)) && !(result.contains(name)) {
+          if !removals.contains(name) && !result.contains(name) {
             result.push(name)
           }
         } else if part.has_prefix("-") {
           // Removal: handled by final removals filter below
           ()
-        } else if !(removals.contains(part)) && !(result.contains(part)) {
+        } else if !removals.contains(part) && !result.contains(part) {
           result.push(part)
         }
       }
       // Apply removals to the final result
-      result.filter(fn(item) { !(removals.contains(item)) })
+      result.filter(fn(item) { !removals.contains(item) })
     } else {
       // No "...", pure +/- mode: start from base, apply operations left-to-right
       let result : Array[String] = base.copy()
       for part in parts {
         if part.has_prefix("+") {
           let name = part[1:].to_string()
-          if !(result.contains(name)) {
+          if !result.contains(name) {
             result.push(name)
           }
         } else if part.has_prefix("-") {

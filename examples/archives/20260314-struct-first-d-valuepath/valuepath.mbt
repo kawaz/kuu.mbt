@@ -225,7 +225,7 @@ fn vp_parse(
       }
       j = j + 1
     }
-    if not(found) {
+    if !(found) {
       // サブコマンドマッチを試みる
       let mut cmd_found = false
       match subcmds {
@@ -253,7 +253,7 @@ fn vp_parse(
         }
         None => ()
       }
-      if not(cmd_found) {
+      if !(cmd_found) {
         // rest 引数として扱う
         match rest_target {
           Some(rest) => rest.val.push(raw_arg)

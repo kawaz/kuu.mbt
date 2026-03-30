@@ -1155,7 +1155,7 @@ fn build_parser(
               Some(String(s)) => s
               _ => ""
             }
-            let child_dashdash = !(has_dashdash_opt(child_opts))
+            let child_dashdash = !has_dashdash_opt(child_opts)
             let child_parser = parser.sub(
               name~,
               description~,
@@ -1498,7 +1498,7 @@ pub fn kuu_parse(input : String) -> String {
   // Check if opts contain explicit "dashdash" kind (if so, disable default separator)
   let has_dashdash_kind = has_dashdash_opt(opts_json)
   // Build parser from schema
-  let parser = @core.Parser::new(dashdash=!(has_dashdash_kind))
+  let parser = @core.Parser::new(dashdash=!has_dashdash_kind)
   if description != "" {
     parser.set_description(description)
   }
@@ -1639,7 +1639,7 @@ pub fn kuu_completions(
   // Check for explicit dashdash
   let has_dashdash_kind = has_dashdash_opt(opts_json)
   // Build parser from schema
-  let parser = @core.Parser::new(dashdash=!(has_dashdash_kind))
+  let parser = @core.Parser::new(dashdash=!has_dashdash_kind)
   if description != "" {
     parser.set_description(description)
   }

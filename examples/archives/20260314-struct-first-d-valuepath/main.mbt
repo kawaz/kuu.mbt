@@ -127,17 +127,17 @@ fn main {
   match result1 {
     Ok(_) => {
       print_config(cfg1)
-      if not(
+      if !(
         assert_eq_str("debug", cfg1.debug.val.to_string(), "true"),
       ) {
         all_pass = false
       }
-      if not(
+      if !(
         assert_eq_str("scale", cfg1.compose_scale.val.to_string(), "3"),
       ) {
         all_pass = false
       }
-      if not(
+      if !(
         assert_eq_str(
           "matched_root_cmd",
           cfg1.matched_root_cmd.val.to_string(),
@@ -146,7 +146,7 @@ fn main {
       ) {
         all_pass = false
       }
-      if not(
+      if !(
         assert_eq_str(
           "matched_compose_cmd",
           cfg1.matched_compose_cmd.val.to_string(),
@@ -173,12 +173,12 @@ fn main {
   match result2 {
     Ok(_) => {
       print_config(cfg2)
-      if not(
+      if !(
         assert_eq_str("debug", cfg2.debug.val.to_string(), "true"),
       ) {
         all_pass = false
       }
-      if not(
+      if !(
         assert_eq_str("log_level", cfg2.log_level.val, "warn"),
       ) {
         all_pass = false
@@ -204,12 +204,12 @@ fn main {
   match result3 {
     Ok(_) => {
       print_config(cfg3)
-      if not(
+      if !(
         assert_eq_str("log_level", cfg3.log_level.val, "error"),
       ) {
         all_pass = false
       }
-      if not(
+      if !(
         assert_eq_str("scale", cfg3.compose_scale.val.to_string(), "5"),
       ) {
         all_pass = false
@@ -232,7 +232,7 @@ fn main {
   match result4 {
     Ok(_) => {
       print_config(cfg4)
-      if not(
+      if !(
         assert_eq_str("verbose", cfg4.verbose.val.to_string(), "3"),
       ) {
         all_pass = false
@@ -259,7 +259,7 @@ fn main {
     }
     Err(msg) => {
       println("Error (expected): " + msg)
-      if not(
+      if !(
         assert_eq_str(
           "error_contains_unknown",
           (msg.contains("Unknown argument")).to_string(),
@@ -287,7 +287,7 @@ fn main {
     }
     Err(msg) => {
       println("Error (expected): " + msg)
-      if not(
+      if !(
         assert_eq_str(
           "error_contains_flag",
           (msg.contains("does not accept a value")).to_string(),
@@ -314,7 +314,7 @@ fn main {
     }
     Err(msg) => {
       println("Error (expected): " + msg)
-      if not(
+      if !(
         assert_eq_str(
           "error_contains_invalid_integer",
           (msg.contains("Invalid integer")).to_string(),
@@ -337,7 +337,7 @@ fn main {
   match result8 {
     Ok(_) => {
       print_config(cfg8)
-      if not(
+      if !(
         assert_eq_str("verbose", cfg8.verbose.val.to_string(), "3"),
       ) {
         all_pass = false
@@ -362,12 +362,12 @@ fn main {
   match result9 {
     Ok(_) => {
       print_config(cfg9)
-      if not(
+      if !(
         assert_eq_str("debug", cfg9.debug.val.to_string(), "true"),
       ) {
         all_pass = false
       }
-      if not(
+      if !(
         assert_eq_str(
           "matched_root_cmd",
           cfg9.matched_root_cmd.val.to_string(),
@@ -376,7 +376,7 @@ fn main {
       ) {
         all_pass = false
       }
-      if not(
+      if !(
         assert_eq_str(
           "matched_net_cmd",
           cfg9.matched_net_cmd.val.to_string(),
@@ -385,12 +385,12 @@ fn main {
       ) {
         all_pass = false
       }
-      if not(
+      if !(
         assert_eq_str("net_create_driver", cfg9.net_create_driver.val, "overlay"),
       ) {
         all_pass = false
       }
-      if not(
+      if !(
         assert_eq_str(
           "net_create_name",
           cfg9.net_create_name.val.to_string(),
@@ -424,7 +424,7 @@ fn main {
       println("Error (expected): " + msg)
       // --debug はグローバルオプションだが compose レベルでは未定義なのでエラーになる
       // struct-first の制限: グローバルオプションを各レベルに手動追加する必要がある
-      if not(
+      if !(
         assert_eq_str(
           "error_contains_unknown",
           (msg.contains("Unknown argument")).to_string(),
