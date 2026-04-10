@@ -7,7 +7,26 @@ enum TestColor {
   Blue
   RGB(Int, Int, Int)
   Auto
-} derive(Show, Eq)
+} derive(Debug, Eq)
+
+///|
+impl Show for TestColor with output(self, logger) {
+  match self {
+    Red => logger.write_string("Red")
+    Green => logger.write_string("Green")
+    Blue => logger.write_string("Blue")
+    RGB(r, g, b) => {
+      logger.write_string("RGB(")
+      r.output(logger)
+      logger.write_string(", ")
+      g.output(logger)
+      logger.write_string(", ")
+      b.output(logger)
+      logger.write_string(")")
+    }
+    Auto => logger.write_string("Auto")
+  }
+}
 
 ///|
 /// ヘルパー: --color <name> → TestColor (consumed=2) の ExactNode を生成

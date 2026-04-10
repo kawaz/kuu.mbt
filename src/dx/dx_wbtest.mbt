@@ -9,7 +9,7 @@ struct SimpleConfig {
   mut name : String
   mut count : Int
   mut rate : Double
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn SimpleConfig::default() -> SimpleConfig {
@@ -77,7 +77,7 @@ test "int: default is 0" {
 ///|
 struct BoolConfig {
   mut debug : Bool
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn BoolConfig::default() -> BoolConfig {
@@ -165,7 +165,7 @@ struct WithDefaults {
   mut host : String
   mut port : Int
   mut timeout : Double
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn WithDefaults::default() -> WithDefaults {
@@ -209,7 +209,7 @@ test "string/int/float with default: explicit value overrides" {
 ///|
 struct CountConfig {
   mut verbosity : Int
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn CountConfig::default() -> CountConfig {
@@ -242,7 +242,7 @@ struct AppendConfig {
   mut tags : Array[String]
   mut ports : Array[Int]
   mut scores : Array[Double]
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn AppendConfig::default() -> AppendConfig {
@@ -282,7 +282,7 @@ test "append_float: multiple --score collects values" {
 ///|
 struct PosConfig {
   mut file : String?
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn PosConfig::default() -> PosConfig {
@@ -313,7 +313,7 @@ test "positional: unset keeps None" {
 ///|
 struct RestConfig {
   mut args : Array[String]
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn RestConfig::default() -> RestConfig {
@@ -347,14 +347,14 @@ enum SubCommand {
   Init
   Build
   None
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 struct SubConfig {
   mut verbose : Bool
   mut command : SubCommand
   mut build_tag : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn SubConfig::default() -> SubConfig {
@@ -385,14 +385,14 @@ impl Parseable for SubConfig with register(self, reg) {
 test "sub: init subcommand" {
   let config = SubConfig::default()
   parse_into(["init"], config)
-  assert_eq(config.command, Init)
+  assert_true(config.command == Init)
 }
 
 ///|
 test "sub: build with option" {
   let config = SubConfig::default()
   parse_into(["build", "--tag", "v1.0"], config)
-  assert_eq(config.command, Build)
+  assert_true(config.command == Build)
   assert_eq(config.build_tag, "v1.0")
 }
 
@@ -401,7 +401,7 @@ test "sub: global flag with subcommand" {
   let config = SubConfig::default()
   parse_into(["--verbose", "build"], config)
   assert_eq(config.verbose, true)
-  assert_eq(config.command, Build)
+  assert_true(config.command == Build)
 }
 
 ///|
@@ -415,7 +415,7 @@ test "sub: require_cmd errors without subcommand" {
 test "sub: unselected subcommand state untouched" {
   let config = SubConfig::default()
   parse_into(["init"], config)
-  assert_eq(config.command, Init)
+  assert_true(config.command == Init)
   assert_eq(config.build_tag, "latest") // build は未選択なのでデフォルト
 }
 
@@ -424,7 +424,7 @@ test "sub: unselected subcommand state untouched" {
 ///|
 struct DescConfig {
   mut name : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn DescConfig::default() -> DescConfig {
@@ -452,7 +452,7 @@ test "set_description: does not affect parsing" {
 struct ShortsConfig {
   mut verbose : Bool
   mut output : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn ShortsConfig::default() -> ShortsConfig {
@@ -490,7 +490,7 @@ test "shorts: -o sets output" {
 ///|
 struct AliasConfig {
   mut color : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn AliasConfig::default() -> AliasConfig {
@@ -520,7 +520,7 @@ test "aliases: --colour works as alias for --color" {
 ///|
 struct EnvConfig {
   mut host : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn EnvConfig::default() -> EnvConfig {
@@ -546,7 +546,7 @@ test "env: env parameter does not affect parsing" {
 struct HiddenConfig {
   mut debug : Bool
   mut name : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn HiddenConfig::default() -> HiddenConfig {
@@ -571,7 +571,7 @@ test "hidden: hidden flag still works for parsing" {
 ///|
 struct SubAliasConfig {
   mut command : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn SubAliasConfig::default() -> SubAliasConfig {
@@ -601,7 +601,7 @@ test "sub aliases: alias 'i' matches install" {
 ///|
 struct ValueNameConfig {
   mut file : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn ValueNameConfig::default() -> ValueNameConfig {
@@ -630,7 +630,7 @@ test "value_name: does not affect parsing" {
 struct ExclusiveConfig {
   mut json : Bool
   mut yaml : Bool
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn ExclusiveConfig::default() -> ExclusiveConfig {
@@ -667,7 +667,7 @@ test "exclusive: both options is error" {
 ///|
 struct RequiredConfig {
   mut output : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn RequiredConfig::default() -> RequiredConfig {
@@ -700,7 +700,7 @@ test "required: missing is error" {
 struct AtLeastOneConfig {
   mut input : String
   mut stdin : Bool
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn AtLeastOneConfig::default() -> AtLeastOneConfig {
@@ -736,7 +736,19 @@ enum LogLevel {
   Info
   Warn
   Error_
-} derive(Show, Eq)
+} derive(Debug, Eq)
+
+///|
+impl Show for LogLevel with output(self, logger) {
+  logger.write_string(
+    match self {
+      Debug => "Debug"
+      Info => "Info"
+      Warn => "Warn"
+      Error_ => "Error_"
+    },
+  )
+}
 
 ///|
 fn LogLevel::from_string(s : String) -> LogLevel raise @core.ParseError {
@@ -759,7 +771,7 @@ fn LogLevel::from_string(s : String) -> LogLevel raise @core.ParseError {
 ///|
 struct CustomConfig {
   mut level : LogLevel
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn CustomConfig::default() -> CustomConfig {
@@ -780,7 +792,7 @@ impl Parseable for CustomConfig with register(self, reg) {
 test "custom: parses custom type" {
   let config = CustomConfig::default()
   parse_into(["--level", "debug"], config)
-  assert_eq(config.level, Debug)
+  assert_true(config.level == Debug)
 }
 
 ///|
@@ -802,7 +814,7 @@ test "custom: invalid value is error" {
 ///|
 struct CustomAppendConfig {
   mut values : Array[Int]
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn CustomAppendConfig::default() -> CustomAppendConfig {
@@ -828,7 +840,7 @@ test "append: collects parsed values" {
 ///|
 struct DefaultMismatchConfig {
   mut host : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn DefaultMismatchConfig::default() -> DefaultMismatchConfig {
@@ -866,7 +878,7 @@ struct NestedConfig {
   mut cmd1 : String
   mut cmd2 : String
   mut value : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn NestedConfig::default() -> NestedConfig {
@@ -923,7 +935,7 @@ test "error message: exclusive violation mentions option names" {
 struct RequiresConfig {
   mut output : String
   mut format : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn RequiresConfig::default() -> RequiresConfig {
@@ -991,7 +1003,7 @@ test "float: --rate=1.5 syntax" {
 ///|
 struct CountShortsConfig {
   mut verbosity : Int
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn CountShortsConfig::default() -> CountShortsConfig {
@@ -1043,7 +1055,7 @@ test "at_least_one: both provided is ok" {
 struct EnvPhase2Config {
   mut host : String
   mut port : Int
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn EnvPhase2Config::default() -> EnvPhase2Config {
@@ -1085,7 +1097,7 @@ test "env: unset env var keeps default" {
 struct DashdashConfig {
   mut verbose : Bool
   mut args : Array[String]
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn DashdashConfig::default() -> DashdashConfig {
@@ -1132,7 +1144,7 @@ test "global flag: after subcommand" {
   let config = SubConfig::default()
   parse_into(["build", "--verbose"], config)
   assert_eq(config.verbose, true)
-  assert_eq(config.command, Build)
+  assert_true(config.command == Build)
 }
 
 // ---- positional + option 組み合わせ ----
@@ -1141,7 +1153,7 @@ test "global flag: after subcommand" {
 struct PosOptionConfig {
   mut file : String?
   mut output : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn PosOptionConfig::default() -> PosOptionConfig {
@@ -1176,7 +1188,7 @@ test "positional + option: option before positional" {
 struct SubPosConfig {
   mut command : String
   mut file : String?
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn SubPosConfig::default() -> SubPosConfig {
@@ -1238,7 +1250,7 @@ test "required: missing keeps struct default" {
 struct EnvPrefixConfig {
   mut host : String
   mut port : Int
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn EnvPrefixConfig::default() -> EnvPrefixConfig {
@@ -1287,7 +1299,7 @@ test "env_prefix: multiple opts with prefix" {
 struct AutoEnvConfig {
   mut host : String
   mut port : Int
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn AutoEnvConfig::default() -> AutoEnvConfig {
@@ -1336,7 +1348,7 @@ test "auto_env: unset env keeps default" {
 struct AutoEnvPrefixConfig {
   mut host : String
   mut port : Int
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn AutoEnvPrefixConfig::default() -> AutoEnvPrefixConfig {
@@ -1370,7 +1382,7 @@ test "auto_env + env_prefix: unprefixed PORT not matched" {
 ///|
 struct FileConfig {
   mut output : String
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn FileConfig::default() -> FileConfig {
@@ -1416,7 +1428,7 @@ struct ValueShortsConfig {
   mut tags : Array[String]
   mut nums : Array[Int]
   mut weights : Array[Double]
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn ValueShortsConfig::default() -> ValueShortsConfig {
@@ -1516,7 +1528,7 @@ struct GlobalConfig {
   mut name : String
   mut level : Int
   mut sub_called : Bool
-} derive(Show, Eq)
+} derive(Debug, Eq)
 
 ///|
 fn GlobalConfig::default() -> GlobalConfig {

@@ -12,7 +12,27 @@ pub(all) enum ErrorKind {
   AtLeastOneRequired
   DependencyMissing
   ParseAlreadyCalled
-} derive(Show, Eq)
+} derive(Debug, Eq)
+
+///|
+pub impl Show for ErrorKind with output(self, logger) {
+  logger.write_string(
+    match self {
+      UnknownOption => "UnknownOption"
+      UnexpectedArgument => "UnexpectedArgument"
+      MissingRequired => "MissingRequired"
+      InvalidValue => "InvalidValue"
+      ArgumentConflict => "ArgumentConflict"
+      AmbiguousMatch => "AmbiguousMatch"
+      MissingValue => "MissingValue"
+      MissingSubcommand => "MissingSubcommand"
+      DuplicateDefinition => "DuplicateDefinition"
+      AtLeastOneRequired => "AtLeastOneRequired"
+      DependencyMissing => "DependencyMissing"
+      ParseAlreadyCalled => "ParseAlreadyCalled"
+    },
+  )
+}
 
 ///|
 pub(all) struct ParseErrorInfo {
@@ -36,12 +56,54 @@ pub(all) enum Variation {
   False(String) // --{p}-{name}: 常に false（Bool 専用、冪等）
   Reset(String) // --{p}-{name}: cell=default, committed=true
   Unset(String) // --{p}-{name}: cell=default, committed=false
-} derive(Show, Eq)
+} derive(Debug, Eq)
+
+///|
+pub impl Show for Variation with output(self, logger) {
+  match self {
+    Toggle(s) => {
+      logger.write_string("Toggle(")
+      s.output(logger)
+      logger.write_string(")")
+    }
+    True(s) => {
+      logger.write_string("True(")
+      s.output(logger)
+      logger.write_string(")")
+    }
+    False(s) => {
+      logger.write_string("False(")
+      s.output(logger)
+      logger.write_string(")")
+    }
+    Reset(s) => {
+      logger.write_string("Reset(")
+      s.output(logger)
+      logger.write_string(")")
+    }
+    Unset(s) => {
+      logger.write_string("Unset(")
+      s.output(logger)
+      logger.write_string(")")
+    }
+  }
+}
 
 ///|
 pub(all) enum ReduceAction {
   Value(String?)
-} derive(Show, Eq)
+} derive(Debug, Eq)
+
+///|
+pub impl Show for ReduceAction with output(self, logger) {
+  match self {
+    Value(s) => {
+      logger.write_string("Value(")
+      s.output(logger)
+      logger.write_string(")")
+    }
+  }
+}
 
 ///|
 pub(all) enum TryResult {
@@ -176,14 +238,38 @@ pub(all) enum OptKind {
   Command
   Positional
   Rest
-} derive(Show, Eq)
+} derive(Debug, Eq)
+
+///|
+pub impl Show for OptKind with output(self, logger) {
+  logger.write_string(
+    match self {
+      Flag => "Flag"
+      ValueOpt => "ValueOpt"
+      Command => "Command"
+      Positional => "Positional"
+      Rest => "Rest"
+    },
+  )
+}
 
 ///|
 pub(all) enum Visibility {
   Visible
   Advanced
   Hidden
-} derive(Show, Eq)
+} derive(Debug, Eq)
+
+///|
+pub impl Show for Visibility with output(self, logger) {
+  logger.write_string(
+    match self {
+      Visible => "Visible"
+      Advanced => "Advanced"
+      Hidden => "Hidden"
+    },
+  )
+}
 
 ///|
 pub(all) struct OptMeta {
