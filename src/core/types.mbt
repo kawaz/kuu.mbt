@@ -15,7 +15,7 @@ pub(all) enum ErrorKind {
 } derive(Debug, Eq)
 
 ///|
-pub impl Show for ErrorKind with output(self, logger) {
+pub impl Show for ErrorKind with fn output(self, logger) {
   logger.write_string(
     match self {
       UnknownOption => "UnknownOption"
@@ -59,7 +59,7 @@ pub(all) enum Variation {
 } derive(Debug, Eq)
 
 ///|
-pub impl Show for Variation with output(self, logger) {
+pub impl Show for Variation with fn output(self, logger) {
   match self {
     Toggle(s) => {
       logger.write_string("Toggle(")
@@ -95,7 +95,7 @@ pub(all) enum ReduceAction {
 } derive(Debug, Eq)
 
 ///|
-pub impl Show for ReduceAction with output(self, logger) {
+pub impl Show for ReduceAction with fn output(self, logger) {
   match self {
     Value(s) => {
       logger.write_string("Value(")
@@ -241,7 +241,7 @@ pub(all) enum OptKind {
 } derive(Debug, Eq)
 
 ///|
-pub impl Show for OptKind with output(self, logger) {
+pub impl Show for OptKind with fn output(self, logger) {
   logger.write_string(
     match self {
       Flag => "Flag"
@@ -261,7 +261,7 @@ pub(all) enum Visibility {
 } derive(Debug, Eq)
 
 ///|
-pub impl Show for Visibility with output(self, logger) {
+pub impl Show for Visibility with fn output(self, logger) {
   logger.write_string(
     match self {
       Visible => "Visible"

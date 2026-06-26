@@ -1,4 +1,4 @@
 import {
-  "moonbitlang/core/string" @string,
-  "kawaz/grapheme" @grapheme,
+  "moonbitlang/core/string",
+  "kawaz/grapheme",
 }

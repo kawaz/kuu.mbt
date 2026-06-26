@@ -10,7 +10,7 @@ enum TestColor {
 } derive(Debug, Eq)
 
 ///|
-impl Show for TestColor with output(self, logger) {
+impl Show for TestColor with fn output(self, logger) {
   match self {
     Red => logger.write_string("Red")
     Green => logger.write_string("Green")
@@ -219,7 +219,6 @@ test "string choices+implicit: --color always" {
     color.get(),
     content=(
       #|Some(always)
-
     ),
   )
 }
@@ -238,7 +237,6 @@ test "string choices+implicit: --color (implicit)" {
     color.get(),
     content=(
       #|Some(always)
-
     ),
   )
 }
@@ -257,7 +255,6 @@ test "string choices+implicit: no --color (default)" {
     color.get(),
     content=(
       #|Some(auto)
-
     ),
   )
 }
@@ -277,7 +274,6 @@ test "string choices+implicit: --color with other flag" {
     color.get(),
     content=(
       #|Some(always)
-
     ),
   )
   inspect(verbose.get(), content="Some(true)")
@@ -312,7 +308,6 @@ test "string choices+implicit: --no-color resets" {
     color.get(),
     content=(
       #|Some(auto)
-
     ),
   )
 }
@@ -331,7 +326,6 @@ test "string choices+implicit: --color=always (eq_split)" {
     color.get(),
     content=(
       #|Some(always)
-
     ),
   )
 }
@@ -356,7 +350,6 @@ test "string choices+implicit: Thunk implicit_value" {
     color.get(),
     content=(
       #|Some(always)
-
     ),
   )
   inspect(counter.val, content="1")
@@ -383,7 +376,6 @@ test "string choices only: --color always → ok" {
     color.get(),
     content=(
       #|Some(always)
-
     ),
   )
 }
@@ -401,7 +393,6 @@ test "string implicit only: --output (implicit)" {
     output.get(),
     content=(
       #|Some(stdout)
-
     ),
   )
 }
@@ -419,7 +410,6 @@ test "string implicit only: --output file.txt" {
     output.get(),
     content=(
       #|Some(file.txt)
-
     ),
   )
 }
@@ -439,7 +429,6 @@ test "string choices+implicit with post filter" {
     color.get(),
     content=(
       #|Some(none)
-
     ),
   )
 }
@@ -464,14 +453,12 @@ test "string choices+implicit: multiple opts with implicit default" {
     color.get(),
     content=(
       #|Some(always)
-
     ),
   )
   inspect(
     md.get(),
     content=(
       #|Some(none)
-
     ),
   )
 }
@@ -566,7 +553,6 @@ test "variation: string with Reset" {
     p.get(host),
     content=(
       #|Some(localhost)
-
     ),
   )
   inspect(host.is_set(), content="true")
@@ -586,7 +572,6 @@ test "variation: string with Unset" {
     p.get(host),
     content=(
       #|Some(localhost)
-
     ),
   )
   inspect(host.is_set(), content="false")
@@ -759,7 +744,6 @@ test "string variation_reset sugar" {
     fmt.get(),
     content=(
       #|Some(json)
-
     ),
   ) // Reset → default
   inspect(fmt.is_set(), content="true")
@@ -858,7 +842,6 @@ test "string default_fn" {
     color.get(),
     content=(
       #|Some(always)
-
     ),
   ) // default_fn が優先
   inspect(color.is_set(), content="false")
@@ -888,7 +871,6 @@ test "string default_fn with reset variation" {
     color.get(),
     content=(
       #|Some(always)
-
     ),
   ) // Reset → default_fn の値に戻る
   inspect(color.is_set(), content="true")
@@ -1051,9 +1033,12 @@ test "append_string_basic" {
   let p = Parser::new()
   let tags = p.append(name="tag", pre=Filter::map(fn(s) { s }))
   p.parse(["--tag", "a", "--tag", "b"]) |> ignore
-  inspect((tags.accessor.get)(), content=(
-    #|[a, b]
-  ))
+  inspect(
+    (tags.accessor.get)(),
+    content=(
+      #|[a, b]
+    ),
+  )
 }
 
 ///|
@@ -1216,14 +1201,12 @@ test "alias: string alias shares value" {
     host.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
   inspect(
     h.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
 }
@@ -1239,7 +1222,6 @@ test "alias: single-dash long option" {
     compiler.get(),
     content=(
       #|Some(gcc)
-
     ),
   )
   inspect(xcc.is_set(), content="true")
@@ -1305,12 +1287,18 @@ test "alias: append alias shares array" {
   let inc = p.append_string(name="include")
   let ii = p.make_alias("-I", inc)
   ignore(p.parse(["--include", "a", "-I", "b"]))
-  inspect(inc.get(), content=(
-    #|Some([a, b])
-  ))
-  inspect(ii.get(), content=(
-    #|Some([a, b])
-  ))
+  inspect(
+    inc.get(),
+    content=(
+      #|Some([a, b])
+    ),
+  )
+  inspect(
+    ii.get(),
+    content=(
+      #|Some([a, b])
+    ),
+  )
 }
 
 ///|
@@ -1323,14 +1311,12 @@ test "alias: unused alias default value" {
     host.get(),
     content=(
       #|Some(localhost)
-
     ),
   )
   inspect(
     h.get(),
     content=(
       #|Some(localhost)
-
     ),
   )
   inspect(host.is_set(), content="false")
@@ -1363,14 +1349,12 @@ test "alias: eq_split with double-dash alias" {
     host.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
   inspect(
     h.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
 }
@@ -1413,7 +1397,6 @@ test "H-1: string implicit: --output=--value (eq-split, double-dash value)" {
     output.get(),
     content=(
       #|Some(--value)
-
     ),
   )
 }
@@ -1444,7 +1427,6 @@ test "H-1: string implicit: --output --next (space-separated) → still implicit
     output.get(),
     content=(
       #|Some(stdout)
-
     ),
   )
   inspect(next.get(), content="Some(true)")
@@ -1474,9 +1456,12 @@ test "M-17: append Reset then re-add" {
     Reset("no"),
   ])
   ignore(p.parse(["--tag", "a", "--no-tag", "--tag", "b"]))
-  inspect((tags.accessor.get)(), content=(
-    #|[b]
-  ))
+  inspect(
+    (tags.accessor.get)(),
+    content=(
+      #|[b]
+    ),
+  )
 }
 
 ///|
@@ -1629,14 +1614,12 @@ test "alias + implicit_value: eq_split via alias name (normal value)" {
     output.get(),
     content=(
       #|Some(file.txt)
-
     ),
   )
   inspect(
     out.get(),
     content=(
       #|Some(file.txt)
-
     ),
   )
 }
@@ -1658,14 +1641,12 @@ test "alias + implicit_value: eq_split via alias name (double-dash value)" {
     output.get(),
     content=(
       #|Some(--file.txt)
-
     ),
   )
   inspect(
     out.get(),
     content=(
       #|Some(--file.txt)
-
     ),
   )
 }
@@ -1685,7 +1666,6 @@ test "alias + implicit_value: eq_split via original name still works" {
     output.get(),
     content=(
       #|Some(file.txt)
-
     ),
   )
 }
@@ -1705,14 +1685,12 @@ test "alias + implicit_value: alias without eq_split uses implicit" {
     output.get(),
     content=(
       #|Some(stdout)
-
     ),
   )
   inspect(
     out.get(),
     content=(
       #|Some(stdout)
-
     ),
   )
 }
@@ -1774,9 +1752,12 @@ test "R2-W4: implicit+choices explicit value" {
     implicit_value=Some(Val("debug")),
   )
   ignore(p.parse(["--level", "warn"]))
-  inspect(level.get(), content=(
-    #|Some(warn)
-  ))
+  inspect(
+    level.get(),
+    content=(
+      #|Some(warn)
+    ),
+  )
 }
 
 ///|
@@ -1789,9 +1770,12 @@ test "R2-W4: implicit+choices implicit value" {
     implicit_value=Some(Val("debug")),
   )
   ignore(p.parse(["--level"]))
-  inspect(level.get(), content=(
-    #|Some(debug)
-  ))
+  inspect(
+    level.get(),
+    content=(
+      #|Some(debug)
+    ),
+  )
 }
 
 ///|
@@ -1804,9 +1788,12 @@ test "R2-W4: implicit+choices eq-split" {
     implicit_value=Some(Val("debug")),
   )
   ignore(p.parse(["--level=error"]))
-  inspect(level.get(), content=(
-    #|Some(error)
-  ))
+  inspect(
+    level.get(),
+    content=(
+      #|Some(error)
+    ),
+  )
 }
 
 ///|
@@ -1852,12 +1839,18 @@ test "deprecated shares value with target" {
   let out = p.deprecated("--out", output, msg="use --output instead")
   ignore(p.parse(["--out", "hello"]))
   // alias 動作: 値が共有される
-  inspect(output.get(), content=(
-    #|Some(hello)
-  ))
-  inspect(out.get(), content=(
-    #|Some(hello)
-  ))
+  inspect(
+    output.get(),
+    content=(
+      #|Some(hello)
+    ),
+  )
+  inspect(
+    out.get(),
+    content=(
+      #|Some(hello)
+    ),
+  )
 }
 
 ///|
@@ -2114,7 +2107,6 @@ test "env: string gets value from env when not specified on CLI" {
     port.get(),
     content=(
       #|Some(9000)
-
     ),
   )
 }
@@ -2128,7 +2120,6 @@ test "env: CLI arg takes precedence over env" {
     port.get(),
     content=(
       #|Some(3000)
-
     ),
   )
 }
@@ -2142,7 +2133,6 @@ test "env: default used when neither CLI nor env specified" {
     port.get(),
     content=(
       #|Some(8080)
-
     ),
   )
 }
@@ -2197,7 +2187,6 @@ test "env: required satisfied by env value" {
     port.get(),
     content=(
       #|Some(9000)
-
     ),
   )
 }
@@ -2219,7 +2208,6 @@ test "env: append_string from env (comma-separated)" {
     includes.get(),
     content=(
       #|Some([a, b, c])
-
     ),
   )
 }
@@ -2241,7 +2229,6 @@ test "env: empty env string is ignored" {
     port.get(),
     content=(
       #|Some(8080)
-
     ),
   )
   inspect(port.is_set(), content="false")
@@ -2292,7 +2279,6 @@ test "env: choices validation passes for valid env value" {
     format.get(),
     content=(
       #|Some(yaml)
-
     ),
   )
 }
@@ -2319,7 +2305,6 @@ test "priv setter: string setter writes cell value" {
     host.get(),
     content=(
       #|Some(localhost)
-
     ),
   )
   (host.accessor.set_value)("example.com")
@@ -2327,7 +2312,6 @@ test "priv setter: string setter writes cell value" {
     host.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
 }
@@ -2413,14 +2397,12 @@ test "link: string value forwarding" {
     host.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
   inspect(
     server.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
 }
@@ -2461,7 +2443,6 @@ test "link: overwrites target when both source and target are set" {
     tgt.get(),
     content=(
       #|Some(from-src)
-
     ),
   )
 }
@@ -2498,14 +2479,12 @@ test "clone: string independent cell" {
     host.get(),
     content=(
       #|Some(localhost)
-
     ),
   )
   inspect(
     host2.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
 }
@@ -2554,7 +2533,6 @@ test "adjust: multiple before_pre execute in registration order (FIFO)" {
     val.get(),
     content=(
       #|Some(xAB)
-
     ),
   )
 }
@@ -2913,7 +2891,6 @@ test "env: nested subcmd env propagation" {
     host.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
   inspect(host.is_set(), content="true")
@@ -2935,21 +2912,18 @@ test "alias chain: root committed propagates through chained aliases" {
     opt.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
   inspect(
     alias1.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
   inspect(
     alias2.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
 }
@@ -3129,7 +3103,6 @@ test "grapheme cluster: long option with family emoji" {
     p.get(opt),
     content=(
       #|Some(on)
-
     ),
   )
 }
@@ -3155,7 +3128,6 @@ test "grapheme cluster: eq split with flag emoji" {
     p.get(opt),
     content=(
       #|Some(on)
-
     ),
   )
 }
@@ -3232,9 +3204,13 @@ test "mergeable_list: overwrite — plain list replaces base" {
   let chain = Filter::mergeable_list(base=["x", "y"])
   let result : Result[Array[String], _] = try? (chain.run)("a,b")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[a, b]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[a, b]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3245,9 +3221,13 @@ test "mergeable_list: add — '+' prefix appends to base" {
   let chain = Filter::mergeable_list(base=["a", "b"])
   let result : Result[Array[String], _] = try? (chain.run)("+c")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[a, b, c]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[a, b, c]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3258,9 +3238,13 @@ test "mergeable_list: remove — '-' prefix excludes from base" {
   let chain = Filter::mergeable_list(base=["a", "b", "c"])
   let result : Result[Array[String], _] = try? (chain.run)("-a")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[b, c]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[b, c]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3271,9 +3255,13 @@ test "mergeable_list: mixed add/remove" {
   let chain = Filter::mergeable_list(base=["a", "b"])
   let result : Result[Array[String], _] = try? (chain.run)("+c,-a")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[b, c]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[b, c]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3284,9 +3272,13 @@ test "mergeable_list: custom separator" {
   let chain = Filter::mergeable_list(base=["x"], separator=":")
   let result : Result[Array[String], _] = try? (chain.run)("a:b:c")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[a, b, c]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[a, b, c]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3297,9 +3289,13 @@ test "mergeable_list: add deduplicates" {
   let chain = Filter::mergeable_list(base=["a", "b"])
   let result : Result[Array[String], _] = try? (chain.run)("+a,+c")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[a, b, c]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[a, b, c]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3310,9 +3306,13 @@ test "mergeable_list: remove nonexistent is no-op" {
   let chain = Filter::mergeable_list(base=["a", "b"])
   let result : Result[Array[String], _] = try? (chain.run)("-z")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[a, b]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[a, b]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3323,9 +3323,13 @@ test "mergeable_list: empty base with add" {
   let chain = Filter::mergeable_list()
   let result : Result[Array[String], _] = try? (chain.run)("+a,+b")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[a, b]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[a, b]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3337,9 +3341,13 @@ test "mergeable_list: rest expansion with '...'" {
   let chain = Filter::mergeable_list(base=["a", "b", "c"])
   let result : Result[Array[String], _] = try? (chain.run)("x,...,-b")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[x, a, c]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[x, a, c]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3351,9 +3359,13 @@ test "mergeable_list: rest at end" {
   let chain = Filter::mergeable_list(base=["a", "b", "c"])
   let result : Result[Array[String], _] = try? (chain.run)("x,...")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[x, a, b, c]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[x, a, b, c]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3365,9 +3377,13 @@ test "mergeable_list: rest with reorder" {
   let chain = Filter::mergeable_list(base=["a", "b", "c"])
   let result : Result[Array[String], _] = try? (chain.run)("c,...")
   match result {
-    Ok(v) => inspect(v, content=(
-      #|[c, a, b]
-    ))
+    Ok(v) =>
+      inspect(
+        v,
+        content=(
+          #|[c, a, b]
+        ),
+      )
     Err(_) => fail("expected Ok")
   }
 }
@@ -3384,9 +3400,12 @@ test "file: value specified" {
     description="config file path",
   )
   p.parse(["--config", "/etc/app.conf"]) |> ignore
-  inspect(config.get(), content=(
-    #|Some(/etc/app.conf)
-  ))
+  inspect(
+    config.get(),
+    content=(
+      #|Some(/etc/app.conf)
+    ),
+  )
 }
 
 ///|
@@ -3399,9 +3418,12 @@ test "file: flag only uses default_path (implicit_value)" {
     description="config file path",
   )
   p.parse(["--config"]) |> ignore
-  inspect(config.get(), content=(
-    #|Some(./config.toml)
-  ))
+  inspect(
+    config.get(),
+    content=(
+      #|Some(./config.toml)
+    ),
+  )
 }
 
 ///|
@@ -3414,9 +3436,12 @@ test "file: not specified uses default" {
     description="config file path",
   )
   p.parse([]) |> ignore
-  inspect(config.get(), content=(
-    #|Some()
-  ))
+  inspect(
+    config.get(),
+    content=(
+      #|Some()
+    ),
+  )
 }
 
 ///|
@@ -3429,9 +3454,12 @@ test "file: shorts support" {
     shorts="c",
   )
   p.parse(["-c", "/path/to/file"]) |> ignore
-  inspect(config.get(), content=(
-    #|Some(/path/to/file)
-  ))
+  inspect(
+    config.get(),
+    content=(
+      #|Some(/path/to/file)
+    ),
+  )
 }
 
 ///|
@@ -3439,9 +3467,12 @@ test "file: equals syntax" {
   let p = Parser::new()
   let config = p.file(name="config", default="", default_path="./config.toml")
   p.parse(["--config=/path/to/file"]) |> ignore
-  inspect(config.get(), content=(
-    #|Some(/path/to/file)
-  ))
+  inspect(
+    config.get(),
+    content=(
+      #|Some(/path/to/file)
+    ),
+  )
 }
 
 // === env Phase 3: env_prefix テスト ===
@@ -3521,7 +3552,6 @@ test "env_prefix: nested subcmd prefix chaining" {
     host.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
   inspect(host.is_set(), content="true")
@@ -3563,7 +3593,6 @@ test "env_prefix: append_string from prefixed env" {
     includes.get(),
     content=(
       #|Some([a, b, c])
-
     ),
   )
 }
@@ -3576,9 +3605,12 @@ test "auto_env: basic — string opt auto-bound to env" {
   p.auto_env(true)
   let port = p.string(name="port", default="8080")
   ignore(p.parse([], env={ "PORT": "3000" }))
-  inspect(port.get(), content=(
-    #|Some(3000)
-  ))
+  inspect(
+    port.get(),
+    content=(
+      #|Some(3000)
+    ),
+  )
   inspect(port.is_set(), content="true")
 }
 
@@ -3589,9 +3621,12 @@ test "auto_env: explicit env takes precedence" {
   let port = p.string(name="port", default="8080", env="CUSTOM_PORT")
   ignore(p.parse([], env={ "CUSTOM_PORT": "3000", "PORT": "9999" }))
   // CUSTOM_PORT should be used, not auto-generated PORT
-  inspect(port.get(), content=(
-    #|Some(3000)
-  ))
+  inspect(
+    port.get(),
+    content=(
+      #|Some(3000)
+    ),
+  )
 }
 
 ///|
@@ -3601,9 +3636,12 @@ test "auto_env: env_prefix combined" {
   p.auto_env(true)
   let port = p.string(name="port", default="8080")
   ignore(p.parse([], env={ "MYAPP_PORT": "3000" }))
-  inspect(port.get(), content=(
-    #|Some(3000)
-  ))
+  inspect(
+    port.get(),
+    content=(
+      #|Some(3000)
+    ),
+  )
 }
 
 ///|
@@ -3613,9 +3651,12 @@ test "auto_env: disabled by default — no auto binding" {
   let port = p.string(name="port", default="8080")
   ignore(p.parse([], env={ "PORT": "3000" }))
   // Should use default since no env binding
-  inspect(port.get(), content=(
-    #|Some(8080)
-  ))
+  inspect(
+    port.get(),
+    content=(
+      #|Some(8080)
+    ),
+  )
   inspect(port.is_set(), content="false")
 }
 
@@ -3626,9 +3667,12 @@ test "auto_env: hidden opt excluded" {
   let secret = p.string(name="secret", default="none", visibility=Hidden)
   ignore(p.parse([], env={ "SECRET": "hidden_val" }))
   // hidden opt should NOT be auto-bound
-  inspect(secret.get(), content=(
-    #|Some(none)
-  ))
+  inspect(
+    secret.get(),
+    content=(
+      #|Some(none)
+    ),
+  )
   inspect(secret.is_set(), content="false")
 }
 
@@ -3638,9 +3682,12 @@ test "auto_env: hyphenated name converts to underscore" {
   p.auto_env(true)
   let port = p.string(name="server-port", default="8080")
   ignore(p.parse([], env={ "SERVER_PORT": "3000" }))
-  inspect(port.get(), content=(
-    #|Some(3000)
-  ))
+  inspect(
+    port.get(),
+    content=(
+      #|Some(3000)
+    ),
+  )
 }
 
 ///|
@@ -3681,7 +3728,6 @@ test "auto_env: append_string auto-bound" {
     includes.get(),
     content=(
       #|Some([a, b, c])
-
     ),
   )
 }
@@ -3692,9 +3738,12 @@ test "auto_env: CLI takes precedence over auto_env" {
   p.auto_env(true)
   let port = p.string(name="port", default="8080")
   ignore(p.parse(["--port", "4000"], env={ "PORT": "3000" }))
-  inspect(port.get(), content=(
-    #|Some(4000)
-  ))
+  inspect(
+    port.get(),
+    content=(
+      #|Some(4000)
+    ),
+  )
 }
 
 ///|
@@ -3723,9 +3772,12 @@ test "auto_env: subcmd inherits auto_env" {
   let child = p.sub(name="serve")
   let port = child.string(name="port", default="8080")
   ignore(p.parse(["serve"], env={ "PORT": "3000" }))
-  inspect(port.get(), content=(
-    #|Some(3000)
-  ))
+  inspect(
+    port.get(),
+    content=(
+      #|Some(3000)
+    ),
+  )
 }
 
 ///|
@@ -3821,9 +3873,12 @@ test "visibility: Advanced option still works for parsing" {
     visibility=Advanced,
   )
   ignore(p.parse(["--internal-format", "yaml"]))
-  inspect(fmt.get(), content=(
-    #|Some(yaml)
-  ))
+  inspect(
+    fmt.get(),
+    content=(
+      #|Some(yaml)
+    ),
+  )
 }
 
 ///|
@@ -3859,9 +3914,12 @@ test "visibility: auto_env excludes Advanced opt" {
   let internal = p.string(name="internal", default="none", visibility=Advanced)
   ignore(p.parse([], env={ "INTERNAL": "test_val" }))
   // Advanced opt should NOT be auto-bound (same as Hidden)
-  inspect(internal.get(), content=(
-    #|Some(none)
-  ))
+  inspect(
+    internal.get(),
+    content=(
+      #|Some(none)
+    ),
+  )
   inspect(internal.is_set(), content="false")
 }
 
@@ -3912,7 +3970,6 @@ test "adjust: append opt with after_post transforms entire array" {
     items.get(),
     content=(
       #|Some([apple, banana, cherry])
-
     ),
   )
 }
@@ -3929,7 +3986,6 @@ test "adjust: append opt with before_pre is silent no-op" {
     items.get(),
     content=(
       #|Some([hello])
-
     ),
   )
 }
@@ -3945,7 +4001,6 @@ test "adjust: positional with after_pre transforms value" {
     name.get(),
     content=(
       #|Some(HELLO)
-
     ),
   )
 }
@@ -3962,7 +4017,6 @@ test "adjust: positional with before_pre is silent no-op" {
     name.get(),
     content=(
       #|Some(world)
-
     ),
   )
 }
@@ -3983,7 +4037,6 @@ test "adjust: rest with after_post transforms array" {
     args.get(),
     content=(
       #|Some([hello, world])
-
     ),
   )
 }
@@ -4000,7 +4053,6 @@ test "adjust: rest with before_pre is silent no-op" {
     args.get(),
     content=(
       #|Some([a, b])
-
     ),
   )
 }
@@ -4081,7 +4133,6 @@ test "adjust: four-phase execution order with multiple adjusts" {
     log,
     content=(
       #|[before_pre, after_pre, before_post, after_post]
-
     ),
   )
   // 値: "x" → before_pre "[bp]x" → pre(identity) "[bp]x" → after_pre "[ap][bp]x"
@@ -4090,7 +4141,6 @@ test "adjust: four-phase execution order with multiple adjusts" {
     val.get(),
     content=(
       #|Some([apo][bpo][ap][bp]x)
-
     ),
   )
 }
@@ -4113,7 +4163,6 @@ test "adjust: before_pre skipped on implicit_value path" {
     mode.get(),
     content=(
       #|Some(auto)
-
     ),
   )
 }

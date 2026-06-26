@@ -62,7 +62,6 @@ test "nested subcommand" {
         p.get(opt),
         content=(
           #|Some(origin)
-
         ),
       )
     None => abort("unreachable")
@@ -85,7 +84,6 @@ test "nested subcommand with parent option" {
         p.get(opt),
         content=(
           #|Some(https://example.com)
-
         ),
       )
     None => abort("unreachable")
@@ -136,7 +134,6 @@ test "global flag in nested subcommand" {
         p.get(opt),
         content=(
           #|Some(origin)
-
         ),
       )
     None => abort("unreachable")
@@ -222,7 +219,6 @@ test "ParseResult nested child navigation" {
             add_result.get(name_opt.val.unwrap()),
             content=(
               #|Some(origin)
-
             ),
           )
         None => abort("add child should exist")
@@ -268,9 +264,12 @@ test "sub basic — no Ref needed" {
   let depth = clone.int(name="depth", default=0)
   let result = p.parse(["clone", "https://example.com", "--depth", "3"])
   inspect(result.child("clone") is Some(_), content="true")
-  inspect(url.get(), content=(
-    #|Some(https://example.com)
-  ))
+  inspect(
+    url.get(),
+    content=(
+      #|Some(https://example.com)
+    ),
+  )
   inspect(depth.get(), content="Some(3)")
 }
 
@@ -290,14 +289,12 @@ test "sub nested — remote add without Ref" {
             name_opt.get(),
             content=(
               #|Some(origin)
-
             ),
           )
           inspect(
             url_opt.get(),
             content=(
               #|Some(https://example.com)
-
             ),
           )
         }
@@ -319,7 +316,6 @@ test "sub with global option propagation" {
     url.get(),
     content=(
       #|Some(https://example.com)
-
     ),
   )
 }
@@ -357,7 +353,6 @@ test "sub with required and exclusive" {
     key.get(),
     content=(
       #|Some(user.name)
-
     ),
   )
 }
@@ -399,14 +394,12 @@ test "sub with serial and never" {
     src.unwrap().get(),
     content=(
       #|Some(a.txt)
-
     ),
   )
   inspect(
     dst.unwrap().get(),
     content=(
       #|Some(b.txt)
-
     ),
   )
 }
@@ -427,14 +420,12 @@ test "sub with dashdash" {
     msg.get(),
     content=(
       #|Some(wip)
-
     ),
   )
   inspect(
     files.get(),
     content=(
       #|Some([file1, file2])
-
     ),
   )
 }
@@ -515,14 +506,12 @@ test "sub + serial positionals" {
     remote_name.unwrap().get(),
     content=(
       #|Some(origin)
-
     ),
   )
   inspect(
     remote_url.unwrap().get(),
     content=(
       #|Some(https://example.com)
-
     ),
   )
 }
@@ -837,7 +826,6 @@ test "H-5: sub alias parses child options correctly" {
     host.get(),
     content=(
       #|Some(example.com)
-
     ),
   )
 }

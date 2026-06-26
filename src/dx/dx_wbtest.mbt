@@ -17,7 +17,7 @@ fn SimpleConfig::default() -> SimpleConfig {
 }
 
 ///|
-impl Parseable for SimpleConfig with register(self, reg) {
+impl Parseable for SimpleConfig with fn register(self, reg) {
   reg.flag(name="verbose", set=fn(v) { self.verbose = v })
   reg.string(name="name", set=fn(v) { self.name = v })
   reg.int(name="count", set=fn(v) { self.count = v })
@@ -85,7 +85,7 @@ fn BoolConfig::default() -> BoolConfig {
 }
 
 ///|
-impl Parseable for BoolConfig with register(self, reg) {
+impl Parseable for BoolConfig with fn register(self, reg) {
   reg.boolean(name="debug", set=fn(v) { self.debug = v })
 }
 
@@ -173,7 +173,7 @@ fn WithDefaults::default() -> WithDefaults {
 }
 
 ///|
-impl Parseable for WithDefaults with register(self, reg) {
+impl Parseable for WithDefaults with fn register(self, reg) {
   reg.string(name="host", default="localhost", set=fn(v) { self.host = v })
   reg.int(name="port", default=8080, set=fn(v) { self.port = v })
   reg.float(name="timeout", default=30.0, set=fn(v) { self.timeout = v })
@@ -217,7 +217,7 @@ fn CountConfig::default() -> CountConfig {
 }
 
 ///|
-impl Parseable for CountConfig with register(self, reg) {
+impl Parseable for CountConfig with fn register(self, reg) {
   reg.count(name="verbose", set=fn(v) { self.verbosity = v })
 }
 
@@ -250,7 +250,7 @@ fn AppendConfig::default() -> AppendConfig {
 }
 
 ///|
-impl Parseable for AppendConfig with register(self, reg) {
+impl Parseable for AppendConfig with fn register(self, reg) {
   reg.append_string(name="tag", set=fn(v) { self.tags = v })
   reg.append_int(name="port", set=fn(v) { self.ports = v })
   reg.append_float(name="score", set=fn(v) { self.scores = v })
@@ -290,7 +290,7 @@ fn PosConfig::default() -> PosConfig {
 }
 
 ///|
-impl Parseable for PosConfig with register(self, reg) {
+impl Parseable for PosConfig with fn register(self, reg) {
   reg.positional(name="FILE", set=fn(v) { self.file = Some(v) })
 }
 
@@ -321,7 +321,7 @@ fn RestConfig::default() -> RestConfig {
 }
 
 ///|
-impl Parseable for RestConfig with register(self, reg) {
+impl Parseable for RestConfig with fn register(self, reg) {
   reg.rest(name="ARGS", set=fn(v) { self.args = v })
 }
 
@@ -362,7 +362,7 @@ fn SubConfig::default() -> SubConfig {
 }
 
 ///|
-impl Parseable for SubConfig with register(self, reg) {
+impl Parseable for SubConfig with fn register(self, reg) {
   reg.flag(name="verbose", global=true, set=fn(v) { self.verbose = v })
   reg.sub(
     name="init",
@@ -432,7 +432,7 @@ fn DescConfig::default() -> DescConfig {
 }
 
 ///|
-impl Parseable for DescConfig with register(self, reg) {
+impl Parseable for DescConfig with fn register(self, reg) {
   reg.set_description("A test CLI tool")
   reg.string(name="name", set=fn(v) { self.name = v })
 }
@@ -460,7 +460,7 @@ fn ShortsConfig::default() -> ShortsConfig {
 }
 
 ///|
-impl Parseable for ShortsConfig with register(self, reg) {
+impl Parseable for ShortsConfig with fn register(self, reg) {
   reg.flag(name="verbose", shorts="v", set=fn(v) { self.verbose = v })
   reg.custom(
     name="output",
@@ -498,7 +498,7 @@ fn AliasConfig::default() -> AliasConfig {
 }
 
 ///|
-impl Parseable for AliasConfig with register(self, reg) {
+impl Parseable for AliasConfig with fn register(self, reg) {
   reg.custom(
     name="color",
     default="",
@@ -528,7 +528,7 @@ fn EnvConfig::default() -> EnvConfig {
 }
 
 ///|
-impl Parseable for EnvConfig with register(self, reg) {
+impl Parseable for EnvConfig with fn register(self, reg) {
   reg.string(name="host", env="APP_HOST", set=fn(v) { self.host = v })
 }
 
@@ -554,7 +554,7 @@ fn HiddenConfig::default() -> HiddenConfig {
 }
 
 ///|
-impl Parseable for HiddenConfig with register(self, reg) {
+impl Parseable for HiddenConfig with fn register(self, reg) {
   reg.flag(name="debug", visibility=Hidden, set=fn(v) { self.debug = v })
   reg.string(name="name", set=fn(v) { self.name = v })
 }
@@ -579,7 +579,7 @@ fn SubAliasConfig::default() -> SubAliasConfig {
 }
 
 ///|
-impl Parseable for SubAliasConfig with register(self, reg) {
+impl Parseable for SubAliasConfig with fn register(self, reg) {
   reg.sub(
     name="install",
     aliases=["i"],
@@ -609,7 +609,7 @@ fn ValueNameConfig::default() -> ValueNameConfig {
 }
 
 ///|
-impl Parseable for ValueNameConfig with register(self, reg) {
+impl Parseable for ValueNameConfig with fn register(self, reg) {
   reg.string(name="file", value_name="PATH", set=fn(v) { self.file = v })
 }
 
@@ -638,7 +638,7 @@ fn ExclusiveConfig::default() -> ExclusiveConfig {
 }
 
 ///|
-impl Parseable for ExclusiveConfig with register(self, reg) {
+impl Parseable for ExclusiveConfig with fn register(self, reg) {
   let json_ref = reg.flag_ref(name="json", set=fn(v) { self.json = v })
   let yaml_ref = reg.flag_ref(name="yaml", set=fn(v) { self.yaml = v })
   reg.exclusive([json_ref, yaml_ref])
@@ -675,7 +675,7 @@ fn RequiredConfig::default() -> RequiredConfig {
 }
 
 ///|
-impl Parseable for RequiredConfig with register(self, reg) {
+impl Parseable for RequiredConfig with fn register(self, reg) {
   let output_ref = reg.string_ref(name="output", set=fn(v) { self.output = v })
   reg.required(output_ref)
 }
@@ -708,7 +708,7 @@ fn AtLeastOneConfig::default() -> AtLeastOneConfig {
 }
 
 ///|
-impl Parseable for AtLeastOneConfig with register(self, reg) {
+impl Parseable for AtLeastOneConfig with fn register(self, reg) {
   let input_ref = reg.string_ref(name="input", set=fn(v) { self.input = v })
   let stdin_ref = reg.flag_ref(name="stdin", set=fn(v) { self.stdin = v })
   reg.at_least_one([input_ref, stdin_ref])
@@ -739,7 +739,7 @@ enum LogLevel {
 } derive(Debug, Eq)
 
 ///|
-impl Show for LogLevel with output(self, logger) {
+impl Show for LogLevel with fn output(self, logger) {
   logger.write_string(
     match self {
       Debug => "Debug"
@@ -779,7 +779,7 @@ fn CustomConfig::default() -> CustomConfig {
 }
 
 ///|
-impl Parseable for CustomConfig with register(self, reg) {
+impl Parseable for CustomConfig with fn register(self, reg) {
   reg.custom(
     name="level",
     default=LogLevel::Info,
@@ -822,7 +822,7 @@ fn CustomAppendConfig::default() -> CustomAppendConfig {
 }
 
 ///|
-impl Parseable for CustomAppendConfig with register(self, reg) {
+impl Parseable for CustomAppendConfig with fn register(self, reg) {
   reg.append(name="value", pre=@core.Filter::parse_int(), set=fn(v) {
     self.values = v
   })
@@ -848,7 +848,7 @@ fn DefaultMismatchConfig::default() -> DefaultMismatchConfig {
 }
 
 ///|
-impl Parseable for DefaultMismatchConfig with register(self, reg) {
+impl Parseable for DefaultMismatchConfig with fn register(self, reg) {
   // registry の default と struct の default が異なる
   // struct の default が source of truth であるべき
   reg.string(name="host", default="registry-default", set=fn(v) {
@@ -886,7 +886,7 @@ fn NestedConfig::default() -> NestedConfig {
 }
 
 ///|
-impl Parseable for NestedConfig with register(self, reg) {
+impl Parseable for NestedConfig with fn register(self, reg) {
   reg.sub(name="parent", on_match=fn() { self.cmd1 = "parent" }, setup=fn(r) {
     r.sub(name="child", on_match=fn() { self.cmd2 = "child" }, setup=fn(r2) {
       r2.string(name="value", set=fn(v) { self.value = v })
@@ -943,7 +943,7 @@ fn RequiresConfig::default() -> RequiresConfig {
 }
 
 ///|
-impl Parseable for RequiresConfig with register(self, reg) {
+impl Parseable for RequiresConfig with fn register(self, reg) {
   let output_ref = reg.string_ref(name="output", set=fn(v) { self.output = v })
   let format_ref = reg.string_ref(name="format", set=fn(v) { self.format = v })
   reg.requires(output_ref, source=format_ref)
@@ -1011,7 +1011,7 @@ fn CountShortsConfig::default() -> CountShortsConfig {
 }
 
 ///|
-impl Parseable for CountShortsConfig with register(self, reg) {
+impl Parseable for CountShortsConfig with fn register(self, reg) {
   reg.count(name="verbose", shorts="v", set=fn(v) { self.verbosity = v })
 }
 
@@ -1063,7 +1063,7 @@ fn EnvPhase2Config::default() -> EnvPhase2Config {
 }
 
 ///|
-impl Parseable for EnvPhase2Config with register(self, reg) {
+impl Parseable for EnvPhase2Config with fn register(self, reg) {
   reg.string(name="host", env="APP_HOST", set=fn(v) { self.host = v })
   reg.int(name="port", env="APP_PORT", set=fn(v) { self.port = v })
 }
@@ -1105,7 +1105,7 @@ fn DashdashConfig::default() -> DashdashConfig {
 }
 
 ///|
-impl Parseable for DashdashConfig with register(self, reg) {
+impl Parseable for DashdashConfig with fn register(self, reg) {
   reg.flag(name="verbose", set=fn(v) { self.verbose = v })
   reg.rest(name="ARGS", set=fn(v) { self.args = v })
 }
@@ -1161,7 +1161,7 @@ fn PosOptionConfig::default() -> PosOptionConfig {
 }
 
 ///|
-impl Parseable for PosOptionConfig with register(self, reg) {
+impl Parseable for PosOptionConfig with fn register(self, reg) {
   reg.positional(name="FILE", set=fn(v) { self.file = Some(v) })
   reg.string(name="output", set=fn(v) { self.output = v })
 }
@@ -1196,7 +1196,7 @@ fn SubPosConfig::default() -> SubPosConfig {
 }
 
 ///|
-impl Parseable for SubPosConfig with register(self, reg) {
+impl Parseable for SubPosConfig with fn register(self, reg) {
   reg.sub(name="add", on_match=fn() { self.command = "add" }, setup=fn(r) {
     r.positional(name="FILE", set=fn(v) { self.file = Some(v) })
   })
@@ -1258,7 +1258,7 @@ fn EnvPrefixConfig::default() -> EnvPrefixConfig {
 }
 
 ///|
-impl Parseable for EnvPrefixConfig with register(self, reg) {
+impl Parseable for EnvPrefixConfig with fn register(self, reg) {
   reg.parser.env_prefix("MYAPP")
   reg.string(name="host", env="HOST", set=fn(v) { self.host = v })
   reg.int(name="port", env="PORT", set=fn(v) { self.port = v })
@@ -1307,7 +1307,7 @@ fn AutoEnvConfig::default() -> AutoEnvConfig {
 }
 
 ///|
-impl Parseable for AutoEnvConfig with register(self, reg) {
+impl Parseable for AutoEnvConfig with fn register(self, reg) {
   reg.parser.auto_env(true)
   reg.string(name="host", set=fn(v) { self.host = v })
   reg.int(name="port", set=fn(v) { self.port = v })
@@ -1356,7 +1356,7 @@ fn AutoEnvPrefixConfig::default() -> AutoEnvPrefixConfig {
 }
 
 ///|
-impl Parseable for AutoEnvPrefixConfig with register(self, reg) {
+impl Parseable for AutoEnvPrefixConfig with fn register(self, reg) {
   reg.parser.env_prefix("APP")
   reg.parser.auto_env(true)
   reg.string(name="host", set=fn(v) { self.host = v })
@@ -1390,7 +1390,7 @@ fn FileConfig::default() -> FileConfig {
 }
 
 ///|
-impl Parseable for FileConfig with register(self, reg) {
+impl Parseable for FileConfig with fn register(self, reg) {
   reg.file(name="output", default_path="./out.log", set=fn(v) {
     self.output = v
   })
@@ -1444,7 +1444,7 @@ fn ValueShortsConfig::default() -> ValueShortsConfig {
 }
 
 ///|
-impl Parseable for ValueShortsConfig with register(self, reg) {
+impl Parseable for ValueShortsConfig with fn register(self, reg) {
   reg.string(name="name", shorts="n", aliases=["alias-name"], set=fn(v) {
     self.name = v
   })
@@ -1536,7 +1536,7 @@ fn GlobalConfig::default() -> GlobalConfig {
 }
 
 ///|
-impl Parseable for GlobalConfig with register(self, reg) {
+impl Parseable for GlobalConfig with fn register(self, reg) {
   reg.string(name="name", global=true, set=fn(v) { self.name = v })
   reg.int(name="level", global=true, set=fn(v) { self.level = v })
   reg.sub(

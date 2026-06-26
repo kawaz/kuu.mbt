@@ -2,7 +2,7 @@
 /// CLI パース可能な struct が実装する trait。
 /// register メソッドで FieldRegistry にフィールド登録を行う。
 pub(open) trait Parseable {
-  register(Self, FieldRegistry) -> Unit
+  fn register(Self, FieldRegistry) -> Unit
 }
 
 ///|
