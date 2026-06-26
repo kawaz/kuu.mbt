@@ -420,11 +420,11 @@ describe("kuu TypeScript DX PoC", () => {
   });
 
   // ------------------------------------------------------------------
-  // Design roadmap example (from DESIGN-roadmap.md)
+  // Design roadmap example (from ROADMAP.md)
   // ------------------------------------------------------------------
 
   describe("roadmap example shape", () => {
-    it("matches the design in DESIGN-roadmap.md", async () => {
+    it("matches the design in ROADMAP.md", async () => {
       const p = kuu.parser({
         opts: {
           verbose: kuu.count({ shorts: "v", global: true }),

@@ -571,9 +571,9 @@ pkg/
 
 | ドキュメント | 内容 |
 |-------------|------|
-| [DESIGN-internals.md](DESIGN-internals.md) | 詳細実装仕様（Parser struct 全フィールド、ExactNode 種類一覧、install ノードアルゴリズム、ヘルプ生成） |
-| [DESIGN-roadmap.md](DESIGN-roadmap.md) | 将来計画・未実装設計（エラー構造化、group、defaults マルチソース、多言語展開等） |
-| [valcell-lifecycle.md](valcell-lifecycle.md) | ValCell/Accessor ライフサイクル詳細 |
-| [kuu-essence.md](kuu-essence.md) | プロジェクトの本質・ポジショニング |
-| [kuu-showcase.md](kuu-showcase.md) | ユースケース事例集（作成中） |
+| [design/internals.md](design/internals.md) | 詳細実装仕様（Parser struct 全フィールド、ExactNode 種類一覧、install ノードアルゴリズム、ヘルプ生成） |
+| [ROADMAP.md](ROADMAP.md) | 将来計画・未実装設計（エラー構造化、group、defaults マルチソース、多言語展開等） |
+| [design/valcell-lifecycle.md](design/valcell-lifecycle.md) | ValCell/Accessor ライフサイクル詳細 |
+| [design/kuu-essence.md](design/kuu-essence.md) | プロジェクトの本質・ポジショニング |
+| [design/kuu-showcase.md](design/kuu-showcase.md) | ユースケース事例集（作成中） |
 | `docs/decisions/` | 個別の設計判断記録（DR-001 以降） |
