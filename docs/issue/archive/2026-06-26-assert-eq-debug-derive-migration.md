@@ -1,6 +1,6 @@
 ---
 title: assert_eq → Debug derive migration
-status: open
+status: resolved
 category: task
 created: 2026-06-26T20:47:59+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-06-26T22:45:40+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented","commit:poqnwoxw d8c12dd9 refactor: deprecation warnings 800件根治"]
 blocked_by:
 origin: 自リポ TODO
 ---
