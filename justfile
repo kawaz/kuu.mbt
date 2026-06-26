@@ -178,7 +178,22 @@ check-version-bumped: (_check-version-bumped "src/" "moon.mod" "moon.pkg")
 [script]
 _check-version-bumped *target_paths:
     if ! bump-semver vcs diff -q main@origin -- "$@" --excludes 'glob:src/**/*_wbtest.mbt'; then
-        bump-semver compare gt VERSION vcs:main@origin
+        # 初回 release では origin/main に VERSION が無いので compare gt が exit 2 で返る (path not found)。
+        # その場合は「VERSION 新規追加 = bump 済」とみなして OK 扱い。
+        set +e
+        bump-semver compare gt VERSION vcs:main@origin 2>/dev/null
+        cmp_exit=$?
+        set -e
+        case "$cmp_exit" in
+            0) ;;  # VERSION > origin の VERSION: OK
+            2)
+                echo "Initial release: origin/main has no VERSION yet, treating as bumped"
+                ;;
+            *)
+                bump-semver compare gt VERSION vcs:main@origin  # 再度実行してエラーを表示
+                exit "$cmp_exit"
+                ;;
+        esac
     fi
 
 # VERSION を bump (= patch/minor/major) して release commit を作成
