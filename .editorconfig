@@ -1,0 +1,21 @@
+# EditorConfig is awesome: http://EditorConfig.org
+
+# top-most EditorConfig file
+root = true
+
+[*]
+end_of_line = lf
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Markdown はトレイリング空白で意図的な改行 (= 2 個の空白 + 改行) を表現できる
+[*.md]
+trim_trailing_whitespace = false
+
+# Makefile / justfile は tab indent (justfile は実は space でも tab でも動くが
+# kawaz canonical の bump-semver の justfile は tab 系を避ける運用なので space)
+[Makefile]
+indent_style = tab

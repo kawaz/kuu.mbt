@@ -1,7 +1,7 @@
 # MoonBit 標準ライブラリ argparse 分析
 
 調査日: 2026-03-10
-対象: moonbitlang/core v0.8.3 の argparse パッケージ（/Users/kawaz/.moon/lib/core/argparse）
+対象: moonbitlang/core v0.8.3 の argparse パッケージ（`~/.moon/lib/core/argparse`）
 
 ## 調査の背景と目的
 
