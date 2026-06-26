@@ -1,3 +1,7 @@
 import {
   "kawaz/kuu/core",
 }
+
+import {
+  "moonbitlang/core/test",
+} for "wbtest"

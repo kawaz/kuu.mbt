@@ -16,7 +16,7 @@ jobs:
       version: ${{ steps.version.outputs.current }}
       changed: ${{ steps.version.outputs.changed }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # bump-semver vcs get latest-tag で全 tag が必要
 
@@ -109,8 +109,9 @@ jobs:
       matrix:
         target: [wasm-gc, wasm, js]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: chawyehsu/setup-moonup@v1
+      - run: moon update
 
       - name: Build (${{ matrix.target }} release)
         env:
@@ -140,7 +141,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: artifacts

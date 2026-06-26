@@ -29,11 +29,9 @@ fmt-check:
 fmt:
     moon fmt
 
-# Type check with warnings as errors (deprecation warnings are excluded
-# pending docs/issue/2026-06-26-try-operator-migration.md +
-# docs/issue/2026-06-26-assert-eq-debug-derive-migration.md)
+# Type check with warnings as errors
 check:
-    moon check --deny-warn --warn-list -20
+    moon check --deny-warn
 
 # === Test ===
 

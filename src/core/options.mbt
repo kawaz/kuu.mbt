@@ -930,14 +930,14 @@ pub fn[T : Show] Parser::custom(
   // "--" prefix ガードは通常パースで必要だが、eq_split 経由の明示的な値には不要。
   if has_implicit && !has_choices {
     let eq_on_match = fn(s : String) -> Result[() -> Unit, ParseError] {
-      let r : Result[T, ParseError] = try? (pre.run)(s)
-      match r {
-        Ok(v) =>
+      try (pre.run)(s) catch {
+        e => Err(e)
+      } noraise {
+        v =>
           Ok(fn() {
             vc.cell.val = v
             vc.committed.val = true
           })
-        Err(e) => Err(e)
       }
     }
     let eq_reset = fn() { () }
@@ -1036,10 +1036,10 @@ pub fn[T] Parser::append(
       make_value_node(
         opt_n,
         fn(s) {
-          let r : Result[T, ParseError] = try? (pre.run)(s)
-          match r {
-            Ok(v) => Ok(fn() { push_fn(v) })
-            Err(e) => Err(e)
+          try (pre.run)(s) catch {
+            e => Err(e)
+          } noraise {
+            v => Ok(fn() { push_fn(v) })
           }
         },
         reset_fn,
@@ -1066,7 +1066,7 @@ pub fn[T] Parser::append(
   register_env_applicator(self, env, vc, raw => {
     let arr : Array[T] = []
     for part in raw.split(",") {
-      arr.push((pre.run)(part.to_string()))
+      arr.push((pre.run)(part.to_owned()))
     }
     arr
   })

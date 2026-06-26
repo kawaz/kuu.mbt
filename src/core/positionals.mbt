@@ -244,7 +244,7 @@ pub fn Parser::serial(
     positionals: [],
     current_positional: { val: 0 },
     parsed: self.parsed, // 親と parsed 共有
-    children: Map::new(),
+    children: Map([], capacity=0),
     metas: [],
     description: { val: "" },
     before_post_hooks: [],
@@ -252,7 +252,7 @@ pub fn Parser::serial(
     registered_names: {},
     duplicate_errors: [],
     force_unclaimed: [],
-    node_templates: Map::new(),
+    node_templates: Map([], capacity=0),
     eq_fallback_nodes: [],
     deprecated_usages: [],
     env_applicators: [],

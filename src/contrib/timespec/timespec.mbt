@@ -13,13 +13,8 @@ pub fn parse_duration(
   default_sign? : @ts.Sign = Plus,
 ) -> @core.FilterChain[String, @ts.Duration] {
   @core.Filter::parse(fn(s) raise @core.ParseError {
-    let result : Result[@ts.Duration, _] = try? @ts.parse_duration(
-      s,
-      default_sign~,
-    )
-    match result {
-      Ok(d) => d
-      Err(e) =>
+    try @ts.parse_duration(s, default_sign~) catch {
+      e =>
         raise @core.ParseError(@core.ParseErrorInfo::{
           kind: InvalidValue,
           message: e.to_string(),
@@ -27,6 +22,8 @@ pub fn parse_duration(
           opt_name: "",
           tip: "",
         })
+    } noraise {
+      d => d
     }
   })
 }
@@ -49,25 +46,21 @@ pub fn parse_timespec(
   now? : () -> UInt64 = fn() { @env.now() },
 ) -> @core.FilterChain[String, @ts.TimeSpec] {
   @core.Filter::parse(fn(s) raise @core.ParseError {
-    let result : Result[@ts.TimeSpec?, _] = try? @ts.parse_timespec(
-      s,
-      default_sign~,
-      now~,
-    )
-    match result {
-      Ok(Some(ts)) => ts
-      Ok(None) =>
+    try @ts.parse_timespec(s, default_sign~, now~) catch {
+      e =>
         raise @core.ParseError(@core.ParseErrorInfo::{
           kind: InvalidValue,
-          message: "timespec resolved to none: " + s,
+          message: e.to_string(),
           error_context: "",
           opt_name: "",
           tip: "",
         })
-      Err(e) =>
+    } noraise {
+      Some(ts) => ts
+      None =>
         raise @core.ParseError(@core.ParseErrorInfo::{
           kind: InvalidValue,
-          message: e.to_string(),
+          message: "timespec resolved to none: " + s,
           error_context: "",
           opt_name: "",
           tip: "",
@@ -84,14 +77,8 @@ pub fn parse_timespec_optional(
   now? : () -> UInt64 = fn() { @env.now() },
 ) -> @core.FilterChain[String, @ts.TimeSpec?] {
   @core.Filter::parse(fn(s) raise @core.ParseError {
-    let result : Result[@ts.TimeSpec?, _] = try? @ts.parse_timespec(
-      s,
-      default_sign~,
-      now~,
-    )
-    match result {
-      Ok(v) => v
-      Err(e) =>
+    try @ts.parse_timespec(s, default_sign~, now~) catch {
+      e =>
         raise @core.ParseError(@core.ParseErrorInfo::{
           kind: InvalidValue,
           message: e.to_string(),
@@ -99,6 +86,8 @@ pub fn parse_timespec_optional(
           opt_name: "",
           tip: "",
         })
+    } noraise {
+      v => v
     }
   })
 }

@@ -15,18 +15,18 @@ fn main {
     setup=fn(child) { let _ = child.int(name="port", default=3000) },
     description="Serve",
   )
-  let result : Result[_, _] = try? p.parse(["--verbose"])
-  match result {
-    Ok(r) => {
+  try p.parse(["--verbose"]) catch {
+    @core.HelpRequested(text) => {
+      let _ = text
+    }
+    @core.ParseError(info) => {
+      let _ = info.to_string()
+    }
+  } noraise {
+    r => {
       let _ = r.get(_verbose)
       let _ = r.child("serve")
       let _ = r.as_map()
-    }
-    Err(@core.HelpRequested(text)) => {
-      let _ = text
-    }
-    Err(@core.ParseError(info)) => {
-      let _ = info.to_string()
     }
   }
 }

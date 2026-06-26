@@ -458,7 +458,7 @@ fn calculate_max_width(
   metas : Array[OptMeta],
   format_left : (OptMeta) -> String,
 ) -> Int {
-  let max = Ref::new(0)
+  let max : Ref[Int] = { val: 0 }
   for meta in metas {
     let w = format_left(meta).char_length()
     if w > max.val {
@@ -572,9 +572,9 @@ fn write_opt_section(
 ///|
 fn Parser::find_meta_by_opt_name(self : Parser, opt_name : String) -> OptMeta? {
   let name = if opt_name.has_prefix("--") {
-    opt_name[2:].to_string()
+    opt_name[2:].to_owned()
   } else if opt_name.has_prefix("-") {
-    opt_name[1:].to_string()
+    opt_name[1:].to_owned()
   } else {
     opt_name
   }

@@ -7,8 +7,8 @@ test "exclusive flags pass when only one set" {
   let csv = p.flag(name="csv")
   p.exclusive([json.as_ref(), csv.as_ref()])
   ignore(p.parse(["--json"]))
-  inspect(p.get(json), content="Some(true)")
-  inspect(p.get(csv), content="Some(false)")
+  debug_inspect(p.get(json), content="Some(true)")
+  debug_inspect(p.get(csv), content="Some(false)")
 }
 
 ///|
@@ -17,8 +17,11 @@ test "exclusive flags error when both set" {
   let json = p.flag(name="json")
   let csv = p.flag(name="csv")
   p.exclusive([json.as_ref(), csv.as_ref()])
-  let result : Result[_, _] = try? p.parse(["--json", "--csv"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--json", "--csv"]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected exclusive error")
+  }
 }
 
 ///|
@@ -28,7 +31,7 @@ test "exclusive allows none set" {
   let csv = p.flag(name="csv")
   p.exclusive([json.as_ref(), csv.as_ref()])
   ignore(p.parse([]))
-  inspect(p.get(json), content="Some(false)")
+  debug_inspect(p.get(json), content="Some(false)")
 }
 
 ///|
@@ -37,10 +40,10 @@ test "required option present" {
   let output = p.string(name="output", default="")
   p.required(output.as_ref())
   ignore(p.parse(["--output", "file.txt"]))
-  inspect(
+  debug_inspect(
     p.get(output),
     content=(
-      #|Some(file.txt)
+      #|Some("file.txt")
     ),
   )
 }
@@ -50,8 +53,11 @@ test "required option missing" {
   let p = Parser::new()
   let output = p.string(name="output", default="")
   p.required(output.as_ref())
-  let result : Result[_, _] = try? p.parse(["--other"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--other"]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected required error")
+  }
 }
 
 ///|
@@ -61,8 +67,8 @@ test "at_least_one passes when one set" {
   let csv = p.flag(name="csv")
   p.at_least_one([json.as_ref(), csv.as_ref()])
   ignore(p.parse(["--json"]))
-  inspect(p.get(json), content="Some(true)")
-  inspect(p.get(csv), content="Some(false)")
+  debug_inspect(p.get(json), content="Some(true)")
+  debug_inspect(p.get(csv), content="Some(false)")
 }
 
 ///|
@@ -72,8 +78,8 @@ test "at_least_one passes when all set" {
   let csv = p.flag(name="csv")
   p.at_least_one([json.as_ref(), csv.as_ref()])
   ignore(p.parse(["--json", "--csv"]))
-  inspect(p.get(json), content="Some(true)")
-  inspect(p.get(csv), content="Some(true)")
+  debug_inspect(p.get(json), content="Some(true)")
+  debug_inspect(p.get(csv), content="Some(true)")
 }
 
 ///|
@@ -82,14 +88,15 @@ test "at_least_one error when none set" {
   let json = p.flag(name="json")
   let csv = p.flag(name="csv")
   p.at_least_one([json.as_ref(), csv.as_ref()])
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse([]) catch {
+    ParseError(info) => {
       inspect(info.message.contains("at least one required"), content="true")
       inspect(info.message.contains("--json"), content="true")
       inspect(info.message.contains("--csv"), content="true")
     }
     _ => abort("expected at_least_one error")
+  } noraise {
+    _ => fail("expected at_least_one error")
   }
 }
 
@@ -106,8 +113,8 @@ test "at_least_one with subcommand" {
     verbose_opt.val = Some(vrb)
   })
   ignore(p.parse(["serve", "--verbose"]))
-  inspect(p.get(format_opt.val.unwrap()), content="Some(false)")
-  inspect(p.get(verbose_opt.val.unwrap()), content="Some(true)")
+  debug_inspect(p.get(format_opt.val.unwrap()), content="Some(false)")
+  debug_inspect(p.get(verbose_opt.val.unwrap()), content="Some(true)")
 }
 
 ///|
@@ -120,10 +127,10 @@ test "is_set false for default fallback" {
   )
   ignore(p.parse([]))
   inspect(color.is_set(), content="false")
-  inspect(
+  debug_inspect(
     p.get(color),
     content=(
-      #|Some(auto)
+      #|Some("auto")
     ),
   )
 }
@@ -138,10 +145,10 @@ test "is_set true for explicit value" {
   )
   ignore(p.parse(["--color", "never"]))
   inspect(color.is_set(), content="true")
-  inspect(
+  debug_inspect(
     p.get(color),
     content=(
-      #|Some(never)
+      #|Some("never")
     ),
   )
 }
@@ -156,10 +163,10 @@ test "is_set true for implicit value" {
   )
   ignore(p.parse(["--color"]))
   inspect(color.is_set(), content="true")
-  inspect(
+  debug_inspect(
     p.get(color),
     content=(
-      #|Some(always)
+      #|Some("always")
     ),
   )
 }
@@ -171,8 +178,11 @@ test "never rejects extra positional args" {
   let p = Parser::new(dashdash=false)
   let _file = p.positional(name="file")
   p.never()
-  let result : Result[_, _] = try? p.parse(["a", "b"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["a", "b"]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected never error")
+  }
 }
 
 ///|
@@ -181,10 +191,10 @@ test "never allows exact positional count" {
   let file = p.positional(name="file")
   p.never()
   ignore(p.parse(["hello"]))
-  inspect(
+  debug_inspect(
     p.get(file),
     content=(
-      #|Some(hello)
+      #|Some("hello")
     ),
   )
 }
@@ -206,10 +216,10 @@ test "deprecated alias satisfies required on target" {
   p.required(output.as_ref())
   // deprecated 別名で target の required を満たせること
   ignore(p.parse(["--out", "file.txt"]))
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(file.txt)
+      #|Some("file.txt")
     ),
   )
 }
@@ -223,7 +233,7 @@ test "deprecated alias satisfies at_least_one on target" {
   p.at_least_one([json.as_ref(), csv.as_ref()])
   // deprecated 別名で at_least_one を満たせること
   ignore(p.parse(["--legacy-json"]))
-  inspect(json.get(), content="Some(true)")
+  debug_inspect(json.get(), content="Some(true)")
 }
 
 ///|
@@ -234,11 +244,12 @@ test "deprecated alias triggers exclusive with target" {
   let _ = p.deprecated("--legacy-json", json, msg="use --json")
   p.exclusive([json.as_ref(), csv.as_ref()])
   // deprecated 別名 + 別オプションで exclusive エラーになること
-  let result = try? p.parse(["--legacy-json", "--csv"])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse(["--legacy-json", "--csv"]) catch {
+    ParseError(info) =>
       inspect(info.message.contains("mutually exclusive"), content="true")
     _ => abort("expected exclusive error")
+  } noraise {
+    _ => fail("expected exclusive error")
   }
 }
 
@@ -251,7 +262,7 @@ test "at_least_one + exclusive = exactly one" {
   p.exclusive([json.as_ref(), csv.as_ref()])
   // 1つだけ → OK
   ignore(p.parse(["--json"]))
-  inspect(json.get(), content="Some(true)")
+  debug_inspect(json.get(), content="Some(true)")
 }
 
 ///|
@@ -261,11 +272,12 @@ test "at_least_one + exclusive rejects none" {
   let csv = p.flag(name="csv")
   p.at_least_one([json.as_ref(), csv.as_ref()])
   p.exclusive([json.as_ref(), csv.as_ref()])
-  let result = try? p.parse([])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse([]) catch {
+    ParseError(info) =>
       inspect(info.message.contains("at least one required"), content="true")
     _ => abort("expected at_least_one error")
+  } noraise {
+    _ => fail("expected at_least_one error")
   }
 }
 
@@ -276,11 +288,12 @@ test "at_least_one + exclusive rejects both" {
   let csv = p.flag(name="csv")
   p.at_least_one([json.as_ref(), csv.as_ref()])
   p.exclusive([json.as_ref(), csv.as_ref()])
-  let result = try? p.parse(["--json", "--csv"])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse(["--json", "--csv"]) catch {
+    ParseError(info) =>
       inspect(info.message.contains("mutually exclusive"), content="true")
     _ => abort("expected exclusive error")
+  } noraise {
+    _ => fail("expected exclusive error")
   }
 }
 
@@ -292,14 +305,15 @@ test "requires: source set without target is error" {
   let config = p.string(name="config", default="")
   let output = p.string(name="output", default="")
   p.requires(output.as_ref(), source=config.as_ref())
-  let result = try? p.parse(["--config", "a.json"])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse(["--config", "a.json"]) catch {
+    ParseError(info) =>
       inspect(
         info.message.contains("--output") && info.message.contains("--config"),
         content="true",
       )
     _ => abort("expected requires error")
+  } noraise {
+    _ => fail("expected requires error")
   }
 }
 
@@ -310,16 +324,16 @@ test "requires: both set is ok" {
   let output = p.string(name="output", default="")
   p.requires(output.as_ref(), source=config.as_ref())
   ignore(p.parse(["--config", "a.json", "--output", "out.txt"]))
-  inspect(
+  debug_inspect(
     config.get(),
     content=(
-      #|Some(a.json)
+      #|Some("a.json")
     ),
   )
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(out.txt)
+      #|Some("out.txt")
     ),
   )
 }
@@ -355,11 +369,12 @@ test "requires: custom error message" {
     source=config.as_ref(),
     msg="--config needs --output",
   )
-  let result = try? p.parse(["--config", "a.json"])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse(["--config", "a.json"]) catch {
+    ParseError(info) =>
       inspect(info.message.contains("--config needs --output"), content="true")
     _ => abort("expected requires error")
+  } noraise {
+    _ => fail("expected requires error")
   }
 }
 
@@ -372,7 +387,7 @@ test "variation + exclusive: --no-verbose alone is ok" {
   let quiet = p.flag(name="quiet")
   p.exclusive([verbose.as_ref(), quiet.as_ref()])
   ignore(p.parse(["--no-verbose"]))
-  inspect(verbose.get(), content="Some(false)")
+  debug_inspect(verbose.get(), content="Some(false)")
   inspect(verbose.is_set(), content="true")
   inspect(quiet.is_set(), content="false")
 }
@@ -383,11 +398,12 @@ test "variation + exclusive: --no-verbose and --quiet is exclusive error" {
   let verbose = p.flag(name="verbose", variations=[False("no")])
   let quiet = p.flag(name="quiet")
   p.exclusive([verbose.as_ref(), quiet.as_ref()])
-  let result = try? p.parse(["--no-verbose", "--quiet"])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse(["--no-verbose", "--quiet"]) catch {
+    ParseError(info) =>
       inspect(info.message.contains("mutually exclusive"), content="true")
     _ => abort("expected exclusive error")
+  } noraise {
+    _ => fail("expected exclusive error")
   }
 }
 
@@ -397,11 +413,12 @@ test "variation + exclusive: --verbose and --quiet is exclusive error" {
   let verbose = p.flag(name="verbose", variations=[False("no")])
   let quiet = p.flag(name="quiet")
   p.exclusive([verbose.as_ref(), quiet.as_ref()])
-  let result = try? p.parse(["--verbose", "--quiet"])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse(["--verbose", "--quiet"]) catch {
+    ParseError(info) =>
       inspect(info.message.contains("mutually exclusive"), content="true")
     _ => abort("expected exclusive error")
+  } noraise {
+    _ => fail("expected exclusive error")
   }
 }
 
@@ -449,8 +466,11 @@ test "requires circular: one set triggers error" {
   p.requires(a.as_ref(), source=b.as_ref())
   p.requires(b.as_ref(), source=a.as_ref())
   // --a だけ指定 → requires(b, source=a) で b 未セットエラー
-  let result : Result[_, _] = try? p.parse(["--a", "val"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--a", "val"]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected requires error")
+  }
 }
 
 // === 矛盾制約テスト ===
@@ -466,8 +486,11 @@ test "required + required + exclusive is always error" {
   p.required(b.as_ref())
   p.exclusive([a.as_ref(), b.as_ref()])
   // 両方指定 → exclusive エラー
-  let result1 : Result[_, _] = try? p.parse(["--a", "--b"])
-  inspect(result1 is Err(_), content="true")
+  try p.parse(["--a", "--b"]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected exclusive error")
+  }
   // 片方だけ → required エラー（b が欠けている）
   let p2 = Parser::new(dashdash=false)
   let a2 = p2.flag(name="a")
@@ -475,8 +498,11 @@ test "required + required + exclusive is always error" {
   p2.required(a2.as_ref())
   p2.required(b2.as_ref())
   p2.exclusive([a2.as_ref(), b2.as_ref()])
-  let result2 : Result[_, _] = try? p2.parse(["--a"])
-  inspect(result2 is Err(_), content="true")
+  try p2.parse(["--a"]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected required error")
+  }
   // 両方なし → required エラー（a が欠けている）
   let p3 = Parser::new(dashdash=false)
   let a3 = p3.flag(name="a")
@@ -484,8 +510,11 @@ test "required + required + exclusive is always error" {
   p3.required(a3.as_ref())
   p3.required(b3.as_ref())
   p3.exclusive([a3.as_ref(), b3.as_ref()])
-  let result3 : Result[_, _] = try? p3.parse([])
-  inspect(result3 is Err(_), content="true")
+  try p3.parse([]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected required error")
+  }
 }
 
 // === 空パーサーテスト ===
@@ -494,8 +523,11 @@ test "required + required + exclusive is always error" {
 test "empty parser rejects unexpected argument" {
   let p = Parser::new(dashdash=false)
   // オプション0個 + 引数あり → unexpected argument エラー
-  let result : Result[_, _] = try? p.parse(["something"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["something"]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected unexpected argument error")
+  }
 }
 
 ///|

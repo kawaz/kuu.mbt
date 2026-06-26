@@ -51,7 +51,7 @@ pub fn Parser::cmd(
     positionals: [],
     current_positional: { val: 0 },
     parsed: { val: false },
-    children: Map::new(),
+    children: Map([], capacity=0),
     metas: [],
     description: { val: "" },
     before_post_hooks: [],
@@ -59,7 +59,7 @@ pub fn Parser::cmd(
     registered_names: {},
     duplicate_errors: [],
     force_unclaimed: [],
-    node_templates: Map::new(),
+    node_templates: Map([], capacity=0),
     eq_fallback_nodes: [],
     deprecated_usages: [],
     env_applicators: [],
@@ -115,18 +115,16 @@ pub fn Parser::cmd(
             }
             synced_count.val += 1
           }
-          let rest_args = args.view(start=pos + 1).to_array()
+          let rest_args = args.view(start=pos + 1).to_owned()
           // env_prefix の継承: 親の prefix + "_" + uppercase(cmd_name)
           let parent_prefix = self.env_prefix.val
           if parent_prefix != "" {
             child.env_prefix.val = parent_prefix + "_" + cmd_name.to_upper()
           }
-          let parse_result : Result[ParseResult, ParseError] = try? child.parse(
-            rest_args,
-            env=self.env_map.val,
-          )
-          match parse_result {
-            Ok(child_result) =>
+          try child.parse(rest_args, env=self.env_map.val) catch {
+            e => Error(e)
+          } noraise {
+            child_result =>
               Accept(consumed=args.length() - pos, commit=fn() {
                 vc.cell.val = Some(CmdResult::{ name: cmd_name, parser: child })
                 vc.committed.val = true
@@ -136,7 +134,6 @@ pub fn Parser::cmd(
                   self.deprecated_usages.push(pair)
                 }
               })
-            Err(e) => Error(e)
           }
         } else {
           Reject

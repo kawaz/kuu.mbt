@@ -30,14 +30,14 @@ impl Parseable for SimpleConfig with fn register(self, reg) {
 test "flag: --verbose sets true" {
   let config = SimpleConfig::default()
   parse_into(["--verbose"], config)
-  assert_eq(config.verbose, true)
+  @test.assert_eq(config.verbose, true)
 }
 
 ///|
 test "flag: default is false" {
   let config = SimpleConfig::default()
   parse_into([], config)
-  assert_eq(config.verbose, false)
+  @test.assert_eq(config.verbose, false)
 }
 
 // ---- string テスト ----
@@ -46,14 +46,14 @@ test "flag: default is false" {
 test "string: --name sets value" {
   let config = SimpleConfig::default()
   parse_into(["--name", "alice"], config)
-  assert_eq(config.name, "alice")
+  @test.assert_eq(config.name, "alice")
 }
 
 ///|
 test "string: default is empty" {
   let config = SimpleConfig::default()
   parse_into([], config)
-  assert_eq(config.name, "")
+  @test.assert_eq(config.name, "")
 }
 
 // ---- int テスト ----
@@ -62,14 +62,14 @@ test "string: default is empty" {
 test "int: --count sets value" {
   let config = SimpleConfig::default()
   parse_into(["--count", "42"], config)
-  assert_eq(config.count, 42)
+  @test.assert_eq(config.count, 42)
 }
 
 ///|
 test "int: default is 0" {
   let config = SimpleConfig::default()
   parse_into([], config)
-  assert_eq(config.count, 0)
+  @test.assert_eq(config.count, 0)
 }
 
 // ---- boolean テスト ----
@@ -93,21 +93,21 @@ impl Parseable for BoolConfig with fn register(self, reg) {
 test "boolean: --debug true" {
   let config = BoolConfig::default()
   parse_into(["--debug", "true"], config)
-  assert_eq(config.debug, true)
+  @test.assert_eq(config.debug, true)
 }
 
 ///|
 test "boolean: --debug off" {
   let config = BoolConfig::default()
   parse_into(["--debug", "off"], config)
-  assert_eq(config.debug, false)
+  @test.assert_eq(config.debug, false)
 }
 
 ///|
 test "boolean: default is false" {
   let config = BoolConfig::default()
   parse_into([], config)
-  assert_eq(config.debug, false)
+  @test.assert_eq(config.debug, false)
 }
 
 // ---- float テスト ----
@@ -116,14 +116,14 @@ test "boolean: default is false" {
 test "float: --rate sets value" {
   let config = SimpleConfig::default()
   parse_into(["--rate", "3.14"], config)
-  assert_eq(config.rate, 3.14)
+  @test.assert_eq(config.rate, 3.14)
 }
 
 ///|
 test "float: default is 0.0" {
   let config = SimpleConfig::default()
   parse_into([], config)
-  assert_eq(config.rate, 0.0)
+  @test.assert_eq(config.rate, 0.0)
 }
 
 // ---- 複合テスト ----
@@ -135,10 +135,10 @@ test "all options together" {
     ["--verbose", "--name", "bob", "--count", "5", "--rate", "2.5"],
     config,
   )
-  assert_eq(config.verbose, true)
-  assert_eq(config.name, "bob")
-  assert_eq(config.count, 5)
-  assert_eq(config.rate, 2.5)
+  @test.assert_eq(config.verbose, true)
+  @test.assert_eq(config.name, "bob")
+  @test.assert_eq(config.count, 5)
+  @test.assert_eq(config.rate, 2.5)
 }
 
 // ---- エラー安全性テスト ----
@@ -146,16 +146,16 @@ test "all options together" {
 ///|
 test "parse error leaves struct at default" {
   let config = SimpleConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into(
-    ["--unknown"],
-    config,
-  )
+  try parse_into(["--unknown"], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
   // パースエラーなので struct は初期値のまま
-  assert_true(result is Err(_))
-  assert_eq(config.verbose, false)
-  assert_eq(config.name, "")
-  assert_eq(config.count, 0)
-  assert_eq(config.rate, 0.0)
+  @test.assert_eq(config.verbose, false)
+  @test.assert_eq(config.name, "")
+  @test.assert_eq(config.count, 0)
+  @test.assert_eq(config.rate, 0.0)
 }
 
 // ---- default パラメータテスト ----
@@ -183,9 +183,9 @@ impl Parseable for WithDefaults with fn register(self, reg) {
 test "string/int/float with default: unset keeps struct default" {
   let config = WithDefaults::default()
   parse_into([], config)
-  assert_eq(config.host, "localhost")
-  assert_eq(config.port, 8080)
-  assert_eq(config.timeout, 30.0)
+  @test.assert_eq(config.host, "localhost")
+  @test.assert_eq(config.port, 8080)
+  @test.assert_eq(config.timeout, 30.0)
 }
 
 ///|
@@ -195,9 +195,9 @@ test "string/int/float with default: explicit value overrides" {
     ["--host", "example.com", "--port", "3000", "--timeout", "5.5"],
     config,
   )
-  assert_eq(config.host, "example.com")
-  assert_eq(config.port, 3000)
-  assert_eq(config.timeout, 5.5)
+  @test.assert_eq(config.host, "example.com")
+  @test.assert_eq(config.port, 3000)
+  @test.assert_eq(config.timeout, 5.5)
 }
 
 // ============================================================
@@ -225,14 +225,14 @@ impl Parseable for CountConfig with fn register(self, reg) {
 test "count: multiple --verbose increments" {
   let config = CountConfig::default()
   parse_into(["--verbose", "--verbose", "--verbose"], config)
-  assert_eq(config.verbosity, 3)
+  @test.assert_eq(config.verbosity, 3)
 }
 
 ///|
 test "count: default is 0" {
   let config = CountConfig::default()
   parse_into([], config)
-  assert_eq(config.verbosity, 0)
+  @test.assert_eq(config.verbosity, 0)
 }
 
 // ---- append テスト ----
@@ -260,21 +260,21 @@ impl Parseable for AppendConfig with fn register(self, reg) {
 test "append_string: multiple --tag collects values" {
   let config = AppendConfig::default()
   parse_into(["--tag", "a", "--tag", "b"], config)
-  assert_eq(config.tags, ["a", "b"])
+  @test.assert_eq(config.tags, ["a", "b"])
 }
 
 ///|
 test "append_int: multiple --port collects values" {
   let config = AppendConfig::default()
   parse_into(["--port", "80", "--port", "443"], config)
-  assert_eq(config.ports, [80, 443])
+  @test.assert_eq(config.ports, [80, 443])
 }
 
 ///|
 test "append_float: multiple --score collects values" {
   let config = AppendConfig::default()
   parse_into(["--score", "1.5", "--score", "2.7"], config)
-  assert_eq(config.scores, [1.5, 2.7])
+  @test.assert_eq(config.scores, [1.5, 2.7])
 }
 
 // ---- positional テスト ----
@@ -298,14 +298,14 @@ impl Parseable for PosConfig with fn register(self, reg) {
 test "positional: captures first arg" {
   let config = PosConfig::default()
   parse_into(["hello.txt"], config)
-  assert_eq(config.file, Some("hello.txt"))
+  @test.assert_eq(config.file, Some("hello.txt"))
 }
 
 ///|
 test "positional: unset keeps None" {
   let config = PosConfig::default()
   parse_into([], config)
-  assert_eq(config.file, None)
+  @test.assert_eq(config.file, None)
 }
 
 // ---- rest テスト ----
@@ -329,7 +329,7 @@ impl Parseable for RestConfig with fn register(self, reg) {
 test "rest: collects remaining args" {
   let config = RestConfig::default()
   parse_into(["a", "b", "c"], config)
-  assert_eq(config.args, ["a", "b", "c"])
+  @test.assert_eq(config.args, ["a", "b", "c"])
 }
 
 ///|
@@ -337,7 +337,7 @@ test "rest: unset preserves struct default" {
   let config : RestConfig = { args: ["pre-populated"] }
   parse_into([], config)
   // rest 未指定時は set を呼ばず、struct のデフォルトを維持する
-  assert_eq(config.args, ["pre-populated"])
+  @test.assert_eq(config.args, ["pre-populated"])
 }
 
 // ---- sub + require_cmd テスト ----
@@ -393,22 +393,25 @@ test "sub: build with option" {
   let config = SubConfig::default()
   parse_into(["build", "--tag", "v1.0"], config)
   assert_true(config.command == Build)
-  assert_eq(config.build_tag, "v1.0")
+  @test.assert_eq(config.build_tag, "v1.0")
 }
 
 ///|
 test "sub: global flag with subcommand" {
   let config = SubConfig::default()
   parse_into(["--verbose", "build"], config)
-  assert_eq(config.verbose, true)
+  @test.assert_eq(config.verbose, true)
   assert_true(config.command == Build)
 }
 
 ///|
 test "sub: require_cmd errors without subcommand" {
   let config = SubConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into([], config)
-  assert_true(result is Err(_))
+  try parse_into([], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
 }
 
 ///|
@@ -416,7 +419,7 @@ test "sub: unselected subcommand state untouched" {
   let config = SubConfig::default()
   parse_into(["init"], config)
   assert_true(config.command == Init)
-  assert_eq(config.build_tag, "latest") // build は未選択なのでデフォルト
+  @test.assert_eq(config.build_tag, "latest") // build は未選択なのでデフォルト
 }
 
 // ---- set_description テスト ----
@@ -441,7 +444,7 @@ impl Parseable for DescConfig with fn register(self, reg) {
 test "set_description: does not affect parsing" {
   let config = DescConfig::default()
   parse_into(["--name", "test"], config)
-  assert_eq(config.name, "test")
+  @test.assert_eq(config.name, "test")
 }
 
 // ============================================================
@@ -475,14 +478,14 @@ impl Parseable for ShortsConfig with fn register(self, reg) {
 test "shorts: -v sets verbose" {
   let config = ShortsConfig::default()
   parse_into(["-v"], config)
-  assert_eq(config.verbose, true)
+  @test.assert_eq(config.verbose, true)
 }
 
 ///|
 test "shorts: -o sets output" {
   let config = ShortsConfig::default()
   parse_into(["-o", "file.txt"], config)
-  assert_eq(config.output, "file.txt")
+  @test.assert_eq(config.output, "file.txt")
 }
 
 // ---- aliases テスト ----
@@ -512,7 +515,7 @@ impl Parseable for AliasConfig with fn register(self, reg) {
 test "aliases: --colour works as alias for --color" {
   let config = AliasConfig::default()
   parse_into(["--colour", "red"], config)
-  assert_eq(config.color, "red")
+  @test.assert_eq(config.color, "red")
 }
 
 // ---- env テスト ----
@@ -537,7 +540,7 @@ test "env: env parameter does not affect parsing" {
   // env はヘルプ表示用メタデータのみ（Phase 1 DR-0041）。パース動作には影響しない。
   let config = EnvConfig::default()
   parse_into(["--host", "example.com"], config)
-  assert_eq(config.host, "example.com")
+  @test.assert_eq(config.host, "example.com")
 }
 
 // ---- hidden テスト ----
@@ -563,7 +566,7 @@ impl Parseable for HiddenConfig with fn register(self, reg) {
 test "hidden: hidden flag still works for parsing" {
   let config = HiddenConfig::default()
   parse_into(["--debug"], config)
-  assert_eq(config.debug, true)
+  @test.assert_eq(config.debug, true)
 }
 
 // ---- sub aliases テスト ----
@@ -593,7 +596,7 @@ impl Parseable for SubAliasConfig with fn register(self, reg) {
 test "sub aliases: alias 'i' matches install" {
   let config = SubAliasConfig::default()
   parse_into(["i"], config)
-  assert_eq(config.command, "install")
+  @test.assert_eq(config.command, "install")
 }
 
 // ---- value_name テスト ----
@@ -617,7 +620,7 @@ impl Parseable for ValueNameConfig with fn register(self, reg) {
 test "value_name: does not affect parsing" {
   let config = ValueNameConfig::default()
   parse_into(["--file", "test.txt"], config)
-  assert_eq(config.file, "test.txt")
+  @test.assert_eq(config.file, "test.txt")
 }
 
 // ============================================================
@@ -648,18 +651,18 @@ impl Parseable for ExclusiveConfig with fn register(self, reg) {
 test "exclusive: single option is ok" {
   let config = ExclusiveConfig::default()
   parse_into(["--json"], config)
-  assert_eq(config.json, true)
-  assert_eq(config.yaml, false)
+  @test.assert_eq(config.json, true)
+  @test.assert_eq(config.yaml, false)
 }
 
 ///|
 test "exclusive: both options is error" {
   let config = ExclusiveConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into(
-    ["--json", "--yaml"],
-    config,
-  )
-  assert_true(result is Err(_))
+  try parse_into(["--json", "--yaml"], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
 }
 
 // ---- required 制約テスト ----
@@ -684,14 +687,17 @@ impl Parseable for RequiredConfig with fn register(self, reg) {
 test "required: provided is ok" {
   let config = RequiredConfig::default()
   parse_into(["--output", "file.txt"], config)
-  assert_eq(config.output, "file.txt")
+  @test.assert_eq(config.output, "file.txt")
 }
 
 ///|
 test "required: missing is error" {
   let config = RequiredConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into([], config)
-  assert_true(result is Err(_))
+  try parse_into([], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
 }
 
 // ---- at_least_one 制約テスト ----
@@ -718,14 +724,17 @@ impl Parseable for AtLeastOneConfig with fn register(self, reg) {
 test "at_least_one: one provided is ok" {
   let config = AtLeastOneConfig::default()
   parse_into(["--stdin"], config)
-  assert_eq(config.stdin, true)
+  @test.assert_eq(config.stdin, true)
 }
 
 ///|
 test "at_least_one: none is error" {
   let config = AtLeastOneConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into([], config)
-  assert_true(result is Err(_))
+  try parse_into([], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
 }
 
 // ---- custom[T] テスト ----
@@ -798,11 +807,11 @@ test "custom: parses custom type" {
 ///|
 test "custom: invalid value is error" {
   let config = CustomConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into(
-    ["--level", "invalid"],
-    config,
-  )
-  assert_true(result is Err(_))
+  try parse_into(["--level", "invalid"], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
 }
 
 // ============================================================
@@ -832,7 +841,7 @@ impl Parseable for CustomAppendConfig with fn register(self, reg) {
 test "append: collects parsed values" {
   let config = CustomAppendConfig::default()
   parse_into(["--value", "1", "--value", "2", "--value", "3"], config)
-  assert_eq(config.values, [1, 2, 3])
+  @test.assert_eq(config.values, [1, 2, 3])
 }
 
 // ---- default 二重管理の修正検証テスト ----
@@ -861,14 +870,14 @@ test "default: struct default preserved when option not specified" {
   let config = DefaultMismatchConfig::default()
   parse_into([], config)
   // struct の default "my-default" が維持される（registry の "registry-default" で上書きされない）
-  assert_eq(config.host, "my-default")
+  @test.assert_eq(config.host, "my-default")
 }
 
 ///|
 test "default: explicit value overrides struct default" {
   let config = DefaultMismatchConfig::default()
   parse_into(["--host", "explicit"], config)
-  assert_eq(config.host, "explicit")
+  @test.assert_eq(config.host, "explicit")
 }
 
 // ---- ネストサブコマンドテスト ----
@@ -900,9 +909,9 @@ impl Parseable for NestedConfig with fn register(self, reg) {
 test "nested sub: grandchild subcommand works" {
   let config = NestedConfig::default()
   parse_into(["parent", "child", "--value", "hello"], config)
-  assert_eq(config.cmd1, "parent")
-  assert_eq(config.cmd2, "child")
-  assert_eq(config.value, "hello")
+  @test.assert_eq(config.cmd1, "parent")
+  @test.assert_eq(config.cmd2, "child")
+  @test.assert_eq(config.value, "hello")
 }
 
 // ---- エラーメッセージ内容テスト ----
@@ -910,17 +919,15 @@ test "nested sub: grandchild subcommand works" {
 ///|
 test "error message: exclusive violation mentions option names" {
   let config = ExclusiveConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into(
-    ["--json", "--yaml"],
-    config,
-  )
-  match result {
-    Err(@core.ParseError(info)) =>
+  try parse_into(["--json", "--yaml"], config) catch {
+    @core.ParseError(info) =>
       assert_true(
         info.message.contains("exclusive") ||
         info.message.contains("--json") ||
         info.message.contains("--yaml"),
       )
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -952,27 +959,27 @@ impl Parseable for RequiresConfig with fn register(self, reg) {
 ///|
 test "requires: source without target is error" {
   let config = RequiresConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into(
-    ["--format", "json"],
-    config,
-  )
-  assert_true(result is Err(_))
+  try parse_into(["--format", "json"], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
 }
 
 ///|
 test "requires: both provided is ok" {
   let config = RequiresConfig::default()
   parse_into(["--format", "json", "--output", "file.txt"], config)
-  assert_eq(config.format, "json")
-  assert_eq(config.output, "file.txt")
+  @test.assert_eq(config.format, "json")
+  @test.assert_eq(config.output, "file.txt")
 }
 
 ///|
 test "requires: neither provided is ok" {
   let config = RequiresConfig::default()
   parse_into([], config)
-  assert_eq(config.format, "")
-  assert_eq(config.output, "")
+  @test.assert_eq(config.format, "")
+  @test.assert_eq(config.output, "")
 }
 
 // ---- = 構文テスト ----
@@ -981,21 +988,21 @@ test "requires: neither provided is ok" {
 test "string: --name=value syntax" {
   let config = SimpleConfig::default()
   parse_into(["--name=alice"], config)
-  assert_eq(config.name, "alice")
+  @test.assert_eq(config.name, "alice")
 }
 
 ///|
 test "int: --count=42 syntax" {
   let config = SimpleConfig::default()
   parse_into(["--count=42"], config)
-  assert_eq(config.count, 42)
+  @test.assert_eq(config.count, 42)
 }
 
 ///|
 test "float: --rate=1.5 syntax" {
   let config = SimpleConfig::default()
   parse_into(["--rate=1.5"], config)
-  assert_eq(config.rate, 1.5)
+  @test.assert_eq(config.rate, 1.5)
 }
 
 // ---- count shorts テスト ----
@@ -1019,14 +1026,14 @@ impl Parseable for CountShortsConfig with fn register(self, reg) {
 test "count shorts: -v -v -v increments via short" {
   let config = CountShortsConfig::default()
   parse_into(["-v", "-v", "-v"], config)
-  assert_eq(config.verbosity, 3)
+  @test.assert_eq(config.verbosity, 3)
 }
 
 ///|
 test "count shorts: -vvv combined short" {
   let config = CountShortsConfig::default()
   parse_into(["-vvv"], config)
-  assert_eq(config.verbosity, 3)
+  @test.assert_eq(config.verbosity, 3)
 }
 
 // ---- exclusive: neither provided is ok ----
@@ -1035,8 +1042,8 @@ test "count shorts: -vvv combined short" {
 test "exclusive: neither option is ok" {
   let config = ExclusiveConfig::default()
   parse_into([], config)
-  assert_eq(config.json, false)
-  assert_eq(config.yaml, false)
+  @test.assert_eq(config.json, false)
+  @test.assert_eq(config.yaml, false)
 }
 
 // ---- at_least_one: both provided is ok ----
@@ -1045,8 +1052,8 @@ test "exclusive: neither option is ok" {
 test "at_least_one: both provided is ok" {
   let config = AtLeastOneConfig::default()
   parse_into(["--input", "file.txt", "--stdin"], config)
-  assert_eq(config.input, "file.txt")
-  assert_eq(config.stdin, true)
+  @test.assert_eq(config.input, "file.txt")
+  @test.assert_eq(config.stdin, true)
 }
 
 // ---- env パラメータ（Phase 2: 実際の値取得）テスト ----
@@ -1072,23 +1079,23 @@ impl Parseable for EnvPhase2Config with fn register(self, reg) {
 test "env: env var sets value when option not provided" {
   let config = EnvPhase2Config::default()
   parse_into([], config, env={ "APP_HOST": "envhost", "APP_PORT": "9090" })
-  assert_eq(config.host, "envhost")
-  assert_eq(config.port, 9090)
+  @test.assert_eq(config.host, "envhost")
+  @test.assert_eq(config.port, 9090)
 }
 
 ///|
 test "env: CLI arg overrides env var" {
   let config = EnvPhase2Config::default()
   parse_into(["--host", "clihost"], config, env={ "APP_HOST": "envhost" })
-  assert_eq(config.host, "clihost")
+  @test.assert_eq(config.host, "clihost")
 }
 
 ///|
 test "env: unset env var keeps default" {
   let config = EnvPhase2Config::default()
   parse_into([], config, env={})
-  assert_eq(config.host, "")
-  assert_eq(config.port, 0)
+  @test.assert_eq(config.host, "")
+  @test.assert_eq(config.port, 0)
 }
 
 // ---- dashdash (--) セパレータテスト ----
@@ -1114,8 +1121,8 @@ impl Parseable for DashdashConfig with fn register(self, reg) {
 test "dashdash: -- separates options from rest args" {
   let config = DashdashConfig::default()
   parse_into(["--verbose", "--", "--not-an-option", "file"], config)
-  assert_eq(config.verbose, true)
-  assert_eq(config.args, ["--not-an-option", "file"])
+  @test.assert_eq(config.verbose, true)
+  @test.assert_eq(config.args, ["--not-an-option", "file"])
 }
 
 // ---- append エラーテスト ----
@@ -1123,18 +1130,18 @@ test "dashdash: -- separates options from rest args" {
 ///|
 test "append: invalid value is error" {
   let config = CustomAppendConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into(
-    ["--value", "abc"],
-    config,
-  )
-  assert_true(result is Err(_))
+  try parse_into(["--value", "abc"], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
 }
 
 ///|
 test "append: empty is ok" {
   let config = CustomAppendConfig::default()
   parse_into([], config)
-  assert_eq(config.values, [])
+  @test.assert_eq(config.values, [])
 }
 
 // ---- global flag: サブコマンドの後ろからも指定可能 ----
@@ -1143,7 +1150,7 @@ test "append: empty is ok" {
 test "global flag: after subcommand" {
   let config = SubConfig::default()
   parse_into(["build", "--verbose"], config)
-  assert_eq(config.verbose, true)
+  @test.assert_eq(config.verbose, true)
   assert_true(config.command == Build)
 }
 
@@ -1170,16 +1177,16 @@ impl Parseable for PosOptionConfig with fn register(self, reg) {
 test "positional + option: both work together" {
   let config = PosOptionConfig::default()
   parse_into(["input.txt", "--output", "out.txt"], config)
-  assert_eq(config.file, Some("input.txt"))
-  assert_eq(config.output, "out.txt")
+  @test.assert_eq(config.file, Some("input.txt"))
+  @test.assert_eq(config.output, "out.txt")
 }
 
 ///|
 test "positional + option: option before positional" {
   let config = PosOptionConfig::default()
   parse_into(["--output", "out.txt", "input.txt"], config)
-  assert_eq(config.file, Some("input.txt"))
-  assert_eq(config.output, "out.txt")
+  @test.assert_eq(config.file, Some("input.txt"))
+  @test.assert_eq(config.output, "out.txt")
 }
 
 // ---- sub + positional 組み合わせ ----
@@ -1206,8 +1213,8 @@ impl Parseable for SubPosConfig with fn register(self, reg) {
 test "sub + positional: subcommand with positional arg" {
   let config = SubPosConfig::default()
   parse_into(["add", "readme.md"], config)
-  assert_eq(config.command, "add")
-  assert_eq(config.file, Some("readme.md"))
+  @test.assert_eq(config.command, "add")
+  @test.assert_eq(config.file, Some("readme.md"))
 }
 
 // ---- error: int に不正な文字列 ----
@@ -1215,11 +1222,11 @@ test "sub + positional: subcommand with positional arg" {
 ///|
 test "int: non-numeric value is error" {
   let config = SimpleConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into(
-    ["--count", "abc"],
-    config,
-  )
-  assert_true(result is Err(_))
+  try parse_into(["--count", "abc"], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
 }
 
 // ---- error: float に不正な文字列 ----
@@ -1227,11 +1234,11 @@ test "int: non-numeric value is error" {
 ///|
 test "float: non-numeric value is error" {
   let config = SimpleConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into(
-    ["--rate", "xyz"],
-    config,
-  )
-  assert_true(result is Err(_))
+  try parse_into(["--rate", "xyz"], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
 }
 
 // ---- error: required missing keeps struct default ----
@@ -1239,9 +1246,12 @@ test "float: non-numeric value is error" {
 ///|
 test "required: missing keeps struct default" {
   let config = RequiredConfig::default()
-  let result : Result[Unit, @core.ParseError] = try? parse_into([], config)
-  assert_true(result is Err(_))
-  assert_eq(config.output, "")
+  try parse_into([], config) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse_into to raise")
+  }
+  @test.assert_eq(config.output, "")
 }
 
 // ---- env_prefix テスト ----
@@ -1268,29 +1278,29 @@ impl Parseable for EnvPrefixConfig with fn register(self, reg) {
 test "env_prefix: MYAPP_PORT sets value via prefixed env" {
   let config = EnvPrefixConfig::default()
   parse_into([], config, env={ "MYAPP_PORT": "3000" })
-  assert_eq(config.port, 3000)
+  @test.assert_eq(config.port, 3000)
 }
 
 ///|
 test "env_prefix: unprefixed env var is not matched" {
   let config = EnvPrefixConfig::default()
   parse_into([], config, env={ "PORT": "3000" })
-  assert_eq(config.port, 0)
+  @test.assert_eq(config.port, 0)
 }
 
 ///|
 test "env_prefix: CLI takes precedence over prefixed env" {
   let config = EnvPrefixConfig::default()
   parse_into(["--port", "8080"], config, env={ "MYAPP_PORT": "3000" })
-  assert_eq(config.port, 8080)
+  @test.assert_eq(config.port, 8080)
 }
 
 ///|
 test "env_prefix: multiple opts with prefix" {
   let config = EnvPrefixConfig::default()
   parse_into([], config, env={ "MYAPP_HOST": "db.local", "MYAPP_PORT": "5432" })
-  assert_eq(config.host, "db.local")
-  assert_eq(config.port, 5432)
+  @test.assert_eq(config.host, "db.local")
+  @test.assert_eq(config.port, 5432)
 }
 
 // ---- auto_env テスト ----
@@ -1317,29 +1327,29 @@ impl Parseable for AutoEnvConfig with fn register(self, reg) {
 test "auto_env: PORT auto-binds to --port" {
   let config = AutoEnvConfig::default()
   parse_into([], config, env={ "PORT": "9090" })
-  assert_eq(config.port, 9090)
+  @test.assert_eq(config.port, 9090)
 }
 
 ///|
 test "auto_env: HOST auto-binds to --host" {
   let config = AutoEnvConfig::default()
   parse_into([], config, env={ "HOST": "autohost" })
-  assert_eq(config.host, "autohost")
+  @test.assert_eq(config.host, "autohost")
 }
 
 ///|
 test "auto_env: CLI takes precedence over auto_env" {
   let config = AutoEnvConfig::default()
   parse_into(["--port", "8080"], config, env={ "PORT": "3000" })
-  assert_eq(config.port, 8080)
+  @test.assert_eq(config.port, 8080)
 }
 
 ///|
 test "auto_env: unset env keeps default" {
   let config = AutoEnvConfig::default()
   parse_into([], config, env={})
-  assert_eq(config.host, "")
-  assert_eq(config.port, 0)
+  @test.assert_eq(config.host, "")
+  @test.assert_eq(config.port, 0)
 }
 
 // ---- auto_env + env_prefix 組み合わせテスト ----
@@ -1367,14 +1377,14 @@ impl Parseable for AutoEnvPrefixConfig with fn register(self, reg) {
 test "auto_env + env_prefix: APP_PORT sets value" {
   let config = AutoEnvPrefixConfig::default()
   parse_into([], config, env={ "APP_PORT": "4000" })
-  assert_eq(config.port, 4000)
+  @test.assert_eq(config.port, 4000)
 }
 
 ///|
 test "auto_env + env_prefix: unprefixed PORT not matched" {
   let config = AutoEnvPrefixConfig::default()
   parse_into([], config, env={ "PORT": "4000" })
-  assert_eq(config.port, 0)
+  @test.assert_eq(config.port, 0)
 }
 
 // ---- file コンビネータテスト ----
@@ -1400,21 +1410,21 @@ impl Parseable for FileConfig with fn register(self, reg) {
 test "file: --output /tmp/a.log sets value" {
   let config = FileConfig::default()
   parse_into(["--output", "/tmp/a.log"], config)
-  assert_eq(config.output, "/tmp/a.log")
+  @test.assert_eq(config.output, "/tmp/a.log")
 }
 
 ///|
 test "file: --output (flag-only) uses default_path" {
   let config = FileConfig::default()
   parse_into(["--output"], config)
-  assert_eq(config.output, "./out.log")
+  @test.assert_eq(config.output, "./out.log")
 }
 
 ///|
 test "file: unset keeps default empty" {
   let config = FileConfig::default()
   parse_into([], config)
-  assert_eq(config.output, "")
+  @test.assert_eq(config.output, "")
 }
 
 // ---- 値系コンビネータ shorts/aliases/global テスト ----
@@ -1462,63 +1472,63 @@ impl Parseable for ValueShortsConfig with fn register(self, reg) {
 test "value shorts: string -n sets value" {
   let config = ValueShortsConfig::default()
   parse_into(["-n", "alice"], config)
-  assert_eq(config.name, "alice")
+  @test.assert_eq(config.name, "alice")
 }
 
 ///|
 test "value shorts: string alias --alias-name sets value" {
   let config = ValueShortsConfig::default()
   parse_into(["--alias-name", "bob"], config)
-  assert_eq(config.name, "bob")
+  @test.assert_eq(config.name, "bob")
 }
 
 ///|
 test "value shorts: int -c sets value" {
   let config = ValueShortsConfig::default()
   parse_into(["-c", "7"], config)
-  assert_eq(config.count, 7)
+  @test.assert_eq(config.count, 7)
 }
 
 ///|
 test "value shorts: float -r sets value" {
   let config = ValueShortsConfig::default()
   parse_into(["-r", "3.14"], config)
-  assert_eq(config.rate, 3.14)
+  @test.assert_eq(config.rate, 3.14)
 }
 
 ///|
 test "value shorts: boolean -d sets value" {
   let config = ValueShortsConfig::default()
   parse_into(["-d", "true"], config)
-  assert_eq(config.debug, true)
+  @test.assert_eq(config.debug, true)
 }
 
 ///|
 test "value shorts: append_string -t collects values" {
   let config = ValueShortsConfig::default()
   parse_into(["-t", "a", "-t", "b"], config)
-  assert_eq(config.tags, ["a", "b"])
+  @test.assert_eq(config.tags, ["a", "b"])
 }
 
 ///|
 test "value shorts: append_string alias --label collects values" {
   let config = ValueShortsConfig::default()
   parse_into(["--label", "x", "--tag", "y"], config)
-  assert_eq(config.tags, ["x", "y"])
+  @test.assert_eq(config.tags, ["x", "y"])
 }
 
 ///|
 test "value shorts: append_int -N collects values" {
   let config = ValueShortsConfig::default()
   parse_into(["-N", "1", "-N", "2"], config)
-  assert_eq(config.nums, [1, 2])
+  @test.assert_eq(config.nums, [1, 2])
 }
 
 ///|
 test "value shorts: append_float -w collects values" {
   let config = ValueShortsConfig::default()
   parse_into(["-w", "1.5", "-w", "2.5"], config)
-  assert_eq(config.weights, [1.5, 2.5])
+  @test.assert_eq(config.weights, [1.5, 2.5])
 }
 
 // ---- global テスト ----
@@ -1551,14 +1561,14 @@ impl Parseable for GlobalConfig with fn register(self, reg) {
 test "global: string with global=true works after subcommand" {
   let config = GlobalConfig::default()
   parse_into(["run", "--name", "alice"], config)
-  assert_eq(config.name, "alice")
-  assert_eq(config.sub_called, true)
+  @test.assert_eq(config.name, "alice")
+  @test.assert_eq(config.sub_called, true)
 }
 
 ///|
 test "global: int with global=true works after subcommand" {
   let config = GlobalConfig::default()
   parse_into(["run", "--level", "5"], config)
-  assert_eq(config.level, 5)
-  assert_eq(config.sub_called, true)
+  @test.assert_eq(config.level, 5)
+  @test.assert_eq(config.sub_called, true)
 }

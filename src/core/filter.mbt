@@ -39,7 +39,7 @@ pub fn[A, B] Filter::parse(f : (A) -> B raise ParseError) -> FilterChain[A, B] {
 ///|
 /// Trim whitespace from both ends
 pub fn Filter::trim() -> FilterChain[String, String] {
-  Filter::map(fn(s) { s.trim().to_string() })
+  Filter::map(fn(s) { s.trim().to_owned() })
 }
 
 ///|
@@ -62,7 +62,7 @@ pub fn Filter::non_empty() -> FilterChain[String, String] {
 /// Split string by separator into Array[String]
 pub fn Filter::split(sep : String) -> FilterChain[String, Array[String]] {
   Filter::map(fn(s) {
-    s.split(sep.to_string_view()).map(fn(sv) { sv.to_string() }).collect()
+    s.split(sep.to_string_view()).map(fn(sv) { sv.to_owned() }).collect()
   })
 }
 
@@ -70,13 +70,13 @@ pub fn Filter::split(sep : String) -> FilterChain[String, Array[String]] {
 /// Parse string to Int
 pub fn Filter::parse_int() -> FilterChain[String, Int] {
   Filter::parse(fn(s) raise ParseError {
-    let r : Result[Int, _] = try? @string.parse_int(s.view())
-    match r {
-      Ok(v) => v
-      Err(_) =>
+    try @string.parse_int(s.view()) catch {
+      _ =>
         raise parse_error(
           "invalid integer: " + s + " (expected e.g. '42', '-10')",
         )
+    } noraise {
+      v => v
     }
   })
 }
@@ -85,13 +85,13 @@ pub fn Filter::parse_int() -> FilterChain[String, Int] {
 /// Parse string to Double
 pub fn Filter::parse_float() -> FilterChain[String, Double] {
   Filter::parse(fn(s) raise ParseError {
-    let r : Result[Double, _] = try? @string.parse_double(s.view())
-    match r {
-      Ok(v) => v
-      Err(_) =>
+    try @string.parse_double(s.view()) catch {
+      _ =>
         raise parse_error(
           "invalid float: " + s + " (expected e.g. '3.14', '-1.5e2')",
         )
+    } noraise {
+      v => v
     }
   })
 }
@@ -278,13 +278,13 @@ pub fn Filter::max_graphemes(n : Int) -> FilterChain[String, String] {
 ///|
 /// Trim leading whitespace
 pub fn Filter::trim_start() -> FilterChain[String, String] {
-  Filter::map(fn(s) { s.trim_start().to_string() })
+  Filter::map(fn(s) { s.trim_start().to_owned() })
 }
 
 ///|
 /// Trim trailing whitespace
 pub fn Filter::trim_end() -> FilterChain[String, String] {
-  Filter::map(fn(s) { s.trim_end().to_string() })
+  Filter::map(fn(s) { s.trim_end().to_owned() })
 }
 
 ///|
@@ -399,7 +399,7 @@ pub fn Filter::regex_replace(
 ) -> FilterChain[String, String] {
   let regex = @string.Regex::unsafe_from_string(pattern)
   Filter::map(fn(s) {
-    regex.replace_by(s[:], fn(_m) { replacement[:] }).to_string()
+    regex.replace_by(s[:], fn(_m) { replacement[:] }).to_owned()
   })
 }
 
@@ -411,7 +411,7 @@ pub fn Filter::regex_split(
 ) -> FilterChain[String, Array[String]] {
   let regex = @string.Regex::unsafe_from_string(pattern)
   Filter::map(fn(s) {
-    regex.split(s[:]).map(fn(sv) { sv.to_string() }).collect()
+    regex.split(s[:]).map(fn(sv) { sv.to_owned() }).collect()
   })
 }
 
@@ -433,7 +433,7 @@ pub fn Filter::mergeable_list(
   Filter::map(fn(input) {
     let parts : Array[String] = input
       .split(separator.to_string_view())
-      .map(fn(sv) { sv.to_string() })
+      .map(fn(sv) { sv.to_owned() })
       .collect()
     // Detect mode: if any element starts with +/- or is "...", it's merge mode
     let is_merge = parts
@@ -454,9 +454,9 @@ pub fn Filter::mergeable_list(
         if part == "..." {
           continue
         } else if part.has_prefix("+") {
-          mentioned.push(part[1:].to_string())
+          mentioned.push(part[1:].to_owned())
         } else if part.has_prefix("-") {
-          let name = part[1:].to_string()
+          let name = part[1:].to_owned()
           mentioned.push(name)
           removals.push(name)
         } else {
@@ -474,7 +474,7 @@ pub fn Filter::mergeable_list(
             }
           }
         } else if part.has_prefix("+") {
-          let name = part[1:].to_string()
+          let name = part[1:].to_owned()
           if !removals.contains(name) && !result.contains(name) {
             result.push(name)
           }
@@ -492,12 +492,12 @@ pub fn Filter::mergeable_list(
       let result : Array[String] = base.copy()
       for part in parts {
         if part.has_prefix("+") {
-          let name = part[1:].to_string()
+          let name = part[1:].to_owned()
           if !result.contains(name) {
             result.push(name)
           }
         } else if part.has_prefix("-") {
-          let name = part[1:].to_string()
+          let name = part[1:].to_owned()
           let filtered = result.filter(fn(item) { item != name })
           result.clear()
           for item in filtered {

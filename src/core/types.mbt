@@ -95,17 +95,6 @@ pub(all) enum ReduceAction {
 } derive(Debug, Eq)
 
 ///|
-pub impl Show for ReduceAction with fn output(self, logger) {
-  match self {
-    Value(s) => {
-      logger.write_string("Value(")
-      s.output(logger)
-      logger.write_string(")")
-    }
-  }
-}
-
-///|
 pub(all) enum TryResult {
   Accept(consumed~ : Int, commit~ : () -> Unit)
   Reject

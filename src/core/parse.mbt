@@ -4,8 +4,8 @@ fn levenshtein(a : String, b : String) -> Int {
   let bg = @grapheme.graphemes(b)
   let m = ag.length()
   let n = bg.length()
-  let a_chars : Array[String] = Array::makei(m, fn(i) { ag[i].to_string() })
-  let b_chars : Array[String] = Array::makei(n, fn(i) { bg[i].to_string() })
+  let a_chars : Array[String] = Array::makei(m, fn(i) { ag[i].to_owned() })
+  let b_chars : Array[String] = Array::makei(n, fn(i) { bg[i].to_owned() })
   // dp[(i)] は行 i の各列の値を保持する
   let prev : Array[Int] = Array::make(n + 1, 0)
   let curr : Array[Int] = Array::make(n + 1, 0)
@@ -210,7 +210,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
 
       while ri < rest_g.length() {
         let cluster = rest_g[ri]
-        let short_name = "-" + cluster.to_string()
+        let short_name = "-" + cluster.to_owned()
 
         // 同一 short 名の全ノードを収集
         let matching : Array[ExactNode] = []
@@ -225,7 +225,7 @@ fn Parser::install_short_combine_node(self : Parser) -> Unit {
 
         let remaining_strs : Array[String] = []
         for j = ri + 1; j < rest_g.length(); j = j + 1 {
-          remaining_strs.push(rest_g[j].to_string())
+          remaining_strs.push(rest_g[j].to_owned())
         }
 
         if remaining_strs.length() > 0 {
@@ -587,10 +587,8 @@ pub fn Parser::parse(
   args : Array[String],
   env? : Map[String, String] = {},
 ) -> ParseResult raise ParseError {
-  let result : Result[ParseResult, ParseError] = try? self.parse_raw(args, env~)
-  match result {
-    Ok(r) => r
-    Err(ParseError(info)) =>
+  try self.parse_raw(args, env~) catch {
+    ParseError(info) =>
       if info.error_context == "" {
         raise ParseError(ParseErrorInfo::{
           ..info,
@@ -599,6 +597,8 @@ pub fn Parser::parse(
       } else {
         raise ParseError(info)
       }
-    Err(e) => raise e
+    e => raise e
+  } noraise {
+    r => r
   }
 }

@@ -7,7 +7,7 @@ test "subcommand basic" {
   })
   ignore(p.parse(["serve", "--port", "3000"]))
   assert_true(serve.is_set())
-  inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
+  @debug.debug_inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
 }
 
 ///|
@@ -32,8 +32,8 @@ test "subcommand with parent flag" {
     port_opt.val = Some(child.int(name="port", default=8080))
   })
   ignore(p.parse(["--verbose", "serve", "--port", "3000"]))
-  inspect(p.get(verbose), content="Some(true)")
-  inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
+  @debug.debug_inspect(p.get(verbose), content="Some(true)")
+  @debug.debug_inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
 }
 
 ///|
@@ -42,8 +42,11 @@ test "subcommand unknown option error" {
   let _serve = p.cmd(name="serve", setup=fn(child) {
     let _ = child.int(name="port", default=8080)
   })
-  let result : Result[_, _] = try? p.parse(["serve", "--unknown"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["serve", "--unknown"]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse error")
+  }
 }
 
 ///|
@@ -58,10 +61,10 @@ test "nested subcommand" {
   ignore(p.parse(["remote", "add", "--name", "origin"]))
   match name_opt.val {
     Some(opt) =>
-      inspect(
+      @debug.debug_inspect(
         p.get(opt),
         content=(
-          #|Some(origin)
+          #|Some("origin")
         ),
       )
     None => abort("unreachable")
@@ -80,10 +83,10 @@ test "nested subcommand with parent option" {
   ignore(p.parse(["remote", "add", "--url", "https://example.com"]))
   match url_opt.val {
     Some(opt) =>
-      inspect(
+      @debug.debug_inspect(
         p.get(opt),
         content=(
-          #|Some(https://example.com)
+          #|Some("https://example.com")
         ),
       )
     None => abort("unreachable")
@@ -99,8 +102,8 @@ test "global flag in subcommand" {
     port_opt.val = Some(child.int(name="port", default=8080))
   })
   ignore(p.parse(["serve", "--verbose", "--port", "3000"]))
-  inspect(p.get(verbose), content="Some(true)")
-  inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
+  @debug.debug_inspect(p.get(verbose), content="Some(true)")
+  @debug.debug_inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
 }
 
 ///|
@@ -112,8 +115,8 @@ test "global flag before subcommand" {
     port_opt.val = Some(child.int(name="port", default=8080))
   })
   ignore(p.parse(["--verbose", "serve", "--port", "3000"]))
-  inspect(p.get(verbose), content="Some(true)")
-  inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
+  @debug.debug_inspect(p.get(verbose), content="Some(true)")
+  @debug.debug_inspect(p.get(port_opt.val.unwrap()), content="Some(3000)")
 }
 
 ///|
@@ -127,13 +130,13 @@ test "global flag in nested subcommand" {
     })
   })
   ignore(p.parse(["remote", "add", "--verbose", "--name", "origin"]))
-  inspect(p.get(verbose), content="Some(true)")
+  @debug.debug_inspect(p.get(verbose), content="Some(true)")
   match name_opt.val {
     Some(opt) =>
-      inspect(
+      @debug.debug_inspect(
         p.get(opt),
         content=(
-          #|Some(origin)
+          #|Some("origin")
         ),
       )
     None => abort("unreachable")
@@ -145,7 +148,7 @@ test "parse returns ParseResult" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   let result = p.parse(["--verbose"])
-  inspect(result.get(verbose), content="Some(true)")
+  @debug.debug_inspect(result.get(verbose), content="Some(true)")
 }
 
 ///|
@@ -153,7 +156,7 @@ test "ParseResult::get before parse returns None" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   let result : ParseResult = { kind: One, parser: p }
-  inspect(result.get(verbose), content="None")
+  @debug.debug_inspect(result.get(verbose), content="None")
 }
 
 ///|
@@ -167,7 +170,10 @@ test "ParseResult child navigation" {
   // child で serve の ParseResult にナビゲート
   match result.child("serve") {
     Some(serve_result) =>
-      inspect(serve_result.get(port_opt.val.unwrap()), content="Some(3000)")
+      @debug.debug_inspect(
+        serve_result.get(port_opt.val.unwrap()),
+        content="Some(3000)",
+      )
     None => abort("serve child should exist")
   }
 }
@@ -215,10 +221,10 @@ test "ParseResult nested child navigation" {
     Some(remote_result) =>
       match remote_result.child("add") {
         Some(add_result) =>
-          inspect(
+          @debug.debug_inspect(
             add_result.get(name_opt.val.unwrap()),
             content=(
-              #|Some(origin)
+              #|Some("origin")
             ),
           )
         None => abort("add child should exist")
@@ -233,12 +239,12 @@ test "opt.get cobra-style" {
   let verbose = p.flag(name="verbose")
   let port = p.int(name="port", default=8080)
   // parse 前は None
-  inspect(verbose.get(), content="None")
-  inspect(port.get(), content="None")
+  @debug.debug_inspect(verbose.get(), content="None")
+  @debug.debug_inspect(port.get(), content="None")
   // parse 後は Some
   ignore(p.parse(["--verbose", "--port", "3000"]))
-  inspect(verbose.get(), content="Some(true)")
-  inspect(port.get(), content="Some(3000)")
+  @debug.debug_inspect(verbose.get(), content="Some(true)")
+  @debug.debug_inspect(port.get(), content="Some(3000)")
 }
 
 ///|
@@ -251,9 +257,9 @@ test "opt.get with subcommand" {
   })
   ignore(p.parse(["serve", "--verbose", "--port", "3000"]))
   // global flag は親の parsed で判定
-  inspect(verbose.get(), content="Some(true)")
+  @debug.debug_inspect(verbose.get(), content="Some(true)")
   // 子パーサの opt も子の parsed で判定
-  inspect(port_opt.val.unwrap().get(), content="Some(3000)")
+  @debug.debug_inspect(port_opt.val.unwrap().get(), content="Some(3000)")
 }
 
 ///|
@@ -264,13 +270,13 @@ test "sub basic — no Ref needed" {
   let depth = clone.int(name="depth", default=0)
   let result = p.parse(["clone", "https://example.com", "--depth", "3"])
   inspect(result.child("clone") is Some(_), content="true")
-  inspect(
+  @debug.debug_inspect(
     url.get(),
     content=(
-      #|Some(https://example.com)
+      #|Some("https://example.com")
     ),
   )
-  inspect(depth.get(), content="Some(3)")
+  @debug.debug_inspect(depth.get(), content="Some(3)")
 }
 
 ///|
@@ -285,16 +291,16 @@ test "sub nested — remote add without Ref" {
     Some(remote_result) =>
       match remote_result.child("add") {
         Some(_) => {
-          inspect(
+          @debug.debug_inspect(
             name_opt.get(),
             content=(
-              #|Some(origin)
+              #|Some("origin")
             ),
           )
-          inspect(
+          @debug.debug_inspect(
             url_opt.get(),
             content=(
-              #|Some(https://example.com)
+              #|Some("https://example.com")
             ),
           )
         }
@@ -311,11 +317,11 @@ test "sub with global option propagation" {
   let clone = p.sub(name="clone")
   let url = clone.positional(name="url")
   ignore(p.parse(["clone", "--verbose", "https://example.com"]))
-  inspect(verbose.get(), content="Some(true)")
-  inspect(
+  @debug.debug_inspect(verbose.get(), content="Some(true)")
+  @debug.debug_inspect(
     url.get(),
     content=(
-      #|Some(https://example.com)
+      #|Some("https://example.com")
     ),
   )
 }
@@ -325,13 +331,14 @@ test "sub help shows options after help flag" {
   let p = Parser::new()
   let clone = p.sub(name="clone", description="Clone a repo")
   let _ = clone.flag(name="depth", description="Shallow clone")
-  let result : Result[_, _] = try? p.parse(["clone", "--help"])
-  match result {
-    Err(HelpRequested(text)) => {
+  try p.parse(["clone", "--help"]) catch {
+    HelpRequested(text) => {
       inspect(text.contains("--depth"), content="true")
       inspect(text.contains("--help"), content="true")
     }
     _ => abort("expected HelpRequested")
+  } noraise {
+    _ => fail("expected HelpRequested")
   }
 }
 
@@ -347,12 +354,12 @@ test "sub with required and exclusive" {
   // valid: --global with key
   let result = p.parse(["config", "--global", "user.name"])
   inspect(result.child("config") is Some(_), content="true")
-  inspect(global_flag.get(), content="Some(true)")
-  inspect(local_flag.get(), content="Some(false)")
-  inspect(
+  @debug.debug_inspect(global_flag.get(), content="Some(true)")
+  @debug.debug_inspect(local_flag.get(), content="Some(false)")
+  @debug.debug_inspect(
     key.get(),
     content=(
-      #|Some(user.name)
+      #|Some("user.name")
     ),
   )
 }
@@ -364,8 +371,11 @@ test "sub exclusive error" {
   let global_flag = config.flag(name="global")
   let local_flag = config.flag(name="local")
   config.exclusive([global_flag.as_ref(), local_flag.as_ref()])
-  let result : Result[_, _] = try? p.parse(["config", "--global", "--local"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["config", "--global", "--local"]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse error")
+  }
 }
 
 ///|
@@ -374,8 +384,11 @@ test "sub required missing error" {
   let config = p.sub(name="config")
   let key = config.positional(name="key")
   config.required(key.as_ref())
-  let result : Result[_, _] = try? p.parse(["config"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["config"]) catch {
+    _ => ()
+  } noraise {
+    _ => fail("expected parse error")
+  }
 }
 
 ///|
@@ -390,16 +403,16 @@ test "sub with serial and never" {
     sub.never()
   })
   ignore(p.parse(["add", "a.txt", "b.txt"]))
-  inspect(
+  @debug.debug_inspect(
     src.unwrap().get(),
     content=(
-      #|Some(a.txt)
+      #|Some("a.txt")
     ),
   )
-  inspect(
+  @debug.debug_inspect(
     dst.unwrap().get(),
     content=(
-      #|Some(b.txt)
+      #|Some("b.txt")
     ),
   )
 }
@@ -416,16 +429,16 @@ test "sub with dashdash" {
   )
   let files = stash.dashdash()
   ignore(p.parse(["stash", "-m", "wip", "--", "file1", "file2"]))
-  inspect(
+  @debug.debug_inspect(
     msg.get(),
     content=(
-      #|Some(wip)
+      #|Some("wip")
     ),
   )
-  inspect(
+  @debug.debug_inspect(
     files.get(),
     content=(
-      #|Some([file1, file2])
+      #|Some(["file1", "file2"])
     ),
   )
 }
@@ -436,14 +449,15 @@ test "require_cmd errors when no subcommand" {
   let _ = p.sub(name="clone", description="Clone a repo")
   let _ = p.sub(name="commit", description="Commit changes")
   p.require_cmd()
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse([]) catch {
+    ParseError(info) => {
       inspect(info.message, content="subcommand required")
       inspect(info.error_context.contains("clone"), content="true")
       inspect(info.error_context.contains("commit"), content="true")
     }
     _ => abort("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -463,13 +477,14 @@ test "require_cmd errors with flags but no subcommand" {
   let _ = p.flag(name="verbose")
   let _ = p.sub(name="serve", description="Start server")
   p.require_cmd()
-  let result : Result[_, _] = try? p.parse(["--verbose"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--verbose"]) catch {
+    ParseError(info) => {
       inspect(info.message, content="subcommand required")
       inspect(info.error_context.contains("serve"), content="true")
     }
     _ => abort("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -479,13 +494,14 @@ test "require_cmd errors on nested sub" {
   let remote = p.sub(name="remote")
   let _ = remote.sub(name="add", description="Add remote")
   remote.require_cmd()
-  let result : Result[_, _] = try? p.parse(["remote"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["remote"]) catch {
+    ParseError(info) => {
       inspect(info.message, content="subcommand required")
       inspect(info.error_context.contains("add"), content="true")
     }
     _ => abort("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -502,16 +518,16 @@ test "sub + serial positionals" {
   })
   let result = p.parse(["remote", "origin", "https://example.com"])
   inspect(result.child("remote") is Some(_), content="true")
-  inspect(
+  @debug.debug_inspect(
     remote_name.unwrap().get(),
     content=(
-      #|Some(origin)
+      #|Some("origin")
     ),
   )
-  inspect(
+  @debug.debug_inspect(
     remote_url.unwrap().get(),
     content=(
-      #|Some(https://example.com)
+      #|Some("https://example.com")
     ),
   )
 }
@@ -521,11 +537,12 @@ test "parse called twice raises error" {
   let p = Parser::new()
   let _ = p.flag(name="verbose")
   ignore(p.parse([]))
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse([]) catch {
+    ParseError(info) =>
       inspect(info.message.contains("can only be called once"), content="true")
     _ => abort("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -533,11 +550,11 @@ test "parse called twice raises error" {
 test "require_cmd with no commands defined" {
   let p = Parser::new()
   p.require_cmd()
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) =>
-      inspect(info.message, content="subcommand required")
+  try p.parse([]) catch {
+    ParseError(info) => inspect(info.message, content="subcommand required")
     _ => abort("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -546,10 +563,11 @@ test "require_cmd with --help still shows help" {
   let p = Parser::new()
   let _ = p.sub(name="serve", description="Start server")
   p.require_cmd()
-  let result : Result[_, _] = try? p.parse(["--help"])
-  match result {
-    Err(HelpRequested(text)) => inspect(text.contains("serve"), content="true")
+  try p.parse(["--help"]) catch {
+    HelpRequested(text) => inspect(text.contains("serve"), content="true")
     _ => abort("expected HelpRequested")
+  } noraise {
+    _ => fail("expected HelpRequested")
   }
 }
 
@@ -589,11 +607,12 @@ test "H-2: duplicate cmd name detected" {
   let p = Parser::new(dashdash=false)
   let _cmd1 = p.cmd(name="serve", dashdash=false, setup=fn(_) {  })
   let _cmd2 = p.cmd(name="serve", dashdash=false, setup=fn(_) {  })
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse([]) catch {
+    ParseError(info) =>
       inspect(info.message.contains("duplicate"), content="true")
     _ => abort("expected duplicate name error for same cmd name")
+  } noraise {
+    _ => fail("expected duplicate name error for same cmd name")
   }
 }
 
@@ -607,11 +626,12 @@ test "H-2: duplicate cmd alias with existing cmd name detected" {
   ) {
 
   })
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse([]) catch {
+    ParseError(info) =>
       inspect(info.message.contains("duplicate"), content="true")
     _ => abort("expected duplicate name error for cmd alias collision")
+  } noraise {
+    _ => fail("expected duplicate name error for cmd alias collision")
   }
 }
 
@@ -641,11 +661,12 @@ test "H-2: sub duplicate name detected" {
   let p = Parser::new(dashdash=false)
   let _s1 = p.sub(name="serve", dashdash=false)
   let _s2 = p.sub(name="serve", dashdash=false)
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse([]) catch {
+    ParseError(info) =>
       inspect(info.message.contains("duplicate"), content="true")
     _ => abort("expected duplicate name error for sub()")
+  } noraise {
+    _ => fail("expected duplicate name error for sub()")
   }
 }
 
@@ -793,7 +814,7 @@ test "H-5: cmd alias parses child options correctly" {
     verbose_ref.val = Some(child.flag(name="verbose"))
   })
   ignore(p.parse(["s", "--verbose"]))
-  inspect(verbose_ref.val.unwrap().get(), content="Some(true)")
+  @debug.debug_inspect(verbose_ref.val.unwrap().get(), content="Some(true)")
 }
 
 ///|
@@ -803,7 +824,7 @@ test "H-5: sub aliases basic" {
   let serve = p.sub(name="serve", aliases=["s"], dashdash=false)
   let verbose = serve.flag(name="verbose")
   ignore(p.parse(["s", "--verbose"]))
-  inspect(verbose.get(), content="Some(true)")
+  @debug.debug_inspect(verbose.get(), content="Some(true)")
 }
 
 ///|
@@ -812,7 +833,7 @@ test "H-5: sub aliases primary name works" {
   let serve = p.sub(name="serve", aliases=["s"], dashdash=false)
   let verbose = serve.flag(name="verbose")
   ignore(p.parse(["serve", "--verbose"]))
-  inspect(verbose.get(), content="Some(true)")
+  @debug.debug_inspect(verbose.get(), content="Some(true)")
 }
 
 ///|
@@ -822,10 +843,10 @@ test "H-5: sub alias parses child options correctly" {
   let serve = p.sub(name="serve", aliases=["s"], dashdash=false)
   let host = serve.string(name="host", default="localhost")
   ignore(p.parse(["s", "--host", "example.com"]))
-  inspect(
+  @debug.debug_inspect(
     host.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
 }

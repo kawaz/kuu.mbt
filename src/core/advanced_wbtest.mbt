@@ -69,10 +69,10 @@ fn make_color_rgb_node(opt_name : String, cell : Ref[TestColor]) -> ExactNode {
         return Reject
       }
       let parse_int = fn(s : String) -> Int? {
-        let r : Result[Int, _] = try? @string.parse_int(s.view())
-        match r {
-          Ok(v) => Some(v)
-          Err(_) => None
+        try @string.parse_int(s.view()) catch {
+          _ => None
+        } noraise {
+          v => Some(v)
         }
       }
       match
@@ -182,7 +182,7 @@ test "enum or: --color with other flag → implicit" {
   let verbose = p.flag(name="verbose")
   ignore(p.parse(["--color", "--verbose"]))
   inspect(cell.val, content="Red")
-  inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
 }
 
 ///|
@@ -192,7 +192,7 @@ test "enum or: --color rgb with args then other opt" {
   let verbose = p.flag(name="verbose")
   ignore(p.parse(["--color", "rgb", "10", "20", "30", "--verbose"]))
   inspect(cell.val, content="RGB(10, 20, 30)")
-  inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
 }
 
 ///|
@@ -215,10 +215,10 @@ test "string choices+implicit: --color always" {
     implicit_value=Some(Val("always")),
   )
   ignore(p.parse(["--color", "always"]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(always)
+      #|Some("always")
     ),
   )
 }
@@ -233,10 +233,10 @@ test "string choices+implicit: --color (implicit)" {
     implicit_value=Some(Val("always")),
   )
   ignore(p.parse(["--color"]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(always)
+      #|Some("always")
     ),
   )
 }
@@ -251,10 +251,10 @@ test "string choices+implicit: no --color (default)" {
     implicit_value=Some(Val("always")),
   )
   ignore(p.parse([]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(auto)
+      #|Some("auto")
     ),
   )
 }
@@ -270,13 +270,13 @@ test "string choices+implicit: --color with other flag" {
   )
   let verbose = p.flag(name="verbose")
   ignore(p.parse(["--color", "--verbose"]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(always)
+      #|Some("always")
     ),
   )
-  inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
 }
 
 ///|
@@ -288,8 +288,11 @@ test "string choices+implicit: --color rander → implicit then unexpected" {
     choices=["always", "none", "auto"],
     implicit_value=Some(Val("always")),
   )
-  let result : Result[_, _] = try? p.parse(["--color", "rander"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--color", "rander"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -304,10 +307,10 @@ test "string choices+implicit: --no-color resets" {
     pre=Filter::map(fn(s) { s }),
   )
   ignore(p.parse(["--color", "none", "--no-color"]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(auto)
+      #|Some("auto")
     ),
   )
 }
@@ -322,10 +325,10 @@ test "string choices+implicit: --color=always (eq_split)" {
     implicit_value=Some(Val("always")),
   )
   ignore(p.parse(["--color=always"]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(always)
+      #|Some("always")
     ),
   )
 }
@@ -346,10 +349,10 @@ test "string choices+implicit: Thunk implicit_value" {
     ),
   )
   ignore(p.parse(["--color"]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(always)
+      #|Some("always")
     ),
   )
   inspect(counter.val, content="1")
@@ -361,8 +364,11 @@ test "string choices only: --color invalid → error" {
   let _color = p.string(name="color", default="auto", choices=[
     "always", "none", "auto",
   ])
-  let result : Result[_, _] = try? p.parse(["--color", "invalid"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--color", "invalid"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -372,10 +378,10 @@ test "string choices only: --color always → ok" {
     "always", "none", "auto",
   ])
   ignore(p.parse(["--color", "always"]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(always)
+      #|Some("always")
     ),
   )
 }
@@ -389,10 +395,10 @@ test "string implicit only: --output (implicit)" {
     implicit_value=Some(Val("stdout")),
   )
   ignore(p.parse(["--output"]))
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(stdout)
+      #|Some("stdout")
     ),
   )
 }
@@ -406,10 +412,10 @@ test "string implicit only: --output file.txt" {
     implicit_value=Some(Val("stdout")),
   )
   ignore(p.parse(["--output", "file.txt"]))
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(file.txt)
+      #|Some("file.txt")
     ),
   )
 }
@@ -425,10 +431,10 @@ test "string choices+implicit with post filter" {
     post=Some(Filter::map(fn(s) { if s == "auto" { "none" } else { s } })),
   )
   ignore(p.parse([]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(none)
+      #|Some("none")
     ),
   )
 }
@@ -449,16 +455,16 @@ test "string choices+implicit: multiple opts with implicit default" {
     implicit_value=Some(Val("render")),
   )
   ignore(p.parse(["--color"]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(always)
+      #|Some("always")
     ),
   )
-  inspect(
+  debug_inspect(
     md.get(),
     content=(
-      #|Some(none)
+      #|Some("none")
     ),
   )
 }
@@ -470,7 +476,7 @@ test "variation: False flag with default=true" {
   let p = Parser::new()
   let color = p.flag(name="color", default=true, variations=[False("no")])
   ignore(p.parse(["--no-color"]))
-  inspect(p.get(color), content="Some(false)")
+  debug_inspect(p.get(color), content="Some(false)")
   inspect(color.is_set(), content="true")
 }
 
@@ -480,7 +486,7 @@ test "variation: False flag with default=false" {
   let verbose = p.flag(name="verbose", default=false, variations=[False("no")])
   ignore(p.parse(["--no-verbose"]))
   // False sets cell=false (same as default), but committed=true
-  inspect(p.get(verbose), content="Some(false)")
+  debug_inspect(p.get(verbose), content="Some(false)")
   inspect(verbose.is_set(), content="true")
 }
 
@@ -490,7 +496,7 @@ test "variation: Reset flag resets to default" {
   let color = p.flag(name="color", default=true, variations=[Reset("reset")])
   // First set to true (positive), then reset
   ignore(p.parse(["--color", "--reset-color"]))
-  inspect(p.get(color), content="Some(true)")
+  debug_inspect(p.get(color), content="Some(true)")
   inspect(color.is_set(), content="true")
 }
 
@@ -499,7 +505,7 @@ test "variation: Unset flag resets value and committed" {
   let p = Parser::new()
   let color = p.flag(name="color", variations=[Unset("unset")])
   ignore(p.parse(["--color", "--unset-color"]))
-  inspect(p.get(color), content="Some(false)")
+  debug_inspect(p.get(color), content="Some(false)")
   inspect(color.is_set(), content="false")
 }
 
@@ -508,7 +514,7 @@ test "variation: True/False flag with enable/disable" {
   let p = Parser::new()
   let color = p.flag(name="color", variations=[True("enable"), False("disable")])
   ignore(p.parse(["--enable-color"]))
-  inspect(p.get(color), content="Some(true)")
+  debug_inspect(p.get(color), content="Some(true)")
   inspect(color.is_set(), content="true")
 }
 
@@ -517,7 +523,7 @@ test "variation: True/False flag disable" {
   let p = Parser::new()
   let color = p.flag(name="color", variations=[True("enable"), False("disable")])
   ignore(p.parse(["--disable-color"]))
-  inspect(p.get(color), content="Some(false)")
+  debug_inspect(p.get(color), content="Some(false)")
   inspect(color.is_set(), content="true")
 }
 
@@ -526,7 +532,7 @@ test "variation: True/False flag enable then disable" {
   let p = Parser::new()
   let color = p.flag(name="color", variations=[True("enable"), False("disable")])
   ignore(p.parse(["--enable-color", "--disable-color"]))
-  inspect(p.get(color), content="Some(false)")
+  debug_inspect(p.get(color), content="Some(false)")
   inspect(color.is_set(), content="true")
 }
 
@@ -535,7 +541,7 @@ test "variation: count with Reset" {
   let p = Parser::new()
   let v = p.count(name="verbose", variations=[Reset("no")])
   ignore(p.parse(["--verbose", "--verbose", "--no-verbose"]))
-  inspect(p.get(v), content="Some(0)")
+  debug_inspect(p.get(v), content="Some(0)")
   inspect(v.is_set(), content="true")
 }
 
@@ -549,10 +555,10 @@ test "variation: string with Reset" {
     pre=Filter::map(fn(s) { s }),
   )
   ignore(p.parse(["--host", "example.com", "--no-host"]))
-  inspect(
+  debug_inspect(
     p.get(host),
     content=(
-      #|Some(localhost)
+      #|Some("localhost")
     ),
   )
   inspect(host.is_set(), content="true")
@@ -568,10 +574,10 @@ test "variation: string with Unset" {
     pre=Filter::map(fn(s) { s }),
   )
   ignore(p.parse(["--host", "example.com", "--unset-host"]))
-  inspect(
+  debug_inspect(
     p.get(host),
     content=(
-      #|Some(localhost)
+      #|Some("localhost")
     ),
   )
   inspect(host.is_set(), content="false")
@@ -587,7 +593,7 @@ test "variation: int with Reset" {
     pre=Filter::parse_int(),
   )
   ignore(p.parse(["--port", "3000", "--no-port"]))
-  inspect(p.get(port), content="Some(8080)")
+  debug_inspect(p.get(port), content="Some(8080)")
   inspect(port.is_set(), content="true")
 }
 
@@ -600,7 +606,7 @@ test "variation: append_string with Reset" {
     pre=Filter::map(fn(s) { s }),
   )
   ignore(p.parse(["--tag", "a", "--tag", "b", "--no-tag"]))
-  inspect(p.get(tags), content="Some([])")
+  debug_inspect(p.get(tags), content="Some([])")
   inspect(tags.is_set(), content="true")
 }
 
@@ -613,7 +619,7 @@ test "variation: append_int with Reset" {
     pre=Filter::parse_int(),
   )
   ignore(p.parse(["--id", "1", "--id", "2", "--no-id"]))
-  inspect(p.get(ids), content="Some([])")
+  debug_inspect(p.get(ids), content="Some([])")
   inspect(ids.is_set(), content="true")
 }
 
@@ -622,7 +628,7 @@ test "variation: flag alias also gets variation" {
   let p = Parser::new()
   let color = p.flag(name="color", aliases=["colour"], variations=[False("no")])
   ignore(p.parse(["--no-colour"]))
-  inspect(p.get(color), content="Some(false)")
+  debug_inspect(p.get(color), content="Some(false)")
   inspect(color.is_set(), content="true")
 }
 
@@ -635,7 +641,7 @@ test "variation: multiple variations" {
     False("disable"),
   ])
   ignore(p.parse(["--disable-color"]))
-  inspect(p.get(color), content="Some(false)")
+  debug_inspect(p.get(color), content="Some(false)")
   inspect(color.is_set(), content="true")
 }
 
@@ -643,10 +649,11 @@ test "variation: multiple variations" {
 test "variation: empty variations means no --no- prefix" {
   let p = Parser::new()
   let _color = p.flag(name="color", variations=[])
-  let result : Result[_, _] = try? p.parse(["--no-color"])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse(["--no-color"]) |> ignore catch {
+    ParseError(info) =>
       inspect(info.message.contains("unexpected argument"), content="true")
+    _ => abort("unexpected non-ParseError")
+  } noraise {
     _ => abort("expected ParseError for unexpected argument --no-color")
   }
 }
@@ -657,7 +664,7 @@ test "variation: Toggle basic" {
   let color = p.flag(name="color", variations=[Toggle("toggle")])
   ignore(p.parse(["--color", "--toggle-color"]))
   // --color sets true (=!default), --toggle-color flips to false
-  inspect(p.get(color), content="Some(false)")
+  debug_inspect(p.get(color), content="Some(false)")
   inspect(color.is_set(), content="true")
 }
 
@@ -667,7 +674,7 @@ test "variation: Toggle double toggles back" {
   let color = p.flag(name="color", variations=[Toggle("toggle")])
   ignore(p.parse(["--color", "--toggle-color", "--toggle-color"]))
   // --color → true, --toggle → false, --toggle → true
-  inspect(p.get(color), content="Some(true)")
+  debug_inspect(p.get(color), content="Some(true)")
   inspect(color.is_set(), content="true")
 }
 
@@ -677,7 +684,7 @@ test "variation: Toggle with default=true" {
   let color = p.flag(name="color", default=true, variations=[Toggle("toggle")])
   ignore(p.parse(["--toggle-color"]))
   // default=true, toggle → false
-  inspect(p.get(color), content="Some(false)")
+  debug_inspect(p.get(color), content="Some(false)")
   inspect(color.is_set(), content="true")
 }
 
@@ -688,7 +695,7 @@ test "variation: True sets true regardless of default" {
   // Main (--color) with default=true sets to !default = false
   ignore(p.parse(["--color", "--enable-color"]))
   // --color → false, --enable-color → true
-  inspect(p.get(color), content="Some(true)")
+  debug_inspect(p.get(color), content="Some(true)")
   inspect(color.is_set(), content="true")
 }
 
@@ -697,7 +704,7 @@ test "variation: False sets false regardless of default" {
   let p = Parser::new()
   let color = p.flag(name="color", default=true, variations=[False("disable")])
   ignore(p.parse(["--disable-color"]))
-  inspect(p.get(color), content="Some(false)")
+  debug_inspect(p.get(color), content="Some(false)")
   inspect(color.is_set(), content="true")
 }
 
@@ -707,7 +714,7 @@ test "flag Main = not default (default=true)" {
   let color = p.flag(name="color", default=true)
   ignore(p.parse(["--color"]))
   // Main with default=true: sets to !true = false
-  inspect(p.get(color), content="Some(false)")
+  debug_inspect(p.get(color), content="Some(false)")
 }
 
 ///|
@@ -716,7 +723,7 @@ test "flag Main = not default (default=false)" {
   let color = p.flag(name="color", default=false)
   ignore(p.parse(["--color"]))
   // Main with default=false: sets to !false = true
-  inspect(p.get(color), content="Some(true)")
+  debug_inspect(p.get(color), content="Some(true)")
 }
 
 // ============ Sugar parameter tests ============
@@ -726,7 +733,7 @@ test "flag variation_reset sugar" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", variation_reset=Some("no"))
   ignore(p.parse(["--verbose", "--no-verbose"]))
-  inspect(verbose.get(), content="Some(false)") // Reset → default(false)
+  debug_inspect(verbose.get(), content="Some(false)") // Reset → default(false)
   inspect(verbose.is_set(), content="true")
 }
 
@@ -740,10 +747,10 @@ test "string variation_reset sugar" {
     pre=Filter::map(fn(s) { s }),
   )
   ignore(p.parse(["--format", "xml", "--no-format"]))
-  inspect(
+  debug_inspect(
     fmt.get(),
     content=(
-      #|Some(json)
+      #|Some("json")
     ),
   ) // Reset → default
   inspect(fmt.is_set(), content="true")
@@ -759,7 +766,7 @@ test "sugar params append to variations" {
   )
   // Toggle + Reset 両方が存在
   ignore(p.parse(["--toggle-verbose", "--no-verbose"]))
-  inspect(verbose.get(), content="Some(false)") // Reset → default
+  debug_inspect(verbose.get(), content="Some(false)") // Reset → default
   inspect(verbose.is_set(), content="true")
 }
 
@@ -773,7 +780,7 @@ test "flag variation_true and variation_false sugar" {
     variation_false=Some("no"),
   )
   ignore(p.parse(["--no-color"]))
-  inspect(color.get(), content="Some(false)") // False → always false
+  debug_inspect(color.get(), content="Some(false)") // False → always false
   //
   let p2 = Parser::new()
   let color2 = p2.flag(
@@ -783,7 +790,7 @@ test "flag variation_true and variation_false sugar" {
     variation_false=Some("no"),
   )
   ignore(p2.parse(["--no-color", "--force-color"]))
-  inspect(color2.get(), content="Some(true)") // True → always true
+  debug_inspect(color2.get(), content="Some(true)") // True → always true
 }
 
 ///|
@@ -791,7 +798,7 @@ test "count variation_reset sugar" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", variation_reset=Some("no"))
   ignore(p.parse(["--verbose", "--verbose", "--no-verbose"]))
-  inspect(verbose.get(), content="Some(0)") // Reset → default(0)
+  debug_inspect(verbose.get(), content="Some(0)") // Reset → default(0)
   inspect(verbose.is_set(), content="true")
 }
 
@@ -804,7 +811,7 @@ test "append_string variation_reset sugar" {
     pre=Filter::map(fn(s) { s }),
   )
   ignore(p.parse(["--include", "a", "--include", "b", "--no-include"]))
-  inspect(includes.get(), content="Some([])") // Reset → empty
+  debug_inspect(includes.get(), content="Some([])") // Reset → empty
   inspect(includes.is_set(), content="true")
 }
 
@@ -815,7 +822,7 @@ test "flag default_fn" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose", default_fn=Some(fn() { true }))
   ignore(p.parse([])) // no args
-  inspect(verbose.get(), content="Some(true)") // default_fn で true
+  debug_inspect(verbose.get(), content="Some(true)") // default_fn で true
   inspect(verbose.is_set(), content="false") // 明示指定なし
 }
 
@@ -825,7 +832,7 @@ test "flag default_fn overrides default" {
   let verbose = p.flag(name="verbose", default_fn=Some(fn() { true }))
   ignore(p.parse(["--verbose"]))
   // Main = !initial_val = !true = false
-  inspect(verbose.get(), content="Some(false)")
+  debug_inspect(verbose.get(), content="Some(false)")
   inspect(verbose.is_set(), content="true")
 }
 
@@ -838,10 +845,10 @@ test "string default_fn" {
     default_fn=Some(fn() { "always" }),
   )
   ignore(p.parse([])) // no args
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(always)
+      #|Some("always")
     ),
   ) // default_fn が優先
   inspect(color.is_set(), content="false")
@@ -852,7 +859,7 @@ test "int default_fn" {
   let p = Parser::new()
   let port = p.int(name="port", default=80, default_fn=Some(fn() { 8080 }))
   ignore(p.parse([])) // no args
-  inspect(port.get(), content="Some(8080)") // default_fn が優先
+  debug_inspect(port.get(), content="Some(8080)") // default_fn が優先
   inspect(port.is_set(), content="false")
 }
 
@@ -867,10 +874,10 @@ test "string default_fn with reset variation" {
     pre=Filter::map(fn(s) { s }),
   )
   ignore(p.parse(["--color", "never", "--no-color"]))
-  inspect(
+  debug_inspect(
     color.get(),
     content=(
-      #|Some(always)
+      #|Some("always")
     ),
   ) // Reset → default_fn の値に戻る
   inspect(color.is_set(), content="true")
@@ -922,8 +929,11 @@ test "custom_int_default" {
 test "custom_int_invalid" {
   let p = Parser::new()
   let _ = p.custom(name="port", default=8080, pre=Filter::parse_int())
-  let result : Result[_, _] = try? p.parse(["--port", "abc"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--port", "abc"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -953,8 +963,11 @@ test "custom_with_choices_invalid" {
   let _ = p.custom(name="level", default="info", pre=Filter::map(fn(s) { s }), choices=[
     "debug", "info", "warn", "error",
   ])
-  let result : Result[_, _] = try? p.parse(["--level", "trace"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--level", "trace"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -1033,10 +1046,10 @@ test "append_string_basic" {
   let p = Parser::new()
   let tags = p.append(name="tag", pre=Filter::map(fn(s) { s }))
   p.parse(["--tag", "a", "--tag", "b"]) |> ignore
-  inspect(
+  debug_inspect(
     (tags.accessor.get)(),
     content=(
-      #|[a, b]
+      #|["a", "b"]
     ),
   )
 }
@@ -1046,7 +1059,7 @@ test "append_string_empty" {
   let p = Parser::new()
   let tags = p.append(name="tag", pre=Filter::map(fn(s) { s }))
   p.parse([]) |> ignore
-  inspect((tags.accessor.get)(), content="[]")
+  debug_inspect((tags.accessor.get)(), content="[]")
 }
 
 ///|
@@ -1054,15 +1067,18 @@ test "append_int_basic" {
   let p = Parser::new()
   let nums = p.append(name="num", pre=Filter::parse_int())
   p.parse(["--num", "1", "--num", "2", "--num", "3"]) |> ignore
-  inspect((nums.accessor.get)(), content="[1, 2, 3]")
+  debug_inspect((nums.accessor.get)(), content="[1, 2, 3]")
 }
 
 ///|
 test "append_int_invalid" {
   let p = Parser::new()
   let _ = p.append(name="num", pre=Filter::parse_int())
-  let result : Result[_, _] = try? p.parse(["--num", "abc"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--num", "abc"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 // ============================================================
@@ -1163,8 +1179,8 @@ test "alias: flag alias shares value" {
   let verb = p.make_alias("--verb", verbose)
   ignore(p.parse(["--verb"]))
   // alias 経由で値が共有される
-  inspect(verbose.get(), content="Some(true)")
-  inspect(verb.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verb.get(), content="Some(true)")
 }
 
 ///|
@@ -1197,16 +1213,16 @@ test "alias: string alias shares value" {
   let host = p.string(name="host", default="localhost")
   let h = p.make_alias("--h", host)
   ignore(p.parse(["--h", "example.com"]))
-  inspect(
+  debug_inspect(
     host.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
-  inspect(
+  debug_inspect(
     h.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
 }
@@ -1218,10 +1234,10 @@ test "alias: single-dash long option" {
   let compiler = p.string(name="compiler", default="")
   let xcc = p.make_alias("-Xcc", compiler)
   ignore(p.parse(["-Xcc", "gcc"]))
-  inspect(
+  debug_inspect(
     compiler.get(),
     content=(
-      #|Some(gcc)
+      #|Some("gcc")
     ),
   )
   inspect(xcc.is_set(), content="true")
@@ -1234,8 +1250,11 @@ test "alias: duplicate name detected" {
   let verbose = p.flag(name="verbose")
   // --verbose は既に登録されているので重複
   ignore(p.make_alias("--verbose", verbose))
-  let result : Result[_, _] = try? p.parse([])
-  inspect(result is Err(_), content="true")
+  try p.parse([]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -1261,9 +1280,9 @@ test "alias: chained alias (alias of alias)" {
   let v = p.make_alias("--v", verb)
   ignore(p.parse(["--v"]))
   // 全ての alias と target の値が共有される
-  inspect(verbose.get(), content="Some(true)")
-  inspect(verb.get(), content="Some(true)")
-  inspect(v.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verb.get(), content="Some(true)")
+  debug_inspect(v.get(), content="Some(true)")
   // is_set: v と verbose は true（alias 経由で target も true）
   // verb は直接使っていないので false
   inspect(verbose.is_set(), content="true")
@@ -1277,8 +1296,8 @@ test "alias: int alias shares value" {
   let port = p.int(name="port", default=8080)
   let pp = p.make_alias("-p", port)
   ignore(p.parse(["-p", "3000"]))
-  inspect(port.get(), content="Some(3000)")
-  inspect(pp.get(), content="Some(3000)")
+  debug_inspect(port.get(), content="Some(3000)")
+  debug_inspect(pp.get(), content="Some(3000)")
 }
 
 ///|
@@ -1287,16 +1306,16 @@ test "alias: append alias shares array" {
   let inc = p.append_string(name="include")
   let ii = p.make_alias("-I", inc)
   ignore(p.parse(["--include", "a", "-I", "b"]))
-  inspect(
+  debug_inspect(
     inc.get(),
     content=(
-      #|Some([a, b])
+      #|Some(["a", "b"])
     ),
   )
-  inspect(
+  debug_inspect(
     ii.get(),
     content=(
-      #|Some([a, b])
+      #|Some(["a", "b"])
     ),
   )
 }
@@ -1307,16 +1326,16 @@ test "alias: unused alias default value" {
   let host = p.string(name="host", default="localhost")
   let h = p.make_alias("--h", host)
   ignore(p.parse([]))
-  inspect(
+  debug_inspect(
     host.get(),
     content=(
-      #|Some(localhost)
+      #|Some("localhost")
     ),
   )
-  inspect(
+  debug_inspect(
     h.get(),
     content=(
-      #|Some(localhost)
+      #|Some("localhost")
     ),
   )
   inspect(host.is_set(), content="false")
@@ -1331,8 +1350,8 @@ test "alias: global alias propagates to subcommand" {
   let status = p.cmd(name="status", setup=fn(_child) {  })
   ignore(p.parse(["status", "--verb"]))
   // global alias は子パーサでも使える
-  inspect(verbose.get(), content="Some(true)")
-  inspect(verb.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verb.get(), content="Some(true)")
   inspect(verbose.is_set(), content="true")
   inspect(verb.is_set(), content="true")
   inspect(status.is_set(), content="true")
@@ -1345,16 +1364,16 @@ test "alias: eq_split with double-dash alias" {
   let host = p.string(name="host", default="localhost")
   let h = p.make_alias("--h", host)
   ignore(p.parse(["--h=example.com"]))
-  inspect(
+  debug_inspect(
     host.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
-  inspect(
+  debug_inspect(
     h.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
 }
@@ -1365,8 +1384,8 @@ test "alias: count alias shares counter" {
   let verbose = p.count(name="verbose")
   let verb = p.make_alias("--verb", verbose)
   ignore(p.parse(["--verbose", "--verb", "--verbose"]))
-  inspect(verbose.get(), content="Some(3)")
-  inspect(verb.get(), content="Some(3)")
+  debug_inspect(verbose.get(), content="Some(3)")
+  debug_inspect(verb.get(), content="Some(3)")
 }
 
 ///|
@@ -1376,8 +1395,11 @@ test "alias: alias does not expand variations" {
   let verbose = p.flag(name="verbose", variations=[False("no")])
   ignore(p.make_alias("--verb", verbose))
   // --no-verb は存在しないのでエラー
-  let result : Result[_, _] = try? p.parse(["--no-verb"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--no-verb"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 // === H-1: --opt=--value で implicit_value にフォールバックするバグ ===
@@ -1393,10 +1415,10 @@ test "H-1: string implicit: --output=--value (eq-split, double-dash value)" {
     implicit_value=Some(Val("stdout")),
   )
   ignore(p.parse(["--output=--value"]))
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(--value)
+      #|Some("--value")
     ),
   )
 }
@@ -1407,8 +1429,11 @@ test "H-1: int implicit: --port=--not-a-port (eq-split) → parse error" {
   // = 経由で明示的に渡されたが Int パースに失敗するのでエラー
   let p = Parser::new()
   ignore(p.int(name="port", default=8080, implicit_value=Some(Val(3000))))
-  let result : Result[_, _] = try? p.parse(["--port=--not-a-port"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--port=--not-a-port"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -1423,13 +1448,13 @@ test "H-1: string implicit: --output --next (space-separated) → still implicit
   )
   let next = p.flag(name="next")
   ignore(p.parse(["--output", "--next"]))
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(stdout)
+      #|Some("stdout")
     ),
   )
-  inspect(next.get(), content="Some(true)")
+  debug_inspect(next.get(), content="Some(true)")
 }
 
 // ============================================================
@@ -1444,7 +1469,7 @@ test "M-17: append Reset variation clears array" {
     Reset("no"),
   ])
   ignore(p.parse(["--tag", "a", "--tag", "b", "--no-tag"]))
-  inspect((tags.accessor.get)(), content="[]")
+  debug_inspect((tags.accessor.get)(), content="[]")
   inspect(tags.is_set(), content="true")
 }
 
@@ -1456,10 +1481,10 @@ test "M-17: append Reset then re-add" {
     Reset("no"),
   ])
   ignore(p.parse(["--tag", "a", "--no-tag", "--tag", "b"]))
-  inspect(
+  debug_inspect(
     (tags.accessor.get)(),
     content=(
-      #|[b]
+      #|["b"]
     ),
   )
 }
@@ -1472,7 +1497,7 @@ test "M-17: append Unset variation clears and unsets" {
     Unset("un"),
   ])
   ignore(p.parse(["--tag", "a", "--tag", "b", "--un-tag"]))
-  inspect((tags.accessor.get)(), content="[]")
+  debug_inspect((tags.accessor.get)(), content="[]")
   inspect(tags.is_set(), content="false")
 }
 
@@ -1486,7 +1511,7 @@ test "M-18: count Toggle variation resets to 0" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", variations=[Toggle("no")])
   ignore(p.parse(["--verbose", "--verbose", "--no-verbose"]))
-  inspect(p.get(verbose), content="Some(0)")
+  debug_inspect(p.get(verbose), content="Some(0)")
   inspect(verbose.is_set(), content="true")
 }
 
@@ -1496,7 +1521,7 @@ test "M-18: count True variation resets to 0" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", variations=[True("force")])
   ignore(p.parse(["--verbose", "--verbose", "--force-verbose"]))
-  inspect(p.get(verbose), content="Some(0)")
+  debug_inspect(p.get(verbose), content="Some(0)")
   inspect(verbose.is_set(), content="true")
 }
 
@@ -1506,7 +1531,7 @@ test "M-18: count False variation resets to 0" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", variations=[False("off")])
   ignore(p.parse(["--verbose", "--verbose", "--verbose", "--off-verbose"]))
-  inspect(p.get(verbose), content="Some(0)")
+  debug_inspect(p.get(verbose), content="Some(0)")
   inspect(verbose.is_set(), content="true")
 }
 
@@ -1516,7 +1541,7 @@ test "M-18: count Toggle then re-count" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", variations=[Toggle("no")])
   ignore(p.parse(["--verbose", "--verbose", "--no-verbose", "--verbose"]))
-  inspect(p.get(verbose), content="Some(1)")
+  debug_inspect(p.get(verbose), content="Some(1)")
 }
 
 ///|
@@ -1525,7 +1550,7 @@ test "M-18: count Unset variation resets and unsets" {
   let p = Parser::new()
   let verbose = p.count(name="verbose", variations=[Unset("un")])
   ignore(p.parse(["--verbose", "--verbose", "--un-verbose"]))
-  inspect(p.get(verbose), content="Some(0)")
+  debug_inspect(p.get(verbose), content="Some(0)")
   inspect(verbose.is_set(), content="false")
 }
 
@@ -1542,8 +1567,11 @@ test "M-21: int post validation error" {
     default=8080,
     post=Some(Filter::in_range(1, 65535)),
   )
-  let result : Result[_, _] = try? p.parse(["--port", "0"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--port", "0"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -1555,7 +1583,7 @@ test "M-21: int post validation passes for valid value" {
     post=Some(Filter::in_range(1, 65535)),
   )
   ignore(p.parse(["--port", "3000"]))
-  inspect(p.get(port), content="Some(3000)")
+  debug_inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
@@ -1566,12 +1594,11 @@ test "M-21: int post validation error message contains out of range" {
     default=8080,
     post=Some(Filter::in_range(1, 65535)),
   )
-  let result : Result[ParseResult, ParseError] = try? p.parse([
-    "--port", "99999",
-  ])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse(["--port", "99999"]) |> ignore catch {
+    ParseError(info) =>
       inspect(info.message.contains("out of range"), content="true")
+    _ => abort("unexpected non-ParseError")
+  } noraise {
     _ => abort("expected validation error")
   }
 }
@@ -1584,8 +1611,11 @@ test "M-21: int post validation error on negative" {
     default=8080,
     post=Some(Filter::in_range(1, 65535)),
   )
-  let result : Result[_, _] = try? p.parse(["--port", "-1"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--port", "-1"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -1593,8 +1623,11 @@ test "M-21: int post default also validated" {
   // default 値も post フィルタを通る。default=0 で in_range(1, 65535) はエラーになる
   let p = Parser::new()
   let _ = p.int(name="port", default=0, post=Some(Filter::in_range(1, 65535)))
-  let result : Result[_, _] = try? p.parse([])
-  inspect(result is Err(_), content="true")
+  try p.parse([]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 // === alias + implicit_value の eq_split フォールバック漏れ ===
@@ -1610,16 +1643,16 @@ test "alias + implicit_value: eq_split via alias name (normal value)" {
   )
   let out = p.make_alias("--out", output)
   ignore(p.parse(["--out=file.txt"]))
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(file.txt)
+      #|Some("file.txt")
     ),
   )
-  inspect(
+  debug_inspect(
     out.get(),
     content=(
-      #|Some(file.txt)
+      #|Some("file.txt")
     ),
   )
 }
@@ -1637,16 +1670,16 @@ test "alias + implicit_value: eq_split via alias name (double-dash value)" {
   )
   let out = p.make_alias("--out", output)
   ignore(p.parse(["--out=--file.txt"]))
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(--file.txt)
+      #|Some("--file.txt")
     ),
   )
-  inspect(
+  debug_inspect(
     out.get(),
     content=(
-      #|Some(--file.txt)
+      #|Some("--file.txt")
     ),
   )
 }
@@ -1662,10 +1695,10 @@ test "alias + implicit_value: eq_split via original name still works" {
   )
   let _ = p.make_alias("--out", output)
   ignore(p.parse(["--output=file.txt"]))
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(file.txt)
+      #|Some("file.txt")
     ),
   )
 }
@@ -1681,16 +1714,16 @@ test "alias + implicit_value: alias without eq_split uses implicit" {
   )
   let out = p.make_alias("--out", output)
   ignore(p.parse(["--out"]))
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(stdout)
+      #|Some("stdout")
     ),
   )
-  inspect(
+  debug_inspect(
     out.get(),
     content=(
-      #|Some(stdout)
+      #|Some("stdout")
     ),
   )
 }
@@ -1704,7 +1737,7 @@ test "R2-C1: global defined after cmd propagates to subcommand" {
   // global を cmd の後に定義
   let verbose = p.flag(name="verbose", global=true)
   ignore(p.parse(["serve", "--verbose"]))
-  inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
 }
 
 ///|
@@ -1714,7 +1747,7 @@ test "R2-C1: global alias defined after cmd propagates" {
   let verbose = p.flag(name="verbose", global=true)
   let _ = p.make_alias("--verb", verbose)
   ignore(p.parse(["serve", "--verb"]))
-  inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
 }
 
 ///|
@@ -1724,8 +1757,8 @@ test "R2-C1: multiple globals after cmd all propagate" {
   let verbose = p.flag(name="verbose", global=true)
   let debug = p.flag(name="debug", global=true)
   ignore(p.parse(["serve", "--verbose", "--debug"]))
-  inspect(verbose.get(), content="Some(true)")
-  inspect(debug.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
+  debug_inspect(debug.get(), content="Some(true)")
 }
 
 ///|
@@ -1737,7 +1770,7 @@ test "R2-C1: global defined after nested cmd propagates to grandchild" {
   // global を cmd の後に定義 — 孫 cmd にも遅延同期で伝播するか確認
   let verbose = p.flag(name="verbose", global=true)
   ignore(p.parse(["remote", "add", "--verbose"]))
-  inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
 }
 
 // === R2-W4: implicit_value + choices 共存テスト ===
@@ -1752,10 +1785,10 @@ test "R2-W4: implicit+choices explicit value" {
     implicit_value=Some(Val("debug")),
   )
   ignore(p.parse(["--level", "warn"]))
-  inspect(
+  debug_inspect(
     level.get(),
     content=(
-      #|Some(warn)
+      #|Some("warn")
     ),
   )
 }
@@ -1770,10 +1803,10 @@ test "R2-W4: implicit+choices implicit value" {
     implicit_value=Some(Val("debug")),
   )
   ignore(p.parse(["--level"]))
-  inspect(
+  debug_inspect(
     level.get(),
     content=(
-      #|Some(debug)
+      #|Some("debug")
     ),
   )
 }
@@ -1788,10 +1821,10 @@ test "R2-W4: implicit+choices eq-split" {
     implicit_value=Some(Val("debug")),
   )
   ignore(p.parse(["--level=error"]))
-  inspect(
+  debug_inspect(
     level.get(),
     content=(
-      #|Some(error)
+      #|Some("error")
     ),
   )
 }
@@ -1805,8 +1838,11 @@ test "R2-W4: implicit+choices invalid choice via eq-split" {
     choices=["debug", "info", "warn", "error"],
     implicit_value=Some(Val("debug")),
   )
-  let result = try? p.parse(["--level=bad"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--level=bad"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 // === deprecated コンビネータテスト ===
@@ -1839,16 +1875,16 @@ test "deprecated shares value with target" {
   let out = p.deprecated("--out", output, msg="use --output instead")
   ignore(p.parse(["--out", "hello"]))
   // alias 動作: 値が共有される
-  inspect(
+  debug_inspect(
     output.get(),
     content=(
-      #|Some(hello)
+      #|Some("hello")
     ),
   )
-  inspect(
+  debug_inspect(
     out.get(),
     content=(
-      #|Some(hello)
+      #|Some("hello")
     ),
   )
 }
@@ -1963,13 +1999,14 @@ test "deprecated empty name rejected" {
   let p = Parser::new(dashdash=false)
   let output = p.string(name="output", default="")
   let _ = p.deprecated("", output, msg="bad")
-  let result = try? p.parse([])
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse([]) |> ignore catch {
+    ParseError(info) =>
       inspect(
         info.message.contains("deprecated name must not be empty"),
         content="true",
       )
+    _ => abort("unexpected non-ParseError")
+  } noraise {
     _ => abort("expected error for empty deprecated name")
   }
 }
@@ -2103,10 +2140,10 @@ test "env: string gets value from env when not specified on CLI" {
   let p = Parser::new(dashdash=false)
   let port = p.string(name="port", default="8080", env="PORT")
   ignore(p.parse([], env={ "PORT": "9000" }))
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(9000)
+      #|Some("9000")
     ),
   )
 }
@@ -2116,10 +2153,10 @@ test "env: CLI arg takes precedence over env" {
   let p = Parser::new(dashdash=false)
   let port = p.string(name="port", default="8080", env="PORT")
   ignore(p.parse(["--port", "3000"], env={ "PORT": "9000" }))
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(3000)
+      #|Some("3000")
     ),
   )
 }
@@ -2129,10 +2166,10 @@ test "env: default used when neither CLI nor env specified" {
   let p = Parser::new(dashdash=false)
   let port = p.string(name="port", default="8080", env="PORT")
   ignore(p.parse([], env={}))
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(8080)
+      #|Some("8080")
     ),
   )
 }
@@ -2142,7 +2179,7 @@ test "env: flag from env" {
   let p = Parser::new(dashdash=false)
   let verbose = p.flag(name="verbose", env="VERBOSE")
   ignore(p.parse([], env={ "VERBOSE": "true" }))
-  inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
 }
 
 ///|
@@ -2150,7 +2187,7 @@ test "env: flag false from env" {
   let p = Parser::new(dashdash=false)
   let verbose = p.flag(name="verbose", env="VERBOSE")
   ignore(p.parse([], env={ "VERBOSE": "false" }))
-  inspect(verbose.get(), content="Some(false)")
+  debug_inspect(verbose.get(), content="Some(false)")
 }
 
 ///|
@@ -2158,7 +2195,7 @@ test "env: int from env" {
   let p = Parser::new(dashdash=false)
   let port = p.int(name="port", default=8080, env="PORT")
   ignore(p.parse([], env={ "PORT": "9000" }))
-  inspect(port.get(), content="Some(9000)")
+  debug_inspect(port.get(), content="Some(9000)")
 }
 
 ///|
@@ -2183,10 +2220,10 @@ test "env: required satisfied by env value" {
   let port = p.string(name="port", default="8080", env="PORT")
   p.required(port.as_ref())
   ignore(p.parse([], env={ "PORT": "9000" }))
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(9000)
+      #|Some("9000")
     ),
   )
 }
@@ -2196,7 +2233,7 @@ test "env: count from env" {
   let p = Parser::new(dashdash=false)
   let verbose = p.count(name="verbose", env="VERBOSE")
   ignore(p.parse([], env={ "VERBOSE": "3" }))
-  inspect(verbose.get(), content="Some(3)")
+  debug_inspect(verbose.get(), content="Some(3)")
 }
 
 ///|
@@ -2204,10 +2241,10 @@ test "env: append_string from env (comma-separated)" {
   let p = Parser::new(dashdash=false)
   let includes = p.append_string(name="include", env="INCLUDES")
   ignore(p.parse([], env={ "INCLUDES": "a,b,c" }))
-  inspect(
+  debug_inspect(
     includes.get(),
     content=(
-      #|Some([a, b, c])
+      #|Some(["a", "b", "c"])
     ),
   )
 }
@@ -2217,7 +2254,7 @@ test "env: append_int from env (comma-separated)" {
   let p = Parser::new(dashdash=false)
   let ports = p.append_int(name="port", env="PORTS")
   ignore(p.parse([], env={ "PORTS": "80,443,8080" }))
-  inspect(ports.get(), content="Some([80, 443, 8080])")
+  debug_inspect(ports.get(), content="Some([80, 443, 8080])")
 }
 
 ///|
@@ -2225,10 +2262,10 @@ test "env: empty env string is ignored" {
   let p = Parser::new(dashdash=false)
   let port = p.string(name="port", default="8080", env="PORT")
   ignore(p.parse([], env={ "PORT": "" }))
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(8080)
+      #|Some("8080")
     ),
   )
   inspect(port.is_set(), content="false")
@@ -2238,10 +2275,11 @@ test "env: empty env string is ignored" {
 test "env: invalid flag value raises error" {
   let p = Parser::new(dashdash=false)
   let _ = p.flag(name="verbose", env="VERBOSE")
-  let result = try? p.parse([], env={ "VERBOSE": "yes" })
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse([], env={ "VERBOSE": "yes" }) |> ignore catch {
+    ParseError(info) =>
       inspect(info.message.contains("expected true/false/1/0"), content="true")
+    _ => abort("unexpected non-ParseError")
+  } noraise {
     _ => abort("expected parse error for invalid flag env value")
   }
 }
@@ -2250,8 +2288,11 @@ test "env: invalid flag value raises error" {
 test "env: invalid int value raises error" {
   let p = Parser::new(dashdash=false)
   let _ = p.int(name="port", default=8080, env="PORT")
-  let result = try? p.parse([], env={ "PORT": "abc" })
-  inspect(result is Err(_), content="true")
+  try p.parse([], env={ "PORT": "abc" }) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -2260,10 +2301,11 @@ test "env: choices validation applies to env values" {
   let _ = p.string(name="format", default="json", env="FORMAT", choices=[
     "json", "yaml", "toml",
   ])
-  let result = try? p.parse([], env={ "FORMAT": "xml" })
-  match result {
-    Err(ParseError(info)) =>
+  try p.parse([], env={ "FORMAT": "xml" }) |> ignore catch {
+    ParseError(info) =>
       inspect(info.message.contains("value must be one of"), content="true")
+    _ => abort("unexpected non-ParseError")
+  } noraise {
     _ => abort("expected choices validation error for env value")
   }
 }
@@ -2275,10 +2317,10 @@ test "env: choices validation passes for valid env value" {
     "json", "yaml", "toml",
   ])
   ignore(p.parse([], env={ "FORMAT": "yaml" }))
-  inspect(
+  debug_inspect(
     format.get(),
     content=(
-      #|Some(yaml)
+      #|Some("yaml")
     ),
   )
 }
@@ -2288,10 +2330,10 @@ test "priv setter: flag setter writes cell value" {
   let p = Parser::new()
   let verbose = p.flag(name="verbose")
   ignore(p.parse([]))
-  inspect(verbose.get(), content="Some(false)")
+  debug_inspect(verbose.get(), content="Some(false)")
   // priv setter で直接書き換え
   (verbose.accessor.set_value)(true)
-  inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
   // is_set は連動しない（setter の設計制約）
   inspect(verbose.is_set(), content="false")
 }
@@ -2301,17 +2343,17 @@ test "priv setter: string setter writes cell value" {
   let p = Parser::new()
   let host = p.string(name="host", default="localhost")
   ignore(p.parse([]))
-  inspect(
+  debug_inspect(
     host.get(),
     content=(
-      #|Some(localhost)
+      #|Some("localhost")
     ),
   )
   (host.accessor.set_value)("example.com")
-  inspect(
+  debug_inspect(
     host.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
 }
@@ -2324,8 +2366,8 @@ test "priv setter: alias shares setter with target" {
   ignore(p.parse([]))
   // alias の setter は target と同一 cell を指す
   (v.accessor.set_value)(true)
-  inspect(verbose.get(), content="Some(true)")
-  inspect(v.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
+  debug_inspect(v.get(), content="Some(true)")
 }
 
 ///|
@@ -2334,7 +2376,7 @@ test "adjust: after_post transforms value when set" {
   let port = p.int(name="port", default=0)
   p.adjust(port, after_post=Filter::map(fn(v) { v + 1000 }))
   ignore(p.parse(["--port", "80"]))
-  inspect(port.get(), content="Some(1080)")
+  debug_inspect(port.get(), content="Some(1080)")
 }
 
 ///|
@@ -2344,7 +2386,7 @@ test "adjust: after_post skips when not set" {
   p.adjust(port, after_post=Filter::map(fn(v) { v + 1000 }))
   ignore(p.parse([]))
   // default 値には変換を掛けない
-  inspect(port.get(), content="Some(8080)")
+  debug_inspect(port.get(), content="Some(8080)")
 }
 
 ///|
@@ -2360,8 +2402,11 @@ test "adjust: after_post validation raises error" {
       }
     },
   })
-  let result : Result[_, _] = try? p.parse(["--port", "80"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--port", "80"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -2371,8 +2416,8 @@ test "link: copies value from source to target when source is set" {
   let debug = p.flag(name="debug")
   p.link(debug, source=verbose)
   ignore(p.parse(["--verbose"]))
-  inspect(verbose.get(), content="Some(true)")
-  inspect(debug.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
+  debug_inspect(debug.get(), content="Some(true)")
 }
 
 ///|
@@ -2382,8 +2427,8 @@ test "link: does not copy when source is not set" {
   let debug = p.flag(name="debug")
   p.link(debug, source=verbose)
   ignore(p.parse([]))
-  inspect(verbose.get(), content="Some(false)")
-  inspect(debug.get(), content="Some(false)")
+  debug_inspect(verbose.get(), content="Some(false)")
+  debug_inspect(debug.get(), content="Some(false)")
 }
 
 ///|
@@ -2393,16 +2438,16 @@ test "link: string value forwarding" {
   let server = p.string(name="server", default="default-server")
   p.link(server, source=host)
   ignore(p.parse(["--host", "example.com"]))
-  inspect(
+  debug_inspect(
     host.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
-  inspect(
+  debug_inspect(
     server.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
 }
@@ -2415,8 +2460,8 @@ test "clone: independent cell - clone set does not affect target" {
   ignore(p.parse(["--verb"]))
   assert_true(v.is_set())
   assert_false(verbose.is_set())
-  inspect(v.get(), content="Some(true)")
-  inspect(verbose.get(), content="Some(false)")
+  debug_inspect(v.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(false)")
 }
 
 ///|
@@ -2427,8 +2472,8 @@ test "clone: independent cell - target set does not affect clone" {
   ignore(p.parse(["--verbose"]))
   assert_true(verbose.is_set())
   assert_false(v.is_set())
-  inspect(verbose.get(), content="Some(true)")
-  inspect(v.get(), content="Some(false)")
+  debug_inspect(verbose.get(), content="Some(true)")
+  debug_inspect(v.get(), content="Some(false)")
 }
 
 ///|
@@ -2439,10 +2484,10 @@ test "link: overwrites target when both source and target are set" {
   p.link(tgt, source=src)
   ignore(p.parse(["--source", "from-src", "--target", "from-tgt"]))
   // source が set なので target は source の値で上書きされる
-  inspect(
+  debug_inspect(
     tgt.get(),
     content=(
-      #|Some(from-src)
+      #|Some("from-src")
     ),
   )
 }
@@ -2455,8 +2500,8 @@ test "clone: both unused" {
   ignore(p.parse([]))
   inspect(verbose.is_set(), content="false")
   inspect(verb.is_set(), content="false")
-  inspect(verbose.get(), content="Some(false)")
-  inspect(verb.get(), content="Some(false)")
+  debug_inspect(verbose.get(), content="Some(false)")
+  debug_inspect(verb.get(), content="Some(false)")
 }
 
 ///|
@@ -2465,8 +2510,8 @@ test "clone: both set independently" {
   let port = p.int(name="port", default=80)
   let clone_port = p.clone("--port2", port)
   ignore(p.parse(["--port", "3000", "--port2", "8080"]))
-  inspect(port.get(), content="Some(3000)")
-  inspect(clone_port.get(), content="Some(8080)")
+  debug_inspect(port.get(), content="Some(3000)")
+  debug_inspect(clone_port.get(), content="Some(8080)")
 }
 
 ///|
@@ -2475,16 +2520,16 @@ test "clone: string independent cell" {
   let host = p.string(name="host", default="localhost")
   let host2 = p.clone("--host2", host)
   ignore(p.parse(["--host2", "example.com"]))
-  inspect(
+  debug_inspect(
     host.get(),
     content=(
-      #|Some(localhost)
+      #|Some("localhost")
     ),
   )
-  inspect(
+  debug_inspect(
     host2.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
 }
@@ -2497,7 +2542,7 @@ test "adjust: multiple adjusts on same target execute in order" {
   p.adjust(val, after_post=Filter::map(fn(v) { v + 1 }))
   ignore(p.parse(["--val", "5"]))
   // 5 * 2 = 10, 10 + 1 = 11 (登録順に実行)
-  inspect(val.get(), content="Some(11)")
+  debug_inspect(val.get(), content="Some(11)")
 }
 
 ///|
@@ -2509,14 +2554,14 @@ test "adjust: before_pre transforms raw string before pre" {
     val,
     before_pre=Filter::map(fn(s : String) {
       if s.has_prefix("0x") {
-        s[2:].to_string()
+        s[2:].to_owned()
       } else {
         s
       }
     }),
   )
   ignore(p.parse(["--val", "0x42"]))
-  inspect(val.get(), content="Some(42)")
+  debug_inspect(val.get(), content="Some(42)")
 }
 
 ///|
@@ -2529,10 +2574,10 @@ test "adjust: multiple before_pre execute in registration order (FIFO)" {
   p.adjust(val, before_pre=Filter::map(fn(s : String) { s + "B" }))
   ignore(p.parse(["--val", "x"]))
   // FIFO: "x" → "xA" → "xAB"
-  inspect(
+  debug_inspect(
     val.get(),
     content=(
-      #|Some(xAB)
+      #|Some("xAB")
     ),
   )
 }
@@ -2544,7 +2589,7 @@ test "adjust: before_pre skips when not set" {
   p.adjust(val, before_pre=Filter::map(fn(s : String) { s + "0" }))
   ignore(p.parse([]))
   // default 値には before_pre は掛からない
-  inspect(val.get(), content="Some(99)")
+  debug_inspect(val.get(), content="Some(99)")
 }
 
 ///|
@@ -2559,8 +2604,11 @@ test "adjust: before_pre error propagates as parse error" {
       s
     },
   })
-  let result : Result[_, _] = try? p.parse(["--val", "bad"])
-  inspect(result is Err(_), content="true")
+  try p.parse(["--val", "bad"]) |> ignore catch {
+    _ => ()
+  } noraise {
+    _ => abort("expected ParseError")
+  }
 }
 
 ///|
@@ -2571,7 +2619,7 @@ test "adjust: before_post transforms value before after_post" {
   p.adjust(val, before_post=Filter::map(fn(v) { v * 2 }))
   p.adjust(val, after_post=Filter::map(fn(v) { v + 1 }))
   ignore(p.parse(["--val", "5"]))
-  inspect(val.get(), content="Some(11)")
+  debug_inspect(val.get(), content="Some(11)")
 }
 
 ///|
@@ -2580,7 +2628,7 @@ test "adjust: before_post skips when not set" {
   let val = p.int(name="val", default=42)
   p.adjust(val, before_post=Filter::map(fn(v) { v * 10 }))
   ignore(p.parse([]))
-  inspect(val.get(), content="Some(42)")
+  debug_inspect(val.get(), content="Some(42)")
 }
 
 ///|
@@ -2590,7 +2638,7 @@ test "adjust: after_pre transforms value after pre conversion" {
   // after_pre: 値を常に +100
   p.adjust(val, after_pre=Filter::map(fn(v) { v + 100 }))
   ignore(p.parse(["--val", "5"]))
-  inspect(val.get(), content="Some(105)")
+  debug_inspect(val.get(), content="Some(105)")
 }
 
 ///|
@@ -2599,7 +2647,7 @@ test "adjust: after_pre skips when not set" {
   let val = p.int(name="val", default=7)
   p.adjust(val, after_pre=Filter::map(fn(v) { v + 100 }))
   ignore(p.parse([]))
-  inspect(val.get(), content="Some(7)")
+  debug_inspect(val.get(), content="Some(7)")
 }
 
 ///|
@@ -2614,7 +2662,7 @@ test "adjust: all four params combined" {
     val,
     before_pre=Filter::map(fn(s : String) {
       if s.has_prefix("!") {
-        s[1:].to_string()
+        s[1:].to_owned()
       } else {
         s
       }
@@ -2625,7 +2673,7 @@ test "adjust: all four params combined" {
   )
   ignore(p.parse(["--val", "!5"]))
   // "!5" → before_pre → "5" → pre(parse_int) → 5 → after_pre → 15 → before_post → 30 → after_post → 31
-  inspect(val.get(), content="Some(31)")
+  debug_inspect(val.get(), content="Some(31)")
 }
 
 ///|
@@ -2637,7 +2685,7 @@ test "clone + link: clone with independent forwarding" {
   p.link(tgt, source=cloned)
   ignore(p.parse(["--cloned"]))
   inspect(cloned.is_set(), content="true")
-  inspect(tgt.get(), content="Some(true)")
+  debug_inspect(tgt.get(), content="Some(true)")
 }
 
 ///|
@@ -2656,7 +2704,7 @@ test "practical: deprecated alias with adjust validation" {
   })
   // deprecated alias でもパースは成功し、adjust の検証も通る
   ignore(p.parse(["--old-port", "3000"]))
-  inspect(port.get(), content="Some(3000)")
+  debug_inspect(port.get(), content="Some(3000)")
   let warnings = p.deprecated_warnings()
   inspect(warnings.length(), content="1")
 }
@@ -2669,8 +2717,8 @@ test "practical: link for verbose implies debug" {
   // --verbose が指定されたら --debug も自動で有効にする
   p.link(debug, source=verbose)
   ignore(p.parse(["--verbose"]))
-  inspect(verbose.get(), content="Some(true)")
-  inspect(debug.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
+  debug_inspect(debug.get(), content="Some(true)")
   inspect(verbose.is_set(), content="true")
   // debug は link で値が書き込まれるが is_set は false（パースで set されたわけではない）
   inspect(debug.is_set(), content="false")
@@ -2684,9 +2732,9 @@ test "practical: clone + adjust for derived option" {
   // secure-port には +443 のオフセットを付ける
   p.adjust(secure_port, after_post=Filter::map(fn(v) { v + 443 }))
   ignore(p.parse(["--secure-port", "100"]))
-  inspect(secure_port.get(), content="Some(543)")
+  debug_inspect(secure_port.get(), content="Some(543)")
   // clone は独立 cell: port は影響を受けない
-  inspect(port.get(), content="Some(80)")
+  debug_inspect(port.get(), content="Some(80)")
 }
 
 // ===== ValCell / Accessor tests (DR-0045) =====
@@ -2847,7 +2895,7 @@ test "link: propagate_set=true updates target is_set" {
   ignore(p.parse(["--verbose"]))
   assert_true(verbose.is_set())
   assert_true(debug.is_set()) // propagate_set=true なので debug.is_set() も true
-  inspect(debug.get(), content="Some(true)")
+  debug_inspect(debug.get(), content="Some(true)")
 }
 
 ///|
@@ -2856,7 +2904,7 @@ test "env: subcmd env option gets value from parent env map" {
   let sub = p.sub(name="serve")
   let port = sub.int(name="port", default=8080, env="PORT")
   ignore(p.parse(["serve"], env={ "PORT": "9000" }))
-  inspect(port.get(), content="Some(9000)")
+  debug_inspect(port.get(), content="Some(9000)")
   inspect(port.is_set(), content="true")
 }
 
@@ -2866,7 +2914,7 @@ test "env: subcmd CLI arg takes precedence over env" {
   let sub = p.sub(name="serve")
   let port = sub.int(name="port", default=8080, env="PORT")
   ignore(p.parse(["serve", "--port", "3000"], env={ "PORT": "9000" }))
-  inspect(port.get(), content="Some(3000)")
+  debug_inspect(port.get(), content="Some(3000)")
   inspect(port.is_set(), content="true")
 }
 
@@ -2876,7 +2924,7 @@ test "env: subcmd default used when neither CLI nor env specified" {
   let sub = p.sub(name="serve")
   let port = sub.int(name="port", default=8080, env="PORT")
   ignore(p.parse(["serve"], env={}))
-  inspect(port.get(), content="Some(8080)")
+  debug_inspect(port.get(), content="Some(8080)")
   inspect(port.is_set(), content="false")
 }
 
@@ -2887,10 +2935,10 @@ test "env: nested subcmd env propagation" {
   let inner = sub.sub(name="serve")
   let host = inner.string(name="host", default="localhost", env="HOST")
   ignore(p.parse(["app", "serve"], env={ "HOST": "example.com" }))
-  inspect(
+  debug_inspect(
     host.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
   inspect(host.is_set(), content="true")
@@ -2908,22 +2956,22 @@ test "alias chain: root committed propagates through chained aliases" {
   assert_true(alias2.is_set())
   assert_false(alias1.is_set())
   // 値は全て共有（alias は Accessor 共有）
-  inspect(
+  debug_inspect(
     opt.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
-  inspect(
+  debug_inspect(
     alias1.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
-  inspect(
+  debug_inspect(
     alias2.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
 }
@@ -2957,7 +3005,7 @@ test "surrogate pair: single emoji short option" {
   let p = Parser::new()
   let opt = p.flag(name="smile", shorts="😀")
   ignore(p.parse(["-😀"]))
-  inspect(p.get(opt), content="Some(true)")
+  debug_inspect(p.get(opt), content="Some(true)")
 }
 
 ///|
@@ -2966,8 +3014,8 @@ test "surrogate pair: emoji short combining two flags" {
   let a = p.flag(name="smile", shorts="😀")
   let b = p.flag(name="cool", shorts="😎")
   ignore(p.parse(["-😀😎"]))
-  inspect(p.get(a), content="Some(true)")
-  inspect(p.get(b), content="Some(true)")
+  debug_inspect(p.get(a), content="Some(true)")
+  debug_inspect(p.get(b), content="Some(true)")
 }
 
 ///|
@@ -2976,8 +3024,8 @@ test "surrogate pair: emoji + ascii combining" {
   let v = p.flag(name="verbose", shorts="v")
   let e = p.flag(name="emoji", shorts="😀")
   ignore(p.parse(["-v😀"]))
-  inspect(p.get(v), content="Some(true)")
-  inspect(p.get(e), content="Some(true)")
+  debug_inspect(p.get(v), content="Some(true)")
+  debug_inspect(p.get(e), content="Some(true)")
 }
 
 ///|
@@ -2986,8 +3034,8 @@ test "surrogate pair: emoji first then ascii combining" {
   let v = p.flag(name="verbose", shorts="v")
   let e = p.flag(name="emoji", shorts="😀")
   ignore(p.parse(["-😀v"]))
-  inspect(p.get(e), content="Some(true)")
-  inspect(p.get(v), content="Some(true)")
+  debug_inspect(p.get(e), content="Some(true)")
+  debug_inspect(p.get(v), content="Some(true)")
 }
 
 ///|
@@ -3000,7 +3048,7 @@ test "surrogate pair: emoji short with inline value" {
     pre=Filter::parse_int(),
   )
   ignore(p.parse(["-😀3000"]))
-  inspect(p.get(port), content="Some(3000)")
+  debug_inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
@@ -3014,20 +3062,21 @@ test "surrogate pair: emoji combining flag then value" {
     pre=Filter::parse_int(),
   )
   ignore(p.parse(["-v😀3000"]))
-  inspect(p.get(v), content="Some(true)")
-  inspect(p.get(port), content="Some(3000)")
+  debug_inspect(p.get(v), content="Some(true)")
+  debug_inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
 test "surrogate pair: suggest_typo with emoji option" {
   let p = Parser::new()
   let _ = p.flag(name="😀mode")
-  let r : Result[ParseResult, _] = try? p.parse(["--😎mode"])
-  match r {
-    Err(ParseError(info)) => {
+  try p.parse(["--😎mode"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.message, content="unexpected argument: --😎mode")
       inspect(info.tip, content="--😀mode")
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -3084,7 +3133,7 @@ test "grapheme cluster: long option with flag emoji" {
   let p = Parser::new()
   let opt = p.flag(name="\u{1F1EF}\u{1F1F5}mode")
   ignore(p.parse(["--\u{1F1EF}\u{1F1F5}mode"]))
-  inspect(p.get(opt), content="Some(true)")
+  debug_inspect(p.get(opt), content="Some(true)")
 }
 
 ///|
@@ -3099,10 +3148,10 @@ test "grapheme cluster: long option with family emoji" {
       "--\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}-mode", "on",
     ]),
   )
-  inspect(
+  debug_inspect(
     p.get(opt),
     content=(
-      #|Some(on)
+      #|Some("on")
     ),
   )
 }
@@ -3111,10 +3160,10 @@ test "grapheme cluster: long option with family emoji" {
 test "grapheme cluster: suggest_typo with flag emoji" {
   let p = Parser::new()
   let _ = p.flag(name="\u{1F1EF}\u{1F1F5}mode")
-  let r : Result[ParseResult, _] = try? p.parse(["--\u{1F1EF}\u{1F1F5}mod"])
-  match r {
-    Err(ParseError(info)) =>
-      inspect(info.tip, content="--\u{1F1EF}\u{1F1F5}mode")
+  try p.parse(["--\u{1F1EF}\u{1F1F5}mod"]) |> ignore catch {
+    ParseError(info) => inspect(info.tip, content="--\u{1F1EF}\u{1F1F5}mode")
+    _ => fail("expected ParseError with typo suggestion")
+  } noraise {
     _ => fail("expected ParseError with typo suggestion")
   }
 }
@@ -3124,10 +3173,10 @@ test "grapheme cluster: eq split with flag emoji" {
   let p = Parser::new()
   let opt = p.string(name="\u{1F1EF}\u{1F1F5}mode", default="off")
   ignore(p.parse(["--\u{1F1EF}\u{1F1F5}mode=on"]))
-  inspect(
+  debug_inspect(
     p.get(opt),
     content=(
-      #|Some(on)
+      #|Some("on")
     ),
   )
 }
@@ -3142,7 +3191,7 @@ test "shorts grapheme cluster: flag emoji short option" {
   let p = Parser::new()
   let opt = p.flag(name="japan", shorts="\u{1F1EF}\u{1F1F5}")
   ignore(p.parse(["-\u{1F1EF}\u{1F1F5}"]))
-  inspect(p.get(opt), content="Some(true)")
+  debug_inspect(p.get(opt), content="Some(true)")
 }
 
 ///|
@@ -3157,8 +3206,8 @@ test "shorts grapheme cluster: family emoji short combining" {
   ignore(
     p.parse(["-\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}v"]),
   )
-  inspect(p.get(f), content="Some(true)")
-  inspect(p.get(v), content="Some(true)")
+  debug_inspect(p.get(f), content="Some(true)")
+  debug_inspect(p.get(v), content="Some(true)")
 }
 
 ///|
@@ -3172,7 +3221,7 @@ test "shorts grapheme cluster: skin tone short + inline value" {
     pre=Filter::parse_int(),
   )
   ignore(p.parse(["-\u{1F44B}\u{1F3FD}3000"]))
-  inspect(p.get(port), content="Some(3000)")
+  debug_inspect(p.get(port), content="Some(3000)")
 }
 
 ///|
@@ -3193,7 +3242,7 @@ test "shorts grapheme cluster: multiple grapheme shorts" {
   let p = Parser::new()
   let opt = p.count(name="flag", shorts="\u{1F1EF}\u{1F1F5}\u{1F1FA}\u{1F1F8}")
   ignore(p.parse(["-\u{1F1EF}\u{1F1F5}"]))
-  inspect(p.get(opt), content="Some(1)")
+  debug_inspect(p.get(opt), content="Some(1)")
 }
 
 // === mergeable_list (DR-0023) ===
@@ -3202,16 +3251,16 @@ test "shorts grapheme cluster: multiple grapheme shorts" {
 test "mergeable_list: overwrite — plain list replaces base" {
   // base=["x","y"], input "a,b" → ["a", "b"]（修飾子なしはフル上書き）
   let chain = Filter::mergeable_list(base=["x", "y"])
-  let result : Result[Array[String], _] = try? (chain.run)("a,b")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("a,b") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[a, b]
+          #|["a", "b"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3219,16 +3268,16 @@ test "mergeable_list: overwrite — plain list replaces base" {
 test "mergeable_list: add — '+' prefix appends to base" {
   // base=["a","b"], input "+c" → ["a", "b", "c"]
   let chain = Filter::mergeable_list(base=["a", "b"])
-  let result : Result[Array[String], _] = try? (chain.run)("+c")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("+c") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[a, b, c]
+          #|["a", "b", "c"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3236,16 +3285,16 @@ test "mergeable_list: add — '+' prefix appends to base" {
 test "mergeable_list: remove — '-' prefix excludes from base" {
   // base=["a","b","c"], input "-a" → ["b", "c"]
   let chain = Filter::mergeable_list(base=["a", "b", "c"])
-  let result : Result[Array[String], _] = try? (chain.run)("-a")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("-a") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[b, c]
+          #|["b", "c"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3253,16 +3302,16 @@ test "mergeable_list: remove — '-' prefix excludes from base" {
 test "mergeable_list: mixed add/remove" {
   // base=["a","b"], input "+c,-a" → ["b", "c"]
   let chain = Filter::mergeable_list(base=["a", "b"])
-  let result : Result[Array[String], _] = try? (chain.run)("+c,-a")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("+c,-a") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[b, c]
+          #|["b", "c"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3270,16 +3319,16 @@ test "mergeable_list: mixed add/remove" {
 test "mergeable_list: custom separator" {
   // separator=":", input "a:b:c" → ["a", "b", "c"]
   let chain = Filter::mergeable_list(base=["x"], separator=":")
-  let result : Result[Array[String], _] = try? (chain.run)("a:b:c")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("a:b:c") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[a, b, c]
+          #|["a", "b", "c"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3287,16 +3336,16 @@ test "mergeable_list: custom separator" {
 test "mergeable_list: add deduplicates" {
   // base=["a","b"], input "+a,+c" → ["a", "b", "c"]（a は既に存在するので no-op）
   let chain = Filter::mergeable_list(base=["a", "b"])
-  let result : Result[Array[String], _] = try? (chain.run)("+a,+c")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("+a,+c") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[a, b, c]
+          #|["a", "b", "c"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3304,16 +3353,16 @@ test "mergeable_list: add deduplicates" {
 test "mergeable_list: remove nonexistent is no-op" {
   // base=["a","b"], input "-z" → ["a", "b"]（存在しない要素の除外は no-op）
   let chain = Filter::mergeable_list(base=["a", "b"])
-  let result : Result[Array[String], _] = try? (chain.run)("-z")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("-z") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[a, b]
+          #|["a", "b"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3321,16 +3370,16 @@ test "mergeable_list: remove nonexistent is no-op" {
 test "mergeable_list: empty base with add" {
   // base=[], input "+a,+b" → ["a", "b"]
   let chain = Filter::mergeable_list()
-  let result : Result[Array[String], _] = try? (chain.run)("+a,+b")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("+a,+b") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[a, b]
+          #|["a", "b"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3339,16 +3388,16 @@ test "mergeable_list: rest expansion with '...'" {
   // base=["a","b","c"], input "x,...,-b" → ["x", "a", "c"]
   // ... expands remaining base items (not yet listed), then -b removes
   let chain = Filter::mergeable_list(base=["a", "b", "c"])
-  let result : Result[Array[String], _] = try? (chain.run)("x,...,-b")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("x,...,-b") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[x, a, c]
+          #|["x", "a", "c"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3357,16 +3406,16 @@ test "mergeable_list: rest at end" {
   // base=["a","b","c"], input "x,..." → ["x", "a", "b", "c"]
   // x は base にないので ... は全 base 要素を展開
   let chain = Filter::mergeable_list(base=["a", "b", "c"])
-  let result : Result[Array[String], _] = try? (chain.run)("x,...")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("x,...") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[x, a, b, c]
+          #|["x", "a", "b", "c"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3375,16 +3424,16 @@ test "mergeable_list: rest with reorder" {
   // base=["a","b","c"], input "c,..." → ["c", "a", "b"]
   // c が先頭、... で残り(a,b)を展開
   let chain = Filter::mergeable_list(base=["a", "b", "c"])
-  let result : Result[Array[String], _] = try? (chain.run)("c,...")
-  match result {
-    Ok(v) =>
-      inspect(
+  try (chain.run)("c,...") catch {
+    _ => fail("expected Ok")
+  } noraise {
+    v =>
+      debug_inspect(
         v,
         content=(
-          #|[c, a, b]
+          #|["c", "a", "b"]
         ),
       )
-    Err(_) => fail("expected Ok")
   }
 }
 
@@ -3400,10 +3449,10 @@ test "file: value specified" {
     description="config file path",
   )
   p.parse(["--config", "/etc/app.conf"]) |> ignore
-  inspect(
+  debug_inspect(
     config.get(),
     content=(
-      #|Some(/etc/app.conf)
+      #|Some("/etc/app.conf")
     ),
   )
 }
@@ -3418,10 +3467,10 @@ test "file: flag only uses default_path (implicit_value)" {
     description="config file path",
   )
   p.parse(["--config"]) |> ignore
-  inspect(
+  debug_inspect(
     config.get(),
     content=(
-      #|Some(./config.toml)
+      #|Some("./config.toml")
     ),
   )
 }
@@ -3436,10 +3485,10 @@ test "file: not specified uses default" {
     description="config file path",
   )
   p.parse([]) |> ignore
-  inspect(
+  debug_inspect(
     config.get(),
     content=(
-      #|Some()
+      #|Some("")
     ),
   )
 }
@@ -3454,10 +3503,10 @@ test "file: shorts support" {
     shorts="c",
   )
   p.parse(["-c", "/path/to/file"]) |> ignore
-  inspect(
+  debug_inspect(
     config.get(),
     content=(
-      #|Some(/path/to/file)
+      #|Some("/path/to/file")
     ),
   )
 }
@@ -3467,10 +3516,10 @@ test "file: equals syntax" {
   let p = Parser::new()
   let config = p.file(name="config", default="", default_path="./config.toml")
   p.parse(["--config=/path/to/file"]) |> ignore
-  inspect(
+  debug_inspect(
     config.get(),
     content=(
-      #|Some(/path/to/file)
+      #|Some("/path/to/file")
     ),
   )
 }
@@ -3483,7 +3532,7 @@ test "env_prefix: basic prefix applied to env lookup" {
   p.env_prefix("MYAPP")
   let port = p.int(name="port", default=8080, env="PORT")
   ignore(p.parse([], env={ "MYAPP_PORT": "9000" }))
-  inspect(port.get(), content="Some(9000)")
+  debug_inspect(port.get(), content="Some(9000)")
   inspect(port.is_set(), content="true")
 }
 
@@ -3494,7 +3543,7 @@ test "env_prefix: unprefixed env var is not matched" {
   let port = p.int(name="port", default=8080, env="PORT")
   ignore(p.parse([], env={ "PORT": "9000" }))
   // prefix が設定されているので素の PORT は無視される
-  inspect(port.get(), content="Some(8080)")
+  debug_inspect(port.get(), content="Some(8080)")
   inspect(port.is_set(), content="false")
 }
 
@@ -3503,7 +3552,7 @@ test "env_prefix: no prefix behaves as before" {
   let p = Parser::new()
   let port = p.int(name="port", default=8080, env="PORT")
   ignore(p.parse([], env={ "PORT": "9000" }))
-  inspect(port.get(), content="Some(9000)")
+  debug_inspect(port.get(), content="Some(9000)")
   inspect(port.is_set(), content="true")
 }
 
@@ -3513,7 +3562,7 @@ test "env_prefix: CLI takes precedence over prefixed env" {
   p.env_prefix("MYAPP")
   let port = p.int(name="port", default=8080, env="PORT")
   ignore(p.parse(["--port", "3000"], env={ "MYAPP_PORT": "9000" }))
-  inspect(port.get(), content="Some(3000)")
+  debug_inspect(port.get(), content="Some(3000)")
   inspect(port.is_set(), content="true")
 }
 
@@ -3523,7 +3572,7 @@ test "env_prefix: opt without env is not affected" {
   p.env_prefix("MYAPP")
   let port = p.int(name="port", default=8080)
   ignore(p.parse([], env={ "MYAPP_PORT": "9000" }))
-  inspect(port.get(), content="Some(8080)")
+  debug_inspect(port.get(), content="Some(8080)")
   inspect(port.is_set(), content="false")
 }
 
@@ -3534,7 +3583,7 @@ test "env_prefix: subcmd inherits parent prefix with nesting" {
   let sub = p.sub(name="serve")
   let port = sub.int(name="port", default=8080, env="PORT")
   ignore(p.parse(["serve"], env={ "MYAPP_SERVE_PORT": "9000" }))
-  inspect(port.get(), content="Some(9000)")
+  debug_inspect(port.get(), content="Some(9000)")
   inspect(port.is_set(), content="true")
 }
 
@@ -3548,10 +3597,10 @@ test "env_prefix: nested subcmd prefix chaining" {
   ignore(
     p.parse(["app", "serve"], env={ "MYAPP_APP_SERVE_HOST": "example.com" }),
   )
-  inspect(
+  debug_inspect(
     host.get(),
     content=(
-      #|Some(example.com)
+      #|Some("example.com")
     ),
   )
   inspect(host.is_set(), content="true")
@@ -3579,7 +3628,7 @@ test "env_prefix: flag from prefixed env" {
   p.env_prefix("MYAPP")
   let verbose = p.flag(name="verbose", env="VERBOSE")
   ignore(p.parse([], env={ "MYAPP_VERBOSE": "true" }))
-  inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
   inspect(verbose.is_set(), content="true")
 }
 
@@ -3589,10 +3638,10 @@ test "env_prefix: append_string from prefixed env" {
   p.env_prefix("MYAPP")
   let includes = p.append_string(name="include", env="INCLUDE")
   ignore(p.parse([], env={ "MYAPP_INCLUDE": "a,b,c" }))
-  inspect(
+  debug_inspect(
     includes.get(),
     content=(
-      #|Some([a, b, c])
+      #|Some(["a", "b", "c"])
     ),
   )
 }
@@ -3605,10 +3654,10 @@ test "auto_env: basic — string opt auto-bound to env" {
   p.auto_env(true)
   let port = p.string(name="port", default="8080")
   ignore(p.parse([], env={ "PORT": "3000" }))
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(3000)
+      #|Some("3000")
     ),
   )
   inspect(port.is_set(), content="true")
@@ -3621,10 +3670,10 @@ test "auto_env: explicit env takes precedence" {
   let port = p.string(name="port", default="8080", env="CUSTOM_PORT")
   ignore(p.parse([], env={ "CUSTOM_PORT": "3000", "PORT": "9999" }))
   // CUSTOM_PORT should be used, not auto-generated PORT
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(3000)
+      #|Some("3000")
     ),
   )
 }
@@ -3636,10 +3685,10 @@ test "auto_env: env_prefix combined" {
   p.auto_env(true)
   let port = p.string(name="port", default="8080")
   ignore(p.parse([], env={ "MYAPP_PORT": "3000" }))
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(3000)
+      #|Some("3000")
     ),
   )
 }
@@ -3651,10 +3700,10 @@ test "auto_env: disabled by default — no auto binding" {
   let port = p.string(name="port", default="8080")
   ignore(p.parse([], env={ "PORT": "3000" }))
   // Should use default since no env binding
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(8080)
+      #|Some("8080")
     ),
   )
   inspect(port.is_set(), content="false")
@@ -3667,10 +3716,10 @@ test "auto_env: hidden opt excluded" {
   let secret = p.string(name="secret", default="none", visibility=Hidden)
   ignore(p.parse([], env={ "SECRET": "hidden_val" }))
   // hidden opt should NOT be auto-bound
-  inspect(
+  debug_inspect(
     secret.get(),
     content=(
-      #|Some(none)
+      #|Some("none")
     ),
   )
   inspect(secret.is_set(), content="false")
@@ -3682,10 +3731,10 @@ test "auto_env: hyphenated name converts to underscore" {
   p.auto_env(true)
   let port = p.string(name="server-port", default="8080")
   ignore(p.parse([], env={ "SERVER_PORT": "3000" }))
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(3000)
+      #|Some("3000")
     ),
   )
 }
@@ -3696,7 +3745,7 @@ test "auto_env: flag auto-bound" {
   p.auto_env(true)
   let verbose = p.flag(name="verbose")
   ignore(p.parse([], env={ "VERBOSE": "true" }))
-  inspect(verbose.get(), content="Some(true)")
+  debug_inspect(verbose.get(), content="Some(true)")
   inspect(verbose.is_set(), content="true")
 }
 
@@ -3706,7 +3755,7 @@ test "auto_env: int auto-bound" {
   p.auto_env(true)
   let count = p.int(name="count", default=0)
   ignore(p.parse([], env={ "COUNT": "42" }))
-  inspect(count.get(), content="Some(42)")
+  debug_inspect(count.get(), content="Some(42)")
 }
 
 ///|
@@ -3715,7 +3764,7 @@ test "auto_env: count combinator auto-bound" {
   p.auto_env(true)
   let verbosity = p.count(name="verbosity")
   ignore(p.parse([], env={ "VERBOSITY": "3" }))
-  inspect(verbosity.get(), content="Some(3)")
+  debug_inspect(verbosity.get(), content="Some(3)")
 }
 
 ///|
@@ -3724,10 +3773,10 @@ test "auto_env: append_string auto-bound" {
   p.auto_env(true)
   let includes = p.append_string(name="include")
   ignore(p.parse([], env={ "INCLUDE": "a,b,c" }))
-  inspect(
+  debug_inspect(
     includes.get(),
     content=(
-      #|Some([a, b, c])
+      #|Some(["a", "b", "c"])
     ),
   )
 }
@@ -3738,10 +3787,10 @@ test "auto_env: CLI takes precedence over auto_env" {
   p.auto_env(true)
   let port = p.string(name="port", default="8080")
   ignore(p.parse(["--port", "4000"], env={ "PORT": "3000" }))
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(4000)
+      #|Some("4000")
     ),
   )
 }
@@ -3772,10 +3821,10 @@ test "auto_env: subcmd inherits auto_env" {
   let child = p.sub(name="serve")
   let port = child.string(name="port", default="8080")
   ignore(p.parse(["serve"], env={ "PORT": "3000" }))
-  inspect(
+  debug_inspect(
     port.get(),
     content=(
-      #|Some(3000)
+      #|Some("3000")
     ),
   )
 }
@@ -3786,7 +3835,7 @@ test "auto_env: float auto-bound" {
   p.auto_env(true)
   let rate = p.float(name="rate", default=1.0)
   ignore(p.parse([], env={ "RATE": "2.5" }))
-  inspect(rate.get(), content="Some(2.5)")
+  debug_inspect(rate.get(), content="Some(2.5)")
 }
 
 ///|
@@ -3795,7 +3844,7 @@ test "auto_env: boolean auto-bound" {
   p.auto_env(true)
   let debug = p.boolean(name="debug", default=false)
   ignore(p.parse([], env={ "DEBUG": "true" }))
-  inspect(debug.get(), content="Some(true)")
+  debug_inspect(debug.get(), content="Some(true)")
 }
 
 // === Visibility enum テスト ===
@@ -3804,12 +3853,13 @@ test "auto_env: boolean auto-bound" {
 test "visibility: Visible option shown in help (default)" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", description="Verbose output")
-  let result : Result[_, _] = try? p.parse(["--help"])
-  match result {
-    Err(HelpRequested(text)) => {
+  try p.parse(["--help"]) |> ignore catch {
+    HelpRequested(text) => {
       inspect(text.contains("--verbose"), content="true")
       inspect(text.contains("Verbose output"), content="true")
     }
+    _ => fail("expected HelpRequested")
+  } noraise {
     _ => fail("expected HelpRequested")
   }
 }
@@ -3819,13 +3869,14 @@ test "visibility: Hidden option not shown in help" {
   let p = Parser::new()
   let _ = p.flag(name="verbose", description="Verbose output")
   let _ = p.flag(name="secret", description="Secret option", visibility=Hidden)
-  let result : Result[_, _] = try? p.parse(["--help"])
-  match result {
-    Err(HelpRequested(text)) => {
+  try p.parse(["--help"]) |> ignore catch {
+    HelpRequested(text) => {
       inspect(text.contains("--verbose"), content="true")
       inspect(text.contains("--secret"), content="false")
       inspect(text.contains("Secret option"), content="false")
     }
+    _ => fail("expected HelpRequested")
+  } noraise {
     _ => fail("expected HelpRequested")
   }
 }
@@ -3839,7 +3890,7 @@ test "visibility: Hidden option still works for parsing" {
     visibility=Hidden,
   )
   ignore(p.parse(["--secret"]))
-  inspect(secret.get(), content="Some(true)")
+  debug_inspect(secret.get(), content="Some(true)")
 }
 
 ///|
@@ -3852,13 +3903,14 @@ test "visibility: Advanced option not shown in help" {
     description="Internal format",
     visibility=Advanced,
   )
-  let result : Result[_, _] = try? p.parse(["--help"])
-  match result {
-    Err(HelpRequested(text)) => {
+  try p.parse(["--help"]) |> ignore catch {
+    HelpRequested(text) => {
       inspect(text.contains("--verbose"), content="true")
       inspect(text.contains("--internal-format"), content="false")
       inspect(text.contains("Internal format"), content="false")
     }
+    _ => fail("expected HelpRequested")
+  } noraise {
     _ => fail("expected HelpRequested")
   }
 }
@@ -3873,10 +3925,10 @@ test "visibility: Advanced option still works for parsing" {
     visibility=Advanced,
   )
   ignore(p.parse(["--internal-format", "yaml"]))
-  inspect(
+  debug_inspect(
     fmt.get(),
     content=(
-      #|Some(yaml)
+      #|Some("yaml")
     ),
   )
 }
@@ -3914,10 +3966,10 @@ test "visibility: auto_env excludes Advanced opt" {
   let internal = p.string(name="internal", default="none", visibility=Advanced)
   ignore(p.parse([], env={ "INTERNAL": "test_val" }))
   // Advanced opt should NOT be auto-bound (same as Hidden)
-  inspect(
+  debug_inspect(
     internal.get(),
     content=(
-      #|Some(none)
+      #|Some("none")
     ),
   )
   inspect(internal.is_set(), content="false")
@@ -3927,14 +3979,15 @@ test "visibility: auto_env excludes Advanced opt" {
 test "visibility: Hidden option not shown in error help line" {
   let p = Parser::new()
   let _ = p.string(name="secret", default="", visibility=Hidden)
-  let result : Result[ParseResult, _] = try? p.parse(["--secrt"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--secrt"]) |> ignore catch {
+    ParseError(info) => {
       // typo suggestion still works
       inspect(info.tip, content="--secret")
       // but help line for hidden option is not shown
       inspect(info.to_string().contains("help:"), content="false")
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -3966,10 +4019,10 @@ test "adjust: append opt with after_post transforms entire array" {
   ignore(
     p.parse(["--items", "banana", "--items", "apple", "--items", "cherry"]),
   )
-  inspect(
+  debug_inspect(
     items.get(),
     content=(
-      #|Some([apple, banana, cherry])
+      #|Some(["apple", "banana", "cherry"])
     ),
   )
 }
@@ -3982,10 +4035,10 @@ test "adjust: append opt with before_pre is silent no-op" {
   p.adjust(items, before_pre=Filter::map(fn(s : String) { s + "_modified" }))
   ignore(p.parse(["--items", "hello"]))
   // before_pre は無視され、値はそのまま
-  inspect(
+  debug_inspect(
     items.get(),
     content=(
-      #|Some([hello])
+      #|Some(["hello"])
     ),
   )
 }
@@ -3997,10 +4050,10 @@ test "adjust: positional with after_pre transforms value" {
   // after_pre で大文字変換
   p.adjust(name, after_pre=Filter::map(fn(s : String) { s.to_upper() }))
   ignore(p.parse(["hello"]))
-  inspect(
+  debug_inspect(
     name.get(),
     content=(
-      #|Some(HELLO)
+      #|Some("HELLO")
     ),
   )
 }
@@ -4013,10 +4066,10 @@ test "adjust: positional with before_pre is silent no-op" {
   p.adjust(name, before_pre=Filter::map(fn(s : String) { s + "_modified" }))
   ignore(p.parse(["world"]))
   // before_pre は無視され、値はそのまま
-  inspect(
+  debug_inspect(
     name.get(),
     content=(
-      #|Some(world)
+      #|Some("world")
     ),
   )
 }
@@ -4033,10 +4086,10 @@ test "adjust: rest with after_post transforms array" {
     }),
   )
   ignore(p.parse(["hello", "", "world", ""]))
-  inspect(
+  debug_inspect(
     args.get(),
     content=(
-      #|Some([hello, world])
+      #|Some(["hello", "world"])
     ),
   )
 }
@@ -4049,10 +4102,10 @@ test "adjust: rest with before_pre is silent no-op" {
   p.adjust(args, before_pre=Filter::map(fn(s : String) { s + "_mod" }))
   ignore(p.parse(["a", "b"]))
   // before_pre は無視され、値はそのまま
-  inspect(
+  debug_inspect(
     args.get(),
     content=(
-      #|Some([a, b])
+      #|Some(["a", "b"])
     ),
   )
 }
@@ -4065,7 +4118,7 @@ test "adjust: option inside sub command" {
   // sub コマンドの中で定義された opt に adjust を適用
   sub.adjust(port, after_post=Filter::map(fn(v) { v + 1000 }))
   ignore(p.parse(["serve", "--port", "80"]))
-  inspect(port.get(), content="Some(1080)")
+  debug_inspect(port.get(), content="Some(1080)")
 }
 
 ///|
@@ -4076,7 +4129,7 @@ test "adjust: flag with after_post transforms bool" {
   p.adjust(verbose, after_post=Filter::map(fn(v : Bool) { !v }))
   ignore(p.parse(["--verbose"]))
   // true → not → false
-  inspect(verbose.get(), content="Some(false)")
+  debug_inspect(verbose.get(), content="Some(false)")
 }
 
 ///|
@@ -4087,7 +4140,7 @@ test "adjust: count with after_post transforms count value" {
   p.adjust(verbosity, after_post=Filter::map(fn(v) { v + 100 }))
   ignore(p.parse(["--verbose", "--verbose", "--verbose"]))
   // count=3 → 3+100 = 103
-  inspect(verbosity.get(), content="Some(103)")
+  debug_inspect(verbosity.get(), content="Some(103)")
 }
 
 ///|
@@ -4129,18 +4182,18 @@ test "adjust: four-phase execution order with multiple adjusts" {
   )
   ignore(p.parse(["--val", "x"]))
   // 実行順序: before_pre → (pre) → after_pre → before_post → after_post
-  inspect(
+  debug_inspect(
     log,
     content=(
-      #|[before_pre, after_pre, before_post, after_post]
+      #|["before_pre", "after_pre", "before_post", "after_post"]
     ),
   )
   // 値: "x" → before_pre "[bp]x" → pre(identity) "[bp]x" → after_pre "[ap][bp]x"
   //   → before_post "[bpo][ap][bp]x" → after_post "[apo][bpo][ap][bp]x"
-  inspect(
+  debug_inspect(
     val.get(),
     content=(
-      #|Some([apo][bpo][ap][bp]x)
+      #|Some("[apo][bpo][ap][bp]x")
     ),
   )
 }
@@ -4159,10 +4212,10 @@ test "adjust: before_pre skipped on implicit_value path" {
   // --mode だけ指定（implicit_value パス）
   ignore(p.parse(["--mode"]))
   // implicit_value="auto" がそのまま使われ、before_pre は適用されない
-  inspect(
+  debug_inspect(
     mode.get(),
     content=(
-      #|Some(auto)
+      #|Some("auto")
     ),
   )
 }

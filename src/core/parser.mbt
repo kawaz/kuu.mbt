@@ -113,7 +113,7 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     positionals: [],
     current_positional: { val: 0 },
     parsed: { val: false },
-    children: Map::new(),
+    children: Map([], capacity=0),
     metas: [],
     description: { val: "" },
     before_post_hooks: [],
@@ -122,7 +122,7 @@ pub fn Parser::new(dashdash? : Bool = true) -> Parser {
     registered_names: {},
     duplicate_errors: [],
     force_unclaimed: [],
-    node_templates: Map::new(),
+    node_templates: Map([], capacity=0),
     eq_fallback_nodes: [],
     deprecated_usages: [],
     env_applicators: [],
@@ -183,7 +183,7 @@ fn[T] Parser::register_option(
   )
   let shorts_arr : Array[String] = @grapheme.graphemes(shorts)
     .iter()
-    .map(fn(sv) { sv.to_string() })
+    .map(fn(sv) { sv.to_owned() })
     .collect()
   let var_names = variations.map(fn(v) {
     let prefix = match v {
@@ -615,7 +615,7 @@ fn expand_short(
   let result : Array[ExactNode] = []
   let shorts_g = @grapheme.graphemes(shorts)
   for i = 0; i < shorts_g.length(); i = i + 1 {
-    let g = shorts_g[i].to_string()
+    let g = shorts_g[i].to_owned()
     if g == "-" {
       report_error("invalid short option character '-' in option --" + name)
     } else if g == " " || g == "\t" || g == "\n" || g == "\r" {
@@ -627,7 +627,7 @@ fn expand_short(
     }
   }
   for i = 0; i < shorts_g.length(); i = i + 1 {
-    let short_nodes = make_short_nodes("-" + shorts_g[i].to_string())
+    let short_nodes = make_short_nodes("-" + shorts_g[i].to_owned())
     check_and_register_names(short_nodes)
     for node in short_nodes {
       result.push(node)

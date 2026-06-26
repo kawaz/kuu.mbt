@@ -1446,10 +1446,8 @@ fn extract_values(
 /// Uses wasm-gc + js-builtin-string for direct String interop.
 pub fn kuu_parse(input : String) -> String {
   // Parse input JSON
-  let parse_json_result : Result[Json, _] = try? @json.parse(input.view())
-  let json : Json = match parse_json_result {
-    Ok(j) => j
-    Err(_) => return make_error_json("invalid input JSON", "")
+  let json : Json = @json.parse(input.view()) catch {
+    _ => return make_error_json("invalid input JSON", "")
   }
   let obj = match json {
     Object(o) => o
@@ -1531,34 +1529,30 @@ pub fn kuu_parse(input : String) -> String {
     _ => {}
   }
   // Parse
-  let result : Result[@core.ParseResult, @core.ParseError] = try? parser.parse(
-    args,
-    env=env_map,
-  )
-  match result {
-    Ok(parse_result) => {
-      let output = extract_values(schema, parse_result)
-      // Append deprecated_warnings if any
-      match output {
-        Object(result_obj) => {
-          let warnings = parser.deprecated_warnings()
-          if warnings.length() > 0 {
-            let warn_arr : Array[Json] = []
-            for pair in warnings {
-              let w : Map[String, Json] = {}
-              w["name"] = Json::string(pair.0)
-              w["msg"] = Json::string(pair.1)
-              warn_arr.push(Json::object(w))
-            }
-            result_obj["deprecated_warnings"] = Json::array(warn_arr)
+  try {
+    let parse_result = parser.parse(args, env=env_map)
+    let output = extract_values(schema, parse_result)
+    // Append deprecated_warnings if any
+    match output {
+      Object(result_obj) => {
+        let warnings = parser.deprecated_warnings()
+        if warnings.length() > 0 {
+          let warn_arr : Array[Json] = []
+          for pair in warnings {
+            let w : Map[String, Json] = {}
+            w["name"] = Json::string(pair.0)
+            w["msg"] = Json::string(pair.1)
+            warn_arr.push(Json::object(w))
           }
-          Json::object(result_obj).stringify()
+          result_obj["deprecated_warnings"] = Json::array(warn_arr)
         }
-        other => other.stringify()
+        Json::object(result_obj).stringify()
       }
+      other => other.stringify()
     }
-    Err(@core.HelpRequested(text)) => make_help_json(text)
-    Err(@core.ParseError(info)) =>
+  } catch {
+    @core.HelpRequested(text) => make_help_json(text)
+    @core.ParseError(info) =>
       make_error_json(
         info.message,
         info.error_context,
@@ -1617,10 +1611,8 @@ pub fn kuu_completions(
   command_name : String,
 ) -> String {
   // Parse schema JSON
-  let parse_json_result : Result[Json, _] = try? @json.parse(schema_json.view())
-  let json : Json = match parse_json_result {
-    Ok(j) => j
-    Err(_) => return "# Error: invalid schema JSON\n"
+  let json : Json = @json.parse(schema_json.view()) catch {
+    _ => return "# Error: invalid schema JSON\n"
   }
   let obj = match json {
     Object(o) => o

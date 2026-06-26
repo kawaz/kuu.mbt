@@ -7,9 +7,8 @@ test "parse error includes error_context" {
     description="Enable verbose output",
   )
   let _ = p.int(name="port", default=8080, description="Set port number")
-  let result : Result[_, _] = try? p.parse(["--unknown"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--unknown"]) |> ignore catch {
+    ParseError(info) => {
       inspect(
         info.message,
         content=(
@@ -25,6 +24,8 @@ test "parse error includes error_context" {
         content="true",
       )
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => abort("expected ParseError")
   }
 }
@@ -66,9 +67,8 @@ test "subcommand error has child error_context" {
     },
     description="Start server",
   )
-  let result : Result[_, _] = try? p.parse(["serve", "--unknown"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["serve", "--unknown"]) |> ignore catch {
+    ParseError(info) => {
       inspect(
         info.message,
         content=(
@@ -84,6 +84,8 @@ test "subcommand error has child error_context" {
       // 親パーサのオプション (--verbose) は含まれない（子のコンテキストが優先）
       inspect(info.error_context.contains("--verbose"), content="false")
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => abort("expected ParseError")
   }
 }
@@ -96,12 +98,13 @@ test "subcommand error has child error_context" {
 test "ErrorKind: UnknownOption for unknown --option" {
   let p = Parser::new()
   let _ = p.flag(name="verbose")
-  let result : Result[_, _] = try? p.parse(["--unknown"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--unknown"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="UnknownOption")
       inspect(info.opt_name, content="--unknown")
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -110,12 +113,13 @@ test "ErrorKind: UnknownOption for unknown --option" {
 test "ErrorKind: UnexpectedArgument for extra positional" {
   let p = Parser::new()
   let _ = p.flag(name="verbose")
-  let result : Result[_, _] = try? p.parse(["extra"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["extra"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="UnexpectedArgument")
       inspect(info.opt_name, content="extra")
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -124,12 +128,13 @@ test "ErrorKind: UnexpectedArgument for extra positional" {
 test "ErrorKind: MissingValue for option without value" {
   let p = Parser::new()
   let _ = p.string(name="output", default="")
-  let result : Result[_, _] = try? p.parse(["--output"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--output"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="MissingValue")
       inspect(info.opt_name, content="--output")
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -138,9 +143,10 @@ test "ErrorKind: MissingValue for option without value" {
 test "ErrorKind: InvalidValue for bad integer" {
   let p = Parser::new()
   let _ = p.int(name="count", default=0)
-  let result : Result[_, _] = try? p.parse(["--count", "abc"])
-  match result {
-    Err(ParseError(info)) => inspect(info.kind, content="InvalidValue")
+  try p.parse(["--count", "abc"]) |> ignore catch {
+    ParseError(info) => inspect(info.kind, content="InvalidValue")
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -150,12 +156,13 @@ test "ErrorKind: MissingRequired for required option" {
   let p = Parser::new()
   let opt = p.string(name="output", default="")
   p.required(opt.as_ref())
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse([]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="MissingRequired")
       inspect(info.opt_name, content="--output")
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -166,9 +173,10 @@ test "ErrorKind: ArgumentConflict for exclusive options" {
   let a = p.flag(name="json")
   let b = p.flag(name="yaml")
   p.exclusive([a.as_ref(), b.as_ref()])
-  let result : Result[_, _] = try? p.parse(["--json", "--yaml"])
-  match result {
-    Err(ParseError(info)) => inspect(info.kind, content="ArgumentConflict")
+  try p.parse(["--json", "--yaml"]) |> ignore catch {
+    ParseError(info) => inspect(info.kind, content="ArgumentConflict")
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -178,9 +186,10 @@ test "ErrorKind: DuplicateDefinition for duplicate option name" {
   let p = Parser::new()
   let _ = p.flag(name="verbose")
   let _ = p.flag(name="verbose")
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => inspect(info.kind, content="DuplicateDefinition")
+  try p.parse([]) |> ignore catch {
+    ParseError(info) => inspect(info.kind, content="DuplicateDefinition")
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -190,9 +199,10 @@ test "ErrorKind: MissingSubcommand for require_cmd" {
   let p = Parser::new()
   let _ = p.sub(name="init")
   p.require_cmd()
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => inspect(info.kind, content="MissingSubcommand")
+  try p.parse([]) |> ignore catch {
+    ParseError(info) => inspect(info.kind, content="MissingSubcommand")
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -203,9 +213,10 @@ test "ErrorKind: AtLeastOneRequired for at_least_one" {
   let a = p.flag(name="json")
   let b = p.flag(name="yaml")
   p.at_least_one([a.as_ref(), b.as_ref()])
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => inspect(info.kind, content="AtLeastOneRequired")
+  try p.parse([]) |> ignore catch {
+    ParseError(info) => inspect(info.kind, content="AtLeastOneRequired")
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -216,12 +227,13 @@ test "ErrorKind: DependencyMissing for requires" {
   let target = p.string(name="output", default="")
   let source = p.flag(name="verbose")
   p.requires(target.as_ref(), source=source.as_ref())
-  let result : Result[_, _] = try? p.parse(["--verbose"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--verbose"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="DependencyMissing")
       inspect(info.opt_name, content="--output")
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -230,9 +242,10 @@ test "ErrorKind: DependencyMissing for requires" {
 test "ErrorKind: ParseAlreadyCalled for double parse" {
   let p = Parser::new()
   ignore(p.parse([]))
-  let result : Result[_, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => inspect(info.kind, content="ParseAlreadyCalled")
+  try p.parse([]) |> ignore catch {
+    ParseError(info) => inspect(info.kind, content="ParseAlreadyCalled")
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -257,9 +270,8 @@ test "structured error: UnknownOption with suggestion" {
     default=8080,
     description="ポート番号を指定",
   )
-  let result : Result[ParseResult, _] = try? p.parse(["--prot"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--prot"]) |> ignore catch {
+    ParseError(info) => {
       // message にはサジェストを含まない
       inspect(info.message, content="unexpected argument: --prot")
       // tip にサジェスト情報
@@ -279,6 +291,8 @@ test "structured error: UnknownOption with suggestion" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -286,9 +300,8 @@ test "structured error: UnknownOption with suggestion" {
 test "structured error: UnknownOption without suggestion" {
   let p = Parser::new()
   let _ = p.flag(name="verbose")
-  let result : Result[ParseResult, _] = try? p.parse(["--xyz"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--xyz"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.message, content="unexpected argument: --xyz")
       inspect(info.tip, content="")
       // to_string 出力を全文 snapshot 検証（tip 行なし）
@@ -304,6 +317,8 @@ test "structured error: UnknownOption without suggestion" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -312,9 +327,8 @@ test "structured error: MissingRequired" {
   let p = Parser::new()
   let opt = p.string(name="config", default="", description="Config file path")
   p.required(opt.as_ref())
-  let result : Result[ParseResult, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse([]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="MissingRequired")
       // to_string 出力を全文 snapshot 検証
       inspect(
@@ -330,6 +344,8 @@ test "structured error: MissingRequired" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -337,9 +353,8 @@ test "structured error: MissingRequired" {
 test "structured error: InvalidValue" {
   let p = Parser::new()
   let _ = p.int(name="port", default=8080, description="Set port")
-  let result : Result[ParseResult, _] = try? p.parse(["--port", "abc"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--port", "abc"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="InvalidValue")
       // to_string 出力を全文 snapshot 検証
       inspect(
@@ -354,6 +369,8 @@ test "structured error: InvalidValue" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -361,9 +378,8 @@ test "structured error: InvalidValue" {
 test "structured error: MissingValue" {
   let p = Parser::new()
   let _ = p.string(name="output", default="", description="Output file")
-  let result : Result[ParseResult, _] = try? p.parse(["--output"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--output"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="MissingValue")
       inspect(info.opt_name, content="--output")
       // to_string 出力を全文 snapshot 検証
@@ -380,6 +396,8 @@ test "structured error: MissingValue" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -389,9 +407,8 @@ test "structured error: ArgumentConflict" {
   let a = p.flag(name="json", description="JSON output")
   let b = p.flag(name="yaml", description="YAML output")
   p.exclusive([a.as_ref(), b.as_ref()])
-  let result : Result[ParseResult, _] = try? p.parse(["--json", "--yaml"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--json", "--yaml"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="ArgumentConflict")
       // to_string 出力を全文 snapshot 検証
       inspect(
@@ -406,6 +423,8 @@ test "structured error: ArgumentConflict" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -419,9 +438,8 @@ test "structured error: help line for short option" {
     description="Output path",
     pre=Filter::map(fn(s) { s }),
   )
-  let result : Result[ParseResult, _] = try? p.parse(["--otuput"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--otuput"]) |> ignore catch {
+    ParseError(info) => {
       // tip にサジェスト先のオプション名
       inspect(info.tip, content="--output")
       // to_string 出力を全文 snapshot 検証
@@ -439,6 +457,8 @@ test "structured error: help line for short option" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -447,9 +467,8 @@ test "structured error: UnexpectedArgument (non-option)" {
   let p = Parser::new()
   let _ = p.flag(name="verbose")
   p.never()
-  let result : Result[ParseResult, _] = try? p.parse(["hello"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["hello"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="UnexpectedArgument")
       inspect(info.message, content="unexpected argument: hello")
       inspect(info.tip, content="")
@@ -465,6 +484,8 @@ test "structured error: UnexpectedArgument (non-option)" {
         ),
       )
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -534,9 +555,8 @@ test "C-1: MissingSubcommand 4-layer display with Commands section" {
   let _ = p.sub(name="init", description="Initialize project")
   let _ = p.sub(name="build", description="Build project")
   p.require_cmd()
-  let result : Result[ParseResult, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse([]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="MissingSubcommand")
       // to_string 出力を全文 snapshot 検証
       inspect(
@@ -555,6 +575,8 @@ test "C-1: MissingSubcommand 4-layer display with Commands section" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -564,9 +586,8 @@ test "C-1: AtLeastOneRequired 4-layer display" {
   let a = p.flag(name="json", description="JSON output")
   let b = p.flag(name="yaml", description="YAML output")
   p.at_least_one([a.as_ref(), b.as_ref()])
-  let result : Result[ParseResult, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse([]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="AtLeastOneRequired")
       // to_string 出力を全文 snapshot 検証
       inspect(
@@ -581,6 +602,8 @@ test "C-1: AtLeastOneRequired 4-layer display" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -590,9 +613,8 @@ test "C-1: DependencyMissing 4-layer display" {
   let target = p.string(name="output", default="", description="Output path")
   let source = p.flag(name="verbose")
   p.requires(target.as_ref(), source=source.as_ref())
-  let result : Result[ParseResult, _] = try? p.parse(["--verbose"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--verbose"]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="DependencyMissing")
       inspect(info.opt_name, content="--output")
       // to_string 出力を全文 snapshot 検証
@@ -609,6 +631,8 @@ test "C-1: DependencyMissing 4-layer display" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -617,9 +641,8 @@ test "C-1: MissingRequired help line display" {
   let p = Parser::new()
   let opt = p.string(name="config", default="", description="Config file path")
   p.required(opt.as_ref())
-  let result : Result[ParseResult, _] = try? p.parse([])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse([]) |> ignore catch {
+    ParseError(info) => {
       inspect(info.kind, content="MissingRequired")
       inspect(info.opt_name, content="--config")
       // to_string 出力を全文 snapshot 検証
@@ -636,6 +659,8 @@ test "C-1: MissingRequired help line display" {
       )
     }
     _ => fail("expected ParseError")
+  } noraise {
+    _ => fail("expected ParseError")
   }
 }
 
@@ -643,9 +668,8 @@ test "C-1: MissingRequired help line display" {
 test "C-3: hidden option not shown in error help line" {
   let p = Parser::new()
   let _ = p.string(name="secret", default="", visibility=Hidden)
-  let result : Result[ParseResult, _] = try? p.parse(["--secrt"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--secrt"]) |> ignore catch {
+    ParseError(info) => {
       // typo suggestion で --secret が tip に入る
       inspect(info.tip, content="--secret")
       // to_string 出力を全文 snapshot 検証（hidden なので help 行なし、tip 行あり）
@@ -661,6 +685,8 @@ test "C-3: hidden option not shown in error help line" {
         ),
       )
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }
@@ -685,9 +711,8 @@ test "C-4: find_meta_by_opt_name finds variation_names" {
 test "to_string layer order: error → help → tip → Usage → footer" {
   let p = Parser::new()
   let _ = p.int(name="port", default=8080, description="Server port")
-  let result : Result[ParseResult, _] = try? p.parse(["--prot"])
-  match result {
-    Err(ParseError(info)) => {
+  try p.parse(["--prot"]) |> ignore catch {
+    ParseError(info) => {
       let display = info.to_string()
       // 各セクションの出現位置を確認（indexOf ベースで順序検証）
       let error_pos = display.find("error:")
@@ -707,6 +732,8 @@ test "to_string layer order: error → help → tip → Usage → footer" {
       assert_true(tip_pos.unwrap() < usage_pos.unwrap())
       assert_true(usage_pos.unwrap() < footer_pos.unwrap())
     }
+    _ => fail("expected ParseError")
+  } noraise {
     _ => fail("expected ParseError")
   }
 }

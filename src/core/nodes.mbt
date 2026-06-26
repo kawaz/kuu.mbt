@@ -278,15 +278,14 @@ fn[T] make_reduced_value_node(
     name,
     fn(s) {
       let ctx : ReduceCtx[T] = { current: cell.val, action: Value(Some(s)) }
-      let r : Result[T?, ParseError] = try? reducer(ctx)
-      match r {
-        Ok(Some(v)) => {
+      try reducer(ctx) catch {
+        e => Err(e)
+      } noraise {
+        Some(v) => {
           pending.val = v
           Ok(fn() { cell.val = pending.val })
         }
-        Ok(None) =>
-          Err(parse_error("unexpected: reducer returned None for Value"))
-        Err(e) => Err(e)
+        None => Err(parse_error("unexpected: reducer returned None for Value"))
       }
     },
     reset,
@@ -316,10 +315,10 @@ fn[T] make_soft_custom_value_node(
       if s.has_prefix("--") {
         return Reject
       }
-      let r : Result[T, ParseError] = try? (pre.run)(s)
-      match r {
-        Ok(v) => Accept(consumed=2, commit=fn() { cell.val = v })
-        Err(_) => Reject
+      try (pre.run)(s) catch {
+        _ => Reject
+      } noraise {
+        v => Accept(consumed=2, commit=fn() { cell.val = v })
       }
     },
     reset: fn() { cell.val = initial_val },
@@ -345,10 +344,10 @@ fn[T] make_custom_choice_value_node(
       if pos + 1 >= args.length() || args[pos + 1] != choice {
         return Reject
       }
-      let r : Result[T, ParseError] = try? (pre.run)(choice)
-      match r {
-        Ok(v) => Accept(consumed=2, commit=fn() { cell.val = v })
-        Err(e) => Error(e)
+      try (pre.run)(choice) catch {
+        e => Error(e)
+      } noraise {
+        v => Accept(consumed=2, commit=fn() { cell.val = v })
       }
     },
     reset: fn() { cell.val = initial_val },
