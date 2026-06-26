@@ -2,7 +2,7 @@
 
 ## 背景
 
-DR-047 (embed+extract+exec パターン) と DR-057 (言語非依存の独立コマンド) に基づく実装。
+DR-0047 (embed+extract+exec パターン) と DR-0057 (言語非依存の独立コマンド) に基づく実装。
 
 ## やること
 
@@ -103,8 +103,8 @@ kuu help                              # ヘルプ表示
 - `src/wasm/moon.pkg` — パッケージ設定の参考
 - `src/wasm/test.mjs` — テストケース 98件（期待動作の参考）
 - `src/core/` — kuu core パースエンジン
-- `docs/decisions/DR-047-*.md` — embed+extract+exec パターン設計
-- `docs/decisions/DR-057-*.md` — 言語非依存コマンド構想
+- `docs/decisions/DR-0047-*.md` — embed+extract+exec パターン設計
+- `docs/decisions/DR-0057-*.md` — 言語非依存コマンド構想
 
 ### テスト
 

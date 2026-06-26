@@ -1011,7 +1011,7 @@ pub fn[T] Parser::append(
   pre~ : FilterChain[String, T],
 ) -> Opt[Array[T]] {
   let env = self.effective_env_name(env, name, visibility)
-  // DR-061 Phase 2: make_parallel_cell で ValCell + accessor + push/reset を一括生成
+  // DR-0061 Phase 2: make_parallel_cell で ValCell + accessor + push/reset を一括生成
   let (vc, acc, push_fn, reset_fn) = make_parallel_cell()
   let display_value_name = if value_name == "" {
     name.to_upper()

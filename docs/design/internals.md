@@ -8,7 +8,7 @@
 
 ```
 引数入力
-  → [parsed ガード] — 同一 Parser での2回呼び出しを禁止（DR-026）
+  → [parsed ガード] — 同一 Parser での2回呼び出しを禁止（DR-0026）
   → [validate_no_duplicate_names] — 重複名を検出して ParseError
   → [install_eq_split_node] — --name=value 対応
   → [install_short_combine_node] — -abc 対応
@@ -22,7 +22,7 @@ post_hooks は `Parser.post_hooks: Array[() -> Unit raise ParseError]` として
 
 ---
 
-## register_option — 共通登録パイプライン（DR-025）
+## register_option — 共通登録パイプライン（DR-0025）
 
 全コンビネータが使う統一的な登録パイプライン:
 
@@ -233,7 +233,7 @@ pub(all) struct OptMeta {
 
 ---
 
-## DX 層の実装構造（DR-042）
+## DX 層の実装構造（DR-0042）
 
 ### Parseable trait
 

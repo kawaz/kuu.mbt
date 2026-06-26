@@ -27,7 +27,7 @@ pub fn FieldRegistry::flag(
 
 ///|
 /// Bool フラグを登録し、OptRef を返す（制約登録用）。
-/// env はヘルプ表示用メタデータのみ。環境変数からの値読み取りは行わない（DR-041 Phase 1）。
+/// env はヘルプ表示用メタデータのみ。環境変数からの値読み取りは行わない（DR-0041 Phase 1）。
 pub fn FieldRegistry::flag_ref(
   self : FieldRegistry,
   name~ : String,

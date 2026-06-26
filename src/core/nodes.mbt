@@ -2,7 +2,7 @@
 /// Core primitive: creates a node that matches an exact literal string.
 /// Consumes 1 argument with no value. The on_match factory returns a commit
 /// callback that is invoked when the match is accepted.
-/// DR-061: exact(str) matches a literal, consuming 1 argument.
+/// DR-0061: exact(str) matches a literal, consuming 1 argument.
 fn make_exact_node(
   name : String,
   on_match~ : () -> () -> Unit,
@@ -179,7 +179,7 @@ fn make_or_node(
 /// If any child Rejects, the entire serial node Rejects.
 /// If any child returns Error, the serial node returns that Error immediately.
 /// Commits are collected and executed together only when all children Accept.
-/// DR-061: serial([...]) = scope creation, process children in order.
+/// DR-0061: serial([...]) = scope creation, process children in order.
 fn make_serial_node(name : String, children : Array[ExactNode]) -> ExactNode {
   ExactNode::{
     name,
@@ -213,7 +213,7 @@ fn make_serial_node(name : String, children : Array[ExactNode]) -> ExactNode {
 
 ///|
 /// Core primitive: creates a rest node that consumes remaining arguments.
-/// DR-061: rest within serial scope, consumes args from current pos.
+/// DR-0061: rest within serial scope, consumes args from current pos.
 fn make_rest_node(
   on_commit~ : (Array[String]) -> Unit,
   reset~ : () -> Unit,

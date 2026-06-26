@@ -305,10 +305,10 @@ wasm-tools component new core.wasm -o component.wasm
 | `--target wasm-gc` で Component 化 | 仕様策定待ち | 最小バイナリ、ホストGC | Pre-Proposal 段階 |
 | 現状維持（JSON bridge） | 動作中 | シンプル、js-builtin-string 対応 | 型安全でない、言語非依存でない |
 
-### DR-029/DR-030 との関連
+### DR-0029/DR-0030 との関連
 
-- **DR-029（言語境界 serialize 設計）**: Component Model は JSON シリアライズを WIT 型定義で置き換える方向と合致
-- **DR-030（opt AST ポータビリティ）**: WIT で opt 定義を表現し、Component として export すれば、JSON export 不要で言語間ポータビリティが実現
+- **DR-0029（言語境界 serialize 設計）**: Component Model は JSON シリアライズを WIT 型定義で置き換える方向と合致
+- **DR-0030（opt AST ポータビリティ）**: WIT で opt 定義を表現し、Component として export すれば、JSON export 不要で言語間ポータビリティが実現
 - ただし wasm-gc + Component Model の統合完了を待つのが理想的
 
 ---

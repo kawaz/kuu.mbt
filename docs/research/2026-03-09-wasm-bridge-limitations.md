@@ -2,7 +2,7 @@
 type: research
 ---
 
-# DR-033: WASM bridge 制限事項と多言語ブリッジ戦略
+# DR-0033: WASM bridge 制限事項と多言語ブリッジ戦略
 
 ## 背景
 
@@ -58,7 +58,7 @@ kuu の WASM は **WASM-GC + js-string-builtins** でビルドされる。
 | 機能 | 概要 | 理由 |
 |---|---|---|
 | **post フィルタ** | trim, non_empty, in_range 等 | クロージャは JSON 表現不可。ホスト言語の型システムで補完 |
-| **custom[T]** | カスタムパーサ | 同上。DR-030 の設計方針に従う |
+| **custom[T]** | カスタムパーサ | 同上。DR-0030 の設計方針に従う |
 
 ## 多言語ブリッジ方式
 
@@ -82,10 +82,10 @@ TypeScript 以外は全て「V8 系ランタイムをサブプロセスで呼ぶ
 
 - variations と command aliases は JSON schema で表現可能 → bridge 側で対応すべき
 - exclusive, required 等の制約は「プリセット制約名」として schema に追加可能だが、ホスト言語側実装の方が柔軟
-- custom[T], post はクロージャであり JSON 表現不可 → ホスト言語側が正解（DR-030）
+- custom[T], post はクロージャであり JSON 表現不可 → ホスト言語側が正解（DR-0030）
 
 ## 関連 DR
 
-- DR-027: core 純粋関数主義 + 多言語 DX レイヤー構想
-- DR-030: opt AST の言語間ポータビリティ
-- DR-032: Go からの kuu WASM 利用（Node.js ブリッジ方式）
+- DR-0027: core 純粋関数主義 + 多言語 DX レイヤー構想
+- DR-0030: opt AST の言語間ポータビリティ
+- DR-0032: Go からの kuu WASM 利用（Node.js ブリッジ方式）

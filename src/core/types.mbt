@@ -297,7 +297,7 @@ pub(all) struct FilterChain[A, B] {
 pub type Accumulator[T, U] = (T, U) -> T
 
 ///|
-/// reducer に渡すコンテキスト。将来メソッド追加してもシグネチャ不変（DR-008）
+/// reducer に渡すコンテキスト。将来メソッド追加してもシグネチャ不変（DR-0008）
 pub(all) struct ReduceCtx[T] {
   current : T
   action : ReduceAction
@@ -379,7 +379,7 @@ fn[T] ValCell::clone(self : ValCell[T]) -> ValCell[T] {
 ///|
 /// Core primitive: creates a value cell with its accessor from an immediate value.
 /// This is the foundational building block for all option combinators.
-/// DR-061: value() is the only true value primitive.
+/// DR-0061: value() is the only true value primitive.
 fn[T] make_value_cell(initial~ : T) -> (ValCell[T], Accessor[T]) {
   let vc = ValCell::new(Val(initial))
   (vc, vc.accessor())
@@ -388,7 +388,7 @@ fn[T] make_value_cell(initial~ : T) -> (ValCell[T], Accessor[T]) {
 ///|
 /// Core primitive: creates a value cell with its accessor from a lazy value.
 /// Used for mutable defaults (e.g. Array) where each reset needs a fresh instance.
-/// DR-061: lazy variant of make_value_cell.
+/// DR-0061: lazy variant of make_value_cell.
 fn[T] make_value_cell_lazy(initial~ : Lazy[T]) -> (ValCell[T], Accessor[T]) {
   let vc = ValCell::new(initial)
   (vc, vc.accessor())
@@ -396,7 +396,7 @@ fn[T] make_value_cell_lazy(initial~ : Lazy[T]) -> (ValCell[T], Accessor[T]) {
 
 ///|
 /// Core primitive: creates a parallel accumulation cell.
-/// DR-061 Phase 2: parallel(Opt[T]) -> Opt[Array[T]] の共通基盤。
+/// DR-0061 Phase 2: parallel(Opt[T]) -> Opt[Array[T]] の共通基盤。
 /// append と rest が共有する「配列に要素を蓄積する」パターンを抽出。
 ///
 /// Returns (valcell, accessor, push_fn, reset_fn) where:

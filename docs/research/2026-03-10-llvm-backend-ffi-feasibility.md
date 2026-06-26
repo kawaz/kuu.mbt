@@ -2,11 +2,11 @@
 type: research
 ---
 
-# DR-046: MoonBit LLVM backend によるネイティブ FFI ライブラリの実現可能性調査
+# DR-0046: MoonBit LLVM backend によるネイティブ FFI ライブラリの実現可能性調査
 
 ## 問題
 
-kuu の多言語ブリッジは WASM-GC + js-string-builtins に依存しており、V8 系ランタイム（Node.js サブプロセス）が必須（DR-032, DR-033）。MoonBit の LLVM backend を使えば `.so` / `.a` を生成し、各言語から直接 FFI で呼び出せるのではないか。
+kuu の多言語ブリッジは WASM-GC + js-string-builtins に依存しており、V8 系ランタイム（Node.js サブプロセス）が必須（DR-0032, DR-0033）。MoonBit の LLVM backend を使えば `.so` / `.a` を生成し、各言語から直接 FFI で呼び出せるのではないか。
 
 ## 発見経緯
 
@@ -72,10 +72,10 @@ MoonBit は 2026 中盤に v1.0 を予定しており、以下が実現すれば
 
 | 方式 | 説明 | 評価 |
 |---|---|---|
-| **Node.js サブプロセス** (現行) | DR-032 の方式。WASM-GC を Node.js で実行 | 動作実績あり。サブプロセスのオーバーヘッドが課題 |
+| **Node.js サブプロセス** (現行) | DR-0032 の方式。WASM-GC を Node.js で実行 | 動作実績あり。サブプロセスのオーバーヘッドが課題 |
 | **C backend の中間 C ソースを手動コンパイル** | `moon build --target native` で生成される C を `gcc -shared` で `.so` 化 | 非公式。GC 初期化の問題あり。壊れやすい |
 | **WASM Component Model** | WASI + Component Model で言語非依存インターフェース | MoonBit 側の対応が限定的。wasmtime の wasm-gc 対応待ち |
-| **コード生成（MoonBit → 各言語のパーサコード）** | kuu の定義から各言語ネイティブのパーサコードを生成 | DR-027 で検討済み。kuu の価値が「ワンソース」にあるなら本末転倒 |
+| **コード生成（MoonBit → 各言語のパーサコード）** | kuu の定義から各言語ネイティブのパーサコードを生成 | DR-0027 で検討済み。kuu の価値が「ワンソース」にあるなら本末転倒 |
 
 ## 参考リンク
 

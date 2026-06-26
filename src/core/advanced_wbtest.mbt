@@ -1356,7 +1356,7 @@ test "alias: count alias shares counter" {
 
 ///|
 test "alias: alias does not expand variations" {
-  // alias は variation を展開しない（DR-037: variation = alias + adjust の合成）
+  // alias は variation を展開しない（DR-0037: variation = alias + adjust の合成）
   let p = Parser::new()
   let verbose = p.flag(name="verbose", variations=[False("no")])
   ignore(p.make_alias("--verb", verbose))
@@ -1929,7 +1929,7 @@ test "deprecated empty name rejected" {
   }
 }
 
-// === DR-041: env パラメータ（ヘルプ表示）テスト ===
+// === DR-0041: env パラメータ（ヘルプ表示）テスト ===
 
 ///|
 test "env name shown in help for string" {
@@ -2051,7 +2051,7 @@ test "env hidden option does not leak env_name in help" {
   inspect(help.contains("secret-key"), content="false")
 }
 
-// === DR-041 Phase 2: env 値取得テスト ===
+// === DR-0041 Phase 2: env 値取得テスト ===
 
 ///|
 test "env: string gets value from env when not specified on CLI" {
@@ -2644,7 +2644,7 @@ test "practical: clone + adjust for derived option" {
   inspect(port.get(), content="Some(80)")
 }
 
-// ===== ValCell / Accessor tests (DR-045) =====
+// ===== ValCell / Accessor tests (DR-0045) =====
 
 ///|
 test "ValCell: new creates cell with default value and committed=false" {
@@ -3151,7 +3151,7 @@ test "shorts grapheme cluster: multiple grapheme shorts" {
   inspect(p.get(opt), content="Some(1)")
 }
 
-// === mergeable_list (DR-023) ===
+// === mergeable_list (DR-0023) ===
 
 ///|
 test "mergeable_list: overwrite — plain list replaces base" {
@@ -3981,7 +3981,7 @@ test "adjust: before_pre skipped on implicit_value path" {
   )
 }
 
-// === make_serial_node テスト (DR-061 Phase 1) ===
+// === make_serial_node テスト (DR-0061 Phase 1) ===
 
 ///|
 test "serial_node: all children Accept => serial Accepts with total consumed" {

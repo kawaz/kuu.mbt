@@ -534,7 +534,7 @@ impl Parseable for EnvConfig with register(self, reg) {
 
 ///|
 test "env: env parameter does not affect parsing" {
-  // env はヘルプ表示用メタデータのみ（Phase 1 DR-041）。パース動作には影響しない。
+  // env はヘルプ表示用メタデータのみ（Phase 1 DR-0041）。パース動作には影響しない。
   let config = EnvConfig::default()
   parse_into(["--host", "example.com"], config)
   assert_eq(config.host, "example.com")

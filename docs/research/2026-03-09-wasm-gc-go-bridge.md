@@ -2,7 +2,7 @@
 type: research
 ---
 
-# DR-032: Go からの kuu WASM 利用 — Node.js ブリッジ方式
+# DR-0032: Go からの kuu WASM 利用 — Node.js ブリッジ方式
 
 ## 問題
 

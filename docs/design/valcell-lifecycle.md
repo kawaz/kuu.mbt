@@ -244,7 +244,7 @@ let ref = opt_verbose.as_ref()  // OptRef { name, is_set }
 | `set_commit()` | なし | `true` | Phase 3 | alias の commit（target の committed を連鎖更新） |
 | `reset()` | `cell = default` | `false` | Phase 3 | ExactNode.reset（OC 競合敗者のリセット） |
 
-> **注:** `is_set` は Accessor ではなく `Opt.used` で管理される（DR-048）。
+> **注:** `is_set` は Accessor ではなく `Opt.used` で管理される（DR-0048）。
 
 ### set と set_value の使い分け
 

@@ -347,7 +347,7 @@ pub fn[T] Parser::deprecated(
 ///   - implicit_value パス、eq_split（--opt=val）パス、env パスには適用されない（既知制限）。
 /// - after_pre: pre 変換後の値変換（post_hooks フェーズで実行）
 /// - before_post: post バリデーション前の値変換（post_hooks フェーズ、after_pre の後に実行）
-///   - 現アーキテクチャでは after_pre と同一フェーズで実行される（DR-061 ペンディング）
+///   - 現アーキテクチャでは after_pre と同一フェーズで実行される（DR-0061 ペンディング）
 /// - after_post: post バリデーション後の値変換（post_hooks フェーズ、最後に実行）
 pub fn[T] Parser::adjust(
   self : Parser,
@@ -447,7 +447,7 @@ pub fn[T] Parser::link(
 
 ///|
 /// 構造コピーコンビネータ: target と同じパース振る舞いだが独立した値セルを持つ。
-/// DR-037 の「clone = 新 name、新 Ref、フィルタ参照共有」を実現する。
+/// DR-0037 の「clone = 新 name、新 Ref、フィルタ参照共有」を実現する。
 /// alias との違い: alias は値共有（Accessor 共有）、clone は値独立（独自 cell）。
 ///
 /// 制限: clone の alias（`alias(name2, clone_opt)`）は clone の cell ではなく

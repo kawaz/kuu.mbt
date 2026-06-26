@@ -415,7 +415,7 @@ pub fn Filter::regex_split(
   })
 }
 
-// --- Mergeable list (DR-023) ---
+// --- Mergeable list (DR-0023) ---
 
 ///|
 /// Parse a +/-/... prefixed list string into Array[String] by merging with base.

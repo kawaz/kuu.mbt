@@ -327,7 +327,7 @@ fmt + info diff + check --deny-warn + test
 | 環境変数 | 対応（`env_var`） | 未対応 |
 | Nargs | `Nargs` enum（Any/One/Fixed/AtLeast/AtMost/Range） | 未対応 |
 | `--` セパレータ | 未対応 | 対応 |
-| alias | 未対応 | 対応（DR-037） |
+| alias | 未対応 | 対応（DR-0037） |
 | exclusive/required | 未対応 | 対応 |
 | WASM bridge | なし | 対応（多言語展開構想あり） |
 | `source` | `"src"`（ソースディレクトリ指定） | 要設定 |
