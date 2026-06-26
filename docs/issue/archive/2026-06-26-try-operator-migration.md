@@ -1,6 +1,6 @@
 ---
 title: try? operator migration
-status: open
+status: resolved
 category: task
 created: 2026-06-26T20:46:40+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-06-26T22:44:32+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented"]
 blocked_by:
 origin: 自リポ TODO
 ---
