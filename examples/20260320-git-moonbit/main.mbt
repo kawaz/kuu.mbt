@@ -1256,7 +1256,10 @@ test "commit: basic" {
   inspect(
     result,
     content=(
-      #|Ok("  command: commit\n  message: \"initial commit\"\n")
+      #|Ok(  command: commit
+      #|  message: "initial commit"
+      #|)
+
     ),
   )
 }
@@ -1267,7 +1270,11 @@ test "commit: amend with no-edit" {
   inspect(
     result,
     content=(
-      #|Ok("  command: commit\n  amend: true\n  no-edit: true\n")
+      #|Ok(  command: commit
+      #|  amend: true
+      #|  no-edit: true
+      #|)
+
     ),
   )
 }
@@ -1278,7 +1285,11 @@ test "commit: no-verify" {
   inspect(
     result,
     content=(
-      #|Ok("  command: commit\n  message: \"fix\"\n  no-verify: true\n")
+      #|Ok(  command: commit
+      #|  message: "fix"
+      #|  no-verify: true
+      #|)
+
     ),
   )
 }
@@ -1292,7 +1303,14 @@ test "commit: all options" {
   inspect(
     result,
     content=(
-      #|Ok("  command: commit\n  message: \"msg\"\n  all: true\n  author: \"Test <test@example.com>\"\n  signoff: true\n  date: \"2024-01-01\"\n")
+      #|Ok(  command: commit
+      #|  message: "msg"
+      #|  all: true
+      #|  author: "Test <test@example.com>"
+      #|  signoff: true
+      #|  date: "2024-01-01"
+      #|)
+
     ),
   )
 }
@@ -1303,7 +1321,11 @@ test "push: basic" {
   inspect(
     result,
     content=(
-      #|Ok("  command: push\n  remote: origin\n  branch: main\n")
+      #|Ok(  command: push
+      #|  remote: origin
+      #|  branch: main
+      #|)
+
     ),
   )
 }
@@ -1314,7 +1336,12 @@ test "push: force" {
   inspect(
     result,
     content=(
-      #|Ok("  command: push\n  remote: origin\n  branch: main\n  force: true\n")
+      #|Ok(  command: push
+      #|  remote: origin
+      #|  branch: main
+      #|  force: true
+      #|)
+
     ),
   )
 }
@@ -1325,7 +1352,12 @@ test "push: force-with-lease" {
   inspect(
     result,
     content=(
-      #|Ok("  command: push\n  remote: origin\n  branch: main\n  force-with-lease: true\n")
+      #|Ok(  command: push
+      #|  remote: origin
+      #|  branch: main
+      #|  force-with-lease: true
+      #|)
+
     ),
   )
 }
@@ -1349,7 +1381,12 @@ test "push: set-upstream" {
   inspect(
     result,
     content=(
-      #|Ok("  command: push\n  remote: origin\n  branch: feature/test\n  set-upstream: true\n")
+      #|Ok(  command: push
+      #|  remote: origin
+      #|  branch: feature/test
+      #|  set-upstream: true
+      #|)
+
     ),
   )
 }
@@ -1360,7 +1397,11 @@ test "pull: basic" {
   inspect(
     result,
     content=(
-      #|Ok("  command: pull\n  remote: origin\n  branch: main\n")
+      #|Ok(  command: pull
+      #|  remote: origin
+      #|  branch: main
+      #|)
+
     ),
   )
 }
@@ -1371,7 +1412,10 @@ test "pull: rebase" {
   inspect(
     result,
     content=(
-      #|Ok("  command: pull\n  rebase: true\n")
+      #|Ok(  command: pull
+      #|  rebase: true
+      #|)
+
     ),
   )
 }
@@ -1382,7 +1426,10 @@ test "pull: no-rebase" {
   inspect(
     result,
     content=(
-      #|Ok("  command: pull\n  rebase: false\n")
+      #|Ok(  command: pull
+      #|  rebase: false
+      #|)
+
     ),
   )
 }
@@ -1404,7 +1451,10 @@ test "checkout: branch" {
   inspect(
     result,
     content=(
-      #|Ok("  command: checkout\n  branch: main\n")
+      #|Ok(  command: checkout
+      #|  branch: main
+      #|)
+
     ),
   )
 }
@@ -1415,7 +1465,10 @@ test "checkout: new branch" {
   inspect(
     result,
     content=(
-      #|Ok("  command: checkout\n  new-branch: feature/new\n")
+      #|Ok(  command: checkout
+      #|  new-branch: feature/new
+      #|)
+
     ),
   )
 }
@@ -1428,7 +1481,11 @@ test "checkout: dashdash" {
   inspect(
     result,
     content=(
-      #|Ok("  command: checkout\n  branch: main\n  -- [\"file1.txt\", \"file2.txt\"]\n")
+      #|Ok(  command: checkout
+      #|  branch: main
+      #|  -- [file1.txt, file2.txt]
+      #|)
+
     ),
   )
 }
@@ -1439,7 +1496,10 @@ test "checkout: alias co" {
   inspect(
     result,
     content=(
-      #|Ok("  command: checkout\n  branch: main\n")
+      #|Ok(  command: checkout
+      #|  branch: main
+      #|)
+
     ),
   )
 }
@@ -1450,7 +1510,10 @@ test "switch: branch" {
   inspect(
     result,
     content=(
-      #|Ok("  command: switch\n  branch: main\n")
+      #|Ok(  command: switch
+      #|  branch: main
+      #|)
+
     ),
   )
 }
@@ -1461,7 +1524,10 @@ test "switch: create" {
   inspect(
     result,
     content=(
-      #|Ok("  command: switch\n  create: feature/new\n")
+      #|Ok(  command: switch
+      #|  create: feature/new
+      #|)
+
     ),
   )
 }
@@ -1472,7 +1538,11 @@ test "restore: staged" {
   inspect(
     result,
     content=(
-      #|Ok("  command: restore\n  staged: true\n  files: [\"file.txt\"]\n")
+      #|Ok(  command: restore
+      #|  staged: true
+      #|  files: [file.txt]
+      #|)
+
     ),
   )
 }
@@ -1485,7 +1555,11 @@ test "restore: source" {
   inspect(
     result,
     content=(
-      #|Ok("  command: restore\n  source: HEAD~1\n  files: [\"file1.txt\", \"file2.txt\"]\n")
+      #|Ok(  command: restore
+      #|  source: HEAD~1
+      #|  files: [file1.txt, file2.txt]
+      #|)
+
     ),
   )
 }
@@ -1496,7 +1570,10 @@ test "branch: list" {
   inspect(
     result,
     content=(
-      #|Ok("  command: branch\n  list: true\n")
+      #|Ok(  command: branch
+      #|  list: true
+      #|)
+
     ),
   )
 }
@@ -1507,7 +1584,11 @@ test "branch: delete" {
   inspect(
     result,
     content=(
-      #|Ok("  command: branch\n  name: old-branch\n  delete: true\n")
+      #|Ok(  command: branch
+      #|  name: old-branch
+      #|  delete: true
+      #|)
+
     ),
   )
 }
@@ -1518,7 +1599,11 @@ test "branch: force delete" {
   inspect(
     result,
     content=(
-      #|Ok("  command: branch\n  name: old-branch\n  force-delete: true\n")
+      #|Ok(  command: branch
+      #|  name: old-branch
+      #|  force-delete: true
+      #|)
+
     ),
   )
 }
@@ -1529,7 +1614,10 @@ test "branch: all" {
   inspect(
     result,
     content=(
-      #|Ok("  command: branch\n  all: true\n")
+      #|Ok(  command: branch
+      #|  all: true
+      #|)
+
     ),
   )
 }
@@ -1540,7 +1628,10 @@ test "branch: alias br" {
   inspect(
     result,
     content=(
-      #|Ok("  command: branch\n  list: true\n")
+      #|Ok(  command: branch
+      #|  list: true
+      #|)
+
     ),
   )
 }
@@ -1551,7 +1642,12 @@ test "log: basic" {
   inspect(
     result,
     content=(
-      #|Ok("  command: log\n  max-count: 10\n  oneline: true\n  graph: true\n")
+      #|Ok(  command: log
+      #|  max-count: 10
+      #|  oneline: true
+      #|  graph: true
+      #|)
+
     ),
   )
 }
@@ -1562,7 +1658,10 @@ test "log: format" {
   inspect(
     result,
     content=(
-      #|Ok("  command: log\n  format: short\n")
+      #|Ok(  command: log
+      #|  format: short
+      #|)
+
     ),
   )
 }
@@ -1573,7 +1672,10 @@ test "log: author filter" {
   inspect(
     result,
     content=(
-      #|Ok("  command: log\n  author: [\"Alice\", \"Bob\"]\n")
+      #|Ok(  command: log
+      #|  author: [Alice, Bob]
+      #|)
+
     ),
   )
 }
@@ -1586,7 +1688,11 @@ test "log: since until" {
   inspect(
     result,
     content=(
-      #|Ok("  command: log\n  since: 2024-01-01\n  until: 2024-12-31\n")
+      #|Ok(  command: log
+      #|  since: 2024-01-01
+      #|  until: 2024-12-31
+      #|)
+
     ),
   )
 }
@@ -1597,7 +1703,10 @@ test "diff: cached" {
   inspect(
     result,
     content=(
-      #|Ok("  command: diff\n  cached: true\n")
+      #|Ok(  command: diff
+      #|  cached: true
+      #|)
+
     ),
   )
 }
@@ -1608,7 +1717,10 @@ test "diff: staged alias" {
   inspect(
     result,
     content=(
-      #|Ok("  command: diff\n  cached: true\n")
+      #|Ok(  command: diff
+      #|  cached: true
+      #|)
+
     ),
   )
 }
@@ -1619,7 +1731,11 @@ test "diff: stat with paths" {
   inspect(
     result,
     content=(
-      #|Ok("  command: diff\n  stat: true\n  paths: [\"src/\", \"lib/\"]\n")
+      #|Ok(  command: diff
+      #|  stat: true
+      #|  paths: [src/, lib/]
+      #|)
+
     ),
   )
 }
@@ -1630,7 +1746,10 @@ test "add: files" {
   inspect(
     result,
     content=(
-      #|Ok("  command: add\n  files: [\"file1.txt\", \"file2.txt\"]\n")
+      #|Ok(  command: add
+      #|  files: [file1.txt, file2.txt]
+      #|)
+
     ),
   )
 }
@@ -1641,7 +1760,10 @@ test "add: all" {
   inspect(
     result,
     content=(
-      #|Ok("  command: add\n  all: true\n")
+      #|Ok(  command: add
+      #|  all: true
+      #|)
+
     ),
   )
 }
@@ -1652,7 +1774,11 @@ test "status: short branch" {
   inspect(
     result,
     content=(
-      #|Ok("  command: status\n  short: true\n  branch: true\n")
+      #|Ok(  command: status
+      #|  short: true
+      #|  branch: true
+      #|)
+
     ),
   )
 }
@@ -1663,7 +1789,10 @@ test "status: porcelain" {
   inspect(
     result,
     content=(
-      #|Ok("  command: status\n  porcelain: true\n")
+      #|Ok(  command: status
+      #|  porcelain: true
+      #|)
+
     ),
   )
 }
@@ -1674,7 +1803,10 @@ test "status: alias st" {
   inspect(
     result,
     content=(
-      #|Ok("  command: status\n  short: true\n")
+      #|Ok(  command: status
+      #|  short: true
+      #|)
+
     ),
   )
 }
@@ -1685,7 +1817,10 @@ test "merge: basic" {
   inspect(
     result,
     content=(
-      #|Ok("  command: merge\n  branch: feature/test\n")
+      #|Ok(  command: merge
+      #|  branch: feature/test
+      #|)
+
     ),
   )
 }
@@ -1696,7 +1831,11 @@ test "merge: no-ff" {
   inspect(
     result,
     content=(
-      #|Ok("  command: merge\n  branch: feature/test\n  no-ff: true\n")
+      #|Ok(  command: merge
+      #|  branch: feature/test
+      #|  no-ff: true
+      #|)
+
     ),
   )
 }
@@ -1709,7 +1848,12 @@ test "merge: squash with message" {
   inspect(
     result,
     content=(
-      #|Ok("  command: merge\n  branch: feature/test\n  squash: true\n  message: \"Squash merge\"\n")
+      #|Ok(  command: merge
+      #|  branch: feature/test
+      #|  squash: true
+      #|  message: "Squash merge"
+      #|)
+
     ),
   )
 }
@@ -1731,7 +1875,10 @@ test "rebase: basic" {
   inspect(
     result,
     content=(
-      #|Ok("  command: rebase\n  upstream: main\n")
+      #|Ok(  command: rebase
+      #|  upstream: main
+      #|)
+
     ),
   )
 }
@@ -1742,7 +1889,11 @@ test "rebase: interactive" {
   inspect(
     result,
     content=(
-      #|Ok("  command: rebase\n  upstream: HEAD~3\n  interactive: true\n")
+      #|Ok(  command: rebase
+      #|  upstream: HEAD~3
+      #|  interactive: true
+      #|)
+
     ),
   )
 }
@@ -1753,7 +1904,11 @@ test "rebase: onto" {
   inspect(
     result,
     content=(
-      #|Ok("  command: rebase\n  upstream: feature\n  onto: main\n")
+      #|Ok(  command: rebase
+      #|  upstream: feature
+      #|  onto: main
+      #|)
+
     ),
   )
 }
@@ -1764,7 +1919,10 @@ test "rebase: continue" {
   inspect(
     result,
     content=(
-      #|Ok("  command: rebase\n  continue: true\n")
+      #|Ok(  command: rebase
+      #|  continue: true
+      #|)
+
     ),
   )
 }
@@ -1786,7 +1944,12 @@ test "tag: create annotated" {
   inspect(
     result,
     content=(
-      #|Ok("  command: tag\n  name: v1.0\n  annotate: true\n  message: \"Release 1.0\"\n")
+      #|Ok(  command: tag
+      #|  name: v1.0
+      #|  annotate: true
+      #|  message: "Release 1.0"
+      #|)
+
     ),
   )
 }
@@ -1797,7 +1960,11 @@ test "tag: delete" {
   inspect(
     result,
     content=(
-      #|Ok("  command: tag\n  name: v0.9\n  delete: true\n")
+      #|Ok(  command: tag
+      #|  name: v0.9
+      #|  delete: true
+      #|)
+
     ),
   )
 }
@@ -1808,7 +1975,10 @@ test "tag: list" {
   inspect(
     result,
     content=(
-      #|Ok("  command: tag\n  list: true\n")
+      #|Ok(  command: tag
+      #|  list: true
+      #|)
+
     ),
   )
 }
@@ -1821,7 +1991,12 @@ test "remote: add" {
   inspect(
     result,
     content=(
-      #|Ok("  command: remote\n  subcommand: add\n  name: upstream\n  url: https://example.com/repo.git\n")
+      #|Ok(  command: remote
+      #|  subcommand: add
+      #|  name: upstream
+      #|  url: https://example.com/repo.git
+      #|)
+
     ),
   )
 }
@@ -1834,7 +2009,13 @@ test "remote: add with fetch" {
   inspect(
     result,
     content=(
-      #|Ok("  command: remote\n  subcommand: add\n  name: upstream\n  url: https://example.com/repo.git\n  fetch: true\n")
+      #|Ok(  command: remote
+      #|  subcommand: add
+      #|  name: upstream
+      #|  url: https://example.com/repo.git
+      #|  fetch: true
+      #|)
+
     ),
   )
 }
@@ -1845,7 +2026,11 @@ test "remote: remove" {
   inspect(
     result,
     content=(
-      #|Ok("  command: remote\n  subcommand: remove\n  name: upstream\n")
+      #|Ok(  command: remote
+      #|  subcommand: remove
+      #|  name: upstream
+      #|)
+
     ),
   )
 }
@@ -1856,7 +2041,11 @@ test "remote: remove alias rm" {
   inspect(
     result,
     content=(
-      #|Ok("  command: remote\n  subcommand: remove\n  name: upstream\n")
+      #|Ok(  command: remote
+      #|  subcommand: remove
+      #|  name: upstream
+      #|)
+
     ),
   )
 }
@@ -1867,7 +2056,12 @@ test "remote: rename" {
   inspect(
     result,
     content=(
-      #|Ok("  command: remote\n  subcommand: rename\n  old: origin\n  new: upstream\n")
+      #|Ok(  command: remote
+      #|  subcommand: rename
+      #|  old: origin
+      #|  new: upstream
+      #|)
+
     ),
   )
 }
@@ -1878,7 +2072,11 @@ test "remote: show" {
   inspect(
     result,
     content=(
-      #|Ok("  command: remote\n  subcommand: show\n  name: origin\n")
+      #|Ok(  command: remote
+      #|  subcommand: show
+      #|  name: origin
+      #|)
+
     ),
   )
 }
@@ -1899,7 +2097,12 @@ test "stash: push" {
   inspect(
     result,
     content=(
-      #|Ok("  command: stash\n  subcommand: push\n  message: \"WIP\"\n  include-untracked: true\n")
+      #|Ok(  command: stash
+      #|  subcommand: push
+      #|  message: "WIP"
+      #|  include-untracked: true
+      #|)
+
     ),
   )
 }
@@ -1910,7 +2113,11 @@ test "stash: push with files" {
   inspect(
     result,
     content=(
-      #|Ok("  command: stash\n  subcommand: push\n  files: [\"file1.txt\", \"file2.txt\"]\n")
+      #|Ok(  command: stash
+      #|  subcommand: push
+      #|  files: [file1.txt, file2.txt]
+      #|)
+
     ),
   )
 }
@@ -1921,7 +2128,10 @@ test "stash: pop" {
   inspect(
     result,
     content=(
-      #|Ok("  command: stash\n  subcommand: pop\n")
+      #|Ok(  command: stash
+      #|  subcommand: pop
+      #|)
+
     ),
   )
 }
@@ -1932,7 +2142,11 @@ test "stash: pop with ref" {
   inspect(
     result,
     content=(
-      #|Ok("  command: stash\n  subcommand: pop\n  stash: stash@{1}\n")
+      #|Ok(  command: stash
+      #|  subcommand: pop
+      #|  stash: stash@{1}
+      #|)
+
     ),
   )
 }
@@ -1943,7 +2157,10 @@ test "stash: list" {
   inspect(
     result,
     content=(
-      #|Ok("  command: stash\n  subcommand: list\n")
+      #|Ok(  command: stash
+      #|  subcommand: list
+      #|)
+
     ),
   )
 }
@@ -1954,7 +2171,11 @@ test "stash: drop" {
   inspect(
     result,
     content=(
-      #|Ok("  command: stash\n  subcommand: drop\n  stash: stash@{0}\n")
+      #|Ok(  command: stash
+      #|  subcommand: drop
+      #|  stash: stash@{0}
+      #|)
+
     ),
   )
 }
@@ -1965,7 +2186,10 @@ test "global: verbose count" {
   inspect(
     result,
     content=(
-      #|Ok("  verbose: 3\n  command: status\n")
+      #|Ok(  verbose: 3
+      #|  command: status
+      #|)
+
     ),
   )
 }
@@ -1976,7 +2200,10 @@ test "global: git-dir" {
   inspect(
     result,
     content=(
-      #|Ok("  git-dir: /tmp/.git\n  command: status\n")
+      #|Ok(  git-dir: /tmp/.git
+      #|  command: status
+      #|)
+
     ),
   )
 }
@@ -1987,7 +2214,11 @@ test "global: no-pager with subcommand" {
   inspect(
     result,
     content=(
-      #|Ok("  no-pager: true\n  command: log\n  oneline: true\n")
+      #|Ok(  no-pager: true
+      #|  command: log
+      #|  oneline: true
+      #|)
+
     ),
   )
 }
@@ -1998,7 +2229,10 @@ test "global: color always" {
   inspect(
     result,
     content=(
-      #|Ok("  color: always\n  command: status\n")
+      #|Ok(  color: always
+      #|  command: status
+      #|)
+
     ),
   )
 }
@@ -2009,7 +2243,10 @@ test "global: color implicit" {
   inspect(
     result,
     content=(
-      #|Ok("  color: always\n  command: diff\n")
+      #|Ok(  color: always
+      #|  command: diff
+      #|)
+
     ),
   )
 }
@@ -2038,7 +2275,8 @@ test "no arguments" {
   inspect(
     result,
     content=(
-      #|Ok("")
+      #|Ok()
+
     ),
   )
 }
@@ -2057,7 +2295,9 @@ test "stash: no subcommand" {
   inspect(
     result,
     content=(
-      #|Ok("  command: stash\n")
+      #|Ok(  command: stash
+      #|)
+
     ),
   )
 }
@@ -2068,7 +2308,10 @@ test "diff: dashdash" {
   inspect(
     result,
     content=(
-      #|Ok("  command: diff\n  paths: [\"file.txt\"]\n")
+      #|Ok(  command: diff
+      #|  paths: [file.txt]
+      #|)
+
     ),
   )
 }
@@ -2079,7 +2322,10 @@ test "add: dashdash" {
   inspect(
     result,
     content=(
-      #|Ok("  command: add\n  files: [\"file.txt\"]\n")
+      #|Ok(  command: add
+      #|  files: [file.txt]
+      #|)
+
     ),
   )
 }
@@ -2101,7 +2347,11 @@ test "branch: force delete with -D" {
   inspect(
     result,
     content=(
-      #|Ok("  command: branch\n  name: old-branch\n  force-delete: true\n")
+      #|Ok(  command: branch
+      #|  name: old-branch
+      #|  force-delete: true
+      #|)
+
     ),
   )
 }
