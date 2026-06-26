@@ -1,6 +1,6 @@
 # DR-040: type registry の方言運用 — canonical default / 言語DX / ロック / 制限手段
 
-> 由来: kawaz × Claude のリモートセッション議論 (2026-06)。DR-010/028/035 の registry 枠組みの上での運用方針。
+> 由来: kawaz × Claude のリモートセッション議論。DR-010/028/035 の registry 枠組みの上での運用方針。
 
 ## 決定
 
@@ -43,11 +43,6 @@ kuu canonical default  ←  言語DX default  ←  ユーザ差し替え (defini
 
 regex を wire に載せる場合も同様に **regex 方言の一致**が cross-host 条件 (`^[0-9]+$` 級は安全、lookahead/Unicode はホスト依存)。
 
-## 未決 (open)
-
-- **`regex_match` (format フィルタ) 不一致時の Reject / Error 出し分け**: 単独 option なら Error (「形式が不正」)、`or` の枝内なら Reject (他枝を試す)。同じ `regex_match` を**使用箇所ごとに Reject/Error 指定できる**必要がある。デフォルトをどちらに置くか含め DR-037 の詰めと一緒に決める。
-- registry 区分の最終確定 (CONTEXT 論点 L、現状8区分)。
-
 ## 関連
 - 再設計 DR-010 (外部レジストリ)、DR-028 (type=参照糖衣・解決順)、DR-035 (definitions/registry 対称)、DR-036 (multiple registry)、DR-037 (Reject/Error)
-- ボトムアップ kuu: `src/contrib/` 命名規約、DR-057/059 (kuu-cli・tree-shaking)
+- ボトムアップ kuu: `src/contrib/` 命名規約、[external: kuu.mbt DR-057]・[external: kuu.mbt DR-059] (kuu-cli・tree-shaking)

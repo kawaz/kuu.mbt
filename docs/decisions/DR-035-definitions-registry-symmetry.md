@@ -76,16 +76,6 @@ DR-007 のフラット形式の問題:
 - 解決順が一様に書ける (`definitions.X.name → registry.X.name`)
 - 配置で意図が明示される
 
-### 7区分かどうかは保留
-
-DR-010 は現時点で7区分 (types/filters/accumulators/handlers/envProvider/completers/defaultFns) を挙げているが、本 DR では区分の**具体的な数や名前は確定しない**。本 DR が確定するのは:
-
-- definitions が registry と同じ区分構造を持つ (対称性)
-- 解決順が一様 (`definitions.X.name → registry.X.name`)
-- 区分は必須 (糖衣で省略しない)
-
-具体的な区分の確定 (multiple registry を追加するか、collectors を独立させるかなど) は DR-036 以降の議論で決める。
-
 ## 関連
 
 - DR-007 (definitions, ref/link) — 本 DR でフラット形式を区分付きに変更

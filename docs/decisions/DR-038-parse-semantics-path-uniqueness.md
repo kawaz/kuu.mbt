@@ -1,6 +1,6 @@
 # DR-038: パース意味論の確定 — 「完全経路の一意性」を契約に、最長一致は廃す
 
-> 由来: kawaz × Claude のリモートセッション議論 (2026-06)。DR-021/DR-037 を「実装契約」として確定させたもの。
+> 由来: kawaz × Claude のリモートセッション議論。DR-021/DR-037 を「実装契約」として確定させたもの。
 
 ## 決定
 
@@ -47,5 +47,5 @@
 2. **曖昧性は値パーサ依存 → 実行時判定**。静的バリデータは構造的リスクの warn まで (DR-021)。
 
 ## 関連
-- 再設計 DR-021 (最長一致と ambiguous)、DR-037 (Reject/Error、解けた枝の数)
-- ボトムアップ kuu: README「投機実行＋最長一致」(本 DR で位置づけを「創発」に降格)、`src/core/parse.mbt` `parse_raw` / `install_short_combine_node` (置換対象)
+- DR-021 (最長一致と ambiguous)、DR-037 (Reject/Error、解けた枝の数)
+- ボトムアップ kuu: `kuu/core/parse.mbt` の `parse_raw` / `install_short_combine_node` (置換対象)

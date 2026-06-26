@@ -4,7 +4,7 @@
 
 `command` は **定義時 (UsefulAST) には1級の概念**として扱う。`option` / `positional` と並ぶ第一級の構造語彙であり、専用フィールド (`commands`) や `type: "command"` で明示的に書ける。
 
-ただし **パースループにかける際 (AtomicAST) には同型要素**として扱う。command は構造プリミティブ (exact + or + serial 等) の組み合わせへ展開され、パーサは「name でトリガしうる children を持つ要素」という同型表現の上で動く。
+ただし **パースループにかける際 (AtomicAST) には同型要素**として扱う。command は構造プリミティブ (exact + or + seq 等) の組み合わせへ展開され、パーサは「name でトリガしうる children を持つ要素」という同型表現の上で動く。
 
 つまり:
 

@@ -109,7 +109,7 @@ multiple 経路:
 
 type の post は **各 piece 単位**、multiple の collector は **累積後**。位置が違うので衝突しない。
 
-## registry 区分の現状 (8区分、変更余地あり)
+## registry 区分の現状 (8区分)
 
 ```
 types         値型 (peaceProcessor の構成プリセット)
@@ -117,9 +117,9 @@ filters       純粋 FilterChain[A,B] (collector もここ)
 accumulators  mapper の属性セット
 multiple      mapper+collector+separator の糖衣プリセット (新規)
 handlers      command の実行フック
-envProvider   環境変数解決
+env_provider  環境変数解決
 completers    動的補完生成
-defaultFns    デフォルト値の動的生成
+default_fns   デフォルト値の動的生成
 ```
 
 ユーザの認知層:
@@ -148,7 +148,6 @@ kawaz の整理:
 - DR-008/019 (multiple field) — 本 DR で再編成
 - DR-009 (filter chain)
 - DR-010 (外部レジストリ) — 区分を 7→8 に拡張
-- DR-021 (最長一致)
 - DR-028 (type=参照糖衣、解決順)
 - DR-034 (multiple の構造モデル)
 - DR-035 (definitions の区分対称)

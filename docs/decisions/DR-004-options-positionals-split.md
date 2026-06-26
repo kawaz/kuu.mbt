@@ -18,10 +18,10 @@
   "positionals": [
     {
       "type": "or",
-      "required": true,    // サブコマンド必須なら
+      "required": true,
       "children": [
-        {"type": "command", "name": "commit", ...},
-        {"type": "command", "name": "clone", ...}
+        {"type": "command", "name": "commit", "...": "..."},
+        {"type": "command", "name": "clone", "...": "..."}
       ]
     }
   ]
@@ -61,11 +61,22 @@ Claude が「サブコマンドを positionals に並べる」と書いて、kaw
 
 書く側は短いが、暗黙ルールで読みにくい。kawaz は明示性重視。
 
-### 案C: matchBy フィールドで要素属性に持つ + flat children
+### 案C: 要素属性のマッチ種別フィールド + flat children
 
-要素ごとに `matchBy: "long" | "position" | "name"` で示す。flat な children に統一。書く側に判断負担、読みづらい。
+要素ごとに `match_by: "long" | "position" | "name"` で示す方式。flat な children に統一する案。書く側に判断負担、読みづらい。
 
 ## 関連
 
 - DR-002 (全要素同型)
 - DR-006 (name 重複ルール: セクション間も含む)
+- DR-017 / DR-018 (commands[] 配列を糖衣として復活、本 DR の「commands 専用配列は不要」を部分撤回)
+
+## Superseded (歴史)
+
+> **更新: DR-017 / DR-018 により本 DR の「`commands` 専用配列は不要」結論のうち糖衣レベルが撤回。本 DR の AtomicAST レベルの正規形 (positionals 内 or でサブコマンドを表す) は引き続き有効。**
+
+### 「commands 専用配列は不要」(DR-017 / DR-018 で部分撤回)
+
+本 DR の「案A: 3分割を採用しなかった」「`commands` 専用フィールドが消える」という結論は、AtomicAST レベルでは現役 (= positionals 内 or でサブコマンドを表す正規形は維持) だが、**糖衣 (SugarAST) レベルでは `commands[]` 配列が復活**した (DR-017 / DR-018)。
+
+糖衣 → AtomicAST 変換で `commands[]` は positionals 内 `or` ノードに展開されるため、本 DR の核 (正規形における or 表現) は不変。書き手向け表記としてのみ `commands[]` を許容する。

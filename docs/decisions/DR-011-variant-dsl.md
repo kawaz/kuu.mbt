@@ -118,4 +118,3 @@ variant は **exact + literal value 発生**に展開され、構造としては
 ## 関連
 
 - DR-009 (filter chain は同じ文法を使う)
-- DR-014 (visibility / deprecated 等のフィールド未確定)

@@ -2,8 +2,6 @@
 
 ## 決定
 
-children (options / positionals) を持つ要素は **自動的にスコープを作る**。明示フラグは不要。
-
 ref/link の解決は lexical scope chain:
 1. `id` で global 検索
 2. 自分の中の name
@@ -14,21 +12,13 @@ ref/link の解決は lexical scope chain:
 
 `name` は **スコープ内 (options + positionals すべて) で重複禁止**。
 
+スコープを作るのは **name を持つノード** (DR-025 / DR-033 で確定)。
+
 ## 経緯
 
-最初 Claude は or がスコープを作るか曖昧に書いていた。kawaz の整理:
-
-> スコープを作るかどうかはまず暗黙では作らないのでは?スコープを作る事を明示するフィールドとかかな？
-> いや違うか。基本的にorはスコープ作って側ないのかな。レキシカルスコープなら子（options,positionals,commands）を持つ度にスコープを作っても祖先方向に探索するから特に意識不要か。
-
-つまり「スコープを作る/作らない」を明示する必要がなく、children を持つだけで自然にスコープが出来る。lexical scope chain なので祖先方向に探索すれば、暗黙でも事故にならない。
-
-「精々がパフォーマンスを詰めようとした時に作らないがあっても良いが気にする必要は基本ない」
+スコープを作るかどうかを明示フラグで持つ必要はない。lexical scope chain なので祖先方向に探索すれば、暗黙でスコープが出来ても事故にならない。
 
 ## name 重複ルール
-
-kawaz の指摘:
-> name重複はセクション間でもひつようではないかな？
 
 options に `name: "config"` があって、positionals にも `name: "config"` があると:
 - ref/link 解決が曖昧
@@ -46,3 +36,26 @@ options に `name: "config"` があって、positionals にも `name: "config"` 
 
 - DR-003 (name の3軸)
 - DR-007 (definitions 領域)
+- DR-025 (name を持つノードがスコープを作る)
+- DR-033 (lexical = name scope の整理)
+
+## Superseded (歴史)
+
+> **更新: DR-025 により本 DR の「スコープ単位」が「children を持つ要素」から「name を持つノード」に変更。DR-033 で lexical scope = name scope と整理。本 DR の lexical chain 探索順序・name 重複禁止ルールは引き続き有効。**
+
+### children を持つ要素がスコープを作る (DR-025 で更新)
+
+当初の決定本文では:
+
+> children (options / positionals) を持つ要素は **自動的にスコープを作る**。明示フラグは不要。
+
+としていたが、DR-025 で **「name を持つノードがスコープを作る」** に訂正された。DR-033 で lexical scope = name scope と整理。
+
+当時の経緯メモ (kawaz):
+
+> スコープを作るかどうかはまず暗黙では作らないのでは?スコープを作る事を明示するフィールドとかかな？
+> いや違うか。基本的にorはスコープ作って側ないのかな。レキシカルスコープなら子（options,positionals,commands）を持つ度にスコープを作っても祖先方向に探索するから特に意識不要か。
+
+> 精々がパフォーマンスを詰めようとした時に作らないがあっても良いが気にする必要は基本ない
+
+children 説でも lexical chain なら事故にならないという観察自体は正しかったが、スコープ単位を name に揃えるほうが設計上クリーンと判断され DR-025 で更新された。

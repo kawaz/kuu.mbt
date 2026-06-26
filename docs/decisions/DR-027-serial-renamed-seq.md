@@ -10,6 +10,8 @@ seq      順次 (順に並んだもの)
 multiple 反復 (繰り返しの畳み込み)
 ```
 
+**`serial` は廃止語であり、現役の語彙としては使用しない。canonical は `seq`。** 本 DR 本文中で歴史的経緯のため `serial` に言及している箇所は、すべて旧名としての参照である。
+
 ## 経緯
 
 `or`(2文字) に対し `serial`(6文字) の非対称、および `serial` が引数パーサ文脈で慣習語でない点から再検討。
@@ -19,7 +21,7 @@ multiple 反復 (繰り返しの畳み込み)
 - **形式言語・正規表現**: alternation ↔ **concatenation**。3演算 = alternation(`|`) / concatenation / closure(`*`)。
 - **PEG**: ordered choice(`/`) ↔ **sequence**(`e1 e2`)。
 - **型・スキーマ**: sum type / oneOf ↔ **tuple** / product type。
-- **引数パーサ (clap/argparse/cobra)**: 順次連接に専用語彙が薄い。positional の順序として暗黙扱い。`serial` は通信/直列化を連想させ異質。
+- **引数パーサ (clap/argparse/cobra)**: 順次連接に専用語彙が薄い。positional の順序として暗黙扱い。旧名 `serial` は通信/直列化を連想させ異質。
 
 候補比較:
 

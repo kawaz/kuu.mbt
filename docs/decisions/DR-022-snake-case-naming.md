@@ -25,7 +25,7 @@ wire ⇄ 各言語バインディング間の case 変換は **pluggable な層*
 
 case ルールは **AST のフィールド名 (キー名) にのみ**適用。値の語彙は別ルール:
 
-- enum 値 (`on_repeat` の値など): 別途規定 (lowercase 単語想定、未確定)
+- enum 値 (`on_repeat` の値など): 別途規定 (lowercase 単語想定)
 - variant DSL (`"no:set:false"`): コロン区切り、独自
 - CLI 値 (`--no-color`, `--export-key`): kebab-case (CLI 慣習であってキー名ではない)
 
@@ -37,7 +37,7 @@ camelCase と snake_case で検討。kawaz:
 
 camelCase は頭字語 (acronym) の扱いに正解がなく (`exportUrl` / `exportURL`、`userId` / `userID`)、「URL→Url と書く」等のローカル規約を持ち込む必要がある。snake_case は `export_url` / `user_id` / `https_url` で機械的に一意。これは kuu の思想「暗黙ルールを増やさない・明示性重視」に合致する。
 
-現状の AST に頭字語を含むキーは存在せず (棚卸し済み)、snake へ倒す書き換えコストは最小。既存 DR の camelCase は CONTEXT.md が「未確定」と明記しており、追認の破棄ではなく正式化前の整え。
+現状の AST に頭字語を含むキーは存在せず、snake へ倒す書き換えコストは最小。
 
 case 変換の固定について kawaz:
 

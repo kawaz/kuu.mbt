@@ -65,19 +65,13 @@ multiple が主に指す断面: mapper, collector, separator (processor/default 
 
 ### 当初の DR-008/019 の問題
 
-DR-008 は `multiple: {kind, item_separator, key_value_separator, on_repeat, key_from, ...}` で多くのフィールドを抱え、責務が混雑していた。DR-019 で repeat を multiple に統合したが、kawaz の指摘で「option の複数回起動」と「positional のリピート個数」を混ぜていることが判明した。
-
-kawaz:
-> multiple は min/max とか言ってるけどそれもう元のマルチプル(オプション複数)の文脈ほぼ無くなってない? それオプションじゃなくてポジショナルのリピートの話じゃない?
+DR-008 は `multiple: {kind, item_separator, key_value_separator, on_repeat, key_from, ...}` で多くのフィールドを抱え、責務が混雑していた。DR-019 で repeat を multiple に統合したが、「option の複数回起動」と「positional のリピート個数」を混ぜていることが判明した。
 
 → multiple の責務を「複数値経路 (mapper/collector/separator) を起動するスイッチ」に絞る。個数制約 (positional のリピート) は別軸として分離。
 
-### mergeable (DR-023 kuu本体) との接続
+### mergeable (kuu.mbt 本体側 DR) との接続
 
-kuu リポジトリの DR-023「マージ可能リストオプション +/- 修飾子と ... 展開」は、`--fields "+x,-y,..."` のような **差分指定 DSL** を first-class でサポートする提案。これは「リストを単純に作る」だけの単純な accumulator では表現できず、**piece の文字列レベルで `+/-` を解釈** + **prevs を見ながら合成** が必要。
-
-kawaz:
-> ([peace])→peace を指定してるみたいな感じでもあるのか? セパレータ指定がないと内部的には要素数1の[peace]に常にしてしまってデフォルトmultipleは prev 無視して peace→[peace] を返して finalizer に [0] 的なのがあると考えることもできる?
+kuu.mbt 本体リポジトリの「マージ可能リストオプション +/- 修飾子と ... 展開」提案 [external: kuu.mbt DR-023] は、`--fields "+x,-y,..."` のような **差分指定 DSL** を first-class でサポートする提案。これは「リストを単純に作る」だけの単純な accumulator では表現できず、**piece の文字列レベルで `+/-` を解釈** + **prevs を見ながら合成** が必要。
 
 → mapper のシグネチャを `(piece: String, processor, prevs: T[]) → T[]` にすることで、mergeable も append も override も同じ枠で表現可能。kuu core の `Accumulator[T, U] = (T, U) → T` を一般化したもの。
 
@@ -88,10 +82,29 @@ kawaz:
 ## 関連
 
 - DR-007 (ref/link、差分上書き)
-- DR-008 (multiple field) — 本 DR で再編成
 - DR-015 (値の発生と伝搬)
-- DR-019 (repeat→multiple 統合) — 本 DR で再分離
-- DR-021 (最長一致と ambiguous)
 - DR-028 (type=参照糖衣)
-- DR-036 (multiple registry、accumulators 拡張)
-- kuu DR-023 (mergeable リスト、本 DR の mapper シグネチャでサポート可能に)
+- DR-036 (multiple registry、accumulators 拡張、collectors を filters registry に統合)
+- [external: kuu.mbt DR-023] (mergeable リスト、本 DR の mapper シグネチャでサポート可能に)
+
+## Superseded (歴史)
+
+> **更新: 以下の記述は後続 DR で覆された。現役仕様の理解には不要、判断経緯としてのみ残す。**
+
+### collector の独立 registry 化 (DR-036 で更新)
+
+> **更新: DR-036 により本 DR の collector 独立 registry 構想は廃案。現役では filters registry に統合。本 DR の peaceProcessor/separator/mapper/collector の4要素構造自体は引き続き有効。**
+
+本 DR の初期構想では collector を独立した registry として扱う想定だったが、DR-036 で **filters registry の延長で扱える** ことが整理された。`T[] → U` は filter のシグネチャに収まるため、collectors registry を新設せず filters registry に統合する。
+
+### accumulators registry の扱い (DR-036 で更新)
+
+> **更新: DR-036 により accumulators registry エントリは「属性セット」(mapper + default_collector + default_separator) に拡張され、multiple registry が新設された。本 DR の mapper シグネチャ自体は引き続き有効。**
+
+本 DR では accumulator (mapper) を単純関数として扱っていたが、DR-036 で **accumulators registry エントリを「属性セット」(mapper + default_collector + default_separator) に拡張** + **multiple registry を新設** することで、multiple プリセットを参照糖衣として一貫させた。
+
+### DR-008/019 の再編成扱い
+
+> **更新: 本 DR は当初 DR-008 (multiple field) の再編成 + DR-019 (repeat→multiple 統合) の再分離として位置付けられたが、registry 構成は DR-036 でさらに整理された。DR-008/019 の旧表 (multiple フィールド統合形・mv の取り分) は本 DR で再編成済みのため現役仕様の参照先は DR-036 + 本 DR §決定。**
+
+本 DR は当初 DR-008 (multiple field) を再編成し、DR-019 (repeat→multiple 統合) を再分離する位置付けだったが、registry 構成は DR-036 でさらに整理された。

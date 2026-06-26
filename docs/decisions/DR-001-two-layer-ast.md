@@ -40,5 +40,4 @@ JSON 化時に:
 
 ## 関連
 
-- 既存 kuu の Sugar層 / Convention層 / Pattern層 / Core層 / ExactNode に対応
-- DR-053 (primitive decomposition) と同じ発想を AST 仕様レベルに引き上げた形
+- [external: kuu.mbt DR-053] (primitive decomposition) と同じ発想を AST 仕様レベルに引き上げた形

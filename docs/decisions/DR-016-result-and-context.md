@@ -14,12 +14,12 @@
 
 各要素について:
 - `value`: 現在値
-- `defaultValue`: デフォルト値
+- `default_value`: デフォルト値
 - `committed` (or `is_set`): ユーザーが明示指定したか
 - `selected`: この要素のいずれかの入口がマッチしたか
-- `source`: 値の由来 (cli / env / default)
-- `selectedNames`: マッチした入口名 (variant 含む)
-- `selectedArgs`: マッチに使われた CLI 引数の部分集合
+- `source`: 値の由来 (値源の種類。DR-031 参照)
+- `selected_names`: マッチした入口名 (variant 含む)
+- `selected_args`: マッチに使われた CLI 引数の部分集合
 
 ### 結果オブジェクト (シンプルモード)
 
@@ -55,7 +55,7 @@ name を持つ要素が結果オブジェクトに1階層作る (DR-003):
 { "serve": { "port": 80 } }
 ```
 
-- exportKey で別キーに上書き可能
+- export_key で別キーに上書き可能
 - export: false で抑制可能
 
 ## scope chain でのアクセス
@@ -97,17 +97,30 @@ console.log(context.get("port").committed);
 console.log(context.get("port").source);
 ```
 
-`committed`、`source`、`selectedNames` 等は ParserContext からのみ参照可能。
+`committed`、`source`、`selected_names` 等は ParserContext からのみ参照可能。
 
 ## selected vs 値の有無
 
 - **selected**: ユーザーが明示的にこの要素を起動したか
-- **値**: 最終結果に出てくる値 (defaultValue or 消費結果)
+- **値**: 最終結果に出てくる値 (default_value or 消費結果)
 
-両者は別の情報。`required` などの制約は committed/selected を見る (defaultValue で埋まっただけでは満たさない)。
+両者は別の情報。`required` などの制約は committed/selected を見る (default_value で埋まっただけでは満たさない)。
 
 ## 関連
 
 - DR-011 (variant の default/unset の committed 違い)
 - DR-013 (inheritable の結果への焼き付け)
 - DR-015 (値の発生と伝搬)
+- DR-031 (値源の拡張: link/config/inherit)
+
+## Superseded (歴史)
+
+> **更新: DR-031 により本 DR の `source` 語彙が拡張された。本 DR の2層構造 (ParserContext / 結果オブジェクト) と scope chain 焼き付け方針は引き続き有効。**
+
+### source 語彙 (DR-031 で更新)
+
+当初 ParserContext の `source` は値の由来として以下の3値を想定していた:
+
+- `cli` / `env` / `default`
+
+DR-031 で値源が拡張され、`link` / `config` / `inherit` 等が追加された。現役の `source` 語彙は DR-031 を参照。

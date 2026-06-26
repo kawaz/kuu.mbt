@@ -9,7 +9,7 @@ AST 要素の値の決定は **構造的セマンティクス** (値が tree を
 | primitive (`string`/`number`/...) | `value` 持つなら literal、無いなら CLI から1引数消費 | 自身の値を親に渡す |
 | `exact` | `value` 持つなら literal、無いなら値なし | 値があれば親に渡す |
 | `or` | 選ばれた子の値 | 子の値をそのまま伝搬 |
-| `serial` / children sequence | 子の値の配列 (or 単独要素なら単独) | 配列または単独値を親に伝搬 |
+| `seq` / children sequence | 子の値の配列 (or 単独要素なら単独) | 配列または単独値を親に伝搬 |
 
 リテラルは primitive type + value のシュガー:
 - `"red"` → `{"type": "string", "value": "red"}`
@@ -21,7 +21,7 @@ AST 要素の値の決定は **構造的セマンティクス** (値が tree を
 kawaz の整理:
 > valueを持ってる要素が値を持つ。親に伝搬。
 
-これでまず or の意味論が明確になる:
+これで or の意味論が明確になる:
 
 ```json
 {
@@ -29,7 +29,7 @@ kawaz の整理:
   "type":"or",
   "children": [
     {"type":"exact", "name":"--no-color", "value": {"type":"string", "value":"none"}},
-    {"type":"serial", "array": false, "children": [
+    {"type":"seq", "array": false, "children": [
       {"type":"exact", "name":"--color"},
       {"type":"or", "children": [
         {"type":"string", "value":"none"},
@@ -94,13 +94,7 @@ kawaz の整理:
 }
 ```
 
-さらに AtomicAST レベルで「value 持ち string」を `exact` に変換する設計も可能 (この詳細は AtomicAST 確定待ち)。
-
 ## values と children の意味分離
-
-最初は `value` / `values` / `children` を混同していた。kawaz の整理:
-
-> children["red", "green", "blue"] コレはちがうな。これだとexact3連な引数消費をするだけになる気がするな。やはりvalueとchildrenは別か?valuesはchildrenをいい感じに構築するショートハンドってのが落とし所か?
 
 - `children`: 起動後に順次消費する子要素群
 - `values`: その要素の取りうる値の選択肢 (or のショートハンド)
@@ -133,5 +127,5 @@ count だけ特殊だが、count は「type=count のシュガー」として隠
 ## 関連
 
 - DR-005 (type の子からの伝搬)
-- DR-008 (accumulator)
 - DR-011 (variant DSL の本質)
+- DR-034 (accumulator)
