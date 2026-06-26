@@ -1,7 +1,20 @@
 # kuu.mbt — MoonBit CLI Parser Library
+#
+# Canonical task runner. bump-semver canonical (kawaz/bump-semver/justfile) を
+# 模倣した push / release flow を持つ。
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+set script-interpreter := ["bash", "-euo", "pipefail"]
+
+set positional-arguments
 
 # Default: lint + test
 default: lint test
+
+# show the recipe list
+list:
+    @just --list --unsorted
 
 # === Lint ===
 
@@ -126,7 +139,7 @@ ci: lint test wasm-test example-test coverage
 # Pre-release check: lint → test-all → wasm → examples → info
 release-check: lint test-all wasm-test example-test info
 
-# === Push gates (= ast 議論を進めるための最低限。OSS リリース前に bump-semver canonical 模倣で拡充予定) ===
+# === Push / Release flow (bump-semver canonical 模倣) ===
 
 # working copy clean check (= 未コミット変更を巻き込ませない)
 [private]
@@ -152,8 +165,38 @@ sync:
 promote:
     bump-semver vcs promote
 
-# push to origin/main with minimal gates (= ensure-clean → ci → push)
-# OSS リリースで release.yml + VERSION + check-outdated-translations + check-version-bumped を
-# 連動する canonical 構成に拡充予定。
-push: check-on-default-branch ensure-clean ci
+# 翻訳ペアの freshness check (= ja 正本が更新されたら en も追従しているか検証)
+[private]
+check-outdated-translations: ensure-clean
+    bump-semver vcs outdated 'glob:**/*-ja.md' '$1/$2.md'
+
+# src/ or moon.mod が変わったら VERSION 上げ忘れを止める
+# test 専用追加 (*_wbtest.mbt) は bump 不要なので exclude
+check-version-bumped: (_check-version-bumped "src/" "moon.mod" "moon.pkg")
+
+[private]
+[script]
+_check-version-bumped *target_paths:
+    if ! bump-semver vcs diff -q main@origin -- "$@" --excludes 'glob:src/**/*_wbtest.mbt'; then
+        bump-semver compare gt VERSION vcs:main@origin
+    fi
+
+# VERSION を bump (= patch/minor/major) して release commit を作成
+# VERSION + moon.mod の version フィールドを同期更新する
+[script]
+bump-version level="patch": ensure-clean
+    bump-semver "$1" VERSION --write --quiet
+    new=$(bump-semver get VERSION)
+    # moon.mod の version 行を同期
+    sed -i.bak -E "s/^version = \".*\"\$/version = \"${new}\"/" moon.mod && rm moon.mod.bak
+    bump-semver vcs commit -m "Release v${new}" VERSION moon.mod
+
+# push to origin/main with canonical gates
+push: check-on-default-branch ci check-outdated-translations check-version-bumped
     bump-semver vcs push --branch main --jj-bookmark-auto-advance
+    @echo "[hint] gh-monitor:watch-workflow --sha $(bump-semver vcs get commit-id --rev main) --on-success release.yml 'just on-success-release' kawaz/kuu.mbt"
+
+# release.yml workflow が success になった時のフォローアクション
+# (現状は version 反映確認のみ。配布物が増えたら拡張する)
+on-success-release:
+    @echo "Released v$(bump-semver get VERSION)"
