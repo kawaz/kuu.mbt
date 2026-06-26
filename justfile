@@ -125,3 +125,35 @@ ci: lint test wasm-test example-test coverage
 
 # Pre-release check: lint → test-all → wasm → examples → info
 release-check: lint test-all wasm-test example-test info
+
+# === Push gates (= ast 議論を進めるための最低限。OSS リリース前に bump-semver canonical 模倣で拡充予定) ===
+
+# working copy clean check (= 未コミット変更を巻き込ませない)
+[private]
+ensure-clean:
+    bump-semver vcs is clean
+
+# default branch (= main) bookmark に居るかを確認
+[private]
+[script]
+check-on-default-branch:
+    if ! bump-semver vcs is on-default-branch; then
+        cur=$(bump-semver vcs get current-branch 2>/dev/null || echo "(ambiguous)")
+        bn=$(bump-semver vcs get default-branch)
+        printf >&2 "⚠ 現在 '%s' bookmark/branch にいます。%s に合流してから push してください\n  1. just sync         # %s@origin に rebase\n  2. just promote      # %s bookmark を current commit に forward\n" "$cur" "$bn" "$bn" "$bn"
+        exit 1
+    fi
+
+# 現在の worktree を default branch (= origin/<default>) に rebase
+sync:
+    bump-semver vcs sync --onto $(bump-semver vcs get default-branch)@origin
+
+# default branch bookmark を現在の commit に forward (push しない)
+promote:
+    bump-semver vcs promote
+
+# push to origin/main with minimal gates (= ensure-clean → ci → push)
+# OSS リリースで release.yml + VERSION + check-outdated-translations + check-version-bumped を
+# 連動する canonical 構成に拡充予定。
+push: check-on-default-branch ensure-clean ci
+    bump-semver vcs push --branch main --jj-bookmark-auto-advance
