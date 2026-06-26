@@ -1,6 +1,6 @@
 name = "kawaz/kuu"
 
-version = "0.1.0"
+version = "0.1.1"
 
 import {
   "kawaz/grapheme@0.10.2",
