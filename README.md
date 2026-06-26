@@ -1,5 +1,7 @@
 # kuu
 
+> English | [日本語](./README-ja.md)
+
 A CLI argument parser for MoonBit. Speculative execution with longest-match resolution eliminates ambiguity without relying on definition order.
 
 ## Features
