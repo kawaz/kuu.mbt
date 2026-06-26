@@ -116,7 +116,9 @@ test "split — splits string by separator" {
   let chain = Filter::split(",")
   let result : Result[Array[String], _] = try? (chain.run)("a,b,c")
   match result {
-    Ok(v) => inspect(v, content="[\"a\", \"b\", \"c\"]")
+    Ok(v) => inspect(v, content=(
+      #|[a, b, c]
+    ))
     Err(_) => fail("expected Ok")
   }
 }
@@ -544,7 +546,9 @@ test "regex_split — splits by pattern" {
   let chain = Filter::regex_split("[,;]+")
   let result : Result[Array[String], _] = try? (chain.run)("a,b;;c")
   match result {
-    Ok(v) => inspect(v, content="[\"a\", \"b\", \"c\"]")
+    Ok(v) => inspect(v, content=(
+      #|[a, b, c]
+    ))
     Err(_) => fail("expected Ok")
   }
 }
@@ -554,7 +558,9 @@ test "regex_split — no match returns single element" {
   let chain = Filter::regex_split("[,;]+")
   let result : Result[Array[String], _] = try? (chain.run)("abc")
   match result {
-    Ok(v) => inspect(v, content="[\"abc\"]")
+    Ok(v) => inspect(v, content=(
+      #|[abc]
+    ))
     Err(_) => fail("expected Ok")
   }
 }

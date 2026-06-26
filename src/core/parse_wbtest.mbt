@@ -64,7 +64,8 @@ test "string option" {
   inspect(
     p.get(host),
     content=(
-      #|Some("example.com")
+      #|Some(example.com)
+
     ),
   )
 }
@@ -77,7 +78,8 @@ test "string option default" {
   inspect(
     p.get(host),
     content=(
-      #|Some("localhost")
+      #|Some(localhost)
+
     ),
   )
 }
@@ -125,7 +127,8 @@ test "int and string combined" {
   inspect(
     p.get(host),
     content=(
-      #|Some("example.com")
+      #|Some(example.com)
+
     ),
   )
   inspect(p.get(verbose), content="Some(true)")
@@ -144,7 +147,8 @@ test "no-prefix resets string option" {
   inspect(
     p.get(host),
     content=(
-      #|Some("localhost")
+      #|Some(localhost)
+
     ),
   )
 }
@@ -170,7 +174,8 @@ test "equals syntax for string" {
   inspect(
     p.get(host),
     content=(
-      #|Some("example.com")
+      #|Some(example.com)
+
     ),
   )
 }
@@ -201,7 +206,8 @@ test "equals syntax mixed with space syntax" {
   inspect(
     p.get(host),
     content=(
-      #|Some("example.com")
+      #|Some(example.com)
+
     ),
   )
 }
@@ -224,7 +230,8 @@ test "append string" {
   inspect(
     p.get(tags),
     content=(
-      #|Some(["a", "b"])
+      #|Some([a, b])
+
     ),
   )
 }
@@ -254,7 +261,8 @@ test "append string negate" {
   inspect(
     p.get(tags),
     content=(
-      #|Some(["b"])
+      #|Some([b])
+
     ),
   )
 }
@@ -288,7 +296,8 @@ test "append with equals syntax" {
   inspect(
     p.get(tags),
     content=(
-      #|Some(["a", "b"])
+      #|Some([a, b])
+
     ),
   )
 }
@@ -301,7 +310,8 @@ test "positional arg" {
   inspect(
     p.get(file),
     content=(
-      #|Some("input.txt")
+      #|Some(input.txt)
+
     ),
   )
 }
@@ -316,7 +326,8 @@ test "positional with option before" {
   inspect(
     p.get(file),
     content=(
-      #|Some("input.txt")
+      #|Some(input.txt)
+
     ),
   )
 }
@@ -331,7 +342,8 @@ test "positional with option after" {
   inspect(
     p.get(file),
     content=(
-      #|Some("input.txt")
+      #|Some(input.txt)
+
     ),
   )
 }
@@ -344,7 +356,8 @@ test "positional default empty" {
   inspect(
     p.get(file),
     content=(
-      #|Some("")
+      #|Some()
+
     ),
   )
 }
@@ -358,13 +371,15 @@ test "serial positional" {
   inspect(
     p.get(input),
     content=(
-      #|Some("input.txt")
+      #|Some(input.txt)
+
     ),
   )
   inspect(
     p.get(output),
     content=(
-      #|Some("output.txt")
+      #|Some(output.txt)
+
     ),
   )
 }
@@ -380,13 +395,15 @@ test "serial positional with option between" {
   inspect(
     p.get(input),
     content=(
-      #|Some("input.txt")
+      #|Some(input.txt)
+
     ),
   )
   inspect(
     p.get(output),
     content=(
-      #|Some("output.txt")
+      #|Some(output.txt)
+
     ),
   )
 }
@@ -400,7 +417,8 @@ test "serial positional partial" {
   inspect(
     p.get(input),
     content=(
-      #|Some("input.txt")
+      #|Some(input.txt)
+
     ),
   )
 }
@@ -415,19 +433,22 @@ test "serial three positionals" {
   inspect(
     p.get(a),
     content=(
-      #|Some("x")
+      #|Some(x)
+
     ),
   )
   inspect(
     p.get(b),
     content=(
-      #|Some("y")
+      #|Some(y)
+
     ),
   )
   inspect(
     p.get(c),
     content=(
-      #|Some("z")
+      #|Some(z)
+
     ),
   )
 }
@@ -440,7 +461,8 @@ test "rest collects remaining args" {
   inspect(
     p.get(files),
     content=(
-      #|Some(["file1", "file2", "file3"])
+      #|Some([file1, file2, file3])
+
     ),
   )
 }
@@ -463,7 +485,8 @@ test "rest with option" {
   inspect(
     p.get(files),
     content=(
-      #|Some(["file1", "file2"])
+      #|Some([file1, file2])
+
     ),
   )
 }
@@ -478,7 +501,8 @@ test "double dash forces positional" {
   inspect(
     p.get(files),
     content=(
-      #|Some(["--not-a-flag", "file1"])
+      #|Some([--not-a-flag, file1])
+
     ),
   )
 }
@@ -501,13 +525,15 @@ test "rest after positional" {
   inspect(
     p.get(input),
     content=(
-      #|Some("input.txt")
+      #|Some(input.txt)
+
     ),
   )
   inspect(
     p.get(extras),
     content=(
-      #|Some(["a", "b"])
+      #|Some([a, b])
+
     ),
   )
 }
@@ -543,7 +569,8 @@ test "alias for string option" {
   inspect(
     p.get(host),
     content=(
-      #|Some("example.com")
+      #|Some(example.com)
+
     ),
   )
 }
@@ -616,7 +643,8 @@ test "short string option" {
   inspect(
     p.get(host),
     content=(
-      #|Some("example.com")
+      #|Some(example.com)
+
     ),
   )
 }
@@ -644,7 +672,8 @@ test "short append" {
   inspect(
     p.get(tags),
     content=(
-      #|Some(["a", "b"])
+      #|Some([a, b])
+
     ),
   )
 }
@@ -706,7 +735,8 @@ test "short combining with string value" {
   inspect(
     p.get(host),
     content=(
-      #|Some("example.com")
+      #|Some(example.com)
+
     ),
   )
 }
@@ -992,7 +1022,8 @@ test "dashdash basic" {
   inspect(
     dd.get(),
     content=(
-      #|Some(["file1", "file2"])
+      #|Some([file1, file2])
+
     ),
   )
 }
@@ -1006,13 +1037,15 @@ test "dashdash with rest before" {
   inspect(
     files.get(),
     content=(
-      #|Some(["ccc"])
+      #|Some([ccc])
+
     ),
   )
   inspect(
     dd.get(),
     content=(
-      #|Some(["hoge", "fuga"])
+      #|Some([hoge, fuga])
+
     ),
   )
 }
@@ -1027,7 +1060,8 @@ test "dashdash with flag" {
   inspect(
     dd.get(),
     content=(
-      #|Some(["--not-a-flag", "file1"])
+      #|Some([--not-a-flag, file1])
+
     ),
   )
 }
@@ -1056,7 +1090,8 @@ test "dashdash custom separator" {
   inspect(
     dd.get(),
     content=(
-      #|Some(["a", "b"])
+      #|Some([a, b])
+
     ),
   )
 }
@@ -1069,7 +1104,8 @@ test "append_dashdash basic" {
   inspect(
     dd.get(),
     content=(
-      #|Some([["a", "b"], ["c", "d"]])
+      #|Some([[a, b], [c, d]])
+
     ),
   )
 }
@@ -1083,13 +1119,15 @@ test "append_dashdash with rest" {
   inspect(
     files.get(),
     content=(
-      #|Some(["ccc"])
+      #|Some([ccc])
+
     ),
   )
   inspect(
     dd.get(),
     content=(
-      #|Some([["hoge", "fuga"], ["aaa"]])
+      #|Some([[hoge, fuga], [aaa]])
+
     ),
   )
 }
@@ -1110,7 +1148,8 @@ test "append_dashdash single group" {
   inspect(
     dd.get(),
     content=(
-      #|Some([["a", "b"]])
+      #|Some([[a, b]])
+
     ),
   )
 }
@@ -1123,7 +1162,8 @@ test "append_dashdash empty group" {
   inspect(
     dd.get(),
     content=(
-      #|Some([[], ["a"]])
+      #|Some([[], [a]])
+
     ),
   )
 }
@@ -1136,7 +1176,8 @@ test "append_dashdash custom separator" {
   inspect(
     dd.get(),
     content=(
-      #|Some([["x"], ["y", "z"]])
+      #|Some([[x], [y, z]])
+
     ),
   )
 }
@@ -1164,7 +1205,8 @@ test "post filter basic" {
   inspect(
     color.get(),
     content=(
-      #|Some("always")
+      #|Some(always)
+
     ),
   )
 }
@@ -1182,7 +1224,8 @@ test "post filter with explicit value" {
   inspect(
     color.get(),
     content=(
-      #|Some("none")
+      #|Some(none)
+
     ),
   )
 }
@@ -1260,7 +1303,8 @@ test "string choices+implicit: short combining -vc" {
   inspect(
     color.get(),
     content=(
-      #|Some("always")
+      #|Some(always)
+
     ),
   )
 }
@@ -1285,7 +1329,8 @@ test "string choices+implicit: short combining -cv" {
   inspect(
     color.get(),
     content=(
-      #|Some("always")
+      #|Some(always)
+
     ),
   )
 }
@@ -1306,7 +1351,8 @@ test "string choices+implicit: short -cnone (inline value)" {
   inspect(
     color.get(),
     content=(
-      #|Some("none")
+      #|Some(none)
+
     ),
   )
 }
@@ -1323,7 +1369,8 @@ test "string implicit_only: --output=-foo (eq-split)" {
   inspect(
     output.get(),
     content=(
-      #|Some("-foo")
+      #|Some(-foo)
+
     ),
   )
 }
@@ -1341,7 +1388,8 @@ test "string implicit_only: --output --verbose → implicit" {
   inspect(
     output.get(),
     content=(
-      #|Some("stdout")
+      #|Some(stdout)
+
     ),
   )
   inspect(verbose.get(), content="Some(true)")
@@ -1387,13 +1435,15 @@ test "rest stop_before stops at marker" {
   inspect(
     p.get(files),
     content=(
-      #|Some(["a", "b"])
+      #|Some([a, b])
+
     ),
   )
   inspect(
     p.get(dd),
     content=(
-      #|Some(["c", "d"])
+      #|Some([c, d])
+
     ),
   )
 }
@@ -1407,13 +1457,15 @@ test "rest stop_before multiple tokens" {
   inspect(
     p.get(files),
     content=(
-      #|Some(["a"])
+      #|Some([a])
+
     ),
   )
   inspect(
     p.get(dd),
     content=(
-      #|Some(["b"])
+      #|Some([b])
+
     ),
   )
 }
@@ -1426,7 +1478,8 @@ test "rest stop_before empty array no effect" {
   inspect(
     p.get(files),
     content=(
-      #|Some(["a", "b", "c"])
+      #|Some([a, b, c])
+
     ),
   )
 }
@@ -1440,13 +1493,15 @@ test "dashdash stop_before stops collection" {
   inspect(
     p.get(dd1),
     content=(
-      #|Some(["a", "b"])
+      #|Some([a, b])
+
     ),
   )
   inspect(
     p.get(dd2),
     content=(
-      #|Some(["c"])
+      #|Some([c])
+
     ),
   )
 }
@@ -1460,13 +1515,15 @@ test "append_dashdash stop_before stops group" {
   inspect(
     p.get(dd),
     content=(
-      #|Some([["a", "b"]])
+      #|Some([[a, b]])
+
     ),
   )
   inspect(
     p.get(extra),
     content=(
-      #|Some(["c"])
+      #|Some([c])
+
     ),
   )
 }
@@ -1483,13 +1540,15 @@ test "serial basic positional grouping" {
   inspect(
     p.get(src),
     content=(
-      #|Some("hello")
+      #|Some(hello)
+
     ),
   )
   inspect(
     p.get(dst),
     content=(
-      #|Some("world")
+      #|Some(world)
+
     ),
   )
 }
@@ -1508,13 +1567,15 @@ test "serial with never prevents extra args" {
   inspect(
     src.unwrap().get(),
     content=(
-      #|Some("a")
+      #|Some(a)
+
     ),
   )
   inspect(
     dst.unwrap().get(),
     content=(
-      #|Some("b")
+      #|Some(b)
+
     ),
   )
 }
@@ -1547,13 +1608,15 @@ test "serial inside dashdash separator context" {
   inspect(
     src.unwrap().get(),
     content=(
-      #|Some("hello")
+      #|Some(hello)
+
     ),
   )
   inspect(
     dst.unwrap().get(),
     content=(
-      #|Some("world")
+      #|Some(world)
+
     ),
   )
 }
@@ -1567,7 +1630,8 @@ test "serial with rest inside" {
   inspect(
     files.unwrap().get(),
     content=(
-      #|Some(["a", "b", "c"])
+      #|Some([a, b, c])
+
     ),
   )
 }
@@ -2171,7 +2235,8 @@ test "equals syntax: --name= (empty value) sets empty string" {
   inspect(
     p.get(name),
     content=(
-      #|Some("")
+      #|Some()
+
     ),
   )
 }
@@ -2196,7 +2261,8 @@ test "equals syntax: --name==value (value contains =)" {
   inspect(
     p.get(name),
     content=(
-      #|Some("=value")
+      #|Some(=value)
+
     ),
   )
 }
@@ -2211,7 +2277,8 @@ test "equals syntax: --name=hello world (shell splits at space)" {
   inspect(
     p.get(name),
     content=(
-      #|Some("hello")
+      #|Some(hello)
+
     ),
   )
 }
@@ -2248,7 +2315,8 @@ test "empty string: positional accepts empty string" {
   inspect(
     p.get(file),
     content=(
-      #|Some("")
+      #|Some()
+
     ),
   )
 }
@@ -2261,7 +2329,8 @@ test "empty string: string option accepts empty string as value" {
   inspect(
     p.get(name),
     content=(
-      #|Some("")
+      #|Some()
+
     ),
   )
 }
@@ -2283,7 +2352,8 @@ test "empty string: empty string as positional + option" {
   inspect(
     p.get(file),
     content=(
-      #|Some("")
+      #|Some()
+
     ),
   )
   inspect(p.get(verbose), content="Some(true)")
@@ -2297,7 +2367,8 @@ test "empty string: rest collects empty strings" {
   inspect(
     p.get(args),
     content=(
-      #|Some(["", "a", ""])
+      #|Some([, a, ])
+
     ),
   )
 }
@@ -2483,7 +2554,8 @@ test "positional accepts --xxx as value" {
   inspect(
     p.get(arg),
     content=(
-      #|Some("--unknown-flag")
+      #|Some(--unknown-flag)
+
     ),
   )
 }
@@ -2498,7 +2570,8 @@ test "positional accepts --xxx alongside registered options" {
   inspect(
     p.get(arg),
     content=(
-      #|Some("--not-registered")
+      #|Some(--not-registered)
+
     ),
   )
 }
@@ -2530,7 +2603,8 @@ test "dashdash=false with explicit dashdash() works without duplicate error" {
   inspect(
     p.get(dd),
     content=(
-      #|Some(["a", "b"])
+      #|Some([a, b])
+
     ),
   )
 }
@@ -2625,13 +2699,15 @@ test "OC/P: non-greedy positional deferred to P phase" {
   inspect(
     src.unwrap().get(),
     content=(
-      #|Some("F1")
+      #|Some(F1)
+
     ),
   )
   inspect(
     dst.unwrap().get(),
     content=(
-      #|Some("F2")
+      #|Some(F2)
+
     ),
   )
 }
@@ -2670,13 +2746,15 @@ test "OC/P: dashdash forces positional in P phase" {
   inspect(
     src.unwrap().get(),
     content=(
-      #|Some("F1")
+      #|Some(F1)
+
     ),
   )
   inspect(
     dst.unwrap().get(),
     content=(
-      #|Some("F2")
+      #|Some(F2)
+
     ),
   )
 }
@@ -2694,7 +2772,8 @@ test "OC/P: dashdash prevents option matching" {
   inspect(
     p.get(files),
     content=(
-      #|Some(["--verbose", "file"])
+      #|Some([--verbose, file])
+
     ),
   )
 }
@@ -2717,20 +2796,23 @@ test "OC/P: interleaved options and positionals" {
   inspect(
     p.get(output),
     content=(
-      #|Some("out")
+      #|Some(out)
+
     ),
   )
   inspect(p.get(verbose), content="Some(true)")
   inspect(
     src.unwrap().get(),
     content=(
-      #|Some("F1")
+      #|Some(F1)
+
     ),
   )
   inspect(
     dst.unwrap().get(),
     content=(
-      #|Some("F2")
+      #|Some(F2)
+
     ),
   )
 }
@@ -2789,7 +2871,9 @@ test "OC/P: rest with options interleaved" {
   let files = p.rest(name="files")
   ignore(p.parse(["f1", "--verbose", "f2", "f3"]))
   inspect(verbose.is_set(), content="true")
-  inspect(files.get(), content="Some([\"f1\", \"f2\", \"f3\"])")
+  inspect(files.get(), content=(
+    #|Some([f1, f2, f3])
+  ))
 }
 
 ///|
@@ -2808,9 +2892,13 @@ test "OC/P: serial(file1, rest(dir), file2) with interleaved options" {
   })
   ignore(p.parse(["F1", "--verbose", "D1", "D2", "F2"]))
   inspect(verbose.is_set(), content="true")
-  inspect(file1.unwrap().get(), content="Some(\"F1\")")
+  inspect(file1.unwrap().get(), content=(
+    #|Some(F1)
+  ))
   // rest が stop_before なしのため D1, D2, F2 全てを消費し file2 は未設定
-  inspect(dirs.unwrap().get(), content="Some([\"D1\", \"D2\", \"F2\"])")
+  inspect(dirs.unwrap().get(), content=(
+    #|Some([D1, D2, F2])
+  ))
   inspect(file2.unwrap().is_set(), content="false")
 }
 
@@ -2824,7 +2912,9 @@ test "OC/P: greedy positional normal consumption" {
   let file = p.positional(name="file", greedy=true)
   ignore(p.parse(["F1", "--verbose"]))
   inspect(verbose.is_set(), content="true")
-  inspect(file.get(), content="Some(\"F1\")")
+  inspect(file.get(), content=(
+    #|Some(F1)
+  ))
 }
 
 ///|
@@ -2838,8 +2928,12 @@ test "OC/P: greedy then non-greedy positional" {
   let deferred = p.positional(name="deferred")
   ignore(p.parse(["A", "--verbose", "B"]))
   inspect(verbose.is_set(), content="true")
-  inspect(eager.get(), content="Some(\"A\")")
-  inspect(deferred.get(), content="Some(\"B\")")
+  inspect(eager.get(), content=(
+    #|Some(A)
+  ))
+  inspect(deferred.get(), content=(
+    #|Some(B)
+  ))
 }
 
 ///|
@@ -2886,8 +2980,12 @@ test "OC/P: serial with greedy=true normal consumption" {
     dst = Some(sub.positional(name="dst"))
   })
   ignore(p.parse(["F1", "F2"]))
-  inspect(src.unwrap().get(), content="Some(\"F1\")")
-  inspect(dst.unwrap().get(), content="Some(\"F2\")")
+  inspect(src.unwrap().get(), content=(
+    #|Some(F1)
+  ))
+  inspect(dst.unwrap().get(), content=(
+    #|Some(F2)
+  ))
 }
 
 ///|
@@ -2944,7 +3042,9 @@ test "R2-W1: parse after error retries without node growth" {
   // 2回目: 成功パース（べき等ガードによりノード数が増えない）
   let r2 = try? p.parse(["--name", "alice"])
   inspect(r2 is Ok(_), content="true")
-  inspect(name.get(), content="Some(\"alice\")")
+  inspect(name.get(), content=(
+    #|Some(alice)
+  ))
   let nodes_after_second = p.nodes.length()
   inspect(nodes_after_first == nodes_after_second, content="true")
 }
@@ -3161,7 +3261,8 @@ test "coverage: register_env_applicator with missing env key" {
   inspect(
     opt.get(),
     content=(
-      #|Some("default")
+      #|Some(default)
+
     ),
   )
 }
@@ -3190,13 +3291,15 @@ test "coverage: rest stop_before triggers Reject then next positional" {
   inspect(
     files.get(),
     content=(
-      #|Some(["a", "b"])
+      #|Some([a, b])
+
     ),
   )
   inspect(
     last.get(),
     content=(
-      #|Some("END")
+      #|Some(END)
+
     ),
   )
 }
@@ -3216,14 +3319,16 @@ test "coverage: P phase skips greedy positional" {
   inspect(
     greedy_pos.get(),
     content=(
-      #|Some("first")
+      #|Some(first)
+
     ),
   )
   inspect(opt.get(), content="Some(true)")
   inspect(
     normal_pos.get(),
     content=(
-      #|Some("second")
+      #|Some(second)
+
     ),
   )
 }
@@ -3311,14 +3416,16 @@ test "coverage: clone with implicit_value creates eq_fallback" {
   inspect(
     colour.get(),
     content=(
-      #|Some("never")
+      #|Some(never)
+
     ),
   )
   // target は変更されない
   inspect(
     color.get(),
     content=(
-      #|Some("auto")
+      #|Some(auto)
+
     ),
   )
 }
@@ -3335,7 +3442,8 @@ test "coverage: serial sub_current exhausted returns Reject" {
   inspect(
     second.get(),
     content=(
-      #|Some("world")
+      #|Some(world)
+
     ),
   )
 }
@@ -3355,7 +3463,8 @@ test "coverage: serial Reject mid-sequence breaks loop" {
   inspect(
     last.get(),
     content=(
-      #|Some("END")
+      #|Some(END)
+
     ),
   )
 }
@@ -3638,7 +3747,9 @@ test "DR-0060: string with shorts and global" {
   let _ = p.sub(name="sub", description="sub")
   let host = p.string(name="host", default="", shorts="H", global=true)
   ignore(p.parse(["sub", "-H", "example.com"]))
-  inspect(host.get(), content="Some(\"example.com\")")
+  inspect(host.get(), content=(
+    #|Some(example.com)
+  ))
 }
 
 ///|
@@ -3646,7 +3757,9 @@ test "DR-0060: string with aliases" {
   let p = Parser::new()
   let output = p.string(name="output", default="", aliases=["out", "o"])
   ignore(p.parse(["--out", "file.txt"]))
-  inspect(output.get(), content="Some(\"file.txt\")")
+  inspect(output.get(), content=(
+    #|Some(file.txt)
+  ))
 }
 
 ///|
@@ -3711,7 +3824,9 @@ test "DR-0060: append_string with shorts and global" {
   let _ = p.sub(name="run", description="run")
   let files = p.append_string(name="file", shorts="f", global=true)
   ignore(p.parse(["run", "-f", "a.txt", "-f", "b.txt"]))
-  inspect(files.get(), content="Some([\"a.txt\", \"b.txt\"])")
+  inspect(files.get(), content=(
+    #|Some([a.txt, b.txt])
+  ))
 }
 
 ///|
@@ -3736,7 +3851,9 @@ test "DR-0060: string without shorts/global uses default behavior" {
   let p = Parser::new()
   let name = p.string(name="name", default="world")
   ignore(p.parse(["--name", "hello"]))
-  inspect(name.get(), content="Some(\"hello\")")
+  inspect(name.get(), content=(
+    #|Some(hello)
+  ))
 }
 
 ///|
@@ -3747,7 +3864,9 @@ test "DR-0060: string with variations" {
   ])
   ignore(p.parse(["--output", "file.txt", "--no-output"]))
   // Reset variation resets to default value
-  inspect(output.get(), content="Some(\"stdout\")")
+  inspect(output.get(), content=(
+    #|Some(stdout)
+  ))
 }
 
 // ============ empty name validation tests ============
@@ -3818,13 +3937,15 @@ test "serial_scope: basic positional grouping" {
   inspect(
     src.get(),
     content=(
-      #|Some("file1.txt")
+      #|Some(file1.txt)
+
     ),
   )
   inspect(
     dst.get(),
     content=(
-      #|Some("file2.txt")
+      #|Some(file2.txt)
+
     ),
   )
 }
@@ -3839,13 +3960,15 @@ test "serial_scope: with rest" {
   inspect(
     remote.get(),
     content=(
-      #|Some("origin")
+      #|Some(origin)
+
     ),
   )
   inspect(
     branches.get(),
     content=(
-      #|Some(["main", "dev"])
+      #|Some([main, dev])
+
     ),
   )
 }
@@ -3861,13 +3984,15 @@ test "serial_scope: greedy mode" {
   inspect(
     arg1.get(),
     content=(
-      #|Some("hello")
+      #|Some(hello)
+
     ),
   )
   inspect(
     arg2.get(),
     content=(
-      #|Some("world")
+      #|Some(world)
+
     ),
   )
   inspect(verbose.get(), content="Some(true)")
@@ -3884,13 +4009,15 @@ test "serial_scope: with sub command" {
   inspect(
     remote.get(),
     content=(
-      #|Some("origin")
+      #|Some(origin)
+
     ),
   )
   inspect(
     branch.get(),
     content=(
-      #|Some("main")
+      #|Some(main)
+
     ),
   )
 }
@@ -3916,7 +4043,8 @@ test "serial_scope: insufficient arguments" {
   inspect(
     src.get(),
     content=(
-      #|Some("only-one")
+      #|Some(only-one)
+
     ),
   )
   // 引数不足の positional は値がセットされず、is_set=false
@@ -3925,7 +4053,8 @@ test "serial_scope: insufficient arguments" {
   inspect(
     dst.get(),
     content=(
-      #|Some("")
+      #|Some()
+
     ),
   )
 }
@@ -3943,13 +4072,15 @@ test "serial_scope: greedy=false option between positionals" {
   inspect(
     arg1.get(),
     content=(
-      #|Some("hello")
+      #|Some(hello)
+
     ),
   )
   inspect(
     arg2.get(),
     content=(
-      #|Some("world")
+      #|Some(world)
+
     ),
   )
   inspect(verbose.get(), content="Some(true)")

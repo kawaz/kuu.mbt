@@ -40,7 +40,8 @@ test "required option present" {
   inspect(
     p.get(output),
     content=(
-      #|Some("file.txt")
+      #|Some(file.txt)
+
     ),
   )
 }
@@ -123,7 +124,8 @@ test "is_set false for default fallback" {
   inspect(
     p.get(color),
     content=(
-      #|Some("auto")
+      #|Some(auto)
+
     ),
   )
 }
@@ -141,7 +143,8 @@ test "is_set true for explicit value" {
   inspect(
     p.get(color),
     content=(
-      #|Some("never")
+      #|Some(never)
+
     ),
   )
 }
@@ -159,7 +162,8 @@ test "is_set true for implicit value" {
   inspect(
     p.get(color),
     content=(
-      #|Some("always")
+      #|Some(always)
+
     ),
   )
 }
@@ -184,7 +188,8 @@ test "never allows exact positional count" {
   inspect(
     p.get(file),
     content=(
-      #|Some("hello")
+      #|Some(hello)
+
     ),
   )
 }
@@ -206,7 +211,9 @@ test "deprecated alias satisfies required on target" {
   p.required(output.as_ref())
   // deprecated 別名で target の required を満たせること
   ignore(p.parse(["--out", "file.txt"]))
-  inspect(output.get(), content="Some(\"file.txt\")")
+  inspect(output.get(), content=(
+    #|Some(file.txt)
+  ))
 }
 
 ///|
@@ -308,13 +315,15 @@ test "requires: both set is ok" {
   inspect(
     config.get(),
     content=(
-      #|Some("a.json")
+      #|Some(a.json)
+
     ),
   )
   inspect(
     output.get(),
     content=(
-      #|Some("out.txt")
+      #|Some(out.txt)
+
     ),
   )
 }

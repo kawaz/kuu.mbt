@@ -61,7 +61,8 @@ test "nested subcommand" {
       inspect(
         p.get(opt),
         content=(
-          #|Some("origin")
+          #|Some(origin)
+
         ),
       )
     None => abort("unreachable")
@@ -83,7 +84,8 @@ test "nested subcommand with parent option" {
       inspect(
         p.get(opt),
         content=(
-          #|Some("https://example.com")
+          #|Some(https://example.com)
+
         ),
       )
     None => abort("unreachable")
@@ -133,7 +135,8 @@ test "global flag in nested subcommand" {
       inspect(
         p.get(opt),
         content=(
-          #|Some("origin")
+          #|Some(origin)
+
         ),
       )
     None => abort("unreachable")
@@ -218,7 +221,8 @@ test "ParseResult nested child navigation" {
           inspect(
             add_result.get(name_opt.val.unwrap()),
             content=(
-              #|Some("origin")
+              #|Some(origin)
+
             ),
           )
         None => abort("add child should exist")
@@ -264,7 +268,9 @@ test "sub basic — no Ref needed" {
   let depth = clone.int(name="depth", default=0)
   let result = p.parse(["clone", "https://example.com", "--depth", "3"])
   inspect(result.child("clone") is Some(_), content="true")
-  inspect(url.get(), content="Some(\"https://example.com\")")
+  inspect(url.get(), content=(
+    #|Some(https://example.com)
+  ))
   inspect(depth.get(), content="Some(3)")
 }
 
@@ -283,13 +289,15 @@ test "sub nested — remote add without Ref" {
           inspect(
             name_opt.get(),
             content=(
-              #|Some("origin")
+              #|Some(origin)
+
             ),
           )
           inspect(
             url_opt.get(),
             content=(
-              #|Some("https://example.com")
+              #|Some(https://example.com)
+
             ),
           )
         }
@@ -310,7 +318,8 @@ test "sub with global option propagation" {
   inspect(
     url.get(),
     content=(
-      #|Some("https://example.com")
+      #|Some(https://example.com)
+
     ),
   )
 }
@@ -347,7 +356,8 @@ test "sub with required and exclusive" {
   inspect(
     key.get(),
     content=(
-      #|Some("user.name")
+      #|Some(user.name)
+
     ),
   )
 }
@@ -388,13 +398,15 @@ test "sub with serial and never" {
   inspect(
     src.unwrap().get(),
     content=(
-      #|Some("a.txt")
+      #|Some(a.txt)
+
     ),
   )
   inspect(
     dst.unwrap().get(),
     content=(
-      #|Some("b.txt")
+      #|Some(b.txt)
+
     ),
   )
 }
@@ -414,13 +426,15 @@ test "sub with dashdash" {
   inspect(
     msg.get(),
     content=(
-      #|Some("wip")
+      #|Some(wip)
+
     ),
   )
   inspect(
     files.get(),
     content=(
-      #|Some(["file1", "file2"])
+      #|Some([file1, file2])
+
     ),
   )
 }
@@ -500,13 +514,15 @@ test "sub + serial positionals" {
   inspect(
     remote_name.unwrap().get(),
     content=(
-      #|Some("origin")
+      #|Some(origin)
+
     ),
   )
   inspect(
     remote_url.unwrap().get(),
     content=(
-      #|Some("https://example.com")
+      #|Some(https://example.com)
+
     ),
   )
 }
@@ -820,7 +836,8 @@ test "H-5: sub alias parses child options correctly" {
   inspect(
     host.get(),
     content=(
-      #|Some("example.com")
+      #|Some(example.com)
+
     ),
   )
 }
