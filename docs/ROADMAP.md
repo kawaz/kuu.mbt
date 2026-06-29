@@ -555,6 +555,8 @@ mooncakes.io はソースレベル配布。`moon publish` で公開、`moon add 
 
 **注意**: MoonBit は言語進化が速く、6ヶ月前のライブラリが壊れることがある。依存する MoonBit バージョンの明記と、定期的な互換性テストが必要。
 
+**現状**: **当面 pending** — kawaz が納得するまで保留。API 安定 / 互換性運用 / 公開タイミングを慎重に判断する。issue 化せず本 ROADMAP に置いておく。
+
 **やること**:
 - `moon.mod.json` のメタデータ整備（description, keywords, license, repository）
 - mooncakes.io のアカウント・トークン設定
