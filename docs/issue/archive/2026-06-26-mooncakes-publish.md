@@ -1,6 +1,6 @@
 ---
 title: mooncakes.io に kawaz/kuu を publish する
-status: open
+status: discarded
 category: task
 created: 2026-06-26T23:54:55+09:00
 last_read:
@@ -8,11 +8,11 @@ open_entered: 2026-06-26T23:54:55+09:00
 wip_entered:
 blocked_entered:
 pending_entered:
-discarded_entered:
+discarded_entered: 2026-06-29T10:54:39+09:00
 resolved_entered:
-discard_reason:
+discard_reason: ["discarded:kawaz判断でROADMAP管理に移行、実作業時期が来たら再起票"]
 pending_reason:
-close_reason:
+close_reason: ["discarded:kawaz判断でROADMAP管理に移行、実作業時期が来たら再起票"]
 blocked_by:
 origin: 自リポ TODO
 ---
