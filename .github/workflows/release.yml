@@ -9,6 +9,11 @@ on:
 permissions:
   contents: write
 
+env:
+  # moon.mod 新形式 (source = "src" 等) を有効化する feature flag。
+  # ローカル nightly toolchain は default で ON だが、CI install 後は明示が必要。
+  MOON_FEATURES: rr_moon_mod,rr_moon_pkg
+
 jobs:
   check-version:
     runs-on: ubuntu-latest

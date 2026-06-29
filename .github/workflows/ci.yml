@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  # moon.mod 新形式 (source = "src" 等) を有効化する feature flag。
+  # ローカル nightly toolchain は default で ON だが、CI install 後は明示が必要。
+  MOON_FEATURES: rr_moon_mod,rr_moon_pkg
+
 jobs:
   lint:
     name: Lint
@@ -15,6 +20,7 @@ jobs:
       - uses: chawyehsu/setup-moonup@v1
         with:
           moonbit-version: nightly
+      - run: moon version --all
       - run: moon update
       - run: moon fmt --check
       - run: moon check --deny-warn
