@@ -1,3 +1,29 @@
+// ============================================================
+// Scope: subcommand 機構と ParseResult 構造の責務輪郭を固定する。
+// sub API (DR-0039 サブパーサ抽象化 + DR-0028 cmd → Opt[CmdResult] 統合)、
+// require_cmd (DR-0026)、global option propagation、ネスト構造を担う。
+//
+// Covers:
+//   - cmd / sub の基本: subcommand 選択、未選択時 fallback、未知 option
+//     エラー、ネストした subcommand 選択
+//   - global option の伝播: subcommand 配下 / subcommand 前置 / nested
+//     subcommand での親 opt 取得
+//   - ParseResult API (DR-0013): get / 親子ナビゲーション (cmd_result.get
+//     経由) / as_map / opt.get cobra-style
+//   - sub 固有: Ref 不要設計 / global option 伝播 / required + exclusive /
+//     serial + never との組合せ / -- 区切り / help flag 表示順
+//   - require_cmd (DR-0026): subcommand 必須化と flag-only 入力時 error
+//
+// NA:
+//   - cmd 配下の opt 自体の基本動作 (= flag / string / int 等) →
+//     parse_wbtest
+//   - cmd 配下の制約 (exclusive / required) — primitive 検証 →
+//     constraint_wbtest
+//   - cmd 経由の env / deprecated → advanced_wbtest
+//   - ErrorKind の MissingSubcommand 検証 → error_wbtest
+//   - dx 層から見た sub → dx/dx_wbtest
+// ============================================================
+
 ///|
 test "subcommand basic" {
   let p = Parser::new()

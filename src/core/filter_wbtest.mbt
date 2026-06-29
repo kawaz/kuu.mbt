@@ -1,3 +1,32 @@
+// ============================================================
+// Scope: FilterChain (DR-0016) と Filter primitives / sugar (DR-0050) を
+// pure function として固定する。kuu の「String → T への前処理 / 検証」
+// 層。parse loop からは独立した純粋関数の検証であり、parser を作らない
+// 単体テストが基本形。
+//
+// Covers:
+//   - Filter primitives: map (純粋変換) / validate (ParseError raise) /
+//     parse (String → T 変換)
+//   - then composition: 型遷移 (String → String → Int → Int range) の
+//     Kleisli 合成、エラー伝播が最初の失敗で止まる semantics
+//   - 標準 filter sugar: trim / non_empty / split / parse_int /
+//     parse_float / in_range (境界含む) / one_of / each / to_lower
+//   - make_reducer: FilterChain を OptKind の reducer に翻訳するときの
+//     Value(Some) / Value(None) / pre error の 3 経路
+//
+// 設計上の注意 (= P1-3 で見直し対象):
+//   現状コメント密度が他 file より低く (約 13%)、境界 case (空入力 /
+//   0 件マッチ / 重なる pattern / overflow / Unicode) の網羅も薄い。
+//   P1-3 でコメント inline 化 + 境界追加を行う。
+//
+// NA:
+//   - parser 経路に組み込んだときの動作 (= flag/string/int 等の reducer
+//     経由で filter が走る場面) → parse_wbtest / advanced_wbtest
+//   - 制約 (exclusive 等) → constraint_wbtest
+//   - error の構造化 → error_wbtest
+//   - dx 層 → dx/dx_wbtest
+// ============================================================
+
 ///|
 test "Filter::map — pure transformation" {
   let chain = Filter::map(fn(s : String) { s.length() })

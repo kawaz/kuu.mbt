@@ -1,3 +1,34 @@
+// ============================================================
+// Scope: dx 層 (DR-0042 struct-first DX / Parseable trait + set 方式) の
+// 責務輪郭を固定する。dx → core の一方向依存 (DESIGN principle #10) を
+// 前提に、「dx 固有の振る舞い」だけをここで検証する。
+//
+// Covers (dx 固有):
+//   - Parseable trait による struct field と opt の紐付け: set callback
+//     が parse 完了後に呼ばれること
+//   - 部分書き込み防止: parse error 時に struct を default のまま残す
+//     (= 失敗時の atomic semantics)
+//   - struct default 保持: opt が unset の field は struct default を
+//     破壊しない
+//   - parse_into entry point: 単一呼び出しで struct に集約される
+//   - sub 経由の struct ネスト (subcommand の field set 反映)
+//   - set_description 等の dx メタ API が parsing に影響しないこと
+//
+// 設計上の注意 (= P1-2 で見直し対象):
+//   core で既に検証済みの動作 (例: count 増分の数値そのもの、append の
+//   配列累積、boolean の true/false 等) を dx でも再検証している重複が
+//   多い (~30 case)。P1-2 で「dx 固有の責務」に絞り、core 動作の再検証は
+//   削除予定。現時点では既存 case を維持。
+//
+// NA:
+//   - opt の単発動作・OptKind 横断・variation・implicit_value 等 → core
+//   - 制約 → constraint_wbtest
+//   - error 構造化 → error_wbtest
+//   - Filter → filter_wbtest
+//   - 環境変数 / Visibility / mergeable_list 等の advanced 機能 →
+//     advanced_wbtest
+// ============================================================
+
 ///|
 /// Phase 1: 基本型テスト — flag, string, int + parse_into
 

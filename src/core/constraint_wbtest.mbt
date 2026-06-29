@@ -1,3 +1,27 @@
+// ============================================================
+// Scope: parser 全体に対する横断的制約 (DR-0021) + 関連派生機能を固定する。
+// 個別 combinator の動作ではなく、「複数 opt 間の関係性」が責務。
+//
+// Covers:
+//   - exclusive: 同時指定禁止グループ (none / one / many 各境界)
+//   - required: 単独必須化と検出タイミング
+//   - at_least_one: グループ内の最低 1 個必須、subcommand 跨ぎ含む
+//   - is_set 追跡 (DR-0021): explicit / implicit / default fallback の
+//     3 値区別
+//   - exclusive × at_least_one 合成で「exactly one」を表現できること
+//   - never combinator (DR-0022): 位置引数の零個許容と過剰拒否
+//   - deprecated alias (DR-0040) と constraint 群の合成: deprecated 経路
+//     経由でも required / at_least_one / exclusive が target に集約される
+//
+// NA:
+//   - 個別 combinator の単発動作 → parse_wbtest
+//   - requires (依存関係) は使われていないなら追加、circular check 含む
+//     場合は別 file → 該当 case は parse_wbtest / advanced_wbtest に存在
+//   - 制約違反の ErrorKind / メッセージ文言検証 → error_wbtest
+//   - subcommand 自体の構造と require_cmd → cmd_wbtest
+//   - dx 層から見た制約 → dx/dx_wbtest
+// ============================================================
+
 // === exclusive / required / is_set テスト ===
 
 ///|

@@ -1,3 +1,34 @@
+// ============================================================
+// Scope: 構造化エラー (DR-0052) と error 表示の輪郭を固定する。
+// 「どんな error が起きたか」を機械可読 (ErrorKind enum + 構造化
+// フィールド) と人間可読 (4 層 to_string format) の両軸で担保する。
+//
+// Covers:
+//   - parse error の error_context (発生位置、subcommand 階層、関連 opt)
+//   - ParseErrorInfo::to_string の 4 層フォーマット骨格:
+//     error / help / tip / Usage / footer の順序と区切り行
+//   - ErrorKind enum 全 variant の発生 trigger:
+//     UnknownOption / UnexpectedArgument / MissingValue / InvalidValue /
+//     MissingRequired / ArgumentConflict / DuplicateDefinition /
+//     MissingSubcommand / AtLeastOneRequired / DependencyMissing /
+//     ParseAlreadyCalled / AmbiguousMatch
+//   - 構造化フィールド (info.kind / info.message / info.tip /
+//     info.opt_name 等) を機械可読 assert で検証
+//   - suggestion 機能 (UnknownOption の typo 候補) の有無両ケース
+//
+// 設計上の注意 (= P0-2 で見直し対象):
+//   to_string 形式の byte 厳密 snapshot は **実装拘束過多** であり、
+//   現状の 9 箇所は将来「1 件代表 + 残りは構造値 assert」に降格予定。
+//   現時点では既存 snapshot を維持し、変更は別 task で行う。
+//
+// NA:
+//   - 制約違反 自体の発生 (constraint 動作) → constraint_wbtest
+//   - subcommand 構造 → cmd_wbtest
+//   - error 経路を踏む parse 動作 (= speculative + longest match の
+//     失敗判定そのもの) → parse_wbtest
+//   - dx 層から見た error → dx/dx_wbtest
+// ============================================================
+
 ///|
 test "parse error includes error_context" {
   let p = Parser::new()

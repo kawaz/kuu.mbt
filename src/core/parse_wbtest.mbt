@@ -1,3 +1,33 @@
+// ============================================================
+// Scope: core parser の基本動作 (combinator → ExactNode → speculative
+// execution + longest match) を全 OptKind 横断で固定する。kuu の中核。
+//
+// Covers:
+//   - 基本 combinator の単発動作: flag / string / int / float / boolean /
+//     count / append* / positional / rest / sub / cmd / never / serial
+//   - OptKind 大統一の挙動: default / explicit value / implicit_value /
+//     choices / 重複呼出時の reducer 蓄積
+//   - speculative execution + longest match: --color / --color=value /
+//     --color value の同時成立、short combining (-abc → -a -b -c)
+//   - parse 2 phase (OC / P) の分担と stop_before / serial / -- 境界
+//   - duplicate name validation (DR-0053 primitive 階層) と
+//     ParseResult アクセス (DR-0013)
+//   - shorts / aliases / global / variations の各 Value primitive 横断
+//     直交性 (DR-0060)
+//
+// NA (= 当 file が担わない軸 — 担当 file を明示):
+//   - 制約系 (exclusive / required / at_least_one / requires /
+//     require_cmd / is_set) → constraint_wbtest.mbt
+//   - 構造化エラー (ErrorKind / ParseErrorInfo / 4 層 to_string 形式) →
+//     error_wbtest.mbt
+//   - Filter / FilterChain (DR-0016 + DR-0050) → filter_wbtest.mbt
+//   - 環境変数 (env / env_prefix / auto_env) / visibility / file /
+//     deprecated / mergeable_list / grapheme 入力 / sugar parameter /
+//     default_fn / ValCell / Accessor → advanced_wbtest.mbt
+//   - subcommand ネスト / ParseResult 親子ナビ / sub API → cmd_wbtest.mbt
+//   - dx (Parseable trait + set callback) → dx/dx_wbtest.mbt
+// ============================================================
+
 ///|
 test "single flag" {
   let p = Parser::new()

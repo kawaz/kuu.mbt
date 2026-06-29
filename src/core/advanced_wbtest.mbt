@@ -1,3 +1,38 @@
+// ============================================================
+// Scope: parse_wbtest が担う「基本動作」より外側の advanced/sugar 層、
+// および後発 DR の機能群を固定する。kuu の「沿線」を全部ここに集める。
+//
+// Covers:
+//   - 汎用 or combinator + enum or (DR-0020) — string/int/RGB 等混在
+//   - choices + implicit_value (DR-0019/0034) の共存と post filter
+//   - variation primitives (False / Reset / Unset / Toggle / True+False)
+//     (DR-0024 variation 設計 + DR-0037 alias の直交合成)
+//   - sugar parameter / default_fn / 各 sugar combinator の参数規約
+//     (DR-0024 / DR-0050)
+//   - H 系修正履歴: --opt=--value implicit_value fallback / alias の
+//     eq_split fallback / global=true 宣言順非依存 / implicit_value +
+//     choices 共存
+//   - deprecated combinator (DR-0040)
+//   - 環境変数: env (DR-0041) / env_prefix Phase 3 / auto_env / 値取得
+//   - mergeable_list (DR-0023) と +/- 修飾子, ... 展開
+//   - file combinator (default + default_path + implicit_value の 3 値)
+//   - Visibility enum (Public / Hidden / Internal の usage / help /
+//     completion / error 各軸)
+//   - adjust + alias 組合せ / serial node primitive (DR-0061 Phase 1)
+//   - grapheme / サロゲートペア対応 (DR-0049) — short combining が
+//     Unicode codepoint 単位で動くこと
+//   - ValCell / Accessor 分離 (DR-0045) と Opt.used / Accessor.is_set
+//     (DR-0048) の内部構造
+//
+// NA:
+//   - 基本 combinator の単発動作と OptKind 横断の正常系 → parse_wbtest
+//   - 制約系 (exclusive / required / 等) → constraint_wbtest
+//   - 構造化エラー (ErrorKind / 4 層 format) → error_wbtest
+//   - Filter / FilterChain → filter_wbtest
+//   - cmd / sub ネストの構造 → cmd_wbtest
+//   - dx 層 → dx/dx_wbtest
+// ============================================================
+
 // === enum or パターン PoC ===
 
 ///|
