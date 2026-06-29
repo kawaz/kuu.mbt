@@ -1,6 +1,6 @@
 ---
 title: release.yml semver gate に latest-release 並列 check 追加 (DR-0039 canonical 同期)
-status: open
+status: discarded
 category: request
 created: 2026-06-28T20:06:07+09:00
 last_read:
@@ -8,9 +8,9 @@ open_entered: 2026-06-28T20:06:07+09:00
 wip_entered:
 blocked_entered:
 pending_entered:
-discarded_entered:
+discarded_entered: 2026-06-29T10:52:31+09:00
 resolved_entered:
-discard_reason:
+discard_reason: ["kuu は GH Release / binary 配布なし方針のため release.yml semver gate 改善は不要。release.yml 自体の今後 (完全削除/暫定維持/mooncakes publish 専用) は別途方針確認。"]
 pending_reason:
 close_reason:
 blocked_by:
