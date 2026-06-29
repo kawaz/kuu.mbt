@@ -1,9 +1,10 @@
 ---
 title: --help のオプションをカテゴリ/セクション分けで表示する機能
-status: open
+status: idea
 category: request
 created: 2026-05-26T09:11:44+09:00
 last_read:
+idea_entered: 2026-06-29T10:59:47+09:00
 open_entered: 2026-05-26T09:11:44+09:00
 wip_entered:
 blocked_entered:
