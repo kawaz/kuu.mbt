@@ -1,9 +1,25 @@
+---
+title: --help のオプションをカテゴリ/セクション分けで表示する機能
+status: open
+category: request
+created: 2026-05-26T09:11:44+09:00
+last_read:
+open_entered: 2026-05-26T09:11:44+09:00
+wip_entered:
+blocked_entered:
+pending_entered:
+discarded_entered:
+resolved_entered:
+discard_reason:
+pending_reason:
+close_reason:
+blocked_by:
+origin: kawaz/hyoui の CLI 設計議論 (paste サブコマンドのオプション数が増えた時に、カテゴリ分けすると圧倒的に読みやすくなると判明)
+---
+
 # `--help` のオプションをカテゴリ/セクション分けで表示する機能
 
-- Status: Open
-- Date: 2026-05-26
 - Priority: Middle (CLI parser/help generator の UX 改善)
-- 発見元: kawaz/hyoui の CLI 設計議論 (paste サブコマンドのオプション数が増えた時に、カテゴリ分けすると圧倒的に読みやすくなると判明)
 
 ## 背景
 
