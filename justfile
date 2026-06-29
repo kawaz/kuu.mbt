@@ -177,7 +177,8 @@ check-version-bumped: (_check-version-bumped "src/" "moon.mod" "moon.pkg")
 [private]
 [script]
 _check-version-bumped *target_paths:
-    if ! bump-semver vcs diff -q main@origin -- "$@" --excludes 'glob:src/**/*_wbtest.mbt'; then
+    # --excludes は -- の前に置く必要がある (置く位置が後だと positional 扱いされ exclude が無効化される、bump-semver 0.45.0 で観測)
+    if ! bump-semver vcs diff -q main@origin --excludes 'glob:src/**/*_wbtest.mbt' -- "$@"; then
         # 初回 release では origin/main に VERSION が無いので compare gt が exit 2 で返る (path not found)。
         # その場合は「VERSION 新規追加 = bump 済」とみなして OK 扱い。
         set +e
