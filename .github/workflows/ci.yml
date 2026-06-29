@@ -20,6 +20,7 @@ jobs:
       - uses: chawyehsu/setup-moonup@v1
         with:
           moonbit-version: nightly
+      - run: moonup default nightly
       - run: moon version --all
       - run: moon update
       - run: moon fmt --check
@@ -37,6 +38,7 @@ jobs:
       - uses: chawyehsu/setup-moonup@v1
         with:
           moonbit-version: nightly
+      - run: moonup default nightly
       - run: moon update
       - name: Run tests
         env:
@@ -52,6 +54,7 @@ jobs:
       - uses: chawyehsu/setup-moonup@v1
         with:
           moonbit-version: nightly
+      - run: moonup default nightly
       - uses: actions/setup-node@v6
         with:
           node-version: 'lts/*'
@@ -68,6 +71,7 @@ jobs:
       - uses: chawyehsu/setup-moonup@v1
         with:
           moonbit-version: nightly
+      - run: moonup default nightly
       - run: moon update
       - name: Test examples
         run: |
@@ -94,5 +98,6 @@ jobs:
       - uses: chawyehsu/setup-moonup@v1
         with:
           moonbit-version: nightly
+      - run: moonup default nightly
       - run: moon update
       - run: moon coverage analyze -- -f summary

@@ -118,6 +118,7 @@ jobs:
       - uses: chawyehsu/setup-moonup@v1
         with:
           moonbit-version: nightly
+      - run: moonup default nightly
       - run: moon update
 
       - name: Build (${{ matrix.target }} release)
