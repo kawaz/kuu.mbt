@@ -111,6 +111,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: chawyehsu/setup-moonup@v1
+        with:
+          moonbit-version: nightly
       - run: moon update
 
       - name: Build (${{ matrix.target }} release)
