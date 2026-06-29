@@ -9,6 +9,4 @@ import {
 
 license = "MIT"
 
-options(
-  source: "src",
-)
+source = "src"
