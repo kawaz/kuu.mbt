@@ -228,8 +228,8 @@ fn dd_marker() -> ElemDef {
   }
 }
 
-fn rep(min : Int) -> RepeatSpec? {
-  Some({ min, })
+fn rep(min : Int, lazy~ : Bool = false) -> RepeatSpec? {
+  Some({ min, lazy })
 }
 
 /// Build a scope + return the ref-template registry (for repeat/ref tests). Any

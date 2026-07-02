@@ -30,9 +30,11 @@ pub(all) struct ElemDef {
 
 /// A repeat closure (DR-043). `min` is the required rep count. The PoC realizes the
 /// unbounded tail (an upper bound / max is out of scope) and requires min >= 1 on the
-/// porous spine; min is the mandatory-head unroll.
+/// porous spine; min is the mandatory-head unroll. `lazy` picks the split preference:
+/// greedy (default, longest share first) vs lazy (shortest first).
 pub(all) struct RepeatSpec {
   min : Int
+  lazy : Bool
 } derive(Eq, Show)
 
 /// A subcommand: a name + its own scope Definition (a fresh backbone, DR-041 §4).
@@ -186,6 +188,11 @@ fn lower_positional(def : Definition, registry : Map[String, Node]) -> Array[Nod
         None => out.push(head)
         Some(spec) => {
           registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
+          // lazy marker under a mangled key the evaluator consults for split preference
+          // (kept out of the Ref node so plain ref-to-template stays lazy-agnostic).
+          if spec.lazy {
+            registry.set("lazy:" + e.name, Exact("lazy"))
+          }
           let m = if spec.min < 1 { 1 } else { spec.min }
           let mut k = 0
           while k < m - 1 {

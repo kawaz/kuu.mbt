@@ -349,24 +349,46 @@ fn scope_consume(
       }
     Ref(name) =>
       // A repeat item (DR-043): >= 1 head, unfolded POROUSLY on the spine. Consume the
-      // mandatory head, then offer either "stop" (advance to pidx+1) or "one more rep"
-      // (re-enter scope_step at the SAME pidx). The "more" route goes through
-      // scope_step, so greedy interjects between reps for free (背骨に留まる, 反復間
-      // 割り込みが保たれる). ≥1 semantics: each visit consumes one mandatory head.
+      // mandatory head, then offer either "stop" (advance to pidx+1, fewer reps) or "one
+      // more rep" (re-enter at the SAME pidx). "more" goes through scope_step, so greedy
+      // interjects between reps for free (背骨に留まる).
+      //
+      // 取り分の選好 (DR-043 §取り分の選好): the split between adjacent closures is not an
+      // ambiguity — it is one interpretation's freedom of division. greedy (default) prefers
+      // the LONGER share (try "more" first), lazy the shorter ("stop" first). We commit to
+      // the FIRST preference whose continuation reaches a FULL parse and PRUNE the other —
+      // it is a different share of the SAME closure, not a competing complete path. If
+      // neither completes, both are kept (failure / genuinely-different completions surface
+      // unchanged). The preference is applied PER head-reading, so structurally different
+      // completions (or-branch / reading differences) remain distinct → still ambiguous.
       {
         let head = ref_head(defs, name)
+        let lazy = ref_is_lazy(defs, name)
+        let target = toks.length()
         let out : Array[Branch] = []
         for b in consume_head(sc, head, toks, pos, severed, defs) {
           match b {
             Accept(p2, bs) =>
               if p2 > pos {
-                // stop: advance past the repeat
-                for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed, defs) {
-                  out.push(r)
+                let acc2 = cat(acc, bs)
+                let stop = scope_step(sc, toks, p2, pidx + 1, acc2, severed, defs)
+                let more = scope_step(sc, toks, p2, pidx, acc2, severed, defs)
+                let chosen = if lazy {
+                  if has_full(stop, target) {
+                    stop
+                  } else if has_full(more, target) {
+                    more
+                  } else {
+                    cat_branches(stop, more)
+                  }
+                } else if has_full(more, target) {
+                  more
+                } else if has_full(stop, target) {
+                  stop
+                } else {
+                  cat_branches(stop, more)
                 }
-                // more reps: re-enter at the same pidx (porous — scope_step offers
-                // a greedy interjection before the next mandatory head)
-                for r in scope_step(sc, toks, p2, pidx, cat(acc, bs), severed, defs) {
+                for r in chosen {
                   out.push(r)
                 }
               }
@@ -456,6 +478,40 @@ fn ref_head(defs : Map[String, Node], name : String) -> Node {
     Some(Seq(items)) => if items.length() >= 1 { items[0] } else { Exact("<bad-ref>") }
     _ => Exact("<bad-ref>")
   }
+}
+
+/// Whether the repeat named `name` prefers the SHORTER share (lazy). The lazy flag is
+/// stored under a mangled registry key by the repeat installer.
+fn ref_is_lazy(defs : Map[String, Node], name : String) -> Bool {
+  match defs.get("lazy:" + name) {
+    Some(_) => true
+    None => false
+  }
+}
+
+/// Whether any branch is a FULL parse (reaches the target length). Used as the split
+/// preference's completion oracle. NB: `target` is the whole-input length, so this is
+/// exact for a root-scope repeat; a repeat nested under a non-final scope is approximate
+/// (the tests keep repeats at the root or in the last command scope).
+fn has_full(brs : Array[Branch], target : Int) -> Bool {
+  for b in brs {
+    match b {
+      Accept(p, _) => if p == target { return true }
+      Held(_, _) => ()
+    }
+  }
+  false
+}
+
+fn cat_branches(a : Array[Branch], b : Array[Branch]) -> Array[Branch] {
+  let r : Array[Branch] = []
+  for x in a {
+    r.push(x)
+  }
+  for x in b {
+    r.push(x)
+  }
+  r
 }
 
 /// One repetition of a Many's inner item (subject to 先食い), continuing at the
