@@ -261,12 +261,12 @@ fn scope_step(
   // (DR-041 §4: the fired greedy's continuation is its internal consumption).
   if !(severed) {
     for g in sc.greedy {
+      // Only dd severs (its continuation is internal consumption, 一体). A command
+      // (CmdSat) does NOT sever — after its subtree completes the parent backbone
+      // RESUMES (DR-041 §4, rev). The command's uniqueness comes from 早閉じ抑制 below,
+      // not from severing the parent.
       let fires_severed = match g {
         DdSat(_) => true
-        // A subcommand owns everything after it: once it fires, the parent greedy
-        // face is off for the rest (一体). Without this, a short child accept lets a
-        // trailing token fall back to a parent greedy (false ambiguity, DR-018).
-        CmdSat(_, _) => true
         _ => false
       }
       for b in eval(g, toks, pos, defs) {
@@ -286,7 +286,15 @@ fn scope_step(
   }
   // (B) advance the positional face
   if pidx >= sc.positional.length() {
-    out.push(Accept(pos, acc)) // positional exhausted => acceptable scope end
+    // 早閉じ抑制 (DR-041 §4, rev): a scope with a backbone cannot complete while one of
+    // its own greedy entries can read the next token — "that which can be read here, is
+    // read here". This makes "the innermost scope that can read wins" emerge without any
+    // cross-path priority: a child cannot exit early leaving a token its greedy could
+    // take, so the parent never gets a competing route. Severed scopes (past `--`) have
+    // greedy off and always may close.
+    if severed || !greedy_reads(sc, toks, pos, defs) {
+      out.push(Accept(pos, acc)) // positional exhausted => acceptable scope end
+    }
   } else {
     for r in scope_consume(
         sc, sc.positional[pidx], toks, pos, pidx, acc, severed, defs,
