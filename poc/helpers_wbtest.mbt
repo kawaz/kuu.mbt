@@ -131,6 +131,7 @@ fn opt(
   env~ : Array[String] = [],
   global~ : Bool = false,
   inherit~ : Bool = false,
+  multiple~ : Bool = false,
   default~ : Value? = None,
 ) -> ElemDef {
   {
@@ -142,11 +143,22 @@ fn opt(
     is_dd: false,
     is_global: global,
     is_inherit: inherit,
+    ref_target: None,
+    repeat: None,
+    multiple,
     default_value: default,
   }
 }
 
-fn pos(name : String, ty : Ty, inherit~ : Bool = false, default~ : Value? = None) -> ElemDef {
+fn pos(
+  name : String,
+  ty : Ty,
+  inherit~ : Bool = false,
+  repeat~ : RepeatSpec? = None,
+  multiple~ : Bool = false,
+  ref_~ : String? = None,
+  default~ : Value? = None,
+) -> ElemDef {
   {
     name,
     ty,
@@ -156,6 +168,9 @@ fn pos(name : String, ty : Ty, inherit~ : Bool = false, default~ : Value? = None
     is_dd: false,
     is_global: false,
     is_inherit: inherit,
+    ref_target: ref_,
+    repeat,
+    multiple,
     default_value: default,
   }
 }
@@ -170,7 +185,27 @@ fn dd_marker() -> ElemDef {
     is_dd: true,
     is_global: false,
     is_inherit: false,
+    ref_target: None,
+    repeat: None,
+    multiple: false,
     default_value: None,
+  }
+}
+
+fn rep(min : Int) -> RepeatSpec? {
+  Some({ min, })
+}
+
+/// Build a scope + return the ref-template registry (for repeat/ref tests). Any
+/// pre-registered templates (e.g. a shared `color`) can be put in `registry` first.
+fn build_reg(
+  def : Definition,
+  order : Array[Installer],
+  registry : Map[String, Node],
+) -> Scope {
+  match parse_definition(def, order, registry~) {
+    Ok(sc) => sc
+    Err(msg) => abort("build failed: " + msg)
   }
 }
 

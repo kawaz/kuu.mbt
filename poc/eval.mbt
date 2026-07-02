@@ -1,9 +1,13 @@
-// eval.mbt — bounded path-search evaluator (DR-038 / DR-041).
+// eval.mbt — bounded path-search evaluator (DR-038 / DR-041 / DR-043).
 //
 // The core contract (DR-038): a parse succeeds iff exactly ONE complete path
 // consumes all tokens. 0 => fail (show held Error), 1 => commit, 2+ => ambiguous.
 // There is NO longest-match rule; "long wins" only emerges because short paths
 // leave unconsumed tokens and drop out (DR-038 §「最長一致」).
+//
+// `defs` is the template registry (DR-020 / DR-043): it resolves `Ref` nodes so a
+// repeat can be a recursive `Seq([head, Opt(Ref(self))])` rather than a closure
+// primitive. It threads through every walk function unchanged.
 
 /// The outcome of trying a node against a token prefix.
 /// A missing branch == Reject (silently dropped, DR-037). `Held` == Error
@@ -36,7 +40,12 @@ fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
 }
 
 /// Evaluate a node at `pos`, returning every reading (Accept) and held Error.
-fn eval(node : Node, toks : Array[String], pos : Int) -> Array[Branch] {
+fn eval(
+  node : Node,
+  toks : Array[String],
+  pos : Int,
+  defs : Map[String, Node],
+) -> Array[Branch] {
   match node {
     Exact(s) =>
       if pos < toks.length() && toks[pos] == s {
@@ -63,20 +72,29 @@ fn eval(node : Node, toks : Array[String], pos : Int) -> Array[Branch] {
     Or(alts) => {
       let out : Array[Branch] = []
       for a in alts {
-        for b in eval(a, toks, pos) {
+        for b in eval(a, toks, pos, defs) {
           out.push(b)
         }
       }
       out
     }
-    Seq(items) => eval_seq(items, 0, toks, pos, [])
-    Many(inner) => eval_many(inner, toks, pos, [])
+    Seq(items) => eval_seq(items, 0, toks, pos, [], defs)
+    Many(inner) => eval_many(inner, toks, pos, [], defs)
     Scoped(_label, body) =>
       // Light layer-3 hook: the name creates a result scope (DR-025). For path
       // counting the label is transparent; nesting is a result-builder concern.
-      eval(body, toks, pos)
-    ScopeNode(sc) => eval_scope(sc, toks, pos)
+      eval(body, toks, pos, defs)
+    ScopeNode(sc) => eval_scope(sc, toks, pos, defs)
     NativeMatch(m) => run_matcher(m, toks, pos)
+    Ref(name) =>
+      // Plain resolution: recurse into the registered template. On the positional
+      // spine `Ref` is instead unfolded porously (scope_consume). Here (inside an Or
+      // head, a matcher-free context, etc.) it is the ordinary recursion, bounded by
+      // the zero-progress guard baked into the template's head.
+      match defs.get(name) {
+        Some(tpl) => eval(tpl, toks, pos, defs)
+        None => []
+      }
     DdSat(trigger) =>
       // A dd satellite reads its trigger like any greedy exact matcher. This is
       // what makes greedy_reads/先食い suppress a raw-eat of `--`. The SEVER on
@@ -92,7 +110,7 @@ fn eval(node : Node, toks : Array[String], pos : Int) -> Array[Branch] {
       // protects the command name from a positional raw-eat. The SEVER of the parent
       // on firing is applied by the spine walk (scope_step step A), not here.
       if pos < toks.length() && toks[pos] == name {
-        eval_scope(child, toks, pos + 1)
+        eval_scope(child, toks, pos + 1, defs)
       } else {
         []
       }
@@ -106,15 +124,16 @@ fn eval_seq(
   toks : Array[String],
   pos : Int,
   acc : Array[Binding],
+  defs : Map[String, Node],
 ) -> Array[Branch] {
   if idx >= items.length() {
     return [Accept(pos, acc)]
   }
   let out : Array[Branch] = []
-  for b in eval(items[idx], toks, pos) {
+  for b in eval(items[idx], toks, pos, defs) {
     match b {
       Accept(p2, bs) =>
-        for r in eval_seq(items, idx + 1, toks, p2, cat(acc, bs)) {
+        for r in eval_seq(items, idx + 1, toks, p2, cat(acc, bs), defs) {
           out.push(r)
         }
       Held(m, d) => out.push(Held(m, d))
@@ -129,13 +148,14 @@ fn eval_many(
   toks : Array[String],
   pos : Int,
   acc : Array[Binding],
+  defs : Map[String, Node],
 ) -> Array[Branch] {
   let out : Array[Branch] = [Accept(pos, acc)] // 0 reps
-  for b in eval(inner, toks, pos) {
+  for b in eval(inner, toks, pos, defs) {
     match b {
       Accept(p2, bs) =>
         if p2 > pos {
-          for r in eval_many(inner, toks, p2, cat(acc, bs)) {
+          for r in eval_many(inner, toks, p2, cat(acc, bs), defs) {
             out.push(r)
           }
         }
@@ -153,9 +173,14 @@ fn eval_many(
 /// A greedy entry "reads" at `pos` iff it consumes >= 1 token there. This is the
 /// exact 先食い predicate (DR-041 §4): when true, positional raw pass-through of
 /// the current token is suppressed. (Only consulted when not severed.)
-fn greedy_reads(sc : Scope, toks : Array[String], pos : Int) -> Bool {
+fn greedy_reads(
+  sc : Scope,
+  toks : Array[String],
+  pos : Int,
+  defs : Map[String, Node],
+) -> Bool {
   for g in sc.greedy {
-    for b in eval(g, toks, pos) {
+    for b in eval(g, toks, pos, defs) {
       match b {
         Accept(p2, _) => if p2 > pos { return true }
         Held(_, _) => ()
@@ -168,17 +193,27 @@ fn greedy_reads(sc : Scope, toks : Array[String], pos : Int) -> Bool {
 /// Whether raw pass-through of the token at `pos` is suppressed. 先食い is
 /// greedy-ONLY (DR-041 §4, rev): a raw-eat is suppressed iff some greedy entry
 /// reads the token. The dd `--` is covered because the dd satellite is itself a
-/// greedy entry (DdSat) — no dd special case (the F-1 trigger-vocab extension was
-/// rejected by the spec revision). Once severed, nothing is suppressed.
-fn suppressed(sc : Scope, toks : Array[String], pos : Int, severed : Bool) -> Bool {
+/// greedy entry (DdSat) — no dd special case. Once severed, nothing is suppressed.
+fn suppressed(
+  sc : Scope,
+  toks : Array[String],
+  pos : Int,
+  severed : Bool,
+  defs : Map[String, Node],
+) -> Bool {
   if severed {
     return false // past `--`: everything falls raw, even a second `--`
   }
-  greedy_reads(sc, toks, pos)
+  greedy_reads(sc, toks, pos, defs)
 }
 
-fn eval_scope(sc : Scope, toks : Array[String], pos : Int) -> Array[Branch] {
-  scope_step(sc, toks, pos, 0, [], false)
+fn eval_scope(
+  sc : Scope,
+  toks : Array[String],
+  pos : Int,
+  defs : Map[String, Node],
+) -> Array[Branch] {
+  scope_step(sc, toks, pos, 0, [], false, defs)
 }
 
 /// Walk sc.positional[pidx..] from `pos`. Offers (A) a greedy interjection (only
@@ -190,12 +225,13 @@ fn scope_step(
   pidx : Int,
   acc : Array[Binding],
   severed : Bool,
+  defs : Map[String, Node],
 ) -> Array[Branch] {
   let out : Array[Branch] = []
   // (A) greedy interjection — a fired greedy entry raw-consumes its own value
   // slots (getopt 同型); re-enter at the same pidx (positional face untouched).
-  // Firing a dd satellite additionally severs the rest of the walk (DR-041: the
-  // dd's continuation is its internal consumption, so greedy is off after it).
+  // Firing a dd or command satellite additionally severs the rest of the walk
+  // (DR-041 §4: the fired greedy's continuation is its internal consumption).
   if !(severed) {
     for g in sc.greedy {
       let fires_severed = match g {
@@ -206,12 +242,12 @@ fn scope_step(
         CmdSat(_, _) => true
         _ => false
       }
-      for b in eval(g, toks, pos) {
+      for b in eval(g, toks, pos, defs) {
         match b {
           Accept(p2, bs) =>
             if p2 > pos {
               for r in scope_step(
-                  sc, toks, p2, pidx, cat(acc, bs), severed || fires_severed,
+                  sc, toks, p2, pidx, cat(acc, bs), severed || fires_severed, defs,
                 ) {
                 out.push(r)
               }
@@ -225,14 +261,16 @@ fn scope_step(
   if pidx >= sc.positional.length() {
     out.push(Accept(pos, acc)) // positional exhausted => acceptable scope end
   } else {
-    for r in scope_consume(sc, sc.positional[pidx], toks, pos, pidx, acc, severed) {
+    for r in scope_consume(
+        sc, sc.positional[pidx], toks, pos, pidx, acc, severed, defs,
+      ) {
       out.push(r)
     }
   }
   out
 }
 
-/// Consume one positional item, then continue at pidx+1 (Many stays at pidx).
+/// Consume one positional item, then continue at pidx+1 (Many/Ref stay at pidx).
 fn scope_consume(
   sc : Scope,
   item : Node,
@@ -241,26 +279,27 @@ fn scope_consume(
   pidx : Int,
   acc : Array[Binding],
   severed : Bool,
+  defs : Map[String, Node],
 ) -> Array[Branch] {
   match item {
     StrArg(name) =>
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed)) {
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
         scope_step(
           sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
-          severed,
+          severed, defs,
         )
       } else {
         []
       }
     NumArg(name) =>
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed)) {
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
         match parse_number(toks[pos]) {
           // DR-041 §5: number positional rejecting a token is a held Error, not a
           // structural refusal — no prefix guard.
           Some(d) =>
             scope_step(
               sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VNum(d), Cli)]),
-              severed,
+              severed, defs,
             )
           None => [Held("\"\{toks[pos]}\" is not a number", pos)]
         }
@@ -269,16 +308,44 @@ fn scope_consume(
       }
     Exact(s) =>
       if pos < toks.length() && toks[pos] == s {
-        scope_step(sc, toks, pos + 1, pidx + 1, acc, severed)
+        scope_step(sc, toks, pos + 1, pidx + 1, acc, severed, defs)
       } else {
         []
       }
+    Ref(name) =>
+      // A repeat item (DR-043): >= 1 head, unfolded POROUSLY on the spine. Consume the
+      // mandatory head, then offer either "stop" (advance to pidx+1) or "one more rep"
+      // (re-enter scope_step at the SAME pidx). The "more" route goes through
+      // scope_step, so greedy interjects between reps for free (背骨に留まる, 反復間
+      // 割り込みが保たれる). ≥1 semantics: each visit consumes one mandatory head.
+      {
+        let head = ref_head(defs, name)
+        let out : Array[Branch] = []
+        for b in consume_head(sc, head, toks, pos, severed, defs) {
+          match b {
+            Accept(p2, bs) =>
+              if p2 > pos {
+                // stop: advance past the repeat
+                for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed, defs) {
+                  out.push(r)
+                }
+                // more reps: re-enter at the same pidx (porous — scope_step offers
+                // a greedy interjection before the next mandatory head)
+                for r in scope_step(sc, toks, p2, pidx, cat(acc, bs), severed, defs) {
+                  out.push(r)
+                }
+              }
+            Held(m, d) => out.push(Held(m, d))
+          }
+        }
+        out
+      }
     Many(inner) => {
       let out : Array[Branch] = []
-      for r in scope_step(sc, toks, pos, pidx + 1, acc, severed) { // 0 reps
+      for r in scope_step(sc, toks, pos, pidx + 1, acc, severed, defs) { // 0 reps
         out.push(r)
       }
-      for r in scope_consume_rep(sc, inner, toks, pos, pidx, acc, severed) { // 1 rep
+      for r in scope_consume_rep(sc, inner, toks, pos, pidx, acc, severed, defs) { // 1 rep
         out.push(r)
       }
       out
@@ -287,10 +354,10 @@ fn scope_consume(
       // DR-042 ⑤: a child scope runs its own (fresh, unsevered) walk; the parent
       // greedy face does not interject during it.
       let out : Array[Branch] = []
-      for b in eval_scope(child, toks, pos) {
+      for b in eval_scope(child, toks, pos, defs) {
         match b {
           Accept(p2, bs) =>
-            for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed) {
+            for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed, defs) {
               out.push(r)
             }
           Held(m, d) => out.push(Held(m, d))
@@ -301,10 +368,10 @@ fn scope_consume(
     other => {
       // any other node as a positional item: eval plainly, then continue.
       let out : Array[Branch] = []
-      for b in eval(other, toks, pos) {
+      for b in eval(other, toks, pos, defs) {
         match b {
           Accept(p2, bs) =>
-            for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed) {
+            for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed, defs) {
               out.push(r)
             }
           Held(m, d) => out.push(Held(m, d))
@@ -312,6 +379,47 @@ fn scope_consume(
       }
       out
     }
+  }
+}
+
+/// Consume one repeat head on the spine. A value primitive respects 先食い (a greedy
+/// trigger between reps is not raw-eaten as a value); a non-primitive head (a ref to
+/// a template, e.g. `color`) is evaluated plainly (head-internal is not spine-porous,
+/// but the rep boundary still is via scope_step).
+fn consume_head(
+  sc : Scope,
+  head : Node,
+  toks : Array[String],
+  pos : Int,
+  severed : Bool,
+  defs : Map[String, Node],
+) -> Array[Branch] {
+  match head {
+    StrArg(name) =>
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+        [Accept(pos + 1, [mkb(name, VStr(toks[pos]), Cli)])]
+      } else {
+        []
+      }
+    NumArg(name) =>
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+        match parse_number(toks[pos]) {
+          Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+          None => [Held("\"\{toks[pos]}\" is not a number", pos)]
+        }
+      } else {
+        []
+      }
+    _ => eval(head, toks, pos, defs)
+  }
+}
+
+/// The head of a repeat template `Seq([head, Opt(Ref(name))])`. The repeat installer
+/// always registers templates in this shape, so the head is the Seq's first item.
+fn ref_head(defs : Map[String, Node], name : String) -> Node {
+  match defs.get(name) {
+    Some(Seq(items)) => if items.length() >= 1 { items[0] } else { Exact("<bad-ref>") }
+    _ => Exact("<bad-ref>")
   }
 }
 
@@ -325,23 +433,25 @@ fn scope_consume_rep(
   pidx : Int,
   acc : Array[Binding],
   severed : Bool,
+  defs : Map[String, Node],
 ) -> Array[Branch] {
   match inner {
     StrArg(name) =>
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed)) {
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
         scope_step(
           sc, toks, pos + 1, pidx, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
-          severed,
+          severed, defs,
         )
       } else {
         []
       }
     NumArg(name) =>
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed)) {
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
         match parse_number(toks[pos]) {
           Some(d) =>
             scope_step(
               sc, toks, pos + 1, pidx, cat(acc, [mkb(name, VNum(d), Cli)]), severed,
+              defs,
             )
           None => [Held("\"\{toks[pos]}\" is not a number", pos)]
         }
@@ -350,11 +460,11 @@ fn scope_consume_rep(
       }
     _ => {
       let out : Array[Branch] = []
-      for b in eval(inner, toks, pos) {
+      for b in eval(inner, toks, pos, defs) {
         match b {
           Accept(p2, bs) =>
             if p2 > pos {
-              for r in scope_step(sc, toks, p2, pidx, cat(acc, bs), severed) {
+              for r in scope_step(sc, toks, p2, pidx, cat(acc, bs), severed, defs) {
                 out.push(r)
               }
             }
@@ -374,8 +484,15 @@ fn scope_consume_rep(
 /// same result via different interleavings are ONE interpretation (DR-038 "1本"
 /// = one interpretation), so they are deduped. Genuinely different readings
 /// produce different bindings and are preserved as separate paths.
-pub fn parse(root : Node, toks : Array[String]) -> Outcome {
-  let branches = eval(root, toks, 0)
+///
+/// `defs` supplies the template registry for `Ref` resolution (empty by default;
+/// only repeat/ref definitions need it).
+pub fn parse(
+  root : Node,
+  toks : Array[String],
+  defs~ : Map[String, Node] = Map::new(),
+) -> Outcome {
+  let branches = eval(root, toks, 0, defs)
   let full : Array[Array[Binding]] = []
   let mut deepest_msg = ""
   let mut deepest_depth = -1

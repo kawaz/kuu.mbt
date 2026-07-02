@@ -37,7 +37,8 @@ test "DR-042 ①': re-applying an installer is a no-op (idempotent from add-if-a
   // Idempotency now comes from add-if-absent, not from consuming the vocab.
   // (This is done below the registration guard, which separately forbids listing
   // the same installer twice in one chain.)
-  let sb = init_sb(clone_def(dr042_def()))
+  let reg : Map[String, Node] = Map::new()
+  let sb = init_sb(clone_def(dr042_def()), reg)
   ensure_entities(sb)
   inst_long(sb.decl, sb.build)
   inst_short(sb.decl, sb.build)

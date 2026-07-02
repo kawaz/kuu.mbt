@@ -22,7 +22,17 @@ pub(all) struct ElemDef {
   is_dd : Bool // owned by the dd installer (type:"dd")
   is_global : Bool // owned by the global installer (copied into descendant command scopes)
   is_inherit : Bool // owned by the inherit installer (declares an inherit seat)
+  ref_target : String? // core (DR-020): this element IS a ref to a named template
+  repeat : RepeatSpec? // owned by the repeat installer (DR-043)
+  multiple : Bool // owned by the multiple installer (DR-034/043)
   default_value : Value?
+} derive(Eq, Show)
+
+/// A repeat closure (DR-043). `min` is the required rep count. The PoC realizes the
+/// unbounded tail (an upper bound / max is out of scope) and requires min >= 1 on the
+/// porous spine; min is the mandatory-head unroll.
+pub(all) struct RepeatSpec {
+  min : Int
 } derive(Eq, Show)
 
 /// A subcommand: a name + its own scope Definition (a fresh backbone, DR-041 §4).
@@ -40,7 +50,7 @@ pub(all) struct Definition {
   commands : Array[CommandDef]
 } derive(Eq, Show)
 
-/// The canonical installers (DR-042 §canonical installer セット).
+/// The canonical installers (DR-042 §canonical installer セット + DR-043 repeat/multiple).
 pub(all) enum Installer {
   LongInst
   ShortInst
@@ -49,6 +59,8 @@ pub(all) enum Installer {
   CommandInst
   GlobalInst
   InheritInst
+  RepeatInst
+  MultipleInst
 } derive(Eq, Show)
 
 fn owned_vocab(i : Installer) -> String {
@@ -60,6 +72,8 @@ fn owned_vocab(i : Installer) -> String {
     CommandInst => "command"
     GlobalInst => "global"
     InheritInst => "inherit"
+    RepeatInst => "repeat"
+    MultipleInst => "multiple"
   }
 }
 
@@ -121,6 +135,9 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     is_dd: e.is_dd,
     is_global: e.is_global,
     is_inherit: e.is_inherit,
+    ref_target: e.ref_target,
+    repeat: e.repeat,
+    multiple: e.multiple,
     default_value: e.default_value,
   }
 }
@@ -141,22 +158,57 @@ fn clone_def(d : Definition) -> Definition {
   { options: os, positionals: ps, commands: cs }
 }
 
-/// Build the scope-builder tree from a (cloned) Definition tree. The positional
-/// face is lowered once here (it does not grow — global copies go to greedy); the
-/// entities and greedy layers are filled by the fixpoint passes.
-fn init_sb(def : Definition) -> SB {
-  let positional : Array[Node] = []
+/// The lowered head node for an element: a value primitive, or a `Ref` when the
+/// element points at a shared template (`ref_target`, DR-020).
+fn elem_head(e : ElemDef) -> Node {
+  match e.ref_target {
+    Some(r) => Ref(r)
+    None => value_prim(e.ty, e.name)
+  }
+}
+
+/// `Opt(X)` = `Or([X, Seq([])])` — the empty Seq matches zero tokens.
+fn opt_node(x : Node) -> Node {
+  Or([x, Seq([])])
+}
+
+/// Lower the positional face. A repeat element (DR-043) is lowered to a ref-recursion:
+/// the template `name = Seq([head, Opt(Ref(name))])` is registered, and the spine gets
+/// `min-1` mandatory heads followed by `Ref(name)` (>= 1 porous). A ref element without
+/// repeat lowers to a plain `Ref(target)`; a value positional to its primitive. dd
+/// positionals are NOT on the spine (the dd installer adds a greedy DdSat).
+fn lower_positional(def : Definition, registry : Map[String, Node]) -> Array[Node] {
+  let out : Array[Node] = []
   for e in def.positionals {
-    // A dd-typed positional is NOT lowered onto the spine: the dd installer adds a
-    // greedy DdSat satellite instead (DR-041 rev). Only value positionals are spine
-    // consumers. The dd's "continuation" is the remaining spine at its fire point.
     if not_dd(e) {
-      positional.push(value_prim(e.ty, e.name))
+      let head = elem_head(e)
+      match e.repeat {
+        None => out.push(head)
+        Some(spec) => {
+          registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
+          let m = if spec.min < 1 { 1 } else { spec.min }
+          let mut k = 0
+          while k < m - 1 {
+            out.push(head) // mandatory unrolled heads (DR-043 min)
+            k = k + 1
+          }
+          out.push(Ref(e.name)) // >= 1 porous recursive tail
+        }
+      }
     }
   }
+  out
+}
+
+/// Build the scope-builder tree from a (cloned) Definition tree. The positional face
+/// is lowered once here (it does not grow — global copies go to greedy); the entities
+/// and greedy layers are filled by the fixpoint passes. `registry` collects the
+/// ref-recursion templates for repeat lowering (DR-043).
+fn init_sb(def : Definition, registry : Map[String, Node]) -> SB {
+  let positional = lower_positional(def, registry)
   let children : Array[SBChild] = []
   for c in def.commands {
-    children.push({ name: c.name, body: init_sb(c.body) })
+    children.push({ name: c.name, body: init_sb(c.body, registry) })
   }
   { decl: def, build: { greedy: [], entities: [], positional }, children }
 }
@@ -181,11 +233,20 @@ fn ensure_entity(build : Build, e : ElemDef) -> Unit {
       return
     }
   }
+  // repeat and multiple both make the cell a value LIST (the shared accumulator,
+  // DR-043/036). Deterministic core lowering; RepeatInst/MultipleInst own the vocab
+  // for completeness but the accumulator setup is a pure function of the decl.
+  let accumulate = e.multiple ||
+    (match e.repeat {
+      Some(_) => true
+      None => false
+    })
   build.entities.push({
     name: e.name,
     ty: e.ty,
     env_key: None,
     inherit: false,
+    accumulate,
     default_value: e.default_value,
   })
 }
@@ -370,6 +431,8 @@ fn apply_node(inst : Installer, sb : SB) -> Unit {
     InheritInst => inst_inherit(sb.decl, sb.build)
     GlobalInst => inst_global(sb)
     CommandInst => () // wired at materialize (see materialize)
+    RepeatInst => () // lowered deterministically in init_sb (ref-recursion + template)
+    MultipleInst => () // accumulator flag set deterministically in ensure_entity
   }
 }
 
@@ -442,6 +505,13 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   if e.is_inherit && !vocab_owned(owned, "inherit") {
     return Some("inherit")
   }
+  match e.repeat {
+    Some(_) => if !vocab_owned(owned, "repeat") { return Some("repeat") }
+    None => ()
+  }
+  if e.multiple && !vocab_owned(owned, "multiple") {
+    return Some("multiple")
+  }
   None
 }
 
@@ -463,6 +533,67 @@ fn scan_def_vocab(def : Definition, owned : Array[String]) -> String? {
   }
   for c in def.commands {
     match scan_def_vocab(c.body, owned) {
+      Some(v) => return Some(v)
+      None => ()
+    }
+  }
+  None
+}
+
+/// Zero-progress static guard (DR-043): a repeat head must consume >= 1 token, else
+/// the recursive unfold loops forever. For a ref head the check reduces to "the ref
+/// target consumes >= 1" (a cycle through refs without a consuming node is caught).
+fn head_progresses(
+  node : Node,
+  registry : Map[String, Node],
+  visiting : Array[String],
+) -> Bool {
+  match node {
+    StrArg(_) | NumArg(_) | Exact(_) | NativeMatch(_) | DdSat(_) | CmdSat(_, _) =>
+      true
+    Bind(_, _) => false // binds without consuming
+    Ref(r) => {
+      for v in visiting {
+        if v == r {
+          return false // cycle with no consuming node => no progress
+        }
+      }
+      match registry.get(r) {
+        Some(tpl) => {
+          visiting.push(r)
+          let ok = head_progresses(tpl, registry, visiting)
+          let _ = visiting.pop()
+          ok
+        }
+        None => false // unresolved ref
+      }
+    }
+    Or(alts) => {
+      for a in alts {
+        if !head_progresses(a, registry, visiting) {
+          return false
+        }
+      }
+      alts.length() > 0
+    }
+    Seq(items) => if items.length() >= 1 { head_progresses(items[0], registry, visiting) } else { false }
+    Many(_) | Scoped(_, _) | ScopeNode(_) => true
+  }
+}
+
+/// Scan the definition tree for a repeat element whose head makes no progress.
+fn repeat_progress_error(def : Definition, registry : Map[String, Node]) -> String? {
+  for e in def.positionals {
+    match e.repeat {
+      Some(_) =>
+        if !head_progresses(elem_head(e), registry, []) {
+          return Some("repeat element '\{e.name}' has a zero-progress head")
+        }
+      None => ()
+    }
+  }
+  for c in def.commands {
+    match repeat_progress_error(c.body, registry) {
       Some(v) => return Some(v)
       None => ()
     }
@@ -535,6 +666,7 @@ fn materialize(sb : SB) -> Scope {
 pub fn parse_definition(
   def0 : Definition,
   order : Array[Installer],
+  registry~ : Map[String, Node] = Map::new(),
 ) -> Result[Scope, String] {
   match check_registration(order) {
     Some(msg) => return Err(msg)
@@ -545,7 +677,11 @@ pub fn parse_definition(
     Some(v) => return Err("unknown special vocab '\{v}' — no installer claimed it")
     None => ()
   }
-  let sb = init_sb(def)
+  let sb = init_sb(def, registry)
+  match repeat_progress_error(def, registry) {
+    Some(v) => return Err(v)
+    None => ()
+  }
   let mut iters = 0
   while true {
     let prev = tree_sig(sb)

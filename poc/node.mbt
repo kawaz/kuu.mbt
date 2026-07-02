@@ -36,6 +36,11 @@ pub(all) enum Node {
   ScopeNode(Scope)
   /// native matcher: data-driven token readings (DR-041 §3-4), installed by long/short (DR-042).
   NativeMatch(Matcher)
+  /// reference to a named template in the registry (DR-020 / DR-043). repeat lowers to
+  /// a recursive `Seq([head, Opt(Ref(self))])`; a ref element (`{ref:"color"}`) points at
+  /// a shared template. On the positional spine `Ref` unfolds POROUSLY (>= 1 head, greedy
+  /// may interject between reps — the unfold stays on the current backbone, DR-043).
+  Ref(String)
   /// dashdash satellite (DR-041 dashdash, rev). A GREEDY-face resident: its matcher
   /// is a plain exact match on the trigger (usually `--`). Because it is a greedy
   /// entry, 先食い (greedy-only) keeps `--` from being raw-eaten; when it fires the
@@ -73,6 +78,7 @@ pub(all) struct Entity {
   ty : Ty
   mut env_key : String? // env seat lookup; None = no env seat declared (env installer sets it)
   mut inherit : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013)
+  accumulate : Bool // this cell collects a value LIST (repeat flattening / multiple, DR-043/034/036)
   default_value : Value? // default seat
 } derive(Eq, Show)
 
