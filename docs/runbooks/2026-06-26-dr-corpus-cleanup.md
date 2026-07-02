@@ -232,6 +232,33 @@ done
 
 予想コスト: 40 DR 規模で 2 段の workflow を回すと **〜7M token / 30〜45 分**。token 予算を意識する場合は `effort: low` で active を流す等で削れる。
 
+## 新規 DR の起票判断 (cleanup と別軸)
+
+本 runbook の Phase 1〜4 は **既存 DR コーパスの整理** (active/partial/full 分類) を扱う。一方、cleanup や垂直スライス実装 (`[external: kuu.mbt DR-039]`) の過程では **新しい判断** が多数発生する。その判断を新規 DR にするか既存 DR の更新にするかの基準を以下に定める。
+
+### 新規 DR を立てるか既存 DR を更新するか
+
+判断は 3 分岐:
+
+1. **既存 DR の判断を覆す** → 新規 DR を起票する。覆される側の DR には Phase 2 の partial 処理に準じて `## Superseded (歴史)` セクションを設け、`Superseded by DR-NNN` を明記する (= 新 DR 側の「本 DR は DR-M を覆す」と合わせて両方向リンク)
+2. **既存 DR の範囲内の補完・詳細化** (判断の骨格は変えず、境界ケースや細則を足す) → 既存 DR を更新する。更新であることが分かる形で節を足す
+3. **どの DR も扱っていない新領域** → 新規 DR を起票する
+
+迷ったときの目安: **既存 DR の「決定」セクションの文言を書き換える必要があるなら覆し (= 新規 DR)、「決定」はそのままで適用範囲が広がるだけなら拡張 (= 既存 DR 更新)**。
+
+新規 DR を起票するときは `docs/decisions/DR-0NN-<slug>.md` (3 桁連番) の作成と `docs/decisions/INDEX.md` の更新をセットで行う。
+
+### DR 番号空間の分離
+
+- ast-spec の DR 番号空間 (3 桁) は kuu.mbt 本体および parts-arggen 系 (いずれも 4 桁) と独立している
+- 他系統の DR を参照するときは `[external: kuu.mbt DR-NNN]` 記法を使う (DR-039 に既出、annotate の実務は Phase 2「外部リポへの参照」を参照)
+- parts-arggen 系 DR はプロトタイプ実験の記録であり、その語彙 (`stop_before` / `ExactNode` / 旧 name 等) をそのまま ast-spec 側へ流用しない
+
+### partial DR の未確定事項トラッキング
+
+- partial DR の `## Superseded (歴史)` 節内で「別 DR で確定する」と宣言された未確定事項は、後続 DR が起票されないまま放置されやすい (例: DR-013 の inheritable prefix 生成ルール)
+- 対処: そうした宣言を見つけたら、その事項を新規 DR 候補として findings (= 欠落洗い出し) または issue に個別に載せ、トラッキングする
+
 ## このドキュメント自身の見直し
 
 このドキュメント自身が陳腐化しないために、次回クリーンナップ実行時:
