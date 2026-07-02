@@ -49,11 +49,27 @@ pub(all) enum Node {
   DdSat(String)
   /// command satellite (DR-018 / DR-041 §4). A GREEDY-face resident whose matcher is
   /// a plain exact match on the command name. Firing enters the child scope as a NEW
-  /// backbone (the parent greedy face does not interject inside it) and SEVERS the
-  /// parent for the rest — the subcommand owns everything after it (greedy internal
-  /// consumption is 一体, exactly like dd). 先食い protects the command name from a
-  /// positional raw-eat, which is the DR-018 "commands が先" priority.
+  /// backbone (the parent greedy face does not interject inside it). 先食い protects the
+  /// command name from a positional raw-eat, which is the DR-018 "commands が先" priority.
   CmdSat(String, Scope)
+  /// link/root-targeted wrapper (DR-042 global link-sync / DR-007 link). Evaluates its
+  /// inner node but marks every binding it produces as `link` — those bindings escape
+  /// result nesting and land on the DECLARING (root) entity. The global installer copies
+  /// an option's satellite into a child scope wrapped in `Rooted`, so the value syncs to
+  /// the one root cell instead of a fresh child cell.
+  Rooted(Node)
+  /// a filtered string value (DR-037 pre_filter): consumes a token ONLY if it does not
+  /// start with `-`; otherwise it REJECTS (no reading, silently drops — not an Error).
+  /// This is the structural stop that keeps a permissive repeat from eating a following
+  /// `--socket` / `--upstream` trigger inside a no-backbone region (DR-041 §4).
+  NoDashStr(String)
+  /// a named indexed-array repeat (DR-043 repeat × DR-025 name scope). Consumes its head
+  /// GREEDILY (as many reps as the head allows), tagging rep k under `[label, "#k"]` so
+  /// the result builder yields an ARRAY of one element per firing (multiple:"append").
+  /// `min` is the required rep count (0 = may be empty). Greedy-max is the 取り分選好
+  /// default; for this raw pattern the split is bounded by the head's Reject / exact, so
+  /// no downstream backtrack is needed (DR-043 §取り分の選好, 大域完全経路).
+  IdxRepeat(String, Node, Int)
 } derive(Eq, Show)
 
 /// A scope carries two faces (DR-041 §4):

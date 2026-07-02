@@ -92,11 +92,18 @@ fn join_comma(items : Array[String]) -> String {
   buf.to_string()
 }
 
-/// `key=value` pairs, sorted — the visible result of a parse.
+fn is_marker(k : String) -> Bool {
+  k == "[]" || k == "{}"
+}
+
+/// `key=value` pairs, sorted — the visible result of a parse. Result-structure markers
+/// ("[]" / "{}") are skipped (they carry no value, only nesting shape).
 fn render_binds(binds : Array[Binding]) -> String {
   let items : Array[String] = []
   for b in binds {
-    items.push("\{b.key}=\{render_val(b.value)}")
+    if !is_marker(b.key) {
+      items.push("\{b.key}=\{render_val(b.value)}")
+    }
   }
   sort_items(items)
   join_comma(items)
@@ -106,7 +113,9 @@ fn render_binds(binds : Array[Binding]) -> String {
 fn render_binds_src(binds : Array[Binding]) -> String {
   let items : Array[String] = []
   for b in binds {
-    items.push("\{b.key}=\{render_val(b.value)}@\{render_src(b.source)}")
+    if !is_marker(b.key) {
+      items.push("\{b.key}=\{render_val(b.value)}@\{render_src(b.source)}")
+    }
   }
   sort_items(items)
   join_comma(items)
@@ -126,10 +135,10 @@ fn render_outcome(o : Outcome) -> String {
 fn render_rval(r : RVal) -> String {
   match r {
     RScalar(v) => render_val(v)
-    RList(vs) => {
+    RArr(vs) => {
       let items : Array[String] = []
       for v in vs {
-        items.push(render_val(v))
+        items.push(render_rval(v))
       }
       "[" + join_comma(items) + "]"
     }
@@ -179,6 +188,7 @@ fn opt(
     is_dd: false,
     is_global: global,
     is_inherit: inherit,
+    is_link: false,
     ref_target: None,
     repeat: None,
     multiple,
@@ -204,6 +214,7 @@ fn pos(
     is_dd: false,
     is_global: false,
     is_inherit: inherit,
+    is_link: false,
     ref_target: ref_,
     repeat,
     multiple,
@@ -221,6 +232,7 @@ fn dd_marker() -> ElemDef {
     is_dd: true,
     is_global: false,
     is_inherit: false,
+    is_link: false,
     ref_target: None,
     repeat: None,
     multiple: false,

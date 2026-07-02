@@ -22,6 +22,7 @@ pub(all) struct ElemDef {
   is_dd : Bool // owned by the dd installer (type:"dd")
   is_global : Bool // owned by the global installer (copied into descendant command scopes)
   is_inherit : Bool // owned by the inherit installer (declares an inherit seat)
+  is_link : Bool // a global COPY (link-sync): its satellite binds the root entity (Rooted)
   ref_target : String? // core (DR-020): this element IS a ref to a named template
   repeat : RepeatSpec? // owned by the repeat installer (DR-043)
   multiple : Bool // owned by the multiple installer (DR-034/043)
@@ -137,6 +138,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     is_dd: e.is_dd,
     is_global: e.is_global,
     is_inherit: e.is_inherit,
+    is_link: e.is_link,
     ref_target: e.ref_target,
     repeat: e.repeat,
     multiple: e.multiple,
@@ -274,9 +276,16 @@ fn inst_long(def : Definition, build : Build) -> Unit {
     for l in e.long {
       let trigger = "--" + l
       match e.ty {
-        TFlag => add_greedy(build, Seq([Exact(trigger), Bind(e.name, VBool(true))]))
+        TFlag =>
+          add_greedy(
+            build,
+            maybe_root(e.is_link, Seq([Exact(trigger), Bind(e.name, VBool(true))])),
+          )
         _ => {
-          add_greedy(build, Seq([Exact(trigger), value_prim(e.ty, e.name)]))
+          add_greedy(
+            build,
+            maybe_root(e.is_link, Seq([Exact(trigger), value_prim(e.ty, e.name)])),
+          )
           eq_entries.push({ key: l, name: e.name, kind: e.ty })
         }
       }
@@ -284,6 +293,16 @@ fn inst_long(def : Definition, build : Build) -> Unit {
   }
   if eq_entries.length() > 0 {
     add_greedy(build, NativeMatch(EqSplit(prefix="--", entries=eq_entries)))
+  }
+}
+
+/// Wrap a satellite in `Rooted` iff the element is a global link copy, so its bindings
+/// target the root entity (DR-042 link-sync).
+fn maybe_root(is_link : Bool, node : Node) -> Node {
+  if is_link {
+    Rooted(node)
+  } else {
+    node
   }
 }
 
@@ -399,7 +418,24 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
       return // self-declared same trigger (shadow) or already-copied (idempotent)
     }
   }
-  child.decl.options.push(clone_elem(opt))
+  // The copy is a link satellite (DR-042): it binds the ROOT entity, not a fresh child
+  // cell, so the value syncs to one place. `is_link` makes long/short wrap it in Rooted.
+  let copy = clone_elem(opt)
+  child.decl.options.push({
+    name: copy.name,
+    ty: copy.ty,
+    long: copy.long,
+    short: copy.short,
+    env: copy.env,
+    is_dd: copy.is_dd,
+    is_global: copy.is_global,
+    is_inherit: copy.is_inherit,
+    is_link: true,
+    ref_target: copy.ref_target,
+    repeat: copy.repeat,
+    multiple: copy.multiple,
+    default_value: copy.default_value,
+  })
 }
 
 /// Two options collide on a trigger if they share any long or short form. Shadowing
@@ -558,6 +594,9 @@ fn head_progresses(
   match node {
     StrArg(_) | NumArg(_) | Exact(_) | NativeMatch(_) | DdSat(_) | CmdSat(_, _) =>
       true
+    NoDashStr(_) => true // consumes one token (when not dash-rejected)
+    IdxRepeat(_, _, _) => true // an indexed repeat consumes its head
+    Rooted(inner) => head_progresses(inner, registry, visiting)
     Bind(_, _) => false // binds without consuming
     Ref(r) => {
       for v in visiting {

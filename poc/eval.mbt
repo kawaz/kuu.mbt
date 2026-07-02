@@ -25,19 +25,25 @@ pub(all) enum Outcome {
 } derive(Eq, Show)
 
 fn mkb(key : String, value : Value, source : Source) -> Binding {
-  { key, value, source, scope: [] }
+  { key, value, source, scope: [], link: false }
 }
 
 /// Nest a set of bindings one level deeper under `label` (DR-025: a name / command
 /// scope prepends its label to every binding produced inside it, outermost first).
+/// LINK bindings (DR-042 global link-sync) are NOT prefixed — they target the declaring
+/// (root) entity, so they escape the nesting and stay where they were declared.
 fn nest(label : String, binds : Array[Binding]) -> Array[Binding] {
   let out : Array[Binding] = []
   for b in binds {
-    let sc2 : Array[String] = [label]
-    for s in b.scope {
-      sc2.push(s)
+    if b.link {
+      out.push(b) // link binding: escapes nesting, stays at the root entity
+    } else {
+      let sc2 : Array[String] = [label]
+      for s in b.scope {
+        sc2.push(s)
+      }
+      out.push({ key: b.key, value: b.value, source: b.source, scope: sc2, link: b.link })
     }
-    out.push({ key: b.key, value: b.value, source: b.source, scope: sc2 })
   }
   out
 }
@@ -133,15 +139,167 @@ fn eval(
     CmdSat(name, child) =>
       // A command satellite reads its name exactly, then the child scope (a fresh
       // backbone) consumes from pos+1. greedy_reads/先食い sees these accepts and
-      // protects the command name from a positional raw-eat. The SEVER of the parent
-      // on firing is applied by the spine walk (scope_step step A), not here.
+      // protects the command name from a positional raw-eat.
       if pos < toks.length() && toks[pos] == name {
-        // the subcommand is a result scope: its bindings nest under the command name.
-        nest_branches(name, eval_scope(child, toks, pos + 1, defs))
+        // the subcommand is a result scope: its bindings nest under the command name,
+        // plus a presence marker so an invoked-but-empty command still appears as {}.
+        mark_scope(name, nest_branches(name, eval_scope(child, toks, pos + 1, defs)))
       } else {
         []
       }
+    Rooted(inner) => {
+      // evaluate the inner node, but mark every binding as `link` so it escapes result
+      // nesting and lands on the declaring (root) entity (DR-042 global link-sync).
+      let out : Array[Branch] = []
+      for b in eval(inner, toks, pos, defs) {
+        match b {
+          Accept(p, bs) => {
+            let marked : Array[Binding] = []
+            for x in bs {
+              marked.push({
+                key: x.key,
+                value: x.value,
+                source: x.source,
+                scope: x.scope,
+                link: true,
+              })
+            }
+            out.push(Accept(p, marked))
+          }
+          Held(m, d) => out.push(Held(m, d))
+        }
+      }
+      out
+    }
+    NoDashStr(name) =>
+      // pre_filter (DR-037): consume the token only if it is NOT `-`-prefixed; a dashed
+      // token REJECTS (no reading), which is what stops a permissive repeat from eating a
+      // following `--socket` / `--upstream` trigger in a no-backbone region.
+      if pos < toks.length() && !starts_dash(toks[pos]) {
+        [Accept(pos + 1, [mkb(name, VStr(toks[pos]), Cli)])]
+      } else {
+        []
+      }
+    IdxRepeat(label, head, min) =>
+      idx_repeat_eval(label, head, min, toks, pos, defs)
   }
+}
+
+fn starts_dash(s : String) -> Bool {
+  for c in s {
+    return c == '-'
+  }
+  false
+}
+
+/// Array-presence marker: `{key:"[]"}` at the array's scope, so an empty array still
+/// appears in the result. The renderers / result builder treat "[]" and "{}" as sentinels.
+fn array_marker(label : String) -> Binding {
+  { key: "[]", value: VBool(false), source: Cli, scope: [label], link: false }
+}
+
+/// Prepend an object-presence marker `{key:"{}"}` at scope `[name]` to each Accept, so an
+/// invoked command scope appears (as at least `{}`) even when it produced no bindings.
+fn mark_scope(name : String, brs : Array[Branch]) -> Array[Branch] {
+  let marker : Binding = {
+    key: "{}",
+    value: VBool(false),
+    source: Cli,
+    scope: [name],
+    link: false,
+  }
+  let out : Array[Branch] = []
+  for b in brs {
+    match b {
+      Accept(p, bs) => out.push(Accept(p, cat([marker], bs)))
+      Held(m, d) => out.push(Held(m, d))
+    }
+  }
+  out
+}
+
+/// Tag a rep's bindings under `[label, "#k"]` (a result-array index). Link bindings escape.
+fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] {
+  let seg = "#" + rep.to_string()
+  let out : Array[Binding] = []
+  for b in bs {
+    if b.link {
+      out.push(b)
+    } else {
+      let sc2 : Array[String] = [label, seg]
+      for s in b.scope {
+        sc2.push(s)
+      }
+      out.push({
+        key: b.key,
+        value: b.value,
+        source: b.source,
+        scope: sc2,
+        link: false,
+      })
+    }
+  }
+  out
+}
+
+/// Greedy-max named indexed-array repeat (DR-043 §取り分の選好, default greedy). Consumes as
+/// many reps as the head allows (each rep tagged `[label, "#k"]`), deterministically. For
+/// the authsock raw pattern the split is bounded by the head's Reject (NoDashStr) or exact
+/// mismatch, so greedy-max lands the correct division with no downstream backtrack; without
+/// the pre_filter it over-consumes and the wrong parse wins SILENTLY (DR-043 §auto-narrowing
+/// 却下 — the user's pre_filter is the fix).
+fn idx_repeat_eval(
+  label : String,
+  head : Node,
+  min : Int,
+  toks : Array[String],
+  pos : Int,
+  defs : Map[String, Node],
+) -> Array[Branch] {
+  let acc : Array[Binding] = [array_marker(label)]
+  let mut cur = pos
+  let mut rep = 0
+  let mut go = true
+  while go {
+    let p2 = idx_one(head, label, rep, toks, cur, defs, acc)
+    if p2 > cur {
+      cur = p2
+      rep = rep + 1
+    } else {
+      go = false
+    }
+  }
+  if rep < min {
+    []
+  } else {
+    [Accept(cur, acc)]
+  }
+}
+
+/// Consume one rep of `head` at `pos`, pushing its indexed bindings to `acc`. Returns the
+/// new position, or `pos` unchanged if the head cannot advance (greedy-max stop).
+fn idx_one(
+  head : Node,
+  label : String,
+  rep : Int,
+  toks : Array[String],
+  pos : Int,
+  defs : Map[String, Node],
+  acc : Array[Binding],
+) -> Int {
+  for b in eval(head, toks, pos, defs) {
+    match b {
+      Accept(p2, bs) =>
+        if p2 > pos {
+          for x in nest_index(label, rep, bs) {
+            acc.push(x)
+          }
+          return p2
+        }
+      Held(_, _) => ()
+    }
+  }
+  pos
 }
 
 /// Thread `pos` through a Seq; bindings accumulate; a Held dead-ends its branch.
@@ -567,6 +725,21 @@ fn scope_consume_rep(
   }
 }
 
+/// Drop the `link` nesting hint (set false) — it is resolved before path counting.
+fn strip_link(bs : Array[Binding]) -> Array[Binding] {
+  let out : Array[Binding] = []
+  for b in bs {
+    out.push({
+      key: b.key,
+      value: b.value,
+      source: b.source,
+      scope: b.scope,
+      link: false,
+    })
+  }
+  out
+}
+
 // ── top level (DR-038 path counting) ────────────────────────────────────────
 
 /// Parse `toks` against `root`, counting DISTINCT complete paths.
@@ -595,15 +768,19 @@ pub fn parse(
     match b {
       Accept(p, bs) =>
         if p == toks.length() {
+          // strip the `link` hint before comparing: nesting is resolved by now, so link is
+          // vestigial and NOT part of the effect identity (DR-038). Two routes onto the same
+          // root entity — one via a link satellite, one direct — merge to one path.
+          let eff = strip_link(bs)
           let mut dup = false
           for existing in full {
-            if existing == bs {
+            if existing == eff {
               dup = true
               break
             }
           }
           if !dup {
-            full.push(bs)
+            full.push(eff)
           }
         }
       Held(m, d) =>

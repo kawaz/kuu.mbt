@@ -32,6 +32,8 @@ pub(all) struct Binding {
   value : Value
   source : Source
   scope : Array[String]
+  link : Bool // a link/root-targeted binding (DR-042/007): stays at the declaring (root)
+  //           scope — result nesting (CmdSat/Scoped) does NOT prepend a label to it.
 } derive(Eq, Show)
 
 /// Tolerant number parser used by `Num` primitives and value-attach matchers.

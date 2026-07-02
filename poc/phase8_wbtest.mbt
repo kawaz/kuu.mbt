@@ -32,7 +32,7 @@ test "DR-041 §4 rev: `app --out X build` binds app's --out (readable at root fi
     [cmd("build", def_([opt("out", TStr, long=["out"])], []))],
   )
   let sc = build_or_fail(def, ec_order())
-  inspect(result_str(sc, ["--out", "X", "build"]), content="{out:X}")
+  inspect(result_str(sc, ["--out", "X", "build"]), content="{out:X,build:{}}")
 }
 
 // ── 親背骨の再開: a trailing parent option is eaten after the child closes ──────
@@ -70,7 +70,7 @@ test "DR-041 §4 rev: `app build sub --out X` — sub can't read --out, so build
     ],
   )
   let sc = build_or_fail(def, ec_order())
-  inspect(result_str(sc, ["build", "sub", "--out", "X"]), content="{build:{out:X}}")
+  inspect(result_str(sc, ["build", "sub", "--out", "X"]), content="{build:{out:X,sub:{}}}")
 }
 
 // ── second-弾 F-3 global case: unique via early-close, not via sever ────────────
@@ -85,7 +85,9 @@ test "DR-041 §4 rev: `build --verbose` (verbose is global) is unique via early-
     [cmd("build", def_([], []))],
   )
   let sc = build_or_fail(def, ec_order())
-  inspect(result_str(sc, ["build", "--verbose"]), content="{build:{verbose:true}}")
+  // verbose is now at the ROOT (global is link-sync since 第4弾 Task 1), and build shows as
+  // an invoked-but-empty scope. Early-close still makes the parse unique.
+  inspect(result_str(sc, ["build", "--verbose"]), content="{verbose:true,build:{}}")
   inspect(
     render_outcome(parse(ScopeNode(sc), ["build", "--verbose"])),
     content="ok{verbose=true}",
