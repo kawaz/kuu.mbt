@@ -119,11 +119,10 @@ fn init_build(def : Definition) -> Build {
   }
   let positional : Array[Node] = []
   for e in def.positionals {
-    if e.is_dd {
-      // core lowering: a dd-typed positional lowers to the DdMark marker; the
-      // continuation is simply the following positional items (DR-041 dashdash).
-      positional.push(DdMark)
-    } else {
+    // A dd-typed positional is NOT lowered onto the spine: the dd installer adds a
+    // greedy DdSat satellite instead (DR-041 rev). Only value positionals are spine
+    // consumers. The dd's "continuation" is the remaining spine at its fire point.
+    if not_dd(e) {
       positional.push(value_prim(e.ty, e.name))
     }
   }
@@ -204,21 +203,30 @@ fn seat_env(build : Build, name : String, key : String) -> Unit {
   }
 }
 
-/// dd: collect (license) the `is_dd` vocab and remove it (invariant ①).
-///
-/// PoC finding on where dd's work lands: the re-scoping is NOT built here. Core
-/// lowering places the DdMark marker (init_build), and the evaluator implements
-/// the greedy-severing semantics on that marker. So — unlike long/short, whose
-/// installers construct concrete satellite/matcher structure — the dd installer
-/// reduces to VOCAB LICENSING (its presence lets the marker exist; its absence
-/// makes the leftover `is_dd` a completeness error). It touches no build state,
-/// which trivially satisfies order-independence and idempotency.
-fn inst_dd(def : Definition, _build : Build) -> Unit {
+/// dd: read `type:"dd"` and add a greedy exact satellite (DR-041 rev). The
+/// satellite (DdSat) is a plain exact matcher on `--` that fires anywhere on the
+/// spine; the evaluator severs the rest of the walk when it fires (internal-一体).
+/// This is now a real structural installer (exact satellite), symmetric with the
+/// other greedy-face installers — the earlier "vocab licensing only" shape is gone.
+fn inst_dd(def : Definition, build : Build) -> Unit {
   for e in def.positionals {
     if e.is_dd {
-      e.is_dd = false // 消費即除去 (licensed by this installer's presence)
+      add_greedy(build, DdSat("--"))
+      e.is_dd = false // deletion protocol (removed in Task 2's non-deletion rewrite)
     }
   }
+}
+
+/// add-if-absent (invariant ①', non-deletion protocol): a contribution is added
+/// only if no structurally-equal entry exists. Makes re-application a no-op and
+/// keeps the fixpoint iteration convergent.
+fn add_greedy(build : Build, g : Node) -> Unit {
+  for existing in build.greedy {
+    if existing == g {
+      return
+    }
+  }
+  build.greedy.push(g)
 }
 
 // ── driver + completeness ────────────────────────────────────────────────────

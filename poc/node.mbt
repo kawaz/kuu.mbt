@@ -36,10 +36,12 @@ pub(all) enum Node {
   ScopeNode(Scope)
   /// native matcher: data-driven token readings (DR-041 §3-4), installed by long/short (DR-042).
   NativeMatch(Matcher)
-  /// dashdash marker (DR-041 dashdash / DR-042 ⑤). A pure positional marker: the
-  /// continuation is simply the positional items after it. When `--` is consumed
-  /// here the scope walk switches to "severed" mode (greedy face off) for the rest.
-  DdMark
+  /// dashdash satellite (DR-041 dashdash, rev). A GREEDY-face resident: its matcher
+  /// is a plain exact match on the trigger (usually `--`). Because it is a greedy
+  /// entry, 先食い (greedy-only) keeps `--` from being raw-eaten; when it fires the
+  /// spine walk switches to "severed" mode (greedy off) for the rest — the sever is
+  /// the "greedy internal consumption is 一体" rule, not a dd special case.
+  DdSat(String)
 } derive(Eq, Show)
 
 /// A scope carries two faces (DR-041 §4):

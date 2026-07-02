@@ -77,10 +77,15 @@ fn eval(node : Node, toks : Array[String], pos : Int) -> Array[Branch] {
       eval(body, toks, pos)
     ScopeNode(sc) => eval_scope(sc, toks, pos)
     NativeMatch(m) => run_matcher(m, toks, pos)
-    DdMark =>
-      // A bare marker outside a scope walk is transparent (consumes nothing). The
-      // meaningful behavior lives in scope_consume where the walk mode is known.
-      [Accept(pos, [])]
+    DdSat(trigger) =>
+      // A dd satellite reads its trigger like any greedy exact matcher. This is
+      // what makes greedy_reads/先食い suppress a raw-eat of `--`. The SEVER on
+      // firing is applied by the spine walk (scope_step step A), not here.
+      if pos < toks.length() && toks[pos] == trigger {
+        [Accept(pos + 1, [])]
+      } else {
+        []
+      }
   }
 }
 
@@ -150,29 +155,16 @@ fn greedy_reads(sc : Scope, toks : Array[String], pos : Int) -> Bool {
   false
 }
 
-fn scope_has_dd(sc : Scope) -> Bool {
-  for p in sc.positional {
-    match p {
-      DdMark => return true
-      _ => ()
-    }
-  }
-  false
-}
-
-/// Whether raw pass-through of the token at `pos` is suppressed.
-/// Two causes: (1) a greedy entry reads it (DR-041 §4 先食い); (2) it is the dd
-/// marker `--` while a dd is still pending (see journal F-1: DR-041 §4's wording
-/// only names greedy entries, so treating `--` as a suppressing trigger is the
-/// extension that keeps dd-present/absent from going ambiguous).
+/// Whether raw pass-through of the token at `pos` is suppressed. 先食い is
+/// greedy-ONLY (DR-041 §4, rev): a raw-eat is suppressed iff some greedy entry
+/// reads the token. The dd `--` is covered because the dd satellite is itself a
+/// greedy entry (DdSat) — no dd special case (the F-1 trigger-vocab extension was
+/// rejected by the spec revision). Once severed, nothing is suppressed.
 fn suppressed(sc : Scope, toks : Array[String], pos : Int, severed : Bool) -> Bool {
   if severed {
     return false // past `--`: everything falls raw, even a second `--`
   }
-  if greedy_reads(sc, toks, pos) {
-    return true
-  }
-  toks[pos] == "--" && scope_has_dd(sc)
+  greedy_reads(sc, toks, pos)
 }
 
 fn eval_scope(sc : Scope, toks : Array[String], pos : Int) -> Array[Branch] {
@@ -192,13 +184,21 @@ fn scope_step(
   let out : Array[Branch] = []
   // (A) greedy interjection — a fired greedy entry raw-consumes its own value
   // slots (getopt 同型); re-enter at the same pidx (positional face untouched).
+  // Firing a dd satellite additionally severs the rest of the walk (DR-041: the
+  // dd's continuation is its internal consumption, so greedy is off after it).
   if !(severed) {
     for g in sc.greedy {
+      let fires_severed = match g {
+        DdSat(_) => true
+        _ => false
+      }
       for b in eval(g, toks, pos) {
         match b {
           Accept(p2, bs) =>
             if p2 > pos {
-              for r in scope_step(sc, toks, p2, pidx, cat(acc, bs), severed) {
+              for r in scope_step(
+                  sc, toks, p2, pidx, cat(acc, bs), severed || fires_severed,
+                ) {
                 out.push(r)
               }
             }
@@ -259,16 +259,6 @@ fn scope_consume(
       } else {
         []
       }
-    DdMark => {
-      // present: consume `--`, continue the SAME walk severed (DR-042 ⑤).
-      // absent: skip the marker, stay in the current mode. `--` is never raw-eaten
-      // while a dd is pending (handled by `suppressed`), so the two never collide.
-      if pos < toks.length() && toks[pos] == "--" && !(severed) {
-        scope_step(sc, toks, pos + 1, pidx + 1, acc, true)
-      } else {
-        scope_step(sc, toks, pos, pidx + 1, acc, severed)
-      }
-    }
     Many(inner) => {
       let out : Array[Branch] = []
       for r in scope_step(sc, toks, pos, pidx + 1, acc, severed) { // 0 reps
