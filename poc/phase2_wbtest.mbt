@@ -26,12 +26,14 @@ fn canonical_order() -> Array[Installer] {
   [LongInst, ShortInst, EnvInst, DdInst]
 }
 
-// ── invariant ① 消費即除去 => 冪等 ─────────────────────────────────────────────
+// ── invariant ①' 非削除 + add-if-absent => 冪等 ───────────────────────────────
 
-test "DR-042 ①: re-applying an installer is a no-op (idempotent from 消費即除去)" {
+test "DR-042 ①': re-applying an installer is a no-op (idempotent from add-if-absent)" {
   // Apply the four installers directly to one build, snapshot, then apply all
-  // four AGAIN to the SAME def+build. The vocab was removed on the first pass, so
-  // the second collects nothing and implants nothing => identical AtomicAST.
+  // four AGAIN to the SAME def+build. The vocab is NOT removed (non-deletion,
+  // invariant ①'); the second pass re-reads it and re-contributes, but every
+  // contribution is add-if-absent, so nothing new lands => identical AtomicAST.
+  // Idempotency now comes from add-if-absent, not from consuming the vocab.
   // (This is done below the registration guard, which separately forbids listing
   // the same installer twice in one chain.)
   let def = clone_def(dr042_def())
@@ -55,6 +57,20 @@ test "DR-042 ①: re-applying an installer is a no-op (idempotent from 消費即
     entities: build.entities,
   })
   inspect(once == twice, content="true")
+}
+
+test "DR-042 ①': the declaration layer is inert — def0 is unchanged, re-runs converge" {
+  // Non-deletion means parse_definition never mutates the caller's declaration
+  // layer: the same def0 can be parsed repeatedly and always yields the identical
+  // AtomicAST. This is the property that keeps help/diagnose/re-serialization able
+  // to read the original declaration (invariant ①').
+  let def = dr042_def()
+  let a = canon_scope(build_or_fail(def, canonical_order()))
+  let b = canon_scope(build_or_fail(def, canonical_order()))
+  // def0 still carries its vocab (proof it was read-only, not consumed)
+  inspect(def.options[0].long, content="[port]")
+  inspect(def.options[0].short, content="[p]")
+  inspect(a == b, content="true")
 }
 
 // ── invariant ③ 所有語彙の交差禁止 ────────────────────────────────────────────

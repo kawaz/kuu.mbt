@@ -1,19 +1,25 @@
 // installer.mbt — parse_definition as a chain of installers (DR-042).
 //
 // An installer owns a special vocabulary (long / short / env / dd), and on each
-// application: (1) collects its vocab from the definition and REMOVES it, (2)
-// implants greedy satellites / matchers / re-scoping, (3) declares runtime seats
-// (env). The 5 invariants keep the chain order-independent and idempotent.
+// application: (1) READS its vocab from the definition (never deletes it — the
+// declaration layer is read-only, invariant ①'), (2) implants greedy satellites
+// / matchers / re-scoping via add-if-absent, (3) declares runtime seats (env).
+// The 5 invariants keep the chain order-independent and idempotent; idempotency
+// now comes from add-if-absent (not from consuming the vocab), and completeness
+// is a "special vocab not owned by any installer in the chain" check.
 
-/// UsefulAST element. Attribute arrays are mutable so installers can empty them
-/// on collection (invariant ①: 消費即除去 => idempotency falls out of the schema).
+/// UsefulAST element. Attribute arrays are READ-ONLY to installers (invariant ①':
+/// 宣言層は読み取り専用). The declaration layer is never emptied — it stays inert so
+/// help / diagnose / re-serialization keep the original declaration, and so a later
+/// installer (global) can still see it. Idempotency is provided by add-if-absent on
+/// the lowered contributions instead.
 pub(all) struct ElemDef {
   name : String
   ty : Ty
-  mut long : Array[String] // owned by the long installer
-  mut short : Array[Char] // owned by the short installer
-  mut env : Array[String] // owned by the env installer
-  mut is_dd : Bool // owned by the dd installer (type:"dd")
+  long : Array[String] // owned by the long installer
+  short : Array[Char] // owned by the short installer
+  env : Array[String] // owned by the env installer
+  is_dd : Bool // owned by the dd installer (type:"dd")
   default_value : Value?
 } derive(Eq, Show)
 
@@ -40,11 +46,13 @@ fn owned_vocab(i : Installer) -> String {
   }
 }
 
-/// Mutable build accumulator: installers only ADD to greedy / mutate the env seat
-/// of an entity in place / (dd only) rewrite the positional face (invariant ②③).
+/// Mutable build accumulator: installers only ADD (add-if-absent) to greedy /
+/// declare the env seat of an entity in place / (dd only) contribute a greedy
+/// satellite (invariant ②③). The build layer grows monotonically; the fixpoint
+/// stops when a full pass adds nothing.
 priv struct Build {
-  greedy : Array[Node] // installers push satellites/matchers (in-place)
-  entities : Array[Entity] // created once; env installer mutates env_key in place
+  greedy : Array[Node] // installers add-if-absent satellites/matchers
+  entities : Array[Entity] // created once; env installer declares env_key seat in place
   positional : Array[Node] // core lowering builds it; dd's semantics live in the evaluator
 }
 
@@ -135,62 +143,57 @@ fn not_dd(e : ElemDef) -> Bool {
 
 // ── the four installers ──────────────────────────────────────────────────────
 
-/// long: collect `long`, add a greedy exact satellite per name (space form) and,
-/// for value options, one eq-split matcher (`--k=v`). Satellites link to the
-/// entity by name (DR-042 §展開の標準パターン).
+/// long: read `long`, add a greedy exact satellite per name (space form) and, for
+/// value options, one eq-split matcher (`--k=v`). All contributions are add-if-absent
+/// (invariant ①' non-deletion: the vocab is read, never removed). Satellites link to
+/// the entity by name (DR-042 §展開の標準パターン).
 fn inst_long(def : Definition, build : Build) -> Unit {
   let eq_entries : Array[LongEntry] = []
   for e in def.options {
-    if e.long.length() > 0 {
-      for l in e.long {
-        let trigger = "--" + l
-        match e.ty {
-          TFlag => build.greedy.push(Seq([Exact(trigger), Bind(e.name, VBool(true))]))
-          _ => {
-            build.greedy.push(Seq([Exact(trigger), value_prim(e.ty, e.name)]))
-            eq_entries.push({ key: l, name: e.name, kind: e.ty })
-          }
+    for l in e.long {
+      let trigger = "--" + l
+      match e.ty {
+        TFlag => add_greedy(build, Seq([Exact(trigger), Bind(e.name, VBool(true))]))
+        _ => {
+          add_greedy(build, Seq([Exact(trigger), value_prim(e.ty, e.name)]))
+          eq_entries.push({ key: l, name: e.name, kind: e.ty })
         }
       }
-      e.long = [] // 消費即除去
     }
   }
   if eq_entries.length() > 0 {
-    build.greedy.push(NativeMatch(EqSplit(prefix="--", entries=eq_entries)))
+    add_greedy(build, NativeMatch(EqSplit(prefix="--", entries=eq_entries)))
   }
 }
 
-/// short: collect `short`, add ONE cluster/value-attach matcher over all entries.
-/// In this PoC the single-char case (`-v`, `-p 8080`) is subsumed by the matcher,
-/// so short adds no separate exact satellite (a matcher-seat finding, see journal).
+/// short: read `short`, add ONE cluster/value-attach matcher over all entries
+/// (add-if-absent). In this PoC the single-char case (`-v`, `-p 8080`) is subsumed
+/// by the matcher, so short adds no separate exact satellite (a matcher-seat
+/// finding, see journal).
 fn inst_short(def : Definition, build : Build) -> Unit {
   let sh_entries : Array[ShortEntry] = []
   for e in def.options {
-    if e.short.length() > 0 {
-      for c in e.short {
-        sh_entries.push({ ch: c, name: e.name, kind: e.ty })
-      }
-      e.short = []
+    for c in e.short {
+      sh_entries.push({ ch: c, name: e.name, kind: e.ty })
     }
   }
   if sh_entries.length() > 0 {
-    build.greedy.push(NativeMatch(ShortCombine(prefix="-", entries=sh_entries)))
+    add_greedy(build, NativeMatch(ShortCombine(prefix="-", entries=sh_entries)))
   }
 }
 
-/// env: collect `env`, declare a lookup at the entity's env SEAT (invariant ④).
-/// It does NOT wrap default_fn; the ladder order is engine-owned (DR-031).
+/// env: read `env`, declare a lookup at the entity's env SEAT (invariant ④). It
+/// does NOT wrap default_fn; the ladder order is engine-owned (DR-031). Declaring
+/// the same seat again is a no-op (idempotent in-place set).
 fn inst_env(def : Definition, build : Build) -> Unit {
   for e in def.options {
     if e.env.length() > 0 {
       seat_env(build, e.name, e.env[0])
-      e.env = []
     }
   }
   for e in def.positionals {
     if e.env.length() > 0 {
       seat_env(build, e.name, e.env[0])
-      e.env = []
     }
   }
 }
@@ -206,13 +209,12 @@ fn seat_env(build : Build, name : String, key : String) -> Unit {
 /// dd: read `type:"dd"` and add a greedy exact satellite (DR-041 rev). The
 /// satellite (DdSat) is a plain exact matcher on `--` that fires anywhere on the
 /// spine; the evaluator severs the rest of the walk when it fires (internal-一体).
-/// This is now a real structural installer (exact satellite), symmetric with the
-/// other greedy-face installers — the earlier "vocab licensing only" shape is gone.
+/// A real structural installer (exact satellite), symmetric with the other
+/// greedy-face installers. Non-deletion: `is_dd` is read, never cleared.
 fn inst_dd(def : Definition, build : Build) -> Unit {
   for e in def.positionals {
     if e.is_dd {
       add_greedy(build, DdSat("--"))
-      e.is_dd = false // deletion protocol (removed in Task 2's non-deletion rewrite)
     }
   }
 }
@@ -255,38 +257,82 @@ fn check_registration(order : Array[Installer]) -> String? {
   None
 }
 
-/// Invariant ①: any special vocab left after all installers => unknown vocab error.
-fn leftover_vocab(def : Definition) -> String? {
-  for e in def.options {
-    if e.long.length() > 0 {
+/// Invariant ①' completeness: a special vocab USED by the definition but OWNED by
+/// no installer in the chain is an error. With non-deletion the vocab always stays
+/// in the def, so completeness is "used vocab ∉ owned set" (not "leftover after
+/// consumption"). `order` fixes the owned set.
+fn unowned_vocab(def : Definition, order : Array[Installer]) -> String? {
+  let owned : Array[String] = []
+  for inst in order {
+    owned.push(owned_vocab(inst))
+  }
+  fn owns(v : String) -> Bool {
+    for o in owned {
+      if o == v {
+        return true
+      }
+    }
+    false
+  }
+
+  fn scan(e : ElemDef) -> String? {
+    if e.long.length() > 0 && !owns("long") {
       return Some("long:" + e.long[0])
     }
-    if e.short.length() > 0 {
+    if e.short.length() > 0 && !owns("short") {
       return Some("short")
     }
-    if e.env.length() > 0 {
+    if e.env.length() > 0 && !owns("env") {
       return Some("env:" + e.env[0])
+    }
+    if e.is_dd && !owns("dd") {
+      return Some("dd")
+    }
+    None
+  }
+
+  for e in def.options {
+    match scan(e) {
+      Some(v) => return Some(v)
+      None => ()
     }
   }
   for e in def.positionals {
-    if e.long.length() > 0 {
-      return Some("long")
-    }
-    if e.short.length() > 0 {
-      return Some("short")
-    }
-    if e.env.length() > 0 {
-      return Some("env:" + e.env[0])
-    }
-    if e.is_dd {
-      return Some("dd")
+    match scan(e) {
+      Some(v) => return Some(v)
+      None => ()
     }
   }
   None
 }
 
+/// A stable signature of the build layer, for fixpoint detection. Node / Entity
+/// both derive Show, so structural growth is visible as a string change.
+fn build_sig(b : Build) -> String {
+  let buf = StringBuilder::new()
+  for g in b.greedy {
+    buf.write_string("\{g};")
+  }
+  buf.write_string("|")
+  for p in b.positional {
+    buf.write_string("\{p};")
+  }
+  buf.write_string("|")
+  for e in b.entities {
+    buf.write_string("\{e};")
+  }
+  buf.to_string()
+}
+
 /// UsefulAST -> AtomicAST as an installer chain (DR-042). `order` is the applied
 /// installer sequence; the 5 invariants make the result order-independent.
+///
+/// The chain runs to a FIXPOINT (invariant note: apparent inter-installer deps —
+/// e.g. global places a declarative copy that long later expands — are resolved by
+/// repeating all installers until contributions stop growing). Termination: the
+/// build layer grows monotonically via add-if-absent over a finite element×scope
+/// space, so a pass that adds nothing is the fixpoint. Without a growing declaration
+/// layer (global) this converges in two passes (add, then no-op).
 pub fn parse_definition(
   def0 : Definition,
   order : Array[Installer],
@@ -296,19 +342,30 @@ pub fn parse_definition(
     None => ()
   }
   let def = clone_def(def0)
+  match unowned_vocab(def, order) {
+    Some(v) => return Err("unknown special vocab '\{v}' — no installer claimed it")
+    None => ()
+  }
   let build = init_build(def)
-  for inst in order {
-    apply(inst, def, build)
+  let mut iters = 0
+  while true {
+    let prev = build_sig(build)
+    for inst in order {
+      apply(inst, def, build)
+    }
+    if build_sig(build) == prev {
+      break
+    }
+    iters = iters + 1
+    if iters > 100 {
+      return Err("installer chain did not converge (fixpoint > 100 iterations)")
+    }
   }
-  match leftover_vocab(def) {
-    Some(v) => Err("unknown special vocab '\{v}' — no installer claimed it")
-    None =>
-      Ok({
-        greedy: build.greedy,
-        positional: build.positional,
-        entities: build.entities,
-      })
-  }
+  Ok({
+    greedy: build.greedy,
+    positional: build.positional,
+    entities: build.entities,
+  })
 }
 
 // ── layer 3: value-source ladder resolution (DR-031, invariant ④) ─────────────
