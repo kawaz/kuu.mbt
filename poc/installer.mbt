@@ -20,13 +20,24 @@ pub(all) struct ElemDef {
   short : Array[Char] // owned by the short installer
   env : Array[String] // owned by the env installer
   is_dd : Bool // owned by the dd installer (type:"dd")
+  is_global : Bool // owned by the global installer (copied into descendant command scopes)
+  is_inherit : Bool // owned by the inherit installer (declares an inherit seat)
   default_value : Value?
 } derive(Eq, Show)
 
-/// UsefulAST for one command scope: entry-bearing options + positional face.
+/// A subcommand: a name + its own scope Definition (a fresh backbone, DR-041 §4).
+pub(all) struct CommandDef {
+  name : String
+  body : Definition
+} derive(Eq, Show)
+
+/// UsefulAST for one command scope: entry-bearing options + positional face +
+/// subcommands. `commands` is the DR-018 sugar; the command installer expands each
+/// into a greedy exact trigger whose subtree is a NEW backbone (DR-041 §4).
 pub(all) struct Definition {
   options : Array[ElemDef]
   positionals : Array[ElemDef]
+  commands : Array[CommandDef]
 } derive(Eq, Show)
 
 /// The canonical installers (DR-042 §canonical installer セット).
@@ -35,6 +46,9 @@ pub(all) enum Installer {
   ShortInst
   EnvInst
   DdInst
+  CommandInst
+  GlobalInst
+  InheritInst
 } derive(Eq, Show)
 
 fn owned_vocab(i : Installer) -> String {
@@ -43,17 +57,35 @@ fn owned_vocab(i : Installer) -> String {
     ShortInst => "short"
     EnvInst => "env"
     DdInst => "dd"
+    CommandInst => "command"
+    GlobalInst => "global"
+    InheritInst => "inherit"
   }
 }
 
-/// Mutable build accumulator: installers only ADD (add-if-absent) to greedy /
-/// declare the env seat of an entity in place / (dd only) contribute a greedy
+/// Mutable build accumulator for ONE scope: installers only ADD (add-if-absent) to
+/// greedy / declare seats of an entity in place / (dd only) contribute a greedy
 /// satellite (invariant ②③). The build layer grows monotonically; the fixpoint
-/// stops when a full pass adds nothing.
+/// stops when a full pass over the whole tree adds nothing.
 priv struct Build {
   greedy : Array[Node] // installers add-if-absent satellites/matchers
-  entities : Array[Entity] // created once; env installer declares env_key seat in place
+  entities : Array[Entity] // ensured per pass; env/inherit installers declare seats in place
   positional : Array[Node] // core lowering builds it; dd's semantics live in the evaluator
+}
+
+/// A node of the scope-builder tree, mirroring the Definition tree. `decl` is the
+/// declaration layer (read-only vocab, but its `options` array GROWS when the global
+/// installer copies a global option in — invariant ②). `build` is this scope's
+/// lowered layer. `children` are the subcommand scopes (a fresh backbone each).
+priv struct SB {
+  decl : Definition
+  build : Build
+  children : Array[SBChild]
+}
+
+priv struct SBChild {
+  name : String
+  body : SB
 }
 
 fn value_prim(ty : Ty, name : String) -> Node {
@@ -87,6 +119,8 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     short: copy_chars(e.short),
     env: copy_strs(e.env),
     is_dd: e.is_dd,
+    is_global: e.is_global,
+    is_inherit: e.is_inherit,
     default_value: e.default_value,
   }
 }
@@ -100,31 +134,17 @@ fn clone_def(d : Definition) -> Definition {
   for e in d.positionals {
     ps.push(clone_elem(e))
   }
-  { options: os, positionals: ps }
+  let cs : Array[CommandDef] = []
+  for c in d.commands {
+    cs.push({ name: c.name, body: clone_def(c.body) })
+  }
+  { options: os, positionals: ps, commands: cs }
 }
 
-/// Core lowering: one entity (value cell, DR-030) per element; a flat positional
-/// face with a DdMark([]) placeholder wherever a dd marker sits.
-fn init_build(def : Definition) -> Build {
-  let entities : Array[Entity] = []
-  for e in def.options {
-    entities.push({
-      name: e.name,
-      ty: e.ty,
-      env_key: None,
-      default_value: e.default_value,
-    })
-  }
-  for e in def.positionals {
-    if not_dd(e) {
-      entities.push({
-        name: e.name,
-        ty: e.ty,
-        env_key: None,
-        default_value: e.default_value,
-      })
-    }
-  }
+/// Build the scope-builder tree from a (cloned) Definition tree. The positional
+/// face is lowered once here (it does not grow — global copies go to greedy); the
+/// entities and greedy layers are filled by the fixpoint passes.
+fn init_sb(def : Definition) -> SB {
   let positional : Array[Node] = []
   for e in def.positionals {
     // A dd-typed positional is NOT lowered onto the spine: the dd installer adds a
@@ -134,7 +154,40 @@ fn init_build(def : Definition) -> Build {
       positional.push(value_prim(e.ty, e.name))
     }
   }
-  { greedy: [], entities, positional }
+  let children : Array[SBChild] = []
+  for c in def.commands {
+    children.push({ name: c.name, body: init_sb(c.body) })
+  }
+  { decl: def, build: { greedy: [], entities: [], positional }, children }
+}
+
+/// Core lowering (not an installer — deterministic, order-independent): ensure one
+/// entity (value cell, DR-030) per option and per non-dd positional, keyed by name
+/// (add-if-absent). Runs every pass so global-copied options gain an entity too.
+fn ensure_entities(sb : SB) -> Unit {
+  for e in sb.decl.options {
+    ensure_entity(sb.build, e)
+  }
+  for e in sb.decl.positionals {
+    if not_dd(e) {
+      ensure_entity(sb.build, e)
+    }
+  }
+}
+
+fn ensure_entity(build : Build, e : ElemDef) -> Unit {
+  for ent in build.entities {
+    if ent.name == e.name {
+      return
+    }
+  }
+  build.entities.push({
+    name: e.name,
+    ty: e.ty,
+    env_key: None,
+    inherit: false,
+    default_value: e.default_value,
+  })
 }
 
 fn not_dd(e : ElemDef) -> Bool {
@@ -231,14 +284,106 @@ fn add_greedy(build : Build, g : Node) -> Unit {
   build.greedy.push(g)
 }
 
+/// inherit: read `inherit`, declare an inherit SEAT on the entity (invariant ④,
+/// DR-031 ladder cli>env>inherit>default). The seat's lookup — "nearest ancestor's
+/// same-named entity value" — is resolved at runtime (resolve_command_tree). Like
+/// env, this is a seat/capability declaration, not a structural contribution.
+fn inst_inherit(def : Definition, build : Build) -> Unit {
+  for e in def.options {
+    if e.is_inherit {
+      seat_inherit(build, e.name)
+    }
+  }
+  for e in def.positionals {
+    if e.is_inherit {
+      seat_inherit(build, e.name)
+    }
+  }
+}
+
+fn seat_inherit(build : Build, name : String) -> Unit {
+  for ent in build.entities {
+    if ent.name == name {
+      ent.inherit = true
+    }
+  }
+}
+
+/// global: read `global`, copy the option's declaration into descendant command
+/// scopes (invariant ②: an addition to the DECLARATION layer, later expanded by
+/// long/short in the child). Shadowing (DR-032/033, minimal scope): a scope that
+/// already declares an option of the same name does NOT receive the copy — its own
+/// wins. The copy keeps `is_global` so it re-propagates further down via the
+/// fixpoint (level-by-level, so an intermediate shadow blocks its whole subtree).
+fn inst_global(sb : SB) -> Unit {
+  for opt in sb.decl.options {
+    if opt.is_global {
+      for child in sb.children {
+        copy_global_into(child.body, opt)
+      }
+    }
+  }
+}
+
+fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
+  for existing in child.decl.options {
+    if triggers_overlap(existing, opt) {
+      return // self-declared same trigger (shadow) or already-copied (idempotent)
+    }
+  }
+  child.decl.options.push(clone_elem(opt))
+}
+
+/// Two options collide on a trigger if they share any long or short form. Shadowing
+/// is by TRIGGER (DR: 同名トリガ), so a child declaring `--v` blocks a global `--v`
+/// copy even under a different name.
+fn triggers_overlap(a : ElemDef, b : ElemDef) -> Bool {
+  for la in a.long {
+    for lb in b.long {
+      if la == lb {
+        return true
+      }
+    }
+  }
+  for ca in a.short {
+    for cb in b.short {
+      if ca == cb {
+        return true
+      }
+    }
+  }
+  false
+}
+
 // ── driver + completeness ────────────────────────────────────────────────────
 
-fn apply(inst : Installer, def : Definition, build : Build) -> Unit {
+/// Apply one installer to one scope node. long/short/env/dd/inherit contribute to
+/// this node's build; global copies into descendants' declaration layers; command
+/// is wired at materialization (its expansion is deterministic — greedy exact
+/// trigger + new-backbone subtree, DR-018 / DR-041 §4).
+fn apply_node(inst : Installer, sb : SB) -> Unit {
   match inst {
-    LongInst => inst_long(def, build)
-    ShortInst => inst_short(def, build)
-    EnvInst => inst_env(def, build)
-    DdInst => inst_dd(def, build)
+    LongInst => inst_long(sb.decl, sb.build)
+    ShortInst => inst_short(sb.decl, sb.build)
+    EnvInst => inst_env(sb.decl, sb.build)
+    DdInst => inst_dd(sb.decl, sb.build)
+    InheritInst => inst_inherit(sb.decl, sb.build)
+    GlobalInst => inst_global(sb)
+    CommandInst => () // wired at materialize (see materialize)
+  }
+}
+
+/// One fixpoint pass over the whole tree: ensure entities (core), apply every
+/// installer to this node, then recurse into subcommand scopes. Global copies into
+/// children before the recursion, so a child sees the grown declaration in the same
+/// pass regardless of global's position in `order`.
+fn tree_pass(order : Array[Installer], sb : SB) -> Unit {
+  ensure_entities(sb)
+  for inst in order {
+    apply_node(inst, sb)
+  }
+  for child in sb.children {
+    tree_pass(order, child.body)
   }
 }
 
@@ -257,48 +402,67 @@ fn check_registration(order : Array[Installer]) -> String? {
   None
 }
 
-/// Invariant ①' completeness: a special vocab USED by the definition but OWNED by
-/// no installer in the chain is an error. With non-deletion the vocab always stays
+/// Invariant ①' completeness: a special vocab USED by the definition tree but OWNED
+/// by no installer in the chain is an error. With non-deletion the vocab always stays
 /// in the def, so completeness is "used vocab ∉ owned set" (not "leftover after
-/// consumption"). `order` fixes the owned set.
+/// consumption"). Scans the whole command subtree. `order` fixes the owned set.
 fn unowned_vocab(def : Definition, order : Array[Installer]) -> String? {
   let owned : Array[String] = []
   for inst in order {
     owned.push(owned_vocab(inst))
   }
-  fn owns(v : String) -> Bool {
-    for o in owned {
-      if o == v {
-        return true
-      }
-    }
-    false
-  }
+  scan_def_vocab(def, owned)
+}
 
-  fn scan(e : ElemDef) -> String? {
-    if e.long.length() > 0 && !owns("long") {
-      return Some("long:" + e.long[0])
+fn vocab_owned(owned : Array[String], v : String) -> Bool {
+  for o in owned {
+    if o == v {
+      return true
     }
-    if e.short.length() > 0 && !owns("short") {
-      return Some("short")
-    }
-    if e.env.length() > 0 && !owns("env") {
-      return Some("env:" + e.env[0])
-    }
-    if e.is_dd && !owns("dd") {
-      return Some("dd")
-    }
-    None
   }
+  false
+}
 
+fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
+  if e.long.length() > 0 && !vocab_owned(owned, "long") {
+    return Some("long:" + e.long[0])
+  }
+  if e.short.length() > 0 && !vocab_owned(owned, "short") {
+    return Some("short")
+  }
+  if e.env.length() > 0 && !vocab_owned(owned, "env") {
+    return Some("env:" + e.env[0])
+  }
+  if e.is_dd && !vocab_owned(owned, "dd") {
+    return Some("dd")
+  }
+  if e.is_global && !vocab_owned(owned, "global") {
+    return Some("global")
+  }
+  if e.is_inherit && !vocab_owned(owned, "inherit") {
+    return Some("inherit")
+  }
+  None
+}
+
+fn scan_def_vocab(def : Definition, owned : Array[String]) -> String? {
   for e in def.options {
-    match scan(e) {
+    match scan_elem_vocab(e, owned) {
       Some(v) => return Some(v)
       None => ()
     }
   }
   for e in def.positionals {
-    match scan(e) {
+    match scan_elem_vocab(e, owned) {
+      Some(v) => return Some(v)
+      None => ()
+    }
+  }
+  if def.commands.length() > 0 && !vocab_owned(owned, "command") {
+    return Some("command")
+  }
+  for c in def.commands {
+    match scan_def_vocab(c.body, owned) {
       Some(v) => return Some(v)
       None => ()
     }
@@ -306,8 +470,8 @@ fn unowned_vocab(def : Definition, order : Array[Installer]) -> String? {
   None
 }
 
-/// A stable signature of the build layer, for fixpoint detection. Node / Entity
-/// both derive Show, so structural growth is visible as a string change.
+/// A stable signature of one scope's build layer, for fixpoint detection. Node /
+/// Entity both derive Show, so structural growth is visible as a string change.
 fn build_sig(b : Build) -> String {
   let buf = StringBuilder::new()
   for g in b.greedy {
@@ -324,15 +488,50 @@ fn build_sig(b : Build) -> String {
   buf.to_string()
 }
 
+/// Signature of the whole scope-builder tree: each node's build plus its declared
+/// option names (so global growing a child's declaration is detected) plus the
+/// recursive child signatures.
+fn tree_sig(sb : SB) -> String {
+  let buf = StringBuilder::new()
+  buf.write_string(build_sig(sb.build))
+  buf.write_string("#opts:")
+  for o in sb.decl.options {
+    buf.write_string(o.name + ",")
+  }
+  for child in sb.children {
+    buf.write_string("{" + child.name + ":")
+    buf.write_string(tree_sig(child.body))
+    buf.write_string("}")
+  }
+  buf.to_string()
+}
+
+/// Materialize the scope-builder tree into a Scope tree. Each subcommand becomes a
+/// greedy `CmdSat(name, child)`: a greedy-face resident whose exact trigger 先食い
+/// protects (the DR-018 "commands が先" priority), whose child is a NEW backbone
+/// (DR-041 §4), and which SEVERS the parent on firing (the subcommand owns the rest).
+fn materialize(sb : SB) -> Scope {
+  let greedy : Array[Node] = []
+  for g in sb.build.greedy {
+    greedy.push(g)
+  }
+  for child in sb.children {
+    let cs = materialize(child.body)
+    greedy.push(CmdSat(child.name, cs))
+  }
+  { greedy, positional: sb.build.positional, entities: sb.build.entities }
+}
+
 /// UsefulAST -> AtomicAST as an installer chain (DR-042). `order` is the applied
 /// installer sequence; the 5 invariants make the result order-independent.
 ///
-/// The chain runs to a FIXPOINT (invariant note: apparent inter-installer deps —
-/// e.g. global places a declarative copy that long later expands — are resolved by
-/// repeating all installers until contributions stop growing). Termination: the
-/// build layer grows monotonically via add-if-absent over a finite element×scope
-/// space, so a pass that adds nothing is the fixpoint. Without a growing declaration
-/// layer (global) this converges in two passes (add, then no-op).
+/// The chain runs to a FIXPOINT over the whole command tree (invariant note:
+/// apparent inter-installer deps — e.g. global places a declarative copy that long
+/// later expands in a child scope — are resolved by repeating all installers until
+/// contributions stop growing). Termination: the build layer grows monotonically via
+/// add-if-absent and global copies over a finite element×scope space (a copy of a
+/// copy is the same option by name, which add-if-absent stops), so a pass that
+/// changes nothing is the fixpoint.
 pub fn parse_definition(
   def0 : Definition,
   order : Array[Installer],
@@ -346,14 +545,12 @@ pub fn parse_definition(
     Some(v) => return Err("unknown special vocab '\{v}' — no installer claimed it")
     None => ()
   }
-  let build = init_build(def)
+  let sb = init_sb(def)
   let mut iters = 0
   while true {
-    let prev = build_sig(build)
-    for inst in order {
-      apply(inst, def, build)
-    }
-    if build_sig(build) == prev {
+    let prev = tree_sig(sb)
+    tree_pass(order, sb)
+    if tree_sig(sb) == prev {
       break
     }
     iters = iters + 1
@@ -361,11 +558,7 @@ pub fn parse_definition(
       return Err("installer chain did not converge (fixpoint > 100 iterations)")
     }
   }
-  Ok({
-    greedy: build.greedy,
-    positional: build.positional,
-    entities: build.entities,
-  })
+  Ok(materialize(sb))
 }
 
 // ── layer 3: value-source ladder resolution (DR-031, invariant ④) ─────────────
@@ -382,12 +575,15 @@ fn env_value(ty : Ty, s : String) -> Value {
   }
 }
 
-/// Resolve one entity down the fixed ladder: cli > env > default (DR-031). The
-/// returned Binding carries the SOURCE tag of the seat that supplied the value.
+/// Resolve one entity down the fixed ladder: cli > env > inherit > default (DR-031).
+/// The returned Binding carries the SOURCE tag of the seat that supplied the value.
+/// `inherited` maps a name to the nearest ancestor scope's resolved value; the
+/// inherit seat consults it only when the entity declared an inherit seat.
 fn resolve_entity(
   e : Entity,
   cli : Array[Binding],
   env_map : Map[String, String],
+  inherited : Map[String, Value],
 ) -> Binding? {
   for b in cli {
     if b.key == e.name {
@@ -402,24 +598,53 @@ fn resolve_entity(
       }
     None => ()
   }
+  if e.inherit {
+    match inherited.get(e.name) {
+      Some(v) => return Some(mkb(e.name, v, Inherit))
+      None => ()
+    }
+  }
   match e.default_value {
     Some(v) => Some(mkb(e.name, v, Default))
     None => None
   }
 }
 
-/// Resolve every entity in a built scope against CLI bindings + an env map.
+/// Resolve every entity in a built scope against CLI bindings + an env map, with an
+/// optional inherited-context (nearest ancestor's resolved values, for inherit seats).
 pub fn resolve_scope(
   sc : Scope,
   cli : Array[Binding],
   env_map : Map[String, String],
+  inherited~ : Map[String, Value] = Map::new(),
 ) -> Array[Binding] {
   let out : Array[Binding] = []
   for e in sc.entities {
-    match resolve_entity(e, cli, env_map) {
+    match resolve_entity(e, cli, env_map, inherited) {
       Some(b) => out.push(b)
       None => ()
     }
   }
   out
+}
+
+/// Fetch a subcommand's built Scope from a parent Scope by name. Subcommands are
+/// materialized as greedy `CmdSat(name, child)` entries.
+pub fn command_child(sc : Scope, name : String) -> Scope? {
+  for g in sc.greedy {
+    match g {
+      CmdSat(n, child) => if n == name { return Some(child) }
+      _ => ()
+    }
+  }
+  None
+}
+
+/// Build an inherited-context map from a parent scope's resolved bindings.
+pub fn inherited_of(binds : Array[Binding]) -> Map[String, Value] {
+  let m : Map[String, Value] = Map::new()
+  for b in binds {
+    m.set(b.key, b.value)
+  }
+  m
 }

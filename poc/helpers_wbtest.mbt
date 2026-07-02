@@ -74,6 +74,7 @@ fn render_src(s : Source) -> String {
   match s {
     Cli => "cli"
     Env => "env"
+    Inherit => "inherit"
     Default => "default"
   }
 }
@@ -128,17 +129,67 @@ fn opt(
   long~ : Array[String] = [],
   short~ : Array[Char] = [],
   env~ : Array[String] = [],
+  global~ : Bool = false,
+  inherit~ : Bool = false,
   default~ : Value? = None,
 ) -> ElemDef {
-  { name, ty, long, short, env, is_dd: false, default_value: default }
+  {
+    name,
+    ty,
+    long,
+    short,
+    env,
+    is_dd: false,
+    is_global: global,
+    is_inherit: inherit,
+    default_value: default,
+  }
 }
 
-fn pos(name : String, ty : Ty) -> ElemDef {
-  { name, ty, long: [], short: [], env: [], is_dd: false, default_value: None }
+fn pos(name : String, ty : Ty, inherit~ : Bool = false, default~ : Value? = None) -> ElemDef {
+  {
+    name,
+    ty,
+    long: [],
+    short: [],
+    env: [],
+    is_dd: false,
+    is_global: false,
+    is_inherit: inherit,
+    default_value: default,
+  }
 }
 
 fn dd_marker() -> ElemDef {
-  { name: "--", ty: TStr, long: [], short: [], env: [], is_dd: true, default_value: None }
+  {
+    name: "--",
+    ty: TStr,
+    long: [],
+    short: [],
+    env: [],
+    is_dd: true,
+    is_global: false,
+    is_inherit: false,
+    default_value: None,
+  }
+}
+
+/// Definition constructors — keep `commands` out of test literals so adding tree
+/// support did not churn every def site.
+fn def_(options : Array[ElemDef], positionals : Array[ElemDef]) -> Definition {
+  { options, positionals, commands: [] }
+}
+
+fn def_cmd(
+  options : Array[ElemDef],
+  positionals : Array[ElemDef],
+  commands : Array[CommandDef],
+) -> Definition {
+  { options, positionals, commands }
+}
+
+fn cmd(name : String, body : Definition) -> CommandDef {
+  { name, body }
 }
 
 /// Order-independent rendering of a built scope: greedy and entities sorted (the

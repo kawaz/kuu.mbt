@@ -42,6 +42,13 @@ pub(all) enum Node {
   /// spine walk switches to "severed" mode (greedy off) for the rest — the sever is
   /// the "greedy internal consumption is 一体" rule, not a dd special case.
   DdSat(String)
+  /// command satellite (DR-018 / DR-041 §4). A GREEDY-face resident whose matcher is
+  /// a plain exact match on the command name. Firing enters the child scope as a NEW
+  /// backbone (the parent greedy face does not interject inside it) and SEVERS the
+  /// parent for the rest — the subcommand owns everything after it (greedy internal
+  /// consumption is 一体, exactly like dd). 先食い protects the command name from a
+  /// positional raw-eat, which is the DR-018 "commands が先" priority.
+  CmdSat(String, Scope)
 } derive(Eq, Show)
 
 /// A scope carries two faces (DR-041 §4):
@@ -57,11 +64,15 @@ pub(all) struct Scope {
 
 /// A value cell (DR-030 "entity-only node"). Satellites/matchers with the same
 /// `name` all write here = link 合流. Carries the reduced value-source ladder:
-/// env seat (declared by the env installer, invariant ④) and default seat.
+/// env seat (declared by the env installer), inherit seat (declared by the inherit
+/// installer), and default seat. Ladder order is engine-owned (DR-031, invariant ④):
+/// cli > env > inherit > default. The inherit seat looks up the nearest ancestor
+/// scope's same-named entity value (縮退ラダー: inherit → default for this PoC).
 pub(all) struct Entity {
   name : String
   ty : Ty
   mut env_key : String? // env seat lookup; None = no env seat declared (env installer sets it)
+  mut inherit : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013)
   default_value : Value? // default seat
 } derive(Eq, Show)
 

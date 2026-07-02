@@ -12,6 +12,7 @@ fn dr042_def() -> Definition {
       opt("version", TFlag, short=['v']),
     ],
     positionals: [dd_marker(), pos("dir", TStr)],
+    commands: [],
   }
 }
 
@@ -36,26 +37,18 @@ test "DR-042 ①': re-applying an installer is a no-op (idempotent from add-if-a
   // Idempotency now comes from add-if-absent, not from consuming the vocab.
   // (This is done below the registration guard, which separately forbids listing
   // the same installer twice in one chain.)
-  let def = clone_def(dr042_def())
-  let build = init_build(def)
-  inst_long(def, build)
-  inst_short(def, build)
-  inst_env(def, build)
-  inst_dd(def, build)
-  let once = canon_scope({
-    greedy: build.greedy,
-    positional: build.positional,
-    entities: build.entities,
-  })
-  inst_long(def, build)
-  inst_short(def, build)
-  inst_env(def, build)
-  inst_dd(def, build)
-  let twice = canon_scope({
-    greedy: build.greedy,
-    positional: build.positional,
-    entities: build.entities,
-  })
+  let sb = init_sb(clone_def(dr042_def()))
+  ensure_entities(sb)
+  inst_long(sb.decl, sb.build)
+  inst_short(sb.decl, sb.build)
+  inst_env(sb.decl, sb.build)
+  inst_dd(sb.decl, sb.build)
+  let once = canon_scope(materialize(sb))
+  inst_long(sb.decl, sb.build)
+  inst_short(sb.decl, sb.build)
+  inst_env(sb.decl, sb.build)
+  inst_dd(sb.decl, sb.build)
+  let twice = canon_scope(materialize(sb))
   inspect(once == twice, content="true")
 }
 
@@ -128,12 +121,10 @@ test "DR-042: all 24 installer orders produce the identical AtomicAST" {
 test "DR-042 ④: env is a ladder-seat declaration; source tags follow cli>env>default" {
   // port declares an env seat (PORT) and a default. The engine-owned ladder
   // (DR-031) decides precedence; the env installer only declared the seat.
-  let def : Definition = {
-    options: [
-      opt("port", TNum, long=["port"], env=["PORT"], default=Some(VNum(3000))),
-    ],
-    positionals: [],
-  }
+  let def = def_(
+    [opt("port", TNum, long=["port"], env=["PORT"], default=Some(VNum(3000)))],
+    [],
+  )
   let sc = build_or_fail(def, canonical_order())
   let env8080 : Map[String, String] = Map::new()
   env8080.set("PORT", "8080")
@@ -160,10 +151,10 @@ test "DR-042 ④: env is a ladder-seat declaration; source tags follow cli>env>d
 test "DR-042 意地悪: long+short+env on one element merge onto a single entity" {
   // All three installers target the same name => one value cell, and every CLI
   // form (long space, eq-split, short attach) writes that one cell (link 合流).
-  let def : Definition = {
-    options: [opt("port", TNum, long=["port"], short=['p'], env=["PORT"])],
-    positionals: [],
-  }
+  let def = def_(
+    [opt("port", TNum, long=["port"], short=['p'], env=["PORT"])],
+    [],
+  )
   let sc = build_or_fail(def, canonical_order())
   // exactly one entity named "port", carrying the declared env seat
   let mut count = 0
@@ -200,10 +191,10 @@ test "DR-042 ⑤: dd installer re-scopes — `--` flips the reading of a followi
   // -a/-b are short flags; x is a positional. With `--`, the greedy face is
   // severed after it, so `-b` becomes the raw positional x. Without `--`, `-b`
   // fires as a flag and the next token is x. Same tokens, different meaning.
-  let def : Definition = {
-    options: [opt("a", TFlag, short=['a']), opt("b", TFlag, short=['b'])],
-    positionals: [dd_marker(), pos("x", TStr)],
-  }
+  let def = def_(
+    [opt("a", TFlag, short=['a']), opt("b", TFlag, short=['b'])],
+    [dd_marker(), pos("x", TStr)],
+  )
   let sc = build_or_fail(def, canonical_order())
   inspect(
     render_outcome(parse(ScopeNode(sc), ["-a", "--", "-b"])),
@@ -218,10 +209,7 @@ test "DR-042 ⑤: dd installer re-scopes — `--` flips the reading of a followi
 // ── end-to-end: every matcher form hits the same cell ─────────────────────────
 
 test "DR-041/042: long-space, eq-split, short-attach, short-next-token all agree" {
-  let def : Definition = {
-    options: [opt("port", TNum, long=["port"], short=['p'])],
-    positionals: [],
-  }
+  let def = def_([opt("port", TNum, long=["port"], short=['p'])], [])
   let sc = build_or_fail(def, canonical_order())
   inspect(
     render_outcome(parse(ScopeNode(sc), ["--port", "8080"])),

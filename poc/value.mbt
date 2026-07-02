@@ -17,6 +17,7 @@ pub(all) enum Value {
 pub(all) enum Source {
   Cli // CLI explicit / link — highest seat (DR-031 #1)
   Env // environment variable seat (DR-031 #2)
+  Inherit // nearest ancestor scope's same-named value (DR-031 #4 / DR-013)
   Default // fixed fallback (DR-031 #5)
 } derive(Eq, Show)
 

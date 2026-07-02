@@ -86,6 +86,16 @@ fn eval(node : Node, toks : Array[String], pos : Int) -> Array[Branch] {
       } else {
         []
       }
+    CmdSat(name, child) =>
+      // A command satellite reads its name exactly, then the child scope (a fresh
+      // backbone) consumes from pos+1. greedy_reads/先食い sees these accepts and
+      // protects the command name from a positional raw-eat. The SEVER of the parent
+      // on firing is applied by the spine walk (scope_step step A), not here.
+      if pos < toks.length() && toks[pos] == name {
+        eval_scope(child, toks, pos + 1)
+      } else {
+        []
+      }
   }
 }
 
@@ -190,6 +200,10 @@ fn scope_step(
     for g in sc.greedy {
       let fires_severed = match g {
         DdSat(_) => true
+        // A subcommand owns everything after it: once it fires, the parent greedy
+        // face is off for the rest (一体). Without this, a short child accept lets a
+        // trailing token fall back to a parent greedy (false ambiguity, DR-018).
+        CmdSat(_, _) => true
         _ => false
       }
       for b in eval(g, toks, pos) {
