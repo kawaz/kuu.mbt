@@ -121,6 +121,42 @@ fn render_outcome(o : Outcome) -> String {
   }
 }
 
+/// Compact rendering of a built result object (name order preserved, not sorted —
+/// nesting and list order are the point of the result builder).
+fn render_rval(r : RVal) -> String {
+  match r {
+    RScalar(v) => render_val(v)
+    RList(vs) => {
+      let items : Array[String] = []
+      for v in vs {
+        items.push(render_val(v))
+      }
+      "[" + join_comma(items) + "]"
+    }
+    RObj(kvs) => {
+      let items : Array[String] = []
+      for kv in kvs {
+        items.push(kv.0 + ":" + render_rval(kv.1))
+      }
+      "{" + join_comma(items) + "}"
+    }
+  }
+}
+
+/// Parse, then build the nested result object (layer 3). On a non-unique parse the
+/// outcome string is returned so tests can assert either shape.
+fn result_str(
+  sc : Scope,
+  toks : Array[String],
+  defs~ : Map[String, Node] = Map::new(),
+) -> String {
+  match parse(ScopeNode(sc), toks, defs~) {
+    Success(binds) => render_rval(build_result(binds, accum_names(sc)))
+    Fail(msg) => "fail:" + msg
+    Ambiguous(n) => "ambiguous:" + n.to_string()
+  }
+}
+
 // ── Phase 2 helpers: definition builders + canonicalizer + permutations ───────
 
 fn opt(

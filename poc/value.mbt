@@ -22,12 +22,16 @@ pub(all) enum Source {
 } derive(Eq, Show)
 
 /// One value written onto a result path: `key = value (from source)`.
-/// `key` is the scope-qualified name; same-key bindings from different entries
-/// (e.g. `--port` satellite and `-p` matcher) merge onto one cell = link 合流.
+/// `key` is the leaf name; same-key bindings from different entries (e.g. `--port`
+/// satellite and `-p` matcher) merge onto one cell = link 合流. `scope` is the result
+/// nesting path (DR-025): a binding produced inside a command / name scope carries that
+/// scope's labels, outermost first. Path-counting (DR-038) treats the whole binding
+/// (leaf + scope) as identity, so a value in `serve` differs from the same leaf at root.
 pub(all) struct Binding {
   key : String
   value : Value
   source : Source
+  scope : Array[String]
 } derive(Eq, Show)
 
 /// Tolerant number parser used by `Num` primitives and value-attach matchers.

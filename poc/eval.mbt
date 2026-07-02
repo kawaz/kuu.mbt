@@ -25,7 +25,33 @@ pub(all) enum Outcome {
 } derive(Eq, Show)
 
 fn mkb(key : String, value : Value, source : Source) -> Binding {
-  { key, value, source }
+  { key, value, source, scope: [] }
+}
+
+/// Nest a set of bindings one level deeper under `label` (DR-025: a name / command
+/// scope prepends its label to every binding produced inside it, outermost first).
+fn nest(label : String, binds : Array[Binding]) -> Array[Binding] {
+  let out : Array[Binding] = []
+  for b in binds {
+    let sc2 : Array[String] = [label]
+    for s in b.scope {
+      sc2.push(s)
+    }
+    out.push({ key: b.key, value: b.value, source: b.source, scope: sc2 })
+  }
+  out
+}
+
+/// Apply `nest` to every Accept branch's bindings (Held passes through).
+fn nest_branches(label : String, brs : Array[Branch]) -> Array[Branch] {
+  let out : Array[Branch] = []
+  for b in brs {
+    match b {
+      Accept(p, bs) => out.push(Accept(p, nest(label, bs)))
+      Held(m, d) => out.push(Held(m, d))
+    }
+  }
+  out
 }
 
 fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
@@ -80,10 +106,10 @@ fn eval(
     }
     Seq(items) => eval_seq(items, 0, toks, pos, [], defs)
     Many(inner) => eval_many(inner, toks, pos, [], defs)
-    Scoped(_label, body) =>
-      // Light layer-3 hook: the name creates a result scope (DR-025). For path
-      // counting the label is transparent; nesting is a result-builder concern.
-      eval(body, toks, pos, defs)
+    Scoped(label, body) =>
+      // A name creates a result scope (DR-025): bindings produced inside nest under
+      // `label`. Path counting is unaffected (nesting only tags the bindings).
+      nest_branches(label, eval(body, toks, pos, defs))
     ScopeNode(sc) => eval_scope(sc, toks, pos, defs)
     NativeMatch(m) => run_matcher(m, toks, pos)
     Ref(name) =>
@@ -110,7 +136,8 @@ fn eval(
       // protects the command name from a positional raw-eat. The SEVER of the parent
       // on firing is applied by the spine walk (scope_step step A), not here.
       if pos < toks.length() && toks[pos] == name {
-        eval_scope(child, toks, pos + 1, defs)
+        // the subcommand is a result scope: its bindings nest under the command name.
+        nest_branches(name, eval_scope(child, toks, pos + 1, defs))
       } else {
         []
       }
