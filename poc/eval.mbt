@@ -77,14 +77,10 @@ fn eval(node : Node, toks : Array[String], pos : Int) -> Array[Branch] {
       eval(body, toks, pos)
     ScopeNode(sc) => eval_scope(sc, toks, pos)
     NativeMatch(m) => run_matcher(m, toks, pos)
-    DdMark(cont) =>
-      // Bare (no enclosing scope): treat `--` as optional-and-consumed, then the
-      // continuation as a greedy-severed child scope.
-      if pos < toks.length() && toks[pos] == "--" {
-        eval_scope({ greedy: [], positional: cont, entities: [] }, toks, pos + 1)
-      } else {
-        eval_scope({ greedy: [], positional: cont, entities: [] }, toks, pos)
-      }
+    DdMark =>
+      // A bare marker outside a scope walk is transparent (consumes nothing). The
+      // meaningful behavior lives in scope_consume where the walk mode is known.
+      [Accept(pos, [])]
   }
 }
 
@@ -135,10 +131,13 @@ fn eval_many(
 }
 
 // ── two-face scope (DR-041 §4) ──────────────────────────────────────────────
+//
+// `severed` is the dd mode (DR-042 ⑤): once `--` is consumed, the greedy face is
+// off for the rest of the walk and everything falls raw into positionals.
 
 /// A greedy entry "reads" at `pos` iff it consumes >= 1 token there. This is the
 /// exact 先食い predicate (DR-041 §4): when true, positional raw pass-through of
-/// the current token is suppressed.
+/// the current token is suppressed. (Only consulted when not severed.)
 fn greedy_reads(sc : Scope, toks : Array[String], pos : Int) -> Bool {
   for g in sc.greedy {
     for b in eval(g, toks, pos) {
@@ -151,33 +150,60 @@ fn greedy_reads(sc : Scope, toks : Array[String], pos : Int) -> Bool {
   false
 }
 
-fn eval_scope(sc : Scope, toks : Array[String], pos : Int) -> Array[Branch] {
-  scope_step(sc, toks, pos, 0, [])
+fn scope_has_dd(sc : Scope) -> Bool {
+  for p in sc.positional {
+    match p {
+      DdMark => return true
+      _ => ()
+    }
+  }
+  false
 }
 
-/// Walk sc.positional[pidx..] from `pos` with greedy active. At each step both
-/// (A) fire a greedy entry (interjection, stays at pidx) and (B) advance the
-/// positional face are offered.
+/// Whether raw pass-through of the token at `pos` is suppressed.
+/// Two causes: (1) a greedy entry reads it (DR-041 §4 先食い); (2) it is the dd
+/// marker `--` while a dd is still pending (see journal F-1: DR-041 §4's wording
+/// only names greedy entries, so treating `--` as a suppressing trigger is the
+/// extension that keeps dd-present/absent from going ambiguous).
+fn suppressed(sc : Scope, toks : Array[String], pos : Int, severed : Bool) -> Bool {
+  if severed {
+    return false // past `--`: everything falls raw, even a second `--`
+  }
+  if greedy_reads(sc, toks, pos) {
+    return true
+  }
+  toks[pos] == "--" && scope_has_dd(sc)
+}
+
+fn eval_scope(sc : Scope, toks : Array[String], pos : Int) -> Array[Branch] {
+  scope_step(sc, toks, pos, 0, [], false)
+}
+
+/// Walk sc.positional[pidx..] from `pos`. Offers (A) a greedy interjection (only
+/// when not severed) and (B) advancing the positional face.
 fn scope_step(
   sc : Scope,
   toks : Array[String],
   pos : Int,
   pidx : Int,
   acc : Array[Binding],
+  severed : Bool,
 ) -> Array[Branch] {
   let out : Array[Branch] = []
   // (A) greedy interjection — a fired greedy entry raw-consumes its own value
-  // slots (getopt 同型); we re-enter at the same pidx (positional face untouched).
-  for g in sc.greedy {
-    for b in eval(g, toks, pos) {
-      match b {
-        Accept(p2, bs) =>
-          if p2 > pos {
-            for r in scope_step(sc, toks, p2, pidx, cat(acc, bs)) {
-              out.push(r)
+  // slots (getopt 同型); re-enter at the same pidx (positional face untouched).
+  if !(severed) {
+    for g in sc.greedy {
+      for b in eval(g, toks, pos) {
+        match b {
+          Accept(p2, bs) =>
+            if p2 > pos {
+              for r in scope_step(sc, toks, p2, pidx, cat(acc, bs), severed) {
+                out.push(r)
+              }
             }
-          }
-        Held(m, d) => out.push(Held(m, d))
+          Held(m, d) => out.push(Held(m, d))
+        }
       }
     }
   }
@@ -185,7 +211,7 @@ fn scope_step(
   if pidx >= sc.positional.length() {
     out.push(Accept(pos, acc)) // positional exhausted => acceptable scope end
   } else {
-    for r in scope_consume(sc, sc.positional[pidx], toks, pos, pidx, acc) {
+    for r in scope_consume(sc, sc.positional[pidx], toks, pos, pidx, acc, severed) {
       out.push(r)
     }
   }
@@ -200,25 +226,27 @@ fn scope_consume(
   pos : Int,
   pidx : Int,
   acc : Array[Binding],
+  severed : Bool,
 ) -> Array[Branch] {
   match item {
     StrArg(name) =>
-      // 先食い: only raw-eat when no greedy entry reads this token (DR-041 §4).
-      if pos < toks.length() && !(greedy_reads(sc, toks, pos)) {
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed)) {
         scope_step(
           sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
+          severed,
         )
       } else {
         []
       }
     NumArg(name) =>
-      if pos < toks.length() && !(greedy_reads(sc, toks, pos)) {
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed)) {
         match parse_number(toks[pos]) {
           // DR-041 §5: number positional rejecting a token is a held Error, not a
           // structural refusal — no prefix guard.
           Some(d) =>
             scope_step(
               sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VNum(d), Cli)]),
+              severed,
             )
           None => [Held("\"\{toks[pos]}\" is not a number", pos)]
         }
@@ -227,28 +255,38 @@ fn scope_consume(
       }
     Exact(s) =>
       if pos < toks.length() && toks[pos] == s {
-        scope_step(sc, toks, pos + 1, pidx + 1, acc)
+        scope_step(sc, toks, pos + 1, pidx + 1, acc, severed)
       } else {
         []
       }
+    DdMark => {
+      // present: consume `--`, continue the SAME walk severed (DR-042 ⑤).
+      // absent: skip the marker, stay in the current mode. `--` is never raw-eaten
+      // while a dd is pending (handled by `suppressed`), so the two never collide.
+      if pos < toks.length() && toks[pos] == "--" && !(severed) {
+        scope_step(sc, toks, pos + 1, pidx + 1, acc, true)
+      } else {
+        scope_step(sc, toks, pos, pidx + 1, acc, severed)
+      }
+    }
     Many(inner) => {
       let out : Array[Branch] = []
-      for r in scope_step(sc, toks, pos, pidx + 1, acc) { // 0 reps
+      for r in scope_step(sc, toks, pos, pidx + 1, acc, severed) { // 0 reps
         out.push(r)
       }
-      for r in scope_consume_rep(sc, inner, toks, pos, pidx, acc) { // 1 rep, stay at pidx
+      for r in scope_consume_rep(sc, inner, toks, pos, pidx, acc, severed) { // 1 rep
         out.push(r)
       }
       out
     }
-    DdMark(cont) => scope_dd(sc, cont, toks, pos, pidx, acc)
     ScopeNode(child) => {
-      // DR-042 ⑤: a child scope severs the parent greedy face for its duration.
+      // DR-042 ⑤: a child scope runs its own (fresh, unsevered) walk; the parent
+      // greedy face does not interject during it.
       let out : Array[Branch] = []
       for b in eval_scope(child, toks, pos) {
         match b {
           Accept(p2, bs) =>
-            for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs)) {
+            for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed) {
               out.push(r)
             }
           Held(m, d) => out.push(Held(m, d))
@@ -262,7 +300,7 @@ fn scope_consume(
       for b in eval(other, toks, pos) {
         match b {
           Accept(p2, bs) =>
-            for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs)) {
+            for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed) {
               out.push(r)
             }
           Held(m, d) => out.push(Held(m, d))
@@ -282,21 +320,25 @@ fn scope_consume_rep(
   pos : Int,
   pidx : Int,
   acc : Array[Binding],
+  severed : Bool,
 ) -> Array[Branch] {
   match inner {
     StrArg(name) =>
-      if pos < toks.length() && !(greedy_reads(sc, toks, pos)) {
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed)) {
         scope_step(
           sc, toks, pos + 1, pidx, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
+          severed,
         )
       } else {
         []
       }
     NumArg(name) =>
-      if pos < toks.length() && !(greedy_reads(sc, toks, pos)) {
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed)) {
         match parse_number(toks[pos]) {
           Some(d) =>
-            scope_step(sc, toks, pos + 1, pidx, cat(acc, [mkb(name, VNum(d), Cli)]))
+            scope_step(
+              sc, toks, pos + 1, pidx, cat(acc, [mkb(name, VNum(d), Cli)]), severed,
+            )
           None => [Held("\"\{toks[pos]}\" is not a number", pos)]
         }
       } else {
@@ -308,7 +350,7 @@ fn scope_consume_rep(
         match b {
           Accept(p2, bs) =>
             if p2 > pos {
-              for r in scope_step(sc, toks, p2, pidx, cat(acc, bs)) {
+              for r in scope_step(sc, toks, p2, pidx, cat(acc, bs), severed) {
                 out.push(r)
               }
             }
@@ -318,54 +360,6 @@ fn scope_consume_rep(
       out
     }
   }
-}
-
-/// dashdash within a scope (DR-041 dashdash / DR-042 ⑤).
-///
-/// The `--` marker is PRIVILEGED here: when the current token is `--` we take
-/// ONLY the present branch (consume `--`, enter a greedy-severed child scope).
-/// See journal 2026-07-02: DR-041 §4's 先食い is worded for greedy entries only,
-/// so a strict impl would also offer an absent-branch positional raw-eat of a
-/// literal `--`, making dd-present vs dd-absent ambiguous. Privileging `--`
-/// closes that gap.
-fn scope_dd(
-  sc : Scope,
-  cont : Array[Node],
-  toks : Array[String],
-  pos : Int,
-  pidx : Int,
-  acc : Array[Binding],
-) -> Array[Branch] {
-  let out : Array[Branch] = []
-  if pos < toks.length() && toks[pos] == "--" {
-    let child : Scope = { greedy: [], positional: cont, entities: [] }
-    for b in eval_scope(child, toks, pos + 1) {
-      match b {
-        Accept(p2, bs) =>
-          for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs)) {
-            out.push(r)
-          }
-        Held(m, d) => out.push(Held(m, d))
-      }
-    }
-  } else {
-    // absent: continuation stays in THIS scope (parent greedy active).
-    let inlined : Scope = {
-      greedy: sc.greedy,
-      positional: cont,
-      entities: sc.entities,
-    }
-    for b in eval_scope(inlined, toks, pos) {
-      match b {
-        Accept(p2, bs) =>
-          for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs)) {
-            out.push(r)
-          }
-        Held(m, d) => out.push(Held(m, d))
-      }
-    }
-  }
-  out
 }
 
 // ── top level (DR-038 path counting) ────────────────────────────────────────

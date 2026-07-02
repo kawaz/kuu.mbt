@@ -15,21 +15,44 @@ fn strv(trigger : String, name : String) -> Node {
   Seq([Exact(trigger), StrArg(name)])
 }
 
-/// greedy number-value entry.
-fn numv(trigger : String, name : String) -> Node {
-  Seq([Exact(trigger), NumArg(name)])
-}
-
 fn scope(greedy : Array[Node], positional : Array[Node]) -> Node {
   ScopeNode({ greedy, positional, entities: [] })
 }
 
-fn scope_e(
-  greedy : Array[Node],
-  positional : Array[Node],
-  entities : Array[Entity],
-) -> Node {
-  ScopeNode({ greedy, positional, entities })
+// Deterministic string ordering. MoonBit's builtin String sort orders by length
+// first, which is wrong for stable canonicalization; this is plain codepoint order.
+
+fn str_less(a : String, b : String) -> Bool {
+  let ca = to_chars(a)
+  let cb = to_chars(b)
+  let n = if ca.length() < cb.length() { ca.length() } else { cb.length() }
+  let mut i = 0
+  while i < n {
+    let x = ca[i].to_int()
+    let y = cb[i].to_int()
+    if x < y {
+      return true
+    }
+    if x > y {
+      return false
+    }
+    i = i + 1
+  }
+  ca.length() < cb.length()
+}
+
+fn sort_items(arr : Array[String]) -> Unit {
+  let mut i = 1
+  while i < arr.length() {
+    let key = arr[i]
+    let mut j = i - 1
+    while j >= 0 && str_less(key, arr[j]) {
+      arr[j + 1] = arr[j]
+      j = j - 1
+    }
+    arr[j + 1] = key
+    i = i + 1
+  }
 }
 
 fn render_val(v : Value) -> String {
@@ -95,4 +118,78 @@ fn render_outcome(o : Outcome) -> String {
     Fail(msg) => "fail:" + msg
     Ambiguous(n) => "ambiguous:" + n.to_string()
   }
+}
+
+// ── Phase 2 helpers: definition builders + canonicalizer + permutations ───────
+
+fn opt(
+  name : String,
+  ty : Ty,
+  long~ : Array[String] = [],
+  short~ : Array[Char] = [],
+  env~ : Array[String] = [],
+  default~ : Value? = None,
+) -> ElemDef {
+  { name, ty, long, short, env, is_dd: false, default_value: default }
+}
+
+fn pos(name : String, ty : Ty) -> ElemDef {
+  { name, ty, long: [], short: [], env: [], is_dd: false, default_value: None }
+}
+
+fn dd_marker() -> ElemDef {
+  { name: "--", ty: TStr, long: [], short: [], env: [], is_dd: true, default_value: None }
+}
+
+/// Order-independent rendering of a built scope: greedy and entities sorted (the
+/// invariants guarantee the SET is fixed; only array order varies), positional in
+/// order (its structure is dd-owned and deterministic). Two scopes with the same
+/// canon string are the same AtomicAST for permutation purposes.
+fn canon_scope(sc : Scope) -> String {
+  let gs : Array[String] = []
+  for g in sc.greedy {
+    gs.push("\{g}")
+  }
+  sort_items(gs)
+  let es : Array[String] = []
+  for e in sc.entities {
+    es.push("\{e}")
+  }
+  sort_items(es)
+  let ps : Array[String] = []
+  for p in sc.positional {
+    ps.push("\{p}")
+  }
+  "G[" + join_comma(gs) + "]|P[" + join_comma(ps) + "]|E[" + join_comma(es) + "]"
+}
+
+fn permutations(items : Array[Installer]) -> Array[Array[Installer]] {
+  if items.length() <= 1 {
+    let only : Array[Installer] = []
+    for x in items {
+      only.push(x)
+    }
+    return [only]
+  }
+  let out : Array[Array[Installer]] = []
+  let mut i = 0
+  while i < items.length() {
+    let rest : Array[Installer] = []
+    let mut j = 0
+    while j < items.length() {
+      if j != i {
+        rest.push(items[j])
+      }
+      j = j + 1
+    }
+    for p in permutations(rest) {
+      let perm : Array[Installer] = [items[i]]
+      for x in p {
+        perm.push(x)
+      }
+      out.push(perm)
+    }
+    i = i + 1
+  }
+  out
 }

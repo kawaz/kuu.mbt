@@ -36,9 +36,10 @@ pub(all) enum Node {
   ScopeNode(Scope)
   /// native matcher: data-driven token readings (DR-041 §3-4), installed by long/short (DR-042).
   NativeMatch(Matcher)
-  /// dashdash re-scoping (DR-041 dashdash / DR-042 ⑤): optional `--` then a greedy-severed
-  /// child scope over the continuation. Payload = the continuation positional items.
-  DdMark(Array[Node])
+  /// dashdash marker (DR-041 dashdash / DR-042 ⑤). A pure positional marker: the
+  /// continuation is simply the positional items after it. When `--` is consumed
+  /// here the scope walk switches to "severed" mode (greedy face off) for the rest.
+  DdMark
 } derive(Eq, Show)
 
 /// A scope carries two faces (DR-041 §4):
@@ -58,7 +59,7 @@ pub(all) struct Scope {
 pub(all) struct Entity {
   name : String
   ty : Ty
-  env_key : String? // env seat lookup; None = no env seat declared
+  mut env_key : String? // env seat lookup; None = no env seat declared (env installer sets it)
   default_value : Value? // default seat
 } derive(Eq, Show)
 
