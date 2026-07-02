@@ -87,6 +87,10 @@ kawaz:
 
 > 以下の記述は後続 DR で覆された。現役仕様の理解には不要、判断経緯としてのみ残す。
 
+### multiple との同名統合 (DR-043 で分離)
+
+> **更新: DR-043 により「repeat (positional の個数) と multiple (option の累積) を multiple 一本に統合する」決定は覆された。現役は repeat (構造閉包、min/max、repeat installer が ref 再帰へ lowering) と multiple (値の畳み、multiple installer) の分離。本 DR の「repeat を独立構造要素にせず要素属性で表す」判断は引き続き有効。**
+
 ### multiple のフィールド一覧 (DR-034 で再構成)
 
 > **更新: DR-034 により本 DR の「multiple が min/max/kind/on_repeat/item_separator/key_value_separator/key_from を直接持つ」設計は撤回。現役は DR-034 の `pieceProcessor` / `separator` / `mapper` / `collector` の4要素分解 + 個数制約を別軸に分離する形に再編成された。本 DR の「repeat を multiple に統合する」決定自体は引き続き有効。**

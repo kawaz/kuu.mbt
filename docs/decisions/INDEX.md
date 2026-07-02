@@ -15,7 +15,7 @@
 - [DR-002](DR-002-element-isomorphism.md): 全要素は同型、CLI 慣習名はシュガー — 適用範囲は updated by DR-017 (AtomicAST 限定)
 - [DR-017](DR-017-command-first-class-at-definition.md): command は定義時1級、パース時同型
 - [DR-018](DR-018-placement-and-commands-sugar.md): 配置で区別、commands は positionals 内 or 糖衣
-- [DR-019](DR-019-repeat-merged-into-multiple.md): repeat を multiple に統合、可変長 positional — multiple の内部構造は reorganized by DR-034
+- [DR-019](DR-019-repeat-merged-into-multiple.md): repeat を multiple に統合、可変長 positional — multiple の内部構造は reorganized by DR-034、repeat との統合は DR-043 で分離
 - [DR-020](DR-020-recursion-via-primitives.md): 復帰/途中分岐は専用概念を持たず構造で組む
 - [DR-023](DR-023-structural-primitives-finalized.md): 構造プリミティブ確定形 (4 + multiple + 糖衣)
 - [DR-026](DR-026-leaf-branch-and-sugar.md): 葉/枝、exact は値プリミティブの一種、構造記法の糖衣 (裸文字列=exact, 裸配列=seq)
@@ -48,6 +48,7 @@
 
 - [DR-008](DR-008-multiple-field.md): multiple フィールドに複数値関連を統合 — 内部構造は reorganized by DR-034
 - [DR-034](DR-034-multiple-structure.md): multiple の構造モデル (peaceProcessor/separator/mapper/collector、縮退ケース、type と multiple は同じ属性平面)
+- [DR-043](DR-043-repeat-and-multiple-split.md): repeat (構造閉包、min/max は枝生成に効く、ref 再帰へ lowering) と multiple (値の畳み) の分離、両者 installer 化 (DR-019 の統合を部分的に覆す)
 
 ## ref / link / definitions
 
