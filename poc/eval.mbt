@@ -515,10 +515,14 @@ fn scope_consume_rep(
 
 /// Parse `toks` against `root`, counting DISTINCT complete paths.
 ///
-/// Distinctness is exact binding-sequence equality: two paths that reach the
-/// same result via different interleavings are ONE interpretation (DR-038 "1本"
-/// = one interpretation), so they are deduped. Genuinely different readings
-/// produce different bindings and are preserved as separate paths.
+/// Path identity is the **observable effect sequence** on entities (DR-038): which
+/// entity (value cell, scope-qualified), which value, which source, in which order.
+/// It is ENTRY-INDEPENDENT — a `Binding` carries no trace of which satellite / matcher
+/// produced it, so two routes that write the same cell (a global copy reaching the same
+/// entity, or an interleaving that lands the same effect two ways) are the SAME path and
+/// merge. Genuinely different readings (an or-branch, a different value) produce different
+/// effect sequences and stay distinct → ambiguous. Comparing the `Array[Binding]` by
+/// structural equality IS this effect-sequence identity (entity=key+scope, value, source, order).
 ///
 /// `defs` supplies the template registry for `Ref` resolution (empty by default;
 /// only repeat/ref definitions need it).
