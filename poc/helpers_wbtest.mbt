@@ -166,6 +166,19 @@ fn result_str(
   }
 }
 
+/// Parse and return the built RVal (aborts on a non-unique parse) — for map-form tests.
+fn result_rval(
+  sc : Scope,
+  toks : Array[String],
+  defs~ : Map[String, Node] = Map::new(),
+) -> RVal {
+  match parse(ScopeNode(sc), toks, defs~) {
+    Success(binds) => build_result(binds, accum_names(sc))
+    Fail(msg) => abort("parse failed: " + msg)
+    Ambiguous(n) => abort("ambiguous: " + n.to_string())
+  }
+}
+
 // ── Phase 2 helpers: definition builders + canonicalizer + permutations ───────
 
 fn opt(

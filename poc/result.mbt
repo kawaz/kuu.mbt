@@ -159,6 +159,72 @@ pub fn build_result(binds : Array[Binding], accum : Array[String]) -> RVal {
   RObj(obj)
 }
 
+/// Map-form collector (DR-044 / F-021 の実例、仮実装). Recursively turn every
+/// ARRAY-OF-OBJECTS into an OBJECT keyed by each element's `key_from` field (the field is
+/// consumed as the key and removed from the element); arrays of scalars are left as arrays.
+///
+/// key 抽出のシグネチャ (自然に落ちた形): `(RVal, key_from) -> RVal`. The collector reads the
+/// named scalar field out of each element and uses its value as the map key. A production
+/// engine would attach `key_from` per-array (a `multiple:"to_map"` collector config on the
+/// name-scope) rather than one global field name; here one field ("path") serves every level.
+pub fn to_map(r : RVal, key_from : String) -> RVal {
+  match r {
+    RScalar(v) => RScalar(v)
+    RArr(elems) => {
+      // all-objects => map keyed by key_from; else (scalars) keep as array
+      let mut all_obj = elems.length() > 0
+      for e in elems {
+        match e {
+          RObj(_) => ()
+          _ => all_obj = false
+        }
+      }
+      if all_obj {
+        let pairs : Array[(String, RVal)] = []
+        for e in elems {
+          match e {
+            RObj(kvs) => {
+              let mut key = ""
+              let rest : Array[(String, RVal)] = []
+              for kv in kvs {
+                if kv.0 == key_from {
+                  key = rval_key_str(kv.1)
+                } else {
+                  rest.push((kv.0, to_map(kv.1, key_from)))
+                }
+              }
+              pairs.push((key, RObj(rest)))
+            }
+            _ => ()
+          }
+        }
+        RObj(pairs)
+      } else {
+        let items : Array[RVal] = []
+        for e in elems {
+          items.push(to_map(e, key_from))
+        }
+        RArr(items)
+      }
+    }
+    RObj(kvs) => {
+      let out : Array[(String, RVal)] = []
+      for kv in kvs {
+        out.push((kv.0, to_map(kv.1, key_from)))
+      }
+      RObj(out)
+    }
+  }
+}
+
+fn rval_key_str(r : RVal) -> String {
+  match r {
+    RScalar(VStr(s)) => s
+    RScalar(v) => "\{v}"
+    _ => "?"
+  }
+}
+
 /// Collect the accumulator leaf-names across a scope tree (repeat / multiple cells).
 pub fn accum_names(sc : Scope) -> Array[String] {
   let out : Array[String] = []
