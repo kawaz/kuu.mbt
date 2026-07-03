@@ -117,10 +117,12 @@ test "DR-050 §3 同型 default: an element WITHOUT config_key looks up its 同�
 
 // ── 値の型 (DR-050 §4) ─────────────────────────────────────────────────────────
 
-test "DR-050 §4 types: string / number / JSON-string→number (lenient) / mismatch→Error" {
-  // config value's expected type = the element's type. A string goes through the pipeline (VStr /
-  // lenient parse); a typed number lands directly; a JSON string "8080" into a number element is
-  // parsed (寛容 canonical, DR-040); a type mismatch (number into a bool element) is a DR-037 Error.
+test "DR-050 §4 types: leniency is BIDIRECTIONALLY SYMMETRIC (kawaz 裁定 a); 意味の飛躍/構造不一致は Error" {
+  // config value's expected type = the element's type, and leniency is symmetric in BOTH directions
+  // (DR-040 canonical 最寛容): a string parses into any type, AND a JSON scalar stringifies into a
+  // string element. A string element accepts anything in CLI/env, so config observes the same — the
+  // presence/absence of quotes in the config file must not split behavior. The ONLY errors are the
+  // 意味の飛躍 (bool ↔ number coercion) and 構造不一致 (array/object → a scalar element).
   let def = def_(
     [
       opt("config", TStr, long=["config"], config_file=true, default=Some(VStr("/app.toml"))),
@@ -131,20 +133,38 @@ test "DR-050 §4 types: string / number / JSON-string→number (lenient) / misma
     [],
   )
   let sc = build_or_fail(def, cfg_order())
-  // string value → VStr; number value → VNum; (name/port only present, flag absent → no flag value)
+  // matching types: string→VStr, number→VNum, bool→VBool
   inspect(
-    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CStr("hi")), ("port", CNum(8080))]))),
-    content="name=hi@config,port=8080@config",
+    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CStr("hi")), ("port", CNum(8080)), ("flag", CBool(true))]))),
+    content="flag=true@config,name=hi@config,port=8080@config",
   )
-  // JSON string "8080" into the number element → parsed leniently
+  // string → number/bool: lenient parse (text → type). "8080" → 8080, "true" → true
   inspect(
-    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("port", CStr("8080"))]))),
-    content="port=8080@config",
+    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("port", CStr("8080")), ("flag", CStr("true"))]))),
+    content="flag=true@config,port=8080@config",
   )
-  // type mismatch: a number into the bool element → Error
+  // JSON scalar → string element: stringified (裁定 a の追加半分). 1.5 → "1.5", true → "true"
+  inspect(
+    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CNum(1.5))]))),
+    content="name=1.5@config",
+  )
+  inspect(
+    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CBool(true))]))),
+    content="name=true@config",
+  )
+  // 意味の飛躍 (bool ↔ number) は Error — no coercion in either direction
   inspect(
     resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("flag", CNum(1))]))),
-    content="err:config number for a bool element (type mismatch)",
+    content="err:config number for a bool element (no number↔bool coercion)",
+  )
+  inspect(
+    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("port", CBool(true))]))),
+    content="err:config bool for a number element (no number↔bool coercion)",
+  )
+  // 構造不一致 (array → a scalar element) は Error
+  inspect(
+    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CArr([CStr("a")]))]))),
+    content="err:config array for a scalar element (structural mismatch)",
   )
 }
 
@@ -168,6 +188,26 @@ test "DR-050 §4 array → multiple pieces; object → 同型 navigation via con
   inspect(
     resolve_cfg(sc, [], empty_env(), provider_obj(obj)),
     content="port=9000@config,tag=a@config,tag=b@config",
+  )
+}
+
+test "DR-050 §4 flag: integer-valued number → string drops the fractional part (1.0 → \"1\", serialize-dependent)" {
+  // A JSON number 1.0 has no memory of "1" vs "1.0" (JSON has a single number type). The PoC renders
+  // an integer-valued double WITHOUT a fractional part (1.0 → "1"); some JSON serializers instead emit
+  // "1.0". DR-050 §4 says only「JSON serialize の標準表現」and does NOT pin this — so the integer-valued
+  // case is a serialize-dependent detail (flag). A non-integer 1.5 → "1.5" is unambiguous. This LOCKS
+  // the PoC's chosen representation so the divergence point is visible.
+  let def = def_(
+    [
+      opt("config", TStr, long=["config"], config_file=true, default=Some(VStr("/app.toml"))),
+      opt("name", TStr, long=["name"], config_key=Some(["name"])),
+    ],
+    [],
+  )
+  let sc = build_or_fail(def, cfg_order())
+  inspect(
+    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CNum(1.0))]))),
+    content="name=1@config",
   )
 }
 

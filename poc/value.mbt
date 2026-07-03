@@ -33,31 +33,46 @@ pub(all) enum ConfigVal {
   CObj(Array[(String, ConfigVal)])
 } derive(Eq, Show)
 
+/// JSON-standard string form of a config number (DR-050 §4 stringification). An integer-valued
+/// double renders without a fractional part (1.0 → "1"); otherwise the decimal form (1.5 → "1.5").
+/// NB: whether an integer-valued float keeps ".0" is a serialize choice — see the 第 10 弾 flag.
+fn num_to_string(d : Double) -> String {
+  let i = d.to_int()
+  if i.to_double() == d {
+    i.to_string()
+  } else {
+    d.to_string()
+  }
+}
+
 /// Convert one leaf config value to the element's expected type (DR-050 §4). The element's `type`
-/// IS the expected type. A string goes through the (PoC-trivial) full pipeline / lenient parse
-/// (DR-040: number element accepts JSON string "8080"); a typed value (number/bool) must MATCH the
-/// element type (型一致検証) — a mismatch (bool element ← number, etc.) is a DR-037 Error. Arrays /
-/// objects are handled before this (multiple pieces / 同型再帰), so reaching here with them is a
-/// structural mismatch → Error.
+/// IS the expected type. Leniency is BIDIRECTIONALLY SYMMETRIC (kawaz 裁定 a, DR-040 canonical 最寛容):
+/// a string parses into any type (`"8080"` → number), AND a JSON scalar stringifies into a string
+/// element (`1.5` → "1.5", `true` → "true") — a string element accepts anything in CLI/env, so
+/// config observes the same (引用符の有無で挙動が割れない). Only the 意味の飛躍 (bool ↔ number
+/// coercion) and 構造不一致 (array/object → a scalar element) are DR-037 Errors.
 pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
   match (cv, ty) {
-    // string: lenient — parse into whatever the element wants (CLI/env と同一経路)
+    // string element: accept anything — string / lenient parse / JSON stringification
     (CStr(s), TStr) => Ok(VStr(s))
+    (CNum(d), TStr) => Ok(VStr(num_to_string(d))) // 1.5 → "1.5" (寛容の双方向対称)
+    (CBool(b), TStr) => Ok(VStr(if b { "true" } else { "false" })) // true → "true"
+    // string → number/bool: lenient parse (テキストから型へ)
     (CStr(s), TNum) =>
       match parse_number(s) {
         Some(d) => Ok(VNum(d))
         None => Err("config value \"\{s}\" is not a number")
       }
     (CStr(s), TFlag) => Ok(VBool(s == "true" || s == "1"))
-    // typed values: must match the element type (型一致検証)
+    // typed values matching their element type
     (CNum(d), TNum) => Ok(VNum(d))
     (CBool(b), TFlag) => Ok(VBool(b))
-    (CNum(_), TStr) => Err("config number for a string element (type mismatch)")
-    (CNum(_), TFlag) => Err("config number for a bool element (type mismatch)")
-    (CBool(_), TStr) => Err("config bool for a string element (type mismatch)")
-    (CBool(_), TNum) => Err("config bool for a number element (type mismatch)")
-    (CArr(_), _) => Err("config array for a scalar element (type mismatch)")
-    (CObj(_), _) => Err("config object for a scalar element (type mismatch)")
+    // 意味の飛躍 (bool ↔ number) は Error — no coercion
+    (CNum(_), TFlag) => Err("config number for a bool element (no number↔bool coercion)")
+    (CBool(_), TNum) => Err("config bool for a number element (no number↔bool coercion)")
+    // 構造不一致 (array / object → scalar element) は Error
+    (CArr(_), _) => Err("config array for a scalar element (structural mismatch)")
+    (CObj(_), _) => Err("config object for a scalar element (structural mismatch)")
   }
 }
 

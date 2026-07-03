@@ -1032,7 +1032,7 @@ fn resolve_entity(
                   }
                   return Ok(bs)
                 } else {
-                  return Err("config array for a scalar element (type mismatch)")
+                  return Err("config array for a scalar element (structural mismatch)")
                 }
               _ =>
                 match config_to_value(cv, e.ty) {
