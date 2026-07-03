@@ -17,6 +17,7 @@ pub(all) struct ElemDef {
   name : String
   ty : Ty
   long : Array[String] // owned by the long installer
+  variants : Array[Variant] // owned by the long installer (variant DSL, DR-011/045)
   short : Array[Char] // owned by the short installer
   env : Array[String] // owned by the env installer
   is_dd : Bool // owned by the dd installer (type:"dd")
@@ -25,16 +26,31 @@ pub(all) struct ElemDef {
   is_link : Bool // a global COPY (link-sync): its satellite binds the root entity (Rooted)
   ref_target : String? // core (DR-020): this element IS a ref to a named template
   repeat : RepeatSpec? // owned by the repeat installer (DR-043)
+  optional : Bool // sugar for repeat:{min:0,max:1} (DR-043), reduced by elem_repeat — repeat's vocab
   multiple : Bool // owned by the multiple installer (DR-034/043)
+  separator : String? // the multiple pipeline's separator (DR-034); a value token splits on it
   default_value : Value?
 } derive(Eq, Show)
 
-/// A repeat closure (DR-043). `min` is the required rep count. The PoC realizes the
-/// unbounded tail (an upper bound / max is out of scope) and requires min >= 1 on the
-/// porous spine; min is the mandatory-head unroll. `lazy` picks the split preference:
-/// greedy (default, longest share first) vs lazy (shortest first).
+/// A variant entry (DR-011 variant DSL / DR-045 effect descriptors). Declares a distinct
+/// trigger that applies an EFFECT to this element's cell — e.g. `--no-ssl` unsetting `ssl`.
+/// The variant DSL surface (`long: ["no:set:false"]`) is the long installer's internal
+/// representation freedom (DR-042 §所有権の粒度); the PoC declares the PARSED form directly.
+/// The long installer lowers each variant to `{exact, link (by name), effect}` (LOWERING §B.1).
+pub(all) struct Variant {
+  trigger : String // the full long trigger word, e.g. "no-ssl" → matches `--no-ssl`
+  op : EffectOp // the effect applied to the cell when this trigger fires
+  operand : Value? // for a `set` variant (e.g. `--compress=gzip`); None for default/unset/empty
+} derive(Eq, Show)
+
+/// A repeat closure (DR-043). `min` is the required rep count (mandatory-head unroll).
+/// `max` is the unroll-段数 upper bound: `None` = unbounded (a recursive Ref tail), `Some(M)`
+/// = bounded (M-min BoundedTail heads, NO Ref recursion — LOWERING §B.8). `optional: true`
+/// is the `{min:0, max:Some(1)}` sugar (reduced here, not an independent concept, DR-043).
+/// `lazy` picks the split preference: greedy (default, longest share first) vs lazy (shortest).
 pub(all) struct RepeatSpec {
   min : Int
+  max : Int? // None = unbounded (Ref tail); Some(M) = bounded to M reps (BoundedTail)
   lazy : Bool
 } derive(Eq, Show)
 
@@ -128,11 +144,20 @@ fn copy_chars(a : Array[Char]) -> Array[Char] {
   r
 }
 
+fn copy_variants(a : Array[Variant]) -> Array[Variant] {
+  let r : Array[Variant] = []
+  for x in a {
+    r.push(x)
+  }
+  r
+}
+
 fn clone_elem(e : ElemDef) -> ElemDef {
   {
     name: e.name,
     ty: e.ty,
     long: copy_strs(e.long),
+    variants: copy_variants(e.variants),
     short: copy_chars(e.short),
     env: copy_strs(e.env),
     is_dd: e.is_dd,
@@ -141,7 +166,9 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     is_link: e.is_link,
     ref_target: e.ref_target,
     repeat: e.repeat,
+    optional: e.optional,
     multiple: e.multiple,
+    separator: e.separator,
     default_value: e.default_value,
   }
 }
@@ -167,7 +194,34 @@ fn clone_def(d : Definition) -> Definition {
 fn elem_head(e : ElemDef) -> Node {
   match e.ref_target {
     Some(r) => Ref(r)
-    None => value_prim(e.ty, e.name)
+    None =>
+      // a separator element splits each token into pieces (DR-034); else a plain value primitive.
+      match e.separator {
+        Some(sep) => SepArg(e.name, sep)
+        None => value_prim(e.ty, e.name)
+      }
+  }
+}
+
+/// The EFFECTIVE repeat spec of an element (DR-043). `optional: true` REDUCES to
+/// `repeat: {min:0, max:1}` — it is sugar, not an independent concept — so an explicit
+/// repeat wins, else optional becomes the 0/1 closure, else None (not a repeat).
+fn elem_repeat(e : ElemDef) -> RepeatSpec? {
+  match e.repeat {
+    Some(s) => Some(s)
+    None => if e.optional { Some({ min: 0, max: Some(1), lazy: false }) } else { None }
+  }
+}
+
+/// Whether a repeat spec's cell ACCUMULATES into a list (DR-036 "flatten"): true iff the
+/// closure can bind >= 2 values — unbounded, or bounded with max >= 2. A max-1 repeat
+/// (including `optional`) binds a SCALAR cell (0-or-1), since flatten collapses a MULTI
+/// cons and there is at most one value. (This max=1 boundary is the PoC's realization of the
+/// DR-043/044 interaction — neither DR pins the 0/1 result shape; see journal.)
+fn repeat_accumulates(s : RepeatSpec) -> Bool {
+  match s.max {
+    None => true
+    Some(m) => m >= 2
   }
 }
 
@@ -186,23 +240,42 @@ fn lower_positional(def : Definition, registry : Map[String, Node]) -> Array[Nod
   for e in def.positionals {
     if not_dd(e) {
       let head = elem_head(e)
-      match e.repeat {
+      match elem_repeat(e) {
         None => out.push(head)
-        Some(spec) => {
-          registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
-          // lazy marker under a mangled key the evaluator consults for split preference
-          // (kept out of the Ref node so plain ref-to-template stays lazy-agnostic).
-          if spec.lazy {
-            registry.set("lazy:" + e.name, Exact("lazy"))
+        Some(spec) =>
+          match spec.max {
+            None => {
+              // UNBOUNDED (DR-043): min-1 mandatory heads + a recursive Ref(>=1) tail. The
+              // template `name = Seq([head, Opt(Ref(name))])` is the porous self-ref.
+              registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
+              // lazy marker under a mangled key the evaluator consults for split preference
+              // (kept out of the Ref node so plain ref-to-template stays lazy-agnostic).
+              if spec.lazy {
+                registry.set("lazy:" + e.name, Exact("lazy"))
+              }
+              let m = if spec.min < 1 { 1 } else { spec.min }
+              let mut k = 0
+              while k < m - 1 {
+                out.push(head) // mandatory unrolled heads (DR-043 min)
+                k = k + 1
+              }
+              out.push(Ref(e.name)) // >= 1 porous recursive tail
+            }
+            Some(mx) => {
+              // BOUNDED (LOWERING §B.8): `min` mandatory heads + BoundedTail(head, max-min),
+              // NO Ref recursion — the bound is the tail's recursion depth. `optional:true`
+              // (min0/max1) is a lone BoundedTail(head, 1). The tail keeps 先食い (consume_head)
+              // and 取り分選好 (greedy/lazy), so bounded repeats compose like unbounded ones.
+              let m = if spec.min < 0 { 0 } else { spec.min }
+              let mut k = 0
+              while k < m {
+                out.push(head) // mandatory heads (DR-043 min)
+                k = k + 1
+              }
+              let budget = if mx - m < 0 { 0 } else { mx - m }
+              out.push(BoundedTail(head, budget, spec.lazy))
+            }
           }
-          let m = if spec.min < 1 { 1 } else { spec.min }
-          let mut k = 0
-          while k < m - 1 {
-            out.push(head) // mandatory unrolled heads (DR-043 min)
-            k = k + 1
-          }
-          out.push(Ref(e.name)) // >= 1 porous recursive tail
-        }
       }
     }
   }
@@ -242,20 +315,31 @@ fn ensure_entity(build : Build, e : ElemDef) -> Unit {
       return
     }
   }
-  // repeat and multiple both make the cell a value LIST (the shared accumulator,
-  // DR-043/036). Deterministic core lowering; RepeatInst/MultipleInst own the vocab
-  // for completeness but the accumulator setup is a pure function of the decl.
-  let accumulate = e.multiple ||
-    (match e.repeat {
-      Some(_) => true
-      None => false
-    })
+  // repeat and multiple both make the cell a value LIST via a NAMED accumulator (DR-036
+  // registry). repeat installs the built-in "flatten" (cons [T,[T,…]] → T[], DR-043);
+  // multiple installs "append" (DR-034). Deterministic core lowering — RepeatInst/MultipleInst
+  // own the vocab for completeness, but which registry entry to install is a pure function of
+  // the decl. If an element is both, multiple's append wins (the value-fold governs).
+  let accum : String? = if e.multiple {
+    Some("append")
+  } else {
+    match elem_repeat(e) {
+      Some(s) => if repeat_accumulates(s) { Some("flatten") } else { None } // max=1 → scalar
+      None =>
+        // a separator element (no repeat) still collects >= 2 pieces from one token → append.
+        if e.separator.is_some() {
+          Some("append")
+        } else {
+          None
+        }
+    }
+  }
   build.entities.push({
     name: e.name,
     ty: e.ty,
     env_key: None,
     inherit: false,
-    accumulate,
+    accum,
     default_value: e.default_value,
   })
 }
@@ -293,6 +377,26 @@ fn inst_long(def : Definition, build : Build) -> Unit {
   }
   if eq_entries.length() > 0 {
     add_greedy(build, NativeMatch(EqSplit(prefix="--", entries=eq_entries)))
+  }
+  // Variant entries (DR-011 / DR-045): each lowers to `{exact, link, effect}` — a greedy
+  // exact satellite that applies the effect op to the element's cell (link is by-name).
+  // A `set` variant carries an operand (Bind = SET degenerate form); default/unset/empty
+  // apply their op via EffMark (0-token). LOWERING §B.1 (extended for the variant effect form).
+  for e in def.options {
+    for v in e.variants {
+      let trigger = "--" + v.trigger
+      let sat = match v.op {
+        Set => {
+          let operand = match v.operand {
+            Some(val) => val
+            None => VBool(true)
+          }
+          Seq([Exact(trigger), Bind(e.name, operand)])
+        }
+        _ => Seq([Exact(trigger), EffMark(e.name, v.op)])
+      }
+      add_greedy(build, maybe_root(e.is_link, sat))
+    }
   }
 }
 
@@ -425,6 +529,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     name: copy.name,
     ty: copy.ty,
     long: copy.long,
+    variants: copy.variants,
     short: copy.short,
     env: copy.env,
     is_dd: copy.is_dd,
@@ -433,7 +538,9 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     is_link: true,
     ref_target: copy.ref_target,
     repeat: copy.repeat,
+    optional: copy.optional,
     multiple: copy.multiple,
+    separator: copy.separator,
     default_value: copy.default_value,
   })
 }
@@ -533,6 +640,11 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   if e.long.length() > 0 && !vocab_owned(owned, "long") {
     return Some("long:" + e.long[0])
   }
+  // Variant DSL is part of the long attribute's value vocabulary (DR-042 §所有権の粒度),
+  // so it is owned by the long installer.
+  if e.variants.length() > 0 && !vocab_owned(owned, "long") {
+    return Some("long:variant:" + e.variants[0].trigger)
+  }
   if e.short.length() > 0 && !vocab_owned(owned, "short") {
     return Some("short")
   }
@@ -548,7 +660,8 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   if e.is_inherit && !vocab_owned(owned, "inherit") {
     return Some("inherit")
   }
-  match e.repeat {
+  // repeat and its `optional` sugar (DR-043) are both owned by the repeat installer.
+  match elem_repeat(e) {
     Some(_) => if !vocab_owned(owned, "repeat") { return Some("repeat") }
     None => ()
   }
@@ -592,12 +705,14 @@ fn head_progresses(
   visiting : Array[String],
 ) -> Bool {
   match node {
-    StrArg(_) | NumArg(_) | Exact(_) | NativeMatch(_) | DdSat(_) | CmdSat(_, _) =>
+    StrArg(_) | SepArg(_, _) | NumArg(_) | Exact(_) | NativeMatch(_) | DdSat(_) | CmdSat(_, _) =>
       true
     NoDashStr(_) => true // consumes one token (when not dash-rejected)
     IdxRepeat(_, _, _) => true // an indexed repeat consumes its head
+    BoundedTail(_, budget, _) => budget >= 1 // consumes only if it may take >= 1 head
     Rooted(inner) => head_progresses(inner, registry, visiting)
     Bind(_, _) => false // binds without consuming
+    EffMark(_, _) => false // applies an effect without consuming (DR-045, 0-token)
     Ref(r) => {
       for v in visiting {
         if v == r {
@@ -630,7 +745,7 @@ fn head_progresses(
 /// Scan the definition tree for a repeat element whose head makes no progress.
 fn repeat_progress_error(def : Definition, registry : Map[String, Node]) -> String? {
   for e in def.positionals {
-    match e.repeat {
+    match elem_repeat(e) {
       Some(_) =>
         if !head_progresses(elem_head(e), registry, []) {
           return Some("repeat element '\{e.name}' has a zero-progress head")
@@ -767,10 +882,30 @@ fn resolve_entity(
   env_map : Map[String, String],
   inherited : Map[String, Value],
 ) -> Binding? {
+  // The cli seat's state is the LAST effect on this entity (last-wins, DR-015). The op
+  // decides committed-ness (DR-045 §2 / DR-031): set/default/empty commit and STOP the
+  // ladder here; unset does NOT commit, so control falls through to env / inherit / default.
+  let mut seat : Binding? = None
   for b in cli {
     if b.key == e.name {
-      return Some(b) // cli seat (highest)
+      seat = Some(b)
     }
+  }
+  match seat {
+    Some(b) =>
+      match b.op {
+        Set => return Some(b) // committed cli value (the SET operand wins)
+        Default =>
+          // committed default: the value is the DEFAULT, but LOCKED — env/inherit cannot
+          // override (this is the observable difference from unset, DR-045 §2).
+          match e.default_value {
+            Some(v) => return Some(mkb(e.name, v, Default))
+            None => return Some(b)
+          }
+        Empty => return Some(b) // committed empty (collection op; scalar is an edge)
+        Unset => () // NOT committed: fall through to the later ladder seats (env/inherit/default)
+      }
+    None => ()
   }
   match e.env_key {
     Some(k) =>

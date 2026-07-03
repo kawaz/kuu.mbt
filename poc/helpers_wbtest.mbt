@@ -121,6 +121,49 @@ fn render_binds_src(binds : Array[Binding]) -> String {
   join_comma(items)
 }
 
+/// op-aware rendering of the effect sequence (DR-045 tests): `key=set(value)` / `key=unset`
+/// / `key=default` / `key=empty`, sorted. Makes the effect op visible where a plain value
+/// render would only show the placeholder.
+fn render_effects(binds : Array[Binding]) -> String {
+  let items : Array[String] = []
+  for b in binds {
+    if !is_marker(b.key) {
+      let tag = match b.op {
+        Set => "\{b.key}=set(\{render_val(b.value)})"
+        Default => "\{b.key}=default"
+        Unset => "\{b.key}=unset"
+        Empty => "\{b.key}=empty"
+      }
+      items.push(tag)
+    }
+  }
+  sort_items(items)
+  join_comma(items)
+}
+
+/// Parse and render the op-aware effect sequence of the unique winning path (DR-045).
+fn effects_str(g : Node, toks : Array[String]) -> String {
+  match parse(g, toks) {
+    Success(binds) => render_effects(binds)
+    Fail(m) => "fail:" + m
+    Ambiguous(n) => "ambiguous:" + n.to_string()
+  }
+}
+
+/// Parse the CLI tokens, then resolve every cell down the value-source ladder with `env`
+/// present (DR-031 / DR-045): shows how the parsed effects interact with env/default seats.
+fn resolve_after_parse(
+  sc : Scope,
+  toks : Array[String],
+  env : Map[String, String],
+) -> String {
+  match parse(ScopeNode(sc), toks) {
+    Success(b) => render_binds_src(resolve_scope(sc, b, env))
+    Fail(m) => "fail:" + m
+    Ambiguous(n) => "ambiguous:" + n.to_string()
+  }
+}
+
 /// Compact one-line rendering of an Outcome for spec-string assertions.
 fn render_outcome(o : Outcome) -> String {
   match o {
@@ -185,6 +228,7 @@ fn opt(
   name : String,
   ty : Ty,
   long~ : Array[String] = [],
+  variants~ : Array[Variant] = [],
   short~ : Array[Char] = [],
   env~ : Array[String] = [],
   global~ : Bool = false,
@@ -196,6 +240,7 @@ fn opt(
     name,
     ty,
     long,
+    variants,
     short,
     env,
     is_dd: false,
@@ -204,7 +249,9 @@ fn opt(
     is_link: false,
     ref_target: None,
     repeat: None,
+    optional: false,
     multiple,
+    separator: None,
     default_value: default,
   }
 }
@@ -214,7 +261,9 @@ fn pos(
   ty : Ty,
   inherit~ : Bool = false,
   repeat~ : RepeatSpec? = None,
+  optional~ : Bool = false,
   multiple~ : Bool = false,
+  separator~ : String? = None,
   ref_~ : String? = None,
   default~ : Value? = None,
 ) -> ElemDef {
@@ -222,6 +271,7 @@ fn pos(
     name,
     ty,
     long: [],
+    variants: [],
     short: [],
     env: [],
     is_dd: false,
@@ -230,7 +280,9 @@ fn pos(
     is_link: false,
     ref_target: ref_,
     repeat,
+    optional,
     multiple,
+    separator,
     default_value: default,
   }
 }
@@ -240,6 +292,7 @@ fn dd_marker() -> ElemDef {
     name: "--",
     ty: TStr,
     long: [],
+    variants: [],
     short: [],
     env: [],
     is_dd: true,
@@ -248,13 +301,15 @@ fn dd_marker() -> ElemDef {
     is_link: false,
     ref_target: None,
     repeat: None,
+    optional: false,
     multiple: false,
+    separator: None,
     default_value: None,
   }
 }
 
-fn rep(min : Int, lazy~ : Bool = false) -> RepeatSpec? {
-  Some({ min, lazy })
+fn rep(min : Int, max~ : Int? = None, lazy~ : Bool = false) -> RepeatSpec? {
+  Some({ min, max, lazy })
 }
 
 /// Build a scope + return the ref-template registry (for repeat/ref tests). Any
@@ -308,6 +363,20 @@ fn canon_scope(sc : Scope) -> String {
     ps.push("\{p}")
   }
   "G[" + join_comma(gs) + "]|P[" + join_comma(ps) + "]|E[" + join_comma(es) + "]"
+}
+
+/// The accumulators-registry name (DR-036) an entity's cell folds through: "flatten" (repeat),
+/// "append" (multiple), or "scalar" for a non-accumulate cell. For the P3 naming tests.
+fn entity_accum(sc : Scope, name : String) -> String {
+  for e in sc.entities {
+    if e.name == name {
+      match e.accum {
+        Some(a) => return a
+        None => return "scalar"
+      }
+    }
+  }
+  "missing"
 }
 
 fn permutations(items : Array[Installer]) -> Array[Array[Installer]] {

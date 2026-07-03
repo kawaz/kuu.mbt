@@ -20,10 +20,21 @@ pub(all) enum Node {
   Exact(String)
   /// string value primitive: consume 1 token, bind name=VStr(token). Maximally permissive (DR-041 §5).
   StrArg(String)
+  /// separator-splitting value primitive (DR-034 separator pipeline): consume 1 token, split it
+  /// on the separator char, and bind ONE `name=part` per split piece. `SepArg("xs", ",")` on the
+  /// token `a,b` binds xs=a and xs=b. Combined with repeat, each firing splits, and the flatten
+  /// accumulator folds all pieces into one list (`prog a,b c,d` → xs=[a,b,c,d]).
+  SepArg(String, String)
   /// number value primitive: consume 1 token; parse-fail is a held Error (DR-041 §5 / DR-037).
   NumArg(String)
   /// 0-token binder: bind name=value. Used to set a flag after its Exact trigger fired.
+  /// This is the SET degenerate form of an effect (DR-045 §1).
   Bind(String, Value)
+  /// 0-token EFFECT binder (DR-045): apply a non-set op (default / unset / empty) to the
+  /// named cell after an Exact trigger fired. This is the lowering of a variant entry's
+  /// effect: `--no-color` → `Seq([Exact("--no-color"), EffMark("color", Unset)])` — the
+  /// `link` (to the color cell) is by-name, the `effect` is the op carried here.
+  EffMark(String, EffectOp)
   /// choice — every alternative's readings become branches (DR-037 / DR-041 §3).
   Or(Array[Node])
   /// ordered consumption; bindings accumulate across the sequence.
@@ -63,6 +74,13 @@ pub(all) enum Node {
   /// This is the structural stop that keeps a permissive repeat from eating a following
   /// `--socket` / `--upstream` trigger inside a no-backbone region (DR-041 §4).
   NoDashStr(String)
+  /// a BOUNDED repeat tail (DR-043 max 有限 / LOWERING §B.8). Consumes 0..budget more heads
+  /// on the spine, POROUSLY (via consume_head, so 先食い holds) and with the 取り分選好
+  /// preference (greedy default / lazy). A bounded `repeat: {min, max}` lowers to `min`
+  /// mandatory heads on the spine followed by `BoundedTail(head, max-min, lazy)` — NO Ref
+  /// recursion (the bound is the recursion depth of the tail, not an unbounded self-ref).
+  /// `optional: true` = `repeat: {min:0, max:1}` reduces to a lone `BoundedTail(head, 1, _)`.
+  BoundedTail(Node, Int, Bool)
   /// a named indexed-array repeat (DR-043 repeat × DR-025 name scope). Consumes its head
   /// GREEDILY (as many reps as the head allows), tagging rep k under `[label, "#k"]` so
   /// the result builder yields an ARRAY of one element per firing (multiple:"append").
@@ -94,7 +112,11 @@ pub(all) struct Entity {
   ty : Ty
   mut env_key : String? // env seat lookup; None = no env seat declared (env installer sets it)
   mut inherit : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013)
-  accumulate : Bool // this cell collects a value LIST (repeat flattening / multiple, DR-043/034/036)
+  // The accumulators-registry name (DR-036) that folds this cell's effect list, or None for a
+  // scalar cell. Built-ins: "flatten" (repeat's cons [T,[T,…]] → T[], DR-043) and "append"
+  // (multiple's value fold, DR-034). Both realize a value LIST here; the name records WHICH
+  // registry accumulator so the AST is self-describing (a scalar cell has None).
+  accum : String? // None = scalar; Some("flatten"|"append"|...) = accumulate via that registry entry
   default_value : Value? // default seat
 } derive(Eq, Show)
 

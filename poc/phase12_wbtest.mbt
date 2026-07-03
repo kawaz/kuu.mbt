@@ -82,16 +82,17 @@ test "authsock: pre_filter Reject stops the greedy filters at the --socket bound
   )
 }
 
-// ── Test 4: map-form collector (to_map + key_from:"path") ───────────────────────
+// ── Test 4: map-form collector (from_entries KeyPromote by "path") ──────────────
 
-test "authsock map-form: to_map keys each object-array by its `path` field (arrays → maps)" {
-  // The map collector (仮実装) turns every array-of-objects into an object keyed by the
-  // element's `path` field; scalar arrays (filters) stay arrays. key 抽出のシグネチャ:
-  // (RVal, key_from) -> RVal, reading the named scalar field out as the map key.
+test "authsock map-form: from_entries({key:path}) keys each object-array by its `path` field" {
+  // The from_entries collector (DR-044 usage (c), key-promotion) turns every array-of-objects
+  // into an object keyed by the element's `path` field (promoted and removed); the scalar
+  // `filters` arrays stay arrays (no `path` field → not mapped, per-level selection). This is
+  // the canonical replacement of the 4th-installment key_from 仮実装.
   let sc = authsock_scope(true)
   let arr = result_rval(sc, authsock_input())
   inspect(
-    render_rval(to_map(arr, "path")),
+    render_rval(from_entries(arr, KeyPromote("path"))),
     content=(
       #|{upstreams:{/path/to/up1:{sockets:{~/.ssh/up1-s1.sock:{filters:[filter1,filter1]},~/.ssh/up1-s2.sock:{filters:[f2,f3]}}},/tmp/foo.sock:{sockets:{/tmp/foo-bar.sock:{filters:[]}}}}}
     ),

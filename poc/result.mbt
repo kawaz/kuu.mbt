@@ -50,6 +50,7 @@ fn sub_under(binds : Array[Binding], seg : String) -> Array[Binding] {
       }
       out.push({
         key: b.key,
+        op: b.op,
         value: b.value,
         source: b.source,
         scope: rest,
@@ -137,20 +138,29 @@ pub fn build_result(binds : Array[Binding], accum : Array[String]) -> RVal {
   // OBJECT: named leaves (folding accum keys into a list) + nested scopes.
   let obj : Array[(String, RVal)] = []
   for k in named {
-    let vals : Array[Value] = []
-    for b in binds {
-      if b.scope.length() == 0 && b.key == k {
-        vals.push(b.value)
-      }
-    }
     if str_contains(accum, k) {
-      let items : Array[RVal] = []
-      for v in vals {
-        items.push(RScalar(v))
+      // ACCUMULATE (repeat "flatten" / multiple "append", DR-043/034/036): fold same-key
+      // effects in order. A `set` effect appends; an `empty` effect CLEARS the collection
+      // (DR-045 empty op), so anything before it is discarded and re-accumulation continues.
+      let mut items : Array[RVal] = []
+      for b in binds {
+        if b.scope.length() == 0 && b.key == k {
+          match b.op {
+            Empty => items = []
+            _ => items.push(RScalar(b.value))
+          }
+        }
       }
       obj.push((k, RArr(items)))
     } else {
-      obj.push((k, RScalar(vals[vals.length() - 1]))) // last-wins (DR-015)
+      // SCALAR last-wins (DR-015): the last value written to the cell.
+      let mut v = VBool(false)
+      for b in binds {
+        if b.scope.length() == 0 && b.key == k {
+          v = b.value
+        }
+      }
+      obj.push((k, RScalar(v)))
     }
   }
   for seg in segs {
@@ -159,62 +169,151 @@ pub fn build_result(binds : Array[Binding], accum : Array[String]) -> RVal {
   RObj(obj)
 }
 
-/// Map-form collector (DR-044 / F-021 の実例、仮実装). Recursively turn every
-/// ARRAY-OF-OBJECTS into an OBJECT keyed by each element's `key_from` field (the field is
-/// consumed as the key and removed from the element); arrays of scalars are left as arrays.
+/// The `from_entries` collector (DR-044): turns an accumulated ARRAY into an OBJECT. It has the
+/// 3 usages of JS's Object.fromEntries, distinguished by how each element supplies (key, value):
 ///
-/// key 抽出のシグネチャ (自然に落ちた形): `(RVal, key_from) -> RVal`. The collector reads the
-/// named scalar field out of each element and uses its value as the map key. A production
-/// engine would attach `key_from` per-array (a `multiple:"to_map"` collector config on the
-/// name-scope) rather than one global field name; here one field ("path") serves every level.
-pub fn to_map(r : RVal, key_from : String) -> RVal {
+///   Entries          — `from_entries()`         : each element is a 2-element seq `[k, v]`
+///   KeyValue(kf, vf) — `from_entries({key,value})`: each element is an object; kf/vf name the
+///                                                    two fields to use as key / value
+///   KeyPromote(kf)   — `from_entries({key})`     : each element is an object; kf is PROMOTED to
+///                                                    the key and removed, the REST becomes the value
+///
+/// It recurses through the structure, converting every array whose elements match the spec's
+/// shape and leaving the rest (e.g. scalar arrays) as arrays — so applying `KeyPromote("path")`
+/// to a nested structure maps every object-array keyed by `path` while a `filters` scalar array
+/// stays a list. A stage WITHOUT a matching key keeps its array (per-level independence, DR-044
+/// §2: from_entries is attached per repeat group; the key present at a level selects that level).
+pub(all) enum FromEntries {
+  Entries // (a) no args: [[k, v], ...]
+  KeyValue(String, String) // (b) {key, value}: two named fields
+  KeyPromote(String) // (c) {key}: promote the key field, the rest is the value
+} derive(Eq, Show)
+
+pub fn from_entries(r : RVal, spec : FromEntries) -> RVal {
   match r {
     RScalar(v) => RScalar(v)
-    RArr(elems) => {
-      // all-objects => map keyed by key_from; else (scalars) keep as array
-      let mut all_obj = elems.length() > 0
-      for e in elems {
-        match e {
-          RObj(_) => ()
-          _ => all_obj = false
-        }
-      }
-      if all_obj {
-        let pairs : Array[(String, RVal)] = []
-        for e in elems {
-          match e {
-            RObj(kvs) => {
-              let mut key = ""
-              let rest : Array[(String, RVal)] = []
-              for kv in kvs {
-                if kv.0 == key_from {
-                  key = rval_key_str(kv.1)
-                } else {
-                  rest.push((kv.0, to_map(kv.1, key_from)))
-                }
-              }
-              pairs.push((key, RObj(rest)))
-            }
-            _ => ()
-          }
-        }
-        RObj(pairs)
-      } else {
-        let items : Array[RVal] = []
-        for e in elems {
-          items.push(to_map(e, key_from))
-        }
-        RArr(items)
-      }
-    }
     RObj(kvs) => {
+      // recurse into an object's field values (a nested array may still match the spec)
       let out : Array[(String, RVal)] = []
       for kv in kvs {
-        out.push((kv.0, to_map(kv.1, key_from)))
+        out.push((kv.0, from_entries(kv.1, spec)))
       }
       RObj(out)
     }
+    RArr(elems) =>
+      match spec {
+        Entries =>
+          if all_pairs(elems) {
+            let pairs : Array[(String, RVal)] = []
+            for e in elems {
+              match e {
+                RArr(xs) => pairs.push((rval_key_str(xs[0]), from_entries(xs[1], spec)))
+                _ => ()
+              }
+            }
+            RObj(pairs)
+          } else {
+            recurse_arr(elems, spec)
+          }
+        KeyValue(kf, vf) =>
+          if all_have_fields(elems, [kf, vf]) {
+            let pairs : Array[(String, RVal)] = []
+            for e in elems {
+              let k = match rval_field(e, kf) {
+                Some(x) => rval_key_str(x)
+                None => "?"
+              }
+              let v = match rval_field(e, vf) {
+                Some(x) => x
+                None => RScalar(VBool(false))
+              }
+              pairs.push((k, from_entries(v, spec)))
+            }
+            RObj(pairs)
+          } else {
+            recurse_arr(elems, spec)
+          }
+        KeyPromote(kf) =>
+          // map only if EVERY element is an object carrying kf; else this level stays an array
+          // (this is the per-level selection: a level without kf is not mapped, DR-044 §2)
+          if all_have_fields(elems, [kf]) {
+            let pairs : Array[(String, RVal)] = []
+            for e in elems {
+              match e {
+                RObj(fields) => {
+                  let mut key = ""
+                  let rest : Array[(String, RVal)] = []
+                  for kv in fields {
+                    if kv.0 == kf {
+                      key = rval_key_str(kv.1)
+                    } else {
+                      rest.push((kv.0, from_entries(kv.1, spec)))
+                    }
+                  }
+                  pairs.push((key, RObj(rest)))
+                }
+                _ => ()
+              }
+            }
+            RObj(pairs)
+          } else {
+            recurse_arr(elems, spec)
+          }
+      }
   }
+}
+
+fn recurse_arr(elems : Array[RVal], spec : FromEntries) -> RVal {
+  let items : Array[RVal] = []
+  for e in elems {
+    items.push(from_entries(e, spec))
+  }
+  RArr(items)
+}
+
+/// Look up an object field's value by name; None if absent or the RVal is not an object.
+fn rval_field(r : RVal, name : String) -> RVal? {
+  match r {
+    RObj(kvs) => {
+      for kv in kvs {
+        if kv.0 == name {
+          return Some(kv.1)
+        }
+      }
+      None
+    }
+    _ => None
+  }
+}
+
+/// Whether every element is a 2-element array (the `Entries` shape). Empty => false.
+fn all_pairs(elems : Array[RVal]) -> Bool {
+  if elems.length() == 0 {
+    return false
+  }
+  for e in elems {
+    match e {
+      RArr(xs) => if xs.length() != 2 { return false }
+      _ => return false
+    }
+  }
+  true
+}
+
+/// Whether every element is an object carrying ALL the named fields. Empty => false.
+fn all_have_fields(elems : Array[RVal], fields : Array[String]) -> Bool {
+  if elems.length() == 0 {
+    return false
+  }
+  for e in elems {
+    for f in fields {
+      match rval_field(e, f) {
+        Some(_) => ()
+        None => return false
+      }
+    }
+  }
+  true
 }
 
 fn rval_key_str(r : RVal) -> String {
@@ -234,7 +333,8 @@ pub fn accum_names(sc : Scope) -> Array[String] {
 
 fn collect_accum(sc : Scope, out : Array[String]) -> Unit {
   for e in sc.entities {
-    if e.accumulate && !str_contains(out, e.name) {
+    // any named accumulator (flatten / append / …) folds the cell into a list (DR-036).
+    if e.accum.is_some() && !str_contains(out, e.name) {
       out.push(e.name)
     }
   }

@@ -21,15 +21,43 @@ pub(all) enum Source {
   Default // fixed fallback (DR-031 #5)
 } derive(Eq, Show)
 
-/// One value written onto a result path: `key = value (from source)`.
-/// `key` is the leaf name; same-key bindings from different entries (e.g. `--port`
-/// satellite and `-p` matcher) merge onto one cell = link 合流. `scope` is the result
-/// nesting path (DR-025): a binding produced inside a command / name scope carries that
-/// scope's labels, outermost first. Path-counting (DR-038) treats the whole binding
-/// (leaf + scope) as identity, so a value in `serve` differs from the same leaf at root.
+/// The effect an entry's firing applies to a value cell (DR-045). It is PURE DATA
+/// `{op, operand?}`: the op names the operation, the operand is the Binding's `value`.
+/// A normal value bind (a value slot consuming a token and writing it) is the SET
+/// degenerate form, so every effect-column element is uniform (entity, op, operand,
+/// source, order). `default`/`unset`/`empty` carry NO operand (the Binding's value is a
+/// placeholder). The four ops correspond 1:1 to DR-011's variant effect vocabulary.
+pub(all) enum EffectOp {
+  Set // write the operand; committed (the degenerate form of a plain value bind)
+  Default // reset to the default value; committed (the user explicitly wants default)
+  Unset // reset to the default; NOT committed — later ladder seats (env/config/inherit) may override
+  Empty // clear a collection (array / map) to empty; committed
+} derive(Eq, Show)
+
+/// committed is DERIVED from the op, never a separate field (DR-045 §2: selected and
+/// committed are independent, and the effect explicitly controls committed). Only `unset`
+/// is un-committed, which is exactly what opens the later value-source ladder seats.
+pub fn committed(op : EffectOp) -> Bool {
+  match op {
+    Unset => false
+    _ => true
+  }
+}
+
+/// One EFFECT written onto a result path: `key`'s cell gets operation `op` with operand
+/// `value`, from `source` (DR-045). `key` is the leaf name; same-key bindings from
+/// different entries (e.g. `--port` satellite and `-p` matcher) merge onto one cell =
+/// link 合流. `scope` is the result nesting path (DR-025): a binding produced inside a
+/// command / name scope carries that scope's labels, outermost first.
+///
+/// Path-counting (DR-038) treats the whole binding as identity, so op/operand are part of
+/// the effect-sequence key (DR-045 §1 精密化): the same cell reset by `unset` vs written by
+/// `set` are DIFFERENT effects even at the same position. A value in `serve` differs from
+/// the same leaf at root (scope is in the key too).
 pub(all) struct Binding {
   key : String
-  value : Value
+  op : EffectOp // the operation on the cell (DR-045); Set for a plain value bind
+  value : Value // the operand (a placeholder for default/unset/empty, which carry none)
   source : Source
   scope : Array[String]
   link : Bool // a link/root-targeted binding (DR-042/007): stays at the declaring (root)

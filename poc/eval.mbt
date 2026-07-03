@@ -24,8 +24,15 @@ pub(all) enum Outcome {
   Ambiguous(Int) // number of distinct complete paths (>= 2)
 } derive(Eq, Show)
 
+/// A plain value bind = the SET degenerate form of an effect (DR-045 §1).
 fn mkb(key : String, value : Value, source : Source) -> Binding {
-  { key, value, source, scope: [], link: false }
+  { key, op: Set, value, source, scope: [], link: false }
+}
+
+/// A non-set effect binding (default / unset / empty). The operand is a placeholder
+/// (VBool(false)) — default/unset/empty carry no operand (DR-045 table).
+fn mk_eff(key : String, op : EffectOp, source : Source) -> Binding {
+  { key, op, value: VBool(false), source, scope: [], link: false }
 }
 
 /// Nest a set of bindings one level deeper under `label` (DR-025: a name / command
@@ -42,7 +49,14 @@ fn nest(label : String, binds : Array[Binding]) -> Array[Binding] {
       for s in b.scope {
         sc2.push(s)
       }
-      out.push({ key: b.key, value: b.value, source: b.source, scope: sc2, link: b.link })
+      out.push({
+        key: b.key,
+        op: b.op,
+        value: b.value,
+        source: b.source,
+        scope: sc2,
+        link: b.link,
+      })
     }
   }
   out
@@ -91,6 +105,13 @@ fn eval(
       } else {
         []
       }
+    SepArg(name, sep) =>
+      // separator split (DR-034): consume 1 token, emit one Set effect per split piece.
+      if pos < toks.length() {
+        [Accept(pos + 1, sep_binds(name, toks[pos], sep))]
+      } else {
+        []
+      }
     NumArg(name) =>
       if pos < toks.length() {
         match parse_number(toks[pos]) {
@@ -101,6 +122,12 @@ fn eval(
         []
       }
     Bind(name, v) => [Accept(pos, [mkb(name, v, Cli)])]
+    EffMark(name, op) =>
+      // A non-set effect (DR-045): consumes 0 tokens, applies `op` to the named cell.
+      // The op becomes part of the effect-sequence identity (DR-038 精密化) via the
+      // Binding's `op` field, so `--no-color` (unset) and `--color` (set) on the same
+      // cell are distinct effects.
+      [Accept(pos, [mk_eff(name, op, Cli)])]
     Or(alts) => {
       let out : Array[Branch] = []
       for a in alts {
@@ -158,6 +185,7 @@ fn eval(
             for x in bs {
               marked.push({
                 key: x.key,
+                op: x.op,
                 value: x.value,
                 source: x.source,
                 scope: x.scope,
@@ -182,6 +210,21 @@ fn eval(
       }
     IdxRepeat(label, head, min) =>
       idx_repeat_eval(label, head, min, toks, pos, defs)
+    BoundedTail(head, budget, _) =>
+      // Off-spine fallback (BoundedTail normally lives on the positional spine, handled
+      // porously by scope_consume with 取り分選好). Here it degrades to the nested-Opt form
+      // (0..budget heads) — correct token acceptance, minus the preference/先食い of the spine.
+      eval(bounded_opt(head, budget), toks, pos, defs)
+  }
+}
+
+/// The nested-Opt equivalent of a bounded tail: 0..budget heads (LOWERING §B.8). Used for the
+/// off-spine eval fallback; the spine path (scope_consume) instead threads the budget porously.
+fn bounded_opt(head : Node, budget : Int) -> Node {
+  if budget <= 0 {
+    Seq([])
+  } else {
+    Or([Seq([head, bounded_opt(head, budget - 1)]), Seq([])])
   }
 }
 
@@ -192,10 +235,45 @@ fn starts_dash(s : String) -> Bool {
   false
 }
 
+/// The first char of a string (String indexing yields a UTF-16 code unit, not a Char, so we
+/// take the first char by iteration — matching how the split loop reads chars).
+fn first_char(s : String) -> Char {
+  for c in s {
+    return c
+  }
+  ',' // unreachable for a non-empty separator
+}
+
+/// Split `s` on the first char of `sep` (DR-034 single-char separator). `a,b,c` / "," → [a,b,c].
+fn split_on(s : String, sep : String) -> Array[String] {
+  let sepc = first_char(sep)
+  let out : Array[String] = []
+  let mut cur = ""
+  for c in s {
+    if c == sepc {
+      out.push(cur)
+      cur = ""
+    } else {
+      cur = cur + c.to_string()
+    }
+  }
+  out.push(cur)
+  out
+}
+
+/// One Set-effect binding per split piece (DR-034 separator + DR-045 set 縮退形).
+fn sep_binds(name : String, tok : String, sep : String) -> Array[Binding] {
+  let out : Array[Binding] = []
+  for part in split_on(tok, sep) {
+    out.push(mkb(name, VStr(part), Cli))
+  }
+  out
+}
+
 /// Array-presence marker: `{key:"[]"}` at the array's scope, so an empty array still
 /// appears in the result. The renderers / result builder treat "[]" and "{}" as sentinels.
 fn array_marker(label : String) -> Binding {
-  { key: "[]", value: VBool(false), source: Cli, scope: [label], link: false }
+  { key: "[]", op: Set, value: VBool(false), source: Cli, scope: [label], link: false }
 }
 
 /// Prepend an object-presence marker `{key:"{}"}` at scope `[name]` to each Accept, so an
@@ -203,6 +281,7 @@ fn array_marker(label : String) -> Binding {
 fn mark_scope(name : String, brs : Array[Branch]) -> Array[Branch] {
   let marker : Binding = {
     key: "{}",
+    op: Set,
     value: VBool(false),
     source: Cli,
     scope: [name],
@@ -232,6 +311,7 @@ fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] 
       }
       out.push({
         key: b.key,
+        op: b.op,
         value: b.value,
         source: b.source,
         scope: sc2,
@@ -484,6 +564,16 @@ fn scope_consume(
       } else {
         []
       }
+    SepArg(name, sep) =>
+      // plain separator positional (DR-034): 先食い-aware, splits the token into pieces.
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+        scope_step(
+          sc, toks, pos + 1, pidx + 1, cat(acc, sep_binds(name, toks[pos], sep)),
+          severed, defs,
+        )
+      } else {
+        []
+      }
     NumArg(name) =>
       if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
         match parse_number(toks[pos]) {
@@ -555,6 +645,12 @@ fn scope_consume(
         }
         out
       }
+    BoundedTail(head, budget, lazy) =>
+      // A bounded repeat tail (DR-043 max 有限 / LOWERING §B.8): consume 0..budget more heads
+      // POROUSLY on the spine. Same 取り分選好 as the Ref path (greedy prefers "more", lazy
+      // "stop"), and consume_head keeps 先食い — so a bounded repeat composes like an unbounded
+      // one, but the recursion depth is the budget (no self-ref).
+      bounded_tail_step(sc, head, budget, lazy, toks, pos, pidx, acc, severed, defs)
     Many(inner) => {
       let out : Array[Branch] = []
       for r in scope_step(sc, toks, pos, pidx + 1, acc, severed, defs) { // 0 reps
@@ -597,6 +693,65 @@ fn scope_consume(
   }
 }
 
+/// A bounded repeat tail (DR-043 max 有限): consume 0..budget more heads porously, with the
+/// 取り分選好 preference. `stop` advances the spine (take no more here); `more` consumes one
+/// head (先食い-aware via consume_head) and recurses with budget-1. greedy (default) commits to
+/// `more` first, lazy to `stop`; the first preference reaching a FULL parse is committed and
+/// the other pruned (a different SHARE of the same closure, not a competing complete path,
+/// DR-038 無傷). If neither completes, both are kept. `has_full` uses the whole-input length
+/// (exact for a root/last-scope repeat, approximate under a non-final scope — same flag as the
+/// Ref path, 3rd installment).
+fn bounded_tail_step(
+  sc : Scope,
+  head : Node,
+  budget : Int,
+  lazy : Bool,
+  toks : Array[String],
+  pos : Int,
+  pidx : Int,
+  acc : Array[Binding],
+  severed : Bool,
+  defs : Map[String, Node],
+) -> Array[Branch] {
+  let target = toks.length()
+  let stop = scope_step(sc, toks, pos, pidx + 1, acc, severed, defs)
+  let more : Array[Branch] = if budget >= 1 {
+    let out : Array[Branch] = []
+    for b in consume_head(sc, head, toks, pos, severed, defs) {
+      match b {
+        Accept(p2, bs) =>
+          if p2 > pos {
+            for r in bounded_tail_step(
+                sc, head, budget - 1, lazy, toks, p2, pidx, cat(acc, bs), severed,
+                defs,
+              ) {
+              out.push(r)
+            }
+          }
+        Held(m, d) => out.push(Held(m, d))
+      }
+    }
+    out
+  } else {
+    []
+  }
+  if lazy {
+    if has_full(stop, target) {
+      stop
+    } else if has_full(more, target) {
+      more
+    } else {
+      cat_branches(stop, more)
+    }
+  } else if has_full(more, target) {
+    more
+  } else if has_full(stop, target) {
+    stop
+  } else {
+    cat_branches(stop, more)
+  }
+}
+
 /// Consume one repeat head on the spine. A value primitive respects 先食い (a greedy
 /// trigger between reps is not raw-eaten as a value); a non-primitive head (a ref to
 /// a template, e.g. `color`) is evaluated plainly (head-internal is not spine-porous,
@@ -613,6 +768,13 @@ fn consume_head(
     StrArg(name) =>
       if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
         [Accept(pos + 1, [mkb(name, VStr(toks[pos]), Cli)])]
+      } else {
+        []
+      }
+    SepArg(name, sep) =>
+      // separator-splitting repeat head (DR-034 × DR-043): 先食い-aware, splits the token.
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+        [Accept(pos + 1, sep_binds(name, toks[pos], sep))]
       } else {
         []
       }
@@ -731,6 +893,7 @@ fn strip_link(bs : Array[Binding]) -> Array[Binding] {
   for b in bs {
     out.push({
       key: b.key,
+      op: b.op,
       value: b.value,
       source: b.source,
       scope: b.scope,
