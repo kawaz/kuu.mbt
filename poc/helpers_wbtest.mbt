@@ -109,6 +109,18 @@ fn render_binds(binds : Array[Binding]) -> String {
   join_comma(items)
 }
 
+/// `key=value` pairs in CONSUMPTION order (NOT sorted) — the effect column (DR-045). Used to
+/// show that link 合流 preserves the argv order of effects onto one cell (last-wins is the tail).
+fn render_binds_ordered(binds : Array[Binding]) -> String {
+  let items : Array[String] = []
+  for b in binds {
+    if !is_marker(b.key) {
+      items.push("\{b.key}=\{render_val(b.value)}")
+    }
+  }
+  join_comma(items)
+}
+
 /// `key=value@source` pairs, sorted — used where provenance is the point (env test).
 fn render_binds_src(binds : Array[Binding]) -> String {
   let items : Array[String] = []
@@ -145,6 +157,17 @@ fn render_effects(binds : Array[Binding]) -> String {
 fn effects_str(g : Node, toks : Array[String]) -> String {
   match parse(g, toks) {
     Success(binds) => render_effects(binds)
+    Fail(m) => "fail:" + m
+    Ambiguous(n) => "ambiguous:" + n.to_string()
+    FireAction(name) => "action:" + name
+  }
+}
+
+/// Parse and render the winning path's effect column in consumption order (DR-045). For link
+/// 合流 tests: shows the ordered effects that merge onto one cell (last-wins is the tail, DR-015).
+fn ordered_effects(g : Node, toks : Array[String]) -> String {
+  match parse(g, toks) {
+    Success(binds) => render_binds_ordered(binds)
     Fail(m) => "fail:" + m
     Ambiguous(n) => "ambiguous:" + n.to_string()
     FireAction(name) => "action:" + name
