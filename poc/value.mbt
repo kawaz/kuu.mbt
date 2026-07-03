@@ -17,9 +17,49 @@ pub(all) enum Value {
 pub(all) enum Source {
   Cli // CLI explicit / link — highest seat (DR-031 #1)
   Env // environment variable seat (DR-031 #2)
+  Config // config-file seat (DR-050 #3) — below env, above inherit
   Inherit // nearest ancestor scope's same-named value (DR-031 #4 / DR-013)
   Default // fixed fallback (DR-031 #5)
 } derive(Eq, Show)
+
+/// A JSON-同型 hierarchical config value (DR-050 §2): what a config_provider returns. kuu core
+/// never sees TOML/YAML — only this shape. Leaf values are typed (string / number / bool); arrays
+/// feed a multiple element's pieces; objects mirror the name-scope hierarchy (同型対応).
+pub(all) enum ConfigVal {
+  CStr(String)
+  CNum(Double)
+  CBool(Bool)
+  CArr(Array[ConfigVal])
+  CObj(Array[(String, ConfigVal)])
+} derive(Eq, Show)
+
+/// Convert one leaf config value to the element's expected type (DR-050 §4). The element's `type`
+/// IS the expected type. A string goes through the (PoC-trivial) full pipeline / lenient parse
+/// (DR-040: number element accepts JSON string "8080"); a typed value (number/bool) must MATCH the
+/// element type (型一致検証) — a mismatch (bool element ← number, etc.) is a DR-037 Error. Arrays /
+/// objects are handled before this (multiple pieces / 同型再帰), so reaching here with them is a
+/// structural mismatch → Error.
+pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
+  match (cv, ty) {
+    // string: lenient — parse into whatever the element wants (CLI/env と同一経路)
+    (CStr(s), TStr) => Ok(VStr(s))
+    (CStr(s), TNum) =>
+      match parse_number(s) {
+        Some(d) => Ok(VNum(d))
+        None => Err("config value \"\{s}\" is not a number")
+      }
+    (CStr(s), TFlag) => Ok(VBool(s == "true" || s == "1"))
+    // typed values: must match the element type (型一致検証)
+    (CNum(d), TNum) => Ok(VNum(d))
+    (CBool(b), TFlag) => Ok(VBool(b))
+    (CNum(_), TStr) => Err("config number for a string element (type mismatch)")
+    (CNum(_), TFlag) => Err("config number for a bool element (type mismatch)")
+    (CBool(_), TStr) => Err("config bool for a string element (type mismatch)")
+    (CBool(_), TNum) => Err("config bool for a number element (type mismatch)")
+    (CArr(_), _) => Err("config array for a scalar element (type mismatch)")
+    (CObj(_), _) => Err("config object for a scalar element (type mismatch)")
+  }
+}
 
 /// The effect an entry's firing applies to a value cell (DR-045). It is PURE DATA
 /// `{op, operand?}`: the op names the operation, the operand is the Binding's `value`.

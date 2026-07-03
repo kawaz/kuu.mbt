@@ -117,6 +117,9 @@ pub(all) struct Entity {
   name : String
   ty : Ty
   mut env_key : String? // env seat lookup; None = no env seat declared (env installer sets it)
+  mut config_seat : Bool // config seat declared (DR-050): fill from the config object by path
+  mut config_key : Array[String]? // explicit absolute config path (DR-050 §3); None = 同型 (scope path + name)
+  is_config_file : Bool // this cell's value is the config-file PATH (DR-050): resolves the provider, no config seat
   mut inherit : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013)
   // The accumulators-registry name (DR-036) that folds this cell's effect list, or None for a
   // scalar cell. Built-ins: "flatten" (repeat's cons [T,[T,…]] → T[], DR-043) and "append"

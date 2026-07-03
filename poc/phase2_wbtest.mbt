@@ -39,7 +39,7 @@ test "DR-042 ①': re-applying an installer is a no-op (idempotent from add-if-a
   // the same installer twice in one chain.)
   let reg : Map[String, Node] = Map::new()
   let sb = init_sb(clone_def(dr042_def()), reg)
-  ensure_entities(sb)
+  ensure_entities(sb, false) // dr042_def has no config_file → has_cf=false
   inst_long(sb.decl, sb.build)
   inst_short(sb.decl, sb.build)
   inst_env(sb.decl, sb.build)

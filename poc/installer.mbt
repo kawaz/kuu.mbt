@@ -30,6 +30,8 @@ pub(all) struct ElemDef {
   multiple : Bool // owned by the multiple installer (DR-034/043)
   separator : String? // the multiple pipeline's separator (DR-034); a value token splits on it
   fail_action : Bool // failure-action element (DR-048, e.g. type:"help"): fires on a FAILED parse
+  is_config_file : Bool // type:"config_file" (DR-050): its resolved path feeds the config_provider
+  config_key : Array[String]? // explicit config path (DR-050 §3); None = 同型. Owned by the config installer
   default_value : Value?
 } derive(Eq, Show)
 
@@ -81,6 +83,7 @@ pub(all) enum Installer {
   InheritInst
   RepeatInst
   MultipleInst
+  ConfigInst
 } derive(Eq, Show)
 
 fn owned_vocab(i : Installer) -> String {
@@ -94,6 +97,7 @@ fn owned_vocab(i : Installer) -> String {
     InheritInst => "inherit"
     RepeatInst => "repeat"
     MultipleInst => "multiple"
+    ConfigInst => "config" // owns both type:"config_file" and config_key (DR-050)
   }
 }
 
@@ -171,6 +175,8 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     multiple: e.multiple,
     separator: e.separator,
     fail_action: e.fail_action,
+    is_config_file: e.is_config_file,
+    config_key: e.config_key,
     default_value: e.default_value,
   }
 }
@@ -288,18 +294,18 @@ fn init_sb(def : Definition, registry : Map[String, Node]) -> SB {
 /// Core lowering (not an installer — deterministic, order-independent): ensure one
 /// entity (value cell, DR-030) per option and per non-dd positional, keyed by name
 /// (add-if-absent). Runs every pass so global-copied options gain an entity too.
-fn ensure_entities(sb : SB) -> Unit {
+fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
   for e in sb.decl.options {
-    ensure_entity(sb.build, e)
+    ensure_entity(sb.build, e, has_cf)
   }
   for e in sb.decl.positionals {
     if not_dd(e) {
-      ensure_entity(sb.build, e)
+      ensure_entity(sb.build, e, has_cf)
     }
   }
 }
 
-fn ensure_entity(build : Build, e : ElemDef) -> Unit {
+fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   for ent in build.entities {
     if ent.name == e.name {
       return
@@ -322,10 +328,17 @@ fn ensure_entity(build : Build, e : ElemDef) -> Unit {
       None => if e.separator.is_some() { Some("append") } else { None }
     }
   }
+  // config seat (DR-050 §3, 同型対応 default): when a config_file element exists, EVERY value cell
+  // corresponds to config by 同型 — so declare a config seat on every entity except the config_file
+  // element itself (循環禁止). `config_key` overrides the path; None = 同型 (scope path + name).
+  let config_seat = has_cf && not(e.is_config_file)
   build.entities.push({
     name: e.name,
     ty: e.ty,
     env_key: None,
+    config_seat,
+    config_key: e.config_key,
+    is_config_file: e.is_config_file,
     inherit: false,
     accum,
     default_value: e.default_value,
@@ -540,6 +553,8 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     multiple: copy.multiple,
     separator: copy.separator,
     fail_action: copy.fail_action,
+    is_config_file: copy.is_config_file,
+    config_key: copy.config_key,
     default_value: copy.default_value,
   })
 }
@@ -582,6 +597,7 @@ fn apply_node(inst : Installer, sb : SB) -> Unit {
     CommandInst => () // wired at materialize (see materialize)
     RepeatInst => () // lowered deterministically in init_sb (ref-recursion + template)
     MultipleInst => () // accumulator flag set deterministically in ensure_entity
+    ConfigInst => () // config seat set deterministically in ensure_entity (席宣言型, DR-050/042 ④)
   }
 }
 
@@ -589,13 +605,13 @@ fn apply_node(inst : Installer, sb : SB) -> Unit {
 /// installer to this node, then recurse into subcommand scopes. Global copies into
 /// children before the recursion, so a child sees the grown declaration in the same
 /// pass regardless of global's position in `order`.
-fn tree_pass(order : Array[Installer], sb : SB) -> Unit {
-  ensure_entities(sb)
+fn tree_pass(order : Array[Installer], sb : SB, has_cf : Bool) -> Unit {
+  ensure_entities(sb, has_cf)
   for inst in order {
     apply_node(inst, sb)
   }
   for child in sb.children {
-    tree_pass(order, child.body)
+    tree_pass(order, child.body, has_cf)
   }
 }
 
@@ -666,6 +682,14 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   }
   if e.multiple && !vocab_owned(owned, "multiple") {
     return Some("multiple")
+  }
+  // config vocab (DR-050): type:"config_file" and config_key are both owned by the config installer.
+  if e.is_config_file && !vocab_owned(owned, "config") {
+    return Some("config:config_file")
+  }
+  match e.config_key {
+    Some(_) => if !vocab_owned(owned, "config") { return Some("config:config_key") }
+    None => ()
   }
   None
 }
@@ -762,6 +786,49 @@ fn repeat_progress_error(def : Definition, registry : Map[String, Node]) -> Stri
   None
 }
 
+/// Whether the definition tree has any `type:"config_file"` element (DR-050): if so, a config
+/// object is available and the 同型 config seat is declared on every value cell.
+fn has_config_file(def : Definition) -> Bool {
+  for e in def.options {
+    if e.is_config_file {
+      return true
+    }
+  }
+  for e in def.positionals {
+    if e.is_config_file {
+      return true
+    }
+  }
+  for c in def.commands {
+    if has_config_file(c.body) {
+      return true
+    }
+  }
+  false
+}
+
+/// 循環禁止 (DR-050 §5): a config_file element cannot itself carry a config_key (it would take its
+/// own path from the config it is supposed to locate). Static check.
+fn config_cycle_error(def : Definition) -> String? {
+  for e in def.options {
+    if e.is_config_file && e.config_key.is_some() {
+      return Some("config_file element '\{e.name}' cannot have a config_key (循環禁止)")
+    }
+  }
+  for e in def.positionals {
+    if e.is_config_file && e.config_key.is_some() {
+      return Some("config_file element '\{e.name}' cannot have a config_key (循環禁止)")
+    }
+  }
+  for c in def.commands {
+    match config_cycle_error(c.body) {
+      Some(v) => return Some(v)
+      None => ()
+    }
+  }
+  None
+}
+
 /// A stable signature of one scope's build layer, for fixpoint detection. Node /
 /// Entity both derive Show, so structural growth is visible as a string change.
 fn build_sig(b : Build) -> String {
@@ -843,10 +910,18 @@ pub fn parse_definition(
     Some(v) => return Err(v)
     None => ()
   }
+  // 循環禁止 (DR-050 §5): the config_file element cannot take its own path from config.
+  match config_cycle_error(def) {
+    Some(v) => return Err(v)
+    None => ()
+  }
+  // 同型 default (DR-050 §3): a config seat is declared on every value cell when a config_file
+  // element exists (its resolved path feeds the provider). Computed once; threaded to ensure_entity.
+  let has_cf = has_config_file(def)
   let mut iters = 0
   while true {
     let prev = tree_sig(sb)
-    tree_pass(order, sb)
+    tree_pass(order, sb, has_cf)
     if tree_sig(sb) == prev {
       break
     }
@@ -872,19 +947,43 @@ fn env_value(ty : Ty, s : String) -> Value {
   }
 }
 
-/// Resolve one entity down the fixed ladder: cli > env > inherit > default (DR-031).
-/// The returned Binding carries the SOURCE tag of the seat that supplied the value.
-/// `inherited` maps a name to the nearest ancestor scope's resolved value; the
-/// inherit seat consults it only when the entity declared an inherit seat.
+/// Navigate a config object by an absolute path (DR-050 §3). Each segment indexes into a CObj;
+/// a missing key or a non-object mid-path yields None (this cell is not supplied by config).
+fn config_lookup(obj : ConfigVal, path : Array[String]) -> ConfigVal? {
+  let mut cur = obj
+  for seg in path {
+    match cur {
+      CObj(kvs) => {
+        let mut found : ConfigVal? = None
+        for kv in kvs {
+          if kv.0 == seg {
+            found = Some(kv.1)
+          }
+        }
+        match found {
+          Some(v) => cur = v
+          None => return None
+        }
+      }
+      _ => return None
+    }
+  }
+  Some(cur)
+}
+
+/// Resolve one entity down the fixed ladder: cli > env > config > inherit > default (DR-031 /
+/// DR-050 #3). Returns the effect bindings (0/1, or many when a config array fills a `multiple`
+/// cell) or an Err (a config type mismatch is a DR-037 Error). `config_obj` is the read config
+/// object (None = no config); `config_path` is this entity's absolute lookup path (同型 or config_key).
 fn resolve_entity(
   e : Entity,
   cli : Array[Binding],
   env_map : Map[String, String],
+  config_obj : ConfigVal?,
+  config_path : Array[String],
   inherited : Map[String, Value],
-) -> Binding? {
-  // The cli seat's state is the LAST effect on this entity (last-wins, DR-015). The op
-  // decides committed-ness (DR-045 §2 / DR-031): set/default/empty commit and STOP the
-  // ladder here; unset does NOT commit, so control falls through to env / inherit / default.
+) -> Result[Array[Binding], String] {
+  // cli seat — the LAST effect (last-wins, DR-015); set/default/empty commit, unset falls through.
   let mut seat : Binding? = None
   for b in cli {
     if b.key == e.name {
@@ -894,41 +993,74 @@ fn resolve_entity(
   match seat {
     Some(b) =>
       match b.op {
-        Set => return Some(b) // committed cli value (the SET operand wins)
+        Set => return Ok([b])
         Default =>
-          // committed default: the value is the DEFAULT, but LOCKED — env/inherit cannot
-          // override (this is the observable difference from unset, DR-045 §2).
           match e.default_value {
-            Some(v) => return Some(mkb(e.name, v, Default))
-            None => return Some(b)
+            Some(v) => return Ok([mkb(e.name, v, Default)])
+            None => return Ok([b])
           }
-        Empty => return Some(b) // committed empty (collection op; scalar is an edge)
-        Unset => () // NOT committed: fall through to the later ladder seats (env/inherit/default)
+        Empty => return Ok([b])
+        Unset => () // NOT committed: fall through
       }
     None => ()
   }
+  // env seat (DR-049)
   match e.env_key {
     Some(k) =>
       match env_map.get(k) {
-        Some(v) => return Some(mkb(e.name, env_value(e.ty, v), Env))
+        Some(v) => return Ok([mkb(e.name, env_value(e.ty, v), Env)])
         None => ()
       }
     None => ()
   }
+  // config seat (DR-050 #3): look up this cell in the config object; type per §4.
+  if e.config_seat {
+    match config_obj {
+      Some(obj) =>
+        match config_lookup(obj, config_path) {
+          Some(cv) =>
+            match cv {
+              // array → a multiple cell's pieces (DR-050 §4); each item typed per §4.
+              CArr(items) =>
+                if e.accum.is_some() {
+                  let bs : Array[Binding] = []
+                  for it in items {
+                    match config_to_value(it, e.ty) {
+                      Ok(v) => bs.push(mkb(e.name, v, Config))
+                      Err(msg) => return Err(msg)
+                    }
+                  }
+                  return Ok(bs)
+                } else {
+                  return Err("config array for a scalar element (type mismatch)")
+                }
+              _ =>
+                match config_to_value(cv, e.ty) {
+                  Ok(v) => return Ok([mkb(e.name, v, Config)])
+                  Err(msg) => return Err(msg) // §4 型不一致 → DR-037 Error
+                }
+            }
+          None => () // not present in config → fall through
+        }
+      None => () // no config object (no config_file, or default-path read failure) → fall through
+    }
+  }
+  // inherit seat (DR-031 / DR-013)
   if e.inherit {
     match inherited.get(e.name) {
-      Some(v) => return Some(mkb(e.name, v, Inherit))
+      Some(v) => return Ok([mkb(e.name, v, Inherit)])
       None => ()
     }
   }
+  // default seat
   match e.default_value {
-    Some(v) => Some(mkb(e.name, v, Default))
-    None => None
+    Some(v) => Ok([mkb(e.name, v, Default)])
+    None => Ok([])
   }
 }
 
-/// Resolve every entity in a built scope against CLI bindings + an env map, with an
-/// optional inherited-context (nearest ancestor's resolved values, for inherit seats).
+/// Resolve every entity in a built scope against CLI bindings + an env map (no config seat). For
+/// the env / inherit tests; config-less, so it never errors.
 pub fn resolve_scope(
   sc : Scope,
   cli : Array[Binding],
@@ -937,12 +1069,123 @@ pub fn resolve_scope(
 ) -> Array[Binding] {
   let out : Array[Binding] = []
   for e in sc.entities {
-    match resolve_entity(e, cli, env_map, inherited) {
-      Some(b) => out.push(b)
-      None => ()
+    match resolve_entity(e, cli, env_map, None, [], inherited) {
+      Ok(bs) => for b in bs { out.push(b) }
+      Err(_) => () // config-less resolution cannot error
     }
   }
   out
+}
+
+fn value_str(v : Value) -> String {
+  match v {
+    VStr(s) => s
+    VBool(b) => if b { "true" } else { "false" }
+    VNum(d) => {
+      let i = d.to_int()
+      if i.to_double() == d {
+        i.to_string()
+      } else {
+        d.to_string()
+      }
+    }
+  }
+}
+
+/// Resolve a scope WITH a config-file value source (DR-050 §5 dependency order):
+///   1. resolve the config_file element's path (cli > env > default; it has NO config seat, 循環禁止)
+///   2. read the provider with that path → a config object (or None). A committed path (cli/env)
+///      that reads None is a DR-037 Error (指定したのに読めない); a default path reading None is
+///      silently tolerated (config seat stays empty)
+///   3. resolve every (non config_file) entity down cli > env > config > inherit > default, using
+///      the config object and each entity's absolute config path (config_key, else 同型 = scope path + name)
+/// `provider` is the config_provider stub (path → config object | None). `path` is this scope's
+/// result path (for 同型 correspondence). Returns Err on a read failure or a §4 type mismatch.
+pub fn resolve_scope_config(
+  sc : Scope,
+  cli : Array[Binding],
+  env_map : Map[String, String],
+  provider : (String) -> ConfigVal?,
+  path~ : Array[String] = [],
+  inherited~ : Map[String, Value] = Map::new(),
+) -> Result[Array[Binding], String] {
+  // Phase 1: resolve the config_file element's path (cli > env > default), track committed-ness.
+  let mut cf_path : String? = None
+  let mut cf_committed = false
+  for e in sc.entities {
+    if e.is_config_file {
+      let mut done = false
+      for b in cli {
+        if b.key == e.name {
+          match b.op {
+            Set => {
+              cf_path = Some(value_str(b.value))
+              cf_committed = true
+              done = true
+            }
+            _ => ()
+          }
+        }
+      }
+      if not(done) {
+        match e.env_key {
+          Some(k) =>
+            match env_map.get(k) {
+              Some(v) => {
+                cf_path = Some(v)
+                cf_committed = true
+                done = true
+              }
+              None => ()
+            }
+          None => ()
+        }
+      }
+      if not(done) {
+        match e.default_value {
+          Some(v) => cf_path = Some(value_str(v)) // committed stays false (default path)
+          None => ()
+        }
+      }
+    }
+  }
+  // Phase 2: read the provider. committed path + None = Error; default path + None = silent.
+  let config_obj : ConfigVal? = match cf_path {
+    Some(p) => provider(p)
+    None => None
+  }
+  match cf_path {
+    Some(p) =>
+      if cf_committed {
+        match config_obj {
+          None => return Err("config file \"\{p}\" could not be read")
+          Some(_) => ()
+        }
+      }
+    None => ()
+  }
+  // Phase 3: resolve every non config_file entity down the full ladder.
+  let out : Array[Binding] = []
+  for e in sc.entities {
+    if not(e.is_config_file) {
+      let cpath = match e.config_key {
+        Some(k) => k // explicit absolute path
+        None => { // 同型: scope path + name
+          let p : Array[String] = []
+          for s in path {
+            p.push(s)
+          }
+          p.push(e.name)
+          p
+        }
+      }
+      match resolve_entity(e, cli, env_map, config_obj, cpath, inherited) {
+        Ok(bs) => for b in bs { out.push(b) }
+        Err(msg) => return Err(msg)
+      }
+    }
+  }
+  Ok(out)
 }
 
 /// Fetch a subcommand's built Scope from a parent Scope by name. Subcommands are

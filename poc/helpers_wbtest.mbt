@@ -74,6 +74,7 @@ fn render_src(s : Source) -> String {
   match s {
     Cli => "cli"
     Env => "env"
+    Config => "config"
     Inherit => "inherit"
     Default => "default"
   }
@@ -263,6 +264,8 @@ fn opt(
   inherit~ : Bool = false,
   multiple~ : Bool = false,
   fail_action~ : Bool = false,
+  config_file~ : Bool = false,
+  config_key~ : Array[String]? = None,
   default~ : Value? = None,
 ) -> ElemDef {
   {
@@ -282,6 +285,8 @@ fn opt(
     multiple,
     separator: None,
     fail_action,
+    is_config_file: config_file,
+    config_key,
     default_value: default,
   }
 }
@@ -294,6 +299,7 @@ fn pos(
   optional~ : Bool = false,
   multiple~ : Bool = false,
   separator~ : String? = None,
+  config_key~ : Array[String]? = None,
   ref_~ : String? = None,
   default~ : Value? = None,
 ) -> ElemDef {
@@ -314,6 +320,8 @@ fn pos(
     multiple,
     separator,
     fail_action: false,
+    is_config_file: false,
+    config_key,
     default_value: default,
   }
 }
@@ -336,6 +344,8 @@ fn dd_marker() -> ElemDef {
     multiple: false,
     separator: None,
     fail_action: false,
+    is_config_file: false,
+    config_key: None,
     default_value: None,
   }
 }
