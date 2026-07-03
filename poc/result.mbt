@@ -25,7 +25,7 @@ fn str_contains(xs : Array[String], v : String) -> Bool {
 }
 
 fn is_sentinel(k : String) -> Bool {
-  k == "[]" || k == "{}" || k == ""
+  k == "[]" || k == "{}" || k == "" || is_action_key(k)
 }
 
 fn has_direct_key(binds : Array[Binding], key : String) -> Bool {
@@ -101,14 +101,61 @@ fn seg_num(seg : String) -> Int {
   n
 }
 
-/// Build the nested result value from the winning flat bindings. `accum` is the set of
-/// leaf names whose (non-indexed) cell folds into a list (multiple / positional repeat).
-pub fn build_result(binds : Array[Binding], accum : Array[String]) -> RVal {
-  // ARRAY: a "[]" sentinel at this level => build one element per "#k" child.
+/// An accumulate cell located at a result-scope path (DR-044 uniform array). `path` is the
+/// command/name nesting where the cell lives; `name` is its key. The builder needs this so an
+/// accumulate cell that fired 0 times still renders `[]` at its home level (not absent).
+pub(all) struct AccumCell {
+  path : Array[String]
+  name : String
+} derive(Eq, Show)
+
+fn path_eq(a : Array[String], b : Array[String]) -> Bool {
+  if a.length() != b.length() {
+    return false
+  }
+  let mut i = 0
+  while i < a.length() {
+    if a[i] != b[i] {
+      return false
+    }
+    i = i + 1
+  }
+  true
+}
+
+/// Whether `name` is an accumulate cell declared at result path `path`.
+fn cell_here(cells : Array[AccumCell], path : Array[String], name : String) -> Bool {
+  for c in cells {
+    if c.name == name && path_eq(c.path, path) {
+      return true
+    }
+  }
+  false
+}
+
+fn path_push(path : Array[String], seg : String) -> Array[String] {
+  let out : Array[String] = []
+  for s in path {
+    out.push(s)
+  }
+  out.push(seg)
+  out
+}
+
+/// Build the nested result value from the winning flat bindings. `cells` locates every
+/// accumulate cell by result path (so an empty cell still renders `[]`, DR-044 uniform array);
+/// `path` is the current result-scope path.
+pub fn build_result(
+  binds : Array[Binding],
+  cells : Array[AccumCell],
+  path : Array[String],
+) -> RVal {
+  // ARRAY: a "[]" sentinel at this level => build one element per "#k" child. Elements keep the
+  // array's path (an indexed repeat element is not a named result-scope segment cells key on).
   if has_direct_key(binds, "[]") {
     let elems : Array[RVal] = []
     for idx in ordered_indices(binds) {
-      elems.push(build_result(sub_under(binds, idx), accum))
+      elems.push(build_result(sub_under(binds, idx), cells, path))
     }
     return RArr(elems)
   }
@@ -138,7 +185,7 @@ pub fn build_result(binds : Array[Binding], accum : Array[String]) -> RVal {
   // OBJECT: named leaves (folding accum keys into a list) + nested scopes.
   let obj : Array[(String, RVal)] = []
   for k in named {
-    if str_contains(accum, k) {
+    if cell_here(cells, path, k) {
       // ACCUMULATE (repeat "flatten" / multiple "append", DR-043/034/036): fold same-key
       // effects in order. A `set` effect appends; an `empty` effect CLEARS the collection
       // (DR-045 empty op), so anything before it is discarded and re-accumulation continues.
@@ -164,7 +211,14 @@ pub fn build_result(binds : Array[Binding], accum : Array[String]) -> RVal {
     }
   }
   for seg in segs {
-    obj.push((seg, build_result(sub_under(binds, seg), accum)))
+    obj.push((seg, build_result(sub_under(binds, seg), cells, path_push(path, seg))))
+  }
+  // UNIFORM ARRAY (DR-044 §1): an accumulate cell declared at THIS path that fired 0 times still
+  // renders `[]` (not absent) — inject empties for cells not already present as named leaves.
+  for c in cells {
+    if path_eq(c.path, path) && !str_contains(named, c.name) {
+      obj.push((c.name, RArr([])))
+    }
   }
   RObj(obj)
 }
@@ -324,24 +378,57 @@ fn rval_key_str(r : RVal) -> String {
   }
 }
 
-/// Collect the accumulator leaf-names across a scope tree (repeat / multiple cells).
-pub fn accum_names(sc : Scope) -> Array[String] {
-  let out : Array[String] = []
-  collect_accum(sc, out)
+/// Locate every accumulate cell (repeat / multiple / separator) by its result-scope path, so
+/// the builder can render an empty cell as `[]` (DR-044 uniform array). A command scope nests
+/// its cells under the command name; the root scope is path `[]`.
+pub fn accum_cells(sc : Scope) -> Array[AccumCell] {
+  let out : Array[AccumCell] = []
+  collect_accum(sc, [], out)
   out
 }
 
-fn collect_accum(sc : Scope, out : Array[String]) -> Unit {
+fn collect_accum(
+  sc : Scope,
+  path : Array[String],
+  out : Array[AccumCell],
+) -> Unit {
   for e in sc.entities {
     // any named accumulator (flatten / append / …) folds the cell into a list (DR-036).
-    if e.accum.is_some() && !str_contains(out, e.name) {
-      out.push(e.name)
+    if e.accum.is_some() {
+      out.push({ path, name: e.name })
     }
   }
   for g in sc.greedy {
     match g {
-      CmdSat(_, child) => collect_accum(child, out)
+      CmdSat(name, child) => collect_accum(child, path_push(path, name), out)
       _ => ()
+    }
+  }
+}
+
+/// The `unwrap_single` collector (DR-034 縮退ケース, opt-in scalar): unwrap a length-1 array to
+/// its element, recursively. This is how an app gets a SCALAR from a repeat/optional cell without
+/// the uniform-array default folding it (`optional: true` yields `[x]`; unwrap_single gives `x`).
+/// Length 0 or >= 2 arrays are left unchanged (unwrap only applies to the unambiguous single case).
+pub fn unwrap_single(r : RVal) -> RVal {
+  match r {
+    RScalar(v) => RScalar(v)
+    RArr(elems) =>
+      if elems.length() == 1 {
+        unwrap_single(elems[0])
+      } else {
+        let items : Array[RVal] = []
+        for e in elems {
+          items.push(unwrap_single(e))
+        }
+        RArr(items)
+      }
+    RObj(kvs) => {
+      let out : Array[(String, RVal)] = []
+      for kv in kvs {
+        out.push((kv.0, unwrap_single(kv.1)))
+      }
+      RObj(out)
     }
   }
 }

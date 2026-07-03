@@ -93,7 +93,7 @@ fn join_comma(items : Array[String]) -> String {
 }
 
 fn is_marker(k : String) -> Bool {
-  k == "[]" || k == "{}"
+  k == "[]" || k == "{}" || is_action_key(k)
 }
 
 /// `key=value` pairs, sorted — the visible result of a parse. Result-structure markers
@@ -147,6 +147,7 @@ fn effects_str(g : Node, toks : Array[String]) -> String {
     Success(binds) => render_effects(binds)
     Fail(m) => "fail:" + m
     Ambiguous(n) => "ambiguous:" + n.to_string()
+    FireAction(name) => "action:" + name
   }
 }
 
@@ -161,6 +162,7 @@ fn resolve_after_parse(
     Success(b) => render_binds_src(resolve_scope(sc, b, env))
     Fail(m) => "fail:" + m
     Ambiguous(n) => "ambiguous:" + n.to_string()
+    FireAction(name) => "action:" + name
   }
 }
 
@@ -170,6 +172,7 @@ fn render_outcome(o : Outcome) -> String {
     Success(binds) => "ok{" + render_binds(binds) + "}"
     Fail(msg) => "fail:" + msg
     Ambiguous(n) => "ambiguous:" + n.to_string()
+    FireAction(name) => "action:" + name
   }
 }
 
@@ -203,9 +206,10 @@ fn result_str(
   defs~ : Map[String, Node] = Map::new(),
 ) -> String {
   match parse(ScopeNode(sc), toks, defs~) {
-    Success(binds) => render_rval(build_result(binds, accum_names(sc)))
+    Success(binds) => render_rval(build_result(binds, accum_cells(sc), []))
     Fail(msg) => "fail:" + msg
     Ambiguous(n) => "ambiguous:" + n.to_string()
+    FireAction(name) => "action:" + name
   }
 }
 
@@ -216,9 +220,10 @@ fn result_rval(
   defs~ : Map[String, Node] = Map::new(),
 ) -> RVal {
   match parse(ScopeNode(sc), toks, defs~) {
-    Success(binds) => build_result(binds, accum_names(sc))
+    Success(binds) => build_result(binds, accum_cells(sc), [])
     Fail(msg) => abort("parse failed: " + msg)
     Ambiguous(n) => abort("ambiguous: " + n.to_string())
+    FireAction(name) => abort("fired action: " + name)
   }
 }
 
@@ -234,6 +239,7 @@ fn opt(
   global~ : Bool = false,
   inherit~ : Bool = false,
   multiple~ : Bool = false,
+  fail_action~ : Bool = false,
   default~ : Value? = None,
 ) -> ElemDef {
   {
@@ -252,6 +258,7 @@ fn opt(
     optional: false,
     multiple,
     separator: None,
+    fail_action,
     default_value: default,
   }
 }
@@ -283,6 +290,7 @@ fn pos(
     optional,
     multiple,
     separator,
+    fail_action: false,
     default_value: default,
   }
 }
@@ -304,6 +312,7 @@ fn dd_marker() -> ElemDef {
     optional: false,
     multiple: false,
     separator: None,
+    fail_action: false,
     default_value: None,
   }
 }

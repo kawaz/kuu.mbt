@@ -14,7 +14,9 @@
 /// (retained for failure display). `Accept(new_pos, bindings)` == a reading.
 enum Branch {
   Accept(Int, Array[Binding]) // (new position, accumulated bindings)
-  Held(String, Int) // (error message, depth reached) — DR-037 Error
+  Held(String, Int, Array[Binding]) // (error message, depth reached, partial state) — DR-037 Error
+  //                                    the partial state is the acc at the error point (F-039):
+  //                                    a failure-action selected before the error lives here.
 } derive(Show)
 
 /// Final parse outcome, counting DISTINCT complete paths (DR-038 table).
@@ -22,6 +24,7 @@ pub(all) enum Outcome {
   Success(Array[Binding])
   Fail(String)
   Ambiguous(Int) // number of distinct complete paths (>= 2)
+  FireAction(String) // 0 complete paths, but a failure-action (help) was selected (DR-048)
 } derive(Eq, Show)
 
 /// A plain value bind = the SET degenerate form of an effect (DR-045 §1).
@@ -33,6 +36,36 @@ fn mkb(key : String, value : Value, source : Source) -> Binding {
 /// (VBool(false)) — default/unset/empty carry no operand (DR-045 table).
 fn mk_eff(key : String, op : EffectOp, source : Source) -> Binding {
   { key, op, value: VBool(false), source, scope: [], link: false }
+}
+
+/// A failure-action marker binding (DR-048): key `@act:<name>`, value = the argv position where
+/// the action was selected (for argv-min tie-break). It rides in the effect column like any
+/// binding, so it is captured by both surfaced Accepts and (via the extended Held) dead ends.
+fn action_marker(name : String, pos : Int) -> Binding {
+  {
+    key: "@act:" + name,
+    op: Set,
+    value: VNum(pos.to_double()),
+    source: Cli,
+    scope: [],
+    link: false,
+  }
+}
+
+/// The action name if `b` is a failure-action marker, else None.
+fn action_of(b : Binding) -> String? {
+  if is_action_key(b.key) {
+    Some(b.key.substring(start=5, end=b.key.length())) // drop the "@act:" prefix (5 chars)
+  } else {
+    None
+  }
+}
+
+/// Whether a result key is a failure-action marker (`@act:...`), which the result builder and
+/// renderers skip (it is search bookkeeping, not a result value).
+pub fn is_action_key(k : String) -> Bool {
+  let p = "@act:"
+  k.length() >= p.length() && k.substring(start=0, end=p.length()) == p
 }
 
 /// Nest a set of bindings one level deeper under `label` (DR-025: a name / command
@@ -68,7 +101,7 @@ fn nest_branches(label : String, brs : Array[Branch]) -> Array[Branch] {
   for b in brs {
     match b {
       Accept(p, bs) => out.push(Accept(p, nest(label, bs)))
-      Held(m, d) => out.push(Held(m, d))
+      Held(m, d, bs) => out.push(Held(m, d, bs))
     }
   }
   out
@@ -116,7 +149,7 @@ fn eval(
       if pos < toks.length() {
         match parse_number(toks[pos]) {
           Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
-          None => [Held("\"\{toks[pos]}\" is not a number", pos)]
+          None => [Held("\"\{toks[pos]}\" is not a number", pos, [])]
         }
       } else {
         []
@@ -128,6 +161,10 @@ fn eval(
       // Binding's `op` field, so `--no-color` (unset) and `--color` (set) on the same
       // cell are distinct effects.
       [Accept(pos, [mk_eff(name, op, Cli)])]
+    FailMark(name) =>
+      // A failure-action mark (DR-048): 0-token, records `name` selected at this argv position.
+      // The position rides in the marker's value so a multi-action failure fires the argv-min one.
+      [Accept(pos, [action_marker(name, pos)])]
     Or(alts) => {
       let out : Array[Branch] = []
       for a in alts {
@@ -194,7 +231,7 @@ fn eval(
             }
             out.push(Accept(p, marked))
           }
-          Held(m, d) => out.push(Held(m, d))
+          Held(m, d, bs) => out.push(Held(m, d, bs))
         }
       }
       out
@@ -291,7 +328,7 @@ fn mark_scope(name : String, brs : Array[Branch]) -> Array[Branch] {
   for b in brs {
     match b {
       Accept(p, bs) => out.push(Accept(p, cat([marker], bs)))
-      Held(m, d) => out.push(Held(m, d))
+      Held(m, d, bs) => out.push(Held(m, d, bs))
     }
   }
   out
@@ -376,7 +413,7 @@ fn idx_one(
           }
           return p2
         }
-      Held(_, _) => ()
+      Held(_, _, _) => ()
     }
   }
   pos
@@ -401,7 +438,7 @@ fn eval_seq(
         for r in eval_seq(items, idx + 1, toks, p2, cat(acc, bs), defs) {
           out.push(r)
         }
-      Held(m, d) => out.push(Held(m, d))
+      Held(m, d, bs) => out.push(Held(m, d, bs))
     }
   }
   out
@@ -424,7 +461,7 @@ fn eval_many(
             out.push(r)
           }
         }
-      Held(m, d) => out.push(Held(m, d))
+      Held(m, d, bs) => out.push(Held(m, d, bs))
     }
   }
   out
@@ -448,7 +485,7 @@ fn greedy_reads(
     for b in eval(g, toks, pos, defs) {
       match b {
         Accept(p2, _) => if p2 > pos { return true }
-        Held(_, _) => ()
+        Held(_, _, _) => ()
       }
     }
   }
@@ -517,7 +554,7 @@ fn scope_step(
                 out.push(r)
               }
             }
-          Held(m, d) => out.push(Held(m, d))
+          Held(m, d, bs) => out.push(Held(m, d, bs))
         }
       }
     }
@@ -584,7 +621,9 @@ fn scope_consume(
               sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VNum(d), Cli)]),
               severed, defs,
             )
-          None => [Held("\"\{toks[pos]}\" is not a number", pos)]
+          // partial state = the scope acc so far (a failure-action selected before this number
+          // positional's parse error is captured here, DR-048 candidate defs / F-039).
+          None => [Held("\"\{toks[pos]}\" is not a number", pos, acc)]
         }
       } else {
         []
@@ -640,7 +679,7 @@ fn scope_consume(
                   out.push(r)
                 }
               }
-            Held(m, d) => out.push(Held(m, d))
+            Held(m, d, bs) => out.push(Held(m, d, bs))
           }
         }
         out
@@ -671,7 +710,7 @@ fn scope_consume(
             for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed, defs) {
               out.push(r)
             }
-          Held(m, d) => out.push(Held(m, d))
+          Held(m, d, bs) => out.push(Held(m, d, bs))
         }
       }
       out
@@ -685,7 +724,7 @@ fn scope_consume(
             for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed, defs) {
               out.push(r)
             }
-          Held(m, d) => out.push(Held(m, d))
+          Held(m, d, bs) => out.push(Held(m, d, bs))
         }
       }
       out
@@ -728,7 +767,7 @@ fn bounded_tail_step(
               out.push(r)
             }
           }
-        Held(m, d) => out.push(Held(m, d))
+        Held(m, d, bs) => out.push(Held(m, d, bs))
       }
     }
     out
@@ -782,7 +821,7 @@ fn consume_head(
       if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
         match parse_number(toks[pos]) {
           Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
-          None => [Held("\"\{toks[pos]}\" is not a number", pos)]
+          None => [Held("\"\{toks[pos]}\" is not a number", pos, [])]
         }
       } else {
         []
@@ -817,7 +856,7 @@ fn has_full(brs : Array[Branch], target : Int) -> Bool {
   for b in brs {
     match b {
       Accept(p, _) => if p == target { return true }
-      Held(_, _) => ()
+      Held(_, _, _) => ()
     }
   }
   false
@@ -864,7 +903,7 @@ fn scope_consume_rep(
               sc, toks, pos + 1, pidx, cat(acc, [mkb(name, VNum(d), Cli)]), severed,
               defs,
             )
-          None => [Held("\"\{toks[pos]}\" is not a number", pos)]
+          None => [Held("\"\{toks[pos]}\" is not a number", pos, acc)]
         }
       } else {
         []
@@ -879,7 +918,7 @@ fn scope_consume_rep(
                 out.push(r)
               }
             }
-          Held(m, d) => out.push(Held(m, d))
+          Held(m, d, bs) => out.push(Held(m, d, bs))
         }
       }
       out
@@ -918,18 +957,32 @@ fn strip_link(bs : Array[Binding]) -> Array[Binding] {
 ///
 /// `defs` supplies the template registry for `Ref` resolution (empty by default;
 /// only repeat/ref definitions need it).
+///
+/// `faildef` chooses WHICH candidate paths count a failure-action as "selected" (DR-048 §5, the
+/// undetermined point tracked by issue `2026-07-03-failure-action-selected-scope`). See `FailDef`.
 pub fn parse(
   root : Node,
   toks : Array[String],
   defs~ : Map[String, Node] = Map::new(),
+  faildef~ : FailDef = WithHeld,
 ) -> Outcome {
   let branches = eval(root, toks, 0, defs)
   let full : Array[Array[Binding]] = []
   let mut deepest_msg = ""
   let mut deepest_depth = -1
+  // the deepest argv position any branch reached (for the DeepestOnly candidate set).
+  let mut max_reach = -1
   for b in branches {
     match b {
-      Accept(p, bs) =>
+      Accept(p, _) => if p > max_reach { max_reach = p }
+      Held(_, d, _) => if d > max_reach { max_reach = d }
+    }
+  }
+  // failure-action markers gathered from the candidate paths selected by `faildef`.
+  let actions : Array[(String, Int)] = []
+  for b in branches {
+    match b {
+      Accept(p, bs) => {
         if p == toks.length() {
           // strip the `link` hint before comparing: nesting is resolved by now, so link is
           // vestigial and NOT part of the effect identity (DR-038). Two routes onto the same
@@ -946,16 +999,81 @@ pub fn parse(
             full.push(eff)
           }
         }
-      Held(m, d) =>
+        // a surfaced scope-end Accept is a candidate path under every faildef (DeepestOnly only
+        // if it is the maximal-consumption one).
+        let counts = match faildef {
+          DeepestOnly => p == max_reach
+          _ => true
+        }
+        if counts {
+          collect_actions(bs, actions)
+        }
+      }
+      Held(m, d, bs) => {
         if d > deepest_depth {
           deepest_depth = d
           deepest_msg = m
         }
+        // a Held (Error) partial path counts only under WithHeld (F-039 failure partial state) or
+        // DeepestOnly-when-maximal; AcceptsOnly ignores dead ends that never reached a scope-end.
+        let counts = match faildef {
+          AcceptsOnly => false
+          WithHeld => true
+          DeepestOnly => d == max_reach
+        }
+        if counts {
+          collect_actions(bs, actions)
+        }
+      }
     }
   }
   match full.length() {
-    0 => if deepest_depth >= 0 { Fail(deepest_msg) } else { Fail("no complete parse") }
+    0 =>
+      // DR-048: 0 complete paths. If a failure-action was selected in a candidate path, fire the
+      // argv-position-minimal one (先勝ち) in place of the held Error; else show the Error.
+      if actions.length() > 0 {
+        FireAction(argmin_action(actions))
+      } else if deepest_depth >= 0 {
+        Fail(deepest_msg)
+      } else {
+        Fail("no complete parse")
+      }
     1 => Success(full[0])
     n => Ambiguous(n)
   }
+}
+
+/// The candidate-path set that counts a failure-action as "selected" (DR-048 §5, undetermined).
+/// The three realize the plausible readings of "候補経路のいずれかで selected":
+pub(all) enum FailDef {
+  AcceptsOnly // candidate = a path that reached a scope-end Accept (dead ends ignored)
+  WithHeld // + a path that reached an Error-held point (its partial state, F-039)
+  DeepestOnly // only the maximal-argv-consumption candidate path(s)
+} derive(Eq, Show)
+
+/// Push every failure-action marker in `bs` as (action name, argv position) into `out`.
+fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit {
+  for b in bs {
+    match action_of(b) {
+      Some(name) => {
+        let pos = match b.value {
+          VNum(d) => d.to_int()
+          _ => 0
+        }
+        out.push((name, pos))
+      }
+      None => ()
+    }
+  }
+}
+
+/// The action with the minimal argv position (先勝ち, DR-048 §4). Ties keep first-seen.
+fn argmin_action(actions : Array[(String, Int)]) -> String {
+  let mut best = actions[0]
+  for a in actions {
+    if a.1 < best.1 {
+      best = a
+    }
+  }
+  best.0
 }

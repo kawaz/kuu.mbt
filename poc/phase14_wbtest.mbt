@@ -120,12 +120,14 @@ test "DR-043 max × 取り分選好 lazy: a lazy bounded repeat takes the shorte
 
 // ── P4: `optional: true` is the {min:0,max:1} sugar (reduced, not an independent concept) ──
 
-test "DR-043 optional = repeat{min:0,max:1}: the sugar lowers IDENTICALLY to the closure" {
+test "DR-043/044 optional = repeat{min:0,max:1}: the sugar lowers IDENTICALLY to the closure" {
   // `optional: true` is NOT an independent concept — it REDUCES to repeat {min:0, max:1}. Two
   // defs, one with optional=true and one with the explicit repeat, must lower to the SAME
   // AtomicAST and parse identically. This proves the sugar (one reduction), not a parallel path.
-  // max=1 => the cell is SCALAR (0-or-1), not a list (flatten collapses a MULTI cons; here at
-  // most one value lands — the PoC's max=1 boundary decision, see journal).
+  // UNIFORM ARRAY (DR-044 §1, kawaz 裁定): declaring repetition makes the cell an ARRAY regardless
+  // of cardinality — max=1 is NOT special-cased to scalar. So the cell folds via "flatten", an
+  // absent optional is `[]` (not missing / null), and one match is `[x]`. Scalar is opt-in via a
+  // collector (next test).
   let d_opt = def_([], [pos("x", TStr, optional=true)])
   let d_rep = def_([], [pos("x", TStr, repeat=rep(0, max=Some(1)))])
   let r1 : Map[String, Node] = Map::new()
@@ -134,13 +136,34 @@ test "DR-043 optional = repeat{min:0,max:1}: the sugar lowers IDENTICALLY to the
   let s_rep = build_reg(d_rep, r14(), r2)
   // structural equality of the lowered scope: the sugar and the closure are the same AtomicAST
   inspect(canon_scope(s_opt) == canon_scope(s_rep), content="true")
-  inspect(entity_accum(s_opt, "x"), content="scalar")
-  // parse: 0 or 1 token accepted (scalar), a 2nd token (nothing follows) fails
-  inspect(result_str(s_opt, [], defs=r1), content="{}")
-  inspect(result_str(s_opt, ["a"], defs=r1), content="{x:a}")
+  inspect(entity_accum(s_opt, "x"), content="flatten")
+  // parse: 0 or 1 token accepted; the result is a uniform array — [] when absent, [x] when present
+  inspect(result_str(s_opt, [], defs=r1), content="{x:[]}")
+  inspect(result_str(s_opt, ["a"], defs=r1), content="{x:[a]}")
+  // a 2nd token (nothing follows) still fails (max 1 bounds the closure)
   inspect(
     render_outcome(parse(ScopeNode(s_opt), ["a", "b"], defs=r1)),
     content="fail:no complete parse",
+  )
+}
+
+test "DR-034 unwrap_single: opt-in scalar folds a 0/1 array back to a scalar" {
+  // The uniform-array default gives `optional` an array `[x]` / `[]`. An app that wants a SCALAR
+  // opts in to the unwrap_single collector (DR-034 縮退ケース, the same parts as any collector):
+  // `[x]` → `x`, `[]` stays `[]` (nothing to unwrap). This is how scalar is recovered WITHOUT the
+  // engine special-casing max=1 — the shaping is a collector concern, not a structural one.
+  let def = def_([], [pos("x", TStr, optional=true)])
+  let reg : Map[String, Node] = Map::new()
+  let sc = build_reg(def, r14(), reg)
+  // present: [a] unwraps to a
+  inspect(
+    render_rval(unwrap_single(result_rval(sc, ["a"], defs=reg))),
+    content="{x:a}",
+  )
+  // absent: [] has nothing to unwrap, stays []
+  inspect(
+    render_rval(unwrap_single(result_rval(sc, [], defs=reg))),
+    content="{x:[]}",
   )
 }
 

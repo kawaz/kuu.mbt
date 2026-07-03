@@ -29,6 +29,7 @@ pub(all) struct ElemDef {
   optional : Bool // sugar for repeat:{min:0,max:1} (DR-043), reduced by elem_repeat — repeat's vocab
   multiple : Bool // owned by the multiple installer (DR-034/043)
   separator : String? // the multiple pipeline's separator (DR-034); a value token splits on it
+  fail_action : Bool // failure-action element (DR-048, e.g. type:"help"): fires on a FAILED parse
   default_value : Value?
 } derive(Eq, Show)
 
@@ -169,6 +170,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     optional: e.optional,
     multiple: e.multiple,
     separator: e.separator,
+    fail_action: e.fail_action,
     default_value: e.default_value,
   }
 }
@@ -210,18 +212,6 @@ fn elem_repeat(e : ElemDef) -> RepeatSpec? {
   match e.repeat {
     Some(s) => Some(s)
     None => if e.optional { Some({ min: 0, max: Some(1), lazy: false }) } else { None }
-  }
-}
-
-/// Whether a repeat spec's cell ACCUMULATES into a list (DR-036 "flatten"): true iff the
-/// closure can bind >= 2 values — unbounded, or bounded with max >= 2. A max-1 repeat
-/// (including `optional`) binds a SCALAR cell (0-or-1), since flatten collapses a MULTI
-/// cons and there is at most one value. (This max=1 boundary is the PoC's realization of the
-/// DR-043/044 interaction — neither DR pins the 0/1 result shape; see journal.)
-fn repeat_accumulates(s : RepeatSpec) -> Bool {
-  match s.max {
-    None => true
-    Some(m) => m >= 2
   }
 }
 
@@ -320,18 +310,16 @@ fn ensure_entity(build : Build, e : ElemDef) -> Unit {
   // multiple installs "append" (DR-034). Deterministic core lowering — RepeatInst/MultipleInst
   // own the vocab for completeness, but which registry entry to install is a pure function of
   // the decl. If an element is both, multiple's append wins (the value-fold governs).
+  // Uniform array (DR-044 §1, kawaz 裁定): a repeat / multiple / separator element is ALWAYS an
+  // array regardless of cardinality — `repeat:{min:0,max:1}` (= optional 糖衣) is [] / [x], NOT a
+  // scalar. Declaring repetition means the result is the many-valued shape; scalar is opt-in via a
+  // collector (unwrap_single, DR-034 縮退). So max no longer gates the accumulator.
   let accum : String? = if e.multiple {
     Some("append")
   } else {
     match elem_repeat(e) {
-      Some(s) => if repeat_accumulates(s) { Some("flatten") } else { None } // max=1 → scalar
-      None =>
-        // a separator element (no repeat) still collects >= 2 pieces from one token → append.
-        if e.separator.is_some() {
-          Some("append")
-        } else {
-          None
-        }
+      Some(_) => Some("flatten") // any repeat (incl. optional/max=1) → the flatten accumulator
+      None => if e.separator.is_some() { Some("append") } else { None }
     }
   }
   build.entities.push({
@@ -361,9 +349,19 @@ fn inst_long(def : Definition, build : Build) -> Unit {
       let trigger = "--" + l
       match e.ty {
         TFlag =>
+          // A flag: fire the trigger and set name=true. A failure-action flag (DR-048, e.g. help)
+          // additionally emits a FailMark so a FAILED parse can fire it. 先食い/内部一体 (DR-041)
+          // means a dd-internal `--help` is raw-consumed and never runs this satellite.
           add_greedy(
             build,
-            maybe_root(e.is_link, Seq([Exact(trigger), Bind(e.name, VBool(true))])),
+            maybe_root(
+              e.is_link,
+              if e.fail_action {
+                Seq([Exact(trigger), Bind(e.name, VBool(true)), FailMark(e.name)])
+              } else {
+                Seq([Exact(trigger), Bind(e.name, VBool(true))])
+              },
+            ),
           )
         _ => {
           add_greedy(
@@ -541,6 +539,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     optional: copy.optional,
     multiple: copy.multiple,
     separator: copy.separator,
+    fail_action: copy.fail_action,
     default_value: copy.default_value,
   })
 }
@@ -713,6 +712,7 @@ fn head_progresses(
     Rooted(inner) => head_progresses(inner, registry, visiting)
     Bind(_, _) => false // binds without consuming
     EffMark(_, _) => false // applies an effect without consuming (DR-045, 0-token)
+    FailMark(_) => false // records a failure-action without consuming (DR-048, 0-token)
     Ref(r) => {
       for v in visiting {
         if v == r {
