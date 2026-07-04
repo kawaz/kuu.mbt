@@ -217,6 +217,40 @@ fn ambig_str(d : AmbiguousData) -> String {
   "ambiguous:" + d.interpretations.length().to_string()
 }
 
+// ── DR-054 definition-error accessors ─────────────────────────────────────────
+
+fn render_def_kind(k : DefErrKind) -> String {
+  match k {
+    DVocabIntersection => "vocab-intersection"
+    DUnknownVocab => "unknown-vocab"
+    DInvalidRange => "invalid-range"
+    DAbsentRef => "absent-ref"
+    DCircularRef => "circular-ref"
+    DZeroProgress => "zero-progress"
+    DConfigCycle => "config-cycle"
+  }
+}
+
+/// All definition errors as `element/kind`, sorted (DR-054 全列挙).
+fn deferrs_str(errs : Array[DefError]) -> String {
+  let items : Array[String] = []
+  for e in errs {
+    items.push("\{e.element}/\{render_def_kind(e.kind)}")
+  }
+  sort_items(items)
+  join_comma(items)
+}
+
+/// The hint of the first error whose element matches `element` (DR-054 §4 「次の手」).
+fn hint_of(errs : Array[DefError], element : String) -> String {
+  for e in errs {
+    if e.element == element {
+      return e.hint
+    }
+  }
+  "none"
+}
+
 // ── DR-053 structure accessors (the rich failure / ambiguous data) ────────────
 
 fn render_kind(k : ErrKind) -> String {
@@ -537,7 +571,7 @@ fn build_reg(
 ) -> Scope {
   match parse_definition(def, order, registry~) {
     Ok(sc) => sc
-    Err(msg) => abort("build failed: " + msg)
+    Err(errs) => abort("build failed: " + deferrs_str(errs))
   }
 }
 

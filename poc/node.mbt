@@ -7,6 +7,27 @@
 // closure), keeping the whole AST comparable (`derive(Eq, Show)`) for the
 // order-independence permutation test (DR-042).
 
+/// A definition-time (parse_definition) Error category (DR-054 §1). All are "lowering が構成できない
+/// / 全入力で壊れる" — Error, not warn. (warn 層 = 一部入力で驚きうるだけ, は lint の関心で PoC 射程外.)
+pub(all) enum DefErrKind {
+  DVocabIntersection // two installers own the same vocab (DR-042③)
+  DUnknownVocab // a special vocab owned by no installer in the chain (DR-042①)
+  DInvalidRange // an invalid value range (repeat min > max, etc., DR-052 ほか)
+  DAbsentRef // a ref target resolvable nowhere (scope + definitions, DR-032)
+  DCircularRef // a ref cycle with infinite structural expansion (DR-007/032)
+  DZeroProgress // a repeat unfold whose 1 iteration consumes no token (DR-043)
+  DConfigCycle // a config_file element taking its own path from config (DR-050 §5)
+} derive(Eq, Show)
+
+/// One definition-time Error (DR-054 §4): {element, kind, message, hint}. `hint` is the「次の手」
+/// (DR-042 完全性検査の様式). parse_definition enumerates ALL of these (no first-error 打ち切り).
+pub(all) struct DefError {
+  element : String
+  kind : DefErrKind
+  message : String
+  hint : String
+} derive(Eq, Show)
+
 /// The result-key axis of an element (DR-052). `export_key: string | null` unified: unspecified =
 /// name-derived key, a string = key-name override, null (or "" — normalized to null) = NO result
 /// key = nameless-同化 透過 (the value still propagates; only the key is gone). This is a RESULT

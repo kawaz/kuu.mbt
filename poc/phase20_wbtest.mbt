@@ -277,8 +277,9 @@ test "DR-050 §5 循環禁止: a config_file element cannot carry a config_key (
     [opt("config", TStr, long=["config"], config_file=true, config_key=Some(["config"]))],
     [],
   )
+  // DR-054: a config-cycle DefError.
   match parse_definition(def, cfg_order()) {
-    Err(m) => inspect(m, content="config_file element 'config' cannot have a config_key (循環禁止)")
+    Err(errs) => inspect(deferrs_str(errs), content="config/config-cycle")
     Ok(_) => abort("expected a 循環禁止 static error")
   }
 }

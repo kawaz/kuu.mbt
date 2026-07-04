@@ -146,16 +146,15 @@ test "DR-031 inherit: with no ancestor value, the child falls to its own default
 test "DR-042 ①': command / global / inherit vocab with no installer is a completeness error" {
   // A def using a vocab whose installer is absent from the chain errors, naming the
   // unowned vocab (§13.5 型). Checked for each new installer.
+  // DR-054: each is an unknown-vocab DefError (`(commands)` element for the command vocab).
   let cmd_def = def_cmd([], [], [cmd("x", def_([], []))])
   match parse_definition(cmd_def, [LongInst]) {
-    Err(m) =>
-      inspect(m, content="unknown special vocab 'command' — no installer claimed it")
+    Err(errs) => inspect(deferrs_str(errs), content="(commands)/unknown-vocab")
     Ok(_) => abort("expected command completeness error")
   }
   let global_def = def_cmd([opt("v", TFlag, long=["v"], global=true)], [], [])
   match parse_definition(global_def, [LongInst]) {
-    Err(m) =>
-      inspect(m, content="unknown special vocab 'global' — no installer claimed it")
+    Err(errs) => inspect(deferrs_str(errs), content="v/unknown-vocab")
     Ok(_) => abort("expected global completeness error")
   }
   let inherit_def = def_(
@@ -163,8 +162,7 @@ test "DR-042 ①': command / global / inherit vocab with no installer is a compl
     [],
   )
   match parse_definition(inherit_def, [LongInst]) {
-    Err(m) =>
-      inspect(m, content="unknown special vocab 'inherit' — no installer claimed it")
+    Err(errs) => inspect(deferrs_str(errs), content="t/unknown-vocab")
     Ok(_) => abort("expected inherit completeness error")
   }
 }

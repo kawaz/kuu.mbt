@@ -144,8 +144,10 @@ test "DR-043: a repeat head that consumes no token is a zero-progress error" {
   let def = def_([], [pos("loop", TStr, ref_=Some("noprogress"), repeat=rep(1))])
   let reg : Map[String, Node] = Map::new()
   reg.set("noprogress", Bind("x", VBool(true))) // binds 0 tokens
+  // DR-054: a zero-progress DefError (distinct from circular-ref — the ref head reaches a 0-token
+  // Bind, not a cycle).
   match parse_definition(def, [RepeatInst], registry=reg) {
-    Err(m) => inspect(m, content="repeat element 'loop' has a zero-progress head")
+    Err(errs) => inspect(deferrs_str(errs), content="loop/zero-progress")
     Ok(_) => abort("expected zero-progress error")
   }
 }

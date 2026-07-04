@@ -19,7 +19,7 @@ fn dr042_def() -> Definition {
 fn build_or_fail(def : Definition, order : Array[Installer]) -> Scope {
   match parse_definition(def, order) {
     Ok(sc) => sc
-    Err(msg) => abort("build failed: " + msg)
+    Err(errs) => abort("build failed: " + deferrs_str(errs))
   }
 }
 
@@ -69,26 +69,35 @@ test "DR-042 ①': the declaration layer is inert — def0 is unchanged, re-runs
 
 // ── invariant ③ 所有語彙の交差禁止 ────────────────────────────────────────────
 
-test "DR-042 ③: two installers claiming the same vocab is a registration error" {
-  // Registration rejects duplicate ownership before any building happens.
-  match parse_definition(dr042_def(), [LongInst, LongInst]) {
-    Err(msg) =>
-      inspect(msg, content="vocab 'long' is claimed by two installers")
+test "DR-042③/DR-054: two installers claiming the same vocab is a vocab-intersection Error" {
+  // DR-054: a definition-error union. The vocab intersection is one DefError of kind
+  // vocab-intersection, with a 次の手 hint. A long-only def isolates it (no other unowned vocab).
+  let long_only = def_([opt("a", TFlag, long=["a"])], [])
+  match parse_definition(long_only, [LongInst, LongInst]) {
+    Err(errs) => {
+      inspect(deferrs_str(errs), content="long/vocab-intersection")
+      inspect(
+        hint_of(errs, "long"),
+        content="remove the duplicate installer owning 'long' from the chain",
+      )
+    }
     Ok(_) => inspect("unexpected Ok", content="should have failed")
   }
 }
 
 // ── invariant ① completeness: leftover vocab => error ─────────────────────────
 
-test "DR-042 ①: special vocab with no installer is a completeness error" {
-  // The def carries env:PORT, but EnvInst is omitted from the chain. After all
-  // installers run, the leftover env vocab is reported as unknown (§13.5 型).
+test "DR-042①/DR-054: special vocab with no installer is an unknown-vocab Error (with hint)" {
+  // The def carries env:PORT, but EnvInst is omitted. DR-054: unknown-vocab DefError with a
+  // 「次の手」hint (register an installer owning the vocab).
   match parse_definition(dr042_def(), [LongInst, ShortInst, DdInst]) {
-    Err(msg) =>
+    Err(errs) => {
+      inspect(deferrs_str(errs), content="port/unknown-vocab")
       inspect(
-        msg,
-        content="unknown special vocab 'env:PORT' — no installer claimed it",
+        hint_of(errs, "port"),
+        content="register an installer owning 'env:PORT' in the chain (§13.5)",
       )
+    }
     Ok(_) => inspect("unexpected Ok", content="should have failed")
   }
 }

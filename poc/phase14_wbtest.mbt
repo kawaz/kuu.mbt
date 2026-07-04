@@ -173,8 +173,7 @@ test "DR-043 optional completeness: optional needs the repeat installer (it IS r
   // vocabulary owned by the repeat installer.
   let def = def_([], [pos("x", TStr, optional=true)])
   match parse_definition(def, [LongInst]) {
-    Err(m) =>
-      inspect(m, content="unknown special vocab 'repeat' — no installer claimed it")
+    Err(errs) => inspect(deferrs_str(errs), content="x/unknown-vocab") // DR-054: unknown-vocab (repeat)
     Ok(_) => abort("expected a repeat completeness error for optional")
   }
 }

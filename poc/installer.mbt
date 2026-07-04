@@ -645,31 +645,96 @@ fn tree_pass(order : Array[Installer], sb : SB, has_cf : Bool) -> Unit {
   }
 }
 
-/// Invariant ③: two installers owning the same vocab is a registration error.
-fn check_registration(order : Array[Installer]) -> String? {
+fn def_err(
+  element : String,
+  kind : DefErrKind,
+  message : String,
+  hint : String,
+) -> DefError {
+  { element, kind, message, hint }
+}
+
+/// Invariant ③ (DR-054): two installers owning the same vocab. Collects ALL intersections.
+fn collect_vocab_intersection(
+  order : Array[Installer],
+  out : Array[DefError],
+) -> Unit {
   let seen : Array[String] = []
   for inst in order {
     let v = owned_vocab(inst)
     for s in seen {
       if s == v {
-        return Some("vocab '\{v}' is claimed by two installers")
+        out.push(
+          def_err(
+            v,
+            DVocabIntersection,
+            "vocab '\{v}' is claimed by two installers",
+            "remove the duplicate installer owning '\{v}' from the chain",
+          ),
+        )
       }
     }
     seen.push(v)
   }
-  None
 }
 
-/// Invariant ①' completeness: a special vocab USED by the definition tree but OWNED
-/// by no installer in the chain is an error. With non-deletion the vocab always stays
-/// in the def, so completeness is "used vocab ∉ owned set" (not "leftover after
-/// consumption"). Scans the whole command subtree. `order` fixes the owned set.
-fn unowned_vocab(def : Definition, order : Array[Installer]) -> String? {
+/// Invariant ①' completeness (DR-054): every special vocab used by the tree but owned by no
+/// installer in the chain is an Error. Collects ALL (per element + commands).
+fn collect_unknown_vocab(
+  def : Definition,
+  order : Array[Installer],
+  out : Array[DefError],
+) -> Unit {
   let owned : Array[String] = []
   for inst in order {
     owned.push(owned_vocab(inst))
   }
-  scan_def_vocab(def, owned)
+  scan_unknown(def, owned, out)
+}
+
+fn scan_unknown(
+  def : Definition,
+  owned : Array[String],
+  out : Array[DefError],
+) -> Unit {
+  for e in def.options {
+    push_elem_unknown(e, owned, out)
+  }
+  for e in def.positionals {
+    push_elem_unknown(e, owned, out)
+  }
+  if def.commands.length() > 0 && !vocab_owned(owned, "command") {
+    out.push(
+      def_err(
+        "(commands)",
+        DUnknownVocab,
+        "unknown special vocab 'command'",
+        "add CommandInst to the installer chain",
+      ),
+    )
+  }
+  for c in def.commands {
+    scan_unknown(c.body, owned, out)
+  }
+}
+
+fn push_elem_unknown(
+  e : ElemDef,
+  owned : Array[String],
+  out : Array[DefError],
+) -> Unit {
+  match scan_elem_vocab(e, owned) {
+    Some(v) =>
+      out.push(
+        def_err(
+          e.name,
+          DUnknownVocab,
+          "unknown special vocab '\{v}' — no installer claimed it",
+          "register an installer owning '\{v}' in the chain (§13.5)",
+        ),
+      )
+    None => ()
+  }
 }
 
 fn vocab_owned(owned : Array[String], v : String) -> Bool {
@@ -720,31 +785,6 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   match e.config_key {
     Some(_) => if !vocab_owned(owned, "config") { return Some("config:config_key") }
     None => ()
-  }
-  None
-}
-
-fn scan_def_vocab(def : Definition, owned : Array[String]) -> String? {
-  for e in def.options {
-    match scan_elem_vocab(e, owned) {
-      Some(v) => return Some(v)
-      None => ()
-    }
-  }
-  for e in def.positionals {
-    match scan_elem_vocab(e, owned) {
-      Some(v) => return Some(v)
-      None => ()
-    }
-  }
-  if def.commands.length() > 0 && !vocab_owned(owned, "command") {
-    return Some("command")
-  }
-  for c in def.commands {
-    match scan_def_vocab(c.body, owned) {
-      Some(v) => return Some(v)
-      None => ()
-    }
   }
   None
 }
@@ -803,24 +843,181 @@ fn head_progresses(
   }
 }
 
-/// Scan the definition tree for a repeat element whose head makes no progress.
-fn repeat_progress_error(def : Definition, registry : Map[String, Node]) -> String? {
+/// The ref in HEAD position of a node (the first thing consumed), if any. A ref AFTER a consuming
+/// head (like a repeat's cons tail `Seq([head, Opt(Ref(self))])`) is NOT in head position, so a
+/// legitimate repeat self-ref returns None here — that is the distinction from a circular ref.
+fn head_ref_of(node : Node) -> String? {
+  match node {
+    Ref(r) => Some(r)
+    Seq(items) => if items.length() >= 1 { head_ref_of(items[0]) } else { None }
+    Or(alts) => {
+      for a in alts {
+        match head_ref_of(a) {
+          Some(r) => return Some(r)
+          None => ()
+        }
+      }
+      None
+    }
+    Rooted(inner) => head_ref_of(inner)
+    _ => None // a consuming or 0-token node in head position
+  }
+}
+
+/// Whether following head-position refs from `name` loops back (a circular ref, infinite structural
+/// expansion, DR-054). A repeat's self-ref does NOT loop here (its head is a consuming node, not a ref).
+fn head_cycles(name : String, registry : Map[String, Node], visiting : Array[String]) -> Bool {
+  for v in visiting {
+    if v == name {
+      return true
+    }
+  }
+  match registry.get(name) {
+    Some(tpl) =>
+      match head_ref_of(tpl) {
+        Some(next) => {
+          visiting.push(name)
+          let r = head_cycles(next, registry, visiting)
+          let _ = visiting.pop()
+          r
+        }
+        None => false
+      }
+    None => false
+  }
+}
+
+/// Whether a node's head-position ref reaches a cycle (used to keep a circular ref from also being
+/// reported as zero-progress).
+fn head_node_cycles(node : Node, registry : Map[String, Node]) -> Bool {
+  match head_ref_of(node) {
+    Some(r) => head_cycles(r, registry, [])
+    None => false
+  }
+}
+
+/// Zero-progress guard (DR-043 / DR-054): a repeat head must consume >= 1 token. Collects ALL such
+/// repeats — but a NON-progress that is actually a ref CYCLE is a circular ref (reported by
+/// collect_circular_ref), not zero-progress, so it is excluded here to keep the kinds distinct.
+fn collect_zero_progress(
+  def : Definition,
+  registry : Map[String, Node],
+  out : Array[DefError],
+) -> Unit {
   for e in def.positionals {
     match elem_repeat(e) {
-      Some(_) =>
-        if !head_progresses(elem_head(e), registry, []) {
-          return Some("repeat element '\{e.name}' has a zero-progress head")
+      Some(_) => {
+        let head = elem_head(e)
+        if !head_progresses(head, registry, []) && not(head_node_cycles(head, registry)) {
+          out.push(
+            def_err(
+              e.name,
+              DZeroProgress,
+              "repeat element '\{e.name}' has a zero-progress head",
+              "give the repeat head a token-consuming element",
+            ),
+          )
+        }
+      }
+      None => ()
+    }
+  }
+  for c in def.commands {
+    collect_zero_progress(c.body, registry, out)
+  }
+}
+
+/// Circular ref (DR-054): a registry template whose head-position ref chain loops → infinite
+/// structural expansion. Repeat-generated self-refs pass (their head is a consuming node). Collects all.
+fn collect_circular_ref(
+  registry : Map[String, Node],
+  out : Array[DefError],
+) -> Unit {
+  for name, _ in registry {
+    // skip the lazy-marker keys the repeat installer registers ("lazy:<name>").
+    if name.length() >= 5 && name.substring(start=0, end=5) == "lazy:" {
+      continue
+    }
+    if head_cycles(name, registry, []) {
+      out.push(
+        def_err(
+          name,
+          DCircularRef,
+          "ref template '\{name}' is circular (infinite structural expansion)",
+          "break the ref cycle or add a token-consuming head before the self-reference",
+        ),
+      )
+    }
+  }
+}
+
+/// Absent ref (DR-054 / DR-032): an element ref_target resolvable nowhere (registry has it after
+/// init_sb's repeat lowering + any pre-registered templates). Collects all.
+fn collect_absent_ref(
+  def : Definition,
+  registry : Map[String, Node],
+  out : Array[DefError],
+) -> Unit {
+  for e in def.options {
+    check_elem_absent_ref(e, registry, out)
+  }
+  for e in def.positionals {
+    check_elem_absent_ref(e, registry, out)
+  }
+  for c in def.commands {
+    collect_absent_ref(c.body, registry, out)
+  }
+}
+
+fn check_elem_absent_ref(
+  e : ElemDef,
+  registry : Map[String, Node],
+  out : Array[DefError],
+) -> Unit {
+  match e.ref_target {
+    Some(r) =>
+      match registry.get(r) {
+        Some(_) => ()
+        None =>
+          out.push(
+            def_err(
+              e.name,
+              DAbsentRef,
+              "ref target '\{r}' is not defined in scope or definitions",
+              "define '\{r}' as a template (definitions) or in the scope",
+            ),
+          )
+      }
+    None => ()
+  }
+}
+
+/// Invalid value range (DR-054 / DR-052): repeat min > max. Collects all. (export_key bool is not
+/// representable in the PoC's ExportKey enum, so there is nothing to check for it — see journal.)
+fn collect_invalid_range(def : Definition, out : Array[DefError]) -> Unit {
+  for e in def.positionals {
+    match e.repeat {
+      Some(spec) =>
+        match spec.max {
+          Some(mx) =>
+            if spec.min > mx {
+              out.push(
+                def_err(
+                  e.name,
+                  DInvalidRange,
+                  "repeat min \{spec.min} > max \{mx}",
+                  "set the repeat max >= min",
+                ),
+              )
+            }
+          None => ()
         }
       None => ()
     }
   }
   for c in def.commands {
-    match repeat_progress_error(c.body, registry) {
-      Some(v) => return Some(v)
-      None => ()
-    }
+    collect_invalid_range(c.body, out)
   }
-  None
 }
 
 /// Whether the definition tree has any `type:"config_file"` element (DR-050): if so, a config
@@ -844,26 +1041,36 @@ fn has_config_file(def : Definition) -> Bool {
   false
 }
 
-/// 循環禁止 (DR-050 §5): a config_file element cannot itself carry a config_key (it would take its
-/// own path from the config it is supposed to locate). Static check.
-fn config_cycle_error(def : Definition) -> String? {
+/// config cycle (DR-050 §5 / DR-054): a config_file element cannot carry a config_key (it would take
+/// its own path from the config it locates). Collects all.
+fn collect_config_cycle(def : Definition, out : Array[DefError]) -> Unit {
   for e in def.options {
     if e.is_config_file && e.config_key.is_some() {
-      return Some("config_file element '\{e.name}' cannot have a config_key (循環禁止)")
+      out.push(
+        def_err(
+          e.name,
+          DConfigCycle,
+          "config_file element '\{e.name}' cannot have a config_key (循環禁止)",
+          "remove config_key from the config_file element",
+        ),
+      )
     }
   }
   for e in def.positionals {
     if e.is_config_file && e.config_key.is_some() {
-      return Some("config_file element '\{e.name}' cannot have a config_key (循環禁止)")
+      out.push(
+        def_err(
+          e.name,
+          DConfigCycle,
+          "config_file element '\{e.name}' cannot have a config_key (循環禁止)",
+          "remove config_key from the config_file element",
+        ),
+      )
     }
   }
   for c in def.commands {
-    match config_cycle_error(c.body) {
-      Some(v) => return Some(v)
-      None => ()
-    }
+    collect_config_cycle(c.body, out)
   }
-  None
 }
 
 /// A stable signature of one scope's build layer, for fixpoint detection. Node /
@@ -928,29 +1135,27 @@ fn materialize(sb : SB) -> Scope {
 /// add-if-absent and global copies over a finite element×scope space (a copy of a
 /// copy is the same option by name, which add-if-absent stops), so a pass that
 /// changes nothing is the fixpoint.
+/// Returns Ok(atomic scope) or Err(ALL definition-time errors) (DR-054 §4 の 2 値 union). Every
+/// static check runs and appends to one list — no first-error 打ち切り (コンパイラの定石). Each
+/// DefError carries {element, kind, message, hint}.
 pub fn parse_definition(
   def0 : Definition,
   order : Array[Installer],
   registry~ : Map[String, Node] = Map::new(),
-) -> Result[Scope, String] {
-  match check_registration(order) {
-    Some(msg) => return Err(msg)
-    None => ()
-  }
+) -> Result[Scope, Array[DefError]] {
   let def = clone_def(def0)
-  match unowned_vocab(def, order) {
-    Some(v) => return Err("unknown special vocab '\{v}' — no installer claimed it")
-    None => ()
-  }
+  // init_sb populates `registry` with repeat-lowering templates, so the ref checks below see them.
   let sb = init_sb(def, registry)
-  match repeat_progress_error(def, registry) {
-    Some(v) => return Err(v)
-    None => ()
-  }
-  // 循環禁止 (DR-050 §5): the config_file element cannot take its own path from config.
-  match config_cycle_error(def) {
-    Some(v) => return Err(v)
-    None => ()
+  let errs : Array[DefError] = []
+  collect_vocab_intersection(order, errs) // DR-042③
+  collect_unknown_vocab(def, order, errs) // DR-042①
+  collect_invalid_range(def, errs) // DR-052 (repeat min>max)
+  collect_absent_ref(def, registry, errs) // DR-032
+  collect_circular_ref(registry, errs) // DR-007/032
+  collect_zero_progress(def, registry, errs) // DR-043
+  collect_config_cycle(def, errs) // DR-050 §5
+  if errs.length() > 0 {
+    return Err(errs) // definition-error: ALL enumerated
   }
   // 同型 default (DR-050 §3): a config seat is declared on every value cell when a config_file
   // element exists (its resolved path feeds the provider). Computed once; threaded to ensure_entity.
@@ -964,7 +1169,14 @@ pub fn parse_definition(
     }
     iters = iters + 1
     if iters > 100 {
-      return Err("installer chain did not converge (fixpoint > 100 iterations)")
+      return Err([
+        def_err(
+          "(chain)",
+          DUnknownVocab,
+          "installer chain did not converge (> 100 iterations)",
+          "check for a runaway global copy or a mis-registered installer",
+        ),
+      ])
     }
   }
   Ok(materialize(sb))
