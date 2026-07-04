@@ -71,6 +71,55 @@ fn action_marker(name : String, pos : Int) -> Binding {
   }
 }
 
+/// A deprecation marker binding (DR-058): key `@depr:<element>`, recording that a deprecated entry
+/// (DR-057 alias) was used to reach the canonical cell. Rides in the effect column like an action
+/// marker; the result builder skips it (bookkeeping, not a value), and `warnings_of` collects it.
+fn depr_marker(element : String) -> Binding {
+  {
+    key: "@depr:" + element,
+    op: Set,
+    value: VBool(false),
+    source: Cli,
+    scope: [],
+    link: false,
+  }
+}
+
+/// Whether a result key is a deprecation marker (`@depr:...`).
+pub fn is_depr_key(k : String) -> Bool {
+  let p = "@depr:"
+  k.length() >= p.length() && k.substring(start=0, end=p.length()) == p
+}
+
+/// The deprecated canonical element names recorded on a Success outcome (DR-058 warnings). Each
+/// `@depr:<element>` marker in the winning path's bindings yields one warning (deduped, sorted by
+/// the renderer). A non-Success outcome carries no single path, so no warnings here (PoC scope).
+pub fn warnings_of(o : Outcome) -> Array[String] {
+  let out : Array[String] = []
+  match o {
+    Success(binds) =>
+      for b in binds {
+        if is_depr_key(b.key) {
+          let name = b.key.substring(start=6, end=b.key.length()) // drop "@depr:" (6 chars)
+          if not(str_mem(out, name)) {
+            out.push(name)
+          }
+        }
+      }
+    _ => ()
+  }
+  out
+}
+
+fn str_mem(xs : Array[String], v : String) -> Bool {
+  for x in xs {
+    if x == v {
+      return true
+    }
+  }
+  false
+}
+
 /// The action name if `b` is a failure-action marker, else None.
 fn action_of(b : Binding) -> String? {
   if is_action_key(b.key) {
@@ -186,6 +235,10 @@ fn eval(
       // A failure-action mark (DR-048): 0-token, records `name` selected at this argv position.
       // The position rides in the marker's value so a multi-action failure fires the argv-min one.
       [Accept(pos, [action_marker(name, pos)])]
+    DeprMark(name) =>
+      // A deprecation mark (DR-058): 0-token, records that a deprecated entry (DR-057 alias) reached
+      // the canonical cell `name`. The value binding sits alongside; only a warning is added.
+      [Accept(pos, [depr_marker(name)])]
     Or(alts) => {
       let out : Array[Branch] = []
       for a in alts {

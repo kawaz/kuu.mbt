@@ -168,12 +168,15 @@ fn walk_short(
   let c = body[i]
   match short_lookup(entries, c) {
     None => []
-    Some(e) =>
+    Some(e) => {
+      // DR-058: a deprecated cluster entry rides a `@depr:<name>` warning marker alongside its
+      // value binding (the value is unchanged; only a warning is added). `dm` is [] for a normal entry.
+      let dm : Array[Binding] = if e.depr { [depr_marker(e.name)] } else { [] }
       match e.kind {
         TFlag =>
           walk_short(
-            entries, body, i + 1, cat(acc, [mkb(e.name, VBool(true), Cli)]), toks,
-            pos,
+            entries, body, i + 1, cat(acc, cat([mkb(e.name, VBool(true), Cli)], dm)),
+            toks, pos,
           )
         _ => {
           let out : Array[Branch] = []
@@ -184,7 +187,7 @@ fn walk_short(
             let vstr = chars_to_str(body, vstart, j)
             match short_val(e, vstr) {
               Some(b) =>
-                for r in walk_short(entries, body, j, cat(acc, [b]), toks, pos) {
+                for r in walk_short(entries, body, j, cat(acc, cat([b], dm)), toks, pos) {
                   out.push(r)
                 }
               None => ()
@@ -194,7 +197,7 @@ fn walk_short(
           // next-token value (space form) only when this value char is the tail.
           if vstart == body.length() && pos + 1 < toks.length() {
             match short_val(e, toks[pos + 1]) {
-              Some(b) => out.push(Accept(pos + 2, cat(acc, [b])))
+              Some(b) => out.push(Accept(pos + 2, cat(acc, cat([b], dm))))
               None =>
                 if e.kind == TNum || e.kind == TInt {
                   out.push(Held(pe_parse(e.name, toks[pos + 1], pos + 1), []))
@@ -204,5 +207,6 @@ fn walk_short(
           out
         }
       }
+    }
   }
 }

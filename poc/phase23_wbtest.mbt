@@ -61,8 +61,8 @@ test "DR-053 §3: an ambiguous parse enumerates every interpretation as a result
   // different interpretations, each a result view — the f-marker makes both parse (DR-038 例).
   let short = NativeMatch(
     ShortCombine(prefix="-", entries=[
-      { ch: 'n', name: "n", kind: TNum },
-      { ch: 'f', name: "f", kind: TFlag },
+      { ch: 'n', name: "n", kind: TNum, depr: false },
+      { ch: 'f', name: "f", kind: TFlag, depr: false },
     ]),
   )
   let g = scope([short], [])

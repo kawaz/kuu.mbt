@@ -94,7 +94,7 @@ fn join_comma(items : Array[String]) -> String {
 }
 
 fn is_marker(k : String) -> Bool {
-  k == "[]" || k == "{}" || is_action_key(k)
+  k == "[]" || k == "{}" || is_action_key(k) || is_depr_key(k)
 }
 
 /// `key=value` pairs, sorted — the visible result of a parse. Result-structure markers
@@ -264,6 +264,14 @@ fn render_kind(k : ErrKind) -> String {
 /// One error as `element@argv_pos/kind` (message dropped for a compact spec-string).
 fn render_err(pe : ParseError) -> String {
   "\{pe.element}@\{pe.argv_pos}/\{render_kind(pe.kind)}"
+}
+
+/// The deprecation warnings on a Success outcome, sorted (DR-058 warnings). Each is the canonical
+/// element name reached via a deprecated entry (DR-057 alias). Empty = no deprecated entry used.
+fn warnings_str(o : Outcome) -> String {
+  let ws = warnings_of(o)
+  sort_items(ws)
+  join_comma(ws)
 }
 
 /// ALL held errors of a Failure, sorted (DR-053 §2 全保持).
@@ -491,6 +499,7 @@ fn opt(
     conflicts_with: conflicts,
     exclusive_group: exclusive,
     value_requires,
+    deprecated: false,
     default_value: default,
   }
 }
@@ -541,6 +550,7 @@ fn pos(
     conflicts_with: [],
     exclusive_group: [],
     value_requires: [],
+    deprecated: false,
     default_value: default,
   }
 }
@@ -570,6 +580,7 @@ fn dd_marker() -> ElemDef {
     conflicts_with: [],
     exclusive_group: [],
     value_requires: [],
+    deprecated: false,
     default_value: None,
   }
 }
@@ -593,20 +604,37 @@ fn build_reg(
 
 /// Definition constructors — keep `commands` out of test literals so adding tree
 /// support did not churn every def site.
-fn def_(options : Array[ElemDef], positionals : Array[ElemDef]) -> Definition {
-  { options, positionals, commands: [] }
+fn def_(
+  options : Array[ElemDef],
+  positionals : Array[ElemDef],
+  aliases~ : Array[AliasDef] = [],
+) -> Definition {
+  { options, positionals, commands: [], aliases }
 }
 
 fn def_cmd(
   options : Array[ElemDef],
   positionals : Array[ElemDef],
   commands : Array[CommandDef],
+  aliases~ : Array[AliasDef] = [],
 ) -> Definition {
-  { options, positionals, commands }
+  { options, positionals, commands, aliases }
 }
 
 fn cmd(name : String, body : Definition, export~ : ExportKey = EkUnset) -> CommandDef {
   { name, body, export_key: export }
+}
+
+/// An alias declaration (DR-057). `name` None = reuse the canonical name (short-only alias); `long`
+/// None = inherit name-derived variants, Some(xs) = explicit override (差分上書き, Some([]) cuts variants).
+fn alias(
+  target : String,
+  name~ : String? = None,
+  short~ : Array[Char] = [],
+  long~ : Array[String]? = None,
+  deprecated~ : Bool = false,
+) -> AliasDef {
+  { target, name, short, long_override: long, deprecated }
 }
 
 /// Order-independent rendering of a built scope: greedy and entities sorted (the

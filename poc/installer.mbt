@@ -37,7 +37,25 @@ pub(all) struct ElemDef {
   conflicts_with : Array[String] // constraint installer (DR-055): 対称ペア排他 — both committed → conflict
   exclusive_group : Array[String] // constraint installer (DR-047): group labels; >1 group member committed → conflict
   value_requires : Array[(String, Array[String])] // DR-055 §1: (value → required) — 値の枝に付いた requires
+  deprecated : Bool // DR-058: using this entry emits a `@depr:<name>` warning. Set on a lowered alias entry-copy
   default_value : Value?
+} derive(Eq, Show)
+
+/// An alias declaration (DR-057): the参照ファミリー third member (ref / link / **alias**). Written as an
+/// INDEPENDENT element `{alias: "port", short: "n"}` — the entry form is decided by the alias's OWN
+/// declaration, not a canonical-side list (§1, no入口軸 ambiguity). `target` names the canonical cell/
+/// command the alias points at. `name` is the alias's own name (None = reuse the canonical name, used
+/// when the alias只 declares an explicit spelling like short). `short` is the alias's explicit short
+/// (used directly — canonical's short is NOT inherited, §3). `long_override` (DR-007差分上書き): None =
+/// no `long` key → inherit canonical's name-derived variants re-derived under the alias name; Some(xs)
+/// = explicit `long` → replace (Some([]) cuts the inherited variants — the base spelling still comes
+/// from the alias name). `deprecated` (DR-058): this entry is a旧 spelling — using it warns.
+pub(all) struct AliasDef {
+  target : String
+  name : String?
+  short : Array[Char]
+  long_override : Array[String]?
+  deprecated : Bool
 } derive(Eq, Show)
 
 /// A variant entry (DR-011 variant DSL / DR-045 effect descriptors). Declares a distinct
@@ -78,6 +96,7 @@ pub(all) struct Definition {
   options : Array[ElemDef]
   positionals : Array[ElemDef]
   commands : Array[CommandDef]
+  aliases : Array[AliasDef] // DR-057: alias declarations, desugared into option entry-copies / command defs
 } derive(Eq, Show)
 
 /// The canonical installers (DR-042 §canonical installer セット + DR-043 repeat/multiple).
@@ -93,6 +112,7 @@ pub(all) enum Installer {
   MultipleInst
   ConfigInst
   ConstraintInst
+  AliasInst
 } derive(Eq, Show)
 
 fn owned_vocab(i : Installer) -> String {
@@ -108,6 +128,7 @@ fn owned_vocab(i : Installer) -> String {
     MultipleInst => "multiple"
     ConfigInst => "config" // owns both type:"config_file" and config_key (DR-050)
     ConstraintInst => "constraint" // requires / conflicts_with / exclusive_group (DR-055)
+    AliasInst => "alias" // alias declarations (DR-057), desugared into entry-copies / command defs
   }
 }
 
@@ -195,6 +216,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     conflicts_with: e.conflicts_with,
     exclusive_group: e.exclusive_group,
     value_requires: e.value_requires,
+    deprecated: e.deprecated,
     default_value: e.default_value,
   }
 }
@@ -212,15 +234,23 @@ fn clone_def(d : Definition) -> Definition {
   for c in d.commands {
     cs.push({ name: c.name, body: clone_def(c.body), export_key: c.export_key })
   }
-  { options: os, positionals: ps, commands: cs }
+  let als : Array[AliasDef] = []
+  for a in d.aliases {
+    als.push(a) // AliasDef is immutable value data (no nested mutable arrays that alias installer mutates)
+  }
+  { options: os, positionals: ps, commands: cs, aliases: als }
 }
 
 /// Build the result-key map (DR-052): every element / command name → its export_key. Used by the
 /// post-parse result remap (apply_export_keys). export_key is a RESULT concern only, so it lives
 /// outside the AtomicAST — the map is read straight off the Definition, not the built Scope.
 pub fn build_export_map(def : Definition) -> Map[String, ExportKey] {
+  // Desugar a clone first (DR-057): a command alias becomes a command whose export_key is EkKey(canonical),
+  // so `co → checkout` shows up in the map exactly as the built scope keys it (結果キーは canonical のみ).
+  let d = clone_def(def)
+  desugar_aliases(d)
   let m : Map[String, ExportKey] = Map::new()
-  collect_export(def, m)
+  collect_export(d, m)
   m
 }
 
@@ -469,7 +499,8 @@ fn inst_short(def : Definition, build : Build) -> Unit {
   let sh_entries : Array[ShortEntry] = []
   for e in def.options {
     for c in e.short {
-      sh_entries.push({ ch: c, name: e.name, kind: e.ty })
+      // DR-058: a deprecated alias entry-copy carries `deprecated`, so its cluster entry warns on use.
+      sh_entries.push({ ch: c, name: e.name, kind: e.ty, depr: e.deprecated })
     }
   }
   if sh_entries.length() > 0 {
@@ -600,6 +631,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     conflicts_with: copy.conflicts_with,
     exclusive_group: copy.exclusive_group,
     value_requires: copy.value_requires,
+    deprecated: copy.deprecated,
     default_value: copy.default_value,
   })
 }
@@ -644,6 +676,8 @@ fn apply_node(inst : Installer, sb : SB) -> Unit {
     MultipleInst => () // accumulator flag set deterministically in ensure_entity
     ConfigInst => () // config seat set deterministically in ensure_entity (席宣言型, DR-050/042 ④)
     ConstraintInst => inst_constraint(sb.decl, sb.build)
+    AliasInst => () // desugared deterministically before init_sb (like repeat); entry-copies are then
+    //                expanded by long/short/command in the fixpoint (DR-057 §4). See desugar_aliases.
   }
 }
 
@@ -696,6 +730,197 @@ fn str_in(xs : Array[String], v : String) -> Bool {
     }
   }
   false
+}
+
+// ── alias desugaring (DR-057) ────────────────────────────────────────────────
+
+/// Whether `s` contains `sub` as a substring (used to detect a name-derived variant trigger:
+/// a variant is name-derived iff its trigger contains the canonical name, DR-057 §3).
+fn str_has_sub(s : String, sub : String) -> Bool {
+  if sub.length() == 0 {
+    return true
+  }
+  let cs = to_chars(s)
+  let cu = to_chars(sub)
+  if cu.length() > cs.length() {
+    return false
+  }
+  let mut i = 0
+  while i + cu.length() <= cs.length() {
+    let mut k = 0
+    let mut ok = true
+    while k < cu.length() {
+      if cs[i + k] != cu[k] {
+        ok = false
+        break
+      }
+      k = k + 1
+    }
+    if ok {
+      return true
+    }
+    i = i + 1
+  }
+  false
+}
+
+/// Replace the FIRST occurrence of `from` in `s` with `to`. Used to re-derive a name-derived
+/// variant trigger under the alias name (DR-057 §3: "--no-ssl" with ssl→tls becomes "--no-tls").
+fn str_replace_first(s : String, from : String, to : String) -> String {
+  let cs = to_chars(s)
+  let cf = to_chars(from)
+  if cf.length() == 0 || cf.length() > cs.length() {
+    return s
+  }
+  let mut i = 0
+  while i + cf.length() <= cs.length() {
+    let mut k = 0
+    let mut ok = true
+    while k < cf.length() {
+      if cs[i + k] != cf[k] {
+        ok = false
+        break
+      }
+      k = k + 1
+    }
+    if ok {
+      let buf = StringBuilder::new()
+      buf.write_string(chars_to_str(cs, 0, i))
+      buf.write_string(to)
+      buf.write_string(chars_to_str(cs, i + cf.length(), cs.length()))
+      return buf.to_string()
+    }
+    i = i + 1
+  }
+  s
+}
+
+/// Find a canonical option/positional element by name.
+fn find_elem(def : Definition, name : String) -> ElemDef? {
+  for e in def.options {
+    if e.name == name {
+      return Some(e)
+    }
+  }
+  for e in def.positionals {
+    if e.name == name {
+      return Some(e)
+    }
+  }
+  None
+}
+
+fn find_command(def : Definition, name : String) -> CommandDef? {
+  for c in def.commands {
+    if c.name == name {
+      return Some(c)
+    }
+  }
+  None
+}
+
+/// An empty ElemDef body: an alias entry-copy carries ONLY entry spellings + the canonical name;
+/// 値源 (env / default) ・結果キー・制約は実体側のまま (DR-057 §3), so none of those fields are set.
+fn alias_entry(
+  canonical_name : String,
+  ty : Ty,
+  long : Array[String],
+  variants : Array[Variant],
+  short : Array[Char],
+  deprecated : Bool,
+) -> ElemDef {
+  {
+    name: canonical_name, // effects / entity / result key all key by the CANONICAL name (link 同型)
+    ty,
+    long,
+    variants,
+    short,
+    env: [],
+    is_dd: false,
+    is_global: false,
+    is_inherit: false,
+    is_link: false,
+    ref_target: None,
+    repeat: None,
+    optional: false,
+    multiple: false,
+    separator: None,
+    fail_action: false,
+    is_config_file: false,
+    config_key: None,
+    export_key: EkUnset,
+    requires: [],
+    conflicts_with: [],
+    exclusive_group: [],
+    value_requires: [],
+    deprecated,
+    default_value: None,
+  }
+}
+
+/// Desugar alias declarations (DR-057) into option entry-copies / command defs. Runs once as a
+/// deterministic pre-pass (after the completeness check confirmed AliasInst owns "alias"), before
+/// init_sb builds the scope tree. Each entry-copy keys by the CANONICAL name (so its satellites bind
+/// the canonical cell — link 同型 — and the result key stays canonical), carries the re-derived
+/// spellings, and is expanded by the long / short / command installers in the fixpoint (DR-057 §4:
+/// "alias installer は入口形式を知らない"). Recurses into command subtrees.
+fn desugar_aliases(def : Definition) -> Unit {
+  for a in def.aliases {
+    let alias_name = match a.name {
+      Some(n) => n
+      None => a.target // no explicit name → reuse the canonical name (e.g. a short-only alias)
+    }
+    match find_elem(def, a.target) {
+      Some(canon) => {
+        // base long spelling: name-derived (§3 / DESIGN §14.5). It exists iff the canonical has a
+        // name-derived base (its long array contains its own name). Re-derived = the ALIAS name.
+        let long : Array[String] = []
+        if str_in(canon.long, canon.name) {
+          long.push(alias_name)
+        }
+        // an explicit `long` override (DR-007 差分上書き) adds its own spellings AND cuts inherited variants.
+        let variants : Array[Variant] = []
+        match a.long_override {
+          Some(extra) =>
+            for l in extra {
+              if not(str_in(long, l)) {
+                long.push(l)
+              }
+            }
+          None =>
+            // inherit canonical's NAME-DERIVED variants, re-derived under the alias name. A variant
+            // is name-derived iff its trigger contains the canonical name (DR-057 §3); an explicit
+            // trigger (e.g. "gzip" for compress) does not, and is NOT inherited (明示綴り非継承).
+            for v in canon.variants {
+              if str_has_sub(v.trigger, canon.name) {
+                variants.push({
+                  trigger: str_replace_first(v.trigger, canon.name, alias_name),
+                  op: v.op,
+                  operand: v.operand,
+                })
+              }
+            }
+        }
+        def.options.push(
+          alias_entry(canon.name, canon.ty, long, variants, copy_chars(a.short), a.deprecated),
+        )
+      }
+      None =>
+        // a command alias: co → checkout の部分木, 結果キーは checkout (export_key で canonical に寄せる).
+        match find_command(def, a.target) {
+          Some(cmd) =>
+            def.commands.push({
+              name: alias_name,
+              body: clone_def(cmd.body),
+              export_key: EkKey(a.target), // 結果キーは canonical のみ (DR-057 §2)
+            })
+          None => () // dangling alias target: left for a future absent-ref check (out of PoC scope)
+        }
+    }
+  }
+  for c in def.commands {
+    desugar_aliases(c.body)
+  }
 }
 
 fn add_constraint(build : Build, c : Constraint) -> Unit {
@@ -786,6 +1011,18 @@ fn scan_unknown(
         DUnknownVocab,
         "unknown special vocab 'command'",
         "add CommandInst to the installer chain",
+      ),
+    )
+  }
+  // alias vocab (DR-057): alias declarations owned by AliasInst. A scope-level check (aliases are
+  // not per-ElemDef), mirroring commands. Absent AliasInst → the alias entries are never expanded.
+  if def.aliases.length() > 0 && !vocab_owned(owned, "alias") {
+    out.push(
+      def_err(
+        "(aliases)",
+        DUnknownVocab,
+        "unknown special vocab 'alias'",
+        "add AliasInst to the installer chain",
       ),
     )
   }
@@ -903,6 +1140,7 @@ fn head_progresses(
     Bind(_, _) => false // binds without consuming
     EffMark(_, _) => false // applies an effect without consuming (DR-045, 0-token)
     FailMark(_) => false // records a failure-action without consuming (DR-048, 0-token)
+    DeprMark(_) => false // records a deprecation warning without consuming (DR-058, 0-token)
     Ref(r) => {
       for v in visiting {
         if v == r {
@@ -1239,10 +1477,12 @@ pub fn parse_definition(
 ) -> Result[Scope, Array[DefError]] {
   let def = clone_def(def0)
   // init_sb populates `registry` with repeat-lowering templates, so the ref checks below see them.
-  let sb = init_sb(def, registry)
+  // The alias entry-copies carry no refs/repeats and command aliases clone already-checked bodies,
+  // so the static checks run on the pre-desugar def (this first tree is only for registry population).
+  let _ = init_sb(def, registry)
   let errs : Array[DefError] = []
   collect_vocab_intersection(order, errs) // DR-042③
-  collect_unknown_vocab(def, order, errs) // DR-042①
+  collect_unknown_vocab(def, order, errs) // DR-042① (incl. the alias vocab check)
   collect_invalid_range(def, errs) // DR-052 (repeat min>max)
   collect_absent_ref(def, registry, errs) // DR-032
   collect_circular_ref(registry, errs) // DR-007/032
@@ -1251,6 +1491,11 @@ pub fn parse_definition(
   if errs.length() > 0 {
     return Err(errs) // definition-error: ALL enumerated
   }
+  // Desugar alias declarations (DR-057) now that completeness confirmed AliasInst owns "alias" (else
+  // the aliases would have raised unknown-vocab above). Deterministic pre-pass: adds option
+  // entry-copies / command defs keyed by the canonical name, which the fixpoint installers expand.
+  desugar_aliases(def)
+  let sb = init_sb(def, registry) // rebuild the scope tree over the desugared definition
   // 同型 default (DR-050 §3): a config seat is declared on every value cell when a config_file
   // element exists (its resolved path feeds the provider). Computed once; threaded to ensure_entity.
   let has_cf = has_config_file(def)

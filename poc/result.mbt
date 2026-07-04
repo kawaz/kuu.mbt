@@ -25,7 +25,7 @@ fn str_contains(xs : Array[String], v : String) -> Bool {
 }
 
 fn is_sentinel(k : String) -> Bool {
-  k == "[]" || k == "{}" || k == "" || is_action_key(k)
+  k == "[]" || k == "{}" || k == "" || is_action_key(k) || is_depr_key(k)
 }
 
 fn has_direct_key(binds : Array[Binding], key : String) -> Bool {

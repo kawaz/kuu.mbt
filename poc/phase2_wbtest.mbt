@@ -13,6 +13,7 @@ fn dr042_def() -> Definition {
     ],
     positionals: [dd_marker(), pos("dir", TStr)],
     commands: [],
+    aliases: [],
   }
 }
 

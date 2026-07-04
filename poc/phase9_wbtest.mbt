@@ -36,8 +36,8 @@ test "DR-038: two entries, same entity+source, DIFFERENT value stay distinct => 
   // component of the effect key, so same-entity/different-value does NOT merge.)
   let short = NativeMatch(
     ShortCombine(prefix="-", entries=[
-      { ch: 'n', name: "n", kind: TNum },
-      { ch: 'f', name: "f", kind: TFlag },
+      { ch: 'n', name: "n", kind: TNum, depr: false },
+      { ch: 'f', name: "f", kind: TFlag, depr: false },
     ]),
   )
   let g = scope([short], [])

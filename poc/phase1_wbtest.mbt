@@ -39,8 +39,8 @@ test "DR-041 §3: -n1.0f is ambiguous when -f is defined (value-attach vs split)
   // n=1.0 + `-f` fired. Both fully consume the single token => ambiguous (DR-038).
   let short = NativeMatch(
     ShortCombine(prefix="-", entries=[
-      { ch: 'n', name: "n", kind: TNum },
-      { ch: 'f', name: "f", kind: TFlag },
+      { ch: 'n', name: "n", kind: TNum, depr: false },
+      { ch: 'f', name: "f", kind: TFlag, depr: false },
     ]),
   )
   let g = scope([short], [])
@@ -53,8 +53,8 @@ test "DR-041 §3: -n1.0 is unambiguous — no split point yields a valid suffix"
   // absorb the suffix.
   let short = NativeMatch(
     ShortCombine(prefix="-", entries=[
-      { ch: 'n', name: "n", kind: TNum },
-      { ch: 'f', name: "f", kind: TFlag },
+      { ch: 'n', name: "n", kind: TNum, depr: false },
+      { ch: 'f', name: "f", kind: TFlag, depr: false },
     ]),
   )
   let g = scope([short], [])
@@ -65,7 +65,7 @@ test "DR-041 §3: -n1.0f collapses to one reading when -f is NOT defined" {
   // Drop `-f` from the definition: the "f" suffix can no longer be a flag, so the
   // only reading is n=1.0 (from the whole "1.0f"). Ambiguity is definition-driven.
   let short = NativeMatch(
-    ShortCombine(prefix="-", entries=[{ ch: 'n', name: "n", kind: TNum }]),
+    ShortCombine(prefix="-", entries=[{ ch: 'n', name: "n", kind: TNum, depr: false }]),
   )
   let g = scope([short], [])
   inspect(render_outcome(parse(g, ["-n1.0f"])), content="ok{n=1}")

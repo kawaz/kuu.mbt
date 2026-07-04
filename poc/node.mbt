@@ -78,6 +78,13 @@ pub(all) enum Node {
   /// effect: `--no-color` → `Seq([Exact("--no-color"), EffMark("color", Unset)])` — the
   /// `link` (to the color cell) is by-name, the `effect` is the op carried here.
   EffMark(String, EffectOp)
+  /// 0-token deprecation mark (DR-058): records that a deprecated ENTRY (an alias with
+  /// `deprecated: true`, DR-057) was used to reach the named canonical cell. Lowered by the long
+  /// installer onto a deprecated element's satellite (`Seq([Exact("--old"), Bind("port", …),
+  /// DeprMark("port")])`); the short installer sets `depr: true` on the cluster entry instead. It
+  /// rides in the effect column as a `@depr:<name>` marker binding (like a FailMark), collected
+  /// into ParserContext.warnings. The value propagates normally — only a warning is added.
+  DeprMark(String)
   /// 0-token failure-action mark (DR-048): records that failure-action element `name` (e.g. help)
   /// was SELECTED at the current argv position. Lowered from a `fail_action` element's satellite
   /// (`Seq([Exact("--help"), Bind("help", true), FailMark("help")])`). On a FAILED parse (0
@@ -196,10 +203,14 @@ pub(all) struct LongEntry {
 } derive(Eq, Show)
 
 /// A short-option entry the cluster matcher can resolve (`-abc`, `-n1.0`).
+/// `depr` (DR-057/058): this entry is a deprecated alias spelling — firing it emits a `@depr:<name>`
+/// warning marker (the value binding is unchanged). Only a deprecated ALIAS sets it; a canonical or
+/// non-deprecated alias short has `depr: false`.
 pub(all) struct ShortEntry {
   ch : Char
   name : String
   kind : Ty
+  depr : Bool
 } derive(Eq, Show)
 
 /// A native matcher (DR-041): reified token-reading capability as DATA.
