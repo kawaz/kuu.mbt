@@ -237,6 +237,27 @@ fn result_str(
   }
 }
 
+/// Parse, apply the result-key axis (DR-052), and render — with the exposure-key collision check
+/// (DESIGN §15.5). `ek_map` = build_export_map(def). On collision → "collision:<key>".
+fn export_result_str(
+  sc : Scope,
+  ek_map : Map[String, ExportKey],
+  toks : Array[String],
+  defs~ : Map[String, Node] = Map::new(),
+) -> String {
+  match parse(ScopeNode(sc), toks, defs~) {
+    Success(binds) =>
+      match find_export_collision(binds, ek_map) {
+        Some(k) => "collision:" + k
+        None =>
+          render_rval(build_result(apply_export_keys(binds, ek_map), accum_cells(sc), []))
+      }
+    Fail(m) => "fail:" + m
+    Ambiguous(n) => "ambiguous:" + n.to_string()
+    FireAction(name) => "action:" + name
+  }
+}
+
 /// Parse and return the built RVal (aborts on a non-unique parse) — for map-form tests.
 fn result_rval(
   sc : Scope,
@@ -266,6 +287,7 @@ fn opt(
   fail_action~ : Bool = false,
   config_file~ : Bool = false,
   config_key~ : Array[String]? = None,
+  export~ : ExportKey = EkUnset,
   default~ : Value? = None,
 ) -> ElemDef {
   {
@@ -287,7 +309,17 @@ fn opt(
     fail_action,
     is_config_file: config_file,
     config_key,
+    export_key: export,
     default_value: default,
+  }
+}
+
+/// Normalize a config-supplied export_key string to `ExportKey`: "" → EkNull (DR-052 §1), else EkKey.
+fn ek(s : String) -> ExportKey {
+  if s == "" {
+    EkNull
+  } else {
+    EkKey(s)
   }
 }
 
@@ -300,6 +332,7 @@ fn pos(
   multiple~ : Bool = false,
   separator~ : String? = None,
   config_key~ : Array[String]? = None,
+  export~ : ExportKey = EkUnset,
   ref_~ : String? = None,
   default~ : Value? = None,
 ) -> ElemDef {
@@ -322,6 +355,7 @@ fn pos(
     fail_action: false,
     is_config_file: false,
     config_key,
+    export_key: export,
     default_value: default,
   }
 }
@@ -346,6 +380,7 @@ fn dd_marker() -> ElemDef {
     fail_action: false,
     is_config_file: false,
     config_key: None,
+    export_key: EkUnset,
     default_value: None,
   }
 }
@@ -381,8 +416,8 @@ fn def_cmd(
   { options, positionals, commands }
 }
 
-fn cmd(name : String, body : Definition) -> CommandDef {
-  { name, body }
+fn cmd(name : String, body : Definition, export~ : ExportKey = EkUnset) -> CommandDef {
+  { name, body, export_key: export }
 }
 
 /// Order-independent rendering of a built scope: greedy and entities sorted (the

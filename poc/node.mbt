@@ -7,6 +7,16 @@
 // closure), keeping the whole AST comparable (`derive(Eq, Show)`) for the
 // order-independence permutation test (DR-042).
 
+/// The result-key axis of an element (DR-052). `export_key: string | null` unified: unspecified =
+/// name-derived key, a string = key-name override, null (or "" — normalized to null) = NO result
+/// key = nameless-同化 透過 (the value still propagates; only the key is gone). This is a RESULT
+/// concern only — lexical scope (name, DR-033) and id (ref/link, DR-046) are orthogonal, unchanged.
+pub(all) enum ExportKey {
+  EkUnset // unspecified → the name is the key (DR-046 default supply)
+  EkKey(String) // a string override → that key name
+  EkNull // null / "" → 結果キー軸なし → 透過 (kv: value gone; seq: value stays as an array element)
+} derive(Eq, Show)
+
 /// Type category of a value cell / primitive. `number` (TNum) accepts integers and floats (JSON
 /// number 同型); `int` (TInt) is integer-constrained — a non-integer value is an Error (DESIGN §3.3
 /// / DR-050 §4). `float` is an alias for number (same accept域) and is modeled as TNum here.

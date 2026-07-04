@@ -32,6 +32,7 @@ pub(all) struct ElemDef {
   fail_action : Bool // failure-action element (DR-048, e.g. type:"help"): fires on a FAILED parse
   is_config_file : Bool // type:"config_file" (DR-050): its resolved path feeds the config_provider
   config_key : Array[String]? // explicit config path (DR-050 §3); None = 同型. Owned by the config installer
+  export_key : ExportKey // result-key axis (DR-052); a RESULT concern, orthogonal to the AtomicAST
   default_value : Value?
 } derive(Eq, Show)
 
@@ -57,10 +58,13 @@ pub(all) struct RepeatSpec {
   lazy : Bool
 } derive(Eq, Show)
 
-/// A subcommand: a name + its own scope Definition (a fresh backbone, DR-041 §4).
+/// A subcommand: a name + its own scope Definition (a fresh backbone, DR-041 §4). `export_key`
+/// gives the command's result-scope key (DR-052): null = the scope key is dropped and children
+/// promote to the parent scope; the command's structural role (a new backbone) is unchanged.
 pub(all) struct CommandDef {
   name : String
   body : Definition
+  export_key : ExportKey
 } derive(Eq, Show)
 
 /// UsefulAST for one command scope: entry-bearing options + positional face +
@@ -179,6 +183,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     fail_action: e.fail_action,
     is_config_file: e.is_config_file,
     config_key: e.config_key,
+    export_key: e.export_key,
     default_value: e.default_value,
   }
 }
@@ -194,9 +199,31 @@ fn clone_def(d : Definition) -> Definition {
   }
   let cs : Array[CommandDef] = []
   for c in d.commands {
-    cs.push({ name: c.name, body: clone_def(c.body) })
+    cs.push({ name: c.name, body: clone_def(c.body), export_key: c.export_key })
   }
   { options: os, positionals: ps, commands: cs }
+}
+
+/// Build the result-key map (DR-052): every element / command name → its export_key. Used by the
+/// post-parse result remap (apply_export_keys). export_key is a RESULT concern only, so it lives
+/// outside the AtomicAST — the map is read straight off the Definition, not the built Scope.
+pub fn build_export_map(def : Definition) -> Map[String, ExportKey] {
+  let m : Map[String, ExportKey] = Map::new()
+  collect_export(def, m)
+  m
+}
+
+fn collect_export(def : Definition, m : Map[String, ExportKey]) -> Unit {
+  for e in def.options {
+    m.set(e.name, e.export_key)
+  }
+  for e in def.positionals {
+    m.set(e.name, e.export_key)
+  }
+  for c in def.commands {
+    m.set(c.name, c.export_key)
+    collect_export(c.body, m)
+  }
 }
 
 /// The lowered head node for an element: a value primitive, or a `Ref` when the
@@ -557,6 +584,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     fail_action: copy.fail_action,
     is_config_file: copy.is_config_file,
     config_key: copy.config_key,
+    export_key: copy.export_key,
     default_value: copy.default_value,
   })
 }

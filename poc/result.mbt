@@ -101,6 +101,75 @@ fn seg_num(seg : String) -> Int {
   n
 }
 
+/// Apply the result-key axis (DR-052) to the winning bindings, BEFORE build_result. This is a
+/// pure result-shape remap — the AtomicAST / parse are untouched (export_key is orthogonal):
+///   - a value cell's key: EkKey(s) → s (override); EkNull → "" (nameless: kv 文脈で消え、seq/array
+///     文脈では値が nameless 要素として残る); EkUnset → the name (unchanged).
+///   - a scope label (command / name scope): EkKey(s) → s; EkNull → DROP the label (子が昇格露出);
+///     EkUnset → unchanged. A "{}" presence marker whose only label was dropped floats to the root
+///     scope where it is a harmless sentinel (a nameless command has no key — 子が昇格).
+/// Sentinels ("[]" / "{}" / "" / "@act:") and index segments ("#k") are not in the map → kept.
+pub fn apply_export_keys(
+  binds : Array[Binding],
+  ek : Map[String, ExportKey],
+) -> Array[Binding] {
+  let out : Array[Binding] = []
+  for b in binds {
+    let new_scope : Array[String] = []
+    for seg in b.scope {
+      if seg.length() >= 1 && seg.substring(start=0, end=1) == "#" {
+        new_scope.push(seg) // an array index segment — never a name
+      } else {
+        match ek.get(seg) {
+          Some(EkNull) => () // drop the label → children promote to the parent (DR-052 §2)
+          Some(EkKey(s)) => new_scope.push(s)
+          _ => new_scope.push(seg) // EkUnset or not a mapped name
+        }
+      }
+    }
+    let new_key = match ek.get(b.key) {
+      Some(EkNull) => "" // nameless value axis
+      Some(EkKey(s)) => s
+      _ => b.key
+    }
+    out.push({
+      key: new_key,
+      op: b.op,
+      value: b.value,
+      source: b.source,
+      scope: new_scope,
+      link: b.link,
+    })
+  }
+  out
+}
+
+/// Detect an exposure-key collision (DESIGN §15.5, DR-021 → DR-052): two DIFFERENT elements whose
+/// export_key resolves to the SAME key name, both present at the same result scope. Runtime check —
+/// the same rule that applies to names now applies to export_key values. Returns the colliding key.
+pub fn find_export_collision(
+  binds : Array[Binding],
+  ek : Map[String, ExportKey],
+) -> String? {
+  let mut i = 0
+  while i < binds.length() {
+    let mut j = i + 1
+    while j < binds.length() {
+      let bi = binds[i]
+      let bj = binds[j]
+      if bi.key != bj.key && path_eq(bi.scope, bj.scope) {
+        match (ek.get(bi.key), ek.get(bj.key)) {
+          (Some(EkKey(si)), Some(EkKey(sj))) => if si == sj { return Some(si) }
+          _ => ()
+        }
+      }
+      j = j + 1
+    }
+    i = i + 1
+  }
+  None
+}
+
 /// An accumulate cell located at a result-scope path (DR-044 uniform array). `path` is the
 /// command/name nesting where the cell lives; `name` is its key. The builder needs this so an
 /// accumulate cell that fired 0 times still renders `[]` at its home level (not absent).
