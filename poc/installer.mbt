@@ -23,6 +23,7 @@ pub(all) struct ElemDef {
   is_dd : Bool // owned by the dd installer (type:"dd")
   is_global : Bool // owned by the global installer (copied into descendant command scopes)
   is_inherit : Bool // owned by the inherit installer (declares an inherit seat)
+  is_inheritable : Bool // owned by the inheritable installer (DR-059): ancestors get a prefixed write-entry
   is_link : Bool // a global COPY (link-sync): its satellite binds the root entity (Rooted)
   ref_target : String? // core (DR-020): this element IS a ref to a named template
   repeat : RepeatSpec? // owned by the repeat installer (DR-043)
@@ -113,6 +114,7 @@ pub(all) enum Installer {
   ConfigInst
   ConstraintInst
   AliasInst
+  InheritableInst
 } derive(Eq, Show)
 
 fn owned_vocab(i : Installer) -> String {
@@ -129,6 +131,7 @@ fn owned_vocab(i : Installer) -> String {
     ConfigInst => "config" // owns both type:"config_file" and config_key (DR-050)
     ConstraintInst => "constraint" // requires / conflicts_with / exclusive_group (DR-055)
     AliasInst => "alias" // alias declarations (DR-057), desugared into entry-copies / command defs
+    InheritableInst => "inheritable" // inheritable (DR-059): prefixed write-entries copied to ancestors
   }
 }
 
@@ -202,6 +205,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     is_dd: e.is_dd,
     is_global: e.is_global,
     is_inherit: e.is_inherit,
+    is_inheritable: e.is_inheritable,
     is_link: e.is_link,
     ref_target: e.ref_target,
     repeat: e.repeat,
@@ -617,6 +621,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     is_dd: copy.is_dd,
     is_global: copy.is_global,
     is_inherit: copy.is_inherit,
+    is_inheritable: copy.is_inheritable,
     is_link: true,
     ref_target: copy.ref_target,
     repeat: copy.repeat,
@@ -678,7 +683,100 @@ fn apply_node(inst : Installer, sb : SB) -> Unit {
     ConstraintInst => inst_constraint(sb.decl, sb.build)
     AliasInst => () // desugared deterministically before init_sb (like repeat); entry-copies are then
     //                expanded by long/short/command in the fixpoint (DR-057 §4). See desugar_aliases.
+    InheritableInst => inst_inheritable(sb)
   }
+}
+
+/// inheritable installer (DR-059): the REVERSE of global. global copies a parent option DOWN into
+/// descendant scopes; inheritable copies a descendant's inheritable element UP into every ancestor
+/// scope, spelled `<定義スコープ名>-<name>` (the same prefix at every ancestor depth, §1). The copy is
+/// a plain long option keyed by the element's name — so `--socket-ttl` in an ancestor binds an ancestor
+/// `ttl` cell. Every `ttl` cell in the chain (defining + ancestor copies) gets an inherit seat, so a
+/// value written at any level flows DOWN as the descendant instance's default (§3 値の意味論, the pair
+/// of the inherit seat DR-031). Shadowing is symmetric to global: an ancestor already declaring the
+/// same trigger literal keeps its own (自前優先). Runs in the fixpoint — the copied long is expanded by
+/// the long installer on a later pass, exactly like a global copy (this is the "global の逆方向" of §3).
+fn inst_inheritable(sb : SB) -> Unit {
+  // (1) descendant inheritables → a prefixed write-entry into THIS (ancestor) scope's declaration.
+  let entries : Array[(String, ElemDef)] = []
+  gather_inheritable(sb.children, entries)
+  for de in entries {
+    let defining_name = de.0
+    let e = de.1
+    let trigger = defining_name + "-" + e.name // 全祖先同綴り (§1): the defining scope name, not the depth
+    add_inheritable_copy(sb, e, trigger)
+  }
+  // (2) seat an inherit lookup on every cell whose name is inheritable in this subtree — the defining
+  // element (sb's own) AND each ancestor copy — so a value written at any level chains down (§3).
+  let names : Array[String] = []
+  for e in sb.decl.options {
+    if e.is_inheritable && not(str_in(names, e.name)) {
+      names.push(e.name)
+    }
+  }
+  for de in entries {
+    if not(str_in(names, de.1.name)) {
+      names.push(de.1.name)
+    }
+  }
+  for name in names {
+    seat_inherit(sb.build, name)
+  }
+}
+
+/// Collect every inheritable element in the descendant scopes, tagged with the name of the scope that
+/// DIRECTLY declares it (the 定義スコープ名, = the prefix, DR-059 §1). Recurses the whole subtree.
+fn gather_inheritable(
+  children : Array[SBChild],
+  out : Array[(String, ElemDef)],
+) -> Unit {
+  for ch in children {
+    for e in ch.body.decl.options {
+      if e.is_inheritable {
+        out.push((ch.name, e))
+      }
+    }
+    gather_inheritable(ch.body.children, out)
+  }
+}
+
+/// Add a prefixed write-entry copy into an ancestor scope's declaration (add-if-absent, shadow-aware).
+/// Shadowing (§3, symmetric to global): if the ancestor already declares an option carrying the same
+/// trigger literal, the ancestor's own wins and no copy is added.
+fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
+  for existing in sb.decl.options {
+    if str_in(existing.long, trigger) {
+      return // 自前優先 (shadow) or already-copied (idempotent)
+    }
+  }
+  sb.decl.options.push({
+    name: e.name, // the ancestor write-target cell shares the element's name (inherit-by-name)
+    ty: e.ty,
+    long: [trigger],
+    variants: [],
+    short: [],
+    env: [],
+    is_dd: false,
+    is_global: false,
+    is_inherit: false, // the inherit seat is declared by inst_inheritable's step (2), not this flag
+    is_inheritable: false, // the copy is a plain entry, not itself inheritable (no further re-propagation)
+    is_link: false,
+    ref_target: None,
+    repeat: None,
+    optional: false,
+    multiple: false,
+    separator: None,
+    fail_action: false,
+    is_config_file: false,
+    config_key: None,
+    export_key: EkUnset,
+    requires: [],
+    conflicts_with: [],
+    exclusive_group: [],
+    value_requires: [],
+    deprecated: false,
+    default_value: None, // NO default on the write-target: only an actual write propagates (§3)
+  })
 }
 
 /// constraint installer (DR-055 / DR-042 席宣言型): collect requires / conflicts_with /
@@ -839,6 +937,7 @@ fn alias_entry(
     is_dd: false,
     is_global: false,
     is_inherit: false,
+    is_inheritable: false,
     is_link: false,
     ref_target: None,
     repeat: None,
@@ -1082,6 +1181,9 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   }
   if e.is_inherit && !vocab_owned(owned, "inherit") {
     return Some("inherit")
+  }
+  if e.is_inheritable && !vocab_owned(owned, "inheritable") {
+    return Some("inheritable")
   }
   // repeat and its `optional` sugar (DR-043) are both owned by the repeat installer.
   match elem_repeat(e) {
