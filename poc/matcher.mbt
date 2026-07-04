@@ -90,7 +90,7 @@ fn run_eq_split(
           match parse_number(valstr) {
             Some(d) => return [Accept(pos + 1, [mkb(e.name, VNum(d), Cli)])]
             // defined key, bad value => held Error (DR-037), not 素通し.
-            None => return [Held("\"\{valstr}\" is not a number", pos, [])]
+            None => return [Held(pe_parse(e.name, valstr, pos), [])]
           }
         TFlag => return [] // flags take no =value
       }
@@ -196,8 +196,8 @@ fn walk_short(
             match short_val(e, toks[pos + 1]) {
               Some(b) => out.push(Accept(pos + 2, cat(acc, [b])))
               None =>
-                if e.kind == TNum {
-                  out.push(Held("\"\{toks[pos + 1]}\" is not a number", pos + 1, []))
+                if e.kind == TNum || e.kind == TInt {
+                  out.push(Held(pe_parse(e.name, toks[pos + 1], pos + 1), []))
                 }
             }
           }

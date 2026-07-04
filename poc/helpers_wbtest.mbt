@@ -158,9 +158,8 @@ fn render_effects(binds : Array[Binding]) -> String {
 fn effects_str(g : Node, toks : Array[String]) -> String {
   match parse(g, toks) {
     Success(binds) => render_effects(binds)
-    Fail(m) => "fail:" + m
-    Ambiguous(n) => "ambiguous:" + n.to_string()
-    FireAction(name) => "action:" + name
+    Failure(d) => fail_str(d)
+    Ambiguous(d) => ambig_str(d)
   }
 }
 
@@ -169,9 +168,8 @@ fn effects_str(g : Node, toks : Array[String]) -> String {
 fn ordered_effects(g : Node, toks : Array[String]) -> String {
   match parse(g, toks) {
     Success(binds) => render_binds_ordered(binds)
-    Fail(m) => "fail:" + m
-    Ambiguous(n) => "ambiguous:" + n.to_string()
-    FireAction(name) => "action:" + name
+    Failure(d) => fail_str(d)
+    Ambiguous(d) => ambig_str(d)
   }
 }
 
@@ -184,19 +182,163 @@ fn resolve_after_parse(
 ) -> String {
   match parse(ScopeNode(sc), toks) {
     Success(b) => render_binds_src(resolve_scope(sc, b, env))
-    Fail(m) => "fail:" + m
-    Ambiguous(n) => "ambiguous:" + n.to_string()
-    FireAction(name) => "action:" + name
+    Failure(d) => fail_str(d)
+    Ambiguous(d) => ambig_str(d)
   }
 }
 
-/// Compact one-line rendering of an Outcome for spec-string assertions.
+/// The primary (deepest-argv) error's message (DR-053 §2 primary = max argv_pos).
+fn primary_message(errors : Array[ParseError]) -> String {
+  let mut best = errors[0]
+  for e in errors {
+    if e.argv_pos > best.argv_pos {
+      best = e
+    }
+  }
+  best.message
+}
+
+/// Backward-compatible one-line rendering of a Failure (DR-053): a fired action → "action:<name>";
+/// else the primary error message → "fail:<msg>"; else "fail:no complete parse". Keeps the pre-DR-053
+/// spec-strings stable so existing tests read unchanged (the structure is richer underneath).
+fn fail_str(d : FailureData) -> String {
+  match d.fired_action {
+    Some(n) => "action:" + n
+    None =>
+      if d.errors.length() > 0 {
+        "fail:" + primary_message(d.errors)
+      } else {
+        "fail:no complete parse"
+      }
+  }
+}
+
+fn ambig_str(d : AmbiguousData) -> String {
+  "ambiguous:" + d.interpretations.length().to_string()
+}
+
+// ── DR-053 structure accessors (the rich failure / ambiguous data) ────────────
+
+fn render_kind(k : ErrKind) -> String {
+  match k {
+    KParse => "parse"
+    KFilter => "filter"
+    KConstraint => "constraint"
+  }
+}
+
+/// One error as `element@argv_pos/kind` (message dropped for a compact spec-string).
+fn render_err(pe : ParseError) -> String {
+  "\{pe.element}@\{pe.argv_pos}/\{render_kind(pe.kind)}"
+}
+
+/// ALL held errors of a Failure, sorted (DR-053 §2 全保持).
+fn errors_str(o : Outcome) -> String {
+  match o {
+    Failure(d) => {
+      let items : Array[String] = []
+      for e in d.errors {
+        items.push(render_err(e))
+      }
+      sort_items(items)
+      join_comma(items)
+    }
+    _ => "not-failure"
+  }
+}
+
+/// The PRIMARY errors (max argv_pos, all if tie), sorted (DR-053 §2 primary = 最深).
+fn primary_str(o : Outcome) -> String {
+  match o {
+    Failure(d) => {
+      if d.errors.length() == 0 {
+        return ""
+      }
+      let mut maxp = -1
+      for e in d.errors {
+        if e.argv_pos > maxp {
+          maxp = e.argv_pos
+        }
+      }
+      let items : Array[String] = []
+      for e in d.errors {
+        if e.argv_pos == maxp {
+          items.push(render_err(e))
+        }
+      }
+      sort_items(items)
+      join_comma(items)
+    }
+    _ => "not-failure"
+  }
+}
+
+/// Every interpretation of an Ambiguous outcome as a result-object view, sorted (DR-053 §3).
+fn interps_str(o : Outcome) -> String {
+  match o {
+    Ambiguous(d) => {
+      let items : Array[String] = []
+      for interp in d.interpretations {
+        items.push(render_rval(build_result(interp, [], [])))
+      }
+      sort_items(items)
+      "[" + join_comma(items) + "]"
+    }
+    _ => "not-ambiguous"
+  }
+}
+
+/// The help_entry material (DR-053 §4), or "none".
+fn help_of(o : Outcome) -> String {
+  match o {
+    Failure(d) =>
+      match d.help_entry {
+        Some(s) => s
+        None => "none"
+      }
+    Ambiguous(d) =>
+      match d.help_entry {
+        Some(s) => s
+        None => "none"
+      }
+    _ => "none"
+  }
+}
+
+/// The tried_triggers material (DR-053 §4), sorted.
+fn tried_of(o : Outcome) -> String {
+  match o {
+    Failure(d) => {
+      let items : Array[String] = []
+      for t in d.tried_triggers {
+        items.push(t)
+      }
+      sort_items(items)
+      join_comma(items)
+    }
+    _ => ""
+  }
+}
+
+/// The fired_action (DR-053 §2), or "none".
+fn fired_of(o : Outcome) -> String {
+  match o {
+    Failure(d) =>
+      match d.fired_action {
+        Some(s) => s
+        None => "none"
+      }
+    _ => "none"
+  }
+}
+
+/// Compact one-line rendering of an Outcome for spec-string assertions (backward-compatible with
+/// the pre-DR-053 "ok{}"/"fail:"/"ambiguous:N"/"action:" forms).
 fn render_outcome(o : Outcome) -> String {
   match o {
     Success(binds) => "ok{" + render_binds(binds) + "}"
-    Fail(msg) => "fail:" + msg
-    Ambiguous(n) => "ambiguous:" + n.to_string()
-    FireAction(name) => "action:" + name
+    Failure(d) => fail_str(d)
+    Ambiguous(d) => ambig_str(d)
   }
 }
 
@@ -231,9 +373,8 @@ fn result_str(
 ) -> String {
   match parse(ScopeNode(sc), toks, defs~) {
     Success(binds) => render_rval(build_result(binds, accum_cells(sc), []))
-    Fail(msg) => "fail:" + msg
-    Ambiguous(n) => "ambiguous:" + n.to_string()
-    FireAction(name) => "action:" + name
+    Failure(d) => fail_str(d)
+    Ambiguous(d) => ambig_str(d)
   }
 }
 
@@ -252,9 +393,8 @@ fn export_result_str(
         None =>
           render_rval(build_result(apply_export_keys(binds, ek_map), accum_cells(sc), []))
       }
-    Fail(m) => "fail:" + m
-    Ambiguous(n) => "ambiguous:" + n.to_string()
-    FireAction(name) => "action:" + name
+    Failure(d) => fail_str(d)
+    Ambiguous(d) => ambig_str(d)
   }
 }
 
@@ -266,9 +406,8 @@ fn result_rval(
 ) -> RVal {
   match parse(ScopeNode(sc), toks, defs~) {
     Success(binds) => build_result(binds, accum_cells(sc), [])
-    Fail(msg) => abort("parse failed: " + msg)
-    Ambiguous(n) => abort("ambiguous: " + n.to_string())
-    FireAction(name) => abort("fired action: " + name)
+    Failure(d) => abort("parse failed: " + fail_str(d))
+    Ambiguous(d) => abort("ambiguous: " + ambig_str(d))
   }
 }
 

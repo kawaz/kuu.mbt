@@ -39,7 +39,16 @@ pub(all) enum Node {
   /// accumulator folds all pieces into one list (`prog a,b c,d` → xs=[a,b,c,d]).
   SepArg(String, String)
   /// number value primitive: consume 1 token; parse-fail is a held Error (DR-041 §5 / DR-037).
+  /// The parse failure is `kind: parse` (DR-053).
   NumArg(String)
+  /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
+  /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
+  /// held Error (a value that parsed but failed the filter — post_filter reject 相当).
+  FilterArg(String, Int)
+  /// a REQUIRED string positional (DR-047 値充足 / DR-053 kind: constraint): consumes a token if
+  /// present; if there is NO token to consume, it is a `kind: constraint` held Error (required
+  /// 未充足) rather than a silent Reject — a delayed-predicate violation surfaced as an Error.
+  ReqArg(String)
   /// 0-token binder: bind name=value. Used to set a flag after its Exact trigger fired.
   /// This is the SET degenerate form of an effect (DR-045 §1).
   Bind(String, Value)

@@ -758,8 +758,15 @@ fn head_progresses(
   visiting : Array[String],
 ) -> Bool {
   match node {
-    StrArg(_) | SepArg(_, _) | NumArg(_) | Exact(_) | NativeMatch(_) | DdSat(_) | CmdSat(_, _) =>
-      true
+    StrArg(_)
+    | SepArg(_, _)
+    | NumArg(_)
+    | FilterArg(_, _)
+    | ReqArg(_)
+    | Exact(_)
+    | NativeMatch(_)
+    | DdSat(_)
+    | CmdSat(_, _) => true
     NoDashStr(_) => true // consumes one token (when not dash-rejected)
     IdxRepeat(_, _, _) => true // an indexed repeat consumes its head
     BoundedTail(_, budget, _) => budget >= 1 // consumes only if it may take >= 1 head

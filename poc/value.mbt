@@ -39,6 +39,24 @@ pub fn is_integer(d : Double) -> Bool {
   d.to_int().to_double() == d
 }
 
+/// The category of a held Error (DR-053 §2 / DR-037 / DR-047): `parse` = type parse failure,
+/// `filter` = a post_filter reject (a value that parsed but failed a filter), `constraint` = a
+/// delayed-predicate violation (required 未充足 etc., DR-047). All three ride the errors array.
+pub(all) enum ErrKind {
+  KParse
+  KFilter
+  KConstraint
+} derive(Eq, Show)
+
+/// One held Error (DR-053 §2): which element, the argv position it failed at, its kind, and the
+/// message. The errors array keeps ALL of them (別候補経路の別 Error); primary = max argv_pos.
+pub(all) struct ParseError {
+  element : String
+  argv_pos : Int
+  kind : ErrKind
+  message : String
+} derive(Eq, Show)
+
 /// JSON-standard string form of a config number (DR-050 §4 stringification). An integer-valued
 /// double renders without a fractional part (1.0 → "1"); otherwise the decimal form (1.5 → "1.5").
 /// NB: whether an integer-valued float keeps ".0" is a serialize choice — see the 第 10 弾 flag.

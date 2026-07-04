@@ -14,17 +14,36 @@
 /// (retained for failure display). `Accept(new_pos, bindings)` == a reading.
 enum Branch {
   Accept(Int, Array[Binding]) // (new position, accumulated bindings)
-  Held(String, Int, Array[Binding]) // (error message, depth reached, partial state) — DR-037 Error
-  //                                    the partial state is the acc at the error point (F-039):
-  //                                    a failure-action selected before the error lives here.
+  Held(ParseError, Array[Binding]) // a DR-037 Error + the partial state (acc) at the error point.
+  //                                   the partial state (F-039) carries a failure-action selected
+  //                                   before the error; the ParseError has element/argv_pos/kind/message.
 } derive(Show)
 
-/// Final parse outcome, counting DISTINCT complete paths (DR-038 table).
+/// Final parse outcome — a discriminated union of 3 values (DR-053 §1). Success carries the result
+/// bindings; Failure carries ALL held errors (primary = max argv_pos) plus the failure-action / help
+/// materials; Ambiguous carries every distinct interpretation (as result-object bindings).
 pub(all) enum Outcome {
   Success(Array[Binding])
-  Fail(String)
-  Ambiguous(Int) // number of distinct complete paths (>= 2)
-  FireAction(String) // 0 complete paths, but a failure-action (help) was selected (DR-048)
+  Failure(FailureData)
+  Ambiguous(AmbiguousData)
+} derive(Eq, Show)
+
+/// DR-053 §2/§4: a failed parse. `errors` holds ALL held Errors (別候補経路の別 Error); primary is
+/// the max-argv_pos subset (computed by the renderer). `fired_action` is the failure-action that
+/// fired (help), if any — it and `errors` coexist (DR-053: 表示が置換されるだけ、構造は残る).
+/// `help_entry` (誘導行の素材) / `tried_triggers` (Did you mean の素材) are fields; wording is the renderer's.
+pub(all) struct FailureData {
+  errors : Array[ParseError]
+  fired_action : String?
+  help_entry : String?
+  tried_triggers : Array[String]
+} derive(Eq, Show)
+
+/// DR-053 §3: an ambiguous parse. `interpretations` enumerates EVERY distinct complete path as a
+/// result-object view (its bindings); `help_entry` is the same 誘導行 material as a failure.
+pub(all) struct AmbiguousData {
+  interpretations : Array[Array[Binding]]
+  help_entry : String?
 } derive(Eq, Show)
 
 /// A plain value bind = the SET degenerate form of an effect (DR-045 §1).
@@ -101,7 +120,7 @@ fn nest_branches(label : String, brs : Array[Branch]) -> Array[Branch] {
   for b in brs {
     match b {
       Accept(p, bs) => out.push(Accept(p, nest(label, bs)))
-      Held(m, d, bs) => out.push(Held(m, d, bs))
+      Held(pe, bs) => out.push(Held(pe, bs))
     }
   }
   out
@@ -149,11 +168,13 @@ fn eval(
       if pos < toks.length() {
         match parse_number(toks[pos]) {
           Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
-          None => [Held("\"\{toks[pos]}\" is not a number", pos, [])]
+          None => [Held(pe_parse(name, toks[pos], pos), [])]
         }
       } else {
         []
       }
+    FilterArg(name, max) => filter_arg_eval(name, max, toks, pos, [])
+    ReqArg(name) => req_arg_eval(name, toks, pos, [])
     Bind(name, v) => [Accept(pos, [mkb(name, v, Cli)])]
     EffMark(name, op) =>
       // A non-set effect (DR-045): consumes 0 tokens, applies `op` to the named cell.
@@ -231,7 +252,7 @@ fn eval(
             }
             out.push(Accept(p, marked))
           }
-          Held(m, d, bs) => out.push(Held(m, d, bs))
+          Held(pe, bs) => out.push(Held(pe, bs))
         }
       }
       out
@@ -262,6 +283,72 @@ fn bounded_opt(head : Node, budget : Int) -> Node {
     Seq([])
   } else {
     Or([Seq([head, bounded_opt(head, budget - 1)]), Seq([])])
+  }
+}
+
+/// A `kind: parse` held Error for a value that failed to parse as a number (DR-053 §2).
+fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
+  { element, argv_pos: pos, kind: KParse, message: "\"\{tok}\" is not a number" }
+}
+
+/// FilterArg (DR-053 kind demo): parse a number then apply a max post-filter. A parse failure is
+/// `kind: parse`; a value above `max` is `kind: filter` (post_filter reject). `acc` is the partial
+/// state carried on the held Error (F-039).
+fn filter_arg_eval(
+  name : String,
+  max : Int,
+  toks : Array[String],
+  pos : Int,
+  acc : Array[Binding],
+) -> Array[Branch] {
+  if pos < toks.length() {
+    match parse_number(toks[pos]) {
+      Some(d) =>
+        if d > max.to_double() {
+          [
+            Held(
+              {
+                element: name,
+                argv_pos: pos,
+                kind: KFilter,
+                message: "\{name} value \{toks[pos]} exceeds max \{max}",
+              },
+              acc,
+            ),
+          ]
+        } else {
+          [Accept(pos + 1, cat(acc, [mkb(name, VNum(d), Cli)]))]
+        }
+      None => [Held(pe_parse(name, toks[pos], pos), acc)]
+    }
+  } else {
+    []
+  }
+}
+
+/// ReqArg (DR-047 値充足 / DR-053 kind: constraint): consume a token if present; NO token to consume
+/// is a `kind: constraint` held Error (required 未充足) — a delayed-predicate violation as an Error,
+/// not a silent Reject. `acc` is the partial state on the held Error.
+fn req_arg_eval(
+  name : String,
+  toks : Array[String],
+  pos : Int,
+  acc : Array[Binding],
+) -> Array[Branch] {
+  if pos < toks.length() {
+    [Accept(pos + 1, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]))]
+  } else {
+    [
+      Held(
+        {
+          element: name,
+          argv_pos: pos,
+          kind: KConstraint,
+          message: "required \{name} is missing",
+        },
+        acc,
+      ),
+    ]
   }
 }
 
@@ -328,7 +415,7 @@ fn mark_scope(name : String, brs : Array[Branch]) -> Array[Branch] {
   for b in brs {
     match b {
       Accept(p, bs) => out.push(Accept(p, cat([marker], bs)))
-      Held(m, d, bs) => out.push(Held(m, d, bs))
+      Held(pe, bs) => out.push(Held(pe, bs))
     }
   }
   out
@@ -413,7 +500,7 @@ fn idx_one(
           }
           return p2
         }
-      Held(_, _, _) => ()
+      Held(_, _) => ()
     }
   }
   pos
@@ -438,7 +525,7 @@ fn eval_seq(
         for r in eval_seq(items, idx + 1, toks, p2, cat(acc, bs), defs) {
           out.push(r)
         }
-      Held(m, d, bs) => out.push(Held(m, d, bs))
+      Held(pe, bs) => out.push(Held(pe, bs))
     }
   }
   out
@@ -461,7 +548,7 @@ fn eval_many(
             out.push(r)
           }
         }
-      Held(m, d, bs) => out.push(Held(m, d, bs))
+      Held(pe, bs) => out.push(Held(pe, bs))
     }
   }
   out
@@ -485,7 +572,7 @@ fn greedy_reads(
     for b in eval(g, toks, pos, defs) {
       match b {
         Accept(p2, _) => if p2 > pos { return true }
-        Held(_, _, _) => ()
+        Held(_, _) => ()
       }
     }
   }
@@ -554,7 +641,7 @@ fn scope_step(
                 out.push(r)
               }
             }
-          Held(m, d, bs) => out.push(Held(m, d, bs))
+          Held(pe, bs) => out.push(Held(pe, bs))
         }
       }
     }
@@ -623,10 +710,62 @@ fn scope_consume(
             )
           // partial state = the scope acc so far (a failure-action selected before this number
           // positional's parse error is captured here, DR-048 candidate defs / F-039).
-          None => [Held("\"\{toks[pos]}\" is not a number", pos, acc)]
+          None => [Held(pe_parse(name, toks[pos], pos), acc)]
         }
       } else {
         []
+      }
+    FilterArg(name, max) =>
+      // number + max post-filter positional (DR-053 kind demo): parse fail = kind parse, > max =
+      // kind filter; either continues the spine on success. 先食い-aware.
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+        match parse_number(toks[pos]) {
+          Some(d) =>
+            if d > max.to_double() {
+              [
+                Held(
+                  {
+                    element: name,
+                    argv_pos: pos,
+                    kind: KFilter,
+                    message: "\{name} value \{toks[pos]} exceeds max \{max}",
+                  },
+                  acc,
+                ),
+              ]
+            } else {
+              scope_step(
+                sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VNum(d), Cli)]),
+                severed, defs,
+              )
+            }
+          None => [Held(pe_parse(name, toks[pos], pos), acc)]
+        }
+      } else {
+        []
+      }
+    ReqArg(name) =>
+      // required string positional (DR-047 / DR-053 kind constraint): no token to consume is a
+      // kind:constraint held Error (required 未充足), not a silent Reject.
+      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+        scope_step(
+          sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
+          severed, defs,
+        )
+      } else if pos >= toks.length() {
+        [
+          Held(
+            {
+              element: name,
+              argv_pos: pos,
+              kind: KConstraint,
+              message: "required \{name} is missing",
+            },
+            acc,
+          ),
+        ]
+      } else {
+        [] // a greedy trigger sits here (先食い); let greedy take it, req stays pending
       }
     Exact(s) =>
       if pos < toks.length() && toks[pos] == s {
@@ -679,7 +818,7 @@ fn scope_consume(
                   out.push(r)
                 }
               }
-            Held(m, d, bs) => out.push(Held(m, d, bs))
+            Held(pe, bs) => out.push(Held(pe, bs))
           }
         }
         out
@@ -710,7 +849,7 @@ fn scope_consume(
             for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed, defs) {
               out.push(r)
             }
-          Held(m, d, bs) => out.push(Held(m, d, bs))
+          Held(pe, bs) => out.push(Held(pe, bs))
         }
       }
       out
@@ -724,7 +863,7 @@ fn scope_consume(
             for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed, defs) {
               out.push(r)
             }
-          Held(m, d, bs) => out.push(Held(m, d, bs))
+          Held(pe, bs) => out.push(Held(pe, bs))
         }
       }
       out
@@ -767,7 +906,7 @@ fn bounded_tail_step(
               out.push(r)
             }
           }
-        Held(m, d, bs) => out.push(Held(m, d, bs))
+        Held(pe, bs) => out.push(Held(pe, bs))
       }
     }
     out
@@ -821,7 +960,7 @@ fn consume_head(
       if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
         match parse_number(toks[pos]) {
           Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
-          None => [Held("\"\{toks[pos]}\" is not a number", pos, [])]
+          None => [Held(pe_parse(name, toks[pos], pos), [])]
         }
       } else {
         []
@@ -856,7 +995,7 @@ fn has_full(brs : Array[Branch], target : Int) -> Bool {
   for b in brs {
     match b {
       Accept(p, _) => if p == target { return true }
-      Held(_, _, _) => ()
+      Held(_, _) => ()
     }
   }
   false
@@ -903,7 +1042,7 @@ fn scope_consume_rep(
               sc, toks, pos + 1, pidx, cat(acc, [mkb(name, VNum(d), Cli)]), severed,
               defs,
             )
-          None => [Held("\"\{toks[pos]}\" is not a number", pos, acc)]
+          None => [Held(pe_parse(name, toks[pos], pos), acc)]
         }
       } else {
         []
@@ -918,7 +1057,7 @@ fn scope_consume_rep(
                 out.push(r)
               }
             }
-          Held(m, d, bs) => out.push(Held(m, d, bs))
+          Held(pe, bs) => out.push(Held(pe, bs))
         }
       }
       out
@@ -967,15 +1106,14 @@ pub fn parse(
   faildef~ : FailDef = WithHeld,
 ) -> Outcome {
   let branches = eval(root, toks, 0, defs)
-  let full : Array[Array[Binding]] = []
-  let mut deepest_msg = ""
-  let mut deepest_depth = -1
+  let full : Array[Array[Binding]] = [] // distinct complete paths → interpretations
+  let errors : Array[ParseError] = [] // ALL held Errors, deduped (DR-053 §2 全保持)
   // the deepest argv position any branch reached (for the DeepestOnly candidate set).
   let mut max_reach = -1
   for b in branches {
     match b {
       Accept(p, _) => if p > max_reach { max_reach = p }
-      Held(_, d, _) => if d > max_reach { max_reach = d }
+      Held(pe, _) => if pe.argv_pos > max_reach { max_reach = pe.argv_pos }
     }
   }
   // failure-action markers gathered from the candidate paths selected by `faildef`.
@@ -999,8 +1137,6 @@ pub fn parse(
             full.push(eff)
           }
         }
-        // a surfaced scope-end Accept is a candidate path under every faildef (DeepestOnly only
-        // if it is the maximal-consumption one).
         let counts = match faildef {
           DeepestOnly => p == max_reach
           _ => true
@@ -1009,17 +1145,24 @@ pub fn parse(
           collect_actions(bs, actions)
         }
       }
-      Held(m, d, bs) => {
-        if d > deepest_depth {
-          deepest_depth = d
-          deepest_msg = m
+      Held(pe, bs) => {
+        // DR-053 §2: keep ALL held Errors (別候補経路の別 Error), deduped by structural equality.
+        let mut dup = false
+        for e in errors {
+          if e == pe {
+            dup = true
+            break
+          }
         }
-        // a Held (Error) partial path counts only under WithHeld (F-039 failure partial state) or
-        // DeepestOnly-when-maximal; AcceptsOnly ignores dead ends that never reached a scope-end.
+        if !dup {
+          errors.push(pe)
+        }
+        // a Held (Error) partial path counts as a failure-action candidate only under WithHeld
+        // (F-039 partial state) or DeepestOnly-when-maximal; AcceptsOnly ignores dead ends.
         let counts = match faildef {
           AcceptsOnly => false
           WithHeld => true
-          DeepestOnly => d == max_reach
+          DeepestOnly => pe.argv_pos == max_reach
         }
         if counts {
           collect_actions(bs, actions)
@@ -1027,20 +1170,88 @@ pub fn parse(
       }
     }
   }
+  let help = find_help_entry(root) // 誘導行の素材 (DR-053 §4)
   match full.length() {
     0 =>
-      // DR-048: 0 complete paths. If a failure-action was selected in a candidate path, fire the
-      // argv-position-minimal one (先勝ち) in place of the held Error; else show the Error.
-      if actions.length() > 0 {
-        FireAction(argmin_action(actions))
-      } else if deepest_depth >= 0 {
-        Fail(deepest_msg)
-      } else {
-        Fail("no complete parse")
-      }
+      // DR-053 §2: a failure. errors are ALL retained; a fired failure-action (DR-048) coexists
+      // (fired_action set, errors still present). tried_triggers is the Did you mean material.
+      Failure({
+        errors,
+        fired_action: if actions.length() > 0 {
+          Some(argmin_action(actions))
+        } else {
+          None
+        },
+        help_entry: help,
+        tried_triggers: tried_triggers_of(root),
+      })
     1 => Success(full[0])
-    n => Ambiguous(n)
+    _ =>
+      // DR-053 §3: ambiguous — every distinct interpretation, plus the same help material.
+      Ambiguous({ interpretations: full, help_entry: help })
   }
+}
+
+/// The help entry's spelling (DR-053 §4 help_entry material): the exact trigger of the greedy
+/// satellite that carries a failure-action FailMark (help). None if the definition has no help entry.
+fn find_help_entry(root : Node) -> String? {
+  match root {
+    ScopeNode(sc) => {
+      for g in sc.greedy {
+        match g {
+          Seq(items) => {
+            let mut trig : String? = None
+            let mut has_fail = false
+            for it in items {
+              match it {
+                Exact(s) => match trig {
+                  None => trig = Some(s)
+                  _ => ()
+                }
+                FailMark(_) => has_fail = true
+                _ => ()
+              }
+            }
+            if has_fail {
+              match trig {
+                Some(t) => return Some(t)
+                None => ()
+              }
+            }
+          }
+          _ => ()
+        }
+      }
+      None
+    }
+    _ => None
+  }
+}
+
+/// The exact trigger literals available in the scope (DR-053 §4 tried_triggers material). PoC
+/// approximation: the whole greedy face's exact triggers, not filtered to the failure position
+/// (近接マッチ計算は DX 層の関心 — 素材のみ、AtomicAST にフックは持たない, F-016).
+fn tried_triggers_of(root : Node) -> Array[String] {
+  let out : Array[String] = []
+  match root {
+    ScopeNode(sc) =>
+      for g in sc.greedy {
+        match g {
+          Seq(items) =>
+            if items.length() >= 1 {
+              match items[0] {
+                Exact(s) => out.push(s)
+                _ => ()
+              }
+            }
+          DdSat(s) => out.push(s)
+          CmdSat(name, _) => out.push(name)
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  out
 }
 
 /// The candidate-path set that counts a failure-action as "selected" (DR-048 §5, undetermined).
