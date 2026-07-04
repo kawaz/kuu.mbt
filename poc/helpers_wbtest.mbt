@@ -266,6 +266,70 @@ fn render_err(pe : ParseError) -> String {
   "\{pe.element}@\{pe.argv_pos}/\{render_kind(pe.kind)}"
 }
 
+// ── completion candidate renderers (DR-060) ──────────────────────────────────
+
+fn ty_str(t : Ty) -> String {
+  match t {
+    TStr => "str"
+    TNum => "num"
+    TInt => "int"
+    TFlag => "flag"
+  }
+}
+
+/// A completion candidate set as sorted `spelling` (exact) / `<ty>` (value) tokens, comma-joined.
+fn cands_str(cands : Array[Cand]) -> String {
+  let items : Array[String] = []
+  for c in cands {
+    if c.is_value {
+      items.push("<" + ty_str(c.ty) + ">")
+    } else {
+      items.push(c.spelling)
+    }
+  }
+  sort_items(items)
+  join_comma(items)
+}
+
+/// The terminal hint of a named exact candidate (DR-060 §9): "end" (word_end) / "cont" (continue) /
+/// "none" if the spelling is not among the candidates.
+fn cand_term(cands : Array[Cand], spelling : String) -> String {
+  for c in cands {
+    if not(c.is_value) && c.spelling == spelling {
+      return match c.term {
+        WordEnd => "end"
+        Cont => "cont"
+      }
+    }
+  }
+  "none"
+}
+
+/// The declaration-layer meta of a named exact candidate, as sorted flags (DR-057/058): any of
+/// alias / hidden / dep, or "-" if none. "absent" if the spelling is not among the candidates.
+fn cand_meta(cands : Array[Cand], spelling : String) -> String {
+  for c in cands {
+    if not(c.is_value) && c.spelling == spelling {
+      let fs : Array[String] = []
+      if c.meta.is_alias {
+        fs.push("alias")
+      }
+      if c.meta.hidden {
+        fs.push("hidden")
+      }
+      if c.meta.deprecated {
+        fs.push("dep")
+      }
+      if fs.length() == 0 {
+        return "-"
+      }
+      sort_items(fs)
+      return join_comma(fs)
+    }
+  }
+  "absent"
+}
+
 /// The deprecation warnings on a Success outcome, sorted (DR-058 warnings). Each is the canonical
 /// element name reached via a deprecated entry (DR-057 alias). Empty = no deprecated entry used.
 fn warnings_str(o : Outcome) -> String {
