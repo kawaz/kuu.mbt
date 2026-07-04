@@ -1081,6 +1081,131 @@ fn strip_link(bs : Array[Binding]) -> Array[Binding] {
   out
 }
 
+// ── constraint evaluation (delayed predicates, DR-055 / DR-047) ──────────────
+
+fn scope_of(root : Node) -> Scope? {
+  match root {
+    ScopeNode(sc) => Some(sc)
+    _ => None
+  }
+}
+
+/// Whether an element is committed on a path (DR-045): the LAST effect on the cell is not unset
+/// (last-wins, DR-015). So `--foo ... --no-foo` (unset) leaves foo un-committed — it does not count
+/// toward conflicts / exclusive (DR-055 §2 / DR-047).
+fn is_committed(bindings : Array[Binding], name : String) -> Bool {
+  let mut committed = false
+  for b in bindings {
+    if b.key == name {
+      match b.op {
+        Unset => committed = false
+        _ => committed = true
+      }
+    }
+  }
+  committed
+}
+
+/// The committed value of an element (last-wins), or None.
+fn elem_value(bindings : Array[Binding], name : String) -> String? {
+  let mut v : String? = None
+  for b in bindings {
+    if b.key == name {
+      match b.op {
+        Unset => ()
+        _ => v = Some(value_str(b.value))
+      }
+    }
+  }
+  v
+}
+
+fn has_default(entities : Array[Entity], name : String) -> Bool {
+  for e in entities {
+    if e.name == name {
+      return e.default_value.is_some()
+    }
+  }
+  false
+}
+
+/// Value presence (DR-047 §5): committed on the path OR a default seat exists (default 込み).
+fn value_present(
+  name : String,
+  bindings : Array[Binding],
+  entities : Array[Entity],
+) -> Bool {
+  is_committed(bindings, name) || has_default(entities, name)
+}
+
+fn constraint_err(element : String, message : String, pos : Int) -> ParseError {
+  { element, argv_pos: pos, kind: KConstraint, message }
+}
+
+/// Evaluate the scope's delayed predicates on a complete path's FINAL state (DR-055 / DR-047).
+/// Returns the violations (each a kind:constraint ParseError). An empty result = the path satisfies
+/// all constraints (a valid 完全解決経路); a non-empty result means the path is NOT complete.
+fn eval_constraints(
+  constraints : Array[Constraint],
+  entities : Array[Entity],
+  bindings : Array[Binding],
+  pos : Int,
+) -> Array[ParseError] {
+  let out : Array[ParseError] = []
+  for c in constraints {
+    match c {
+      // requires (正の依存): committed → every target must have a value (default 込み).
+      CRequires(elem, targets) =>
+        if is_committed(bindings, elem) {
+          for t in targets {
+            if not(value_present(t, bindings, entities)) {
+              out.push(constraint_err(elem, "'\{elem}' requires '\{t}'", pos))
+            }
+          }
+        }
+      // value-dependent requires (DR-055 §1): active only when the element's committed value == v.
+      CRequiresIf(elem, v, targets) => {
+        let active = is_committed(bindings, elem) &&
+          (match elem_value(bindings, elem) {
+            Some(x) => x == v
+            None => false
+          })
+        if active {
+          for t in targets {
+            if not(value_present(t, bindings, entities)) {
+              out.push(constraint_err(elem, "'\{elem}'=\{v} requires '\{t}'", pos))
+            }
+          }
+        }
+      }
+      // conflicts_with (対称): committed elem + committed target → conflict.
+      CConflicts(elem, targets) =>
+        if is_committed(bindings, elem) {
+          for t in targets {
+            if is_committed(bindings, t) {
+              out.push(constraint_err(elem, "'\{elem}' conflicts with '\{t}'", pos))
+            }
+          }
+        }
+      // exclusive_group: > 1 committed member → conflict.
+      CExclusive(group, members) => {
+        let mut count = 0
+        for m in members {
+          if is_committed(bindings, m) {
+            count = count + 1
+          }
+        }
+        if count > 1 {
+          out.push(
+            constraint_err(group, "exclusive group '\{group}' allows at most one", pos),
+          )
+        }
+      }
+    }
+  }
+  out
+}
+
 // ── top level (DR-038 path counting) ────────────────────────────────────────
 
 /// Parse `toks` against `root`, counting DISTINCT complete paths.
@@ -1108,6 +1233,11 @@ pub fn parse(
   let branches = eval(root, toks, 0, defs)
   let full : Array[Array[Binding]] = [] // distinct complete paths → interpretations
   let errors : Array[ParseError] = [] // ALL held Errors, deduped (DR-053 §2 全保持)
+  // the scope's delayed predicates + entities, for constraint evaluation (DR-055 / DR-047).
+  let (constraints, sc_entities) = match scope_of(root) {
+    Some(s) => (s.constraints, s.entities)
+    None => ([], [])
+  }
   // the deepest argv position any branch reached (for the DeepestOnly candidate set).
   let mut max_reach = -1
   for b in branches {
@@ -1126,15 +1256,34 @@ pub fn parse(
           // vestigial and NOT part of the effect identity (DR-038). Two routes onto the same
           // root entity — one via a link satellite, one direct — merge to one path.
           let eff = strip_link(bs)
-          let mut dup = false
-          for existing in full {
-            if existing == eff {
-              dup = true
-              break
+          // DR-055 / DR-047: a delayed-predicate violation makes this NOT a complete解決経路 — the
+          // path is dropped from `full` (so a constraint can 経路選択に参加, DR-047 §6) and its
+          // violations join the errors (kind:constraint). A satisfying path is a real interpretation.
+          let viol = eval_constraints(constraints, sc_entities, eff, toks.length())
+          if viol.length() > 0 {
+            for v in viol {
+              let mut vdup = false
+              for e in errors {
+                if e == v {
+                  vdup = true
+                  break
+                }
+              }
+              if !vdup {
+                errors.push(v)
+              }
             }
-          }
-          if !dup {
-            full.push(eff)
+          } else {
+            let mut dup = false
+            for existing in full {
+              if existing == eff {
+                dup = true
+                break
+              }
+            }
+            if !dup {
+              full.push(eff)
+            }
           }
         }
         let counts = match faildef {

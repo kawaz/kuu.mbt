@@ -20,6 +20,7 @@ test "DR-053 §2: multiple candidate paths fail at different positions — ALL k
     greedy: [],
     positional: [Or([Seq([NumArg("a")]), Seq([StrArg("s"), NumArg("b")])])],
     entities: [],
+    constraints: [],
   }
   let o = parse(ScopeNode(sc), ["x", "y"])
   inspect(errors_str(o), content="a@0/parse,b@1/parse") // 全保持
@@ -32,6 +33,7 @@ test "DR-053 §2: two errors at the SAME argv position are BOTH primary (同深�
     greedy: [],
     positional: [Or([NumArg("a"), NumArg("b")])],
     entities: [],
+    constraints: [],
   }
   let o = parse(ScopeNode(sc), ["x"])
   inspect(errors_str(o), content="a@0/parse,b@0/parse")
@@ -42,13 +44,13 @@ test "DR-053 §2: two errors at the SAME argv position are BOTH primary (同深�
 
 test "DR-053 §2 kind 3値: parse (型不一致) / filter (post_filter reject) / constraint (required 未充足)" {
   // parse: a number positional on a non-number token → kind:parse.
-  let sc_p : Scope = { greedy: [], positional: [NumArg("n")], entities: [] }
+  let sc_p : Scope = { greedy: [], positional: [NumArg("n")], entities: [], constraints: [] }
   inspect(errors_str(parse(ScopeNode(sc_p), ["x"])), content="n@0/parse")
   // filter: a value that PARSES but exceeds a max post-filter → kind:filter (DR-034 filter reject).
-  let sc_f : Scope = { greedy: [], positional: [FilterArg("port", 1000)], entities: [] }
+  let sc_f : Scope = { greedy: [], positional: [FilterArg("port", 1000)], entities: [], constraints: [] }
   inspect(errors_str(parse(ScopeNode(sc_f), ["5000"])), content="port@0/filter")
   // constraint: a required positional with no token → kind:constraint (DR-047 値充足 違反).
-  let sc_c : Scope = { greedy: [], positional: [ReqArg("file")], entities: [] }
+  let sc_c : Scope = { greedy: [], positional: [ReqArg("file")], entities: [], constraints: [] }
   inspect(errors_str(parse(ScopeNode(sc_c), [])), content="file@0/constraint")
 }
 

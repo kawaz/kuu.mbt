@@ -136,6 +136,7 @@ test "DR-042 ⑤: parent greedy does not interrupt a child scope's positional co
     greedy: [],
     positional: [StrArg("a"), StrArg("b")],
     entities: [],
+    constraints: [],
   })
   let g = scope([flag("--opt", "opt")], [child])
   inspect(render_outcome(parse(g, ["--opt", "x"])), content="ok{a=--opt,b=x}")

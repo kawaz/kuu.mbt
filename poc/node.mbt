@@ -148,6 +148,22 @@ pub(all) struct Scope {
   greedy : Array[Node]
   positional : Array[Node]
   entities : Array[Entity]
+  constraints : Array[Constraint] // delayed predicates (DR-055/047), declared by the constraint installer
+} derive(Eq, Show)
+
+/// A delayed-predicate constraint (DR-055 / DR-047), evaluated on a complete path's FINAL state. A
+/// violation makes the path NOT a complete解決経路 (DR-047 §2) — a DR-037 Error of kind:constraint.
+pub(all) enum Constraint {
+  /// element committed → each target must have a value (default 込み). requires = 正の依存 (DR-055 §3).
+  CRequires(String, Array[String])
+  /// value-dependent requires (DR-055 §1): element committed AND its value == the given string →
+  /// the targets are required. This is the「値の枝 (exact) に付いた requires」as a value-conditional.
+  CRequiresIf(String, String, Array[String])
+  /// conflicts_with (DR-055 §2, 対称): element committed + any target committed → conflict. Declaring
+  /// on one side works both ways (the check is「両方 committed」regardless of who declared it).
+  CConflicts(String, Array[String])
+  /// exclusive_group: at most one member of the group may be committed (DR-047 指定述語).
+  CExclusive(String, Array[String])
 } derive(Eq, Show)
 
 /// A value cell (DR-030 "entity-only node"). Satellites/matchers with the same

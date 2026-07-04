@@ -22,7 +22,12 @@ fn authsock_scope(with_filter : Bool) -> Scope {
     StrArg("path"),
     IdxRepeat("sockets", socket_head, 0),
   ])
-  { greedy: [], positional: [IdxRepeat("upstreams", upstream_head, 1)], entities: [] }
+  {
+    greedy: [],
+    positional: [IdxRepeat("upstreams", upstream_head, 1)],
+    entities: [],
+    constraints: [],
+  }
 }
 
 fn authsock_input() -> Array[String] {

@@ -50,6 +50,7 @@ test "DR-052 §2: export_key null in an array element KEEPS the value as a bare 
     greedy: [],
     positional: [IdxRepeat("xs", StrArg("k"), 0)],
     entities: [],
+    constraints: [],
   }
   // no export_key → each element is an object {k:v}
   let none : Map[String, ExportKey] = Map::new()

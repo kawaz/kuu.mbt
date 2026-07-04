@@ -16,7 +16,7 @@ fn strv(trigger : String, name : String) -> Node {
 }
 
 fn scope(greedy : Array[Node], positional : Array[Node]) -> Node {
-  ScopeNode({ greedy, positional, entities: [] })
+  ScopeNode({ greedy, positional, entities: [], constraints: [] })
 }
 
 // Deterministic string ordering. MoonBit's builtin String sort orders by length
@@ -461,6 +461,10 @@ fn opt(
   config_file~ : Bool = false,
   config_key~ : Array[String]? = None,
   export~ : ExportKey = EkUnset,
+  requires~ : Array[String] = [],
+  conflicts~ : Array[String] = [],
+  exclusive~ : Array[String] = [],
+  value_requires~ : Array[(String, Array[String])] = [],
   default~ : Value? = None,
 ) -> ElemDef {
   {
@@ -483,6 +487,10 @@ fn opt(
     is_config_file: config_file,
     config_key,
     export_key: export,
+    requires,
+    conflicts_with: conflicts,
+    exclusive_group: exclusive,
+    value_requires,
     default_value: default,
   }
 }
@@ -529,6 +537,10 @@ fn pos(
     is_config_file: false,
     config_key,
     export_key: export,
+    requires: [],
+    conflicts_with: [],
+    exclusive_group: [],
+    value_requires: [],
     default_value: default,
   }
 }
@@ -554,6 +566,10 @@ fn dd_marker() -> ElemDef {
     is_config_file: false,
     config_key: None,
     export_key: EkUnset,
+    requires: [],
+    conflicts_with: [],
+    exclusive_group: [],
+    value_requires: [],
     default_value: None,
   }
 }

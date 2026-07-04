@@ -33,6 +33,10 @@ pub(all) struct ElemDef {
   is_config_file : Bool // type:"config_file" (DR-050): its resolved path feeds the config_provider
   config_key : Array[String]? // explicit config path (DR-050 §3); None = 同型. Owned by the config installer
   export_key : ExportKey // result-key axis (DR-052); a RESULT concern, orthogonal to the AtomicAST
+  requires : Array[String] // constraint installer (DR-055): 正の依存 — committed → targets need a value
+  conflicts_with : Array[String] // constraint installer (DR-055): 対称ペア排他 — both committed → conflict
+  exclusive_group : Array[String] // constraint installer (DR-047): group labels; >1 group member committed → conflict
+  value_requires : Array[(String, Array[String])] // DR-055 §1: (value → required) — 値の枝に付いた requires
   default_value : Value?
 } derive(Eq, Show)
 
@@ -88,6 +92,7 @@ pub(all) enum Installer {
   RepeatInst
   MultipleInst
   ConfigInst
+  ConstraintInst
 } derive(Eq, Show)
 
 fn owned_vocab(i : Installer) -> String {
@@ -102,6 +107,7 @@ fn owned_vocab(i : Installer) -> String {
     RepeatInst => "repeat"
     MultipleInst => "multiple"
     ConfigInst => "config" // owns both type:"config_file" and config_key (DR-050)
+    ConstraintInst => "constraint" // requires / conflicts_with / exclusive_group (DR-055)
   }
 }
 
@@ -113,6 +119,7 @@ priv struct Build {
   greedy : Array[Node] // installers add-if-absent satellites/matchers
   entities : Array[Entity] // ensured per pass; env/inherit installers declare seats in place
   positional : Array[Node] // core lowering builds it; dd's semantics live in the evaluator
+  constraints : Array[Constraint] // constraint installer declares delayed predicates here (DR-055)
 }
 
 /// A node of the scope-builder tree, mirroring the Definition tree. `decl` is the
@@ -184,6 +191,10 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     is_config_file: e.is_config_file,
     config_key: e.config_key,
     export_key: e.export_key,
+    requires: e.requires,
+    conflicts_with: e.conflicts_with,
+    exclusive_group: e.exclusive_group,
+    value_requires: e.value_requires,
     default_value: e.default_value,
   }
 }
@@ -317,7 +328,7 @@ fn init_sb(def : Definition, registry : Map[String, Node]) -> SB {
   for c in def.commands {
     children.push({ name: c.name, body: init_sb(c.body, registry) })
   }
-  { decl: def, build: { greedy: [], entities: [], positional }, children }
+  { decl: def, build: { greedy: [], entities: [], positional, constraints: [] }, children }
 }
 
 /// Core lowering (not an installer — deterministic, order-independent): ensure one
@@ -585,6 +596,10 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     is_config_file: copy.is_config_file,
     config_key: copy.config_key,
     export_key: copy.export_key,
+    requires: copy.requires,
+    conflicts_with: copy.conflicts_with,
+    exclusive_group: copy.exclusive_group,
+    value_requires: copy.value_requires,
     default_value: copy.default_value,
   })
 }
@@ -628,7 +643,68 @@ fn apply_node(inst : Installer, sb : SB) -> Unit {
     RepeatInst => () // lowered deterministically in init_sb (ref-recursion + template)
     MultipleInst => () // accumulator flag set deterministically in ensure_entity
     ConfigInst => () // config seat set deterministically in ensure_entity (席宣言型, DR-050/042 ④)
+    ConstraintInst => inst_constraint(sb.decl, sb.build)
   }
+}
+
+/// constraint installer (DR-055 / DR-042 席宣言型): collect requires / conflicts_with /
+/// exclusive_group / value_requires into the scope's delayed predicates. No structural satellite —
+/// the predicates are evaluated on a complete path's final state (DR-047). add-if-absent (idempotent).
+fn inst_constraint(def : Definition, build : Build) -> Unit {
+  let all : Array[ElemDef] = []
+  for e in def.options {
+    all.push(e)
+  }
+  for e in def.positionals {
+    all.push(e)
+  }
+  for e in all {
+    if e.requires.length() > 0 {
+      add_constraint(build, CRequires(e.name, copy_strs(e.requires)))
+    }
+    if e.conflicts_with.length() > 0 {
+      add_constraint(build, CConflicts(e.name, copy_strs(e.conflicts_with)))
+    }
+    for vr in e.value_requires {
+      add_constraint(build, CRequiresIf(e.name, vr.0, copy_strs(vr.1)))
+    }
+  }
+  // exclusive_group: gather members per group label across the scope, then one CExclusive per group.
+  let groups : Array[String] = []
+  for e in all {
+    for g in e.exclusive_group {
+      if not(str_in(groups, g)) {
+        groups.push(g)
+      }
+    }
+  }
+  for g in groups {
+    let members : Array[String] = []
+    for e in all {
+      if str_in(e.exclusive_group, g) {
+        members.push(e.name)
+      }
+    }
+    add_constraint(build, CExclusive(g, members))
+  }
+}
+
+fn str_in(xs : Array[String], v : String) -> Bool {
+  for x in xs {
+    if x == v {
+      return true
+    }
+  }
+  false
+}
+
+fn add_constraint(build : Build, c : Constraint) -> Unit {
+  for existing in build.constraints {
+    if existing == c {
+      return
+    }
+  }
+  build.constraints.push(c)
 }
 
 /// One fixpoint pass over the whole tree: ensure entities (core), apply every
@@ -785,6 +861,19 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   match e.config_key {
     Some(_) => if !vocab_owned(owned, "config") { return Some("config:config_key") }
     None => ()
+  }
+  // constraint vocab (DR-055): requires / conflicts_with / exclusive_group / value_requires.
+  if e.requires.length() > 0 && !vocab_owned(owned, "constraint") {
+    return Some("constraint:requires")
+  }
+  if e.conflicts_with.length() > 0 && !vocab_owned(owned, "constraint") {
+    return Some("constraint:conflicts_with")
+  }
+  if e.exclusive_group.length() > 0 && !vocab_owned(owned, "constraint") {
+    return Some("constraint:exclusive_group")
+  }
+  if e.value_requires.length() > 0 && !vocab_owned(owned, "constraint") {
+    return Some("constraint:value_requires")
   }
   None
 }
@@ -1122,7 +1211,12 @@ fn materialize(sb : SB) -> Scope {
     let cs = materialize(child.body)
     greedy.push(CmdSat(child.name, cs))
   }
-  { greedy, positional: sb.build.positional, entities: sb.build.entities }
+  {
+    greedy,
+    positional: sb.build.positional,
+    entities: sb.build.entities,
+    constraints: sb.build.constraints,
+  }
 }
 
 /// UsefulAST -> AtomicAST as an installer chain (DR-042). `order` is the applied
