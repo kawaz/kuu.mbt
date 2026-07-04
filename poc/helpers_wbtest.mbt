@@ -407,6 +407,35 @@ fn canon_scope(sc : Scope) -> String {
   "G[" + join_comma(gs) + "]|P[" + join_comma(ps) + "]|E[" + join_comma(es) + "]"
 }
 
+/// Whether the scope's entity roster contains `name` (the ParserContext / detail side, DR-016). An
+/// absent element (no result key) is still in the roster — this is the 2-layer separation (DR-051 §5).
+fn entity_exists(sc : Scope, name : String) -> Bool {
+  for e in sc.entities {
+    if e.name == name {
+      return true
+    }
+  }
+  false
+}
+
+/// The ParserContext meta of a result cell (DR-016 / DR-051 §5): `present` = it has a value in the
+/// result; `committed` = the value came from a CLI selection (source=Cli). An absent element reports
+/// present=false, committed=false; a default-supplied value is present but NOT committed.
+fn ctx_report(binds : Array[Binding], name : String) -> String {
+  let mut present = false
+  let mut committed = false
+  for b in binds {
+    if b.key == name {
+      present = true
+      match b.source {
+        Cli => committed = true
+        _ => ()
+      }
+    }
+  }
+  "present=\{present},committed=\{committed}"
+}
+
 /// The accumulators-registry name (DR-036) an entity's cell folds through: "flatten" (repeat),
 /// "append" (multiple), or "scalar" for a non-accumulate cell. For the P3 naming tests.
 fn entity_accum(sc : Scope, name : String) -> String {

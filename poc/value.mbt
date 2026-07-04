@@ -31,7 +31,13 @@ pub(all) enum ConfigVal {
   CBool(Bool)
   CArr(Array[ConfigVal])
   CObj(Array[(String, ConfigVal)])
+  CNull // JSON null (DR-050 §4 / DR-051): treated as 供給なし — the config seat supplies nothing
 } derive(Eq, Show)
+
+/// Whether a double is integer-valued (for the int type's constraint, DESIGN §3.3 / DR-050 §4).
+pub fn is_integer(d : Double) -> Bool {
+  d.to_int().to_double() == d
+}
 
 /// JSON-standard string form of a config number (DR-050 §4 stringification). An integer-valued
 /// double renders without a fractional part (1.0 → "1"); otherwise the decimal form (1.5 → "1.5").
@@ -57,22 +63,42 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
     (CStr(s), TStr) => Ok(VStr(s))
     (CNum(d), TStr) => Ok(VStr(num_to_string(d))) // 1.5 → "1.5" (寛容の双方向対称)
     (CBool(b), TStr) => Ok(VStr(if b { "true" } else { "false" })) // true → "true"
-    // string → number/bool: lenient parse (テキストから型へ)
+    // string → number: lenient parse (テキストから型へ)
     (CStr(s), TNum) =>
       match parse_number(s) {
         Some(d) => Ok(VNum(d))
         None => Err("config value \"\{s}\" is not a number")
       }
+    // string → int: parse AND require integer (DR-050 §4 int 行: 整数構文のみ)
+    (CStr(s), TInt) =>
+      match parse_number(s) {
+        Some(d) =>
+          if is_integer(d) {
+            Ok(VNum(d))
+          } else {
+            Err("config value \"\{s}\" is not an integer")
+          }
+        None => Err("config value \"\{s}\" is not a number")
+      }
     (CStr(s), TFlag) => Ok(VBool(s == "true" || s == "1"))
-    // typed values matching their element type
+    // typed number matching a number element (any) / an int element (integer only)
     (CNum(d), TNum) => Ok(VNum(d))
+    (CNum(d), TInt) =>
+      if is_integer(d) {
+        Ok(VNum(d))
+      } else {
+        Err("config value \"\{num_to_string(d)}\" is not an integer")
+      }
     (CBool(b), TFlag) => Ok(VBool(b))
     // 意味の飛躍 (bool ↔ number) は Error — no coercion
     (CNum(_), TFlag) => Err("config number for a bool element (no number↔bool coercion)")
     (CBool(_), TNum) => Err("config bool for a number element (no number↔bool coercion)")
+    (CBool(_), TInt) => Err("config bool for an int element (no number↔bool coercion)")
     // 構造不一致 (array / object → scalar element) は Error
     (CArr(_), _) => Err("config array for a scalar element (structural mismatch)")
     (CObj(_), _) => Err("config object for a scalar element (structural mismatch)")
+    // null is 供給なし (handled before this by resolve; defensive arm for exhaustiveness, DR-050 §4)
+    (CNull, _) => Err("config null is 供給なし (should be handled as no-supply, not converted)")
   }
 }
 

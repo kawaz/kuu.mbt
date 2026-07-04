@@ -7,10 +7,13 @@
 // closure), keeping the whole AST comparable (`derive(Eq, Show)`) for the
 // order-independence permutation test (DR-042).
 
-/// Type category of a value cell / primitive.
+/// Type category of a value cell / primitive. `number` (TNum) accepts integers and floats (JSON
+/// number 同型); `int` (TInt) is integer-constrained — a non-integer value is an Error (DESIGN §3.3
+/// / DR-050 §4). `float` is an alias for number (same accept域) and is modeled as TNum here.
 pub(all) enum Ty {
   TStr
   TNum
+  TInt
   TFlag
 } derive(Eq, Show)
 

@@ -128,7 +128,9 @@ priv struct SBChild {
 
 fn value_prim(ty : Ty, name : String) -> Node {
   match ty {
-    TNum => NumArg(name)
+    // int is number-like at the CLI in this PoC; the integer constraint is enforced at config time
+    // (config_to_value). Full CLI-side int validation is out of scope for the 11th installment.
+    TNum | TInt => NumArg(name)
     _ => StrArg(name)
   }
 }
@@ -937,7 +939,7 @@ pub fn parse_definition(
 
 fn env_value(ty : Ty, s : String) -> Value {
   match ty {
-    TNum =>
+    TNum | TInt =>
       match parse_number(s) {
         Some(d) => VNum(d)
         None => VStr(s)
@@ -1020,6 +1022,9 @@ fn resolve_entity(
         match config_lookup(obj, config_path) {
           Some(cv) =>
             match cv {
+              // JSON null = 供給なし (DR-050 §4 / DR-051): the config seat supplies nothing; fall
+              // through to inherit / default (null is NOT a value in kuu's value space).
+              CNull => ()
               // array → a multiple cell's pieces (DR-050 §4); each item typed per §4.
               CArr(items) =>
                 if e.accum.is_some() {

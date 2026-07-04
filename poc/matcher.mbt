@@ -86,7 +86,7 @@ fn run_eq_split(
     if e.key == key {
       match e.kind {
         TStr => return [Accept(pos + 1, [mkb(e.name, VStr(valstr), Cli)])]
-        TNum =>
+        TNum | TInt => // int is number-like at the CLI (constraint enforced at config time)
           match parse_number(valstr) {
             Some(d) => return [Accept(pos + 1, [mkb(e.name, VNum(d), Cli)])]
             // defined key, bad value => held Error (DR-037), not 素通し.
@@ -137,7 +137,7 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 fn short_val(e : ShortEntry, s : String) -> Binding? {
   match e.kind {
     TStr => Some(mkb(e.name, VStr(s), Cli))
-    TNum =>
+    TNum | TInt =>
       match parse_number(s) {
         Some(d) => Some(mkb(e.name, VNum(d), Cli))
         None => None
