@@ -47,12 +47,15 @@ fixture 側の記述が誤っているわけではない。
 
 ## 受け入れ条件
 
-- [ ] `inst_dd` が `def.options` 側に宣言された dd も走査し、install 対象にする
-      (実装方針は要裏取り: `inst_dd` 側で両面走査するか、`clone_def` で dd を
-      単一の面へ正規化するか — このリポの担当セッションが選定する)
+- [x] `inst_dd` が `def.options` 側に宣言された dd も走査し、install 対象にする
+      (両面走査で実装。`installer.mbt` の inst_dd を options/positionals 両走査化)
 - [ ] `fixtures/dd/*.json` の faithful 8 cases が仕様準拠の期待値で全て一致する
-- [ ] `fixture_runner_wbtest.mbt` の DIAG コントロールケース (dd を positionals
+      (effects は 8 cases 全て一致。ただし cases 1/7 は result に preset-default
+      gap が残る = 未発火 flag が result に現れない別問題。DR-064 の dd 配置不問
+      自体は解決済みだが、preset-default gap の解消は別 issue のため未完了扱い)
+- [x] `fixture_runner_wbtest.mbt` の DIAG コントロールケース (dd を positionals
       に移設して期待一致を確認していた 2 case) は目的を終えるため削除する
+      (DIAG 6 件 + 専用ヘルパー 2 関数を削除、conformance runner 化)
 
 ## TODO
 

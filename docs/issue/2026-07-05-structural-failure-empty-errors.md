@@ -73,11 +73,14 @@ Error 表現 (kind/element/argv_pos/reason) が検証できないことが判明
 
 ## 受け入れ条件
 
-- [ ] `fixtures/dd/basic.json` case 3・4・5 について、slice の failure が
+- [x] `fixtures/dd/basic.json` case 3・4・5 について、slice の failure が
       仕様の定める `errors` 内容 (`kind: parse`、`element` 省略 or 該当
       element、`argv_pos`) を持つようになる
-      (具体的な差し込み地点はこのリポでの裏取りに委ねる)
-- [ ] 上記 3 case が fixture runner 上で仕様準拠の期待値と一致する
+      (`eval.mbt`: 構造的必須不成立は held ParseError、残余トークンは
+      top-level で合成。case 3=`{x@2/parse}`, case 4=`{@2/parse}`,
+      case 5=`{x@3/parse}` が fixture 一致)
+- [x] 上記 3 case が fixture runner 上で仕様準拠の期待値と一致する
+      (fixture runner の case 3/4/5 が PASS)
 - [ ] `reason` (`missing_operand` / `unexpected_token`) までは現状
       runner が未比較 (`reason` 検証は fixture 側 optional のため、
       本 issue のスコープ外としてよい。別途着手する場合は runner 側の
