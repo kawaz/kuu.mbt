@@ -2109,13 +2109,12 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// observed) both fail the test. Expected-value edits to make the slice pass are禁止 — the fixture is
 /// authoritative; divergences stay visible here.
 ///
-/// VERDICT-GRANULARITY FREEZE (Fable §): the frozen unit is the whole verdict string (got/want diff
+/// VERDICT-GRANULARITY FREEZE: the frozen unit is the whole verdict string (got/want diff
 /// content), not just the `rel::case#N` case key. So a SECOND divergence inside an already-frozen case
 /// (e.g. an element-name divergence that later grows an argv_pos divergence too) shifts the verdict
 /// string and surfaces as an UNEXPECTED+VANISHED pair for that key — it can no longer hide behind the
-/// case key that was already on the ledger. Verbatim freeze is used today; if a future lower-side
-/// divergence makes a verdict全文 grow large, a per-面 summary keying is the successor design (deferred
-/// — verbatim stays honest and diff-legible until a fixture actually forces the issue).
+/// case key that was already on the ledger. The verbatim string is the freeze unit: honest and
+/// diff-legible.
 fn known_divergences() -> Array[String] {
   [
     // double-receptacle 取り分 (DR-043): two adjacent min:0 repeats (xs*, ys*). The fixture now asserts
@@ -2273,6 +2272,8 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     for pair in skips {
       sb.write_string("  " + pair.0 + " :: " + pair.1 + "\n")
     }
+    // moon test swallows abort() text (only a stack trace survives) — surface the report on stdout
+    println(sb.to_string())
     abort(sb.to_string())
   }
 
@@ -2344,6 +2345,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
         sb.write_string("    " + s + "\n")
       }
     }
+    println(sb.to_string())
     abort(sb.to_string())
   }
 
@@ -2385,6 +2387,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
         sb.write_string("    " + k + "\n")
       }
     }
+    println(sb.to_string())
     abort(sb.to_string())
   }
 }
