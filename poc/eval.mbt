@@ -738,8 +738,25 @@ fn scope_consume(
           sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
           severed, defs,
         )
+      } else if pos >= toks.length() {
+        // 構造的必須の不成立 (DR-065 §3): the spine needs a token for `name` but the argv is
+        // exhausted. This is kind:parse (経路構築の失敗) — a layer apart from an explicit
+        // `required` constraint (ReqArg → KConstraint). argv_pos = pos = argv.length (the token
+        // ran out at the position `name` requested). Held (not a silent Reject) so the 0-path
+        // failure carries this Error (CONFORMANCE §2 / DR-053 全保持), mirroring ReqArg's shape.
+        [
+          Held(
+            {
+              element: name,
+              argv_pos: pos,
+              kind: KParse,
+              message: "missing operand for \{name}",
+            },
+            acc,
+          ),
+        ]
       } else {
-        []
+        [] // a greedy trigger sits here (先食い); let greedy take it, the spine stays pending
       }
     SepArg(name, sep) =>
       // plain separator positional (DR-034): 先食い-aware, splits the token into pieces.
@@ -1373,6 +1390,19 @@ pub fn parse(
     }
   }
   let help = find_help_entry(root) // 誘導行の素材 (DR-053 §4)
+  // Residual-token failure (DR-065 §3 / CONFORMANCE §2): a 0-complete-path failure with NO held
+  // or constraint Error means every path reached a scope-end Accept but left tokens no consumer
+  // could take (p < argv.length). The spine walk drops such a path silently (it is not a complete
+  // reading, DR-038), so no Error is synthesized there.合成 it here at the residual head — the
+  // deepest Accept position reached (max_reach; with errors empty there are no Held branches, so
+  // max_reach is a residual Accept). element omitted = a scope-level stumble (not a single element's
+  // fault); kind:parse. Token-exhaustion (missing_operand) is already carried as a held Error above,
+  // so this fires ONLY for the residual shape.
+  let errors = if errors.length() == 0 && max_reach >= 0 {
+    [{ element: "", argv_pos: max_reach, kind: KParse, message: "unexpected token" }]
+  } else {
+    errors
+  }
   match full.length() {
     0 =>
       // DR-053 §2: a failure. errors are ALL retained; a fired failure-action (DR-048) coexists

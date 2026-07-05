@@ -60,26 +60,31 @@ test "DR-043/LOWERING §B.8 max finite: {min:1,max:3} accepts 1..3, rejects a 4t
   inspect(entity_accum(sc, "f"), content="flatten")
   inspect(result_str(sc, ["a"], defs=reg), content="{f:[a]}")
   inspect(result_str(sc, ["a", "b", "c"], defs=reg), content="{f:[a,b,c]}")
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠)
   inspect(
     render_outcome(parse(ScopeNode(sc), ["a", "b", "c", "d"], defs=reg)),
-    content="fail:no complete parse",
+    content="fail:unexpected token",
   )
 }
 
 test "DR-043 exact count {min:2,max:2}: exactly two heads, no more no fewer" {
   // min == max == 2 => exactly two heads (2 mandatory + BoundedTail budget 0). `a` fails the min;
   // `a b` => [a,b]; `a b c` fails (the 3rd token exceeds max and is left unconsumed).
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠。min 未達 = operand
+  // 不足、max 超過 = 余剰トークン)
   let def = def_([], [pos("f", TStr, repeat=rep(2, max=Some(2)))])
   let reg : Map[String, Node] = Map::new()
   let sc = build_reg(def, r14(), reg)
   inspect(
     render_outcome(parse(ScopeNode(sc), ["a"], defs=reg)),
-    content="fail:no complete parse",
+    content="fail:missing operand for f",
   )
   inspect(result_str(sc, ["a", "b"], defs=reg), content="{f:[a,b]}")
   inspect(
     render_outcome(parse(ScopeNode(sc), ["a", "b", "c"], defs=reg)),
-    content="fail:no complete parse",
+    content="fail:unexpected token",
   )
 }
 
@@ -141,9 +146,11 @@ test "DR-043/044 optional = repeat{min:0,max:1}: the sugar lowers IDENTICALLY to
   inspect(result_str(s_opt, [], defs=r1), content="{x:[]}")
   inspect(result_str(s_opt, ["a"], defs=r1), content="{x:[a]}")
   // a 2nd token (nothing follows) still fails (max 1 bounds the closure)
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠)
   inspect(
     render_outcome(parse(ScopeNode(s_opt), ["a", "b"], defs=r1)),
-    content="fail:no complete parse",
+    content="fail:unexpected token",
   )
 }
 

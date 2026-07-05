@@ -28,10 +28,12 @@ test "DR-043: `cp src... dst` splits uniquely — src takes all but the last tok
     render_outcome(parse(ScopeNode(sc), ["a", "b"], defs=reg)),
     content="ok{dst=b,src=a}",
   )
-  // one token cannot satisfy both (src min 1 AND dst) => no complete parse
+  // one token cannot satisfy both (src min 1 AND dst) => dst has no operand.
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠)
   inspect(
     render_outcome(parse(ScopeNode(sc), ["a"], defs=reg)),
-    content="fail:no complete parse",
+    content="fail:missing operand for dst",
   )
 }
 
@@ -89,10 +91,12 @@ test "DR-043: repeat min:2 requires at least two reps before the tail is optiona
     render_outcome(parse(ScopeNode(sc), ["a", "b", "c", "d"], defs=reg)),
     content="ok{dst=d,src=a,src=b,src=c}",
   )
-  // only two tokens: src min:2 consumes both, dst unfilled => fail
+  // only two tokens: src min:2 consumes both, dst unfilled => dst has no operand.
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠)
   inspect(
     render_outcome(parse(ScopeNode(sc), ["a", "b"], defs=reg)),
-    content="fail:no complete parse",
+    content="fail:missing operand for dst",
   )
 }
 

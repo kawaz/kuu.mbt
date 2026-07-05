@@ -18,6 +18,8 @@ test "DR-043 flag: a repeat inside a command, with a trailing PARENT positional 
   // [a,b,c] (it reaches the global end) and prunes the [a,b] split BEFORE root's tail is tried —
   // leaving nothing for tail. The scope's true boundary is one token earlier than the global end,
   // which the global oracle cannot see. Observed outcome recorded below.
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠)
   let def = def_cmd(
     [],
     [pos("tail", TStr)],
@@ -27,7 +29,7 @@ test "DR-043 flag: a repeat inside a command, with a trailing PARENT positional 
   let sc = build_reg(def, r16(), reg)
   inspect(
     render_outcome(parse(ScopeNode(sc), ["seq", "a", "b", "c"], defs=reg)),
-    content="fail:no complete parse",
+    content="fail:missing operand for tail",
   )
 }
 

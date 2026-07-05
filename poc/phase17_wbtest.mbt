@@ -51,11 +51,13 @@ test "DR-048 B: `--typo --help` (fail token first) does NOT fire — help is unr
   // 先頭 --typo は消費できる positional が無いので探索が pos0 で詰まり、--help に到達できない → help
   // satellite は一度も発火しない。どの候補定義でも marker が無い → 保持 Error (ここでは Error も無い
   // ので「no complete parse」)。A との対比で argv 順 (到達可能性) が効くことを示す。
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠)
   let sc = help_scope([])
   let (a, b, c) = out3(sc, ["--typo", "--help"])
-  inspect(a, content="fail:no complete parse")
-  inspect(b, content="fail:no complete parse")
-  inspect(c, content="fail:no complete parse")
+  inspect(a, content="fail:unexpected token")
+  inspect(b, content="fail:unexpected token")
+  inspect(c, content="fail:unexpected token")
 }
 
 // ── C: dd 内部の --help は selected にならない (先食い/内部一体) ─────────────────
@@ -64,11 +66,13 @@ test "DR-048 C: `-- --help x` — the dd-internal --help is raw-consumed, so hel
   // dd (`--`) が発火して以降を内部消費 (raw) にするので、--help は positional の値として食われ、help
   // satellite は発火しない (DR-041 §4 先食い/内部一体)。末尾 x が消費できず失敗するが、help marker は
   // 無いので発火しない。対照: dd 無しの `--help x y` は help が発火する。
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠)
   let sc = help_scope([dd_marker(), pos("p", TStr)])
   let (a, b, c) = out3(sc, ["--", "--help", "x"])
-  inspect(a, content="fail:no complete parse")
-  inspect(b, content="fail:no complete parse")
-  inspect(c, content="fail:no complete parse")
+  inspect(a, content="fail:unexpected token")
+  inspect(b, content="fail:unexpected token")
+  inspect(c, content="fail:unexpected token")
   // 対照: 先食いが効く位置 (dd 前) で --help が来れば発火する
   inspect(
     render_outcome(parse(ScopeNode(sc), ["--help", "x", "y"], faildef=WithHeld)),

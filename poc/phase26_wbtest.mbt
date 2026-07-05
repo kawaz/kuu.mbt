@@ -96,7 +96,9 @@ test "DR-057 §3: an explicit long:[] override cuts the inherited variant (only 
   let sc = build_or_fail(def, p26_order())
   inspect(result_str(sc, ["--tls"]), content="{ssl:true}") // 素の --tls は残る (base は name 由来)
   // --no-tls は生成されない → 未定義トークンで完全経路なし (Failure、ssl=false にはならない)
-  inspect(render_outcome(parse(ScopeNode(sc), ["--no-tls"])), content="fail:no complete parse")
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠)
+  inspect(render_outcome(parse(ScopeNode(sc), ["--no-tls"])), content="fail:unexpected token")
   inspect(result_str(sc, ["--no-ssl"]), content="{ssl:false}") // canonical variant は不変
 }
 

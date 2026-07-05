@@ -24,9 +24,11 @@ test "DR-018/041 §4: a subcommand fires as a greedy trigger and enters its own 
   )
   // The subcommand name itself is required to enter; a bare option at the root that
   // only the child declares does not resolve (the child's backbone is separate).
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠)
   inspect(
     render_outcome(parse(ScopeNode(sc), ["--release"])),
-    content="fail:no complete parse",
+    content="fail:unexpected token",
   )
 }
 

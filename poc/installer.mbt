@@ -541,7 +541,16 @@ fn seat_env(build : Build, name : String, key : String) -> Unit {
 /// spine; the evaluator severs the rest of the walk when it fires (internal-一体).
 /// A real structural installer (exact satellite), symmetric with the other
 /// greedy-face installers. Non-deletion: `is_dd` is read, never cleared.
+/// Placement-agnostic collection (DR-064 §2「dd は配置不問で回収」): dd is canonically
+/// declared under options[] but may also sit in positionals[]; the installer reads BOTH
+/// faces, symmetric with inst_env / inst_inherit which likewise walk both. add-if-absent
+/// (add_greedy) collapses duplicate declarations to a single DdSat (DR-064 §4).
 fn inst_dd(def : Definition, build : Build) -> Unit {
+  for e in def.options {
+    if e.is_dd {
+      add_greedy(build, DdSat("--"))
+    }
+  }
   for e in def.positionals {
     if e.is_dd {
       add_greedy(build, DdSat("--"))

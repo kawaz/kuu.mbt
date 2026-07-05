@@ -48,7 +48,9 @@ test "DR-051 §2c: a required (mandatory) positional is never absent in a SUCCES
   // So a successful parse ALWAYS carries the positional — it is never absent in a success result.
   let def = def_([], [pos("file", TStr)])
   let sc = build_or_fail(def, p21_order())
-  inspect(render_outcome(parse(ScopeNode(sc), [])), content="fail:no complete parse") // 未指定 → 経路不成立
+  // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
+  // ParseError を emit するようになった = spec DR-053/065 準拠)
+  inspect(render_outcome(parse(ScopeNode(sc), [])), content="fail:missing operand for file") // 未指定 → 経路不成立
   inspect(render_outcome(parse(ScopeNode(sc), ["x"])), content="ok{file=x}") // success は必ず値を持つ
 }
 
