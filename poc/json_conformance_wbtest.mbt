@@ -584,13 +584,25 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
     [
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "separator", "requires", "conflicts_with",
-      "exclusive_group", "export_key", "config_key", "deprecated",
+      "exclusive_group", "export_key", "config_key", "deprecated", "or",
     ],
     "option",
   )
+  // `or` (DR-055 §1 / §5.3 values-enum): the value枝 list. Its branches carry the value-conditional
+  // requires (a `json`枝 with requires:[schema] → value_requires ("json", ["schema"])). A value option
+  // written with `or` omits `type` (the exact枝 values are strings) → default to "string".
+  let value_requires = match o.get("or") {
+    Some(orj) => dec_or(orj)
+    None => []
+  }
   let tystr = match jf_str(o, "type") {
     Some(t) => t
-    None => raise DecodeSkip("option missing 'type'")
+    None =>
+      if has_key(o, "or") {
+        "string"
+      } else {
+        raise DecodeSkip("option missing 'type'")
+      }
   }
   let name = match jf_str(o, "name") {
     Some(s) => s
@@ -655,6 +667,7 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
       requires~,
       conflicts~,
       exclusive~,
+      value_requires~,
       default~,
     ),
     separator: sep,
@@ -663,12 +676,56 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
 }
 
 ///|
-/// Decode a positional. `positionals` is NOT allowed here → a nested-group positional
-/// (repeat over a sub-sequence, DR-043) auto-skips as a documented stage-3 gap.
+/// Decode an option's `or` value枝 list (DR-055 §1 / DESIGN §9.3 / §5.3 values-enum) into the slice's
+/// value_requires ((exact値 → required targets)). Each branch is `{exact, id?, requires?}`: `exact` is
+/// the matched value, `requires` (if present) lowers to a value-conditional predicate the slice models
+/// as CRequiresIf (phase25). A branch with no `requires` (e.g. a plain `yaml`枝) contributes nothing.
+/// LOSSY NOTE: the枝 `id` (DR-052 orthogonal id naming the anonymous exact枝) is NOT representable — the
+/// slice attributes the constraint element to the parent NAME, so an id-bearing requires枝 produces a
+/// known element-name divergence (frozen in the ledger). The enum-membership restriction (only the
+/// listed values accepted) is also not modeled — the slice keeps a permissive TStr cell; this is
+/// lossless for the current fixtures because no case supplies an out-of-enum value.
+fn dec_or(j : Json) -> Array[(String, Array[String])] raise DecodeSkip {
+  let a = match j.as_array() {
+    Some(x) => x
+    None => raise DecodeSkip("or is not an array")
+  }
+  let vrs : Array[(String, Array[String])] = []
+  for e in a {
+    let bo = match e.as_object() {
+      Some(x) => x
+      None => raise DecodeSkip("or branch is not an object")
+    }
+    allowed_keys(bo, ["exact", "id", "requires"], "or branch")
+    let exact = match jf_str(bo, "exact") {
+      Some(s) => s
+      None => raise DecodeSkip("or branch missing 'exact' (only exact value枝 supported)")
+    }
+    let reqs = dec_strs(bo.get("requires"))
+    if reqs.length() > 0 {
+      vrs.push((exact, reqs))
+    }
+  }
+  vrs
+}
+
+///|
+/// Decode a positional. A `positionals` sub-array is a NESTED-GROUP positional (DR-043 repeat over a
+/// sub-sequence): the group `xs` repeats an inner element `k` whose name differs from the array label
+/// and may carry its own export_key. The slice's Definition/ElemDef model is FLAT — lower_positional
+/// lowers a repeat positional to a Ref-recursion whose head binds the positional's OWN name
+/// (label == head), with no field for a distinctly-named inner element or its export_key. The
+/// evaluator supports the shape as a MANUALLY built IdxRepeat(label, distinct-head, min) (phase22),
+/// but parse_definition — the runner's §5 contract path — cannot construct it. No builder → skip.
 fn dec_positional(j : Json) -> ElemDef raise DecodeSkip {
   let o = match j.as_object() {
     Some(x) => x
     None => raise DecodeSkip("positional is not an object")
+  }
+  if has_key(o, "positionals") {
+    raise DecodeSkip(
+      "nested-group positional (repeat over a named sub-sequence): slice ElemDef is flat, parse_definition builds no IdxRepeat with a distinct inner-element name/export_key",
+    )
   }
   allowed_keys(
     o,
@@ -865,9 +922,9 @@ fn exp_warnings_str(j : Json) -> String raise DecodeSkip {
 }
 
 ///|
-/// DR-031 sources: the fixture maps `cell → value-source tag`. A DOTTED key (`sub.ttl`) is a
-/// command-scoped cell whose resolution needs the cross-scope inherit ladder — a stage-3 gap, so
-/// the fixture is skipped. Rendered as a sorted "cell=src" set.
+/// DR-031 sources: the fixture maps `cell → value-source tag`. A key is scope-path-qualified — root
+/// cells are bare (`ttl`), nested-scope cells are dotted (`sub.ttl`, CONFORMANCE §2). Rendered as a
+/// sorted "cell=src" set; proj_sources_tree emits the matching qualified form from the resolve tree.
 fn exp_sources_str(j : Json) -> String raise DecodeSkip {
   let o = match j.as_object() {
     Some(x) => x
@@ -875,9 +932,6 @@ fn exp_sources_str(j : Json) -> String raise DecodeSkip {
   }
   let items : Array[String] = []
   for k, v in o {
-    if str_has_sub(k, ".") {
-      raise DecodeSkip("cross-scope sources (dotted key '" + k + "') — stage 3")
-    }
     let src = match v.as_string() {
       Some(s) => s
       None => raise DecodeSkip("source value is not a string")
@@ -1005,6 +1059,135 @@ fn do_resolve(
     CfgFiles(files) =>
       resolve_scope_config(sc, cli, dc.env, fn(p) { cfg_lookup(files, p) })
   }
+}
+
+///|
+/// Whether a scope owns any command sub-scope (a CmdSat greedy resident, DR-018/041 §4).
+fn has_commands(sc : Scope) -> Bool {
+  for g in sc.greedy {
+    match g {
+      CmdSat(_, _) => return true
+      _ => ()
+    }
+  }
+  false
+}
+
+///|
+/// Resolve a scope TREE end-to-end, threading the value-source ladder across command scopes (DR-031
+/// #4 inherit席 / DR-059 inheritable). The slice's resolve primitives are scope-local (resolve_scope
+/// + inherited_of, composed manually per scope in phase3/27); this bridges them into the single-argv
+/// conformance path. Each scope resolves down cli>env>config>inherit>default over the bindings that
+/// landed in it (parse tags every binding with its scope path); the resolved values seat the inherit
+/// lookup of its command children (nearest-ancestor wins). Returns every resolved binding re-tagged
+/// with its scope path, so build_result nests the result and proj_sources_tree qualifies the sources.
+fn resolve_tree(
+  sc : Scope,
+  binds : Array[Binding],
+  dc : DCase,
+  path : Array[String],
+  inherited : Map[String, Value],
+) -> Result[Array[Binding], String] {
+  // bindings that landed in THIS scope (exact full-path match; resolve matches cells by name).
+  let here : Array[Binding] = []
+  for b in binds {
+    if path_eq(b.scope, path) {
+      here.push(b)
+    }
+  }
+  let resolved = match dc.cfg {
+    NoCfg => resolve_scope(sc, here, dc.env, inherited~)
+    CfgObj(obj) =>
+      match
+        resolve_scope_config(
+          sc, here, dc.env, fn(_p) { Some(obj) }, path~, inherited~,
+        ) {
+        Ok(rb) => rb
+        Err(m) => return Err(m)
+      }
+    CfgFiles(files) =>
+      match
+        resolve_scope_config(
+          sc, here, dc.env, fn(p) { cfg_lookup(files, p) }, path~, inherited~,
+        ) {
+        Ok(rb) => rb
+        Err(m) => return Err(m)
+      }
+  }
+  let out : Array[Binding] = []
+  // carry the parse's presence markers ("{}" / "[]") for THIS scope forward, so an entered-but-empty
+  // scope still renders (the marker sits at scope==path; resolve_scope drops it, so re-inject it).
+  for b in here {
+    if is_sentinel(b.key) {
+      out.push(b)
+    }
+  }
+  for b in resolved {
+    out.push({ ..b, scope: path })
+  }
+  // child inherit context = ancestor context ∪ this scope's resolved values (nearer scope wins).
+  let child_inherited : Map[String, Value] = Map::new()
+  for k, v in inherited {
+    child_inherited.set(k, v)
+  }
+  for b in resolved {
+    child_inherited.set(b.key, b.value)
+  }
+  // recurse ONLY into command scopes the parse actually ENTERED (a "{}" marker sits at the child's
+  // path). An un-entered scope is not resolved — its cells must not appear in the result / sources.
+  for g in sc.greedy {
+    match g {
+      CmdSat(name, child) => {
+        let childpath = path_push(path, name)
+        if scope_entered(binds, childpath) {
+          match resolve_tree(child, binds, dc, childpath, child_inherited) {
+            Ok(rb) =>
+              for b in rb {
+                out.push(b)
+              }
+            Err(m) => return Err(m)
+          }
+        }
+      }
+      _ => ()
+    }
+  }
+  Ok(out)
+}
+
+///|
+/// Whether the parse ENTERED the scope at `path` — a presence marker (or any binding) sits exactly
+/// at that path (mark_scope prepends a "{}" marker on every command entry, eval.mbt).
+fn scope_entered(binds : Array[Binding], path : Array[String]) -> Bool {
+  for b in binds {
+    if path_eq(b.scope, path) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// Scope-path-qualified value-source tags from the resolve tree (DR-031, CONFORMANCE §2 dotted keys):
+/// a root cell is bare (`ttl`), a nested-scope cell is dotted (`sub.ttl`). Mirrors proj_sources but
+/// reads the re-tagged tree bindings directly (each carries its scope path). config_file infra cells
+/// never appear here (resolve_scope_config drops them from its output; the flat resolve_scope path is
+/// only reached for scopes without config, and the cross-scope fixtures declare no config_file cell).
+fn proj_sources_tree(resolved : Array[Binding]) -> String {
+  let items : Array[String] = []
+  for b in resolved {
+    if is_sentinel(b.key) {
+      continue
+    }
+    let mut key = ""
+    for seg in b.scope {
+      key = key + seg + "."
+    }
+    key = key + b.key
+    items.push(key + "=" + render_src(b.source))
+  }
+  sort_items(items)
+  join_comma(items)
 }
 
 // ── case + fixture decoding ─────────────────────────────────────────────────────
@@ -1239,6 +1422,28 @@ fn collect_rel(root : String, rel : String, out : Array[String]) -> Unit raise {
 // ── the runner ────────────────────────────────────────────────────────────────
 
 ///|
+/// Whether a FLAT scope carries a non-flag default that only the value-source ladder can surface.
+/// collect_defaults injects flag presets (LOWERING §A.5) but leaves a non-flag default ladder-resolved
+/// (result.mbt), so a scope like `{format default "json", key_file default "/id.key"}` needs the resolve
+/// pass to render those defaults even with an empty CLI. Nested scopes (any CmdSat child) are excluded:
+/// resolve_scope resolves only the ROOT scope's entities and would flatten the command nesting, so those
+/// stay on the CLI-parse projection (cross-scope ladder threading is a separate gap).
+fn scope_needs_default_ladder(sc : Scope) -> Bool {
+  for g in sc.greedy {
+    match g {
+      CmdSat(_, _) => return false
+      _ => ()
+    }
+  }
+  for e in sc.entities {
+    if e.ty != TFlag && e.default_value.is_some() {
+      return true
+    }
+  }
+  false
+}
+
+///|
 /// Run one decoded case against the built scope. Compares ONLY the assertions the fixture makes
 /// (effects/result/errors/sources/warnings/fired_action/interpretations). Returns "PASS" or a
 /// "field got=… want=…" diff (all divergences for the case joined). effects come from the CLI-only
@@ -1247,6 +1452,10 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
   let sc = df.scope
   let outcome = parse(ScopeNode(sc), dc.argv, defs=df.registry)
   let problems : Array[String] = []
+  // A non-flag default surfaces in the result ONLY via the value-source ladder (collect_defaults
+  // injects flag presets; a non-flag default is ladder-resolved, result.mbt). So a flat scope with a
+  // non-flag default runs resolve even without env/config/sources — else the default is dropped.
+  let use_resolve = dc.resolve || scope_needs_default_ladder(sc)
   match dc.outcome {
     "success" =>
       match outcome {
@@ -1260,7 +1469,35 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             }
             None => ()
           }
-          if dc.resolve {
+          if dc.resolve && has_commands(sc) {
+            // CROSS-SCOPE ladder (DR-031 #4 / DR-059): a command tree threads each scope's resolved
+            // values down to its children as the inherit席 context. resolve_tree re-tags bindings with
+            // their scope path so build_result nests the result and proj_sources_tree qualifies the
+            // source keys (dotted `sub.ttl`). The flat resolve_scope alone cannot thread parent→child.
+            match resolve_tree(sc, binds, dc, [], Map::new()) {
+              Ok(rb) => {
+                match dc.exp_result {
+                  Some(er) => {
+                    let ar = proj_result_export(sc, rb, df.ekmap)
+                    if ar != er {
+                      problems.push("result got=\{ar} want=\{er}")
+                    }
+                  }
+                  None => ()
+                }
+                match dc.exp_sources {
+                  Some(es) => {
+                    let asr = proj_sources_tree(rb)
+                    if asr != es {
+                      problems.push("sources got=\{asr} want=\{es}")
+                    }
+                  }
+                  None => ()
+                }
+              }
+              Err(msg) => problems.push("resolve error: " + msg)
+            }
+          } else if use_resolve {
             match do_resolve(sc, binds, dc) {
               Ok(rb) => {
                 match dc.exp_result {
@@ -1415,10 +1652,14 @@ fn known_divergences() -> Array[String] {
     // to a scalar instead of dropping (the slice's phase22 only covers the co-fired-sibling case).
     // slice gap surfaced by the fixture.
     "export-key/transparent-kv.json::case#2",
-    // empty fired command scope (DR-018): a command that fires but owns only a link cell renders no
-    // scope, where the fixture asserts an empty `build:{}`. slice gap.
-    "variant-effects/effect-order-global.json::case#1",
-    "variant-effects/effect-order-global.json::case#2",
+    // value枝 id attribution (DR-052 直交 id / DR-055 §1): the `or` value枝 `{exact:json, id:fmt_json,
+    // requires:[schema]}` lowers to a value_requires (json → [schema]) whose CRequiresIf carries the
+    // PARENT element name `format`, not the枝 id `fmt_json` — the slice's ElemDef has no place to name
+    // an anonymous exact枝, so a constraint violation reports element=format where the fixture asserts
+    // element=fmt_json. slice gap (value-branch id attribution unmodeled). The outcome (failure,
+    // kind:constraint, argv_pos) is correct — only the element name diverges.
+    "constraints-parse/default-interaction.json::case#3",
+    "constraints-parse/requires.json::case#4",
     // global shadow subtree (DR-042 global): a shadowed global's value nests under the child scope
     // AND appears at the root; the fixture asserts only the child placement. slice gap (shadow sync).
     "command-scope/shadowing-subtree.json::case#1",

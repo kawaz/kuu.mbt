@@ -54,18 +54,23 @@ kawaz/kuu の fixtures を JSON 直読み conformance runner
 - **仮説 (要裏取り)**: slice の phase22 が co-fired-sibling ケースのみカバーし、
   sole-binding (単独バインディング) ケースの drop を実装していない。
 
-### 3. 空発火 command scope が `{}` を描画しない
+### 3. 空発火 command scope が `{}` を描画しない → **解消済み (runner-projection gap だった)**
 
-- **現象**: `variant-effects/effect-order-global.json::case#1` — result
+- **現象 (旧)**: `variant-effects/effect-order-global.json::case#1` — result
   `got={out=B}` `want={build={},out=B}`。case#2 も同型 (`got={out=A}`
   `want={build={},out=A}`)。link cell のみ発火した command が scope を描画せず、
-  空の `build:{}` が欠落する。
-- **一次資料**: 台帳コメントは DR-018 (command が発火したら scope を持つ) を引く。
-  presence の観点では DR-051/052 (発火した scope は空でも `{}` を持つ) も関わる。
-  **どちらが是正の根拠として正なのかは当事者で確認してほしい** (部外観測では
-  presence 規約の適用範囲を断定できない)。
-- **仮説 (要裏取り)**: 発火判定は通っているが、子を持たない scope の空描画パスが
-  無い。
+  空の `build:{}` が欠落していた。
+- **真因**: これは slice 本体 gap ではなく **runner の flat resolve 射影 gap** だった。
+  slice の parse は正しく `{}` presence marker を発火 command scope に付ける
+  (`mark_scope`, eval.mbt) が、runner の旧 `do_resolve`→`resolve_scope` は root scope
+  の entity だけを flat に解決し、marker と子 scope のネストを落としていた。この fixture
+  は `sources` を持つため resolve 経路に入り、flat 射影で `build:{}` が消えていた。
+- **解消**: `json_conformance_wbtest.mbt` に cross-scope 値ラダーを threading する
+  `resolve_tree` を実装 (DR-031 #4 inherit 席の scope tree 配線)。各 scope の presence
+  marker を保持し、解決 binding を scope path で再タグして `build_result` にネストさせる。
+  case#1/#2 とも green 化、`known_divergences()` から除去済み (2026-07-06)。
+- **含意**: slice 本体は当初から DR-018/051 準拠だった。台帳の当該エントリは slice gap で
+  なく runner 射影 gap のフラグだったことが判明。
 
 ### 4. global shadow subtree の値が root にも出る
 
