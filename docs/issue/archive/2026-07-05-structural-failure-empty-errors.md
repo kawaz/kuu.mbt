@@ -1,6 +1,6 @@
 ---
 title: トークン枯渇・残余の failure で errors が空になる — held-error が構造的必須不成立/残余トークンを捕捉しない (DR-053/065)
-status: open
+status: resolved
 category: bug
 created: 2026-07-05T13:20:09+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-06T02:52:44+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done:dd/basic.json case 3/4/5 は eval.mbt の held ParseError 合成 (構造的必須不成立) + top-level 合成 (残余トークン) で解消、fixture runner PASS", "done:同根の complete-path-count.json::case#3 (NumArg 枯渇) も scope_consume の NumArg/SepArg への枯渇 held 追加で解消 (commit deb8d0f65e)", "tracked-elsewhere:reason (missing_operand/unexpected_token) 未比較は本 issue スコープ外、追跡は kawaz/kuu の DR-070 §1b known gap 台帳が既に担う"]
 blocked_by:
 origin: kawaz/kuu (docs/CONFORMANCE.md §2, DR-053/065/066)
 ---
