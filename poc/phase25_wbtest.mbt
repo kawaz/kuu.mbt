@@ -15,10 +15,14 @@ fn cstr_order() -> Array[Installer] {
 test "DR-055/DR-042: constraint vocab needs the constraint installer; seats are order-independent" {
   // requires without ConstraintInst → unknown-vocab (DR-054). With it, the delayed predicate is
   // declared, and building with two different installer orders yields the same constraint behavior.
+  // The requires TARGET `b` is a VALUE option (not a flag): a flag carries a preset default:false
+  // (LOWERING §A.5 / DR-051 §2) so it is never value-absent, which would make `--a requires b`
+  // vacuously satisfied (DR-055「target default 充足」). A value `b` stays absent when unsupplied, so
+  // `--a` still surfaces the order-independent requires VIOLATION this test exercises.
   let def = def_(
     [
       opt("a", TFlag, long=["a"], requires=["b"]),
-      opt("b", TFlag, long=["b"]),
+      opt("b", TStr, long=["b"]),
     ],
     [],
   )

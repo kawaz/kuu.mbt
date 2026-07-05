@@ -144,13 +144,15 @@ test "DR-050 §4 types: leniency is BIDIRECTIONALLY SYMMETRIC (kawaz 裁定 a); 
     content="flag=true@config,port=8080@config",
   )
   // JSON scalar → string element: stringified (裁定 a の追加半分). 1.5 → "1.5", true → "true"
+  // `flag` is unsupplied by config/cli/env → resolves to its preset default false (LOWERING §A.5 /
+  // DR-051 §2 flag は absent にならない). 旧値 name=1.5@config は flag preset default 未実装時代の凍結。
   inspect(
     resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CNum(1.5))]))),
-    content="name=1.5@config",
+    content="flag=false@default,name=1.5@config",
   )
   inspect(
     resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CBool(true))]))),
-    content="name=true@config",
+    content="flag=false@default,name=true@config", // flag 未供給 → preset default false (DR-051 §2)
   )
   // 意味の飛躍 (bool ↔ number) は Error — no coercion in either direction
   inspect(

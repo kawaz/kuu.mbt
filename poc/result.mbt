@@ -144,6 +144,43 @@ pub fn apply_export_keys(
   out
 }
 
+/// Apply the result-key axis (DR-052) to the injected default cells, mirroring apply_export_keys on
+/// bindings: an EkNull cell is 透過 (dropped from the kv result), an EkKey renames it, and path
+/// segments (command scope names) are renamed / promoted the same way. Keeps a flag's preset default
+/// subject to the same export transform as its fired value (so `--verbose` with export null neither
+/// appears as a value nor re-appears as an injected `false`).
+pub fn apply_export_to_defaults(
+  defaults : Array[DefaultCell],
+  ek : Map[String, ExportKey],
+) -> Array[DefaultCell] {
+  let out : Array[DefaultCell] = []
+  for d in defaults {
+    match ek.get(d.name) {
+      Some(EkNull) => () // 透過: the value has no result key → not injected
+      _ => {
+        let new_path : Array[String] = []
+        for seg in d.path {
+          if seg.length() >= 1 && seg.substring(start=0, end=1) == "#" {
+            new_path.push(seg)
+          } else {
+            match ek.get(seg) {
+              Some(EkNull) => () // dropped scope label → children promote
+              Some(EkKey(s)) => new_path.push(s)
+              _ => new_path.push(seg)
+            }
+          }
+        }
+        let new_name = match ek.get(d.name) {
+          Some(EkKey(s)) => s
+          _ => d.name
+        }
+        out.push({ path: new_path, name: new_name, value: d.value })
+      }
+    }
+  }
+  out
+}
+
 /// Detect an exposure-key collision (DESIGN §15.5, DR-021 → DR-052): two DIFFERENT elements whose
 /// export_key resolves to the SAME key name, both present at the same result scope. Runtime check —
 /// the same rule that applies to names now applies to export_key values. Returns the colliding key.
@@ -217,6 +254,7 @@ fn path_push(path : Array[String], seg : String) -> Array[String] {
 pub fn build_result(
   binds : Array[Binding],
   cells : Array[AccumCell],
+  defaults : Array[DefaultCell],
   path : Array[String],
 ) -> RVal {
   // ARRAY: a "[]" sentinel at this level => build one element per "#k" child. Elements keep the
@@ -224,7 +262,7 @@ pub fn build_result(
   if has_direct_key(binds, "[]") {
     let elems : Array[RVal] = []
     for idx in ordered_indices(binds) {
-      elems.push(build_result(sub_under(binds, idx), cells, path))
+      elems.push(build_result(sub_under(binds, idx), cells, defaults, path))
     }
     return RArr(elems)
   }
@@ -280,13 +318,21 @@ pub fn build_result(
     }
   }
   for seg in segs {
-    obj.push((seg, build_result(sub_under(binds, seg), cells, path_push(path, seg))))
+    obj.push((seg, build_result(sub_under(binds, seg), cells, defaults, path_push(path, seg))))
   }
   // UNIFORM ARRAY (DR-044 §1): an accumulate cell declared at THIS path that fired 0 times still
   // renders `[]` (not absent) — inject empties for cells not already present as named leaves.
   for c in cells {
     if path_eq(c.path, path) && !str_contains(named, c.name) {
       obj.push((c.name, RArr([])))
+    }
+  }
+  // DEFAULT SEAT (DR-031 default seat / DR-051 §2): a scalar cell with a default declared at THIS
+  // path that received no winning binding renders its default (the flag preset default:false rides
+  // here — an unfired flag shows `false`, never absent). Skip names already present as a bound leaf.
+  for d in defaults {
+    if path_eq(d.path, path) && !str_contains(named, d.name) {
+      obj.push((d.name, RScalar(d.value)))
     }
   }
   RObj(obj)
@@ -470,6 +516,51 @@ fn collect_accum(
   for g in sc.greedy {
     match g {
       CmdSat(name, child) => collect_accum(child, path_push(path, name), out)
+      _ => ()
+    }
+  }
+}
+
+/// A scalar cell carrying a default value, located by its result-scope path. The result builder
+/// renders this default when the cell is otherwise absent from the winning bindings — realizing the
+/// value-source ladder's default seat in the result-object projection (DR-031 default seat). The
+/// flag preset (LOWERING §A.5 default:false) rides on this: an unfired flag renders `false` rather
+/// than dropping out (DR-051 §2 flag は absent にならない). Accum cells are excluded (they render
+/// `[]` via the AccumCell path, DR-044) so a cell has AT MOST one injection source.
+pub(all) struct DefaultCell {
+  path : Array[String]
+  name : String
+  value : Value
+} derive(Eq, Show)
+
+pub fn default_cells(sc : Scope) -> Array[DefaultCell] {
+  let out : Array[DefaultCell] = []
+  collect_defaults(sc, [], out)
+  out
+}
+
+fn collect_defaults(
+  sc : Scope,
+  path : Array[String],
+  out : Array[DefaultCell],
+) -> Unit {
+  for e in sc.entities {
+    // FLAG cells only (LOWERING §A.5 / DR-051 §2): a flag carries the preset default:false (or an
+    // explicit bool default) and is never absent, so it renders in the result-object projection even
+    // where the value-source ladder is not run. A NON-flag cell's default is deliberately NOT injected
+    // here — its true value depends on the full ladder (env / config / inherit seats can override the
+    // default, e.g. an inheritable ttl resolves via its inherit seat), which this projection does not
+    // run; injecting the raw default would surface a wrong value. Those cells stay ladder-resolved.
+    if e.ty == TFlag && e.accum.is_none() {
+      match e.default_value {
+        Some(v) => out.push({ path, name: e.name, value: v })
+        None => ()
+      }
+    }
+  }
+  for g in sc.greedy {
+    match g {
+      CmdSat(name, child) => collect_defaults(child, path_push(path, name), out)
       _ => ()
     }
   }

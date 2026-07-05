@@ -385,7 +385,7 @@ fn interps_str(o : Outcome) -> String {
     Ambiguous(d) => {
       let items : Array[String] = []
       for interp in d.interpretations {
-        items.push(render_rval(build_result(interp, [], [])))
+        items.push(render_rval(build_result(interp, [], [], [])))
       }
       sort_items(items)
       "[" + join_comma(items) + "]"
@@ -478,7 +478,7 @@ fn result_str(
   defs~ : Map[String, Node] = Map::new(),
 ) -> String {
   match parse(ScopeNode(sc), toks, defs~) {
-    Success(binds) => render_rval(build_result(binds, accum_cells(sc), []))
+    Success(binds) => render_rval(build_result(binds, accum_cells(sc), default_cells(sc), []))
     Failure(d) => fail_str(d)
     Ambiguous(d) => ambig_str(d)
   }
@@ -497,7 +497,7 @@ fn export_result_str(
       match find_export_collision(binds, ek_map) {
         Some(k) => "collision:" + k
         None =>
-          render_rval(build_result(apply_export_keys(binds, ek_map), accum_cells(sc), []))
+          render_rval(build_result(apply_export_keys(binds, ek_map), accum_cells(sc), apply_export_to_defaults(default_cells(sc), ek_map), []))
       }
     Failure(d) => fail_str(d)
     Ambiguous(d) => ambig_str(d)
@@ -511,7 +511,7 @@ fn result_rval(
   defs~ : Map[String, Node] = Map::new(),
 ) -> RVal {
   match parse(ScopeNode(sc), toks, defs~) {
-    Success(binds) => build_result(binds, accum_cells(sc), [])
+    Success(binds) => build_result(binds, accum_cells(sc), default_cells(sc), [])
     Failure(d) => abort("parse failed: " + fail_str(d))
     Ambiguous(d) => abort("ambiguous: " + ambig_str(d))
   }

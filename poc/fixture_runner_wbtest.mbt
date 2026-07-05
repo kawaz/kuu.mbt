@@ -80,7 +80,7 @@ fn render_rval_sorted(r : RVal) -> String {
 /// CONFORMANCE §2 result: the final result object (ladder-filled). accum_cells +
 /// build_result is the slice's own §5 projection path.
 fn proj_result(sc : Scope, binds : Array[Binding]) -> String {
-  render_rval_sorted(build_result(binds, accum_cells(sc), []))
+  render_rval_sorted(build_result(binds, accum_cells(sc), default_cells(sc), []))
 }
 
 /// CONFORMANCE §2 failure: the SET of (element, argv_pos, kind) — reason omitted
@@ -160,12 +160,12 @@ fn dup_def() -> Scope {
 
 test "conformance dd/basic case 1: -- severs greedy face; -b falls raw into x (DR-041/042)" {
   // fixture expect: effects [a set true, x set "-b"] ; result {a:true, b:false, x:"-b"}.
-  // effects now match the fixture exactly (dd sever + raw -b into x); the ONLY residual is
-  // KNOWN GAP (preset default): fixture expects b=false but the slice leaves unfired flags
-  // absent from the result (b missing), so result stays got={a=true,x=-b} want={...,b=false}.
+  // effects match (dd sever + raw -b into x). result now matches too: the flag preset default
+  // (LOWERING §A.5 / DR-051 §2) means the unfired flag b renders as false rather than dropping
+  // out — the projection injects the flag default seat (build_result default_cells).
   inspect(
     run_success(basic_def(), ["-a", "--", "-b"], "a:set(true)@cli,x:set(-b)@cli", "{a=true,b=false,x=-b}"),
-    content="effects ok | result got={a=true,x=-b} want={a=true,b=false,x=-b}",
+    content="PASS",
   )
 }
 
@@ -210,12 +210,12 @@ test "conformance dd/basic case 6: 2nd -- is literal (sever is emergent, not a c
 
 test "conformance dd/basic case 7: dd position-free; -- after operand still succeeds (DR-041 §4)" {
   // fixture expect: effects [x set "hello"] ; result {a:false, b:false, x:"hello"}.
-  // effects now match the fixture exactly (dd after the operand still succeeds). The ONLY residual is
-  // KNOWN GAP (preset default): fixture expects a=false,b=false but unfired flags are absent from the
-  // slice result, so result stays got={x=hello} want={a=false,b=false,x=hello}.
+  // effects match (dd after the operand still succeeds). result now matches too: both flags a and b
+  // are unfired and render as false via the preset default (LOWERING §A.5 / DR-051 §2), no longer
+  // absent from the result.
   inspect(
     run_success(basic_def(), ["hello", "--"], "x:set(hello)@cli", "{a=false,b=false,x=hello}"),
-    content="effects ok | result got={x=hello} want={a=false,b=false,x=hello}",
+    content="PASS",
   )
 }
 

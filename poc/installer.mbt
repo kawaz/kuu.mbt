@@ -225,6 +225,61 @@ fn clone_elem(e : ElemDef) -> ElemDef {
   }
 }
 
+/// snake_case → kebab-case (DR-022): the AST key is snake_case, the CLI long spelling is kebab-case.
+/// Only `_` → `-`; other characters pass through (test names are ASCII).
+fn kebab(name : String) -> String {
+  let buf = StringBuilder::new()
+  for c in name {
+    if c == '_' {
+      buf.write_char('-')
+    } else {
+      buf.write_char(c)
+    }
+  }
+  buf.to_string()
+}
+
+/// Surface normalization (LOWERING §A / §C.4): a純構文 pre-pass applied before the static checks and
+/// the installer fixpoint. Two rules:
+///   Fix 2 (LOWERING §B.1): an OPTION with present-empty `long: []` generates `--<kebab(name)>` (a
+///     name-derived spelling). The slice models `long` as an explicit spelling list, so `[]` IS the
+///     present-empty case (there is no separate absent modeling — global/with-long.json gap 3).
+///   Fix 3 (DR-064 §5): a dd element (in either face) whose name is omitted defaults its trigger
+///     spelling to "--". An explicit name overrides (方言 CLI 綴り差し替え).
+fn normalize_surface(def : Definition) -> Unit {
+  let mut i = 0
+  while i < def.options.length() {
+    def.options[i] = normalize_option(def.options[i])
+    i = i + 1
+  }
+  i = 0
+  while i < def.positionals.length() {
+    def.positionals[i] = normalize_dd_name(def.positionals[i])
+    i = i + 1
+  }
+  for c in def.commands {
+    normalize_surface(c.body)
+  }
+}
+
+fn normalize_option(e : ElemDef) -> ElemDef {
+  if e.is_dd {
+    normalize_dd_name(e)
+  } else if e.long.length() == 0 {
+    { ..e, long: [kebab(e.name)] } // present-empty long → name-derived kebab spelling
+  } else {
+    e
+  }
+}
+
+fn normalize_dd_name(e : ElemDef) -> ElemDef {
+  if e.is_dd && e.name == "" {
+    { ..e, name: "--" } // DR-064 §5: omitted dd name defaults to the "--" trigger spelling
+  } else {
+    e
+  }
+}
+
 fn clone_def(d : Definition) -> Definition {
   let os : Array[ElemDef] = []
   for e in d.options {
@@ -370,7 +425,15 @@ fn init_sb(def : Definition, registry : Map[String, Node]) -> SB {
 /// (add-if-absent). Runs every pass so global-copied options gain an entity too.
 fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
   for e in sb.decl.options {
-    ensure_entity(sb.build, e, has_cf)
+    // not_dd: a dd carries no value cell (LOWERING §B.4 「値なし」 / DR-064 §1). The options loop
+    // lacked this guard (positionals had it), so a dd placed in options[] minted a spurious
+    // `{name:"--", ty:TStr}` entity — a placement-dependent divergence (dd in positionals[] did not),
+    // violating DR-064 §2 「配置不問で lowered 形が同一」. not(is_link): a global link COPY resolves
+    // to the ROOT cell via its Rooted satellite (DR-042 link-sync), so the child scope needs no own
+    // entity — the with-long golden 断面 shows 子 entities 空 (DR-070 §1b gap 5).
+    if not_dd(e) && not(e.is_link) {
+      ensure_entity(sb.build, e, has_cf)
+    }
   }
   for e in sb.decl.positionals {
     if not_dd(e) {
@@ -406,6 +469,14 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   // corresponds to config by 同型 — so declare a config seat on every entity except the config_file
   // element itself (循環禁止). `config_key` overrides the path; None = 同型 (scope path + name).
   let config_seat = has_cf && not(e.is_config_file)
+  // Flag preset default (LOWERING §A.5 = bool + default:false; DR-051 §2 flag は absent にならない):
+  // a TFlag cell without an explicit default carries default:false so an unfired flag resolves to
+  // false rather than dropping out of the result. An explicit default (e.g. a bool defaulting true)
+  // overrides the preset. The cell's internal ty stays TFlag — observationally a bool holding VBool.
+  let default_value : Value? = match e.default_value {
+    Some(v) => Some(v)
+    None => if e.ty == TFlag { Some(VBool(false)) } else { None }
+  }
   build.entities.push({
     name: e.name,
     ty: e.ty,
@@ -415,7 +486,7 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     is_config_file: e.is_config_file,
     inherit: false,
     accum,
-    default_value: e.default_value,
+    default_value,
   })
 }
 
@@ -546,14 +617,17 @@ fn seat_env(build : Build, name : String, key : String) -> Unit {
 /// faces, symmetric with inst_env / inst_inherit which likewise walk both. add-if-absent
 /// (add_greedy) collapses duplicate declarations to a single DdSat (DR-064 §4).
 fn inst_dd(def : Definition, build : Build) -> Unit {
+  // The trigger spelling comes from the element's name (DR-064 §5: 「dd の name はトリガ綴り軸にのみ
+  // 効く」). The name defaults to "--" (normalize_surface supplies it when omitted, LOWERING §A.5),
+  // and an explicit name overrides for a dialect CLI. add-if-absent collapses duplicate dd decls.
   for e in def.options {
     if e.is_dd {
-      add_greedy(build, DdSat("--"))
+      add_greedy(build, DdSat(e.name))
     }
   }
   for e in def.positionals {
     if e.is_dd {
-      add_greedy(build, DdSat("--"))
+      add_greedy(build, DdSat(e.name))
     }
   }
 }
@@ -1587,6 +1661,10 @@ pub fn parse_definition(
   registry~ : Map[String, Node] = Map::new(),
 ) -> Result[Scope, Array[DefError]] {
   let def = clone_def(def0)
+  // Surface normalization (LOWERING §A / §C.4 純構文正規化): present-empty long → name-derived kebab
+  // spelling (Fix 2 §B.1) + dd name default "--" (Fix 3 DR-064 §5). Runs on the clone before the
+  // static vocab checks so a name-derived long is subject to the same 未所有 vocab check as an explicit one.
+  normalize_surface(def)
   // init_sb populates `registry` with repeat-lowering templates, so the ref checks below see them.
   // The alias entry-copies carry no refs/repeats and command aliases clone already-checked bodies,
   // so the static checks run on the pre-desugar def (this first tree is only for registry population).
