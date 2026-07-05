@@ -13,8 +13,13 @@ list:
     @just --list --unsorted
 
 # poc の全テスト
+#
+# JSON 直読み conformance runner (json_conformance_wbtest.mbt) が fixtures を実食する。
+# fixtures root は $KUU_FIXTURES を優先、無ければ隣接 kuu リポの絶対パスを解決して渡す。
+# それも見つからなければ未設定のまま moon test に渡し、runner 側の相対 fallback
+# (moon-test cwd = poc からの ../../../kuu/main/fixtures) が効く。
 test:
-    cd poc && moon test
+    fx="${KUU_FIXTURES:-{{justfile_directory()}}/../../kuu/main/fixtures}"; if [ -d "$fx" ]; then export KUU_FIXTURES="$(cd "$fx" && pwd)"; fi; cd "{{justfile_directory()}}/poc" && moon test
 
 # slice bookmark を @- 先端へ forward して origin へ push (test gate 付き)
 push: test
