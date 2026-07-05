@@ -1460,6 +1460,25 @@ fn req_field(o : Map[String, Json], key : String) -> String raise DecodeSkip {
 }
 
 ///|
+/// A golden `{ref, link}` value-cell reference → the collapsed refname. ref (構造継承) and
+/// link (値同期) are independent axes (DR-007/029): a golden may legitimately carry ref≠link.
+/// But the 断面 models only collapse them — TRefEnt stores one name and renders `ref{n,link=n}`,
+/// GSeqSat renders link==ref — so a ref≠link golden is structurally unrepresentable here.
+/// DR-070 §2 lists 「link 先」as a match-required item, so silently dropping link would be a
+/// mis-decode; instead we capability-gate: reject unknown keys and DecodeSkip on ref≠link.
+fn dec_ref_link(o : Map[String, Json], what : String) -> String raise DecodeSkip {
+  allowed_keys(o, ["ref", "link"], what)
+  let r = req_field(o, "ref")
+  let l = req_field(o, "link")
+  if l != r {
+    raise DecodeSkip(
+      what + " has ref≠link (unrepresentable in 断面: ref=" + r + " link=" + l + ")",
+    )
+  }
+  r
+}
+
+///|
 /// A golden greedy-face item (DR-063 §3) → GItem, discriminated by its keys: `scope`→command subtree,
 /// `matcher`→native matcher seat, `seq`→value satellite {exact,ref}, `value`→set 縮退形 {exact,value,
 /// link}, bare `exact`→dd/exact trigger.
@@ -1470,6 +1489,7 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
   }
   if has_key(o, "scope") {
     // {exact: name, scope: {5-face}} — a command subtree (scope may be {} for an empty child).
+    allowed_keys(o, ["exact", "scope"], "golden command subtree")
     let name = req_field(o, "exact")
     let so = match o.get("scope").unwrap().as_object() {
       Some(x) => x
@@ -1478,6 +1498,7 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
     return GCmd(name, dec_lsec(so))
   }
   if has_key(o, "matcher") {
+    allowed_keys(o, ["matcher", "entries"], "golden matcher")
     let kind = req_field(o, "matcher")
     let entries : Array[(String, String)] = []
     match o.get("entries") {
@@ -1498,6 +1519,7 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
   }
   if has_key(o, "seq") {
     // {seq:[{exact: trigger}, {ref: name, link: name}]} — a value satellite (trigger + value slot).
+    allowed_keys(o, ["seq"], "golden seq satellite")
     let sa = match o.get("seq").unwrap().as_array() {
       Some(x) => x
       None => raise DecodeSkip("greedy seq is not an array")
@@ -1506,24 +1528,34 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
       raise DecodeSkip("greedy seq satellite is not [exact, ref]")
     }
     let trig = match sa[0].as_object() {
-      Some(x) => req_field(x, "exact")
+      Some(x) => {
+        allowed_keys(x, ["exact"], "golden seq trigger")
+        req_field(x, "exact")
+      }
       None => raise DecodeSkip("greedy seq[0] is not an object")
     }
     let refn = match sa[1].as_object() {
-      Some(x) => req_field(x, "ref")
+      Some(x) => dec_ref_link(x, "golden seq value cell")
       None => raise DecodeSkip("greedy seq[1] is not an object")
     }
     return GSeqSat(trig, refn)
   }
   if has_key(o, "value") {
     // {exact, value, link} — set descriptor 縮退形 (DR-045): flag / variant satellite.
+    allowed_keys(o, ["exact", "value", "link"], "golden set descriptor")
     return GSet(
       req_field(o, "exact"),
       json_to_value(o.get("value").unwrap()),
       req_field(o, "link"),
     )
   }
-  // bare {exact: "--"} — dd marker / exact trigger.
+  // bare {exact: "--"} — dd marker / exact trigger. allowed_keys is the capability gate:
+  // the non-set effect descriptor {exact, link, effect:{op}} (DR-045) reaches here (no
+  // scope/matcher/seq/value key) and is rejected on its `link`/`effect` keys → DecodeSkip,
+  // rather than silently collapsing to GExact and dropping the effect (DR-070 §2 requires
+  // 効果記述子の op/operand/link 先 to match; GEff decode is intentionally unimplemented
+  // until a fixture exercises it, so gate it here).
+  allowed_keys(o, ["exact"], "golden greedy exact")
   GExact(req_field(o, "exact"))
 }
 
@@ -1536,10 +1568,13 @@ fn dec_pos_tnode(j : Json) -> TNode raise DecodeSkip {
     None => raise DecodeSkip("positional node is not an object")
   }
   if has_key(o, "link") {
-    return TRefEnt(req_field(o, "ref"))
+    return TRefEnt(dec_ref_link(o, "positional entity ref"))
   }
   match jf_str(o, "ref") {
-    Some(k) => TRefTmpl(canon_tmpl(k), bool_field(o, "optional", false))
+    Some(k) => {
+      allowed_keys(o, ["ref", "optional"], "positional template ref")
+      TRefTmpl(canon_tmpl(k), bool_field(o, "optional", false))
+    }
     None => raise DecodeSkip("unrecognized positional node")
   }
 }
@@ -1553,6 +1588,7 @@ fn dec_tmpl_body(j : Json) -> TNode raise DecodeSkip {
     None => raise DecodeSkip("template body is not an object")
   }
   if has_key(o, "seq") {
+    allowed_keys(o, ["seq"], "template seq")
     let sa = match o.get("seq").unwrap().as_array() {
       Some(x) => x
       None => raise DecodeSkip("template seq is not an array")
@@ -1564,11 +1600,13 @@ fn dec_tmpl_body(j : Json) -> TNode raise DecodeSkip {
     return TSeq(items)
   }
   if has_key(o, "link") {
-    return TRefEnt(req_field(o, "ref"))
+    return TRefEnt(dec_ref_link(o, "template entity ref"))
   }
   if has_key(o, "ref") {
+    allowed_keys(o, ["ref", "optional"], "template ref")
     return TRefTmpl(canon_tmpl(req_field(o, "ref")), bool_field(o, "optional", false))
   }
+  allowed_keys(o, ["exact"], "template literal")
   TExact(req_field(o, "exact"))
 }
 
@@ -1612,17 +1650,34 @@ fn dec_lcon(j : Json) -> Constraint raise DecodeSkip {
     None => raise DecodeSkip("constraint is not an object")
   }
   match req_field(o, "kind") {
-    "requires" => CRequires(req_field(o, "element"), dec_strs(o.get("targets")))
-    "conflicts_with" =>
+    "requires" => {
+      allowed_keys(o, ["kind", "element", "targets"], "requires constraint")
+      CRequires(req_field(o, "element"), dec_strs(o.get("targets")))
+    }
+    "conflicts_with" => {
+      allowed_keys(
+        o,
+        ["kind", "element", "targets"],
+        "conflicts_with constraint",
+      )
       CConflicts(req_field(o, "element"), dec_strs(o.get("targets")))
-    "requires_if" =>
+    }
+    "requires_if" => {
+      allowed_keys(
+        o,
+        ["kind", "element", "value", "targets"],
+        "requires_if constraint",
+      )
       CRequiresIf(
         req_field(o, "element"),
         req_field(o, "value"),
         dec_strs(o.get("targets")),
       )
-    "exclusive_group" =>
+    }
+    "exclusive_group" => {
+      allowed_keys(o, ["kind", "group", "members"], "exclusive_group constraint")
       CExclusive(req_field(o, "group"), dec_strs(o.get("members")))
+    }
     other => raise DecodeSkip("unsupported constraint kind '" + other + "'")
   }
 }
