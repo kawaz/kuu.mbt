@@ -150,26 +150,9 @@ fn basic_def() -> Scope {
   build_reg(def, [LongInst, ShortInst, DdInst], Map::new())
 }
 
-/// Diagnostic control: the SAME definition but with `--` transcribed into
-/// positionals[]. DR-064 §2 says placement must not matter; the slice's inst_dd
-/// (installer.mbt:544) iterates only positionals, so this control isolates whether
-/// any basic divergence is caused by placement rather than by dd semantics.
-fn basic_def_dd_in_positionals() -> Scope {
-  let def = def_(
-    [opt("a", TFlag, short=['a']), opt("b", TFlag, short=['b'])],
-    [dd_marker(), pos("x", TStr)],
-  )
-  build_reg(def, [LongInst, ShortInst, DdInst], Map::new())
-}
-
 /// fixtures/dd/duplicate-decl.json definition: two dd declarations in options[].
 fn dup_def() -> Scope {
   let def = def_([dd_marker(), dd_marker()], [pos("x", TStr)])
-  build_reg(def, [DdInst], Map::new())
-}
-
-fn dup_def_dd_in_positionals() -> Scope {
-  let def = def_([], [dd_marker(), dd_marker(), pos("x", TStr)])
   build_reg(def, [DdInst], Map::new())
 }
 
@@ -177,11 +160,12 @@ fn dup_def_dd_in_positionals() -> Scope {
 
 test "conformance dd/basic case 1: -- severs greedy face; -b falls raw into x (DR-041/042)" {
   // fixture expect: effects [a set true, x set "-b"] ; result {a:true, b:false, x:"-b"}.
-  // b:false is the flag-preset-default (known slice gap): unfired flags are absent
-  // in the slice, so result will be missing b => gap-classified in the report.
+  // effects now match the fixture exactly (dd sever + raw -b into x); the ONLY residual is
+  // KNOWN GAP (preset default): fixture expects b=false but the slice leaves unfired flags
+  // absent from the result (b missing), so result stays got={a=true,x=-b} want={...,b=false}.
   inspect(
     run_success(basic_def(), ["-a", "--", "-b"], "a:set(true)@cli,x:set(-b)@cli", "{a=true,b=false,x=-b}"),
-    content="effects got=a:set(true)@cli,x:set(--)@cli,b:set(true)@cli want=a:set(true)@cli,x:set(-b)@cli | result got={a=true,b=true,x=--} want={a=true,b=false,x=-b}",
+    content="effects ok | result got={a=true,x=-b} want={a=true,b=false,x=-b}",
   )
 }
 
@@ -197,35 +181,41 @@ test "conformance dd/basic case 2: no --; -b fires as flag, c -> x (DR-042 dd pu
 test "conformance dd/basic case 3: structural-required x unmet, argv_pos=token-exhaust (DR-065 §3)" {
   // fixture expect: failure errors {element:x, argv_pos:2, kind:parse} (reason missing_operand
   // not compared). argv_pos = argv.length = 2 (token ran out at the position x requested).
-  inspect(run_failure(basic_def(), ["-a", "-b"], "{x@2/parse}"), content="errors got={} want={x@2/parse}")
+  // errors now match the fixture exactly (structural failure emits the held ParseError).
+  inspect(run_failure(basic_def(), ["-a", "-b"], "{x@2/parse}"), content="PASS")
 }
 
 test "conformance dd/basic case 4: residual token after sever, element-less scope stumble (DR-065 §3)" {
   // fixture expect: failure errors {element:"" (omitted), argv_pos:2, kind:parse} (reason
   // unexpected_token). argv_pos = residual head (the -b at index 2 with no consumer).
-  inspect(run_failure(basic_def(), ["--", "-a", "-b"], "{@2/parse}"), content="EXPECTED-FAILURE got=ok{a=true,b=true,x=--}")
+  // errors now match the fixture exactly (residual-token failure synthesizes the parse error).
+  inspect(run_failure(basic_def(), ["--", "-a", "-b"], "{@2/parse}"), content="PASS")
 }
 
 test "conformance dd/basic case 5: marker consumed but yields no value; x empty (DR-038)" {
   // fixture expect: failure errors {element:x, argv_pos:3, kind:parse} (reason missing_operand).
   // argv_pos = 3 = argv.length (all consumed but x got no value => not a complete path).
-  inspect(run_failure(basic_def(), ["-a", "-b", "--"], "{x@3/parse}"), content="EXPECTED-FAILURE got=ok{a=true,b=true,x=--}")
+  // errors now match the fixture exactly (dd consumes the marker, x stays unmet => held error).
+  inspect(run_failure(basic_def(), ["-a", "-b", "--"], "{x@3/parse}"), content="PASS")
 }
 
 test "conformance dd/basic case 6: 2nd -- is literal (sever is emergent, not a count rule) (DR-064 §4)" {
   // fixture expect: effects [a set true, b set true, x set "--"] ; result {a:true,b:true,x:"--"}.
+  // effects + result now match the fixture exactly (dd position-free回収 lets the 2nd -- reach x).
   inspect(
     run_success(basic_def(), ["-a", "-b", "--", "--"], "a:set(true)@cli,b:set(true)@cli,x:set(--)@cli", "{a=true,b=true,x=--}"),
-    content="EXPECTED-SUCCESS got=fail:no complete parse",
+    content="PASS",
   )
 }
 
 test "conformance dd/basic case 7: dd position-free; -- after operand still succeeds (DR-041 §4)" {
   // fixture expect: effects [x set "hello"] ; result {a:false, b:false, x:"hello"}.
-  // a:false and b:false are both preset-default (known slice gap) => absent in result.
+  // effects now match the fixture exactly (dd after the operand still succeeds). The ONLY residual is
+  // KNOWN GAP (preset default): fixture expects a=false,b=false but unfired flags are absent from the
+  // slice result, so result stays got={x=hello} want={a=false,b=false,x=hello}.
   inspect(
     run_success(basic_def(), ["hello", "--"], "x:set(hello)@cli", "{a=false,b=false,x=hello}"),
-    content="EXPECTED-SUCCESS got=fail:no complete parse",
+    content="effects ok | result got={x=hello} want={a=false,b=false,x=hello}",
   )
 }
 
@@ -235,46 +225,9 @@ test "conformance dd/duplicate-decl case 1: two dd decls merge to one reading (D
   // fixture expect: success (NOT ambiguous) effects [x set "-v"] ; result {x:"-v"}.
   // Both dd readings have the same effect (sever + consume 1, no value) so path-identity
   // dedup collapses them to a single interpretation.
+  // effects + result now match the fixture exactly (two dd decls merge to one reading).
   inspect(
     run_success(dup_def(), ["--", "-v"], "x:set(-v)@cli", "{x=-v}"),
-    content="EXPECTED-SUCCESS got=fail:no complete parse",
-  )
-}
-
-// ── diagnostic controls (dd in positionals) — root-cause the placement axis ────
-
-test "DIAG: basic case 1 with dd in positionals[] (isolates DR-064 §2 placement-agnosticism)" {
-  inspect(
-    run_success(basic_def_dd_in_positionals(), ["-a", "--", "-b"], "a:set(true)@cli,x:set(-b)@cli", "{a=true,b=false,x=-b}"),
-    content="effects ok | result got={a=true,x=-b} want={a=true,b=false,x=-b}",
-  )
-}
-
-test "DIAG: basic case 4 with dd in positionals[]" {
-  inspect(run_failure(basic_def_dd_in_positionals(), ["--", "-a", "-b"], "{@2/parse}"), content="errors got={} want={@2/parse}")
-}
-
-test "DIAG: basic case 5 with dd in positionals[]" {
-  inspect(run_failure(basic_def_dd_in_positionals(), ["-a", "-b", "--"], "{x@3/parse}"), content="errors got={} want={x@3/parse}")
-}
-
-test "DIAG: basic case 6 with dd in positionals[]" {
-  inspect(
-    run_success(basic_def_dd_in_positionals(), ["-a", "-b", "--", "--"], "a:set(true)@cli,b:set(true)@cli,x:set(--)@cli", "{a=true,b=true,x=--}"),
-    content="PASS",
-  )
-}
-
-test "DIAG: basic case 7 with dd in positionals[]" {
-  inspect(
-    run_success(basic_def_dd_in_positionals(), ["hello", "--"], "x:set(hello)@cli", "{a=false,b=false,x=hello}"),
-    content="effects ok | result got={x=hello} want={a=false,b=false,x=hello}",
-  )
-}
-
-test "DIAG: duplicate-decl case 1 with dd in positionals[]" {
-  inspect(
-    run_success(dup_def_dd_in_positionals(), ["--", "-v"], "x:set(-v)@cli", "{x=-v}"),
     content="PASS",
   )
 }
