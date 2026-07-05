@@ -89,6 +89,7 @@ enum CfgInj {
 ///|
 struct DCase {
   argv : Array[String]
+  id : String? // stable case id (kebab-case slug), optional at this stage — enables rel::slug reporting (None → rel::case#N fallback). Format validation deferred to a later stage (read only here).
   outcome : String // "success" | "failure" | "ambiguous"
   exp_effects : String? // §2 effects (CLI-only, ordered)
   exp_result : String? // §2 result (key-sorted; resolve-filled when in resolve mode)
@@ -1264,6 +1265,10 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     None => raise DecodeSkip("case is not an object")
   }
   let argv = dec_argv(co)
+  // stable case id (DR-pending upstream): read only at this stage. The kebab-case ([a-z0-9-]) +
+  // per-file uniqueness invariants are NOT enforced here (loose acceptance) — strict validation is
+  // a later stage. A present id drives rel::slug reporting; its absence falls back to rel::case#N.
+  let id = jf_str(co, "id")
   let expect = match co.get("expect") {
     Some(e) => e
     None => raise DecodeSkip("case missing 'expect'")
@@ -1357,6 +1362,7 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
   }
   {
     argv,
+    id,
     outcome,
     exp_effects,
     exp_result,
@@ -2172,6 +2178,19 @@ fn expected_skips() -> Array[(String, String)] {
 }
 
 ///|
+/// The case identity used in every report line + the frozen divergence ledger key. A case with a
+/// stable `id` renders as `rel::slug` (position-independent — survives case reordering / insertion);
+/// a case without one falls back to the ordinal `rel::case#N` (N = 1-based decode order). The ledger
+/// (known_divergences) currently freezes the case#N form, so until fixtures carry ids every key takes
+/// the fallback and the ledger stays matching.
+fn case_key(rel : String, ci : Int, id : String?) -> String {
+  match id {
+    Some(slug) => rel + "::" + slug
+    None => rel + "::case#" + ci.to_string()
+  }
+}
+
+///|
 test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lower 5 面断面)" {
   let root = fixtures_root()
   let rels : Array[String] = []
@@ -2225,7 +2244,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       ran_cases = ran_cases + 1
       let verdict = run_case(df, c)
       if verdict != "PASS" {
-        mismatches.push(rel + "::case#" + ci.to_string() + " :: " + verdict)
+        mismatches.push(case_key(rel, ci, c.id) + " :: " + verdict)
       }
     }
   }
