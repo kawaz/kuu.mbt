@@ -66,7 +66,9 @@
 // ── skip signal: a fixture the decoder does not support ────────────────────────
 
 ///|
-suberror DecodeSkip String
+suberror DecodeSkip {
+  DecodeSkip(String)
+}
 
 // ── a decoded, runnable case ───────────────────────────────────────────────────
 // A case carries the argv, the asserted outcome, and every comparison the fixture
@@ -322,7 +324,11 @@ fn has_key(o : Map[String, Json], k : String) -> Bool {
 }
 
 ///|
-fn bool_field(o : Map[String, Json], k : String, dflt : Bool) -> Bool raise DecodeSkip {
+fn bool_field(
+  o : Map[String, Json],
+  k : String,
+  dflt : Bool,
+) -> Bool raise DecodeSkip {
   match o.get(k) {
     None => dflt
     Some(j) =>
@@ -356,7 +362,8 @@ fn dec_strs(j : Json?) -> Array[String] raise DecodeSkip {
               for e in a {
                 match e.as_string() {
                   Some(s) => r.push(s)
-                  None => raise DecodeSkip("string-array element is not a string")
+                  None =>
+                    raise DecodeSkip("string-array element is not a string")
                 }
               }
               r
@@ -440,7 +447,11 @@ fn dec_ty(t : String) -> Ty raise DecodeSkip {
 /// A `long` array element is EITHER a plain spelling / the `:set` main-entry descriptor (kept in
 /// `long`, returns None) OR a variant DSL entry `prefix:op[:operand]` (returns the Variant, DR-011).
 /// The variant trigger word is `prefix-kebab(name)` (e.g. `no:set:false` on `ssl` → `--no-ssl`).
-fn dec_variant(elem : String, name : String, ty : Ty) -> Variant? raise DecodeSkip {
+fn dec_variant(
+  elem : String,
+  name : String,
+  ty : Ty,
+) -> Variant? raise DecodeSkip {
   if elem == ":set" {
     return None // the main-entry descriptor — a spelling, not a variant
   }
@@ -559,7 +570,11 @@ fn dec_export(j : Json) -> ExportKey {
 /// An alias declaration (DR-057), from an options[]/commands[] entry carrying an `alias` key.
 fn dec_alias(o : Map[String, Json]) -> AliasDef raise DecodeSkip {
   // `type` is allowed (a command alias carries type:"command"); it does not affect the decode.
-  allowed_keys(o, ["alias", "name", "short", "long", "deprecated", "type"], "alias")
+  allowed_keys(
+    o,
+    ["alias", "name", "short", "long", "deprecated", "type"],
+    "alias",
+  )
   let target = match jf_str(o, "alias") {
     Some(t) => t
     None => raise DecodeSkip("alias missing target")
@@ -605,8 +620,8 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
     o,
     [
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
-      "inheritable", "multiple", "separator", "requires", "conflicts_with",
-      "exclusive_group", "export_key", "config_key", "deprecated", "or",
+      "inheritable", "multiple", "separator", "requires", "conflicts_with", "exclusive_group",
+      "export_key", "config_key", "deprecated", "or",
     ],
     "option",
   )
@@ -632,7 +647,7 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
   }
   // dd: the trigger spelling is the element's name (DR-064 §5); a dialect name ("++") is honored.
   if tystr == "dd" {
-    return DOpt({ ..dd_marker(), name })
+    return DOpt({ ..dd_marker(), name, })
   }
   // help / version (DR-048): a failure-action FLAG. config_file (DR-050): a TStr path cell.
   let (ty, fail_action, config_file) = match tystr {
@@ -676,7 +691,7 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
       ty,
       long=longs,
       variants=vars,
-      short=short,
+      short~,
       env~,
       global~,
       inherit~,
@@ -685,7 +700,7 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
       fail_action~,
       config_file~,
       config_key~,
-      export=export,
+      export~,
       requires~,
       conflicts~,
       exclusive~,
@@ -721,7 +736,10 @@ fn dec_or(j : Json) -> Array[(String, Array[String])] raise DecodeSkip {
     allowed_keys(bo, ["exact", "id", "requires"], "or branch")
     let exact = match jf_str(bo, "exact") {
       Some(s) => s
-      None => raise DecodeSkip("or branch missing 'exact' (only exact value枝 supported)")
+      None =>
+        raise DecodeSkip(
+          "or branch missing 'exact' (only exact value枝 supported)",
+        )
     }
     let reqs = dec_strs(bo.get("requires"))
     if reqs.length() > 0 {
@@ -752,8 +770,8 @@ fn dec_positional(j : Json) -> ElemDef raise DecodeSkip {
   allowed_keys(
     o,
     [
-      "id", "name", "type", "repeat", "optional", "multiple", "separator",
-      "export_key", "config_key", "default",
+      "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
+      "config_key", "default",
     ],
     "positional",
   )
@@ -790,12 +808,12 @@ fn dec_positional(j : Json) -> ElemDef raise DecodeSkip {
   pos(
     name,
     ty,
-    repeat=repeat,
+    repeat~,
     optional~,
     multiple~,
     separator=sep,
     config_key~,
-    export=export,
+    export~,
     default~,
   )
 }
@@ -1076,8 +1094,7 @@ fn do_resolve(
 ) -> Result[Array[Binding], String] {
   match dc.cfg {
     NoCfg => Ok(resolve_scope(sc, cli, dc.env))
-    CfgObj(obj) =>
-      resolve_scope_config(sc, cli, dc.env, fn(_p) { Some(obj) })
+    CfgObj(obj) => resolve_scope_config(sc, cli, dc.env, fn(_p) { Some(obj) })
     CfgFiles(files) =>
       resolve_scope_config(sc, cli, dc.env, fn(p) { cfg_lookup(files, p) })
   }
@@ -1135,7 +1152,12 @@ fn resolve_tree(
     CfgObj(obj) =>
       match
         resolve_scope_config(
-          sc, here, dc.env, fn(_p) { Some(obj) }, path~, inherited~,
+          sc,
+          here,
+          dc.env,
+          fn(_p) { Some(obj) },
+          path~,
+          inherited~,
         ) {
         Ok(rb) => rb
         Err(m) => return Err(m)
@@ -1143,7 +1165,12 @@ fn resolve_tree(
     CfgFiles(files) =>
       match
         resolve_scope_config(
-          sc, here, dc.env, fn(p) { cfg_lookup(files, p) }, path~, inherited~,
+          sc,
+          here,
+          dc.env,
+          fn(p) { cfg_lookup(files, p) },
+          path~,
+          inherited~,
         ) {
         Ok(rb) => rb
         Err(m) => return Err(m)
@@ -1322,7 +1349,8 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     None
   }
   // fired_action (DR-048) is a FailureData field — only asserted on a failure outcome.
-  let (fired_cmp, fired_exp) = if outcome == "failure" && has_key(eo, "fired_action") {
+  let (fired_cmp, fired_exp) = if outcome == "failure" &&
+    has_key(eo, "fired_action") {
     (true, jf_str(eo, "fired_action")) // string → Some; JSON null → None (no action)
   } else {
     (false, None)
@@ -1397,8 +1425,19 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
 /// The canonical full installer chain (DR-042 §canonical set + DR-043/050/055/057/059).
 fn full_installers() -> Array[Installer] {
   [
-    LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst,
-    RepeatInst, MultipleInst, ConfigInst, ConstraintInst, AliasInst, InheritableInst,
+    LongInst,
+    ShortInst,
+    EnvInst,
+    DdInst,
+    CommandInst,
+    GlobalInst,
+    InheritInst,
+    RepeatInst,
+    MultipleInst,
+    ConfigInst,
+    ConstraintInst,
+    AliasInst,
+    InheritableInst,
   ]
 }
 
@@ -1469,13 +1508,21 @@ fn req_field(o : Map[String, Json], key : String) -> String raise DecodeSkip {
 /// GSeqSat renders link==ref — so a ref≠link golden is structurally unrepresentable here.
 /// DR-070 §2 lists 「link 先」as a match-required item, so silently dropping link would be a
 /// mis-decode; instead we capability-gate: reject unknown keys and DecodeSkip on ref≠link.
-fn dec_ref_link(o : Map[String, Json], what : String) -> String raise DecodeSkip {
+fn dec_ref_link(
+  o : Map[String, Json],
+  what : String,
+) -> String raise DecodeSkip {
   allowed_keys(o, ["ref", "link"], what)
   let r = req_field(o, "ref")
   let l = req_field(o, "link")
   if l != r {
     raise DecodeSkip(
-      what + " has ref≠link (unrepresentable in 断面: ref=" + r + " link=" + l + ")",
+      what +
+      " has ref≠link (unrepresentable in 断面: ref=" +
+      r +
+      " link=" +
+      l +
+      ")",
     )
   }
   r
@@ -1607,7 +1654,10 @@ fn dec_tmpl_body(j : Json) -> TNode raise DecodeSkip {
   }
   if has_key(o, "ref") {
     allowed_keys(o, ["ref", "optional"], "template ref")
-    return TRefTmpl(canon_tmpl(req_field(o, "ref")), bool_field(o, "optional", false))
+    return TRefTmpl(
+      canon_tmpl(req_field(o, "ref")),
+      bool_field(o, "optional", false),
+    )
   }
   allowed_keys(o, ["exact"], "template literal")
   TExact(req_field(o, "exact"))
@@ -1678,7 +1728,11 @@ fn dec_lcon(j : Json) -> Constraint raise DecodeSkip {
       )
     }
     "exclusive_group" => {
-      allowed_keys(o, ["kind", "group", "members"], "exclusive_group constraint")
+      allowed_keys(
+        o,
+        ["kind", "group", "members"],
+        "exclusive_group constraint",
+      )
       CExclusive(req_field(o, "group"), dec_strs(o.get("members")))
     }
     other => raise DecodeSkip("unsupported constraint kind '" + other + "'")
@@ -1698,7 +1752,10 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
   match o.get("greedy") {
     Some(gj) =>
       match gj.as_array() {
-        Some(a) => for e in a { greedy.push(dec_gitem(e)) }
+        Some(a) =>
+          for e in a {
+            greedy.push(dec_gitem(e))
+          }
         None => raise DecodeSkip("greedy is not an array")
       }
     None => ()
@@ -1707,7 +1764,10 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
   match o.get("positionals") {
     Some(pj) =>
       match pj.as_array() {
-        Some(a) => for e in a { positionals.push(dec_pos_tnode(e)) }
+        Some(a) =>
+          for e in a {
+            positionals.push(dec_pos_tnode(e))
+          }
         None => raise DecodeSkip("positionals is not an array")
       }
     None => ()
@@ -1716,7 +1776,10 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
   match o.get("entities") {
     Some(en) =>
       match en.as_object() {
-        Some(eo) => for k, v in eo { entities.push(dec_lent(k, v)) }
+        Some(eo) =>
+          for k, v in eo {
+            entities.push(dec_lent(k, v))
+          }
         None => raise DecodeSkip("entities is not an object")
       }
     None => ()
@@ -1725,7 +1788,10 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
   match o.get("constraints") {
     Some(cj) =>
       match cj.as_array() {
-        Some(a) => for e in a { constraints.push(dec_lcon(e)) }
+        Some(a) =>
+          for e in a {
+            constraints.push(dec_lcon(e))
+          }
         None => raise DecodeSkip("constraints is not an array")
       }
     None => ()
@@ -1798,10 +1864,10 @@ fn fixtures_root() -> String {
     Some(p) => if p != "" && @fs.path_exists(p) { return p }
     None => ()
   }
-  for cand in [
-    "../../../kuu/main/fixtures", "../../kuu/main/fixtures",
-    "../../../../kuu/main/fixtures",
-  ] {
+  for
+    cand in [
+      "../../../kuu/main/fixtures", "../../kuu/main/fixtures", "../../../../kuu/main/fixtures",
+    ] {
     if @fs.path_exists(cand) {
       return cand
     }
@@ -1811,7 +1877,8 @@ fn fixtures_root() -> String {
     None => "?"
   }
   abort(
-    "fixtures root not found (set KUU_FIXTURES to kuu/main/fixtures); cwd=" + cwd,
+    "fixtures root not found (set KUU_FIXTURES to kuu/main/fixtures); cwd=" +
+    cwd,
   )
 }
 
@@ -2012,7 +2079,8 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             }
             None => ()
           }
-        other => problems.push("EXPECTED-AMBIGUOUS got=" + render_outcome(other))
+        other =>
+          problems.push("EXPECTED-AMBIGUOUS got=" + render_outcome(other))
       }
   }
   if problems.length() == 0 {
@@ -2065,14 +2133,14 @@ fn known_divergences() -> Array[String] {
     // export-key collision (DESIGN §15.5): two elements share export_key "x". The fixture models the
     // collision as an AMBIGUOUS outcome; the slice returns Success (collision is a separate check,
     // not surfaced as an outcome). slice gap.
-    "export-key/collision.json::case#1 :: EXPECTED-AMBIGUOUS got=ok{a=true,b=true}",
+     "export-key/collision.json::case#1 :: EXPECTED-AMBIGUOUS got=ok{a=true,b=true}",
     // value枝 id attribution (DR-052 直交 id / DR-055 §1): the `or` value枝 `{exact:json, id:fmt_json,
     // requires:[schema]}` lowers to a value_requires (json → [schema]) whose CRequiresIf carries the
     // PARENT element name `format`, not the枝 id `fmt_json` — the slice's ElemDef has no place to name
     // an anonymous exact枝, so a constraint violation reports element=format where the fixture asserts
     // element=fmt_json. slice gap (value-branch id attribution unmodeled). The outcome (failure,
     // kind:constraint, argv_pos) is correct — only the element name diverges.
-    "constraints-parse/default-interaction.json::case#3 :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
+     "constraints-parse/default-interaction.json::case#3 :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
     "constraints-parse/requires.json::case#4 :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
   ]
 }
@@ -2099,8 +2167,7 @@ fn expected_skips() -> Array[(String, String)] {
     // cannot represent it losslessly and skips up front (dec_positional, "positionals" key guard). slice
     // vocabulary gap. The reason string below MUST stay byte-identical to that DecodeSkip message.
     (
-      "export-key/transparent-seq.json",
-      "nested-group positional (repeat over a named sub-sequence): slice ElemDef is flat, parse_definition builds no IdxRepeat with a distinct inner-element name/export_key",
+      "export-key/transparent-seq.json", "nested-group positional (repeat over a named sub-sequence): slice ElemDef is flat, parse_definition builds no IdxRepeat with a distinct inner-element name/export_key",
     ),
   ]
 }
@@ -2173,7 +2240,14 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
   let hist : Map[String, Int] = Map::new()
   for pair in skips {
     let r = pair.1
-    hist.set(r, (match hist.get(r) { Some(n) => n; None => 0 }) + 1)
+    hist.set(
+      r,
+      (match hist.get(r) {
+        Some(n) => n
+        None => 0
+      }) +
+      1,
+    )
   }
   let hitems : Array[String] = []
   for r, n in hist {
@@ -2193,7 +2267,9 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     !str_in(decoded, "dd/duplicate-decl.json") ||
     !str_in(decoded, "lowering/baseline/converged.json") {
     let sb = StringBuilder::new()
-    sb.write_string("acceptance target fixture was skipped (decoder regression):\n")
+    sb.write_string(
+      "acceptance target fixture was skipped (decoder regression):\n",
+    )
     for pair in skips {
       sb.write_string("  " + pair.0 + " :: " + pair.1 + "\n")
     }
@@ -2302,7 +2378,9 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       }
     }
     if vanished.length() > 0 {
-      sb.write_string("  VANISHED (gap closed / verdict shifted — remove from ledger):\n")
+      sb.write_string(
+        "  VANISHED (gap closed / verdict shifted — remove from ledger):\n",
+      )
       for k in vanished {
         sb.write_string("    " + k + "\n")
       }

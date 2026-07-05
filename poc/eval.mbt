@@ -382,7 +382,12 @@ fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
 /// token for `element` but the argv was exhausted. argv_pos = pos = argv.length (where the token was
 /// requested). A layer apart from an explicit `required` constraint (ReqArg → KConstraint).
 fn pe_missing(element : String, pos : Int) -> ParseError {
-  { element, argv_pos: pos, kind: KParse, message: "missing operand for \{element}" }
+  {
+    element,
+    argv_pos: pos,
+    kind: KParse,
+    message: "missing operand for \{element}",
+  }
 }
 
 ///|
