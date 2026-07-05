@@ -46,7 +46,7 @@ test "DR-038 link-sync: two entries onto the SAME root entity merge to one path"
   // (entry-independent, link-hint stripped) merges them to a single path, not ambiguous. This
   // is the DR-038 "同一実体への入口が複数スコープにある" merge, now realized by link-sync.
   let g = scope(
-    [flag("--verbose", "verbose"), Rooted(flag("--verbose", "verbose"))],
+    [flag("--verbose", "verbose"), Rooted(flag("--verbose", "verbose"), 1)],
     [],
   )
   inspect(render_outcome(parse(g, ["--verbose"])), content="ok{verbose=true}")
@@ -56,6 +56,6 @@ test "DR-038 link-sync: two entries onto the SAME root entity merge to one path"
 test "DR-038 link-sync: two link entries onto DIFFERENT root entities stay distinct" {
   // Same trigger, but the two link entries bind different root cells (a vs b) => different
   // effects => two distinct paths => ambiguous. Confirms the merge is by effect, not by link.
-  let g = scope([Rooted(flag("--v", "a")), Rooted(flag("--v", "b"))], [])
+  let g = scope([Rooted(flag("--v", "a"), 1), Rooted(flag("--v", "b"), 1)], [])
   inspect(render_outcome(parse(g, ["--v"])), content="ambiguous:2")
 }

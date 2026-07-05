@@ -25,7 +25,9 @@ pub(all) struct ElemDef {
   is_global : Bool // owned by the global installer (copied into descendant command scopes)
   is_inherit : Bool // owned by the inherit installer (declares an inherit seat)
   is_inheritable : Bool // owned by the inheritable installer (DR-059): ancestors get a prefixed write-entry
-  is_link : Bool // a global COPY (link-sync): its satellite binds the root entity (Rooted)
+  link_depth : Int // >0 = a global COPY (link-sync) placed this many scopes BELOW its declaration:
+  //                  its satellite (Rooted) escapes that many result-nesting levels to bind the
+  //                  DECLARING scope's entity (0 = not a copy; 1 = direct child; +1 per re-propagation)
   ref_target : String? // core (DR-020): this element IS a ref to a named template
   repeat : RepeatSpec? // owned by the repeat installer (DR-043)
   optional : Bool // sugar for repeat:{min:0,max:1} (DR-043), reduced by elem_repeat — repeat's vocab
@@ -230,7 +232,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     is_global: e.is_global,
     is_inherit: e.is_inherit,
     is_inheritable: e.is_inheritable,
-    is_link: e.is_link,
+    link_depth: e.link_depth,
     ref_target: e.ref_target,
     repeat: e.repeat,
     optional: e.optional,
@@ -482,10 +484,10 @@ fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
     // not_dd: a dd carries no value cell (LOWERING §B.4 「値なし」 / DR-064 §1). The options loop
     // lacked this guard (positionals had it), so a dd placed in options[] minted a spurious
     // `{name:"--", ty:TStr}` entity — a placement-dependent divergence (dd in positionals[] did not),
-    // violating DR-064 §2 「配置不問で lowered 形が同一」. not(is_link): a global link COPY resolves
-    // to the ROOT cell via its Rooted satellite (DR-042 link-sync), so the child scope needs no own
-    // entity — the with-long golden 断面 shows 子 entities 空 (DR-070 §1b gap 5).
-    if not_dd(e) && not(e.is_link) {
+    // violating DR-064 §2 「配置不問で lowered 形が同一」. link_depth == 0: a global link COPY resolves
+    // to its DECLARING cell via its Rooted satellite (DR-042 link-sync), so the child scope needs no
+    // own entity — the with-long golden 断面 shows 子 entities 空 (DR-070 §1b gap 5).
+    if not_dd(e) && e.link_depth == 0 {
       ensure_entity(sb.build, e, has_cf)
     }
   }
@@ -570,7 +572,7 @@ fn inst_long(def : Definition, build : Build) -> Unit {
           add_greedy(
             build,
             maybe_root(
-              e.is_link,
+              e.link_depth,
               if e.fail_action {
                 Seq([
                   Exact(trigger),
@@ -586,7 +588,7 @@ fn inst_long(def : Definition, build : Build) -> Unit {
           add_greedy(
             build,
             maybe_root(
-              e.is_link,
+              e.link_depth,
               Seq([Exact(trigger), value_prim(e.ty, e.name)]),
             ),
           )
@@ -615,17 +617,18 @@ fn inst_long(def : Definition, build : Build) -> Unit {
         }
         _ => Seq([Exact(trigger), EffMark(e.name, v.op)])
       }
-      add_greedy(build, maybe_root(e.is_link, sat))
+      add_greedy(build, maybe_root(e.link_depth, sat))
     }
   }
 }
 
 ///|
-/// Wrap a satellite in `Rooted` iff the element is a global link copy, so its bindings
-/// target the root entity (DR-042 link-sync).
-fn maybe_root(is_link : Bool, node : Node) -> Node {
-  if is_link {
-    Rooted(node)
+/// Wrap a satellite in `Rooted(node, depth)` iff the element is a global link copy (link_depth > 0),
+/// so its bindings escape `link_depth` result-nesting levels to bind the DECLARING scope's entity
+/// (DR-042 link-sync). link_depth == 0 = a self-declared element, no wrapping.
+fn maybe_root(link_depth : Int, node : Node) -> Node {
+  if link_depth > 0 {
+    Rooted(node, link_depth)
   } else {
     node
   }
@@ -765,8 +768,10 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
       return // self-declared same trigger (shadow) or already-copied (idempotent)
     }
   }
-  // The copy is a link satellite (DR-042): it binds the ROOT entity, not a fresh child
-  // cell, so the value syncs to one place. `is_link` makes long/short wrap it in Rooted.
+  // The copy is a link satellite (DR-042): it binds the DECLARING scope's entity, not a fresh child
+  // cell, so the value syncs to one place. `link_depth` = how many scopes this copy sits below the
+  // declaration: +1 vs the source (0→1 for the first copy off the original global; N→N+1 on each
+  // re-propagation level). long/short wrap the satellite in Rooted(node, link_depth) accordingly.
   let copy = clone_elem(opt)
   child.decl.options.push({
     name: copy.name,
@@ -779,7 +784,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     is_global: copy.is_global,
     is_inherit: copy.is_inherit,
     is_inheritable: copy.is_inheritable,
-    is_link: true,
+    link_depth: copy.link_depth + 1,
     ref_target: copy.ref_target,
     repeat: copy.repeat,
     optional: copy.optional,
@@ -922,7 +927,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     is_global: false,
     is_inherit: false, // the inherit seat is declared by inst_inheritable's step (2), not this flag
     is_inheritable: false, // the copy is a plain entry, not itself inheritable (no further re-propagation)
-    is_link: false,
+    link_depth: 0,
     ref_target: None,
     repeat: None,
     optional: false,
@@ -1107,7 +1112,7 @@ fn alias_entry(
     is_global: false,
     is_inherit: false,
     is_inheritable: false,
-    is_link: false,
+    link_depth: 0,
     ref_target: None,
     repeat: None,
     optional: false,
@@ -1428,7 +1433,7 @@ fn head_progresses(
     NoDashStr(_) => true // consumes one token (when not dash-rejected)
     IdxRepeat(_, _, _) => true // an indexed repeat consumes its head
     BoundedTail(_, budget, _) => budget >= 1 // consumes only if it may take >= 1 head
-    Rooted(inner) => head_progresses(inner, registry, visiting)
+    Rooted(inner, _) => head_progresses(inner, registry, visiting)
     Bind(_, _) => false // binds without consuming
     EffMark(_, _) => false // applies an effect without consuming (DR-045, 0-token)
     FailMark(_) => false // records a failure-action without consuming (DR-048, 0-token)
@@ -1484,7 +1489,7 @@ fn head_ref_of(node : Node) -> String? {
       }
       None
     }
-    Rooted(inner) => head_ref_of(inner)
+    Rooted(inner, _) => head_ref_of(inner)
     _ => None // a consuming or 0-token node in head position
   }
 }

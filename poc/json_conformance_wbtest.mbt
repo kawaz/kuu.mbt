@@ -2068,9 +2068,6 @@ fn known_divergences() -> Array[String] {
     // kind:constraint, argv_pos) is correct — only the element name diverges.
     "constraints-parse/default-interaction.json::case#3",
     "constraints-parse/requires.json::case#4",
-    // global shadow subtree (DR-042 global): a shadowed global's value nests under the child scope
-    // AND appears at the root; the fixture asserts only the child placement. slice gap (shadow sync).
-    "command-scope/shadowing-subtree.json::case#1",
   ]
 }
 

@@ -124,12 +124,14 @@ pub(all) enum Node {
   /// backbone (the parent greedy face does not interject inside it). 先食い protects the
   /// command name from a positional raw-eat, which is the DR-018 "commands が先" priority.
   CmdSat(String, Scope)
-  /// link/root-targeted wrapper (DR-042 global link-sync / DR-007 link). Evaluates its
-  /// inner node but marks every binding it produces as `link` — those bindings escape
-  /// result nesting and land on the DECLARING (root) entity. The global installer copies
-  /// an option's satellite into a child scope wrapped in `Rooted`, so the value syncs to
-  /// the one root cell instead of a fresh child cell.
-  Rooted(Node)
+  /// link/scope-targeted wrapper (DR-042 global link-sync / DR-007 link). Evaluates its inner
+  /// node but marks every binding it produces as a link that escapes `Int` result-nesting levels
+  /// (= the scopes this copied satellite sits BELOW its declaration). Those bindings climb out of
+  /// the sub-scopes and land on the DECLARING scope's entity. The global installer copies an
+  /// option's satellite into a descendant scope wrapped in `Rooted(node, depth)`, so the value
+  /// syncs to the one declaring cell instead of a fresh child cell (depth 1 for a direct child,
+  /// +1 per re-propagation level). A root global's depth = firing depth (escapes to the root).
+  Rooted(Node, Int)
   /// a filtered string value (DR-037 pre_filter): consumes a token ONLY if it does not
   /// start with `-`; otherwise it REJECTS (no reading, silently drops — not an Error).
   /// This is the structural stop that keeps a permissive repeat from eating a following

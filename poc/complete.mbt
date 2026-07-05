@@ -151,7 +151,7 @@ fn greedy_first_matches(g : Node, tok : String) -> Bool {
     NativeMatch(EqSplit(prefix=_, entries=_)) => false // the space-form Seq trigger covers the match
     CmdSat(name, _) => name == tok
     DdSat(trig) => trig == tok
-    Rooted(inner) => greedy_first_matches(inner, tok)
+    Rooted(inner, _) => greedy_first_matches(inner, tok)
     _ => false
   }
 }
@@ -201,7 +201,7 @@ fn comp_consume_greedy(
       if pos < before.length() && before[pos] == trig {
         comp_scope(sc, before, t, pos + 1, pidx, true, defs, out) // severed: greedy off henceforth
       }
-    Rooted(inner) =>
+    Rooted(inner, _) =>
       comp_consume_greedy(inner, sc, before, t, pos, pidx, severed, defs, out)
     _ => ()
   }
@@ -499,7 +499,7 @@ fn emit_greedy_starts(g : Node, out : Array[Cand]) -> Unit {
       }
     CmdSat(name, _) => out.push(cexact(name, WordEnd, name))
     DdSat(_) => () // the `--` mode-switch marker is not suggested as a completion candidate
-    Rooted(inner) => emit_greedy_starts(inner, out)
+    Rooted(inner, _) => emit_greedy_starts(inner, out)
     _ => ()
   }
 }

@@ -53,14 +53,14 @@ pub(all) struct AmbiguousData {
 ///|
 /// A plain value bind = the SET degenerate form of an effect (DR-045 §1).
 fn mkb(key : String, value : Value, source : Source) -> Binding {
-  { key, op: Set, value, source, scope: [], link: false }
+  { key, op: Set, value, source, scope: [], link: 0 }
 }
 
 ///|
 /// A non-set effect binding (default / unset / empty). The operand is a placeholder
 /// (VBool(false)) — default/unset/empty carry no operand (DR-045 table).
 fn mk_eff(key : String, op : EffectOp, source : Source) -> Binding {
-  { key, op, value: VBool(false), source, scope: [], link: false }
+  { key, op, value: VBool(false), source, scope: [], link: 0 }
 }
 
 ///|
@@ -74,7 +74,7 @@ fn action_marker(name : String, pos : Int) -> Binding {
     value: VNum(pos.to_double()),
     source: Cli,
     scope: [],
-    link: false,
+    link: 0,
   }
 }
 
@@ -89,7 +89,7 @@ fn depr_marker(element : String) -> Binding {
     value: VBool(false),
     source: Cli,
     scope: [],
-    link: false,
+    link: 0,
   }
 }
 
@@ -152,13 +152,17 @@ pub fn is_action_key(k : String) -> Bool {
 ///|
 /// Nest a set of bindings one level deeper under `label` (DR-025: a name / command
 /// scope prepends its label to every binding produced inside it, outermost first).
-/// LINK bindings (DR-042 global link-sync) are NOT prefixed — they target the declaring
-/// (root) entity, so they escape the nesting and stay where they were declared.
+/// A LINK binding (DR-042 global link-sync) with `link > 0` ESCAPES this level: it skips the
+/// prepend and decrements its counter, climbing out of the scopes BELOW its declaration. Once
+/// the counter reaches 0 it nests like any binding — so a global declared at an intermediate
+/// scope (shadow, DR-042) settles at THAT declaring scope, not the absolute root (a root global
+/// escapes all the way, its counter = firing depth).
 fn nest(label : String, binds : Array[Binding]) -> Array[Binding] {
   let out : Array[Binding] = []
   for b in binds {
-    if b.link {
-      out.push(b) // link binding: escapes nesting, stays at the root entity
+    if b.link > 0 {
+      // still below the declaring scope: escape this level, one fewer to climb.
+      out.push({ ..b, link: b.link - 1 })
     } else {
       let sc2 : Array[String] = [label]
       for s in b.scope {
@@ -305,9 +309,10 @@ fn eval(
       } else {
         []
       }
-    Rooted(inner) => {
-      // evaluate the inner node, but mark every binding as `link` so it escapes result
-      // nesting and lands on the declaring (root) entity (DR-042 global link-sync).
+    Rooted(inner, depth) => {
+      // evaluate the inner node, but mark every binding as a link that escapes `depth` result-nesting
+      // levels (= the scopes this satellite sits BELOW its declaration) so it lands on the declaring
+      // scope's entity (DR-042 global link-sync). depth = firing depth for a root global (escapes all).
       let out : Array[Branch] = []
       for b in eval(inner, toks, pos, defs) {
         match b {
@@ -320,7 +325,7 @@ fn eval(
                 value: x.value,
                 source: x.source,
                 scope: x.scope,
-                link: true,
+                link: depth,
               })
             }
             out.push(Accept(p, marked))
@@ -490,7 +495,7 @@ fn array_marker(label : String) -> Binding {
     value: VBool(false),
     source: Cli,
     scope: [label],
-    link: false,
+    link: 0,
   }
 }
 
@@ -504,7 +509,7 @@ fn mark_scope(name : String, brs : Array[Branch]) -> Array[Branch] {
     value: VBool(false),
     source: Cli,
     scope: [name],
-    link: false,
+    link: 0,
   }
   let out : Array[Branch] = []
   for b in brs {
@@ -522,8 +527,8 @@ fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] 
   let seg = "#" + rep.to_string()
   let out : Array[Binding] = []
   for b in bs {
-    if b.link {
-      out.push(b)
+    if b.link > 0 {
+      out.push({ ..b, link: b.link - 1 }) // escape this rep level too (below declaration)
     } else {
       let sc2 : Array[String] = [label, seg]
       for s in b.scope {
@@ -535,7 +540,7 @@ fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] 
         value: b.value,
         source: b.source,
         scope: sc2,
-        link: false,
+        link: 0,
       })
     }
   }
@@ -1289,7 +1294,7 @@ fn strip_link(bs : Array[Binding]) -> Array[Binding] {
       value: b.value,
       source: b.source,
       scope: b.scope,
-      link: false,
+      link: 0,
     })
   }
   out

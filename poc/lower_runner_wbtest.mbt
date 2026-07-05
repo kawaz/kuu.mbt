@@ -327,7 +327,7 @@ fn proj_greedy(node : Node, reg : Map[String, Node]) -> GItem {
   match node {
     DdSat(name) => GExact(name)
     Exact(s) => GExact(s)
-    Rooted(inner) => proj_greedy(inner, reg) // link-sync wrapper is transparent in the 断面
+    Rooted(inner, _) => proj_greedy(inner, reg) // link-sync wrapper is transparent in the 断面
     CmdSat(name, child) => GCmd(name, proj_scope(child, reg))
     NativeMatch(EqSplit(prefix~, entries~)) => {
       let es : Array[(String, String)] = []
@@ -450,7 +450,7 @@ fn collect_reftmpls(
       Many(inner) => walk(inner)
       BoundedTail(inner, _, _) => walk(inner)
       Scoped(_, inner) => walk(inner)
-      Rooted(inner) => walk(inner)
+      Rooted(inner, _) => walk(inner)
       _ => ()
     }
   }

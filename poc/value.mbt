@@ -178,8 +178,13 @@ pub(all) struct Binding {
   value : Value // the operand (a placeholder for default/unset/empty, which carry none)
   source : Source
   scope : Array[String]
-  link : Bool // a link/root-targeted binding (DR-042/007): stays at the declaring (root)
-  //           scope — result nesting (CmdSat/Scoped) does NOT prepend a label to it.
+  link : Int // a link/global-copy binding (DR-042/007): the number of result-nesting levels it
+  //           still ESCAPES before settling at its declaring scope. 0 = a normal binding (every
+  //           CmdSat/Scoped level prepends its label). N>0 = a global copied N scopes BELOW its
+  //           declaration; the next N nest levels skip prepending (decrementing), then it nests
+  //           normally — so an intermediate-scope global (DR-042 shadow) lands at its declaring
+  //           scope, not the absolute root. A root global (declared at depth 0) has N = its firing
+  //           depth, which escapes all the way to the root (the original bool-`link` behaviour).
 } derive(Eq, Show)
 
 ///|

@@ -82,6 +82,19 @@ kawaz/kuu の fixtures を JSON 直読み conformance runner
 - **一次資料**: `kawaz/kuu` の DR-042 (global shadow は子配置のみ、root には出さない)。
 - **仮説 (要裏取り)**: shadow 同期が root エントリを消さずに子へコピーしている
   (shadow sync の二重書き)。
+- **真因 (裏取り済)**: shadow sync は正しかった。真因は **link 束の逃がし先が絶対 root
+  固定**だったこと。`Binding.link` は Bool で、`nest` は link 束を「全 nest 段を escape =
+  絶対 root へ」と扱っていた (`value.mbt`/`eval.mbt nest`)。root global ならこれで正解
+  (宣言 scope = root) だが、中間 scope a が宣言した global (averb) の link コピーは、孫 b で
+  発火すると b→a の 1 段だけ escape して a に着地すべきところを、絶対 root まで overshoot して
+  `averb` を root に置いていた。結果 a.averb は preset default false のまま、averb=true が root に
+  重複出現していた。
+- **修正**: link を「宣言 scope までの残り escape 段数」を持つ Int 化 (`Binding.link : Int`,
+  `Rooted(Node, Int)`, `ElemDef.link_depth : Int`)。`copy_global_into` が copy 段ごとに
+  `link_depth+1` を刻み (原 global=0 → 直子=1 → 孫=2 …)、`nest`/`nest_index` は `link>0` の間だけ
+  段を escape して decrement、0 で通常 nest に戻る。root global は link_depth=発火深度になり従来通り
+  絶対 root へ抜ける (後方互換)。case#1 green 化、`shadowing.json`/`shadowing-3level-*`/`global.json`
+  も全 green 維持。台帳から除去済み。
 
 ### 5. 二重 receptacle の取り分 (DR-043 greedy 未実装)
 
