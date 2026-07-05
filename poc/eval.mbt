@@ -422,7 +422,8 @@ fn filter_arg_eval(
       None => [Held(pe_parse(name, toks[pos], pos), acc)]
     }
   } else {
-    []
+    // exhausted mandatory filter head: same 構造的必須の不成立 shape as the scope_consume arms.
+    [Held(pe_missing(name, pos), acc)]
   }
 }
 
@@ -914,6 +915,9 @@ fn scope_consume(
             }
           None => [Held(pe_parse(name, toks[pos], pos), acc)]
         }
+      } else if pos >= toks.length() {
+        // exhausted mandatory filter positional: same 構造的必須の不成立 shape as StrArg/NumArg/SepArg.
+        [Held(pe_missing(name, pos), acc)]
       } else {
         []
       }

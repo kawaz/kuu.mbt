@@ -81,6 +81,21 @@ test "DR-053 §2 kind 3値: parse (型不一致) / filter (post_filter reject) /
   inspect(errors_str(parse(ScopeNode(sc_c), [])), content="file@0/constraint")
 }
 
+///|
+test "DR-065 §3: an exhausted mandatory FilterArg is a missing_operand held (kind:parse), not silent" {
+  // 構造的必須の不成立 on the filter arm: the spine needs a token for `port` but the argv is
+  // exhausted. The value never reached the post-filter, so this is kind:parse at argv_pos =
+  // argv.length (missing operand) — same shape as the StrArg/NumArg/SepArg arms — NOT kind:filter
+  // and NOT an empty error set (DR-053 全保持: a 0-path failure must carry its Error).
+  let sc : Scope = {
+    greedy: [],
+    positional: [FilterArg("port", 1000)],
+    entities: [],
+    constraints: [],
+  }
+  inspect(errors_str(parse(ScopeNode(sc), [])), content="port@0/parse")
+}
+
 // ── 3. ambiguous interpretations (結果オブジェクト形ビュー) ──────────────────────
 
 ///|
