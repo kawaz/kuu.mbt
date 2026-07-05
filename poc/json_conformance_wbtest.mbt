@@ -1,30 +1,31 @@
-// json_conformance_wbtest.mbt — Phase 2-① JSON-DIRECT conformance runner (stage 1: dd domain).
+// json_conformance_wbtest.mbt — JSON-DIRECT conformance runner (query: "parse" + "lower").
 //
-// WHAT THIS IS (and how it differs from fixture_runner_wbtest.mbt):
-//   fixture_runner_wbtest.mbt hand-transcribes two dd fixtures into MoonBit literals.
-//   THIS file instead READS the fixture JSON files straight off disk, decodes the
-//   `definition` into the slice's own builders (opt/pos/dd_marker/build via
-//   parse_definition), projects each parsed Outcome with the SAME projectors the
-//   hand runner uses (proj_effects/proj_result/proj_errors via run_success/run_failure),
-//   and compares against the fixture's own `expect`. The fixture JSON is the single
-//   source of truth (CONFORMANCE §1 "definition は wire form"), so it no longer drifts
-//   from a hand copy.
+// WHAT THIS IS (and how it differs from the hand runners):
+//   fixture_runner_wbtest.mbt / lower_runner_wbtest.mbt hand-transcribe each fixture's wire-form
+//   definition + golden `expect` into MoonBit literals. THIS file instead READS the fixture JSON
+//   straight off disk, decodes the `definition` into the slice's own builders (opt/pos/dd_marker via
+//   parse_definition), and compares against the fixture's own `expect`. The fixture JSON is the
+//   single source of truth (CONFORMANCE §1 "definition は wire form"), so it never drifts from a
+//   hand copy.
 //
-// STAGE 1 SCOPE (deliberately narrow — see the team plan):
-//   Only the vocabulary the `dd` fixtures need is decoded:
-//     - definition: options[] (name/type/short) + positionals[] (name/type)
-//     - option type ∈ {dd, flag, string}; dd trigger name fixed to "--"
-//     - positional type == "string"; expect.outcome ∈ {success, failure}
-//   Anything richer (long spellings, env/config/variants/commands/repeat/number/help,
-//   custom dd trigger names, ambiguous outcomes, non-"parse" queries) is NOT decoded:
-//   the fixture is SKIPPED with a reason and counted. As later stages teach the decoder
-//   more vocabulary, the skip list shrinks — the skip reasons are the stage-2 TODO list.
+// TWO QUERY PATHS (dispatched on the fixture's `query`):
+//   - "parse" (dec_fixture + run_case): each case's argv is parsed and the resulting Outcome is
+//     projected with the SAME projectors the hand runner uses (proj_effects/proj_result/proj_errors,
+//     resolve pass for env/config/sources), then string-compared against the case's asserted §2/§3
+//     effects/result/errors/sources/warnings/interpretations/fired_action.
+//   - "lower" (dec_lower + run_lower): the definition is lowered through the fixture's installer
+//     SUBSET and the resulting canon Scope is projected into the DR-063 §3 five-face 断面, then
+//     loose-compared (DR-070 §2) against the golden 断面. Projection + comparison reuse
+//     lower_runner_wbtest.mbt's proj_scope/lsec_str/run_lower verbatim; only the golden `expect` JSON
+//     → LSec decode is new here (see dec_lsec). run_lower also checks permutation convergence.
+//   Any other query (or a missing one) is SKIPPED with a reason and counted.
 //
 // WHY DECODE-CAPABILITY GATES THE RUN (not a directory allowlist):
-//   A fixture runs iff `dec_fixture` can losslessly decode it. Vocabulary the decoder cannot
-//   represent raises DecodeSkip *before* any case executes, so we never silently mis-decode (e.g.
-//   a dd marker whose trigger is "++" instead of "--" is skipped rather than parsed as "--").
-//   This keeps the runnable set honest and self-describing.
+//   A fixture runs iff its decoder (dec_fixture for parse, dec_lower for lower) can losslessly
+//   decode it. Vocabulary the decoder cannot represent raises DecodeSkip *before* any case executes,
+//   so we never silently mis-decode (e.g. a dd marker whose trigger is "++" instead of "--" is
+//   skipped rather than parsed as "--"). This keeps the runnable set honest and self-describing:
+//   the skip-reason histogram printed at the end IS the remaining-vocabulary TODO list.
 //
 //   TWO LOSSY CATEGORIES, TWO TREATMENTS:
 //     (1) Unrepresentable construct → SKIP. If decoding would drop meaning the slice cannot model
@@ -43,13 +44,14 @@
 //         slice would accept it where the spec rejects, and that surfaces as an UNEXPECTED ledger
 //         divergence — a loud failure (the desired failure mode), never a silent pass.
 //
-// COMPARISON MODEL (CONFORMANCE §2/§3):
+// COMPARISON MODEL (CONFORMANCE §2/§3, parse path):
 //   The expected effects/result/errors are rendered into the exact spec-string grammar
 //   that proj_effects/proj_result/proj_errors emit for the actual Outcome, by reusing
 //   render_val / render_rval_sorted / sort_items / join_comma. So "want" and "got" are
-//   produced by one grammar and compared as strings inside run_success / run_failure.
-//   Mismatches are COLLECTED (file + case# + got/want) and reported all at once at the
-//   end — a single failing test lists every divergence, not just the first.
+//   produced by one grammar and compared as strings inside run_case. Mismatches are COLLECTED
+//   (file + case# + got/want) and reported all at once at the end — a single failing test lists
+//   every divergence, not just the first. The lower path compares the same way but over the
+//   five-face 断面 string (lsec_str), keyed as `rel::lower`.
 //
 // FIXTURES ROOT: $KUU_FIXTURES if set & existing, else a relative fallback from the
 //   moon-test cwd (= poc). The justfile `test` recipe resolves $KUU_FIXTURES to the
@@ -58,7 +60,7 @@
 // Imports (moon.pkg, `for "wbtest"`): moonbitlang/x/fs, moonbitlang/core/env,
 //   moonbitlang/core/json.
 
-// ── skip signal: a fixture the current (stage-1) decoder does not support ──────
+// ── skip signal: a fixture the decoder does not support ────────────────────────
 
 ///|
 suberror DecodeSkip String
@@ -1349,9 +1351,10 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
     Some(o) => o
     None => raise DecodeSkip("fixture is not an object")
   }
+  // 'lower' is intercepted upstream (dec_lower); reaching here means any other query is undecoded.
   match jf_str(top, "query") {
     Some("parse") => ()
-    Some(q) => raise DecodeSkip("query '" + q + "' (stage 2: 'parse' only)")
+    Some(q) => raise DecodeSkip("query '" + q + "' (parse/lower only)")
     None => raise DecodeSkip("missing 'query'")
   }
   let defj = match top.get("definition") {
@@ -1394,6 +1397,325 @@ fn full_installers() -> Array[Installer] {
     LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst,
     RepeatInst, MultipleInst, ConfigInst, ConstraintInst, AliasInst, InheritableInst,
   ]
+}
+
+// ── query 'lower' path: 5-face 断面 golden JSON → LSec ─────────────────────────────
+// A lower fixture (query:"lower") carries a definition + an installer SUBSET + a golden 5-face 断面
+// (DR-063 §3). It is decoded HERE and run through the SAME projection + loose-comparison as the
+// hand-transcribed lower_runner_wbtest.mbt (canon_of / proj_scope / lsec_str / run_lower): the ONLY
+// new work is decoding the golden `expect` JSON into an LSec, so `want` renders byte-identically to
+// the projected `got`. The golden is the spec正本 (DR-070 §1b) — a divergence is a frozen ledger
+// entry, never an expected-value edit. Capability-gated like the parse path: any golden construct
+// the decoder cannot represent raises DecodeSkip (fixture skipped + counted), keeping the runnable
+// lower set honest. run_lower also checks DR-070 §3 permutation convergence (order-independence).
+
+///|
+struct DecodedLower {
+  def : Definition
+  order : Array[Installer] // the fixture's installer subset (or full chain)
+  want : LSec // golden 断面 decoded into the lower_runner projection model
+}
+
+///|
+/// Reverse of owned_vocab: an installer NAME (fixture `installers[]` element) → the Installer.
+fn dec_installer(name : String) -> Installer raise DecodeSkip {
+  for i in full_installers() {
+    if owned_vocab(i) == name {
+      return i
+    }
+  }
+  raise DecodeSkip("unknown installer '" + name + "'")
+}
+
+///|
+/// The installer order for a lower fixture: the `installers[]` subset in declared order, or the full
+/// chain when `installers` is absent/null (DR-070 §1: "installers 省略 = 全登録").
+fn dec_installers(top : Map[String, Json]) -> Array[Installer] raise DecodeSkip {
+  match top.get("installers") {
+    None => full_installers()
+    Some(j) =>
+      match j.as_array() {
+        None => full_installers() // installers: null → full chain
+        Some(a) => {
+          let out : Array[Installer] = []
+          for e in a {
+            match e.as_string() {
+              Some(s) => out.push(dec_installer(s))
+              None => raise DecodeSkip("installers[] element is not a string")
+            }
+          }
+          out
+        }
+      }
+  }
+}
+
+///|
+/// A required string field, or DecodeSkip (small helper for the golden 断面 decoders).
+fn req_field(o : Map[String, Json], key : String) -> String raise DecodeSkip {
+  match jf_str(o, key) {
+    Some(s) => s
+    None => raise DecodeSkip("golden node missing string field '" + key + "'")
+  }
+}
+
+///|
+/// A golden greedy-face item (DR-063 §3) → GItem, discriminated by its keys: `scope`→command subtree,
+/// `matcher`→native matcher seat, `seq`→value satellite {exact,ref}, `value`→set 縮退形 {exact,value,
+/// link}, bare `exact`→dd/exact trigger.
+fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
+  let o = match j.as_object() {
+    Some(x) => x
+    None => raise DecodeSkip("greedy item is not an object")
+  }
+  if has_key(o, "scope") {
+    // {exact: name, scope: {5-face}} — a command subtree (scope may be {} for an empty child).
+    let name = req_field(o, "exact")
+    let so = match o.get("scope").unwrap().as_object() {
+      Some(x) => x
+      None => raise DecodeSkip("command 'scope' is not an object")
+    }
+    return GCmd(name, dec_lsec(so))
+  }
+  if has_key(o, "matcher") {
+    let kind = req_field(o, "matcher")
+    let entries : Array[(String, String)] = []
+    match o.get("entries") {
+      Some(ej) =>
+        match ej.as_object() {
+          Some(eo) =>
+            for k, v in eo {
+              match v.as_string() {
+                Some(nm) => entries.push((k, nm))
+                None => raise DecodeSkip("matcher entry value is not a string")
+              }
+            }
+          None => raise DecodeSkip("matcher 'entries' is not an object")
+        }
+      None => raise DecodeSkip("matcher missing 'entries'")
+    }
+    return GMatch(kind, entries)
+  }
+  if has_key(o, "seq") {
+    // {seq:[{exact: trigger}, {ref: name, link: name}]} — a value satellite (trigger + value slot).
+    let sa = match o.get("seq").unwrap().as_array() {
+      Some(x) => x
+      None => raise DecodeSkip("greedy seq is not an array")
+    }
+    if sa.length() != 2 {
+      raise DecodeSkip("greedy seq satellite is not [exact, ref]")
+    }
+    let trig = match sa[0].as_object() {
+      Some(x) => req_field(x, "exact")
+      None => raise DecodeSkip("greedy seq[0] is not an object")
+    }
+    let refn = match sa[1].as_object() {
+      Some(x) => req_field(x, "ref")
+      None => raise DecodeSkip("greedy seq[1] is not an object")
+    }
+    return GSeqSat(trig, refn)
+  }
+  if has_key(o, "value") {
+    // {exact, value, link} — set descriptor 縮退形 (DR-045): flag / variant satellite.
+    return GSet(
+      req_field(o, "exact"),
+      json_to_value(o.get("value").unwrap()),
+      req_field(o, "link"),
+    )
+  }
+  // bare {exact: "--"} — dd marker / exact trigger.
+  GExact(req_field(o, "exact"))
+}
+
+///|
+/// A golden positionals-face node → TNode. `{ref, link}`→entity consumption point; `{ref: "x#cons"}`
+/// (no link)→a spine template ref (repeat cons, DR-043). ORDERED face (消費順), no sorting here.
+fn dec_pos_tnode(j : Json) -> TNode raise DecodeSkip {
+  let o = match j.as_object() {
+    Some(x) => x
+    None => raise DecodeSkip("positional node is not an object")
+  }
+  if has_key(o, "link") {
+    return TRefEnt(req_field(o, "ref"))
+  }
+  match jf_str(o, "ref") {
+    Some(k) => TRefTmpl(canon_tmpl(k), bool_field(o, "optional", false))
+    None => raise DecodeSkip("unrecognized positional node")
+  }
+}
+
+///|
+/// A golden templates-face body → TNode (recursively). `{seq:[...]}`→ordered TSeq; `{ref,link}`→
+/// entity ref; `{ref: id, optional?}`→template ref; `{exact}`→literal.
+fn dec_tmpl_body(j : Json) -> TNode raise DecodeSkip {
+  let o = match j.as_object() {
+    Some(x) => x
+    None => raise DecodeSkip("template body is not an object")
+  }
+  if has_key(o, "seq") {
+    let sa = match o.get("seq").unwrap().as_array() {
+      Some(x) => x
+      None => raise DecodeSkip("template seq is not an array")
+    }
+    let items : Array[TNode] = []
+    for e in sa {
+      items.push(dec_tmpl_body(e))
+    }
+    return TSeq(items)
+  }
+  if has_key(o, "link") {
+    return TRefEnt(req_field(o, "ref"))
+  }
+  if has_key(o, "ref") {
+    return TRefTmpl(canon_tmpl(req_field(o, "ref")), bool_field(o, "optional", false))
+  }
+  TExact(req_field(o, "exact"))
+}
+
+///|
+/// A golden entities-face cell → LEnt (minimal projection, DR-063 §3). Mirrors proj_entity's fields.
+fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
+  let o = match j.as_object() {
+    Some(x) => x
+    None => raise DecodeSkip("entity is not an object")
+  }
+  allowed_keys(
+    o,
+    ["type", "default", "env", "inherit", "config_key", "accumulator"],
+    "golden entity",
+  )
+  let typ = req_field(o, "type")
+  let default_ = match o.get("default") {
+    Some(d) => Some(json_to_value(d))
+    None => None
+  }
+  let config_key : Array[String]? = match o.get("config_key") {
+    Some(c) => Some(dec_strs(Some(c)))
+    None => None
+  }
+  {
+    name,
+    typ,
+    default_,
+    env: jf_str(o, "env"),
+    inherit: bool_field(o, "inherit", false),
+    config_key,
+    accum: jf_str(o, "accumulator"),
+  }
+}
+
+///|
+/// A golden constraints-face entry → Constraint (the slice's 4-value enum, DR-063 §3).
+fn dec_lcon(j : Json) -> Constraint raise DecodeSkip {
+  let o = match j.as_object() {
+    Some(x) => x
+    None => raise DecodeSkip("constraint is not an object")
+  }
+  match req_field(o, "kind") {
+    "requires" => CRequires(req_field(o, "element"), dec_strs(o.get("targets")))
+    "conflicts_with" =>
+      CConflicts(req_field(o, "element"), dec_strs(o.get("targets")))
+    "requires_if" =>
+      CRequiresIf(
+        req_field(o, "element"),
+        req_field(o, "value"),
+        dec_strs(o.get("targets")),
+      )
+    "exclusive_group" =>
+      CExclusive(req_field(o, "group"), dec_strs(o.get("members")))
+    other => raise DecodeSkip("unsupported constraint kind '" + other + "'")
+  }
+}
+
+///|
+/// A golden 5-face 断面 object → LSec, reusing the lower_runner projection model so lsec_str renders
+/// `want` byte-identically to the projected `got`. Empty faces are simply absent (最小投影).
+fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
+  allowed_keys(
+    o,
+    ["greedy", "positionals", "entities", "constraints", "templates"],
+    "golden 断面",
+  )
+  let greedy : Array[GItem] = []
+  match o.get("greedy") {
+    Some(gj) =>
+      match gj.as_array() {
+        Some(a) => for e in a { greedy.push(dec_gitem(e)) }
+        None => raise DecodeSkip("greedy is not an array")
+      }
+    None => ()
+  }
+  let positionals : Array[TNode] = []
+  match o.get("positionals") {
+    Some(pj) =>
+      match pj.as_array() {
+        Some(a) => for e in a { positionals.push(dec_pos_tnode(e)) }
+        None => raise DecodeSkip("positionals is not an array")
+      }
+    None => ()
+  }
+  let entities : Array[LEnt] = []
+  match o.get("entities") {
+    Some(en) =>
+      match en.as_object() {
+        Some(eo) => for k, v in eo { entities.push(dec_lent(k, v)) }
+        None => raise DecodeSkip("entities is not an object")
+      }
+    None => ()
+  }
+  let constraints : Array[Constraint] = []
+  match o.get("constraints") {
+    Some(cj) =>
+      match cj.as_array() {
+        Some(a) => for e in a { constraints.push(dec_lcon(e)) }
+        None => raise DecodeSkip("constraints is not an array")
+      }
+    None => ()
+  }
+  let templates : Array[(String, TNode)] = []
+  match o.get("templates") {
+    Some(tj) =>
+      match tj.as_object() {
+        Some(to) =>
+          for k, v in to {
+            templates.push((canon_tmpl(k), dec_tmpl_body(v)))
+          }
+        None => raise DecodeSkip("templates is not an object")
+      }
+    None => ()
+  }
+  { greedy, positionals, entities, constraints, templates }
+}
+
+///|
+/// Decode a whole query:"lower" fixture: definition → Definition (reusing dec_definition), the
+/// installer SUBSET (or full chain), and the golden 5-face 断面 → LSec. Any unsupported construct
+/// raises DecodeSkip so the fixture is skipped atomically (capability gate, like the parse path).
+fn dec_lower(j : Json) -> DecodedLower raise DecodeSkip {
+  let top = match j.as_object() {
+    Some(o) => o
+    None => raise DecodeSkip("fixture is not an object")
+  }
+  let defo = match top.get("definition") {
+    Some(d) =>
+      match d.as_object() {
+        Some(o) => o
+        None => raise DecodeSkip("definition is not an object")
+      }
+    None => raise DecodeSkip("missing 'definition'")
+  }
+  allowed_keys(defo, ["options", "positionals", "commands"], "definition")
+  let def = dec_definition(defo)
+  let order = dec_installers(top)
+  let expo = match top.get("expect") {
+    Some(e) =>
+      match e.as_object() {
+        Some(o) => o
+        None => raise DecodeSkip("expect is not an object")
+      }
+    None => raise DecodeSkip("missing 'expect'")
+  }
+  { def, order, want: dec_lsec(expo) }
 }
 
 // ── fixtures discovery (fs walk) ──────────────────────────────────────────────
@@ -1698,7 +2020,7 @@ fn known_divergences() -> Array[String] {
 }
 
 ///|
-test "conformance: fixtures を JSON 直読みで実食 (stage 2: parse 語彙網羅)" {
+test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lower 5 面断面)" {
   let root = fixtures_root()
   let rels : Array[String] = []
   collect_rel(root, "", rels) catch {
@@ -1717,6 +2039,29 @@ test "conformance: fixtures を JSON 直読みで実食 (stage 2: parse 語彙�
         skips.push((rel, "load/parse error"))
         continue
       }
+    }
+    // query dispatch: 'lower' fixtures take the 5-face 断面 path (dec_lower + run_lower); everything
+    // else (including a missing query) falls through to dec_fixture, which gates on query=='parse'.
+    let q = match j.as_object() {
+      Some(o) => jf_str(o, "query").or("")
+      None => ""
+    }
+    if q == "lower" {
+      let dl = dec_lower(j) catch {
+        DecodeSkip(reason) => {
+          skips.push((rel, reason))
+          continue
+        }
+      }
+      decoded.push(rel)
+      ran_cases = ran_cases + 1
+      let verdict = run_lower(dl.def, dl.order, dl.want)
+      if verdict != "PASS" {
+        let key = rel + "::lower"
+        mismatch_keys.push(key)
+        mismatches.push(key + " :: " + verdict)
+      }
+      continue
     }
     let df = dec_fixture(j) catch {
       DecodeSkip(reason) => {
@@ -1761,11 +2106,13 @@ test "conformance: fixtures を JSON 直読みで実食 (stage 2: parse 語彙�
     println("[json-conformance]   diverge " + m)
   }
 
-  // Tripwire: the stage-1 acceptance targets MUST still decode & run.
+  // Tripwire: acceptance targets on BOTH query paths MUST still decode & run — a parse dd fixture
+  // and a lower fixture. A decoder regression that silently drops either path fails loudly here.
   if !str_in(decoded, "dd/basic.json") ||
-    !str_in(decoded, "dd/duplicate-decl.json") {
+    !str_in(decoded, "dd/duplicate-decl.json") ||
+    !str_in(decoded, "lowering/baseline/converged.json") {
     let sb = StringBuilder::new()
-    sb.write_string("stage-1 target fixture was skipped (decoder regression):\n")
+    sb.write_string("acceptance target fixture was skipped (decoder regression):\n")
     for pair in skips {
       sb.write_string("  " + pair.0 + " :: " + pair.1 + "\n")
     }
