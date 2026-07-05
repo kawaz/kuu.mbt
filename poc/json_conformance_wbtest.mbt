@@ -28,9 +28,12 @@
 //   the skip-reason histogram printed at the end IS the remaining-vocabulary TODO list.
 //
 //   TWO LOSSY CATEGORIES, TWO TREATMENTS:
-//     (1) Unrepresentable construct → SKIP. If decoding would drop meaning the slice cannot model
-//         at all (custom dd trigger, nested-group positional with a distinct inner name), the
-//         fixture is skipped up front. Nothing runs against a mis-built definition.
+//     (1) Unrepresentable construct → SKIP + skip-ledger-freeze. If decoding would drop meaning the
+//         slice cannot model at all (custom dd trigger, nested-group positional with a distinct inner
+//         name), the fixture is skipped up front — nothing runs against a mis-built definition — and
+//         the skip is frozen in expected_skips(). Both-direction: a previously-decoding fixture that
+//         regresses into a skip fails as UNEXPECTED SKIP (coverage loss the histogram would swallow),
+//         and a ledgered skip that starts decoding fails as VANISHED SKIP (remove it, it is runnable).
 //     (2) Model-gap documented-lossy → RUN + ledger-freeze. Some constructs decode into a
 //         slice-representable shape that is KNOWN to differ from the fixture in a bounded, named
 //         way. These RUN, and the resulting divergence is frozen in known_divergences(): the run
@@ -2029,12 +2032,22 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 }
 
 ///|
-/// The FROZEN divergence ledger (fixture = 正本, slice = 被検体). Each entry is a `rel::case#N`
-/// key whose comparison currently diverges — a KNOWN gap (slice-unimplemented) or a suspected
-/// fixture authoring issue. The runner asserts the observed divergence SET equals this ledger:
-/// an UNEXPECTED divergence (regression / newly-decoded fixture that diverges) OR a VANISHED one
-/// (a gap got closed but the ledger was not updated) both fail the test. Expected-value edits to
-/// make the slice pass are禁止 — the fixture is authoritative; divergences stay visible here.
+/// The FROZEN divergence ledger (fixture = 正本, slice = 被検体). Each entry is the FULL
+/// `rel::case#N :: verdict` string of a comparison that currently diverges — a KNOWN gap
+/// (slice-unimplemented) or a suspected fixture authoring issue. The runner asserts the observed
+/// divergence SET equals this ledger: an UNEXPECTED divergence (regression / newly-decoded fixture
+/// that diverges, OR a *second* regression inside an already-frozen case that changes its verdict)
+/// AND a VANISHED one (a gap got closed, or a frozen verdict shifted, so the old string is no longer
+/// observed) both fail the test. Expected-value edits to make the slice pass are禁止 — the fixture is
+/// authoritative; divergences stay visible here.
+///
+/// VERDICT-GRANULARITY FREEZE (Fable §): the frozen unit is the whole verdict string (got/want diff
+/// content), not just the `rel::case#N` case key. So a SECOND divergence inside an already-frozen case
+/// (e.g. an element-name divergence that later grows an argv_pos divergence too) shifts the verdict
+/// string and surfaces as an UNEXPECTED+VANISHED pair for that key — it can no longer hide behind the
+/// case key that was already on the ledger. Verbatim freeze is used today; if a future lower-side
+/// divergence makes a verdict全文 grow large, a per-面 summary keying is the successor design (deferred
+/// — verbatim stays honest and diff-legible until a fixture actually forces the issue).
 fn known_divergences() -> Array[String] {
   [
     // double-receptacle 取り分 (DR-043): two adjacent min:0 repeats (xs*, ys*). The fixture now asserts
@@ -2045,22 +2058,50 @@ fn known_divergences() -> Array[String] {
     // and case#3 (2 tokens) yields a balanced split {xs=[a],ys=[b]} instead of the greedy-longest.
     // slice gap (取り分 preference unimplemented). NB: the fixture's greedy DIRECTION (left- vs right-
     // longest) is itself unsettled upstream (kuu DR-043「未決着 — 取り分の向き」); if it flips, case#3's
-    // want reverses but the gap persists.
-    "path-search/ambiguous-receptacles.json::case#1",
-    "path-search/ambiguous-receptacles.json::case#2",
-    "path-search/ambiguous-receptacles.json::case#3",
+    // want reverses (the frozen verdict below changes) but the gap persists.
+    "path-search/ambiguous-receptacles.json::case#1 :: EXPECTED-SUCCESS got=fail:missing operand for xs",
+    "path-search/ambiguous-receptacles.json::case#2 :: EXPECTED-SUCCESS got=fail:missing operand for ys",
+    "path-search/ambiguous-receptacles.json::case#3 :: effects got=xs:set(a)@cli,ys:set(b)@cli want= | result got={xs=[a],ys=[b]} want={xs=[a,b],ys=[]}",
     // export-key collision (DESIGN §15.5): two elements share export_key "x". The fixture models the
     // collision as an AMBIGUOUS outcome; the slice returns Success (collision is a separate check,
     // not surfaced as an outcome). slice gap.
-    "export-key/collision.json::case#1",
+    "export-key/collision.json::case#1 :: EXPECTED-AMBIGUOUS got=ok{a=true,b=true}",
     // value枝 id attribution (DR-052 直交 id / DR-055 §1): the `or` value枝 `{exact:json, id:fmt_json,
     // requires:[schema]}` lowers to a value_requires (json → [schema]) whose CRequiresIf carries the
     // PARENT element name `format`, not the枝 id `fmt_json` — the slice's ElemDef has no place to name
     // an anonymous exact枝, so a constraint violation reports element=format where the fixture asserts
     // element=fmt_json. slice gap (value-branch id attribution unmodeled). The outcome (failure,
     // kind:constraint, argv_pos) is correct — only the element name diverges.
-    "constraints-parse/default-interaction.json::case#3",
-    "constraints-parse/requires.json::case#4",
+    "constraints-parse/default-interaction.json::case#3 :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
+    "constraints-parse/requires.json::case#4 :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
+  ]
+}
+
+///|
+/// The FROZEN skip ledger (the two-way twin of known_divergences, but for DECODE-time skips). Each
+/// entry is `(rel, reason)`: a fixture the decoder cannot losslessly represent, so it raises DecodeSkip
+/// *before* any case runs (§ "TWO LOSSY CATEGORIES" (1)). Freezing the skip set closes the same both-
+/// direction hole the divergence ledger closes for RUN outcomes:
+///   (a) an actual skip whose rel is NOT on this ledger  → UNEXPECTED SKIP (a previously-decoding
+///       fixture regressed into a skip — a silent loss of coverage the histogram alone would swallow).
+///   (b) a ledger rel that did NOT skip this run          → VANISHED SKIP (the decoder learned the
+///       construct; remove the entry so the fixture stays in the runnable+ledgered set).
+///   (c) a ledger rel that skipped for a DIFFERENT reason → CHANGED SKIP REASON (the skip-side analog
+///       of the verdict-granularity freeze: the decoder now fails at a different point; re-confirm the
+///       fixture is still genuinely unrepresentable, then update the frozen reason).
+/// Expected-value / skip-hiding edits are禁止 — like the divergence ledger, this is a deliberate frozen
+/// contract, never silently grown or shrunk.
+fn expected_skips() -> Array[(String, String)] {
+  [
+    // nested-group positional (repeat over a named sub-sequence): the fixture's positional carries an
+    // inner `positionals` array (a named sub-sequence repeated as a unit). The slice's ElemDef is flat —
+    // parse_definition builds no IdxRepeat with a distinct inner-element name/export_key — so dec_positional
+    // cannot represent it losslessly and skips up front (dec_positional, "positionals" key guard). slice
+    // vocabulary gap. The reason string below MUST stay byte-identical to that DecodeSkip message.
+    (
+      "export-key/transparent-seq.json",
+      "nested-group positional (repeat over a named sub-sequence): slice ElemDef is flat, parse_definition builds no IdxRepeat with a distinct inner-element name/export_key",
+    ),
   ]
 }
 
@@ -2074,8 +2115,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
   sort_items(rels)
   let decoded : Array[String] = []
   let skips : Array[(String, String)] = [] // (rel, reason)
-  let mismatches : Array[String] = [] // "rel::case#N :: verdict"
-  let mismatch_keys : Array[String] = [] // "rel::case#N"
+  let mismatches : Array[String] = [] // full "rel::case#N :: verdict" (the frozen divergence unit)
   let mut ran_cases = 0
   for rel in rels {
     let full = root + "/" + rel
@@ -2102,9 +2142,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       ran_cases = ran_cases + 1
       let verdict = run_lower(dl.def, dl.order, dl.want)
       if verdict != "PASS" {
-        let key = rel + "::lower"
-        mismatch_keys.push(key)
-        mismatches.push(key + " :: " + verdict)
+        mismatches.push(rel + "::lower :: " + verdict)
       }
       continue
     }
@@ -2121,9 +2159,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       ran_cases = ran_cases + 1
       let verdict = run_case(df, c)
       if verdict != "PASS" {
-        let key = rel + "::case#" + ci.to_string()
-        mismatch_keys.push(key)
-        mismatches.push(key + " :: " + verdict)
+        mismatches.push(rel + "::case#" + ci.to_string() + " :: " + verdict)
       }
     }
   }
@@ -2164,19 +2200,93 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     abort(sb.to_string())
   }
 
-  // Ledger assertion: the observed divergence SET must equal known_divergences() exactly.
-  // Unexpected divergences (not in the ledger) and vanished ones (in the ledger but no longer
-  // observed) both fail — the ledger is a frozen contract, edited deliberately, never silently.
+  // Skip-ledger assertion (both-direction, the decode-time twin of the divergence ledger below).
+  // The observed skip SET must equal expected_skips() exactly, matched by rel; a matched rel's reason
+  // is frozen too. UNEXPECTED SKIP (rel not on ledger = coverage regressed into a silent skip),
+  // VANISHED SKIP (ledgered rel decoded = gap closed), and CHANGED SKIP REASON (rel skipped for a
+  // different reason) all fail — the ledger is a deliberate frozen contract.
+  let sk_ledger = expected_skips()
+  let unexpected_skips : Array[String] = [] // "rel :: reason" — skipped but not on the ledger
+  let changed_skips : Array[String] = [] // "rel :: got=... want=..." — reason drifted
+  for pair in skips {
+    let rel = pair.0
+    let reason = pair.1
+    let mut found_reason : String? = None
+    for e in sk_ledger {
+      if e.0 == rel {
+        found_reason = Some(e.1)
+        break
+      }
+    }
+    match found_reason {
+      None => unexpected_skips.push(rel + " :: " + reason)
+      Some(want) =>
+        if want != reason {
+          changed_skips.push(rel + " :: got=" + reason + " want=" + want)
+        }
+    }
+  }
+  let vanished_skips : Array[String] = [] // ledgered rel that did not skip this run (= decoded)
+  for e in sk_ledger {
+    let mut still_skipped = false
+    for pair in skips {
+      if pair.0 == e.0 {
+        still_skipped = true
+        break
+      }
+    }
+    if !still_skipped {
+      vanished_skips.push(e.0)
+    }
+  }
+  if unexpected_skips.length() > 0 ||
+    vanished_skips.length() > 0 ||
+    changed_skips.length() > 0 {
+    let sb = StringBuilder::new()
+    sb.write_string("skip ledger mismatch:\n")
+    if unexpected_skips.length() > 0 {
+      sb.write_string(
+        "  UNEXPECTED SKIP (a decoding fixture regressed into a skip; add to ledger only after confirming it is genuinely unrepresentable):\n",
+      )
+      for s in unexpected_skips {
+        sb.write_string("    " + s + "\n")
+      }
+    }
+    if vanished_skips.length() > 0 {
+      sb.write_string(
+        "  VANISHED SKIP (decoder now represents it — remove from ledger, the fixture is runnable):\n",
+      )
+      for s in vanished_skips {
+        sb.write_string("    " + s + "\n")
+      }
+    }
+    if changed_skips.length() > 0 {
+      sb.write_string(
+        "  CHANGED SKIP REASON (skips for a different reason now — re-confirm unrepresentable, then update the frozen reason):\n",
+      )
+      for s in changed_skips {
+        sb.write_string("    " + s + "\n")
+      }
+    }
+    abort(sb.to_string())
+  }
+
+  // Divergence-ledger assertion: the observed divergence SET must equal known_divergences() exactly,
+  // matched on the FULL "rel::case#N :: verdict" string (verdict-granularity freeze). An UNEXPECTED
+  // divergence (not on the ledger) and a VANISHED one (on the ledger but no longer observed) both fail
+  // — the ledger is a frozen contract, edited deliberately, never silently. A second regression inside
+  // an already-frozen case shifts its verdict string and shows up as an UNEXPECTED+VANISHED pair for
+  // that key (the whole point of freezing the verdict, not just the case key).
   let known = known_divergences()
   let unexpected : Array[String] = []
-  for k in mismatch_keys {
-    if !str_in(known, k) {
-      unexpected.push(k)
+  for m in mismatches {
+    if !str_in(known, m) {
+      unexpected.push(m)
     }
   }
   let vanished : Array[String] = []
   for k in known {
-    if !str_in(mismatch_keys, k) {
+    if !str_in(mismatches, k) {
       vanished.push(k)
     }
   }
@@ -2184,29 +2294,21 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     let sb = StringBuilder::new()
     sb.write_string("divergence ledger mismatch:\n")
     if unexpected.length() > 0 {
-      sb.write_string("  UNEXPECTED (add to ledger only after confirming fixture=正本):\n")
-      for k in unexpected {
-        for m in mismatches {
-          if str_starts(m, k + " ::") {
-            sb.write_string("    " + m + "\n")
-          }
-        }
+      sb.write_string(
+        "  UNEXPECTED (add to ledger only after confirming fixture=正本):\n",
+      )
+      for m in unexpected {
+        sb.write_string("    " + m + "\n")
       }
     }
     if vanished.length() > 0 {
-      sb.write_string("  VANISHED (gap closed — remove from ledger):\n")
+      sb.write_string("  VANISHED (gap closed / verdict shifted — remove from ledger):\n")
       for k in vanished {
         sb.write_string("    " + k + "\n")
       }
     }
     abort(sb.to_string())
   }
-}
-
-///|
-/// Whether `s` starts with `prefix` (small helper for the ledger diff report).
-fn str_starts(s : String, prefix : String) -> Bool {
-  s.length() >= prefix.length() && s.substring(start=0, end=prefix.length()) == prefix
 }
 
 ///|

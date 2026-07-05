@@ -772,6 +772,17 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
   // cell, so the value syncs to one place. `link_depth` = how many scopes this copy sits below the
   // declaration: +1 vs the source (0→1 for the first copy off the original global; N→N+1 on each
   // re-propagation level). long/short wrap the satellite in Rooted(node, link_depth) accordingly.
+  //
+  // INVARIANT (install-time count ↔ eval-time decrement, current constraint): this `+1` counts SCOPE
+  // (name/command) copy levels ONLY — one increment per copy_global_into propagation step. At eval-time
+  // the Rooted satellite's `link` counter is decremented on TWO kinds of nesting: nest() (scope levels,
+  // eval.mbt) AND nest_index() (rep #k levels, eval.mbt). The invariant "link_depth == number of eval
+  // nesting levels between the satellite and its declaring scope" therefore holds ONLY while a Rooted
+  // satellite is never placed BELOW an IdxRepeat — which is true today: the lowering wraps globals in
+  // Rooted at the scope spine, never inside a repeat head, so no rep level ever sits between copy and
+  // declaration. If nested-group support later admits a scope/global INSIDE a repeat group, each rep
+  // level would decrement a counter this `+1` never incremented for it → the satellite over-escapes
+  // (desyncs). Extend this count to also add rep-nesting depth at that point.
   let copy = clone_elem(opt)
   child.decl.options.push({
     name: copy.name,
