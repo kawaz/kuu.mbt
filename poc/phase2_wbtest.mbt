@@ -62,8 +62,9 @@ test "DR-042 ①': the declaration layer is inert — def0 is unchanged, re-runs
   let def = dr042_def()
   let a = canon_scope(build_or_fail(def, canonical_order()))
   let b = canon_scope(build_or_fail(def, canonical_order()))
-  // def0 still carries its vocab (proof it was read-only, not consumed)
-  inspect(def.options[0].long, content="[port]")
+  // def0 still carries its vocab (proof it was read-only, not consumed). long is
+  // presence-carrying (Array[String]?): a declared spelling reads as Some([...]).
+  inspect(def.options[0].long, content="Some([port])")
   inspect(def.options[0].short, content="[p]")
   inspect(a == b, content="true")
 }

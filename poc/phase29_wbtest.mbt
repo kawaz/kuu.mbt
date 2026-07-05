@@ -15,18 +15,18 @@ fn p29_order() -> Array[Installer] {
 // ── gap 2: present-empty long は --<name> を生成する (LOWERING §B.1) ─────────────
 
 test "gap2 LOWERING §B.1: present-empty `long:[]` generates the name-derived --<name> trigger" {
-  // opt("v", TFlag) は long を明示しない = present-empty (slice は明示綴りリストのモデルなので `[]` が
-  // present-empty そのもの)。normalize_surface が long=["v"] を供給し、long installer が --v を植える。
-  // fires: --v → v=true。unfired: v は preset default false (LOWERING §A.5 / DR-051 §2、gap 1)。
-  let sc = build_or_fail(def_([opt("v", TFlag)], []), [LongInst])
+  // present-empty は `long=[]` を明示する (long は presence-carrying: 省略 = absent = None、`[]` =
+  // present-empty = Some([]))。normalize_surface が present-empty にだけ long=["v"] を供給し、long
+  // installer が --v を植える。fires: --v → v=true。unfired: v は preset default false (LOWERING §A.5 / DR-051 §2、gap 1)。
+  let sc = build_or_fail(def_([opt("v", TFlag, long=[])], []), [LongInst])
   inspect(result_str(sc, ["--v"]), content="{v:true}")
   inspect(result_str(sc, []), content="{v:false}")
 }
 
 test "gap2 DR-022: a snake_case name lowers its long trigger to kebab-case (--dry-run, not --dry_run)" {
-  // name は snake_case が正規形 (AST キー、DR-022)。present-empty long の名前由来綴りは CLI 慣習の
-  // kebab-case に変換される (`dry_run` → `--dry-run`)。結果キーは name のまま snake (dry_run)。
-  let sc = build_or_fail(def_([opt("dry_run", TFlag)], []), [LongInst])
+  // name は snake_case が正規形 (AST キー、DR-022)。present-empty long (`long=[]`) の名前由来綴りは
+  // CLI 慣習の kebab-case に変換される (`dry_run` → `--dry-run`)。結果キーは name のまま snake (dry_run)。
+  let sc = build_or_fail(def_([opt("dry_run", TFlag, long=[])], []), [LongInst])
   inspect(result_str(sc, ["--dry-run"]), content="{dry_run:true}") // kebab トリガが発火
   // snake 綴りの --dry_run は生成されていない → 消費できず失敗 (トリガは --dry-run のみ)
   inspect(render_outcome(parse(ScopeNode(sc), ["--dry_run"])), content="fail:unexpected token")

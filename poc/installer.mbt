@@ -16,7 +16,7 @@
 pub(all) struct ElemDef {
   name : String
   ty : Ty
-  long : Array[String] // owned by the long installer
+  long : Array[String]? // owned by the long installer. None = absent (no `long` key → no name-derived spelling), Some([]) = present-empty (→ `--<kebab(name)>`, LOWERING §B.1)
   variants : Array[Variant] // owned by the long installer (variant DSL, DR-011/045)
   short : Array[Char] // owned by the short installer
   env : Array[String] // owned by the env installer
@@ -178,6 +178,23 @@ fn copy_strs(a : Array[String]) -> Array[String] {
   r
 }
 
+fn copy_strs_opt(a : Array[String]?) -> Array[String]? {
+  match a {
+    Some(xs) => Some(copy_strs(xs)) // preserve presence: Some([]) stays present-empty
+    None => None
+  }
+}
+
+/// The effective long spellings of an element. None (absent) and Some([]) (present-empty
+/// that never got normalized) both read as "no spellings" — presence only matters to
+/// normalize_option, which supplies the name-derived spelling for present-empty.
+fn long_of(e : ElemDef) -> Array[String] {
+  match e.long {
+    Some(xs) => xs
+    None => []
+  }
+}
+
 fn copy_chars(a : Array[Char]) -> Array[Char] {
   let r : Array[Char] = []
   for x in a {
@@ -198,7 +215,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
   {
     name: e.name,
     ty: e.ty,
-    long: copy_strs(e.long),
+    long: copy_strs_opt(e.long),
     variants: copy_variants(e.variants),
     short: copy_chars(e.short),
     env: copy_strs(e.env),
@@ -241,9 +258,9 @@ fn kebab(name : String) -> String {
 
 /// Surface normalization (LOWERING §A / §C.4): a純構文 pre-pass applied before the static checks and
 /// the installer fixpoint. Two rules:
-///   Fix 2 (LOWERING §B.1): an OPTION with present-empty `long: []` generates `--<kebab(name)>` (a
-///     name-derived spelling). The slice models `long` as an explicit spelling list, so `[]` IS the
-///     present-empty case (there is no separate absent modeling — global/with-long.json gap 3).
+///   Fix 2 (LOWERING §B.1): an OPTION with present-empty `long: Some([])` generates `--<kebab(name)>`
+///     (a name-derived spelling). `long : Array[String]?` distinguishes presence: absent `None`
+///     generates NO spelling (未指定なら生成しない), only present-empty `Some([])` does.
 ///   Fix 3 (DR-064 §5): a dd element (in either face) whose name is omitted defaults its trigger
 ///     spelling to "--". An explicit name overrides (方言 CLI 綴り差し替え).
 fn normalize_surface(def : Definition) -> Unit {
@@ -265,10 +282,15 @@ fn normalize_surface(def : Definition) -> Unit {
 fn normalize_option(e : ElemDef) -> ElemDef {
   if e.is_dd {
     normalize_dd_name(e)
-  } else if e.long.length() == 0 {
-    { ..e, long: [kebab(e.name)] } // present-empty long → name-derived kebab spelling
   } else {
-    e
+    match e.long {
+      // present-empty `long: []` → name-derived `--<kebab(name)>` spelling (LOWERING §B.1)
+      Some([]) => { ..e, long: Some([kebab(e.name)]) }
+      // present non-empty: explicit spellings win, no name-derived addition
+      Some(_) => e
+      // absent `long`: no spelling generated (LOWERING §B.1: 未指定なら生成しない)
+      None => e
+    }
   }
 }
 
@@ -503,7 +525,7 @@ fn not_dd(e : ElemDef) -> Bool {
 fn inst_long(def : Definition, build : Build) -> Unit {
   let eq_entries : Array[LongEntry] = []
   for e in def.options {
-    for l in e.long {
+    for l in long_of(e) {
       let trigger = "--" + l
       match e.ty {
         TFlag =>
@@ -728,8 +750,8 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
 /// is by TRIGGER (DR: 同名トリガ), so a child declaring `--v` blocks a global `--v`
 /// copy even under a different name.
 fn triggers_overlap(a : ElemDef, b : ElemDef) -> Bool {
-  for la in a.long {
-    for lb in b.long {
+  for la in long_of(a) {
+    for lb in long_of(b) {
       if la == lb {
         return true
       }
@@ -828,14 +850,14 @@ fn gather_inheritable(
 /// trigger literal, the ancestor's own wins and no copy is added.
 fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
   for existing in sb.decl.options {
-    if str_in(existing.long, trigger) {
+    if str_in(long_of(existing), trigger) {
       return // 自前優先 (shadow) or already-copied (idempotent)
     }
   }
   sb.decl.options.push({
     name: e.name, // the ancestor write-target cell shares the element's name (inherit-by-name)
     ty: e.ty,
-    long: [trigger],
+    long: Some([trigger]), // present: the prefixed inheritable trigger is a concrete spelling
     variants: [],
     short: [],
     env: [],
@@ -1013,7 +1035,7 @@ fn alias_entry(
   {
     name: canonical_name, // effects / entity / result key all key by the CANONICAL name (link 同型)
     ty,
-    long,
+    long: Some(long), // present: a re-derived, finalized spelling list (not subject to normalize)
     variants,
     short,
     env: [],
@@ -1057,7 +1079,7 @@ fn desugar_aliases(def : Definition) -> Unit {
         // base long spelling: name-derived (§3 / DESIGN §14.5). It exists iff the canonical has a
         // name-derived base (its long array contains its own name). Re-derived = the ALIAS name.
         let long : Array[String] = []
-        if str_in(canon.long, canon.name) {
+        if str_in(long_of(canon), canon.name) {
           long.push(alias_name)
         }
         // an explicit `long` override (DR-007 差分上書き) adds its own spellings AND cuts inherited variants.
@@ -1242,8 +1264,8 @@ fn vocab_owned(owned : Array[String], v : String) -> Bool {
 }
 
 fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
-  if e.long.length() > 0 && !vocab_owned(owned, "long") {
-    return Some("long:" + e.long[0])
+  if long_of(e).length() > 0 && !vocab_owned(owned, "long") {
+    return Some("long:" + long_of(e)[0])
   }
   // Variant DSL is part of the long attribute's value vocabulary (DR-042 §所有権の粒度),
   // so it is owned by the long installer.

@@ -576,7 +576,7 @@ fn probe_value(ty : Ty) -> String {
 pub fn completion_meta(def : Definition) -> Map[String, CandMeta] {
   let m : Map[String, CandMeta] = Map::new()
   for e in def.options {
-    for l in e.long {
+    for l in long_of(e) {
       m.set("--" + l, { is_alias: false, hidden: false, deprecated: e.deprecated })
     }
     for c in e.short {

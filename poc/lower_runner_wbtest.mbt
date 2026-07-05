@@ -592,24 +592,16 @@ fn run_lower(def : Definition, order : Array[Installer], want : LSec) -> String 
 // Each `test` transcribes ONE fixtures/lowering/<area>/<name>.json: its wire-form
 // definition + installer subset + golden 断面. The verdict is frozen with inspect
 // (like fixture_runner_wbtest.mbt): "PASS" for a spec-conformant lowering, or a
-// "DIVERGE|got=…|want=…" string that FREEZES the observed slice divergence so drift
-// is caught. 12 fixtures pass; 6 diverge on ONE known gap (below).
+// "DIVERGE|got=…|want=…" string that FREEZES an observed slice divergence so drift
+// is caught. All 18 fixtures pass.
 //
-// ── KNOWN GAP (NEW, surfaced by this runner): absent-long vs present-empty-long ──
-// ElemDef models `long : Array[String]` with NO presence flag, so an ABSENT `long`
-// key (env-only / short-only / inherit-only / multiple-only / config_key-only option)
-// is indistinguishable from a PRESENT-empty `long: []`. The DR-070 §1b gap-2 fix
-// (normalize_option: empty long → name-derived `--<kebab(name)>`) therefore OVER-fires:
-// it invents a `--<name>` trigger for options that genuinely have no long. Effect:
-//   • chain WITHOUT LongInst  → the invented "long" vocab is unowned → `unknown-vocab`
-//     DefError (env/basic, short/basic, inherit/basic, multiple/basic)
-//   • chain WITH LongInst     → a spurious `--<name>` greedy satellite + eq_split entry
-//     (config/basic port, baseline/converged verbose)
-// The golden is spec-correct (DR-070 §1b: golden = spec正本, absent long ⇒ no trigger).
-// This is the *other half* of gap 2: fixing present-empty exposed absent-long conflation.
-// FIX (out of this runner's scope — production change): model long-presence, e.g.
-// `long : Array[String]?` (None = absent, Some([]) = present-empty) or a `long_present`
-// flag, so normalize_surface fires ONLY for present-empty. See divergence report.
+// ── long-presence (LOWERING §B.1) ──────────────────────────────────────────────
+// `long : Array[String]?` distinguishes ABSENT (None: no `long` key — env-only /
+// short-only / inherit-only / multiple-only / config_key-only options) from PRESENT-empty
+// (Some([]): a declared but empty `long`). normalize_option fires ONLY for present-empty,
+// supplying the name-derived `--<kebab(name)>`; an absent long mints no trigger. Fixtures
+// exercising absent long (short/env/inherit/multiple/config/converged) therefore carry NO
+// invented `--<name>` — spec-correct per DR-070 §1b (absent long ⇒ no trigger).
 
 // baseline/no-installers.json — installers=[] (A群純構文正規化のみ, §C.4)。裸 positional x。
 test "lower baseline/no-installers: identity core lowering (installers=[])" {
@@ -671,8 +663,8 @@ test "lower long/variant: variant DSL lowers to {exact, value, link} effect sate
 }
 
 // short/basic.json — installers=[short]。port(short p) + verbose(flag short v)。
-// DIVERGES (KNOWN GAP above): port & verbose have absent long → normalize invents
-// --port / --verbose → "long" vocab unowned by [ShortInst] → unknown-vocab abort.
+// port & verbose have ABSENT long (None) → normalize invents NO --port / --verbose,
+// so [ShortInst] alone owns all vocab: a pure short_combine matcher, no long satellites.
 test "lower short/basic: short_combine matcher subsumes single-char (matcher-seat, §B.2)" {
   inspect(
     run_lower(
@@ -689,13 +681,13 @@ test "lower short/basic: short_combine matcher subsumes single-char (matcher-sea
         ],
       ),
     ),
-    content="DIVERGE|got=ERR:port/unknown-vocab,verbose/unknown-vocab|want=G[matcher(short_combine){p->port,v->verbose}]|E[port{type=number},verbose{default=false,type=bool}]",
+    content="PASS",
   )
 }
 
 // env/basic.json — installers=[env]。port(env PORT のみ、long なし)。
-// DIVERGES (KNOWN GAP above): port has absent long → normalize invents --port →
-// "long" vocab unowned by [EnvInst] → unknown-vocab abort.
+// port has ABSENT long (None) → normalize invents no --port, so [EnvInst] owns all
+// vocab: an env seat only, no structural satellite (§B.3).
 test "lower env/basic: env installer seats PORT, no structural satellite (§B.3)" {
   inspect(
     run_lower(
@@ -703,7 +695,7 @@ test "lower env/basic: env installer seats PORT, no structural satellite (§B.3)
       [EnvInst],
       lsec(entities=[le("port", "number", env=Some("PORT"))]),
     ),
-    content="DIVERGE|got=ERR:port/unknown-vocab|want=E[port{env=PORT,type=number}]",
+    content="PASS",
   )
 }
 
@@ -752,10 +744,9 @@ test "lower command/basic: command subtree as a greedy {exact, scope} (§B.5 / D
   )
 }
 
-// config/basic.json — installers=[config, long]。config_file + port(config_key)。
-// DIVERGES (KNOWN GAP above): port has absent long (config_key-only) but [LongInst] is
-// in the chain → normalize invents --port → a spurious --port satellite + eq_split entry
-// that the golden (port sourced only from config) does not have.
+// config/basic.json — installers=[config, long]。config_file (present-empty long → --config)
+// + port(config_key, ABSENT long)。port's absent long (None) means normalize invents no
+// --port even with [LongInst] in the chain, so port is sourced only from config (no satellite).
 test "lower config/basic: config seats; config_file value cell (DR-050)" {
   inspect(
     run_lower(
@@ -778,7 +769,7 @@ test "lower config/basic: config seats; config_file value cell (DR-050)" {
         ],
       ),
     ),
-    content="DIVERGE|got=G[matcher(eq_split){--config->config,--port->port},seq{exact=--config,ref=config,link=config},seq{exact=--port,ref=port,link=port}]|E[config{type=config_file},port{config_key=[server,port],type=number}]|want=G[matcher(eq_split){--config->config},seq{exact=--config,ref=config,link=config}]|E[config{type=config_file},port{config_key=[server,port],type=number}]",
+    content="PASS",
   )
 }
 
@@ -864,9 +855,9 @@ test "lower global/with-long: global copy 不動点展開 into the child scope (
   )
 }
 
-// inherit/basic.json — installers=[inherit]。ttl(inherit seat のみ)。
-// DIVERGES (KNOWN GAP above): ttl has absent long → normalize invents --ttl →
-// "long" vocab unowned by [InheritInst] → unknown-vocab abort.
+// inherit/basic.json — installers=[inherit]。ttl(inherit seat のみ, ABSENT long)。
+// ttl's absent long (None) → normalize invents no --ttl, so [InheritInst] alone owns
+// all vocab: just the inherit ladder rung, no long satellite.
 test "lower inherit/basic: inherit installer seats the inherit ladder rung (DR-031)" {
   inspect(
     run_lower(
@@ -874,7 +865,7 @@ test "lower inherit/basic: inherit installer seats the inherit ladder rung (DR-0
       [InheritInst],
       lsec(entities=[le("ttl", "number", inherit=true)]),
     ),
-    content="DIVERGE|got=ERR:ttl/unknown-vocab|want=E[ttl{inherit=true,type=number}]",
+    content="PASS",
   )
 }
 
@@ -910,9 +901,9 @@ test "lower inheritable/with-long: reverse-of-global 逆方向コピー (DR-059)
   )
 }
 
-// multiple/basic.json — installers=[multiple]。tag(append accumulator)。
-// DIVERGES (KNOWN GAP above): tag has absent long → normalize invents --tag →
-// "long" vocab unowned by [MultipleInst] → unknown-vocab abort.
+// multiple/basic.json — installers=[multiple]。tag(append accumulator, ABSENT long)。
+// tag's absent long (None) → normalize invents no --tag, so [MultipleInst] alone owns
+// all vocab: just the append accumulator, no long satellite.
 test "lower multiple/basic: multiple installs the append accumulator (DR-034)" {
   inspect(
     run_lower(
@@ -920,7 +911,7 @@ test "lower multiple/basic: multiple installs the append accumulator (DR-034)" {
       [MultipleInst],
       lsec(entities=[le("tag", "string", accum=Some("append"))]),
     ),
-    content="DIVERGE|got=ERR:tag/unknown-vocab|want=E[tag{accumulator=append,type=string}]",
+    content="PASS",
   )
 }
 
@@ -986,11 +977,11 @@ test "lower alias/command: command alias clones the subtree (empty scope) (DR-05
 }
 
 // baseline/converged.json — installers 省略 (= 全登録)。8 installer の kitchen-sink。
-// DIVERGES (KNOWN GAP above): verbose has absent long (short-only) but the full chain
-// includes LongInst → normalize invents --verbose → a spurious --verbose set satellite
-// the golden does not have. EVERYTHING ELSE MATCHES EXACTLY (the projection of the
-// command subtree, eq_split/short_combine, dd exact, repeat cons template src#T, and
-// the minimal entities all agree) — the sole diff is the extra --verbose greedy item.
+// verbose has ABSENT long (short-only): even with LongInst in the full chain, normalize
+// invents no --verbose, so the golden carries only its short_combine seat. port declares
+// present-empty long (--port) and host too (--host in the serve subtree). Projection of the
+// command subtree, eq_split/short_combine, dd exact, repeat cons template src#T, and the
+// minimal entities all agree — the whole kitchen-sink converges to the spec golden.
 test "lower baseline/converged: 全収束 kitchen-sink (installers 省略 = full chain)" {
   inspect(
     run_lower(
@@ -1030,6 +1021,6 @@ test "lower baseline/converged: 全収束 kitchen-sink (installers 省略 = full
         templates=[cons_tmpl("src")],
       ),
     ),
-    content="DIVERGE|got=G[cmd{exact=serve,scope=(G[matcher(eq_split){--host->host},seq{exact=--host,ref=host,link=host}]|E[host{type=string}])},exact(--),matcher(eq_split){--port->port},matcher(short_combine){p->port,v->verbose},seq{exact=--port,ref=port,link=port},set{exact=--verbose,value=true,link=verbose}]|P[ref{src#T}]|E[port{env=PORT,type=number},src{accumulator=flatten,type=string},verbose{default=false,type=bool}]|T[src#T=seq[ref{src,link=src},ref{src#T,optional}]]|want=G[cmd{exact=serve,scope=(G[matcher(eq_split){--host->host},seq{exact=--host,ref=host,link=host}]|E[host{type=string}])},exact(--),matcher(eq_split){--port->port},matcher(short_combine){p->port,v->verbose},seq{exact=--port,ref=port,link=port}]|P[ref{src#T}]|E[port{env=PORT,type=number},src{accumulator=flatten,type=string},verbose{default=false,type=bool}]|T[src#T=seq[ref{src,link=src},ref{src#T,optional}]]",
+    content="PASS",
   )
 }

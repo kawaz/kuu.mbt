@@ -82,10 +82,13 @@ golden で「子 entities 空」が仕様準拠値として示されている
       (`kawaz/kuu` の `fixtures/lowering/global/with-long.json` 相当の
       ケースで子 entities が空になる) — `!is_link` ガード + phase29 "gap5" で
       子スコープ entity 非生成・観測挙動 `build:{}` 不変を固定
-- [ ] fixture runner の lower 対応実装後、`kawaz/kuu` の
+- [x] fixture runner の lower 対応実装後、`kawaz/kuu` の
       `fixtures/lowering/dd/*.json` および `fixtures/lowering/global/*.json`
-      で両症状が再発しないことを回帰確認する (未: 現状は phase29 で entity
-      roster を直接検証。lower モード runner は別タスク)
+      で両症状が再発しないことを回帰確認する (lower モード runner
+      `lower_runner_wbtest.mbt` が 18/18 全 PASS の green gate として成立。
+      dd/basic fixture が options[] 配置の dd で `--` entity 非生成を、
+      global/with-long fixture が子スコープ verbose entity 非生成を、それぞれ
+      lower golden で回帰固定)
 
 ## TODO
 

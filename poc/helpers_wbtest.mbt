@@ -522,7 +522,7 @@ fn result_rval(
 fn opt(
   name : String,
   ty : Ty,
-  long~ : Array[String] = [],
+  long? : Array[String], // presence-carrying: omitted → None (absent), long=[] → Some([]) (present-empty), long=[..] → present
   variants~ : Array[Variant] = [],
   short~ : Array[Char] = [],
   env~ : Array[String] = [],
@@ -595,7 +595,7 @@ fn pos(
   {
     name,
     ty,
-    long: [],
+    long: None, // a positional never declares a long spelling (absent)
     variants: [],
     short: [],
     env: [],
@@ -626,7 +626,7 @@ fn dd_marker() -> ElemDef {
   {
     name: "--",
     ty: TStr,
-    long: [],
+    long: None, // a dd marker's trigger comes from its name ("--"), not a long spelling (absent)
     variants: [],
     short: [],
     env: [],
