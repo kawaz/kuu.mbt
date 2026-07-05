@@ -52,7 +52,7 @@
 //   that proj_effects/proj_result/proj_errors emit for the actual Outcome, by reusing
 //   render_val / render_rval_sorted / sort_items / join_comma. So "want" and "got" are
 //   produced by one grammar and compared as strings inside run_case. Mismatches are COLLECTED
-//   (file + case# + got/want) and reported all at once at the end — a single failing test lists
+//   (rel::slug + got/want) and reported all at once at the end — a single failing test lists
 //   every divergence, not just the first. The lower path compares the same way but over the
 //   five-face 断面 string (lsec_str), keyed as `rel::lower`.
 //
@@ -89,7 +89,7 @@ enum CfgInj {
 ///|
 struct DCase {
   argv : Array[String]
-  id : String? // stable case id (kebab-case slug), optional at this stage — enables rel::slug reporting (None → rel::case#N fallback). Format validation deferred to a later stage (read only here).
+  id : String // stable case id (DR-072): required kebab-case slug, per-fixture unique. Drives the rel::slug report line + divergence-ledger key. "" is only a transient "missing" marker that check_ids catches as a fixture-meta failure before any case runs.
   outcome : String // "success" | "failure" | "ambiguous"
   exp_effects : String? // §2 effects (CLI-only, ordered)
   exp_result : String? // §2 result (key-sorted; resolve-filled when in resolve mode)
@@ -1265,10 +1265,11 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     None => raise DecodeSkip("case is not an object")
   }
   let argv = dec_argv(co)
-  // stable case id (DR-pending upstream): read only at this stage. The kebab-case ([a-z0-9-]) +
-  // per-file uniqueness invariants are NOT enforced here (loose acceptance) — strict validation is
-  // a later stage. A present id drives rel::slug reporting; its absence falls back to rel::case#N.
-  let id = jf_str(co, "id")
+  // stable case id (DR-072): read verbatim here. Its well-formedness (present / kebab-case /
+  // per-fixture unique) is a fixture-meta invariant asserted by check_ids in the run loop as an
+  // explicit failure (DR-072 §3 — disjoint from parse_definition's 3 層), NOT a DecodeSkip. A
+  // missing id surfaces as "" and is caught there, so a malformed fixture fails loudly.
+  let id = jf_str(co, "id").or("")
   let expect = match co.get("expect") {
     Some(e) => e
     None => raise DecodeSkip("case missing 'expect'")
@@ -2107,7 +2108,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 
 ///|
 /// The FROZEN divergence ledger (fixture = 正本, slice = 被検体). Each entry is the FULL
-/// `rel::case#N :: verdict` string of a comparison that currently diverges — a KNOWN gap
+/// `rel::slug :: verdict` string of a comparison that currently diverges — a KNOWN gap
 /// (slice-unimplemented) or a suspected fixture authoring issue. The runner asserts the observed
 /// divergence SET equals this ledger: an UNEXPECTED divergence (regression / newly-decoded fixture
 /// that diverges, OR a *second* regression inside an already-frozen case that changes its verdict)
@@ -2116,7 +2117,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// authoritative; divergences stay visible here.
 ///
 /// VERDICT-GRANULARITY FREEZE: the frozen unit is the whole verdict string (got/want diff
-/// content), not just the `rel::case#N` case key. So a SECOND divergence inside an already-frozen case
+/// content), not just the `rel::slug` case key. So a SECOND divergence inside an already-frozen case
 /// (e.g. an element-name divergence that later grows an argv_pos divergence too) shifts the verdict
 /// string and surfaces as an UNEXPECTED+VANISHED pair for that key — it can no longer hide behind the
 /// case key that was already on the ledger. The verbatim string is the freeze unit: honest and
@@ -2126,27 +2127,28 @@ fn known_divergences() -> Array[String] {
     // double-receptacle 取り分 (DR-043): two adjacent min:0 repeats (xs*, ys*). The fixture now asserts
     // DR-043 greedy取り分 (left-longest → success 1本: 0/1 tokens fill xs and leave ys empty, 2 tokens
     // → xs=[a,b],ys=[]). The slice's phase10 model has NOT implemented DR-043取り分 preference for
-    // adjacent min:0 repeats: case#1/#2 (0/1 token) fail (`missing operand for xs`/`ys` — a min:0 repeat
-    // is still lowered as ≥1 here, so it is not allowed to stay empty when another repeat is present),
-    // and case#3 (2 tokens) yields a balanced split {xs=[a],ys=[b]} instead of the greedy-longest.
-    // slice gap (取り分 preference unimplemented). NB: the fixture's greedy DIRECTION (left- vs right-
-    // longest) is itself unsettled upstream (kuu DR-043「未決着 — 取り分の向き」); if it flips, case#3's
-    // want reverses (the frozen verdict below changes) but the gap persists.
-    "path-search/ambiguous-receptacles.json::case#1 :: EXPECTED-SUCCESS got=fail:missing operand for xs",
-    "path-search/ambiguous-receptacles.json::case#2 :: EXPECTED-SUCCESS got=fail:missing operand for ys",
-    "path-search/ambiguous-receptacles.json::case#3 :: effects got=xs:set(a)@cli,ys:set(b)@cli want= | result got={xs=[a],ys=[b]} want={xs=[a,b],ys=[]}",
+    // adjacent min:0 repeats: zero-tokens-unique-split / one-token-greedy-left (0/1 token) fail
+    // (`missing operand for xs`/`ys` — a min:0 repeat is still lowered as ≥1 here, so it is not allowed
+    // to stay empty when another repeat is present), and two-tokens-greedy-left (2 tokens) yields a
+    // balanced split {xs=[a],ys=[b]} instead of the greedy-longest. slice gap (取り分 preference
+    // unimplemented). NB: the fixture's greedy DIRECTION (left- vs right-longest) is itself unsettled
+    // upstream (kuu DR-043「未決着 — 取り分の向き」); if it flips, two-tokens-greedy-left's want reverses
+    // (the frozen verdict below changes) but the gap persists.
+    "path-search/ambiguous-receptacles.json::zero-tokens-unique-split :: EXPECTED-SUCCESS got=fail:missing operand for xs",
+    "path-search/ambiguous-receptacles.json::one-token-greedy-left :: EXPECTED-SUCCESS got=fail:missing operand for ys",
+    "path-search/ambiguous-receptacles.json::two-tokens-greedy-left :: effects got=xs:set(a)@cli,ys:set(b)@cli want= | result got={xs=[a],ys=[b]} want={xs=[a,b],ys=[]}",
     // export-key collision (DESIGN §15.5): two elements share export_key "x". The fixture models the
     // collision as an AMBIGUOUS outcome; the slice returns Success (collision is a separate check,
     // not surfaced as an outcome). slice gap.
-     "export-key/collision.json::case#1 :: EXPECTED-AMBIGUOUS got=ok{a=true,b=true}",
+     "export-key/collision.json::co-exposure-collision :: EXPECTED-AMBIGUOUS got=ok{a=true,b=true}",
     // value枝 id attribution (DR-052 直交 id / DR-055 §1): the `or` value枝 `{exact:json, id:fmt_json,
     // requires:[schema]}` lowers to a value_requires (json → [schema]) whose CRequiresIf carries the
     // PARENT element name `format`, not the枝 id `fmt_json` — the slice's ElemDef has no place to name
     // an anonymous exact枝, so a constraint violation reports element=format where the fixture asserts
     // element=fmt_json. slice gap (value-branch id attribution unmodeled). The outcome (failure,
     // kind:constraint, argv_pos) is correct — only the element name diverges.
-     "constraints-parse/default-interaction.json::case#3 :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
-    "constraints-parse/requires.json::case#4 :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
+     "constraints-parse/default-interaction.json::value-branch-cli-trigger :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
+    "constraints-parse/requires.json::value-requires-violated :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
   ]
 }
 
@@ -2178,16 +2180,79 @@ fn expected_skips() -> Array[(String, String)] {
 }
 
 ///|
-/// The case identity used in every report line + the frozen divergence ledger key. A case with a
-/// stable `id` renders as `rel::slug` (position-independent — survives case reordering / insertion);
-/// a case without one falls back to the ordinal `rel::case#N` (N = 1-based decode order). The ledger
-/// (known_divergences) currently freezes the case#N form, so until fixtures carry ids every key takes
-/// the fallback and the ledger stays matching.
-fn case_key(rel : String, ci : Int, id : String?) -> String {
-  match id {
-    Some(slug) => rel + "::" + slug
-    None => rel + "::case#" + ci.to_string()
+/// The case identity used in every report line + the frozen divergence ledger key: `rel::slug`
+/// (DR-072). Position-independent — it survives case reordering / insertion, the whole reason the
+/// stable id replaced the retired ordinal reference. The id is guaranteed present + well-formed by
+/// check_ids before any case runs, so this needs no fallback.
+fn case_key(rel : String, id : String) -> String {
+  rel + "::" + id
+}
+
+///|
+/// A kebab-case slug (DR-072 §2): non-empty and every char ∈ [a-z0-9-]. DR-072 fixes only the
+/// character class + non-emptiness (leading/trailing/double dash are not further restricted).
+fn is_kebab(s : String) -> Bool {
+  if s == "" {
+    return false
   }
+  for c in s {
+    let ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-'
+    if !ok {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// DR-072 well-formedness of a decoded fixture's case ids (fixture-meta, NOT decode capability —
+/// DR-072 §3: id 一意性は fixture フォーマットの well-formedness で parse_definition の 3 層とは disjoint).
+/// Returns one violation string per offending case — a missing id ("" from dec_case), a non-kebab id,
+/// or a duplicate id within the file. Empty ⇒ the fixture's ids are well-formed. The runner treats a
+/// non-empty result as an explicit FAILURE (collected + reported once), never a DecodeSkip: a malformed
+/// fixture must fail loudly (DR-072 §4「id 欠落は fixture 不備」) instead of silently dropping out of the
+/// runnable set the way a decode skip would. Case ordinals appear ONLY here (to point at the offending
+/// row); they never key a report line or ledger entry.
+fn check_ids(rel : String, cases : Array[DCase]) -> Array[String] {
+  let bad : Array[String] = []
+  let seen : Map[String, Int] = Map::new() // id → 1-based ordinal of first sighting
+  let mut ci = 0
+  for c in cases {
+    ci = ci + 1
+    if c.id == "" {
+      bad.push(
+        rel +
+        "::case#" +
+        ci.to_string() +
+        " — id 欠落 (DR-072: 各 case は required の kebab-case id を持つ)",
+      )
+    } else if !is_kebab(c.id) {
+      bad.push(
+        rel +
+        "::case#" +
+        ci.to_string() +
+        " — id '" +
+        c.id +
+        "' が kebab-case ([a-z0-9-]) でない",
+      )
+    } else {
+      match seen.get(c.id) {
+        Some(first) =>
+          bad.push(
+            rel +
+            "::case#" +
+            ci.to_string() +
+            " — id '" +
+            c.id +
+            "' が fixture 内で重複 (初出 case#" +
+            first.to_string() +
+            ")",
+          )
+        None => seen.set(c.id, ci)
+      }
+    }
+  }
+  bad
 }
 
 ///|
@@ -2200,7 +2265,8 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
   sort_items(rels)
   let decoded : Array[String] = []
   let skips : Array[(String, String)] = [] // (rel, reason)
-  let mismatches : Array[String] = [] // full "rel::case#N :: verdict" (the frozen divergence unit)
+  let mismatches : Array[String] = [] // full "rel::slug :: verdict" (the frozen divergence unit)
+  let malformed : Array[String] = [] // DR-072 id well-formedness violations (explicit fixture-meta fail)
   let mut ran_cases = 0
   for rel in rels {
     let full = root + "/" + rel
@@ -2238,13 +2304,21 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       }
     }
     decoded.push(rel)
-    let mut ci = 0
+    // DR-072 id well-formedness (fixture-meta, explicit fail — §3/§4). A malformed fixture is
+    // collected and fails the whole run below; its cases are NOT executed, since the slug they'd
+    // key their report line + ledger entry by is invalid (running would emit meaningless keys).
+    let bad = check_ids(rel, df.cases)
+    if bad.length() > 0 {
+      for b in bad {
+        malformed.push(b)
+      }
+      continue
+    }
     for c in df.cases {
-      ci = ci + 1
       ran_cases = ran_cases + 1
       let verdict = run_case(df, c)
       if verdict != "PASS" {
-        mismatches.push(case_key(rel, ci, c.id) + " :: " + verdict)
+        mismatches.push(case_key(rel, c.id) + " :: " + verdict)
       }
     }
   }
@@ -2278,6 +2352,9 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
   for m in mismatches {
     println("[json-conformance]   diverge " + m)
   }
+  for m in malformed {
+    println("[json-conformance]   malformed " + m)
+  }
 
   // Tripwire: acceptance targets on BOTH query paths MUST still decode & run — a parse dd fixture
   // and a lower fixture. A decoder regression that silently drops either path fails loudly here.
@@ -2292,6 +2369,20 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       sb.write_string("  " + pair.0 + " :: " + pair.1 + "\n")
     }
     // moon test swallows abort() text (only a stack trace survives) — surface the report on stdout
+    println(sb.to_string())
+    abort(sb.to_string())
+  }
+
+  // DR-072 id well-formedness assertion (explicit fixture-meta fail, distinct from a decode skip).
+  // Any missing / non-kebab / duplicate case id makes the run fail loudly here — a malformed fixture
+  // must NOT silently drop out of the runnable set (§4). This is disjoint from parse_definition's 3
+  // 層 (§3), so it is asserted here on the runner side, not routed through DecodeSkip.
+  if malformed.length() > 0 {
+    let sb = StringBuilder::new()
+    sb.write_string("fixture case-id well-formedness violation (DR-072):\n")
+    for m in malformed {
+      sb.write_string("  " + m + "\n")
+    }
     println(sb.to_string())
     abort(sb.to_string())
   }
@@ -2369,7 +2460,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
   }
 
   // Divergence-ledger assertion: the observed divergence SET must equal known_divergences() exactly,
-  // matched on the FULL "rel::case#N :: verdict" string (verdict-granularity freeze). An UNEXPECTED
+  // matched on the FULL "rel::slug :: verdict" string (verdict-granularity freeze). An UNEXPECTED
   // divergence (not on the ledger) and a VANISHED one (on the ledger but no longer observed) both fail
   // — the ledger is a frozen contract, edited deliberately, never silently. A second regression inside
   // an already-frozen case shifts its verdict string and shows up as an UNEXPECTED+VANISHED pair for
