@@ -302,8 +302,35 @@ pub fn build_result(
       segs.push(b.scope[0])
     }
   }
-  // SCALAR element: only an unnamed "" value here, no named keys / nested scopes.
-  if has_direct_key(binds, "") && named.length() == 0 && segs.length() == 0 {
+  // SCALAR element (seq/array context, DR-052 §2): a lone unnamed "" value at this level — no named
+  // keys, no nested scopes, AND no object-forming cell here (an accum cell or a scalar default at this
+  // path). The nameless value survives as a scalar ONLY when it is genuinely alone (e.g. a transparent
+  // seq element via the "[]" recursion). In kv context — where a sibling cell exists, even as an
+  // unfired preset default (transparent-kv sole-binding: `--verbose` null + keep preset false) — the
+  // "" value is 透過 and DROPS: control falls through to OBJECT building, where the "" sentinel key is
+  // skipped and the sibling default seats, yielding {keep:false} rather than a promoted scalar true.
+  let has_object_cell_here = {
+    let mut f = false
+    for c in cells {
+      if path_eq(c.path, path) {
+        f = true
+        break
+      }
+    }
+    if !f {
+      for d in defaults {
+        if path_eq(d.path, path) {
+          f = true
+          break
+        }
+      }
+    }
+    f
+  }
+  if has_direct_key(binds, "") &&
+    named.length() == 0 &&
+    segs.length() == 0 &&
+    !has_object_cell_here {
     let mut v = VBool(false)
     for b in binds {
       if b.scope.length() == 0 && b.key == "" {

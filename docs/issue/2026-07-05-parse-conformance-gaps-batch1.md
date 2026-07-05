@@ -53,6 +53,18 @@ kawaz/kuu の fixtures を JSON 直読み conformance runner
 - **一次資料**: `kawaz/kuu` の DR-052 §2 (kv 文脈では EkNull は drop が仕様)。
 - **仮説 (要裏取り)**: slice の phase22 が co-fired-sibling ケースのみカバーし、
   sole-binding (単独バインディング) ケースの drop を実装していない。
+- **真因 (裏取り済)**: `result.mbt build_result` の SCALAR 昇格分岐が **kv 文脈でも発火**
+  していた。EkNull 値は apply_export_keys で key="" (nameless sentinel) に落ちる。case#2 は
+  binds が `{"":true}` のみ、keep は未発火 flag で defaults 側に居る。旧条件は
+  `has_direct_key("") && named==0 && segs==0` だけで、defaults/accum cell の有無を見ずに
+  `RScalar(true)` を返していた。seq/array 文脈 (`"[]"` recursion の要素) では nameless 値が
+  scalar 要素になるのが正しいが、kv 文脈 (兄弟セルが preset default であっても存在する) では
+  DR-052 §2 で drop が仕様。
+- **修正**: SCALAR 昇格条件に `!has_object_cell_here` を追加 — この path に accum cell か
+  scalar default が 1 つでもあれば「object/kv 文脈」と判定して昇格しない。case#2 は keep default が
+  root path に居るので昇格せず OBJECT 構築へ落ち、"" sentinel key は skip、keep default が seat して
+  `{keep:false}`。case#1 (`--verbose --keep`) は named=[keep] で元々昇格せず影響なし。transparent-seq
+  等の array 要素は path に scalar default を持たないので昇格継続。台帳から除去済み。
 
 ### 3. 空発火 command scope が `{}` を描画しない → **解消済み (runner-projection gap だった)**
 

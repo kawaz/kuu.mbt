@@ -2056,10 +2056,6 @@ fn known_divergences() -> Array[String] {
     // collision as an AMBIGUOUS outcome; the slice returns Success (collision is a separate check,
     // not surfaced as an outcome). slice gap.
     "export-key/collision.json::case#1",
-    // transparent-kv sole-binding (DR-052 §2): an EkNull value that is the ONLY real binding promotes
-    // to a scalar instead of dropping (the slice's phase22 only covers the co-fired-sibling case).
-    // slice gap surfaced by the fixture.
-    "export-key/transparent-kv.json::case#2",
     // value枝 id attribution (DR-052 直交 id / DR-055 §1): the `or` value枝 `{exact:json, id:fmt_json,
     // requires:[schema]}` lowers to a value_requires (json → [schema]) whose CRequiresIf carries the
     // PARENT element name `format`, not the枝 id `fmt_json` — the slice's ElemDef has no place to name
