@@ -4,13 +4,22 @@
 // the greedy split commits/prunes at the global end instead of the scope's boundary. These pin
 // the observed behavior so the limitation is recorded, not silently worked around.
 
+///|
 fn r16() -> Array[Installer] {
   [
-    LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst,
-    RepeatInst, MultipleInst,
+    LongInst,
+    ShortInst,
+    EnvInst,
+    DdInst,
+    CommandInst,
+    GlobalInst,
+    InheritInst,
+    RepeatInst,
+    MultipleInst,
   ]
 }
 
+///|
 test "DR-043 flag: a repeat inside a command, with a trailing PARENT positional (oracle stress)" {
   // seq is a command whose body is a greedy repeat xs; the ROOT has a trailing positional tail.
   // A valid interpretation of `seq a b c` exists: {seq:{xs:[a,b]}, tail:c}. But the completion
@@ -20,11 +29,9 @@ test "DR-043 flag: a repeat inside a command, with a trailing PARENT positional 
   // which the global oracle cannot see. Observed outcome recorded below.
   // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
   // ParseError を emit するようになった = spec DR-053/065 準拠)
-  let def = def_cmd(
-    [],
-    [pos("tail", TStr)],
-    [cmd("seq", def_([], [pos("xs", TStr, repeat=rep(1))]))],
-  )
+  let def = def_cmd([], [pos("tail", TStr)], [
+    cmd("seq", def_([], [pos("xs", TStr, repeat=rep(1))])),
+  ])
   let reg : Map[String, Node] = Map::new()
   let sc = build_reg(def, r16(), reg)
   inspect(
@@ -35,6 +42,7 @@ test "DR-043 flag: a repeat inside a command, with a trailing PARENT positional 
 
 // ── separator × repeat composition (DR-034 separator × DR-043 repeat) ───────────
 
+///|
 test "DR-034/043 separator × repeat: `a,b c,d` splits each token and flattens (composition)" {
   // xs is a repeat positional with separator ",". Each firing consumes one token and splits it on
   // "," (the DR-034 separator pipeline); the repeat fires once per token; the flatten accumulator
@@ -50,6 +58,7 @@ test "DR-034/043 separator × repeat: `a,b c,d` splits each token and flattens (
   inspect(result_str(sc, ["solo"], defs=reg), content="{xs:[solo]}")
 }
 
+///|
 test "DR-034 separator (no repeat): one token splits into a list via the append accumulator" {
   // xs is a single positional (no repeat) with separator ",". One token `a,b,c` splits into three
   // pieces, collected by "append" (a separator can yield >= 2 pieces, so the cell is a list). This

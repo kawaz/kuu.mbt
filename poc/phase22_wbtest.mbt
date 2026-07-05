@@ -3,15 +3,25 @@
 // "" → null 正規化) = 結果キー軸なし = nameless 同化の透過 (値の伝搬は止まらない、キーが無くなるだけ)。
 // lexical スコープ・id (ref/link) は export_key と直交で不変。露出キー衝突は実行時 ambiguous (§15.5)。
 
+///|
 fn p22_order() -> Array[Installer] {
   [
-    LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst,
-    RepeatInst, MultipleInst, ConfigInst,
+    LongInst,
+    ShortInst,
+    EnvInst,
+    DdInst,
+    CommandInst,
+    GlobalInst,
+    InheritInst,
+    RepeatInst,
+    MultipleInst,
+    ConfigInst,
   ]
 }
 
 // ── 1. キー上書き: export_key: "alias" ─────────────────────────────────────────
 
+///|
 test "DR-052 §1: an export_key string overrides the result key (the name key does not appear)" {
   // `port` exposes under "alias", not "port". export_key is the result-key axis; the name provides
   // the key only by default (DR-046). The parse / cell is unchanged — only the result key.
@@ -23,6 +33,7 @@ test "DR-052 §1: an export_key string overrides the result key (the name key do
 
 // ── 2. 透過 (kv 文脈): export_key: null → 値ごと消える ───────────────────────────
 
+///|
 test "DR-052 §2: export_key null on an option is 透過 — the value disappears from the kv result" {
   // `verbose` has null result-key axis: in a kv (options) context it does not appear at all (「kv には
   // 結果キー持ちだけ現れる」). `keep` (a normal key) appears. verbose still fires (the value propagates
@@ -36,11 +47,15 @@ test "DR-052 §2: export_key null on an option is 透過 — the value disappear
   )
   let sc = build_or_fail(def, p22_order())
   let ekm = build_export_map(def)
-  inspect(export_result_str(sc, ekm, ["--verbose", "--keep"]), content="{keep:true}")
+  inspect(
+    export_result_str(sc, ekm, ["--verbose", "--keep"]),
+    content="{keep:true}",
+  )
 }
 
 // ── 3. 透過 (seq/array 文脈): 値は親の配列要素として残る (形は変わらない) ───────────
 
+///|
 test "DR-052 §2: export_key null in an array element KEEPS the value as a bare element (shape unchanged)" {
   // An IdxRepeat whose head is a named element `k`. Without export_key each array element is {k:v};
   // with export_key null on `k` the key drops and each element is the BARE value — the array shape
@@ -66,34 +81,36 @@ test "DR-052 §2: export_key null in an array element KEEPS the value as a bare 
 
 // ── 4. 昇格露出: name スコープ (command) に export_key: null → 子が昇格 ─────────────
 
+///|
 test "DR-052 §2/§3: export_key null on a command drops its scope key — children promote to the parent" {
   // A null-export command is not counted as a result-key layer (露出規則 §2.4): its scope key is
   // dropped and its children promote to the parent scope. Contrast: a normal command nests its
   // children under its name.
-  let def_null = def_cmd(
-    [],
-    [],
-    [cmd("serve", def_([opt("port", TNum, long=["port"])], []), export=EkNull)],
-  )
+  let def_null = def_cmd([], [], [
+    cmd("serve", def_([opt("port", TNum, long=["port"])], []), export=EkNull),
+  ])
   let sc_null = build_or_fail(def_null, p22_order())
   inspect(
-    export_result_str(sc_null, build_export_map(def_null), ["serve", "--port", "80"]),
+    export_result_str(sc_null, build_export_map(def_null), [
+      "serve", "--port", "80",
+    ]),
     content="{port:80}", // serve キー無し、port が親へ昇格
   )
-  let def_norm = def_cmd(
-    [],
-    [],
-    [cmd("serve", def_([opt("port", TNum, long=["port"])], []))],
-  )
+  let def_norm = def_cmd([], [], [
+    cmd("serve", def_([opt("port", TNum, long=["port"])], [])),
+  ])
   let sc_norm = build_or_fail(def_norm, p22_order())
   inspect(
-    export_result_str(sc_norm, build_export_map(def_norm), ["serve", "--port", "80"]),
+    export_result_str(sc_norm, build_export_map(def_norm), [
+      "serve", "--port", "80",
+    ]),
     content="{serve:{port:80}}", // 対照: 通常は serve 下にネスト
   )
 }
 
 // ── 5. "" = null ───────────────────────────────────────────────────────────────
 
+///|
 test "DR-052 §1: export_key \"\" normalizes to null (same 透過 behavior as null)" {
   // An empty string is meaningless as a key name, so it normalizes to null (DR-052 §1 / §4) — a
   // JSON-format escape hatch for「null が書けない」. Same 透過 as EkNull.
@@ -113,6 +130,7 @@ test "DR-052 §1: export_key \"\" normalizes to null (same 透過 behavior as nu
 
 // ── 6. 直交性: export_key は link/id と直交 (値の伝搬は不変) ──────────────────────
 
+///|
 test "DR-052 §2: export_key is orthogonal to link/id — link 合流 is unchanged, only the key differs" {
   // `port` has long + short, both linking to the one `port` cell (by name). export_key renames the
   // RESULT key but the link 合流 (value sync) is a parse-time / id concern, unchanged: `--port 80 -p 90`
@@ -123,15 +141,21 @@ test "DR-052 §2: export_key is orthogonal to link/id — link 合流 is unchang
   )
   let sc = build_or_fail(def, p22_order())
   let ekm = build_export_map(def)
-  inspect(export_result_str(sc, ekm, ["--port", "80", "-p", "90"]), content="{portnum:90}")
+  inspect(
+    export_result_str(sc, ekm, ["--port", "80", "-p", "90"]),
+    content="{portnum:90}",
+  )
 }
 
 // ── 7. presence marker (DR-052 §3) ─────────────────────────────────────────────
 
+///|
 test "DR-052 §3 presence marker: a selected scope is `{}` even if empty; an unselected scope is absent" {
   // A result-key scope-生成要素 (command) that is SELECTED has the value `{}` even when its children
   // are all absent (スコープ生成 = 値の発生、反復系の [] と同型). Not selected → absent (DR-051).
-  let def = def_cmd([], [], [cmd("serve", def_([opt("port", TNum, long=["port"])], []))])
+  let def = def_cmd([], [], [
+    cmd("serve", def_([opt("port", TNum, long=["port"])], [])),
+  ])
   let sc = build_or_fail(def, p22_order())
   let ekm = build_export_map(def)
   inspect(export_result_str(sc, ekm, ["serve"]), content="{serve:{}}") // 選ばれた空 command → {}
@@ -140,6 +164,7 @@ test "DR-052 §3 presence marker: a selected scope is `{}` even if empty; an uns
 
 // ── 8. 露出キー衝突: 同じ export_key を 2 要素 → 実行時 ambiguous (DESIGN §15.5) ─────
 
+///|
 test "DR-052/DESIGN §15.5: two elements with the SAME export_key both exposed is a runtime collision" {
   // The exposure-key uniqueness check (DR-021, runtime) applies to export_key VALUES: two distinct
   // elements resolving to the same key, both present with the same input, collide (ambiguous). Only

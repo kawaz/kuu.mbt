@@ -6,6 +6,7 @@
 
 // ── committed is derived from the op (DR-045 §2) ───────────────────────────────
 
+///|
 test "DR-045 §2: committed is derived from the op — only unset is uncommitted" {
   // The committed flag is not stored; it is a pure function of the op. set/default/empty
   // commit (the value is the user's explicit choice / an explicit clear); only unset means
@@ -19,6 +20,7 @@ test "DR-045 §2: committed is derived from the op — only unset is uncommitted
 
 // ── op is part of the effect identity (DR-045 §1 精密化 / DR-038) ───────────────
 
+///|
 test "DR-045/038 精密化: same cell + same value, only the OP differs => distinct (ambiguous)" {
   // Two entries fire on --x and BOTH write x=false; the ONLY difference is the op (set vs
   // unset). DR-045 §1 folds op/operand into the effect-sequence identity, so the two complete
@@ -34,6 +36,7 @@ test "DR-045/038 精密化: same cell + same value, only the OP differs => disti
   inspect(render_outcome(parse(g, ["--x"])), content="ambiguous:2")
 }
 
+///|
 test "DR-038 contrast: two IDENTICAL effects (same op+value) merge to one path" {
   // The partner of the test above: both entries are `set x=false`. Identical effect reached by
   // two search routes => effect identity merges them to ONE path (not ambiguous). Confirms the
@@ -50,6 +53,7 @@ test "DR-038 contrast: two IDENTICAL effects (same op+value) merge to one path" 
 
 // ── variant lowering: {exact, link, effect} (LOWERING §B.1 / DR-045) ────────────
 
+///|
 test "DR-045/LOWERING §B.1: a variant entry lowers to {exact, link (by name), effect}" {
   // ssl is a bool option with a `--no-ssl` variant that UNSETs the cell. The long installer
   // lowers the variant to a greedy satellite Seq([Exact("--no-ssl"), EffMark("ssl", Unset)]):
@@ -57,12 +61,9 @@ test "DR-045/LOWERING §B.1: a variant entry lowers to {exact, link (by name), e
   // This is the variant form of LOWERING §B.1 — the lowering DR-045 §由来 names as gap G-4/G-5.
   let def = def_(
     [
-      opt(
-        "ssl",
-        TFlag,
-        long=["ssl"],
-        variants=[{ trigger: "no-ssl", op: Unset, operand: None }],
-      ),
+      opt("ssl", TFlag, long=["ssl"], variants=[
+        { trigger: "no-ssl", op: Unset, operand: None },
+      ]),
     ],
     [],
   )
@@ -79,18 +80,16 @@ test "DR-045/LOWERING §B.1: a variant entry lowers to {exact, link (by name), e
   inspect(effects_str(ScopeNode(sc), ["--no-ssl"]), content="ssl=unset")
 }
 
+///|
 test "DR-045 set-variant: a set variant carries its operand (the SET degenerate form)" {
   // --gzip is a SET variant of `compress` with operand "gzip": firing it commits compress=gzip.
   // The SET form carries the operand as the Binding value (a value bind IS set, DR-045 §1); this
   // is distinct from the operand-less default/unset/empty forms.
   let def = def_(
     [
-      opt(
-        "compress",
-        TStr,
-        long=["compress"],
-        variants=[{ trigger: "gzip", op: Set, operand: Some(VStr("gzip")) }],
-      ),
+      opt("compress", TStr, long=["compress"], variants=[
+        { trigger: "gzip", op: Set, operand: Some(VStr("gzip")) },
+      ]),
     ],
     [],
   )
@@ -100,6 +99,7 @@ test "DR-045 set-variant: a set variant carries its operand (the SET degenerate 
 
 // ── unset opens the ladder, default locks it (DR-045 §2 / DR-031) ──────────────
 
+///|
 test "DR-045 §2: unset opens the ladder (env overrides), set/default commit (env ignored)" {
   // color has an env seat (COLOR) and a default "auto"; --no-color is an UNSET variant and
   // --color-default is a DEFAULT variant. The four cases pin the committed table's ladder
@@ -129,8 +129,14 @@ test "DR-045 §2: unset opens the ladder (env overrides), set/default commit (en
   let sc = build_or_fail(def, [LongInst, EnvInst])
   let env : Map[String, String] = Map::new()
   env.set("COLOR", "always")
-  inspect(resolve_after_parse(sc, ["--no-color"], env), content="color=always@env")
-  inspect(resolve_after_parse(sc, ["--color", "red"], env), content="color=red@cli")
+  inspect(
+    resolve_after_parse(sc, ["--no-color"], env),
+    content="color=always@env",
+  )
+  inspect(
+    resolve_after_parse(sc, ["--color", "red"], env),
+    content="color=red@cli",
+  )
   inspect(
     resolve_after_parse(sc, ["--color-default"], env),
     content="color=auto@default",
@@ -140,6 +146,7 @@ test "DR-045 §2: unset opens the ladder (env overrides), set/default commit (en
 
 // ── empty clears a collection (DR-045 empty op) ────────────────────────────────
 
+///|
 test "DR-045 empty: an empty variant clears the accumulated collection" {
   // tag is a `multiple` (accumulate) option; --clear-tags is an EMPTY variant. Effects fold in
   // order in the result builder: set a, set b, then EMPTY resets the list to [] — so the result
@@ -147,13 +154,9 @@ test "DR-045 empty: an empty variant clears the accumulated collection" {
   // the empty op operating on a collection cell (its committed=true clears deterministically).
   let def = def_(
     [
-      opt(
-        "tag",
-        TStr,
-        long=["tag"],
-        multiple=true,
-        variants=[{ trigger: "clear-tags", op: Empty, operand: None }],
-      ),
+      opt("tag", TStr, long=["tag"], multiple=true, variants=[
+        { trigger: "clear-tags", op: Empty, operand: None },
+      ]),
     ],
     [],
   )

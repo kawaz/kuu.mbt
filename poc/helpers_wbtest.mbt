@@ -5,16 +5,19 @@
 // read against each other. Renderers give tests a compact, sorted "spec string"
 // so each assertion reads as a fact, not a Show dump.
 
+///|
 /// greedy flag entry: `Seq([Exact(trigger), Bind(name, true)])` — fires and sets a bool.
 fn flag(trigger : String, name : String) -> Node {
   Seq([Exact(trigger), Bind(name, VBool(true))])
 }
 
+///|
 /// greedy string-value entry: trigger then a raw value slot (getopt-同型 raw consume).
 fn strv(trigger : String, name : String) -> Node {
   Seq([Exact(trigger), StrArg(name)])
 }
 
+///|
 fn scope(greedy : Array[Node], positional : Array[Node]) -> Node {
   ScopeNode({ greedy, positional, entities: [], constraints: [] })
 }
@@ -22,6 +25,7 @@ fn scope(greedy : Array[Node], positional : Array[Node]) -> Node {
 // Deterministic string ordering. MoonBit's builtin String sort orders by length
 // first, which is wrong for stable canonicalization; this is plain codepoint order.
 
+///|
 fn str_less(a : String, b : String) -> Bool {
   let ca = to_chars(a)
   let cb = to_chars(b)
@@ -41,6 +45,7 @@ fn str_less(a : String, b : String) -> Bool {
   ca.length() < cb.length()
 }
 
+///|
 fn sort_items(arr : Array[String]) -> Unit {
   let mut i = 1
   while i < arr.length() {
@@ -55,6 +60,7 @@ fn sort_items(arr : Array[String]) -> Unit {
   }
 }
 
+///|
 fn render_val(v : Value) -> String {
   match v {
     VStr(s) => s
@@ -70,6 +76,7 @@ fn render_val(v : Value) -> String {
   }
 }
 
+///|
 fn render_src(s : Source) -> String {
   match s {
     Cli => "cli"
@@ -80,6 +87,7 @@ fn render_src(s : Source) -> String {
   }
 }
 
+///|
 fn join_comma(items : Array[String]) -> String {
   let buf = StringBuilder::new()
   let mut first = true
@@ -93,10 +101,12 @@ fn join_comma(items : Array[String]) -> String {
   buf.to_string()
 }
 
+///|
 fn is_marker(k : String) -> Bool {
   k == "[]" || k == "{}" || is_action_key(k) || is_depr_key(k)
 }
 
+///|
 /// `key=value` pairs, sorted — the visible result of a parse. Result-structure markers
 /// ("[]" / "{}") are skipped (they carry no value, only nesting shape).
 fn render_binds(binds : Array[Binding]) -> String {
@@ -110,6 +120,7 @@ fn render_binds(binds : Array[Binding]) -> String {
   join_comma(items)
 }
 
+///|
 /// `key=value` pairs in CONSUMPTION order (NOT sorted) — the effect column (DR-045). Used to
 /// show that link 合流 preserves the argv order of effects onto one cell (last-wins is the tail).
 fn render_binds_ordered(binds : Array[Binding]) -> String {
@@ -122,6 +133,7 @@ fn render_binds_ordered(binds : Array[Binding]) -> String {
   join_comma(items)
 }
 
+///|
 /// `key=value@source` pairs, sorted — used where provenance is the point (env test).
 fn render_binds_src(binds : Array[Binding]) -> String {
   let items : Array[String] = []
@@ -134,6 +146,7 @@ fn render_binds_src(binds : Array[Binding]) -> String {
   join_comma(items)
 }
 
+///|
 /// op-aware rendering of the effect sequence (DR-045 tests): `key=set(value)` / `key=unset`
 /// / `key=default` / `key=empty`, sorted. Makes the effect op visible where a plain value
 /// render would only show the placeholder.
@@ -154,6 +167,7 @@ fn render_effects(binds : Array[Binding]) -> String {
   join_comma(items)
 }
 
+///|
 /// Parse and render the op-aware effect sequence of the unique winning path (DR-045).
 fn effects_str(g : Node, toks : Array[String]) -> String {
   match parse(g, toks) {
@@ -163,6 +177,7 @@ fn effects_str(g : Node, toks : Array[String]) -> String {
   }
 }
 
+///|
 /// Parse and render the winning path's effect column in consumption order (DR-045). For link
 /// 合流 tests: shows the ordered effects that merge onto one cell (last-wins is the tail, DR-015).
 fn ordered_effects(g : Node, toks : Array[String]) -> String {
@@ -173,6 +188,7 @@ fn ordered_effects(g : Node, toks : Array[String]) -> String {
   }
 }
 
+///|
 /// Parse the CLI tokens, then resolve every cell down the value-source ladder with `env`
 /// present (DR-031 / DR-045): shows how the parsed effects interact with env/default seats.
 fn resolve_after_parse(
@@ -187,6 +203,7 @@ fn resolve_after_parse(
   }
 }
 
+///|
 /// The primary (deepest-argv) error's message (DR-053 §2 primary = max argv_pos).
 fn primary_message(errors : Array[ParseError]) -> String {
   let mut best = errors[0]
@@ -198,6 +215,7 @@ fn primary_message(errors : Array[ParseError]) -> String {
   best.message
 }
 
+///|
 /// Backward-compatible one-line rendering of a Failure (DR-053): a fired action → "action:<name>";
 /// else the primary error message → "fail:<msg>"; else "fail:no complete parse". Keeps the pre-DR-053
 /// spec-strings stable so existing tests read unchanged (the structure is richer underneath).
@@ -213,12 +231,14 @@ fn fail_str(d : FailureData) -> String {
   }
 }
 
+///|
 fn ambig_str(d : AmbiguousData) -> String {
   "ambiguous:" + d.interpretations.length().to_string()
 }
 
 // ── DR-054 definition-error accessors ─────────────────────────────────────────
 
+///|
 fn render_def_kind(k : DefErrKind) -> String {
   match k {
     DVocabIntersection => "vocab-intersection"
@@ -231,6 +251,7 @@ fn render_def_kind(k : DefErrKind) -> String {
   }
 }
 
+///|
 /// All definition errors as `element/kind`, sorted (DR-054 全列挙).
 fn deferrs_str(errs : Array[DefError]) -> String {
   let items : Array[String] = []
@@ -241,6 +262,7 @@ fn deferrs_str(errs : Array[DefError]) -> String {
   join_comma(items)
 }
 
+///|
 /// The hint of the first error whose element matches `element` (DR-054 §4 「次の手」).
 fn hint_of(errs : Array[DefError], element : String) -> String {
   for e in errs {
@@ -253,6 +275,7 @@ fn hint_of(errs : Array[DefError], element : String) -> String {
 
 // ── DR-053 structure accessors (the rich failure / ambiguous data) ────────────
 
+///|
 fn render_kind(k : ErrKind) -> String {
   match k {
     KParse => "parse"
@@ -261,6 +284,7 @@ fn render_kind(k : ErrKind) -> String {
   }
 }
 
+///|
 /// One error as `element@argv_pos/kind` (message dropped for a compact spec-string).
 fn render_err(pe : ParseError) -> String {
   "\{pe.element}@\{pe.argv_pos}/\{render_kind(pe.kind)}"
@@ -268,6 +292,7 @@ fn render_err(pe : ParseError) -> String {
 
 // ── completion candidate renderers (DR-060) ──────────────────────────────────
 
+///|
 fn ty_str(t : Ty) -> String {
   match t {
     TStr => "str"
@@ -277,6 +302,7 @@ fn ty_str(t : Ty) -> String {
   }
 }
 
+///|
 /// A completion candidate set as sorted `spelling` (exact) / `<ty>` (value) tokens, comma-joined.
 fn cands_str(cands : Array[Cand]) -> String {
   let items : Array[String] = []
@@ -291,6 +317,7 @@ fn cands_str(cands : Array[Cand]) -> String {
   join_comma(items)
 }
 
+///|
 /// The terminal hint of a named exact candidate (DR-060 §9): "end" (word_end) / "cont" (continue) /
 /// "none" if the spelling is not among the candidates.
 fn cand_term(cands : Array[Cand], spelling : String) -> String {
@@ -305,6 +332,7 @@ fn cand_term(cands : Array[Cand], spelling : String) -> String {
   "none"
 }
 
+///|
 /// The declaration-layer meta of a named exact candidate, as sorted flags (DR-057/058): any of
 /// alias / hidden / dep, or "-" if none. "absent" if the spelling is not among the candidates.
 fn cand_meta(cands : Array[Cand], spelling : String) -> String {
@@ -330,6 +358,7 @@ fn cand_meta(cands : Array[Cand], spelling : String) -> String {
   "absent"
 }
 
+///|
 /// The deprecation warnings on a Success outcome, sorted (DR-058 warnings). Each is the canonical
 /// element name reached via a deprecated entry (DR-057 alias). Empty = no deprecated entry used.
 fn warnings_str(o : Outcome) -> String {
@@ -338,6 +367,7 @@ fn warnings_str(o : Outcome) -> String {
   join_comma(ws)
 }
 
+///|
 /// ALL held errors of a Failure, sorted (DR-053 §2 全保持).
 fn errors_str(o : Outcome) -> String {
   match o {
@@ -353,6 +383,7 @@ fn errors_str(o : Outcome) -> String {
   }
 }
 
+///|
 /// The PRIMARY errors (max argv_pos, all if tie), sorted (DR-053 §2 primary = 最深).
 fn primary_str(o : Outcome) -> String {
   match o {
@@ -379,6 +410,7 @@ fn primary_str(o : Outcome) -> String {
   }
 }
 
+///|
 /// Every interpretation of an Ambiguous outcome as a result-object view, sorted (DR-053 §3).
 fn interps_str(o : Outcome) -> String {
   match o {
@@ -394,6 +426,7 @@ fn interps_str(o : Outcome) -> String {
   }
 }
 
+///|
 /// The help_entry material (DR-053 §4), or "none".
 fn help_of(o : Outcome) -> String {
   match o {
@@ -411,6 +444,7 @@ fn help_of(o : Outcome) -> String {
   }
 }
 
+///|
 /// The tried_triggers material (DR-053 §4), sorted.
 fn tried_of(o : Outcome) -> String {
   match o {
@@ -426,6 +460,7 @@ fn tried_of(o : Outcome) -> String {
   }
 }
 
+///|
 /// The fired_action (DR-053 §2), or "none".
 fn fired_of(o : Outcome) -> String {
   match o {
@@ -438,6 +473,7 @@ fn fired_of(o : Outcome) -> String {
   }
 }
 
+///|
 /// Compact one-line rendering of an Outcome for spec-string assertions (backward-compatible with
 /// the pre-DR-053 "ok{}"/"fail:"/"ambiguous:N"/"action:" forms).
 fn render_outcome(o : Outcome) -> String {
@@ -448,6 +484,7 @@ fn render_outcome(o : Outcome) -> String {
   }
 }
 
+///|
 /// Compact rendering of a built result object (name order preserved, not sorted —
 /// nesting and list order are the point of the result builder).
 fn render_rval(r : RVal) -> String {
@@ -470,48 +507,60 @@ fn render_rval(r : RVal) -> String {
   }
 }
 
+///|
 /// Parse, then build the nested result object (layer 3). On a non-unique parse the
 /// outcome string is returned so tests can assert either shape.
 fn result_str(
   sc : Scope,
   toks : Array[String],
-  defs~ : Map[String, Node] = Map::new(),
+  defs? : Map[String, Node] = Map::new(),
 ) -> String {
   match parse(ScopeNode(sc), toks, defs~) {
-    Success(binds) => render_rval(build_result(binds, accum_cells(sc), default_cells(sc), []))
+    Success(binds) =>
+      render_rval(build_result(binds, accum_cells(sc), default_cells(sc), []))
     Failure(d) => fail_str(d)
     Ambiguous(d) => ambig_str(d)
   }
 }
 
+///|
 /// Parse, apply the result-key axis (DR-052), and render — with the exposure-key collision check
 /// (DESIGN §15.5). `ek_map` = build_export_map(def). On collision → "collision:<key>".
 fn export_result_str(
   sc : Scope,
   ek_map : Map[String, ExportKey],
   toks : Array[String],
-  defs~ : Map[String, Node] = Map::new(),
+  defs? : Map[String, Node] = Map::new(),
 ) -> String {
   match parse(ScopeNode(sc), toks, defs~) {
     Success(binds) =>
       match find_export_collision(binds, ek_map) {
         Some(k) => "collision:" + k
         None =>
-          render_rval(build_result(apply_export_keys(binds, ek_map), accum_cells(sc), apply_export_to_defaults(default_cells(sc), ek_map), []))
+          render_rval(
+            build_result(
+              apply_export_keys(binds, ek_map),
+              accum_cells(sc),
+              apply_export_to_defaults(default_cells(sc), ek_map),
+              [],
+            ),
+          )
       }
     Failure(d) => fail_str(d)
     Ambiguous(d) => ambig_str(d)
   }
 }
 
+///|
 /// Parse and return the built RVal (aborts on a non-unique parse) — for map-form tests.
 fn result_rval(
   sc : Scope,
   toks : Array[String],
-  defs~ : Map[String, Node] = Map::new(),
+  defs? : Map[String, Node] = Map::new(),
 ) -> RVal {
   match parse(ScopeNode(sc), toks, defs~) {
-    Success(binds) => build_result(binds, accum_cells(sc), default_cells(sc), [])
+    Success(binds) =>
+      build_result(binds, accum_cells(sc), default_cells(sc), [])
     Failure(d) => abort("parse failed: " + fail_str(d))
     Ambiguous(d) => abort("ambiguous: " + ambig_str(d))
   }
@@ -519,26 +568,27 @@ fn result_rval(
 
 // ── Phase 2 helpers: definition builders + canonicalizer + permutations ───────
 
+///|
 fn opt(
   name : String,
   ty : Ty,
-  long~ : Array[String] = [], // DR-071 two-form main-entry spellings: `[":set"]` = main entry via kebab(name), explicit spellings as-is, `[]` = no main entry (omitted default)
-  variants~ : Array[Variant] = [],
-  short~ : Array[Char] = [],
-  env~ : Array[String] = [],
-  global~ : Bool = false,
-  inherit~ : Bool = false,
-  inheritable~ : Bool = false,
-  multiple~ : Bool = false,
-  fail_action~ : Bool = false,
-  config_file~ : Bool = false,
-  config_key~ : Array[String]? = None,
-  export~ : ExportKey = EkUnset,
-  requires~ : Array[String] = [],
-  conflicts~ : Array[String] = [],
-  exclusive~ : Array[String] = [],
-  value_requires~ : Array[(String, Array[String])] = [],
-  default~ : Value? = None,
+  long? : Array[String] = [], // DR-071 two-form main-entry spellings: `[":set"]` = main entry via kebab(name), explicit spellings as-is, `[]` = no main entry (omitted default)
+  variants? : Array[Variant] = [],
+  short? : Array[Char] = [],
+  env? : Array[String] = [],
+  global? : Bool = false,
+  inherit? : Bool = false,
+  inheritable? : Bool = false,
+  multiple? : Bool = false,
+  fail_action? : Bool = false,
+  config_file? : Bool = false,
+  config_key? : Array[String]? = None,
+  export? : ExportKey = EkUnset,
+  requires? : Array[String] = [],
+  conflicts? : Array[String] = [],
+  exclusive? : Array[String] = [],
+  value_requires? : Array[(String, Array[String])] = [],
+  default? : Value? = None,
 ) -> ElemDef {
   {
     name,
@@ -570,6 +620,7 @@ fn opt(
   }
 }
 
+///|
 /// Normalize a config-supplied export_key string to `ExportKey`: "" → EkNull (DR-052 §1), else EkKey.
 fn ek(s : String) -> ExportKey {
   if s == "" {
@@ -579,18 +630,19 @@ fn ek(s : String) -> ExportKey {
   }
 }
 
+///|
 fn pos(
   name : String,
   ty : Ty,
-  inherit~ : Bool = false,
-  repeat~ : RepeatSpec? = None,
-  optional~ : Bool = false,
-  multiple~ : Bool = false,
-  separator~ : String? = None,
-  config_key~ : Array[String]? = None,
-  export~ : ExportKey = EkUnset,
-  ref_~ : String? = None,
-  default~ : Value? = None,
+  inherit? : Bool = false,
+  repeat? : RepeatSpec? = None,
+  optional? : Bool = false,
+  multiple? : Bool = false,
+  separator? : String? = None,
+  config_key? : Array[String]? = None,
+  export? : ExportKey = EkUnset,
+  ref_? : String? = None,
+  default? : Value? = None,
 ) -> ElemDef {
   {
     name,
@@ -622,6 +674,7 @@ fn pos(
   }
 }
 
+///|
 fn dd_marker() -> ElemDef {
   {
     name: "--",
@@ -653,10 +706,12 @@ fn dd_marker() -> ElemDef {
   }
 }
 
-fn rep(min : Int, max~ : Int? = None, lazy~ : Bool = false) -> RepeatSpec? {
+///|
+fn rep(min : Int, max? : Int? = None, lazy? : Bool = false) -> RepeatSpec? {
   Some({ min, max, lazy })
 }
 
+///|
 /// Build a scope + return the ref-template registry (for repeat/ref tests). Any
 /// pre-registered templates (e.g. a shared `color`) can be put in `registry` first.
 fn build_reg(
@@ -670,41 +725,50 @@ fn build_reg(
   }
 }
 
+///|
 /// Definition constructors — keep `commands` out of test literals so adding tree
 /// support did not churn every def site.
 fn def_(
   options : Array[ElemDef],
   positionals : Array[ElemDef],
-  aliases~ : Array[AliasDef] = [],
+  aliases? : Array[AliasDef] = [],
 ) -> Definition {
   { options, positionals, commands: [], aliases }
 }
 
+///|
 fn def_cmd(
   options : Array[ElemDef],
   positionals : Array[ElemDef],
   commands : Array[CommandDef],
-  aliases~ : Array[AliasDef] = [],
+  aliases? : Array[AliasDef] = [],
 ) -> Definition {
   { options, positionals, commands, aliases }
 }
 
-fn cmd(name : String, body : Definition, export~ : ExportKey = EkUnset) -> CommandDef {
+///|
+fn cmd(
+  name : String,
+  body : Definition,
+  export? : ExportKey = EkUnset,
+) -> CommandDef {
   { name, body, export_key: export }
 }
 
+///|
 /// An alias declaration (DR-057). `name` None = reuse the canonical name (short-only alias); `long`
 /// None = inherit name-derived variants, Some(xs) = explicit override (差分上書き, Some([]) cuts variants).
 fn alias(
   target : String,
-  name~ : String? = None,
-  short~ : Array[Char] = [],
-  long~ : Array[String]? = None,
-  deprecated~ : Bool = false,
+  name? : String? = None,
+  short? : Array[Char] = [],
+  long? : Array[String]? = None,
+  deprecated? : Bool = false,
 ) -> AliasDef {
   { target, name, short, long_override: long, deprecated }
 }
 
+///|
 /// Order-independent rendering of a built scope: greedy and entities sorted (the
 /// invariants guarantee the SET is fixed; only array order varies), positional in
 /// order (its structure is dd-owned and deterministic). Two scopes with the same
@@ -724,9 +788,16 @@ fn canon_scope(sc : Scope) -> String {
   for p in sc.positional {
     ps.push("\{p}")
   }
-  "G[" + join_comma(gs) + "]|P[" + join_comma(ps) + "]|E[" + join_comma(es) + "]"
+  "G[" +
+  join_comma(gs) +
+  "]|P[" +
+  join_comma(ps) +
+  "]|E[" +
+  join_comma(es) +
+  "]"
 }
 
+///|
 /// Whether the scope's entity roster contains `name` (the ParserContext / detail side, DR-016). An
 /// absent element (no result key) is still in the roster — this is the 2-layer separation (DR-051 §5).
 fn entity_exists(sc : Scope, name : String) -> Bool {
@@ -738,6 +809,7 @@ fn entity_exists(sc : Scope, name : String) -> Bool {
   false
 }
 
+///|
 /// The ParserContext meta of a result cell (DR-016 / DR-051 §5): `present` = it has a value in the
 /// result; `committed` = the value came from a CLI selection (source=Cli). An absent element reports
 /// present=false, committed=false; a default-supplied value is present but NOT committed.
@@ -756,6 +828,7 @@ fn ctx_report(binds : Array[Binding], name : String) -> String {
   "present=\{present},committed=\{committed}"
 }
 
+///|
 /// The accumulators-registry name (DR-036) an entity's cell folds through: "flatten" (repeat),
 /// "append" (multiple), or "scalar" for a non-accumulate cell. For the P3 naming tests.
 fn entity_accum(sc : Scope, name : String) -> String {
@@ -770,6 +843,7 @@ fn entity_accum(sc : Scope, name : String) -> String {
   "missing"
 }
 
+///|
 fn permutations(items : Array[Installer]) -> Array[Array[Installer]] {
   if items.length() <= 1 {
     let only : Array[Installer] = []

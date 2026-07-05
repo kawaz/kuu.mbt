@@ -5,13 +5,25 @@
 // installer は宣言的コピー (global 同型); 入口展開は long/short/command installer が担う。hidden/deprecated
 // は DR-058 (deprecated alias は入口限定で ParserContext.warnings に積む)。
 
+///|
 fn p26_order() -> Array[Installer] {
   [
-    LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst,
-    RepeatInst, MultipleInst, ConfigInst, ConstraintInst, AliasInst,
+    LongInst,
+    ShortInst,
+    EnvInst,
+    DdInst,
+    CommandInst,
+    GlobalInst,
+    InheritInst,
+    RepeatInst,
+    MultipleInst,
+    ConfigInst,
+    ConstraintInst,
+    AliasInst,
   ]
 }
 
+///|
 /// The ShortCombine cluster entries of a built scope, as sorted `ch=name` (with `!` for a deprecated
 /// entry). Used to show short 非継承 (no duplicate canonical short) and the deprecated flag placement.
 fn short_str(sc : Scope) -> String {
@@ -31,16 +43,15 @@ fn short_str(sc : Scope) -> String {
 
 // ── 1. short alias: 別入口が canonical セルに束縛、結果キーは canonical のみ ──────
 
+///|
 test "DR-057 §1/§2: a short alias binds the canonical cell; the result key stays canonical; あと勝ち" {
   // canonical `port` (short -p) + an alias `{alias:"port", short:"n"}` → -n is a SECOND entry into the
   // one `port` cell (link 同型). The entry-copy keys by the canonical name, so both the effect and the
   // result key are `port` — the alias makes no result scope of its own (§2). -p and -n on the same cell
   // are last-wins (DR-015).
-  let def = def_(
-    [opt("port", TNum, short=['p'])],
-    [],
-    aliases=[alias("port", short=['n'])],
-  )
+  let def = def_([opt("port", TNum, short=['p'])], [], aliases=[
+    alias("port", short=['n']),
+  ])
   let sc = build_or_fail(def, p26_order())
   inspect(result_str(sc, ["-n", "80"]), content="{port:80}") // -n → port セル、結果キー port
   inspect(result_str(sc, ["-p", "80"]), content="{port:80}") // canonical も同じセル
@@ -49,6 +60,7 @@ test "DR-057 §1/§2: a short alias binds the canonical cell; the result key sta
 
 // ── 2. long alias + variant 再導出 (本命) ───────────────────────────────────────
 
+///|
 test "DR-057 §3: a long alias re-derives the name-derived base AND its variant under the new name" {
   // canonical `ssl` (bool, default true) with a `--no-ssl` SET-false variant. Alias `{alias:"ssl",
   // name:"tls"}` → the name-derived base (--ssl) re-derives to --tls, and the variant (name-derived:
@@ -56,13 +68,9 @@ test "DR-057 §3: a long alias re-derives the name-derived base AND its variant 
   // the `ssl` cell; --no-tls sets ssl=false. The canonical spellings still work too.
   let def = def_(
     [
-      opt(
-        "ssl",
-        TFlag,
-        long=["ssl"],
-        default=Some(VBool(true)),
-        variants=[{ trigger: "no-ssl", op: Set, operand: Some(VBool(false)) }],
-      ),
+      opt("ssl", TFlag, long=["ssl"], default=Some(VBool(true)), variants=[
+        { trigger: "no-ssl", op: Set, operand: Some(VBool(false)) },
+      ]),
     ],
     [],
     aliases=[alias("ssl", name=Some("tls"))],
@@ -76,19 +84,16 @@ test "DR-057 §3: a long alias re-derives the name-derived base AND its variant 
 
 // ── 3. long:[] 明示上書き → variant が切れる (差分上書き, DR-007) ─────────────────
 
+///|
 test "DR-057 §3: an explicit long:[] override cuts the inherited variant (only the bare --tls remains)" {
   // Same canonical `ssl`. Alias `{alias:"ssl", name:"tls", long:[]}` → the explicit long override
   // (差分上書き) cuts the inherited variant, so --no-tls is NOT generated. The base --tls still comes
   // from the alias name (素の --tls のみ). --no-tls therefore does not resolve.
   let def = def_(
     [
-      opt(
-        "ssl",
-        TFlag,
-        long=["ssl"],
-        default=Some(VBool(true)),
-        variants=[{ trigger: "no-ssl", op: Set, operand: Some(VBool(false)) }],
-      ),
+      opt("ssl", TFlag, long=["ssl"], default=Some(VBool(true)), variants=[
+        { trigger: "no-ssl", op: Set, operand: Some(VBool(false)) },
+      ]),
     ],
     [],
     aliases=[alias("ssl", name=Some("tls"), long=Some([]))],
@@ -98,27 +103,30 @@ test "DR-057 §3: an explicit long:[] override cuts the inherited variant (only 
   // --no-tls は生成されない → 未定義トークンで完全経路なし (Failure、ssl=false にはならない)
   // (旧値 fail:no complete parse は空 errors バグの凍結だった。構造的失敗が
   // ParseError を emit するようになった = spec DR-053/065 準拠)
-  inspect(render_outcome(parse(ScopeNode(sc), ["--no-tls"])), content="fail:unexpected token")
+  inspect(
+    render_outcome(parse(ScopeNode(sc), ["--no-tls"])),
+    content="fail:unexpected token",
+  )
   inspect(result_str(sc, ["--no-ssl"]), content="{ssl:false}") // canonical variant は不変
 }
 
 // ── 4. short 非継承: alias は canonical の short を継承しない ─────────────────────
 
+///|
 test "DR-057 §3: short is NOT inherited — the alias does not re-generate the canonical short" {
   // canonical `ssl` declares its own short -s; the alias `tls` declares its own short -t. Because short
   // is an EXPLICIT spelling (§3 明示綴り非継承), the alias entry-copy does NOT inherit canonical's -s —
   // the cluster has exactly one `s` (canonical) + one `t` (alias), not a duplicated `s`. Both bind ssl.
-  let def = def_(
-    [opt("ssl", TFlag, long=["ssl"], short=['s'])],
-    [],
-    aliases=[alias("ssl", name=Some("tls"), short=['t'])],
-  )
+  let def = def_([opt("ssl", TFlag, long=["ssl"], short=['s'])], [], aliases=[
+    alias("ssl", name=Some("tls"), short=['t']),
+  ])
   let sc = build_or_fail(def, p26_order())
   inspect(short_str(sc), content="s=ssl,t=ssl") // 一つの s (継承なら s が二重に出る)
 }
 
 // ── 5. command alias: co → checkout 部分木、結果キーは checkout ───────────────────
 
+///|
 test "DR-057 §2: a command alias enters the canonical subtree; the result key stays canonical" {
   // `checkout` is a command; alias `{alias:"checkout", type:command, name:"co"}` → `co` triggers the
   // checkout subtree (a clone body), and its export_key is EkKey("checkout") so the result nests under
@@ -143,34 +151,51 @@ test "DR-057 §2: a command alias enters the canonical subtree; the result key s
 
 // ── 6. alias installer の順列一致 (不動点反復で入口 installer が展開) ─────────────
 
+///|
 test "DR-057/DR-042: the alias-desugared lowering is identical regardless of installer order" {
   // The alias entry-copies are expanded by long/short in the fixpoint; the desugaring itself is
   // order-independent. Building with AliasInst early vs late (and the whole chain permuted) yields the
   // identical AtomicAST (canon_scope).
   let def = def_(
-    [opt("ssl", TFlag, long=["ssl"], short=['s'], variants=[{ trigger: "no-ssl", op: Set, operand: Some(VBool(false)) }])],
+    [
+      opt("ssl", TFlag, long=["ssl"], short=['s'], variants=[
+        { trigger: "no-ssl", op: Set, operand: Some(VBool(false)) },
+      ]),
+    ],
     [],
     aliases=[alias("ssl", name=Some("tls"), short=['t'])],
   )
-  let early = canon_scope(build_or_fail(def, [AliasInst, LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst, RepeatInst, MultipleInst, ConfigInst, ConstraintInst]))
+  let early = canon_scope(
+    build_or_fail(def, [
+      AliasInst,
+      LongInst,
+      ShortInst,
+      EnvInst,
+      DdInst,
+      CommandInst,
+      GlobalInst,
+      InheritInst,
+      RepeatInst,
+      MultipleInst,
+      ConfigInst,
+      ConstraintInst,
+    ]),
+  )
   let late = canon_scope(build_or_fail(def, p26_order()))
   inspect(early == late, content="true")
 }
 
 // ── 7. deprecated alias (DR-058): 受理 + ParserContext.warnings に構造化警告 ──────
 
+///|
 test "DR-058: a deprecated alias is accepted and binds the canonical cell, adding a warning" {
   // canonical `port` (-p) + a normal alias -n + a DEPRECATED alias -o. All three bind `port`; only -o
   // adds a deprecation warning (DR-058: 受理不変 + warnings に {element, kind:deprecated}). -n / -p add
   // no warning. The warning's element is the canonical (`port`), the auto-derived "use port instead"素材.
-  let def = def_(
-    [opt("port", TNum, short=['p'])],
-    [],
-    aliases=[
-      alias("port", short=['n']),
-      alias("port", short=['o'], deprecated=true),
-    ],
-  )
+  let def = def_([opt("port", TNum, short=['p'])], [], aliases=[
+    alias("port", short=['n']),
+    alias("port", short=['o'], deprecated=true),
+  ])
   let sc = build_or_fail(def, p26_order())
   // -o: accepted, binds port, AND records a deprecation warning
   inspect(result_str(sc, ["-o", "80"]), content="{port:80}") // 受理 + 実体束縛
@@ -182,6 +207,7 @@ test "DR-058: a deprecated alias is accepted and binds the canonical cell, addin
 
 // ── 8. 実体側制約との噛み合い: alias 起動でも実体 committed が立ち制約が効く ────────
 
+///|
 test "DR-057 §2/§3: a constraint on the canonical fires even when the alias entry triggers the commit" {
   // `decrypt requires key_file`. The alias -d is another entry into `decrypt` (§3: 制約は実体側のまま —
   // the alias does not carry the requires). Triggering -d commits the `decrypt` cell, so the canonical's
@@ -195,6 +221,12 @@ test "DR-057 §2/§3: a constraint on the canonical fires even when the alias en
     aliases=[alias("decrypt", short=['d'])],
   )
   let sc = build_or_fail(def, p26_order())
-  inspect(errors_str(parse(ScopeNode(sc), ["-d"])), content="decrypt@1/constraint") // alias 起動でも制約が効く
-  inspect(result_str(sc, ["-d", "--key-file", "k"]), content="{decrypt:true,key_file:k}") // 充足
+  inspect(
+    errors_str(parse(ScopeNode(sc), ["-d"])),
+    content="decrypt@1/constraint",
+  ) // alias 起動でも制約が効く
+  inspect(
+    result_str(sc, ["-d", "--key-file", "k"]),
+    content="{decrypt:true,key_file:k}",
+  ) // 充足
 }

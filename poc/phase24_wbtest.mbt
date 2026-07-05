@@ -5,26 +5,26 @@
 
 // ── 全列挙: 複数の独立エラーが 1 回で返る (DR-054 §4) ────────────────────────────
 
+///|
 test "DR-054: multiple independent errors are ALL returned in one parse_definition (全列挙)" {
   // An absent ref (`missing`) AND a zero-progress repeat (`loop` → a 0-token Bind template). Both
   // surface in a single call — no first-error 打ち切り (コンパイラの定石).
-  let def = def_(
-    [],
-    [
-      pos("x", TStr, ref_=Some("missing")), // absent ref
-      pos("loop", TStr, ref_=Some("noprog"), repeat=rep(1)), // zero-progress head
-    ],
-  )
+  let def = def_([], [
+    pos("x", TStr, ref_=Some("missing")), // absent ref
+    pos("loop", TStr, ref_=Some("noprog"), repeat=rep(1)), // zero-progress head
+  ])
   let reg : Map[String, Node] = Map::new()
   reg.set("noprog", Bind("b", VBool(true))) // a 0-token head (no consumption)
   match parse_definition(def, [RepeatInst], registry=reg) {
-    Err(errs) => inspect(deferrs_str(errs), content="loop/zero-progress,x/absent-ref")
+    Err(errs) =>
+      inspect(deferrs_str(errs), content="loop/zero-progress,x/absent-ref")
     Ok(_) => abort("expected multiple errors")
   }
 }
 
 // ── 未知の特殊語彙 + hint (DR-042①) ────────────────────────────────────────────
 
+///|
 test "DR-054: an unknown special vocab is an Error with a 「次の手」hint" {
   // env:PORT used but EnvInst absent → unknown-vocab, and the hint names the fix (register the owner).
   let def = def_([opt("port", TNum, long=["port"], env=["PORT"])], [])
@@ -42,6 +42,7 @@ test "DR-054: an unknown special vocab is an Error with a 「次の手」hint" {
 
 // ── 不正な値域: repeat min > max (DR-052) ──────────────────────────────────────
 
+///|
 test "DR-054: repeat min > max is an invalid-range Error (with hint)" {
   // A range that cannot describe any cardinality — the lowering is malformed → Error.
   let def = def_([], [pos("f", TStr, repeat=rep(3, max=Some(1)))]) // min 3 > max 1
@@ -56,6 +57,7 @@ test "DR-054: repeat min > max is an invalid-range Error (with hint)" {
 
 // ── 不在の ref / link (DR-032) ─────────────────────────────────────────────────
 
+///|
 test "DR-054: a ref target defined nowhere is an absent-ref Error (with hint)" {
   // `x` refs `nope`, which exists in neither the scope nor definitions → the ref cannot resolve.
   let def = def_([], [pos("x", TStr, ref_=Some("nope"))])
@@ -74,6 +76,7 @@ test "DR-054: a ref target defined nowhere is an absent-ref Error (with hint)" {
 
 // ── 循環 ref vs repeat の正当な自己 ref (DR-007/032 vs DR-043) ───────────────────
 
+///|
 test "DR-054: a circular ref is an Error; a repeat's legitimate self-ref is NOT (ゼロ進捗ガードとの区別)" {
   // A circular ref: `bad` refs itself in HEAD position (nothing consumed before recursing) → infinite
   // structural expansion → circular-ref Error.

@@ -8,6 +8,7 @@
 // String indexing yields UTF-16 code units, so cluster/value work is done on
 // Array[Char] (iterating a String yields Char). Test tokens are ASCII.
 
+///|
 fn to_chars(s : String) -> Array[Char] {
   let a : Array[Char] = []
   for c in s {
@@ -16,6 +17,7 @@ fn to_chars(s : String) -> Array[Char] {
   a
 }
 
+///|
 fn chars_to_str(cs : Array[Char], a : Int, b : Int) -> String {
   let buf = StringBuilder::new()
   let mut i = a
@@ -26,6 +28,7 @@ fn chars_to_str(cs : Array[Char], a : Int, b : Int) -> String {
   buf.to_string()
 }
 
+///|
 fn char_prefix(cs : Array[Char], p : Array[Char]) -> Bool {
   if p.length() > cs.length() {
     return false
@@ -40,6 +43,7 @@ fn char_prefix(cs : Array[Char], p : Array[Char]) -> Bool {
   true
 }
 
+///|
 fn index_of_char(cs : Array[Char], c : Char) -> Int {
   let mut i = 0
   while i < cs.length() {
@@ -51,6 +55,7 @@ fn index_of_char(cs : Array[Char], c : Char) -> Int {
   -1
 }
 
+///|
 /// Interpret a matcher against the token at `pos`.
 fn run_matcher(m : Matcher, toks : Array[String], pos : Int) -> Array[Branch] {
   if pos >= toks.length() {
@@ -62,6 +67,7 @@ fn run_matcher(m : Matcher, toks : Array[String], pos : Int) -> Array[Branch] {
   }
 }
 
+///|
 /// `--key=value` (DR-041 §「equal separator」). Fires only when the token has `=`.
 /// Undefined key => no reading (素通し to positional). Space form is the satellite's job.
 fn run_eq_split(
@@ -99,6 +105,7 @@ fn run_eq_split(
   [] // undefined key => 素通し
 }
 
+///|
 /// `-abc` cluster + value attachment (DR-041 §「short combine」). Enumerates ALL
 /// readings; ambiguous defs (the `-cv` problem) yield multiple readings.
 fn run_short(
@@ -125,6 +132,7 @@ fn run_short(
   walk_short(entries, body, 0, [], toks, pos)
 }
 
+///|
 fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
   for e in entries {
     if e.ch == c {
@@ -134,6 +142,7 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
   None
 }
 
+///|
 fn short_val(e : ShortEntry, s : String) -> Binding? {
   match e.kind {
     TStr => Some(mkb(e.name, VStr(s), Cli))
@@ -146,6 +155,7 @@ fn short_val(e : ShortEntry, s : String) -> Binding? {
   }
 }
 
+///|
 /// Walk the in-token cluster body from index `i`, emitting readings.
 /// - a flag char advances by one;
 /// - a value char attaches an in-token value of every valid length, then keeps
@@ -175,8 +185,12 @@ fn walk_short(
       match e.kind {
         TFlag =>
           walk_short(
-            entries, body, i + 1, cat(acc, cat([mkb(e.name, VBool(true), Cli)], dm)),
-            toks, pos,
+            entries,
+            body,
+            i + 1,
+            cat(acc, cat([mkb(e.name, VBool(true), Cli)], dm)),
+            toks,
+            pos,
           )
         _ => {
           let out : Array[Branch] = []
@@ -187,7 +201,15 @@ fn walk_short(
             let vstr = chars_to_str(body, vstart, j)
             match short_val(e, vstr) {
               Some(b) =>
-                for r in walk_short(entries, body, j, cat(acc, cat([b], dm)), toks, pos) {
+                for
+                  r in walk_short(
+                    entries,
+                    body,
+                    j,
+                    cat(acc, cat([b], dm)),
+                    toks,
+                    pos,
+                  ) {
                   out.push(r)
                 }
               None => ()

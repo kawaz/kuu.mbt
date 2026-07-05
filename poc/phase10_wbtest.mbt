@@ -4,21 +4,33 @@
 // downstream failure — NOT reported as ambiguity. The preference lives in the split
 // dimension only: structurally different completions (or-branch differences) stay ambiguous.
 
+///|
 fn pref_order() -> Array[Installer] {
   [
-    LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst,
-    RepeatInst, MultipleInst,
+    LongInst,
+    ShortInst,
+    EnvInst,
+    DdInst,
+    CommandInst,
+    GlobalInst,
+    InheritInst,
+    RepeatInst,
+    MultipleInst,
   ]
 }
 
 // ── greedy + greedy: the left/outer closure takes the longer share ─────────────
 
+///|
 test "DR-043: greedy + greedy splits uniquely — first closure takes the longest share" {
   // Two unbounded string repeats over `a b c d e`. Without preference this is five ways to
   // split (all complete) — but the split is not an ambiguity. greedy tries the longest share
   // for the left closure first; `[a,b,c,d,e],[]` fails the right's min:1, so `[a,b,c,d],[e]`
   // is committed. Unique, no ambiguity.
-  let def = def_([], [pos("xs", TStr, repeat=rep(1)), pos("ys", TStr, repeat=rep(1))])
+  let def = def_([], [
+    pos("xs", TStr, repeat=rep(1)),
+    pos("ys", TStr, repeat=rep(1)),
+  ])
   let reg : Map[String, Node] = Map::new()
   let sc = build_reg(def, pref_order(), reg)
   inspect(
@@ -27,13 +39,14 @@ test "DR-043: greedy + greedy splits uniquely — first closure takes the longes
   )
 }
 
+///|
 test "DR-043: lazy + greedy — the lazy left closure takes the shortest share" {
   // Marking the first closure lazy flips its preference: it takes the SHORTEST share that
   // lets the rest complete, so `[a],[b,c,d,e]`.
-  let def = def_(
-    [],
-    [pos("xs", TStr, repeat=rep(1, lazy=true)), pos("ys", TStr, repeat=rep(1))],
-  )
+  let def = def_([], [
+    pos("xs", TStr, repeat=rep(1, lazy=true)),
+    pos("ys", TStr, repeat=rep(1)),
+  ])
   let reg : Map[String, Node] = Map::new()
   let sc = build_reg(def, pref_order(), reg)
   inspect(
@@ -44,14 +57,21 @@ test "DR-043: lazy + greedy — the lazy left closure takes the shortest share" 
 
 // ── backtracking on downstream failure ─────────────────────────────────────────
 
+///|
 test "DR-043: greedy backtracks when the preferred share fails downstream" {
   // A string repeat then a NUMBER repeat over `a b 3`. greedy xs first grabs `[a,b,3]`, but
   // then ys (number, min:1) has no token → fail. It backtracks, xs yields the trailing `3`,
   // and ys=[3] (a valid number) completes. So `[a,b],[3]` — regex-style backtracking.
-  let def = def_([], [pos("xs", TStr, repeat=rep(1)), pos("ys", TNum, repeat=rep(1))])
+  let def = def_([], [
+    pos("xs", TStr, repeat=rep(1)),
+    pos("ys", TNum, repeat=rep(1)),
+  ])
   let reg : Map[String, Node] = Map::new()
   let sc = build_reg(def, pref_order(), reg)
-  inspect(result_str(sc, ["a", "b", "3"], defs=reg), content="{xs:[a,b],ys:[3]}")
+  inspect(
+    result_str(sc, ["a", "b", "3"], defs=reg),
+    content="{xs:[a,b],ys:[3]}",
+  )
   // with no numeric tail at all, no share of xs lets ys get a number => genuine failure
   inspect(
     render_outcome(parse(ScopeNode(sc), ["a", "b", "c"], defs=reg)),
@@ -61,6 +81,7 @@ test "DR-043: greedy backtracks when the preferred share fails downstream" {
 
 // ── preference is split-dimension only: or-branch differences stay ambiguous ────
 
+///|
 test "DR-043: the preference does not erode ambiguity — an or-branch difference is still ambiguous" {
   // hlcolors := color+, color := [r,g,b] | name. `255 0 0` is ONE rgb triple (a single rep,
   // rgb branch) OR three string names (three reps, name branch). These are structurally

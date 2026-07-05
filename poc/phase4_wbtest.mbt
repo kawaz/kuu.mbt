@@ -3,15 +3,24 @@
 // share-out uniqueness of `cp src... dst`, greedy interjection between reps, the min
 // unroll, repeat over a ref element (a shared or-template), and the zero-progress guard.
 
+///|
 fn full_order() -> Array[Installer] {
   [
-    LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst,
-    RepeatInst, MultipleInst,
+    LongInst,
+    ShortInst,
+    EnvInst,
+    DdInst,
+    CommandInst,
+    GlobalInst,
+    InheritInst,
+    RepeatInst,
+    MultipleInst,
   ]
 }
 
 // ── cp src... dst: the share-out is unique (DR-038 emergence) ──────────────────
 
+///|
 test "DR-043: `cp src... dst` splits uniquely — src takes all but the last token" {
   // src is a repeat (min 1); dst is a single positional. The path-search enumerates
   // every split, but only src=[all-but-last], dst=[last] fully consumes: dst needs
@@ -37,6 +46,7 @@ test "DR-043: `cp src... dst` splits uniquely — src takes all but the last tok
   )
 }
 
+///|
 test "DR-043: the repeat lowers to the ref-recursion template Seq([head, Opt(Ref(self))])" {
   // Structural: the installer registered the DR-043 canonical shape for `src`. This
   // is the AtomicAST form (a recursive cons list), distinct from the porous unfold the
@@ -54,14 +64,15 @@ test "DR-043: the repeat lowers to the ref-recursion template Seq([head, Opt(Ref
 
 // ── porous: greedy interjects between reps (DR-043: unfold stays on the backbone) ─
 
+///|
 test "DR-043/041 §4: a greedy option interjects between repeat reps (cp a --verbose b)" {
   // --verbose fires between src and dst; src cannot raw-eat --verbose (先食い), so
   // src=[a], --verbose fires, dst=b. The ref-recursion unfold stays on the current
   // backbone, so the reps are porous exactly like a Many.
-  let def = def_(
-    [opt("verbose", TFlag, long=["verbose"])],
-    [pos("src", TStr, repeat=rep(1)), pos("dst", TStr)],
-  )
+  let def = def_([opt("verbose", TFlag, long=["verbose"])], [
+    pos("src", TStr, repeat=rep(1)),
+    pos("dst", TStr),
+  ])
   let reg : Map[String, Node] = Map::new()
   let sc = build_reg(def, [LongInst, RepeatInst], reg)
   inspect(
@@ -77,6 +88,7 @@ test "DR-043/041 §4: a greedy option interjects between repeat reps (cp a --ver
 
 // ── min unroll (DR-043: min は必須段の unroll) ─────────────────────────────────
 
+///|
 test "DR-043: repeat min:2 requires at least two reps before the tail is optional" {
   // min:2 unrolls one mandatory head then the >= 1 recursive tail (>= 2 total). With
   // a trailing dst, `cp a b c` => src=[a,b], dst=c; two tokens cannot satisfy min:2 + dst.
@@ -102,15 +114,14 @@ test "DR-043: repeat min:2 requires at least two reps before the tail is optiona
 
 // ── repeat over a REF element: hlcolors = repeat of a shared `color` template ──
 
+///|
 fn color_template() -> Node {
   // color := [r,g,b] (three numbers) | colorname (a string). DR-025's --color shape,
   // used here as an export:false template that hlcolors refs (DR-043 ref元への repeat).
-  Or([
-    Seq([NumArg("r"), NumArg("g"), NumArg("b")]),
-    StrArg("name"),
-  ])
+  Or([Seq([NumArg("r"), NumArg("g"), NumArg("b")]), StrArg("name")])
 }
 
+///|
 test "DR-043: repeat over a ref element (hlcolors := color+, color is an or-template)" {
   // hlcolors refs the shared `color` template and repeats it (min 1). Each color is a
   // string name here, so `hlcolors red blue` => two colors. The head's consumption is
@@ -142,6 +153,7 @@ test "DR-043: repeat over a ref element (hlcolors := color+, color is an or-temp
 
 // ── zero-progress static guard (DR-043) ────────────────────────────────────────
 
+///|
 test "DR-043: a repeat head that consumes no token is a zero-progress error" {
   // A ref element whose target head binds without consuming (a Bind template) would
   // loop forever when unfolded. The static guard rejects it at build time.

@@ -6,7 +6,7 @@ repository = ""
 
 license = "MIT"
 
-keywords = []
+keywords = [ ]
 
 preferred_target = "wasm-gc"
 

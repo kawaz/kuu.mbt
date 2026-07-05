@@ -2,12 +2,14 @@
 // global × dd (scope-crossing copy × greedy-sever) and multi-level global propagation
 // through the fixpoint. These are the "next to break" combinations the DR flagged.
 
+///|
 fn all7() -> Array[Installer] {
   [LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst]
 }
 
 // ── global × dd: the copied global option obeys the child's dd sever ───────────
 
+///|
 test "DR-042 ⑤ × global: inside a child, dd severs the copied global option too" {
   // --verbose is a root global; the `run` subcommand has a dd marker and a positional
   // x. The global copy lands on run's greedy face, so it obeys run's OWN sever: after
@@ -32,6 +34,7 @@ test "DR-042 ⑤ × global: inside a child, dd severs the copied global option t
   )
 }
 
+///|
 test "DR-042 ⑤ × global: the global option still works BEFORE the child's dd" {
   // Ordering within the child: `run --verbose -- z` fires the global copy, then `--`
   // severs, then z is the raw positional. Confirms the sever boundary is the child's
@@ -50,6 +53,7 @@ test "DR-042 ⑤ × global: the global option still works BEFORE the child's dd"
 
 // ── multi-level: a global option propagates to a grandchild via the fixpoint ────
 
+///|
 test "DR-042 global: a global option reaches a grandchild command (fixpoint propagation)" {
   // verbose is global at the root; `a` and `a b` are nested subcommands that declare
   // no verbose. The global copy must propagate root -> a -> b through the fixpoint
@@ -67,25 +71,20 @@ test "DR-042 global: a global option reaches a grandchild command (fixpoint prop
   )
 }
 
+///|
 test "DR-042 global shadowing blocks a whole subtree: an intermediate scope's own wins" {
   // `a` self-declares its own `--verbose` (name averb). Shadowing is level-by-level, so
   // root's global does NOT overwrite a's, and — because the copy propagates from a's own
   // declaration — b inside a inherits A's verbose, not root's. Here b declares nothing,
   // so `a b --verbose` binds averb (a's), proving the intermediate shadow governs its subtree.
-  let def = def_cmd(
-    [opt("rverb", TFlag, long=["verbose"], global=true)],
-    [],
-    [
-      cmd(
-        "a",
-        def_cmd(
-          [opt("averb", TFlag, long=["verbose"], global=true)],
-          [],
-          [cmd("b", def_([], []))],
-        ),
-      ),
-    ],
-  )
+  let def = def_cmd([opt("rverb", TFlag, long=["verbose"], global=true)], [], [
+    cmd(
+      "a",
+      def_cmd([opt("averb", TFlag, long=["verbose"], global=true)], [], [
+        cmd("b", def_([], [])),
+      ]),
+    ),
+  ])
   let sc = build_or_fail(def, all7())
   inspect(
     render_outcome(parse(ScopeNode(sc), ["a", "b", "--verbose"])),

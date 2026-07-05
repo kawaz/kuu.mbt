@@ -11,6 +11,7 @@
 // action), whereas completion is dead-end-EXCLUSIVE. So neither is reused; the shared idea is only
 // "collect the expected set at the cut position", realized here by a boundary-aware traversal.
 
+///|
 /// A terminal hint on an exact candidate (DR-060 §3): `WordEnd` = 確定, a space may follow; `Cont` =
 /// 継続, no space (a value must follow — e.g. a value-taking --port, or a `--key=` / dir `/` in prod).
 pub(all) enum TermHint {
@@ -18,6 +19,7 @@ pub(all) enum TermHint {
   Cont
 } derive(Eq, Show)
 
+///|
 /// Declaration-layer meta a completion reads by reference (DR-056 / DR-057 / DR-058): whether a
 /// spelling is an alias entry, hidden (excluded from candidates by default, kept in meta), deprecated.
 pub(all) struct CandMeta {
@@ -26,6 +28,7 @@ pub(all) struct CandMeta {
   deprecated : Bool
 } derive(Eq, Show)
 
+///|
 /// A completion candidate (DR-060 §3): either an exact trigger spelling, or a value position (type +
 /// completer名, PoC shows the type). Meta rides alongside; policy / replacement / landing is the
 /// generator's & shell's (kuu returns素材 only).
@@ -38,20 +41,24 @@ pub(all) struct Cand {
   meta : CandMeta
 } derive(Eq, Show)
 
+///|
 fn no_meta() -> CandMeta {
   { is_alias: false, hidden: false, deprecated: false }
 }
 
+///|
 fn cexact(spelling : String, term : TermHint, origin : String) -> Cand {
   { spelling, is_value: false, ty: TFlag, origin, term, meta: no_meta() }
 }
 
+///|
 fn cvalue(ty : Ty, origin : String) -> Cand {
   { spelling: "", is_value: true, ty, origin, term: WordEnd, meta: no_meta() }
 }
 
 // ── the surviving-partial-path traversal (DR-060 §1) ─────────────────────────
 
+///|
 /// Walk a scope over `before`, collecting the readable expectations at the cut position T =
 /// before.length() across every surviving partial path. `pos` is the current argv position, `pidx`
 /// the positional-face index, `severed` the post-`--` mode (greedy off, DR-042 ⑤).
@@ -91,6 +98,7 @@ fn comp_scope(
   }
 }
 
+///|
 /// Whether some greedy entry's FIRST token matches `tok` — the completion 先食い check. Unlike the
 /// parse `greedy_reads` (which needs full consumption), this fires on a TRIGGER match even when the
 /// entry's value is still pending, so `--port` suppresses the positional raw-eat during completion.
@@ -103,6 +111,7 @@ fn comp_greedy_reads(sc : Scope, tok : String) -> Bool {
   false
 }
 
+///|
 fn greedy_first_matches(g : Node, tok : String) -> Bool {
   match g {
     Or(alts) => {
@@ -147,6 +156,7 @@ fn greedy_first_matches(g : Node, tok : String) -> Bool {
   }
 }
 
+///|
 /// Consume `before[pos]` through one greedy entry, then continue the scope walk (or, if the entry
 /// reaches the cut mid-way, emit its pending expectation via comp_seq_entry).
 fn comp_consume_greedy(
@@ -197,6 +207,7 @@ fn comp_consume_greedy(
   }
 }
 
+///|
 /// Walk a greedy entry's Seq from item `idx` at position `cur`. A value/exact reached AT the cut is a
 /// pending expectation (the getopt-同型 value slot, DR-041 §4). 0-token items pass through. A consumed
 /// value that type-mismatches is a dead end (no continuation, DR-060 §1).
@@ -221,18 +232,83 @@ fn comp_seq_entry(
       if cur >= t {
         out.push(cexact(s, WordEnd, s)) // a pending exact (e.g. a multi-exact entry mid-way)
       } else if cur < before.length() && before[cur] == s {
-        comp_seq_entry(items, idx + 1, sc, before, t, cur + 1, pidx, severed, defs, out)
+        comp_seq_entry(
+          items,
+          idx + 1,
+          sc,
+          before,
+          t,
+          cur + 1,
+          pidx,
+          severed,
+          defs,
+          out,
+        )
       }
     // 0-token effect / marker items pass through without consuming.
     Bind(_, _) | EffMark(_, _) | FailMark(_) | DeprMark(_) =>
-      comp_seq_entry(items, idx + 1, sc, before, t, cur, pidx, severed, defs, out)
-    StrArg(name) => comp_seq_value(items, idx, name, TStr, sc, before, t, cur, pidx, severed, defs, out)
-    SepArg(name, _) => comp_seq_value(items, idx, name, TStr, sc, before, t, cur, pidx, severed, defs, out)
-    NumArg(name) => comp_seq_value(items, idx, name, TNum, sc, before, t, cur, pidx, severed, defs, out)
+      comp_seq_entry(
+        items,
+        idx + 1,
+        sc,
+        before,
+        t,
+        cur,
+        pidx,
+        severed,
+        defs,
+        out,
+      )
+    StrArg(name) =>
+      comp_seq_value(
+        items,
+        idx,
+        name,
+        TStr,
+        sc,
+        before,
+        t,
+        cur,
+        pidx,
+        severed,
+        defs,
+        out,
+      )
+    SepArg(name, _) =>
+      comp_seq_value(
+        items,
+        idx,
+        name,
+        TStr,
+        sc,
+        before,
+        t,
+        cur,
+        pidx,
+        severed,
+        defs,
+        out,
+      )
+    NumArg(name) =>
+      comp_seq_value(
+        items,
+        idx,
+        name,
+        TNum,
+        sc,
+        before,
+        t,
+        cur,
+        pidx,
+        severed,
+        defs,
+        out,
+      )
     _ => ()
   }
 }
 
+///|
 /// A value slot inside a greedy entry: at the cut it is a pending value candidate; before the cut it
 /// raw-consumes the token (type-checked — a NumArg on a non-number is a dead end).
 fn comp_seq_value(
@@ -252,10 +328,22 @@ fn comp_seq_value(
   if cur >= t {
     out.push(cvalue(ty, name)) // pending value (e.g. before=["--port"] → the port value position)
   } else if cur < before.length() && value_consumable(ty, before[cur]) {
-    comp_seq_entry(items, idx + 1, sc, before, t, cur + 1, pidx, severed, defs, out)
+    comp_seq_entry(
+      items,
+      idx + 1,
+      sc,
+      before,
+      t,
+      cur + 1,
+      pidx,
+      severed,
+      defs,
+      out,
+    )
   }
 }
 
+///|
 /// Consume `before[pos]` through the positional face at `pidx`, then continue.
 fn comp_consume_pos(
   sc : Scope,
@@ -270,9 +358,20 @@ fn comp_consume_pos(
   if pidx >= sc.positional.length() {
     return // no positional slot to consume this token
   }
-  comp_consume_pos_node(sc.positional[pidx], sc, before, t, pos, pidx, severed, defs, out)
+  comp_consume_pos_node(
+    sc.positional[pidx],
+    sc,
+    before,
+    t,
+    pos,
+    pidx,
+    severed,
+    defs,
+    out,
+  )
 }
 
+///|
 fn comp_consume_pos_node(
   node : Node,
   sc : Scope,
@@ -301,21 +400,29 @@ fn comp_consume_pos_node(
       // a repeat positional (DR-043): consume one head, then either stop (pidx+1) or take another
       // rep (same pidx). Resolve the head from the registry template Seq([head, Opt(Ref)]).
       match ref_head_node(defs, r) {
-        Some(h) => {
-          comp_consume_rep_head(h, sc, before, t, pos, pidx, severed, defs, out, true)
-        }
+        Some(h) =>
+          comp_consume_rep_head(
+            h, sc, before, t, pos, pidx, severed, defs, out, true,
+          )
         None => ()
       }
     Many(inner) =>
-      comp_consume_rep_head(inner, sc, before, t, pos, pidx, severed, defs, out, true)
+      comp_consume_rep_head(
+        inner, sc, before, t, pos, pidx, severed, defs, out, true,
+      )
     IdxRepeat(_, h, _) =>
-      comp_consume_rep_head(h, sc, before, t, pos, pidx, severed, defs, out, true)
+      comp_consume_rep_head(
+        h, sc, before, t, pos, pidx, severed, defs, out, true,
+      )
     BoundedTail(h, _, _) =>
-      comp_consume_rep_head(h, sc, before, t, pos, pidx, severed, defs, out, true)
+      comp_consume_rep_head(
+        h, sc, before, t, pos, pidx, severed, defs, out, true,
+      )
     _ => ()
   }
 }
 
+///|
 /// Consume one repeat head, then offer both "one more rep" (same pidx) and "stop" (pidx+1).
 fn comp_consume_rep_head(
   head : Node,
@@ -345,6 +452,7 @@ fn comp_consume_rep_head(
 
 // ── boundary emission (the readable set at the cut) ──────────────────────────
 
+///|
 /// The trigger spellings a greedy entry offers as its FIRST readable token (DR-060 §1: greedy 面の
 /// matcher トリガ綴り). A value-taking entry gets a `Cont` hint (a value must follow); a flag gets
 /// `WordEnd` (§9). EqSplit is skipped — its spelling duplicates the space-form Seq satellite.
@@ -360,7 +468,9 @@ fn emit_greedy_starts(g : Node, out : Array[Cand]) -> Unit {
           Exact(trig) => {
             let takes_val = seq_takes_value(items)
             let origin = seq_origin(items, trig)
-            out.push(cexact(trig, if takes_val { Cont } else { WordEnd }, origin))
+            out.push(
+              cexact(trig, if takes_val { Cont } else { WordEnd }, origin),
+            )
           }
           _ => ()
         }
@@ -373,7 +483,17 @@ fn emit_greedy_starts(g : Node, out : Array[Cand]) -> Unit {
               TFlag => false
               _ => true
             }
-            out.push(cexact(prefix + e.ch.to_string(), if takes { Cont } else { WordEnd }, e.name))
+            out.push(
+              cexact(
+                prefix + e.ch.to_string(),
+                if takes {
+                  Cont
+                } else {
+                  WordEnd
+                },
+                e.name,
+              ),
+            )
           }
         EqSplit(prefix=_, entries=_) => () // dup of the space-form Seq spelling; skip
       }
@@ -384,6 +504,7 @@ fn emit_greedy_starts(g : Node, out : Array[Cand]) -> Unit {
   }
 }
 
+///|
 /// Whether a greedy entry Seq has a value slot after its trigger (→ a `Cont` terminal hint, §9).
 fn seq_takes_value(items : Array[Node]) -> Bool {
   for it in items {
@@ -395,17 +516,20 @@ fn seq_takes_value(items : Array[Node]) -> Bool {
   false
 }
 
+///|
 /// The origin element name of a greedy entry: the value / bind name, else the trigger.
 fn seq_origin(items : Array[Node], trig : String) -> String {
   for it in items {
     match it {
-      StrArg(n) | NumArg(n) | SepArg(n, _) | Bind(n, _) | EffMark(n, _) => return n
+      StrArg(n) | NumArg(n) | SepArg(n, _) | Bind(n, _) | EffMark(n, _) =>
+        return n
       _ => ()
     }
   }
   trig
 }
 
+///|
 /// The readable expectation of the positional face at `pidx` (value type / literal exact). A repeat /
 /// Many can be zero reps, so the NEXT positional head is ALSO readable (both offered). `seen` guards
 /// against a positional Ref cycle.
@@ -422,6 +546,7 @@ fn comp_pos_head(
   comp_pos_head_node(positional[pidx], positional, pidx, defs, out, seen)
 }
 
+///|
 fn comp_pos_head_node(
   node : Node,
   positional : Array[Node],
@@ -459,6 +584,7 @@ fn comp_pos_head_node(
   }
 }
 
+///|
 /// The head node of a repeat template `Seq([head, Opt(Ref(name))])` in the registry.
 fn ref_head_node(defs : Map[String, Node], name : String) -> Node? {
   match defs.get(name) {
@@ -467,6 +593,7 @@ fn ref_head_node(defs : Map[String, Node], name : String) -> Node? {
   }
 }
 
+///|
 fn value_consumable(ty : Ty, tok : String) -> Bool {
   match ty {
     TNum | TInt => parse_number(tok).is_some()
@@ -476,6 +603,7 @@ fn value_consumable(ty : Ty, tok : String) -> Bool {
 
 // ── top-level complete API (DR-060 §2) ───────────────────────────────────────
 
+///|
 /// complete(atomic, {before, after?}) → candidate structure (DR-060). Enumerates the surviving-partial
 /// expectation union, dedups, attaches declaration-layer meta (alias / hidden / deprecated), excludes
 /// hidden by default (kept queryable via `keep_hidden`), and — when `after` is given — keeps only
@@ -483,14 +611,15 @@ fn value_consumable(ty : Ty, tok : String) -> Bool {
 pub fn complete(
   root : Node,
   before : Array[String],
-  after~ : Array[String] = [],
-  defs~ : Map[String, Node] = Map::new(),
-  meta~ : Map[String, CandMeta] = Map::new(),
-  keep_hidden~ : Bool = false,
+  after? : Array[String] = [],
+  defs? : Map[String, Node] = Map::new(),
+  meta? : Map[String, CandMeta] = Map::new(),
+  keep_hidden? : Bool = false,
 ) -> Array[Cand] {
   let raw : Array[Cand] = []
   match root {
-    ScopeNode(sc) => comp_scope(sc, before, before.length(), 0, 0, false, defs, raw)
+    ScopeNode(sc) =>
+      comp_scope(sc, before, before.length(), 0, 0, false, defs, raw)
     _ => ()
   }
   // dedup (exact by spelling, value by origin+ty), attach meta, apply after-filter + hidden exclusion.
@@ -510,16 +639,26 @@ pub fn complete(
   out
 }
 
+///|
 fn attach_meta(c : Cand, meta : Map[String, CandMeta]) -> Cand {
   if c.is_value {
     return c
   }
   match meta.get(c.spelling) {
-    Some(m) => { spelling: c.spelling, is_value: c.is_value, ty: c.ty, origin: c.origin, term: c.term, meta: m }
+    Some(m) =>
+      {
+        spelling: c.spelling,
+        is_value: c.is_value,
+        ty: c.ty,
+        origin: c.origin,
+        term: c.term,
+        meta: m,
+      }
     None => c
   }
 }
 
+///|
 fn cand_dup(out : Array[Cand], c : Cand) -> Bool {
   for x in out {
     if x.is_value && c.is_value {
@@ -535,6 +674,7 @@ fn cand_dup(out : Array[Cand], c : Cand) -> Bool {
   false
 }
 
+///|
 /// after 整合フィルタ (DR-060 §2): does adopting `c` still admit a complete parse of `before ++ c ++
 /// after`? A value candidate is realized with a type-appropriate probe; an exact with its spelling.
 fn after_consistent(
@@ -563,6 +703,7 @@ fn after_consistent(
   }
 }
 
+///|
 fn probe_value(ty : Ty) -> String {
   match ty {
     TNum | TInt => "0"
@@ -570,6 +711,7 @@ fn probe_value(ty : Ty) -> String {
   }
 }
 
+///|
 /// Build the completion meta map (spelling → CandMeta) from the definition — the declaration-layer
 /// reference read (DR-056). Options are canonical; alias declarations mark their spellings is_alias.
 /// (hidden is not modeled in this PoC — DR-058 §1 hidden is a display-layer concern deferred here.)
@@ -577,19 +719,36 @@ pub fn completion_meta(def : Definition) -> Map[String, CandMeta] {
   let m : Map[String, CandMeta] = Map::new()
   for e in def.options {
     for l in long_of(e) {
-      m.set("--" + l, { is_alias: false, hidden: false, deprecated: e.deprecated })
+      m.set("--" + l, {
+        is_alias: false,
+        hidden: false,
+        deprecated: e.deprecated,
+      })
     }
     for c in e.short {
-      m.set("-" + c.to_string(), { is_alias: false, hidden: false, deprecated: e.deprecated })
+      m.set("-" + c.to_string(), {
+        is_alias: false,
+        hidden: false,
+        deprecated: e.deprecated,
+      })
     }
   }
   for a in def.aliases {
     for c in a.short {
-      m.set("-" + c.to_string(), { is_alias: true, hidden: false, deprecated: a.deprecated })
+      m.set("-" + c.to_string(), {
+        is_alias: true,
+        hidden: false,
+        deprecated: a.deprecated,
+      })
     }
     // long alias base spelling (§16 の再導出と整合): the alias name is the base long, if the alias has a name.
     match a.name {
-      Some(n) => m.set("--" + n, { is_alias: true, hidden: false, deprecated: a.deprecated })
+      Some(n) =>
+        m.set("--" + n, {
+          is_alias: true,
+          hidden: false,
+          deprecated: a.deprecated,
+        })
       None => ()
     }
   }

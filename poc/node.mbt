@@ -7,6 +7,7 @@
 // closure), keeping the whole AST comparable (`derive(Eq, Show)`) for the
 // order-independence permutation test (DR-042).
 
+///|
 /// A definition-time (parse_definition) Error category (DR-054 §1). All are "lowering が構成できない
 /// / 全入力で壊れる" — Error, not warn. (warn 層 = 一部入力で驚きうるだけ, は lint の関心で PoC 射程外.)
 pub(all) enum DefErrKind {
@@ -19,6 +20,7 @@ pub(all) enum DefErrKind {
   DConfigCycle // a config_file element taking its own path from config (DR-050 §5)
 } derive(Eq, Show)
 
+///|
 /// One definition-time Error (DR-054 §4): {element, kind, message, hint}. `hint` is the「次の手」
 /// (DR-042 完全性検査の様式). parse_definition enumerates ALL of these (no first-error 打ち切り).
 pub(all) struct DefError {
@@ -28,6 +30,7 @@ pub(all) struct DefError {
   hint : String
 } derive(Eq, Show)
 
+///|
 /// The result-key axis of an element (DR-052). `export_key: string | null` unified: unspecified =
 /// name-derived key, a string = key-name override, null (or "" — normalized to null) = NO result
 /// key = nameless-同化 透過 (the value still propagates; only the key is gone). This is a RESULT
@@ -38,6 +41,7 @@ pub(all) enum ExportKey {
   EkNull // null / "" → 結果キー軸なし → 透過 (kv: value gone; seq: value stays as an array element)
 } derive(Eq, Show)
 
+///|
 /// Type category of a value cell / primitive. `number` (TNum) accepts integers and floats (JSON
 /// number 同型); `int` (TInt) is integer-constrained — a non-integer value is an Error (DESIGN §3.3
 /// / DR-050 §4). `float` is an alias for number (same accept域) and is modeled as TNum here.
@@ -48,6 +52,7 @@ pub(all) enum Ty {
   TFlag
 } derive(Eq, Show)
 
+///|
 /// A node of the AtomicAST. Consumption is measured in whole argv tokens.
 pub(all) enum Node {
   /// literal token match; binds nothing, consumes 1.
@@ -146,6 +151,7 @@ pub(all) enum Node {
   IdxRepeat(String, Node, Int)
 } derive(Eq, Show)
 
+///|
 /// A scope carries two faces (DR-041 §4):
 /// - `greedy`: order-independent trigger entries (long/short satellites + matchers).
 ///   Each fires as a bound unit; its internal value slots raw-consume (getopt 同型).
@@ -158,6 +164,7 @@ pub(all) struct Scope {
   constraints : Array[Constraint] // delayed predicates (DR-055/047), declared by the constraint installer
 } derive(Eq, Show)
 
+///|
 /// A delayed-predicate constraint (DR-055 / DR-047), evaluated on a complete path's FINAL state. A
 /// violation makes the path NOT a complete解決経路 (DR-047 §2) — a DR-037 Error of kind:constraint.
 pub(all) enum Constraint {
@@ -173,6 +180,7 @@ pub(all) enum Constraint {
   CExclusive(String, Array[String])
 } derive(Eq, Show)
 
+///|
 /// A value cell (DR-030 "entity-only node"). Satellites/matchers with the same
 /// `name` all write here = link 合流. Carries the reduced value-source ladder:
 /// env seat (declared by the env installer), inherit seat (declared by the inherit
@@ -195,6 +203,7 @@ pub(all) struct Entity {
   default_value : Value? // default seat
 } derive(Eq, Show)
 
+///|
 /// A long-option entry the eq-split matcher can resolve (`--key=value`).
 pub(all) struct LongEntry {
   key : String
@@ -202,6 +211,7 @@ pub(all) struct LongEntry {
   kind : Ty
 } derive(Eq, Show)
 
+///|
 /// A short-option entry the cluster matcher can resolve (`-abc`, `-n1.0`).
 /// `depr` (DR-057/058): this entry is a deprecated alias spelling — firing it emits a `@depr:<name>`
 /// warning marker (the value binding is unchanged). Only a deprecated ALIAS sets it; a canonical or
@@ -213,6 +223,7 @@ pub(all) struct ShortEntry {
   depr : Bool
 } derive(Eq, Show)
 
+///|
 /// A native matcher (DR-041): reified token-reading capability as DATA.
 /// The evaluator interprets it (`run_matcher`); installers construct it from
 /// the collected entry table (DR-042: "回収したエントリ表が matcher の構成データ").

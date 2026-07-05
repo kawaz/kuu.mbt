@@ -3,6 +3,7 @@
 // path; two entries with different effects stay distinct. This pins that identity is
 // (entity, value, source, order) and not "which entry (satellite/matcher) fired".
 
+///|
 test "DR-038: two entries reaching the SAME effect merge to one path (entry-independent)" {
   // Two structurally identical greedy entries write the same cell v=true. The token fires
   // both, producing the same effect via two search routes; effect identity merges them to
@@ -13,6 +14,7 @@ test "DR-038: two entries reaching the SAME effect merge to one path (entry-inde
   inspect(render_outcome(parse(g, ["--v"])), content="ok{v=true}")
 }
 
+///|
 test "DR-038: two entries with DIFFERENT effects stay distinct => ambiguous (identity is the effect)" {
   // Same trigger --v, but the two entries bind DIFFERENT entities (a vs b). The effects
   // differ, so the two complete paths are genuinely distinct => ambiguous:2. Proves the
@@ -21,6 +23,7 @@ test "DR-038: two entries with DIFFERENT effects stay distinct => ambiguous (ide
   inspect(render_outcome(parse(g, ["--v"])), content="ambiguous:2")
 }
 
+///|
 test "DR-038: same effect via different ORDER stays distinct (order is part of identity)" {
   // Two flags --a --b, and the same pair of effects reachable... but token order fixes the
   // effect order (a before b), so there is exactly ONE order and one path. The contrast
@@ -29,6 +32,7 @@ test "DR-038: same effect via different ORDER stays distinct (order is part of i
   inspect(render_outcome(parse(g, ["--a", "--b"])), content="ok{a=true,b=true}")
 }
 
+///|
 test "DR-038: two entries, same entity+source, DIFFERENT value stay distinct => ambiguous" {
   // Both write cell `n`, but one binds true-as-flag... use two value entries that a single
   // token reads two ways: -n reading "1.0f" whole vs "1.0"+f. Different VALUE on n (and on f)

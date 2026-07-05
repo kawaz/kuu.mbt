@@ -4,6 +4,7 @@
 // `Value`, tagged with the `Source` seat it came from (DR-031 ladder), and
 // collected as `Binding`s onto a result path.
 
+///|
 /// A resolved value that can land in the result object.
 pub(all) enum Value {
   VStr(String)
@@ -11,6 +12,7 @@ pub(all) enum Value {
   VBool(Bool)
 } derive(Eq, Show)
 
+///|
 /// Provenance of a value cell (DR-031 / DR-016 source tag).
 /// The evaluator preserves this so an appconfig store (DR-030) can ask
 /// "where did this value come from" without the ladder order being movable.
@@ -22,6 +24,7 @@ pub(all) enum Source {
   Default // fixed fallback (DR-031 #5)
 } derive(Eq, Show)
 
+///|
 /// A JSON-同型 hierarchical config value (DR-050 §2): what a config_provider returns. kuu core
 /// never sees TOML/YAML — only this shape. Leaf values are typed (string / number / bool); arrays
 /// feed a multiple element's pieces; objects mirror the name-scope hierarchy (同型対応).
@@ -34,11 +37,13 @@ pub(all) enum ConfigVal {
   CNull // JSON null (DR-050 §4 / DR-051): treated as 供給なし — the config seat supplies nothing
 } derive(Eq, Show)
 
+///|
 /// Whether a double is integer-valued (for the int type's constraint, DESIGN §3.3 / DR-050 §4).
 pub fn is_integer(d : Double) -> Bool {
   d.to_int().to_double() == d
 }
 
+///|
 /// The category of a held Error (DR-053 §2 / DR-037 / DR-047): `parse` = type parse failure,
 /// `filter` = a post_filter reject (a value that parsed but failed a filter), `constraint` = a
 /// delayed-predicate violation (required 未充足 etc., DR-047). All three ride the errors array.
@@ -48,6 +53,7 @@ pub(all) enum ErrKind {
   KConstraint
 } derive(Eq, Show)
 
+///|
 /// One held Error (DR-053 §2): which element, the argv position it failed at, its kind, and the
 /// message. The errors array keeps ALL of them (別候補経路の別 Error); primary = max argv_pos.
 pub(all) struct ParseError {
@@ -57,6 +63,7 @@ pub(all) struct ParseError {
   message : String
 } derive(Eq, Show)
 
+///|
 /// JSON-standard string form of a config number (DR-050 §4 stringification). An integer-valued
 /// double renders without a fractional part (1.0 → "1"); otherwise the decimal form (1.5 → "1.5").
 /// NB: whether an integer-valued float keeps ".0" is a serialize choice — see the 第 10 弾 flag.
@@ -69,6 +76,7 @@ fn num_to_string(d : Double) -> String {
   }
 }
 
+///|
 /// Convert one leaf config value to the element's expected type (DR-050 §4). The element's `type`
 /// IS the expected type. Leniency is BIDIRECTIONALLY SYMMETRIC (kawaz 裁定 a, DR-040 canonical 最寛容):
 /// a string parses into any type (`"8080"` → number), AND a JSON scalar stringifies into a string
@@ -109,17 +117,26 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
       }
     (CBool(b), TFlag) => Ok(VBool(b))
     // 意味の飛躍 (bool ↔ number) は Error — no coercion
-    (CNum(_), TFlag) => Err("config number for a bool element (no number↔bool coercion)")
-    (CBool(_), TNum) => Err("config bool for a number element (no number↔bool coercion)")
-    (CBool(_), TInt) => Err("config bool for an int element (no number↔bool coercion)")
+    (CNum(_), TFlag) =>
+      Err("config number for a bool element (no number↔bool coercion)")
+    (CBool(_), TNum) =>
+      Err("config bool for a number element (no number↔bool coercion)")
+    (CBool(_), TInt) =>
+      Err("config bool for an int element (no number↔bool coercion)")
     // 構造不一致 (array / object → scalar element) は Error
-    (CArr(_), _) => Err("config array for a scalar element (structural mismatch)")
-    (CObj(_), _) => Err("config object for a scalar element (structural mismatch)")
+    (CArr(_), _) =>
+      Err("config array for a scalar element (structural mismatch)")
+    (CObj(_), _) =>
+      Err("config object for a scalar element (structural mismatch)")
     // null is 供給なし (handled before this by resolve; defensive arm for exhaustiveness, DR-050 §4)
-    (CNull, _) => Err("config null is 供給なし (should be handled as no-supply, not converted)")
+    (CNull, _) =>
+      Err(
+        "config null is 供給なし (should be handled as no-supply, not converted)",
+      )
   }
 }
 
+///|
 /// The effect an entry's firing applies to a value cell (DR-045). It is PURE DATA
 /// `{op, operand?}`: the op names the operation, the operand is the Binding's `value`.
 /// A normal value bind (a value slot consuming a token and writing it) is the SET
@@ -133,6 +150,7 @@ pub(all) enum EffectOp {
   Empty // clear a collection (array / map) to empty; committed
 } derive(Eq, Show)
 
+///|
 /// committed is DERIVED from the op, never a separate field (DR-045 §2: selected and
 /// committed are independent, and the effect explicitly controls committed). Only `unset`
 /// is un-committed, which is exactly what opens the later value-source ladder seats.
@@ -143,6 +161,7 @@ pub fn committed(op : EffectOp) -> Bool {
   }
 }
 
+///|
 /// One EFFECT written onto a result path: `key`'s cell gets operation `op` with operand
 /// `value`, from `source` (DR-045). `key` is the leaf name; same-key bindings from
 /// different entries (e.g. `--port` satellite and `-p` matcher) merge onto one cell =
@@ -163,6 +182,7 @@ pub(all) struct Binding {
   //           scope — result nesting (CmdSat/Scoped) does NOT prepend a label to it.
 } derive(Eq, Show)
 
+///|
 /// Tolerant number parser used by `Num` primitives and value-attach matchers.
 ///
 /// Accepts an optional leading sign, digits with an optional single decimal

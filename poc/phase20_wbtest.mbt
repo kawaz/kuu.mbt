@@ -4,23 +4,35 @@
 // 影響しない — 完走後の resolve フェーズ (経路確定 → config_file 値確定 → provider 読込 → config 席
 // 有効化 → 最終値確定) で効く。DR-042 検証マトリクスの「env × config_key (値源 2 つ)」を含む。
 
+///|
 fn cfg_order() -> Array[Installer] {
   [
-    LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst,
-    RepeatInst, MultipleInst, ConfigInst,
+    LongInst,
+    ShortInst,
+    EnvInst,
+    DdInst,
+    CommandInst,
+    GlobalInst,
+    InheritInst,
+    RepeatInst,
+    MultipleInst,
+    ConfigInst,
   ]
 }
 
+///|
 /// A config_provider stub that returns `obj` for ANY path.
 fn provider_obj(obj : ConfigVal) -> (String) -> ConfigVal? {
   fn(_p : String) -> ConfigVal? { Some(obj) }
 }
 
+///|
 /// A config_provider stub that always fails (read failure / file absent).
 fn provider_none() -> (String) -> ConfigVal? {
   fn(_p : String) -> ConfigVal? { None }
 }
 
+///|
 /// Resolve a scope WITH config and render the resolved effect bindings (key=value@source, sorted),
 /// or the error string. The config_file element is infrastructure and is not in the output.
 fn resolve_cfg(
@@ -35,12 +47,14 @@ fn resolve_cfg(
   }
 }
 
+///|
 fn empty_env() -> Map[String, String] {
   Map::new()
 }
 
 // ── env × config_key: the 4-seat ladder cli > env > config > default (本命) ──────
 
+///|
 test "DR-050/031 env × config_key: the ladder is cli > env > config > default, source tags preserved" {
   // port declares env (PORT), config_key (["port"]), and a default. The config_file element `config`
   // provides the config object. Each of the 4 value sources supplies port in turn, and the source
@@ -48,8 +62,22 @@ test "DR-050/031 env × config_key: the ladder is cli > env > config > default, 
   // F-032). This is the DR-042 matrix item「env × config_key (値源 2 つ)」.
   let def = def_(
     [
-      opt("config", TStr, long=["config"], env=["MYAPP_CONFIG"], config_file=true, default=Some(VStr("/app.toml"))),
-      opt("port", TNum, long=["port"], env=["PORT"], config_key=Some(["port"]), default=Some(VNum(1))),
+      opt(
+        "config",
+        TStr,
+        long=["config"],
+        env=["MYAPP_CONFIG"],
+        config_file=true,
+        default=Some(VStr("/app.toml")),
+      ),
+      opt(
+        "port",
+        TNum,
+        long=["port"],
+        env=["PORT"],
+        config_key=Some(["port"]),
+        default=Some(VNum(1)),
+      ),
     ],
     [],
   )
@@ -68,36 +96,75 @@ test "DR-050/031 env × config_key: the ladder is cli > env > config > default, 
   // no cli/env → config supplies (source:"config")
   inspect(resolve_cfg(sc, [], empty_env(), prov), content="port=3000@config")
   // no cli/env, config lacks port → default
-  inspect(resolve_cfg(sc, [], empty_env(), provider_obj(CObj([]))), content="port=1@default")
+  inspect(
+    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([]))),
+    content="port=1@default",
+  )
 }
 
+///|
 test "DR-050/042 ④: env and config seat declarations are order-independent (permutation)" {
   // Both env and config are seat-declaration installers (invariant ④). Building with EnvInst before
   // ConfigInst vs after yields the SAME AtomicAST (entities carry both env_key and config_seat
   // regardless of order). Confirms the two seats compose order-independently.
   let def = def_(
     [
-      opt("config", TStr, long=["config"], config_file=true, default=Some(VStr("/app.toml"))),
+      opt(
+        "config",
+        TStr,
+        long=["config"],
+        config_file=true,
+        default=Some(VStr("/app.toml")),
+      ),
       opt("port", TNum, long=["port"], env=["PORT"], config_key=Some(["port"])),
     ],
     [],
   )
   let a = canon_scope(
-    build_or_fail(def, [LongInst, EnvInst, ConfigInst, ShortInst, DdInst, CommandInst, GlobalInst, InheritInst, RepeatInst, MultipleInst]),
+    build_or_fail(def, [
+      LongInst,
+      EnvInst,
+      ConfigInst,
+      ShortInst,
+      DdInst,
+      CommandInst,
+      GlobalInst,
+      InheritInst,
+      RepeatInst,
+      MultipleInst,
+    ]),
   )
   let b = canon_scope(
-    build_or_fail(def, [ConfigInst, EnvInst, LongInst, ShortInst, DdInst, CommandInst, GlobalInst, InheritInst, RepeatInst, MultipleInst]),
+    build_or_fail(def, [
+      ConfigInst,
+      EnvInst,
+      LongInst,
+      ShortInst,
+      DdInst,
+      CommandInst,
+      GlobalInst,
+      InheritInst,
+      RepeatInst,
+      MultipleInst,
+    ]),
   )
   inspect(a == b, content="true")
 }
 
+///|
 test "DR-050 §3 同型 default: an element WITHOUT config_key looks up its 同型 path (scope path + name)" {
   // The default correspondence is 同型: an element that declares NO config_key looks itself up in
   // the config object by its result-scope path + name (here root → ["port"]). This is the「結果と
   // 同じ形」correspondence (DR-030 appconfig 統合ストア), distinct from an explicit absolute config_key.
   let def = def_(
     [
-      opt("config", TStr, long=["config"], config_file=true, default=Some(VStr("/app.toml"))),
+      opt(
+        "config",
+        TStr,
+        long=["config"],
+        config_file=true,
+        default=Some(VStr("/app.toml")),
+      ),
       opt("port", TNum, long=["port"], default=Some(VNum(1))), // NO config_key → 同型
     ],
     [],
@@ -110,13 +177,19 @@ test "DR-050 §3 同型 default: an element WITHOUT config_key looks up its 同�
   )
   // a differently-nested config (server.port) is NOT found by the 同型 path ["port"] → default
   inspect(
-    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("server", CObj([("port", CNum(5000))]))]))),
+    resolve_cfg(
+      sc,
+      [],
+      empty_env(),
+      provider_obj(CObj([("server", CObj([("port", CNum(5000))]))])),
+    ),
     content="port=1@default",
   )
 }
 
 // ── 値の型 (DR-050 §4) ─────────────────────────────────────────────────────────
 
+///|
 test "DR-050 §4 types: leniency is BIDIRECTIONALLY SYMMETRIC (kawaz 裁定 a); 意味の飛躍/構造不一致は Error" {
   // config value's expected type = the element's type, and leniency is symmetric in BOTH directions
   // (DR-040 canonical 最寛容): a string parses into any type, AND a JSON scalar stringifies into a
@@ -125,7 +198,13 @@ test "DR-050 §4 types: leniency is BIDIRECTIONALLY SYMMETRIC (kawaz 裁定 a); 
   // 意味の飛躍 (bool ↔ number coercion) and 構造不一致 (array/object → a scalar element).
   let def = def_(
     [
-      opt("config", TStr, long=["config"], config_file=true, default=Some(VStr("/app.toml"))),
+      opt(
+        "config",
+        TStr,
+        long=["config"],
+        config_file=true,
+        default=Some(VStr("/app.toml")),
+      ),
       opt("name", TStr, long=["name"], config_key=Some(["name"])),
       opt("port", TNum, long=["port"], config_key=Some(["port"])),
       opt("flag", TFlag, long=["flag"], config_key=Some(["flag"])),
@@ -135,12 +214,24 @@ test "DR-050 §4 types: leniency is BIDIRECTIONALLY SYMMETRIC (kawaz 裁定 a); 
   let sc = build_or_fail(def, cfg_order())
   // matching types: string→VStr, number→VNum, bool→VBool
   inspect(
-    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CStr("hi")), ("port", CNum(8080)), ("flag", CBool(true))]))),
+    resolve_cfg(
+      sc,
+      [],
+      empty_env(),
+      provider_obj(
+        CObj([("name", CStr("hi")), ("port", CNum(8080)), ("flag", CBool(true))]),
+      ),
+    ),
     content="flag=true@config,name=hi@config,port=8080@config",
   )
   // string → number/bool: lenient parse (text → type). "8080" → 8080, "true" → true
   inspect(
-    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("port", CStr("8080")), ("flag", CStr("true"))]))),
+    resolve_cfg(
+      sc,
+      [],
+      empty_env(),
+      provider_obj(CObj([("port", CStr("8080")), ("flag", CStr("true"))])),
+    ),
     content="flag=true@config,port=8080@config",
   )
   // JSON scalar → string element: stringified (裁定 a の追加半分). 1.5 → "1.5", true → "true"
@@ -151,7 +242,12 @@ test "DR-050 §4 types: leniency is BIDIRECTIONALLY SYMMETRIC (kawaz 裁定 a); 
     content="flag=false@default,name=1.5@config",
   )
   inspect(
-    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CBool(true))]))),
+    resolve_cfg(
+      sc,
+      [],
+      empty_env(),
+      provider_obj(CObj([("name", CBool(true))])),
+    ),
     content="flag=false@default,name=true@config", // flag 未供給 → preset default false (DR-051 §2)
   )
   // 意味の飛躍 (bool ↔ number) は Error — no coercion in either direction
@@ -160,22 +256,39 @@ test "DR-050 §4 types: leniency is BIDIRECTIONALLY SYMMETRIC (kawaz 裁定 a); 
     content="err:config number for a bool element (no number↔bool coercion)",
   )
   inspect(
-    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("port", CBool(true))]))),
+    resolve_cfg(
+      sc,
+      [],
+      empty_env(),
+      provider_obj(CObj([("port", CBool(true))])),
+    ),
     content="err:config bool for a number element (no number↔bool coercion)",
   )
   // 構造不一致 (array → a scalar element) は Error
   inspect(
-    resolve_cfg(sc, [], empty_env(), provider_obj(CObj([("name", CArr([CStr("a")]))]))),
+    resolve_cfg(
+      sc,
+      [],
+      empty_env(),
+      provider_obj(CObj([("name", CArr([CStr("a")]))])),
+    ),
     content="err:config array for a scalar element (structural mismatch)",
   )
 }
 
+///|
 test "DR-050 §4 array → multiple pieces; object → 同型 navigation via config_key" {
   // An array config value feeds a `multiple` cell's pieces (each typed per §4). A nested object is
   // navigated by an absolute config_key path (server.port), the 同型対応 at the lookup level.
   let def = def_(
     [
-      opt("config", TStr, long=["config"], config_file=true, default=Some(VStr("/app.toml"))),
+      opt(
+        "config",
+        TStr,
+        long=["config"],
+        config_file=true,
+        default=Some(VStr("/app.toml")),
+      ),
       opt("tag", TStr, long=["tag"], multiple=true, config_key=Some(["tags"])),
       opt("port", TNum, long=["port"], config_key=Some(["server", "port"])),
     ],
@@ -193,6 +306,7 @@ test "DR-050 §4 array → multiple pieces; object → 同型 navigation via con
   )
 }
 
+///|
 test "DR-050 §4 flag: integer-valued number → string drops the fractional part (1.0 → \"1\", serialize-dependent)" {
   // A JSON number 1.0 has no memory of "1" vs "1.0" (JSON has a single number type). The PoC renders
   // an integer-valued double WITHOUT a fractional part (1.0 → "1"); some JSON serializers instead emit
@@ -201,7 +315,13 @@ test "DR-050 §4 flag: integer-valued number → string drops the fractional par
   // the PoC's chosen representation so the divergence point is visible.
   let def = def_(
     [
-      opt("config", TStr, long=["config"], config_file=true, default=Some(VStr("/app.toml"))),
+      opt(
+        "config",
+        TStr,
+        long=["config"],
+        config_file=true,
+        default=Some(VStr("/app.toml")),
+      ),
       opt("name", TStr, long=["name"], config_key=Some(["name"])),
     ],
     [],
@@ -215,12 +335,20 @@ test "DR-050 §4 flag: integer-valued number → string drops the fractional par
 
 // ── パス解決: --config (CLI) > MYAPP_CONFIG (env) > default ─────────────────────
 
+///|
 test "DR-050 path ladder: the config_file path itself resolves cli > env > default" {
   // The config_file element `config` is an ordinary element; its PATH resolves down cli > env >
   // default. A provider that returns a different object per path lets us observe which path won.
   let def = def_(
     [
-      opt("config", TStr, long=["config"], env=["MYAPP_CONFIG"], config_file=true, default=Some(VStr("/default.toml"))),
+      opt(
+        "config",
+        TStr,
+        long=["config"],
+        env=["MYAPP_CONFIG"],
+        config_file=true,
+        default=Some(VStr("/default.toml")),
+      ),
       opt("port", TNum, long=["port"], config_key=Some(["port"])),
     ],
     [],
@@ -238,7 +366,10 @@ test "DR-050 path ladder: the config_file path itself resolves cli > env > defau
     }
   }
   // cli path wins
-  inspect(resolve_cfg(sc, [mkb("config", VStr("/cli.toml"), Cli)], empty_env(), prov), content="port=11@config")
+  inspect(
+    resolve_cfg(sc, [mkb("config", VStr("/cli.toml"), Cli)], empty_env(), prov),
+    content="port=11@config",
+  )
   // no cli, env path
   let envc : Map[String, String] = Map::new()
   envc.set("MYAPP_CONFIG", "/env.toml")
@@ -249,34 +380,65 @@ test "DR-050 path ladder: the config_file path itself resolves cli > env > defau
 
 // ── null (読込失敗): committed パス → Error / default パス不在 → 黙認 ────────────
 
+///|
 test "DR-050 null: committed path read failure is Error; default path absence is silent" {
   // A committed path (CLI/env explicit) that the provider cannot read is a DR-037 Error (指定した
   // のに読めない). A default-derived path that reads None is silently tolerated (設定ファイルは
   // オプショナル) — the config seat is empty and port falls to its default.
   let def = def_(
     [
-      opt("config", TStr, long=["config"], env=["MYAPP_CONFIG"], config_file=true, default=Some(VStr("/default.toml"))),
-      opt("port", TNum, long=["port"], config_key=Some(["port"]), default=Some(VNum(7))),
+      opt(
+        "config",
+        TStr,
+        long=["config"],
+        env=["MYAPP_CONFIG"],
+        config_file=true,
+        default=Some(VStr("/default.toml")),
+      ),
+      opt(
+        "port",
+        TNum,
+        long=["port"],
+        config_key=Some(["port"]),
+        default=Some(VNum(7)),
+      ),
     ],
     [],
   )
   let sc = build_or_fail(def, cfg_order())
   // committed CLI path + provider None → Error
   inspect(
-    resolve_cfg(sc, [mkb("config", VStr("/missing.toml"), Cli)], empty_env(), provider_none()),
+    resolve_cfg(
+      sc,
+      [mkb("config", VStr("/missing.toml"), Cli)],
+      empty_env(),
+      provider_none(),
+    ),
     content="err:config file \"/missing.toml\" could not be read",
   )
   // default path + provider None → silent, port falls to default
-  inspect(resolve_cfg(sc, [], empty_env(), provider_none()), content="port=7@default")
+  inspect(
+    resolve_cfg(sc, [], empty_env(), provider_none()),
+    content="port=7@default",
+  )
 }
 
 // ── 循環禁止: config_file 要素自身に config_key → 静的エラー ─────────────────────
 
+///|
 test "DR-050 §5 循環禁止: a config_file element cannot carry a config_key (static error)" {
   // A config_file element taking its own path from config is a cycle (it needs the config it locates
   // to know where the config is). The static check rejects the definition.
   let def = def_(
-    [opt("config", TStr, long=["config"], config_file=true, config_key=Some(["config"]))],
+    [
+      opt(
+        "config",
+        TStr,
+        long=["config"],
+        config_file=true,
+        config_key=Some(["config"]),
+      ),
+    ],
     [],
   )
   // DR-054: a config-cycle DefError.
@@ -288,6 +450,7 @@ test "DR-050 §5 循環禁止: a config_file element cannot carry a config_key (
 
 // ── config は構造に影響しない (DR-050 §5 不変条件) ──────────────────────────────
 
+///|
 test "DR-050 §5 invariant: config does not affect structure — parsing is identical with/without config" {
   // config is a value source only: it contributes NO matcher / trigger / path-search behavior. The
   // AtomicAST greedy/positional faces are identical whether or not a config_file element is present;
@@ -295,14 +458,23 @@ test "DR-050 §5 invariant: config does not affect structure — parsing is iden
   // resolve phase (where config acts) is strictly after path-search completes.
   let with_cfg = def_(
     [
-      opt("config", TStr, long=["config"], config_file=true, default=Some(VStr("/app.toml"))),
+      opt(
+        "config",
+        TStr,
+        long=["config"],
+        config_file=true,
+        default=Some(VStr("/app.toml")),
+      ),
       opt("port", TNum, long=["port"], config_key=Some(["port"])),
     ],
     [],
   )
   let sc = build_or_fail(with_cfg, cfg_order())
   // parsing (structure) is unaffected by config: --port 80 binds normally, no config consulted
-  inspect(render_outcome(parse(ScopeNode(sc), ["--port", "80"])), content="ok{port=80}")
+  inspect(
+    render_outcome(parse(ScopeNode(sc), ["--port", "80"])),
+    content="ok{port=80}",
+  )
   // the config seat exists on port but NOT on the config_file element (循環禁止)
   let mut port_seat = false
   let mut config_seat_on_cf = true

@@ -29,6 +29,7 @@
 
 // ── projections ───────────────────────────────────────────────────────────────
 
+///|
 fn eff_op(op : EffectOp) -> String {
   match op {
     Set => "set"
@@ -38,6 +39,7 @@ fn eff_op(op : EffectOp) -> String {
   }
 }
 
+///|
 /// CONFORMANCE §2 effects: ordered "entity:op(operand)@source", consumption order
 /// preserved (order is an identity component, DR-038/045). Sentinel bindings
 /// ("[]" / "{}" / "" / @act: / @depr:) are excluded via is_sentinel (result.mbt).
@@ -53,6 +55,7 @@ fn proj_effects(binds : Array[Binding]) -> String {
   join_comma(items)
 }
 
+///|
 /// A key-sorted rendering of the built result object (CONFORMANCE §3: result is
 /// compared for structural equivalence, key order non-normative). Arrays keep
 /// order (list order is meaningful).
@@ -77,12 +80,16 @@ fn render_rval_sorted(r : RVal) -> String {
   }
 }
 
+///|
 /// CONFORMANCE §2 result: the final result object (ladder-filled). accum_cells +
 /// build_result is the slice's own §5 projection path.
 fn proj_result(sc : Scope, binds : Array[Binding]) -> String {
-  render_rval_sorted(build_result(binds, accum_cells(sc), default_cells(sc), []))
+  render_rval_sorted(
+    build_result(binds, accum_cells(sc), default_cells(sc), []),
+  )
 }
 
+///|
 /// CONFORMANCE §2 failure: the SET of (element, argv_pos, kind) — reason omitted
 /// (slice-unimplemented, §2 optional). Sorted for set comparison (§3).
 fn proj_errors(errs : Array[ParseError]) -> String {
@@ -96,6 +103,7 @@ fn proj_errors(errs : Array[ParseError]) -> String {
 
 // ── case drivers (the 突合: fixture-expected values are the arguments) ─────────
 
+///|
 /// Run a success case: compare projected effects + result against the fixture's
 /// expected. Returns "PASS" or a diff string classifying the mismatch.
 fn run_success(
@@ -113,8 +121,16 @@ fn run_success(
       if e_ok && r_ok {
         "PASS"
       } else {
-        let ep = if e_ok { "effects ok" } else { "effects got=\{ae} want=\{exp_effects}" }
-        let rp = if r_ok { "result ok" } else { "result got=\{ar} want=\{exp_result}" }
+        let ep = if e_ok {
+          "effects ok"
+        } else {
+          "effects got=\{ae} want=\{exp_effects}"
+        }
+        let rp = if r_ok {
+          "result ok"
+        } else {
+          "result got=\{ar} want=\{exp_result}"
+        }
         ep + " | " + rp
       }
     }
@@ -122,6 +138,7 @@ fn run_success(
   }
 }
 
+///|
 /// Run a failure case: compare the projected error set against the fixture's
 /// expected set. Returns "PASS" or a diff string.
 fn run_failure(sc : Scope, argv : Array[String], exp_errors : String) -> String {
@@ -140,6 +157,7 @@ fn run_failure(sc : Scope, argv : Array[String], exp_errors : String) -> String 
 
 // ── fixture definitions (transcribed wire form) ───────────────────────────────
 
+///|
 /// fixtures/dd/basic.json definition. dd (`--`) transcribed into options[] as the
 /// wire form declares it (DR-064 canonical placement).
 fn basic_def() -> Scope {
@@ -150,6 +168,7 @@ fn basic_def() -> Scope {
   build_reg(def, [LongInst, ShortInst, DdInst], Map::new())
 }
 
+///|
 /// fixtures/dd/duplicate-decl.json definition: two dd declarations in options[].
 fn dup_def() -> Scope {
   let def = def_([dd_marker(), dd_marker()], [pos("x", TStr)])
@@ -158,26 +177,39 @@ fn dup_def() -> Scope {
 
 // ── basic.json: 7 cases ───────────────────────────────────────────────────────
 
+///|
 test "conformance dd/basic case 1: -- severs greedy face; -b falls raw into x (DR-041/042)" {
   // fixture expect: effects [a set true, x set "-b"] ; result {a:true, b:false, x:"-b"}.
   // effects match (dd sever + raw -b into x). result now matches too: the flag preset default
   // (LOWERING §A.5 / DR-051 §2) means the unfired flag b renders as false rather than dropping
   // out — the projection injects the flag default seat (build_result default_cells).
   inspect(
-    run_success(basic_def(), ["-a", "--", "-b"], "a:set(true)@cli,x:set(-b)@cli", "{a=true,b=false,x=-b}"),
+    run_success(
+      basic_def(),
+      ["-a", "--", "-b"],
+      "a:set(true)@cli,x:set(-b)@cli",
+      "{a=true,b=false,x=-b}",
+    ),
     content="PASS",
   )
 }
 
+///|
 test "conformance dd/basic case 2: no --; -b fires as flag, c -> x (DR-042 dd purpose)" {
   // fixture expect: effects [a set true, b set true, x set "c"] ; result {a:true,b:true,x:"c"}.
   // All three flags fire so no preset-default gap on the result here.
   inspect(
-    run_success(basic_def(), ["-a", "-b", "c"], "a:set(true)@cli,b:set(true)@cli,x:set(c)@cli", "{a=true,b=true,x=c}"),
+    run_success(
+      basic_def(),
+      ["-a", "-b", "c"],
+      "a:set(true)@cli,b:set(true)@cli,x:set(c)@cli",
+      "{a=true,b=true,x=c}",
+    ),
     content="PASS",
   )
 }
 
+///|
 test "conformance dd/basic case 3: structural-required x unmet, argv_pos=token-exhaust (DR-065 §3)" {
   // fixture expect: failure errors {element:x, argv_pos:2, kind:parse} (reason missing_operand
   // not compared). argv_pos = argv.length = 2 (token ran out at the position x requested).
@@ -185,42 +217,63 @@ test "conformance dd/basic case 3: structural-required x unmet, argv_pos=token-e
   inspect(run_failure(basic_def(), ["-a", "-b"], "{x@2/parse}"), content="PASS")
 }
 
+///|
 test "conformance dd/basic case 4: residual token after sever, element-less scope stumble (DR-065 §3)" {
   // fixture expect: failure errors {element:"" (omitted), argv_pos:2, kind:parse} (reason
   // unexpected_token). argv_pos = residual head (the -b at index 2 with no consumer).
   // errors now match the fixture exactly (residual-token failure synthesizes the parse error).
-  inspect(run_failure(basic_def(), ["--", "-a", "-b"], "{@2/parse}"), content="PASS")
-}
-
-test "conformance dd/basic case 5: marker consumed but yields no value; x empty (DR-038)" {
-  // fixture expect: failure errors {element:x, argv_pos:3, kind:parse} (reason missing_operand).
-  // argv_pos = 3 = argv.length (all consumed but x got no value => not a complete path).
-  // errors now match the fixture exactly (dd consumes the marker, x stays unmet => held error).
-  inspect(run_failure(basic_def(), ["-a", "-b", "--"], "{x@3/parse}"), content="PASS")
-}
-
-test "conformance dd/basic case 6: 2nd -- is literal (sever is emergent, not a count rule) (DR-064 §4)" {
-  // fixture expect: effects [a set true, b set true, x set "--"] ; result {a:true,b:true,x:"--"}.
-  // effects + result now match the fixture exactly (dd position-free回収 lets the 2nd -- reach x).
   inspect(
-    run_success(basic_def(), ["-a", "-b", "--", "--"], "a:set(true)@cli,b:set(true)@cli,x:set(--)@cli", "{a=true,b=true,x=--}"),
+    run_failure(basic_def(), ["--", "-a", "-b"], "{@2/parse}"),
     content="PASS",
   )
 }
 
+///|
+test "conformance dd/basic case 5: marker consumed but yields no value; x empty (DR-038)" {
+  // fixture expect: failure errors {element:x, argv_pos:3, kind:parse} (reason missing_operand).
+  // argv_pos = 3 = argv.length (all consumed but x got no value => not a complete path).
+  // errors now match the fixture exactly (dd consumes the marker, x stays unmet => held error).
+  inspect(
+    run_failure(basic_def(), ["-a", "-b", "--"], "{x@3/parse}"),
+    content="PASS",
+  )
+}
+
+///|
+test "conformance dd/basic case 6: 2nd -- is literal (sever is emergent, not a count rule) (DR-064 §4)" {
+  // fixture expect: effects [a set true, b set true, x set "--"] ; result {a:true,b:true,x:"--"}.
+  // effects + result now match the fixture exactly (dd position-free回収 lets the 2nd -- reach x).
+  inspect(
+    run_success(
+      basic_def(),
+      ["-a", "-b", "--", "--"],
+      "a:set(true)@cli,b:set(true)@cli,x:set(--)@cli",
+      "{a=true,b=true,x=--}",
+    ),
+    content="PASS",
+  )
+}
+
+///|
 test "conformance dd/basic case 7: dd position-free; -- after operand still succeeds (DR-041 §4)" {
   // fixture expect: effects [x set "hello"] ; result {a:false, b:false, x:"hello"}.
   // effects match (dd after the operand still succeeds). result now matches too: both flags a and b
   // are unfired and render as false via the preset default (LOWERING §A.5 / DR-051 §2), no longer
   // absent from the result.
   inspect(
-    run_success(basic_def(), ["hello", "--"], "x:set(hello)@cli", "{a=false,b=false,x=hello}"),
+    run_success(
+      basic_def(),
+      ["hello", "--"],
+      "x:set(hello)@cli",
+      "{a=false,b=false,x=hello}",
+    ),
     content="PASS",
   )
 }
 
 // ── duplicate-decl.json: 1 case ───────────────────────────────────────────────
 
+///|
 test "conformance dd/duplicate-decl case 1: two dd decls merge to one reading (DR-064 §4 / DR-038)" {
   // fixture expect: success (NOT ambiguous) effects [x set "-v"] ; result {x:"-v"}.
   // Both dd readings have the same effect (sever + consume 1, no value) so path-identity

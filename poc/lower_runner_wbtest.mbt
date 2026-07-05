@@ -30,6 +30,7 @@
 
 // ── 断面 model (the DR-063 §3 normal form as comparable data) ──────────────────
 
+///|
 /// A value cell (entity) in the 断面, minimally projected (only meaningful fields).
 struct LEnt {
   name : String
@@ -41,6 +42,7 @@ struct LEnt {
   accum : String?
 }
 
+///|
 /// A greedy-face 断面 item.
 enum GItem {
   GExact(String) // {exact: "--"} — dd marker / bare trigger
@@ -51,6 +53,7 @@ enum GItem {
   GCmd(String, LSec) // {exact: name, scope: 5-face} — command subtree
 }
 
+///|
 /// A positional / template-body node (the ref+link / template-ref / seq shapes).
 enum TNode {
   TSeq(Array[TNode]) // {seq: [...]} — ordered
@@ -59,6 +62,7 @@ enum TNode {
   TExact(String) // {exact: s}
 }
 
+///|
 /// A scope 断面: the DR-063 §3 five faces. Empty faces are omitted at render (最小投影),
 /// so an empty child scope renders as "" (= golden `scope: {}`).
 struct LSec {
@@ -71,6 +75,7 @@ struct LSec {
 
 // ── canonical id normalization (DR-063 §3: `#` id 綴りは非規範) ─────────────────
 
+///|
 /// Normalize a template id to `<prefix-before-#>#T`. The slice keys the repeat cons
 /// template by the ELEMENT name (`src`) — the ambiguous form DR-063 §3 warns against —
 /// while the golden uses the `#`-qualified `src#cons`; both collapse here to `src#T`,
@@ -88,6 +93,7 @@ fn canon_tmpl(k : String) -> String {
 
 // ── renderers (produce the canonical comparison string) ───────────────────────
 
+///|
 fn lent_str(e : LEnt) -> String {
   let fs : Array[String] = ["type=" + e.typ]
   match e.default_ {
@@ -113,6 +119,7 @@ fn lent_str(e : LEnt) -> String {
   e.name + "{" + join_comma(fs) + "}"
 }
 
+///|
 fn lcon_str(c : Constraint) -> String {
   fn sorted(xs : Array[String]) -> String {
     let ss : Array[String] = []
@@ -124,16 +131,24 @@ fn lcon_str(c : Constraint) -> String {
   }
 
   match c {
-    CRequires(el, ts) => "requires{element=" + el + ",targets=[" + sorted(ts) + "]}"
+    CRequires(el, ts) =>
+      "requires{element=" + el + ",targets=[" + sorted(ts) + "]}"
     CConflicts(el, ts) =>
       "conflicts_with{element=" + el + ",targets=[" + sorted(ts) + "]}"
     CRequiresIf(el, v, ts) =>
-      "requires_if{element=" + el + ",value=" + v + ",targets=[" + sorted(ts) + "]}"
+      "requires_if{element=" +
+      el +
+      ",value=" +
+      v +
+      ",targets=[" +
+      sorted(ts) +
+      "]}"
     CExclusive(g, ms) =>
       "exclusive_group{group=" + g + ",members=[" + sorted(ms) + "]}"
   }
 }
 
+///|
 fn gmatch_entries_str(entries : Array[(String, String)]) -> String {
   // Object semantics: unique keys. A duplicate re-derived entry (same key→name) is
   // masked (gap 6); a genuine key conflict (same key, different name) surfaces as
@@ -167,6 +182,7 @@ fn gmatch_entries_str(entries : Array[(String, String)]) -> String {
   join_comma(items)
 }
 
+///|
 fn gitem_str(g : GItem) -> String {
   match g {
     GExact(s) => "exact(" + s + ")"
@@ -178,10 +194,12 @@ fn gitem_str(g : GItem) -> String {
       "seq{exact=" + trig + ",ref=" + ref_ + ",link=" + ref_ + "}"
     GMatch(kind, entries) =>
       "matcher(" + kind + "){" + gmatch_entries_str(entries) + "}"
-    GCmd(name, child) => "cmd{exact=" + name + ",scope=(" + lsec_str(child) + ")}"
+    GCmd(name, child) =>
+      "cmd{exact=" + name + ",scope=(" + lsec_str(child) + ")}"
   }
 }
 
+///|
 fn lower_eff_op(op : EffectOp) -> String {
   match op {
     Set => "set"
@@ -191,6 +209,7 @@ fn lower_eff_op(op : EffectOp) -> String {
   }
 }
 
+///|
 fn tnode_str(t : TNode) -> String {
   match t {
     TSeq(xs) => {
@@ -201,11 +220,13 @@ fn tnode_str(t : TNode) -> String {
       "seq[" + join_comma(items) + "]" // ordered (no sort)
     }
     TRefEnt(n) => "ref{" + n + ",link=" + n + "}"
-    TRefTmpl(id, opt) => "ref{" + id + (if opt { ",optional" } else { "" }) + "}"
+    TRefTmpl(id, opt) =>
+      "ref{" + id + (if opt { ",optional" } else { "" }) + "}"
     TExact(s) => "exact(" + s + ")"
   }
 }
 
+///|
 /// Render a 5-face 断面 to its canonical comparison string. Empty faces are omitted
 /// (最小投影) so an empty scope renders as "".
 fn lsec_str(s : LSec) -> String {
@@ -252,6 +273,7 @@ fn lsec_str(s : LSec) -> String {
   join_pipe(parts)
 }
 
+///|
 fn join_pipe(items : Array[String]) -> String {
   let buf = StringBuilder::new()
   let mut first = true
@@ -267,6 +289,7 @@ fn join_pipe(items : Array[String]) -> String {
 
 // ── projection: slice canon Scope → 断面 LSec ─────────────────────────────────
 
+///|
 /// The name a value primitive binds (its entity), for the ref+link collapse.
 fn prim_name(n : Node) -> String? {
   match n {
@@ -280,6 +303,7 @@ fn prim_name(n : Node) -> String? {
   }
 }
 
+///|
 fn proj_seq_sat(xs : Array[Node]) -> GItem {
   // A greedy value/flag/variant satellite: xs[0] = Exact(trigger). The tail decides the
   // descriptor form (DR-045): Bind → set 縮退形; EffMark → effect; a value primitive →
@@ -298,6 +322,7 @@ fn proj_seq_sat(xs : Array[Node]) -> GItem {
   }
 }
 
+///|
 fn proj_greedy(node : Node, reg : Map[String, Node]) -> GItem {
   match node {
     DdSat(name) => GExact(name)
@@ -323,6 +348,7 @@ fn proj_greedy(node : Node, reg : Map[String, Node]) -> GItem {
   }
 }
 
+///|
 fn proj_pos(node : Node) -> TNode {
   match node {
     Ref(k) => TRefTmpl(canon_tmpl(k), false) // spine template ref (repeat cons)
@@ -341,6 +367,7 @@ fn proj_pos(node : Node) -> TNode {
   }
 }
 
+///|
 /// Project a template-body node (DR-063 §3 templates 面). `Or([x, Seq([])])` = opt_node =
 /// the optional wrapper; its inner ref becomes an `optional` template ref.
 fn proj_tnode(node : Node) -> TNode {
@@ -367,6 +394,7 @@ fn proj_tnode(node : Node) -> TNode {
   }
 }
 
+///|
 fn proj_entity(e : Entity) -> LEnt {
   let typ = if e.is_config_file {
     "config_file"
@@ -389,6 +417,7 @@ fn proj_entity(e : Entity) -> LEnt {
   }
 }
 
+///|
 /// Collect the template ids referenced from a node list (transitive through bodies).
 fn collect_reftmpls(
   nodes : Array[Node],
@@ -410,8 +439,14 @@ fn collect_reftmpls(
             None => ()
           }
         }
-      Seq(xs) => for x in xs { walk(x) }
-      Or(xs) => for x in xs { walk(x) }
+      Seq(xs) =>
+        for x in xs {
+          walk(x)
+        }
+      Or(xs) =>
+        for x in xs {
+          walk(x)
+        }
       Many(inner) => walk(inner)
       BoundedTail(inner, _, _) => walk(inner)
       Scoped(_, inner) => walk(inner)
@@ -425,6 +460,7 @@ fn collect_reftmpls(
   }
 }
 
+///|
 fn str_has_prefix(s : String, pre : String) -> Bool {
   let cs = to_chars(s)
   let cp = to_chars(pre)
@@ -441,6 +477,7 @@ fn str_has_prefix(s : String, pre : String) -> Bool {
   true
 }
 
+///|
 /// Project a canon Scope into its 5-face 断面. `reg` is the parse_definition registry
 /// (carries the repeat cons templates). Templates are attached to the scope that
 /// references them on its spine (child scopes in the 18 reference none).
@@ -475,41 +512,57 @@ fn proj_scope(sc : Scope, reg : Map[String, Node]) -> LSec {
 
 // ── expected-断面 builders (hand-transcribed golden `expect`) ──────────────────
 
+///|
 fn le(
   name : String,
   typ : String,
-  default_~ : Value? = None,
-  env~ : String? = None,
-  inherit~ : Bool = false,
-  config_key~ : Array[String]? = None,
-  accum~ : String? = None,
+  default_? : Value? = None,
+  env? : String? = None,
+  inherit? : Bool = false,
+  config_key? : Array[String]? = None,
+  accum? : String? = None,
 ) -> LEnt {
   { name, typ, default_, env, inherit, config_key, accum }
 }
 
+///|
 /// The repeat cons template body (the only template shape in the 18): the golden
 /// `{seq:[{ref:name,link:name},{ref:name#cons,optional:true}]}`.
 fn cons_tmpl(name : String) -> (String, TNode) {
   (canon_tmpl(name), TSeq([TRefEnt(name), TRefTmpl(canon_tmpl(name), true)]))
 }
 
+///|
 fn lsec(
-  greedy~ : Array[GItem] = [],
-  positionals~ : Array[TNode] = [],
-  entities~ : Array[LEnt] = [],
-  constraints~ : Array[Constraint] = [],
-  templates~ : Array[(String, TNode)] = [],
+  greedy? : Array[GItem] = [],
+  positionals? : Array[TNode] = [],
+  entities? : Array[LEnt] = [],
+  constraints? : Array[Constraint] = [],
+  templates? : Array[(String, TNode)] = [],
 ) -> LSec {
   { greedy, positionals, entities, constraints, templates }
 }
 
 // ── the runner (突合 + 順列検査) ───────────────────────────────────────────────
 
+///|
 let full_chain : Array[Installer] = [
-  LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst,
-  RepeatInst, MultipleInst, ConfigInst, ConstraintInst, AliasInst, InheritableInst,
+  LongInst,
+  ShortInst,
+  EnvInst,
+  DdInst,
+  CommandInst,
+  GlobalInst,
+  InheritInst,
+  RepeatInst,
+  MultipleInst,
+  ConfigInst,
+  ConstraintInst,
+  AliasInst,
+  InheritableInst,
 ]
 
+///|
 /// The canonical 断面 string of one lowering, or "ERR:<sorted deferrs>" on a
 /// definition-time failure (so an unowned-vocab abort is a comparable value, not a crash).
 fn canon_of(def : Definition, order : Array[Installer]) -> String {
@@ -520,6 +573,7 @@ fn canon_of(def : Definition, order : Array[Installer]) -> String {
   }
 }
 
+///|
 /// DR-070 §3 常時分: 3 deterministically-chosen permutations (identity / reverse /
 /// rotate-by-1), deduped. Full-permutation opt-in (nightly) is out of scope — HOOK: a
 /// `pick_all(order)` using `permutations()` would slot in here behind an explicit flag.
@@ -556,6 +610,7 @@ fn pick3(order : Array[Installer]) -> Array[Array[Installer]] {
   out
 }
 
+///|
 fn order_sig(order : Array[Installer]) -> String {
   let buf = StringBuilder::new()
   for x in order {
@@ -564,6 +619,7 @@ fn order_sig(order : Array[Installer]) -> String {
   buf.to_string()
 }
 
+///|
 /// Run one fixture: project + loose-compare against `want`, and check DR-070 §3
 /// permutation convergence (the projected canon must be identical under pick3). Returns
 /// "PASS" or a divergence classification (frozen with inspect so drift is caught).
@@ -605,6 +661,8 @@ fn run_lower(def : Definition, order : Array[Installer], want : LSec) -> String 
 // pre-parsed into `variants`; `:set` stays in `long`.
 
 // baseline/no-installers.json — installers=[] (A群純構文正規化のみ, §C.4)。裸 positional x。
+
+///|
 test "lower baseline/no-installers: identity core lowering (installers=[])" {
   inspect(
     run_lower(
@@ -617,6 +675,8 @@ test "lower baseline/no-installers: identity core lowering (installers=[])" {
 }
 
 // long/basic.json — installers=[long]。`long: true` 糖衣 = [":set"] → --port + eq_split。
+
+///|
 test "lower long/basic: long installer 主入口 (space form + eq-split, LOWERING §B.1)" {
   inspect(
     run_lower(
@@ -635,18 +695,16 @@ test "lower long/basic: long installer 主入口 (space form + eq-split, LOWERIN
 }
 
 // long/variant.json — installers=[long]。`long: [":set", "no:set:false"]`: 主入口 :set + no:set:false variant (bool ssl, default true)。
+
+///|
 test "lower long/variant: variant DSL lowers to {exact, value, link} effect satellites" {
   inspect(
     run_lower(
       def_(
         [
-          opt(
-            "ssl",
-            TFlag,
-            long=[":set"],
-            default=Some(VBool(true)),
-            variants=[{ trigger: "no-ssl", op: Set, operand: Some(VBool(false)) }],
-          ),
+          opt("ssl", TFlag, long=[":set"], default=Some(VBool(true)), variants=[
+            { trigger: "no-ssl", op: Set, operand: Some(VBool(false)) },
+          ]),
         ],
         [],
       ),
@@ -666,6 +724,8 @@ test "lower long/variant: variant DSL lowers to {exact, value, link} effect sate
 // short/basic.json — installers=[short]。port(short p) + verbose(flag short v)。
 // port & verbose declare NO long (`long=[]`, DR-071 入口なし) → normalize invents NO --port / --verbose,
 // so [ShortInst] alone owns all vocab: a pure short_combine matcher, no long satellites.
+
+///|
 test "lower short/basic: short_combine matcher subsumes single-char (matcher-seat, §B.2)" {
   inspect(
     run_lower(
@@ -689,6 +749,8 @@ test "lower short/basic: short_combine matcher subsumes single-char (matcher-sea
 // env/basic.json — installers=[env]。port(env PORT のみ、long なし)。
 // port declares NO long (`long=[]`) → normalize invents no --port, so [EnvInst] owns all
 // vocab: an env seat only, no structural satellite (§B.3).
+
+///|
 test "lower env/basic: env installer seats PORT, no structural satellite (§B.3)" {
   inspect(
     run_lower(
@@ -701,45 +763,43 @@ test "lower env/basic: env installer seats PORT, no structural satellite (§B.3)
 }
 
 // dd/basic.json — installers=[dd]。dd marker (options[]) + positional x。
+
+///|
 test "lower dd/basic: dd installer adds a greedy exact satellite; x on the spine (§B.4)" {
   inspect(
     run_lower(
       def_([dd_marker()], [pos("x", TStr)]),
       [DdInst],
-      lsec(
-        greedy=[GExact("--")],
-        positionals=[TRefEnt("x")],
-        entities=[le("x", "string")],
-      ),
+      lsec(greedy=[GExact("--")], positionals=[TRefEnt("x")], entities=[
+        le("x", "string"),
+      ]),
     ),
     content="PASS",
   )
 }
 
 // command/basic.json — installers=[command, long]。serve コマンド (子に long host)。
+
+///|
 test "lower command/basic: command subtree as a greedy {exact, scope} (§B.5 / DR-041 §4)" {
   inspect(
     run_lower(
-      def_cmd(
-        [],
-        [],
-        [cmd("serve", def_([opt("host", TStr, long=[":set"])], []))],
-      ),
+      def_cmd([], [], [
+        cmd("serve", def_([opt("host", TStr, long=[":set"])], [])),
+      ]),
       [CommandInst, LongInst],
-      lsec(
-        greedy=[
-          GCmd(
-            "serve",
-            lsec(
-              greedy=[
-                GSeqSat("--host", "host"),
-                GMatch("eq_split", [("--host", "host")]),
-              ],
-              entities=[le("host", "string")],
-            ),
+      lsec(greedy=[
+        GCmd(
+          "serve",
+          lsec(
+            greedy=[
+              GSeqSat("--host", "host"),
+              GMatch("eq_split", [("--host", "host")]),
+            ],
+            entities=[le("host", "string")],
           ),
-        ],
-      ),
+        ),
+      ]),
     ),
     content="PASS",
   )
@@ -748,6 +808,8 @@ test "lower command/basic: command subtree as a greedy {exact, scope} (§B.5 / D
 // config/basic.json — installers=[config, long]。config_file (long=[":set"] → --config)
 // + port(config_key, NO long)。port's empty long (`long=[]`) means normalize invents no
 // --port even with [LongInst] in the chain, so port is sourced only from config (no satellite).
+
+///|
 test "lower config/basic: config seats; config_file value cell (DR-050)" {
   inspect(
     run_lower(
@@ -775,6 +837,8 @@ test "lower config/basic: config seats; config_file value cell (DR-050)" {
 }
 
 // constraint/basic.json — installers=[constraint, long]。decrypt requires key_file。
+
+///|
 test "lower constraint/basic: requires 遅延述語 (DR-055) + long satellites" {
   inspect(
     run_lower(
@@ -804,6 +868,8 @@ test "lower constraint/basic: requires 遅延述語 (DR-055) + long satellites" 
 }
 
 // constraint/exclusive.json — installers=[constraint, long]。json/yaml 排他グループ。
+
+///|
 test "lower constraint/exclusive: exclusive_group 指定述語 (DR-047)" {
   inspect(
     run_lower(
@@ -832,14 +898,14 @@ test "lower constraint/exclusive: exclusive_group 指定述語 (DR-047)" {
 }
 
 // global/with-long.json — installers=[global, long, command]。verbose(global) + build。
+
+///|
 test "lower global/with-long: global copy 不動点展開 into the child scope (§B.6)" {
   inspect(
     run_lower(
-      def_cmd(
-        [opt("verbose", TFlag, long=[":set"], global=true)],
-        [],
-        [cmd("build", def_([], []))],
-      ),
+      def_cmd([opt("verbose", TFlag, long=[":set"], global=true)], [], [
+        cmd("build", def_([], [])),
+      ]),
       [GlobalInst, LongInst, CommandInst],
       lsec(
         greedy=[
@@ -859,6 +925,8 @@ test "lower global/with-long: global copy 不動点展開 into the child scope (
 // inherit/basic.json — installers=[inherit]。ttl(inherit seat のみ, NO long)。
 // ttl's empty long (`long=[]`) → normalize invents no --ttl, so [InheritInst] alone owns
 // all vocab: just the inherit ladder rung, no long satellite.
+
+///|
 test "lower inherit/basic: inherit installer seats the inherit ladder rung (DR-031)" {
   inspect(
     run_lower(
@@ -871,14 +939,17 @@ test "lower inherit/basic: inherit installer seats the inherit ladder rung (DR-0
 }
 
 // inheritable/with-long.json — installers=[inheritable, long, command]。子 ttl を祖先へ。
+
+///|
 test "lower inheritable/with-long: reverse-of-global 逆方向コピー (DR-059)" {
   inspect(
     run_lower(
-      def_cmd(
-        [],
-        [],
-        [cmd("sub", def_([opt("ttl", TNum, long=[":set"], inheritable=true)], []))],
-      ),
+      def_cmd([], [], [
+        cmd(
+          "sub",
+          def_([opt("ttl", TNum, long=[":set"], inheritable=true)], []),
+        ),
+      ]),
       [InheritableInst, LongInst, CommandInst],
       lsec(
         greedy=[
@@ -905,6 +976,8 @@ test "lower inheritable/with-long: reverse-of-global 逆方向コピー (DR-059)
 // multiple/basic.json — installers=[multiple]。tag(append accumulator, NO long)。
 // tag's empty long (`long=[]`) → normalize invents no --tag, so [MultipleInst] alone owns
 // all vocab: just the append accumulator, no long satellite.
+
+///|
 test "lower multiple/basic: multiple installs the append accumulator (DR-034)" {
   inspect(
     run_lower(
@@ -917,6 +990,8 @@ test "lower multiple/basic: multiple installs the append accumulator (DR-034)" {
 }
 
 // repeat/basic.json — installers=[repeat]。src(repeat min:1) + dst。cons unfold。
+
+///|
 test "lower repeat/basic: repeat unfolds to a cons template + flatten (§B.8 / DR-043)" {
   inspect(
     run_lower(
@@ -936,14 +1011,14 @@ test "lower repeat/basic: repeat unfolds to a cons template + flatten (§B.8 / D
 }
 
 // alias/basic.json — installers=[alias, long, short]。port + alias short n。
+
+///|
 test "lower alias/basic: alias entry-copy re-derives entries; long dup masked (gap 6)" {
   inspect(
     run_lower(
-      def_(
-        [opt("port", TInt, long=[":set"], short=['p'])],
-        [],
-        aliases=[alias("port", short=['n'])],
-      ),
+      def_([opt("port", TInt, long=[":set"], short=['p'])], [], aliases=[
+        alias("port", short=['n']),
+      ]),
       [AliasInst, LongInst, ShortInst],
       lsec(
         greedy=[
@@ -959,19 +1034,16 @@ test "lower alias/basic: alias entry-copy re-derives entries; long dup masked (g
 }
 
 // alias/command.json — installers=[alias, command]。checkout + co alias。
+
+///|
 test "lower alias/command: command alias clones the subtree (empty scope) (DR-057 §2)" {
   inspect(
     run_lower(
-      def_cmd(
-        [],
-        [],
-        [cmd("checkout", def_([], []))],
-        aliases=[alias("checkout", name=Some("co"))],
-      ),
+      def_cmd([], [], [cmd("checkout", def_([], []))], aliases=[
+        alias("checkout", name=Some("co")),
+      ]),
       [AliasInst, CommandInst],
-      lsec(
-        greedy=[GCmd("checkout", lsec()), GCmd("co", lsec())],
-      ),
+      lsec(greedy=[GCmd("checkout", lsec()), GCmd("co", lsec())]),
     ),
     content="PASS",
   )
@@ -983,6 +1055,8 @@ test "lower alias/command: command alias clones the subtree (empty scope) (DR-05
 // `long=[":set"]` (--port) and host too (--host in the serve subtree). Projection of the
 // command subtree, eq_split/short_combine, dd exact, repeat cons template src#T, and the
 // minimal entities all agree — the whole kitchen-sink converges to the spec golden.
+
+///|
 test "lower baseline/converged: 全収束 kitchen-sink (installers 省略 = full chain)" {
   inspect(
     run_lower(

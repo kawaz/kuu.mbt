@@ -8,6 +8,7 @@
 //   - key "{}" at a scope  => that scope is present as an object (even if otherwise empty)
 //   - key ""   at a scope  => that scope's element is the SCALAR value (an unnamed leaf)
 
+///|
 /// A built result value.
 pub(all) enum RVal {
   RScalar(Value)
@@ -15,6 +16,7 @@ pub(all) enum RVal {
   RObj(Array[(String, RVal)]) // a name / command scope, keys in first-seen order
 } derive(Eq, Show)
 
+///|
 fn str_contains(xs : Array[String], v : String) -> Bool {
   for x in xs {
     if x == v {
@@ -24,10 +26,12 @@ fn str_contains(xs : Array[String], v : String) -> Bool {
   false
 }
 
+///|
 fn is_sentinel(k : String) -> Bool {
   k == "[]" || k == "{}" || k == "" || is_action_key(k) || is_depr_key(k)
 }
 
+///|
 fn has_direct_key(binds : Array[Binding], key : String) -> Bool {
   for b in binds {
     if b.scope.length() == 0 && b.key == key {
@@ -37,6 +41,7 @@ fn has_direct_key(binds : Array[Binding], key : String) -> Bool {
   false
 }
 
+///|
 /// The bindings under a scope segment `seg`, with the first path element dropped.
 fn sub_under(binds : Array[Binding], seg : String) -> Array[Binding] {
   let out : Array[Binding] = []
@@ -61,13 +66,16 @@ fn sub_under(binds : Array[Binding], seg : String) -> Array[Binding] {
   out
 }
 
+///|
 /// Index segments ("#k") among the direct children, ordered by k ascending.
 fn ordered_indices(binds : Array[Binding]) -> Array[String] {
   let idxs : Array[String] = []
   for b in binds {
     if b.scope.length() > 0 {
       let seg = b.scope[0]
-      if seg.length() >= 1 && seg.substring(start=0, end=1) == "#" && !str_contains(idxs, seg) {
+      if seg.length() >= 1 &&
+        seg.substring(start=0, end=1) == "#" &&
+        !str_contains(idxs, seg) {
         idxs.push(seg)
       }
     }
@@ -88,6 +96,7 @@ fn ordered_indices(binds : Array[Binding]) -> Array[String] {
   idxs
 }
 
+///|
 fn seg_num(seg : String) -> Int {
   // parse the integer after '#'
   let mut n = 0
@@ -101,6 +110,7 @@ fn seg_num(seg : String) -> Int {
   n
 }
 
+///|
 /// Apply the result-key axis (DR-052) to the winning bindings, BEFORE build_result. This is a
 /// pure result-shape remap — the AtomicAST / parse are untouched (export_key is orthogonal):
 ///   - a value cell's key: EkKey(s) → s (override); EkNull → "" (nameless: kv 文脈で消え、seq/array
@@ -144,6 +154,7 @@ pub fn apply_export_keys(
   out
 }
 
+///|
 /// Apply the result-key axis (DR-052) to the injected default cells, mirroring apply_export_keys on
 /// bindings: an EkNull cell is 透過 (dropped from the kv result), an EkKey renames it, and path
 /// segments (command scope names) are renamed / promoted the same way. Keeps a flag's preset default
@@ -181,6 +192,7 @@ pub fn apply_export_to_defaults(
   out
 }
 
+///|
 /// Detect an exposure-key collision (DESIGN §15.5, DR-021 → DR-052): two DIFFERENT elements whose
 /// export_key resolves to the SAME key name, both present at the same result scope. Runtime check —
 /// the same rule that applies to names now applies to export_key values. Returns the colliding key.
@@ -207,6 +219,7 @@ pub fn find_export_collision(
   None
 }
 
+///|
 /// An accumulate cell located at a result-scope path (DR-044 uniform array). `path` is the
 /// command/name nesting where the cell lives; `name` is its key. The builder needs this so an
 /// accumulate cell that fired 0 times still renders `[]` at its home level (not absent).
@@ -215,6 +228,7 @@ pub(all) struct AccumCell {
   name : String
 } derive(Eq, Show)
 
+///|
 fn path_eq(a : Array[String], b : Array[String]) -> Bool {
   if a.length() != b.length() {
     return false
@@ -229,8 +243,13 @@ fn path_eq(a : Array[String], b : Array[String]) -> Bool {
   true
 }
 
+///|
 /// Whether `name` is an accumulate cell declared at result path `path`.
-fn cell_here(cells : Array[AccumCell], path : Array[String], name : String) -> Bool {
+fn cell_here(
+  cells : Array[AccumCell],
+  path : Array[String],
+  name : String,
+) -> Bool {
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
       return true
@@ -239,6 +258,7 @@ fn cell_here(cells : Array[AccumCell], path : Array[String], name : String) -> B
   false
 }
 
+///|
 fn path_push(path : Array[String], seg : String) -> Array[String] {
   let out : Array[String] = []
   for s in path {
@@ -248,6 +268,7 @@ fn path_push(path : Array[String], seg : String) -> Array[String] {
   out
 }
 
+///|
 /// Build the nested result value from the winning flat bindings. `cells` locates every
 /// accumulate cell by result path (so an empty cell still renders `[]`, DR-044 uniform array);
 /// `path` is the current result-scope path.
@@ -269,7 +290,9 @@ pub fn build_result(
   // gather direct named keys (skip sentinels) and nested (named) scopes
   let named : Array[String] = []
   for b in binds {
-    if b.scope.length() == 0 && !is_sentinel(b.key) && !str_contains(named, b.key) {
+    if b.scope.length() == 0 &&
+      !is_sentinel(b.key) &&
+      !str_contains(named, b.key) {
       named.push(b.key)
     }
   }
@@ -318,7 +341,17 @@ pub fn build_result(
     }
   }
   for seg in segs {
-    obj.push((seg, build_result(sub_under(binds, seg), cells, defaults, path_push(path, seg))))
+    obj.push(
+      (
+        seg,
+        build_result(
+          sub_under(binds, seg),
+          cells,
+          defaults,
+          path_push(path, seg),
+        ),
+      ),
+    )
   }
   // UNIFORM ARRAY (DR-044 §1): an accumulate cell declared at THIS path that fired 0 times still
   // renders `[]` (not absent) — inject empties for cells not already present as named leaves.
@@ -338,6 +371,7 @@ pub fn build_result(
   RObj(obj)
 }
 
+///|
 /// The `from_entries` collector (DR-044): turns an accumulated ARRAY into an OBJECT. It has the
 /// 3 usages of JS's Object.fromEntries, distinguished by how each element supplies (key, value):
 ///
@@ -358,6 +392,7 @@ pub(all) enum FromEntries {
   KeyPromote(String) // (c) {key}: promote the key field, the rest is the value
 } derive(Eq, Show)
 
+///|
 pub fn from_entries(r : RVal, spec : FromEntries) -> RVal {
   match r {
     RScalar(v) => RScalar(v)
@@ -376,7 +411,8 @@ pub fn from_entries(r : RVal, spec : FromEntries) -> RVal {
             let pairs : Array[(String, RVal)] = []
             for e in elems {
               match e {
-                RArr(xs) => pairs.push((rval_key_str(xs[0]), from_entries(xs[1], spec)))
+                RArr(xs) =>
+                  pairs.push((rval_key_str(xs[0]), from_entries(xs[1], spec)))
                 _ => ()
               }
             }
@@ -432,6 +468,7 @@ pub fn from_entries(r : RVal, spec : FromEntries) -> RVal {
   }
 }
 
+///|
 fn recurse_arr(elems : Array[RVal], spec : FromEntries) -> RVal {
   let items : Array[RVal] = []
   for e in elems {
@@ -440,6 +477,7 @@ fn recurse_arr(elems : Array[RVal], spec : FromEntries) -> RVal {
   RArr(items)
 }
 
+///|
 /// Look up an object field's value by name; None if absent or the RVal is not an object.
 fn rval_field(r : RVal, name : String) -> RVal? {
   match r {
@@ -455,6 +493,7 @@ fn rval_field(r : RVal, name : String) -> RVal? {
   }
 }
 
+///|
 /// Whether every element is a 2-element array (the `Entries` shape). Empty => false.
 fn all_pairs(elems : Array[RVal]) -> Bool {
   if elems.length() == 0 {
@@ -469,6 +508,7 @@ fn all_pairs(elems : Array[RVal]) -> Bool {
   true
 }
 
+///|
 /// Whether every element is an object carrying ALL the named fields. Empty => false.
 fn all_have_fields(elems : Array[RVal], fields : Array[String]) -> Bool {
   if elems.length() == 0 {
@@ -485,6 +525,7 @@ fn all_have_fields(elems : Array[RVal], fields : Array[String]) -> Bool {
   true
 }
 
+///|
 fn rval_key_str(r : RVal) -> String {
   match r {
     RScalar(VStr(s)) => s
@@ -493,6 +534,7 @@ fn rval_key_str(r : RVal) -> String {
   }
 }
 
+///|
 /// Locate every accumulate cell (repeat / multiple / separator) by its result-scope path, so
 /// the builder can render an empty cell as `[]` (DR-044 uniform array). A command scope nests
 /// its cells under the command name; the root scope is path `[]`.
@@ -502,6 +544,7 @@ pub fn accum_cells(sc : Scope) -> Array[AccumCell] {
   out
 }
 
+///|
 fn collect_accum(
   sc : Scope,
   path : Array[String],
@@ -521,6 +564,7 @@ fn collect_accum(
   }
 }
 
+///|
 /// A scalar cell carrying a default value, located by its result-scope path. The result builder
 /// renders this default when the cell is otherwise absent from the winning bindings — realizing the
 /// value-source ladder's default seat in the result-object projection (DR-031 default seat). The
@@ -533,12 +577,14 @@ pub(all) struct DefaultCell {
   value : Value
 } derive(Eq, Show)
 
+///|
 pub fn default_cells(sc : Scope) -> Array[DefaultCell] {
   let out : Array[DefaultCell] = []
   collect_defaults(sc, [], out)
   out
 }
 
+///|
 fn collect_defaults(
   sc : Scope,
   path : Array[String],
@@ -566,6 +612,7 @@ fn collect_defaults(
   }
 }
 
+///|
 /// The `unwrap_single` collector (DR-034 縮退ケース, opt-in scalar): unwrap a length-1 array to
 /// its element, recursively. This is how an app gets a SCALAR from a repeat/optional cell without
 /// the uniform-array default folding it (`optional: true` yields `[x]`; unwrap_single gives `x`).

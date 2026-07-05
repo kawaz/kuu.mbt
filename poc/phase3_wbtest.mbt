@@ -4,12 +4,14 @@
 // global copies declarations down (shadowing by trigger), inherit declares a ladder
 // seat, and the whole chain converges under every one of the 5040 installer orders.
 
+///|
 fn all_installers() -> Array[Installer] {
   [LongInst, ShortInst, EnvInst, DdInst, CommandInst, GlobalInst, InheritInst]
 }
 
 // ── command: a subcommand is a greedy exact trigger over a NEW backbone ────────
 
+///|
 test "DR-018/041 §4: a subcommand fires as a greedy trigger and enters its own backbone" {
   // `build` is a command whose subtree defines `--release`. Typing `build --release`
   // enters build's fresh backbone (parent greedy does not interject inside it) and
@@ -34,6 +36,7 @@ test "DR-018/041 §4: a subcommand fires as a greedy trigger and enters its own 
 
 // ── global: a global option is available inside descendant command scopes ──────
 
+///|
 test "DR-042 global: a global option is copied into a subcommand scope" {
   // --verbose is declared global at the root. Inside `build` (which declares no
   // verbose) the copy makes `build --verbose` fire verbose=true. This is the
@@ -51,16 +54,15 @@ test "DR-042 global: a global option is copied into a subcommand scope" {
   )
 }
 
+///|
 test "DR-042 global shadowing: a child declaring the same TRIGGER blocks the copy" {
   // Root global option `gverb` and child-own option `lverb` BOTH trigger --verbose
   // but under different names. Shadowing is by trigger (同名トリガ), so the copy is
   // suppressed and the child's own wins: `build --verbose` binds lverb, unambiguously.
   // (If the copy had leaked in, both names would fire => ambiguous:2.)
-  let def = def_cmd(
-    [opt("gverb", TFlag, long=["verbose"], global=true)],
-    [],
-    [cmd("build", def_([opt("lverb", TFlag, long=["verbose"])], []))],
-  )
+  let def = def_cmd([opt("gverb", TFlag, long=["verbose"], global=true)], [], [
+    cmd("build", def_([opt("lverb", TFlag, long=["verbose"])], [])),
+  ])
   let sc = build_or_fail(def, all_installers())
   inspect(
     render_outcome(parse(ScopeNode(sc), ["build", "--verbose"])),
@@ -70,6 +72,7 @@ test "DR-042 global shadowing: a child declaring the same TRIGGER blocks the cop
 
 // ── inherit: the value-source ladder gains an inherit seat (cli>env>inherit>default) ─
 
+///|
 test "DR-031/013 inherit: a child inherits the nearest ancestor's value (cli>env>inherit>default)" {
   // Root declares `ttl` (default 30). The `up` subcommand declares its own `ttl`
   // with inherit=true (own default 99). At resolve time the child's inherit seat
@@ -80,7 +83,10 @@ test "DR-031/013 inherit: a child inherits the nearest ancestor's value (cli>env
     [
       cmd(
         "up",
-        def_([opt("ttl", TNum, long=["ttl"], inherit=true, default=Some(VNum(99)))], []),
+        def_(
+          [opt("ttl", TNum, long=["ttl"], inherit=true, default=Some(VNum(99)))],
+          [],
+        ),
       ),
     ],
   )
@@ -112,12 +118,18 @@ test "DR-031/013 inherit: a child inherits the nearest ancestor's value (cli>env
   // child's OWN cli beats inherit (cli is the top seat)
   inspect(
     render_binds_src(
-      resolve_scope(child, [mkb("ttl", VNum(7), Cli)], empty, inherited=inherited_of(parent_cli)),
+      resolve_scope(
+        child,
+        [mkb("ttl", VNum(7), Cli)],
+        empty,
+        inherited=inherited_of(parent_cli),
+      ),
     ),
     content="ttl=7@cli",
   )
 }
 
+///|
 test "DR-031 inherit: with no ancestor value, the child falls to its own default" {
   // No inherited context => the inherit seat yields nothing and the ladder drops to
   // the child's own default (99). Proves inherit sits ABOVE default, not replacing it.
@@ -127,7 +139,10 @@ test "DR-031 inherit: with no ancestor value, the child falls to its own default
     [
       cmd(
         "up",
-        def_([opt("ttl", TNum, long=["ttl"], inherit=true, default=Some(VNum(99)))], []),
+        def_(
+          [opt("ttl", TNum, long=["ttl"], inherit=true, default=Some(VNum(99)))],
+          [],
+        ),
       ),
     ],
   )
@@ -145,6 +160,7 @@ test "DR-031 inherit: with no ancestor value, the child falls to its own default
 
 // ── completeness for the new vocabularies (invariant ①') ───────────────────────
 
+///|
 test "DR-042 ①': command / global / inherit vocab with no installer is a completeness error" {
   // A def using a vocab whose installer is absent from the chain errors, naming the
   // unowned vocab (§13.5 型). Checked for each new installer.
@@ -159,10 +175,7 @@ test "DR-042 ①': command / global / inherit vocab with no installer is a compl
     Err(errs) => inspect(deferrs_str(errs), content="v/unknown-vocab")
     Ok(_) => abort("expected global completeness error")
   }
-  let inherit_def = def_(
-    [opt("t", TNum, long=["t"], inherit=true)],
-    [],
-  )
+  let inherit_def = def_([opt("t", TNum, long=["t"], inherit=true)], [])
   match parse_definition(inherit_def, [LongInst]) {
     Err(errs) => inspect(deferrs_str(errs), content="t/unknown-vocab")
     Ok(_) => abort("expected inherit completeness error")
@@ -171,6 +184,7 @@ test "DR-042 ①': command / global / inherit vocab with no installer is a compl
 
 // ── 順序非依存: all 5040 orders of the 7 installers converge ────────────────────
 
+///|
 fn perm7_def() -> Definition {
   // A def that exercises every one of the 7 installers' vocab: long+short+env on
   // `port`, a global flag `verbose`, a dd marker + a positional, and a subcommand
@@ -187,6 +201,7 @@ fn perm7_def() -> Definition {
   )
 }
 
+///|
 test "DR-042: all 5040 orders of the 7 installers produce the identical AtomicAST tree" {
   // The 5 invariants + fixpoint make the tree-shaped chain order-independent. Build
   // under every permutation and confirm a single distinct canonical form. canon_scope

@@ -4,6 +4,7 @@
 // idempotency, order-independence (all 24 permutations), link 合流, and the dd
 // re-scoping — end to end, by building a scope and then running the evaluator.
 
+///|
 /// The DR-042 §展開の標準パターン example, exercising all four installers.
 fn dr042_def() -> Definition {
   {
@@ -17,6 +18,7 @@ fn dr042_def() -> Definition {
   }
 }
 
+///|
 fn build_or_fail(def : Definition, order : Array[Installer]) -> Scope {
   match parse_definition(def, order) {
     Ok(sc) => sc
@@ -24,12 +26,14 @@ fn build_or_fail(def : Definition, order : Array[Installer]) -> Scope {
   }
 }
 
+///|
 fn canonical_order() -> Array[Installer] {
   [LongInst, ShortInst, EnvInst, DdInst]
 }
 
 // ── invariant ①' 非削除 + add-if-absent => 冪等 ───────────────────────────────
 
+///|
 test "DR-042 ①': re-applying an installer is a no-op (idempotent from add-if-absent)" {
   // Apply the four installers directly to one build, snapshot, then apply all
   // four AGAIN to the SAME def+build. The vocab is NOT removed (non-deletion,
@@ -54,6 +58,7 @@ test "DR-042 ①': re-applying an installer is a no-op (idempotent from add-if-a
   inspect(once == twice, content="true")
 }
 
+///|
 test "DR-042 ①': the declaration layer is inert — def0 is unchanged, re-runs converge" {
   // Non-deletion means parse_definition never mutates the caller's declaration
   // layer: the same def0 can be parsed repeatedly and always yields the identical
@@ -71,6 +76,7 @@ test "DR-042 ①': the declaration layer is inert — def0 is unchanged, re-runs
 
 // ── invariant ③ 所有語彙の交差禁止 ────────────────────────────────────────────
 
+///|
 test "DR-042③/DR-054: two installers claiming the same vocab is a vocab-intersection Error" {
   // DR-054: a definition-error union. The vocab intersection is one DefError of kind
   // vocab-intersection, with a 次の手 hint. A long-only def isolates it (no other unowned vocab).
@@ -89,6 +95,7 @@ test "DR-042③/DR-054: two installers claiming the same vocab is a vocab-inters
 
 // ── invariant ① completeness: leftover vocab => error ─────────────────────────
 
+///|
 test "DR-042①/DR-054: special vocab with no installer is an unknown-vocab Error (with hint)" {
   // The def carries env:PORT, but EnvInst is omitted. DR-054: unknown-vocab DefError with a
   // 「次の手」hint (register an installer owning the vocab).
@@ -106,6 +113,7 @@ test "DR-042①/DR-054: special vocab with no installer is an unknown-vocab Erro
 
 // ── 順序非依存: all 24 permutations converge ──────────────────────────────────
 
+///|
 test "DR-042: all 24 installer orders produce the identical AtomicAST" {
   // The 5 invariants make the chain order-independent. Build under every order
   // and confirm a single distinct canonical form.
@@ -130,6 +138,7 @@ test "DR-042: all 24 installer orders produce the identical AtomicAST" {
 
 // ── invariant ④ 値源はラダー席への宣言 (source タグ保存) ───────────────────────
 
+///|
 test "DR-042 ④: env is a ladder-seat declaration; source tags follow cli>env>default" {
   // port declares an env seat (PORT) and a default. The engine-owned ladder
   // (DR-031) decides precedence; the env installer only declared the seat.
@@ -160,6 +169,7 @@ test "DR-042 ④: env is a ladder-seat declaration; source tags follow cli>env>d
 
 // ── 意地悪: 1 要素全部盛り (long + short + env) => 衛星が 1 実体に合流 ──────────
 
+///|
 test "DR-042 意地悪: long+short+env on one element merge onto a single entity" {
   // All three installers target the same name => one value cell, and every CLI
   // form (long space, eq-split, short attach) writes that one cell (link 合流).
@@ -199,14 +209,15 @@ test "DR-042 意地悪: long+short+env on one element merge onto a single entity
 
 // ── dd re-scoping end-to-end via the installer (DR-042 ⑤) ──────────────────────
 
+///|
 test "DR-042 ⑤: dd installer re-scopes — `--` flips the reading of a following token" {
   // -a/-b are short flags; x is a positional. With `--`, the greedy face is
   // severed after it, so `-b` becomes the raw positional x. Without `--`, `-b`
   // fires as a flag and the next token is x. Same tokens, different meaning.
-  let def = def_(
-    [opt("a", TFlag, short=['a']), opt("b", TFlag, short=['b'])],
-    [dd_marker(), pos("x", TStr)],
-  )
+  let def = def_([opt("a", TFlag, short=['a']), opt("b", TFlag, short=['b'])], [
+    dd_marker(),
+    pos("x", TStr),
+  ])
   let sc = build_or_fail(def, canonical_order())
   inspect(
     render_outcome(parse(ScopeNode(sc), ["-a", "--", "-b"])),
@@ -220,6 +231,7 @@ test "DR-042 ⑤: dd installer re-scopes — `--` flips the reading of a followi
 
 // ── end-to-end: every matcher form hits the same cell ─────────────────────────
 
+///|
 test "DR-041/042: long-space, eq-split, short-attach, short-next-token all agree" {
   let def = def_([opt("port", TNum, long=["port"], short=['p'])], [])
   let sc = build_or_fail(def, canonical_order())

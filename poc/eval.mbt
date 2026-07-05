@@ -9,6 +9,7 @@
 // repeat can be a recursive `Seq([head, Opt(Ref(self))])` rather than a closure
 // primitive. It threads through every walk function unchanged.
 
+///|
 /// The outcome of trying a node against a token prefix.
 /// A missing branch == Reject (silently dropped, DR-037). `Held` == Error
 /// (retained for failure display). `Accept(new_pos, bindings)` == a reading.
@@ -19,6 +20,7 @@ enum Branch {
   //                                   before the error; the ParseError has element/argv_pos/kind/message.
 } derive(Show)
 
+///|
 /// Final parse outcome — a discriminated union of 3 values (DR-053 §1). Success carries the result
 /// bindings; Failure carries ALL held errors (primary = max argv_pos) plus the failure-action / help
 /// materials; Ambiguous carries every distinct interpretation (as result-object bindings).
@@ -28,6 +30,7 @@ pub(all) enum Outcome {
   Ambiguous(AmbiguousData)
 } derive(Eq, Show)
 
+///|
 /// DR-053 §2/§4: a failed parse. `errors` holds ALL held Errors (別候補経路の別 Error); primary is
 /// the max-argv_pos subset (computed by the renderer). `fired_action` is the failure-action that
 /// fired (help), if any — it and `errors` coexist (DR-053: 表示が置換されるだけ、構造は残る).
@@ -39,6 +42,7 @@ pub(all) struct FailureData {
   tried_triggers : Array[String]
 } derive(Eq, Show)
 
+///|
 /// DR-053 §3: an ambiguous parse. `interpretations` enumerates EVERY distinct complete path as a
 /// result-object view (its bindings); `help_entry` is the same 誘導行 material as a failure.
 pub(all) struct AmbiguousData {
@@ -46,17 +50,20 @@ pub(all) struct AmbiguousData {
   help_entry : String?
 } derive(Eq, Show)
 
+///|
 /// A plain value bind = the SET degenerate form of an effect (DR-045 §1).
 fn mkb(key : String, value : Value, source : Source) -> Binding {
   { key, op: Set, value, source, scope: [], link: false }
 }
 
+///|
 /// A non-set effect binding (default / unset / empty). The operand is a placeholder
 /// (VBool(false)) — default/unset/empty carry no operand (DR-045 table).
 fn mk_eff(key : String, op : EffectOp, source : Source) -> Binding {
   { key, op, value: VBool(false), source, scope: [], link: false }
 }
 
+///|
 /// A failure-action marker binding (DR-048): key `@act:<name>`, value = the argv position where
 /// the action was selected (for argv-min tie-break). It rides in the effect column like any
 /// binding, so it is captured by both surfaced Accepts and (via the extended Held) dead ends.
@@ -71,6 +78,7 @@ fn action_marker(name : String, pos : Int) -> Binding {
   }
 }
 
+///|
 /// A deprecation marker binding (DR-058): key `@depr:<element>`, recording that a deprecated entry
 /// (DR-057 alias) was used to reach the canonical cell. Rides in the effect column like an action
 /// marker; the result builder skips it (bookkeeping, not a value), and `warnings_of` collects it.
@@ -85,12 +93,14 @@ fn depr_marker(element : String) -> Binding {
   }
 }
 
+///|
 /// Whether a result key is a deprecation marker (`@depr:...`).
 pub fn is_depr_key(k : String) -> Bool {
   let p = "@depr:"
   k.length() >= p.length() && k.substring(start=0, end=p.length()) == p
 }
 
+///|
 /// The deprecated canonical element names recorded on a Success outcome (DR-058 warnings). Each
 /// `@depr:<element>` marker in the winning path's bindings yields one warning (deduped, sorted by
 /// the renderer). A non-Success outcome carries no single path, so no warnings here (PoC scope).
@@ -111,6 +121,7 @@ pub fn warnings_of(o : Outcome) -> Array[String] {
   out
 }
 
+///|
 fn str_mem(xs : Array[String], v : String) -> Bool {
   for x in xs {
     if x == v {
@@ -120,6 +131,7 @@ fn str_mem(xs : Array[String], v : String) -> Bool {
   false
 }
 
+///|
 /// The action name if `b` is a failure-action marker, else None.
 fn action_of(b : Binding) -> String? {
   if is_action_key(b.key) {
@@ -129,6 +141,7 @@ fn action_of(b : Binding) -> String? {
   }
 }
 
+///|
 /// Whether a result key is a failure-action marker (`@act:...`), which the result builder and
 /// renderers skip (it is search bookkeeping, not a result value).
 pub fn is_action_key(k : String) -> Bool {
@@ -136,6 +149,7 @@ pub fn is_action_key(k : String) -> Bool {
   k.length() >= p.length() && k.substring(start=0, end=p.length()) == p
 }
 
+///|
 /// Nest a set of bindings one level deeper under `label` (DR-025: a name / command
 /// scope prepends its label to every binding produced inside it, outermost first).
 /// LINK bindings (DR-042 global link-sync) are NOT prefixed — they target the declaring
@@ -163,6 +177,7 @@ fn nest(label : String, binds : Array[Binding]) -> Array[Binding] {
   out
 }
 
+///|
 /// Apply `nest` to every Accept branch's bindings (Held passes through).
 fn nest_branches(label : String, brs : Array[Branch]) -> Array[Branch] {
   let out : Array[Branch] = []
@@ -175,6 +190,7 @@ fn nest_branches(label : String, brs : Array[Branch]) -> Array[Branch] {
   out
 }
 
+///|
 fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
   let r : Array[Binding] = []
   for x in a {
@@ -186,6 +202,7 @@ fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
   r
 }
 
+///|
 /// Evaluate a node at `pos`, returning every reading (Accept) and held Error.
 fn eval(
   node : Node,
@@ -281,7 +298,10 @@ fn eval(
       if pos < toks.length() && toks[pos] == name {
         // the subcommand is a result scope: its bindings nest under the command name,
         // plus a presence marker so an invoked-but-empty command still appears as {}.
-        mark_scope(name, nest_branches(name, eval_scope(child, toks, pos + 1, defs)))
+        mark_scope(
+          name,
+          nest_branches(name, eval_scope(child, toks, pos + 1, defs)),
+        )
       } else {
         []
       }
@@ -329,6 +349,7 @@ fn eval(
   }
 }
 
+///|
 /// The nested-Opt equivalent of a bounded tail: 0..budget heads (LOWERING §B.8). Used for the
 /// off-spine eval fallback; the spine path (scope_consume) instead threads the budget porously.
 fn bounded_opt(head : Node, budget : Int) -> Node {
@@ -339,11 +360,18 @@ fn bounded_opt(head : Node, budget : Int) -> Node {
   }
 }
 
+///|
 /// A `kind: parse` held Error for a value that failed to parse as a number (DR-053 §2).
 fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
-  { element, argv_pos: pos, kind: KParse, message: "\"\{tok}\" is not a number" }
+  {
+    element,
+    argv_pos: pos,
+    kind: KParse,
+    message: "\"\{tok}\" is not a number",
+  }
 }
 
+///|
 /// FilterArg (DR-053 kind demo): parse a number then apply a max post-filter. A parse failure is
 /// `kind: parse`; a value above `max` is `kind: filter` (post_filter reject). `acc` is the partial
 /// state carried on the held Error (F-039).
@@ -379,6 +407,7 @@ fn filter_arg_eval(
   }
 }
 
+///|
 /// ReqArg (DR-047 値充足 / DR-053 kind: constraint): consume a token if present; NO token to consume
 /// is a `kind: constraint` held Error (required 未充足) — a delayed-predicate violation as an Error,
 /// not a silent Reject. `acc` is the partial state on the held Error.
@@ -405,6 +434,7 @@ fn req_arg_eval(
   }
 }
 
+///|
 fn starts_dash(s : String) -> Bool {
   for c in s {
     return c == '-'
@@ -412,6 +442,7 @@ fn starts_dash(s : String) -> Bool {
   false
 }
 
+///|
 /// The first char of a string (String indexing yields a UTF-16 code unit, not a Char, so we
 /// take the first char by iteration — matching how the split loop reads chars).
 fn first_char(s : String) -> Char {
@@ -421,6 +452,7 @@ fn first_char(s : String) -> Char {
   ',' // unreachable for a non-empty separator
 }
 
+///|
 /// Split `s` on the first char of `sep` (DR-034 single-char separator). `a,b,c` / "," → [a,b,c].
 fn split_on(s : String, sep : String) -> Array[String] {
   let sepc = first_char(sep)
@@ -438,6 +470,7 @@ fn split_on(s : String, sep : String) -> Array[String] {
   out
 }
 
+///|
 /// One Set-effect binding per split piece (DR-034 separator + DR-045 set 縮退形).
 fn sep_binds(name : String, tok : String, sep : String) -> Array[Binding] {
   let out : Array[Binding] = []
@@ -447,12 +480,21 @@ fn sep_binds(name : String, tok : String, sep : String) -> Array[Binding] {
   out
 }
 
+///|
 /// Array-presence marker: `{key:"[]"}` at the array's scope, so an empty array still
 /// appears in the result. The renderers / result builder treat "[]" and "{}" as sentinels.
 fn array_marker(label : String) -> Binding {
-  { key: "[]", op: Set, value: VBool(false), source: Cli, scope: [label], link: false }
+  {
+    key: "[]",
+    op: Set,
+    value: VBool(false),
+    source: Cli,
+    scope: [label],
+    link: false,
+  }
 }
 
+///|
 /// Prepend an object-presence marker `{key:"{}"}` at scope `[name]` to each Accept, so an
 /// invoked command scope appears (as at least `{}`) even when it produced no bindings.
 fn mark_scope(name : String, brs : Array[Branch]) -> Array[Branch] {
@@ -474,6 +516,7 @@ fn mark_scope(name : String, brs : Array[Branch]) -> Array[Branch] {
   out
 }
 
+///|
 /// Tag a rep's bindings under `[label, "#k"]` (a result-array index). Link bindings escape.
 fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] {
   let seg = "#" + rep.to_string()
@@ -499,6 +542,7 @@ fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] 
   out
 }
 
+///|
 /// Greedy-max named indexed-array repeat (DR-043 §取り分の選好, default greedy). Consumes as
 /// many reps as the head allows (each rep tagged `[label, "#k"]`), deterministically. For
 /// the authsock raw pattern the split is bounded by the head's Reject (NoDashStr) or exact
@@ -533,6 +577,7 @@ fn idx_repeat_eval(
   }
 }
 
+///|
 /// Consume one rep of `head` at `pos`, pushing its indexed bindings to `acc`. Returns the
 /// new position, or `pos` unchanged if the head cannot advance (greedy-max stop).
 fn idx_one(
@@ -559,6 +604,7 @@ fn idx_one(
   pos
 }
 
+///|
 /// Thread `pos` through a Seq; bindings accumulate; a Held dead-ends its branch.
 fn eval_seq(
   items : Array[Node],
@@ -584,6 +630,7 @@ fn eval_seq(
   out
 }
 
+///|
 /// Unbounded repeat (>= 0). The `p2 > pos` guard prevents zero-progress loops.
 fn eval_many(
   inner : Node,
@@ -612,6 +659,7 @@ fn eval_many(
 // `severed` is the dd mode (DR-042 ⑤): once `--` is consumed, the greedy face is
 // off for the rest of the walk and everything falls raw into positionals.
 
+///|
 /// A greedy entry "reads" at `pos` iff it consumes >= 1 token there. This is the
 /// exact 先食い predicate (DR-041 §4): when true, positional raw pass-through of
 /// the current token is suppressed. (Only consulted when not severed.)
@@ -632,6 +680,7 @@ fn greedy_reads(
   false
 }
 
+///|
 /// Whether raw pass-through of the token at `pos` is suppressed. 先食い is
 /// greedy-ONLY (DR-041 §4, rev): a raw-eat is suppressed iff some greedy entry
 /// reads the token. The dd `--` is covered because the dd satellite is itself a
@@ -649,6 +698,7 @@ fn suppressed(
   greedy_reads(sc, toks, pos, defs)
 }
 
+///|
 fn eval_scope(
   sc : Scope,
   toks : Array[String],
@@ -658,6 +708,7 @@ fn eval_scope(
   scope_step(sc, toks, pos, 0, [], false, defs)
 }
 
+///|
 /// Walk sc.positional[pidx..] from `pos`. Offers (A) a greedy interjection (only
 /// when not severed) and (B) advancing the positional face.
 fn scope_step(
@@ -674,7 +725,7 @@ fn scope_step(
   // slots (getopt 同型); re-enter at the same pidx (positional face untouched).
   // Firing a dd or command satellite additionally severs the rest of the walk
   // (DR-041 §4: the fired greedy's continuation is its internal consumption).
-  if !(severed) {
+  if !severed {
     for g in sc.greedy {
       // Only dd severs (its continuation is internal consumption, 一体). A command
       // (CmdSat) does NOT sever — after its subtree completes the parent backbone
@@ -688,8 +739,15 @@ fn scope_step(
         match b {
           Accept(p2, bs) =>
             if p2 > pos {
-              for r in scope_step(
-                  sc, toks, p2, pidx, cat(acc, bs), severed || fires_severed, defs,
+              for
+                r in scope_step(
+                  sc,
+                  toks,
+                  p2,
+                  pidx,
+                  cat(acc, bs),
+                  severed || fires_severed,
+                  defs,
                 ) {
                 out.push(r)
               }
@@ -711,8 +769,16 @@ fn scope_step(
       out.push(Accept(pos, acc)) // positional exhausted => acceptable scope end
     }
   } else {
-    for r in scope_consume(
-        sc, sc.positional[pidx], toks, pos, pidx, acc, severed, defs,
+    for
+      r in scope_consume(
+        sc,
+        sc.positional[pidx],
+        toks,
+        pos,
+        pidx,
+        acc,
+        severed,
+        defs,
       ) {
       out.push(r)
     }
@@ -720,6 +786,7 @@ fn scope_step(
   out
 }
 
+///|
 /// Consume one positional item, then continue at pidx+1 (Many/Ref stay at pidx).
 fn scope_consume(
   sc : Scope,
@@ -733,10 +800,15 @@ fn scope_consume(
 ) -> Array[Branch] {
   match item {
     StrArg(name) =>
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         scope_step(
-          sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
-          severed, defs,
+          sc,
+          toks,
+          pos + 1,
+          pidx + 1,
+          cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
+          severed,
+          defs,
         )
       } else if pos >= toks.length() {
         // 構造的必須の不成立 (DR-065 §3): the spine needs a token for `name` but the argv is
@@ -760,23 +832,33 @@ fn scope_consume(
       }
     SepArg(name, sep) =>
       // plain separator positional (DR-034): 先食い-aware, splits the token into pieces.
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         scope_step(
-          sc, toks, pos + 1, pidx + 1, cat(acc, sep_binds(name, toks[pos], sep)),
-          severed, defs,
+          sc,
+          toks,
+          pos + 1,
+          pidx + 1,
+          cat(acc, sep_binds(name, toks[pos], sep)),
+          severed,
+          defs,
         )
       } else {
         []
       }
     NumArg(name) =>
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         match parse_number(toks[pos]) {
           // DR-041 §5: number positional rejecting a token is a held Error, not a
           // structural refusal — no prefix guard.
           Some(d) =>
             scope_step(
-              sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VNum(d), Cli)]),
-              severed, defs,
+              sc,
+              toks,
+              pos + 1,
+              pidx + 1,
+              cat(acc, [mkb(name, VNum(d), Cli)]),
+              severed,
+              defs,
             )
           // partial state = the scope acc so far (a failure-action selected before this number
           // positional's parse error is captured here, DR-048 candidate defs / F-039).
@@ -788,7 +870,7 @@ fn scope_consume(
     FilterArg(name, max) =>
       // number + max post-filter positional (DR-053 kind demo): parse fail = kind parse, > max =
       // kind filter; either continues the spine on success. 先食い-aware.
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         match parse_number(toks[pos]) {
           Some(d) =>
             if d > max.to_double() {
@@ -805,8 +887,13 @@ fn scope_consume(
               ]
             } else {
               scope_step(
-                sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VNum(d), Cli)]),
-                severed, defs,
+                sc,
+                toks,
+                pos + 1,
+                pidx + 1,
+                cat(acc, [mkb(name, VNum(d), Cli)]),
+                severed,
+                defs,
               )
             }
           None => [Held(pe_parse(name, toks[pos], pos), acc)]
@@ -817,10 +904,15 @@ fn scope_consume(
     ReqArg(name) =>
       // required string positional (DR-047 / DR-053 kind constraint): no token to consume is a
       // kind:constraint held Error (required 未充足), not a silent Reject.
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         scope_step(
-          sc, toks, pos + 1, pidx + 1, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
-          severed, defs,
+          sc,
+          toks,
+          pos + 1,
+          pidx + 1,
+          cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
+          severed,
+          defs,
         )
       } else if pos >= toks.length() {
         [
@@ -843,62 +935,63 @@ fn scope_consume(
       } else {
         []
       }
-    Ref(name) =>
-      // A repeat item (DR-043): >= 1 head, unfolded POROUSLY on the spine. Consume the
-      // mandatory head, then offer either "stop" (advance to pidx+1, fewer reps) or "one
-      // more rep" (re-enter at the SAME pidx). "more" goes through scope_step, so greedy
-      // interjects between reps for free (背骨に留まる).
-      //
-      // 取り分の選好 (DR-043 §取り分の選好): the split between adjacent closures is not an
-      // ambiguity — it is one interpretation's freedom of division. greedy (default) prefers
-      // the LONGER share (try "more" first), lazy the shorter ("stop" first). We commit to
-      // the FIRST preference whose continuation reaches a FULL parse and PRUNE the other —
-      // it is a different share of the SAME closure, not a competing complete path. If
-      // neither completes, both are kept (failure / genuinely-different completions surface
-      // unchanged). The preference is applied PER head-reading, so structurally different
-      // completions (or-branch / reading differences) remain distinct → still ambiguous.
-      {
-        let head = ref_head(defs, name)
-        let lazy = ref_is_lazy(defs, name)
-        let target = toks.length()
-        let out : Array[Branch] = []
-        for b in consume_head(sc, head, toks, pos, severed, defs) {
-          match b {
-            Accept(p2, bs) =>
-              if p2 > pos {
-                let acc2 = cat(acc, bs)
-                let stop = scope_step(sc, toks, p2, pidx + 1, acc2, severed, defs)
-                let more = scope_step(sc, toks, p2, pidx, acc2, severed, defs)
-                let chosen = if lazy {
-                  if has_full(stop, target) {
-                    stop
-                  } else if has_full(more, target) {
-                    more
-                  } else {
-                    cat_branches(stop, more)
-                  }
+    // A repeat item (DR-043): >= 1 head, unfolded POROUSLY on the spine. Consume the
+    // mandatory head, then offer either "stop" (advance to pidx+1, fewer reps) or "one
+    // more rep" (re-enter at the SAME pidx). "more" goes through scope_step, so greedy
+    // interjects between reps for free (背骨に留まる).
+    //
+    // 取り分の選好 (DR-043 §取り分の選好): the split between adjacent closures is not an
+    // ambiguity — it is one interpretation's freedom of division. greedy (default) prefers
+    // the LONGER share (try "more" first), lazy the shorter ("stop" first). We commit to
+    // the FIRST preference whose continuation reaches a FULL parse and PRUNE the other —
+    // it is a different share of the SAME closure, not a competing complete path. If
+    // neither completes, both are kept (failure / genuinely-different completions surface
+    // unchanged). The preference is applied PER head-reading, so structurally different
+    // completions (or-branch / reading differences) remain distinct → still ambiguous.
+    Ref(name) => {
+      let head = ref_head(defs, name)
+      let lazy = ref_is_lazy(defs, name)
+      let target = toks.length()
+      let out : Array[Branch] = []
+      for b in consume_head(sc, head, toks, pos, severed, defs) {
+        match b {
+          Accept(p2, bs) =>
+            if p2 > pos {
+              let acc2 = cat(acc, bs)
+              let stop = scope_step(sc, toks, p2, pidx + 1, acc2, severed, defs)
+              let more = scope_step(sc, toks, p2, pidx, acc2, severed, defs)
+              let chosen = if lazy {
+                if has_full(stop, target) {
+                  stop
                 } else if has_full(more, target) {
                   more
-                } else if has_full(stop, target) {
-                  stop
                 } else {
                   cat_branches(stop, more)
                 }
-                for r in chosen {
-                  out.push(r)
-                }
+              } else if has_full(more, target) {
+                more
+              } else if has_full(stop, target) {
+                stop
+              } else {
+                cat_branches(stop, more)
               }
-            Held(pe, bs) => out.push(Held(pe, bs))
-          }
+              for r in chosen {
+                out.push(r)
+              }
+            }
+          Held(pe, bs) => out.push(Held(pe, bs))
         }
-        out
       }
+      out
+    }
     BoundedTail(head, budget, lazy) =>
       // A bounded repeat tail (DR-043 max 有限 / LOWERING §B.8): consume 0..budget more heads
       // POROUSLY on the spine. Same 取り分選好 as the Ref path (greedy prefers "more", lazy
       // "stop"), and consume_head keeps 先食い — so a bounded repeat composes like an unbounded
       // one, but the recursion depth is the budget (no self-ref).
-      bounded_tail_step(sc, head, budget, lazy, toks, pos, pidx, acc, severed, defs)
+      bounded_tail_step(
+        sc, head, budget, lazy, toks, pos, pidx, acc, severed, defs,
+      )
     Many(inner) => {
       let out : Array[Branch] = []
       for r in scope_step(sc, toks, pos, pidx + 1, acc, severed, defs) { // 0 reps
@@ -916,7 +1009,16 @@ fn scope_consume(
       for b in eval_scope(child, toks, pos, defs) {
         match b {
           Accept(p2, bs) =>
-            for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed, defs) {
+            for
+              r in scope_step(
+                sc,
+                toks,
+                p2,
+                pidx + 1,
+                cat(acc, bs),
+                severed,
+                defs,
+              ) {
               out.push(r)
             }
           Held(pe, bs) => out.push(Held(pe, bs))
@@ -930,7 +1032,16 @@ fn scope_consume(
       for b in eval(other, toks, pos, defs) {
         match b {
           Accept(p2, bs) =>
-            for r in scope_step(sc, toks, p2, pidx + 1, cat(acc, bs), severed, defs) {
+            for
+              r in scope_step(
+                sc,
+                toks,
+                p2,
+                pidx + 1,
+                cat(acc, bs),
+                severed,
+                defs,
+              ) {
               out.push(r)
             }
           Held(pe, bs) => out.push(Held(pe, bs))
@@ -941,6 +1052,7 @@ fn scope_consume(
   }
 }
 
+///|
 /// A bounded repeat tail (DR-043 max 有限): consume 0..budget more heads porously, with the
 /// 取り分選好 preference. `stop` advances the spine (take no more here); `more` consumes one
 /// head (先食い-aware via consume_head) and recurses with budget-1. greedy (default) commits to
@@ -969,8 +1081,17 @@ fn bounded_tail_step(
       match b {
         Accept(p2, bs) =>
           if p2 > pos {
-            for r in bounded_tail_step(
-                sc, head, budget - 1, lazy, toks, p2, pidx, cat(acc, bs), severed,
+            for
+              r in bounded_tail_step(
+                sc,
+                head,
+                budget - 1,
+                lazy,
+                toks,
+                p2,
+                pidx,
+                cat(acc, bs),
+                severed,
                 defs,
               ) {
               out.push(r)
@@ -1000,6 +1121,7 @@ fn bounded_tail_step(
   }
 }
 
+///|
 /// Consume one repeat head on the spine. A value primitive respects 先食い (a greedy
 /// trigger between reps is not raw-eaten as a value); a non-primitive head (a ref to
 /// a template, e.g. `color`) is evaluated plainly (head-internal is not spine-porous,
@@ -1014,20 +1136,20 @@ fn consume_head(
 ) -> Array[Branch] {
   match head {
     StrArg(name) =>
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         [Accept(pos + 1, [mkb(name, VStr(toks[pos]), Cli)])]
       } else {
         []
       }
     SepArg(name, sep) =>
       // separator-splitting repeat head (DR-034 × DR-043): 先食い-aware, splits the token.
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         [Accept(pos + 1, sep_binds(name, toks[pos], sep))]
       } else {
         []
       }
     NumArg(name) =>
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         match parse_number(toks[pos]) {
           Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
           None => [Held(pe_parse(name, toks[pos], pos), [])]
@@ -1039,15 +1161,22 @@ fn consume_head(
   }
 }
 
+///|
 /// The head of a repeat template `Seq([head, Opt(Ref(name))])`. The repeat installer
 /// always registers templates in this shape, so the head is the Seq's first item.
 fn ref_head(defs : Map[String, Node], name : String) -> Node {
   match defs.get(name) {
-    Some(Seq(items)) => if items.length() >= 1 { items[0] } else { Exact("<bad-ref>") }
+    Some(Seq(items)) =>
+      if items.length() >= 1 {
+        items[0]
+      } else {
+        Exact("<bad-ref>")
+      }
     _ => Exact("<bad-ref>")
   }
 }
 
+///|
 /// Whether the repeat named `name` prefers the SHORTER share (lazy). The lazy flag is
 /// stored under a mangled registry key by the repeat installer.
 fn ref_is_lazy(defs : Map[String, Node], name : String) -> Bool {
@@ -1057,6 +1186,7 @@ fn ref_is_lazy(defs : Map[String, Node], name : String) -> Bool {
   }
 }
 
+///|
 /// Whether any branch is a FULL parse (reaches the target length). Used as the split
 /// preference's completion oracle. NB: `target` is the whole-input length, so this is
 /// exact for a root-scope repeat; a repeat nested under a non-final scope is approximate
@@ -1071,6 +1201,7 @@ fn has_full(brs : Array[Branch], target : Int) -> Bool {
   false
 }
 
+///|
 fn cat_branches(a : Array[Branch], b : Array[Branch]) -> Array[Branch] {
   let r : Array[Branch] = []
   for x in a {
@@ -1082,6 +1213,7 @@ fn cat_branches(a : Array[Branch], b : Array[Branch]) -> Array[Branch] {
   r
 }
 
+///|
 /// One repetition of a Many's inner item (subject to 先食い), continuing at the
 /// SAME pidx so the Many remains available (porous reps, DR-041 §4).
 fn scope_consume_rep(
@@ -1096,20 +1228,30 @@ fn scope_consume_rep(
 ) -> Array[Branch] {
   match inner {
     StrArg(name) =>
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         scope_step(
-          sc, toks, pos + 1, pidx, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
-          severed, defs,
+          sc,
+          toks,
+          pos + 1,
+          pidx,
+          cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
+          severed,
+          defs,
         )
       } else {
         []
       }
     NumArg(name) =>
-      if pos < toks.length() && !(suppressed(sc, toks, pos, severed, defs)) {
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         match parse_number(toks[pos]) {
           Some(d) =>
             scope_step(
-              sc, toks, pos + 1, pidx, cat(acc, [mkb(name, VNum(d), Cli)]), severed,
+              sc,
+              toks,
+              pos + 1,
+              pidx,
+              cat(acc, [mkb(name, VNum(d), Cli)]),
+              severed,
               defs,
             )
           None => [Held(pe_parse(name, toks[pos], pos), acc)]
@@ -1123,7 +1265,8 @@ fn scope_consume_rep(
         match b {
           Accept(p2, bs) =>
             if p2 > pos {
-              for r in scope_step(sc, toks, p2, pidx, cat(acc, bs), severed, defs) {
+              for
+                r in scope_step(sc, toks, p2, pidx, cat(acc, bs), severed, defs) {
                 out.push(r)
               }
             }
@@ -1135,6 +1278,7 @@ fn scope_consume_rep(
   }
 }
 
+///|
 /// Drop the `link` nesting hint (set false) — it is resolved before path counting.
 fn strip_link(bs : Array[Binding]) -> Array[Binding] {
   let out : Array[Binding] = []
@@ -1153,6 +1297,7 @@ fn strip_link(bs : Array[Binding]) -> Array[Binding] {
 
 // ── constraint evaluation (delayed predicates, DR-055 / DR-047) ──────────────
 
+///|
 fn scope_of(root : Node) -> Scope? {
   match root {
     ScopeNode(sc) => Some(sc)
@@ -1160,6 +1305,7 @@ fn scope_of(root : Node) -> Scope? {
   }
 }
 
+///|
 /// Whether an element is committed on a path (DR-045): the LAST effect on the cell is not unset
 /// (last-wins, DR-015). So `--foo ... --no-foo` (unset) leaves foo un-committed — it does not count
 /// toward conflicts / exclusive (DR-055 §2 / DR-047).
@@ -1176,6 +1322,7 @@ fn is_committed(bindings : Array[Binding], name : String) -> Bool {
   committed
 }
 
+///|
 /// The committed value of an element (last-wins), or None.
 fn elem_value(bindings : Array[Binding], name : String) -> String? {
   let mut v : String? = None
@@ -1190,6 +1337,7 @@ fn elem_value(bindings : Array[Binding], name : String) -> String? {
   v
 }
 
+///|
 fn has_default(entities : Array[Entity], name : String) -> Bool {
   for e in entities {
     if e.name == name {
@@ -1199,6 +1347,7 @@ fn has_default(entities : Array[Entity], name : String) -> Bool {
   false
 }
 
+///|
 /// Value presence (DR-047 §5): committed on the path OR a default seat exists (default 込み).
 fn value_present(
   name : String,
@@ -1208,10 +1357,12 @@ fn value_present(
   is_committed(bindings, name) || has_default(entities, name)
 }
 
+///|
 fn constraint_err(element : String, message : String, pos : Int) -> ParseError {
   { element, argv_pos: pos, kind: KConstraint, message }
 }
 
+///|
 /// Evaluate the scope's delayed predicates on a complete path's FINAL state (DR-055 / DR-047).
 /// Returns the violations (each a kind:constraint ParseError). An empty result = the path satisfies
 /// all constraints (a valid 完全解決経路); a non-empty result means the path is NOT complete.
@@ -1243,7 +1394,9 @@ fn eval_constraints(
         if active {
           for t in targets {
             if not(value_present(t, bindings, entities)) {
-              out.push(constraint_err(elem, "'\{elem}'=\{v} requires '\{t}'", pos))
+              out.push(
+                constraint_err(elem, "'\{elem}'=\{v} requires '\{t}'", pos),
+              )
             }
           }
         }
@@ -1253,7 +1406,9 @@ fn eval_constraints(
         if is_committed(bindings, elem) {
           for t in targets {
             if is_committed(bindings, t) {
-              out.push(constraint_err(elem, "'\{elem}' conflicts with '\{t}'", pos))
+              out.push(
+                constraint_err(elem, "'\{elem}' conflicts with '\{t}'", pos),
+              )
             }
           }
         }
@@ -1267,7 +1422,11 @@ fn eval_constraints(
         }
         if count > 1 {
           out.push(
-            constraint_err(group, "exclusive group '\{group}' allows at most one", pos),
+            constraint_err(
+              group,
+              "exclusive group '\{group}' allows at most one",
+              pos,
+            ),
           )
         }
       }
@@ -1278,6 +1437,7 @@ fn eval_constraints(
 
 // ── top level (DR-038 path counting) ────────────────────────────────────────
 
+///|
 /// Parse `toks` against `root`, counting DISTINCT complete paths.
 ///
 /// Path identity is the **observable effect sequence** on entities (DR-038): which
@@ -1297,8 +1457,8 @@ fn eval_constraints(
 pub fn parse(
   root : Node,
   toks : Array[String],
-  defs~ : Map[String, Node] = Map::new(),
-  faildef~ : FailDef = WithHeld,
+  defs? : Map[String, Node] = Map::new(),
+  faildef? : FailDef = WithHeld,
 ) -> Outcome {
   let branches = eval(root, toks, 0, defs)
   let full : Array[Array[Binding]] = [] // distinct complete paths → interpretations
@@ -1329,7 +1489,12 @@ pub fn parse(
           // DR-055 / DR-047: a delayed-predicate violation makes this NOT a complete解決経路 — the
           // path is dropped from `full` (so a constraint can 経路選択に参加, DR-047 §6) and its
           // violations join the errors (kind:constraint). A satisfying path is a real interpretation.
-          let viol = eval_constraints(constraints, sc_entities, eff, toks.length())
+          let viol = eval_constraints(
+            constraints,
+            sc_entities,
+            eff,
+            toks.length(),
+          )
           if viol.length() > 0 {
             for v in viol {
               let mut vdup = false
@@ -1399,7 +1564,14 @@ pub fn parse(
   // fault); kind:parse. Token-exhaustion (missing_operand) is already carried as a held Error above,
   // so this fires ONLY for the residual shape.
   let errors = if errors.length() == 0 && max_reach >= 0 {
-    [{ element: "", argv_pos: max_reach, kind: KParse, message: "unexpected token" }]
+    [
+      {
+        element: "",
+        argv_pos: max_reach,
+        kind: KParse,
+        message: "unexpected token",
+      },
+    ]
   } else {
     errors
   }
@@ -1424,6 +1596,7 @@ pub fn parse(
   }
 }
 
+///|
 /// The help entry's spelling (DR-053 §4 help_entry material): the exact trigger of the greedy
 /// satellite that carries a failure-action FailMark (help). None if the definition has no help entry.
 fn find_help_entry(root : Node) -> String? {
@@ -1436,10 +1609,11 @@ fn find_help_entry(root : Node) -> String? {
             let mut has_fail = false
             for it in items {
               match it {
-                Exact(s) => match trig {
-                  None => trig = Some(s)
-                  _ => ()
-                }
+                Exact(s) =>
+                  match trig {
+                    None => trig = Some(s)
+                    _ => ()
+                  }
                 FailMark(_) => has_fail = true
                 _ => ()
               }
@@ -1460,6 +1634,7 @@ fn find_help_entry(root : Node) -> String? {
   }
 }
 
+///|
 /// The exact trigger literals available in the scope (DR-053 §4 tried_triggers material). PoC
 /// approximation: the whole greedy face's exact triggers, not filtered to the failure position
 /// (近接マッチ計算は DX 層の関心 — 素材のみ、AtomicAST にフックは持たない, F-016).
@@ -1486,6 +1661,7 @@ fn tried_triggers_of(root : Node) -> Array[String] {
   out
 }
 
+///|
 /// The candidate-path set that counts a failure-action as "selected" (DR-048 §5, undetermined).
 /// The three realize the plausible readings of "候補経路のいずれかで selected":
 pub(all) enum FailDef {
@@ -1494,6 +1670,7 @@ pub(all) enum FailDef {
   DeepestOnly // only the maximal-argv-consumption candidate path(s)
 } derive(Eq, Show)
 
+///|
 /// Push every failure-action marker in `bs` as (action name, argv position) into `out`.
 fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit {
   for b in bs {
@@ -1510,6 +1687,7 @@ fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit {
   }
 }
 
+///|
 /// The action with the minimal argv position (先勝ち, DR-048 §4). Ties keep first-seen.
 fn argmin_action(actions : Array[(String, Int)]) -> String {
   let mut best = actions[0]

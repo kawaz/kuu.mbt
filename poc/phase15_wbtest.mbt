@@ -6,6 +6,7 @@
 
 // ── usage (a): from_entries() over an entries array [[k, v], ...] ───────────────
 
+///|
 test "DR-044 from_entries(): a 2-element entries array becomes an object" {
   // Usage (a): with no config, each element is a 2-element seq [k, v] (unnamed), used directly
   // as an entry. `[[a,1],[b,2]]` => {a:1, b:2}. This is the entries-array form.
@@ -18,6 +19,7 @@ test "DR-044 from_entries(): a 2-element entries array becomes an object" {
 
 // ── usage (b): from_entries({key, value}) over named-field objects ──────────────
 
+///|
 test "DR-044 from_entries({key,value}): two named fields become the key and value" {
   // Usage (b): each element is an object; the config names which field is the key and which is
   // the value. `[{k:x, v:10}, {k:y, v:20}]` with {key:k, value:v} => {x:10, y:20}. The other
@@ -26,11 +28,15 @@ test "DR-044 from_entries({key,value}): two named fields become the key and valu
     RObj([("k", RScalar(VStr("x"))), ("v", RScalar(VNum(10)))]),
     RObj([("k", RScalar(VStr("y"))), ("v", RScalar(VNum(20)))]),
   ])
-  inspect(render_rval(from_entries(data, KeyValue("k", "v"))), content="{x:10,y:20}")
+  inspect(
+    render_rval(from_entries(data, KeyValue("k", "v"))),
+    content="{x:10,y:20}",
+  )
 }
 
 // ── usage (c): from_entries({key}) promotes the key, the rest is the value ──────
 
+///|
 test "DR-044 from_entries({key}): the key field is promoted, the REST of the object is the value" {
   // Usage (c): each element is an object; the one named field is promoted to the map key and
   // REMOVED, and the whole remaining object becomes the value. `[{path:/u1, w:1}, {path:/u2, w:2}]`
@@ -47,6 +53,7 @@ test "DR-044 from_entries({key}): the key field is promoted, the REST of the obj
 
 // ── per-level independence: each nested stage chooses array or map on its own key ──
 
+///|
 test "DR-044 §2: nested stages choose array/map independently — the key present at a level selects it" {
   // A 2-level structure: the OUTER elements carry `path`, the INNER `conns` elements carry `id`
   // (not `path`). Applying from_entries by "path" maps the OUTER level and leaves conns an array

@@ -8,6 +8,7 @@
 // now comes from add-if-absent (not from consuming the vocab), and completeness
 // is a "special vocab not owned by any installer in the chain" check.
 
+///|
 /// UsefulAST element. Attribute arrays are READ-ONLY to installers (invariant ①':
 /// 宣言層は読み取り専用). The declaration layer is never emptied — it stays inert so
 /// help / diagnose / re-serialization keep the original declaration, and so a later
@@ -42,6 +43,7 @@ pub(all) struct ElemDef {
   default_value : Value?
 } derive(Eq, Show)
 
+///|
 /// An alias declaration (DR-057): the参照ファミリー third member (ref / link / **alias**). Written as an
 /// INDEPENDENT element `{alias: "port", short: "n"}` — the entry form is decided by the alias's OWN
 /// declaration, not a canonical-side list (§1, no入口軸 ambiguity). `target` names the canonical cell/
@@ -59,6 +61,7 @@ pub(all) struct AliasDef {
   deprecated : Bool
 } derive(Eq, Show)
 
+///|
 /// A variant entry (DR-011 variant DSL / DR-045 effect descriptors). Declares a distinct
 /// trigger that applies an EFFECT to this element's cell — e.g. `--no-ssl` unsetting `ssl`.
 /// The variant DSL surface (`long: ["no:set:false"]`) is the long installer's internal
@@ -70,6 +73,7 @@ pub(all) struct Variant {
   operand : Value? // for a `set` variant (e.g. `--compress=gzip`); None for default/unset/empty
 } derive(Eq, Show)
 
+///|
 /// A repeat closure (DR-043). `min` is the required rep count (mandatory-head unroll).
 /// `max` is the unroll-段数 upper bound: `None` = unbounded (a recursive Ref tail), `Some(M)`
 /// = bounded (M-min BoundedTail heads, NO Ref recursion — LOWERING §B.8). `optional: true`
@@ -81,6 +85,7 @@ pub(all) struct RepeatSpec {
   lazy : Bool
 } derive(Eq, Show)
 
+///|
 /// A subcommand: a name + its own scope Definition (a fresh backbone, DR-041 §4). `export_key`
 /// gives the command's result-scope key (DR-052): null = the scope key is dropped and children
 /// promote to the parent scope; the command's structural role (a new backbone) is unchanged.
@@ -90,6 +95,7 @@ pub(all) struct CommandDef {
   export_key : ExportKey
 } derive(Eq, Show)
 
+///|
 /// UsefulAST for one command scope: entry-bearing options + positional face +
 /// subcommands. `commands` is the DR-018 sugar; the command installer expands each
 /// into a greedy exact trigger whose subtree is a NEW backbone (DR-041 §4).
@@ -100,6 +106,7 @@ pub(all) struct Definition {
   aliases : Array[AliasDef] // DR-057: alias declarations, desugared into option entry-copies / command defs
 } derive(Eq, Show)
 
+///|
 /// The canonical installers (DR-042 §canonical installer セット + DR-043 repeat/multiple).
 pub(all) enum Installer {
   LongInst
@@ -117,6 +124,7 @@ pub(all) enum Installer {
   InheritableInst
 } derive(Eq, Show)
 
+///|
 fn owned_vocab(i : Installer) -> String {
   match i {
     LongInst => "long"
@@ -135,6 +143,7 @@ fn owned_vocab(i : Installer) -> String {
   }
 }
 
+///|
 /// Mutable build accumulator for ONE scope: installers only ADD (add-if-absent) to
 /// greedy / declare seats of an entity in place / (dd only) contribute a greedy
 /// satellite (invariant ②③). The build layer grows monotonically; the fixpoint
@@ -146,6 +155,7 @@ priv struct Build {
   constraints : Array[Constraint] // constraint installer declares delayed predicates here (DR-055)
 }
 
+///|
 /// A node of the scope-builder tree, mirroring the Definition tree. `decl` is the
 /// declaration layer (read-only vocab, but its `options` array GROWS when the global
 /// installer copies a global option in — invariant ②). `build` is this scope's
@@ -156,11 +166,13 @@ priv struct SB {
   children : Array[SBChild]
 }
 
+///|
 priv struct SBChild {
   name : String
   body : SB
 }
 
+///|
 fn value_prim(ty : Ty, name : String) -> Node {
   match ty {
     // int is number-like at the CLI in this PoC; the integer constraint is enforced at config time
@@ -170,6 +182,7 @@ fn value_prim(ty : Ty, name : String) -> Node {
   }
 }
 
+///|
 fn copy_strs(a : Array[String]) -> Array[String] {
   let r : Array[String] = []
   for x in a {
@@ -178,6 +191,7 @@ fn copy_strs(a : Array[String]) -> Array[String] {
   r
 }
 
+///|
 /// The effective long spellings of an element. Post-normalize this is a plain spelling list
 /// (the `:set` descriptor has been expanded to kebab(name) by normalize_surface); `[]` = no
 /// main entry (DR-071 — no absent/empty presence distinction).
@@ -185,6 +199,7 @@ fn long_of(e : ElemDef) -> Array[String] {
   e.long
 }
 
+///|
 fn copy_chars(a : Array[Char]) -> Array[Char] {
   let r : Array[Char] = []
   for x in a {
@@ -193,6 +208,7 @@ fn copy_chars(a : Array[Char]) -> Array[Char] {
   r
 }
 
+///|
 fn copy_variants(a : Array[Variant]) -> Array[Variant] {
   let r : Array[Variant] = []
   for x in a {
@@ -201,6 +217,7 @@ fn copy_variants(a : Array[Variant]) -> Array[Variant] {
   r
 }
 
+///|
 fn clone_elem(e : ElemDef) -> ElemDef {
   {
     name: e.name,
@@ -232,6 +249,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
   }
 }
 
+///|
 /// snake_case → kebab-case (DR-022): the AST key is snake_case, the CLI long spelling is kebab-case.
 /// Only `_` → `-`; other characters pass through (test names are ASCII).
 fn kebab(name : String) -> String {
@@ -246,6 +264,7 @@ fn kebab(name : String) -> String {
   buf.to_string()
 }
 
+///|
 /// Surface normalization (LOWERING §A / §C.4): a純構文 pre-pass applied before the static checks and
 /// the installer fixpoint. Two rules:
 ///   Fix 2 (LOWERING §B.1 / DR-071): the `:set` main-entry descriptor in an option's `long` array is
@@ -269,6 +288,7 @@ fn normalize_surface(def : Definition) -> Unit {
   }
 }
 
+///|
 fn normalize_option(e : ElemDef) -> ElemDef {
   if e.is_dd {
     normalize_dd_name(e)
@@ -284,6 +304,7 @@ fn normalize_option(e : ElemDef) -> ElemDef {
   }
 }
 
+///|
 fn normalize_dd_name(e : ElemDef) -> ElemDef {
   if e.is_dd && e.name == "" {
     { ..e, name: "--" } // DR-064 §5: omitted dd name defaults to the "--" trigger spelling
@@ -292,6 +313,7 @@ fn normalize_dd_name(e : ElemDef) -> ElemDef {
   }
 }
 
+///|
 fn clone_def(d : Definition) -> Definition {
   let os : Array[ElemDef] = []
   for e in d.options {
@@ -312,6 +334,7 @@ fn clone_def(d : Definition) -> Definition {
   { options: os, positionals: ps, commands: cs, aliases: als }
 }
 
+///|
 /// Build the result-key map (DR-052): every element / command name → its export_key. Used by the
 /// post-parse result remap (apply_export_keys). export_key is a RESULT concern only, so it lives
 /// outside the AtomicAST — the map is read straight off the Definition, not the built Scope.
@@ -325,6 +348,7 @@ pub fn build_export_map(def : Definition) -> Map[String, ExportKey] {
   m
 }
 
+///|
 fn collect_export(def : Definition, m : Map[String, ExportKey]) -> Unit {
   for e in def.options {
     m.set(e.name, e.export_key)
@@ -338,6 +362,7 @@ fn collect_export(def : Definition, m : Map[String, ExportKey]) -> Unit {
   }
 }
 
+///|
 /// The lowered head node for an element: a value primitive, or a `Ref` when the
 /// element points at a shared template (`ref_target`, DR-020).
 fn elem_head(e : ElemDef) -> Node {
@@ -352,27 +377,38 @@ fn elem_head(e : ElemDef) -> Node {
   }
 }
 
+///|
 /// The EFFECTIVE repeat spec of an element (DR-043). `optional: true` REDUCES to
 /// `repeat: {min:0, max:1}` — it is sugar, not an independent concept — so an explicit
 /// repeat wins, else optional becomes the 0/1 closure, else None (not a repeat).
 fn elem_repeat(e : ElemDef) -> RepeatSpec? {
   match e.repeat {
     Some(s) => Some(s)
-    None => if e.optional { Some({ min: 0, max: Some(1), lazy: false }) } else { None }
+    None =>
+      if e.optional {
+        Some({ min: 0, max: Some(1), lazy: false })
+      } else {
+        None
+      }
   }
 }
 
+///|
 /// `Opt(X)` = `Or([X, Seq([])])` — the empty Seq matches zero tokens.
 fn opt_node(x : Node) -> Node {
   Or([x, Seq([])])
 }
 
+///|
 /// Lower the positional face. A repeat element (DR-043) is lowered to a ref-recursion:
 /// the template `name = Seq([head, Opt(Ref(name))])` is registered, and the spine gets
 /// `min-1` mandatory heads followed by `Ref(name)` (>= 1 porous). A ref element without
 /// repeat lowers to a plain `Ref(target)`; a value positional to its primitive. dd
 /// positionals are NOT on the spine (the dd installer adds a greedy DdSat).
-fn lower_positional(def : Definition, registry : Map[String, Node]) -> Array[Node] {
+fn lower_positional(
+  def : Definition,
+  registry : Map[String, Node],
+) -> Array[Node] {
   let out : Array[Node] = []
   for e in def.positionals {
     if not_dd(e) {
@@ -419,6 +455,7 @@ fn lower_positional(def : Definition, registry : Map[String, Node]) -> Array[Nod
   out
 }
 
+///|
 /// Build the scope-builder tree from a (cloned) Definition tree. The positional face
 /// is lowered once here (it does not grow — global copies go to greedy); the entities
 /// and greedy layers are filled by the fixpoint passes. `registry` collects the
@@ -429,9 +466,14 @@ fn init_sb(def : Definition, registry : Map[String, Node]) -> SB {
   for c in def.commands {
     children.push({ name: c.name, body: init_sb(c.body, registry) })
   }
-  { decl: def, build: { greedy: [], entities: [], positional, constraints: [] }, children }
+  {
+    decl: def,
+    build: { greedy: [], entities: [], positional, constraints: [] },
+    children,
+  }
 }
 
+///|
 /// Core lowering (not an installer — deterministic, order-independent): ensure one
 /// entity (value cell, DR-030) per option and per non-dd positional, keyed by name
 /// (add-if-absent). Runs every pass so global-copied options gain an entity too.
@@ -454,6 +496,7 @@ fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
   }
 }
 
+///|
 fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   for ent in build.entities {
     if ent.name == e.name {
@@ -502,12 +545,14 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   })
 }
 
+///|
 fn not_dd(e : ElemDef) -> Bool {
   !e.is_dd
 }
 
 // ── the four installers ──────────────────────────────────────────────────────
 
+///|
 /// long: read `long`, add a greedy exact satellite per name (space form) and, for
 /// value options, one eq-split matcher (`--k=v`). All contributions are add-if-absent
 /// (invariant ①' non-deletion: the vocab is read, never removed). Satellites link to
@@ -527,7 +572,11 @@ fn inst_long(def : Definition, build : Build) -> Unit {
             maybe_root(
               e.is_link,
               if e.fail_action {
-                Seq([Exact(trigger), Bind(e.name, VBool(true)), FailMark(e.name)])
+                Seq([
+                  Exact(trigger),
+                  Bind(e.name, VBool(true)),
+                  FailMark(e.name),
+                ])
               } else {
                 Seq([Exact(trigger), Bind(e.name, VBool(true))])
               },
@@ -536,7 +585,10 @@ fn inst_long(def : Definition, build : Build) -> Unit {
         _ => {
           add_greedy(
             build,
-            maybe_root(e.is_link, Seq([Exact(trigger), value_prim(e.ty, e.name)])),
+            maybe_root(
+              e.is_link,
+              Seq([Exact(trigger), value_prim(e.ty, e.name)]),
+            ),
           )
           eq_entries.push({ key: l, name: e.name, kind: e.ty })
         }
@@ -568,6 +620,7 @@ fn inst_long(def : Definition, build : Build) -> Unit {
   }
 }
 
+///|
 /// Wrap a satellite in `Rooted` iff the element is a global link copy, so its bindings
 /// target the root entity (DR-042 link-sync).
 fn maybe_root(is_link : Bool, node : Node) -> Node {
@@ -578,6 +631,7 @@ fn maybe_root(is_link : Bool, node : Node) -> Node {
   }
 }
 
+///|
 /// short: read `short`, add ONE cluster/value-attach matcher over all entries
 /// (add-if-absent). In this PoC the single-char case (`-v`, `-p 8080`) is subsumed
 /// by the matcher, so short adds no separate exact satellite (a matcher-seat
@@ -595,6 +649,7 @@ fn inst_short(def : Definition, build : Build) -> Unit {
   }
 }
 
+///|
 /// env: read `env`, declare a lookup at the entity's env SEAT (invariant ④). It
 /// does NOT wrap default_fn; the ladder order is engine-owned (DR-031). Declaring
 /// the same seat again is a no-op (idempotent in-place set).
@@ -611,6 +666,7 @@ fn inst_env(def : Definition, build : Build) -> Unit {
   }
 }
 
+///|
 fn seat_env(build : Build, name : String, key : String) -> Unit {
   for ent in build.entities {
     if ent.name == name {
@@ -619,6 +675,7 @@ fn seat_env(build : Build, name : String, key : String) -> Unit {
   }
 }
 
+///|
 /// dd: read `type:"dd"` and add a greedy exact satellite (DR-041 rev). The
 /// satellite (DdSat) is a plain exact matcher on `--` that fires anywhere on the
 /// spine; the evaluator severs the rest of the walk when it fires (internal-一体).
@@ -644,6 +701,7 @@ fn inst_dd(def : Definition, build : Build) -> Unit {
   }
 }
 
+///|
 /// add-if-absent (invariant ①', non-deletion protocol): a contribution is added
 /// only if no structurally-equal entry exists. Makes re-application a no-op and
 /// keeps the fixpoint iteration convergent.
@@ -656,6 +714,7 @@ fn add_greedy(build : Build, g : Node) -> Unit {
   build.greedy.push(g)
 }
 
+///|
 /// inherit: read `inherit`, declare an inherit SEAT on the entity (invariant ④,
 /// DR-031 ladder cli>env>inherit>default). The seat's lookup — "nearest ancestor's
 /// same-named entity value" — is resolved at runtime (resolve_command_tree). Like
@@ -673,6 +732,7 @@ fn inst_inherit(def : Definition, build : Build) -> Unit {
   }
 }
 
+///|
 fn seat_inherit(build : Build, name : String) -> Unit {
   for ent in build.entities {
     if ent.name == name {
@@ -681,6 +741,7 @@ fn seat_inherit(build : Build, name : String) -> Unit {
   }
 }
 
+///|
 /// global: read `global`, copy the option's declaration into descendant command
 /// scopes (invariant ②: an addition to the DECLARATION layer, later expanded by
 /// long/short in the child). Shadowing (DR-032/033, minimal scope): a scope that
@@ -697,6 +758,7 @@ fn inst_global(sb : SB) -> Unit {
   }
 }
 
+///|
 fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
   for existing in child.decl.options {
     if triggers_overlap(existing, opt) {
@@ -736,6 +798,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
   })
 }
 
+///|
 /// Two options collide on a trigger if they share any long or short form. Shadowing
 /// is by TRIGGER (DR: 同名トリガ), so a child declaring `--v` blocks a global `--v`
 /// copy even under a different name.
@@ -759,6 +822,7 @@ fn triggers_overlap(a : ElemDef, b : ElemDef) -> Bool {
 
 // ── driver + completeness ────────────────────────────────────────────────────
 
+///|
 /// Apply one installer to one scope node. long/short/env/dd/inherit contribute to
 /// this node's build; global copies into descendants' declaration layers; command
 /// is wired at materialization (its expansion is deterministic — greedy exact
@@ -782,6 +846,7 @@ fn apply_node(inst : Installer, sb : SB) -> Unit {
   }
 }
 
+///|
 /// inheritable installer (DR-059): the REVERSE of global. global copies a parent option DOWN into
 /// descendant scopes; inheritable copies a descendant's inheritable element UP into every ancestor
 /// scope, spelled `<定義スコープ名>-<name>` (the same prefix at every ancestor depth, §1). The copy is
@@ -819,6 +884,7 @@ fn inst_inheritable(sb : SB) -> Unit {
   }
 }
 
+///|
 /// Collect every inheritable element in the descendant scopes, tagged with the name of the scope that
 /// DIRECTLY declares it (the 定義スコープ名, = the prefix, DR-059 §1). Recurses the whole subtree.
 fn gather_inheritable(
@@ -835,6 +901,7 @@ fn gather_inheritable(
   }
 }
 
+///|
 /// Add a prefixed write-entry copy into an ancestor scope's declaration (add-if-absent, shadow-aware).
 /// Shadowing (§3, symmetric to global): if the ancestor already declares an option carrying the same
 /// trigger literal, the ancestor's own wins and no copy is added.
@@ -874,6 +941,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
   })
 }
 
+///|
 /// constraint installer (DR-055 / DR-042 席宣言型): collect requires / conflicts_with /
 /// exclusive_group / value_requires into the scope's delayed predicates. No structural satellite —
 /// the predicates are evaluated on a complete path's final state (DR-047). add-if-absent (idempotent).
@@ -916,6 +984,7 @@ fn inst_constraint(def : Definition, build : Build) -> Unit {
   }
 }
 
+///|
 fn str_in(xs : Array[String], v : String) -> Bool {
   for x in xs {
     if x == v {
@@ -927,6 +996,7 @@ fn str_in(xs : Array[String], v : String) -> Bool {
 
 // ── alias desugaring (DR-057) ────────────────────────────────────────────────
 
+///|
 /// Whether `s` contains `sub` as a substring (used to detect a name-derived variant trigger:
 /// a variant is name-derived iff its trigger contains the canonical name, DR-057 §3).
 fn str_has_sub(s : String, sub : String) -> Bool {
@@ -957,6 +1027,7 @@ fn str_has_sub(s : String, sub : String) -> Bool {
   false
 }
 
+///|
 /// Replace the FIRST occurrence of `from` in `s` with `to`. Used to re-derive a name-derived
 /// variant trigger under the alias name (DR-057 §3: "--no-ssl" with ssl→tls becomes "--no-tls").
 fn str_replace_first(s : String, from : String, to : String) -> String {
@@ -988,6 +1059,7 @@ fn str_replace_first(s : String, from : String, to : String) -> String {
   s
 }
 
+///|
 /// Find a canonical option/positional element by name.
 fn find_elem(def : Definition, name : String) -> ElemDef? {
   for e in def.options {
@@ -1003,6 +1075,7 @@ fn find_elem(def : Definition, name : String) -> ElemDef? {
   None
 }
 
+///|
 fn find_command(def : Definition, name : String) -> CommandDef? {
   for c in def.commands {
     if c.name == name {
@@ -1012,6 +1085,7 @@ fn find_command(def : Definition, name : String) -> CommandDef? {
   None
 }
 
+///|
 /// An empty ElemDef body: an alias entry-copy carries ONLY entry spellings + the canonical name;
 /// 値源 (env / default) ・結果キー・制約は実体側のまま (DR-057 §3), so none of those fields are set.
 fn alias_entry(
@@ -1052,6 +1126,7 @@ fn alias_entry(
   }
 }
 
+///|
 /// Desugar alias declarations (DR-057) into option entry-copies / command defs. Runs once as a
 /// deterministic pre-pass (after the completeness check confirmed AliasInst owns "alias"), before
 /// init_sb builds the scope tree. Each entry-copy keys by the CANONICAL name (so its satellites bind
@@ -1096,7 +1171,14 @@ fn desugar_aliases(def : Definition) -> Unit {
             }
         }
         def.options.push(
-          alias_entry(canon.name, canon.ty, long, variants, copy_chars(a.short), a.deprecated),
+          alias_entry(
+            canon.name,
+            canon.ty,
+            long,
+            variants,
+            copy_chars(a.short),
+            a.deprecated,
+          ),
         )
       }
       None =>
@@ -1117,6 +1199,7 @@ fn desugar_aliases(def : Definition) -> Unit {
   }
 }
 
+///|
 fn add_constraint(build : Build, c : Constraint) -> Unit {
   for existing in build.constraints {
     if existing == c {
@@ -1126,6 +1209,7 @@ fn add_constraint(build : Build, c : Constraint) -> Unit {
   build.constraints.push(c)
 }
 
+///|
 /// One fixpoint pass over the whole tree: ensure entities (core), apply every
 /// installer to this node, then recurse into subcommand scopes. Global copies into
 /// children before the recursion, so a child sees the grown declaration in the same
@@ -1140,6 +1224,7 @@ fn tree_pass(order : Array[Installer], sb : SB, has_cf : Bool) -> Unit {
   }
 }
 
+///|
 fn def_err(
   element : String,
   kind : DefErrKind,
@@ -1149,6 +1234,7 @@ fn def_err(
   { element, kind, message, hint }
 }
 
+///|
 /// Invariant ③ (DR-054): two installers owning the same vocab. Collects ALL intersections.
 fn collect_vocab_intersection(
   order : Array[Installer],
@@ -1173,6 +1259,7 @@ fn collect_vocab_intersection(
   }
 }
 
+///|
 /// Invariant ①' completeness (DR-054): every special vocab used by the tree but owned by no
 /// installer in the chain is an Error. Collects ALL (per element + commands).
 fn collect_unknown_vocab(
@@ -1187,6 +1274,7 @@ fn collect_unknown_vocab(
   scan_unknown(def, owned, out)
 }
 
+///|
 fn scan_unknown(
   def : Definition,
   owned : Array[String],
@@ -1225,6 +1313,7 @@ fn scan_unknown(
   }
 }
 
+///|
 fn push_elem_unknown(
   e : ElemDef,
   owned : Array[String],
@@ -1244,6 +1333,7 @@ fn push_elem_unknown(
   }
 }
 
+///|
 fn vocab_owned(owned : Array[String], v : String) -> Bool {
   for o in owned {
     if o == v {
@@ -1253,6 +1343,7 @@ fn vocab_owned(owned : Array[String], v : String) -> Bool {
   false
 }
 
+///|
 fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   if long_of(e).length() > 0 && !vocab_owned(owned, "long") {
     return Some("long:" + long_of(e)[0])
@@ -1293,7 +1384,10 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
     return Some("config:config_file")
   }
   match e.config_key {
-    Some(_) => if !vocab_owned(owned, "config") { return Some("config:config_key") }
+    Some(_) =>
+      if !vocab_owned(owned, "config") {
+        return Some("config:config_key")
+      }
     None => ()
   }
   // constraint vocab (DR-055): requires / conflicts_with / exclusive_group / value_requires.
@@ -1312,6 +1406,7 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   None
 }
 
+///|
 /// Zero-progress static guard (DR-043): a repeat head must consume >= 1 token, else
 /// the recursive unfold loops forever. For a ref head the check reduces to "the ref
 /// target consumes >= 1" (a cycle through refs without a consuming node is caught).
@@ -1362,11 +1457,17 @@ fn head_progresses(
       }
       alts.length() > 0
     }
-    Seq(items) => if items.length() >= 1 { head_progresses(items[0], registry, visiting) } else { false }
+    Seq(items) =>
+      if items.length() >= 1 {
+        head_progresses(items[0], registry, visiting)
+      } else {
+        false
+      }
     Many(_) | Scoped(_, _) | ScopeNode(_) => true
   }
 }
 
+///|
 /// The ref in HEAD position of a node (the first thing consumed), if any. A ref AFTER a consuming
 /// head (like a repeat's cons tail `Seq([head, Opt(Ref(self))])`) is NOT in head position, so a
 /// legitimate repeat self-ref returns None here — that is the distinction from a circular ref.
@@ -1388,9 +1489,14 @@ fn head_ref_of(node : Node) -> String? {
   }
 }
 
+///|
 /// Whether following head-position refs from `name` loops back (a circular ref, infinite structural
 /// expansion, DR-054). A repeat's self-ref does NOT loop here (its head is a consuming node, not a ref).
-fn head_cycles(name : String, registry : Map[String, Node], visiting : Array[String]) -> Bool {
+fn head_cycles(
+  name : String,
+  registry : Map[String, Node],
+  visiting : Array[String],
+) -> Bool {
   for v in visiting {
     if v == name {
       return true
@@ -1411,6 +1517,7 @@ fn head_cycles(name : String, registry : Map[String, Node], visiting : Array[Str
   }
 }
 
+///|
 /// Whether a node's head-position ref reaches a cycle (used to keep a circular ref from also being
 /// reported as zero-progress).
 fn head_node_cycles(node : Node, registry : Map[String, Node]) -> Bool {
@@ -1420,6 +1527,7 @@ fn head_node_cycles(node : Node, registry : Map[String, Node]) -> Bool {
   }
 }
 
+///|
 /// Zero-progress guard (DR-043 / DR-054): a repeat head must consume >= 1 token. Collects ALL such
 /// repeats — but a NON-progress that is actually a ref CYCLE is a circular ref (reported by
 /// collect_circular_ref), not zero-progress, so it is excluded here to keep the kinds distinct.
@@ -1432,7 +1540,8 @@ fn collect_zero_progress(
     match elem_repeat(e) {
       Some(_) => {
         let head = elem_head(e)
-        if !head_progresses(head, registry, []) && not(head_node_cycles(head, registry)) {
+        if !head_progresses(head, registry, []) &&
+          not(head_node_cycles(head, registry)) {
           out.push(
             def_err(
               e.name,
@@ -1451,6 +1560,7 @@ fn collect_zero_progress(
   }
 }
 
+///|
 /// Circular ref (DR-054): a registry template whose head-position ref chain loops → infinite
 /// structural expansion. Repeat-generated self-refs pass (their head is a consuming node). Collects all.
 fn collect_circular_ref(
@@ -1475,6 +1585,7 @@ fn collect_circular_ref(
   }
 }
 
+///|
 /// Absent ref (DR-054 / DR-032): an element ref_target resolvable nowhere (registry has it after
 /// init_sb's repeat lowering + any pre-registered templates). Collects all.
 fn collect_absent_ref(
@@ -1493,6 +1604,7 @@ fn collect_absent_ref(
   }
 }
 
+///|
 fn check_elem_absent_ref(
   e : ElemDef,
   registry : Map[String, Node],
@@ -1516,6 +1628,7 @@ fn check_elem_absent_ref(
   }
 }
 
+///|
 /// Invalid value range (DR-054 / DR-052): repeat min > max. Collects all. (export_key bool is not
 /// representable in the PoC's ExportKey enum, so there is nothing to check for it — see journal.)
 fn collect_invalid_range(def : Definition, out : Array[DefError]) -> Unit {
@@ -1544,6 +1657,7 @@ fn collect_invalid_range(def : Definition, out : Array[DefError]) -> Unit {
   }
 }
 
+///|
 /// Whether the definition tree has any `type:"config_file"` element (DR-050): if so, a config
 /// object is available and the 同型 config seat is declared on every value cell.
 fn has_config_file(def : Definition) -> Bool {
@@ -1565,6 +1679,7 @@ fn has_config_file(def : Definition) -> Bool {
   false
 }
 
+///|
 /// config cycle (DR-050 §5 / DR-054): a config_file element cannot carry a config_key (it would take
 /// its own path from the config it locates). Collects all.
 fn collect_config_cycle(def : Definition, out : Array[DefError]) -> Unit {
@@ -1597,6 +1712,7 @@ fn collect_config_cycle(def : Definition, out : Array[DefError]) -> Unit {
   }
 }
 
+///|
 /// A stable signature of one scope's build layer, for fixpoint detection. Node /
 /// Entity both derive Show, so structural growth is visible as a string change.
 fn build_sig(b : Build) -> String {
@@ -1615,6 +1731,7 @@ fn build_sig(b : Build) -> String {
   buf.to_string()
 }
 
+///|
 /// Signature of the whole scope-builder tree: each node's build plus its declared
 /// option names (so global growing a child's declaration is detected) plus the
 /// recursive child signatures.
@@ -1633,6 +1750,7 @@ fn tree_sig(sb : SB) -> String {
   buf.to_string()
 }
 
+///|
 /// Materialize the scope-builder tree into a Scope tree. Each subcommand becomes a
 /// greedy `CmdSat(name, child)`: a greedy-face resident whose exact trigger 先食い
 /// protects (the DR-018 "commands が先" priority), whose child is a NEW backbone
@@ -1654,6 +1772,7 @@ fn materialize(sb : SB) -> Scope {
   }
 }
 
+///|
 /// UsefulAST -> AtomicAST as an installer chain (DR-042). `order` is the applied
 /// installer sequence; the 5 invariants make the result order-independent.
 ///
@@ -1670,7 +1789,7 @@ fn materialize(sb : SB) -> Scope {
 pub fn parse_definition(
   def0 : Definition,
   order : Array[Installer],
-  registry~ : Map[String, Node] = Map::new(),
+  registry? : Map[String, Node] = Map::new(),
 ) -> Result[Scope, Array[DefError]] {
   let def = clone_def(def0)
   // Surface normalization (LOWERING §A / §C.4 純構文正規化): the `:set` main-entry descriptor → name-derived
@@ -1724,6 +1843,7 @@ pub fn parse_definition(
 
 // ── layer 3: value-source ladder resolution (DR-031, invariant ④) ─────────────
 
+///|
 fn env_value(ty : Ty, s : String) -> Value {
   match ty {
     TNum | TInt =>
@@ -1736,6 +1856,7 @@ fn env_value(ty : Ty, s : String) -> Value {
   }
 }
 
+///|
 /// Navigate a config object by an absolute path (DR-050 §3). Each segment indexes into a CObj;
 /// a missing key or a non-object mid-path yields None (this cell is not supplied by config).
 fn config_lookup(obj : ConfigVal, path : Array[String]) -> ConfigVal? {
@@ -1760,6 +1881,7 @@ fn config_lookup(obj : ConfigVal, path : Array[String]) -> ConfigVal? {
   Some(cur)
 }
 
+///|
 /// Resolve one entity down the fixed ladder: cli > env > config > inherit > default (DR-031 /
 /// DR-050 #3). Returns the effect bindings (0/1, or many when a config array fills a `multiple`
 /// cell) or an Err (a config type mismatch is a DR-037 Error). `config_obj` is the read config
@@ -1824,7 +1946,9 @@ fn resolve_entity(
                   }
                   return Ok(bs)
                 } else {
-                  return Err("config array for a scalar element (structural mismatch)")
+                  return Err(
+                    "config array for a scalar element (structural mismatch)",
+                  )
                 }
               _ =>
                 match config_to_value(cv, e.ty) {
@@ -1851,24 +1975,29 @@ fn resolve_entity(
   }
 }
 
+///|
 /// Resolve every entity in a built scope against CLI bindings + an env map (no config seat). For
 /// the env / inherit tests; config-less, so it never errors.
 pub fn resolve_scope(
   sc : Scope,
   cli : Array[Binding],
   env_map : Map[String, String],
-  inherited~ : Map[String, Value] = Map::new(),
+  inherited? : Map[String, Value] = Map::new(),
 ) -> Array[Binding] {
   let out : Array[Binding] = []
   for e in sc.entities {
     match resolve_entity(e, cli, env_map, None, [], inherited) {
-      Ok(bs) => for b in bs { out.push(b) }
+      Ok(bs) =>
+        for b in bs {
+          out.push(b)
+        }
       Err(_) => () // config-less resolution cannot error
     }
   }
   out
 }
 
+///|
 fn value_str(v : Value) -> String {
   match v {
     VStr(s) => s
@@ -1884,6 +2013,7 @@ fn value_str(v : Value) -> String {
   }
 }
 
+///|
 /// Resolve a scope WITH a config-file value source (DR-050 §5 dependency order):
 ///   1. resolve the config_file element's path (cli > env > default; it has NO config seat, 循環禁止)
 ///   2. read the provider with that path → a config object (or None). A committed path (cli/env)
@@ -1898,8 +2028,8 @@ pub fn resolve_scope_config(
   cli : Array[Binding],
   env_map : Map[String, String],
   provider : (String) -> ConfigVal?,
-  path~ : Array[String] = [],
-  inherited~ : Map[String, Value] = Map::new(),
+  path? : Array[String] = [],
+  inherited? : Map[String, Value] = Map::new(),
 ) -> Result[Array[Binding], String] {
   // Phase 1: resolve the config_file element's path (cli > env > default), track committed-ness.
   let mut cf_path : String? = None
@@ -1972,7 +2102,10 @@ pub fn resolve_scope_config(
         }
       }
       match resolve_entity(e, cli, env_map, config_obj, cpath, inherited) {
-        Ok(bs) => for b in bs { out.push(b) }
+        Ok(bs) =>
+          for b in bs {
+            out.push(b)
+          }
         Err(msg) => return Err(msg)
       }
     }
@@ -1980,6 +2113,7 @@ pub fn resolve_scope_config(
   Ok(out)
 }
 
+///|
 /// Fetch a subcommand's built Scope from a parent Scope by name. Subcommands are
 /// materialized as greedy `CmdSat(name, child)` entries.
 pub fn command_child(sc : Scope, name : String) -> Scope? {
@@ -1992,6 +2126,7 @@ pub fn command_child(sc : Scope, name : String) -> Scope? {
   None
 }
 
+///|
 /// Build an inherited-context map from a parent scope's resolved bindings.
 pub fn inherited_of(binds : Array[Binding]) -> Map[String, Value] {
   let m : Map[String, Value] = Map::new()
