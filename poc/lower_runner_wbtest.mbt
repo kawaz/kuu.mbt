@@ -595,13 +595,14 @@ fn run_lower(def : Definition, order : Array[Installer], want : LSec) -> String 
 // "DIVERGE|got=…|want=…" string that FREEZES an observed slice divergence so drift
 // is caught. All 18 fixtures pass.
 //
-// ── long-presence (LOWERING §B.1) ──────────────────────────────────────────────
-// `long : Array[String]?` distinguishes ABSENT (None: no `long` key — env-only /
-// short-only / inherit-only / multiple-only / config_key-only options) from PRESENT-empty
-// (Some([]): a declared but empty `long`). normalize_option fires ONLY for present-empty,
-// supplying the name-derived `--<kebab(name)>`; an absent long mints no trigger. Fixtures
-// exercising absent long (short/env/inherit/multiple/config/converged) therefore carry NO
-// invented `--<name>` — spec-correct per DR-070 §1b (absent long ⇒ no trigger).
+// ── long two-form (LOWERING §B.1 / DR-071) ─────────────────────────────────────
+// `long : Array[String]` is the DR-071 two-form main-entry spelling list. The spec's
+// `long: true` (最頻ケース) is the sugar `[":set"]`; a fixture transcribes it as `long=[":set"]`,
+// which normalize_surface expands to the name-derived `--<kebab(name)>`. **absent = false = [] =
+// 入口なし** (all同義, no presence distinction) — options that declare no long (env-only /
+// short-only / inherit-only / multiple-only / config_key-only) simply omit it (default `[]`) and
+// mint NO `--<name>` trigger, spec-correct per DR-070 §1b. A variant entry (`no:set:false`) is
+// pre-parsed into `variants`; `:set` stays in `long`.
 
 // baseline/no-installers.json — installers=[] (A群純構文正規化のみ, §C.4)。裸 positional x。
 test "lower baseline/no-installers: identity core lowering (installers=[])" {
@@ -615,11 +616,11 @@ test "lower baseline/no-installers: identity core lowering (installers=[])" {
   )
 }
 
-// long/basic.json — installers=[long]。present-empty long:[] → --port + eq_split。
+// long/basic.json — installers=[long]。`long: true` 糖衣 = [":set"] → --port + eq_split。
 test "lower long/basic: long installer 主入口 (space form + eq-split, LOWERING §B.1)" {
   inspect(
     run_lower(
-      def_([opt("port", TNum, long=[])], []),
+      def_([opt("port", TNum, long=[":set"])], []),
       [LongInst],
       lsec(
         greedy=[
@@ -633,7 +634,7 @@ test "lower long/basic: long installer 主入口 (space form + eq-split, LOWERIN
   )
 }
 
-// long/variant.json — installers=[long]。bool ssl (default true) + no:set:false variant。
+// long/variant.json — installers=[long]。`long: [":set", "no:set:false"]`: 主入口 :set + no:set:false variant (bool ssl, default true)。
 test "lower long/variant: variant DSL lowers to {exact, value, link} effect satellites" {
   inspect(
     run_lower(
@@ -642,7 +643,7 @@ test "lower long/variant: variant DSL lowers to {exact, value, link} effect sate
           opt(
             "ssl",
             TFlag,
-            long=["ssl"],
+            long=[":set"],
             default=Some(VBool(true)),
             variants=[{ trigger: "no-ssl", op: Set, operand: Some(VBool(false)) }],
           ),
@@ -663,7 +664,7 @@ test "lower long/variant: variant DSL lowers to {exact, value, link} effect sate
 }
 
 // short/basic.json — installers=[short]。port(short p) + verbose(flag short v)。
-// port & verbose have ABSENT long (None) → normalize invents NO --port / --verbose,
+// port & verbose declare NO long (`long=[]`, DR-071 入口なし) → normalize invents NO --port / --verbose,
 // so [ShortInst] alone owns all vocab: a pure short_combine matcher, no long satellites.
 test "lower short/basic: short_combine matcher subsumes single-char (matcher-seat, §B.2)" {
   inspect(
@@ -686,7 +687,7 @@ test "lower short/basic: short_combine matcher subsumes single-char (matcher-sea
 }
 
 // env/basic.json — installers=[env]。port(env PORT のみ、long なし)。
-// port has ABSENT long (None) → normalize invents no --port, so [EnvInst] owns all
+// port declares NO long (`long=[]`) → normalize invents no --port, so [EnvInst] owns all
 // vocab: an env seat only, no structural satellite (§B.3).
 test "lower env/basic: env installer seats PORT, no structural satellite (§B.3)" {
   inspect(
@@ -722,7 +723,7 @@ test "lower command/basic: command subtree as a greedy {exact, scope} (§B.5 / D
       def_cmd(
         [],
         [],
-        [cmd("serve", def_([opt("host", TStr, long=[])], []))],
+        [cmd("serve", def_([opt("host", TStr, long=[":set"])], []))],
       ),
       [CommandInst, LongInst],
       lsec(
@@ -744,15 +745,15 @@ test "lower command/basic: command subtree as a greedy {exact, scope} (§B.5 / D
   )
 }
 
-// config/basic.json — installers=[config, long]。config_file (present-empty long → --config)
-// + port(config_key, ABSENT long)。port's absent long (None) means normalize invents no
+// config/basic.json — installers=[config, long]。config_file (long=[":set"] → --config)
+// + port(config_key, NO long)。port's empty long (`long=[]`) means normalize invents no
 // --port even with [LongInst] in the chain, so port is sourced only from config (no satellite).
 test "lower config/basic: config seats; config_file value cell (DR-050)" {
   inspect(
     run_lower(
       def_(
         [
-          opt("config", TStr, config_file=true, long=[]),
+          opt("config", TStr, config_file=true, long=[":set"]),
           opt("port", TNum, config_key=Some(["server", "port"])),
         ],
         [],
@@ -779,8 +780,8 @@ test "lower constraint/basic: requires 遅延述語 (DR-055) + long satellites" 
     run_lower(
       def_(
         [
-          opt("decrypt", TFlag, long=[], requires=["key_file"]),
-          opt("key_file", TStr, long=[]),
+          opt("decrypt", TFlag, long=[":set"], requires=["key_file"]),
+          opt("key_file", TStr, long=[":set"]),
         ],
         [],
       ),
@@ -808,8 +809,8 @@ test "lower constraint/exclusive: exclusive_group 指定述語 (DR-047)" {
     run_lower(
       def_(
         [
-          opt("json", TFlag, long=[], exclusive=["format"]),
-          opt("yaml", TFlag, long=[], exclusive=["format"]),
+          opt("json", TFlag, long=[":set"], exclusive=["format"]),
+          opt("yaml", TFlag, long=[":set"], exclusive=["format"]),
         ],
         [],
       ),
@@ -835,7 +836,7 @@ test "lower global/with-long: global copy 不動点展開 into the child scope (
   inspect(
     run_lower(
       def_cmd(
-        [opt("verbose", TFlag, long=[], global=true)],
+        [opt("verbose", TFlag, long=[":set"], global=true)],
         [],
         [cmd("build", def_([], []))],
       ),
@@ -855,8 +856,8 @@ test "lower global/with-long: global copy 不動点展開 into the child scope (
   )
 }
 
-// inherit/basic.json — installers=[inherit]。ttl(inherit seat のみ, ABSENT long)。
-// ttl's absent long (None) → normalize invents no --ttl, so [InheritInst] alone owns
+// inherit/basic.json — installers=[inherit]。ttl(inherit seat のみ, NO long)。
+// ttl's empty long (`long=[]`) → normalize invents no --ttl, so [InheritInst] alone owns
 // all vocab: just the inherit ladder rung, no long satellite.
 test "lower inherit/basic: inherit installer seats the inherit ladder rung (DR-031)" {
   inspect(
@@ -876,7 +877,7 @@ test "lower inheritable/with-long: reverse-of-global 逆方向コピー (DR-059)
       def_cmd(
         [],
         [],
-        [cmd("sub", def_([opt("ttl", TNum, long=[], inheritable=true)], []))],
+        [cmd("sub", def_([opt("ttl", TNum, long=[":set"], inheritable=true)], []))],
       ),
       [InheritableInst, LongInst, CommandInst],
       lsec(
@@ -901,8 +902,8 @@ test "lower inheritable/with-long: reverse-of-global 逆方向コピー (DR-059)
   )
 }
 
-// multiple/basic.json — installers=[multiple]。tag(append accumulator, ABSENT long)。
-// tag's absent long (None) → normalize invents no --tag, so [MultipleInst] alone owns
+// multiple/basic.json — installers=[multiple]。tag(append accumulator, NO long)。
+// tag's empty long (`long=[]`) → normalize invents no --tag, so [MultipleInst] alone owns
 // all vocab: just the append accumulator, no long satellite.
 test "lower multiple/basic: multiple installs the append accumulator (DR-034)" {
   inspect(
@@ -939,7 +940,7 @@ test "lower alias/basic: alias entry-copy re-derives entries; long dup masked (g
   inspect(
     run_lower(
       def_(
-        [opt("port", TInt, long=[], short=['p'])],
+        [opt("port", TInt, long=[":set"], short=['p'])],
         [],
         aliases=[alias("port", short=['n'])],
       ),
@@ -977,9 +978,9 @@ test "lower alias/command: command alias clones the subtree (empty scope) (DR-05
 }
 
 // baseline/converged.json — installers 省略 (= 全登録)。8 installer の kitchen-sink。
-// verbose has ABSENT long (short-only): even with LongInst in the full chain, normalize
+// verbose declares NO long (short-only, `long=[]`): even with LongInst in the full chain, normalize
 // invents no --verbose, so the golden carries only its short_combine seat. port declares
-// present-empty long (--port) and host too (--host in the serve subtree). Projection of the
+// `long=[":set"]` (--port) and host too (--host in the serve subtree). Projection of the
 // command subtree, eq_split/short_combine, dd exact, repeat cons template src#T, and the
 // minimal entities all agree — the whole kitchen-sink converges to the spec golden.
 test "lower baseline/converged: 全収束 kitchen-sink (installers 省略 = full chain)" {
@@ -987,12 +988,12 @@ test "lower baseline/converged: 全収束 kitchen-sink (installers 省略 = full
     run_lower(
       def_cmd(
         [
-          opt("port", TNum, long=[], short=['p'], env=["PORT"]),
+          opt("port", TNum, long=[":set"], short=['p'], env=["PORT"]),
           opt("verbose", TFlag, short=['v']),
           dd_marker(),
         ],
         [pos("src", TStr, repeat=rep(1))],
-        [cmd("serve", def_([opt("host", TStr, long=[])], []))],
+        [cmd("serve", def_([opt("host", TStr, long=[":set"])], []))],
       ),
       full_chain,
       lsec(

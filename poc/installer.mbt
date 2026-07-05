@@ -16,8 +16,8 @@
 pub(all) struct ElemDef {
   name : String
   ty : Ty
-  long : Array[String]? // owned by the long installer. None = absent (no `long` key → no name-derived spelling), Some([]) = present-empty (→ `--<kebab(name)>`, LOWERING §B.1)
-  variants : Array[Variant] // owned by the long installer (variant DSL, DR-011/045)
+  long : Array[String] // owned by the long installer. Main-entry base spellings (DR-071 two-form): `:set` = main entry with a name-derived spelling (kebab(name), DR-022), any other string = explicit spelling. `[]` = no main entry (absent = false = [] all同義, DR-071). normalize_surface expands `:set` → kebab(name).
+  variants : Array[Variant] // owned by the long installer (variant DSL, DR-011/045). The spec's long array element `no:set:false` is pre-parsed into this field (`:set` stays in `long`).
   short : Array[Char] // owned by the short installer
   env : Array[String] // owned by the env installer
   is_dd : Bool // owned by the dd installer (type:"dd")
@@ -178,21 +178,11 @@ fn copy_strs(a : Array[String]) -> Array[String] {
   r
 }
 
-fn copy_strs_opt(a : Array[String]?) -> Array[String]? {
-  match a {
-    Some(xs) => Some(copy_strs(xs)) // preserve presence: Some([]) stays present-empty
-    None => None
-  }
-}
-
-/// The effective long spellings of an element. None (absent) and Some([]) (present-empty
-/// that never got normalized) both read as "no spellings" — presence only matters to
-/// normalize_option, which supplies the name-derived spelling for present-empty.
+/// The effective long spellings of an element. Post-normalize this is a plain spelling list
+/// (the `:set` descriptor has been expanded to kebab(name) by normalize_surface); `[]` = no
+/// main entry (DR-071 — no absent/empty presence distinction).
 fn long_of(e : ElemDef) -> Array[String] {
-  match e.long {
-    Some(xs) => xs
-    None => []
-  }
+  e.long
 }
 
 fn copy_chars(a : Array[Char]) -> Array[Char] {
@@ -215,7 +205,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
   {
     name: e.name,
     ty: e.ty,
-    long: copy_strs_opt(e.long),
+    long: copy_strs(e.long),
     variants: copy_variants(e.variants),
     short: copy_chars(e.short),
     env: copy_strs(e.env),
@@ -258,9 +248,9 @@ fn kebab(name : String) -> String {
 
 /// Surface normalization (LOWERING §A / §C.4): a純構文 pre-pass applied before the static checks and
 /// the installer fixpoint. Two rules:
-///   Fix 2 (LOWERING §B.1): an OPTION with present-empty `long: Some([])` generates `--<kebab(name)>`
-///     (a name-derived spelling). `long : Array[String]?` distinguishes presence: absent `None`
-///     generates NO spelling (未指定なら生成しない), only present-empty `Some([])` does.
+///   Fix 2 (LOWERING §B.1 / DR-071): the `:set` main-entry descriptor in an option's `long` array is
+///     expanded to its name-derived spelling `kebab(name)` (DR-022). Explicit spellings pass through.
+///     `[]` mints no main entry (absent = false = [] all同義, DR-071 — no presence distinction).
 ///   Fix 3 (DR-064 §5): a dd element (in either face) whose name is omitted defaults its trigger
 ///     spelling to "--". An explicit name overrides (方言 CLI 綴り差し替え).
 fn normalize_surface(def : Definition) -> Unit {
@@ -283,14 +273,14 @@ fn normalize_option(e : ElemDef) -> ElemDef {
   if e.is_dd {
     normalize_dd_name(e)
   } else {
-    match e.long {
-      // present-empty `long: []` → name-derived `--<kebab(name)>` spelling (LOWERING §B.1)
-      Some([]) => { ..e, long: Some([kebab(e.name)]) }
-      // present non-empty: explicit spellings win, no name-derived addition
-      Some(_) => e
-      // absent `long`: no spelling generated (LOWERING §B.1: 未指定なら生成しない)
-      None => e
+    // DR-071 two-form long: the `:set` descriptor is the main entry — its spelling is name-derived
+    // (kebab, DR-022, LOWERING §B.1). Expand it here; explicit spellings pass through unchanged. An
+    // empty `long` mints no main entry (no present-empty special case anymore).
+    let resolved : Array[String] = []
+    for l in e.long {
+      resolved.push(if l == ":set" { kebab(e.name) } else { l })
     }
+    { ..e, long: resolved }
   }
 }
 
@@ -857,7 +847,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
   sb.decl.options.push({
     name: e.name, // the ancestor write-target cell shares the element's name (inherit-by-name)
     ty: e.ty,
-    long: Some([trigger]), // present: the prefixed inheritable trigger is a concrete spelling
+    long: [trigger], // the prefixed inheritable trigger is a concrete explicit spelling
     variants: [],
     short: [],
     env: [],
@@ -1035,7 +1025,7 @@ fn alias_entry(
   {
     name: canonical_name, // effects / entity / result key all key by the CANONICAL name (link 同型)
     ty,
-    long: Some(long), // present: a re-derived, finalized spelling list (not subject to normalize)
+    long, // a re-derived, finalized spelling list (explicit spellings — not subject to normalize / no `:set`)
     variants,
     short,
     env: [],
@@ -1683,8 +1673,8 @@ pub fn parse_definition(
   registry~ : Map[String, Node] = Map::new(),
 ) -> Result[Scope, Array[DefError]] {
   let def = clone_def(def0)
-  // Surface normalization (LOWERING §A / §C.4 純構文正規化): present-empty long → name-derived kebab
-  // spelling (Fix 2 §B.1) + dd name default "--" (Fix 3 DR-064 §5). Runs on the clone before the
+  // Surface normalization (LOWERING §A / §C.4 純構文正規化): the `:set` main-entry descriptor → name-derived
+  // kebab spelling (Fix 2 §B.1 / DR-071) + dd name default "--" (Fix 3 DR-064 §5). Runs on the clone before the
   // static vocab checks so a name-derived long is subject to the same 未所有 vocab check as an explicit one.
   normalize_surface(def)
   // init_sb populates `registry` with repeat-lowering templates, so the ref checks below see them.
