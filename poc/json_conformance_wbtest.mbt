@@ -1396,9 +1396,14 @@ fn known_divergences() -> Array[String] {
     // failure error SET is empty where the fixture asserts a `kind:parse` held error. slice gap.
     "repeat-parse/min2-standalone.json::case#1",
     "path-search/complete-path-count.json::case#3",
-    // double-receptacle ambiguity (DR-043): two adjacent repeats. The slice prunes to ONE greedy
-    // interpretation (phase10 model), the fixtures assert full ambiguous enumeration (and even the
-    // empty-input success case does not resolve). slice model divergence.
+    // double-receptacle 取り分 (DR-043): two adjacent min:0 repeats (xs*, ys*). The fixture now asserts
+    // DR-043 greedy取り分 (left-longest → success 1本: 0/1 tokens fill xs and leave ys empty, 2 tokens
+    // → xs=[a,b],ys=[]). The slice's phase10 model has NOT implemented DR-043取り分 preference for
+    // adjacent min:0 repeats: case#1/#2 (0/1 token) yield `no complete parse` (a min:0 repeat is not
+    // allowed to stay empty when another repeat is present), and case#3 (2 tokens) yields a balanced
+    // split {xs=[a],ys=[b]} instead of the greedy-longest. slice gap (取り分 preference unimplemented).
+    // NB: the fixture's greedy DIRECTION (left- vs right-longest) is itself unsettled upstream
+    // (kuu DR-043「未決着 — 取り分の向き」); if it flips, case#3's want reverses but the gap persists.
     "path-search/ambiguous-receptacles.json::case#1",
     "path-search/ambiguous-receptacles.json::case#2",
     "path-search/ambiguous-receptacles.json::case#3",
