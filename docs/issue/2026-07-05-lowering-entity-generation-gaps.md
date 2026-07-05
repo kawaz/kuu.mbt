@@ -73,15 +73,19 @@ golden で「子 entities 空」が仕様準拠値として示されている
 
 ## 受け入れ条件
 
-- [ ] `ensure_entities` の options ループに `not_dd` ガードを追加し、dd の
+- [x] `ensure_entities` の options ループに `not_dd` ガードを追加し、dd の
       options[] 配置で余分な entity `{name: "--", ty: TStr}` が生成されない
-      ことを確認する
-- [ ] global の子スコープで自前の verbose entity が生成されないことを確認する
+      ことを確認する (installer.mbt `ensure_entities` + phase29
+      "gap4 DR-064 §2" で options[]/positionals[] 両配置とも `--` 実体なし・
+      lowered 形同一を固定)
+- [x] global の子スコープで自前の verbose entity が生成されないことを確認する
       (`kawaz/kuu` の `fixtures/lowering/global/with-long.json` 相当の
-      ケースで子 entities が空になる)
+      ケースで子 entities が空になる) — `!is_link` ガード + phase29 "gap5" で
+      子スコープ entity 非生成・観測挙動 `build:{}` 不変を固定
 - [ ] fixture runner の lower 対応実装後、`kawaz/kuu` の
       `fixtures/lowering/dd/*.json` および `fixtures/lowering/global/*.json`
-      で両症状が再発しないことを回帰確認する
+      で両症状が再発しないことを回帰確認する (未: 現状は phase29 で entity
+      roster を直接検証。lower モード runner は別タスク)
 
 ## TODO
 
