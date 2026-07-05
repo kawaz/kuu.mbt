@@ -21,10 +21,27 @@
 //   more vocabulary, the skip list shrinks — the skip reasons are the stage-2 TODO list.
 //
 // WHY DECODE-CAPABILITY GATES THE RUN (not a directory allowlist):
-//   A fixture runs iff `dec_fixture` can losslessly decode it. Lossy constructs raise
-//   DecodeSkip *before* any case executes, so we never silently mis-decode (e.g. a dd
-//   marker whose trigger is "++" instead of "--" is skipped rather than parsed as "--").
+//   A fixture runs iff `dec_fixture` can losslessly decode it. Vocabulary the decoder cannot
+//   represent raises DecodeSkip *before* any case executes, so we never silently mis-decode (e.g.
+//   a dd marker whose trigger is "++" instead of "--" is skipped rather than parsed as "--").
 //   This keeps the runnable set honest and self-describing.
+//
+//   TWO LOSSY CATEGORIES, TWO TREATMENTS:
+//     (1) Unrepresentable construct → SKIP. If decoding would drop meaning the slice cannot model
+//         at all (custom dd trigger, nested-group positional with a distinct inner name), the
+//         fixture is skipped up front. Nothing runs against a mis-built definition.
+//     (2) Model-gap documented-lossy → RUN + ledger-freeze. Some constructs decode into a
+//         slice-representable shape that is KNOWN to differ from the fixture in a bounded, named
+//         way. These RUN, and the resulting divergence is frozen in known_divergences(): the run
+//         makes the gap VISIBLE (asserted, not hidden) instead of skipping it out of sight.
+//         Current member: dec_or's value枝 `id` drop + enum-membership non-modeling (DR-052/055) —
+//         the id-bearing requires枝 attributes the constraint to the parent element name (a frozen
+//         element-name divergence), and the enum's "only listed values accepted" restriction is not
+//         enforced (the slice keeps a permissive TStr cell). The enum non-modeling is UNEXERCISED
+//         across the current fixture set (no case supplies an out-of-enum value, whole-set verified):
+//         it is lossless in practice today. Should a future fixture supply an out-of-enum value, the
+//         slice would accept it where the spec rejects, and that surfaces as an UNEXPECTED ledger
+//         divergence — a loud failure (the desired failure mode), never a silent pass.
 //
 // COMPARISON MODEL (CONFORMANCE §2/§3):
 //   The expected effects/result/errors are rendered into the exact spec-string grammar
@@ -1081,6 +1098,19 @@ fn has_commands(sc : Scope) -> Bool {
 /// landed in it (parse tags every binding with its scope path); the resolved values seat the inherit
 /// lookup of its command children (nearest-ancestor wins). Returns every resolved binding re-tagged
 /// with its scope path, so build_result nests the result and proj_sources_tree qualifies the sources.
+///
+/// CURRENT CONSTRAINTS (latent gaps — each surfaces as a ledger UNEXPECTED divergence, loud, if a
+/// fixture exercises it):
+///   (a) Indexed-repeat bindings (scope == [label, "#k"]) are NOT matched here: `here` filters by
+///       exact full-path equality (path_eq), and an indexed slot's synthetic "#k" segment never
+///       equals a command scope path. A commands+resolve+repeat fixture would drop those values.
+///   (b) A command scope carrying a non-flag default with no sources/env/config never runs the
+///       ladder: use_resolve keys off dc.resolve || scope_needs_default_ladder, and the latter
+///       returns false the moment a CmdSat greedy resident exists. Such a default is dropped.
+///   (c) proj_sources_tree lacks two refinements the flat proj_sources has: the flag-preset
+///       "default" special-case (a flag surfacing only its preset default reports "default") and
+///       the same-cell multi-binding dedup (a cell bound multiple times, e.g. a config array). It
+///       emits one row per resolved binding straight, so those two shapes diverge.
 fn resolve_tree(
   sc : Scope,
   binds : Array[Binding],
@@ -1194,7 +1224,8 @@ fn proj_sources_tree(resolved : Array[Binding]) -> String {
 
 ///|
 /// Decode one case: its argv, asserted outcome, every comparison the fixture makes, and the
-/// value-source injection (env / config). A cross-scope source key raises DecodeSkip (stage-3 gap).
+/// value-source injection (env / config). Cross-scope source keys are decoded and resolved by the
+/// scope-tree resolve pass (resolve_tree), so no source key is rejected here.
 fn dec_case(cj : Json) -> DCase raise DecodeSkip {
   let co = match cj.as_object() {
     Some(x) => x
