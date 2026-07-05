@@ -1,6 +1,6 @@
 ---
 title: unbounded repeat{min:2} の min 未達で failure の errors が空になる (bounded は held error を emit)
-status: open
+status: resolved
 category: bug
 created: 2026-07-05T22:06:18+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-06T02:50:56+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:consume_head 枯渇時 missing_operand held 追加 + scope_consume の NumArg/SepArg への同 held 追加で解消 (commit deb8d0f65e)"]
 blocked_by:
 origin: kawaz/kuu (docs/decisions/DR-053, DR-065, docs/CONFORMANCE.md §2)
 ---
