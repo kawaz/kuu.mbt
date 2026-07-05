@@ -86,6 +86,15 @@ Error 表現 (kind/element/argv_pos/reason) が検証できないことが判明
       本 issue のスコープ外としてよい。別途着手する場合は runner 側の
       比較ロジック追加が必要)
 
+## 追記: 同根の後続解消 (complete-path-count::case#3)
+
+本 issue で `eval.mbt` に入れた「構造的必須不成立は held ParseError」は `scope_consume` の
+**StrArg** 経路のみだった。順序付き 2 positional (a:string, b:number) の 2 番目 `b` が number で
+トークン枯渇するケース (`path-search/complete-path-count.json::case#3`, want `{b@1/parse}`) は
+**NumArg 経路に枯渇 held が無く** 空 errors のままだった。`2026-07-05-min2-unbounded-empty-errors.md`
+の修正で `scope_consume` の NumArg/SepArg にも枯渇 held を追加して解消済み (詳細はそちらの
+「真因・修正」)。残余トークン (case#4) は本 issue の top-level 合成で既に解消済み。
+
 ## 関連メモ (future work, 本 issue の受け入れ条件には含めない)
 
 - `proj_effects` (`fixture_runner_wbtest.mbt:44`) が binding の `source`

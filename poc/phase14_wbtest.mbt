@@ -51,9 +51,13 @@ test "DR-043 min:2: at least two heads, unbounded above (a recursive Ref tail)" 
   let reg : Map[String, Node] = Map::new()
   let sc = build_reg(def, r14(), reg)
   inspect(entity_accum(sc, "f"), content="flatten")
+  // `a` 1 個は min:2 未達。unbounded の min-th mandatory head (Ref tail) がトークンを得られず
+  // 構造的必須の不成立 → missing_operand held error を emit する (DR-053/065、bounded の
+  // exact-count と同型)。旧値 "fail:no complete parse" は held-error を落としていた空 errors バグ
+  // の凍結で、min2-standalone.json::case#1 が flag していた乖離。
   inspect(
     render_outcome(parse(ScopeNode(sc), ["a"], defs=reg)),
-    content="fail:no complete parse",
+    content="fail:missing operand for f",
   )
   inspect(result_str(sc, ["a", "b"], defs=reg), content="{f:[a,b]}")
   inspect(result_str(sc, ["a", "b", "c"], defs=reg), content="{f:[a,b,c]}")

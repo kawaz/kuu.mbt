@@ -72,10 +72,16 @@ test "DR-043: greedy backtracks when the preferred share fails downstream" {
     result_str(sc, ["a", "b", "3"], defs=reg),
     content="{xs:[a,b],ys:[3]}",
   )
-  // with no numeric tail at all, no share of xs lets ys get a number => genuine failure
+  // with no numeric tail at all, no share of xs lets ys get a number => genuine failure.
+  // 全保持 (DR-053 §2) では複数候補経路の held error を全部残し、primary は max-argv_pos。
+  // greedy 経路 xs=[a,b,c] は ys(number,min:1) に mandatory head のトークンを残さず ys@3 の
+  // missing_operand を生む — これが最深 (pos 3) なので primary。旧値 "c" is not a number は
+  // 均等分割経路 (xs=[a,b], ys が c を拒否) の pos 2 held error で、ys@3 の構造的失敗を
+  // 落としていた (repeat head 枯渇時に held を emit しなかった旧バグの副産物)。genuine
+  // failure である点は不変。
   inspect(
     render_outcome(parse(ScopeNode(sc), ["a", "b", "c"], defs=reg)),
-    content="fail:\"c\" is not a number",
+    content="fail:missing operand for ys",
   )
 }
 

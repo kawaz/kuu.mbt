@@ -377,6 +377,15 @@ fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
 }
 
 ///|
+/// A `kind: parse` held Error for a structurally-mandatory value that had NO token to consume
+/// (構造的必須の不成立, DR-065 §3 / DR-053 全保持): the spine (or a repeat's mandatory head) needed a
+/// token for `element` but the argv was exhausted. argv_pos = pos = argv.length (where the token was
+/// requested). A layer apart from an explicit `required` constraint (ReqArg → KConstraint).
+fn pe_missing(element : String, pos : Int) -> ParseError {
+  { element, argv_pos: pos, kind: KParse, message: "missing operand for \{element}" }
+}
+
+///|
 /// FilterArg (DR-053 kind demo): parse a number then apply a max post-filter. A parse failure is
 /// `kind: parse`; a value above `max` is `kind: filter` (post_filter reject). `acc` is the partial
 /// state carried on the held Error (F-039).
@@ -817,21 +826,9 @@ fn scope_consume(
         )
       } else if pos >= toks.length() {
         // 構造的必須の不成立 (DR-065 §3): the spine needs a token for `name` but the argv is
-        // exhausted. This is kind:parse (経路構築の失敗) — a layer apart from an explicit
-        // `required` constraint (ReqArg → KConstraint). argv_pos = pos = argv.length (the token
-        // ran out at the position `name` requested). Held (not a silent Reject) so the 0-path
-        // failure carries this Error (CONFORMANCE §2 / DR-053 全保持), mirroring ReqArg's shape.
-        [
-          Held(
-            {
-              element: name,
-              argv_pos: pos,
-              kind: KParse,
-              message: "missing operand for \{name}",
-            },
-            acc,
-          ),
-        ]
+        // exhausted. kind:parse (経路構築の失敗), argv_pos = argv.length. Held (not a silent Reject)
+        // so the 0-path failure carries this Error (CONFORMANCE §2 / DR-053 全保持).
+        [Held(pe_missing(name, pos), acc)]
       } else {
         [] // a greedy trigger sits here (先食い); let greedy take it, the spine stays pending
       }
@@ -847,6 +844,9 @@ fn scope_consume(
           severed,
           defs,
         )
+      } else if pos >= toks.length() {
+        // exhausted mandatory separator positional: same 構造的必須の不成立 shape as StrArg.
+        [Held(pe_missing(name, pos), acc)]
       } else {
         []
       }
@@ -869,6 +869,12 @@ fn scope_consume(
           // positional's parse error is captured here, DR-048 candidate defs / F-039).
           None => [Held(pe_parse(name, toks[pos], pos), acc)]
         }
+      } else if pos >= toks.length() {
+        // 構造的必須の不成立 (DR-065 §3): a number positional (e.g. complete-path-count's `b`) whose
+        // token the argv never supplied. StrArg carried this Held; NumArg silently dropped it (empty
+        // errors on a 0-path failure), so a missing 2nd positional produced no Error. Emit the same
+        // missing_operand Held (kind:parse, argv_pos = argv.length) so `errors` is non-empty.
+        [Held(pe_missing(name, pos), acc)]
       } else {
         []
       }
@@ -964,7 +970,12 @@ fn scope_consume(
             if p2 > pos {
               let acc2 = cat(acc, bs)
               let stop = scope_step(sc, toks, p2, pidx + 1, acc2, severed, defs)
-              let more = scope_step(sc, toks, p2, pidx, acc2, severed, defs)
+              // "more" = one more OPTIONAL rep of `name`; a missing_operand-for-name inside it is a
+              // legitimate stop (this rep already succeeded), not a structural failure → drop it.
+              let more = drop_optional_missing(
+                scope_step(sc, toks, p2, pidx, acc2, severed, defs),
+                head_name(head),
+              )
               let chosen = if lazy {
                 if has_full(stop, target) {
                   stop
@@ -1105,7 +1116,9 @@ fn bounded_tail_step(
         Held(pe, bs) => out.push(Held(pe, bs))
       }
     }
-    out
+    // The BoundedTail is the OPTIONAL portion (after `min` mandatory heads, LOWERING §B.8), so a
+    // missing_operand-for-head inside it is a stop signal, not a failure — same filter as the Ref path.
+    drop_optional_missing(out, head_name(head))
   } else {
     []
   }
@@ -1131,6 +1144,16 @@ fn bounded_tail_step(
 /// trigger between reps is not raw-eaten as a value); a non-primitive head (a ref to
 /// a template, e.g. `color`) is evaluated plainly (head-internal is not spine-porous,
 /// but the rep boundary still is via scope_step).
+///
+/// TOKEN EXHAUSTION (DR-065 §3, held-error parity): when the argv is exhausted (not merely 先食い-
+/// suppressed) the mandatory head cannot be satisfied — emit a missing_operand Held, exactly as
+/// scope_consume does for a plain spine positional. An unbounded `repeat{min:N}` unrolls to N-1
+/// mandatory StrArg heads (scope_consume, which already held) + a Ref tail whose head passes through
+/// HERE; without this the Ref's min-th mandatory head dropped silently, so a min-unmet unbounded
+/// repeat failed with EMPTY errors while the bounded (BoundedTail) form emitted the Held (min2-
+/// standalone::case#1). The Held rides through the Ref/BoundedTail "more" branch too, but that branch
+/// is a CHOICE against "stop": has_full(stop) prunes it whenever the closure can terminate, so a
+/// satisfied repeat keeps its Accept and the exhaustion Held only surfaces on a genuine 0-path fail.
 fn consume_head(
   sc : Scope,
   head : Node,
@@ -1143,13 +1166,17 @@ fn consume_head(
     StrArg(name) =>
       if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         [Accept(pos + 1, [mkb(name, VStr(toks[pos]), Cli)])]
+      } else if pos >= toks.length() {
+        [Held(pe_missing(name, pos), [])]
       } else {
-        []
+        [] // 先食い: a greedy trigger sits here, let greedy take it (no Error)
       }
     SepArg(name, sep) =>
       // separator-splitting repeat head (DR-034 × DR-043): 先食い-aware, splits the token.
       if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
         [Accept(pos + 1, sep_binds(name, toks[pos], sep))]
+      } else if pos >= toks.length() {
+        [Held(pe_missing(name, pos), [])]
       } else {
         []
       }
@@ -1159,11 +1186,48 @@ fn consume_head(
           Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
           None => [Held(pe_parse(name, toks[pos], pos), [])]
         }
+      } else if pos >= toks.length() {
+        [Held(pe_missing(name, pos), [])]
       } else {
         []
       }
     _ => eval(head, toks, pos, defs)
   }
+}
+
+///|
+/// The value-primitive element name of a repeat head (StrArg/SepArg/NumArg), or "" for a
+/// non-primitive head. Used to identify a repeat element's OWN missing_operand for the
+/// optional-continuation filter (drop_optional_missing).
+fn head_name(head : Node) -> String {
+  match head {
+    StrArg(n) => n
+    SepArg(n, _) => n
+    NumArg(n) => n
+    _ => ""
+  }
+}
+
+///|
+/// Drop `missing_operand` Held Errors for `name` from an OPTIONAL repeat-continuation ("more")
+/// branch set. Rationale: reaching "more" means a rep of `name` already succeeded here, so the
+/// closure's minimum for `name` is met — "one more optional rep found no token" is a legitimate
+/// STOP, not a structural failure of `name`. The mandatory min-th head is handled elsewhere (its
+/// consume_head Held is pushed directly, never through "more"), so it is NOT filtered. Only the
+/// exact missing_operand-for-name shape is dropped; a value-parse Error (pe_parse) or an Error for
+/// a DIFFERENT element (e.g. a trailing positional's missing_operand) rides through untouched.
+fn drop_optional_missing(brs : Array[Branch], name : String) -> Array[Branch] {
+  if name == "" {
+    return brs
+  }
+  let out : Array[Branch] = []
+  for b in brs {
+    match b {
+      Held(pe, _) => if pe != pe_missing(name, pe.argv_pos) { out.push(b) }
+      _ => out.push(b)
+    }
+  }
+  out
 }
 
 ///|
