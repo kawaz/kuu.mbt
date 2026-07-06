@@ -2255,6 +2255,47 @@ fn known_divergences() -> Array[String] {
     // kind:constraint, argv_pos) is correct — only the element name diverges.
      "constraints-parse/default-interaction.json::value-branch-cli-trigger :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
     "constraints-parse/requires.json::value-requires-violated :: errors got={format@2/constraint} want={fmt_json@2/constraint}",
+    // ── DR-074 canonical number/bool 字句改訂への slice parse_number / bool 未追従 (spec-gaps #3 決着) ──
+    // 以下 14 件はすべて DR-074 で number/bool の canonical value_parser 字句が確定したことによる
+    // divergence。本フェーズは仕様確定が主で slice 本体 (parse_number / bool 解釈) は旧字句のまま — 追従は
+    // docs/issue/2026-07-06-parse-number-bool-dr074-followup.md で追跡。「slice parse_number 未追従」を明記。
+    //
+    // (A) number value_parser: slice parse_number は「先頭の数値部分を読んで残りを捨てる」lenient/prefix
+    //     消費型で、canonical の anchored 契約 (DR-074 §5: token 全体一致・prefix 消費しない) に未追従。
+    //     加えて canonical が新たに default 受理する桁区切り `_` (DR-074 §1・§4) と指数 `e` を slice は未実装。
+    //     slice は既に +5 / 007 / .5 / 1. を正しく受理する (これらは divergence に出ない) ので、10 進字句で
+    //     未対応なのは桁区切り `1_000` と指数 `1e3` のみ:
+     "value-typing/number-decimal-lexicon.json::thousand-sep-underscore :: EXPECTED-SUCCESS got=fail:\"1_000\" is not a number",
+    "value-typing/number-decimal-lexicon.json::exponent :: EXPECTED-SUCCESS got=fail:\"1e3\" is not a number",
+    //     float の受理域 = number + inf (DR-074 §1)。slice parse_number は inf/Infinity を未実装で拒否する。
+    //     nan 両型 reject + inf-on-number reject の 3 case は slice も拒否するので divergence に出ない (整合済):
+     "value-typing/number-inf-nan.json::inf-on-float-accepted :: EXPECTED-SUCCESS got=fail:\"inf\" is not a number",
+    "value-typing/number-inf-nan.json::inf-case-insensitive-on-float :: EXPECTED-SUCCESS got=fail:\"Infinity\" is not a number",
+    // (B) anchored 契約未追従が short cluster の値付着読みに波及 (DR-074 §1・§5 / DR-041 §3)。canonical は
+    //     `-n1.0f` の値付着読み `n="1.0f"` を、型 suffix `f` を含む token 全体が number でないとして held
+    //     Error に落とす。slice parse_number は `1.0f` から先頭 `1.0`(→1) を読んで trailing `f` を捨てる
+    //     (= DR-074 §5 が非採用とした Model B の prefix 消費) ため、値付着読みも成功扱いになる:
+    //     - cluster-split (f 定義あり): 値付着 + 分割の 2 読みが両方成功 → slice ambiguous:2。canonical は
+    //       値付着が Error なので分割 1 本の success (want=success)。
+     "matcher-readings/cluster-split.json::suffix-rejected-split-only :: EXPECTED-SUCCESS got=ambiguous:2",
+    //     - cluster-split-no-flag (f 未定義): 唯一の値付着読みを canonical は Error → failure。slice は
+    //       `1.0f`→1 と読んで ok{n=1} (want=failure)。この 2 fixture は spec 側で golden/case-id が
+    //       整合更新された (旧: ambiguous 前提 → 新: suffix 非採用前提) ことに伴う新規 divergence。
+     "matcher-readings/cluster-split-no-flag.json::no-flag-suffix-error :: EXPECTED-FAILURE got=ok{n=1}",
+    // (C) bool String→bool value_parser 未実装 (DR-074 §3)。canonical は --enabled=<val> の付着値を
+    //     true_values ["true","1"] / false_values ["false","0",""] に ci 照合するが、slice は bool を
+    //     値なし flag 的に扱い、付着値 `=<val>` を解釈できず "unexpected token" で落ちる。accept 7 case
+    //     (true / 1 / True / TRUE / false / 0 / 空文字) はすべて EXPECTED-SUCCESS got=fail:unexpected token:
+     "value-typing/bool-canonical.json::true-word :: EXPECTED-SUCCESS got=fail:unexpected token",
+    "value-typing/bool-canonical.json::one-numeric :: EXPECTED-SUCCESS got=fail:unexpected token",
+    "value-typing/bool-canonical.json::true-mixedcase :: EXPECTED-SUCCESS got=fail:unexpected token",
+    "value-typing/bool-canonical.json::true-upper :: EXPECTED-SUCCESS got=fail:unexpected token",
+    "value-typing/bool-canonical.json::false-word :: EXPECTED-SUCCESS got=fail:unexpected token",
+    "value-typing/bool-canonical.json::zero-numeric :: EXPECTED-SUCCESS got=fail:unexpected token",
+    "value-typing/bool-canonical.json::empty-false :: EXPECTED-SUCCESS got=fail:unexpected token",
+    //     yes-rejected は canonical (Norway 回避で yes 非採用 → Error) と slice がどちらも失敗するが、
+    //     element 帰属が違う: canonical は element=enabled、slice は付着値を解釈できず element 名を欠く (空文字)。
+     "value-typing/bool-canonical.json::yes-rejected :: errors got={@0/parse} want={enabled@0/parse}",
   ]
 }
 
@@ -2300,6 +2341,15 @@ fn expected_skips() -> Array[(String, String)] {
     ),
     (
       "path-search/held-errors-same-depth.json", "structural or-positional (branches are consumption grammars binding distinct named cells): slice ElemDef is flat with one value cell per element — lower_positional builds a single value_prim per positional, so parse_definition has no builder for Or([Seq([…]),…]) at the §5 contract path",
+    ),
+    // DR-074 §2・§4 / DR-061 §3: number_allow_base_prefix opt-in を `definitions.types.number =
+    // {name, config}` の factory shadow で有効化する断面。slice の parse_definition は top-level
+    // definition に options/positionals/commands しか許さず、DR-061 の `definitions` (factory config
+    // 差し替え) キーを表現できないため decode 前に skip する。slice が factory config shadow を実装したら
+    // VANISH する (base_prefix 追従は number-decimal-lexicon 系の parse_number 追従と同じ issue で追跡)。
+    // reason は allowed_keys(defo,…,"definition") の DecodeSkip メッセージと byte 一致必須。
+    (
+      "value-typing/number-base-prefix-optin.json", "definition has unsupported key 'definitions'",
     ),
   ]
 }
