@@ -22,12 +22,15 @@ origin: kawaz/kuu (spec-gaps #3 決着 / DR-074, fixtures 実食で顕在化)
 ## 概要
 
 spec-gaps #3 が決着し、DR-074 で number/bool の canonical value_parser 字句が確定した
-(JSON 風 → 実用寛容へ改訂)。kawaz/kuu が新輪郭 fixture (`fixtures/value-typing/` 5 件 +
+(JSON 風 → 実用寛容へ改訂)。さらに spec-gaps M2 が DR-075 で決着し、int の String parse が
+**値空間判定** (トークンを number として読み、値が整数なら受理) + **int_round** (default
+`error`) と確定した。kawaz/kuu が新輪郭 fixture (`fixtures/value-typing/` 7 件 +
 `matcher-readings/cluster-split*` の golden 整合更新) を追加した結果、slice 本体
-(parse_number は `poc/value.mbt:198`、bool 解釈は `poc/matcher.mbt` 経路) が旧字句のまま
-なので **14 件の RUN divergence + 1 件の DECODE skip** が顕在化した。本フェーズは仕様確定が主で slice 本体は
-無改変、divergence/skip はすべて `known_divergences()` / `expected_skips()` に凍結済み。
-本 issue は slice 側の追従課題を追跡する。
+(parse_number は `poc/value.mbt:198`、int lowering は `poc/installer.mbt:182`、bool 解釈は
+`poc/matcher.mbt` 経路) が旧字句・旧 int 規則のままなので **17 件の RUN divergence + 2 件の
+DECODE skip** が顕在化した。本フェーズは仕様確定が主で slice 本体は無改変、divergence/skip は
+すべて `known_divergences()` / `expected_skips()` に凍結済み。本 issue は slice 側の追従課題を
+追跡する (DR-074 number/bool 字句 + DR-075 int 値空間/int_round は同根の value_parser 追従)。
 
 実測 (moon test の diverge/skip 出力) に基づくフラグ + 一次資料 (DR-074 / 各 fixture の
 `why`) の提示であり、真因特定と是正方針の判断は slice 当事者に委ねる (現象・仮説は
@@ -94,6 +97,33 @@ canonical は `--enabled=<val>` の付着値を true_values `["true","1"]` / fal
 - **report 送り (spec 側 open)**: bool value_parser 失敗の reason 語彙が DR-066 v1 に無く、
   yes-rejected は kind まで検証。slice 実装時は kind=parse で足り、reason は後追い。
 
+### (D) int 値空間判定 + int_round 未実装 (DR-075 / M2 決着)
+
+DR-075 で int の String parse は **値空間判定** (トークンを number として読み、値が整数なら
+受理 — 整数構文に限らない) + **int_round** (default `error`、fractional 値の丸めモード) と
+確定した。slice は int を CLI で number と同一に扱う: `value_prim` (`poc/installer.mbt:182`) が
+`TNum | TInt => NumArg(name)` で int を number と同じ `NumArg` ノードに落とし (同 180-181 の
+コメント: 整数制約は config 相の `config_to_value` でのみ enforce)、`NumArg` eval
+(`poc/eval.mbt:237`) は `parse_number` 一発で成功なら `VNum` を素通しする。よって CLI 相では
+整数値判定も int_round も走らない。
+
+- **fractional 値の拒否欠落**: `value-typing/int-value-space.json::fractional-value-rejected` —
+  `2.5` は `parse_number` で 2.5 と読め、slice は整数値判定を持たないため `VNum(2.5)` を
+  そのまま success で束縛 → `EXPECTED-FAILURE got=ok{v=2.5}`。DR-075 §2 / DR-066 §3 の
+  default `int_round=error` では整数でない値は `not_an_integer` で failure になるべき。
+- **整数「値」だが number 字句が parse_number 未対応**: 同 fixture `::exponent-integer-value`
+  (`1e3`) / `::thousand-sep-integer-value` (`1_000`) はどちらも整数値 1000 なので DR-075 §1 では
+  受理されるべきだが、`parse_number` が指数 `e` / 桁区切り `_` を未実装のため held not-a-number
+  → `EXPECTED-SUCCESS got=fail:"1e3"/"1_000" is not a number`。これは (A) の
+  `number-decimal-lexicon::exponent` / `::thousand-sep-underscore` と**同一の parse_number 字句
+  gap** が int の値空間経由で顕れたもの ((A) を直せば同時に解消する見込み)。
+- **整合済 (divergence に出ない)**: `fractional-syntax-integer-value` (`3.0`→3) は
+  `parse_number` で 3.0 と読め `num_to_string` で 3 に、`non-number-rejected` (`abc`) は number
+  不一致で both が `not_a_number` 拒否 (element=v も一致) するため PASS。
+- **report 送り (spec 側)**: int_round の丸めモード期待値の正本は DR-075 期待値表。丸め挙動の
+  fixture 網羅 (全 10 モード) は `value-typing-s7-fixtures` issue で追跡。String 源の丸めは
+  binary64 非経由の厳密判定が必須要件 (DR-075 §5) — slice 実装時はここに注意。
+
 ### DECODE skip: factory config shadow の `definitions` キー未対応 (`expected_skips()` に凍結)
 
 - `value-typing/number-base-prefix-optin.json` — DR-074 §2・§4 / DR-061 §3 の
@@ -101,6 +131,10 @@ canonical は `--enabled=<val>` の付着値を true_values `["true","1"]` / fal
   factory shadow で有効化する断面。slice の parse_definition は top-level definition に
   `options/positionals/commands` しか許さず `definitions` キーを表現できないため decode 前に
   skip する (`definition has unsupported key 'definitions'`)。
+- `value-typing/int-round-modes.json` — DR-075 §2 / DR-061 の int_round opt-in 丸めモード輪郭を
+  `definitions.types` で `kuu_int_parser` を int_round 違いに 4 shadow して観測する断面。同じく
+  `definitions` キー未対応で同一 reason (`definition has unsupported key 'definitions'`) で skip。
+  base_prefix と同じ factory config shadow 追従で VANISH する。
 - 対の canonical 側 `number-base-prefix-rejected.json` (default false → `0x1F`/`0x1p4` を
   両方 Error) は slice も両方 Error で PASS 済み (整合)。base_prefix の受理は slice も
   未実装だが canonical では拒否が正なので偶然一致している。
@@ -116,8 +150,15 @@ canonical は `--enabled=<val>` の付着値を true_values `["true","1"]` / fal
 2. **String→bool value_parser の新設** ((C)): true_values/false_values の ci 照合。付着値
    `--enabled=<val>` の割り出しは既存の eq_split (entry-forms) を通す。
 3. **factory config shadow (`definitions.types`) の decode + 配線** (skip 解消 +
-   base_prefix opt-in): DR-061 §3 の `{name, config}` 参照形を parse_definition が受ける。
-   これができると int 型 hex 値空間 fixture 等の report 送り事項も後続で載せられる。
+   base_prefix opt-in + int_round shadow): DR-061 §3 の `{name, config}` 参照形を
+   parse_definition が受ける。これができると int 型 hex 値空間 fixture や int_round 丸めモード
+   fixture (int-round-modes.json) 等の report 送り事項も後続で載せられる。
+4. **int 値空間判定 + int_round の CLI 相実装** ((D)): `value_prim` で int を number と別扱いに
+   し、CLI 相でも整数値判定を行う。整数でない値は `int_round` config に従って丸める / default
+   `error` なら `not_an_integer` failure。丸めは binary64 非経由の厳密判定 (DR-075 §5)。一次資料は
+   DR-075 §1・§2・§5 と期待値表、`int-value-space.json` / `int-round-modes.json` の `why`。
+   (A) の parse_number 字句拡張 (指数 `e` / 桁区切り `_`) が入れば `1e3`/`1_000` の値空間受理も
+   同時に通る。
 
 ## 参照
 
