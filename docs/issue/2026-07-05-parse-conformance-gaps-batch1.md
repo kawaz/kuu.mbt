@@ -44,6 +44,9 @@ kawaz/kuu の fixtures を JSON 直読み conformance runner
 - **仮説 (要裏取り)**: 衝突検査が Outcome 判定と別経路にあり、Outcome に surface
   していない。slice 第 12 弾 note 3 の「衝突検査が Outcome と別経路」の実装課題に
   対応。
+- **相互参照**: 担体の仕様が DR-073 (ambiguous + claimants 面) で確定したため、本 gap
+  の詳細版・実装追跡は 2026-07-06-collision-ambiguous-claimants-surfacing.md に移管。
+  本 issue では gap #5 (ambiguous-receptacles) が残存。
 
 ### 2. transparent-kv の sole-binding で EkNull 値が scalar 昇格する
 
