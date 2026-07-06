@@ -2298,6 +2298,29 @@ fn known_divergences() -> Array[String] {
     //     yes-rejected は canonical (Norway 回避で yes 非採用 → Error) と slice がどちらも失敗するが、
     //     element 帰属が違う: canonical は element=enabled、slice は付着値を解釈できず element 名を欠く (空文字)。
      "value-typing/bool-canonical.json::yes-rejected :: errors got={@0/parse} want={enabled@0/parse}",
+    // ── DR-075 int 値空間判定 + int_round への slice int-parse 未追従 (M2 決着) ──
+    // int-value-space.json は default(int_round=error) の受理輪郭を固定する。slice は int 型を CLI で
+    // number と同一に扱う: value_prim (installer.mbt:182) が `TNum | TInt => NumArg(name)` で int を
+    // number と同じ NumArg ノードに落とし、整数値判定も int_round も CLI 相では適用しない (同 180-181 の
+    // コメント: 整数制約は config 相の config_to_value でのみ enforce)。NumArg eval (eval.mbt:237) は
+    // parse_number 一発で、成功なら VNum を素通し。よって DR-075 が要求する「整数値なら受理 / 真に
+    // fractional な値は int_round に従う (default error)」の値空間判定を slice は持たない。追従は
+    // docs/issue/2026-07-06-parse-number-bool-dr074-followup.md で追跡 (number 字句追従と同根)。
+    //
+    // (A) fractional 値の拒否欠落: `"2.5"` は parse_number で 2.5 と読め、slice は整数値判定を持たないため
+    //     VNum(2.5) をそのまま success で束縛する。DR-075 §2 / DR-066 §3 の default int_round=error では
+    //     整数でない値は not_an_integer で failure になるべき。slice gap (値空間の整数判定 + int_round 未実装):
+     "value-typing/int-value-space.json::fractional-value-rejected :: EXPECTED-FAILURE got=ok{v=2.5}",
+    // (B) 整数「値」だが number 字句が parse_number 未対応: `"1e3"`(指数) / `"1_000"`(桁区切り) はどちらも
+    //     整数値 1000 なので DR-075 §1 では受理されるべきだが、slice parse_number (value.mbt:198) は anchored
+    //     で指数 `e` も桁区切り `_` も未実装のため None を返し held not-a-number に落ちる。これは
+    //     number-decimal-lexicon::exponent / ::thousand-sep-underscore と同一の parse_number 字句 gap
+    //     (DR-074 §1・§4) が int の値空間経由でも顕れたもの。同 issue で追従:
+     "value-typing/int-value-space.json::exponent-integer-value :: EXPECTED-SUCCESS got=fail:\"1e3\" is not a number",
+    "value-typing/int-value-space.json::thousand-sep-integer-value :: EXPECTED-SUCCESS got=fail:\"1_000\" is not a number",
+    //     NB: 同 fixture の `fractional-syntax-integer-value` (`"3.0"`→3) と `non-number-rejected` (`"abc"`→
+    //     not_a_number) は divergence に出ない (整合済): `"3.0"` は parse_number で 3.0 と読め num_to_string
+    //     で 3 に、`"abc"` は number 不一致で both が not_a_number 拒否 (element=v も一致) するため。
   ]
 }
 
@@ -2352,6 +2375,15 @@ fn expected_skips() -> Array[(String, String)] {
     // reason は allowed_keys(defo,…,"definition") の DecodeSkip メッセージと byte 一致必須。
     (
       "value-typing/number-base-prefix-optin.json", "definition has unsupported key 'definitions'",
+    ),
+    // DR-075 §2 / DR-061 configurable factory: int_round opt-in の丸めモード輪郭を `definitions.types`
+    // で kuu_int_parser を int_round 違いに 4 shadow して観測する断面。number-base-prefix-optin と同じく
+    // slice の parse_definition は top-level definition に options/positionals/commands しか許さず、
+    // DR-061 の `definitions` (factory config 差し替え) キーを表現できないため decode 前に skip する。
+    // slice が factory config shadow を実装したら VANISH する (int_round 追従は int-value-space の値空間
+    // 判定 + int_round 実装と同じ issue で追跡)。reason は allowed_keys の DecodeSkip と byte 一致必須。
+    (
+      "value-typing/int-round-modes.json", "definition has unsupported key 'definitions'",
     ),
   ]
 }
