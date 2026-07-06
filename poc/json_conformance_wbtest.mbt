@@ -924,8 +924,60 @@ fn dec_argv(cj : Map[String, Json]) -> Array[String] raise DecodeSkip {
 // ── expect-side projections (mirror the slice's outcome renderers) ──────────────
 
 ///|
-/// §3 ambiguous: the SET of interpretation result-objects, each rendered like proj_result
-/// (key-sorted). Sorted so the comparison is order-independent (interpretation order non-normative).
+/// DR-073 claimants face: `{export-key: entity}` — the 露出キー → 占有実体 provenance that
+/// distinguishes otherwise-degenerate interpretation views (a flag-collision's two views both read
+/// `{x:true}`, but claimants attributes x to `a` vs `b`). Rendered as a sorted "key=entity" set so
+/// the bundling is deterministic and order-independent (DR-073 順序非依存).
+fn exp_claimants_str(j : Json) -> String raise DecodeSkip {
+  let o = match j.as_object() {
+    Some(x) => x
+    None => raise DecodeSkip("claimants is not an object")
+  }
+  let items : Array[String] = []
+  for k, v in o {
+    let ent = match v.as_string() {
+      Some(s) => s
+      None =>
+        raise DecodeSkip("claimant value (occupying entity) is not a string")
+    }
+    items.push(k + "=" + ent)
+  }
+  sort_items(items)
+  "{" + join_comma(items) + "}"
+}
+
+///|
+/// One §3 interpretation → its comparison string. TWO forms coexist (DR-073 表現定義), discriminated
+/// by the `claimants` key (only the wrapper carries it — DR-073 writes claimants ONLY in the wrapper,
+/// so a bare view never names a top-level `claimants`):
+///   (1) bare view `{x:true}` — an interpretation WITHOUT claimants provenance (cluster-split /
+///       ambiguous-non-firing). Rendered as the key-sorted result view alone (render_rval_sorted).
+///   (2) wrapper `{result:<view>, claimants:{key:entity}}` — the DR-053 §3 canonical `{result:...}`
+///       form carrying claimants (export-key collision). The view + claimants are bundled into ONE
+///       string (`<view>#claimants{...}`) so distinct claimants keep degenerate-view interpretations
+///       distinct under the §3 set comparison (view と claimants を 1 単位で突合、DR-073 順序非依存).
+/// The wrapper is capability-gated (allowed_keys + required `result`): a malformed one raises
+/// DecodeSkip rather than silently mis-decoding as a plain 2-key result object.
+fn exp_interp_str(e : Json) -> String raise DecodeSkip {
+  match e.as_object() {
+    Some(o) =>
+      if has_key(o, "claimants") {
+        allowed_keys(o, ["result", "claimants"], "interpretation wrapper")
+        let view = match o.get("result") {
+          Some(r) => render_rval_sorted(json_to_rval(r))
+          None => raise DecodeSkip("interpretation wrapper missing 'result'")
+        }
+        view + "#claimants" + exp_claimants_str(o.get("claimants").unwrap())
+      } else {
+        render_rval_sorted(json_to_rval(e))
+      }
+    None => render_rval_sorted(json_to_rval(e))
+  }
+}
+
+///|
+/// §3 ambiguous: the SET of interpretation strings (bare view or view+claimants, per exp_interp_str).
+/// Sorted so the comparison is order-independent (interpretation order non-normative, CONFORMANCE §3).
 fn dec_interps(j : Json) -> Array[String] raise DecodeSkip {
   let a = match j.as_array() {
     Some(x) => x
@@ -933,7 +985,7 @@ fn dec_interps(j : Json) -> Array[String] raise DecodeSkip {
   }
   let out : Array[String] = []
   for e in a {
-    out.push(render_rval_sorted(json_to_rval(e)))
+    out.push(exp_interp_str(e))
   }
   sort_items(out)
   out
@@ -2068,6 +2120,12 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
     _ =>
       // ambiguous — each interpretation is a raw complete-path result-object (NO flag preset
       // defaults injected: an unfired flag is simply absent in that interpretation, DR-053 §3).
+      // The got side renders BARE views only: AmbiguousData.interpretations is Array[Array[Binding]]
+      // with no claimants provenance (DR-073), so the slice cannot attribute a collision's export-key
+      // to its occupying entity. A claimants-bearing fixture (export-key/collision) whose slice returned
+      // Ambiguous would therefore diverge here (got bare view vs want `<view>#claimants{...}`) — but the
+      // slice returns Success for that fixture, so the gap surfaces one层 up as the frozen outcome-level
+      // EXPECTED-AMBIGUOUS divergence (which subsumes the claimants gap). See known_divergences().
       match outcome {
         Ambiguous(d) =>
           match dc.exp_interps {
@@ -2145,9 +2203,15 @@ fn known_divergences() -> Array[String] {
     "path-search/ambiguous-receptacles.json::zero-tokens-unique-split :: EXPECTED-SUCCESS got=fail:missing operand for xs",
     "path-search/ambiguous-receptacles.json::one-token-greedy-left :: EXPECTED-SUCCESS got=fail:missing operand for ys",
     "path-search/ambiguous-receptacles.json::two-tokens-greedy-left :: effects got=xs:set(a)@cli,ys:set(b)@cli want= | result got={xs=[a],ys=[b]} want={xs=[a,b],ys=[]}",
-    // export-key collision (DESIGN §15.5): two elements share export_key "x". The fixture models the
-    // collision as an AMBIGUOUS outcome; the slice returns Success (collision is a separate check,
-    // not surfaced as an outcome). slice gap.
+    // export-key collision (DESIGN §15.5 / DR-073): two elements share export_key "x". The fixture
+    // models the co-exposure as an AMBIGUOUS outcome whose two interpretations carry a claimants face
+    // (x→a vs x→b) to stay distinct despite both views degenerating to {x:true} (DR-073). The slice
+    // returns Success (collision is a separate check, not surfaced as an outcome), so the divergence is
+    // at the OUTCOME level — the runner never reaches the interpretations/claimants comparison. TWO
+    // slice gaps are frozen under this one verdict: (1) collision→Ambiguous not surfaced, and (2) even
+    // if it were, AmbiguousData carries no claimants provenance (run_case ambiguous branch note). The
+    // want side decodes claimants honestly (exp_interp_str) so the comparison is ready once the slice
+    // grows both; today the outcome-level verdict subsumes them.
      "export-key/collision.json::co-exposure-collision :: EXPECTED-AMBIGUOUS got=ok{a=true,b=true}",
     // value枝 id attribution (DR-052 直交 id / DR-055 §1): the `or` value枝 `{exact:json, id:fmt_json,
     // requires:[schema]}` lowers to a value_requires (json → [schema]) whose CRequiresIf carries the
