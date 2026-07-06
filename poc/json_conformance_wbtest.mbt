@@ -1264,6 +1264,14 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     Some(x) => x
     None => raise DecodeSkip("case is not an object")
   }
+  // Tripwire: reject any unexpected case key so an id typo (Id / slug / …) or a stray field surfaces
+  // loudly instead of being silently ignored (a mistyped "id" would otherwise read as the missing-id
+  // "" and only be caught by check_ids). "why" is doc-only — unread here but a permitted case key.
+  allowed_keys(
+    co,
+    ["id", "argv", "expect", "env", "config", "config_files", "why"],
+    "case",
+  )
   let argv = dec_argv(co)
   // stable case id (DR-072): read verbatim here. Its well-formedness (present / kebab-case /
   // per-fixture unique) is a fixture-meta invariant asserted by check_ids in the run loop as an
@@ -2189,66 +2197,109 @@ fn case_key(rel : String, id : String) -> String {
 }
 
 ///|
-/// A kebab-case slug (DR-072 §2): non-empty and every char ∈ [a-z0-9-]. DR-072 fixes only the
-/// character class + non-emptiness (leading/trailing/double dash are not further restricted).
+/// A kebab-case slug (DR-072 §2), strict form `^[a-z0-9]+(-[a-z0-9]+)*$`: non-empty, every char ∈
+/// [a-z0-9-], and a '-' only ever separates two alphanumerics — no leading, trailing, or doubled dash.
 fn is_kebab(s : String) -> Bool {
   if s == "" {
     return false
   }
+  // prev_dash starts true so a leading '-' is rejected (the position before the start counts as a
+  // separator); it flips true after each '-' so a doubled '-' is caught, and the final `!prev_dash`
+  // rejects a trailing '-'.
+  let mut prev_dash = true
   for c in s {
-    let ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-'
-    if !ok {
+    if c == '-' {
+      if prev_dash {
+        return false
+      }
+      prev_dash = true
+    } else if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+      prev_dash = false
+    } else {
       return false
     }
   }
-  true
+  !prev_dash
 }
 
 ///|
-/// DR-072 well-formedness of a decoded fixture's case ids (fixture-meta, NOT decode capability —
-/// DR-072 §3: id 一意性は fixture フォーマットの well-formedness で parse_definition の 3 層とは disjoint).
-/// Returns one violation string per offending case — a missing id ("" from dec_case), a non-kebab id,
-/// or a duplicate id within the file. Empty ⇒ the fixture's ids are well-formed. The runner treats a
+/// Extract the raw `id` string of every case in a fixture's cases[] array WITHOUT decoding the case
+/// body — feeds check_ids, which is fixture-meta and must run whether or not the case decodes (a
+/// skipped fixture's stale id still has to fail loudly). Returns None when there is no cases[] array
+/// (e.g. a lower fixture's order/want shape), meaning "no id check applies". A missing or non-string
+/// id, or a non-object case element, yields "" — check_ids flags that as a missing/non-string id.
+fn raw_case_ids(j : Json) -> Array[String]? {
+  let top = match j.as_object() {
+    Some(o) => o
+    None => return None
+  }
+  let casesj = match top.get("cases") {
+    Some(c) => c
+    None => return None
+  }
+  let carr = match casesj.as_array() {
+    Some(x) => x
+    None => return None
+  }
+  let ids : Array[String] = []
+  for cj in carr {
+    ids.push(
+      match cj.as_object() {
+        Some(co) => jf_str(co, "id").or("")
+        None => ""
+      },
+    )
+  }
+  Some(ids)
+}
+
+///|
+/// DR-072 well-formedness of a fixture's case ids (fixture-meta, NOT decode capability — DR-072 §3:
+/// id 一意性は fixture フォーマットの well-formedness で parse_definition の 3 層とは disjoint). Takes the RAW
+/// ids extracted by raw_case_ids, so it runs whether or not the fixture decodes: a skipped fixture's
+/// ids are still divergence-ledger / issue / DR reference keys that must stay well-formed. Returns one
+/// violation string per offending case — a missing or non-string id (""), a non-kebab id, or a
+/// duplicate id within the file. Empty ⇒ the fixture's ids are well-formed. The runner treats a
 /// non-empty result as an explicit FAILURE (collected + reported once), never a DecodeSkip: a malformed
 /// fixture must fail loudly (DR-072 §4「id 欠落は fixture 不備」) instead of silently dropping out of the
 /// runnable set the way a decode skip would. Case ordinals appear ONLY here (to point at the offending
 /// row); they never key a report line or ledger entry.
-fn check_ids(rel : String, cases : Array[DCase]) -> Array[String] {
+fn check_ids(rel : String, ids : Array[String]) -> Array[String] {
   let bad : Array[String] = []
   let seen : Map[String, Int] = Map::new() // id → 1-based ordinal of first sighting
   let mut ci = 0
-  for c in cases {
+  for id in ids {
     ci = ci + 1
-    if c.id == "" {
+    if id == "" {
       bad.push(
         rel +
         "::case#" +
         ci.to_string() +
-        " — id 欠落 (DR-072: 各 case は required の kebab-case id を持つ)",
+        " — id 欠落または非文字列 (DR-072: 各 case は required の kebab-case id を持つ)",
       )
-    } else if !is_kebab(c.id) {
+    } else if !is_kebab(id) {
       bad.push(
         rel +
         "::case#" +
         ci.to_string() +
         " — id '" +
-        c.id +
+        id +
         "' が kebab-case ([a-z0-9-]) でない",
       )
     } else {
-      match seen.get(c.id) {
+      match seen.get(id) {
         Some(first) =>
           bad.push(
             rel +
             "::case#" +
             ci.to_string() +
             " — id '" +
-            c.id +
+            id +
             "' が fixture 内で重複 (初出 case#" +
             first.to_string() +
             ")",
           )
-        None => seen.set(c.id, ci)
+        None => seen.set(id, ci)
       }
     }
   }
@@ -2275,6 +2326,17 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
         skips.push((rel, "load/parse error"))
         continue
       }
+    }
+    // DR-072 id well-formedness (fixture-meta, explicit fail — §3/§4). Checked on the RAW cases[]
+    // BEFORE the decode dispatch, so a fixture that later DecodeSkips still has its ids validated: an
+    // id is a divergence-ledger / issue / DR reference key, so its hygiene must not hinge on the case
+    // being runnable. Lower fixtures carry no cases[] (order/want shape) ⇒ raw_case_ids None ⇒ no check.
+    let id_bad : Array[String] = match raw_case_ids(j) {
+      Some(ids) => check_ids(rel, ids)
+      None => []
+    }
+    for b in id_bad {
+      malformed.push(b)
     }
     // query dispatch: 'lower' fixtures take the 5-face 断面 path (dec_lower + run_lower); everything
     // else (including a missing query) falls through to dec_fixture, which gates on query=='parse'.
@@ -2304,14 +2366,10 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       }
     }
     decoded.push(rel)
-    // DR-072 id well-formedness (fixture-meta, explicit fail — §3/§4). A malformed fixture is
-    // collected and fails the whole run below; its cases are NOT executed, since the slug they'd
-    // key their report line + ledger entry by is invalid (running would emit meaningless keys).
-    let bad = check_ids(rel, df.cases)
-    if bad.length() > 0 {
-      for b in bad {
-        malformed.push(b)
-      }
+    // A malformed-id fixture (id_bad non-empty, collected above) is NOT executed — the slug its cases
+    // would key their report line + ledger entry by is invalid (running would emit meaningless keys);
+    // the run fails loudly on `malformed` below. Decode still ran, so it counts in `decoded`.
+    if id_bad.length() > 0 {
       continue
     }
     for c in df.cases {

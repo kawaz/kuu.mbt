@@ -1160,7 +1160,7 @@ fn bounded_tail_step(
 /// mandatory StrArg heads (scope_consume, which already held) + a Ref tail whose head passes through
 /// HERE; without this the Ref's min-th mandatory head dropped silently, so a min-unmet unbounded
 /// repeat failed with EMPTY errors while the bounded (BoundedTail) form emitted the Held (min2-
-/// standalone::case#1). The Held rides through the Ref/BoundedTail "more" branch too, but that branch
+/// standalone::under-min). The Held rides through the Ref/BoundedTail "more" branch too, but that branch
 /// is a CHOICE against "stop": has_full(stop) prunes it whenever the closure can terminate, so a
 /// satisfied repeat keeps its Accept and the exhaustion Held only surfaces on a genuine 0-path fail.
 fn consume_head(

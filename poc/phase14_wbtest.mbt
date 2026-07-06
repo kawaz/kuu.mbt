@@ -54,7 +54,7 @@ test "DR-043 min:2: at least two heads, unbounded above (a recursive Ref tail)" 
   // `a` 1 個は min:2 未達。unbounded の min-th mandatory head (Ref tail) がトークンを得られず
   // 構造的必須の不成立 → missing_operand held error を emit する (DR-053/065、bounded の
   // exact-count と同型)。旧値 "fail:no complete parse" は held-error を落としていた空 errors バグ
-  // の凍結で、min2-standalone.json::case#1 が flag していた乖離。
+  // の凍結で、min2-standalone::under-min が flag していた乖離。
   inspect(
     render_outcome(parse(ScopeNode(sc), ["a"], defs=reg)),
     content="fail:missing operand for f",
