@@ -30,7 +30,9 @@
 //   TWO LOSSY CATEGORIES, TWO TREATMENTS:
 //     (1) Unrepresentable construct → SKIP + skip-ledger-freeze. If decoding would drop meaning the
 //         slice cannot model at all (custom dd trigger, nested-group positional with a distinct inner
-//         name), the fixture is skipped up front — nothing runs against a mis-built definition — and
+//         name, structural-or over consumption grammars — a variable-arity option / or-positional whose
+//         flat ElemDef has no builder for Or([Seq(…),…])), the fixture is skipped up front — nothing
+//         runs against a mis-built definition — and
 //         the skip is frozen in expected_skips(). Both-direction: a previously-decoding fixture that
 //         regresses into a skip fails as UNEXPECTED SKIP (coverage loss the histogram would swallow),
 //         and a ledgered skip that starts decoding fails as VANISHED SKIP (remove it, it is runnable).
@@ -728,6 +730,24 @@ fn dec_or(j : Json) -> Array[(String, Array[String])] raise DecodeSkip {
     Some(x) => x
     None => raise DecodeSkip("or is not an array")
   }
+  // STRUCTURAL-OR guard (capability gate, § "TWO LOSSY CATEGORIES" (1)): a branch carrying `seq` or
+  // `type` is a CONSUMPTION GRAMMAR (a variable-arity option — DESIGN §15.4 / DR-038 — that consumes a
+  // seq of typed cells r,g,b vs a single typed cell name), NOT a value-enum exact-branch. The slice
+  // models `or` only as value_requires (exact値 → required targets); an option whose value is
+  // Or([Seq([NumArg,…]),StrArg]) over distinct named cells has no builder in parse_definition (ElemDef
+  // carries one value cell per option). Skip up front with an honest reason rather than mis-decode the
+  // arity. The reason string MUST stay byte-identical to the expected_skips() ledger entry.
+  for e in a {
+    match e.as_object() {
+      Some(bo) =>
+        if has_key(bo, "seq") || has_key(bo, "type") {
+          raise DecodeSkip(
+            "variable-arity or-option (branches are consumption grammars — a seq of typed cells vs a single typed cell): slice ElemDef carries one value cell per option and dec_or models only value-enum exact-branches, so parse_definition has no builder for Or([Seq([NumArg,…]),StrArg]) at the §5 contract path",
+          )
+        }
+      None => ()
+    }
+  }
   let vrs : Array[(String, Array[String])] = []
   for e in a {
     let bo = match e.as_object() {
@@ -766,6 +786,20 @@ fn dec_positional(j : Json) -> ElemDef raise DecodeSkip {
   if has_key(o, "positionals") {
     raise DecodeSkip(
       "nested-group positional (repeat over a named sub-sequence): slice ElemDef is flat, parse_definition builds no IdxRepeat with a distinct inner-element name/export_key",
+    )
+  }
+  // STRUCTURAL-OR positional (capability gate, § "TWO LOSSY CATEGORIES" (1)): a positional whose value
+  // is an `or` of CONSUMPTION GRAMMARS — each branch binds DIFFERENT named cells (a single typed cell,
+  // or a `seq` of typed cells) — is a real-ambiguous / held-error spine (DESIGN §15.4 / DR-038/053).
+  // The slice's ElemDef is FLAT: one `ty` value cell per element, and lower_positional emits a single
+  // value_prim (elem_head) per positional. parse_definition's §5 contract path has NO builder for
+  // Or([Seq([NumArg,…]),…]) over multiple named cells — the engine's Node ADT (Or/Seq/NumArg) supports
+  // the shape, but nothing lowers a flat ElemDef into it (exactly the nested-group positional gap
+  // above). Unrepresentable → skip up front rather than mis-decode. The reason string MUST stay
+  // byte-identical to the expected_skips() ledger entry.
+  if has_key(o, "or") {
+    raise DecodeSkip(
+      "structural or-positional (branches are consumption grammars binding distinct named cells): slice ElemDef is flat with one value cell per element — lower_positional builds a single value_prim per positional, so parse_definition has no builder for Or([Seq([…]),…]) at the §5 contract path",
     )
   }
   allowed_keys(
@@ -2247,6 +2281,25 @@ fn expected_skips() -> Array[(String, String)] {
     // vocabulary gap. The reason string below MUST stay byte-identical to that DecodeSkip message.
     (
       "export-key/transparent-seq.json", "nested-group positional (repeat over a named sub-sequence): slice ElemDef is flat, parse_definition builds no IdxRepeat with a distinct inner-element name/export_key",
+    ),
+    // structural-or spine (DESIGN §15.4 / DR-038/053): three path-search fixtures encode an `or` of
+    // CONSUMPTION GRAMMARS — an element whose value is Or([Seq([typed cells]),…]) that binds DIFFERENT
+    // named cells per branch (real-ambiguous / held-error-primary). The slice's ElemDef is flat (one
+    // value cell per element) and elem_head/lower_positional emit a single value_prim per element, so
+    // parse_definition's §5 contract path has no builder for the multi-cell Or([Seq(…),…]) shape. The
+    // engine's Node ADT (Or/Seq/NumArg, eval.mbt/complete.mbt) supports it — the gap is purely the
+    // absence of a flat-ElemDef→structural-or lowering, exactly the nested-group positional case above.
+    // Category (1) unrepresentable → skipped before any case runs. Should the engine grow a structural-
+    // or builder, these VANISH from the ledger (a loud "now runnable" signal). Reason strings below MUST
+    // stay byte-identical to the dec_or / dec_positional DecodeSkip messages.
+    (
+      "path-search/variable-arity-ambiguous.json", "variable-arity or-option (branches are consumption grammars — a seq of typed cells vs a single typed cell): slice ElemDef carries one value cell per option and dec_or models only value-enum exact-branches, so parse_definition has no builder for Or([Seq([NumArg,…]),StrArg]) at the §5 contract path",
+    ),
+    (
+      "path-search/held-errors-distinct-depth.json", "structural or-positional (branches are consumption grammars binding distinct named cells): slice ElemDef is flat with one value cell per element — lower_positional builds a single value_prim per positional, so parse_definition has no builder for Or([Seq([…]),…]) at the §5 contract path",
+    ),
+    (
+      "path-search/held-errors-same-depth.json", "structural or-positional (branches are consumption grammars binding distinct named cells): slice ElemDef is flat with one value cell per element — lower_positional builds a single value_prim per positional, so parse_definition has no builder for Or([Seq([…]),…]) at the §5 contract path",
     ),
   ]
 }
