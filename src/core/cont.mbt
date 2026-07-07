@@ -1,0 +1,143 @@
+// cont.mbt — the defunctionalized continuation (MDR-002 §1).
+//
+// The 取り分選好 completion oracle (has_full) cannot be a scope-local number:
+// a repeat's correct share depends on what the PARENT consumes after this
+// scope, recursively (MDR-002 §1.1). So the oracle is the continuation
+// itself: "run everything that follows this choice — the rest of this scope,
+// the parent's rest, …, the final pos == toks.length() check — and see
+// whether an Accept comes out."
+//
+// `Cont` is a defunctionalized ADT (not a raw closure) so a completes-cache
+// keyed by (continuation shape, argv position) stays possible (MDR-002 §1.3).
+// Every payload derives Eq, keeping the whole Cont structurally comparable.
+
+///|
+/// The continuation of a scope walk: what happens after the current scope
+/// finishes at some position.
+enum Cont {
+  /// the top of the whole parse: pos == toks.length() is the ONE global
+  /// completion check (MDR-002 §1.2). A position short of the end is a
+  /// residual-token failure (DR-065 §3) — surfaced as a held Error here,
+  /// where the residual head is known, instead of being synthesized at the
+  /// top level from silently-dropped partial Accepts.
+  KTop
+  /// accept wherever the scope ends (no global check). Used for OFF-SPINE
+  /// scope evaluation (a probe, or a ScopeNode reached through plain `eval`),
+  /// which mirrors the slice's eval_scope returning scope-end Accepts as-is.
+  KDone
+  /// resume the parent scope walk: (scope, pidx, severed, outer). The child
+  /// scope finished; continue the parent's scope_step from this state.
+  KResumeScope(Scope, Int, Bool, Cont)
+  /// nest the bindings accumulated SINCE `start` (an index into acc) under
+  /// `label`, then continue. The Bool adds the `{}` presence marker (a
+  /// command scope appears as at least {} even when empty, DR-025). This
+  /// frame is what lets a child scope's repeats consult the parent's
+  /// continuation (phase16) while the child's bindings still nest under the
+  /// command name — nesting happens when the frame RUNS, on the acc slice.
+  KNest(String, Bool, Int, Cont)
+  /// a Ref-repeat head that is itself a ScopeNode just finished consuming:
+  /// (sc, ref name, pidx, severed, entry_pos, outer). Runs the stop/more
+  /// 取り分選好 (ref_choice) from the head's end position. Without this
+  /// frame a scope-shaped head would be evaluated off-spine under KDone and
+  /// its INTERNAL repeats would lose sight of the outer scope's remaining
+  /// consumption — reintroducing breakage-1 one nesting level in (found by
+  /// design review, pinned by the REVIEW-H1 wbtest). entry_pos guards
+  /// zero-progress heads (a scope accepting 0 tokens cannot be a rep).
+  KRefChoice(Scope, String, Int, Bool, Int, Cont)
+  /// same for a BoundedTail whose head is a ScopeNode: (sc, head, remaining
+  /// budget, lazy_, pidx, severed, entry_pos, outer). Runs bounded_tail_step
+  /// from the head's end position with the decremented budget.
+  KTailChoice(Scope, Node, Int, Bool, Int, Bool, Int, Cont)
+} derive(Eq, Debug)
+
+///|
+/// Run a continuation from (pos, acc). This is the oracle's engine: the
+/// caller inspects the resulting branches (has_full_k) to decide a repeat
+/// split, and the SAME call produces the real branches when chosen.
+fn run_cont(
+  k : Cont,
+  toks : Array[String],
+  pos : Int,
+  acc : Array[Binding],
+  defs : Map[String, Node],
+) -> Array[Branch] {
+  match k {
+    KTop =>
+      if pos == toks.length() {
+        [Accept(pos, acc)]
+      } else {
+        // residual tokens (DR-065 §3): every consumer passed but toks[pos..]
+        // remain. element "" = a scope-level stumble, kind:parse.
+        [
+          Held(
+            {
+              element: "",
+              argv_pos: pos,
+              kind: KParse,
+              reason: "unexpected_token",
+              message: "unexpected token",
+            },
+            acc,
+          ),
+        ]
+      }
+    KDone => [Accept(pos, acc)]
+    KResumeScope(sc, pidx, severed, outer) =>
+      scope_step(sc, toks, pos, pidx, acc, severed, defs, outer)
+    KNest(label, is_cmd, start, outer) => {
+      // nest acc[start..] one level under `label` (link bindings escape,
+      // DR-042); acc[..start] predates the scope and passes through.
+      let before : Array[Binding] = []
+      let inside : Array[Binding] = []
+      let mut i = 0
+      for b in acc {
+        if i < start {
+          before.push(b)
+        } else {
+          inside.push(b)
+        }
+        i = i + 1
+      }
+      let out : Array[Binding] = []
+      for b in before {
+        out.push(b)
+      }
+      if is_cmd {
+        out.push(scope_marker(label))
+      }
+      for b in nest(label, inside) {
+        out.push(b)
+      }
+      run_cont(outer, toks, pos, out, defs)
+    }
+    KRefChoice(sc, name, pidx, severed, entry_pos, outer) =>
+      if pos <= entry_pos {
+        [] // zero-progress head: not a rep (same guard as the inline path)
+      } else {
+        ref_choice(sc, name, toks, pos, pidx, acc, severed, defs, outer)
+      }
+    KTailChoice(sc, head, budget, lazy_, pidx, severed, entry_pos, outer) =>
+      if pos <= entry_pos {
+        []
+      } else {
+        bounded_tail_step(
+          sc, head, budget, lazy_, toks, pos, pidx, acc, severed, defs, outer,
+        )
+      }
+  }
+}
+
+///|
+/// Whether any branch is a FULL parse. Under CPS an `Accept` only exists if
+/// the continuation chain reached KTop at toks.length() (or KDone for an
+/// off-spine probe), so no target comparison is needed here (MDR-002 §1.2).
+fn has_full_k(brs : Array[Branch]) -> Bool {
+  for b in brs {
+    match b {
+      Accept(_, _) => return true
+      Held(_, _) => ()
+      Pending(_, _) => ()
+    }
+  }
+  false
+}
