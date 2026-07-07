@@ -12,15 +12,30 @@
 // Every payload derives Eq, keeping the whole Cont structurally comparable.
 
 ///|
+/// One scope's delayed predicates + their scope: the constraint table entry
+/// KTop evaluates at the global completion point. `path` is the result
+/// nesting path of the declaring scope (root = []); bindings are matched
+/// scope-exactly against it.
+pub(all) struct ScopedCons {
+  path : Array[String]
+  constraints : Array[Constraint]
+  entities : Array[Entity]
+} derive(Eq, Debug)
+
+///|
 /// The continuation of a scope walk: what happens after the current scope
 /// finishes at some position.
 enum Cont {
-  /// the top of the whole parse: pos == toks.length() is the ONE global
-  /// completion check (MDR-002 §1.2). A position short of the end is a
-  /// residual-token failure (DR-065 §3) — surfaced as a held Error here,
-  /// where the residual head is known, instead of being synthesized at the
-  /// top level from silently-dropped partial Accepts.
-  KTop
+  /// the top of the whole parse, carrying the static constraint table
+  /// (collect_scopes). "complete解決経路" is decided HERE and only here:
+  /// pos == toks.length() (MDR-002 §1.2) AND every scope's delayed
+  /// predicates satisfied (DR-047 §2). A constraint-violating full
+  /// consumption returns Helds (one per violation) instead of an Accept, so
+  /// the 取り分選好 oracle (has_full_k) shares the same completeness
+  /// definition as parse() — a violating share can no longer prune the
+  /// satisfying one (deep review EXP-A). A position short of the end is a
+  /// residual-token failure (DR-065 §3), also a Held.
+  KTop(Array[ScopedCons])
   /// accept wherever the scope ends (no global check). Used for OFF-SPINE
   /// scope evaluation (a probe, or a ScopeNode reached through plain `eval`),
   /// which mirrors the slice's eval_scope returning scope-end Accepts as-is.
@@ -62,9 +77,20 @@ fn run_cont(
   defs : Map[String, Node],
 ) -> Array[Branch] {
   match k {
-    KTop =>
+    KTop(table) =>
       if pos == toks.length() {
-        [Accept(pos, acc)]
+        let viol = eval_all_constraints(table, acc, pos)
+        if viol.length() == 0 {
+          [Accept(pos, acc)]
+        } else {
+          // DR-047: not a complete解決経路 — each violation is a held Error
+          // (DR-053 全保持), the partial state rides for fired_action.
+          let out : Array[Branch] = []
+          for v in viol {
+            out.push(Held(v, acc))
+          }
+          out
+        }
       } else {
         // residual tokens (DR-065 §3): every consumer passed but toks[pos..]
         // remain. element "" = a scope-level stumble, kind:parse.

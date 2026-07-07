@@ -624,12 +624,71 @@ fn eval_many(
 // the rest of the walk and everything falls raw into positionals.
 
 ///|
-/// A greedy entry "reads" at `pos` iff it consumes >= 1 token there — OR its
-/// trigger was consumed with the value slot starved (Pending). Counting
-/// Pending closes the raw-eat hole of MDR-002 §2.6: `--port` as the LAST
-/// token no longer falls into a permissive string positional; the trigger
-/// match alone suppresses the raw-eat and the parse fails with a proper
-/// missing-value error instead of silently binding files="--port".
+/// A greedy entry "reads" at `pos` iff its TRIGGER engages the token there
+/// (spec DR-041 §4: 素通しはトリガ不一致 = 読みゼロの時のみ). This is a
+/// structural trigger-match, NOT "does the whole entry consume successfully":
+/// an engaged trigger whose value slot then fails (bad number, starved slot,
+/// unfulfillable child scope) still suppresses the raw-eat — the token is
+/// read HERE and the entry's Held/Pending is the outcome, never a silent
+/// positional fallback (deep review R1/R2: `--port xyz` and a value-less
+/// `build` used to silently succeed as positionals). Entries without a
+/// structural trigger (bare value primitives) keep the consumption-based
+/// probe, so a degenerate bare NumArg greedy does not over-suppress.
+fn greedy_engages(
+  g : Node,
+  toks : Array[String],
+  pos : Int,
+  defs : Map[String, Node],
+) -> Bool {
+  match g {
+    Seq(items) =>
+      if items.length() >= 1 {
+        match items[0] {
+          Exact(s) => toks[pos] == s
+          NativeMatch(m) => run_matcher(m, toks, pos).length() > 0
+          _ => eval_consumes(g, toks, pos, defs)
+        }
+      } else {
+        false
+      }
+    Or(alts) => {
+      for a in alts {
+        if greedy_engages(a, toks, pos, defs) {
+          return true
+        }
+      }
+      false
+    }
+    CmdSat(name, _) => toks[pos] == name
+    DdSat(t) => toks[pos] == t
+    // a matcher engages iff it yields ANY reading or held Error ([] = 素通し,
+    // e.g. an undefined --key= or a non-prefix token).
+    NativeMatch(m) => run_matcher(m, toks, pos).length() > 0
+    Rooted(inner, _) => greedy_engages(inner, toks, pos, defs)
+    _ => eval_consumes(g, toks, pos, defs)
+  }
+}
+
+///|
+/// Consumption-based fallback probe for trigger-less greedy shapes: reads iff
+/// some branch consumes a token (or a Pending shows a trigger was consumed).
+fn eval_consumes(
+  g : Node,
+  toks : Array[String],
+  pos : Int,
+  defs : Map[String, Node],
+) -> Bool {
+  for b in eval(g, toks, pos, defs) {
+    match b {
+      Accept(p2, _) => if p2 > pos { return true }
+      Held(_, _) => ()
+      Pending(_, _) => return true
+    }
+  }
+  false
+}
+
+///|
 fn greedy_reads(
   sc : Scope,
   toks : Array[String],
@@ -640,12 +699,8 @@ fn greedy_reads(
     return false // no token to read (早閉じ check at the end of input)
   }
   for g in sc.greedy {
-    for b in eval(g, toks, pos, defs) {
-      match b {
-        Accept(p2, _) => if p2 > pos { return true }
-        Held(_, _) => ()
-        Pending(_, _) => return true
-      }
+    if greedy_engages(g, toks, pos, defs) {
+      return true
     }
   }
   false
@@ -1502,22 +1557,38 @@ fn strip_link(bs : Array[Binding]) -> Array[Binding] {
 }
 
 // ── constraint evaluation (delayed predicates, spec DR-055 / DR-047) ─────────
+//
+// Constraints are predicates on the DECLARING scope's entities (spec DR-012 /
+// DR-055 §1 lexical resolution), so binding lookups are scoped: a binding
+// matches (path, name) iff its key AND its result-nesting path both match.
+// Key-only matching leaked commits across scopes in both directions — a
+// child's same-named cell falsely triggered / falsely satisfied a root
+// constraint (deep review EXP-B/C/D, O2/O2b).
 
 ///|
-fn scope_of(root : Node) -> Scope? {
-  match root {
-    ScopeNode(sc) => Some(sc)
-    _ => None
+fn scope_path_eq(a : Array[String], b : Array[String]) -> Bool {
+  if a.length() != b.length() {
+    return false
   }
+  for i in 0..<a.length() {
+    if a[i] != b[i] {
+      return false
+    }
+  }
+  true
 }
 
 ///|
-/// Whether an element is committed on a path (spec DR-045): the LAST effect
-/// on the cell is not unset (last-wins).
-fn is_committed(bindings : Array[Binding], name : String) -> Bool {
+/// Whether the (path, name) cell is committed on a path (spec DR-045): the
+/// LAST effect on the cell is not unset (last-wins).
+fn is_committed(
+  bindings : Array[Binding],
+  path : Array[String],
+  name : String,
+) -> Bool {
   let mut committed = false
   for b in bindings {
-    if b.key == name {
+    if b.key == name && scope_path_eq(b.scope, path) {
       match b.op {
         Unset => committed = false
         _ => committed = true
@@ -1528,11 +1599,15 @@ fn is_committed(bindings : Array[Binding], name : String) -> Bool {
 }
 
 ///|
-/// The committed value of an element (last-wins), or None.
-fn elem_value(bindings : Array[Binding], name : String) -> String? {
+/// The committed value of the (path, name) cell (last-wins), or None.
+fn elem_value(
+  bindings : Array[Binding],
+  path : Array[String],
+  name : String,
+) -> String? {
   let mut v : String? = None
   for b in bindings {
-    if b.key == name {
+    if b.key == name && scope_path_eq(b.scope, path) {
       match b.op {
         Unset => ()
         _ => v = Some(value_str(b.value))
@@ -1554,13 +1629,14 @@ fn has_default(entities : Array[Entity], name : String) -> Bool {
 
 ///|
 /// Value presence (spec DR-047 §5): committed on the path OR a default seat
-/// exists.
+/// exists (default seats live on the declaring scope's own entities).
 fn value_present(
   name : String,
   bindings : Array[Binding],
+  path : Array[String],
   entities : Array[Entity],
 ) -> Bool {
-  is_committed(bindings, name) || has_default(entities, name)
+  is_committed(bindings, path, name) || has_default(entities, name)
 }
 
 ///|
@@ -1574,21 +1650,21 @@ fn constraint_err(
 }
 
 ///|
-/// Evaluate the scope's delayed predicates on a complete path's FINAL state.
+/// Evaluate ONE scope's delayed predicates on a complete path's FINAL state.
 /// A non-empty result means the path is NOT a complete解決経路.
 fn eval_constraints(
-  constraints : Array[Constraint],
-  entities : Array[Entity],
+  sc : ScopedCons,
   bindings : Array[Binding],
   pos : Int,
 ) -> Array[ParseError] {
   let out : Array[ParseError] = []
-  for c in constraints {
+  let path = sc.path
+  for c in sc.constraints {
     match c {
       CRequires(elem, targets) =>
-        if is_committed(bindings, elem) {
+        if is_committed(bindings, path, elem) {
           for t in targets {
-            if !value_present(t, bindings, entities) {
+            if !value_present(t, bindings, path, sc.entities) {
               out.push(
                 constraint_err(
                   elem,
@@ -1601,14 +1677,14 @@ fn eval_constraints(
           }
         }
       CRequiresIf(elem, v, targets) => {
-        let active = is_committed(bindings, elem) &&
-          (match elem_value(bindings, elem) {
+        let active = is_committed(bindings, path, elem) &&
+          (match elem_value(bindings, path, elem) {
             Some(x) => x == v
             None => false
           })
         if active {
           for t in targets {
-            if !value_present(t, bindings, entities) {
+            if !value_present(t, bindings, path, sc.entities) {
               out.push(
                 constraint_err(
                   elem,
@@ -1622,9 +1698,9 @@ fn eval_constraints(
         }
       }
       CConflicts(elem, targets) =>
-        if is_committed(bindings, elem) {
+        if is_committed(bindings, path, elem) {
           for t in targets {
-            if is_committed(bindings, t) {
+            if is_committed(bindings, path, t) {
               out.push(
                 constraint_err(
                   elem,
@@ -1639,7 +1715,7 @@ fn eval_constraints(
       CExclusive(group, members) => {
         let mut count = 0
         for m in members {
-          if is_committed(bindings, m) {
+          if is_committed(bindings, path, m) {
             count = count + 1
           }
         }
@@ -1657,6 +1733,127 @@ fn eval_constraints(
     }
   }
   out
+}
+
+///|
+/// Evaluate EVERY collected scope's constraints (spec DR-047 §2 has no
+/// declaring-scope exemption — a nested scope's predicates are completion
+/// conditions too). Called from KTop: this makes "complete解決経路 = full
+/// consumption AND all constraints satisfied" a single definition that the
+/// 取り分選好 oracle (has_full_k) automatically shares — the parse() layer
+/// and the preference layer can no longer disagree about completeness.
+fn eval_all_constraints(
+  table : Array[ScopedCons],
+  bindings : Array[Binding],
+  pos : Int,
+) -> Array[ParseError] {
+  let out : Array[ParseError] = []
+  for sc in table {
+    for v in eval_constraints(sc, bindings, pos) {
+      out.push(v)
+    }
+  }
+  out
+}
+
+// ── static scope collection (the KTop constraint table) ──────────────────────
+
+///|
+/// Collect (result-path, constraints, entities) for the root scope and every
+/// statically reachable nested scope: CmdSat children (path + [name], also
+/// inside Or-bundled greedy entries), inline positional ScopeNodes and
+/// scope-shaped repeat heads (transparent — same path, their bindings are
+/// not nested). Scopes with no constraints are skipped (nothing to check).
+///
+/// Known limitation (documented, not enforced): a repeat-instantiated
+/// transparent scope shares its path across reps, so its constraints see the
+/// MERGED final state of all reps; per-rep predicate instances are not spec'd
+/// (no DR defines them). IdxRepeat's indexed paths ("#k") are out of scope.
+fn collect_scopes(root : Node, defs : Map[String, Node]) -> Array[ScopedCons] {
+  let out : Array[ScopedCons] = []
+  match root {
+    ScopeNode(sc) => collect_scope_into(sc, [], defs, out, [])
+    _ => ()
+  }
+  out
+}
+
+///|
+fn collect_scope_into(
+  sc : Scope,
+  path : Array[String],
+  defs : Map[String, Node],
+  out : Array[ScopedCons],
+  seen_refs : Array[String],
+) -> Unit {
+  if sc.constraints.length() > 0 {
+    out.push({ path, constraints: sc.constraints, entities: sc.entities })
+  }
+  for g in sc.greedy {
+    collect_greedy_scopes(g, path, defs, out, seen_refs)
+  }
+  for p in sc.positional {
+    collect_pos_scopes(p, path, defs, out, seen_refs)
+  }
+}
+
+///|
+fn collect_greedy_scopes(
+  g : Node,
+  path : Array[String],
+  defs : Map[String, Node],
+  out : Array[ScopedCons],
+  seen_refs : Array[String],
+) -> Unit {
+  match g {
+    CmdSat(name, child) => {
+      let p2 : Array[String] = []
+      for s in path {
+        p2.push(s)
+      }
+      p2.push(name)
+      collect_scope_into(child, p2, defs, out, seen_refs)
+    }
+    Or(alts) =>
+      for a in alts {
+        collect_greedy_scopes(a, path, defs, out, seen_refs)
+      }
+    Rooted(inner, _) => collect_greedy_scopes(inner, path, defs, out, seen_refs)
+    _ => ()
+  }
+}
+
+///|
+fn collect_pos_scopes(
+  n : Node,
+  path : Array[String],
+  defs : Map[String, Node],
+  out : Array[ScopedCons],
+  seen_refs : Array[String],
+) -> Unit {
+  match n {
+    ScopeNode(child) => collect_scope_into(child, path, defs, out, seen_refs)
+    Ref(name) =>
+      if !str_mem(seen_refs, name) {
+        let seen2 : Array[String] = []
+        for s in seen_refs {
+          seen2.push(s)
+        }
+        seen2.push(name)
+        match ref_head(defs, name) {
+          ScopeNode(child) => collect_scope_into(child, path, defs, out, seen2)
+          _ => ()
+        }
+      }
+    BoundedTail(head, _, _) =>
+      match head {
+        ScopeNode(child) =>
+          collect_scope_into(child, path, defs, out, seen_refs)
+        _ => ()
+      }
+    Many(inner) => collect_pos_scopes(inner, path, defs, out, seen_refs)
+    _ => ()
+  }
 }
 
 // ── top level (spec DR-038 path counting) ────────────────────────────────────
@@ -1680,15 +1877,21 @@ pub fn parse(
   faildef? : FailDef = WithHeld,
 ) -> Outcome {
   let branches = match root {
-    ScopeNode(sc) => scope_step(sc, toks, 0, 0, [], false, defs, KTop)
+    ScopeNode(sc) =>
+      scope_step(
+        sc,
+        toks,
+        0,
+        0,
+        [],
+        false,
+        defs,
+        KTop(collect_scopes(root, defs)),
+      )
     _ => eval(root, toks, 0, defs)
   }
   let full : Array[Array[Binding]] = []
   let errors : Array[ParseError] = []
-  let (constraints, sc_entities) = match scope_of(root) {
-    Some(s) => (s.constraints, s.entities)
-    None => ([], [])
-  }
   // the deepest argv position any branch reached (DeepestOnly candidate set).
   let mut max_reach = -1
   for b in branches {
@@ -1706,29 +1909,20 @@ pub fn parse(
   for b in branches {
     match b {
       Accept(p, bs) => {
+        // constraint satisfaction is already decided at KTop (a violating
+        // full consumption arrives as Helds, never an Accept), so every
+        // full-length Accept here IS a complete解決経路.
         if p == toks.length() {
           let eff = strip_link(bs)
-          let viol = eval_constraints(
-            constraints,
-            sc_entities,
-            eff,
-            toks.length(),
-          )
-          if viol.length() > 0 {
-            for v in viol {
-              push_error(errors, v)
+          let mut dup = false
+          for existing in full {
+            if existing == eff {
+              dup = true
+              break
             }
-          } else {
-            let mut dup = false
-            for existing in full {
-              if existing == eff {
-                dup = true
-                break
-              }
-            }
-            if !dup {
-              full.push(eff)
-            }
+          }
+          if !dup {
+            full.push(eff)
           }
         }
         let counts = match faildef {

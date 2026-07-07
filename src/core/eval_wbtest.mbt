@@ -631,3 +631,191 @@ test "REGRESSION Or-wrapped greedy: find_help_entry / tried_triggers walk Or arm
     _ => fail("expected Failure")
   }
 }
+
+///|
+test "REVIEW-D1 取り分選好オラクルは制約違反の全消費を「完全」と数えない (DR-047 §2 × DR-043)" {
+  // more 側 (xs=[a,b]) は全消費だが CRequires(xs,[y]) に違反 = 完全解決経路
+  // ではない。stop 側 (xs=[a], y=[b]) が唯一の完全解決経路なので Success。
+  // KTop が制約を評価して違反を Held 化することで、has_full_k (選好オラクル)
+  // と parse() の「完全経路」定義が 1 箇所に統一される — 旧実装は選好層が
+  // 違反経路を完全と誤認して stop 側を刈り、false Failure になっていた。
+  let defs : Map[String, Node] = Map([])
+  reg_repeat(defs, "xs", StrArg("xs"))
+  let root : Scope = {
+    greedy: [],
+    positional: [Ref("xs"), Many(StrArg("y"))],
+    entities: [],
+    constraints: [CRequires("xs", ["y"])],
+  }
+  let o = parse(ScopeNode(root), ["a", "b"], defs~)
+  match o {
+    Success(bs) => {
+      let mut xs_count = 0
+      let mut y_count = 0
+      for b in bs {
+        if b.key == "xs" {
+          xs_count = xs_count + 1
+        }
+        if b.key == "y" {
+          y_count = y_count + 1
+        }
+      }
+      assert_eq(xs_count, 1)
+      assert_eq(y_count, 1)
+    }
+    _ => fail("expected Success (xs=[a], y=[b])")
+  }
+}
+
+///|
+test "REVIEW-D2 制約照合は scope-exact: 子スコープの同名 key は root 制約を発火させない (DR-055 §1 lexical)" {
+  // 子スコープの x (scope=["c"]) だけが commit される入力。root 宣言の
+  // CRequires("x",[...]) の対象は root の x セルなので不活性 = Success。
+  let child : Scope = {
+    greedy: [],
+    positional: [StrArg("x")],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("c", child)],
+    positional: [],
+    entities: [],
+    constraints: [CRequires("x", ["z"])],
+  }
+  let o = parse(ScopeNode(root), ["c", "v"], defs=Map([]))
+  match o {
+    Success(_) => ()
+    _ => fail("expected Success (root x is uncommitted)")
+  }
+}
+
+///|
+test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコープの同名 binding では満たされない" {
+  // root の file が commit、requires ターゲット out は子スコープにしか
+  // commit されない → root の out は不在なので requires_violated の Failure
+  // が正 (旧実装は key 名一致で誤充足して Success にしていた)。
+  let child : Scope = {
+    greedy: [Seq([Exact("--out"), Bind("out", VBool(true))])],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [
+      Seq([Exact("--file"), Bind("file", VBool(true))]),
+      CmdSat("sub", child),
+    ],
+    positional: [],
+    entities: [],
+    constraints: [CRequires("file", ["out"])],
+  }
+  let o = parse(ScopeNode(root), ["--file", "sub", "--out"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut viol = false
+      for e in fd.errors {
+        if e.element == "file" && e.reason == "requires_violated" {
+          viol = true
+        }
+      }
+      assert_true(viol)
+    }
+    _ => fail("expected Failure (root out is not committed)")
+  }
+}
+
+///|
+test "REVIEW-D4 入れ子スコープの constraints も完全経路の成立条件 (DR-047 §2 に宣言スコープ免除なし)" {
+  // 子スコープ宣言の CConflicts(x,[y]) が sub 内の --x --y 同時 commit を
+  // 弾く。旧実装は root 直下の constraints しか評価していなかった。
+  let child : Scope = {
+    greedy: [
+      Seq([Exact("--x"), Bind("x", VBool(true))]),
+      Seq([Exact("--y"), Bind("y", VBool(true))]),
+    ],
+    positional: [],
+    entities: [],
+    constraints: [CConflicts("x", ["y"])],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("sub", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["sub", "--x", "--y"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut viol = false
+      for e in fd.errors {
+        if e.element == "x" && e.reason == "conflicts_with_violated" {
+          viol = true
+        }
+      }
+      assert_true(viol)
+    }
+    _ => fail("expected Failure (child-scope conflicts)")
+  }
+}
+
+///|
+test "REVIEW-D5 先食いはトリガ一致で成立: 値不正の --port は positional に raw 落ちしない (DR-041 §4)" {
+  // 旧 greedy_reads は「entry 全体が消費成功したか」を見ていたため、値が
+  // number として読めない `--port xyz` で entry が Held に落ちると suppress
+  // が外れ、寛容 positional 2 つが f="--port", g="xyz" を silent Success で
+  // 食っていた。トリガ一致意味論では --port は「ここで読まれる」ので、
+  // 結末は port の not_a_number を含む Failure。
+  let root : Scope = {
+    greedy: [Seq([Exact("--port"), NumArg("port")])],
+    positional: [StrArg("f"), StrArg("g")],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["--port", "xyz"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut port_err = false
+      for e in fd.errors {
+        if e.element == "port" && e.reason == "not_a_number" {
+          port_err = true
+        }
+      }
+      assert_true(port_err)
+    }
+    _ => fail("expected Failure (not a silent positional eat)")
+  }
+}
+
+///|
+test "REVIEW-D6 CmdSat トリガ一致も先食い: 子スコープ不成立でも command 名は raw 落ちしない" {
+  // `build` が最終トークンで子スコープの必須 positional x が満たせない場合、
+  // 旧実装は CmdSat の読みが立たず build が親 positional f に raw 落ちして
+  // silent Success になっていた。トリガ (command 名) 一致で suppress し、
+  // 結末は x の missing_operand を含む Failure。
+  let child : Scope = {
+    greedy: [],
+    positional: [StrArg("x")],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("build", child)],
+    positional: [StrArg("f")],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["build"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut x_missing = false
+      for e in fd.errors {
+        if e.element == "x" && e.reason == "missing_operand" {
+          x_missing = true
+        }
+      }
+      assert_true(x_missing)
+    }
+    _ => fail("expected Failure (missing operand for x)")
+  }
+}
