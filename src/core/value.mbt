@@ -1,0 +1,632 @@
+// value.mbt — value cells, provenance tags, and the tolerant number/bool parsers.
+//
+// These are the leaf currency of the evaluator: a parsed CLI token becomes a
+// `Value`, tagged with the `Source` seat it came from (DR-031 ladder), and
+// collected as `Binding`s onto a result path.
+//
+// DR-074 fixes the canonical number/bool 字句; DR-075 fixes int's 値空間判定 and
+// the `int_round` rounding modes (with the binary64-非経由 requirement realized by
+// lexical scanning here). MDR-002 §3: value.mbt depends on node.mbt only.
+//
+// `Binding` / `ParseError` (DR-066 5-field with reason) live here; `Branch` and `Cand` live in
+// node.mbt. The matcher builds bindings via the mkb / cat / pe_parse / depr_marker helpers at the
+// end of this file.
+
+///|
+/// A resolved value that can land in the result object.
+pub(all) enum Value {
+  VStr(String)
+  VNum(Double)
+  VBool(Bool)
+} derive(Eq, Debug)
+
+///|
+/// Provenance of a value cell (DR-031 / DR-016 source tag).
+/// The evaluator preserves this so an appconfig store (DR-030) can ask
+/// "where did this value come from" without the ladder order being movable.
+pub(all) enum Source {
+  Cli // CLI explicit / link — highest seat (DR-031 #1)
+  Env // environment variable seat (DR-031 #2)
+  Config // config-file seat (DR-050 #3) — below env, above inherit
+  Inherit // nearest ancestor scope's same-named value (DR-031 #4 / DR-013)
+  Default // fixed fallback (DR-031 #5)
+} derive(Eq, Debug)
+
+///|
+/// A JSON-同型 hierarchical config value (DR-050 §2): what a config_provider returns. kuu core
+/// never sees TOML/YAML — only this shape. Leaf values are typed (string / number / bool); arrays
+/// feed a multiple element's pieces; objects mirror the name-scope hierarchy (同型対応).
+pub(all) enum ConfigVal {
+  CStr(String)
+  CNum(Double)
+  CBool(Bool)
+  CArr(Array[ConfigVal])
+  CObj(Array[(String, ConfigVal)])
+  CNull // JSON null (DR-050 §4 / DR-051): treated as 供給なし — the config seat supplies nothing
+} derive(Eq, Debug)
+
+///|
+/// The int rounding mode (DR-075 §2). Direction 4 (`floor`/`ceil`/`trunc`/`away`) × {plain, half}
+/// + `half_even` + `error` = 10 modes, 体系完備. `error` is the canonical default (int silently
+/// coerces nothing; a non-integer VALUE is rejected). Direction語 name 0-起点 (`trunc`/`away`) と
+/// 無限-起点 (`floor`/`ceil`) を分け、Java/Python の "UP"/"DOWN" 多義を持ち込まない (DR-075 §3).
+pub(all) enum RoundMode {
+  RFloor // →−∞
+  RCeil // →+∞
+  RTrunc // →0 方向 (小数部を捨てる)
+  RAway // →0 の反対方向 (絶対値切り上げ)
+  RHalfFloor // tie→−∞
+  RHalfCeil // tie→+∞
+  RHalfTrunc // tie→0 方向
+  RHalfAway // tie→0 の反対 (学校四捨五入)
+  RHalfEven // banker's rounding
+  RError // 非整数値は Error
+} derive(Eq, Debug)
+
+///|
+/// The reason an int/number parse failed (DR-066 語彙): `NotANumber` = not a number at all,
+/// `NotAnInteger` = a non-integer value under `int_round: error`.
+pub(all) enum ParseFail {
+  NotANumber
+  NotAnInteger
+} derive(Eq, Debug)
+
+///|
+/// Whether a double is integer-valued (for the int type on a config NATIVE number, DR-075 §5:
+/// a JSON-由来 native number is already binary64, so this seat判定 is binary64-based — the
+/// non-transit requirement applies to String源 only, handled by `parse_int_value`).
+pub fn is_integer(d : Double) -> Bool {
+  d.to_int().to_double() == d
+}
+
+///|
+/// The category of a held Error (DR-053 §2 / DR-037 / DR-047): `parse` = type parse failure,
+/// `filter` = a post_filter reject (a value that parsed but failed a filter), `constraint` = a
+/// delayed-predicate violation (required 未充足 etc., DR-047). All three ride the errors array.
+pub(all) enum ErrKind {
+  KParse
+  KFilter
+  KConstraint
+} derive(Eq, Debug)
+
+///|
+/// One held Error (DR-053 §2 + DR-066): which element, the argv position it failed at, its kind, a
+/// machine-readable `reason` (snake_case, DR-066 §3 v1 vocab: missing_operand / unexpected_token /
+/// not_a_number / not_an_integer / <attr>_violated), and the human message. The errors array keeps
+/// ALL of them (別候補経路の別 Error); primary = max argv_pos. Conformance compares errors by
+/// (element, argv_pos, kind, reason) — message is always ignored (CONFORMANCE §3) — so every
+/// construction site emits a reason from the v1 vocabulary.
+pub(all) struct ParseError {
+  element : String
+  argv_pos : Int
+  kind : ErrKind
+  reason : String // DR-066: machine-readable failure identifier (snake_case v1 vocab)
+  message : String
+} derive(Eq, Debug)
+
+///|
+/// JSON-standard string form of a config number (DR-050 §4 stringification). An integer-valued
+/// double renders without a fractional part (1.0 → "1"); otherwise the decimal form (1.5 → "1.5").
+fn num_to_string(d : Double) -> String {
+  let i = d.to_int()
+  if i.to_double() == d {
+    i.to_string()
+  } else {
+    d.to_string()
+  }
+}
+
+// ── canonical number 字句スキャン (DR-074 §1, §7) ──────────────────────────────
+
+///|
+/// String indexing (`s[i]`) yields a UTF-16 code unit, not a Char, so the number 字句スキャン works
+/// on Array[Char] (iterating a String yields Char). Test tokens are ASCII.
+fn chars_of(s : String) -> Array[Char] {
+  let a : Array[Char] = []
+  for c in s {
+    a.push(c)
+  }
+  a
+}
+
+///|
+/// Scan a maximal digit group starting at `start`, writing the digits (WITHOUT the `_`
+/// separators) into `buf`. DR-074 §7 `_` placement: a `_` is legal ONLY between two digits —
+/// no leading (`_1`), trailing (`1_`), consecutive (`1__0`), or edge-adjacent `_`. Returns the
+/// index just past the group, or None if a `_` is misplaced. An empty group is legal (returns
+/// `start` unchanged) — the caller decides whether at least one mantissa digit was seen.
+fn scan_digits(cs : Array[Char], start : Int, buf : StringBuilder) -> Int? {
+  let n = cs.length()
+  let mut i = start
+  let mut last_digit = false
+  while i < n {
+    let c = cs[i]
+    if c >= '0' && c <= '9' {
+      buf.write_char(c)
+      last_digit = true
+      i = i + 1
+    } else if c == '_' {
+      // `_` must have a digit on BOTH sides (DR-074 §7)
+      if !last_digit {
+        return None
+      }
+      if i + 1 >= n {
+        return None
+      }
+      let nx = cs[i + 1]
+      if !(nx >= '0' && nx <= '9') {
+        return None
+      }
+      last_digit = false
+      i = i + 1 // skip `_`, do not write it
+    } else {
+      break
+    }
+  }
+  Some(i)
+}
+
+///|
+/// Split a token into canonical number parts: `(neg, int_digits, frac_digits, exp)`, or None if the
+/// token is not a canonical number lexeme (DR-074 §1). Rejects base prefixes (`0x`/`0o`/`0b` — Error
+/// in canonical, §2), type suffix (`1.0f`), inf/nan, and any trailing junk. `int_digits`/`frac_digits`
+/// have their `_` separators stripped; a leading `.` gives empty `int_digits`, a trailing `.` gives
+/// empty `frac_digits`. At least one mantissa digit is required (`.` / `+` alone → None).
+fn scan_number_parts(s : String) -> (Bool, String, String, Int)? {
+  let cs = chars_of(s)
+  let n = cs.length()
+  if n == 0 {
+    return None
+  }
+  let mut i = 0
+  let mut neg = false
+  // leading sign (DR-074 §1: [+-] both accepted)
+  if cs[i] == '+' || cs[i] == '-' {
+    neg = cs[i] == '-'
+    i = i + 1
+  }
+  // reject base prefix — canonical does not accept 0x/0o/0b (§2, opt-in only)
+  if i + 1 < n && cs[i] == '0' {
+    let c1 = cs[i + 1]
+    if c1 == 'x' ||
+      c1 == 'X' ||
+      c1 == 'o' ||
+      c1 == 'O' ||
+      c1 == 'b' ||
+      c1 == 'B' {
+      return None
+    }
+  }
+  // integer digit group (may be empty for a leading-`.` form like `.5`)
+  let ibuf = StringBuilder::new()
+  let after_int = match scan_digits(cs, i, ibuf) {
+    None => return None
+    Some(x) => x
+  }
+  i = after_int
+  let int_digits = ibuf.to_string()
+  let mut saw_digit = int_digits.length() > 0
+  // fraction
+  let fbuf = StringBuilder::new()
+  if i < n && cs[i] == '.' {
+    i = i + 1
+    let after_frac = match scan_digits(cs, i, fbuf) {
+      None => return None
+      Some(x) => x
+    }
+    i = after_frac
+  }
+  let frac_digits = fbuf.to_string()
+  if frac_digits.length() > 0 {
+    saw_digit = true
+  }
+  // at least one mantissa digit required (`.` alone or `+` alone → None)
+  if !saw_digit {
+    return None
+  }
+  // exponent (e/E, optional [+-] sign, digits required — DR-074 §7)
+  let mut exp = 0
+  if i < n && (cs[i] == 'e' || cs[i] == 'E') {
+    i = i + 1
+    let mut esign = 1
+    if i < n && (cs[i] == '+' || cs[i] == '-') {
+      if cs[i] == '-' {
+        esign = -1
+      }
+      i = i + 1
+    }
+    let ebuf = StringBuilder::new()
+    let after_exp = match scan_digits(cs, i, ebuf) {
+      None => return None
+      Some(x) => x
+    }
+    i = after_exp
+    let edigits = ebuf.to_string()
+    if edigits.length() == 0 {
+      return None // exponent marker with no digits
+    }
+    exp = esign * digits_to_int(edigits)
+  }
+  // any trailing character (incl. `f` suffix / inf / nan / stray char) rejects the whole token
+  if i != n {
+    return None
+  }
+  Some((neg, int_digits, frac_digits, exp))
+}
+
+///|
+fn digits_to_int(s : String) -> Int {
+  let mut acc = 0
+  for c in s {
+    acc = acc * 10 + (c.to_int() - 48)
+  }
+  acc
+}
+
+///|
+fn digits_to_i64(s : String) -> Int64 {
+  let mut acc : Int64 = 0
+  for c in s {
+    acc = acc * 10L + (c.to_int() - 48).to_int64()
+  }
+  acc
+}
+
+///|
+/// Tolerant number parser (DR-074 §1 canonical): optional leading sign, decimal digits with an
+/// optional single decimal point (`.5` / `1.` accepted), `_` thousands separators (default vocab),
+/// and an optional `e`/`E` exponent with an optional sign. Base prefixes, type suffixes (`1.0f`),
+/// inf/nan are NOT accepted (all → None). The value conversion delegates to the host's binary64
+/// parser on a normalized, `_`-stripped lexeme (validating the 字句 is this leaf's job; DR-075's
+/// binary64-非経由 requirement is on INT rounding only, handled in `parse_int_value`).
+pub fn parse_number(s : String) -> Double? {
+  match scan_number_parts(s) {
+    None => None
+    Some((neg, int_d, frac_d, exp)) => {
+      let buf = StringBuilder::new()
+      if neg {
+        buf.write_char('-')
+      }
+      buf.write_string(if int_d.length() > 0 { int_d } else { "0" })
+      if frac_d.length() > 0 {
+        buf.write_char('.')
+        buf.write_string(frac_d)
+      }
+      if exp != 0 {
+        buf.write_char('e')
+        buf.write_string(exp.to_string())
+      }
+      try_parse_double(buf.to_string())
+    }
+  }
+}
+
+///|
+fn try_parse_double(clean : String) -> Double? {
+  try {
+    Some(@string.parse_double(clean))
+  } catch {
+    _ => None
+  }
+}
+
+// ── int 値空間判定 + int_round (DR-075) ────────────────────────────────────────
+
+///|
+fn repeat_zero(k : Int) -> String {
+  let buf = StringBuilder::new()
+  let mut j = 0
+  while j < k {
+    buf.write_char('0')
+    j = j + 1
+  }
+  buf.to_string()
+}
+
+///|
+fn all_zero(s : String) -> Bool {
+  for c in s {
+    if c != '0' {
+      return false
+    }
+  }
+  true
+}
+
+///|
+fn has_nonzero(s : String, from : Int) -> Bool {
+  let cs = chars_of(s)
+  let mut i = from
+  while i < cs.length() {
+    if cs[i] != '0' {
+      return true
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
+/// Fold the exponent into the digit列, yielding the plain `(integer_part_digits, frac_part_digits)`
+/// with the decimal point materialized (no exponent left). e.g. int="1" frac="" exp=3 → ("1000","");
+/// int="2" frac="5" exp=0 → ("2","5"); int="" frac="5" exp=0 → ("","5"). This is decimal 桁シフト,
+/// done purely on digit strings so no binary64 rounding enters the integer/tie decision (DR-075 §5).
+fn apply_exponent(int_d : String, frac_d : String, exp : Int) -> (String, String) {
+  let combined = int_d + frac_d
+  let point = int_d.length() + exp
+  if point <= 0 {
+    ("", repeat_zero(-point) + combined)
+  } else if point >= combined.length() {
+    (combined + repeat_zero(point - combined.length()), "")
+  } else {
+    (combined[0:point].to_owned(), combined[point:].to_owned())
+  }
+}
+
+///|
+/// Round a non-negative magnitude `m` (the integer部) given the first fractional digit `d0` and
+/// whether any later fractional digit is non-zero, plus the sign and the mode (DR-075 §2 table).
+/// The tie/half classification is lexical (d0<5 / d0=5&rest=0 / else) — no binary64 involved.
+fn round_magnitude(
+  m : Int64,
+  d0 : Int,
+  rest_nonzero : Bool,
+  neg : Bool,
+  mode : RoundMode,
+) -> Int64 {
+  let gt_half = d0 > 5 || (d0 == 5 && rest_nonzero)
+  let is_tie = d0 == 5 && !rest_nonzero
+  let up = m + 1L
+  match mode {
+    RFloor => if neg { up } else { m } // →−∞
+    RCeil => if neg { m } else { up } // →+∞
+    RTrunc => m // →0 (drop fraction)
+    RAway => up // →0 の反対 (abs 切り上げ)
+    RHalfFloor => if is_tie { if neg { up } else { m } } else if gt_half { up } else { m }
+    RHalfCeil => if is_tie { if neg { m } else { up } } else if gt_half { up } else { m }
+    RHalfTrunc => if is_tie { m } else if gt_half { up } else { m }
+    RHalfAway => if is_tie { up } else if gt_half { up } else { m }
+    RHalfEven =>
+      if is_tie {
+        if m % 2L == 0L {
+          m
+        } else {
+          up
+        }
+      } else if gt_half {
+        up
+      } else {
+        m
+      }
+    RError => m // caller handles RError before reaching here
+  }
+}
+
+///|
+/// Parse a String token as an `int` element per DR-075: 値空間判定. Parse the token as a canonical
+/// number, then judge its VALUE. An integer value (`"3.0"`→3 / `"1e3"`→1000 / `"1_000"`→1000) is
+/// accepted directly under every mode. A truly-fractional value follows `mode`: `RError` (canonical
+/// default) → `NotAnInteger`; any rounding mode → the rounded Int64. A non-number token → `NotANumber`.
+/// The整数性 and tie decisions are lexical (binary64-非経由, DR-075 §5).
+pub fn parse_int_value(s : String, mode : RoundMode) -> Result[Int64, ParseFail] {
+  match scan_number_parts(s) {
+    None => Err(NotANumber)
+    Some((neg, int_d, frac_d, exp)) => {
+      let (ipart, fpart) = apply_exponent(int_d, frac_d, exp)
+      if all_zero(fpart) {
+        // integer value — accepted under every mode, no rounding
+        let m = digits_to_i64(ipart)
+        Ok(if neg { -m } else { m })
+      } else {
+        match mode {
+          RError => Err(NotAnInteger)
+          _ => {
+            let m = digits_to_i64(ipart)
+            let d0 = fpart[0].to_int() - 48
+            let rest_nonzero = has_nonzero(fpart, 1)
+            let mag = round_magnitude(m, d0, rest_nonzero, neg, mode)
+            Ok(if neg { -mag } else { mag })
+          }
+        }
+      }
+    }
+  }
+}
+
+// ── bool canonical 字句 (DR-074 §3) ────────────────────────────────────────────
+
+///|
+fn eq_ci(s : String, target : String) -> Bool {
+  let a = chars_of(s)
+  let b = chars_of(target)
+  if a.length() != b.length() {
+    return false
+  }
+  for i in 0..<a.length() {
+    if lower_code(a[i]) != lower_code(b[i]) {
+      return false
+    }
+  }
+  true
+}
+
+///|
+fn lower_code(c : Char) -> Int {
+  let x = c.to_int()
+  if x >= 65 && x <= 90 {
+    x + 32 // ASCII 'A'-'Z' → 'a'-'z'
+  } else {
+    x
+  }
+}
+
+///|
+/// Parse a String token as a bool (DR-074 §3 canonical): `true_values = ["true","1"]`,
+/// `false_values = ["false","0",""]`, `case_insensitive = true`. An unrecognized token is None
+/// (→ Error at the call site — no silent bool化, DR-021 姿勢). The empty string is false (env's
+/// `FLAG=` pattern); `yes`/`no`/`on`/`off` are canonical-外 (Norway problem 回避).
+pub fn parse_bool(s : String) -> Bool? {
+  if eq_ci(s, "true") || s == "1" {
+    Some(true)
+  } else if eq_ci(s, "false") || s == "0" || s == "" {
+    Some(false)
+  } else {
+    None
+  }
+}
+
+///|
+/// Convert one leaf config value to the element's expected type (DR-050 §4). Leniency is
+/// BIDIRECTIONALLY SYMMETRIC (DR-040 canonical): a string parses into any type (`"8080"` → number),
+/// AND a JSON scalar stringifies into a string element (`1.5` → "1.5", `true` → "true"). The int
+/// path is 値空間判定 with canonical `int_round: error` (DR-075): `"3.0"` → 3, `"2.5"` → Error. Bool
+/// is the canonical vocab (DR-074 §3). Only the 意味の飛躍 (bool ↔ number) and 構造不一致
+/// (array/object → scalar) are DR-037 Errors.
+pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
+  match (cv, ty) {
+    // string element: accept anything — string / lenient parse / JSON stringification
+    (CStr(s), TStr) => Ok(VStr(s))
+    (CNum(d), TStr) => Ok(VStr(num_to_string(d))) // 1.5 → "1.5" (寛容の双方向対称)
+    (CBool(b), TStr) => Ok(VStr(if b { "true" } else { "false" })) // true → "true"
+    // string → number: lenient canonical parse (DR-074)
+    (CStr(s), TNum) =>
+      match parse_number(s) {
+        Some(d) => Ok(VNum(d))
+        None => Err("config value \"\{s}\" is not a number")
+      }
+    // string → int: 値空間判定, canonical int_round = error (DR-075 §1-§2)
+    (CStr(s), TInt) =>
+      match parse_int_value(s, RError) {
+        Ok(i) => Ok(VNum(i.to_double()))
+        Err(NotAnInteger) => Err("config value \"\{s}\" is not an integer")
+        Err(NotANumber) => Err("config value \"\{s}\" is not a number")
+      }
+    // string → bool: canonical vocab (DR-074 §3), unrecognized → Error (no silent 変換)
+    (CStr(s), TFlag) =>
+      match parse_bool(s) {
+        Some(b) => Ok(VBool(b))
+        None => Err("config value \"\{s}\" is not a bool")
+      }
+    // typed number matching a number element (any) / an int element (integer only)
+    (CNum(d), TNum) => Ok(VNum(d))
+    // native number → int: JSON 由来 binary64 経由判定 (DR-075 §5 の非対称)
+    (CNum(d), TInt) =>
+      if is_integer(d) {
+        Ok(VNum(d))
+      } else {
+        Err("config value \"\{num_to_string(d)}\" is not an integer")
+      }
+    (CBool(b), TFlag) => Ok(VBool(b))
+    // 意味の飛躍 (bool ↔ number) は Error — no coercion
+    (CNum(_), TFlag) =>
+      Err("config number for a bool element (no number↔bool coercion)")
+    (CBool(_), TNum) =>
+      Err("config bool for a number element (no number↔bool coercion)")
+    (CBool(_), TInt) =>
+      Err("config bool for an int element (no number↔bool coercion)")
+    // 構造不一致 (array / object → scalar element) は Error
+    (CArr(_), _) => Err("config array for a scalar element (structural mismatch)")
+    (CObj(_), _) =>
+      Err("config object for a scalar element (structural mismatch)")
+    // null is 供給なし (handled before this by resolve; defensive arm for exhaustiveness, DR-050 §4)
+    (CNull, _) =>
+      Err(
+        "config null is 供給なし (should be handled as no-supply, not converted)",
+      )
+  }
+}
+
+///|
+/// The effect an entry's firing applies to a value cell (DR-045). It is PURE DATA
+/// `{op, operand?}`: the op names the operation, the operand is the Binding's `value`.
+/// A normal value bind (a value slot consuming a token and writing it) is the SET
+/// degenerate form, so every effect-column element is uniform (entity, op, operand,
+/// source, order). `default`/`unset`/`empty` carry NO operand (the Binding's value is a
+/// placeholder). The four ops correspond 1:1 to DR-011's variant effect vocabulary.
+pub(all) enum EffectOp {
+  Set // write the operand; committed (the degenerate form of a plain value bind)
+  Default // reset to the default value; committed (the user explicitly wants default)
+  Unset // reset to the default; NOT committed — later ladder seats (env/config/inherit) may override
+  Empty // clear a collection (array / map) to empty; committed
+} derive(Eq, Debug)
+
+///|
+/// committed is DERIVED from the op, never a separate field (DR-045 §2: selected and
+/// committed are independent, and the effect explicitly controls committed). Only `unset`
+/// is un-committed, which is exactly what opens the later value-source ladder seats.
+pub fn committed(op : EffectOp) -> Bool {
+  match op {
+    Unset => false
+    _ => true
+  }
+}
+
+///|
+/// One EFFECT written onto a result path: `key`'s cell gets operation `op` with operand
+/// `value`, from `source` (DR-045). `key` is the leaf name; same-key bindings from
+/// different entries (e.g. `--port` satellite and `-p` matcher) merge onto one cell =
+/// link 合流. `scope` is the result nesting path (DR-025): a binding produced inside a
+/// command / name scope carries that scope's labels, outermost first.
+///
+/// Path-counting (DR-038) treats the whole binding as identity, so op/operand are part of
+/// the effect-sequence key (DR-045 §1 精密化): the same cell reset by `unset` vs written by
+/// `set` are DIFFERENT effects even at the same position. A value in `serve` differs from
+/// the same leaf at root (scope is in the key too).
+pub(all) struct Binding {
+  key : String
+  op : EffectOp // the operation on the cell (DR-045); Set for a plain value bind
+  value : Value // the operand (a placeholder for default/unset/empty, which carry none)
+  source : Source
+  scope : Array[String]
+  link : Int // a link/global-copy binding (DR-042/007): the number of result-nesting levels it
+  //           still ESCAPES before settling at its declaring scope. 0 = a normal binding (every
+  //           CmdSat/Scoped level prepends its label). N>0 = a global copied N scopes BELOW its
+  //           declaration; the next N nest levels skip prepending (decrementing), then it nests
+  //           normally — so an intermediate-scope global (DR-042 shadow) lands at its declaring
+  //           scope, not the absolute root. A root global (declared at depth 0) has N = its firing
+  //           depth, which escapes all the way to the root (the original bool-`link` behaviour).
+} derive(Eq, Debug)
+
+// ── Binding/ParseError helpers the matcher builds (Branch itself lives in node.mbt) ──
+
+///|
+/// A plain value bind = the SET degenerate form of an effect (DR-045 §1).
+fn mkb(key : String, value : Value, source : Source) -> Binding {
+  { key, op: Set, value, source, scope: [], link: 0 }
+}
+
+///|
+/// Concatenate two binding arrays (accumulate readings along a path).
+fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
+  let r : Array[Binding] = []
+  for x in a {
+    r.push(x)
+  }
+  for x in b {
+    r.push(x)
+  }
+  r
+}
+
+///|
+/// A `kind: parse` held Error for a value that failed to parse as a number (DR-053 §2). The reason is
+/// `not_a_number` (DR-066 §3): a token that does not read as a number at all — an int element also
+/// lands here for a non-number token (int judges via the number 字句), while `not_an_integer` is the
+/// separate reason for a readable-but-fractional value under int_round=error.
+fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
+  {
+    element,
+    argv_pos: pos,
+    kind: KParse,
+    reason: "not_a_number",
+    message: "\"\{tok}\" is not a number",
+  }
+}
+
+///|
+/// A deprecation marker binding (DR-058): key `@depr:<element>`, recording that a deprecated entry
+/// (DR-057 alias) was used to reach the canonical cell. Rides in the effect column like any binding;
+/// the result builder skips it (bookkeeping, not a value), and `warnings_of` collects it.
+fn depr_marker(element : String) -> Binding {
+  { key: "@depr:" + element, op: Set, value: VBool(false), source: Cli, scope: [], link: 0 }
+}
