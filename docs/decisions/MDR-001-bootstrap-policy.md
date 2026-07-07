@@ -11,7 +11,7 @@ kuu.mbt を kuu 仕様 (kawaz/kuu) の MoonBit 参照実装として再出発さ
 評価器コア (slice の `poc/eval.mbt` / `poc/complete.mbt` 相当) は、slice が抱える 2 件の破れを設計入力として**ゼロから再設計**する。速度のための移植妥協はしない。
 
 - **破れ 1**: 完成オラクルのスコープ相対化。slice の `poc/phase16_wbtest.mbt` の凍結 fail がこの再設計の受け入れテストになる (= 新評価器はこの fail を解消して green にできなければならない)。
-- **破れ 2**: pending 枝の扱い。分離恒久化案と Branch への Pending 追加案の両案がある (下記「未決」参照)。
+- **破れ 2**: pending 枝の扱い。分離恒久化案と Branch への Pending 追加案の 2 案を設計入力とする。決着は §2 / 派生決定 (MDR-002 §2 で案 B に確定)。
 
 葉 (`node` / `value` / `matcher` / `result` 相当) と installer の lowering は slice を参照して移植するが、設計的に正しい形への書き直しを厭わない。
 
