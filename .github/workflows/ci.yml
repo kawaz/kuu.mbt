@@ -12,10 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: chawyehsu/setup-moonup@v1
-        with:
-          moonbit-version: 0.1.20260707+ca43856
-      - run: moonup default 0.1.20260707+ca43856
+      # 公式 install script で rolling nightly を直取得 (moonup の nightly index は
+      # 1 日遅延することがあり、toolchain 移行日 (例: assert_eq の Show→Debug) に
+      # ローカルと CI で版が割れるため。CDN の binaries/nightly は当日更新される)
+      - run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s nightly
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
       - run: moon version --all
       - run: moon update
       - run: moon fmt --check
@@ -40,10 +42,12 @@ jobs:
           ref: e21646f557dd88bd4ae789411b16a83ea88e5e5f
           path: _kuu-spec
 
-      - uses: chawyehsu/setup-moonup@v1
-        with:
-          moonbit-version: 0.1.20260707+ca43856
-      - run: moonup default 0.1.20260707+ca43856
+      # 公式 install script で rolling nightly を直取得 (moonup の nightly index は
+      # 1 日遅延することがあり、toolchain 移行日 (例: assert_eq の Show→Debug) に
+      # ローカルと CI で版が割れるため。CDN の binaries/nightly は当日更新される)
+      - run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s nightly
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
       - run: moon update
 
       - name: Run tests
