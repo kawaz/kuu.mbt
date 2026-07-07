@@ -205,7 +205,8 @@ fn walk_short(
             let vstr = chars_to_str(body, vstart, j)
             match short_val(e, vstr) {
               Some(b) =>
-                for r in walk_short(
+                for
+                  r in walk_short(
                     entries,
                     body,
                     j,

@@ -39,10 +39,9 @@ fn is_held(b : Branch) -> Bool {
 /// bad number value is a held Error (not 素通し, DR-037); an undefined key produces no reading and
 /// falls through to the positional face (素通し). A token without the prefix/`=` does not fire.
 test "eq-split long option resolves, errors, and 素通し" {
-  let long = EqSplit(
-    prefix="--",
-    entries=[{ key: "port", name: "port", kind: TNum }],
-  )
+  let long = EqSplit(prefix="--", entries=[
+    { key: "port", name: "port", kind: TNum },
+  ])
   // a defined numeric key: one Accept consuming 1 token, binding port=8080 from the CLI seat.
   let r1 = run_matcher(long, ["--port=8080"], 0)
   assert_eq(r1.length(), 1)
@@ -72,14 +71,11 @@ test "eq-split long option resolves, errors, and 素通し" {
 /// (the `1`/`1.` prefixes leave undefined chars that kill their readings), so exactly one reading
 /// results. This is DR-041 §3-4 "enumerate ALL readings" narrowed by the completion requirement.
 test "short cluster: flag run and in-token numeric value" {
-  let short = ShortCombine(
-    prefix="-",
-    entries=[
-      { ch: 'a', name: "a", kind: TFlag, depr: false },
-      { ch: 'b', name: "b", kind: TFlag, depr: false },
-      { ch: 'n', name: "n", kind: TNum, depr: false },
-    ],
-  )
+  let short = ShortCombine(prefix="-", entries=[
+    { ch: 'a', name: "a", kind: TFlag, depr: false },
+    { ch: 'b', name: "b", kind: TFlag, depr: false },
+    { ch: 'n', name: "n", kind: TNum, depr: false },
+  ])
   // `-ab`: a run of two flags → one reading binding a=true, b=true, consuming the single token.
   let rf = run_matcher(short, ["-ab"], 0)
   assert_eq(rf.length(), 1)
@@ -104,10 +100,9 @@ test "short cluster: flag run and in-token numeric value" {
 /// A value char at the cluster tail may take the NEXT token as its value (space form, consuming 2
 /// tokens) — `-n 5` → n=5 at position 2. This is the getopt-同型 tail consumption (DR-041 §4).
 test "short cluster: space-form value takes the next token" {
-  let short = ShortCombine(
-    prefix="-",
-    entries=[{ ch: 'n', name: "n", kind: TNum, depr: false }],
-  )
+  let short = ShortCombine(prefix="-", entries=[
+    { ch: 'n', name: "n", kind: TNum, depr: false },
+  ])
   let r = run_matcher(short, ["-n", "5"], 0)
   assert_eq(r.length(), 1)
   assert_eq(acc_pos(r[0]), 2) // consumed BOTH the `-n` token and the `5` token
@@ -122,10 +117,9 @@ test "short cluster: space-form value takes the next token" {
 /// the value binding is unchanged (only a warning is later collected from the marker). This freezes
 /// that firing a deprecated spelling does NOT alter the parsed value — it only adds bookkeeping.
 test "short cluster: deprecated entry rides a @depr marker" {
-  let short = ShortCombine(
-    prefix="-",
-    entries=[{ ch: 'd', name: "d", kind: TFlag, depr: true }],
-  )
+  let short = ShortCombine(prefix="-", entries=[
+    { ch: 'd', name: "d", kind: TFlag, depr: true },
+  ])
   let r = run_matcher(short, ["-d"], 0)
   assert_eq(r.length(), 1)
   let b = acc_binds(r[0])

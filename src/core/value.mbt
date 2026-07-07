@@ -303,9 +303,7 @@ pub fn parse_number(s : String) -> Double? {
 
 ///|
 fn try_parse_double(clean : String) -> Double? {
-  try {
-    Some(@string.parse_double(clean))
-  } catch {
+  Some(@string.parse_double(clean)) catch {
     _ => None
   }
 }
@@ -351,7 +349,11 @@ fn has_nonzero(s : String, from : Int) -> Bool {
 /// with the decimal point materialized (no exponent left). e.g. int="1" frac="" exp=3 → ("1000","");
 /// int="2" frac="5" exp=0 → ("2","5"); int="" frac="5" exp=0 → ("","5"). This is decimal 桁シフト,
 /// done purely on digit strings so no binary64 rounding enters the integer/tie decision (DR-075 §5).
-fn apply_exponent(int_d : String, frac_d : String, exp : Int) -> (String, String) {
+fn apply_exponent(
+  int_d : String,
+  frac_d : String,
+  exp : Int,
+) -> (String, String) {
   let combined = int_d + frac_d
   let point = int_d.length() + exp
   if point <= 0 {
@@ -382,8 +384,30 @@ fn round_magnitude(
     RCeil => if neg { m } else { up } // →+∞
     RTrunc => m // →0 (drop fraction)
     RAway => up // →0 の反対 (abs 切り上げ)
-    RHalfFloor => if is_tie { if neg { up } else { m } } else if gt_half { up } else { m }
-    RHalfCeil => if is_tie { if neg { m } else { up } } else if gt_half { up } else { m }
+    RHalfFloor =>
+      if is_tie {
+        if neg {
+          up
+        } else {
+          m
+        }
+      } else if gt_half {
+        up
+      } else {
+        m
+      }
+    RHalfCeil =>
+      if is_tie {
+        if neg {
+          m
+        } else {
+          up
+        }
+      } else if gt_half {
+        up
+      } else {
+        m
+      }
     RHalfTrunc => if is_tie { m } else if gt_half { up } else { m }
     RHalfAway => if is_tie { up } else if gt_half { up } else { m }
     RHalfEven =>
@@ -408,7 +432,10 @@ fn round_magnitude(
 /// accepted directly under every mode. A truly-fractional value follows `mode`: `RError` (canonical
 /// default) → `NotAnInteger`; any rounding mode → the rounded Int64. A non-number token → `NotANumber`.
 /// The整数性 and tie decisions are lexical (binary64-非経由, DR-075 §5).
-pub fn parse_int_value(s : String, mode : RoundMode) -> Result[Int64, ParseFail] {
+pub fn parse_int_value(
+  s : String,
+  mode : RoundMode,
+) -> Result[Int64, ParseFail] {
   match scan_number_parts(s) {
     None => Err(NotANumber)
     Some((neg, int_d, frac_d, exp)) => {
@@ -525,7 +552,8 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
     (CBool(_), TInt) =>
       Err("config bool for an int element (no number↔bool coercion)")
     // 構造不一致 (array / object → scalar element) は Error
-    (CArr(_), _) => Err("config array for a scalar element (structural mismatch)")
+    (CArr(_), _) =>
+      Err("config array for a scalar element (structural mismatch)")
     (CObj(_), _) =>
       Err("config object for a scalar element (structural mismatch)")
     // null is 供給なし (handled before this by resolve; defensive arm for exhaustiveness, DR-050 §4)
@@ -628,5 +656,12 @@ fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
 /// (DR-057 alias) was used to reach the canonical cell. Rides in the effect column like any binding;
 /// the result builder skips it (bookkeeping, not a value), and `warnings_of` collects it.
 fn depr_marker(element : String) -> Binding {
-  { key: "@depr:" + element, op: Set, value: VBool(false), source: Cli, scope: [], link: 0 }
+  {
+    key: "@depr:" + element,
+    op: Set,
+    value: VBool(false),
+    source: Cli,
+    scope: [],
+    link: 0,
+  }
 }
