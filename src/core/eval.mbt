@@ -579,7 +579,12 @@ fn eval_seq(
         for r in eval_seq(items, idx + 1, toks, p2, cat(acc, bs), defs) {
           out.push(r)
         }
-      Held(pe, bs) => out.push(Held(pe, bs))
+      // the Held carries the Seq's accumulated partial state too: a marker
+      // bound EARLIER in the same entry (e.g. `--help`'s FailMark before a
+      // failing value slot) must reach parse() for fired_action selection
+      // (DR-048 / DR-053 §4 共存). The slice dropped acc here — a defect the
+      // adversarial review caught, not a parity to keep.
+      Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
       Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
     }
   }
@@ -605,7 +610,9 @@ fn eval_many(
           }
         }
       Held(pe, bs) => out.push(Held(pe, bs))
-      Pending(cs, bs) => out.push(Pending(cs, bs))
+      // a Pending after >= 1 successful reps still carries the reps' acc
+      // (same contract as eval_seq: Pending = starved branch WITH its state).
+      Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
     }
   }
   out
@@ -1214,6 +1221,11 @@ fn consume_head(
 /// non-primitive head (used by drop_optional_missing).
 fn head_name(head : Node) -> String {
   match head {
+    // FilterArg included: consume_head falls back to eval() for it, whose
+    // EOF arm emits the same missing-operand shape — without the name here
+    // an optional "one more rep" of a filtered head would read as a
+    // structural failure (adversarial review finding).
+    FilterArg(n, _) => n
     StrArg(n) => n
     SepArg(n, _) => n
     NumArg(n) => n
@@ -1660,20 +1672,32 @@ pub fn parse(
     }
   }
   let help = find_help_entry(root)
-  // Residual-token fallback for NON-scope roots (a ScopeNode root surfaces
-  // residual tokens as KTop Helds already).
-  let errors = if errors.length() == 0 && full.length() == 0 && max_reach >= 0 {
-    [
-      {
+  // Residual-token synthesis for NON-scope roots (a ScopeNode root surfaces
+  // residual tokens as KTop Helds already): a partial Accept (p < length)
+  // on a 0-complete-path parse is a residual failure in its own right, and
+  // must surface EVEN IF other branches contributed held Errors — gating on
+  // "errors empty" would silently mask the deepest partial reading's stumble
+  // (DR-053 §2 全保持; adversarial review finding). Deduped like any error.
+  if full.length() == 0 {
+    let mut max_partial = -1
+    for b in branches {
+      match b {
+        Accept(p, _) =>
+          if p < toks.length() && p > max_partial {
+            max_partial = p
+          }
+        _ => ()
+      }
+    }
+    if max_partial >= 0 {
+      push_error(errors, {
         element: "",
-        argv_pos: max_reach,
+        argv_pos: max_partial,
         kind: KParse,
         reason: "unexpected_token",
         message: "unexpected token",
-      },
-    ]
-  } else {
-    errors
+      })
+    }
   }
   match full.length() {
     0 =>

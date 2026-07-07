@@ -301,3 +301,112 @@ test "DR-043 sequential repeats: xs ys over a b c d e — greedy xs takes the lo
     _ => fail("expected Success")
   }
 }
+
+///|
+test "REVIEW-C1 fired_action survives a failing value slot in the same greedy entry" {
+  // A failure-action entry that ALSO takes a value: Seq([--help, FailMark,
+  // NumArg]). When the value fails to parse, the FailMark marker bound
+  // earlier in the SAME Seq must still reach parse() on the Held's partial
+  // state — fired_action and the held error coexist (spec DR-048/DR-053 §4).
+  // The slice dropped the Seq-internal acc on Held, losing the action.
+  let root : Scope = {
+    greedy: [Seq([Exact("--help"), FailMark("help"), NumArg("n")])],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["--help", "abc"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      assert_eq(fd.fired_action, Some("help"))
+      let mut saw_parse_err = false
+      for e in fd.errors {
+        if e.element == "n" && e.reason == "not_a_number" {
+          saw_parse_err = true
+        }
+      }
+      assert_true(saw_parse_err)
+    }
+    _ => fail("expected Failure")
+  }
+}
+
+///|
+test "REVIEW-C2 eval_many: a Pending after successful reps carries the reps' bindings" {
+  // Whitebox: one rep of StrArg("v") consumes the only token, the next rep
+  // starves -> Pending. Its partial state must include v=x (the same
+  // contract as eval_seq: Pending = starved branch WITH its state).
+  let brs = eval_many(StrArg("v"), ["x"], 0, [], Map([]))
+  let mut pending_has_acc = false
+  for b in brs {
+    match b {
+      Pending(_, bs) =>
+        if bs.length() == 1 && bs[0].key == "v" {
+          pending_has_acc = true
+        }
+      _ => ()
+    }
+  }
+  assert_true(pending_has_acc)
+}
+
+///|
+test "REVIEW-C3 head_name knows FilterArg: optional extra rep at EOF is a stop, not an error" {
+  // Repeat of a FilterArg head followed by a mandatory positional z, input
+  // exhausts after one rep. The genuine failure is "z missing"; the "one
+  // more n" probe finding no token is a legitimate stop and must NOT add a
+  // missing-operand-for-n error (drop_optional_missing needs the head's
+  // name, which FilterArg supplies via head_name).
+  let defs : Map[String, Node] = Map([])
+  reg_repeat(defs, "ns", FilterArg("n", 100))
+  let root : Scope = {
+    greedy: [],
+    positional: [Ref("ns"), StrArg("z")],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["5"], defs~)
+  match o {
+    Failure(fd) => {
+      for e in fd.errors {
+        // no error may blame the repeat element n for "missing operand"
+        assert_false(e.element == "n" && e.reason == "missing_operand")
+      }
+      let mut z_missing = false
+      for e in fd.errors {
+        if e.element == "z" && e.reason == "missing_operand" {
+          z_missing = true
+        }
+      }
+      assert_true(z_missing)
+    }
+    _ => fail("expected Failure")
+  }
+}
+
+///|
+test "REVIEW-C4 non-scope root: residual of a partial Accept surfaces even when another branch held an error" {
+  // Or branch 1 accepts "a" leaving "xyz" residual (partial Accept);
+  // branch 2 helds a not_a_number on "xyz". 0 complete paths -> failure.
+  // Both failure reasons must be retained (DR-053 §2 全保持): gating the
+  // residual synthesis on "errors empty" would mask the partial reading.
+  let root = Or([Exact("a"), Seq([Exact("a"), NumArg("n")])])
+  let o = parse(root, ["a", "xyz"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut saw_residual = false
+      let mut saw_parse = false
+      for e in fd.errors {
+        if e.reason == "unexpected_token" && e.argv_pos == 1 {
+          saw_residual = true
+        }
+        if e.reason == "not_a_number" {
+          saw_parse = true
+        }
+      }
+      assert_true(saw_residual)
+      assert_true(saw_parse)
+    }
+    _ => fail("expected Failure")
+  }
+}
