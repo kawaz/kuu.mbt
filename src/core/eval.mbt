@@ -783,7 +783,9 @@ fn step_greedy(
                 out.push(r)
               }
             }
-          Held(pe, bs) => out.push(Held(pe, bs))
+          // acc must be carried on Held so an earlier FailMark (fired_action
+          // material, eval_seq comment DR-048/DR-053 §4) survives to parse().
+          Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
           Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
         }
       }
@@ -950,13 +952,17 @@ fn scope_consume(
         // back one nesting level in (REVIEW-H1 wbtest). The head's own walk
         // gets the choice point as its continuation frame instead.
         ScopeNode(child) =>
+          // DR-041 dashdash: dd severs the greedy face for the REST of the
+          // spine, including any child scope reached through the porous
+          // unfold. The child's own walk inherits `severed` so a dd-continued
+          // token cannot re-fire a greedy in the child scope.
           scope_step(
             child,
             toks,
             pos,
             0,
             acc,
-            false,
+            severed,
             defs,
             KRefChoice(sc, name, pidx, severed, pos, k),
           )
@@ -981,7 +987,8 @@ fn scope_consume(
                     out.push(r)
                   }
                 }
-              Held(pe, bs) => out.push(Held(pe, bs))
+              // Carry acc on Held (fired_action material preservation).
+              Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
               Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
             }
           }
@@ -993,30 +1000,37 @@ fn scope_consume(
         sc, head, budget, lazy_, toks, pos, pidx, acc, severed, defs, k,
       )
     Many(inner) => {
-      let out : Array[Branch] = []
-      for r in scope_step(sc, toks, pos, pidx + 1, acc, severed, defs, k) { // 0 reps
-        out.push(r)
+      // Two closures on the spine — parity with Ref/BoundedTail 取り分選好
+      // (spec DR-043). Without preference, `[Many(xs), Many(ys)]` on ["a","b"]
+      // returns Ambiguous (3-way split) even though the greedy default fixes
+      // xs=[a,b], ys=[] as the representative. `Many` is greedy-only (no lazy_
+      // knob in the AST) — more-rep first, then stop.
+      let stop = scope_step(sc, toks, pos, pidx + 1, acc, severed, defs, k) // 0 reps
+      let more = scope_consume_rep(
+        sc, inner, toks, pos, pidx, acc, severed, defs, k,
+      ) // 1 rep (which re-enters scope_step at same pidx)
+      if has_full_k(more) {
+        more
+      } else if has_full_k(stop) {
+        stop
+      } else {
+        cat_branches(stop, more)
       }
-      for
-        r in scope_consume_rep(
-          sc, inner, toks, pos, pidx, acc, severed, defs, k,
-        ) { // 1 rep
-        out.push(r)
-      }
-      out
     }
     ScopeNode(child) =>
-      // spec DR-042 ⑤: a child scope runs its own (fresh, unsevered) walk;
-      // the parent greedy face does not interject during it. The child's
-      // continuation resumes the parent at pidx+1 — so a repeat INSIDE the
-      // child consults the parent's remaining consumption (CPS benefit).
+      // spec DR-042 ⑤: a child scope runs its own walk (the parent greedy
+      // face does not interject during it). `severed` DOES pass through — dd
+      // severs the greedy face for the whole rest of the spine, including
+      // inline child scopes reached through the positional face (DR-041
+      // dashdash: continuation is raw). The parent-resume continuation still
+      // remembers the outer severed independently.
       scope_step(
         child,
         toks,
         pos,
         0,
         acc,
-        false,
+        severed,
         defs,
         KResumeScope(sc, pidx + 1, severed, k),
       )
@@ -1039,7 +1053,8 @@ fn scope_consume(
               ) {
               out.push(r)
             }
-          Held(pe, bs) => out.push(Held(pe, bs))
+          // Carry acc on Held (fired_action material preservation).
+          Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
           Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
         }
       }
@@ -1066,11 +1081,13 @@ fn ref_choice(
   let head = ref_head(defs, name)
   let lazy_ = ref_is_lazy(defs, name)
   let stop = scope_step(sc, toks, p2, pidx + 1, acc2, severed, defs, k)
-  // "more" = one more OPTIONAL rep; a missing-operand for the repeat
-  // element inside it is a legitimate stop, not a failure.
+  // "more" = one more OPTIONAL rep; a missing-operand for ANY value
+  // primitive reachable inside the repeat head (scope-shaped included) is a
+  // legitimate stop, not a failure. head-external missing (a downstream
+  // primitive fed by the parent continuation) stays.
   let more = drop_optional_missing(
     scope_step(sc, toks, p2, pidx, acc2, severed, defs, k),
-    head_name(head),
+    head_elem_names(head),
   )
   if lazy_ {
     if has_full_k(stop) {
@@ -1106,18 +1123,19 @@ fn bounded_tail_step(
   k : Cont,
 ) -> Array[Branch] {
   let stop = scope_step(sc, toks, pos, pidx + 1, acc, severed, defs, k)
-  let more : Array[Branch] = if budget >= 1 {
+  let more_raw : Array[Branch] = if budget >= 1 {
     match head {
       // scope-shaped head: same KDone hazard as the Ref path (REVIEW-H1) —
       // the head's walk carries the tail's choice point as its continuation.
       ScopeNode(child) =>
+        // same dd sever pass-through as the scope_consume ScopeNode arms.
         scope_step(
           child,
           toks,
           pos,
           0,
           acc,
-          false,
+          severed,
           defs,
           KTailChoice(sc, head, budget - 1, lazy_, pidx, severed, pos, k),
         )
@@ -1144,16 +1162,25 @@ fn bounded_tail_step(
                   out.push(r)
                 }
               }
+            // NOTE: bounded_tail_step's Held acc handling is intentionally
+            // left alone here — the 4-site scope-walk acc fix targeted the
+            // scope_step / scope_consume family only. Revisit if a FailMark
+            // preservation gap surfaces in the bounded tail path.
             Held(pe, bs) => out.push(Held(pe, bs))
             Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
           }
         }
-        drop_optional_missing(out, head_name(head))
+        out
       }
     }
   } else {
     []
   }
+  // Filter the OPTIONAL "more" branch's internal missing_operand@EOF for any
+  // primitive reachable in the head (scope-shaped heads included, spec
+  // DR-065 §3 held-error parity). head-external missing from the parent's
+  // continuation is preserved.
+  let more = drop_optional_missing(more_raw, head_elem_names(head))
   if lazy_ {
     if has_full_k(stop) {
       stop
@@ -1212,41 +1239,130 @@ fn consume_head(
       } else {
         []
       }
+    // ReqArg / FilterArg get their own arms so 先食い (suppressed) applies —
+    // eval() does not see the parent scope, so falling through would let a
+    // greedy trigger token be raw-eaten as the repeat head's value. Held
+    // shapes must match the primitive arms above so drop_optional_missing on
+    // the OPTIONAL "more" branch can filter them uniformly.
+    ReqArg(name) =>
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
+        [Accept(pos + 1, [mkb(name, VStr(toks[pos]), Cli)])]
+      } else if pos >= toks.length() {
+        [
+          Held(
+            {
+              element: name,
+              argv_pos: pos,
+              kind: KConstraint,
+              reason: "required_violated",
+              message: "required \{name} is missing",
+            },
+            [],
+          ),
+        ]
+      } else {
+        []
+      }
+    FilterArg(name, max) =>
+      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
+        match parse_number(toks[pos]) {
+          Some(d) =>
+            if d > max.to_double() {
+              [
+                Held(
+                  {
+                    element: name,
+                    argv_pos: pos,
+                    kind: KFilter,
+                    reason: "too_large",
+                    message: "\{name} value \{toks[pos]} exceeds max \{max}",
+                  },
+                  [],
+                ),
+              ]
+            } else {
+              [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+            }
+          None => [Held(pe_parse(name, toks[pos], pos), [])]
+        }
+      } else if pos >= toks.length() {
+        [Held(pe_missing(name, pos), [])]
+      } else {
+        []
+      }
     _ => eval(head, toks, pos, defs)
   }
 }
 
 ///|
-/// The value-primitive element name of a repeat head, or "" for a
-/// non-primitive head (used by drop_optional_missing).
-fn head_name(head : Node) -> String {
-  match head {
-    // FilterArg included: consume_head falls back to eval() for it, whose
-    // EOF arm emits the same missing-operand shape — without the name here
-    // an optional "one more rep" of a filtered head would read as a
-    // structural failure (adversarial review finding).
-    FilterArg(n, _) => n
-    StrArg(n) => n
-    SepArg(n, _) => n
-    NumArg(n) => n
-    _ => ""
+/// The value-primitive element names reachable inside a repeat head (spec
+/// DR-043 / DR-065 §3 held-error parity for scope-shaped heads). For a
+/// primitive head this is [name]; for a ScopeNode head this recurses into the
+/// child scope's greedy + positional structure so drop_optional_missing can
+/// suppress the "one more OPTIONAL rep" internal missing_operand@EOF for
+/// EVERY primitive the head might produce, while downstream (head-external)
+/// missing_operand from the parent's continuation still surfaces.
+fn head_elem_names(head : Node) -> Array[String] {
+  let out : Array[String] = []
+  head_elem_names_into(head, out)
+  out
+}
+
+///|
+fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
+  match n {
+    StrArg(name) => if !str_mem(out, name) { out.push(name) }
+    SepArg(name, _) => if !str_mem(out, name) { out.push(name) }
+    NumArg(name) => if !str_mem(out, name) { out.push(name) }
+    FilterArg(name, _) => if !str_mem(out, name) { out.push(name) }
+    ReqArg(name) => if !str_mem(out, name) { out.push(name) }
+    Seq(items) =>
+      for it in items {
+        head_elem_names_into(it, out)
+      }
+    Or(alts) =>
+      for a in alts {
+        head_elem_names_into(a, out)
+      }
+    Many(inner) => head_elem_names_into(inner, out)
+    BoundedTail(h, _, _) => head_elem_names_into(h, out)
+    ScopeNode(sc) => {
+      for g in sc.greedy {
+        head_elem_names_into(g, out)
+      }
+      for p in sc.positional {
+        head_elem_names_into(p, out)
+      }
+    }
+    // Ref/CmdSat/DdSat/Rooted/etc.: opaque or heavy — do not recurse (Ref
+    // could loop; command/dd satellites are not walked by the head reps).
+    _ => ()
   }
 }
 
 ///|
-/// Drop `missing_operand` Held Errors for `name` from an OPTIONAL
-/// repeat-continuation ("more") branch set: reaching "more" means a rep of
-/// `name` already succeeded, so "one more optional rep found no token" is a
-/// legitimate STOP, not a structural failure. Only the exact
-/// missing-operand-for-name shape is dropped.
-fn drop_optional_missing(brs : Array[Branch], name : String) -> Array[Branch] {
-  if name == "" {
+/// Drop `missing_operand` Held Errors whose element is in `names` from an
+/// OPTIONAL repeat-continuation ("more") branch set: reaching "more" means a
+/// rep of one of these primitives already succeeded, so "one more optional
+/// rep found no token" is a legitimate STOP, not a structural failure. Only
+/// the exact missing-operand-for-name shape is dropped; head-external missing
+/// (a downstream primitive fed by the parent's continuation) stays.
+fn drop_optional_missing(
+  brs : Array[Branch],
+  names : Array[String],
+) -> Array[Branch] {
+  if names.length() == 0 {
     return brs
   }
   let out : Array[Branch] = []
   for b in brs {
     match b {
-      Held(pe, _) => if pe != pe_missing(name, pe.argv_pos) { out.push(b) }
+      Held(pe, _) =>
+        if pe.reason == "missing_operand" && str_mem(names, pe.element) {
+          () // dropped: internal "one more rep" EOF signal
+        } else {
+          out.push(b)
+        }
       _ => out.push(b)
     }
   }
@@ -1358,7 +1474,8 @@ fn scope_consume_rep(
                 out.push(r)
               }
             }
-          Held(pe, bs) => out.push(Held(pe, bs))
+          // Carry acc on Held (fired_action material preservation).
+          Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
           Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
         }
       }

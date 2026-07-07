@@ -410,3 +410,224 @@ test "REVIEW-C4 non-scope root: residual of a partial Accept surfaces even when 
     _ => fail("expected Failure")
   }
 }
+
+///|
+test "REGRESSION dd sever transparent to positional inline ScopeNode child (DR-041 dashdash)" {
+  // deep-review R4a: root's DdSat("--") fires; the positional walk then
+  // enters a ScopeNode child; without the sever pass-through the child's
+  // greedy face resurrects and reads "-x" as the child's -x option
+  // (Success x=true, a="w"). Spec DR-041/042 ⑤: dd's continuation is raw
+  // for the WHOLE spine, including any inline child scope reached via the
+  // positional face — so "-x" must land as the child's positional a, and
+  // "w" is a residual token → Failure.
+  let child : Scope = {
+    greedy: [Seq([Exact("-x"), Bind("x", VBool(true))])],
+    positional: [StrArg("a")],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [DdSat("--")],
+    positional: [ScopeNode(child)],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["--", "-x", "w"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      // no x binding should exist (child greedy face is severed) and the
+      // residual "w" surfaces as a KTop unexpected_token at argv_pos 2.
+      let mut saw_residual = false
+      for e in fd.errors {
+        if e.reason == "unexpected_token" && e.argv_pos == 2 {
+          saw_residual = true
+        }
+      }
+      assert_true(saw_residual)
+    }
+    _ => fail("expected Failure (child greedy must be severed under dd)")
+  }
+}
+
+///|
+test "REGRESSION step_greedy Held carries acc so FailMark survives to DeepestOnly fired_action" {
+  // deep-review "step_greedy acc": two greedy entries — a FailMark help
+  // action, and a numeric option. Under faildef=DeepestOnly the ONLY
+  // candidate path for fired_action collection is the deepest one:
+  // consume --help (bind help + FailMark) → consume --num → NumArg("xyz")
+  // parse fail @ argv_pos 2. Without acc on the Held branch, the FailMark
+  // binding accumulated before the Held is dropped and fired_action
+  // becomes None. With it, fired_action = Some("help").
+  let root : Scope = {
+    greedy: [
+      Seq([Exact("--help"), Bind("help", VBool(true)), FailMark("help")]),
+      Seq([Exact("--num"), NumArg("n")]),
+    ],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(
+    ScopeNode(root),
+    ["--help", "--num", "xyz"],
+    defs=Map([]),
+    faildef=DeepestOnly,
+  )
+  match o {
+    Failure(fd) => assert_eq(fd.fired_action, Some("help"))
+    _ => fail("expected Failure")
+  }
+}
+
+///|
+test "REGRESSION consume_head ReqArg respects 先食い (raw-eat suppression)" {
+  // deep-review LENS-T2b: `fs` is a Ref-repeat over ReqArg head. Without
+  // the ReqArg arm in consume_head, the fallback eval() sees no scope and
+  // cannot apply suppressed(), so the "more" rep of fs raw-eats the
+  // greedy trigger "-v" as another f value. Correct: -v fires the greedy
+  // entry (verbose=true), fs has ONE binding.
+  let defs : Map[String, Node] = Map([])
+  defs.set("fs", Seq([ReqArg("f")]))
+  let root : Scope = {
+    greedy: [Seq([Exact("-v"), Bind("verbose", VBool(true))])],
+    positional: [Ref("fs")],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["a", "-v"], defs~)
+  match o {
+    Success(bs) => {
+      let mut f_count = 0
+      let mut verbose_ok = false
+      for b in bs {
+        if b.key == "f" {
+          f_count = f_count + 1
+        }
+        if b.key == "verbose" {
+          match b.value {
+            VBool(v) => if v { verbose_ok = true }
+            _ => ()
+          }
+        }
+      }
+      assert_eq(f_count, 1)
+      assert_true(verbose_ok)
+    }
+    _ => fail("expected Success (verbose fires, fs=[a])")
+  }
+}
+
+///|
+test "REGRESSION Many spine takes preference (greedy default, no Ambiguous)" {
+  // deep-review LENS-T6: two adjacent Many closures without preference
+  // return Ambiguous (3-way split of ["a","b"] between xs and ys). DR-043
+  // "取り分次元は代表 1 本に確定" — greedy default (Many has no lazy_
+  // knob) picks the more-rep-first split: xs=[a,b], ys=[].
+  let root : Scope = {
+    greedy: [],
+    positional: [Many(StrArg("xs")), Many(StrArg("ys"))],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["a", "b"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      let mut xs_count = 0
+      let mut ys_count = 0
+      for b in bs {
+        if b.key == "xs" {
+          xs_count = xs_count + 1
+        }
+        if b.key == "ys" {
+          ys_count = ys_count + 1
+        }
+      }
+      assert_eq(xs_count, 2)
+      assert_eq(ys_count, 0)
+    }
+    _ => fail("expected Success xs=2 ys=0 (no Ambiguous)")
+  }
+}
+
+///|
+test "REGRESSION scope-shaped Ref head: more-branch drops internal missing_operand only" {
+  // deep-review LENS-T3: Ref("r")'s head is ScopeNode(inner) with a
+  // single StrArg("f") positional. Input ["a"] consumes 1 rep (f=a);
+  // the OPTIONAL "more" rep enters inner at EOF, producing Held(pe_missing
+  // "f"). Before the fix, head_name(ScopeNode)="" left drop_optional_missing
+  // inert, so "f missing" leaked into FailureData.errors alongside the
+  // real downstream failure ("n missing"). With head_elem_names the
+  // internal "f" is dropped, only the head-external "n" missing remains.
+  let defs : Map[String, Node] = Map([])
+  let inner : Scope = {
+    greedy: [],
+    positional: [StrArg("f")],
+    entities: [],
+    constraints: [],
+  }
+  defs.set("r", Seq([ScopeNode(inner)]))
+  let root : Scope = {
+    greedy: [],
+    positional: [Ref("r"), NumArg("n")],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["a"], defs~)
+  match o {
+    Failure(fd) => {
+      let mut saw_n_missing = false
+      let mut saw_f_missing = false
+      for e in fd.errors {
+        if e.reason == "missing_operand" && e.element == "n" {
+          saw_n_missing = true
+        }
+        if e.reason == "missing_operand" && e.element == "f" {
+          saw_f_missing = true
+        }
+      }
+      assert_true(saw_n_missing)
+      assert_false(saw_f_missing)
+    }
+    _ => fail("expected Failure")
+  }
+}
+
+///|
+test "REGRESSION Or-wrapped greedy: find_help_entry / tried_triggers walk Or arms" {
+  // deep-review REVIEW-O4: help_entry / tried_triggers must reflect Or-
+  // bundled greedy entries (step_greedy treats each alt as its own
+  // interjection). Before the outcome.mbt fix, an Or-wrapped --help was
+  // invisible to both materials. Input ["--typo"] fails — help_entry
+  // should carry "--help" and tried_triggers should list both "--help"
+  // and "--verbose".
+  let root : Scope = {
+    greedy: [
+      Or([
+        Seq([Exact("--help"), Bind("help", VBool(true)), FailMark("help")]),
+        Seq([Exact("--verbose"), Bind("v", VBool(true))]),
+      ]),
+    ],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["--typo"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      assert_eq(fd.help_entry, Some("--help"))
+      let mut saw_help = false
+      let mut saw_verbose = false
+      for t in fd.tried_triggers {
+        if t == "--help" {
+          saw_help = true
+        }
+        if t == "--verbose" {
+          saw_verbose = true
+        }
+      }
+      assert_true(saw_help)
+      assert_true(saw_verbose)
+    }
+    _ => fail("expected Failure")
+  }
+}

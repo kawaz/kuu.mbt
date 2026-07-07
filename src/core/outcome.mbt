@@ -75,32 +75,52 @@ fn find_help_entry(root : Node) -> String? {
   match root {
     ScopeNode(sc) => {
       for g in sc.greedy {
-        match g {
-          Seq(items) => {
-            let mut trig : String? = None
-            let mut has_fail = false
-            for it in items {
-              match it {
-                Exact(s) =>
-                  match trig {
-                    None => trig = Some(s)
-                    _ => ()
-                  }
-                FailMark(_) => has_fail = true
-                _ => ()
-              }
-            }
-            if has_fail {
-              match trig {
-                Some(t) => return Some(t)
-                None => ()
-              }
-            }
-          }
-          _ => ()
+        match find_help_entry_in_greedy(g) {
+          Some(t) => return Some(t)
+          None => ()
         }
       }
       None
+    }
+    _ => None
+  }
+}
+
+///|
+/// Search a single greedy entry (possibly Or-wrapped) for the help satellite's
+/// exact trigger spelling. step_greedy/eval treat Or([alt1, alt2, …]) as a
+/// bundle of interjections (each alt is its own greedy entry semantically);
+/// find_help_entry mirrors that so an Or-wrapped help entry is discovered.
+fn find_help_entry_in_greedy(g : Node) -> String? {
+  match g {
+    Or(alts) => {
+      for a in alts {
+        match find_help_entry_in_greedy(a) {
+          Some(t) => return Some(t)
+          None => ()
+        }
+      }
+      None
+    }
+    Seq(items) => {
+      let mut trig : String? = None
+      let mut has_fail = false
+      for it in items {
+        match it {
+          Exact(s) =>
+            match trig {
+              None => trig = Some(s)
+              _ => ()
+            }
+          FailMark(_) => has_fail = true
+          _ => ()
+        }
+      }
+      if has_fail {
+        trig
+      } else {
+        None
+      }
     }
     _ => None
   }
@@ -114,20 +134,33 @@ fn tried_triggers_of(root : Node) -> Array[String] {
   match root {
     ScopeNode(sc) =>
       for g in sc.greedy {
-        match g {
-          Seq(items) =>
-            if items.length() >= 1 {
-              match items[0] {
-                Exact(s) => out.push(s)
-                _ => ()
-              }
-            }
-          DdSat(s) => out.push(s)
-          CmdSat(name, _) => out.push(name)
-          _ => ()
-        }
+        tried_triggers_in_greedy(g, out)
       }
     _ => ()
   }
   out
+}
+
+///|
+/// Collect trigger spellings from a single greedy entry (possibly Or-wrapped)
+/// into `out`. Or([alt1, alt2, …]) is a bundle of interjections in
+/// step_greedy/eval; this walk must mirror that so an Or-wrapped `--help`
+/// spelling shows up in tried_triggers.
+fn tried_triggers_in_greedy(g : Node, out : Array[String]) -> Unit {
+  match g {
+    Or(alts) =>
+      for a in alts {
+        tried_triggers_in_greedy(a, out)
+      }
+    Seq(items) =>
+      if items.length() >= 1 {
+        match items[0] {
+          Exact(s) => out.push(s)
+          _ => ()
+        }
+      }
+    DdSat(s) => out.push(s)
+    CmdSat(name, _) => out.push(name)
+    _ => ()
+  }
 }
