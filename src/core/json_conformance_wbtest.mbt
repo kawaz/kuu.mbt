@@ -18,6 +18,55 @@
 // SECTION 1 — Local helpers (mirror slice/poc/helpers_wbtest.mbt)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ── deprecated-free Json accessors (moon nightly: as_* 系は deprecated) ───────
+
+///|
+fn Json::j_obj(self : Json) -> Map[String, Json]? {
+  if self is Object(m) {
+    Some(m)
+  } else {
+    None
+  }
+}
+
+///|
+fn Json::j_arr(self : Json) -> Array[Json]? {
+  if self is Array(a) {
+    Some(a)
+  } else {
+    None
+  }
+}
+
+///|
+fn Json::j_str(self : Json) -> String? {
+  if self is String(x) {
+    Some(x)
+  } else {
+    None
+  }
+}
+
+///|
+fn Json::j_bool(self : Json) -> Bool? {
+  if self is True {
+    Some(true)
+  } else if self is False {
+    Some(false)
+  } else {
+    None
+  }
+}
+
+///|
+fn Json::j_num(self : Json) -> Double? {
+  if self is Number(n, ..) {
+    Some(n)
+  } else {
+    None
+  }
+}
+
 ///|
 /// Deterministic codepoint ordering (MoonBit's builtin sorts by length first).
 fn str_less(a : String, b : String) -> Bool {
@@ -240,13 +289,13 @@ fn opt(
   short? : Array[Char] = [],
   env? : Array[String] = [],
   global? : Bool = false,
-  inherit? : Bool = false,
+  inherit_? : Bool = false,
   inheritable? : Bool = false,
   multiple? : Bool = false,
   fail_action? : Bool = false,
   config_file? : Bool = false,
   config_key? : Array[String]? = None,
-  export? : ExportKey = EkUnset,
+  export_? : ExportKey = EkUnset,
   requires? : Array[String] = [],
   conflicts? : Array[String] = [],
   exclusive? : Array[String] = [],
@@ -262,7 +311,7 @@ fn opt(
     env,
     is_dd: false,
     is_global: global,
-    is_inherit: inherit,
+    is_inherit: inherit_,
     is_inheritable: inheritable,
     link_depth: 0,
     ref_target: None,
@@ -273,7 +322,7 @@ fn opt(
     fail_action,
     is_config_file: config_file,
     config_key,
-    export_key: export,
+    export_key: export_,
     requires,
     conflicts_with: conflicts,
     exclusive_group: exclusive,
@@ -287,13 +336,13 @@ fn opt(
 fn pos(
   name : String,
   ty : Ty,
-  inherit? : Bool = false,
+  inherit_? : Bool = false,
   repeat? : RepeatSpec? = None,
   optional? : Bool = false,
   multiple? : Bool = false,
   separator? : String? = None,
   config_key? : Array[String]? = None,
-  export? : ExportKey = EkUnset,
+  export_? : ExportKey = EkUnset,
   ref_? : String? = None,
   default? : Value? = None,
 ) -> ElemDef {
@@ -306,7 +355,7 @@ fn pos(
     env: [],
     is_dd: false,
     is_global: false,
-    is_inherit: inherit,
+    is_inherit: inherit_,
     is_inheritable: false,
     link_depth: 0,
     ref_target: ref_,
@@ -317,7 +366,7 @@ fn pos(
     fail_action: false,
     is_config_file: false,
     config_key,
-    export_key: export,
+    export_key: export_,
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
@@ -357,26 +406,6 @@ fn dd_marker() -> ElemDef {
     deprecated: false,
     default_value: None,
   }
-}
-
-///|
-fn cmd(
-  name : String,
-  body : Definition,
-  export? : ExportKey = EkUnset,
-) -> CommandDef {
-  { name, body, export_key: export }
-}
-
-///|
-fn alias_(
-  target : String,
-  name? : String? = None,
-  short? : Array[Char] = [],
-  long? : Array[String]? = None,
-  deprecated? : Bool = false,
-) -> AliasDef {
-  { target, name, short, long_override: long, deprecated }
 }
 
 ///|
@@ -430,7 +459,7 @@ struct LEnt {
   typ : String
   default_ : Value?
   env : String?
-  inherit : Bool
+  inherit_ : Bool
   config_key : Array[String]?
   accum : String?
 }
@@ -485,8 +514,8 @@ fn lent_str(e : LEnt) -> String {
     Some(k) => fs.push("env=" + k)
     None => ()
   }
-  if e.inherit {
-    fs.push("inherit=true")
+  if e.inherit_ {
+    fs.push("inherit_=true")
   }
   match e.config_key {
     Some(p) => fs.push("config_key=[" + join_comma(p) + "]")
@@ -767,7 +796,7 @@ fn proj_entity(e : Entity) -> LEnt {
     typ,
     default_: e.default_value,
     env: e.env_key,
-    inherit: e.inherit_,
+    inherit_: e.inherit_,
     config_key: e.config_key,
     accum: e.accum,
   }
@@ -848,7 +877,7 @@ fn proj_scope(sc : Scope, reg : Map[String, Node]) -> LSec {
 
 ///|
 fn canon_of(def : Definition, order : Array[Installer]) -> String {
-  let reg : Map[String, Node] = Map::new()
+  let reg : Map[String, Node] = Map([])
   match parse_definition(def, order, registry=reg) {
     Ok(sc) => lsec_str(proj_scope(sc, reg))
     Err(e) => "ERR:" + deferrs_str(e)
@@ -1038,7 +1067,7 @@ fn proj_sources(sc : Scope, resolved : Array[Binding]) -> String {
     match src {
       Some(s) => items.push(e.name + "=" + s)
       None =>
-        if e.ty == TFlag && e.accum.is_none() {
+        if e.ty == TFlag && e.accum is None {
           match e.default_value {
             Some(_) => items.push(e.name + "=default")
             None => ()
@@ -1133,7 +1162,7 @@ enum DCmd {
 ///|
 fn jf_str(o : Map[String, Json], key : String) -> String? {
   match o.get(key) {
-    Some(j) => j.as_string()
+    Some(j) => j.j_str()
     None => None
   }
 }
@@ -1168,7 +1197,7 @@ fn bool_field(
   match o.get(k) {
     None => dflt
     Some(j) =>
-      match j.as_bool() {
+      match j.j_bool() {
         Some(b) => b
         None => raise DecodeSkip(k + " is not a bool")
       }
@@ -1177,7 +1206,7 @@ fn bool_field(
 
 ///|
 fn num_int(j : Json, ctx : String) -> Int raise DecodeSkip {
-  match j.as_number() {
+  match j.j_num() {
     Some(d) => d.to_int()
     None => raise DecodeSkip(ctx + " is not a number")
   }
@@ -1185,15 +1214,15 @@ fn num_int(j : Json, ctx : String) -> Int raise DecodeSkip {
 
 ///|
 fn json_to_value(j : Json) -> Value raise DecodeSkip {
-  match j.as_bool() {
+  match j.j_bool() {
     Some(b) => return VBool(b)
     None => ()
   }
-  match j.as_string() {
+  match j.j_str() {
     Some(s) => return VStr(s)
     None => ()
   }
-  match j.as_number() {
+  match j.j_num() {
     Some(d) => return VNum(d)
     None => ()
   }
@@ -1202,7 +1231,7 @@ fn json_to_value(j : Json) -> Value raise DecodeSkip {
 
 ///|
 fn json_to_rval(j : Json) -> RVal raise DecodeSkip {
-  match j.as_object() {
+  match j.j_obj() {
     Some(o) => {
       let kvs : Array[(String, RVal)] = []
       for k, v in o {
@@ -1212,7 +1241,7 @@ fn json_to_rval(j : Json) -> RVal raise DecodeSkip {
     }
     None => ()
   }
-  match j.as_array() {
+  match j.j_arr() {
     Some(a) => {
       let vs : Array[RVal] = []
       for v in a {
@@ -1227,7 +1256,7 @@ fn json_to_rval(j : Json) -> RVal raise DecodeSkip {
 
 ///|
 fn json_to_configval(j : Json) -> ConfigVal {
-  match j.as_object() {
+  match j.j_obj() {
     Some(o) => {
       let kvs : Array[(String, ConfigVal)] = []
       for k, v in o {
@@ -1237,7 +1266,7 @@ fn json_to_configval(j : Json) -> ConfigVal {
     }
     None => ()
   }
-  match j.as_array() {
+  match j.j_arr() {
     Some(a) => {
       let vs : Array[ConfigVal] = []
       for v in a {
@@ -1247,15 +1276,15 @@ fn json_to_configval(j : Json) -> ConfigVal {
     }
     None => ()
   }
-  match j.as_bool() {
+  match j.j_bool() {
     Some(b) => return CBool(b)
     None => ()
   }
-  match j.as_string() {
+  match j.j_str() {
     Some(s) => return CStr(s)
     None => ()
   }
-  match j.as_number() {
+  match j.j_num() {
     Some(d) => return CNum(d)
     None => ()
   }
@@ -1267,14 +1296,14 @@ fn dec_strs(j : Json?) -> Array[String] raise DecodeSkip {
   match j {
     None => []
     Some(x) =>
-      match x.as_string() {
+      match x.j_str() {
         Some(s) => [s]
         None =>
-          match x.as_array() {
+          match x.j_arr() {
             Some(a) => {
               let r : Array[String] = []
               for e in a {
-                match e.as_string() {
+                match e.j_str() {
                   Some(s) => r.push(s)
                   None =>
                     raise DecodeSkip("string-array element is not a string")
@@ -1308,13 +1337,13 @@ fn split_colon(s : String) -> Array[String] {
 
 ///|
 fn exp_effects_str(eff : Json) -> String raise DecodeSkip {
-  let a = match eff.as_array() {
+  let a = match eff.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("effects is not an array")
   }
   let items : Array[String] = []
   for e in a {
-    let eo = match e.as_object() {
+    let eo = match e.j_obj() {
       Some(x) => x
       None => raise DecodeSkip("effect is not an object")
     }
@@ -1349,28 +1378,28 @@ fn exp_result_str(res : Json) -> String raise DecodeSkip {
 /// a `reason` field (DR-066): with_reason drives got-side inclusion so per-error opt-in comparison
 /// stays aligned.
 fn exp_errors_decode(errs : Json) -> (String, Bool) raise DecodeSkip {
-  let a = match errs.as_array() {
+  let a = match errs.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("errors is not an array")
   }
   // detect reason opt-in first (per fixture set, not per element)
   let mut with_reason = false
   for e in a {
-    match e.as_object() {
+    match e.j_obj() {
       Some(eo) => if has_key(eo, "reason") { with_reason = true }
       None => raise DecodeSkip("error is not an object")
     }
   }
   let items : Array[String] = []
   for e in a {
-    let eo = e.as_object().unwrap()
+    let eo = e.j_obj().unwrap()
     let element = match jf_str(eo, "element") {
       Some(s) => s
       None => ""
     }
     let pos = match eo.get("argv_pos") {
       Some(j) =>
-        match j.as_number() {
+        match j.j_num() {
           Some(d) => d.to_int().to_string()
           None => raise DecodeSkip("error 'argv_pos' is not a number")
         }
@@ -1396,13 +1425,13 @@ fn exp_errors_decode(errs : Json) -> (String, Bool) raise DecodeSkip {
 
 ///|
 fn exp_warnings_str(j : Json) -> String raise DecodeSkip {
-  let a = match j.as_array() {
+  let a = match j.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("warnings is not an array")
   }
   let items : Array[String] = []
   for e in a {
-    let eo = match e.as_object() {
+    let eo = match e.j_obj() {
       Some(x) => x
       None => raise DecodeSkip("warning is not an object")
     }
@@ -1417,13 +1446,13 @@ fn exp_warnings_str(j : Json) -> String raise DecodeSkip {
 
 ///|
 fn exp_sources_str(j : Json) -> String raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("sources is not an object")
   }
   let items : Array[String] = []
   for k, v in o {
-    let src = match v.as_string() {
+    let src = match v.j_str() {
       Some(s) => s
       None => raise DecodeSkip("source value is not a string")
     }
@@ -1435,13 +1464,13 @@ fn exp_sources_str(j : Json) -> String raise DecodeSkip {
 
 ///|
 fn exp_claimants_str(j : Json) -> String raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("claimants is not an object")
   }
   let items : Array[String] = []
   for k, v in o {
-    let ent = match v.as_string() {
+    let ent = match v.j_str() {
       Some(s) => s
       None =>
         raise DecodeSkip("claimant value (occupying entity) is not a string")
@@ -1454,7 +1483,7 @@ fn exp_claimants_str(j : Json) -> String raise DecodeSkip {
 
 ///|
 fn exp_interp_str(e : Json) -> String raise DecodeSkip {
-  match e.as_object() {
+  match e.j_obj() {
     Some(o) =>
       if has_key(o, "claimants") {
         allowed_keys(o, ["result", "claimants"], "interpretation wrapper")
@@ -1472,7 +1501,7 @@ fn exp_interp_str(e : Json) -> String raise DecodeSkip {
 
 ///|
 fn dec_interps(j : Json) -> Array[String] raise DecodeSkip {
-  let a = match j.as_array() {
+  let a = match j.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("interpretations is not an array")
   }
@@ -1491,14 +1520,14 @@ fn dec_short(o : Map[String, Json]) -> Array[Char] raise DecodeSkip {
   match o.get("short") {
     None => []
     Some(j) =>
-      match j.as_string() {
+      match j.j_str() {
         Some(s) => to_chars(s)
         None =>
-          match j.as_array() {
+          match j.j_arr() {
             Some(a) => {
               let cs : Array[Char] = []
               for e in a {
-                match e.as_string() {
+                match e.j_str() {
                   Some(s) =>
                     for c in to_chars(s) {
                       cs.push(c)
@@ -1561,16 +1590,16 @@ fn dec_long(
   name : String,
   ty : Ty,
 ) -> (Array[String], Array[Variant]) raise DecodeSkip {
-  match j.as_bool() {
+  match j.j_bool() {
     Some(true) => ([":set"], [])
     Some(false) => ([], [])
     None =>
-      match j.as_array() {
+      match j.j_arr() {
         Some(a) => {
           let longs : Array[String] = []
           let vars : Array[Variant] = []
           for e in a {
-            let s = match e.as_string() {
+            let s = match e.j_str() {
               Some(x) => x
               None => raise DecodeSkip("long[] element is not a string")
             }
@@ -1588,7 +1617,7 @@ fn dec_long(
 
 ///|
 fn dec_repeat(j : Json) -> RepeatSpec raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("repeat is not an object")
   }
@@ -1607,16 +1636,16 @@ fn dec_repeat(j : Json) -> RepeatSpec raise DecodeSkip {
 
 ///|
 fn dec_multiple(j : Json) -> (Bool, String?) raise DecodeSkip {
-  match j.as_bool() {
+  match j.j_bool() {
     Some(b) => return (b, None)
     None => ()
   }
-  match j.as_string() {
+  match j.j_str() {
     Some("append") => return (true, None)
     Some(other) => raise DecodeSkip("multiple preset '" + other + "'")
     None => ()
   }
-  match j.as_object() {
+  match j.j_obj() {
     Some(o) => {
       allowed_keys(o, ["accumulator", "separator"], "multiple")
       match jf_str(o, "accumulator") {
@@ -1632,7 +1661,7 @@ fn dec_multiple(j : Json) -> (Bool, String?) raise DecodeSkip {
 
 ///|
 fn dec_export(j : Json) -> ExportKey {
-  match j.as_string() {
+  match j.j_str() {
     Some("") => EkNull
     Some(s) => EkKey(s)
     None => EkNull
@@ -1654,11 +1683,11 @@ fn dec_alias(o : Map[String, Json]) -> AliasDef raise DecodeSkip {
   let short = dec_short(o)
   let long_override : Array[String]? = match o.get("long") {
     Some(lj) =>
-      match lj.as_array() {
+      match lj.j_arr() {
         Some(a) => {
           let ls : Array[String] = []
           for e in a {
-            match e.as_string() {
+            match e.j_str() {
               Some(s) => ls.push(s)
               None => raise DecodeSkip("alias long[] element is not a string")
             }
@@ -1666,7 +1695,7 @@ fn dec_alias(o : Map[String, Json]) -> AliasDef raise DecodeSkip {
           Some(ls)
         }
         None =>
-          match lj.as_bool() {
+          match lj.j_bool() {
             Some(true) => Some([":set"])
             Some(false) => Some([])
             None => raise DecodeSkip("alias long is not a bool/array")
@@ -1680,12 +1709,12 @@ fn dec_alias(o : Map[String, Json]) -> AliasDef raise DecodeSkip {
 
 ///|
 fn dec_or(j : Json) -> Array[(String, Array[String])] raise DecodeSkip {
-  let a = match j.as_array() {
+  let a = match j.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("or is not an array")
   }
   for e in a {
-    match e.as_object() {
+    match e.j_obj() {
       Some(bo) =>
         if has_key(bo, "seq") || has_key(bo, "type") {
           raise DecodeSkip(
@@ -1697,7 +1726,7 @@ fn dec_or(j : Json) -> Array[(String, Array[String])] raise DecodeSkip {
   }
   let vrs : Array[(String, Array[String])] = []
   for e in a {
-    let bo = match e.as_object() {
+    let bo = match e.j_obj() {
       Some(x) => x
       None => raise DecodeSkip("or branch is not an object")
     }
@@ -1719,7 +1748,7 @@ fn dec_or(j : Json) -> Array[(String, Array[String])] raise DecodeSkip {
 
 ///|
 fn dec_option(j : Json) -> DElem raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("option is not an object")
   }
@@ -1780,7 +1809,7 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
   let requires = dec_strs(o.get("requires"))
   let conflicts = dec_strs(o.get("conflicts_with"))
   let exclusive = dec_strs(o.get("exclusive_group"))
-  let export = match o.get("export_key") {
+  let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
     None => EkUnset
   }
@@ -1798,13 +1827,13 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
       short~,
       env~,
       global~,
-      inherit=inherit_flag,
+      inherit_=inherit_flag,
       inheritable~,
       multiple~,
       fail_action~,
       config_file~,
       config_key~,
-      export~,
+      export_~,
       requires~,
       conflicts~,
       exclusive~,
@@ -1818,7 +1847,7 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
 
 ///|
 fn dec_positional(j : Json) -> ElemDef raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("positional is not an object")
   }
@@ -1857,7 +1886,7 @@ fn dec_positional(j : Json) -> ElemDef raise DecodeSkip {
     Some(m) => dec_multiple(m)
     None => (false, None)
   }
-  let export = match o.get("export_key") {
+  let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
     None => EkUnset
   }
@@ -1877,14 +1906,14 @@ fn dec_positional(j : Json) -> ElemDef raise DecodeSkip {
     multiple~,
     separator=sep,
     config_key~,
-    export~,
+    export_~,
     default~,
   )
 }
 
 ///|
 fn dec_command(j : Json) -> DCmd raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("command is not an object")
   }
@@ -1901,11 +1930,11 @@ fn dec_command(j : Json) -> DCmd raise DecodeSkip {
     None => raise DecodeSkip("command missing 'name'")
   }
   let body = dec_definition(o)
-  let export = match o.get("export_key") {
+  let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
     None => EkUnset
   }
-  DCommand({ name, body, export_key: export })
+  DCommand({ name, body, export_key: export_ })
 }
 
 ///|
@@ -1916,7 +1945,7 @@ fn dec_definition(o : Map[String, Json]) -> Definition raise DecodeSkip {
   let aliases : Array[AliasDef] = []
   match o.get("options") {
     Some(arr) => {
-      let a = match arr.as_array() {
+      let a = match arr.j_arr() {
         Some(x) => x
         None => raise DecodeSkip("options is not an array")
       }
@@ -1931,7 +1960,7 @@ fn dec_definition(o : Map[String, Json]) -> Definition raise DecodeSkip {
   }
   match o.get("positionals") {
     Some(arr) => {
-      let a = match arr.as_array() {
+      let a = match arr.j_arr() {
         Some(x) => x
         None => raise DecodeSkip("positionals is not an array")
       }
@@ -1943,7 +1972,7 @@ fn dec_definition(o : Map[String, Json]) -> Definition raise DecodeSkip {
   }
   match o.get("commands") {
     Some(arr) => {
-      let a = match arr.as_array() {
+      let a = match arr.j_arr() {
         Some(x) => x
         None => raise DecodeSkip("commands is not an array")
       }
@@ -1965,13 +1994,13 @@ fn dec_argv(cj : Map[String, Json]) -> Array[String] raise DecodeSkip {
     Some(x) => x
     None => raise DecodeSkip("case missing 'argv'")
   }
-  let a = match aj.as_array() {
+  let a = match aj.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("argv is not an array")
   }
   let out : Array[String] = []
   for t in a {
-    match t.as_string() {
+    match t.j_str() {
       Some(s) => out.push(s)
       None => raise DecodeSkip("argv element is not a string")
     }
@@ -1981,7 +2010,7 @@ fn dec_argv(cj : Map[String, Json]) -> Array[String] raise DecodeSkip {
 
 ///|
 fn dec_case(cj : Json) -> DCase raise DecodeSkip {
-  let co = match cj.as_object() {
+  let co = match cj.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("case is not an object")
   }
@@ -1991,12 +2020,12 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     "case",
   )
   let argv = dec_argv(co)
-  let id = jf_str(co, "id").or("")
+  let id = jf_str(co, "id").unwrap_or("")
   let expect = match co.get("expect") {
     Some(e) => e
     None => raise DecodeSkip("case missing 'expect'")
   }
-  let eo = match expect.as_object() {
+  let eo = match expect.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("expect is not an object")
   }
@@ -2009,15 +2038,15 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
       }
     None => raise DecodeSkip("expect missing 'outcome'")
   }
-  let env : Map[String, String] = Map::new()
+  let env : Map[String, String] = Map([])
   match co.get("env") {
     Some(ej) => {
-      let eobj = match ej.as_object() {
+      let eobj = match ej.j_obj() {
         Some(x) => x
         None => raise DecodeSkip("case env is not an object")
       }
       for k, v in eobj {
-        match v.as_string() {
+        match v.j_str() {
           Some(s) => env.set(k, s)
           None => raise DecodeSkip("case env value is not a string")
         }
@@ -2030,7 +2059,7 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     None =>
       match co.get("config_files") {
         Some(fj) =>
-          match fj.as_object() {
+          match fj.j_obj() {
             Some(fo) => {
               let files : Array[(String, ConfigVal)] = []
               for k, v in fo {
@@ -2105,7 +2134,7 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
 
 ///|
 fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
-  let top = match j.as_object() {
+  let top = match j.j_obj() {
     Some(o) => o
     None => raise DecodeSkip("fixture is not an object")
   }
@@ -2118,13 +2147,13 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
     Some(d) => d
     None => raise DecodeSkip("missing 'definition'")
   }
-  let defo = match defj.as_object() {
+  let defo = match defj.j_obj() {
     Some(o) => o
     None => raise DecodeSkip("definition is not an object")
   }
   allowed_keys(defo, ["options", "positionals", "commands"], "definition")
   let def = dec_definition(defo)
-  let registry : Map[String, Node] = Map::new()
+  let registry : Map[String, Node] = Map([])
   let scope = match parse_definition(def, full_installers(), registry~) {
     Ok(sc) => sc
     Err(errs) => raise DecodeSkip("definition rejected: " + deferrs_str(errs))
@@ -2134,7 +2163,7 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
     Some(c) => c
     None => raise DecodeSkip("missing 'cases'")
   }
-  let carr = match casesj.as_array() {
+  let carr = match casesj.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("cases is not an array")
   }
@@ -2169,12 +2198,12 @@ fn dec_installers(top : Map[String, Json]) -> Array[Installer] raise DecodeSkip 
   match top.get("installers") {
     None => full_installers()
     Some(j) =>
-      match j.as_array() {
+      match j.j_arr() {
         None => full_installers()
         Some(a) => {
           let out : Array[Installer] = []
           for e in a {
-            match e.as_string() {
+            match e.j_str() {
               Some(s) => out.push(dec_installer(s))
               None => raise DecodeSkip("installers[] element is not a string")
             }
@@ -2216,14 +2245,14 @@ fn dec_ref_link(
 
 ///|
 fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("greedy item is not an object")
   }
   if has_key(o, "scope") {
     allowed_keys(o, ["exact", "scope"], "golden command subtree")
     let name = req_field(o, "exact")
-    let so = match o.get("scope").unwrap().as_object() {
+    let so = match o.get("scope").unwrap().j_obj() {
       Some(x) => x
       None => raise DecodeSkip("command 'scope' is not an object")
     }
@@ -2235,10 +2264,10 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
     let entries : Array[(String, String)] = []
     match o.get("entries") {
       Some(ej) =>
-        match ej.as_object() {
+        match ej.j_obj() {
           Some(eo) =>
             for k, v in eo {
-              match v.as_string() {
+              match v.j_str() {
                 Some(nm) => entries.push((k, nm))
                 None => raise DecodeSkip("matcher entry value is not a string")
               }
@@ -2251,21 +2280,21 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
   }
   if has_key(o, "seq") {
     allowed_keys(o, ["seq"], "golden seq satellite")
-    let sa = match o.get("seq").unwrap().as_array() {
+    let sa = match o.get("seq").unwrap().j_arr() {
       Some(x) => x
       None => raise DecodeSkip("greedy seq is not an array")
     }
     if sa.length() != 2 {
       raise DecodeSkip("greedy seq satellite is not [exact, ref]")
     }
-    let trig = match sa[0].as_object() {
+    let trig = match sa[0].j_obj() {
       Some(x) => {
         allowed_keys(x, ["exact"], "golden seq trigger")
         req_field(x, "exact")
       }
       None => raise DecodeSkip("greedy seq[0] is not an object")
     }
-    let refn = match sa[1].as_object() {
+    let refn = match sa[1].j_obj() {
       Some(x) => dec_ref_link(x, "golden seq value cell")
       None => raise DecodeSkip("greedy seq[1] is not an object")
     }
@@ -2285,7 +2314,7 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
 
 ///|
 fn dec_pos_tnode(j : Json) -> TNode raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("positional node is not an object")
   }
@@ -2303,13 +2332,13 @@ fn dec_pos_tnode(j : Json) -> TNode raise DecodeSkip {
 
 ///|
 fn dec_tmpl_body(j : Json) -> TNode raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("template body is not an object")
   }
   if has_key(o, "seq") {
     allowed_keys(o, ["seq"], "template seq")
-    let sa = match o.get("seq").unwrap().as_array() {
+    let sa = match o.get("seq").unwrap().j_arr() {
       Some(x) => x
       None => raise DecodeSkip("template seq is not an array")
     }
@@ -2335,7 +2364,7 @@ fn dec_tmpl_body(j : Json) -> TNode raise DecodeSkip {
 
 ///|
 fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("entity is not an object")
   }
@@ -2358,7 +2387,7 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
     typ,
     default_,
     env: jf_str(o, "env"),
-    inherit: bool_field(o, "inherit", false),
+    inherit_: bool_field(o, "inherit", false),
     config_key,
     accum: jf_str(o, "accumulator"),
   }
@@ -2366,7 +2395,7 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
 
 ///|
 fn dec_lcon(j : Json) -> Constraint raise DecodeSkip {
-  let o = match j.as_object() {
+  let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("constraint is not an object")
   }
@@ -2417,7 +2446,7 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
   let greedy : Array[GItem] = []
   match o.get("greedy") {
     Some(gj) =>
-      match gj.as_array() {
+      match gj.j_arr() {
         Some(a) =>
           for e in a {
             greedy.push(dec_gitem(e))
@@ -2429,7 +2458,7 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
   let positionals : Array[TNode] = []
   match o.get("positionals") {
     Some(pj) =>
-      match pj.as_array() {
+      match pj.j_arr() {
         Some(a) =>
           for e in a {
             positionals.push(dec_pos_tnode(e))
@@ -2441,7 +2470,7 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
   let entities : Array[LEnt] = []
   match o.get("entities") {
     Some(en) =>
-      match en.as_object() {
+      match en.j_obj() {
         Some(eo) =>
           for k, v in eo {
             entities.push(dec_lent(k, v))
@@ -2453,7 +2482,7 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
   let constraints : Array[Constraint] = []
   match o.get("constraints") {
     Some(cj) =>
-      match cj.as_array() {
+      match cj.j_arr() {
         Some(a) =>
           for e in a {
             constraints.push(dec_lcon(e))
@@ -2465,7 +2494,7 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
   let templates : Array[(String, TNode)] = []
   match o.get("templates") {
     Some(tj) =>
-      match tj.as_object() {
+      match tj.j_obj() {
         Some(to) =>
           for k, v in to {
             templates.push((canon_tmpl(k), dec_tmpl_body(v)))
@@ -2479,13 +2508,13 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
 
 ///|
 fn dec_lower(j : Json) -> DecodedLower raise DecodeSkip {
-  let top = match j.as_object() {
+  let top = match j.j_obj() {
     Some(o) => o
     None => raise DecodeSkip("fixture is not an object")
   }
   let defo = match top.get("definition") {
     Some(d) =>
-      match d.as_object() {
+      match d.j_obj() {
         Some(o) => o
         None => raise DecodeSkip("definition is not an object")
       }
@@ -2496,7 +2525,7 @@ fn dec_lower(j : Json) -> DecodedLower raise DecodeSkip {
   let order = dec_installers(top)
   let expo = match top.get("expect") {
     Some(e) =>
-      match e.as_object() {
+      match e.j_obj() {
         Some(o) => o
         None => raise DecodeSkip("expect is not an object")
       }
@@ -2568,7 +2597,7 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
     }
   }
   for e in sc.entities {
-    if e.ty != TFlag && e.default_value.is_some() {
+    if e.ty != TFlag && e.default_value is Some(_) {
       return true
     }
   }
@@ -2683,7 +2712,7 @@ fn resolve_tree(
   for b in resolved {
     out.push({ ..b, scope: path })
   }
-  let child_inherited : Map[String, Value] = Map::new()
+  let child_inherited : Map[String, Value] = Map([])
   for k, v in inherited {
     child_inherited.set(k, v)
   }
@@ -2740,7 +2769,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             None => ()
           }
           if dc.resolve && has_commands(sc) {
-            match resolve_tree(sc, binds, dc, [], Map::new()) {
+            match resolve_tree(sc, binds, dc, [], Map([])) {
               Ok(rb) => {
                 match dc.exp_result {
                   Some(er) => {
@@ -3023,7 +3052,7 @@ fn is_kebab(s : String) -> Bool {
 
 ///|
 fn raw_case_ids(j : Json) -> Array[String]? {
-  let top = match j.as_object() {
+  let top = match j.j_obj() {
     Some(o) => o
     None => return None
   }
@@ -3031,15 +3060,15 @@ fn raw_case_ids(j : Json) -> Array[String]? {
     Some(c) => c
     None => return None
   }
-  let carr = match casesj.as_array() {
+  let carr = match casesj.j_arr() {
     Some(x) => x
     None => return None
   }
   let ids : Array[String] = []
   for cj in carr {
     ids.push(
-      match cj.as_object() {
-        Some(co) => jf_str(co, "id").or("")
+      match cj.j_obj() {
+        Some(co) => jf_str(co, "id").unwrap_or("")
         None => ""
       },
     )
@@ -3050,7 +3079,7 @@ fn raw_case_ids(j : Json) -> Array[String]? {
 ///|
 fn check_ids(rel : String, ids : Array[String]) -> Array[String] {
   let bad : Array[String] = []
-  let seen : Map[String, Int] = Map::new()
+  let seen : Map[String, Int] = Map([])
   let mut ci = 0
   for id in ids {
     ci = ci + 1
@@ -3123,8 +3152,8 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     for b in id_bad {
       malformed.push(b)
     }
-    let q = match j.as_object() {
-      Some(o) => jf_str(o, "query").or("")
+    let q = match j.j_obj() {
+      Some(o) => jf_str(o, "query").unwrap_or("")
       None => ""
     }
     if q == "lower" {
@@ -3164,7 +3193,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     "[json-conformance] decoded=\{decoded.length()} ran_cases=\{ran_cases} skipped=\{skips.length()} mismatches=\{mismatches.length()}",
   )
   println("[json-conformance] decoded: " + join_comma(decoded))
-  let hist : Map[String, Int] = Map::new()
+  let hist : Map[String, Int] = Map([])
   for pair in skips {
     let r = pair.1
     hist.set(
