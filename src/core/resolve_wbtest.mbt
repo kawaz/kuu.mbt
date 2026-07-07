@@ -1,0 +1,465 @@
+// resolve_wbtest.mbt — executable spec for the value-resolution layer (MDR-002 §3): the result
+// builder (DR-016/025/043/044), export-key application + collision (DR-052/073), and the
+// value-source ladder (DR-031/049/050, with the DR-074/075 env-lexer update over the slice).
+
+///|
+/// A scalar cli/env/config/… `Set` binding at the root scope (the common case in these tests;
+/// nested-scope cases build the `Binding` literal directly to show the scope path explicitly).
+fn cb(key : String, value : Value, source : Source) -> Binding {
+  { key, op: Set, value, source, scope: [], link: 0 }
+}
+
+///|
+/// An Entity builder with every ladder seat off by default (labeled optional args mirror slice
+/// `poc/helpers_wbtest.mbt`'s `opt()` — only the ladder seats a test actually exercises are named).
+fn ent(
+  name : String,
+  ty : Ty,
+  env_key? : String? = None,
+  config_seat? : Bool = false,
+  config_key? : Array[String]? = None,
+  is_config_file? : Bool = false,
+  inherit_? : Bool = false,
+  accum? : String? = None,
+  default_value? : Value? = None,
+) -> Entity {
+  {
+    name,
+    ty,
+    env_key,
+    config_seat,
+    config_key,
+    is_config_file,
+    inherit_,
+    accum,
+    default_value,
+  }
+}
+
+// ── build_result (DR-016/025/043/044) ─────────────────────────────────────────
+
+///|
+/// Guarantees: a plain scalar cell renders last-wins (DR-015), an accumulate cell folds same-key
+/// effects into an array (DR-043/034/036, `empty` clears prior items), and a scalar cell's preset
+/// default seats when the cell has no winning binding at all (DR-031 default seat / DR-051 §2 flag
+/// は absent にならない) — three of the builder's structural cases in one pass over a flat scope.
+test "build_result folds scalar last-wins, accumulate array, and default seat" {
+  let binds : Array[Binding] = [
+    cb("port", VNum(8080.0), Cli),
+    cb("port", VNum(9090.0), Cli), // last-wins: 9090 should win over 8080
+    cb("tags", VStr("a"), Cli),
+    cb("tags", VStr("b"), Cli),
+  ]
+  let cells : Array[AccumCell] = [{ path: [], name: "tags" }]
+  let defaults : Array[DefaultCell] = [
+    { path: [], name: "verbose", value: VBool(false) },
+  ]
+  let r = build_result(binds, cells, defaults, [])
+  assert_eq(
+    r,
+    RObj([
+      ("port", RScalar(VNum(9090.0))),
+      ("tags", RArr([RScalar(VStr("a")), RScalar(VStr("b"))])),
+      ("verbose", RScalar(VBool(false))),
+    ]),
+  )
+}
+
+///|
+/// Guarantees: an `empty` effect on an accumulate cell CLEARS everything accumulated before it
+/// (DR-045 empty op) — re-accumulation after `empty` starts fresh, not appended to the discard.
+test "build_result: an empty op on an accumulate cell clears prior items" {
+  let binds : Array[Binding] = [
+    { key: "tags", op: Set, value: VStr("a"), source: Cli, scope: [], link: 0 },
+    {
+      key: "tags",
+      op: Empty,
+      value: VBool(false), // placeholder — empty carries no operand
+      source: Cli,
+      scope: [],
+      link: 0,
+    },
+    { key: "tags", op: Set, value: VStr("c"), source: Cli, scope: [], link: 0 },
+  ]
+  let cells : Array[AccumCell] = [{ path: [], name: "tags" }]
+  let r = build_result(binds, cells, [], [])
+  assert_eq(r, RObj([("tags", RArr([RScalar(VStr("c"))]))]))
+}
+
+///|
+/// Guarantees: an accumulate cell that fired ZERO times still renders `[]` (DR-044 §1 uniform
+/// array) instead of being absent from the result object.
+test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)" {
+  let cells : Array[AccumCell] = [{ path: [], name: "tags" }]
+  assert_eq(build_result([], cells, [], []), RObj([("tags", RArr([]))]))
+}
+
+///|
+/// Guarantees: an IdxRepeat's "[]"/"#k" sentinel encoding (DR-043 named indexed repeat) folds into
+/// an ARRAY of one element per firing, each element itself built by recursing under its "#k" — the
+/// nameless "" leaf at each index is the SCALAR case (a seq/array context nameless value, DR-052
+/// §2), not promoted into a kv object.
+test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
+  let binds : Array[Binding] = [
+    {
+      key: "[]",
+      op: Set,
+      value: VBool(true),
+      source: Cli,
+      scope: ["xs"],
+      link: 0,
+    },
+    {
+      key: "",
+      op: Set,
+      value: VStr("a"),
+      source: Cli,
+      scope: ["xs", "#0"],
+      link: 0,
+    },
+    {
+      key: "",
+      op: Set,
+      value: VStr("b"),
+      source: Cli,
+      scope: ["xs", "#1"],
+      link: 0,
+    },
+  ]
+  let r = build_result(binds, [], [], [])
+  assert_eq(r, RObj([("xs", RArr([RScalar(VStr("a")), RScalar(VStr("b"))]))]))
+}
+
+// ── export-key application (DR-052) ───────────────────────────────────────────
+
+///|
+/// Guarantees: `apply_export_keys` overrides a value cell's key (EkKey) and drops a scope label
+/// entirely (EkNull, DR-052 §2 透過 — children promote to the parent), leaving an unmapped
+/// (EkUnset) name unchanged.
+test "apply_export_keys renames a leaf key and drops a null-exported scope label" {
+  let ek : Map[String, ExportKey] = Map::from_array([
+    ("port", EkKey("p")),
+    ("wrapper", EkNull),
+  ])
+  let binds : Array[Binding] = [
+    cb("port", VNum(80.0), Cli),
+    {
+      key: "verbose",
+      op: Set,
+      value: VBool(true),
+      source: Cli,
+      scope: ["wrapper"],
+      link: 0,
+    },
+  ]
+  let mapped = apply_export_keys(binds, ek)
+  assert_eq(mapped[0].key, "p")
+  assert_eq(mapped[1].scope, []) // "wrapper" label dropped → child promotes to root
+  assert_eq(mapped[1].key, "verbose") // unmapped name unchanged (EkUnset default)
+}
+
+// ── export-key collision (DR-073) ─────────────────────────────────────────────
+//
+// Mirrors spec fixture `fixtures/export-key/collision.json` exactly: two flags `a`/`b` both
+// export_key `x`.
+
+///|
+fn collision_ek() -> Map[String, ExportKey] {
+  Map::from_array([("a", EkKey("x")), ("b", EkKey("x"))])
+}
+
+///|
+/// co-exposure-collision (`--a --b`): both a and b fire in the SAME parse and both map to `x` —
+/// a genuine runtime collision (DESIGN §15.5 / DR-021). `find_export_collisions` reports the
+/// group; `build_interpretations` yields 2 interpretations (one claiming `x` per entity), both
+/// degenerating to the SAME view `{x:true}` (both flags) — distinguished ONLY by claimants
+/// (DR-073 §1/§2), exactly the fixture's expected shape.
+test "DR-073 co-exposure-collision: degenerate views distinguished by claimants" {
+  let ek = collision_ek()
+  let binds : Array[Binding] = [
+    cb("a", VBool(true), Cli),
+    cb("b", VBool(true), Cli),
+  ]
+  let collisions = find_export_collisions(binds, ek)
+  assert_eq(collisions.length(), 1)
+  assert_eq(collisions[0].path, [])
+  assert_eq(collisions[0].key, "x")
+  assert_eq(collisions[0].claimants, ["a", "b"])
+  let interps = build_interpretations(binds, ek, [], [])
+  assert_eq(interps.length(), 2)
+  assert_eq(interps[0].result, RObj([("x", RScalar(VBool(true)))]))
+  assert_eq(interps[0].claimants, [("x", "a")])
+  assert_eq(interps[1].result, RObj([("x", RScalar(VBool(true)))]))
+  assert_eq(interps[1].claimants, [("x", "b")])
+}
+
+///|
+/// single-exposure-ok (`--a` only): only `a` actually fires — no collision (the check is on
+/// ACTUAL co-exposure, not the static declaration, DR-021 §5 / DESIGN §15.5). `b`'s unfired flag
+/// preset (`default: false`) must NOT resurface under the shared exported key `x` (it would wrongly
+/// look like a second occupant) — `apply_export_to_defaults` maps it to the same key `x`, but
+/// `build_result`'s default-seat injection skips it because `x` is already a bound leaf (from `a`).
+test "DR-073 single-exposure-ok: no collision, and the unfired co-exported default does not resurface" {
+  let ek = collision_ek()
+  let binds : Array[Binding] = [cb("a", VBool(true), Cli)]
+  assert_eq(find_export_collisions(binds, ek), [])
+  let defaults : Array[DefaultCell] = [
+    { path: [], name: "b", value: VBool(false) },
+  ]
+  let interps = build_interpretations(
+    binds,
+    ek,
+    [],
+    apply_export_to_defaults(defaults, ek),
+  )
+  assert_eq(interps.length(), 1)
+  assert_eq(interps[0].claimants, [])
+  assert_eq(interps[0].result, RObj([("x", RScalar(VBool(true)))]))
+}
+
+// ── value-source ladder (DR-031/049/050) ──────────────────────────────────────
+
+///|
+/// Guarantees: the ladder picks cli > env > default in that order when multiple seats could supply
+/// the same cell — this is the DR-031 invariant the whole layer exists to realize.
+test "resolve_scope: cli wins over env, env wins over default" {
+  let port = ent(
+    "port",
+    TNum,
+    env_key=Some("PORT"),
+    default_value=Some(VNum(1.0)),
+  )
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [port],
+    constraints: [],
+  }
+  // cli present → cli wins regardless of env/default.
+  let cli_bound = resolve_scope(
+    sc,
+    [cb("port", VNum(8080.0), Cli)],
+    Map::from_array([("PORT", "9999")]),
+  )
+  assert_eq(cli_bound, Ok([cb("port", VNum(8080.0), Cli)]))
+  // no cli → env wins over default.
+  let env_bound = resolve_scope(sc, [], Map::from_array([("PORT", "9999")]))
+  assert_eq(env_bound, Ok([mkb_pub("port", VNum(9999.0), Env)]))
+  // neither cli nor env → default seats.
+  let default_bound = resolve_scope(sc, [], Map([]))
+  assert_eq(default_bound, Ok([mkb_pub("port", VNum(1.0), Default)]))
+}
+
+///|
+/// A `Set` binding builder exposed for assertions (mirrors `mkb`'s shape without re-exporting it).
+fn mkb_pub(key : String, value : Value, source : Source) -> Binding {
+  { key, op: Set, value, source, scope: [], link: 0 }
+}
+
+///|
+/// Guarantees: the inherit seat (DR-031 #4 / DR-013) supplies the nearest ancestor scope's
+/// same-named value when no cli/env/config seat wins, and is itself out-ranked by a default seat
+/// that would only apply when inherit has nothing (both absent here → default).
+test "resolve_scope: inherit seat fills from the parent context map" {
+  let ttl = ent("ttl", TNum, inherit_=true, default_value=Some(VNum(30.0)))
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ttl],
+    constraints: [],
+  }
+  let inherited = Map::from_array([("ttl", VNum(60.0))])
+  let bound = resolve_scope(sc, [], Map([]), inherited~)
+  assert_eq(bound, Ok([mkb_pub("ttl", VNum(60.0), Inherit)]))
+  // no inherited value present → falls through to default.
+  let bound_no_parent = resolve_scope(sc, [], Map([]))
+  assert_eq(bound_no_parent, Ok([mkb_pub("ttl", VNum(30.0), Default)]))
+}
+
+///|
+/// Guarantees (DR-074/075 update over slice `env_value`): a badly-typed env string is a DR-066
+/// Error with the canonical reason (`not_a_number` / `not_an_integer` / `not_a_bool`) — NOT a
+/// silent `VStr` fallback into a wrong-typed cell (the slice's behaviour this port fixes).
+test "resolve_scope: a badly-typed env value is a DR-066 Error, not a silent VStr fallback" {
+  let num = ent("n", TNum, env_key=Some("N"))
+  let sc_num : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [num],
+    constraints: [],
+  }
+  match resolve_scope(sc_num, [], Map::from_array([("N", "abc")])) {
+    Err(pe) => {
+      assert_eq(pe.element, "n")
+      assert_eq(pe.kind, KParse)
+      assert_eq(pe.reason, "not_a_number")
+    }
+    Ok(_) => fail("expected an Err, env value \"abc\" is not a number")
+  }
+  let int_ = ent("i", TInt, env_key=Some("I"))
+  let sc_int : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [int_],
+    constraints: [],
+  }
+  match resolve_scope(sc_int, [], Map::from_array([("I", "2.5")])) {
+    Err(pe) => assert_eq(pe.reason, "not_an_integer") // readable as a number, not integer-valued
+    Ok(_) => fail("expected an Err, env value \"2.5\" is not an integer")
+  }
+  // an integer-VALUED string is accepted under every mode (DR-075 値空間判定), incl. via env.
+  let sc_int_ok : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("i", TInt, env_key=Some("I"))],
+    constraints: [],
+  }
+  assert_eq(
+    resolve_scope(sc_int_ok, [], Map::from_array([("I", "3.0")])),
+    Ok([mkb_pub("i", VNum(3.0), Env)]),
+  )
+  let flag = ent("f", TFlag, env_key=Some("F"))
+  let sc_flag : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [flag],
+    constraints: [],
+  }
+  match resolve_scope(sc_flag, [], Map::from_array([("F", "maybe")])) {
+    Err(pe) => assert_eq(pe.reason, "not_a_bool")
+    Ok(_) => fail("expected an Err, env value \"maybe\" is not a bool")
+  }
+}
+
+///|
+/// Guarantees (DR-050 §5 dependency order): the config_file element's OWN path resolves cli >
+/// env > default first (no config seat, 循環禁止); the provider is then read with that path, and
+/// every other entity resolves down cli > env > config > inherit > default using it.
+test "resolve_scope_config: the config seat fills below env, above inherit/default" {
+  let cfg_path = ent(
+    "config",
+    TStr,
+    is_config_file=true,
+    default_value=Some(VStr("app.json")),
+  )
+  let port = ent("port", TNum, config_seat=true)
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [cfg_path, port],
+    constraints: [],
+  }
+  let provider = fn(p : String) -> ConfigVal? {
+    if p == "app.json" {
+      Some(CObj([("port", CNum(4321.0))]))
+    } else {
+      None
+    }
+  }
+  let bound = resolve_scope_config(sc, [], Map([]), provider)
+  assert_eq(bound, Ok([mkb_pub("port", VNum(4321.0), Config)]))
+}
+
+///|
+/// Guarantees: a COMMITTED config path (cli/env-explicit) that the provider fails to read is a
+/// DR-066 Error (指定したのに読めない); a DEFAULT-only path reading `None` is silently tolerated
+/// (the config seat stays empty and later seats/default apply) — DR-050 §2's asymmetry.
+test "resolve_scope_config: a committed unreadable config path errors, a default one does not" {
+  let never_reads = fn(_p : String) -> ConfigVal? { None }
+  let committed = ent("config", TStr, is_config_file=true)
+  let sc_committed : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [committed],
+    constraints: [],
+  }
+  match
+    resolve_scope_config(
+      sc_committed,
+      [cb("config", VStr("missing.json"), Cli)],
+      Map([]),
+      never_reads,
+    ) {
+    Err(pe) => {
+      assert_eq(pe.element, "config")
+      assert_eq(pe.reason, "config_read_failed")
+    }
+    Ok(_) =>
+      fail("expected an Err, the committed config path could not be read")
+  }
+  // a default-only path (no cli/env) reading None is silently tolerated: no Error, the config seat
+  // just supplies nothing (later entities fall through to inherit/default).
+  let by_default = ent(
+    "config",
+    TStr,
+    is_config_file=true,
+    default_value=Some(VStr("optional.json")),
+  )
+  let port = ent("port", TNum, config_seat=true, default_value=Some(VNum(1.0)))
+  let sc_default : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [by_default, port],
+    constraints: [],
+  }
+  assert_eq(
+    resolve_scope_config(sc_default, [], Map([]), never_reads),
+    Ok([mkb_pub("port", VNum(1.0), Default)]),
+  )
+}
+
+///|
+/// Guarantees (DR-066 reason derivation, `config_mismatch_reason`): a config value of the wrong
+/// STRUCTURE for a scalar cell (a JSON array where a scalar is expected) is a DR-037/066 Error with
+/// a config-specific extension reason (no v1 reason covers structural mismatch yet, DR-066 §3).
+test "resolve_scope_config: a structural config mismatch is an Error" {
+  let scalar_cfg = ent("port", TNum, config_seat=true)
+  let cfg_path = ent(
+    "config",
+    TStr,
+    is_config_file=true,
+    default_value=Some(VStr("app.json")),
+  )
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [cfg_path, scalar_cfg],
+    constraints: [],
+  }
+  let provider = fn(_p : String) -> ConfigVal? {
+    Some(CObj([("port", CArr([CNum(1.0), CNum(2.0)]))]))
+  }
+  match resolve_scope_config(sc, [], Map([]), provider) {
+    Err(pe) => {
+      assert_eq(pe.element, "port")
+      assert_eq(pe.reason, "config_structural_mismatch")
+    }
+    Ok(_) => fail("expected an Err, a config array cannot fill a scalar cell")
+  }
+}
+
+// ── command_child / inherited_of ──────────────────────────────────────────────
+
+///|
+/// Guarantees: `command_child` fetches a subcommand's built Scope by name from its parent's
+/// `CmdSat` greedy entries; `inherited_of` turns a resolved-bindings array into the name→value
+/// map the next scope's inherit seat reads (`resolve_scope`'s `inherited?` parameter).
+test "command_child fetches a subcommand scope; inherited_of builds the parent context map" {
+  let child : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("serve", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  assert_eq(command_child(root, "serve"), Some(child))
+  assert_eq(command_child(root, "missing"), None)
+  let ctx = inherited_of([cb("ttl", VNum(60.0), Cli)])
+  assert_eq(ctx.get("ttl"), Some(VNum(60.0)))
+  assert_eq(ctx.get("absent"), None)
+}

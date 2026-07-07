@@ -1411,25 +1411,6 @@ fn is_committed(bindings : Array[Binding], name : String) -> Bool {
 }
 
 ///|
-/// A Value rendered as its comparison string (constraint value matching:
-/// integers print without the trailing `.0`). The resolve layer owns the
-/// result-object rendering; this is only the CRequiresIf comparison form.
-fn value_str(v : Value) -> String {
-  match v {
-    VStr(s) => s
-    VBool(b) => if b { "true" } else { "false" }
-    VNum(d) => {
-      let i = d.to_int()
-      if i.to_double() == d {
-        i.to_string()
-      } else {
-        d.to_string()
-      }
-    }
-  }
-}
-
-///|
 /// The committed value of an element (last-wins), or None.
 fn elem_value(bindings : Array[Binding], name : String) -> String? {
   let mut v : String? = None
