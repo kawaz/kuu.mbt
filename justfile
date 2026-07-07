@@ -80,6 +80,13 @@ check-version-bumped: (_check-version-bumped "src/" "moon.mod")
 [private]
 [script]
 _check-version-bumped *target_paths:
+    # VERSION=0.0.0 はプレースホルダ (MDR-001: release 休眠)。placeholder の間は
+    # src 変更でも bump を要求しない — release.yml 側も 0.0.0 を skip するので対称。
+    # 初回 release は kawaz の手動 `just bump-version` で開始する。
+    if [ "$(tr -d '[:space:]' < VERSION)" = "0.0.0" ]; then
+        echo "Placeholder VERSION (0.0.0): release dormant, skipping bump gate"
+        exit 0
+    fi
     # --excludes は -- の前に置く (後だと positional 扱いで exclude が無効化される)
     if ! bump-semver vcs diff -q main@origin --excludes 'glob:src/**/*_wbtest.mbt' -- "$@"; then
         # 初回 release では origin/main に VERSION が無く compare gt が exit 2 (path not found)。
