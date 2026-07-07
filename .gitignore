@@ -1,0 +1,7 @@
+target
+_build/
+_coverage/
+.mooncakes/
+.DS_Store
+# CI-only working checkout of the kuu spec fixtures (see .github/workflows/ci.yml)
+_kuu-spec/
