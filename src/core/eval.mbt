@@ -1439,10 +1439,14 @@ fn ref_head(defs : Map[String, Node], name : String) -> Node {
 }
 
 ///|
-/// Whether the repeat named `name` prefers the SHORTER share (lazy_). The lazy_
-/// flag is stored under a mangled registry key by the repeat installer.
+/// Whether the repeat named `name` prefers the SHORTER share (lazy). The flag
+/// is stored under a mangled registry key by the repeat installer. NB: the
+/// key is the wire-ish vocabulary string "lazy:" (paired with the installer) —
+/// MDR-003's identifier rename (lazy → lazy_) does NOT apply to this string
+/// (a blanket rename once broke lazy preference entirely; pinned by the
+/// conformance fixture repeat-parse/preference-lazy).
 fn ref_is_lazy(defs : Map[String, Node], name : String) -> Bool {
-  match defs.get("lazy_:" + name) {
+  match defs.get("lazy:" + name) {
     Some(_) => true
     None => false
   }
@@ -1991,6 +1995,30 @@ pub fn parse(
       })
     }
   }
+  // Residual collapse: KTop emits one scope-level unexpected_token PER
+  // dead-end position, but the canonical errors set carries the residual
+  // only at its DEEPEST head (spec fixture repeat-parse/max-finite pins
+  // exactly one; the shallower stops of the same walk are the same stumble
+  // observed earlier, not distinct failure reasons — element-attributed
+  // errors are untouched, DR-053 §2 全保持 is about DISTINCT errors).
+  let mut deepest_resid = -1
+  for e in errors {
+    if e.element == "" &&
+      e.reason == "unexpected_token" &&
+      e.argv_pos > deepest_resid {
+      deepest_resid = e.argv_pos
+    }
+  }
+  let errors2 : Array[ParseError] = []
+  for e in errors {
+    if e.element == "" &&
+      e.reason == "unexpected_token" &&
+      e.argv_pos < deepest_resid {
+      continue
+    }
+    errors2.push(e)
+  }
+  let errors = errors2
   match full.length() {
     0 =>
       Failure({

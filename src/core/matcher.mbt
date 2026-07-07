@@ -216,7 +216,17 @@ fn walk_short(
                   ) {
                   out.push(r)
                 }
-              None => ()
+              None =>
+                // A typed value that fails to parse: a mid-token split is a
+                // silent non-reading (its remainder would need OTHER defined
+                // chars to progress, DR-041 §3), but the FULL-TAIL attach is
+                // the「値 char が残余全体を値として取る」唯一形の読みなので、
+                // its parse failure is a held Error (DR-041 §5 値不正 =
+                // Error、DR-074 の suffix 拒否がここに落ちる)。fixture
+                // matcher-readings/cluster-split-no-flag が輪郭を固定する。
+                if j == body.length() && (e.kind == TNum || e.kind == TInt) {
+                  out.push(Held(pe_parse(e.name, vstr, pos), acc))
+                }
             }
             j = j + 1
           }
