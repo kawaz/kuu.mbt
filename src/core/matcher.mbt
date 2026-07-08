@@ -125,11 +125,22 @@ fn run_eq_split(
     if e.key == key {
       match e.kind {
         TStr => return [Accept(pos + 1, [mkb(e.name, VStr(valstr), Cli)])]
-        TNum | TInt => // int is number-like at the CLI (constraint enforced at config time)
+        TNum => // canonical number 字句 (DR-074 §1)
           match parse_number(valstr) {
             Some(d) => return [Accept(pos + 1, [mkb(e.name, VNum(d), Cli)])]
-            // defined key, bad value => held Error (DR-037), not 素通し.
             None => return [Held(pe_parse(e.name, valstr, pos), [])]
+          }
+        TInt =>
+          // DR-075 §1-§2: eq-split (`--v=2.5`) の TInt も値空間判定 + int_round を適用する。entry の
+          // int_round は installer が ElemDef.int_round から埋め込む (canonical default = RError)。
+          match parse_int_value(valstr, e.int_round) {
+            Ok(i) =>
+              return [Accept(pos + 1, [mkb(e.name, VNum(i.to_double()), Cli)])]
+            Err(NotAnInteger) =>
+              return [Held(pe_parse_int(e.name, valstr, pos), [])]
+            Err(IntOutOfRange) =>
+              return [Held(pe_int_out_of_range(e.name, valstr, pos), [])]
+            Err(NotANumber) => return [Held(pe_parse(e.name, valstr, pos), [])]
           }
         TFloat => // DR-074 §1: float's wider accept域 (number + inf) via parse_float
           match parse_float(valstr) {
@@ -193,10 +204,20 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 fn short_val(e : ShortEntry, s : String) -> Binding? {
   match e.kind {
     TStr => Some(mkb(e.name, VStr(s), Cli))
-    TNum | TInt =>
+    TNum =>
       match parse_number(s) {
         Some(d) => Some(mkb(e.name, VNum(d), Cli))
         None => None
+      }
+    TInt =>
+      // DR-075 §1-§2: short cluster / space-tail の TInt も値空間判定 + int_round を反映。丸めモードで
+      // fractional が Ok(rounded) を返すときは Some(...) を返す。RError で fractional のときは None を
+      // 返し、caller (walk_short) が tail 位置で held Error を組む (pre-existing 挙動保存 —
+      // not_an_integer/out_of_range の細粒 reason は tail 経路の pe_parse に集約されるが、これは既存の
+      // Binding? 契約の範囲内。より細粒な reason 分岐が要る場合は別の task で shape 拡張)。
+      match parse_int_value(s, e.int_round) {
+        Ok(i) => Some(mkb(e.name, VNum(i.to_double()), Cli))
+        Err(_) => None
       }
     TFloat =>
       match parse_float(s) {

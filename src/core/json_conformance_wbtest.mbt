@@ -301,6 +301,7 @@ fn opt(
   exclusive? : Array[String] = [],
   value_requires? : Array[(String, String, Array[String])] = [],
   default? : Value? = None,
+  int_round? : RoundMode = RError,
 ) -> ElemDef {
   {
     name,
@@ -329,6 +330,7 @@ fn opt(
     value_requires,
     deprecated: false,
     default_value: default,
+    int_round,
   }
 }
 
@@ -345,6 +347,7 @@ fn pos(
   export_? : ExportKey = EkUnset,
   ref_? : String? = None,
   default? : Value? = None,
+  int_round? : RoundMode = RError,
 ) -> ElemDef {
   {
     name,
@@ -373,6 +376,7 @@ fn pos(
     value_requires: [],
     deprecated: false,
     default_value: default,
+    int_round,
   }
 }
 
@@ -405,6 +409,7 @@ fn dd_marker() -> ElemDef {
     value_requires: [],
     deprecated: false,
     default_value: None,
+    int_round: RError,
   }
 }
 
@@ -697,7 +702,7 @@ fn prim_name(n : Node) -> String? {
     NumArg(x) => Some(x)
     // TInt は DR-075 §1 で値空間判定に切替、CLI 相で IntArg 経由。lower 断面では他の value primitive
     // と同型の値セル (n) として扱う (Some(x) を返す)。
-    IntArg(x) => Some(x)
+    IntArg(x, _) => Some(x)
     FloatArg(x) => Some(x)
     SepArg(x, _) => Some(x)
     FilterArg(x, _) => Some(x)
@@ -1580,6 +1585,104 @@ fn dec_ty(t : String) -> Ty raise DecodeSkip {
 }
 
 ///|
+/// DR-061 §3 configurable factory の type shadow: user 定義の型名を base Ty + parse 相 config
+/// (現状 int_round のみ) に解決する。fixture の `definitions.types.<name>` → TypeShadow の map で
+/// 保持し、dec_option / dec_positional の `type: "<name>"` 解決で consultation する。canonical 型名
+/// (string/number/int/...) は shadow で override 可能だが本 fixture では未使用 (`kuu_int_parser` factory
+/// のみ扱う; `kuu_number_parser` = number_allow_base_prefix は次タスク)。
+struct TypeShadow {
+  base : Ty
+  int_round : RoundMode
+} derive(Eq, Debug)
+
+///|
+/// Decode `definitions.types` (DR-061 §3 `{name: <factory>, config: {<key>: <value>, ...}}`) into
+/// a shadow map. 各 shadow は base Ty (factory 名から導出) と平坦 config キーで構成される。
+/// 現状サポート: `kuu_int_parser` (base = TInt、config = `int_round`)。他の factory 名は
+/// DecodeSkip で明示的に unsupported 扱い (typo 検出、DR-061 §4 は factory 自身が config 値を検証
+/// する規定なので、type/factory 認識のこの層は capability gate として振る舞う)。
+fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
+  let o = match j.j_obj() {
+    Some(x) => x
+    None => raise DecodeSkip("definitions.types is not an object")
+  }
+  let out : Map[String, TypeShadow] = Map([])
+  for name, tj in o {
+    let to = match tj.j_obj() {
+      Some(x) => x
+      None =>
+        raise DecodeSkip(
+          "definitions.types[" +
+          name +
+          "] is not an object (expected {name, config})",
+        )
+    }
+    allowed_keys(to, ["name", "config"], "type shadow")
+    let factory = match jf_str(to, "name") {
+      Some(s) => s
+      None =>
+        raise DecodeSkip(
+          "definitions.types[" + name + "] missing factory 'name'",
+        )
+    }
+    match factory {
+      "kuu_int_parser" => {
+        // DR-075 §2 の唯一 config = int_round (10 モード語彙、value.mbt の round_mode_of で解決)。
+        // config 未指定は canonical default (RError = error モード)。
+        let mut mode = RError
+        match to.get("config") {
+          Some(cj) => {
+            let co = match cj.j_obj() {
+              Some(x) => x
+              None =>
+                raise DecodeSkip(
+                  "definitions.types[" + name + "].config is not an object",
+                )
+            }
+            allowed_keys(co, ["int_round"], "kuu_int_parser config")
+            match co.get("int_round") {
+              Some(vj) =>
+                match vj.j_str() {
+                  Some(s) =>
+                    match round_mode_of(s) {
+                      Some(m) => mode = m
+                      None =>
+                        raise DecodeSkip(
+                          "definitions.types[" +
+                          name +
+                          "].config.int_round '" +
+                          s +
+                          "' is not a canonical RoundMode",
+                        )
+                    }
+                  None =>
+                    raise DecodeSkip(
+                      "definitions.types[" +
+                      name +
+                      "].config.int_round is not a string",
+                    )
+                }
+              None => ()
+            }
+          }
+          None => ()
+        }
+        out.set(name, { base: TInt, int_round: mode })
+      }
+      other =>
+        raise DecodeSkip(
+          "definitions.types[" +
+          name +
+          "] unsupported factory '" +
+          other +
+          "' (only kuu_int_parser is wired in the current substrate; kuu_number_parser is next task)",
+        )
+    }
+  }
+  out
+}
+
+///|
 fn dec_variant(
   elem : String,
   name : String,
@@ -1779,7 +1882,10 @@ fn dec_or(
 }
 
 ///|
-fn dec_option(j : Json) -> DElem raise DecodeSkip {
+fn dec_option(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+) -> DElem raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("option is not an object")
@@ -1817,10 +1923,17 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
   if tystr == "dd" {
     return DOpt({ ..dd_marker(), name, })
   }
-  let (ty, fail_action, config_file) = match tystr {
-    "help" => (TFlag, true, false)
-    "config_file" => (TStr, false, true)
-    _ => (dec_ty(tystr), false, false)
+  // DR-061 §3: type shadow lookup — user 定義の type 名なら base Ty + parse 相 config を採用、
+  // canonical 型名 (string/int/...) にフォールバック。help/config_file は語彙 keyword で shadow の
+  // 適用対象外 (installer 語彙、DR-042)。
+  let (ty, fail_action, config_file, int_round_from_shadow) = match tystr {
+    "help" => (TFlag, true, false, RError)
+    "config_file" => (TStr, false, true, RError)
+    _ =>
+      match shadows.get(tystr) {
+        Some(sh) => (sh.base, false, false, sh.int_round)
+        None => (dec_ty(tystr), false, false, RError)
+      }
   }
   let (longs, vars) = match o.get("long") {
     Some(lj) => dec_long(lj, name, ty)
@@ -1872,6 +1985,7 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
       exclusive~,
       value_requires~,
       default~,
+      int_round=int_round_from_shadow,
     ),
     separator: sep,
     deprecated,
@@ -1879,7 +1993,10 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
 }
 
 ///|
-fn dec_positional(j : Json) -> ElemDef raise DecodeSkip {
+fn dec_positional(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+) -> ElemDef raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("positional is not an object")
@@ -1902,9 +2019,14 @@ fn dec_positional(j : Json) -> ElemDef raise DecodeSkip {
     ],
     "positional",
   )
-  let ty = match jf_str(o, "type") {
-    Some(t) => dec_ty(t)
-    None => TStr
+  // DR-061 §3: positional も type shadow を consultation (dec_option と同型)。
+  let (ty, int_round_from_shadow) = match jf_str(o, "type") {
+    Some(t) =>
+      match shadows.get(t) {
+        Some(sh) => (sh.base, sh.int_round)
+        None => (dec_ty(t), RError)
+      }
+    None => (TStr, RError)
   }
   let name = match jf_str(o, "name") {
     Some(s) => s
@@ -1941,11 +2063,15 @@ fn dec_positional(j : Json) -> ElemDef raise DecodeSkip {
     config_key~,
     export_~,
     default~,
+    int_round=int_round_from_shadow,
   )
 }
 
 ///|
-fn dec_command(j : Json) -> DCmd raise DecodeSkip {
+fn dec_command(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+) -> DCmd raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("command is not an object")
@@ -1962,7 +2088,9 @@ fn dec_command(j : Json) -> DCmd raise DecodeSkip {
     Some(s) => s
     None => raise DecodeSkip("command missing 'name'")
   }
-  let body = dec_definition(o)
+  // 子コマンドの definition は親の shadows を継承する (DR-061 は scope 継承を規定していないが、
+  // slice実装は fixture が命令的に flat な type shadow を宣言するだけなので親→子への単純伝搬で足りる)
+  let body = dec_definition(o, shadows~)
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
     None => EkUnset
@@ -1971,7 +2099,10 @@ fn dec_command(j : Json) -> DCmd raise DecodeSkip {
 }
 
 ///|
-fn dec_definition(o : Map[String, Json]) -> Definition raise DecodeSkip {
+fn dec_definition(
+  o : Map[String, Json],
+  shadows? : Map[String, TypeShadow] = Map([]),
+) -> Definition raise DecodeSkip {
   let options : Array[ElemDef] = []
   let positionals : Array[ElemDef] = []
   let commands : Array[CommandDef] = []
@@ -1983,7 +2114,7 @@ fn dec_definition(o : Map[String, Json]) -> Definition raise DecodeSkip {
         None => raise DecodeSkip("options is not an array")
       }
       for oj in a {
-        match dec_option(oj) {
+        match dec_option(oj, shadows) {
           DOpt(e) => options.push(e)
           DAlias(al) => aliases.push(al)
         }
@@ -1998,7 +2129,7 @@ fn dec_definition(o : Map[String, Json]) -> Definition raise DecodeSkip {
         None => raise DecodeSkip("positionals is not an array")
       }
       for pj in a {
-        positionals.push(dec_positional(pj))
+        positionals.push(dec_positional(pj, shadows))
       }
     }
     None => ()
@@ -2010,7 +2141,7 @@ fn dec_definition(o : Map[String, Json]) -> Definition raise DecodeSkip {
         None => raise DecodeSkip("commands is not an array")
       }
       for cj in a {
-        match dec_command(cj) {
+        match dec_command(cj, shadows) {
           DCommand(c) => commands.push(c)
           DCmdAlias(al) => aliases.push(al)
         }
@@ -2184,8 +2315,28 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
     Some(o) => o
     None => raise DecodeSkip("definition is not an object")
   }
-  allowed_keys(defo, ["options", "positionals", "commands"], "definition")
-  let def = dec_definition(defo)
+  // DR-061 §3 configurable factory: `definitions.types` を許容し、その中身を shadow map に decode。
+  // shadow は dec_definition に thread されて type 名解決で consultation される。
+  allowed_keys(
+    defo,
+    ["options", "positionals", "commands", "definitions"],
+    "definition",
+  )
+  let shadows = match defo.get("definitions") {
+    Some(dj) => {
+      let d = match dj.j_obj() {
+        Some(x) => x
+        None => raise DecodeSkip("definitions is not an object")
+      }
+      allowed_keys(d, ["types"], "definitions")
+      match d.get("types") {
+        Some(tj) => dec_types(tj)
+        None => Map([])
+      }
+    }
+    None => Map([])
+  }
+  let def = dec_definition(defo, shadows~)
   let registry : Map[String, Node] = Map([])
   let scope = match parse_definition(def, full_installers(), registry~) {
     Ok(sc) => sc
@@ -2559,8 +2710,28 @@ fn dec_lower(j : Json) -> DecodedLower raise DecodeSkip {
       }
     None => raise DecodeSkip("missing 'definition'")
   }
-  allowed_keys(defo, ["options", "positionals", "commands"], "definition")
-  let def = dec_definition(defo)
+  // DR-061 §3 configurable factory: `definitions.types` を許容し、その中身を shadow map に decode。
+  // shadow は dec_definition に thread されて type 名解決で consultation される。
+  allowed_keys(
+    defo,
+    ["options", "positionals", "commands", "definitions"],
+    "definition",
+  )
+  let shadows = match defo.get("definitions") {
+    Some(dj) => {
+      let d = match dj.j_obj() {
+        Some(x) => x
+        None => raise DecodeSkip("definitions is not an object")
+      }
+      allowed_keys(d, ["types"], "definitions")
+      match d.get("types") {
+        Some(tj) => dec_types(tj)
+        None => Map([])
+      }
+    }
+    None => Map([])
+  }
+  let def = dec_definition(defo, shadows~)
   let order = dec_installers(top)
   let expo = match top.get("expect") {
     Some(e) =>
@@ -2986,7 +3157,16 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
 /// MDR-001 §6). Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
-  []
+  [
+    // DR-076 (bool = 値型) の実装待ち 4 件: spec fixture (a906204b 系列) が bool の
+    // 値形衛星 + eq-split + :set:true 縮退の新期待値へ先行しており、inst_long の
+    // TBool bare-only lowering が追いつくまでの一時 divergence (divfix ws で実装中、
+    // 着地時にこの 4 行を削除して空台帳へ戻す)。
+    "lowering/long/variant.json::lower :: DIVERGE|got=G[set{exact=---ssl,value=true,link=ssl},set{exact=--no-ssl,value=false,link=ssl},set{exact=--ssl,value=true,link=ssl}]|E[ssl{default=true,type=bool}]|want=G[matcher(eq_split){--ssl->ssl},seq{exact=--ssl,ref=ssl,link=ssl},set{exact=--no-ssl,value=false,link=ssl},set{exact=--ssl,value=true,link=ssl}]|E[ssl{default=true,type=bool}]",
+    "value-typing/bool-canonical.json::space-form-true :: EXPECTED-SUCCESS got=fail:unexpected token",
+    "value-typing/bool-canonical.json::space-form-noncanonical-rejected :: errors got={@1/parse/unexpected_token} want={enabled@1/parse/not_a_bool}",
+    "value-typing/bool-canonical.json::bare-trigger-missing-value :: EXPECTED-FAILURE got=ok{enabled=true}",
+  ]
 }
 
 ///|
@@ -3023,16 +3203,13 @@ fn expected_skips() -> Array[(String, String)] {
     (
       "path-search/held-errors-same-depth.json", "structural or-positional (branches are consumption grammars binding distinct named cells): slice ElemDef is flat with one value cell per element — lower_positional builds a single value_prim per positional, so parse_definition has no builder for Or([Seq([…]),…]) at the §5 contract path",
     ),
-    // DR-074 §2・§4 / DR-061 §3 `definitions` factory shadow: number_allow_base_prefix / int_round の
-    // opt-in を definition top-level の `definitions` キーで factory config を差し替えて表現する断面。
-    // main の parse_definition は top-level definition に options/positionals/commands しか許さず、
-    // DR-061 の `definitions` (factory config 差し替え) キーを表現できないため decode 前に skip する。
-    // reason は allowed_keys(defo, …, "definition") の DecodeSkip メッセージと byte 一致必須。
+    // DR-074 §2・§4 / DR-061 §3 `definitions` factory shadow: number_allow_base_prefix (kuu_number_parser)
+    // 経路は hex integer + hex float の parser 実装が未完なので decoder が unsupported factory として
+    // 明示 skip する (dec_types 内 `kuu_int_parser 以外は unsupported`)。int_round (kuu_int_parser) は
+    // 実装済み (int-round-modes.json は decoded)。追跡は次タスクで hex float lexer 追加後に解消予定。
+    // reason は dec_types 内の DecodeSkip メッセージと byte 一致必須。
     (
-      "value-typing/number-base-prefix-optin.json", "definition has unsupported key 'definitions'",
-    ),
-    (
-      "value-typing/int-round-modes.json", "definition has unsupported key 'definitions'",
+      "value-typing/number-base-prefix-optin.json", "definitions.types[number] unsupported factory 'kuu_number_parser' (only kuu_int_parser is wired in the current substrate; kuu_number_parser is next task)",
     ),
   ]
 }

@@ -597,6 +597,27 @@ fn round_magnitude(
 }
 
 ///|
+/// Decode a canonical `int_round` config string (DR-061 §4 平坦 config キー、DR-075 §2 の 10 種語彙)
+/// to its `RoundMode`. Returns None on an unknown token (typo / non-canonical vocab) — the caller
+/// surfaces this as a `DecodeSkip` or a factory-config Error (DR-061 §4: config 値の検証は factory
+/// 責務). The 10 tokens are byte-identical to DR-075's naming (no HALF_UP/HALF_DOWN aliases).
+pub fn round_mode_of(s : String) -> RoundMode? {
+  match s {
+    "error" => Some(RError)
+    "floor" => Some(RFloor)
+    "ceil" => Some(RCeil)
+    "trunc" => Some(RTrunc)
+    "away" => Some(RAway)
+    "half_floor" => Some(RHalfFloor)
+    "half_ceil" => Some(RHalfCeil)
+    "half_trunc" => Some(RHalfTrunc)
+    "half_away" => Some(RHalfAway)
+    "half_even" => Some(RHalfEven)
+    _ => None
+  }
+}
+
+///|
 /// Parse a String token as an `int` element per DR-075: 値空間判定. Parse the token as a canonical
 /// number, then judge its VALUE. An integer value (`"3.0"`→3 / `"1e3"`→1000 / `"1_000"`→1000) is
 /// accepted directly under every mode. A truly-fractional value follows `mode`: `RError` (canonical

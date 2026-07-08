@@ -54,6 +54,7 @@ fn el(
     value_requires: [],
     deprecated: false,
     default_value: None,
+    int_round: RError,
   }
 }
 

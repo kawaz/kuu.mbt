@@ -88,15 +88,15 @@ pub(all) enum Node {
   /// place that distinction is known (installer.mbt `value_prim`); once lowered to a bare value node
   /// there is no other channel to carry it. Parse-fail is `kind: parse`, same reason vocab as NumArg.
   FloatArg(String)
-  /// int value primitive (DR-075 §1: 値空間判定 with canonical `int_round: error`). Consume 1 token,
-  /// parse via `parse_int_value(_, RError)`: an integer value (`"3.0"`→3 / `"1e3"`→1000 / `"1_000"`
-  /// →1000) is accepted directly, a truly-fractional value (`"2.5"`) fails with reason
-  /// `not_an_integer`, a non-number token (`"abc"`) fails with `not_a_number`. A separate node from
-  /// `NumArg` because CLI-side TInt needs the value-space (not syntax-only) judgment and its own
-  /// reason vocab — `Ty::TInt` is the only place the distinction is known (installer.mbt
-  /// `value_prim`); once lowered to a bare value node there is no other channel to carry it.
-  /// Parse-fail is `kind: parse`.
-  IntArg(String)
+  /// int value primitive (DR-075 §1 値空間判定 + §2 int_round factory config). Consume 1 token, parse
+  /// via `parse_int_value(_, mode)` where `mode` is the element's `int_round` (canonical default
+  /// `RError`, opt-in via `kuu_int_parser` factory config, DR-061 §4). RError: fractional は
+  /// `not_an_integer`、それ以外 (RFloor/RCeil/RTrunc/RAway/RHalf{Floor,Ceil,Trunc,Away,Even}) では
+  /// fractional 値を丸めて Ok。整数値 (`"3.0"` / `"1e3"` / `"1_000"`) は全モードで丸めなし。番号として
+  /// 全く読めない token (`"abc"`) は全モードで `not_a_number`。mode は installer で ElemDef.int_round
+  /// から埋め込まれる (parse 相内部調整、DR-061 §5); 一度 lowered value node になると他の carrier は
+  /// 無いため mode は node 自身が持つ。parse-fail は `kind: parse`。
+  IntArg(String, RoundMode)
   /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
   /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
   /// held Error (a value that parsed but failed the filter — post_filter reject 相当).
@@ -240,11 +240,15 @@ pub(all) struct Entity {
 } derive(Eq, Debug)
 
 ///|
-/// A long-option entry the eq-split matcher can resolve (`--key=value`).
+/// A long-option entry the eq-split matcher can resolve (`--key=value`). `int_round` carries the
+/// element's DR-075 int_round factory config into the eq-split path (space form runs the greedy
+/// IntArg node which already carries mode; eq-split needs its own copy since the entry table is the
+/// only channel run_eq_split reads). Ignored for non-`TInt` kinds.
 pub(all) struct LongEntry {
   key : String
   name : String
   kind : Ty
+  int_round : RoundMode
 } derive(Eq, Debug)
 
 ///|
@@ -257,6 +261,8 @@ pub(all) struct ShortEntry {
   name : String
   kind : Ty
   depr : Bool
+  // DR-075 int_round: short cluster / space-tail 経路の TInt 値 parse に運ぶ (LongEntry と同型)。
+  int_round : RoundMode
 } derive(Eq, Debug)
 
 ///|

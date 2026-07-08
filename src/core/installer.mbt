@@ -46,6 +46,11 @@ pub(all) struct ElemDef {
   // 値の帰属先 = 親 entity の非対称)。id 未指定時は parent entity name を branch_id にフォールバック
   // (parent 直属の value_requires と等価な挙動)。
   value_requires : Array[(String, String, Array[String])]
+  // DR-075 §2 int_round factory config (DR-061 §4 平坦 config キー、`kuu_int_parser` の唯一 config)。
+  // canonical default = `RError` (非整数値は Error)、opt-in で floor/trunc/half_even 等の丸めモード。
+  // parse 相内部調整で、`value_prim` が IntArg(name, mode) にこの値を埋め込む。TInt 以外の element は
+  // 参照しない (installer が読み取らない冗長フィールド)。
+  int_round : RoundMode
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
   default_value : Value?
 } derive(Eq, Debug)
@@ -164,13 +169,13 @@ priv struct SBChild {
 }
 
 ///|
-fn value_prim(ty : Ty, name : String) -> Node {
+fn value_prim(ty : Ty, name : String, int_round : RoundMode) -> Node {
   match ty {
     // TNum は canonical number 字句のみ (DR-074 §1) — parse_number, VNum で束ねる
     TNum => NumArg(name)
-    // TInt は値空間判定 (DR-075 §1、canonical int_round=error): number として parse し値が整数かを
-    // 判定する。fractional 値は not_an_integer で fail。IntArg 経由で parse_int_value(RError) を通す
-    TInt => IntArg(name)
+    // TInt は値空間判定 (DR-075 §1) + int_round 適用 (DR-075 §2、canonical default=RError)。IntArg に
+    // mode を埋め込み、eval が parse_int_value(_, mode) で丸めを反映する。TInt 以外は int_round を無視。
+    TInt => IntArg(name, int_round)
     // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
     TFloat => FloatArg(name)
     _ => StrArg(name)
@@ -239,6 +244,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     value_requires: e.value_requires,
     deprecated: e.deprecated,
     default_value: e.default_value,
+    int_round: e.int_round,
   }
 }
 
@@ -354,7 +360,7 @@ fn elem_head(e : ElemDef) -> Node {
     None =>
       match e.separator {
         Some(sep) => SepArg(e.name, sep)
-        None => value_prim(e.ty, e.name)
+        None => value_prim(e.ty, e.name, e.int_round)
       }
   }
 }
@@ -577,7 +583,7 @@ fn inst_long(def : Definition, build : Build) -> Unit {
             build,
             maybe_root(
               e.link_depth,
-              Seq([Exact(trigger), value_prim(e.ty, e.name)]),
+              Seq([Exact(trigger), value_prim(e.ty, e.name, e.int_round)]),
             ),
           )
       }
@@ -589,9 +595,21 @@ fn inst_long(def : Definition, build : Build) -> Unit {
       // has a dedicated true/false trigger pair, so no separate `=value` form is registered for it
       // (fixtures/lowering/long/variant.json's ssl: `--ssl`/`--no-ssl` only, no `--ssl=value`).
       if e.ty == TBool && e.variants.length() == 0 {
-        eq_entries.push({ key: l, name: e.name, kind: e.ty })
+        eq_entries.push({
+          key: l,
+          name: e.name,
+          kind: e.ty,
+          int_round: e.int_round,
+        })
       } else if e.ty != TFlag && e.ty != TBool {
-        eq_entries.push({ key: l, name: e.name, kind: e.ty })
+        // DR-075 §2: TInt の eq-split (`--v=2.5`) が factory config int_round を反映するよう、
+        // ElemDef.int_round を LongEntry に持ち込む。TInt 以外は entry 側で参照されない。
+        eq_entries.push({
+          key: l,
+          name: e.name,
+          kind: e.ty,
+          int_round: e.int_round,
+        })
       }
     }
   }
@@ -637,7 +655,14 @@ fn inst_short(def : Definition, build : Build) -> Unit {
   for e in def.options {
     for c in e.short {
       // DR-058: deprecated alias entry-copy は cluster entry でも警告する
-      sh_entries.push({ ch: c, name: e.name, kind: e.ty, depr: e.deprecated })
+      // DR-075 §2: short cluster / space-tail 経路の TInt (`-n1.5` / `-n 1.5`) も factory config を反映
+      sh_entries.push({
+        ch: c,
+        name: e.name,
+        kind: e.ty,
+        depr: e.deprecated,
+        int_round: e.int_round,
+      })
     }
   }
   if sh_entries.length() > 0 {
@@ -786,6 +811,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     value_requires: copy.value_requires,
     deprecated: copy.deprecated,
     default_value: copy.default_value,
+    int_round: copy.int_round,
   })
 }
 
@@ -916,6 +942,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     value_requires: [],
     deprecated: false,
     default_value: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
+    int_round: RError, // canonical default (DR-075 §2): write-target は int_round を持たない
   })
 }
 
@@ -1102,6 +1129,7 @@ fn alias_entry(
     value_requires: [],
     deprecated,
     default_value: None,
+    int_round: RError,
   }
 }
 
@@ -1392,7 +1420,7 @@ fn head_progresses(
     | SepArg(_, _)
     | NumArg(_)
     | FloatArg(_)
-    | IntArg(_)
+    | IntArg(_, _)
     | FilterArg(_, _)
     | ReqArg(_)
     | Exact(_)
