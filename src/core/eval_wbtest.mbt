@@ -336,7 +336,8 @@ test "REVIEW-C2 eval_many: a Pending after successful reps carries the reps' bin
   // Whitebox: one rep of StrArg("v") consumes the only token, the next rep
   // starves -> Pending. Its partial state must include v=x (the same
   // contract as eval_seq: Pending = starved branch WITH its state).
-  let brs = eval_many(StrArg("v"), ["x"], 0, [], Map([]))
+  let ctx : Ctx = { toks: ["x"], defs: Map([]), mode: ModeParse }
+  let brs = eval_many(StrArg("v"), ctx, 0, [])
   let mut pending_has_acc = false
   for b in brs {
     match b {

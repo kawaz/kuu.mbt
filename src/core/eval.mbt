@@ -25,6 +25,34 @@
 // nodes so a repeat can be a recursive `Seq([head, Opt(Ref(self))])`.
 
 ///|
+/// The evaluator's ambient context, threaded through the whole walk.
+/// Bundles what every walk function needs but never mutates: the token
+/// stream, the template registry (DR-020/043), and the evaluation mode
+/// (parse vs complete — the collection-policy switch MDR-002's TODO
+/// anticipates). A future completes-memoization table also lives here.
+priv struct Ctx {
+  toks : Array[String]
+  defs : Map[String, Node]
+  mode : EvalMode
+}
+
+///|
+/// parse counts complete paths (DR-038); complete collects expectations
+/// (DR-060). The walk is ONE implementation — mode switches a handful of
+/// collection-policy points (added in a follow-up change, NOT this one).
+priv enum EvalMode {
+  ModeParse
+  ModeComplete
+} derive(Eq)
+
+///|
+/// Reference `ModeComplete` and its `Eq` at package scope so the follow-up
+/// `complete()` API can flip the mode without a churn of "constructor now
+/// used" edits. Comparing at scope keeps the derived `Eq` live too. Neither
+/// side has runtime effect on `parse()` (this value is never read).
+let _mode_complete_ref : Bool = ModeComplete == ModeComplete
+
+///|
 /// A non-set effect binding (default / unset / empty). The operand is a
 /// placeholder — these ops carry no operand (spec DR-045 table).
 fn mk_eff(key : String, op : EffectOp, source : Source) -> Binding {
@@ -195,15 +223,10 @@ fn pend_value(ty : Ty, origin : String) -> Cand {
 ///|
 /// Evaluate a node at `pos`, returning every reading (Accept), held Error,
 /// and pending-value state.
-fn eval(
-  node : Node,
-  toks : Array[String],
-  pos : Int,
-  defs : Map[String, Node],
-) -> Array[Branch] {
+fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
   match node {
     Exact(s) =>
-      if pos < toks.length() && toks[pos] == s {
+      if pos < ctx.toks.length() && ctx.toks[pos] == s {
         [Accept(pos + 1, [])]
       } else {
         // an unmatched / exhausted trigger is a silent Reject (spec DR-037),
@@ -213,8 +236,8 @@ fn eval(
         []
       }
     StrArg(name) =>
-      if pos < toks.length() {
-        [Accept(pos + 1, [mkb(name, VStr(toks[pos]), Cli)])]
+      if pos < ctx.toks.length() {
+        [Accept(pos + 1, [mkb(name, VStr(ctx.toks[pos]), Cli)])]
       } else {
         // MDR-002 §2.1: the end of input at a value slot is an explicit
         // Pending, not a silent []. Reached mid-greedy-entry (after the
@@ -222,22 +245,22 @@ fn eval(
         [Pending([pend_value(TStr, name)], [])]
       }
     SepArg(name, sep) =>
-      if pos < toks.length() {
-        [Accept(pos + 1, sep_binds(name, toks[pos], sep))]
+      if pos < ctx.toks.length() {
+        [Accept(pos + 1, sep_binds(name, ctx.toks[pos], sep))]
       } else {
         [Pending([pend_value(TStr, name)], [])]
       }
     NumArg(name) =>
-      if pos < toks.length() {
-        match parse_number(toks[pos]) {
+      if pos < ctx.toks.length() {
+        match parse_number(ctx.toks[pos]) {
           Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
-          None => [Held(pe_parse(name, toks[pos], pos), [])]
+          None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
         }
       } else {
         [Pending([pend_value(TNum, name)], [])]
       }
-    FilterArg(name, max) => filter_arg_eval(name, max, toks, pos, [])
-    ReqArg(name) => req_arg_eval(name, toks, pos, [])
+    FilterArg(name, max) => filter_arg_eval(name, max, ctx, pos, [])
+    ReqArg(name) => req_arg_eval(name, ctx, pos, [])
     Bind(name, v) => [Accept(pos, [mkb(name, v, Cli)])]
     EffMark(name, op) => [Accept(pos, [mk_eff(name, op, Cli)])]
     FailMark(name) => [Accept(pos, [action_marker(name, pos)])]
@@ -245,28 +268,28 @@ fn eval(
     Or(alts) => {
       let out : Array[Branch] = []
       for a in alts {
-        for b in eval(a, toks, pos, defs) {
+        for b in eval(a, ctx, pos) {
           out.push(b)
         }
       }
       out
     }
-    Seq(items) => eval_seq(items, 0, toks, pos, [], defs)
-    Many(inner) => eval_many(inner, toks, pos, [], defs)
-    Scoped(label, body) => nest_branches(label, eval(body, toks, pos, defs))
+    Seq(items) => eval_seq(items, 0, ctx, pos, [])
+    Many(inner) => eval_many(inner, ctx, pos, [])
+    Scoped(label, body) => nest_branches(label, eval(body, ctx, pos))
     ScopeNode(sc) =>
       // off-spine scope: accept wherever the scope ends (KDone), mirroring
       // the slice's eval_scope. The SPINE path (scope_consume) instead
       // threads the real continuation.
-      scope_step(sc, toks, pos, 0, [], false, defs, KDone)
-    NativeMatch(m) => run_matcher(m, toks, pos)
+      scope_step(sc, ctx, pos, 0, [], false, KDone)
+    NativeMatch(m) => run_matcher(m, ctx.toks, pos)
     Ref(name) =>
-      match defs.get(name) {
-        Some(tpl) => eval(tpl, toks, pos, defs)
+      match ctx.defs.get(name) {
+        Some(tpl) => eval(tpl, ctx, pos)
         None => []
       }
     DdSat(trigger) =>
-      if pos < toks.length() && toks[pos] == trigger {
+      if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         [Accept(pos + 1, [])]
       } else {
         []
@@ -275,12 +298,12 @@ fn eval(
       // off-spine command (a probe or a nested context): child evaluated with
       // KDone; bindings nest under the name + presence marker. The greedy
       // face path (step_greedy) threads the real continuation instead.
-      if pos < toks.length() && toks[pos] == name {
+      if pos < ctx.toks.length() && ctx.toks[pos] == name {
         mark_scope(
           name,
           nest_branches(
             name,
-            scope_step(child, toks, pos + 1, 0, [], false, defs, KDone),
+            scope_step(child, ctx, pos + 1, 0, [], false, KDone),
           ),
         )
       } else {
@@ -288,7 +311,7 @@ fn eval(
       }
     Rooted(inner, depth) => {
       let out : Array[Branch] = []
-      for b in eval(inner, toks, pos, defs) {
+      for b in eval(inner, ctx, pos) {
         match b {
           Accept(p, bs) => {
             let marked : Array[Binding] = []
@@ -314,16 +337,15 @@ fn eval(
       // pre_filter (spec DR-037): a dashed token REJECTS silently. At the end
       // of input this stays a Reject too (the filter cannot promise a token
       // would be accepted), not a Pending.
-      if pos < toks.length() && !starts_dash(toks[pos]) {
-        [Accept(pos + 1, [mkb(name, VStr(toks[pos]), Cli)])]
+      if pos < ctx.toks.length() && !starts_dash(ctx.toks[pos]) {
+        [Accept(pos + 1, [mkb(name, VStr(ctx.toks[pos]), Cli)])]
       } else {
         []
       }
-    IdxRepeat(label, head, min) =>
-      idx_repeat_eval(label, head, min, toks, pos, defs)
+    IdxRepeat(label, head, min) => idx_repeat_eval(label, head, min, ctx, pos)
     BoundedTail(head, budget, _) =>
       // off-spine fallback: degrade to the nested-Opt form (0..budget heads).
-      eval(bounded_opt(head, budget), toks, pos, defs)
+      eval(bounded_opt(head, budget), ctx, pos)
   }
 }
 
@@ -357,12 +379,12 @@ fn pe_missing(element : String, pos : Int) -> ParseError {
 fn filter_arg_eval(
   name : String,
   max : Int,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   acc : Array[Binding],
 ) -> Array[Branch] {
-  if pos < toks.length() {
-    match parse_number(toks[pos]) {
+  if pos < ctx.toks.length() {
+    match parse_number(ctx.toks[pos]) {
       Some(d) =>
         if d > max.to_double() {
           [
@@ -372,7 +394,7 @@ fn filter_arg_eval(
                 argv_pos: pos,
                 kind: KFilter,
                 reason: "too_large",
-                message: "\{name} value \{toks[pos]} exceeds max \{max}",
+                message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
               },
               acc,
             ),
@@ -380,7 +402,7 @@ fn filter_arg_eval(
         } else {
           [Accept(pos + 1, cat(acc, [mkb(name, VNum(d), Cli)]))]
         }
-      None => [Held(pe_parse(name, toks[pos], pos), acc)]
+      None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
     }
   } else {
     [Held(pe_missing(name, pos), acc)]
@@ -392,12 +414,12 @@ fn filter_arg_eval(
 /// `kind: constraint` held Error, not a silent Reject.
 fn req_arg_eval(
   name : String,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   acc : Array[Binding],
 ) -> Array[Branch] {
-  if pos < toks.length() {
-    [Accept(pos + 1, cat(acc, [mkb(name, VStr(toks[pos]), Cli)]))]
+  if pos < ctx.toks.length() {
+    [Accept(pos + 1, cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli)]))]
   } else {
     [
       Held(
@@ -506,16 +528,15 @@ fn idx_repeat_eval(
   label : String,
   head : Node,
   min : Int,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
-  defs : Map[String, Node],
 ) -> Array[Branch] {
   let acc : Array[Binding] = [array_marker(label)]
   let mut cur = pos
   let mut rep = 0
   let mut go = true
   while go {
-    let p2 = idx_one(head, label, rep, toks, cur, defs, acc)
+    let p2 = idx_one(head, label, rep, ctx, cur, acc)
     if p2 > cur {
       cur = p2
       rep = rep + 1
@@ -535,12 +556,11 @@ fn idx_one(
   head : Node,
   label : String,
   rep : Int,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
-  defs : Map[String, Node],
   acc : Array[Binding],
 ) -> Int {
-  for b in eval(head, toks, pos, defs) {
+  for b in eval(head, ctx, pos) {
     match b {
       Accept(p2, bs) =>
         if p2 > pos {
@@ -564,19 +584,18 @@ fn idx_one(
 fn eval_seq(
   items : Array[Node],
   idx : Int,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   acc : Array[Binding],
-  defs : Map[String, Node],
 ) -> Array[Branch] {
   if idx >= items.length() {
     return [Accept(pos, acc)]
   }
   let out : Array[Branch] = []
-  for b in eval(items[idx], toks, pos, defs) {
+  for b in eval(items[idx], ctx, pos) {
     match b {
       Accept(p2, bs) =>
-        for r in eval_seq(items, idx + 1, toks, p2, cat(acc, bs), defs) {
+        for r in eval_seq(items, idx + 1, ctx, p2, cat(acc, bs)) {
           out.push(r)
         }
       // the Held carries the Seq's accumulated partial state too: a marker
@@ -595,17 +614,16 @@ fn eval_seq(
 /// Unbounded repeat (>= 0). The `p2 > pos` guard prevents zero-progress loops.
 fn eval_many(
   inner : Node,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   acc : Array[Binding],
-  defs : Map[String, Node],
 ) -> Array[Branch] {
   let out : Array[Branch] = [Accept(pos, acc)] // 0 reps
-  for b in eval(inner, toks, pos, defs) {
+  for b in eval(inner, ctx, pos) {
     match b {
       Accept(p2, bs) =>
         if p2 > pos {
-          for r in eval_many(inner, toks, p2, cat(acc, bs), defs) {
+          for r in eval_many(inner, ctx, p2, cat(acc, bs)) {
             out.push(r)
           }
         }
@@ -634,51 +652,41 @@ fn eval_many(
 /// `build` used to silently succeed as positionals). Entries without a
 /// structural trigger (bare value primitives) keep the consumption-based
 /// probe, so a degenerate bare NumArg greedy does not over-suppress.
-fn greedy_engages(
-  g : Node,
-  toks : Array[String],
-  pos : Int,
-  defs : Map[String, Node],
-) -> Bool {
+fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
   match g {
     Seq(items) =>
       if items.length() >= 1 {
         match items[0] {
-          Exact(s) => toks[pos] == s
-          NativeMatch(m) => run_matcher(m, toks, pos).length() > 0
-          _ => eval_consumes(g, toks, pos, defs)
+          Exact(s) => ctx.toks[pos] == s
+          NativeMatch(m) => run_matcher(m, ctx.toks, pos).length() > 0
+          _ => eval_consumes(g, ctx, pos)
         }
       } else {
         false
       }
     Or(alts) => {
       for a in alts {
-        if greedy_engages(a, toks, pos, defs) {
+        if greedy_engages(a, ctx, pos) {
           return true
         }
       }
       false
     }
-    CmdSat(name, _) => toks[pos] == name
-    DdSat(t) => toks[pos] == t
+    CmdSat(name, _) => ctx.toks[pos] == name
+    DdSat(t) => ctx.toks[pos] == t
     // a matcher engages iff it yields ANY reading or held Error ([] = 素通し,
     // e.g. an undefined --key= or a non-prefix token).
-    NativeMatch(m) => run_matcher(m, toks, pos).length() > 0
-    Rooted(inner, _) => greedy_engages(inner, toks, pos, defs)
-    _ => eval_consumes(g, toks, pos, defs)
+    NativeMatch(m) => run_matcher(m, ctx.toks, pos).length() > 0
+    Rooted(inner, _) => greedy_engages(inner, ctx, pos)
+    _ => eval_consumes(g, ctx, pos)
   }
 }
 
 ///|
 /// Consumption-based fallback probe for trigger-less greedy shapes: reads iff
 /// some branch consumes a token (or a Pending shows a trigger was consumed).
-fn eval_consumes(
-  g : Node,
-  toks : Array[String],
-  pos : Int,
-  defs : Map[String, Node],
-) -> Bool {
-  for b in eval(g, toks, pos, defs) {
+fn eval_consumes(g : Node, ctx : Ctx, pos : Int) -> Bool {
+  for b in eval(g, ctx, pos) {
     match b {
       Accept(p2, _) => if p2 > pos { return true }
       Held(_, _) => ()
@@ -689,17 +697,12 @@ fn eval_consumes(
 }
 
 ///|
-fn greedy_reads(
-  sc : Scope,
-  toks : Array[String],
-  pos : Int,
-  defs : Map[String, Node],
-) -> Bool {
-  if pos >= toks.length() {
+fn greedy_reads(sc : Scope, ctx : Ctx, pos : Int) -> Bool {
+  if pos >= ctx.toks.length() {
     return false // no token to read (早閉じ check at the end of input)
   }
   for g in sc.greedy {
-    if greedy_engages(g, toks, pos, defs) {
+    if greedy_engages(g, ctx, pos) {
       return true
     }
   }
@@ -710,17 +713,19 @@ fn greedy_reads(
 /// Whether raw pass-through of the token at `pos` is suppressed. 先食い is
 /// greedy-ONLY (spec DR-041 §4): a raw-eat is suppressed iff some greedy
 /// entry reads the token. Once severed, nothing is suppressed.
-fn suppressed(
-  sc : Scope,
-  toks : Array[String],
-  pos : Int,
-  severed : Bool,
-  defs : Map[String, Node],
-) -> Bool {
+fn suppressed(sc : Scope, ctx : Ctx, pos : Int, severed : Bool) -> Bool {
+  // Anchor point for the ModeParse/ModeComplete no-op branch: the mode field
+  // is stored on Ctx for the follow-up complete() implementation. Reading it
+  // here (no-op match) keeps the field from being flagged as unused without
+  // altering behavior.
+  match ctx.mode {
+    ModeParse => ()
+    ModeComplete => ()
+  }
   if severed {
     return false
   }
-  greedy_reads(sc, toks, pos, defs)
+  greedy_reads(sc, ctx, pos)
 }
 
 ///|
@@ -729,12 +734,11 @@ fn suppressed(
 /// positional face; a finished face RUNS `k` (subject to 早閉じ抑制).
 fn scope_step(
   sc : Scope,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   pidx : Int,
   acc : Array[Binding],
   severed : Bool,
-  defs : Map[String, Node],
   k : Cont,
 ) -> Array[Branch] {
   let out : Array[Branch] = []
@@ -744,7 +748,7 @@ fn scope_step(
   // child's repeats must see that the parent still wants a token).
   if !severed {
     for g in sc.greedy {
-      step_greedy(g, sc, toks, pos, pidx, acc, severed, defs, k, out)
+      step_greedy(g, sc, ctx, pos, pidx, acc, severed, k, out)
     }
   }
   // (B) advance the positional face
@@ -752,8 +756,8 @@ fn scope_step(
     // 早閉じ抑制 (spec DR-041 §4): a scope with a backbone cannot complete
     // while one of its own greedy entries can read the next token — "that
     // which can be read here, is read here".
-    if severed || !greedy_reads(sc, toks, pos, defs) {
-      for r in run_cont(k, toks, pos, acc, defs) {
+    if severed || !greedy_reads(sc, ctx, pos) {
+      for r in run_cont(k, ctx, pos, acc) {
         out.push(r)
       }
     }
@@ -762,12 +766,11 @@ fn scope_step(
       r in scope_consume(
         sc,
         sc.positional[pidx],
-        toks,
+        ctx,
         pos,
         pidx,
         acc,
         severed,
-        defs,
         k,
       ) {
       out.push(r)
@@ -787,54 +790,43 @@ fn scope_step(
 fn step_greedy(
   g : Node,
   sc : Scope,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   pidx : Int,
   acc : Array[Binding],
   severed : Bool,
-  defs : Map[String, Node],
   k : Cont,
   out : Array[Branch],
 ) -> Unit {
   match g {
     CmdSat(name, child) =>
-      if pos < toks.length() && toks[pos] == name {
+      if pos < ctx.toks.length() && ctx.toks[pos] == name {
         let kk = KNest(
           name,
           true,
           acc.length(),
           KResumeScope(sc, pidx, severed, k),
         )
-        for r in scope_step(child, toks, pos + 1, 0, acc, false, defs, kk) {
+        for r in scope_step(child, ctx, pos + 1, 0, acc, false, kk) {
           out.push(r)
         }
       }
     DdSat(trigger) =>
-      if pos < toks.length() && toks[pos] == trigger {
-        for r in scope_step(sc, toks, pos + 1, pidx, acc, true, defs, k) {
+      if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
+        for r in scope_step(sc, ctx, pos + 1, pidx, acc, true, k) {
           out.push(r)
         }
       }
     Or(alts) =>
       for a in alts {
-        step_greedy(a, sc, toks, pos, pidx, acc, severed, defs, k, out)
+        step_greedy(a, sc, ctx, pos, pidx, acc, severed, k, out)
       }
     _ =>
-      for b in eval(g, toks, pos, defs) {
+      for b in eval(g, ctx, pos) {
         match b {
           Accept(p2, bs) =>
             if p2 > pos {
-              for
-                r in scope_step(
-                  sc,
-                  toks,
-                  p2,
-                  pidx,
-                  cat(acc, bs),
-                  severed,
-                  defs,
-                  k,
-                ) {
+              for r in scope_step(sc, ctx, p2, pidx, cat(acc, bs), severed, k) {
                 out.push(r)
               }
             }
@@ -854,28 +846,26 @@ fn step_greedy(
 fn scope_consume(
   sc : Scope,
   item : Node,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   pidx : Int,
   acc : Array[Binding],
   severed : Bool,
-  defs : Map[String, Node],
   k : Cont,
 ) -> Array[Branch] {
   match item {
     StrArg(name) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         scope_step(
           sc,
-          toks,
+          ctx,
           pos + 1,
           pidx + 1,
-          cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
+          cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli)]),
           severed,
-          defs,
           k,
         )
-      } else if pos >= toks.length() {
+      } else if pos >= ctx.toks.length() {
         // 構造的必須の不成立 (spec DR-065 §3): the spine needs a token for
         // `name` but the argv is exhausted. Held, not a silent Reject.
         [Held(pe_missing(name, pos), acc)]
@@ -883,46 +873,44 @@ fn scope_consume(
         [] // 先食い: a greedy trigger sits here; the spine stays pending
       }
     SepArg(name, sep) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         scope_step(
           sc,
-          toks,
+          ctx,
           pos + 1,
           pidx + 1,
-          cat(acc, sep_binds(name, toks[pos], sep)),
+          cat(acc, sep_binds(name, ctx.toks[pos], sep)),
           severed,
-          defs,
           k,
         )
-      } else if pos >= toks.length() {
+      } else if pos >= ctx.toks.length() {
         [Held(pe_missing(name, pos), acc)]
       } else {
         []
       }
     NumArg(name) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
-        match parse_number(toks[pos]) {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_number(ctx.toks[pos]) {
           Some(d) =>
             scope_step(
               sc,
-              toks,
+              ctx,
               pos + 1,
               pidx + 1,
               cat(acc, [mkb(name, VNum(d), Cli)]),
               severed,
-              defs,
               k,
             )
-          None => [Held(pe_parse(name, toks[pos], pos), acc)]
+          None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
         }
-      } else if pos >= toks.length() {
+      } else if pos >= ctx.toks.length() {
         [Held(pe_missing(name, pos), acc)]
       } else {
         []
       }
     FilterArg(name, max) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
-        match parse_number(toks[pos]) {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_number(ctx.toks[pos]) {
           Some(d) =>
             if d > max.to_double() {
               [
@@ -932,7 +920,7 @@ fn scope_consume(
                     argv_pos: pos,
                     kind: KFilter,
                     reason: "too_large",
-                    message: "\{name} value \{toks[pos]} exceeds max \{max}",
+                    message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
                   },
                   acc,
                 ),
@@ -940,35 +928,33 @@ fn scope_consume(
             } else {
               scope_step(
                 sc,
-                toks,
+                ctx,
                 pos + 1,
                 pidx + 1,
                 cat(acc, [mkb(name, VNum(d), Cli)]),
                 severed,
-                defs,
                 k,
               )
             }
-          None => [Held(pe_parse(name, toks[pos], pos), acc)]
+          None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
         }
-      } else if pos >= toks.length() {
+      } else if pos >= ctx.toks.length() {
         [Held(pe_missing(name, pos), acc)]
       } else {
         []
       }
     ReqArg(name) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         scope_step(
           sc,
-          toks,
+          ctx,
           pos + 1,
           pidx + 1,
-          cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
+          cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli)]),
           severed,
-          defs,
           k,
         )
-      } else if pos >= toks.length() {
+      } else if pos >= ctx.toks.length() {
         [
           Held(
             {
@@ -985,8 +971,8 @@ fn scope_consume(
         []
       }
     Exact(s) =>
-      if pos < toks.length() && toks[pos] == s {
-        scope_step(sc, toks, pos + 1, pidx + 1, acc, severed, defs, k)
+      if pos < ctx.toks.length() && ctx.toks[pos] == s {
+        scope_step(sc, ctx, pos + 1, pidx + 1, acc, severed, k)
       } else {
         []
       }
@@ -1001,7 +987,7 @@ fn scope_consume(
     // check), so has_full_k is exact at ANY nesting depth — this is the
     // phase16 fix (MDR-002 §1.4).
     Ref(name) =>
-      match ref_head(defs, name) {
+      match ref_head(ctx.defs, name) {
         // A scope-shaped head must NOT go through plain eval (KDone): its
         // internal repeats need the true continuation, or breakage-1 comes
         // back one nesting level in (REVIEW-H1 wbtest). The head's own walk
@@ -1013,17 +999,16 @@ fn scope_consume(
           // token cannot re-fire a greedy in the child scope.
           scope_step(
             child,
-            toks,
+            ctx,
             pos,
             0,
             acc,
             severed,
-            defs,
             KRefChoice(sc, name, pidx, severed, pos, k),
           )
         head => {
           let out : Array[Branch] = []
-          for b in consume_head(sc, head, toks, pos, severed, defs) {
+          for b in consume_head(sc, head, ctx, pos, severed) {
             match b {
               Accept(p2, bs) =>
                 if p2 > pos {
@@ -1031,12 +1016,11 @@ fn scope_consume(
                     r in ref_choice(
                       sc,
                       name,
-                      toks,
+                      ctx,
                       p2,
                       pidx,
                       cat(acc, bs),
                       severed,
-                      defs,
                       k,
                     ) {
                     out.push(r)
@@ -1052,7 +1036,7 @@ fn scope_consume(
       }
     BoundedTail(head, budget, lazy_) =>
       bounded_tail_step(
-        sc, head, budget, lazy_, toks, pos, pidx, acc, severed, defs, k,
+        sc, head, budget, lazy_, ctx, pos, pidx, acc, severed, k,
       )
     Many(inner) => {
       // Two closures on the spine — parity with Ref/BoundedTail 取り分選好
@@ -1060,10 +1044,8 @@ fn scope_consume(
       // returns Ambiguous (3-way split) even though the greedy default fixes
       // xs=[a,b], ys=[] as the representative. `Many` is greedy-only (no lazy_
       // knob in the AST) — more-rep first, then stop.
-      let stop = scope_step(sc, toks, pos, pidx + 1, acc, severed, defs, k) // 0 reps
-      let more = scope_consume_rep(
-        sc, inner, toks, pos, pidx, acc, severed, defs, k,
-      ) // 1 rep (which re-enters scope_step at same pidx)
+      let stop = scope_step(sc, ctx, pos, pidx + 1, acc, severed, k) // 0 reps
+      let more = scope_consume_rep(sc, inner, ctx, pos, pidx, acc, severed, k) // 1 rep (which re-enters scope_step at same pidx)
       if has_full_k(more) {
         more
       } else if has_full_k(stop) {
@@ -1081,31 +1063,20 @@ fn scope_consume(
       // remembers the outer severed independently.
       scope_step(
         child,
-        toks,
+        ctx,
         pos,
         0,
         acc,
         severed,
-        defs,
         KResumeScope(sc, pidx + 1, severed, k),
       )
     other => {
       // any other node as a positional item: eval plainly, then continue.
       let out : Array[Branch] = []
-      for b in eval(other, toks, pos, defs) {
+      for b in eval(other, ctx, pos) {
         match b {
           Accept(p2, bs) =>
-            for
-              r in scope_step(
-                sc,
-                toks,
-                p2,
-                pidx + 1,
-                cat(acc, bs),
-                severed,
-                defs,
-                k,
-              ) {
+            for r in scope_step(sc, ctx, p2, pidx + 1, cat(acc, bs), severed, k) {
               out.push(r)
             }
           // Carry acc on Held (fired_action material preservation).
@@ -1125,23 +1096,22 @@ fn scope_consume(
 fn ref_choice(
   sc : Scope,
   name : String,
-  toks : Array[String],
+  ctx : Ctx,
   p2 : Int,
   pidx : Int,
   acc2 : Array[Binding],
   severed : Bool,
-  defs : Map[String, Node],
   k : Cont,
 ) -> Array[Branch] {
-  let head = ref_head(defs, name)
-  let lazy_ = ref_is_lazy(defs, name)
-  let stop = scope_step(sc, toks, p2, pidx + 1, acc2, severed, defs, k)
+  let head = ref_head(ctx.defs, name)
+  let lazy_ = ref_is_lazy(ctx.defs, name)
+  let stop = scope_step(sc, ctx, p2, pidx + 1, acc2, severed, k)
   // "more" = one more OPTIONAL rep; a missing-operand for ANY value
   // primitive reachable inside the repeat head (scope-shaped included) is a
   // legitimate stop, not a failure. head-external missing (a downstream
   // primitive fed by the parent continuation) stays.
   let more = drop_optional_missing(
-    scope_step(sc, toks, p2, pidx, acc2, severed, defs, k),
+    scope_step(sc, ctx, p2, pidx, acc2, severed, k),
     head_elem_names(head),
   )
   if lazy_ {
@@ -1169,15 +1139,14 @@ fn bounded_tail_step(
   head : Node,
   budget : Int,
   lazy_ : Bool,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   pidx : Int,
   acc : Array[Binding],
   severed : Bool,
-  defs : Map[String, Node],
   k : Cont,
 ) -> Array[Branch] {
-  let stop = scope_step(sc, toks, pos, pidx + 1, acc, severed, defs, k)
+  let stop = scope_step(sc, ctx, pos, pidx + 1, acc, severed, k)
   let more_raw : Array[Branch] = if budget >= 1 {
     match head {
       // scope-shaped head: same KDone hazard as the Ref path (REVIEW-H1) —
@@ -1186,17 +1155,16 @@ fn bounded_tail_step(
         // same dd sever pass-through as the scope_consume ScopeNode arms.
         scope_step(
           child,
-          toks,
+          ctx,
           pos,
           0,
           acc,
           severed,
-          defs,
           KTailChoice(sc, head, budget - 1, lazy_, pidx, severed, pos, k),
         )
       _ => {
         let out : Array[Branch] = []
-        for b in consume_head(sc, head, toks, pos, severed, defs) {
+        for b in consume_head(sc, head, ctx, pos, severed) {
           match b {
             Accept(p2, bs) =>
               if p2 > pos {
@@ -1206,12 +1174,11 @@ fn bounded_tail_step(
                     head,
                     budget - 1,
                     lazy_,
-                    toks,
+                    ctx,
                     p2,
                     pidx,
                     cat(acc, bs),
                     severed,
-                    defs,
                     k,
                   ) {
                   out.push(r)
@@ -1261,35 +1228,34 @@ fn bounded_tail_step(
 fn consume_head(
   sc : Scope,
   head : Node,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   severed : Bool,
-  defs : Map[String, Node],
 ) -> Array[Branch] {
   match head {
     StrArg(name) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
-        [Accept(pos + 1, [mkb(name, VStr(toks[pos]), Cli)])]
-      } else if pos >= toks.length() {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        [Accept(pos + 1, [mkb(name, VStr(ctx.toks[pos]), Cli)])]
+      } else if pos >= ctx.toks.length() {
         [Held(pe_missing(name, pos), [])]
       } else {
         []
       }
     SepArg(name, sep) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
-        [Accept(pos + 1, sep_binds(name, toks[pos], sep))]
-      } else if pos >= toks.length() {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        [Accept(pos + 1, sep_binds(name, ctx.toks[pos], sep))]
+      } else if pos >= ctx.toks.length() {
         [Held(pe_missing(name, pos), [])]
       } else {
         []
       }
     NumArg(name) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
-        match parse_number(toks[pos]) {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_number(ctx.toks[pos]) {
           Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
-          None => [Held(pe_parse(name, toks[pos], pos), [])]
+          None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
         }
-      } else if pos >= toks.length() {
+      } else if pos >= ctx.toks.length() {
         [Held(pe_missing(name, pos), [])]
       } else {
         []
@@ -1300,9 +1266,9 @@ fn consume_head(
     // shapes must match the primitive arms above so drop_optional_missing on
     // the OPTIONAL "more" branch can filter them uniformly.
     ReqArg(name) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
-        [Accept(pos + 1, [mkb(name, VStr(toks[pos]), Cli)])]
-      } else if pos >= toks.length() {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        [Accept(pos + 1, [mkb(name, VStr(ctx.toks[pos]), Cli)])]
+      } else if pos >= ctx.toks.length() {
         [
           Held(
             {
@@ -1319,8 +1285,8 @@ fn consume_head(
         []
       }
     FilterArg(name, max) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
-        match parse_number(toks[pos]) {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_number(ctx.toks[pos]) {
           Some(d) =>
             if d > max.to_double() {
               [
@@ -1330,7 +1296,7 @@ fn consume_head(
                     argv_pos: pos,
                     kind: KFilter,
                     reason: "too_large",
-                    message: "\{name} value \{toks[pos]} exceeds max \{max}",
+                    message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
                   },
                   [],
                 ),
@@ -1338,14 +1304,14 @@ fn consume_head(
             } else {
               [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
             }
-          None => [Held(pe_parse(name, toks[pos], pos), [])]
+          None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
         }
-      } else if pos >= toks.length() {
+      } else if pos >= ctx.toks.length() {
         [Held(pe_missing(name, pos), [])]
       } else {
         []
       }
-    _ => eval(head, toks, pos, defs)
+    _ => eval(head, ctx, pos)
   }
 }
 
@@ -1470,66 +1436,53 @@ fn cat_branches(a : Array[Branch], b : Array[Branch]) -> Array[Branch] {
 fn scope_consume_rep(
   sc : Scope,
   inner : Node,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   pidx : Int,
   acc : Array[Binding],
   severed : Bool,
-  defs : Map[String, Node],
   k : Cont,
 ) -> Array[Branch] {
   match inner {
     StrArg(name) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         scope_step(
           sc,
-          toks,
+          ctx,
           pos + 1,
           pidx,
-          cat(acc, [mkb(name, VStr(toks[pos]), Cli)]),
+          cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli)]),
           severed,
-          defs,
           k,
         )
       } else {
         []
       }
     NumArg(name) =>
-      if pos < toks.length() && !suppressed(sc, toks, pos, severed, defs) {
-        match parse_number(toks[pos]) {
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_number(ctx.toks[pos]) {
           Some(d) =>
             scope_step(
               sc,
-              toks,
+              ctx,
               pos + 1,
               pidx,
               cat(acc, [mkb(name, VNum(d), Cli)]),
               severed,
-              defs,
               k,
             )
-          None => [Held(pe_parse(name, toks[pos], pos), acc)]
+          None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
         }
       } else {
         []
       }
     _ => {
       let out : Array[Branch] = []
-      for b in eval(inner, toks, pos, defs) {
+      for b in eval(inner, ctx, pos) {
         match b {
           Accept(p2, bs) =>
             if p2 > pos {
-              for
-                r in scope_step(
-                  sc,
-                  toks,
-                  p2,
-                  pidx,
-                  cat(acc, bs),
-                  severed,
-                  defs,
-                  k,
-                ) {
+              for r in scope_step(sc, ctx, p2, pidx, cat(acc, bs), severed, k) {
                 out.push(r)
               }
             }
@@ -1880,19 +1833,11 @@ pub fn parse(
   defs? : Map[String, Node] = Map([]),
   faildef? : FailDef = WithHeld,
 ) -> Outcome {
+  let ctx : Ctx = { toks, defs, mode: ModeParse }
   let branches = match root {
     ScopeNode(sc) =>
-      scope_step(
-        sc,
-        toks,
-        0,
-        0,
-        [],
-        false,
-        defs,
-        KTop(collect_scopes(root, defs)),
-      )
-    _ => eval(root, toks, 0, defs)
+      scope_step(sc, ctx, 0, 0, [], false, KTop(collect_scopes(root, defs)))
+    _ => eval(root, ctx, 0)
   }
   let full : Array[Array[Binding]] = []
   let errors : Array[ParseError] = []

@@ -71,14 +71,13 @@ enum Cont {
 /// split, and the SAME call produces the real branches when chosen.
 fn run_cont(
   k : Cont,
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
   acc : Array[Binding],
-  defs : Map[String, Node],
 ) -> Array[Branch] {
   match k {
     KTop(table) =>
-      if pos == toks.length() {
+      if pos == ctx.toks.length() {
         let viol = eval_all_constraints(table, acc, pos)
         if viol.length() == 0 {
           [Accept(pos, acc)]
@@ -109,7 +108,7 @@ fn run_cont(
       }
     KDone => [Accept(pos, acc)]
     KResumeScope(sc, pidx, severed, outer) =>
-      scope_step(sc, toks, pos, pidx, acc, severed, defs, outer)
+      scope_step(sc, ctx, pos, pidx, acc, severed, outer)
     KNest(label, is_cmd, start, outer) => {
       // nest acc[start..] one level under `label` (link bindings escape,
       // DR-042); acc[..start] predates the scope and passes through.
@@ -134,20 +133,20 @@ fn run_cont(
       for b in nest(label, inside) {
         out.push(b)
       }
-      run_cont(outer, toks, pos, out, defs)
+      run_cont(outer, ctx, pos, out)
     }
     KRefChoice(sc, name, pidx, severed, entry_pos, outer) =>
       if pos <= entry_pos {
         [] // zero-progress head: not a rep (same guard as the inline path)
       } else {
-        ref_choice(sc, name, toks, pos, pidx, acc, severed, defs, outer)
+        ref_choice(sc, name, ctx, pos, pidx, acc, severed, outer)
       }
     KTailChoice(sc, head, budget, lazy_, pidx, severed, entry_pos, outer) =>
       if pos <= entry_pos {
         []
       } else {
         bounded_tail_step(
-          sc, head, budget, lazy_, toks, pos, pidx, acc, severed, defs, outer,
+          sc, head, budget, lazy_, ctx, pos, pidx, acc, severed, outer,
         )
       }
   }
