@@ -1,6 +1,6 @@
 ---
 title: FloatArg の spine アーム欠落 (先食い/complete) と TBool/TFloat の残ギャップ
-status: open
+status: resolved
 category: bug
 created: 2026-07-08T11:47:59+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-08T12:26:54+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done:spine 4関数(scope_consume/consume_head/scope_consume_rep/head_elem_names_into)にNumArg/IntArg対称のFloatArgアーム追加(complete分岐込み)","done:RED先行で先食み(greedy raw-eat)×3+DR-065名前集合脱落×1の計4件の実誤動作を実証してからGREEN化","done:commit 8ef5bf88 (git sha 62f5d9a)、regression testはeval_wbtest.mbt末尾4本"]
 blocked_by:
 origin: 自リポ TODO (kuu.mbt 参照実装コードの静的読解で発見)
 ---
