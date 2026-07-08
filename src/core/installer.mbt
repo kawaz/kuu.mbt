@@ -58,6 +58,35 @@ pub(all) struct ElemDef {
   allow_base_prefix : Bool
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
   default_value : Value?
+  // MDR-004: 消費文法の軸。`BCell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
+  // 縮退形、観測挙動不変)。`BOr`/`BGroup` の要素では `ty` は未使用 — 枝/内部要素の leaf ElemDef が
+  // 各自の `ty` を持つ。
+  body : ElemBody
+} derive(Eq, Debug)
+
+///|
+/// MDR-004: ElemDef の消費文法軸。`BCell` (単一値セル) 以外の2つは構造化された消費文法:
+/// - `BOr`: 構造 or (DR-038 / DESIGN §15.4) — 枝ごとに別の named cell を束縛する「消費文法の枝」。
+///   DR-055 の値 enum 枝 (exact 照合、CRequiresIf の素材) とは別物 — あちらは `value_requires` が
+///   引き続き担う (§5.3 values 正規形)。
+/// - `BGroup`: named group (DR-044 反復グループ) — repeat と組んで、発火ごとに内部 positionals を
+///   1 セットずつ束ねる (transparent-seq の `xs{k}` がこの形)。
+pub(all) enum ElemBody {
+  BCell
+  BOr(Array[OrBranch])
+  BGroup(Array[ElemDef])
+} derive(Eq, Debug)
+
+///|
+/// MDR-004 §1: 構造 or の 1 枝。`id` はユーザ指定 (fixture の `"id"` キー) か、無指定なら自動採番
+/// `"#{seq}"` (kawaz 裁定 2026-07-08: `#` は user namespace 外、一意なら採番方式は問わない)。この id
+/// は現状の 4 fixture では表示面・照合面のどこにも現れない内部データ (§4: 自動 id は表示面に出さない
+/// — wbtest で非露出を固定、実装順 §5 段目) — 枝の選択は Or ノードの構造そのもの (配列内の位置) で
+/// 行われ、id 照合には現状どの lowering 経路も依存しない。`items` は 1 個 = 単一セル枝、複数 = seq 枝
+/// (再帰可 — 枝の中に group/or を持てる、ただし本 MDR の対象 4 fixture は 1 階層のみ)。
+pub(all) struct OrBranch {
+  id : String
+  items : Array[ElemDef]
 } derive(Eq, Debug)
 
 ///|
@@ -370,6 +399,36 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     default_value: e.default_value,
     int_round: e.int_round,
     allow_base_prefix: e.allow_base_prefix,
+    body: clone_body(e.body),
+  }
+}
+
+///|
+/// MDR-004: deep-clone `ElemBody`'s nested `ElemDef`s (mirrors the Array-field deep-copy discipline
+/// `clone_elem` already applies to `long`/`variants`/`short`/`env` — global/alias desugaring pushes
+/// COPIES into descendant scopes, so aliasing the same mutable nested arrays across scopes would be
+/// a bug).
+fn clone_body(b : ElemBody) -> ElemBody {
+  match b {
+    BCell => BCell
+    BOr(branches) => {
+      let out : Array[OrBranch] = []
+      for br in branches {
+        let items : Array[ElemDef] = []
+        for it in br.items {
+          items.push(clone_elem(it))
+        }
+        out.push({ id: br.id, items })
+      }
+      BOr(out)
+    }
+    BGroup(items) => {
+      let out : Array[ElemDef] = []
+      for it in items {
+        out.push(clone_elem(it))
+      }
+      BGroup(out)
+    }
   }
 }
 
@@ -466,14 +525,39 @@ pub fn build_export_map(def : Definition) -> Map[String, ExportKey] {
 ///|
 fn collect_export(def : Definition, m : Map[String, ExportKey]) -> Unit {
   for e in def.options {
-    m.set(e.name, e.export_key)
+    collect_export_body(e, m)
   }
   for e in def.positionals {
-    m.set(e.name, e.export_key)
+    collect_export_body(e, m)
   }
   for c in def.commands {
     m.set(c.name, c.export_key)
     collect_export(c.body, m)
+  }
+}
+
+///|
+/// MDR-004 §3b: `collect_export` needs to recurse into `ElemBody` — a `BGroup`/`BOr` element's
+/// nested leaves (e.g. transparent-seq's `k`, export_key:null) each have their OWN export_key that
+/// must reach the map, or their `export_key:null` 裸値化 (DR-052 §2) never gets applied downstream
+/// (resolve's export-key remap only consults this map). `BGroup` registers BOTH the wrapper (the
+/// array cell itself) and its inner leaves; `BOr`'s wrapper has no export_key of its own concern
+/// (structural dispatcher, no scalar/array value) — only its branch leaves register.
+fn collect_export_body(e : ElemDef, m : Map[String, ExportKey]) -> Unit {
+  match e.body {
+    BCell => m.set(e.name, e.export_key)
+    BOr(branches) =>
+      for br in branches {
+        for it in br.items {
+          collect_export_body(it, m)
+        }
+      }
+    BGroup(items) => {
+      m.set(e.name, e.export_key)
+      for it in items {
+        collect_export_body(it, m)
+      }
+    }
   }
 }
 
@@ -487,6 +571,23 @@ fn elem_head(e : ElemDef) -> Node {
         Some(sep) => SepArg(e.name, sep)
         None => value_prim(e.ty, e.name, e.int_round, e.allow_base_prefix)
       }
+  }
+}
+
+///|
+/// MDR-004 §3: one `OrBranch`'s consumption grammar node — a single node for a 1-item branch, a
+/// `Seq` of value primitives (consumed in order) for a multi-item branch. Each item's own `name`
+/// carries through `elem_head` unchanged, so held-Error / binding attribution lands on the LEAF
+/// (e.g. `a`/`s`/`b`/`r`/`g`/`b`/`name`) with no extra provenance wiring needed (§4).
+fn or_branch_node(br : OrBranch) -> Node {
+  if br.items.length() == 1 {
+    elem_head(br.items[0])
+  } else {
+    let nodes : Array[Node] = []
+    for it in br.items {
+      nodes.push(elem_head(it))
+    }
+    Seq(nodes)
   }
 }
 
@@ -534,50 +635,83 @@ fn lower_positional(
   let out : Array[Node] = []
   for e in def.positionals {
     if not_dd(e) {
-      let head = elem_head(e)
-      match elem_repeat(e) {
-        None => out.push(head)
-        Some(spec) =>
-          match spec.max {
-            None =>
-              if spec.min == 0 {
-                // UNBOUNDED min:0 (DR-043): a bare `Ref(e.name)` cannot express "0 is fine" (its
-                // arm in scope_consume has no fallback for `consume_head` failing to progress), and
-                // wrapping it in a plain `Or([Ref(name), Seq([])])` would lose the 取り分選好 (plain
-                // `eval()`'s `Or` arm has no preference — both branches survive whenever they BOTH
-                // reach a full parse, producing Ambiguous instead of the greedy-left-longest single
-                // reading DR-043 requires — exactly this fixture's 3 divergences). `Many(head)` is
-                // the existing spine form with the IDENTICAL preference algorithm already wired in
-                // scope_consume, so no registry/self-ref is needed at all (each further rep re-enters
-                // the SAME `Many` node at the same `pidx`, not a named template).
-                out.push(Many(head))
-              } else {
-                // UNBOUNDED min>=1 (DR-043): `name = Seq([head, Opt(Ref(name))])` の porous 自参照
-                registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
-                if spec.lazy_ {
-                  // lazy marker (evaluator が split 選好を引くための mangled key)
-                  registry.set("lazy:" + e.name, Exact("lazy"))
-                }
-                let m = spec.min
-                let mut k = 0
-                while k < m - 1 {
-                  out.push(head) // mandatory unrolled heads (DR-043 min)
-                  k = k + 1
-                }
-                out.push(Ref(e.name)) // >= 1 porous recursive tail
-              }
-            Some(mx) => {
-              // BOUNDED (LOWERING §B.8): min mandatory heads + BoundedTail(head, max-min)
-              let m = if spec.min < 0 { 0 } else { spec.min }
-              let mut k = 0
-              while k < m {
-                out.push(head)
-                k = k + 1
-              }
-              let budget = if mx - m < 0 { 0 } else { mx - m }
-              out.push(BoundedTail(head, budget, spec.lazy_))
-            }
+      match e.body {
+        BOr(branches) => {
+          // MDR-004 §3 "BOr (positional, 匿名)": spine に Or([branch_node...]) を直接積む。評価器の
+          // 既存 Or 意味論 (全枝評価 + Held 全保持、DR-053 §2 / 完全経路 2 本以上で ambiguous 保存、
+          // DR-038) がそのまま輪郭を満たす — repeat との組合せは対象 fixture に無いので未対応。
+          let nodes : Array[Node] = []
+          for br in branches {
+            nodes.push(or_branch_node(br))
           }
+          out.push(Or(nodes))
+        }
+        BGroup(items) => {
+          // MDR-004 §3 "BGroup + repeat": IdxRepeat(label=name, head=Seq(inner cells), min) に lower。
+          // スコープ限定: UNBOUNDED (max:null) のみ — IdxRepeat(String, Node, Int) は budget を
+          // 持たず bounded を表現できない (bounded named-group が来たら budget 拡張が別途要る)。
+          let head = if items.length() == 1 {
+            elem_head(items[0])
+          } else {
+            let nodes : Array[Node] = []
+            for it in items {
+              nodes.push(elem_head(it))
+            }
+            Seq(nodes)
+          }
+          let min = match elem_repeat(e) {
+            Some(spec) => spec.min
+            None => 0
+          }
+          out.push(IdxRepeat(e.name, head, min))
+        }
+        BCell => {
+          let head = elem_head(e)
+          match elem_repeat(e) {
+            None => out.push(head)
+            Some(spec) =>
+              match spec.max {
+                None =>
+                  if spec.min == 0 {
+                    // UNBOUNDED min:0 (DR-043): a bare `Ref(e.name)` cannot express "0 is fine" (its
+                    // arm in scope_consume has no fallback for `consume_head` failing to progress), and
+                    // wrapping it in a plain `Or([Ref(name), Seq([])])` would lose the 取り分選好 (plain
+                    // `eval()`'s `Or` arm has no preference — both branches survive whenever they BOTH
+                    // reach a full parse, producing Ambiguous instead of the greedy-left-longest single
+                    // reading DR-043 requires — exactly this fixture's 3 divergences). `Many(head)` is
+                    // the existing spine form with the IDENTICAL preference algorithm already wired in
+                    // scope_consume, so no registry/self-ref is needed at all (each further rep re-enters
+                    // the SAME `Many` node at the same `pidx`, not a named template).
+                    out.push(Many(head))
+                  } else {
+                    // UNBOUNDED min>=1 (DR-043): `name = Seq([head, Opt(Ref(name))])` の porous 自参照
+                    registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
+                    if spec.lazy_ {
+                      // lazy marker (evaluator が split 選好を引くための mangled key)
+                      registry.set("lazy:" + e.name, Exact("lazy"))
+                    }
+                    let m = spec.min
+                    let mut k = 0
+                    while k < m - 1 {
+                      out.push(head) // mandatory unrolled heads (DR-043 min)
+                      k = k + 1
+                    }
+                    out.push(Ref(e.name)) // >= 1 porous recursive tail
+                  }
+                Some(mx) => {
+                  // BOUNDED (LOWERING §B.8): min mandatory heads + BoundedTail(head, max-min)
+                  let m = if spec.min < 0 { 0 } else { spec.min }
+                  let mut k = 0
+                  while k < m {
+                    out.push(head)
+                    k = k + 1
+                  }
+                  let budget = if mx - m < 0 { 0 } else { mx - m }
+                  out.push(BoundedTail(head, budget, spec.lazy_))
+                }
+              }
+          }
+        }
       }
     }
   }
@@ -609,13 +743,44 @@ fn init_sb(def : Definition, registry : Map[String, Node]) -> SB {
 fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
   for e in sb.decl.options {
     if not_dd(e) && e.link_depth == 0 {
-      ensure_entity(sb.build, e, has_cf)
+      ensure_entity_body(sb.build, e, has_cf)
     }
   }
   for e in sb.decl.positionals {
     if not_dd(e) {
-      ensure_entity(sb.build, e, has_cf)
+      ensure_entity_body(sb.build, e, has_cf)
     }
+  }
+}
+
+///|
+/// MDR-004 §3b: register `e` (and any `ElemBody`-nested leaves) as top-level entities — the
+/// evaluator's `Or`/`Seq`/`IdxRepeat` nodes don't know about entities at all, so this recursive
+/// walk is the ONLY registration point. `BOr`'s wrapper is a structural dispatcher with no
+/// scalar/array value of its own (e.g. "color" never itself holds a value — only its branch leaves
+/// r/g/b/name do), so ONLY the branch leaves register. `BGroup`'s wrapper DOES need its own entity
+/// (the array cell — `elem_repeat` on it still drives the existing "flatten" accumulator path,
+/// unaffected by `body`) in ADDITION to its inner leaves (e.g. transparent-seq's `k`, its own cell
+/// with `entity=k` effects).
+fn ensure_entity_body(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
+  match e.body {
+    BCell => ensure_entity(build, e, has_cf)
+    BOr(branches) =>
+      for br in branches {
+        for it in br.items {
+          ensure_entity_body(build, it, has_cf)
+        }
+      }
+    BGroup(items) =>
+      // The wrapper (e.g. "xs") lowers to IdxRepeat (MDR-004 §3): its array is built entirely by
+      // eval.mbt's array_marker/nest_index scope mechanism, never via the accum-entity ladder. If
+      // registered here, ensure_entity would set accum:flatten (elem_repeat(e) is Some for a
+      // repeat group), making accum_cells double-count "xs" and inject a spurious extra `[]`
+      // alongside the nested-scope array resolve.mbt already builds from the IdxRepeat bindings.
+      // Only the inner leaf cells (value-source-ladder participants) need entities.
+      for it in items {
+        ensure_entity_body(build, it, has_cf)
+      }
   }
 }
 
@@ -682,43 +847,61 @@ fn inst_long(def : Definition, build : Build) -> Unit {
   for e in def.options {
     for l in long_of(e) {
       let trigger = "--" + l
-      match e.ty {
-        TFlag =>
-          // bare trigger fire → name=true — presence-only (DR-076 §1: flag is the special/sugar
-          // side, NOT bool; bool moved to the value-satellite `_` branch below). failure-action
-          // (DR-048) additionally emits a FailMark (FAILED parse で fire できる)。dd-internal な
-          // --help は raw-consumed で発火しない (先食い/内部一体)。
+      match e.body {
+        // MDR-004 §3: BOr option (variable-arity) — greedy satellite
+        // Seq([Exact(trigger), Or([branch_node...])]). `e.ty` is unused (a BOr wrapper carries no
+        // value of its own); each branch's own leaf name(s) flow through unchanged via
+        // or_branch_node/elem_head, so held-Error / binding attribution lands on the leaf with no
+        // extra provenance wiring (§4).
+        BOr(branches) => {
+          let branch_nodes : Array[Node] = []
+          for br in branches {
+            branch_nodes.push(or_branch_node(br))
+          }
           add_greedy(
             build,
-            maybe_root(
-              e.link_depth,
-              if e.fail_action {
-                Seq([
-                  Exact(trigger),
-                  Bind(e.name, VBool(true)),
-                  FailMark(e.name),
-                ])
-              } else {
-                Seq([Exact(trigger), Bind(e.name, VBool(true))])
-              },
-            ),
+            maybe_root(e.link_depth, Seq([Exact(trigger), Or(branch_nodes)])),
           )
+        }
         _ =>
-          // DR-076 §1/§4: bool (TBool) is now a NORMAL value type, same satellite shape as
-          // string/number/int/float — `:set` always takes a value (space form here; eq form via
-          // eq_entries below). A bare `--x` fire needs the explicit `:set:true` variant (decoded as
-          // a Set-op Variant with operand VBool(true), lowered by the "Variant entries" loop below)
-          // — this branch no longer special-cases TBool as a bare-true degenerate.
-          add_greedy(
-            build,
-            maybe_root(
-              e.link_depth,
-              Seq([
-                Exact(trigger),
-                value_prim(e.ty, e.name, e.int_round, e.allow_base_prefix),
-              ]),
-            ),
-          )
+          match e.ty {
+            TFlag =>
+              // bare trigger fire → name=true — presence-only (DR-076 §1: flag is the special/sugar
+              // side, NOT bool; bool moved to the value-satellite `_` branch below). failure-action
+              // (DR-048) additionally emits a FailMark (FAILED parse で fire できる)。dd-internal な
+              // --help は raw-consumed で発火しない (先食い/内部一体)。
+              add_greedy(
+                build,
+                maybe_root(
+                  e.link_depth,
+                  if e.fail_action {
+                    Seq([
+                      Exact(trigger),
+                      Bind(e.name, VBool(true)),
+                      FailMark(e.name),
+                    ])
+                  } else {
+                    Seq([Exact(trigger), Bind(e.name, VBool(true))])
+                  },
+                ),
+              )
+            _ =>
+              // DR-076 §1/§4: bool (TBool) is now a NORMAL value type, same satellite shape as
+              // string/number/int/float — `:set` always takes a value (space form here; eq form via
+              // eq_entries below). A bare `--x` fire needs the explicit `:set:true` variant (decoded as
+              // a Set-op Variant with operand VBool(true), lowered by the "Variant entries" loop below)
+              // — this branch no longer special-cases TBool as a bare-true degenerate.
+              add_greedy(
+                build,
+                maybe_root(
+                  e.link_depth,
+                  Seq([
+                    Exact(trigger),
+                    value_prim(e.ty, e.name, e.int_round, e.allow_base_prefix),
+                  ]),
+                ),
+              )
+          }
       }
       // eq-split value form (`--key=value`): every value-typed long gets this EXCEPT a
       // presence-only TFlag (no value pipeline at all — `--help=x` stays undefined-key 素通し).
@@ -727,16 +910,36 @@ fn inst_long(def : Definition, build : Build) -> Unit {
       // (fixtures/lowering/long/variant.json's ssl: `--ssl=false` fires alongside `--ssl`/`--no-ssl`).
       // DR-075 §2: TInt の eq-split (`--v=2.5`) が factory config int_round を反映するよう、
       // ElemDef.int_round を LongEntry に持ち込む (TInt 以外は entry 側で参照されない)。
-      if e.ty != TFlag {
-        eq_entries.push({
-          key: l,
-          name: e.name,
-          kind: e.ty,
-          int_round: e.int_round,
-          // DR-074 §2: TNum / TInt の eq-split (`--v=0xff`) も factory config を反映するよう ElemDef から
-          // LongEntry に持ち込む (他 kind は entry 側で参照されない)。
-          allow_base_prefix: e.allow_base_prefix,
-        })
+      // MDR-004 §3: a BOr element's eq-split registers only for a single-value-cell branch (using
+      // that leaf's own name/ty/int_round/allow_base_prefix, never the wrapper's) — a multi-cell
+      // branch's `=` form is undefined (`--color=v` cannot supply 3 leaves).
+      match e.body {
+        BOr(branches) =>
+          for br in branches {
+            if br.items.length() == 1 {
+              let leaf = br.items[0]
+              eq_entries.push({
+                key: l,
+                name: leaf.name,
+                kind: leaf.ty,
+                int_round: leaf.int_round,
+                allow_base_prefix: leaf.allow_base_prefix,
+              })
+            }
+          }
+        BGroup(_) => () // positional-only shape (MDR-004 §3 scope) — no long spelling applies
+        BCell =>
+          if e.ty != TFlag {
+            eq_entries.push({
+              key: l,
+              name: e.name,
+              kind: e.ty,
+              int_round: e.int_round,
+              // DR-074 §2: TNum / TInt の eq-split (`--v=0xff`) も factory config を反映するよう
+              // ElemDef から LongEntry に持ち込む (他 kind は entry 側で参照されない)。
+              allow_base_prefix: e.allow_base_prefix,
+            })
+          }
       }
     }
   }
@@ -942,6 +1145,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     default_value: copy.default_value,
     int_round: copy.int_round,
     allow_base_prefix: copy.allow_base_prefix,
+    body: copy.body,
   })
 }
 
@@ -1074,6 +1278,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     default_value: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
     int_round: RError, // canonical default (DR-075 §2): write-target は int_round を持たない
     allow_base_prefix: false, // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
+    body: BCell,
   })
 }
 
@@ -1262,6 +1467,7 @@ fn alias_entry(
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
+    body: BCell,
   }
 }
 

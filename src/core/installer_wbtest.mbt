@@ -56,6 +56,7 @@ fn el(
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
+    body: BCell,
   }
 }
 

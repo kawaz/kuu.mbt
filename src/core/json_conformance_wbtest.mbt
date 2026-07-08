@@ -303,6 +303,7 @@ fn opt(
   default? : Value? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
+  body? : ElemBody = BCell,
 ) -> ElemDef {
   {
     name,
@@ -333,6 +334,7 @@ fn opt(
     default_value: default,
     int_round,
     allow_base_prefix,
+    body,
   }
 }
 
@@ -351,6 +353,7 @@ fn pos(
   default? : Value? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
+  body? : ElemBody = BCell,
 ) -> ElemDef {
   {
     name,
@@ -381,6 +384,7 @@ fn pos(
     default_value: default,
     int_round,
     allow_base_prefix,
+    body,
   }
 }
 
@@ -415,6 +419,7 @@ fn dd_marker() -> ElemDef {
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
+    body: BCell,
   }
 }
 
@@ -1858,17 +1863,9 @@ fn dec_or(
     Some(x) => x
     None => raise DecodeSkip("or is not an array")
   }
-  for e in a {
-    match e.j_obj() {
-      Some(bo) =>
-        if has_key(bo, "seq") || has_key(bo, "type") {
-          raise DecodeSkip(
-            "variable-arity or-option (branches are consumption grammars — a seq of typed cells vs a single typed cell): slice ElemDef carries one value cell per option and dec_or models only value-enum exact-branches, so parse_definition has no builder for Or([Seq([NumArg,…]),StrArg]) at the §5 contract path",
-          )
-        }
-      None => ()
-    }
-  }
+  // MDR-004 §2: the capability gate that used to reject "seq"/"type" branches here is GONE — the
+  // caller (`dec_option`) now shape-detects BEFORE calling `dec_or`, routing structural branches to
+  // `dec_or_structural` instead. This function only ever sees the value-enum form now.
   // DR-055 §1 + DR-052 §値枝 id 直交: 各枝の tuple = (branch_id, exact_value, targets)。branch_id は
   // `id` フィールド (fixture の `id: "fmt_json"`) を採用、未指定なら parent_name にフォールバック
   // (parent 直属 value_requires と等価挙動)。
@@ -1893,6 +1890,107 @@ fn dec_or(
     }
   }
   vrs
+}
+
+///|
+/// MDR-004 kawaz 裁定 2026-07-08: auto `OrBranch.id` numbering for structural branches without an
+/// explicit `"id"`. "採番 seq は decode 1 回のパーサ全体で単調増加... 一意なら何でもよい" — a single
+/// monotonic counter for the whole decode run satisfies this; the `#` prefix keeps it out of user
+/// namespace (fixture ids are plain strings like `"fmt_json"`, never `#`-prefixed).
+let or_branch_seq : Array[Int] = [0]
+
+///|
+fn next_or_branch_id() -> String {
+  let n = or_branch_seq[0]
+  or_branch_seq[0] = n + 1
+  "#" + n.to_string()
+}
+
+///|
+/// MDR-004 §2: shape-detect a JSON `"or"` array — `None` if it's the DR-055 value-enum form (every
+/// branch has `"exact"`, handled by `dec_or` instead), `Some(branches)` if it's the STRUCTURAL
+/// consumption-grammar form (any branch has `"seq"`/`"type"` — a multi-cell `{"seq":[...]}` branch
+/// or a single-cell `{"type":..,"name":..}` branch, used verbatim as the branch object itself).
+fn dec_or_structural(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+) -> Array[OrBranch]? raise DecodeSkip {
+  let a = match j.j_arr() {
+    Some(x) => x
+    None => raise DecodeSkip("or is not an array")
+  }
+  let mut structural = false
+  for e in a {
+    match e.j_obj() {
+      Some(bo) =>
+        if has_key(bo, "seq") || has_key(bo, "type") {
+          structural = true
+        }
+      None => ()
+    }
+  }
+  if !structural {
+    return None
+  }
+  let branches : Array[OrBranch] = []
+  for e in a {
+    let bo = match e.j_obj() {
+      Some(x) => x
+      None => raise DecodeSkip("or branch is not an object")
+    }
+    let id = match jf_str(bo, "id") {
+      Some(s) => s
+      None => next_or_branch_id()
+    }
+    let items : Array[ElemDef] = match bo.get("seq") {
+      Some(sj) => {
+        let sa = match sj.j_arr() {
+          Some(x) => x
+          None => raise DecodeSkip("or branch 'seq' is not an array")
+        }
+        let its : Array[ElemDef] = []
+        for ij in sa {
+          its.push(dec_or_leaf(ij, shadows))
+        }
+        its
+      }
+      // a single-cell branch IS the leaf object itself (no "seq" wrapper, DESIGN §1.2 裸配列 seq 糖衣
+      // — wire form already normalizes bare-seq sugar, so here a missing "seq" key on a branch that
+      // has "type"/"name" directly is exactly the 1-item case).
+      None => [dec_or_leaf(e, shadows)]
+    }
+    branches.push({ id, items })
+  }
+  Some(branches)
+}
+
+///|
+/// A leaf cell inside a structural `"or"` branch: `{"type":..,"name":..}`. Minimal — BCell only, no
+/// long/short/env/etc (the shared trigger, if any, lives on the PARENT option's `long`, factored out
+/// per the `variable-arity-ambiguous.json` wire form; an anonymous positional or-branch leaf has no
+/// trigger at all).
+fn dec_or_leaf(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+) -> ElemDef raise DecodeSkip {
+  let o = match j.j_obj() {
+    Some(x) => x
+    None => raise DecodeSkip("or branch leaf is not an object")
+  }
+  allowed_keys(o, ["type", "name"], "or branch leaf")
+  let name = match jf_str(o, "name") {
+    Some(s) => s
+    None => raise DecodeSkip("or branch leaf missing 'name'")
+  }
+  let (ty, int_round_from_shadow) = match jf_str(o, "type") {
+    Some(t) =>
+      match shadows.get(t) {
+        Some(sh) => (sh.base, sh.int_round)
+        None => (dec_ty(t), RError)
+      }
+    None => raise DecodeSkip("or branch leaf missing 'type'")
+  }
+  pos(name, ty, int_round=int_round_from_shadow)
 }
 
 ///|
@@ -1929,10 +2027,21 @@ fn dec_option(
     Some(s) => s
     None => raise DecodeSkip("option missing 'name'")
   }
-  // dec_or は parent name を要求 (or 枝の `id` 未指定時のフォールバック先、DR-055 §1 + DR-052)。
-  let value_requires = match o.get("or") {
-    Some(orj) => dec_or(orj, name)
-    None => []
+  // MDR-004 §2: "or" is shape-detected FIRST — the DR-055 value-enum form ({"exact":...} branches,
+  // dec_or, parent name = branch-id フォールバック先) and the structural consumption-grammar form
+  // (BOr, dec_or_structural) share the same JSON key but are otherwise unrelated (§5.3 values 正規形
+  // vs §1 消費文法の枝)。
+  let structural_or = match o.get("or") {
+    Some(orj) => dec_or_structural(orj, shadows)
+    None => None
+  }
+  let value_requires = match structural_or {
+    Some(_) => []
+    None =>
+      match o.get("or") {
+        Some(orj) => dec_or(orj, name)
+        None => []
+      }
   }
   if tystr == "dd" {
     return DOpt({ ..dd_marker(), name, })
@@ -2007,6 +2116,10 @@ fn dec_option(
       default~,
       int_round=int_round_from_shadow,
       allow_base_prefix=base_prefix_from_shadow,
+      body=match structural_or {
+        Some(branches) => BOr(branches)
+        None => BCell
+      },
     ),
     separator: sep,
     deprecated,
@@ -2022,24 +2135,33 @@ fn dec_positional(
     Some(x) => x
     None => raise DecodeSkip("positional is not an object")
   }
-  if has_key(o, "positionals") {
-    raise DecodeSkip(
-      "nested-group positional (repeat over a named sub-sequence): slice ElemDef is flat, parse_definition builds no IdxRepeat with a distinct inner-element name/export_key",
-    )
-  }
-  if has_key(o, "or") {
-    raise DecodeSkip(
-      "structural or-positional (branches are consumption grammars binding distinct named cells): slice ElemDef is flat with one value cell per element — lower_positional builds a single value_prim per positional, so parse_definition has no builder for Or([Seq([…]),…]) at the §5 contract path",
-    )
-  }
   allowed_keys(
     o,
     [
       "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
-      "config_key", "default",
+      "config_key", "default", "positionals", "or",
     ],
     "positional",
   )
+  // MDR-004 §2: "positionals" (named nested group, BGroup) and "or" (anonymous structural or,
+  // BOr) are decoded via ElemBody now — the gates that used to reject these keys are GONE. A
+  // positional's "or" is ALWAYS structural (there is no DR-055 value-enum-or concept for
+  // positionals — that's an option-only constraint-declaration sugar, §5.3).
+  match o.get("positionals") {
+    Some(pj) => return dec_positional_group(o, pj, shadows)
+    None => ()
+  }
+  match o.get("or") {
+    Some(orj) =>
+      match dec_or_structural(orj, shadows) {
+        Some(branches) => return { ..pos("", TStr), body: BOr(branches) }
+        None =>
+          raise DecodeSkip(
+            "positional 'or' has no structural branches (all-exact value-enum form is option-only, DR-055 §1 / §5.3)",
+          )
+      }
+    None => ()
+  }
   // DR-061 §3: positional も type shadow を consultation (dec_option と同型)。
   let (ty, int_round_from_shadow, base_prefix_from_shadow) = match
     jf_str(o, "type") {
@@ -2088,6 +2210,34 @@ fn dec_positional(
     int_round=int_round_from_shadow,
     allow_base_prefix=base_prefix_from_shadow,
   )
+}
+
+///|
+/// MDR-004 §1/§3: a named group positional (`{"name":"xs","repeat":{...},"positionals":[...]}`) —
+/// `BGroup(items)`. Inner items are decoded via `dec_positional` itself (recursive — an inner leaf
+/// like transparent-seq's `k` is just a normal positional decode, `export_key:null` included).
+fn dec_positional_group(
+  o : Map[String, Json],
+  pj : Json,
+  shadows : Map[String, TypeShadow],
+) -> ElemDef raise DecodeSkip {
+  let name = match jf_str(o, "name") {
+    Some(s) => s
+    None => raise DecodeSkip("positional (named group) missing 'name'")
+  }
+  let repeat : RepeatSpec? = match o.get("repeat") {
+    Some(r) => Some(dec_repeat(r))
+    None => None
+  }
+  let inner_arr = match pj.j_arr() {
+    Some(x) => x
+    None => raise DecodeSkip("positionals is not an array")
+  }
+  let items : Array[ElemDef] = []
+  for ij in inner_arr {
+    items.push(dec_positional(ij, shadows))
+  }
+  { ..pos(name, TStr, repeat~), body: BGroup(items) }
 }
 
 ///|
@@ -3188,36 +3338,13 @@ fn known_divergences() -> Array[String] {
 /// a fixture the decoder cannot losslessly represent, so it raises DecodeSkip before any case runs.
 /// UNEXPECTED / VANISHED / CHANGED SKIP REASON all fail the run (like divergences, MDR-001 §6).
 ///
-/// Initial population (2026-07-08 first run, journal 2026-07-08-conformance-first-run.md):
-/// 6 slice-inherited skips — nested-group positional (1) + structural or-position/-option (3) +
-/// `definitions` factory-config key (2). Reason strings are byte-identical to the corresponding
-/// `raise DecodeSkip(...)` messages in dec_positional / dec_or / allowed_keys(defo, ...).
+/// MDR-004 (ElemBody body grammar) resolved the 4 structural-or / nested-group skips inherited from
+/// slice (BOr option/positional lowering + BGroup+IdxRepeat lowering), and the parallel
+/// number_allow_base_prefix work (hex/oct/bin integer + hex float lexer) resolved the remaining
+/// `definitions.types[number]` factory-config gap — all previously-frozen skip entries are removed
+/// since every fixture now decodes and runs losslessly (full conformance, no known skip gaps).
 fn expected_skips() -> Array[(String, String)] {
-  [
-    // nested-group positional (repeat over a named sub-sequence): fixture's positional carries an
-    // inner `positionals` array (a named sub-sequence repeated as a unit). Main's ElemDef is flat —
-    // parse_definition builds no IdxRepeat with a distinct inner-element name/export_key — so
-    // dec_positional cannot represent it losslessly and skips up front (dec_positional, "positionals"
-    // key guard). Main src vocabulary gap (inherited from slice).
-    (
-      "export-key/transparent-seq.json", "nested-group positional (repeat over a named sub-sequence): slice ElemDef is flat, parse_definition builds no IdxRepeat with a distinct inner-element name/export_key",
-    ),
-    // structural-or spine / -option: three fixtures encode an `or` of CONSUMPTION GRAMMARS — an
-    // element whose value is Or([Seq([typed cells]),…]) binding DIFFERENT named cells per branch
-    // (real-ambiguous / held-error-primary). Main's ElemDef is flat (one value cell per element);
-    // parse_definition's §5 contract path has no builder for the multi-cell Or([Seq(…),…]) shape.
-    // The engine's Node ADT supports it — the gap is the absence of a flat-ElemDef → structural-or
-    // lowering. Inherited from slice.
-    (
-      "path-search/variable-arity-ambiguous.json", "variable-arity or-option (branches are consumption grammars — a seq of typed cells vs a single typed cell): slice ElemDef carries one value cell per option and dec_or models only value-enum exact-branches, so parse_definition has no builder for Or([Seq([NumArg,…]),StrArg]) at the §5 contract path",
-    ),
-    (
-      "path-search/held-errors-distinct-depth.json", "structural or-positional (branches are consumption grammars binding distinct named cells): slice ElemDef is flat with one value cell per element — lower_positional builds a single value_prim per positional, so parse_definition has no builder for Or([Seq([…]),…]) at the §5 contract path",
-    ),
-    (
-      "path-search/held-errors-same-depth.json", "structural or-positional (branches are consumption grammars binding distinct named cells): slice ElemDef is flat with one value cell per element — lower_positional builds a single value_prim per positional, so parse_definition has no builder for Or([Seq([…]),…]) at the §5 contract path",
-    ),
-  ]
+  []
 }
 
 ///|
@@ -3518,4 +3645,81 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     println(sb.to_string())
     abort(sb.to_string())
   }
+}
+
+///|
+/// MDR-004 §4 / 実装順 5: OrBranch.id (無指定なら自動採番 `#{seq}`) は内部照合専用で、観測面
+/// (held Error / ambiguous interpretations / success result) のどこにも漏れてはいけない。対象
+/// 4 fixture はどれも "id" キー無指定 (= 自動採番のみ) なので、既にそれ自体が非漏出の状況証拠で
+/// はある — が、fixture 任せだと「将来誰かが .id を表示経路に配線してしまう」退行を検出できない
+/// (codex REVIEW-M5)。ここでは同じ定義形 (対称 or の 2 枝、held-errors-same-depth.json と同型) を
+/// inline JSON で組み、failure (0 本成立) / ambiguous (2 本成立) / success (1 本のみ生存) の 3 outcome
+/// すべてで、rendered text に自動 id パターン ("#0" / "#1") が一切現れないこと、かつ本来の leaf 名
+/// (a/b) は現れることを同時に固定する。
+test "conformance: OrBranch auto id (#{seq}) は held-error / ambiguous / success のどこにも漏れない (MDR-004 §4)" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "positionals": [
+    #|      {"or": [{"type": "number", "name": "a"}, {"type": "number", "name": "b"}]}
+    #|    ]
+    #|  },
+    #|  "cases": []
+    #|}
+  let j = @json.parse(src)
+  let df = dec_fixture(j)
+  let no_leak = fn(s : String) -> Unit {
+    if s.contains("#0") || s.contains("#1") {
+      abort("auto branch id leaked into observable text: \{s}")
+    }
+  }
+  // failure (0 本成立): 非数値 1 token は両枝とも同位置で dead-end (same-depth 同型)。
+  let fail_outcome = parse(ScopeNode(df.scope), ["x"], defs=df.registry)
+  match fail_outcome {
+    Failure(d) => {
+      let texts : Array[String] = []
+      for e in d.errors {
+        texts.push(e.element + ":" + e.message)
+      }
+      let joined = join_comma(texts)
+      no_leak(joined)
+      if !joined.contains("a:") || !joined.contains("b:") {
+        abort("expected both leaf names (a/b) in failure text, got: \{joined}")
+      }
+    }
+    other => abort("expected Failure, got " + render_outcome(other))
+  }
+  // ambiguous (2 本成立): 数値 1 token は両枝が同位置で成立 → 2 完全経路。
+  let amb_outcome = parse(ScopeNode(df.scope), ["5"], defs=df.registry)
+  match amb_outcome {
+    Ambiguous(d) => {
+      let views : Array[String] = []
+      for interp in d.interpretations {
+        views.push(
+          render_rval_sorted(
+            build_result(
+              apply_export_keys(interp.binds, df.ekmap),
+              accum_cells(df.scope),
+              [],
+              [],
+            ),
+          ),
+        )
+      }
+      let joined = join_comma(views)
+      no_leak(joined)
+      if !joined.contains("a=5") || !joined.contains("b=5") {
+        abort(
+          "expected both interpretations (a=5/b=5) in ambiguous text, got: \{joined}",
+        )
+      }
+    }
+    other => abort("expected Ambiguous, got " + render_outcome(other))
+  }
+  // success (1 本のみ生存) は対称 2 枝 (a/b 共に number) では作れない — 両枝は常に対称に成立/
+  // 不成立するため、単一トークン argv では必ず failure か ambiguous になる。success 面の非漏出は
+  // path-search/variable-arity-ambiguous.json::non-number-collapses-to-name (既存 conformance、
+  // 非対称 2 枝で数値枝のみ死ぬケース) が別途固定済みなので、本 wbtest は failure/ambiguous の
+  // 2 outcome をスコープとする。
 }
