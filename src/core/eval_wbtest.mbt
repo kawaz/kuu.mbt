@@ -1013,3 +1013,173 @@ test "REGRESSION head_elem_names_into collects a FloatArg head's name" {
   head_elem_names_into(FloatArg("f"), out)
   assert_eq(out, ["f"])
 }
+
+// ── DR-066 §4: path/provenance on held Errors ────────────────────────────────
+
+///|
+/// A held Error at the ROOT scope carries `path: []` (root 直下, DR-066 §4):
+/// no CmdSat/Scoped boundary was crossed on the way out, so there is no
+/// ancestor to record.
+test "DR-066 §4: a root-level held Error carries path: []" {
+  let root : Scope = {
+    greedy: [],
+    positional: [NumArg("n", false)],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["abc"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut found = false
+      for e in fd.errors {
+        if e.element == "n" && e.reason == "not_a_number" {
+          found = true
+          assert_eq(e.path, [])
+        }
+      }
+      assert_true(found)
+    }
+    _ => fail("expected Failure (\"abc\" is not a number)")
+  }
+}
+
+///|
+/// A held Error one CmdSat deep carries `path: [<command name>]` (DR-066 §4
+/// snoc form: `path` = ancestors, `element` = self). The error fires INSIDE
+/// the child scope (a bare `NumArg` parse failure straight from `eval`,
+/// `path: []` at construction) and crosses exactly one command boundary on
+/// its way out through `step_greedy`'s CmdSat arm.
+test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
+  let child : Scope = {
+    greedy: [],
+    positional: [NumArg("n", false)],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("sub", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["sub", "abc"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut found = false
+      for e in fd.errors {
+        if e.element == "n" && e.reason == "not_a_number" {
+          found = true
+          assert_eq(e.path, ["sub"])
+        }
+      }
+      assert_true(found)
+    }
+    _ => fail("expected Failure (\"abc\" is not a number)")
+  }
+}
+
+///|
+/// A held Error two CmdSat levels deep carries `path: ["a", "b"]` (root-first,
+/// DR-066 §4): the error crosses TWO command boundaries on its way out — "b"
+/// prepends first (innermost, its own step_greedy loop), then "a" prepends in
+/// front of that (its parent's), landing root-first as the CPS Held bubbles
+/// out through both KNest/CmdSat crossings.
+test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (root-first)" {
+  let grandchild : Scope = {
+    greedy: [],
+    positional: [NumArg("n", false)],
+    entities: [],
+    constraints: [],
+  }
+  let child : Scope = {
+    greedy: [CmdSat("b", grandchild)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("a", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["a", "b", "abc"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut found = false
+      for e in fd.errors {
+        if e.element == "n" && e.reason == "not_a_number" {
+          found = true
+          assert_eq(e.path, ["a", "b"])
+        }
+      }
+      assert_true(found)
+    }
+    _ => fail("expected Failure (\"abc\" is not a number)")
+  }
+}
+
+///|
+/// A constraint violation (KConstraint, evaluated at KTop after the whole
+/// parse completes — spec DR-047 §2) declared in a CHILD scope still carries
+/// the child's path (DR-066 §4): `constraint_err` starts the Held at `path:
+/// []` (deliberately NOT `ScopedCons.path`, see the comment there) and it
+/// picks up "sub" crossing the SAME CmdSat boundary as any other Held on its
+/// way back out through the continuation chain (KNest → KResumeScope → …).
+test "DR-066 §4: a constraint violation declared in a child scope carries the child's path" {
+  let child : Scope = {
+    greedy: [Seq([Exact("--x"), Bind("x", VBool(true))])],
+    positional: [],
+    entities: [],
+    constraints: [CRequires("x", ["y"])],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("sub", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["sub", "--x"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut found = false
+      for e in fd.errors {
+        if e.element == "x" && e.reason == "requires_violated" {
+          found = true
+          assert_eq(e.path, ["sub"])
+        }
+      }
+      assert_true(found)
+    }
+    _ => fail("expected Failure ('x' requires 'y', unsatisfied)")
+  }
+}
+
+///|
+/// A residual-token Error (spec DR-065 §3: unconsumed trailing token at KTop)
+/// carries `path: []` — it is inherently a root/global-position stumble (the
+/// WHOLE parse, not any one scope, failed to consume the rest), so there is
+/// no ancestor scope to attribute it to even when it surfaces after crossing
+/// into a nested scope during the walk.
+test "DR-066 §4: a residual-token Error carries path: []" {
+  let root : Scope = {
+    greedy: [],
+    positional: [Exact("go")],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["go", "zzz"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut found = false
+      for e in fd.errors {
+        if e.reason == "unexpected_token" {
+          found = true
+          assert_eq(e.path, [])
+        }
+      }
+      assert_true(found)
+    }
+    _ => fail("expected Failure (residual token 'zzz')")
+  }
+}

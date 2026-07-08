@@ -99,16 +99,21 @@ pub(all) enum ErrKind {
 ///|
 /// One held Error (DR-053 §2 + DR-066): which element, the argv position it failed at, its kind, a
 /// machine-readable `reason` (snake_case, DR-066 §3 v1 vocab: missing_operand / unexpected_token /
-/// not_a_number / not_an_integer / <attr>_violated), and the human message. The errors array keeps
-/// ALL of them (別候補経路の別 Error); primary = max argv_pos. Conformance compares errors by
-/// (element, argv_pos, kind, reason) — message is always ignored (CONFORMANCE §3) — so every
-/// construction site emits a reason from the v1 vocabulary.
+/// not_a_number / not_an_integer / <attr>_violated), the human message, and `path` (DR-066 §4): the
+/// root-first ancestor scope names the error fired under (snoc form — `path` = ancestors, `element` =
+/// self; `path: []` = root 直下, no separate null case, Maybe ⊂ List). The errors array keeps ALL of
+/// them (別候補経路の別 Error); primary = max argv_pos. Conformance compares errors by
+/// (element, argv_pos, kind, reason) — message is always ignored (CONFORMANCE §3), path is optional
+/// (DR-066 §4) — so every construction site emits a reason from the v1 vocabulary and a path (`[]`
+/// when the error has no ancestor scope to record, which conformance treats identically to "no path
+/// asserted" when the fixture opts out).
 pub(all) struct ParseError {
   element : String
   argv_pos : Int
   kind : ErrKind
-  reason : String // DR-066: machine-readable failure identifier (snake_case v1 vocab)
+  reason : String // DR-066 §3: machine-readable failure identifier (snake_case v1 vocab)
   message : String
+  path : Array[String] // DR-066 §4: root-first ancestor scope names (snoc form, [] = root 直下)
 } derive(Eq, Debug)
 
 ///|
@@ -1334,6 +1339,7 @@ fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
     kind: KParse,
     reason: "not_a_number",
     message: "\"\{tok}\" is not a number",
+    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
   }
 }
 
@@ -1349,6 +1355,7 @@ fn pe_parse_int(element : String, tok : String, pos : Int) -> ParseError {
     kind: KParse,
     reason: "not_an_integer",
     message: "\"\{tok}\" is not an integer",
+    path: [],
   }
 }
 
@@ -1364,6 +1371,7 @@ fn pe_int_out_of_range(element : String, tok : String, pos : Int) -> ParseError 
     kind: KParse,
     reason: "int_out_of_range",
     message: "\"\{tok}\" is out of Int64 range",
+    path: [],
   }
 }
 
@@ -1380,6 +1388,7 @@ fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
     kind: KParse,
     reason: "not_a_bool",
     message: "\"\{tok}\" is not a bool",
+    path: [],
   }
 }
 

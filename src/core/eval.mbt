@@ -180,15 +180,33 @@ fn nest(label : String, binds : Array[Binding]) -> Array[Binding] {
 }
 
 ///|
+/// Prepend `label` onto a held Error's `path` (DR-066 §4 snoc form, root-first
+/// ancestor list). Mirrors `nest`'s scope-prepend on Binding, but for the
+/// error's path instead of a binding's scope — the two are threaded through
+/// the same scope-boundary crossings (Scoped / CmdSat) so a path built this
+/// way lines up with the equivalent Binding.scope.
+fn nest_path(label : String, path : Array[String]) -> Array[String] {
+  let out : Array[String] = [label]
+  for s in path {
+    out.push(s)
+  }
+  out
+}
+
+///|
 /// Apply `nest` to every Accept branch's bindings (Held / Pending pass
-/// through: their partial state is failure/completion material, not a
-/// result object, so nesting is not needed for it).
+/// through unchanged on the binding side: their partial state is
+/// failure/completion material, not a result object, so nesting is not
+/// needed for it). A Held's ParseError.path DOES get the same prepend
+/// (DR-066 §4): as this Held rides back out through the scope this label
+/// declares, `label` becomes its innermost recorded ancestor.
 fn nest_branches(label : String, brs : Array[Branch]) -> Array[Branch] {
   let out : Array[Branch] = []
   for b in brs {
     match b {
       Accept(p, bs) => out.push(Accept(p, nest(label, bs)))
-      Held(pe, bs) => out.push(Held(pe, bs))
+      Held(pe, bs) =>
+        out.push(Held({ ..pe, path: nest_path(label, pe.path) }, bs))
       Pending(cs, bs) => out.push(Pending(cs, bs))
     }
   }
@@ -446,6 +464,7 @@ fn pe_missing(element : String, pos : Int) -> ParseError {
     kind: KParse,
     reason: "missing_operand",
     message: "missing operand for \{element}",
+    path: [],
   }
 }
 
@@ -471,6 +490,7 @@ fn filter_arg_eval(
                 kind: KFilter,
                 reason: "too_large",
                 message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
+                path: [],
               },
               acc,
             ),
@@ -509,6 +529,7 @@ fn req_arg_eval(
           kind: KConstraint,
           reason: "required_violated",
           message: "required \{name} is missing",
+          path: [],
         },
         acc,
       ),
@@ -914,8 +935,18 @@ fn step_greedy(
           acc.length(),
           KResumeScope(sc, pidx, severed, k),
         )
+        // DR-066 §4: every Held riding out of the child scope crosses this
+        // command boundary exactly once — whether it fired INSIDE the child
+        // (a bare Held straight from `eval`, path still []) or arrived at
+        // KTop after the child's own KNest completed (path already carries
+        // deeper ancestors). Either way, `name` belongs on the front: this
+        // is the boundary the child scope's `name` declares.
         for r in scope_step(child, ctx, pos + 1, 0, acc, false, kk) {
-          out.push(r)
+          match r {
+            Held(pe, bs) =>
+              out.push(Held({ ..pe, path: nest_path(name, pe.path) }, bs))
+            _ => out.push(r)
+          }
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         // complete: the command name is readable at the boundary (DR-060 §1).
@@ -1131,6 +1162,7 @@ fn scope_consume(
                     kind: KFilter,
                     reason: "too_large",
                     message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
+                    path: [],
                   },
                   acc,
                 ),
@@ -1180,6 +1212,7 @@ fn scope_consume(
                 kind: KConstraint,
                 reason: "required_violated",
                 message: "required \{name} is missing",
+                path: [],
               },
               acc,
             ),
@@ -1576,6 +1609,7 @@ fn consume_head(
                 kind: KConstraint,
                 reason: "required_violated",
                 message: "required \{name} is missing",
+                path: [],
               },
               [],
             ),
@@ -1597,6 +1631,7 @@ fn consume_head(
                     kind: KFilter,
                     reason: "too_large",
                     message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
+                    path: [],
                   },
                   [],
                 ),
@@ -1985,7 +2020,12 @@ fn constraint_err(
   message : String,
   pos : Int,
 ) -> ParseError {
-  { element, argv_pos: pos, kind: KConstraint, reason, message }
+  // DR-066 §4: path starts empty here and is prepended by scope boundaries
+  // (nest_branches / CmdSat) as the Held rides KTop's result back out through
+  // the continuation chain — NOT `sc.path` (ScopedCons's path is the
+  // scope_path_eq lookup key, reusing it here would double the prefix once
+  // the same Held crosses those same boundaries on its way out).
+  { element, argv_pos: pos, kind: KConstraint, reason, message, path: [] }
 }
 
 ///|
@@ -2323,6 +2363,7 @@ pub fn parse(
         kind: KParse,
         reason: "unexpected_token",
         message: "unexpected token",
+        path: [], // NON-scope root: no ancestor scope to record
       })
     }
   }

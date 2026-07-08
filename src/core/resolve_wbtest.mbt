@@ -463,3 +463,94 @@ test "command_child fetches a subcommand scope; inherited_of builds the parent c
   assert_eq(ctx.get("ttl"), Some(VNum(60.0)))
   assert_eq(ctx.get("absent"), None)
 }
+
+// ── DR-066 §4: path/provenance on ladder-fill Errors ──────────────────────────
+
+///|
+/// Guarantees (DR-066 §4): `resolve_scope`'s `path?` argument is this scope's DR-066 §4
+/// result-nesting path, threaded straight into a ladder-fill Error's `path` field — no boundary
+/// crossing to accumulate (unlike eval.mbt's CPS Held), because resolving one scope's entities
+/// already runs WITH that scope's own path known statically. Root (`path` omitted, default `[]`)
+/// carries an empty path; a scope one command deep (`path: ["sub"]`, as `resolve_tree` would thread
+/// for a `sub` command scope) carries that path unchanged.
+test "resolve_scope: a ladder-fill Error's path is the caller-supplied scope path" {
+  let num = ent("n", TNum, env_key=Some("N"))
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [num],
+    constraints: [],
+  }
+  // root (path omitted → default [])
+  match resolve_scope(sc, [], Map::from_array([("N", "abc")])) {
+    Err(pe) => assert_eq(pe.path, [])
+    Ok(_) => fail("expected an Err, env value \"abc\" is not a number")
+  }
+  // one command scope deep
+  match resolve_scope(sc, [], Map::from_array([("N", "abc")]), path=["sub"]) {
+    Err(pe) => assert_eq(pe.path, ["sub"])
+    Ok(_) => fail("expected an Err, env value \"abc\" is not a number")
+  }
+}
+
+///|
+/// Guarantees (DR-066 §4): `resolve_scope_config`'s `path?` argument likewise reaches BOTH ladder
+/// Error sites — the config_read_failed Error (Phase 2, cf_element) and a per-entity config-seat
+/// type-mismatch Error (Phase 3) — with the scope's own path, regardless of whether the entity uses
+/// an explicit `config_key` (a DIFFERENT absolute path, used only for the config LOOKUP) or the
+/// isomorphic default.
+test "resolve_scope_config: a ladder-fill Error's path is the caller-supplied scope path, independent of config_key" {
+  let cfg_path = ent(
+    "config",
+    TStr,
+    is_config_file=true,
+    default_value=Some(VStr("app.json")),
+  )
+  // Phase 2: a committed config path that fails to read.
+  let sc1 : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [cfg_path],
+    constraints: [],
+  }
+  let never_reads = fn(_p : String) -> ConfigVal? { None }
+  match
+    resolve_scope_config(
+      sc1,
+      [cb("config", VStr("missing.json"), Cli)],
+      Map([]),
+      never_reads,
+      path=["sub"],
+    ) {
+    Err(pe) => {
+      assert_eq(pe.reason, "config_read_failed")
+      assert_eq(pe.path, ["sub"])
+    }
+    Ok(_) => fail("expected an Err, the committed config path cannot be read")
+  }
+  // Phase 3: a config-seat type mismatch, entity using an explicit config_key
+  // (a config-tree lookup path distinct from the scope's own result path) —
+  // the Error's `path` must still be the scope path, not the config_key.
+  let scalar_cfg = ent(
+    "port",
+    TNum,
+    config_seat=true,
+    config_key=Some(["elsewhere", "port"]),
+  )
+  let sc2 : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [cfg_path, scalar_cfg],
+    constraints: [],
+  }
+  let provider = fn(_p : String) -> ConfigVal? {
+    Some(CObj([("elsewhere", CObj([("port", CStr("not-a-number"))]))]))
+  }
+  match resolve_scope_config(sc2, [], Map([]), provider, path=["sub"]) {
+    Err(pe) => {
+      assert_eq(pe.element, "port")
+      assert_eq(pe.path, ["sub"]) // scope path, NOT ["elsewhere", "port"]
+    }
+    Ok(_) => fail("expected an Err, config \"port\" is not a number")
+  }
+}

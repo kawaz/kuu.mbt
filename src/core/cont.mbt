@@ -101,6 +101,9 @@ fn run_cont(
               kind: KParse,
               reason: "unexpected_token",
               message: "unexpected token",
+              // DR-066 §4: starts empty, prepended by scope boundaries
+              // (nest_branches / CmdSat) as this Held rides back out.
+              path: [],
             },
             acc,
           ),

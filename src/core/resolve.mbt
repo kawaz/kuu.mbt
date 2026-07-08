@@ -892,14 +892,20 @@ fn value_str(v : Value) -> String {
 /// caller-supplied final position (env/config seat errors are not read at a token position — they
 /// surface after the path completed, the same conceptual point `eval_constraints` evaluates at, so
 /// callers thread the same final `toks.length()`). kind is always `KParse` (a value-source failed
-/// to parse into the entity's type — the same category as a bad CLI token, DR-053).
+/// to parse into the entity's type — the same category as a bad CLI token, DR-053). `epath` is the
+/// DR-066 §4 ancestor path (root-first, [] = root 直下): this ladder walk resolves ONE scope's
+/// entities at a time and already carries the scope's own result-nesting path (the `resolve_tree`
+/// caller threads it in), so — unlike eval.mbt's CPS Held (which starts at [] and picks up ancestors
+/// crossing scope boundaries on the way out) — the ladder path is known statically and passed in
+/// directly, no boundary-crossing accumulation needed.
 fn ladder_err(
   element : String,
   at_pos : Int,
   reason : String,
   message : String,
+  epath : Array[String],
 ) -> ParseError {
-  { element, argv_pos: at_pos, kind: KParse, reason, message }
+  { element, argv_pos: at_pos, kind: KParse, reason, message, path: epath }
 }
 
 ///|
@@ -933,6 +939,7 @@ fn env_value(
   ty : Ty,
   s : String,
   at_pos : Int,
+  epath : Array[String],
 ) -> Result[Value, ParseError] {
   match ty {
     TStr => Ok(VStr(s))
@@ -946,6 +953,7 @@ fn env_value(
               at_pos,
               "not_a_number",
               "env value \"\{s}\" is not a number",
+              epath,
             ),
           )
       }
@@ -959,6 +967,7 @@ fn env_value(
               at_pos,
               int_fail_reason(f),
               "env value \"\{s}\" is not \{int_fail_phrase(f)}",
+              epath,
             ),
           )
       }
@@ -972,6 +981,7 @@ fn env_value(
               at_pos,
               "not_a_number",
               "env value \"\{s}\" is not a number",
+              epath,
             ),
           )
       }
@@ -985,6 +995,7 @@ fn env_value(
               at_pos,
               "not_a_bool",
               "env value \"\{s}\" is not a bool",
+              epath,
             ),
           )
       }
@@ -1046,7 +1057,11 @@ fn config_mismatch_reason(cv : ConfigVal, ty : Ty) -> String {
 /// DR-050 #3). Returns the effect bindings (0/1, or many when a config array fills a `multiple`
 /// cell) or an Err (a value-source type mismatch is a DR-037/DR-066 Error). `config_obj` is the
 /// read config object (None = no config); `config_path` is this entity's absolute lookup path
-/// (同型 or config_key). `at_pos` is the position an Error is reported at (see `ladder_err`).
+/// (同型 or config_key, used for the config LOOKUP — may diverge from `epath` under an explicit
+/// `config_key`). `at_pos` is the position an Error is reported at (see `ladder_err`). `epath` is
+/// this entity's DR-066 §4 error path: the DECLARING scope's result-nesting path (root-first,
+/// [] = root 直下) — always the scope path, never `config_path`, so a config_key override does not
+/// leak an unrelated config-tree location into the error's ancestor scope list.
 fn resolve_entity(
   e : Entity,
   cli : Array[Binding],
@@ -1055,6 +1070,7 @@ fn resolve_entity(
   config_path : Array[String],
   inherited : Map[String, Value],
   at_pos : Int,
+  epath : Array[String],
 ) -> Result[Array[Binding], ParseError] {
   // cli seat — the LAST effect (last-wins, DR-015); set/default/empty commit, unset falls through.
   let mut seat : Binding? = None
@@ -1082,7 +1098,7 @@ fn resolve_entity(
     Some(k) =>
       match env_map.get(k) {
         Some(v) =>
-          match env_value(e.name, e.ty, v, at_pos) {
+          match env_value(e.name, e.ty, v, at_pos, epath) {
             Ok(parsed) => return Ok([mkb(e.name, parsed, Env)])
             Err(pe) => return Err(pe)
           }
@@ -1114,6 +1130,7 @@ fn resolve_entity(
                             at_pos,
                             config_mismatch_reason(it, e.ty),
                             "config array element for \"\{e.name}\" has the wrong type",
+                            epath,
                           ),
                         )
                     }
@@ -1126,6 +1143,7 @@ fn resolve_entity(
                       at_pos,
                       "config_structural_mismatch",
                       "config array for a scalar element (structural mismatch)",
+                      epath,
                     ),
                   )
                 }
@@ -1139,6 +1157,7 @@ fn resolve_entity(
                         at_pos,
                         config_mismatch_reason(cv, e.ty),
                         "config value for \"\{e.name}\" has the wrong type",
+                        epath,
                       ),
                     ) // §4 型不一致 → DR-037/DR-066 Error
                 }
@@ -1166,16 +1185,19 @@ fn resolve_entity(
 /// Resolve every entity in a built scope against CLI bindings + an env map (no config seat). For
 /// the env / inherit ladder path (no config_file element in scope). Unlike slice (whose config-less
 /// path "never errors"), a badly-typed env value now surfaces as an Err (DR-074/075 update above).
+/// `path` is this scope's DR-066 §4 result-nesting path (root-first, [] = root 直下), threaded into
+/// any ladder-fill Error the same way `resolve_scope_config`'s `path` is.
 pub fn resolve_scope(
   sc : Scope,
   cli : Array[Binding],
   env_map : Map[String, String],
   inherited? : Map[String, Value] = Map([]),
   at_pos? : Int = -1,
+  path? : Array[String] = [],
 ) -> Result[Array[Binding], ParseError] {
   let out : Array[Binding] = []
   for e in sc.entities {
-    match resolve_entity(e, cli, env_map, None, [], inherited, at_pos) {
+    match resolve_entity(e, cli, env_map, None, [], inherited, at_pos, path) {
       Ok(bs) =>
         for b in bs {
           out.push(b)
@@ -1263,6 +1285,7 @@ pub fn resolve_scope_config(
                 at_pos,
                 "config_read_failed",
                 "config file \"\{p}\" could not be read",
+                path,
               ),
             )
           Some(_) => ()
@@ -1286,7 +1309,9 @@ pub fn resolve_scope_config(
         }
       }
       match
-        resolve_entity(e, cli, env_map, config_obj, cpath, inherited, at_pos) {
+        resolve_entity(
+          e, cli, env_map, config_obj, cpath, inherited, at_pos, path,
+        ) {
         Ok(bs) =>
           for b in bs {
             out.push(b)

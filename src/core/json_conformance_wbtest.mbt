@@ -2,8 +2,10 @@
 //
 // PORTED FROM: kawaz/kuu.mbt slice/poc/{json_conformance_wbtest,lower_runner_wbtest,helpers_wbtest,
 // fixture_runner_wbtest}.mbt — verbatim structure with API adaptations for main src/core:
-//   - ParseError is 5-tuple (element/argv_pos/kind/reason/message, DR-066): proj_errors and
-//     exp_errors_str include `reason` when the fixture asserts it (per-error opt-in, CONFORMANCE §3).
+//   - ParseError is a 6-tuple (element/argv_pos/kind/reason/message/path, DR-066 §3/§4): proj_errors
+//     and exp_errors_decode include `reason` when the fixture asserts it on ANY error in the set, and
+//     `path` likewise on its own independent opt-in (per-field, per-fixture-set — DR-066 §4/§5:
+//     message is never compared, reason/path are each optional and asserted independently).
 //   - resolve_scope / resolve_scope_config return `Result[Array[Binding], ParseError]` in main
 //     (slice returned Result[..., String] for the config variant and Array[Binding] for the flat
 //     variant). Both sites in resolve_tree/do_resolve wrap the ParseError message.
@@ -1013,19 +1015,43 @@ fn is_config_file_cell(sc : Scope, name : String) -> Bool {
 }
 
 ///|
-/// §2 failure error set. Emits `element@pos/kind` per error; if the fixture asserted `reason` at all
-/// (want_has_reason), the got side includes `/reason` too so a per-error opt-in comparison stays
-/// aligned. sorted as a set.
-fn proj_errors(errs : Array[ParseError], with_reason : Bool) -> String {
+/// A `path` array rendered as a single comparable token (DR-066 §4 snoc form, root-first). `>` joins
+/// segments — element/scope names are installer-derived identifiers (kuu source names), never
+/// containing `>` — so this stays unambiguous the same way `/` separates the kind/reason fields.
+fn render_path(path : Array[String]) -> String {
+  let buf = StringBuilder::new()
+  let mut first = true
+  for s in path {
+    if !first {
+      buf.write_string(">")
+    }
+    buf.write_string(s)
+    first = false
+  }
+  buf.to_string()
+}
+
+///|
+/// §2 failure error set. Emits `element@pos/kind` per error; `reason` and `path` (DR-066 §4) each
+/// ride along independently when the fixture asserted that field on ANY error in the set (per-field
+/// opt-in, CONFORMANCE §3/§5) — `/reason` first (kept at its original position for fixtures already
+/// asserting only reason), `|path` appended after (a separate delimiter so "no reason, but path
+/// asserted" cannot collide with "reason asserted, no path"). sorted as a set.
+fn proj_errors(
+  errs : Array[ParseError],
+  with_reason : Bool,
+  with_path : Bool,
+) -> String {
   let items : Array[String] = []
   for e in errs {
+    let mut item = "\{e.element}@\{e.argv_pos}/\{render_kind(e.kind)}"
     if with_reason {
-      items.push(
-        "\{e.element}@\{e.argv_pos}/\{render_kind(e.kind)}/\{e.reason}",
-      )
-    } else {
-      items.push("\{e.element}@\{e.argv_pos}/\{render_kind(e.kind)}")
+      item = item + "/\{e.reason}"
     }
+    if with_path {
+      item = item + "|\{render_path(e.path)}"
+    }
+    items.push(item)
   }
   sort_items(items)
   "{" + join_comma(items) + "}"
@@ -1130,9 +1156,10 @@ struct DCase {
   outcome : String
   exp_effects : String?
   exp_result : String?
-  // errors face: (asserted-set-string, whether fixture provided reason on any error)
+  // errors face: (asserted-set-string, whether fixture provided reason/path on any error, DR-066 §4/§5)
   exp_errors : String?
   exp_errors_with_reason : Bool
+  exp_errors_with_path : Bool
   exp_interps : Array[String]?
   exp_warnings : String?
   exp_sources : String?
@@ -1364,19 +1391,50 @@ fn exp_result_str(res : Json) -> String raise DecodeSkip {
 }
 
 ///|
-/// Decode the fixture's errors[] and report both the sorted set-string and whether any error had
-/// a `reason` field (DR-066): with_reason drives got-side inclusion so per-error opt-in comparison
-/// stays aligned.
-fn exp_errors_decode(errs : Json) -> (String, Bool) raise DecodeSkip {
+/// Decode a fixture error's `path` array (DR-066 §4, root-first) into the same `>`-joined token
+/// `render_path` produces on the got side, so string comparison lines up.
+fn exp_error_path(eo : Map[String, Json]) -> String raise DecodeSkip {
+  match eo.get("path") {
+    Some(j) =>
+      match j.j_arr() {
+        Some(segs) => {
+          let parts : Array[String] = []
+          for s in segs {
+            match s.j_str() {
+              Some(str) => parts.push(str)
+              None => raise DecodeSkip("error 'path' element is not a string")
+            }
+          }
+          render_path(parts)
+        }
+        None => raise DecodeSkip("error 'path' is not an array")
+      }
+    None => "" // absent on a specific error — compare against empty ([]) path on got side
+  }
+}
+
+///|
+/// Decode the fixture's errors[] and report the sorted set-string plus whether any error had a
+/// `reason` and/or `path` field (DR-066 §4/§5, each an INDEPENDENT per-fixture-set opt-in):
+/// with_reason / with_path drive got-side inclusion so the per-field opt-in comparison stays aligned.
+fn exp_errors_decode(errs : Json) -> (String, Bool, Bool) raise DecodeSkip {
   let a = match errs.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("errors is not an array")
   }
-  // detect reason opt-in first (per fixture set, not per element)
+  // detect reason/path opt-in first (per fixture set, not per element)
   let mut with_reason = false
+  let mut with_path = false
   for e in a {
     match e.j_obj() {
-      Some(eo) => if has_key(eo, "reason") { with_reason = true }
+      Some(eo) => {
+        if has_key(eo, "reason") {
+          with_reason = true
+        }
+        if has_key(eo, "path") {
+          with_path = true
+        }
+      }
       None => raise DecodeSkip("error is not an object")
     }
   }
@@ -1399,18 +1457,21 @@ fn exp_errors_decode(errs : Json) -> (String, Bool) raise DecodeSkip {
       Some(s) => s
       None => raise DecodeSkip("error missing 'kind'")
     }
+    let mut item = "\{element}@\{pos}/\{kind}"
     if with_reason {
       let reason = match jf_str(eo, "reason") {
         Some(s) => s
         None => "" // absent on a specific error — compare against empty reason on got side
       }
-      items.push("\{element}@\{pos}/\{kind}/\{reason}")
-    } else {
-      items.push("\{element}@\{pos}/\{kind}")
+      item = item + "/\{reason}"
     }
+    if with_path {
+      item = item + "|\{exp_error_path(eo)}"
+    }
+    items.push(item)
   }
   sort_items(items)
-  ("{" + join_comma(items) + "}", with_reason)
+  ("{" + join_comma(items) + "}", with_reason, with_path)
 }
 
 ///|
@@ -2424,12 +2485,13 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     Some(x) => Some(exp_result_str(x))
     None => None
   }
-  let (exp_errors, exp_errors_with_reason) = match eo.get("errors") {
+  let (exp_errors, exp_errors_with_reason, exp_errors_with_path) = match
+    eo.get("errors") {
     Some(x) => {
-      let (s, wr) = exp_errors_decode(x)
-      (Some(s), wr)
+      let (s, wr, wp) = exp_errors_decode(x)
+      (Some(s), wr, wp)
     }
-    None => (None, false)
+    None => (None, false, false)
   }
   let exp_interps = match eo.get("interpretations") {
     Some(x) => Some(dec_interps(x))
@@ -2458,6 +2520,7 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     exp_result,
     exp_errors,
     exp_errors_with_reason,
+    exp_errors_with_path,
     exp_interps,
     exp_warnings,
     exp_sources,
@@ -3234,7 +3297,11 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
         Failure(d) => {
           match dc.exp_errors {
             Some(ex) => {
-              let ae = proj_errors(d.errors, dc.exp_errors_with_reason)
+              let ae = proj_errors(
+                d.errors,
+                dc.exp_errors_with_reason,
+                dc.exp_errors_with_path,
+              )
               if ae != ex {
                 problems.push("errors got=\{ae} want=\{ex}")
               }
@@ -3722,4 +3789,67 @@ test "conformance: OrBranch auto id (#{seq}) は held-error / ambiguous / succes
   // path-search/variable-arity-ambiguous.json::non-number-collapses-to-name (既存 conformance、
   // 非対称 2 枝で数値枝のみ死ぬケース) が別途固定済みなので、本 wbtest は failure/ambiguous の
   // 2 outcome をスコープとする。
+}
+
+///|
+/// DR-066 §4 harness smoke test: `errors[].path` opt-in actually drives `run_case`'s comparison,
+/// not just decodes without effect. A `--n` (number) value slot inside a `sub` command scope fails
+/// to parse ("abc" is not a number) one command deep. The CORRECT-path case (`path: ["sub"]`) must
+/// PASS; the WRONG-path case (`path: ["not-sub"]`, everything else identical) must FAIL — proving
+/// `proj_errors`/`exp_errors_decode` round-trip the path into the comparison, mirroring how the
+/// existing `reason` opt-in is exercised end-to-end by the real fixture corpus.
+test "conformance harness: errors[].path opt-in is compared, not merely decoded (DR-066 §4)" {
+  let src =
+    #|{
+    #|  "why": "DR-066 §4 harness smoke test for errors[].path opt-in",
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "commands": [
+    #|      {
+    #|        "type": "command",
+    #|        "name": "sub",
+    #|        "options": [
+    #|          {"name": "n", "type": "number", "long": true}
+    #|        ]
+    #|      }
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "correct-path",
+    #|      "why": "path: [\"sub\"] matches the actual ancestor (n fails inside the sub command scope)",
+    #|      "argv": ["sub", "--n", "abc"],
+    #|      "expect": {
+    #|        "outcome": "failure",
+    #|        "errors": [
+    #|          {"element": "n", "argv_pos": 2, "kind": "parse", "reason": "not_a_number", "path": ["sub"]}
+    #|        ]
+    #|      }
+    #|    },
+    #|    {
+    #|      "id": "wrong-path",
+    #|      "why": "path: [\"not-sub\"] is deliberately wrong — must be caught as a mismatch",
+    #|      "argv": ["sub", "--n", "abc"],
+    #|      "expect": {
+    #|        "outcome": "failure",
+    #|        "errors": [
+    #|          {"element": "n", "argv_pos": 2, "kind": "parse", "reason": "not_a_number", "path": ["not-sub"]}
+    #|        ]
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let j = @json.parse(src)
+  let df = dec_fixture(j)
+  assert_eq(df.cases.length(), 2)
+  for c in df.cases {
+    let verdict = run_case(df, c)
+    if c.id == "correct-path" {
+      if verdict != "PASS" {
+        abort("expected PASS for correct-path, got: \{verdict}")
+      }
+    } else if verdict == "PASS" {
+      abort("expected a path mismatch for wrong-path, got PASS")
+    }
+  }
 }
