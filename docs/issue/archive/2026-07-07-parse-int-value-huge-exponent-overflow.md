@@ -1,6 +1,6 @@
 ---
 title: parse_int_value の巨大指数入力で Int64 silent wrap
-status: open
+status: resolved
 category: bug
 created: 2026-07-07T22:16:26+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-08T12:46:26+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:ParseFail に IntOutOfRange を追加し silent wrap を解消(commit zqzulqol / git b07bec0系列)","done:\"1e300\"→Ok(0) に加え \"9223372036854775808\"→Ok(Int64::MIN) の符号反転 wrap も実測 RED 化して修正","done:apply_exponent 前の有効桁数早期判定(19桁超即拒否)、Int64::min 絶対値の専用即値、rounding経路のsigned/unsigned分離","done:reasonはprovisional \"int_out_of_range\"(not_a_bool前例)、語彙確定はspec側issue 2026-07-08-int-value-domain-out-of-range で追跡","done:既知の残存ギャップ(rounding経路のInt64::min絶対値×真の小数×non-error modeの保守的誤拒否、負の巨大指数の性能)はコード内コメントに明記済み"]
 blocked_by:
 origin: 自リポ TODO
 ---
