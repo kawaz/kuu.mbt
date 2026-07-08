@@ -23,6 +23,12 @@ origin: 多視点レビュー (wf eval-core-deep-review)
 
 多視点レビュー (wf eval-core-deep-review) で confirmed になった low/medium 3 件の追跡。いずれも eval-core の greedy/repeat 系の前提と、エラー報告 (tried_triggers) の伝搬に関わる。
 
+**2026-07-08 更新 (commit e43facd7 世代): 3 件中 2 件は決着済み、残スコープは (1) の仕様裁定のみ。**
+
+- **(1) 要裁定 (kawaz 待ち)**: DR-041 §4「greedy のみ = 1 回」を通常 option に適用すると、確定済み仕様 3 点 — DR-015 (あと勝ち mutation、同一トリガ複数発火前提) / DR-043 (「出現回数・出現位置の制約は持たない」) / fixture `multiple-parse/last-wins-scalar.json` (複数発火 + last-wins を正式固定、CI green) — と正面矛盾するため実装せず保留
+- **(2) 決着**: IdxRepeat の greedy-max backtrack 欠如は installer 規約 (bounded-head 前提) として明文化 + KNOWN GAP テストで現挙動を pin (BGroup+repeat の実ユースケース fixture 不在のため実装先行を見送り)
+- **(3) 決着**: tried_triggers を失敗位置のスコープ基準に修正 (最深 error の DR-066 §4 path で子スコープを辿る、commit e43facd7)
+
 ## 背景
 
 ### (1) DR-041 §4「greedy のみ = 1 回」が未実装
