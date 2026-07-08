@@ -18,7 +18,10 @@ fn empty_def() -> Definition {
 fn el(
   name : String,
   ty : Ty,
-  long? : Array[String] = [],
+  // DR-071 §1 / kawaz 裁定 2026-07-08: `long` は wire 二形 (LongDecl) をそのまま受け取る — bool/array
+  // の区別が installer 層の resolve_long (糖衣展開・DR-076 §2 flag 差し替え/補完) に必要なため、
+  // Array[String] へ潰さない。既定は `LList([])` (= absent = 入口なし)。
+  long? : LongDecl = LList([]),
   short? : Array[Char] = [],
   env? : Array[String] = [],
   is_dd? : Bool = false,
@@ -109,8 +112,12 @@ fn entity_of(sc : Scope, name : String) -> Entity? {
 /// matcher の構成 data として使う) + LOWERING §B.1 (long entry の 2 form: name-derived / 明示綴り)。
 test "long installer: value option gets 1 greedy Seq satellite + 1 EqSplit matcher + 1 entity" {
   let def : Definition = {
-    ..empty_def(),
-    options: [el("port", TStr, long=["port"])],
+    ..empty_def()
+    // DR-071 §1: `:set` is the main-entry sentinel `normalize_option` expands to kebab(name) — the
+    // pre-normalize form `el(...)` must use (DR-011 明確化 2026-07-08: a colon-less string like
+    // "port" is itself a variant DSL syntax error now, not a pass-through literal spelling).
+    ,
+    options: [el("port", TStr, long=LList([":set"]))],
   }
   let sc = ok_scope(def, [LongInst])
   // 貢献: (1) Seq([Exact("--port"), StrArg("port")]) の satellite が 1 本、(2) NativeMatch(EqSplit(...))
@@ -139,24 +146,59 @@ test "long installer: value option gets 1 greedy Seq satellite + 1 EqSplit match
 // ── flag (TFlag) の default:false preset + fail_action ─────────────────────────
 
 ///|
-/// 保証: TFlag entity には LOWERING §A.5 / DR-051 §2 に従い default:false を preset する
-/// (未 fire でも false に落ちる)。flag の greedy satellite は Bind(name, VBool(true)) 版で、
-/// eq-split matcher には登録されない (flag は value を持たないので `--flag=v` はそもそも来ない)。
-test "long installer: flag gets Bind(true) satellite (no EqSplit entry) and default:false preset" {
+/// 保証: TFlag entity には LOWERING §A.5 / DR-051 §2 に従い default:false を preset する (未 fire でも
+/// false に落ちる)。DR-076 §2 規則1 (flag の `long:true` 糖衣は `:set:true` — bool の `[":set"]` 糖衣を
+/// 差し替え): `el("verbose", TFlag, long=LBool(true))` は wire `{"long": true}` そのものを模しており、
+/// `normalize_option` (`resolve_long` 経由) がこれを解釈して `variants` を合成する — installer_wbtest
+/// が JSON decode を経由せず規則1 を直接検証できる (kawaz 裁定 2026-07-08「installer_wbtest からも
+/// 規則1/2 が検証可能になる」の実演)。値セルの型 TFlag→TBool 差し替えも同じ normalize_option の仕事。
+/// flag の裸発火は合成された `:set:true` の Set variant が Variant entries loop 経由で Bind(name, true)
+/// 衛星を生む。eq-split matcher には登録されない (この要素は main entry `:set` を持たない = 値パイプ
+/// ライン自体が無い、古典 flag の糖衣 `long:true` → `[":set:true"]` のみのケース)。
+test "long installer: a flag's `long:true` composes a `:set:true` variant → bare Bind(true) satellite (no EqSplit entry), default:false preset (DR-076 §2 規則1)" {
   let def : Definition = {
     ..empty_def(),
-    options: [el("verbose", TFlag, long=["verbose"])],
+    options: [el("verbose", TFlag, long=LBool(true))],
   }
   let sc = ok_scope(def, [LongInst])
-  // TFlag なので eq-split entry は無い → greedy = Bind 衛星 1 本のみ。
+  // main entry 無し (long=[]) + Set variant 1 本 → eq-split entry は無い → greedy = Bind 衛星 1 本のみ。
   assert_eq(sc.greedy.length(), 1)
   assert_eq(
     sc.greedy[0],
     Seq([Exact("--verbose"), Bind("verbose", VBool(true))]),
   )
+  // normalize_option の TFlag→TBool 差し替えは値セルの型のみに効く。entity 自体は name=verbose のまま。
   let ent = entity_of(sc, "verbose").unwrap()
+  assert_eq(ent.ty, TBool)
   // default:false preset (DR-051 §2)
   assert_eq(ent.default_value, Some(VBool(false)))
+}
+
+///|
+/// 保証: DR-076 §2 規則2 (flag の明示 variant リストは非空なら `:set:true` を冪等に補完 — 値形+裸の
+/// 同居): `long=LList([":set"])` は wire `{"long": [":set"]}` を模す。main entry `:set` はそのまま
+/// 残り (値スロット形、`--verbose <bool>`)、`:set:true` (裸発火) が合成されて共存する。
+test "long installer: a flag's explicit `long:[\":set\"]` composes `:set:true` ALONGSIDE the value-slot main entry (DR-076 §2 規則2, 値形+裸の同居)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TFlag, long=LList([":set"]))],
+  }
+  let sc = ok_scope(def, [LongInst])
+  // main entry 1 本 (値スロット, TFlag→TBool 差し替え後 BoolArg) + EqSplit matcher 1 本 + variant 1 本
+  // (裸発火 Bind) → greedy = 3 本。
+  assert_eq(sc.greedy.length(), 3)
+  let mut has_value_slot = false
+  let mut has_bare_bind = false
+  for g in sc.greedy {
+    match g {
+      Seq([Exact("--verbose"), BoolArg("verbose")]) => has_value_slot = true
+      Seq([Exact("--verbose"), Bind("verbose", VBool(true))]) =>
+        has_bare_bind = true
+      _ => ()
+    }
+  }
+  assert_true(has_value_slot)
+  assert_true(has_bare_bind)
 }
 
 // ── env installer (席宣言型 DR-042 ④) ───────────────────────────────────────
@@ -169,7 +211,7 @@ test "long installer: flag gets Bind(true) satellite (no EqSplit entry) and defa
 test "env installer: seat env_key on entity, no greedy contribution" {
   let def : Definition = {
     ..empty_def(),
-    options: [el("host", TStr, long=["host"], env=["HOST"])],
+    options: [el("host", TStr, long=LList([":set"]), env=["HOST"])],
   }
   let sc = ok_scope(def, all_installers())
   let ent = entity_of(sc, "host").unwrap()
@@ -254,8 +296,11 @@ test "dd installer: options[] placement lowers to same DdSat with no entity (DR-
 test "global + long + fixpoint: child scope receives Rooted satellite (link_depth=1) and no own entity" {
   let child : Definition = { ..empty_def() }
   let def : Definition = {
-    ..empty_def(),
-    options: [el("verbose", TFlag, long=["verbose"], is_global=true)],
+    ..empty_def()
+    // DR-076 §2 規則1: `long=LBool(true)` (wire `{"long": true}`) は normalize_option が resolve_long
+    // で `variants` へ `:set:true` を合成する — 上の "a flag's `long:true` composes..." テスト参照。
+    ,
+    options: [el("verbose", TFlag, long=LBool(true), is_global=true)],
     commands: [{ name: "sub", body: child, export_key: EkUnset }],
   }
   let sc = ok_scope(def, all_installers())
@@ -293,7 +338,7 @@ test "global + long + fixpoint: child scope receives Rooted satellite (link_dept
 test "installer chain: order-independent thanks to 5 invariants + fixpoint" {
   let def : Definition = {
     ..empty_def(),
-    options: [el("host", TStr, long=["host"], env=["HOST"])],
+    options: [el("host", TStr, long=LList([":set"]), env=["HOST"])],
   }
   let sc1 = ok_scope(def, [LongInst, EnvInst])
   let sc2 = ok_scope(def, [EnvInst, LongInst])
@@ -314,7 +359,7 @@ test "installer chain: order-independent thanks to 5 invariants + fixpoint" {
 test "parse_definition enumerates all def-errors (no first-error 打ち切り, DR-054 §4)" {
   let def : Definition = {
     ..empty_def(),
-    options: [el("v", TFlag, long=["v"])], // long 属性あり
+    options: [el("v", TFlag, long=LList(["v"]))], // long 属性あり
     positionals: [
       el("f", TStr, repeat=Some({ min: 3, max: Some(1), lazy_: false })),
     ], // min > max
@@ -377,11 +422,12 @@ test "classify_long_spelling: the 4 outcomes on representative spellings" {
     }
     _ => fail("expected LVariant")
   }
-  // (4) LLiteral: no colon at all — a plain explicit spelling, passed through unchanged (e.g. an
-  // alias's non-name-derived explicit trigger, DR-057 §3 "明示綴り非継承" — compress's "gzip").
+  // (4) LInvalid: no colon at all — DR-011 明確化 (kawaz 裁定 2026-07-08): a colon-less string is a
+  // variant DSL syntax error, NOT a literal-spelling fallback. An explicit non-name-derived spelling
+  // (e.g. an alias's "gzip") belongs to a DR-057 alias element, not to `long`'s DSL.
   match classify_long_spelling("gzip", "compress", TStr) {
-    LLiteral(s) => assert_eq(s, "gzip")
-    _ => fail("expected LLiteral")
+    LInvalid(s) => assert_eq(s, "gzip")
+    _ => fail("expected LInvalid")
   }
   // a non-bool variant operand parses per the element's OWN type (DR-074/075 canonical lexicons) —
   // not just bool. `default:5` on a TNum element parses the operand as a number.
@@ -393,10 +439,96 @@ test "classify_long_spelling: the 4 outcomes on representative spellings" {
     }
     _ => fail("expected LVariant")
   }
-  // an unrecognized op word is not a valid DSL form — treated as a literal spelling (not a crash),
-  // since production code has no DecodeSkip-style channel to reject it definition-time here.
+  // (5) LInvalid: an unrecognized effect word (colon present, but not set/unset/empty/default) is
+  // ALSO a syntax error (DR-011 明確化) — not a literal-spelling fallback either.
   match classify_long_spelling("no:bogus:false", "ssl", TBool) {
-    LLiteral(s) => assert_eq(s, "no:bogus:false")
-    _ => fail("expected LLiteral (unrecognized op word)")
+    LInvalid(s) => assert_eq(s, "no:bogus:false")
+    _ => fail("expected LInvalid (unrecognized op word)")
+  }
+}
+
+///|
+/// DR-011 明確化 (kawaz 裁定 2026-07-08): `parse_definition` surfaces a colon-less `long` spelling as
+/// a DR-054 `unknown-vocab` definition-error (not a silently-accepted literal trigger).
+test "parse_definition: a colon-less long spelling is a DR-054 unknown-vocab definition-error" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TFlag, long=LList(["verbose"]))],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) =>
+      fail(
+        "expected Err (colon-less long spelling 'verbose' is a syntax error)",
+      )
+    Err(errs) => {
+      let mut found = false
+      for e in errs {
+        if e.kind == DUnknownVocab && e.element == "verbose" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+  }
+}
+
+///|
+/// DR-011 明確化: an unrecognized effect word (colon present, op word outside set/unset/empty/default)
+/// is the SAME syntax error as colon-less — also `unknown-vocab`.
+test "parse_definition: an unrecognized effect word in long is a DR-054 unknown-vocab definition-error" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("ssl", TBool, long=LList(["no:bogus:false"]))],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) =>
+      fail("expected Err (unrecognized effect word 'bogus' is a syntax error)")
+    Err(errs) => {
+      let mut found = false
+      for e in errs {
+        if e.kind == DUnknownVocab && e.element == "ssl" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+  }
+}
+
+///|
+/// DR-011 明確化 (kawaz 裁定 2026-07-08): alias `long_override` (DR-057 §3 差分上書き) is the SAME
+/// colon DSL canonical `long` uses (`classify_long_spelling` shared, installer.mbt comment "二経路が
+/// drift しないよう分類器を共用") — the 明確化 applies wherever the DSL appears, not just canonical
+/// `long`. A colon-less `long_override` spelling must be an `unknown-vocab` definition-error too,
+/// caught by `collect_invalid_alias_long_override` BEFORE `desugar_aliases` ever runs (so the invalid
+/// spelling never silently becomes a literal trigger through the alias path either).
+test "parse_definition: a colon-less alias long_override spelling is a DR-054 unknown-vocab definition-error" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TFlag, long=LBool(true))],
+    aliases: [
+      {
+        target: "verbose",
+        name: Some("chatty"),
+        short: [],
+        long_override: Some(["chatty"]), // colon-less — 文法エラー
+        deprecated: false,
+      },
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) =>
+      fail(
+        "expected Err (colon-less alias long_override spelling 'chatty' is a syntax error)",
+      )
+    Err(errs) => {
+      let mut found = false
+      for e in errs {
+        if e.kind == DUnknownVocab && e.element == "chatty" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
   }
 }

@@ -19,8 +19,14 @@
 pub(all) struct ElemDef {
   name : String
   ty : Ty
-  long : Array[String] // long installer 所有: main-entry base spelling (`:set` = name 由来, kebab / それ以外 = 明示綴り, [] = main-entry なし DR-071)
-  variants : Array[Variant] // long installer 所有 (variant DSL, DR-011/045)
+  // long installer 所有: wire 二形 (DR-071 §1 — bool | array、"wire には二形とも載る、展開は long
+  // installer の解釈"）。糖衣展開 (bool→リスト、DR-076 §2 flag 差し替え/補完) と colon DSL 分類
+  // (DR-011/076、main-entry / variant / 構文エラー) は共に installer 層 (`normalize_option` が呼ぶ
+  // `resolve_long`) が担う — decode 層は wire の形をそのまま `LongDecl` に写すだけ。normalize 前
+  // (宣言直後) はこの二形のまま、normalize 後は `LList([<kebab main entries>])`（`variants` フィール
+  // ドへ分離済みの variant は含まない）に統一される。
+  long : LongDecl
+  variants : Array[Variant] // long installer 所有 (variant DSL, DR-011/045) — normalize_option が resolve_long の結果で埋める。宣言直後は常に []
   short : Array[Char] // short installer 所有
   env : Array[String] // env installer 所有
   is_dd : Bool // dd installer 所有 (type:"dd")
@@ -114,15 +120,30 @@ pub(all) struct Variant {
 // ── long DSL 綴りの分類 (DR-011 / DR-071 / DR-076): wire 語彙の唯一の解釈器 ────────
 
 ///|
+/// `long` attribute の wire 二形 (DR-071 §1): JSON では `true`/`false` (bool 糖衣) か `[...]` (variant
+/// DSL の配列) のどちらか。decode 層 (dec_long) はこの二形をそのまま写すだけ — 型依存の糖衣展開
+/// (DR-076 §2 flag 差し替え/補完) や colon DSL 分類 (DR-011) は installer 層の `resolve_long` が担う
+/// (二形の区別は wire 上でしか付かない情報なので、展開後の `Array[String]` 単独では復元できない —
+/// decode 層で糖衣を潰すと installer 層がこの区別を必要とする場面で情報が失われる)。
+pub(all) enum LongDecl {
+  LBool(Bool)
+  LList(Array[String])
+} derive(Eq, Debug)
+
+///|
 /// One `long` DSL string (DR-011/071/076), classified. `":set"` (bare sentinel) is `LMain`; any
 /// OTHER colon form is `LVariant` (an empty prefix, e.g. `":set:true"`, is the element's own
 /// bare-degenerate main entry — DR-076 §4 — a NON-empty prefix, e.g. `"no:set:false"`, is a
-/// separately-triggered named variant — DR-011); anything with no colon at all is `LLiteral`, a
-/// spelling passed through unchanged.
+/// separately-triggered named variant — DR-011). DR-011 明確化 (kawaz 裁定 2026-07-08): a colon-less
+/// string (e.g. `"verbose"`) and a colon-having string whose effect word is outside the vocabulary
+/// (`set`/`default`/`unset`/`empty`) are BOTH a variant DSL syntax error, not a literal spelling
+/// fallback — `LInvalid` carries the offending string for the caller to surface as a DR-054
+/// definition-error `unknown-vocab`. An explicit-spelling entry point belongs to DR-057's alias
+/// element, not to `long`'s DSL (there is no "colon-less = literal" escape hatch here anymore).
 enum LongSpelling {
   LMain(String) // resolved main-entry spelling (`own_name`, verbatim — see `classify_long_spelling`)
   LVariant(Variant) // a fully-built variant (trigger/op/operand already resolved against own_name)
-  LLiteral(String) // an explicit literal spelling (no DSL colon), unchanged
+  LInvalid(String) // syntax error (colon-less, or unrecognized effect word) — the original string
 } derive(Eq, Debug)
 
 ///|
@@ -174,13 +195,13 @@ fn dsl_operand_value(ty : Ty, s : String) -> Value {
 
 ///|
 /// Classify one `long`/`long_override` DSL string against `own_name` (the caller decides WHICH name
-/// applies — a canonical element's own kebab name for `ElemDef.long`/`normalize_option`, or an
+/// applies — a canonical element's own kebab name for `resolve_long`/`normalize_option`, or an
 /// alias's re-derived name for `AliasDef.long_override` desugaring, DR-057 §3) and the element's
 /// type (for `LVariant`'s operand parsing, DR-074/075/076). This is the SOLE interpreter of the
-/// colon DSL (DR-011/071/076 wire vocab) — both the JSON-fixture decoder (`dec_variant`, a thin
-/// wrapper) and `desugar_aliases` (alias override desugaring) call this so the two paths can never
-/// drift apart (issue 2026-07-08 alias `long_override` gap: aliases used to skip DSL classification
-/// entirely, silently misinterpreting `":set:true"` as a literal `"--:set:true"` spelling).
+/// colon DSL (DR-011/071/076 wire vocab) — both `resolve_long` (main `long` attribute) and
+/// `desugar_aliases` (alias override desugaring) call this so the two paths can never drift apart
+/// (issue 2026-07-08 alias `long_override` gap: aliases used to skip DSL classification entirely,
+/// silently misinterpreting `":set:true"` as a literal `"--:set:true"` spelling).
 fn classify_long_spelling(
   s : String,
   own_name : String,
@@ -191,7 +212,8 @@ fn classify_long_spelling(
   }
   let parts = split_colon(s)
   if parts.length() == 1 {
-    return LLiteral(s)
+    // DR-011 明確化: colon-less は文法エラー (literal 綴りへの fallback は不採用)。
+    return LInvalid(s)
   }
   let prefix = parts[0]
   let op : EffectOp? = match parts[1] {
@@ -202,10 +224,9 @@ fn classify_long_spelling(
     _ => None
   }
   match op {
-    // an unrecognized op word is not a valid DSL form — pass it through as a literal spelling
-    // rather than silently dropping it (a genuinely invalid definition surfaces downstream as an
-    // unmatched/unreachable trigger, not a parse-time crash here).
-    None => LLiteral(s)
+    // DR-011 明確化: 語彙外の effect word も文法エラー (colon-less と同じ扱い — typo が「マッチしない
+    // 入口」として黙って通るのを防ぐ、DR-054 の機械検出思想)。
+    None => LInvalid(s)
     Some(o) => {
       let trigger = if prefix == "" {
         own_name
@@ -218,6 +239,66 @@ fn classify_long_spelling(
         None
       }
       LVariant({ trigger, op: o, operand })
+    }
+  }
+}
+
+///|
+/// DR-076 §2: the `:set:true` variant (bare-trigger fire → literal `true`) a flag's long展開
+/// composes in — `classify_long_spelling(":set:true", kebab(name), TFlag)` would build the SAME
+/// value (colon-DSL round-trip), this just skips the string-splitting for the one fixed shape.
+fn flag_bare_true_variant(name : String) -> Variant {
+  { trigger: kebab(name), op: Set, operand: Some(VBool(true)) }
+}
+
+///|
+/// `LongDecl` (wire 二形) → (main-entry spellings — kebab 展開済み, variants)。DR-071 §1's
+/// type-independent `long: true` → `[":set"]` sugar is what every OTHER type gets; DR-076 §2 gives
+/// `type:"flag"` a DIFFERENT sugar (規則1: 差し替え) and an explicit non-empty list gets `:set:true`
+/// COMPOSED IN alongside whatever the author wrote (規則2: 補完、idempotent). This is the ONLY place
+/// that needs the bool/array distinction `LongDecl` preserves — once collapsed to `Array[String]`
+/// (the old design), `long:true` and `long:[":set"]` become indistinguishable, yet DR-076 §2 requires
+/// different flag sugar for each (kawaz 裁定 2026-07-08, spec DR-071 §1 "wire には二形とも載る、展開は
+/// long installer の解釈"). `LInvalid` spellings (DR-011 明確化: colon-less / 語彙外 effect) are
+/// silently skipped here — the caller (`normalize_option`) only reaches this AFTER
+/// `collect_invalid_long_dsl` has already surfaced them as definition-errors and `parse_definition`
+/// has returned early on any error, so none should be live at this point in practice.
+fn resolve_long(
+  decl : LongDecl,
+  name : String,
+  ty : Ty,
+) -> (Array[String], Array[Variant]) {
+  match decl {
+    LBool(false) => ([], [])
+    LBool(true) =>
+      if ty == TFlag {
+        ([], [flag_bare_true_variant(name)])
+      } else {
+        ([kebab(name)], [])
+      }
+    LList(strs) => {
+      let longs : Array[String] = []
+      let vars : Array[Variant] = []
+      for l in strs {
+        match classify_long_spelling(l, kebab(name), ty) {
+          LMain(n) => longs.push(n)
+          LVariant(v) => vars.push(v)
+          LInvalid(_) => ()
+        }
+      }
+      if ty == TFlag && (longs.length() > 0 || vars.length() > 0) {
+        let bare_true = flag_bare_true_variant(name)
+        let mut already = false
+        for v in vars {
+          if v == bare_true {
+            already = true
+          }
+        }
+        if !already {
+          vars.push(bare_true)
+        }
+      }
+      (longs, vars)
     }
   }
 }
@@ -345,9 +426,22 @@ fn copy_strs(a : Array[String]) -> Array[String] {
 }
 
 ///|
-/// 有効 long 綴り一覧 (post-normalize; `:set` は既に kebab(name) に展開済み)。[] = main-entry なし (DR-071)。
+/// 有効 long 綴り一覧 (post-normalize; `:set` は既に kebab(name) に展開済み、`normalize_option` が
+/// `LongDecl` を `LList([<kebab main entries>])` に確定させた後の形)。[] = main-entry なし (DR-071)。
+/// pre-normalize な `LBool` はここに来ない前提 (呼び出しは全て normalize 後)。
 fn long_of(e : ElemDef) -> Array[String] {
-  e.long
+  match e.long {
+    LList(strs) => strs
+    LBool(_) => []
+  }
+}
+
+///|
+fn copy_long(l : LongDecl) -> LongDecl {
+  match l {
+    LBool(b) => LBool(b)
+    LList(strs) => LList(copy_strs(strs))
+  }
 }
 
 ///|
@@ -373,7 +467,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
   {
     name: e.name,
     ty: e.ty,
-    long: copy_strs(e.long),
+    long: copy_long(e.long),
     variants: copy_variants(e.variants),
     short: copy_chars(e.short),
     env: copy_strs(e.env),
@@ -448,8 +542,15 @@ fn kebab(name : String) -> String {
 
 ///|
 /// 純構文 pre-pass (LOWERING §A / §C.4)。static check と installer fixpoint の前に走る:
-///   Fix 2 (§B.1 / DR-071): option の `long` 配列内 `:set` main-entry descriptor を kebab(name) に展開
+///   Fix 2 (§B.1 / DR-071 / DR-076 §2, kawaz 裁定 2026-07-08): `resolve_long` が `LongDecl` (wire 二形)
+///   を解釈し、main entry (kebab 展開済み) と variants に確定させる。糖衣展開・flag 差し替え/補完・
+///   colon DSL 分類はここに集約 — decode 層 (dec_long) はもう wire の形を写すだけ (二形の区別は decode
+///   後に潰さない、`resolve_long` のコメント参照)。
 ///   Fix 3 (DR-064 §5): dd 要素で name 未指定なら trigger 綴りを "--" に既定
+///   Fix 4 (LOWERING §A.5 / DR-076 §2): TFlag の値セルを TBool へ差し替え (flag = bool + default:false +
+///   long 綴り合成)。これにより inst_long / eq_entries は TFlag を特殊扱いする必要がなくなり、bool と
+///   完全同一の lowering 経路に自然に乗る (flag 固有の lowering 分岐を「型差し替え + resolve_long」の
+///   2 点だけに縮退させる、DR-076 §2 規則4)。
 fn normalize_surface(def : Definition) -> Unit {
   let mut i = 0
   while i < def.options.length() {
@@ -471,12 +572,11 @@ fn normalize_option(e : ElemDef) -> ElemDef {
   if e.is_dd {
     normalize_dd_name(e)
   } else {
-    // DR-071 two-form long: `:set` = name-derived (kebab, DR-022 / LOWERING §B.1)。空 long は main-entry 無し。
-    let resolved : Array[String] = []
-    for l in e.long {
-      resolved.push(if l == ":set" { kebab(e.name) } else { l })
-    }
-    { ..e, long: resolved }
+    // DR-076 §2: flag の展開後の値セルは bool (LOWERING §A.5) — resolve_long は元の型 (e.ty, まだ
+    // TFlag) で判定する必要があるので、型差し替えより先に呼ぶ。
+    let (longs, vars) = resolve_long(e.long, e.name, e.ty)
+    let ty2 = if e.ty == TFlag { TBool } else { e.ty }
+    { ..e, ty: ty2, long: LList(longs), variants: vars }
   }
 }
 
@@ -864,50 +964,32 @@ fn inst_long(def : Definition, build : Build) -> Unit {
           )
         }
         _ =>
-          match e.ty {
-            TFlag =>
-              // bare trigger fire → name=true — presence-only (DR-076 §1: flag is the special/sugar
-              // side, NOT bool; bool moved to the value-satellite `_` branch below). failure-action
-              // (DR-048) additionally emits a FailMark (FAILED parse で fire できる)。dd-internal な
-              // --help は raw-consumed で発火しない (先食い/内部一体)。
-              add_greedy(
-                build,
-                maybe_root(
-                  e.link_depth,
-                  if e.fail_action {
-                    Seq([
-                      Exact(trigger),
-                      Bind(e.name, VBool(true)),
-                      FailMark(e.name),
-                    ])
-                  } else {
-                    Seq([Exact(trigger), Bind(e.name, VBool(true))])
-                  },
-                ),
-              )
-            _ =>
-              // DR-076 §1/§4: bool (TBool) is now a NORMAL value type, same satellite shape as
-              // string/number/int/float — `:set` always takes a value (space form here; eq form via
-              // eq_entries below). A bare `--x` fire needs the explicit `:set:true` variant (decoded as
-              // a Set-op Variant with operand VBool(true), lowered by the "Variant entries" loop below)
-              // — this branch no longer special-cases TBool as a bare-true degenerate.
-              add_greedy(
-                build,
-                maybe_root(
-                  e.link_depth,
-                  Seq([
-                    Exact(trigger),
-                    value_prim(e.ty, e.name, e.int_round, e.allow_base_prefix),
-                  ]),
-                ),
-              )
-          }
+          // DR-076 §1/§2/§4: every value-typed main entry (bool included, flag ALREADY normalized to
+          // TBool by `normalize_option`, DR-076 §2) is a NORMAL value satellite — `:set` always takes
+          // a value (space form here; eq form via eq_entries below). A bare `--x` fire (the classic
+          // flag shape) needs the explicit `:set:true` variant (decoded as a Set-op Variant with
+          // operand VBool(true), lowered by the "Variant entries" loop below, which also carries the
+          // fail_action FailMark — flag's presence-only lowering has fully collapsed into that generic
+          // variant path; this arm no longer special-cases TFlag/TBool bare-true at all).
+          add_greedy(
+            build,
+            maybe_root(
+              e.link_depth,
+              Seq([
+                Exact(trigger),
+                value_prim(e.ty, e.name, e.int_round, e.allow_base_prefix),
+              ]),
+            ),
+          )
       }
-      // eq-split value form (`--key=value`): every value-typed long gets this EXCEPT a
-      // presence-only TFlag (no value pipeline at all — `--help=x` stays undefined-key 素通し).
-      // DR-076 §3: TBool's variant-guard exclusion (eq-split withheld when the element ALSO carries
-      // `--x`/`--no-x` variant spellings) is REPEALED — bool's eq-split and variant triggers coexist
-      // (fixtures/lowering/long/variant.json's ssl: `--ssl=false` fires alongside `--ssl`/`--no-ssl`).
+      // eq-split value form (`--key=value`): every value-typed main entry gets this (bool included,
+      // DR-076 §1) — a flag's default sugar carries NO main entry at all (`e.long` stays [], DR-076
+      // §2), so this loop never runs for a bare classic flag; an explicit `long:[":set"]` flag DOES
+      // register its value-slot form here, coexisting with the bare `:set:true` variant (DR-076 §2
+      // "value形+裸の同居"). DR-076 §3: TBool's variant-guard exclusion (eq-split withheld when the
+      // element ALSO carries `--x`/`--no-x` variant spellings) is REPEALED — bool's eq-split and
+      // variant triggers coexist (fixtures/lowering/long/variant.json's ssl: `--ssl=false` fires
+      // alongside `--ssl`/`--no-ssl`).
       // DR-075 §2: TInt の eq-split (`--v=2.5`) が factory config int_round を反映するよう、
       // ElemDef.int_round を LongEntry に持ち込む (TInt 以外は entry 側で参照されない)。
       // MDR-004 §3: a BOr element's eq-split registers only for a single-value-cell branch (using
@@ -929,17 +1011,20 @@ fn inst_long(def : Definition, build : Build) -> Unit {
           }
         BGroup(_) => () // positional-only shape (MDR-004 §3 scope) — no long spelling applies
         BCell =>
-          if e.ty != TFlag {
-            eq_entries.push({
-              key: l,
-              name: e.name,
-              kind: e.ty,
-              int_round: e.int_round,
-              // DR-074 §2: TNum / TInt の eq-split (`--v=0xff`) も factory config を反映するよう
-              // ElemDef から LongEntry に持ち込む (他 kind は entry 側で参照されない)。
-              allow_base_prefix: e.allow_base_prefix,
-            })
-          }
+          // DR-076 §2: no `e.ty != TFlag` guard needed here anymore — a classic flag never reaches
+          // this loop body at all (its `e.long` is empty, `long_of(e)` yields no `l` to iterate), so
+          // the guard was always vacuous for it; an explicit `long:[":set"]` flag (now TBool) SHOULD
+          // register its eq-split form, which this unconditional push now does correctly (the guard
+          // used to wrongly suppress it while `e.ty` still read TFlag pre-normalize_option).
+          eq_entries.push({
+            key: l,
+            name: e.name,
+            kind: e.ty,
+            int_round: e.int_round,
+            // DR-074 §2: TNum / TInt の eq-split (`--v=0xff`) も factory config を反映するよう
+            // ElemDef から LongEntry に持ち込む (他 kind は entry 側で参照されない)。
+            allow_base_prefix: e.allow_base_prefix,
+          })
       }
     }
   }
@@ -948,6 +1033,12 @@ fn inst_long(def : Definition, build : Build) -> Unit {
   }
   // Variant entries (DR-011 / DR-045): `{exact, link (by name), effect}` に lowering。
   // `set` variant は Bind (SET degenerate); default/unset/empty は EffMark (0-token effect)。
+  // DR-076 §2/§4: a flag's classic bare-fire trigger IS a Set variant now (`:set:true`, composed in
+  // by dec_long) — it rides through here, not through the old TFlag-only branch above. A fail_action
+  // element (DR-048, e.g. help) additionally emits a FailMark alongside its Set variant's Bind, so
+  // this loop must carry the SAME fail_action attachment the collapsed TFlag branch used to (a
+  // fail_action flag firing here — its ONLY main-entry shape post-DR-076 §2 — must still be able to
+  // select as a failed-parse action).
   for e in def.options {
     for v in e.variants {
       let trigger = "--" + v.trigger
@@ -957,7 +1048,11 @@ fn inst_long(def : Definition, build : Build) -> Unit {
             Some(val) => val
             None => VBool(true)
           }
-          Seq([Exact(trigger), Bind(e.name, operand)])
+          if e.fail_action {
+            Seq([Exact(trigger), Bind(e.name, operand), FailMark(e.name)])
+          } else {
+            Seq([Exact(trigger), Bind(e.name, operand)])
+          }
         }
         _ => Seq([Exact(trigger), EffMark(e.name, v.op)])
       }
@@ -1150,11 +1245,33 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
 }
 
 ///|
-/// トリガ衝突: 2 option が long / short いずれかを共有すれば衝突 (shadow はトリガ基準 = 同名トリガ)。
+/// An element's every long CLI trigger spelling (kebab, sans `--` prefix) — `long_of` (the resolved
+/// `:set` main entry, post `resolve_long`) AND `variants` (each colon-DSL variant's own trigger,
+/// DR-011/076) combined. The two arrays are just WHERE a spelling landed post-`resolve_long`
+/// (main-entry sentinel vs. colon-DSL variant); the actual `--xxx` wire spelling they produce is the
+/// same kind of string either way, so any trigger-identity comparison (`triggers_overlap`) must look
+/// at both together — otherwise the SAME spelling can hide in `long` on one element and `variants` on
+/// the other (e.g. a flag's `:set:true` composed bare-fire trigger lands in `variants`, DR-076 §2,
+/// while a plain `:set` main entry lands in `long`) and a real collision goes undetected.
+fn all_long_triggers(e : ElemDef) -> Array[String] {
+  let out : Array[String] = []
+  for l in long_of(e) {
+    out.push(l)
+  }
+  for v in e.variants {
+    out.push(v.trigger)
+  }
+  out
+}
+
+///|
+/// トリガ衝突: 2 option が long / short / long variant いずれかを共有すれば衝突 (shadow はトリガ基準 =
+/// 同名トリガ)。long の main entry と variant は格納場所が違うだけで同じ trigger 語彙 (`all_long_triggers`
+/// 参照) なので、比較は両者を合わせた集合同士で行う。
 fn triggers_overlap(a : ElemDef, b : ElemDef) -> Bool {
-  for la in long_of(a) {
-    for lb in long_of(b) {
-      if la == lb {
+  for ta in all_long_triggers(a) {
+    for tb in all_long_triggers(b) {
+      if ta == tb {
         return true
       }
     }
@@ -1252,7 +1369,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
   sb.decl.options.push({
     name: e.name, // 祖先 write-target cell は要素名共有 (inherit-by-name)
     ty: e.ty,
-    long: [trigger], // prefixed inheritable trigger (明示綴り)
+    long: LList([trigger]), // prefixed inheritable trigger (post-normalize 相当の確定形、resolve_long を経由しない)
     variants: [],
     short: [],
     env: [],
@@ -1441,7 +1558,10 @@ fn alias_entry(
   {
     name: canonical_name, // effect / entity / result key は全て canonical name で keying (link 同型)
     ty,
-    long, // 既に導出済み explicit 綴り列 (`:set` は含まない — normalize の対象外)
+    // 既に導出済み explicit 綴り列 (`:set` は含まない — normalize/resolve_long の対象外、post-normalize
+    // 相当の確定形として直接 LList で持つ)。alias entry-copies は fixpoint installer (inst_long 等) が
+    // そのまま処理する対象で、二度目の resolve_long は起きない。
+    long: LList(long),
     variants,
     short,
     env: [],
@@ -1493,7 +1613,7 @@ fn desugar_aliases(def : Definition) -> Unit {
         // 明示 `long` override (DR-007 差分上書き) は自綴りを add、継承 variants を cut。override
         // 文字列は canonical の `long`/`variants` と同じ colon DSL (DR-011/071/076) — 生文字列のまま
         // push すると `":set:true"` 等が解釈されず literal 綴り `"--:set:true"` になる (issue
-        // 2026-07-08 alias long_override gap)。`classify_long_spelling` (canonical 側の dec_variant
+        // 2026-07-08 alias long_override gap)。`classify_long_spelling` (canonical 側の resolve_long
         // と共通の分類器) で alias_name 基準に分類する。
         let variants : Array[Variant] = []
         match a.long_override {
@@ -1501,7 +1621,12 @@ fn desugar_aliases(def : Definition) -> Unit {
             for l in extra {
               match classify_long_spelling(l, alias_name, canon.ty) {
                 LMain(n) => if !str_in(long, n) { long.push(n) }
-                LLiteral(n) => if !str_in(long, n) { long.push(n) }
+                // DR-011 明確化 (2026-07-08): colon-less / 語彙外 effect は `collect_invalid_alias_
+                // long_override` (static check フェーズ、parse_definition が normalize_surface を呼ぶ
+                // 前) が既に definition-error `unknown-vocab` として検出し、errs 非空なら desugar_
+                // aliases 自体に到達しない — ここに来る時点で LInvalid は理論上出現しない防御的分岐。
+                // canonical 側 `resolve_long` の LInvalid 無視と対称に、フォールスルーで無視する。
+                LInvalid(_) => ()
                 LVariant(v) => variants.push(v)
               }
             }
@@ -1579,6 +1704,95 @@ fn def_err(
   hint : String,
 ) -> DefError {
   { element, kind, message, hint }
+}
+
+///|
+/// DR-011 明確化 (kawaz 裁定 2026-07-08): `long` の array 形の各要素は `classify_long_spelling` が
+/// `LMain`/`LVariant` に分類できる形でなければならない — colon-less な文字列、または語彙外 effect
+/// word を持つ文字列 (`LInvalid`) は文法エラーで `unknown-vocab` (DR-054) に落とす。`normalize_option`
+/// (`resolve_long` 経由) の**前**に検査する必要がある — `resolve_long` は `LInvalid` を黙って捨てる
+/// (呼び出し前提が「無効文字列は既に definition-error として検出済み」なので) ため、normalize 後の
+/// `e.long` には無効な生文字列がもう残っていない。
+fn collect_invalid_long_dsl(def : Definition, out : Array[DefError]) -> Unit {
+  for e in def.options {
+    push_invalid_long(e, out)
+  }
+  for e in def.positionals {
+    push_invalid_long(e, out)
+  }
+  for c in def.commands {
+    collect_invalid_long_dsl(c.body, out)
+  }
+}
+
+///|
+fn push_invalid_long(e : ElemDef, out : Array[DefError]) -> Unit {
+  match e.long {
+    LBool(_) => () // bool 糖衣は常に妥当 (DR-071 §1 / DR-076 §2)
+    LList(strs) =>
+      for l in strs {
+        match classify_long_spelling(l, kebab(e.name), e.ty) {
+          LInvalid(s) =>
+            out.push(
+              def_err(
+                e.name,
+                DUnknownVocab,
+                "long spelling '\{s}' is not valid variant DSL (colon-less, or an unrecognized effect word) — DR-011 明確化 2026-07-08",
+                "use `:set` / a colon-DSL variant (e.g. `:set:true`, `no:set:false`), or a DR-057 alias element for an explicit spelling",
+              ),
+            )
+          LMain(_) | LVariant(_) => ()
+        }
+      }
+  }
+}
+
+///|
+/// DR-011 明確化 (kawaz 裁定 2026-07-08): alias `long_override` (DR-057 §3 差分上書き) は canonical
+/// 側の `long` と同じ colon DSL を共用する (`classify_long_spelling`、installer.mbt:1497 のコメント
+/// 「二経路が drift しないよう分類器を共用」参照) — 明確化はこの DSL が現れる**全ての場所**に一様に効く
+/// 規則なので、colon-less / 語彙外 effect は canonical 側 (`push_invalid_long`) と同じく `unknown-vocab`
+/// (DR-054) に落とす。canonical 側と別関数にしているのは、target canonical 要素の `ty` を
+/// `find_elem` で引く必要があり (`classify_long_spelling` の operand 解釈に使う)、`push_invalid_long`
+/// の「自分の ElemDef を検査する」形と入力の形が違うため — dangling alias target (見つからない場合)
+/// は absent-ref check が別途拾うのでここでは静かにスキップする。desugar_aliases (LInvalid を
+/// rename-only で通す経路) より前、static check フェーズで検出する。
+fn collect_invalid_alias_long_override(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  for a in def.aliases {
+    match a.long_override {
+      Some(extra) => {
+        let alias_name = match a.name {
+          Some(n) => n
+          None => a.target
+        }
+        match find_elem(def, a.target) {
+          Some(canon) =>
+            for l in extra {
+              match classify_long_spelling(l, alias_name, canon.ty) {
+                LInvalid(s) =>
+                  out.push(
+                    def_err(
+                      alias_name,
+                      DUnknownVocab,
+                      "alias long_override spelling '\{s}' is not valid variant DSL (colon-less, or an unrecognized effect word) — DR-011 明確化 2026-07-08",
+                      "use `:set` / a colon-DSL variant (e.g. `:set:true`, `no:set:false`) in long_override",
+                    ),
+                  )
+                LMain(_) | LVariant(_) => ()
+              }
+            }
+          None => () // dangling alias target — absent-ref check が別途拾う
+        }
+      }
+      None => ()
+    }
+  }
+  for c in def.commands {
+    collect_invalid_alias_long_override(c.body, out)
+  }
 }
 
 ///|
@@ -2114,13 +2328,19 @@ pub fn parse_definition(
   registry? : Map[String, Node] = Map([], capacity=0),
 ) -> Result[Scope, Array[DefError]] {
   let def = clone_def(def0)
+  let errs : Array[DefError] = []
+  // DR-011 明確化 (2026-07-08): `:set` → kebab 展開 (normalize_surface) より前に検査する — 展開後は
+  // sentinel `":set"` 自体が消え、有効な main entry と無効な残存文字列を区別できなくなる。
+  collect_invalid_long_dsl(def, errs)
+  // alias long_override も同じ colon DSL (DR-011 明確化は DSL が現れる全ての場所に効く)。desugar
+  // (long_override → variants/long の展開) より前に検査する。
+  collect_invalid_alias_long_override(def, errs)
   // 純構文 pre-pass (LOWERING §A / §C.4): `:set` → kebab (Fix 2, DR-071) + dd name 既定 "--" (Fix 3, DR-064 §5)
   normalize_surface(def)
   // init_sb が registry に repeat-lowering template を植える (静的 ref check が見えるように)。
   // alias entry-copies は ref/repeat を持たず、command alias は check 済 body を clone するので、
   // static check は pre-desugar def で回す (この 1 本目の tree は registry 植え込みのみが目的)。
   let _ = init_sb(def, registry)
-  let errs : Array[DefError] = []
   collect_vocab_intersection(order, errs) // DR-042③
   collect_unknown_vocab(def, order, errs) // DR-042① (alias vocab check 込み)
   collect_invalid_range(def, errs) // DR-052 (repeat min > max)

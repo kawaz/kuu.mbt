@@ -286,7 +286,7 @@ fn eff_op(op : EffectOp) -> String {
 fn opt(
   name : String,
   ty : Ty,
-  long? : Array[String] = [],
+  long? : LongDecl = LList([]),
   variants? : Array[Variant] = [],
   short? : Array[Char] = [],
   env? : Array[String] = [],
@@ -360,7 +360,7 @@ fn pos(
   {
     name,
     ty,
-    long: [],
+    long: LList([]),
     variants: [],
     short: [],
     env: [],
@@ -395,7 +395,7 @@ fn dd_marker() -> ElemDef {
   {
     name: "--",
     ty: TStr,
-    long: [],
+    long: LList([]),
     variants: [],
     short: [],
     env: [],
@@ -1780,43 +1780,27 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
 }
 
 ///|
-fn dec_variant(elem : String, name : String, ty : Ty) -> Variant? {
-  // thin wrapper: `classify_long_spelling` (installer.mbt) is the SOLE interpreter of the colon DSL
-  // now (shared with `desugar_aliases`'s alias `long_override`, issue 2026-07-08 alias gap) — this
-  // just adapts its 3-way result back to `dec_long`'s existing `Variant?` (None = push to `longs`,
-  // Some = push to `variants`) contract, unchanged from before the move.
-  match classify_long_spelling(elem, kebab(name), ty) {
-    LMain(_) => None
-    LLiteral(_) => None
-    LVariant(v) => Some(v)
-  }
-}
-
-///|
-fn dec_long(
-  j : Json,
-  name : String,
-  ty : Ty,
-) -> (Array[String], Array[Variant]) raise DecodeSkip {
+/// wire bool|array long → `LongDecl`, UNCHANGED — this is decode's entire responsibility for `long`
+/// now (kawaz 裁定 2026-07-08): the two-form distinction (DR-071 §1) is preserved as data instead of
+/// being collapsed into an `Array[String]` here, because collapsing it destroys information
+/// `resolve_long` (installer.mbt) needs (a bare `long:true` and an explicit `long:[":set"]` decode to
+/// the SAME `[":set"]` array, yet DR-076 §2 requires DIFFERENT flag sugar for each). Type-dependent
+/// sugar expansion, colon-DSL classification, and syntax-error detection all moved to installer.mbt's
+/// `resolve_long` / `collect_invalid_long_dsl` — decode only mirrors the wire shape.
+fn dec_long(j : Json) -> LongDecl raise DecodeSkip {
   match j.j_bool() {
-    Some(true) => ([":set"], [])
-    Some(false) => ([], [])
+    Some(b) => LBool(b)
     None =>
       match j.j_arr() {
         Some(a) => {
-          let longs : Array[String] = []
-          let vars : Array[Variant] = []
+          let strs : Array[String] = []
           for e in a {
-            let s = match e.j_str() {
-              Some(x) => x
+            match e.j_str() {
+              Some(s) => strs.push(s)
               None => raise DecodeSkip("long[] element is not a string")
             }
-            match dec_variant(s, name, ty) {
-              Some(v) => vars.push(v)
-              None => longs.push(s)
-            }
           }
-          (longs, vars)
+          LList(strs)
         }
         None => raise DecodeSkip("long is not a bool/array")
       }
@@ -2125,9 +2109,12 @@ fn dec_option(
         None => (dec_ty(tystr), false, false, RError, false)
       }
   }
-  let (longs, vars) = match o.get("long") {
-    Some(lj) => dec_long(lj, name, ty)
-    None => ([], [])
+  // DR-071 §1 / kawaz 裁定 2026-07-08: decode は wire の bool|array 二形をそのまま `LongDecl` に写す
+  // だけ — 糖衣展開・colon DSL 分類 (variants の分離を含む) は installer.mbt の `resolve_long` が
+  // `normalize_option` から担う (下記 `opt(...)` は `variants` を渡さない = 常に [] のまま宣言層へ)。
+  let long_decl : LongDecl = match o.get("long") {
+    Some(lj) => dec_long(lj)
+    None => LList([])
   }
   let short = dec_short(o)
   let env = dec_strs(o.get("env"))
@@ -2158,8 +2145,7 @@ fn dec_option(
     ..opt(
       name,
       ty,
-      long=longs,
-      variants=vars,
+      long=long_decl,
       short~,
       env~,
       global~,
