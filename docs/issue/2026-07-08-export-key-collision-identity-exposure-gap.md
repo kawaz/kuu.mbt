@@ -53,3 +53,8 @@ identity 露出込みのケースまで明示しているかは未確認 (精読
 ## TODO
 
 <!-- wip 時のみ -->
+
+## 追記 (2026-07-08): id 裁定との関係
+
+kawaz の同日裁定「内部 id は #{seq} 系で user ns と分離」は**本 issue とは別軸** — 本 issue は「ユーザ宣言の export_key vs 別要素の自然名」で、両方ユーザ宣言の露出 key の衝突。team-lead の意見は「露出面で同じ key を 2 実体が主張する事実は mapped か natural かに依らず collision に含めるべき (find_export_collisions を露出 key で一様に group する)」だが、この含否自体は未裁定のまま。DR-052/073 精読 + spec 判断が受け入れ条件である点は不変。
+
