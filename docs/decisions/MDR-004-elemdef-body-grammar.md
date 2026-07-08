@@ -1,6 +1,6 @@
 # MDR-004: ElemDef に消費文法 body を持たせる — structural-or / nested-group の decode と lowering
 
-Status: Draft (実装前レビュー待ち)
+Status: Accepted (実装済み — conformance skip 全解消、コミット ba39207c)
 
 > 由来: issue `2026-07-08-structural-or-builder-or-branch-id-followup` (installer 移植時の意図的 skip 凍結) と conformance skip 4 件。kawaz 裁定 2026-07-08 (自動 id `#{seq}` 系 / provenance 表示、docs/issue 同 issue の裁定節) を設計条件として組み込む。
 
