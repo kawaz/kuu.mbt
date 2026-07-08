@@ -77,6 +77,117 @@ pub(all) struct Variant {
   operand : Value? // set variant のみ操作数を持つ; default / unset / empty は None
 } derive(Eq, Debug)
 
+// ── long DSL 綴りの分類 (DR-011 / DR-071 / DR-076): wire 語彙の唯一の解釈器 ────────
+
+///|
+/// One `long` DSL string (DR-011/071/076), classified. `":set"` (bare sentinel) is `LMain`; any
+/// OTHER colon form is `LVariant` (an empty prefix, e.g. `":set:true"`, is the element's own
+/// bare-degenerate main entry — DR-076 §4 — a NON-empty prefix, e.g. `"no:set:false"`, is a
+/// separately-triggered named variant — DR-011); anything with no colon at all is `LLiteral`, a
+/// spelling passed through unchanged.
+enum LongSpelling {
+  LMain(String) // resolved main-entry spelling (`own_name`, verbatim — see `classify_long_spelling`)
+  LVariant(Variant) // a fully-built variant (trigger/op/operand already resolved against own_name)
+  LLiteral(String) // an explicit literal spelling (no DSL colon), unchanged
+} derive(Eq, Debug)
+
+///|
+/// Split on `:` (DR-011/071/076 colon DSL), keeping empty segments (`":set:true"` → `["", "set",
+/// "true"]`) — a leading empty segment is exactly how an EMPTY prefix (the main entry's own
+/// bare-degenerate form) is distinguished from a named prefix (`"no:set:false"` → `["no", "set",
+/// "false"]`).
+fn split_colon(s : String) -> Array[String] {
+  let out : Array[String] = []
+  let mut cur = ""
+  for c in s {
+    if c == ':' {
+      out.push(cur)
+      cur = ""
+    } else {
+      cur = cur + c.to_string()
+    }
+  }
+  out.push(cur)
+  out
+}
+
+///|
+/// Naive scalar coercion for a colon-DSL operand string (`no:set:false`'s `"false"`, `:set:true`'s
+/// `"true"`, etc.) into the element's `Value` per its type — mirrors `config_to_value`'s per-type
+/// parsers (DR-074/075/076 canonical lexicons) but with a permissive `VStr` fallback instead of an
+/// Error: a DSL operand is a literal the DEFINITION author wrote (not untrusted CLI input), so an
+/// unparseable operand degrading to a string is a defensive fallback, not a silent-coercion concern.
+fn dsl_operand_value(ty : Ty, s : String) -> Value {
+  match ty {
+    TNum | TInt =>
+      match parse_number(s) {
+        Some(d) => VNum(d)
+        None => VStr(s)
+      }
+    TFloat =>
+      match parse_float(s) {
+        Some(d) => VNum(d)
+        None => VStr(s)
+      }
+    TFlag | TBool =>
+      match parse_bool(s) {
+        Some(b) => VBool(b)
+        None => VBool(s == "true" || s == "1")
+      }
+    TStr => VStr(s)
+  }
+}
+
+///|
+/// Classify one `long`/`long_override` DSL string against `own_name` (the caller decides WHICH name
+/// applies — a canonical element's own kebab name for `ElemDef.long`/`normalize_option`, or an
+/// alias's re-derived name for `AliasDef.long_override` desugaring, DR-057 §3) and the element's
+/// type (for `LVariant`'s operand parsing, DR-074/075/076). This is the SOLE interpreter of the
+/// colon DSL (DR-011/071/076 wire vocab) — both the JSON-fixture decoder (`dec_variant`, a thin
+/// wrapper) and `desugar_aliases` (alias override desugaring) call this so the two paths can never
+/// drift apart (issue 2026-07-08 alias `long_override` gap: aliases used to skip DSL classification
+/// entirely, silently misinterpreting `":set:true"` as a literal `"--:set:true"` spelling).
+fn classify_long_spelling(
+  s : String,
+  own_name : String,
+  ty : Ty,
+) -> LongSpelling {
+  if s == ":set" {
+    return LMain(own_name)
+  }
+  let parts = split_colon(s)
+  if parts.length() == 1 {
+    return LLiteral(s)
+  }
+  let prefix = parts[0]
+  let op : EffectOp? = match parts[1] {
+    "set" => Some(Set)
+    "unset" => Some(Unset)
+    "empty" => Some(Empty)
+    "default" => Some(Default)
+    _ => None
+  }
+  match op {
+    // an unrecognized op word is not a valid DSL form — pass it through as a literal spelling
+    // rather than silently dropping it (a genuinely invalid definition surfaces downstream as an
+    // unmatched/unreachable trigger, not a parse-time crash here).
+    None => LLiteral(s)
+    Some(o) => {
+      let trigger = if prefix == "" {
+        own_name
+      } else {
+        prefix + "-" + own_name
+      }
+      let operand = if parts.length() >= 3 {
+        Some(dsl_operand_value(ty, parts[2]))
+      } else {
+        None
+      }
+      LVariant({ trigger, op: o, operand })
+    }
+  }
+}
+
 ///|
 /// repeat 閉包 (DR-043)。`min` は必須 rep 数 (mandatory-head unroll)。`max`: None = 無限 (Ref tail),
 /// Some(M) = 有限 (M-min BoundedTail heads、Ref 再帰なし LOWERING §B.8)。`optional:true` は
@@ -178,6 +289,8 @@ fn value_prim(ty : Ty, name : String, int_round : RoundMode) -> Node {
     TInt => IntArg(name, int_round)
     // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
     TFloat => FloatArg(name)
+    // TBool は DR-076 §1/§4 で string/number と同格の値型 — BoolArg / parse_bool を通す
+    TBool => BoolArg(name)
     _ => StrArg(name)
   }
 }
@@ -558,11 +671,11 @@ fn inst_long(def : Definition, build : Build) -> Unit {
     for l in long_of(e) {
       let trigger = "--" + l
       match e.ty {
-        TFlag | TBool =>
-          // bare trigger fire → name=true, for BOTH a presence-only flag and a value-typed bool
-          // (DR-074 §3's TBool keeps this degenerate identical to TFlag). failure-action (DR-048)
-          // additionally emits a FailMark (FAILED parse で fire できる)。dd-internal な --help は
-          // raw-consumed で発火しない (先食い/内部一体)。
+        TFlag =>
+          // bare trigger fire → name=true — presence-only (DR-076 §1: flag is the special/sugar
+          // side, NOT bool; bool moved to the value-satellite `_` branch below). failure-action
+          // (DR-048) additionally emits a FailMark (FAILED parse で fire できる)。dd-internal な
+          // --help は raw-consumed で発火しない (先食い/内部一体)。
           add_greedy(
             build,
             maybe_root(
@@ -579,6 +692,11 @@ fn inst_long(def : Definition, build : Build) -> Unit {
             ),
           )
         _ =>
+          // DR-076 §1/§4: bool (TBool) is now a NORMAL value type, same satellite shape as
+          // string/number/int/float — `:set` always takes a value (space form here; eq form via
+          // eq_entries below). A bare `--x` fire needs the explicit `:set:true` variant (decoded as
+          // a Set-op Variant with operand VBool(true), lowered by the "Variant entries" loop below)
+          // — this branch no longer special-cases TBool as a bare-true degenerate.
           add_greedy(
             build,
             maybe_root(
@@ -587,23 +705,14 @@ fn inst_long(def : Definition, build : Build) -> Unit {
             ),
           )
       }
-      // DR-074 §3: a value-typed bool (TBool) ALSO takes an eq-split value (`--enabled=true`), not
-      // just the bare presence trigger above — the two forms fire on disjoint token shapes (bare vs
-      // containing `=`) so both entries coexist without ambiguity. A presence-only TFlag never gets
-      // an eq_entries row (it has no value pipeline — `--help=x` stays undefined-key 素通し). A
-      // TBool that carries variant spellings (`--x`/`--no-x`, DR-011/045) is EXCLUDED too: it already
-      // has a dedicated true/false trigger pair, so no separate `=value` form is registered for it
-      // (fixtures/lowering/long/variant.json's ssl: `--ssl`/`--no-ssl` only, no `--ssl=value`).
-      if e.ty == TBool && e.variants.length() == 0 {
-        eq_entries.push({
-          key: l,
-          name: e.name,
-          kind: e.ty,
-          int_round: e.int_round,
-        })
-      } else if e.ty != TFlag && e.ty != TBool {
-        // DR-075 §2: TInt の eq-split (`--v=2.5`) が factory config int_round を反映するよう、
-        // ElemDef.int_round を LongEntry に持ち込む。TInt 以外は entry 側で参照されない。
+      // eq-split value form (`--key=value`): every value-typed long gets this EXCEPT a
+      // presence-only TFlag (no value pipeline at all — `--help=x` stays undefined-key 素通し).
+      // DR-076 §3: TBool's variant-guard exclusion (eq-split withheld when the element ALSO carries
+      // `--x`/`--no-x` variant spellings) is REPEALED — bool's eq-split and variant triggers coexist
+      // (fixtures/lowering/long/variant.json's ssl: `--ssl=false` fires alongside `--ssl`/`--no-ssl`).
+      // DR-075 §2: TInt の eq-split (`--v=2.5`) が factory config int_round を反映するよう、
+      // ElemDef.int_round を LongEntry に持ち込む (TInt 以外は entry 側で参照されない)。
+      if e.ty != TFlag {
         eq_entries.push({
           key: l,
           name: e.name,
@@ -1152,13 +1261,19 @@ fn desugar_aliases(def : Definition) -> Unit {
         if str_in(long_of(canon), canon.name) {
           long.push(alias_name)
         }
-        // 明示 `long` override (DR-007 差分上書き) は自綴りを add、継承 variants を cut。
+        // 明示 `long` override (DR-007 差分上書き) は自綴りを add、継承 variants を cut。override
+        // 文字列は canonical の `long`/`variants` と同じ colon DSL (DR-011/071/076) — 生文字列のまま
+        // push すると `":set:true"` 等が解釈されず literal 綴り `"--:set:true"` になる (issue
+        // 2026-07-08 alias long_override gap)。`classify_long_spelling` (canonical 側の dec_variant
+        // と共通の分類器) で alias_name 基準に分類する。
         let variants : Array[Variant] = []
         match a.long_override {
           Some(extra) =>
             for l in extra {
-              if !str_in(long, l) {
-                long.push(l)
+              match classify_long_spelling(l, alias_name, canon.ty) {
+                LMain(n) => if !str_in(long, n) { long.push(n) }
+                LLiteral(n) => if !str_in(long, n) { long.push(n) }
+                LVariant(v) => variants.push(v)
               }
             }
           None =>
@@ -1421,6 +1536,7 @@ fn head_progresses(
     | NumArg(_)
     | FloatArg(_)
     | IntArg(_, _)
+    | BoolArg(_)
     | FilterArg(_, _)
     | ReqArg(_)
     | Exact(_)

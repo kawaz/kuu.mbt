@@ -339,3 +339,62 @@ test "parse_definition enumerates all def-errors (no first-error 打ち切り, D
     }
   }
 }
+
+// ── long DSL 分類 (DR-011 / DR-071 / DR-076): classify_long_spelling 輪郭 ───────
+
+///|
+/// `classify_long_spelling` is the SOLE interpreter of the colon DSL (DR-011/071/076), shared by
+/// the JSON-fixture decoder (`dec_variant`) and `desugar_aliases`'s alias `long_override` (issue
+/// 2026-07-08: aliases used to skip this classification entirely, misreading `":set:true"` as a
+/// literal `"--:set:true"` spelling). This pins all 4 classification outcomes on representative
+/// spellings, keyed on `own_name` (the caller's own resolved name — canonical OR alias, DR-057 §3).
+test "classify_long_spelling: the 4 outcomes on representative spellings" {
+  // (1) LMain: the bare `:set` sentinel resolves to `own_name` verbatim, no operand.
+  match classify_long_spelling(":set", "ssl", TBool) {
+    LMain(n) => assert_eq(n, "ssl")
+    _ => fail("expected LMain")
+  }
+  // (2) LVariant with an EMPTY prefix (`:set:true`, DR-076 §4): the element's own bare-degenerate
+  // main entry — trigger is `own_name` verbatim (NOT "-"+own_name — that would be a bogus extra
+  // spelling installer.mbt never intended, since it always does `"--" + v.trigger`).
+  match classify_long_spelling(":set:true", "ssl", TBool) {
+    LVariant({ trigger, op, operand }) => {
+      assert_eq(trigger, "ssl")
+      assert_eq(op, Set)
+      assert_eq(operand, Some(VBool(true)))
+    }
+    _ => fail("expected LVariant")
+  }
+  // (3) LVariant with a NON-empty prefix (`no:set:false`, DR-011): a separately-triggered named
+  // variant — trigger is `prefix + "-" + own_name`.
+  match classify_long_spelling("no:set:false", "ssl", TBool) {
+    LVariant({ trigger, op, operand }) => {
+      assert_eq(trigger, "no-ssl")
+      assert_eq(op, Set)
+      assert_eq(operand, Some(VBool(false)))
+    }
+    _ => fail("expected LVariant")
+  }
+  // (4) LLiteral: no colon at all — a plain explicit spelling, passed through unchanged (e.g. an
+  // alias's non-name-derived explicit trigger, DR-057 §3 "明示綴り非継承" — compress's "gzip").
+  match classify_long_spelling("gzip", "compress", TStr) {
+    LLiteral(s) => assert_eq(s, "gzip")
+    _ => fail("expected LLiteral")
+  }
+  // a non-bool variant operand parses per the element's OWN type (DR-074/075 canonical lexicons) —
+  // not just bool. `default:5` on a TNum element parses the operand as a number.
+  match classify_long_spelling("default:default:5", "port", TNum) {
+    LVariant({ trigger, op, operand }) => {
+      assert_eq(trigger, "default-port")
+      assert_eq(op, Default)
+      assert_eq(operand, Some(VNum(5.0)))
+    }
+    _ => fail("expected LVariant")
+  }
+  // an unrecognized op word is not a valid DSL form — treated as a literal spelling (not a crash),
+  // since production code has no DecodeSkip-style channel to reject it definition-time here.
+  match classify_long_spelling("no:bogus:false", "ssl", TBool) {
+    LLiteral(s) => assert_eq(s, "no:bogus:false")
+    _ => fail("expected LLiteral (unrecognized op word)")
+  }
+}

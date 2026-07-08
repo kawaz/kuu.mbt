@@ -313,6 +313,16 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TInt, name)], [])]
       }
+    BoolArg(name) =>
+      // DR-076 §1/§4: bool value slot (canonical vocab, DR-074 §3) — mirrors NumArg/FloatArg/IntArg.
+      if pos < ctx.toks.length() {
+        match parse_bool(ctx.toks[pos]) {
+          Some(b) => [Accept(pos + 1, [mkb(name, VBool(b), Cli)])]
+          None => [Held(pe_parse_bool(name, ctx.toks[pos], pos), [])]
+        }
+      } else {
+        [Pending([pend_value(TBool, name)], [])]
+      }
     FilterArg(name, max) => filter_arg_eval(name, max, ctx, pos, [])
     ReqArg(name) => req_arg_eval(name, ctx, pos, [])
     Bind(name, v) => [Accept(pos, [mkb(name, v, Cli)])]
@@ -1081,6 +1091,31 @@ fn scope_consume(
       } else {
         []
       }
+    BoolArg(name) =>
+      // DR-076 §1/§4 CLI 値空間 (scope_step 経路: NumArg/IntArg/FloatArg のミラー)。
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_bool(ctx.toks[pos]) {
+          Some(b) =>
+            scope_step(
+              sc,
+              ctx,
+              pos + 1,
+              pidx + 1,
+              cat(acc, [mkb(name, VBool(b), Cli)]),
+              severed,
+              k,
+            )
+          None => [Held(pe_parse_bool(name, ctx.toks[pos], pos), acc)]
+        }
+      } else if pos >= ctx.toks.length() {
+        if in_complete(ctx) {
+          [Pending([pend_value(TBool, name)], acc)]
+        } else {
+          [Held(pe_missing(name, pos), acc)]
+        }
+      } else {
+        []
+      }
     FilterArg(name, max) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match parse_number(ctx.toks[pos]) {
@@ -1502,6 +1537,22 @@ fn consume_head(
       } else {
         []
       }
+    BoolArg(name) =>
+      // DR-076 §1/§4 CLI 値空間 (先食い分岐: NumArg/IntArg/FloatArg のミラー)。
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_bool(ctx.toks[pos]) {
+          Some(b) => [Accept(pos + 1, [mkb(name, VBool(b), Cli)])]
+          None => [Held(pe_parse_bool(name, ctx.toks[pos], pos), [])]
+        }
+      } else if pos >= ctx.toks.length() {
+        if in_complete(ctx) {
+          [Pending([pend_value(TBool, name)], [])]
+        } else {
+          [Held(pe_missing(name, pos), [])]
+        }
+      } else {
+        []
+      }
     // ReqArg / FilterArg get their own arms so 先食い (suppressed) applies —
     // eval() does not see the parent scope, so falling through would let a
     // greedy trigger token be raw-eaten as the repeat head's value. Held
@@ -1587,6 +1638,7 @@ fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
     NumArg(name) => if !str_mem(out, name) { out.push(name) }
     FloatArg(name) => if !str_mem(out, name) { out.push(name) }
     IntArg(name, _) => if !str_mem(out, name) { out.push(name) }
+    BoolArg(name) => if !str_mem(out, name) { out.push(name) }
     FilterArg(name, _) => if !str_mem(out, name) { out.push(name) }
     ReqArg(name) => if !str_mem(out, name) { out.push(name) }
     Seq(items) =>
@@ -1778,6 +1830,27 @@ fn scope_consume_rep(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [Pending([pend_value(TInt, name)], acc)]
+      } else {
+        []
+      }
+    BoolArg(name) =>
+      // DR-076 §1/§4 CLI 値空間 (Many head 経路: NumArg/IntArg/FloatArg のミラー)。
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_bool(ctx.toks[pos]) {
+          Some(b) =>
+            scope_step(
+              sc,
+              ctx,
+              pos + 1,
+              pidx,
+              cat(acc, [mkb(name, VBool(b), Cli)]),
+              severed,
+              k,
+            )
+          None => [Held(pe_parse_bool(name, ctx.toks[pos], pos), acc)]
+        }
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        [Pending([pend_value(TBool, name)], acc)]
       } else {
         []
       }

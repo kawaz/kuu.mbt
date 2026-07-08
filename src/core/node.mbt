@@ -97,6 +97,15 @@ pub(all) enum Node {
   /// から埋め込まれる (parse 相内部調整、DR-061 §5); 一度 lowered value node になると他の carrier は
   /// 無いため mode は node 自身が持つ。parse-fail は `kind: parse`。
   IntArg(String, RoundMode)
+  /// bool value primitive (DR-076 §1/§4: bool is a normal value type, same standing as
+  /// string/number). Consume 1 token, parsed via `parse_bool` (DR-074 §3 canonical vocab:
+  /// true/false/1/0/""，case-insensitive); an unrecognized token fails with reason `not_a_bool`
+  /// (`pe_parse_bool`). A separate node from `NumArg`/`FloatArg`/`IntArg` for the same reason as
+  /// those: `Ty::TBool` is the only place the value-typed-vs-presence-only (`Ty::TFlag`)
+  /// distinction is known (installer.mbt `value_prim`); once lowered to a bare value node there is
+  /// no other channel to carry it. A bare `--x` (presence-only) fire is `TFlag`'s job, not this
+  /// node's — `BoolArg` only appears where a definition's `:set` explicitly wants a value slot.
+  BoolArg(String)
   /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
   /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
   /// held Error (a value that parsed but failed the filter — post_filter reject 相当).

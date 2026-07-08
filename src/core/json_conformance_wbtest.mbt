@@ -414,32 +414,6 @@ fn dd_marker() -> ElemDef {
 }
 
 ///|
-/// Naive scalar coercion for the variant DSL operand (`no:set:false` → VBool). Matches slice's
-/// env_value(ty, s) form. The main env_value in resolve.mbt requires (element, ty, s, at_pos)
-/// and returns Result — but here the input is a static DSL literal (bool false / "0" / "readonly"),
-/// so a strict Result is not needed. Fallback = VStr.
-fn dsl_variant_value(ty : Ty, s : String) -> Value {
-  match ty {
-    TNum | TInt =>
-      match parse_number(s) {
-        Some(d) => VNum(d)
-        None => VStr(s)
-      }
-    TFloat =>
-      match parse_float(s) {
-        Some(d) => VNum(d)
-        None => VStr(s)
-      }
-    TFlag | TBool =>
-      match parse_bool(s) {
-        Some(b) => VBool(b)
-        None => VBool(s == "true" || s == "1")
-      }
-    TStr => VStr(s)
-  }
-}
-
-///|
 /// Canonical full installer chain (DR-042 §canonical set + DR-043/050/055/057/059).
 fn full_installers() -> Array[Installer] {
   [
@@ -704,6 +678,8 @@ fn prim_name(n : Node) -> String? {
     // と同型の値セル (n) として扱う (Some(x) を返す)。
     IntArg(x, _) => Some(x)
     FloatArg(x) => Some(x)
+    // DR-076 §1/§4: bool is now a normal value type, same satellite shape as string/number/int/float.
+    BoolArg(x) => Some(x)
     SepArg(x, _) => Some(x)
     FilterArg(x, _) => Some(x)
     ReqArg(x) => Some(x)
@@ -1337,22 +1313,6 @@ fn dec_strs(j : Json?) -> Array[String] raise DecodeSkip {
   }
 }
 
-///|
-fn split_colon(s : String) -> Array[String] {
-  let out : Array[String] = []
-  let mut cur = ""
-  for c in s {
-    if c == ':' {
-      out.push(cur)
-      cur = ""
-    } else {
-      cur = cur + c.to_string()
-    }
-  }
-  out.push(cur)
-  out
-}
-
 // ── expected-string builders ──────────────────────────────────────────────────
 
 ///|
@@ -1683,33 +1643,16 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
 }
 
 ///|
-fn dec_variant(
-  elem : String,
-  name : String,
-  ty : Ty,
-) -> Variant? raise DecodeSkip {
-  if elem == ":set" {
-    return None
+fn dec_variant(elem : String, name : String, ty : Ty) -> Variant? {
+  // thin wrapper: `classify_long_spelling` (installer.mbt) is the SOLE interpreter of the colon DSL
+  // now (shared with `desugar_aliases`'s alias `long_override`, issue 2026-07-08 alias gap) — this
+  // just adapts its 3-way result back to `dec_long`'s existing `Variant?` (None = push to `longs`,
+  // Some = push to `variants`) contract, unchanged from before the move.
+  match classify_long_spelling(elem, kebab(name), ty) {
+    LMain(_) => None
+    LLiteral(_) => None
+    LVariant(v) => Some(v)
   }
-  let parts = split_colon(elem)
-  if parts.length() == 1 {
-    return None
-  }
-  let prefix = parts[0]
-  let op : EffectOp = match parts[1] {
-    "set" => Set
-    "unset" => Unset
-    "empty" => Empty
-    "default" => Default
-    other => raise DecodeSkip("variant op '" + other + "'")
-  }
-  let trigger = prefix + "-" + kebab(name)
-  let operand : Value? = if parts.length() >= 3 {
-    Some(dsl_variant_value(ty, parts[2]))
-  } else {
-    None
-  }
-  Some({ trigger, op, operand })
 }
 
 ///|
@@ -3157,16 +3100,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
 /// MDR-001 §6). Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
-  [
-    // DR-076 (bool = 値型) の実装待ち 4 件: spec fixture (a906204b 系列) が bool の
-    // 値形衛星 + eq-split + :set:true 縮退の新期待値へ先行しており、inst_long の
-    // TBool bare-only lowering が追いつくまでの一時 divergence (divfix ws で実装中、
-    // 着地時にこの 4 行を削除して空台帳へ戻す)。
-    "lowering/long/variant.json::lower :: DIVERGE|got=G[set{exact=---ssl,value=true,link=ssl},set{exact=--no-ssl,value=false,link=ssl},set{exact=--ssl,value=true,link=ssl}]|E[ssl{default=true,type=bool}]|want=G[matcher(eq_split){--ssl->ssl},seq{exact=--ssl,ref=ssl,link=ssl},set{exact=--no-ssl,value=false,link=ssl},set{exact=--ssl,value=true,link=ssl}]|E[ssl{default=true,type=bool}]",
-    "value-typing/bool-canonical.json::space-form-true :: EXPECTED-SUCCESS got=fail:unexpected token",
-    "value-typing/bool-canonical.json::space-form-noncanonical-rejected :: errors got={@1/parse/unexpected_token} want={enabled@1/parse/not_a_bool}",
-    "value-typing/bool-canonical.json::bare-trigger-missing-value :: EXPECTED-FAILURE got=ok{enabled=true}",
-  ]
+  []
 }
 
 ///|
