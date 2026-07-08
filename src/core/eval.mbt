@@ -73,6 +73,7 @@ fn cand_trigger(
     origin,
     term,
     meta: { is_alias: false, hidden: false, deprecated },
+    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
   }
 }
 
@@ -194,12 +195,27 @@ fn nest_path(label : String, path : Array[String]) -> Array[String] {
 }
 
 ///|
+/// Prepend `label` onto every candidate's `path` in a Pending's candidate array (DR-066 §4, issue
+/// 2026-07-08 pending-starvation-missing-operand-path). Mirrors `nest_path`'s Held prepend — a
+/// Pending's value-slot candidate is parse mode's OTHER failure carrier (converted to a
+/// `missing_operand` ParseError at parse()'s top level, DR-053 §2.3), so it needs the same ancestor
+/// tracking Held already had, or the resulting Error's path is silently stuck at `[]`.
+fn nest_cands(label : String, cs : Array[Cand]) -> Array[Cand] {
+  let out : Array[Cand] = []
+  for c in cs {
+    out.push({ ..c, path: nest_path(label, c.path) })
+  }
+  out
+}
+
+///|
 /// Apply `nest` to every Accept branch's bindings (Held / Pending pass
 /// through unchanged on the binding side: their partial state is
 /// failure/completion material, not a result object, so nesting is not
-/// needed for it). A Held's ParseError.path DOES get the same prepend
-/// (DR-066 §4): as this Held rides back out through the scope this label
-/// declares, `label` becomes its innermost recorded ancestor.
+/// needed for it). A Held's ParseError.path and a Pending's candidate `path`s
+/// DO get the same prepend (DR-066 §4): as the branch rides back out through
+/// the scope this label declares, `label` becomes its innermost recorded
+/// ancestor.
 fn nest_branches(label : String, brs : Array[Branch]) -> Array[Branch] {
   let out : Array[Branch] = []
   for b in brs {
@@ -207,7 +223,7 @@ fn nest_branches(label : String, brs : Array[Branch]) -> Array[Branch] {
       Accept(p, bs) => out.push(Accept(p, nest(label, bs)))
       Held(pe, bs) =>
         out.push(Held({ ..pe, path: nest_path(label, pe.path) }, bs))
-      Pending(cs, bs) => out.push(Pending(cs, bs))
+      Pending(cs, bs) => out.push(Pending(nest_cands(label, cs), bs))
     }
   }
   out
@@ -252,6 +268,7 @@ fn pend_value(ty : Ty, origin : String) -> Cand {
     origin,
     term: WordEnd,
     meta: { is_alias: false, hidden: false, deprecated: false },
+    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
   }
 }
 
@@ -940,11 +957,16 @@ fn step_greedy(
         // (a bare Held straight from `eval`, path still []) or arrived at
         // KTop after the child's own KNest completed (path already carries
         // deeper ancestors). Either way, `name` belongs on the front: this
-        // is the boundary the child scope's `name` declares.
+        // is the boundary the child scope's `name` declares. A Pending's
+        // candidate paths get the SAME prepend (issue 2026-07-08
+        // pending-starvation-missing-operand-path) — a starved value slot is
+        // parse mode's other failure carrier (DR-053 §2.3), so its eventual
+        // missing_operand ParseError needs the same ancestor tracking.
         for r in scope_step(child, ctx, pos + 1, 0, acc, false, kk) {
           match r {
             Held(pe, bs) =>
               out.push(Held({ ..pe, path: nest_path(name, pe.path) }, bs))
+            Pending(cs, bs) => out.push(Pending(nest_cands(name, cs), bs))
             _ => out.push(r)
           }
         }
@@ -2322,9 +2344,18 @@ pub fn parse(
       Pending(cands, bs) => {
         // MDR-002 §2.3: a starved value slot is an error the slice used to
         // swallow. One missing-operand Error per value candidate origin.
+        // DR-066 §4 (issue 2026-07-08 pending-starvation-missing-operand-path):
+        // the candidate's own `path` (already prepended by scope boundaries
+        // on its way out to this top-level branches array, same as a Held's
+        // ParseError.path) overrides `pe_missing`'s default `[]` — this is
+        // the ONE conversion point where a Pending becomes a ParseError, so
+        // it is also the one place that needs to carry the path across.
         for c in cands {
           if c.is_value {
-            push_error(errors, pe_missing(c.origin, toks.length()))
+            push_error(errors, {
+              ..pe_missing(c.origin, toks.length()),
+              path: c.path,
+            })
           }
         }
         let counts = match faildef {

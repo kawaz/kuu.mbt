@@ -320,6 +320,18 @@ pub(all) struct CandMeta {
 /// A completion candidate (DR-060 §3): either an exact trigger spelling, or a value position (type +
 /// completer名, PoC shows the type). Meta rides alongside; policy / replacement / landing is the
 /// generator's & shell's (kuu returns素材 only).
+///
+/// `path` (DR-066 §4, issue 2026-07-08 pending-starvation-missing-operand-path): root-first ancestor
+/// scope names, mirroring `ParseError.path`'s snoc form ([] = root 直下). `origin` already answers
+/// "which element" a candidate came from; `path` answers "under which ancestor scopes" — the same
+/// pairing `ParseError` uses (`element` + `path`). Threaded the SAME way Held's path is (starts `[]`
+/// at construction, `nest_branches`/CmdSat prepend the traversed scope labels on the way out) so a
+/// `Pending`'s value-slot candidate can be converted to a `missing_operand` `ParseError` (parse()
+/// top-level, DR-053 §2.3) WITHOUT losing the ancestor path the way it used to (Held already worked;
+/// Pending — parse mode's other failure carrier — did not, because prepend only touched Held). Also
+/// carried by the exact-trigger (`is_value:false`) candidates for consistency, even though those
+/// never feed `missing_operand` today — DR-060's completion consumers are free to ignore the field
+/// (additive, not a breaking change to the §3 candidate structure).
 pub(all) struct Cand {
   spelling : String // the exact spelling; "" for a value position
   is_value : Bool
@@ -327,6 +339,7 @@ pub(all) struct Cand {
   origin : String // the element name it came from
   term : TermHint
   meta : CandMeta
+  path : Array[String] // DR-066 §4: root-first ancestor scope names (snoc form, [] = root 直下)
 } derive(Eq, Debug)
 
 ///|

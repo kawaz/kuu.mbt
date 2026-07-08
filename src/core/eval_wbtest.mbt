@@ -1183,3 +1183,40 @@ test "DR-066 §4: a residual-token Error carries path: []" {
     _ => fail("expected Failure (residual token 'zzz')")
   }
 }
+
+///|
+/// DR-066 §4 (issue 2026-07-08 pending-starvation-missing-operand-path): a Pending's
+/// starved value slot converts to a `missing_operand` Error at parse()'s top level
+/// (MDR-002 §2.3). That conversion point sat OUTSIDE the CPS scope-boundary prepend
+/// (`nest_branches` / `step_greedy`'s CmdSat case) that a Held's `ParseError.path`
+/// already rode through, so nested-scope starvation always surfaced `path: []` no
+/// matter how deep the starved slot actually was. `sub --port` (no value token after
+/// `--port`) starves the value slot at input end one command-scope deep.
+test "DR-066 §4: a Pending-starvation missing_operand Error inside a nested command carries the ancestor path" {
+  let child : Scope = {
+    greedy: [Seq([Exact("--port"), NumArg("port", false)])],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("sub", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["sub", "--port"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut found = false
+      for e in fd.errors {
+        if e.element == "port" && e.reason == "missing_operand" {
+          found = true
+          assert_eq(e.path, ["sub"])
+        }
+      }
+      assert_true(found)
+    }
+    _ => fail("expected Failure (missing operand for port)")
+  }
+}

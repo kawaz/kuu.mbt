@@ -218,7 +218,17 @@ pub fn complete(
         for c in cs {
           let mut dup = false
           for e in cands {
-            if e == c {
+            // DR-060 §3's candidate structure is spelling/is_value/ty/origin/term/meta —
+            // `path` (DR-066 §4) is NOT part of it, so two candidates that differ only
+            // by which ancestor scope produced them are the same candidate here: the
+            // same spelling is readable either way, and DR-060 §1's "union of what's
+            // readable" is a union over SPELLINGS, not over the scopes that offer them.
+            if e.spelling == c.spelling &&
+              e.is_value == c.is_value &&
+              e.ty == c.ty &&
+              e.origin == c.origin &&
+              e.term == c.term &&
+              e.meta == c.meta {
               dup = true
               break
             }
