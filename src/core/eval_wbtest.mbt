@@ -526,7 +526,7 @@ test "REGRESSION Many spine takes preference (greedy default, no Ambiguous)" {
   // knob) picks the more-rep-first split: xs=[a,b], ys=[].
   let root : Scope = {
     greedy: [],
-    positional: [Many(StrArg("xs")), Many(StrArg("ys"))],
+    positional: [Many(StrArg("xs"), false), Many(StrArg("ys"), false)],
     entities: [],
     constraints: [],
   }
@@ -547,6 +547,39 @@ test "REGRESSION Many spine takes preference (greedy default, no Ambiguous)" {
       assert_eq(ys_count, 0)
     }
     _ => fail("expected Success xs=2 ys=0 (no Ambiguous)")
+  }
+}
+
+///|
+/// DR-043 lazy on the min:0 UNBOUNDED spine form (issue 2026-07-08 min0-lazy-repeat-gap,
+/// resolved): `Many`'s 2nd field mirrors this test's greedy-default sibling above, with the
+/// tie-break flipped. `Many(xs, true)` adjacent to `Many(ys, false)` on ["a","b","c"] takes the
+/// SHORTEST xs share (0 reps) instead of the longest — same shape as preference-lazy.json's
+/// min:1 case (`xs=[a]` there, the mandatory minimum; here the mandatory minimum is 0).
+test "DR-043: Many(lazy=true) prefers the shortest (0-rep) share, mirroring the greedy default" {
+  let root : Scope = {
+    greedy: [],
+    positional: [Many(StrArg("xs"), true), Many(StrArg("ys"), false)],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["a", "b", "c"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      let mut xs_count = 0
+      let mut ys_count = 0
+      for b in bs {
+        if b.key == "xs" {
+          xs_count = xs_count + 1
+        }
+        if b.key == "ys" {
+          ys_count = ys_count + 1
+        }
+      }
+      assert_eq(xs_count, 0)
+      assert_eq(ys_count, 3)
+    }
+    _ => fail("expected Success xs=0 ys=3 (lazy prefers shortest)")
   }
 }
 
@@ -644,7 +677,7 @@ test "REVIEW-D1 取り分選好オラクルは制約違反の全消費を「完�
   reg_repeat(defs, "xs", StrArg("xs"))
   let root : Scope = {
     greedy: [],
-    positional: [Ref("xs"), Many(StrArg("y"))],
+    positional: [Ref("xs"), Many(StrArg("y"), false)],
     entities: [],
     constraints: [CRequires("xs", ["y"])],
   }
@@ -972,7 +1005,7 @@ test "REGRESSION consume_head FloatArg respects 先食い (raw-eat suppression)"
 test "REGRESSION scope_consume_rep Many(FloatArg) respects 先食い (raw-eat suppression)" {
   let root : Scope = {
     greedy: [Seq([Exact("inf"), Bind("verbose", VBool(true))])],
-    positional: [Many(FloatArg("f"))],
+    positional: [Many(FloatArg("f"), false)],
     entities: [],
     constraints: [],
   }

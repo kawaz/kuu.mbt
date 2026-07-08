@@ -728,12 +728,10 @@ fn opt_node(x : Node) -> Node {
 ///
 /// MDR-002 §CPS 規約: repeat はここでスパイン形 (positional の Ref / BoundedTail / ScopeNode /
 /// **Many**) にのみ正規化し、Or/Seq/Rooted 内部への埋め込みは生成しない (取り分選好の局所化を避け
-/// るため)。`Many` は `Ref`/`BoundedTail` と対称な取り分選好 (greedy 既定 = 長い方から試す、
-/// `has_full_k` で pruning) を scope_consume 側に持つ spine 形 (eval.mbt の `Many(inner) =>`
-/// アーム、"parity with Ref/BoundedTail 取り分選好 spec DR-043")。輪郭は
-/// fixtures/path-search/ambiguous-receptacles.json が固定する。NB: `Many` は greedy-only
-/// (AST に lazy knob なし) のため min:0 + lazy:true は現状 laziness が効かない —
-/// docs/issue/2026-07-08-min0-lazy-repeat-gap.md で追跡。
+/// るため)。`Many` は `Ref`/`BoundedTail` と対称な取り分選好 (既定 greedy = 長い方から試す、
+/// `lazy:true` で反転 = 短い方から試す、`has_full_k` で pruning) を scope_consume 側に持つ spine 形
+/// (eval.mbt の `Many(inner, lazy_) =>` アーム、"parity with Ref/BoundedTail 取り分選好 spec
+/// DR-043")。輪郭は fixtures/path-search/ambiguous-receptacles.json が固定する。
 fn lower_positional(
   def : Definition,
   registry : Map[String, Node],
@@ -787,8 +785,11 @@ fn lower_positional(
                     // reading DR-043 requires — exactly this fixture's 3 divergences). `Many(head)` is
                     // the existing spine form with the IDENTICAL preference algorithm already wired in
                     // scope_consume, so no registry/self-ref is needed at all (each further rep re-enters
-                    // the SAME `Many` node at the same `pidx`, not a named template).
-                    out.push(Many(head))
+                    // the SAME `Many` node at the same `pidx`, not a named template). `spec.lazy_` rides
+                    // straight into `Many`'s 2nd field (issue 2026-07-08 min0-lazy-repeat-gap resolved:
+                    // BoundedTail's 3rd field is the same seat for the bounded sibling, DR-043 lazy is
+                    // declarative preference regardless of min/max shape).
+                    out.push(Many(head, spec.lazy_))
                   } else {
                     // UNBOUNDED min>=1 (DR-043): `name = Seq([head, Opt(Ref(name))])` の porous 自参照
                     registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))

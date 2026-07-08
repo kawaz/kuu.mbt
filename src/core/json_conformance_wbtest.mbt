@@ -838,7 +838,7 @@ fn collect_reftmpls(
         for x in xs {
           walk(x)
         }
-      Many(inner) => walk(inner)
+      Many(inner, _) => walk(inner)
       BoundedTail(inner, _, _) => walk(inner)
       Scoped(_, inner) => walk(inner)
       Rooted(inner, _) => walk(inner)

@@ -249,7 +249,7 @@ test "DR-060 §1: spine の Many も続きの値候補を出す (codex REVIEW-C1
   // 取りこぼし)。1 rep 消費後もこれから 0 rep 目でも、次の xs は打てる。
   let root : Scope = {
     greedy: [],
-    positional: [Many(StrArg("xs"))],
+    positional: [Many(StrArg("xs"), false)],
     entities: [],
     constraints: [],
   }

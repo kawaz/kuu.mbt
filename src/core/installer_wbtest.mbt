@@ -240,6 +240,24 @@ test "repeat installer: unbounded repeat installs 'flatten' accum + Ref-recursio
   assert_eq(ent.accum, Some("flatten")) // DR-043 flatten
 }
 
+///|
+/// 保証: unbounded min:0 は `Ref` (0 でもよいを表現できない) ではなく `Many(head, lazy_)` に落ち、
+/// `lazy_` は宣言の `repeat.lazy` がそのまま `Many` の 2nd field に渡る (issue 2026-07-08
+/// min0-lazy-repeat-gap 根治: `BoundedTail`'s 3rd field と同じ座席を min:0 UNBOUNDED 側にも用意)。
+test "repeat installer: min:0 unbounded repeat lowers to Many(head, lazy_) carrying the lazy spec" {
+  let def : Definition = {
+    ..empty_def(),
+    positionals: [
+      el("xs", TStr, repeat=Some({ min: 0, max: None, lazy_: true })),
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  assert_eq(sc.positional.length(), 1)
+  assert_eq(sc.positional[0], Many(StrArg("xs"), true))
+  let ent = entity_of(sc, "xs").unwrap()
+  assert_eq(ent.accum, Some("flatten")) // DR-044 §1: cardinality 不問で常に配列
+}
+
 // ── bounded repeat (LOWERING §B.8): min heads + BoundedTail、Ref 再帰なし ─────
 
 ///|

@@ -144,8 +144,14 @@ pub(all) enum Node {
   Or(Array[Node])
   /// ordered consumption; bindings accumulate across the sequence.
   Seq(Array[Node])
-  /// unbounded repeat (>= 0). Guarded against zero-progress loops.
-  Many(Node)
+  /// unbounded repeat (>= 0). Guarded against zero-progress loops. The `Bool` is the DR-043 lazy
+  /// knob (issue 2026-07-08 min0-lazy-repeat-gap): mirrors `BoundedTail`'s 3rd field — `Many` is
+  /// the min:0 UNBOUNDED spine form the way `BoundedTail` is the bounded one, so it gets the SAME
+  /// seat rather than a parallel mechanism (a min>=1 UNBOUNDED lazy repeat already threads its knob
+  /// through the registry's `"lazy:" + name` marker, but `Many` re-enters the SAME node at the same
+  /// `pidx` — no named template, so no registry key to carry it on). `false` (installer default when
+  /// a repeat has no `lazy` spec) preserves the pre-existing greedy-only behavior exactly.
+  Many(Node, Bool)
   /// result scope label (DR-025). Light layer-3 hook; does not change path count.
   Scoped(String, Node)
   /// the two-face scope: greedy (order-free triggers) over a positional face (DR-041 §4).

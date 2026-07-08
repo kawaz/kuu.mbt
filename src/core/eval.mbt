@@ -375,7 +375,12 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       out
     }
     Seq(items) => eval_seq(items, 0, ctx, pos, [])
-    Many(inner) => eval_many(inner, ctx, pos, [])
+    // off-spine Many (embedded in Or/Seq rather than a positional spine slot,
+    // MDR-002 §CPS 規約: lowering never generates this shape today) has no
+    // 取り分選好 to apply here — `eval_many` already returns every share
+    // unfiltered, so the lazy knob has nothing to invert. Ignored, not lost:
+    // the spine form (scope_consume's `Many` arm below) is where lazy_ acts.
+    Many(inner, _) => eval_many(inner, ctx, pos, [])
     Scoped(label, body) => nest_branches(label, eval(body, ctx, pos))
     ScopeNode(sc) =>
       // off-spine scope: accept wherever the scope ends (KDone), mirroring
@@ -1313,18 +1318,28 @@ fn scope_consume(
       bounded_tail_step(
         sc, head, budget, lazy_, ctx, pos, pidx, acc, severed, k,
       )
-    Many(inner) => {
+    Many(inner, lazy_) => {
       // Two closures on the spine — parity with Ref/BoundedTail 取り分選好
       // (spec DR-043). Without preference, `[Many(xs), Many(ys)]` on ["a","b"]
       // returns Ambiguous (3-way split) even though the greedy default fixes
-      // xs=[a,b], ys=[] as the representative. `Many` is greedy-only (no lazy_
-      // knob in the AST) — more-rep first, then stop.
+      // xs=[a,b], ys=[] as the representative. `lazy_` (issue 2026-07-08
+      // min0-lazy-repeat-gap) inverts which share wins EXACTLY the way
+      // `bounded_tail_step` does below — same two closures, same tie-break
+      // order flip, just no budget countdown (unbounded).
       let stop = scope_step(sc, ctx, pos, pidx + 1, acc, severed, k) // 0 reps
       let more = scope_consume_rep(sc, inner, ctx, pos, pidx, acc, severed, k) // 1 rep (which re-enters scope_step at same pidx)
       if in_complete(ctx) {
         // complete: no pruning — the losing share's Pending is candidate
         // material too (MDR-002 §2.4: union over ALL surviving partials).
         cat_branches(stop, more)
+      } else if lazy_ {
+        if has_full_k(stop) {
+          stop
+        } else if has_full_k(more) {
+          more
+        } else {
+          cat_branches(stop, more)
+        }
       } else if has_full_k(more) {
         more
       } else if has_full_k(stop) {
@@ -1709,7 +1724,7 @@ fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
       for a in alts {
         head_elem_names_into(a, out)
       }
-    Many(inner) => head_elem_names_into(inner, out)
+    Many(inner, _) => head_elem_names_into(inner, out)
     BoundedTail(h, _, _) => head_elem_names_into(h, out)
     ScopeNode(sc) => {
       for g in sc.greedy {
@@ -2256,7 +2271,7 @@ fn collect_pos_scopes(
           collect_scope_into(child, path, defs, out, seen_refs)
         _ => ()
       }
-    Many(inner) => collect_pos_scopes(inner, path, defs, out, seen_refs)
+    Many(inner, _) => collect_pos_scopes(inner, path, defs, out, seen_refs)
     _ => ()
   }
 }
