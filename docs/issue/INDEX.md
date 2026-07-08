@@ -7,3 +7,4 @@
 | 2026-07-08 | task | open | [structural-or-builder-or-branch-id-followup](./2026-07-08-structural-or-builder-or-branch-id-followup.md) | structural-or builder と or-branch-id の未実装追跡 (installer.mbt 移植で意図的 skip 凍結) |
 | 2026-07-08 | bug | open | [floatarg-spine-arm-gap](./2026-07-08-floatarg-spine-arm-gap.md) | FloatArg が spine 系 4 関数 (scope_consume/consume_head/scope_consume_rep/head_elem_names_into) に固有アームを持たず先食い抑制と DR-065 §3 名前集合から漏れる |
 | 2026-07-08 | bug | open | [greedy-once-and-idxrepeat-premises](./2026-07-08-greedy-once-and-idxrepeat-premises.md) | greedy 1回制約・IdxRepeat bounded-head 前提・tried_triggers 失敗位置の追跡 (deep review low/medium 3件) |
+| 2026-07-08 | design | open | [export-key-collision-identity-exposure-gap](./2026-07-08-export-key-collision-identity-exposure-gap.md) | find_export_collisions が identity 露出 (ek 未登録) 由来の衝突を見逃す |
