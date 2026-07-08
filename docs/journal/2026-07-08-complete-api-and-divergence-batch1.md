@@ -40,3 +40,16 @@
 
 - Batch-2: E (export collision → Ambiguous + DR-073 claimants) + C (int-value-space、DR-075 int_round)
 - D (path-search 3 件) は DR-043 §71 の向き決着待ち、F (structural-or 2 skip) は ElemDef 再設計と併合
+
+## 追記 (同日後半): Batch-2 以降で divergence 20→3 到達
+
+- **Batch-2** (`5161f0a` 系列, opus47): DR-073 claimants (AmbInterp 化 + promote_collision_ambiguous) と DR-075 IntArg (値空間判定、spine 4 経路 + complete モードミラー) で 7→5
+- **constraints-parse** (`5161f0a`, opus47): CRequiresIf を (entity, branch_id, value, targets) に拡張。committed 判定は親 entity、error.element は宣言元の値枝 id — DR-055 §1 + DR-052 直交の非対称。5→3
+- **FloatArg spine アーム** (`62f5d9a`, sonnet5): issue 起票 → RED first (4 関数それぞれの実誤動作を個別 FAIL 確認) → 対称アーム追加。issue は resolved → archive
+- **Int64 silent wrap** (`b07bec0`, sonnet5): "1e300"→Ok(0) に加え "9223372036854775808"→Ok(Int64::MIN) の符号反転を発見・修正。reason は provisional `int_out_of_range` (not_a_bool 前例)、語彙確定は spec issue `int-value-domain-out-of-range` で追跡
+- **残 3 件 = path-search/ambiguous-receptacles のみ** (DR-043 §71 の取り分方向が spec 未決着。実装側の手は尽きた)
+
+### 追加のハマり所
+
+- **jj 並行 ws の divergent change**: main ws と divfix ws の操作が交錯すると同一 change-id が /0 (pushed) と /1 (ローカル) に分裂し、push gate が「(ambiguous)」で止まる。対処: `jj diff --from X/1 --to X/0` で内容一致を確認 → pushed 側 (immutable ◆) に rebase し直し → /1 系列を abandon。**根本回避は「ws を跨ぐ操作の直前に jj log で相手 ws の @ 位置を確認する」**
+- 新起票 (実装監査からの発見): `export-key-collision-identity-exposure-gap` (identity 露出 vs mapped key の衝突未検出、spec 精読要)
