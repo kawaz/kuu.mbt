@@ -1,6 +1,6 @@
 ---
 title: min:0 + lazy:true の unbounded repeat で laziness が沈黙で失われる
-status: open
+status: resolved
 category: bug
 created: 2026-07-08T14:55:00+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-08T22:07:24+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented: Many(Node, Bool) で lazy 座席を追加して根治 (commit e519be9d)。BoundedTail と対称の取り分反転を scope_consume の Many アームに実装、installer が repeat.lazy を配線。RED→GREEN + テスト検出力の裏取り (lazy 強制無効化で FAIL 確認) 済み","fixture/repeat-parse/preference-lazy-min0.json"]
 blocked_by:
 origin: path-search 3 件解消 (min:0 → Many lowering) の監査で発見
 ---
