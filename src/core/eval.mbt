@@ -1024,6 +1024,31 @@ fn scope_consume(
       } else {
         []
       }
+    FloatArg(name) =>
+      // DR-074 §1 CLI 値空間 (scope_step 経路: NumArg のミラー、parse_number→parse_float / TNum→TFloat)。
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_float(ctx.toks[pos]) {
+          Some(d) =>
+            scope_step(
+              sc,
+              ctx,
+              pos + 1,
+              pidx + 1,
+              cat(acc, [mkb(name, VNum(d), Cli)]),
+              severed,
+              k,
+            )
+          None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
+        }
+      } else if pos >= ctx.toks.length() {
+        if in_complete(ctx) {
+          [Pending([pend_value(TFloat, name)], acc)]
+        } else {
+          [Held(pe_missing(name, pos), acc)]
+        }
+      } else {
+        []
+      }
     IntArg(name) =>
       // DR-075 §1-§2 CLI 値空間判定 (scope_step 経路: NumArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
@@ -1436,6 +1461,22 @@ fn consume_head(
       } else {
         []
       }
+    FloatArg(name) =>
+      // DR-074 §1 CLI 値空間 (先食い分岐: NumArg のミラー、parse_number→parse_float / TNum→TFloat)。
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_float(ctx.toks[pos]) {
+          Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+          None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
+        }
+      } else if pos >= ctx.toks.length() {
+        if in_complete(ctx) {
+          [Pending([pend_value(TFloat, name)], [])]
+        } else {
+          [Held(pe_missing(name, pos), [])]
+        }
+      } else {
+        []
+      }
     IntArg(name) =>
       // DR-075 §1-§2 CLI 値空間判定 (先食い分岐: NumArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
@@ -1537,6 +1578,7 @@ fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
     StrArg(name) => if !str_mem(out, name) { out.push(name) }
     SepArg(name, _) => if !str_mem(out, name) { out.push(name) }
     NumArg(name) => if !str_mem(out, name) { out.push(name) }
+    FloatArg(name) => if !str_mem(out, name) { out.push(name) }
     IntArg(name) => if !str_mem(out, name) { out.push(name) }
     FilterArg(name, _) => if !str_mem(out, name) { out.push(name) }
     ReqArg(name) => if !str_mem(out, name) { out.push(name) }
@@ -1683,6 +1725,27 @@ fn scope_consume_rep(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [Pending([pend_value(TNum, name)], acc)]
+      } else {
+        []
+      }
+    FloatArg(name) =>
+      // DR-074 §1 CLI 値空間 (Many head 経路: NumArg のミラー、parse_number→parse_float / TNum→TFloat)。
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_float(ctx.toks[pos]) {
+          Some(d) =>
+            scope_step(
+              sc,
+              ctx,
+              pos + 1,
+              pidx,
+              cat(acc, [mkb(name, VNum(d), Cli)]),
+              severed,
+              k,
+            )
+          None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
+        }
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        [Pending([pend_value(TFloat, name)], acc)]
       } else {
         []
       }

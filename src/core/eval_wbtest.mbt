@@ -881,3 +881,135 @@ test "DR-074 §1: FloatArg accepts inf (ci, signed), NumArg rejects it" {
     _ => fail("expected Failure for --t nan")
   }
 }
+
+///|
+/// REGRESSION scope_consume: a BARE positional `FloatArg` (not wrapped in a greedy
+/// Seq/Exact satellite) must respect 先食い (suppressed) just like NumArg/IntArg/ReqArg do
+/// (docs/issue/2026-07-08-floatarg-spine-arm-gap.md). Without a dedicated FloatArg arm in
+/// `scope_consume`, the item falls to the generic `other => eval(other, ctx, pos)` catch-all,
+/// which has no access to the parent scope and so cannot call `suppressed()` — it tries to
+/// parse the token as a float regardless of a competing greedy trigger at that position. Here
+/// the trigger text IS itself a valid float lexeme (DR-074 §1's `"inf"`), so the raw-eat does
+/// NOT fail loudly — it silently SUCCEEDS as `x=inf`, stealing the token that should have fired
+/// the greedy `verbose` trigger and leaving `x` never correctly re-evaluated as starved. Correct
+/// behavior: 先食い means the greedy trigger wins at this position, `x`'s positional slot never
+/// gets a token, and the parse ends in Failure (missing_operand for x) — NOT a silent Success.
+test "REGRESSION scope_consume FloatArg respects 先食い (raw-eat suppression)" {
+  let root : Scope = {
+    greedy: [Seq([Exact("inf"), Bind("verbose", VBool(true))])],
+    positional: [FloatArg("x")],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["inf"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut x_missing = false
+      for e in fd.errors {
+        if e.element == "x" && e.reason == "missing_operand" {
+          x_missing = true
+        }
+      }
+      assert_true(x_missing)
+    }
+    _ =>
+      fail(
+        "expected Failure (missing operand for x; the greedy 'inf' trigger wins 先食い — a raw-eaten x=inf is the bug)",
+      )
+  }
+}
+
+///|
+/// REGRESSION consume_head: a Ref-repeat over a `FloatArg` head must respect 先食い, mirroring
+/// the established ReqArg precedent above ("REGRESSION consume_head ReqArg respects 先食い").
+/// Without the FloatArg arm in `consume_head`, the repeat's "one more rep" attempt raw-eats the
+/// greedy trigger token "inf" as ANOTHER float value (again silently, since "inf" parses) instead
+/// of stopping at 1 rep and letting the greedy `verbose` entry fire on it. Correct: `fs` = [1.5],
+/// `verbose` = true.
+test "REGRESSION consume_head FloatArg respects 先食い (raw-eat suppression)" {
+  let defs : Map[String, Node] = Map([])
+  defs.set("fs", Seq([FloatArg("f")]))
+  let root : Scope = {
+    greedy: [Seq([Exact("inf"), Bind("verbose", VBool(true))])],
+    positional: [Ref("fs")],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["1.5", "inf"], defs~)
+  match o {
+    Success(bs) => {
+      let mut f_count = 0
+      let mut verbose_ok = false
+      for b in bs {
+        if b.key == "f" {
+          f_count = f_count + 1
+        }
+        if b.key == "verbose" {
+          match b.value {
+            VBool(v) => if v { verbose_ok = true }
+            _ => ()
+          }
+        }
+      }
+      assert_eq(f_count, 1)
+      assert_true(verbose_ok)
+    }
+    _ =>
+      fail(
+        "expected Success (verbose fires via 'inf' trigger, fs=[1.5] — raw-eating fs=[1.5,inf] with no verbose is the bug)",
+      )
+  }
+}
+
+///|
+/// REGRESSION scope_consume_rep: `Many(FloatArg(...))` as a repeat head must respect 先食い
+/// (DR-043 spec, same concern as the Ref-based case above but through the `Many` node instead of
+/// a registry Ref). Without the FloatArg arm in `scope_consume_rep`, the catch-all `_ => eval(inner,
+/// ...)` ignores `suppressed()` and the "more rep" branch raw-eats "inf" as f=[1.5, inf] — and since
+/// `Many`'s greedy-only 取り分選好 (eval.mbt ~1231 `has_full_k(more) => more`) prefers the MORE-rep
+/// branch whenever it reaches a full parse, this wrong reading wins OUTRIGHT (not merely Ambiguous).
+/// Correct: f=[1.5], verbose=true (1 rep, then the greedy trigger fires on "inf").
+test "REGRESSION scope_consume_rep Many(FloatArg) respects 先食い (raw-eat suppression)" {
+  let root : Scope = {
+    greedy: [Seq([Exact("inf"), Bind("verbose", VBool(true))])],
+    positional: [Many(FloatArg("f"))],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["1.5", "inf"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      let mut f_count = 0
+      let mut verbose_ok = false
+      for b in bs {
+        if b.key == "f" {
+          f_count = f_count + 1
+        }
+        if b.key == "verbose" {
+          match b.value {
+            VBool(v) => if v { verbose_ok = true }
+            _ => ()
+          }
+        }
+      }
+      assert_eq(f_count, 1)
+      assert_true(verbose_ok)
+    }
+    _ =>
+      fail(
+        "expected Success (verbose fires via 'inf' trigger, f=[1.5] — raw-eating f=[1.5,inf] with no verbose is the bug)",
+      )
+  }
+}
+
+///|
+/// REGRESSION head_elem_names_into: a `FloatArg` repeat head's name must be collected into the
+/// DR-065 §3 held-error-parity name set (`drop_optional_missing` reads this to suppress a spurious
+/// missing_operand for an optional repeat's "one more" phantom rep) — mirroring the existing
+/// StrArg/NumArg/IntArg/ReqArg arms. This is a narrower, more direct probe of the same 4th function
+/// named in the issue than the end-to-end parse() scenarios above.
+test "REGRESSION head_elem_names_into collects a FloatArg head's name" {
+  let out : Array[String] = []
+  head_elem_names_into(FloatArg("f"), out)
+  assert_eq(out, ["f"])
+}
