@@ -754,6 +754,17 @@ fn lower_positional(
           // MDR-004 §3 "BGroup + repeat": IdxRepeat(label=name, head=Seq(inner cells), min) に lower。
           // スコープ限定: UNBOUNDED (max:null) のみ — IdxRepeat(String, Node, Int) は budget を
           // 持たず bounded を表現できない (bounded named-group が来たら budget 拡張が別途要る)。
+          //
+          // bounded-head 前提 (issue 2026-07-08 greedy-once-and-idxrepeat-premises §2, kawaz 裁定
+          // 待ち — installer 規約としての明文化を選択、eval 側への backtrack 追加は見送り): `idx_repeat_eval`
+          // (eval.mbt) は宣言上 deterministic な greedy-max で、下流失敗時の後退 (regex backtracking,
+          // DR-043 の通常 repeat が `ref_choice` で持つ機構) を持たない。head が permissive (bare string
+          // primitive 等、無制限にどんなトークンでも消費できる) だと、後続の必須 positional のぶんまで
+          // greedy-max に食われて starve しうる (backtrack が無いので回復しない) — 通常 repeat の
+          // backtrack.json fixture が固定する「縮小再分割」の保証は IdxRepeat には及ばない。この lowering
+          // (named-group repeat) を書く際は head の先頭に明示的な trigger (Exact 等) を持たせる、または
+          // 末尾に必須 positional を続けない設計にすること。現状 conformance fixture に BGroup+repeat の
+          // ケースが無いため実害未確認 (再現は eval_wbtest.mbt の低レベル Node 直接構築テストのみ)。
           let head = if items.length() == 1 {
             elem_head(items[0])
           } else {

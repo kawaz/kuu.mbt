@@ -2447,7 +2447,7 @@ pub fn parse(
           None
         },
         help_entry: help,
-        tried_triggers: tried_triggers_of(root),
+        tried_triggers: tried_triggers_of(root, errors),
       })
     1 => Success(full[0])
     _ =>

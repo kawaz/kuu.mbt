@@ -143,18 +143,84 @@ fn find_help_entry_in_greedy(g : Node) -> String? {
 }
 
 ///|
-/// The exact trigger literals available in the scope (spec DR-053 §4
-/// tried_triggers material). 近接マッチ計算は DX 層の関心 — 素材のみ。
-fn tried_triggers_of(root : Node) -> Array[String] {
+/// The exact trigger literals available AT THE FAILURE POSITION (spec DR-053 §4 tried_triggers
+/// material, issue 2026-07-08 greedy-once-and-idxrepeat-premises §3). §4's "失敗位置" ties directly
+/// to §2's "primary の定義: argv 位置が最深の Error" (both live in the same DR, §4 immediately
+/// follows §2's primary rule) — the failure POSITION is the primary error's position, and DR-041
+/// §4's "読める最内スコープが勝つ" means the triggers tried there are the scope the primary error
+/// actually failed IN, not always root's. Each primary error's `path` (DR-066 §4) already threads
+/// the ancestor scope names it crossed on the way out; walking root down that path reaches the
+/// scope that offered the greedy entries at the failure site. 複数 primary (同深) なら全ての scope
+/// を和集合 (重複除去はしない — 呼び出し元 push_error と同じ非-dedup 方針)。素材のみ、near-match は
+/// DX 層の関心。
+fn tried_triggers_of(root : Node, errors : Array[ParseError]) -> Array[String] {
+  let mut deepest = -1
+  for e in errors {
+    if e.argv_pos > deepest {
+      deepest = e.argv_pos
+    }
+  }
   let out : Array[String] = []
-  match root {
-    ScopeNode(sc) =>
-      for g in sc.greedy {
-        tried_triggers_in_greedy(g, out)
+  let mut any_primary = false
+  for e in errors {
+    if e.argv_pos == deepest {
+      any_primary = true
+      match scope_at_path(root, e.path) {
+        Some(sc) =>
+          for g in sc.greedy {
+            tried_triggers_in_greedy(g, out)
+          }
+        None => ()
       }
-    _ => ()
+    }
+  }
+  if !any_primary {
+    // no errors at all — root scope's own triggers are the best available
+    // material (matches the pre-fix behavior exactly for this edge case).
+    match root {
+      ScopeNode(sc) =>
+        for g in sc.greedy {
+          tried_triggers_in_greedy(g, out)
+        }
+      _ => ()
+    }
   }
   out
+}
+
+///|
+/// Walk `root` down `path` (root-first ancestor scope names, DR-066 §4) through CmdSat children
+/// ONLY — a `Scoped` label (DR-025 result scope label) wraps an arbitrary Node, not necessarily a
+/// child Scope (MDR-002 "light layer-3 hook; does not change path count"), so a path segment that
+/// doesn't match any CmdSat name stops the walk short (returns `None`, tried_triggers_of falls back
+/// to the root-scope material rather than guessing). `[]` resolves straight to `root`'s own scope.
+fn scope_at_path(root : Node, path : Array[String]) -> Scope? {
+  let mut cur = root
+  for label in path {
+    match cur {
+      ScopeNode(sc) => {
+        let mut next : Node? = None
+        for g in sc.greedy {
+          match g {
+            CmdSat(name, child) =>
+              if name == label {
+                next = Some(ScopeNode(child))
+              }
+            _ => ()
+          }
+        }
+        match next {
+          Some(n) => cur = n
+          None => return None
+        }
+      }
+      _ => return None
+    }
+  }
+  match cur {
+    ScopeNode(sc) => Some(sc)
+    _ => None
+  }
 }
 
 ///|

@@ -667,6 +667,47 @@ test "REGRESSION Or-wrapped greedy: find_help_entry / tried_triggers walk Or arm
 }
 
 ///|
+/// DR-053 §4 (issue 2026-07-08 greedy-once-and-idxrepeat-premises §3, resolved): tried_triggers is
+/// the triggers available AT THE FAILURE POSITION (§4 immediately follows §2's "primary の定義:
+/// argv 位置が最深の Error" in the same DR), not always root's — DR-041 §4 "読める最内スコープが勝つ"
+/// means a failure INSIDE a subcommand's own scope should surface that scope's OWN greedy triggers.
+/// `sub zzz` ("zzz" is an unconsumed residual inside "sub"'s scope, whose only positional-face
+/// element is none — a bare unexpected_token) used to report only root's "sub" command name;
+/// now it reports "sub"'s own `--port` trigger, the one actually offered at the failure site.
+test "DR-053 §4: tried_triggers reflects the failure position's OWN scope, not root's" {
+  let child : Scope = {
+    greedy: [Seq([Exact("--port"), NumArg("port", false)])],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("sub", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["sub", "zzz"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut saw_port = false
+      let mut saw_sub = false
+      for t in fd.tried_triggers {
+        if t == "--port" {
+          saw_port = true
+        }
+        if t == "sub" {
+          saw_sub = true
+        }
+      }
+      assert_true(saw_port)
+      assert_false(saw_sub) // root's "sub" is NOT the failure-position scope
+    }
+    _ => fail("expected Failure (residual 'zzz' inside sub's scope)")
+  }
+}
+
+///|
 test "REVIEW-D1 取り分選好オラクルは制約違反の全消費を「完全」と数えない (DR-047 §2 × DR-043)" {
   // more 側 (xs=[a,b]) は全消費だが CRequires(xs,[y]) に違反 = 完全解決経路
   // ではない。stop 側 (xs=[a], y=[b]) が唯一の完全解決経路なので Success。
@@ -1251,5 +1292,42 @@ test "DR-066 §4: a Pending-starvation missing_operand Error inside a nested com
       assert_true(found)
     }
     _ => fail("expected Failure (missing operand for port)")
+  }
+}
+
+///|
+/// KNOWN GAP (issue 2026-07-08 greedy-once-and-idxrepeat-premises §2, kawaz 裁定待ち):
+/// `idx_repeat_eval`'s greedy-max is deterministic with NO downstream backtrack (see its doc
+/// comment) — unlike the normal Ref-repeat path, which `ref_choice` backs off one rep at a time on
+/// downstream failure (fixture repeat-parse/backtrack.json fixes this for the common case). A
+/// permissive head (bare `StrArg`, matches any token) followed by a mandatory positional starves
+/// that positional: greedy-max consumes ALL 3 tokens into the repeat, leaving nothing for `tail`,
+/// and there is no backtrack to try `g=[a,b], tail=c` instead. This test PINS the current (gap)
+/// behavior so a future backtrack fix flips it to Success and this assertion catches the flip —
+/// do NOT "fix" this test to make it pass differently without updating the issue. installer.mbt's
+/// BGroup lowering comment documents the "bounded-head" workaround (give the head an explicit
+/// leading trigger) until this is resolved one way or the other.
+test "KNOWN GAP: IdxRepeat greedy-max has no downstream backtrack for a following mandatory positional" {
+  let root : Scope = {
+    greedy: [],
+    positional: [IdxRepeat("g", StrArg("x"), 1), StrArg("tail")],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["a", "b", "c"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut tail_missing = false
+      for e in fd.errors {
+        if e.element == "tail" && e.reason == "missing_operand" {
+          tail_missing = true
+        }
+      }
+      assert_true(tail_missing)
+    }
+    _ =>
+      fail(
+        "gap behavior changed: expected Failure (tail starved, no backtrack) — if this now succeeds, the backtrack gap is fixed; update this test and the issue accordingly",
+      )
   }
 }
