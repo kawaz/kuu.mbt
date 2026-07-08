@@ -47,8 +47,16 @@ struct OrBranch {
 
 - **BOr (option, トリガ付き)**: greedy 衛星 `Seq([Exact(trigger), Or([branch_node...])])`。branch_node = items を順に value_prim で並べた `Seq` (1 個なら素のノード)。**leaf cell は親スコープ直下の entity として登録** (fixture の flat result に一致)。eq-split matcher は単一値セル枝のみ対象 (3 セル枝に `--color=v` は成立しない — `=` 形は値 1 個の綴り)
 - **BOr (positional, 匿名)**: spine に `Or([branch_node...])` を直接積む。枝の held Error は評価器の既存 Or 意味論 (全枝評価 + Held 保持) がそのまま DR-053 §2 を満たす
-- **BGroup + repeat**: `IdxRepeat(label = 要素名, head = Seq(inner cells...), min)` に lower (skip メッセージの「IdxRepeat with a distinct inner-element name/export_key」がこの経路)。inner の export_key null は既存の DR-052 §2 処理 (resolve の裸値化) に接続
-- engine 側 (Node ADT / eval) は Or/Seq/IdxRepeat を既にサポート — **本 MDR で評価器は触らない** (lowering と decode のみ)
+- **BGroup + repeat**: `IdxRepeat(label = 要素名, head = Seq(inner cells...), min)` に lower (skip メッセージの「IdxRepeat with a distinct inner-element name/export_key」がこの経路)。inner の export_key null は既存の DR-052 §2 処理 (resolve の裸値化) に接続。**スコープ限定: 本 MDR の BGroup は unbounded repeat (max:null) のみ対象** — `IdxRepeat(String, Node, Int)` は budget を持たず bounded を表現できないため、bounded named-group の fixture が来た時点で IdxRepeat の budget 拡張を別途行う (codex REVIEW-M3)
+- engine 側 (Node ADT / eval) は Or/Seq/IdxRepeat を既にサポート — **本 MDR で評価器は触らない** (lowering と decode のみ。既存意味論で held 全保持・最深 primary・反復グループ整形・裸値化が出ることは eval.mbt / resolve.mbt の実地照合で確認済み — codex レビュー)
+
+### 3b. lowering 周辺の非再帰関数群への波及 (codex Critical ×2 + Medium ×1)
+
+Node の組み方 (§3) だけでは足りず、**ElemDef 直下しか見ていない既存の収集関数群を ElemBody 再帰に拡張する**。忘れると「値は評価されるが entity/export が無くて resolve できない」という気づきにくい失敗になる:
+
+- **`collect_export` / `build_export_map`**: BGroup 内 leaf (transparent-seq の `k` export_key:null) と BOr 枝内 leaf の export_key を map に載せるため、body を再帰的に辿る。transparent-seq はまさにこの経路が本体 (裸値化は export map 経由)
+- **`ensure_entities` / `ensure_entity`**: BOr 枝 leaf (r/g/b/name) と BGroup 内 leaf (k) を親スコープ直下の entity として登録する再帰拡張。評価器の Or/Seq/IdxRepeat は entity 登録を関知しないので、ここが唯一の登録点
+- **`inst_long` の eq_entries 既定 push**: 現行は TFlag/TBool 以外の全 option に `e.ty` で無条件登録するが、BOr 要素は `ty` を使わない — **BOr 要素では無条件 push をスキップし、単一値セル枝が存在する場合のみその leaf の name/ty で entry を作る** (`--color=v` を実在しない top-level entity に束縛する誤登録の防止)
 
 ### 4. エラー・表示の帰属 (kawaz 裁定の適用)
 
@@ -59,8 +67,9 @@ struct OrBranch {
 
 1. decoder + ElemBody (gate 撤去、BCell 縮退の無風確認 = 既存 fixture 全 green)
 2. BOr positional (held-errors 2 fixture、評価器の既存 Or 意味論で最小)
-3. BOr option (variable-arity、ambiguous 保存 + flat entity)
-4. BGroup + IdxRepeat (transparent-seq)
+3. BOr option (variable-arity、ambiguous 保存 + flat entity + §3b の inst_long 分岐)
+4. BGroup + IdxRepeat (transparent-seq、§3b の export/entity 再帰が本体)
+5. **OrBranch.id の表示非露出 wbtest を 1 本追加** — 対象 4 fixture には branch id が観測面に出る case が無いため、fixture 任せにすると未検証コードになる (codex REVIEW-M5)。自動 `#{seq}` id がエラー・結果のどこにも漏れないことを wbtest で固定
 
 各段で conformance を回し、skip が 1 つずつ VANISHED になるのを確認する。
 
