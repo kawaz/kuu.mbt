@@ -1,3 +1,10 @@
+///|
+/// wbtest helper: a parse-mode Ctx over bare tokens (run_matcher takes Ctx
+/// since the complete-mode boundary Pending was added to the cluster walk).
+fn pctx(toks : Array[String]) -> Ctx {
+  { toks, defs: Map([]), mode: ModeParse }
+}
+
 // matcher_wbtest.mbt — the native matcher interpreter as executable spec (DR-041 §3-4).
 //
 // These tests freeze the token→readings decomposition: an eq-split long option, and the short
@@ -43,7 +50,7 @@ test "eq-split long option resolves, errors, and 素通し" {
     { key: "port", name: "port", kind: TNum },
   ])
   // a defined numeric key: one Accept consuming 1 token, binding port=8080 from the CLI seat.
-  let r1 = run_matcher(long, ["--port=8080"], 0)
+  let r1 = run_matcher(long, pctx(["--port=8080"]), 0)
   assert_eq(r1.length(), 1)
   assert_eq(acc_pos(r1[0]), 1)
   let b1 = acc_binds(r1[0])
@@ -52,14 +59,14 @@ test "eq-split long option resolves, errors, and 素通し" {
   assert_eq(b1[0].value, VNum(8080.0))
   assert_eq(b1[0].source, Cli)
   // a defined key with a non-number value is a held Error (DR-037), NOT a silent 素通し.
-  let r2 = run_matcher(long, ["--port=abc"], 0)
+  let r2 = run_matcher(long, pctx(["--port=abc"]), 0)
   assert_eq(r2.length(), 1)
   assert_eq(is_held(r2[0]), true)
   // an undefined key produces no reading (素通し to positional).
-  assert_eq(run_matcher(long, ["--host=x"], 0).length(), 0)
+  assert_eq(run_matcher(long, pctx(["--host=x"]), 0).length(), 0)
   // a token without `=` (or without the prefix) does not fire this matcher.
-  assert_eq(run_matcher(long, ["--port"], 0).length(), 0)
-  assert_eq(run_matcher(long, ["plain"], 0).length(), 0)
+  assert_eq(run_matcher(long, pctx(["--port"]), 0).length(), 0)
+  assert_eq(run_matcher(long, pctx(["plain"]), 0).length(), 0)
 }
 
 // ── DR-041 short cluster matcher (`-abc`, value attachment, space form) ─────────
@@ -77,7 +84,7 @@ test "short cluster: flag run and in-token numeric value" {
     { ch: 'n', name: "n", kind: TNum, depr: false },
   ])
   // `-ab`: a run of two flags → one reading binding a=true, b=true, consuming the single token.
-  let rf = run_matcher(short, ["-ab"], 0)
+  let rf = run_matcher(short, pctx(["-ab"]), 0)
   assert_eq(rf.length(), 1)
   assert_eq(acc_pos(rf[0]), 1)
   let bf = acc_binds(rf[0])
@@ -87,7 +94,7 @@ test "short cluster: flag run and in-token numeric value" {
   assert_eq(bf[1].key, "b")
   assert_eq(bf[1].value, VBool(true))
   // `-n1.0`: only the full value `1.0` completes the cluster → exactly one reading n=1.0.
-  let rn = run_matcher(short, ["-n1.0"], 0)
+  let rn = run_matcher(short, pctx(["-n1.0"]), 0)
   assert_eq(rn.length(), 1)
   assert_eq(acc_pos(rn[0]), 1)
   let bn = acc_binds(rn[0])
@@ -103,7 +110,7 @@ test "short cluster: space-form value takes the next token" {
   let short = ShortCombine(prefix="-", entries=[
     { ch: 'n', name: "n", kind: TNum, depr: false },
   ])
-  let r = run_matcher(short, ["-n", "5"], 0)
+  let r = run_matcher(short, pctx(["-n", "5"]), 0)
   assert_eq(r.length(), 1)
   assert_eq(acc_pos(r[0]), 2) // consumed BOTH the `-n` token and the `5` token
   let b = acc_binds(r[0])
@@ -120,7 +127,7 @@ test "short cluster: deprecated entry rides a @depr marker" {
   let short = ShortCombine(prefix="-", entries=[
     { ch: 'd', name: "d", kind: TFlag, depr: true },
   ])
-  let r = run_matcher(short, ["-d"], 0)
+  let r = run_matcher(short, pctx(["-d"]), 0)
   assert_eq(r.length(), 1)
   let b = acc_binds(r[0])
   // two bindings: the flag value (d=true) plus the deprecation marker (@depr:d).

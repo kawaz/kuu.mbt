@@ -164,3 +164,77 @@ fn tried_triggers_in_greedy(g : Node, out : Array[String]) -> Unit {
     _ => ()
   }
 }
+
+// ── complete (DR-060 / MDR-002 §2.4: the ONE Pending-collection function) ─────
+
+///|
+/// Complete = the union of everything readable at the next consumption point
+/// over every surviving partial path that consumed `before` (DR-060 §1). The
+/// walk itself is parse's walk in ModeComplete — boundary trigger sites and
+/// starved value slots come back as `Pending` branches; a `Held`-only path is
+/// a true dead end and contributes nothing (DR-060: dead-end candidates are
+/// noise). Candidates are raw material + meta (DR-060 §3); prefix filtering
+/// by the cursor word, alias/hidden policy and insertion are the generator's
+/// (層 2) and the shell's concern — kuu fixes no policy here.
+///
+/// `after` (DR-060 §2 整合フィルタ): when the cursor sits mid-line, a
+/// WordEnd exact candidate survives only if adopting it still lets some path
+/// consume `after` to a complete parse. Value candidates and Cont-term
+/// spellings (an eq-split `--key` needs `=value` typed in the same word)
+/// cannot be checked without inventing the user's input, so they pass the
+/// filter unexamined.
+pub fn complete(
+  root : Node,
+  before : Array[String],
+  defs? : Map[String, Node] = Map([]),
+  after? : Array[String] = [],
+) -> Array[Cand] {
+  let ctx : Ctx = { toks: before, defs, mode: ModeComplete }
+  let branches = match root {
+    ScopeNode(sc) =>
+      scope_step(sc, ctx, 0, 0, [], false, KTop(collect_scopes(root, defs)))
+    _ => eval(root, ctx, 0)
+  }
+  let cands : Array[Cand] = []
+  for b in branches {
+    match b {
+      Pending(cs, _) =>
+        for c in cs {
+          let mut dup = false
+          for e in cands {
+            if e == c {
+              dup = true
+              break
+            }
+          }
+          if !dup {
+            cands.push(c)
+          }
+        }
+      _ => () // Accept: already complete, nothing to read; Held: dead end
+    }
+  }
+  if after.length() == 0 {
+    return cands
+  }
+  let out : Array[Cand] = []
+  for c in cands {
+    if c.is_value || c.term == Cont {
+      out.push(c)
+    } else {
+      let toks2 : Array[String] = []
+      for t in before {
+        toks2.push(t)
+      }
+      toks2.push(c.spelling)
+      for t in after {
+        toks2.push(t)
+      }
+      match parse(root, toks2, defs~) {
+        Success(_) | Ambiguous(_) => out.push(c)
+        Failure(_) => ()
+      }
+    }
+  }
+  out
+}

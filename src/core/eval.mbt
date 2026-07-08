@@ -38,19 +38,43 @@ priv struct Ctx {
 
 ///|
 /// parse counts complete paths (DR-038); complete collects expectations
-/// (DR-060). The walk is ONE implementation — mode switches a handful of
-/// collection-policy points (added in a follow-up change, NOT this one).
+/// (DR-060). The walk is ONE implementation — mode switches the
+/// collection-policy points below (MDR-002 §2.4):
+/// - boundary trigger sites (Exact / CmdSat / DdSat / NativeMatch at argv
+///   end) emit `Pending` exact candidates instead of a silent Reject;
+/// - spine value primitives starved at argv end emit `Pending` value
+///   candidates instead of a missing-operand Held;
+/// - 取り分選好 pruning is off (a losing share's Pending is still material).
 priv enum EvalMode {
   ModeParse
   ModeComplete
 } derive(Eq)
 
 ///|
-/// Reference `ModeComplete` and its `Eq` at package scope so the follow-up
-/// `complete()` API can flip the mode without a churn of "constructor now
-/// used" edits. Comparing at scope keeps the derived `Eq` live too. Neither
-/// side has runtime effect on `parse()` (this value is never read).
-let _mode_complete_ref : Bool = ModeComplete == ModeComplete
+fn in_complete(ctx : Ctx) -> Bool {
+  ctx.mode == ModeComplete
+}
+
+///|
+/// An exact-spelling candidate (the Pending payload at a trigger boundary,
+/// DR-060 §3). `ty` is only meaningful when a value must follow the spelling
+/// (term = Cont, e.g. an eq-split `--key`); a plain trigger carries TFlag.
+fn cand_trigger(
+  spelling : String,
+  origin : String,
+  ty : Ty,
+  term : TermHint,
+  deprecated : Bool,
+) -> Cand {
+  {
+    spelling,
+    is_value: false,
+    ty,
+    origin,
+    term,
+    meta: { is_alias: false, hidden: false, deprecated },
+  }
+}
 
 ///|
 /// A non-set effect binding (default / unset / empty). The operand is a
@@ -228,11 +252,14 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
     Exact(s) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == s {
         [Accept(pos + 1, [])]
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        // complete (DR-060 §1): the argv boundary at a trigger position means
+        // this spelling is exactly what could be typed next.
+        [Pending([cand_trigger(s, s, TFlag, WordEnd, false)], [])]
       } else {
-        // an unmatched / exhausted trigger is a silent Reject (spec DR-037),
-        // NOT a Pending: no part of the entry was consumed, so nothing is
-        // "half-read". (Boundary trigger candidates for complete are the
-        // outcome layer's concern, collected separately.)
+        // an unmatched (or, in parse mode, exhausted) trigger is a silent
+        // Reject (spec DR-037), NOT a Pending: no part of the entry was
+        // consumed, so nothing is "half-read".
         []
       }
     StrArg(name) =>
@@ -282,7 +309,14 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       // the slice's eval_scope. The SPINE path (scope_consume) instead
       // threads the real continuation.
       scope_step(sc, ctx, pos, 0, [], false, KDone)
-    NativeMatch(m) => run_matcher(m, ctx.toks, pos)
+    NativeMatch(m) =>
+      if pos >= ctx.toks.length() && in_complete(ctx) {
+        // complete: the matcher's own spellings (eq-split keys, cluster
+        // chars) are the readable-next set at the boundary (DR-060 §1).
+        [Pending(matcher_cands(m), [])]
+      } else {
+        run_matcher(m, ctx, pos)
+      }
     Ref(name) =>
       match ctx.defs.get(name) {
         Some(tpl) => eval(tpl, ctx, pos)
@@ -291,6 +325,8 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
     DdSat(trigger) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         [Accept(pos + 1, [])]
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        [Pending([cand_trigger(trigger, trigger, TFlag, WordEnd, false)], [])]
       } else {
         []
       }
@@ -306,6 +342,8 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
             scope_step(child, ctx, pos + 1, 0, [], false, KDone),
           ),
         )
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        [Pending([cand_trigger(name, name, TFlag, WordEnd, false)], [])]
       } else {
         []
       }
@@ -404,6 +442,8 @@ fn filter_arg_eval(
         }
       None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
     }
+  } else if in_complete(ctx) {
+    [Pending([pend_value(TNum, name)], acc)]
   } else {
     [Held(pe_missing(name, pos), acc)]
   }
@@ -420,6 +460,8 @@ fn req_arg_eval(
 ) -> Array[Branch] {
   if pos < ctx.toks.length() {
     [Accept(pos + 1, cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli)]))]
+  } else if in_complete(ctx) {
+    [Pending([pend_value(TStr, name)], acc)]
   } else {
     [
       Held(
@@ -658,7 +700,7 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
       if items.length() >= 1 {
         match items[0] {
           Exact(s) => ctx.toks[pos] == s
-          NativeMatch(m) => run_matcher(m, ctx.toks, pos).length() > 0
+          NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
           _ => eval_consumes(g, ctx, pos)
         }
       } else {
@@ -676,7 +718,7 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
     DdSat(t) => ctx.toks[pos] == t
     // a matcher engages iff it yields ANY reading or held Error ([] = 素通し,
     // e.g. an undefined --key= or a non-prefix token).
-    NativeMatch(m) => run_matcher(m, ctx.toks, pos).length() > 0
+    NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
     Rooted(inner, _) => greedy_engages(inner, ctx, pos)
     _ => eval_consumes(g, ctx, pos)
   }
@@ -714,14 +756,6 @@ fn greedy_reads(sc : Scope, ctx : Ctx, pos : Int) -> Bool {
 /// greedy-ONLY (spec DR-041 §4): a raw-eat is suppressed iff some greedy
 /// entry reads the token. Once severed, nothing is suppressed.
 fn suppressed(sc : Scope, ctx : Ctx, pos : Int, severed : Bool) -> Bool {
-  // Anchor point for the ModeParse/ModeComplete no-op branch: the mode field
-  // is stored on Ctx for the follow-up complete() implementation. Reading it
-  // here (no-op match) keeps the field from being flagged as unused without
-  // altering behavior.
-  match ctx.mode {
-    ModeParse => ()
-    ModeComplete => ()
-  }
   if severed {
     return false
   }
@@ -810,12 +844,19 @@ fn step_greedy(
         for r in scope_step(child, ctx, pos + 1, 0, acc, false, kk) {
           out.push(r)
         }
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        // complete: the command name is readable at the boundary (DR-060 §1).
+        out.push(Pending([cand_trigger(name, name, TFlag, WordEnd, false)], acc))
       }
     DdSat(trigger) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         for r in scope_step(sc, ctx, pos + 1, pidx, acc, true, k) {
           out.push(r)
         }
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        out.push(
+          Pending([cand_trigger(trigger, trigger, TFlag, WordEnd, false)], acc),
+        )
       }
     Or(alts) =>
       for a in alts {
@@ -867,8 +908,14 @@ fn scope_consume(
         )
       } else if pos >= ctx.toks.length() {
         // 構造的必須の不成立 (spec DR-065 §3): the spine needs a token for
-        // `name` but the argv is exhausted. Held, not a silent Reject.
-        [Held(pe_missing(name, pos), acc)]
+        // `name` but the argv is exhausted. Held, not a silent Reject; in
+        // complete mode the same boundary is the positional expectation
+        // (DR-060 §1「positional 面の次の期待ノード」).
+        if in_complete(ctx) {
+          [Pending([pend_value(TStr, name)], acc)]
+        } else {
+          [Held(pe_missing(name, pos), acc)]
+        }
       } else {
         [] // 先食い: a greedy trigger sits here; the spine stays pending
       }
@@ -884,7 +931,11 @@ fn scope_consume(
           k,
         )
       } else if pos >= ctx.toks.length() {
-        [Held(pe_missing(name, pos), acc)]
+        if in_complete(ctx) {
+          [Pending([pend_value(TStr, name)], acc)]
+        } else {
+          [Held(pe_missing(name, pos), acc)]
+        }
       } else {
         []
       }
@@ -904,7 +955,11 @@ fn scope_consume(
           None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
         }
       } else if pos >= ctx.toks.length() {
-        [Held(pe_missing(name, pos), acc)]
+        if in_complete(ctx) {
+          [Pending([pend_value(TNum, name)], acc)]
+        } else {
+          [Held(pe_missing(name, pos), acc)]
+        }
       } else {
         []
       }
@@ -939,7 +994,11 @@ fn scope_consume(
           None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
         }
       } else if pos >= ctx.toks.length() {
-        [Held(pe_missing(name, pos), acc)]
+        if in_complete(ctx) {
+          [Pending([pend_value(TNum, name)], acc)]
+        } else {
+          [Held(pe_missing(name, pos), acc)]
+        }
       } else {
         []
       }
@@ -955,24 +1014,30 @@ fn scope_consume(
           k,
         )
       } else if pos >= ctx.toks.length() {
-        [
-          Held(
-            {
-              element: name,
-              argv_pos: pos,
-              kind: KConstraint,
-              reason: "required_violated",
-              message: "required \{name} is missing",
-            },
-            acc,
-          ),
-        ]
+        if in_complete(ctx) {
+          [Pending([pend_value(TStr, name)], acc)]
+        } else {
+          [
+            Held(
+              {
+                element: name,
+                argv_pos: pos,
+                kind: KConstraint,
+                reason: "required_violated",
+                message: "required \{name} is missing",
+              },
+              acc,
+            ),
+          ]
+        }
       } else {
         []
       }
     Exact(s) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == s {
         scope_step(sc, ctx, pos + 1, pidx + 1, acc, severed, k)
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        [Pending([cand_trigger(s, s, TFlag, WordEnd, false)], acc)]
       } else {
         []
       }
@@ -1046,7 +1111,11 @@ fn scope_consume(
       // knob in the AST) — more-rep first, then stop.
       let stop = scope_step(sc, ctx, pos, pidx + 1, acc, severed, k) // 0 reps
       let more = scope_consume_rep(sc, inner, ctx, pos, pidx, acc, severed, k) // 1 rep (which re-enters scope_step at same pidx)
-      if has_full_k(more) {
+      if in_complete(ctx) {
+        // complete: no pruning — the losing share's Pending is candidate
+        // material too (MDR-002 §2.4: union over ALL surviving partials).
+        cat_branches(stop, more)
+      } else if has_full_k(more) {
         more
       } else if has_full_k(stop) {
         stop
@@ -1114,7 +1183,10 @@ fn ref_choice(
     scope_step(sc, ctx, p2, pidx, acc2, severed, k),
     head_elem_names(head),
   )
-  if lazy_ {
+  if in_complete(ctx) {
+    // complete: no pruning (union over ALL surviving partials, MDR-002 §2.4).
+    cat_branches(stop, more)
+  } else if lazy_ {
     if has_full_k(stop) {
       stop
     } else if has_full_k(more) {
@@ -1203,7 +1275,9 @@ fn bounded_tail_step(
   // DR-065 §3 held-error parity). head-external missing from the parent's
   // continuation is preserved.
   let more = drop_optional_missing(more_raw, head_elem_names(head))
-  if lazy_ {
+  if in_complete(ctx) {
+    cat_branches(stop, more)
+  } else if lazy_ {
     if has_full_k(stop) {
       stop
     } else if has_full_k(more) {
@@ -1237,7 +1311,13 @@ fn consume_head(
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         [Accept(pos + 1, [mkb(name, VStr(ctx.toks[pos]), Cli)])]
       } else if pos >= ctx.toks.length() {
-        [Held(pe_missing(name, pos), [])]
+        // in complete mode the starved head is a repeat-continuation value
+        // candidate (DR-060 §1), not a missing-operand Held.
+        if in_complete(ctx) {
+          [Pending([pend_value(TStr, name)], [])]
+        } else {
+          [Held(pe_missing(name, pos), [])]
+        }
       } else {
         []
       }
@@ -1245,7 +1325,11 @@ fn consume_head(
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         [Accept(pos + 1, sep_binds(name, ctx.toks[pos], sep))]
       } else if pos >= ctx.toks.length() {
-        [Held(pe_missing(name, pos), [])]
+        if in_complete(ctx) {
+          [Pending([pend_value(TStr, name)], [])]
+        } else {
+          [Held(pe_missing(name, pos), [])]
+        }
       } else {
         []
       }
@@ -1256,7 +1340,11 @@ fn consume_head(
           None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
         }
       } else if pos >= ctx.toks.length() {
-        [Held(pe_missing(name, pos), [])]
+        if in_complete(ctx) {
+          [Pending([pend_value(TNum, name)], [])]
+        } else {
+          [Held(pe_missing(name, pos), [])]
+        }
       } else {
         []
       }
@@ -1269,18 +1357,22 @@ fn consume_head(
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         [Accept(pos + 1, [mkb(name, VStr(ctx.toks[pos]), Cli)])]
       } else if pos >= ctx.toks.length() {
-        [
-          Held(
-            {
-              element: name,
-              argv_pos: pos,
-              kind: KConstraint,
-              reason: "required_violated",
-              message: "required \{name} is missing",
-            },
-            [],
-          ),
-        ]
+        if in_complete(ctx) {
+          [Pending([pend_value(TStr, name)], [])]
+        } else {
+          [
+            Held(
+              {
+                element: name,
+                argv_pos: pos,
+                kind: KConstraint,
+                reason: "required_violated",
+                message: "required \{name} is missing",
+              },
+              [],
+            ),
+          ]
+        }
       } else {
         []
       }
@@ -1307,7 +1399,11 @@ fn consume_head(
           None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
         }
       } else if pos >= ctx.toks.length() {
-        [Held(pe_missing(name, pos), [])]
+        if in_complete(ctx) {
+          [Pending([pend_value(TNum, name)], [])]
+        } else {
+          [Held(pe_missing(name, pos), [])]
+        }
       } else {
         []
       }

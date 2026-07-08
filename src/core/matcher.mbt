@@ -60,15 +60,44 @@ fn index_of_char(cs : Array[Char], c : Char) -> Int {
 }
 
 ///|
-/// Interpret a matcher against the token at `pos`.
-fn run_matcher(m : Matcher, toks : Array[String], pos : Int) -> Array[Branch] {
-  if pos >= toks.length() {
+/// Interpret a matcher against the token at `pos`. Takes the whole Ctx so the
+/// cluster walk can emit a complete-mode Pending for a tail value char whose
+/// next-token value is past the argv end (DR-060 §1 readable-next set).
+fn run_matcher(m : Matcher, ctx : Ctx, pos : Int) -> Array[Branch] {
+  if pos >= ctx.toks.length() {
     return []
   }
   match m {
-    EqSplit(prefix~, entries~) => run_eq_split(prefix, entries, toks, pos)
-    ShortCombine(prefix~, entries~) => run_short(prefix, entries, toks, pos)
+    EqSplit(prefix~, entries~) => run_eq_split(prefix, entries, ctx.toks, pos)
+    ShortCombine(prefix~, entries~) => run_short(prefix, entries, ctx, pos)
   }
+}
+
+///|
+/// The matcher's own trigger spellings as complete candidates (DR-060 §3
+/// 「eq-split / cluster の元綴り」). An eq-split key must be followed by
+/// `=value` in the same word (term = Cont, ty = the value type); a TFlag
+/// entry never fires through the eq face, so it contributes no spelling
+/// here. A cluster char may end the word (flag) or take a space-form value
+/// (term = WordEnd either way); a deprecated alias char keeps its meta.
+fn matcher_cands(m : Matcher) -> Array[Cand] {
+  let out : Array[Cand] = []
+  match m {
+    EqSplit(prefix~, entries~) =>
+      for e in entries {
+        if e.kind != TFlag {
+          out.push(cand_trigger(prefix + e.key, e.name, e.kind, Cont, false))
+        }
+      }
+    ShortCombine(prefix~, entries~) =>
+      for e in entries {
+        let buf = StringBuilder::new()
+        buf.write_string(prefix)
+        buf.write_char(e.ch)
+        out.push(cand_trigger(buf.to_string(), e.name, e.kind, WordEnd, e.depr))
+      }
+  }
+  out
 }
 
 ///|
@@ -115,10 +144,10 @@ fn run_eq_split(
 fn run_short(
   prefix : String,
   entries : Array[ShortEntry],
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
 ) -> Array[Branch] {
-  let tok = to_chars(toks[pos])
+  let tok = to_chars(ctx.toks[pos])
   let pfx = to_chars(prefix)
   if !char_prefix(tok, pfx) {
     return []
@@ -133,7 +162,7 @@ fn run_short(
   if body.length() == 0 {
     return [] // bare prefix, e.g. "-"
   }
-  walk_short(entries, body, 0, [], toks, pos)
+  walk_short(entries, body, 0, [], ctx, pos)
 }
 
 ///|
@@ -173,7 +202,7 @@ fn walk_short(
   body : Array[Char],
   i : Int,
   acc : Array[Binding],
-  toks : Array[String],
+  ctx : Ctx,
   pos : Int,
 ) -> Array[Branch] {
   if i == body.length() {
@@ -193,7 +222,7 @@ fn walk_short(
             body,
             i + 1,
             cat(acc, cat([mkb(e.name, VBool(true), Cli)], dm)),
-            toks,
+            ctx,
             pos,
           )
         _ => {
@@ -211,7 +240,7 @@ fn walk_short(
                     body,
                     j,
                     cat(acc, cat([b], dm)),
-                    toks,
+                    ctx,
                     pos,
                   ) {
                   out.push(r)
@@ -231,14 +260,19 @@ fn walk_short(
             j = j + 1
           }
           // next-token value (space form) only when this value char is the tail.
-          if vstart == body.length() && pos + 1 < toks.length() {
-            match short_val(e, toks[pos + 1]) {
+          if vstart == body.length() && pos + 1 < ctx.toks.length() {
+            match short_val(e, ctx.toks[pos + 1]) {
               Some(b) => out.push(Accept(pos + 2, cat(acc, cat([b], dm))))
               None =>
                 if e.kind == TNum || e.kind == TInt {
-                  out.push(Held(pe_parse(e.name, toks[pos + 1], pos + 1), []))
+                  out.push(Held(pe_parse(e.name, ctx.toks[pos + 1], pos + 1), []))
                 }
             }
+          } else if vstart == body.length() && in_complete(ctx) {
+            // complete: the cluster ends in a value char and the argv ends
+            // here — the space-form value is exactly what could come next
+            // (DR-060 §1). The flags already read stay as partial state.
+            out.push(Pending([pend_value(e.kind, e.name)], cat(acc, dm)))
           }
           out
         }
