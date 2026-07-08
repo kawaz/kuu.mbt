@@ -1,6 +1,6 @@
 ---
 title: structural-or builder と or-branch-id の未実装追跡 (installer.mbt 移植で意図的 skip 凍結)
-status: open
+status: resolved
 category: task
 created: 2026-07-08T00:00:22+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-08T00:00:00+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/MDR-004","implemented:structural-or builder (ElemBody BCell/BOr/BGroup + OrBranch 自動 id #{seq}, commit ba39207c / git 7857205, conformance decoded 115/skipped 0/mismatches 0)","implemented:or-branch-id (CRequiresIf 4-tuple entity/branch_id/value/targets, commit 5161f0a)"]
 blocked_by:
 origin: slice (kawaz/kuu.mbt/slice)
 ---
