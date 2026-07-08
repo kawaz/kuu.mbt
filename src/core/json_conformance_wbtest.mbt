@@ -1873,26 +1873,12 @@ fn dec_alias(o : Map[String, Json]) -> AliasDef raise DecodeSkip {
   }
   let name = jf_str(o, "name")
   let short = dec_short(o)
-  let long_override : Array[String]? = match o.get("long") {
-    Some(lj) =>
-      match lj.j_arr() {
-        Some(a) => {
-          let ls : Array[String] = []
-          for e in a {
-            match e.j_str() {
-              Some(s) => ls.push(s)
-              None => raise DecodeSkip("alias long[] element is not a string")
-            }
-          }
-          Some(ls)
-        }
-        None =>
-          match lj.j_bool() {
-            Some(true) => Some([":set"])
-            Some(false) => Some([])
-            None => raise DecodeSkip("alias long is not a bool/array")
-          }
-      }
+  // DR-076 §2 flag 差し替え/補完の alias 側適用 (issue 2026-07-08 dec-alias-long-override-flag-
+  // sugar-gap): decode はここでも canonical 側の dec_long と同じく wire の bool|array 二形を
+  // `LongDecl` にそのまま写すだけ — 型依存の糖衣解釈は installer.mbt の desugar_aliases
+  // (resolve_long 経由) が担う。
+  let long_override : LongDecl? = match o.get("long") {
+    Some(lj) => Some(dec_long(lj))
     None => None
   }
   let deprecated = bool_field(o, "deprecated", false)

@@ -511,7 +511,7 @@ test "parse_definition: a colon-less alias long_override spelling is a DR-054 un
         target: "verbose",
         name: Some("chatty"),
         short: [],
-        long_override: Some(["chatty"]), // colon-less — 文法エラー
+        long_override: Some(LList(["chatty"])), // colon-less — 文法エラー
         deprecated: false,
       },
     ],
@@ -531,4 +531,186 @@ test "parse_definition: a colon-less alias long_override spelling is a DR-054 un
       assert_true(found)
     }
   }
+}
+
+// ── alias long_override の DR-076 §2 flag 差し替え/補完 (issue 2026-07-08 根治) ────
+
+///|
+/// 保証 (issue 2026-07-08 dec-alias-long-override-flag-sugar-gap の根治): alias `long_override` の
+/// `long:true` (LBool(true)) は、canonical 側の `long:true` と同じ規則1 (DR-076 §2: flag なら
+/// `:set:true` へ差し替え) を適用する。alias `{alias:"verbose", name:"v", long:true}` (canonical
+/// verbose = flag) は、値スロット形の main entry `--v <bool>` ではなく、`:set:true` の裸発火 variant
+/// (Bind("verbose", true)) を生む — desugar_aliases が canonical の「元の型」(normalize_surface で
+/// TBool 化される前の TFlag) を保持した複製 (`orig`) から引き、alias 名・その元の型で resolve_long
+/// を通すことで実現する。
+test "desugar_aliases: alias long:true on a flag canonical composes :set:true (bare fire), not a value-slot main entry (DR-076 §2 規則1)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TFlag)],
+    aliases: [
+      {
+        target: "verbose",
+        name: Some("v"),
+        short: [],
+        long_override: Some(LBool(true)),
+        deprecated: false,
+      },
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  // alias 側の trigger --v は Bind (裸発火) 衛星 1 本のみ — EqSplit (値スロット形) には登録されない。
+  let mut has_bare_bind = false
+  let mut has_value_slot = false
+  for g in sc.greedy {
+    match g {
+      Seq([Exact("--v"), Bind("verbose", VBool(true))]) => has_bare_bind = true
+      Seq([Exact("--v"), BoolArg("verbose")]) => has_value_slot = true
+      _ => ()
+    }
+  }
+  assert_true(has_bare_bind)
+  assert_false(has_value_slot)
+}
+
+///|
+/// 保証 (対照): alias `long_override` の `long:true` は canonical が string (非 flag) なら、通常どおり
+/// `:set` (値スロット形) に糖衣展開される — 規則1 の差し替えは flag 型限定であることの固定。
+test "desugar_aliases: alias long:true on a string canonical stays a value-slot main entry" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("host", TStr)],
+    aliases: [
+      {
+        target: "host",
+        name: Some("h"),
+        short: [],
+        long_override: Some(LBool(true)),
+        deprecated: false,
+      },
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  let mut has_value_slot = false
+  for g in sc.greedy {
+    match g {
+      Seq([Exact("--h"), StrArg("host")]) => has_value_slot = true
+      _ => ()
+    }
+  }
+  assert_true(has_value_slot)
+}
+
+// ── copy_global_into 冪等判定はトリガ集合まで見る (codex 指摘、regression 修正) ─────
+
+///|
+/// 保証 (codex 指摘の regression 修正): `copy_global_into` の idempotent 判定は「同名 + コピー由来」
+/// だけでなく**トリガ集合の一致**まで見る。root と mid にそれぞれ独立に宣言された同名 (`x`) だが
+/// 別トリガ (`:set:true` vs `no:set:false`) の global が祖先チェーンにある場合、両方とも孫スコープ
+/// (sub) まで正しく伝播しなければならない — 「同名なら idempotent」という緩い判定だと、先に
+/// コピーされた方 (トリガ A) が後続の別トリガ (トリガ B) のコピーを誤って抑止してしまう。
+///
+/// この regression は `parse()` 経由の end-to-end テストでは検出できなかった: DR-041 §4 の
+/// 早閉じ+porous によって、sub 自体にトリガが 1 本しか無くても祖先 (mid) の greedy 面がまだ読める
+/// ため、observable な parse 結果 (effects/result) が偶然「両方効いているように」見えてしまう。
+/// そのため `materialize` 後の `Scope` 構造 (sub 自身の greedy 面に積まれた `Rooted` 衛星の本数) を
+/// 直接検査する — sub 自身が両トリガの link 衛星を持つことが、porous に頼らない正しい伝播の証拠。
+test "copy_global_into: two same-name different-trigger globals (declared independently at root and mid) both propagate to a grandchild scope" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [{ ..el("x", TBool), long: LList([":set:true"]), is_global: true }],
+    commands: [
+      {
+        name: "mid",
+        body: {
+          ..empty_def(),
+          options: [
+            { ..el("x", TBool), long: LList(["no:set:false"]), is_global: true },
+          ],
+          commands: [{ name: "sub", body: empty_def(), export_key: EkUnset }],
+        },
+        export_key: EkUnset,
+      },
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  let mut mid_sc : Scope? = None
+  for g in sc.greedy {
+    match g {
+      CmdSat(n, cs) => if n == "mid" { mid_sc = Some(cs) }
+      _ => ()
+    }
+  }
+  let mid_sc = mid_sc.unwrap()
+  let mut sub_sc : Scope? = None
+  for g in mid_sc.greedy {
+    match g {
+      CmdSat(n, cs) => if n == "sub" { sub_sc = Some(cs) }
+      _ => ()
+    }
+  }
+  let sub_sc = sub_sc.unwrap()
+  // sub 自身の greedy 面に、root 由来 (:set:true) と mid 由来 (no:set:false) 両方の Rooted 衛星が
+  // 積まれているはず — 1 本しか無ければ、後続コピーがトリガ違いにも関わらず誤って抑止された regression。
+  let mut rooted_count = 0
+  for g in sub_sc.greedy {
+    match g {
+      Rooted(_, _) => rooted_count = rooted_count + 1
+      _ => ()
+    }
+  }
+  assert_eq(rooted_count, 2)
+}
+
+// ── add_inheritable_copy の shadow 判定はトリガ集合まで見る (codex 指摘、regression 修正) ──
+
+///|
+/// 保証 (codex 指摘の regression 修正): `add_inheritable_copy` の自前優先 shadow 判定は、DR-076 後に
+/// 裸発火トリガが `variants` 側に入るケース (例: alias `[":set:true"]` 由来) も見なければならない。
+/// root の canonical `other` (flag, トリガなし) + alias `{alias:"other", name:"sub-ttl",
+/// long:[":set:true"]}` で `--sub-ttl` を裸発火として与えておき、子 `sub` の inheritable `ttl` が
+/// 同じ綴り `sub-ttl` (defining scope 名 "sub" + name "ttl" の prefix 導出) で祖先へ逆コピーされよう
+/// とするケース。`long_of` (main long のみ) で shadow 判定すると alias 由来のトリガ (variants 側) を
+/// 見落とし、`--sub-ttl` の入口が重複してしまう (root の greedy 面に同一 Exact トリガの衛星が 2 本
+/// 立つ)。`all_long_triggers` (long + variants 横断) で判定すれば、既存の alias トリガを検出して
+/// inheritable コピーが正しく shadow (抑止) される。
+test "add_inheritable_copy: an alias-provided (variants-side) trigger shadows the inheritable reverse-copy" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("other", TFlag)],
+    commands: [
+      {
+        name: "sub",
+        body: {
+          ..empty_def(),
+          options: [
+            {
+              ..el("ttl", TNum),
+              is_inheritable: true,
+              default_value: Some(VNum(60.0)),
+            },
+          ],
+        },
+        export_key: EkUnset,
+      },
+    ],
+    aliases: [
+      {
+        target: "other",
+        name: Some("sub-ttl"),
+        short: [],
+        long_override: Some(LList([":set:true"])),
+        deprecated: false,
+      },
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  let mut count = 0
+  for g in sc.greedy {
+    match g {
+      Seq([Exact("--sub-ttl"), ..]) => count = count + 1
+      _ => ()
+    }
+  }
+  // shadow が正しく効けば alias 由来の 1 本のみ (inheritable コピーは重複追加されない)。
+  assert_eq(count, 1)
 }

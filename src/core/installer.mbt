@@ -99,12 +99,16 @@ pub(all) struct OrBranch {
 /// alias 宣言 (DR-057): 参照ファミリー third member (ref / link / **alias**). 独立 element として
 /// `{alias:"port", short:"n"}` の形で書く。`target` = canonical, `name` = alias 自身の名 (None なら
 /// canonical と同名), `short` = alias 明示 short (canonical の short は継承しない §3), `long_override`
-/// (DR-007 差分上書き): None = alias 名で name-derived variants を再導出, Some(xs) = 明示置換。
+/// (DR-007 差分上書き): None = alias 名で name-derived variants を再導出, Some(decl) = 明示置換。
+/// `LongDecl` (wire 二形保持) を canonical の `long` と同じ型にする — bool/array の区別を decode 後も
+/// 保持しないと、alias 側で DR-076 §2 の flag 差し替え/補完 (`resolve_long`) を適用できない (issue
+/// 2026-07-08 dec-alias-long-override-flag-sugar-gap: 旧 `Array[String]?` は `long:true` を型非依存に
+/// `[":set"]` へ潰しており、canonical が flag でも裸発火 `:set:true` へ差し替わらなかった)。
 pub(all) struct AliasDef {
   target : String
   name : String?
   short : Array[Char]
-  long_override : Array[String]?
+  long_override : LongDecl?
   deprecated : Bool
 } derive(Eq, Debug)
 
@@ -616,7 +620,9 @@ fn clone_def(d : Definition) -> Definition {
 /// 建った Scope の keying と一致するように。
 pub fn build_export_map(def : Definition) -> Map[String, ExportKey] {
   let d = clone_def(def)
-  desugar_aliases(d)
+  // `d` は normalize_surface を経ていない生の (= pre-normalize) 複製なので、`orig` 引数にも
+  // 同じ `d` を渡してよい (TFlag 等の元の型はまだ書き換わっていない)。
+  desugar_aliases(d, d)
   let m : Map[String, ExportKey] = Map([], capacity=0)
   collect_export(d, m)
   m
@@ -1204,8 +1210,17 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     // トリガ集合が空だと常に false を返すため、上のチェックだけでは「既にコピー済みの trigger-less
     // canonical」を検出できず、fixpoint のたびに同じ要素を再コピーし続けて収束しない
     // (installer chain did not converge)。同名 + link_depth>0 (= コピー由来) の既存要素があれば、
-    // トリガの有無に関わらず idempotent とみなす。
-    if existing.name == opt.name && existing.link_depth > 0 {
+    // idempotent とみなす — ただし判定はトリガ集合も一致する場合に限る (codex 指摘、実機確認済み
+    // regression: 同名だが**別トリガ**の 2 つの global が祖先チェーンの異なる段でそれぞれ独立に宣言
+    // されている場合、`name` だけで判定すると先にコピーされた方が後続の別トリガ copy を誤って
+    // 抑止し、孫スコープへ一方のトリガが伝播しなくなる — conformance の parse() 経由テストでは
+    // DR-041 §4 早閉じ+porous が観測結果を偶然保存してしまい検出できなかったため、`materialize` 後
+    // の Scope 構造 (Rooted 衛星の本数) を直接検査する wbtest で確認した)。トリガ集合が両方とも
+    // 空集合の場合は「集合一致」も自明に成立するので、元の trigger-less canonical バグの修正は
+    // このまま維持される。
+    if existing.name == opt.name &&
+      existing.link_depth > 0 &&
+      trigger_sets_equal(existing, opt) {
       return
     }
   }
@@ -1271,6 +1286,24 @@ fn all_long_triggers(e : ElemDef) -> Array[String] {
     out.push(v.trigger)
   }
   out
+}
+
+///|
+/// 2 要素のトリガ集合が完全一致するか (順序無視、`all_long_triggers` の集合として比較)。
+/// `copy_global_into` の idempotent 判定 (同名 + コピー由来 + トリガ集合一致) 専用 — トリガ集合が
+/// 両方とも空なら自明に一致する (trigger-less canonical の idempotent 判定を保つ)。
+fn trigger_sets_equal(a : ElemDef, b : ElemDef) -> Bool {
+  let ta = all_long_triggers(a)
+  let tb = all_long_triggers(b)
+  if ta.length() != tb.length() {
+    return false
+  }
+  for t in ta {
+    if !str_in(tb, t) {
+      return false
+    }
+  }
+  true
 }
 
 ///|
@@ -1368,10 +1401,14 @@ fn gather_inheritable(
 
 ///|
 /// 祖先 scope の宣言層に prefixed write-entry を追加 (add-if-absent, shadow-aware)。祖先が同トリガを
-/// 既に宣言 (§3 global 対称 shadow) なら copy しない。
+/// 既に宣言 (§3 global 対称 shadow) なら copy しない。DR-076 後は裸発火トリガが `variants` 側に入る
+/// (例: alias `[":set:true"]` 由来) ため、`long_of` (main long のみ) ではなく `all_long_triggers`
+/// (long + variants 横断) で判定する必要がある — codex 指摘、実機確認済み regression: alias が
+/// variants 側で提供するトリガを `long_of` だけでは見落とし、同じ綴りの inheritable コピーを重複
+/// 追加してしまう (materialize 後の Scope に同一トリガの greedy 衛星が 2 本立つ)。
 fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
   for existing in sb.decl.options {
-    if str_in(long_of(existing), trigger) {
+    if str_in(all_long_triggers(existing), trigger) {
       return // 自前優先 (shadow) / 既 copy (idempotent)
     }
   }
@@ -1605,7 +1642,13 @@ fn alias_entry(
 /// "alias" 所有を確認した後、init_sb 前に 1 度だけ走る決定的 pre-pass。各 entry-copy は canonical name
 /// で keying (satellites が canonical cell を bind、結果キーも canonical)、再導出綴りを携行し、fixpoint
 /// の long/short/command installer が展開する (DR-057 §4)。command subtree にも再帰。
-fn desugar_aliases(def : Definition) -> Unit {
+///
+/// `orig` は normalize_surface 適用前の複製 (issue 2026-07-08 dec-alias-long-override-flag-sugar-
+/// gap): `def` 側の canonical 要素は既に TFlag→TBool 変換済みなので、DR-076 §2 規則1 (flag の
+/// `long:true` 糖衣は `:set:true` へ差し替え) を判定する材料 (元の型 TFlag) が失われている。`orig`
+/// から同じ target 要素の変換前の `ty`/`long` を引き、`resolve_long` を canonical 側と同じ形で
+/// 通すことで、alias 側にも同じ規則1/2 を適用する。
+fn desugar_aliases(def : Definition, orig : Definition) -> Unit {
   for a in def.aliases {
     let alias_name = match a.name {
       Some(n) => n
@@ -1613,37 +1656,45 @@ fn desugar_aliases(def : Definition) -> Unit {
     }
     match find_elem(def, a.target) {
       Some(canon) => {
-        // 基底 long 綴り: name-derived (§3 / DESIGN §14.5)。canonical が name-derived を持つ
-        // (long 配列に自 name を含む) 時のみ、alias 名で再導出。
+        let (orig_ty, orig_long) = match find_elem(orig, a.target) {
+          Some(oc) => (oc.ty, oc.long)
+          None => (canon.ty, canon.long) // 理論上起きない防御的フォールバック
+        }
+        // canonical 自身の (pre-normalize) long を canonical 名・元の型で解決する — 基底 long 綴り
+        // (name-derived 主入口の有無) と、継承すべき NAME-DERIVED variants の両方をここから導く。
+        // resolve_long を通すことで、canonical が flag なら規則1/2 (:set:true 差し替え/補完) を
+        // 反映した形で `canon_vars` が手に入る。
+        let (canon_longs, canon_vars) = resolve_long(
+          orig_long,
+          canon.name,
+          orig_ty,
+        )
         let long : Array[String] = []
-        if str_in(long_of(canon), canon.name) {
+        if str_in(canon_longs, kebab(canon.name)) {
           long.push(alias_name)
         }
-        // 明示 `long` override (DR-007 差分上書き) は自綴りを add、継承 variants を cut。override
-        // 文字列は canonical の `long`/`variants` と同じ colon DSL (DR-011/071/076) — 生文字列のまま
-        // push すると `":set:true"` 等が解釈されず literal 綴り `"--:set:true"` になる (issue
-        // 2026-07-08 alias long_override gap)。`classify_long_spelling` (canonical 側の resolve_long
-        // と共通の分類器) で alias_name 基準に分類する。
+        // 明示 `long` override (DR-007 差分上書き) は自綴りを add、継承 variants を cut。alias 自身の
+        // long も canonical と同じ `resolve_long` (colon DSL 分類 + flag 規則1/2) を alias 名・
+        // canonical の元の型で通す — 型依存の糖衣差し替えが alias 側でも canonical と揃う
+        // (issue 2026-07-08 dec-alias-long-override-flag-sugar-gap の根治)。
         let variants : Array[Variant] = []
         match a.long_override {
-          Some(extra) =>
-            for l in extra {
-              match classify_long_spelling(l, alias_name, canon.ty) {
-                LMain(n) => if !str_in(long, n) { long.push(n) }
-                // DR-011 明確化 (2026-07-08): colon-less / 語彙外 effect は `collect_invalid_alias_
-                // long_override` (static check フェーズ、parse_definition が normalize_surface を呼ぶ
-                // 前) が既に definition-error `unknown-vocab` として検出し、errs 非空なら desugar_
-                // aliases 自体に到達しない — ここに来る時点で LInvalid は理論上出現しない防御的分岐。
-                // canonical 側 `resolve_long` の LInvalid 無視と対称に、フォールスルーで無視する。
-                LInvalid(_) => ()
-                LVariant(v) => variants.push(v)
+          Some(decl) => {
+            let (longs, vars) = resolve_long(decl, alias_name, orig_ty)
+            for n in longs {
+              if !str_in(long, n) {
+                long.push(n)
               }
             }
+            for v in vars {
+              variants.push(v)
+            }
+          }
           None =>
-            // canonical の NAME-DERIVED variants を alias 名で再導出。variant.trigger が canonical.name
-            // を部分文字列に含めば name-derived (DR-057 §3); 明示 trigger (e.g. compress の "gzip") は
-            // 非継承 (明示綴り非継承)。
-            for v in canon.variants {
+            // canonical の NAME-DERIVED variants (上で resolve_long 済み) を alias 名で再導出。
+            // variant.trigger が canonical.name を部分文字列に含めば name-derived (DR-057 §3);
+            // 明示 trigger (e.g. compress の "gzip") は非継承 (明示綴り非継承)。
+            for v in canon_vars {
               if str_has_sub(v.trigger, canon.name) {
                 variants.push({
                   trigger: str_replace_first(v.trigger, canon.name, alias_name),
@@ -1678,7 +1729,11 @@ fn desugar_aliases(def : Definition) -> Unit {
     }
   }
   for c in def.commands {
-    desugar_aliases(c.body)
+    let orig_body = match find_command(orig, c.name) {
+      Some(oc) => oc.body
+      None => c.body // 理論上起きない防御的フォールバック (orig 側の対応 command が見つからない)
+    }
+    desugar_aliases(c.body, orig_body)
   }
 }
 
@@ -1772,26 +1827,30 @@ fn collect_invalid_alias_long_override(
 ) -> Unit {
   for a in def.aliases {
     match a.long_override {
-      Some(extra) => {
+      Some(decl) => {
         let alias_name = match a.name {
           Some(n) => n
           None => a.target
         }
         match find_elem(def, a.target) {
           Some(canon) =>
-            for l in extra {
-              match classify_long_spelling(l, alias_name, canon.ty) {
-                LInvalid(s) =>
-                  out.push(
-                    def_err(
-                      alias_name,
-                      DUnknownVocab,
-                      "alias long_override spelling '\{s}' is not valid variant DSL (colon-less, or an unrecognized effect word) — DR-011 明確化 2026-07-08",
-                      "use `:set` / a colon-DSL variant (e.g. `:set:true`, `no:set:false`) in long_override",
-                    ),
-                  )
-                LMain(_) | LVariant(_) => ()
-              }
+            match decl {
+              LBool(_) => () // bool 糖衣は常に妥当 (DR-071 §1 / DR-076 §2)
+              LList(strs) =>
+                for l in strs {
+                  match classify_long_spelling(l, alias_name, canon.ty) {
+                    LInvalid(s) =>
+                      out.push(
+                        def_err(
+                          alias_name,
+                          DUnknownVocab,
+                          "alias long_override spelling '\{s}' is not valid variant DSL (colon-less, or an unrecognized effect word) — DR-011 明確化 2026-07-08",
+                          "use `:set` / a colon-DSL variant (e.g. `:set:true`, `no:set:false`) in long_override",
+                        ),
+                      )
+                    LMain(_) | LVariant(_) => ()
+                  }
+                }
             }
           None => () // dangling alias target — absent-ref check が別途拾う
         }
@@ -2337,6 +2396,12 @@ pub fn parse_definition(
   registry? : Map[String, Node] = Map([], capacity=0),
 ) -> Result[Scope, Array[DefError]] {
   let def = clone_def(def0)
+  // DR-076 §2 flag 差し替え/補完の alias 側適用 (issue 2026-07-08 dec-alias-long-override-flag-sugar-
+  // gap): `desugar_aliases` は canonical 要素の「元の型」(TFlag のまま、resolve_long の規則1判定に
+  // 必須) を必要とするが、`normalize_surface` は canonical 要素を TBool へ書き換えてしまい、この情報
+  // を post-normalize な `def` から取り戻せない。normalize 前の複製を別途保持し、alias 解決時だけ
+  // そちらを参照する (def 自体には normalize を通常どおり適用する — 二重 pipeline にしない)。
+  let orig = clone_def(def0)
   let errs : Array[DefError] = []
   // DR-011 明確化 (2026-07-08): `:set` → kebab 展開 (normalize_surface) より前に検査する — 展開後は
   // sentinel `":set"` 自体が消え、有効な main entry と無効な残存文字列を区別できなくなる。
@@ -2362,7 +2427,7 @@ pub fn parse_definition(
   }
   // alias 宣言 desugar (DR-057): 完全性検査 pass 後、決定的 pre-pass。option entry-copies /
   // command defs を追加 — fixpoint installer が展開する。
-  desugar_aliases(def)
+  desugar_aliases(def, orig)
   let sb = init_sb(def, registry) // desugar 済 def で scope tree 再構築
   // 同型 default (DR-050 §3): config_file 要素があれば全 value cell に config seat を宣言。1 度計算、
   // ensure_entity に thread。
