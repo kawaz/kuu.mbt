@@ -53,3 +53,13 @@
 
 - **jj 並行 ws の divergent change**: main ws と divfix ws の操作が交錯すると同一 change-id が /0 (pushed) と /1 (ローカル) に分裂し、push gate が「(ambiguous)」で止まる。対処: `jj diff --from X/1 --to X/0` で内容一致を確認 → pushed 側 (immutable ◆) に rebase し直し → /1 系列を abandon。**根本回避は「ws を跨ぐ操作の直前に jj log で相手 ws の @ 位置を確認する」**
 - 新起票 (実装監査からの発見): `export-key-collision-identity-exposure-gap` (identity 露出 vs mapped key の衝突未検出、spec 精読要)
+
+## 追記 2 (同日): conformance 全一致 (mismatches=0) 到達
+
+kawaz 裁定 6 件 (取り分の向き / int 値域 / bool 値型 / not_a_bool / 自動 id / DR-066 path) の spec 反映後、
+最後の path-search 3 件を解消して **divergence 20 → 0** (`8d1d0b9`、fixtures pin ce1b684e)。
+
+- **根本原因**: lower_positional が unbounded repeat の min:0 を min:1 に丸めていた (取り分の向きの実装は最初から正しかった)。修正は既存 spine 形 `Many(head)` への lowering — 新規 Node なし
+- **fixture バグの検出**: 実装の突き合わせで ambiguous-receptacles の effects:[] 計算漏れを発見 → spec 側で是正 (ce1b684e)。**参照実装が spec の fixture バグを検出した初のケース** (conformance の相互検証が機能)
+- **新発見 issue**: min:0 + lazy:true で laziness が沈黙で greedy に落ちる (`min0-lazy-repeat-gap`、Many に lazy の座席なし)
+- 残る実装課題は conformance 外の issue 群 (greedy 1 回制約 / IdxRepeat 前提 / accum export_key / identity 露出衝突 / structural-or = ElemDef 再設計 [設計条件は kawaz 裁定で確定済み])
