@@ -1,6 +1,6 @@
 ---
 title: Pending 飢餓経由の missing_operand が DR-066 §4 path を持てない
-status: open
+status: resolved
 category: design
 created: 2026-07-08T17:47:53+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-08T21:43:06+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:Cand.path 追加 (修正方向の案 A) で根治 (commit a7621231)。Held と同型に scope 境界 (nest_branches / CmdSat) で prepend し、parse() の Pending→missing_operand 変換点で path を引き継ぐ。complete() の dedup は DR-060 §3 の候補構造基準の明示比較に変更して公開面の契約を維持 (path は §3 の契約外、回帰テストで固定)。RED→GREEN 実証済み。"]
 blocked_by:
 origin: kuu (spec リポ)
 ---
