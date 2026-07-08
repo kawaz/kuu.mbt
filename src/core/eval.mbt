@@ -286,7 +286,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TNum, name)], [])]
       }
-FloatArg(name) =>
+    FloatArg(name) =>
       // DR-074 §1: the float accept域 = number + inf (parse_float), same reason vocab (not_a_number)
       // on failure as NumArg — only the parser function differs.
       if pos < ctx.toks.length() {
@@ -892,7 +892,9 @@ fn step_greedy(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         // complete: the command name is readable at the boundary (DR-060 §1).
-        out.push(Pending([cand_trigger(name, name, TFlag, WordEnd, false)], acc))
+        out.push(
+          Pending([cand_trigger(name, name, TFlag, WordEnd, false)], acc),
+        )
       }
     DdSat(trigger) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {

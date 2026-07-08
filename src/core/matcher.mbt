@@ -287,7 +287,9 @@ fn walk_short(
               Some(b) => out.push(Accept(pos + 2, cat(acc, cat([b], dm))))
               None =>
                 if e.kind == TNum || e.kind == TInt || e.kind == TFloat {
-                  out.push(Held(pe_parse(e.name, ctx.toks[pos + 1], pos + 1), []))
+                  out.push(
+                    Held(pe_parse(e.name, ctx.toks[pos + 1], pos + 1), []),
+                  )
                 }
             }
           } else if vstart == body.length() && in_complete(ctx) {
