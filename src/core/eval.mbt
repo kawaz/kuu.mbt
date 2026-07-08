@@ -587,10 +587,45 @@ fn idx_repeat_eval(
     }
   }
   if rep < min {
-    []
+    if in_complete(ctx) {
+      // complete: the mandatory next rep starved (or its trigger sits at the
+      // boundary) — surface the head's Pending candidates instead of the
+      // parse-mode silent Reject.
+      idx_head_pendings(head, ctx, cur, acc)
+    } else {
+      []
+    }
   } else {
-    [Accept(cur, acc)]
+    let out : Array[Branch] = [Accept(cur, acc)]
+    if in_complete(ctx) {
+      // complete: min is met but one MORE rep is still typable — union in
+      // the head's boundary candidates (DR-060 §1 全生存 partial の和集合).
+      for b in idx_head_pendings(head, ctx, cur, acc) {
+        out.push(b)
+      }
+    }
+    out
   }
+}
+
+///|
+/// The head's Pending branches at `pos` with the reps consumed so far as
+/// partial state. A mismatch (no Pending) contributes nothing — only the
+/// boundary starvation does.
+fn idx_head_pendings(
+  head : Node,
+  ctx : Ctx,
+  pos : Int,
+  acc : Array[Binding],
+) -> Array[Branch] {
+  let out : Array[Branch] = []
+  for b in eval(head, ctx, pos) {
+    match b {
+      Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+      _ => ()
+    }
+  }
+  out
 }
 
 ///|
@@ -1551,6 +1586,11 @@ fn scope_consume_rep(
           severed,
           k,
         )
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        // complete: "one more Many rep" starved at the boundary is a value
+        // candidate (DR-060 §1) — in parse it is a legitimate silent stop
+        // (the 0-more branch already covers the walk).
+        [Pending([pend_value(TStr, name)], acc)]
       } else {
         []
       }
@@ -1569,6 +1609,8 @@ fn scope_consume_rep(
             )
           None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
         }
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        [Pending([pend_value(TNum, name)], acc)]
       } else {
         []
       }

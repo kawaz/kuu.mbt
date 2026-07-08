@@ -221,3 +221,39 @@ test "DR-060 §1: 全消費も一意性も課さない — 既に完全でも続
   let cs = complete(ScopeNode(root), ["x"])
   assert_true(has_exact(cs, "--v"))
 }
+
+///|
+test "DR-060 §1: spine の Many も続きの値候補を出す (codex REVIEW-C1)" {
+  // Ref repeat は consume_head 経由で修正済みだったが、spine の Many は
+  // scope_consume_rep 経由で EOF が沈黙 [] のままだった (同型パターンの
+  // 取りこぼし)。1 rep 消費後もこれから 0 rep 目でも、次の xs は打てる。
+  let root : Scope = {
+    greedy: [],
+    positional: [Many(StrArg("xs"))],
+    entities: [],
+    constraints: [],
+  }
+  let cs = complete(ScopeNode(root), ["a"])
+  assert_true(has_value(cs, "xs"))
+  let cs0 = complete(ScopeNode(root), [])
+  assert_true(has_value(cs0, "xs"))
+}
+
+///|
+test "DR-060 §1: IdxRepeat も min 前後の両方で続きの値候補を出す (codex REVIEW-C2)" {
+  // idx_one が Pending を明示的に捨てていた。min 未達 (最初の必須 rep が
+  // 飢える) でも min 充足後 (もう 1 rep 打てる) でも、head の境界候補は
+  // 和集合に入る (DR-060 §1)。
+  let root : Scope = {
+    greedy: [],
+    positional: [IdxRepeat("xs", StrArg("xs"), 1)],
+    entities: [],
+    constraints: [],
+  }
+  // min=1 未達: 最初の rep の値位置が候補。
+  let cs0 = complete(ScopeNode(root), [])
+  assert_true(has_value(cs0, "xs"))
+  // min 充足後: 次の rep も候補 (経路自体は Accept でもある)。
+  let cs1 = complete(ScopeNode(root), ["a"])
+  assert_true(has_value(cs1, "xs"))
+}
