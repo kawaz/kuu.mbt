@@ -202,9 +202,13 @@ pub(all) struct Scope {
 pub(all) enum Constraint {
   /// element committed → each target must have a value (default 込み). requires = 正の依存 (DR-055 §3).
   CRequires(String, Array[String])
-  /// value-dependent requires (DR-055 §1): element committed AND its value == the given string →
-  /// the targets are required. This is the「値の枝 (exact) に付いた requires」as a value-conditional.
-  CRequiresIf(String, String, Array[String])
+  /// value-dependent requires (DR-055 §1 + DR-052 §値枝 id 直交): 4-tuple = (entity, branch_id,
+  /// value, targets). Semantics: `entity` が committed AND その値 == `value` のとき、`targets` の値
+  /// 充足を要求する。違反時の error.element は `branch_id` (= or 値枝の匿名要素に付いた id、fixture
+  /// の `id: "fmt_json"` に相当) を emit する — 値の帰属先は親 entity (format) だが制約の宣言元は
+  /// 枝 (fmt_json) なので、element 属性は宣言元を指す (DR-052 と直交)。`branch_id` == `entity` の
+  /// ときは or 匿名枝に id が付いていない (parent 直属の value_requires を模したフォールバック)。
+  CRequiresIf(String, String, String, Array[String])
   /// conflicts_with (DR-055 §2, 対称): element committed + any target committed → conflict. Declaring
   /// on one side works both ways (the check is「両方 committed」regardless of who declared it).
   CConflicts(String, Array[String])

@@ -1929,9 +1929,13 @@ fn eval_constraints(
             }
           }
         }
-      CRequiresIf(elem, v, targets) => {
-        let active = is_committed(bindings, path, elem) &&
-          (match elem_value(bindings, path, elem) {
+      CRequiresIf(entity, branch_id, v, targets) => {
+        // DR-055 §1 + DR-052 §値枝 id 直交: committed 判定 / 値照合は親 entity (format) を対象に、
+        // 違反時の error.element は branch_id (fmt_json = 制約の宣言元 = 値枝の id) を emit する。
+        // branch_id は installer で id 未指定時に entity 名にフォールバックされているので、id なしの
+        // parent 直属 value_requires は従来通り entity 名で attribution される。
+        let active = is_committed(bindings, path, entity) &&
+          (match elem_value(bindings, path, entity) {
             Some(x) => x == v
             None => false
           })
@@ -1940,9 +1944,9 @@ fn eval_constraints(
             if !value_present(t, bindings, path, sc.entities) {
               out.push(
                 constraint_err(
-                  elem,
+                  branch_id,
                   "requires_violated",
-                  "'\{elem}'=\{v} requires '\{t}'",
+                  "'\{entity}'=\{v} requires '\{t}'",
                   pos,
                 ),
               )

@@ -40,7 +40,12 @@ pub(all) struct ElemDef {
   requires : Array[String] // constraint installer (DR-055): 正の依存
   conflicts_with : Array[String] // constraint installer (DR-055): 対称ペア排他
   exclusive_group : Array[String] // constraint installer (DR-047): group labels
-  value_requires : Array[(String, Array[String])] // DR-055 §1: (value → required) 値の枝に付いた requires
+  // DR-055 §1 + DR-052 §値枝 id 直交: 値の枝に付いた requires。tuple 各成分 =
+  // (branch_id, value, targets)。branch_id は or 値枝の匿名要素に付いた識別子 (fixture の `id:
+  // "fmt_json"`) で、CRequiresIf 違反時の error.element として emit する (制約の宣言元 = 枝、
+  // 値の帰属先 = 親 entity の非対称)。id 未指定時は parent entity name を branch_id にフォールバック
+  // (parent 直属の value_requires と等価な挙動)。
+  value_requires : Array[(String, String, Array[String])]
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
   default_value : Value?
 } derive(Eq, Debug)
@@ -911,7 +916,9 @@ fn inst_constraint(def : Definition, build : Build) -> Unit {
       add_constraint(build, CConflicts(e.name, copy_strs(e.conflicts_with)))
     }
     for vr in e.value_requires {
-      add_constraint(build, CRequiresIf(e.name, vr.0, copy_strs(vr.1)))
+      // DR-055 §1 / DR-052 §値枝 id 直交: 4-tuple = (entity, branch_id, value, targets)。entity は
+      // committed 判定 / 値照合の対象 (親 name)、branch_id は違反時の error.element (枝の id)。
+      add_constraint(build, CRequiresIf(e.name, vr.0, vr.1, copy_strs(vr.2)))
     }
   }
   // exclusive_group: label per scope でメンバを集約 → 1 CExclusive per label

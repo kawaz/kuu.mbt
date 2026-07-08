@@ -299,7 +299,7 @@ fn opt(
   requires? : Array[String] = [],
   conflicts? : Array[String] = [],
   exclusive? : Array[String] = [],
-  value_requires? : Array[(String, Array[String])] = [],
+  value_requires? : Array[(String, String, Array[String])] = [],
   default? : Value? = None,
 ) -> ElemDef {
   {
@@ -550,9 +550,14 @@ fn lcon_str(c : Constraint) -> String {
       "requires{element=" + el + ",targets=[" + sorted(ts) + "]}"
     CConflicts(el, ts) =>
       "conflicts_with{element=" + el + ",targets=[" + sorted(ts) + "]}"
-    CRequiresIf(el, v, ts) =>
-      "requires_if{element=" +
-      el +
+    CRequiresIf(entity, branch_id, v, ts) =>
+      // DR-055 §1 + DR-052 §値枝 id 直交: entity は committed 判定対象、branch_id は違反時 element。
+      // 断面には両方 emit する (entity と branch_id が別ならその非対称が読める; id なしの parent 直属
+      // 値依存 requires では entity == branch_id となり冗長だが projection は fixture 側と対称に保つ)。
+      "requires_if{entity=" +
+      entity +
+      ",element=" +
+      branch_id +
       ",value=" +
       v +
       ",targets=[" +
@@ -1728,7 +1733,10 @@ fn dec_alias(o : Map[String, Json]) -> AliasDef raise DecodeSkip {
 }
 
 ///|
-fn dec_or(j : Json) -> Array[(String, Array[String])] raise DecodeSkip {
+fn dec_or(
+  j : Json,
+  parent_name : String,
+) -> Array[(String, String, Array[String])] raise DecodeSkip {
   let a = match j.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("or is not an array")
@@ -1744,7 +1752,10 @@ fn dec_or(j : Json) -> Array[(String, Array[String])] raise DecodeSkip {
       None => ()
     }
   }
-  let vrs : Array[(String, Array[String])] = []
+  // DR-055 §1 + DR-052 §値枝 id 直交: 各枝の tuple = (branch_id, exact_value, targets)。branch_id は
+  // `id` フィールド (fixture の `id: "fmt_json"`) を採用、未指定なら parent_name にフォールバック
+  // (parent 直属 value_requires と等価挙動)。
+  let vrs : Array[(String, String, Array[String])] = []
   for e in a {
     let bo = match e.j_obj() {
       Some(x) => x
@@ -1760,7 +1771,8 @@ fn dec_or(j : Json) -> Array[(String, Array[String])] raise DecodeSkip {
     }
     let reqs = dec_strs(bo.get("requires"))
     if reqs.length() > 0 {
-      vrs.push((exact, reqs))
+      let branch_id = jf_str(bo, "id").unwrap_or(parent_name)
+      vrs.push((branch_id, exact, reqs))
     }
   }
   vrs
@@ -1784,10 +1796,6 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
     ],
     "option",
   )
-  let value_requires = match o.get("or") {
-    Some(orj) => dec_or(orj)
-    None => []
-  }
   let tystr = match jf_str(o, "type") {
     Some(t) => t
     None =>
@@ -1800,6 +1808,11 @@ fn dec_option(j : Json) -> DElem raise DecodeSkip {
   let name = match jf_str(o, "name") {
     Some(s) => s
     None => raise DecodeSkip("option missing 'name'")
+  }
+  // dec_or は parent name を要求 (or 枝の `id` 未指定時のフォールバック先、DR-055 §1 + DR-052)。
+  let value_requires = match o.get("or") {
+    Some(orj) => dec_or(orj, name)
+    None => []
   }
   if tystr == "dd" {
     return DOpt({ ..dd_marker(), name, })
@@ -2433,13 +2446,19 @@ fn dec_lcon(j : Json) -> Constraint raise DecodeSkip {
       CConflicts(req_field(o, "element"), dec_strs(o.get("targets")))
     }
     "requires_if" => {
+      // DR-055 §1 + DR-052 §値枝 id 直交: fixture 側が constraints[] を直宣言する場面での decoder。
+      // `entity` (committed 判定対象) と `element` (違反時 emit する branch_id) の両方を受け付ける。
+      // `entity` 省略時は `element` にフォールバック (parent 直属 value_requires 相当の暗黙形)。
       allowed_keys(
         o,
-        ["kind", "element", "value", "targets"],
+        ["kind", "entity", "element", "value", "targets"],
         "requires_if constraint",
       )
+      let element = req_field(o, "element")
+      let entity = jf_str(o, "entity").unwrap_or(element)
       CRequiresIf(
-        req_field(o, "element"),
+        entity,
+        element,
         req_field(o, "value"),
         dec_strs(o.get("targets")),
       )
@@ -2973,17 +2992,11 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// "新実装 delta 3 件"), so the divergence-ledger assertion stays red until they are addressed.
 fn known_divergences() -> Array[String] {
   [
-    // ── DR-052 §値枝 id 直交 / DR-055 §1 value-conditional requires: `or` 値枝の `id` (fmt_json) が
-    //     属性する CRequiresIf の element 名を anonymous 枝 id に紐づけられず、親 element (format) に付く。
-    //     main の ElemDef は slice と同じく flat で anonymous 枝 id を持たない。reason は fixture が
-    //     opt-in で書いた requires_violated (DR-066 §3 v1 vocab)。追従は「value-branch id 属性の再設計」issue で。
-    "constraints-parse/default-interaction.json::value-branch-cli-trigger :: errors got={format@2/constraint/requires_violated} want={fmt_json@2/constraint/requires_violated}",
-    "constraints-parse/requires.json::value-requires-violated :: errors got={format@2/constraint/requires_violated} want={fmt_json@2/constraint/requires_violated}",
     // ── DR-043 取り分の選好: adjacent min:0 receptacles (xs*, ys*) の左最長選好。slice と同じく main も
     //     min:0 repeat を「>=1 で lower」してしまうため、0 token 供給パスや偏った分割で失敗する。
     //     取り分方向 (左/右最長) が上流未決着 (kuu DR-043 「未決着 — 取り分の向き」) なので、実装後
     //     方向が決まると two-tokens 側の want が反転する可能性がある (verdict 文字列も変わる)。
-     "path-search/ambiguous-receptacles.json::zero-tokens-unique-split :: EXPECTED-SUCCESS got=fail:missing operand for xs",
+    "path-search/ambiguous-receptacles.json::zero-tokens-unique-split :: EXPECTED-SUCCESS got=fail:missing operand for xs",
     "path-search/ambiguous-receptacles.json::one-token-greedy-left :: EXPECTED-SUCCESS got=fail:missing operand for ys",
     "path-search/ambiguous-receptacles.json::two-tokens-greedy-left :: effects got=xs:set(a)@cli,ys:set(b)@cli want= | result got={xs=[a],ys=[b]} want={xs=[a,b],ys=[]}",
   ]
