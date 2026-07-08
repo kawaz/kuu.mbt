@@ -1,6 +1,6 @@
 ---
 title: alias long_override の long:true が DR-076 §2 の flag 糖衣差し替えを受けない
-status: open
+status: resolved
 category: design
 created: 2026-07-08T20:39:02+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-08T21:10:46+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented: AliasDef.long_override の LongDecl 化 + desugar_aliases が pre-normalize 複製から canonical の元の型を引いて resolve_long を alias 側にも適用する形で根治 (commit c8fd82e5)", "wbtest 2 本 (flag canonical -> 裸発火 / string canonical -> 値形) で固定済み", "codex レビュー (2026-07-08) でも High 指摘として独立検出され、同コミットで解消"]
 blocked_by:
 origin: dr066-path worker の spec fixture 移行報告 (2026-07-08、spec 側リポ kuu からの越境起票)
 ---
