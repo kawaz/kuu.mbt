@@ -908,6 +908,7 @@ fn int_fail_reason(f : ParseFail) -> String {
   match f {
     NotANumber => "not_a_number"
     NotAnInteger => "not_an_integer"
+    IntOutOfRange => "int_out_of_range"
   }
 }
 
@@ -918,6 +919,7 @@ fn int_fail_phrase(f : ParseFail) -> String {
   match f {
     NotANumber => "a number"
     NotAnInteger => "an integer"
+    IntOutOfRange => "within Int64 range"
   }
 }
 
@@ -1028,6 +1030,7 @@ fn config_mismatch_reason(cv : ConfigVal, ty : Ty) -> String {
     (CStr(s), TInt) =>
       match parse_int_value(s, RError) {
         Err(NotAnInteger) => "not_an_integer"
+        Err(IntOutOfRange) => "int_out_of_range"
         _ => "not_a_number"
       }
     (CStr(_), TFlag) => "not_a_bool"

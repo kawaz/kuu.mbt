@@ -65,10 +65,17 @@ pub(all) enum RoundMode {
 
 ///|
 /// The reason an int/number parse failed (DR-066 語彙): `NotANumber` = not a number at all,
-/// `NotAnInteger` = a non-integer value under `int_round: error`.
+/// `NotAnInteger` = a non-integer value under `int_round: error`. `IntOutOfRange` = a readable
+/// integer VALUE whose magnitude exceeds Int64's range (issue
+/// 2026-07-07-parse-int-value-huge-exponent-overflow: `"1e300"` etc. used to silently wrap via
+/// `digits_to_i64` instead of erroring). DR-066 v1 has no reason for this yet — `int_out_of_range`
+/// is a provisional reason, the SAME kind of gap-fill as `pe_parse_bool`'s `not_a_bool`
+/// (docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md); the spec-side vocab decision is
+/// tracked separately (spec repo kawaz/kuu issue, filed by the team lead).
 pub(all) enum ParseFail {
   NotANumber
   NotAnInteger
+  IntOutOfRange
 } derive(Eq, Debug)
 
 ///|
@@ -416,6 +423,118 @@ fn apply_exponent(
   }
 }
 
+// ── Int64 range check (DR-075 §1-§2, issue 2026-07-07-parse-int-value-huge-exponent-overflow) ──
+
+///|
+/// Int64's two boundary magnitudes as canonical decimal digit strings, each exactly 19 digits: the
+/// positive max `9223372036854775807`, and the negative min's ABSOLUTE magnitude `9223372036854775808`
+/// (one more — two's-complement asymmetry). `digits_to_i64` cannot even REPRESENT
+/// +9223372036854775808 as an intermediate positive value, so the min boundary needs its own
+/// literal (`signed_magnitude_of` below), never "negate a would-be-overflowing positive".
+let int64_max_mag : String = "9223372036854775807"
+
+///|
+let int64_min_mag : String = "9223372036854775808"
+
+///|
+fn count_leading_zeros(s : String) -> Int {
+  let cs = chars_of(s)
+  let n = cs.length()
+  let mut i = 0
+  while i < n && cs[i] == '0' {
+    i = i + 1
+  }
+  i
+}
+
+///|
+/// Lexicographic magnitude comparison for two EQUAL-LENGTH all-digit strings — valid without
+/// numeric conversion because both operands have the same length (no leading-zero ambiguity):
+/// `true` iff `a`'s magnitude is strictly greater than `b`'s.
+fn digits_gt(a : String, b : String) -> Bool {
+  let ca = chars_of(a)
+  let cb = chars_of(b)
+  let mut i = 0
+  while i < ca.length() {
+    if ca[i] != cb[i] {
+      return ca[i] > cb[i]
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
+/// The significant (leading-zeros-stripped) digit count the int-typed magnitude `int_d`/`frac_d`/
+/// `exp` WOULD have after `apply_exponent`'s exponent shift — computed WITHOUT materializing that
+/// shift, so a huge `exp` (`"1e300"`) never builds a giant digit string just to discover it
+/// overflows. `int_d`/`frac_d` are never huge themselves (bounded by the literal input length —
+/// only the exponent-driven zero-padding explodes), so this is O(len(int_d)+len(frac_d)) regardless
+/// of `exp`'s magnitude. The caller rejects outright when this exceeds 19 (Int64's max digit count);
+/// at exactly 19 it must still compare against the exact boundary (a value could be `1e18` = 19
+/// digits `1000000000000000000`, well within range, or `1e19` = 20 digits, always out of range).
+fn int_part_significant_len(int_d : String, frac_d : String, exp : Int) -> Int {
+  let combined = int_d + frac_d
+  let point = int_d.length() + exp
+  if point <= 0 || all_zero(combined) {
+    0
+  } else {
+    let lead = count_leading_zeros(combined)
+    let capped_lead = if lead < point { lead } else { point }
+    point - capped_lead
+  }
+}
+
+///|
+/// Convert an already-materialized `ipart` (the caller has verified, via
+/// `int_part_significant_len`, that its significant digit count is <= 19 — so `ipart` itself is
+/// bounded/small regardless of how huge the ORIGINAL exponent was) to its FINAL SIGNED Int64 value,
+/// or `None` if the magnitude exceeds Int64's per-sign range. `neg` selects the boundary: a
+/// positive value's magnitude tops out at `int64_max_mag`, a negative value's at the one-larger
+/// `int64_min_mag` — and the `-9223372036854775808` case is returned directly as a literal, since
+/// `digits_to_i64` cannot even represent its magnitude as an intermediate positive value to negate.
+fn signed_magnitude_of(ipart : String, neg : Bool) -> Int64? {
+  let lead = count_leading_zeros(ipart)
+  let sig_len = ipart.length() - lead
+  if sig_len < 19 {
+    let m = digits_to_i64(ipart)
+    return Some(if neg { -m } else { m })
+  }
+  // sig_len == 19 here (the caller already rejected > 19 before ipart was even materialized).
+  let sig = ipart[lead:].to_owned()
+  let boundary = if neg { int64_min_mag } else { int64_max_mag }
+  if digits_gt(sig, boundary) {
+    None
+  } else if neg && sig == int64_min_mag {
+    Some(-9223372036854775808L)
+  } else {
+    let m = digits_to_i64(ipart)
+    Some(if neg { -m } else { m })
+  }
+}
+
+///|
+/// Convert `ipart` to its UNSIGNED (always non-negative) magnitude, checked ONLY against the
+/// positive boundary `int64_max_mag` regardless of the value's actual sign — this is what
+/// `round_magnitude` needs (DR-075 §2: it applies `+1`/the sign itself on this unsigned magnitude).
+/// A truncated magnitude that sits exactly at Int64::min's boundary (9223372036854775808) can't be
+/// represented unsigned at all, so it is (narrowly, conservatively) reported out-of-range here too
+/// — an accepted residual gap: that exact magnitude, ALSO genuinely fractional, under a non-error
+/// rounding mode is astronomically rare and outside this issue's test matrix.
+fn unsigned_magnitude_of(ipart : String) -> Int64? {
+  let lead = count_leading_zeros(ipart)
+  let sig_len = ipart.length() - lead
+  if sig_len < 19 {
+    return Some(digits_to_i64(ipart))
+  }
+  let sig = ipart[lead:].to_owned()
+  if digits_gt(sig, int64_max_mag) {
+    None
+  } else {
+    Some(digits_to_i64(ipart))
+  }
+}
+
 ///|
 /// Round a non-negative magnitude `m` (the integer部) given the first fractional digit `d0` and
 /// whether any later fractional digit is non-zero, plus the sign and the mode (DR-075 §2 table).
@@ -490,21 +609,42 @@ pub fn parse_int_value(
   match scan_number_parts(s) {
     None => Err(NotANumber)
     Some((neg, int_d, frac_d, exp)) => {
+      // Range guard BEFORE materializing apply_exponent's zero-padding (issue
+      // 2026-07-07-parse-int-value-huge-exponent-overflow): reject up front when the significant
+      // digit count already exceeds Int64's 19-digit max, so a huge `exp` (`"1e300"`) never builds
+      // the giant digit string just to discover it overflows.
+      if int_part_significant_len(int_d, frac_d, exp) > 19 {
+        return Err(IntOutOfRange)
+      }
       let (ipart, fpart) = apply_exponent(int_d, frac_d, exp)
       if all_zero(fpart) {
         // integer value — accepted under every mode, no rounding
-        let m = digits_to_i64(ipart)
-        Ok(if neg { -m } else { m })
+        match signed_magnitude_of(ipart, neg) {
+          None => Err(IntOutOfRange)
+          Some(m) => Ok(m)
+        }
       } else {
         match mode {
           RError => Err(NotAnInteger)
-          _ => {
-            let m = digits_to_i64(ipart)
-            let d0 = fpart[0].to_int() - 48
-            let rest_nonzero = has_nonzero(fpart, 1)
-            let mag = round_magnitude(m, d0, rest_nonzero, neg, mode)
-            Ok(if neg { -mag } else { mag })
-          }
+          _ =>
+            // round_magnitude needs an UNSIGNED magnitude (it applies +1 / the sign itself, DR-075
+            // §2), so the pre-rounding range check always uses the POSITIVE boundary regardless of
+            // `neg` — see `unsigned_magnitude_of`'s doc for the narrow residual gap this implies.
+            match unsigned_magnitude_of(ipart) {
+              None => Err(IntOutOfRange)
+              Some(m) => {
+                let d0 = fpart[0].to_int() - 48
+                let rest_nonzero = has_nonzero(fpart, 1)
+                let mag = round_magnitude(m, d0, rest_nonzero, neg, mode)
+                if mag < 0L {
+                  // `m + 1` silently wrapped past Int64::max (m was already at the exact boundary
+                  // and rounding pushed it over) — surface as out-of-range, not a wrapped sign.
+                  Err(IntOutOfRange)
+                } else {
+                  Ok(if neg { -mag } else { mag })
+                }
+              }
+            }
         }
       }
     }
@@ -583,6 +723,7 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
       match parse_int_value(s, RError) {
         Ok(i) => Ok(VNum(i.to_double()))
         Err(NotAnInteger) => Err("config value \"\{s}\" is not an integer")
+        Err(IntOutOfRange) => Err("config value \"\{s}\" is out of Int64 range")
         Err(NotANumber) => Err("config value \"\{s}\" is not a number")
       }
     // string → bool: canonical vocab (DR-074 §3), unrecognized → Error (no silent 変換). Applies
@@ -724,6 +865,21 @@ fn pe_parse_int(element : String, tok : String, pos : Int) -> ParseError {
     kind: KParse,
     reason: "not_an_integer",
     message: "\"\{tok}\" is not an integer",
+  }
+}
+
+///|
+/// A `kind: parse` held Error for a readable integer VALUE whose magnitude exceeds Int64's range
+/// (issue 2026-07-07-parse-int-value-huge-exponent-overflow). The provisional reason
+/// `int_out_of_range` follows the `pe_parse_bool`/`not_a_bool` precedent (DR-066 v1 has no reason
+/// for this yet).
+fn pe_int_out_of_range(element : String, tok : String, pos : Int) -> ParseError {
+  {
+    element,
+    argv_pos: pos,
+    kind: KParse,
+    reason: "int_out_of_range",
+    message: "\"\{tok}\" is out of Int64 range",
   }
 }
 

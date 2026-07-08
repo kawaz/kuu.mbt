@@ -116,6 +116,62 @@ test "parse_int_value accepts integer VALUES regardless of syntax" {
 }
 
 ///|
+/// REGRESSION (issue 2026-07-07-parse-int-value-huge-exponent-overflow): a huge exponent (`"1e300"`)
+/// used to silently WRAP through `digits_to_i64` instead of erroring — `Ok(0L)` rather than a range
+/// Error. This pins the exact repro plus the `"1e19"`/`"1e18"` decade boundary (20 vs 19 significant
+/// digits — Int64's max magnitude is 19 digits, so 20+ ALWAYS overflows regardless of digit values,
+/// while 19 needs the exact-boundary comparison covered by the next test).
+test "parse_int_value rejects huge-exponent overflow instead of silently wrapping" {
+  assert_eq(ir("1e300", RError), Err(IntOutOfRange)) // the exact repro from the issue (was Ok(0L))
+  assert_eq(ir("-1e300", RError), Err(IntOutOfRange))
+  assert_eq(ir("1e19", RError), Err(IntOutOfRange)) // 20 significant digits — always out of range
+  assert_eq(ir("1e18", RError), Ok(1000000000000000000L)) // 19 digits, well under max — in range
+  // a huge exponent whose combined digits are ALL zero is still exactly 0 (padding zeros stay zero,
+  // not "significant" — `int_part_significant_len`'s all_zero short-circuit).
+  assert_eq(ir("0e300", RError), Ok(0L))
+  assert_eq(ir("0.0e300", RError), Ok(0L))
+}
+
+///|
+/// The exact Int64 boundary decade (both exactly 19 significant digits, so the digit-count shortcut
+/// alone can't decide — DR-075 range check needs the precise string comparison here): max
+/// (`9223372036854775807`) and one past it, min (`-9223372036854775808`, the two's-complement
+/// asymmetry — its magnitude 9223372036854775808 is one MORE than max's) and one past it, plus the
+/// adjacent in-range values (`±1` off each boundary) to pin the edge is exactly right, not off-by-one.
+test "parse_int_value pins the exact Int64 boundary decade" {
+  // positive max and its neighbors.
+  assert_eq(ir("9223372036854775807", RError), Ok(9223372036854775807L)) // Int64::max exactly
+  assert_eq(ir("9223372036854775806", RError), Ok(9223372036854775806L)) // max - 1, in range
+  assert_eq(ir("9223372036854775808", RError), Err(IntOutOfRange)) // max + 1, out of range
+  // negative min and its neighbors — min's magnitude (9223372036854775808) is NOT representable as
+  // a positive Int64 at all, so this is the case `digits_to_i64` + negate could never produce.
+  assert_eq(ir("-9223372036854775808", RError), Ok(-9223372036854775808L)) // Int64::min exactly
+  assert_eq(ir("-9223372036854775807", RError), Ok(-9223372036854775807L)) // min + 1, in range
+  assert_eq(ir("-9223372036854775809", RError), Err(IntOutOfRange)) // min - 1, out of range
+  // a decimal form of the same boundary values (value空間判定, not just integer literal syntax).
+  assert_eq(ir("9223372036854775807.0", RError), Ok(9223372036854775807L))
+  assert_eq(ir("9223372036854775808.0", RError), Err(IntOutOfRange))
+}
+
+///|
+/// The `int_out_of_range` reason surfaces through the ROUNDING branches too (non-`RError` modes),
+/// not just the direct-integer-value path above — `magnitude_of`'s pre-rounding check uses the
+/// POSITIVE boundary unconditionally (round_magnitude needs an unsigned magnitude to add `+1`), and
+/// a SEPARATE post-rounding guard catches the narrower case where rounding pushes an in-range
+/// truncated magnitude (exactly Int64::max, non-tie-round-up) past the boundary.
+test "parse_int_value surfaces int_out_of_range through rounding modes too" {
+  // truncated magnitude alone already exceeds Int64 range (huge exponent, genuinely fractional
+  // literal digits so this exercises the rounding branch, not the direct-integer-value one).
+  assert_eq(ir("1.5e300", RFloor), Err(IntOutOfRange))
+  // truncated magnitude is exactly Int64::max and the fraction rounds UP past it (round_magnitude's
+  // `m + 1` would silently wrap to Int64::min without the post-rounding `mag < 0L` guard).
+  assert_eq(ir("9223372036854775807.5", RCeil), Err(IntOutOfRange))
+  assert_eq(ir("9223372036854775807.5", RHalfEven), Err(IntOutOfRange)) // 807 is odd → banker's rounds up too
+  // a rounding-mode value comfortably within range still rounds normally (no false-positive rejection).
+  assert_eq(ir("9223372036854775806.5", RCeil), Ok(9223372036854775807L))
+}
+
+///|
 /// The canonical default `int_round: error` rejects a truly-fractional value as `not_an_integer`
 /// (DR-075 §4: the CLI-parser 界 precedent is error-only; silent 精度落ち is a surprise). This is the
 /// only mode that emits `not_an_integer`; every rounding mode below turns the same input into a value.

@@ -305,6 +305,8 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
           Err(NotAnInteger) =>
             [Held(pe_parse_int(name, ctx.toks[pos], pos), [])]
+          Err(IntOutOfRange) =>
+            [Held(pe_int_out_of_range(name, ctx.toks[pos], pos), [])]
           Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
         }
       } else {
@@ -1065,6 +1067,8 @@ fn scope_consume(
             )
           Err(NotAnInteger) =>
             [Held(pe_parse_int(name, ctx.toks[pos], pos), acc)]
+          Err(IntOutOfRange) =>
+            [Held(pe_int_out_of_range(name, ctx.toks[pos], pos), acc)]
           Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
         }
       } else if pos >= ctx.toks.length() {
@@ -1484,6 +1488,8 @@ fn consume_head(
           Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
           Err(NotAnInteger) =>
             [Held(pe_parse_int(name, ctx.toks[pos], pos), [])]
+          Err(IntOutOfRange) =>
+            [Held(pe_int_out_of_range(name, ctx.toks[pos], pos), [])]
           Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
         }
       } else if pos >= ctx.toks.length() {
@@ -1765,6 +1771,8 @@ fn scope_consume_rep(
             )
           Err(NotAnInteger) =>
             [Held(pe_parse_int(name, ctx.toks[pos], pos), acc)]
+          Err(IntOutOfRange) =>
+            [Held(pe_int_out_of_range(name, ctx.toks[pos], pos), acc)]
           Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
