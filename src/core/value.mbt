@@ -308,6 +308,57 @@ fn try_parse_double(clean : String) -> Double? {
   }
 }
 
+///|
+/// Recognize the DR-074 §7 inf lexeme: an optional leading `[+-]` sign (the same rule as
+/// `scan_number_parts`'s sign, §1) followed by a case-insensitive `inf` or `infinity` — the
+/// confirmed 2-word set (`Inf`/`INF`/`Infinity` are case variants, not separately enumerated).
+/// Returns the signed Double infinity, or None if `s` is not this exact lexeme (nan is NEVER
+/// matched here — nan has no lexeme at all in canonical, DR-074 §1/§3 "採用しなかった案").
+fn scan_inf(s : String) -> Double? {
+  let cs = chars_of(s)
+  let n = cs.length()
+  if n == 0 {
+    return None
+  }
+  let mut i = 0
+  let mut neg = false
+  if cs[i] == '+' || cs[i] == '-' {
+    neg = cs[i] == '-'
+    i = i + 1
+  }
+  let rest = chars_to_str_from(cs, i)
+  if !(eq_ci(rest, "inf") || eq_ci(rest, "infinity")) {
+    return None
+  }
+  let inf : Double = 1.0 / 0.0
+  Some(if neg { -inf } else { inf })
+}
+
+///|
+fn chars_to_str_from(cs : Array[Char], start : Int) -> String {
+  let buf = StringBuilder::new()
+  let mut i = start
+  while i < cs.length() {
+    buf.write_char(cs[i])
+    i = i + 1
+  }
+  buf.to_string()
+}
+
+///|
+/// Tolerant FLOAT parser (DR-074 §1/§7): the `float` type's accept域 is `parse_number`'s canonical
+/// number lexicon PLUS the 2-word inf/infinity vocab (case-insensitive, sign-合成可) — nan is Error
+/// for BOTH number and float (no lexeme accepted here, ever). A separate function from
+/// `parse_number` because the accept-域 differs per TYPE (`Ty::TNum` rejects inf, `Ty::TFloat`
+/// accepts it, DR-074 §1) — `parse_number` itself stays number-canonical so every OTHER caller
+/// (int's 値空間判定, config's TNum path, matcher's TNum/TInt eq-split) is unaffected.
+pub fn parse_float(s : String) -> Double? {
+  match parse_number(s) {
+    Some(d) => Some(d)
+    None => scan_inf(s)
+  }
+}
+
 // ── int 値空間判定 + int_round (DR-075) ────────────────────────────────────────
 
 ///|
@@ -521,6 +572,12 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
         Some(d) => Ok(VNum(d))
         None => Err("config value \"\{s}\" is not a number")
       }
+    // string → float: wider accept域 (number + inf, DR-074 §1) via parse_float
+    (CStr(s), TFloat) =>
+      match parse_float(s) {
+        Some(d) => Ok(VNum(d))
+        None => Err("config value \"\{s}\" is not a number")
+      }
     // string → int: 値空間判定, canonical int_round = error (DR-075 §1-§2)
     (CStr(s), TInt) =>
       match parse_int_value(s, RError) {
@@ -528,14 +585,18 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
         Err(NotAnInteger) => Err("config value \"\{s}\" is not an integer")
         Err(NotANumber) => Err("config value \"\{s}\" is not a number")
       }
-    // string → bool: canonical vocab (DR-074 §3), unrecognized → Error (no silent 変換)
-    (CStr(s), TFlag) =>
+    // string → bool: canonical vocab (DR-074 §3), unrecognized → Error (no silent 変換). Applies
+    // identically to a presence-only flag (TFlag) and a value-typed bool (TBool) — config's string
+    // seat doesn't distinguish the CLI-side eq-split capability (installer.mbt), only the value type.
+    (CStr(s), TFlag) | (CStr(s), TBool) =>
       match parse_bool(s) {
         Some(b) => Ok(VBool(b))
         None => Err("config value \"\{s}\" is not a bool")
       }
-    // typed number matching a number element (any) / an int element (integer only)
-    (CNum(d), TNum) => Ok(VNum(d))
+    // typed number matching a number element (any) / a float element (a JSON-native number is
+    // already a valid float value — inf has no JSON literal, so this arm never carries it) / an
+    // int element (integer only)
+    (CNum(d), TNum) | (CNum(d), TFloat) => Ok(VNum(d))
     // native number → int: JSON 由来 binary64 経由判定 (DR-075 §5 の非対称)
     (CNum(d), TInt) =>
       if is_integer(d) {
@@ -543,11 +604,11 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
       } else {
         Err("config value \"\{num_to_string(d)}\" is not an integer")
       }
-    (CBool(b), TFlag) => Ok(VBool(b))
+    (CBool(b), TFlag) | (CBool(b), TBool) => Ok(VBool(b))
     // 意味の飛躍 (bool ↔ number) は Error — no coercion
-    (CNum(_), TFlag) =>
+    (CNum(_), TFlag) | (CNum(_), TBool) =>
       Err("config number for a bool element (no number↔bool coercion)")
-    (CBool(_), TNum) =>
+    (CBool(_), TNum) | (CBool(_), TFloat) =>
       Err("config bool for a number element (no number↔bool coercion)")
     (CBool(_), TInt) =>
       Err("config bool for an int element (no number↔bool coercion)")
@@ -648,6 +709,22 @@ fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
     kind: KParse,
     reason: "not_a_number",
     message: "\"\{tok}\" is not a number",
+  }
+}
+
+///|
+/// A `kind: parse` held Error for a value that failed to parse as a bool (DR-074 §3 canonical vocab:
+/// unrecognized tokens like `yes`/`on` are canonical-外, Error not silent 変換). DR-066 v1's reason
+/// vocab only lists `not_a_number`/`not_an_integer` (bool has no entry yet); this reason is the
+/// provisional `not_a_bool` used by resolve.mbt's config-path bool Error (§952 of resolve.mbt),
+/// kept until DR-066 v1 vocab is amended (docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md).
+fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
+  {
+    element,
+    argv_pos: pos,
+    kind: KParse,
+    reason: "not_a_bool",
+    message: "\"\{tok}\" is not a bool",
   }
 }
 

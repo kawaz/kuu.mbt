@@ -286,6 +286,17 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TNum, name)], [])]
       }
+FloatArg(name) =>
+      // DR-074 §1: the float accept域 = number + inf (parse_float), same reason vocab (not_a_number)
+      // on failure as NumArg — only the parser function differs.
+      if pos < ctx.toks.length() {
+        match parse_float(ctx.toks[pos]) {
+          Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+          None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
+        }
+      } else {
+        [Pending([pend_value(TFloat, name)], [])]
+      }
     FilterArg(name, max) => filter_arg_eval(name, max, ctx, pos, [])
     ReqArg(name) => req_arg_eval(name, ctx, pos, [])
     Bind(name, v) => [Accept(pos, [mkb(name, v, Cli)])]

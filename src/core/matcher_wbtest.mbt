@@ -69,6 +69,63 @@ test "eq-split long option resolves, errors, and 素通し" {
   assert_eq(run_matcher(long, pctx(["plain"]), 0).length(), 0)
 }
 
+///|
+/// A `TBool` eq-split entry (DR-074 §3, value-typed canonical bool): `--enabled=true` parses the
+/// value through the canonical bool vocab (true/false/1/0/""，case-insensitive). An unrecognized
+/// token (`yes` etc., canonical-外) is a held Error with reason `not_a_bool` (DR-066 v1 has no bool
+/// reason yet, docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md) — not a silent 素通し. A
+/// PRESENCE-only `TFlag` entry never fires here at all (no eq-split registration, installer.mbt
+/// `inst_long`; `TFlag`'s own arm in `run_eq_split` returns `[]` unconditionally).
+test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Error" {
+  let long = EqSplit(prefix="--", entries=[
+    { key: "enabled", name: "enabled", kind: TBool },
+  ])
+  // `true` / `1` / mixed-case / all-caps all resolve to VBool(true).
+  for
+    tok in ["--enabled=true", "--enabled=1", "--enabled=True", "--enabled=TRUE"] {
+    let r = run_matcher(long, pctx([tok]), 0)
+    assert_eq(r.length(), 1)
+    assert_eq(acc_pos(r[0]), 1)
+    let b = acc_binds(r[0])
+    assert_eq(b.length(), 1)
+    assert_eq(b[0].key, "enabled")
+    assert_eq(b[0].value, VBool(true))
+    assert_eq(b[0].source, Cli)
+  }
+  // `false` / `0` / `""` all resolve to VBool(false) — the empty string is the env `FLAG=` pattern.
+  for tok in ["--enabled=false", "--enabled=0", "--enabled="] {
+    let r = run_matcher(long, pctx([tok]), 0)
+    assert_eq(r.length(), 1)
+    let b = acc_binds(r[0])
+    assert_eq(b.length(), 1)
+    assert_eq(b[0].value, VBool(false))
+  }
+  // `yes` is canonical-外 (Norway problem 回避, DR-074 §3): a held Error, not a silent 素通し.
+  let ry = run_matcher(long, pctx(["--enabled=yes"]), 0)
+  assert_eq(ry.length(), 1)
+  assert_eq(is_held(ry[0]), true)
+  match ry[0] {
+    Held(pe, _) => {
+      assert_eq(pe.element, "enabled")
+      assert_eq(pe.argv_pos, 0)
+      assert_eq(pe.kind, KParse)
+      assert_eq(pe.reason, "not_a_bool")
+    }
+    _ => fail("expected Held")
+  }
+}
+
+///|
+/// A presence-only `TFlag` entry (e.g. `--help`/`--verbose`) has NO eq-split value pipeline at all
+/// (DR-074 §3 only applies to `TBool`): `--verbose=true` finds the key defined but the type has no
+/// value arm, so `run_eq_split` returns `[]` (素通し to positional), not a held Error.
+test "eq-split long option: a TFlag entry never fires on =value" {
+  let long = EqSplit(prefix="--", entries=[
+    { key: "verbose", name: "verbose", kind: TFlag },
+  ])
+  assert_eq(run_matcher(long, pctx(["--verbose=true"]), 0).length(), 0)
+}
+
 // ── DR-041 short cluster matcher (`-abc`, value attachment, space form) ─────────
 
 ///|

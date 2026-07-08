@@ -606,13 +606,14 @@ fn collect_defaults(
   out : Array[DefaultCell],
 ) -> Unit {
   for e in sc.entities {
-    // FLAG cells only (LOWERING §A.5 / DR-051 §2): a flag carries the preset default:false (or an
-    // explicit bool default) and is never absent, so it renders in the result-object projection even
-    // where the value-source ladder is not run. A NON-flag cell's default is deliberately NOT injected
-    // here — its true value depends on the full ladder (env / config / inherit seats can override the
-    // default, e.g. an inheritable ttl resolves via its inherit seat), which this projection does not
-    // run; injecting the raw default would surface a wrong value. Those cells stay ladder-resolved.
-    if e.ty == TFlag && e.accum is None {
+    // FLAG/BOOL cells only (LOWERING §A.5 / DR-051 §2): a flag (or DR-074 value-typed bool) carries
+    // the preset default:false (or an explicit bool default) and is never absent, so it renders in
+    // the result-object projection even where the value-source ladder is not run. A NON-flag cell's
+    // default is deliberately NOT injected here — its true value depends on the full ladder (env /
+    // config / inherit seats can override the default, e.g. an inheritable ttl resolves via its
+    // inherit seat), which this projection does not run; injecting the raw default would surface a
+    // wrong value. Those cells stay ladder-resolved.
+    if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
       match e.default_value {
         Some(v) => out.push({ path, name: e.name, value: v })
         None => ()
@@ -899,7 +900,20 @@ fn env_value(
             ),
           )
       }
-    TFlag =>
+    TFloat =>
+      match parse_float(s) {
+        Some(d) => Ok(VNum(d))
+        None =>
+          Err(
+            ladder_err(
+              element,
+              at_pos,
+              "not_a_number",
+              "env value \"\{s}\" is not a number",
+            ),
+          )
+      }
+    TFlag | TBool =>
       match parse_bool(s) {
         Some(b) => Ok(VBool(b))
         None =>
@@ -950,12 +964,14 @@ fn config_lookup(obj : ConfigVal, path : Array[String]) -> ConfigVal? {
 fn config_mismatch_reason(cv : ConfigVal, ty : Ty) -> String {
   match (cv, ty) {
     (CStr(_), TNum) => "not_a_number"
+    (CStr(_), TFloat) => "not_a_number"
     (CStr(s), TInt) =>
       match parse_int_value(s, RError) {
         Err(NotAnInteger) => "not_an_integer"
         _ => "not_a_number"
       }
     (CStr(_), TFlag) => "not_a_bool"
+    (CStr(_), TBool) => "not_a_bool"
     (CArr(_), _) => "config_structural_mismatch"
     (CObj(_), _) => "config_structural_mismatch"
     _ => "config_type_mismatch" // CNum/CBool 意味の飛躍 (bool↔number); CNull is 供給なし (defensive)

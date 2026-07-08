@@ -163,6 +163,8 @@ fn value_prim(ty : Ty, name : String) -> Node {
   match ty {
     // TNum / TInt は CLI 側では number-like 扱い (integer 値空間判定は config 段で行う)
     TNum | TInt => NumArg(name)
+    // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
+    TFloat => FloatArg(name)
     _ => StrArg(name)
   }
 }
@@ -480,11 +482,16 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   // 同型 config seat (DR-050 §3): config_file 要素が存在すれば全 value cell に config seat を宣言
   // (自身が config_file の要素は循環禁止で除く)。config_key は path override; None = 同型。
   let config_seat = has_cf && !e.is_config_file
-  // flag preset default (LOWERING §A.5 / DR-051 §2): TFlag cell は default:false を preset
-  // (未 fire でも false に落ちる)。明示 default があればそちらが勝つ。
+  // flag/bool preset default (LOWERING §A.5 / DR-051 §2): a TFlag or DR-074 TBool cell presets
+  // default:false (未 fire でも false に落ちる)。明示 default があればそちらが勝つ (e.g. ssl の default:true)。
   let default_value : Value? = match e.default_value {
     Some(v) => Some(v)
-    None => if e.ty == TFlag { Some(VBool(false)) } else { None }
+    None =>
+      if e.ty == TFlag || e.ty == TBool {
+        Some(VBool(false))
+      } else {
+        None
+      }
   }
   build.entities.push({
     name: e.name,
@@ -515,9 +522,11 @@ fn inst_long(def : Definition, build : Build) -> Unit {
     for l in long_of(e) {
       let trigger = "--" + l
       match e.ty {
-        TFlag =>
-          // flag: trigger fire → name=true。failure-action (DR-048) は追加で FailMark を発する
-          // (FAILED parse で fire できる)。dd-internal な --help は raw-consumed で発火しない (先食い/内部一体)。
+        TFlag | TBool =>
+          // bare trigger fire → name=true, for BOTH a presence-only flag and a value-typed bool
+          // (DR-074 §3's TBool keeps this degenerate identical to TFlag). failure-action (DR-048)
+          // additionally emits a FailMark (FAILED parse で fire できる)。dd-internal な --help は
+          // raw-consumed で発火しない (先食い/内部一体)。
           add_greedy(
             build,
             maybe_root(
@@ -533,7 +542,7 @@ fn inst_long(def : Definition, build : Build) -> Unit {
               },
             ),
           )
-        _ => {
+        _ =>
           add_greedy(
             build,
             maybe_root(
@@ -541,8 +550,18 @@ fn inst_long(def : Definition, build : Build) -> Unit {
               Seq([Exact(trigger), value_prim(e.ty, e.name)]),
             ),
           )
-          eq_entries.push({ key: l, name: e.name, kind: e.ty })
-        }
+      }
+      // DR-074 §3: a value-typed bool (TBool) ALSO takes an eq-split value (`--enabled=true`), not
+      // just the bare presence trigger above — the two forms fire on disjoint token shapes (bare vs
+      // containing `=`) so both entries coexist without ambiguity. A presence-only TFlag never gets
+      // an eq_entries row (it has no value pipeline — `--help=x` stays undefined-key 素通し). A
+      // TBool that carries variant spellings (`--x`/`--no-x`, DR-011/045) is EXCLUDED too: it already
+      // has a dedicated true/false trigger pair, so no separate `=value` form is registered for it
+      // (fixtures/lowering/long/variant.json's ssl: `--ssl`/`--no-ssl` only, no `--ssl=value`).
+      if e.ty == TBool && e.variants.length() == 0 {
+        eq_entries.push({ key: l, name: e.name, kind: e.ty })
+      } else if e.ty != TFlag && e.ty != TBool {
+        eq_entries.push({ key: l, name: e.name, kind: e.ty })
       }
     }
   }
@@ -1340,6 +1359,7 @@ fn head_progresses(
     StrArg(_)
     | SepArg(_, _)
     | NumArg(_)
+    | FloatArg(_)
     | FilterArg(_, _)
     | ReqArg(_)
     | Exact(_)

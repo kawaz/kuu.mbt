@@ -62,6 +62,34 @@ test "parse_number rejects non-canonical forms" {
   assert_eq(parse_number("abc"), None)
 }
 
+///|
+/// `parse_float` (DR-074 §1/§7): the float accept域 = number (unchanged, delegates to
+/// `parse_number`) PLUS the 2-word inf/infinity lexeme — case-insensitive (`Inf`/`INF`/`Infinity`
+/// are case variants of the same 2 words, not separately enumerated), sign-合成可 (`-inf`/`+Infinity`
+/// per §1's leading-sign rule). nan has NO lexeme in float either (§1: nan is Error for both types,
+/// no opt-in) — `parse_float("nan")` must stay None, not silently fall through to inf.
+test "parse_float accepts canonical number forms plus the inf lexicon" {
+  // everything parse_number accepts, parse_float accepts identically (delegates first).
+  assert_eq(parse_float("+5"), Some(5.0))
+  assert_eq(parse_float("1_000.5"), Some(1000.5))
+  // the 2-word inf lexicon, case-insensitive (Inf/INF/Infinity are case variants of these 2 words).
+  assert_eq(parse_float("inf"), Some(1.0 / 0.0))
+  assert_eq(parse_float("Inf"), Some(1.0 / 0.0))
+  assert_eq(parse_float("INF"), Some(1.0 / 0.0))
+  assert_eq(parse_float("infinity"), Some(1.0 / 0.0))
+  assert_eq(parse_float("Infinity"), Some(1.0 / 0.0))
+  // leading sign composes onto inf (§1 の符号規則を inf にも適用、§7 で確定).
+  assert_eq(parse_float("-inf"), Some(-1.0 / 0.0))
+  assert_eq(parse_float("+inf"), Some(1.0 / 0.0))
+  assert_eq(parse_float("-Infinity"), Some(-1.0 / 0.0))
+  // nan has NO lexeme in float (§1: nan is Error for both number and float, no opt-in ever).
+  assert_eq(parse_float("nan"), None)
+  assert_eq(parse_float("NaN"), None)
+  // non-numeric junk and a malformed inf spelling both stay None (anchored 契約: no partial match).
+  assert_eq(parse_float("infi"), None)
+  assert_eq(parse_float("abc"), None)
+}
+
 // ── DR-075 int 値空間判定 + int_round ──────────────────────────────────────────
 
 ///|

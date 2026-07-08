@@ -131,7 +131,21 @@ fn run_eq_split(
             // defined key, bad value => held Error (DR-037), not 素通し.
             None => return [Held(pe_parse(e.name, valstr, pos), [])]
           }
-        TFlag => return [] // flags take no =value
+        TFloat => // DR-074 §1: float's wider accept域 (number + inf) via parse_float
+          match parse_float(valstr) {
+            Some(d) => return [Accept(pos + 1, [mkb(e.name, VNum(d), Cli)])]
+            None => return [Held(pe_parse(e.name, valstr, pos), [])]
+          }
+        TFlag => return [] // presence-only trigger (DR-074 no eq-split): flags take no =value
+        TBool =>
+          // DR-074 §3: a value-typed bool DOES take an eq-split value (`--enabled=true`), unlike a
+          // presence-only flag firing — the CLI vocab is canonical `parse_bool` (true/false/1/0/"",
+          // case-insensitive). An unrecognized token is a held Error (DR-037), not 素通し. (installer.mbt
+          // `inst_long` only registers this entry when the element has no variant spellings.)
+          match parse_bool(valstr) {
+            Some(b) => return [Accept(pos + 1, [mkb(e.name, VBool(b), Cli)])]
+            None => return [Held(pe_parse_bool(e.name, valstr, pos), [])]
+          }
       }
     }
   }
@@ -184,7 +198,12 @@ fn short_val(e : ShortEntry, s : String) -> Binding? {
         Some(d) => Some(mkb(e.name, VNum(d), Cli))
         None => None
       }
-    TFlag => None
+    TFloat =>
+      match parse_float(s) {
+        Some(d) => Some(mkb(e.name, VNum(d), Cli))
+        None => None
+      }
+    TFlag | TBool => None // no in-cluster/space-form VALUE attachment for a bool short (no fixture needs `-e5`/`-e true`)
   }
 }
 
@@ -216,7 +235,9 @@ fn walk_short(
       // value binding (the value is unchanged; only a warning is added). `dm` is [] for a normal entry.
       let dm : Array[Binding] = if e.depr { [depr_marker(e.name)] } else { [] }
       match e.kind {
-        TFlag =>
+        TFlag | TBool =>
+          // a bool short cluster char is presence-only, same as a plain flag (DR-074 §3 canonical
+          // bool has no in-cluster/space-form `=value` short spelling, only the long eq-split form).
           walk_short(
             entries,
             body,
@@ -253,7 +274,8 @@ fn walk_short(
                 // its parse failure is a held Error (DR-041 §5 値不正 =
                 // Error、DR-074 の suffix 拒否がここに落ちる)。fixture
                 // matcher-readings/cluster-split-no-flag が輪郭を固定する。
-                if j == body.length() && (e.kind == TNum || e.kind == TInt) {
+                if j == body.length() &&
+                  (e.kind == TNum || e.kind == TInt || e.kind == TFloat) {
                   out.push(Held(pe_parse(e.name, vstr, pos), acc))
                 }
             }
@@ -264,7 +286,7 @@ fn walk_short(
             match short_val(e, ctx.toks[pos + 1]) {
               Some(b) => out.push(Accept(pos + 2, cat(acc, cat([b], dm))))
               None =>
-                if e.kind == TNum || e.kind == TInt {
+                if e.kind == TNum || e.kind == TInt || e.kind == TFloat {
                   out.push(Held(pe_parse(e.name, ctx.toks[pos + 1], pos + 1), []))
                 }
             }

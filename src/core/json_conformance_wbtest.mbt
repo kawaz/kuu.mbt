@@ -420,7 +420,12 @@ fn dsl_variant_value(ty : Ty, s : String) -> Value {
         Some(d) => VNum(d)
         None => VStr(s)
       }
-    TFlag =>
+    TFloat =>
+      match parse_float(s) {
+        Some(d) => VNum(d)
+        None => VStr(s)
+      }
+    TFlag | TBool =>
       match parse_bool(s) {
         Some(b) => VBool(b)
         None => VBool(s == "true" || s == "1")
@@ -787,8 +792,9 @@ fn proj_entity(e : Entity) -> LEnt {
     match e.ty {
       TStr => "string"
       TNum => "number"
+      TFloat => "float"
       TInt => "int"
-      TFlag => "bool"
+      TFlag | TBool => "bool"
     }
   }
   {
@@ -1067,7 +1073,7 @@ fn proj_sources(sc : Scope, resolved : Array[Binding]) -> String {
     match src {
       Some(s) => items.push(e.name + "=" + s)
       None =>
-        if e.ty == TFlag && e.accum is None {
+        if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
           match e.default_value {
             Some(_) => items.push(e.name + "=default")
             None => ()
@@ -1544,12 +1550,22 @@ fn dec_short(o : Map[String, Json]) -> Array[Char] raise DecodeSkip {
 }
 
 ///|
+/// DR-074 §3: `"flag"` is a presence-only trigger (`TFlag`, no `=value` form ever — e.g. `--help`);
+/// `"bool"` is the value-typed canonical bool (`TBool`, additionally takes `--x=value` unless it
+/// carries variant spellings, installer.mbt `inst_long`). The two JSON type strings map to
+/// DIFFERENT Ty variants now (they used to collapse to one `TFlag`, which made a value-typed
+/// bool's `--enabled=true` eq-split unreachable — see fixtures/value-typing/bool-canonical.json).
+/// Likewise DR-074 §1: `"number"` (`TNum`, rejects inf) and `"float"` (`TFloat`, accepts inf) map to
+/// DIFFERENT Ty variants (they used to collapse to one `TNum` — see
+/// fixtures/value-typing/number-inf-nan.json's `--t`/`--n` type-dependent inf accept域).
 fn dec_ty(t : String) -> Ty raise DecodeSkip {
   match t {
     "string" => TStr
-    "number" | "float" => TNum
+    "number" => TNum
+    "float" => TFloat
     "int" => TInt
-    "flag" | "bool" => TFlag
+    "flag" => TFlag
+    "bool" => TBool
     other => raise DecodeSkip("value type '" + other + "'")
   }
 }
@@ -2597,7 +2613,7 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
     }
   }
   for e in sc.entities {
-    if e.ty != TFlag && e.default_value is Some(_) {
+    if e.ty != TFlag && e.ty != TBool && e.default_value is Some(_) {
       return true
     }
   }
@@ -2949,30 +2965,11 @@ fn known_divergences() -> Array[String] {
      "path-search/ambiguous-receptacles.json::zero-tokens-unique-split :: EXPECTED-SUCCESS got=fail:missing operand for xs",
     "path-search/ambiguous-receptacles.json::one-token-greedy-left :: EXPECTED-SUCCESS got=fail:missing operand for ys",
     "path-search/ambiguous-receptacles.json::two-tokens-greedy-left :: effects got=xs:set(a)@cli,ys:set(b)@cli want= | result got={xs=[a],ys=[b]} want={xs=[a,b],ys=[]}",
-    // ── DR-074 §3 bool canonical value_parser 未実装: `--enabled=<val>` の付着値解釈で true_values
-    //     ["true","1"] / false_values ["false","0",""] を ci 照合する canonical が未実装。main は
-    //     bool を「値なし flag」的に扱うため付着値 `=<val>` を token として認識できず unexpected_token に落ちる。
-    //     追従は parse_bool + matcher の bool 値付着解釈拡張 (「DR-074/075 追従」issue で)。
-     "value-typing/bool-canonical.json::true-word :: EXPECTED-SUCCESS got=fail:unexpected token",
-    "value-typing/bool-canonical.json::one-numeric :: EXPECTED-SUCCESS got=fail:unexpected token",
-    "value-typing/bool-canonical.json::true-mixedcase :: EXPECTED-SUCCESS got=fail:unexpected token",
-    "value-typing/bool-canonical.json::true-upper :: EXPECTED-SUCCESS got=fail:unexpected token",
-    "value-typing/bool-canonical.json::false-word :: EXPECTED-SUCCESS got=fail:unexpected token",
-    "value-typing/bool-canonical.json::zero-numeric :: EXPECTED-SUCCESS got=fail:unexpected token",
-    "value-typing/bool-canonical.json::empty-false :: EXPECTED-SUCCESS got=fail:unexpected token",
-    //     yes-rejected は canonical (Norway 回避で yes 非採用 → Error) と main がどちらも失敗するが、
-    //     element 帰属が違う: canonical は element=enabled、main は付着値を token として認識できないため
-    //     element="" (この case は fixture が reason を書いていないので got 側も reason 抜き)。
-     "value-typing/bool-canonical.json::yes-rejected :: errors got={@0/parse} want={enabled@0/parse}",
     // ── DR-075 §2 int_round 未実装: main は int 型を CLI 相で number と同じ NumArg に落とし、値空間の
     //     整数判定・int_round も CLI 相では適用しない。`"2.5"` が VNum(2.5) で通ってしまうため failure に
     //     ならない。追従は「値空間の整数判定 + int_round 実装」issue で (parse_number の DR-074/075
     //     追従と同根の追跡)。
      "value-typing/int-value-space.json::fractional-value-rejected :: EXPECTED-FAILURE got=ok{v=2.5}",
-    // ── DR-074 §1 float 受理域 (number + inf, case-insensitive): main の parse_number は inf / Infinity を
-    //     未実装で拒否する。nan の拒否と inf-on-number reject は canonical と main が一致 (divergence に出ない)。
-     "value-typing/number-inf-nan.json::inf-on-float-accepted :: EXPECTED-SUCCESS got=fail:\"inf\" is not a number",
-    "value-typing/number-inf-nan.json::inf-case-insensitive-on-float :: EXPECTED-SUCCESS got=fail:\"Infinity\" is not a number",
   ]
 }
 

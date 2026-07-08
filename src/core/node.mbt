@@ -47,15 +47,23 @@ pub(all) enum ExportKey {
 } derive(Eq, Debug)
 
 ///|
-/// Type category of a value cell / primitive. `number` (TNum) accepts integers and floats; `int`
-/// (TInt) is integer-constrained by 値空間判定 — a non-integer VALUE follows `int_round`
-/// (DR-075, canonical default `error`). `float` shares TNum's accept域 (number + inf, DR-074 §1);
-/// no distinct float variant exists yet, so inf handling stays out of the number-型 lexicon here.
+/// Type category of a value cell / primitive. `number` (TNum) accepts integers and floats but
+/// rejects inf/nan (DR-074 §1); `int` (TInt) is integer-constrained by 値空間判定 — a non-integer
+/// VALUE follows `int_round` (DR-075, canonical default `error`). `float` (TFloat) shares TNum's
+/// accept域 PLUS inf (case-insensitive `inf`/`infinity`, sign-合成可) — nan stays Error for both
+/// (DR-074 §1/§7). `TFlag` is a PRESENCE-only trigger (bare `--x` fires name=true, no value token
+/// ever — e.g. `--help`/`--verbose`). `TBool` is DR-074 §3's value-typed canonical bool: the bare
+/// trigger ALSO fires true (same degenerate as TFlag), but it additionally takes an eq-split value
+/// (`--enabled=true`, parsed through the canonical bool vocab) UNLESS the element carries variant
+/// spellings (`--x`/`--no-x`) — a variant-bearing bool already has a dedicated true/false pair of
+/// triggers, so no separate `=value` form is registered for it (installer.mbt `inst_long`).
 pub(all) enum Ty {
   TStr
   TNum
   TInt
+  TFloat
   TFlag
+  TBool
 } derive(Eq, Debug)
 
 ///|
@@ -73,6 +81,13 @@ pub(all) enum Node {
   /// number value primitive: consume 1 token; parse-fail is a held Error (DR-041 §5 / DR-037).
   /// The parse failure is `kind: parse` (DR-053).
   NumArg(String)
+  /// float value primitive (DR-074 §1/§7): consume 1 token, parsed through the WIDER float lexicon
+  /// (canonical number + the 2-word inf/infinity vocab, case-insensitive, sign-合成可 — nan stays
+  /// Error for both number and float). A separate node from `NumArg` because the accept-域 differs
+  /// per TYPE (`number` rejects inf, `float` accepts it) and `Ty::TNum`/`Ty::TFloat` is the only
+  /// place that distinction is known (installer.mbt `value_prim`); once lowered to a bare value node
+  /// there is no other channel to carry it. Parse-fail is `kind: parse`, same reason vocab as NumArg.
+  FloatArg(String)
   /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
   /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
   /// held Error (a value that parsed but failed the filter — post_filter reject 相当).
