@@ -297,6 +297,19 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TFloat, name)], [])]
       }
+    IntArg(name) =>
+      // DR-075 §1-§2: 値空間判定 + canonical int_round=error. `"3.0"`/`"1e3"` は整数値なので受理 (VNum
+      // に整数として畳む)、`"2.5"` は not_an_integer、`"abc"` は not_a_number。
+      if pos < ctx.toks.length() {
+        match parse_int_value(ctx.toks[pos], RError) {
+          Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
+          Err(NotAnInteger) =>
+            [Held(pe_parse_int(name, ctx.toks[pos], pos), [])]
+          Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
+        }
+      } else {
+        [Pending([pend_value(TInt, name)], [])]
+      }
     FilterArg(name, max) => filter_arg_eval(name, max, ctx, pos, [])
     ReqArg(name) => req_arg_eval(name, ctx, pos, [])
     Bind(name, v) => [Accept(pos, [mkb(name, v, Cli)])]
@@ -1011,6 +1024,33 @@ fn scope_consume(
       } else {
         []
       }
+    IntArg(name) =>
+      // DR-075 §1-§2 CLI 値空間判定 (scope_step 経路: NumArg のミラー)。
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_int_value(ctx.toks[pos], RError) {
+          Ok(i) =>
+            scope_step(
+              sc,
+              ctx,
+              pos + 1,
+              pidx + 1,
+              cat(acc, [mkb(name, VNum(i.to_double()), Cli)]),
+              severed,
+              k,
+            )
+          Err(NotAnInteger) =>
+            [Held(pe_parse_int(name, ctx.toks[pos], pos), acc)]
+          Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
+        }
+      } else if pos >= ctx.toks.length() {
+        if in_complete(ctx) {
+          [Pending([pend_value(TInt, name)], acc)]
+        } else {
+          [Held(pe_missing(name, pos), acc)]
+        }
+      } else {
+        []
+      }
     FilterArg(name, max) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match parse_number(ctx.toks[pos]) {
@@ -1396,6 +1436,24 @@ fn consume_head(
       } else {
         []
       }
+    IntArg(name) =>
+      // DR-075 §1-§2 CLI 値空間判定 (先食い分岐: NumArg のミラー)。
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_int_value(ctx.toks[pos], RError) {
+          Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
+          Err(NotAnInteger) =>
+            [Held(pe_parse_int(name, ctx.toks[pos], pos), [])]
+          Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
+        }
+      } else if pos >= ctx.toks.length() {
+        if in_complete(ctx) {
+          [Pending([pend_value(TInt, name)], [])]
+        } else {
+          [Held(pe_missing(name, pos), [])]
+        }
+      } else {
+        []
+      }
     // ReqArg / FilterArg get their own arms so 先食い (suppressed) applies —
     // eval() does not see the parent scope, so falling through would let a
     // greedy trigger token be raw-eaten as the repeat head's value. Held
@@ -1479,6 +1537,7 @@ fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
     StrArg(name) => if !str_mem(out, name) { out.push(name) }
     SepArg(name, _) => if !str_mem(out, name) { out.push(name) }
     NumArg(name) => if !str_mem(out, name) { out.push(name) }
+    IntArg(name) => if !str_mem(out, name) { out.push(name) }
     FilterArg(name, _) => if !str_mem(out, name) { out.push(name) }
     ReqArg(name) => if !str_mem(out, name) { out.push(name) }
     Seq(items) =>
@@ -1624,6 +1683,29 @@ fn scope_consume_rep(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [Pending([pend_value(TNum, name)], acc)]
+      } else {
+        []
+      }
+    IntArg(name) =>
+      // DR-075 §1-§2 CLI 値空間判定 (Many head 経路: NumArg のミラー)。
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match parse_int_value(ctx.toks[pos], RError) {
+          Ok(i) =>
+            scope_step(
+              sc,
+              ctx,
+              pos + 1,
+              pidx,
+              cat(acc, [mkb(name, VNum(i.to_double()), Cli)]),
+              severed,
+              k,
+            )
+          Err(NotAnInteger) =>
+            [Held(pe_parse_int(name, ctx.toks[pos], pos), acc)]
+          Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
+        }
+      } else if pos >= ctx.toks.length() && in_complete(ctx) {
+        [Pending([pend_value(TInt, name)], acc)]
       } else {
         []
       }
@@ -2128,7 +2210,21 @@ pub fn parse(
         tried_triggers: tried_triggers_of(root),
       })
     1 => Success(full[0])
-    _ => Ambiguous({ interpretations: full, help_entry: help })
+    _ =>
+      // DR-073: structurally-distinct full paths have no export-key collision (they differ by
+      // parse structure, not by provenance for a shared exposed key), so claimants stays empty.
+      // Export-key co-exposure collisions are surfaced by a separate post-parse promotion step
+      // (resolve.mbt `promote_collision_ambiguous`) which fills in claimants per interpretation.
+      Ambiguous({
+        interpretations: {
+          let a : Array[AmbInterp] = []
+          for f in full {
+            a.push({ binds: f, claimants: [] })
+          }
+          a
+        },
+        help_entry: help,
+      })
   }
 }
 

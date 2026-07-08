@@ -690,6 +690,10 @@ fn prim_name(n : Node) -> String? {
   match n {
     StrArg(x) => Some(x)
     NumArg(x) => Some(x)
+    // TInt は DR-075 §1 で値空間判定に切替、CLI 相で IntArg 経由。lower 断面では他の value primitive
+    // と同型の値セル (n) として扱う (Some(x) を返す)。
+    IntArg(x) => Some(x)
+    FloatArg(x) => Some(x)
     SepArg(x, _) => Some(x)
     FilterArg(x, _) => Some(x)
     ReqArg(x) => Some(x)
@@ -2768,7 +2772,14 @@ fn scope_entered(binds : Array[Binding], path : Array[String]) -> Bool {
 ///|
 fn run_case(df : DecodedFixture, dc : DCase) -> String {
   let sc = df.scope
-  let outcome = parse(ScopeNode(sc), dc.argv, defs=df.registry)
+  // DR-021 → DR-073: after parse, promote Success to Ambiguous when the actual binding set carries
+  // an export-key co-exposure collision (runtime check on the actual co-exposure, §15.5 / DESIGN
+  // §15.5). Structurally-ambiguous outcomes pass through unchanged (they differ by parse structure,
+  // not by provenance for a shared exposed key).
+  let outcome = promote_collision_ambiguous(
+    parse(ScopeNode(sc), dc.argv, defs=df.registry),
+    df.ekmap,
+  )
   let problems : Array[String] = []
   let use_resolve = dc.resolve || scope_needs_default_ladder(sc)
   match dc.outcome {
@@ -2890,16 +2901,31 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             Some(ei) => {
               let got : Array[String] = []
               for interp in d.interpretations {
-                got.push(
-                  render_rval_sorted(
-                    build_result(
-                      apply_export_keys(interp, df.ekmap),
-                      accum_cells(sc),
-                      [],
-                      [],
-                    ),
+                // Result-object view is always rendered (DR-053 §3 骨格温存)
+                let view = render_rval_sorted(
+                  build_result(
+                    apply_export_keys(interp.binds, df.ekmap),
+                    accum_cells(sc),
+                    [],
+                    [],
                   ),
                 )
+                // DR-073 §1: append `#claimants{...}` suffix only when the interpretation carries
+                // a non-empty claimants面 (matches exp_interp_str's `view + "#claimants" + ...`
+                // encoding at line 1500). Non-collision interpretations render as bare view — the
+                // renderer must not synthesize an empty `#claimants{}` for those (would fail the
+                // structural or-position/repeat/prefix-guard ambiguous fixtures whose expected
+                // form is view-only, not `view#claimants{}`).
+                if interp.claimants.length() == 0 {
+                  got.push(view)
+                } else {
+                  let items : Array[String] = []
+                  for kv in interp.claimants {
+                    items.push(kv.0 + "=" + kv.1)
+                  }
+                  sort_items(items)
+                  got.push(view + "#claimants{" + join_comma(items) + "}")
+                }
               }
               sort_items(got)
               let ag = join_comma(got)
@@ -2953,11 +2979,6 @@ fn known_divergences() -> Array[String] {
     //     opt-in で書いた requires_violated (DR-066 §3 v1 vocab)。追従は「value-branch id 属性の再設計」issue で。
     "constraints-parse/default-interaction.json::value-branch-cli-trigger :: errors got={format@2/constraint/requires_violated} want={fmt_json@2/constraint/requires_violated}",
     "constraints-parse/requires.json::value-requires-violated :: errors got={format@2/constraint/requires_violated} want={fmt_json@2/constraint/requires_violated}",
-    // ── DESIGN §15.5 export-key collision: fixture は AMBIGUOUS 表現に (interpretations と claimants
-    //     provenance で co-exposure を分節)、main は Success + collision 未検知。gap は 2 段 —
-    //     (1) collision→Ambiguous を outcome level で surface、(2) AmbiguousData に claimants provenance。
-    //     現行は (1) 未実装なので verdict は outcome level に落ちる。
-     "export-key/collision.json::co-exposure-collision :: EXPECTED-AMBIGUOUS got=ok{a=true,b=true}",
     // ── DR-043 取り分の選好: adjacent min:0 receptacles (xs*, ys*) の左最長選好。slice と同じく main も
     //     min:0 repeat を「>=1 で lower」してしまうため、0 token 供給パスや偏った分割で失敗する。
     //     取り分方向 (左/右最長) が上流未決着 (kuu DR-043 「未決着 — 取り分の向き」) なので、実装後
@@ -2965,11 +2986,6 @@ fn known_divergences() -> Array[String] {
      "path-search/ambiguous-receptacles.json::zero-tokens-unique-split :: EXPECTED-SUCCESS got=fail:missing operand for xs",
     "path-search/ambiguous-receptacles.json::one-token-greedy-left :: EXPECTED-SUCCESS got=fail:missing operand for ys",
     "path-search/ambiguous-receptacles.json::two-tokens-greedy-left :: effects got=xs:set(a)@cli,ys:set(b)@cli want= | result got={xs=[a],ys=[b]} want={xs=[a,b],ys=[]}",
-    // ── DR-075 §2 int_round 未実装: main は int 型を CLI 相で number と同じ NumArg に落とし、値空間の
-    //     整数判定・int_round も CLI 相では適用しない。`"2.5"` が VNum(2.5) で通ってしまうため failure に
-    //     ならない。追従は「値空間の整数判定 + int_round 実装」issue で (parse_number の DR-074/075
-    //     追従と同根の追跡)。
-     "value-typing/int-value-space.json::fractional-value-rejected :: EXPECTED-FAILURE got=ok{v=2.5}",
   ]
 }
 

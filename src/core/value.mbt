@@ -713,6 +713,21 @@ fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
 }
 
 ///|
+/// A `kind: parse` held Error for a value that read as a number but is not an integer value under
+/// canonical `int_round: error` (DR-075 §2 / DR-066 §3). The reason `not_an_integer` is emitted ONLY
+/// when `int_round=error` (any rounding mode rounds to Ok and never raises this); a token that does
+/// not read as a number at all lands in `pe_parse` with reason `not_a_number`.
+fn pe_parse_int(element : String, tok : String, pos : Int) -> ParseError {
+  {
+    element,
+    argv_pos: pos,
+    kind: KParse,
+    reason: "not_an_integer",
+    message: "\"\{tok}\" is not an integer",
+  }
+}
+
+///|
 /// A `kind: parse` held Error for a value that failed to parse as a bool (DR-074 §3 canonical vocab:
 /// unrecognized tokens like `yes`/`on` are canonical-外, Error not silent 変換). DR-066 v1's reason
 /// vocab only lists `not_a_number`/`not_an_integer` (bool has no entry yet); this reason is the

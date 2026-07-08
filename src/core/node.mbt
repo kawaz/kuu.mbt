@@ -88,6 +88,15 @@ pub(all) enum Node {
   /// place that distinction is known (installer.mbt `value_prim`); once lowered to a bare value node
   /// there is no other channel to carry it. Parse-fail is `kind: parse`, same reason vocab as NumArg.
   FloatArg(String)
+  /// int value primitive (DR-075 §1: 値空間判定 with canonical `int_round: error`). Consume 1 token,
+  /// parse via `parse_int_value(_, RError)`: an integer value (`"3.0"`→3 / `"1e3"`→1000 / `"1_000"`
+  /// →1000) is accepted directly, a truly-fractional value (`"2.5"`) fails with reason
+  /// `not_an_integer`, a non-number token (`"abc"`) fails with `not_a_number`. A separate node from
+  /// `NumArg` because CLI-side TInt needs the value-space (not syntax-only) judgment and its own
+  /// reason vocab — `Ty::TInt` is the only place the distinction is known (installer.mbt
+  /// `value_prim`); once lowered to a bare value node there is no other channel to carry it.
+  /// Parse-fail is `kind: parse`.
+  IntArg(String)
   /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
   /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
   /// held Error (a value that parsed but failed the filter — post_filter reject 相当).

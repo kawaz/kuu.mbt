@@ -787,6 +787,66 @@ pub fn build_interpretations(
 }
 
 ///|
+/// Promote a `Success` outcome to `Ambiguous` when its bindings carry an export-key co-exposure
+/// collision (DR-021 → DR-073). The collision detection runs against the actual parse (§15.5
+/// runtime check), so a definition that DECLARES two elements with the same export_key is only
+/// promoted when BOTH elements are present in the same result scope. `Failure` and already-
+/// `Ambiguous` outcomes pass through unchanged (structurally-ambiguous outcomes have no export-key
+/// collision by construction — they differ in parse structure, not provenance for a shared key).
+/// Each promoted interpretation carries the DR-073 §1 claimants面 (exposed key → occupying entity
+/// name) so degenerate views (e.g. two flags both `true`) remain distinct under (view, claimants)
+/// pair comparison (CONFORMANCE §3, DR-073 §3).
+pub fn promote_collision_ambiguous(
+  o : Outcome,
+  ek : Map[String, ExportKey],
+) -> Outcome {
+  match o {
+    Success(binds) => {
+      let collisions = find_export_collisions(binds, ek)
+      if collisions.length() == 0 {
+        return o
+      }
+      // Cross product of claimant choices per collision group — each combo picks one claimant per
+      // group and drops the rivals' bindings at that (path, mapped-key) from THIS view (DR-073 §2:
+      // entity name is the sole cross-view-stable identifier; value/source can coincide).
+      let interps : Array[AmbInterp] = []
+      for combo in claimant_combinations(collisions) {
+        let filtered : Array[Binding] = []
+        for b in binds {
+          let mut drop = false
+          let mut gi = 0
+          while gi < collisions.length() {
+            let c = collisions[gi]
+            if path_eq(c.path, b.scope) &&
+              c.key ==
+              (match ek.get(b.key) {
+                Some(EkKey(s)) => s
+                _ => ""
+              }) &&
+              b.key != combo[gi] {
+              drop = true
+            }
+            gi = gi + 1
+          }
+          if !drop {
+            filtered.push(b)
+          }
+        }
+        let claimants : Array[(String, String)] = []
+        let mut gi = 0
+        while gi < collisions.length() {
+          claimants.push((collisions[gi].key, combo[gi]))
+          gi = gi + 1
+        }
+        interps.push({ binds: filtered, claimants })
+      }
+      Ambiguous({ interpretations: interps, help_entry: None })
+    }
+    _ => o
+  }
+}
+
+///|
 /// The cross product of each collision group's claimant choices, e.g. 2 groups of 2 claimants each
 /// → 4 combinations, `combo[i]` is the chosen claimant for `collisions[i]`.
 fn claimant_combinations(

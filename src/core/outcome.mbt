@@ -22,10 +22,26 @@ pub(all) struct FailureData {
 } derive(Eq, Debug)
 
 ///|
-/// spec DR-053 §3: an ambiguous parse — every distinct interpretation as a
-/// result-object view.
+/// One ambiguous interpretation (DR-053 §3 + DR-073 claimants provenance). `binds` are the
+/// PRE-export-key Bindings for this interpretation (raw entity-name keys — downstream applies
+/// the ExportKey map to render the result-object view). `claimants` is the DR-073 §1 optional
+/// provenance面: for each exposed key that this interpretation contests with another, the entity
+/// name that occupies it IN THIS VIEW. Empty when the interpretation carries no export-key
+/// collision (the common case — structurally-distinct full paths need no claimants to be told
+/// apart). Non-empty only for export-key co-exposure collisions where degenerate views (e.g.
+/// two flags both `true`) share a result key but come from different entities (DR-073 §2:
+/// entity name is the only cross-view-stable identifier since value/source can coincide).
+pub(all) struct AmbInterp {
+  binds : Array[Binding]
+  claimants : Array[(String, String)]
+} derive(Eq, Debug)
+
+///|
+/// spec DR-053 §3 + DR-073: an ambiguous parse — every distinct interpretation with an optional
+/// claimants面 (DR-073 §1 の「解釈に claimants を束ねた組」= 並行配列ではなく組で保持し、集合
+/// 比較 (CONFORMANCE §3) が (view, claimants) の対を単位として突き合わせられる)。
 pub(all) struct AmbiguousData {
-  interpretations : Array[Array[Binding]]
+  interpretations : Array[AmbInterp]
   help_entry : String?
 } derive(Eq, Debug)
 

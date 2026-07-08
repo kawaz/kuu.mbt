@@ -161,8 +161,11 @@ priv struct SBChild {
 ///|
 fn value_prim(ty : Ty, name : String) -> Node {
   match ty {
-    // TNum / TInt は CLI 側では number-like 扱い (integer 値空間判定は config 段で行う)
-    TNum | TInt => NumArg(name)
+    // TNum は canonical number 字句のみ (DR-074 §1) — parse_number, VNum で束ねる
+    TNum => NumArg(name)
+    // TInt は値空間判定 (DR-075 §1、canonical int_round=error): number として parse し値が整数かを
+    // 判定する。fractional 値は not_an_integer で fail。IntArg 経由で parse_int_value(RError) を通す
+    TInt => IntArg(name)
     // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
     TFloat => FloatArg(name)
     _ => StrArg(name)
@@ -1360,6 +1363,7 @@ fn head_progresses(
     | SepArg(_, _)
     | NumArg(_)
     | FloatArg(_)
+    | IntArg(_)
     | FilterArg(_, _)
     | ReqArg(_)
     | Exact(_)
