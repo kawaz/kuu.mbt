@@ -381,11 +381,21 @@ fn opt_node(x : Node) -> Node {
 
 ///|
 /// positional face の lowering。repeat 要素 (DR-043) は Ref 再帰: template
-/// `name = Seq([head, Opt(Ref(name))])` を registry に登録し、spine には `min-1` mandatory + Ref。
-/// bounded (max 有限) は Ref 再帰なしで BoundedTail に落ちる (LOWERING §B.8)。dd 要素は spine に載せない。
+/// `name = Seq([head, Opt(Ref(name))])` を registry に登録し、spine には `min-1` mandatory + Ref
+/// (min >= 1 のみ — `Ref` 自体は必ず >= 1 head を消費する構造で「0 でもよい」を表現できない、
+/// `consume_head` に「0 なら silent stop」の分岐が無いため)。`min:0` の UNBOUNDED は代わりに
+/// `Many(head)` を直接積む (下記詳細)。bounded (max 有限) は Ref 再帰なしで BoundedTail に落ちる
+/// (LOWERING §B.8、min:0 は budget=max の BoundedTail が最初から正しく扱う)。dd 要素は spine に
+/// 載せない。
 ///
-/// MDR-002 §CPS 規約: repeat はここでスパイン形 (positional の Ref / BoundedTail / ScopeNode) にのみ
-/// 正規化し、Or/Seq/Rooted 内部への埋め込みは生成しない (取り分選好の局所化を避けるため)。
+/// MDR-002 §CPS 規約: repeat はここでスパイン形 (positional の Ref / BoundedTail / ScopeNode /
+/// **Many**) にのみ正規化し、Or/Seq/Rooted 内部への埋め込みは生成しない (取り分選好の局所化を避け
+/// るため)。`Many` は `Ref`/`BoundedTail` と対称な取り分選好 (greedy 既定 = 長い方から試す、
+/// `has_full_k` で pruning) を scope_consume 側に持つ spine 形 (eval.mbt の `Many(inner) =>`
+/// アーム、"parity with Ref/BoundedTail 取り分選好 spec DR-043")。輪郭は
+/// fixtures/path-search/ambiguous-receptacles.json が固定する。NB: `Many` は greedy-only
+/// (AST に lazy knob なし) のため min:0 + lazy:true は現状 laziness が効かない —
+/// docs/issue/2026-07-08-min0-lazy-repeat-gap.md で追跡。
 fn lower_positional(
   def : Definition,
   registry : Map[String, Node],
@@ -398,21 +408,33 @@ fn lower_positional(
         None => out.push(head)
         Some(spec) =>
           match spec.max {
-            None => {
-              // UNBOUNDED (DR-043): `name = Seq([head, Opt(Ref(name))])` の porous 自参照
-              registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
-              if spec.lazy_ {
-                // lazy marker (evaluator が split 選好を引くための mangled key)
-                registry.set("lazy:" + e.name, Exact("lazy"))
+            None =>
+              if spec.min == 0 {
+                // UNBOUNDED min:0 (DR-043): a bare `Ref(e.name)` cannot express "0 is fine" (its
+                // arm in scope_consume has no fallback for `consume_head` failing to progress), and
+                // wrapping it in a plain `Or([Ref(name), Seq([])])` would lose the 取り分選好 (plain
+                // `eval()`'s `Or` arm has no preference — both branches survive whenever they BOTH
+                // reach a full parse, producing Ambiguous instead of the greedy-left-longest single
+                // reading DR-043 requires — exactly this fixture's 3 divergences). `Many(head)` is
+                // the existing spine form with the IDENTICAL preference algorithm already wired in
+                // scope_consume, so no registry/self-ref is needed at all (each further rep re-enters
+                // the SAME `Many` node at the same `pidx`, not a named template).
+                out.push(Many(head))
+              } else {
+                // UNBOUNDED min>=1 (DR-043): `name = Seq([head, Opt(Ref(name))])` の porous 自参照
+                registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
+                if spec.lazy_ {
+                  // lazy marker (evaluator が split 選好を引くための mangled key)
+                  registry.set("lazy:" + e.name, Exact("lazy"))
+                }
+                let m = spec.min
+                let mut k = 0
+                while k < m - 1 {
+                  out.push(head) // mandatory unrolled heads (DR-043 min)
+                  k = k + 1
+                }
+                out.push(Ref(e.name)) // >= 1 porous recursive tail
               }
-              let m = if spec.min < 1 { 1 } else { spec.min }
-              let mut k = 0
-              while k < m - 1 {
-                out.push(head) // mandatory unrolled heads (DR-043 min)
-                k = k + 1
-              }
-              out.push(Ref(e.name)) // >= 1 porous recursive tail
-            }
             Some(mx) => {
               // BOUNDED (LOWERING §B.8): min mandatory heads + BoundedTail(head, max-min)
               let m = if spec.min < 0 { 0 } else { spec.min }

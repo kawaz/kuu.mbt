@@ -2984,22 +2984,9 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// a KNOWN gap either INHERITED from slice/poc (未実装が正本仕様に追従していない) or a suspected
 /// fixture-authoring issue frozen for later resolution. The runner asserts the observed divergence
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
-/// MDR-001 §6).
-///
-/// Initial population (2026-07-08 first run, journal 2026-07-08-conformance-first-run.md):
-/// 17 slice-inherited entries. Additional 3 new-implementation delta entries are NOT ledgered
-/// here — they are tracked as regressions to be fixed in eval/matcher core (see journal §
-/// "新実装 delta 3 件"), so the divergence-ledger assertion stays red until they are addressed.
+/// MDR-001 §6). Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
-  [
-    // ── DR-043 取り分の選好: adjacent min:0 receptacles (xs*, ys*) の左最長選好。slice と同じく main も
-    //     min:0 repeat を「>=1 で lower」してしまうため、0 token 供給パスや偏った分割で失敗する。
-    //     取り分方向 (左/右最長) が上流未決着 (kuu DR-043 「未決着 — 取り分の向き」) なので、実装後
-    //     方向が決まると two-tokens 側の want が反転する可能性がある (verdict 文字列も変わる)。
-    "path-search/ambiguous-receptacles.json::zero-tokens-unique-split :: EXPECTED-SUCCESS got=fail:missing operand for xs",
-    "path-search/ambiguous-receptacles.json::one-token-greedy-left :: EXPECTED-SUCCESS got=fail:missing operand for ys",
-    "path-search/ambiguous-receptacles.json::two-tokens-greedy-left :: effects got=xs:set(a)@cli,ys:set(b)@cli want= | result got={xs=[a],ys=[b]} want={xs=[a,b],ys=[]}",
-  ]
+  []
 }
 
 ///|
