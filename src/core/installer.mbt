@@ -1197,7 +1197,16 @@ fn inst_global(sb : SB) -> Unit {
 fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
   for existing in child.decl.options {
     if triggers_overlap(existing, opt) {
-      return // shadow または既に copy 済 (idempotent)
+      return // shadow または既に copy 済 (idempotent, トリガ基準)
+    }
+    // DR-057 alias 併用パターン (canonical 側は global だがトリガを持たない = long/short/variants
+    // 全て空で、alias 側だけが実際のトリガを別要素として持つ) で発見: `triggers_overlap` は両者とも
+    // トリガ集合が空だと常に false を返すため、上のチェックだけでは「既にコピー済みの trigger-less
+    // canonical」を検出できず、fixpoint のたびに同じ要素を再コピーし続けて収束しない
+    // (installer chain did not converge)。同名 + link_depth>0 (= コピー由来) の既存要素があれば、
+    // トリガの有無に関わらず idempotent とみなす。
+    if existing.name == opt.name && existing.link_depth > 0 {
+      return
     }
   }
   // copy は link 衛星 (DR-042): declaring scope の entity を bind (子は自 cell を持たない)。
