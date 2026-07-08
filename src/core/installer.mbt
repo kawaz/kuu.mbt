@@ -51,6 +51,11 @@ pub(all) struct ElemDef {
   // parse 相内部調整で、`value_prim` が IntArg(name, mode) にこの値を埋め込む。TInt 以外の element は
   // 参照しない (installer が読み取らない冗長フィールド)。
   int_round : RoundMode
+  // DR-074 §2 統合 opt-in `number_allow_base_prefix` (kuu_number_parser factory config)。canonical
+  // default = false (基数 prefix / hex float は Error)、true で `0xff` / `0x1.8p3` / `0o777` / `0b1010`
+  // を受理する。value_prim が NumArg(name, flag) / IntArg(name, mode, flag) に埋め込み、eval / matcher
+  // で parse_number_ext / parse_int_value_ext に流す。TNum / TInt 以外は参照しない。
+  allow_base_prefix : Bool
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
   default_value : Value?
 } derive(Eq, Debug)
@@ -280,13 +285,19 @@ priv struct SBChild {
 }
 
 ///|
-fn value_prim(ty : Ty, name : String, int_round : RoundMode) -> Node {
+fn value_prim(
+  ty : Ty,
+  name : String,
+  int_round : RoundMode,
+  allow_base_prefix : Bool,
+) -> Node {
   match ty {
-    // TNum は canonical number 字句のみ (DR-074 §1) — parse_number, VNum で束ねる
-    TNum => NumArg(name)
-    // TInt は値空間判定 (DR-075 §1) + int_round 適用 (DR-075 §2、canonical default=RError)。IntArg に
-    // mode を埋め込み、eval が parse_int_value(_, mode) で丸めを反映する。TInt 以外は int_round を無視。
-    TInt => IntArg(name, int_round)
+    // TNum は canonical (DR-074 §1) + opt-in base prefix (§2)。allow=true で hex/oct/bin 整数 + hex
+    // float も受理する統合 opt-in (単一 flag、DR-074 §2)。
+    TNum => NumArg(name, allow_base_prefix)
+    // TInt は値空間判定 (DR-075 §1) + int_round (§2) + hex/oct/bin (DR-074 §2)。IntArg に mode / flag
+    // を埋め込み、eval が parse_int_value_ext(_, mode, flag) で丸め + 基数 prefix を反映する。
+    TInt => IntArg(name, int_round, allow_base_prefix)
     // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
     TFloat => FloatArg(name)
     // TBool は DR-076 §1/§4 で string/number と同格の値型 — BoolArg / parse_bool を通す
@@ -358,6 +369,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     deprecated: e.deprecated,
     default_value: e.default_value,
     int_round: e.int_round,
+    allow_base_prefix: e.allow_base_prefix,
   }
 }
 
@@ -473,7 +485,7 @@ fn elem_head(e : ElemDef) -> Node {
     None =>
       match e.separator {
         Some(sep) => SepArg(e.name, sep)
-        None => value_prim(e.ty, e.name, e.int_round)
+        None => value_prim(e.ty, e.name, e.int_round, e.allow_base_prefix)
       }
   }
 }
@@ -701,7 +713,10 @@ fn inst_long(def : Definition, build : Build) -> Unit {
             build,
             maybe_root(
               e.link_depth,
-              Seq([Exact(trigger), value_prim(e.ty, e.name, e.int_round)]),
+              Seq([
+                Exact(trigger),
+                value_prim(e.ty, e.name, e.int_round, e.allow_base_prefix),
+              ]),
             ),
           )
       }
@@ -718,6 +733,9 @@ fn inst_long(def : Definition, build : Build) -> Unit {
           name: e.name,
           kind: e.ty,
           int_round: e.int_round,
+          // DR-074 §2: TNum / TInt の eq-split (`--v=0xff`) も factory config を反映するよう ElemDef から
+          // LongEntry に持ち込む (他 kind は entry 側で参照されない)。
+          allow_base_prefix: e.allow_base_prefix,
         })
       }
     }
@@ -771,6 +789,8 @@ fn inst_short(def : Definition, build : Build) -> Unit {
         kind: e.ty,
         depr: e.deprecated,
         int_round: e.int_round,
+        // DR-074 §2: short cluster / space-tail の TNum / TInt も allow_base_prefix を反映
+        allow_base_prefix: e.allow_base_prefix,
       })
     }
   }
@@ -921,6 +941,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     deprecated: copy.deprecated,
     default_value: copy.default_value,
     int_round: copy.int_round,
+    allow_base_prefix: copy.allow_base_prefix,
   })
 }
 
@@ -1052,6 +1073,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     deprecated: false,
     default_value: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
     int_round: RError, // canonical default (DR-075 §2): write-target は int_round を持たない
+    allow_base_prefix: false, // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
   })
 }
 
@@ -1239,6 +1261,7 @@ fn alias_entry(
     deprecated,
     default_value: None,
     int_round: RError,
+    allow_base_prefix: false,
   }
 }
 
@@ -1533,9 +1556,9 @@ fn head_progresses(
   match node {
     StrArg(_)
     | SepArg(_, _)
-    | NumArg(_)
+    | NumArg(_, _)
     | FloatArg(_)
-    | IntArg(_, _)
+    | IntArg(_, _, _)
     | BoolArg(_)
     | FilterArg(_, _)
     | ReqArg(_)

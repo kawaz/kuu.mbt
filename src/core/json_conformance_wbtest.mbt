@@ -302,6 +302,7 @@ fn opt(
   value_requires? : Array[(String, String, Array[String])] = [],
   default? : Value? = None,
   int_round? : RoundMode = RError,
+  allow_base_prefix? : Bool = false,
 ) -> ElemDef {
   {
     name,
@@ -331,6 +332,7 @@ fn opt(
     deprecated: false,
     default_value: default,
     int_round,
+    allow_base_prefix,
   }
 }
 
@@ -348,6 +350,7 @@ fn pos(
   ref_? : String? = None,
   default? : Value? = None,
   int_round? : RoundMode = RError,
+  allow_base_prefix? : Bool = false,
 ) -> ElemDef {
   {
     name,
@@ -377,6 +380,7 @@ fn pos(
     deprecated: false,
     default_value: default,
     int_round,
+    allow_base_prefix,
   }
 }
 
@@ -410,6 +414,7 @@ fn dd_marker() -> ElemDef {
     deprecated: false,
     default_value: None,
     int_round: RError,
+    allow_base_prefix: false,
   }
 }
 
@@ -673,10 +678,10 @@ fn lsec_str(s : LSec) -> String {
 fn prim_name(n : Node) -> String? {
   match n {
     StrArg(x) => Some(x)
-    NumArg(x) => Some(x)
+    NumArg(x, _) => Some(x)
     // TInt は DR-075 §1 で値空間判定に切替、CLI 相で IntArg 経由。lower 断面では他の value primitive
     // と同型の値セル (n) として扱う (Some(x) を返す)。
-    IntArg(x, _) => Some(x)
+    IntArg(x, _, _) => Some(x)
     FloatArg(x) => Some(x)
     // DR-076 §1/§4: bool is now a normal value type, same satellite shape as string/number/int/float.
     BoolArg(x) => Some(x)
@@ -1553,6 +1558,9 @@ fn dec_ty(t : String) -> Ty raise DecodeSkip {
 struct TypeShadow {
   base : Ty
   int_round : RoundMode
+  // DR-074 §2 `number_allow_base_prefix` (kuu_number_parser factory config)。canonical default = false。
+  // TypeShadow が担う base 側の flag は canonical default が false なので、int_round と直交な平坦キー。
+  allow_base_prefix : Bool
 } derive(Eq, Debug)
 
 ///|
@@ -1587,9 +1595,10 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
     }
     match factory {
       "kuu_int_parser" => {
-        // DR-075 §2 の唯一 config = int_round (10 モード語彙、value.mbt の round_mode_of で解決)。
-        // config 未指定は canonical default (RError = error モード)。
+        // DR-075 §2 int_round (10 モード語彙、round_mode_of で解決) + DR-074 §2 の (int にも波及する)
+        // `number_allow_base_prefix`。config 未指定は canonical default (RError + false)。
         let mut mode = RError
+        let mut base_prefix = false
         match to.get("config") {
           Some(cj) => {
             let co = match cj.j_obj() {
@@ -1599,7 +1608,11 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
                   "definitions.types[" + name + "].config is not an object",
                 )
             }
-            allowed_keys(co, ["int_round"], "kuu_int_parser config")
+            allowed_keys(
+              co,
+              ["int_round", "number_allow_base_prefix"],
+              "kuu_int_parser config",
+            )
             match co.get("int_round") {
               Some(vj) =>
                 match vj.j_str() {
@@ -1624,10 +1637,68 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
                 }
               None => ()
             }
+            match co.get("number_allow_base_prefix") {
+              Some(vj) =>
+                match vj.j_bool() {
+                  Some(b) => base_prefix = b
+                  None =>
+                    raise DecodeSkip(
+                      "definitions.types[" +
+                      name +
+                      "].config.number_allow_base_prefix is not a bool",
+                    )
+                }
+              None => ()
+            }
           }
           None => ()
         }
-        out.set(name, { base: TInt, int_round: mode })
+        out.set(name, {
+          base: TInt,
+          int_round: mode,
+          allow_base_prefix: base_prefix,
+        })
+      }
+      "kuu_number_parser" => {
+        // DR-074 §2 `number_allow_base_prefix` = 統合 opt-in で 0x/0o/0b + hex float 一括有効化
+        // (単一 flag、canonical default false)。他 config キー (`number_thousand_sep` /
+        // `number_leading_zero`) は本 substrate 未サポート (fixture が使わないため)。
+        let mut base_prefix = false
+        match to.get("config") {
+          Some(cj) => {
+            let co = match cj.j_obj() {
+              Some(x) => x
+              None =>
+                raise DecodeSkip(
+                  "definitions.types[" + name + "].config is not an object",
+                )
+            }
+            allowed_keys(
+              co,
+              ["number_allow_base_prefix"],
+              "kuu_number_parser config",
+            )
+            match co.get("number_allow_base_prefix") {
+              Some(vj) =>
+                match vj.j_bool() {
+                  Some(b) => base_prefix = b
+                  None =>
+                    raise DecodeSkip(
+                      "definitions.types[" +
+                      name +
+                      "].config.number_allow_base_prefix is not a bool",
+                    )
+                }
+              None => ()
+            }
+          }
+          None => ()
+        }
+        out.set(name, {
+          base: TNum,
+          int_round: RError,
+          allow_base_prefix: base_prefix,
+        })
       }
       other =>
         raise DecodeSkip(
@@ -1635,7 +1706,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           name +
           "] unsupported factory '" +
           other +
-          "' (only kuu_int_parser is wired in the current substrate; kuu_number_parser is next task)",
+          "' (only kuu_int_parser / kuu_number_parser are wired in the current substrate)",
         )
     }
   }
@@ -1869,13 +1940,19 @@ fn dec_option(
   // DR-061 §3: type shadow lookup — user 定義の type 名なら base Ty + parse 相 config を採用、
   // canonical 型名 (string/int/...) にフォールバック。help/config_file は語彙 keyword で shadow の
   // 適用対象外 (installer 語彙、DR-042)。
-  let (ty, fail_action, config_file, int_round_from_shadow) = match tystr {
-    "help" => (TFlag, true, false, RError)
-    "config_file" => (TStr, false, true, RError)
+  let (
+    ty,
+    fail_action,
+    config_file,
+    int_round_from_shadow,
+    base_prefix_from_shadow,
+  ) = match tystr {
+    "help" => (TFlag, true, false, RError, false)
+    "config_file" => (TStr, false, true, RError, false)
     _ =>
       match shadows.get(tystr) {
-        Some(sh) => (sh.base, false, false, sh.int_round)
-        None => (dec_ty(tystr), false, false, RError)
+        Some(sh) => (sh.base, false, false, sh.int_round, sh.allow_base_prefix)
+        None => (dec_ty(tystr), false, false, RError, false)
       }
   }
   let (longs, vars) = match o.get("long") {
@@ -1929,6 +2006,7 @@ fn dec_option(
       value_requires~,
       default~,
       int_round=int_round_from_shadow,
+      allow_base_prefix=base_prefix_from_shadow,
     ),
     separator: sep,
     deprecated,
@@ -1963,13 +2041,14 @@ fn dec_positional(
     "positional",
   )
   // DR-061 §3: positional も type shadow を consultation (dec_option と同型)。
-  let (ty, int_round_from_shadow) = match jf_str(o, "type") {
+  let (ty, int_round_from_shadow, base_prefix_from_shadow) = match
+    jf_str(o, "type") {
     Some(t) =>
       match shadows.get(t) {
-        Some(sh) => (sh.base, sh.int_round)
-        None => (dec_ty(t), RError)
+        Some(sh) => (sh.base, sh.int_round, sh.allow_base_prefix)
+        None => (dec_ty(t), RError, false)
       }
-    None => (TStr, RError)
+    None => (TStr, RError, false)
   }
   let name = match jf_str(o, "name") {
     Some(s) => s
@@ -2007,6 +2086,7 @@ fn dec_positional(
     export_~,
     default~,
     int_round=int_round_from_shadow,
+    allow_base_prefix=base_prefix_from_shadow,
   )
 }
 
@@ -3136,14 +3216,6 @@ fn expected_skips() -> Array[(String, String)] {
     ),
     (
       "path-search/held-errors-same-depth.json", "structural or-positional (branches are consumption grammars binding distinct named cells): slice ElemDef is flat with one value cell per element — lower_positional builds a single value_prim per positional, so parse_definition has no builder for Or([Seq([…]),…]) at the §5 contract path",
-    ),
-    // DR-074 §2・§4 / DR-061 §3 `definitions` factory shadow: number_allow_base_prefix (kuu_number_parser)
-    // 経路は hex integer + hex float の parser 実装が未完なので decoder が unsupported factory として
-    // 明示 skip する (dec_types 内 `kuu_int_parser 以外は unsupported`)。int_round (kuu_int_parser) は
-    // 実装済み (int-round-modes.json は decoded)。追跡は次タスクで hex float lexer 追加後に解消予定。
-    // reason は dec_types 内の DecodeSkip メッセージと byte 一致必須。
-    (
-      "value-typing/number-base-prefix-optin.json", "definitions.types[number] unsupported factory 'kuu_number_parser' (only kuu_int_parser is wired in the current substrate; kuu_number_parser is next task)",
     ),
   ]
 }

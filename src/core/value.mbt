@@ -261,6 +261,469 @@ fn scan_number_parts(s : String) -> (Bool, String, String, Int)? {
   Some((neg, int_digits, frac_digits, exp))
 }
 
+// ── DR-074 §2 / §7 opt-in base prefix (0x / 0o / 0b) + hex float ──────────────
+
+///|
+/// hex digit value 0-15 (case-insensitive, DR-074 §7 「hex の桁 a-f / A-F は case-insensitive」),
+/// or None for non-hex characters. Used by scan_hex_digits / parse_hex_body の値計算.
+fn hex_val(c : Char) -> Int? {
+  if c >= '0' && c <= '9' {
+    Some(c.to_int() - '0'.to_int())
+  } else if c >= 'a' && c <= 'f' {
+    Some(10 + c.to_int() - 'a'.to_int())
+  } else if c >= 'A' && c <= 'F' {
+    Some(10 + c.to_int() - 'A'.to_int())
+  } else {
+    None
+  }
+}
+
+///|
+/// Scan a maximal hex digit group starting at `start`, writing the digits (WITHOUT the `_`
+/// separators) into `buf`. DR-074 §7 `_` placement: 両隣が hex 桁のみ許容 — 連続 (`ff__ff`) 不可、
+/// 先頭 (`_ff`) / 末尾 (`ff_`) / 非 hex 隣接不可。`0x_ff` は caller が拒否する (prefix 隣接 = 先頭に相当)。
+/// 空 group は legal (0 を返す) — caller が「少なくとも 1 桁」を判定。
+fn scan_hex_digits(cs : Array[Char], start : Int, buf : StringBuilder) -> Int? {
+  let n = cs.length()
+  let mut i = start
+  let mut last_hex = false
+  while i < n {
+    let c = cs[i]
+    match hex_val(c) {
+      Some(_) => {
+        buf.write_char(c)
+        last_hex = true
+        i = i + 1
+      }
+      None =>
+        if c == '_' {
+          if !last_hex {
+            return None
+          }
+          if i + 1 >= n {
+            return None
+          }
+          if hex_val(cs[i + 1]) is None {
+            return None
+          }
+          last_hex = false
+          i = i + 1
+        } else {
+          break
+        }
+    }
+  }
+  Some(i)
+}
+
+///|
+/// Scan a maximal octal digit group [0-7] with `_` between digits (DR-074 §7 と同一規則の base=8 版)。
+fn scan_oct_digits(cs : Array[Char], start : Int, buf : StringBuilder) -> Int? {
+  let n = cs.length()
+  let mut i = start
+  let mut last_oct = false
+  while i < n {
+    let c = cs[i]
+    if c >= '0' && c <= '7' {
+      buf.write_char(c)
+      last_oct = true
+      i = i + 1
+    } else if c == '_' {
+      if !last_oct {
+        return None
+      }
+      if i + 1 >= n {
+        return None
+      }
+      let nx = cs[i + 1]
+      if !(nx >= '0' && nx <= '7') {
+        return None
+      }
+      last_oct = false
+      i = i + 1
+    } else {
+      break
+    }
+  }
+  Some(i)
+}
+
+///|
+/// Scan a maximal binary digit group [01] with `_` between digits (base=2)。
+fn scan_bin_digits(cs : Array[Char], start : Int, buf : StringBuilder) -> Int? {
+  let n = cs.length()
+  let mut i = start
+  let mut last_bin = false
+  while i < n {
+    let c = cs[i]
+    if c == '0' || c == '1' {
+      buf.write_char(c)
+      last_bin = true
+      i = i + 1
+    } else if c == '_' {
+      if !last_bin {
+        return None
+      }
+      if i + 1 >= n {
+        return None
+      }
+      let nx = cs[i + 1]
+      if !(nx == '0' || nx == '1') {
+        return None
+      }
+      last_bin = false
+      i = i + 1
+    } else {
+      break
+    }
+  }
+  Some(i)
+}
+
+///|
+/// 2^exp を Double で計算 (単純ループ、hex float 二進指数の適用に使う)。fixture が使う範囲 (|exp| < 20
+/// 程度) では overflow なし。極端値では ±0 / ±inf に飽和する (spec は境界を規定しないので合理的既定)。
+fn pow2_double(exp : Int) -> Double {
+  if exp >= 0 {
+    let mut r = 1.0
+    let mut i = 0
+    while i < exp {
+      r = r * 2.0
+      i = i + 1
+    }
+    r
+  } else {
+    let mut r = 1.0
+    let mut i = 0
+    while i < -exp {
+      r = r * 2.0
+      i = i + 1
+    }
+    1.0 / r
+  }
+}
+
+///|
+/// DR-074 §2 hex 整数 or hex float の body parse (`0x`/`0X` prefix は caller が既に消費)。至急要求 =
+/// (mantissa hex 桁が int/frac に一つ以上) + optional `.frac_hex` + optional `p[+-]?dec`。fraction または
+/// exponent がある場合は hex float、両方無ければ hex integer (同じロジックで value 化する — integer は
+/// exp=0 かつ frac 空)。trailing junk (i != n) は None。DR-074 §7 pin: `_` 配置文法は 両隣桁のみ、
+/// `0x_ff` (prefix 隣接) は先頭空 int_digits → 続く `_` が scan_hex_digits で NG (先頭 `_`) で拒否。
+fn parse_hex_body(cs : Array[Char], i_start : Int, neg : Bool) -> Double? {
+  let n = cs.length()
+  let mut i = i_start
+  // integer hex 桁群 (空 legal、fraction がある場合のみ)
+  let ibuf = StringBuilder::new()
+  let after_int = match scan_hex_digits(cs, i, ibuf) {
+    None => return None
+    Some(x) => x
+  }
+  i = after_int
+  let int_digits = ibuf.to_string()
+  let mut saw_digit = int_digits.length() > 0
+  // fraction: 小数点あり時のみ、`_` 配置は同一規則
+  let fbuf = StringBuilder::new()
+  if i < n && cs[i] == '.' {
+    i = i + 1
+    let after_frac = match scan_hex_digits(cs, i, fbuf) {
+      None => return None
+      Some(x) => x
+    }
+    i = after_frac
+  }
+  let frac_digits = fbuf.to_string()
+  if frac_digits.length() > 0 {
+    saw_digit = true
+  }
+  // 少なくとも 1 mantissa 桁 (`0x.p3` / `0x` は空 mantissa で None、DR-074 §1 の scan_number_parts と同型)
+  if !saw_digit {
+    return None
+  }
+  // 二進指数 `p[+-]?dec+` (任意、DR-074 §2 「p 任意 = C strtod 流」)
+  let mut exp = 0
+  if i < n && (cs[i] == 'p' || cs[i] == 'P') {
+    i = i + 1
+    let mut esign = 1
+    if i < n && (cs[i] == '+' || cs[i] == '-') {
+      if cs[i] == '-' {
+        esign = -1
+      }
+      i = i + 1
+    }
+    let ebuf = StringBuilder::new()
+    let after_exp = match scan_digits(cs, i, ebuf) {
+      None => return None
+      Some(x) => x
+    }
+    i = after_exp
+    let edigits = ebuf.to_string()
+    if edigits.length() == 0 {
+      return None
+    }
+    exp = esign * digits_to_int(edigits)
+  }
+  // trailing junk
+  if i != n {
+    return None
+  }
+  // value 計算: mantissa = Σ hex_val * 16^k (int) + Σ hex_val * 16^(-(k+1)) (frac)、scale = 2^exp
+  let mut val = 0.0
+  for c in int_digits {
+    val = val * 16.0 + hex_val(c).unwrap().to_double()
+  }
+  let mut frac_mul = 1.0 / 16.0
+  for c in frac_digits {
+    val = val + hex_val(c).unwrap().to_double() * frac_mul
+    frac_mul = frac_mul / 16.0
+  }
+  val = val * pow2_double(exp)
+  Some(if neg { -val } else { val })
+}
+
+///|
+/// DR-074 §2 opt-in `0o` 8 進整数 (`0o` prefix は caller が消費済み)。§7 pin: `0o1.5` / `0o1p3` は
+/// 小数点・指数 hex float 限定なので、fraction / exponent は accept せず、trailing char で None。
+fn parse_oct_body(cs : Array[Char], i_start : Int, neg : Bool) -> Double? {
+  let n = cs.length()
+  let mut i = i_start
+  let ibuf = StringBuilder::new()
+  let after_int = match scan_oct_digits(cs, i, ibuf) {
+    None => return None
+    Some(x) => x
+  }
+  i = after_int
+  let int_digits = ibuf.to_string()
+  if int_digits.length() == 0 {
+    return None
+  }
+  if i != n {
+    return None
+  }
+  let mut val = 0.0
+  for c in int_digits {
+    val = val * 8.0 + (c.to_int() - 48).to_double()
+  }
+  Some(if neg { -val } else { val })
+}
+
+///|
+/// DR-074 §2 opt-in `0b` 2 進整数 (parse_oct_body の base=2 版、§7 pin により小数・指数不可)。
+fn parse_bin_body(cs : Array[Char], i_start : Int, neg : Bool) -> Double? {
+  let n = cs.length()
+  let mut i = i_start
+  let ibuf = StringBuilder::new()
+  let after_int = match scan_bin_digits(cs, i, ibuf) {
+    None => return None
+    Some(x) => x
+  }
+  i = after_int
+  let int_digits = ibuf.to_string()
+  if int_digits.length() == 0 {
+    return None
+  }
+  if i != n {
+    return None
+  }
+  let mut val = 0.0
+  for c in int_digits {
+    val = val * 2.0 + (c.to_int() - 48).to_double()
+  }
+  Some(if neg { -val } else { val })
+}
+
+///|
+/// DR-074 §2 opt-in base prefix (`0x` / `0X` / `0o` / `0O` / `0b` / `0B`) の総合 dispatcher。先頭符号
+/// `[+-]` を合成可 (§7 pin、-0xff や +0x1.8p3 も受理)。prefix 判定後、body に応じて hex (float or int) /
+/// oct / bin の各 parser に振り分ける。canonical (allow=false) からは呼ばれず、opt-in 時のみ試される。
+fn parse_base_prefixed(s : String) -> Double? {
+  let cs = chars_of(s)
+  let n = cs.length()
+  if n == 0 {
+    return None
+  }
+  let mut i = 0
+  let mut neg = false
+  if cs[i] == '+' || cs[i] == '-' {
+    neg = cs[i] == '-'
+    i = i + 1
+  }
+  if i + 1 >= n {
+    return None
+  }
+  if cs[i] != '0' {
+    return None
+  }
+  let c1 = cs[i + 1]
+  i = i + 2
+  match c1 {
+    'x' | 'X' => parse_hex_body(cs, i, neg)
+    'o' | 'O' => parse_oct_body(cs, i, neg)
+    'b' | 'B' => parse_bin_body(cs, i, neg)
+    _ => None
+  }
+}
+
+///|
+/// DR-074 §2 統合 opt-in の number parser: `allow_base_prefix=false` は既存 canonical parse_number と
+/// 等価 (10 進のみ、base prefix は None)。`true` では 10 進を先に試し、失敗時のみ base prefix を試す
+/// (canonical と opt-in の受理域が排他なので順序に影響なし、DR-074 §2 「両方が一括で成功に転じる」)。
+pub fn parse_number_ext(s : String, allow_base_prefix : Bool) -> Double? {
+  match parse_number(s) {
+    Some(d) => return Some(d)
+    None => ()
+  }
+  if allow_base_prefix {
+    parse_base_prefixed(s)
+  } else {
+    None
+  }
+}
+
+///|
+/// DR-075 § 値空間判定 + DR-074 §2 opt-in の int parser。canonical (allow=false) は既存 parse_int_value
+/// と等価。opt-in 時は base prefix 経路も試し、hex integer (0xff=255) は整数値、hex float (0x1.8p3=12) は
+/// binary64 の値が整数なら受理、非整数 (0x1.8=1.5) は int_round に従う (DR-074 §2 「10 進と同一規則を
+/// hex にも適用」)。DR-075 §5 の binary64 非経由要件は 10 進 tie 判定に対する規定で、hex float は
+/// base-2 aligned で binary64 に exactly 表現可能なので本経路の binary64 経由は spec 意図と整合。
+/// NB: exact なのは mantissa 53 bit (hex ~13 桁) まで — それを超える hex mantissa は binary64 丸めが
+/// 入り tie 判定が 10 進 false-tie と同型の問題を持ちうるが、その値域の挙動は DR-074 §2 が未規定
+/// (fixture 未固定、病的入力域)。spec が規定したら追従する。
+pub fn parse_int_value_ext(
+  s : String,
+  mode : RoundMode,
+  allow_base_prefix : Bool,
+) -> Result[Int64, ParseFail] {
+  // 10 進経路を先に試す (canonical と opt-in で挙動同一)
+  match parse_int_value(s, mode) {
+    Ok(i) => return Ok(i)
+    Err(NotANumber) => () // 10 進 lexer で not_a_number = base prefix 試行に落とす
+    Err(e) => return Err(e) // NotAnInteger / IntOutOfRange は 10 進経路で確定した Error なので伝播
+  }
+  if !allow_base_prefix {
+    return Err(NotANumber)
+  }
+  match parse_base_prefixed(s) {
+    None => Err(NotANumber)
+    Some(d) =>
+      if is_integer(d) {
+        // 整数値: mode 問わず受理。Int64 域内チェックは境界のみ (fixture は 0xff=255 レベル)
+        let i = d.to_int64()
+        if i.to_double() == d {
+          Ok(i)
+        } else {
+          Err(IntOutOfRange)
+        }
+      } else {
+        // fractional hex float: mode に従う
+        match mode {
+          RError => Err(NotAnInteger)
+          _ => {
+            // 単純化: binary64 上で is_integer 判定 + 丸め。DR-075 §5 の厳密判定は 10 進 tie のための
+            // 規定 (findings 2026-07-06 の false-tie 域) で、hex float は base-2 aligned なので binary64
+            // 上の丸めは exact。round-mode を Double に適用する簡易実装:
+            let rounded = round_double_by_mode(d, mode)
+            let i = rounded.to_int64()
+            if i.to_double() == rounded {
+              Ok(i)
+            } else {
+              Err(IntOutOfRange)
+            }
+          }
+        }
+      }
+  }
+}
+
+///|
+/// DR-075 §2 の 10 モードを Double 上で適用 (hex float 用の簡易実装)。base-2 aligned な hex float は
+/// binary64 で exact なので、tie 判定・境界判定に false-tie の懸念なし。
+fn round_double_by_mode(d : Double, mode : RoundMode) -> Double {
+  // 整数値は素通し (呼び出し側で is_integer チェック済みだが防御的に)
+  let floor_d = if d >= 0.0 {
+    d.to_int64().to_double()
+  } else {
+    let f = d.to_int64().to_double()
+    if f == d {
+      f
+    } else {
+      f - 1.0
+    }
+  }
+  let ceil_d = if d >= 0.0 {
+    let f = d.to_int64().to_double()
+    if f == d {
+      f
+    } else {
+      f + 1.0
+    }
+  } else {
+    d.to_int64().to_double()
+  }
+  let frac = d - floor_d // >= 0
+  let is_tie = frac == 0.5
+  let gt_half = frac > 0.5
+  match mode {
+    RFloor => floor_d
+    RCeil => ceil_d
+    RTrunc => if d >= 0.0 { floor_d } else { ceil_d }
+    RAway => if d >= 0.0 { ceil_d } else { floor_d }
+    RHalfFloor =>
+      if is_tie {
+        floor_d
+      } else if gt_half {
+        ceil_d
+      } else {
+        floor_d
+      }
+    RHalfCeil =>
+      if is_tie {
+        ceil_d
+      } else if gt_half {
+        ceil_d
+      } else {
+        floor_d
+      }
+    RHalfTrunc =>
+      if is_tie {
+        if d >= 0.0 {
+          floor_d
+        } else {
+          ceil_d
+        }
+      } else if gt_half {
+        ceil_d
+      } else {
+        floor_d
+      }
+    RHalfAway =>
+      if is_tie {
+        if d >= 0.0 {
+          ceil_d
+        } else {
+          floor_d
+        }
+      } else if gt_half {
+        ceil_d
+      } else {
+        floor_d
+      }
+    RHalfEven =>
+      if is_tie {
+        let fi = floor_d.to_int64()
+        if fi % 2L == 0L {
+          floor_d
+        } else {
+          ceil_d
+        }
+      } else if gt_half {
+        ceil_d
+      } else {
+        floor_d
+      }
+    RError => d // caller の是非判定で拾われる
+  }
+}
+
 ///|
 fn digits_to_int(s : String) -> Int {
   let mut acc = 0

@@ -47,7 +47,13 @@ fn is_held(b : Branch) -> Bool {
 /// falls through to the positional face (素通し). A token without the prefix/`=` does not fire.
 test "eq-split long option resolves, errors, and 素通し" {
   let long = EqSplit(prefix="--", entries=[
-    { key: "port", name: "port", kind: TNum, int_round: RError },
+    {
+      key: "port",
+      name: "port",
+      kind: TNum,
+      int_round: RError,
+      allow_base_prefix: false,
+    },
   ])
   // a defined numeric key: one Accept consuming 1 token, binding port=8080 from the CLI seat.
   let r1 = run_matcher(long, pctx(["--port=8080"]), 0)
@@ -78,7 +84,13 @@ test "eq-split long option resolves, errors, and 素通し" {
 /// `inst_long`; `TFlag`'s own arm in `run_eq_split` returns `[]` unconditionally).
 test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Error" {
   let long = EqSplit(prefix="--", entries=[
-    { key: "enabled", name: "enabled", kind: TBool, int_round: RError },
+    {
+      key: "enabled",
+      name: "enabled",
+      kind: TBool,
+      int_round: RError,
+      allow_base_prefix: false,
+    },
   ])
   // `true` / `1` / mixed-case / all-caps all resolve to VBool(true).
   for
@@ -121,7 +133,13 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
 /// value arm, so `run_eq_split` returns `[]` (素通し to positional), not a held Error.
 test "eq-split long option: a TFlag entry never fires on =value" {
   let long = EqSplit(prefix="--", entries=[
-    { key: "verbose", name: "verbose", kind: TFlag, int_round: RError },
+    {
+      key: "verbose",
+      name: "verbose",
+      kind: TFlag,
+      int_round: RError,
+      allow_base_prefix: false,
+    },
   ])
   assert_eq(run_matcher(long, pctx(["--verbose=true"]), 0).length(), 0)
 }
@@ -136,9 +154,30 @@ test "eq-split long option: a TFlag entry never fires on =value" {
 /// results. This is DR-041 §3-4 "enumerate ALL readings" narrowed by the completion requirement.
 test "short cluster: flag run and in-token numeric value" {
   let short = ShortCombine(prefix="-", entries=[
-    { ch: 'a', name: "a", kind: TFlag, depr: false, int_round: RError },
-    { ch: 'b', name: "b", kind: TFlag, depr: false, int_round: RError },
-    { ch: 'n', name: "n", kind: TNum, depr: false, int_round: RError },
+    {
+      ch: 'a',
+      name: "a",
+      kind: TFlag,
+      depr: false,
+      int_round: RError,
+      allow_base_prefix: false,
+    },
+    {
+      ch: 'b',
+      name: "b",
+      kind: TFlag,
+      depr: false,
+      int_round: RError,
+      allow_base_prefix: false,
+    },
+    {
+      ch: 'n',
+      name: "n",
+      kind: TNum,
+      depr: false,
+      int_round: RError,
+      allow_base_prefix: false,
+    },
   ])
   // `-ab`: a run of two flags → one reading binding a=true, b=true, consuming the single token.
   let rf = run_matcher(short, pctx(["-ab"]), 0)
@@ -165,7 +204,14 @@ test "short cluster: flag run and in-token numeric value" {
 /// tokens) — `-n 5` → n=5 at position 2. This is the getopt-同型 tail consumption (DR-041 §4).
 test "short cluster: space-form value takes the next token" {
   let short = ShortCombine(prefix="-", entries=[
-    { ch: 'n', name: "n", kind: TNum, depr: false, int_round: RError },
+    {
+      ch: 'n',
+      name: "n",
+      kind: TNum,
+      depr: false,
+      int_round: RError,
+      allow_base_prefix: false,
+    },
   ])
   let r = run_matcher(short, pctx(["-n", "5"]), 0)
   assert_eq(r.length(), 1)
@@ -182,7 +228,14 @@ test "short cluster: space-form value takes the next token" {
 /// that firing a deprecated spelling does NOT alter the parsed value — it only adds bookkeeping.
 test "short cluster: deprecated entry rides a @depr marker" {
   let short = ShortCombine(prefix="-", entries=[
-    { ch: 'd', name: "d", kind: TFlag, depr: true, int_round: RError },
+    {
+      ch: 'd',
+      name: "d",
+      kind: TFlag,
+      depr: true,
+      int_round: RError,
+      allow_base_prefix: false,
+    },
   ])
   let r = run_matcher(short, pctx(["-d"]), 0)
   assert_eq(r.length(), 1)

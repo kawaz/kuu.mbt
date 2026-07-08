@@ -277,9 +277,11 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TStr, name)], [])]
       }
-    NumArg(name) =>
+    NumArg(name, base) =>
+      // DR-074 §1 + §2: canonical (base=false) は 10 進のみ、opt-in (base=true) で 0x/0o/0b + hex float
+      // も受理。base は installer が ElemDef.allow_base_prefix から埋め込む。
       if pos < ctx.toks.length() {
-        match parse_number(ctx.toks[pos]) {
+        match parse_number_ext(ctx.toks[pos], base) {
           Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
           None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
         }
@@ -297,12 +299,11 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TFloat, name)], [])]
       }
-    IntArg(name, mode) =>
-      // DR-075 §1-§2: 値空間判定 + int_round 適用。mode = RError なら fractional は not_an_integer、
-      // 他モードでは丸めて Ok。整数値 (`"3.0"`/`"1e3"`) は全モードで丸めなし。`"abc"` は not_a_number。
-      // mode は installer が ElemDef.int_round から埋め込む (parse 相内部調整、DR-061 §5)。
+    IntArg(name, mode, base) =>
+      // DR-075 §1-§2 + DR-074 §2: 値空間判定 + int_round + opt-in base prefix。base=false で 10 進のみ、
+      // true で 0xff (整数値) / 0x1.8p3 (=12 整数値) / 0x1.8p0 (=1.5 非整数、mode に従う) も受理する。
       if pos < ctx.toks.length() {
-        match parse_int_value(ctx.toks[pos], mode) {
+        match parse_int_value_ext(ctx.toks[pos], mode, base) {
           Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
           Err(NotAnInteger) =>
             [Held(pe_parse_int(name, ctx.toks[pos], pos), [])]
@@ -1013,9 +1014,10 @@ fn scope_consume(
       } else {
         []
       }
-    NumArg(name) =>
+    NumArg(name, base) =>
+      // DR-074 §1 + §2 (scope_step 経路: parse_number_ext with base flag)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_number(ctx.toks[pos]) {
+        match parse_number_ext(ctx.toks[pos], base) {
           Some(d) =>
             scope_step(
               sc,
@@ -1062,10 +1064,10 @@ fn scope_consume(
       } else {
         []
       }
-    IntArg(name, mode) =>
-      // DR-075 §1-§2 CLI 値空間判定 + int_round (scope_step 経路: NumArg のミラー)。
+    IntArg(name, mode, base) =>
+      // DR-075 §1-§2 + DR-074 §2 CLI 値空間判定 + int_round + base prefix (scope_step 経路)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_int_value(ctx.toks[pos], mode) {
+        match parse_int_value_ext(ctx.toks[pos], mode, base) {
           Ok(i) =>
             scope_step(
               sc,
@@ -1486,9 +1488,10 @@ fn consume_head(
       } else {
         []
       }
-    NumArg(name) =>
+    NumArg(name, base) =>
+      // DR-074 §1 + §2 (先食い分岐: parse_number_ext with base flag)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_number(ctx.toks[pos]) {
+        match parse_number_ext(ctx.toks[pos], base) {
           Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
           None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
         }
@@ -1517,10 +1520,10 @@ fn consume_head(
       } else {
         []
       }
-    IntArg(name, mode) =>
-      // DR-075 §1-§2 CLI 値空間判定 + int_round (先食い分岐: NumArg のミラー)。
+    IntArg(name, mode, base) =>
+      // DR-075 §1-§2 + DR-074 §2 (先食い分岐)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_int_value(ctx.toks[pos], mode) {
+        match parse_int_value_ext(ctx.toks[pos], mode, base) {
           Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
           Err(NotAnInteger) =>
             [Held(pe_parse_int(name, ctx.toks[pos], pos), [])]
@@ -1635,9 +1638,9 @@ fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
   match n {
     StrArg(name) => if !str_mem(out, name) { out.push(name) }
     SepArg(name, _) => if !str_mem(out, name) { out.push(name) }
-    NumArg(name) => if !str_mem(out, name) { out.push(name) }
+    NumArg(name, _) => if !str_mem(out, name) { out.push(name) }
     FloatArg(name) => if !str_mem(out, name) { out.push(name) }
-    IntArg(name, _) => if !str_mem(out, name) { out.push(name) }
+    IntArg(name, _, _) => if !str_mem(out, name) { out.push(name) }
     BoolArg(name) => if !str_mem(out, name) { out.push(name) }
     FilterArg(name, _) => if !str_mem(out, name) { out.push(name) }
     ReqArg(name) => if !str_mem(out, name) { out.push(name) }
@@ -1767,9 +1770,10 @@ fn scope_consume_rep(
       } else {
         []
       }
-    NumArg(name) =>
+    NumArg(name, base) =>
+      // DR-074 §1 + §2 (Many head 経路: parse_number_ext with base flag)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_number(ctx.toks[pos]) {
+        match parse_number_ext(ctx.toks[pos], base) {
           Some(d) =>
             scope_step(
               sc,
@@ -1808,10 +1812,10 @@ fn scope_consume_rep(
       } else {
         []
       }
-    IntArg(name, mode) =>
-      // DR-075 §1-§2 CLI 値空間判定 + int_round (Many head 経路: NumArg のミラー)。
+    IntArg(name, mode, base) =>
+      // DR-075 §1-§2 + DR-074 §2 (Many head 経路)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_int_value(ctx.toks[pos], mode) {
+        match parse_int_value_ext(ctx.toks[pos], mode, base) {
           Ok(i) =>
             scope_step(
               sc,

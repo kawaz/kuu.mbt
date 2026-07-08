@@ -78,9 +78,12 @@ pub(all) enum Node {
   /// token `a,b` binds xs=a and xs=b. Combined with repeat, each firing splits, and the flatten
   /// accumulator folds all pieces into one list (`prog a,b c,d` → xs=[a,b,c,d]).
   SepArg(String, String)
-  /// number value primitive: consume 1 token; parse-fail is a held Error (DR-041 §5 / DR-037).
-  /// The parse failure is `kind: parse` (DR-053).
-  NumArg(String)
+  /// number value primitive (DR-074 §1 canonical + §2 opt-in `number_allow_base_prefix`)。consume 1
+  /// token, parse via `parse_number_ext(_, allow_base_prefix)`。allow=false は canonical (10 進のみ、
+  /// base prefix Error)、allow=true で `0xff` / `0x1.8p3` / `0o777` / `0b1010` も受理する統合 opt-in。
+  /// flag は installer が ElemDef.allow_base_prefix から埋め込む (kuu_number_parser factory config、
+  /// DR-061 §4)。parse-fail は `kind: parse` (DR-053)。
+  NumArg(String, Bool)
   /// float value primitive (DR-074 §1/§7): consume 1 token, parsed through the WIDER float lexicon
   /// (canonical number + the 2-word inf/infinity vocab, case-insensitive, sign-合成可 — nan stays
   /// Error for both number and float). A separate node from `NumArg` because the accept-域 differs
@@ -95,8 +98,10 @@ pub(all) enum Node {
   /// fractional 値を丸めて Ok。整数値 (`"3.0"` / `"1e3"` / `"1_000"`) は全モードで丸めなし。番号として
   /// 全く読めない token (`"abc"`) は全モードで `not_a_number`。mode は installer で ElemDef.int_round
   /// から埋め込まれる (parse 相内部調整、DR-061 §5); 一度 lowered value node になると他の carrier は
-  /// 無いため mode は node 自身が持つ。parse-fail は `kind: parse`。
-  IntArg(String, RoundMode)
+  /// 無いため mode は node 自身が持つ。DR-074 §2 `allow_base_prefix` を第 3 引数で追加運搬 —
+  /// opt-in 時は `0xff` (整数値) / `0x1.8p3=12` (整数値) / `0x1.8p0=1.5` (非整数、mode に従う) の
+  /// 値空間判定を hex にも一般化する。canonical default は `false`。parse-fail は `kind: parse`。
+  IntArg(String, RoundMode, Bool)
   /// bool value primitive (DR-076 §1/§4: bool is a normal value type, same standing as
   /// string/number). Consume 1 token, parsed via `parse_bool` (DR-074 §3 canonical vocab:
   /// true/false/1/0/""，case-insensitive); an unrecognized token fails with reason `not_a_bool`
@@ -249,15 +254,17 @@ pub(all) struct Entity {
 } derive(Eq, Debug)
 
 ///|
-/// A long-option entry the eq-split matcher can resolve (`--key=value`). `int_round` carries the
-/// element's DR-075 int_round factory config into the eq-split path (space form runs the greedy
-/// IntArg node which already carries mode; eq-split needs its own copy since the entry table is the
-/// only channel run_eq_split reads). Ignored for non-`TInt` kinds.
+/// A long-option entry the eq-split matcher can resolve (`--key=value`). `int_round` /
+/// `allow_base_prefix` carry the element's DR-075 / DR-074 §2 factory config into the eq-split path
+/// (space form runs the greedy Num/IntArg node which already carries mode; eq-split needs its own
+/// copy since the entry table is the only channel run_eq_split reads). `int_round` は TInt のみ、
+/// `allow_base_prefix` は TNum / TInt が参照する。他 kind は無視。
 pub(all) struct LongEntry {
   key : String
   name : String
   kind : Ty
   int_round : RoundMode
+  allow_base_prefix : Bool
 } derive(Eq, Debug)
 
 ///|
@@ -270,8 +277,10 @@ pub(all) struct ShortEntry {
   name : String
   kind : Ty
   depr : Bool
-  // DR-075 int_round: short cluster / space-tail 経路の TInt 値 parse に運ぶ (LongEntry と同型)。
+  // DR-075 int_round + DR-074 §2 allow_base_prefix: short cluster / space-tail の値 parse に運ぶ
+  // (LongEntry と同型)。int_round は TInt のみ、allow_base_prefix は TNum/TInt が参照。
   int_round : RoundMode
+  allow_base_prefix : Bool
 } derive(Eq, Debug)
 
 ///|

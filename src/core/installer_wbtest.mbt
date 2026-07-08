@@ -55,6 +55,7 @@ fn el(
     deprecated: false,
     default_value: None,
     int_round: RError,
+    allow_base_prefix: false,
   }
 }
 

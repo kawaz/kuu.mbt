@@ -125,15 +125,15 @@ fn run_eq_split(
     if e.key == key {
       match e.kind {
         TStr => return [Accept(pos + 1, [mkb(e.name, VStr(valstr), Cli)])]
-        TNum => // canonical number 字句 (DR-074 §1)
-          match parse_number(valstr) {
+        TNum => // canonical number 字句 (DR-074 §1) + opt-in base prefix (§2)
+          match parse_number_ext(valstr, e.allow_base_prefix) {
             Some(d) => return [Accept(pos + 1, [mkb(e.name, VNum(d), Cli)])]
             None => return [Held(pe_parse(e.name, valstr, pos), [])]
           }
         TInt =>
-          // DR-075 §1-§2: eq-split (`--v=2.5`) の TInt も値空間判定 + int_round を適用する。entry の
-          // int_round は installer が ElemDef.int_round から埋め込む (canonical default = RError)。
-          match parse_int_value(valstr, e.int_round) {
+          // DR-075 §1-§2 + DR-074 §2: eq-split (`--v=2.5` / `--v=0xff`) の TInt も値空間判定 + int_round
+          // + 基数 prefix を適用。int_round / allow_base_prefix は installer が LongEntry に埋め込む。
+          match parse_int_value_ext(valstr, e.int_round, e.allow_base_prefix) {
             Ok(i) =>
               return [Accept(pos + 1, [mkb(e.name, VNum(i.to_double()), Cli)])]
             Err(NotAnInteger) =>
@@ -205,17 +205,16 @@ fn short_val(e : ShortEntry, s : String) -> Binding? {
   match e.kind {
     TStr => Some(mkb(e.name, VStr(s), Cli))
     TNum =>
-      match parse_number(s) {
+      // DR-074 §1 + §2: short cluster / space-tail の TNum も opt-in base prefix を反映。
+      match parse_number_ext(s, e.allow_base_prefix) {
         Some(d) => Some(mkb(e.name, VNum(d), Cli))
         None => None
       }
     TInt =>
-      // DR-075 §1-§2: short cluster / space-tail の TInt も値空間判定 + int_round を反映。丸めモードで
-      // fractional が Ok(rounded) を返すときは Some(...) を返す。RError で fractional のときは None を
-      // 返し、caller (walk_short) が tail 位置で held Error を組む (pre-existing 挙動保存 —
-      // not_an_integer/out_of_range の細粒 reason は tail 経路の pe_parse に集約されるが、これは既存の
-      // Binding? 契約の範囲内。より細粒な reason 分岐が要る場合は別の task で shape 拡張)。
-      match parse_int_value(s, e.int_round) {
+      // DR-075 §1-§2 + DR-074 §2: short cluster / space-tail の TInt も値空間判定 + int_round +
+      // base prefix を反映。丸めモード / 基数 prefix で Ok(...) は Some、それ以外は None を返し
+      // caller (walk_short) が tail 位置で held Error を組む (既存の Binding? 契約範囲内)。
+      match parse_int_value_ext(s, e.int_round, e.allow_base_prefix) {
         Ok(i) => Some(mkb(e.name, VNum(i.to_double()), Cli))
         Err(_) => None
       }

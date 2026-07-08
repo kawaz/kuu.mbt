@@ -115,7 +115,7 @@ test "MDR-002 §2.6 acceptance: a value-less trigger at the end of input is a mi
   // "reads", the raw-eat is suppressed and the parse fails with a proper
   // missing-operand error for `port`.
   let root : Scope = {
-    greedy: [Seq([Exact("--port"), NumArg("port")])],
+    greedy: [Seq([Exact("--port"), NumArg("port", false)])],
     positional: [StrArg("files")],
     entities: [],
     constraints: [],
@@ -310,7 +310,7 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
   // state — fired_action and the held error coexist (spec DR-048/DR-053 §4).
   // The slice dropped the Seq-internal acc on Held, losing the action.
   let root : Scope = {
-    greedy: [Seq([Exact("--help"), FailMark("help"), NumArg("n")])],
+    greedy: [Seq([Exact("--help"), FailMark("help"), NumArg("n", false)])],
     positional: [],
     entities: [],
     constraints: [],
@@ -391,7 +391,7 @@ test "REVIEW-C4 non-scope root: residual of a partial Accept surfaces even when 
   // branch 2 helds a not_a_number on "xyz". 0 complete paths -> failure.
   // Both failure reasons must be retained (DR-053 §2 全保持): gating the
   // residual synthesis on "errors empty" would mask the partial reading.
-  let root = Or([Exact("a"), Seq([Exact("a"), NumArg("n")])])
+  let root = Or([Exact("a"), Seq([Exact("a"), NumArg("n", false)])])
   let o = parse(root, ["a", "xyz"], defs=Map([]))
   match o {
     Failure(fd) => {
@@ -455,14 +455,14 @@ test "REGRESSION step_greedy Held carries acc so FailMark survives to DeepestOnl
   // deep-review "step_greedy acc": two greedy entries — a FailMark help
   // action, and a numeric option. Under faildef=DeepestOnly the ONLY
   // candidate path for fired_action collection is the deepest one:
-  // consume --help (bind help + FailMark) → consume --num → NumArg("xyz")
+  // consume --help (bind help + FailMark) → consume --num → NumArg("xyz", false)
   // parse fail @ argv_pos 2. Without acc on the Held branch, the FailMark
   // binding accumulated before the Held is dropped and fired_action
   // becomes None. With it, fired_action = Some("help").
   let root : Scope = {
     greedy: [
       Seq([Exact("--help"), Bind("help", VBool(true)), FailMark("help")]),
-      Seq([Exact("--num"), NumArg("n")]),
+      Seq([Exact("--num"), NumArg("n", false)]),
     ],
     positional: [],
     entities: [],
@@ -569,7 +569,7 @@ test "REGRESSION scope-shaped Ref head: more-branch drops internal missing_opera
   defs.set("r", Seq([ScopeNode(inner)]))
   let root : Scope = {
     greedy: [],
-    positional: [Ref("r"), NumArg("n")],
+    positional: [Ref("r"), NumArg("n", false)],
     entities: [],
     constraints: [],
   }
@@ -768,7 +768,7 @@ test "REVIEW-D5 先食いはトリガ一致で成立: 値不正の --port は po
   // 食っていた。トリガ一致意味論では --port は「ここで読まれる」ので、
   // 結末は port の not_a_number を含む Failure。
   let root : Scope = {
-    greedy: [Seq([Exact("--port"), NumArg("port")])],
+    greedy: [Seq([Exact("--port"), NumArg("port", false)])],
     positional: [StrArg("f"), StrArg("g")],
     entities: [],
     constraints: [],
@@ -830,7 +830,7 @@ test "DR-074 §1: FloatArg accepts inf (ci, signed), NumArg rejects it" {
   let root : Scope = {
     greedy: [
       Seq([Exact("--t"), FloatArg("t")]),
-      Seq([Exact("--n"), NumArg("n")]),
+      Seq([Exact("--n"), NumArg("n", false)]),
     ],
     positional: [],
     entities: [],

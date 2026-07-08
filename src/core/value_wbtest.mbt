@@ -311,3 +311,99 @@ test "config_to_value type conversions" {
   // 構造不一致 (array/object → scalar) is an Error.
   assert_eq(cv_ok(config_to_value(CArr([CNum(1.0)]), TNum)), None)
 }
+
+///|
+/// DR-074 §2 opt-in `number_allow_base_prefix` (統合 opt-in): allow=false は canonical (10 進のみ) を
+/// 保つ (`0xff` / `0x1.8p3` / `0o777` / `0b1010` すべて Error)。allow=true で hex integer / hex float /
+/// oct / bin 一括受理する。§7 pin (prefix 大文字 / `_` 配置文法 / `0o`・`0b` の小数点拒否 / 符号合成 /
+/// p 任意) の境界を parse_number_ext の輪郭として固定する。
+test "parse_number_ext: canonical (allow=false) は base prefix を全て Error" {
+  // canonical = decimal のみ: base prefix は None
+  assert_eq(parse_number_ext("0xff", false), None)
+  assert_eq(parse_number_ext("0x1.8p3", false), None)
+  assert_eq(parse_number_ext("0o777", false), None)
+  assert_eq(parse_number_ext("0b1010", false), None)
+  // canonical decimal は allow に関係なく通る
+  assert_eq(parse_number_ext("1_000", false), Some(1000.0))
+  assert_eq(parse_number_ext("1e3", false), Some(1000.0))
+}
+
+///|
+/// hex integer: `0xff` = 255、`0xFF` (大文字桁) / `0Xff` (大文字 prefix) も同値 (§7 pin 「prefix / hex 桁
+/// case-insensitive」)、`0xff_ff` は `_` 桁区切りで 65535、符号合成 `-0xff` = -255。
+test "parse_number_ext: hex integer 基本と case / underscore / 符号合成" {
+  assert_eq(parse_number_ext("0xff", true), Some(255.0))
+  assert_eq(parse_number_ext("0xFF", true), Some(255.0))
+  assert_eq(parse_number_ext("0Xff", true), Some(255.0)) // §7 pin 大文字 prefix
+  assert_eq(parse_number_ext("0xff_ff", true), Some(65535.0))
+  assert_eq(parse_number_ext("-0xff", true), Some(-255.0))
+  assert_eq(parse_number_ext("+0xff", true), Some(255.0))
+}
+
+///|
+/// hex float: `0x1.8p3` = (1 + 8/16) * 2^3 = 1.5 * 8 = 12、`0x1.8` = 1.5 (p 省略時 = 2^0、DR-074 §2 の
+/// C strtod 流 「p 任意」)、`0x1.8p-1` = 0.75、大文字 P も受理 (§7 pin 「二進指数 p/P」)。
+test "parse_number_ext: hex float mantissa / 指数 / P 大文字" {
+  assert_eq(parse_number_ext("0x1.8p3", true), Some(12.0))
+  assert_eq(parse_number_ext("0x1.8", true), Some(1.5)) // p 省略
+  assert_eq(parse_number_ext("0x1.8p-1", true), Some(0.75)) // 指数負符号
+  assert_eq(parse_number_ext("0x1.8P3", true), Some(12.0)) // 大文字 P
+  assert_eq(parse_number_ext("0x1.8p+3", true), Some(12.0)) // 指数明示 +
+}
+
+///|
+/// `_` 配置文法 (§7 pin): 両隣桁必須。prefix 隣接 (`0x_ff` = prefix 直後の `_` は先頭空 → 拒否)、
+/// 末尾 (`0xff_`) / 連続 (`0xff__ff`) は Error。fraction の `_` も両隣 hex 桁。
+test "parse_number_ext: `_` 配置文法 (prefix 隣接 / 末尾 / 連続すべて Error)" {
+  assert_eq(parse_number_ext("0x_ff", true), None) // prefix 直後
+  assert_eq(parse_number_ext("0xff_", true), None) // 末尾
+  assert_eq(parse_number_ext("0xff__ff", true), None) // 連続
+  assert_eq(parse_number_ext("0x1_.8", true), None) // 小数点隣接
+  assert_eq(parse_number_ext("0x1._8", true), None) // 小数点隣接
+  assert_eq(parse_number_ext("0x1.8p_3", true), None) // 指数記号隣接
+}
+
+///|
+/// `0o` / `0b` は整数のみ (§7 pin 「小数部・二進指数は hex (0x) のみ」): `0o1.5` / `0b1.1` / `0o1p2` は
+/// すべて Error。正常な整数値 (`0o777` = 511、`0b1010` = 10) は受理、`_` 桁区切りも同一規則。
+test "parse_number_ext: oct/bin は整数のみ (小数点・指数不可、DR-074 §7 pin)" {
+  assert_eq(parse_number_ext("0o777", true), Some(511.0))
+  assert_eq(parse_number_ext("0o7_77", true), Some(511.0))
+  assert_eq(parse_number_ext("0O777", true), Some(511.0)) // 大文字 prefix
+  assert_eq(parse_number_ext("0b1010", true), Some(10.0))
+  assert_eq(parse_number_ext("0B1010", true), Some(10.0))
+  assert_eq(parse_number_ext("0b10_10", true), Some(10.0))
+  // 小数点・指数付き 8/2 進はすべて Error
+  assert_eq(parse_number_ext("0o1.5", true), None)
+  assert_eq(parse_number_ext("0b1.1", true), None)
+  assert_eq(parse_number_ext("0o1p2", true), None)
+}
+
+///|
+/// `0x1e2` = hex 482 (0x1e2 全体が hex、10 進 e 指数と割れない、DR-074 §2 内部整合)。10 進の `e` と
+/// hex の `p` は prefix (`0x` の有無) で一意に切り替わる。
+test "parse_number_ext: `0x1e2` = hex 482 (e は hex 桁、p が二進指数)" {
+  // 0x1e2 = 0x1 * 0x100 + 0xe * 0x10 + 0x2 = 256 + 224 + 2 = 482
+  assert_eq(parse_number_ext("0x1e2", true), Some(482.0))
+  // 10 進 e は canonical で 1e2 = 100
+  assert_eq(parse_number_ext("1e2", true), Some(100.0))
+}
+
+///|
+/// DR-075 §値空間判定 と DR-074 §2 の合成: `parse_int_value_ext` は hex 経路も値空間で判定する。
+/// `0xff` は整数値なので RError でも Ok(255)、`0x1.8p3` = 12 は整数値なので Ok(12)、`0x1.8` = 1.5 は
+/// 非整数なので RError で NotAnInteger、丸めモードで Ok(rounded)。opt-in off で hex は not_a_number。
+test "parse_int_value_ext: hex 整数値は Ok、hex 非整数は int_round に従う (DR-075 §1 / §2)" {
+  // hex integer は整数値なので全モードで Ok
+  assert_eq(parse_int_value_ext("0xff", RError, true), Ok(255L))
+  // hex float で整数値 (0x1.8p3 = 12) も全モードで Ok
+  assert_eq(parse_int_value_ext("0x1.8p3", RError, true), Ok(12L))
+  // hex float で非整数 (0x1.8 = 1.5) は RError で NotAnInteger
+  assert_eq(parse_int_value_ext("0x1.8", RError, true), Err(NotAnInteger))
+  // 丸めモードなら Ok (1.5 を trunc → 1、floor → 1、ceil → 2)
+  assert_eq(parse_int_value_ext("0x1.8", RTrunc, true), Ok(1L))
+  assert_eq(parse_int_value_ext("0x1.8", RFloor, true), Ok(1L))
+  assert_eq(parse_int_value_ext("0x1.8", RCeil, true), Ok(2L))
+  // opt-in off なら hex は not_a_number
+  assert_eq(parse_int_value_ext("0xff", RError, false), Err(NotANumber))
+}
