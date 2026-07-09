@@ -305,9 +305,12 @@ test "repeat installer: unbounded repeat installs 'flatten' accum + Ref-recursio
     ],
   }
   let sc = ok_scope(def, all_installers())
-  // min:1 → min-1=0 mandatory heads → Ref("src") のみ 1 本
+  // min:1 → min-1=0 mandatory heads → Ref("src#cons") のみ 1 本 (codex 指摘 1 / DR-078 §2:
+  // "#cons" mangle — repeat 自己参照 template key が definitions.templates の user namespace と
+  // 衝突しないよう、DR-046 §4 の自動 id 空間サフィックスを使う。spec fixtures/lowering/repeat/basic.json
+  // の golden も元々 "src#cons" を期待していた、緩比較 canon_tmpl が差を吸収していただけ)。
   assert_eq(sc.positional.length(), 1)
-  assert_eq(sc.positional[0], Ref("src"))
+  assert_eq(sc.positional[0], Ref("src#cons"))
   let ent = entity_of(sc, "src").unwrap()
   assert_eq(ent.accum, Some("flatten")) // DR-043 flatten
 }
@@ -890,10 +893,14 @@ test "add_inheritable_copy: an alias-provided (variants-side) trigger shadows th
 // ── DR-077: update 効果 + count (definition-error 系、installer 層) ──────────────
 
 ///|
-/// 保証: DR-077 §2 「不在 → unknown-vocab」— 語彙外の transform 名は classify_long_spelling が
-/// LInvalid へ倒し (installer.mbt コメント参照)、既存の push_invalid_long/collect_invalid_long_dsl
-/// 機構にそのまま合流して DR-054 definition-error になる。新しい definition-error チェックを増やさず
-/// 既存機構に相乗りする設計判断の固定。
+/// 保証 (codex 指摘 2、DR-077 §2 「不在 → unknown-vocab」): `classify_long_spelling` は
+/// `:update:<name>` の `<name>` を filters registry へ実際に `lookup_filter` する (旧実装は
+/// `parts[2] == "increment"` のハードコード allowlist だった — 節目レビューで指摘され registry
+/// lookup ベースへ置換)。registry に存在しない名前 (`bogus`) は `None` の分岐で `LInvalid` へ倒し
+/// (installer.mbt コメント参照)、既存の push_invalid_long/collect_invalid_long_dsl 機構にそのまま
+/// 合流して DR-054 definition-error (`DUnknownVocab`) になる。新しい definition-error チェックを
+/// 増やさず既存機構に相乗りする設計判断の固定。「不在」ケース (次の wbtest の「存在するが
+/// signature 不適合」ケースと対)。
 test "DR-077 §2: an unrecognized update transform name is a DR-054 unknown-vocab definition-error" {
   let def : Definition = {
     ..empty_def(),
@@ -915,16 +922,23 @@ test "DR-077 §2: an unrecognized update transform name is a DR-054 unknown-voca
 }
 
 ///|
-/// 保証: DR-077 §2 「シグネチャ不適合 → definition-error」の一例 — 0-arg 組み込み `increment` に余分な
-/// args を渡す (`:update:increment:5`) のも同じ unknown-vocab 経路に落ちる (実装側の裁量、DR-054 系の
-/// 細分は installer.mbt コメント参照)。
-test "DR-077 §2: extra args to the 0-arg `increment` transform is also a DR-054 unknown-vocab definition-error" {
+/// 保証 (codex 指摘 2、DR-077 §2 「シグネチャ不適合 → definition-error」): `in_range` は filters
+/// registry に**実在する**が signature は `Validate` (`filters.mbt`) — `T→T` の transform ではなく
+/// `T→T raise` の validator なので `update` (DR-077 §1 `cell = f(old)`、旧値から新値を計算する
+/// transform を要求) には使えない。前の wbtest (`bogus` = 不在) と対で「存在するが signature 不適合」
+/// ケースを分離 pin する — どちらも現行 `DefErrKind` (DR-054) に signature 専用の細分 kind が無い
+/// ため同じ `DUnknownVocab` に倒れる (installer.mbt の `classify_long_spelling` doc comment 参照、
+/// 実装の裁量として報告済み)。
+test "DR-077 §2: a registered but Validate-signature filter is also a DR-054 unknown-vocab definition-error" {
   let def : Definition = {
     ..empty_def(),
-    options: [el("verbose", TCount, long=LList([":update:increment:5"]))],
+    options: [el("verbose", TCount, long=LList([":update:in_range"]))],
   }
   match parse_definition(def, all_installers()) {
-    Ok(_) => fail("expected Err (increment takes no args)")
+    Ok(_) =>
+      fail(
+        "expected Err ('in_range' is Validate signature, not usable as an update transform)",
+      )
     Err(errs) => {
       let mut found = false
       for e in errs {
@@ -934,6 +948,32 @@ test "DR-077 §2: extra args to the 0-arg `increment` transform is also a DR-054
       }
       assert_true(found)
     }
+  }
+}
+
+///|
+/// 保証 (codex 指摘 2、DR-077 §2 の definition-time gate 精密化): 引数の arity は RUNTIME 関心
+/// (`apply_transform`, resolve.mbt — closure 自身が拒否する、`apply_filter_chain` と同じ split)。
+/// `classify_long_spelling` の definition-time gate は「registry に存在するか」「signature が
+/// Transform か」の 2 点だけを見る — args の個数は関知しない。よって `:update:increment:5` (0-arg
+/// 組み込み `increment` に余分な args) は **definition としては妥当** (increment は登録済み・
+/// Transform signature)、Err にはならない。旧実装は `parts.length() == 3` を definition-time で
+/// 強制する hardcoded allowlist だったため extra args を unknown-vocab として弾いていたが、
+/// registry lookup ベースの新実装ではこの静的チェックが無くなった (意図的な設計変更 — arity
+/// mismatch は resolve.mbt 側で kind:filter の実行時 Error として顕在化する、対で固定する次の
+/// wbtest 参照)。
+test "DR-077 §2: extra args to a registered Transform are NOT a definition-error (arity is a runtime concern)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TCount, long=LList([":update:increment:5"]))],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => ()
+    Err(errs) =>
+      fail(
+        "expected Ok (increment:5 is definition-valid, arity is checked at runtime): " +
+        deferrs_str(errs),
+      )
   }
 }
 
@@ -1016,5 +1056,40 @@ test "positional or+repeat installer: string branch repeats in parallel with the
   match parse(ScopeNode(sc), ["255", "0", "0"], defs=registry) {
     Ambiguous(d) => assert_eq(d.interpretations.length(), 2)
     other => fail("expected Ambiguous, got " + render_outcome(other))
+  }
+}
+
+// ── DR-078 §2 (codex 指摘 1): repeat 自己参照 template 名の user templates namespace 衝突 ──
+
+///|
+/// 保証: repeat installer が自己参照 cons template を registry へ登録するとき、要素名そのまま
+/// (`e.name`) をキーに使うと、DR-078 で registry を共有するようになった `definitions.templates`
+/// のユーザ宣言 (同名) を黙って上書きしてしまう。`registry.set(e.name + "#cons", ...)` への mangle
+/// (`#` は DR-046 §4 の自動 id 空間、user ns 外の既裁定) により、ユーザが事前登録した同名キーの
+/// エントリが repeat lowering を経ても無傷で残ることを固定する。
+test "repeat installer: self-ref cons template key does not collide with a same-named registry entry" {
+  let registry : Map[String, Node] = Map::from_array([
+    ("x", Exact("user-defined-x")),
+  ])
+  let def : Definition = {
+    ..empty_def(),
+    positionals: [
+      el("x", TStr, repeat=Some({ min: 1, max: None, lazy_: false })),
+    ],
+  }
+  match parse_definition(def, [RepeatInst], registry~) {
+    Ok(_) => {
+      // ユーザが事前登録した "x" エントリは repeat lowering 後も無傷 (上書きされていない)。
+      assert_eq(registry.get("x"), Some(Exact("user-defined-x")))
+      // repeat 自身の自己参照 template は mangled key "x#cons" に登録される。
+      match registry.get("x#cons") {
+        Some(_) => ()
+        None =>
+          fail(
+            "expected repeat's self-ref template under the mangled key 'x#cons'",
+          )
+      }
+    }
+    Err(_) => fail("expected Ok(Scope)")
   }
 }

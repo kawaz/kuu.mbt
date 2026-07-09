@@ -784,3 +784,39 @@ test "resolve_scope: a filters/post_filters reject carries kind=KFilter and the 
     Ok(_) => fail("expected Err (101 is out of range [0, 100])")
   }
 }
+
+///|
+/// 保証 (codex 指摘 2/3 の対、issue 2026-07-09-constraint-path-filtering-gap 節目レビュー):
+/// `:update:increment:5` (0-arg 組み込み `increment` への余分な args) は definition-time では
+/// 通る (installer_wbtest.mbt の対テスト参照 — registry に存在し signature も Transform なので
+/// gate を通過する) が、**RUNTIME** で `apply_transform` が `(d.run)(old, args)` を呼んだ時点で
+/// `filter_increment` 自身が `args.length() != 0` を拒否し (`filters.mbt`)、`kind: KFilter` /
+/// `reason: "update_transform_type_mismatch"` の Error になることを固定する (codex 指摘 3:
+/// この Error の kind は `ladder_err` (KParse) から `filter_err` (KFilter) へ置換済み — 値の
+/// パース失敗ではなく filter/transform 語彙の拒否なので DR-053 §2 の分類上こちらが正しい)。
+test "resolve_scope: an update transform's own arity rejection surfaces at runtime as kind=KFilter" {
+  let n = ent("n", TNum, default_value=Some(VNum(0.0)))
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [n],
+    constraints: [],
+  }
+  let cli = [
+    {
+      key: "n",
+      op: Update("increment", ["5"]),
+      value: VBool(false),
+      source: Cli,
+      scope: [],
+      link: 0,
+    },
+  ]
+  match resolve_scope(sc, cli, Map([])) {
+    Err(pe) => {
+      assert_eq(pe.kind, KFilter)
+      assert_eq(pe.reason, "update_transform_type_mismatch")
+    }
+    Ok(_) => fail("expected Err (increment takes no args)")
+  }
+}

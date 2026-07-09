@@ -235,16 +235,42 @@ fn classify_long_spelling(
   let trigger = if prefix == "" { own_name } else { prefix + "-" + own_name }
   // DR-077 §2 `update` (5th effect word): a SEPARATE arity from set/unset/empty/default — parts[2]
   // is the filters-registry TRANSFORM NAME (not an operand to coerce via dsl_operand_value), and
-  // any remaining segments are that transform's own args. `unknown-vocab` (DR-054, §2 "不在 →
-  // unknown-vocab") is realized by folding an unrecognized/malformed transform into `LInvalid` HERE
-  // — this reuses `push_invalid_long`'s existing DUnknownVocab collection wholesale instead of a
-  // parallel definition-error check (design-priority: 既存の枠組みの組み合わせで解決). Only the
-  // built-in 0-arg `increment` is recognized (no filters registry to consult for anything else
-  // yet) — an unrecognized name OR extra args passed to `increment` (an arity mismatch, DR-077 §2
-  // "シグネチャ不適合") both fall into the same LInvalid bucket for now (実装側の裁量、DR-054 系の細分).
+  // any remaining segments (parts[3..]) are that transform's own args, threaded through unchecked
+  // (arity is a RUNTIME concern — `apply_transform`, resolve.mbt — the same split DR-009's filter
+  // chain already uses: definition-time only gates existence + signature, DR-077 §2 "シグネチャ不適合
+  // → definition-error"). `unknown-vocab` (DR-054, §2 "不在 → unknown-vocab") is realized by folding
+  // BOTH failure modes into `LInvalid` HERE — this reuses `push_invalid_long`'s existing
+  // DUnknownVocab collection wholesale instead of a parallel definition-error check
+  // (design-priority: 既存の枠組みの組み合わせで解決). codex 指摘 (issue 2026-07-09, DR-047 の設計
+  // 報告と同じ節目レビュー): 旧実装は `parts[2] == "increment"` のハードコード allowlist だった —
+  // DR-077 §2 の契約通り filters registry を実際に引いて signature を検査する形に置換。不在
+  // (registry に無い名前) と、存在するが `Validate` signature (transform として使えない、
+  // DR-077 §2 "validate-only filters cannot be used as an update transform" と同じ判定) の 2 つを
+  // 区別して弾く — どちらも現行 `DefErrKind` 列挙 (DR-054) に "invalid-signature" 相当の細分 kind が
+  // 無いため、両方とも `DUnknownVocab` のまま kind は共通、メッセージ文言だけで理由を分ける
+  // (実装の裁量、細分 kind 追加は spec 側の DR-054 拡張判断が要るため見送り — 報告に明記)。
   if parts[1] == "update" {
-    if parts.length() == 3 && parts[2] == "increment" {
-      return LVariant({ trigger, op: Update("increment", []), operand: None })
+    if parts.length() >= 3 {
+      let transform = parts[2]
+      match lookup_filter(transform) {
+        None => return LInvalid(s) // 不在: unknown-vocab (registry に無い名前)
+        Some(d) =>
+          if d.signature == Transform {
+            let args : Array[String] = []
+            let mut i = 3
+            while i < parts.length() {
+              args.push(parts[i])
+              i = i + 1
+            }
+            return LVariant({
+              trigger,
+              op: Update(transform, args),
+              operand: None,
+            })
+          } else {
+            return LInvalid(s) // 存在するが Validate signature: transform として使えない
+          }
+      }
     }
     return LInvalid(s)
   }
@@ -834,11 +860,18 @@ fn lower_repeat_head(
             // declarative preference regardless of min/max shape).
             out.push(Many(head, spec.lazy_))
           } else {
-            // UNBOUNDED min>=1 (DR-043): `name = Seq([head, Opt(Ref(name))])` の porous 自参照
-            registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
+            // UNBOUNDED min>=1 (DR-043): `name#cons = Seq([head, Opt(Ref(name#cons))])` の porous
+            // 自参照。`#cons` サフィックス (DR-046 §4 の自動 id 空間、`#` は user ns 外の既裁定) で
+            // mangle する — DR-078 で `definitions.templates` がこの同じ `registry` を共有するように
+            // なったため、プレーン `e.name` キーは「repeat 要素と同名のユーザ template」で衝突しうる
+            // (spec `fixtures/lowering/repeat/basic.json` の golden も元々この mangled 形
+            // `"src#cons"` を期待しており、`canon_tmpl` の緩比較 (先頭 `#` 区切りで正規化) がこれまで
+            // 実装側のプレーン名との差を吸収して隠していただけ — 本 mangle で golden と実体が一致する)。
+            let cons = e.name + "#cons"
+            registry.set(cons, Seq([head, opt_node(Ref(cons))]))
             if spec.lazy_ {
               // lazy marker (evaluator が split 選好を引くための mangled key)
-              registry.set("lazy:" + e.name, Exact("lazy"))
+              registry.set("lazy:" + cons, Exact("lazy"))
             }
             let m = spec.min
             let mut k = 0
@@ -846,7 +879,7 @@ fn lower_repeat_head(
               out.push(head) // mandatory unrolled heads (DR-043 min)
               k = k + 1
             }
-            out.push(Ref(e.name)) // >= 1 porous recursive tail
+            out.push(Ref(cons)) // >= 1 porous recursive tail
           }
         Some(mx) => {
           // BOUNDED (LOWERING §B.8): min mandatory heads + BoundedTail(head, max-min)

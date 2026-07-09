@@ -992,13 +992,16 @@ fn int_fail_phrase(f : ParseFail) -> String {
 
 ///|
 /// Apply an `update` effect's transform to the running `old` value (DR-077 §1/§2: `cell = f(old)`).
-/// Only the built-in 0-arg `increment` is implemented — no filters registry exists yet to look up
-/// anything else (DR-077 §2 "transform の実体は filters registry の名前参照", not yet built in
-/// kuu.mbt). `installer.mbt`'s `classify_long_spelling` already rejects any other name/arity at
-/// DEFINITION time as `unknown-vocab` (DR-054) — `apply_transform` seeing an unrecognized transform
-/// here should never actually happen in practice; the fallback Err is defensive, not a live path.
-/// `args` is accepted for signature symmetry with the wire shape (DR-077 §2's `:update:add:5`
-/// nesting convention) but unused — `increment` takes none.
+/// `transform` is looked up in the filters registry (DR-077 §2 "transform の実体は filters registry
+/// の名前参照") — `installer.mbt`'s `classify_long_spelling` (definition-time gate, codex 指摘 2 /
+/// DR-077 §2 の裁定で `parts[2] == "increment"` のハードコード allowlist から registry lookup +
+/// signature チェックへ置換済み) already rejects an unregistered name or a non-`Transform`-signature
+/// name as `unknown-vocab` (DR-054) at DEFINITION time, so `apply_transform` seeing either here
+/// should never actually happen in practice — the `None` / non-`Transform` branches are defensive,
+/// not a live path. `args` (DR-077 §2's `:update:<name>:arg...` nesting convention) is threaded
+/// straight through to the registered closure unchecked — arity is a RUNTIME concern the closure
+/// itself enforces (mirrors `apply_filter_chain`'s split), so the 3rd branch (`d.run` itself
+/// rejecting, e.g. a genuine arity mismatch) IS a live path even after the definition-time gate.
 fn apply_transform(
   transform : String,
   old : Value,
@@ -1009,8 +1012,11 @@ fn apply_transform(
 ) -> Result[Value, ParseError] {
   match lookup_filter(transform) {
     None =>
+      // codex 指摘 3 (issue 2026-07-09, 節目レビュー): defensive kind を KParse (ladder_err) から
+      // KFilter (filter_err) へ — 「値がパースできなかった」ではなく「filter/transform 語彙の拒否」
+      // なので DR-053 §2 の 3 分類上 filter が正しい (filter_err の doc comment 参照)。
       Err(
-        ladder_err(
+        filter_err(
           name,
           at_pos,
           "unknown_update_transform",
@@ -1022,10 +1028,10 @@ fn apply_transform(
       if d.signature != Transform {
         // DR-077 §2 「シグネチャ不適合 → definition-error」: reached here only if the filters
         // registry later grows a name whose signature is Validate but installer.mbt's
-        // classify_long_spelling (definition-time gate, currently hardcoded to "increment" only)
-        // ever let it through — defensive, not a live path today.
+        // classify_long_spelling (definition-time gate) ever let it through — defensive, not a
+        // live path today. kind: KFilter (codex 指摘 3、上と同じ理由)。
         Err(
-          ladder_err(
+          filter_err(
             name,
             at_pos,
             "update_transform_type_mismatch",
@@ -1037,8 +1043,11 @@ fn apply_transform(
         match (d.run)(old, args) {
           Ok(v) => Ok(v)
           Err(msg) =>
+            // live path (arity mismatch 等、closure 自身の拒否) — defensive な上 2 分岐と同じ理由で
+            // kind: KFilter に揃える (team-lead 指摘は上 2 分岐限定だったが、同一関数内の同じ
+            // reason-family を KParse のまま残すのは内部不整合なので合わせて修正、報告に明記)。
             Err(
-              ladder_err(
+              filter_err(
                 name, at_pos, "update_transform_type_mismatch", msg, epath,
               ),
             )
