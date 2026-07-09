@@ -88,7 +88,7 @@ pub fn is_integer(d : Double) -> Bool {
 
 ///|
 /// The category of a held Error (DR-053 §2 / DR-037 / DR-047): `parse` = type parse failure,
-/// `filter` = a post_filter reject (a value that parsed but failed a filter), `constraint` = a
+/// `filter` = a piece/value/cell filter reject (a value that parsed but failed a filter), `constraint` = a
 /// delayed-predicate violation (required 未充足 etc., DR-047). All three ride the errors array.
 pub(all) enum ErrKind {
   KParse
@@ -1190,27 +1190,27 @@ pub fn parse_bool(s : String) -> Bool? {
 /// is the canonical vocab (DR-074 §3). Only the 意味の飛躍 (bool ↔ number) and 構造不一致
 /// (array/object → scalar) are DR-037 Errors.
 ///
-/// `pre_filters` (DR-050 §4 "string → CLI/env と完全に同一の全段 pipeline"、issue
+/// `piece_filters` (DR-050 §4 "string → CLI/env と完全に同一の全段 pipeline"、issue
 /// 2026-07-09-config-string-pieceprocessor-gap): applied ONCE, up front, ONLY when the JSON source
 /// is a string (`CStr`) — a non-string source matching its type (`CNum`/`CBool`) has no
-/// String→String step to gate, per §4's "型一致なら pre_filters/parse はスキップ" (the type's own
+/// String→String step to gate, per §4's "型一致なら piece_filters/parse はスキップ" (the type's own
 /// consequence, not a special case here; mirrors `resolve.mbt`'s `env_value`, whose source is
-/// ALWAYS a string so it always runs pre_filters — config's source varies, so this runs it exactly
+/// ALWAYS a string so it always runs piece_filters — config's source varies, so this runs it exactly
 /// when config's source happens to be a string). Every `(CStr(s), _)` arm below sees the
 /// ALREADY-filtered string.
 ///
-/// Error shape `(ErrKind, reason, message)`: `KFilter` for a pre_filters rejection (mirrors
+/// Error shape `(ErrKind, reason, message)`: `KFilter` for a piece_filters rejection (mirrors
 /// `resolve.mbt`'s `filter_err`), `KParse` for every type-mismatch/parse-failure arm (mirrors
 /// `ladder_err`) — the caller picks the matching `ParseError` constructor by this tag. `message`
 /// is caller-facing text only (conformance ignores it, per this file's `ParseError` doc comment).
 pub fn config_to_value(
   cv : ConfigVal,
   ty : Ty,
-  pre_filters : Array[String],
+  piece_filters : Array[String],
 ) -> Result[Value, (ErrKind, String, String)] {
   let cv = match cv {
     CStr(raw) =>
-      match apply_pre_filters(pre_filters, raw) {
+      match apply_piece_filters(piece_filters, raw) {
         Ok(s) => CStr(s)
         Err((reason, msg)) => return Err((KFilter, reason, msg))
       }
@@ -1399,13 +1399,13 @@ pub(all) struct Binding {
   //           normally — so an intermediate-scope global (DR-042 shadow) lands at its declaring
   //           scope, not the absolute root. A root global (declared at depth 0) has N = its firing
   //           depth, which escapes all the way to the root (the original bool-`link` behaviour).
-  // DR-034/DR-062 pre_filters + issue 2026-07-09-accum-entity-filters-wiring: the argv token
+  // DR-034/DR-062 piece_filters + issue 2026-07-09-accum-entity-filters-wiring: the argv token
   // position this binding's VALUE was read from, when it has one. `Some(pos)` for a CLI-seat
   // binding built at token-consumption time (eval.mbt/matcher.mbt's `mkb` call sites — a separator
   // piece carries the position of the WHOLE token it split from, not a per-piece offset, since a
   // piece is not itself a token). `None` for every non-token-consumption source (env/config/
   // inherit/default seats, resolve.mbt) — those values were never read off an argv token, so there
-  // is no position to attribute a later filters(each) reject to (`apply_entity_filters`'s
+  // is no position to attribute a later value_filters(each) reject to (`apply_entity_filters`'s
   // `filter_err` falls back to the ladder's own `at_pos`, unchanged behavior, when this is `None`).
   at_pos : Int?
 } derive(Eq, Debug)
@@ -1505,14 +1505,14 @@ fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
 }
 
 ///|
-/// A `kind: filter` held Error for a pre_filters chain that rejected a raw token/piece before it
+/// A `kind: filter` held Error for a piece_filters chain that rejected a raw token/piece before it
 /// ever reached its type parser (DR-034/DR-062, DR-037's Reject/Error distinction — see
-/// `apply_pre_filters`'s doc comment for why a filter chain's `Err` always becomes a `Held`, never
+/// `apply_piece_filters`'s doc comment for why a filter chain's `Err` always becomes a `Held`, never
 /// a silent `[]`: the Or/path-search machinery already discards a `Held` branch whenever a sibling
 /// branch `Accept`s, so a single `Held(kind: KFilter, ...)` return realizes BOTH DR-037 outcomes —
 /// no separate silent-Reject channel is needed). Token-consumption callers (eval.mbt's value-
 /// primitive arms, matcher.mbt's `run_eq_split`) pass `reason`/`message` straight from
-/// `apply_pre_filters`'s `Err` tuple. Mirrors `resolve.mbt`'s `filter_err` (the ladder-layer
+/// `apply_piece_filters`'s `Err` tuple. Mirrors `resolve.mbt`'s `filter_err` (the ladder-layer
 /// counterpart, used by `env_value`) — kept as a separate builder here because eval.mbt/value.mbt
 /// sit below resolve.mbt in the dependency graph (MDR-002 §3) and cannot call it.
 fn pe_filter(

@@ -125,7 +125,7 @@ fn run_eq_split(
   let valstr = chars_to_str(body, eq + 1, body.length())
   for e in entries {
     if e.key == key {
-      // TFlag/TCount take no eq-split value at all (no raw string to gate), so pre_filters is
+      // TFlag/TCount take no eq-split value at all (no raw string to gate), so piece_filters is
       // skipped for them entirely — checked BEFORE running the chain to avoid filtering a value
       // slot that structurally doesn't exist for this kind.
       if e.kind == TFlag {
@@ -136,7 +136,7 @@ fn run_eq_split(
       }
       // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1): `--key=a,b`
       // goes through the SAME pieceProcessor as the space form (`sep_binds`) — split FIRST, then
-      // pre_filters/parse run per PIECE, not once over the whole `valstr` (same ordering concern
+      // piece_filters/parse run per PIECE, not once over the whole `valstr` (same ordering concern
       // `sep_binds`'s own doc comment explains).
       match e.separator {
         Some(sep) =>
@@ -148,7 +148,7 @@ fn run_eq_split(
               e.kind,
               e.int_round,
               e.allow_base_prefix,
-              e.pre_filters,
+              e.piece_filters,
               pos,
             ) {
             Ok(bs) => [Accept(pos + 1, bs)]
@@ -156,10 +156,10 @@ fn run_eq_split(
           }
         None => ()
       }
-      // DR-034/DR-062 pre_filters: run BEFORE the kind-specific parse, same timing eval.mbt's
+      // DR-034/DR-062 piece_filters: run BEFORE the kind-specific parse, same timing eval.mbt's
       // value-primitive arms use (this is the eq-split entry's own copy of the element's chain,
       // LongEntry carries it the same way it carries int_round/allow_base_prefix).
-      let filtered = match apply_pre_filters(e.pre_filters, valstr) {
+      let filtered = match apply_piece_filters(e.piece_filters, valstr) {
         Ok(s) => s
         Err((reason, msg)) =>
           return [Held(pe_filter(e.name, pos, reason, msg), [])]
@@ -264,7 +264,7 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 /// `Ok` = the value char attached successfully (an `Array[Binding]` — usually length 1, but a
 /// `separator` entry can split one attach into several pieces, same as the long-option space form's
 /// `SepArg`/`sep_binds`, issue 2026-07-09-separator-non-string-type-parse-gap 段1). `Err` carries a
-/// full `ParseError` (`kind: KFilter` for a pre_filters reject, `kind: KParse` for a type-parse
+/// full `ParseError` (`kind: KFilter` for a piece_filters reject, `kind: KParse` for a type-parse
 /// failure — both delegate straight to `sep_binds` when `e.separator` is `Some`). `walk_short`'s
 /// mid-token/full-tail split still governs whether an `Err` surfaces as a `Held` or is silently
 /// dropped (see its call sites) — unlike the old `Binding?`-based 2-way split, this no longer needs
@@ -290,11 +290,11 @@ fn short_val(
         e.kind,
         e.int_round,
         e.allow_base_prefix,
-        e.pre_filters,
+        e.piece_filters,
         pos,
       )
     None => {
-      let filtered = match apply_pre_filters(e.pre_filters, s) {
+      let filtered = match apply_piece_filters(e.piece_filters, s) {
         Ok(v) => v
         Err((reason, msg)) => return Err(pe_filter(e.name, pos, reason, msg))
       }
@@ -404,12 +404,12 @@ fn walk_short(
                   out.push(r)
                 }
               Err(pe) =>
-                // A mid-token split's failure (pre_filters reject OR type-parse failure) is a
+                // A mid-token split's failure (piece_filters reject OR type-parse failure) is a
                 // silent non-reading (its remainder would need OTHER defined chars to progress,
                 // DR-041 §3); only the FULL-TAIL attach — the「値 char が残余全体を値として取る」
                 //唯一形の読み — surfaces as a held Error (DR-041 §5 値不正 = Error、DR-074 の
                 // suffix 拒否がここに落ちる)。fixture matcher-readings/cluster-split-no-flag /
-                // pre-filters/reject.json が輪郭を固定する。TStr が構造的に型 parse エラーを
+                // piece-filters/reject.json が輪郭を固定する。TStr が構造的に型 parse エラーを
                 // 起こさない (short_val の doc comment) ので、kind によるガードは不要。
                 if j == body.length() {
                   out.push(Held(pe, acc))

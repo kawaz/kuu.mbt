@@ -317,9 +317,9 @@ fn opt(
   default? : Value? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
-  pre_filters? : Array[String] = [],
-  filters? : Array[String] = [],
-  post_filters? : Array[String] = [],
+  piece_filters? : Array[String] = [],
+  value_filters? : Array[String] = [],
+  cell_filters? : Array[String] = [],
   ref_? : String? = None,
   body? : ElemBody = BCell,
 ) -> ElemDef {
@@ -353,9 +353,9 @@ fn opt(
     default_value: default,
     int_round,
     allow_base_prefix,
-    pre_filters,
-    filters,
-    post_filters,
+    piece_filters,
+    value_filters,
+    cell_filters,
     body,
   }
 }
@@ -376,9 +376,9 @@ fn pos(
   default? : Value? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
-  pre_filters? : Array[String] = [],
-  filters? : Array[String] = [],
-  post_filters? : Array[String] = [],
+  piece_filters? : Array[String] = [],
+  value_filters? : Array[String] = [],
+  cell_filters? : Array[String] = [],
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -411,9 +411,9 @@ fn pos(
     default_value: default,
     int_round,
     allow_base_prefix,
-    pre_filters,
-    filters,
-    post_filters,
+    piece_filters,
+    value_filters,
+    cell_filters,
     body,
   }
 }
@@ -450,9 +450,9 @@ fn dd_marker() -> ElemDef {
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
-    pre_filters: [],
-    filters: [],
-    post_filters: [],
+    piece_filters: [],
+    value_filters: [],
+    cell_filters: [],
     body: BCell,
   }
 }
@@ -2252,8 +2252,8 @@ fn dec_option(
     [
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "separator", "requires", "conflicts_with", "exclusive_group",
-      "export_key", "config_key", "deprecated", "or", "pre_filters", "filters", "post_filters",
-      "ref", "repeat",
+      "export_key", "config_key", "deprecated", "or", "piece_filters", "value_filters",
+      "cell_filters", "ref", "repeat",
     ],
     "option",
   )
@@ -2344,9 +2344,9 @@ fn dec_option(
     None => None
   }
   let deprecated = bool_field(o, "deprecated", false)
-  let pre_filters = dec_strs(o.get("pre_filters"))
-  let filters = dec_strs(o.get("filters"))
-  let post_filters = dec_strs(o.get("post_filters"))
+  let piece_filters = dec_strs(o.get("piece_filters"))
+  let value_filters = dec_strs(o.get("value_filters"))
+  let cell_filters = dec_strs(o.get("cell_filters"))
   let ref_ = jf_str(o, "ref")
   // DR-078 §1 option repeat (issue 2026-07-09-ref-template-result-shape, new capability): `repeat`
   // used to be positional-only (`dec_positional`'s own decode above) — mirrored here now that
@@ -2378,9 +2378,9 @@ fn dec_option(
       default~,
       int_round=int_round_from_shadow,
       allow_base_prefix=base_prefix_from_shadow,
-      pre_filters~,
-      filters~,
-      post_filters~,
+      piece_filters~,
+      value_filters~,
+      cell_filters~,
       ref_~,
       body=match structural_or {
         Some(branches) => BOr(branches)
@@ -2406,8 +2406,8 @@ fn dec_positional(
     o,
     [
       "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
-      "config_key", "default", "positionals", "or", "pre_filters", "filters", "post_filters",
-      "ref",
+      "config_key", "default", "positionals", "or", "piece_filters", "value_filters",
+      "cell_filters", "ref",
     ],
     "positional",
   )
@@ -2466,9 +2466,9 @@ fn dec_positional(
     Some(d) => Some(json_to_value(d))
     None => None
   }
-  let pre_filters = dec_strs(o.get("pre_filters"))
-  let filters = dec_strs(o.get("filters"))
-  let post_filters = dec_strs(o.get("post_filters"))
+  let piece_filters = dec_strs(o.get("piece_filters"))
+  let value_filters = dec_strs(o.get("value_filters"))
+  let cell_filters = dec_strs(o.get("cell_filters"))
   let ref_ = jf_str(o, "ref")
   pos(
     name,
@@ -2484,9 +2484,9 @@ fn dec_positional(
     default~,
     int_round=int_round_from_shadow,
     allow_base_prefix=base_prefix_from_shadow,
-    pre_filters~,
-    filters~,
-    post_filters~,
+    piece_filters~,
+    value_filters~,
+    cell_filters~,
   )
 }
 
@@ -3334,15 +3334,15 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
     if e.ty != TFlag && e.ty != TBool && e.default_value is Some(_) {
       return true
     }
-    // DR-009 filters/post_filters (issue 2026-07-09-filters-registry-foundation) are applied by
+    // DR-009 value_filters/cell_filters (issue 2026-07-09-filters-registry-foundation) are applied by
     // `resolve_entity` (resolve.mbt's `apply_entity_filters`), NOT by the raw CLI `binds` array
     // this function's `false` result routes to. `resolve_entity_raw`'s CLI-seat fold now preserves
     // every same-name Binding for an accum cell (issue 2026-07-09-accum-entity-filters-wiring),
-    // so an accum cell with filters/post_filters ALSO needs the resolve path — the guard that used
+    // so an accum cell with value_filters/cell_filters ALSO needs the resolve path — the guard that used
     // to exclude accum (`e.accum is None &&`) is removed. `apply_entity_filters` already skips
-    // post_filters for an accum cell (accumulated-array post is a separate stage, issue
-    // accum-post-filters-stage7); routing through resolve here only activates filters(each).
-    if e.filters.length() > 0 || e.post_filters.length() > 0 {
+    // cell_filters for an accum cell (accumulated-array post is a separate stage, issue
+    // accum-post-filters-stage7); routing through resolve here only activates value_filters(each).
+    if e.value_filters.length() > 0 || e.cell_filters.length() > 0 {
       return true
     }
   }
@@ -3376,7 +3376,7 @@ fn pe_msg(pe : ParseError) -> String {
 }
 
 ///|
-/// The `ParseError`-preserving form (`"failure"`-branch resolve check, DR-009 §7 post_filters etc.
+/// The `ParseError`-preserving form (`"failure"`-branch resolve check, DR-009 §7 cell_filters etc.
 /// surfacing as a resolve-layer Err even when `parse()` itself succeeded — see `do_resolve`'s
 /// string-message wrapper below, kept for its existing "success"-branch callers).
 fn do_resolve_pe(
@@ -3385,7 +3385,7 @@ fn do_resolve_pe(
   dc : DCase,
 ) -> Result[Array[Binding], ParseError] {
   // `at_pos: dc.argv.length()` — a resolve-layer Error (env/config seat parse failure, or a
-  // DR-009 §7 filters/post_filters reject) is not read at a token position, it surfaces after
+  // DR-009 §7 value_filters/cell_filters reject) is not read at a token position, it surfaces after
   // the argv path completed (`ladder_err`'s doc comment, resolve.mbt). Threading the real final
   // position here (instead of `resolve_scope`/`resolve_scope_config`'s `at_pos? = -1` default)
   // matches `eval_constraints`'s convention for the same conceptual point (DR-053 §2).
@@ -3520,7 +3520,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
   let root = ScopeNode(sc)
   // DR-047 §5 明確化 (kawaz 裁定 2026-07-09): bool-target requires/CRequiresIf は KTop (CLI 面
   // のみ) では常にスキップされているので、値源 (env) が解ける後段でここでフィルタする
-  // (post_filters と同じ側、`resolve.mbt` の `apply_bool_requires_filter` — 経路数に応じて
+  // (cell_filters と同じ側、`resolve.mbt` の `apply_bool_requires_filter` — 経路数に応じて
   // success/ambiguous/failure を再確定)。DR-021 → DR-073 の export-key collision 昇格
   // (`promote_collision_ambiguous`) より先に適用する — 責務が異なる2つの後処理 (「経路の成立
   //自体」と「export-key 衝突による Success→Ambiguous 昇格」) を素直に直列に並べる。
@@ -3650,7 +3650,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             }
           }
         }
-        // DR-009 §7 post_filters (and any other resolve-layer check, e.g. a future
+        // DR-009 §7 cell_filters (and any other resolve-layer check, e.g. a future
         // constraint that only resolve sees): `parse()` itself can succeed while the VALUE
         // resolution layer (env/config/inherit/default ladder fill + filter chains,
         // resolve.mbt) still rejects — a "failure" fixture case exercising THAT path needs

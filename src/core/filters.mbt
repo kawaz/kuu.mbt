@@ -1,5 +1,5 @@
 // filters.mbt — the filters registry (DR-009/010/036/061/077): the pure-function chain that
-// DR-009 threads through 3 phases (pre_filters / filters (each) / post_filters). MDR-002 §3:
+// DR-009 threads through 3 phases (piece_filters / value_filters (each) / cell_filters). MDR-002 §3:
 // depends on {node, value} only (no eval dependency — filters run over already-parsed `Value`s,
 // not tokens).
 //
@@ -10,7 +10,7 @@
 // is simply always registered). DR-062's inheritance interface (`{prepend, append}` composition
 // against a ref/type-registry base chain) is likewise OUT OF SCOPE: kuu.mbt has no `type` registry
 // (a name → factory lookup for value parsers) to inherit FROM yet, so there is no base chain to
-// compose against — `filters`/`pre_filters`/`post_filters` are plain `Array[String]`
+// compose against — `value_filters`/`piece_filters`/`cell_filters` are plain `Array[String]`
 // (string-shorthand DSL only, DR-009's colon-DSL `"<name>:<arg>:<arg>..."`) with no inherit/
 // prepend/append object form. Revisit when a type registry with per-type default chains exists.
 
@@ -44,9 +44,9 @@ pub(all) struct FilterDescriptor {
 }
 
 ///|
-/// `trim` (DR-040 §pre_filters example, DR-009 §DSL 文法): string-only, strips ASCII whitespace
+/// `trim` (DR-040 §piece_filters example, DR-009 §DSL 文法): string-only, strips ASCII whitespace
 /// from both ends. A `Transform` (the value CHANGES). Non-string input is untouched (defensive —
-/// every current call site only ever feeds `trim` a `VStr`, DR-009's pre_filters phase is
+/// every current call site only ever feeds `trim` a `VStr`, DR-009's piece_filters phase is
 /// string→string by construction).
 fn filter_trim(v : Value, _args : Array[String]) -> Result[Value, String] {
   match v {
@@ -67,8 +67,8 @@ fn filter_non_empty(v : Value, _args : Array[String]) -> Result[Value, String] {
 }
 
 ///|
-/// `in_range:<min>:<max>` (DR-040 §「count の上限は post_filters (in_range 等) で書く」, DR-077 §1
-/// "post_filters が update の結果にも通る" の実証対象そのもの): number-only `Validate`. `min`/`max`
+/// `in_range:<min>:<max>` (DR-040 §「count の上限は cell_filters (in_range 等) で書く」, DR-077 §1
+/// "cell_filters が update の結果にも通る" の実証対象そのもの): number-only `Validate`. `min`/`max`
 /// are the DSL args (DR-009 "args はすべて string、filter registry 側でキャスト") — parsed here via
 /// `parse_number` (canonical DR-074 §1 lexicon, same parser the value primitives use). A malformed
 /// arg is a filter-definition error surfaced as an Err (caught at filter-run time, same as any other
@@ -191,10 +191,10 @@ pub fn apply_filter_chain(
 }
 
 ///|
-/// DR-034/DR-062 pre_filters: run a String→String chain over one raw token / piece, immediately
+/// DR-034/DR-062 piece_filters: run a String→String chain over one raw token / piece, immediately
 /// before that value reaches its type parser (eval.mbt's value-primitive arms, matcher.mbt's
 /// `run_eq_split`/`short_val`, resolve.mbt's `env_value`). Thin wrapper over `apply_filter_chain`
-/// specialized to the pre_filters contract (string in, string out) — every registered filter that
+/// specialized to the piece_filters contract (string in, string out) — every registered filter that
 /// isn't string-aware already passes a non-`VStr` through untouched (`filter_trim`'s doc comment),
 /// so the `Ok(VStr(s))` arm is the only reachable success shape today. A filter that returns a
 /// non-string here is a filter-definition bug violating the String→String contract (DR-034's
@@ -205,7 +205,7 @@ pub fn apply_filter_chain(
 /// resolve.mbt reuses its own `filter_err`) — this function stays value-source-agnostic (no
 /// argv_pos/element to carry) so both the CLI-token-consumption callers and the ladder (env)
 /// caller can share it.
-pub fn apply_pre_filters(
+pub fn apply_piece_filters(
   chain : Array[String],
   raw : String,
 ) -> Result[String, (String, String)] {
@@ -214,7 +214,7 @@ pub fn apply_pre_filters(
     Ok(_) =>
       Err(
         (
-          "filter_rejected", "pre_filters chain returned a non-string value (String→String contract violation, filter-definition bug)",
+          "filter_rejected", "piece_filters chain returned a non-string value (String→String contract violation, filter-definition bug)",
         ),
       )
     Err(e) => Err(e)

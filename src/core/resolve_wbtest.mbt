@@ -29,9 +29,9 @@ fn ent(
   collector? : String? = None,
   default_value? : Value? = None,
   separator? : String? = None,
-  pre_filters? : Array[String] = [],
-  filters? : Array[String] = [],
-  post_filters? : Array[String] = [],
+  piece_filters? : Array[String] = [],
+  value_filters? : Array[String] = [],
+  cell_filters? : Array[String] = [],
 ) -> Entity {
   {
     name,
@@ -45,9 +45,9 @@ fn ent(
     collector,
     default_value,
     separator,
-    pre_filters,
-    filters,
-    post_filters,
+    piece_filters,
+    value_filters,
+    cell_filters,
   }
 }
 
@@ -719,16 +719,16 @@ test "resolve_scope: count falls back to default:0 when unfired, and env SETS a 
   )
 }
 
-// ── DR-077 §1 / issue 2026-07-09-filters-registry-foundation: post_filters が update 結果にも通る ──
+// ── DR-077 §1 / issue 2026-07-09-filters-registry-foundation: cell_filters が update 結果にも通る ──
 
 ///|
-/// 保証 (issue の受け入れ条件そのもの — DR-040 「count の上限は post_filters (in_range 等) で書く」の
-/// 実体化、DR-077 §1 「post_filters は update の結果にも通す」): count 要素 (update 効果で fold された
-/// 値) に post_filters:["in_range:0:2"] を宣言すると、3 回連続 increment (-vvv 相当の ceff 3 個) の
-/// 結果 3 が in_range の外に出て Err になる。2 回 (境界内) は通る。post_filters は set 経路・update
+/// 保証 (issue の受け入れ条件そのもの — DR-040 「count の上限は cell_filters (in_range 等) で書く」の
+/// 実体化、DR-077 §1 「cell_filters は update の結果にも通す」): count 要素 (update 効果で fold された
+/// 値) に cell_filters:["in_range:0:2"] を宣言すると、3 回連続 increment (-vvv 相当の ceff 3 個) の
+/// 結果 3 が in_range の外に出て Err になる。2 回 (境界内) は通る。cell_filters は set 経路・update
 /// 経路を区別せず、resolve_entity が最終確定した値に対して一様に適用される (apply_entity_filters)。
-test "resolve_scope: post_filters (in_range) rejects an update-folded count value over the limit" {
-  let verbose = ent("verbose", TNum, default_value=Some(VNum(0.0)), post_filters=[
+test "resolve_scope: cell_filters (in_range) rejects an update-folded count value over the limit" {
+  let verbose = ent("verbose", TNum, default_value=Some(VNum(0.0)), cell_filters=[
     "in_range:0:2",
   ])
   let sc : Scope = {
@@ -756,11 +756,11 @@ test "resolve_scope: post_filters (in_range) rejects an update-folded count valu
 }
 
 ///|
-/// 保証: post_filters は set 経路 (通常の value option) にも同じく効く — DR-077 §1 が強調するのは
-/// 「update の結果にも」という追加であって、set 経路の post_filters 適用は元々の DR-009/040 契約
+/// 保証: cell_filters は set 経路 (通常の value option) にも同じく効く — DR-077 §1 が強調するのは
+/// 「update の結果にも」という追加であって、set 経路の cell_filters 適用は元々の DR-009/040 契約
 /// (update 導入前から成立すべき前提)。両経路が同じ apply_entity_filters を通ることを対で固定する。
-test "resolve_scope: post_filters (in_range) also rejects a plain Set value over the limit" {
-  let n = ent("n", TNum, post_filters=["in_range:0:100"])
+test "resolve_scope: cell_filters (in_range) also rejects a plain Set value over the limit" {
+  let n = ent("n", TNum, cell_filters=["in_range:0:100"])
   let sc : Scope = {
     greedy: [],
     positional: [],
@@ -817,11 +817,11 @@ test "resolve_scope: a scalar (no accum) cell's CLI seat still folds to last-win
 }
 
 ///|
-/// 保証: accum × filters(each、段5) — 全 piece が filter を通過すれば、resolve_entity 経由でも
+/// 保証: accum × value_filters(each、段5) — 全 piece が filter を通過すれば、resolve_entity 経由でも
 /// 累積列がそのまま保たれる (multiple-parse/filters-each.json::all-pieces-pass-then-accumulate
 /// の wbtest 版、conformance fixture 到達前に GREEN を固定する)。
-test "resolve_scope: accum × filters(each) — all pieces passing preserves the accumulated list" {
-  let ports = ent("ports", TNum, accum=Some("append"), filters=[
+test "resolve_scope: accum × value_filters(each) — all pieces passing preserves the accumulated list" {
+  let ports = ent("ports", TNum, accum=Some("append"), value_filters=[
     "in_range:1:100",
   ])
   let sc : Scope = {
@@ -839,13 +839,13 @@ test "resolve_scope: accum × filters(each) — all pieces passing preserves the
 
 ///|
 /// 保証 (issue 2026-07-09-accum-entity-filters-wiring 完了条件、CONFORMANCE §2/§3 の piece
-/// 帰属規約): accum × filters(each) で 1 piece が reject すると全体が failure になり (「不正 piece
+/// 帰属規約): accum × value_filters(each) で 1 piece が reject すると全体が failure になり (「不正 piece
 /// を静かに除外して残りを累積する」経路ではない)、その argv_pos は reject した piece 自身が
 /// 由来する CLI トークン位置 (`Binding.at_pos`、issue のスコープで追加) — ladder 呼び出し側が
 /// 一律で渡す `at_pos` (env/config 由来の「トークン非帰属」フォールバック) には落ちない。
 /// multiple-parse/filters-each.json::one-piece-rejects-whole-not-partial-accumulate の wbtest 版。
-test "resolve_scope: accum × filters(each) — one piece rejecting fails whole at ITS OWN token position" {
-  let ports = ent("ports", TNum, accum=Some("append"), filters=[
+test "resolve_scope: accum × value_filters(each) — one piece rejecting fails whole at ITS OWN token position" {
+  let ports = ent("ports", TNum, accum=Some("append"), value_filters=[
     "in_range:1:100",
   ])
   let sc : Scope = {
@@ -873,7 +873,7 @@ test "resolve_scope: accum × filters(each) — one piece rejecting fails whole 
 
 ///|
 /// 保証 (regression 再現、issue 2026-07-09-accum-filters-non-set-op-semantics の "根": kawaz 裁定
-/// 「filters(each) は cell に書かれる実値 (set operand / update 適用結果) にのみ乗る、
+/// 「value_filters(each) は cell に書かれる実値 (set operand / update 適用結果) にのみ乗る、
 /// unset/default/empty は cell 操作であって piece ではない」の accum 経路への一般化): accum セルの
 /// CLI 座席 fold (issue accum-entity-filters-wiring) は op を解釈せず同名 Binding を列のまま温存
 /// するため、`Unset` 効果の placeholder 値 (`mk_eff` の doc comment: "The operand is a
@@ -884,8 +884,8 @@ test "resolve_scope: accum × filters(each) — one piece rejecting fails whole 
 /// ため、Unset の placeholder は filter を一切通らず素通しされ、Set(5) だけが filter を通って
 /// success になる。multiple-parse/filters-cell-ops.json::unset-after-set-resets-to-empty-without-filter
 /// の wbtest 版 (fixture 側は DSL 記述の修正待ち、2026-07-09 時点)。
-test "resolve_scope: accum × filters(each) — Unset placeholder is exempt from filters (only Set carries a real value)" {
-  let ports = ent("ports", TNum, accum=Some("append"), filters=[
+test "resolve_scope: accum × value_filters(each) — Unset placeholder is exempt from filters (only Set carries a real value)" {
+  let ports = ent("ports", TNum, accum=Some("append"), value_filters=[
     "in_range:1:100",
   ])
   let sc : Scope = {
@@ -919,7 +919,7 @@ test "resolve_scope: accum × filters(each) — Unset placeholder is exempt from
     }
     Err(_) =>
       fail(
-        "expected Ok — Unset's placeholder must not run through e.filters (in_range would wrongly reject a non-number placeholder if it did)",
+        "expected Ok — Unset's placeholder must not run through e.value_filters (in_range would wrongly reject a non-number placeholder if it did)",
       )
   }
 }
@@ -930,8 +930,8 @@ test "resolve_scope: accum × filters(each) — Unset placeholder is exempt from
 /// Set が filter を reject する場合も同様に機能することを固定 (Unset 混在下でも Set 側の
 /// reject 輪郭 (既存の "one piece rejecting fails whole" テスト) が保たれることの対比)。
 /// multiple-parse/filters-cell-ops.json::unset-then-set-reaccumulates-with-filter-intact の wbtest 版。
-test "resolve_scope: accum × filters(each) — Unset does not disable filters for a LATER Set piece" {
-  let ports = ent("ports", TNum, accum=Some("append"), filters=[
+test "resolve_scope: accum × value_filters(each) — Unset does not disable filters for a LATER Set piece" {
+  let ports = ent("ports", TNum, accum=Some("append"), value_filters=[
     "in_range:1:100",
   ])
   let sc : Scope = {
@@ -990,7 +990,7 @@ test "resolve_scope: accum × filters(each) — Unset does not disable filters f
 }
 
 ///|
-/// 保証 (issue 2026-07-09-post-filter-error-attribution): `filters`/`post_filters` reject の
+/// 保証 (issue 2026-07-09-post-filter-error-attribution): `value_filters`/`cell_filters` reject の
 /// Error は `kind: KFilter` を持つ (DR-053 §2 の `parse` | `filter` | `constraint` 3 分類 — 値が
 /// パースできなかった `KParse` とは別カテゴリ、既にパース済みの値を validate/transform した結果の
 /// reject なので `filter` 分類に属する)。`argv_pos` は呼び出し側が渡した最終位置をそのまま持つ
@@ -999,8 +999,8 @@ test "resolve_scope: accum × filters(each) — Unset does not disable filters f
 /// 相当。本テストでは呼び出し側が明示的に `at_pos=3` を渡し、それがそのまま素通しされることを
 /// 固定する — 実際の conformance harness 側の配線 (`dc.argv.length()`) は
 /// json_conformance_wbtest.mbt の `do_resolve_pe`/`resolve_tree` が担う)。
-test "resolve_scope: a filters/post_filters reject carries kind=KFilter and the caller's at_pos" {
-  let n = ent("n", TNum, post_filters=["in_range:0:100"])
+test "resolve_scope: a value_filters/cell_filters reject carries kind=KFilter and the caller's at_pos" {
+  let n = ent("n", TNum, cell_filters=["in_range:0:100"])
   let sc : Scope = {
     greedy: [],
     positional: [],

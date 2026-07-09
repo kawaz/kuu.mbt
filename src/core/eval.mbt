@@ -293,9 +293,9 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // consumed, so nothing is "half-read".
         []
       }
-    StrArg(name, pre_filters) =>
+    StrArg(name, piece_filters) =>
       if pos < ctx.toks.length() {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             [Accept(pos + 1, [mkb(name, VStr(s), Cli, at_pos=Some(pos))])]
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
@@ -306,7 +306,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // trigger consumed) this is the "--port with no value" state.
         [Pending([pend_value(TStr, name)], [])]
       }
-    SepArg(name, sep, ty, int_round, base, pre_filters) =>
+    SepArg(name, sep, ty, int_round, base, piece_filters) =>
       if pos < ctx.toks.length() {
         match
           sep_binds(
@@ -316,7 +316,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
             ty,
             int_round,
             base,
-            pre_filters,
+            piece_filters,
             pos,
           ) {
           Ok(bs) => [Accept(pos + 1, bs)]
@@ -325,11 +325,11 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(ty, name)], [])]
       }
-    NumArg(name, base, pre_filters) =>
+    NumArg(name, base, piece_filters) =>
       // DR-074 §1 + §2: canonical (base=false) は 10 進のみ、opt-in (base=true) で 0x/0o/0b + hex float
       // も受理。base は installer が ElemDef.allow_base_prefix から埋め込む。
       if pos < ctx.toks.length() {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_number_ext(s, base) {
               Some(d) =>
@@ -341,11 +341,11 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TNum, name)], [])]
       }
-    FloatArg(name, pre_filters) =>
+    FloatArg(name, piece_filters) =>
       // DR-074 §1: the float accept域 = number + inf (parse_float), same reason vocab (not_a_number)
       // on failure as NumArg — only the parser function differs.
       if pos < ctx.toks.length() {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_float(s) {
               Some(d) =>
@@ -357,11 +357,11 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TFloat, name)], [])]
       }
-    IntArg(name, mode, base, pre_filters) =>
+    IntArg(name, mode, base, piece_filters) =>
       // DR-075 §1-§2 + DR-074 §2: 値空間判定 + int_round + opt-in base prefix。base=false で 10 進のみ、
       // true で 0xff (整数値) / 0x1.8p3 (=12 整数値) / 0x1.8p0 (=1.5 非整数、mode に従う) も受理する。
       if pos < ctx.toks.length() {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_int_value_ext(s, mode, base) {
               Ok(i) =>
@@ -380,10 +380,10 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TInt, name)], [])]
       }
-    BoolArg(name, pre_filters) =>
+    BoolArg(name, piece_filters) =>
       // DR-076 §1/§4: bool value slot (canonical vocab, DR-074 §3) — mirrors NumArg/FloatArg/IntArg.
       if pos < ctx.toks.length() {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_bool(s) {
               Some(b) =>
@@ -641,14 +641,14 @@ fn split_on(s : String, sep : String) -> Array[String] {
 }
 
 ///|
-/// One Set-effect binding per split piece (spec DR-034 + DR-045). `pre_filters` runs per PIECE (not
-/// once over the whole raw token) — DESIGN §6.2's pieceProcessor applies pre_filters AFTER the
+/// One Set-effect binding per split piece (spec DR-034 + DR-045). `piece_filters` runs per PIECE (not
+/// once over the whole raw token) — DESIGN §6.2's pieceProcessor applies piece_filters AFTER the
 /// separator split, one piece at a time (this is what distinguishes `per-piece-trim.json` from a
-/// "trim the whole raw string first" misreading). AFTER pre_filters, each piece goes through its
+/// "trim the whole raw string first" misreading). AFTER piece_filters, each piece goes through its
 /// OWN type parse (issue 2026-07-09-separator-non-string-type-parse-gap 段2 — DESIGN §6.2's
-/// pieceProcessor: separator → pre_filters → parse → post_filters, one piece at a time; a piece's
+/// pieceProcessor: separator → piece_filters → parse → cell_filters, one piece at a time; a piece's
 /// type is independent of whether it came via separator, `elem_head`'s pre-段2 "always VStr"
-/// shortcut was the bug this closes). A pre_filters reject OR a type-parse failure on ANY piece
+/// shortcut was the bug this closes). A piece_filters reject OR a type-parse failure on ANY piece
 /// fails the WHOLE binding (`Err` short-circuits) — same all-or-nothing contract a single-piece
 /// value primitive has; the two failure kinds stay distinct (`KFilter` vs `KParse`, mirrored from
 /// the scalar value-primitive arms' own pe_filter/pe_parse split).
@@ -664,12 +664,12 @@ fn sep_binds(
   ty : Ty,
   int_round : RoundMode,
   allow_base_prefix : Bool,
-  pre_filters : Array[String],
+  piece_filters : Array[String],
   pos : Int,
 ) -> Result[Array[Binding], ParseError] {
   let out : Array[Binding] = []
   for part in split_on(tok, sep) {
-    match apply_pre_filters(pre_filters, part) {
+    match apply_piece_filters(piece_filters, part) {
       Err((reason, msg)) => return Err(pe_filter(name, pos, reason, msg))
       Ok(s) =>
         match ty {
@@ -1212,9 +1212,9 @@ fn scope_consume(
   k : Cont,
 ) -> Array[Branch] {
   match item {
-    StrArg(name, pre_filters) =>
+    StrArg(name, piece_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             scope_step(
               sc,
@@ -1240,7 +1240,7 @@ fn scope_consume(
       } else {
         [] // 先食い: a greedy trigger sits here; the spine stays pending
       }
-    SepArg(name, sep, ty, int_round, base, pre_filters) =>
+    SepArg(name, sep, ty, int_round, base, piece_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match
           sep_binds(
@@ -1250,7 +1250,7 @@ fn scope_consume(
             ty,
             int_round,
             base,
-            pre_filters,
+            piece_filters,
             pos,
           ) {
           Ok(bs) =>
@@ -1266,10 +1266,10 @@ fn scope_consume(
       } else {
         []
       }
-    NumArg(name, base, pre_filters) =>
+    NumArg(name, base, piece_filters) =>
       // DR-074 §1 + §2 (scope_step 経路: parse_number_ext with base flag)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_number_ext(s, base) {
               Some(d) =>
@@ -1295,10 +1295,10 @@ fn scope_consume(
       } else {
         []
       }
-    FloatArg(name, pre_filters) =>
+    FloatArg(name, piece_filters) =>
       // DR-074 §1 CLI 値空間 (scope_step 経路: NumArg のミラー、parse_number→parse_float / TNum→TFloat)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_float(s) {
               Some(d) =>
@@ -1324,10 +1324,10 @@ fn scope_consume(
       } else {
         []
       }
-    IntArg(name, mode, base, pre_filters) =>
+    IntArg(name, mode, base, piece_filters) =>
       // DR-075 §1-§2 + DR-074 §2 CLI 値空間判定 + int_round + base prefix (scope_step 経路)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_int_value_ext(s, mode, base) {
               Ok(i) =>
@@ -1358,10 +1358,10 @@ fn scope_consume(
       } else {
         []
       }
-    BoolArg(name, pre_filters) =>
+    BoolArg(name, piece_filters) =>
       // DR-076 §1/§4 CLI 値空間 (scope_step 経路: NumArg/IntArg/FloatArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_bool(s) {
               Some(b) =>
@@ -1749,9 +1749,9 @@ fn consume_head(
   severed : Bool,
 ) -> Array[Branch] {
   match head {
-    StrArg(name, pre_filters) =>
+    StrArg(name, piece_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             [Accept(pos + 1, [mkb(name, VStr(s), Cli, at_pos=Some(pos))])]
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
@@ -1767,7 +1767,7 @@ fn consume_head(
       } else {
         []
       }
-    SepArg(name, sep, ty, int_round, base, pre_filters) =>
+    SepArg(name, sep, ty, int_round, base, piece_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match
           sep_binds(
@@ -1777,7 +1777,7 @@ fn consume_head(
             ty,
             int_round,
             base,
-            pre_filters,
+            piece_filters,
             pos,
           ) {
           Ok(bs) => [Accept(pos + 1, bs)]
@@ -1792,10 +1792,10 @@ fn consume_head(
       } else {
         []
       }
-    NumArg(name, base, pre_filters) =>
+    NumArg(name, base, piece_filters) =>
       // DR-074 §1 + §2 (先食い分岐: parse_number_ext with base flag)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_number_ext(s, base) {
               Some(d) =>
@@ -1813,10 +1813,10 @@ fn consume_head(
       } else {
         []
       }
-    FloatArg(name, pre_filters) =>
+    FloatArg(name, piece_filters) =>
       // DR-074 §1 CLI 値空間 (先食い分岐: NumArg のミラー、parse_number→parse_float / TNum→TFloat)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_float(s) {
               Some(d) =>
@@ -1834,10 +1834,10 @@ fn consume_head(
       } else {
         []
       }
-    IntArg(name, mode, base, pre_filters) =>
+    IntArg(name, mode, base, piece_filters) =>
       // DR-075 §1-§2 + DR-074 §2 (先食い分岐)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_int_value_ext(s, mode, base) {
               Ok(i) =>
@@ -1862,10 +1862,10 @@ fn consume_head(
       } else {
         []
       }
-    BoolArg(name, pre_filters) =>
+    BoolArg(name, piece_filters) =>
       // DR-076 §1/§4 CLI 値空間 (先食い分岐: NumArg/IntArg/FloatArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_bool(s) {
               Some(b) =>
@@ -2171,9 +2171,9 @@ fn scope_consume_rep(
   k : Cont,
 ) -> Array[Branch] {
   match inner {
-    StrArg(name, pre_filters) =>
+    StrArg(name, piece_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             scope_step(
               sc,
@@ -2194,10 +2194,10 @@ fn scope_consume_rep(
       } else {
         []
       }
-    NumArg(name, base, pre_filters) =>
+    NumArg(name, base, piece_filters) =>
       // DR-074 §1 + §2 (Many head 経路: parse_number_ext with base flag)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_number_ext(s, base) {
               Some(d) =>
@@ -2219,10 +2219,10 @@ fn scope_consume_rep(
       } else {
         []
       }
-    FloatArg(name, pre_filters) =>
+    FloatArg(name, piece_filters) =>
       // DR-074 §1 CLI 値空間 (Many head 経路: NumArg のミラー、parse_number→parse_float / TNum→TFloat)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_float(s) {
               Some(d) =>
@@ -2244,10 +2244,10 @@ fn scope_consume_rep(
       } else {
         []
       }
-    IntArg(name, mode, base, pre_filters) =>
+    IntArg(name, mode, base, piece_filters) =>
       // DR-075 §1-§2 + DR-074 §2 (Many head 経路)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_int_value_ext(s, mode, base) {
               Ok(i) =>
@@ -2274,10 +2274,10 @@ fn scope_consume_rep(
       } else {
         []
       }
-    BoolArg(name, pre_filters) =>
+    BoolArg(name, piece_filters) =>
       // DR-076 §1/§4 CLI 値空間 (Many head 経路: NumArg/IntArg/FloatArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_bool(s) {
               Some(b) =>
@@ -2454,7 +2454,7 @@ fn eval_constraints(
             // でなく「解決後の値が true」(値源不問)。値源解決は resolve 層でしか行えない
             // (eval 層/Ctx は CLI 面のみで env/config を持たない) ため、bool target の判定は
             // KTop からは完全にスキップし (常に pass 扱い)、`resolve.mbt` の
-            // `apply_bool_requires_filter` (post_filters と同じ側、`parse()` の後段) に委譲する
+            // `apply_bool_requires_filter` (cell_filters と同じ側、`parse()` の後段) に委譲する
             // — 元の全完全経路がそのまま KTop を通過し、ambiguous 解消への参加は後段フィルタが担う。
             // non-bool target は従来どおり CLI 面のみで確定的に判定できるため KTop に残す。
             if !is_bool_entity(sc.entities, t) &&

@@ -488,7 +488,7 @@ pub fn build_result(
 ///
 /// It recurses through the structure, converting every array whose elements match the spec's
 /// shape and leaving the rest (e.g. scalar arrays) as arrays — so applying `KeyPromote("path")`
-/// to a nested structure maps every object-array keyed by `path` while a `filters` scalar array
+/// to a nested structure maps every object-array keyed by `path` while a `value_filters` scalar array
 /// stays a list. A stage WITHOUT a matching key keeps its array (per-level independence, DR-044
 /// §2: from_entries is attached per repeat group; the key present at a level selects that level).
 pub(all) enum FromEntries {
@@ -1084,7 +1084,7 @@ fn eval_bool_requires(
 }
 
 ///|
-/// Apply the DR-047 §5 bool-target requires path filter to a `parse()` Outcome (post_filters と
+/// Apply the DR-047 §5 bool-target requires path filter to a `parse()` Outcome (cell_filters と
 /// 同じ側の後段処理、`promote_collision_ambiguous` と同型パターン — `parse()` 自体のシグネチャ・
 /// eval 層の Ctx は無改修のまま、値源 (env) を後から与える)。生存経路数で outcome を再構成する:
 /// 0 → `Failure` (violation を DR-053 §2 全保持で errors に、`fired_action`/`help_entry`/
@@ -1202,7 +1202,7 @@ fn ladder_err(
 }
 
 ///|
-/// A DR-053 §2 filter-reject Error: `filters`/`post_filters` (DR-009 §7) rejected an already-
+/// A DR-053 §2 filter-reject Error: `value_filters`/`cell_filters` (DR-009 §7) rejected an already-
 /// resolved value. Distinct from `ladder_err` (`kind: KParse`, a value-source failed to parse) —
 /// a filter reject is a validation/transform rejection over a value that parsed fine, so it gets
 /// its own builder with `kind: KFilter` (DR-053 §2's 3-way `parse` | `filter` | `constraint` split;
@@ -1311,8 +1311,8 @@ fn apply_transform(
 /// pipeline as CLI). Unlike slice's `env_value` (naive `parse_number` with a silent `VStr` fallback
 /// on failure), this reuses the canonical lexers (DR-074/075) and surfaces a parse failure as a
 /// DR-066 Error — a badly-typed env value is never silently coerced to a wrong-typed string cell.
-/// `pre_filters` (DR-034/DR-062, issue 2026-07-09-pre-split-filters-execution-wiring): DR-049 §2
-/// says env goes through the SAME pipeline as CLI, which includes pre_filters — applied here BEFORE
+/// `piece_filters` (DR-034/DR-062, issue 2026-07-09-pre-split-filters-execution-wiring): DR-049 §2
+/// says env goes through the SAME pipeline as CLI, which includes piece_filters — applied here BEFORE
 /// the type-specific parse below (including the `TStr` arm, so `trim` etc. also affects a plain
 /// string env value, not just numeric rescue). This is env's OWN application point, distinct from
 /// the CLI seat's (eval.mbt/matcher.mbt, applied at token-consumption time, before the value ever
@@ -1321,11 +1321,11 @@ fn env_value(
   element : String,
   ty : Ty,
   s : String,
-  pre_filters : Array[String],
+  piece_filters : Array[String],
   at_pos : Int,
   epath : Array[String],
 ) -> Result[Value, ParseError] {
-  let s = match apply_pre_filters(pre_filters, s) {
+  let s = match apply_piece_filters(piece_filters, s) {
     Ok(v) => v
     Err((reason, msg)) =>
       return Err(filter_err(element, at_pos, reason, msg, epath))
@@ -1453,12 +1453,12 @@ fn resolve_entity(
 }
 
 ///|
-/// DR-009 §filters/post_filters applied to whatever `resolve_entity_raw` resolved (any ladder
+/// DR-009 §value_filters/cell_filters applied to whatever `resolve_entity_raw` resolved (any ladder
 /// seat: cli/env/config/inherit/default — DR-077 §1's whole point is that `set` and `update`
-/// effects converge here indistinguishably). `filters` (each) applies to every binding; `post_filters`
+/// effects converge here indistinguishably). `value_filters` (each) applies to every binding; `cell_filters`
 /// (累積後の最終値) applies ONLY to a scalar cell's (no accum) single binding — a `multiple`/accum
 /// cell's TRUE "post accumulation" point is build_result (resolve.mbt's caller), which this function
-/// does not reach; extending post_filters to the accumulated array is a follow-up (this issue's
+/// does not reach; extending cell_filters to the accumulated array is a follow-up (this issue's
 /// scope is the count/update scalar case DR-077 §1 needed proven, not the general multiple case).
 /// `Empty`'s binding carries a PLACEHOLDER value (DR-045 — the real "clear the collection" effect
 /// has no value of its own), so it's exempt from both chains — running a number/string filter over
@@ -1471,7 +1471,7 @@ fn apply_entity_filters(
 ) -> Result[Array[Binding], ParseError] {
   let out : Array[Binding] = []
   for b in bs {
-    // filters(each、段5) applies only to a binding carrying a REAL value (kawaz 裁定
+    // value_filters(each、段5) applies only to a binding carrying a REAL value (kawaz 裁定
     // 2026-07-09、issue accum-filters-non-set-op-semantics): `Set` (a plain value bind) and
     // `Update`'s applied result. The scalar CLI-seat fold (resolve_entity_raw's non-accum branch)
     // already converts a committed `Update` to a `Set` binding via `mkb` before it ever reaches
@@ -1483,13 +1483,13 @@ fn apply_entity_filters(
     // so the two rules were equivalent there, but an ACCUM cell's fold (resolve_entity_raw's
     // `e.accum is Some(_)` branch) preserves every op UNINTERPRETED — without this
     // generalization, a `Default`/`Unset` binding's placeholder value would wrongly run through
-    // `e.filters` (issue's `--ports 5 --reset-ports` repro).
+    // `e.value_filters` (issue's `--ports 5 --reset-ports` repro).
     if b.op != Set {
       out.push(b)
     } else {
-      match apply_filter_chain(e.filters, b.value) {
+      match apply_filter_chain(e.value_filters, b.value) {
         Err((reason, msg)) => {
-          // filters(each、段5、DR-009): CONFORMANCE §3's piece-attribution rule — a reject here
+          // value_filters(each、段5、DR-009): CONFORMANCE §3's piece-attribution rule — a reject here
           // is attributed to the SPECIFIC argv token the rejected piece came from (`b.at_pos`,
           // issue 2026-07-09-accum-entity-filters-wiring), not the ladder's own `at_pos` (which
           // stays argv.length — the "no specific token" fallback for env/config/inherit/default-
@@ -1503,7 +1503,7 @@ fn apply_entity_filters(
         Ok(v) => {
           let b2 = { ..b, value: v }
           if e.accum is None {
-            match apply_filter_chain(e.post_filters, b2.value) {
+            match apply_filter_chain(e.cell_filters, b2.value) {
               Err((reason, msg)) =>
                 return Err(filter_err(e.name, at_pos, reason, msg, epath))
               Ok(v2) => out.push({ ..b2, value: v2 })
@@ -1552,7 +1552,7 @@ fn resolve_entity_raw(
   // already does for the raw-bind bypass path this issue is replacing. Threading the ops through
   // UNINTERPRETED here (no Update/Default/Unset resolution) keeps resolve's accum output
   // byte-identical to that bypass input — apply_entity_filters (this function's caller) then runs
-  // filters(each) over each preserved piece. accum × Update is UNSPECIFIED (DR-077's update targets
+  // value_filters(each) over each preserved piece. accum × Update is UNSPECIFIED (DR-077's update targets
   // a scalar ledger only) — passed through as-is, not resolved here (issue
   // 2026-07-09-accum-entity-filters-wiring §4: 現状挙動を変えない).
   if e.accum is Some(_) {
@@ -1632,7 +1632,7 @@ fn resolve_entity_raw(
   // env seat (DR-049 §2): the raw env string is ONE firing's argument (同 §2 「発火 1 回の 1 引数と
   // 同じ扱い」) — a `multiple` + `separator` cell splits it exactly like `eval.mbt`'s `sep_binds`
   // splits the CLI seat's own raw token (issue 2026-07-09-env-separator-split-gap): each piece
-  // runs the SAME pieceProcessor (`env_value`'s pre_filters → parse) independently, and any
+  // runs the SAME pieceProcessor (`env_value`'s piece_filters → parse) independently, and any
   // piece's failure fails the whole seat (all-or-nothing, mirrors `sep_binds`'s contract). No
   // `separator` (the common case) stays exactly the prior single-binding behavior.
   match e.env_key {
@@ -1644,7 +1644,7 @@ fn resolve_entity_raw(
               let bs : Array[Binding] = []
               for part in split_on(v, sep) {
                 match
-                  env_value(e.name, e.ty, part, e.pre_filters, at_pos, epath) {
+                  env_value(e.name, e.ty, part, e.piece_filters, at_pos, epath) {
                   Ok(parsed) => bs.push(mkb(e.name, parsed, Env))
                   Err(pe) => return Err(pe)
                 }
@@ -1652,7 +1652,7 @@ fn resolve_entity_raw(
               return Ok(bs)
             }
             None =>
-              match env_value(e.name, e.ty, v, e.pre_filters, at_pos, epath) {
+              match env_value(e.name, e.ty, v, e.piece_filters, at_pos, epath) {
                 Ok(parsed) => return Ok([mkb(e.name, parsed, Env)])
                 Err(pe) => return Err(pe)
               }
@@ -1673,12 +1673,12 @@ fn resolve_entity_raw(
               CNull => ()
               // array → a multiple cell's pieces (DR-050 §4); each item typed per §4 — including
               // §4's string pipeline (issue 2026-07-09-config-string-pieceprocessor-gap), so a
-              // string array item ALSO runs `e.pre_filters` before its type parse.
+              // string array item ALSO runs `e.piece_filters` before its type parse.
               CArr(items) =>
                 if e.accum is Some(_) {
                   let bs : Array[Binding] = []
                   for it in items {
-                    match config_to_value(it, e.ty, e.pre_filters) {
+                    match config_to_value(it, e.ty, e.piece_filters) {
                       Ok(v) => bs.push(mkb(e.name, v, Config))
                       Err((KFilter, reason, msg)) =>
                         return Err(
@@ -1703,10 +1703,10 @@ fn resolve_entity_raw(
                   )
                 }
               // DR-050 §4 の string 全段 pipeline (issue 2026-07-09-config-string-pieceprocessor-gap):
-              // `config_to_value` が `e.pre_filters` を先頭で適用してから型 parse する — CLI/env の
+              // `config_to_value` が `e.piece_filters` を先頭で適用してから型 parse する — CLI/env の
               // pieceProcessor と同じ窓口。
               _ =>
-                match config_to_value(cv, e.ty, e.pre_filters) {
+                match config_to_value(cv, e.ty, e.piece_filters) {
                   Ok(v) => return Ok([mkb(e.name, v, Config)])
                   Err((KFilter, reason, msg)) =>
                     return Err(filter_err(e.name, at_pos, reason, msg, epath))

@@ -80,11 +80,11 @@ pub(all) enum Node {
   /// literal token match; binds nothing, consumes 1.
   Exact(String)
   /// string value primitive: consume 1 token, bind name=VStr(token). Maximally permissive (DR-041 §5).
-  /// 2nd field is DR-034's pre_filters (String→String FilterChain, DR-062 二形のうち kuu.mbt が実装
+  /// 2nd field is DR-034's piece_filters (String→String FilterChain, DR-062 二形のうち kuu.mbt が実装
   /// する string-shorthand 配列のみ — filters.mbt ヘッダ注記参照): applied to the raw token BEFORE
   /// this node's own (identity, for TStr) parse step. installer.mbt `value_prim` embeds it from
-  /// `ElemDef.pre_filters` (same carrier pattern as `IntArg`'s `int_round` / `allow_base_prefix`);
-  /// eval.mbt's consumption arms run it via `apply_pre_filters` immediately after reading
+  /// `ElemDef.piece_filters` (same carrier pattern as `IntArg`'s `int_round` / `allow_base_prefix`);
+  /// eval.mbt's consumption arms run it via `apply_piece_filters` immediately after reading
   /// `ctx.toks[pos]`, before the value ever reaches its type parser.
   StrArg(String, Array[String])
   /// separator-splitting value primitive (DR-034 separator pipeline): consume 1 token, split it
@@ -92,18 +92,18 @@ pub(all) enum Node {
   /// its own type (issue 2026-07-09-separator-non-string-type-parse-gap §段4 — a piece's type is
   /// independent of whether it came via separator or not, DR-034 §6.2's pieceProcessor). Fields:
   /// name, sep, ty (the element's declared type — TStr is the historical identity-parse default),
-  /// int_round (TInt only, mirrors `IntArg`'s carrier), allow_base_prefix (TNum/TInt), pre_filters
+  /// int_round (TInt only, mirrors `IntArg`'s carrier), allow_base_prefix (TNum/TInt), piece_filters
   /// (applied to EACH split piece — not the whole raw token — right before that piece's own parse
-  /// step, DESIGN §6.2: separator → pre_filters → parse → post_filters, one piece at a time).
+  /// step, DESIGN §6.2: separator → piece_filters → parse → cell_filters, one piece at a time).
   /// `sep_binds` (eval.mbt) threads all of this through the split loop; a piece that fails its
   /// type parse is `kind: KParse` (same reason vocab as the scalar value primitives), NOT a
-  /// pre_filters-style `KFilter` reject — these are distinct pipeline stages (段3 vs 段4).
+  /// piece_filters-style `KFilter` reject — these are distinct pipeline stages (段3 vs 段4).
   SepArg(String, String, Ty, RoundMode, Bool, Array[String])
   /// number value primitive (DR-074 §1 canonical + §2 opt-in `number_allow_base_prefix`)。consume 1
   /// token, parse via `parse_number_ext(_, allow_base_prefix)`。allow=false は canonical (10 進のみ、
   /// base prefix Error)、allow=true で `0xff` / `0x1.8p3` / `0o777` / `0b1010` も受理する統合 opt-in。
   /// flag は installer が ElemDef.allow_base_prefix から埋め込む (kuu_number_parser factory config、
-  /// DR-061 §4)。parse-fail は `kind: parse` (DR-053)。4th field is DR-034's pre_filters (same
+  /// DR-061 §4)。parse-fail は `kind: parse` (DR-053)。4th field is DR-034's piece_filters (same
   /// carrier pattern as `StrArg`'s 2nd field) — applied to the raw token before `parse_number_ext`.
   NumArg(String, Bool, Array[String])
   /// float value primitive (DR-074 §1/§7): consume 1 token, parsed through the WIDER float lexicon
@@ -112,7 +112,7 @@ pub(all) enum Node {
   /// per TYPE (`number` rejects inf, `float` accepts it) and `Ty::TNum`/`Ty::TFloat` is the only
   /// place that distinction is known (installer.mbt `value_prim`); once lowered to a bare value node
   /// there is no other channel to carry it. Parse-fail is `kind: parse`, same reason vocab as NumArg.
-  /// 2nd field is DR-034's pre_filters (same carrier pattern as `StrArg`).
+  /// 2nd field is DR-034's piece_filters (same carrier pattern as `StrArg`).
   FloatArg(String, Array[String])
   /// int value primitive (DR-075 §1 値空間判定 + §2 int_round factory config). Consume 1 token, parse
   /// via `parse_int_value(_, mode)` where `mode` is the element's `int_round` (canonical default
@@ -124,7 +124,7 @@ pub(all) enum Node {
   /// 無いため mode は node 自身が持つ。DR-074 §2 `allow_base_prefix` を第 3 引数で追加運搬 —
   /// opt-in 時は `0xff` (整数値) / `0x1.8p3=12` (整数値) / `0x1.8p0=1.5` (非整数、mode に従う) の
   /// 値空間判定を hex にも一般化する。canonical default は `false`。parse-fail は `kind: parse`。
-  /// 5th field is DR-034's pre_filters (same carrier pattern as the other value primitives).
+  /// 5th field is DR-034's piece_filters (same carrier pattern as the other value primitives).
   IntArg(String, RoundMode, Bool, Array[String])
   /// bool value primitive (DR-076 §1/§4: bool is a normal value type, same standing as
   /// string/number). Consume 1 token, parsed via `parse_bool` (DR-074 §3 canonical vocab:
@@ -134,13 +134,13 @@ pub(all) enum Node {
   /// distinction is known (installer.mbt `value_prim`); once lowered to a bare value node there is
   /// no other channel to carry it. A bare `--x` (presence-only) fire is `TFlag`'s job, not this
   /// node's — `BoolArg` only appears where a definition's `:set` explicitly wants a value slot.
-  /// 2nd field is DR-034's pre_filters (same carrier pattern as `StrArg`).
+  /// 2nd field is DR-034's piece_filters (same carrier pattern as `StrArg`).
   BoolArg(String, Array[String])
   /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
   /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
-  /// held Error (a value that parsed but failed the filter — post_filter reject 相当). Test-only
+  /// held Error (a value that parsed but failed the filter — cell_filters reject 相当). Test-only
   /// (eval_wbtest.mbt): production lowering (`installer.mbt` の `elem_head`/`value_prim`) never
-  /// constructs this node, so it carries no `pre_filters` field (DR-034 配線対象外、issue
+  /// constructs this node, so it carries no `piece_filters` field (DR-034 配線対象外、issue
   /// 2026-07-09-pre-split-filters-execution-wiring).
   FilterArg(String, Int)
   /// a REQUIRED string positional (DR-047 値充足 / DR-053 kind: constraint): consumes a token if
@@ -308,34 +308,34 @@ pub(all) struct Entity {
   collector : String?
   default_value : Value? // default seat
   // DR-034 multiple の separator (issue 2026-07-09-env-separator-split-gap): the env seat's OWN
-  // copy, mirroring `pre_filters` below — `resolve.mbt`'s `env_value` runs the pieceProcessor once
+  // copy, mirroring `piece_filters` below — `resolve.mbt`'s `env_value` runs the pieceProcessor once
   // per piece exactly like `eval.mbt`'s `sep_binds` does for the CLI seat's raw token, but the CLI
   // seat's split already happened upstream (at token-consumption time); the env seat's raw string
   // hasn't been split at all until this field tells `resolve_entity_raw` to. `None` = no separator
   // declared (the common case, and every non-`multiple` cell) — env value stays a single piece.
   separator : String?
-  // DR-034/DR-062 pre_filters (String→String, per-piece / pre-parse 相): unlike `filters`/
-  // `post_filters` below (which run AFTER a ladder seat's value is already resolved, in
-  // `resolve.mbt`'s `apply_entity_filters`), pre_filters only ever runs BEFORE a string→T parse —
-  // i.e. only for STRING-typed ladder inputs. The CLI seat's own pre_filters application happens
+  // DR-034/DR-062 piece_filters (String→String, per-piece / pre-parse 相): unlike `value_filters`/
+  // `cell_filters` below (which run AFTER a ladder seat's value is already resolved, in
+  // `resolve.mbt`'s `apply_entity_filters`), piece_filters only ever runs BEFORE a string→T parse —
+  // i.e. only for STRING-typed ladder inputs. The CLI seat's own piece_filters application happens
   // upstream in eval.mbt/matcher.mbt (token consumption, before the value ever reaches this
   // Entity) — this copy exists so the ladder's OTHER string-sourced seats (env: DR-049 §2 "env
   // 値も pieceProcessor を通る") can run the SAME chain via `resolve.mbt`'s `env_value`. A non-
   // string ladder source (config number/bool matching the type, default, inherit) has no parse
-  // step to gate, so this field is simply unused there (DR-050 §4's "型一致なら post_filters のみ"
-  // — pre_filters/parse は元々 String→T の関数なので、型一致で供給された非 string 値には適用対象
+  // step to gate, so this field is simply unused there (DR-050 §4's "型一致なら cell_filters のみ"
+  // — piece_filters/parse は元々 String→T の関数なので、型一致で供給された非 string 値には適用対象
   // が無いという型の帰結、特別規則ではない).
-  pre_filters : Array[String]
-  // DR-009 filters (each, T→T): applied to EVERY value this cell resolves from ANY ladder seat
+  piece_filters : Array[String]
+  // DR-009 value_filters (each, T→T): applied to EVERY value this cell resolves from ANY ladder seat
   // (cli/env/config/inherit/default) right after that seat's own value is determined — same timing
   // "type.parse の後、accumulator の前" DR-009's [4]→[5] describes. For a scalar cell (no accum)
-  // this collapses to "applied once, right before post_filters" since only one seat ever wins.
-  filters : Array[String]
-  // DR-009 post_filters (累積後の最終値、DR-077 §1 "post_filters は update の結果にも通す" の実証対象):
+  // this collapses to "applied once, right before cell_filters" since only one seat ever wins.
+  value_filters : Array[String]
+  // DR-009 cell_filters (累積後の最終値、DR-077 §1 "cell_filters は update の結果にも通す" の実証対象):
   // applied to the FINAL resolved value, after the ladder has picked a winning seat (and after any
   // accumulation, for a multiple cell). This is the one place both `set` and `update` effects
   // converge before the value leaves resolve_entity — the whole point of this issue.
-  post_filters : Array[String]
+  cell_filters : Array[String]
 } derive(Eq, Debug)
 
 ///|
@@ -350,14 +350,14 @@ pub(all) struct LongEntry {
   kind : Ty
   int_round : RoundMode
   allow_base_prefix : Bool
-  // DR-034/DR-062 pre_filters (same carrier pattern as `int_round`/`allow_base_prefix`): run_eq_split
+  // DR-034/DR-062 piece_filters (same carrier pattern as `int_round`/`allow_base_prefix`): run_eq_split
   // (matcher.mbt) applies it to `valstr` before the kind-specific parse. Ignored for TFlag/TCount
   // (no eq-split value slot to gate — a presence-only fire has no raw string to filter).
-  pre_filters : Array[String]
+  piece_filters : Array[String]
   // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1): `--key=a,b` eq-split
   // form goes through the SAME pieceProcessor as the space form — separator splitting is a value-
   // axis concern independent of which entry point supplied the raw string (DR-034, matcher-readings/
-  // entry-forms.json's "入口形に関わらず同じ pieceProcessor 管を通る" precedent for pre_filters
+  // entry-forms.json's "入口形に関わらず同じ pieceProcessor 管を通る" precedent for piece_filters
   // applies identically here). `None` = no split (single-piece degenerate, DR-034 §6.3).
   separator : String?
 } derive(Eq, Debug)
@@ -376,11 +376,11 @@ pub(all) struct ShortEntry {
   // (LongEntry と同型)。int_round は TInt のみ、allow_base_prefix は TNum/TInt が参照。
   int_round : RoundMode
   allow_base_prefix : Bool
-  // DR-034/DR-062 pre_filters (same carrier pattern as LongEntry): `short_val` (matcher.mbt) applies
+  // DR-034/DR-062 piece_filters (same carrier pattern as LongEntry): `short_val` (matcher.mbt) applies
   // it to the in-cluster/space-form value string before the kind-specific parse. Ignored for
   // TFlag/TBool/TCount (no in-cluster/space-form VALUE attachment for those — `short_val` already
   // returns None unconditionally for them).
-  pre_filters : Array[String]
+  piece_filters : Array[String]
   // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1, same rationale as
   // LongEntry's field): in-cluster (`-p5,7`) and space-form (`-p 5,7`) both go through the same
   // pieceProcessor as the long-option space form. `None` = no split.

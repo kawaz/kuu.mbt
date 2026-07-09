@@ -53,7 +53,7 @@ test "eq-split long option resolves, errors, and 素通し" {
       kind: TNum,
       int_round: RError,
       allow_base_prefix: false,
-      pre_filters: [],
+      piece_filters: [],
       separator: None,
     },
   ])
@@ -92,7 +92,7 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
       kind: TBool,
       int_round: RError,
       allow_base_prefix: false,
-      pre_filters: [],
+      piece_filters: [],
       separator: None,
     },
   ])
@@ -143,7 +143,7 @@ test "eq-split long option: a TFlag entry never fires on =value" {
       kind: TFlag,
       int_round: RError,
       allow_base_prefix: false,
-      pre_filters: [],
+      piece_filters: [],
       separator: None,
     },
   ])
@@ -167,7 +167,7 @@ test "short cluster: flag run and in-token numeric value" {
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
-      pre_filters: [],
+      piece_filters: [],
       separator: None,
     },
     {
@@ -177,7 +177,7 @@ test "short cluster: flag run and in-token numeric value" {
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
-      pre_filters: [],
+      piece_filters: [],
       separator: None,
     },
     {
@@ -187,7 +187,7 @@ test "short cluster: flag run and in-token numeric value" {
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
-      pre_filters: [],
+      piece_filters: [],
       separator: None,
     },
   ])
@@ -223,7 +223,7 @@ test "short cluster: space-form value takes the next token" {
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
-      pre_filters: [],
+      piece_filters: [],
       separator: None,
     },
   ])
@@ -249,7 +249,7 @@ test "short cluster: deprecated entry rides a @depr marker" {
       depr: true,
       int_round: RError,
       allow_base_prefix: false,
-      pre_filters: [],
+      piece_filters: [],
       separator: None,
     },
   ])

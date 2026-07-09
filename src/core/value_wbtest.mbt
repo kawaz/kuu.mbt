@@ -290,8 +290,8 @@ fn cv_ok(r : Result[Value, (ErrKind, String, String)]) -> Value? {
 /// a string parses into any type, and a JSON scalar stringifies into a string element. The int seat is
 /// 値空間判定 with canonical `int_round: error` (DR-075): `"3.0"` → 3, `"2.5"` → Error. The bool seat
 /// uses the canonical vocab. Semantic jumps (bool↔number) and structural mismatches stay Errors.
-/// `pre_filters` is `[]` throughout — issue 2026-07-09-config-string-pieceprocessor-gap's own
-/// pre_filters-application test lives separately (below), so these cases isolate the type-leniency
+/// `piece_filters` is `[]` throughout — issue 2026-07-09-config-string-pieceprocessor-gap's own
+/// piece_filters-application test lives separately (below), so these cases isolate the type-leniency
 /// matrix from the filter chain.
 test "config_to_value type conversions" {
   // string → number / int (lenient parse), and 値空間 int acceptance of "3.0".
@@ -317,28 +317,28 @@ test "config_to_value type conversions" {
 
 ///|
 /// 保証 (codex 節目レビュー想定と同型の観点、issue 2026-07-09-config-string-pieceprocessor-gap): a
-/// `CStr` config source runs `pre_filters` BEFORE its type parse — exactly like `resolve.mbt`'s
+/// `CStr` config source runs `piece_filters` BEFORE its type parse — exactly like `resolve.mbt`'s
 /// `env_value` does for the env seat (DR-049 §2), and `eval.mbt`'s CLI token-consumption path.
-/// `trim` (DR-034 built-in pre_filter) rescues a config string with surrounding whitespace that
+/// `trim` (DR-034 built-in piece_filter) rescues a config string with surrounding whitespace that
 /// would otherwise fail `parse_number` outright — this is the concrete, previously-impossible
 /// case the gap issue's TODO describes (`{"port": " 8080 "}`). A non-string source (CNum/CBool
-/// matching its type) has NO pre_filters step to skip past (§4's type-consequence, not tested by
+/// matching its type) has NO piece_filters step to skip past (§4's type-consequence, not tested by
 /// omission here — the type-leniency matrix above already covers those arms with `[]`).
-test "config_to_value: pre_filters runs on a CStr source before the type parse (DR-050 §4)" {
+test "config_to_value: piece_filters runs on a CStr source before the type parse (DR-050 §4)" {
   assert_eq(
     cv_ok(config_to_value(CStr(" 8080 "), TNum, ["trim"])),
     Some(VNum(8080.0)),
   )
-  // without the pre_filter, the same raw string fails to parse (proves `trim` is load-bearing,
+  // without the piece_filter, the same raw string fails to parse (proves `trim` is load-bearing,
   // not a no-op the type parser would have tolerated anyway).
   assert_eq(cv_ok(config_to_value(CStr(" 8080 "), TNum, [])), None)
-  // pre_filters ALSO runs for a string target (TStr の「何でも受ける」型でも trim は素通りしない —
+  // piece_filters ALSO runs for a string target (TStr の「何でも受ける」型でも trim は素通りしない —
   // DR-050 §4 の全段 pipeline は target 型を問わない).
   assert_eq(
     cv_ok(config_to_value(CStr(" hi "), TStr, ["trim"])),
     Some(VStr("hi")),
   )
-  // a pre_filters REJECT (not just a parse failure) surfaces as KFilter, distinct from a KParse
+  // a piece_filters REJECT (not just a parse failure) surfaces as KFilter, distinct from a KParse
   // type-mismatch — `resolve.mbt`'s caller picks the ParseError constructor by this tag.
   match config_to_value(CStr(""), TNum, ["non_empty"]) {
     Err((KFilter, _, _)) => ()

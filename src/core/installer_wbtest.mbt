@@ -31,9 +31,9 @@ fn el(
   multiple? : Bool = false,
   collector? : String? = None,
   ref_? : String? = None,
-  pre_filters? : Array[String] = [],
-  filters? : Array[String] = [],
-  post_filters? : Array[String] = [],
+  piece_filters? : Array[String] = [],
+  value_filters? : Array[String] = [],
+  cell_filters? : Array[String] = [],
 ) -> ElemDef {
   {
     name,
@@ -65,9 +65,9 @@ fn el(
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
-    pre_filters,
-    filters,
-    post_filters,
+    piece_filters,
+    value_filters,
+    cell_filters,
     body: BCell,
   }
 }
@@ -1174,7 +1174,7 @@ test "repeat installer: self-ref cons template key does not collide with a same-
 /// 解ける後段でしか行えないため、**`parse()` 単体では bool target の requires を KTop が常に
 /// スキップする** (常に pass 扱い、"c" を一切与えなくても Success のまま — これは vacuous
 /// satisfaction ではなく、後段フィルタを通す前の意図された中間状態)。`resolve.mbt` の
-/// `apply_bool_requires_filter` (post_filters と同じ側の後段処理) を通して初めて、c が
+/// `apply_bool_requires_filter` (cell_filters と同じ側の後段処理) を通して初めて、c が
 /// 未解決 (default:false のまま) なら requires 違反として Failure に確定する — vacuous
 /// satisfaction は後段フィルタ適用で解消されることを、この2段 (parse() 単体 / フィルタ後) で
 /// 固定する。次の wbtest (target が非フラグ = KTop のまま従来通り) との対で挙動差を確認する。
