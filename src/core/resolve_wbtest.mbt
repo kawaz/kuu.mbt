@@ -870,6 +870,124 @@ test "resolve_scope: accum × filters(each) — one piece rejecting fails whole 
 }
 
 ///|
+/// 保証 (regression 再現、issue 2026-07-09-accum-filters-non-set-op-semantics の "根": kawaz 裁定
+/// 「filters(each) は cell に書かれる実値 (set operand / update 適用結果) にのみ乗る、
+/// unset/default/empty は cell 操作であって piece ではない」の accum 経路への一般化): accum セルの
+/// CLI 座席 fold (issue accum-entity-filters-wiring) は op を解釈せず同名 Binding を列のまま温存
+/// するため、`Unset` 効果の placeholder 値 (`mk_eff` の doc comment: "The operand is a
+/// placeholder — these ops carry no operand", ここでは VBool(false)) が修正前は
+/// `apply_entity_filters` の `b.op == Empty のみ skip` という条件をすり抜け、number 用
+/// `in_range` filter に渡って型不一致で誤 reject していた (issue 本文の `--ports 5
+/// --reset-ports` 実測 probe をここで正式な wbtest に昇格)。修正後は `b.op != Set` を skip する
+/// ため、Unset の placeholder は filter を一切通らず素通しされ、Set(5) だけが filter を通って
+/// success になる。multiple-parse/filters-cell-ops.json::unset-after-set-resets-to-empty-without-filter
+/// の wbtest 版 (fixture 側は DSL 記述の修正待ち、2026-07-09 時点)。
+test "resolve_scope: accum × filters(each) — Unset placeholder is exempt from filters (only Set carries a real value)" {
+  let ports = ent("ports", TNum, accum=Some("append"), filters=[
+    "in_range:1:100",
+  ])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ports],
+    constraints: [],
+  }
+  // `--ports 5 --reset-ports` を模す: Set(5) の後に Unset (placeholder VBool(false)、値なし) が続く。
+  let cli = [
+    cb("ports", VNum(5.0), Cli, at_pos=Some(1)),
+    {
+      key: "ports",
+      op: Unset,
+      value: VBool(false), // placeholder — unset carries no operand
+      source: Cli,
+      scope: [],
+      link: 0,
+      at_pos: None,
+    },
+  ]
+  match resolve_scope(sc, cli, Map([])) {
+    Ok(bs) => {
+      // Set(5) は filter (in_range:1:100) を通過して素通しの VNum(5.0) のまま、Unset は op/value
+      // ともに一切変更されず (filter を経由していない証拠) そのまま温存される。
+      assert_eq(bs.length(), 2)
+      assert_eq(bs[0].op, Set)
+      assert_eq(bs[0].value, VNum(5.0))
+      assert_eq(bs[1].op, Unset)
+      assert_eq(bs[1].value, VBool(false))
+    }
+    Err(_) =>
+      fail(
+        "expected Ok — Unset's placeholder must not run through e.filters (in_range would wrongly reject a non-number placeholder if it did)",
+      )
+  }
+}
+
+///|
+/// 保証 (対、上記テストの逆順): `--reset-ports --ports 7` を模す — Unset が先に発火しても、後続の
+/// Set(7) には filter が正常に効き続ける (「Unset が filter chain 自体を壊す」ことがない)。
+/// Set が filter を reject する場合も同様に機能することを固定 (Unset 混在下でも Set 側の
+/// reject 輪郭 (既存の "one piece rejecting fails whole" テスト) が保たれることの対比)。
+/// multiple-parse/filters-cell-ops.json::unset-then-set-reaccumulates-with-filter-intact の wbtest 版。
+test "resolve_scope: accum × filters(each) — Unset does not disable filters for a LATER Set piece" {
+  let ports = ent("ports", TNum, accum=Some("append"), filters=[
+    "in_range:1:100",
+  ])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ports],
+    constraints: [],
+  }
+  // 通過ケース: Unset の後の Set(7) は in_range:1:100 を通過する。
+  let cli_pass = [
+    {
+      key: "ports",
+      op: Unset,
+      value: VBool(false),
+      source: Cli,
+      scope: [],
+      link: 0,
+      at_pos: None,
+    },
+    cb("ports", VNum(7.0), Cli, at_pos=Some(2)),
+  ]
+  match resolve_scope(sc, cli_pass, Map([])) {
+    Ok(bs) => {
+      assert_eq(bs.length(), 2)
+      assert_eq(bs[0].op, Unset)
+      assert_eq(bs[1].op, Set)
+      assert_eq(bs[1].value, VNum(7.0))
+    }
+    Err(_) =>
+      fail("expected Ok — Set(7) is within range and Unset must not block it")
+  }
+  // reject ケース: Unset の後の Set(500) は in_range:1:100 を reject する (Unset 混在でも Set の
+  // filter 適用が生きていることの直接証拠)。
+  let cli_reject = [
+    {
+      key: "ports",
+      op: Unset,
+      value: VBool(false),
+      source: Cli,
+      scope: [],
+      link: 0,
+      at_pos: None,
+    },
+    cb("ports", VNum(500.0), Cli, at_pos=Some(2)),
+  ]
+  match resolve_scope(sc, cli_reject, Map([])) {
+    Err(pe) => {
+      assert_eq(pe.kind, KFilter)
+      assert_eq(pe.reason, "filter_rejected")
+    }
+    Ok(_) =>
+      fail(
+        "expected Err — 500 is out of range [1, 100], Unset must not exempt it",
+      )
+  }
+}
+
+///|
 /// 保証 (issue 2026-07-09-post-filter-error-attribution): `filters`/`post_filters` reject の
 /// Error は `kind: KFilter` を持つ (DR-053 §2 の `parse` | `filter` | `constraint` 3 分類 — 値が
 /// パースできなかった `KParse` とは別カテゴリ、既にパース済みの値を validate/transform した結果の

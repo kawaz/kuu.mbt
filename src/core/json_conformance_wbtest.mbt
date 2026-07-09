@@ -1122,7 +1122,14 @@ fn proj_result_export(
 
 ///|
 /// Resolved value-source tags per cell (DR-031). Config_file infra cells are excluded. Flag-preset
-/// defaults report `default` when no other seat surfaced (LOWERING §A.5).
+/// defaults report `default` when no other seat surfaced (LOWERING §A.5). An accum cell's `Unset`
+/// binding (issue 2026-07-09-accum-filters-non-set-op-semantics) reports `default` regardless of
+/// its own `source` field — `Unset` is CLI-fired (`b.source == Cli`) but uncommitted (DR-045
+/// "default 値へ戻す... committed=false"), so the value tag must reflect the LADDER OUTCOME
+/// ("as if untouched", same as `unset-ladder.json`'s scalar precedent where a scalar cell's fold
+/// already re-seats to a lower ladder rung on unset) rather than the firing token's own source. A
+/// LATER `Set` after an `Unset` still wins normally (the loop keeps overwriting `src` in order) —
+/// mirrors `build_result`'s ACCUMULATE fold treating `Unset` as a clear-point, not a terminal state.
 fn proj_sources(sc : Scope, resolved : Array[Binding]) -> String {
   let items : Array[String] = []
   for e in sc.entities {
@@ -1132,7 +1139,10 @@ fn proj_sources(sc : Scope, resolved : Array[Binding]) -> String {
     let mut src : String? = None
     for b in resolved {
       if b.key == e.name && !is_sentinel(b.key) {
-        src = Some(render_src(b.source))
+        src = match b.op {
+          Unset => Some("default")
+          _ => Some(render_src(b.source))
+        }
       }
     }
     match src {

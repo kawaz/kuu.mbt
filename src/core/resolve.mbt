@@ -353,12 +353,21 @@ pub fn build_result(
     if cell_here(cells, path, k) {
       // ACCUMULATE (repeat "flatten" / multiple "append", DR-043/034/036): fold same-key
       // effects in order. A `set` effect appends; an `empty` effect CLEARS the collection
-      // (DR-045 empty op), so anything before it is discarded and re-accumulation continues.
+      // (DR-045 empty op, committed=true — a deliberate "make it empty"), so anything before
+      // it is discarded and re-accumulation continues. An `unset` effect ALSO clears (issue
+      // 2026-07-09-accum-filters-non-set-op-semantics: DR-045 "default 値へ戻す" + DR-044/051's
+      // accum default=[] compose to "unset resets the accumulated list to []", same as an unfired
+      // cell's uniform-array default) but is DISTINCT from `empty` in committed-ness — `empty`
+      // commits (source stays `cli`, the fixed-point of a deliberate clear-to-empty), `unset`
+      // does NOT commit (source becomes `default`, "as if untouched" — `proj_sources`'s own
+      // matching branch reads the same op to report this). `default`/`update` are NOT handled
+      // here (issue 2026-07-09-accum-fold-update-default-ops, scoped out — their bindings still
+      // fall into the catch-all push, unchanged behavior).
       let mut items : Array[RVal] = []
       for b in binds {
         if b.scope.length() == 0 && b.key == k {
           match b.op {
-            Empty => items = []
+            Empty | Unset => items = []
             _ => items.push(RScalar(b.value))
           }
         }
@@ -1436,7 +1445,20 @@ fn apply_entity_filters(
 ) -> Result[Array[Binding], ParseError] {
   let out : Array[Binding] = []
   for b in bs {
-    if b.op == Empty {
+    // filters(each、段5) applies only to a binding carrying a REAL value (kawaz 裁定
+    // 2026-07-09、issue accum-filters-non-set-op-semantics): `Set` (a plain value bind) and
+    // `Update`'s applied result. The scalar CLI-seat fold (resolve_entity_raw's non-accum branch)
+    // already converts a committed `Update` to a `Set` binding via `mkb` before it ever reaches
+    // here, so this function never special-cases `Update` itself — checking `op == Set` alone
+    // covers both. `Unset`/`Default`/`Empty` are operations ON THE CELL, not a piece carrying a
+    // value — their bindings carry no meaningful operand (placeholder values, `mk_eff`'s doc
+    // comment) and must pass through untouched. This generalizes the old "only `Empty` is exempt"
+    // rule: for a SCALAR cell the fold above already collapses everything else to `Set`/`Empty`
+    // so the two rules were equivalent there, but an ACCUM cell's fold (resolve_entity_raw's
+    // `e.accum is Some(_)` branch) preserves every op UNINTERPRETED — without this
+    // generalization, a `Default`/`Unset` binding's placeholder value would wrongly run through
+    // `e.filters` (issue's `--ports 5 --reset-ports` repro).
+    if b.op != Set {
       out.push(b)
     } else {
       match apply_filter_chain(e.filters, b.value) {
