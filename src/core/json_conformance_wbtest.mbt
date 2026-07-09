@@ -729,7 +729,7 @@ fn prim_name(n : Node) -> String? {
     FloatArg(x, _) => Some(x)
     // DR-076 §1/§4: bool is now a normal value type, same satellite shape as string/number/int/float.
     BoolArg(x, _) => Some(x)
-    SepArg(x, _, _) => Some(x)
+    SepArg(x, _, _, _, _, _) => Some(x)
     FilterArg(x, _) => Some(x)
     ReqArg(x) => Some(x)
     NoDashStr(x) => Some(x)
@@ -3692,17 +3692,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
 /// MDR-001 §6). Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
-  [
-    // issue 2026-07-09-separator-non-string-type-parse-gap: long/short option (greedy face) の
-    // value slot は `separator` を見ない (`elem_head` の SepArg 分岐は positional 面専用、
-    // installer.mbt `value_prim` 呼び出し元の非対称) — `--ports 5,500` の 1 トークンが分割されず
-    // そのまま number parse に渡り `not_a_number` になる。accum×filters(each) 配線自体
-    // (issue 2026-07-09-accum-entity-filters-wiring) は解決済みで、この divergence は
-    // 別 issue の「対処 2 段構成 (option 経路の SepArg 構築 + SepArg 型 parse)」待ち
-    // (kawaz/team-lead 裁定 2026-07-09、commit 0dbc91b8 で追記済み)。fixture の期待値・意図は
-    // 変えていない — 実装側のギャップとして凍結する。
-    "multiple-parse/filters-each.json::separator-piece-rejects-whole :: errors got={ports@1/parse/not_a_number} want={ports@1/filter/filter_rejected}",
-  ]
+  []
 }
 
 ///|

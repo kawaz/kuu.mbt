@@ -88,13 +88,17 @@ pub(all) enum Node {
   /// `ctx.toks[pos]`, before the value ever reaches its type parser.
   StrArg(String, Array[String])
   /// separator-splitting value primitive (DR-034 separator pipeline): consume 1 token, split it
-  /// on the separator char, and bind ONE `name=part` per split piece. `SepArg("xs", ",", [])` on the
-  /// token `a,b` binds xs=a and xs=b. Combined with repeat, each firing splits, and the flatten
-  /// accumulator folds all pieces into one list (`prog a,b c,d` → xs=[a,b,c,d]). 3rd field is
-  /// DR-034's pre_filters — applied to EACH split piece (not the whole raw token) right before that
-  /// piece's own parse step, per DESIGN §6.2's pieceProcessor (separator → pre_filters → parse →
-  /// post_filters, one piece at a time). `sep_binds` (eval.mbt) threads it through the split loop.
-  SepArg(String, String, Array[String])
+  /// on the separator char, and bind ONE `name=part` per split piece, EACH piece parsed through
+  /// its own type (issue 2026-07-09-separator-non-string-type-parse-gap §段4 — a piece's type is
+  /// independent of whether it came via separator or not, DR-034 §6.2's pieceProcessor). Fields:
+  /// name, sep, ty (the element's declared type — TStr is the historical identity-parse default),
+  /// int_round (TInt only, mirrors `IntArg`'s carrier), allow_base_prefix (TNum/TInt), pre_filters
+  /// (applied to EACH split piece — not the whole raw token — right before that piece's own parse
+  /// step, DESIGN §6.2: separator → pre_filters → parse → post_filters, one piece at a time).
+  /// `sep_binds` (eval.mbt) threads all of this through the split loop; a piece that fails its
+  /// type parse is `kind: KParse` (same reason vocab as the scalar value primitives), NOT a
+  /// pre_filters-style `KFilter` reject — these are distinct pipeline stages (段3 vs 段4).
+  SepArg(String, String, Ty, RoundMode, Bool, Array[String])
   /// number value primitive (DR-074 §1 canonical + §2 opt-in `number_allow_base_prefix`)。consume 1
   /// token, parse via `parse_number_ext(_, allow_base_prefix)`。allow=false は canonical (10 進のみ、
   /// base prefix Error)、allow=true で `0xff` / `0x1.8p3` / `0o777` / `0b1010` も受理する統合 opt-in。
@@ -330,6 +334,12 @@ pub(all) struct LongEntry {
   // (matcher.mbt) applies it to `valstr` before the kind-specific parse. Ignored for TFlag/TCount
   // (no eq-split value slot to gate — a presence-only fire has no raw string to filter).
   pre_filters : Array[String]
+  // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1): `--key=a,b` eq-split
+  // form goes through the SAME pieceProcessor as the space form — separator splitting is a value-
+  // axis concern independent of which entry point supplied the raw string (DR-034, matcher-readings/
+  // entry-forms.json's "入口形に関わらず同じ pieceProcessor 管を通る" precedent for pre_filters
+  // applies identically here). `None` = no split (single-piece degenerate, DR-034 §6.3).
+  separator : String?
 } derive(Eq, Debug)
 
 ///|
@@ -351,6 +361,10 @@ pub(all) struct ShortEntry {
   // TFlag/TBool/TCount (no in-cluster/space-form VALUE attachment for those — `short_val` already
   // returns None unconditionally for them).
   pre_filters : Array[String]
+  // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1, same rationale as
+  // LongEntry's field): in-cluster (`-p5,7`) and space-form (`-p 5,7`) both go through the same
+  // pieceProcessor as the long-option space form. `None` = no split.
+  separator : String?
 } derive(Eq, Debug)
 
 ///|

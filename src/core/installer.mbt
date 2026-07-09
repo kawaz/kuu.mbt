@@ -475,30 +475,41 @@ priv struct SBChild {
 }
 
 ///|
-/// long/short option の value slot は `separator` を見ない (positional 面の `elem_head` だけが
-/// `SepArg` に分岐する既存の非対称) — 発見済みの既存バグだが issue
-/// 2026-07-09-separator-non-string-type-parse-gap に切り出し済み、本関数では対象外のまま
-/// (kawaz/team-lead 裁定 2026-07-09: 別 issue の対処 2 段構成「option 経路の SepArg 構築 + SepArg
-/// 型 parse」が前提、本 issue accum-entity-filters-wiring では追わない)。
+/// 値プリミティブの唯一の構築点 (positional / long / short いずれの value slot もここを通る,
+/// issue 2026-07-09-separator-non-string-type-parse-gap 段1: 以前は `elem_head` だけが
+/// `separator` を見て `SepArg` に分岐し、long/short main entry はこの関数を `separator` 抜きで
+/// 直接呼んでいたため、long/short option で `multiple + separator` を宣言しても分割が一切効かない
+/// 既存バグがあった — `separator` をこの関数自身の分岐に格上げし、呼び出し元 (positional の
+/// `elem_head` / long の `inst_long` main entry) が同じ判断を共有するよう一元化した。`separator`
+/// が `Some` なら `SepArg` を構築し、型情報 (ty/int_round/allow_base_prefix) をそのまま運搬する
+/// (段2: SepArg 自身が piece ごとに型 parse を行う、`sep_binds` 参照) — 段1 (分割自体を配線) と
+/// 段2 (分割後の型 parse) は同一サイクルで導入必須 (issue 追記2: 段1 単独では成功系が regress する
+/// 実測確認済み)。
 fn value_prim(
   ty : Ty,
   name : String,
   int_round : RoundMode,
   allow_base_prefix : Bool,
   pre_filters : Array[String],
+  separator? : String? = None,
 ) -> Node {
-  match ty {
-    // TNum は canonical (DR-074 §1) + opt-in base prefix (§2)。allow=true で hex/oct/bin 整数 + hex
-    // float も受理する統合 opt-in (単一 flag、DR-074 §2)。
-    TNum => NumArg(name, allow_base_prefix, pre_filters)
-    // TInt は値空間判定 (DR-075 §1) + int_round (§2) + hex/oct/bin (DR-074 §2)。IntArg に mode / flag
-    // を埋め込み、eval が parse_int_value_ext(_, mode, flag) で丸め + 基数 prefix を反映する。
-    TInt => IntArg(name, int_round, allow_base_prefix, pre_filters)
-    // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
-    TFloat => FloatArg(name, pre_filters)
-    // TBool は DR-076 §1/§4 で string/number と同格の値型 — BoolArg / parse_bool を通す
-    TBool => BoolArg(name, pre_filters)
-    _ => StrArg(name, pre_filters)
+  match separator {
+    Some(sep) =>
+      SepArg(name, sep, ty, int_round, allow_base_prefix, pre_filters)
+    None =>
+      match ty {
+        // TNum は canonical (DR-074 §1) + opt-in base prefix (§2)。allow=true で hex/oct/bin 整数 +
+        // hex float も受理する統合 opt-in (単一 flag、DR-074 §2)。
+        TNum => NumArg(name, allow_base_prefix, pre_filters)
+        // TInt は値空間判定 (DR-075 §1) + int_round (§2) + hex/oct/bin (DR-074 §2)。IntArg に mode /
+        // flag を埋め込み、eval が parse_int_value_ext(_, mode, flag) で丸め + 基数 prefix を反映する。
+        TInt => IntArg(name, int_round, allow_base_prefix, pre_filters)
+        // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
+        TFloat => FloatArg(name, pre_filters)
+        // TBool は DR-076 §1/§4 で string/number と同格の値型 — BoolArg / parse_bool を通す
+        TBool => BoolArg(name, pre_filters)
+        _ => StrArg(name, pre_filters)
+      }
   }
 }
 
@@ -766,22 +777,20 @@ fn collect_export_body(e : ElemDef, m : Map[String, ExportKey]) -> Unit {
 }
 
 ///|
-/// 要素の lowered head: 値プリミティブ / Ref (ref_target) / SepArg (separator)。
+/// 要素の lowered head: 値プリミティブ / Ref (ref_target) / SepArg (separator, `value_prim` 側に集約
+/// 済み — このヘルパー自身の役目は ref_target の分岐のみ)。
 fn elem_head(e : ElemDef) -> Node {
   match e.ref_target {
     Some(r) => Ref(r)
     None =>
-      match e.separator {
-        Some(sep) => SepArg(e.name, sep, e.pre_filters)
-        None =>
-          value_prim(
-            e.ty,
-            e.name,
-            e.int_round,
-            e.allow_base_prefix,
-            e.pre_filters,
-          )
-      }
+      value_prim(
+        e.ty,
+        e.name,
+        e.int_round,
+        e.allow_base_prefix,
+        e.pre_filters,
+        separator=e.separator,
+      )
   }
 }
 
@@ -1158,6 +1167,7 @@ fn inst_long(def : Definition, build : Build) -> Unit {
                   e.int_round,
                   e.allow_base_prefix,
                   e.pre_filters,
+                  separator=e.separator,
                 ),
               ]),
             ),
@@ -1188,6 +1198,7 @@ fn inst_long(def : Definition, build : Build) -> Unit {
                 int_round: leaf.int_round,
                 allow_base_prefix: leaf.allow_base_prefix,
                 pre_filters: leaf.pre_filters,
+                separator: leaf.separator,
               })
             }
           }
@@ -1207,6 +1218,7 @@ fn inst_long(def : Definition, build : Build) -> Unit {
             // ElemDef から LongEntry に持ち込む (他 kind は entry 側で参照されない)。
             allow_base_prefix: e.allow_base_prefix,
             pre_filters: e.pre_filters,
+            separator: e.separator,
           })
       }
     }
@@ -1273,6 +1285,7 @@ fn inst_short(def : Definition, build : Build) -> Unit {
         // DR-074 §2: short cluster / space-tail の TNum / TInt も allow_base_prefix を反映
         allow_base_prefix: e.allow_base_prefix,
         pre_filters: e.pre_filters,
+        separator: e.separator,
       })
     }
   }
@@ -2233,7 +2246,7 @@ fn head_progresses(
 ) -> Bool {
   match node {
     StrArg(_, _)
-    | SepArg(_, _, _)
+    | SepArg(_, _, _, _, _, _)
     | NumArg(_, _, _)
     | FloatArg(_, _)
     | IntArg(_, _, _, _)

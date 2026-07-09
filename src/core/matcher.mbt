@@ -134,6 +134,28 @@ fn run_eq_split(
       if e.kind == TCount {
         return [] // DR-077 §3: count takes no =value either — the update effect has no operand
       }
+      // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1): `--key=a,b`
+      // goes through the SAME pieceProcessor as the space form (`sep_binds`) — split FIRST, then
+      // pre_filters/parse run per PIECE, not once over the whole `valstr` (same ordering concern
+      // `sep_binds`'s own doc comment explains).
+      match e.separator {
+        Some(sep) =>
+          return match
+            sep_binds(
+              e.name,
+              valstr,
+              sep,
+              e.kind,
+              e.int_round,
+              e.allow_base_prefix,
+              e.pre_filters,
+              pos,
+            ) {
+            Ok(bs) => [Accept(pos + 1, bs)]
+            Err(pe) => [Held(pe, [])]
+          }
+        None => ()
+      }
       // DR-034/DR-062 pre_filters: run BEFORE the kind-specific parse, same timing eval.mbt's
       // value-primitive arms use (this is the eq-split entry's own copy of the element's chain,
       // LongEntry carries it the same way it carries int_round/allow_base_prefix).
@@ -239,14 +261,16 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 }
 
 ///|
-/// `Ok` = the value char attached successfully. `Err(None)` = an ORDINARY parse failure (the
-/// pre-DR-034 contract: caller falls back to `pe_parse`/kind:KParse at the tail position, same as
-/// a bare `Binding?`'s `None` always meant). `Err(Some((reason, message)))` = a DR-034/DR-062
-/// pre_filters chain rejected the raw value BEFORE it ever reached the kind-specific parser — a
-/// DISTINCT failure kind (KFilter) the old `Binding?` signature had no channel for, hence the
-/// signature widening from `Binding?` to this `Result`. Both error shapes stay valid at every value
-/// char length (`walk_short`'s mid-token/full-tail split still governs whether a failure surfaces
-/// as a `Held` or is silently dropped — see its call sites).
+/// `Ok` = the value char attached successfully (an `Array[Binding]` — usually length 1, but a
+/// `separator` entry can split one attach into several pieces, same as the long-option space form's
+/// `SepArg`/`sep_binds`, issue 2026-07-09-separator-non-string-type-parse-gap 段1). `Err` carries a
+/// full `ParseError` (`kind: KFilter` for a pre_filters reject, `kind: KParse` for a type-parse
+/// failure — both delegate straight to `sep_binds` when `e.separator` is `Some`). `walk_short`'s
+/// mid-token/full-tail split still governs whether an `Err` surfaces as a `Held` or is silently
+/// dropped (see its call sites) — unlike the old `Binding?`-based 2-way split, this no longer needs
+/// a kind guard at the call site: a `TStr` entry structurally never produces a type-parse `Err`
+/// (its parse is the identity), so "every `Err` at full-tail becomes `Held`" is equivalent to the
+/// old kind-gated condition, just simpler.
 /// `pos` (issue 2026-07-09-accum-entity-filters-wiring): the argv token this value char's raw
 /// string was read from — the CALLING token for an in-cluster attach, the NEXT token for a
 /// space-form attach (`walk_short`'s two call sites pass `pos`/`pos + 1` respectively, mirroring
@@ -256,46 +280,54 @@ fn short_val(
   e : ShortEntry,
   s : String,
   pos : Int,
-) -> Result[Binding, (String, String)?] {
-  match e.kind {
-    TStr =>
-      match apply_pre_filters(e.pre_filters, s) {
-        Ok(v) => Ok(mkb(e.name, VStr(v), Cli, at_pos=Some(pos)))
-        Err(fe) => Err(Some(fe))
+) -> Result[Array[Binding], ParseError] {
+  match e.separator {
+    Some(sep) =>
+      sep_binds(
+        e.name,
+        s,
+        sep,
+        e.kind,
+        e.int_round,
+        e.allow_base_prefix,
+        e.pre_filters,
+        pos,
+      )
+    None => {
+      let filtered = match apply_pre_filters(e.pre_filters, s) {
+        Ok(v) => v
+        Err((reason, msg)) => return Err(pe_filter(e.name, pos, reason, msg))
       }
-    TNum =>
-      // DR-074 §1 + §2: short cluster / space-tail の TNum も opt-in base prefix を反映。
-      match apply_pre_filters(e.pre_filters, s) {
-        Ok(v) =>
-          match parse_number_ext(v, e.allow_base_prefix) {
-            Some(d) => Ok(mkb(e.name, VNum(d), Cli, at_pos=Some(pos)))
-            None => Err(None)
+      match e.kind {
+        TStr => Ok([mkb(e.name, VStr(filtered), Cli, at_pos=Some(pos))])
+        TNum =>
+          // DR-074 §1 + §2: short cluster / space-tail の TNum も opt-in base prefix を反映。
+          match parse_number_ext(filtered, e.allow_base_prefix) {
+            Some(d) => Ok([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))])
+            None => Err(pe_parse(e.name, filtered, pos))
           }
-        Err(fe) => Err(Some(fe))
-      }
-    TInt =>
-      // DR-075 §1-§2 + DR-074 §2: short cluster / space-tail の TInt も値空間判定 + int_round +
-      // base prefix を反映。丸めモード / 基数 prefix で Ok(...) は Some、それ以外は None を返し
-      // caller (walk_short) が tail 位置で held Error を組む (既存の Binding? 契約範囲内)。
-      match apply_pre_filters(e.pre_filters, s) {
-        Ok(v) =>
-          match parse_int_value_ext(v, e.int_round, e.allow_base_prefix) {
-            Ok(i) => Ok(mkb(e.name, VNum(i.to_double()), Cli, at_pos=Some(pos)))
-            Err(_) => Err(None)
+        TInt =>
+          // DR-075 §1-§2 + DR-074 §2: short cluster / space-tail の TInt も値空間判定 + int_round +
+          // base prefix を反映。
+          match
+            parse_int_value_ext(filtered, e.int_round, e.allow_base_prefix) {
+            Ok(i) =>
+              Ok([mkb(e.name, VNum(i.to_double()), Cli, at_pos=Some(pos))])
+            Err(NotAnInteger) => Err(pe_parse_int(e.name, filtered, pos))
+            Err(IntOutOfRange) =>
+              Err(pe_int_out_of_range(e.name, filtered, pos))
+            Err(NotANumber) => Err(pe_parse(e.name, filtered, pos))
           }
-        Err(fe) => Err(Some(fe))
-      }
-    TFloat =>
-      match apply_pre_filters(e.pre_filters, s) {
-        Ok(v) =>
-          match parse_float(v) {
-            Some(d) => Ok(mkb(e.name, VNum(d), Cli, at_pos=Some(pos)))
-            None => Err(None)
+        TFloat =>
+          match parse_float(filtered) {
+            Some(d) => Ok([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))])
+            None => Err(pe_parse(e.name, filtered, pos))
           }
-        Err(fe) => Err(Some(fe))
+        // unreachable defensively: walk_short's TFlag/TBool/TCount arms never call short_val (no
+        // in-cluster/space-form VALUE attachment for those kinds).
+        TFlag | TBool | TCount => Err(pe_parse(e.name, filtered, pos))
       }
-    TFlag | TBool => Err(None) // no in-cluster/space-form VALUE attachment for a bool short (no fixture needs `-e5`/`-e true`)
-    TCount => Err(None) // DR-077 §3: count short is non-consuming (fixed increment), same standing as a bool short
+    }
   }
 }
 
@@ -359,39 +391,28 @@ fn walk_short(
           while j <= body.length() {
             let vstr = chars_to_str(body, vstart, j)
             match short_val(e, vstr, pos) {
-              Ok(b) =>
+              Ok(bs) =>
                 for
                   r in walk_short(
                     entries,
                     body,
                     j,
-                    cat(acc, cat([b], dm)),
+                    cat(acc, cat(bs, dm)),
                     ctx,
                     pos,
                   ) {
                   out.push(r)
                 }
-              Err(Some((reason, msg))) =>
-                // DR-034/DR-062 pre_filters rejected this length's raw value BEFORE it reached the
-                // kind-specific parser — same mid-token/full-tail asymmetry as the ordinary parse-
-                // fail arm below (a mid-token reject is a silent non-reading, only the FULL-TAIL
-                // attach surfaces as a held Error), but UNGATED by kind (unlike parse failures,
-                // pre_filters applies to every value-taking kind including TStr — fixture
-                // pre-filters/reject.json's `name` is a plain string).
+              Err(pe) =>
+                // A mid-token split's failure (pre_filters reject OR type-parse failure) is a
+                // silent non-reading (its remainder would need OTHER defined chars to progress,
+                // DR-041 §3); only the FULL-TAIL attach — the「値 char が残余全体を値として取る」
+                //唯一形の読み — surfaces as a held Error (DR-041 §5 値不正 = Error、DR-074 の
+                // suffix 拒否がここに落ちる)。fixture matcher-readings/cluster-split-no-flag /
+                // pre-filters/reject.json が輪郭を固定する。TStr が構造的に型 parse エラーを
+                // 起こさない (short_val の doc comment) ので、kind によるガードは不要。
                 if j == body.length() {
-                  out.push(Held(pe_filter(e.name, pos, reason, msg), acc))
-                }
-              Err(None) =>
-                // A typed value that fails to parse: a mid-token split is a
-                // silent non-reading (its remainder would need OTHER defined
-                // chars to progress, DR-041 §3), but the FULL-TAIL attach is
-                // the「値 char が残余全体を値として取る」唯一形の読みなので、
-                // its parse failure is a held Error (DR-041 §5 値不正 =
-                // Error、DR-074 の suffix 拒否がここに落ちる)。fixture
-                // matcher-readings/cluster-split-no-flag が輪郭を固定する。
-                if j == body.length() &&
-                  (e.kind == TNum || e.kind == TInt || e.kind == TFloat) {
-                  out.push(Held(pe_parse(e.name, vstr, pos), acc))
+                  out.push(Held(pe, acc))
                 }
             }
             j = j + 1
@@ -399,15 +420,8 @@ fn walk_short(
           // next-token value (space form) only when this value char is the tail.
           if vstart == body.length() && pos + 1 < ctx.toks.length() {
             match short_val(e, ctx.toks[pos + 1], pos + 1) {
-              Ok(b) => out.push(Accept(pos + 2, cat(acc, cat([b], dm))))
-              Err(Some((reason, msg))) =>
-                out.push(Held(pe_filter(e.name, pos + 1, reason, msg), []))
-              Err(None) =>
-                if e.kind == TNum || e.kind == TInt || e.kind == TFloat {
-                  out.push(
-                    Held(pe_parse(e.name, ctx.toks[pos + 1], pos + 1), []),
-                  )
-                }
+              Ok(bs) => out.push(Accept(pos + 2, cat(acc, cat(bs, dm))))
+              Err(pe) => out.push(Held(pe, []))
             }
           } else if vstart == body.length() && in_complete(ctx) {
             // complete: the cluster ends in a value char and the argv ends

@@ -306,14 +306,24 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // trigger consumed) this is the "--port with no value" state.
         [Pending([pend_value(TStr, name)], [])]
       }
-    SepArg(name, sep, pre_filters) =>
+    SepArg(name, sep, ty, int_round, base, pre_filters) =>
       if pos < ctx.toks.length() {
-        match sep_binds(name, ctx.toks[pos], sep, pre_filters, pos) {
+        match
+          sep_binds(
+            name,
+            ctx.toks[pos],
+            sep,
+            ty,
+            int_round,
+            base,
+            pre_filters,
+            pos,
+          ) {
           Ok(bs) => [Accept(pos + 1, bs)]
-          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
+          Err(pe) => [Held(pe, [])]
         }
       } else {
-        [Pending([pend_value(TStr, name)], [])]
+        [Pending([pend_value(ty, name)], [])]
       }
     NumArg(name, base, pre_filters) =>
       // DR-074 §1 + §2: canonical (base=false) は 10 進のみ、opt-in (base=true) で 0x/0o/0b + hex float
@@ -630,24 +640,64 @@ fn split_on(s : String, sep : String) -> Array[String] {
 /// One Set-effect binding per split piece (spec DR-034 + DR-045). `pre_filters` runs per PIECE (not
 /// once over the whole raw token) — DESIGN §6.2's pieceProcessor applies pre_filters AFTER the
 /// separator split, one piece at a time (this is what distinguishes `per-piece-trim.json` from a
-/// "trim the whole raw string first" misreading). A pre_filters reject on ANY piece fails the whole
-/// binding (`Err` short-circuits) — same all-or-nothing contract a single-piece value primitive has.
+/// "trim the whole raw string first" misreading). AFTER pre_filters, each piece goes through its
+/// OWN type parse (issue 2026-07-09-separator-non-string-type-parse-gap 段2 — DESIGN §6.2's
+/// pieceProcessor: separator → pre_filters → parse → post_filters, one piece at a time; a piece's
+/// type is independent of whether it came via separator, `elem_head`'s pre-段2 "always VStr"
+/// shortcut was the bug this closes). A pre_filters reject OR a type-parse failure on ANY piece
+/// fails the WHOLE binding (`Err` short-circuits) — same all-or-nothing contract a single-piece
+/// value primitive has; the two failure kinds stay distinct (`KFilter` vs `KParse`, mirrored from
+/// the scalar value-primitive arms' own pe_filter/pe_parse split).
 /// `pos` (issue 2026-07-09-accum-entity-filters-wiring): every split piece is attributed to the
 /// SAME argv token position — a piece is not itself a token, so there is no finer-grained position
 /// to give it (CONFORMANCE §3's piece-attribution regulation attributes per-piece failures to the
-/// whole token they came from, per `multiple-parse/filters-each.json::separator-piece-rejects-whole`).
+/// whole token they came from, per `multiple-parse/filters-each.json::separator-piece-rejects-whole`
+/// and `separator-typed.json::option-separator-piece-parse-rejected`).
 fn sep_binds(
   name : String,
   tok : String,
   sep : String,
+  ty : Ty,
+  int_round : RoundMode,
+  allow_base_prefix : Bool,
   pre_filters : Array[String],
   pos : Int,
-) -> Result[Array[Binding], (String, String)] {
+) -> Result[Array[Binding], ParseError] {
   let out : Array[Binding] = []
   for part in split_on(tok, sep) {
     match apply_pre_filters(pre_filters, part) {
-      Ok(s) => out.push(mkb(name, VStr(s), Cli, at_pos=Some(pos)))
-      Err(e) => return Err(e)
+      Err((reason, msg)) => return Err(pe_filter(name, pos, reason, msg))
+      Ok(s) =>
+        match ty {
+          TNum =>
+            match parse_number_ext(s, allow_base_prefix) {
+              Some(d) => out.push(mkb(name, VNum(d), Cli, at_pos=Some(pos)))
+              None => return Err(pe_parse(name, s, pos))
+            }
+          TInt =>
+            match parse_int_value_ext(s, int_round, allow_base_prefix) {
+              Ok(i) =>
+                out.push(mkb(name, VNum(i.to_double()), Cli, at_pos=Some(pos)))
+              Err(NotAnInteger) => return Err(pe_parse_int(name, s, pos))
+              Err(IntOutOfRange) =>
+                return Err(pe_int_out_of_range(name, s, pos))
+              Err(NotANumber) => return Err(pe_parse(name, s, pos))
+            }
+          TFloat =>
+            match parse_float(s) {
+              Some(d) => out.push(mkb(name, VNum(d), Cli, at_pos=Some(pos)))
+              None => return Err(pe_parse(name, s, pos))
+            }
+          TBool =>
+            match parse_bool(s) {
+              Some(b) => out.push(mkb(name, VBool(b), Cli, at_pos=Some(pos)))
+              None => return Err(pe_parse_bool(name, s, pos))
+            }
+          // TStr (and any other kind that structurally never reaches a SepArg, e.g. TFlag/TCount —
+          // multiple/separator on a presence-only cell is not a real shape): identity parse, the
+          // pre-段2 default behavior preserved exactly for string elements.
+          _ => out.push(mkb(name, VStr(s), Cli, at_pos=Some(pos)))
+        }
     }
   }
   Ok(out)
@@ -1099,16 +1149,26 @@ fn scope_consume(
       } else {
         [] // 先食い: a greedy trigger sits here; the spine stays pending
       }
-    SepArg(name, sep, pre_filters) =>
+    SepArg(name, sep, ty, int_round, base, pre_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match sep_binds(name, ctx.toks[pos], sep, pre_filters, pos) {
+        match
+          sep_binds(
+            name,
+            ctx.toks[pos],
+            sep,
+            ty,
+            int_round,
+            base,
+            pre_filters,
+            pos,
+          ) {
           Ok(bs) =>
             scope_step(sc, ctx, pos + 1, pidx + 1, cat(acc, bs), severed, k)
-          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
+          Err(pe) => [Held(pe, acc)]
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value(TStr, name)], acc)]
+          [Pending([pend_value(ty, name)], acc)]
         } else {
           [Held(pe_missing(name, pos), acc)]
         }
@@ -1610,15 +1670,25 @@ fn consume_head(
       } else {
         []
       }
-    SepArg(name, sep, pre_filters) =>
+    SepArg(name, sep, ty, int_round, base, pre_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match sep_binds(name, ctx.toks[pos], sep, pre_filters, pos) {
+        match
+          sep_binds(
+            name,
+            ctx.toks[pos],
+            sep,
+            ty,
+            int_round,
+            base,
+            pre_filters,
+            pos,
+          ) {
           Ok(bs) => [Accept(pos + 1, bs)]
-          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
+          Err(pe) => [Held(pe, [])]
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value(TStr, name)], [])]
+          [Pending([pend_value(ty, name)], [])]
         } else {
           [Held(pe_missing(name, pos), [])]
         }
@@ -1803,7 +1873,7 @@ fn head_elem_names(head : Node) -> Array[String] {
 fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
   match n {
     StrArg(name, _) => if !str_mem(out, name) { out.push(name) }
-    SepArg(name, _, _) => if !str_mem(out, name) { out.push(name) }
+    SepArg(name, _, _, _, _, _) => if !str_mem(out, name) { out.push(name) }
     NumArg(name, _, _) => if !str_mem(out, name) { out.push(name) }
     FloatArg(name, _) => if !str_mem(out, name) { out.push(name) }
     IntArg(name, _, _, _) => if !str_mem(out, name) { out.push(name) }
