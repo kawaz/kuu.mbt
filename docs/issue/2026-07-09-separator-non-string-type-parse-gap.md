@@ -1,11 +1,11 @@
 ---
 title: separator 付き multiple の非 string 型が型 parse を経由しない (SepArg = VStr 固定)
-status: open
+status: wip
 category: bug
 created: 2026-07-09T16:18:40+09:00
 last_read:
 open_entered: 2026-07-09T16:18:40+09:00
-wip_entered:
+wip_entered: 2026-07-09T17:57:32+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
