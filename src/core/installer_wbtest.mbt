@@ -885,3 +885,51 @@ test "DR-077 end-to-end: parse_definition → parse → resolve_scope ledgers -v
       )
   }
 }
+
+// ── positional × or × repeat (issue 2026-07-09-positional-or-repeat-lowering-gap) ─────
+
+///|
+/// 保証: DR-043「repeat の対象要素は形を問わない」は ref head だけでなく **BOr (構造 or) head にも
+/// 一様に適用される** — `lower_positional` の BOr ケースは以前 `elem_repeat(e)` を一切見ず常に
+/// `Or(nodes)` を単発で積んでいた (installer.mbt 旧コメント「repeat との組合せは対象 fixture に無いので
+/// 未対応」)。`{name:"hlcolors", repeat:{min:1}, or:[{seq:rgb 3数値}, {type:"string", name:"colorname"}]}`
+/// で `["red","blue"]` (2 文字列) が unexpected-token になっていたのがこのギャップの症状。
+/// `lower_repeat_head(e, Or(nodes), registry, out)` へ配線し、hand-built `Many(Or(...))` (slice 相当)
+/// と同じ「両 or 枝が並列に反復できる」挙動を wire lowering 経由でも実現する。
+test "positional or+repeat installer: string branch repeats in parallel with the seq(rgb) branch (issue 2026-07-09)" {
+  let rgb_seq : OrBranch = {
+    id: "rgb",
+    items: [el("r", TNum), el("g", TNum), el("b", TNum)],
+  }
+  let name_leaf : OrBranch = { id: "colorname", items: [el("colorname", TStr)] }
+  let hlcolors : ElemDef = {
+    ..el("hlcolors", TStr),
+    repeat: Some({ min: 1, max: None, lazy_: false }),
+    body: BOr([rgb_seq, name_leaf]),
+  }
+  let def : Definition = { ..empty_def(), positionals: [hlcolors] }
+  let registry : Map[String, Node] = Map([])
+  let sc = match parse_definition(def, all_installers(), registry~) {
+    Ok(s) => s
+    Err(_) => abort("expected Ok(Scope)")
+  }
+  // 2 つの文字列トークンは rgb 枝に一致せず、string 枝 (colorname) が 2 回反復して吸収する。
+  match parse(ScopeNode(sc), ["red", "blue"], defs=registry) {
+    Success(bs) => {
+      let mut count = 0
+      for b in bs {
+        if b.key == "colorname" {
+          count = count + 1
+        }
+      }
+      assert_eq(count, 2)
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+  // 3 つの数値トークンは (a) rgb 枝 1 反復、(b) string 枝 3 反復、の 2 通りに構造的に読める
+  // (DR-038 完全経路 2 本) — ambiguous。
+  match parse(ScopeNode(sc), ["255", "0", "0"], defs=registry) {
+    Ambiguous(d) => assert_eq(d.interpretations.length(), 2)
+    other => fail("expected Ambiguous, got " + render_outcome(other))
+  }
+}

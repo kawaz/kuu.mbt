@@ -3184,28 +3184,31 @@ fn pe_msg(pe : ParseError) -> String {
 }
 
 ///|
+/// The `ParseError`-preserving form (`"failure"`-branch resolve check, DR-009 §7 post_filters etc.
+/// surfacing as a resolve-layer Err even when `parse()` itself succeeded — see `do_resolve`'s
+/// string-message wrapper below, kept for its existing "success"-branch callers).
+fn do_resolve_pe(
+  sc : Scope,
+  cli : Array[Binding],
+  dc : DCase,
+) -> Result[Array[Binding], ParseError] {
+  match dc.cfg {
+    NoCfg => resolve_scope(sc, cli, dc.env)
+    CfgObj(obj) => resolve_scope_config(sc, cli, dc.env, fn(_p) { Some(obj) })
+    CfgFiles(files) =>
+      resolve_scope_config(sc, cli, dc.env, fn(p) { cfg_lookup(files, p) })
+  }
+}
+
+///|
 fn do_resolve(
   sc : Scope,
   cli : Array[Binding],
   dc : DCase,
 ) -> Result[Array[Binding], String] {
-  match dc.cfg {
-    NoCfg =>
-      match resolve_scope(sc, cli, dc.env) {
-        Ok(rb) => Ok(rb)
-        Err(pe) => Err(pe_msg(pe))
-      }
-    CfgObj(obj) =>
-      match resolve_scope_config(sc, cli, dc.env, fn(_p) { Some(obj) }) {
-        Ok(rb) => Ok(rb)
-        Err(pe) => Err(pe_msg(pe))
-      }
-    CfgFiles(files) =>
-      match
-        resolve_scope_config(sc, cli, dc.env, fn(p) { cfg_lookup(files, p) }) {
-        Ok(rb) => Ok(rb)
-        Err(pe) => Err(pe_msg(pe))
-      }
+  match do_resolve_pe(sc, cli, dc) {
+    Ok(rb) => Ok(rb)
+    Err(pe) => Err(pe_msg(pe))
   }
 }
 
@@ -3429,6 +3432,34 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             }
           }
         }
+        // DR-009 §7 post_filters (and any other resolve-layer check, e.g. a future
+        // constraint that only resolve sees): `parse()` itself can succeed while the VALUE
+        // resolution layer (env/config/inherit/default ladder fill + filter chains,
+        // resolve.mbt) still rejects — a "failure" fixture case exercising THAT path needs
+        // the resolve check run here too, mirroring the "success" branch's
+        // `use_resolve`-gated `do_resolve` call. Without this, a resolve-layer Err was
+        // invisible to `"failure"` fixtures entirely (this function's `match outcome` never
+        // called resolve at all before) — `Success` fell straight to the `other` catch-all
+        // below and got mis-reported as EXPECTED-FAILURE got=ok{...}.
+        Success(binds) if use_resolve =>
+          match do_resolve_pe(sc, binds, dc) {
+            Err(pe) =>
+              match dc.exp_errors {
+                Some(ex) => {
+                  let ae = proj_errors(
+                    [pe],
+                    dc.exp_errors_with_reason,
+                    dc.exp_errors_with_path,
+                  )
+                  if ae != ex {
+                    problems.push("errors got=\{ae} want=\{ex}")
+                  }
+                }
+                None => ()
+              }
+            Ok(_) =>
+              problems.push("EXPECTED-FAILURE got=ok (resolve also succeeded)")
+          }
         other => problems.push("EXPECTED-FAILURE got=" + render_outcome(other))
       }
     _ =>

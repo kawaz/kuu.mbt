@@ -1331,3 +1331,41 @@ test "KNOWN GAP: IdxRepeat greedy-max has no downstream backtrack for a followin
       )
   }
 }
+
+///|
+/// 保証 (issue 2026-07-09-positional-or-repeat-lowering-gap の slice-equivalent 確認): 手組み
+/// `Many(Or([Seq(rgb), StrArg(name)]))` は元々 (installer 経由の wire lowering ギャップとは独立に)
+/// 両 or 枝が並列に反復できる — evaluator 自体 (Many の取り分選好、Or の全枝保持) には問題が無く、
+/// ギャップは installer.mbt の `lower_positional` BOr ケースが `elem_repeat` を無視していたことに
+/// 限定される (installer_wbtest.mbt の対応する wire テストと対で、evaluator 層 / installer 層のどちら
+/// が壊れていたかを切り分ける)。
+test "DR-043 × DR-038: hand-built Many(Or(seq-rgb, string-name)) lets both or-branches repeat" {
+  let head = Or([
+    Seq([NumArg("r", false), NumArg("g", false), NumArg("b", false)]),
+    StrArg("name"),
+  ])
+  let root : Scope = {
+    greedy: [],
+    positional: [Many(head, false)],
+    entities: [],
+    constraints: [],
+  }
+  // ["red", "blue"]: 2 non-numeric tokens — only the string branch can fire (twice) → success.
+  match parse(ScopeNode(root), ["red", "blue"], defs=Map([])) {
+    Success(bs) => {
+      let mut names = 0
+      for b in bs {
+        if b.key == "name" {
+          names = names + 1
+        }
+      }
+      assert_eq(names, 2)
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+  // ["255", "0", "0"]: 3 numeric tokens — BOTH readings succeed (rgb once, OR name x3) → ambiguous.
+  match parse(ScopeNode(root), ["255", "0", "0"], defs=Map([])) {
+    Ambiguous(d) => assert_eq(d.interpretations.length(), 2)
+    other => fail("expected Ambiguous, got " + render_outcome(other))
+  }
+}

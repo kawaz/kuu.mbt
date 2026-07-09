@@ -791,6 +791,73 @@ fn opt_node(x : Node) -> Node {
 /// `lazy:true` で反転 = 短い方から試す、`has_full_k` で pruning) を scope_consume 側に持つ spine 形
 /// (eval.mbt の `Many(inner, lazy_) =>` アーム、"parity with Ref/BoundedTail 取り分選好 spec
 /// DR-043")。輪郭は fixtures/path-search/ambiguous-receptacles.json が固定する。
+
+///|
+/// DR-043 repeat lowering for a single positional `head` node, shared by `BCell` (head =
+/// `elem_head(e)`) and `BOr` (head = `Or(branch_node...)`, issue
+/// 2026-07-09-positional-or-repeat-lowering-gap: BOr used to push `Or(nodes)` directly and
+/// silently ignore `elem_repeat(e)` entirely — a structural-or head is JUST a head like any other
+/// for repeat's purposes, DR-043 §「repeat の対象要素は形を問わない」already says this for `ref`
+/// heads, it applies identically to an `Or` head). When `elem_repeat(e)` is `None` the bare `head`
+/// is pushed unchanged — the branches inside an `Or` head still each read one head via `Or`'s
+/// existing multi-branch semantics (DR-038); `elem_repeat` only ever governs REPETITION count,
+/// never branch structure.
+fn lower_repeat_head(
+  e : ElemDef,
+  head : Node,
+  registry : Map[String, Node],
+  out : Array[Node],
+) -> Unit {
+  match elem_repeat(e) {
+    None => out.push(head)
+    Some(spec) =>
+      match spec.max {
+        None =>
+          if spec.min == 0 {
+            // UNBOUNDED min:0 (DR-043): a bare `Ref(e.name)` cannot express "0 is fine" (its
+            // arm in scope_consume has no fallback for `consume_head` failing to progress), and
+            // wrapping it in a plain `Or([Ref(name), Seq([])])` would lose the 取り分選好 (plain
+            // `eval()`'s `Or` arm has no preference — both branches survive whenever they BOTH
+            // reach a full parse, producing Ambiguous instead of the greedy-left-longest single
+            // reading DR-043 requires — exactly this fixture's 3 divergences). `Many(head)` is
+            // the existing spine form with the IDENTICAL preference algorithm already wired in
+            // scope_consume, so no registry/self-ref is needed at all (each further rep re-enters
+            // the SAME `Many` node at the same `pidx`, not a named template). `spec.lazy_` rides
+            // straight into `Many`'s 2nd field (issue 2026-07-08 min0-lazy-repeat-gap resolved:
+            // BoundedTail's 3rd field is the same seat for the bounded sibling, DR-043 lazy is
+            // declarative preference regardless of min/max shape).
+            out.push(Many(head, spec.lazy_))
+          } else {
+            // UNBOUNDED min>=1 (DR-043): `name = Seq([head, Opt(Ref(name))])` の porous 自参照
+            registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
+            if spec.lazy_ {
+              // lazy marker (evaluator が split 選好を引くための mangled key)
+              registry.set("lazy:" + e.name, Exact("lazy"))
+            }
+            let m = spec.min
+            let mut k = 0
+            while k < m - 1 {
+              out.push(head) // mandatory unrolled heads (DR-043 min)
+              k = k + 1
+            }
+            out.push(Ref(e.name)) // >= 1 porous recursive tail
+          }
+        Some(mx) => {
+          // BOUNDED (LOWERING §B.8): min mandatory heads + BoundedTail(head, max-min)
+          let m = if spec.min < 0 { 0 } else { spec.min }
+          let mut k = 0
+          while k < m {
+            out.push(head)
+            k = k + 1
+          }
+          let budget = if mx - m < 0 { 0 } else { mx - m }
+          out.push(BoundedTail(head, budget, spec.lazy_))
+        }
+      }
+  }
+}
+
+///|
 fn lower_positional(
   def : Definition,
   registry : Map[String, Node],
@@ -802,12 +869,16 @@ fn lower_positional(
         BOr(branches) => {
           // MDR-004 §3 "BOr (positional, 匿名)": spine に Or([branch_node...]) を直接積む。評価器の
           // 既存 Or 意味論 (全枝評価 + Held 全保持、DR-053 §2 / 完全経路 2 本以上で ambiguous 保存、
-          // DR-038) がそのまま輪郭を満たす — repeat との組合せは対象 fixture に無いので未対応。
+          // DR-038) がそのまま輪郭を満たす。DR-043 repeat との組合せ (issue
+          // 2026-07-09-positional-or-repeat-lowering-gap で根治): `Or(nodes)` を head として
+          // `lower_repeat_head` に渡す — repeat のレンズには「構造 or の 1 発火」も他の head と
+          // 同じ 1 unit で、Ref/Many/BoundedTail のどれになるかは head の形 (Or か StrArg か) に
+          // 依存しない。
           let nodes : Array[Node] = []
           for br in branches {
             nodes.push(or_branch_node(br))
           }
-          out.push(Or(nodes))
+          lower_repeat_head(e, Or(nodes), registry, out)
         }
         BGroup(items) => {
           // MDR-004 §3 "BGroup + repeat": IdxRepeat(label=name, head=Seq(inner cells), min) に lower。
@@ -839,56 +910,7 @@ fn lower_positional(
           }
           out.push(IdxRepeat(e.name, head, min))
         }
-        BCell => {
-          let head = elem_head(e)
-          match elem_repeat(e) {
-            None => out.push(head)
-            Some(spec) =>
-              match spec.max {
-                None =>
-                  if spec.min == 0 {
-                    // UNBOUNDED min:0 (DR-043): a bare `Ref(e.name)` cannot express "0 is fine" (its
-                    // arm in scope_consume has no fallback for `consume_head` failing to progress), and
-                    // wrapping it in a plain `Or([Ref(name), Seq([])])` would lose the 取り分選好 (plain
-                    // `eval()`'s `Or` arm has no preference — both branches survive whenever they BOTH
-                    // reach a full parse, producing Ambiguous instead of the greedy-left-longest single
-                    // reading DR-043 requires — exactly this fixture's 3 divergences). `Many(head)` is
-                    // the existing spine form with the IDENTICAL preference algorithm already wired in
-                    // scope_consume, so no registry/self-ref is needed at all (each further rep re-enters
-                    // the SAME `Many` node at the same `pidx`, not a named template). `spec.lazy_` rides
-                    // straight into `Many`'s 2nd field (issue 2026-07-08 min0-lazy-repeat-gap resolved:
-                    // BoundedTail's 3rd field is the same seat for the bounded sibling, DR-043 lazy is
-                    // declarative preference regardless of min/max shape).
-                    out.push(Many(head, spec.lazy_))
-                  } else {
-                    // UNBOUNDED min>=1 (DR-043): `name = Seq([head, Opt(Ref(name))])` の porous 自参照
-                    registry.set(e.name, Seq([head, opt_node(Ref(e.name))]))
-                    if spec.lazy_ {
-                      // lazy marker (evaluator が split 選好を引くための mangled key)
-                      registry.set("lazy:" + e.name, Exact("lazy"))
-                    }
-                    let m = spec.min
-                    let mut k = 0
-                    while k < m - 1 {
-                      out.push(head) // mandatory unrolled heads (DR-043 min)
-                      k = k + 1
-                    }
-                    out.push(Ref(e.name)) // >= 1 porous recursive tail
-                  }
-                Some(mx) => {
-                  // BOUNDED (LOWERING §B.8): min mandatory heads + BoundedTail(head, max-min)
-                  let m = if spec.min < 0 { 0 } else { spec.min }
-                  let mut k = 0
-                  while k < m {
-                    out.push(head)
-                    k = k + 1
-                  }
-                  let budget = if mx - m < 0 { 0 } else { mx - m }
-                  out.push(BoundedTail(head, budget, spec.lazy_))
-                }
-              }
-          }
-        }
+        BCell => lower_repeat_head(e, elem_head(e), registry, out)
       }
     }
   }
