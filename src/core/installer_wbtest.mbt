@@ -30,6 +30,7 @@ fn el(
   repeat? : RepeatSpec? = None,
   multiple? : Bool = false,
   collector? : String? = None,
+  ref_? : String? = None,
   pre_split_filters? : Array[String] = [],
   filters? : Array[String] = [],
   post_filters? : Array[String] = [],
@@ -46,7 +47,7 @@ fn el(
     is_inherit,
     is_inheritable: false,
     link_depth: 0,
-    ref_target: None,
+    ref_target: ref_,
     repeat,
     optional: false,
     multiple,
@@ -517,6 +518,43 @@ test "parse_definition enumerates all def-errors (no first-error 打ち切り, D
       }
       assert_true(has_unknown)
       assert_true(has_range)
+    }
+  }
+}
+
+// ── DR-078 §1/§3: ref target 解決 (definitions.templates への decode 配線の裏どり) ───
+
+///|
+/// 保証 (DR-078 §1「解決順は DR-032 のまま: スコープ内 → definitions (templates)」/ DR-054
+/// absent-ref): `ref_target` の解決先が registry のどこにも無い場合、`parse_definition` は
+/// `DAbsentRef` を definition-error として列挙する。ランタイム側の `check_elem_absent_ref`
+/// (installer.mbt) は本 issue 以前から実装済みだったが、decode 層 (`ref` キー) が無かったため
+/// この分岐は未踏だった — decode 配線後の疎通確認として、registry を意図的に空のまま
+/// (`Map::new()`) `parse_definition` へ渡し、absent-ref が正しく検出されることを固定する。
+test "parse_definition: a ref target absent from registry is DAbsentRef (DR-078 §1 / DR-054)" {
+  let def : Definition = {
+    ..empty_def(),
+    positionals: [
+      el(
+        "hlcolors",
+        TStr,
+        ref_=Some("color"),
+        repeat=Some({ min: 1, max: None, lazy_: false }),
+      ),
+    ],
+  }
+  // "color" は scope 内の兄弟要素にも registry (definitions.templates 相当の事前登録) にも無い
+  // (registry 未指定 = 既定の空 map)。
+  match parse_definition(def, [RepeatInst]) {
+    Ok(_) => abort("expected Err (absent ref target 'color')")
+    Err(errs) => {
+      let mut has_absent_ref = false
+      for e in errs {
+        if e.kind == DAbsentRef {
+          has_absent_ref = true
+        }
+      }
+      assert_true(has_absent_ref)
     }
   }
 }

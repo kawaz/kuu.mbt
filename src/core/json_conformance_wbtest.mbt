@@ -319,6 +319,7 @@ fn opt(
   pre_split_filters? : Array[String] = [],
   filters? : Array[String] = [],
   post_filters? : Array[String] = [],
+  ref_? : String? = None,
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -333,7 +334,7 @@ fn opt(
     is_inherit: inherit_,
     is_inheritable: inheritable,
     link_depth: 0,
-    ref_target: None,
+    ref_target: ref_,
     repeat: None,
     optional: false,
     multiple,
@@ -1832,6 +1833,82 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
 }
 
 ///|
+/// DR-078 §1 `definitions.templates`: name → shared consumption-grammar `Node`, decoded straight
+/// into the `registry` a `ref` element's head resolves against (`ElemDef.ref_target`/`elem_head`,
+/// installer.mbt — this decode is the ONLY missing piece, the runtime side was already complete).
+/// Mutates `registry` in place (same map `dec_fixture` later threads into `parse_definition`) rather
+/// than returning a fresh map — `registry` also receives `parse_definition`'s OWN repeat-recursion
+/// entries later (`init_sb`), so it has to be the single shared mutable instance throughout, not a
+/// value merged in afterward.
+fn dec_templates(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+  registry : Map[String, Node],
+) -> Unit raise DecodeSkip {
+  let o = match j.j_obj() {
+    Some(x) => x
+    None => raise DecodeSkip("definitions.templates is not an object")
+  }
+  for name, tj in o {
+    registry.set(name, dec_template_body(tj, shadows))
+  }
+}
+
+///|
+/// One `definitions.templates` entry's body (DR-078 §1 "値は要素定義と同じ構造記法 (or / seq /
+/// 裸文字列等、LOWERING §A 群の糖衣がそのまま効く)"). Three shapes, mirroring `dec_or_structural`'s
+/// own branch-shape handling (§1's example is literally an `or` of a `seq` branch + a bare-leaf
+/// branch — this reuses that SAME decoder + `or_branch_node`, installer.mbt, rather than
+/// duplicating the or/seq/leaf grammar a second time):
+///   `{"or": [...]}`   — structural or (DR-055 value-enum `or` form is rejected: a template's
+///                       job is a shared CONSUMPTION grammar, not a constraint-declaration sugar)
+///   `{"seq": [...]}`  — a bare sequence of leaf cells (no outer `or`)
+///   `{"type":..,"name":..}` — a single bare leaf cell (no `seq` wrapper, DR-078 §1 "裸文字列等")
+fn dec_template_body(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+) -> Node raise DecodeSkip {
+  let o = match j.j_obj() {
+    Some(x) => x
+    None => raise DecodeSkip("definitions.templates entry is not an object")
+  }
+  match o.get("or") {
+    Some(orj) => {
+      allowed_keys(o, ["or"], "template body (or)")
+      match dec_or_structural(orj, shadows) {
+        Some(branches) => {
+          let nodes : Array[Node] = []
+          for br in branches {
+            nodes.push(or_branch_node(br))
+          }
+          Or(nodes)
+        }
+        None =>
+          raise DecodeSkip(
+            "definitions.templates 'or' has no structural branches (DR-055 value-enum form is option-only, not a shared consumption template)",
+          )
+      }
+    }
+    None =>
+      match o.get("seq") {
+        Some(sj) => {
+          allowed_keys(o, ["seq"], "template body (seq)")
+          let sa = match sj.j_arr() {
+            Some(x) => x
+            None => raise DecodeSkip("template body 'seq' is not an array")
+          }
+          let nodes : Array[Node] = []
+          for e in sa {
+            nodes.push(elem_head(dec_or_leaf(e, shadows)))
+          }
+          Seq(nodes)
+        }
+        None => elem_head(dec_or_leaf(j, shadows)) // bare leaf {"type":..,"name":..}
+      }
+  }
+}
+
+///|
 /// wire bool|array long → `LongDecl`, UNCHANGED — this is decode's entire responsibility for `long`
 /// now (kawaz 裁定 2026-07-08): the two-form distinction (DR-071 §1) is preserved as data instead of
 /// being collapsed into an `Array[String]` here, because collapsing it destroys information
@@ -2127,14 +2204,18 @@ fn dec_option(
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "separator", "requires", "conflicts_with", "exclusive_group",
       "export_key", "config_key", "deprecated", "or", "pre_split_filters", "filters",
-      "post_filters",
+      "post_filters", "ref",
     ],
     "option",
   )
   let tystr = match jf_str(o, "type") {
     Some(t) => t
     None =>
-      if has_key(o, "or") {
+      if has_key(o, "or") || has_key(o, "ref") {
+        // DR-078 §1: a `ref` element's own consumption is replaced by the referenced template
+        // (`elem_head`'s `Ref(r)` head, ty unused there) — same "type is moot" reasoning `or`
+        // already gets. `dec_positional` already defaults ty to TStr when absent for the same
+        // shape reason; this mirrors that on the option side.
         "string"
       } else {
         raise DecodeSkip("option missing 'type'")
@@ -2216,6 +2297,7 @@ fn dec_option(
   let pre_split_filters = dec_strs(o.get("pre_split_filters"))
   let filters = dec_strs(o.get("filters"))
   let post_filters = dec_strs(o.get("post_filters"))
+  let ref_ = jf_str(o, "ref")
   DOpt({
     ..opt(
       name,
@@ -2241,6 +2323,7 @@ fn dec_option(
       pre_split_filters~,
       filters~,
       post_filters~,
+      ref_~,
       body=match structural_or {
         Some(branches) => BOr(branches)
         None => BCell
@@ -2266,7 +2349,7 @@ fn dec_positional(
     [
       "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
       "config_key", "default", "positionals", "or", "pre_split_filters", "filters",
-      "post_filters",
+      "post_filters", "ref",
     ],
     "positional",
   )
@@ -2327,6 +2410,7 @@ fn dec_positional(
   let pre_split_filters = dec_strs(o.get("pre_split_filters"))
   let filters = dec_strs(o.get("filters"))
   let post_filters = dec_strs(o.get("post_filters"))
+  let ref_ = jf_str(o, "ref")
   pos(
     name,
     ty,
@@ -2337,6 +2421,7 @@ fn dec_positional(
     collector=coll,
     config_key~,
     export_~,
+    ref_~,
     default~,
     int_round=int_round_from_shadow,
     allow_base_prefix=base_prefix_from_shadow,
@@ -2626,27 +2711,35 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
   }
   // DR-061 §3 configurable factory: `definitions.types` を許容し、その中身を shadow map に decode。
   // shadow は dec_definition に thread されて type 名解決で consultation される。
+  // DR-078 §1: `definitions.templates` (共有消費文法、id→Node) も同じ `definitions` オブジェクトの
+  // 区分として許容し、`registry` (parse_definition の ref 解決空間) を事前に埋める — types (shadow
+  // map) とは別の受け皿 (§2: templates は外部 registry を持たない唯一の区分、クロージャなしの純構造)。
   allowed_keys(
     defo,
     ["options", "positionals", "commands", "definitions"],
     "definition",
   )
+  let registry : Map[String, Node] = Map([])
   let shadows = match defo.get("definitions") {
     Some(dj) => {
       let d = match dj.j_obj() {
         Some(x) => x
         None => raise DecodeSkip("definitions is not an object")
       }
-      allowed_keys(d, ["types"], "definitions")
-      match d.get("types") {
+      allowed_keys(d, ["types", "templates"], "definitions")
+      let ts = match d.get("types") {
         Some(tj) => dec_types(tj)
         None => Map([])
       }
+      match d.get("templates") {
+        Some(tmplj) => dec_templates(tmplj, ts, registry)
+        None => ()
+      }
+      ts
     }
     None => Map([])
   }
   let def = dec_definition(defo, shadows~)
-  let registry : Map[String, Node] = Map([])
   let scope = match parse_definition(def, full_installers(), registry~) {
     Ok(sc) => sc
     Err(errs) => raise DecodeSkip("definition rejected: " + deferrs_str(errs))
@@ -3984,6 +4077,88 @@ test "conformance: OrBranch auto id (#{seq}) は held-error / ambiguous / succes
   // path-search/variable-arity-ambiguous.json::non-number-collapses-to-name (既存 conformance、
   // 非対称 2 枝で数値枝のみ死ぬケース) が別途固定済みなので、本 wbtest は failure/ambiguous の
   // 2 outcome をスコープとする。
+}
+
+// ── DR-078: definitions.templates + ref (蒸留 1:1 audit 漏れ #1/#2, slice phase4:114/phase10:64) ──
+
+///|
+/// 保証 (蒸留 1:1 audit 漏れ #1、slice `poc/phase4_wbtest.mbt:125-152` 相当、DR-078 §1 の decode
+/// 配線疎通): `hlcolors := color+` (positional が `ref:"color"` + `repeat:{min:1}`、`color` は
+/// `definitions.templates` に `or [ [r,g,b] な 3 数値 seq | 文字列 colorname ]` (DR-078 §1 の例
+/// そのもの) として宣言された共有 template) が正しく decode → lowering → parse される。
+/// 文字列名の繰り返し (`red blue`) は各発火が colorname 枝を辿るだけの一義的な parse。
+/// `255 0 0` は「1 回発火・rgb 枝 (3 トークン消費)」と「3 回発火・colorname 枝 (1 トークンずつ)」の
+/// 構造的に異なる完全経路が両立し、ambiguous:2 になる (or 枝の違いは DR-043 の取り分選好の対象外 —
+/// 選好は「同じ closure の分け方」の中でしか効かない、次の wbtest で対で固定)。
+test "DR-078: definitions.templates + ref — repeat over a shared or-template (hlcolors := color+)" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "definitions": {"templates": {"color": {"or": [
+    #|      {"seq": [{"type": "number", "name": "r"}, {"type": "number", "name": "g"}, {"type": "number", "name": "b"}]},
+    #|      {"type": "string", "name": "colorname"}
+    #|    ]}}},
+    #|    "positionals": [
+    #|      {"name": "hlcolors", "ref": "color", "repeat": {"min": 1}}
+    #|    ]
+    #|  },
+    #|  "cases": []
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  // 純文字列の繰り返し: colorname 枝のみが成立する一義的な parse (rgb 枝は数値でないトークンで dead-end)。
+  // render_outcome は binding を flat key=value (sort 済み) で描画する (slice の ok{name=blue,name=red}
+  // と同じ形、色テンプレの leaf 名は "colorname")。
+  assert_eq(
+    render_outcome(
+      parse(ScopeNode(df.scope), ["red", "blue"], defs=df.registry),
+    ),
+    "ok{colorname=blue,colorname=red}",
+  )
+  // rgb 枝 (1 回発火, 3 トークン) vs colorname 枝 (3 回発火, 1 トークンずつ) — 構造的に異なる完全経路
+  // が両立し ambiguous:2 (DR-038)。
+  assert_eq(
+    render_outcome(
+      parse(ScopeNode(df.scope), ["255", "0", "0"], defs=df.registry),
+    ),
+    "ambiguous:2",
+  )
+}
+
+///|
+/// 保証 (蒸留 1:1 audit 漏れ #2、slice `poc/phase10_wbtest.mbt:90-108` 相当): repeat の取り分選好
+/// (preference、DR-043) は「同じ closure の分け方」次元にのみ効き、or 枝の違い (構造的に異なる完全
+/// 経路) を侵食してかき消さない。`255 0 0` は前 wbtest と同じく ambiguous:2 のまま — 選好は「同点の
+/// share だけ絞る」ものであって「or 枝の差を潰す」ものではないことを固定する。純文字列 argv には
+/// rgb 読みが無いので (すべて非数値) split は一意 — 選好の有無に関わらず成立するケースとして対比する。
+test "DR-078: preference does not erode or-branch ambiguity (share-dimension only, DR-043)" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "definitions": {"templates": {"color": {"or": [
+    #|      {"seq": [{"type": "number", "name": "r"}, {"type": "number", "name": "g"}, {"type": "number", "name": "b"}]},
+    #|      {"type": "string", "name": "colorname"}
+    #|    ]}}},
+    #|    "positionals": [
+    #|      {"name": "hlcolors", "ref": "color", "repeat": {"min": 1}}
+    #|    ]
+    #|  },
+    #|  "cases": []
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(
+    render_outcome(
+      parse(ScopeNode(df.scope), ["255", "0", "0"], defs=df.registry),
+    ),
+    "ambiguous:2",
+  )
+  assert_eq(
+    render_outcome(
+      parse(ScopeNode(df.scope), ["red", "green", "blue"], defs=df.registry),
+    ),
+    "ok{colorname=blue,colorname=green,colorname=red}",
+  )
 }
 
 ///|
