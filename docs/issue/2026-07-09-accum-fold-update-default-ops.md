@@ -3,7 +3,7 @@ title: build_result の ACCUMULATE fold が Update / Default op を解釈しな�
 status: wip
 category: task
 created: 2026-07-09T21:38:57+09:00
-last_read:
+last_read: 2026-07-10T10:41:00+09:00
 open_entered: 2026-07-09T21:38:57+09:00
 wip_entered: 2026-07-10T03:37:33+09:00
 blocked_entered:
