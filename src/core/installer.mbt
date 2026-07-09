@@ -64,6 +64,13 @@ pub(all) struct ElemDef {
   allow_base_prefix : Bool
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
   default_value : Value?
+  // DR-009 3 段 filter chain (DR-062: inheritance object 形は未実装、string-shorthand 配列のみ —
+  // filters.mbt ヘッダ注記参照)。pre_split_filters: raw string 全体 (分割前) に適用。filters:
+  // 分割後の要素単位 (each 暗黙、DR-009)。post_filters: 累積後の最終値に適用 (DR-077 §1 の主対象 —
+  // update の結果にもこれが通る)。
+  pre_split_filters : Array[String]
+  filters : Array[String]
+  post_filters : Array[String]
   // MDR-004: 消費文法の軸。`BCell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
   // 縮退形、観測挙動不変)。`BOr`/`BGroup` の要素では `ty` は未使用 — 枝/内部要素の leaf ElemDef が
   // 各自の `ty` を持つ。
@@ -534,6 +541,9 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     default_value: e.default_value,
     int_round: e.int_round,
     allow_base_prefix: e.allow_base_prefix,
+    pre_split_filters: copy_strs(e.pre_split_filters),
+    filters: copy_strs(e.filters),
+    post_filters: copy_strs(e.post_filters),
     body: clone_body(e.body),
   }
 }
@@ -1008,6 +1018,8 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     inherit_: false, // MDR-003: node.mbt 側 Entity.inherit_
     accum,
     default_value,
+    filters: e.filters,
+    post_filters: e.post_filters,
   })
 }
 
@@ -1337,6 +1349,9 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     default_value: copy.default_value,
     int_round: copy.int_round,
     allow_base_prefix: copy.allow_base_prefix,
+    pre_split_filters: copy.pre_split_filters,
+    filters: copy.filters,
+    post_filters: copy.post_filters,
     body: copy.body,
   })
 }
@@ -1514,6 +1529,9 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     default_value: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
     int_round: RError, // canonical default (DR-075 §2): write-target は int_round を持たない
     allow_base_prefix: false, // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
+    pre_split_filters: [], // write-target は filter chain を持たない (源 e の filters は source 側で既に適用済み)
+    filters: [],
+    post_filters: [],
     body: BCell,
   })
 }
@@ -1706,6 +1724,9 @@ fn alias_entry(
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
+    pre_split_filters: [],
+    filters: [],
+    post_filters: [],
     body: BCell,
   }
 }

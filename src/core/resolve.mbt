@@ -946,20 +946,8 @@ fn apply_transform(
   at_pos : Int,
   epath : Array[String],
 ) -> Result[Value, ParseError] {
-  let _ = args
-  match transform {
-    "increment" =>
-      match old {
-        VNum(n) => Ok(VNum(n + 1.0))
-        _ =>
-          Err(
-            ladder_err(
-              name, at_pos, "update_transform_type_mismatch", "transform 'increment' requires a number cell",
-              epath,
-            ),
-          )
-      }
-    _ =>
+  match lookup_filter(transform) {
+    None =>
       Err(
         ladder_err(
           name,
@@ -969,6 +957,32 @@ fn apply_transform(
           epath,
         ),
       )
+    Some(d) =>
+      if d.signature != Transform {
+        // DR-077 §2 「シグネチャ不適合 → definition-error」: reached here only if the filters
+        // registry later grows a name whose signature is Validate but installer.mbt's
+        // classify_long_spelling (definition-time gate, currently hardcoded to "increment" only)
+        // ever let it through — defensive, not a live path today.
+        Err(
+          ladder_err(
+            name,
+            at_pos,
+            "update_transform_type_mismatch",
+            "filter '\{transform}' is not a transform (validate-only filters cannot be used as an update transform)",
+            epath,
+          ),
+        )
+      } else {
+        match (d.run)(old, args) {
+          Ok(v) => Ok(v)
+          Err(msg) =>
+            Err(
+              ladder_err(
+                name, at_pos, "update_transform_type_mismatch", msg, epath,
+              ),
+            )
+        }
+      }
   }
 }
 
@@ -1113,6 +1127,72 @@ fn config_mismatch_reason(cv : ConfigVal, ty : Ty) -> String {
 /// [] = root 直下) — always the scope path, never `config_path`, so a config_key override does not
 /// leak an unrelated config-tree location into the error's ancestor scope list.
 fn resolve_entity(
+  e : Entity,
+  cli : Array[Binding],
+  env_map : Map[String, String],
+  config_obj : ConfigVal?,
+  config_path : Array[String],
+  inherited : Map[String, Value],
+  at_pos : Int,
+  epath : Array[String],
+) -> Result[Array[Binding], ParseError] {
+  match
+    resolve_entity_raw(
+      e, cli, env_map, config_obj, config_path, inherited, at_pos, epath,
+    ) {
+    Ok(bs) => apply_entity_filters(e, bs, at_pos, epath)
+    Err(pe) => Err(pe)
+  }
+}
+
+///|
+/// DR-009 §filters/post_filters applied to whatever `resolve_entity_raw` resolved (any ladder
+/// seat: cli/env/config/inherit/default — DR-077 §1's whole point is that `set` and `update`
+/// effects converge here indistinguishably). `filters` (each) applies to every binding; `post_filters`
+/// (累積後の最終値) applies ONLY to a scalar cell's (no accum) single binding — a `multiple`/accum
+/// cell's TRUE "post accumulation" point is build_result (resolve.mbt's caller), which this function
+/// does not reach; extending post_filters to the accumulated array is a follow-up (this issue's
+/// scope is the count/update scalar case DR-077 §1 needed proven, not the general multiple case).
+/// `Empty`'s binding carries a PLACEHOLDER value (DR-045 — the real "clear the collection" effect
+/// has no value of its own), so it's exempt from both chains — running a number/string filter over
+/// a bogus `VBool(false)` placeholder would be nonsensical.
+fn apply_entity_filters(
+  e : Entity,
+  bs : Array[Binding],
+  at_pos : Int,
+  epath : Array[String],
+) -> Result[Array[Binding], ParseError] {
+  let out : Array[Binding] = []
+  for b in bs {
+    if b.op == Empty {
+      out.push(b)
+    } else {
+      match apply_filter_chain(e.filters, b.value) {
+        Err((reason, msg)) =>
+          return Err(ladder_err(e.name, at_pos, reason, msg, epath))
+        Ok(v) => {
+          let b2 = { ..b, value: v }
+          if e.accum is None {
+            match apply_filter_chain(e.post_filters, b2.value) {
+              Err((reason, msg)) =>
+                return Err(ladder_err(e.name, at_pos, reason, msg, epath))
+              Ok(v2) => out.push({ ..b2, value: v2 })
+            }
+          } else {
+            out.push(b2)
+          }
+        }
+      }
+    }
+  }
+  Ok(out)
+}
+
+///|
+/// The pre-DR-009-filters ladder resolution (cli > env > config > inherit > default) — unchanged
+/// behavior from before this issue, just renamed so `resolve_entity` can wrap it with filter chain
+/// application (`apply_entity_filters`) without duplicating the ladder logic.
+fn resolve_entity_raw(
   e : Entity,
   cli : Array[Binding],
   env_map : Map[String, String],

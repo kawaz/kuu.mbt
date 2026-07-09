@@ -22,6 +22,8 @@ fn ent(
   inherit_? : Bool = false,
   accum? : String? = None,
   default_value? : Value? = None,
+  filters? : Array[String] = [],
+  post_filters? : Array[String] = [],
 ) -> Entity {
   {
     name,
@@ -33,6 +35,8 @@ fn ent(
     inherit_,
     accum,
     default_value,
+    filters,
+    post_filters,
   }
 }
 
@@ -642,5 +646,63 @@ test "resolve_scope: count falls back to default:0 when unfired, and env SETS a 
   assert_eq(
     resolve_scope(sc, [], Map::from_array([("VERBOSITY", "5")])),
     Ok([mkb_pub("verbose", VNum(5.0), Env)]),
+  )
+}
+
+// ── DR-077 §1 / issue 2026-07-09-filters-registry-foundation: post_filters が update 結果にも通る ──
+
+///|
+/// 保証 (issue の受け入れ条件そのもの — DR-040 「count の上限は post_filters (in_range 等) で書く」の
+/// 実体化、DR-077 §1 「post_filters は update の結果にも通す」): count 要素 (update 効果で fold された
+/// 値) に post_filters:["in_range:0:2"] を宣言すると、3 回連続 increment (-vvv 相当の ceff 3 個) の
+/// 結果 3 が in_range の外に出て Err になる。2 回 (境界内) は通る。post_filters は set 経路・update
+/// 経路を区別せず、resolve_entity が最終確定した値に対して一様に適用される (apply_entity_filters)。
+test "resolve_scope: post_filters (in_range) rejects an update-folded count value over the limit" {
+  let verbose = ent("verbose", TNum, default_value=Some(VNum(0.0)), post_filters=[
+    "in_range:0:2",
+  ])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [verbose],
+    constraints: [],
+  }
+  // 3 回 update(increment): old=0->1->2->3, 3 は in_range:0:2 の外。
+  let cli3 = [
+    ceff("verbose", "increment"),
+    ceff("verbose", "increment"),
+    ceff("verbose", "increment"),
+  ]
+  match resolve_scope(sc, cli3, Map([])) {
+    Err(pe) => assert_eq(pe.reason, "filter_rejected")
+    Ok(_) => fail("expected Err (3 is out of range [0, 2])")
+  }
+  // 2 回 (境界内) は通る。
+  let cli2 = [ceff("verbose", "increment"), ceff("verbose", "increment")]
+  assert_eq(
+    resolve_scope(sc, cli2, Map([])),
+    Ok([mkb_pub("verbose", VNum(2.0), Cli)]),
+  )
+}
+
+///|
+/// 保証: post_filters は set 経路 (通常の value option) にも同じく効く — DR-077 §1 が強調するのは
+/// 「update の結果にも」という追加であって、set 経路の post_filters 適用は元々の DR-009/040 契約
+/// (update 導入前から成立すべき前提)。両経路が同じ apply_entity_filters を通ることを対で固定する。
+test "resolve_scope: post_filters (in_range) also rejects a plain Set value over the limit" {
+  let n = ent("n", TNum, post_filters=["in_range:0:100"])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [n],
+    constraints: [],
+  }
+  match resolve_scope(sc, [cb("n", VNum(101.0), Cli)], Map([])) {
+    Err(pe) => assert_eq(pe.reason, "filter_rejected")
+    Ok(_) => fail("expected Err (101 is out of range [0, 100])")
+  }
+  assert_eq(
+    resolve_scope(sc, [cb("n", VNum(50.0), Cli)], Map([])),
+    Ok([cb("n", VNum(50.0), Cli)]),
   )
 }

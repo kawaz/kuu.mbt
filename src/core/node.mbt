@@ -265,6 +265,16 @@ pub(all) struct Entity {
   // registry accumulator so the AST is self-describing (a scalar cell has None).
   accum : String? // None = scalar; Some("flatten"|"append"|...) = accumulate via that registry entry
   default_value : Value? // default seat
+  // DR-009 filters (each, T→T): applied to EVERY value this cell resolves from ANY ladder seat
+  // (cli/env/config/inherit/default) right after that seat's own value is determined — same timing
+  // "type.parse の後、accumulator の前" DR-009's [4]→[5] describes. For a scalar cell (no accum)
+  // this collapses to "applied once, right before post_filters" since only one seat ever wins.
+  filters : Array[String]
+  // DR-009 post_filters (累積後の最終値、DR-077 §1 "post_filters は update の結果にも通す" の実証対象):
+  // applied to the FINAL resolved value, after the ladder has picked a winning seat (and after any
+  // accumulation, for a multiple cell). This is the one place both `set` and `update` effects
+  // converge before the value leaves resolve_entity — the whole point of this issue.
+  post_filters : Array[String]
 } derive(Eq, Debug)
 
 ///|

@@ -315,6 +315,9 @@ fn opt(
   default? : Value? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
+  pre_split_filters? : Array[String] = [],
+  filters? : Array[String] = [],
+  post_filters? : Array[String] = [],
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -346,6 +349,9 @@ fn opt(
     default_value: default,
     int_round,
     allow_base_prefix,
+    pre_split_filters,
+    filters,
+    post_filters,
     body,
   }
 }
@@ -365,6 +371,9 @@ fn pos(
   default? : Value? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
+  pre_split_filters? : Array[String] = [],
+  filters? : Array[String] = [],
+  post_filters? : Array[String] = [],
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -396,6 +405,9 @@ fn pos(
     default_value: default,
     int_round,
     allow_base_prefix,
+    pre_split_filters,
+    filters,
+    post_filters,
     body,
   }
 }
@@ -431,6 +443,9 @@ fn dd_marker() -> ElemDef {
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
+    pre_split_filters: [],
+    filters: [],
+    post_filters: [],
     body: BCell,
   }
 }
@@ -2073,7 +2088,8 @@ fn dec_option(
     [
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "separator", "requires", "conflicts_with", "exclusive_group",
-      "export_key", "config_key", "deprecated", "or",
+      "export_key", "config_key", "deprecated", "or", "pre_split_filters", "filters",
+      "post_filters",
     ],
     "option",
   )
@@ -2159,6 +2175,9 @@ fn dec_option(
     None => None
   }
   let deprecated = bool_field(o, "deprecated", false)
+  let pre_split_filters = dec_strs(o.get("pre_split_filters"))
+  let filters = dec_strs(o.get("filters"))
+  let post_filters = dec_strs(o.get("post_filters"))
   DOpt({
     ..opt(
       name,
@@ -2181,6 +2200,9 @@ fn dec_option(
       default~,
       int_round=int_round_from_shadow,
       allow_base_prefix=base_prefix_from_shadow,
+      pre_split_filters~,
+      filters~,
+      post_filters~,
       body=match structural_or {
         Some(branches) => BOr(branches)
         None => BCell
@@ -2204,7 +2226,8 @@ fn dec_positional(
     o,
     [
       "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
-      "config_key", "default", "positionals", "or",
+      "config_key", "default", "positionals", "or", "pre_split_filters", "filters",
+      "post_filters",
     ],
     "positional",
   )
@@ -2262,6 +2285,9 @@ fn dec_positional(
     Some(d) => Some(json_to_value(d))
     None => None
   }
+  let pre_split_filters = dec_strs(o.get("pre_split_filters"))
+  let filters = dec_strs(o.get("filters"))
+  let post_filters = dec_strs(o.get("post_filters"))
   pos(
     name,
     ty,
@@ -2274,6 +2300,9 @@ fn dec_positional(
     default~,
     int_round=int_round_from_shadow,
     allow_base_prefix=base_prefix_from_shadow,
+    pre_split_filters~,
+    filters~,
+    post_filters~,
   )
 }
 
@@ -3109,6 +3138,19 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
   }
   for e in sc.entities {
     if e.ty != TFlag && e.ty != TBool && e.default_value is Some(_) {
+      return true
+    }
+    // DR-009 filters/post_filters (issue 2026-07-09-filters-registry-foundation) are applied by
+    // `resolve_entity` (resolve.mbt's `apply_entity_filters`), NOT by the raw CLI `binds` array
+    // this function's `false` result routes to. Only route a SCALAR (no accum) filtered entity
+    // through resolve — `resolve_entity`'s cli-seat fold collapses to "last binding wins" (by
+    // design, pre-dates this issue), which would silently drop all but the last piece of an
+    // accum/multiple cell if routed here. Extending resolve_entity to preserve per-piece
+    // accumulation under filters is a follow-up (issue 2026-07-09-filters-registry-foundation's
+    // "filters (each) の適用位置" note) — for now an accum cell's filters declaration only takes
+    // effect when some OTHER seat (env/config/inherit/default) already forces the resolve path.
+    if e.accum is None &&
+      (e.filters.length() > 0 || e.post_filters.length() > 0) {
       return true
     }
   }

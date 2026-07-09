@@ -29,6 +29,9 @@ fn el(
   is_inherit? : Bool = false,
   repeat? : RepeatSpec? = None,
   multiple? : Bool = false,
+  pre_split_filters? : Array[String] = [],
+  filters? : Array[String] = [],
+  post_filters? : Array[String] = [],
 ) -> ElemDef {
   {
     name,
@@ -59,6 +62,9 @@ fn el(
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
+    pre_split_filters,
+    filters,
+    post_filters,
     body: BCell,
   }
 }
