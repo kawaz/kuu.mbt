@@ -5,6 +5,24 @@ read-only 委譲した結果の全文。監査所見と採否は issue regex-mat
 
 ---
 
+## 2026-07-09 訂正 (kawaz 指摘): MoonBit core に第一級 Regex が存在する
+
+本提案の「生態系調査結果」は誤り。調査が `.mooncakes/moonbitlang/x` (外部パッケージ) と
+公開レジストリ検索に留まり、**toolchain 標準ライブラリ moonbitlang/core を見落としていた**。
+実査 (moon 0.1.20260707、~/.moon/lib/core):
+
+- `string` パッケージに `pub struct Regex` — `re"[[:digit:]]+"` リテラル構文、
+  `Regex::Regex(StringView) raise` (動的コンパイル)、`execute` / `find` / `split` /
+  `replace_by`、POSIX 文字クラス対応 (string/pkg.generated.mbti L32-47、
+  string/regex_methods.mbt)
+- `bytes` 側にも regex_engine あり
+
+したがって本提案の「サブセット自前実装 (~500 LOC)」は不要。kawaz 裁定 (regex 方言は
+host 実装準拠) とあわせて、kuu.mbt の regex_match は **core Regex の薄い wrapper** として
+実装し「MoonBit core Regex の方言に準じる」と宣言する。以下の原文は経緯として保存
+(採用案・生態系調査の節は上記訂正が優先)。colon-splitting の論点と fixture 輪郭案は
+引き続き有効。
+
 ## 採用案
 
 `regex_match` は当面、kuu.mbt 内蔵の最小 subset regex として実装するのが妥当です。理由は、DR-040 が要求している用途が「pre_filters で狭める」ための例示レベルで、実例も `^-?[0-9]+$` や DESIGN §8.4 の `"regex_match:^[a-z]+$"` に限られているためです。根拠: [DR-040](</Users/kawaz/.local/share/repos/github.com/kawaz/kuu/main/docs/decisions/DR-040-type-registry-dialects-and-restriction.md:26>)、[DESIGN.md](</Users/kawaz/.local/share/repos/github.com/kawaz/kuu/main/docs/DESIGN.md:615>)。
