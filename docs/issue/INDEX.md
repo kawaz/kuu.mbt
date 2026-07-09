@@ -11,3 +11,4 @@
 | 2026-07-09 | bug | open | [env-separator-split-gap](./2026-07-09-env-separator-split-gap.md) | separator 付き multiple 要素の env 値が separator 分割されない (DR-049 乖離) |
 | 2026-07-09 | design | open | [accum-post-filters-stage7](./2026-07-09-accum-post-filters-stage7.md) | accum セルの post_filters (DR-009 段 7、累積後 Acc→Acc) の配線 — build_result 層の設計変更が前提 |
 | 2026-07-09 | task | open | [accum-fold-update-default-ops](./2026-07-09-accum-fold-update-default-ops.md) | build_result の ACCUMULATE fold が Update / Default op を解釈しない (実装未対応) |
+| 2026-07-09 | bug | open | [multiple-ref-accum-gap](./2026-07-09-multiple-ref-accum-gap.md) | multiple×ref の accumulator 未配線で配列結果を作れない |
