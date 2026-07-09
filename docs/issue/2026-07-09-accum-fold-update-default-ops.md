@@ -67,3 +67,15 @@ accum セルの env/config 席供給自体に未実装 (issue env-separator-spli
 config-string-pieceprocessor-gap) があり、当該組合せは fixture の無い未検証領域。
 本 issue の fold op 解釈の完全化と同時に、accum × unset × 下位値源の ladder 統合 +
 fixture 追加を扱うこと。
+
+## 2026-07-09 追記: coverage gap (codex レビュー指摘) も本 issue で拾う
+
+- `Empty` × accum × `filters` の conformance fixture が無い (Unset のみ)。Empty は fold の
+  クリア対応済みなので fixture は今でも書ける — sources=cli (committed) と Unset の
+  sources=default の対比が輪郭価値
+- `Default` op: scalar 実装は :default 発火時に default 値を mkb で Set 化して `filters` に
+  通している一方、DESIGN §8.3 (精密化後) は「発火は operand を運ばない → 適用対象の piece が
+  生じない」+「書き戻される default 席の値の chain 通過は値源席の規定 (DR-049/050) の管轄」。
+  default 席の値が `filters` を通るべきかは DR-050 の post_filters ラベル曖昧性
+  (issue design-6-2-piece-post-label-collision) の解消とセットで確定させ、scalar 実装の
+  現挙動と突き合わせること
