@@ -5,8 +5,13 @@
 ///|
 /// A scalar cli/env/config/… `Set` binding at the root scope (the common case in these tests;
 /// nested-scope cases build the `Binding` literal directly to show the scope path explicitly).
-fn cb(key : String, value : Value, source : Source) -> Binding {
-  { key, op: Set, value, source, scope: [], link: 0 }
+fn cb(
+  key : String,
+  value : Value,
+  source : Source,
+  at_pos? : Int? = None,
+) -> Binding {
+  { key, op: Set, value, source, scope: [], link: 0, at_pos }
 }
 
 ///|
@@ -78,7 +83,7 @@ test "build_result folds scalar last-wins, accumulate array, and default seat" {
 /// (DR-045 empty op) — re-accumulation after `empty` starts fresh, not appended to the discard.
 test "build_result: an empty op on an accumulate cell clears prior items" {
   let binds : Array[Binding] = [
-    { key: "tags", op: Set, value: VStr("a"), source: Cli, scope: [], link: 0 },
+    cb("tags", VStr("a"), Cli),
     {
       key: "tags",
       op: Empty,
@@ -86,8 +91,9 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
       source: Cli,
       scope: [],
       link: 0,
+      at_pos: None,
     },
-    { key: "tags", op: Set, value: VStr("c"), source: Cli, scope: [], link: 0 },
+    cb("tags", VStr("c"), Cli),
   ]
   let cells : Array[AccumCell] = [{ path: [], name: "tags", collector: None }]
   let r = build_result(binds, cells, [], [])
@@ -164,6 +170,7 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
       source: Cli,
       scope: ["xs"],
       link: 0,
+      at_pos: None,
     },
     {
       key: "",
@@ -172,6 +179,7 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
       source: Cli,
       scope: ["xs", "#0"],
       link: 0,
+      at_pos: None,
     },
     {
       key: "",
@@ -180,6 +188,7 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
       source: Cli,
       scope: ["xs", "#1"],
       link: 0,
+      at_pos: None,
     },
   ]
   let r = build_result(binds, [], [], [])
@@ -206,6 +215,7 @@ test "apply_export_keys renames a leaf key and drops a null-exported scope label
       source: Cli,
       scope: ["wrapper"],
       link: 0,
+      at_pos: None,
     },
   ]
   let mapped = apply_export_keys(binds, ek)
@@ -308,8 +318,13 @@ test "resolve_scope: cli wins over env, env wins over default" {
 
 ///|
 /// A `Set` binding builder exposed for assertions (mirrors `mkb`'s shape without re-exporting it).
-fn mkb_pub(key : String, value : Value, source : Source) -> Binding {
-  { key, op: Set, value, source, scope: [], link: 0 }
+fn mkb_pub(
+  key : String,
+  value : Value,
+  source : Source,
+  at_pos? : Int? = None,
+) -> Binding {
+  { key, op: Set, value, source, scope: [], link: 0, at_pos }
 }
 
 ///|
@@ -625,6 +640,7 @@ fn ceff(key : String, transform : String) -> Binding {
     source: Cli,
     scope: [],
     link: 0,
+    at_pos: None,
   }
 }
 
@@ -759,6 +775,100 @@ test "resolve_scope: post_filters (in_range) also rejects a plain Set value over
   )
 }
 
+// ── accum (multiple) セルの CLI 座席 fold (issue 2026-07-09-accum-entity-filters-wiring) ───────
+
+///|
+/// 保証 (regression 再現、issue 2026-07-09-accum-entity-filters-wiring の "根" そのもの):
+/// resolve_entity_raw の CLI 座席 fold は `e.accum is Some(_)` のとき同名 Binding を DR-015
+/// last-wins に潰さず、列のまま (op 解釈せず) 温存して返す — accum 無し (scalar) の fold が
+/// last-wins のままであることとの対比を同じテストで固定する。修正前はこの assert が
+/// `Ok([cb("tags", VStr("b"), Cli)])` (最後の 1 個だけ) に潰れて RED だった。
+test "resolve_scope: an accum cell's CLI seat preserves EVERY same-name binding (not last-wins)" {
+  let tags = ent("tags", TStr, accum=Some("append"))
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [tags],
+    constraints: [],
+  }
+  let cli = [cb("tags", VStr("a"), Cli), cb("tags", VStr("b"), Cli)]
+  assert_eq(
+    resolve_scope(sc, cli, Map([])),
+    Ok([cb("tags", VStr("a"), Cli), cb("tags", VStr("b"), Cli)]),
+  )
+}
+
+///|
+/// 保証 (対比、scalar は変わらず last-wins のまま): accum を持たない同名要素は DR-015 の
+/// 「最後に committed した 1 個が勝つ」規約を保つ — accum 分岐がスカラー経路に漏れていないこと
+/// を同じ fixture 形で固定する (multiple-parse/last-wins-scalar.json の resolve 版)。
+test "resolve_scope: a scalar (no accum) cell's CLI seat still folds to last-wins" {
+  let port = ent("port", TStr)
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [port],
+    constraints: [],
+  }
+  let cli = [cb("port", VStr("a"), Cli), cb("port", VStr("b"), Cli)]
+  assert_eq(resolve_scope(sc, cli, Map([])), Ok([cb("port", VStr("b"), Cli)]))
+}
+
+///|
+/// 保証: accum × filters(each、段5) — 全 piece が filter を通過すれば、resolve_entity 経由でも
+/// 累積列がそのまま保たれる (multiple-parse/filters-each.json::all-pieces-pass-then-accumulate
+/// の wbtest 版、conformance fixture 到達前に GREEN を固定する)。
+test "resolve_scope: accum × filters(each) — all pieces passing preserves the accumulated list" {
+  let ports = ent("ports", TNum, accum=Some("append"), filters=[
+    "in_range:1:100",
+  ])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ports],
+    constraints: [],
+  }
+  let cli = [cb("ports", VNum(5.0), Cli), cb("ports", VNum(7.0), Cli)]
+  assert_eq(
+    resolve_scope(sc, cli, Map([])),
+    Ok([cb("ports", VNum(5.0), Cli), cb("ports", VNum(7.0), Cli)]),
+  )
+}
+
+///|
+/// 保証 (issue 2026-07-09-accum-entity-filters-wiring 完了条件、CONFORMANCE §2/§3 の piece
+/// 帰属規約): accum × filters(each) で 1 piece が reject すると全体が failure になり (「不正 piece
+/// を静かに除外して残りを累積する」経路ではない)、その argv_pos は reject した piece 自身が
+/// 由来する CLI トークン位置 (`Binding.at_pos`、issue のスコープで追加) — ladder 呼び出し側が
+/// 一律で渡す `at_pos` (env/config 由来の「トークン非帰属」フォールバック) には落ちない。
+/// multiple-parse/filters-each.json::one-piece-rejects-whole-not-partial-accumulate の wbtest 版。
+test "resolve_scope: accum × filters(each) — one piece rejecting fails whole at ITS OWN token position" {
+  let ports = ent("ports", TNum, accum=Some("append"), filters=[
+    "in_range:1:100",
+  ])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ports],
+    constraints: [],
+  }
+  // "5" は argv トークン 1 由来、"500" は argv トークン 3 由来 (`--ports 5 --ports 500` を模す)。
+  // ladder 呼び出し側の at_pos=4 (仮に argv.length() 相当) を渡しても、reject は 500 自身の
+  // 位置 (3) に帰属することを固定する — env/config seat の argv.length フォールバックとの対比。
+  let cli = [
+    cb("ports", VNum(5.0), Cli, at_pos=Some(1)),
+    cb("ports", VNum(500.0), Cli, at_pos=Some(3)),
+  ]
+  match resolve_scope(sc, cli, Map([]), at_pos=4) {
+    Err(pe) => {
+      assert_eq(pe.kind, KFilter)
+      assert_eq(pe.argv_pos, 3)
+      assert_eq(pe.reason, "filter_rejected")
+    }
+    Ok(_) => fail("expected Err (500 is out of range [1, 100])")
+  }
+}
+
 ///|
 /// 保証 (issue 2026-07-09-post-filter-error-attribution): `filters`/`post_filters` reject の
 /// Error は `kind: KFilter` を持つ (DR-053 §2 の `parse` | `filter` | `constraint` 3 分類 — 値が
@@ -812,6 +922,7 @@ test "resolve_scope: an update transform's own arity rejection surfaces at runti
       source: Cli,
       scope: [],
       link: 0,
+      at_pos: None,
     },
   ]
   match resolve_scope(sc, cli, Map([])) {

@@ -143,10 +143,16 @@ fn run_eq_split(
           return [Held(pe_filter(e.name, pos, reason, msg), [])]
       }
       match e.kind {
-        TStr => return [Accept(pos + 1, [mkb(e.name, VStr(filtered), Cli)])]
+        TStr =>
+          return [
+            Accept(pos + 1, [mkb(e.name, VStr(filtered), Cli, at_pos=Some(pos))]),
+          ]
         TNum => // canonical number 字句 (DR-074 §1) + opt-in base prefix (§2)
           match parse_number_ext(filtered, e.allow_base_prefix) {
-            Some(d) => return [Accept(pos + 1, [mkb(e.name, VNum(d), Cli)])]
+            Some(d) =>
+              return [
+                Accept(pos + 1, [mkb(e.name, VNum(d), Cli, at_pos=Some(pos))]),
+              ]
             None => return [Held(pe_parse(e.name, filtered, pos), [])]
           }
         TInt =>
@@ -155,7 +161,11 @@ fn run_eq_split(
           match
             parse_int_value_ext(filtered, e.int_round, e.allow_base_prefix) {
             Ok(i) =>
-              return [Accept(pos + 1, [mkb(e.name, VNum(i.to_double()), Cli)])]
+              return [
+                Accept(pos + 1, [
+                  mkb(e.name, VNum(i.to_double()), Cli, at_pos=Some(pos)),
+                ]),
+              ]
             Err(NotAnInteger) =>
               return [Held(pe_parse_int(e.name, filtered, pos), [])]
             Err(IntOutOfRange) =>
@@ -165,7 +175,10 @@ fn run_eq_split(
           }
         TFloat => // DR-074 §1: float's wider accept域 (number + inf) via parse_float
           match parse_float(filtered) {
-            Some(d) => return [Accept(pos + 1, [mkb(e.name, VNum(d), Cli)])]
+            Some(d) =>
+              return [
+                Accept(pos + 1, [mkb(e.name, VNum(d), Cli, at_pos=Some(pos))]),
+              ]
             None => return [Held(pe_parse(e.name, filtered, pos), [])]
           }
         TFlag => return [] // unreachable (guarded above); kept for exhaustiveness
@@ -176,7 +189,10 @@ fn run_eq_split(
           // case-insensitive). An unrecognized token is a held Error (DR-037), not 素通し. (installer.mbt
           // `inst_long` only registers this entry when the element has no variant spellings.)
           match parse_bool(filtered) {
-            Some(b) => return [Accept(pos + 1, [mkb(e.name, VBool(b), Cli)])]
+            Some(b) =>
+              return [
+                Accept(pos + 1, [mkb(e.name, VBool(b), Cli, at_pos=Some(pos))]),
+              ]
             None => return [Held(pe_parse_bool(e.name, filtered, pos), [])]
           }
       }
@@ -231,11 +247,20 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 /// signature widening from `Binding?` to this `Result`. Both error shapes stay valid at every value
 /// char length (`walk_short`'s mid-token/full-tail split still governs whether a failure surfaces
 /// as a `Held` or is silently dropped — see its call sites).
-fn short_val(e : ShortEntry, s : String) -> Result[Binding, (String, String)?] {
+/// `pos` (issue 2026-07-09-accum-entity-filters-wiring): the argv token this value char's raw
+/// string was read from — the CALLING token for an in-cluster attach, the NEXT token for a
+/// space-form attach (`walk_short`'s two call sites pass `pos`/`pos + 1` respectively, mirroring
+/// the `pe_parse(..., pos)` / `pe_parse(..., pos + 1)` split those same call sites already made
+/// pre-existing for ordinary parse failures).
+fn short_val(
+  e : ShortEntry,
+  s : String,
+  pos : Int,
+) -> Result[Binding, (String, String)?] {
   match e.kind {
     TStr =>
       match apply_pre_filters(e.pre_filters, s) {
-        Ok(v) => Ok(mkb(e.name, VStr(v), Cli))
+        Ok(v) => Ok(mkb(e.name, VStr(v), Cli, at_pos=Some(pos)))
         Err(fe) => Err(Some(fe))
       }
     TNum =>
@@ -243,7 +268,7 @@ fn short_val(e : ShortEntry, s : String) -> Result[Binding, (String, String)?] {
       match apply_pre_filters(e.pre_filters, s) {
         Ok(v) =>
           match parse_number_ext(v, e.allow_base_prefix) {
-            Some(d) => Ok(mkb(e.name, VNum(d), Cli))
+            Some(d) => Ok(mkb(e.name, VNum(d), Cli, at_pos=Some(pos)))
             None => Err(None)
           }
         Err(fe) => Err(Some(fe))
@@ -255,7 +280,7 @@ fn short_val(e : ShortEntry, s : String) -> Result[Binding, (String, String)?] {
       match apply_pre_filters(e.pre_filters, s) {
         Ok(v) =>
           match parse_int_value_ext(v, e.int_round, e.allow_base_prefix) {
-            Ok(i) => Ok(mkb(e.name, VNum(i.to_double()), Cli))
+            Ok(i) => Ok(mkb(e.name, VNum(i.to_double()), Cli, at_pos=Some(pos)))
             Err(_) => Err(None)
           }
         Err(fe) => Err(Some(fe))
@@ -264,7 +289,7 @@ fn short_val(e : ShortEntry, s : String) -> Result[Binding, (String, String)?] {
       match apply_pre_filters(e.pre_filters, s) {
         Ok(v) =>
           match parse_float(v) {
-            Some(d) => Ok(mkb(e.name, VNum(d), Cli))
+            Some(d) => Ok(mkb(e.name, VNum(d), Cli, at_pos=Some(pos)))
             None => Err(None)
           }
         Err(fe) => Err(Some(fe))
@@ -333,7 +358,7 @@ fn walk_short(
           let mut j = vstart + 1
           while j <= body.length() {
             let vstr = chars_to_str(body, vstart, j)
-            match short_val(e, vstr) {
+            match short_val(e, vstr, pos) {
               Ok(b) =>
                 for
                   r in walk_short(
@@ -373,7 +398,7 @@ fn walk_short(
           }
           // next-token value (space form) only when this value char is the tail.
           if vstart == body.length() && pos + 1 < ctx.toks.length() {
-            match short_val(e, ctx.toks[pos + 1]) {
+            match short_val(e, ctx.toks[pos + 1], pos + 1) {
               Ok(b) => out.push(Accept(pos + 2, cat(acc, cat([b], dm))))
               Err(Some((reason, msg))) =>
                 out.push(Held(pe_filter(e.name, pos + 1, reason, msg), []))

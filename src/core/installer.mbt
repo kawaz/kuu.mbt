@@ -475,6 +475,11 @@ priv struct SBChild {
 }
 
 ///|
+/// long/short option の value slot は `separator` を見ない (positional 面の `elem_head` だけが
+/// `SepArg` に分岐する既存の非対称) — 発見済みの既存バグだが issue
+/// 2026-07-09-separator-non-string-type-parse-gap に切り出し済み、本関数では対象外のまま
+/// (kawaz/team-lead 裁定 2026-07-09: 別 issue の対処 2 段構成「option 経路の SepArg 構築 + SepArg
+/// 型 parse」が前提、本 issue accum-entity-filters-wiring では追わない)。
 fn value_prim(
   ty : Ty,
   name : String,

@@ -3275,15 +3275,13 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
     }
     // DR-009 filters/post_filters (issue 2026-07-09-filters-registry-foundation) are applied by
     // `resolve_entity` (resolve.mbt's `apply_entity_filters`), NOT by the raw CLI `binds` array
-    // this function's `false` result routes to. Only route a SCALAR (no accum) filtered entity
-    // through resolve — `resolve_entity`'s cli-seat fold collapses to "last binding wins" (by
-    // design, pre-dates this issue), which would silently drop all but the last piece of an
-    // accum/multiple cell if routed here. Extending resolve_entity to preserve per-piece
-    // accumulation under filters is a follow-up (issue 2026-07-09-filters-registry-foundation's
-    // "filters (each) の適用位置" note) — for now an accum cell's filters declaration only takes
-    // effect when some OTHER seat (env/config/inherit/default) already forces the resolve path.
-    if e.accum is None &&
-      (e.filters.length() > 0 || e.post_filters.length() > 0) {
+    // this function's `false` result routes to. `resolve_entity_raw`'s CLI-seat fold now preserves
+    // every same-name Binding for an accum cell (issue 2026-07-09-accum-entity-filters-wiring),
+    // so an accum cell with filters/post_filters ALSO needs the resolve path — the guard that used
+    // to exclude accum (`e.accum is None &&`) is removed. `apply_entity_filters` already skips
+    // post_filters for an accum cell (accumulated-array post is a separate stage, issue
+    // accum-post-filters-stage7); routing through resolve here only activates filters(each).
+    if e.filters.length() > 0 || e.post_filters.length() > 0 {
       return true
     }
   }
@@ -3694,7 +3692,17 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
 /// MDR-001 §6). Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
-  []
+  [
+    // issue 2026-07-09-separator-non-string-type-parse-gap: long/short option (greedy face) の
+    // value slot は `separator` を見ない (`elem_head` の SepArg 分岐は positional 面専用、
+    // installer.mbt `value_prim` 呼び出し元の非対称) — `--ports 5,500` の 1 トークンが分割されず
+    // そのまま number parse に渡り `not_a_number` になる。accum×filters(each) 配線自体
+    // (issue 2026-07-09-accum-entity-filters-wiring) は解決済みで、この divergence は
+    // 別 issue の「対処 2 段構成 (option 経路の SepArg 構築 + SepArg 型 parse)」待ち
+    // (kawaz/team-lead 裁定 2026-07-09、commit 0dbc91b8 で追記済み)。fixture の期待値・意図は
+    // 変えていない — 実装側のギャップとして凍結する。
+    "multiple-parse/filters-each.json::separator-piece-rejects-whole :: errors got={ports@1/parse/not_a_number} want={ports@1/filter/filter_rejected}",
+  ]
 }
 
 ///|

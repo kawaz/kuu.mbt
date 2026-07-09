@@ -68,14 +68,7 @@ fn sub_under(binds : Array[Binding], seg : String) -> Array[Binding] {
         rest.push(b.scope[i])
         i = i + 1
       }
-      out.push({
-        key: b.key,
-        op: b.op,
-        value: b.value,
-        source: b.source,
-        scope: rest,
-        link: b.link,
-      })
+      out.push({ ..b, scope: rest })
     }
   }
   out
@@ -158,14 +151,7 @@ pub fn apply_export_keys(
       Some(EkKey(s)) => s
       _ => b.key
     }
-    out.push({
-      key: new_key,
-      op: b.op,
-      value: b.value,
-      source: b.source,
-      scope: new_scope,
-      link: b.link,
-    })
+    out.push({ ..b, key: new_key, scope: new_scope })
   }
   out
 }
@@ -1454,8 +1440,18 @@ fn apply_entity_filters(
       out.push(b)
     } else {
       match apply_filter_chain(e.filters, b.value) {
-        Err((reason, msg)) =>
-          return Err(filter_err(e.name, at_pos, reason, msg, epath))
+        Err((reason, msg)) => {
+          // filters(each、段5、DR-009): CONFORMANCE §3's piece-attribution rule — a reject here
+          // is attributed to the SPECIFIC argv token the rejected piece came from (`b.at_pos`,
+          // issue 2026-07-09-accum-entity-filters-wiring), not the ladder's own `at_pos` (which
+          // stays argv.length — the "no specific token" fallback for env/config/inherit/default-
+          // sourced bindings, where `b.at_pos` is always `None`).
+          let pos = match b.at_pos {
+            Some(p) => p
+            None => at_pos
+          }
+          return Err(filter_err(e.name, pos, reason, msg, epath))
+        }
         Ok(v) => {
           let b2 = { ..b, value: v }
           if e.accum is None {
@@ -1502,66 +1498,87 @@ fn resolve_entity_raw(
   // pre-fold code did (`return Ok([b])` / `return Ok([mkb(e.name, v, Default)])`). Only `update`
   // needs the running VALUE (as `old`) — `.value` is read off `current` at that point, never
   // reconstructed from scratch.
-  let mut current : Binding? = None
-  let mut committed_now = false
-  for b in cli {
-    if b.key == e.name {
-      match b.op {
-        Set => {
-          current = Some(b)
-          committed_now = true
-        }
-        Default =>
-          match e.default_value {
-            Some(v) => {
-              current = Some(mkb(e.name, v, Default))
-              committed_now = true
-            }
-            None => {
-              current = Some(b)
-              committed_now = true
-            }
+  // accum セル (multiple/repeat, DR-034/043): the CLI seat must preserve EVERY same-name Binding,
+  // not fold to "last wins" — build_result's ACCUMULATE branch (resolve.mbt's caller,
+  // `Empty` = clear / else = append) is the layer that interprets the op sequence, exactly as it
+  // already does for the raw-bind bypass path this issue is replacing. Threading the ops through
+  // UNINTERPRETED here (no Update/Default/Unset resolution) keeps resolve's accum output
+  // byte-identical to that bypass input — apply_entity_filters (this function's caller) then runs
+  // filters(each) over each preserved piece. accum × Update is UNSPECIFIED (DR-077's update targets
+  // a scalar ledger only) — passed through as-is, not resolved here (issue
+  // 2026-07-09-accum-entity-filters-wiring §4: 現状挙動を変えない).
+  if e.accum is Some(_) {
+    let bs : Array[Binding] = []
+    for b in cli {
+      if b.key == e.name {
+        bs.push(b)
+      }
+    }
+    if bs.length() > 0 {
+      return Ok(bs)
+    }
+  } else {
+    let mut current : Binding? = None
+    let mut committed_now = false
+    for b in cli {
+      if b.key == e.name {
+        match b.op {
+          Set => {
+            current = Some(b)
+            committed_now = true
           }
-        Empty => {
-          current = Some(b)
-          committed_now = true
-        }
-        // NOT committed: resets the running value to default so a LATER update in the same
-        // fold sees the right "old" — but this seat stays eligible to fall through to
-        // env/config/inherit if nothing commits after it (unchanged pre-DR-077 contract).
-        Unset => {
-          current = match e.default_value {
-            Some(v) => Some(mkb(e.name, v, Default))
-            None => None
-          }
-          committed_now = false
-        }
-        Update(transform, args) => {
-          // DR-077 §2 "old ?? default": no prior commit in THIS fold falls back to the entity's
-          // own default (which count presets to 0, LOWERING §A.5) — never a bare literal zero.
-          let old = match current {
-            Some(cb) => cb.value
-            None =>
-              match e.default_value {
-                Some(v) => v
-                None => VNum(0.0)
+          Default =>
+            match e.default_value {
+              Some(v) => {
+                current = Some(mkb(e.name, v, Default))
+                committed_now = true
               }
-          }
-          match apply_transform(transform, old, args, e.name, at_pos, epath) {
-            Ok(v) => {
-              current = Some(mkb(e.name, v, Cli))
-              committed_now = true
+              None => {
+                current = Some(b)
+                committed_now = true
+              }
             }
-            Err(pe) => return Err(pe)
+          Empty => {
+            current = Some(b)
+            committed_now = true
+          }
+          // NOT committed: resets the running value to default so a LATER update in the same
+          // fold sees the right "old" — but this seat stays eligible to fall through to
+          // env/config/inherit if nothing commits after it (unchanged pre-DR-077 contract).
+          Unset => {
+            current = match e.default_value {
+              Some(v) => Some(mkb(e.name, v, Default))
+              None => None
+            }
+            committed_now = false
+          }
+          Update(transform, args) => {
+            // DR-077 §2 "old ?? default": no prior commit in THIS fold falls back to the entity's
+            // own default (which count presets to 0, LOWERING §A.5) — never a bare literal zero.
+            let old = match current {
+              Some(cb) => cb.value
+              None =>
+                match e.default_value {
+                  Some(v) => v
+                  None => VNum(0.0)
+                }
+            }
+            match apply_transform(transform, old, args, e.name, at_pos, epath) {
+              Ok(v) => {
+                current = Some(mkb(e.name, v, Cli))
+                committed_now = true
+              }
+              Err(pe) => return Err(pe)
+            }
           }
         }
       }
     }
-  }
-  if committed_now {
-    match current {
-      Some(b) => return Ok([b])
-      None => ()
+    if committed_now {
+      match current {
+        Some(b) => return Ok([b])
+        None => ()
+      }
     }
   }
   // env seat (DR-049)

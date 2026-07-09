@@ -81,7 +81,7 @@ fn cand_trigger(
 /// A non-set effect binding (default / unset / empty). The operand is a
 /// placeholder — these ops carry no operand (spec DR-045 table).
 fn mk_eff(key : String, op : EffectOp, source : Source) -> Binding {
-  { key, op, value: VBool(false), source, scope: [], link: 0 }
+  { key, op, value: VBool(false), source, scope: [], link: 0, at_pos: None }
 }
 
 ///|
@@ -95,6 +95,7 @@ fn action_marker(name : String, pos : Int) -> Binding {
     source: Cli,
     scope: [],
     link: 0,
+    at_pos: None,
   }
 }
 
@@ -167,14 +168,7 @@ fn nest(label : String, binds : Array[Binding]) -> Array[Binding] {
       for s in b.scope {
         sc2.push(s)
       }
-      out.push({
-        key: b.key,
-        op: b.op,
-        value: b.value,
-        source: b.source,
-        scope: sc2,
-        link: b.link,
-      })
+      out.push({ ..b, scope: sc2 })
     }
   }
   out
@@ -240,6 +234,7 @@ fn scope_marker(label : String) -> Binding {
     source: Cli,
     scope: [label],
     link: 0,
+    at_pos: None,
   }
 }
 
@@ -254,6 +249,7 @@ fn array_marker(label : String) -> Binding {
     source: Cli,
     scope: [label],
     link: 0,
+    at_pos: None,
   }
 }
 
@@ -300,7 +296,8 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
     StrArg(name, pre_filters) =>
       if pos < ctx.toks.length() {
         match apply_pre_filters(pre_filters, ctx.toks[pos]) {
-          Ok(s) => [Accept(pos + 1, [mkb(name, VStr(s), Cli)])]
+          Ok(s) =>
+            [Accept(pos + 1, [mkb(name, VStr(s), Cli, at_pos=Some(pos))])]
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
       } else {
@@ -311,7 +308,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       }
     SepArg(name, sep, pre_filters) =>
       if pos < ctx.toks.length() {
-        match sep_binds(name, ctx.toks[pos], sep, pre_filters) {
+        match sep_binds(name, ctx.toks[pos], sep, pre_filters, pos) {
           Ok(bs) => [Accept(pos + 1, bs)]
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
@@ -325,7 +322,8 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         match apply_pre_filters(pre_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_number_ext(s, base) {
-              Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+              Some(d) =>
+                [Accept(pos + 1, [mkb(name, VNum(d), Cli, at_pos=Some(pos))])]
               None => [Held(pe_parse(name, s, pos), [])]
             }
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
@@ -340,7 +338,8 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         match apply_pre_filters(pre_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_float(s) {
-              Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+              Some(d) =>
+                [Accept(pos + 1, [mkb(name, VNum(d), Cli, at_pos=Some(pos))])]
               None => [Held(pe_parse(name, s, pos), [])]
             }
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
@@ -355,7 +354,12 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         match apply_pre_filters(pre_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_int_value_ext(s, mode, base) {
-              Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
+              Ok(i) =>
+                [
+                  Accept(pos + 1, [
+                    mkb(name, VNum(i.to_double()), Cli, at_pos=Some(pos)),
+                  ]),
+                ]
               Err(NotAnInteger) => [Held(pe_parse_int(name, s, pos), [])]
               Err(IntOutOfRange) =>
                 [Held(pe_int_out_of_range(name, s, pos), [])]
@@ -372,7 +376,8 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         match apply_pre_filters(pre_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_bool(s) {
-              Some(b) => [Accept(pos + 1, [mkb(name, VBool(b), Cli)])]
+              Some(b) =>
+                [Accept(pos + 1, [mkb(name, VBool(b), Cli, at_pos=Some(pos))])]
               None => [Held(pe_parse_bool(name, s, pos), [])]
             }
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
@@ -453,14 +458,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           Accept(p, bs) => {
             let marked : Array[Binding] = []
             for x in bs {
-              marked.push({
-                key: x.key,
-                op: x.op,
-                value: x.value,
-                source: x.source,
-                scope: x.scope,
-                link: depth,
-              })
+              marked.push({ ..x, link: depth })
             }
             out.push(Accept(p, marked))
           }
@@ -475,7 +473,11 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       // of input this stays a Reject too (the filter cannot promise a token
       // would be accepted), not a Pending.
       if pos < ctx.toks.length() && !starts_dash(ctx.toks[pos]) {
-        [Accept(pos + 1, [mkb(name, VStr(ctx.toks[pos]), Cli)])]
+        [
+          Accept(pos + 1, [
+            mkb(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos)),
+          ]),
+        ]
       } else {
         []
       }
@@ -539,7 +541,12 @@ fn filter_arg_eval(
             ),
           ]
         } else {
-          [Accept(pos + 1, cat(acc, [mkb(name, VNum(d), Cli)]))]
+          [
+            Accept(
+              pos + 1,
+              cat(acc, [mkb(name, VNum(d), Cli, at_pos=Some(pos))]),
+            ),
+          ]
         }
       None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
     }
@@ -560,7 +567,12 @@ fn req_arg_eval(
   acc : Array[Binding],
 ) -> Array[Branch] {
   if pos < ctx.toks.length() {
-    [Accept(pos + 1, cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli)]))]
+    [
+      Accept(
+        pos + 1,
+        cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos))]),
+      ),
+    ]
   } else if in_complete(ctx) {
     [Pending([pend_value(TStr, name)], acc)]
   } else {
@@ -620,16 +632,21 @@ fn split_on(s : String, sep : String) -> Array[String] {
 /// separator split, one piece at a time (this is what distinguishes `per-piece-trim.json` from a
 /// "trim the whole raw string first" misreading). A pre_filters reject on ANY piece fails the whole
 /// binding (`Err` short-circuits) — same all-or-nothing contract a single-piece value primitive has.
+/// `pos` (issue 2026-07-09-accum-entity-filters-wiring): every split piece is attributed to the
+/// SAME argv token position — a piece is not itself a token, so there is no finer-grained position
+/// to give it (CONFORMANCE §3's piece-attribution regulation attributes per-piece failures to the
+/// whole token they came from, per `multiple-parse/filters-each.json::separator-piece-rejects-whole`).
 fn sep_binds(
   name : String,
   tok : String,
   sep : String,
   pre_filters : Array[String],
+  pos : Int,
 ) -> Result[Array[Binding], (String, String)] {
   let out : Array[Binding] = []
   for part in split_on(tok, sep) {
     match apply_pre_filters(pre_filters, part) {
-      Ok(s) => out.push(mkb(name, VStr(s), Cli))
+      Ok(s) => out.push(mkb(name, VStr(s), Cli, at_pos=Some(pos)))
       Err(e) => return Err(e)
     }
   }
@@ -663,14 +680,7 @@ fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] 
       for s in b.scope {
         sc2.push(s)
       }
-      out.push({
-        key: b.key,
-        op: b.op,
-        value: b.value,
-        source: b.source,
-        scope: sc2,
-        link: 0,
-      })
+      out.push({ ..b, scope: sc2, link: 0 })
     }
   }
   out
@@ -1070,7 +1080,7 @@ fn scope_consume(
               ctx,
               pos + 1,
               pidx + 1,
-              cat(acc, [mkb(name, VStr(s), Cli)]),
+              cat(acc, [mkb(name, VStr(s), Cli, at_pos=Some(pos))]),
               severed,
               k,
             )
@@ -1091,7 +1101,7 @@ fn scope_consume(
       }
     SepArg(name, sep, pre_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match sep_binds(name, ctx.toks[pos], sep, pre_filters) {
+        match sep_binds(name, ctx.toks[pos], sep, pre_filters, pos) {
           Ok(bs) =>
             scope_step(sc, ctx, pos + 1, pidx + 1, cat(acc, bs), severed, k)
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
@@ -1117,7 +1127,7 @@ fn scope_consume(
                   ctx,
                   pos + 1,
                   pidx + 1,
-                  cat(acc, [mkb(name, VNum(d), Cli)]),
+                  cat(acc, [mkb(name, VNum(d), Cli, at_pos=Some(pos))]),
                   severed,
                   k,
                 )
@@ -1146,7 +1156,7 @@ fn scope_consume(
                   ctx,
                   pos + 1,
                   pidx + 1,
-                  cat(acc, [mkb(name, VNum(d), Cli)]),
+                  cat(acc, [mkb(name, VNum(d), Cli, at_pos=Some(pos))]),
                   severed,
                   k,
                 )
@@ -1175,7 +1185,9 @@ fn scope_consume(
                   ctx,
                   pos + 1,
                   pidx + 1,
-                  cat(acc, [mkb(name, VNum(i.to_double()), Cli)]),
+                  cat(acc, [
+                    mkb(name, VNum(i.to_double()), Cli, at_pos=Some(pos)),
+                  ]),
                   severed,
                   k,
                 )
@@ -1207,7 +1219,7 @@ fn scope_consume(
                   ctx,
                   pos + 1,
                   pidx + 1,
-                  cat(acc, [mkb(name, VBool(b), Cli)]),
+                  cat(acc, [mkb(name, VBool(b), Cli, at_pos=Some(pos))]),
                   severed,
                   k,
                 )
@@ -1248,7 +1260,7 @@ fn scope_consume(
                 ctx,
                 pos + 1,
                 pidx + 1,
-                cat(acc, [mkb(name, VNum(d), Cli)]),
+                cat(acc, [mkb(name, VNum(d), Cli, at_pos=Some(pos))]),
                 severed,
                 k,
               )
@@ -1271,7 +1283,7 @@ fn scope_consume(
           ctx,
           pos + 1,
           pidx + 1,
-          cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli)]),
+          cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos))]),
           severed,
           k,
         )
@@ -1583,7 +1595,8 @@ fn consume_head(
     StrArg(name, pre_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match apply_pre_filters(pre_filters, ctx.toks[pos]) {
-          Ok(s) => [Accept(pos + 1, [mkb(name, VStr(s), Cli)])]
+          Ok(s) =>
+            [Accept(pos + 1, [mkb(name, VStr(s), Cli, at_pos=Some(pos))])]
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
       } else if pos >= ctx.toks.length() {
@@ -1599,7 +1612,7 @@ fn consume_head(
       }
     SepArg(name, sep, pre_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match sep_binds(name, ctx.toks[pos], sep, pre_filters) {
+        match sep_binds(name, ctx.toks[pos], sep, pre_filters, pos) {
           Ok(bs) => [Accept(pos + 1, bs)]
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
@@ -1618,7 +1631,8 @@ fn consume_head(
         match apply_pre_filters(pre_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_number_ext(s, base) {
-              Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+              Some(d) =>
+                [Accept(pos + 1, [mkb(name, VNum(d), Cli, at_pos=Some(pos))])]
               None => [Held(pe_parse(name, s, pos), [])]
             }
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
@@ -1638,7 +1652,8 @@ fn consume_head(
         match apply_pre_filters(pre_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_float(s) {
-              Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+              Some(d) =>
+                [Accept(pos + 1, [mkb(name, VNum(d), Cli, at_pos=Some(pos))])]
               None => [Held(pe_parse(name, s, pos), [])]
             }
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
@@ -1658,7 +1673,12 @@ fn consume_head(
         match apply_pre_filters(pre_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_int_value_ext(s, mode, base) {
-              Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
+              Ok(i) =>
+                [
+                  Accept(pos + 1, [
+                    mkb(name, VNum(i.to_double()), Cli, at_pos=Some(pos)),
+                  ]),
+                ]
               Err(NotAnInteger) => [Held(pe_parse_int(name, s, pos), [])]
               Err(IntOutOfRange) =>
                 [Held(pe_int_out_of_range(name, s, pos), [])]
@@ -1681,7 +1701,8 @@ fn consume_head(
         match apply_pre_filters(pre_filters, ctx.toks[pos]) {
           Ok(s) =>
             match parse_bool(s) {
-              Some(b) => [Accept(pos + 1, [mkb(name, VBool(b), Cli)])]
+              Some(b) =>
+                [Accept(pos + 1, [mkb(name, VBool(b), Cli, at_pos=Some(pos))])]
               None => [Held(pe_parse_bool(name, s, pos), [])]
             }
           Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
@@ -1702,7 +1723,11 @@ fn consume_head(
     // the OPTIONAL "more" branch can filter them uniformly.
     ReqArg(name) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        [Accept(pos + 1, [mkb(name, VStr(ctx.toks[pos]), Cli)])]
+        [
+          Accept(pos + 1, [
+            mkb(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos)),
+          ]),
+        ]
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
           [Pending([pend_value(TStr, name)], [])]
@@ -1743,7 +1768,7 @@ fn consume_head(
                 ),
               ]
             } else {
-              [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+              [Accept(pos + 1, [mkb(name, VNum(d), Cli, at_pos=Some(pos))])]
             }
           None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
         }
@@ -1901,7 +1926,7 @@ fn scope_consume_rep(
               ctx,
               pos + 1,
               pidx,
-              cat(acc, [mkb(name, VStr(s), Cli)]),
+              cat(acc, [mkb(name, VStr(s), Cli, at_pos=Some(pos))]),
               severed,
               k,
             )
@@ -1927,7 +1952,7 @@ fn scope_consume_rep(
                   ctx,
                   pos + 1,
                   pidx,
-                  cat(acc, [mkb(name, VNum(d), Cli)]),
+                  cat(acc, [mkb(name, VNum(d), Cli, at_pos=Some(pos))]),
                   severed,
                   k,
                 )
@@ -1952,7 +1977,7 @@ fn scope_consume_rep(
                   ctx,
                   pos + 1,
                   pidx,
-                  cat(acc, [mkb(name, VNum(d), Cli)]),
+                  cat(acc, [mkb(name, VNum(d), Cli, at_pos=Some(pos))]),
                   severed,
                   k,
                 )
@@ -1977,7 +2002,9 @@ fn scope_consume_rep(
                   ctx,
                   pos + 1,
                   pidx,
-                  cat(acc, [mkb(name, VNum(i.to_double()), Cli)]),
+                  cat(acc, [
+                    mkb(name, VNum(i.to_double()), Cli, at_pos=Some(pos)),
+                  ]),
                   severed,
                   k,
                 )
@@ -2005,7 +2032,7 @@ fn scope_consume_rep(
                   ctx,
                   pos + 1,
                   pidx,
-                  cat(acc, [mkb(name, VBool(b), Cli)]),
+                  cat(acc, [mkb(name, VBool(b), Cli, at_pos=Some(pos))]),
                   severed,
                   k,
                 )
@@ -2043,14 +2070,7 @@ fn scope_consume_rep(
 fn strip_link(bs : Array[Binding]) -> Array[Binding] {
   let out : Array[Binding] = []
   for b in bs {
-    out.push({
-      key: b.key,
-      op: b.op,
-      value: b.value,
-      source: b.source,
-      scope: b.scope,
-      link: 0,
-    })
+    out.push({ ..b, link: 0 })
   }
   out
 }

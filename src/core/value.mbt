@@ -1315,14 +1315,31 @@ pub(all) struct Binding {
   //           normally — so an intermediate-scope global (DR-042 shadow) lands at its declaring
   //           scope, not the absolute root. A root global (declared at depth 0) has N = its firing
   //           depth, which escapes all the way to the root (the original bool-`link` behaviour).
+  // DR-034/DR-062 pre_filters + issue 2026-07-09-accum-entity-filters-wiring: the argv token
+  // position this binding's VALUE was read from, when it has one. `Some(pos)` for a CLI-seat
+  // binding built at token-consumption time (eval.mbt/matcher.mbt's `mkb` call sites — a separator
+  // piece carries the position of the WHOLE token it split from, not a per-piece offset, since a
+  // piece is not itself a token). `None` for every non-token-consumption source (env/config/
+  // inherit/default seats, resolve.mbt) — those values were never read off an argv token, so there
+  // is no position to attribute a later filters(each) reject to (`apply_entity_filters`'s
+  // `filter_err` falls back to the ladder's own `at_pos`, unchanged behavior, when this is `None`).
+  at_pos : Int?
 } derive(Eq, Debug)
 
 // ── Binding/ParseError helpers the matcher builds (Branch itself lives in node.mbt) ──
 
 ///|
-/// A plain value bind = the SET degenerate form of an effect (DR-045 §1).
-fn mkb(key : String, value : Value, source : Source) -> Binding {
-  { key, op: Set, value, source, scope: [], link: 0 }
+/// A plain value bind = the SET degenerate form of an effect (DR-045 §1). `at_pos` (issue
+/// 2026-07-09-accum-entity-filters-wiring): the CLI-seat call sites (eval.mbt/matcher.mbt) pass
+/// `Some(pos)` — the token this binding's value was read from; every other caller (resolve.mbt's
+/// env/config/inherit/default seats) omits it, defaulting to `None`.
+fn mkb(
+  key : String,
+  value : Value,
+  source : Source,
+  at_pos? : Int? = None,
+) -> Binding {
+  { key, op: Set, value, source, scope: [], link: 0, at_pos }
 }
 
 ///|
@@ -1435,5 +1452,6 @@ fn depr_marker(element : String) -> Binding {
     source: Cli,
     scope: [],
     link: 0,
+    at_pos: None,
   }
 }
