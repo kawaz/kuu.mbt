@@ -908,6 +908,210 @@ fn claimant_combinations(
   combos
 }
 
+// ── DR-047 §5 明確化 (kawaz 裁定 2026-07-09): bool target requires の後段 path filter ───────────
+//
+// requires (CRequires) / value 依存 requires (CRequiresIf) の目的語が bool 型 (TFlag/TBool) の
+// 場合、充足条件は「値の有無」ではなく「解決後の値が true であること」(値源不問)。この判定は
+// 値源ラダー (cli/env/…) が解ける後段でしか行えないため、KTop (eval.mbt, CLI 面のみで完結する
+// 完全経路判定) では常に pass 扱いとしてスキップし (`is_bool_entity` が両者の共有ゲート)、ここで
+// `parse()` の Outcome を受け取って事後フィルタとして適用する — `promote_collision_ambiguous`
+// (DR-073, 直上) と同じ「Outcome を受け取り Outcome を返す後処理」パターン。
+
+///|
+/// `name` (entities 内で探した Entity) が bool 型 (TFlag/TBool) かどうか — DR-047 §5 明確化の
+/// bool target 判定ゲート。KTop 側の早期スキップ (eval.mbt `eval_constraints`) と、この後段
+/// フィルタの両方が参照する共有関数 (2 箇所で判定がズレないようにする)。
+pub fn is_bool_entity(entities : Array[Entity], name : String) -> Bool {
+  for e in entities {
+    if e.name == name {
+      return e.ty == TFlag || e.ty == TBool
+    }
+  }
+  false
+}
+
+///|
+/// bool target `name` の「解決後の値」(DR-047 §5 明確化、値源不問): committed (CLI) が最終
+/// (true/false どちらでも CLI 面が勝つ、DR-031 ラダー通り)、非 committed なら env
+/// (`entity.env_key` があれば `parse_bool` を試みる)、それも無ければ default_value (bool は
+/// LOWERING §A.5 の暗黙 default:false を含め常に何らかの値を持つ)。**config / inherit は対象外**
+/// (既知の限界 — 元 issue の 3 ケースが CLI + env で表現できるため、config provider / 親スコープ
+/// 探索を持ち込むコストに見合わないと判断。config/inherit 経由でのみ true になる bool target は
+/// 現状この判定に反映されない、後続 issue 候補)。
+fn resolved_bool_value(
+  name : String,
+  bindings : Array[Binding],
+  path : Array[String],
+  entities : Array[Entity],
+  env : Map[String, String],
+) -> Bool {
+  if is_committed(bindings, path, name) {
+    return match elem_value(bindings, path, name) {
+      Some("true") => true
+      _ => false
+    }
+  }
+  for e in entities {
+    if e.name == name {
+      match e.env_key {
+        Some(k) =>
+          match env.get(k) {
+            Some(s) =>
+              match parse_bool(s) {
+                Some(b) => return b
+                None => ()
+              }
+            None => ()
+          }
+        None => ()
+      }
+      return match e.default_value {
+        Some(VBool(b)) => b
+        _ => false
+      }
+    }
+  }
+  false
+}
+
+///|
+/// One scope's bool-target `requires`/value 依存 requires violations, evaluated against a
+/// CANDIDATE path's bindings (mirrors `eval.mbt`'s `eval_constraints` shape, but restricted to
+/// the bool-target predicates KTop skipped). `constraint_err`'s `path` defaults to `[]` (KTop's
+/// contract: a Held rides the cont chain and scope boundaries prepend the path on the way out) —
+/// that mechanism doesn't run here (the path is already fully resolved), so `sc.path` (DR-066 §4
+/// result-nesting path) is threaded in directly via struct-update.
+fn eval_bool_requires(
+  sc : ScopedCons,
+  bindings : Array[Binding],
+  pos : Int,
+  env : Map[String, String],
+) -> Array[ParseError] {
+  let out : Array[ParseError] = []
+  let path = sc.path
+  for c in sc.constraints {
+    match c {
+      CRequires(elem, targets) =>
+        if is_committed(bindings, path, elem) {
+          for t in targets {
+            if is_bool_entity(sc.entities, t) &&
+              !resolved_bool_value(t, bindings, path, sc.entities, env) {
+              out.push({
+                ..constraint_err(
+                  elem,
+                  "requires_violated",
+                  "'\{elem}' requires '\{t}'",
+                  pos,
+                ),
+                path,
+              })
+            }
+          }
+        }
+      CRequiresIf(entity, branch_id, v, targets) => {
+        let active = is_committed(bindings, path, entity) &&
+          (match elem_value(bindings, path, entity) {
+            Some(x) => x == v
+            None => false
+          })
+        if active {
+          for t in targets {
+            if is_bool_entity(sc.entities, t) &&
+              !resolved_bool_value(t, bindings, path, sc.entities, env) {
+              out.push({
+                ..constraint_err(
+                  branch_id,
+                  "requires_violated",
+                  "'\{entity}'=\{v} requires '\{t}'",
+                  pos,
+                ),
+                path,
+              })
+            }
+          }
+        }
+      }
+      CConflicts(_, _) | CExclusive(_, _) => () // committed 基準、値源不問なので KTop で確定済み
+    }
+  }
+  out
+}
+
+///|
+/// Apply the DR-047 §5 bool-target requires path filter to a `parse()` Outcome (post_filters と
+/// 同じ側の後段処理、`promote_collision_ambiguous` と同型パターン — `parse()` 自体のシグネチャ・
+/// eval 層の Ctx は無改修のまま、値源 (env) を後から与える)。生存経路数で outcome を再構成する:
+/// 0 → `Failure` (violation を DR-053 §2 全保持で errors に、`fired_action`/`help_entry`/
+/// `tried_triggers` は既存 KTop 発 Failure と同じ素材関数から構築 — 区別が付かない形にする、
+/// DR-048 の「候補経路は dead end を含む」通り違反で落ちた経路の action も候補に数える)、
+/// 1 → その経路で `Success`、2+ → 生存分だけの `Ambiguous`。`root`/`defs` は制約テーブル
+/// (`collect_scopes`) と `find_help_entry`/`tried_triggers_of` の素材取得に使う。
+pub fn apply_bool_requires_filter(
+  o : Outcome,
+  root : Node,
+  defs : Map[String, Node],
+  env : Map[String, String],
+  toks_len : Int,
+) -> Outcome {
+  let table = collect_scopes(root, defs)
+  let violations_of = fn(binds : Array[Binding]) -> Array[ParseError] {
+    let out : Array[ParseError] = []
+    for sc in table {
+      for v in eval_bool_requires(sc, binds, toks_len, env) {
+        out.push(v)
+      }
+    }
+    out
+  }
+  let build_failure = fn(
+    binds_for_actions : Array[Array[Binding]],
+    errors : Array[ParseError],
+  ) -> Outcome {
+    let actions : Array[(String, Int)] = []
+    for bs in binds_for_actions {
+      collect_actions(bs, actions)
+    }
+    Failure({
+      errors,
+      fired_action: if actions.length() > 0 {
+        Some(argmin_action(actions))
+      } else {
+        None
+      },
+      help_entry: find_help_entry(root),
+      tried_triggers: tried_triggers_of(root, errors),
+    })
+  }
+  match o {
+    Success(binds) =>
+      match violations_of(binds) {
+        [] => o
+        viol => build_failure([binds], viol)
+      }
+    Ambiguous(d) => {
+      let survivors : Array[AmbInterp] = []
+      let all_violations : Array[ParseError] = []
+      let all_binds : Array[Array[Binding]] = []
+      for interp in d.interpretations {
+        all_binds.push(interp.binds) // DR-048: dead-end (違反除外) 経路も action 候補に数える
+        match violations_of(interp.binds) {
+          [] => survivors.push(interp)
+          viol =>
+            for v in viol {
+              all_violations.push(v)
+            }
+        }
+      }
+      match survivors.length() {
+        0 => build_failure(all_binds, all_violations)
+        1 => Success(survivors[0].binds)
+        _ => Ambiguous({ interpretations: survivors, help_entry: d.help_entry })
+      }
+    }
+    Failure(_) => o
+  }
+}
+
 // ── value-source ladder (slice `poc/installer.mbt`'s resolve_scope / resolve_scope_config) ───
 
 ///|

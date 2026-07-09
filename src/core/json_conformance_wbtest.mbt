@@ -3458,12 +3458,21 @@ fn scope_entered(binds : Array[Binding], path : Array[String]) -> Bool {
 ///|
 fn run_case(df : DecodedFixture, dc : DCase) -> String {
   let sc = df.scope
-  // DR-021 → DR-073: after parse, promote Success to Ambiguous when the actual binding set carries
-  // an export-key co-exposure collision (runtime check on the actual co-exposure, §15.5 / DESIGN
-  // §15.5). Structurally-ambiguous outcomes pass through unchanged (they differ by parse structure,
-  // not by provenance for a shared exposed key).
+  let root = ScopeNode(sc)
+  // DR-047 §5 明確化 (kawaz 裁定 2026-07-09): bool-target requires/CRequiresIf は KTop (CLI 面
+  // のみ) では常にスキップされているので、値源 (env) が解ける後段でここでフィルタする
+  // (post_filters と同じ側、`resolve.mbt` の `apply_bool_requires_filter` — 経路数に応じて
+  // success/ambiguous/failure を再確定)。DR-021 → DR-073 の export-key collision 昇格
+  // (`promote_collision_ambiguous`) より先に適用する — 責務が異なる2つの後処理 (「経路の成立
+  //自体」と「export-key 衝突による Success→Ambiguous 昇格」) を素直に直列に並べる。
   let outcome = promote_collision_ambiguous(
-    parse(ScopeNode(sc), dc.argv, defs=df.registry),
+    apply_bool_requires_filter(
+      parse(root, dc.argv, defs=df.registry),
+      root,
+      df.registry,
+      dc.env,
+      dc.argv.length(),
+    ),
     df.ekmap,
   )
   let problems : Array[String] = []
@@ -4221,5 +4230,132 @@ test "conformance harness: errors[].path opt-in is compared, not merely decoded 
     } else if verdict == "PASS" {
       abort("expected a path mismatch for wrong-path, got PASS")
     }
+  }
+}
+
+///|
+/// 保証 (issue 2026-07-09-constraint-path-filtering-gap の元 exact repro、DR-047 §5 明確化
+/// kawaz 裁定 2026-07-09 後の end-to-end 確認): alias で同一トリガ `--v` を持つ 2 経路 (a に
+/// `requires:["c"]`、c はフラグ) に対し、`run_case` (= `apply_bool_requires_filter` →
+/// `promote_collision_ambiguous` の直列適用込みの harness 本経路) が3ケースとも正しい outcome を
+/// 返すことを固定する。`c` には `env:["C"]` を追加している (元 exact repro には無かったが、env
+/// 救済ケースの検証に必要 — DR-047 §5 明確化「値源不問」の env 面カバー)。
+test "DR-047 §5 end-to-end: exact issue repro (alias same trigger, requires) via run_case" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "a", "type": "flag", "requires": ["c"]},
+    #|      {"alias": "a", "name": "v", "long": [":set:true"]},
+    #|      {"name": "b", "type": "flag"},
+    #|      {"alias": "b", "name": "v", "long": [":set:true"]},
+    #|      {"name": "c", "type": "flag", "long": true, "env": ["C"]}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "c-unset-a-excluded",
+    #|      "argv": ["--v"],
+    #|      "expect": {"outcome": "success", "effects": [
+    #|        {"entity": "b", "op": "set", "operand": true, "source": "cli"}
+    #|      ]}
+    #|    },
+    #|    {
+    #|      "id": "c-cli-both-survive",
+    #|      "argv": ["--v", "--c"],
+    #|      "expect": {"outcome": "ambiguous"}
+    #|    },
+    #|    {
+    #|      "id": "c-env-both-survive",
+    #|      "argv": ["--v"],
+    #|      "env": {"C": "true"},
+    #|      "expect": {"outcome": "ambiguous"}
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 3)
+  for c in df.cases {
+    let verdict = run_case(df, c)
+    if verdict != "PASS" {
+      abort("case '" + c.id + "' expected PASS, got: " + verdict)
+    }
+  }
+}
+
+///|
+/// 保証: 前 wbtest との対 — target `c` が非フラグ (string、default 無し) なら DR-047 §5 明確化の
+/// 対象外 (bool でない) なので、KTop の既存 CLI-only 判定がそのまま効く。env で値を与えても
+/// (env は committed を立てない、DR-047 §5「committed の定義は本 DR で変更しない」) requires は
+/// 充足しない — bool target 限定の新挙動が non-bool target まで漏れ出していないことを固定する。
+test "DR-047 §5 end-to-end: non-bool target requires is unaffected by the env rescue path" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "a", "type": "flag", "long": true, "requires": ["c"]},
+    #|      {"name": "c", "type": "string", "long": true, "env": ["C"]}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "c-env-set-still-fails",
+    #|      "argv": ["--a"],
+    #|      "env": {"C": "x"},
+    #|      "expect": {
+    #|        "outcome": "failure",
+    #|        "errors": [{"element": "a", "argv_pos": 1, "kind": "constraint", "reason": "requires_violated"}]
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 1)
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// 保証 (team-lead 指摘: 生存 0 → Failure の fired_action/help_entry/tried_triggers が既存
+/// KTop 発 Failure と同じ素材関数 (`collect_actions`/`argmin_action`/`find_help_entry`/
+/// `tried_triggers_of`) から構築され、整合が取れていることの end-to-end 確認): help
+/// (`type:"help"`, DR-048 失敗時アクション) が selected な経路が、bool-target requires 違反で
+/// `apply_bool_requires_filter` により Failure に変換されても、`fired_action` が正しく "help"
+/// になることを固定する。`--help --a` で help・a 共に発火 (help selected)、a は requires:[c]
+/// 未充足 (c はフラグ、CLI/env どちらも未指定で false) → Success(1本) が Failure に変換される
+/// 経路で、KTop 発 Failure (`failure-actions/help-basic.json`) と同じ fired_action 契約が
+/// 保たれることを確認する (DR-053 §2 「fired_action と errors が 1 Failure に両立」)。
+test "DR-047 §5 end-to-end: fired_action (help) survives the post-filter Success→Failure conversion" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "help", "type": "help", "long": true},
+    #|      {"name": "a", "type": "flag", "long": true, "requires": ["c"]},
+    #|      {"name": "c", "type": "flag", "long": true}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "help-selected-survives-bool-requires-failure",
+    #|      "argv": ["--help", "--a"],
+    #|      "expect": {
+    #|        "outcome": "failure",
+    #|        "errors": [{"element": "a", "argv_pos": 2, "kind": "constraint", "reason": "requires_violated"}],
+    #|        "fired_action": "help"
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 1)
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
   }
 }

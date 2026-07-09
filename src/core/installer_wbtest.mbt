@@ -1097,45 +1097,41 @@ test "repeat installer: self-ref cons template key does not collide with a same-
 // ── DR-047 §5: requires 目的語の「値の有無」判定とフラグの暗黙 default (issue 2026-07-09-constraint-path-filtering-gap の調査結果) ──
 
 ///|
-/// 保証 (issue 2026-07-09-constraint-path-filtering-gap の根本原因の特定): `requires` の目的語側
-/// 判定は「値の有無」(DR-047 §5、`value_present` = committed OR has_default)。フラグ型セルは
-/// LOWERING §A.5 / DR-051 §2 により**常に** `default:false` を暗黙で持つ (`ensure_entity` が
-/// TFlag に無条件で default_value を注入する) ため、`has_default` が常に真になり、フラグを
-/// target とする `requires` は **CLI で明示指定しなくても常に充足** する (vacuous satisfaction)。
-/// これは KTop の path filter 自体の不具合ではない (eval_wbtest.mbt の DR-047 §2 pin が別途
-/// 実証済み) — `requires` の目的語にフラグを選ぶと、そのフラグが「値を持たないことがあり得ない」
-/// ため制約として無意味化するという、DR-047 §5 の判定式とフラグの default 注入が組み合わさった
-/// 帰結。次の wbtest (target が非フラグ = default 無し) との対で挙動差を固定する。
-test "DR-047 §5: requires targeting a FLAG is vacuously satisfied (flag always has a default value)" {
+/// 保証 (issue 2026-07-09-constraint-path-filtering-gap、DR-047 §5 明確化 kawaz 裁定
+/// 2026-07-09 で期待値が反転した wbtest): `requires` の目的語が bool 型 (フラグ含む) の場合、
+/// 充足条件は「値の有無」ではなく「解決後の値が true であること」(値源不問)。判定は値源ラダーが
+/// 解ける後段でしか行えないため、**`parse()` 単体では bool target の requires を KTop が常に
+/// スキップする** (常に pass 扱い、"c" を一切与えなくても Success のまま — これは vacuous
+/// satisfaction ではなく、後段フィルタを通す前の意図された中間状態)。`resolve.mbt` の
+/// `apply_bool_requires_filter` (post_filters と同じ側の後段処理) を通して初めて、c が
+/// 未解決 (default:false のまま) なら requires 違反として Failure に確定する — vacuous
+/// satisfaction は後段フィルタ適用で解消されることを、この2段 (parse() 単体 / フィルタ後) で
+/// 固定する。次の wbtest (target が非フラグ = KTop のまま従来通り) との対で挙動差を確認する。
+test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_bool_requires_filter enforces it" {
   let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
   let c = el("c", TFlag, long=LList([":set"]))
   let def : Definition = { ..empty_def(), options: [a, c] }
   let sc = ok_scope(def, all_installers())
-  // "c" を一切与えなくても、a の requires:[c] は c の暗黙 default:false で充足済み扱いになり、
-  // success になる (failure kind:constraint にはならない)。
-  match parse(ScopeNode(sc), ["--a"], defs=Map([])) {
+  let root = ScopeNode(sc)
+  // parse() 単体: bool target なので KTop は常に pass 扱い (c を与えなくても Success)。
+  match parse(root, ["--a"], defs=Map([])) {
     Success(_) => ()
     other =>
       fail(
-        "expected Success (vacuous satisfaction), got " + render_outcome(other),
+        "expected Success (KTop skips bool-target requires), got " +
+        render_outcome(other),
       )
   }
-}
-
-///|
-/// 保証: 前 wbtest との対 — `requires` の目的語が非フラグ (default 宣言なしの string) なら、
-/// CLI 明示指定が無い限り `has_default` が偽のままなので `value_present` が正しく偽になり、
-/// `requires` が意図通り enforce される (failure kind:constraint、reason requires_violated)。
-/// フラグ target との挙動差がフラグの暗黙 default 注入だけに起因することの固定 (既存 spec fixture
-/// `alias-parse/canonical-constraint.json` / `constraints-parse/requires.json` も同型の
-/// 非フラグ target で正しく enforce されている — 本 wbtest はそれを非フラグ/フラグ対比の形で
-/// installer 層に pin し直す)。
-test "DR-047 §5: requires targeting a non-flag (no default) is correctly enforced" {
-  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
-  let c = el("c", TStr, long=LList([":set"]))
-  let def : Definition = { ..empty_def(), options: [a, c] }
-  let sc = ok_scope(def, all_installers())
-  match parse(ScopeNode(sc), ["--a"], defs=Map([])) {
+  // apply_bool_requires_filter を通すと、c=false (未解決、暗黙 default:false) で requires
+  // 違反が検出され Failure に確定する。
+  match
+    apply_bool_requires_filter(
+      parse(root, ["--a"], defs=Map([])),
+      root,
+      Map([]),
+      Map([]),
+      1,
+    ) {
     Failure(d) => {
       let mut found = false
       for e in d.errors {
@@ -1146,10 +1142,77 @@ test "DR-047 §5: requires targeting a non-flag (no default) is correctly enforc
       assert_true(found)
     }
     other =>
-      fail("expected Failure (requires unmet), got " + render_outcome(other))
+      fail(
+        "expected Failure (post-filter enforces bool-target requires), got " +
+        render_outcome(other),
+      )
   }
-  // c を与えれば充足し success になる (対称の成功面)。
-  match parse(ScopeNode(sc), ["--a", "--c", "x"], defs=Map([])) {
+  // c を CLI で明示指定すれば true に解決され、フィルタ後も Success のまま。
+  match
+    apply_bool_requires_filter(
+      parse(root, ["--a", "--c"], defs=Map([])),
+      root,
+      Map([]),
+      Map([]),
+      2,
+    ) {
+    Success(_) => ()
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証: 前 wbtest との対 — `requires` の目的語が非フラグ (default 宣言なしの string) なら、
+/// bool target ではないので DR-047 §5 明確化の対象外 (`is_bool_entity` が偽) — KTop が従来どおり
+/// CLI 面のみで確定的に `value_present` (= committed OR has_default) を評価し、CLI 明示指定が
+/// 無い限り正しく enforce される (failure kind:constraint、reason requires_violated)。
+/// `apply_bool_requires_filter` を通しても non-bool target には手を出さないので結果は不変
+/// (フィルタが「bool target だけ」を対象にすることの確認を兼ねる)。フラグ target との挙動差が
+/// フラグの暗黙 default 注入 + bool 判定式の組合せだけに起因することの固定 (既存 spec fixture
+/// `alias-parse/canonical-constraint.json` / `constraints-parse/requires.json` も同型の
+/// 非フラグ target で正しく enforce されている — 本 wbtest はそれを非フラグ/フラグ対比の形で
+/// installer 層に pin し直す)。
+test "DR-047 §5: requires targeting a non-flag (no default) is correctly enforced (KTop, filter is a no-op)" {
+  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let c = el("c", TStr, long=LList([":set"]))
+  let def : Definition = { ..empty_def(), options: [a, c] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  fn check_failure(o : Outcome) -> Unit raise {
+    match o {
+      Failure(d) => {
+        let mut found = false
+        for e in d.errors {
+          if e.kind == KConstraint && e.reason == "requires_violated" {
+            found = true
+          }
+        }
+        assert_true(found)
+      }
+      other =>
+        fail("expected Failure (requires unmet), got " + render_outcome(other))
+    }
+  }
+  check_failure(parse(root, ["--a"], defs=Map([])))
+  // apply_bool_requires_filter を通しても non-bool target には影響しない (既に KTop で Failure)。
+  check_failure(
+    apply_bool_requires_filter(
+      parse(root, ["--a"], defs=Map([])),
+      root,
+      Map([]),
+      Map([]),
+      1,
+    ),
+  )
+  // c を与えれば充足し success になる (対称の成功面)。フィルタを通しても不変。
+  match
+    apply_bool_requires_filter(
+      parse(root, ["--a", "--c", "x"], defs=Map([])),
+      root,
+      Map([]),
+      Map([]),
+      3,
+    ) {
     Success(_) => ()
     other => fail("expected Success, got " + render_outcome(other))
   }
