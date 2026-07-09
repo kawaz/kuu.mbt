@@ -7,3 +7,4 @@
 | 2026-07-08 | design | open | [export-key-collision-identity-exposure-gap](./2026-07-08-export-key-collision-identity-exposure-gap.md) | find_export_collisions が identity 露出 (ek 未登録) 由来の衝突を見逃す |
 | 2026-07-09 | design | open | [filters-registry-foundation](./2026-07-09-filters-registry-foundation.md) | filters registry 汎用基盤の整備 (DR-009/DR-010/DR-040/DR-077 の宣言軸が未実装) |
 | 2026-07-09 | task | open | [pre-split-filters-execution-wiring](./2026-07-09-pre-split-filters-execution-wiring.md) | pre_split_filters の実行配線 (decode 済み・未配線) |
+| 2026-07-09 | design | open | [accum-entity-filters-wiring](./2026-07-09-accum-entity-filters-wiring.md) | accum (multiple) 要素への filters/post_filters 配線 — resolve_entity の accum 対応 |
