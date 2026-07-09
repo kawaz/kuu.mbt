@@ -78,3 +78,20 @@ filters-each.json::separator-piece-rejects-whole の mismatch、got=parse/not_a_
 conformance fixture: multiple-parse/filters-each.json::separator-piece-rejects-whole が
 本 issue 解決までの known divergence として ledger 登録される (fixture の意図は変えない)。
 number×separator の成功系 fixture (spec 側) も本 issue 解決時に追加する。
+
+## 2026-07-09 追記 2: 対処 2 段の連鎖を実測確認 (段 1 単独適用は不可)
+
+impl-prefilters worker が段 1 (option 経路の separator 配線) を試験実装して確認した実測:
+value_prim に `separator? : String?` を追加して SepArg 構築を一元化する修正 (アプローチ自体は
+有効、elem_head の独自分岐も一本化できる) を入れると、`--ports 5` (separator 宣言あり・分割
+不要の単発トークン) も SepArg 経由になり、**段 2 (SepArg の型 parse 欠如) が即座に露呈**して
+VStr("5") が number filter (in_range) に渡り成功系まで壊れる。
+
+つまり段 1 と段 2 は片方だけ適用できない (段 1 のみ → 成功系 regression / 段 1 なし → option で
+分割自体が起きない)。**本 issue の着手時は 2 段を同一サイクルで一括実装すること**。
+Binding.at_pos (accum-entity-filters-wiring サイクルで導入予定) が入っていれば、separator piece
+群の argv_pos (同一トークン位置) はそのまま乗る。
+
+検証環境: multiple-parse/filters-each.json の 3 case が本 issue の判別 fixture として機能する
+(段 1+2 完了で case 3 が GREEN、成功系 case 1 が regress しないことも同 fixture で確認可能)。
+number×separator の成功系 fixture (spec 側) の追加も本 issue の受け入れ条件に含める。
