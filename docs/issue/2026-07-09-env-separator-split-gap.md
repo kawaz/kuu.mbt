@@ -1,11 +1,11 @@
 ---
 title: separator 付き multiple 要素の env 値が separator 分割されない (DR-049 乖離)
-status: open
+status: wip
 category: bug
 created: 2026-07-09T16:56:15+09:00
 last_read:
 open_entered: 2026-07-09T16:56:15+09:00
-wip_entered:
+wip_entered: 2026-07-09T23:29:15+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
