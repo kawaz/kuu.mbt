@@ -1,11 +1,11 @@
 ---
 title: accum (multiple) 要素への filters / post_filters 配線 — resolve_entity の accum 対応
-status: open
+status: wip
 category: design
 created: 2026-07-09T10:26:36+09:00
 last_read:
 open_entered: 2026-07-09T10:26:36+09:00
-wip_entered:
+wip_entered: 2026-07-09T17:01:55+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
