@@ -1,6 +1,6 @@
 ---
 title: DR-047「制約を満たさない経路は完全経路と数えない」(path filter) が未実装
-status: open
+status: resolved
 category: bug
 created: 2026-07-09T11:00:30+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-09T14:35:10+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-047","implemented","commit 382f4d51 pin diagnosis correction","commit 5dd6b8a9 apply_bool_requires_filter implementation","spec commit b4718339 fixture pin","related-issue/bool-requires-config-inherit-gap"]
 blocked_by:
 origin: kuu (spec リポ)
 ---
