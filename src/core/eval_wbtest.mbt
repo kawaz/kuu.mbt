@@ -1369,3 +1369,82 @@ test "DR-043 × DR-038: hand-built Many(Or(seq-rgb, string-name)) lets both or-b
     other => fail("expected Ambiguous, got " + render_outcome(other))
   }
 }
+
+// ── DR-047: 遅延述語は完全経路の成立条件 (KTop path filter) ──────────────────────
+//
+// issue 2026-07-09-constraint-path-filtering-gap の設計調査で得た pin。core engine
+// (cont.mbt の KTop / eval_all_constraints) が DR-047 §2 「制約を満たさない経路は完全経路と
+// 数えない」を正しく実装していることを、installer/decode を経由しない raw Node/Scope 構築で
+// 直接検証する (一次資料)。issue の実測 (alias 経由の 2 経路 + 片方 requires 未充足で
+// ambiguous:2) は、後続の調査で「requires の目的語がフラグ型セル (LOWERING §A.5 の暗黙
+// default:false を必ず持つ) だったため、DR-047 §5 の「requires 目的語側=値の有無」判定が
+// その暗黙 default で常に充足してしまう (vacuous satisfaction)」ことが原因と判明した — KTop
+// 自体のフィルタは正しく動いている (下の 2 wbtest が実証)。フラグ target の vacuous
+// satisfaction 自体は別途 3 本目の wbtest で固定する (installer_wbtest.mbt 参照)。
+
+///|
+/// 保証: slice `poc/phase25_wbtest.mbt:225` の直接移植。`x` の 2 通りの完全経路 (foo+bar を
+/// 両方 commit する経路 / foo だけを commit する経路) のうち、`CConflicts("foo",["bar"])` が
+/// 前者を完全経路から除外し、後者 1 本で success 確定する (DR-047 §2 の核)。制約なしの対照は
+/// 同じ 2 経路が正しく ambiguous:2 になることも併せて固定する (= 経路構造そのものは変わらず、
+/// filter の有無だけが結果を変えることの証明)。
+test "DR-047 §2: a constraint filters one of two complete paths (Or-branch shape, slice phase25:225)" {
+  let paths : Array[Node] = [
+    Or([
+      Seq([Exact("x"), Bind("foo", VBool(true)), Bind("bar", VBool(true))]),
+      Seq([Exact("x"), Bind("foo", VBool(true))]),
+    ]),
+  ]
+  let sc : Scope = {
+    greedy: [],
+    positional: paths,
+    entities: [],
+    constraints: [CConflicts("foo", ["bar"])],
+  }
+  match parse(ScopeNode(sc), ["x"], defs=Map([])) {
+    Success(bs) => {
+      assert_eq(bs.length(), 1)
+      assert_eq(bs[0].key, "foo")
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+  let sc_noc : Scope = { ..sc, constraints: [] }
+  match parse(ScopeNode(sc_noc), ["x"], defs=Map([])) {
+    Ambiguous(d) => assert_eq(d.interpretations.length(), 2)
+    other => fail("expected Ambiguous, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証: DR-047 §2 の path filter は `Or` ノードで束ねた経路だけでなく、`sc.greedy` に
+/// 独立した SIBLING エントリとして並ぶ経路 (同じ trigger `--v` を持つ 2 本の Seq) でも同様に効く
+/// (= filter の適用点が KTop に集約されているため、経路がどの構文で作られたかに依存しない)。
+/// `a` が `requires:["c"]` を持ち、`c` を与えない `--v` 単独では a 経路が requires 未充足で
+/// 完全経路から除外され、b 1 本 (`ok{b=true}`) に確定する。`c` を併せて与えると両経路とも
+/// 完全経路になり ambiguous:2 (対照ケース)。`entities: []` (target `c` に Entity が無い =
+/// LOWERING §A.5 のフラグ暗黙 default が乗らない) なので、この pin では
+/// `installer_wbtest.mbt` 側で固定するフラグ target の vacuous-satisfaction 事象は起きない
+/// (= 混ぜず、KTop の filter 機構そのものだけを検証する)。
+test "DR-047 §2: a constraint filters one of two complete paths (sibling greedy shape)" {
+  let sc : Scope = {
+    greedy: [
+      Seq([Exact("--v"), Bind("a", VBool(true))]),
+      Seq([Exact("--v"), Bind("b", VBool(true))]),
+      Seq([Exact("--c"), Bind("c", VBool(true))]),
+    ],
+    positional: [],
+    entities: [],
+    constraints: [CRequires("a", ["c"])],
+  }
+  match parse(ScopeNode(sc), ["--v"], defs=Map([])) {
+    Success(bs) => {
+      assert_eq(bs.length(), 1)
+      assert_eq(bs[0].key, "b")
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+  match parse(ScopeNode(sc), ["--v", "--c"], defs=Map([])) {
+    Ambiguous(d) => assert_eq(d.interpretations.length(), 2)
+    other => fail("expected Ambiguous, got " + render_outcome(other))
+  }
+}

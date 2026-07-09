@@ -1093,3 +1093,64 @@ test "repeat installer: self-ref cons template key does not collide with a same-
     Err(_) => fail("expected Ok(Scope)")
   }
 }
+
+// ── DR-047 §5: requires 目的語の「値の有無」判定とフラグの暗黙 default (issue 2026-07-09-constraint-path-filtering-gap の調査結果) ──
+
+///|
+/// 保証 (issue 2026-07-09-constraint-path-filtering-gap の根本原因の特定): `requires` の目的語側
+/// 判定は「値の有無」(DR-047 §5、`value_present` = committed OR has_default)。フラグ型セルは
+/// LOWERING §A.5 / DR-051 §2 により**常に** `default:false` を暗黙で持つ (`ensure_entity` が
+/// TFlag に無条件で default_value を注入する) ため、`has_default` が常に真になり、フラグを
+/// target とする `requires` は **CLI で明示指定しなくても常に充足** する (vacuous satisfaction)。
+/// これは KTop の path filter 自体の不具合ではない (eval_wbtest.mbt の DR-047 §2 pin が別途
+/// 実証済み) — `requires` の目的語にフラグを選ぶと、そのフラグが「値を持たないことがあり得ない」
+/// ため制約として無意味化するという、DR-047 §5 の判定式とフラグの default 注入が組み合わさった
+/// 帰結。次の wbtest (target が非フラグ = default 無し) との対で挙動差を固定する。
+test "DR-047 §5: requires targeting a FLAG is vacuously satisfied (flag always has a default value)" {
+  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let c = el("c", TFlag, long=LList([":set"]))
+  let def : Definition = { ..empty_def(), options: [a, c] }
+  let sc = ok_scope(def, all_installers())
+  // "c" を一切与えなくても、a の requires:[c] は c の暗黙 default:false で充足済み扱いになり、
+  // success になる (failure kind:constraint にはならない)。
+  match parse(ScopeNode(sc), ["--a"], defs=Map([])) {
+    Success(_) => ()
+    other =>
+      fail(
+        "expected Success (vacuous satisfaction), got " + render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 保証: 前 wbtest との対 — `requires` の目的語が非フラグ (default 宣言なしの string) なら、
+/// CLI 明示指定が無い限り `has_default` が偽のままなので `value_present` が正しく偽になり、
+/// `requires` が意図通り enforce される (failure kind:constraint、reason requires_violated)。
+/// フラグ target との挙動差がフラグの暗黙 default 注入だけに起因することの固定 (既存 spec fixture
+/// `alias-parse/canonical-constraint.json` / `constraints-parse/requires.json` も同型の
+/// 非フラグ target で正しく enforce されている — 本 wbtest はそれを非フラグ/フラグ対比の形で
+/// installer 層に pin し直す)。
+test "DR-047 §5: requires targeting a non-flag (no default) is correctly enforced" {
+  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let c = el("c", TStr, long=LList([":set"]))
+  let def : Definition = { ..empty_def(), options: [a, c] }
+  let sc = ok_scope(def, all_installers())
+  match parse(ScopeNode(sc), ["--a"], defs=Map([])) {
+    Failure(d) => {
+      let mut found = false
+      for e in d.errors {
+        if e.kind == KConstraint && e.reason == "requires_violated" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail("expected Failure (requires unmet), got " + render_outcome(other))
+  }
+  // c を与えれば充足し success になる (対称の成功面)。
+  match parse(ScopeNode(sc), ["--a", "--c", "x"], defs=Map([])) {
+    Success(_) => ()
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
