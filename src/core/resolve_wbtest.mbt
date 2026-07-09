@@ -782,9 +782,14 @@ test "resolve_scope: cell_filters (in_range) also rejects a plain Set value over
 ///|
 /// 保証 (regression 再現、issue 2026-07-09-accum-entity-filters-wiring の "根" そのもの):
 /// resolve_entity_raw の CLI 座席 fold は `e.accum is Some(_)` のとき同名 Binding を DR-015
-/// last-wins に潰さず、列のまま (op 解釈せず) 温存して返す — accum 無し (scalar) の fold が
-/// last-wins のままであることとの対比を同じテストで固定する。修正前はこの assert が
-/// `Ok([cb("tags", VStr("b"), Cli)])` (最後の 1 個だけ) に潰れて RED だった。
+/// last-wins に潰さない — accum 無し (scalar) の fold が last-wins のままであることとの対比を同じ
+/// テストで固定する。修正前はこの assert が `Ok([cb("tags", VStr("b"), Cli)])` (最後の 1 個だけ) に
+/// 潰れて RED だった。本テストは Set 効果のみを使うため、issue accum-fold-update-default-ops
+/// (team-lead 裁定 2026-07-10) 以降 `resolve_entity_raw` の accum 分岐が default/unset の committed
+/// 状態を追跡するようになった後も結果は変わらない (Set は常に `committed_now=true` で温存される) —
+/// 「op 解釈しない」という記述は現在の実装を正確に表さないため削除し、「Set のみなら常に全件温存」
+/// という不変条件として書き直した (op 解釈が入っても Set 効果自体の扱いは変わっていない、という
+/// 意図)。
 test "resolve_scope: an accum cell's CLI seat preserves EVERY same-name binding (not last-wins)" {
   let tags = ent("tags", TStr, accum=Some("append"))
   let sc : Scope = {
@@ -872,18 +877,25 @@ test "resolve_scope: accum × value_filters(each) — one piece rejecting fails 
 }
 
 ///|
-/// 保証 (regression 再現、issue 2026-07-09-accum-filters-non-set-op-semantics の "根": kawaz 裁定
-/// 「value_filters(each) は cell に書かれる実値 (set operand / update 適用結果) にのみ乗る、
-/// unset/default/empty は cell 操作であって piece ではない」の accum 経路への一般化): accum セルの
-/// CLI 座席 fold (issue accum-entity-filters-wiring) は op を解釈せず同名 Binding を列のまま温存
-/// するため、`Unset` 効果の placeholder 値 (`mk_eff` の doc comment: "The operand is a
-/// placeholder — these ops carry no operand", ここでは VBool(false)) が修正前は
-/// `apply_entity_filters` の `b.op == Empty のみ skip` という条件をすり抜け、number 用
-/// `in_range` filter に渡って型不一致で誤 reject していた (issue 本文の `--ports 5
-/// --reset-ports` 実測 probe をここで正式な wbtest に昇格)。修正後は `b.op != Set` を skip する
-/// ため、Unset の placeholder は filter を一切通らず素通しされ、Set(5) だけが filter を通って
-/// success になる。multiple-parse/filters-cell-ops.json::unset-after-set-resets-to-empty-without-filter
-/// の wbtest 版 (fixture 側は DSL 記述の修正待ち、2026-07-09 時点)。
+/// 保証 (issue 2026-07-09-accum-fold-update-default-ops、team-lead 裁定 2026-07-10 — 前サイクル
+/// (issue accum-filters-non-set-op-semantics) からの契約変更を明示する): このテストが検証する
+/// 「何を」は変わっていない (Unset の placeholder 値 (`mk_eff` の doc comment: "The operand is a
+/// placeholder — these ops carry no operand", ここでは VBool(false)) が number 用 `in_range`
+/// value_filters に渡って型不一致で誤 reject しないこと) — この spec 面の正本は conformance fixture
+/// `multiple-parse/filters-cell-ops.json` (unset-after-set-resets-to-empty-without-filter ケース、
+/// green 維持確認済み) であり、本 wbtest はそれが conformance fixture に到達する前に GREEN を固定
+/// する下働き。**変わったのは「どう検証するか」**: 旧契約 (accum-filters-non-set-op-semantics サイクル)
+/// では `resolve_entity_raw` の accum 分岐は CLI 座席の op を一切解釈せず同名 Binding を生のまま列で
+/// 温存していたため、本テストは「`resolve_scope` の戻り値が `[Set(5), Unset]` の2件そのまま」を
+/// 直接 assert していた。今サイクルの裁定で `resolve_entity_raw` の accum 分岐は op を解釈するように
+/// なった (default/unset の committed 状態を追跡し、CLI 座席全体が uncommitted なら下位ラダーへ
+/// フォールスルーする、Q5) — `ports` は env/config/宣言 default を一切持たないため、Unset
+/// (committed=false) 単独発火は CLI 座席全体を下位ラダーへ開放し、下位値源も無いので最終的に
+/// `Ok([])` に確定する (`unset-env-fallback.json` の下位値源ありケースとの対比: 本テストは下位値源
+/// なしの基準形、対になる下位値源ありケースは次のテストで押さえる)。Unset の placeholder が
+/// `apply_entity_filters` の filter chain (in_range:1:100) を通っていたら型不一致で `Err` になるはず
+/// なので、`Ok([])` (Err でないこと) 自体が「placeholder が filter を経由していない」証拠になる —
+/// この検証ロジック自体 (Err にならないことで filter 非適用を証明する) は旧契約でも同じだった。
 test "resolve_scope: accum × value_filters(each) — Unset placeholder is exempt from filters (only Set carries a real value)" {
   let ports = ent("ports", TNum, accum=Some("append"), value_filters=[
     "in_range:1:100",
@@ -908,19 +920,58 @@ test "resolve_scope: accum × value_filters(each) — Unset placeholder is exemp
     },
   ]
   match resolve_scope(sc, cli, Map([])) {
-    Ok(bs) => {
-      // Set(5) は filter (in_range:1:100) を通過して素通しの VNum(5.0) のまま、Unset は op/value
-      // ともに一切変更されず (filter を経由していない証拠) そのまま温存される。
-      assert_eq(bs.length(), 2)
-      assert_eq(bs[0].op, Set)
-      assert_eq(bs[0].value, VNum(5.0))
-      assert_eq(bs[1].op, Unset)
-      assert_eq(bs[1].value, VBool(false))
-    }
+    Ok(bs) =>
+      // Unset が CLI 座席をラダーへ開放し、下位値源 (env/config/宣言default) も無いので `[]` に確定
+      // する — Set(5) は Unset で累積列がクリアされた後の座席には残らない (build_result 側の
+      // ACCUMULATE fold が Set→Unset を「クリア点」として畳むのと同じ規約、`resolve_scope` 単体では
+      // その畳みの手前の座席解決だけを見ている)。
+      assert_eq(bs.length(), 0)
     Err(_) =>
       fail(
-        "expected Ok — Unset's placeholder must not run through e.value_filters (in_range would wrongly reject a non-number placeholder if it did)",
+        "expected Ok([]) — Unset's placeholder must not run through e.value_filters (in_range would wrongly reject a non-number placeholder if it did)",
       )
+  }
+}
+
+///|
+/// 保証 (上記テストの対、下位値源ありケース — fall-through の両面を unit 層でも押さえる): `ports`
+/// が env 席を持つ場合、Unset (committed=false) は CLI 座席を下位ラダーへ開放し、env が供給する
+/// 値がそのまま最終値になる (`unset-env-fallback.json` の `unset-opens-ladder-to-env-separator-list`
+/// と同型、本テストは separator 無しの単純形)。env から供給される値は `resolve_entity_raw` の
+/// 独立した座席解決 (env seat、`config_to_value`/`env_value` の pieceProcessor) を通るため
+/// value_filters も正しく適用される — Unset で CLI 座席の value_filters チェックを完全に迂回した
+/// 上記テストとの対比 (下位値源の有無だけで fall-through の着地点が変わることを固定する)。
+test "resolve_scope: accum × Unset opens the ladder to env when a lower source exists" {
+  let ports = ent("ports", TNum, accum=Some("append"), env_key=Some("PORTS"), value_filters=[
+    "in_range:1:100",
+  ])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ports],
+    constraints: [],
+  }
+  // `--reset-ports` のみ、env PORTS="42": CLI 座席は Unset 1 個のみ (committed=false) で下位の env
+  // 席まで落ち、"42" が value_filters (in_range:1:100) を通って供給される。
+  let cli = [
+    {
+      key: "ports",
+      op: Unset,
+      value: VBool(false),
+      source: Cli,
+      scope: [],
+      link: 0,
+      at_pos: None,
+    },
+  ]
+  match resolve_scope(sc, cli, Map([("PORTS", "42")])) {
+    Ok(bs) => {
+      assert_eq(bs.length(), 1)
+      assert_eq(bs[0].value, VNum(42.0))
+      assert_eq(bs[0].source, Env)
+    }
+    Err(_) =>
+      fail("expected Ok — env supplies 42 after Unset opens the ladder")
   }
 }
 

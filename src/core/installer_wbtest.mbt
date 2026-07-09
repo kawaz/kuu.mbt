@@ -633,6 +633,195 @@ test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (co
   }
 }
 
+///|
+/// 保証 (issue 2026-07-09-accum-fold-update-default-ops、team-lead 裁定 2026-07-10 最終版): a
+/// `multiple` element carrying an `update` variant (`:update:<transform>`, DR-077 §1) is
+/// DInvalidRange — `collect_unsupported_option_ref_repeat` (上記) と同型の「構造的に宣言できるが
+/// 実装が対応できない組合せを definition-error で落とす」契約の3例目。DR-077 の `update` semantics
+/// は `cell = f(old)` で `old` はセルの現在値だが、accum セルではその値が累積状態 (T[]) であり、
+/// filters registry の transform は全て T=>T (scalar、`filters.mbt`'s `FilterSignature`、DR-077 §2
+/// 「使えるのは transform シグネチャ T=>T の filter のみ」) — 構造的に型が噴合し、legal な解決が今の
+/// registry には存在しない。これを ACCUMULATE fold の実行時に検出するのではなく、DR-077 §2 が既に
+/// 「未登録の transform 名」「validate-only signature」を definition-error で閉じている
+/// (`classify_long_spelling` の `LInvalid` 経路、両方とも `DUnknownVocab`) のと同じ層で静的に閉じる
+/// (この3つ目は multiple 宣言との組合せなので `classify_long_spelling` の DSL-parse 単体では判定でき
+/// ず、`normalize_surface` が variants を確定させた後の別 pass になる)。
+///
+/// spec fixture pin 状況 (2026-07-10 team-lead 連絡): definition_error format 自体が DR-065 で予約の
+/// みで未確定なため、spec 側のこの reject の fixture 化は保留 (issue 起票済み、format 実例化は kawaz
+/// 裁定待ち) — 本 wbtest が現時点で唯一の pin (`collect_unsupported_option_ref_repeat` の min>1
+/// reject も同型の wbtest-only pin の前例)。
+test "parse_definition: an update variant on a multiple element is DInvalidRange (accum-fold-update-default-ops)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "tags",
+        TStr,
+        long=LList([":set", "bump:update:increment"]),
+        multiple=true,
+      ),
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) =>
+      abort(
+        "expected Err (update variant on a multiple element is unsupported)",
+      )
+    Err(errs) => {
+      let mut has_range = false
+      for e in errs {
+        if e.kind == DInvalidRange && e.element == "tags" {
+          has_range = true
+        }
+      }
+      assert_true(has_range)
+    }
+  }
+}
+
+///|
+/// 保証 (対極、上のテストの境界、[[self-written-rule-blind-spots]] の対極確認): scalar 要素
+/// (multiple 無し) への update variant は REJECT されない — count (DR-077 §3 "number + default:0 +
+/// update:increment の綴り合成") がまさにこの形で正規化される既存の正当な用法であり、multiple との
+/// 組合せだけが不支持であることを固定する。
+test "parse_definition: an update variant on a scalar (non-multiple) element is NOT rejected (対極)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el("verbosity", TNum, long=LList([":set", "bump:update:increment"])),
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => ()
+    Err(errs) =>
+      for e in errs {
+        if e.kind == DInvalidRange {
+          abort(
+            "a scalar (non-multiple) element with an update variant must not raise DInvalidRange",
+          )
+        }
+      }
+  }
+}
+
+///|
+/// 保証 (codex レビュー High 1、2026-07-10): alias の `long_override` (DR-057 §3 差分上書き) 経由の
+/// `:update:<transform>` も、canonical 要素本体の `variants` (上の2テストが固定する経路) と同じく
+/// DInvalidRange で REJECT される — `collect_unsupported_accum_update` が canonical 側の variants
+/// しか見ないと、alias 経由の update variant が検査をすり抜けて `parse_definition` を通過し、発火時
+/// に canonical (multiple 要素) への Update binding が resolve.mbt の accum 分岐に届いて abort に
+/// 到達してしまう (修正前の実際の repro)。canonical `tags` (multiple:true) は自身は update variant
+/// を持たず、alias `t` の long_override だけが `bump:update:increment` を持つ形で、alias 経由の
+/// 検査が独立して機能することを固定する。
+test "parse_definition: an alias's long_override update variant on a multiple canonical is DInvalidRange (codex High 1)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("tags", TStr, long=LList([":set"]), multiple=true)],
+    aliases: [
+      {
+        target: "tags",
+        name: Some("t"),
+        short: [],
+        long_override: Some(LList(["bump:update:increment"])),
+        deprecated: false,
+      },
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) =>
+      abort(
+        "expected Err (alias long_override update variant on a multiple canonical is unsupported)",
+      )
+    Err(errs) => {
+      let mut has_range = false
+      for e in errs {
+        if e.kind == DInvalidRange && e.element == "tags" {
+          has_range = true
+        }
+      }
+      assert_true(has_range)
+    }
+  }
+}
+
+///|
+/// 保証 (対極、上のテストの境界): alias の long_override が update variant を持っていても、canonical
+/// 側が multiple でなければ REJECT されない — multiple との組合せだけが不支持であることを alias 経路
+/// でも固定する (scalar 版の対極テストと同じ観点)。
+test "parse_definition: an alias's long_override update variant on a scalar canonical is NOT rejected (対極)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbosity", TNum, long=LList([":set"]))],
+    aliases: [
+      {
+        target: "verbosity",
+        name: Some("v"),
+        short: [],
+        long_override: Some(LList(["bump:update:increment"])),
+        deprecated: false,
+      },
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => ()
+    Err(errs) =>
+      for e in errs {
+        if e.kind == DInvalidRange {
+          abort(
+            "an alias update variant on a scalar (non-multiple) canonical must not raise DInvalidRange",
+          )
+        }
+      }
+  }
+}
+
+///|
+/// 保証 (codex レビュー High 2、2026-07-10): TCount の **short** 発火は variant を一切経由せず
+/// `matcher.mbt`'s `walk_short` が直接 `mk_eff(e.name, Update("increment", []), Cli)` を生成する
+/// (`count_increment_variant` の `long:true` 糖衣経路とは別の生成源) — `collect_unsupported_accum_
+/// update` の variant 走査ではこの経路が最初から見えないため、TCount×multiple という組合せ自体を
+/// 要素レベルで閉じる (`collect_unsupported_count_multiple`)。修正前の実際の repro:
+/// `{"name":"n","type":"count","short":["n"],"multiple":true}` は `parse_definition` を通過し、
+/// argv `["-n"]` の発火で resolve.mbt の accum 分岐の abort に到達していた。
+test "parse_definition: a count element with multiple is DInvalidRange (codex High 2, short-fired repro)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("n", TCount, short=['n'], multiple=true)],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => abort("expected Err (count element with multiple is unsupported)")
+    Err(errs) => {
+      let mut has_range = false
+      for e in errs {
+        if e.kind == DInvalidRange && e.element == "n" {
+          has_range = true
+        }
+      }
+      assert_true(has_range)
+    }
+  }
+}
+
+///|
+/// 保証 (対極、上のテストの境界): TCount 要素が multiple を持たなければ REJECT されない — count の
+/// 通常用法 (`-vvv` の verbosity 加算等、multiple 無し) を誤って落とさないことを固定する。
+test "parse_definition: a count element without multiple is NOT rejected (対極)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbosity", TCount, short=['v'])],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => ()
+    Err(errs) =>
+      for e in errs {
+        if e.kind == DInvalidRange {
+          abort("a count element without multiple must not raise DInvalidRange")
+        }
+      }
+  }
+}
+
 // ── long DSL 分類 (DR-011 / DR-071 / DR-076): classify_long_spelling 輪郭 ───────
 
 ///|

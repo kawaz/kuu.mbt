@@ -411,14 +411,21 @@ pub fn build_result(
       // cell's uniform-array default) but is DISTINCT from `empty` in committed-ness — `empty`
       // commits (source stays `cli`, the fixed-point of a deliberate clear-to-empty), `unset`
       // does NOT commit (source becomes `default`, "as if untouched" — `proj_sources`'s own
-      // matching branch reads the same op to report this). `default`/`update` are NOT handled
-      // here (issue 2026-07-09-accum-fold-update-default-ops, scoped out — their bindings still
-      // fall into the catch-all push, unchanged behavior).
+      // matching branch reads the same op to report this). `default` clears THE SAME WAY (issue
+      // 2026-07-09-accum-fold-update-default-ops, team-lead 裁定 2026-07-10: accum の default 席は
+      // DR-051 §2 の一様配列 `[]` — 宣言 default という概念自体を持たない) but stays committed=true
+      // like `empty` (locks the ladder, `resolve_entity_raw`'s accum branch already rewrote this
+      // binding's `source` to `Default` before it reached here, so the tag comes out right without
+      // a default-specific branch on the source side). `update` never reaches this match —
+      // `installer.mbt`'s `collect_unsupported_accum_update` rejects a `multiple` element's
+      // `update` variant at `parse_definition` time (static definition-error, not a runtime fold
+      // check), so no Scope carrying this combination is ever built for `resolve`/`build_result`
+      // to see.
       let mut items : Array[RVal] = []
       for b in binds {
         if b.scope.length() == 0 && b.key == k {
           match b.op {
-            Empty | Unset => items = []
+            Empty | Unset | Default => items = []
             _ => items.push(RScalar(b.value))
           }
         }
@@ -1548,21 +1555,69 @@ fn resolve_entity_raw(
   // reconstructed from scratch.
   // accum セル (multiple/repeat, DR-034/043): the CLI seat must preserve EVERY same-name Binding,
   // not fold to "last wins" — build_result's ACCUMULATE branch (resolve.mbt's caller,
-  // `Empty` = clear / else = append) is the layer that interprets the op sequence, exactly as it
-  // already does for the raw-bind bypass path this issue is replacing. Threading the ops through
-  // UNINTERPRETED here (no Update/Default/Unset resolution) keeps resolve's accum output
-  // byte-identical to that bypass input — apply_entity_filters (this function's caller) then runs
-  // value_filters(each) over each preserved piece. accum × Update is UNSPECIFIED (DR-077's update targets
-  // a scalar ledger only) — passed through as-is, not resolved here (issue
-  // 2026-07-09-accum-entity-filters-wiring §4: 現状挙動を変えない).
+  // `Empty`/`Unset`/`Default` = clear-point, else = append) is the layer that interprets the op
+  // sequence, exactly as it already does for the raw-bind bypass path this issue is replacing.
+  // apply_entity_filters (this function's caller) then runs value_filters(each) over each
+  // preserved piece.
+  //
+  // issue 2026-07-09-accum-fold-update-default-ops (team-lead 裁定 2026-07-10、その後の再裁定込み):
+  // `default`/`unset` need CLI-seat-level interpretation here (this loop), unlike the scalar
+  // branch's full fold this stays a THIN pass — only `committed` tracking + 1 rewrite, the actual
+  // clear-and-reaccumulate logic stays in build_result:
+  // - `update`: NEVER reaches this loop — `installer.mbt`'s `collect_unsupported_accum_update`
+  //   rejects a `multiple` element's `update` variant at `parse_definition` time (静的
+  //   definition-error, DR-077 §2 の「transform でない・存在しない → definition-error」ファミリの
+  //   3例目)。old = the cell's current value, which for an accum cell is the accumulated array
+  //   (T[]) while every filters-registry transform is T=>T (scalar) — a structural mismatch with
+  //   no legal resolution, so closing it statically (rather than at fold time) matches how
+  //   DR-077 §2 already closes "unknown transform name" / "validate-only signature" one layer
+  //   earlier (`classify_long_spelling`'s `LInvalid`). The `Update` arm below is unreachable
+  //   defensive code, not a live path.
+  // - `default`: resets to `[]` (DR-051 §2's uniform-array default — an accum cell carries no
+  //   declared default BY DESIGN, `AccumCell` has no such field) with committed=true (locks the
+  //   ladder, mirrors scalar's `unset-ladder.json` default-commits-locked precedent). The op itself
+  //   carries no operand, so there's no piece for value_filters/cell_filters to act on (DESIGN
+  //   §8.3) — build_result's ACCUMULATE match folds `Default` exactly like `Empty`/`Unset` (a
+  //   clear-point), so only the SOURCE TAG differs here: rewriting `source` to `Default` (mirrors
+  //   scalar's `mkb(e.name, v, Default)`) keeps `proj_sources`/harness correct without a
+  //   default-specific branch there.
+  // - `unset`: stays uncommitted (committed=false, unchanged from before) — if every same-name CLI
+  //   effect in this seat ends up uncommitted, the CLI seat falls through to the lower ladder rungs
+  //   (env/config/inherit/default) below, exactly like the scalar branch already does
+  //   (`unset-ladder.json`'s `unset-opens-ladder`) — this is the new `committed_now` gate replacing
+  //   the old unconditional `bs.length() > 0` return.
   if e.accum is Some(_) {
     let bs : Array[Binding] = []
+    let mut committed_now = false
     for b in cli {
       if b.key == e.name {
-        bs.push(b)
+        match b.op {
+          Update(_, _) =>
+            // team-lead 裁定 2026-07-10 (更新): accum×update は実行時 Err ではなく静的
+            // definition-error (`installer.mbt`'s `collect_unsupported_accum_update`) — a
+            // `multiple` element carrying an `update` variant is rejected at `parse_definition`
+            // time, before a Scope (and this function) ever exists. This arm is therefore
+            // unreachable in practice; `abort` makes that contract visible instead of silently
+            // mis-handling a binding that should never arrive.
+            abort(
+              "unreachable: an accum (multiple) entity's `update` variant is rejected at definition time (installer.mbt's collect_unsupported_accum_update) — resolve_entity_raw should never see one",
+            )
+          Default => {
+            bs.push({ ..b, source: Default })
+            committed_now = true
+          }
+          Unset => {
+            bs.push(b)
+            committed_now = false
+          }
+          Set | Empty => {
+            bs.push(b)
+            committed_now = true
+          }
+        }
       }
     }
-    if bs.length() > 0 {
+    if committed_now {
       return Ok(bs)
     }
   } else {

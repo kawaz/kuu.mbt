@@ -2638,6 +2638,168 @@ fn collect_unsupported_option_ref_repeat(
 }
 
 ///|
+/// issue 2026-07-09-accum-fold-update-default-ops (team-lead 裁定 2026-07-10、`collect_unsupported_
+/// option_ref_repeat` の兄弟 — 同じ「構造的に宣言できるが実装が対応できない組合せを definition-error
+/// で落とす」契約): an `update` variant (DR-077 §1's `:update:<transform>` DSL) targeting a `multiple`
+/// (accum) element is REJECTED at definition time. DR-077's `update` semantics are `cell = f(old)`
+/// where `old` is the CELL'S CURRENT VALUE — for an accum cell that value is the accumulated array
+/// (T[]), but every filters-registry transform is T=>T (scalar, `filters.mbt`'s `FilterSignature`,
+/// DR-077 §2 "使えるのは transform シグネチャ T=>T の filter のみ"). Applying a scalar transform to an
+/// array is a STRUCTURAL type mismatch with no legal resolution today (no Acc=>Acc transform exists
+/// in the registry) — rather than let it reach the ACCUMULATE fold and fail unpredictably there
+/// (or silently coerce), this closes the gap at the SAME layer DR-077 §2 already closes "unknown
+/// transform name" / "validate-only signature" (`classify_long_spelling`'s `LInvalid` path, both
+/// folded into `DUnknownVocab` there) — `multiple` + `update` is a third static-known-bad
+/// combination, just discovered one step later (after `normalize_surface` has resolved `variants`,
+/// unlike the two above which classify_long_spelling catches at DSL-parse time). `DInvalidRange` is
+/// reused (not a new `DefErrKind`) for the same reason `classify_long_spelling`'s comment gives:
+/// introducing a finer-grained kind is a spec-side DR-054 decision, not kuu.mbt's to make alone.
+///
+/// spec fixture pin 状況 (2026-07-10 team-lead 連絡): definition_error format 自体が DR-065 で予約の
+/// みで未確定なため、spec 側のこの reject の fixture 化は保留 (issue 起票済み、format 実例化は kawaz
+/// 裁定待ち) — この検査は kuu.mbt 側の wbtest でのみ pin する (`collect_unsupported_option_ref_repeat`
+/// の min>1 reject も同型の wbtest-only pin の前例)。
+fn collect_unsupported_accum_update(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  for e in def.options {
+    if e.multiple {
+      for v in e.variants {
+        match v.op {
+          Update(_, _) =>
+            out.push(
+              def_err(
+                e.name,
+                DInvalidRange,
+                "update variant '\{v.trigger}' targets a multiple (accum) element — every filters-registry transform is T=>T (scalar) but this cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
+                "remove the update variant from this element, or move the transform to a non-multiple (scalar) element",
+              ),
+            )
+          _ => ()
+        }
+      }
+    }
+  }
+  for e in def.positionals {
+    if e.multiple {
+      for v in e.variants {
+        match v.op {
+          Update(_, _) =>
+            out.push(
+              def_err(
+                e.name,
+                DInvalidRange,
+                "update variant '\{v.trigger}' targets a multiple (accum) element — every filters-registry transform is T=>T (scalar) but this cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
+                "remove the update variant from this element, or move the transform to a non-multiple (scalar) element",
+              ),
+            )
+          _ => ()
+        }
+      }
+    }
+  }
+  // codex レビュー High 1 (2026-07-10): alias の `long_override` (DR-057 §3 差分上書き) は canonical
+  // 側の `variants` を経由せず独自に colon DSL を解釈する — 上の 2 ループは `def.options`/
+  // `def.positionals` の (この時点の) variants しか見ないため、alias 経由の `:update:<transform>`
+  // が同じ検査をすり抜けて `parse_definition` を通過し、発火時に canonical (multiple 要素) への
+  // Update binding が届いて `resolve.mbt`'s accum 分岐の abort に到達する
+  // (repro: canonical `{"name":"tags","multiple":true}` + alias `{"target":"tags",
+  // "long_override":["bump:update:increment"]}` + argv `["--bump-t"]`)。`desugar_aliases` (この
+  // 検査より後に走る) が alias 用の entry-copy を作った後だと、そのcopy自身は `multiple: false`
+  // 固定 (`alias_entry`) になり判定が別ロジックを要る — ここ (desugar 前、`def.aliases` を直接見る)
+  // で `collect_invalid_alias_long_override` と同じパターン (colon DSL を `classify_long_spelling`
+  // で分類 + `find_elem` で alias 先 canonical を引く) を再利用する方が既存規約と一貫し、
+  // `parse_definition` 全体の実行順序も変えずに済む。
+  for a in def.aliases {
+    match a.long_override {
+      Some(LList(strs)) =>
+        match find_elem(def, a.target) {
+          Some(canon) =>
+            if canon.multiple {
+              let alias_name = match a.name {
+                Some(n) => n
+                None => a.target
+              }
+              for l in strs {
+                match classify_long_spelling(l, alias_name, canon.ty) {
+                  LVariant(v) =>
+                    match v.op {
+                      Update(_, _) =>
+                        out.push(
+                          def_err(
+                            canon.name,
+                            DInvalidRange,
+                            "alias long_override update variant '\{v.trigger}' targets '\{canon.name}', a multiple (accum) element — every filters-registry transform is T=>T (scalar) but this cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
+                            "remove the update variant from this alias's long_override, or move the transform to a non-multiple (scalar) element",
+                          ),
+                        )
+                      _ => ()
+                    }
+                  LMain(_) | LInvalid(_) => () // not an update variant; other errors caught by collect_invalid_alias_long_override
+                }
+              }
+            }
+          None => () // dangling alias target — absent-ref check が別途拾う
+        }
+      Some(LBool(_)) => () // bool 糖衣 (:set/:set:true 相当) は update DSL を含まない
+      None => ()
+    }
+  }
+  for c in def.commands {
+    collect_unsupported_accum_update(c.body, out)
+  }
+}
+
+///|
+/// codex レビュー High 2 (2026-07-10): `collect_unsupported_accum_update` の variant 走査 (上記) は
+/// `count_increment_variant` 経由 (`long:true` 糖衣、DR-077 §3) の `:update:increment` は捕まえるが、
+/// TCount の **short** 発火 (`matcher.mbt` の `walk_short`'s `TCount` arm) は variant を一切経由せず
+/// `mk_eff(e.name, Update("increment", []), Cli)` を直接生成する — variants を持たない firing なので
+/// variant 走査ではそもそも見えない (repro: `{"name":"n","type":"count","short":["n"],
+/// "multiple":true}` + argv `["-n"]` で resolve.mbt の accum 分岐の abort に到達)。
+///
+/// DR-077 §3 で count は `number + default:0 + update:increment の綴り合成` と規定されている —
+/// count という TYPE そのものが「update(increment) 効果を持つ」という契約を運ぶので、firing の綴り
+/// (short/long/明示variant) を問わず、**TCount 要素への `multiple` 宣言そのもの**が accum×update と
+/// 構造的に同じ未対応構成 (T=>T transform vs 累積状態 T[]) になる。variant の有無に依存しない要素
+/// レベルの検査として、`collect_unsupported_accum_update` とは別条件で実装する (variant 走査を
+/// TCount にも広げるのではなく、TCount×multiple という組合せ自体を閉じる — short 経由はそもそも
+/// variant を生成しないため、variant 走査を広げても捕まえられない)。
+fn collect_unsupported_count_multiple(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  for e in def.options {
+    if e.ty == TCount && e.multiple {
+      out.push(
+        def_err(
+          e.name,
+          DInvalidRange,
+          "a `count` element cannot declare `multiple` — count's type contract IS an update(increment) effect (DR-077 §3), and every filters-registry transform is T=>T (scalar) while a multiple (accum) cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
+          "remove `multiple` from this count element, or use a plain `number` element with an explicit `:update:<transform>` variant on a non-multiple cell",
+        ),
+      )
+    }
+  }
+  for e in def.positionals {
+    if e.ty == TCount && e.multiple {
+      out.push(
+        def_err(
+          e.name,
+          DInvalidRange,
+          "a `count` element cannot declare `multiple` — count's type contract IS an update(increment) effect (DR-077 §3), and every filters-registry transform is T=>T (scalar) while a multiple (accum) cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
+          "remove `multiple` from this count element, or use a plain `number` element with an explicit `:update:<transform>` variant on a non-multiple cell",
+        ),
+      )
+    }
+  }
+  for c in def.commands {
+    collect_unsupported_count_multiple(c.body, out)
+  }
+}
+
+///|
 /// 木のどこかに `type:"config_file"` 要素があるか (DR-050): あれば同型 config seat が全 value cell に立つ。
 fn has_config_file(def : Definition) -> Bool {
   for e in def.options {
@@ -2772,6 +2934,8 @@ pub fn parse_definition(
   collect_unknown_vocab(def, order, errs) // DR-042① (alias vocab check 込み)
   collect_invalid_range(def, errs) // DR-052 (repeat min > max)
   collect_unsupported_option_ref_repeat(def, errs) // codex 指摘4 (option ref+repeat min>1 未配線)
+  collect_unsupported_accum_update(def, errs) // issue accum-fold-update-default-ops (multiple + update variant)
+  collect_unsupported_count_multiple(def, errs) // codex 指摘 High 2 (count 型 × multiple)
   collect_absent_ref(def, registry, errs) // DR-032
   collect_circular_ref(registry, errs) // DR-007/032
   collect_zero_progress(def, registry, errs) // DR-043

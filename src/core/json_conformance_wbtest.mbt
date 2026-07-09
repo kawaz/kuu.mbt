@@ -3336,12 +3336,14 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
     }
     // DR-009 value_filters/cell_filters (issue 2026-07-09-filters-registry-foundation) are applied by
     // `resolve_entity` (resolve.mbt's `apply_entity_filters`), NOT by the raw CLI `binds` array
-    // this function's `false` result routes to. `resolve_entity_raw`'s CLI-seat fold now preserves
-    // every same-name Binding for an accum cell (issue 2026-07-09-accum-entity-filters-wiring),
-    // so an accum cell with value_filters/cell_filters ALSO needs the resolve path — the guard that used
-    // to exclude accum (`e.accum is None &&`) is removed. `apply_entity_filters` already skips
-    // cell_filters for an accum cell (accumulated-array post is a separate stage, issue
-    // accum-post-filters-stage7); routing through resolve here only activates value_filters(each).
+    // this function's `false` result routes to. `resolve_entity_raw`'s CLI-seat fold interprets an
+    // accum cell's op sequence now (issue 2026-07-09-accum-entity-filters-wiring's raw-preservation
+    // groundwork, extended by issue 2026-07-09-accum-fold-update-default-ops's committed tracking +
+    // ladder fall-through), so an accum cell with value_filters/cell_filters ALSO needs the resolve
+    // path — the guard that used to exclude accum (`e.accum is None &&`) is removed. `apply_entity_
+    // filters` already skips cell_filters for an accum cell (accumulated-array post is a separate
+    // stage, issue accum-post-filters-stage7); routing through resolve here only activates
+    // value_filters(each).
     if e.value_filters.length() > 0 || e.cell_filters.length() > 0 {
       return true
     }
