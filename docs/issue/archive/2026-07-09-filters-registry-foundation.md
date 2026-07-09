@@ -1,6 +1,6 @@
 ---
 title: filters registry 汎用基盤の整備 (DR-009/DR-010/DR-040/DR-077 の宣言軸が未実装)
-status: open
+status: resolved
 category: design
 created: 2026-07-09T09:55:47+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-09T10:28:16+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-040 implemented", "dr/DR-077 implemented", "done: filters registry (FilterDescriptor + signature Validate/Transform) + 組み込み4種 (trim/non_empty/in_range/increment) + apply_transform registry lookup 化 + update 経路への post_filters 適用 を commit 7f1b0c96 で実装、実機実証済み。DR-062 継承と DR-010 多段注入は参照実装スコープ外の根拠を filters.mbt ヘッダに明記。残り2系統は issue/2026-07-09-pre-split-filters-execution-wiring と issue/2026-07-09-accum-entity-filters-wiring へ切り出し済み"]
 blocked_by:
 origin: 依頼元プロジェクト kuu (spec リポ)
 ---
