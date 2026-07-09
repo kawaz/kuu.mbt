@@ -81,3 +81,20 @@ docs/findings/2026-07-09-regex-match-design-proposal.md。要点:
 
 次のアクション: kawaz に (1) kuu_regex_min の subset 範囲、(2) colon 対応 (name 特例 vs
 descriptor-driven)、の 2 点を DR 議論球として提示してから実装着手。
+
+## 2026-07-09 kawaz 裁定: regex 方言は host 実装準拠
+
+「持ち込む言語が持つ regex エンジンや実装に準じる宣言で良い。全て同じを目指すのは
+キリがないし現実的でない」(kawaz、2026-07-09)。
+
+- canonical subset (`kuu_regex_min`) の spec 固定は**しない**。spec は「regex_match の
+  照合方言は host 実装依存 (host 言語の regex エンジンに準じる)」と宣言する
+- DR-040 の「regex 方言の一致が cross-host 再現性条件」という記述はこの裁定で相対化
+  される — spec 側の明文化 (DR-040 追記 or 新 DR) が実装着手時の作業に含まれる
+- conformance fixture は方言差の出ない共通パターン (literal / `^$` anchor / 基本文字
+  クラス) に限定して書く
+- kuu.mbt (MoonBit) は host に regex エンジンが無いため、codex 提案のサブセット実装を
+  「kuu.mbt という host の方言」として実装・宣言する (= spec が方言を規定しないので
+  サブセットで正当)
+
+残る確認点 (colon 対応) は監査所見の節を参照 — 推奨は descriptor 宣言方式。
