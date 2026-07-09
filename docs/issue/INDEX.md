@@ -10,3 +10,4 @@
 | 2026-07-09 | task | open | [dec-multiple-collector-decode](./2026-07-09-dec-multiple-collector-decode.md) | conformance harness の dec_multiple に collector 属性の decode を追加 |
 | 2026-07-09 | bug | open | [constraint-path-filtering-gap](./2026-07-09-constraint-path-filtering-gap.md) | DR-047「制約を満たさない経路は完全経路と数えない」(path filter) が未実装 |
 | 2026-07-09 | bug | open | [post-filter-error-attribution](./2026-07-09-post-filter-error-attribution.md) | post_filters reject の kind/argv_pos が未配線 (KParse ハードコード + at_pos=-1) |
+| 2026-07-09 | task | open | [ref-template-decode-missing](./2026-07-09-ref-template-decode-missing.md) | conformance harness に ref (共有 template 参照) の decode が無い |
