@@ -1066,12 +1066,28 @@ fn ensure_entity_body(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
       // ALSO a structural dispatcher with no scalar/array value of its own — its "value" is a
       // name-scoped projection of the REFERENCED template's own leaves (installer.mbt's
       // `ref_row_head` / `lower_positional`/`inst_long`'s `Scoped` wrap), never a flat binding on
-      // `e.name` itself. Registering an entity here would (a) be dead (nothing ever binds flatly
-      // to `e.name`, so it never seats a value-source-ladder seat) and (b) for a repeat element,
-      // register a spurious "flatten" accum cell that double-renders the array alongside the
-      // nested-scope ROW-GROUP `resolve.mbt` already builds (mirrors the BGroup/"xs" comment
-      // just below, same failure mode).
+      // `e.name` itself. Registering an entity here is (a) dead for the value-source-ladder side
+      // (nothing ever binds flatly to `e.name`, so `resolve_entity` always seats `Ok([])` and
+      // contributes no binding) — harmless, not "spurious".
+      //
+      // issue 2026-07-09-accum-fold-update-default-ops 追記 (2026-07-10, codex レビュー由来の
+      // ref-repeat-sibling-trigger.json mismatch): a repeat-bearing ref element (`elem_repeat(e)
+      // is Some(_)`) DOES need the entity now, specifically for its `accum: Some("flatten")` —
+      // DR-051 §2b「反復系は 0 回発火でも `[]`」は ref+repeat セルにも及ぶが、0 回発火では "#row"
+      // (`ref_row_head`) が一切生まれず、build_result の ROW-GROUP 分岐 (`has_direct_key(binds,
+      // "#row")`) が素通りして誤って `{}` (OBJECT 経路) に落ちていた (repro:
+      // `{"ref":"color","repeat":{"min":0}}` + 直後に sibling trigger で 0 反復)。`accum_cells`
+      // (resolve.mbt) が `sc.entities` だけを見る前提を保ったまま、この entity 登録でその走査に
+      // ref+repeat セルを乗せ、build_result の UNIFORM ARRAY 注入 (DR-044 §1) で `[]` を出す。
+      // 1 回以上発火した場合の「double-renders」懸念 ("#row" 経由の行配列と UNIFORM ARRAY 注入の
+      // 二重描画) は、build_result 側のガードを `named` だけでなく `segs` (nested scope 一覧) も
+      // 見るよう拡張して閉じている (resolve.mbt のコメント参照) — ROW-GROUP が先に返した path は
+      // `segs` 経由で obj に載るので、UNIFORM ARRAY 側は `segs` チェックで重複注入をスキップする。
+      // repeat 無しの単発 ref (`elem_repeat(e) is None`) は元のコメントの懸念がそのまま有効
+      // (accum が立たないので死んだ entity を増やすだけ) なので、対象を repeat 付きに限定する。
       if e.ref_target is None {
+        ensure_entity(build, e, has_cf)
+      } else if elem_repeat(e) is Some(_) {
         ensure_entity(build, e, has_cf)
       }
     BOr(branches) =>

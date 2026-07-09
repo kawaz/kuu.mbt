@@ -448,22 +448,64 @@ pub fn build_result(
     }
   }
   for seg in segs {
-    obj.push(
-      (
-        seg,
-        build_result(
-          sub_under(binds, seg),
-          cells,
-          defaults,
-          path_push(path, seg),
+    // issue 2026-07-09-accum-fold-update-default-ops 追記 (2026-07-10): a ref+repeat option cell
+    // registered as an accum entity (`ensure_entity_body`'s BCell arm) that fired 0 times has
+    // ONLY its "#fire" marker under `scope=[e.name]` (`inst_long`'s `Scoped(e.name, Bind("#fire",
+    // ...))`) — no "#row" sentinel (`ref_row_head`) at all, since `GreedyRepeat` never ran. Its
+    // `scope[0]` still lands in `segs` (any `scope.length()>0` binding does, sentinel or not), so
+    // recursing here would build an EMPTY OBJECT `{}` from that lone "#fire" and push it — the
+    // wrong shape (DR-044 §1 wants `[]` for a 0-fired accum cell, from the UNIFORM ARRAY injection
+    // below, not an object built from a stray marker). Skip the recursion for this seg (defer
+    // entirely to the injection below) when it names a THIS-path accum cell with no "#row" —
+    // fired >=1 time (a real "#row" present) still recurses normally, unaffected.
+    let unfired_ref_accum_seg = {
+      let mut is_accum = false
+      for c in cells {
+        if c.name == seg && path_eq(c.path, path) {
+          is_accum = true
+        }
+      }
+      is_accum && !has_direct_key(sub_under(binds, seg), "#row")
+    }
+    if !unfired_ref_accum_seg {
+      obj.push(
+        (
+          seg,
+          build_result(
+            sub_under(binds, seg),
+            cells,
+            defaults,
+            path_push(path, seg),
+          ),
         ),
-      ),
-    )
+      )
+    }
   }
   // UNIFORM ARRAY (DR-044 §1): an accumulate cell declared at THIS path that fired 0 times still
   // renders `[]` (not absent) — inject empties for cells not already present as named leaves.
+  //
+  // issue 2026-07-09-accum-fold-update-default-ops 追記 (2026-07-10, ref-repeat-sibling-trigger.json
+  // mismatch の修正): a ref+repeat option cell (`ensure_entity_body`'s BCell arm now registers one
+  // for its `accum: Some("flatten")`, so `accum_cells` sees it too) needs a DIFFERENT double-render
+  // guard than plain `!str_contains(named, c.name)` — its bindings never land in `named` at all
+  // (`ref_row_head`'s `Scoped(e.name, ...)` wrap means every binding carries `scope=[e.name, ...]`,
+  // never a bare top-level key), so `named` alone can't tell "fired >=1 time, ROW-GROUP already
+  // built the real array" apart from "fired 0 times, needs [] injected here". A naive `segs`
+  // membership check (± "is this cell's name a nested-scope segment at all") is WRONG in the other
+  // direction: `resolve_scope`'s accum branch (this cell's `Entity.accum` seats no CLI binding, so
+  // `resolve_entity` always resolves it to `Ok([])`) drops the raw eval-layer bindings entirely
+  // before `build_result` ever runs, so THAT path never even reaches `segs` — but conformance's
+  // no-resolve path (`run_case`'s `else` arm, `json_conformance_wbtest.mbt`) feeds build_result the
+  // RAW eval bindings, where a 0-rep firing still leaves the `"#fire"` marker
+  // (`inst_long`'s `Scoped(e.name, Bind("#fire", ...))`) under `scope=[e.name]` — landing THIS in
+  // `segs` too, indistinguishable from a real "#row"-bearing firing by name alone. The precise
+  // test is whether this cell's OWN nested bindings actually contain a "#row" sentinel (only a
+  // real repetition emits one, `ref_row_head`) — check that directly instead of trusting `segs`
+  // membership as a proxy for it.
   for c in cells {
-    if path_eq(c.path, path) && !str_contains(named, c.name) {
+    if path_eq(c.path, path) &&
+      !str_contains(named, c.name) &&
+      !has_direct_key(sub_under(binds, c.name), "#row") {
       let empty : RVal = RArr([])
       let collected = match c.collector {
         Some(cn) => apply_collector(cn, empty)

@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: kawaz/kuu
-          ref: 28fa57c4eb87127be3f42ca0c6d43b59df1e7291
+          ref: 939f37ef2f29e3ff408d997e3c93675d4b142fef
           path: _kuu-spec
 
       # 公式 install script で rolling nightly を直取得 (moonup の nightly index は
