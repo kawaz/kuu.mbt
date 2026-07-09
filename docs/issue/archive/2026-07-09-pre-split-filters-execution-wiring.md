@@ -1,6 +1,6 @@
 ---
 title: pre_split_filters の実行配線 (decode 済み・未配線)
-status: wip
+status: resolved
 category: task
 created: 2026-07-09T10:25:35+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered: 2026-07-09T15:32:44+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-09T16:54:37+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:commit 321f542c 全経路実行配線完了、conformance fixtures/pre-filters 6本12case全GREEN (decoded=142/ran_cases=363/skipped=0/mismatches=0、153テスト全pass)"]
 blocked_by:
 origin: 依頼元プロジェクト kuu (spec リポ)
 ---
@@ -33,11 +33,13 @@ issue filters-registry-foundation (2026-07-09) の受け入れ条件②「DR-009
 
 ## 受け入れ条件
 
-- [ ] ElemDef / fixture decode のキーが spec 正本どおり `pre_filters` に rename されている
-- [ ] piece 確定 → type.parse の間に pre_filters 適用点が漏れなく通っている (eval 4 関数の値アーム + matcher の eq-split / short_val 経路 + sep_binds 分割後の各 piece)。漏れの機械検査 (grep 条件) を報告に添える
-- [ ] reject は kind=filter (Held/KFilter) で表面化する
-- [ ] wbtest + conformance fixture (per-piece 判別 / parse 救済 / reject / single 縮退 / eq-split / short / env の輪郭) が揃っている
+- [x] ElemDef / fixture decode のキーが spec 正本どおり `pre_filters` に rename されている
+- [x] piece 確定 → type.parse の間に pre_filters 適用点が漏れなく通っている (eval 4 関数の値アーム + matcher の eq-split / short_val 経路 + sep_binds 分割後の各 piece)。漏れの機械検査 (grep 条件) を報告に添える — grep 機械検査 0 件 (生 token 直渡しなし)
+- [x] reject は kind=filter (Held/KFilter) で表面化する — pe_filter 共通化、argv_pos は piece 帰属の値トークン位置
+- [x] wbtest + conformance fixture (per-piece 判別 / parse 救済 / reject / single 縮退 / eq-split / short / env の輪郭) が揃っている — fixtures/pre-filters 6 本 12 case 全 GREEN
 
-## TODO
+## 派生 issue (別途起票)
 
-<!-- wip 時のみ -->
+- regex-match-filter (registry 拡張)
+- separator-non-string-type-parse-gap (隣接バグ)
+- config 経路と env separator の 2 ギャップ
