@@ -8,4 +8,3 @@
 | 2026-07-09 | task | open | [pre-split-filters-execution-wiring](./2026-07-09-pre-split-filters-execution-wiring.md) | pre_split_filters の実行配線 (decode 済み・未配線) |
 | 2026-07-09 | design | open | [accum-entity-filters-wiring](./2026-07-09-accum-entity-filters-wiring.md) | accum (multiple) 要素への filters/post_filters 配線 — resolve_entity の accum 対応 |
 | 2026-07-09 | bug | open | [constraint-path-filtering-gap](./2026-07-09-constraint-path-filtering-gap.md) | DR-047「制約を満たさない経路は完全経路と数えない」(path filter) が未実装 |
-| 2026-07-09 | task | open | [ref-template-decode-missing](./2026-07-09-ref-template-decode-missing.md) | conformance harness に ref (共有 template 参照) の decode が無い |

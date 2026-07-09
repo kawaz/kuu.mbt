@@ -1,6 +1,6 @@
 ---
 title: conformance harness に ref (共有 template 参照) の decode が無い
-status: open
+status: resolved
 category: task
 created: 2026-07-09T11:47:33+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-09T13:00:57+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-078","implemented","done:decode 層実装 commit 3b60eaeb (dec_option/dec_positional の ref キー + dec_templates で registry 事前注入、ランタイムは既存 ref_target 経路のまま不変)","fixtures/repeat-parse/ref-or-template.json (spec commit a80634ae) で audit漏れ#1/#2 (slice phase4:114 / phase10:64) を effects+outcome 面で pin","spec issue ref-template-result-shape へ設計論点切り出し (ref テンプレ内要素の結果ビュー形は未確定)","conformance 132/344/0"]
 blocked_by:
 origin: fixture-batch2 worker (依頼元プロジェクト: kuu)
 ---
