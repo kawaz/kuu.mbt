@@ -66,3 +66,21 @@ Err kind=filter pos=2 reason=filter_rejected msg=in_range requires a number valu
 限定する — Unset/Default/Empty/Update は cell への操作であって piece ではない (Empty の既存
 skip の一般化)。期待挙動: `--ports 5 --reset-ports` は cell 開放 (accum × unset の畳み意味論
 は build_result 側の既存 fold に従う) で、filter は 5 にのみ適用される。
+
+## 2026-07-09 kawaz 裁定: filters(each) の適用対象は Set + Update
+
+「Set のみでいいんじゃない？あとは最近追加された update もか」(kawaz、2026-07-09)。
+
+- **filters(each、DR-009 段 5) の適用対象 = 実値を持つ/生む op**: Set の operand と、
+  Update (DR-077) の transform 適用結果
+- **Unset / Default / Empty は対象外** (cell への操作であって piece ではない、placeholder を
+  filter に通さない)。既存の Empty skip はこの原則の部分実装だった
+- 実装上の含意: scalar 経路は CLI 座席 fold が update を transform 適用済みの実値にしてから
+  filters に届けるため既存挙動が既に正しい。**要修正は accum 経路のみ** (op 未解釈で温存する
+  ため placeholder が filters に届く)
+- accum × Update の畳み意味論自体は未定義のまま (本 issue の対象外)。定義された時に
+  「その適用結果へ filters」の原則が引き継がれる
+
+対応: (a) apply_entity_filters の accum 経路で filters 適用を op=Set (実値 piece) に限定、
+(b) spec 側 DESIGN の filters 節 + PIPELINE §2 段 5 に適用対象を明文化、
+(c) accum × unset の conformance fixture (`--ports 5 --reset-ports` が failure しない輪郭)。
