@@ -1,6 +1,6 @@
 ---
 title: conformance harness の dec_multiple に collector 属性の decode を追加
-status: open
+status: resolved
 category: task
 created: 2026-07-09T10:59:04+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-09T12:16:35+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented","done:collector 属性を decode (dec_multiple、unwrap_single のみ受理 — to_set/from_entries は false promise 回避で明示 DecodeSkip) から ElemDef/Entity/AccumCell 経由で build_result の実適用まで配線 (commit 913502c9)。accumulator 受理語彙は ensure_entity が構造でしか registry entry を決めない現状では拡張せず (根拠コメント記録済み)。spec fixture fixtures/multiple-parse/collector-unwrap-single.json (spec commit 8275c3da) で 0/1/2+ 発火の輪郭を pin、audit 漏れ #3 (slice phase14:157) 解消。conformance 131/341/0。"]
 blocked_by:
 origin: 依頼元プロジェクト kuu (spec リポ)
 ---
