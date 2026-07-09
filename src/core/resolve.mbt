@@ -1424,31 +1424,6 @@ fn config_lookup(obj : ConfigVal, path : Array[String]) -> ConfigVal? {
 }
 
 ///|
-/// The DR-066 reason for a `config_to_value` (value.mbt, unchanged) rejection, derived from the
-/// (cv, ty) pair IT rejected — not by string-matching its message (value.mbt predates DR-066 and
-/// returns a plain String; re-deriving from the typed inputs stays exact instead of sniffing text).
-/// The two value-parser reasons (`not_a_number` / `not_an_integer`) are DR-066 v1 vocab; the
-/// remaining config-specific mismatches (structural / bool↔number 意味の飛躍) have no v1 reason yet
-/// so they carry a resolve-local extension name (DR-066 §3: the v1 vocab is an explicitly open set).
-fn config_mismatch_reason(cv : ConfigVal, ty : Ty) -> String {
-  match (cv, ty) {
-    (CStr(_), TNum) => "not_a_number"
-    (CStr(_), TFloat) => "not_a_number"
-    (CStr(s), TInt) =>
-      match parse_int_value(s, RError) {
-        Err(NotAnInteger) => "not_an_integer"
-        Err(IntOutOfRange) => "int_out_of_range"
-        _ => "not_a_number"
-      }
-    (CStr(_), TFlag) => "not_a_bool"
-    (CStr(_), TBool) => "not_a_bool"
-    (CArr(_), _) => "config_structural_mismatch"
-    (CObj(_), _) => "config_structural_mismatch"
-    _ => "config_type_mismatch" // CNum/CBool 意味の飛躍 (bool↔number); CNull is 供給なし (defensive)
-  }
-}
-
-///|
 /// Resolve one entity down the fixed ladder: cli > env > config > inherit > default (DR-031 /
 /// DR-050 #3). Returns the effect bindings (0/1, or many when a config array fills a `multiple`
 /// cell) or an Err (a value-source type mismatch is a DR-037/DR-066 Error). `config_obj` is the
@@ -1654,14 +1629,33 @@ fn resolve_entity_raw(
       }
     }
   }
-  // env seat (DR-049)
+  // env seat (DR-049 §2): the raw env string is ONE firing's argument (同 §2 「発火 1 回の 1 引数と
+  // 同じ扱い」) — a `multiple` + `separator` cell splits it exactly like `eval.mbt`'s `sep_binds`
+  // splits the CLI seat's own raw token (issue 2026-07-09-env-separator-split-gap): each piece
+  // runs the SAME pieceProcessor (`env_value`'s pre_filters → parse) independently, and any
+  // piece's failure fails the whole seat (all-or-nothing, mirrors `sep_binds`'s contract). No
+  // `separator` (the common case) stays exactly the prior single-binding behavior.
   match e.env_key {
     Some(k) =>
       match env_map.get(k) {
         Some(v) =>
-          match env_value(e.name, e.ty, v, e.pre_filters, at_pos, epath) {
-            Ok(parsed) => return Ok([mkb(e.name, parsed, Env)])
-            Err(pe) => return Err(pe)
+          match e.separator {
+            Some(sep) => {
+              let bs : Array[Binding] = []
+              for part in split_on(v, sep) {
+                match
+                  env_value(e.name, e.ty, part, e.pre_filters, at_pos, epath) {
+                  Ok(parsed) => bs.push(mkb(e.name, parsed, Env))
+                  Err(pe) => return Err(pe)
+                }
+              }
+              return Ok(bs)
+            }
+            None =>
+              match env_value(e.name, e.ty, v, e.pre_filters, at_pos, epath) {
+                Ok(parsed) => return Ok([mkb(e.name, parsed, Env)])
+                Err(pe) => return Err(pe)
+              }
           }
         None => ()
       }
@@ -1677,22 +1671,22 @@ fn resolve_entity_raw(
               // JSON null = 供給なし (DR-050 §4 / DR-051): the config seat supplies nothing; fall
               // through to inherit / default (null is NOT a value in kuu's value space).
               CNull => ()
-              // array → a multiple cell's pieces (DR-050 §4); each item typed per §4.
+              // array → a multiple cell's pieces (DR-050 §4); each item typed per §4 — including
+              // §4's string pipeline (issue 2026-07-09-config-string-pieceprocessor-gap), so a
+              // string array item ALSO runs `e.pre_filters` before its type parse.
               CArr(items) =>
                 if e.accum is Some(_) {
                   let bs : Array[Binding] = []
                   for it in items {
-                    match config_to_value(it, e.ty) {
+                    match config_to_value(it, e.ty, e.pre_filters) {
                       Ok(v) => bs.push(mkb(e.name, v, Config))
-                      Err(_) =>
+                      Err((KFilter, reason, msg)) =>
                         return Err(
-                          ladder_err(
-                            e.name,
-                            at_pos,
-                            config_mismatch_reason(it, e.ty),
-                            "config array element for \"\{e.name}\" has the wrong type",
-                            epath,
-                          ),
+                          filter_err(e.name, at_pos, reason, msg, epath),
+                        )
+                      Err((_, reason, msg)) =>
+                        return Err(
+                          ladder_err(e.name, at_pos, reason, msg, epath),
                         )
                     }
                   }
@@ -1708,19 +1702,16 @@ fn resolve_entity_raw(
                     ),
                   )
                 }
+              // DR-050 §4 の string 全段 pipeline (issue 2026-07-09-config-string-pieceprocessor-gap):
+              // `config_to_value` が `e.pre_filters` を先頭で適用してから型 parse する — CLI/env の
+              // pieceProcessor と同じ窓口。
               _ =>
-                match config_to_value(cv, e.ty) {
+                match config_to_value(cv, e.ty, e.pre_filters) {
                   Ok(v) => return Ok([mkb(e.name, v, Config)])
-                  Err(_) =>
-                    return Err(
-                      ladder_err(
-                        e.name,
-                        at_pos,
-                        config_mismatch_reason(cv, e.ty),
-                        "config value for \"\{e.name}\" has the wrong type",
-                        epath,
-                      ),
-                    ) // §4 型不一致 → DR-037/DR-066 Error
+                  Err((KFilter, reason, msg)) =>
+                    return Err(filter_err(e.name, at_pos, reason, msg, epath))
+                  Err((_, reason, msg)) =>
+                    return Err(ladder_err(e.name, at_pos, reason, msg, epath)) // §4 型不一致 → DR-037/DR-066 Error
                 }
             }
           None => () // not present in config → fall through

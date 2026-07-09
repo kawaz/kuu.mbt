@@ -1149,7 +1149,14 @@ fn proj_sources(sc : Scope, resolved : Array[Binding]) -> String {
     match src {
       Some(s) => items.push(e.name + "=" + s)
       None =>
-        if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
+        // DR-044 uniform array (issue 2026-07-09-env-separator-split-gap's env-separator-
+        // split.json, `sources` check): an unfired multiple/repeat cell decays to `[]` (never
+        // absent, same guarantee flag/bool's default preset gets below) — regardless of type,
+        // and regardless of whether the element ALSO declared an explicit `default:` (accum
+        // cells usually don't; the empty array IS the implicit default here, unconditionally).
+        if e.accum is Some(_) {
+          items.push(e.name + "=default")
+        } else if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
           match e.default_value {
             Some(_) => items.push(e.name + "=default")
             None => ()

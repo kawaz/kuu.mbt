@@ -1158,6 +1158,7 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
       None
     },
     default_value,
+    separator: e.separator,
     pre_filters: e.pre_filters,
     filters: e.filters,
     post_filters: e.post_filters,

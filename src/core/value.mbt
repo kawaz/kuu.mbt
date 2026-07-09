@@ -1189,7 +1189,33 @@ pub fn parse_bool(s : String) -> Bool? {
 /// path is 値空間判定 with canonical `int_round: error` (DR-075): `"3.0"` → 3, `"2.5"` → Error. Bool
 /// is the canonical vocab (DR-074 §3). Only the 意味の飛躍 (bool ↔ number) and 構造不一致
 /// (array/object → scalar) are DR-037 Errors.
-pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
+///
+/// `pre_filters` (DR-050 §4 "string → CLI/env と完全に同一の全段 pipeline"、issue
+/// 2026-07-09-config-string-pieceprocessor-gap): applied ONCE, up front, ONLY when the JSON source
+/// is a string (`CStr`) — a non-string source matching its type (`CNum`/`CBool`) has no
+/// String→String step to gate, per §4's "型一致なら pre_filters/parse はスキップ" (the type's own
+/// consequence, not a special case here; mirrors `resolve.mbt`'s `env_value`, whose source is
+/// ALWAYS a string so it always runs pre_filters — config's source varies, so this runs it exactly
+/// when config's source happens to be a string). Every `(CStr(s), _)` arm below sees the
+/// ALREADY-filtered string.
+///
+/// Error shape `(ErrKind, reason, message)`: `KFilter` for a pre_filters rejection (mirrors
+/// `resolve.mbt`'s `filter_err`), `KParse` for every type-mismatch/parse-failure arm (mirrors
+/// `ladder_err`) — the caller picks the matching `ParseError` constructor by this tag. `message`
+/// is caller-facing text only (conformance ignores it, per this file's `ParseError` doc comment).
+pub fn config_to_value(
+  cv : ConfigVal,
+  ty : Ty,
+  pre_filters : Array[String],
+) -> Result[Value, (ErrKind, String, String)] {
+  let cv = match cv {
+    CStr(raw) =>
+      match apply_pre_filters(pre_filters, raw) {
+        Ok(s) => CStr(s)
+        Err((reason, msg)) => return Err((KFilter, reason, msg))
+      }
+    other => other
+  }
   match (cv, ty) {
     // string element: accept anything — string / lenient parse / JSON stringification
     (CStr(s), TStr) => Ok(VStr(s))
@@ -1202,21 +1228,38 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
     (CStr(s), TNum) | (CStr(s), TCount) =>
       match parse_number(s) {
         Some(d) => Ok(VNum(d))
-        None => Err("config value \"\{s}\" is not a number")
+        None =>
+          Err((KParse, "not_a_number", "config value \"\{s}\" is not a number"))
       }
     // string → float: wider accept域 (number + inf, DR-074 §1) via parse_float
     (CStr(s), TFloat) =>
       match parse_float(s) {
         Some(d) => Ok(VNum(d))
-        None => Err("config value \"\{s}\" is not a number")
+        None =>
+          Err((KParse, "not_a_number", "config value \"\{s}\" is not a number"))
       }
     // string → int: 値空間判定, canonical int_round = error (DR-075 §1-§2)
     (CStr(s), TInt) =>
       match parse_int_value(s, RError) {
         Ok(i) => Ok(VNum(i.to_double()))
-        Err(NotAnInteger) => Err("config value \"\{s}\" is not an integer")
-        Err(IntOutOfRange) => Err("config value \"\{s}\" is out of Int64 range")
-        Err(NotANumber) => Err("config value \"\{s}\" is not a number")
+        Err(NotAnInteger) =>
+          Err(
+            (
+              KParse,
+              "not_an_integer",
+              "config value \"\{s}\" is not an integer",
+            ),
+          )
+        Err(IntOutOfRange) =>
+          Err(
+            (
+              KParse,
+              "int_out_of_range",
+              "config value \"\{s}\" is out of Int64 range",
+            ),
+          )
+        Err(NotANumber) =>
+          Err((KParse, "not_a_number", "config value \"\{s}\" is not a number"))
       }
     // string → bool: canonical vocab (DR-074 §3), unrecognized → Error (no silent 変換). Applies
     // identically to a presence-only flag (TFlag) and a value-typed bool (TBool) — config's string
@@ -1224,7 +1267,8 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
     (CStr(s), TFlag) | (CStr(s), TBool) =>
       match parse_bool(s) {
         Some(b) => Ok(VBool(b))
-        None => Err("config value \"\{s}\" is not a bool")
+        None =>
+          Err((KParse, "not_a_bool", "config value \"\{s}\" is not a bool"))
       }
     // typed number matching a number element (any) / a float element (a JSON-native number is
     // already a valid float value — inf has no JSON literal, so this arm never carries it) / an
@@ -1235,25 +1279,65 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
       if is_integer(d) {
         Ok(VNum(d))
       } else {
-        Err("config value \"\{num_to_string(d)}\" is not an integer")
+        Err(
+          (
+            KParse,
+            "not_an_integer",
+            "config value \"\{num_to_string(d)}\" is not an integer",
+          ),
+        )
       }
     (CBool(b), TFlag) | (CBool(b), TBool) => Ok(VBool(b))
     // 意味の飛躍 (bool ↔ number) は Error — no coercion
     (CNum(_), TFlag) | (CNum(_), TBool) =>
-      Err("config number for a bool element (no number↔bool coercion)")
+      Err(
+        (
+          KParse,
+          "config_type_mismatch",
+          "config number for a bool element (no number↔bool coercion)",
+        ),
+      )
     (CBool(_), TNum) | (CBool(_), TFloat) | (CBool(_), TCount) =>
-      Err("config bool for a number element (no number↔bool coercion)")
+      Err(
+        (
+          KParse,
+          "config_type_mismatch",
+          "config bool for a number element (no number↔bool coercion)",
+        ),
+      )
     (CBool(_), TInt) =>
-      Err("config bool for an int element (no number↔bool coercion)")
+      Err(
+        (
+          KParse,
+          "config_type_mismatch",
+          "config bool for an int element (no number↔bool coercion)",
+        ),
+      )
     // 構造不一致 (array / object → scalar element) は Error
     (CArr(_), _) =>
-      Err("config array for a scalar element (structural mismatch)")
+      Err(
+        (
+          KParse,
+          "config_structural_mismatch",
+          "config array for a scalar element (structural mismatch)",
+        ),
+      )
     (CObj(_), _) =>
-      Err("config object for a scalar element (structural mismatch)")
+      Err(
+        (
+          KParse,
+          "config_structural_mismatch",
+          "config object for a scalar element (structural mismatch)",
+        ),
+      )
     // null is 供給なし (handled before this by resolve; defensive arm for exhaustiveness, DR-050 §4)
     (CNull, _) =>
       Err(
-        "config null is 供給なし (should be handled as no-supply, not converted)",
+        (
+          KParse,
+          "config_type_mismatch",
+          "config null is 供給なし (should be handled as no-supply, not converted)",
+        ),
       )
   }
 }

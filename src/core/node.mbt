@@ -307,6 +307,13 @@ pub(all) struct Entity {
   // presets but not reachable through this simple by-name field yet.
   collector : String?
   default_value : Value? // default seat
+  // DR-034 multiple の separator (issue 2026-07-09-env-separator-split-gap): the env seat's OWN
+  // copy, mirroring `pre_filters` below — `resolve.mbt`'s `env_value` runs the pieceProcessor once
+  // per piece exactly like `eval.mbt`'s `sep_binds` does for the CLI seat's raw token, but the CLI
+  // seat's split already happened upstream (at token-consumption time); the env seat's raw string
+  // hasn't been split at all until this field tells `resolve_entity_raw` to. `None` = no separator
+  // declared (the common case, and every non-`multiple` cell) — env value stays a single piece.
+  separator : String?
   // DR-034/DR-062 pre_filters (String→String, per-piece / pre-parse 相): unlike `filters`/
   // `post_filters` below (which run AFTER a ladder seat's value is already resolved, in
   // `resolve.mbt`'s `apply_entity_filters`), pre_filters only ever runs BEFORE a string→T parse —
