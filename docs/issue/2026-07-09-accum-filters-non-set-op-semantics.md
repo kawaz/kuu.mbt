@@ -1,11 +1,11 @@
 ---
 title: accum セルの filters(each) が非 Set 効果 (Default/Unset/Update) の placeholder 値にも走り得る
-status: open
+status: wip
 category: design
 created: 2026-07-09T17:53:58+09:00
 last_read:
 open_entered: 2026-07-09T17:53:58+09:00
-wip_entered:
+wip_entered: 2026-07-09T21:21:20+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
