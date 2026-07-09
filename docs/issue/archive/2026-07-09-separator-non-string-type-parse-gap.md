@@ -1,6 +1,6 @@
 ---
 title: separator 付き multiple の非 string 型が型 parse を経由しない (SepArg = VStr 固定)
-status: wip
+status: resolved
 category: bug
 created: 2026-07-09T16:18:40+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered: 2026-07-09T17:57:32+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-09T18:00:00+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:commit e2eee701 (feat(separator)) - 2段一括実装: 段1=value_prim へ separator? 統合で option (long/short/eq-split/cluster) 経路にも SepArg 構築、段2=SepArg に Ty/int_round/allow_base_prefix を運搬し sep_binds で piece ごとに pre_filters→型 parse。fixture separator-typed.json + separator-typed-positional.json GREEN、filters-each.json::separator-piece-rejects-whole も GREEN 化し known_divergences 空に復帰。conformance decoded=145/ran_cases=369/skipped=0/mismatches=0、157テスト全pass"]
 blocked_by:
 origin: impl-prefilters worker (pre_filters 配線の設計調査中)
 ---
