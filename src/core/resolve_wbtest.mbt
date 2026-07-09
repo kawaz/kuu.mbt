@@ -21,6 +21,7 @@ fn ent(
   is_config_file? : Bool = false,
   inherit_? : Bool = false,
   accum? : String? = None,
+  collector? : String? = None,
   default_value? : Value? = None,
   filters? : Array[String] = [],
   post_filters? : Array[String] = [],
@@ -34,6 +35,7 @@ fn ent(
     is_config_file,
     inherit_,
     accum,
+    collector,
     default_value,
     filters,
     post_filters,
@@ -54,7 +56,7 @@ test "build_result folds scalar last-wins, accumulate array, and default seat" {
     cb("tags", VStr("a"), Cli),
     cb("tags", VStr("b"), Cli),
   ]
-  let cells : Array[AccumCell] = [{ path: [], name: "tags" }]
+  let cells : Array[AccumCell] = [{ path: [], name: "tags", collector: None }]
   let defaults : Array[DefaultCell] = [
     { path: [], name: "verbose", value: VBool(false) },
   ]
@@ -85,7 +87,7 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
     },
     { key: "tags", op: Set, value: VStr("c"), source: Cli, scope: [], link: 0 },
   ]
-  let cells : Array[AccumCell] = [{ path: [], name: "tags" }]
+  let cells : Array[AccumCell] = [{ path: [], name: "tags", collector: None }]
   let r = build_result(binds, cells, [], [])
   assert_eq(r, RObj([("tags", RArr([RScalar(VStr("c"))]))]))
 }
@@ -94,8 +96,56 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
 /// Guarantees: an accumulate cell that fired ZERO times still renders `[]` (DR-044 §1 uniform
 /// array) instead of being absent from the result object.
 test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)" {
-  let cells : Array[AccumCell] = [{ path: [], name: "tags" }]
+  let cells : Array[AccumCell] = [{ path: [], name: "tags", collector: None }]
   assert_eq(build_result([], cells, [], []), RObj([("tags", RArr([]))]))
+}
+
+///|
+/// 保証 (DR-036, issue 2026-07-09-dec-multiple-collector-decode): an accum cell whose AccumCell
+/// carries `collector: Some("unwrap_single")` has the collector applied to the FINAL accumulated
+/// array (after fold, same spot `apply_collector`/`unwrap_single`, resolve.mbt, sits) — a
+/// length-1 accumulation collapses to a bare scalar (DR-034 縮退ケース: an app wants a SCALAR from
+/// a multiple/repeat cell without the uniform-array default folding it). Paired with the next case
+/// (2+ elements) to fix unwrap_single's actual boundary, not just "it does something".
+test "build_result: a collector (unwrap_single) collapses a length-1 accumulation to a scalar" {
+  let binds : Array[Binding] = [cb("tag", VStr("solo"), Cli)]
+  let cells : Array[AccumCell] = [
+    { path: [], name: "tag", collector: Some("unwrap_single") },
+  ]
+  assert_eq(
+    build_result(binds, cells, [], []),
+    RObj([("tag", RScalar(VStr("solo")))]),
+  )
+}
+
+///|
+/// 保証: unwrap_single は「唯一無二の縮退」だけを畳む — 2 要素以上の accumulation は集約結果の
+/// ARRAY のまま残る (resolve.mbt `unwrap_single`'s doc comment: "Length 0 or >= 2 arrays are left
+/// unchanged")。前ケース (length-1 → scalar) と対で unwrap_single の輪郭を固定する。
+test "build_result: a collector (unwrap_single) leaves a 2+ element accumulation as an array" {
+  let binds : Array[Binding] = [
+    cb("tag", VStr("a"), Cli),
+    cb("tag", VStr("b"), Cli),
+  ]
+  let cells : Array[AccumCell] = [
+    { path: [], name: "tag", collector: Some("unwrap_single") },
+  ]
+  assert_eq(
+    build_result(binds, cells, [], []),
+    RObj([("tag", RArr([RScalar(VStr("a")), RScalar(VStr("b"))]))]),
+  )
+}
+
+///|
+/// 保証: 0 回発火の accum cell に collector が付いていても、DR-044 §1 の uniform array 契約 (未発火
+/// でも `[]` を描画、absent にしない) は崩れない — unwrap_single([]) は空配列のまま (unchanged)
+/// なので、collector 適用後も `[]` のまま描画される。uniform-array 注入経路 (build_result の
+/// `UNIFORM ARRAY` 分岐) にも collector 適用を配線したことを固定する (ACCUMULATE 分岐だけでなく)。
+test "build_result: a collector on an unfired accum cell still renders [] (DR-044 uniform array)" {
+  let cells : Array[AccumCell] = [
+    { path: [], name: "tag", collector: Some("unwrap_single") },
+  ]
+  assert_eq(build_result([], cells, [], []), RObj([("tag", RArr([]))]))
 }
 
 ///|

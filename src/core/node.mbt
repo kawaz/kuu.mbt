@@ -264,6 +264,15 @@ pub(all) struct Entity {
   // (multiple's value fold, DR-034). Both realize a value LIST here; the name records WHICH
   // registry accumulator so the AST is self-describing (a scalar cell has None).
   accum : String? // None = scalar; Some("flatten"|"append"|...) = accumulate via that registry entry
+  // DR-036 collector: the T[]→U transform applied to an `accum` cell's FINAL accumulated array
+  // (build_result's ACCUMULATE branch, `resolve.mbt`'s `apply_collector`). Only meaningful when
+  // `accum is Some(_)` — a scalar cell has no accumulated array to collect from, so this stays
+  // None there. `None` here (the common case) means "no collector, render the plain accumulated
+  // array" — the multiple registry's `append` preset's `collector: なし` (DR-036 "省略時 accumulator
+  // 連動デフォルト"). Only `unwrap_single` is wired end-to-end today (issue
+  // 2026-07-09-dec-multiple-collector-decode); `to_set`/`from_entries` are DR-036 registry
+  // presets but not reachable through this simple by-name field yet.
+  collector : String?
   default_value : Value? // default seat
   // DR-009 filters (each, T→T): applied to EVERY value this cell resolves from ANY ladder seat
   // (cli/env/config/inherit/default) right after that seat's own value is determined — same timing

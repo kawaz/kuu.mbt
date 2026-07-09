@@ -215,6 +215,10 @@ pub fn apply_export_to_defaults(
 pub(all) struct AccumCell {
   path : Array[String]
   name : String
+  // DR-036 collector (Entity.collector's copy, threaded through so build_result — which only
+  // sees AccumCell, never the Scope/Entity it came from — can apply it to the final accumulated
+  // array without a second lookup pass). None = no collector (render the plain array).
+  collector : String?
 } derive(Eq, Debug)
 
 ///|
@@ -245,6 +249,35 @@ fn cell_here(
     }
   }
   false
+}
+
+///|
+/// The DR-036 collector declared for the accum cell at `path`/`name`, or None (`cell_here` already
+/// established the cell exists — this is the same lookup, returning the payload instead of a Bool).
+fn collector_here(
+  cells : Array[AccumCell],
+  path : Array[String],
+  name : String,
+) -> String? {
+  for c in cells {
+    if c.name == name && path_eq(c.path, path) {
+      return c.collector
+    }
+  }
+  None
+}
+
+///|
+/// DR-036 collector dispatch by name: applies the named collector to an accum cell's final
+/// accumulated `RArr`. Only `unwrap_single` is wired end-to-end today (`Entity.collector`'s doc
+/// comment, node.mbt) — an unrecognized name is unreachable in practice (decode validates against
+/// this same vocab before ever setting `Entity.collector`, `dec_multiple` in
+/// json_conformance_wbtest.mbt), so this defensively falls back to identity rather than aborting.
+fn apply_collector(name : String, r : RVal) -> RVal {
+  match name {
+    "unwrap_single" => unwrap_single(r)
+    _ => r
+  }
 }
 
 ///|
@@ -344,7 +377,12 @@ pub fn build_result(
           }
         }
       }
-      obj.push((k, RArr(items)))
+      let arr = RArr(items)
+      let collected = match collector_here(cells, path, k) {
+        Some(cn) => apply_collector(cn, arr)
+        None => arr
+      }
+      obj.push((k, collected))
     } else {
       // SCALAR last-wins (DR-015): the last value written to the cell.
       let mut v = VBool(false)
@@ -373,7 +411,12 @@ pub fn build_result(
   // renders `[]` (not absent) — inject empties for cells not already present as named leaves.
   for c in cells {
     if path_eq(c.path, path) && !str_contains(named, c.name) {
-      obj.push((c.name, RArr([])))
+      let empty : RVal = RArr([])
+      let collected = match c.collector {
+        Some(cn) => apply_collector(cn, empty)
+        None => empty
+      }
+      obj.push((c.name, collected))
     }
   }
   // DEFAULT SEAT (DR-031 default seat / DR-051 §2): a scalar cell with a default declared at THIS
@@ -568,7 +611,7 @@ fn collect_accum(
   for e in sc.entities {
     // any named accumulator (flatten / append / …) folds the cell into a list (DR-036).
     if e.accum is Some(_) {
-      out.push({ path, name: e.name })
+      out.push({ path, name: e.name, collector: e.collector })
     }
   }
   for g in sc.greedy {

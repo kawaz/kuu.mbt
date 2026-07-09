@@ -39,6 +39,11 @@ pub(all) struct ElemDef {
   optional : Bool // repeat:{min:0,max:1} の糖衣 (DR-043) — repeat 語彙が所有
   multiple : Bool // multiple installer 所有 (DR-034/043)
   separator : String? // multiple パイプラインの separator (DR-034)
+  // DR-036 collector: `multiple: {accumulator, collector}` の object 形が持つ collector 属性 (decode
+  // 層 dec_multiple 所有、json_conformance_wbtest.mbt)。`ensure_entity` がそのまま `Entity.collector`
+  // へ写す — 中間の installer 変換は無い (この属性を消費する唯一の installer は「宣言をそのまま Entity
+  // へ通す」ensure_entity 自身)。None = collector 未指定 (accumulator 連動デフォルト、DR-036)。
+  collector : String?
   fail_action : Bool // failure-action element (DR-048)
   is_config_file : Bool // type:"config_file" (DR-050)
   config_key : Array[String]? // 明示 config path (DR-050 §3); None = 同型
@@ -529,6 +534,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     optional: e.optional,
     multiple: e.multiple,
     separator: e.separator,
+    collector: e.collector,
     fail_action: e.fail_action,
     is_config_file: e.is_config_file,
     config_key: e.config_key,
@@ -1039,6 +1045,14 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     is_config_file: e.is_config_file,
     inherit_: false, // MDR-003: node.mbt 側 Entity.inherit_
     accum,
+    // DR-036: collector only means anything alongside an accum cell (Entity.collector's doc
+    // comment, node.mbt) — a scalar cell (accum is None) drops any declared collector rather than
+    // carrying a dead attribute forward.
+    collector: if accum is Some(_) {
+      e.collector
+    } else {
+      None
+    },
     default_value,
     filters: e.filters,
     post_filters: e.post_filters,
@@ -1359,6 +1373,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     optional: copy.optional,
     multiple: copy.multiple,
     separator: copy.separator,
+    collector: copy.collector,
     fail_action: copy.fail_action,
     is_config_file: copy.is_config_file,
     config_key: copy.config_key,
@@ -1539,6 +1554,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     optional: false,
     multiple: false,
     separator: None,
+    collector: None,
     fail_action: false,
     is_config_file: false,
     config_key: None,
@@ -1734,6 +1750,7 @@ fn alias_entry(
     optional: false,
     multiple: false,
     separator: None,
+    collector: None,
     fail_action: false,
     is_config_file: false,
     config_key: None,

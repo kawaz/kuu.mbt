@@ -304,6 +304,7 @@ fn opt(
   inherit_? : Bool = false,
   inheritable? : Bool = false,
   multiple? : Bool = false,
+  collector? : String? = None,
   fail_action? : Bool = false,
   config_file? : Bool = false,
   config_key? : Array[String]? = None,
@@ -337,6 +338,7 @@ fn opt(
     optional: false,
     multiple,
     separator: None,
+    collector,
     fail_action,
     is_config_file: config_file,
     config_key,
@@ -365,6 +367,7 @@ fn pos(
   optional? : Bool = false,
   multiple? : Bool = false,
   separator? : String? = None,
+  collector? : String? = None,
   config_key? : Array[String]? = None,
   export_? : ExportKey = EkUnset,
   ref_? : String? = None,
@@ -393,6 +396,7 @@ fn pos(
     optional,
     multiple,
     separator,
+    collector,
     fail_action: false,
     is_config_file: false,
     config_key,
@@ -431,6 +435,7 @@ fn dd_marker() -> ElemDef {
     optional: false,
     multiple: false,
     separator: None,
+    collector: None,
     fail_action: false,
     is_config_file: false,
     config_key: None,
@@ -1874,25 +1879,58 @@ fn dec_repeat(j : Json) -> RepeatSpec raise DecodeSkip {
 }
 
 ///|
-fn dec_multiple(j : Json) -> (Bool, String?) raise DecodeSkip {
+/// The DR-036 `collector` vocab this decode layer actually wires end-to-end (issue
+/// 2026-07-09-dec-multiple-collector-decode). `unwrap_single` has a real runtime (resolve.mbt's
+/// `apply_collector`/`unwrap_single`, applied to the accum cell's final array in `build_result`).
+/// `to_set`/`from_entries` are DR-036 registry presets but NOT reachable through this simple
+/// by-name field: `to_set` has no runtime implementation at all yet, and `from_entries` (DR-044)
+/// takes a shape config (`FromEntries`: Entries/KeyValue/KeyPromote) this single-string field can't
+/// carry — accepting either name here would decode successfully but silently render the plain
+/// array at runtime (a decode/runtime capability mismatch), so both are explicitly rejected with a
+/// reason instead of falling into the generic "unknown" message.
+fn known_collector(name : String) -> Bool {
+  name == "unwrap_single"
+}
+
+///|
+/// DR-036 `multiple`. Returns (fires, separator, collector). The `accumulator` key's accepted
+/// vocab stays "append"-only (issue acceptance criterion 判断: DR-036 also lists merge/override/
+/// increment/flatten, but `installer.mbt`'s `ensure_entity` hardcodes the accum registry entry
+/// from `e.multiple`/`elem_repeat`/`e.separator` alone — it never reads the decoded accumulator
+/// string. Accepting a wider vocab here would decode successfully while installer.mbt silently
+/// keeps treating every multiple cell as plain "append", a decode/runtime mismatch of the same
+/// kind `known_collector`'s doc comment describes for `to_set`/`from_entries`. Widening this needs
+/// `ensure_entity` to actually consult the accumulator name first).
+fn dec_multiple(j : Json) -> (Bool, String?, String?) raise DecodeSkip {
   match j.j_bool() {
-    Some(b) => return (b, None)
+    Some(b) => return (b, None, None)
     None => ()
   }
   match j.j_str() {
-    Some("append") => return (true, None)
+    Some("append") => return (true, None, None)
     Some(other) => raise DecodeSkip("multiple preset '" + other + "'")
     None => ()
   }
   match j.j_obj() {
     Some(o) => {
-      allowed_keys(o, ["accumulator", "separator"], "multiple")
+      allowed_keys(o, ["accumulator", "separator", "collector"], "multiple")
       match jf_str(o, "accumulator") {
         Some("append") => ()
         Some(a) => raise DecodeSkip("multiple.accumulator '" + a + "'")
         None => ()
       }
-      (true, jf_str(o, "separator"))
+      let collector = match jf_str(o, "collector") {
+        Some(c) =>
+          if known_collector(c) {
+            Some(c)
+          } else {
+            raise DecodeSkip(
+              "multiple.collector '" + c + "' has no wired runtime yet",
+            )
+          }
+        None => None
+      }
+      (true, jf_str(o, "separator"), collector)
     }
     None => raise DecodeSkip("multiple is not a bool/string/object")
   }
@@ -2159,9 +2197,9 @@ fn dec_option(
   let global = bool_field(o, "global", false)
   let inherit_flag = bool_field(o, "inherit", false)
   let inheritable = bool_field(o, "inheritable", false)
-  let (multiple, sep) = match o.get("multiple") {
+  let (multiple, sep, coll) = match o.get("multiple") {
     Some(m) => dec_multiple(m)
-    None => (false, None)
+    None => (false, None, None)
   }
   let requires = dec_strs(o.get("requires"))
   let conflicts = dec_strs(o.get("conflicts_with"))
@@ -2209,6 +2247,7 @@ fn dec_option(
       },
     ),
     separator: sep,
+    collector: coll,
     deprecated,
   })
 }
@@ -2269,9 +2308,9 @@ fn dec_positional(
     None => None
   }
   let optional = bool_field(o, "optional", false)
-  let (multiple, sep) = match o.get("multiple") {
+  let (multiple, sep, coll) = match o.get("multiple") {
     Some(m) => dec_multiple(m)
-    None => (false, None)
+    None => (false, None, None)
   }
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
@@ -2295,6 +2334,7 @@ fn dec_positional(
     optional~,
     multiple~,
     separator=sep,
+    collector=coll,
     config_key~,
     export_~,
     default~,

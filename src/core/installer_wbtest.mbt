@@ -29,6 +29,7 @@ fn el(
   is_inherit? : Bool = false,
   repeat? : RepeatSpec? = None,
   multiple? : Bool = false,
+  collector? : String? = None,
   pre_split_filters? : Array[String] = [],
   filters? : Array[String] = [],
   post_filters? : Array[String] = [],
@@ -50,6 +51,7 @@ fn el(
     optional: false,
     multiple,
     separator: None,
+    collector,
     fail_action: false,
     is_config_file: false,
     config_key: None,
@@ -348,6 +350,51 @@ test "repeat installer: bounded max lowers to min heads + BoundedTail (no Ref)" 
   // Ref template は登録されない (Ref 再帰なし)
   let ent = entity_of(sc, "f").unwrap()
   assert_eq(ent.accum, Some("flatten"))
+}
+
+// ── multiple の collector 属性 (DR-036, issue 2026-07-09-dec-multiple-collector-decode) ─────
+
+///|
+/// 保証: `multiple:true` + collector 宣言 (ElemDef) は accum cell の Entity へそのまま写る
+/// (`ensure_entity` の write-through、installer.mbt) — collector 自体を解釈・変換する installer は
+/// 無く、宣言をそのまま Entity.collector に通す (DR-036 の decode/実体 lookup の「実体」側)。
+test "multiple installer: a declared collector rides straight through to Entity.collector" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "tags",
+        TStr,
+        long=LList([":set"]),
+        multiple=true,
+        collector=Some("unwrap_single"),
+      ),
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  let ent = entity_of(sc, "tags").unwrap()
+  assert_eq(ent.accum, Some("append")) // DR-034: multiple の値 fold は append
+  assert_eq(ent.collector, Some("unwrap_single"))
+}
+
+///|
+/// 保証: collector は accum cell の伴属物 (node.mbt Entity.collector の doc comment) — multiple も
+/// repeat も無いスカラーセルに collector だけ宣言しても `ensure_entity` は捨てる (accum が None なら
+/// collector も強制 None、「累積すら起きないセルの collector」という無意味な組合せを AST に残さない)。
+/// 実運用の decode 層 (dec_multiple, json_conformance_wbtest.mbt) は collector を multiple:{...} の
+/// 内側キーとしてのみ受理するので、この経路 (multiple:false かつ collector 宣言) は decode からは
+/// 到達しない — installer 層の防御的な契約として単体で固定する。
+test "multiple installer: a collector declared without multiple/repeat is dropped (accum is None)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el("n", TNum, long=LList([":set"]), collector=Some("unwrap_single")),
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  let ent = entity_of(sc, "n").unwrap()
+  assert_eq(ent.accum, None)
+  assert_eq(ent.collector, None)
 }
 
 // ── dd installer (DR-064): 配置不問回収 (options[] / positionals[] 両対応) ──────
