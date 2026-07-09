@@ -1,11 +1,11 @@
 ---
 title: pre_split_filters の実行配線 (decode 済み・未配線)
-status: open
+status: wip
 category: task
 created: 2026-07-09T10:25:35+09:00
 last_read:
 open_entered: 2026-07-09T10:25:35+09:00
-wip_entered:
+wip_entered: 2026-07-09T15:32:44+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
