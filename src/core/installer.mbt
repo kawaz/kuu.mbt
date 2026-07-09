@@ -795,6 +795,20 @@ fn elem_head(e : ElemDef) -> Node {
 }
 
 ///|
+/// DR-078 §1 result 写像 (issue 2026-07-09-ref-template-result-shape): wrap ONE repeat rep's
+/// `head` (a ref element's consumption unit) so its bindings land nested under `name` (the
+/// result scope, DESIGN §2.3/§2.4) with a leading "#row" sentinel marking the row boundary
+/// (`resolve.mbt`'s `build_result` ROW-GROUP branch groups same-scope bindings into one array
+/// element per "#row"). `Bind`'s 0-token binding rides IN FRONT of `head`'s own bindings within
+/// the SAME `Scoped` wrap, so both land at scope=[name] together in argv order — this is safe to
+/// apply per-rep (rather than wrapping the whole repeat spine once) because it changes only the
+/// CONTENT of one head-consumption, never the spine shape that drives 取り分選好/先食い
+/// (`lower_repeat_head` / `ref_choice` / `bounded_tail_step` remain untouched).
+fn ref_row_head(name : String, head : Node) -> Node {
+  Scoped(name, Seq([Bind("#row", VBool(false)), head]))
+}
+
+///|
 /// MDR-004 §3: one `OrBranch`'s consumption grammar node — a single node for a 1-item branch, a
 /// `Seq` of value primitives (consumed in order) for a multi-item branch. Each item's own `name`
 /// carries through `elem_head` unchanged, so held-Error / binding attribution lands on the LEAF
@@ -972,7 +986,29 @@ fn lower_positional(
           }
           out.push(IdxRepeat(e.name, head, min))
         }
-        BCell => lower_repeat_head(e, elem_head(e), registry, out)
+        BCell =>
+          match e.ref_target {
+            // DR-078 §1 result 写像 (issue 2026-07-09-ref-template-result-shape): a `ref`
+            // element's own `name` must create a result scope (DESIGN §2.3/§2.4) — `elem_head`
+            // returns the bare `Ref(target)`, discarding `e.name` entirely, so without this the
+            // referenced template's OWN leaf names (colorname/r/g/b) surface at the TOP level
+            // instead of nested under `e.name`.
+            Some(_) =>
+              match elem_repeat(e) {
+                // no repeat: single occurrence, degenerate row (DESIGN §6.1 の逆 — repeat が
+                // 「配列に包む」操作を担う、外すと row がそのまま値になる) — no "#row" marker
+                // needed, `sub_under(binds, e.name)` already yields the row's flat leaves.
+                None => out.push(Scoped(e.name, elem_head(e)))
+                Some(_) =>
+                  lower_repeat_head(
+                    e,
+                    ref_row_head(e.name, elem_head(e)),
+                    registry,
+                    out,
+                  )
+              }
+            None => lower_repeat_head(e, elem_head(e), registry, out)
+          }
       }
     }
   }
@@ -1025,7 +1061,19 @@ fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
 /// with `entity=k` effects).
 fn ensure_entity_body(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   match e.body {
-    BCell => ensure_entity(build, e, has_cf)
+    BCell =>
+      // DR-078 §1 result 写像 (issue 2026-07-09-ref-template-result-shape): a `ref` element is
+      // ALSO a structural dispatcher with no scalar/array value of its own — its "value" is a
+      // name-scoped projection of the REFERENCED template's own leaves (installer.mbt's
+      // `ref_row_head` / `lower_positional`/`inst_long`'s `Scoped` wrap), never a flat binding on
+      // `e.name` itself. Registering an entity here would (a) be dead (nothing ever binds flatly
+      // to `e.name`, so it never seats a value-source-ladder seat) and (b) for a repeat element,
+      // register a spurious "flatten" accum cell that double-renders the array alongside the
+      // nested-scope ROW-GROUP `resolve.mbt` already builds (mirrors the BGroup/"xs" comment
+      // just below, same failure mode).
+      if e.ref_target is None {
+        ensure_entity(build, e, has_cf)
+      }
     BOr(branches) =>
       for br in branches {
         for it in br.items {
@@ -1126,7 +1174,11 @@ fn not_dd(e : ElemDef) -> Bool {
 ///|
 /// long: `long` を READ、name あたり greedy exact 衛星 (space form) と、value 系なら eq-split matcher
 /// を add-if-absent で追加。衛星は name で entity に link (DR-042 §展開の標準パターン)。
-fn inst_long(def : Definition, build : Build) -> Unit {
+fn inst_long(
+  def : Definition,
+  build : Build,
+  registry : Map[String, Node],
+) -> Unit {
   let eq_entries : Array[LongEntry] = []
   for e in def.options {
     for l in long_of(e) {
@@ -1148,30 +1200,84 @@ fn inst_long(def : Definition, build : Build) -> Unit {
           )
         }
         _ =>
-          // DR-076 §1/§2/§4: every value-typed main entry (bool included, flag ALREADY normalized to
-          // TBool by `normalize_option`, DR-076 §2) is a NORMAL value satellite — `:set` always takes
-          // a value (space form here; eq form via eq_entries below). A bare `--x` fire (the classic
-          // flag shape) needs the explicit `:set:true` variant (decoded as a Set-op Variant with
-          // operand VBool(true), lowered by the "Variant entries" loop below, which also carries the
-          // fail_action FailMark — flag's presence-only lowering has fully collapsed into that generic
-          // variant path; this arm no longer special-cases TFlag/TBool bare-true at all).
-          add_greedy(
-            build,
-            maybe_root(
-              e.link_depth,
-              Seq([
-                Exact(trigger),
-                value_prim(
-                  e.ty,
-                  e.name,
-                  e.int_round,
-                  e.allow_base_prefix,
-                  e.pre_filters,
-                  separator=e.separator,
+          match e.ref_target {
+            // DR-078 §1 option repeat (issue 2026-07-09-ref-template-result-shape, new
+            // capability): mirrors `lower_positional`'s BCell/ref_target arm — a `ref` element's
+            // own `name` creates a result scope, and (when repeated) each rep's row groups under
+            // a "#row" sentinel (`ref_row_head`, `resolve.mbt`'s ROW-GROUP branch).
+            Some(_) =>
+              match elem_repeat(e) {
+                None =>
+                  add_greedy(
+                    build,
+                    maybe_root(
+                      e.link_depth,
+                      Seq([Exact(trigger), Scoped(e.name, elem_head(e))]),
+                    ),
+                  )
+                Some(_) => {
+                  // The repeat spine (mandatory heads + Ref/BoundedTail/Many tail) collapses to
+                  // ONE node for `min <= 1` (no mandatory-head unrolling) — the only shape any
+                  // fixture exercises today (`last-wins-repeat-rows.json`'s `{"min":1}`). A
+                  // `min > 1` option repeat would need `GreedyRepeat` to carry multiple
+                  // `sc'.positional` slots (eval.mbt's `step_greedy_repeat`), not yet wired.
+                  let spine : Array[Node] = []
+                  lower_repeat_head(
+                    e,
+                    ref_row_head(e.name, elem_head(e)),
+                    registry,
+                    spine,
+                  )
+                  let tail = if spine.length() == 1 {
+                    spine[0]
+                  } else {
+                    Seq(spine)
+                  }
+                  add_greedy(
+                    build,
+                    maybe_root(
+                      e.link_depth,
+                      Seq([
+                        Exact(trigger),
+                        // DR-034 last-wins-whole-cell (multiple 無しの再発火はセル丸ごと上書き):
+                        // "#fire" marks this firing's start so `resolve.mbt`'s ROW-GROUP branch
+                        // can discard every EARLIER firing's rows wholesale rather than merging
+                        // leaf-by-leaf (which would wrongly keep a superseded rep whose position
+                        // the later, shorter firing never touched).
+                        Scoped(e.name, Bind("#fire", VBool(false))),
+                        GreedyRepeat(tail),
+                      ]),
+                    ),
+                  )
+                }
+              }
+            None =>
+              // DR-076 §1/§2/§4: every value-typed main entry (bool included, flag ALREADY
+              // normalized to TBool by `normalize_option`, DR-076 §2) is a NORMAL value satellite
+              // — `:set` always takes a value (space form here; eq form via eq_entries below). A
+              // bare `--x` fire (the classic flag shape) needs the explicit `:set:true` variant
+              // (decoded as a Set-op Variant with operand VBool(true), lowered by the "Variant
+              // entries" loop below, which also carries the fail_action FailMark — flag's
+              // presence-only lowering has fully collapsed into that generic variant path; this
+              // arm no longer special-cases TFlag/TBool bare-true at all).
+              add_greedy(
+                build,
+                maybe_root(
+                  e.link_depth,
+                  Seq([
+                    Exact(trigger),
+                    value_prim(
+                      e.ty,
+                      e.name,
+                      e.int_round,
+                      e.allow_base_prefix,
+                      e.pre_filters,
+                      separator=e.separator,
+                    ),
+                  ]),
                 ),
-              ]),
-            ),
-          )
+              )
+          }
       }
       // eq-split value form (`--key=value`): every value-typed main entry gets this (bool included,
       // DR-076 §1) — a flag's default sugar carries NO main entry at all (`e.long` stays [], DR-076
@@ -1528,9 +1634,9 @@ fn triggers_overlap(a : ElemDef, b : ElemDef) -> Bool {
 ///|
 /// 1 scope node に 1 installer を適用。long/short/env/dd/inherit は当該 node の build に貢献。
 /// global は子孫の宣言層にコピー。command は materialize 段で wire (展開は決定的 — DR-018 / DR-041 §4)。
-fn apply_node(inst : Installer, sb : SB) -> Unit {
+fn apply_node(inst : Installer, sb : SB, registry : Map[String, Node]) -> Unit {
   match inst {
-    LongInst => inst_long(sb.decl, sb.build)
+    LongInst => inst_long(sb.decl, sb.build, registry)
     ShortInst => inst_short(sb.decl, sb.build)
     EnvInst => inst_env(sb.decl, sb.build)
     DdInst => inst_dd(sb.decl, sb.build)
@@ -1953,13 +2059,18 @@ fn add_constraint(build : Build, c : Constraint) -> Unit {
 ///|
 /// 全木 1 pass の fixpoint: entities ensure (core) → installer 適用 → 子 scope 再帰。global は再帰前に
 /// 子にコピーするので、`order` 内の global 位置に関わらず子は同 pass で成長した宣言層を見る。
-fn tree_pass(order : Array[Installer], sb : SB, has_cf : Bool) -> Unit {
+fn tree_pass(
+  order : Array[Installer],
+  sb : SB,
+  has_cf : Bool,
+  registry : Map[String, Node],
+) -> Unit {
   ensure_entities(sb, has_cf)
   for inst in order {
-    apply_node(inst, sb)
+    apply_node(inst, sb, registry)
   }
   for child in sb.children {
-    tree_pass(order, child.body, has_cf)
+    tree_pass(order, child.body, has_cf, registry)
   }
 }
 
@@ -2296,6 +2407,7 @@ fn head_progresses(
         false
       }
     Many(_) | Scoped(_, _) | ScopeNode(_) => true
+    GreedyRepeat(inner) => head_progresses(inner, registry, visiting)
   }
 }
 
@@ -2488,6 +2600,43 @@ fn collect_invalid_range(def : Definition, out : Array[DefError]) -> Unit {
 }
 
 ///|
+/// codex レビュー指摘 4 (2026-07-09 節目レビュー): an option's `ref` + `repeat` lowering
+/// (`inst_long`'s `Some(_)` arm) only wires a SINGLE `GreedyRepeat` spine slot — correct for
+/// `min <= 1` (no mandatory-head unrolling, `elem_repeat`'s `Some(spec) => spec.min - 1`
+/// mandatory heads collapses to 0), but a `min > 1` spec WOULD unroll extra mandatory heads that
+/// `inst_long` silently folds into the SAME single tail (`Seq(spine)`) — losing both 先食い
+/// suppression and the greedy 取り分選好 for those extra reps while still parsing "successfully"
+/// (issue 2026-07-09-ref-template-result-shape: 未対応構成は黙って誤動作させず definition error
+/// で可視化する契約、[[retreat-is-last-resort]] 同型の「壊れたまま動かすより落とす」判断)。Reject at
+/// definition time until `GreedyRepeat` carries multiple spine slots.
+fn collect_unsupported_option_ref_repeat(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  for e in def.options {
+    if e.ref_target is Some(_) {
+      match elem_repeat(e) {
+        Some(spec) =>
+          if spec.min > 1 {
+            out.push(
+              def_err(
+                e.name,
+                DInvalidRange,
+                "option repeat min \{spec.min} > 1 is not supported for a `ref` element (GreedyRepeat wires a single spine slot only)",
+                "use repeat: {\"min\": 0} or {\"min\": 1} on this option, or move the mandatory reps to a positional",
+              ),
+            )
+          }
+        None => ()
+      }
+    }
+  }
+  for c in def.commands {
+    collect_unsupported_option_ref_repeat(c.body, out)
+  }
+}
+
+///|
 /// 木のどこかに `type:"config_file"` 要素があるか (DR-050): あれば同型 config seat が全 value cell に立つ。
 fn has_config_file(def : Definition) -> Bool {
   for e in def.options {
@@ -2621,6 +2770,7 @@ pub fn parse_definition(
   collect_vocab_intersection(order, errs) // DR-042③
   collect_unknown_vocab(def, order, errs) // DR-042① (alias vocab check 込み)
   collect_invalid_range(def, errs) // DR-052 (repeat min > max)
+  collect_unsupported_option_ref_repeat(def, errs) // codex 指摘4 (option ref+repeat min>1 未配線)
   collect_absent_ref(def, registry, errs) // DR-032
   collect_circular_ref(registry, errs) // DR-007/032
   collect_zero_progress(def, registry, errs) // DR-043
@@ -2638,7 +2788,7 @@ pub fn parse_definition(
   let mut iters = 0
   while true {
     let prev = tree_size(sb)
-    tree_pass(order, sb, has_cf)
+    tree_pass(order, sb, has_cf, registry)
     if tree_size(sb) == prev {
       break
     }

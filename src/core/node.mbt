@@ -229,6 +229,19 @@ pub(all) enum Node {
   /// default; for this raw pattern the split is bounded by the head's Reject / exact, so
   /// no downstream backtrack is needed (DR-043 §取り分の選好, 大域完全経路).
   IdxRepeat(String, Node, Int)
+  /// an OPTION's repeat value slot (DR-078 §1 option-level repeat, new capability): wraps ONLY
+  /// the repeat TAIL (`Ref`/`Many`/`BoundedTail`, the same node `lower_repeat_head` builds for a
+  /// positional) — the trigger/marker prefix ahead of it in the satellite's `Seq` stays plain. A
+  /// bare greedy satellite is evaluated OFF-SPINE (`step_greedy`'s catch-all → plain `eval`, no
+  /// `Scope`), which cannot apply 先食い (DR-041 §4) to stop the repeat before it swallows a
+  /// sibling trigger (e.g. a second `--hlcolors`). `step_greedy` detects this wrapper and
+  /// evaluates `tail` through a throwaway `Scope` that BORROWS the real scope's `greedy` face (so
+  /// suppression sees every sibling trigger, including a refire of the SAME option) but has its
+  /// OWN single-slot `positional` (so the tail's internal repeat loop — which re-enters at the
+  /// same pidx for "more" — cannot walk into the real scope's unrelated positional slots).
+  /// Off-spine `eval` (completion probes etc.) degrades to plain `eval(tail, ..)`, losing
+  /// suppression — acceptable there (no sibling scope to suppress against).
+  GreedyRepeat(Node)
 } derive(Eq, Debug)
 
 ///|

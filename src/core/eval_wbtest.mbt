@@ -1077,6 +1077,58 @@ test "REGRESSION scope_consume_rep Many(FloatArg) respects 先食い (raw-eat su
 }
 
 ///|
+/// REGRESSION (codex 節目レビュー指摘3, issue 2026-07-09-ref-template-result-shape): the SAME
+/// suppression gap as the `Many(FloatArg(...))` test just above, but for a `ref` element's
+/// UNBOUNDED `min:0` repeat — installer.mbt's `lower_repeat_head` lowers that shape to
+/// `Many(head, lazy)` where `head` is `ref_row_head`'s wrap (`Scoped(name, Seq([Bind("#row",_),
+/// Ref(target)]))`), a COMPOUND node, never a bare primitive. `scope_consume_rep`'s catch-all used
+/// to degrade to plain off-spine `eval` for any non-primitive `inner` — which has no `Scope` and so
+/// could never apply 先食い (DR-041 §4) to the leaf (`colorname`, reached through
+/// Scoped→Seq→Ref→Or) — `consume_compound` now threads `sc`/`severed` down instead (same fix
+/// applied to `scope_consume`'s "other" positional-item arm, mirrored `consume_head` catch-all
+/// fix). No spec fixture exists for this shape yet (option/positional ref+repeat `min:0` — a
+/// separate spec-side issue tracks fixture-izing this輪郭, per team-lead); this wbtest pins the
+/// kuu.mbt-side regression fix directly, hand-building the lowered shape (mirrors the
+/// `Many(FloatArg(...))` regression test's own style just above).
+test "REGRESSION scope_consume_rep Many(compound ref-template head) respects 先食い (codex review #3)" {
+  // `color := colorname:string` (単純化 — Or 分岐は本 regression の本質と無関係)。`hlcolors` は
+  // `{"name":"hlcolors","ref":"color","repeat":{"min":0}}` の lowering そのもの。
+  let head = Scoped("hlcolors", Seq([Bind("#row", VBool(false)), Ref("color")]))
+  let root : Scope = {
+    greedy: [Seq([Exact("--verbose"), Bind("verbose", VBool(true))])],
+    positional: [Many(head, false)],
+    entities: [],
+    constraints: [],
+  }
+  let defs : Map[String, Node] = Map([("color", StrArg("colorname", []))])
+  let o = parse(ScopeNode(root), ["red", "--verbose"], defs~)
+  match o {
+    Success(bs) => {
+      let mut colorname_count = 0
+      let mut verbose_ok = false
+      for b in bs {
+        if b.key == "colorname" {
+          colorname_count = colorname_count + 1
+        }
+        if b.key == "verbose" {
+          match b.value {
+            VBool(v) => if v { verbose_ok = true }
+            _ => ()
+          }
+        }
+      }
+      assert_eq(colorname_count, 1)
+      assert_true(verbose_ok)
+    }
+    other =>
+      fail(
+        "expected Success (--verbose fires, hlcolors=[colorname:red] only — raw-eating '--verbose' as a 2nd colorname rep with no verbose fire is the bug), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
 /// REGRESSION head_elem_names_into: a `FloatArg` repeat head's name must be collected into the
 /// DR-065 §3 held-error-parity name set (`drop_optional_missing` reads this to suppress a spurious
 /// missing_operand for an optional repeat's "one more" phantom rep) — mirroring the existing

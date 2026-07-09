@@ -495,6 +495,10 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
     BoundedTail(head, budget, _) =>
       // off-spine fallback: degrade to the nested-Opt form (0..budget heads).
       eval(bounded_opt(head, budget), ctx, pos)
+    GreedyRepeat(tail) =>
+      // off-spine fallback: no sibling Scope to suppress against, so just evaluate the tail
+      // plainly (loses 先食い, acceptable off-spine — see node.mbt's doc comment).
+      eval(tail, ctx, pos)
   }
 }
 
@@ -1089,20 +1093,107 @@ fn step_greedy(
         step_greedy(a, sc, ctx, pos, pidx, acc, severed, k, out)
       }
     _ =>
-      for b in eval(g, ctx, pos) {
-        match b {
-          Accept(p2, bs) =>
-            if p2 > pos {
-              for r in scope_step(sc, ctx, p2, pidx, cat(acc, bs), severed, k) {
-                out.push(r)
-              }
+      match greedy_repeat_split(g) {
+        Some((prefix, tail)) =>
+          step_greedy_repeat(
+            prefix, tail, sc, ctx, pos, pidx, acc, severed, k, out,
+          )
+        None =>
+          for b in eval(g, ctx, pos) {
+            match b {
+              Accept(p2, bs) =>
+                if p2 > pos {
+                  for
+                    r in scope_step(sc, ctx, p2, pidx, cat(acc, bs), severed, k) {
+                    out.push(r)
+                  }
+                }
+              // acc must be carried on Held so an earlier FailMark (fired_action
+              // material, eval_seq comment DR-048/DR-053 §4) survives to parse().
+              Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
+              Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
             }
-          // acc must be carried on Held so an earlier FailMark (fired_action
-          // material, eval_seq comment DR-048/DR-053 §4) survives to parse().
-          Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
-          Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+          }
+      }
+  }
+}
+
+///|
+/// Detect a `Seq([..prefix.., GreedyRepeat(tail)])` satellite shape (installer.mbt's option
+/// repeat lowering, DR-078 §1) — the prefix (trigger + any 0-token markers) evaluates plainly;
+/// `tail` needs `step_greedy_repeat`'s `sc`-aware treatment instead.
+fn greedy_repeat_split(g : Node) -> (Node, Node)? {
+  match g {
+    Seq(items) =>
+      if items.length() >= 1 {
+        match items[items.length() - 1] {
+          GreedyRepeat(tail) => {
+            let prefix : Array[Node] = []
+            let mut i = 0
+            while i < items.length() - 1 {
+              prefix.push(items[i])
+              i = i + 1
+            }
+            Some((Seq(prefix), tail))
+          }
+          _ => None
+        }
+      } else {
+        None
+      }
+    _ => None
+  }
+}
+
+///|
+/// Evaluate an option satellite's `prefix` (plain, off-spine — just the trigger and any 0-token
+/// markers) then hand `tail` (the repeat node) to a THROWAWAY single-slot `Scope` that borrows
+/// `sc.greedy` (node.mbt's `GreedyRepeat` doc comment explains why this is needed: 先食い against
+/// sibling triggers, including a refire of the SAME option, DR-041 §4).
+fn step_greedy_repeat(
+  prefix : Node,
+  tail : Node,
+  sc : Scope,
+  ctx : Ctx,
+  pos : Int,
+  pidx : Int,
+  acc : Array[Binding],
+  severed : Bool,
+  k : Cont,
+  out : Array[Branch],
+) -> Unit {
+  for b in eval(prefix, ctx, pos) {
+    match b {
+      Accept(p2, bs) => {
+        let wrap_sc : Scope = {
+          greedy: sc.greedy,
+          positional: [tail],
+          entities: [],
+          constraints: [],
+        }
+        for r in scope_consume(wrap_sc, tail, ctx, p2, 0, [], severed, KDone) {
+          match r {
+            Accept(p3, bs2) =>
+              for
+                rr in scope_step(
+                  sc,
+                  ctx,
+                  p3,
+                  pidx,
+                  cat(acc, cat(bs, bs2)),
+                  severed,
+                  k,
+                ) {
+                out.push(rr)
+              }
+            Held(pe, bs2) => out.push(Held(pe, cat(acc, cat(bs, bs2))))
+            Pending(cs, bs2) => out.push(Pending(cs, cat(acc, cat(bs, bs2))))
+          }
         }
       }
+      Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
+      Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+    }
   }
 }
 
@@ -1485,9 +1576,15 @@ fn scope_consume(
         KResumeScope(sc, pidx + 1, severed, k),
       )
     other => {
-      // any other node as a positional item: eval plainly, then continue.
+      // any other node as a positional item: consume it (codex 節目レビュー指摘3、issue
+      // 2026-07-09-ref-template-result-shape: a ref element's mandatory-head-unrolled slot
+      // (installer.mbt's `ref_row_head`, `min > 1` positional repeat) is a COMPOUND node
+      // (Scoped/Seq/Or wrapping the referenced template's leaves) placed directly on the spine —
+      // plain off-spine `eval` has no `Scope`, so it could never apply 先食い (DR-041 §4) to a
+      // nested leaf. `consume_compound` (eval.mbt, shared with `consume_head`'s own catch-all)
+      // threads `sc`/`severed` down to every leaf primitive it reaches instead), then continue.
       let out : Array[Branch] = []
-      for b in eval(other, ctx, pos) {
+      for b in consume_compound(sc, other, ctx, pos, severed) {
         match b {
           Accept(p2, bs) =>
             for r in scope_step(sc, ctx, p2, pidx + 1, cat(acc, bs), severed, k) {
@@ -1851,8 +1948,95 @@ fn consume_head(
       } else {
         []
       }
-    _ => eval(head, ctx, pos)
+    // DR-078 §1 (issue 2026-07-09-ref-template-result-shape): a `ref` element's head is a
+    // COMPOUND node (Or/Seq/Scoped wrapping a shared template's leaves, never a bare primitive)
+    // — plain off-spine `eval` has no `Scope`, so it could never apply 先食い (DR-041 §4) to a
+    // nested leaf (e.g. `colorname` swallowing a sibling `--hlcolors` refire trigger,
+    // `multiple-parse/last-wins-repeat-rows.json`). `consume_compound` threads `sc`/`severed`
+    // down to every leaf primitive it reaches instead.
+    _ => consume_compound(sc, head, ctx, pos, severed)
   }
+}
+
+///|
+/// Suppression-aware descent through the Or/Seq/Scoped/Ref/Bind shapes a `ref` element's
+/// template is built from (installer.mbt's `dec_template_body`/`ref_row_head`) — mirrors `eval`'s
+/// own Or/Seq combinators exactly, substituting `consume_head` (which DOES check `suppressed`)
+/// for `eval` at every primitive leaf. Any OTHER node shape (not expected inside a template body)
+/// falls back to plain `eval` — a terminal case, not mutual recursion with `consume_head`'s
+/// catch-all above.
+fn consume_compound(
+  sc : Scope,
+  node : Node,
+  ctx : Ctx,
+  pos : Int,
+  severed : Bool,
+) -> Array[Branch] {
+  match node {
+    StrArg(_, _)
+    | SepArg(_, _, _, _, _, _)
+    | NumArg(_, _, _)
+    | FloatArg(_, _)
+    | IntArg(_, _, _, _)
+    | BoolArg(_, _)
+    | ReqArg(_)
+    | FilterArg(_, _) => consume_head(sc, node, ctx, pos, severed)
+    Or(alts) => {
+      let out : Array[Branch] = []
+      for a in alts {
+        for b in consume_compound(sc, a, ctx, pos, severed) {
+          out.push(b)
+        }
+      }
+      out
+    }
+    Seq(items) => consume_compound_seq(sc, items, 0, ctx, pos, [], severed)
+    Scoped(label, body) =>
+      nest_branches(label, consume_compound(sc, body, ctx, pos, severed))
+    Ref(name) =>
+      match ctx.defs.get(name) {
+        Some(tpl) => consume_compound(sc, tpl, ctx, pos, severed)
+        None => []
+      }
+    Bind(name, v) => [Accept(pos, [mkb(name, v, Cli)])]
+    _ => eval(node, ctx, pos)
+  }
+}
+
+///|
+fn consume_compound_seq(
+  sc : Scope,
+  items : Array[Node],
+  idx : Int,
+  ctx : Ctx,
+  pos : Int,
+  acc : Array[Binding],
+  severed : Bool,
+) -> Array[Branch] {
+  if idx >= items.length() {
+    return [Accept(pos, acc)]
+  }
+  let out : Array[Branch] = []
+  for b in consume_compound(sc, items[idx], ctx, pos, severed) {
+    match b {
+      Accept(p2, bs) =>
+        for
+          r in consume_compound_seq(
+            sc,
+            items,
+            idx + 1,
+            ctx,
+            p2,
+            cat(acc, bs),
+            severed,
+          ) {
+          out.push(r)
+        }
+      Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
+      Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+    }
+  }
+  out
 }
 
 ///|
@@ -2115,9 +2299,17 @@ fn scope_consume_rep(
       } else {
         []
       }
+    // codex 節目レビュー指摘3 (issue 2026-07-09-ref-template-result-shape): a ref element's
+    // UNBOUNDED min:0 repeat lowers to `Many(head, lazy)` (installer.mbt's `lower_repeat_head`) —
+    // `head` here is a COMPOUND node (Scoped/Seq/Or, `ref_row_head`'s wrap), never a bare
+    // primitive. This catch-all used to degrade to plain off-spine `eval`, which has no `Scope`
+    // and so could never apply 先食い (DR-041 §4) to a nested leaf (e.g. a sibling trigger, or a
+    // GreedyRepeat option's OWN refire, swallowed as one more "optional" rep instead of stopping).
+    // `consume_compound` threads `sc`/`severed` down to every leaf primitive it reaches instead —
+    // same substitution as `consume_head`'s catch-all and `scope_consume`'s "other" arm above.
     _ => {
       let out : Array[Branch] = []
-      for b in eval(inner, ctx, pos) {
+      for b in consume_compound(sc, inner, ctx, pos, severed) {
         match b {
           Accept(p2, bs) =>
             if p2 > pos {

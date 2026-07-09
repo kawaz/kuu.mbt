@@ -43,7 +43,13 @@ fn str_contains(xs : Array[String], v : String) -> Bool {
 
 ///|
 fn is_sentinel(k : String) -> Bool {
-  k == "[]" || k == "{}" || k == "" || is_action_key(k) || is_depr_key(k)
+  k == "[]" ||
+  k == "{}" ||
+  k == "" ||
+  k == "#row" ||
+  k == "#fire" ||
+  is_action_key(k) ||
+  is_depr_key(k)
 }
 
 ///|
@@ -72,6 +78,36 @@ fn sub_under(binds : Array[Binding], seg : String) -> Array[Binding] {
     }
   }
   out
+}
+
+///|
+/// Split a flat "#row"-marked binding list (DR-078 §1) into per-row groups, keeping only the
+/// bindings after the LAST "#fire" marker (option refire discard, see `build_result`'s ROW-GROUP
+/// comment). "#row"/"#fire" sentinels themselves are dropped — each returned group is a row's own
+/// flat leaf bindings, ready for a recursive `build_result` call.
+fn row_groups(binds : Array[Binding]) -> Array[Array[Binding]] {
+  let mut from = 0
+  let mut i = 0
+  for b in binds {
+    if b.scope.length() == 0 && b.key == "#fire" {
+      from = i + 1
+    }
+    i = i + 1
+  }
+  let groups : Array[Array[Binding]] = []
+  i = 0
+  for b in binds {
+    if i >= from {
+      if b.scope.length() == 0 && b.key == "#row" {
+        groups.push([])
+      } else if !(b.scope.length() == 0 && b.key == "#fire") &&
+        groups.length() > 0 {
+        groups[groups.length() - 1].push(b)
+      }
+    }
+    i = i + 1
+  }
+  groups
 }
 
 ///|
@@ -294,6 +330,21 @@ pub fn build_result(
       elems.push(build_result(sub_under(binds, idx), cells, defaults, path))
     }
     return RArr(elems)
+  }
+  // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
+  // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
+  // boundary for a ref-template repeat cell — build one row (recursive build_result over that
+  // row's own flat leaf bindings) per "#row"-delimited run. "#fire" (installer.mbt's `inst_long`,
+  // option repeat only) marks the start of ONE firing's contribution; multiple 無しの再発火は
+  // セル丸ごと上書きなので (DR-034 の axis 分離、last-wins-repeat-rows.json), only the bindings
+  // AFTER THE LAST "#fire" survive — with no "#fire" at all (a positional fires its repeat
+  // exactly once) the whole list is one firing.
+  if has_direct_key(binds, "#row") {
+    let rows : Array[RVal] = []
+    for row in row_groups(binds) {
+      rows.push(build_result(row, cells, defaults, path))
+    }
+    return RArr(rows)
   }
   // gather direct named keys (skip sentinels) and nested (named) scopes
   let named : Array[String] = []

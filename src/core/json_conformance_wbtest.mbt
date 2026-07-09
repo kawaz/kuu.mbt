@@ -303,6 +303,7 @@ fn opt(
   global? : Bool = false,
   inherit_? : Bool = false,
   inheritable? : Bool = false,
+  repeat? : RepeatSpec? = None,
   multiple? : Bool = false,
   collector? : String? = None,
   fail_action? : Bool = false,
@@ -335,7 +336,7 @@ fn opt(
     is_inheritable: inheritable,
     link_depth: 0,
     ref_target: ref_,
-    repeat: None,
+    repeat,
     optional: false,
     multiple,
     separator: None,
@@ -1250,6 +1251,27 @@ fn jf_str(o : Map[String, Json], key : String) -> String? {
 }
 
 ///|
+/// DR-067 §2 name/id 構文制約 (codex 節目レビュー指摘1, issue 2026-07-09-ref-template-result-shape):
+/// `#` を含む name/id はユーザ定義で禁止 — repeat lowering の内部 template キー
+/// (`e.name + "#cons"`, installer.mbt `lower_repeat_head`)・`next_or_branch_id`'s 自動採番
+/// ("#0"/"#1"/…)・resolve.mbt の row/fire sentinel ("#row"/"#fire") が共有する予約名前空間
+/// (DR-046 §4)。id 未指定なら name が id を兼ねる (DR-046 §2) ため name にも同じ制約が及ぶ — ここを
+/// enforce しないと `{"name": "src#cons"}` のような wire がその内部キーと衝突しうる。既存の decode
+/// error と同じ語彙 (`raise DecodeSkip`) で reject する。呼び出し側は name/id を読んだ「その場」で
+/// これを通す (missing チェックの直後、他フィールドの decode より前 — 診断が name/id の妥当性で早期
+/// に止まるようにする)。
+fn check_reserved_name(name : String, what : String) -> Unit raise DecodeSkip {
+  if name.contains("#") {
+    raise DecodeSkip(
+      what +
+      " name/id '" +
+      name +
+      "' contains '#' (DR-067 §2: '#' はユーザ定義で禁止、内部予約名前空間)",
+    )
+  }
+}
+
+///|
 fn has_key(o : Map[String, Json], k : String) -> Bool {
   match o.get(k) {
     Some(_) => true
@@ -1860,6 +1882,7 @@ fn dec_templates(
     None => raise DecodeSkip("definitions.templates is not an object")
   }
   for name, tj in o {
+    check_reserved_name(name, "definitions.templates")
     registry.set(name, dec_template_body(tj, shadows))
   }
 }
@@ -2044,6 +2067,10 @@ fn dec_alias(o : Map[String, Json]) -> AliasDef raise DecodeSkip {
     None => raise DecodeSkip("alias missing target")
   }
   let name = jf_str(o, "name")
+  match name {
+    Some(n) => check_reserved_name(n, "alias")
+    None => ()
+  }
   let short = dec_short(o)
   // DR-076 §2 flag 差し替え/補完の alias 側適用 (issue 2026-07-08 dec-alias-long-override-flag-
   // sugar-gap): decode はここでも canonical 側の dec_long と同じく wire の bool|array 二形を
@@ -2089,6 +2116,7 @@ fn dec_or(
     let reqs = dec_strs(bo.get("requires"))
     if reqs.length() > 0 {
       let branch_id = jf_str(bo, "id").unwrap_or(parent_name)
+      check_reserved_name(branch_id, "or branch")
       vrs.push((branch_id, exact, reqs))
     }
   }
@@ -2142,7 +2170,10 @@ fn dec_or_structural(
       None => raise DecodeSkip("or branch is not an object")
     }
     let id = match jf_str(bo, "id") {
-      Some(s) => s
+      Some(s) => {
+        check_reserved_name(s, "or branch")
+        s
+      }
       None => next_or_branch_id()
     }
     let items : Array[ElemDef] = match bo.get("seq") {
@@ -2185,6 +2216,7 @@ fn dec_or_leaf(
     Some(s) => s
     None => raise DecodeSkip("or branch leaf missing 'name'")
   }
+  check_reserved_name(name, "or branch leaf")
   let (ty, int_round_from_shadow) = match jf_str(o, "type") {
     Some(t) =>
       match shadows.get(t) {
@@ -2214,7 +2246,7 @@ fn dec_option(
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "separator", "requires", "conflicts_with", "exclusive_group",
       "export_key", "config_key", "deprecated", "or", "pre_filters", "filters", "post_filters",
-      "ref",
+      "ref", "repeat",
     ],
     "option",
   )
@@ -2235,6 +2267,7 @@ fn dec_option(
     Some(s) => s
     None => raise DecodeSkip("option missing 'name'")
   }
+  check_reserved_name(name, "option")
   // MDR-004 §2: "or" is shape-detected FIRST — the DR-055 value-enum form ({"exact":...} branches,
   // dec_or, parent name = branch-id フォールバック先) and the structural consumption-grammar form
   // (BOr, dec_or_structural) share the same JSON key but are otherwise unrelated (§5.3 values 正規形
@@ -2308,12 +2341,20 @@ fn dec_option(
   let filters = dec_strs(o.get("filters"))
   let post_filters = dec_strs(o.get("post_filters"))
   let ref_ = jf_str(o, "ref")
+  // DR-078 §1 option repeat (issue 2026-07-09-ref-template-result-shape, new capability): `repeat`
+  // used to be positional-only (`dec_positional`'s own decode above) — mirrored here now that
+  // installer.mbt's `inst_long` wires it into an option's satellite (`GreedyRepeat`, eval.mbt).
+  let repeat : RepeatSpec? = match o.get("repeat") {
+    Some(r) => Some(dec_repeat(r))
+    None => None
+  }
   DOpt({
     ..opt(
       name,
       ty,
       long=long_decl,
       short~,
+      repeat~,
       env~,
       global~,
       inherit_=inherit_flag,
@@ -2396,6 +2437,7 @@ fn dec_positional(
     Some(s) => s
     None => raise DecodeSkip("positional missing 'name'")
   }
+  check_reserved_name(name, "positional")
   let repeat : RepeatSpec? = match o.get("repeat") {
     Some(r) => Some(dec_repeat(r))
     None => None
@@ -2454,6 +2496,7 @@ fn dec_positional_group(
     Some(s) => s
     None => raise DecodeSkip("positional (named group) missing 'name'")
   }
+  check_reserved_name(name, "positional (named group)")
   let repeat : RepeatSpec? = match o.get("repeat") {
     Some(r) => Some(dec_repeat(r))
     None => None
@@ -2490,6 +2533,7 @@ fn dec_command(
     Some(s) => s
     None => raise DecodeSkip("command missing 'name'")
   }
+  check_reserved_name(name, "command")
   // 子コマンドの definition は親の shadows を継承する (DR-061 は scope 継承を規定していないが、
   // slice実装は fixture が命令的に flat な type shadow を宣言するだけなので親→子への単純伝搬で足りる)
   let body = dec_definition(o, shadows~)
@@ -4175,6 +4219,86 @@ test "DR-078: preference does not erode or-branch ambiguity (share-dimension onl
       parse(ScopeNode(df.scope), ["red", "green", "blue"], defs=df.registry),
     ),
     "ok{colorname=blue,colorname=green,colorname=red}",
+  )
+}
+
+///|
+/// 保証 (codex 節目レビュー指摘1、issue 2026-07-09-ref-template-result-shape): wire schema の name/id
+/// 制約 `^[^#]+$` (DR-067 §2「`#` を含む name/id はユーザ定義で禁止」、内部予約名前空間 = repeat
+/// lowering の `<name>#cons` / `next_or_branch_id` の `#0`/`#1`/… / resolve.mbt の row/fire sentinel
+/// "#row"/"#fire") を decode 層が enforce することを、`#` の出現しうる箇所ごとにマトリクスで固定する
+/// — 1 箇所だけ確認すると「たまたま通ってた」を見逃す (empirical-verification のサンプル数原則)。
+/// positional の name / option の name / definitions.templates の template key の 3 カテゴリで
+/// decode が `DecodeSkip` (definition の decode error、既存語彙のまま) を投げることを確認する。
+test "decode: a `#` in name/id is rejected at every user-facing name surface (codex review #1)" {
+  // (1) positional の name。`@json.parse` (raise ParseError) を try の外で先に評価しておく —
+  // `dec_fixture` 自身の `raise DecodeSkip` だけを catch で汲む。
+  let pos_src =
+    #|{"query":"parse","definition":{"positionals":[{"name":"src#cons","type":"string"}]},"cases":[]}
+  let pos_j = @json.parse(pos_src)
+  let _ = dec_fixture(pos_j) catch {
+    DecodeSkip(r) => {
+      assert_true(r.contains("#"))
+      return
+    }
+  }
+  abort("positional name 'src#cons': expected DecodeSkip, decode succeeded")
+}
+
+///|
+test "decode: a `#` in an option's name is rejected (codex review #1)" {
+  let opt_src =
+    #|{"query":"parse","definition":{"options":[{"name":"hl#colors","type":"string","long":true}]},"cases":[]}
+  let opt_j = @json.parse(opt_src)
+  let _ = dec_fixture(opt_j) catch {
+    DecodeSkip(r) => {
+      assert_true(r.contains("#"))
+      return
+    }
+  }
+  abort("option name 'hl#colors': expected DecodeSkip, decode succeeded")
+}
+
+///|
+/// definitions.templates の template key (DR-078 §1 の ref 対象名) も同じ予約名前空間 — `ref:` が
+/// 指す先の key が `#` を含めば、repeat lowering の内部 template キー (`<name>#cons`) と衝突しうる。
+test "decode: a `#` in a definitions.templates key is rejected (codex review #1)" {
+  let tmpl_src =
+    #|{"query":"parse","definition":{"definitions":{"templates":{"co#lor":{"type":"string","name":"c"}}},"positionals":[{"name":"hlcolor","ref":"co#lor"}]},"cases":[]}
+  let tmpl_j = @json.parse(tmpl_src)
+  let _ = dec_fixture(tmpl_j) catch {
+    DecodeSkip(r) => {
+      assert_true(r.contains("#"))
+      return
+    }
+  }
+  abort("template key 'co#lor': expected DecodeSkip, decode succeeded")
+}
+
+///|
+/// 対極確認 ([[self-written-rule-blind-spots]]): `#` を含まない普通の name は一切影響を受けない —
+/// 上の 3 テストが「拒否すべき形を通さない」ことの確認なら、これは「拒否してはいけない形を誤って落と
+/// さない」ことの確認。`hlcolors := color+` (このissueの本題そのもの) が今も decode + parse を通る
+/// ことを固定する。
+test "decode: an ordinary `#`-free name is unaffected by the reserved-name check (codex review #1 対極)" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "definitions": {"templates": {"color": {"or": [
+    #|      {"seq": [{"type": "number", "name": "r"}, {"type": "number", "name": "g"}, {"type": "number", "name": "b"}]},
+    #|      {"type": "string", "name": "colorname"}
+    #|    ]}}},
+    #|    "positionals": [
+    #|      {"name": "hlcolors", "ref": "color", "repeat": {"min": 1}}
+    #|    ]
+    #|  },
+    #|  "cases": []
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(
+    render_outcome(parse(ScopeNode(df.scope), ["red"], defs=df.registry)),
+    "ok{colorname=red}",
   )
 }
 

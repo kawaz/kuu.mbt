@@ -562,6 +562,77 @@ test "parse_definition: a ref target absent from registry is DAbsentRef (DR-078 
   }
 }
 
+///|
+/// 保証 (codex 節目レビュー指摘4、issue 2026-07-09-ref-template-result-shape): an option's `ref` +
+/// `repeat` lowering (`inst_long`) wires a SINGLE `GreedyRepeat` spine slot — correct for
+/// `min <= 1`, but a `min > 1` spec would silently fold the extra mandatory-head reps into that
+/// same single slot, losing 先食い suppression / 取り分選好 for them while still parsing
+/// "successfully" (a mis-shaped-but-quiet result, the exact failure mode
+/// [[retreat-is-last-resort]]/契約 が禁じる). `parse_definition` must reject this at definition
+/// time (`DInvalidRange`, mirrors the sibling positional `min > max` check just above) rather than
+/// let it run mis-wired. Registry left empty (color 未登録) — `DAbsentRef` co-occurs, but this
+/// test only asserts `DInvalidRange` is ALSO enumerated (DR-054 §4 no first-error 打ち切り).
+test "parse_definition: an option's ref+repeat with min > 1 is DInvalidRange (codex review #4)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "hlcolors",
+        TStr,
+        long=LList([":set"]),
+        ref_=Some("color"),
+        repeat=Some({ min: 2, max: None, lazy_: false }),
+      ),
+    ],
+  }
+  match parse_definition(def, [LongInst, RepeatInst]) {
+    Ok(_) => abort("expected Err (unsupported option ref+repeat min>1)")
+    Err(errs) => {
+      let mut has_range = false
+      for e in errs {
+        if e.kind == DInvalidRange && e.element == "hlcolors" {
+          has_range = true
+        }
+      }
+      assert_true(has_range)
+    }
+  }
+}
+
+///|
+/// 保証 (対極、codex 指摘4 の境界): `min <= 1` (mandatory-head unroll 無し、`GreedyRepeat` が単一
+/// spine slot で足りる形) は REJECT されない — 上のテストが「壊れた形を通す」ことへの反例なら、
+/// このテストは「正しく対応済みの形を誤って落とさない」ことへの反例 ([[self-written-rule-blind-spots]]
+/// の対極確認)。`last-wins-repeat-rows.json` が固定する実際の形そのもの ({"min":1})。
+test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (codex review #4 対極)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "hlcolors",
+        TStr,
+        long=LList([":set"]),
+        ref_=Some("color"),
+        repeat=Some({ min: 1, max: None, lazy_: false }),
+      ),
+    ],
+  }
+  match parse_definition(def, [LongInst, RepeatInst]) {
+    Ok(_) =>
+      abort(
+        "expected Err (absent ref target 'color', registry left empty on purpose)",
+      )
+    Err(errs) =>
+      for e in errs {
+        if e.kind == DInvalidRange {
+          abort(
+            "min:1 must not raise DInvalidRange (only min>1 is unsupported)",
+          )
+        }
+      }
+  }
+}
+
 // ── long DSL 分類 (DR-011 / DR-071 / DR-076): classify_long_spelling 輪郭 ───────
 
 ///|
