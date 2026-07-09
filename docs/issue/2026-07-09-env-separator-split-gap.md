@@ -3,7 +3,7 @@ title: separator 付き multiple 要素の env 値が separator 分割されな�
 status: wip
 category: bug
 created: 2026-07-09T16:56:15+09:00
-last_read:
+last_read: 2026-07-09T23:41:25+09:00
 open_entered: 2026-07-09T16:56:15+09:00
 wip_entered: 2026-07-09T23:29:15+09:00
 blocked_entered:
