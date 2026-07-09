@@ -1,6 +1,6 @@
 ---
 title: build_result の ACCUMULATE fold が Update / Default op を解釈しない (実装未対応)
-status: wip
+status: resolved
 category: task
 created: 2026-07-09T21:38:57+09:00
 last_read: 2026-07-10T10:41:00+09:00
@@ -9,10 +9,10 @@ wip_entered: 2026-07-10T03:37:33+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-10T04:55:12+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:commit b8967505ae0b05965f9b00807320e4e75ab22705 (fix(resolve): accum セルの cell 操作 op 解釈とラダー fall-through)、push 済み CI green (run 29045866863)","done:ACCUMULATE fold の Update op → 静的 definition-error (DInvalidRange) に裁定変更。DR-077 §2 ファミリ + min>1 前例からの導出 (accum 宣言・transform とも静的に既知のため実行時まで遅延しない)。alias long_override 経由・count×multiple (update 糖衣) のすり抜けも codex レビュー検出を受けて静的検査でカバー、Update binding 全生成源 (long DSL / count 糖衣 / TCount short) を逆引き確認済み","done:Default op → [] + committed=true (ラダー非開放) で fold 解釈。宣言 default 配列の意味論は未規定と判明、spec issue multiple-declared-default-semantics に切り出し (kawaz 裁定待ち)","done:Update 適用結果の filters (段5)→post_filters (段7) 通過、および型不一致の実行時 Err は update が静的に塞がれたため非該当化 (受け入れ条件から除外)","done:spec fixture default-cell-ops (2 case) / filters-cell-ops empty case / unset-env-fallback (3 case) 追加 (spec commit 28fa57c4eb87127be3f42ca0c6d43b59df1e7291)。accum×update の fixture のみ definition_error format 未確定 (DR-065 予約) のため spec issue definition-error-fixture-format に切り出し (kawaz 裁定待ち)、wbtest で pin 済み","done:追記1 (accum×unset×下位値源の source タグ) は ladder fall-through 実装で解消、unset 後に env が値を供給する場合 sources=env が正しく出る","done:追記2 (Empty fixture / Default op の filters 疑義) は Empty fixture 追加で解消、filters 疑義は DESIGN §14.3 確定 (design-6-2 close) で解消済み","note:sources=default (op=default) は DR-031 明文との既存矛盾が発覚、既存 scalar pin (unset-ladder.json) と一貫の現状維持とし spec issue default-op-source-tag-contradiction で kawaz 裁定待ち","done:conformance decoded=152/ran_cases=388/skipped=0/mismatches=0、moon test 174 本全 pass"]
 blocked_by:
 origin: 自リポ TODO
 ---
