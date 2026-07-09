@@ -1,6 +1,6 @@
 ---
 title: separator 付き multiple 要素の env 値が separator 分割されない (DR-049 乖離)
-status: wip
+status: resolved
 category: bug
 created: 2026-07-09T16:56:15+09:00
 last_read: 2026-07-09T23:41:25+09:00
@@ -9,10 +9,10 @@ wip_entered: 2026-07-09T23:29:15+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-09T23:55:00+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["DR-049 §2 どおり env seat の separator 分割 → pieceProcessor → accumulator を実装 (commit cbd42917d7b9278393fe400cf7883cc9b2e7baeb、push 後 SHA)。spec fixture fixtures/multiple-parse/env-separator-split.json (spec commit 93efbcf8e445b75ed871844baf1e33c05e9d3d4c) 追加済み・全 case green。受け入れ条件 3 点すべて達成。TODO にあった separator-non-string-type-parse-gap との重なりは前サイクルで SepArg 型 parse 実装済みのため解消済みだった。conformance: decoded=150 / ran_cases=382 / skipped=0 / mismatches=0、moon test 167 本全 pass、codex レビュー指摘なし。"]
 blocked_by:
 origin: impl-prefilters worker (pre_filters 配線中)
 ---
