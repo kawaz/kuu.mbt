@@ -1195,8 +1195,11 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
     (CStr(s), TStr) => Ok(VStr(s))
     (CNum(d), TStr) => Ok(VStr(num_to_string(d))) // 1.5 → "1.5" (寛容の双方向対称)
     (CBool(b), TStr) => Ok(VStr(if b { "true" } else { "false" })) // true → "true"
-    // string → number: lenient canonical parse (DR-074)
-    (CStr(s), TNum) =>
+    // string → number: lenient canonical parse (DR-074). `TCount` folded in defensively (DR-077
+    // §3: count's config seat sets a plain number, never increments — `Entity.ty` is already
+    // collapsed to TNum for every real count cell by `ensure_entity`, so this arm never actually
+    // sees TCount in practice).
+    (CStr(s), TNum) | (CStr(s), TCount) =>
       match parse_number(s) {
         Some(d) => Ok(VNum(d))
         None => Err("config value \"\{s}\" is not a number")
@@ -1226,7 +1229,7 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
     // typed number matching a number element (any) / a float element (a JSON-native number is
     // already a valid float value — inf has no JSON literal, so this arm never carries it) / an
     // int element (integer only)
-    (CNum(d), TNum) | (CNum(d), TFloat) => Ok(VNum(d))
+    (CNum(d), TNum) | (CNum(d), TFloat) | (CNum(d), TCount) => Ok(VNum(d))
     // native number → int: JSON 由来 binary64 経由判定 (DR-075 §5 の非対称)
     (CNum(d), TInt) =>
       if is_integer(d) {
@@ -1238,7 +1241,7 @@ pub fn config_to_value(cv : ConfigVal, ty : Ty) -> Result[Value, String] {
     // 意味の飛躍 (bool ↔ number) は Error — no coercion
     (CNum(_), TFlag) | (CNum(_), TBool) =>
       Err("config number for a bool element (no number↔bool coercion)")
-    (CBool(_), TNum) | (CBool(_), TFloat) =>
+    (CBool(_), TNum) | (CBool(_), TFloat) | (CBool(_), TCount) =>
       Err("config bool for a number element (no number↔bool coercion)")
     (CBool(_), TInt) =>
       Err("config bool for an int element (no number↔bool coercion)")
@@ -1267,6 +1270,14 @@ pub(all) enum EffectOp {
   Default // reset to the default value; committed (the user explicitly wants default)
   Unset // reset to the default; NOT committed — later ladder seats (env/config/inherit) may override
   Empty // clear a collection (array / map) to empty; committed
+  // DR-077 §1 (5th op): apply an old-dependent transform to the linked cell — `cell = f(old)`. No
+  // operand (the Binding's value is a placeholder, same as default/unset/empty) — the RESULT
+  // depends on the cell's running value at fire time, which resolve.mbt's CLI-seat fold computes,
+  // not something the parser can precompute at consume time. `String` is the transform's filters-
+  // registry name (DR-077 §2, e.g. "increment"); `Array[String]` are that transform's own args (the
+  // registry name is arity-1 of the colon DSL, remaining segments are its args — same nesting
+  // convention filters already use). committed = true (a user-explicit CLI op, like set).
+  Update(String, Array[String])
 } derive(Eq, Debug)
 
 ///|

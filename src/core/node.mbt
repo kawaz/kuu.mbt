@@ -64,6 +64,14 @@ pub(all) enum Ty {
   TFloat
   TFlag
   TBool
+  /// count 糖衣の PRE-normalize marker (DR-077 §3, LOWERING §A.5): mirrors `TFlag`'s standing to
+  /// `TBool` — a bare `--x` fire applies the `increment` update effect (0-token, no value ever,
+  /// same presence-only shape as `TFlag`'s bare-true). `normalize_option` differentiates
+  /// `long:true` sugar (`[":update:increment"]` vs bool's `[":set:true"]`) and default-presets
+  /// (0 vs false) by this
+  /// tag BEFORE collapsing it to `TNum` — once lowered there is no other channel to tell a count
+  /// cell apart from an ordinary number cell (installer.mbt `normalize_option`).
+  TCount
 } derive(Eq, Debug)
 
 ///|

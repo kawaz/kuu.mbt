@@ -201,6 +201,69 @@ test "long installer: a flag's explicit `long:[\":set\"]` composes `:set:true` A
   assert_true(has_bare_bind)
 }
 
+// ── count (TCount) の default:0 preset + long 綴り合成 (DR-077 §3) ─────────────
+
+///|
+/// 保証: TCount entity には LOWERING §A.5 / DR-077 §3 に従い default:0 を preset する — flag の
+/// default:false と対称。DR-077 §3 規則1 (count の `long:true` 糖衣は `:update:increment`):
+/// `el("verbose", TCount, long=LBool(true))` は wire `{"long": true}` を模す。値セルの型 TCount→TNum
+/// 差し替えは flag と違い `normalize_option` ではなく `ensure_entity` (Entity 構築) まで遅延する —
+/// `TCount` タグは short/eq-split matcher (matcher.mbt) が「非消費・固定 increment」を判定するのに
+/// installer chain 全体を通して必要だから (`normalize_option` のコメント参照、TBool は画一ルールで
+/// 閉じるが TNum 全般には count 挙動を強制できない)。
+test "long installer: a count's `long:true` composes an `:update:increment` variant → bare update-effect satellite (no EqSplit entry), default:0 preset (DR-077 §3 規則1)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TCount, long=LBool(true))],
+  }
+  let sc = ok_scope(def, [LongInst])
+  // main entry 無し (long=[]) + Update variant 1 本 → eq-split entry は無い → greedy = EffMark 衛星 1 本のみ。
+  assert_eq(sc.greedy.length(), 1)
+  assert_eq(
+    sc.greedy[0],
+    Seq([Exact("--verbose"), EffMark("verbose", Update("increment", []))]),
+  )
+  let ent = entity_of(sc, "verbose").unwrap()
+  // ensure_entity が TCount→TNum の型差し替えを担う (normalize_option ではない)。
+  assert_eq(ent.ty, TNum)
+  // default:0 preset (DR-077 §3)。
+  assert_eq(ent.default_value, Some(VNum(0.0)))
+}
+
+///|
+/// 保証: DR-077 §3 規則2 (count の明示 variant リストは非空なら `:update:increment` を冪等に補完):
+/// `long=LList([":update:increment"])` を明示しても二重に足されない。flag の規則2 (§1 の 2 番目の
+/// test) と対称。
+test "long installer: a count's explicit `long:[\":update:increment\"]` does not duplicate the composed variant (DR-077 §3 規則2, 冪等)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TCount, long=LList([":update:increment"]))],
+  }
+  let sc = ok_scope(def, [LongInst])
+  assert_eq(sc.greedy.length(), 1)
+  assert_eq(
+    sc.greedy[0],
+    Seq([Exact("--verbose"), EffMark("verbose", Update("increment", []))]),
+  )
+}
+
+///|
+/// 保証: DR-071 §1 三態同義 — count の long 糖衣は absent (LBool(false)) でも入口なし。short だけの
+/// count (`--` 側は書かない) が成立することを固定する。
+test "long installer: a count with long:false has no long entry point (DR-071 §1 三態同義)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TCount, long=LBool(false), short=['v'])],
+  }
+  let sc = ok_scope(def, all_installers())
+  for g in sc.greedy {
+    match g {
+      Seq([Exact("--verbose"), ..]) => fail("expected no --verbose long entry")
+      _ => ()
+    }
+  }
+}
+
 // ── env installer (席宣言型 DR-042 ④) ───────────────────────────────────────
 
 ///|
@@ -731,4 +794,88 @@ test "add_inheritable_copy: an alias-provided (variants-side) trigger shadows th
   }
   // shadow が正しく効けば alias 由来の 1 本のみ (inheritable コピーは重複追加されない)。
   assert_eq(count, 1)
+}
+
+// ── DR-077: update 効果 + count (definition-error 系、installer 層) ──────────────
+
+///|
+/// 保証: DR-077 §2 「不在 → unknown-vocab」— 語彙外の transform 名は classify_long_spelling が
+/// LInvalid へ倒し (installer.mbt コメント参照)、既存の push_invalid_long/collect_invalid_long_dsl
+/// 機構にそのまま合流して DR-054 definition-error になる。新しい definition-error チェックを増やさず
+/// 既存機構に相乗りする設計判断の固定。
+test "DR-077 §2: an unrecognized update transform name is a DR-054 unknown-vocab definition-error" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TCount, long=LList([":update:bogus"]))],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) =>
+      fail("expected Err (unrecognized transform 'bogus' is unknown-vocab)")
+    Err(errs) => {
+      let mut found = false
+      for e in errs {
+        if e.kind == DUnknownVocab && e.element == "verbose" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+  }
+}
+
+///|
+/// 保証: DR-077 §2 「シグネチャ不適合 → definition-error」の一例 — 0-arg 組み込み `increment` に余分な
+/// args を渡す (`:update:increment:5`) のも同じ unknown-vocab 経路に落ちる (実装側の裁量、DR-054 系の
+/// 細分は installer.mbt コメント参照)。
+test "DR-077 §2: extra args to the 0-arg `increment` transform is also a DR-054 unknown-vocab definition-error" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TCount, long=LList([":update:increment:5"]))],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => fail("expected Err (increment takes no args)")
+    Err(errs) => {
+      let mut found = false
+      for e in errs {
+        if e.kind == DUnknownVocab && e.element == "verbose" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+  }
+}
+
+///|
+/// End-to-end 保証: installer chain (`parse_definition`) が組んだ Scope に対する CLI 発火
+/// (`-vvv`) → `parse()` の生 binding 列 → `resolve_scope` の cli seat fold、という完全なパイプライン
+/// が DR-077 の実運用シナリオ (`-v -v -v` = verbose level 3) を一気通貫で満たすことを固定する
+/// (resolve_wbtest.mbt の低レベル `ceff` 直接構築テストと対をなす、installer 由来の Scope での確認)。
+test "DR-077 end-to-end: parse_definition → parse → resolve_scope ledgers -vvv to 3" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TCount, long=LBool(true), short=['v'])],
+  }
+  let sc = ok_scope(def, all_installers())
+  let o = parse(ScopeNode(sc), ["-vvv"], defs=Map([]))
+  match o {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) => {
+          let mut found = false
+          for b in resolved {
+            if b.key == "verbose" {
+              found = true
+              assert_eq(b.value, VNum(3.0))
+            }
+          }
+          assert_true(found)
+        }
+        Err(_) => fail("expected Ok from resolve_scope")
+      }
+    _ =>
+      fail(
+        "expected Success from parse (-vvv should parse as 3 short cluster fires)",
+      )
+  }
 }

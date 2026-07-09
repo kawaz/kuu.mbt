@@ -85,7 +85,9 @@ fn matcher_cands(m : Matcher) -> Array[Cand] {
   match m {
     EqSplit(prefix~, entries~) =>
       for e in entries {
-        if e.kind != TFlag {
+        // DR-077 §3: count (like flag) never fires through the eq face — see run_eq_split's
+        // `TCount => return []` — so it contributes no completion candidate here either.
+        if e.kind != TFlag && e.kind != TCount {
           out.push(cand_trigger(prefix + e.key, e.name, e.kind, Cont, false))
         }
       }
@@ -148,6 +150,7 @@ fn run_eq_split(
             None => return [Held(pe_parse(e.name, valstr, pos), [])]
           }
         TFlag => return [] // presence-only trigger (DR-074 no eq-split): flags take no =value
+        TCount => return [] // DR-077 §3: count takes no =value either — the update effect has no operand
         TBool =>
           // DR-074 §3: a value-typed bool DOES take an eq-split value (`--enabled=true`), unlike a
           // presence-only flag firing — the CLI vocab is canonical `parse_bool` (true/false/1/0/"",
@@ -224,6 +227,7 @@ fn short_val(e : ShortEntry, s : String) -> Binding? {
         None => None
       }
     TFlag | TBool => None // no in-cluster/space-form VALUE attachment for a bool short (no fixture needs `-e5`/`-e true`)
+    TCount => None // DR-077 §3: count short is non-consuming (fixed increment), same standing as a bool short
   }
 }
 
@@ -263,6 +267,19 @@ fn walk_short(
             body,
             i + 1,
             cat(acc, cat([mkb(e.name, VBool(true), Cli)], dm)),
+            ctx,
+            pos,
+          )
+        TCount =>
+          // DR-077 §3: count short is non-consuming, firing a 0-token `update(increment)` effect
+          // (same standing as a flag's fixed `true` supply above — the fired VALUE is resolved
+          // later, by resolve.mbt's CLI-seat fold, not something the matcher can compute at
+          // consume time).
+          walk_short(
+            entries,
+            body,
+            i + 1,
+            cat(acc, cat([mk_eff(e.name, Update("increment", []), Cli)], dm)),
             ctx,
             pos,
           )

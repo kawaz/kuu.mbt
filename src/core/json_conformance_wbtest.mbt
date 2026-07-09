@@ -275,6 +275,16 @@ fn eff_op(op : EffectOp) -> String {
     Default => "default"
     Unset => "unset"
     Empty => "empty"
+    // DR-077 §1 (5th op): the transform name rides along so two DIFFERENT update transforms (e.g.
+    // "increment" vs a future "add") render distinctly. Args are appended ONLY when non-empty
+    // (mirrors DR-077 §2's colon-DSL nesting, `:update:add:5`) so the 0-arg `increment` case reads
+    // as plain "update:increment", not "update:increment:" with a dangling separator.
+    Update(transform, args) =>
+      if args.length() == 0 {
+        "update:" + transform
+      } else {
+        "update:" + transform + ":" + join_comma(args)
+      }
   }
 }
 
@@ -597,6 +607,12 @@ fn lower_eff_op(op : EffectOp) -> String {
     Default => "default"
     Unset => "unset"
     Empty => "empty"
+    Update(transform, args) =>
+      if args.length() == 0 {
+        "update:" + transform
+      } else {
+        "update:" + transform + ":" + join_comma(args)
+      }
   }
 }
 
@@ -793,7 +809,9 @@ fn proj_entity(e : Entity) -> LEnt {
   } else {
     match e.ty {
       TStr => "string"
-      TNum => "number"
+      // DR-077 §3: `Entity.ty` is already collapsed TCount→TNum by `ensure_entity` for every real
+      // count cell — folded in defensively (this arm should never actually see TCount).
+      TNum | TCount => "number"
       TFloat => "float"
       TInt => "int"
       TFlag | TBool => "bool"
@@ -1376,10 +1394,20 @@ fn exp_effects_str(eff : Json) -> String raise DecodeSkip {
       Some(s) => s
       None => raise DecodeSkip("effect missing 'source'")
     }
+    // DR-077 §1: an `update` effect's descriptor carries a `transform` name alongside `op` (mirrors
+    // the wire effect descriptor `{op:"update", transform:"increment"}`) — folded into the SAME
+    // op-string `eff_op`/`lower_eff_op` render for the 0-arg case ("update:increment"), so a fixture
+    // needs no separate comparison branch. Absent for every other op (unaffected).
+    let op_str = match jf_str(eo, "transform") {
+      Some(t) => op + ":" + t
+      None => op
+    }
     match eo.get("operand") {
       Some(j) =>
-        items.push("\{entity}:\{op}(\{render_val(json_to_value(j))})@\{source}")
-      None => items.push("\{entity}:\{op}@\{source}")
+        items.push(
+          "\{entity}:\{op_str}(\{render_val(json_to_value(j))})@\{source}",
+        )
+      None => items.push("\{entity}:\{op_str}@\{source}")
     }
   }
   join_comma(items)
@@ -1611,6 +1639,10 @@ fn dec_ty(t : String) -> Ty raise DecodeSkip {
     "int" => TInt
     "flag" => TFlag
     "bool" => TBool
+    // DR-077 §3: `"count"` is the PRE-normalize marker (mirrors `"flag"` → `TFlag`) — installer.mbt
+    // collapses it to `TNum` at `ensure_entity`, not here (decode's only job is the wire type
+    // string → Ty tag, same as every other arm).
+    "count" => TCount
     other => raise DecodeSkip("value type '" + other + "'")
   }
 }
@@ -2700,8 +2732,69 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
       req_field(o, "link"),
     )
   }
+  // DR-045 effect descriptor (`{exact, link, effect: {op, transform?, args?}}`) — the non-Set ops
+  // (default/unset/empty/update, DR-011/077) that lower to `Seq([Exact, EffMark])` (see the
+  // `[Exact(t), EffMark(n, op)] => GEff(t, n, op)` projection below). No `lower fixture` used this
+  // shape before DR-077 (every prior lowering fixture only exercised Set), so this decode path is
+  // new — added for count's `:update:increment` lowering fixtures, but generic over all 4 non-set
+  // ops.
+  if has_key(o, "effect") {
+    allowed_keys(o, ["exact", "link", "effect"], "golden effect descriptor")
+    let ex = req_field(o, "exact")
+    let link = req_field(o, "link")
+    let effo = match o.get("effect").unwrap().j_obj() {
+      Some(x) => x
+      None => raise DecodeSkip("effect is not an object")
+    }
+    return GEff(ex, link, dec_eff_op(effo))
+  }
   allowed_keys(o, ["exact"], "golden greedy exact")
   GExact(req_field(o, "exact"))
+}
+
+///|
+/// DR-045 op vocab (`set`/`default`/`unset`/`empty`) + DR-077 §1's 5th op (`update`, which additionally
+/// carries a `transform` name + optional `args`). `set` is accepted for completeness even though
+/// GSet's dedicated `{value, link}` shorthand is the normal spelling for it in a fixture.
+fn dec_eff_op(o : Map[String, Json]) -> EffectOp raise DecodeSkip {
+  let opstr = match jf_str(o, "op") {
+    Some(s) => s
+    None => raise DecodeSkip("effect missing 'op'")
+  }
+  match opstr {
+    "set" => Set
+    "default" => Default
+    "unset" => Unset
+    "empty" => Empty
+    "update" => {
+      let transform = match jf_str(o, "transform") {
+        Some(t) => t
+        None => raise DecodeSkip("update effect missing 'transform'")
+      }
+      let args : Array[String] = match o.get("args") {
+        Some(aj) =>
+          match aj.j_arr() {
+            Some(a) => {
+              let r : Array[String] = []
+              for e in a {
+                match e.j_str() {
+                  Some(s) => r.push(s)
+                  None =>
+                    raise DecodeSkip(
+                      "update effect args element is not a string",
+                    )
+                }
+              }
+              r
+            }
+            None => raise DecodeSkip("update effect 'args' is not an array")
+          }
+        None => []
+      }
+      Update(transform, args)
+    }
+    other => raise DecodeSkip("unrecognized effect op '" + other + "'")
+  }
 }
 
 ///|

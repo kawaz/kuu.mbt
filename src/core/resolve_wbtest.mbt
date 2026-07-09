@@ -554,3 +554,93 @@ test "resolve_scope_config: a ladder-fill Error's path is the caller-supplied sc
     Ok(_) => fail("expected an Err, config \"port\" is not a number")
   }
 }
+
+// ── DR-077: update 効果 + count cli-seat fold ─────────────────────────────────
+
+///|
+/// A 0-token `update` effect binding (DR-077 §1) — mirrors `cb`'s Set-only shape but for the
+/// old-dependent op; `value` is a placeholder (never read — resolve_entity's fold reads `old` off
+/// the RUNNING state, not off this binding).
+fn ceff(key : String, transform : String) -> Binding {
+  {
+    key,
+    op: Update(transform, []),
+    value: VBool(false),
+    source: Cli,
+    scope: [],
+    link: 0,
+  }
+}
+
+///|
+/// 保証: DR-077 §1 ledger 挙動 — 3 つの `update(increment)` effect が同じ key で連続すると、
+/// resolve_entity の cli seat fold は old=default(0)→1→2→3 と連鎖計算する (`-vvv` の実機シナリオ)。
+/// count の default:0 preset (installer.mbt ensure_entity, DR-077 §3) が fold の起点になることも
+/// 同時に固定する。
+test "resolve_scope: 3 chained update(increment) effects ledger old=0→1→2→3" {
+  let verbose = ent("verbose", TNum, default_value=Some(VNum(0.0)))
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [verbose],
+    constraints: [],
+  }
+  let cli = [
+    ceff("verbose", "increment"),
+    ceff("verbose", "increment"),
+    ceff("verbose", "increment"),
+  ]
+  assert_eq(
+    resolve_scope(sc, cli, Map([])),
+    Ok([mkb_pub("verbose", VNum(3.0), Cli)]),
+  )
+}
+
+///|
+/// 保証: DR-077 §1 — `update` effect が無指定の default (`e.default_value` が None) セルに対して
+/// 発火すると、"old ?? default" (DR-077 §2) は default 不在時のフォールバック (bare zero) を使う。
+/// count は常に default:0 を preset する (installer.mbt) ので実運用でこの分岐に落ちることは無いが、
+/// 低レベル resolve_scope の契約としては独立に固定しておく (defensive のさらに一段防御)。
+test "resolve_scope: update(increment) with no declared default falls back to a bare zero" {
+  let n = ent("n", TNum) // no default_value
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [n],
+    constraints: [],
+  }
+  assert_eq(
+    resolve_scope(sc, [ceff("n", "increment")], Map([])),
+    Ok([mkb_pub("n", VNum(1.0), Cli)]),
+  )
+}
+
+///|
+/// 保証: DR-077 §3 — count が全く発火しない場合は default:0 のまま (flag の default:false と対称)、
+/// かつ env 由来の文字列は number として普通に parse → SET される (`VERBOSITY=5` は 5 を set、
+/// increment ではない) — count の CLI fold と env seat は完全に独立したラダー段であることを固定する
+/// (cli 側が unset なら resolve_entity は env seat へそのまま fall through、DR-031 の既存契約通り)。
+test "resolve_scope: count falls back to default:0 when unfired, and env SETS a plain number" {
+  let verbose = ent(
+    "verbose",
+    TNum,
+    env_key=Some("VERBOSITY"),
+    default_value=Some(VNum(0.0)),
+  )
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [verbose],
+    constraints: [],
+  }
+  // no cli fire at all → default seat (0).
+  assert_eq(
+    resolve_scope(sc, [], Map([])),
+    Ok([mkb_pub("verbose", VNum(0.0), Default)]),
+  )
+  // env seat: a plain number set, never an increment (no `update` op anywhere in this path).
+  assert_eq(
+    resolve_scope(sc, [], Map::from_array([("VERBOSITY", "5")])),
+    Ok([mkb_pub("verbose", VNum(5.0), Env)]),
+  )
+}

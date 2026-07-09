@@ -178,7 +178,7 @@ fn split_colon(s : String) -> Array[String] {
 /// unparseable operand degrading to a string is a defensive fallback, not a silent-coercion concern.
 fn dsl_operand_value(ty : Ty, s : String) -> Value {
   match ty {
-    TNum | TInt =>
+    TNum | TInt | TCount =>
       match parse_number(s) {
         Some(d) => VNum(d)
         None => VStr(s)
@@ -220,6 +220,22 @@ fn classify_long_spelling(
     return LInvalid(s)
   }
   let prefix = parts[0]
+  let trigger = if prefix == "" { own_name } else { prefix + "-" + own_name }
+  // DR-077 §2 `update` (5th effect word): a SEPARATE arity from set/unset/empty/default — parts[2]
+  // is the filters-registry TRANSFORM NAME (not an operand to coerce via dsl_operand_value), and
+  // any remaining segments are that transform's own args. `unknown-vocab` (DR-054, §2 "不在 →
+  // unknown-vocab") is realized by folding an unrecognized/malformed transform into `LInvalid` HERE
+  // — this reuses `push_invalid_long`'s existing DUnknownVocab collection wholesale instead of a
+  // parallel definition-error check (design-priority: 既存の枠組みの組み合わせで解決). Only the
+  // built-in 0-arg `increment` is recognized (no filters registry to consult for anything else
+  // yet) — an unrecognized name OR extra args passed to `increment` (an arity mismatch, DR-077 §2
+  // "シグネチャ不適合") both fall into the same LInvalid bucket for now (実装側の裁量、DR-054 系の細分).
+  if parts[1] == "update" {
+    if parts.length() == 3 && parts[2] == "increment" {
+      return LVariant({ trigger, op: Update("increment", []), operand: None })
+    }
+    return LInvalid(s)
+  }
   let op : EffectOp? = match parts[1] {
     "set" => Some(Set)
     "unset" => Some(Unset)
@@ -232,11 +248,6 @@ fn classify_long_spelling(
     // 入口」として黙って通るのを防ぐ、DR-054 の機械検出思想)。
     None => LInvalid(s)
     Some(o) => {
-      let trigger = if prefix == "" {
-        own_name
-      } else {
-        prefix + "-" + own_name
-      }
       let operand = if parts.length() >= 3 {
         Some(dsl_operand_value(ty, parts[2]))
       } else {
@@ -256,15 +267,27 @@ fn flag_bare_true_variant(name : String) -> Variant {
 }
 
 ///|
+/// DR-077 §3: the `:update:increment` variant (bare-trigger fire → apply the `increment` transform
+/// to the linked cell's old value) a count's long展開 composes in — mirrors `flag_bare_true_variant`
+/// exactly, just with `Update("increment", [])` in place of `Set`/`true` (count has no operand to
+/// carry; the fired value depends on the cell's running state, computed by resolve.mbt's fold).
+fn count_increment_variant(name : String) -> Variant {
+  { trigger: kebab(name), op: Update("increment", []), operand: None }
+}
+
+///|
 /// `LongDecl` (wire 二形) → (main-entry spellings — kebab 展開済み, variants)。DR-071 §1's
 /// type-independent `long: true` → `[":set"]` sugar is what every OTHER type gets; DR-076 §2 gives
 /// `type:"flag"` a DIFFERENT sugar (規則1: 差し替え) and an explicit non-empty list gets `:set:true`
-/// COMPOSED IN alongside whatever the author wrote (規則2: 補完、idempotent). This is the ONLY place
-/// that needs the bool/array distinction `LongDecl` preserves — once collapsed to `Array[String]`
-/// (the old design), `long:true` and `long:[":set"]` become indistinguishable, yet DR-076 §2 requires
-/// different flag sugar for each (kawaz 裁定 2026-07-08, spec DR-071 §1 "wire には二形とも載る、展開は
-/// long installer の解釈"). `LInvalid` spellings (DR-011 明確化: colon-less / 語彙外 effect) are
-/// silently skipped here — the caller (`normalize_option`) only reaches this AFTER
+/// COMPOSED IN alongside whatever the author wrote (規則2: 補完、idempotent). DR-077 §3 gives
+/// `type:"count"` the SAME two-rule treatment with `:update:increment` in place of `:set:true` —
+/// count is the 2nd instance of this exact 糖衣差し替え+補完 machinery (not a parallel mechanism).
+/// This is the ONLY place that needs the bool/array distinction `LongDecl` preserves — once
+/// collapsed to `Array[String]` (the old design), `long:true` and `long:[":set"]` become
+/// indistinguishable, yet DR-076/077 require different flag/count sugar for each (kawaz 裁定
+/// 2026-07-08, spec DR-071 §1 "wire には二形とも載る、展開は long installer の解釈"). `LInvalid`
+/// spellings (DR-011 明確化: colon-less / 語彙外 effect, DR-077 §2 unknown transform) are silently
+/// skipped here — the caller (`normalize_option`) only reaches this AFTER
 /// `collect_invalid_long_dsl` has already surfaced them as definition-errors and `parse_definition`
 /// has returned early on any error, so none should be live at this point in practice.
 fn resolve_long(
@@ -277,6 +300,8 @@ fn resolve_long(
     LBool(true) =>
       if ty == TFlag {
         ([], [flag_bare_true_variant(name)])
+      } else if ty == TCount {
+        ([], [count_increment_variant(name)])
       } else {
         ([kebab(name)], [])
       }
@@ -300,6 +325,18 @@ fn resolve_long(
         }
         if !already {
           vars.push(bare_true)
+        }
+      }
+      if ty == TCount && (longs.length() > 0 || vars.length() > 0) {
+        let bare_inc = count_increment_variant(name)
+        let mut already = false
+        for v in vars {
+          if v == bare_inc {
+            already = true
+          }
+        }
+        if !already {
+          vars.push(bare_inc)
         }
       }
       (longs, vars)
@@ -572,12 +609,24 @@ fn normalize_surface(def : Definition) -> Unit {
 }
 
 ///|
+/// DR-076 §2: flag の展開後の値セルは bool (LOWERING §A.5) — resolve_long は元の型 (e.ty, まだ TFlag)
+/// で判定する必要があるので、型差し替えより先に呼ぶ。`TFlag → TBool` はここで確定してよい — `TBool`
+/// 型の short/eq-split 挙動は "TBool 全般に画一的なルール" (非消費・固定 true) で閉じるので、変換後も
+/// 「元 flag だったか」を覚えておく必要が無い (matcher.mbt の `TFlag | TBool` アームが両方 flag 型と
+/// して扱うのはこの画一性のおかげ)。
+///
+/// DR-077 §3 (`TCount`) は対称的な糖衣に見えて **ここでは TNum に変換しない** — count 由来の short/
+/// eq-split 挙動 (非消費・固定 increment) は「TNum 全般」には適用できない (ordinary number の short
+/// は値を消費するのが正しい挙動、`-n5` 等) ので、flag と違って「型変換後も元 count だったか」を覚えて
+/// おく必要がある。ElemDef に専用マーカーを新設する代わりに、**TCount というタグ自体を installer chain
+/// の間ずっと保持し、値セルの実体型 (Entity.ty = TNum) への収束を `ensure_entity` まで遅延させる**
+/// (`ensure_entity` のコメント参照) — 既存の型そのものが情報を運ぶ設計は崩さず、collapse のタイミングだけ
+/// 後ろにずらす。short/eq-split matcher (matcher.mbt) は `TCount` を `TFlag | TBool` と並ぶ第 3 の
+/// 非消費挙動として扱う。
 fn normalize_option(e : ElemDef) -> ElemDef {
   if e.is_dd {
     normalize_dd_name(e)
   } else {
-    // DR-076 §2: flag の展開後の値セルは bool (LOWERING §A.5) — resolve_long は元の型 (e.ty, まだ
-    // TFlag) で判定する必要があるので、型差し替えより先に呼ぶ。
     let (longs, vars) = resolve_long(e.long, e.name, e.ty)
     let ty2 = if e.ty == TFlag { TBool } else { e.ty }
     { ..e, ty: ty2, long: LList(longs), variants: vars }
@@ -928,18 +977,30 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   let config_seat = has_cf && !e.is_config_file
   // flag/bool preset default (LOWERING §A.5 / DR-051 §2): a TFlag or DR-074 TBool cell presets
   // default:false (未 fire でも false に落ちる)。明示 default があればそちらが勝つ (e.g. ssl の default:true)。
+  //
+  // count preset default (DR-077 §3): a TCount cell presets default:0, mirroring flag's
+  // default:false — but unlike TBool (画一的ルールが型全体に効く), an ORDINARY TNum cell must NOT
+  // get an uninvited default:0 (a bare numeric slot commonly has no sensible default). This is
+  // exactly why `normalize_option` does NOT collapse `TCount → TNum` early (see its comment) — the
+  // `TCount` tag survives the whole chain so THIS is the one place that can still tell a count cell
+  // apart from an ordinary number cell. The `TNum` collapse itself happens right here too (`ty2`
+  // below), at the entity's actual value-cell type (Entity.ty) — the LAST point where the
+  // distinction still matters.
   let default_value : Value? = match e.default_value {
     Some(v) => Some(v)
     None =>
       if e.ty == TFlag || e.ty == TBool {
         Some(VBool(false))
+      } else if e.ty == TCount {
+        Some(VNum(0.0))
       } else {
         None
       }
   }
+  let ty2 = if e.ty == TCount { TNum } else { e.ty }
   build.entities.push({
     name: e.name,
-    ty: e.ty,
+    ty: ty2,
     env_key: None,
     config_seat,
     config_key: e.config_key,

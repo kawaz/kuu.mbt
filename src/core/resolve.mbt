@@ -930,6 +930,49 @@ fn int_fail_phrase(f : ParseFail) -> String {
 }
 
 ///|
+/// Apply an `update` effect's transform to the running `old` value (DR-077 §1/§2: `cell = f(old)`).
+/// Only the built-in 0-arg `increment` is implemented — no filters registry exists yet to look up
+/// anything else (DR-077 §2 "transform の実体は filters registry の名前参照", not yet built in
+/// kuu.mbt). `installer.mbt`'s `classify_long_spelling` already rejects any other name/arity at
+/// DEFINITION time as `unknown-vocab` (DR-054) — `apply_transform` seeing an unrecognized transform
+/// here should never actually happen in practice; the fallback Err is defensive, not a live path.
+/// `args` is accepted for signature symmetry with the wire shape (DR-077 §2's `:update:add:5`
+/// nesting convention) but unused — `increment` takes none.
+fn apply_transform(
+  transform : String,
+  old : Value,
+  args : Array[String],
+  name : String,
+  at_pos : Int,
+  epath : Array[String],
+) -> Result[Value, ParseError] {
+  let _ = args
+  match transform {
+    "increment" =>
+      match old {
+        VNum(n) => Ok(VNum(n + 1.0))
+        _ =>
+          Err(
+            ladder_err(
+              name, at_pos, "update_transform_type_mismatch", "transform 'increment' requires a number cell",
+              epath,
+            ),
+          )
+      }
+    _ =>
+      Err(
+        ladder_err(
+          name,
+          at_pos,
+          "unknown_update_transform",
+          "unknown update transform '\{transform}'",
+          epath,
+        ),
+      )
+  }
+}
+
+///|
 /// Parse an env string into a Value per the entity's type (DR-049 §2: env goes through the same
 /// pipeline as CLI). Unlike slice's `env_value` (naive `parse_number` with a silent `VStr` fallback
 /// on failure), this reuses the canonical lexers (DR-074/075) and surfaces a parse failure as a
@@ -943,7 +986,14 @@ fn env_value(
 ) -> Result[Value, ParseError] {
   match ty {
     TStr => Ok(VStr(s))
-    TNum =>
+    // DR-077 §3: count's env/config seat parses a plain number and SETs it (never increments) —
+    // the same lexicon TNum uses. `Entity.ty` is already collapsed to TNum by `ensure_entity` for
+    // every real count cell, so `TCount` never actually arrives here in practice; folded into the
+    // same arm defensively (this function's job is purely "how does this Ty parse", independent of
+    // which effect op eventually carries the result — DR-077 §3's `VERBOSITY=5` sets 5, it never
+    // increments, and this arm is exactly that: a plain env-string → number parse, no old/update
+    // involved at all).
+    TNum | TCount =>
       match parse_number(s) {
         Some(d) => Ok(VNum(d))
         None =>
@@ -1072,26 +1122,81 @@ fn resolve_entity(
   at_pos : Int,
   epath : Array[String],
 ) -> Result[Array[Binding], ParseError] {
-  // cli seat — the LAST effect (last-wins, DR-015); set/default/empty commit, unset falls through.
-  let mut seat : Binding? = None
+  // cli seat (DR-015 last-wins + DR-077 §1 update fold): fold every same-name CLI effect in argv
+  // order, not just peek at the last one. `update`'s result is OLD-DEPENDENT — a single "read the
+  // last binding" can no longer resolve the seat once update effects are mixed with
+  // set/default/empty/unset (`-vvv` needs old=0→1→2, each rep depending on the ONE before it). For
+  // every definition that never uses `update`, this fold degenerates to EXACTLY the prior "last
+  // committed op wins" read (each non-update op still just replaces `current` outright, same as
+  // before) — DR-015's last-wins guarantee (fixture multiple-parse/last-wins-scalar.json) is a
+  // special case of this fold, not a different algorithm.
+  // `current` holds the FULL binding (not just its value) — Set/Default/Empty must be returned
+  // VERBATIM downstream (Empty's `value` is a placeholder that a later result-builder interprets
+  // by `op`, not by `value`; Default's `source` must read `Default`, not `Cli`) exactly as the
+  // pre-fold code did (`return Ok([b])` / `return Ok([mkb(e.name, v, Default)])`). Only `update`
+  // needs the running VALUE (as `old`) — `.value` is read off `current` at that point, never
+  // reconstructed from scratch.
+  let mut current : Binding? = None
+  let mut committed_now = false
   for b in cli {
     if b.key == e.name {
-      seat = Some(b)
-    }
-  }
-  match seat {
-    Some(b) =>
       match b.op {
-        Set => return Ok([b])
+        Set => {
+          current = Some(b)
+          committed_now = true
+        }
         Default =>
           match e.default_value {
-            Some(v) => return Ok([mkb(e.name, v, Default)])
-            None => return Ok([b])
+            Some(v) => {
+              current = Some(mkb(e.name, v, Default))
+              committed_now = true
+            }
+            None => {
+              current = Some(b)
+              committed_now = true
+            }
           }
-        Empty => return Ok([b])
-        Unset => () // NOT committed: fall through
+        Empty => {
+          current = Some(b)
+          committed_now = true
+        }
+        // NOT committed: resets the running value to default so a LATER update in the same
+        // fold sees the right "old" — but this seat stays eligible to fall through to
+        // env/config/inherit if nothing commits after it (unchanged pre-DR-077 contract).
+        Unset => {
+          current = match e.default_value {
+            Some(v) => Some(mkb(e.name, v, Default))
+            None => None
+          }
+          committed_now = false
+        }
+        Update(transform, args) => {
+          // DR-077 §2 "old ?? default": no prior commit in THIS fold falls back to the entity's
+          // own default (which count presets to 0, LOWERING §A.5) — never a bare literal zero.
+          let old = match current {
+            Some(cb) => cb.value
+            None =>
+              match e.default_value {
+                Some(v) => v
+                None => VNum(0.0)
+              }
+          }
+          match apply_transform(transform, old, args, e.name, at_pos, epath) {
+            Ok(v) => {
+              current = Some(mkb(e.name, v, Cli))
+              committed_now = true
+            }
+            Err(pe) => return Err(pe)
+          }
+        }
       }
-    None => ()
+    }
+  }
+  if committed_now {
+    match current {
+      Some(b) => return Ok([b])
+      None => ()
+    }
   }
   // env seat (DR-049)
   match e.env_key {
