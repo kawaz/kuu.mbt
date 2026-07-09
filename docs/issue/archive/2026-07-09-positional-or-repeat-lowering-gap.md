@@ -1,6 +1,6 @@
 ---
 title: positional × or × repeat の wire lowering ギャップ — string 枝が並列生成されない
-status: open
+status: resolved
 category: bug
 created: 2026-07-09T10:36:42+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-09T10:56:19+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:fe59837d","finding:BOr が elem_repeat を無視していた実装漏れを lower_repeat_head 抽出で BCell/BOr 共用化し根治","done:DR-043 の Or head 適用は既存裁定の同型適用のため新規裁定不要","done:付随して harness failure 分岐の resolve 層欠落も同一コミットで修正"]
 blocked_by:
 origin: spec リポ (kawaz/kuu) の fixture-batch worker
 ---
