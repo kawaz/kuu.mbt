@@ -706,3 +706,31 @@ test "resolve_scope: post_filters (in_range) also rejects a plain Set value over
     Ok([cb("n", VNum(50.0), Cli)]),
   )
 }
+
+///|
+/// 保証 (issue 2026-07-09-post-filter-error-attribution): `filters`/`post_filters` reject の
+/// Error は `kind: KFilter` を持つ (DR-053 §2 の `parse` | `filter` | `constraint` 3 分類 — 値が
+/// パースできなかった `KParse` とは別カテゴリ、既にパース済みの値を validate/transform した結果の
+/// reject なので `filter` 分類に属する)。`argv_pos` は呼び出し側が渡した最終位置をそのまま持つ
+/// (env/config seat のエラーと同じ規約 — `ladder_err`/`filter_err` の doc comment 参照、値がどの
+/// token でも読まれていないので位置は「argv 走査が完了した地点」= 呼び出し側の `toks.length()`
+/// 相当。本テストでは呼び出し側が明示的に `at_pos=3` を渡し、それがそのまま素通しされることを
+/// 固定する — 実際の conformance harness 側の配線 (`dc.argv.length()`) は
+/// json_conformance_wbtest.mbt の `do_resolve_pe`/`resolve_tree` が担う)。
+test "resolve_scope: a filters/post_filters reject carries kind=KFilter and the caller's at_pos" {
+  let n = ent("n", TNum, post_filters=["in_range:0:100"])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [n],
+    constraints: [],
+  }
+  match resolve_scope(sc, [cb("n", VNum(101.0), Cli)], Map([]), at_pos=3) {
+    Err(pe) => {
+      assert_eq(pe.kind, KFilter)
+      assert_eq(pe.argv_pos, 3)
+      assert_eq(pe.reason, "filter_rejected")
+    }
+    Ok(_) => fail("expected Err (101 is out of range [0, 100])")
+  }
+}

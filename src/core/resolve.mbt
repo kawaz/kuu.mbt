@@ -909,6 +909,24 @@ fn ladder_err(
 }
 
 ///|
+/// A DR-053 §2 filter-reject Error: `filters`/`post_filters` (DR-009 §7) rejected an already-
+/// resolved value. Distinct from `ladder_err` (`kind: KParse`, a value-source failed to parse) —
+/// a filter reject is a validation/transform rejection over a value that parsed fine, so it gets
+/// its own builder with `kind: KFilter` (DR-053 §2's 3-way `parse` | `filter` | `constraint` split;
+/// `eval.mbt`'s `filter_arg_eval` already emits `KFilter` for the same conceptual failure at the
+/// token-parsing layer, this is `apply_entity_filters`'s resolve-layer counterpart). Same
+/// `at_pos`/`epath` threading contract as `ladder_err`.
+fn filter_err(
+  element : String,
+  at_pos : Int,
+  reason : String,
+  message : String,
+  epath : Array[String],
+) -> ParseError {
+  { element, argv_pos: at_pos, kind: KFilter, reason, message, path: epath }
+}
+
+///|
 /// The DR-066 reason for a `parse_int_value` failure.
 fn int_fail_reason(f : ParseFail) -> String {
   match f {
@@ -1169,13 +1187,13 @@ fn apply_entity_filters(
     } else {
       match apply_filter_chain(e.filters, b.value) {
         Err((reason, msg)) =>
-          return Err(ladder_err(e.name, at_pos, reason, msg, epath))
+          return Err(filter_err(e.name, at_pos, reason, msg, epath))
         Ok(v) => {
           let b2 = { ..b, value: v }
           if e.accum is None {
             match apply_filter_chain(e.post_filters, b2.value) {
               Err((reason, msg)) =>
-                return Err(ladder_err(e.name, at_pos, reason, msg, epath))
+                return Err(filter_err(e.name, at_pos, reason, msg, epath))
               Ok(v2) => out.push({ ..b2, value: v2 })
             }
           } else {

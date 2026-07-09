@@ -3192,11 +3192,24 @@ fn do_resolve_pe(
   cli : Array[Binding],
   dc : DCase,
 ) -> Result[Array[Binding], ParseError] {
+  // `at_pos: dc.argv.length()` — a resolve-layer Error (env/config seat parse failure, or a
+  // DR-009 §7 filters/post_filters reject) is not read at a token position, it surfaces after
+  // the argv path completed (`ladder_err`'s doc comment, resolve.mbt). Threading the real final
+  // position here (instead of `resolve_scope`/`resolve_scope_config`'s `at_pos? = -1` default)
+  // matches `eval_constraints`'s convention for the same conceptual point (DR-053 §2).
+  let at_pos = dc.argv.length()
   match dc.cfg {
-    NoCfg => resolve_scope(sc, cli, dc.env)
-    CfgObj(obj) => resolve_scope_config(sc, cli, dc.env, fn(_p) { Some(obj) })
+    NoCfg => resolve_scope(sc, cli, dc.env, at_pos~)
+    CfgObj(obj) =>
+      resolve_scope_config(sc, cli, dc.env, fn(_p) { Some(obj) }, at_pos~)
     CfgFiles(files) =>
-      resolve_scope_config(sc, cli, dc.env, fn(p) { cfg_lookup(files, p) })
+      resolve_scope_config(
+        sc,
+        cli,
+        dc.env,
+        fn(p) { cfg_lookup(files, p) },
+        at_pos~,
+      )
   }
 }
 
@@ -3226,9 +3239,11 @@ fn resolve_tree(
       here.push(b)
     }
   }
+  // See `do_resolve_pe`'s comment: real final argv position, not the `-1` default.
+  let at_pos = dc.argv.length()
   let resolved = match dc.cfg {
     NoCfg =>
-      match resolve_scope(sc, here, dc.env, inherited~) {
+      match resolve_scope(sc, here, dc.env, inherited~, at_pos~) {
         Ok(rb) => rb
         Err(pe) => return Err(pe_msg(pe))
       }
@@ -3241,6 +3256,7 @@ fn resolve_tree(
           fn(_p) { Some(obj) },
           path~,
           inherited~,
+          at_pos~,
         ) {
         Ok(rb) => rb
         Err(pe) => return Err(pe_msg(pe))
@@ -3254,6 +3270,7 @@ fn resolve_tree(
           fn(p) { cfg_lookup(files, p) },
           path~,
           inherited~,
+          at_pos~,
         ) {
         Ok(rb) => rb
         Err(pe) => return Err(pe_msg(pe))
