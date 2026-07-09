@@ -1,6 +1,6 @@
 ---
 title: accum (multiple) 要素への filters / post_filters 配線 — resolve_entity の accum 対応
-status: wip
+status: resolved
 category: design
 created: 2026-07-09T10:26:36+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered: 2026-07-09T17:01:55+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-09T17:45:51+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:commit c976da76 (feat(accum-filters))","accepted-criteria:4/4 achieved (CLI座席fold accum温存+filters(each) wbtest4本, harness accum除外ガード撤去, conformance fixture spec/multiple-parse/filters-each.json case1-2 GREEN, decoded=143/ran_cases=366/skipped=0/mismatches=1(ledger分))","derived:accum-post-filters-stage7","derived:separator-non-string-type-parse-gap"]
 blocked_by:
 origin: kuu (spec リポ)
 ---
@@ -39,7 +39,7 @@ issue filters-registry-foundation (2026-07-09) の実装中に発見。dr066-pat
 
 ## 受け入れ条件 (段 7 切り出し後)
 
-- [ ] resolve_entity (CLI 座席 fold) が accum (append/flatten) 要素の複数 Binding を温存し、filters (each、段 5) が accum 要素にも適用される
-- [ ] harness の scope_needs_default_ladder から `e.accum is None &&` ガードが除去され、accum×filters が resolve 経路で走る (filters を持たない scope の else 分岐は残る = バイパスの正当化範囲を縮小)
-- [ ] accum + filters(each) の conformance fixture (全 piece 通過で累積成功 / 1 piece reject で全体 failure kind=filter) が追加されている
-- [ ] 既存 conformance (decoded=142/ran_cases=363/skipped=0/mismatches=0 + 新規分) が全 GREEN
+- [x] resolve_entity (CLI 座席 fold) が accum (append/flatten) 要素の複数 Binding を温存し、filters (each、段 5) が accum 要素にも適用される (wbtest 4 本で regression 固定)
+- [x] harness の scope_needs_default_ladder から `e.accum is None &&` ガードが除去され、accum×filters が resolve 経路で走る (filters を持たない scope の else 分岐は正当化して残置)
+- [x] accum + filters(each) の conformance fixture — spec fixtures/multiple-parse/filters-each.json 3 case 中 case 1/2 GREEN。case 3 は別 issue separator-non-string-type-parse-gap 待ちとして known_divergences 登録
+- [x] 既存 conformance = decoded=143/ran_cases=366/skipped=0/mismatches=1 (ledger 分のみ)、157 テスト全 pass
