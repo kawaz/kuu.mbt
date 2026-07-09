@@ -59,3 +59,22 @@ grep で発見 (実測未)。
 ## TODO
 
 <!-- wip 時のみ -->
+
+## 2026-07-09 追記: option 経路では separator 分割自体が未配線 (より根本的な欠落)
+
+accum×filters(each) 配線 (issue accum-entity-filters-wiring) の実装中に impl-prefilters worker が発見。
+SepArg を構築する elem_head は **positional 面の lowering 専用** (呼び出し元は def.positionals ループ /
+repeat head / BOr/BGroup 内部のみ)。long/short option (greedy face) の value slot は inst_long /
+inst_short が value_prim を直接呼び (installer.mbt L1143 付近)、e.separator を一切参照しない。
+
+つまり multiple + separator を option として宣言すると分割が全く起きず、`--ports 5,500` は
+"5,500" がそのまま NumArg parse に渡って not_a_number になる (実測: fixtures/multiple-parse/
+filters-each.json::separator-piece-rejects-whole の mismatch、got=parse/not_a_number)。
+
+本 issue の対処は 2 段になる:
+1. inst_long / inst_short に separator 分岐を追加し option 経路でも SepArg (相当) を構築する
+2. SepArg に型情報を運搬して piece ごとに pre_filters → 型 parse を通す (当初起票分)
+
+conformance fixture: multiple-parse/filters-each.json::separator-piece-rejects-whole が
+本 issue 解決までの known divergence として ledger 登録される (fixture の意図は変えない)。
+number×separator の成功系 fixture (spec 側) も本 issue 解決時に追加する。
