@@ -23,7 +23,7 @@ test "MDR-002 §1.5 acceptance: greedy repeat in a child command yields the pare
   // KTop at the global end → Accept; the xs=[a,b,c] split's continuation
   // Helds on tail → pruned. Exactly one complete path remains.
   let defs : Map[String, Node] = Map([])
-  reg_repeat(defs, "xs", StrArg("xs"))
+  reg_repeat(defs, "xs", StrArg("xs", []))
   let child : Scope = {
     greedy: [],
     positional: [Ref("xs")],
@@ -32,7 +32,7 @@ test "MDR-002 §1.5 acceptance: greedy repeat in a child command yields the pare
   }
   let root : Scope = {
     greedy: [CmdSat("seq", child)],
-    positional: [StrArg("tail")],
+    positional: [StrArg("tail", [])],
     entities: [],
     constraints: [],
   }
@@ -76,7 +76,7 @@ test "MDR-002 §1.4 control: without the trailing positional, greedy xs takes ev
   // Same shape minus `tail`: xs correctly commits to [a,b,c] (greedy default
   // = the longer share, and that share completes).
   let defs : Map[String, Node] = Map([])
-  reg_repeat(defs, "xs", StrArg("xs"))
+  reg_repeat(defs, "xs", StrArg("xs", []))
   let child : Scope = {
     greedy: [],
     positional: [Ref("xs")],
@@ -115,8 +115,8 @@ test "MDR-002 §2.6 acceptance: a value-less trigger at the end of input is a mi
   // "reads", the raw-eat is suppressed and the parse fails with a proper
   // missing-operand error for `port`.
   let root : Scope = {
-    greedy: [Seq([Exact("--port"), NumArg("port", false)])],
-    positional: [StrArg("files")],
+    greedy: [Seq([Exact("--port"), NumArg("port", false, [])])],
+    positional: [StrArg("files", [])],
     entities: [],
     constraints: [],
   }
@@ -140,7 +140,7 @@ test "positional spine + greedy interjection sanity (order-free trigger between 
   // prog a --v b : greedy flag --v interjects between two positionals.
   let root : Scope = {
     greedy: [Seq([Exact("--v"), Bind("v", VBool(true))])],
-    positional: [StrArg("x"), StrArg("y")],
+    positional: [StrArg("x", []), StrArg("y", [])],
     entities: [],
     constraints: [],
   }
@@ -179,7 +179,7 @@ test "positional spine + greedy interjection sanity (order-free trigger between 
 test "dd sever: past `--`, a trigger-looking token falls raw into the positional" {
   let root : Scope = {
     greedy: [Seq([Exact("--v"), Bind("v", VBool(true))]), DdSat("--")],
-    positional: [StrArg("x")],
+    positional: [StrArg("x", [])],
     entities: [],
     constraints: [],
   }
@@ -233,7 +233,7 @@ test "REVIEW-H1 probe: repeat head = ScopeNode (off-spine KDone) with outer trai
   // reintroduces breakage-1 here, the inner xs eats a,b,c and tail starves.
   // Correct outcome: xs=[a,b], tail=c (same shape as phase16, one level in).
   let defs : Map[String, Node] = Map([])
-  reg_repeat(defs, "xs", StrArg("xs"))
+  reg_repeat(defs, "xs", StrArg("xs", []))
   let inner : Scope = {
     greedy: [],
     positional: [Ref("xs")],
@@ -243,7 +243,7 @@ test "REVIEW-H1 probe: repeat head = ScopeNode (off-spine KDone) with outer trai
   reg_repeat(defs, "grp", ScopeNode(inner))
   let root : Scope = {
     greedy: [],
-    positional: [Ref("grp"), StrArg("tail")],
+    positional: [Ref("grp"), StrArg("tail", [])],
     entities: [],
     constraints: [],
   }
@@ -274,8 +274,8 @@ test "DR-043 sequential repeats: xs ys over a b c d e — greedy xs takes the lo
   // of division, not an ambiguity: greedy xs prefers the longest share whose
   // continuation still completes -> xs=[a,b,c,d], ys=[e]. Exactly one path.
   let defs : Map[String, Node] = Map([])
-  reg_repeat(defs, "xs", StrArg("xs"))
-  reg_repeat(defs, "ys", StrArg("ys"))
+  reg_repeat(defs, "xs", StrArg("xs", []))
+  reg_repeat(defs, "ys", StrArg("ys", []))
   let root : Scope = {
     greedy: [],
     positional: [Ref("xs"), Ref("ys")],
@@ -310,7 +310,7 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
   // state — fired_action and the held error coexist (spec DR-048/DR-053 §4).
   // The slice dropped the Seq-internal acc on Held, losing the action.
   let root : Scope = {
-    greedy: [Seq([Exact("--help"), FailMark("help"), NumArg("n", false)])],
+    greedy: [Seq([Exact("--help"), FailMark("help"), NumArg("n", false, [])])],
     positional: [],
     entities: [],
     constraints: [],
@@ -333,11 +333,11 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
 
 ///|
 test "REVIEW-C2 eval_many: a Pending after successful reps carries the reps' bindings" {
-  // Whitebox: one rep of StrArg("v") consumes the only token, the next rep
+  // Whitebox: one rep of StrArg("v", []) consumes the only token, the next rep
   // starves -> Pending. Its partial state must include v=x (the same
   // contract as eval_seq: Pending = starved branch WITH its state).
   let ctx : Ctx = { toks: ["x"], defs: Map([]), mode: ModeParse }
-  let brs = eval_many(StrArg("v"), ctx, 0, [])
+  let brs = eval_many(StrArg("v", []), ctx, 0, [])
   let mut pending_has_acc = false
   for b in brs {
     match b {
@@ -362,7 +362,7 @@ test "REVIEW-C3 head_name knows FilterArg: optional extra rep at EOF is a stop, 
   reg_repeat(defs, "ns", FilterArg("n", 100))
   let root : Scope = {
     greedy: [],
-    positional: [Ref("ns"), StrArg("z")],
+    positional: [Ref("ns"), StrArg("z", [])],
     entities: [],
     constraints: [],
   }
@@ -391,7 +391,7 @@ test "REVIEW-C4 non-scope root: residual of a partial Accept surfaces even when 
   // branch 2 helds a not_a_number on "xyz". 0 complete paths -> failure.
   // Both failure reasons must be retained (DR-053 §2 全保持): gating the
   // residual synthesis on "errors empty" would mask the partial reading.
-  let root = Or([Exact("a"), Seq([Exact("a"), NumArg("n", false)])])
+  let root = Or([Exact("a"), Seq([Exact("a"), NumArg("n", false, [])])])
   let o = parse(root, ["a", "xyz"], defs=Map([]))
   match o {
     Failure(fd) => {
@@ -423,7 +423,7 @@ test "REGRESSION dd sever transparent to positional inline ScopeNode child (DR-0
   // "w" is a residual token → Failure.
   let child : Scope = {
     greedy: [Seq([Exact("-x"), Bind("x", VBool(true))])],
-    positional: [StrArg("a")],
+    positional: [StrArg("a", [])],
     entities: [],
     constraints: [],
   }
@@ -455,14 +455,14 @@ test "REGRESSION step_greedy Held carries acc so FailMark survives to DeepestOnl
   // deep-review "step_greedy acc": two greedy entries — a FailMark help
   // action, and a numeric option. Under faildef=DeepestOnly the ONLY
   // candidate path for fired_action collection is the deepest one:
-  // consume --help (bind help + FailMark) → consume --num → NumArg("xyz", false)
+  // consume --help (bind help + FailMark) → consume --num → NumArg("xyz", false, [])
   // parse fail @ argv_pos 2. Without acc on the Held branch, the FailMark
   // binding accumulated before the Held is dropped and fired_action
   // becomes None. With it, fired_action = Some("help").
   let root : Scope = {
     greedy: [
       Seq([Exact("--help"), Bind("help", VBool(true)), FailMark("help")]),
-      Seq([Exact("--num"), NumArg("n", false)]),
+      Seq([Exact("--num"), NumArg("n", false, [])]),
     ],
     positional: [],
     entities: [],
@@ -526,7 +526,7 @@ test "REGRESSION Many spine takes preference (greedy default, no Ambiguous)" {
   // knob) picks the more-rep-first split: xs=[a,b], ys=[].
   let root : Scope = {
     greedy: [],
-    positional: [Many(StrArg("xs"), false), Many(StrArg("ys"), false)],
+    positional: [Many(StrArg("xs", []), false), Many(StrArg("ys", []), false)],
     entities: [],
     constraints: [],
   }
@@ -559,7 +559,7 @@ test "REGRESSION Many spine takes preference (greedy default, no Ambiguous)" {
 test "DR-043: Many(lazy=true) prefers the shortest (0-rep) share, mirroring the greedy default" {
   let root : Scope = {
     greedy: [],
-    positional: [Many(StrArg("xs"), true), Many(StrArg("ys"), false)],
+    positional: [Many(StrArg("xs", []), true), Many(StrArg("ys", []), false)],
     entities: [],
     constraints: [],
   }
@@ -586,7 +586,7 @@ test "DR-043: Many(lazy=true) prefers the shortest (0-rep) share, mirroring the 
 ///|
 test "REGRESSION scope-shaped Ref head: more-branch drops internal missing_operand only" {
   // deep-review LENS-T3: Ref("r")'s head is ScopeNode(inner) with a
-  // single StrArg("f") positional. Input ["a"] consumes 1 rep (f=a);
+  // single StrArg("f", []) positional. Input ["a"] consumes 1 rep (f=a);
   // the OPTIONAL "more" rep enters inner at EOF, producing Held(pe_missing
   // "f"). Before the fix, head_name(ScopeNode)="" left drop_optional_missing
   // inert, so "f missing" leaked into FailureData.errors alongside the
@@ -595,14 +595,14 @@ test "REGRESSION scope-shaped Ref head: more-branch drops internal missing_opera
   let defs : Map[String, Node] = Map([])
   let inner : Scope = {
     greedy: [],
-    positional: [StrArg("f")],
+    positional: [StrArg("f", [])],
     entities: [],
     constraints: [],
   }
   defs.set("r", Seq([ScopeNode(inner)]))
   let root : Scope = {
     greedy: [],
-    positional: [Ref("r"), NumArg("n", false)],
+    positional: [Ref("r"), NumArg("n", false, [])],
     entities: [],
     constraints: [],
   }
@@ -676,7 +676,7 @@ test "REGRESSION Or-wrapped greedy: find_help_entry / tried_triggers walk Or arm
 /// now it reports "sub"'s own `--port` trigger, the one actually offered at the failure site.
 test "DR-053 §4: tried_triggers reflects the failure position's OWN scope, not root's" {
   let child : Scope = {
-    greedy: [Seq([Exact("--port"), NumArg("port", false)])],
+    greedy: [Seq([Exact("--port"), NumArg("port", false, [])])],
     positional: [],
     entities: [],
     constraints: [],
@@ -715,10 +715,10 @@ test "REVIEW-D1 取り分選好オラクルは制約違反の全消費を「完�
   // と parse() の「完全経路」定義が 1 箇所に統一される — 旧実装は選好層が
   // 違反経路を完全と誤認して stop 側を刈り、false Failure になっていた。
   let defs : Map[String, Node] = Map([])
-  reg_repeat(defs, "xs", StrArg("xs"))
+  reg_repeat(defs, "xs", StrArg("xs", []))
   let root : Scope = {
     greedy: [],
-    positional: [Ref("xs"), Many(StrArg("y"), false)],
+    positional: [Ref("xs"), Many(StrArg("y", []), false)],
     entities: [],
     constraints: [CRequires("xs", ["y"])],
   }
@@ -748,7 +748,7 @@ test "REVIEW-D2 制約照合は scope-exact: 子スコープの同名 key は ro
   // CRequires("x",[...]) の対象は root の x セルなので不活性 = Success。
   let child : Scope = {
     greedy: [],
-    positional: [StrArg("x")],
+    positional: [StrArg("x", [])],
     entities: [],
     constraints: [],
   }
@@ -842,8 +842,8 @@ test "REVIEW-D5 先食いはトリガ一致で成立: 値不正の --port は po
   // 食っていた。トリガ一致意味論では --port は「ここで読まれる」ので、
   // 結末は port の not_a_number を含む Failure。
   let root : Scope = {
-    greedy: [Seq([Exact("--port"), NumArg("port", false)])],
-    positional: [StrArg("f"), StrArg("g")],
+    greedy: [Seq([Exact("--port"), NumArg("port", false, [])])],
+    positional: [StrArg("f", []), StrArg("g", [])],
     entities: [],
     constraints: [],
   }
@@ -870,13 +870,13 @@ test "REVIEW-D6 CmdSat トリガ一致も先食い: 子スコープ不成立で�
   // 結末は x の missing_operand を含む Failure。
   let child : Scope = {
     greedy: [],
-    positional: [StrArg("x")],
+    positional: [StrArg("x", [])],
     entities: [],
     constraints: [],
   }
   let root : Scope = {
     greedy: [CmdSat("build", child)],
-    positional: [StrArg("f")],
+    positional: [StrArg("f", [])],
     entities: [],
     constraints: [],
   }
@@ -903,8 +903,8 @@ test "REVIEW-D6 CmdSat トリガ一致も先食い: 子スコープ不成立で�
 test "DR-074 §1: FloatArg accepts inf (ci, signed), NumArg rejects it" {
   let root : Scope = {
     greedy: [
-      Seq([Exact("--t"), FloatArg("t")]),
-      Seq([Exact("--n"), NumArg("n", false)]),
+      Seq([Exact("--t"), FloatArg("t", [])]),
+      Seq([Exact("--n"), NumArg("n", false, [])]),
     ],
     positional: [],
     entities: [],
@@ -971,7 +971,7 @@ test "DR-074 §1: FloatArg accepts inf (ci, signed), NumArg rejects it" {
 test "REGRESSION scope_consume FloatArg respects 先食い (raw-eat suppression)" {
   let root : Scope = {
     greedy: [Seq([Exact("inf"), Bind("verbose", VBool(true))])],
-    positional: [FloatArg("x")],
+    positional: [FloatArg("x", [])],
     entities: [],
     constraints: [],
   }
@@ -1002,7 +1002,7 @@ test "REGRESSION scope_consume FloatArg respects 先食い (raw-eat suppression)
 /// `verbose` = true.
 test "REGRESSION consume_head FloatArg respects 先食い (raw-eat suppression)" {
   let defs : Map[String, Node] = Map([])
-  defs.set("fs", Seq([FloatArg("f")]))
+  defs.set("fs", Seq([FloatArg("f", [])]))
   let root : Scope = {
     greedy: [Seq([Exact("inf"), Bind("verbose", VBool(true))])],
     positional: [Ref("fs")],
@@ -1046,7 +1046,7 @@ test "REGRESSION consume_head FloatArg respects 先食い (raw-eat suppression)"
 test "REGRESSION scope_consume_rep Many(FloatArg) respects 先食い (raw-eat suppression)" {
   let root : Scope = {
     greedy: [Seq([Exact("inf"), Bind("verbose", VBool(true))])],
-    positional: [Many(FloatArg("f"), false)],
+    positional: [Many(FloatArg("f", []), false)],
     entities: [],
     constraints: [],
   }
@@ -1084,7 +1084,7 @@ test "REGRESSION scope_consume_rep Many(FloatArg) respects 先食い (raw-eat su
 /// named in the issue than the end-to-end parse() scenarios above.
 test "REGRESSION head_elem_names_into collects a FloatArg head's name" {
   let out : Array[String] = []
-  head_elem_names_into(FloatArg("f"), out)
+  head_elem_names_into(FloatArg("f", []), out)
   assert_eq(out, ["f"])
 }
 
@@ -1097,7 +1097,7 @@ test "REGRESSION head_elem_names_into collects a FloatArg head's name" {
 test "DR-066 §4: a root-level held Error carries path: []" {
   let root : Scope = {
     greedy: [],
-    positional: [NumArg("n", false)],
+    positional: [NumArg("n", false, [])],
     entities: [],
     constraints: [],
   }
@@ -1126,7 +1126,7 @@ test "DR-066 §4: a root-level held Error carries path: []" {
 test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
   let child : Scope = {
     greedy: [],
-    positional: [NumArg("n", false)],
+    positional: [NumArg("n", false, [])],
     entities: [],
     constraints: [],
   }
@@ -1161,7 +1161,7 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
 test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (root-first)" {
   let grandchild : Scope = {
     greedy: [],
-    positional: [NumArg("n", false)],
+    positional: [NumArg("n", false, [])],
     entities: [],
     constraints: [],
   }
@@ -1268,7 +1268,7 @@ test "DR-066 §4: a residual-token Error carries path: []" {
 /// `--port`) starves the value slot at input end one command-scope deep.
 test "DR-066 §4: a Pending-starvation missing_operand Error inside a nested command carries the ancestor path" {
   let child : Scope = {
-    greedy: [Seq([Exact("--port"), NumArg("port", false)])],
+    greedy: [Seq([Exact("--port"), NumArg("port", false, [])])],
     positional: [],
     entities: [],
     constraints: [],
@@ -1310,7 +1310,7 @@ test "DR-066 §4: a Pending-starvation missing_operand Error inside a nested com
 test "KNOWN GAP: IdxRepeat greedy-max has no downstream backtrack for a following mandatory positional" {
   let root : Scope = {
     greedy: [],
-    positional: [IdxRepeat("g", StrArg("x"), 1), StrArg("tail")],
+    positional: [IdxRepeat("g", StrArg("x", []), 1), StrArg("tail", [])],
     entities: [],
     constraints: [],
   }
@@ -1341,8 +1341,8 @@ test "KNOWN GAP: IdxRepeat greedy-max has no downstream backtrack for a followin
 /// が壊れていたかを切り分ける)。
 test "DR-043 × DR-038: hand-built Many(Or(seq-rgb, string-name)) lets both or-branches repeat" {
   let head = Or([
-    Seq([NumArg("r", false), NumArg("g", false), NumArg("b", false)]),
-    StrArg("name"),
+    Seq([NumArg("r", false, []), NumArg("g", false, []), NumArg("b", false, [])]),
+    StrArg("name", []),
   ])
   let root : Scope = {
     greedy: [],

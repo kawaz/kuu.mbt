@@ -1,5 +1,5 @@
 // filters.mbt — the filters registry (DR-009/010/036/061/077): the pure-function chain that
-// DR-009 threads through 3 phases (pre_split_filters / filters (each) / post_filters). MDR-002 §3:
+// DR-009 threads through 3 phases (pre_filters / filters (each) / post_filters). MDR-002 §3:
 // depends on {node, value} only (no eval dependency — filters run over already-parsed `Value`s,
 // not tokens).
 //
@@ -10,7 +10,7 @@
 // is simply always registered). DR-062's inheritance interface (`{prepend, append}` composition
 // against a ref/type-registry base chain) is likewise OUT OF SCOPE: kuu.mbt has no `type` registry
 // (a name → factory lookup for value parsers) to inherit FROM yet, so there is no base chain to
-// compose against — `filters`/`pre_split_filters`/`post_filters` are plain `Array[String]`
+// compose against — `filters`/`pre_filters`/`post_filters` are plain `Array[String]`
 // (string-shorthand DSL only, DR-009's colon-DSL `"<name>:<arg>:<arg>..."`) with no inherit/
 // prepend/append object form. Revisit when a type registry with per-type default chains exists.
 
@@ -46,7 +46,7 @@ pub(all) struct FilterDescriptor {
 ///|
 /// `trim` (DR-040 §pre_filters example, DR-009 §DSL 文法): string-only, strips ASCII whitespace
 /// from both ends. A `Transform` (the value CHANGES). Non-string input is untouched (defensive —
-/// every current call site only ever feeds `trim` a `VStr`, DR-009's pre_split_filters phase is
+/// every current call site only ever feeds `trim` a `VStr`, DR-009's pre_filters phase is
 /// string→string by construction).
 fn filter_trim(v : Value, _args : Array[String]) -> Result[Value, String] {
   match v {
@@ -188,4 +188,27 @@ pub fn apply_filter_chain(
     }
   }
   Ok(current)
+}
+
+///|
+/// DR-034/DR-062 pre_filters: run a String→String chain over one raw token / piece, immediately
+/// before that value reaches its type parser (eval.mbt's value-primitive arms, matcher.mbt's
+/// `run_eq_split`/`short_val`, resolve.mbt's `env_value`). Thin wrapper over `apply_filter_chain`
+/// specialized to the pre_filters contract (string in, string out) — every registered filter that
+/// isn't string-aware already passes a non-`VStr` through untouched (`filter_trim`'s doc comment),
+/// so the `Ok(VStr(s))` arm is the only reachable success shape here; a filter that somehow returns
+/// a non-string is a filter-definition bug, not a pre_filters-caller concern, hence the defensive
+/// `other => Ok(...)` disambiguation. Callers convert the `Err` tuple to a `ParseError` themselves
+/// (eval.mbt/matcher.mbt build `kind: KFilter` inline per `filter_arg_eval`'s precedent; resolve.mbt
+/// reuses its own `filter_err`) — this function stays value-source-agnostic (no argv_pos/element to
+/// carry) so both the CLI-token-consumption callers and the ladder (env) caller can share it.
+pub fn apply_pre_filters(
+  chain : Array[String],
+  raw : String,
+) -> Result[String, (String, String)] {
+  match apply_filter_chain(chain, VStr(raw)) {
+    Ok(VStr(s)) => Ok(s)
+    Ok(_) => Ok(raw) // defensive: a pre_filters chain never legitimately turns a string into a non-string
+    Err(e) => Err(e)
+  }
 }

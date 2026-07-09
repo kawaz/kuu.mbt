@@ -316,7 +316,7 @@ fn opt(
   default? : Value? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
-  pre_split_filters? : Array[String] = [],
+  pre_filters? : Array[String] = [],
   filters? : Array[String] = [],
   post_filters? : Array[String] = [],
   ref_? : String? = None,
@@ -352,7 +352,7 @@ fn opt(
     default_value: default,
     int_round,
     allow_base_prefix,
-    pre_split_filters,
+    pre_filters,
     filters,
     post_filters,
     body,
@@ -375,7 +375,7 @@ fn pos(
   default? : Value? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
-  pre_split_filters? : Array[String] = [],
+  pre_filters? : Array[String] = [],
   filters? : Array[String] = [],
   post_filters? : Array[String] = [],
   body? : ElemBody = BCell,
@@ -410,7 +410,7 @@ fn pos(
     default_value: default,
     int_round,
     allow_base_prefix,
-    pre_split_filters,
+    pre_filters,
     filters,
     post_filters,
     body,
@@ -449,7 +449,7 @@ fn dd_marker() -> ElemDef {
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
-    pre_split_filters: [],
+    pre_filters: [],
     filters: [],
     post_filters: [],
     body: BCell,
@@ -721,15 +721,15 @@ fn lsec_str(s : LSec) -> String {
 ///|
 fn prim_name(n : Node) -> String? {
   match n {
-    StrArg(x) => Some(x)
-    NumArg(x, _) => Some(x)
+    StrArg(x, _) => Some(x)
+    NumArg(x, _, _) => Some(x)
     // TInt は DR-075 §1 で値空間判定に切替、CLI 相で IntArg 経由。lower 断面では他の value primitive
     // と同型の値セル (n) として扱う (Some(x) を返す)。
-    IntArg(x, _, _) => Some(x)
-    FloatArg(x) => Some(x)
+    IntArg(x, _, _, _) => Some(x)
+    FloatArg(x, _) => Some(x)
     // DR-076 §1/§4: bool is now a normal value type, same satellite shape as string/number/int/float.
-    BoolArg(x) => Some(x)
-    SepArg(x, _) => Some(x)
+    BoolArg(x, _) => Some(x)
+    SepArg(x, _, _) => Some(x)
     FilterArg(x, _) => Some(x)
     ReqArg(x) => Some(x)
     NoDashStr(x) => Some(x)
@@ -2203,8 +2203,8 @@ fn dec_option(
     [
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "separator", "requires", "conflicts_with", "exclusive_group",
-      "export_key", "config_key", "deprecated", "or", "pre_split_filters", "filters",
-      "post_filters", "ref",
+      "export_key", "config_key", "deprecated", "or", "pre_filters", "filters", "post_filters",
+      "ref",
     ],
     "option",
   )
@@ -2294,7 +2294,7 @@ fn dec_option(
     None => None
   }
   let deprecated = bool_field(o, "deprecated", false)
-  let pre_split_filters = dec_strs(o.get("pre_split_filters"))
+  let pre_filters = dec_strs(o.get("pre_filters"))
   let filters = dec_strs(o.get("filters"))
   let post_filters = dec_strs(o.get("post_filters"))
   let ref_ = jf_str(o, "ref")
@@ -2320,7 +2320,7 @@ fn dec_option(
       default~,
       int_round=int_round_from_shadow,
       allow_base_prefix=base_prefix_from_shadow,
-      pre_split_filters~,
+      pre_filters~,
       filters~,
       post_filters~,
       ref_~,
@@ -2348,8 +2348,8 @@ fn dec_positional(
     o,
     [
       "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
-      "config_key", "default", "positionals", "or", "pre_split_filters", "filters",
-      "post_filters", "ref",
+      "config_key", "default", "positionals", "or", "pre_filters", "filters", "post_filters",
+      "ref",
     ],
     "positional",
   )
@@ -2407,7 +2407,7 @@ fn dec_positional(
     Some(d) => Some(json_to_value(d))
     None => None
   }
-  let pre_split_filters = dec_strs(o.get("pre_split_filters"))
+  let pre_filters = dec_strs(o.get("pre_filters"))
   let filters = dec_strs(o.get("filters"))
   let post_filters = dec_strs(o.get("post_filters"))
   let ref_ = jf_str(o, "ref")
@@ -2425,7 +2425,7 @@ fn dec_positional(
     default~,
     int_round=int_round_from_shadow,
     allow_base_prefix=base_prefix_from_shadow,
-    pre_split_filters~,
+    pre_filters~,
     filters~,
     post_filters~,
   )

@@ -53,6 +53,7 @@ test "eq-split long option resolves, errors, and 素通し" {
       kind: TNum,
       int_round: RError,
       allow_base_prefix: false,
+      pre_filters: [],
     },
   ])
   // a defined numeric key: one Accept consuming 1 token, binding port=8080 from the CLI seat.
@@ -90,6 +91,7 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
       kind: TBool,
       int_round: RError,
       allow_base_prefix: false,
+      pre_filters: [],
     },
   ])
   // `true` / `1` / mixed-case / all-caps all resolve to VBool(true).
@@ -139,6 +141,7 @@ test "eq-split long option: a TFlag entry never fires on =value" {
       kind: TFlag,
       int_round: RError,
       allow_base_prefix: false,
+      pre_filters: [],
     },
   ])
   assert_eq(run_matcher(long, pctx(["--verbose=true"]), 0).length(), 0)
@@ -161,6 +164,7 @@ test "short cluster: flag run and in-token numeric value" {
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
+      pre_filters: [],
     },
     {
       ch: 'b',
@@ -169,6 +173,7 @@ test "short cluster: flag run and in-token numeric value" {
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
+      pre_filters: [],
     },
     {
       ch: 'n',
@@ -177,6 +182,7 @@ test "short cluster: flag run and in-token numeric value" {
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
+      pre_filters: [],
     },
   ])
   // `-ab`: a run of two flags → one reading binding a=true, b=true, consuming the single token.
@@ -211,6 +217,7 @@ test "short cluster: space-form value takes the next token" {
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
+      pre_filters: [],
     },
   ])
   let r = run_matcher(short, pctx(["-n", "5"]), 0)
@@ -235,6 +242,7 @@ test "short cluster: deprecated entry rides a @depr marker" {
       depr: true,
       int_round: RError,
       allow_base_prefix: false,
+      pre_filters: [],
     },
   ])
   let r = run_matcher(short, pctx(["-d"]), 0)

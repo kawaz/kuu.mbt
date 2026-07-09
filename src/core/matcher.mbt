@@ -125,40 +125,59 @@ fn run_eq_split(
   let valstr = chars_to_str(body, eq + 1, body.length())
   for e in entries {
     if e.key == key {
+      // TFlag/TCount take no eq-split value at all (no raw string to gate), so pre_filters is
+      // skipped for them entirely — checked BEFORE running the chain to avoid filtering a value
+      // slot that structurally doesn't exist for this kind.
+      if e.kind == TFlag {
+        return [] // presence-only trigger (DR-074 no eq-split): flags take no =value
+      }
+      if e.kind == TCount {
+        return [] // DR-077 §3: count takes no =value either — the update effect has no operand
+      }
+      // DR-034/DR-062 pre_filters: run BEFORE the kind-specific parse, same timing eval.mbt's
+      // value-primitive arms use (this is the eq-split entry's own copy of the element's chain,
+      // LongEntry carries it the same way it carries int_round/allow_base_prefix).
+      let filtered = match apply_pre_filters(e.pre_filters, valstr) {
+        Ok(s) => s
+        Err((reason, msg)) =>
+          return [Held(pe_filter(e.name, pos, reason, msg), [])]
+      }
       match e.kind {
-        TStr => return [Accept(pos + 1, [mkb(e.name, VStr(valstr), Cli)])]
+        TStr => return [Accept(pos + 1, [mkb(e.name, VStr(filtered), Cli)])]
         TNum => // canonical number 字句 (DR-074 §1) + opt-in base prefix (§2)
-          match parse_number_ext(valstr, e.allow_base_prefix) {
+          match parse_number_ext(filtered, e.allow_base_prefix) {
             Some(d) => return [Accept(pos + 1, [mkb(e.name, VNum(d), Cli)])]
-            None => return [Held(pe_parse(e.name, valstr, pos), [])]
+            None => return [Held(pe_parse(e.name, filtered, pos), [])]
           }
         TInt =>
           // DR-075 §1-§2 + DR-074 §2: eq-split (`--v=2.5` / `--v=0xff`) の TInt も値空間判定 + int_round
           // + 基数 prefix を適用。int_round / allow_base_prefix は installer が LongEntry に埋め込む。
-          match parse_int_value_ext(valstr, e.int_round, e.allow_base_prefix) {
+          match
+            parse_int_value_ext(filtered, e.int_round, e.allow_base_prefix) {
             Ok(i) =>
               return [Accept(pos + 1, [mkb(e.name, VNum(i.to_double()), Cli)])]
             Err(NotAnInteger) =>
-              return [Held(pe_parse_int(e.name, valstr, pos), [])]
+              return [Held(pe_parse_int(e.name, filtered, pos), [])]
             Err(IntOutOfRange) =>
-              return [Held(pe_int_out_of_range(e.name, valstr, pos), [])]
-            Err(NotANumber) => return [Held(pe_parse(e.name, valstr, pos), [])]
+              return [Held(pe_int_out_of_range(e.name, filtered, pos), [])]
+            Err(NotANumber) =>
+              return [Held(pe_parse(e.name, filtered, pos), [])]
           }
         TFloat => // DR-074 §1: float's wider accept域 (number + inf) via parse_float
-          match parse_float(valstr) {
+          match parse_float(filtered) {
             Some(d) => return [Accept(pos + 1, [mkb(e.name, VNum(d), Cli)])]
-            None => return [Held(pe_parse(e.name, valstr, pos), [])]
+            None => return [Held(pe_parse(e.name, filtered, pos), [])]
           }
-        TFlag => return [] // presence-only trigger (DR-074 no eq-split): flags take no =value
-        TCount => return [] // DR-077 §3: count takes no =value either — the update effect has no operand
+        TFlag => return [] // unreachable (guarded above); kept for exhaustiveness
+        TCount => return [] // unreachable (guarded above); kept for exhaustiveness
         TBool =>
           // DR-074 §3: a value-typed bool DOES take an eq-split value (`--enabled=true`), unlike a
           // presence-only flag firing — the CLI vocab is canonical `parse_bool` (true/false/1/0/"",
           // case-insensitive). An unrecognized token is a held Error (DR-037), not 素通し. (installer.mbt
           // `inst_long` only registers this entry when the element has no variant spellings.)
-          match parse_bool(valstr) {
+          match parse_bool(filtered) {
             Some(b) => return [Accept(pos + 1, [mkb(e.name, VBool(b), Cli)])]
-            None => return [Held(pe_parse_bool(e.name, valstr, pos), [])]
+            None => return [Held(pe_parse_bool(e.name, filtered, pos), [])]
           }
       }
     }
@@ -204,30 +223,54 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 }
 
 ///|
-fn short_val(e : ShortEntry, s : String) -> Binding? {
+/// `Ok` = the value char attached successfully. `Err(None)` = an ORDINARY parse failure (the
+/// pre-DR-034 contract: caller falls back to `pe_parse`/kind:KParse at the tail position, same as
+/// a bare `Binding?`'s `None` always meant). `Err(Some((reason, message)))` = a DR-034/DR-062
+/// pre_filters chain rejected the raw value BEFORE it ever reached the kind-specific parser — a
+/// DISTINCT failure kind (KFilter) the old `Binding?` signature had no channel for, hence the
+/// signature widening from `Binding?` to this `Result`. Both error shapes stay valid at every value
+/// char length (`walk_short`'s mid-token/full-tail split still governs whether a failure surfaces
+/// as a `Held` or is silently dropped — see its call sites).
+fn short_val(e : ShortEntry, s : String) -> Result[Binding, (String, String)?] {
   match e.kind {
-    TStr => Some(mkb(e.name, VStr(s), Cli))
+    TStr =>
+      match apply_pre_filters(e.pre_filters, s) {
+        Ok(v) => Ok(mkb(e.name, VStr(v), Cli))
+        Err(fe) => Err(Some(fe))
+      }
     TNum =>
       // DR-074 §1 + §2: short cluster / space-tail の TNum も opt-in base prefix を反映。
-      match parse_number_ext(s, e.allow_base_prefix) {
-        Some(d) => Some(mkb(e.name, VNum(d), Cli))
-        None => None
+      match apply_pre_filters(e.pre_filters, s) {
+        Ok(v) =>
+          match parse_number_ext(v, e.allow_base_prefix) {
+            Some(d) => Ok(mkb(e.name, VNum(d), Cli))
+            None => Err(None)
+          }
+        Err(fe) => Err(Some(fe))
       }
     TInt =>
       // DR-075 §1-§2 + DR-074 §2: short cluster / space-tail の TInt も値空間判定 + int_round +
       // base prefix を反映。丸めモード / 基数 prefix で Ok(...) は Some、それ以外は None を返し
       // caller (walk_short) が tail 位置で held Error を組む (既存の Binding? 契約範囲内)。
-      match parse_int_value_ext(s, e.int_round, e.allow_base_prefix) {
-        Ok(i) => Some(mkb(e.name, VNum(i.to_double()), Cli))
-        Err(_) => None
+      match apply_pre_filters(e.pre_filters, s) {
+        Ok(v) =>
+          match parse_int_value_ext(v, e.int_round, e.allow_base_prefix) {
+            Ok(i) => Ok(mkb(e.name, VNum(i.to_double()), Cli))
+            Err(_) => Err(None)
+          }
+        Err(fe) => Err(Some(fe))
       }
     TFloat =>
-      match parse_float(s) {
-        Some(d) => Some(mkb(e.name, VNum(d), Cli))
-        None => None
+      match apply_pre_filters(e.pre_filters, s) {
+        Ok(v) =>
+          match parse_float(v) {
+            Some(d) => Ok(mkb(e.name, VNum(d), Cli))
+            None => Err(None)
+          }
+        Err(fe) => Err(Some(fe))
       }
-    TFlag | TBool => None // no in-cluster/space-form VALUE attachment for a bool short (no fixture needs `-e5`/`-e true`)
-    TCount => None // DR-077 §3: count short is non-consuming (fixed increment), same standing as a bool short
+    TFlag | TBool => Err(None) // no in-cluster/space-form VALUE attachment for a bool short (no fixture needs `-e5`/`-e true`)
+    TCount => Err(None) // DR-077 §3: count short is non-consuming (fixed increment), same standing as a bool short
   }
 }
 
@@ -291,7 +334,7 @@ fn walk_short(
           while j <= body.length() {
             let vstr = chars_to_str(body, vstart, j)
             match short_val(e, vstr) {
-              Some(b) =>
+              Ok(b) =>
                 for
                   r in walk_short(
                     entries,
@@ -303,7 +346,17 @@ fn walk_short(
                   ) {
                   out.push(r)
                 }
-              None =>
+              Err(Some((reason, msg))) =>
+                // DR-034/DR-062 pre_filters rejected this length's raw value BEFORE it reached the
+                // kind-specific parser — same mid-token/full-tail asymmetry as the ordinary parse-
+                // fail arm below (a mid-token reject is a silent non-reading, only the FULL-TAIL
+                // attach surfaces as a held Error), but UNGATED by kind (unlike parse failures,
+                // pre_filters applies to every value-taking kind including TStr — fixture
+                // pre-filters/reject.json's `name` is a plain string).
+                if j == body.length() {
+                  out.push(Held(pe_filter(e.name, pos, reason, msg), acc))
+                }
+              Err(None) =>
                 // A typed value that fails to parse: a mid-token split is a
                 // silent non-reading (its remainder would need OTHER defined
                 // chars to progress, DR-041 §3), but the FULL-TAIL attach is
@@ -321,8 +374,10 @@ fn walk_short(
           // next-token value (space form) only when this value char is the tail.
           if vstart == body.length() && pos + 1 < ctx.toks.length() {
             match short_val(e, ctx.toks[pos + 1]) {
-              Some(b) => out.push(Accept(pos + 2, cat(acc, cat([b], dm))))
-              None =>
+              Ok(b) => out.push(Accept(pos + 2, cat(acc, cat([b], dm))))
+              Err(Some((reason, msg))) =>
+                out.push(Held(pe_filter(e.name, pos + 1, reason, msg), []))
+              Err(None) =>
                 if e.kind == TNum || e.kind == TInt || e.kind == TFloat {
                   out.push(
                     Held(pe_parse(e.name, ctx.toks[pos + 1], pos + 1), []),

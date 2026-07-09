@@ -1265,13 +1265,25 @@ fn apply_transform(
 /// pipeline as CLI). Unlike slice's `env_value` (naive `parse_number` with a silent `VStr` fallback
 /// on failure), this reuses the canonical lexers (DR-074/075) and surfaces a parse failure as a
 /// DR-066 Error — a badly-typed env value is never silently coerced to a wrong-typed string cell.
+/// `pre_filters` (DR-034/DR-062, issue 2026-07-09-pre-split-filters-execution-wiring): DR-049 §2
+/// says env goes through the SAME pipeline as CLI, which includes pre_filters — applied here BEFORE
+/// the type-specific parse below (including the `TStr` arm, so `trim` etc. also affects a plain
+/// string env value, not just numeric rescue). This is env's OWN application point, distinct from
+/// the CLI seat's (eval.mbt/matcher.mbt, applied at token-consumption time, before the value ever
+/// reaches this Entity-based ladder).
 fn env_value(
   element : String,
   ty : Ty,
   s : String,
+  pre_filters : Array[String],
   at_pos : Int,
   epath : Array[String],
 ) -> Result[Value, ParseError] {
+  let s = match apply_pre_filters(pre_filters, s) {
+    Ok(v) => v
+    Err((reason, msg)) =>
+      return Err(filter_err(element, at_pos, reason, msg, epath))
+  }
   match ty {
     TStr => Ok(VStr(s))
     // DR-077 §3: count's env/config seat parses a plain number and SETs it (never increments) —
@@ -1557,7 +1569,7 @@ fn resolve_entity_raw(
     Some(k) =>
       match env_map.get(k) {
         Some(v) =>
-          match env_value(e.name, e.ty, v, at_pos, epath) {
+          match env_value(e.name, e.ty, v, e.pre_filters, at_pos, epath) {
             Ok(parsed) => return Ok([mkb(e.name, parsed, Env)])
             Err(pe) => return Err(pe)
           }

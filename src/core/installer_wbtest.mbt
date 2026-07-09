@@ -31,7 +31,7 @@ fn el(
   multiple? : Bool = false,
   collector? : String? = None,
   ref_? : String? = None,
-  pre_split_filters? : Array[String] = [],
+  pre_filters? : Array[String] = [],
   filters? : Array[String] = [],
   post_filters? : Array[String] = [],
 ) -> ElemDef {
@@ -65,7 +65,7 @@ fn el(
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
-    pre_split_filters,
+    pre_filters,
     filters,
     post_filters,
     body: BCell,
@@ -132,7 +132,7 @@ test "long installer: value option gets 1 greedy Seq satellite + 1 EqSplit match
   // 貢献: (1) Seq([Exact("--port"), StrArg("port")]) の satellite が 1 本、(2) NativeMatch(EqSplit(...))
   // 1 本、計 greedy = 2 本。TStr なので value_prim = StrArg。
   assert_eq(sc.greedy.length(), 2)
-  assert_eq(sc.greedy[0], Seq([Exact("--port"), StrArg("port")]))
+  assert_eq(sc.greedy[0], Seq([Exact("--port"), StrArg("port", [])]))
   match sc.greedy[1] {
     NativeMatch(EqSplit(prefix=p, entries=es)) => {
       assert_eq(p, "--")
@@ -200,7 +200,7 @@ test "long installer: a flag's explicit `long:[\":set\"]` composes `:set:true` A
   let mut has_bare_bind = false
   for g in sc.greedy {
     match g {
-      Seq([Exact("--verbose"), BoolArg("verbose")]) => has_value_slot = true
+      Seq([Exact("--verbose"), BoolArg("verbose", _)]) => has_value_slot = true
       Seq([Exact("--verbose"), Bind("verbose", VBool(true))]) =>
         has_bare_bind = true
       _ => ()
@@ -328,7 +328,7 @@ test "repeat installer: min:0 unbounded repeat lowers to Many(head, lazy_) carry
   }
   let sc = ok_scope(def, all_installers())
   assert_eq(sc.positional.length(), 1)
-  assert_eq(sc.positional[0], Many(StrArg("xs"), true))
+  assert_eq(sc.positional[0], Many(StrArg("xs", []), true))
   let ent = entity_of(sc, "xs").unwrap()
   assert_eq(ent.accum, Some("flatten")) // DR-044 §1: cardinality 不問で常に配列
 }
@@ -349,8 +349,8 @@ test "repeat installer: bounded max lowers to min heads + BoundedTail (no Ref)" 
   let sc = ok_scope(def, all_installers())
   // 1 mandatory head + BoundedTail(head, 2, false) — budget = 3-1
   assert_eq(sc.positional.length(), 2)
-  assert_eq(sc.positional[0], StrArg("f"))
-  assert_eq(sc.positional[1], BoundedTail(StrArg("f"), 2, false))
+  assert_eq(sc.positional[0], StrArg("f", []))
+  assert_eq(sc.positional[1], BoundedTail(StrArg("f", []), 2, false))
   // Ref template は登録されない (Ref 再帰なし)
   let ent = entity_of(sc, "f").unwrap()
   assert_eq(ent.accum, Some("flatten"))
@@ -739,7 +739,7 @@ test "desugar_aliases: alias long:true on a flag canonical composes :set:true (b
   for g in sc.greedy {
     match g {
       Seq([Exact("--v"), Bind("verbose", VBool(true))]) => has_bare_bind = true
-      Seq([Exact("--v"), BoolArg("verbose")]) => has_value_slot = true
+      Seq([Exact("--v"), BoolArg("verbose", _)]) => has_value_slot = true
       _ => ()
     }
   }
@@ -768,7 +768,7 @@ test "desugar_aliases: alias long:true on a string canonical stays a value-slot 
   let mut has_value_slot = false
   for g in sc.greedy {
     match g {
-      Seq([Exact("--h"), StrArg("host")]) => has_value_slot = true
+      Seq([Exact("--h"), StrArg("host", _)]) => has_value_slot = true
       _ => ()
     }
   }

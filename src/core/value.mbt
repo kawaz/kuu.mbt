@@ -1404,6 +1404,26 @@ fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
 }
 
 ///|
+/// A `kind: filter` held Error for a pre_filters chain that rejected a raw token/piece before it
+/// ever reached its type parser (DR-034/DR-062, DR-037's Reject/Error distinction — see
+/// `apply_pre_filters`'s doc comment for why a filter chain's `Err` always becomes a `Held`, never
+/// a silent `[]`: the Or/path-search machinery already discards a `Held` branch whenever a sibling
+/// branch `Accept`s, so a single `Held(kind: KFilter, ...)` return realizes BOTH DR-037 outcomes —
+/// no separate silent-Reject channel is needed). Token-consumption callers (eval.mbt's value-
+/// primitive arms, matcher.mbt's `run_eq_split`) pass `reason`/`message` straight from
+/// `apply_pre_filters`'s `Err` tuple. Mirrors `resolve.mbt`'s `filter_err` (the ladder-layer
+/// counterpart, used by `env_value`) — kept as a separate builder here because eval.mbt/value.mbt
+/// sit below resolve.mbt in the dependency graph (MDR-002 §3) and cannot call it.
+fn pe_filter(
+  element : String,
+  pos : Int,
+  reason : String,
+  message : String,
+) -> ParseError {
+  { element, argv_pos: pos, kind: KFilter, reason, message, path: [] }
+}
+
+///|
 /// A deprecation marker binding (DR-058): key `@depr:<element>`, recording that a deprecated entry
 /// (DR-057 alias) was used to reach the canonical cell. Rides in the effect column like any binding;
 /// the result builder skips it (bookkeeping, not a value), and `warnings_of` collects it.

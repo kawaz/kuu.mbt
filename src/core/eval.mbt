@@ -297,64 +297,85 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // consumed, so nothing is "half-read".
         []
       }
-    StrArg(name) =>
+    StrArg(name, pre_filters) =>
       if pos < ctx.toks.length() {
-        [Accept(pos + 1, [mkb(name, VStr(ctx.toks[pos]), Cli)])]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) => [Accept(pos + 1, [mkb(name, VStr(s), Cli)])]
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
+        }
       } else {
         // MDR-002 §2.1: the end of input at a value slot is an explicit
         // Pending, not a silent []. Reached mid-greedy-entry (after the
         // trigger consumed) this is the "--port with no value" state.
         [Pending([pend_value(TStr, name)], [])]
       }
-    SepArg(name, sep) =>
+    SepArg(name, sep, pre_filters) =>
       if pos < ctx.toks.length() {
-        [Accept(pos + 1, sep_binds(name, ctx.toks[pos], sep))]
+        match sep_binds(name, ctx.toks[pos], sep, pre_filters) {
+          Ok(bs) => [Accept(pos + 1, bs)]
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
+        }
       } else {
         [Pending([pend_value(TStr, name)], [])]
       }
-    NumArg(name, base) =>
+    NumArg(name, base, pre_filters) =>
       // DR-074 §1 + §2: canonical (base=false) は 10 進のみ、opt-in (base=true) で 0x/0o/0b + hex float
       // も受理。base は installer が ElemDef.allow_base_prefix から埋め込む。
       if pos < ctx.toks.length() {
-        match parse_number_ext(ctx.toks[pos], base) {
-          Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
-          None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_number_ext(s, base) {
+              Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+              None => [Held(pe_parse(name, s, pos), [])]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
       } else {
         [Pending([pend_value(TNum, name)], [])]
       }
-    FloatArg(name) =>
+    FloatArg(name, pre_filters) =>
       // DR-074 §1: the float accept域 = number + inf (parse_float), same reason vocab (not_a_number)
       // on failure as NumArg — only the parser function differs.
       if pos < ctx.toks.length() {
-        match parse_float(ctx.toks[pos]) {
-          Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
-          None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_float(s) {
+              Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+              None => [Held(pe_parse(name, s, pos), [])]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
       } else {
         [Pending([pend_value(TFloat, name)], [])]
       }
-    IntArg(name, mode, base) =>
+    IntArg(name, mode, base, pre_filters) =>
       // DR-075 §1-§2 + DR-074 §2: 値空間判定 + int_round + opt-in base prefix。base=false で 10 進のみ、
       // true で 0xff (整数値) / 0x1.8p3 (=12 整数値) / 0x1.8p0 (=1.5 非整数、mode に従う) も受理する。
       if pos < ctx.toks.length() {
-        match parse_int_value_ext(ctx.toks[pos], mode, base) {
-          Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
-          Err(NotAnInteger) =>
-            [Held(pe_parse_int(name, ctx.toks[pos], pos), [])]
-          Err(IntOutOfRange) =>
-            [Held(pe_int_out_of_range(name, ctx.toks[pos], pos), [])]
-          Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_int_value_ext(s, mode, base) {
+              Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
+              Err(NotAnInteger) => [Held(pe_parse_int(name, s, pos), [])]
+              Err(IntOutOfRange) =>
+                [Held(pe_int_out_of_range(name, s, pos), [])]
+              Err(NotANumber) => [Held(pe_parse(name, s, pos), [])]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
       } else {
         [Pending([pend_value(TInt, name)], [])]
       }
-    BoolArg(name) =>
+    BoolArg(name, pre_filters) =>
       // DR-076 §1/§4: bool value slot (canonical vocab, DR-074 §3) — mirrors NumArg/FloatArg/IntArg.
       if pos < ctx.toks.length() {
-        match parse_bool(ctx.toks[pos]) {
-          Some(b) => [Accept(pos + 1, [mkb(name, VBool(b), Cli)])]
-          None => [Held(pe_parse_bool(name, ctx.toks[pos], pos), [])]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_bool(s) {
+              Some(b) => [Accept(pos + 1, [mkb(name, VBool(b), Cli)])]
+              None => [Held(pe_parse_bool(name, s, pos), [])]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
       } else {
         [Pending([pend_value(TBool, name)], [])]
@@ -594,13 +615,25 @@ fn split_on(s : String, sep : String) -> Array[String] {
 }
 
 ///|
-/// One Set-effect binding per split piece (spec DR-034 + DR-045).
-fn sep_binds(name : String, tok : String, sep : String) -> Array[Binding] {
+/// One Set-effect binding per split piece (spec DR-034 + DR-045). `pre_filters` runs per PIECE (not
+/// once over the whole raw token) — DESIGN §6.2's pieceProcessor applies pre_filters AFTER the
+/// separator split, one piece at a time (this is what distinguishes `per-piece-trim.json` from a
+/// "trim the whole raw string first" misreading). A pre_filters reject on ANY piece fails the whole
+/// binding (`Err` short-circuits) — same all-or-nothing contract a single-piece value primitive has.
+fn sep_binds(
+  name : String,
+  tok : String,
+  sep : String,
+  pre_filters : Array[String],
+) -> Result[Array[Binding], (String, String)] {
   let out : Array[Binding] = []
   for part in split_on(tok, sep) {
-    out.push(mkb(name, VStr(part), Cli))
+    match apply_pre_filters(pre_filters, part) {
+      Ok(s) => out.push(mkb(name, VStr(s), Cli))
+      Err(e) => return Err(e)
+    }
   }
-  out
+  Ok(out)
 }
 
 ///|
@@ -1028,17 +1061,21 @@ fn scope_consume(
   k : Cont,
 ) -> Array[Branch] {
   match item {
-    StrArg(name) =>
+    StrArg(name, pre_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        scope_step(
-          sc,
-          ctx,
-          pos + 1,
-          pidx + 1,
-          cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli)]),
-          severed,
-          k,
-        )
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            scope_step(
+              sc,
+              ctx,
+              pos + 1,
+              pidx + 1,
+              cat(acc, [mkb(name, VStr(s), Cli)]),
+              severed,
+              k,
+            )
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
+        }
       } else if pos >= ctx.toks.length() {
         // 構造的必須の不成立 (spec DR-065 §3): the spine needs a token for
         // `name` but the argv is exhausted. Held, not a silent Reject; in
@@ -1052,17 +1089,13 @@ fn scope_consume(
       } else {
         [] // 先食い: a greedy trigger sits here; the spine stays pending
       }
-    SepArg(name, sep) =>
+    SepArg(name, sep, pre_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        scope_step(
-          sc,
-          ctx,
-          pos + 1,
-          pidx + 1,
-          cat(acc, sep_binds(name, ctx.toks[pos], sep)),
-          severed,
-          k,
-        )
+        match sep_binds(name, ctx.toks[pos], sep, pre_filters) {
+          Ok(bs) =>
+            scope_step(sc, ctx, pos + 1, pidx + 1, cat(acc, bs), severed, k)
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
+        }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
           [Pending([pend_value(TStr, name)], acc)]
@@ -1072,21 +1105,25 @@ fn scope_consume(
       } else {
         []
       }
-    NumArg(name, base) =>
+    NumArg(name, base, pre_filters) =>
       // DR-074 §1 + §2 (scope_step 経路: parse_number_ext with base flag)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_number_ext(ctx.toks[pos], base) {
-          Some(d) =>
-            scope_step(
-              sc,
-              ctx,
-              pos + 1,
-              pidx + 1,
-              cat(acc, [mkb(name, VNum(d), Cli)]),
-              severed,
-              k,
-            )
-          None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_number_ext(s, base) {
+              Some(d) =>
+                scope_step(
+                  sc,
+                  ctx,
+                  pos + 1,
+                  pidx + 1,
+                  cat(acc, [mkb(name, VNum(d), Cli)]),
+                  severed,
+                  k,
+                )
+              None => [Held(pe_parse(name, s, pos), acc)]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
@@ -1097,21 +1134,25 @@ fn scope_consume(
       } else {
         []
       }
-    FloatArg(name) =>
+    FloatArg(name, pre_filters) =>
       // DR-074 §1 CLI 値空間 (scope_step 経路: NumArg のミラー、parse_number→parse_float / TNum→TFloat)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_float(ctx.toks[pos]) {
-          Some(d) =>
-            scope_step(
-              sc,
-              ctx,
-              pos + 1,
-              pidx + 1,
-              cat(acc, [mkb(name, VNum(d), Cli)]),
-              severed,
-              k,
-            )
-          None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_float(s) {
+              Some(d) =>
+                scope_step(
+                  sc,
+                  ctx,
+                  pos + 1,
+                  pidx + 1,
+                  cat(acc, [mkb(name, VNum(d), Cli)]),
+                  severed,
+                  k,
+                )
+              None => [Held(pe_parse(name, s, pos), acc)]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
@@ -1122,25 +1163,28 @@ fn scope_consume(
       } else {
         []
       }
-    IntArg(name, mode, base) =>
+    IntArg(name, mode, base, pre_filters) =>
       // DR-075 §1-§2 + DR-074 §2 CLI 値空間判定 + int_round + base prefix (scope_step 経路)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_int_value_ext(ctx.toks[pos], mode, base) {
-          Ok(i) =>
-            scope_step(
-              sc,
-              ctx,
-              pos + 1,
-              pidx + 1,
-              cat(acc, [mkb(name, VNum(i.to_double()), Cli)]),
-              severed,
-              k,
-            )
-          Err(NotAnInteger) =>
-            [Held(pe_parse_int(name, ctx.toks[pos], pos), acc)]
-          Err(IntOutOfRange) =>
-            [Held(pe_int_out_of_range(name, ctx.toks[pos], pos), acc)]
-          Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_int_value_ext(s, mode, base) {
+              Ok(i) =>
+                scope_step(
+                  sc,
+                  ctx,
+                  pos + 1,
+                  pidx + 1,
+                  cat(acc, [mkb(name, VNum(i.to_double()), Cli)]),
+                  severed,
+                  k,
+                )
+              Err(NotAnInteger) => [Held(pe_parse_int(name, s, pos), acc)]
+              Err(IntOutOfRange) =>
+                [Held(pe_int_out_of_range(name, s, pos), acc)]
+              Err(NotANumber) => [Held(pe_parse(name, s, pos), acc)]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
@@ -1151,21 +1195,25 @@ fn scope_consume(
       } else {
         []
       }
-    BoolArg(name) =>
+    BoolArg(name, pre_filters) =>
       // DR-076 §1/§4 CLI 値空間 (scope_step 経路: NumArg/IntArg/FloatArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_bool(ctx.toks[pos]) {
-          Some(b) =>
-            scope_step(
-              sc,
-              ctx,
-              pos + 1,
-              pidx + 1,
-              cat(acc, [mkb(name, VBool(b), Cli)]),
-              severed,
-              k,
-            )
-          None => [Held(pe_parse_bool(name, ctx.toks[pos], pos), acc)]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_bool(s) {
+              Some(b) =>
+                scope_step(
+                  sc,
+                  ctx,
+                  pos + 1,
+                  pidx + 1,
+                  cat(acc, [mkb(name, VBool(b), Cli)]),
+                  severed,
+                  k,
+                )
+              None => [Held(pe_parse_bool(name, s, pos), acc)]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
@@ -1532,9 +1580,12 @@ fn consume_head(
   severed : Bool,
 ) -> Array[Branch] {
   match head {
-    StrArg(name) =>
+    StrArg(name, pre_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        [Accept(pos + 1, [mkb(name, VStr(ctx.toks[pos]), Cli)])]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) => [Accept(pos + 1, [mkb(name, VStr(s), Cli)])]
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
+        }
       } else if pos >= ctx.toks.length() {
         // in complete mode the starved head is a repeat-continuation value
         // candidate (DR-060 §1), not a missing-operand Held.
@@ -1546,9 +1597,12 @@ fn consume_head(
       } else {
         []
       }
-    SepArg(name, sep) =>
+    SepArg(name, sep, pre_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        [Accept(pos + 1, sep_binds(name, ctx.toks[pos], sep))]
+        match sep_binds(name, ctx.toks[pos], sep, pre_filters) {
+          Ok(bs) => [Accept(pos + 1, bs)]
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
+        }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
           [Pending([pend_value(TStr, name)], [])]
@@ -1558,12 +1612,16 @@ fn consume_head(
       } else {
         []
       }
-    NumArg(name, base) =>
+    NumArg(name, base, pre_filters) =>
       // DR-074 §1 + §2 (先食い分岐: parse_number_ext with base flag)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_number_ext(ctx.toks[pos], base) {
-          Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
-          None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_number_ext(s, base) {
+              Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+              None => [Held(pe_parse(name, s, pos), [])]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
@@ -1574,12 +1632,16 @@ fn consume_head(
       } else {
         []
       }
-    FloatArg(name) =>
+    FloatArg(name, pre_filters) =>
       // DR-074 §1 CLI 値空間 (先食い分岐: NumArg のミラー、parse_number→parse_float / TNum→TFloat)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_float(ctx.toks[pos]) {
-          Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
-          None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_float(s) {
+              Some(d) => [Accept(pos + 1, [mkb(name, VNum(d), Cli)])]
+              None => [Held(pe_parse(name, s, pos), [])]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
@@ -1590,16 +1652,19 @@ fn consume_head(
       } else {
         []
       }
-    IntArg(name, mode, base) =>
+    IntArg(name, mode, base, pre_filters) =>
       // DR-075 §1-§2 + DR-074 §2 (先食い分岐)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_int_value_ext(ctx.toks[pos], mode, base) {
-          Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
-          Err(NotAnInteger) =>
-            [Held(pe_parse_int(name, ctx.toks[pos], pos), [])]
-          Err(IntOutOfRange) =>
-            [Held(pe_int_out_of_range(name, ctx.toks[pos], pos), [])]
-          Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_int_value_ext(s, mode, base) {
+              Ok(i) => [Accept(pos + 1, [mkb(name, VNum(i.to_double()), Cli)])]
+              Err(NotAnInteger) => [Held(pe_parse_int(name, s, pos), [])]
+              Err(IntOutOfRange) =>
+                [Held(pe_int_out_of_range(name, s, pos), [])]
+              Err(NotANumber) => [Held(pe_parse(name, s, pos), [])]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
@@ -1610,12 +1675,16 @@ fn consume_head(
       } else {
         []
       }
-    BoolArg(name) =>
+    BoolArg(name, pre_filters) =>
       // DR-076 §1/§4 CLI 値空間 (先食い分岐: NumArg/IntArg/FloatArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_bool(ctx.toks[pos]) {
-          Some(b) => [Accept(pos + 1, [mkb(name, VBool(b), Cli)])]
-          None => [Held(pe_parse_bool(name, ctx.toks[pos], pos), [])]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_bool(s) {
+              Some(b) => [Accept(pos + 1, [mkb(name, VBool(b), Cli)])]
+              None => [Held(pe_parse_bool(name, s, pos), [])]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
@@ -1708,12 +1777,12 @@ fn head_elem_names(head : Node) -> Array[String] {
 ///|
 fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
   match n {
-    StrArg(name) => if !str_mem(out, name) { out.push(name) }
-    SepArg(name, _) => if !str_mem(out, name) { out.push(name) }
-    NumArg(name, _) => if !str_mem(out, name) { out.push(name) }
-    FloatArg(name) => if !str_mem(out, name) { out.push(name) }
-    IntArg(name, _, _) => if !str_mem(out, name) { out.push(name) }
-    BoolArg(name) => if !str_mem(out, name) { out.push(name) }
+    StrArg(name, _) => if !str_mem(out, name) { out.push(name) }
+    SepArg(name, _, _) => if !str_mem(out, name) { out.push(name) }
+    NumArg(name, _, _) => if !str_mem(out, name) { out.push(name) }
+    FloatArg(name, _) => if !str_mem(out, name) { out.push(name) }
+    IntArg(name, _, _, _) => if !str_mem(out, name) { out.push(name) }
+    BoolArg(name, _) => if !str_mem(out, name) { out.push(name) }
     FilterArg(name, _) => if !str_mem(out, name) { out.push(name) }
     ReqArg(name) => if !str_mem(out, name) { out.push(name) }
     Seq(items) =>
@@ -1823,17 +1892,21 @@ fn scope_consume_rep(
   k : Cont,
 ) -> Array[Branch] {
   match inner {
-    StrArg(name) =>
+    StrArg(name, pre_filters) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        scope_step(
-          sc,
-          ctx,
-          pos + 1,
-          pidx,
-          cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli)]),
-          severed,
-          k,
-        )
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            scope_step(
+              sc,
+              ctx,
+              pos + 1,
+              pidx,
+              cat(acc, [mkb(name, VStr(s), Cli)]),
+              severed,
+              k,
+            )
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
+        }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         // complete: "one more Many rep" starved at the boundary is a value
         // candidate (DR-060 §1) — in parse it is a legitimate silent stop
@@ -1842,88 +1915,103 @@ fn scope_consume_rep(
       } else {
         []
       }
-    NumArg(name, base) =>
+    NumArg(name, base, pre_filters) =>
       // DR-074 §1 + §2 (Many head 経路: parse_number_ext with base flag)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_number_ext(ctx.toks[pos], base) {
-          Some(d) =>
-            scope_step(
-              sc,
-              ctx,
-              pos + 1,
-              pidx,
-              cat(acc, [mkb(name, VNum(d), Cli)]),
-              severed,
-              k,
-            )
-          None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_number_ext(s, base) {
+              Some(d) =>
+                scope_step(
+                  sc,
+                  ctx,
+                  pos + 1,
+                  pidx,
+                  cat(acc, [mkb(name, VNum(d), Cli)]),
+                  severed,
+                  k,
+                )
+              None => [Held(pe_parse(name, s, pos), acc)]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [Pending([pend_value(TNum, name)], acc)]
       } else {
         []
       }
-    FloatArg(name) =>
+    FloatArg(name, pre_filters) =>
       // DR-074 §1 CLI 値空間 (Many head 経路: NumArg のミラー、parse_number→parse_float / TNum→TFloat)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_float(ctx.toks[pos]) {
-          Some(d) =>
-            scope_step(
-              sc,
-              ctx,
-              pos + 1,
-              pidx,
-              cat(acc, [mkb(name, VNum(d), Cli)]),
-              severed,
-              k,
-            )
-          None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_float(s) {
+              Some(d) =>
+                scope_step(
+                  sc,
+                  ctx,
+                  pos + 1,
+                  pidx,
+                  cat(acc, [mkb(name, VNum(d), Cli)]),
+                  severed,
+                  k,
+                )
+              None => [Held(pe_parse(name, s, pos), acc)]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [Pending([pend_value(TFloat, name)], acc)]
       } else {
         []
       }
-    IntArg(name, mode, base) =>
+    IntArg(name, mode, base, pre_filters) =>
       // DR-075 §1-§2 + DR-074 §2 (Many head 経路)
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_int_value_ext(ctx.toks[pos], mode, base) {
-          Ok(i) =>
-            scope_step(
-              sc,
-              ctx,
-              pos + 1,
-              pidx,
-              cat(acc, [mkb(name, VNum(i.to_double()), Cli)]),
-              severed,
-              k,
-            )
-          Err(NotAnInteger) =>
-            [Held(pe_parse_int(name, ctx.toks[pos], pos), acc)]
-          Err(IntOutOfRange) =>
-            [Held(pe_int_out_of_range(name, ctx.toks[pos], pos), acc)]
-          Err(NotANumber) => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_int_value_ext(s, mode, base) {
+              Ok(i) =>
+                scope_step(
+                  sc,
+                  ctx,
+                  pos + 1,
+                  pidx,
+                  cat(acc, [mkb(name, VNum(i.to_double()), Cli)]),
+                  severed,
+                  k,
+                )
+              Err(NotAnInteger) => [Held(pe_parse_int(name, s, pos), acc)]
+              Err(IntOutOfRange) =>
+                [Held(pe_int_out_of_range(name, s, pos), acc)]
+              Err(NotANumber) => [Held(pe_parse(name, s, pos), acc)]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [Pending([pend_value(TInt, name)], acc)]
       } else {
         []
       }
-    BoolArg(name) =>
+    BoolArg(name, pre_filters) =>
       // DR-076 §1/§4 CLI 値空間 (Many head 経路: NumArg/IntArg/FloatArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_bool(ctx.toks[pos]) {
-          Some(b) =>
-            scope_step(
-              sc,
-              ctx,
-              pos + 1,
-              pidx,
-              cat(acc, [mkb(name, VBool(b), Cli)]),
-              severed,
-              k,
-            )
-          None => [Held(pe_parse_bool(name, ctx.toks[pos], pos), acc)]
+        match apply_pre_filters(pre_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            match parse_bool(s) {
+              Some(b) =>
+                scope_step(
+                  sc,
+                  ctx,
+                  pos + 1,
+                  pidx,
+                  cat(acc, [mkb(name, VBool(b), Cli)]),
+                  severed,
+                  k,
+                )
+              None => [Held(pe_parse_bool(name, s, pos), acc)]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [Pending([pend_value(TBool, name)], acc)]

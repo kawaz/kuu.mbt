@@ -69,11 +69,12 @@ pub(all) struct ElemDef {
   allow_base_prefix : Bool
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
   default_value : Value?
-  // DR-009 3 段 filter chain (DR-062: inheritance object 形は未実装、string-shorthand 配列のみ —
-  // filters.mbt ヘッダ注記参照)。pre_split_filters: raw string 全体 (分割前) に適用。filters:
-  // 分割後の要素単位 (each 暗黙、DR-009)。post_filters: 累積後の最終値に適用 (DR-077 §1 の主対象 —
-  // update の結果にもこれが通る)。
-  pre_split_filters : Array[String]
+  // DR-034 pieceProcessor の 3 段 filter chain (DR-062: inheritance object 形は未実装、string-
+  // shorthand 配列のみ — filters.mbt ヘッダ注記参照)。pre_filters: separator 分割後の各 piece
+  // 単位 (multiple 無しは長さ 1 に縮退、同じ管を通る) で type.parse の直前に適用 (String→String)。
+  // filters: 分割後の要素単位 (each 暗黙、DR-009)。post_filters: 累積後の最終値に適用 (DR-077 §1
+  // の主対象 — update の結果にもこれが通る)。
+  pre_filters : Array[String]
   filters : Array[String]
   post_filters : Array[String]
   // MDR-004: 消費文法の軸。`BCell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
@@ -479,19 +480,20 @@ fn value_prim(
   name : String,
   int_round : RoundMode,
   allow_base_prefix : Bool,
+  pre_filters : Array[String],
 ) -> Node {
   match ty {
     // TNum は canonical (DR-074 §1) + opt-in base prefix (§2)。allow=true で hex/oct/bin 整数 + hex
     // float も受理する統合 opt-in (単一 flag、DR-074 §2)。
-    TNum => NumArg(name, allow_base_prefix)
+    TNum => NumArg(name, allow_base_prefix, pre_filters)
     // TInt は値空間判定 (DR-075 §1) + int_round (§2) + hex/oct/bin (DR-074 §2)。IntArg に mode / flag
     // を埋め込み、eval が parse_int_value_ext(_, mode, flag) で丸め + 基数 prefix を反映する。
-    TInt => IntArg(name, int_round, allow_base_prefix)
+    TInt => IntArg(name, int_round, allow_base_prefix, pre_filters)
     // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
-    TFloat => FloatArg(name)
+    TFloat => FloatArg(name, pre_filters)
     // TBool は DR-076 §1/§4 で string/number と同格の値型 — BoolArg / parse_bool を通す
-    TBool => BoolArg(name)
-    _ => StrArg(name)
+    TBool => BoolArg(name, pre_filters)
+    _ => StrArg(name, pre_filters)
   }
 }
 
@@ -573,7 +575,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     default_value: e.default_value,
     int_round: e.int_round,
     allow_base_prefix: e.allow_base_prefix,
-    pre_split_filters: copy_strs(e.pre_split_filters),
+    pre_filters: copy_strs(e.pre_filters),
     filters: copy_strs(e.filters),
     post_filters: copy_strs(e.post_filters),
     body: clone_body(e.body),
@@ -765,8 +767,15 @@ fn elem_head(e : ElemDef) -> Node {
     Some(r) => Ref(r)
     None =>
       match e.separator {
-        Some(sep) => SepArg(e.name, sep)
-        None => value_prim(e.ty, e.name, e.int_round, e.allow_base_prefix)
+        Some(sep) => SepArg(e.name, sep, e.pre_filters)
+        None =>
+          value_prim(
+            e.ty,
+            e.name,
+            e.int_round,
+            e.allow_base_prefix,
+            e.pre_filters,
+          )
       }
   }
 }
@@ -1087,6 +1096,7 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
       None
     },
     default_value,
+    pre_filters: e.pre_filters,
     filters: e.filters,
     post_filters: e.post_filters,
   })
@@ -1137,7 +1147,13 @@ fn inst_long(def : Definition, build : Build) -> Unit {
               e.link_depth,
               Seq([
                 Exact(trigger),
-                value_prim(e.ty, e.name, e.int_round, e.allow_base_prefix),
+                value_prim(
+                  e.ty,
+                  e.name,
+                  e.int_round,
+                  e.allow_base_prefix,
+                  e.pre_filters,
+                ),
               ]),
             ),
           )
@@ -1166,6 +1182,7 @@ fn inst_long(def : Definition, build : Build) -> Unit {
                 kind: leaf.ty,
                 int_round: leaf.int_round,
                 allow_base_prefix: leaf.allow_base_prefix,
+                pre_filters: leaf.pre_filters,
               })
             }
           }
@@ -1184,6 +1201,7 @@ fn inst_long(def : Definition, build : Build) -> Unit {
             // DR-074 §2: TNum / TInt の eq-split (`--v=0xff`) も factory config を反映するよう
             // ElemDef から LongEntry に持ち込む (他 kind は entry 側で参照されない)。
             allow_base_prefix: e.allow_base_prefix,
+            pre_filters: e.pre_filters,
           })
       }
     }
@@ -1249,6 +1267,7 @@ fn inst_short(def : Definition, build : Build) -> Unit {
         int_round: e.int_round,
         // DR-074 §2: short cluster / space-tail の TNum / TInt も allow_base_prefix を反映
         allow_base_prefix: e.allow_base_prefix,
+        pre_filters: e.pre_filters,
       })
     }
   }
@@ -1419,7 +1438,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     default_value: copy.default_value,
     int_round: copy.int_round,
     allow_base_prefix: copy.allow_base_prefix,
-    pre_split_filters: copy.pre_split_filters,
+    pre_filters: copy.pre_filters,
     filters: copy.filters,
     post_filters: copy.post_filters,
     body: copy.body,
@@ -1600,7 +1619,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     default_value: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
     int_round: RError, // canonical default (DR-075 §2): write-target は int_round を持たない
     allow_base_prefix: false, // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
-    pre_split_filters: [], // write-target は filter chain を持たない (源 e の filters は source 側で既に適用済み)
+    pre_filters: [], // write-target は filter chain を持たない (源 e の filters は source 側で既に適用済み)
     filters: [],
     post_filters: [],
     body: BCell,
@@ -1796,7 +1815,7 @@ fn alias_entry(
     default_value: None,
     int_round: RError,
     allow_base_prefix: false,
-    pre_split_filters: [],
+    pre_filters: [],
     filters: [],
     post_filters: [],
     body: BCell,
@@ -2208,12 +2227,12 @@ fn head_progresses(
   visiting : Array[String],
 ) -> Bool {
   match node {
-    StrArg(_)
-    | SepArg(_, _)
-    | NumArg(_, _)
-    | FloatArg(_)
-    | IntArg(_, _, _)
-    | BoolArg(_)
+    StrArg(_, _)
+    | SepArg(_, _, _)
+    | NumArg(_, _, _)
+    | FloatArg(_, _)
+    | IntArg(_, _, _, _)
+    | BoolArg(_, _)
     | FilterArg(_, _)
     | ReqArg(_)
     | Exact(_)

@@ -23,6 +23,7 @@ fn ent(
   accum? : String? = None,
   collector? : String? = None,
   default_value? : Value? = None,
+  pre_filters? : Array[String] = [],
   filters? : Array[String] = [],
   post_filters? : Array[String] = [],
 ) -> Entity {
@@ -37,6 +38,7 @@ fn ent(
     accum,
     collector,
     default_value,
+    pre_filters,
     filters,
     post_filters,
   }
