@@ -39,3 +39,30 @@ codex レビュー (2026-07-09) の指摘。実測は未確認 — 該当する 
 - [ ] 未裁定の論点が裁定される (kawaz 確認または一次資料からの導出)
 - [ ] `apply_entity_filters` の適用条件が op ベース (Set のみ、または裁定に従う条件) に修正される
 - [ ] spec 側に accum × 非 Set 効果 (Default/Unset/Update) 混在の conformance fixture が追加され、placeholder への誤適用が再現・回帰防止される
+
+## 2026-07-09 具体ケースと実測 (kawaz 依頼)
+
+**定義** (wire 形):
+```json
+{"name": "ports", "type": "number", "long": [":set", "reset-ports:unset"],
+ "multiple": "append", "filters": ["in_range:1:100"]}
+```
+
+**argv**: `--ports 5 --reset-ports` (5 を積んだ後にリセット操作)
+
+**現実装の実測** (resolve_scope への直接 probe、cli 列 = [Set(VNum 5), Unset(placeholder VBool(false))]):
+```
+Err kind=filter pos=2 reason=filter_rejected msg=in_range requires a number value
+```
+= **リセット操作をしただけで全体 failure になる誤動作**。Unset 効果 Binding の placeholder
+値 VBool(false) (eval.mbt mk_eff: 「The operand is a placeholder — these ops carry no operand」)
+に number 用 filter in_range が適用されるため。
+
+**scalar (accum なし) では起きない**: scalar の CLI 座席 fold は Unset を「セル開放」として
+解釈し、Unset binding 自体は filters に届かない。accum 分岐 (commit c976da76) が
+「op 未解釈で温存」するため accum × filters で初めて露出した (codex レビューの指摘どおり)。
+
+**推奨対処**: apply_entity_filters の filters(each) 適用条件を「op が Set (値を運ぶ piece)」に
+限定する — Unset/Default/Empty/Update は cell への操作であって piece ではない (Empty の既存
+skip の一般化)。期待挙動: `--ports 5 --reset-ports` は cell 開放 (accum × unset の畳み意味論
+は build_result 側の既存 fold に従う) で、filter は 5 にのみ適用される。
