@@ -84,3 +84,16 @@ skip の一般化)。期待挙動: `--ports 5 --reset-ports` は cell 開放 (ac
 対応: (a) apply_entity_filters の accum 経路で filters 適用を op=Set (実値 piece) に限定、
 (b) spec 側 DESIGN の filters 節 + PIPELINE §2 段 5 に適用対象を明文化、
 (c) accum × unset の conformance fixture (`--ports 5 --reset-ports` が failure しない輪郭)。
+
+## 2026-07-09 裁定の精密化 (kawaz): update は set の変種、単一原則で閉じる
+
+「update って結局のところ set(update) と同じで、要はどちらも set でしょ」(kawaz)。
+
+- filters の適用原則は単一: **cell に書かれる実値に乗る**。set の operand と update の適用
+  結果 (= old に transform を適用して書く set の変種) は同じ扱い。update の特別扱いは不要
+- accum × update も「意味論未定義」ではない: 効果列の畳みで old (その時点の累積状態) に
+  transform を適用して書くだけ (DR-077 + DR-045/015 の合成で既に決まる)。increment (T=>T) を
+  累積列 T[] に当てれば transform の型不一致で実行時 Err — 型の帰結で自然に決まり新規則不要
+- 本 issue や過去 issue の「accum × Update は仕様上未定義」という表現は不正確で、正しくは
+  「**build_result の ACCUMULATE fold が update op を解釈しない実装未対応**」。fold の update
+  対応は本 issue のスコープ外の実装課題として残る (filters 適用条件の修正とは独立)
