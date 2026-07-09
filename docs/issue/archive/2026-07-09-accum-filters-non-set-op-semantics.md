@@ -1,6 +1,6 @@
 ---
 title: accum セルの filters(each) が非 Set 効果 (Default/Unset/Update) の placeholder 値にも走り得る
-status: wip
+status: resolved
 category: design
 created: 2026-07-09T17:53:58+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered: 2026-07-09T21:21:20+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-09T21:46:55+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented — commit 5b4fc96e (feat(accum-filters))","apply_entity_filters を Set 以外素通しに修正、Unset placeholder への filters 誤適用バグを根治","build_result の ACCUMULATE fold の Unset 解釈 (累積クリア + uncommitted, sources=default) を実装","spec 正本 DESIGN §8.3 / PIPELINE §2 段5 + §3.2 に明文化済み","conformance fixture multiple-parse/filters-cell-ops.json 2 case GREEN、decoded=146/ran_cases=371/skipped=0/mismatches=0、159 テスト全 pass","派生 issue: accum-fold-update-default-ops"]
 blocked_by:
 origin: codex (gpt-5.5) による accum 配線レビュー (2026-07-09、対象 d52143a7..56275676) の観点 1 指摘
 ---
