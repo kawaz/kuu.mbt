@@ -8,3 +8,4 @@
 | 2026-07-09 | task | open | [pre-split-filters-execution-wiring](./2026-07-09-pre-split-filters-execution-wiring.md) | pre_split_filters の実行配線 (decode 済み・未配線) |
 | 2026-07-09 | design | open | [accum-entity-filters-wiring](./2026-07-09-accum-entity-filters-wiring.md) | accum (multiple) 要素への filters/post_filters 配線 — resolve_entity の accum 対応 |
 | 2026-07-09 | bug | open | [positional-or-repeat-lowering-gap](./2026-07-09-positional-or-repeat-lowering-gap.md) | positional × or × repeat の wire lowering ギャップ — string 枝が並列生成されない |
+| 2026-07-09 | bug | open | [filter-chain-parse-path-integration-gap](./2026-07-09-filter-chain-parse-path-integration-gap.md) | filter chain が parse (fixture) 経路で発動しない — unit/resolve 層との統合ギャップ |
