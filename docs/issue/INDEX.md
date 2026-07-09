@@ -8,5 +8,5 @@
 | 2026-07-09 | design | open | [bool-requires-config-inherit-gap](./2026-07-09-bool-requires-config-inherit-gap.md) | bool 目的語 requires の解決が config / inherit 値源を見ない (既知の限界) |
 | 2026-07-09 | task | open | [regex-match-filter](./2026-07-09-regex-match-filter.md) | filters registry に regex_match を追加 (DR-040 語彙、正規表現エンジンの調達判断込み) |
 | 2026-07-09 | design | open | [accum-post-filters-stage7](./2026-07-09-accum-post-filters-stage7.md) | accum セルの post_filters (DR-009 段 7、累積後 Acc→Acc) の配線 — build_result 層の設計変更が前提 |
-| 2026-07-09 | task | open | [accum-fold-update-default-ops](./2026-07-09-accum-fold-update-default-ops.md) | build_result の ACCUMULATE fold が Update / Default op を解釈しない (実装未対応) |
+| 2026-07-09 | task | wip | [accum-fold-update-default-ops](./2026-07-09-accum-fold-update-default-ops.md) | build_result の ACCUMULATE fold が Update / Default op を解釈しない (実装未対応) |
 | 2026-07-09 | bug | open | [multiple-ref-accum-gap](./2026-07-09-multiple-ref-accum-gap.md) | multiple×ref の accumulator 未配線で配列結果を作れない |

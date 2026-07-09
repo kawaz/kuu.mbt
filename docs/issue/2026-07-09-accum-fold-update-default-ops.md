@@ -1,11 +1,11 @@
 ---
 title: build_result の ACCUMULATE fold が Update / Default op を解釈しない (実装未対応)
-status: open
+status: wip
 category: task
 created: 2026-07-09T21:38:57+09:00
 last_read:
 open_entered: 2026-07-09T21:38:57+09:00
-wip_entered:
+wip_entered: 2026-07-10T03:37:33+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
