@@ -8,3 +8,4 @@
 | 2026-07-09 | task | wip | [pre-split-filters-execution-wiring](./2026-07-09-pre-split-filters-execution-wiring.md) | pre_split_filters の実行配線 (decode 済み・未配線) |
 | 2026-07-09 | design | open | [accum-entity-filters-wiring](./2026-07-09-accum-entity-filters-wiring.md) | accum (multiple) 要素への filters/post_filters 配線 — resolve_entity の accum 対応 |
 | 2026-07-09 | design | open | [bool-requires-config-inherit-gap](./2026-07-09-bool-requires-config-inherit-gap.md) | bool 目的語 requires の解決が config / inherit 値源を見ない (既知の限界) |
+| 2026-07-09 | bug | open | [separator-non-string-type-parse-gap](./2026-07-09-separator-non-string-type-parse-gap.md) | separator 付き multiple の非 string 型が型 parse を経由しない (SepArg = VStr 固定) |
