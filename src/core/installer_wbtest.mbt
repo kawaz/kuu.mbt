@@ -571,7 +571,9 @@ test "parse_definition: a ref target absent from registry is DAbsentRef (DR-078 
 /// [[retreat-is-last-resort]]/契約 が禁じる). `parse_definition` must reject this at definition
 /// time (`DInvalidRange`, mirrors the sibling positional `min > max` check just above) rather than
 /// let it run mis-wired. Registry left empty (color 未登録) — `DAbsentRef` co-occurs, but this
-/// test only asserts `DInvalidRange` is ALSO enumerated (DR-054 §4 no first-error 打ち切り).
+/// test only asserts `DInvalidRange` is ALSO enumerated (DR-054 §4 no first-error 打ち切り)。
+/// spec fixture 昇格済み (DR-082、fixtures/definition-error/option-ref-repeat-min-invalid-range.json)
+/// — 本 wbtest はそれに先行する unit 層の pin として残す。
 test "parse_definition: an option's ref+repeat with min > 1 is DInvalidRange (codex review #4)" {
   let def : Definition = {
     ..empty_def(),
@@ -647,10 +649,8 @@ test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (co
 /// (この3つ目は multiple 宣言との組合せなので `classify_long_spelling` の DSL-parse 単体では判定でき
 /// ず、`normalize_surface` が variants を確定させた後の別 pass になる)。
 ///
-/// spec fixture pin 状況 (2026-07-10 team-lead 連絡): definition_error format 自体が DR-065 で予約の
-/// みで未確定なため、spec 側のこの reject の fixture 化は保留 (issue 起票済み、format 実例化は kawaz
-/// 裁定待ち) — 本 wbtest が現時点で唯一の pin (`collect_unsupported_option_ref_repeat` の min>1
-/// reject も同型の wbtest-only pin の前例)。
+/// spec fixture 昇格済み (DR-082、fixtures/definition-error/accum-update-invalid-range.json) —
+/// 本 wbtest はそれに先行する unit 層の pin として残す。
 test "parse_definition: an update variant on a multiple element is DInvalidRange (accum-fold-update-default-ops)" {
   let def : Definition = {
     ..empty_def(),
@@ -784,6 +784,8 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
 /// 要素レベルで閉じる (`collect_unsupported_count_multiple`)。修正前の実際の repro:
 /// `{"name":"n","type":"count","short":["n"],"multiple":true}` は `parse_definition` を通過し、
 /// argv `["-n"]` の発火で resolve.mbt の accum 分岐の abort に到達していた。
+/// spec fixture 昇格済み (DR-082、fixtures/definition-error/count-multiple-invalid-range.json) —
+/// 本 wbtest はそれに先行する unit 層の pin として残す。
 test "parse_definition: a count element with multiple is DInvalidRange (codex High 2, short-fired repro)" {
   let def : Definition = {
     ..empty_def(),

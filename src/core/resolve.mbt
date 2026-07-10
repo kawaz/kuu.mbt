@@ -1644,10 +1644,31 @@ fn resolve_entity_raw(
             abort(
               "unreachable: an accum (multiple) entity's `update` variant is rejected at definition time (installer.mbt's collect_unsupported_accum_update) — resolve_entity_raw should never see one",
             )
-          Default => {
-            bs.push({ ..b, source: Default })
-            committed_now = true
-          }
+          Default =>
+            // DR-081 §2: accum セルでも op=default は「その時点の (書き換え済み) default 値」を
+            // set する — 宣言 default が無ければ DR-051 §2 一様形 `[]` のまま (env/config 供給も
+            // 無ければ `resolve_ladder_below_cli` は `Ok([])` を返すので、何も push しない = 累積
+            // 列が空のまま = `[]`)、供給があればその配列 (複数 piece もそのまま) が書き換え済み
+            // default になる。build_result の ACCUMULATE match は `b.op` だけを見て
+            // `Default => items = []` とクリアするので、この Default 効果 binding 自身 (`b`) は
+            // そのままクリア点として残し、書き換え済み default の各要素は別の `Set` binding として
+            // 追加する (2 段構成: クリア点 1 個 + 書き換え済み default の要素 N 個、N=0 なら `[]`
+            // のまま)。`source` は両方 `Cli` に統一 (DR-081 §2 の確定主体読み — `proj_sources` は
+            // 累積列内 SAME KEY の最後の binding の source/op を見るので、途中の要素が env 由来の
+            // 値であっても Set 側の source を Cli に上書きしないと sources=env に誤読される)。
+            match
+              resolve_ladder_below_cli(
+                e, env_map, config_obj, config_path, inherited, at_pos, epath,
+              ) {
+              Ok(bs2) => {
+                bs.push({ ..b, source: Cli })
+                for nb in bs2 {
+                  bs.push({ ..nb, op: Set, source: Cli })
+                }
+                committed_now = true
+              }
+              Err(pe) => return Err(pe)
+            }
           Unset => {
             bs.push(b)
             committed_now = false
@@ -1673,15 +1694,29 @@ fn resolve_entity_raw(
             committed_now = true
           }
           Default =>
-            match e.default_value {
-              Some(v) => {
-                current = Some(mkb(e.name, v, Default))
+            // DR-081 §2: op=default sets the CURRENT (already-rewritten) default value — env/
+            // config/inherit don't "win as a lower seat" here, they've already rewritten the
+            // cell's default (§1's model) by the time this fires, so querying the SAME ladder
+            // `resolve_ladder_below_cli` runs for a normal fall-through gets exactly that value.
+            // `source` is ALWAYS `Cli` now (DR-081 §2 "確定させた主体"重視 — the default's own
+            // provenance, even if it's env, doesn't change WHO committed it) — this is the one
+            // behavior change from the pre-DR-081 code, which tagged `source: Default` here.
+            match
+              resolve_ladder_below_cli(
+                e, env_map, config_obj, config_path, inherited, at_pos, epath,
+              ) {
+              Ok(bs2) => {
+                current = if bs2.length() > 0 {
+                  Some(mkb(e.name, bs2[bs2.length() - 1].value, Cli))
+                } else {
+                  // no declared default AND no env/config/inherit supply — nothing to rewrite to,
+                  // same degenerate fallback the pre-DR-081 code used (the placeholder binding
+                  // itself, committed as-is; this element simply has no meaningful default here).
+                  Some(b)
+                }
                 committed_now = true
               }
-              None => {
-                current = Some(b)
-                committed_now = true
-              }
+              Err(pe) => return Err(pe)
             }
           Empty => {
             current = Some(b)
@@ -1726,6 +1761,35 @@ fn resolve_entity_raw(
       }
     }
   }
+  resolve_ladder_below_cli(
+    e, env_map, config_obj, config_path, inherited, at_pos, epath,
+  )
+}
+
+///|
+/// DR-081 §1 の「default 席書き換え」モデルの実装的正体: env/config/inherit/宣言 default という
+/// CLI 未満のラダー段。CLI seat がフォールスルーした場合の通常経路であると同時に、`resolve_entity_
+/// raw` の CLI seat 内で `Default` effect (`:default` variant) が発火した瞬間の **「その時点の
+/// (書き換え済み) default 値」を問い合わせる関数としても再利用する** (DR-081 §2 "op=default は
+/// 現在の default をそのままセルへ書く")。CLI seat の外に切り出したのは、両方の呼び手が全く同じ
+/// 「env が勝てば env、なければ config、なければ inherit、なければ宣言 default (無ければ accum は
+/// `[]` / scalar は absent)」という 1 本のラダーを必要とするため — 重複実装すると DR-081 が
+/// 「複数席が供給する場合は従来のラダー優先順」と明記する優先順位 (env が最終的に勝つ) を 2 箇所で
+/// 保守する羽目になる。
+///
+/// 返り値は素の `resolve_entity_raw` の戻り値と同型 (Array[Binding], 0 件 = absent 相当 / 1 件以上)。
+/// `Default` effect の呼び手はこれをそのまま bindings として使う (scalar は高々 1 件、accum は
+/// env/config の複数 piece もそのまま乗る — DR-081 §2 の accum 節 "書き換え済み default があれば
+/// それ" が要求する挙動そのもの)。
+fn resolve_ladder_below_cli(
+  e : Entity,
+  env_map : Map[String, String],
+  config_obj : ConfigVal?,
+  config_path : Array[String],
+  inherited : Map[String, Value],
+  at_pos : Int,
+  epath : Array[String],
+) -> Result[Array[Binding], ParseError] {
   // env seat (DR-049 §2): the raw env string is ONE firing's argument (同 §2 「発火 1 回の 1 引数と
   // 同じ扱い」) — a `multiple` + `separator` cell splits it exactly like `eval.mbt`'s `sep_binds`
   // splits the CLI seat's own raw token (issue 2026-07-09-env-separator-split-gap): each piece

@@ -2751,6 +2751,164 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
   }
 }
 
+// ── definition_error path (DR-082) ─────────────────────────────────────────────
+
+///|
+/// DR-082 §1: `query: "definition_error"` fixture の 1 case — DR-054 §4 の `parse_definition()`
+/// 返値をそのまま転用する。`argv` は無い (定義の静的検査であり実行しない)。比較対象は
+/// element+kind の組の集合のみ (message/hint はレンダラ管轄なので比較しない、DR-082 §1 — parse
+/// fixture の `errors` が message を比較しないのと同流儀)。`exp_errors` は `deferrs_str` と同じ
+/// ソート済み "element/kind" 連結表現なので、実行時にそのまま文字列比較できる。
+struct DDefErrorCase {
+  id : String
+  exp_errors : String
+}
+
+///|
+struct DDefErrorFixture {
+  def : Definition
+  registry : Map[String, Node]
+  cases : Array[DDefErrorCase]
+}
+
+///|
+fn dec_def_error_case(cj : Json) -> DDefErrorCase raise DecodeSkip {
+  let co = match cj.j_obj() {
+    Some(x) => x
+    None => raise DecodeSkip("case is not an object")
+  }
+  allowed_keys(co, ["id", "why", "expect"], "definition_error case")
+  let id = match jf_str(co, "id") {
+    Some(s) => s
+    None => raise DecodeSkip("case missing 'id'")
+  }
+  let eo = match co.get("expect") {
+    Some(x) =>
+      match x.j_obj() {
+        Some(o) => o
+        None => raise DecodeSkip("expect is not an object")
+      }
+    None => raise DecodeSkip("case missing 'expect'")
+  }
+  allowed_keys(eo, ["outcome", "errors"], "definition_error case's expect")
+  match jf_str(eo, "outcome") {
+    Some("definition-error") => ()
+    Some(o) =>
+      raise DecodeSkip("expect.outcome '" + o + "' is not 'definition-error'")
+    None => raise DecodeSkip("expect missing 'outcome'")
+  }
+  let errsj = match eo.get("errors") {
+    Some(x) => x
+    None => raise DecodeSkip("expect missing 'errors'")
+  }
+  let arr = match errsj.j_arr() {
+    Some(x) => x
+    None => raise DecodeSkip("expect.errors is not an array")
+  }
+  let items : Array[String] = []
+  for ej in arr {
+    let ejo = match ej.j_obj() {
+      Some(x) => x
+      None => raise DecodeSkip("expect.errors entry is not an object")
+    }
+    allowed_keys(
+      ejo,
+      ["element", "kind"],
+      "definition_error case's expect.errors entry",
+    )
+    let element = match jf_str(ejo, "element") {
+      Some(s) => s
+      None => raise DecodeSkip("errors entry missing 'element'")
+    }
+    let kind = match jf_str(ejo, "kind") {
+      Some(s) => s
+      None => raise DecodeSkip("errors entry missing 'kind'")
+    }
+    items.push(element + "/" + kind)
+  }
+  sort_items(items)
+  { id, exp_errors: join_comma(items) }
+}
+
+///|
+/// `dec_fixture` (query="parse") と対照的に、ここでは `parse_definition` を呼ばない — definition_
+/// error fixture の主旨は「parse_definition が Err を返すこと」自体を検証することなので、
+/// `dec_fixture` のように `Err` を即 `DecodeSkip` してしまうと本題を検証できなくなる
+/// (`dec_fixture`'s `"definition rejected: ..."` 分岐と対照)。`definition`/`definitions` の decode
+/// (dec_definition/dec_types/dec_templates) は "parse" と同じ経路を再利用する — 検証差分はこの後の
+/// `parse_definition` 呼び出しタイミング (fixture decode 時ではなく case 実行時) だけ。
+fn dec_definition_error_fixture(j : Json) -> DDefErrorFixture raise DecodeSkip {
+  let top = match j.j_obj() {
+    Some(o) => o
+    None => raise DecodeSkip("fixture is not an object")
+  }
+  let defj = match top.get("definition") {
+    Some(d) => d
+    None => raise DecodeSkip("missing 'definition'")
+  }
+  let defo = match defj.j_obj() {
+    Some(o) => o
+    None => raise DecodeSkip("definition is not an object")
+  }
+  allowed_keys(
+    defo,
+    ["options", "positionals", "commands", "definitions"],
+    "definition",
+  )
+  let registry : Map[String, Node] = Map([])
+  let shadows = match defo.get("definitions") {
+    Some(dj) => {
+      let d = match dj.j_obj() {
+        Some(x) => x
+        None => raise DecodeSkip("definitions is not an object")
+      }
+      allowed_keys(d, ["types", "templates"], "definitions")
+      let ts = match d.get("types") {
+        Some(tj) => dec_types(tj)
+        None => Map([])
+      }
+      match d.get("templates") {
+        Some(tmplj) => dec_templates(tmplj, ts, registry)
+        None => ()
+      }
+      ts
+    }
+    None => Map([])
+  }
+  let def = dec_definition(defo, shadows~)
+  let casesj = match top.get("cases") {
+    Some(c) => c
+    None => raise DecodeSkip("missing 'cases'")
+  }
+  let carr = match casesj.j_arr() {
+    Some(x) => x
+    None => raise DecodeSkip("cases is not an array")
+  }
+  let cases : Array[DDefErrorCase] = []
+  for cj in carr {
+    cases.push(dec_def_error_case(cj))
+  }
+  { def, registry, cases }
+}
+
+///|
+/// DR-082 §1: run `parse_definition` and compare its `Err` (element+kind set) against the fixture's
+/// expectation. An unexpected `Ok` (the definition was NOT rejected) is itself a mismatch —
+/// `render_outcome`-style "EXPECTED-*" convention mirrors the parse-path runner's diagnostics.
+fn run_definition_error(fx : DDefErrorFixture, c : DDefErrorCase) -> String {
+  match parse_definition(fx.def, full_installers(), registry=fx.registry) {
+    Ok(_) => "EXPECTED-DEFINITION-ERROR got=ok"
+    Err(errs) => {
+      let got = deferrs_str(errs)
+      if got == c.exp_errors {
+        "PASS"
+      } else {
+        "errors got=\{got} want=\{c.exp_errors}"
+      }
+    }
+  }
+}
+
 ///|
 fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
   let top = match j.j_obj() {
@@ -3916,6 +4074,23 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       let verdict = run_lower(dl.def, dl.order, dl.want)
       if verdict != "PASS" {
         mismatches.push(rel + "::lower :: " + verdict)
+      }
+      continue
+    }
+    if q == "definition_error" {
+      let fx = dec_definition_error_fixture(j) catch {
+        DecodeSkip(reason) => {
+          skips.push((rel, reason))
+          continue
+        }
+      }
+      decoded.push(rel)
+      for c in fx.cases {
+        ran_cases = ran_cases + 1
+        let verdict = run_definition_error(fx, c)
+        if verdict != "PASS" {
+          mismatches.push(case_key(rel, c.id) + " :: " + verdict)
+        }
       }
       continue
     }
