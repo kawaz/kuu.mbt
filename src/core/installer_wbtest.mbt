@@ -1619,3 +1619,95 @@ test "codex Medium: merge without separator — an escaped piece is a literal ad
     other => fail("expected Success, got " + render_outcome(other))
   }
 }
+
+///|
+/// 保証 (DR-085 §1 訂正、kawaz 裁定 2026-07-10): a `regex_match` filter entry whose pattern fails to
+/// compile is a definition-error, kind=DInvalidArgument (spec fixture 昇格済み: fixtures/definition-
+/// error/regex-match-compile-invalid-argument.json — 本 wbtest はそれに先行する unit 層の pin として
+/// 残す、`accum-update-invalid-range` の wbtest/fixture 対と同じ運用)。`[` は文字クラス開始のみで閉じ
+/// `]` を欠く未完成構文 — regex エンジンの compile 段で方言を問わず共通に構文エラーになる (DR-085 §1
+/// 波及節の「方言差の出ない共通パターン」条件を満たす不正 pattern)。
+test "parse_definition: a regex_match filter with an uncompilable pattern is DInvalidArgument (DR-085 §1 訂正)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el("code", TStr, long=LBool(true), piece_filters=["regex_match:["]),
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => abort("expected Err (regex_match pattern '[' fails to compile)")
+    Err(errs) => {
+      let mut has_invalid_argument = false
+      for e in errs {
+        if e.kind == DInvalidArgument && e.element == "code" {
+          has_invalid_argument = true
+        }
+      }
+      assert_true(has_invalid_argument)
+    }
+  }
+}
+
+///|
+/// 保証 (対極、上のテストの境界、[[self-written-rule-blind-spots]] の対極確認): a compilable pattern
+/// is NOT rejected at definition time — only compile FAILURE is a definition-error, not the mere
+/// presence of a `regex_match` entry.
+test "parse_definition: a regex_match filter with a compilable pattern is NOT rejected (対極)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el("code", TStr, long=LBool(true), piece_filters=["regex_match:^[a-z]+$"]),
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => ()
+    Err(errs) =>
+      for e in errs {
+        if e.kind == DInvalidArgument {
+          abort(
+            "a regex_match entry with a compilable pattern must not raise DInvalidArgument",
+          )
+        }
+      }
+  }
+}
+
+///|
+/// 保証: DR-085 波及節が要求する 3 相 (piece_filters/value_filters/cell_filters) 全てで regex_match
+/// pattern compile 検査が効く — `regex_match` は plain `FilterDescriptor` (filters.mbt) で3相どれでも
+/// 使える (accum cell_filters の array-vs-scalar 語彙分離のような相限定が無い)、その通り検査される
+/// ことを value_filters/cell_filters それぞれで固定する (piece_filters は上の2テストが既に固定済み)。
+test "parse_definition: regex_match compile check also fires for value_filters and cell_filters" {
+  let def_value : Definition = {
+    ..empty_def(),
+    options: [el("a", TStr, long=LBool(true), value_filters=["regex_match:["])],
+  }
+  match parse_definition(def_value, all_installers()) {
+    Ok(_) => abort("expected Err (value_filters regex_match compile failure)")
+    Err(errs) => {
+      let mut found = false
+      for e in errs {
+        if e.kind == DInvalidArgument && e.element == "a" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+  }
+  let def_cell : Definition = {
+    ..empty_def(),
+    options: [el("b", TStr, long=LBool(true), cell_filters=["regex_match:["])],
+  }
+  match parse_definition(def_cell, all_installers()) {
+    Ok(_) => abort("expected Err (cell_filters regex_match compile failure)")
+    Err(errs) => {
+      let mut found = false
+      for e in errs {
+        if e.kind == DInvalidArgument && e.element == "b" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+  }
+}

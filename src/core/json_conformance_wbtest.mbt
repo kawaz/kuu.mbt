@@ -198,6 +198,7 @@ fn render_def_kind(k : DefErrKind) -> String {
     DCircularRef => "circular-ref"
     DZeroProgress => "zero-progress"
     DConfigCycle => "config-cycle"
+    DInvalidArgument => "invalid-argument"
   }
 }
 
@@ -4071,6 +4072,12 @@ fn expected_skips() -> Array[(String, String)] {
   [
     (
       "value-sources/set-always-variant-branch.json", "option has unsupported key 'values'",
+    ),
+    (
+      "value-sources/set-always-variant-cut-positional-required.json", "option has unsupported key 'values'",
+    ),
+    (
+      "value-sources/set-always-variant-cut-positional-optional.json", "option has unsupported key 'values'",
     ),
   ]
 }

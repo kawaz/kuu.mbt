@@ -2980,6 +2980,59 @@ fn collect_invalid_accum_cell_filter(
 }
 
 ///|
+/// DR-085 §1 訂正 (kawaz 裁定 2026-07-10): a `regex_match` filter entry's pattern compile failure is
+/// a definition-error (kind=invalid-argument, DR-054 §4 更新2 / DR-082 §3) — the pattern is part of
+/// the definition and compile validity is statically knowable at definition time (same "静的に既知
+/// は定義時に倒す" posture `collect_scalar_array_default`/`collect_invalid_accum_cell_filter` use).
+/// Checked across all 3 filter-chain phases (piece_filters/value_filters/cell_filters, DR-034/
+/// DR-009) since `regex_match` is a plain `FilterDescriptor` (filters.mbt) usable in any of the 3
+/// phases — no phase-specific restriction exists for it (unlike the array-vs-scalar vocabulary
+/// split `collect_invalid_accum_cell_filter` enforces for cell_filters specifically). Uses
+/// `filters.mbt`'s `compile_regex` — the SAME compile path `filter_regex_match` runs at match time,
+/// so a pattern that passes this gate is guaranteed compilable at runtime too. A wrong arg count
+/// (not exactly 1) is left to the runtime "regex_match requires exactly 1 arg" Err (`filter_regex_
+/// match`) rather than duplicated here as a second definition-time check — this gate's sole job is
+/// "does the pattern compile", not general arity validation.
+fn collect_invalid_regex_pattern(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  fn check_chain(name : String, chain : Array[String]) -> Unit {
+    for spelling in chain {
+      let (fname, args) = split_filter_spelling(spelling)
+      if fname == "regex_match" &&
+        args.length() == 1 &&
+        compile_regex(args[0]) is None {
+        out.push(
+          def_err(
+            name,
+            DInvalidArgument,
+            "regex_match pattern '" + args[0] + "' failed to compile",
+            "fix the pattern syntax for this host's regex dialect (DR-085 §2)",
+          ),
+        )
+      }
+    }
+  }
+
+  fn check(e : ElemDef) -> Unit {
+    check_chain(e.name, e.piece_filters)
+    check_chain(e.name, e.value_filters)
+    check_chain(e.name, e.cell_filters)
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_invalid_regex_pattern(c.body, out)
+  }
+}
+
+///|
 /// DR-084 §3 (issue multiple-ref-accum-gap): merge accumulator × ref is a definition-error. The
 /// merge marker vocabulary (DR-080 §2) presupposes a separator-split STRING piece list (whole-
 /// piece match against `@`/`-x`/`+`) — a `ref` element's firing value is a row (the referenced
@@ -3152,6 +3205,7 @@ pub fn parse_definition(
   collect_unsupported_count_multiple(def, errs) // codex 指摘 High 2 (count 型 × multiple)
   collect_scalar_array_default(def, errs) // DR-083 §5 (非 accum 要素への配列 default)
   collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 (accum cell_filters は配列語彙のみ)
+  collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)
   collect_ref_merge_accum(def, errs) // DR-084 §3 (merge accumulator × ref)
   collect_absent_ref(def, registry, errs) // DR-032
   collect_circular_ref(registry, errs) // DR-007/032

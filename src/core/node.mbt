@@ -23,6 +23,11 @@ pub(all) enum DefErrKind {
   DCircularRef // a ref cycle with infinite structural expansion (DR-007/032)
   DZeroProgress // a repeat unfold whose 1 iteration consumes no token (DR-043)
   DConfigCycle // a config_file element taking its own path from config (DR-050 §5)
+  // a single argument value itself is outside a registry device's acceptance range (DR-054 §4
+  // 更新2 / DR-082 §3, DR-085 §1 訂正) — e.g. regex_match's pattern failing to compile. Distinct
+  // from DInvalidRange (a COMBINATION of attributes is out of range, e.g. repeat min > max):
+  // DInvalidArgument is about a single value's own internal validity.
+  DInvalidArgument
 } derive(Eq, Debug)
 
 ///|
