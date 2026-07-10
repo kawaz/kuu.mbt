@@ -3834,6 +3834,11 @@ fn do_resolve(
 }
 
 ///|
+/// `dc.cfg` (NoCfg/CfgObj/CfgFiles) → `resolve.mbt`'s `resolve_scope_tree` provider 契約への薄い
+/// アダプタ (issue resolve-first-constraint-pipeline Phase 1: 再帰的な木解決ロジック自体は
+/// `resolve_scope_tree` 側に一本化、ここでは DCase 分岐と `Result[..., ParseError]` →
+/// `Result[..., String]` のハーネス向け整形だけを担う — `do_resolve_pe`/`run_case` の
+/// `bool_requires_provider` と同型の分岐)。
 fn resolve_tree(
   sc : Scope,
   binds : Array[Binding],
@@ -3841,93 +3846,18 @@ fn resolve_tree(
   path : Array[String],
   inherited : Map[String, Value],
 ) -> Result[Array[Binding], String] {
-  let here : Array[Binding] = []
-  for b in binds {
-    if path_eq(b.scope, path) {
-      here.push(b)
-    }
+  let provider : (String) -> ConfigVal? = match dc.cfg {
+    NoCfg => fn(_p) { None }
+    CfgObj(obj) => fn(_p) { Some(obj) }
+    CfgFiles(files) => fn(p) { cfg_lookup(files, p) }
   }
   // See `do_resolve_pe`'s comment: real final argv position, not the `-1` default.
   let at_pos = dc.argv.length()
-  let resolved = match dc.cfg {
-    NoCfg =>
-      match resolve_scope(sc, here, dc.env, inherited~, at_pos~) {
-        Ok(rb) => rb
-        Err(pe) => return Err(pe_msg(pe))
-      }
-    CfgObj(obj) =>
-      match
-        resolve_scope_config(
-          sc,
-          here,
-          dc.env,
-          fn(_p) { Some(obj) },
-          path~,
-          inherited~,
-          at_pos~,
-        ) {
-        Ok(rb) => rb
-        Err(pe) => return Err(pe_msg(pe))
-      }
-    CfgFiles(files) =>
-      match
-        resolve_scope_config(
-          sc,
-          here,
-          dc.env,
-          fn(p) { cfg_lookup(files, p) },
-          path~,
-          inherited~,
-          at_pos~,
-        ) {
-        Ok(rb) => rb
-        Err(pe) => return Err(pe_msg(pe))
-      }
+  match
+    resolve_scope_tree(sc, binds, dc.env, provider, path~, inherited~, at_pos~) {
+    Ok(rb) => Ok(rb)
+    Err(pe) => Err(pe_msg(pe))
   }
-  let out : Array[Binding] = []
-  for b in here {
-    if is_sentinel(b.key) {
-      out.push(b)
-    }
-  }
-  for b in resolved {
-    out.push({ ..b, scope: path })
-  }
-  let child_inherited : Map[String, Value] = Map([])
-  for k, v in inherited {
-    child_inherited.set(k, v)
-  }
-  for b in resolved {
-    child_inherited.set(b.key, b.value)
-  }
-  for g in sc.greedy {
-    match g {
-      CmdSat(name, child) => {
-        let childpath = path_push(path, name)
-        if scope_entered(binds, childpath) {
-          match resolve_tree(child, binds, dc, childpath, child_inherited) {
-            Ok(rb) =>
-              for b in rb {
-                out.push(b)
-              }
-            Err(m) => return Err(m)
-          }
-        }
-      }
-      _ => ()
-    }
-  }
-  Ok(out)
-}
-
-///|
-fn scope_entered(binds : Array[Binding], path : Array[String]) -> Bool {
-  for b in binds {
-    if path_eq(b.scope, path) {
-      return true
-    }
-  }
-  false
 }
 
 ///|
@@ -3940,14 +3870,15 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
   // success/ambiguous/failure を再確定)。DR-021 → DR-073 の export-key collision 昇格
   // (`promote_collision_ambiguous`) より先に適用する — 責務が異なる2つの後処理 (「経路の成立
   //自体」と「export-key 衝突による Success→Ambiguous 昇格」) を素直に直列に並べる。
-  // bool-requires-config-inherit-gap 裁定 2026-07-10 (b): apply_bool_requires_filter へ渡す
-  // config_obj は「呼び出し元が解決済みの単一 ConfigVal?」契約。CfgObj は素通し、NoCfg は
-  // None。CfgFiles (スコープごとに異なる config_file を動的参照) は単一オブジェクトに
-  // 落とし込めない (config_file 解決の Phase 1/2 再演が必要になり責務外) ので None のまま —
-  // 現状フィクスチャに CfgFiles 使用例は無い既知の残存ギャップ。
-  let bool_requires_config_obj : ConfigVal? = match dc.cfg {
-    CfgObj(obj) => Some(obj)
-    NoCfg | CfgFiles(_) => None
+  // issue resolve-first-constraint-pipeline (Phase 1、旧 bool-requires-config-inherit-gap 裁定
+  // 2026-07-10 (b) を置き換え): apply_bool_requires_filter は候補ごとに `resolve_scope_tree` を
+  // 実際に呼ぶようになったので、`resolve_scope_config` と同じ `provider: (String) -> ConfigVal?`
+  // 契約をそのまま渡せる — `do_resolve_pe` が dc.cfg から作る provider と同型 (CfgFiles も
+  // 均一に扱われ、単一 ConfigVal だった旧契約の既知の残存ギャップが解消)。
+  let bool_requires_provider : (String) -> ConfigVal? = match dc.cfg {
+    NoCfg => fn(_p) { None }
+    CfgObj(obj) => fn(_p) { Some(obj) }
+    CfgFiles(files) => fn(p) { cfg_lookup(files, p) }
   }
   let outcome = promote_collision_ambiguous(
     apply_bool_requires_filter(
@@ -3956,7 +3887,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
       df.registry,
       dc.env,
       dc.argv.length(),
-      config_obj=bool_requires_config_obj,
+      provider=bool_requires_provider,
     ),
     df.ekmap,
   )

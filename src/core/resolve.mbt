@@ -1205,165 +1205,23 @@ pub fn is_bool_entity(entities : Array[Entity], name : String) -> Bool {
 }
 
 ///|
-/// bool target `name` の「解決後の値」(DR-047 §5 明確化、値源不問): committed (CLI) が最終
-/// (true/false どちらでも CLI 面が勝つ、DR-031 ラダー通り)、非 committed なら env
-/// (`entity.env_key` があれば `parse_bool` を試みる)、それも無ければ config (`e.config_seat` が
-/// あれば `config_obj` を `e.config_key` or スコープ path + name で引く、`resolve_scope_config`
-/// Phase 3 の cpath 構築と同型)、それも無ければ inherit (`e.inherit_` なら祖先スコープ chain を
-/// `table` (`collect_scopes` の全スコープ表) 上で `path` を 1 段ずつ短くしながら同名 entity を探し、
-/// 見つかった祖先スコープの同じラダーを再帰評価する — DESIGN §11.2)、それも無ければ default_values
-/// (bool は LOWERING §A.5 の暗黙 default:false を含め常に何らかの値を持つ)。
-///
-/// **config_obj は呼び出し元が解決済みの単一 `ConfigVal?` を渡す契約** (issue
-/// bool-requires-config-inherit-gap の裁定 2026-07-10 (b)):
-/// `resolve_scope_config` の Phase 1/2 (config_file 要素の CLI/env/default 解決 → provider 読取)
-/// をここで再演しない — この関数は「解決後の制約検査」層であり、config_file 解決は責務外
-/// (呼び出し元が既に解決した単一オブジェクトをそのまま使う。スコープごとに異なる config_file を
-/// 動的に指す CfgFiles 型のケースは対象外、既知の残存ギャップ)。
-///
-/// inherit の祖先探索は `path` が呼び出しごとに厳密に短くなる (`ancestor_of` で末尾要素を 1 つ
-/// ずつ落とす) ため構造的に停止するが、`max_depth` (呼び出し時の `path.length() + 1`) を深さ上限
-/// として渡し、防御的に再帰を打ち切る (循環 inherit 定義を decode 側が拒否しなくても暴走しない
-/// ようにする保険、team-lead 裁定 2026-07-10 の要請)。
-fn resolved_bool_value(
-  name : String,
-  bindings : Array[Binding],
-  path : Array[String],
-  entities : Array[Entity],
-  env : Map[String, String],
-  config_obj : ConfigVal?,
-  table : Array[ScopedCons],
-) -> Bool {
-  resolved_bool_value_ladder(
-    name,
-    bindings,
-    path,
-    entities,
-    env,
-    config_obj,
-    table,
-    path.length() + 1,
-  )
-}
-
-///|
-/// `resolved_bool_value` の実装本体 — inherit の祖先再帰用に `max_depth` (残り許容再帰回数) を
-/// 持つ。
-fn resolved_bool_value_ladder(
-  name : String,
-  bindings : Array[Binding],
-  path : Array[String],
-  entities : Array[Entity],
-  env : Map[String, String],
-  config_obj : ConfigVal?,
-  table : Array[ScopedCons],
-  max_depth : Int,
-) -> Bool {
-  if is_committed(bindings, path, name) {
-    return match elem_value(bindings, path, name) {
-      Some("true") => true
-      _ => false
-    }
-  }
-  for e in entities {
-    if e.name == name {
-      match e.env_key {
-        Some(k) =>
-          match env.get(k) {
-            Some(s) =>
-              match parse_bool(s) {
-                Some(b) => return b
-                None => ()
-              }
-            None => ()
-          }
-        None => ()
-      }
-      if e.config_seat {
-        match config_obj {
-          Some(obj) => {
-            let cpath = match e.config_key {
-              Some(k) => k
-              None => {
-                let p : Array[String] = []
-                for s in path {
-                  p.push(s)
-                }
-                p.push(e.name)
-                p
-              }
-            }
-            match config_lookup(obj, cpath) {
-              Some(cv) =>
-                match config_to_value(cv, e.ty, e.piece_filters) {
-                  Ok(VBool(b)) => return b
-                  _ => () // 解読不能 (structural mismatch 等) は「供給なし」扱いで次段へ
-                }
-              None => ()
-            }
-          }
-          None => ()
-        }
-      }
-      if e.inherit_ && max_depth > 0 {
-        // 祖先 scope chain を近い順に辿る (DESIGN §11.2): path の末尾を 1 つずつ落とした
-        // prefix ごとに `table` を探し、同名 entity を持つ最初の祖先スコープで再帰評価する。
-        // path が構築の度に厳密に短くなるので、この for ループ自体は path.length() 回で終端する
-        // (max_depth はさらに越境防止の保険)。
-        let mut anc_len = path.length() - 1
-        while anc_len >= 0 {
-          let anc : Array[String] = []
-          for i = 0; i < anc_len; i = i + 1 {
-            anc.push(path[i])
-          }
-          let mut found = false
-          for sc2 in table {
-            if path_eq(sc2.path, anc) {
-              for e2 in sc2.entities {
-                if e2.name == name {
-                  found = true
-                }
-              }
-              if found {
-                return resolved_bool_value_ladder(
-                  name,
-                  bindings,
-                  anc,
-                  sc2.entities,
-                  env,
-                  config_obj,
-                  table,
-                  max_depth - 1,
-                )
-              }
-            }
-          }
-          anc_len = anc_len - 1
-        }
-      }
-      return match default_scalar(e) {
-        Some(VBool(b)) => b
-        _ => false
-      }
-    }
-  }
-  false
-}
-
-///|
 /// One scope's bool-target `requires`/value 依存 requires violations, evaluated against a
-/// CANDIDATE path's bindings (mirrors `eval.mbt`'s `eval_constraints` shape, but restricted to
-/// the bool-target predicates KTop skipped). `constraint_err`'s `path` defaults to `[]` (KTop's
-/// contract: a Held rides the cont chain and scope boundaries prepend the path on the way out) —
-/// that mechanism doesn't run here (the path is already fully resolved), so `sc.path` (DR-066 §4
-/// result-nesting path) is threaded in directly via struct-update.
+/// CANDIDATE path's CLI-only bindings (trigger 判定、DR-047 §5 表「トリガ側 = committed」) AND
+/// the SAME candidate's fully resolved bindings (target 判定、「目的語側 = 値の有無/真理値」) —
+/// issue resolve-first-constraint-pipeline (Phase 1) 裁定 2026-07-10: 目的語の充足判定は、もはや
+/// この関数が自前のラダー (env/config/inherit) を再演するのではなく、呼び出し元が既に
+/// `resolve_scope_tree` で解決済みの `resolved` を渡してくるので `elem_value` の単純参照で済む
+/// (値源不問は「resolve 済みなら値源を意識する必要がない」という形で自然に成立する)。
+///
+/// `constraint_err`'s `path` defaults to `[]` (KTop's contract: a Held rides the cont chain and
+/// scope boundaries prepend the path on the way out) — that mechanism doesn't run here (the path
+/// is already fully resolved), so `sc.path` (DR-066 §4 result-nesting path) is threaded in
+/// directly via struct-update.
 fn eval_bool_requires(
   sc : ScopedCons,
   bindings : Array[Binding],
+  resolved : Array[Binding],
   pos : Int,
-  env : Map[String, String],
-  config_obj : ConfigVal?,
-  table : Array[ScopedCons],
 ) -> Array[ParseError] {
   let out : Array[ParseError] = []
   let path = sc.path
@@ -1373,15 +1231,7 @@ fn eval_bool_requires(
         if is_committed(bindings, path, elem) {
           for t in targets {
             if is_bool_entity(sc.entities, t) &&
-              !resolved_bool_value(
-                t,
-                bindings,
-                path,
-                sc.entities,
-                env,
-                config_obj,
-                table,
-              ) {
+              elem_value(resolved, path, t) != Some("true") {
               out.push({
                 ..constraint_err(
                   elem,
@@ -1403,15 +1253,7 @@ fn eval_bool_requires(
         if active {
           for t in targets {
             if is_bool_entity(sc.entities, t) &&
-              !resolved_bool_value(
-                t,
-                bindings,
-                path,
-                sc.entities,
-                env,
-                config_obj,
-                table,
-              ) {
+              elem_value(resolved, path, t) != Some("true") {
               out.push({
                 ..constraint_err(
                   branch_id,
@@ -1432,45 +1274,167 @@ fn eval_bool_requires(
 }
 
 ///|
+/// Whether ANY binding in `binds` was recorded at exactly this scope path — "this nested command
+/// scope was actually entered in this candidate". Ported from `json_conformance_wbtest.mbt`'s
+/// `scope_entered` (production code can't reference a wbtest-only symbol; wbtest files aren't
+/// linked into non-test builds) for `resolve_scope_tree`'s own use.
+fn scope_entered_here(binds : Array[Binding], path : Array[String]) -> Bool {
+  for b in binds {
+    if path_eq(b.scope, path) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// Resolve a WHOLE scope tree (root scope + every entered nested command scope) down the full
+/// value-source ladder (`resolve_scope_config`), threading `inherited` top-down so a child scope's
+/// inherit seat always sees its ANCESTOR's already-resolved values (DR-087 §3 dependency order —
+/// the parent must be fully resolved before the child's inherit lookup runs, never reversed).
+///
+/// This is the production promotion of `json_conformance_wbtest.mbt`'s `resolve_tree` (issue
+/// resolve-first-constraint-pipeline, Phase 1): same recursive shape, generalized from the test
+/// harness's `DCase`-specific `NoCfg`/`CfgObj`/`CfgFiles` dispatch to a plain `provider` closure
+/// (`resolve_scope_config`'s own contract), so production callers — not just the conformance
+/// harness — can resolve a whole tree, not just one scope. `apply_bool_requires_filter` below is
+/// the first such caller; `json_conformance_wbtest.mbt`'s own `resolve_tree` is expected to become
+/// a thin `dc.cfg`-to-`provider` adapter over this function (not duplicated here).
+///
+/// `binds` is the CLI-only raw bindings for ONE candidate path (`parse()`'s `Success`/`AmbInterp`
+/// payload) — not yet split by scope; this function filters to `path`'s own direct bindings at
+/// each recursion level. The returned `Array[Binding]` is flat with every binding's `scope` tagged
+/// to its owning path (the same shape `build_result`/`proj_sources_tree` already consume) — a
+/// caller wanting a value at a nested path uses the ordinary `elem_value`/`is_committed` lookups
+/// with that path, no different from a single-scope `resolve_scope_config` caller.
+pub fn resolve_scope_tree(
+  sc : Scope,
+  binds : Array[Binding],
+  env_map : Map[String, String],
+  provider : (String) -> ConfigVal?,
+  path? : Array[String] = [],
+  inherited? : Map[String, Value] = Map([]),
+  at_pos? : Int = -1,
+) -> Result[Array[Binding], ParseError] {
+  let here : Array[Binding] = []
+  for b in binds {
+    if path_eq(b.scope, path) {
+      here.push(b)
+    }
+  }
+  let resolved = match
+    resolve_scope_config(
+      sc,
+      here,
+      env_map,
+      provider,
+      path~,
+      inherited~,
+      at_pos~,
+    ) {
+    Ok(rb) => rb
+    Err(pe) => return Err(pe)
+  }
+  let out : Array[Binding] = []
+  for b in here {
+    if is_sentinel(b.key) {
+      out.push(b)
+    }
+  }
+  for b in resolved {
+    out.push({ ..b, scope: path })
+  }
+  let child_inherited : Map[String, Value] = Map([])
+  for k, v in inherited {
+    child_inherited.set(k, v)
+  }
+  for b in resolved {
+    child_inherited.set(b.key, b.value)
+  }
+  for g in sc.greedy {
+    match g {
+      CmdSat(name, child) => {
+        let childpath = path_push(path, name)
+        if scope_entered_here(binds, childpath) {
+          match
+            resolve_scope_tree(
+              child,
+              binds,
+              env_map,
+              provider,
+              path=childpath,
+              inherited=child_inherited,
+              at_pos~,
+            ) {
+            Ok(cb) =>
+              for b in cb {
+                out.push(b)
+              }
+            Err(pe) => return Err(pe)
+          }
+        }
+      }
+      _ => ()
+    }
+  }
+  Ok(out)
+}
+
+///|
 /// Apply the DR-047 §5 bool-target requires path filter to a `parse()` Outcome (cell_filters と
 /// 同じ側の後段処理、`promote_collision_ambiguous` と同型パターン — `parse()` 自体のシグネチャ・
-/// eval 層の Ctx は無改修のまま、値源 (env) を後から与える)。生存経路数で outcome を再構成する:
-/// 0 → `Failure` (violation を DR-053 §2 全保持で errors に、`fired_action`/`help_entry`/
-/// `tried_triggers` は既存 KTop 発 Failure と同じ素材関数から構築 — 区別が付かない形にする、
-/// DR-048 の「候補経路は dead end を含む」通り違反で落ちた経路の action も候補に数える)、
+/// eval 層の Ctx は無改修のまま、値源 (env/config/inherit) を後から与える)。生存経路数で outcome
+/// を再構成する: 0 → `Failure` (violation を DR-053 §2 全保持で errors に、`fired_action`/
+/// `help_entry`/`tried_triggers` は既存 KTop 発 Failure と同じ素材関数から構築 — 区別が付かない
+/// 形にする、DR-048 の「候補経路は dead end を含む」通り違反で落ちた経路の action も候補に数える)、
 /// 1 → その経路で `Success`、2+ → 生存分だけの `Ambiguous`。`root`/`defs` は制約テーブル
 /// (`collect_scopes`) と `find_help_entry`/`tried_triggers_of` の素材取得に使う。
 ///
-/// `config_obj~` (issue bool-requires-config-inherit-gap 裁定 2026-07-10 (b)): 呼び出し元が
-/// 解決済みの単一 `ConfigVal?` を渡す (省略時 `None` = config 未使用、既存呼び出し元は無改修)。
-/// この関数自身は `resolve_scope_config` の config_file 解決 (Phase 1/2) を再演しない — 単一
-/// config オブジェクトを前提にした `resolved_bool_value` の config seat 参照に渡すだけ。スコープ
-/// ごとに異なる config_file を動的に指すケース (CfgFiles 型) はこの経路では未対応 (既知の残存
-/// ギャップ、呼び出し元が単一オブジェクトを解決できないため)。
+/// issue resolve-first-constraint-pipeline (Phase 1、audit issue lazy-default-resolution-audit の
+/// finding への根治): 候補ごとに `resolve_scope_tree` で実際に解決してから `elem_value` を読むだけの
+/// 「読者」に再設計した (以前の `resolved_bool_value_ladder` 自前ミニラダー + `config_obj:
+/// ConfigVal?` 単一オブジェクト契約 + `collect_all_scopes` 祖先探索テーブルは全廃)。
+/// `provider~` は `resolve_scope_config` と同じ `(String) -> ConfigVal?` 契約 — スコープごとに
+/// 異なる config_file を動的に指す CfgFiles ケースも、呼び出し元が対応する provider を渡すだけで
+/// 均一に扱われる (単一 ConfigVal だった旧契約の既知の残存ギャップが解消)。省略時は常に `None` を
+/// 返す no-op provider (config 未使用の既存呼び出し元は無改修)。
+///
+/// `table.length() == 0` (このスコープ木に bool-target 制約が一つも無い) なら resolve を試みずに
+/// 即座に `[]` を返す — 制約が無い定義で resolve コストを払わない、かつ無関係な entity の env/config
+/// 解決エラーを不要に持ち込まない (両立できる速い経路)。
 pub fn apply_bool_requires_filter(
   o : Outcome,
   root : Node,
   defs : Map[String, Node],
   env : Map[String, String],
   toks_len : Int,
-  config_obj? : ConfigVal? = None,
+  provider? : (String) -> ConfigVal? = fn(_) { None },
 ) -> Outcome {
   let table = collect_scopes(root, defs)
-  // inherit 祖先探索専用 (issue bool-requires-config-inherit-gap): `table` は制約を持つスコープ
-  // だけ (`collect_scopes` の元の契約、KTop と同じ間引き) なので、祖先が「制約なし・entities だけ」
-  // のスコープだと素通りしてしまう — `collect_all_scopes` で全スコープを引く別テーブルを用意する。
-  let entity_table = collect_all_scopes(root, defs)
   let violations_of = fn(binds : Array[Binding]) -> Array[ParseError] {
-    let out : Array[ParseError] = []
-    for sc in table {
-      for
-        v in eval_bool_requires(
-          sc, binds, toks_len, env, config_obj, entity_table,
-        ) {
-        out.push(v)
-      }
+    if table.length() == 0 {
+      return []
     }
-    out
+    match root {
+      ScopeNode(sc) =>
+        match resolve_scope_tree(sc, binds, env, provider, at_pos=toks_len) {
+          Ok(resolved) => {
+            let out : Array[ParseError] = []
+            for sc2 in table {
+              for v in eval_bool_requires(sc2, binds, resolved, toks_len) {
+                out.push(v)
+              }
+            }
+            out
+          }
+          // A resolve-layer failure (e.g. a badly-typed env value on some OTHER entity in the
+          // same scope tree) makes this candidate non-viable, same conceptual bucket as a
+          // constraint violation (DR-047 §2/§3: 述語失敗は Error, 経路の成立条件) — it is folded
+          // into this candidate's violations rather than aborting the whole filter.
+          Err(pe) => [pe]
+        }
+      _ => []
+    }
   }
   let build_failure = fn(
     binds_for_actions : Array[Array[Binding]],

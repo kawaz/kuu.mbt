@@ -1492,15 +1492,18 @@ test "DR-047 §5: requires targeting a non-flag (no default) is correctly enforc
 
 ///|
 /// 保証: bool target `c` が config seat 経由でのみ true になる場合、`apply_bool_requires_filter`
-/// は (呼び出し元が渡す) `config_obj~` を参照して充足と判定する — 拡張前は config を一切見ず
-/// 常に未充足 (`resolved_bool_value` の doc が明記していた既知の限界) だった。`c` は CLI/env 未
-/// 指定のまま、config オブジェクトにだけ `c: true` を持たせて確認する。config seat は
-/// `installer.mbt` の `has_cf` 規約通り、scope に `is_config_file` 要素が 1 つでもあれば
-/// (自身が config_file の要素を除く) 全 value cell に同型で付与される (DR-050 §3)。
+/// は (呼び出し元が渡す) `provider~` を経由して実際に `resolve_scope_tree` で解決した値を参照して
+/// 充足と判定する (issue resolve-first-constraint-pipeline Phase 1 — もはや自前ミニラダーを持たず、
+/// 本物の resolve を読むだけ)。`c` は CLI/env 未指定のまま、config_file 要素 `cfg` に宣言 default
+/// ("/app.toml") を持たせて Phase 1 (config_file 自身のパス解決) を成立させ、provider がそのパスで
+/// `{c: true}` を返す。config seat は `installer.mbt` の `has_cf` 規約通り、scope に
+/// `is_config_file` 要素が 1 つでもあれば (自身が config_file の要素を除く) 全 value cell に同型で
+/// 付与される (DR-050 §3)。
 test "issue bool-requires-config-inherit-gap: requires targeting a config-sourced bool survives the filter" {
   let cfg_file = {
     ..el("cfg", TStr, long=LList([":set"])),
     is_config_file: true,
+    default_values: Some([VStr("/app.toml")]),
   }
   let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
   let c = el("c", TFlag, long=LList([":set"]))
@@ -1514,7 +1517,7 @@ test "issue bool-requires-config-inherit-gap: requires targeting a config-source
       Map([]),
       Map([]),
       1,
-      config_obj=Some(CObj([("c", CBool(true))])),
+      provider=fn(_p) { Some(CObj([("c", CBool(true))])) },
     ) {
     Success(_) => ()
     other =>
@@ -1532,6 +1535,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
   let cfg_file = {
     ..el("cfg", TStr, long=LList([":set"])),
     is_config_file: true,
+    default_values: Some([VStr("/app.toml")]),
   }
   let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
   let c = el("c", TFlag, long=LList([":set"]))
@@ -1561,7 +1565,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
       Map([]),
       Map([]),
       1,
-      config_obj=Some(CObj([])),
+      provider=fn(_p) { Some(CObj([])) },
     ),
   )
   // config オブジェクトが c:false を明示供給
@@ -1572,7 +1576,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
       Map([]),
       Map([]),
       1,
-      config_obj=Some(CObj([("c", CBool(false))])),
+      provider=fn(_p) { Some(CObj([("c", CBool(false))])) },
     ),
   )
 }
