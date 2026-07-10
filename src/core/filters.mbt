@@ -114,6 +114,53 @@ fn filter_increment(v : Value, args : Array[String]) -> Result[Value, String] {
 }
 
 ///|
+/// Compile a MoonBit core `string.Regex` from a pattern, converting the raise-on-malformed-pattern
+/// signature (`@string.Regex::Regex(StringView) -> Self raise`) into an `Option` — this repo's
+/// filter closures return `Result[Value, String]`, not a raise-effect signature, so the raise is
+/// caught at the narrowest point (mirrors `value.mbt`'s `try_parse_double` wrapping
+/// `@string.parse_double` the same way).
+fn compile_regex(pattern : String) -> @string.Regex? {
+  Some(@string.Regex::Regex(pattern)) catch {
+    _ => None
+  }
+}
+
+///|
+/// `regex_match:<pattern>` (DR-085 §1/§2): string-only `Validate`, a thin wrapper over MoonBit
+/// core's first-class `string.Regex` (kuu.mbt has no `x` regex package — `~/.moon/lib/core`'s
+/// `string` package's `Regex::Regex`/`execute` is the toolchain-standard engine, DR-085 §2's "host
+/// 実装準拠" dialect declaration for this host is exactly this engine, no self-rolled subset engine
+/// needed). Unanchored
+/// = partial match (DR-085 §1 — this filter never injects an implicit `^`/`$`; a caller wanting a
+/// full match writes the anchors into the pattern itself, matching general regex-engine convention).
+/// Compile failure (malformed pattern — a filter-DEFINITION bug) and match failure (a valid pattern
+/// simply not matching this input — the ordinary Validate reject) are two DISTINCT `Err` messages
+/// per DR-085 §1 ("pattern の compile 失敗と照合不一致は別の失敗"), even though both currently
+/// surface through the same `filter_rejected` reason code at `apply_filter_chain`'s call site (no
+/// finer-grained reason vocab exists yet for a single filter's two failure modes — this filter does
+/// not introduce one unilaterally, same posture as the rest of this registry's Err messages).
+fn filter_regex_match(v : Value, args : Array[String]) -> Result[Value, String] {
+  match v {
+    VStr(s) => {
+      if args.length() != 1 {
+        return Err("regex_match requires exactly 1 arg (pattern)")
+      }
+      let pattern = args[0]
+      match compile_regex(pattern) {
+        None => Err("regex_match pattern '" + pattern + "' failed to compile")
+        Some(re) =>
+          match re.execute(s) {
+            Some(_) => Ok(v)
+            None =>
+              Err("value '" + s + "' does not match pattern '" + pattern + "'")
+          }
+      }
+    }
+    _ => Err("regex_match requires a string value")
+  }
+}
+
+///|
 /// The filters registry (DR-010 §filters 区分). A minimal built-in set (DR-040 §「filters registry
 /// の階層」canonical/標準 layer — no 拡張/opt-in tier exists in this single-host reference impl, see
 /// this file's header note). Constructed fresh per lookup rather than held as a top-level `let`
@@ -130,6 +177,10 @@ fn filters_registry() -> Map[String, FilterDescriptor] {
     (
       "in_range",
       { name: "in_range", signature: Validate, run: filter_in_range },
+    ),
+    (
+      "regex_match",
+      { name: "regex_match", signature: Validate, run: filter_regex_match },
     ),
     (
       "increment",
@@ -225,11 +276,81 @@ pub fn apply_cell_filter_chain(
 }
 
 ///|
-/// Split one DSL entry (`"in_range:1:65535"`, DR-009 §DSL 文法) into (name, args) — same colon
-/// convention `installer.mbt`'s `split_colon` uses for variant/update DSL, but filters have no
-/// leading-empty-segment special case (`:set` sentinel) to worry about: `parts[0]` is ALWAYS the
-/// filter name here.
+/// Sentinel marking an OBJECT-FORM filter spelling (DR-085 §3 / DESIGN §8.4's `{"name": ...,
+/// "args": [...]}` alternative to the colon shorthand, needed when an arg itself contains a colon
+/// — e.g. `regex_match`'s `^https?://` pattern). U+E000 (Unicode Private Use Area) never appears in
+/// a colon-shorthand DSL string in practice (no filter name/arg in this codebase uses PUA code
+/// points, and JSON fixture authors write ordinary text) so prefixing with it is a safe,
+/// unambiguous tag — chosen over U+0000 specifically because a raw NUL byte makes the containing
+/// source/JSON file register as "binary" to common text tools (grep/diff/editors), which is its own
+/// source of confusion; a PUA character is valid UTF-8 and behaves like ordinary text everywhere.
+///
+/// Design rationale: `piece_filters`/`value_filters`/`cell_filters` stay plain `Array[String]`
+/// (DR-085 does not ask for a wire-format change to those fields) — an `Array[FilterSpelling]` enum
+/// would be the "clean" alternative, but every call site across installer.mbt/node.mbt/eval.mbt/
+/// resolve.mbt/matcher.mbt threads these fields as `Array[String]` already, and widening the type
+/// is a mechanical but wide-blast-radius refactor this DR's scope (one colon-bearing-pattern case)
+/// doesn't warrant. This PUA-tagged single-string encoding keeps the object form representable
+/// within the existing `Array[String]` chain without colliding with `split_colon`'s all-colon-split
+/// rule (DR-085 §3: "colon 分割規則は変更しない"). Revisit if a second object-form consumer appears.
+let object_form_tag : String = "\u{E000}"
+
+///|
+/// Encode DR-085 §3's object-form filter spelling `{"name": n, "args": [...]}` into one
+/// `Array[String]` element that `split_filter_spelling` round-trips WITHOUT colon-splitting (see
+/// `object_form_tag`'s doc comment for why). Fields are tag-joined after a leading sentinel.
+pub fn encode_object_form_filter_spelling(
+  name : String,
+  args : Array[String],
+) -> String {
+  let buf = StringBuilder::new()
+  buf.write_string(object_form_tag)
+  buf.write_string(name)
+  for a in args {
+    buf.write_string(object_form_tag)
+    buf.write_string(a)
+  }
+  buf.to_string()
+}
+
+///|
+/// Split on the `object_form_tag` sentinel (mirrors `split_colon`'s char-by-char scan, just on the
+/// PUA tag char instead of `':'`).
+fn split_on_object_form_tag(s : String) -> Array[String] {
+  let out : Array[String] = []
+  let mut cur = ""
+  for c in s {
+    if c.to_string() == object_form_tag {
+      out.push(cur)
+      cur = ""
+    } else {
+      cur = cur + c.to_string()
+    }
+  }
+  out.push(cur)
+  out
+}
+
+///|
+/// Split one DSL entry into (name, args). Two forms (DR-085 §3):
+/// - Object form (`object_form_tag`-prefixed, from `encode_object_form_filter_spelling`): split on
+///   the PUA tag, args carried verbatim (may contain colons — the whole point of the object form).
+/// - Shorthand (`"in_range:1:65535"`, DR-009 §DSL 文法): same colon convention `installer.mbt`'s
+///   `split_colon` uses for variant/update DSL, but filters have no leading-empty-segment special
+///   case (`:set` sentinel) to worry about — `parts[0]` is ALWAYS the filter name here.
 fn split_filter_spelling(s : String) -> (String, Array[String]) {
+  if s.has_prefix(object_form_tag) {
+    let rest = s.view(start_offset=object_form_tag.length()).to_owned()
+    let parts = split_on_object_form_tag(rest)
+    let name = parts[0]
+    let args : Array[String] = []
+    let mut i = 1
+    while i < parts.length() {
+      args.push(parts[i])
+      i = i + 1
+    }
+    return (name, args)
+  }
   let parts = split_colon(s)
   let name = parts[0]
   let args : Array[String] = []

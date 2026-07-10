@@ -68,6 +68,79 @@ test "filter_in_range accepts a closed interval [min, max]" {
 }
 
 ///|
+/// 保証: `regex_match:<pattern>` の輪郭 (issue 2026-07-09-regex-match-filter §受け入れ条件、DR-085
+/// §1) — (a) 一致受理、(b) 不一致 reject、(c) 部分一致 (unanchored) と全体一致 (pattern 側 `^$`) の
+/// 区別、(d) メタ文字 escape (`\.` がリテラルドットにマッチし、無escape の `.` は任意1文字にマッチ)
+/// の4輪郭を1テストで網羅する。DR-085 §2: 方言は MoonBit core `string.Regex` に準拠 (host 実装準拠)。
+test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar escape" {
+  // (a) 一致受理: literal 部分一致。
+  match apply_filter_chain(["regex_match:abc"], VStr("xxabcyy")) {
+    Ok(v) => assert_eq(v, VStr("xxabcyy"))
+    Err(_) => fail("expected Ok (unanchored partial match finds 'abc' inside)")
+  }
+  // (b) 不一致 reject。
+  match apply_filter_chain(["regex_match:abc"], VStr("xyz")) {
+    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Ok(_) => fail("expected Err (no 'abc' substring)")
+  }
+  // (c) 部分一致と全体一致の区別: unanchored pattern は末尾ゴミがあっても通る (DR-085 §1 "filter
+  // 側で暗黙アンカーを足さない")。同じ入力に `^...$` を足すと reject に転じる — アンカーは pattern
+  // 側の責務であることの直接証拠。
+  match apply_filter_chain(["regex_match:abc"], VStr("abcXYZ")) {
+    Ok(_) => ()
+    Err(_) =>
+      fail("expected Ok (unanchored: trailing garbage after the match is fine)")
+  }
+  match apply_filter_chain(["regex_match:^abc$"], VStr("abcXYZ")) {
+    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Ok(_) => fail("expected Err (full-anchor pattern rejects trailing garbage)")
+  }
+  match apply_filter_chain(["regex_match:^abc$"], VStr("abc")) {
+    Ok(v) => assert_eq(v, VStr("abc"))
+    Err(_) => fail("expected Ok (full-anchor pattern matches the exact string)")
+  }
+  // (d) メタ文字 escape: `a.c` (無escape) は任意 1 文字を挟んだ "abc"/"axc" 双方にマッチするが、
+  // `a\.c` (escape 済み) はリテラル "." のみにマッチし "abc" にはマッチしない。
+  match apply_filter_chain(["regex_match:^a.c$"], VStr("abc")) {
+    Ok(_) => ()
+    Err(_) =>
+      fail("expected Ok (unescaped '.' matches any single char, including 'b')")
+  }
+  match apply_filter_chain(["regex_match:^a\\.c$"], VStr("abc")) {
+    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Ok(_) =>
+      fail("expected Err (escaped '\\.' is a literal dot, does not match 'b')")
+  }
+  match apply_filter_chain(["regex_match:^a\\.c$"], VStr("a.c")) {
+    Ok(v) => assert_eq(v, VStr("a.c"))
+    Err(_) => fail("expected Ok (escaped '\\.' matches a literal dot)")
+  }
+}
+
+///|
+/// 保証: pattern の compile 失敗 (定義不良) と照合不一致 (入力拒否) は別の失敗という DR-085 §1 の
+/// 区別 — 不正な pattern (閉じ括弧なしの group) は compile 時点で Err になる。非 string 値は他の
+/// string-only filter (`non_empty` 等) と同じく `VStr` 以外専用の Err (このフィルタは string-only
+/// で non-string 素通しの `trim` とは違う挙動、args 個数も 1 固定)。
+test "filter_regex_match: malformed pattern, arg count, non-string input all Err distinctly" {
+  match apply_filter_chain(["regex_match:(unclosed"], VStr("x")) {
+    Err((reason, msg)) => {
+      assert_eq(reason, "filter_rejected")
+      assert_true(msg.contains("compile"))
+    }
+    Ok(_) => fail("expected Err (malformed pattern fails to compile)")
+  }
+  match apply_filter_chain(["regex_match"], VStr("x")) {
+    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Ok(_) => fail("expected Err (regex_match requires exactly 1 arg)")
+  }
+  match apply_filter_chain(["regex_match:x"], VNum(1.0)) {
+    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Ok(_) => fail("expected Err (regex_match requires a string value)")
+  }
+}
+
+///|
 /// 保証: `increment` は 0-arg number Transform、DR-077 §3 count の built-in transform そのもの
 /// (apply_transform が registry lookup 経由でこの同じ closure を呼ぶ)。
 test "filter_increment adds 1 to a number, rejects args and non-numbers" {

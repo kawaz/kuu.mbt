@@ -1466,6 +1466,89 @@ fn dec_strs(j : Json?) -> Array[String] raise DecodeSkip {
   }
 }
 
+///|
+/// Decode a filters-chain field (`piece_filters`/`value_filters`/`cell_filters`, DR-009 §DSL 文法):
+/// same shape as `dec_strs` (a string, or a string[]), but each array element may ALSO be the
+/// DR-085 §3 / DESIGN §8.4 object form `{"name": ..., "args": [...]}` — needed when a filter's own
+/// arg contains a colon (e.g. `regex_match`'s `^https?://` pattern breaks the colon-shorthand DSL's
+/// all-colon-split rule, DR-009). An object-form element is folded into the SAME `Array[String]`
+/// chain via `encode_object_form_filter_spelling` (filters.mbt) — see that function's doc comment
+/// for why the chain's element type stays `String` (Private-Use-Area tag encoding) instead of widening to a new
+/// `Array[FilterSpelling]` type. `dec_strs` itself is intentionally NOT widened here: it's shared by
+/// `requires`/`conflicts_with`/`exclusive_group`/`env`/`targets`/`members`, none of which have an
+/// object form — this is a sibling decoder specific to the 3 filter-chain fields, not a generalized
+/// replacement.
+fn dec_filter_chain(j : Json?) -> Array[String] raise DecodeSkip {
+  match j {
+    None => []
+    Some(x) =>
+      match x.j_str() {
+        Some(s) => [s]
+        None =>
+          match x.j_arr() {
+            Some(a) => {
+              let r : Array[String] = []
+              for e in a {
+                match e.j_str() {
+                  Some(s) => r.push(s)
+                  None =>
+                    match e.j_obj() {
+                      Some(o) => {
+                        allowed_keys(
+                          o,
+                          ["name", "args"],
+                          "filter (object form)",
+                        )
+                        let name = match jf_str(o, "name") {
+                          Some(n) => n
+                          None =>
+                            raise DecodeSkip(
+                              "filter object form missing 'name'",
+                            )
+                        }
+                        let args = match o.get("args") {
+                          Some(aj) =>
+                            match aj.j_arr() {
+                              Some(aa) => {
+                                let out : Array[String] = []
+                                for av in aa {
+                                  match av.j_str() {
+                                    Some(s) => out.push(s)
+                                    None =>
+                                      raise DecodeSkip(
+                                        "filter object form 'args' element is not a string",
+                                      )
+                                  }
+                                }
+                                out
+                              }
+                              None =>
+                                raise DecodeSkip(
+                                  "filter object form 'args' is not an array",
+                                )
+                            }
+                          None => []
+                        }
+                        r.push(encode_object_form_filter_spelling(name, args))
+                      }
+                      None =>
+                        raise DecodeSkip(
+                          "filter chain element is not a string or object",
+                        )
+                    }
+                }
+              }
+              r
+            }
+            None =>
+              raise DecodeSkip(
+                "expected a string or filter[] (string | object form)",
+              )
+          }
+      }
+  }
+}
+
 // ── expected-string builders ──────────────────────────────────────────────────
 
 ///|
@@ -2387,9 +2470,9 @@ fn dec_option(
     None => None
   }
   let deprecated = bool_field(o, "deprecated", false)
-  let piece_filters = dec_strs(o.get("piece_filters"))
-  let value_filters = dec_strs(o.get("value_filters"))
-  let cell_filters = dec_strs(o.get("cell_filters"))
+  let piece_filters = dec_filter_chain(o.get("piece_filters"))
+  let value_filters = dec_filter_chain(o.get("value_filters"))
+  let cell_filters = dec_filter_chain(o.get("cell_filters"))
   let ref_ = jf_str(o, "ref")
   // DR-078 §1 option repeat (issue 2026-07-09-ref-template-result-shape, new capability): `repeat`
   // used to be positional-only (`dec_positional`'s own decode above) — mirrored here now that
@@ -2510,9 +2593,9 @@ fn dec_positional(
     Some(d) => Some(json_to_default_values(d))
     None => None
   }
-  let piece_filters = dec_strs(o.get("piece_filters"))
-  let value_filters = dec_strs(o.get("value_filters"))
-  let cell_filters = dec_strs(o.get("cell_filters"))
+  let piece_filters = dec_filter_chain(o.get("piece_filters"))
+  let value_filters = dec_filter_chain(o.get("value_filters"))
+  let cell_filters = dec_filter_chain(o.get("cell_filters"))
   let ref_ = jf_str(o, "ref")
   pos(
     name,
