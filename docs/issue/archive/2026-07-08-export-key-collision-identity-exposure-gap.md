@@ -1,6 +1,6 @@
 ---
 title: find_export_collisions が identity 露出 (ek 未登録) 由来の衝突を見逃す
-status: open
+status: resolved
 category: design
 created: 2026-07-08T12:11:39+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-10T21:50:19+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented: kuu.mbt commit 6de458e8 で exposed_key_of による解決規則一元化 (find_export_collisions が mapped 同士しか見ず apply_export_keys と別規則だった不整合の解消、build_interpretations / promote_collision_ambiguous の drop 判定も統一)。導出根拠: DR-052 §1 (未指定 = name 由来キーで露出という解決値、null のみ透過) + DESIGN §15.5 (衝突基準は解決後の露出キー一致、経路非区別)。spec fixture export-key/collision-identity.json 3 case (spec 6b59dc91) で pin、conformance decoded=176 / ran_cases=458 / skipped=0 / mismatches=0、moon test 205 本 (identity×identity 非衝突の対極 wbtest 込み)。"]
 blocked_by:
 origin: kuu (spec リポ) の Batch-2 監査 (commit c7bdbe1f)
 ---
