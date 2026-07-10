@@ -1,6 +1,6 @@
 ---
 title: accum セルの export_key rename が未対応 (resolve 層の非対称)
-status: open
+status: resolved
 category: design
 created: 2026-07-07T23:36:14+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-10T22:14:47+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented: kuu.mbt commit 09ae9d92 で accum_cells / CmdSat scope label / proj_sources に exposed_key_of (DR-052 §1 の解決規則) を適用し、export_key rename 付き accum セルが fold 照合に失敗して last-wins scalar へ縮退するバグと、sources 射影の rename 非対応 (同根、rename.json が sources 未検証で潜伏) を解消。spec fixture export-key/rename-multiple.json 3 case (spec 70890eb1、null 透過×accum と 0 発火 [] の rename キー出力を含む) で pin。conformance decoded=177 / ran_cases=461 / skipped=0 / mismatches=0、moon test 209 本。"]
 blocked_by:
 origin: resolve-port3 の移植報告からの申し送り
 ---
