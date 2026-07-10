@@ -3,7 +3,7 @@ title: 遅延述語の value_present が env/config/inherit を見ない (DR-047
 status: open
 category: bug
 created: 2026-07-10T23:14:17+09:00
-last_read:
+last_read: 2026-07-10T23:32:37+09:00
 open_entered: 2026-07-10T23:14:17+09:00
 wip_entered:
 blocked_entered:
