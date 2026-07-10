@@ -1370,11 +1370,11 @@ test "repeat installer: self-ref cons template key does not collide with a same-
 /// 解ける後段でしか行えないため、**`parse()` 単体では bool target の requires を KTop が常に
 /// スキップする** (常に pass 扱い、"c" を一切与えなくても Success のまま — これは vacuous
 /// satisfaction ではなく、後段フィルタを通す前の意図された中間状態)。`resolve.mbt` の
-/// `apply_bool_requires_filter` (cell_filters と同じ側の後段処理) を通して初めて、c が
+/// `apply_requires_filter` (cell_filters と同じ側の後段処理) を通して初めて、c が
 /// 未解決 (default:false のまま) なら requires 違反として Failure に確定する — vacuous
 /// satisfaction は後段フィルタ適用で解消されることを、この2段 (parse() 単体 / フィルタ後) で
 /// 固定する。次の wbtest (target が非フラグ = KTop のまま従来通り) との対で挙動差を確認する。
-test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_bool_requires_filter enforces it" {
+test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_requires_filter enforces it" {
   let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
   let c = el("c", TFlag, long=LList([":set"]))
   let def : Definition = { ..empty_def(), options: [a, c] }
@@ -1389,10 +1389,10 @@ test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_bool_requir
         render_outcome(other),
       )
   }
-  // apply_bool_requires_filter を通すと、c=false (未解決、暗黙 default:false) で requires
+  // apply_requires_filter を通すと、c=false (未解決、暗黙 default:false) で requires
   // 違反が検出され Failure に確定する。
   match
-    apply_bool_requires_filter(
+    apply_requires_filter(
       parse(root, ["--a"], defs=Map([])),
       root,
       Map([]),
@@ -1416,7 +1416,7 @@ test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_bool_requir
   }
   // c を CLI で明示指定すれば true に解決され、フィルタ後も Success のまま。
   match
-    apply_bool_requires_filter(
+    apply_requires_filter(
       parse(root, ["--a", "--c"], defs=Map([])),
       root,
       Map([]),
@@ -1429,69 +1429,93 @@ test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_bool_requir
 }
 
 ///|
-/// 保証: 前 wbtest との対 — `requires` の目的語が非フラグ (default 宣言なしの string) なら、
-/// bool target ではないので DR-047 §5 明確化の対象外 (`is_bool_entity` が偽) — KTop が従来どおり
-/// CLI 面のみで確定的に `value_present` (= committed OR has_default) を評価し、CLI 明示指定が
-/// 無い限り正しく enforce される (failure kind:constraint、reason requires_violated)。
-/// `apply_bool_requires_filter` を通しても non-bool target には手を出さないので結果は不変
-/// (フィルタが「bool target だけ」を対象にすることの確認を兼ねる)。フラグ target との挙動差が
-/// フラグの暗黙 default 注入 + bool 判定式の組合せだけに起因することの固定 (既存 spec fixture
-/// `alias-parse/canonical-constraint.json` / `constraints-parse/requires.json` も同型の
-/// 非フラグ target で正しく enforce されている — 本 wbtest はそれを非フラグ/フラグ対比の形で
-/// installer 層に pin し直す)。
-test "DR-047 §5: requires targeting a non-flag (no default) is correctly enforced (KTop, filter is a no-op)" {
+/// 保証 (DR-088 §2/§4): `requires` の目的語が非フラグ (env 宣言あり、CLI/default 無し) でも、
+/// KTop の探索中判定 (`value_declared`) は「env 宣言がある」ことだけで経路を完全と数える (値の実
+/// 解決はしない、bare `parse()` の時点で既に `Success`) — DR-088 §1「宣言された値源はデフォルトの
+/// 存在」の帰結。最終的な充足判定 (真の値があるか) は `apply_requires_filter` (post-parse、解決済み
+/// bindings の読者) が担う: 実機再現の本体は次の wbtest ペア (env 実値あり/なし)。
+test "DR-088: requires targeting an env-declared non-flag is a complete path at KTop even before resolving" {
   let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
-  let c = el("c", TStr, long=LList([":set"]))
+  let c = el("c", TStr, long=LList([":set"]), env=["C"])
   let def : Definition = { ..empty_def(), options: [a, c] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  fn check_failure(o : Outcome) -> Unit raise {
-    match o {
-      Failure(d) => {
-        let mut found = false
-        for e in d.errors {
-          if e.kind == KConstraint && e.reason == "requires_violated" {
-            found = true
-          }
-        }
-        assert_true(found)
-      }
-      other =>
-        fail("expected Failure (requires unmet), got " + render_outcome(other))
-    }
+  match parse(root, ["--a"], defs=Map([])) {
+    Success(_) => ()
+    other =>
+      fail(
+        "expected Success (env-declared target counts as a complete path at KTop, DR-088 §2), got " +
+        render_outcome(other),
+      )
   }
-  check_failure(parse(root, ["--a"], defs=Map([])))
-  // apply_bool_requires_filter を通しても non-bool target には影響しない (既に KTop で Failure)。
-  check_failure(
-    apply_bool_requires_filter(
+}
+
+///|
+/// 保証 (issue value-present-ladder-gap の本体、実機再現の pin、DR-088 §4 の 2 番目の canonical
+/// 例): 非bool target `c` が env 経由のみで供給される (CLI/default 無し) 場合、
+/// `apply_requires_filter` は resolve 済み値を読んで充足と判定する — 修正前は `value_present`
+/// (= committed OR has_default) が env を一切見ず、常に requires_violated になっていた (本 issue
+/// の実機再現そのもの)。
+test "value-present-ladder-gap: requires targeting an env-only-sourced non-flag survives the filter" {
+  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let c = el("c", TStr, long=LList([":set"]), env=["C"])
+  let def : Definition = { ..empty_def(), options: [a, c] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match
+    apply_requires_filter(
+      parse(root, ["--a"], defs=Map([])),
+      root,
+      Map([]),
+      Map::from_array([("C", "x")]),
+      1,
+    ) {
+    Success(_) => ()
+    other =>
+      fail(
+        "expected Success (env seat supplies c), got " + render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 対極: env が実際に未設定なら (CLI/default も無し) 従来どおり違反のまま Failure — env が
+/// 「無条件に救済する」わけではないことの固定 (config/inherit 対極テストと対称)。
+test "value-present-ladder-gap: requires targeting a non-flag with no env value still violates requires" {
+  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let c = el("c", TStr, long=LList([":set"]), env=["C"])
+  let def : Definition = { ..empty_def(), options: [a, c] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match
+    apply_requires_filter(
       parse(root, ["--a"], defs=Map([])),
       root,
       Map([]),
       Map([]),
       1,
-    ),
-  )
-  // c を与えれば充足し success になる (対称の成功面)。フィルタを通しても不変。
-  match
-    apply_bool_requires_filter(
-      parse(root, ["--a", "--c", "x"], defs=Map([])),
-      root,
-      Map([]),
-      Map([]),
-      3,
     ) {
-    Success(_) => ()
-    other => fail("expected Success, got " + render_outcome(other))
+    Failure(d) => {
+      let mut found = false
+      for e in d.errors {
+        if e.kind == KConstraint && e.reason == "requires_violated" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail("expected Failure (requires unmet), got " + render_outcome(other))
   }
 }
 
 // ── issue bool-requires-config-inherit-gap (kawaz 裁定 2026-07-10): DR-047 §5 明確化「値源
 // 不問」を config / inherit にも拡張する。上の CLI/env 対の続きとして、config seat / inherit
-// seat 経由でのみ true になる bool target が `apply_bool_requires_filter` で正しく生存する
+// seat 経由でのみ true になる bool target が `apply_requires_filter` で正しく生存する
 // ことと、その対極 (config/inherit 側が false・不在のときは従来通り違反のまま) を固定する。 ──
 
 ///|
-/// 保証: bool target `c` が config seat 経由でのみ true になる場合、`apply_bool_requires_filter`
+/// 保証: bool target `c` が config seat 経由でのみ true になる場合、`apply_requires_filter`
 /// は (呼び出し元が渡す) `provider~` を経由して実際に `resolve_scope_tree` で解決した値を参照して
 /// 充足と判定する (issue resolve-first-constraint-pipeline Phase 1 — もはや自前ミニラダーを持たず、
 /// 本物の resolve を読むだけ)。`c` は CLI/env 未指定のまま、config_file 要素 `cfg` に宣言 default
@@ -1511,7 +1535,7 @@ test "issue bool-requires-config-inherit-gap: requires targeting a config-source
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
   match
-    apply_bool_requires_filter(
+    apply_requires_filter(
       parse(root, ["--a"], defs=Map([])),
       root,
       Map([]),
@@ -1559,7 +1583,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
   }
   // config オブジェクトに c キー自体が無い (供給なし → default:false へフォールスルー)
   check_failure(
-    apply_bool_requires_filter(
+    apply_requires_filter(
       parse(root, ["--a"], defs=Map([])),
       root,
       Map([]),
@@ -1570,7 +1594,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
   )
   // config オブジェクトが c:false を明示供給
   check_failure(
-    apply_bool_requires_filter(
+    apply_requires_filter(
       parse(root, ["--a"], defs=Map([])),
       root,
       Map([]),
@@ -1583,7 +1607,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
 
 ///|
 /// 保証: bool target `c` が祖先 scope の inherit 経由でのみ true になる場合、
-/// `apply_bool_requires_filter` は祖先 scope chain (`table` = `collect_scopes` 全体) を辿って
+/// `apply_requires_filter` は祖先 scope chain (`table` = `collect_scopes` 全体) を辿って
 /// 充足と判定する (DESIGN §11.2)。root で `c` を CLI 指定し (`--c`)、`sub` サブコマンド内で
 /// `a requires c` を宣言、`sub` 自身の `c` は `is_inherit:true` で自前の値を持たない — 祖先
 /// (root) の解決済み値 (CLI committed) を見つけて生存する。
@@ -1600,7 +1624,7 @@ test "issue bool-requires-config-inherit-gap: requires targeting an inherit-sour
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
   match
-    apply_bool_requires_filter(
+    apply_requires_filter(
       parse(root, ["--c", "sub", "--a"], defs=Map([])),
       root,
       Map([]),
@@ -1632,7 +1656,7 @@ test "issue bool-requires-config-inherit-gap: inherit-sourced bool absent still 
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
   match
-    apply_bool_requires_filter(
+    apply_requires_filter(
       parse(root, ["sub", "--a"], defs=Map([])),
       root,
       Map([]),
@@ -1656,7 +1680,7 @@ test "issue bool-requires-config-inherit-gap: inherit-sourced bool absent still 
 ///|
 /// 保証 (回帰確認): 既存 CLI/env 経由テスト (上の DR-047 §5 対) が config_obj~ 未指定でも
 /// 従来どおり動くこと — 新規 config/inherit 経路の追加が既存呼び出しシグネチャを壊していない
-/// ことの固定 (`apply_bool_requires_filter` の `config_obj~` 省略時デフォルト `None`)。
+/// ことの固定 (`apply_requires_filter` の `config_obj~` 省略時デフォルト `None`)。
 test "issue bool-requires-config-inherit-gap: existing CLI-committed bool target still survives without config_obj" {
   let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
   let c = el("c", TFlag, long=LList([":set"]))
@@ -1664,7 +1688,7 @@ test "issue bool-requires-config-inherit-gap: existing CLI-committed bool target
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
   match
-    apply_bool_requires_filter(
+    apply_requires_filter(
       parse(root, ["--a", "--c"], defs=Map([])),
       root,
       Map([]),

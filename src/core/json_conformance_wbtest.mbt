@@ -3866,12 +3866,12 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
   let root = ScopeNode(sc)
   // DR-047 §5 明確化 (kawaz 裁定 2026-07-09): bool-target requires/CRequiresIf は KTop (CLI 面
   // のみ) では常にスキップされているので、値源 (env) が解ける後段でここでフィルタする
-  // (cell_filters と同じ側、`resolve.mbt` の `apply_bool_requires_filter` — 経路数に応じて
+  // (cell_filters と同じ側、`resolve.mbt` の `apply_requires_filter` — 経路数に応じて
   // success/ambiguous/failure を再確定)。DR-021 → DR-073 の export-key collision 昇格
   // (`promote_collision_ambiguous`) より先に適用する — 責務が異なる2つの後処理 (「経路の成立
   //自体」と「export-key 衝突による Success→Ambiguous 昇格」) を素直に直列に並べる。
   // issue resolve-first-constraint-pipeline (Phase 1、旧 bool-requires-config-inherit-gap 裁定
-  // 2026-07-10 (b) を置き換え): apply_bool_requires_filter は候補ごとに `resolve_scope_tree` を
+  // 2026-07-10 (b) を置き換え): apply_requires_filter は候補ごとに `resolve_scope_tree` を
   // 実際に呼ぶようになったので、`resolve_scope_config` と同じ `provider: (String) -> ConfigVal?`
   // 契約をそのまま渡せる — `do_resolve_pe` が dc.cfg から作る provider と同型 (CfgFiles も
   // 均一に扱われ、単一 ConfigVal だった旧契約の既知の残存ギャップが解消)。
@@ -3881,7 +3881,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
     CfgFiles(files) => fn(p) { cfg_lookup(files, p) }
   }
   let outcome = promote_collision_ambiguous(
-    apply_bool_requires_filter(
+    apply_requires_filter(
       parse(root, dc.argv, defs=df.registry),
       root,
       df.registry,
@@ -4786,7 +4786,7 @@ test "conformance harness: errors[].path opt-in is compared, not merely decoded 
 ///|
 /// 保証 (issue 2026-07-09-constraint-path-filtering-gap の元 exact repro、DR-047 §5 明確化
 /// kawaz 裁定 2026-07-09 後の end-to-end 確認): alias で同一トリガ `--v` を持つ 2 経路 (a に
-/// `requires:["c"]`、c はフラグ) に対し、`run_case` (= `apply_bool_requires_filter` →
+/// `requires:["c"]`、c はフラグ) に対し、`run_case` (= `apply_requires_filter` →
 /// `promote_collision_ambiguous` の直列適用込みの harness 本経路) が3ケースとも正しい outcome を
 /// 返すことを固定する。`c` には `env:["C"]` を追加している (元 exact repro には無かったが、env
 /// 救済ケースの検証に必要 — DR-047 §5 明確化「値源不問」の env 面カバー)。
@@ -4835,11 +4835,16 @@ test "DR-047 §5 end-to-end: exact issue repro (alias same trigger, requires) vi
 }
 
 ///|
-/// 保証: 前 wbtest との対 — target `c` が非フラグ (string、default 無し) なら DR-047 §5 明確化の
-/// 対象外 (bool でない) なので、KTop の既存 CLI-only 判定がそのまま効く。env で値を与えても
-/// (env は committed を立てない、DR-047 §5「committed の定義は本 DR で変更しない」) requires は
-/// 充足しない — bool target 限定の新挙動が non-bool target まで漏れ出していないことを固定する。
-test "DR-047 §5 end-to-end: non-bool target requires is unaffected by the env rescue path" {
+/// 保証 (DR-088 更新、issue value-present-ladder-gap): target `c` が非フラグ (string、default
+/// 無し、env 宣言あり) の場合、env 宣言は「その値源から遅延解決する default_fn が設定されている」
+/// のと同型 (DR-088 §1) — 探索中は宣言の有無だけで経路完全性を判定し (§2)、最終判定は解決後の
+/// 実値を見る (§3)。env に実値があれば requires は充足する — 旧実装は `committed` の定義に
+/// env を含めない (DR-047 §5「committed の定義は本 DR で変更しない」) ことを根拠に env 供給の
+/// non-bool target を一律未充足としていたが、これは committed (トリガ判定の基準) と目的語の値
+/// 充足判定 (別の基準、DR-088 で env 宣言込みに拡張) を混同していた誤りだった (spec fixture
+/// `constraints-parse/requires-bool-target-contrast.json::c-env-set-satisfies-requires` として
+/// 修正済み、本 wbtest はその同型ケースを end-to-end で固定)。
+test "DR-088 end-to-end: non-bool target requires is satisfied via the env rescue path" {
   let src =
     #|{
     #|  "query": "parse",
@@ -4851,12 +4856,12 @@ test "DR-047 §5 end-to-end: non-bool target requires is unaffected by the env r
     #|  },
     #|  "cases": [
     #|    {
-    #|      "id": "c-env-set-still-fails",
+    #|      "id": "c-env-set-satisfies-requires",
     #|      "argv": ["--a"],
     #|      "env": {"C": "x"},
     #|      "expect": {
-    #|        "outcome": "failure",
-    #|        "errors": [{"element": "a", "argv_pos": 1, "kind": "constraint", "reason": "requires_violated"}]
+    #|        "outcome": "success",
+    #|        "effects": [{"entity": "a", "op": "set", "operand": true, "source": "cli"}]
     #|      }
     #|    }
     #|  ]
@@ -4874,7 +4879,7 @@ test "DR-047 §5 end-to-end: non-bool target requires is unaffected by the env r
 /// KTop 発 Failure と同じ素材関数 (`collect_actions`/`argmin_action`/`find_help_entry`/
 /// `tried_triggers_of`) から構築され、整合が取れていることの end-to-end 確認): help
 /// (`type:"help"`, DR-048 失敗時アクション) が selected な経路が、bool-target requires 違反で
-/// `apply_bool_requires_filter` により Failure に変換されても、`fired_action` が正しく "help"
+/// `apply_requires_filter` により Failure に変換されても、`fired_action` が正しく "help"
 /// になることを固定する。`--help --a` で help・a 共に発火 (help selected)、a は requires:[c]
 /// 未充足 (c はフラグ、CLI/env どちらも未指定で false) → Success(1本) が Failure に変換される
 /// 経路で、KTop 発 Failure (`failure-actions/help-basic.json`) と同じ fired_action 契約が

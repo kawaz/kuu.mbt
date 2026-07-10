@@ -1182,19 +1182,25 @@ fn claimant_combinations(
   combos
 }
 
-// ── DR-047 §5 明確化 (kawaz 裁定 2026-07-09): bool target requires の後段 path filter ───────────
+// ── DR-047 §4/§5 (issue value-present-ladder-gap 裁定 2026-07-10、bool target 分は元 issue
+// bool-requires-config-inherit-gap 裁定 2026-07-09): requires の後段 path filter ───────────────
 //
-// requires (CRequires) / value 依存 requires (CRequiresIf) の目的語が bool 型 (TFlag/TBool) の
-// 場合、充足条件は「値の有無」ではなく「解決後の値が true であること」(値源不問)。この判定は
-// 値源ラダー (cli/env/…) が解ける後段でしか行えないため、KTop (eval.mbt, CLI 面のみで完結する
-// 完全経路判定) では常に pass 扱いとしてスキップし (`is_bool_entity` が両者の共有ゲート)、ここで
-// `parse()` の Outcome を受け取って事後フィルタとして適用する — `promote_collision_ambiguous`
+// requires (CRequires) / value 依存 requires (CRequiresIf) の目的語の充足条件は「値源ラダー
+// (env/config/inherit/default) 充填後の最終状態」で決まる — bool 型 (TFlag/TBool) なら「解決後の
+// 値が true であること」(値源不問)、非 bool なら「値の有無 (default 込み)」(DR-047 §5 表)。この
+// 判定は値源ラダーが解ける後段でしか行えないため、KTop (eval.mbt, CLI 面のみで完結する完全経路
+// 判定) では両方とも常に pass 扱いとしてスキップし (`is_bool_entity` が bool/非bool の分岐ゲート)、
+// ここで `parse()` の Outcome を受け取って事後フィルタとして適用する — `promote_collision_ambiguous`
 // (DR-073, 直上) と同じ「Outcome を受け取り Outcome を返す後処理」パターン。
+//
+// 非bool 分は元々 `value_present` (= committed OR has_default) として KTop で即時評価していたが、
+// これは env/config/inherit 経由の供給を無視する実装ショートカットだった (DR-047 §4 の「値源ラダー
+// 充填後の最終状態で評価する」規定と乖離、issue value-present-ladder-gap で発見・実機再現)。
 
 ///|
-/// `name` (entities 内で探した Entity) が bool 型 (TFlag/TBool) かどうか — DR-047 §5 明確化の
-/// bool target 判定ゲート。KTop 側の早期スキップ (eval.mbt `eval_constraints`) と、この後段
-/// フィルタの両方が参照する共有関数 (2 箇所で判定がズレないようにする)。
+/// `name` (entities 内で探した Entity) が bool 型 (TFlag/TBool) かどうか — DR-047 §5 の bool/非bool
+/// 目的語判定ゲート。この後段フィルタが bool 判定式 (真理値) と非bool 判定式 (値の有無) のどちらを
+/// 使うかを分ける。
 pub fn is_bool_entity(entities : Array[Entity], name : String) -> Bool {
   for e in entities {
     if e.name == name {
@@ -1205,19 +1211,21 @@ pub fn is_bool_entity(entities : Array[Entity], name : String) -> Bool {
 }
 
 ///|
-/// One scope's bool-target `requires`/value 依存 requires violations, evaluated against a
-/// CANDIDATE path's CLI-only bindings (trigger 判定、DR-047 §5 表「トリガ側 = committed」) AND
-/// the SAME candidate's fully resolved bindings (target 判定、「目的語側 = 値の有無/真理値」) —
-/// issue resolve-first-constraint-pipeline (Phase 1) 裁定 2026-07-10: 目的語の充足判定は、もはや
-/// この関数が自前のラダー (env/config/inherit) を再演するのではなく、呼び出し元が既に
-/// `resolve_scope_tree` で解決済みの `resolved` を渡してくるので `elem_value` の単純参照で済む
-/// (値源不問は「resolve 済みなら値源を意識する必要がない」という形で自然に成立する)。
+/// One scope's `requires`/value 依存 requires violations, evaluated against a CANDIDATE path's
+/// CLI-only bindings (trigger 判定、DR-047 §5 表「トリガ側 = committed」) AND the SAME candidate's
+/// fully resolved bindings (目的語判定、「目的語側 = 値の有無/真理値」) — issue
+/// resolve-first-constraint-pipeline (Phase 1) 裁定 2026-07-10: 目的語の充足判定は、もはやこの関数が
+/// 自前のラダー (env/config/inherit) を再演するのではなく、呼び出し元が既に `resolve_scope_tree` で
+/// 解決済みの `resolved` を渡してくるので `elem_value` の単純参照で済む (値源不問は「resolve 済み
+/// なら値源を意識する必要がない」という形で自然に成立する)。issue value-present-ladder-gap 裁定
+/// 2026-07-10 でこの読者化を非bool 目的語にも拡張した — bool は `elem_value(resolved,...) ==
+/// Some("true")`、非bool は `elem_value(resolved,...) != None` (値の有無) の 2 分岐。
 ///
 /// `constraint_err`'s `path` defaults to `[]` (KTop's contract: a Held rides the cont chain and
 /// scope boundaries prepend the path on the way out) — that mechanism doesn't run here (the path
 /// is already fully resolved), so `sc.path` (DR-066 §4 result-nesting path) is threaded in
 /// directly via struct-update.
-fn eval_bool_requires(
+fn eval_requires(
   sc : ScopedCons,
   bindings : Array[Binding],
   resolved : Array[Binding],
@@ -1225,13 +1233,19 @@ fn eval_bool_requires(
 ) -> Array[ParseError] {
   let out : Array[ParseError] = []
   let path = sc.path
+  let satisfied = fn(t : String) -> Bool {
+    if is_bool_entity(sc.entities, t) {
+      elem_value(resolved, path, t) == Some("true")
+    } else {
+      elem_value(resolved, path, t) != None
+    }
+  }
   for c in sc.constraints {
     match c {
       CRequires(elem, targets) =>
         if is_committed(bindings, path, elem) {
           for t in targets {
-            if is_bool_entity(sc.entities, t) &&
-              elem_value(resolved, path, t) != Some("true") {
+            if !satisfied(t) {
               out.push({
                 ..constraint_err(
                   elem,
@@ -1252,8 +1266,7 @@ fn eval_bool_requires(
           })
         if active {
           for t in targets {
-            if is_bool_entity(sc.entities, t) &&
-              elem_value(resolved, path, t) != Some("true") {
+            if !satisfied(t) {
               out.push({
                 ..constraint_err(
                   branch_id,
@@ -1297,7 +1310,7 @@ fn scope_entered_here(binds : Array[Binding], path : Array[String]) -> Bool {
 /// resolve-first-constraint-pipeline, Phase 1): same recursive shape, generalized from the test
 /// harness's `DCase`-specific `NoCfg`/`CfgObj`/`CfgFiles` dispatch to a plain `provider` closure
 /// (`resolve_scope_config`'s own contract), so production callers — not just the conformance
-/// harness — can resolve a whole tree, not just one scope. `apply_bool_requires_filter` below is
+/// harness — can resolve a whole tree, not just one scope. `apply_requires_filter` below is
 /// the first such caller; `json_conformance_wbtest.mbt`'s own `resolve_tree` is expected to become
 /// a thin `dc.cfg`-to-`provider` adapter over this function (not duplicated here).
 ///
@@ -1381,14 +1394,16 @@ pub fn resolve_scope_tree(
 }
 
 ///|
-/// Apply the DR-047 §5 bool-target requires path filter to a `parse()` Outcome (cell_filters と
-/// 同じ側の後段処理、`promote_collision_ambiguous` と同型パターン — `parse()` 自体のシグネチャ・
-/// eval 層の Ctx は無改修のまま、値源 (env/config/inherit) を後から与える)。生存経路数で outcome
-/// を再構成する: 0 → `Failure` (violation を DR-053 §2 全保持で errors に、`fired_action`/
-/// `help_entry`/`tried_triggers` は既存 KTop 発 Failure と同じ素材関数から構築 — 区別が付かない
-/// 形にする、DR-048 の「候補経路は dead end を含む」通り違反で落ちた経路の action も候補に数える)、
-/// 1 → その経路で `Success`、2+ → 生存分だけの `Ambiguous`。`root`/`defs` は制約テーブル
-/// (`collect_scopes`) と `find_help_entry`/`tried_triggers_of` の素材取得に使う。
+/// Apply the DR-047 §4/§5 requires path filter to a `parse()` Outcome (cell_filters と同じ側の
+/// 後段処理、`promote_collision_ambiguous` と同型パターン — `parse()` 自体のシグネチャ・eval 層の
+/// Ctx は無改修のまま、値源 (env/config/inherit) を後から与える)。bool 目的語 (真理値判定) と非bool
+/// 目的語 (値の有無判定) の両方をここで扱う (issue value-present-ladder-gap 裁定 2026-07-10 で対象
+/// 拡張、旧名 `apply_requires_filter` から改名)。生存経路数で outcome を再構成する: 0 →
+/// `Failure` (violation を DR-053 §2 全保持で errors に、`fired_action`/`help_entry`/
+/// `tried_triggers` は既存 KTop 発 Failure と同じ素材関数から構築 — 区別が付かない形にする、
+/// DR-048 の「候補経路は dead end を含む」通り違反で落ちた経路の action も候補に数える)、1 → その
+/// 経路で `Success`、2+ → 生存分だけの `Ambiguous`。`root`/`defs` は制約テーブル (`collect_scopes`)
+/// と `find_help_entry`/`tried_triggers_of` の素材取得に使う。
 ///
 /// issue resolve-first-constraint-pipeline (Phase 1、audit issue lazy-default-resolution-audit の
 /// finding への根治): 候補ごとに `resolve_scope_tree` で実際に解決してから `elem_value` を読むだけの
@@ -1399,10 +1414,10 @@ pub fn resolve_scope_tree(
 /// 均一に扱われる (単一 ConfigVal だった旧契約の既知の残存ギャップが解消)。省略時は常に `None` を
 /// 返す no-op provider (config 未使用の既存呼び出し元は無改修)。
 ///
-/// `table.length() == 0` (このスコープ木に bool-target 制約が一つも無い) なら resolve を試みずに
+/// `table.length() == 0` (このスコープ木に requires 制約が一つも無い) なら resolve を試みずに
 /// 即座に `[]` を返す — 制約が無い定義で resolve コストを払わない、かつ無関係な entity の env/config
 /// 解決エラーを不要に持ち込まない (両立できる速い経路)。
-pub fn apply_bool_requires_filter(
+pub fn apply_requires_filter(
   o : Outcome,
   root : Node,
   defs : Map[String, Node],
@@ -1421,7 +1436,7 @@ pub fn apply_bool_requires_filter(
           Ok(resolved) => {
             let out : Array[ParseError] = []
             for sc2 in table {
-              for v in eval_bool_requires(sc2, binds, resolved, toks_len) {
+              for v in eval_requires(sc2, binds, resolved, toks_len) {
                 out.push(v)
               }
             }

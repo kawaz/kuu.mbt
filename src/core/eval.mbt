@@ -2606,28 +2606,6 @@ fn elem_value(
 }
 
 ///|
-fn has_default(entities : Array[Entity], name : String) -> Bool {
-  for e in entities {
-    if e.name == name {
-      return e.default_values is Some(_)
-    }
-  }
-  false
-}
-
-///|
-/// Value presence (spec DR-047 §5): committed on the path OR a default seat
-/// exists (default seats live on the declaring scope's own entities).
-fn value_present(
-  name : String,
-  bindings : Array[Binding],
-  path : Array[String],
-  entities : Array[Entity],
-) -> Bool {
-  is_committed(bindings, path, name) || has_default(entities, name)
-}
-
-///|
 fn constraint_err(
   element : String,
   reason : String,
@@ -2640,6 +2618,34 @@ fn constraint_err(
   // scope_path_eq lookup key, reusing it here would double the prefix once
   // the same Held crosses those same boundaries on its way out).
   { element, argv_pos: pos, kind: KConstraint, reason, message, path: [] }
+}
+
+///|
+/// DR-088 §1/§2: 「値源が宣言されている」= 「その値源から遅延解決する default_fn が設定されている
+/// のと同型」= デフォルトの存在。経路探索 (選好・完全性) に参加する遅延述語の充足判定は、値の実解決
+/// をせず**この静的宣言の有無だけ**を見る — committed か、または (default 属性 ∨ env 宣言 ∨
+/// config 席 ∨ inherit 宣言) のいずれかがあれば「充足しうる」とみなす。bool/非bool を問わない
+/// (真理値判定は最終判定 `resolve.mbt` の `apply_requires_filter` だけの仕事、探索中は「値が来る
+/// 可能性があるか」だけを見る)。判定材料が定義の静的構造だけなので、経路選択は実行時の env/config
+/// の中身に依存せず決定的になる (§2 の要求)。
+fn value_declared(
+  name : String,
+  bindings : Array[Binding],
+  path : Array[String],
+  entities : Array[Entity],
+) -> Bool {
+  if is_committed(bindings, path, name) {
+    return true
+  }
+  for e in entities {
+    if e.name == name {
+      return e.default_values is Some(_) ||
+        e.env_key is Some(_) ||
+        e.config_seat ||
+        e.inherit_
+    }
+  }
+  false
 }
 
 ///|
@@ -2657,15 +2663,7 @@ fn eval_constraints(
       CRequires(elem, targets) =>
         if is_committed(bindings, path, elem) {
           for t in targets {
-            // DR-047 §5 明確化 (kawaz 裁定 2026-07-09): bool 型 target の充足判定は「値の有無」
-            // でなく「解決後の値が true」(値源不問)。値源解決は resolve 層でしか行えない
-            // (eval 層/Ctx は CLI 面のみで env/config を持たない) ため、bool target の判定は
-            // KTop からは完全にスキップし (常に pass 扱い)、`resolve.mbt` の
-            // `apply_bool_requires_filter` (cell_filters と同じ側、`parse()` の後段) に委譲する
-            // — 元の全完全経路がそのまま KTop を通過し、ambiguous 解消への参加は後段フィルタが担う。
-            // non-bool target は従来どおり CLI 面のみで確定的に判定できるため KTop に残す。
-            if !is_bool_entity(sc.entities, t) &&
-              !value_present(t, bindings, path, sc.entities) {
+            if !value_declared(t, bindings, path, sc.entities) {
               out.push(
                 constraint_err(
                   elem,
@@ -2689,9 +2687,7 @@ fn eval_constraints(
           })
         if active {
           for t in targets {
-            // 上の CRequires と同じ理由 (DR-047 §5 明確化) で bool target は KTop スキップ。
-            if !is_bool_entity(sc.entities, t) &&
-              !value_present(t, bindings, path, sc.entities) {
+            if !value_declared(t, bindings, path, sc.entities) {
               out.push(
                 constraint_err(
                   branch_id,
