@@ -2,4 +2,4 @@
 
 | date | category | status | slug | 概要 |
 |---|---|---|---|---|
-| 2026-07-10 | task | wip | [lazy-default-resolution-audit](./2026-07-10-lazy-default-resolution-audit.md) | DR-087 (default 遅延解決) に対する resolve フェーズの先詰め箇所の棚卸し |
+| 2026-07-10 | design | open | [resolve-first-constraint-pipeline](./2026-07-10-resolve-first-constraint-pipeline.md) | パイプライン再構成 — resolve 先行 + 制約検査は解決済み bindings の読者に (DR-087 §4 の実装形) |
