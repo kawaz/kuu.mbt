@@ -1485,6 +1485,193 @@ test "DR-047 §5: requires targeting a non-flag (no default) is correctly enforc
   }
 }
 
+// ── issue bool-requires-config-inherit-gap (kawaz 裁定 2026-07-10): DR-047 §5 明確化「値源
+// 不問」を config / inherit にも拡張する。上の CLI/env 対の続きとして、config seat / inherit
+// seat 経由でのみ true になる bool target が `apply_bool_requires_filter` で正しく生存する
+// ことと、その対極 (config/inherit 側が false・不在のときは従来通り違反のまま) を固定する。 ──
+
+///|
+/// 保証: bool target `c` が config seat 経由でのみ true になる場合、`apply_bool_requires_filter`
+/// は (呼び出し元が渡す) `config_obj~` を参照して充足と判定する — 拡張前は config を一切見ず
+/// 常に未充足 (`resolved_bool_value` の doc が明記していた既知の限界) だった。`c` は CLI/env 未
+/// 指定のまま、config オブジェクトにだけ `c: true` を持たせて確認する。config seat は
+/// `installer.mbt` の `has_cf` 規約通り、scope に `is_config_file` 要素が 1 つでもあれば
+/// (自身が config_file の要素を除く) 全 value cell に同型で付与される (DR-050 §3)。
+test "issue bool-requires-config-inherit-gap: requires targeting a config-sourced bool survives the filter" {
+  let cfg_file = {
+    ..el("cfg", TStr, long=LList([":set"])),
+    is_config_file: true,
+  }
+  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let c = el("c", TFlag, long=LList([":set"]))
+  let def : Definition = { ..empty_def(), options: [cfg_file, a, c] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match
+    apply_bool_requires_filter(
+      parse(root, ["--a"], defs=Map([])),
+      root,
+      Map([]),
+      Map([]),
+      1,
+      config_obj=Some(CObj([("c", CBool(true))])),
+    ) {
+    Success(_) => ()
+    other =>
+      fail(
+        "expected Success (config seat supplies c=true), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 対極: config オブジェクトに `c` が無い / `false` の場合は従来どおり未充足のまま Failure
+/// (config が「無条件に救済する」わけではないことの固定)。
+test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false still violates requires" {
+  let cfg_file = {
+    ..el("cfg", TStr, long=LList([":set"])),
+    is_config_file: true,
+  }
+  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let c = el("c", TFlag, long=LList([":set"]))
+  let def : Definition = { ..empty_def(), options: [cfg_file, a, c] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  fn check_failure(o : Outcome) -> Unit raise {
+    match o {
+      Failure(d) => {
+        let mut found = false
+        for e in d.errors {
+          if e.kind == KConstraint && e.reason == "requires_violated" {
+            found = true
+          }
+        }
+        assert_true(found)
+      }
+      other =>
+        fail("expected Failure (requires unmet), got " + render_outcome(other))
+    }
+  }
+  // config オブジェクトに c キー自体が無い (供給なし → default:false へフォールスルー)
+  check_failure(
+    apply_bool_requires_filter(
+      parse(root, ["--a"], defs=Map([])),
+      root,
+      Map([]),
+      Map([]),
+      1,
+      config_obj=Some(CObj([])),
+    ),
+  )
+  // config オブジェクトが c:false を明示供給
+  check_failure(
+    apply_bool_requires_filter(
+      parse(root, ["--a"], defs=Map([])),
+      root,
+      Map([]),
+      Map([]),
+      1,
+      config_obj=Some(CObj([("c", CBool(false))])),
+    ),
+  )
+}
+
+///|
+/// 保証: bool target `c` が祖先 scope の inherit 経由でのみ true になる場合、
+/// `apply_bool_requires_filter` は祖先 scope chain (`table` = `collect_scopes` 全体) を辿って
+/// 充足と判定する (DESIGN §11.2)。root で `c` を CLI 指定し (`--c`)、`sub` サブコマンド内で
+/// `a requires c` を宣言、`sub` 自身の `c` は `is_inherit:true` で自前の値を持たない — 祖先
+/// (root) の解決済み値 (CLI committed) を見つけて生存する。
+test "issue bool-requires-config-inherit-gap: requires targeting an inherit-sourced bool survives the filter" {
+  let root_c = el("c", TFlag, long=LList([":set"]))
+  let child_a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let child_c = el("c", TFlag, long=LList([":set"]), is_inherit=true)
+  let child : Definition = { ..empty_def(), options: [child_a, child_c] }
+  let def : Definition = {
+    ..empty_def(),
+    options: [root_c],
+    commands: [{ name: "sub", body: child, export_key: EkUnset }],
+  }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match
+    apply_bool_requires_filter(
+      parse(root, ["--c", "sub", "--a"], defs=Map([])),
+      root,
+      Map([]),
+      Map([]),
+      3,
+    ) {
+    Success(_) => ()
+    other =>
+      fail(
+        "expected Success (root's committed c=true reaches sub via inherit), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 対極: root で `--c` を指定しなければ (祖先も未解決、暗黙 default:false) 従来どおり Failure
+/// (inherit が「無条件に救済する」わけではないことの固定 — 上の config 対極テストと対称)。
+test "issue bool-requires-config-inherit-gap: inherit-sourced bool absent still violates requires" {
+  let root_c = el("c", TFlag, long=LList([":set"]))
+  let child_a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let child_c = el("c", TFlag, long=LList([":set"]), is_inherit=true)
+  let child : Definition = { ..empty_def(), options: [child_a, child_c] }
+  let def : Definition = {
+    ..empty_def(),
+    options: [root_c],
+    commands: [{ name: "sub", body: child, export_key: EkUnset }],
+  }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match
+    apply_bool_requires_filter(
+      parse(root, ["sub", "--a"], defs=Map([])),
+      root,
+      Map([]),
+      Map([]),
+      2,
+    ) {
+    Failure(d) => {
+      let mut found = false
+      for e in d.errors {
+        if e.kind == KConstraint && e.reason == "requires_violated" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail("expected Failure (requires unmet), got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証 (回帰確認): 既存 CLI/env 経由テスト (上の DR-047 §5 対) が config_obj~ 未指定でも
+/// 従来どおり動くこと — 新規 config/inherit 経路の追加が既存呼び出しシグネチャを壊していない
+/// ことの固定 (`apply_bool_requires_filter` の `config_obj~` 省略時デフォルト `None`)。
+test "issue bool-requires-config-inherit-gap: existing CLI-committed bool target still survives without config_obj" {
+  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let c = el("c", TFlag, long=LList([":set"]))
+  let def : Definition = { ..empty_def(), options: [a, c] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match
+    apply_bool_requires_filter(
+      parse(root, ["--a", "--c"], defs=Map([])),
+      root,
+      Map([]),
+      Map([]),
+      2,
+    ) {
+    Success(_) => ()
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
 // ── codex Medium 追従 (issue merge-no-separator-marker-gap): separator 無し merge 宣言の
 // end-to-end 固定。resolve_wbtest.mbt の合成 Entity テストは eval.mbt/installer.mbt の value_prim
 // ルーティングを一切通らない (Binding を手組みするため) — この gap は「実 CLI argv → parse() →

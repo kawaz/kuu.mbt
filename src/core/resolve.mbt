@@ -1207,17 +1207,57 @@ pub fn is_bool_entity(entities : Array[Entity], name : String) -> Bool {
 ///|
 /// bool target `name` の「解決後の値」(DR-047 §5 明確化、値源不問): committed (CLI) が最終
 /// (true/false どちらでも CLI 面が勝つ、DR-031 ラダー通り)、非 committed なら env
-/// (`entity.env_key` があれば `parse_bool` を試みる)、それも無ければ default_values (bool は
-/// LOWERING §A.5 の暗黙 default:false を含め常に何らかの値を持つ)。**config / inherit は対象外**
-/// (既知の限界 — 元 issue の 3 ケースが CLI + env で表現できるため、config provider / 親スコープ
-/// 探索を持ち込むコストに見合わないと判断。config/inherit 経由でのみ true になる bool target は
-/// 現状この判定に反映されない、後続 issue 候補)。
+/// (`entity.env_key` があれば `parse_bool` を試みる)、それも無ければ config (`e.config_seat` が
+/// あれば `config_obj` を `e.config_key` or スコープ path + name で引く、`resolve_scope_config`
+/// Phase 3 の cpath 構築と同型)、それも無ければ inherit (`e.inherit_` なら祖先スコープ chain を
+/// `table` (`collect_scopes` の全スコープ表) 上で `path` を 1 段ずつ短くしながら同名 entity を探し、
+/// 見つかった祖先スコープの同じラダーを再帰評価する — DESIGN §11.2)、それも無ければ default_values
+/// (bool は LOWERING §A.5 の暗黙 default:false を含め常に何らかの値を持つ)。
+///
+/// **config_obj は呼び出し元が解決済みの単一 `ConfigVal?` を渡す契約** (issue
+/// bool-requires-config-inherit-gap の裁定 2026-07-10 (b)):
+/// `resolve_scope_config` の Phase 1/2 (config_file 要素の CLI/env/default 解決 → provider 読取)
+/// をここで再演しない — この関数は「解決後の制約検査」層であり、config_file 解決は責務外
+/// (呼び出し元が既に解決した単一オブジェクトをそのまま使う。スコープごとに異なる config_file を
+/// 動的に指す CfgFiles 型のケースは対象外、既知の残存ギャップ)。
+///
+/// inherit の祖先探索は `path` が呼び出しごとに厳密に短くなる (`ancestor_of` で末尾要素を 1 つ
+/// ずつ落とす) ため構造的に停止するが、`max_depth` (呼び出し時の `path.length() + 1`) を深さ上限
+/// として渡し、防御的に再帰を打ち切る (循環 inherit 定義を decode 側が拒否しなくても暴走しない
+/// ようにする保険、team-lead 裁定 2026-07-10 の要請)。
 fn resolved_bool_value(
   name : String,
   bindings : Array[Binding],
   path : Array[String],
   entities : Array[Entity],
   env : Map[String, String],
+  config_obj : ConfigVal?,
+  table : Array[ScopedCons],
+) -> Bool {
+  resolved_bool_value_ladder(
+    name,
+    bindings,
+    path,
+    entities,
+    env,
+    config_obj,
+    table,
+    path.length() + 1,
+  )
+}
+
+///|
+/// `resolved_bool_value` の実装本体 — inherit の祖先再帰用に `max_depth` (残り許容再帰回数) を
+/// 持つ。
+fn resolved_bool_value_ladder(
+  name : String,
+  bindings : Array[Binding],
+  path : Array[String],
+  entities : Array[Entity],
+  env : Map[String, String],
+  config_obj : ConfigVal?,
+  table : Array[ScopedCons],
+  max_depth : Int,
 ) -> Bool {
   if is_committed(bindings, path, name) {
     return match elem_value(bindings, path, name) {
@@ -1238,6 +1278,68 @@ fn resolved_bool_value(
             None => ()
           }
         None => ()
+      }
+      if e.config_seat {
+        match config_obj {
+          Some(obj) => {
+            let cpath = match e.config_key {
+              Some(k) => k
+              None => {
+                let p : Array[String] = []
+                for s in path {
+                  p.push(s)
+                }
+                p.push(e.name)
+                p
+              }
+            }
+            match config_lookup(obj, cpath) {
+              Some(cv) =>
+                match config_to_value(cv, e.ty, e.piece_filters) {
+                  Ok(VBool(b)) => return b
+                  _ => () // 解読不能 (structural mismatch 等) は「供給なし」扱いで次段へ
+                }
+              None => ()
+            }
+          }
+          None => ()
+        }
+      }
+      if e.inherit_ && max_depth > 0 {
+        // 祖先 scope chain を近い順に辿る (DESIGN §11.2): path の末尾を 1 つずつ落とした
+        // prefix ごとに `table` を探し、同名 entity を持つ最初の祖先スコープで再帰評価する。
+        // path が構築の度に厳密に短くなるので、この for ループ自体は path.length() 回で終端する
+        // (max_depth はさらに越境防止の保険)。
+        let mut anc_len = path.length() - 1
+        while anc_len >= 0 {
+          let anc : Array[String] = []
+          for i = 0; i < anc_len; i = i + 1 {
+            anc.push(path[i])
+          }
+          let mut found = false
+          for sc2 in table {
+            if path_eq(sc2.path, anc) {
+              for e2 in sc2.entities {
+                if e2.name == name {
+                  found = true
+                }
+              }
+              if found {
+                return resolved_bool_value_ladder(
+                  name,
+                  bindings,
+                  anc,
+                  sc2.entities,
+                  env,
+                  config_obj,
+                  table,
+                  max_depth - 1,
+                )
+              }
+            }
+          }
+          anc_len = anc_len - 1
+        }
       }
       return match default_scalar(e) {
         Some(VBool(b)) => b
@@ -1260,6 +1362,8 @@ fn eval_bool_requires(
   bindings : Array[Binding],
   pos : Int,
   env : Map[String, String],
+  config_obj : ConfigVal?,
+  table : Array[ScopedCons],
 ) -> Array[ParseError] {
   let out : Array[ParseError] = []
   let path = sc.path
@@ -1269,7 +1373,15 @@ fn eval_bool_requires(
         if is_committed(bindings, path, elem) {
           for t in targets {
             if is_bool_entity(sc.entities, t) &&
-              !resolved_bool_value(t, bindings, path, sc.entities, env) {
+              !resolved_bool_value(
+                t,
+                bindings,
+                path,
+                sc.entities,
+                env,
+                config_obj,
+                table,
+              ) {
               out.push({
                 ..constraint_err(
                   elem,
@@ -1291,7 +1403,15 @@ fn eval_bool_requires(
         if active {
           for t in targets {
             if is_bool_entity(sc.entities, t) &&
-              !resolved_bool_value(t, bindings, path, sc.entities, env) {
+              !resolved_bool_value(
+                t,
+                bindings,
+                path,
+                sc.entities,
+                env,
+                config_obj,
+                table,
+              ) {
               out.push({
                 ..constraint_err(
                   branch_id,
@@ -1320,18 +1440,33 @@ fn eval_bool_requires(
 /// DR-048 の「候補経路は dead end を含む」通り違反で落ちた経路の action も候補に数える)、
 /// 1 → その経路で `Success`、2+ → 生存分だけの `Ambiguous`。`root`/`defs` は制約テーブル
 /// (`collect_scopes`) と `find_help_entry`/`tried_triggers_of` の素材取得に使う。
+///
+/// `config_obj~` (issue bool-requires-config-inherit-gap 裁定 2026-07-10 (b)): 呼び出し元が
+/// 解決済みの単一 `ConfigVal?` を渡す (省略時 `None` = config 未使用、既存呼び出し元は無改修)。
+/// この関数自身は `resolve_scope_config` の config_file 解決 (Phase 1/2) を再演しない — 単一
+/// config オブジェクトを前提にした `resolved_bool_value` の config seat 参照に渡すだけ。スコープ
+/// ごとに異なる config_file を動的に指すケース (CfgFiles 型) はこの経路では未対応 (既知の残存
+/// ギャップ、呼び出し元が単一オブジェクトを解決できないため)。
 pub fn apply_bool_requires_filter(
   o : Outcome,
   root : Node,
   defs : Map[String, Node],
   env : Map[String, String],
   toks_len : Int,
+  config_obj? : ConfigVal? = None,
 ) -> Outcome {
   let table = collect_scopes(root, defs)
+  // inherit 祖先探索専用 (issue bool-requires-config-inherit-gap): `table` は制約を持つスコープ
+  // だけ (`collect_scopes` の元の契約、KTop と同じ間引き) なので、祖先が「制約なし・entities だけ」
+  // のスコープだと素通りしてしまう — `collect_all_scopes` で全スコープを引く別テーブルを用意する。
+  let entity_table = collect_all_scopes(root, defs)
   let violations_of = fn(binds : Array[Binding]) -> Array[ParseError] {
     let out : Array[ParseError] = []
     for sc in table {
-      for v in eval_bool_requires(sc, binds, toks_len, env) {
+      for
+        v in eval_bool_requires(
+          sc, binds, toks_len, env, config_obj, entity_table,
+        ) {
         out.push(v)
       }
     }
@@ -2309,10 +2444,20 @@ fn resolve_merge_accum(
 
 ///|
 /// Resolve every entity in a built scope against CLI bindings + an env map (no config seat). For
-/// the env / inherit ladder path (no config_file element in scope). Unlike slice (whose config-less
-/// path "never errors"), a badly-typed env value now surfaces as an Err (DR-074/075 update above).
+/// the env / inherit ladder path. Unlike slice (whose config-less path "never errors"), a
+/// badly-typed env value now surfaces as an Err (DR-074/075 update above).
 /// `path` is this scope's DR-066 §4 result-nesting path (root-first, [] = root 直下), threaded into
 /// any ladder-fill Error the same way `resolve_scope_config`'s `path` is.
+///
+/// A scope MAY still declare a `config_file` element even on this no-config-object call path (a
+/// caller can choose not to supply config data for a particular case/run — issue
+/// bool-requires-config-inherit-gap の diverge 調査で顕在化: 元のドキュメント想定「no config_file
+/// element in scope」は呼び出し元の都合を entity 宣言の事実と混同していた)。`resolve_scope_config`
+/// の Phase 3 (`if !e.is_config_file`) と同じ規則 — config_file 要素は配線宣言であって結果 entity
+/// ではない — をここでも守る。守らないと、config データを供給しない呼び出しのときだけ config_file
+/// 要素の宣言 default が漏れて result に出現する非対称が起きる (config_seat を持つ通常 entity は
+/// config_obj=None のときの通常 default フォールスルーで正しく処理されるので対象外、config_file
+/// 自身だけがこの skip を必要とする)。
 pub fn resolve_scope(
   sc : Scope,
   cli : Array[Binding],
@@ -2323,12 +2468,14 @@ pub fn resolve_scope(
 ) -> Result[Array[Binding], ParseError] {
   let out : Array[Binding] = []
   for e in sc.entities {
-    match resolve_entity(e, cli, env_map, None, [], inherited, at_pos, path) {
-      Ok(bs) =>
-        for b in bs {
-          out.push(b)
-        }
-      Err(pe) => return Err(pe)
+    if !e.is_config_file {
+      match resolve_entity(e, cli, env_map, None, [], inherited, at_pos, path) {
+        Ok(bs) =>
+          for b in bs {
+            out.push(b)
+          }
+        Err(pe) => return Err(pe)
+      }
     }
   }
   Ok(out)

@@ -2779,7 +2779,26 @@ fn eval_all_constraints(
 fn collect_scopes(root : Node, defs : Map[String, Node]) -> Array[ScopedCons] {
   let out : Array[ScopedCons] = []
   match root {
-    ScopeNode(sc) => collect_scope_into(sc, [], defs, out, [])
+    ScopeNode(sc) => collect_scope_into(sc, [], defs, out, [], false)
+    _ => ()
+  }
+  out
+}
+
+///|
+/// `collect_scopes` の全スコープ版 (制約の有無に関わらず全スコープを含める) — bool 目的語
+/// requires の inherit 祖先探索 (`resolve.mbt` の `resolved_bool_value`) が「制約を持たない祖先
+/// スコープの entities」を引く必要があるための専用エントリポイント (issue
+/// bool-requires-config-inherit-gap)。既存 2 呼び出し元 (KTop 制約表 / `outcome.mbt`) は
+/// `collect_scopes` のまま (制約なしスコープは元々 no-op なので同じ結果になるが、テーブルを
+/// 不必要に太らせない現状維持)。
+fn collect_all_scopes(
+  root : Node,
+  defs : Map[String, Node],
+) -> Array[ScopedCons] {
+  let out : Array[ScopedCons] = []
+  match root {
+    ScopeNode(sc) => collect_scope_into(sc, [], defs, out, [], true)
     _ => ()
   }
   out
@@ -2792,15 +2811,16 @@ fn collect_scope_into(
   defs : Map[String, Node],
   out : Array[ScopedCons],
   seen_refs : Array[String],
+  include_empty : Bool,
 ) -> Unit {
-  if sc.constraints.length() > 0 {
+  if sc.constraints.length() > 0 || include_empty {
     out.push({ path, constraints: sc.constraints, entities: sc.entities })
   }
   for g in sc.greedy {
-    collect_greedy_scopes(g, path, defs, out, seen_refs)
+    collect_greedy_scopes(g, path, defs, out, seen_refs, include_empty)
   }
   for p in sc.positional {
-    collect_pos_scopes(p, path, defs, out, seen_refs)
+    collect_pos_scopes(p, path, defs, out, seen_refs, include_empty)
   }
 }
 
@@ -2811,6 +2831,7 @@ fn collect_greedy_scopes(
   defs : Map[String, Node],
   out : Array[ScopedCons],
   seen_refs : Array[String],
+  include_empty : Bool,
 ) -> Unit {
   match g {
     CmdSat(name, child) => {
@@ -2819,13 +2840,14 @@ fn collect_greedy_scopes(
         p2.push(s)
       }
       p2.push(name)
-      collect_scope_into(child, p2, defs, out, seen_refs)
+      collect_scope_into(child, p2, defs, out, seen_refs, include_empty)
     }
     Or(alts) =>
       for a in alts {
-        collect_greedy_scopes(a, path, defs, out, seen_refs)
+        collect_greedy_scopes(a, path, defs, out, seen_refs, include_empty)
       }
-    Rooted(inner, _) => collect_greedy_scopes(inner, path, defs, out, seen_refs)
+    Rooted(inner, _) =>
+      collect_greedy_scopes(inner, path, defs, out, seen_refs, include_empty)
     _ => ()
   }
 }
@@ -2837,9 +2859,11 @@ fn collect_pos_scopes(
   defs : Map[String, Node],
   out : Array[ScopedCons],
   seen_refs : Array[String],
+  include_empty : Bool,
 ) -> Unit {
   match n {
-    ScopeNode(child) => collect_scope_into(child, path, defs, out, seen_refs)
+    ScopeNode(child) =>
+      collect_scope_into(child, path, defs, out, seen_refs, include_empty)
     Ref(name) =>
       if !str_mem(seen_refs, name) {
         let seen2 : Array[String] = []
@@ -2848,17 +2872,19 @@ fn collect_pos_scopes(
         }
         seen2.push(name)
         match ref_head(defs, name) {
-          ScopeNode(child) => collect_scope_into(child, path, defs, out, seen2)
+          ScopeNode(child) =>
+            collect_scope_into(child, path, defs, out, seen2, include_empty)
           _ => ()
         }
       }
     BoundedTail(head, _, _) =>
       match head {
         ScopeNode(child) =>
-          collect_scope_into(child, path, defs, out, seen_refs)
+          collect_scope_into(child, path, defs, out, seen_refs, include_empty)
         _ => ()
       }
-    Many(inner, _) => collect_pos_scopes(inner, path, defs, out, seen_refs)
+    Many(inner, _) =>
+      collect_pos_scopes(inner, path, defs, out, seen_refs, include_empty)
     _ => ()
   }
 }

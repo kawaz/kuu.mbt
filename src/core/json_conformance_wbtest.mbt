@@ -3940,6 +3940,15 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
   // success/ambiguous/failure を再確定)。DR-021 → DR-073 の export-key collision 昇格
   // (`promote_collision_ambiguous`) より先に適用する — 責務が異なる2つの後処理 (「経路の成立
   //自体」と「export-key 衝突による Success→Ambiguous 昇格」) を素直に直列に並べる。
+  // bool-requires-config-inherit-gap 裁定 2026-07-10 (b): apply_bool_requires_filter へ渡す
+  // config_obj は「呼び出し元が解決済みの単一 ConfigVal?」契約。CfgObj は素通し、NoCfg は
+  // None。CfgFiles (スコープごとに異なる config_file を動的参照) は単一オブジェクトに
+  // 落とし込めない (config_file 解決の Phase 1/2 再演が必要になり責務外) ので None のまま —
+  // 現状フィクスチャに CfgFiles 使用例は無い既知の残存ギャップ。
+  let bool_requires_config_obj : ConfigVal? = match dc.cfg {
+    CfgObj(obj) => Some(obj)
+    NoCfg | CfgFiles(_) => None
+  }
   let outcome = promote_collision_ambiguous(
     apply_bool_requires_filter(
       parse(root, dc.argv, defs=df.registry),
@@ -3947,6 +3956,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
       df.registry,
       dc.env,
       dc.argv.length(),
+      config_obj=bool_requires_config_obj,
     ),
     df.ekmap,
   )

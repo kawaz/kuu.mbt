@@ -540,6 +540,45 @@ test "resolve_scope: inherit seat fills from the parent context map" {
 }
 
 ///|
+/// issue bool-requires-config-inherit-gap の diverge 調査で発見した非対称バグの固定:
+/// `resolve_scope_config` の Phase 3 (`if !e.is_config_file`) は「config_file 要素は配線宣言で
+/// あって結果 entity ではない」規則を守るが、config データを供給しない呼び出し (`resolve_scope`
+/// 経由、config_obj=None) は元々このガードを持たず、config_file 要素の宣言 default がそのまま
+/// 通常ラダーで解決されて result に漏れていた (`requires-bool-target-config-inherit.json` の
+/// `inherit-true-satisfies-requires` case が config を一切供給しない中で config_file 要素を
+/// 定義に持つ、という組合せで顕在化)。スコープが `config_file` 要素を宣言していても、config
+/// オブジェクトを供給しない呼び出しでは無視 (bindings を生成しない) することを固定する。
+test "resolve_scope: a config_file element is never resolved (skipped even when the caller supplies no config object)" {
+  let cfg = ent(
+    "config",
+    TStr,
+    is_config_file=true,
+    default_value=Some(VStr("/app.toml")),
+  )
+  let port = ent("port", TNum, default_value=Some(VNum(7.0)))
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [cfg, port],
+    constraints: [],
+  }
+  // config_file 要素の default は宣言されているが、resolve_scope の結果には一切現れない (port の
+  // default だけが seat する)。
+  assert_eq(
+    resolve_scope(sc, [], Map([])),
+    Ok([mkb_pub("port", VNum(7.0), Default)]),
+  )
+  // CLI で config_file 要素へ明示的にパスを与えても (通常 entity なら committed で勝つ場面) 同じく
+  // 無視される — config_file 要素は「値セル」ではなく「配線先パスの宣言」であるという性質そのものが
+  // resolve_scope 経路でも一貫することの確認 (対極: resolve_scope_config 側の既存挙動は本 wbtest
+  // では触らない、Phase 3 の `if !e.is_config_file` が既にそれを保証している)。
+  assert_eq(
+    resolve_scope(sc, [cb("config", VStr("/cli.toml"), Cli)], Map([])),
+    Ok([mkb_pub("port", VNum(7.0), Default)]),
+  )
+}
+
+///|
 /// Guarantees (DR-074/075 update over slice `env_value`): a badly-typed env string is a DR-066
 /// Error with the canonical reason (`not_a_number` / `not_an_integer` / `not_a_bool`) — NOT a
 /// silent `VStr` fallback into a wrong-typed cell (the slice's behaviour this port fixes).
