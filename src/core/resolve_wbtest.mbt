@@ -53,9 +53,11 @@ fn ent(
     collector,
     default_values,
     separator,
-    piece_filters,
-    value_filters,
-    cell_filters,
+    // `chain` (filters_wbtest.mbt, same package): colon-shorthand ergonomics over `Entity`'s
+    // production `Array[FilterSpelling]` fields (issue filter-spelling-inband-encoding-retyping).
+    piece_filters: chain(piece_filters),
+    value_filters: chain(value_filters),
+    cell_filters: chain(cell_filters),
   }
 }
 

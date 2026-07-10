@@ -1206,7 +1206,7 @@ pub fn parse_bool(s : String) -> Bool? {
 pub fn config_to_value(
   cv : ConfigVal,
   ty : Ty,
-  piece_filters : Array[String],
+  piece_filters : Array[FilterSpelling],
 ) -> Result[Value, (ErrKind, String, String)] {
   let cv = match cv {
     CStr(raw) =>

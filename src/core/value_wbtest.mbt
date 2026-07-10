@@ -326,7 +326,7 @@ test "config_to_value type conversions" {
 /// omission here — the type-leniency matrix above already covers those arms with `[]`).
 test "config_to_value: piece_filters runs on a CStr source before the type parse (DR-050 §4)" {
   assert_eq(
-    cv_ok(config_to_value(CStr(" 8080 "), TNum, ["trim"])),
+    cv_ok(config_to_value(CStr(" 8080 "), TNum, chain(["trim"]))),
     Some(VNum(8080.0)),
   )
   // without the piece_filter, the same raw string fails to parse (proves `trim` is load-bearing,
@@ -335,12 +335,12 @@ test "config_to_value: piece_filters runs on a CStr source before the type parse
   // piece_filters ALSO runs for a string target (TStr の「何でも受ける」型でも trim は素通りしない —
   // DR-050 §4 の全段 pipeline は target 型を問わない).
   assert_eq(
-    cv_ok(config_to_value(CStr(" hi "), TStr, ["trim"])),
+    cv_ok(config_to_value(CStr(" hi "), TStr, chain(["trim"]))),
     Some(VStr("hi")),
   )
   // a piece_filters REJECT (not just a parse failure) surfaces as KFilter, distinct from a KParse
   // type-mismatch — `resolve.mbt`'s caller picks the ParseError constructor by this tag.
-  match config_to_value(CStr(""), TNum, ["non_empty"]) {
+  match config_to_value(CStr(""), TNum, chain(["non_empty"])) {
     Err((KFilter, _, _)) => ()
     Ok(_) => fail("expected Err(KFilter, ..), got Ok")
     Err((KParse, _, _)) =>

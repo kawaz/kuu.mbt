@@ -80,18 +80,35 @@ pub(all) enum Ty {
 } derive(Eq, Debug)
 
 ///|
+/// One filter-chain DSL entry (DR-009 §DSL 文法, `piece_filters`/`value_filters`/`cell_filters`):
+/// name + args, structured — either from the colon shorthand (`"in_range:1:65535"` decodes to
+/// `{name:"in_range", args:["1","65535"]}`) or the DESIGN §8.4 / DR-085 §3 object form
+/// (`{"name":"regex_match","args":["^https?://"]}`, needed when an arg itself contains a colon,
+/// e.g. `regex_match`'s `^https?://` pattern). Both forms decode to the SAME `FilterSpelling` shape
+/// (issue filter-spelling-inband-encoding-retyping) — no in-band string encoding / magic-tag scheme
+/// is needed since `args` carries the object form's values verbatim in a real `Array[String]` field
+/// rather than a single joined string. Colon-splitting for the shorthand happens ONCE at the decode
+/// boundary (`json_conformance_wbtest.mbt`'s `dec_filter_chain`); every downstream consumer
+/// (filters.mbt/installer.mbt/eval.mbt/matcher.mbt/resolve.mbt/value.mbt) reads `name`/`args`
+/// directly, never re-parses a spelling string.
+pub(all) struct FilterSpelling {
+  name : String
+  args : Array[String]
+} derive(Eq, Debug)
+
+///|
 /// A node of the AtomicAST. Consumption is measured in whole argv tokens.
 pub(all) enum Node {
   /// literal token match; binds nothing, consumes 1.
   Exact(String)
   /// string value primitive: consume 1 token, bind name=VStr(token). Maximally permissive (DR-041 §5).
   /// 2nd field is DR-034's piece_filters (String→String FilterChain, DR-062 二形のうち kuu.mbt が実装
-  /// する string-shorthand 配列のみ — filters.mbt ヘッダ注記参照): applied to the raw token BEFORE
+  /// する `FilterSpelling` 配列のみ — filters.mbt ヘッダ注記参照): applied to the raw token BEFORE
   /// this node's own (identity, for TStr) parse step. installer.mbt `value_prim` embeds it from
   /// `ElemDef.piece_filters` (same carrier pattern as `IntArg`'s `int_round` / `allow_base_prefix`);
   /// eval.mbt's consumption arms run it via `apply_piece_filters` immediately after reading
   /// `ctx.toks[pos]`, before the value ever reaches its type parser.
-  StrArg(String, Array[String])
+  StrArg(String, Array[FilterSpelling])
   /// separator-splitting value primitive (DR-034 separator pipeline): consume 1 token, split it
   /// on the separator char, and bind ONE `name=part` per split piece, EACH piece parsed through
   /// its own type (issue 2026-07-09-separator-non-string-type-parse-gap §段4 — a piece's type is
@@ -115,14 +132,14 @@ pub(all) enum Node {
   /// `sep_binds` (eval.mbt) knows whether to run `classify_merge_piece` on each split piece
   /// (merge-declared elements only, DR-080 §1) or treat every piece as a plain add (everyone else,
   /// unchanged pre-DR-080 behavior).
-  SepArg(String, String?, Ty, RoundMode, Bool, Array[String], Bool)
+  SepArg(String, String?, Ty, RoundMode, Bool, Array[FilterSpelling], Bool)
   /// number value primitive (DR-074 §1 canonical + §2 opt-in `number_allow_base_prefix`)。consume 1
   /// token, parse via `parse_number_ext(_, allow_base_prefix)`。allow=false は canonical (10 進のみ、
   /// base prefix Error)、allow=true で `0xff` / `0x1.8p3` / `0o777` / `0b1010` も受理する統合 opt-in。
   /// flag は installer が ElemDef.allow_base_prefix から埋め込む (kuu_number_parser factory config、
   /// DR-061 §4)。parse-fail は `kind: parse` (DR-053)。4th field is DR-034's piece_filters (same
   /// carrier pattern as `StrArg`'s 2nd field) — applied to the raw token before `parse_number_ext`.
-  NumArg(String, Bool, Array[String])
+  NumArg(String, Bool, Array[FilterSpelling])
   /// float value primitive (DR-074 §1/§7): consume 1 token, parsed through the WIDER float lexicon
   /// (canonical number + the 2-word inf/infinity vocab, case-insensitive, sign-合成可 — nan stays
   /// Error for both number and float). A separate node from `NumArg` because the accept-域 differs
@@ -130,7 +147,7 @@ pub(all) enum Node {
   /// place that distinction is known (installer.mbt `value_prim`); once lowered to a bare value node
   /// there is no other channel to carry it. Parse-fail is `kind: parse`, same reason vocab as NumArg.
   /// 2nd field is DR-034's piece_filters (same carrier pattern as `StrArg`).
-  FloatArg(String, Array[String])
+  FloatArg(String, Array[FilterSpelling])
   /// int value primitive (DR-075 §1 値空間判定 + §2 int_round factory config). Consume 1 token, parse
   /// via `parse_int_value(_, mode)` where `mode` is the element's `int_round` (canonical default
   /// `RError`, opt-in via `kuu_int_parser` factory config, DR-061 §4). RError: fractional は
@@ -142,7 +159,7 @@ pub(all) enum Node {
   /// opt-in 時は `0xff` (整数値) / `0x1.8p3=12` (整数値) / `0x1.8p0=1.5` (非整数、mode に従う) の
   /// 値空間判定を hex にも一般化する。canonical default は `false`。parse-fail は `kind: parse`。
   /// 5th field is DR-034's piece_filters (same carrier pattern as the other value primitives).
-  IntArg(String, RoundMode, Bool, Array[String])
+  IntArg(String, RoundMode, Bool, Array[FilterSpelling])
   /// bool value primitive (DR-076 §1/§4: bool is a normal value type, same standing as
   /// string/number). Consume 1 token, parsed via `parse_bool` (DR-074 §3 canonical vocab:
   /// true/false/1/0/""，case-insensitive); an unrecognized token fails with reason `not_a_bool`
@@ -152,7 +169,7 @@ pub(all) enum Node {
   /// no other channel to carry it. A bare `--x` (presence-only) fire is `TFlag`'s job, not this
   /// node's — `BoolArg` only appears where a definition's `:set` explicitly wants a value slot.
   /// 2nd field is DR-034's piece_filters (same carrier pattern as `StrArg`).
-  BoolArg(String, Array[String])
+  BoolArg(String, Array[FilterSpelling])
   /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
   /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
   /// held Error (a value that parsed but failed the filter — cell_filters reject 相当). Test-only
@@ -352,17 +369,17 @@ pub(all) struct Entity {
   // step to gate, so this field is simply unused there (DR-050 §4's "型一致なら cell_filters のみ"
   // — piece_filters/parse は元々 String→T の関数なので、型一致で供給された非 string 値には適用対象
   // が無いという型の帰結、特別規則ではない).
-  piece_filters : Array[String]
+  piece_filters : Array[FilterSpelling]
   // DR-009 value_filters (each, T→T): applied to EVERY value this cell resolves from ANY ladder seat
   // (cli/env/config/inherit/default) right after that seat's own value is determined — same timing
   // "type.parse の後、accumulator の前" DR-009's [4]→[5] describes. For a scalar cell (no accum)
   // this collapses to "applied once, right before cell_filters" since only one seat ever wins.
-  value_filters : Array[String]
+  value_filters : Array[FilterSpelling]
   // DR-009 cell_filters (累積後の最終値、DR-077 §1 "cell_filters は update の結果にも通す" の実証対象):
   // applied to the FINAL resolved value, after the ladder has picked a winning seat (and after any
   // accumulation, for a multiple cell). This is the one place both `set` and `update` effects
   // converge before the value leaves resolve_entity — the whole point of this issue.
-  cell_filters : Array[String]
+  cell_filters : Array[FilterSpelling]
 } derive(Eq, Debug)
 
 ///|
@@ -380,7 +397,7 @@ pub(all) struct LongEntry {
   // DR-034/DR-062 piece_filters (same carrier pattern as `int_round`/`allow_base_prefix`): run_eq_split
   // (matcher.mbt) applies it to `valstr` before the kind-specific parse. Ignored for TFlag/TCount
   // (no eq-split value slot to gate — a presence-only fire has no raw string to filter).
-  piece_filters : Array[String]
+  piece_filters : Array[FilterSpelling]
   // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1): `--key=a,b` eq-split
   // form goes through the SAME pieceProcessor as the space form — separator splitting is a value-
   // axis concern independent of which entry point supplied the raw string (DR-034, matcher-readings/
@@ -411,7 +428,7 @@ pub(all) struct ShortEntry {
   // it to the in-cluster/space-form value string before the kind-specific parse. Ignored for
   // TFlag/TBool/TCount (no in-cluster/space-form VALUE attachment for those — `short_val` already
   // returns None unconditionally for them).
-  piece_filters : Array[String]
+  piece_filters : Array[FilterSpelling]
   // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1, same rationale as
   // LongEntry's field): in-cluster (`-p5,7`) and space-form (`-p 5,7`) both go through the same
   // pieceProcessor as the long-option space form. `None` = no split.

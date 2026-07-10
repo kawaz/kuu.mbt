@@ -79,14 +79,16 @@ pub(all) struct ElemDef {
   // `Entity.default_values` へ写す (§1 の decode-time 持ち上げに加え、FLAG/BOOL/COUNT の暗黙 preset
   // も同じ長さ1形へ揃える)。node.mbt の `Entity.default_values` の doc comment 参照。
   default_values : Array[Value]?
-  // DR-034 pieceProcessor の 3 段 filter chain (DR-062: inheritance object 形は未実装、string-
-  // shorthand 配列のみ — filters.mbt ヘッダ注記参照)。piece_filters: separator 分割後の各 piece
-  // 単位 (multiple 無しは長さ 1 に縮退、同じ管を通る) で type.parse の直前に適用 (String→String)。
-  // value_filters: 分割後の要素単位 (each 暗黙、DR-009)。cell_filters: 累積後の最終値に適用 (DR-077 §1
-  // の主対象 — update の結果にもこれが通る)。
-  piece_filters : Array[String]
-  value_filters : Array[String]
-  cell_filters : Array[String]
+  // DR-034 pieceProcessor の 3 段 filter chain (DR-062: inheritance object 形は未実装 — filters.mbt
+  // ヘッダ注記参照)。piece_filters: separator 分割後の各 piece 単位 (multiple 無しは長さ 1 に縮退、
+  // 同じ管を通る) で type.parse の直前に適用 (String→String)。value_filters: 分割後の要素単位 (each
+  // 暗黙、DR-009)。cell_filters: 累積後の最終値に適用 (DR-077 §1 の主対象 — update の結果にもこれが
+  // 通る)。要素は `FilterSpelling` (node.mbt、issue filter-spelling-inband-encoding-retyping) —
+  // colon shorthand も DESIGN §8.4 object form も同じ構造体に decode 済み、chain 消費側は colon
+  // 分割を一切気にしない。
+  piece_filters : Array[FilterSpelling]
+  value_filters : Array[FilterSpelling]
+  cell_filters : Array[FilterSpelling]
   // MDR-004: 消費文法の軸。`BCell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
   // 縮退形、観測挙動不変)。`BOr`/`BGroup` の要素では `ty` は未使用 — 枝/内部要素の leaf ElemDef が
   // 各自の `ty` を持つ。
@@ -517,7 +519,7 @@ fn value_prim(
   name : String,
   int_round : RoundMode,
   allow_base_prefix : Bool,
-  piece_filters : Array[String],
+  piece_filters : Array[FilterSpelling],
   separator? : String? = None,
   merge? : Bool = false,
 ) -> Node {
@@ -547,6 +549,19 @@ fn copy_strs(a : Array[String]) -> Array[String] {
   let r : Array[String] = []
   for x in a {
     r.push(x)
+  }
+  r
+}
+
+///|
+/// Deep-copy an `Array[FilterSpelling]` — mirrors `copy_strs`'s discipline (global/alias desugaring
+/// pushes COPIES into descendant scopes, `clone_elem`'s doc comment) but also copies each entry's
+/// own `args : Array[String]` (a mutable nested array `copy_strs`-style aliasing would otherwise
+/// share across scope copies).
+fn copy_filter_spellings(a : Array[FilterSpelling]) -> Array[FilterSpelling] {
+  let r : Array[FilterSpelling] = []
+  for fs in a {
+    r.push({ name: fs.name, args: copy_strs(fs.args) })
   }
   r
 }
@@ -621,9 +636,9 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     default_values: e.default_values,
     int_round: e.int_round,
     allow_base_prefix: e.allow_base_prefix,
-    piece_filters: copy_strs(e.piece_filters),
-    value_filters: copy_strs(e.value_filters),
-    cell_filters: copy_strs(e.cell_filters),
+    piece_filters: copy_filter_spellings(e.piece_filters),
+    value_filters: copy_filter_spellings(e.value_filters),
+    cell_filters: copy_filter_spellings(e.cell_filters),
     body: clone_body(e.body),
   }
 }
@@ -3019,15 +3034,14 @@ fn collect_invalid_accum_cell_filter(
 
   fn check(e : ElemDef) -> Unit {
     if is_accum_elem(e) {
-      for spelling in e.cell_filters {
-        let (name, _args) = split_filter_spelling(spelling)
-        if lookup_array_filter(name) is None {
+      for fs in e.cell_filters {
+        if lookup_array_filter(fs.name) is None {
           out.push(
             def_err(
               e.name,
               DInvalidRange,
               "an accum (multiple/repeat/separator) element's cell_filters entry '" +
-              name +
+              fs.name +
               "' is not a registered ARRAY filter (DR-009 段 7 — accum cell_filters runs Acc→Acc over the whole accumulated array, a different vocabulary from a scalar cell_filters' per-value T→T chain)",
               "use an array-shaped filter (e.g. `unique`) or move this entry off an accum element",
             ),
@@ -3066,17 +3080,16 @@ fn collect_invalid_regex_pattern(
   def : Definition,
   out : Array[DefError],
 ) -> Unit {
-  fn check_chain(name : String, chain : Array[String]) -> Unit {
-    for spelling in chain {
-      let (fname, args) = split_filter_spelling(spelling)
-      if fname == "regex_match" &&
-        args.length() == 1 &&
-        compile_regex(args[0]) is None {
+  fn check_chain(name : String, chain : Array[FilterSpelling]) -> Unit {
+    for fs in chain {
+      if fs.name == "regex_match" &&
+        fs.args.length() == 1 &&
+        compile_regex(fs.args[0]) is None {
         out.push(
           def_err(
             name,
             DInvalidArgument,
-            "regex_match pattern '" + args[0] + "' failed to compile",
+            "regex_match pattern '" + fs.args[0] + "' failed to compile",
             "fix the pattern syntax for this host's regex dialect (DR-085 §2)",
           ),
         )

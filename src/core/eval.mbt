@@ -676,7 +676,7 @@ fn sep_binds(
   ty : Ty,
   int_round : RoundMode,
   allow_base_prefix : Bool,
-  piece_filters : Array[String],
+  piece_filters : Array[FilterSpelling],
   pos : Int,
   merge : Bool,
 ) -> Result[Array[Binding], ParseError] {
@@ -746,7 +746,7 @@ fn sep_piece_value(
   ty : Ty,
   int_round : RoundMode,
   allow_base_prefix : Bool,
-  piece_filters : Array[String],
+  piece_filters : Array[FilterSpelling],
   pos : Int,
 ) -> Result[Value, ParseError] {
   match apply_piece_filters(piece_filters, part) {

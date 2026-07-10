@@ -10,8 +10,9 @@
 // is simply always registered). DR-062's inheritance interface (`{prepend, append}` composition
 // against a ref/type-registry base chain) is likewise OUT OF SCOPE: kuu.mbt has no `type` registry
 // (a name → factory lookup for value parsers) to inherit FROM yet, so there is no base chain to
-// compose against — `value_filters`/`piece_filters`/`cell_filters` are plain `Array[String]`
-// (string-shorthand DSL only, DR-009's colon-DSL `"<name>:<arg>:<arg>..."`) with no inherit/
+// compose against — `value_filters`/`piece_filters`/`cell_filters` are plain `Array[FilterSpelling]`
+// (colon-shorthand DSL `"<name>:<arg>:<arg>..."` and DESIGN §8.4 object form, DR-009/DR-085 §3,
+// both decoded to the same structured shape — node.mbt's `FilterSpelling`) with no inherit/
 // prepend/append object form. Revisit when a type registry with per-type default chains exists.
 
 ///|
@@ -264,14 +265,13 @@ pub fn lookup_array_filter(name : String) -> ArrayFilterDescriptor? {
 /// name — identity" fallback, both guarded by a decode-time vocab check that runs before this ever sees
 /// the name).
 pub fn apply_cell_filter_chain(
-  chain : Array[String],
+  chain : Array[FilterSpelling],
   vs : Array[Value],
 ) -> Array[Value] {
   let mut current = vs
-  for spelling in chain {
-    let (name, args) = split_filter_spelling(spelling)
-    match lookup_array_filter(name) {
-      Some(d) => current = (d.run)(current, args)
+  for fs in chain {
+    match lookup_array_filter(fs.name) {
+      Some(d) => current = (d.run)(current, fs.args)
       None => ()
     }
   }
@@ -279,81 +279,13 @@ pub fn apply_cell_filter_chain(
 }
 
 ///|
-/// Sentinel marking an OBJECT-FORM filter spelling (DR-085 §3 / DESIGN §8.4's `{"name": ...,
-/// "args": [...]}` alternative to the colon shorthand, needed when an arg itself contains a colon
-/// — e.g. `regex_match`'s `^https?://` pattern). U+E000 (Unicode Private Use Area) never appears in
-/// a colon-shorthand DSL string in practice (no filter name/arg in this codebase uses PUA code
-/// points, and JSON fixture authors write ordinary text) so prefixing with it is a safe,
-/// unambiguous tag — chosen over U+0000 specifically because a raw NUL byte makes the containing
-/// source/JSON file register as "binary" to common text tools (grep/diff/editors), which is its own
-/// source of confusion; a PUA character is valid UTF-8 and behaves like ordinary text everywhere.
-///
-/// Design rationale: `piece_filters`/`value_filters`/`cell_filters` stay plain `Array[String]`
-/// (DR-085 does not ask for a wire-format change to those fields) — an `Array[FilterSpelling]` enum
-/// would be the "clean" alternative, but every call site across installer.mbt/node.mbt/eval.mbt/
-/// resolve.mbt/matcher.mbt threads these fields as `Array[String]` already, and widening the type
-/// is a mechanical but wide-blast-radius refactor this DR's scope (one colon-bearing-pattern case)
-/// doesn't warrant. This PUA-tagged single-string encoding keeps the object form representable
-/// within the existing `Array[String]` chain without colliding with `split_colon`'s all-colon-split
-/// rule (DR-085 §3: "colon 分割規則は変更しない"). Revisit if a second object-form consumer appears.
-let object_form_tag : String = "\u{E000}"
-
-///|
-/// Encode DR-085 §3's object-form filter spelling `{"name": n, "args": [...]}` into one
-/// `Array[String]` element that `split_filter_spelling` round-trips WITHOUT colon-splitting (see
-/// `object_form_tag`'s doc comment for why). Fields are tag-joined after a leading sentinel.
-pub fn encode_object_form_filter_spelling(
-  name : String,
-  args : Array[String],
-) -> String {
-  let buf = StringBuilder::new()
-  buf.write_string(object_form_tag)
-  buf.write_string(name)
-  for a in args {
-    buf.write_string(object_form_tag)
-    buf.write_string(a)
-  }
-  buf.to_string()
-}
-
-///|
-/// Split on the `object_form_tag` sentinel (mirrors `split_colon`'s char-by-char scan, just on the
-/// PUA tag char instead of `':'`).
-fn split_on_object_form_tag(s : String) -> Array[String] {
-  let out : Array[String] = []
-  let mut cur = ""
-  for c in s {
-    if c.to_string() == object_form_tag {
-      out.push(cur)
-      cur = ""
-    } else {
-      cur = cur + c.to_string()
-    }
-  }
-  out.push(cur)
-  out
-}
-
-///|
-/// Split one DSL entry into (name, args). Two forms (DR-085 §3):
-/// - Object form (`object_form_tag`-prefixed, from `encode_object_form_filter_spelling`): split on
-///   the PUA tag, args carried verbatim (may contain colons — the whole point of the object form).
-/// - Shorthand (`"in_range:1:65535"`, DR-009 §DSL 文法): same colon convention `installer.mbt`'s
-///   `split_colon` uses for variant/update DSL, but filters have no leading-empty-segment special
-///   case (`:set` sentinel) to worry about — `parts[0]` is ALWAYS the filter name here.
-fn split_filter_spelling(s : String) -> (String, Array[String]) {
-  if s.has_prefix(object_form_tag) {
-    let rest = s.view(start_offset=object_form_tag.length()).to_owned()
-    let parts = split_on_object_form_tag(rest)
-    let name = parts[0]
-    let args : Array[String] = []
-    let mut i = 1
-    while i < parts.length() {
-      args.push(parts[i])
-      i = i + 1
-    }
-    return (name, args)
-  }
+/// Parse the colon-shorthand DSL string (`"in_range:1:65535"`, DR-009 §DSL 文法) into a
+/// `FilterSpelling` — the SOLE colon-splitting point for filter chains (mirrors `installer.mbt`'s
+/// `classify_long_spelling` being the sole interpreter of the variant colon DSL). The decode
+/// boundary (`json_conformance_wbtest.mbt`'s `dec_filter_chain`) calls this for every plain-string
+/// chain element; wbtest call sites use it too, for the shorthand's ergonomics instead of hand-
+/// building a `FilterSpelling` struct literal per case.
+pub fn parse_filter_shorthand(s : String) -> FilterSpelling {
   let parts = split_colon(s)
   let name = parts[0]
   let args : Array[String] = []
@@ -362,30 +294,33 @@ fn split_filter_spelling(s : String) -> (String, Array[String]) {
     args.push(parts[i])
     i = i + 1
   }
-  (name, args)
+  { name, args }
 }
 
 ///|
-/// Run one filter chain (an `Array[String]` of DSL entries, DR-009's string-shorthand form) over a
-/// value, in declared order (DR-034 合成順「後ろほど優先」と同じ — chain 内は宣言順そのまま素通し、
-/// 上書きの概念はない). An unknown filter name or a filter's own Err both surface as `Err(reason,
-/// message)` — `reason` is a machine-readable DR-066-style identifier the caller threads into a
-/// ParseError (mirrors `apply_transform`'s existing `unknown_update_transform` /
-/// `update_transform_type_mismatch` shape, generalized: `unknown_filter` for an unregistered name,
-/// `filter_rejected` for a filter's own validation/transform failure — see this issue's "暫定 reason
-/// の整理" acceptance criterion, resolved by folding apply_transform's 2 ad-hoc reasons into this
-/// chain's 2 general ones).
+/// Run one filter chain (an `Array[FilterSpelling]`, DR-009 §DSL 文法) over a value, in declared
+/// order (DR-034 合成順「後ろほど優先」と同じ — chain 内は宣言順そのまま素通し、上書きの概念はない).
+/// `FilterSpelling` (node.mbt) already carries `name`/`args` structured — colon-shorthand splitting
+/// and DESIGN §8.4 / DR-085 §3 object-form decoding both happen ONCE at the decode boundary
+/// (`json_conformance_wbtest.mbt`'s `dec_filter_chain`), so this function never re-parses a spelling
+/// string (issue filter-spelling-inband-encoding-retyping — replaces the earlier U+E000 PUA-tag
+/// single-string encoding that let an object-form arg containing that exact code point corrupt the
+/// split; a structured `args : Array[String]` has no such in-band collision to begin with). An
+/// unknown filter name or a filter's own Err both surface as `Err(reason, message)` — `reason` is a
+/// machine-readable DR-066-style identifier the caller threads into a ParseError (mirrors
+/// `apply_transform`'s existing `unknown_update_transform` / `update_transform_type_mismatch` shape,
+/// generalized: `unknown_filter` for an unregistered name, `filter_rejected` for a filter's own
+/// validation/transform failure).
 pub fn apply_filter_chain(
-  chain : Array[String],
+  chain : Array[FilterSpelling],
   v : Value,
 ) -> Result[Value, (String, String)] {
   let mut current = v
-  for spelling in chain {
-    let (name, args) = split_filter_spelling(spelling)
-    match lookup_filter(name) {
-      None => return Err(("unknown_filter", "unknown filter '" + name + "'"))
+  for fs in chain {
+    match lookup_filter(fs.name) {
+      None => return Err(("unknown_filter", "unknown filter '" + fs.name + "'"))
       Some(d) =>
-        match (d.run)(current, args) {
+        match (d.run)(current, fs.args) {
           Ok(v2) => current = v2
           Err(msg) => return Err(("filter_rejected", msg))
         }
@@ -410,7 +345,7 @@ pub fn apply_filter_chain(
 /// argv_pos/element to carry) so both the CLI-token-consumption callers and the ladder (env)
 /// caller can share it.
 pub fn apply_piece_filters(
-  chain : Array[String],
+  chain : Array[FilterSpelling],
   raw : String,
 ) -> Result[String, (String, String)] {
   match apply_filter_chain(chain, VStr(raw)) {

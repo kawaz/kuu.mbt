@@ -271,7 +271,7 @@ pub(all) struct AccumCell {
   // all). Applied BEFORE `collector` (DR-083 §2's literal order "accumulator 畳み → cell_filters"
   // has no collector step in it; the collector/post_filters interaction — issue's "未裁定の論点1"
   // — stays open for whenever a fixture actually exercises both on the same cell).
-  cell_filters : Array[String]
+  cell_filters : Array[FilterSpelling]
   // DR-084 §2 (issue multiple-ref-accum-gap): the accumulator KIND (Entity.accum's copy — always
   // `Some(_)` for a cell that reaches `accum_cells` at all, so this is a plain `String` here, not
   // `String?`). `build_result`'s `segs` loop needs to tell apart a ref+repeat cell's "flatten"
@@ -337,7 +337,7 @@ fn cell_filters_here(
   cells : Array[AccumCell],
   path : Array[String],
   name : String,
-) -> Array[String] {
+) -> Array[FilterSpelling] {
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
       return c.cell_filters
@@ -1500,7 +1500,7 @@ fn env_value(
   element : String,
   ty : Ty,
   s : String,
-  piece_filters : Array[String],
+  piece_filters : Array[FilterSpelling],
   at_pos : Int,
   epath : Array[String],
 ) -> Result[Value, ParseError] {

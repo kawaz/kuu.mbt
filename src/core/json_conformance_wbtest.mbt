@@ -323,9 +323,9 @@ fn opt(
   default? : Array[Value]? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
-  piece_filters? : Array[String] = [],
-  value_filters? : Array[String] = [],
-  cell_filters? : Array[String] = [],
+  piece_filters? : Array[FilterSpelling] = [],
+  value_filters? : Array[FilterSpelling] = [],
+  cell_filters? : Array[FilterSpelling] = [],
   ref_? : String? = None,
   body? : ElemBody = BCell,
 ) -> ElemDef {
@@ -384,9 +384,9 @@ fn pos(
   default? : Array[Value]? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
-  piece_filters? : Array[String] = [],
-  value_filters? : Array[String] = [],
-  cell_filters? : Array[String] = [],
+  piece_filters? : Array[FilterSpelling] = [],
+  value_filters? : Array[FilterSpelling] = [],
+  cell_filters? : Array[FilterSpelling] = [],
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -1468,30 +1468,33 @@ fn dec_strs(j : Json?) -> Array[String] raise DecodeSkip {
 }
 
 ///|
-/// Decode a filters-chain field (`piece_filters`/`value_filters`/`cell_filters`, DR-009 §DSL 文法):
-/// same shape as `dec_strs` (a string, or a string[]), but each array element may ALSO be the
-/// DR-085 §3 / DESIGN §8.4 object form `{"name": ..., "args": [...]}` — needed when a filter's own
-/// arg contains a colon (e.g. `regex_match`'s `^https?://` pattern breaks the colon-shorthand DSL's
-/// all-colon-split rule, DR-009). An object-form element is folded into the SAME `Array[String]`
-/// chain via `encode_object_form_filter_spelling` (filters.mbt) — see that function's doc comment
-/// for why the chain's element type stays `String` (Private-Use-Area tag encoding) instead of widening to a new
-/// `Array[FilterSpelling]` type. `dec_strs` itself is intentionally NOT widened here: it's shared by
-/// `requires`/`conflicts_with`/`exclusive_group`/`env`/`targets`/`members`, none of which have an
-/// object form — this is a sibling decoder specific to the 3 filter-chain fields, not a generalized
-/// replacement.
-fn dec_filter_chain(j : Json?) -> Array[String] raise DecodeSkip {
+/// Decode a filters-chain field (`piece_filters`/`value_filters`/`cell_filters`, DR-009 §DSL 文法)
+/// into `Array[FilterSpelling]` (node.mbt, issue filter-spelling-inband-encoding-retyping): same
+/// shape as `dec_strs` (a string, or a string[]), but each array element may ALSO be the DR-085 §3
+/// / DESIGN §8.4 object form `{"name": ..., "args": [...]}` — needed when a filter's own arg
+/// contains a colon (e.g. `regex_match`'s `^https?://` pattern breaks the colon-shorthand DSL's
+/// all-colon-split rule, DR-009). Both forms decode to the SAME `FilterSpelling` struct (colon
+/// shorthand → `filters.mbt`'s `parse_filter_shorthand`, object form → `name`/`args` read straight
+/// off the JSON object) — no in-band string encoding is needed since the result type carries `args`
+/// as a real `Array[String]`, replacing the earlier U+E000 PUA-tag single-string encoding that
+/// shared `Array[String]` with plain shorthand strings (that scheme had a latent hole: an object-
+/// form arg VALUE containing the tag character itself would have mis-split). `dec_strs` itself is
+/// intentionally NOT reused here: it's shared by `requires`/`conflicts_with`/`exclusive_group`/
+/// `env`/`targets`/`members`, none of which have an object form — this is a sibling decoder
+/// specific to the 3 filter-chain fields, not a generalized replacement.
+fn dec_filter_chain(j : Json?) -> Array[FilterSpelling] raise DecodeSkip {
   match j {
     None => []
     Some(x) =>
       match x.j_str() {
-        Some(s) => [s]
+        Some(s) => [parse_filter_shorthand(s)]
         None =>
           match x.j_arr() {
             Some(a) => {
-              let r : Array[String] = []
+              let r : Array[FilterSpelling] = []
               for e in a {
                 match e.j_str() {
-                  Some(s) => r.push(s)
+                  Some(s) => r.push(parse_filter_shorthand(s))
                   None =>
                     match e.j_obj() {
                       Some(o) => {
@@ -1530,7 +1533,7 @@ fn dec_filter_chain(j : Json?) -> Array[String] raise DecodeSkip {
                             }
                           None => []
                         }
-                        r.push(encode_object_form_filter_spelling(name, args))
+                        r.push({ name, args })
                       }
                       None =>
                         raise DecodeSkip(
@@ -4868,4 +4871,31 @@ test "DR-047 §5 end-to-end: fired_action (help) survives the post-filter Succes
   if verdict != "PASS" {
     abort("expected PASS, got: " + verdict)
   }
+}
+
+///|
+/// 保証 (issue filter-spelling-inband-encoding-retyping — in-band 穴の閉鎖の pin): DESIGN §8.4 /
+/// DR-085 §3 のオブジェクト形式 filter spelling (`{"name":..,"args":[...]}`) は、args の値そのものに
+/// U+E000 (旧実装が colon 衝突回避のタグに使っていた Private Use Area 文字) が含まれていても、
+/// `FilterSpelling.args` (node.mbt) の各要素として一切分割されず literal のまま保持される。旧実装
+/// (U+E000 タグ付き単一文字列への in-band encode/decode) はこの入力で誤って分割・破壊していた —
+/// タグ文字を含む値そのものが decode を壊す潜在穴だったため、それを埋めた側の pin。`args` に U+E000
+/// を複数個 (要素の内部と要素境界紛いの位置の両方) 埋め込み、構造化フィールドがどこにも colon/tag
+/// 分割ロジックを経由しないことを固定する。
+test "dec_filter_chain: an object-form arg value containing U+E000 (retired in-band PUA tag) survives as a literal, unsplit" {
+  let tag = "\u{E000}"
+  let raw_arg = "a" + tag + "b" + tag + tag + "c"
+  let src = "[{\"name\":\"regex_match\",\"args\":[\"" +
+    raw_arg +
+    "\"]},{\"name\":\"trim\"}]"
+  let j = @json.parse(src)
+  let result = dec_filter_chain(Some(j)) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(result.length(), 2)
+  assert_eq(result[0].name, "regex_match")
+  assert_eq(result[0].args.length(), 1)
+  assert_eq(result[0].args[0], raw_arg)
+  assert_eq(result[1].name, "trim")
+  assert_eq(result[1].args.length(), 0)
 }
