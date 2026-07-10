@@ -1,6 +1,6 @@
 ---
 title: bool 目的語 requires の解決が config / inherit 値源を見ない (既知の限界)
-status: open
+status: resolved
 category: design
 created: 2026-07-09T14:36:29+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-10T22:52:24+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:resolved_bool_value_ladder (committed→env→config→inherit 祖先再帰→default, DR-047 §5 値源不問判定) in kuu.mbt ef976bcd; config_obj は呼び出し元注入 (DR-087 遅延解決モデルと整合)","fix:collect_all_scopes 新設 (collect_scopes の制約持ちスコープ間引きが inherit 祖先探索を素通りさせる前提バグ)","fix:resolve_scope NoCfg 経路の is_config_file ガード (config_file 要素が結果 entity に漏れる非対称)","fixture:constraints-parse/requires-bool-target-config-inherit.json 3 case (spec 27c58e51)","verified:conformance decoded=178 ran_cases=464 skipped=0 mismatches=0; moon test 215本","residual:CfgFiles (スコープ動的 config_file) 経路は config_obj=None のまま (fixture 実例なし)、issue/lazy-default-resolution-audit で追跡"]
 blocked_by:
 origin: kuu (spec リポ)
 ---
