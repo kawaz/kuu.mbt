@@ -708,6 +708,67 @@ test "DR-053 §4: tried_triggers reflects the failure position's OWN scope, not 
 }
 
 ///|
+/// spec issue conformance-tried-triggers-help-entry-fields (fixture failure-actions/tried-
+/// triggers-scope.json の subcommand-scope-excludes-ancestor-spelling を実機確認して発覚):
+/// `find_help_entry` は旧実装が root scope の greedy しか見ておらず、サブコマンドの子スコープに
+/// 宣言された help 入口を見逃していた — `tried_triggers_of` と同じ「失敗位置のスコープ基準」
+/// (DR-053 §4) に揃えて修正した、そのpin。root に help 入口は無く、sub 子スコープにのみ help が
+/// ある構成で、sub 内での失敗が sub 自身の help_entry ("--help") を正しく報告することを固定する
+/// (旧実装なら root scope に help entry が無いので None を返していたはず)。
+test "DR-053 §4: help_entry reflects the failure position's OWN scope, not root's (find_help_entry fix)" {
+  let child : Scope = {
+    greedy: [
+      Seq([Exact("--help"), Bind("help", VBool(true)), FailMark("help")]),
+      Seq([Exact("--port"), NumArg("port", false, [])]),
+    ],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("sub", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["sub", "zzz"], defs=Map([]))
+  match o {
+    Failure(fd) => assert_eq(fd.help_entry, Some("--help"))
+    _ => fail("expected Failure (residual 'zzz' inside sub's scope)")
+  }
+}
+
+///|
+/// 保証 (対極、上のテストの境界、[[self-written-rule-blind-spots]] の対極確認): root scope に help
+/// 入口が無く、失敗も root scope 自身で起きる (sub へ入場しない) 場合は、旧来どおり None を返す —
+/// 「失敗位置スコープ基準」への変更が「常に何かの help_entry を拾ってしまう」誤動作を生んでいない
+/// ことを固定する。
+test "DR-053 §4: help_entry is None when the failure-position scope has no help entry (対極)" {
+  let child : Scope = {
+    greedy: [
+      Seq([Exact("--help"), Bind("help", VBool(true)), FailMark("help")]),
+    ],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("sub", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["zzz"], defs=Map([]))
+  match o {
+    Failure(fd) => assert_eq(fd.help_entry, None)
+    _ =>
+      fail(
+        "expected Failure (residual 'zzz' in root scope, never entering sub)",
+      )
+  }
+}
+
+///|
 test "REVIEW-D1 取り分選好オラクルは制約違反の全消費を「完全」と数えない (DR-047 §2 × DR-043)" {
   // more 側 (xs=[a,b]) は全消費だが CRequires(xs,[y]) に違反 = 完全解決経路
   // ではない。stop 側 (xs=[a], y=[b]) が唯一の完全解決経路なので Success。

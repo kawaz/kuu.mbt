@@ -1124,6 +1124,19 @@ fn proj_warnings(o : Outcome) -> String {
 }
 
 ///|
+/// spec issue conformance-tried-triggers-help-entry-fields (CONFORMANCE §2/§3): DR-053 §4's
+/// tried_triggers material as a sorted set (順序非規範、`proj_errors`と同じ `{a,b,c}` 表記 — 空集合
+/// は `{}` になり「exact trigger 0 個」を明示的に表現する、空文字列との取り違えを避ける)。
+fn proj_tried_triggers(triggers : Array[String]) -> String {
+  let items : Array[String] = []
+  for t in triggers {
+    items.push(t)
+  }
+  sort_items(items)
+  "{" + join_comma(items) + "}"
+}
+
+///|
 /// Result with the DR-052 result-key axis applied.
 fn proj_result_export(
   sc : Scope,
@@ -1241,6 +1254,15 @@ struct DCase {
   exp_sources : String?
   fired_cmp : Bool
   fired_exp : String?
+  // spec issue conformance-tried-triggers-help-entry-fields (CONFORMANCE §2/§3): help_entry is
+  // opt-in on failure OR ambiguous (structural equality — a plain String? compare like fired_action's).
+  help_cmp : Bool
+  help_exp : String?
+  // tried_triggers is opt-in on failure only, set comparison (順序非規範) — held as the SAME
+  // sorted `{a,b,c}` projection string `proj_tried_triggers` produces from the live Outcome, so
+  // comparison is a plain String `!=` like every other set-compared face (errors/warnings/sources).
+  tried_cmp : Bool
+  tried_exp : String?
   resolve : Bool
   env : Map[String, String]
   cfg : CfgInj
@@ -2917,6 +2939,24 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
   } else {
     (false, None)
   }
+  // spec issue conformance-tried-triggers-help-entry-fields: help_entry is opt-in on failure OR
+  // ambiguous (DR-053 §4 material — both outcomes can carry a selected/discoverable help entry).
+  let (help_cmp, help_exp) = if (outcome == "failure" || outcome == "ambiguous") &&
+    has_key(eo, "help_entry") {
+    (true, jf_str(eo, "help_entry"))
+  } else {
+    (false, None)
+  }
+  // tried_triggers is opt-in on failure only (DR-053 §4 material tied to the failure position —
+  // ambiguous has no single failure position to derive it from). Projected to the SAME sorted
+  // `{a,b,c}` string the live Outcome comparison uses, at decode time — a plain String compare
+  // at the comparison site, matching every other set-compared face.
+  let (tried_cmp, tried_exp) = if outcome == "failure" &&
+    has_key(eo, "tried_triggers") {
+    (true, Some(proj_tried_triggers(dec_strs(eo.get("tried_triggers")))))
+  } else {
+    (false, None)
+  }
   {
     argv,
     id,
@@ -2931,6 +2971,10 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     exp_sources,
     fired_cmp,
     fired_exp,
+    help_cmp,
+    help_exp,
+    tried_cmp,
+    tried_exp,
     resolve,
     env,
     cfg,
@@ -4006,6 +4050,29 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
               problems.push("fired_action got=\{got} want=\{want}")
             }
           }
+          if dc.help_cmp {
+            let got = match d.help_entry {
+              Some(s) => s
+              None => "(none)"
+            }
+            let want = match dc.help_exp {
+              Some(s) => s
+              None => "(none)"
+            }
+            if got != want {
+              problems.push("help_entry got=\{got} want=\{want}")
+            }
+          }
+          if dc.tried_cmp {
+            let got = proj_tried_triggers(d.tried_triggers)
+            let want = match dc.tried_exp {
+              Some(s) => s
+              None => "{}"
+            }
+            if got != want {
+              problems.push("tried_triggers got=\{got} want=\{want}")
+            }
+          }
         }
         // DR-009 §7 cell_filters (and any other resolve-layer check, e.g. a future
         // constraint that only resolve sees): `parse()` itself can succeed while the VALUE
@@ -4039,7 +4106,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
       }
     _ =>
       match outcome {
-        Ambiguous(d) =>
+        Ambiguous(d) => {
           match dc.exp_interps {
             Some(ei) => {
               let got : Array[String] = []
@@ -4079,6 +4146,20 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             }
             None => ()
           }
+          if dc.help_cmp {
+            let got = match d.help_entry {
+              Some(s) => s
+              None => "(none)"
+            }
+            let want = match dc.help_exp {
+              Some(s) => s
+              None => "(none)"
+            }
+            if got != want {
+              problems.push("help_entry got=\{got} want=\{want}")
+            }
+          }
+        }
         other =>
           problems.push("EXPECTED-AMBIGUOUS got=" + render_outcome(other))
       }

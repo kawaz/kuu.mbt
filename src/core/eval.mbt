@@ -2971,7 +2971,6 @@ pub fn parse(
       }
     }
   }
-  let help = find_help_entry(root)
   // Residual-token synthesis for NON-scope roots (a ScopeNode root surfaces
   // residual tokens as KTop Helds already): a partial Accept (p < length)
   // on a 0-complete-path parse is a residual failure in its own right, and
@@ -3033,7 +3032,7 @@ pub fn parse(
         } else {
           None
         },
-        help_entry: help,
+        help_entry: find_help_entry(root, errors),
         tried_triggers: tried_triggers_of(root, errors),
       })
     1 => Success(full[0])
@@ -3042,6 +3041,9 @@ pub fn parse(
       // parse structure, not by provenance for a shared exposed key), so claimants stays empty.
       // Export-key co-exposure collisions are surfaced by a separate post-parse promotion step
       // (resolve.mbt `promote_collision_ambiguous`) which fills in claimants per interpretation.
+      // help_entry: ambiguous には単一の「失敗位置」が無い (複数完全経路が成立している) ので、
+      // `find_help_entry` へ空の errors を渡して root scope 全体を見る従来どおりの posture に
+      // 留める (`find_help_entry`のフォールバック分岐、failure 側の失敗位置基準とは意図的に別)。
       Ambiguous({
         interpretations: {
           let a : Array[AmbInterp] = []
@@ -3050,7 +3052,7 @@ pub fn parse(
           }
           a
         },
-        help_entry: help,
+        help_entry: find_help_entry(root, []),
       })
   }
 }

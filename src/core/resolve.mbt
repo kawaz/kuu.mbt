@@ -1303,7 +1303,7 @@ pub fn apply_bool_requires_filter(
       } else {
         None
       },
-      help_entry: find_help_entry(root),
+      help_entry: find_help_entry(root, errors),
       tried_triggers: tried_triggers_of(root, errors),
     })
   }

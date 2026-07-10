@@ -85,21 +85,50 @@ fn argmin_action(actions : Array[(String, Int)]) -> String {
 }
 
 ///|
-/// The help entry's spelling (spec DR-053 §4 help_entry material): the exact
-/// trigger of the greedy satellite that carries a help FailMark.
-fn find_help_entry(root : Node) -> String? {
-  match root {
-    ScopeNode(sc) => {
-      for g in sc.greedy {
-        match find_help_entry_in_greedy(g) {
-          Some(t) => return Some(t)
-          None => ()
-        }
-      }
-      None
+/// The help entry's spelling (spec DR-053 §4 help_entry material): the exact trigger of the greedy
+/// satellite that carries a help FailMark, IN THE SCOPE AT THE FAILURE POSITION — same scope-
+/// resolution rule `tried_triggers_of` uses (DR-053 §4 の失敗位置基準、issue conformance-tried-
+/// triggers-help-entry-fields の実機確認で発覚: 旧実装は root scope の greedy しか見ておらず、
+/// サブコマンドの子スコープに宣言された help 入口を見逃していた — fixtures/failure-actions/
+/// tried-triggers-scope.json の subcommand-scope-excludes-ancestor-spelling が pin する)。`errors`
+/// が空 (呼び出し元が ambiguous 用に意図的に渡す — 複数完全経路が成立した状態には単一の「失敗位置」
+/// が無いので、root scope 全体を見る従来どおりの posture に留める) の場合は root scope のみを見る。
+fn find_help_entry(root : Node, errors : Array[ParseError]) -> String? {
+  let mut deepest = -1
+  for e in errors {
+    if e.argv_pos > deepest {
+      deepest = e.argv_pos
     }
-    _ => None
   }
+  let mut any_primary = false
+  for e in errors {
+    if e.argv_pos == deepest {
+      any_primary = true
+      match scope_at_path(root, e.path) {
+        Some(sc) =>
+          for g in sc.greedy {
+            match find_help_entry_in_greedy(g) {
+              Some(t) => return Some(t)
+              None => ()
+            }
+          }
+        None => ()
+      }
+    }
+  }
+  if !any_primary {
+    match root {
+      ScopeNode(sc) =>
+        for g in sc.greedy {
+          match find_help_entry_in_greedy(g) {
+            Some(t) => return Some(t)
+            None => ()
+          }
+        }
+      _ => ()
+    }
+  }
+  None
 }
 
 ///|
