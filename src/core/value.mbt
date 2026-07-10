@@ -1343,6 +1343,21 @@ pub fn config_to_value(
 }
 
 ///|
+/// DR-083 §2: a declared default's stored piece is already a `Value` (decoded straight off the
+/// JSON literal, `VStr`/`VNum`/`VBool` — never `VStr` coerced to the element's `Ty` at decode time,
+/// mirroring how a config array's piece is stored as an untyped `ConfigVal` until READ). This is
+/// the bridge that lets `resolve_ladder_below_cli`'s default seat reuse `config_to_value` VERBATIM
+/// (DR-083 §2 "config array と同型に扱う") instead of re-deriving the same string/number/bool
+/// leniency table a second time — `Value`'s 3 variants map 1:1 onto `ConfigVal`'s 3 scalar ones.
+pub fn value_to_configval(v : Value) -> ConfigVal {
+  match v {
+    VStr(s) => CStr(s)
+    VNum(d) => CNum(d)
+    VBool(b) => CBool(b)
+  }
+}
+
+///|
 /// The effect an entry's firing applies to a value cell (DR-045). It is PURE DATA
 /// `{op, operand?}`: the op names the operation, the operand is the Binding's `value`.
 /// A normal value bind (a value slot consuming a token and writing it) is the SET

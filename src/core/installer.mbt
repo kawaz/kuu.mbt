@@ -73,7 +73,12 @@ pub(all) struct ElemDef {
   // で parse_number_ext / parse_int_value_ext に流す。TNum / TInt 以外は参照しない。
   allow_base_prefix : Bool
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
-  default_value : Value?
+  // DR-083 §1/§波及: decode 層 (dec_option/dec_positional) 所有。JSON scalar → 長さ1へ持ち上げ、JSON
+  // array → その piece 列そのまま (multiple/repeat/merge 要素のみ合法 — 非 accum 要素への配列は
+  // `collect_scalar_array_default` が definition-error として静的に弾く)。`ensure_entity` がそのまま
+  // `Entity.default_values` へ写す (§1 の decode-time 持ち上げに加え、FLAG/BOOL/COUNT の暗黙 preset
+  // も同じ長さ1形へ揃える)。node.mbt の `Entity.default_values` の doc comment 参照。
+  default_values : Array[Value]?
   // DR-034 pieceProcessor の 3 段 filter chain (DR-062: inheritance object 形は未実装、string-
   // shorthand 配列のみ — filters.mbt ヘッダ注記参照)。piece_filters: separator 分割後の各 piece
   // 単位 (multiple 無しは長さ 1 に縮退、同じ管を通る) で type.parse の直前に適用 (String→String)。
@@ -606,7 +611,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     exclusive_group: e.exclusive_group,
     value_requires: e.value_requires,
     deprecated: e.deprecated,
-    default_value: e.default_value,
+    default_values: e.default_values,
     int_round: e.int_round,
     allow_base_prefix: e.allow_base_prefix,
     piece_filters: copy_strs(e.piece_filters),
@@ -1103,10 +1108,14 @@ fn ensure_entity_body(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
       // 見るよう拡張して閉じている (resolve.mbt のコメント参照) — ROW-GROUP が先に返した path は
       // `segs` 経由で obj に載るので、UNIFORM ARRAY 側は `segs` チェックで重複注入をスキップする。
       // repeat 無しの単発 ref (`elem_repeat(e) is None`) は元のコメントの懸念がそのまま有効
-      // (accum が立たないので死んだ entity を増やすだけ) なので、対象を repeat 付きに限定する。
+      // (accum が立たないので死んだ entity を増やすだけ) なので、対象を repeat 付きに限定する —
+      // ただし DR-084 §1 (issue multiple-ref-accum-gap): `multiple` 付きの repeat 無し ref は
+      // "dead" ではない。この場合の accum は "append" (ensure_entity のデフォルト写像) になり、
+      // `inst_long`/`lower_positional` 側 (このファイル、`ref_row_head` 分岐の条件) が発火ごとに
+      // "#row" を打つよう連動して変わる — 両者は同じ `e.multiple` ガードで揃える必要がある。
       if e.ref_target is None {
         ensure_entity(build, e, has_cf)
-      } else if elem_repeat(e) is Some(_) {
+      } else if elem_repeat(e) is Some(_) || e.multiple {
         ensure_entity(build, e, has_cf)
       }
     BOr(branches) =>
@@ -1168,13 +1177,17 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   // apart from an ordinary number cell. The `TNum` collapse itself happens right here too (`ty2`
   // below), at the entity's actual value-cell type (Entity.ty) — the LAST point where the
   // distinction still matters.
-  let default_value : Value? = match e.default_value {
-    Some(v) => Some(v)
+  // DR-083 §1: the FLAG/BOOL/COUNT implicit preset is ALSO a length-1 array (the uniform shape
+  // every reader now expects) — a decl-less preset is scalar by construction (none of the three
+  // kinds can be `multiple` and carry a >1-element preset), so `[v]` is the correct degenerate
+  // form, never `[]`.
+  let default_values : Array[Value]? = match e.default_values {
+    Some(vs) => Some(vs)
     None =>
       if e.ty == TFlag || e.ty == TBool {
-        Some(VBool(false))
+        Some([VBool(false)])
       } else if e.ty == TCount {
-        Some(VNum(0.0))
+        Some([VNum(0.0)])
       } else {
         None
       }
@@ -1197,7 +1210,7 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     } else {
       None
     },
-    default_value,
+    default_values,
     separator: e.separator,
     piece_filters: e.piece_filters,
     value_filters: e.value_filters,
@@ -1253,7 +1266,24 @@ fn inst_long(
                     build,
                     maybe_root(
                       e.link_depth,
-                      Seq([Exact(trigger), Scoped(e.name, elem_head(e))]),
+                      Seq([
+                        Exact(trigger),
+                        // DR-084 §1 (issue multiple-ref-accum-gap): a `multiple` repeat-less ref
+                        // element's row is the ACCUMULATOR's fold unit (one fire = one row) —
+                        // tag it with "#row" (`ref_row_head`, same sentinel repeat-bearing ref
+                        // uses) so `resolve.mbt`'s ROW-GROUP branch splits each firing into its
+                        // own row-group instead of merging every firing's leaves flat into one
+                        // object (the pre-DR-084 bug: 2 fires of an or-branch ref would land BOTH
+                        // branches' leaves under the same bare `Scoped(e.name, ...)`, e.g.
+                        // `{colorname:"red", r:0, g:128, b:255}` instead of 2 separate rows). No
+                        // `multiple` (the `ref-template-no-repeat-degenerate.json` baseline) keeps
+                        // the bare `Scoped` wrap — a single scalar row, never array-wrapped.
+                        if e.multiple {
+                          ref_row_head(e.name, elem_head(e))
+                        } else {
+                          Scoped(e.name, elem_head(e))
+                        },
+                      ]),
                     ),
                   )
                 Some(_) => {
@@ -1605,7 +1635,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     exclusive_group: copy.exclusive_group,
     value_requires: copy.value_requires,
     deprecated: copy.deprecated,
-    default_value: copy.default_value,
+    default_values: copy.default_values,
     int_round: copy.int_round,
     allow_base_prefix: copy.allow_base_prefix,
     piece_filters: copy.piece_filters,
@@ -1787,7 +1817,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     exclusive_group: [],
     value_requires: [],
     deprecated: false,
-    default_value: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
+    default_values: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
     int_round: RError, // canonical default (DR-075 §2): write-target は int_round を持たない
     allow_base_prefix: false, // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
     piece_filters: [], // write-target は filter chain を持たない (源 e の value_filters は source 側で既に適用済み)
@@ -1984,7 +2014,7 @@ fn alias_entry(
     exclusive_group: [],
     value_requires: [],
     deprecated,
-    default_value: None,
+    default_values: None,
     int_round: RError,
     allow_base_prefix: false,
     piece_filters: [],
@@ -2847,6 +2877,143 @@ fn collect_unsupported_count_multiple(
 }
 
 ///|
+/// DR-083 §5: a non-accum (truly scalar) element's declared default must decode to EXACTLY one
+/// piece — an array-shaped JSON default (`length != 1`) for such an element is a STRUCTURAL
+/// mismatch known entirely at definition time (no I/O needed, unlike DR-050's config array whose
+/// structural mismatch IS a runtime Error precisely because config is read at runtime) —
+/// `collect_unsupported_accum_update`'s sibling "構造的に宣言できるが実装が対応できない組合せを
+/// definition-error で落とす" contract.
+///
+/// "non-accum" mirrors `ensure_entity`'s OWN accum-eligibility derivation exactly (`e.multiple ||
+/// elem_repeat(e) is Some(_) || e.separator is Some(_)`) — computed here on the pre-`ensure_entity`
+/// `ElemDef` fields directly, since this check runs before `Entity`/`Entity.accum` exist. Using
+/// the narrower `e.multiple` alone would misfire on a `repeat`-only or bare-`separator` element
+/// (both legitimately accum cells per `ensure_entity`, DR-043/034) declaring a multi-piece default
+/// — this derivation must stay IN SYNC with `ensure_entity`'s if it ever changes.
+fn collect_scalar_array_default(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  fn is_accum_elem(e : ElemDef) -> Bool {
+    e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
+  }
+
+  fn check(e : ElemDef) -> Unit {
+    if !is_accum_elem(e) {
+      match e.default_values {
+        Some(vs) =>
+          if vs.length() != 1 {
+            out.push(
+              def_err(
+                e.name,
+                DInvalidRange,
+                "a non-multiple (scalar) element's declared default must be exactly ONE piece, got \{vs.length()} — an array-shaped default is only legal for a multiple/repeat/separator (accum) element (DR-083 §1/§5)",
+                "wrap this element's default in `multiple`/`repeat` if it should accumulate, or write a single scalar default value",
+              ),
+            )
+          }
+        None => ()
+      }
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_scalar_array_default(c.body, out)
+  }
+}
+
+///|
+/// DR-009 段 7 (issue accum-post-filters-stage7): an accum (multiple/repeat/separator) element's
+/// `cell_filters` runs Acc→Acc over the WHOLE accumulated array (`filters.mbt`'s
+/// `ArrayFilterDescriptor` registry, e.g. `unique`) — a DIFFERENT vocabulary from a scalar
+/// element's `cell_filters` (`filters.mbt`'s per-Value `FilterDescriptor` registry, e.g.
+/// `in_range`). The two registries are disjoint on purpose (genuinely different signatures, no
+/// name is meant to serve both), so a chain entry that isn't a registered ARRAY filter is a
+/// definition-time mistake, known statically without I/O — same "構造的に宣言できるが実装が対応
+/// できない組合せを definition-error で落とす" contract `collect_scalar_array_default` uses. This
+/// is also what lets `filters.mbt`'s `apply_cell_filter_chain` (called from `build_result`, deep
+/// inside value resolution) skip an unregistered name silently instead of erroring: by the time it
+/// runs, this gate has already guaranteed every name it sees is valid.
+fn collect_invalid_accum_cell_filter(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  fn is_accum_elem(e : ElemDef) -> Bool {
+    e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
+  }
+
+  fn check(e : ElemDef) -> Unit {
+    if is_accum_elem(e) {
+      for spelling in e.cell_filters {
+        let (name, _args) = split_filter_spelling(spelling)
+        if lookup_array_filter(name) is None {
+          out.push(
+            def_err(
+              e.name,
+              DInvalidRange,
+              "an accum (multiple/repeat/separator) element's cell_filters entry '" +
+              name +
+              "' is not a registered ARRAY filter (DR-009 段 7 — accum cell_filters runs Acc→Acc over the whole accumulated array, a different vocabulary from a scalar cell_filters' per-value T→T chain)",
+              "use an array-shaped filter (e.g. `unique`) or move this entry off an accum element",
+            ),
+          )
+        }
+      }
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_invalid_accum_cell_filter(c.body, out)
+  }
+}
+
+///|
+/// DR-084 §3 (issue multiple-ref-accum-gap): merge accumulator × ref is a definition-error. The
+/// merge marker vocabulary (DR-080 §2) presupposes a separator-split STRING piece list (whole-
+/// piece match against `@`/`-x`/`+`) — a `ref` element's firing value is a row (the referenced
+/// template's or-branch consumption result, DR-078 §1), which never has a piece list at all, so
+/// there is nothing for a marker to match against. Both `ref` and `multiple:{accumulator:"merge"}`
+/// are declared, so the mismatch is known statically without I/O — same "構造的に宣言できるが実装
+/// が対応できない組合せを definition-error で落とす" contract `collect_scalar_array_default`/
+/// `collect_invalid_accum_cell_filter` use.
+fn collect_ref_merge_accum(def : Definition, out : Array[DefError]) -> Unit {
+  fn check(e : ElemDef) -> Unit {
+    if e.ref_target is Some(_) && e.accumulator is Some("merge") {
+      out.push(
+        def_err(
+          e.name,
+          DInvalidRange,
+          "a `ref` element cannot use the merge accumulator — merge's marker vocabulary (DR-080 §2) requires a separator-split string piece list, but a ref element's firing value is a row (DR-078 §1), which has no piece list to match markers against",
+          "use `multiple: \"append\"` (or omit `accumulator`, which defaults to append) instead of `accumulator: \"merge\"` on this ref element",
+        ),
+      )
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_ref_merge_accum(c.body, out)
+  }
+}
+
+///|
 /// 木のどこかに `type:"config_file"` 要素があるか (DR-050): あれば同型 config seat が全 value cell に立つ。
 fn has_config_file(def : Definition) -> Bool {
   for e in def.options {
@@ -2983,6 +3150,9 @@ pub fn parse_definition(
   collect_unsupported_option_ref_repeat(def, errs) // codex 指摘4 (option ref+repeat min>1 未配線)
   collect_unsupported_accum_update(def, errs) // issue accum-fold-update-default-ops (multiple + update variant)
   collect_unsupported_count_multiple(def, errs) // codex 指摘 High 2 (count 型 × multiple)
+  collect_scalar_array_default(def, errs) // DR-083 §5 (非 accum 要素への配列 default)
+  collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 (accum cell_filters は配列語彙のみ)
+  collect_ref_merge_accum(def, errs) // DR-084 §3 (merge accumulator × ref)
   collect_absent_ref(def, registry, errs) // DR-032
   collect_circular_ref(registry, errs) // DR-007/032
   collect_zero_progress(def, registry, errs) // DR-043

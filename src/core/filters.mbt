@@ -145,6 +145,86 @@ pub fn lookup_filter(name : String) -> FilterDescriptor? {
 }
 
 ///|
+/// `unique`: an accum cell's ARRAY-shaped cell_filters entry (DR-009 段 7 "post_filters"/Acc→Acc,
+/// issue accum-post-filters-stage7 / DR-083 §2's "value_filters per piece → accumulator 畳み →
+/// cell_filters" order) — dedupes by `Value` structural equality, first-occurrence order preserved
+/// (stable, mirrors how a human reads "unique" — not sorted). 0-arg (same shape as `increment`).
+fn array_filter_unique(
+  vs : Array[Value],
+  _args : Array[String],
+) -> Array[Value] {
+  let out : Array[Value] = []
+  for v in vs {
+    let mut dup = false
+    for o in out {
+      if o == v {
+        dup = true
+        break
+      }
+    }
+    if !dup {
+      out.push(v)
+    }
+  }
+  out
+}
+
+///|
+/// One ARRAY cell_filters registry entry (DR-009 段 7): unlike `FilterDescriptor` (`Value =>
+/// Value`, piece/value_filters phases), this phase's `run` is `Array[Value] => Array[Value]` — the
+/// accumulated cell's WHOLE final array is the unit these filters see (issue accum-post-filters-
+/// stage7's "未裁定の論点1" resolved: whole-array, not per-element — a self-map over U, DR-083 §2's
+/// literal order "accumulator 畳み → cell_filters" has no per-piece step left to run this at). A
+/// separate registry from `filters_registry()` (not a variant/overload of it) because the two
+/// phases have genuinely different signatures — no name collision risk since `installer.mbt`'s
+/// `collect_invalid_accum_cell_filter` (DR-082 kind=invalid-range) rejects an accum entity's
+/// cell_filters chain containing a name this registry doesn't know, at DEFINITION time — by the
+/// time `build_result` (resolve.mbt) runs this chain, every name is already known-valid, so this
+/// phase's `run` can stay a plain `Array[Value] => Array[Value]` (no `Result`, no error channel to
+/// thread through `build_result`'s existing `-> RVal` signature, DR-082's usual "push structural
+/// validity to definition-error, keep runtime paths total" pattern).
+pub(all) struct ArrayFilterDescriptor {
+  name : String
+  run : (Array[Value], Array[String]) -> Array[Value]
+}
+
+///|
+fn array_filters_registry() -> Map[String, ArrayFilterDescriptor] {
+  Map::from_array([("unique", { name: "unique", run: array_filter_unique })])
+}
+
+///|
+/// Look up one ARRAY cell_filters entry by name (DR-009 段7 registry, separate from
+/// `lookup_filter`'s per-value registry — see `ArrayFilterDescriptor`'s doc comment for why).
+pub fn lookup_array_filter(name : String) -> ArrayFilterDescriptor? {
+  array_filters_registry().get(name)
+}
+
+///|
+/// Run an accum cell's cell_filters chain (DR-009 段 7, Array[Value] => Array[Value]) over its
+/// final accumulated array, in declared order. Unlike `apply_filter_chain`, this has no `Result`
+/// return — `installer.mbt`'s `collect_invalid_accum_cell_filter` already guarantees every chain
+/// entry reaching here is a registered array filter name (definition-time gate, `ArrayFilterDescriptor`'s
+/// doc comment). An unregistered name here is therefore unreachable in practice; falls back to a
+/// no-op pass-through rather than aborting (same defensive posture as `apply_collector`'s "unrecognized
+/// name — identity" fallback, both guarded by a decode-time vocab check that runs before this ever sees
+/// the name).
+pub fn apply_cell_filter_chain(
+  chain : Array[String],
+  vs : Array[Value],
+) -> Array[Value] {
+  let mut current = vs
+  for spelling in chain {
+    let (name, args) = split_filter_spelling(spelling)
+    match lookup_array_filter(name) {
+      Some(d) => current = (d.run)(current, args)
+      None => ()
+    }
+  }
+  current
+}
+
+///|
 /// Split one DSL entry (`"in_range:1:65535"`, DR-009 §DSL 文法) into (name, args) — same colon
 /// convention `installer.mbt`'s `split_colon` uses for variant/update DSL, but filters have no
 /// leading-empty-segment special case (`:set` sentinel) to worry about: `parts[0]` is ALWAYS the

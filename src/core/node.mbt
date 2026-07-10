@@ -318,7 +318,17 @@ pub(all) struct Entity {
   // 2026-07-09-dec-multiple-collector-decode); `to_set`/`from_entries` are DR-036 registry
   // presets but not reachable through this simple by-name field yet.
   collector : String?
-  default_value : Value? // default seat
+  // DR-083 §1/§波及: default seat, stored as a length-1-degenerate UNIFORM array (`None` = no
+  // declared default; a scalar cell's declared default is `Some([v])`, length exactly 1; a
+  // `multiple`/repeat/merge (accum) cell's is `Some([v1, v2, ...])`, one piece per declared array
+  // element — DR-050 §4's config-array precedent, "already split pieces" per DR-083 §2). Every
+  // reader that KNOWS its cell is scalar (bool-target checks, the scalar CLI-seat fold's Unset/
+  // Update "old ?? default" arms) takes `vs[0]` (a scalar's array is always length 1 by
+  // construction, `ensure_entity`'s only producer). The accum-cell-aware readers (`resolve_ladder_
+  // below_cli`'s default seat, `collect_scalar_array_default`'s definition-time gate) iterate the
+  // whole array — this single field replaces the pre-DR-083 `default_value : Value?` (a design
+  // taken up again after being shelved mid accum-fold-update-default-ops, now justified by DR-083).
+  default_values : Array[Value]?
   // DR-034 multiple の separator (issue 2026-07-09-env-separator-split-gap): the env seat's OWN
   // copy, mirroring `piece_filters` below — `resolve.mbt`'s `env_value` runs the pieceProcessor once
   // per piece exactly like `eval.mbt`'s `sep_binds` does for the CLI seat's raw token, but the CLI

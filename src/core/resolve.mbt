@@ -111,6 +111,29 @@ fn row_groups(binds : Array[Binding]) -> Array[Array[Binding]] {
 }
 
 ///|
+/// DR-084 §2 (issue multiple-ref-accum-gap): split a "#fire"-marked binding list into per-FIRING
+/// chunks — the firing-boundary-PRESERVING sibling of `row_groups`' firing-boundary-DISCARDING cut
+/// (`row_groups` keeps only the bindings after the LAST "#fire", `last-wins-repeat-rows.json`'s
+/// last-wins-whole-cell contract; this keeps EVERY firing as its own chunk, for a ref+repeat
+/// element that is ALSO `multiple` — `build_result`'s `segs` loop calls this only when both
+/// conditions hold, `inst_long`'s `Scoped(e.name, Bind("#fire", ...))` marker is unconditional so
+/// the grammar itself doesn't need to change per DR-084 §2, only its consumer here). Each returned
+/// chunk still carries its own "#row" sentinels untouched — the caller re-runs `row_groups` (which
+/// sees no "#fire" inside a single chunk, so its "keep from last #fire" cutoff is a no-op) on each
+/// chunk to get that firing's own row list.
+fn fire_groups(binds : Array[Binding]) -> Array[Array[Binding]] {
+  let groups : Array[Array[Binding]] = []
+  for b in binds {
+    if b.scope.length() == 0 && b.key == "#fire" {
+      groups.push([])
+    } else if groups.length() > 0 {
+      groups[groups.length() - 1].push(b)
+    }
+  }
+  groups
+}
+
+///|
 /// Index segments ("#k") among the direct children, ordered by k ascending.
 fn ordered_indices(binds : Array[Binding]) -> Array[String] {
   let idxs : Array[String] = []
@@ -241,6 +264,23 @@ pub(all) struct AccumCell {
   // sees AccumCell, never the Scope/Entity it came from — can apply it to the final accumulated
   // array without a second lookup pass). None = no collector (render the plain array).
   collector : String?
+  // DR-009 段 7 post_filters (Entity.cell_filters's copy, issue accum-post-filters-stage7): an
+  // accum cell's cell_filters is Acc→Acc (the WHOLE accumulated array, `filters.mbt`'s
+  // `ArrayFilterDescriptor` registry — DIFFERENT signature from a scalar cell's cell_filters,
+  // which `apply_entity_filters` already applies per-value T→T and never reaches build_result at
+  // all). Applied BEFORE `collector` (DR-083 §2's literal order "accumulator 畳み → cell_filters"
+  // has no collector step in it; the collector/post_filters interaction — issue's "未裁定の論点1"
+  // — stays open for whenever a fixture actually exercises both on the same cell).
+  cell_filters : Array[String]
+  // DR-084 §2 (issue multiple-ref-accum-gap): the accumulator KIND (Entity.accum's copy — always
+  // `Some(_)` for a cell that reaches `accum_cells` at all, so this is a plain `String` here, not
+  // `String?`). `build_result`'s `segs` loop needs to tell apart a ref+repeat cell's "flatten"
+  // (non-`multiple`, last-wins-WHOLE-CELL discard — `last-wins-repeat-rows.json`, "#fire" is a
+  // CUTOFF) from "append" (`multiple`, firing-boundary-PRESERVING — `ref-repeat-rows-nested.json`,
+  // "#fire" is a GROUPING boundary instead) — both shapes emit the SAME "#fire"/"#row" sentinels
+  // (`inst_long`'s repeat-bearing ref branch doesn't itself change per DR-084 §2), so only the
+  // accumulator kind distinguishes which interpretation applies.
+  accum : String
 } derive(Eq, Debug)
 
 ///|
@@ -284,6 +324,41 @@ fn collector_here(
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
       return c.collector
+    }
+  }
+  None
+}
+
+///|
+/// The DR-009 段 7 cell_filters chain declared for the accum cell at `path`/`name` (mirrors
+/// `collector_here`, same lookup shape). `[]` (no chain) is indistinguishable from "cell not
+/// found" here — both callers already gate on `cell_here` first, same as `collector_here`.
+fn cell_filters_here(
+  cells : Array[AccumCell],
+  path : Array[String],
+  name : String,
+) -> Array[String] {
+  for c in cells {
+    if c.name == name && path_eq(c.path, path) {
+      return c.cell_filters
+    }
+  }
+  []
+}
+
+///|
+/// The accumulator KIND declared for the accum cell at `path`/`name` (mirrors `collector_here`,
+/// same lookup shape) — DR-084 §2's `build_result` needs to tell "flatten" (ref+repeat WITHOUT
+/// `multiple`, last-wins-WHOLE-CELL discard) apart from any other kind (`multiple`'s "append" etc,
+/// firing-boundary-PRESERVING), see `AccumCell.accum`'s doc comment.
+fn accum_kind_here(
+  cells : Array[AccumCell],
+  path : Array[String],
+  name : String,
+) -> String? {
+  for c in cells {
+    if c.name == name && path_eq(c.path, path) {
+      return Some(c.accum)
     }
   }
   None
@@ -421,14 +496,25 @@ pub fn build_result(
       // `update` variant at `parse_definition` time (static definition-error, not a runtime fold
       // check), so no Scope carrying this combination is ever built for `resolve`/`build_result`
       // to see.
-      let mut items : Array[RVal] = []
+      let mut vals : Array[Value] = []
       for b in binds {
         if b.scope.length() == 0 && b.key == k {
           match b.op {
-            Empty | Unset | Default => items = []
-            _ => items.push(RScalar(b.value))
+            Empty | Unset | Default => vals = []
+            _ => vals.push(b.value)
           }
         }
+      }
+      // DR-009 段 7 cell_filters (issue accum-post-filters-stage7): Acc→Acc self-map over the
+      // WHOLE folded array, BEFORE the collector (DR-083 §2's order — see AccumCell.cell_filters'
+      // doc comment for why collector comes after, not before).
+      let filtered_vals = match cell_filters_here(cells, path, k) {
+        [] => vals
+        chain => apply_cell_filter_chain(chain, vals)
+      }
+      let items : Array[RVal] = []
+      for v in filtered_vals {
+        items.push(RScalar(v))
       }
       let arr = RArr(items)
       let collected = match collector_here(cells, path, k) {
@@ -458,16 +544,39 @@ pub fn build_result(
     // below, not an object built from a stray marker). Skip the recursion for this seg (defer
     // entirely to the injection below) when it names a THIS-path accum cell with no "#row" —
     // fired >=1 time (a real "#row" present) still recurses normally, unaffected.
-    let unfired_ref_accum_seg = {
-      let mut is_accum = false
-      for c in cells {
-        if c.name == seg && path_eq(c.path, path) {
-          is_accum = true
+    let seg_binds = sub_under(binds, seg)
+    let is_accum = cell_here(cells, path, seg)
+    let unfired_ref_accum_seg = is_accum && !has_direct_key(seg_binds, "#row")
+    // DR-084 §2 (issue multiple-ref-accum-gap): a ref+repeat element that is ALSO `multiple`
+    // fires "#fire" per firing (`inst_long`'s repeat-bearing ref branch — unconditional, a
+    // non-`multiple` ref+repeat cell emits the SAME "#fire"/"#row" sentinels) AND "#row" per rep
+    // within each firing (`ref_row_head`) — the two-level nesting `row_groups` alone can't express
+    // (it only ever returns ONE flat row list, either "everything since the last #fire" or, with
+    // none present, "everything"). `fire_groups` splits by "#fire" first; `row_groups` on each
+    // resulting chunk then sees no "#fire" of its own (a no-op cutoff) and returns that firing's
+    // own rows — giving the DR-084 §2 shape directly: an outer element per firing (`T[]`), never
+    // flattened, "two-fires-preserve-firing-boundary" fixture's contract.
+    //
+    // The accumulator KIND (not just `is_accum`) is what gates this — `last-wins-repeat-rows.json`
+    // (non-`multiple` ref+repeat) IS an accum cell too (`ensure_entity`'s "flatten" fallback for a
+    // repeat-only element), and its "#fire" is the ORIGINAL discard-earlier-firings cutoff
+    // (`row_groups`'s own contract) — only a `multiple` cell's "append"/other accumulator (never
+    // "flatten") wants the firing-PRESERVING read.
+    let seg_is_multiple_ref = is_accum &&
+      accum_kind_here(cells, path, seg) != Some("flatten")
+    if seg_is_multiple_ref &&
+      has_direct_key(seg_binds, "#fire") &&
+      has_direct_key(seg_binds, "#row") {
+      let per_fire : Array[RVal] = []
+      for chunk in fire_groups(seg_binds) {
+        let rows : Array[RVal] = []
+        for row in row_groups(chunk) {
+          rows.push(build_result(row, cells, defaults, path_push(path, seg)))
         }
+        per_fire.push(RArr(rows))
       }
-      is_accum && !has_direct_key(sub_under(binds, seg), "#row")
-    }
-    if !unfired_ref_accum_seg {
+      obj.push((seg, RArr(per_fire)))
+    } else if !unfired_ref_accum_seg {
       obj.push(
         (
           seg,
@@ -705,8 +814,16 @@ fn collect_accum(
 ) -> Unit {
   for e in sc.entities {
     // any named accumulator (flatten / append / …) folds the cell into a list (DR-036).
-    if e.accum is Some(_) {
-      out.push({ path, name: e.name, collector: e.collector })
+    match e.accum {
+      Some(a) =>
+        out.push({
+          path,
+          name: e.name,
+          collector: e.collector,
+          cell_filters: e.cell_filters,
+          accum: a,
+        })
+      None => ()
     }
   }
   for g in sc.greedy {
@@ -738,6 +855,19 @@ pub fn default_cells(sc : Scope) -> Array[DefaultCell] {
 }
 
 ///|
+/// DR-083 §1: `Entity.default_values` is the uniform length-1-degenerate array (node.mbt's doc
+/// comment) — every SCALAR-cell reader (a cell with `accum is None`, guaranteed length exactly 1
+/// by `ensure_entity`'s only producer) wants just the one value. `resolve_ladder_below_cli`'s
+/// default seat is the ONE reader that legitimately iterates the whole array (an accum cell's
+/// default can carry N pieces) and does NOT use this helper.
+fn default_scalar(e : Entity) -> Value? {
+  match e.default_values {
+    Some(vs) => if vs.length() > 0 { Some(vs[0]) } else { None }
+    None => None
+  }
+}
+
+///|
 fn collect_defaults(
   sc : Scope,
   path : Array[String],
@@ -752,7 +882,7 @@ fn collect_defaults(
     // inherit seat), which this projection does not run; injecting the raw default would surface a
     // wrong value. Those cells stay ladder-resolved.
     if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
-      match e.default_value {
+      match default_scalar(e) {
         Some(v) => out.push({ path, name: e.name, value: v })
         None => ()
       }
@@ -1028,7 +1158,7 @@ pub fn is_bool_entity(entities : Array[Entity], name : String) -> Bool {
 ///|
 /// bool target `name` の「解決後の値」(DR-047 §5 明確化、値源不問): committed (CLI) が最終
 /// (true/false どちらでも CLI 面が勝つ、DR-031 ラダー通り)、非 committed なら env
-/// (`entity.env_key` があれば `parse_bool` を試みる)、それも無ければ default_value (bool は
+/// (`entity.env_key` があれば `parse_bool` を試みる)、それも無ければ default_values (bool は
 /// LOWERING §A.5 の暗黙 default:false を含め常に何らかの値を持つ)。**config / inherit は対象外**
 /// (既知の限界 — 元 issue の 3 ケースが CLI + env で表現できるため、config provider / 親スコープ
 /// 探索を持ち込むコストに見合わないと判断。config/inherit 経由でのみ true になる bool target は
@@ -1060,7 +1190,7 @@ fn resolved_bool_value(
           }
         None => ()
       }
-      return match e.default_value {
+      return match default_scalar(e) {
         Some(VBool(b)) => b
         _ => false
       }
@@ -1745,7 +1875,7 @@ fn resolve_entity_raw(
           // fold sees the right "old" — but this seat stays eligible to fall through to
           // env/config/inherit if nothing commits after it (unchanged pre-DR-077 contract).
           Unset => {
-            current = match e.default_value {
+            current = match default_scalar(e) {
               Some(v) => Some(mkb(e.name, v, Default))
               None => None
             }
@@ -1757,7 +1887,7 @@ fn resolve_entity_raw(
             let old = match current {
               Some(cb) => cb.value
               None =>
-                match e.default_value {
+                match default_scalar(e) {
                   Some(v) => v
                   None => VNum(0.0)
                 }
@@ -1914,10 +2044,33 @@ fn resolve_ladder_below_cli(
       None => ()
     }
   }
-  // default seat
-  match e.default_value {
-    Some(v) => Ok([mkb(e.name, v, Default)])
-    None => Ok([])
+  // default seat (DR-083 §1/§2): a scalar cell wants just the one value (`default_scalar`); an
+  // accum cell's declared default supplies its WHOLE array as already-split pieces, config-array
+  // precedent (DR-050 §4) — each piece routed through `config_to_value` (via `value_to_configval`)
+  // for the same T-domain / string-pipeline parse the CArr config branch above uses, so declared-
+  // default pieces and config-array pieces share one type-parse code path.
+  if e.accum is Some(_) {
+    match e.default_values {
+      Some(vs) => {
+        let bs : Array[Binding] = []
+        for v in vs {
+          match config_to_value(value_to_configval(v), e.ty, e.piece_filters) {
+            Ok(vv) => bs.push(mkb(e.name, vv, Default))
+            Err((KFilter, reason, msg)) =>
+              return Err(filter_err(e.name, at_pos, reason, msg, epath))
+            Err((_, reason, msg)) =>
+              return Err(ladder_err(e.name, at_pos, reason, msg, epath))
+          }
+        }
+        Ok(bs)
+      }
+      None => Ok([])
+    }
+  } else {
+    match default_scalar(e) {
+      Some(v) => Ok([mkb(e.name, v, Default)])
+      None => Ok([])
+    }
   }
 }
 
@@ -2186,7 +2339,7 @@ pub fn resolve_scope_config(
         }
       }
       if !done {
-        match e.default_value {
+        match default_scalar(e) {
           Some(v) => cf_path = Some(value_str(v)) // committed stays false (default path)
           None => ()
         }

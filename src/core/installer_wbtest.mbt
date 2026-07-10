@@ -64,7 +64,7 @@ fn el(
     exclusive_group: [],
     value_requires: [],
     deprecated: false,
-    default_value: None,
+    default_values: None,
     int_round: RError,
     allow_base_prefix: false,
     piece_filters,
@@ -144,14 +144,14 @@ test "long installer: value option gets 1 greedy Seq satellite + 1 EqSplit match
     }
     _ => abort("expected NativeMatch(EqSplit)")
   }
-  // entity は name=port で 1 個、TFlag ではないので default_value は None。inherit_ / env_key
+  // entity は name=port で 1 個、TFlag ではないので default_values は None。inherit_ / env_key
   // / config_seat / accum は installer が触っていないので初期値のまま。
   assert_eq(sc.entities.length(), 1)
   let ent = entity_of(sc, "port").unwrap()
   assert_eq(ent.ty, TStr)
   assert_eq(ent.env_key, None)
   assert_eq(ent.accum, None)
-  assert_eq(ent.default_value, None)
+  assert_eq(ent.default_values, None)
 }
 
 // ── flag (TFlag) の default:false preset + fail_action ─────────────────────────
@@ -181,8 +181,8 @@ test "long installer: a flag's `long:true` composes a `:set:true` variant → ba
   // normalize_option の TFlag→TBool 差し替えは値セルの型のみに効く。entity 自体は name=verbose のまま。
   let ent = entity_of(sc, "verbose").unwrap()
   assert_eq(ent.ty, TBool)
-  // default:false preset (DR-051 §2)
-  assert_eq(ent.default_value, Some(VBool(false)))
+  // default:false preset (DR-051 §2), stored as the length-1-degenerate array (DR-083 §1)
+  assert_eq(ent.default_values, Some([VBool(false)]))
 }
 
 ///|
@@ -237,8 +237,8 @@ test "long installer: a count's `long:true` composes an `:update:increment` vari
   let ent = entity_of(sc, "verbose").unwrap()
   // ensure_entity が TCount→TNum の型差し替えを担う (normalize_option ではない)。
   assert_eq(ent.ty, TNum)
-  // default:0 preset (DR-077 §3)。
-  assert_eq(ent.default_value, Some(VNum(0.0)))
+  // default:0 preset (DR-077 §3), stored as the length-1-degenerate array (DR-083 §1)
+  assert_eq(ent.default_values, Some([VNum(0.0)]))
 }
 
 ///|
@@ -464,9 +464,9 @@ test "global + long + fixpoint: child scope receives Rooted satellite (link_dept
   assert_true(found)
   // 子 scope に verbose entity は無い (link 同期で root cell に landing)
   assert_eq(entity_of(child_sc, "verbose"), None)
-  // root には verbose entity + default:false preset がある
+  // root には verbose entity + default:false preset がある (DR-083 §1: 長さ 1 縮退配列)
   let root_ent = entity_of(sc, "verbose").unwrap()
-  assert_eq(root_ent.default_value, Some(VBool(false)))
+  assert_eq(root_ent.default_values, Some([VBool(false)]))
 }
 
 // ── 順列耐性 (5 invariants + fixpoint): 順序が違っても同じ Scope に収束 ─────────
@@ -1125,7 +1125,7 @@ test "add_inheritable_copy: an alias-provided (variants-side) trigger shadows th
             {
               ..el("ttl", TNum),
               is_inheritable: true,
-              default_value: Some(VNum(60.0)),
+              default_values: Some([VNum(60.0)]),
             },
           ],
         },

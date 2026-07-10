@@ -319,7 +319,7 @@ fn opt(
   conflicts? : Array[String] = [],
   exclusive? : Array[String] = [],
   value_requires? : Array[(String, String, Array[String])] = [],
-  default? : Value? = None,
+  default? : Array[Value]? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
   piece_filters? : Array[String] = [],
@@ -356,7 +356,7 @@ fn opt(
     exclusive_group: exclusive,
     value_requires,
     deprecated: false,
-    default_value: default,
+    default_values: default,
     int_round,
     allow_base_prefix,
     piece_filters,
@@ -380,7 +380,7 @@ fn pos(
   config_key? : Array[String]? = None,
   export_? : ExportKey = EkUnset,
   ref_? : String? = None,
-  default? : Value? = None,
+  default? : Array[Value]? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
   piece_filters? : Array[String] = [],
@@ -416,7 +416,7 @@ fn pos(
     exclusive_group: [],
     value_requires: [],
     deprecated: false,
-    default_value: default,
+    default_values: default,
     int_round,
     allow_base_prefix,
     piece_filters,
@@ -456,7 +456,7 @@ fn dd_marker() -> ElemDef {
     exclusive_group: [],
     value_requires: [],
     deprecated: false,
-    default_value: None,
+    default_values: None,
     int_round: RError,
     allow_base_prefix: false,
     piece_filters: [],
@@ -854,7 +854,10 @@ fn proj_entity(e : Entity) -> LEnt {
   {
     name: e.name,
     typ,
-    default_: e.default_value,
+    // DR-083 §1: LEnt is the golden-fixture "5-face" oracle format, which only knows a scalar
+    // default (`dec_lent` below decodes `"default"` via a single `json_to_value`, no accum-array
+    // shape) — project the scalar face of `Entity.default_values` for this cross-check.
+    default_: default_scalar(e),
     env: e.env_key,
     inherit_: e.inherit_,
     config_key: e.config_key,
@@ -1172,7 +1175,7 @@ fn proj_sources(sc : Scope, resolved : Array[Binding]) -> String {
         if e.accum is Some(_) {
           items.push(e.name + "=default")
         } else if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
-          match e.default_value {
+          match default_scalar(e) {
             Some(_) => items.push(e.name + "=default")
             None => ()
           }
@@ -1353,6 +1356,26 @@ fn json_to_value(j : Json) -> Value raise DecodeSkip {
     None => ()
   }
   raise DecodeSkip("non-scalar value in effects/result")
+}
+
+///|
+/// DR-083 §1: a declared `"default"` decodes to the length-1-degenerate array uniformly — a bare
+/// JSON scalar lifts to a single-piece array (`[v]`), a JSON array decodes elementwise (one Value
+/// per already-split piece, DR-083 §2). Which shape is STRUCTURALLY legal for a given element
+/// (scalar element ⇒ length must end up 1) is a definition-time check, NOT a decode-time gate —
+/// `collect_scalar_array_default` (installer.mbt) is the one that rejects a >1-length default on a
+/// non-accum element; this decoder accepts either JSON shape unconditionally.
+fn json_to_default_values(j : Json) -> Array[Value] raise DecodeSkip {
+  match j.j_arr() {
+    Some(a) => {
+      let vs : Array[Value] = []
+      for it in a {
+        vs.push(json_to_value(it))
+      }
+      vs
+    }
+    None => [json_to_value(j)]
+  }
 }
 
 ///|
@@ -2341,8 +2364,8 @@ fn dec_option(
   }
   let short = dec_short(o)
   let env = dec_strs(o.get("env"))
-  let default = match o.get("default") {
-    Some(d) => Some(json_to_value(d))
+  let default : Array[Value]? = match o.get("default") {
+    Some(d) => Some(json_to_default_values(d))
     None => None
   }
   let global = bool_field(o, "global", false)
@@ -2483,8 +2506,8 @@ fn dec_positional(
     Some(c) => Some(dec_strs(Some(c)))
     None => None
   }
-  let default = match o.get("default") {
-    Some(d) => Some(json_to_value(d))
+  let default : Array[Value]? = match o.get("default") {
+    Some(d) => Some(json_to_default_values(d))
     None => None
   }
   let piece_filters = dec_strs(o.get("piece_filters"))
@@ -3511,7 +3534,7 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
     }
   }
   for e in sc.entities {
-    if e.ty != TFlag && e.ty != TBool && e.default_value is Some(_) {
+    if e.ty != TFlag && e.ty != TBool && e.default_values is Some(_) {
       return true
     }
     // DR-009 value_filters/cell_filters (issue 2026-07-09-filters-registry-foundation) are applied by
@@ -3960,7 +3983,13 @@ fn known_divergences() -> Array[String] {
 /// `definitions.types[number]` factory-config gap — all previously-frozen skip entries are removed
 /// since every fixture now decodes and runs losslessly (full conformance, no known skip gaps).
 fn expected_skips() -> Array[(String, String)] {
-  []
+  // values キー未対応の明示 skip (追跡: docs/issue/2026-07-10-values-decode-support.md)。
+  // decode 対応 (or 展開、DESIGN §5.3) が入ったらこのエントリを削除して green 条件に戻す。
+  [
+    (
+      "value-sources/set-always-variant-branch.json", "option has unsupported key 'values'",
+    ),
+  ]
 }
 
 ///|

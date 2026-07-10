@@ -2480,7 +2480,7 @@ fn elem_value(
 fn has_default(entities : Array[Entity], name : String) -> Bool {
   for e in entities {
     if e.name == name {
-      return e.default_value is Some(_)
+      return e.default_values is Some(_)
     }
   }
   false

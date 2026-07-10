@@ -33,6 +33,14 @@ fn ent(
   value_filters? : Array[String] = [],
   cell_filters? : Array[String] = [],
 ) -> Entity {
+  // DR-083 §1: the field is the length-1-degenerate array (node.mbt's doc comment); this builder
+  // keeps its OWN param scalar (every existing call site passes a single value, the common scalar-
+  // entity case) and wraps it here, one place, instead of touching every `default_value=Some(v)`
+  // call site across the file.
+  let default_values : Array[Value]? = match default_value {
+    Some(v) => Some([v])
+    None => None
+  }
   {
     name,
     ty,
@@ -43,7 +51,7 @@ fn ent(
     inherit_,
     accum,
     collector,
-    default_value,
+    default_values,
     separator,
     piece_filters,
     value_filters,
@@ -65,7 +73,15 @@ test "build_result folds scalar last-wins, accumulate array, and default seat" {
     cb("tags", VStr("a"), Cli),
     cb("tags", VStr("b"), Cli),
   ]
-  let cells : Array[AccumCell] = [{ path: [], name: "tags", collector: None }]
+  let cells : Array[AccumCell] = [
+    {
+      path: [],
+      name: "tags",
+      collector: None,
+      cell_filters: [],
+      accum: "append",
+    },
+  ]
   let defaults : Array[DefaultCell] = [
     { path: [], name: "verbose", value: VBool(false) },
   ]
@@ -97,7 +113,15 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
     },
     cb("tags", VStr("c"), Cli),
   ]
-  let cells : Array[AccumCell] = [{ path: [], name: "tags", collector: None }]
+  let cells : Array[AccumCell] = [
+    {
+      path: [],
+      name: "tags",
+      collector: None,
+      cell_filters: [],
+      accum: "append",
+    },
+  ]
   let r = build_result(binds, cells, [], [])
   assert_eq(r, RObj([("tags", RArr([RScalar(VStr("c"))]))]))
 }
@@ -106,7 +130,15 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
 /// Guarantees: an accumulate cell that fired ZERO times still renders `[]` (DR-044 §1 uniform
 /// array) instead of being absent from the result object.
 test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)" {
-  let cells : Array[AccumCell] = [{ path: [], name: "tags", collector: None }]
+  let cells : Array[AccumCell] = [
+    {
+      path: [],
+      name: "tags",
+      collector: None,
+      cell_filters: [],
+      accum: "append",
+    },
+  ]
   assert_eq(build_result([], cells, [], []), RObj([("tags", RArr([]))]))
 }
 
@@ -120,7 +152,13 @@ test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)
 test "build_result: a collector (unwrap_single) collapses a length-1 accumulation to a scalar" {
   let binds : Array[Binding] = [cb("tag", VStr("solo"), Cli)]
   let cells : Array[AccumCell] = [
-    { path: [], name: "tag", collector: Some("unwrap_single") },
+    {
+      path: [],
+      name: "tag",
+      collector: Some("unwrap_single"),
+      cell_filters: [],
+      accum: "append",
+    },
   ]
   assert_eq(
     build_result(binds, cells, [], []),
@@ -138,7 +176,13 @@ test "build_result: a collector (unwrap_single) leaves a 2+ element accumulation
     cb("tag", VStr("b"), Cli),
   ]
   let cells : Array[AccumCell] = [
-    { path: [], name: "tag", collector: Some("unwrap_single") },
+    {
+      path: [],
+      name: "tag",
+      collector: Some("unwrap_single"),
+      cell_filters: [],
+      accum: "append",
+    },
   ]
   assert_eq(
     build_result(binds, cells, [], []),
@@ -153,7 +197,13 @@ test "build_result: a collector (unwrap_single) leaves a 2+ element accumulation
 /// `UNIFORM ARRAY` 分岐) にも collector 適用を配線したことを固定する (ACCUMULATE 分岐だけでなく)。
 test "build_result: a collector on an unfired accum cell still renders [] (DR-044 uniform array)" {
   let cells : Array[AccumCell] = [
-    { path: [], name: "tag", collector: Some("unwrap_single") },
+    {
+      path: [],
+      name: "tag",
+      collector: Some("unwrap_single"),
+      cell_filters: [],
+      accum: "append",
+    },
   ]
   assert_eq(build_result([], cells, [], []), RObj([("tag", RArr([]))]))
 }
