@@ -3,3 +3,4 @@
 | date | category | status | slug | 概要 |
 |---|---|---|---|---|
 | 2026-07-10 | design | wip | [resolve-first-constraint-pipeline](./2026-07-10-resolve-first-constraint-pipeline.md) | パイプライン再構成 — resolve 先行 + 制約検査は解決済み bindings の読者に (DR-087 §4 の実装形) |
+| 2026-07-10 | bug | open | [value-present-ladder-gap](./2026-07-10-value-present-ladder-gap.md) | 遅延述語の value_present が env/config/inherit を見ない (DR-047 §4 と乖離) |
