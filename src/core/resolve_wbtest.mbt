@@ -337,6 +337,53 @@ test "DR-073 single-exposure-ok: no collision, and the unfired co-exported defau
   assert_eq(interps[0].result, RObj([("x", RScalar(VBool(true)))]))
 }
 
+///|
+/// issue export-key-collision-identity-exposure-gap: an IDENTITY-exposed element (export_key
+/// unset, DR-052 §1 "未指定 → name 由来のキーで露出" — `a`'s own name "a" IS its resolved exposed
+/// key) competing with another element's `EkKey`-MAPPED key for the same result-scope key is a
+/// genuine collision, same as the co-exposure-collision test above where both sides are mapped.
+/// `find_export_collisions` used to only group `EkKey`-mapped bindings, silently excluding
+/// identity-exposed ones (DR-052 §1's resolution table treats "未指定" as resolving to a real key,
+/// not a separate "no key" state — same posture `apply_export_keys` already takes for the SAME `_`
+/// fallback, this fix brings collision detection into parity with it).
+test "DR-073 identity-exposure collision: EkUnset element vs EkKey-mapped element sharing a key" {
+  // `a` has no ek entry at all (map doesn't even mention it — the common "declared without
+  // export_key" shape) — resolves to identity exposure under "a" itself. `b` explicitly maps to
+  // the SAME key "a".
+  let ek : Map[String, ExportKey] = Map::from_array([("b", EkKey("a"))])
+  let binds : Array[Binding] = [
+    cb("a", VBool(true), Cli),
+    cb("b", VBool(true), Cli),
+  ]
+  let collisions = find_export_collisions(binds, ek)
+  assert_eq(collisions.length(), 1)
+  assert_eq(collisions[0].path, [])
+  assert_eq(collisions[0].key, "a")
+  assert_eq(collisions[0].claimants, ["a", "b"])
+  // build_interpretations の drop 判定 (issue 受け入れ条件「promote_collision_ambiguous のドロップ
+  // 判定も同様に拡張」) — 2 interpretations、各々が claimant 1 個ずつを残し他方を drop する。
+  let interps = build_interpretations(binds, ek, [], [])
+  assert_eq(interps.length(), 2)
+  assert_eq(interps[0].result, RObj([("a", RScalar(VBool(true)))]))
+  assert_eq(interps[0].claimants, [("a", "a")])
+  assert_eq(interps[1].result, RObj([("a", RScalar(VBool(true)))]))
+  assert_eq(interps[1].claimants, [("a", "b")])
+}
+
+///|
+/// 保証 (対極、上のテストの境界、[[self-written-rule-blind-spots]] の対極確認): 2つの identity 露出
+/// 要素は当然ながら別名 (別キー) を持つので衝突しない — identity 露出をグルーピング対象に含めた
+/// 変更が「無関係な identity 要素同士まで誤って衝突と判定してしまう」誤動作を生んでいないことを
+/// 固定する。
+test "DR-073 identity-exposure 対極: two distinctly-named identity-exposed elements never collide" {
+  let ek : Map[String, ExportKey] = Map([])
+  let binds : Array[Binding] = [
+    cb("a", VBool(true), Cli),
+    cb("b", VBool(true), Cli),
+  ]
+  assert_eq(find_export_collisions(binds, ek), [])
+}
+
 // ── value-source ladder (DR-031/049/050) ──────────────────────────────────────
 
 ///|

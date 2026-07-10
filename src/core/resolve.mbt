@@ -944,25 +944,51 @@ pub(all) struct ExportCollision {
 } derive(Eq, Debug)
 
 ///|
+/// The result-key axis (DR-052 §1) resolved to its ACTUAL exposed key string for `raw` (an entity
+/// name / binding key), or `None` when the axis carries no key at all (EkNull, DR-052 §2 透過).
+/// Mirrors `apply_export_keys`'s own resolution exactly (same 3-way match, same `_` fallback to
+/// `raw` for EkUnset AND for an unmapped name — sentinels `"[]"`/`"{}"`/`""`/`"@act:"`/`"@depr:"`
+/// and `"#k"` index segments are never in `ek`, `apply_export_keys`'s doc comment) — this is the
+/// SAME "未指定 → name 由来のキーで露出" resolution DR-052 §1's table specifies, just queried
+/// instead of applied. issue export-key-collision-identity-exposure-gap: `find_export_collisions`
+/// used to skip this `_` (EkUnset / unmapped) case entirely, treating "no `ek` entry" as "not
+/// exposed" — but DR-052 §1 says EkUnset resolves to a REAL exposed key (the name), so an identity-
+/// exposed element competing with another element's `EkKey`-mapped key for the same result-scope
+/// key was invisible to collision detection. Spec precedent (DESIGN §15.5: "衝突の本質は結果キーの
+/// provenance の曖昧さ") talks about "同じ export_key へ解決する" — export_key's own value-domain
+/// (DR-052 §1) already includes "未指定 → name 由来のキー" as a resolved value, not a separate
+/// "no key" state, so this is the axis's existing resolution reused for detection, not a new
+/// collision-detection policy.
+fn exposed_key_of(raw : String, ek : Map[String, ExportKey]) -> String? {
+  match ek.get(raw) {
+    Some(EkNull) => None
+    Some(EkKey(s)) => Some(s)
+    _ => Some(raw)
+  }
+}
+
+///|
 /// Detect every export-key collision in `binds` (DESIGN §15.5, DR-021 → DR-052 → DR-073). Runtime
 /// check on the actual co-exposure of a parse, not a static declaration scan (§15.6 stays warn-only
 /// at definition time). `binds` are PRE-export-key bindings (raw entity names in `key`); grouping
 /// compares the raw `scope` path directly (two bindings at the identical remaining nesting are
 /// candidates regardless of depth — no per-level recursion needed, mirroring the original
-/// `find_export_collision`'s flat O(n²) scan).
+/// `find_export_collision`'s flat O(n²) scan). Groups by `exposed_key_of` (mapped OR identity-
+/// exposed, EkNull excluded) — see that function's doc comment for why identity exposure is now
+/// included (issue export-key-collision-identity-exposure-gap).
 pub fn find_export_collisions(
   binds : Array[Binding],
   ek : Map[String, ExportKey],
 ) -> Array[ExportCollision] {
-  // (path, mapped key) → claimants, built incrementally; a linear scan over few groups is fine at
+  // (path, exposed key) → claimants, built incrementally; a linear scan over few groups is fine at
   // this scale (definitions have small option counts).
   let groups : Array[ExportCollision] = []
   for b in binds {
-    match ek.get(b.key) {
-      Some(EkKey(mapped)) => {
+    match exposed_key_of(b.key, ek) {
+      Some(key) => {
         let mut found = false
         for g in groups {
-          if path_eq(g.path, b.scope) && g.key == mapped {
+          if path_eq(g.path, b.scope) && g.key == key {
             if !str_contains(g.claimants, b.key) {
               g.claimants.push(b.key)
             }
@@ -971,10 +997,10 @@ pub fn find_export_collisions(
           }
         }
         if !found {
-          groups.push({ path: b.scope, key: mapped, claimants: [b.key] })
+          groups.push({ path: b.scope, key, claimants: [b.key] })
         }
       }
-      _ => ()
+      None => ()
     }
   }
   let out : Array[ExportCollision] = []
@@ -1028,11 +1054,7 @@ pub fn build_interpretations(
       while gi < collisions.length() {
         let c = collisions[gi]
         if path_eq(c.path, b.scope) &&
-          c.key ==
-          (match ek.get(b.key) {
-            Some(EkKey(s)) => s
-            _ => ""
-          }) &&
+          exposed_key_of(b.key, ek) == Some(c.key) &&
           b.key != combo[gi] {
           drop = true
         }
