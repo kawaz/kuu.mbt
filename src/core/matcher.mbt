@@ -150,6 +150,7 @@ fn run_eq_split(
               e.allow_base_prefix,
               e.piece_filters,
               pos,
+              e.merge,
             ) {
             Ok(bs) => [Accept(pos + 1, bs)]
             Err(pe) => [Held(pe, [])]
@@ -292,6 +293,7 @@ fn short_val(
         e.allow_base_prefix,
         e.piece_filters,
         pos,
+        e.merge,
       )
     None => {
       let filtered = match apply_piece_filters(e.piece_filters, s) {

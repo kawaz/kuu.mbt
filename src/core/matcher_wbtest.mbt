@@ -55,6 +55,7 @@ test "eq-split long option resolves, errors, and 素通し" {
       allow_base_prefix: false,
       piece_filters: [],
       separator: None,
+      merge: false,
     },
   ])
   // a defined numeric key: one Accept consuming 1 token, binding port=8080 from the CLI seat.
@@ -94,6 +95,7 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
       allow_base_prefix: false,
       piece_filters: [],
       separator: None,
+      merge: false,
     },
   ])
   // `true` / `1` / mixed-case / all-caps all resolve to VBool(true).
@@ -145,6 +147,7 @@ test "eq-split long option: a TFlag entry never fires on =value" {
       allow_base_prefix: false,
       piece_filters: [],
       separator: None,
+      merge: false,
     },
   ])
   assert_eq(run_matcher(long, pctx(["--verbose=true"]), 0).length(), 0)
@@ -169,6 +172,7 @@ test "short cluster: flag run and in-token numeric value" {
       allow_base_prefix: false,
       piece_filters: [],
       separator: None,
+      merge: false,
     },
     {
       ch: 'b',
@@ -179,6 +183,7 @@ test "short cluster: flag run and in-token numeric value" {
       allow_base_prefix: false,
       piece_filters: [],
       separator: None,
+      merge: false,
     },
     {
       ch: 'n',
@@ -189,6 +194,7 @@ test "short cluster: flag run and in-token numeric value" {
       allow_base_prefix: false,
       piece_filters: [],
       separator: None,
+      merge: false,
     },
   ])
   // `-ab`: a run of two flags → one reading binding a=true, b=true, consuming the single token.
@@ -225,6 +231,7 @@ test "short cluster: space-form value takes the next token" {
       allow_base_prefix: false,
       piece_filters: [],
       separator: None,
+      merge: false,
     },
   ])
   let r = run_matcher(short, pctx(["-n", "5"]), 0)
@@ -251,6 +258,7 @@ test "short cluster: deprecated entry rides a @depr marker" {
       allow_base_prefix: false,
       piece_filters: [],
       separator: None,
+      merge: false,
     },
   ])
   let r = run_matcher(short, pctx(["-d"]), 0)

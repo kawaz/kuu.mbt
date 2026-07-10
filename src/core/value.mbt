@@ -1362,6 +1362,19 @@ pub(all) enum EffectOp {
   // registry name is arity-1 of the colon DSL, remaining segments are its args — same nesting
   // convention filters already use). committed = true (a user-explicit CLI op, like set).
   Update(String, Array[String])
+  // DR-080 §2 (merge accumulator piece marker vocabulary): a `remove`/`splice` PIECE within one
+  // CLI firing's separator-split value list, distinct in kind from the 5 CELL-level ops above (a
+  // merge-accumulator cell's own effect is still `Set` — these two only ever appear on the
+  // per-piece Bindings `resolve_entity_raw`'s accum fold groups by `at_pos`, DR-080 波及節 "1
+  // 発火 = 同一 argv 位置の piece 列"). `Remove`'s operand (the Binding's `value`) is type-parsed
+  // like any add piece (DR-080 §2 "operand は要素 type で parse される"); `Splice` (`@`) carries
+  // no operand (the Binding's value is a placeholder, same convention as default/unset/empty).
+  // committed = true for both (mirrors `Update`) — `resolve_entity_raw`'s accum branch (which
+  // interprets the piece sequence) owns whether the OVERALL fire commits, not this per-piece tag
+  // (the DR-045 `committed` helper below never sees these — they never reach the scalar branch,
+  // only the accum one, which computes committed_now from its own marker-presence check).
+  Remove
+  Splice
 } derive(Eq, Debug)
 
 ///|

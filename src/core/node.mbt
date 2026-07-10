@@ -98,7 +98,12 @@ pub(all) enum Node {
   /// `sep_binds` (eval.mbt) threads all of this through the split loop; a piece that fails its
   /// type parse is `kind: KParse` (same reason vocab as the scalar value primitives), NOT a
   /// piece_filters-style `KFilter` reject — these are distinct pipeline stages (段3 vs 段4).
-  SepArg(String, String, Ty, RoundMode, Bool, Array[String])
+  /// 7th field (DR-080 波及節): `merge` — whether the declaring element's `multiple.accumulator`
+  /// is `"merge"`. Threaded from `ElemDef.accumulator` via `installer.mbt`'s `value_prim` so
+  /// `sep_binds` (eval.mbt) knows whether to run `classify_merge_piece` on each split piece
+  /// (merge-declared elements only, DR-080 §1) or treat every piece as a plain add (everyone else,
+  /// unchanged pre-DR-080 behavior).
+  SepArg(String, String, Ty, RoundMode, Bool, Array[String], Bool)
   /// number value primitive (DR-074 §1 canonical + §2 opt-in `number_allow_base_prefix`)。consume 1
   /// token, parse via `parse_number_ext(_, allow_base_prefix)`。allow=false は canonical (10 進のみ、
   /// base prefix Error)、allow=true で `0xff` / `0x1.8p3` / `0o777` / `0b1010` も受理する統合 opt-in。
@@ -360,6 +365,10 @@ pub(all) struct LongEntry {
   // entry-forms.json's "入口形に関わらず同じ pieceProcessor 管を通る" precedent for piece_filters
   // applies identically here). `None` = no split (single-piece degenerate, DR-034 §6.3).
   separator : String?
+  // DR-080 波及節: `ElemDef.accumulator == Some("merge")` — the eq-split form (`--key=a,-a`) shares
+  // the SAME `sep_binds` pieceProcessor as the space form, so it needs the same merge-marker flag
+  // (same rationale as `separator` above: the entry point doesn't change the value-axis pipeline).
+  merge : Bool
 } derive(Eq, Debug)
 
 ///|
@@ -385,6 +394,8 @@ pub(all) struct ShortEntry {
   // LongEntry's field): in-cluster (`-p5,7`) and space-form (`-p 5,7`) both go through the same
   // pieceProcessor as the long-option space form. `None` = no split.
   separator : String?
+  // DR-080 波及節 (same rationale as LongEntry's field): `ElemDef.accumulator == Some("merge")`.
+  merge : Bool
 } derive(Eq, Debug)
 
 ///|

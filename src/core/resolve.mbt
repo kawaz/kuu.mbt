@@ -1628,6 +1628,17 @@ fn resolve_entity_raw(
   //   (env/config/inherit/default) below, exactly like the scalar branch already does
   //   (`unset-ladder.json`'s `unset-opens-ladder`) — this is the new `committed_now` gate replacing
   //   the old unconditional `bs.length() > 0` return.
+  // DR-080 波及節: a merge-accumulator cell's CLI seat is NOT a per-binding fold — a "発火" is a
+  // GROUP of same-`at_pos` Set/Remove/Splice pieces (one argv token's separator-split), evaluated
+  // together against the DR-080 §3 rule (old composition, remove/splice, implicit leading `@`).
+  // That grouping cannot be expressed inside this function's per-binding `match b.op` loop (which
+  // append/flatten's accumulators are correctly built around, one binding = one independent
+  // effect) — factored into its own function.
+  if e.accum is Some("merge") {
+    return resolve_merge_accum(
+      e, cli, env_map, config_obj, config_path, inherited, at_pos, epath,
+    )
+  }
   if e.accum is Some(_) {
     let bs : Array[Binding] = []
     let mut committed_now = false
@@ -1643,6 +1654,14 @@ fn resolve_entity_raw(
             // mis-handling a binding that should never arrive.
             abort(
               "unreachable: an accum (multiple) entity's `update` variant is rejected at definition time (installer.mbt's collect_unsupported_accum_update) — resolve_entity_raw should never see one",
+            )
+          Remove | Splice =>
+            // DR-080 §2: `sep_binds` only ever emits a `Remove`/`Splice` piece for an entity whose
+            // `accumulator` is `"merge"` (the `merge` flag gate on `classify_merge_piece`) — this
+            // branch is append/flatten's fold, reached only when `e.accum` is NOT `Some("merge")`
+            // (the `if` above already returned for that case). Unreachable in practice.
+            abort(
+              "unreachable: a Remove/Splice piece only fires for a merge-accumulator entity (DR-080 §1) — this is the non-merge (append/flatten) accum fold",
             )
           Default =>
             // DR-081 §2: accum セルでも op=default は「その時点の (書き換え済み) default 値」を
@@ -1751,6 +1770,14 @@ fn resolve_entity_raw(
               Err(pe) => return Err(pe)
             }
           }
+          Remove | Splice =>
+            // DR-080 §2: a `Remove`/`Splice` piece only ever fires for a `multiple` element whose
+            // `accumulator` is `"merge"` — a merge accumulator REQUIRES `multiple` (DR-080 §1), so
+            // no scalar (non-multiple) entity's CLI seat can ever carry one. Unreachable in
+            // practice; `abort` matches the sibling accum branch's own defensive arm.
+            abort(
+              "unreachable: a Remove/Splice piece only fires for a multiple(merge) entity (DR-080 §1) — this is the scalar (non-multiple) fold",
+            )
         }
       }
     }
@@ -1892,6 +1919,190 @@ fn resolve_ladder_below_cli(
     Some(v) => Ok([mkb(e.name, v, Default)])
     None => Ok([])
   }
+}
+
+///|
+/// A merge accumulator's CLI-seat unit of work (DR-080 波及節「1 発火 = 同一 argv 位置の piece
+/// 列」): either one cell-level op (`default`/`unset`/`empty`, 0-token `EffMark` bindings, `at_pos`
+/// always `None`) or a run of `Set`/`Remove`/`Splice` PIECE bindings sharing the SAME `at_pos`
+/// (`sep_binds`'s split of one separator token). `resolve_merge_accum` groups the CLI seat into
+/// this shape before applying DR-080 §3's evaluation rule.
+priv enum MergeGroup {
+  GCell(Binding)
+  GFire(Array[Binding])
+}
+
+///|
+/// DR-080 の merge accumulator 専用 CLI 席折込み。append/flatten (`resolve_entity_raw`'s own accum
+/// loop) は「1 binding = 1 独立効果」の fold で済むが、merge は「同じ at_pos の Set/Remove/Splice
+/// piece 列 = 1 発火」という粒度で DR-080 §3 の規則 (old 合成、remove/splice、暗黙先頭 `@`) を適用
+/// する必要があり、その fold には収まらない — 独立関数として切り出した。
+///
+/// 各グループの処理は前段の結果を **完全に置き換える** (累積しない): DR-080 §3 冒頭「マーカーを
+/// 1 つも含まない発火 = cell 上書き」("second-no-marker-fire-overwrites-again" fixture — 2 回目の
+/// マーカーなし発火は 1 回目の 5 要素を消して単独の結果になる、append 累積とは異なる) — append の
+/// ような「毎発火の効果を保存して build_result に畳ませる」contract ではなく、merge 自身が「現在の
+/// 確定状態」を都度再計算し、その時点の状態だけを返り値 (`build_result` が解釈する素の binding 列)
+/// として持つ。次の発火の "old" は別途 `old_values` で運ぶ (返り値の binding 列そのものからは
+/// 再構成しない — `Default`/`Empty` の 2 段構成 binding 列から values を逆算するのは重複ロジックに
+/// なる)。
+fn resolve_merge_accum(
+  e : Entity,
+  cli : Array[Binding],
+  env_map : Map[String, String],
+  config_obj : ConfigVal?,
+  config_path : Array[String],
+  inherited : Map[String, Value],
+  at_pos : Int,
+  epath : Array[String],
+) -> Result[Array[Binding], ParseError] {
+  // グループ化: 同名 binding のうち、Set/Remove/Splice は「連続する同一 at_pos」の連なりを 1 発火
+  // (GFire) として束ね、Update/Default/Unset/Empty は単独グループ (GCell) とする。
+  let groups : Array[MergeGroup] = []
+  let mut fire_buf : Array[Binding] = []
+  let mut fire_pos : Int? = None
+  for b in cli {
+    if b.key == e.name {
+      match b.op {
+        Set | Remove | Splice => {
+          if fire_buf.length() > 0 && fire_pos != b.at_pos {
+            groups.push(GFire(fire_buf))
+            fire_buf = []
+          }
+          fire_pos = b.at_pos
+          fire_buf.push(b)
+        }
+        Update(_, _) | Default | Unset | Empty => {
+          if fire_buf.length() > 0 {
+            groups.push(GFire(fire_buf))
+            fire_buf = []
+            fire_pos = None
+          }
+          groups.push(GCell(b))
+        }
+      }
+    }
+  }
+  if fire_buf.length() > 0 {
+    groups.push(GFire(fire_buf))
+  }
+  let mut result_bs : Array[Binding] = []
+  let mut committed_now = false
+  let mut old_values : Array[Value]? = None
+  for g in groups {
+    match g {
+      GCell(b) =>
+        match b.op {
+          Update(_, _) =>
+            // team-lead 裁定 2026-07-10: accum×update は静的 definition-error (installer.mbt の
+            // collect_unsupported_accum_update) — merge accumulator も `multiple` の一種なので
+            // 同じ gate に掛かる。この arm に実際に来ることはない。
+            abort(
+              "unreachable: an accum (multiple) entity's `update` variant is rejected at definition time (installer.mbt's collect_unsupported_accum_update) — resolve_merge_accum should never see one",
+            )
+          Default =>
+            // DR-081 §2 の accum 節と同じ二段構成 (クリア点 1 個 + 書き換え済み default の要素
+            // N 個)。old_values はこの発火の結果 (書き換え済み default の値列) に更新する —
+            // 後続の merge 発火があれば、それが「その時点の old」になる (DR-080 §3 の old はセル
+            // 現在値、default 発火直後ならその値)。
+            match
+              resolve_ladder_below_cli(
+                e, env_map, config_obj, config_path, inherited, at_pos, epath,
+              ) {
+              Ok(bs2) => {
+                let nb : Array[Binding] = [{ ..b, source: Cli }]
+                let vals : Array[Value] = []
+                for x in bs2 {
+                  nb.push({ ..x, op: Set, source: Cli })
+                  vals.push(x.value)
+                }
+                result_bs = nb
+                old_values = Some(vals)
+                committed_now = true
+              }
+              Err(pe) => return Err(pe)
+            }
+          Unset => {
+            // DR-045: uncommitted — the ladder re-opens. A LATER merge firing in this same CLI
+            // seat must re-query it fresh (mirrors "初回発火" — `old_values = None` signals that).
+            result_bs = [b]
+            old_values = None
+            committed_now = false
+          }
+          Empty => {
+            result_bs = [b]
+            old_values = Some([])
+            committed_now = true
+          }
+          Set | Remove | Splice =>
+            abort(
+              "unreachable: GCell only ever holds Update/Default/Unset/Empty (the grouping loop routes Set/Remove/Splice into GFire)",
+            )
+        }
+      GFire(pieces) => {
+        let marks : Array[MergeMark] = []
+        for p in pieces {
+          match p.op {
+            Set => marks.push(MAdd(p.value))
+            Remove => marks.push(MRemove(p.value))
+            Splice => marks.push(MSplice)
+            _ =>
+              abort(
+                "unreachable: a GFire piece is always Set/Remove/Splice (the grouping loop's own invariant)",
+              )
+          }
+        }
+        if merge_pieces_has_no_marker(marks) {
+          // DR-080 §3 冒頭: マーカーを1つも含まない発火 = cell 上書き。`pieces` は既に
+          // Set/Cli/at_pos 形 (`sep_binds` が組んだ通り) なので、そのまま採用する — old は
+          // 一切参照しない。
+          let vals : Array[Value] = []
+          for p in pieces {
+            vals.push(p.value)
+          }
+          result_bs = pieces
+          old_values = Some(vals)
+          committed_now = true
+        } else {
+          // DR-080 §3: old = セルの現在値 (直前発火の結果)、初回発火なら値源ラダーの下位席の勝者。
+          let old = match old_values {
+            Some(vs) => vs
+            None =>
+              match
+                resolve_ladder_below_cli(
+                  e, env_map, config_obj, config_path, inherited, at_pos, epath,
+                ) {
+                Ok(bs2) => {
+                  let vs : Array[Value] = []
+                  for x in bs2 {
+                    vs.push(x.value)
+                  }
+                  vs
+                }
+                Err(pe) => return Err(pe)
+              }
+          }
+          let result_vals = eval_merge_pieces(
+            merge_pieces_with_implicit_splice(marks),
+            old,
+          )
+          let nb : Array[Binding] = []
+          for v in result_vals {
+            nb.push(mkb(e.name, v, Cli))
+          }
+          result_bs = nb
+          old_values = Some(result_vals)
+          committed_now = true
+        }
+      }
+    }
+  }
+  if committed_now {
+    return Ok(result_bs)
+  }
+  resolve_ladder_below_cli(
+    e, env_map, config_obj, config_path, inherited, at_pos, epath,
+  )
 }
 
 ///|
@@ -2057,4 +2268,151 @@ pub fn inherited_of(binds : Array[Binding]) -> Map[String, Value] {
     m.set(b.key, b.value)
   }
   m
+}
+
+// ── DR-080: merge accumulator — piece マーカー語彙と old 合成 ──────────────────
+
+///|
+/// DR-080 §2 のマーカー判定結果 (1 piece 分)。マーカー認識は piece 全体一致・separator 分割直後・
+/// 型 parse 前 (DR-080 波及節) — この enum はその判定が終わった後の形で、`MRemove`/`MAdd` の
+/// payload は既に型 parse 済みの `Value` (remove の operand も要素 type で parse される、DR-080 §2)。
+/// `MSplice` (`@`) は operand を持たない (old をその位置に展開するだけ)。
+pub(all) enum MergeMark {
+  MAdd(Value)
+  MRemove(Value)
+  MSplice
+} derive(Eq, Debug)
+
+///|
+/// DR-080 §3 の評価規則 (左→右の一回走査)。呼び出し側の責務: (a) 「マーカーを 1 つも含まない発火」
+/// の判定 (この関数はマーカーが渡された前提で動く — マーカーなし発火は「cell 上書き」であり、この
+/// 合成規則を経由しない、DR-080 §3 冒頭)。(b) 明示 `@` が無い場合の暗黙先頭 `@` 補完 (DR-080 §3
+/// 「明示 `@` が無ければ先頭に暗黙の `@` が補われる」) — `pieces` はこの補完が既に済んだ列を渡す。
+///
+/// アルゴリズム (DR-080 §4 の 14 例全てで検証済み、kuu.mbt issue の逆算):
+/// - `seen_removes`: これまでに出現した remove の operand 集合 (発火全体を通じて蓄積、削除も
+///   splice フィルタも兼ねる)
+/// - `MAdd(v)`: work_list の末尾に追加 (それ以前/以後の remove からは影響を受けない自分自身の
+///   追加だが、後続の remove がこの要素を削除しうる — 削除は「その時点までの work_list 全体」に
+///   効くため)
+/// - `MRemove(v)`: `seen_removes` に `v` を追加した後、work_list 全体 (その時点までに構築された
+///   もの) から `v` と等しい要素を全削除 (DR-080 §3 (a) 後置 remove)
+/// - `MSplice`: `old` から「その時点で `seen_removes` に含まれる」要素を除いたコピーを work_list
+///   の末尾に連結 (DR-080 §3 (b) 前置 remove — old 展開時点の `seen_removes` を使うので、remove が
+///   splice より後にあっても、splice の時点でまだ出現していなければ及ばない。ただし同じ発火内で
+///   remove が先行していれば当然反映される)
+pub fn eval_merge_pieces(
+  pieces : Array[MergeMark],
+  old : Array[Value],
+) -> Array[Value] {
+  let work_list : Array[Value] = []
+  let seen_removes : Array[Value] = []
+  for p in pieces {
+    match p {
+      MAdd(v) => work_list.push(v)
+      MRemove(v) => {
+        if !array_contains_value(seen_removes, v) {
+          seen_removes.push(v)
+        }
+        let kept : Array[Value] = []
+        for x in work_list {
+          if x != v {
+            kept.push(x)
+          }
+        }
+        work_list.clear()
+        for x in kept {
+          work_list.push(x)
+        }
+      }
+      MSplice =>
+        for x in old {
+          if !array_contains_value(seen_removes, x) {
+            work_list.push(x)
+          }
+        }
+    }
+  }
+  work_list
+}
+
+///|
+fn array_contains_value(arr : Array[Value], v : Value) -> Bool {
+  for x in arr {
+    if x == v {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// `pieces` が 1 つも `MRemove`/`MSplice` を含まないか (= DR-080 §3 冒頭「マーカーを 1 つも含まない
+/// 発火」の判定)。全て `MAdd` なら true。
+pub fn merge_pieces_has_no_marker(pieces : Array[MergeMark]) -> Bool {
+  for p in pieces {
+    match p {
+      MAdd(_) => ()
+      _ => return false
+    }
+  }
+  true
+}
+
+///|
+/// DR-080 §3 「明示 `@` が無ければ先頭に暗黙の `@` が補われる」。`pieces` にマーカーが含まれる
+/// (merge モード) 前提で呼ぶ — マーカーなし発火 (cell 上書き) には適用しない。
+pub fn merge_pieces_with_implicit_splice(
+  pieces : Array[MergeMark],
+) -> Array[MergeMark] {
+  let mut has_explicit_splice = false
+  for p in pieces {
+    match p {
+      MSplice => has_explicit_splice = true
+      _ => ()
+    }
+  }
+  if has_explicit_splice {
+    pieces
+  } else {
+    let out : Array[MergeMark] = [MSplice]
+    for p in pieces {
+      out.push(p)
+    }
+    out
+  }
+}
+
+///|
+/// DR-080 §2 の piece 全体一致マーカー判定結果 (型 parse 前 — operand はまだ生の文字列)。
+/// `PkRemove`/`PkAdd` の文字列は `piece_filters` → 型 parse を通す payload (DR-080 波及節)、
+/// `PkSplice` は operand を持たない。
+pub(all) enum PieceMark {
+  PkAdd(String)
+  PkRemove(String)
+  PkSplice
+} derive(Eq, Debug)
+
+///|
+/// DR-080 §2 のマーカー語彙判定 (piece 全体一致のみ、separator 分割直後・型 parse 前):
+/// - `"@"` (完全一致) → splice
+/// - 先頭が `-` → remove、operand は残り (空文字列も含む — `-` 単独は remove(""))
+/// - 先頭が `+` かつ 2 文字目が `-`/`@`/`+` → escape、先頭の `+` を 1 個剥がした literal (add)
+/// - 上記以外 → add (通常値、`+` 単独や `+x` (x が `-`/`@`/`+` 以外) もここに落ちる = literal)
+///
+/// 部分一致はマーカーにならない (`a@b` は `@` を含むが先頭一致ではないので add)。
+pub fn classify_merge_piece(s : String) -> PieceMark {
+  if s == "@" {
+    return PkSplice
+  }
+  let cs = to_chars(s)
+  if cs.length() > 0 && cs[0] == '-' {
+    return PkRemove(chars_to_str_from(cs, 1))
+  }
+  if cs.length() >= 2 &&
+    cs[0] == '+' &&
+    (cs[1] == '-' || cs[1] == '@' || cs[1] == '+') {
+    return PkAdd(chars_to_str_from(cs, 1))
+  }
+  PkAdd(s)
 }

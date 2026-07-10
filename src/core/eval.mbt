@@ -306,7 +306,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // trigger consumed) this is the "--port with no value" state.
         [Pending([pend_value(TStr, name)], [])]
       }
-    SepArg(name, sep, ty, int_round, base, piece_filters) =>
+    SepArg(name, sep, ty, int_round, base, piece_filters, merge) =>
       if pos < ctx.toks.length() {
         match
           sep_binds(
@@ -318,6 +318,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
             base,
             piece_filters,
             pos,
+            merge,
           ) {
           Ok(bs) => [Accept(pos + 1, bs)]
           Err(pe) => [Held(pe, [])]
@@ -657,6 +658,11 @@ fn split_on(s : String, sep : String) -> Array[String] {
 /// to give it (CONFORMANCE §3's piece-attribution regulation attributes per-piece failures to the
 /// whole token they came from, per `multiple-parse/filters-each.json::separator-piece-rejects-whole`
 /// and `separator-typed.json::option-separator-piece-parse-rejected`).
+/// `merge` (DR-080 波及節): whether `name`'s element declared `accumulator: "merge"` — the marker
+/// vocabulary (`classify_merge_piece`) only applies to a merge-declared element's pieces (DR-080
+/// §1 "マーカー語彙は accumulator=merge を宣言した要素の CLI 発火 piece 列にのみ適用"). When false,
+/// every piece is treated as a plain add (`PkAdd(part)`, no classification) — degenerates to the
+/// pre-DR-080 behavior exactly (no piece is ever `-`/`@`-prefixed specially for append etc).
 fn sep_binds(
   name : String,
   tok : String,
@@ -666,45 +672,105 @@ fn sep_binds(
   allow_base_prefix : Bool,
   piece_filters : Array[String],
   pos : Int,
+  merge : Bool,
 ) -> Result[Array[Binding], ParseError] {
   let out : Array[Binding] = []
   for part in split_on(tok, sep) {
-    match apply_piece_filters(piece_filters, part) {
-      Err((reason, msg)) => return Err(pe_filter(name, pos, reason, msg))
-      Ok(s) =>
-        match ty {
-          TNum =>
-            match parse_number_ext(s, allow_base_prefix) {
-              Some(d) => out.push(mkb(name, VNum(d), Cli, at_pos=Some(pos)))
-              None => return Err(pe_parse(name, s, pos))
-            }
-          TInt =>
-            match parse_int_value_ext(s, int_round, allow_base_prefix) {
-              Ok(i) =>
-                out.push(mkb(name, VNum(i.to_double()), Cli, at_pos=Some(pos)))
-              Err(NotAnInteger) => return Err(pe_parse_int(name, s, pos))
-              Err(IntOutOfRange) =>
-                return Err(pe_int_out_of_range(name, s, pos))
-              Err(NotANumber) => return Err(pe_parse(name, s, pos))
-            }
-          TFloat =>
-            match parse_float(s) {
-              Some(d) => out.push(mkb(name, VNum(d), Cli, at_pos=Some(pos)))
-              None => return Err(pe_parse(name, s, pos))
-            }
-          TBool =>
-            match parse_bool(s) {
-              Some(b) => out.push(mkb(name, VBool(b), Cli, at_pos=Some(pos)))
-              None => return Err(pe_parse_bool(name, s, pos))
-            }
-          // TStr (and any other kind that structurally never reaches a SepArg, e.g. TFlag/TCount —
-          // multiple/separator on a presence-only cell is not a real shape): identity parse, the
-          // pre-段2 default behavior preserved exactly for string elements.
-          _ => out.push(mkb(name, VStr(s), Cli, at_pos=Some(pos)))
+    let mark : PieceMark = if merge {
+      classify_merge_piece(part)
+    } else {
+      PkAdd(part)
+    }
+    match mark {
+      // DR-080 §2 splice: no payload, no filters/parse — a pure cell-marker binding
+      // (mirrors Default/Unset/Empty's placeholder-value convention).
+      PkSplice =>
+        out.push({
+          key: name,
+          op: Splice,
+          value: VBool(false),
+          source: Cli,
+          scope: [],
+          link: 0,
+          at_pos: Some(pos),
+        })
+      PkRemove(payload) =>
+        match
+          sep_piece_value(
+            name, payload, ty, int_round, allow_base_prefix, piece_filters, pos,
+          ) {
+          Ok(v) =>
+            out.push({
+              key: name,
+              op: Remove,
+              value: v,
+              source: Cli,
+              scope: [],
+              link: 0,
+              at_pos: Some(pos),
+            })
+          Err(pe) => return Err(pe)
+        }
+      PkAdd(payload) =>
+        match
+          sep_piece_value(
+            name, payload, ty, int_round, allow_base_prefix, piece_filters, pos,
+          ) {
+          Ok(v) => out.push(mkb(name, v, Cli, at_pos=Some(pos)))
+          Err(pe) => return Err(pe)
         }
     }
   }
   Ok(out)
+}
+
+///|
+/// One split piece's payload → `piece_filters` → type parse (DESIGN §6.2's pieceProcessor,
+/// shared by `sep_binds`'s add/remove piece kinds — DR-080 §2 "remove operand は payload として
+/// 型 parse を通る", 同じ規約を add piece と共有する). Factored out of `sep_binds` so the
+/// non-merge (plain add) and merge (add/remove) piece kinds run the EXACT same filter→parse
+/// pipeline, never two copies drifting apart.
+fn sep_piece_value(
+  name : String,
+  part : String,
+  ty : Ty,
+  int_round : RoundMode,
+  allow_base_prefix : Bool,
+  piece_filters : Array[String],
+  pos : Int,
+) -> Result[Value, ParseError] {
+  match apply_piece_filters(piece_filters, part) {
+    Err((reason, msg)) => Err(pe_filter(name, pos, reason, msg))
+    Ok(s) =>
+      match ty {
+        TNum =>
+          match parse_number_ext(s, allow_base_prefix) {
+            Some(d) => Ok(VNum(d))
+            None => Err(pe_parse(name, s, pos))
+          }
+        TInt =>
+          match parse_int_value_ext(s, int_round, allow_base_prefix) {
+            Ok(i) => Ok(VNum(i.to_double()))
+            Err(NotAnInteger) => Err(pe_parse_int(name, s, pos))
+            Err(IntOutOfRange) => Err(pe_int_out_of_range(name, s, pos))
+            Err(NotANumber) => Err(pe_parse(name, s, pos))
+          }
+        TFloat =>
+          match parse_float(s) {
+            Some(d) => Ok(VNum(d))
+            None => Err(pe_parse(name, s, pos))
+          }
+        TBool =>
+          match parse_bool(s) {
+            Some(b) => Ok(VBool(b))
+            None => Err(pe_parse_bool(name, s, pos))
+          }
+        // TStr (and any other kind that structurally never reaches a SepArg, e.g. TFlag/TCount —
+        // multiple/separator on a presence-only cell is not a real shape): identity parse, the
+        // pre-段2 default behavior preserved exactly for string elements.
+        _ => Ok(VStr(s))
+      }
+  }
 }
 
 ///|
@@ -1240,7 +1306,7 @@ fn scope_consume(
       } else {
         [] // 先食い: a greedy trigger sits here; the spine stays pending
       }
-    SepArg(name, sep, ty, int_round, base, piece_filters) =>
+    SepArg(name, sep, ty, int_round, base, piece_filters, merge) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match
           sep_binds(
@@ -1252,6 +1318,7 @@ fn scope_consume(
             base,
             piece_filters,
             pos,
+            merge,
           ) {
           Ok(bs) =>
             scope_step(sc, ctx, pos + 1, pidx + 1, cat(acc, bs), severed, k)
@@ -1767,7 +1834,7 @@ fn consume_head(
       } else {
         []
       }
-    SepArg(name, sep, ty, int_round, base, piece_filters) =>
+    SepArg(name, sep, ty, int_round, base, piece_filters, merge) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match
           sep_binds(
@@ -1779,6 +1846,7 @@ fn consume_head(
             base,
             piece_filters,
             pos,
+            merge,
           ) {
           Ok(bs) => [Accept(pos + 1, bs)]
           Err(pe) => [Held(pe, [])]
@@ -1974,7 +2042,7 @@ fn consume_compound(
 ) -> Array[Branch] {
   match node {
     StrArg(_, _)
-    | SepArg(_, _, _, _, _, _)
+    | SepArg(_, _, _, _, _, _, _)
     | NumArg(_, _, _)
     | FloatArg(_, _)
     | IntArg(_, _, _, _)
@@ -2057,7 +2125,7 @@ fn head_elem_names(head : Node) -> Array[String] {
 fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
   match n {
     StrArg(name, _) => if !str_mem(out, name) { out.push(name) }
-    SepArg(name, _, _, _, _, _) => if !str_mem(out, name) { out.push(name) }
+    SepArg(name, _, _, _, _, _, _) => if !str_mem(out, name) { out.push(name) }
     NumArg(name, _, _) => if !str_mem(out, name) { out.push(name) }
     FloatArg(name, _) => if !str_mem(out, name) { out.push(name) }
     IntArg(name, _, _, _) => if !str_mem(out, name) { out.push(name) }

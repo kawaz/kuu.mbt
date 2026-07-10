@@ -38,6 +38,11 @@ pub(all) struct ElemDef {
   repeat : RepeatSpec? // repeat installer 所有 (DR-043)
   optional : Bool // repeat:{min:0,max:1} の糖衣 (DR-043) — repeat 語彙が所有
   multiple : Bool // multiple installer 所有 (DR-034/043)
+  // DR-036 accumulator 名 (decode 層 dec_multiple 所有)。None = 未指定時のデフォルト ("append")、
+  // Some("merge") が DR-080 の merge accumulator を選ぶ。`ensure_entity` がそのまま `Entity.accum`
+  // へ写す — 中間の installer 変換は無い (collector と同じ「宣言をそのまま Entity へ通す」経路)。
+  // 「multiple:true なら常に append」という旧固定写像をこのフィールドで一般化する (DR-080 波及節)。
+  accumulator : String?
   separator : String? // multiple パイプラインの separator (DR-034)
   // DR-036 collector: `multiple: {accumulator, collector}` の object 形が持つ collector 属性 (decode
   // 層 dec_multiple 所有、json_conformance_wbtest.mbt)。`ensure_entity` がそのまま `Entity.collector`
@@ -485,6 +490,8 @@ priv struct SBChild {
 /// (段2: SepArg 自身が piece ごとに型 parse を行う、`sep_binds` 参照) — 段1 (分割自体を配線) と
 /// 段2 (分割後の型 parse) は同一サイクルで導入必須 (issue 追記2: 段1 単独では成功系が regress する
 /// 実測確認済み)。
+/// `merge` (DR-080 波及節): `ElemDef.accumulator == Some("merge")` の素通し。両呼び出し元
+/// (`elem_head` / `inst_long` main entry) が同じ判断 (`e.accumulator` を見る) を共有する。
 fn value_prim(
   ty : Ty,
   name : String,
@@ -492,10 +499,11 @@ fn value_prim(
   allow_base_prefix : Bool,
   piece_filters : Array[String],
   separator? : String? = None,
+  merge? : Bool = false,
 ) -> Node {
   match separator {
     Some(sep) =>
-      SepArg(name, sep, ty, int_round, allow_base_prefix, piece_filters)
+      SepArg(name, sep, ty, int_round, allow_base_prefix, piece_filters, merge)
     None =>
       match ty {
         // TNum は canonical (DR-074 §1) + opt-in base prefix (§2)。allow=true で hex/oct/bin 整数 +
@@ -577,6 +585,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     repeat: e.repeat,
     optional: e.optional,
     multiple: e.multiple,
+    accumulator: e.accumulator,
     separator: e.separator,
     collector: e.collector,
     fail_action: e.fail_action,
@@ -790,6 +799,7 @@ fn elem_head(e : ElemDef) -> Node {
         e.allow_base_prefix,
         e.piece_filters,
         separator=e.separator,
+        merge=e.accumulator == Some("merge"),
       )
   }
 }
@@ -1118,12 +1128,17 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   }
   // repeat / multiple / separator は値 LIST — 名前付き accumulator registry に落とす (DR-036)。
   //   repeat → "flatten" (cons [T,[T,…]] → T[], DR-043)
-  //   multiple / separator → "append" (DR-034)
-  // 両方立った場合は multiple の append が勝つ (値 fold が支配)。
+  //   multiple / separator → "append" (DR-034)、あるいは `e.accumulator` が明示指定していれば
+  //     それ (DR-080 §1: `multiple: {accumulator: "merge", ...}` — 旧「multiple なら常に append」
+  //     固定写像を、宣言された accumulator 名の一般写像に置き換える)。
+  // 両方立った場合は multiple の (accumulator 指定 or) append が勝つ (値 fold が支配)。
   // DR-044 §1 (kawaz 裁定): repeat / multiple / separator は cardinality 不問で常に配列
   //   (`repeat:{min:0,max:1}` = optional 糖衣も [] / [x] — scalar 昇格は collector 側の責務)。
   let accum : String? = if e.multiple {
-    Some("append")
+    match e.accumulator {
+      Some(a) => Some(a)
+      None => Some("append")
+    }
   } else {
     match elem_repeat(e) {
       Some(_) => Some("flatten")
@@ -1290,6 +1305,7 @@ fn inst_long(
                       e.allow_base_prefix,
                       e.piece_filters,
                       separator=e.separator,
+                      merge=e.accumulator == Some("merge"),
                     ),
                   ]),
                 ),
@@ -1322,6 +1338,7 @@ fn inst_long(
                 allow_base_prefix: leaf.allow_base_prefix,
                 piece_filters: leaf.piece_filters,
                 separator: leaf.separator,
+                merge: leaf.accumulator == Some("merge"),
               })
             }
           }
@@ -1342,6 +1359,7 @@ fn inst_long(
             allow_base_prefix: e.allow_base_prefix,
             piece_filters: e.piece_filters,
             separator: e.separator,
+            merge: e.accumulator == Some("merge"),
           })
       }
     }
@@ -1409,6 +1427,7 @@ fn inst_short(def : Definition, build : Build) -> Unit {
         allow_base_prefix: e.allow_base_prefix,
         piece_filters: e.piece_filters,
         separator: e.separator,
+        merge: e.accumulator == Some("merge"),
       })
     }
   }
@@ -1565,6 +1584,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     repeat: copy.repeat,
     optional: copy.optional,
     multiple: copy.multiple,
+    accumulator: copy.accumulator,
     separator: copy.separator,
     collector: copy.collector,
     fail_action: copy.fail_action,
@@ -1746,6 +1766,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     repeat: None,
     optional: false,
     multiple: false,
+    accumulator: None,
     separator: None,
     collector: None,
     fail_action: false,
@@ -1942,6 +1963,7 @@ fn alias_entry(
     repeat: None,
     optional: false,
     multiple: false,
+    accumulator: None,
     separator: None,
     collector: None,
     fail_action: false,
@@ -2374,7 +2396,7 @@ fn head_progresses(
 ) -> Bool {
   match node {
     StrArg(_, _)
-    | SepArg(_, _, _, _, _, _)
+    | SepArg(_, _, _, _, _, _, _)
     | NumArg(_, _, _)
     | FloatArg(_, _)
     | IntArg(_, _, _, _)

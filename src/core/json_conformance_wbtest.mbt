@@ -285,6 +285,10 @@ fn eff_op(op : EffectOp) -> String {
       } else {
         "update:" + transform + ":" + join_comma(args)
       }
+    // DR-080 §2 merge accumulator piece markers — fixture (merge-basic.json 等) の effects oracle
+    // が pin する op 名そのもの ("set" は既存の add piece 表示と同じ、remove/splice がこの2値)。
+    Remove => "remove"
+    Splice => "splice"
   }
 }
 
@@ -305,6 +309,7 @@ fn opt(
   inheritable? : Bool = false,
   repeat? : RepeatSpec? = None,
   multiple? : Bool = false,
+  accumulator? : String? = None,
   collector? : String? = None,
   fail_action? : Bool = false,
   config_file? : Bool = false,
@@ -339,6 +344,7 @@ fn opt(
     repeat,
     optional: false,
     multiple,
+    accumulator,
     separator: None,
     collector,
     fail_action,
@@ -368,6 +374,7 @@ fn pos(
   repeat? : RepeatSpec? = None,
   optional? : Bool = false,
   multiple? : Bool = false,
+  accumulator? : String? = None,
   separator? : String? = None,
   collector? : String? = None,
   config_key? : Array[String]? = None,
@@ -397,6 +404,7 @@ fn pos(
     repeat,
     optional,
     multiple,
+    accumulator,
     separator,
     collector,
     fail_action: false,
@@ -436,6 +444,7 @@ fn dd_marker() -> ElemDef {
     repeat: None,
     optional: false,
     multiple: false,
+    accumulator: None,
     separator: None,
     collector: None,
     fail_action: false,
@@ -635,6 +644,9 @@ fn lower_eff_op(op : EffectOp) -> String {
       } else {
         "update:" + transform + ":" + join_comma(args)
       }
+    // DR-080 §2 merge accumulator piece markers (eff_op と同じ語彙、lower path 用の並行実装)。
+    Remove => "remove"
+    Splice => "splice"
   }
 }
 
@@ -730,7 +742,7 @@ fn prim_name(n : Node) -> String? {
     FloatArg(x, _) => Some(x)
     // DR-076 §1/§4: bool is now a normal value type, same satellite shape as string/number/int/float.
     BoolArg(x, _) => Some(x)
-    SepArg(x, _, _, _, _, _) => Some(x)
+    SepArg(x, _, _, _, _, _, _) => Some(x)
     FilterArg(x, _) => Some(x)
     ReqArg(x) => Some(x)
     NoDashStr(x) => Some(x)
@@ -1023,7 +1035,10 @@ fn render_rval_sorted(r : RVal) -> String {
 }
 
 ///|
-/// §2 CLI effects, EXCLUDING config_file infra cells. `set` renders operand; other ops render bare.
+/// §2 CLI effects, EXCLUDING config_file infra cells. `set`/`remove` render an operand (DR-080 §2:
+/// remove's operand is the type-parsed value being removed, same wire shape as set's); every other
+/// op (default/unset/empty/update/splice) renders bare — `splice` carries no operand (DR-080 §2 `@`
+/// just points at old, DESIGN's placeholder-value convention).
 fn proj_effects_ex(sc : Scope, binds : Array[Binding]) -> String {
   let items : Array[String] = []
   for b in binds {
@@ -1034,9 +1049,9 @@ fn proj_effects_ex(sc : Scope, binds : Array[Binding]) -> String {
       continue
     }
     match b.op {
-      Set =>
+      Set | Remove =>
         items.push(
-          "\{b.key}:set(\{render_val(b.value)})@\{render_src(b.source)}",
+          "\{b.key}:\{eff_op(b.op)}(\{render_val(b.value)})@\{render_src(b.source)}",
         )
       _ => items.push("\{b.key}:\{eff_op(b.op)}@\{render_src(b.source)}")
     }
@@ -2018,23 +2033,28 @@ fn known_collector(name : String) -> Bool {
 /// keeps treating every multiple cell as plain "append", a decode/runtime mismatch of the same
 /// kind `known_collector`'s doc comment describes for `to_set`/`from_entries`. Widening this needs
 /// `ensure_entity` to actually consult the accumulator name first).
-fn dec_multiple(j : Json) -> (Bool, String?, String?) raise DecodeSkip {
+/// DR-080 §1: "merge" を accumulator 語彙に追加 (append の兄弟)。戻り値の4番目 (accumulator 名)
+/// は None = 未指定 (`ensure_entity` が既定 "append" にフォールバック)、Some("merge") が DR-080 の
+/// merge accumulator を選ぶ。bool/string 糖衣 (`true`/`"append"`) は常に "append" 相当 (accumulator
+/// 名 None = デフォルト) — merge は object 形の `accumulator` キーでのみ選べる (DR-080 §1 の宣言例)。
+fn dec_multiple(j : Json) -> (Bool, String?, String?, String?) raise DecodeSkip {
   match j.j_bool() {
-    Some(b) => return (b, None, None)
+    Some(b) => return (b, None, None, None)
     None => ()
   }
   match j.j_str() {
-    Some("append") => return (true, None, None)
+    Some("append") => return (true, None, None, None)
     Some(other) => raise DecodeSkip("multiple preset '" + other + "'")
     None => ()
   }
   match j.j_obj() {
     Some(o) => {
       allowed_keys(o, ["accumulator", "separator", "collector"], "multiple")
-      match jf_str(o, "accumulator") {
-        Some("append") => ()
+      let accumulator = match jf_str(o, "accumulator") {
+        Some("append") => None // 既定と同義 — Entity.accum への写しは ensure_entity が "append" にフォールバック
+        Some("merge") => Some("merge")
         Some(a) => raise DecodeSkip("multiple.accumulator '" + a + "'")
-        None => ()
+        None => None
       }
       let collector = match jf_str(o, "collector") {
         Some(c) =>
@@ -2047,7 +2067,7 @@ fn dec_multiple(j : Json) -> (Bool, String?, String?) raise DecodeSkip {
           }
         None => None
       }
-      (true, jf_str(o, "separator"), collector)
+      (true, jf_str(o, "separator"), collector, accumulator)
     }
     None => raise DecodeSkip("multiple is not a bool/string/object")
   }
@@ -2328,9 +2348,9 @@ fn dec_option(
   let global = bool_field(o, "global", false)
   let inherit_flag = bool_field(o, "inherit", false)
   let inheritable = bool_field(o, "inheritable", false)
-  let (multiple, sep, coll) = match o.get("multiple") {
+  let (multiple, sep, coll, acc) = match o.get("multiple") {
     Some(m) => dec_multiple(m)
-    None => (false, None, None)
+    None => (false, None, None, None)
   }
   let requires = dec_strs(o.get("requires"))
   let conflicts = dec_strs(o.get("conflicts_with"))
@@ -2367,6 +2387,7 @@ fn dec_option(
       inherit_=inherit_flag,
       inheritable~,
       multiple~,
+      accumulator=acc,
       fail_action~,
       config_file~,
       config_key~,
@@ -2450,9 +2471,9 @@ fn dec_positional(
     None => None
   }
   let optional = bool_field(o, "optional", false)
-  let (multiple, sep, coll) = match o.get("multiple") {
+  let (multiple, sep, coll, acc) = match o.get("multiple") {
     Some(m) => dec_multiple(m)
-    None => (false, None, None)
+    None => (false, None, None, None)
   }
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
@@ -2476,6 +2497,7 @@ fn dec_positional(
     repeat~,
     optional~,
     multiple~,
+    accumulator=acc,
     separator=sep,
     collector=coll,
     config_key~,
@@ -3503,6 +3525,17 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
     // stage, issue accum-post-filters-stage7); routing through resolve here only activates
     // value_filters(each).
     if e.value_filters.length() > 0 || e.cell_filters.length() > 0 {
+      return true
+    }
+    // DR-080 波及節: a merge-accumulator cell's Set/Remove/Splice PIECE bindings only fold into
+    // the cell's final state inside `resolve_merge_accum` (resolve.mbt) — the raw-`binds` fold
+    // this function's `false` result routes to (`build_result`'s generic ACCUMULATE match) has no
+    // concept of "同じ at_pos の piece 列 = 1 発火" grouping or old-composition, and would push a
+    // `Splice`/`Remove` binding's placeholder/operand value straight into the array (wrong on
+    // every axis: no overwrite-vs-merge distinction, no @ old-splice, `Remove`'s operand and
+    // `Splice`'s `VBool(false)` placeholder both leak into the result). A merge cell ALWAYS needs
+    // the resolve path, even with no env/config/default/filters declared.
+    if e.accum is Some("merge") {
       return true
     }
   }
