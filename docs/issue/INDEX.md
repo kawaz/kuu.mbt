@@ -9,3 +9,4 @@
 | 2026-07-09 | task | open | [regex-match-filter](./2026-07-09-regex-match-filter.md) | filters registry に regex_match を追加 (DR-040 語彙、正規表現エンジンの調達判断込み) |
 | 2026-07-09 | design | open | [accum-post-filters-stage7](./2026-07-09-accum-post-filters-stage7.md) | accum セルの post_filters (DR-009 段 7、累積後 Acc→Acc) の配線 — build_result 層の設計変更が前提 |
 | 2026-07-09 | bug | open | [multiple-ref-accum-gap](./2026-07-09-multiple-ref-accum-gap.md) | multiple×ref の accumulator 未配線で配列結果を作れない |
+| 2026-07-10 | task | open | [values-decode-support](./2026-07-10-values-decode-support.md) | values キーの decode 対応 (or 展開) — set-always-variant-branch.json の skip 解消 |
