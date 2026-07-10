@@ -1,11 +1,11 @@
 ---
 title: パイプライン再構成 — resolve 先行 + 制約検査は解決済み bindings の読者に (DR-087 §4 の実装形)
-status: open
+status: wip
 category: design
 created: 2026-07-10T23:02:42+09:00
 last_read: 2026-07-10T23:06:41+09:00
 open_entered: 2026-07-10T23:02:42+09:00
-wip_entered:
+wip_entered: 2026-07-10T23:07:38+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
