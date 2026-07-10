@@ -1481,3 +1481,141 @@ test "DR-047 §5: requires targeting a non-flag (no default) is correctly enforc
     other => fail("expected Success, got " + render_outcome(other))
   }
 }
+
+// ── codex Medium 追従 (issue merge-no-separator-marker-gap): separator 無し merge 宣言の
+// end-to-end 固定。resolve_wbtest.mbt の合成 Entity テストは eval.mbt/installer.mbt の value_prim
+// ルーティングを一切通らない (Binding を手組みするため) — この gap は「実 CLI argv → parse() →
+// resolve_scope」の一気通貫でしか顕在化しなかった (`el()` の `separator: None` 固定と組み合わせて
+// merge 宣言だけ足すことで、正に「separator 未宣言」の形が作れる)。 ─────────────────────────
+
+///|
+fn resolved_values(bs : Array[Binding], key : String) -> Array[Value] {
+  let out : Array[Value] = []
+  for b in bs {
+    if b.key == key {
+      out.push(b.value)
+    }
+  }
+  out
+}
+
+///|
+/// 保証 (上書き): separator 未宣言の merge 要素でも、マーカーを含まない単一発火は普通に add される
+/// (DR-034 §6.3 の縮退 — 1 piece = トークン全体、`classify_merge_piece` を通しても marker に一致
+/// しない文字列はそのまま literal)。
+test "codex Medium: merge without separator — no-marker single fire adds (overwrite degenerate)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "fields",
+        TStr,
+        long=LBool(true),
+        multiple=true,
+        accumulator=Some("merge"),
+      ),
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  match parse(ScopeNode(sc), ["--fields", "hello"], defs=Map([])) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(resolved_values(resolved, "fields"), [VStr("hello")])
+        Err(_) => fail("expected Ok")
+      }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証 (remove 単独): 2 回目の発火 `-hello` は separator が無いので 1 piece のまま
+/// `classify_merge_piece` に渡り、`-` 始まりなので remove マーカーと判定される (旧実装では
+/// separator 無しだと SepArg に一切進まず、`-hello` はただの literal 文字列として上書きされ
+/// `["-hello"]` になっていた — このケースが退行検知の主眼)。暗黙先頭 `@` が補われ old=[hello] を
+/// splice、remove("hello") がそれを削って結果は空になる。
+test "codex Medium: merge without separator — a lone remove-marker fire merges against prior old" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "fields",
+        TStr,
+        long=LBool(true),
+        multiple=true,
+        accumulator=Some("merge"),
+      ),
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  match
+    parse(
+      ScopeNode(sc),
+      ["--fields", "hello", "--fields", "-hello"],
+      defs=Map([]),
+    ) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) => assert_eq(resolved_values(resolved, "fields"), [])
+        Err(_) => fail("expected Ok")
+      }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証 (@ 恒等): 2 回目の発火 `@` 単独も 1 piece のまま splice マーカーと判定され、old (直前発火の
+/// [hello]) をそのまま展開する恒等操作になる (結果不変)。
+test "codex Medium: merge without separator — a lone splice-marker fire is identity" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "fields",
+        TStr,
+        long=LBool(true),
+        multiple=true,
+        accumulator=Some("merge"),
+      ),
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  match
+    parse(ScopeNode(sc), ["--fields", "hello", "--fields", "@"], defs=Map([])) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(resolved_values(resolved, "fields"), [VStr("hello")])
+        Err(_) => fail("expected Ok")
+      }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証 (escape): separator 無しでも escape 規約 (先頭 `+` を1個剥がす) は同じ pipeline で効く —
+/// `+-x` は marker でなく literal `-x` の add になり、cell 上書き。
+test "codex Medium: merge without separator — an escaped piece is a literal add" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "fields",
+        TStr,
+        long=LBool(true),
+        multiple=true,
+        accumulator=Some("merge"),
+      ),
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  match parse(ScopeNode(sc), ["--fields", "+-x"], defs=Map([])) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(resolved_values(resolved, "fields"), [VStr("-x")])
+        Err(_) => fail("expected Ok")
+      }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}

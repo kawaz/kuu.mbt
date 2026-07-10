@@ -663,10 +663,16 @@ fn split_on(s : String, sep : String) -> Array[String] {
 /// §1 "マーカー語彙は accumulator=merge を宣言した要素の CLI 発火 piece 列にのみ適用"). When false,
 /// every piece is treated as a plain add (`PkAdd(part)`, no classification) — degenerates to the
 /// pre-DR-080 behavior exactly (no piece is ever `-`/`@`-prefixed specially for append etc).
+/// `sep` is `String?`, not `String` (codex Medium 追従): `None` = no declared separator, DR-034
+/// §6.3's degenerate form — `tok` itself is the ONE piece (`[tok]`), never split. A non-merge
+/// element with no separator never reaches this function at all (`value_prim`'s routing still
+/// gates on `separator is Some(_) || merge`); a MERGE element with no separator DOES reach here
+/// now, precisely so its single-piece operand still runs through `classify_merge_piece` (a bare
+/// `--fields -a` needs to recognize `-a` as a remove marker even with no comma to split on).
 fn sep_binds(
   name : String,
   tok : String,
-  sep : String,
+  sep : String?,
   ty : Ty,
   int_round : RoundMode,
   allow_base_prefix : Bool,
@@ -675,7 +681,11 @@ fn sep_binds(
   merge : Bool,
 ) -> Result[Array[Binding], ParseError] {
   let out : Array[Binding] = []
-  for part in split_on(tok, sep) {
+  let parts = match sep {
+    Some(s) => split_on(tok, s)
+    None => [tok]
+  }
+  for part in parts {
     let mark : PieceMark = if merge {
       classify_merge_piece(part)
     } else {

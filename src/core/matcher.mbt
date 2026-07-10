@@ -138,24 +138,27 @@ fn run_eq_split(
       // goes through the SAME pieceProcessor as the space form (`sep_binds`) — split FIRST, then
       // piece_filters/parse run per PIECE, not once over the whole `valstr` (same ordering concern
       // `sep_binds`'s own doc comment explains).
-      match e.separator {
-        Some(sep) =>
-          return match
-            sep_binds(
-              e.name,
-              valstr,
-              sep,
-              e.kind,
-              e.int_round,
-              e.allow_base_prefix,
-              e.piece_filters,
-              pos,
-              e.merge,
-            ) {
-            Ok(bs) => [Accept(pos + 1, bs)]
-            Err(pe) => [Held(pe, [])]
-          }
-        None => ()
+      // codex Medium 追従 (issue merge-no-separator-marker-gap): gate is `separator is Some(_) ||
+      // e.merge`, not `separator` alone — a merge-declared entry with NO separator still needs
+      // `sep_binds` (DR-034 §6.3 の縮退: `None` → 1 piece = `valstr` 全体) so `classify_merge_piece`
+      // sees `--key=-a` as a remove marker instead of falling through to the plain literal-string
+      // arm below.
+      if e.separator is Some(_) || e.merge {
+        return match
+          sep_binds(
+            e.name,
+            valstr,
+            e.separator,
+            e.kind,
+            e.int_round,
+            e.allow_base_prefix,
+            e.piece_filters,
+            pos,
+            e.merge,
+          ) {
+          Ok(bs) => [Accept(pos + 1, bs)]
+          Err(pe) => [Held(pe, [])]
+        }
       }
       // DR-034/DR-062 piece_filters: run BEFORE the kind-specific parse, same timing eval.mbt's
       // value-primitive arms use (this is the eq-split entry's own copy of the element's chain,
@@ -266,7 +269,9 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 /// `separator` entry can split one attach into several pieces, same as the long-option space form's
 /// `SepArg`/`sep_binds`, issue 2026-07-09-separator-non-string-type-parse-gap 段1). `Err` carries a
 /// full `ParseError` (`kind: KFilter` for a piece_filters reject, `kind: KParse` for a type-parse
-/// failure — both delegate straight to `sep_binds` when `e.separator` is `Some`). `walk_short`'s
+/// failure — both delegate straight to `sep_binds` when `e.separator` is `Some` OR `e.merge` is
+/// `true`, codex Medium 追従: a merge entry needs the piece pipeline even with no separator).
+/// `walk_short`'s
 /// mid-token/full-tail split still governs whether an `Err` surfaces as a `Held` or is silently
 /// dropped (see its call sites) — unlike the old `Binding?`-based 2-way split, this no longer needs
 /// a kind guard at the call site: a `TStr` entry structurally never produces a type-parse `Err`
@@ -282,53 +287,51 @@ fn short_val(
   s : String,
   pos : Int,
 ) -> Result[Array[Binding], ParseError] {
-  match e.separator {
-    Some(sep) =>
-      sep_binds(
-        e.name,
-        s,
-        sep,
-        e.kind,
-        e.int_round,
-        e.allow_base_prefix,
-        e.piece_filters,
-        pos,
-        e.merge,
-      )
-    None => {
-      let filtered = match apply_piece_filters(e.piece_filters, s) {
-        Ok(v) => v
-        Err((reason, msg)) => return Err(pe_filter(e.name, pos, reason, msg))
-      }
-      match e.kind {
-        TStr => Ok([mkb(e.name, VStr(filtered), Cli, at_pos=Some(pos))])
-        TNum =>
-          // DR-074 §1 + §2: short cluster / space-tail の TNum も opt-in base prefix を反映。
-          match parse_number_ext(filtered, e.allow_base_prefix) {
-            Some(d) => Ok([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))])
-            None => Err(pe_parse(e.name, filtered, pos))
-          }
-        TInt =>
-          // DR-075 §1-§2 + DR-074 §2: short cluster / space-tail の TInt も値空間判定 + int_round +
-          // base prefix を反映。
-          match
-            parse_int_value_ext(filtered, e.int_round, e.allow_base_prefix) {
-            Ok(i) =>
-              Ok([mkb(e.name, VNum(i.to_double()), Cli, at_pos=Some(pos))])
-            Err(NotAnInteger) => Err(pe_parse_int(e.name, filtered, pos))
-            Err(IntOutOfRange) =>
-              Err(pe_int_out_of_range(e.name, filtered, pos))
-            Err(NotANumber) => Err(pe_parse(e.name, filtered, pos))
-          }
-        TFloat =>
-          match parse_float(filtered) {
-            Some(d) => Ok([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))])
-            None => Err(pe_parse(e.name, filtered, pos))
-          }
-        // unreachable defensively: walk_short's TFlag/TBool/TCount arms never call short_val (no
-        // in-cluster/space-form VALUE attachment for those kinds).
-        TFlag | TBool | TCount => Err(pe_parse(e.name, filtered, pos))
-      }
+  // codex Medium 追従 (issue merge-no-separator-marker-gap): `run_eq_split` と同じ gate 拡張
+  // (`separator is Some(_) || e.merge`) — `-f-a` (in-cluster attach) / `-f -a` (space-form) いずれ
+  // も merge 宣言なら separator 未宣言でも `sep_binds` 経由でマーカー認識させる。
+  if e.separator is Some(_) || e.merge {
+    sep_binds(
+      e.name,
+      s,
+      e.separator,
+      e.kind,
+      e.int_round,
+      e.allow_base_prefix,
+      e.piece_filters,
+      pos,
+      e.merge,
+    )
+  } else {
+    let filtered = match apply_piece_filters(e.piece_filters, s) {
+      Ok(v) => v
+      Err((reason, msg)) => return Err(pe_filter(e.name, pos, reason, msg))
+    }
+    match e.kind {
+      TStr => Ok([mkb(e.name, VStr(filtered), Cli, at_pos=Some(pos))])
+      TNum =>
+        // DR-074 §1 + §2: short cluster / space-tail の TNum も opt-in base prefix を反映。
+        match parse_number_ext(filtered, e.allow_base_prefix) {
+          Some(d) => Ok([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))])
+          None => Err(pe_parse(e.name, filtered, pos))
+        }
+      TInt =>
+        // DR-075 §1-§2 + DR-074 §2: short cluster / space-tail の TInt も値空間判定 + int_round +
+        // base prefix を反映。
+        match parse_int_value_ext(filtered, e.int_round, e.allow_base_prefix) {
+          Ok(i) => Ok([mkb(e.name, VNum(i.to_double()), Cli, at_pos=Some(pos))])
+          Err(NotAnInteger) => Err(pe_parse_int(e.name, filtered, pos))
+          Err(IntOutOfRange) => Err(pe_int_out_of_range(e.name, filtered, pos))
+          Err(NotANumber) => Err(pe_parse(e.name, filtered, pos))
+        }
+      TFloat =>
+        match parse_float(filtered) {
+          Some(d) => Ok([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))])
+          None => Err(pe_parse(e.name, filtered, pos))
+        }
+      // unreachable defensively: walk_short's TFlag/TBool/TCount arms never call short_val (no
+      // in-cluster/space-form VALUE attachment for those kinds).
+      TFlag | TBool | TCount => Err(pe_parse(e.name, filtered, pos))
     }
   }
 }

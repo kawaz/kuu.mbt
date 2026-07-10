@@ -98,12 +98,19 @@ pub(all) enum Node {
   /// `sep_binds` (eval.mbt) threads all of this through the split loop; a piece that fails its
   /// type parse is `kind: KParse` (same reason vocab as the scalar value primitives), NOT a
   /// piece_filters-style `KFilter` reject — these are distinct pipeline stages (段3 vs 段4).
+  /// 2nd field is `String?`, not `String` (codex Medium 追従, 2026-07-10): a merge-declared element
+  /// with NO `separator` still needs piece semantics (DR-034 §6.3's degenerate form — no separator
+  /// IS a 1-piece split, `sep_binds` treats `None` as `[tok]` rather than calling `split_on`). This
+  /// is what lets `--fields -a` (no separator declared) recognize `-a` as a merge remove marker
+  /// instead of silently degrading to a literal add — without this, marker vocabulary was INERT for
+  /// any merge element that omitted `separator` (issue: markers only worked when a comma actually
+  /// split the token into ≥1 piece via the OLD mandatory-separator SepArg gate).
   /// 7th field (DR-080 波及節): `merge` — whether the declaring element's `multiple.accumulator`
   /// is `"merge"`. Threaded from `ElemDef.accumulator` via `installer.mbt`'s `value_prim` so
   /// `sep_binds` (eval.mbt) knows whether to run `classify_merge_piece` on each split piece
   /// (merge-declared elements only, DR-080 §1) or treat every piece as a plain add (everyone else,
   /// unchanged pre-DR-080 behavior).
-  SepArg(String, String, Ty, RoundMode, Bool, Array[String], Bool)
+  SepArg(String, String?, Ty, RoundMode, Bool, Array[String], Bool)
   /// number value primitive (DR-074 §1 canonical + §2 opt-in `number_allow_base_prefix`)。consume 1
   /// token, parse via `parse_number_ext(_, allow_base_prefix)`。allow=false は canonical (10 進のみ、
   /// base prefix Error)、allow=true で `0xff` / `0x1.8p3` / `0o777` / `0b1010` も受理する統合 opt-in。

@@ -492,6 +492,14 @@ priv struct SBChild {
 /// 実測確認済み)。
 /// `merge` (DR-080 波及節): `ElemDef.accumulator == Some("merge")` の素通し。両呼び出し元
 /// (`elem_head` / `inst_long` main entry) が同じ判断 (`e.accumulator` を見る) を共有する。
+///
+/// codex Medium 追従 (2026-07-10, issue merge-no-separator-marker-gap): 経路選択は
+/// `separator is Some(_)` **単独**ではなく `separator is Some(_) || merge` — merge 宣言要素は
+/// `separator` 未宣言でも `SepArg` (piece 処理) 側へ進む。`separator` は `SepArg` へそのまま
+/// `String?` で運び (`sep_binds` が `None` を「1 piece = 全体」として扱う、DR-034 §6.3 の縮退)、
+/// マーカー認識 (`classify_merge_piece`) は piece 数に関わらず同じ pipeline で効く — `--fields -a`
+/// (separator 無し、コンマで割る余地が無い) でも `-a` が remove マーカーとして解釈される。
+/// merge でない要素は従来通り `separator is Some(_)` のみが gate (この分岐は不変)。
 fn value_prim(
   ty : Ty,
   name : String,
@@ -501,23 +509,24 @@ fn value_prim(
   separator? : String? = None,
   merge? : Bool = false,
 ) -> Node {
-  match separator {
-    Some(sep) =>
-      SepArg(name, sep, ty, int_round, allow_base_prefix, piece_filters, merge)
-    None =>
-      match ty {
-        // TNum は canonical (DR-074 §1) + opt-in base prefix (§2)。allow=true で hex/oct/bin 整数 +
-        // hex float も受理する統合 opt-in (単一 flag、DR-074 §2)。
-        TNum => NumArg(name, allow_base_prefix, piece_filters)
-        // TInt は値空間判定 (DR-075 §1) + int_round (§2) + hex/oct/bin (DR-074 §2)。IntArg に mode /
-        // flag を埋め込み、eval が parse_int_value_ext(_, mode, flag) で丸め + 基数 prefix を反映する。
-        TInt => IntArg(name, int_round, allow_base_prefix, piece_filters)
-        // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
-        TFloat => FloatArg(name, piece_filters)
-        // TBool は DR-076 §1/§4 で string/number と同格の値型 — BoolArg / parse_bool を通す
-        TBool => BoolArg(name, piece_filters)
-        _ => StrArg(name, piece_filters)
-      }
+  if separator is Some(_) || merge {
+    SepArg(
+      name, separator, ty, int_round, allow_base_prefix, piece_filters, merge,
+    )
+  } else {
+    match ty {
+      // TNum は canonical (DR-074 §1) + opt-in base prefix (§2)。allow=true で hex/oct/bin 整数 +
+      // hex float も受理する統合 opt-in (単一 flag、DR-074 §2)。
+      TNum => NumArg(name, allow_base_prefix, piece_filters)
+      // TInt は値空間判定 (DR-075 §1) + int_round (§2) + hex/oct/bin (DR-074 §2)。IntArg に mode /
+      // flag を埋め込み、eval が parse_int_value_ext(_, mode, flag) で丸め + 基数 prefix を反映する。
+      TInt => IntArg(name, int_round, allow_base_prefix, piece_filters)
+      // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
+      TFloat => FloatArg(name, piece_filters)
+      // TBool は DR-076 §1/§4 で string/number と同格の値型 — BoolArg / parse_bool を通す
+      TBool => BoolArg(name, piece_filters)
+      _ => StrArg(name, piece_filters)
+    }
   }
 }
 
