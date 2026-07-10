@@ -1146,7 +1146,7 @@ fn proj_result_export(
   render_rval_sorted(
     build_result(
       apply_export_keys(binds, ekmap),
-      accum_cells(sc),
+      accum_cells(sc, ekmap),
       apply_export_to_defaults(default_cells(sc), ekmap),
       [],
     ),
@@ -1163,37 +1163,52 @@ fn proj_result_export(
 /// already re-seats to a lower ladder rung on unset) rather than the firing token's own source. A
 /// LATER `Set` after an `Unset` still wins normally (the loop keeps overwriting `src` in order) —
 /// mirrors `build_result`'s ACCUMULATE fold treating `Unset` as a clear-point, not a terminal state.
-fn proj_sources(sc : Scope, resolved : Array[Binding]) -> String {
+fn proj_sources(
+  sc : Scope,
+  resolved : Array[Binding],
+  ek : Map[String, ExportKey],
+) -> String {
   let items : Array[String] = []
   for e in sc.entities {
     if e.is_config_file {
       continue
     }
-    let mut src : String? = None
-    for b in resolved {
-      if b.key == e.name && !is_sentinel(b.key) {
-        src = match b.op {
-          Unset => Some("default")
-          _ => Some(render_src(b.source))
-        }
-      }
-    }
-    match src {
-      Some(s) => items.push(e.name + "=" + s)
-      None =>
-        // DR-044 uniform array (issue 2026-07-09-env-separator-split-gap's env-separator-
-        // split.json, `sources` check): an unfired multiple/repeat cell decays to `[]` (never
-        // absent, same guarantee flag/bool's default preset gets below) — regardless of type,
-        // and regardless of whether the element ALSO declared an explicit `default:` (accum
-        // cells usually don't; the empty array IS the implicit default here, unconditionally).
-        if e.accum is Some(_) {
-          items.push(e.name + "=default")
-        } else if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
-          match default_scalar(e) {
-            Some(_) => items.push(e.name + "=default")
-            None => ()
+    // issue accum-export-key-rename-asymmetry の続き (fixture export-key/rename-multiple.json
+    // で実機確認): sources 射影も `proj_result_export`/`accum_cells` と同じ DR-052 §1 解決
+    // (`exposed_key_of`, resolve.mbt) を経由させる — こちらも今まで `ek` を一切見ておらず、
+    // rename された cell の source 行が旧名のまま出るバグだった (rename.json は元々 sources を
+    // 検証していなかったため顕在化していなかった)。EkNull (透過) の cell は sources にも出さない
+    // (result 側の透過と同じ posture)。
+    match exposed_key_of(e.name, ek) {
+      None => ()
+      Some(exposed) => {
+        let mut src : String? = None
+        for b in resolved {
+          if b.key == e.name && !is_sentinel(b.key) {
+            src = match b.op {
+              Unset => Some("default")
+              _ => Some(render_src(b.source))
+            }
           }
         }
+        match src {
+          Some(s) => items.push(exposed + "=" + s)
+          None =>
+            // DR-044 uniform array (issue 2026-07-09-env-separator-split-gap's env-separator-
+            // split.json, `sources` check): an unfired multiple/repeat cell decays to `[]` (never
+            // absent, same guarantee flag/bool's default preset gets below) — regardless of type,
+            // and regardless of whether the element ALSO declared an explicit `default:` (accum
+            // cells usually don't; the empty array IS the implicit default here, unconditionally).
+            if e.accum is Some(_) {
+              items.push(exposed + "=default")
+            } else if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
+              match default_scalar(e) {
+                Some(_) => items.push(exposed + "=default")
+                None => ()
+              }
+            }
+        }
+      }
     }
   }
   sort_items(items)
@@ -3988,7 +4003,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 }
                 match dc.exp_sources {
                   Some(es) => {
-                    let asr = proj_sources(sc, rb)
+                    let asr = proj_sources(sc, rb, df.ekmap)
                     if asr != es {
                       problems.push("sources got=\{asr} want=\{es}")
                     }
@@ -4115,7 +4130,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 let view = render_rval_sorted(
                   build_result(
                     apply_export_keys(interp.binds, df.ekmap),
-                    accum_cells(sc),
+                    accum_cells(sc, df.ekmap),
                     [],
                     [],
                   ),
@@ -4578,7 +4593,7 @@ test "conformance: OrBranch auto id (#{seq}) は held-error / ambiguous / succes
           render_rval_sorted(
             build_result(
               apply_export_keys(interp.binds, df.ekmap),
-              accum_cells(df.scope),
+              accum_cells(df.scope, df.ekmap),
               [],
               [],
             ),

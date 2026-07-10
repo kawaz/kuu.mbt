@@ -278,6 +278,97 @@ test "apply_export_keys renames a leaf key and drops a null-exported scope label
   assert_eq(mapped[1].key, "verbose") // unmapped name unchanged (EkUnset default)
 }
 
+///|
+/// issue accum-export-key-rename-asymmetry: `accum_cells` used to ignore `ek` entirely, returning
+/// AccumCells keyed by the RAW entity name while `build_result`'s `cells` argument is matched
+/// against ALREADY export_key-mapped binding keys (`apply_export_keys` runs first) — a renamed
+/// accum entity's AccumCell silently failed to match, so the accumulate fold never fired (the
+/// entity's own bindings fell through to plain last-wins scalar rendering under the OLD name
+/// instead of folding into `[]` under the renamed key, exactly the shape `build_result`'s "OBJECT"
+/// branch's `cell_here` check exists to prevent). This pins the fix: `tags` (accum) has
+/// `export_key: "t"` — the accumulated array must render under "t", not "tags", and the fold must
+/// actually happen (2 elements, not a last-wins scalar).
+test "accum_cells resolves export_key rename — the accumulate fold fires under the renamed key" {
+  let ek : Map[String, ExportKey] = Map::from_array([("tags", EkKey("t"))])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("tags", TStr, accum=Some("append"))],
+    constraints: [],
+  }
+  let cells = accum_cells(sc, ek)
+  assert_eq(cells.length(), 1)
+  assert_eq(cells[0].name, "t")
+  let binds : Array[Binding] = [
+    cb("tags", VStr("a"), Cli),
+    cb("tags", VStr("b"), Cli),
+  ]
+  let r = build_result(apply_export_keys(binds, ek), cells, [], [])
+  assert_eq(r, RObj([("t", RArr([RScalar(VStr("a")), RScalar(VStr("b"))]))]))
+}
+
+///|
+/// 保証 (対極、上のテストの境界、[[self-written-rule-blind-spots]] の対極確認): export_key: null
+/// を持つ accum セル自身は結果キー軸を失う (DR-052 §2 透過、スカラー default の EkNull と同じ posture)
+/// — 変更が「常に何らかのキーで accum セルを出力してしまう」誤動作を生んでいないことを固定する。
+test "accum_cells 対極: an EkNull accum cell carries no result-key axis (dropped)" {
+  let ek : Map[String, ExportKey] = Map::from_array([("tags", EkNull)])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("tags", TStr, accum=Some("append"))],
+    constraints: [],
+  }
+  assert_eq(accum_cells(sc, ek), [])
+}
+
+///|
+/// 保証: command scope の export_key rename も path (accum セルのネスト先) に正しく反映される —
+/// `apply_export_to_defaults` の scope-label 変換ロジック (233-243行) と同じ意味論を
+/// `collect_accum` の CmdSat 再帰でも固定する。
+test "accum_cells resolves export_key rename on a command scope label (nested path)" {
+  let ek : Map[String, ExportKey] = Map::from_array([("sub", EkKey("s"))])
+  let child : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("tags", TStr, accum=Some("append"))],
+    constraints: [],
+  }
+  let root : Scope = {
+    greedy: [CmdSat("sub", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let cells = accum_cells(root, ek)
+  assert_eq(cells.length(), 1)
+  assert_eq(cells[0].path, ["s"])
+  assert_eq(cells[0].name, "tags")
+}
+
+///|
+/// 保証 (fixture export-key/rename-multiple.json::renamed-key-zero-fire-empty-array の実機確認、
+/// DR-051 §2「反復系は absent にならない、0 回発火でも [] を持つ」): rename された accum セル
+/// (tags → export_key:"t") が 0 回発火でも `t` キーの下に `[]` が現れる — export_key rename は
+/// DR-044 の一様配列規則を無効化しない (rename は「fold 済みの値をどこへ写像するか」だけを決める
+/// 直交軸、issue accum-export-key-rename-asymmetry の一般原則そのもの)。同 fixture の 3件目 case
+/// (`null-export-key-multiple-transparent`) が「未発火の renamed accum セルはキーごと消える」と
+/// 期待しているのは、この DR-051 §2 の絶対規則 (反復系は type/export_key を問わず常に `[]`、
+/// transparent-seq.json の zero-fire-empty-array と同型) と矛盾する — fixture 側の推定誤りと判断
+/// し、修正せず report した (team-lead 裁定待ち)。
+test "accum_cells + build_result: a renamed accum cell with zero fires still renders `[]` under the renamed key (DR-051 §2)" {
+  let ek : Map[String, ExportKey] = Map::from_array([("tags", EkKey("t"))])
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("tags", TStr, accum=Some("append"))],
+    constraints: [],
+  }
+  let cells = accum_cells(sc, ek)
+  let r = build_result(apply_export_keys([], ek), cells, [], [])
+  assert_eq(r, RObj([("t", RArr([]))]))
+}
+
 // ── export-key collision (DR-073) ─────────────────────────────────────────────
 //
 // Mirrors spec fixture `fixtures/export-key/collision.json` exactly: two flags `a`/`b` both

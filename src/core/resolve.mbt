@@ -800,9 +800,21 @@ fn rval_key_str(r : RVal) -> String {
 /// Locate every accumulate cell (repeat / multiple / separator) by its result-scope path, so
 /// the builder can render an empty cell as `[]` (DR-044 uniform array). A command scope nests
 /// its cells under the command name; the root scope is path `[]`.
-pub fn accum_cells(sc : Scope) -> Array[AccumCell] {
+///
+/// `ek` (DR-052 §1 result-key axis) is applied here — issue accum-export-key-rename-asymmetry:
+/// this used to omit `ek` entirely and return raw entity names / scope-label paths, while its
+/// sibling `default_cells` (via `apply_export_to_defaults`) and the winning `binds` (via
+/// `apply_export_keys`) both already resolve through `ek` before reaching `build_result`. Since
+/// `build_result`'s `cell_here` match compares an AccumCell's `(path, name)` against the ALREADY-
+/// mapped binding keys, an unmapped AccumCell for a renamed accum entity silently failed to
+/// match — the accumulate fold never fired (the entity's bindings fell through to plain last-wins
+/// scalar rendering under its OLD name instead of `[]`-folding under the renamed key). Same 3-way
+/// resolution `apply_export_to_defaults` uses: `EkKey(s)` → rename to `s`, `EkNull` → drop (透過,
+/// DR-052 §2 — an accum cell whose OWN key is nulled carries no result-key axis, same posture a
+/// scalar default's EkNull already gets), otherwise unchanged.
+pub fn accum_cells(sc : Scope, ek : Map[String, ExportKey]) -> Array[AccumCell] {
   let out : Array[AccumCell] = []
-  collect_accum(sc, [], out)
+  collect_accum(sc, [], ek, out)
   out
 }
 
@@ -810,25 +822,40 @@ pub fn accum_cells(sc : Scope) -> Array[AccumCell] {
 fn collect_accum(
   sc : Scope,
   path : Array[String],
+  ek : Map[String, ExportKey],
   out : Array[AccumCell],
 ) -> Unit {
   for e in sc.entities {
     // any named accumulator (flatten / append / …) folds the cell into a list (DR-036).
     match e.accum {
       Some(a) =>
-        out.push({
-          path,
-          name: e.name,
-          collector: e.collector,
-          cell_filters: e.cell_filters,
-          accum: a,
-        })
+        match ek.get(e.name) {
+          Some(EkNull) => () // 透過: this accum cell's own result-key axis is dropped
+          _ => {
+            let new_name = match ek.get(e.name) {
+              Some(EkKey(s)) => s
+              _ => e.name
+            }
+            out.push({
+              path,
+              name: new_name,
+              collector: e.collector,
+              cell_filters: e.cell_filters,
+              accum: a,
+            })
+          }
+        }
       None => ()
     }
   }
   for g in sc.greedy {
     match g {
-      CmdSat(name, child) => collect_accum(child, path_push(path, name), out)
+      CmdSat(name, child) =>
+        match ek.get(name) {
+          Some(EkNull) => collect_accum(child, path, ek, out) // dropped label → children promote (DR-052 §2)
+          Some(EkKey(s)) => collect_accum(child, path_push(path, s), ek, out)
+          _ => collect_accum(child, path_push(path, name), ek, out)
+        }
       _ => ()
     }
   }
