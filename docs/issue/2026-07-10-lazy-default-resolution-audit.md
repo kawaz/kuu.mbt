@@ -1,11 +1,11 @@
 ---
 title: DR-087 (default 遅延解決) に対する resolve フェーズの先詰め箇所の棚卸し
-status: open
+status: wip
 category: task
 created: 2026-07-10T22:49:09+09:00
 last_read: 2026-07-10T22:55:24+09:00
 open_entered: 2026-07-10T22:49:09+09:00
-wip_entered:
+wip_entered: 2026-07-10T22:56:31+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
