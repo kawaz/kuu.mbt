@@ -1,6 +1,6 @@
 ---
 title: 遅延述語の value_present が env/config/inherit を見ない (DR-047 §4 の『充填後の最終状態で評価』と乖離)
-status: wip
+status: resolved
 category: bug
 created: 2026-07-10T23:14:17+09:00
 last_read: 2026-07-10T23:32:37+09:00
@@ -9,10 +9,10 @@ wip_entered: 2026-07-10T23:33:33+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-11T00:34:15+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-088","implemented"]
 blocked_by:
 origin: kuu (spec リポ)
 ---
