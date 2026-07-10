@@ -1,6 +1,6 @@
 ---
 title: パイプライン再構成 — resolve 先行 + 制約検査は解決済み bindings の読者に (DR-087 §4 の実装形)
-status: wip
+status: resolved
 category: design
 created: 2026-07-10T23:02:42+09:00
 last_read: 2026-07-10T23:06:41+09:00
@@ -9,10 +9,10 @@ wip_entered: 2026-07-10T23:07:38+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-10T23:30:09+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-087","implemented"]
 blocked_by:
 origin: kuu (spec リポ)
 ---
