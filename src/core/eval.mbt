@@ -1052,6 +1052,82 @@ fn suppressed(sc : Scope, ctx : Ctx, pos : Int, severed : Bool) -> Bool {
 }
 
 ///|
+/// DR-086 cut 判定補助 (issue values-decode-support): 0-token マーカーかどうか — installer.mbt の
+/// lowering が variant (Set/Default/Unset/Empty) satellite の「trigger 消費後、値を取らない」側に
+/// 積む構成要素 (`Seq([Exact(trigger), ..これらのみ..])`、`inst_long`「Variant entries」ループ参照)。
+/// この判定は lowering が生成する具体的な shape と同期が必要 — 新しい 0-token marker 種別が Node
+/// に増えたらここにも追加すること。
+fn is_zero_token_marker(n : Node) -> Bool {
+  match n {
+    Bind(_, _) => true
+    EffMark(_, _) => true
+    DeprMark(_) => true
+    FailMark(_) => true
+    _ => false
+  }
+}
+
+///|
+/// DR-086 cut (issue values-decode-support、team-lead 裁定 2026-07-10「性質ベースの判定、
+/// lowering の生成 shape 追加で漏れないように」): greedy 衛星 `g` が「trigger を Exact 消費した
+/// 直後、値を1つ以上消費しうる継続」を持つ main entry (installer.mbt の `value_prim`/
+/// `enum_value_node` 由来) なら trigger 文字列を返す。具体的な値消費 shape
+/// (StrArg/NumArg/FloatArg/IntArg/BoolArg/SepArg/Or/...) を列挙する代わりに「継続の先頭要素が
+/// 0-token マーカーでない」という消極的な性質で判定する — lowering に新しい値消費 shape が
+/// 増えても自動的に安全側 (cut 候補として拾う) に倒れ、このヘルパーの更新漏れを起こさない。
+fn value_slot_trigger(g : Node) -> String? {
+  match g {
+    Seq([Exact(t), rest, ..]) =>
+      if is_zero_token_marker(rest) {
+        None
+      } else {
+        Some(t)
+      }
+    _ => None
+  }
+}
+
+///|
+/// DR-086 cut: `value_slot_trigger` の対極 (fallback 側候補) — greedy 衛星 `g` が「trigger を
+/// Exact 消費した直後、0-token マーカーのみが (1個以上) 続く」形 (installer.mbt の
+/// Set/Default/Unset/Empty variant lowering、fail_action 付き Set variant の
+/// `Bind, FailMark` 2連続を含む) なら trigger 文字列を返す。
+fn zero_arg_variant_trigger(g : Node) -> String? {
+  match g {
+    Seq([Exact(t), .. rest]) => {
+      if rest.length() == 0 {
+        return None
+      }
+      let mut all_zero = true
+      for n in rest {
+        if !is_zero_token_marker(n) {
+          all_zero = false
+        }
+      }
+      if all_zero {
+        Some(t)
+      } else {
+        None
+      }
+    }
+    _ => None
+  }
+}
+
+///|
+/// `Branch` 配列に `Accept` が1つでも含まれるか (DR-086 cut の判定基準そのもの — 「照合消費
+/// できる」)。
+fn has_accept(brs : Array[Branch]) -> Bool {
+  for b in brs {
+    match b {
+      Accept(_, _) => return true
+      _ => ()
+    }
+  }
+  false
+}
+
+///|
 /// Walk sc.positional[pidx..] from `pos` with continuation `k`. Offers (A) a
 /// greedy interjection (only when not severed) and (B) advancing the
 /// positional face; a finished face RUNS `k` (subject to 早閉じ抑制).
@@ -1069,9 +1145,62 @@ fn scope_step(
   // untouched). CmdSat / DdSat are dispatched structurally so their child
   // walk gets the REAL continuation (this is where phase16 is won: the
   // child's repeats must see that the parent still wants a token).
+  //
+  // DR-086 cut (issue values-decode-support): 同一 trigger を持つ「値スロット main entry」と
+  // 「0引数 Set variant」が競合する場合、値スロット側が現在トークンを照合消費できるなら cut で
+  // そちらだけを採用し、0引数 variant へ backtrack しない (DR-086 §1)。lowering 構造
+  // (`build.greedy` に積む Node の個数・形) は一切変えず、ここ (経路探索へ投入する直前) でのみ
+  // 読みを間引く — DR-086 §3「経路空間に投入される読みの数を減らす局所規則」の位置づけそのもの、
+  // node.mbt/installer.mbt には手を入れない (lowering query fixture への影響回避、team-lead
+  // 裁定 2026-07-10)。
+  //   1st pass: 値スロット候補を先に評価し、Accept があった trigger を cut_triggers に記録する
+  //   (Reject = Accept 0 の場合は記録しない — DR-086 §1「食えない場合は従来どおり引数なし枝が
+  //   生きる」)。cut 判定は「trigger + 値スロット自体」が消費できるかという**浅い**基準
+  //   (`eval(g, ctx, pos)` — 継続 k を含まない) を使う。継続 k まで含めた深い評価
+  //   (`step_greedy`、後続 positional の充足可否まで見てしまう) を判定に使うと DR-086 §1 の
+  //   「後続文法の充足可能性を理由に引数なし枝へ再解釈しない」に反する誤判定になる (required
+  //   positional が飢える経路も「値スロット自体は食えている」ので cut すべきところ、深い評価だと
+  //   その経路全体が Held に落ちて Accept 0 と誤認識してしまう — 2026-07-10 実機で発覚)。cut が
+  //   確定した後の実際の経路探索は、既存の `step_greedy` (継続 k 込み) にそのまま委ねる。
   if !severed {
+    let cut_triggers : Array[String] = []
+    let value_slot_nodes : Array[Node] = []
     for g in sc.greedy {
-      step_greedy(g, sc, ctx, pos, pidx, acc, severed, k, out)
+      match value_slot_trigger(g) {
+        Some(trigger) => {
+          value_slot_nodes.push(g)
+          if has_accept(eval(g, ctx, pos)) {
+            cut_triggers.push(trigger)
+          }
+          step_greedy(g, sc, ctx, pos, pidx, acc, severed, k, out)
+        }
+        None => ()
+      }
+    }
+    for g in sc.greedy {
+      let mut already = false
+      for h in value_slot_nodes {
+        if h == g {
+          already = true
+        }
+      }
+      if already {
+        continue
+      }
+      match zero_arg_variant_trigger(g) {
+        Some(trigger) => {
+          let mut cut = false
+          for t in cut_triggers {
+            if t == trigger {
+              cut = true
+            }
+          }
+          if !cut {
+            step_greedy(g, sc, ctx, pos, pidx, acc, severed, k, out)
+          }
+        }
+        None => step_greedy(g, sc, ctx, pos, pidx, acc, severed, k, out)
+      }
     }
   }
   // (B) advance the positional face

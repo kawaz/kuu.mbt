@@ -2219,10 +2219,15 @@ fn dec_alias(o : Map[String, Json]) -> AliasDef raise DecodeSkip {
 }
 
 ///|
+/// DR-055 value-enum 形式の or 枝を decode し、(1) enum 消費構造用の全 exact 値 (requires の有無を
+/// 問わない — issue values-decode-support, BEnum の `dec_option` 呼び出しが使う) と (2) 制約用の
+/// value_requires (requires を持つ枝だけ) の両方を1パスで返す。従来は (2) だけを返していたが、今回
+/// values/or の消費意味論を合流させるにあたり同じ走査で (1) も一緒に収集するよう拡張した (二重
+/// 実装を避ける)。
 fn dec_or(
   j : Json,
   parent_name : String,
-) -> Array[(String, String, Array[String])] raise DecodeSkip {
+) -> (Array[String], Array[(String, String, Array[String])]) raise DecodeSkip {
   let a = match j.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("or is not an array")
@@ -2233,6 +2238,7 @@ fn dec_or(
   // DR-055 §1 + DR-052 §値枝 id 直交: 各枝の tuple = (branch_id, exact_value, targets)。branch_id は
   // `id` フィールド (fixture の `id: "fmt_json"`) を採用、未指定なら parent_name にフォールバック
   // (parent 直属 value_requires と等価挙動)。
+  let exacts : Array[String] = []
   let vrs : Array[(String, String, Array[String])] = []
   for e in a {
     let bo = match e.j_obj() {
@@ -2247,6 +2253,7 @@ fn dec_or(
           "or branch missing 'exact' (only exact value枝 supported)",
         )
     }
+    exacts.push(exact)
     let reqs = dec_strs(bo.get("requires"))
     if reqs.length() > 0 {
       let branch_id = jf_str(bo, "id").unwrap_or(parent_name)
@@ -2254,7 +2261,7 @@ fn dec_or(
       vrs.push((branch_id, exact, reqs))
     }
   }
-  vrs
+  (exacts, vrs)
 }
 
 ///|
@@ -2269,6 +2276,30 @@ fn next_or_branch_id() -> String {
   let n = or_branch_seq[0]
   or_branch_seq[0] = n + 1
   "#" + n.to_string()
+}
+
+///|
+/// DESIGN §5.3 `values` shorthand: a flat array of exact-match string literals (`["red","green",
+/// "blue"]`). The seq-branch form (`"values": [..., [{"name":"r",...},...]]`, DESIGN §5.3 後半) is
+/// OUT OF SCOPE for this issue (no target fixture exercises it) — a non-string element raises
+/// DecodeSkip rather than silently degrading, so a future seq-branch fixture surfaces as a decode
+/// gap instead of a wrong parse.
+fn dec_values(j : Json) -> Array[String] raise DecodeSkip {
+  let a = match j.j_arr() {
+    Some(x) => x
+    None => raise DecodeSkip("values is not an array")
+  }
+  let out : Array[String] = []
+  for e in a {
+    match e.j_str() {
+      Some(s) => out.push(s)
+      None =>
+        raise DecodeSkip(
+          "values element is not a string (seq-branch values form not supported)",
+        )
+    }
+  }
+  out
 }
 
 ///|
@@ -2379,19 +2410,22 @@ fn dec_option(
     [
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "separator", "requires", "conflicts_with", "exclusive_group",
-      "export_key", "config_key", "deprecated", "or", "piece_filters", "value_filters",
-      "cell_filters", "ref", "repeat",
+      "export_key", "config_key", "deprecated", "or", "values", "piece_filters",
+      "value_filters", "cell_filters", "ref", "repeat",
     ],
     "option",
   )
   let tystr = match jf_str(o, "type") {
     Some(t) => t
     None =>
-      if has_key(o, "or") || has_key(o, "ref") {
+      if has_key(o, "or") || has_key(o, "ref") || has_key(o, "values") {
         // DR-078 §1: a `ref` element's own consumption is replaced by the referenced template
         // (`elem_head`'s `Ref(r)` head, ty unused there) — same "type is moot" reasoning `or`
         // already gets. `dec_positional` already defaults ty to TStr when absent for the same
-        // shape reason; this mirrors that on the option side.
+        // shape reason; this mirrors that on the option side. `values` gets the same default
+        // (DR-028 追記: values を持つ node は type フィールドなしで enum 型を兼ねる) — DESIGN §5.3's
+        // `values` shorthand is string-literal-only in this issue's scope (seq-branch values form
+        // not implemented), so the enum's own values are always strings regardless of this default.
         "string"
       } else {
         raise DecodeSkip("option missing 'type'")
@@ -2410,12 +2444,28 @@ fn dec_option(
     Some(orj) => dec_or_structural(orj, shadows)
     None => None
   }
-  let value_requires = match structural_or {
-    Some(_) => []
+  // issue values-decode-support (DESIGN §5.3 "values は or のショートハンド" + team-lead 裁定
+  // 2026-07-10「values と or (value-enum形式) の消費意味論を分岐させない」): `values` はここで
+  // `or` value-enum 相当 (全 exact 値のリスト) へ正規化し、以降 `value_enum`/`value_requires` の
+  // 決定を「values 由来」と「or 由来」で完全に同じ経路に流す — 糖衣と正規形で観測挙動が割れない
+  // ようにする。`values` と `or` の同時指定は対象 fixture に無く未定義 (values を優先、無視した
+  // `or` があれば下の `value_requires` 判定には現れない — 想定外の組合せなので検出はしない)。
+  let (value_enum, value_requires) : (
+    Array[String]?,
+    Array[(String, String, Array[String])],
+  ) = match structural_or {
+    Some(_) => (None, [])
     None =>
-      match o.get("or") {
-        Some(orj) => dec_or(orj, name)
-        None => []
+      match o.get("values") {
+        Some(vj) => (Some(dec_values(vj)), [])
+        None =>
+          match o.get("or") {
+            Some(orj) => {
+              let (exacts, vrs) = dec_or(orj, name)
+              (Some(exacts), vrs)
+            }
+            None => (None, [])
+          }
       }
   }
   if tystr == "dd" {
@@ -2512,7 +2562,11 @@ fn dec_option(
       ref_~,
       body=match structural_or {
         Some(branches) => BOr(branches)
-        None => BCell
+        None =>
+          match value_enum {
+            Some(values) => BEnum(values)
+            None => BCell
+          }
       },
     ),
     separator: sep,
@@ -4067,19 +4121,7 @@ fn known_divergences() -> Array[String] {
 /// `definitions.types[number]` factory-config gap — all previously-frozen skip entries are removed
 /// since every fixture now decodes and runs losslessly (full conformance, no known skip gaps).
 fn expected_skips() -> Array[(String, String)] {
-  // values キー未対応の明示 skip (追跡: docs/issue/2026-07-10-values-decode-support.md)。
-  // decode 対応 (or 展開、DESIGN §5.3) が入ったらこのエントリを削除して green 条件に戻す。
-  [
-    (
-      "value-sources/set-always-variant-branch.json", "option has unsupported key 'values'",
-    ),
-    (
-      "value-sources/set-always-variant-cut-positional-required.json", "option has unsupported key 'values'",
-    ),
-    (
-      "value-sources/set-always-variant-cut-positional-optional.json", "option has unsupported key 'values'",
-    ),
-  ]
+  []
 }
 
 ///|

@@ -94,16 +94,23 @@ pub(all) struct ElemDef {
 } derive(Eq, Debug)
 
 ///|
-/// MDR-004: ElemDef の消費文法軸。`BCell` (単一値セル) 以外の2つは構造化された消費文法:
+/// MDR-004: ElemDef の消費文法軸。`BCell` (単一値セル) 以外の3つは構造化された消費文法:
 /// - `BOr`: 構造 or (DR-038 / DESIGN §15.4) — 枝ごとに別の named cell を束縛する「消費文法の枝」。
-///   DR-055 の値 enum 枝 (exact 照合、CRequiresIf の素材) とは別物 — あちらは `value_requires` が
-///   引き続き担う (§5.3 values 正規形)。
+///   DR-055 の値 enum 枝 (exact 照合、CRequiresIf の素材) とは別物 — `BEnum` (下記) と対になり、
+///   value_requires (制約) は enum 枝の有無に関わらず `dec_or` が引き続き担う (§5.3 values 正規形)。
 /// - `BGroup`: named group (DR-044 反復グループ) — repeat と組んで、発火ごとに内部 positionals を
 ///   1 セットずつ束ねる (transparent-seq の `xs{k}` がこの形)。
+/// - `BEnum` (issue values-decode-support, DESIGN §5.3 / DR-028 追記): 単一 named cell の消費構造が
+///   exact 値の列のどれか一つ (BOr と違い全枝が SAME name/cell に着地する — 「どの named cell を
+///   選ぶか」ではなく「1つの cell にどの値が入るか」)。DESIGN §5.3 の `values` ショートハンド と
+///   既存の `or` value-enum 正規形 (`{"or":[{"exact":...}]}`, DR-055) は同じ消費意味論に合流する
+///   (糖衣と展開形で観測挙動を割らない、team-lead 裁定 2026-07-10) — `dec_option` が両方をこの
+///   variant へ decode する。
 pub(all) enum ElemBody {
   BCell
   BOr(Array[OrBranch])
   BGroup(Array[ElemDef])
+  BEnum(Array[String])
 } derive(Eq, Debug)
 
 ///|
@@ -647,6 +654,7 @@ fn clone_body(b : ElemBody) -> ElemBody {
       }
       BGroup(out)
     }
+    BEnum(values) => BEnum(copy_strs(values))
   }
 }
 
@@ -796,6 +804,9 @@ fn collect_export_body(e : ElemDef, m : Map[String, ExportKey]) -> Unit {
         collect_export_body(it, m)
       }
     }
+    // BEnum (issue values-decode-support): same standing as BCell — a single named cell whose
+    // consumption structure happens to be an exact-value enum (no nested leaves to recurse into).
+    BEnum(_) => m.set(e.name, e.export_key)
   }
 }
 
@@ -816,6 +827,25 @@ fn elem_head(e : ElemDef) -> Node {
         merge=e.accumulator == Some("merge"),
       )
   }
+}
+
+///|
+/// DESIGN §5.3 (values は or のショートハンド) / DR-028 追記 (values を持つ node は type フィールド
+/// なしで enum 型を兼ねる): the consumption structure for a `BEnum` cell — ONE token that must
+/// match one of the exact values, or the whole read doesn't exist (DR-028 §3.1 "enum 的テンプレへの
+/// 未定義値は or 全枝の綴り不一致 (Reject)" — no held error, same posture bare `Exact` already has:
+/// a non-matching token means every branch of the `Or` below fails to Accept, so the read simply
+/// isn't there — no separate "reject" signal needed). Each matching branch's Bind value goes
+/// through `dsl_operand_value` (the SAME type coercion `classify_long_spelling`'s DSL operand
+/// parsing already uses for variant operands) so a non-string-typed enum would get a correctly-
+/// typed value — moot for today's only callers (string-only `values`, this issue's scope) since
+/// `dsl_operand_value(TStr, s) = VStr(s)`.
+fn enum_value_node(name : String, ty : Ty, values : Array[String]) -> Node {
+  let branches : Array[Node] = []
+  for v in values {
+    branches.push(Seq([Exact(v), Bind(name, dsl_operand_value(ty, v))]))
+  }
+  Or(branches)
 }
 
 ///|
@@ -1033,6 +1063,18 @@ fn lower_positional(
               }
             None => lower_repeat_head(e, elem_head(e), registry, out)
           }
+        // BEnum (issue values-decode-support): `dec_positional` never produces this shape today
+        // (positionals only decode structural "or"/"positionals" — DESIGN §5.3's value-enum
+        // shorthand is option-only, `dec_positional`'s own comment). Wired anyway (not aborted) so
+        // a future positional-values fixture works without another round-trip here — same
+        // `enum_value_node` consumption structure the option side (`inst_long`) uses.
+        BEnum(values) =>
+          lower_repeat_head(
+            e,
+            enum_value_node(e.name, e.ty, values),
+            registry,
+            out,
+          )
       }
     }
   }
@@ -1134,6 +1176,11 @@ fn ensure_entity_body(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
       for it in items {
         ensure_entity_body(build, it, has_cf)
       }
+    // BEnum (issue values-decode-support): a single named cell like BCell (the enum's exact-value
+    // branches all bind the SAME `e.name`, unlike BOr's per-branch leaves) — never has a
+    // `ref_target` (values/or on a `ref` element is not a decodable shape today), so this always
+    // registers unconditionally, simpler than BCell's ref_target-gated arm above.
+    BEnum(_) => ensure_entity(build, e, has_cf)
   }
 }
 
@@ -1253,6 +1300,20 @@ fn inst_long(
             maybe_root(e.link_depth, Seq([Exact(trigger), Or(branch_nodes)])),
           )
         }
+        // BEnum (issue values-decode-support, DESIGN §5.3 / DR-028 追記): main entry の値スロット
+        // 消費構造が `enum_value_node` (exact 値の or 展開) になる — BCell の `value_prim` に相当する
+        // 差し替え。DR-086 §1 の cut (同一 trigger の 0引数 Set variant との競合解決) は lowering
+        // 構造 (ここで積む greedy 衛星の個数・形) を変えず eval.mbt 側で扱う (lowering query fixture
+        // への影響回避、team-lead 裁定 2026-07-10) — ここでは通常の main entry と同じ形で単独登録
+        // するだけでよい。
+        BEnum(values) =>
+          add_greedy(
+            build,
+            maybe_root(
+              e.link_depth,
+              Seq([Exact(trigger), enum_value_node(e.name, e.ty, values)]),
+            ),
+          )
         _ =>
           match e.ref_target {
             // DR-078 §1 option repeat (issue 2026-07-09-ref-template-result-shape, new
@@ -1400,6 +1461,14 @@ fn inst_long(
             separator: e.separator,
             merge: e.accumulator == Some("merge"),
           })
+        // BEnum (issue values-decode-support): eq-split (`--color=always`) for an enum-constrained
+        // cell is OUT OF SCOPE for this issue (no target fixture exercises `--key=value` against a
+        // `values`/`or` value-enum element) — `EqSplit`'s `LongEntry.kind : Ty` carrier has no slot
+        // for "enum of these strings", only a plain value-primitive type. Registering nothing here
+        // means `--color=always` simply doesn't match this entry (falls through to whatever else
+        // recognizes the raw token, most likely unexpected_token) rather than silently accepting an
+        // UNvalidated value via a `Ty`-based fallback — deliberately absent, not deliberately wrong.
+        BEnum(_) => ()
       }
     }
   }
