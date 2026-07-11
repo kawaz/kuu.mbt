@@ -6277,3 +6277,44 @@ test "DR-094 §9 対極: builtin ns 表記でも未配線 factory (bool_parser) 
     "builtin/bool_parser: expected DecodeSkip (not wired in this substrate), decode succeeded",
   )
 }
+
+///|
+/// codex レビュー指摘 (2026-07-12) の回帰 pin: 異名の dd/none 要素の committed placeholder
+/// binding は完全経路の dedup に混入しない (DESIGN §15.1「経路の同一性は実体への観測可能な
+/// 効果列で判定する」/ DR-030「実体 = 値セル」/ DR-093 §6「none の発火事実は ParserContext 層」)。
+/// 同一 pattern の 2 つの dd 要素 (trig_a / trig_b) が同じトークンに発火しうる 2 枝は、
+/// observable な result/effects が同一 ({rest: ["x"]}) なので 1 経路に dedup され Success になる。
+/// 修正前は placeholder の key 差 (trig_a vs trig_b) が strip_link 後の binding 配列比較に
+/// 混入して偽 Ambiguous になっていた (eval.mbt の dedup キー側だけ strip_none_placeholders を
+/// 通す修正で解消 — `eff` 本体は保持するので build_result / ParserContext 側は不変)。
+/// 標準 comparator (run_case) を通すことで「result に dd 名が漏れない」も同時に固定する。
+test "codex-20260712: differing dd placeholder keys do not split path dedup (DESIGN §15.1)" {
+  let src =
+    #|{
+    #|  "why": "dedup regression pin (inline)",
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "trig_a", "type": "dd", "match": "^x$", "self": "keep"},
+    #|      {"name": "trig_b", "type": "dd", "match": "^x$", "self": "keep"}
+    #|    ],
+    #|    "positionals": [
+    #|      {"name": "rest", "type": "string", "repeat": {"min": 0}}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "same-observable-converges-to-success",
+    #|      "why": "両 dd が同一トークン x に発火しうるが観測可能効果列は同一 → 1 経路 (Success)、rest に x (self: keep)",
+    #|      "argv": ["x"],
+    #|      "expect": {"outcome": "success", "result": {"rest": ["x"]}}
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 1)
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}

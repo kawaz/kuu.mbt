@@ -2710,6 +2710,36 @@ fn strip_link(bs : Array[Binding]) -> Array[Binding] {
   out
 }
 
+///|
+/// codex 指摘 (2026-07-12): `parse()`'s dedup-only helper — drop any binding whose (scope, key)
+/// matches a `NoneCell` (dd/none committed placeholder, DR-093 §2/§7 / DR-089 §3). These elements
+/// carry no entity (DR-030 「実体=値セル」), so DESIGN §15.1's "実体への観測可能な効果列" path-
+/// identity criterion does not see them — two branches whose only structural difference is WHICH
+/// dd/none element fired (different `elem_name` key, same downstream positional/value effects)
+/// must still dedup to one path. `scope_path_eq(nc.path, b.scope)` mirrors `is_committed`'s own
+/// (path, name) matching (this same file) — `b.scope` already carries the binding's full declaring
+/// path at this pre-`build_result` layer (nested scopes rewrite it on the way out, see the `{ ..b,
+/// scope: sc2 }` call sites), same shape `NoneCell.path` uses.
+fn strip_none_placeholders(
+  bs : Array[Binding],
+  nones : Array[NoneCell],
+) -> Array[Binding] {
+  let out : Array[Binding] = []
+  for b in bs {
+    let mut is_none = false
+    for n in nones {
+      if n.name == b.key && scope_path_eq(n.path, b.scope) {
+        is_none = true
+        break
+      }
+    }
+    if !is_none {
+      out.push(b)
+    }
+  }
+  out
+}
+
 // ── constraint evaluation (delayed predicates, spec DR-055 / DR-047) ─────────
 //
 // Constraints are predicates on the DECLARING scope's entities (spec DR-012 /
@@ -3062,6 +3092,14 @@ pub fn parse(
   faildef? : FailDef = WithHeld,
 ) -> Outcome {
   let ctx : Ctx = { toks, defs, mode: ModeParse }
+  // codex 指摘 (2026-07-12): dedup 判定 (下の `eff`/`dedup_key`) から dd/none の committed
+  // placeholder binding を除外するための (path, name) 集合 — `none_cells` (resolve.mbt、
+  // build_result が NoneCell として結果から除外する既存機構をそのまま再利用)。root が
+  // `ScopeNode` でない場合 (dd/none は Scope 経由でのみ意味を持つ構造) は空集合のまま。
+  let nones = match root {
+    ScopeNode(sc) => none_cells(sc)
+    _ => []
+  }
   let branches = match root {
     ScopeNode(sc) =>
       scope_step(sc, ctx, 0, 0, [], false, KTop(collect_scopes(root, defs)))
@@ -3091,9 +3129,18 @@ pub fn parse(
         // full-length Accept here IS a complete解決経路.
         if p == toks.length() {
           let eff = strip_link(bs)
+          // codex 指摘 (2026-07-12, DESIGN §15.1「経路の同一性は実体への観測可能な効果列で判定
+          // する」): dd/none 要素は entity (値セル) を持たない (DR-030) ため、そのプレースホルダ
+          // binding は比較対象の「実体への効果」に含めない。`eff` 自体 (Success/Ambiguous が
+          // 運ぶ binding 配列、build_result がそのまま NoneCell 除外に使う) は placeholder 込みの
+          // ままにし、dedup 判定専用の `strip_none_placeholders` 済みキーだけを比較する — fixture
+          // dd/duplicate-decl.json の「dd は値効果を持たないため同名複数宣言は同効果に落ちる」pin
+          // は同名 (同一 key) の偶然の一致でしか成立せず、異名 (別 elem_name) の複数 dd/none 要素が
+          // 同一トークンで競合する場合はこのキー抽出が無いと dedup できない (PoC wbtest で実測)。
+          let dedup_key = strip_none_placeholders(eff, nones)
           let mut dup = false
           for existing in full {
-            if existing == eff {
+            if strip_none_placeholders(existing, nones) == dedup_key {
               dup = true
               break
             }
