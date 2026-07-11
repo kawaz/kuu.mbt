@@ -42,6 +42,11 @@ fn el(
   // without hand-writing a full ElemDef literal.
   long_prefix? : String = "--",
   require_equal_separator? : Bool = false,
+  // issue scope-config-object-gap: same rationale, for the DESIGN §7.2 fields `inst_short`/
+  // `inst_long` now consume directly (`short_prefix`/`allow_equal_separator`).
+  short_prefix? : String = "-",
+  allow_equal_separator? : Bool = true,
+  short_combine? : Bool = true,
 ) -> ElemDef {
   {
     name,
@@ -83,6 +88,11 @@ fn el(
     value_filters: chain(value_filters),
     cell_filters: chain(cell_filters),
     long_prefix,
+    short_prefix,
+    env_prefix: "",
+    auto_env: false,
+    allow_equal_separator,
+    short_combine,
     require_equal_separator,
     body: BCell,
   }
@@ -2464,5 +2474,232 @@ test "DR-091 §3 end-to-end: a long_prefix:\"\" element does not collide with a 
       assert_false(if_found)
     }
     other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+// ── issue scope-config-object-gap: short_prefix / allow_equal_separator wiring ──
+
+///|
+/// 保証 (DESIGN §7.2 / LOWERING §B.2「config `short_prefix`/`short_combine` がパラメータ」):
+/// `inst_short` は `e.short_prefix` を `ShortCombine` matcher の `prefix` に使う (旧ハードコード
+/// `"-"` を置換)。既定の `"-"` はこのテストの対極 (long installer 同型テストの `"--"` 既定と対)。
+test "short installer: e.short_prefix drives the ShortCombine matcher's prefix (default \"-\")" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TFlag, short=['v'])],
+  }
+  let sc = ok_scope(def, [ShortInst])
+  assert_eq(sc.greedy.length(), 1)
+  match sc.greedy[0] {
+    NativeMatch(ShortCombine(prefix=p, entries=es, ..)) => {
+      assert_eq(p, "-")
+      assert_eq(es.length(), 1)
+      assert_eq(es[0].ch, 'v')
+      assert_eq(es[0].name, "verbose")
+    }
+    _ => abort("expected NativeMatch(ShortCombine)")
+  }
+}
+
+///|
+/// 保証 (同上、非既定側): `short_prefix: "+"` (BSD 慣習等) を指定した要素は `ShortCombine` matcher
+/// の prefix にそのまま反映される。
+test "short installer: a non-default short_prefix (\"+\") is honored" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TFlag, short=['v'], short_prefix="+")],
+  }
+  let sc = ok_scope(def, [ShortInst])
+  match sc.greedy[0] {
+    NativeMatch(ShortCombine(prefix=p, ..)) => assert_eq(p, "+")
+    _ => abort("expected NativeMatch(ShortCombine)")
+  }
+}
+
+///|
+/// 保証 (同上、grouping 側 — DR-091 §3 の `eq_group`/`long_prefix` grouping と同型): 異なる
+/// `short_prefix` を持つ要素は同じ `ShortCombine` matcher に混ざらず、prefix ごとに別 matcher が
+/// 立つ (異なる token 空間を誤って結合しない — `eq_group` の doc comment と同じ理由付け)。
+test "short installer: distinct short_prefix values get SEPARATE ShortCombine matchers (no cross-prefix combine)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el("verbose", TFlag, short=['v']),
+      el("weird", TFlag, short=['w'], short_prefix="+"),
+    ],
+  }
+  let sc = ok_scope(def, [ShortInst])
+  assert_eq(sc.greedy.length(), 2)
+  let mut dash_count = 0
+  let mut plus_count = 0
+  for g in sc.greedy {
+    match g {
+      NativeMatch(ShortCombine(prefix="-", entries=es, ..)) => {
+        dash_count = dash_count + 1
+        assert_eq(es.length(), 1)
+        assert_eq(es[0].ch, 'v')
+      }
+      NativeMatch(ShortCombine(prefix="+", entries=es, ..)) => {
+        plus_count = plus_count + 1
+        assert_eq(es.length(), 1)
+        assert_eq(es[0].ch, 'w')
+      }
+      _ => abort("expected NativeMatch(ShortCombine) with prefix - or +")
+    }
+  }
+  assert_eq(dash_count, 1)
+  assert_eq(plus_count, 1)
+}
+
+///|
+/// 保証 (DR-014「-abc の結合許可」解釈A, team-lead 裁定 2026-07-11): `e.short_combine` は
+/// `inst_short` の grouping を素通りして `ShortCombine` matcher の `combine` param にそのまま
+/// 反映される (`short_group` の pair-key 化)。matcher レベルの意味論確認は matcher_wbtest.mbt、
+/// ここでは ElemDef → matcher の配線そのものを固定する。
+test "short installer: e.short_combine rides through to the ShortCombine matcher's combine param" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("verbose", TFlag, short=['v'], short_combine=false)],
+  }
+  let sc = ok_scope(def, [ShortInst])
+  match sc.greedy[0] {
+    NativeMatch(ShortCombine(combine=c, ..)) => assert_eq(c, false)
+    _ => abort("expected NativeMatch(ShortCombine)")
+  }
+}
+
+///|
+/// 保証 (同上、grouping 側): 同じ `short_prefix` を共有しつつ `short_combine` が異なる 2 要素は
+/// `short_group` の pair-key 化により別 matcher に分かれる (`short_group` の doc comment の
+/// tie-break 回避理由そのもの — 混ぜたら combine の意味論が矛盾する)。
+test "short installer: same short_prefix but DIFFERENT short_combine values get separate matchers" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el("verbose", TFlag, short=['v'], short_combine=true),
+      el("weird", TFlag, short=['w'], short_combine=false),
+    ],
+  }
+  let sc = ok_scope(def, [ShortInst])
+  assert_eq(sc.greedy.length(), 2)
+  let mut true_count = 0
+  let mut false_count = 0
+  for g in sc.greedy {
+    match g {
+      NativeMatch(ShortCombine(combine=true, entries=es, ..)) => {
+        true_count = true_count + 1
+        assert_eq(es[0].ch, 'v')
+      }
+      NativeMatch(ShortCombine(combine=false, entries=es, ..)) => {
+        false_count = false_count + 1
+        assert_eq(es[0].ch, 'w')
+      }
+      _ => abort("expected NativeMatch(ShortCombine)")
+    }
+  }
+  assert_eq(true_count, 1)
+  assert_eq(false_count, 1)
+}
+
+///|
+/// 保証 (同上、end-to-end): `short_combine:false` 下で `-ab` (2 flag の同時結合) は parse 失敗
+/// (読みが 0 本、matcher_wbtest.mbt の matcher レベル確認の end-to-end 版)。`-a -b` (別トークン)
+/// は引き続き両方発火する — combine が禁じるのは「1 トークンでの複数 entry 結合」だけであって、
+/// 各 entry 個別の発火能力そのものではない、という解釈Aの帰結を実行結果で固定する。
+test "short installer end-to-end: short_combine:false rejects -ab but accepts -a -b (解釈A)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el("a", TFlag, short=['a'], short_combine=false),
+      el("b", TFlag, short=['b'], short_combine=false),
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  match parse(ScopeNode(sc), ["-ab"], defs=Map([])) {
+    Failure(_) => ()
+    other =>
+      fail(
+        "expected Failure (2-flag cluster withheld by combine:false), got " +
+        render_outcome(other),
+      )
+  }
+  match parse(ScopeNode(sc), ["-a", "-b"], defs=Map([])) {
+    Success(bs) => {
+      let mut a_found = false
+      let mut b_found = false
+      for bd in bs {
+        if bd.key == "a" {
+          a_found = true
+        }
+        if bd.key == "b" {
+          b_found = true
+        }
+      }
+      assert_true(a_found)
+      assert_true(b_found)
+    }
+    other =>
+      fail(
+        "expected Success (2 separate tokens, no combine needed), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 保証 (DR-014「--name=value の許可」/ DR-041「config (allow_equal_separator/long_prefix) から
+/// 規則を構成」): `allow_equal_separator: false` の要素は `inst_long` が eq-split entry を一切登録
+/// しない — space-form の greedy Seq 衛星のみが残る (`EqSplit` matcher 自体、要素が唯一なので、
+/// 生成されない)。既定 (`true`) の対極として既存 "value option gets 1 greedy Seq + 1 EqSplit"
+/// テストと対で読む。
+test "long installer: allow_equal_separator:false withholds this element's eq-split entry (space form survives)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el("port", TStr, long=LList([":set"]), allow_equal_separator=false),
+    ],
+  }
+  let sc = ok_scope(def, [LongInst])
+  // EqSplit entry が無いので、この要素単独では NativeMatch(EqSplit) 自体が greedy に現れない
+  // (eq_prefixes/eq_groups が空のまま — inst_long の "0 entries なら matcher を足さない" ガード)。
+  assert_eq(sc.greedy.length(), 1)
+  assert_eq(sc.greedy[0], Seq([Exact("--port"), StrArg("port", [])]))
+}
+
+///|
+/// 保証 (同上、eq form の実行時失敗側): `allow_equal_separator:false` の要素へ `--port=80` を渡すと
+/// eq-split の読みが存在しないため、`=` を含むトークンは丸ごと unrecognized になり parse は失敗する
+/// (space form `--port 80` は引き続き成功する、対比として同テスト内で確認)。
+test "long installer: allow_equal_separator:false end-to-end — eq form fails, space form succeeds" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el("port", TStr, long=LList([":set"]), allow_equal_separator=false),
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  match parse(ScopeNode(sc), ["--port=80"], defs=Map([])) {
+    Failure(_) => ()
+    other =>
+      fail(
+        "expected Failure (no eq-split reading registered), got " +
+        render_outcome(other),
+      )
+  }
+  match parse(ScopeNode(sc), ["--port", "80"], defs=Map([])) {
+    Success(bs) => {
+      let mut found = false
+      for b in bs {
+        if b.key == "port" {
+          found = true
+          assert_eq(b.value, VStr("80"))
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail(
+        "expected Success (space form unaffected), got " + render_outcome(other),
+      )
   }
 }

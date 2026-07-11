@@ -328,6 +328,11 @@ fn opt(
   cell_filters? : Array[FilterSpelling] = [],
   ref_? : String? = None,
   long_prefix? : String = "--",
+  short_prefix? : String = "-",
+  env_prefix? : String = "",
+  auto_env? : Bool = false,
+  allow_equal_separator? : Bool = true,
+  short_combine? : Bool = true,
   require_equal_separator? : Bool = false,
   body? : ElemBody = BCell,
 ) -> ElemDef {
@@ -368,6 +373,11 @@ fn opt(
     value_filters,
     cell_filters,
     long_prefix,
+    short_prefix,
+    env_prefix,
+    auto_env,
+    allow_equal_separator,
+    short_combine,
     require_equal_separator,
     body,
   }
@@ -432,10 +442,18 @@ fn pos(
     piece_filters,
     value_filters,
     cell_filters,
-    // positional 要素は long spelling を持たない (`long: LList([])` 上、`long_of` は常に [] を返す)
-    // — `long_prefix`/`require_equal_separator` は DR-091 §3 の long-only 語彙なので既定値のまま
-    // 未使用フィールドとして持ち回るだけ (`opt`/`inst_long` 側の実際の消費経路と同じ理由付け)。
+    // positional 要素は long/short spelling を持たない (`long: LList([])`/`short: []` 上、`long_of`
+    // は常に [] を返す) — `long_prefix`/`short_prefix`/`allow_equal_separator`/`short_combine`/
+    // `require_equal_separator` は long/short-only 語彙なので既定値のまま未使用フィールドとして持ち
+    // 回るだけ (`opt`/`inst_long`/`inst_short` 側の実際の消費経路と同じ理由付け)。`env_prefix`/
+    // `auto_env` は env 席が positional にも効く (`inst_env` が def.positionals も走査) ため、
+    // `dec_definition` が呼び出し側でこの2つだけ scope config を焼き込む (下記コメント参照)。
     long_prefix: "--",
+    short_prefix: "-",
+    env_prefix: "",
+    auto_env: false,
+    allow_equal_separator: true,
+    short_combine: true,
     require_equal_separator: false,
     body,
   }
@@ -481,6 +499,11 @@ fn dd_marker(match_? : String? = None, self_keep? : Bool = false) -> ElemDef {
     cell_filters: [],
     // dd marker element も `long: LList([])` で long spelling を持たない — 同じ理由で既定値。
     long_prefix: "--",
+    short_prefix: "-",
+    env_prefix: "",
+    auto_env: false,
+    allow_equal_separator: true,
+    short_combine: true,
     require_equal_separator: false,
     body: BCell,
   }
@@ -807,7 +830,7 @@ fn proj_greedy(node : Node, reg : Map[String, Node]) -> GItem {
       }
       GMatch("eq_split", es)
     }
-    NativeMatch(ShortCombine(prefix=_, entries~)) => {
+    NativeMatch(ShortCombine(prefix=_, entries~, ..)) => {
       let es : Array[(String, String)] = []
       for e in entries {
         es.push(("\{e.ch}", e.name))
@@ -2834,9 +2857,172 @@ fn dec_positional_group(
 }
 
 ///|
+/// DR-014 / DESIGN §7.2 (issue scope-config-object-gap): the resolved (post-inheritance) value of
+/// every scope `config` key, threaded top-down through `dec_definition`/`dec_command`'s recursion —
+/// this IS the "子要素は親の config を継承、上書き可能" hierarchy (DESIGN §7.2), realized as
+/// "each scope merges its own `config` object over the value it received from its parent" rather
+/// than a stored-on-`Definition` carrier (installer.mbt never reads a `Definition`-level config; the
+/// resolved tuple gets baked onto each `ElemDef` the scope owns, same pattern DR-091 §3 established
+/// for the original 2-field minimal implementation).
+struct ScopeConfig {
+  long_prefix : String
+  short_prefix : String
+  env_prefix : String
+  auto_env : Bool
+  allow_equal_separator : Bool
+  short_combine : Bool
+  require_equal_separator : Bool
+} derive(Eq, Debug)
+
+///|
+/// The canonical config, in effect at the root scope when no `config` object is ever written
+/// (equivalent to every key's DESIGN §7.2 default) — matches DR-091 §3's pre-issue defaults exactly
+/// (`long_prefix:"--"`, `require_equal_separator:false`) for the 2 fields that already existed.
+fn default_scope_config() -> ScopeConfig {
+  {
+    long_prefix: "--",
+    short_prefix: "-",
+    env_prefix: "",
+    auto_env: false,
+    allow_equal_separator: true,
+    short_combine: true,
+    require_equal_separator: false,
+  }
+}
+
+///|
+/// Merges THIS scope's own `config` object (JSON, may be partly or fully absent) over `parent`
+/// (the already-resolved config the enclosing scope handed down) — a key ABSENT from `co` inherits
+/// `parent`'s resolved value; a key PRESENT overrides it. This single merge step, applied once per
+/// scope in the top-down recursion, is the entire "階層継承可能" mechanism DR-014 specifies — no
+/// separate reconciliation pass is needed because each scope only ever sees its own JSON object and
+/// the one already-merged value from above.
+fn dec_scope_config(
+  co : Map[String, Json],
+  parent : ScopeConfig,
+) -> ScopeConfig raise DecodeSkip {
+  allowed_keys(
+    co,
+    [
+      "long_prefix", "short_prefix", "env_prefix", "auto_env", "allow_equal_separator",
+      "short_combine", "require_equal_separator",
+    ],
+    "definition.config",
+  )
+  let long_prefix = match jf_str(co, "long_prefix") {
+    Some(s) => s
+    None => parent.long_prefix
+  }
+  let short_prefix = match jf_str(co, "short_prefix") {
+    Some(s) => s
+    None => parent.short_prefix
+  }
+  let env_prefix = match jf_str(co, "env_prefix") {
+    Some(s) => s
+    None => parent.env_prefix
+  }
+  let auto_env = bool_field(co, "auto_env", parent.auto_env)
+  let allow_equal_separator = bool_field(
+    co,
+    "allow_equal_separator",
+    parent.allow_equal_separator,
+  )
+  let short_combine = bool_field(co, "short_combine", parent.short_combine)
+  let require_equal_separator = bool_field(
+    co,
+    "require_equal_separator",
+    parent.require_equal_separator,
+  )
+  {
+    long_prefix,
+    short_prefix,
+    env_prefix,
+    auto_env,
+    allow_equal_separator,
+    short_combine,
+    require_equal_separator,
+  }
+}
+
+///|
+/// "_" 連結 (DR-049 §3 auto_env 名導出の連結セパレータ)。空 segment は呼び出し側が既に除外している
+/// 前提 (`auto_env_name` — env_prefix 未設定時に prefix segment 自体を積まない、DR-049 §3
+/// 「env_prefix 未設定なら prefix 部を省く」)。
+fn join_us(items : Array[String]) -> String {
+  let buf = StringBuilder::new()
+  let mut first = true
+  for s in items {
+    if !first {
+      buf.write_string("_")
+    }
+    buf.write_string(s)
+    first = false
+  }
+  buf.to_string()
+}
+
+///|
+/// DR-049 §3 auto_env 名導出: `UPPER(env_prefix) "_" UPPER(scope_path を "_" 連結) "_" UPPER(name)`。
+/// `env_prefix` 未設定 (`""`) なら prefix segment を省く (§3 明記)。`name` は wire format の
+/// snake_case (DR-022) なので変換は uppercase のみ (kebab/camel からの変換規則は定義しない、§3)。
+fn auto_env_name(
+  env_prefix : String,
+  scope_path : Array[String],
+  name : String,
+) -> String {
+  let segs : Array[String] = []
+  if env_prefix != "" {
+    segs.push(env_prefix.to_upper())
+  }
+  for s in scope_path {
+    segs.push(s.to_upper())
+  }
+  segs.push(name.to_upper())
+  join_us(segs)
+}
+
+///|
+/// DR-049 §3/§4: applies THIS scope's resolved `env_prefix`/`auto_env` to one option/positional
+/// element. Two independent effects (§4「明示 env: が auto_env に優先する」means these are mutually
+/// exclusive per element, not layered):
+/// - explicit `env:` (§4): env_prefix prepends to EVERY declared env key (`UPPER(env_prefix) + "_"
+///   + <value>` — the value itself is left as the author wrote it, only the prefix segment is
+///   uppercased per §3's "UPPER(env_prefix)"), UNLESS env_prefix is `""` (§3 "未設定なら prefix 部
+///   を省く" — the element is left byte-for-byte unchanged, preserving every pre-issue fixture that
+///   declares `env:` with no scope config at all).
+/// - no explicit `env:` + `auto_env: true` (§3): derives the full name via `auto_env_name` — gated to
+///   `BCell` bodies only ("値セル持ち要素", DESIGN §7.2 line 842 — a `BOr`/`BGroup`/`BEnum` wrapper
+///   has no single value slot for a scalar env lookup to bind to, matcher/leaf-level auto_env is not
+///   specified anywhere and would be an invented extension).
+fn apply_env_config(
+  e : ElemDef,
+  env_prefix : String,
+  auto_env : Bool,
+  scope_path : Array[String],
+) -> ElemDef {
+  if e.env.length() > 0 {
+    if env_prefix == "" {
+      e
+    } else {
+      let prefixed : Array[String] = []
+      for v in e.env {
+        prefixed.push(env_prefix.to_upper() + "_" + v)
+      }
+      { ..e, env: prefixed }
+    }
+  } else if auto_env && e.body is BCell {
+    { ..e, env: [auto_env_name(env_prefix, scope_path, e.name)] }
+  } else {
+    e
+  }
+}
+
+///|
 fn dec_command(
   j : Json,
   shadows : Map[String, TypeShadow],
+  parent_config : ScopeConfig,
+  scope_path : Array[String],
 ) -> DCmd raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
@@ -2849,7 +3035,7 @@ fn dec_command(
     o,
     [
       "type", "name", "options", "positionals", "commands", "export_key",
-      // DR-091 §3 (scope config, DESIGN §7.2): a command's own object IS its Definition's `o`
+      // DR-014 / DESIGN §7.2 / DR-091 §3: a command's own object IS its Definition's `o`
       // (`dec_definition` is called with THIS SAME map below) — so `config` is legal here too.
        "config",
     ],
@@ -2862,7 +3048,15 @@ fn dec_command(
   check_reserved_name(name, "command")
   // 子コマンドの definition は親の shadows を継承する (DR-061 は scope 継承を規定していないが、
   // slice実装は fixture が命令的に flat な type shadow を宣言するだけなので親→子への単純伝搬で足りる)
-  let body = dec_definition(o, shadows~)
+  //
+  // DR-014 階層継承 / DR-049 §3 scope_path: この command 自身の name を scope_path に足して子へ
+  // 渡す — auto_env のフル修飾名導出 (DR-049 §3「スコープパスはフル修飾」) が使う。
+  let body = dec_definition(
+    o,
+    shadows~,
+    parent_config~,
+    scope_path=scope_path + [name],
+  )
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
     None => EkUnset
@@ -2874,48 +3068,47 @@ fn dec_command(
 fn dec_definition(
   o : Map[String, Json],
   shadows? : Map[String, TypeShadow] = Map([]),
+  parent_config? : ScopeConfig = default_scope_config(),
+  scope_path? : Array[String] = [],
 ) -> Definition raise DecodeSkip {
-  // DR-091 §3 (scope config, DESIGN §7.2 の兄弟; team-lead 裁定 2026-07-11: 要素単位の
-  // long_prefix/require_equal_separator は spec 未規定の語彙発明になるため、正本を DEFINITION
-  // (= scope) レベルの wire キーへ変更): この呼び出しの `o` (root definition object、または
-  // 1つの command の own definition object — `dec_command` が自分の `o` をそのまま渡す) が持つ
-  // `config: {long_prefix, require_equal_separator}` (DESIGN §7.2 の wire 形そのもの — ネストした
-  // "config" object、フラットな definition 直下キーではない) を読み、直下の `options` 全要素の
-  // ElemDef へ配る。DESIGN §7.2 のフル config object (short_prefix/env_prefix/auto_env/
-  // allow_equal_separator/short_combine・階層継承) は issue scope-config-object-gap の管掌 —
-  // このアプリはその2フィールドだけを受理する部分実装 (config object 自体の allowed_keys で
-  // 他キーは reject)。階層継承は無い — `dec_definition` は command ごとに独立して再帰呼び出し
-  // されるので、子 command の own definition object が明示しない限り、親の値は伝播しない (この
-  // 呼び出し単位そのものが「継承しない」境界)。`config` 省略時は既定 `long_prefix:"--"` /
-  // `require_equal_separator:false` (§3 適用前と同じ挙動)。
-  let (long_prefix, require_equal_separator) = match o.get("config") {
+  // DR-014 / DESIGN §7.2 (issue scope-config-object-gap; supersedes DR-091 §3's original 2-field-
+  // only, non-inheriting scope config): この呼び出しの `o` (root definition object、または 1つの
+  // command の own definition object — `dec_command` が自分の `o` をそのまま渡す) が持つ
+  // `config: {long_prefix, short_prefix, env_prefix, auto_env, allow_equal_separator, short_combine,
+  // require_equal_separator}` (DESIGN §7.2 の wire 形そのもの) を `parent_config` (呼び出し元から
+  // 継承した既解決値) の上に `dec_scope_config` でマージする — 明示したキーだけ上書き、省略した
+  // キーは親の値をそのまま継承する (DESIGN §7.2「子要素は親の config を継承、上書き可能」)。
+  // `config` 自体を省略したスコープは `parent_config` をそのまま使う (= 何も上書きしない、継承の
+  // 恒等射)。ルートスコープの `parent_config` 既定は `default_scope_config()` (DR-091 §3 の
+  // pre-issue 既定と同一値)。
+  let config = match o.get("config") {
     Some(cj) => {
       let co = match cj.j_obj() {
         Some(x) => x
         None => raise DecodeSkip("config is not an object")
       }
-      allowed_keys(
-        co,
-        ["long_prefix", "require_equal_separator"],
-        "definition.config",
-      )
-      let lp = match jf_str(co, "long_prefix") {
-        Some(s) => s
-        None => "--"
-      }
-      let req = bool_field(co, "require_equal_separator", false)
-      (lp, req)
+      dec_scope_config(co, parent_config)
     }
-    None => ("--", false)
+    None => parent_config
   }
   // DR-091 §3 "単独の空 prefix は未定義動作のまま": `long_prefix: ""` は
   // `require_equal_separator: true` との併用時のみ合法 — 空 prefix 単独ならこの scope の
   // SPACE-FORM main entry が ANY トークンにマッチしてしまい、素 operand と衝突する
   // (`ElemDef.require_equal_separator` の doc comment 参照)。definition-error として決定的に
   // reject (`collect_unsupported_accum_update` 等と同じ「静的、実行時でない」姿勢)。
-  if long_prefix == "" && !require_equal_separator {
+  if config.long_prefix == "" && !config.require_equal_separator {
     raise DecodeSkip(
       "long_prefix: \"\" requires require_equal_separator: true (DR-091 §3)",
+    )
+  }
+  // 自然な帰結 (spec の明示規定ではなく、上2フィールドの組合せが構造的に導く帰結 — DR-043
+  // `collect_zero_progress` と同じ「到達不能な宣言を静的に拒否する」姿勢): この scope の全 long
+  // option が SPACE-FORM (`require_equal_separator:true` が withhold) と EQ-FORM (
+  // `allow_equal_separator:false` が withhold) の両方を失うと、long 語彙を持つ要素が一切発火できない
+  // (`inst_long` の "DR-091 §3" コメント参照 — 両方 withhold されると trigger の入口が丸ごと消える)。
+  if config.require_equal_separator && !config.allow_equal_separator {
+    raise DecodeSkip(
+      "require_equal_separator: true with allow_equal_separator: false leaves every long option with no reachable entry point",
     )
   }
   let options : Array[ElemDef] = []
@@ -2930,7 +3123,22 @@ fn dec_definition(
       }
       for oj in a {
         match dec_option(oj, shadows) {
-          DOpt(e) => options.push({ ..e, long_prefix, require_equal_separator })
+          DOpt(e) =>
+            options.push(
+              apply_env_config(
+                {
+                  ..e,
+                  long_prefix: config.long_prefix,
+                  short_prefix: config.short_prefix,
+                  allow_equal_separator: config.allow_equal_separator,
+                  short_combine: config.short_combine,
+                  require_equal_separator: config.require_equal_separator,
+                },
+                config.env_prefix,
+                config.auto_env,
+                scope_path,
+              ),
+            )
           DAlias(al) => aliases.push(al)
         }
       }
@@ -2944,7 +3152,14 @@ fn dec_definition(
         None => raise DecodeSkip("positionals is not an array")
       }
       for pj in a {
-        positionals.push(dec_positional(pj, shadows))
+        positionals.push(
+          apply_env_config(
+            dec_positional(pj, shadows),
+            config.env_prefix,
+            config.auto_env,
+            scope_path,
+          ),
+        )
       }
     }
     None => ()
@@ -2956,7 +3171,7 @@ fn dec_definition(
         None => raise DecodeSkip("commands is not an array")
       }
       for cj in a {
-        match dec_command(cj, shadows) {
+        match dec_command(cj, shadows, config, scope_path) {
           DCommand(c) => commands.push(c)
           DCmdAlias(al) => aliases.push(al)
         }
@@ -5149,6 +5364,257 @@ test "dec_option: long_prefix at the OPTION level is an unknown-key decode rejec
   let j = @json.parse(src)
   let _ = dec_option(j, Map([])) catch { DecodeSkip(_) => return }
   fail("expected DecodeSkip (long_prefix is not a valid option-level key)")
+}
+
+// ── issue scope-config-object-gap: DR-014 full 7-key config object + 階層継承 ─────
+
+///|
+/// 保証 (DESIGN §7.2「子要素は親の config を継承、上書き可能」): a root scope declares
+/// `long_prefix: "+"`; a nested `commands[0]` declares NO `config` at all — its options must still
+/// resolve `long_prefix` to the INHERITED `"+"` (not the pre-issue root default `"--"`), proving
+/// the parent→child propagation `dec_command`/`dec_definition` now carry.
+test "dec_definition: a child command with no own config inherits every key from the parent scope" {
+  let src =
+    #|{
+    #|  "options": [{"name": "root_opt", "type": "string", "long": true}],
+    #|  "config": {"long_prefix": "+"},
+    #|  "commands": [
+    #|    {"name": "sub", "options": [{"name": "sub_opt", "type": "string", "long": true}]}
+    #|  ]
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.options[0].long_prefix, "+")
+  assert_eq(def.commands.length(), 1)
+  assert_eq(def.commands[0].body.options[0].long_prefix, "+")
+}
+
+///|
+/// 保証 (同上、上書き側): a child command declaring its OWN `config` with only `short_prefix`
+/// overrides ONLY that key — `long_prefix` still resolves to the parent's `"+"` (merge is
+/// per-key, not whole-object replacement, `dec_scope_config`'s doc comment).
+test "dec_definition: a child command's own config overrides ONLY the keys it declares, inherits the rest" {
+  let src =
+    #|{
+    #|  "options": [],
+    #|  "config": {"long_prefix": "+"},
+    #|  "commands": [
+    #|    {
+    #|      "name": "sub",
+    #|      "options": [{"name": "sub_opt", "type": "string", "long": true, "short": "s"}],
+    #|      "config": {"short_prefix": "="}
+    #|    }
+    #|  ]
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  let sub_opt = def.commands[0].body.options[0]
+  assert_eq(sub_opt.short_prefix, "=") // 子が明示した上書き
+  assert_eq(sub_opt.long_prefix, "+") // 親から継承 (子は long_prefix を書いていない)
+}
+
+///|
+/// 保証 (孫スコープまでの多段継承): a grandchild command (root → mid → leaf, neither `mid` nor
+/// `leaf` declaring their own `config`) still resolves the root's `long_prefix` — hierarchical
+/// merge threads through every recursion level, not just 1 hop.
+test "dec_definition: config inheritance threads through MULTIPLE nesting levels (grandchild)" {
+  let src =
+    #|{
+    #|  "options": [],
+    #|  "config": {"long_prefix": "+"},
+    #|  "commands": [
+    #|    {
+    #|      "name": "mid",
+    #|      "options": [],
+    #|      "commands": [
+    #|        {"name": "leaf", "options": [{"name": "v", "type": "string", "long": true}]}
+    #|      ]
+    #|    }
+    #|  ]
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  let leaf = def.commands[0].body.commands[0].body
+  assert_eq(leaf.options[0].long_prefix, "+")
+}
+
+///|
+/// 保証 (DR-049 §4「明示 env: の値にも env_prefix は連結される」): `env: "PORT"` + scope
+/// `env_prefix: "MYAPP"` → decode 後の `e.env[0]` が `"MYAPP_PORT"` に連結される。DESIGN §7.2
+/// line 838 の例そのもの。
+test "dec_definition: explicit env: gets env_prefix concatenated (DR-049 §4)" {
+  let src =
+    #|{
+    #|  "options": [{"name": "port", "type": "number", "env": "PORT"}],
+    #|  "config": {"env_prefix": "MYAPP"}
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.options[0].env, ["MYAPP_PORT"])
+}
+
+///|
+/// 対極 (DR-049 §3「env_prefix 未設定なら prefix 部を省く」): `config` を一切書かないスコープでは
+/// 明示 `env:` の値が一切改変されない — pre-issue の全 fixture (env installer 単体テスト等) が
+/// この後方互換に依存する。
+test "dec_definition: explicit env: is UNCHANGED when env_prefix is unset (対極, 後方互換)" {
+  let src =
+    #|{"options": [{"name": "port", "type": "number", "env": "PORT"}]}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.options[0].env, ["PORT"])
+}
+
+///|
+/// 保証 (DR-049 §3 名前導出規則、DESIGN §7.2 line 842 の例そのもの): `config: {env_prefix:"MYAPP",
+/// auto_env:true}` 配下の `serve` スコープの `port` (env: 未指定) は decode 時点で
+/// `MYAPP_SERVE_PORT` を自動導出する — scope_path (= `dec_command` が積む command name チェーン)
+/// + env_prefix + name の全連結、UPPER のみ (name は既に snake_case)。
+test "dec_definition: auto_env derives UPPER(env_prefix)_UPPER(scope_path)_UPPER(name) (DR-049 §3, DESIGN §7.2 example)" {
+  let src =
+    #|{
+    #|  "options": [],
+    #|  "config": {"env_prefix": "MYAPP", "auto_env": true},
+    #|  "commands": [
+    #|    {"name": "serve", "options": [{"name": "port", "type": "number"}]}
+    #|  ]
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.commands[0].body.options[0].env, ["MYAPP_SERVE_PORT"])
+}
+
+///|
+/// 対極 (DR-049 §4「明示 env: が auto_env に優先する」): auto_env:true 下でも `env:` を明示した
+/// 要素には auto 導出が一切効かない (明示値 + env_prefix 連結のみ、scope_path は不参加) — auto_env
+/// on の scope に混在する明示/暗黙の両方が正しく分岐することを 1 fixture で固定する。
+test "dec_definition: auto_env does NOT override an element's explicit env: (DR-049 §4, 優先関係)" {
+  let src =
+    #|{
+    #|  "options": [],
+    #|  "config": {"env_prefix": "MYAPP", "auto_env": true},
+    #|  "commands": [
+    #|    {
+    #|      "name": "serve",
+    #|      "options": [
+    #|        {"name": "port", "type": "number"},
+    #|        {"name": "host", "type": "string", "env": "HOME"}
+    #|      ]
+    #|    }
+    #|  ]
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  let opts = def.commands[0].body.options
+  assert_eq(opts[0].env, ["MYAPP_SERVE_PORT"]) // auto 導出 (未指定)
+  assert_eq(opts[1].env, ["MYAPP_HOME"]) // 明示値 + env_prefix 連結のみ、scope_path 不参加
+}
+
+///|
+/// 保証 (DESIGN §7.2 line 842「env: 未指定の値セル持ち要素」— BCell gate): auto_env は positional
+/// にも効く (`inst_env` が options/positionals 両方を走査するのと対称)。
+test "dec_definition: auto_env also derives env for positionals (値セル持ち要素は BCell 全般)" {
+  let src =
+    #|{
+    #|  "positionals": [{"name": "target", "type": "string"}],
+    #|  "config": {"env_prefix": "MYAPP", "auto_env": true}
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.positionals[0].env, ["MYAPP_TARGET"])
+}
+
+///|
+/// 保証 (自然な帰結 — 上2フィールドの組合せが構造的に導く到達不能宣言、DR-043
+/// `collect_zero_progress` と同じ姿勢): `require_equal_separator: true` (space form withhold) と
+/// `allow_equal_separator: false` (eq form withhold) を同時に指定すると、このスコープの全 long
+/// option が入口を一切失うため decode 時点で reject する。
+test "dec_definition: require_equal_separator:true + allow_equal_separator:false is a decode-time reject (no reachable entry point)" {
+  let src =
+    #|{"options":[{"name":"if","type":"string","long":true}],"config":{"require_equal_separator":true,"allow_equal_separator":false}}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let _ = dec_definition(o) catch { DecodeSkip(_) => return }
+  fail("expected DecodeSkip, but dec_definition succeeded")
+}
+
+///|
+/// 保証 (DR-014 フル 7 キーの decode 受理 + 階層継承の運搬): `short_prefix`/`allow_equal_separator`/
+/// `short_combine` も他の 4 キーと同じ decode-time bake パターンで各要素へ伝わる。`short_combine`
+/// は消費側配線が未実装 (issue scope-config-object-gap 停止報告) だが、decode・継承・保持は他
+/// キーと同等であることをここで固定する。
+test "dec_definition: short_prefix / allow_equal_separator / short_combine all decode and bake onto options" {
+  let src =
+    #|{
+    #|  "options": [{"name": "v", "type": "string", "long": true, "short": "v"}],
+    #|  "config": {"short_prefix": "+", "allow_equal_separator": false, "short_combine": false}
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.options[0].short_prefix, "+")
+  assert_eq(def.options[0].allow_equal_separator, false)
+  assert_eq(def.options[0].short_combine, false)
+}
+
+///|
+/// 保証 (allowed_keys 側の網羅性): `config` object 内の未知キーは decode-time reject — DR-014 の
+/// 7 キー以外を発明しない歯止め。
+test "dec_definition: an unknown config key is a decode-time reject" {
+  let src =
+    #|{"options":[],"config":{"bogus_key":true}}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let _ = dec_definition(o) catch { DecodeSkip(_) => return }
+  fail("expected DecodeSkip (bogus_key is not a config vocabulary word)")
 }
 
 ///|

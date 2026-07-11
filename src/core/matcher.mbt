@@ -69,7 +69,8 @@ fn run_matcher(m : Matcher, ctx : Ctx, pos : Int) -> Array[Branch] {
   }
   match m {
     EqSplit(prefix~, entries~) => run_eq_split(prefix, entries, ctx.toks, pos)
-    ShortCombine(prefix~, entries~) => run_short(prefix, entries, ctx, pos)
+    ShortCombine(prefix~, entries~, combine~) =>
+      run_short(prefix, entries, combine, ctx, pos)
   }
 }
 
@@ -91,7 +92,7 @@ fn matcher_cands(m : Matcher) -> Array[Cand] {
           out.push(cand_trigger(prefix + e.key, e.name, e.kind, Cont, false))
         }
       }
-    ShortCombine(prefix~, entries~) =>
+    ShortCombine(prefix~, entries~, ..) =>
       for e in entries {
         let buf = StringBuilder::new()
         buf.write_string(prefix)
@@ -233,10 +234,13 @@ fn run_eq_split(
 
 ///|
 /// `-abc` cluster + value attachment (DR-041 §「short combine」). Enumerates ALL
-/// readings; ambiguous defs (the `-cv` problem) yield multiple readings.
+/// readings; ambiguous defs (the `-cv` problem) yield multiple readings. `combine`
+/// (DESIGN §7.2 scope config, node.mbt's `ShortCombine` doc comment) gates whether
+/// `walk_short` may let a SECOND entry occupy the same token.
 fn run_short(
   prefix : String,
   entries : Array[ShortEntry],
+  combine : Bool,
   ctx : Ctx,
   pos : Int,
 ) -> Array[Branch] {
@@ -255,7 +259,7 @@ fn run_short(
   if body.length() == 0 {
     return [] // bare prefix, e.g. "-"
   }
-  walk_short(entries, body, 0, [], ctx, pos)
+  walk_short(entries, combine, body, 0, [], ctx, pos)
 }
 
 ///|
@@ -350,8 +354,22 @@ fn short_val(
 ///   value (space form, consuming 2 tokens).
 /// An undefined char kills the reading (DR-041 §5: no prefix guard — the whole
 /// token simply produces no reading and falls through to positional).
+///
+/// `combine` (issue scope-config-object-gap 解釈A, team-lead 裁定 2026-07-11 — DR-014「-abc の
+/// 結合許可」は複数 short オプションを 1 トークンへ束ねる行為のみを指し、値付着は別パラメータの
+/// 管轄, DR-041 line 77): when `false`, a SECOND entry may never occupy the same token as the
+/// first. This walk only ever advances `i` past 0 to reach a genuine second entry in 2 places —
+/// the flag/bool/count/none recursive continuation (`i + 1`) and the in-token value-attach
+/// continuation (`j`) — so gating exactly those 2 continuations (only recurse when the
+/// continuation is TERMINAL, i.e. nothing is left to combine with) is sufficient: a lone flag fire
+/// (`-p`, `i == 0`, `body.length() == 1`) and a value-attach consuming the ENTIRE remaining tail
+/// (`-p80`, `j == body.length()`, nothing left over) both still terminate immediately and are
+/// therefore unaffected — only a reading that would need a THIRD+ char to combine gets pruned. The
+/// next-token space-form value (`-p 80`) and the completion `Pending` branch consume no further
+/// same-token chars at all, so neither needs a `combine` check.
 fn walk_short(
   entries : Array[ShortEntry],
+  combine : Bool,
   body : Array[Char],
   i : Int,
   acc : Array[Binding],
@@ -376,62 +394,83 @@ fn walk_short(
         TFlag | TBool | TNone =>
           // a bool short cluster char is presence-only, same as a plain flag (DR-074 §3 canonical
           // bool has no in-cluster/space-form `=value` short spelling, only the long eq-split form).
-          walk_short(
-            entries,
-            body,
-            i + 1,
-            cat(acc, cat([mkb(e.name, VBool(true), Cli)], dm)),
-            ctx,
-            pos,
-          )
+          // `combine:false` gate: only continue when this char is the token's last (nothing left
+          // to combine with) — otherwise a 2nd entry would occupy the same token, disallowed.
+          if combine || i + 1 == body.length() {
+            walk_short(
+              entries,
+              combine,
+              body,
+              i + 1,
+              cat(acc, cat([mkb(e.name, VBool(true), Cli)], dm)),
+              ctx,
+              pos,
+            )
+          } else {
+            []
+          }
         TCount =>
           // DR-077 §3: count short is non-consuming, firing a 0-token `update(increment)` effect
           // (same standing as a flag's fixed `true` supply above — the fired VALUE is resolved
           // later, by resolve.mbt's CLI-seat fold, not something the matcher can compute at
-          // consume time).
-          walk_short(
-            entries,
-            body,
-            i + 1,
-            cat(acc, cat([mk_eff(e.name, Update("increment", []), Cli)], dm)),
-            ctx,
-            pos,
-          )
+          // consume time). Same `combine:false` gate as the flag-like arm above.
+          if combine || i + 1 == body.length() {
+            walk_short(
+              entries,
+              combine,
+              body,
+              i + 1,
+              cat(acc, cat([mk_eff(e.name, Update("increment", []), Cli)], dm)),
+              ctx,
+              pos,
+            )
+          } else {
+            []
+          }
         _ => {
           let out : Array[Branch] = []
           let vstart = i + 1
           // in-token value of every non-empty length; continue walking the rest.
           let mut j = vstart + 1
           while j <= body.length() {
-            let vstr = chars_to_str(body, vstart, j)
-            match short_val(e, vstr, pos) {
-              Ok(bs) =>
-                for
-                  r in walk_short(
-                    entries,
-                    body,
-                    j,
-                    cat(acc, cat(bs, dm)),
-                    ctx,
-                    pos,
-                  ) {
-                  out.push(r)
-                }
-              Err(pe) =>
-                // A mid-token split's failure (piece_filters reject OR type-parse failure) is a
-                // silent non-reading (its remainder would need OTHER defined chars to progress,
-                // DR-041 §3); only the FULL-TAIL attach — the「値 char が残余全体を値として取る」
-                //唯一形の読み — surfaces as a held Error (DR-041 §5 値不正 = Error、DR-074 の
-                // suffix 拒否がここに落ちる)。fixture matcher-readings/cluster-split-no-flag /
-                // piece-filters/reject.json が輪郭を固定する。TStr が構造的に型 parse エラーを
-                // 起こさない (short_val の doc comment) ので、kind によるガードは不要。
-                if j == body.length() {
-                  out.push(Held(pe, acc))
-                }
+            // `combine:false` gate: a PARTIAL-length value-attach (`j < body.length()`) would leave
+            // chars for a 2nd entry to combine with — skip it entirely (no reading, no Held error)
+            // when combine is off. The FULL-TAIL length (`j == body.length()`, this entry alone
+            // consumes everything left) is a single entry, never disallowed by `combine:false`.
+            if combine || j == body.length() {
+              let vstr = chars_to_str(body, vstart, j)
+              match short_val(e, vstr, pos) {
+                Ok(bs) =>
+                  for
+                    r in walk_short(
+                      entries,
+                      combine,
+                      body,
+                      j,
+                      cat(acc, cat(bs, dm)),
+                      ctx,
+                      pos,
+                    ) {
+                    out.push(r)
+                  }
+                Err(pe) =>
+                  // A mid-token split's failure (piece_filters reject OR type-parse failure) is a
+                  // silent non-reading (its remainder would need OTHER defined chars to progress,
+                  // DR-041 §3); only the FULL-TAIL attach — the「値 char が残余全体を値として取る」
+                  //唯一形の読み — surfaces as a held Error (DR-041 §5 値不正 = Error、DR-074 の
+                  // suffix 拒否がここに落ちる)。fixture matcher-readings/cluster-split-no-flag /
+                  // piece-filters/reject.json が輪郭を固定する。TStr が構造的に型 parse エラーを
+                  // 起こさない (short_val の doc comment) ので、kind によるガードは不要。
+                  if j == body.length() {
+                    out.push(Held(pe, acc))
+                  }
+              }
             }
             j = j + 1
           }
-          // next-token value (space form) only when this value char is the tail.
+          // next-token value (space form) only when this value char is the tail. Not gated by
+          // `combine` (doc comment above): the value comes from the NEXT token entirely, no 2nd
+          // entry shares THIS token.
           if vstart == body.length() && pos + 1 < ctx.toks.length() {
             match short_val(e, ctx.toks[pos + 1], pos + 1) {
               Ok(bs) => out.push(Accept(pos + 2, cat(acc, cat(bs, dm))))

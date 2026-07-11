@@ -162,7 +162,7 @@ test "eq-split long option: a TFlag entry never fires on =value" {
 /// (the `1`/`1.` prefixes leave undefined chars that kill their readings), so exactly one reading
 /// results. This is DR-041 §3-4 "enumerate ALL readings" narrowed by the completion requirement.
 test "short cluster: flag run and in-token numeric value" {
-  let short = ShortCombine(prefix="-", entries=[
+  let short = ShortCombine(prefix="-", combine=true, entries=[
     {
       ch: 'a',
       name: "a",
@@ -221,7 +221,7 @@ test "short cluster: flag run and in-token numeric value" {
 /// A value char at the cluster tail may take the NEXT token as its value (space form, consuming 2
 /// tokens) — `-n 5` → n=5 at position 2. This is the getopt-同型 tail consumption (DR-041 §4).
 test "short cluster: space-form value takes the next token" {
-  let short = ShortCombine(prefix="-", entries=[
+  let short = ShortCombine(prefix="-", combine=true, entries=[
     {
       ch: 'n',
       name: "n",
@@ -248,7 +248,7 @@ test "short cluster: space-form value takes the next token" {
 /// the value binding is unchanged (only a warning is later collected from the marker). This freezes
 /// that firing a deprecated spelling does NOT alter the parsed value — it only adds bookkeeping.
 test "short cluster: deprecated entry rides a @depr marker" {
-  let short = ShortCombine(prefix="-", entries=[
+  let short = ShortCombine(prefix="-", combine=true, entries=[
     {
       ch: 'd',
       name: "d",
@@ -269,4 +269,144 @@ test "short cluster: deprecated entry rides a @depr marker" {
   assert_eq(b[0].key, "d")
   assert_eq(b[0].value, VBool(true))
   assert_eq(b[1].key, "@depr:d")
+}
+
+// ── issue scope-config-object-gap: short_combine (解釈A, team-lead 裁定 2026-07-11) ──
+
+///|
+/// entries を共有する 3 テスト共通の fixture: a (flag) / b (flag) / n (TNum, 値付着可)。
+fn combine_entries() -> Array[ShortEntry] {
+  [
+    {
+      ch: 'a',
+      name: "a",
+      kind: TFlag,
+      depr: false,
+      int_round: RError,
+      allow_base_prefix: false,
+      piece_filters: [],
+      separator: None,
+      merge: false,
+    },
+    {
+      ch: 'b',
+      name: "b",
+      kind: TFlag,
+      depr: false,
+      int_round: RError,
+      allow_base_prefix: false,
+      piece_filters: [],
+      separator: None,
+      merge: false,
+    },
+    {
+      ch: 'n',
+      name: "n",
+      kind: TNum,
+      depr: false,
+      int_round: RError,
+      allow_base_prefix: false,
+      piece_filters: [],
+      separator: None,
+      merge: false,
+    },
+  ]
+}
+
+///|
+/// 保証 (DR-014「-abc の結合許可」解釈A: 複数 entry のクラスタ結合のみ禁止): `combine:false` の
+/// matcher へ `-ab` (2 flag を 1 トークンに結合) を渡すと、`a` を処理した後 `i+1(=1) !=
+/// body.length()(=2)` により 2 文字目への継続を打ち切り、読みが 0 本になる (素通し — 対極として
+/// combine:true の既存テスト "flag run and in-token numeric value" の `-ab` 成功ケースと対で読む)。
+test "short cluster: combine:false rejects a 2-flag cluster (-ab)" {
+  let short = ShortCombine(prefix="-", combine=false, entries=combine_entries())
+  let r = run_matcher(short, pctx(["-ab"]), 0)
+  assert_eq(r.length(), 0)
+}
+
+///|
+/// 対極 (同上、単一 flag は combine の管轄外): `combine:false` でも `-a` 単独 (body.length()==1) は
+/// 引き続き発火する — 「複数 entry の結合」だけが禁止される、単一 entry のトークン占有は禁止されない。
+test "short cluster: combine:false still fires a LONE flag (-a)" {
+  let short = ShortCombine(prefix="-", combine=false, entries=combine_entries())
+  let r = run_matcher(short, pctx(["-a"]), 0)
+  assert_eq(r.length(), 1)
+  assert_eq(acc_pos(r[0]), 1)
+  let b = acc_binds(r[0])
+  assert_eq(b.length(), 1)
+  assert_eq(b[0].key, "a")
+  assert_eq(b[0].value, VBool(true))
+}
+
+///|
+/// 対極 (同上、値付着が残余を "全部" 消費するなら結合ではない): `combine:false` でも `-n1.0` (value
+/// char が残余トークン全体を値として取る、後続 entry が存在しない) は引き続き発火する — DR-041
+/// line 77 の「値付着は short_combine と独立パラメータ」という設計意図の直接の帰結。
+test "short cluster: combine:false still fires a FULL-TAIL value-attach (-n1.0)" {
+  let short = ShortCombine(prefix="-", combine=false, entries=combine_entries())
+  let r = run_matcher(short, pctx(["-n1.0"]), 0)
+  assert_eq(r.length(), 1)
+  assert_eq(acc_pos(r[0]), 1)
+  let b = acc_binds(r[0])
+  assert_eq(b.length(), 1)
+  assert_eq(b[0].key, "n")
+  assert_eq(b[0].value, VNum(1.0))
+}
+
+///|
+/// 保証 (同上、部分長の値付着 + 後続 entry も結合の一種): `combine:false` で `-n1a` の PARTIAL
+/// attach 読み (n が "1" だけ値に取り、残った "a" を後続 flag として結合する読み) は禁止される —
+/// `j != body.length()` の場合 `combine:false` はそもそも `short_val` を試さない。残るのは
+/// FULL-TAIL attach 読み (n が "1a" を丸ごと値に取ろうとする、TNum parse が失敗して Held) だけ 1 本
+/// — full-tail 読みは combine の管轄外 (単一 entry) なので禁止されない。合計 1 本、かつ Held。
+test "short cluster: combine:false rejects the PARTIAL value-attach reading, keeps the FULL-TAIL Held (-n1a)" {
+  let short = ShortCombine(prefix="-", combine=false, entries=combine_entries())
+  let r = run_matcher(short, pctx(["-n1a"]), 0)
+  assert_eq(r.length(), 1)
+  assert_true(is_held(r[0])) // full-tail "1a" は TNum として parse 失敗 → Held (DR-037)
+}
+
+///|
+/// 対極 (同上、combine:true なら部分長 + 結合の読みも追加で生きる): 同じ `-n1a` を `combine:true` の
+/// matcher に渡すと、上記の FULL-TAIL Held に加え、PARTIAL attach (n="1"消費 + 残り "a" を flag と
+/// して結合、n=1.0/a=true) の読みも生成され、計 2 本になる — `combine:false` テストとの対比で「何が
+/// 追加で許可されるか」を固定する。
+test "short cluster: combine:true adds the PARTIAL-attach-then-combine reading on top of the FULL-TAIL Held (対極, -n1a)" {
+  let short = ShortCombine(prefix="-", combine=true, entries=combine_entries())
+  let r = run_matcher(short, pctx(["-n1a"]), 0)
+  assert_eq(r.length(), 2)
+  let mut accept_found = false
+  let mut held_found = false
+  for br in r {
+    if is_held(br) {
+      held_found = true
+    } else {
+      accept_found = true
+      assert_eq(acc_pos(br), 1)
+      let b = acc_binds(br)
+      assert_eq(b.length(), 2)
+      assert_eq(b[0].key, "n")
+      assert_eq(b[0].value, VNum(1.0))
+      assert_eq(b[1].key, "a")
+      assert_eq(b[1].value, VBool(true))
+    }
+  }
+  assert_true(accept_found)
+  assert_true(held_found)
+}
+
+///|
+/// 保証 (同上、space-form は combine の管轄外): `combine:false` でも `-n 5` (space-form, 値は次
+/// トークン全体) は引き続き発火する — 値は「同じトークンを共有する別 entry」ではなく別トークンから
+/// 来るため、combine の対象外 (node.mbt の `ShortCombine` doc comment、次トークン borrow は「同じ
+/// トークンでの結合」に該当しない)。
+test "short cluster: combine:false still fires the space-form (next-token) value (-n 5)" {
+  let short = ShortCombine(prefix="-", combine=false, entries=combine_entries())
+  let r = run_matcher(short, pctx(["-n", "5"]), 0)
+  assert_eq(r.length(), 1)
+  assert_eq(acc_pos(r[0]), 2)
+  let b = acc_binds(r[0])
+  assert_eq(b.length(), 1)
+  assert_eq(b[0].key, "n")
+  assert_eq(b[0].value, VNum(5.0))
 }

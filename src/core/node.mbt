@@ -475,8 +475,17 @@ pub(all) enum Matcher {
   /// `--key=value` split. Fires only on tokens containing `=`. Undefined key = no reading (素通し).
   EqSplit(prefix~ : String, entries~ : Array[LongEntry])
   /// `-abc` cluster + value attachment. Enumerates ALL readings (DR-041 §3-4); ambiguous defs
-  /// (the `-cv` problem) surface as multiple readings that both complete.
-  ShortCombine(prefix~ : String, entries~ : Array[ShortEntry])
+  /// (the `-cv` problem) surface as multiple readings that both complete. `combine` (DR-014「-abc
+  /// の結合許可」, DESIGN §7.2 scope config `short_combine`, issue scope-config-object-gap 解釈A
+  /// team-lead 裁定 2026-07-11): when `false`, only a SINGLE short entry may occupy a token —
+  /// multi-entry clustering (`-ab` → 2 entries in 1 token) is withheld, while a lone flag fire
+  /// (`-p`) and a value-attach that consumes the ENTIRE token tail (`-p80`, no leftover chars for a
+  /// further entry to combine with) remain unaffected (`run_short`/`walk_short`, matcher.mbt, is the
+  /// sole consumer). Internal-only parameter — never projected into a lowering fixture's golden
+  ///断面 (`proj_greedy`'s `NativeMatch(ShortCombine(prefix=_, entries~))` arm in
+  /// json_conformance_wbtest.mbt already discards `prefix` too, DR-070 §2 loose compare: matcher
+  /// kind + entry table only). 既定 `true` (現行の cluster/値付着 全読み挙動は不変)。
+  ShortCombine(prefix~ : String, entries~ : Array[ShortEntry], combine~ : Bool)
 } derive(Eq, Debug)
 
 // ── completion candidate 型 (DR-060 §3) — 型のみ移植 (slice complete.mbt 1-57) ─

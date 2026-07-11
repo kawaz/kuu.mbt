@@ -94,18 +94,47 @@ pub(all) struct ElemDef {
   piece_filters : Array[FilterSpelling]
   value_filters : Array[FilterSpelling]
   cell_filters : Array[FilterSpelling]
-  // DR-091 §3 最小実装 (案2、team-lead 裁定 2026-07-11): a per-element FLAT pair, no hierarchical
-  // `config` object (DESIGN §7.2's full `long_prefix`/`short_prefix`/`env_prefix`/`auto_env`/
-  // `allow_equal_separator`/`short_combine` config-with-inheritance stays issue
-  // scope-config-object-gap's scope — this is 2 narrow fields on the ELEMENT itself, not a
-  // scope-wide inherited setting). `long_prefix` (既定 `"--"`): the string `inst_long` prepends to
-  // this element's own long spellings when building each trigger (`e.long_prefix + l`, replacing
-  // the old hardcoded `"--" + l`) — every OTHER element in the same `Definition` keeps its own
-  // default unless it also overrides. `""` is legal ONLY paired with `require_equal_separator:
-  // true` (dec_option 側で検証, DR-091 §3「単独の空 prefix は未定義動作のまま」) — an empty prefix
-  // without the eq gate would make a bare positional operand (`foo`) collide with this element's
-  // long candidacy, the exact ambiguity §3 exists to close.
+  // DR-014 / DESIGN §7.2 / DR-091 §3 (issue scope-config-object-gap): the FULL hierarchical scope
+  // `config` object (long_prefix/short_prefix/env_prefix/auto_env/allow_equal_separator/
+  // short_combine/require_equal_separator). Decode (`dec_definition`, json_conformance_wbtest.mbt)
+  // reads `config` at EACH Definition/command scope, merges it with the parent scope's resolved
+  // config (child key present → override, absent → inherit — DESIGN §7.2「子要素は親の config を
+  // 継承、上書き可能」), and bakes the resolved 7-key tuple onto every option/positional ElemDef
+  // that scope owns (same "decode-time bake, no Definition-level config carrier" pattern DR-091 §3
+  // established for the original 2-field minimal implementation — installer.mbt itself never reads
+  // `config`, only these per-element fields). `long_prefix` (既定 `"--"`): the string `inst_long`
+  // prepends to this element's own long spellings when building each trigger (`e.long_prefix + l`,
+  // replacing the old hardcoded `"--" + l`) — every OTHER element in the same `Definition` keeps its
+  // own resolved value unless it also overrides. `""` is legal ONLY paired with
+  // `require_equal_separator: true` (dec_option 側で検証, DR-091 §3「単独の空 prefix は未定義動作の
+  // まま」) — an empty prefix without the eq gate would make a bare positional operand (`foo`)
+  // collide with this element's long candidacy, the exact ambiguity §3 exists to close.
   long_prefix : String
+  // DESIGN §7.2 / LOWERING §B.2「config `short_prefix`/`short_combine` がパラメータ」: the string
+  // `inst_short` prepends when building the `ShortCombine` matcher's `prefix` (replacing the old
+  // hardcoded `"-"`). 既定 `"-"`. Positional 要素は short spelling を持たないため未使用のまま既定値
+  // を持ち回る (`long_prefix` と同じ理由付け、opt/pos の doc comment 参照)。
+  short_prefix : String
+  // DESIGN §7.2 line 838/842 / DR-049 §3-4: `inst_env`/decode-time が env 席の最終 key に連結する
+  // prefix。明示 `env:` にも auto_env 導出にも効く (DR-049 §4「明示 env: の値にも env_prefix は連結
+  // される」) — decode (`dec_definition`) が両ケースとも解決済みの最終 key をこのフィールドではなく
+  // `env` 配列そのものへ焼き込む (この `env_prefix` フィールドは階層継承の運搬用、installer 層は
+  // 読まない)。既定 `""` = prefix 部を省く (DR-049 §3「env_prefix 未設定なら prefix 部を省く」)。
+  env_prefix : String
+  // DESIGN §7.2 line 842 / DR-049 §3: true なら `env:` 未指定の値セル (`BCell`) 持ち要素に
+  // decode 時点で env 席を自動宣言する (`UPPER(env_prefix) + "_" + UPPER(scope_path 連結) + "_" +
+  // UPPER(name)`、DR-049 §3 の名前導出規則そのまま — decode がこの計算を行い `env` 配列へ焼き込む)。
+  // 明示 `env:` が優先 (DR-049 §4)。既定 `false`。
+  auto_env : Bool
+  // DR-014「--name=value の許可」/ DR-041「config (allow_equal_separator/long_prefix) から規則を
+  // 構成」: false なら `inst_long` はこの要素の eq-split entry を登録しない (space form のみ、
+  // `--key=value` 読みを提供しない)。既定 `true` (現行の EqSplit 常時生成挙動を不変に保つ)。
+  allow_equal_separator : Bool
+  // DR-014「-abc の結合許可」/ LOWERING §B.2: decode は受理・階層継承するが、`ShortCombine` matcher
+  // への配線は未実装 — `short_combine: false` が「複数 short の cluster 結合のみ禁止」か「値付着
+  // (`-p80`) も含め禁止」か spec から一意に導出できず (issue scope-config-object-gap 2026-07-11
+  // 停止報告、main の裁定待ち)。既定 `true`、消費側 (`inst_short`) は現状このフィールドを読まない。
+  short_combine : Bool
   // DR-091 §3: when true, `inst_long` withholds this element's SPACE-FORM main entry (`Seq([Exact
   // (trigger), value_prim(...)])`, the `ref_target is None` branch) — only the eq-split form
   // (`key=value`, `LongEntry`/`EqSplit`) reaches the entity. This is what makes `long_prefix: ""`
@@ -687,6 +716,11 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     value_filters: copy_filter_spellings(e.value_filters),
     cell_filters: copy_filter_spellings(e.cell_filters),
     long_prefix: e.long_prefix,
+    short_prefix: e.short_prefix,
+    env_prefix: e.env_prefix,
+    auto_env: e.auto_env,
+    allow_equal_separator: e.allow_equal_separator,
+    short_combine: e.short_combine,
     require_equal_separator: e.require_equal_separator,
     body: clone_body(e.body),
   }
@@ -1569,12 +1603,17 @@ fn inst_long(
       // never routes through). Registering here would let `--define=NOEQUALSIGN` silently produce
       // `{NOEQUALSIGN: ""}` instead of DR-091 §2's required Reject — same deliberate-absence posture
       // as `BEnum`'s "OUT OF SCOPE" comment below, not an oversight.
+      //
+      // DR-014「--name=value の許可」/ DR-041: `e.allow_equal_separator` (scope config, decode-time
+      // baked — always the WRAPPING option's resolved value, never a BOr leaf's unbaked default,
+      // same reasoning `eq_group(..., e.long_prefix)` already applies below) gates every arm — false
+      // withholds the eq-split entry entirely, leaving only the space form registered above.
       match e.body {
         BOr(branches) =>
           for br in branches {
             if br.items.length() == 1 {
               let leaf = br.items[0]
-              if leaf.accumulator != Some("kv_map") {
+              if e.allow_equal_separator && leaf.accumulator != Some("kv_map") {
                 eq_group(eq_prefixes, eq_groups, e.long_prefix).push({
                   key: l,
                   name: leaf.name,
@@ -1595,7 +1634,7 @@ fn inst_long(
           // the guard was always vacuous for it; an explicit `long:[":set"]` flag (now TBool) SHOULD
           // register its eq-split form, which this unconditional push now does correctly (the guard
           // used to wrongly suppress it while `e.ty` still read TFlag pre-normalize_option).
-          if e.accumulator != Some("kv_map") {
+          if e.allow_equal_separator && e.accumulator != Some("kv_map") {
             eq_group(eq_prefixes, eq_groups, e.long_prefix).push({
               key: l,
               name: e.name,
@@ -1674,15 +1713,62 @@ fn maybe_root(link_depth : Int, node : Node) -> Node {
 }
 
 ///|
+/// DESIGN §7.2 / LOWERING §B.2: mirrors `eq_group` (long installer, DR-091 §3) — bundles every
+/// short-cluster entry under ONE `(short_prefix, short_combine)` PAIR per `ShortCombine` matcher
+/// instance. Keying on the pair (not `short_prefix` alone) matters because a `Definition`'s
+/// `def.options` can mix elements from 2 sources with different defaults: elements decoded in THIS
+/// scope (uniform `short_prefix`/`short_combine`, both baked from the SAME resolved `ScopeConfig`
+/// by `dec_definition`) and elements COPIED in from elsewhere (`add_inheritable_copy`/`alias_entry`,
+/// which hardcode the canonical defaults `"-"`/`true` regardless of the current scope's config,
+/// mirroring `long_prefix`'s existing "--" hardcode at those same call sites). If 2 elements
+/// disagreed on `short_combine` while sharing `short_prefix`, merging them into ONE matcher would
+/// require inventing a tie-break policy (spec is silent) — keying on the pair instead routes each
+/// distinct combination to its own matcher, so no policy is ever needed.
+fn short_group(
+  prefixes : Array[String],
+  combines : Array[Bool],
+  groups : Array[Array[ShortEntry]],
+  prefix : String,
+  combine : Bool,
+) -> Array[ShortEntry] {
+  let mut i = 0
+  while i < prefixes.length() {
+    if prefixes[i] == prefix && combines[i] == combine {
+      return groups[i]
+    }
+    i = i + 1
+  }
+  let g : Array[ShortEntry] = []
+  prefixes.push(prefix)
+  combines.push(combine)
+  groups.push(g)
+  g
+}
+
+///|
 /// short: `short` を READ、cluster/value-attach matcher を 1 本 add-if-absent。PoC では single-char
 /// (`-v`, `-p 8080`) も matcher に集約するため、short は独立 exact 衛星を発しない (matcher-seat)。
+/// DESIGN §7.2: `e.short_prefix` replaces the old hardcoded `"-"` — one `ShortCombine` matcher PER
+/// DISTINCT `(short_prefix, short_combine)` pair actually present (was: a single
+/// `ShortCombine(prefix="-", ...)` for the whole `Definition`), same generalization DR-091 §3
+/// already applied to `inst_long`/`EqSplit`. `e.short_combine` (issue scope-config-object-gap
+/// 解釈A, team-lead 裁定 2026-07-11) rides straight through to the matcher's `combine` param —
+/// `run_short`/`walk_short` (matcher.mbt) are the sole consumers of the flag's actual meaning.
 fn inst_short(def : Definition, build : Build) -> Unit {
-  let sh_entries : Array[ShortEntry] = []
+  let sh_prefixes : Array[String] = []
+  let sh_combines : Array[Bool] = []
+  let sh_groups : Array[Array[ShortEntry]] = []
   for e in def.options {
     for c in e.short {
       // DR-058: deprecated alias entry-copy は cluster entry でも警告する
       // DR-075 §2: short cluster / space-tail 経路の TInt (`-n1.5` / `-n 1.5`) も factory config を反映
-      sh_entries.push({
+      short_group(
+        sh_prefixes,
+        sh_combines,
+        sh_groups,
+        e.short_prefix,
+        e.short_combine,
+      ).push({
         ch: c,
         name: e.name,
         kind: e.ty,
@@ -1696,8 +1782,21 @@ fn inst_short(def : Definition, build : Build) -> Unit {
       })
     }
   }
-  if sh_entries.length() > 0 {
-    add_greedy(build, NativeMatch(ShortCombine(prefix="-", entries=sh_entries)))
+  let mut gi = 0
+  while gi < sh_prefixes.length() {
+    if sh_groups[gi].length() > 0 {
+      add_greedy(
+        build,
+        NativeMatch(
+          ShortCombine(
+            prefix=sh_prefixes[gi],
+            entries=sh_groups[gi],
+            combine=sh_combines[gi],
+          ),
+        ),
+      )
+    }
+    gi = gi + 1
   }
 }
 
@@ -1886,6 +1985,11 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     value_filters: copy.value_filters,
     cell_filters: copy.cell_filters,
     long_prefix: copy.long_prefix,
+    short_prefix: copy.short_prefix,
+    env_prefix: copy.env_prefix,
+    auto_env: copy.auto_env,
+    allow_equal_separator: copy.allow_equal_separator,
+    short_combine: copy.short_combine,
     require_equal_separator: copy.require_equal_separator,
     body: copy.body,
   })
@@ -2072,6 +2176,11 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     value_filters: [],
     cell_filters: [],
     long_prefix: "--", // 通常の long 綴り (kebab, 未 prefix) — inst_long が既定 "--" を前置する
+    short_prefix: "-", // write-target copy は short spelling を持たない (canonical default 相当)
+    env_prefix: "", // write-target copy は env 席を持たない (canonical default 相当)
+    auto_env: false,
+    allow_equal_separator: true, // canonical default (§3 と同じ「通常挙動」)
+    short_combine: true, // canonical default
     require_equal_separator: false,
     body: BCell,
   })
@@ -2273,6 +2382,11 @@ fn alias_entry(
     value_filters: [],
     cell_filters: [],
     long_prefix: "--",
+    short_prefix: "-",
+    env_prefix: "",
+    auto_env: false,
+    allow_equal_separator: true,
+    short_combine: true,
     require_equal_separator: false,
     body: BCell,
   }
