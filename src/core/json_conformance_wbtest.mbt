@@ -5683,3 +5683,89 @@ test "DR-089 end-to-end: an explicit type:none option behaves identically to omi
     abort("expected PASS, got: " + verdict)
   }
 }
+
+// ── DR-092: inf / 非整数 float の JSON serialize 規約 (end-to-end via dec_fixture/run_case) ──
+
+///|
+/// 保証 (DR-092 §1/§2「inf は JSON string sentinel "Infinity"/"-Infinity" で表す」、実装調査
+/// 2026-07-11 の実機確認結果): fixture の `result` 位置に JSON 文字列 `"Infinity"` を書いた期待値
+/// (DR-092 §1 の wire 表現そのもの) が、実際の `--t inf` (float 型) 実行結果と一致する — 双方とも
+/// `render_val` を経由し、GOT 側は `VNum(inf)` → MoonBit Ryu 実装の "Infinity" 特殊形、EXPECT 側は
+/// JSON string decode (`json_to_value` は文字列をそのまま `VStr` に写す) → `render_val(VStr(s)) =
+/// s` の素通し、で同じ文字列 "Infinity" に収束する。**production コード変更なしで DR-092 の wire
+/// 表現規約が conformance harness 上で既に成立する**ことを end-to-end で固定する
+/// (fixtures/value-typing/number-inf-nan.json への実 pin は main が別段で行う予定、本テストは
+/// spec fixture を一切変更せずインライン JSON で同じ輪郭を先に固定するもの)。
+test "DR-092 end-to-end: --t inf round-trips through result as the JSON string sentinel \"Infinity\"" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "t", "type": "float", "long": true}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "inf-result-serializes-as-json-string-sentinel",
+    #|      "argv": ["--t", "inf"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "effects": [{"entity": "t", "op": "set", "operand": "Infinity", "source": "cli"}],
+    #|        "result": {"t": "Infinity"}
+    #|      }
+    #|    },
+    #|    {
+    #|      "id": "neg-inf-result-serializes-as-json-string-sentinel",
+    #|      "argv": ["--t", "-Infinity"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "effects": [{"entity": "t", "op": "set", "operand": "-Infinity", "source": "cli"}],
+    #|        "result": {"t": "-Infinity"}
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 2)
+  for c in df.cases {
+    let verdict = run_case(df, c)
+    if verdict != "PASS" {
+      abort("expected PASS for case '" + c.id + "', got: " + verdict)
+    }
+  }
+}
+
+///|
+/// 保証 (DR-092 §4「非整数 float の canonical serialize = shortest round-trip」、end-to-end):
+/// `--t 3.14159` の result が入力綴りそのまま (丸め/桁欠落なし) で戻る — shortest round-trip の
+/// 「入力と同じ最短表現に落ち着く」性質を CLI 入力からの往復で確認する (`value_str`/`render_val`
+/// 直接テストの resolve_wbtest.mbt 版と対で、こちらは実 argv からの end-to-end)。
+test "DR-092 end-to-end: a non-integer float CLI value round-trips via shortest round-trip in result" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "t", "type": "float", "long": true}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "non-integer-float-shortest-round-trip",
+    #|      "argv": ["--t", "3.14159"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "effects": [{"entity": "t", "op": "set", "operand": 3.14159, "source": "cli"}],
+    #|        "result": {"t": 3.14159}
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 1)
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}

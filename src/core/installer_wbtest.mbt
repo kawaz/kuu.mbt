@@ -2703,3 +2703,48 @@ test "long installer: allow_equal_separator:false end-to-end — eq form fails, 
       )
   }
 }
+
+// ── DR-092: inf の CLI→binding 経路が値を一切改変しないことの end-to-end 固定 ────
+
+///|
+/// 保証 (DR-092 実装調査 2026-07-11、fixtures/value-typing/number-inf-nan.json の
+/// `inf-on-float-accepted` 対の完全版): `--t inf` (float 型) が argv → matcher → `parse_float` →
+/// `Binding.value` の全経路を通っても `VNum` の inf がそのまま (saturate/丸めなど一切なく) 届く
+/// ことを end-to-end で固定する。fixture 側は「operand の JSON 表現が未確定」を理由に `result`
+/// pin を見送っている (main が本 DR 実装確定後に別段で追加) — この wbtest は fixture pin を待たず
+/// production コードパスの値保持を先に固定する。
+test "long installer end-to-end: --t inf reaches the binding as VNum(Infinity) unaltered (DR-092)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [el("t", TFloat, long=LBool(true))],
+  }
+  let sc = ok_scope(def, all_installers())
+  let inf : Double = 1.0 / 0.0
+  match parse(ScopeNode(sc), ["--t", "inf"], defs=Map([])) {
+    Success(bs) => {
+      let mut found = false
+      for b in bs {
+        if b.key == "t" {
+          found = true
+          assert_eq(b.value, VNum(inf))
+        }
+      }
+      assert_true(found)
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+  // 負の無限大 + Infinity の case-insensitive 綴り (DR-074 §7) も同経路で確認。
+  match parse(ScopeNode(sc), ["--t", "-Infinity"], defs=Map([])) {
+    Success(bs) => {
+      let mut found = false
+      for b in bs {
+        if b.key == "t" {
+          found = true
+          assert_eq(b.value, VNum(-inf))
+        }
+      }
+      assert_true(found)
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}

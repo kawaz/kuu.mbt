@@ -1730,3 +1730,59 @@ test "build_result: kv_map's RObj branch does not affect a sibling 'append' accu
     RObj([("tags", RArr([RScalar(VStr("a")), RScalar(VStr("b"))]))]),
   )
 }
+
+// ── DR-092: inf / 非整数 float の JSON serialize 規約 (value_str = "the resolve layer owns the
+// result-object rendering") ─────────────────────────────────────────────────────
+
+///|
+/// 保証 (DR-092 §2「canonical 語彙は "Infinity"/"-Infinity" (protobuf3 準拠スペル)、先頭 + 無し」):
+/// `value_str` の `VNum(d)` 分岐 (`d.to_int()` で整数値判定 → 非整数/範囲外なら `d.to_string()` に
+/// フォールバック) は inf に対して自明に真 — inf は `Double::to_int()` が Int32 範囲外として
+/// saturate する (`~/.moon/lib/core/builtin/double_to_int.mbt`) ため `i.to_double() != d` となり
+/// 必ずフォールバック分岐へ落ち、MoonBit stdlib の `Double::to_string` (Ryu 実装、
+/// `double_ryu_nonjs.mbt` の `copy_special_str` が exponent bit 全 1 かつ mantissa 0 を inf と
+/// 判定して "Infinity"/"-Infinity" を返す、先頭 `+` は付かない) がそのまま DR-092 §2 の canonical
+/// 語彙を生成する。**production コード変更なしで既に規約を満たしている**ことをここで固定する
+/// (issue scope-config-object-gap 後続サイクル、DR-092 実装調査 2026-07-11 の実機確認結果)。
+test "value_str: inf/-inf render as \"Infinity\"/\"-Infinity\" with no code change (DR-092 §2)" {
+  let inf : Double = 1.0 / 0.0
+  let ninf : Double = -1.0 / 0.0
+  assert_eq(value_str(VNum(inf)), "Infinity")
+  assert_eq(value_str(VNum(ninf)), "-Infinity")
+}
+
+///|
+/// 保証 (DR-092 §4「非整数 float の canonical serialize = shortest round-trip」): `0.1 + 0.2` は
+/// binary64 では厳密に 0.3 にならない (古典的な浮動小数点の実演) — shortest round-trip 実装
+/// (Ryu/Grisu 系) はこの誤差を正直に最短表現で表す (`"0.30000000000000004"`)。ナイーブな固定桁
+/// フォーマット (`%.17g` や `%.6f` 等) はこの丸めを再現しないため、この値は「shortest round-trip
+/// を実際に使っているか」の判別に有効な probe (DR-092 の実装調査で main から明示された確認事項)。
+test "value_str: a non-integer float renders via shortest round-trip, not naive fixed-precision (DR-092 §4)" {
+  assert_eq(value_str(VNum(0.1 + 0.2)), "0.30000000000000004")
+  assert_eq(value_str(VNum(3.14159)), "3.14159")
+}
+
+///|
+/// 対極 (DR-092 §4「整数値の float は DR-050 §4 の最短表現規則 (1.0 → "1") と同じ扱い」):
+/// 非整数 float との対比を同テストで固定 — `value_str` の `i.to_double() == d` 分岐が整数値
+/// float を小数点なしの整数表記に倒す既存挙動 (DR-050 §4) は本 DR で変更しない。
+test "value_str: an integer-valued float keeps DR-050 §4's no-decimal-point rendering (対極, DR-092 §4)" {
+  assert_eq(value_str(VNum(3.0)), "3")
+  assert_eq(value_str(VNum(-0.0)), "0") // -0.0 は int 0 と等価判定 (DR-050 §4 の既存挙動、inf 非該当)
+}
+
+///|
+/// 保証 (DR-092 §3「適用範囲は一律 — result / effects / config 起因の値、いずれも同じ表現」):
+/// `build_result` (RVal 構築、report の値位置の 1 つ = result) は inf 値を型・値ともに一切変更
+/// せず通す — `VNum` の Eq 比較は IEEE754 の `Infinity == Infinity` (true, NaN と違い比較可能)
+/// に従うため、`assert_eq` がそのまま構造等価を検証できる。value 位置の serialize 規約
+/// (`value_str`) とは独立に、値そのものが report の "result" 経路で失われない (clamp/丸め等が
+/// 起きない) ことを固定する。
+test "build_result: an inf-valued cell passes through the result builder unchanged (DR-092 §3 result 位置)" {
+  let inf : Double = 1.0 / 0.0
+  let binds : Array[Binding] = [cb("threshold", VNum(inf), Cli)]
+  assert_eq(
+    build_result(binds, [], [], []),
+    RObj([("threshold", RScalar(VNum(inf)))]),
+  )
+}
