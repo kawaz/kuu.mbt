@@ -2537,6 +2537,11 @@ fn dec_option(
       // DR-090 §2: dd 専用の2軸拡張キー — 他 type では無意味だが、dd 分岐 (下) だけが読む
       // ("option" 共通 allowed_keys に足すのは他 wire 属性 (env/config_key 等) と同じ扱い方)。
        "match", "self",
+      // codex 節目レビュー Major 1 (DESIGN §7.2「子要素は親の config を継承、上書き可能」/ DR-049
+      // §4 要素単位 env_prefix 上書き): 要素単位の scope config override — `dec_option` 自身は
+      // この値を消費しない (`allowed_keys` を通すためだけ)、実際の decode/merge は呼び出し元
+      // `dec_definition` が `oj` を再読して行う (`dec_scope_config` の 2 段目呼び出し)。
+       "config",
     ],
     "option",
   )
@@ -2734,6 +2739,9 @@ fn dec_positional(
       "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
       "config_key", "default", "positionals", "or", "piece_filters", "value_filters",
       "cell_filters", "ref", "env",
+      // codex 節目レビュー Major 1 (dec_option 側と同じ要素単位 scope config override、
+      // 対称の positional 版)。
+       "config",
     ],
     "positional",
   )
@@ -2945,6 +2953,39 @@ fn dec_scope_config(
 }
 
 ///|
+/// DR-091 §3 + issue scope-config-object-gap 自然な帰結の 2 チェックを 1 箇所に集約 (codex 節目
+/// レビュー Major 1 監査時点で発見: 元々 `dec_definition` の SCOPE レベルにだけインライン展開され
+/// ていた — 要素単位 config override (DR-049 §4「その要素の config で env_prefix:"" を上書きする」
+/// で明示される、DESIGN §7.2「子要素」は command だけでなく option/positional も含む) を追加する
+/// 以上、同じ2つの不整合はスコープ単位の resolved config だけでなく、要素単位で resolved した
+/// config でも起こりうる (例: 要素が独自に `long_prefix:""` を上書きしつつ `require_equal_
+/// separator` を明示しない場合、親から継承した値が false のままだと同じ「空 prefix が素 operand と
+/// 衝突する」問題が要素単位で再現する) — checker を関数化して両呼び出し点 (スコープ解決直後・要素
+/// ごとのマージ直後) から同一ロジックで検証する。
+fn validate_scope_config(cfg : ScopeConfig) -> Unit raise DecodeSkip {
+  // DR-091 §3 "単独の空 prefix は未定義動作のまま": `long_prefix: ""` は
+  // `require_equal_separator: true` との併用時のみ合法 — 空 prefix 単独ならこの scope の
+  // SPACE-FORM main entry が ANY トークンにマッチしてしまい、素 operand と衝突する
+  // (`ElemDef.require_equal_separator` の doc comment 参照)。definition-error として決定的に
+  // reject (`collect_unsupported_accum_update` 等と同じ「静的、実行時でない」姿勢)。
+  if cfg.long_prefix == "" && !cfg.require_equal_separator {
+    raise DecodeSkip(
+      "long_prefix: \"\" requires require_equal_separator: true (DR-091 §3)",
+    )
+  }
+  // 自然な帰結 (spec の明示規定ではなく、上2フィールドの組合せが構造的に導く帰結 — DR-043
+  // `collect_zero_progress` と同じ「到達不能な宣言を静的に拒否する」姿勢): この scope の全 long
+  // option が SPACE-FORM (`require_equal_separator:true` が withhold) と EQ-FORM (
+  // `allow_equal_separator:false` が withhold) の両方を失うと、long 語彙を持つ要素が一切発火できない
+  // (`inst_long` の "DR-091 §3" コメント参照 — 両方 withhold されると trigger の入口が丸ごと消える)。
+  if cfg.require_equal_separator && !cfg.allow_equal_separator {
+    raise DecodeSkip(
+      "require_equal_separator: true with allow_equal_separator: false leaves every long option with no reachable entry point",
+    )
+  }
+}
+
+///|
 /// "_" 連結 (DR-049 §3 auto_env 名導出の連結セパレータ)。空 segment は呼び出し側が既に除外している
 /// 前提 (`auto_env_name` — env_prefix 未設定時に prefix segment 自体を積まない、DR-049 §3
 /// 「env_prefix 未設定なら prefix 部を省く」)。
@@ -3091,26 +3132,7 @@ fn dec_definition(
     }
     None => parent_config
   }
-  // DR-091 §3 "単独の空 prefix は未定義動作のまま": `long_prefix: ""` は
-  // `require_equal_separator: true` との併用時のみ合法 — 空 prefix 単独ならこの scope の
-  // SPACE-FORM main entry が ANY トークンにマッチしてしまい、素 operand と衝突する
-  // (`ElemDef.require_equal_separator` の doc comment 参照)。definition-error として決定的に
-  // reject (`collect_unsupported_accum_update` 等と同じ「静的、実行時でない」姿勢)。
-  if config.long_prefix == "" && !config.require_equal_separator {
-    raise DecodeSkip(
-      "long_prefix: \"\" requires require_equal_separator: true (DR-091 §3)",
-    )
-  }
-  // 自然な帰結 (spec の明示規定ではなく、上2フィールドの組合せが構造的に導く帰結 — DR-043
-  // `collect_zero_progress` と同じ「到達不能な宣言を静的に拒否する」姿勢): この scope の全 long
-  // option が SPACE-FORM (`require_equal_separator:true` が withhold) と EQ-FORM (
-  // `allow_equal_separator:false` が withhold) の両方を失うと、long 語彙を持つ要素が一切発火できない
-  // (`inst_long` の "DR-091 §3" コメント参照 — 両方 withhold されると trigger の入口が丸ごと消える)。
-  if config.require_equal_separator && !config.allow_equal_separator {
-    raise DecodeSkip(
-      "require_equal_separator: true with allow_equal_separator: false leaves every long option with no reachable entry point",
-    )
-  }
+  validate_scope_config(config)
   let options : Array[ElemDef] = []
   let positionals : Array[ElemDef] = []
   let commands : Array[CommandDef] = []
@@ -3123,22 +3145,46 @@ fn dec_definition(
       }
       for oj in a {
         match dec_option(oj, shadows) {
-          DOpt(e) =>
+          DOpt(e) => {
+            // codex 節目レビュー Major 1 (DR-049 §4「その要素の config で env_prefix:"" を上書きする
+            // (DR-014 の階層継承で要素単位の上書きが可能)」/ DESIGN §7.2「子要素は親の config を
+            // 継承、上書き可能」の『子要素』は command scope に限らない): `dec_option` は要素の生
+            // JSON を `allowed_keys` 済み `Map[String, Json]` として保持しないので、要素単位の
+            // `config` はここ (呼び出し元) で `oj` を直接再読して取り出す — `dec_scope_config` を
+            // このスコープの `config` を親として要素の `config` に適用すれば、既存の階層マージ
+            // ロジックをそのまま要素レベルへ 1 段延長できる (別実装を持たない)。
+            let elem_config = match oj.j_obj() {
+              Some(oo) =>
+                match oo.get("config") {
+                  Some(ecj) => {
+                    let eco = match ecj.j_obj() {
+                      Some(x) => x
+                      None => raise DecodeSkip("option config is not an object")
+                    }
+                    let merged = dec_scope_config(eco, config)
+                    validate_scope_config(merged)
+                    merged
+                  }
+                  None => config
+                }
+              None => config // 到達不能 (dec_option が既に object であることを検証済み)
+            }
             options.push(
               apply_env_config(
                 {
                   ..e,
-                  long_prefix: config.long_prefix,
-                  short_prefix: config.short_prefix,
-                  allow_equal_separator: config.allow_equal_separator,
-                  short_combine: config.short_combine,
-                  require_equal_separator: config.require_equal_separator,
+                  long_prefix: elem_config.long_prefix,
+                  short_prefix: elem_config.short_prefix,
+                  allow_equal_separator: elem_config.allow_equal_separator,
+                  short_combine: elem_config.short_combine,
+                  require_equal_separator: elem_config.require_equal_separator,
                 },
-                config.env_prefix,
-                config.auto_env,
+                elem_config.env_prefix,
+                elem_config.auto_env,
                 scope_path,
               ),
             )
+          }
           DAlias(al) => aliases.push(al)
         }
       }
@@ -3152,11 +3198,36 @@ fn dec_definition(
         None => raise DecodeSkip("positionals is not an array")
       }
       for pj in a {
+        let e = dec_positional(pj, shadows)
+        // Major 1 と同じ要素単位 override、positional 版 (DESIGN §7.2「子要素」の対称範囲)。
+        let elem_config = match pj.j_obj() {
+          Some(po) =>
+            match po.get("config") {
+              Some(ecj) => {
+                let eco = match ecj.j_obj() {
+                  Some(x) => x
+                  None => raise DecodeSkip("positional config is not an object")
+                }
+                let merged = dec_scope_config(eco, config)
+                validate_scope_config(merged)
+                merged
+              }
+              None => config
+            }
+          None => config // 到達不能 (dec_positional が既に object であることを検証済み)
+        }
         positionals.push(
           apply_env_config(
-            dec_positional(pj, shadows),
-            config.env_prefix,
-            config.auto_env,
+            {
+              ..e,
+              long_prefix: elem_config.long_prefix,
+              short_prefix: elem_config.short_prefix,
+              allow_equal_separator: elem_config.allow_equal_separator,
+              short_combine: elem_config.short_combine,
+              require_equal_separator: elem_config.require_equal_separator,
+            },
+            elem_config.env_prefix,
+            elem_config.auto_env,
             scope_path,
           ),
         )
@@ -5767,5 +5838,206 @@ test "DR-092 end-to-end: a non-integer float CLI value round-trips via shortest 
   let verdict = run_case(df, df.cases[0])
   if verdict != "PASS" {
     abort("expected PASS, got: " + verdict)
+  }
+}
+
+// ── codex 節目レビュー Major 1: 要素単位 scope config override ─────────────────
+
+///|
+/// 保証 (codex 指摘 Major 1, DR-049 §4「prefix を付けたくない完全指定 (例: HOME を読む) は、その
+/// 要素の config で env_prefix:"" を上書きする (DR-014 の階層継承で要素単位の上書きが可能)」の
+/// motivating case そのもの): scope が `env_prefix: "MYAPP"` を持つ中で、1つの要素だけ自分の
+/// `config: {"env_prefix": ""}` を持つと、その要素の明示 `env: "HOME"` は連結されずそのまま残る
+/// (DR-049 §3「env_prefix 未設定なら prefix 部を省く」が要素単位の resolved config にも同じ規則で
+/// 効く)。同じスコープの他要素は scope 側の env_prefix 連結をそのまま受ける — 要素単位 override が
+/// 兄弟要素に波及しないことも同時に固定する。
+test "dec_definition: an element's own config env_prefix:\"\" opts that element out of the scope's env_prefix (DR-049 §4 HOME motivating case)" {
+  let src =
+    #|{
+    #|  "options": [
+    #|    {"name": "port", "type": "number", "env": "PORT"},
+    #|    {"name": "home", "type": "string", "env": "HOME", "config": {"env_prefix": ""}}
+    #|  ],
+    #|  "config": {"env_prefix": "MYAPP"}
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.options[0].env, ["MYAPP_PORT"]) // 兄弟要素は scope の連結をそのまま受ける
+  assert_eq(def.options[1].env, ["HOME"]) // opt-out 要素は連結されない
+}
+
+///|
+/// 保証 (同上、long_prefix/short_combine 軸): scope 既定 (`long_prefix:"--"`) の中で 1 要素だけ
+/// `config: {"long_prefix":"+"}` を持つと、その要素だけ `+` 綴りになり、兄弟要素は `--` のまま —
+/// マージは要素単位で `dec_scope_config` を再適用するだけ (別ロジックを持たない) ことの直接確認。
+test "dec_definition: an element's own config long_prefix overrides ONLY that element, siblings keep the scope default" {
+  let src =
+    #|{
+    #|  "options": [
+    #|    {"name": "a", "type": "string", "long": true},
+    #|    {"name": "b", "type": "string", "long": true, "config": {"long_prefix": "+"}}
+    #|  ]
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.options[0].long_prefix, "--")
+  assert_eq(def.options[1].long_prefix, "+")
+}
+
+///|
+/// 保証 (同上、positional 対称性 — DESIGN §7.2「子要素」は option/positional 双方を含む):
+/// positional も要素単位 `config` を受理し、env_prefix override が同じ規則で効く。
+test "dec_definition: a positional's own config env_prefix override works the same as an option's" {
+  let src =
+    #|{
+    #|  "positionals": [
+    #|    {"name": "target", "type": "string"},
+    #|    {"name": "home", "type": "string", "env": "HOME", "config": {"env_prefix": ""}}
+    #|  ],
+    #|  "config": {"env_prefix": "MYAPP", "auto_env": true}
+    #|}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.positionals[0].env, ["MYAPP_TARGET"]) // auto_env 経由、scope env_prefix 連結
+  assert_eq(def.positionals[1].env, ["HOME"]) // opt-out、明示 env: そのまま
+}
+
+///|
+/// 保証 (要素単位 override でも DR-091 §3 の静的検査が働く — `validate_scope_config` を要素マージ
+/// 直後にも呼ぶことの直接確認): 要素が `config: {"long_prefix": ""}` だけを上書きし
+/// `require_equal_separator` を明示しない場合、scope 既定の `require_equal_separator: false` を
+/// 継承したままになるため、スコープレベルと同じ「空 prefix が素 operand と衝突する」不整合が
+/// 要素単位でも再現し decode-time reject される。
+test "dec_definition: an element's own config can ALSO trigger the long_prefix:\"\" + !require_equal_separator reject" {
+  let src =
+    #|{"options":[{"name":"if","type":"string","long":true,"config":{"long_prefix":""}}]}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let _ = dec_definition(o) catch { DecodeSkip(_) => return }
+  fail(
+    "expected DecodeSkip (element-level long_prefix:\"\" without require_equal_separator:true)",
+  )
+}
+
+///|
+/// 保証 (要素単位 config の allowed_keys 網羅性): option の `config` object 内も scope config と
+/// 同じ 7 キーのみ受理 — 未知キーは decode-time reject (DR-014 の語彙を要素単位でも発明しない)。
+test "dec_definition: an option's own config rejects an unknown key just like scope config does" {
+  let src =
+    #|{"options":[{"name":"a","type":"string","config":{"bogus_key":true}}]}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let _ = dec_definition(o) catch { DecodeSkip(_) => return }
+  fail("expected DecodeSkip (bogus_key is not a config vocabulary word)")
+}
+
+///|
+/// 保証 (end-to-end, DR-049 §4 HOME motivating case の完全版): `HOME` (env_prefix opt-out) の値を
+/// 実際の env lookup → parse → result まで通す。auto_env:true 下で `port` は自動導出
+/// (`MYAPP_PORT`) された env 名で環境変数を読み、`home_dir` は opt-out した生の `HOME` を読む —
+/// 同じスコープに両方の挙動が共存することを実行結果で固定する。
+test "DR-049 §4 end-to-end: an element's env_prefix:\"\" opt-out reads the raw env var name, alongside a sibling's prefixed auto_env" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "port", "type": "number"},
+    #|      {"name": "home_dir", "type": "string", "env": "HOME", "config": {"env_prefix": ""}}
+    #|    ],
+    #|    "config": {"env_prefix": "MYAPP", "auto_env": true}
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "opt-out-element-reads-raw-env-name",
+    #|      "argv": [],
+    #|      "env": {"MYAPP_PORT": "8080", "HOME": "/home/kawaz"},
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "sources": {"port": "env", "home_dir": "env"}
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 1)
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+// ── codex 節目レビュー Minor: DR-092 §5 config 値源経路の実装証跡 ───────────────
+
+///|
+/// 保証 (codex 指摘 Minor, DR-092 §5「config ファイルの JSON 値位置に "Infinity"/"-Infinity" を
+/// 文字列として書いた場合、float 要素への供給は DR-050 §4 の既存経路で自動的に成立する」の
+/// 実装証跡): config_file 由来の値が float 要素へ渡り、結果が DR-092 §2 の canonical serialize
+/// (`"Infinity"`) で戻ることを end-to-end で固定する。fixtures/value-sources/config/value-typing.json
+/// と同型の config value source 表記 (`type: "config_file"` + `config_key`) に DR-092 の inf
+/// sentinel を組み合わせるだけ — DR-050 §4 が「string element の型変換パイプラインは source を
+/// 問わず同一」と規定する通り、config 値源専用の特別処理は一切追加しない (本 DR §5 の「確認的明記」
+/// を裏づける)。
+test "DR-092 §5 end-to-end: config-origin \"Infinity\" reaches a float element and serializes canonically" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "config", "type": "config_file", "long": true, "default": "/app.toml"},
+    #|      {"name": "t", "type": "float", "long": true, "config_key": ["t"]}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "config-inf-string-to-float-element",
+    #|      "argv": [],
+    #|      "config": {"t": "Infinity"},
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "effects": [],
+    #|        "result": {"t": "Infinity"},
+    #|        "sources": {"t": "config"}
+    #|      }
+    #|    },
+    #|    {
+    #|      "id": "config-neg-inf-string-to-float-element",
+    #|      "argv": [],
+    #|      "config": {"t": "-Infinity"},
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "effects": [],
+    #|        "result": {"t": "-Infinity"},
+    #|        "sources": {"t": "config"}
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 2)
+  for c in df.cases {
+    let verdict = run_case(df, c)
+    if verdict != "PASS" {
+      abort("expected PASS for case '" + c.id + "', got: " + verdict)
+    }
   }
 }

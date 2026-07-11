@@ -1681,7 +1681,11 @@ fn inst_long(
   // select as a failed-parse action).
   for e in def.options {
     for v in e.variants {
-      let trigger = "--" + v.trigger
+      // issue scope-config-object-gap codex 指摘 Major 2: main entry (inst_long 冒頭) と eq-split
+      // (eq_group) は既に e.long_prefix を使う — variant だけ "--" 固定だと同一 option family の
+      // 綴りが long_prefix 非既定時に分裂する (DR-091 §3 の一貫性を variant にも及ぼす)。既定
+      // "--" なので既存挙動 (main entry と揃った "--" 綴り) は不変。
+      let trigger = e.long_prefix + v.trigger
       let sat = match v.op {
         Set => {
           let operand = match v.operand {

@@ -2748,3 +2748,72 @@ test "long installer end-to-end: --t inf reaches the binding as VNum(Infinity) u
     other => fail("expected Success, got " + render_outcome(other))
   }
 }
+
+// ── codex 節目レビュー Major 2: variant trigger も e.long_prefix を使う ─────────
+
+///|
+/// 保証 (codex 指摘 Major 2, 2026-07-11 team-lead 監査 OK): main entry (inst_long 冒頭の
+/// `e.long_prefix + l`) と eq-split (`eq_group(..., e.long_prefix)`) は既に `e.long_prefix` を
+/// 使うが、variant トリガだけ `"--" + v.trigger` に固定されていた — `long_prefix:"+"` の scope で
+/// `long: [":set", "no:set:false"]` (DR-011 の `no:set:false` variant DSL、trigger は
+/// `"no-" + name`) を持つ要素は、修正前は main entry `+ssl` と variant `--no-ssl` に**綴りが分裂**
+/// していた (同一 option family なのに prefix が食い違う)。修正後は両方 `+` prefix で揃う。
+test "long installer: a variant trigger uses e.long_prefix, matching the main entry (codex Major 2)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      {
+        ..el(
+          "ssl",
+          TBool,
+          long=LList([":set", "no:set:false"]),
+          long_prefix="+",
+        ),
+        default_values: Some([VBool(true)]),
+      },
+    ],
+  }
+  let sc = ok_scope(def, [LongInst])
+  let mut has_plus_main = false
+  let mut has_plus_variant = false
+  let mut has_dash_variant = false
+  for g in sc.greedy {
+    match g {
+      Seq([Exact("+ssl"), BoolArg("ssl", _)]) => has_plus_main = true
+      Seq([Exact("+no-ssl"), Bind("ssl", VBool(false))]) =>
+        has_plus_variant = true
+      Seq([Exact("--no-ssl"), ..]) => has_dash_variant = true
+      _ => ()
+    }
+  }
+  assert_true(has_plus_main)
+  assert_true(has_plus_variant)
+  assert_false(has_dash_variant) // 修正前のバグ挙動 (分裂した "--" 綴り) が残っていないことの否定確認
+}
+
+///|
+/// 対極 (regression guard): 既定 `long_prefix:"--"` では main entry と variant が両方とも従来通り
+/// `"--"` 綴りになる — 修正が既定値の断面 (byte 同一) を変えないことを固定する。
+test "long installer: default long_prefix keeps variant trigger at \"--\" (対極, no regression)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      {
+        ..el("ssl", TBool, long=LList([":set", "no:set:false"])),
+        default_values: Some([VBool(true)]),
+      },
+    ],
+  }
+  let sc = ok_scope(def, [LongInst])
+  let mut has_main = false
+  let mut has_variant = false
+  for g in sc.greedy {
+    match g {
+      Seq([Exact("--ssl"), BoolArg("ssl", _)]) => has_main = true
+      Seq([Exact("--no-ssl"), Bind("ssl", VBool(false))]) => has_variant = true
+      _ => ()
+    }
+  }
+  assert_true(has_main)
+  assert_true(has_variant)
+}
