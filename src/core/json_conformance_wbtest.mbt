@@ -407,6 +407,7 @@ fn pos(
   cell_filters? : Array[FilterSpelling] = [],
   env? : Array[String] = [],
   required? : Bool = false,
+  requires? : Array[String] = [],
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -434,7 +435,7 @@ fn pos(
     is_config_file: false,
     config_key,
     export_key: export_,
-    requires: [],
+    requires,
     conflicts_with: [],
     exclusive_group: [],
     required,
@@ -2793,7 +2794,7 @@ fn dec_positional(
     [
       "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
       "config_key", "default", "positionals", "or", "piece_filters", "value_filters",
-      "cell_filters", "ref", "env", "required",
+      "cell_filters", "ref", "env", "required", "requires",
       // codex 節目レビュー Major 1 (dec_option 側と同じ要素単位 scope config override、
       // 対称の positional 版)。
        "config",
@@ -2871,6 +2872,11 @@ fn dec_positional(
   // DR-093 §1/§2/§5: positional も required を持てる (corpus/real-cli の
   // `{"name":"path","type":"string","required":true}` 実例が示す通り、option 限定ではない)。
   let required = bool_field(o, "required", false)
+  // DR-093 §3/§5: positional も requires (他要素への依存) を持てる — die の骨格
+  // (`{"name":"args","requires":["--"]}`) は requires のトリガ側が positional である実例。
+  // option 側 (`dec_option`) は既に対応済みだったが positional 側は decode gap だった
+  // (fixtures/constraints-parse/requires-dd-target.json が発見)。
+  let requires = dec_strs(o.get("requires"))
   pos(
     name,
     ty,
@@ -2891,6 +2897,7 @@ fn dec_positional(
     env~,
     cell_filters~,
     required~,
+    requires~,
   )
 }
 

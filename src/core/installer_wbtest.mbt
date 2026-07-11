@@ -2249,6 +2249,49 @@ test "DR-093: a required:true dd element with dd_match (DdMatchSat) is satisfied
 }
 
 ///|
+/// 保証 (DR-093 §3/§5、die の骨格そのもの — decode gap の追加サイクル): positional トリガの
+/// requires が constraint 登録 (`inst_constraint`、option/positional 共通の `all` 配列) から
+/// 評価 (`eval_constraints`/`eval_requires`) まで正しく効く。`dec_positional` の `allowed_keys` に
+/// `requires` が無かった decode gap (option 側 `dec_option` には既にあった非対称) の修正対象。
+/// 目的語が none 型 (dd) の場合、目的語の充足は発火 (committed、DR-093 §3)。
+test "DR-093: a positional's requires (trigger side) reaches constraint registration and evaluation" {
+  let dd = el("--", TNone, is_dd=true)
+  let args = { ..pos("args", TStr, optional=true), requires: ["--"] }
+  let def : Definition = { ..empty_def(), options: [dd], positionals: [args] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  // -- 発火してから args が msg を消費: requires 充足、Success。
+  match parse(root, ["--", "msg"], defs=Map([])) {
+    Success(_) => ()
+    other =>
+      fail(
+        "expected Success (dd fired before args consumes), got " +
+        render_outcome(other),
+      )
+  }
+  // args (トリガ) が msg を消費して committed になるが -- (目的語) 未発火: requires 未充足。
+  // 取り分次元の dead-end (0 消費側の残余 unexpected_token) も併走しうる (DR-053 §2「取り分次元の
+  // dead-end も全保持」) ので、Failure であることと errors に requires_violated が「含まれる」こと
+  // だけを見る (exact set 一致ではなく contains — fixture 側の輪郭確認とは異なる粒度で十分)。
+  match parse(root, ["msg"], defs=Map([])) {
+    Failure(d) => {
+      let mut found = false
+      for e in d.errors {
+        if e.element == "args" && e.reason == "requires_violated" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail(
+        "expected Failure to include requires_violated among held errors, got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
 /// 保証 (team-lead 監査 2026-07-11): none には値空間が無いので、値源を宣言する
 /// `env`/`config_key`/`inherit` は静的に既知の不成立構成であり definition-error になる (DR-089
 /// §4、DR-083 §5 と同型)。3 種の値源宣言をそれぞれ個別の none 要素に付けて固定する。
