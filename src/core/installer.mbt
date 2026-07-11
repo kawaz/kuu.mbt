@@ -61,6 +61,12 @@ pub(all) struct ElemDef {
   requires : Array[String] // constraint installer (DR-055): 正の依存
   conflicts_with : Array[String] // constraint installer (DR-055): 対称ペア排他
   exclusive_group : Array[String] // constraint installer (DR-047): group labels
+  // DR-093 §1/§2: constraint installer 所有。「解決後の充足」の保証であり、充足の定義は type (値空間)
+  // が与える — 値空間を持つ要素 (通常 type) は最終状態の値の有無 (default 込み、DR-047 §5 不変)、
+  // 値空間が空の要素 (`type: "none"`、dd 含む、DR-089) は発火したこと (committed)。option/positional
+  // 両方が持てる (basename/ln の `{"name":"path","type":"string","required":true}` のような
+  // positional required が corpus/real-cli に実在する)。
+  required : Bool
   // DR-055 §1 + DR-052 §値枝 id 直交: 値の枝に付いた requires。tuple 各成分 =
   // (branch_id, value, targets)。branch_id は or 値枝の匿名要素に付いた識別子 (fixture の `id:
   // "fmt_json"`) で、CRequiresIf 違反時の error.element として emit する (制約の宣言元 = 枝、
@@ -707,6 +713,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     requires: e.requires,
     conflicts_with: e.conflicts_with,
     exclusive_group: e.exclusive_group,
+    required: e.required,
     value_requires: e.value_requires,
     deprecated: e.deprecated,
     default_values: e.default_values,
@@ -1847,8 +1854,8 @@ fn inst_dd(def : Definition, build : Build) -> Unit {
       DdSat(e.name)
     } else {
       match e.dd_match {
-        Some(pattern) => DdMatchSat(pattern, true, e.dd_self_keep)
-        None => DdMatchSat(e.name, false, e.dd_self_keep)
+        Some(pattern) => DdMatchSat(pattern, true, e.dd_self_keep, e.name)
+        None => DdMatchSat(e.name, false, e.dd_self_keep, e.name)
       }
     }
   }
@@ -1980,6 +1987,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     requires: copy.requires,
     conflicts_with: copy.conflicts_with,
     exclusive_group: copy.exclusive_group,
+    required: copy.required,
     value_requires: copy.value_requires,
     deprecated: copy.deprecated,
     default_values: copy.default_values,
@@ -2171,6 +2179,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
+    required: false, // write-target copy は required 制約を持たない (requires/exclusive_group と同じ理由)
     value_requires: [],
     deprecated: false,
     default_values: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
@@ -2192,7 +2201,8 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
 
 ///|
 /// constraint installer (DR-055 / DR-042 席宣言型): requires / conflicts_with / exclusive_group /
-/// value_requires を scope の遅延述語として登録。構造衛星は無し (DR-047 完全 path の最終状態で評価)。
+/// required / value_requires を scope の遅延述語として登録。構造衛星は無し (DR-047 完全 path の
+/// 最終状態で評価)。
 fn inst_constraint(def : Definition, build : Build) -> Unit {
   let all : Array[ElemDef] = []
   for e in def.options {
@@ -2207,6 +2217,10 @@ fn inst_constraint(def : Definition, build : Build) -> Unit {
     }
     if e.conflicts_with.length() > 0 {
       add_constraint(build, CConflicts(e.name, copy_strs(e.conflicts_with)))
+    }
+    if e.required {
+      // DR-093 §1/§2: required:true の要素自身を対象にした CRequired を 1 個登録。
+      add_constraint(build, CRequired(e.name))
     }
     for vr in e.value_requires {
       // DR-055 §1 / DR-052 §値枝 id 直交: 4-tuple = (entity, branch_id, value, targets)。entity は
@@ -2377,6 +2391,7 @@ fn alias_entry(
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
+    required: false, // alias entry は AliasDef 自体に required 宣言経路を持たない (requires/exclusive_group と同じ理由)
     value_requires: [],
     deprecated,
     default_values: None,
@@ -2821,7 +2836,7 @@ fn head_progresses(
     | CmdSat(_, _) => true
     // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `DdSat`,
     // `keep` (true) is a 0-token Accept (same standing as `Bind`/`EffMark` below).
-    DdMatchSat(_, _, self_keep) => !self_keep
+    DdMatchSat(_, _, self_keep, _) => !self_keep
     NoDashStr(_) => true // dash-reject でなければ 1 token 消費
     IdxRepeat(_, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
@@ -3305,72 +3320,7 @@ fn collect_scalar_array_default(
 }
 
 ///|
-/// DR-089 §4: none has no value space, so it cannot serve as a `requires`/`value_requires`
-/// target (値充足を要求される席には立てない) — statically known (the target's type is a definition-
-/// time fact), so this is a definition-error rather than a runtime surprise (DR-083 §5 の筋、同型の
-/// 静的既知チェック). Lookup is scoped to the SAME declaring scope's siblings (DR-055 §1 lexical
-/// scope — constraints don't cross command boundaries), mirroring `eval.mbt`'s `eval_constraints`
-/// scope-exact matching. A target name that resolves to no sibling element at all is left to the
-/// existing "unknown requires target" surface (out of this check's scope — this check only fires
-/// when the target DOES resolve, to a none-typed element).
-fn collect_none_requires_target(
-  def : Definition,
-  out : Array[DefError],
-) -> Unit {
-  fn find_ty(name : String) -> Ty? {
-    for e in def.options {
-      if e.name == name {
-        return Some(e.ty)
-      }
-    }
-    for e in def.positionals {
-      if e.name == name {
-        return Some(e.ty)
-      }
-    }
-    None
-  }
-
-  fn flag(elem_name : String, target : String) -> Unit {
-    match find_ty(target) {
-      Some(TNone) =>
-        out.push(
-          def_err(
-            elem_name,
-            DInvalidRange,
-            "requires target '\{target}' has type none (no value space, cannot be required — DR-089 §4)",
-            "give '\{target}' a real value type, or remove it from '\{elem_name}''s requires",
-          ),
-        )
-      _ => ()
-    }
-  }
-
-  fn check(e : ElemDef) -> Unit {
-    for t in e.requires {
-      flag(e.name, t)
-    }
-    for vr in e.value_requires {
-      for t in vr.2 {
-        flag(e.name, t)
-      }
-    }
-  }
-
-  for e in def.options {
-    check(e)
-  }
-  for e in def.positionals {
-    check(e)
-  }
-  for c in def.commands {
-    collect_none_requires_target(c.body, out)
-  }
-}
-
-///|
-/// DR-089 §4 (team-lead 監査 2026-07-11、`collect_none_requires_target` と同型の collector):
-/// none には値空間が無いので、値源を宣言する `env`/`config_key`/`inherit` は静的に既知の不成立構成
+/// DR-089 §4: none には値空間が無いので、値源を宣言する `env`/`config_key`/`inherit` は静的に既知の不成立構成
 /// — 「静的に既知は定義時に倒す」(DR-083 §5) の筋で definition-error にする。実行時側
 /// (`env_value`/`config_to_value` の TNone arm、resolve.mbt/value.mbt) は防御 (このチェックが
 /// 先に落とすので unreachable 想定) として残す。config_key の明示宣言のみを対象とし、
@@ -3735,7 +3685,6 @@ pub fn parse_definition(
   collect_unsupported_accum_update(def, errs) // issue accum-fold-update-default-ops (multiple + update variant)
   collect_unsupported_count_multiple(def, errs) // codex 指摘 High 2 (count 型 × multiple)
   collect_scalar_array_default(def, errs) // DR-083 §5 (非 accum 要素への配列 default)
-  collect_none_requires_target(def, errs) // DR-089 §4 (none を requires 目的語にした宣言)
   collect_none_value_source_decl(def, errs) // DR-089 §4 (none への env/config_key/inherit 宣言)
   collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 (accum cell_filters は配列語彙のみ)
   collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)

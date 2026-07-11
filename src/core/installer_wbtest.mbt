@@ -76,6 +76,9 @@ fn el(
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
+    // DR-093: `el()` follows the same "constraint axes stay at their zero value, spread-override
+    // (`{ ..el(...), required: true }`) if a case needs it" pattern as requires/exclusive_group above.
+    required: false,
     value_requires: [],
     deprecated: false,
     default_values: None,
@@ -2043,23 +2046,205 @@ test "DR-089: a none-typed repeat positional structurally consumes multiple toke
 }
 
 ///|
-/// 保証: none を requires 目的語に宣言すると、値充足を要求される席に none は立てないため定義時
-/// definition-error になる (DR-089 §4、DR-083 §5 と同型の静的既知チェック)。
-test "DR-089: a none-typed requires target is a definition-error" {
-  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+/// 保証 (DR-093 §3、DR-089 §4 の「値充足を要求される席には none は立てない → definition-error」を
+/// 置換): none を requires 目的語に宣言しても definition-error にはならない — `A requires B` で B が
+/// マーカー (値を運ばず発火事実だけを持つ要素) であることは意味を持つ宣言であり、definition-error
+/// として弾く理由がない (DR-093 §1 の型委譲原理: 目的語の充足は「発火 = committed」で定義される)。
+test "DR-093: a none-typed requires target is NOT a definition-error (supersedes DR-089 §4)" {
+  let a = { ..el("a", TFlag, long=LBool(true)), requires: ["c"] }
   let c = el("c", TNone, long=LBool(true))
   let def : Definition = { ..empty_def(), options: [a, c] }
   match parse_definition(def, all_installers()) {
-    Ok(_) => abort("expected Err (none requires target is a definition-error)")
-    Err(errs) => {
+    Ok(_) => ()
+    Err(_) =>
+      fail(
+        "expected Ok (DR-093 §3 supersedes the DR-089 §4 definition-error)",
+      )
+  }
+}
+
+///|
+/// 保証 (DR-093 §3 の帰結、対): none requires 目的語の充足は発火 (committed) — c ("--c" 相当の純
+/// トリガ) が発火すれば a の requires が満たされ Success、発火しなければ requires_violated の
+/// constraint Error で完全経路 0 本 = Failure になる。CRequires の目的語判定 (resolve.mbt の
+/// `eval_requires`/`satisfied`) が none 分岐を正しく通ることを固定する。
+test "DR-093: a none-typed requires target is satisfied by firing (committed), unmet otherwise" {
+  let a = { ..el("a", TFlag, long=LBool(true)), requires: ["c"] }
+  let c = el("c", TNone, long=LBool(true))
+  let def : Definition = { ..empty_def(), options: [a, c] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  // c 発火あり: requires 充足、Success (a=true, c は値空間なしなので結果に現れない)。
+  match parse(root, ["--a", "--c"], defs=Map([])) {
+    Success(_) => ()
+    other =>
+      fail(
+        "expected Success (c fired, requires satisfied), got " +
+        render_outcome(other),
+      )
+  }
+  // c 発火なし: requires 未充足、constraint required_violated ではなく requires_violated の Failure。
+  match parse(root, ["--a"], defs=Map([])) {
+    Failure(d) => {
       let mut found = false
-      for e in errs {
-        if e.element == "a" {
+      for e in d.errors {
+        if e.element == "a" && e.reason == "requires_violated" {
           found = true
         }
       }
       assert_true(found)
     }
+    other =>
+      fail(
+        "expected Failure (c not fired, requires unmet), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 保証 (DR-093 §1/§2、値空間ありの通常 type の基本輪郭): required:true の option は最終状態の値の
+/// 有無で充足を判定する — CLI 未指定 (値源なし) は required_violated の Failure、CLI 指定は Success。
+/// DR-047 §5 の「値空間ありは最終状態の値の有無」が本 DR で不変のまま一様形に組み込まれたことの固定。
+test "DR-093: a required:true option (value-space) is satisfied by CLI value, unmet with no value source" {
+  let name = { ..el("name", TStr, long=LBool(true)), required: true }
+  let def : Definition = { ..empty_def(), options: [name] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  // 未指定: 値源 (default/env/config/inherit) が無いので required 未充足、Failure。
+  match parse(root, [], defs=Map([])) {
+    Failure(d) => {
+      let mut found = false
+      for e in d.errors {
+        if e.element == "name" && e.reason == "required_violated" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail(
+        "expected Failure (no value source, required unmet), got " +
+        render_outcome(other),
+      )
+  }
+  // CLI 指定: 値が在るので Success。
+  match parse(root, ["--name", "x"], defs=Map([])) {
+    Success(_) => ()
+    other =>
+      fail("expected Success (CLI value present), got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証 (DR-093 §1/§2、DR-047 §5「required:true + default は常に充足」が本 DR で不変): default を
+/// 持つ要素は required:true でも CLI 未指定のまま自明に充足する — 「default があるのに明示も強制」
+/// は表現不能 (DR-047 §6-3 の受け入れる帰結)。
+test "DR-093: a required:true option with a declared default is vacuously satisfied (unchanged from DR-047 §5)" {
+  let name = {
+    ..el("name", TStr, long=LBool(true)),
+    required: true,
+    default_values: Some([VStr("fallback")]),
+  }
+  let def : Definition = { ..empty_def(), options: [name] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, [], defs=Map([])) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(
+            proj_result_export(sc, resolved, Map([])),
+            "{name=fallback}",
+          )
+        Err(_) => fail("expected Ok resolve")
+      }
+    other =>
+      fail(
+        "expected Success (default satisfies required vacuously), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 保証 (DR-093 §2/§5、die の motivating case そのもの): none 型の dd 要素 (`dd_match` 未使用、
+/// `DdSat` 発火経路) に required:true を付けると、発火 (committed) で充足し、未発火は
+/// required_violated の constraint Error で完全経路 0 本 = Failure になる。kawaz/die の `--`
+/// 必須が `{"type":"dd","required":true}` (新規 wire 語彙ゼロ) で表現できることの実装側の固定。
+test "DR-093: a required:true dd element (DdSat) is satisfied by firing, unmet otherwise" {
+  let dd = { ..el("--", TNone, is_dd=true), required: true }
+  let x = pos("x", TStr)
+  let def : Definition = { ..empty_def(), options: [dd], positionals: [x] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  // -- 発火あり: required 充足、Success。dd は値空間なしなので結果に "--" は現れない (DR-089 §3)。
+  match parse(root, ["--", "msg"], defs=Map([])) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(proj_result_export(sc, resolved, Map([])), "{x=msg}")
+        Err(_) => fail("expected Ok resolve")
+      }
+    other => fail("expected Success (-- fired), got " + render_outcome(other))
+  }
+  // -- 発火なし: required 未充足、constraint required_violated の Failure (kawaz/die の `die msg` 相当)。
+  match parse(root, ["msg"], defs=Map([])) {
+    Failure(d) => {
+      let mut found = false
+      for e in d.errors {
+        if e.element == "--" && e.reason == "required_violated" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail(
+        "expected Failure (-- not fired, required unmet), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 保証 (DR-093 §2/§5 の一般化、DR-090 拡張軸): `dd_match` を使う dd 要素 (`DdMatchSat` 発火経路) も
+/// 同じ型委譲で required:true を扱う — 発火 (committed) で充足、未発火は required_violated。spelling
+/// (トリガ綴り/パターン) と要素名が分離するケース (DR-090 §2「match があるとき name はトリガ綴りに
+/// 使われず、要素の同一性・表示軸のみに効く」) でも、committed 観測は要素名で正しく行われることを
+/// 固定する (`DdMatchSat` の 4 番目フィールド `elem_name` がこの委譲判定の実装対象)。
+test "DR-093: a required:true dd element with dd_match (DdMatchSat) is satisfied by firing, unmet otherwise" {
+  let dd = {
+    ..el("marker", TNone, is_dd=true, dd_match=Some("^--$")),
+    required: true,
+  }
+  let x = pos("x", TStr)
+  let def : Definition = { ..empty_def(), options: [dd], positionals: [x] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, ["--", "msg"], defs=Map([])) {
+    Success(_) => ()
+    other =>
+      fail(
+        "expected Success (marker fired via dd_match), got " +
+        render_outcome(other),
+      )
+  }
+  match parse(root, ["msg"], defs=Map([])) {
+    Failure(d) => {
+      let mut found = false
+      for e in d.errors {
+        if e.element == "marker" && e.reason == "required_violated" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail(
+        "expected Failure (marker not fired, required unmet), got " +
+        render_outcome(other),
+      )
   }
 }
 

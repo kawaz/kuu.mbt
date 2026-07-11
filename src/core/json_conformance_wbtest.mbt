@@ -319,6 +319,7 @@ fn opt(
   requires? : Array[String] = [],
   conflicts? : Array[String] = [],
   exclusive? : Array[String] = [],
+  required? : Bool = false,
   value_requires? : Array[(String, String, Array[String])] = [],
   default? : Array[Value]? = None,
   int_round? : RoundMode = RError,
@@ -364,6 +365,7 @@ fn opt(
     requires,
     conflicts_with: conflicts,
     exclusive_group: exclusive,
+    required,
     value_requires,
     deprecated: false,
     default_values: default,
@@ -404,6 +406,7 @@ fn pos(
   value_filters? : Array[FilterSpelling] = [],
   cell_filters? : Array[FilterSpelling] = [],
   env? : Array[String] = [],
+  required? : Bool = false,
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -434,6 +437,7 @@ fn pos(
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
+    required,
     value_requires: [],
     deprecated: false,
     default_values: default,
@@ -460,7 +464,11 @@ fn pos(
 }
 
 ///|
-fn dd_marker(match_? : String? = None, self_keep? : Bool = false) -> ElemDef {
+fn dd_marker(
+  match_? : String? = None,
+  self_keep? : Bool = false,
+  required? : Bool = false,
+) -> ElemDef {
   {
     name: "--",
     ty: TStr,
@@ -489,6 +497,7 @@ fn dd_marker(match_? : String? = None, self_keep? : Bool = false) -> ElemDef {
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
+    required,
     value_requires: [],
     deprecated: false,
     default_values: None,
@@ -640,6 +649,7 @@ fn lcon_str(c : Constraint) -> String {
       "]}"
     CExclusive(g, ms) =>
       "exclusive_group{group=" + g + ",members=[" + sorted(ms) + "]}"
+    CRequired(el) => "required{element=" + el + "}"
   }
 }
 
@@ -816,7 +826,7 @@ fn proj_greedy(node : Node, reg : Map[String, Node]) -> GItem {
     // DR-090: no golden lowering fixture exercises this yet (spec fixtures for DR-090 are
     // "query":"parse"輪郭, not lowering shape comparisons) — minimal, informative encoding via
     // the existing GMatch shape rather than inventing a new GItem variant for an untested path.
-    DdMatchSat(spelling, is_pattern, self_keep) =>
+    DdMatchSat(spelling, is_pattern, self_keep, _) =>
       GMatch("dd_match:" + (if self_keep { "keep" } else { "drop" }), [
         (spelling, if is_pattern { "pattern" } else { "exact" }),
       ])
@@ -1110,6 +1120,12 @@ fn proj_effects_ex(sc : Scope, binds : Array[Binding]) -> String {
     if is_none_cell(sc, b.key) {
       continue
     }
+    // DR-093 §2/§7: dd 発火の committed 観測用 binding も同じ理由 (値空間なし、DR-089 §3) で
+    // effects から除外する — entity を持たないので `is_none_cell` では捉えられない (`is_dd_cell`
+    // 参照)。
+    if is_dd_cell(sc, b.key) {
+      continue
+    }
     match b.op {
       Set | Remove =>
         items.push(
@@ -1135,6 +1151,41 @@ fn is_config_file_cell(sc : Scope, name : String) -> Bool {
 fn is_none_cell(sc : Scope, name : String) -> Bool {
   for e in sc.entities {
     if e.name == name && e.ty == TNone {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// DR-093 §2/§7 波及: dd 要素 (`DdSat`/`DdMatchSat`) は entity を持たない (DR-030「実体=値セル」/
+/// LOWERING §B.4、`ensure_entities` の `not_dd` ガード) が、DR-093 の committed 観測用 binding
+/// (発火時の `flag_bare_true_variant` 同型 `Set VBool(true)` placeholder) は他の値と同じ `binds`
+/// 配列に乗る。`is_none_cell` は entity 走査なので dd 要素の binding を捉えられない — scope の
+/// greedy 面を直接走査して dd 要素名を集める、対になる判定。`proj_effects_ex` は `binds` をルート
+/// scope 基準でフラットに舐める (`b.key` のみ比較、`b.scope` 不問) ので、`CmdSat` の子 scope も
+/// 再帰的に見る (dd/global-sever.json のような子コマンドスコープ dd の実測で必須と判明)。
+fn is_dd_cell(sc : Scope, name : String) -> Bool {
+  fn scan(g : Node) -> Bool {
+    match g {
+      DdSat(trigger) => trigger == name
+      DdMatchSat(_, _, _, elem_name) => elem_name == name
+      Or(alts) => {
+        for a in alts {
+          if scan(a) {
+            return true
+          }
+        }
+        false
+      }
+      Rooted(inner, _) => scan(inner)
+      CmdSat(_, child) => is_dd_cell(child, name)
+      _ => false
+    }
+  }
+
+  for g in sc.greedy {
+    if scan(g) {
       return true
     }
   }
@@ -2532,7 +2583,7 @@ fn dec_option(
     [
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "separator", "requires", "conflicts_with", "exclusive_group",
-      "export_key", "config_key", "deprecated", "or", "values", "piece_filters",
+      "required", "export_key", "config_key", "deprecated", "or", "values", "piece_filters",
       "value_filters", "cell_filters", "ref", "repeat",
       // DR-090 §2: dd 専用の2軸拡張キー — 他 type では無意味だが、dd 分岐 (下) だけが読む
       // ("option" 共通 allowed_keys に足すのは他 wire 属性 (env/config_key 等) と同じ扱い方)。
@@ -2611,7 +2662,9 @@ fn dec_option(
       Some(other) =>
         raise DecodeSkip("dd 'self' has unknown value '" + other + "'")
     }
-    return DOpt({ ..dd_marker(match_~, self_keep~), name, })
+    // DR-093 §2/§5: dd も required を持てる (`{"type":"dd","required":true}`、新規 wire 語彙ゼロ)。
+    let required = bool_field(o, "required", false)
+    return DOpt({ ..dd_marker(match_~, self_keep~, required~), name, })
   }
   // DR-061 §3: type shadow lookup — user 定義の type 名なら base Ty + parse 相 config を採用、
   // canonical 型名 (string/int/...) にフォールバック。help/config_file は語彙 keyword で shadow の
@@ -2654,6 +2707,7 @@ fn dec_option(
   let requires = dec_strs(o.get("requires"))
   let conflicts = dec_strs(o.get("conflicts_with"))
   let exclusive = dec_strs(o.get("exclusive_group"))
+  let required = bool_field(o, "required", false)
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
     None => EkUnset
@@ -2701,6 +2755,7 @@ fn dec_option(
       requires~,
       conflicts~,
       exclusive~,
+      required~,
       value_requires~,
       default~,
       int_round=int_round_from_shadow,
@@ -2738,7 +2793,7 @@ fn dec_positional(
     [
       "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
       "config_key", "default", "positionals", "or", "piece_filters", "value_filters",
-      "cell_filters", "ref", "env",
+      "cell_filters", "ref", "env", "required",
       // codex 節目レビュー Major 1 (dec_option 側と同じ要素単位 scope config override、
       // 対称の positional 版)。
        "config",
@@ -2813,6 +2868,9 @@ fn dec_positional(
   // field) — this was missing from the positional decoder entirely (`allowed_keys` rejected it
   // outright), a genuine decode gap surfaced by `positional-env-presence.json`.
   let env = dec_strs(o.get("env"))
+  // DR-093 §1/§2/§5: positional も required を持てる (corpus/real-cli の
+  // `{"name":"path","type":"string","required":true}` 実例が示す通り、option 限定ではない)。
+  let required = bool_field(o, "required", false)
   pos(
     name,
     ty,
@@ -2832,6 +2890,7 @@ fn dec_positional(
     value_filters~,
     env~,
     cell_filters~,
+    required~,
   )
 }
 

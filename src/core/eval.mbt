@@ -476,7 +476,9 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       }
     DdSat(trigger) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
-        [Accept(pos + 1, [])]
+        // DR-093 §2/§7: step_greedy の同アームと同じ committed placeholder binding (off-spine
+        // evaluation はこの1本の Branch の bindings を返すだけ — 呼び出し元が outer acc と cat する)。
+        [Accept(pos + 1, [mkb(trigger, VBool(true), Cli, at_pos=Some(pos))])]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [Pending([cand_trigger(trigger, trigger, TFlag, WordEnd, false)], [])]
       } else {
@@ -486,13 +488,15 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
     // self_keep's 0-token Accept. Off-spine evaluation never threads `severed` (that's the SPINE
     // walk's job, `step_greedy`'s own DdMatchSat arm below) — this arm only answers "does this
     // node accept here", same degenerate scope `DdSat`'s off-spine arm already has.
-    DdMatchSat(spelling, is_pattern, self_keep) =>
+    DdMatchSat(spelling, is_pattern, self_keep, elem_name) =>
       if pos < ctx.toks.length() &&
         dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
+        // DR-093 §2/§7: same committed placeholder as the DdSat arm above, keyed by `elem_name`.
+        let b = mkb(elem_name, VBool(true), Cli, at_pos=Some(pos))
         if self_keep {
-          [Accept(pos, [])]
+          [Accept(pos, [b])]
         } else {
-          [Accept(pos + 1, [])]
+          [Accept(pos + 1, [b])]
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) && !is_pattern {
         // DR-060 §1 completion candidates only make sense for an EXACT spelling (a regex
@@ -1079,7 +1083,7 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
     // `_ => eval_consumes` fallback, because `eval_consumes` only counts a reading as "engaged"
     // when it ADVANCES position (`p2 > pos`), which is wrong for `self_keep=true` (its Accept
     // stays at the SAME `pos` by design, DR-090 §2 の 0-token Accept).
-    DdMatchSat(spelling, is_pattern, _) =>
+    DdMatchSat(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
     // a matcher engages iff it yields ANY reading or held Error ([] = 素通し,
     // e.g. an undefined --key= or a non-prefix token).
@@ -1361,7 +1365,13 @@ fn step_greedy(
       }
     DdSat(trigger) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
-        for r in scope_step(sc, ctx, pos + 1, pidx, acc, true, k) {
+        // DR-093 §2/§7: fire を committed として観測可能にする placeholder binding
+        // (`flag_bare_true_variant` と同型の `Set VBool(true)`、`NoneCell`/`none_cells` が
+        // build_result/effects から除外する — 値そのものは運ばない、DR-089 §3 不変)。DdSat の
+        // trigger 文字列は要素名そのもの (dd_match 未使用の唯一のケースでのみ installer が
+        // `DdSat(e.name)` を作る) なのでそのまま key に使える。
+        let acc2 = cat(acc, [mkb(trigger, VBool(true), Cli, at_pos=Some(pos))])
+        for r in scope_step(sc, ctx, pos + 1, pidx, acc2, true, k) {
           out.push(r)
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
@@ -1375,11 +1385,14 @@ fn step_greedy(
     // triggering token (`pos + 1`, same as `DdSat`); `true` (keep) resumes at the SAME `pos` —
     // the triggering token itself is never consumed here, so it flows into the positional face
     // (now severed = raw) starting with itself, matching §2's "自身を含めて以降が positional 域".
-    DdMatchSat(spelling, is_pattern, self_keep) =>
+    DdMatchSat(spelling, is_pattern, self_keep, elem_name) =>
       if pos < ctx.toks.length() &&
         dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
         let resume_pos = if self_keep { pos } else { pos + 1 }
-        for r in scope_step(sc, ctx, resume_pos, pidx, acc, true, k) {
+        // DR-093 §2/§7: DdSat と同じ committed placeholder binding。key は `elem_name` (要素の
+        // 同一性軸、DR-090 §2) — `spelling` は match 使用時トリガ綴りやパターンで要素名と一致しない。
+        let acc2 = cat(acc, [mkb(elem_name, VBool(true), Cli, at_pos=Some(pos))])
+        for r in scope_step(sc, ctx, resume_pos, pidx, acc2, true, k) {
           out.push(r)
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) && !is_pattern {
@@ -2886,6 +2899,22 @@ fn eval_constraints(
           )
         }
       }
+      CRequired(elem) =>
+        // DR-093 §1/§2: KTop の粗判定 (完全経路の成立条件、DR-047 §2) — `value_declared` を
+        // そのまま再利用する (CRequires 目的語と同じゲート)。値空間なし (none) の要素は
+        // default_values/env_key/config_seat/inherit_ をそもそも持てない (DR-089 §7) ため、
+        // `value_declared` は committed のみで判定される形に自動的に縮退する — 型分岐を新設する
+        // 必要はない。最終判定 (bool 特例なしの型委譲) は resolve.mbt の後段フィルタが行う。
+        if !value_declared(elem, bindings, path, sc.entities) {
+          out.push(
+            constraint_err(
+              elem,
+              "required_violated",
+              "required '\{elem}' is missing",
+              pos,
+            ),
+          )
+        }
     }
   }
   out

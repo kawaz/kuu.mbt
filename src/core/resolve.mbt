@@ -1011,6 +1011,26 @@ pub fn none_cells(sc : Scope) -> Array[NoneCell] {
 }
 
 ///|
+/// DR-093 §2/§7 波及: dd 要素 (`DdSat`/`DdMatchSat`) は entity を持たない (DR-030「実体=値セル」/
+/// LOWERING §B.4、`ensure_entities` の `not_dd` ガード) が、DR-093 の committed 観測用 binding は
+/// 他の none 型セルと同じ `binds` 配列に乗る (`flag_bare_true_variant` 同型 placeholder)。entity
+/// 走査だけでは dd 要素を `NoneCell` として拾えないので、greedy 面も合わせて見る (`Or`/`Rooted` の
+/// 中に置かれた dd も同じ scope の一員として拾う — `outcome.mbt`/`json_conformance_wbtest.mbt` の
+/// dd 探索ヘルパーと同型の再帰形)。
+fn collect_dd_names(g : Node, out : Array[String]) -> Unit {
+  match g {
+    DdSat(trigger) => out.push(trigger)
+    DdMatchSat(_, _, _, elem_name) => out.push(elem_name)
+    Or(alts) =>
+      for a in alts {
+        collect_dd_names(a, out)
+      }
+    Rooted(inner, _) => collect_dd_names(inner, out)
+    _ => ()
+  }
+}
+
+///|
 fn collect_nones(
   sc : Scope,
   path : Array[String],
@@ -1020,6 +1040,13 @@ fn collect_nones(
     if e.ty == TNone {
       out.push({ path, name: e.name })
     }
+  }
+  let dd_names : Array[String] = []
+  for g in sc.greedy {
+    collect_dd_names(g, dd_names)
+  }
+  for name in dd_names {
+    out.push({ path, name })
   }
   for g in sc.greedy {
     match g {
@@ -1324,6 +1351,23 @@ pub fn is_bool_entity(entities : Array[Entity], name : String) -> Bool {
 }
 
 ///|
+/// `name` (entities 内で探した Entity) が値空間なし型 (`TNone`、dd 含む) かどうか — DR-093 §1/§2 の
+/// 型委譲ゲート。値空間なし要素の充足 (required 自身 / requires 目的語) は committed で判定し、
+/// 値空間あり要素は最終状態の値の有無で判定する (`is_bool_entity` と対になる、同じ形のゲート)。
+/// 見つからない場合は `true` (= 値空間なし扱い) — `is_bool_entity` (見つからなければ `false`) と
+/// 非対称に見えるが、dd 要素は DR-030「実体=値セル」/ LOWERING §B.4「dd は値を生まない」により
+/// `ensure_entities` が最初から entity を作らない (`not_dd` ガード)。値空間の有無は entity の有無と
+/// 一致するので、「entity が無い」は「値空間なし」の別表現であり、この既定側が正しい。
+pub fn is_none_entity(entities : Array[Entity], name : String) -> Bool {
+  for e in entities {
+    if e.name == name {
+      return e.ty == TNone
+    }
+  }
+  true
+}
+
+///|
 /// One scope's `requires`/value 依存 requires violations, evaluated against a CANDIDATE path's
 /// CLI-only bindings (trigger 判定、DR-047 §5 表「トリガ側 = committed」) AND the SAME candidate's
 /// fully resolved bindings (目的語判定、「目的語側 = 値の有無/真理値」) — issue
@@ -1346,8 +1390,13 @@ fn eval_requires(
 ) -> Array[ParseError] {
   let out : Array[ParseError] = []
   let path = sc.path
+  // DR-093 §1/§3: 目的語の充足判定は型 (値空間) への委譲 — 値空間なし (none) は発火 (committed)、
+  // bool は解決後値が true、それ以外 (通常の値空間あり型) は値の有無。none 分岐が先 (bool/非bool の
+  // 判定は値空間があることが前提で、none には値そのものが無い)。
   let satisfied = fn(t : String) -> Bool {
-    if is_bool_entity(sc.entities, t) {
+    if is_none_entity(sc.entities, t) {
+      is_committed(bindings, path, t)
+    } else if is_bool_entity(sc.entities, t) {
       elem_value(resolved, path, t) == Some("true")
     } else {
       elem_value(resolved, path, t) != None
@@ -1394,6 +1443,30 @@ fn eval_requires(
         }
       }
       CConflicts(_, _) | CExclusive(_, _) => () // committed 基準、値源不問なので KTop で確定済み
+      CRequired(elem) => {
+        // DR-093 §1/§2: 自身の充足は型委譲。値空間なし (none) = 発火 (committed)、値空間あり =
+        // 最終状態の値の有無 (default 込み、DR-047 §5 不変)。`satisfied` (上記 requires 目的語用) は
+        // 再利用しない — bool の「解決後値 true」ルールは requires 目的語限定 (DR-047 §5 明確化) で
+        // あり、required 自身の充足には持ち込まない (DESIGN §9.1 に bool 特例なし、bool は preset
+        // default:false を常に持つため required 自身は「値の有無」で自明に充足する、それが spec の
+        // 意図どおり)。
+        let ok = if is_none_entity(sc.entities, elem) {
+          is_committed(bindings, path, elem)
+        } else {
+          elem_value(resolved, path, elem) != None
+        }
+        if !ok {
+          out.push({
+            ..constraint_err(
+              elem,
+              "required_violated",
+              "required '\{elem}' is missing",
+              pos,
+            ),
+            path,
+          })
+        }
+      }
     }
   }
   out

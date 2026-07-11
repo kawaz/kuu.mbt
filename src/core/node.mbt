@@ -252,7 +252,7 @@ pub(all) enum Node {
   /// arity extended) to keep every existing `DdSat("--")` hand-construction (wbtest files,
   /// installer's canonical exact-dd path) untouched; the installer only ever emits THIS
   /// variant when the definition actually declares `match` and/or `self:"keep"` (§2).
-  /// Fields: `(spelling, is_pattern, self_keep)`.
+  /// Fields: `(spelling, is_pattern, self_keep, elem_name)`.
   /// - `spelling`: the exact trigger string (`is_pattern=false`, same matching as `DdSat`)
   ///   OR a regex pattern source (`is_pattern=true`, compiled via `compile_regex` — the SAME
   ///   host-dialect compile path DR-085's `regex_match` filter uses, unanchored substring-vs-
@@ -260,7 +260,12 @@ pub(all) enum Node {
   /// - `self_keep`: `false` (drop, DR-090 §2 既定 — consume 1 token, discard it, same as `DdSat`)
   ///   | `true` (keep — consume 0 tokens, Accept immediately; the triggering token itself
   ///   flows into the positional face along with everything after it, still severed).
-  DdMatchSat(String, Bool, Bool)
+  /// - `elem_name` (DR-093 §2/§5): the declaring element's `name`, independent of `spelling`
+  ///   (§2's "match があるとき name はトリガ綴りに使われず、要素の同一性・表示軸のみに効く" —
+  ///   this is that axis, made concrete). Used ONLY to key the committed-observation binding
+  ///   the firing arm produces (mirrors `DdSat`'s own trigger-string-as-name shortcut, which only
+  ///   works there because `DdSat` never decouples spelling from name). Never used for matching.
+  DdMatchSat(String, Bool, Bool, String)
   /// command satellite (DR-018 / DR-041 §4). A GREEDY-face resident whose matcher is
   /// a plain exact match on the command name. Firing enters the child scope as a NEW
   /// backbone (the parent greedy face does not interject inside it). 先食い protects the
@@ -339,6 +344,11 @@ pub(all) enum Constraint {
   CConflicts(String, Array[String])
   /// exclusive_group: at most one member of the group may be committed (DR-047 指定述語).
   CExclusive(String, Array[String])
+  /// required (DR-093 §1/§2): この entity 自身の「解決後の充足」。充足の定義は型 (値空間) への委譲 —
+  /// 値空間を持つ要素 (通常の type) は最終状態の値の有無 (default / env 等の値源込み、DR-047 §5 不変)、
+  /// 値空間が空の要素 (`type: "none"`、dd 含む、DR-089) は発火したこと (committed)。判定入力に
+  /// committed を使う点は CRequires と同じ線 (DR-047 §5 が selected を診断メタに留めた線を維持)。
+  CRequired(String)
 } derive(Eq, Debug)
 
 ///|
