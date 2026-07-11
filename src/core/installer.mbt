@@ -30,6 +30,11 @@ pub(all) struct ElemDef {
   short : Array[Char] // short installer 所有
   env : Array[String] // env installer 所有
   is_dd : Bool // dd installer 所有 (type:"dd")
+  // DR-090 §2: dd installer 所有、is_dd 専用の軸拡張 — None/false なら従来の exact dd (§1「既存
+  // dd」列) と完全に同じ。`dd_match` が Some のとき `name` はトリガ綴りに使われない (§2「match が
+  // あるとき name はトリガ綴りに使われず、要素の同一性・表示軸のみに効く」)。
+  dd_match : String? // regex パターン (host = MoonBit core Regex 準拠、DR-085 §2 と同じ dialect)
+  dd_self_keep : Bool // false=drop (既定、消費1・捨てる) | true=keep (消費0・自身含め以降 raw)
   is_global : Bool // global installer 所有 (子孫 command scope へコピー伝播)
   is_inherit : Bool // inherit installer 所有 (inherit seat 宣言)
   is_inheritable : Bool // inheritable installer 所有 (DR-059)
@@ -624,6 +629,8 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     short: copy_chars(e.short),
     env: copy_strs(e.env),
     is_dd: e.is_dd,
+    dd_match: e.dd_match,
+    dd_self_keep: e.dd_self_keep,
     is_global: e.is_global,
     is_inherit: e.is_inherit,
     is_inheritable: e.is_inheritable,
@@ -1634,14 +1641,30 @@ fn seat_env(build : Build, name : String, key : String) -> Unit {
 /// (env / inherit と同じく両 face を walk する対称形)。add-if-absent (add_greedy) が重複宣言を collapse。
 fn inst_dd(def : Definition, build : Build) -> Unit {
   // DR-064 §5: dd の name は trigger 綴りに効く (normalize_surface が既定 "--" を供給、明示は上書き)。
+  // DR-090 §2: `dd_match` が None かつ `dd_self_keep` が false (両軸とも既定) の要素だけ、既存
+  // `DdSat` (exact/drop 専用ノード) をそのまま使う — 完全な後方互換 (既存 wbtest の `DdSat("--")`
+  // 手組みと構造一致し続ける)。どちらかの軸が既定から外れたら一般化ノード `DdMatchSat` を積む
+  // (`match` が Some のとき name はトリガ綴りに使われない、§2 の規定通り `e.name` の代わりに
+  // `dd_match` の pattern を spelling に使う)。
+  fn dd_node(e : ElemDef) -> Node {
+    if e.dd_match is None && !e.dd_self_keep {
+      DdSat(e.name)
+    } else {
+      match e.dd_match {
+        Some(pattern) => DdMatchSat(pattern, true, e.dd_self_keep)
+        None => DdMatchSat(e.name, false, e.dd_self_keep)
+      }
+    }
+  }
+
   for e in def.options {
     if e.is_dd {
-      add_greedy(build, DdSat(e.name))
+      add_greedy(build, dd_node(e))
     }
   }
   for e in def.positionals {
     if e.is_dd {
-      add_greedy(build, DdSat(e.name))
+      add_greedy(build, dd_node(e))
     }
   }
 }
@@ -1741,6 +1764,8 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     short: copy.short,
     env: copy.env,
     is_dd: copy.is_dd,
+    dd_match: copy.dd_match,
+    dd_self_keep: copy.dd_self_keep,
     is_global: copy.is_global,
     is_inherit: copy.is_inherit,
     is_inheritable: copy.is_inheritable,
@@ -1923,6 +1948,8 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     short: [],
     env: [],
     is_dd: false,
+    dd_match: None,
+    dd_self_keep: false,
     is_global: false,
     is_inherit: false, // inherit seat は inst_inheritable step(2) が立てる
     is_inheritable: false, // copy 自体は plain entry (再伝播しない)
@@ -2120,6 +2147,8 @@ fn alias_entry(
     short,
     env: [],
     is_dd: false,
+    dd_match: None,
+    dd_self_keep: false,
     is_global: false,
     is_inherit: false,
     is_inheritable: false,
@@ -2572,6 +2601,9 @@ fn head_progresses(
     | NativeMatch(_)
     | DdSat(_)
     | CmdSat(_, _) => true
+    // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `DdSat`,
+    // `keep` (true) is a 0-token Accept (same standing as `Bind`/`EffMark` below).
+    DdMatchSat(_, _, self_keep) => !self_keep
     NoDashStr(_) => true // dash-reject でなければ 1 token 消費
     IdxRepeat(_, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
@@ -3241,6 +3273,40 @@ fn collect_invalid_accum_cell_filter(
 /// (not exactly 1) is left to the runtime "regex_match requires exactly 1 arg" Err (`filter_regex_
 /// match`) rather than duplicated here as a second definition-time check — this gate's sole job is
 /// "does the pattern compile", not general arity validation.
+/// DR-090 §2: a dd element's `match` regex — compile failure is a definition-error, the same
+/// treatment `collect_invalid_regex_pattern` gives `regex_match` piece/value/cell filter patterns
+/// (same `compile_regex` compile path, same `DInvalidArgument` kind — "pattern compile failure is
+/// a definition-time fact, known statically without I/O").
+fn collect_invalid_dd_pattern(def : Definition, out : Array[DefError]) -> Unit {
+  fn check(e : ElemDef) -> Unit {
+    match e.dd_match {
+      Some(pattern) =>
+        if compile_regex(pattern) is None {
+          out.push(
+            def_err(
+              e.name,
+              DInvalidArgument,
+              "dd match pattern '" + pattern + "' failed to compile",
+              "fix the pattern syntax for this host's regex dialect (DR-085 §2 / DR-090 §2)",
+            ),
+          )
+        }
+      None => ()
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_invalid_dd_pattern(c.body, out)
+  }
+}
+
+///|
 fn collect_invalid_regex_pattern(
   def : Definition,
   out : Array[DefError],
@@ -3455,6 +3521,7 @@ pub fn parse_definition(
   collect_none_value_source_decl(def, errs) // DR-089 §4 (none への env/config_key/inherit 宣言)
   collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 (accum cell_filters は配列語彙のみ)
   collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)
+  collect_invalid_dd_pattern(def, errs) // DR-090 §2 (dd match pattern compile 失敗)
   collect_ref_merge_accum(def, errs) // DR-084 §3 (merge accumulator × ref)
   collect_absent_ref(def, registry, errs) // DR-032
   collect_circular_ref(registry, errs) // DR-007/032

@@ -56,6 +56,25 @@ fn in_complete(ctx : Ctx) -> Bool {
 }
 
 ///|
+/// DR-090 §2: whether `token` fires a `DdMatchSat` trigger — exact string equality
+/// (`is_pattern=false`, same test `DdSat` itself uses) or a compiled-regex unanchored search
+/// (`is_pattern=true`, `filters.mbt`'s `compile_regex`/`execute` — the SAME host-dialect compile
+/// path DR-085's `regex_match` filter uses, per DR-090 §2 "照合方言は host 実装準拠"). A pattern
+/// that fails to compile is treated as never-matching here (defensive — `installer.mbt`'s
+/// `collect_invalid_dd_pattern` rejects an uncompilable `match` at definition time, so this arm
+/// should not actually see one in practice).
+fn dd_match_token(spelling : String, is_pattern : Bool, token : String) -> Bool {
+  if is_pattern {
+    match compile_regex(spelling) {
+      Some(re) => re.execute(token) is Some(_)
+      None => false
+    }
+  } else {
+    token == spelling
+  }
+}
+
+///|
 /// An exact-spelling candidate (the Pending payload at a trigger boundary,
 /// DR-060 §3). `ty` is only meaningful when a value must follow the spelling
 /// (term = Cont, e.g. an eq-split `--key`); a plain trigger carries TFlag.
@@ -442,6 +461,25 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         [Accept(pos + 1, [])]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [Pending([cand_trigger(trigger, trigger, TFlag, WordEnd, false)], [])]
+      } else {
+        []
+      }
+    // DR-090: off-spine mirror of `DdSat`'s own arm above, generalized to pattern matching +
+    // self_keep's 0-token Accept. Off-spine evaluation never threads `severed` (that's the SPINE
+    // walk's job, `step_greedy`'s own DdMatchSat arm below) — this arm only answers "does this
+    // node accept here", same degenerate scope `DdSat`'s off-spine arm already has.
+    DdMatchSat(spelling, is_pattern, self_keep) =>
+      if pos < ctx.toks.length() &&
+        dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
+        if self_keep {
+          [Accept(pos, [])]
+        } else {
+          [Accept(pos + 1, [])]
+        }
+      } else if pos >= ctx.toks.length() && in_complete(ctx) && !is_pattern {
+        // DR-060 §1 completion candidates only make sense for an EXACT spelling (a regex
+        // pattern has no single "next token to type" to surface as a candidate).
+        [Pending([cand_trigger(spelling, spelling, TFlag, WordEnd, false)], [])]
       } else {
         []
       }
@@ -1005,6 +1043,12 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
     }
     CmdSat(name, _) => ctx.toks[pos] == name
     DdSat(t) => ctx.toks[pos] == t
+    // DR-090: a trigger test, same standing as `DdSat`/`CmdSat` above — NOT routed through the
+    // `_ => eval_consumes` fallback, because `eval_consumes` only counts a reading as "engaged"
+    // when it ADVANCES position (`p2 > pos`), which is wrong for `self_keep=true` (its Accept
+    // stays at the SAME `pos` by design, DR-090 §2 の 0-token Accept).
+    DdMatchSat(spelling, is_pattern, _) =>
+      dd_match_token(spelling, is_pattern, ctx.toks[pos])
     // a matcher engages iff it yields ANY reading or held Error ([] = 素通し,
     // e.g. an undefined --key= or a non-prefix token).
     NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
@@ -1291,6 +1335,29 @@ fn step_greedy(
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         out.push(
           Pending([cand_trigger(trigger, trigger, TFlag, WordEnd, false)], acc),
+        )
+      }
+    // DR-090 §1/§2: generalized dd. `severed=true` is unconditional here exactly like `DdSat`
+    // above (the sever is the "greedy internal consumption is 一体" rule, unaffected by which
+    // axis fired). `self_keep` only changes the RESUMED position: `false` (drop) consumes the
+    // triggering token (`pos + 1`, same as `DdSat`); `true` (keep) resumes at the SAME `pos` —
+    // the triggering token itself is never consumed here, so it flows into the positional face
+    // (now severed = raw) starting with itself, matching §2's "自身を含めて以降が positional 域".
+    DdMatchSat(spelling, is_pattern, self_keep) =>
+      if pos < ctx.toks.length() &&
+        dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
+        let resume_pos = if self_keep { pos } else { pos + 1 }
+        for r in scope_step(sc, ctx, resume_pos, pidx, acc, true, k) {
+          out.push(r)
+        }
+      } else if pos >= ctx.toks.length() && in_complete(ctx) && !is_pattern {
+        // completion candidates only for an exact spelling (see the off-spine `eval` arm's
+        // identical rationale) — a pattern trigger has no single "next token to type".
+        out.push(
+          Pending(
+            [cand_trigger(spelling, spelling, TFlag, WordEnd, false)],
+            acc,
+          ),
         )
       }
     Or(alts) =>

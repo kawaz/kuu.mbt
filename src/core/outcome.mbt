@@ -271,6 +271,9 @@ fn tried_triggers_in_greedy(g : Node, out : Array[String]) -> Unit {
         }
       }
     DdSat(s) => out.push(s)
+    // DR-090: only an EXACT dd trigger is a "tried spelling" a user could type (same rationale
+    // as the eval.mbt Pending arms — a regex pattern has no single literal candidate to surface).
+    DdMatchSat(spelling, is_pattern, _) => if !is_pattern { out.push(spelling) }
     CmdSat(name, _) => out.push(name)
     _ => ()
   }

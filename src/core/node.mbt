@@ -239,6 +239,19 @@ pub(all) enum Node {
   /// spine walk switches to "severed" mode (greedy off) for the rest — the sever is
   /// the "greedy internal consumption is 一体" rule, not a dd special case.
   DdSat(String)
+  /// DR-090: the 2-axis generalization of `DdSat` — a SEPARATE variant (not `DdSat`'s own
+  /// arity extended) to keep every existing `DdSat("--")` hand-construction (wbtest files,
+  /// installer's canonical exact-dd path) untouched; the installer only ever emits THIS
+  /// variant when the definition actually declares `match` and/or `self:"keep"` (§2).
+  /// Fields: `(spelling, is_pattern, self_keep)`.
+  /// - `spelling`: the exact trigger string (`is_pattern=false`, same matching as `DdSat`)
+  ///   OR a regex pattern source (`is_pattern=true`, compiled via `compile_regex` — the SAME
+  ///   host-dialect compile path DR-085's `regex_match` filter uses, unanchored substring-vs-
+  ///   whole-token semantics per DR-090 §2's "match" being a trigger test on the WHOLE token).
+  /// - `self_keep`: `false` (drop, DR-090 §2 既定 — consume 1 token, discard it, same as `DdSat`)
+  ///   | `true` (keep — consume 0 tokens, Accept immediately; the triggering token itself
+  ///   flows into the positional face along with everything after it, still severed).
+  DdMatchSat(String, Bool, Bool)
   /// command satellite (DR-018 / DR-041 §4). A GREEDY-face resident whose matcher is
   /// a plain exact match on the command name. Firing enters the child scope as a NEW
   /// backbone (the parent greedy face does not interject inside it). 先食い protects the

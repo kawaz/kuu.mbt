@@ -25,6 +25,8 @@ fn el(
   short? : Array[Char] = [],
   env? : Array[String] = [],
   is_dd? : Bool = false,
+  dd_match? : String? = None,
+  dd_self_keep? : Bool = false,
   is_global? : Bool = false,
   is_inherit? : Bool = false,
   repeat? : RepeatSpec? = None,
@@ -44,6 +46,8 @@ fn el(
     short,
     env,
     is_dd,
+    dd_match,
+    dd_self_keep,
     is_global,
     is_inherit,
     is_inheritable: false,
@@ -2219,5 +2223,131 @@ test "DR-088 対極2: an explicit optional:true positional is unaffected (still 
         Err(_) => fail("expected Ok resolve")
       }
     other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+// ── issue dr-090-dd-match-self-implementation: dd の一般化 (トリガ形 exact|pattern) ×
+// (自己保持 self drop|keep)。canonical 用途は (exact,drop)=従来 dd と (pattern,keep)=xargs型。
+// **host regex dialect の実機確認**: DR-090 §2/§3 の canonical 例そのままの `"^[^-]"` は
+// この host (MoonBit core `@string.Regex`) では **compile 失敗する** (`[^-]` — `^` 直後の
+// 未エスケープ `-` が範囲指定として誤解釈される)。エスケープした `"^[^\\-]"` (MoonBit 文字列
+// リテラルでは `\\-`、JSON 文字列としては `"^[^\\-]"`) なら compile が通る — 本 wbtest は
+// エスケープ済み pattern を使う。spec fixture 側にも報告済み (完了報告参照)。 ──────────────
+
+///|
+fn dd_value_to_str(v : Value) -> String {
+  match v {
+    VStr(s) => s
+    VNum(d) => d.to_string()
+    VBool(b) => b.to_string()
+  }
+}
+
+///|
+/// 保証 (実機再現の pin、DR-090 §2/§3 の canonical 適用): `xargs -n 1 rm -f a` 型の輪郭。
+/// `-n` は known option として発火し値 `1` を消費 (値スロットは raw 消費、DR-041 §4 — dd pattern
+/// と形が交わらない)。`rm` (最初の非ハイフン operand) が pattern dd に一致して発火・自己保持
+/// (self:keep、消費0で Accept) — `rm` 自身を含め以降 (`-f`, `a`) が positional 域 + severed に
+/// 流れ、`-f` は既知 option の綴りでも severed により raw のまま (再発火しない、実 xargs と同じ)。
+test "DR-090: xargs-style pattern dd (self:keep) — option fires, value slot raw, pattern-dd self-keep, tail severed" {
+  let n = { ..el("n", TInt, short=['n']) }
+  let dd = {
+    ..el("dd", TStr, is_dd=true, dd_match=Some("^[^\\-]"), dd_self_keep=true)
+  }
+  let rest = pos("rest", TStr, repeat=Some({ min: 0, max: None, lazy_: false }))
+  let def : Definition = {
+    ..empty_def(),
+    options: [n, dd],
+    positionals: [rest],
+  }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, ["-n", "1", "rm", "-f", "a"], defs=Map([])) {
+    Success(bs) => {
+      assert_eq(elem_value_bs(bs, "n"), Some("1"))
+      let rest_vals : Array[String] = []
+      for b in bs {
+        if b.key == "rest" {
+          rest_vals.push(dd_value_to_str(b.value))
+        }
+      }
+      assert_eq(rest_vals, ["rm", "-f", "a"])
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+fn elem_value_bs(bs : Array[Binding], key : String) -> String? {
+  let mut v : String? = None
+  for b in bs {
+    if b.key == key {
+      v = Some(dd_value_to_str(b.value))
+    }
+  }
+  v
+}
+
+///|
+/// 対極 (輪郭固定): 従来の exact dd (`match`/`self` いずれも未宣言) は本 DR の変更で一切
+/// 影響を受けない — `--` を消費して捨て (self:drop 既定)、以降が severed で全 raw になる
+/// 挙動は不変。DdSat ノードがそのまま使われ続けることの間接固定 (`DdMatchSat` へ切り替わらない)。
+test "DR-090 対極: exact dd (no match/self declared) is unaffected — drop + severed as before" {
+  let dd = el("--", TStr, is_dd=true)
+  let rest = pos("rest", TStr, repeat=Some({ min: 0, max: None, lazy_: false }))
+  let def : Definition = { ..empty_def(), options: [dd], positionals: [rest] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, ["--", "-x", "y"], defs=Map([])) {
+    Success(bs) => {
+      let rest_vals : Array[String] = []
+      for b in bs {
+        if b.key == "rest" {
+          rest_vals.push(dd_value_to_str(b.value))
+        }
+      }
+      // "--" 自身は消費されて捨てられる (self:drop) ので rest には現れない。
+      assert_eq(rest_vals, ["-x", "y"])
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証: dd の `match` 正規表現が host dialect で compile 不能な場合、definition-error になる
+/// (DR-090 §2、DR-085 §1 訂正の regex_match pattern compile 失敗と同じ kind=DInvalidArgument)。
+test "DR-090: an uncompilable dd match pattern is a definition-error" {
+  let dd = { ..el("dd", TStr, is_dd=true, dd_match=Some("[")) }
+  let def : Definition = { ..empty_def(), options: [dd] }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => abort("expected Err (uncompilable dd match pattern)")
+    Err(errs) => {
+      let mut found = false
+      for e in errs {
+        if e.element == "dd" && e.kind == DInvalidArgument {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+  }
+}
+
+///|
+/// 対極: compile 可能な pattern は definition-error にならない (上のテストの境界確認、
+/// self-written-rule-blind-spots の対極確認と同じ姿勢)。
+test "DR-090 対極: a compilable dd match pattern is NOT rejected" {
+  let dd = { ..el("dd", TStr, is_dd=true, dd_match=Some("^[^\\-]")) }
+  let def : Definition = { ..empty_def(), options: [dd] }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => ()
+    Err(errs) =>
+      for e in errs {
+        if e.kind == DInvalidArgument {
+          abort(
+            "a dd with a compilable match pattern must not raise DInvalidArgument",
+          )
+        }
+      }
   }
 }

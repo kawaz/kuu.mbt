@@ -337,6 +337,8 @@ fn opt(
     short,
     env,
     is_dd: false,
+    dd_match: None,
+    dd_self_keep: false,
     is_global: global,
     is_inherit: inherit_,
     is_inheritable: inheritable,
@@ -398,6 +400,8 @@ fn pos(
     short: [],
     env,
     is_dd: false,
+    dd_match: None,
+    dd_self_keep: false,
     is_global: false,
     is_inherit: inherit_,
     is_inheritable: false,
@@ -429,7 +433,7 @@ fn pos(
 }
 
 ///|
-fn dd_marker() -> ElemDef {
+fn dd_marker(match_? : String? = None, self_keep? : Bool = false) -> ElemDef {
   {
     name: "--",
     ty: TStr,
@@ -438,6 +442,8 @@ fn dd_marker() -> ElemDef {
     short: [],
     env: [],
     is_dd: true,
+    dd_match: match_,
+    dd_self_keep: self_keep,
     is_global: false,
     is_inherit: false,
     is_inheritable: false,
@@ -772,6 +778,13 @@ fn proj_seq_sat(xs : Array[Node]) -> GItem {
 fn proj_greedy(node : Node, reg : Map[String, Node]) -> GItem {
   match node {
     DdSat(name) => GExact(name)
+    // DR-090: no golden lowering fixture exercises this yet (spec fixtures for DR-090 are
+    // "query":"parse"輪郭, not lowering shape comparisons) — minimal, informative encoding via
+    // the existing GMatch shape rather than inventing a new GItem variant for an untested path.
+    DdMatchSat(spelling, is_pattern, self_keep) =>
+      GMatch("dd_match:" + (if self_keep { "keep" } else { "drop" }), [
+        (spelling, if is_pattern { "pattern" } else { "exact" }),
+      ])
     Exact(s) => GExact(s)
     Rooted(inner, _) => proj_greedy(inner, reg)
     CmdSat(name, child) => GCmd(name, proj_scope(child, reg))
@@ -2481,6 +2494,9 @@ fn dec_option(
       "inheritable", "multiple", "separator", "requires", "conflicts_with", "exclusive_group",
       "export_key", "config_key", "deprecated", "or", "values", "piece_filters",
       "value_filters", "cell_filters", "ref", "repeat",
+      // DR-090 §2: dd 専用の2軸拡張キー — 他 type では無意味だが、dd 分岐 (下) だけが読む
+      // ("option" 共通 allowed_keys に足すのは他 wire 属性 (env/config_key 等) と同じ扱い方)。
+       "match", "self",
     ],
     "option",
   )
@@ -2541,7 +2557,16 @@ fn dec_option(
       }
   }
   if tystr == "dd" {
-    return DOpt({ ..dd_marker(), name, })
+    // DR-090 §2: `match` (regex トリガ) / `self` (`"drop"` 既定 | `"keep"`)。`self` の語彙外文字列は
+    // decode 時点で拒否 (綴りミスを黙って drop 扱いにしない、DR-054 の「構文の驚きは v1 Error」筋)。
+    let match_ = jf_str(o, "match")
+    let self_keep = match jf_str(o, "self") {
+      Some("drop") | None => false
+      Some("keep") => true
+      Some(other) =>
+        raise DecodeSkip("dd 'self' has unknown value '" + other + "'")
+    }
+    return DOpt({ ..dd_marker(match_~, self_keep~), name, })
   }
   // DR-061 §3: type shadow lookup — user 定義の type 名なら base Ty + parse 相 config を採用、
   // canonical 型名 (string/int/...) にフォールバック。help/config_file は語彙 keyword で shadow の
