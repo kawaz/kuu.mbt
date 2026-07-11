@@ -387,6 +387,7 @@ fn pos(
   piece_filters? : Array[FilterSpelling] = [],
   value_filters? : Array[FilterSpelling] = [],
   cell_filters? : Array[FilterSpelling] = [],
+  env? : Array[String] = [],
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -395,7 +396,7 @@ fn pos(
     long: LList([]),
     variants: [],
     short: [],
-    env: [],
+    env,
     is_dd: false,
     is_global: false,
     is_inherit: inherit_,
@@ -2660,7 +2661,7 @@ fn dec_positional(
     [
       "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
       "config_key", "default", "positionals", "or", "piece_filters", "value_filters",
-      "cell_filters", "ref",
+      "cell_filters", "ref", "env",
     ],
     "positional",
   )
@@ -2727,6 +2728,11 @@ fn dec_positional(
   let value_filters = dec_filter_chain(o.get("value_filters"))
   let cell_filters = dec_filter_chain(o.get("cell_filters"))
   let ref_ = jf_str(o, "ref")
+  // DR-088 (issue dr-088-positional-default-verification): positionals can declare `env` too
+  // (Entity.env_key applies uniformly across options/positionals, `dec_option`'s same-named
+  // field) — this was missing from the positional decoder entirely (`allowed_keys` rejected it
+  // outright), a genuine decode gap surfaced by `positional-env-presence.json`.
+  let env = dec_strs(o.get("env"))
   pos(
     name,
     ty,
@@ -2744,6 +2750,7 @@ fn dec_positional(
     allow_base_prefix=base_prefix_from_shadow,
     piece_filters~,
     value_filters~,
+    env~,
     cell_filters~,
   )
 }

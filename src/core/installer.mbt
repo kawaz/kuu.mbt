@@ -926,6 +926,18 @@ fn opt_node(x : Node) -> Node {
 }
 
 ///|
+/// DR-088 §1: 「宣言された値源はデフォルトの存在」— `default_values` (明示 default) だけでなく
+/// `env`/`config_key`/`inherit` の宣言も「遅延解決する default_fn が設定されているのと同型」。
+/// `eval.mbt`'s `value_declared` (resolve-first-constraint-pipeline / value-present-ladder-gap の
+/// 静的宣言述語) と同じ4要素判定を、installer 層 (lowering 時点、ElemDef ベース) で行う版。
+fn has_declared_value_source(e : ElemDef) -> Bool {
+  e.default_values is Some(_) ||
+  e.env.length() > 0 ||
+  e.config_key is Some(_) ||
+  e.is_inherit
+}
+
+///|
 /// positional face の lowering。repeat 要素 (DR-043) は Ref 再帰: template
 /// `name = Seq([head, Opt(Ref(name))])` を registry に登録し、spine には `min-1` mandatory + Ref
 /// (min >= 1 のみ — `Ref` 自体は必ず >= 1 head を消費する構造で「0 でもよい」を表現できない、
@@ -1087,7 +1099,26 @@ fn lower_positional(
                     out,
                   )
               }
-            None => lower_repeat_head(e, elem_head(e), registry, out)
+            None =>
+              // DR-088 §2 (issue dr-088-positional-default-verification): a plain (no
+              // repeat/optional) positional that declares a value source (default/env/
+              // config_key/inherit) is structurally COMPLETE with 0 tokens too — the declared
+              // source is "a default_fn scheduled to resolve later" (DR-088 §1), so the path
+              // must not starve into `missing_operand` just because no token showed up here.
+              // `opt_node` (`Or([head, Seq([])])`, already used by `elem_repeat`'s min:0 paths)
+              // makes the ONE occurrence optional at the structural level WITHOUT touching
+              // `elem_repeat`/`lower_repeat_head`'s array-producing repeat machinery — the
+              // entity stays a genuine SCALAR cell (no `accum`), and an unconsumed occurrence
+              // leaves it uncommitted, so `resolve.mbt`'s existing default-seat ladder
+              // (`resolve_ladder_below_cli`) fills it in exactly as it already does for options.
+              // Declared-but-unresolved-at-runtime (e.g. env var absent) still falls through to
+              // the scalar's OWN default_values / lower ladder rungs as usual — this only fixes
+              // the STRUCTURAL completeness gate, not the value resolution itself.
+              if elem_repeat(e) is None && has_declared_value_source(e) {
+                lower_repeat_head(e, opt_node(elem_head(e)), registry, out)
+              } else {
+                lower_repeat_head(e, elem_head(e), registry, out)
+              }
           }
         // BEnum (issue values-decode-support): `dec_positional` never produces this shape today
         // (positionals only decode structural "or"/"positionals" — DESIGN §5.3's value-enum

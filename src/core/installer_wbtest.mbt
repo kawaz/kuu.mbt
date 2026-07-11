@@ -2123,3 +2123,101 @@ test "DR-089 対極: a pre-existing explicit-type element is unaffected by none 
     other => fail("expected Success, got " + render_outcome(other))
   }
 }
+
+// ── issue dr-088-positional-default-verification: 素の positional (optional/repeat 無し) +
+// default 宣言は、DR-088 §1「宣言された値源はデフォルトの存在」により「トークンが無くても経路完全
+// → 遅延解決で default 実体化」となる。旧実装は default の宣言を無視し、トークン 0 個を常に
+// missing_operand の経路不成立として扱っていた (`lower_positional` が無条件に mandatory な値
+// primitive を push、DR-044 の「配列に包む」optional 糖衣を明示指定しない限り 0-or-1 の構造を
+// 表現できなかった)。 ────────────────────────────────────────────────────────
+
+///|
+/// 保証 (実機再現の pin、DR-088 §1/§2 の canonical 適用): `{name, type, default}` の素の
+/// positional (optional/repeat 宣言なし) は、トークン供給なしでも Success になり、宣言済み
+/// default の値が結果に実体化される — 旧実装は同じ入力で Failure(missing_operand) になっていた。
+test "DR-088: a plain scalar positional with a declared default is a complete path with 0 tokens" {
+  let seconds = { ..pos("seconds", TInt), default_values: Some([VNum(10.0)]) }
+  let def : Definition = { ..empty_def(), positionals: [seconds] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, [], defs=Map([])) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(proj_result_export(sc, resolved, Map([])), "{seconds=10}")
+        Err(_) => fail("expected Ok resolve")
+      }
+    other =>
+      fail(
+        "expected Success (declared default makes the path complete), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 保証: 同じ定義でトークンを供給すれば、供給値が (default ではなく) 結果に現れる — 構造的
+/// optional 化がトークン供給時の通常経路を壊していないことの固定 (対称の成功面)。
+test "DR-088: a plain scalar positional with a declared default still consumes a supplied token" {
+  let seconds = { ..pos("seconds", TInt), default_values: Some([VNum(10.0)]) }
+  let def : Definition = { ..empty_def(), positionals: [seconds] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, ["5"], defs=Map([])) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(proj_result_export(sc, resolved, Map([])), "{seconds=5}")
+        Err(_) => fail("expected Ok resolve")
+      }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 対極: default 宣言の無い素の positional は、この変更後も従来どおりトークン 0 個で
+/// missing_operand の Failure になる — `fixtures/absent/required-positional.json` が pin する
+/// 「必須 positional は absent にならない (present か parse failure の二択)」の輪郭を、この
+/// 変更が壊していないことの固定 (構造的 optional 化は「宣言済み値源がある場合」限定)。
+test "DR-088 対極: a plain scalar positional with NO declared default still misses on 0 tokens" {
+  let file = pos("file", TStr)
+  let def : Definition = { ..empty_def(), positionals: [file] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, [], defs=Map([])) {
+    Failure(d) => {
+      let mut found = false
+      for e in d.errors {
+        if e.element == "file" && e.reason == "missing_operand" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail(
+        "expected Failure (no declared source, still required), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 対極2: `optional:true` (repeat 糖衣) を明示した positional は、この変更の影響を受けず従来どおり
+/// 配列で結果に出る (DR-044 「max=1 でも配列」の特別化なし) — 構造的 optional 化の新経路
+/// (`opt_node`) は `elem_repeat(e) is None` の場合限定であることの固定。
+test "DR-088 対極2: an explicit optional:true positional is unaffected (still array-shaped)" {
+  let tag = pos("tag", TStr, optional=true)
+  let def : Definition = { ..empty_def(), positionals: [tag] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, [], defs=Map([])) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(proj_result_export(sc, resolved, Map([])), "{tag=[]}")
+        Err(_) => fail("expected Ok resolve")
+      }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
