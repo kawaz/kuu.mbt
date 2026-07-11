@@ -2018,9 +2018,10 @@ struct TypeShadow {
 /// DecodeSkip で明示的に unsupported 扱い (typo 検出、DR-061 §4 は factory 自身が config 値を検証
 /// する規定なので、type/factory 認識のこの層は capability gate として振る舞う)。
 ///
-/// DR-094 §3/§9 案A: factory 名は `<bare>` (builtin ns の糖衣) / `builtin/<bare>` (ns 明示) /
-/// `kuu_<bare>` (旧 ad-hoc prefix、移行期間中は deprecated alias として受理) の 3 形が同一実体に
-/// 解決される。旧名の削除は fixture pin bump 完了後に別コミットで判断 (本 issue の射程外)。
+/// DR-094 §3/§9 案A: factory 名は `<bare>` (builtin ns の糖衣) / `builtin/<bare>` (ns 明示) の
+/// 2 形が同一実体に解決される。旧 ad-hoc prefix `kuu_<bare>` は fixture pin bump (37aa3b3d) 完了に
+/// 伴い移行期間を終え、unsupported factory として明示的に拒否される (unknown-vocab の一部、
+/// DR-054)。
 fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
@@ -2046,7 +2047,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
         )
     }
     match factory {
-      "int_parser" | "builtin/int_parser" | "kuu_int_parser" => {
+      "int_parser" | "builtin/int_parser" => {
         // DR-075 §2 int_round (10 モード語彙、round_mode_of で解決) + DR-074 §2 の (int にも波及する)
         // `number_allow_base_prefix`。config 未指定は canonical default (RError + false)。
         let mut mode = RError
@@ -2111,7 +2112,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           allow_base_prefix: base_prefix,
         })
       }
-      "number_parser" | "builtin/number_parser" | "kuu_number_parser" => {
+      "number_parser" | "builtin/number_parser" => {
         // DR-074 §2 `number_allow_base_prefix` = 統合 opt-in で 0x/0o/0b + hex float 一括有効化
         // (単一 flag、canonical default false)。他 config キー (`number_thousand_sep` /
         // `number_leading_zero`) は本 substrate 未サポート (fixture が使わないため)。
@@ -6119,11 +6120,11 @@ test "DR-092 §5 end-to-end: config-origin \"Infinity\" reaches a float element 
 
 ///|
 /// 保証 (DR-094 §3/§9 案A): `definitions.types` の factory 名は `int_parser` (builtin ns の bare
-/// 糖衣) / `builtin/int_parser` (ns 明示) / `kuu_int_parser` (旧 ad-hoc prefix、移行期間中の
-/// deprecated alias) の 3 表記形が同一 TypeShadow 実体に解決される。3 つの shadow を同じ
-/// `int_round: "floor"` config で並べ、同じ fractional 入力 `2.5` を横流しして全て `2` (floor 方向)
-/// に解決されることで実体の同一性を固定する — 表記が違うだけで挙動が分岐しないことの end-to-end 証跡。
-test "DR-094 §9: int_parser の 3 表記形 (bare / builtin/ ns / 旧 kuu_ prefix) が同一 factory に解決される" {
+/// 糖衣) / `builtin/int_parser` (ns 明示) の 2 表記形が同一 TypeShadow 実体に解決される。2 つの
+/// shadow を同じ `int_round: "floor"` config で並べ、同じ fractional 入力 `2.5` を横流しして全て
+/// `2` (floor 方向) に解決されることで実体の同一性を固定する — 表記が違うだけで挙動が分岐しないこと
+/// の end-to-end 証跡。旧 `kuu_int_parser` prefix の移行期間終了後の拒否確認は別 test を参照。
+test "DR-094 §9: int_parser の 2 表記形 (bare / builtin/ ns) が同一 factory に解決される" {
   let src =
     #|{
     #|  "query": "parse",
@@ -6131,23 +6132,21 @@ test "DR-094 §9: int_parser の 3 表記形 (bare / builtin/ ns / 旧 kuu_ pref
     #|    "definitions": {
     #|      "types": {
     #|        "t_bare": {"name": "int_parser", "config": {"int_round": "floor"}},
-    #|        "t_ns": {"name": "builtin/int_parser", "config": {"int_round": "floor"}},
-    #|        "t_legacy": {"name": "kuu_int_parser", "config": {"int_round": "floor"}}
+    #|        "t_ns": {"name": "builtin/int_parser", "config": {"int_round": "floor"}}
     #|      }
     #|    },
     #|    "options": [
     #|      {"name": "bare", "type": "t_bare", "long": true},
-    #|      {"name": "ns", "type": "t_ns", "long": true},
-    #|      {"name": "legacy", "type": "t_legacy", "long": true}
+    #|      {"name": "ns", "type": "t_ns", "long": true}
     #|    ]
     #|  },
     #|  "cases": [
     #|    {
-    #|      "id": "all-three-forms-floor-2p5-to-2",
-    #|      "argv": ["--bare", "2.5", "--ns", "2.5", "--legacy", "2.5"],
+    #|      "id": "both-forms-floor-2p5-to-2",
+    #|      "argv": ["--bare", "2.5", "--ns", "2.5"],
     #|      "expect": {
     #|        "outcome": "success",
-    #|        "result": {"bare": 2, "ns": 2, "legacy": 2}
+    #|        "result": {"bare": 2, "ns": 2}
     #|      }
     #|    }
     #|  ]
@@ -6161,11 +6160,10 @@ test "DR-094 §9: int_parser の 3 表記形 (bare / builtin/ ns / 旧 kuu_ pref
 }
 
 ///|
-/// 保証 (DR-094 §3/§9 案A、number_parser 版): `number_parser` / `builtin/number_parser` /
-/// `kuu_number_parser` の 3 表記形が同一 TypeShadow 実体に解決される。`number_allow_base_prefix:
-/// true` を共有 config にして `0xff` (hex int opt-in) を横流しし、全て `255` に解決されることを
-/// 固定する。
-test "DR-094 §9: number_parser の 3 表記形 (bare / builtin/ ns / 旧 kuu_ prefix) が同一 factory に解決される" {
+/// 保証 (DR-094 §3/§9 案A、number_parser 版): `number_parser` / `builtin/number_parser` の 2 表記形
+/// が同一 TypeShadow 実体に解決される。`number_allow_base_prefix: true` を共有 config にして `0xff`
+/// (hex int opt-in) を横流しし、全て `255` に解決されることを固定する。
+test "DR-094 §9: number_parser の 2 表記形 (bare / builtin/ ns) が同一 factory に解決される" {
   let src =
     #|{
     #|  "query": "parse",
@@ -6173,23 +6171,21 @@ test "DR-094 §9: number_parser の 3 表記形 (bare / builtin/ ns / 旧 kuu_ p
     #|    "definitions": {
     #|      "types": {
     #|        "t_bare": {"name": "number_parser", "config": {"number_allow_base_prefix": true}},
-    #|        "t_ns": {"name": "builtin/number_parser", "config": {"number_allow_base_prefix": true}},
-    #|        "t_legacy": {"name": "kuu_number_parser", "config": {"number_allow_base_prefix": true}}
+    #|        "t_ns": {"name": "builtin/number_parser", "config": {"number_allow_base_prefix": true}}
     #|      }
     #|    },
     #|    "options": [
     #|      {"name": "bare", "type": "t_bare", "long": true},
-    #|      {"name": "ns", "type": "t_ns", "long": true},
-    #|      {"name": "legacy", "type": "t_legacy", "long": true}
+    #|      {"name": "ns", "type": "t_ns", "long": true}
     #|    ]
     #|  },
     #|  "cases": [
     #|    {
-    #|      "id": "all-three-forms-hex-prefix-accepted",
-    #|      "argv": ["--bare", "0xff", "--ns", "0xff", "--legacy", "0xff"],
+    #|      "id": "both-forms-hex-prefix-accepted",
+    #|      "argv": ["--bare", "0xff", "--ns", "0xff"],
     #|      "expect": {
     #|        "outcome": "success",
-    #|        "result": {"bare": 255, "ns": 255, "legacy": 255}
+    #|        "result": {"bare": 255, "ns": 255}
     #|      }
     #|    }
     #|  ]
@@ -6200,6 +6196,48 @@ test "DR-094 §9: number_parser の 3 表記形 (bare / builtin/ ns / 旧 kuu_ p
   if verdict != "PASS" {
     abort("expected PASS, got: " + verdict)
   }
+}
+
+///|
+/// 保証 (DR-094 §9 移行期間終了): 旧 ad-hoc prefix `kuu_int_parser` は fixture pin bump
+/// (37aa3b3d、全 fixture が新名へ移行済み) を境に deprecated alias としての受理を終え、他の未知
+/// 語彙と同じ unsupported factory DecodeSkip に落ちる。旧名の「受理されないこと」を positive に
+/// 固定する — 語彙が spec の閉集合 (DR-094 §2 builtin は closed set) であることの unknown-vocab
+/// 側の証跡 (DR-054)。multiple:true 等コンテナ側の他語彙と同じ寛容ハーネスの上で、旧 factory 名
+/// だけが特別に生き残らないことを示す。
+test "DR-094 §9 移行期間終了: 旧 kuu_int_parser prefix は unsupported factory として拒否される" {
+  let int_src =
+    #|{"query":"parse","definition":{"definitions":{"types":{"t":{"name":"kuu_int_parser","config":{}}}},"options":[{"name":"v","type":"t","long":true}]},"cases":[]}
+  let int_j = @json.parse(int_src)
+  let _ = dec_fixture(int_j) catch {
+    DecodeSkip(r) => {
+      assert_true(r.contains("unsupported factory"))
+      assert_true(r.contains("kuu_int_parser"))
+      return
+    }
+  }
+  abort(
+    "kuu_int_parser: expected DecodeSkip (legacy alias retired), decode succeeded",
+  )
+}
+
+///|
+/// 保証 (DR-094 §9 移行期間終了、number_parser 版): 旧 ad-hoc prefix `kuu_number_parser` も同様に
+/// unsupported factory DecodeSkip に落ちる (int_parser 版と対称)。
+test "DR-094 §9 移行期間終了: 旧 kuu_number_parser prefix は unsupported factory として拒否される" {
+  let number_src =
+    #|{"query":"parse","definition":{"definitions":{"types":{"t":{"name":"kuu_number_parser","config":{}}}},"options":[{"name":"v","type":"t","long":true}]},"cases":[]}
+  let number_j = @json.parse(number_src)
+  let _ = dec_fixture(number_j) catch {
+    DecodeSkip(r) => {
+      assert_true(r.contains("unsupported factory"))
+      assert_true(r.contains("kuu_number_parser"))
+      return
+    }
+  }
+  abort(
+    "kuu_number_parser: expected DecodeSkip (legacy alias retired), decode succeeded",
+  )
 }
 
 ///|
