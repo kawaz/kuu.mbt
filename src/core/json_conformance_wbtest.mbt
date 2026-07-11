@@ -850,6 +850,7 @@ fn proj_entity(e : Entity) -> LEnt {
       TFloat => "float"
       TInt => "int"
       TFlag | TBool => "bool"
+      TNone => "none"
     }
   }
   {
@@ -1052,6 +1053,14 @@ fn proj_effects_ex(sc : Scope, binds : Array[Binding]) -> String {
     if is_config_file_cell(sc, b.key) {
       continue
     }
+    // DR-089 §3 (team-lead 裁定 2026-07-11): none の発火は effects にも現れない (観測は
+    // ParserContext/explains 層の管掌、値空間なしの set エントリを発明しない)。内部表現は
+    // `flag_bare_true_variant` 再利用の Set+VBool(true) placeholder のままで良く (installer.mbt)、
+    // ここ (射影層) だけで除外する — `is_config_file_cell` と同じ「Entity 属性を見て特定 cell を
+    // 射影から外す」パターン。
+    if is_none_cell(sc, b.key) {
+      continue
+    }
     match b.op {
       Set | Remove =>
         items.push(
@@ -1067,6 +1076,16 @@ fn proj_effects_ex(sc : Scope, binds : Array[Binding]) -> String {
 fn is_config_file_cell(sc : Scope, name : String) -> Bool {
   for e in sc.entities {
     if e.name == name && e.is_config_file {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn is_none_cell(sc : Scope, name : String) -> Bool {
+  for e in sc.entities {
+    if e.name == name && e.ty == TNone {
       return true
     }
   }
@@ -1149,6 +1168,7 @@ fn proj_result_export(
       accum_cells(sc, ekmap),
       apply_export_to_defaults(default_cells(sc), ekmap),
       [],
+      nones=none_cells(sc),
     ),
   )
 }
@@ -1171,6 +1191,11 @@ fn proj_sources(
   let items : Array[String] = []
   for e in sc.entities {
     if e.is_config_file {
+      continue
+    }
+    // DR-089 §3: none has no value, so it has no "source" either (結果非掲載と同じ posture — 発火の
+    // 観測は explains 層の管掌で、この射影の関心ではない)。
+    if e.ty == TNone {
       continue
     }
     // issue accum-export-key-rename-asymmetry の続き (fixture export-key/rename-multiple.json
@@ -1865,6 +1890,8 @@ fn dec_ty(t : String) -> Ty raise DecodeSkip {
     // collapses it to `TNum` at `ensure_entity`, not here (decode's only job is the wire type
     // string → Ty tag, same as every other arm).
     "count" => TCount
+    // DR-089 §2: type:"none" は第一級 — 値空間が空の型 (省略の明示綴り、同じタグに解決する)。
+    "none" => TNone
     other => raise DecodeSkip("value type '" + other + "'")
   }
 }
@@ -2422,13 +2449,14 @@ fn dec_or_leaf(
     None => raise DecodeSkip("or branch leaf missing 'name'")
   }
   check_reserved_name(name, "or branch leaf")
+  // DR-089 §2: type 省略 = none の糖衣 (or branch leaf も他の要素種と同じ規約)。
   let (ty, int_round_from_shadow) = match jf_str(o, "type") {
     Some(t) =>
       match shadows.get(t) {
         Some(sh) => (sh.base, sh.int_round)
         None => (dec_ty(t), RError)
       }
-    None => raise DecodeSkip("or branch leaf missing 'type'")
+    None => (TNone, RError)
   }
   pos(name, ty, int_round=int_round_from_shadow)
 }
@@ -2461,14 +2489,17 @@ fn dec_option(
       if has_key(o, "or") || has_key(o, "ref") || has_key(o, "values") {
         // DR-078 §1: a `ref` element's own consumption is replaced by the referenced template
         // (`elem_head`'s `Ref(r)` head, ty unused there) — same "type is moot" reasoning `or`
-        // already gets. `dec_positional` already defaults ty to TStr when absent for the same
-        // shape reason; this mirrors that on the option side. `values` gets the same default
-        // (DR-028 追記: values を持つ node は type フィールドなしで enum 型を兼ねる) — DESIGN §5.3's
-        // `values` shorthand is string-literal-only in this issue's scope (seq-branch values form
-        // not implemented), so the enum's own values are always strings regardless of this default.
+        // already gets. `values` gets the same default (DR-028 追記: values を持つ node は type
+        // フィールドなしで enum 型を兼ねる) — DESIGN §5.3's `values` shorthand is string-literal-
+        // only in this issue's scope (seq-branch values form not implemented), so the enum's own
+        // values are always strings regardless of this default.
         "string"
       } else {
-        raise DecodeSkip("option missing 'type'")
+        // DR-089 §2: type 省略 = none の糖衣 (or/ref/values いずれも無い場合)。旧実装は
+        // ここを DecodeSkip (type 必須) にしていたが、DR-089 で「無いものに勝手に値型をあてるのは
+        // 手抜き」(kawaz) として default-typing 案が明示的に不採用になったのと対称に、旧
+        // DecodeSkip も「無いものをエラー扱いする」誤りだった — 値空間が無いこと自体は正当な宣言。
+        "none"
       }
   }
   let name = match jf_str(o, "name") {
@@ -2653,6 +2684,10 @@ fn dec_positional(
     None => ()
   }
   // DR-061 §3: positional も type shadow を consultation (dec_option と同型)。
+  // DR-089 §2: type 省略 = none の糖衣 (旧実装は TStr を勝手にあてる default-typing だった —
+  // DR-089 の「採用しなかった案」が明示的に否定するパターン。`ref` 付きの場合はそもそも ty が
+  // 未使用 (elem_head の Ref(r) head、下の `dec_or_structural`/`positionals` 分岐同様) なので
+  // TNone に変えても無害)。
   let (ty, int_round_from_shadow, base_prefix_from_shadow) = match
     jf_str(o, "type") {
     Some(t) =>
@@ -2660,7 +2695,7 @@ fn dec_positional(
         Some(sh) => (sh.base, sh.int_round, sh.allow_base_prefix)
         None => (dec_ty(t), RError, false)
       }
-    None => (TStr, RError, false)
+    None => (TNone, RError, false)
   }
   let name = match jf_str(o, "name") {
     Some(s) => s
@@ -4074,6 +4109,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                     accum_cells(sc, df.ekmap),
                     [],
                     [],
+                    nones=none_cells(sc),
                   ),
                 )
                 // DR-073 §1: append `#claimants{...}` suffix only when the interpretation carries
@@ -4940,4 +4976,71 @@ test "dec_filter_chain: an object-form arg value containing U+E000 (retired in-b
   assert_eq(result[0].args[0], raw_arg)
   assert_eq(result[1].name, "trim")
   assert_eq(result[1].args.length(), 0)
+}
+
+///|
+/// 保証 (issue type-none-support, DR-089 §2/§3): JSON fixture 上で `type` を省略した option が
+/// none として decode され、消費 0 の純トリガとして発火・resolve を通り、シンプルモードの結果には
+/// キーが一切現れない (`result: {}`) — DR-051 §1/§4 の「値の無さはフィールド不在」と同型。
+/// effects にも現れない (team-lead 裁定 2026-07-11: 観測は ParserContext/explains 層の管掌、値
+/// 空間なしの set エントリを発明しない — 内部表現は `flag_bare_true_variant` 再利用の Set +
+/// VBool(true) placeholder のままだが、`proj_effects_ex` 側で none cell を除外する)。
+test "DR-089 end-to-end: an omitted-type option decodes to none, fires as a pure trigger, absent from result" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "sep", "long": true}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "sep-fires-pure-trigger",
+    #|      "argv": ["--sep"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "effects": [],
+    #|        "result": {}
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 1)
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// 対極: `type: "none"` を明示しても同じ挙動 (DR-089 §2「省略 = none の糖衣」の end-to-end 対称確認)。
+test "DR-089 end-to-end: an explicit type:none option behaves identically to omission" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "sep", "type": "none", "long": true}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "sep-fires-pure-trigger-explicit",
+    #|      "argv": ["--sep"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "effects": [],
+    #|        "result": {}
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 1)
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
 }

@@ -1929,3 +1929,197 @@ test "parse_definition: regex_match compile check also fires for value_filters a
     }
   }
 }
+
+// ── issue type-none-support (DR-089): type 省略 = 値空間が空の node。値空間 (type) と消費 (構造) は
+// 直交 (§1) — none は 0 トークンの純トリガにも repeat+filter の「食って捨てる」構造にもなれる。
+// committed 基準の制約 (conflicts/exclusive/requires トリガ側) には通常どおり参加するが、値充足を
+// 要求される requires 目的語には立てず定義時 definition-error (§4)。結果には現れない (§3)。 ────
+
+///|
+/// 保証: `type` を省略した「消費 0 の純トリガ」(DR-089 §2 canonical 例、`long:true` のみ) が
+/// committed 制約 (`conflicts_with`) の判定に通常どおり参加する — トリガとして機能することの固定。
+test "DR-089: an omitted-type (none) pure trigger participates in conflicts as a committed trigger" {
+  let a = { ..el("a", TFlag, long=LBool(true)), conflicts_with: ["b"] }
+  let b = el("b", TFlag, long=LList([":set"]))
+  let def : Definition = { ..empty_def(), options: [a, b] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, ["--a", "--b"], defs=Map([])) {
+    Failure(d) => {
+      let mut found = false
+      for e in d.errors {
+        if e.reason == "conflicts_with_violated" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail(
+        "expected Failure (conflicts enforced), got " + render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 保証: none 型セルが発火しても、シンプルモードの結果オブジェクトにキーが一切現れない (DR-089
+/// §3「値の結果には現れない」、DR-051 §1/§4 の「値の無さはフィールドの不在」と同じ posture)。
+test "DR-089: a fired none-typed pure trigger never appears in the result" {
+  let sep = el("sep", TNone, long=LBool(true))
+  let def : Definition = { ..empty_def(), options: [sep] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, ["--sep"], defs=Map([])) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(proj_result_export(sc, resolved, Map([])), "{}")
+        Err(_) => fail("expected Ok resolve")
+      }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証 (対極): none を明示 (`type:"none"`) しても消費 0 純トリガとして同じ挙動になる — 省略と
+/// 明示綴りが同じタグに解決すること (DR-089 §2「省略は none の糖衣」) の固定。
+test "DR-089: explicit type:none behaves identically to an omitted type" {
+  let sep = el("sep2", TNone, long=LBool(true))
+  let def : Definition = { ..empty_def(), options: [sep] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, ["--sep2"], defs=Map([])) {
+    Success(bs) => assert_eq(bs.length(), 1)
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証: none 型を持つ positional + repeat の「食って捨てる」構造 (DR-089 §2 の `{"type": "none",
+/// "repeat": {"min": 0}}` 例) が構造的に複数トークンを消費できる (消費は構造の関心、type とは直交
+/// という §1 の帰結の end-to-end 固定)。
+test "DR-089: a none-typed repeat positional structurally consumes multiple tokens (eat-and-discard)" {
+  let colon = pos(
+    "colon",
+    TNone,
+    repeat=Some({ min: 0, max: None, lazy_: false }),
+  )
+  let def : Definition = { ..empty_def(), positionals: [colon] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, ["x", "y"], defs=Map([])) {
+    Success(bs) => {
+      let mut n = 0
+      for b in bs {
+        if b.key == "colon" {
+          n = n + 1
+        }
+      }
+      assert_eq(n, 2)
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証: none を requires 目的語に宣言すると、値充足を要求される席に none は立てないため定義時
+/// definition-error になる (DR-089 §4、DR-083 §5 と同型の静的既知チェック)。
+test "DR-089: a none-typed requires target is a definition-error" {
+  let a = { ..el("a", TFlag, long=LList([":set"])), requires: ["c"] }
+  let c = el("c", TNone, long=LBool(true))
+  let def : Definition = { ..empty_def(), options: [a, c] }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => abort("expected Err (none requires target is a definition-error)")
+    Err(errs) => {
+      let mut found = false
+      for e in errs {
+        if e.element == "a" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+  }
+}
+
+///|
+/// 保証 (team-lead 監査 2026-07-11): none には値空間が無いので、値源を宣言する
+/// `env`/`config_key`/`inherit` は静的に既知の不成立構成であり definition-error になる (DR-089
+/// §4、DR-083 §5 と同型)。3 種の値源宣言をそれぞれ個別の none 要素に付けて固定する。
+test "DR-089: a none-typed element declaring env/config_key/inherit is a definition-error" {
+  let with_env = el("has_env", TNone, long=LBool(true), env=["X"])
+  let with_config_key = {
+    ..el("has_config_key", TNone, long=LBool(true)),
+    config_key: Some(["k"]),
+  }
+  let with_inherit = {
+    ..el("has_inherit", TNone, long=LBool(true)),
+    is_inherit: true,
+  }
+  let def : Definition = {
+    ..empty_def(),
+    options: [with_env, with_config_key, with_inherit],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) =>
+      abort(
+        "expected Err (none element with env/config_key/inherit is a definition-error)",
+      )
+    Err(errs) => {
+      let mut has_env_flagged = false
+      let mut has_config_key_flagged = false
+      let mut has_inherit_flagged = false
+      for e in errs {
+        if e.element == "has_env" {
+          has_env_flagged = true
+        }
+        if e.element == "has_config_key" {
+          has_config_key_flagged = true
+        }
+        if e.element == "has_inherit" {
+          has_inherit_flagged = true
+        }
+      }
+      assert_true(has_env_flagged)
+      assert_true(has_config_key_flagged)
+      assert_true(has_inherit_flagged)
+    }
+  }
+}
+
+///|
+/// 対極: 値源を一切宣言しない none 要素 (純トリガ) は影響を受けない — このチェックが none 全般を
+/// 誤って拒否しないことの固定 (上の definition-error テストの反例)。
+test "DR-089 対極: a none-typed element with no value-source declaration is not a definition-error" {
+  let sep = el("sep3", TNone, long=LBool(true))
+  let def : Definition = { ..empty_def(), options: [sep] }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => ()
+    Err(errs) => {
+      let mut msg = ""
+      for e in errs {
+        msg = msg + e.element + ":" + e.hint + " "
+      }
+      abort("expected Ok, got Err: " + msg)
+    }
+  }
+}
+
+///|
+/// 対極: 既存の明示 type (TFlag) を持つ要素は type-none 対応 (decoder の省略受理、KTop/resolve の
+/// none 判定分岐) を追加しても一切影響を受けない — 純粋な追加機能であることの固定。
+test "DR-089 対極: a pre-existing explicit-type element is unaffected by none support" {
+  let x = el("x", TFlag, long=LList([":set"]))
+  let def : Definition = { ..empty_def(), options: [x] }
+  let sc = ok_scope(def, all_installers())
+  let root = ScopeNode(sc)
+  match parse(root, ["--x"], defs=Map([])) {
+    Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(proj_result_export(sc, resolved, Map([])), "{x=true}")
+        Err(_) => fail("expected Ok resolve")
+      }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}

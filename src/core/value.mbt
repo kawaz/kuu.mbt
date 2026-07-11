@@ -1305,6 +1305,17 @@ pub fn config_to_value(
           "config bool for a number element (no number↔bool coercion)",
         ),
       )
+    // DR-089: none has no value space at all, so a config seat is a structural mismatch regardless
+    // of the JSON scalar kind supplied (same family as the CArr/CObj structural-mismatch arms
+    // below, just against a scalarless element instead of a non-scalar JSON value).
+    (CStr(_), TNone) | (CNum(_), TNone) | (CBool(_), TNone) =>
+      Err(
+        (
+          KParse,
+          "config_type_mismatch",
+          "config value for a none element (no value space)",
+        ),
+      )
     (CBool(_), TInt) =>
       Err(
         (

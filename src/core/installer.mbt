@@ -226,6 +226,10 @@ fn dsl_operand_value(ty : Ty, s : String) -> Value {
         None => VBool(s == "true" || s == "1")
       }
     TStr => VStr(s)
+    // DR-089: none has no value space — this defensive arm is not a live path (a none-typed
+    // element carries no value-bearing DSL operand to reach here), same permissive VStr fallback
+    // as the rest of this function.
+    TNone => VStr(s)
   }
 }
 
@@ -360,6 +364,13 @@ fn resolve_long(
         ([], [flag_bare_true_variant(name)])
       } else if ty == TCount {
         ([], [count_increment_variant(name)])
+      } else if ty == TNone {
+        // DR-089 §2 の「消費 0 の純トリガ」canonical 例 (`{"name": "sep", "long": true}`) —
+        // TFlag/TCount と同じ「main entry を持たず bare-true variant だけ」の 3 例目。none には
+        // 運ぶ値が無いので `flag_bare_true_variant` のプレースホルダ (`Set VBool(true)`) をそのまま
+        // 再利用してよい — この Binding は `build_result` 側で `NoneCell` により結果から除外される
+        // (`resolve.mbt` 参照)、committed 参加 (conflicts/exclusive/requires トリガ側) だけが生きる。
+        ([], [flag_bare_true_variant(name)])
       } else {
         ([kebab(name)], [])
       }
@@ -3013,6 +3024,129 @@ fn collect_scalar_array_default(
 }
 
 ///|
+/// DR-089 §4: none has no value space, so it cannot serve as a `requires`/`value_requires`
+/// target (値充足を要求される席には立てない) — statically known (the target's type is a definition-
+/// time fact), so this is a definition-error rather than a runtime surprise (DR-083 §5 の筋、同型の
+/// 静的既知チェック). Lookup is scoped to the SAME declaring scope's siblings (DR-055 §1 lexical
+/// scope — constraints don't cross command boundaries), mirroring `eval.mbt`'s `eval_constraints`
+/// scope-exact matching. A target name that resolves to no sibling element at all is left to the
+/// existing "unknown requires target" surface (out of this check's scope — this check only fires
+/// when the target DOES resolve, to a none-typed element).
+fn collect_none_requires_target(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  fn find_ty(name : String) -> Ty? {
+    for e in def.options {
+      if e.name == name {
+        return Some(e.ty)
+      }
+    }
+    for e in def.positionals {
+      if e.name == name {
+        return Some(e.ty)
+      }
+    }
+    None
+  }
+
+  fn flag(elem_name : String, target : String) -> Unit {
+    match find_ty(target) {
+      Some(TNone) =>
+        out.push(
+          def_err(
+            elem_name,
+            DInvalidRange,
+            "requires target '\{target}' has type none (no value space, cannot be required — DR-089 §4)",
+            "give '\{target}' a real value type, or remove it from '\{elem_name}''s requires",
+          ),
+        )
+      _ => ()
+    }
+  }
+
+  fn check(e : ElemDef) -> Unit {
+    for t in e.requires {
+      flag(e.name, t)
+    }
+    for vr in e.value_requires {
+      for t in vr.2 {
+        flag(e.name, t)
+      }
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_none_requires_target(c.body, out)
+  }
+}
+
+///|
+/// DR-089 §4 (team-lead 監査 2026-07-11、`collect_none_requires_target` と同型の collector):
+/// none には値空間が無いので、値源を宣言する `env`/`config_key`/`inherit` は静的に既知の不成立構成
+/// — 「静的に既知は定義時に倒す」(DR-083 §5) の筋で definition-error にする。実行時側
+/// (`env_value`/`config_to_value` の TNone arm、resolve.mbt/value.mbt) は防御 (このチェックが
+/// 先に落とすので unreachable 想定) として残す。config_key の明示宣言のみを対象とし、
+/// `config_seat` (config_file 要素の存在で自動的に全 value cell へ同型付与される席、DR-050 §3)
+/// はここでは対象外 — 著者が明示的に書いた宣言だけを検査する (config_seat は個々の要素の意図では
+/// なくスコープ全体の自動帰結なので、同じ「著者の誤り」カテゴリに属さない)。
+fn collect_none_value_source_decl(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  fn check(e : ElemDef) -> Unit {
+    if e.ty == TNone {
+      if e.env.length() > 0 {
+        out.push(
+          def_err(
+            e.name,
+            DInvalidRange,
+            "'\{e.name}' is type none (no value space) but declares env — a none element cannot have a value source (DR-089 §4)",
+            "remove 'env' from '\{e.name}', or give it a real value type",
+          ),
+        )
+      }
+      if e.config_key is Some(_) {
+        out.push(
+          def_err(
+            e.name,
+            DInvalidRange,
+            "'\{e.name}' is type none (no value space) but declares config_key — a none element cannot have a value source (DR-089 §4)",
+            "remove 'config_key' from '\{e.name}', or give it a real value type",
+          ),
+        )
+      }
+      if e.is_inherit {
+        out.push(
+          def_err(
+            e.name,
+            DInvalidRange,
+            "'\{e.name}' is type none (no value space) but declares inherit — a none element cannot have a value source (DR-089 §4)",
+            "remove 'inherit' from '\{e.name}', or give it a real value type",
+          ),
+        )
+      }
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_none_value_source_decl(c.body, out)
+  }
+}
+
+///|
 /// DR-009 段 7 (issue accum-post-filters-stage7): an accum (multiple/repeat/separator) element's
 /// `cell_filters` runs Acc→Acc over the WHOLE accumulated array (`filters.mbt`'s
 /// `ArrayFilterDescriptor` registry, e.g. `unique`) — a DIFFERENT vocabulary from a scalar
@@ -3286,6 +3420,8 @@ pub fn parse_definition(
   collect_unsupported_accum_update(def, errs) // issue accum-fold-update-default-ops (multiple + update variant)
   collect_unsupported_count_multiple(def, errs) // codex 指摘 High 2 (count 型 × multiple)
   collect_scalar_array_default(def, errs) // DR-083 §5 (非 accum 要素への配列 default)
+  collect_none_requires_target(def, errs) // DR-089 §4 (none を requires 目的語にした宣言)
+  collect_none_value_source_decl(def, errs) // DR-089 §4 (none への env/config_key/inherit 宣言)
   collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 (accum cell_filters は配列語彙のみ)
   collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)
   collect_ref_merge_accum(def, errs) // DR-084 §3 (merge accumulator × ref)

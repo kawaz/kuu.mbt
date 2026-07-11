@@ -209,6 +209,10 @@ fn run_eq_split(
           }
         TFlag => return [] // unreachable (guarded above); kept for exhaustiveness
         TCount => return [] // unreachable (guarded above); kept for exhaustiveness
+        // DR-089: none has no value space, so it takes no eq-split value form either — same
+        // guarded-unreachable shape as TFlag/TCount (installer.mbt's `inst_long` never registers
+        // an eq-split LongEntry for a none-typed element).
+        TNone => return []
         TBool =>
           // DR-074 §3: a value-typed bool DOES take an eq-split value (`--enabled=true`), unlike a
           // presence-only flag firing — the CLI vocab is canonical `parse_bool` (true/false/1/0/"",
@@ -329,9 +333,10 @@ fn short_val(
           Some(d) => Ok([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))])
           None => Err(pe_parse(e.name, filtered, pos))
         }
-      // unreachable defensively: walk_short's TFlag/TBool/TCount arms never call short_val (no
-      // in-cluster/space-form VALUE attachment for those kinds).
-      TFlag | TBool | TCount => Err(pe_parse(e.name, filtered, pos))
+      // unreachable defensively: walk_short's TFlag/TBool/TCount/TNone arms never call short_val
+      // (no in-cluster/space-form VALUE attachment for those kinds — DR-089: none has no value
+      // space at all).
+      TFlag | TBool | TCount | TNone => Err(pe_parse(e.name, filtered, pos))
     }
   }
 }
@@ -364,7 +369,11 @@ fn walk_short(
       // value binding (the value is unchanged; only a warning is added). `dm` is [] for a normal entry.
       let dm : Array[Binding] = if e.depr { [depr_marker(e.name)] } else { [] }
       match e.kind {
-        TFlag | TBool =>
+        // DR-089: a none short cluster char is presence-only too — none carries no value space so
+        // it has nothing to attach in-cluster/space-form (the "食って捨てる" repeat+filter shape
+        // DR-089 §2 also allows operates at the value-slot/positional-consumption level, not
+        // short-cluster attachment).
+        TFlag | TBool | TNone =>
           // a bool short cluster char is presence-only, same as a plain flag (DR-074 §3 canonical
           // bool has no in-cluster/space-form `=value` short spelling, only the long eq-split form).
           walk_short(

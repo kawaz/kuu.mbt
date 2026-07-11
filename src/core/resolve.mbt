@@ -396,20 +396,23 @@ pub fn build_result(
   cells : Array[AccumCell],
   defaults : Array[DefaultCell],
   path : Array[String],
+  nones? : Array[NoneCell] = [],
 ) -> RVal {
   // ARRAY: a "[]" sentinel at this level => build one element per "#k" child. Elements keep the
   // array's path (an indexed repeat element is not a named result-scope segment cells key on).
   if has_direct_key(binds, "[]") {
     let elems : Array[RVal] = []
     for idx in ordered_indices(binds) {
-      elems.push(build_result(sub_under(binds, idx), cells, defaults, path))
+      elems.push(
+        build_result(sub_under(binds, idx), cells, defaults, path, nones~),
+      )
     }
     return RArr(elems)
   }
   // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
   // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
   // boundary for a ref-template repeat cell — build one row (recursive build_result over that
-  // row's own flat leaf bindings) per "#row"-delimited run. "#fire" (installer.mbt's `inst_long`,
+  // row's own flat leaf bindings) per "#row"-delimited run。"#fire" (installer.mbt's `inst_long`,
   // option repeat only) marks the start of ONE firing's contribution; multiple 無しの再発火は
   // セル丸ごと上書きなので (DR-034 の axis 分離、last-wins-repeat-rows.json), only the bindings
   // AFTER THE LAST "#fire" survive — with no "#fire" at all (a positional fires its repeat
@@ -417,17 +420,28 @@ pub fn build_result(
   if has_direct_key(binds, "#row") {
     let rows : Array[RVal] = []
     for row in row_groups(binds) {
-      rows.push(build_result(row, cells, defaults, path))
+      rows.push(build_result(row, cells, defaults, path, nones~))
     }
     return RArr(rows)
   }
   // gather direct named keys (skip sentinels) and nested (named) scopes
+  // DR-089 §3: a none-typed cell's value never appears in the result (値の結果には現れない) — same
+  // exclusion mechanism as sentinel keys, keyed on (path, name) since `NoneCell` carries the same
+  // per-scope shape `AccumCell`/`DefaultCell` do.
   let named : Array[String] = []
   for b in binds {
     if b.scope.length() == 0 &&
       !is_sentinel(b.key) &&
       !str_contains(named, b.key) {
-      named.push(b.key)
+      let mut excluded = false
+      for nc in nones {
+        if path_eq(nc.path, path) && nc.name == b.key {
+          excluded = true
+        }
+      }
+      if !excluded {
+        named.push(b.key)
+      }
     }
   }
   let segs : Array[String] = []
@@ -571,7 +585,9 @@ pub fn build_result(
       for chunk in fire_groups(seg_binds) {
         let rows : Array[RVal] = []
         for row in row_groups(chunk) {
-          rows.push(build_result(row, cells, defaults, path_push(path, seg)))
+          rows.push(
+            build_result(row, cells, defaults, path_push(path, seg), nones~),
+          )
         }
         per_fire.push(RArr(rows))
       }
@@ -585,6 +601,7 @@ pub fn build_result(
             cells,
             defaults,
             path_push(path, seg),
+            nones~,
           ),
         ),
       )
@@ -924,6 +941,44 @@ fn collect_defaults(
 }
 
 ///|
+/// DR-089 §3: a none-typed cell's committed marker (`is_committed`/committed 基準の制約は通常どおり
+/// 参加する) still rides the same `Array[Binding]` channel `build_result` renders from — there is
+/// no separate ParserContext-shaped channel wired up in this layer yet. `NoneCell` names the
+/// (path, name) pairs `build_result` must exclude from `named` so a none cell's presence never
+/// surfaces in the result object (§3「値の結果には現れない」), mirroring `AccumCell`/`DefaultCell`'s
+/// own per-scope shape.
+pub(all) struct NoneCell {
+  path : Array[String]
+  name : String
+} derive(Eq, Debug)
+
+///|
+pub fn none_cells(sc : Scope) -> Array[NoneCell] {
+  let out : Array[NoneCell] = []
+  collect_nones(sc, [], out)
+  out
+}
+
+///|
+fn collect_nones(
+  sc : Scope,
+  path : Array[String],
+  out : Array[NoneCell],
+) -> Unit {
+  for e in sc.entities {
+    if e.ty == TNone {
+      out.push({ path, name: e.name })
+    }
+  }
+  for g in sc.greedy {
+    match g {
+      CmdSat(name, child) => collect_nones(child, path_push(path, name), out)
+      _ => ()
+    }
+  }
+}
+
+///|
 /// The `unwrap_single` collector (DR-034 縮退ケース, opt-in scalar): unwrap a length-1 array to
 /// its element, recursively. This is how an app gets a SCALAR from a repeat/optional cell without
 /// the uniform-array default folding it (`optional: true` yields `[x]`; unwrap_single gives `x`).
@@ -1064,12 +1119,16 @@ pub fn build_interpretations(
   ek : Map[String, ExportKey],
   cells : Array[AccumCell],
   defaults : Array[DefaultCell],
+  nones? : Array[NoneCell] = [],
 ) -> Array[Interpretation] {
   let collisions = find_export_collisions(binds, ek)
   if collisions.length() == 0 {
     let mapped = apply_export_keys(binds, ek)
     return [
-      { result: build_result(mapped, cells, defaults, []), claimants: [] },
+      {
+        result: build_result(mapped, cells, defaults, [], nones~),
+        claimants: [],
+      },
     ]
   }
   let out : Array[Interpretation] = []
@@ -1098,7 +1157,10 @@ pub fn build_interpretations(
       claimants.push((collisions[gi].key, combo[gi]))
       gi = gi + 1
     }
-    out.push({ result: build_result(mapped, cells, defaults, []), claimants })
+    out.push({
+      result: build_result(mapped, cells, defaults, [], nones~),
+      claimants,
+    })
   }
   out
 }
@@ -1737,6 +1799,17 @@ fn env_value(
             ),
           )
       }
+    // DR-089: none has no value space, so an env seat on a none-typed entity is a structural
+    // mismatch (same family as `config_to_value`'s TNone arms in value.mbt — no defined DR-089
+    // seat semantics, consistent error treatment across the value-source ladder's runtime-input
+    // parsers).
+    TNone =>
+      Err(
+        ladder_err(
+          element, at_pos, "config_type_mismatch", "env value for a none element (no value space)",
+          epath,
+        ),
+      )
   }
 }
 

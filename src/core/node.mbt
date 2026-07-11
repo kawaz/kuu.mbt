@@ -77,6 +77,14 @@ pub(all) enum Ty {
   /// tag BEFORE collapsing it to `TNum` — once lowered there is no other channel to tell a count
   /// cell apart from an ordinary number cell (installer.mbt `normalize_option`).
   TCount
+  /// DR-089: 値空間が空の型 — type 省略の糖衣先 (§2「type 省略 = none」)。type が規定するのは値
+  /// 空間だけで消費は構造 (repeat/値スロット/exact/filter の Accept 報告) の関心という直交 (§1) の
+  /// 帰結として、none は「発火しても値を運ばない」ことだけを意味し、消費数そのものは制約しない —
+  /// 消費 0 の純トリガ (long のみ) にも、repeat+filter で「食って捨てる」構造にも使える。値充足を
+  /// 要求する席 (requires の目的語) には立てない (静的 definition-error、§4)。結果には現れない
+  /// (フィールド非掲載、DR-051 §1/§4) — 発火の観測は ParserContext/explains 層の管掌で、この型は
+  /// 関与しない。
+  TNone
 } derive(Eq, Debug)
 
 ///|
