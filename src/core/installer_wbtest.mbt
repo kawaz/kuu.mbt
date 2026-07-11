@@ -2373,6 +2373,153 @@ test "DR-089 対極: a pre-existing explicit-type element is unaffected by none 
   }
 }
 
+// ── DESIGN §7.2 / DR-091 §3 (issue scope-config-object-gap 静的矛盾チェックの definition-error 化):
+// `require_equal_separator: true` × `allow_equal_separator: false` は installer 層
+// `collect_eq_separator_conflict` (installer.mbt) が element 単位で検出する。旧実装は decode 層
+// (`validate_scope_config`) が scope config 単位で `DecodeSkip` を raise していた
+// (query:definition_error fixture で element 別に pin できない) — 移設後は他の definition-error
+// (DR-089 の none 系) と同じ `parse_definition` の Err 経路になる。
+
+///|
+/// 保証: 要素単位 config override 由来 (この要素だけが独自に require:true/allow:false を持つ) の
+/// 場合、DInvalidRange は当該要素だけに付き、同じスコープの正常な兄弟要素 ("other") には波及しない
+/// — スコープ由来の全列挙 (下のテスト) との対比で「要素単位の帰属」を固定する。
+test "parse_definition: require_equal_separator:true × allow_equal_separator:false on a long-having element is DInvalidRange (DESIGN §7.2 / DR-091 §3, element override)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "target",
+        TStr,
+        long=LList([":set"]),
+        require_equal_separator=true,
+        allow_equal_separator=false,
+      ),
+      el("other", TStr, long=LList([":set"])), // 既定 (require:false/allow:true) の正常な兄弟要素
+    ],
+  }
+  match parse_definition(def, [LongInst]) {
+    Ok(_) =>
+      abort(
+        "expected Err (require_equal_separator:true × allow_equal_separator:false on 'target')",
+      )
+    Err(errs) => {
+      let mut has_target = false
+      let mut has_other = false
+      for e in errs {
+        if e.kind == DInvalidRange && e.element == "target" {
+          has_target = true
+        }
+        if e.kind == DInvalidRange && e.element == "other" {
+          has_other = true
+        }
+      }
+      assert_true(has_target)
+      assert_false(has_other)
+    }
+  }
+}
+
+///|
+/// 保証: スコープ config 由来 (= 複数要素が同じ矛盾した値を継承/焼き込み済み) の場合、long を持つ
+/// 全要素に独立して DInvalidRange が付く (DR-054 §4 全列挙、打ち切りなし) — 「1 個検出したら終わり」
+/// ではないことを固定する。decode 層の scope-config マージ自体はこの層の対象外 (`el()` へ直接
+/// 焼き込むことで「マージ済みの結果」を模擬する — installer 層はマージ由来か要素単独指定かを区別
+/// しない、`collect_eq_separator_conflict` の doc comment 参照)。
+test "parse_definition: scope-wide config conflict flags every long-having element independently (全列挙, DR-054 §4)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "a",
+        TStr,
+        long=LList([":set"]),
+        require_equal_separator=true,
+        allow_equal_separator=false,
+      ),
+      el(
+        "b",
+        TStr,
+        long=LList([":set"]),
+        require_equal_separator=true,
+        allow_equal_separator=false,
+      ),
+    ],
+  }
+  match parse_definition(def, [LongInst]) {
+    Ok(_) => abort("expected Err (both 'a' and 'b' conflict)")
+    Err(errs) => {
+      let mut count = 0
+      for e in errs {
+        if e.kind == DInvalidRange {
+          count = count + 1
+        }
+      }
+      assert_eq(count, 2)
+    }
+  }
+}
+
+///|
+/// 対極: `allow_equal_separator: true` (既定) との組合せでは SPACE-FORM/EQ-FORM のどちらかが必ず
+/// 生きるので definition-error にならない — 上 2 テストの反例 (矛盾条件そのものが誤検出でないこと
+/// の固定)。
+test "parse_definition: require_equal_separator:true with allow_equal_separator:true is NOT a definition-error (対極)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "target",
+        TStr,
+        long=LList([":set"]),
+        require_equal_separator=true,
+        allow_equal_separator=true,
+      ),
+    ],
+  }
+  match parse_definition(def, [LongInst]) {
+    Ok(_) => ()
+    Err(errs) => {
+      let mut msg = ""
+      for e in errs {
+        msg = msg + e.element + ":" + e.hint + " "
+      }
+      abort("expected Ok, got Err: " + msg)
+    }
+  }
+}
+
+///|
+/// 対極 (境界条件): long エントリを持たない要素 (`long` 既定 `LList([])` — main entry も variant
+/// も無い) は、たとえ require:true/allow:false を焼き込まれていても対象外 — SPACE-FORM/EQ-FORM の
+/// 区別自体が「main entry を持つ要素」にしか意味を持たない (`long_of` が空を返す要素は `inst_long`
+/// の main entry ループを素通りする、`collect_eq_separator_conflict` の doc comment 参照)。
+test "parse_definition: require_equal_separator:true × allow_equal_separator:false on a long-less element is NOT flagged (long_of 空、対象外)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "target",
+        TStr,
+        require_equal_separator=true,
+        allow_equal_separator=false,
+      ),
+    ],
+  }
+  match parse_definition(def, [LongInst]) {
+    Ok(_) => ()
+    Err(errs) => {
+      let mut has_eqsep = false
+      for e in errs {
+        if e.kind == DInvalidRange && e.element == "target" {
+          has_eqsep = true
+        }
+      }
+      assert_false(has_eqsep)
+    }
+  }
+}
+
 // ── issue dr-088-positional-default-verification: 素の positional (optional/repeat 無し) +
 // default 宣言は、DR-088 §1「宣言された値源はデフォルトの存在」により「トークンが無くても経路完全
 // → 遅延解決で default 実体化」となる。旧実装は default の宣言を無視し、トークン 0 個を常に

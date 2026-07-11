@@ -3378,6 +3378,56 @@ fn collect_none_value_source_decl(
 }
 
 ///|
+/// DESIGN §7.2 / DR-091 §3 (issue scope-config-object-gap 静的矛盾チェックの definition-error 化):
+/// `require_equal_separator: true` と `allow_equal_separator: false` を同じ要素が同時に持つと、
+/// `inst_long` はこの要素の SPACE-FORM main entry (`require_equal_separator` が withhold) も
+/// EQ-FORM entry (`allow_equal_separator` が withhold) も配線しない — long 語彙を持つのに一切発火
+/// できない要素になる (`inst_long` の "DR-091 §3" コメント参照)。この組合せは decode 時点で静的に
+/// 既知 (両フィールドとも `ElemDef` に焼き込み済み、実行時入力に依存しない) — 「静的に既知は定義時に
+/// 倒す」姿勢 (DR-083 §5、`collect_zero_progress` と同じ「到達不能な宣言を静的に拒否する」筋) で
+/// definition-error にする。
+///
+/// 旧実装は decode 層 (`dec_definition` が呼ぶ `validate_scope_config`) がスコープ config 単位で
+/// このチェックを行い `DecodeSkip` を raise していた — query:definition_error の fixture では
+/// decode 不能 = skip 扱いになり、errors 全列挙 (DR-054 §4) で element 別に pin できなかった。
+/// ここでは `collect_none_value_source_decl` 等と同じ「要素ごとに焼き込み済みフィールドを直接見る」
+/// 配置に移し、`parse_definition` の Err 経路 (installer 層、`normalize_surface` 済みの def を走る)
+/// で element 単位に報告する。
+///
+/// `long_of(e)` が空 (= long エントリを持たない要素、`opt`/`pos` のデフォルト `LList([])` および
+/// positional は常に該当) は対象外 — この2フィールドは long 語彙専用 (`long_prefix`/`short_prefix`/
+/// `allow_equal_separator`/`short_combine`/`require_equal_separator` の doc comment 参照) で、
+/// long エントリの無い要素には焼き込まれていても実害が無い。この関数は `normalize_surface` 後
+/// (`parse_definition` 内、`e.long` が `LList` に確定済み) に呼ぶ前提 — decode 直後の生 `LBool` の
+/// ままでは `long_of` が誤って空を返す (`normalize_option` の doc comment 参照)。
+///
+/// スコープ config 由来 (`config` オブジェクトでの指定) なら、そのスコープの long 持ち全要素に同じ
+/// 値が焼き込まれるので全列挙で複数エラーが並ぶ (DR-054 §4)。要素単位 config override 由来なら、
+/// 上書きした当該要素だけがエラーになる。
+fn collect_eq_separator_conflict(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  for e in def.options {
+    if e.require_equal_separator &&
+      !e.allow_equal_separator &&
+      long_of(e).length() > 0 {
+      out.push(
+        def_err(
+          e.name,
+          DInvalidRange,
+          "'\{e.name}' has require_equal_separator: true with allow_equal_separator: false — both the SPACE-FORM and EQ-FORM entry points are withheld, this long option can never fire",
+          "set allow_equal_separator: true, or set require_equal_separator: false",
+        ),
+      )
+    }
+  }
+  for c in def.commands {
+    collect_eq_separator_conflict(c.body, out)
+  }
+}
+
+///|
 /// DR-009 段 7 (issue accum-post-filters-stage7): an accum (multiple/repeat/separator) element's
 /// `cell_filters` runs Acc→Acc over the WHOLE accumulated array (`filters.mbt`'s
 /// `ArrayFilterDescriptor` registry, e.g. `unique`) — a DIFFERENT vocabulary from a scalar
@@ -3686,6 +3736,7 @@ pub fn parse_definition(
   collect_unsupported_count_multiple(def, errs) // codex 指摘 High 2 (count 型 × multiple)
   collect_scalar_array_default(def, errs) // DR-083 §5 (非 accum 要素への配列 default)
   collect_none_value_source_decl(def, errs) // DR-089 §4 (none への env/config_key/inherit 宣言)
+  collect_eq_separator_conflict(def, errs) // DESIGN §7.2 / DR-091 §3 (require_equal_separator:true × allow_equal_separator:false)
   collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 (accum cell_filters は配列語彙のみ)
   collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)
   collect_invalid_dd_pattern(def, errs) // DR-090 §2 (dd match pattern compile 失敗)

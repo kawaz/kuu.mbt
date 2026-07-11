@@ -3019,15 +3019,19 @@ fn dec_scope_config(
 }
 
 ///|
-/// DR-091 §3 + issue scope-config-object-gap 自然な帰結の 2 チェックを 1 箇所に集約 (codex 節目
-/// レビュー Major 1 監査時点で発見: 元々 `dec_definition` の SCOPE レベルにだけインライン展開され
-/// ていた — 要素単位 config override (DR-049 §4「その要素の config で env_prefix:"" を上書きする」
-/// で明示される、DESIGN §7.2「子要素」は command だけでなく option/positional も含む) を追加する
-/// 以上、同じ2つの不整合はスコープ単位の resolved config だけでなく、要素単位で resolved した
-/// config でも起こりうる (例: 要素が独自に `long_prefix:""` を上書きしつつ `require_equal_
-/// separator` を明示しない場合、親から継承した値が false のままだと同じ「空 prefix が素 operand と
-/// 衝突する」問題が要素単位で再現する) — checker を関数化して両呼び出し点 (スコープ解決直後・要素
-/// ごとのマージ直後) から同一ロジックで検証する。
+/// DR-091 §3 自然な帰結チェックを 1 箇所に集約 (codex 節目レビュー Major 1 監査時点で発見: 元々
+/// `dec_definition` の SCOPE レベルにだけインライン展開されていた — 要素単位 config override
+/// (DR-049 §4「その要素の config で env_prefix:"" を上書きする」で明示される、DESIGN §7.2「子要素」
+/// は command だけでなく option/positional も含む) を追加する以上、同じ不整合はスコープ単位の
+/// resolved config だけでなく、要素単位で resolved した config でも起こりうる (例: 要素が独自に
+/// `long_prefix:""` を上書きしつつ `require_equal_separator` を明示しない場合、親から継承した値が
+/// false のままだと同じ「空 prefix が素 operand と衝突する」問題が要素単位で再現する) — checker を
+/// 関数化して両呼び出し点 (スコープ解決直後・要素ごとのマージ直後) から同一ロジックで検証する。
+///
+/// `require_equal_separator: true` × `allow_equal_separator: false` の矛盾チェックは、ここには
+/// 無い — installer 層 `collect_eq_separator_conflict` (installer.mbt) へ移設済み (DESIGN §7.2
+/// が definition-error と規範化、decode 層の `DecodeSkip` では query:definition_error fixture で
+/// element 別に pin できないため — `collect_eq_separator_conflict` の doc comment 参照)。
 fn validate_scope_config(cfg : ScopeConfig) -> Unit raise DecodeSkip {
   // DR-091 §3 "単独の空 prefix は未定義動作のまま": `long_prefix: ""` は
   // `require_equal_separator: true` との併用時のみ合法 — 空 prefix 単独ならこの scope の
@@ -3037,16 +3041,6 @@ fn validate_scope_config(cfg : ScopeConfig) -> Unit raise DecodeSkip {
   if cfg.long_prefix == "" && !cfg.require_equal_separator {
     raise DecodeSkip(
       "long_prefix: \"\" requires require_equal_separator: true (DR-091 §3)",
-    )
-  }
-  // 自然な帰結 (spec の明示規定ではなく、上2フィールドの組合せが構造的に導く帰結 — DR-043
-  // `collect_zero_progress` と同じ「到達不能な宣言を静的に拒否する」姿勢): この scope の全 long
-  // option が SPACE-FORM (`require_equal_separator:true` が withhold) と EQ-FORM (
-  // `allow_equal_separator:false` が withhold) の両方を失うと、long 語彙を持つ要素が一切発火できない
-  // (`inst_long` の "DR-091 §3" コメント参照 — 両方 withhold されると trigger の入口が丸ごと消える)。
-  if cfg.require_equal_separator && !cfg.allow_equal_separator {
-    raise DecodeSkip(
-      "require_equal_separator: true with allow_equal_separator: false leaves every long option with no reachable entry point",
     )
   }
 }
@@ -5702,19 +5696,28 @@ test "dec_definition: auto_env also derives env for positionals (値セル持ち
 }
 
 ///|
-/// 保証 (自然な帰結 — 上2フィールドの組合せが構造的に導く到達不能宣言、DR-043
-/// `collect_zero_progress` と同じ姿勢): `require_equal_separator: true` (space form withhold) と
-/// `allow_equal_separator: false` (eq form withhold) を同時に指定すると、このスコープの全 long
-/// option が入口を一切失うため decode 時点で reject する。
-test "dec_definition: require_equal_separator:true + allow_equal_separator:false is a decode-time reject (no reachable entry point)" {
+/// 保証 (移設後 — DESIGN §7.2 が definition-error と規範化、installer.mbt
+/// `collect_eq_separator_conflict`): `require_equal_separator: true` (space form withhold) と
+/// `allow_equal_separator: false` (eq form withhold) の組合せは、もはや decode-time reject では
+/// ない — decode 自体は成功し、両フィールドがそのまま `options[0]` へ焼き込まれる。旧実装は
+/// decode 層 (`validate_scope_config`) が scope config 単位で `DecodeSkip` を raise していたが、
+/// query:definition_error fixture では decode 不能 = skip 扱いになり element 別に pin できない
+/// ため、element 単位で報告できる installer 層 (`parse_definition` の Err 経路、DR-054 §4 全列挙)
+/// へ矛盾検出そのものを移設した。矛盾が実際に definition-error として検出されることの固定は
+/// installer_wbtest.mbt の "parse_definition: require_equal_separator:true ×
+/// allow_equal_separator:false ..." 系テスト側で行う。
+test "dec_definition: require_equal_separator:true + allow_equal_separator:false decodes successfully (矛盾検出は installer 層 collect_eq_separator_conflict へ移設)" {
   let src =
     #|{"options":[{"name":"if","type":"string","long":true}],"config":{"require_equal_separator":true,"allow_equal_separator":false}}
   let o = match @json.parse(src).j_obj() {
     Some(x) => x
     None => abort("test src is not an object")
   }
-  let _ = dec_definition(o) catch { DecodeSkip(_) => return }
-  fail("expected DecodeSkip, but dec_definition succeeded")
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.options[0].require_equal_separator, true)
+  assert_eq(def.options[0].allow_equal_separator, false)
 }
 
 ///|
