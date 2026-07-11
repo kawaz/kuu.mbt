@@ -28,20 +28,28 @@ pub(all) enum FilterSignature {
 
 ///|
 /// One filters-registry entry (DR-010 "filters" registry区分 + DR-061 descriptor 概念 applied to
-/// filters, not just installers — signature is the descriptor axis DR-077 §2 needs; `reasons` is
-/// deliberately NOT a separate declared list here, see the note on `apply_filter_chain`'s Err
-/// arm). `run` is genuinely a closure (kuu.mbt is the single MoonBit reference host — DR-010's
-/// wire-serializable `{name, config}` factory form is a multi-host concern this reference impl
-/// does not need to round-trip through JSON) — `FilterDescriptor` therefore has no `derive(Eq)`
-/// (closures aren't comparable); registry lookup is by `name` (String), never by descriptor
-/// equality.
+/// filters, not just installers — signature is the descriptor axis DR-077 §2 needs). `reasons` is
+/// this descriptor's declared failure-mode vocabulary (DR-095 §3's per-filter table; spec 正本 is
+/// `schema/builtin-descriptors.json`) — `run`'s `Err` reason must be a member of this list for a
+/// correctly-defined filter invocation, EXCEPT filter-definition-bug paths (arg-count mismatch, a
+/// malformed regex pattern, a value whose type this filter doesn't handle), which fall back to
+/// `"filter_rejected"` and sit outside the declared vocabulary (DR-095 §3: these are not a failure
+/// mode of a *correctly defined* filter, so completeness/typo checking doesn't cover them — same
+/// posture `apply_filter_chain` already uses for an unregistered filter NAME, generalized here to
+/// an unregistered filter REASON). `run` is genuinely a closure (kuu.mbt is the single MoonBit
+/// reference host — DR-010's wire-serializable `{name, config}` factory form is a multi-host
+/// concern this reference impl does not need to round-trip through JSON) — `FilterDescriptor`
+/// therefore has no `derive(Eq)` (closures aren't comparable); registry lookup is by `name`
+/// (String), never by descriptor equality.
 pub(all) struct FilterDescriptor {
   name : String
   signature : FilterSignature
+  reasons : Array[String]
   // DR-009 "args はすべて string、filter registry 側でキャスト": the closure owns its own arg
   // parsing/casting, uniformly for every filter (mirrors `dsl_operand_value`'s per-type casting,
-  // just filter-side instead of variant-side).
-  run : (Value, Array[String]) -> Result[Value, String]
+  // just filter-side instead of variant-side). Err carries (reason, message) — reason is this
+  // descriptor's DR-095 vocabulary (or `"filter_rejected"`, see this struct's doc comment).
+  run : (Value, Array[String]) -> Result[Value, (String, String)]
 }
 
 ///|
@@ -49,7 +57,10 @@ pub(all) struct FilterDescriptor {
 /// from both ends. A `Transform` (the value CHANGES). Non-string input is untouched (defensive —
 /// every current call site only ever feeds `trim` a `VStr`, DR-009's piece_filters phase is
 /// string→string by construction).
-fn filter_trim(v : Value, _args : Array[String]) -> Result[Value, String] {
+fn filter_trim(
+  v : Value,
+  _args : Array[String],
+) -> Result[Value, (String, String)] {
   match v {
     VStr(s) => Ok(VStr(s.trim(chars=" \t\n\r").to_owned()))
     other => Ok(other)
@@ -59,10 +70,18 @@ fn filter_trim(v : Value, _args : Array[String]) -> Result[Value, String] {
 ///|
 /// `non_empty` (DR-040 §filters 最小セット): string-only `Validate` — Err on the empty string,
 /// value unchanged otherwise. Non-string input passes through untouched (defensive, same rationale
-/// as `filter_trim`).
-fn filter_non_empty(v : Value, _args : Array[String]) -> Result[Value, String] {
+/// as `filter_trim`). Sole declared reason (DR-095 §3): `empty_value`.
+fn filter_non_empty(
+  v : Value,
+  _args : Array[String],
+) -> Result[Value, (String, String)] {
   match v {
-    VStr(s) => if s == "" { Err("value is empty") } else { Ok(v) }
+    VStr(s) =>
+      if s == "" {
+        Err(("empty_value", "value is empty"))
+      } else {
+        Ok(v)
+      }
     other => Ok(other)
   }
 }
@@ -72,30 +91,52 @@ fn filter_non_empty(v : Value, _args : Array[String]) -> Result[Value, String] {
 /// "cell_filters が update の結果にも通る" の実証対象そのもの): number-only `Validate`. `min`/`max`
 /// are the DSL args (DR-009 "args はすべて string、filter registry 側でキャスト") — parsed here via
 /// `parse_number` (canonical DR-074 §1 lexicon, same parser the value primitives use). A malformed
-/// arg is a filter-definition error surfaced as an Err (caught at filter-run time, same as any other
-/// filter failure — no separate definition-time arg-arity check exists yet for filter DSL args, unlike
-/// `update`'s transform-name check in installer.mbt's `classify_long_spelling`).
-fn filter_in_range(v : Value, args : Array[String]) -> Result[Value, String] {
+/// arg is a filter-definition error surfaced as an Err with the `filter_rejected` fallback reason
+/// (caught at filter-run time, same as any other filter-definition-bug path — no separate
+/// definition-time arg-arity check exists yet for filter DSL args, unlike `update`'s transform-name
+/// check in installer.mbt's `classify_long_spelling`). The two ordinary Validate rejects — below
+/// `min` / above `max` — carry the descriptor's declared reasons (DR-095 §3): `too_small` /
+/// `too_large` respectively.
+fn filter_in_range(
+  v : Value,
+  args : Array[String],
+) -> Result[Value, (String, String)] {
   match v {
     VNum(n) => {
       if args.length() != 2 {
-        return Err("in_range requires exactly 2 args (min, max)")
+        return Err(
+          ("filter_rejected", "in_range requires exactly 2 args (min, max)"),
+        )
       }
       let min = match parse_number(args[0]) {
         Some(d) => d
-        None => return Err("in_range min '" + args[0] + "' is not a number")
+        None =>
+          return Err(
+            (
+              "filter_rejected",
+              "in_range min '" + args[0] + "' is not a number",
+            ),
+          )
       }
       let max = match parse_number(args[1]) {
         Some(d) => d
-        None => return Err("in_range max '" + args[1] + "' is not a number")
+        None =>
+          return Err(
+            (
+              "filter_rejected",
+              "in_range max '" + args[1] + "' is not a number",
+            ),
+          )
       }
-      if n < min || n > max {
-        Err("value \{n} is out of range [\{min}, \{max}]")
+      if n < min {
+        Err(("too_small", "value \{n} is less than min \{min}"))
+      } else if n > max {
+        Err(("too_large", "value \{n} is greater than max \{max}"))
       } else {
         Ok(v)
       }
     }
-    _ => Err("in_range requires a number value")
+    _ => Err(("filter_rejected", "in_range requires a number value"))
   }
 }
 
@@ -103,22 +144,27 @@ fn filter_in_range(v : Value, args : Array[String]) -> Result[Value, String] {
 /// `increment` (DR-077 §2/§3 built-in transform, count's `:update:increment`): number-only
 /// `Transform`, `(old) => old + 1`. 0-arg (DR-077 §2 "0-arg"). This is the SAME closure
 /// `apply_transform` (resolve.mbt) now looks up by name instead of hardcoding — the registry lookup
-/// this issue exists to introduce.
-fn filter_increment(v : Value, args : Array[String]) -> Result[Value, String] {
+/// this issue exists to introduce. Transform (never fails on a well-formed call, DR-095 §3:
+/// `reasons: []`) — the arg-count / non-number Err arms below are filter-definition-bug paths
+/// (`filter_rejected` fallback, see `FilterDescriptor`'s doc comment), not a declared failure mode.
+fn filter_increment(
+  v : Value,
+  args : Array[String],
+) -> Result[Value, (String, String)] {
   if args.length() != 0 {
-    return Err("increment takes no args")
+    return Err(("filter_rejected", "increment takes no args"))
   }
   match v {
     VNum(n) => Ok(VNum(n + 1.0))
-    _ => Err("increment requires a number value")
+    _ => Err(("filter_rejected", "increment requires a number value"))
   }
 }
 
 ///|
 /// Compile a MoonBit core `string.Regex` from a pattern, converting the raise-on-malformed-pattern
 /// signature (`@string.Regex::Regex(StringView) -> Self raise`) into an `Option` — this repo's
-/// filter closures return `Result[Value, String]`, not a raise-effect signature, so the raise is
-/// caught at the narrowest point (mirrors `value.mbt`'s `try_parse_double` wrapping
+/// filter closures return `Result[Value, (String, String)]`, not a raise-effect signature, so the
+/// raise is caught at the narrowest point (mirrors `value.mbt`'s `try_parse_double` wrapping
 /// `@string.parse_double` the same way). `pub` (not just this file's `filter_regex_match`) because
 /// `installer.mbt`'s `collect_invalid_regex_pattern` (DR-085 §1 訂正 — pattern compile failure is a
 /// definition-error, kind=invalid-argument, DR-054 §4 更新2 / DR-082 §3) needs the SAME compile
@@ -137,30 +183,48 @@ pub fn compile_regex(pattern : String) -> @string.Regex? {
 /// needed). Unanchored
 /// = partial match (DR-085 §1 — this filter never injects an implicit `^`/`$`; a caller wanting a
 /// full match writes the anchors into the pattern itself, matching general regex-engine convention).
-/// Compile failure (malformed pattern — a filter-DEFINITION bug) and match failure (a valid pattern
-/// simply not matching this input — the ordinary Validate reject) are two DISTINCT `Err` messages
-/// per DR-085 §1 ("pattern の compile 失敗と照合不一致は別の失敗"), even though both currently
-/// surface through the same `filter_rejected` reason code at `apply_filter_chain`'s call site (no
-/// finer-grained reason vocab exists yet for a single filter's two failure modes — this filter does
-/// not introduce one unilaterally, same posture as the rest of this registry's Err messages).
-fn filter_regex_match(v : Value, args : Array[String]) -> Result[Value, String] {
+/// Compile failure (malformed pattern — a filter-DEFINITION bug, DR-085 §1 / DR-082 §3 belongs to
+/// definition-error's kind=invalid-argument, not this runtime reason vocabulary — `installer.mbt`'s
+/// `collect_invalid_regex_pattern` already gates it at definition time, so this arm is defensive/
+/// unreachable in a correctly-defined filter chain) and match failure (a valid pattern simply not
+/// matching this input — the ordinary Validate reject) are two DISTINCT `Err`s per DR-085 §1
+/// ("pattern の compile 失敗と照合不一致は別の失敗"): compile failure falls back to
+/// `filter_rejected` (outside this descriptor's declared reasons), match failure carries
+/// `pattern_no_match` (DR-095 §3's sole declared reason for this descriptor).
+fn filter_regex_match(
+  v : Value,
+  args : Array[String],
+) -> Result[Value, (String, String)] {
   match v {
     VStr(s) => {
       if args.length() != 1 {
-        return Err("regex_match requires exactly 1 arg (pattern)")
+        return Err(
+          ("filter_rejected", "regex_match requires exactly 1 arg (pattern)"),
+        )
       }
       let pattern = args[0]
       match compile_regex(pattern) {
-        None => Err("regex_match pattern '" + pattern + "' failed to compile")
+        None =>
+          Err(
+            (
+              "filter_rejected",
+              "regex_match pattern '" + pattern + "' failed to compile",
+            ),
+          )
         Some(re) =>
           match re.execute(s) {
             Some(_) => Ok(v)
             None =>
-              Err("value '" + s + "' does not match pattern '" + pattern + "'")
+              Err(
+                (
+                  "pattern_no_match",
+                  "value '" + s + "' does not match pattern '" + pattern + "'",
+                ),
+              )
           }
       }
     }
-    _ => Err("regex_match requires a string value")
+    _ => Err(("filter_rejected", "regex_match requires a string value"))
   }
 }
 
@@ -173,22 +237,45 @@ fn filter_regex_match(v : Value, args : Array[String]) -> Result[Value, String] 
 /// map is tiny and lookups are not hot-path).
 fn filters_registry() -> Map[String, FilterDescriptor] {
   Map::from_array([
-    ("trim", { name: "trim", signature: Transform, run: filter_trim }),
+    (
+      "trim",
+      { name: "trim", signature: Transform, reasons: [], run: filter_trim },
+    ),
     (
       "non_empty",
-      { name: "non_empty", signature: Validate, run: filter_non_empty },
+      {
+        name: "non_empty",
+        signature: Validate,
+        reasons: ["empty_value"],
+        run: filter_non_empty,
+      },
     ),
     (
       "in_range",
-      { name: "in_range", signature: Validate, run: filter_in_range },
+      {
+        name: "in_range",
+        signature: Validate,
+        reasons: ["too_small", "too_large"],
+        run: filter_in_range,
+      },
     ),
     (
       "regex_match",
-      { name: "regex_match", signature: Validate, run: filter_regex_match },
+      {
+        name: "regex_match",
+        signature: Validate,
+        reasons: ["pattern_no_match"],
+        run: filter_regex_match,
+      },
     ),
     (
       "increment",
-      { name: "increment", signature: Transform, run: filter_increment },
+      {
+        name: "increment",
+        signature: Transform,
+        reasons: [],
+        run: filter_increment,
+      },
     ),
   ])
 }
@@ -309,8 +396,10 @@ pub fn parse_filter_shorthand(s : String) -> FilterSpelling {
 /// unknown filter name or a filter's own Err both surface as `Err(reason, message)` — `reason` is a
 /// machine-readable DR-066-style identifier the caller threads into a ParseError (mirrors
 /// `apply_transform`'s existing `unknown_update_transform` / `update_transform_type_mismatch` shape,
-/// generalized: `unknown_filter` for an unregistered name, `filter_rejected` for a filter's own
-/// validation/transform failure).
+/// generalized: `unknown_filter` for an unregistered name; a filter's own Err already carries
+/// whatever reason its `FilterDescriptor.run` chose (its DR-095 declared vocabulary for a
+/// correctly-defined failure, `filter_rejected` fallback for a filter-definition-bug path — see
+/// `FilterDescriptor`'s doc comment), so this loop threads it through unchanged.
 pub fn apply_filter_chain(
   chain : Array[FilterSpelling],
   v : Value,
@@ -322,7 +411,7 @@ pub fn apply_filter_chain(
       Some(d) =>
         match (d.run)(current, fs.args) {
           Ok(v2) => current = v2
-          Err(msg) => return Err(("filter_rejected", msg))
+          Err(e) => return Err(e)
         }
     }
   }

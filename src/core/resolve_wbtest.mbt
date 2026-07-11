@@ -973,7 +973,7 @@ test "resolve_scope: cell_filters (in_range) rejects an update-folded count valu
     ceff("verbose", "increment"),
   ]
   match resolve_scope(sc, cli3, Map([])) {
-    Err(pe) => assert_eq(pe.reason, "filter_rejected")
+    Err(pe) => assert_eq(pe.reason, "too_large")
     Ok(_) => fail("expected Err (3 is out of range [0, 2])")
   }
   // 2 回 (境界内) は通る。
@@ -997,7 +997,7 @@ test "resolve_scope: cell_filters (in_range) also rejects a plain Set value over
     constraints: [],
   }
   match resolve_scope(sc, [cb("n", VNum(101.0), Cli)], Map([])) {
-    Err(pe) => assert_eq(pe.reason, "filter_rejected")
+    Err(pe) => assert_eq(pe.reason, "too_large")
     Ok(_) => fail("expected Err (101 is out of range [0, 100])")
   }
   assert_eq(
@@ -1099,7 +1099,7 @@ test "resolve_scope: accum × value_filters(each) — one piece rejecting fails 
     Err(pe) => {
       assert_eq(pe.kind, KFilter)
       assert_eq(pe.argv_pos, 3)
-      assert_eq(pe.reason, "filter_rejected")
+      assert_eq(pe.reason, "too_large")
     }
     Ok(_) => fail("expected Err (500 is out of range [1, 100])")
   }
@@ -1260,7 +1260,7 @@ test "resolve_scope: accum × value_filters(each) — Unset does not disable fil
   match resolve_scope(sc, cli_reject, Map([])) {
     Err(pe) => {
       assert_eq(pe.kind, KFilter)
-      assert_eq(pe.reason, "filter_rejected")
+      assert_eq(pe.reason, "too_large")
     }
     Ok(_) =>
       fail(
@@ -1291,7 +1291,7 @@ test "resolve_scope: a value_filters/cell_filters reject carries kind=KFilter an
     Err(pe) => {
       assert_eq(pe.kind, KFilter)
       assert_eq(pe.argv_pos, 3)
-      assert_eq(pe.reason, "filter_rejected")
+      assert_eq(pe.reason, "too_large")
     }
     Ok(_) => fail("expected Err (101 is out of range [0, 100])")
   }

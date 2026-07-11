@@ -48,20 +48,22 @@ test "filter_trim strips whitespace, passes non-strings through" {
 
 ///|
 /// 保証: `non_empty` は空文字列のみ Err、それ以外は値そのままの Ok (Validate、値を変えない)。
+/// reason は DR-095 §3 の宣言 `["empty_value"]` に細粒度化されている (filter_rejected 潰しの廃止)。
 test "filter_non_empty rejects only the empty string" {
   match apply_filter_chain(chain(["non_empty"]), VStr("x")) {
     Ok(v) => assert_eq(v, VStr("x"))
     Err(_) => fail("expected Ok")
   }
   match apply_filter_chain(chain(["non_empty"]), VStr("")) {
-    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Err((reason, _)) => assert_eq(reason, "empty_value")
     Ok(_) => fail("expected Err (empty string)")
   }
 }
 
 ///|
 /// 保証: `in_range:<min>:<max>` (DR-009 §DSL 文法 "args はすべて string、filter registry 側でキャスト")
-/// — 境界値は両方とも受理 (閉区間)、はみ出しは Err。
+/// — 境界値は両方とも受理 (閉区間)、はみ出しは Err。reason は DR-095 §3 の宣言に細粒度化: 下限未満は
+/// `too_small`、上限超過は `too_large` (filter_rejected 潰しの廃止)。
 test "filter_in_range accepts a closed interval [min, max]" {
   match apply_filter_chain(chain(["in_range:1:10"]), VNum(1.0)) {
     Ok(v) => assert_eq(v, VNum(1.0))
@@ -72,11 +74,11 @@ test "filter_in_range accepts a closed interval [min, max]" {
     Err(_) => fail("expected Ok (upper bound inclusive)")
   }
   match apply_filter_chain(chain(["in_range:1:10"]), VNum(11.0)) {
-    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Err((reason, _)) => assert_eq(reason, "too_large")
     Ok(_) => fail("expected Err (over the upper bound)")
   }
   match apply_filter_chain(chain(["in_range:1:10"]), VNum(0.0)) {
-    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Err((reason, _)) => assert_eq(reason, "too_small")
     Ok(_) => fail("expected Err (under the lower bound)")
   }
 }
@@ -86,6 +88,8 @@ test "filter_in_range accepts a closed interval [min, max]" {
 /// §1) — (a) 一致受理、(b) 不一致 reject、(c) 部分一致 (unanchored) と全体一致 (pattern 側 `^$`) の
 /// 区別、(d) メタ文字 escape (`\.` がリテラルドットにマッチし、無escape の `.` は任意1文字にマッチ)
 /// の4輪郭を1テストで網羅する。DR-085 §2: 方言は MoonBit core `string.Regex` に準拠 (host 実装準拠)。
+/// reason は DR-095 §3 の宣言 `["pattern_no_match"]` に細粒度化されている (filter_rejected 潰しの廃止、
+/// 全ての不一致 reject が対象 — compile 失敗は別テストが担う防御的パス)。
 test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar escape" {
   // (a) 一致受理: literal 部分一致。
   match apply_filter_chain(chain(["regex_match:abc"]), VStr("xxabcyy")) {
@@ -94,7 +98,7 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
   }
   // (b) 不一致 reject。
   match apply_filter_chain(chain(["regex_match:abc"]), VStr("xyz")) {
-    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) => fail("expected Err (no 'abc' substring)")
   }
   // (c) 部分一致と全体一致の区別: unanchored pattern は末尾ゴミがあっても通る (DR-085 §1 "filter
@@ -106,7 +110,7 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
       fail("expected Ok (unanchored: trailing garbage after the match is fine)")
   }
   match apply_filter_chain(chain(["regex_match:^abc$"]), VStr("abcXYZ")) {
-    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) => fail("expected Err (full-anchor pattern rejects trailing garbage)")
   }
   match apply_filter_chain(chain(["regex_match:^abc$"]), VStr("abc")) {
@@ -121,7 +125,7 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
       fail("expected Ok (unescaped '.' matches any single char, including 'b')")
   }
   match apply_filter_chain(chain(["regex_match:^a\\.c$"]), VStr("abc")) {
-    Err((reason, _)) => assert_eq(reason, "filter_rejected")
+    Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) =>
       fail("expected Err (escaped '\\.' is a literal dot, does not match 'b')")
   }
@@ -135,7 +139,9 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
 /// 保証: pattern の compile 失敗 (定義不良) と照合不一致 (入力拒否) は別の失敗という DR-085 §1 の
 /// 区別 — 不正な pattern (閉じ括弧なしの group) は compile 時点で Err になる。非 string 値は他の
 /// string-only filter (`non_empty` 等) と同じく `VStr` 以外専用の Err (このフィルタは string-only
-/// で non-string 素通しの `trim` とは違う挙動、args 個数も 1 固定)。
+/// で non-string 素通しの `trim` とは違う挙動、args 個数も 1 固定)。この3ケースはいずれも
+/// filter-definition-bug 系の防御的パス (DR-095 §3 の宣言 reasons 外) なので `filter_rejected`
+/// フォールバックのまま — `pattern_no_match` (宣言済み reason) は照合不一致のみに使う。
 test "filter_regex_match: malformed pattern, arg count, non-string input all Err distinctly" {
   match apply_filter_chain(chain(["regex_match:(unclosed"]), VStr("x")) {
     Err((reason, msg)) => {
@@ -187,5 +193,64 @@ test "apply_filter_chain runs entries in declared order" {
   match apply_filter_chain(chain(["increment", "increment"]), VNum(1.0)) {
     Ok(v) => assert_eq(v, VNum(3.0))
     Err(_) => fail("expected Ok (1 -> 2 -> 3)")
+  }
+}
+
+///|
+/// 保証: 各組み込み filter の宣言 `reasons` (DR-095 §3, spec 正本 `schema/builtin-descriptors.json`)
+/// を registry から読み出すと、この issue が意図した集合そのものになっている — DR-066 §2 の完備
+/// チェック/typo検出が filter 領域でも機能するための宣言側の固定 (実際に emit された reason が
+/// この集合の要素であることは、各 filter の個別テストが reason を直接 assert_eq することで実質
+/// カバー済み。ここでは "宣言側が正しいか" を別テストとして固定する)。`trim`/`increment` は
+/// Transform で常に成功 (reasons: [])。
+test "built-in filter descriptors declare exactly the DR-095 §3 reason vocabulary" {
+  assert_eq(lookup_filter("trim").unwrap().reasons, [])
+  assert_eq(lookup_filter("non_empty").unwrap().reasons, ["empty_value"])
+  assert_eq(lookup_filter("in_range").unwrap().reasons, [
+    "too_small", "too_large",
+  ])
+  assert_eq(lookup_filter("regex_match").unwrap().reasons, ["pattern_no_match"])
+  assert_eq(lookup_filter("increment").unwrap().reasons, [])
+}
+
+///|
+/// 保証: 宣言済み failure mode (DR-095 §3) を実際に踏んだ時、emit される reason は必ずその
+/// descriptor の `reasons` に含まれる (DR-066 §2 の完備チェック/typo検出が実装 emit 側でも成立して
+/// いることの実行時固定) — filter-definition-bug 系の防御的 Err (arg 個数不一致・型不一致・regex
+/// compile 失敗) は対象外 (`filter_rejected` フォールバック、`FilterDescriptor` doc comment 参照、
+/// 個別テストが既に別途 assert 済み)。
+test "reasons emitted for declared failure modes are a subset of the descriptor's reasons" {
+  fn assert_declared(filter_name : String, got_reason : String) -> Unit raise {
+    let reasons = lookup_filter(filter_name).unwrap().reasons
+    if !reasons.contains(got_reason) {
+      fail(
+        "filter '" +
+        filter_name +
+        "' emitted reason '" +
+        got_reason +
+        "' not in its declared reasons",
+      )
+    }
+  }
+
+  // non_empty: empty_value
+  match apply_filter_chain(chain(["non_empty"]), VStr("")) {
+    Err((reason, _)) => assert_declared("non_empty", reason)
+    Ok(_) => fail("expected Err")
+  }
+  // in_range: too_small
+  match apply_filter_chain(chain(["in_range:1:10"]), VNum(0.0)) {
+    Err((reason, _)) => assert_declared("in_range", reason)
+    Ok(_) => fail("expected Err")
+  }
+  // in_range: too_large
+  match apply_filter_chain(chain(["in_range:1:10"]), VNum(11.0)) {
+    Err((reason, _)) => assert_declared("in_range", reason)
+    Ok(_) => fail("expected Err")
+  }
+  // regex_match: pattern_no_match
+  match apply_filter_chain(chain(["regex_match:abc"]), VStr("xyz")) {
+    Err((reason, _)) => assert_declared("regex_match", reason)
+    Ok(_) => fail("expected Err")
   }
 }

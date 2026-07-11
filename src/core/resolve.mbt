@@ -1820,10 +1820,14 @@ fn apply_transform(
       } else {
         match (d.run)(old, args) {
           Ok(v) => Ok(v)
-          Err(msg) =>
+          Err((_reason, msg)) =>
             // live path (arity mismatch 等、closure 自身の拒否) — defensive な上 2 分岐と同じ理由で
             // kind: KFilter に揃える (team-lead 指摘は上 2 分岐限定だったが、同一関数内の同じ
             // reason-family を KParse のまま残すのは内部不整合なので合わせて修正、報告に明記)。
+            // `d.run`'s own reason (DR-095 vocabulary or `filter_rejected` fallback, filters.mbt's
+            // `apply_filter_chain` doc comment) is FOR the piece/value/cell_filters chain reason
+            // axis, not this update-transform axis (DR-077 §2) — this call site keeps its own fixed
+            // `update_transform_type_mismatch` reason and only threads the message through.
             Err(
               filter_err(
                 name, at_pos, "update_transform_type_mismatch", msg, epath,
