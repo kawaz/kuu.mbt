@@ -1793,11 +1793,15 @@ fn apply_transform(
       // codex 指摘 3 (issue 2026-07-09, 節目レビュー): defensive kind を KParse (ladder_err) から
       // KFilter (filter_err) へ — 「値がパースできなかった」ではなく「filter/transform 語彙の拒否」
       // なので DR-053 §2 の 3 分類上 filter が正しい (filter_err の doc comment 参照)。
+      // codex 指摘 (2026-07-12, 節目レビュー): reason は `filter_rejected` — この分岐は definition-
+      // time gate 済みで到達しない防御的パス (上の doc comment 参照)。`unknown_update_transform` は
+      // DR-095 の宣言集合にも spec 全体 (docs/fixtures/schema grep 0 hit) にも存在しない実装発明
+      // だったため、DR-095 §5 の宣言外防御的失敗 fallback `filter_rejected` へ畳む。
       Err(
         filter_err(
           name,
           at_pos,
-          "unknown_update_transform",
+          "filter_rejected",
           "unknown update transform '\{transform}'",
           epath,
         ),
@@ -1808,11 +1812,15 @@ fn apply_transform(
         // registry later grows a name whose signature is Validate but installer.mbt's
         // classify_long_spelling (definition-time gate) ever let it through — defensive, not a
         // live path today. kind: KFilter (codex 指摘 3、上と同じ理由)。
+        // codex 指摘 (2026-07-12, 節目レビュー): reason は `filter_rejected` — DR-095 §3 は型不一致
+        // (非対象型が filter に渡る) を「filter-definition bug であり正しい定義における failure
+        // mode ではない」として reasons 宣言から明示的に除外している (increment 行の根拠と同じ)。
+        // `update_transform_type_mismatch` は宣言外の実装発明だったため fallback へ畳む。
         Err(
           filter_err(
             name,
             at_pos,
-            "update_transform_type_mismatch",
+            "filter_rejected",
             "filter '\{transform}' is not a transform (validate-only filters cannot be used as an update transform)",
             epath,
           ),
@@ -1824,15 +1832,12 @@ fn apply_transform(
             // live path (arity mismatch 等、closure 自身の拒否) — defensive な上 2 分岐と同じ理由で
             // kind: KFilter に揃える (team-lead 指摘は上 2 分岐限定だったが、同一関数内の同じ
             // reason-family を KParse のまま残すのは内部不整合なので合わせて修正、報告に明記)。
-            // `d.run`'s own reason (DR-095 vocabulary or `filter_rejected` fallback, filters.mbt's
-            // `apply_filter_chain` doc comment) is FOR the piece/value/cell_filters chain reason
-            // axis, not this update-transform axis (DR-077 §2) — this call site keeps its own fixed
-            // `update_transform_type_mismatch` reason and only threads the message through.
-            Err(
-              filter_err(
-                name, at_pos, "update_transform_type_mismatch", msg, epath,
-              ),
-            )
+            // codex 指摘 (2026-07-12, 節目レビュー): reason も `filter_rejected` に統一 (上 2 分岐と
+            // 同じ理由、DR-095 の宣言集合に update-transform 軸の failure reason は無い)。`d.run`
+            // 自身の own reason (`_reason`) は piece/value/cell_filters チェーン用の別軸 (filters.mbt
+            // `apply_filter_chain` doc comment 参照) であり、この update-transform 軸 (DR-077 §2) に
+            // は使わず message だけ通す。
+            Err(filter_err(name, at_pos, "filter_rejected", msg, epath))
         }
       }
   }

@@ -395,7 +395,8 @@ pub fn parse_filter_shorthand(s : String) -> FilterSpelling {
 /// split; a structured `args : Array[String]` has no such in-band collision to begin with). An
 /// unknown filter name or a filter's own Err both surface as `Err(reason, message)` — `reason` is a
 /// machine-readable DR-066-style identifier the caller threads into a ParseError (mirrors
-/// `apply_transform`'s existing `unknown_update_transform` / `update_transform_type_mismatch` shape,
+/// `apply_transform`'s `filter_rejected` fallback shape for its own defensive/definition-error
+/// paths — DR-095 §5's SCH-Q4 sole fallback for a reason not in its declared vocabulary),
 /// generalized: `unknown_filter` for an unregistered name; a filter's own Err already carries
 /// whatever reason its `FilterDescriptor.run` chose (its DR-095 declared vocabulary for a
 /// correctly-defined failure, `filter_rejected` fallback for a filter-definition-bug path — see
