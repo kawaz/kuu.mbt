@@ -94,6 +94,25 @@ pub(all) struct ElemDef {
   piece_filters : Array[FilterSpelling]
   value_filters : Array[FilterSpelling]
   cell_filters : Array[FilterSpelling]
+  // DR-091 §3 最小実装 (案2、team-lead 裁定 2026-07-11): a per-element FLAT pair, no hierarchical
+  // `config` object (DESIGN §7.2's full `long_prefix`/`short_prefix`/`env_prefix`/`auto_env`/
+  // `allow_equal_separator`/`short_combine` config-with-inheritance stays issue
+  // scope-config-object-gap's scope — this is 2 narrow fields on the ELEMENT itself, not a
+  // scope-wide inherited setting). `long_prefix` (既定 `"--"`): the string `inst_long` prepends to
+  // this element's own long spellings when building each trigger (`e.long_prefix + l`, replacing
+  // the old hardcoded `"--" + l`) — every OTHER element in the same `Definition` keeps its own
+  // default unless it also overrides. `""` is legal ONLY paired with `require_equal_separator:
+  // true` (dec_option 側で検証, DR-091 §3「単独の空 prefix は未定義動作のまま」) — an empty prefix
+  // without the eq gate would make a bare positional operand (`foo`) collide with this element's
+  // long candidacy, the exact ambiguity §3 exists to close.
+  long_prefix : String
+  // DR-091 §3: when true, `inst_long` withholds this element's SPACE-FORM main entry (`Seq([Exact
+  // (trigger), value_prim(...)])`, the `ref_target is None` branch) — only the eq-split form
+  // (`key=value`, `LongEntry`/`EqSplit`) reaches the entity. This is what makes `long_prefix: ""`
+  // safe: with the space form gone, this element's trigger NEVER matches a bare token (`EqSplit`
+  // only fires on a token containing `=`, `node.mbt`'s `EqSplit` doc comment), so a plain operand
+  // (`foo`) cannot be swallowed by it. 既定 `false` (現行の space-form main entry 挙動は不変)。
+  require_equal_separator : Bool
   // MDR-004: 消費文法の軸。`BCell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
   // 縮退形、観測挙動不変)。`BOr`/`BGroup` の要素では `ty` は未使用 — 枝/内部要素の leaf ElemDef が
   // 各自の `ty` を持つ。
@@ -530,6 +549,13 @@ priv struct SBChild {
 /// マーカー認識 (`classify_merge_piece`) は piece 数に関わらず同じ pipeline で効く — `--fields -a`
 /// (separator 無し、コンマで割る余地が無い) でも `-a` が remove マーカーとして解釈される。
 /// merge でない要素は従来通り `separator is Some(_)` のみが gate (この分岐は不変)。
+///
+/// `kv_map` (DR-091 §2): `ElemDef.accumulator == Some("kv_map")` は `merge`/`separator` の SepArg
+/// 経路とは別枝 — kv_map は「1 token = 1 piece」で separator 分割を必要としない (`k=v` の `=` 分割は
+/// この node の仕事ではなく `resolve.mbt`'s `build_result` が畳み時に行う、node.mbt の `KvArg` doc
+/// comment参照)。`merge` より先に判定するのは两者が同時に真になることは無い (decode 層 `dec_multiple`
+/// が `accumulator` を単一 `String?` としてしか運ばない、DR-080/DR-091 のどちらか一方の語彙) ため
+/// 順序に意味は無いが、KvArg が SepArg の分岐に巻き込まれないよう最初に切り出す。
 fn value_prim(
   ty : Ty,
   name : String,
@@ -538,8 +564,11 @@ fn value_prim(
   piece_filters : Array[FilterSpelling],
   separator? : String? = None,
   merge? : Bool = false,
+  kv_map? : Bool = false,
 ) -> Node {
-  if separator is Some(_) || merge {
+  if kv_map {
+    KvArg(name, piece_filters)
+  } else if separator is Some(_) || merge {
     SepArg(
       name, separator, ty, int_round, allow_base_prefix, piece_filters, merge,
     )
@@ -657,6 +686,8 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     piece_filters: copy_filter_spellings(e.piece_filters),
     value_filters: copy_filter_spellings(e.value_filters),
     cell_filters: copy_filter_spellings(e.cell_filters),
+    long_prefix: e.long_prefix,
+    require_equal_separator: e.require_equal_separator,
     body: clone_body(e.body),
   }
 }
@@ -858,6 +889,7 @@ fn elem_head(e : ElemDef) -> Node {
         e.piece_filters,
         separator=e.separator,
         merge=e.accumulator == Some("merge"),
+        kv_map=e.accumulator == Some("kv_map"),
       )
   }
 }
@@ -1337,6 +1369,33 @@ fn not_dd(e : ElemDef) -> Bool {
 // ── 各 installer ─────────────────────────────────────────────────────────────
 
 ///|
+/// DR-091 §3: `EqSplit` bundles every eq-split entry it carries under ONE `prefix` (`node.mbt`'s
+/// `EqSplit(prefix~, entries~)` — a single matcher instance, single prefix). Before this DR every
+/// element shared the hardcoded `"--"`, so one `EqSplit` per `Definition` was correct; now an
+/// element MAY declare its own `long_prefix` (`if=`/`of=`'s `long_prefix: ""`), so `inst_long`
+/// groups eq entries by their declaring element's `long_prefix` and emits one `EqSplit` per
+/// distinct value actually present — `prefixes`/`groups` are parallel arrays (insertion order),
+/// mirroring this file's existing dedup-by-linear-scan style (`resolve.mbt`'s `named`/`segs`
+/// arrays) rather than a `Map` (whose iteration order this codebase doesn't otherwise rely on).
+fn eq_group(
+  prefixes : Array[String],
+  groups : Array[Array[LongEntry]],
+  prefix : String,
+) -> Array[LongEntry] {
+  let mut i = 0
+  while i < prefixes.length() {
+    if prefixes[i] == prefix {
+      return groups[i]
+    }
+    i = i + 1
+  }
+  let g : Array[LongEntry] = []
+  prefixes.push(prefix)
+  groups.push(g)
+  g
+}
+
+///|
 /// long: `long` を READ、name あたり greedy exact 衛星 (space form) と、value 系なら eq-split matcher
 /// を add-if-absent で追加。衛星は name で entity に link (DR-042 §展開の標準パターン)。
 fn inst_long(
@@ -1344,10 +1403,13 @@ fn inst_long(
   build : Build,
   registry : Map[String, Node],
 ) -> Unit {
-  let eq_entries : Array[LongEntry] = []
+  let eq_prefixes : Array[String] = []
+  let eq_groups : Array[Array[LongEntry]] = []
   for e in def.options {
     for l in long_of(e) {
-      let trigger = "--" + l
+      // DR-091 §3: `e.long_prefix` replaces the old hardcoded `"--"` (既定値は `"--"` そのものなので
+      // this element's own trigger is unchanged unless it explicitly overrides).
+      let trigger = e.long_prefix + l
       match e.body {
         // MDR-004 §3: BOr option (variable-arity) — greedy satellite
         // Seq([Exact(trigger), Or([branch_node...])]). `e.ty` is unused (a BOr wrapper carries no
@@ -1456,24 +1518,35 @@ fn inst_long(
               // entries" loop below, which also carries the fail_action FailMark — flag's
               // presence-only lowering has fully collapsed into that generic variant path; this
               // arm no longer special-cases TFlag/TBool bare-true at all).
-              add_greedy(
-                build,
-                maybe_root(
-                  e.link_depth,
-                  Seq([
-                    Exact(trigger),
-                    value_prim(
-                      e.ty,
-                      e.name,
-                      e.int_round,
-                      e.allow_base_prefix,
-                      e.piece_filters,
-                      separator=e.separator,
-                      merge=e.accumulator == Some("merge"),
-                    ),
-                  ]),
-                ),
-              )
+              //
+              // DR-091 §3: `require_equal_separator` withholds THIS space-form main entry — the
+              // only entry point left is the eq-split form registered below (`eq_group` push).
+              // This is the exact mechanism that makes `long_prefix: ""` safe (node.mbt's
+              // `require_equal_separator` doc comment on `ElemDef`): with no space-form trigger,
+              // `trigger` (== `l` when `long_prefix` is `""`) never matches a bare token — only
+              // `EqSplit`, which fires exclusively on tokens containing `=`, can reach this
+              // element, so a plain operand can never collide with it.
+              if !e.require_equal_separator {
+                add_greedy(
+                  build,
+                  maybe_root(
+                    e.link_depth,
+                    Seq([
+                      Exact(trigger),
+                      value_prim(
+                        e.ty,
+                        e.name,
+                        e.int_round,
+                        e.allow_base_prefix,
+                        e.piece_filters,
+                        separator=e.separator,
+                        merge=e.accumulator == Some("merge"),
+                        kv_map=e.accumulator == Some("kv_map"),
+                      ),
+                    ]),
+                  ),
+                )
+              }
           }
       }
       // eq-split value form (`--key=value`): every value-typed main entry gets this (bool included,
@@ -1489,21 +1562,30 @@ fn inst_long(
       // MDR-004 §3: a BOr element's eq-split registers only for a single-value-cell branch (using
       // that leaf's own name/ty/int_round/allow_base_prefix, never the wrapper's) — a multi-cell
       // branch's `=` form is undefined (`--color=v` cannot supply 3 leaves).
+      // DR-091 §2: a `kv_map`-accumulator leaf does NOT register an eq-split entry (unlike merge,
+      // which shares the same `sep_binds` pipeline as the space form) — `run_eq_split` (matcher.mbt)
+      // builds its binding through `sep_binds`, which has no "the piece must contain `=`" gate (that
+      // gate lives in the `KvArg` node, `value_prim`'s dedicated kv_map branch, which `LongEntry`
+      // never routes through). Registering here would let `--define=NOEQUALSIGN` silently produce
+      // `{NOEQUALSIGN: ""}` instead of DR-091 §2's required Reject — same deliberate-absence posture
+      // as `BEnum`'s "OUT OF SCOPE" comment below, not an oversight.
       match e.body {
         BOr(branches) =>
           for br in branches {
             if br.items.length() == 1 {
               let leaf = br.items[0]
-              eq_entries.push({
-                key: l,
-                name: leaf.name,
-                kind: leaf.ty,
-                int_round: leaf.int_round,
-                allow_base_prefix: leaf.allow_base_prefix,
-                piece_filters: leaf.piece_filters,
-                separator: leaf.separator,
-                merge: leaf.accumulator == Some("merge"),
-              })
+              if leaf.accumulator != Some("kv_map") {
+                eq_group(eq_prefixes, eq_groups, e.long_prefix).push({
+                  key: l,
+                  name: leaf.name,
+                  kind: leaf.ty,
+                  int_round: leaf.int_round,
+                  allow_base_prefix: leaf.allow_base_prefix,
+                  piece_filters: leaf.piece_filters,
+                  separator: leaf.separator,
+                  merge: leaf.accumulator == Some("merge"),
+                })
+              }
             }
           }
         BGroup(_) => () // positional-only shape (MDR-004 §3 scope) — no long spelling applies
@@ -1513,18 +1595,20 @@ fn inst_long(
           // the guard was always vacuous for it; an explicit `long:[":set"]` flag (now TBool) SHOULD
           // register its eq-split form, which this unconditional push now does correctly (the guard
           // used to wrongly suppress it while `e.ty` still read TFlag pre-normalize_option).
-          eq_entries.push({
-            key: l,
-            name: e.name,
-            kind: e.ty,
-            int_round: e.int_round,
-            // DR-074 §2: TNum / TInt の eq-split (`--v=0xff`) も factory config を反映するよう
-            // ElemDef から LongEntry に持ち込む (他 kind は entry 側で参照されない)。
-            allow_base_prefix: e.allow_base_prefix,
-            piece_filters: e.piece_filters,
-            separator: e.separator,
-            merge: e.accumulator == Some("merge"),
-          })
+          if e.accumulator != Some("kv_map") {
+            eq_group(eq_prefixes, eq_groups, e.long_prefix).push({
+              key: l,
+              name: e.name,
+              kind: e.ty,
+              int_round: e.int_round,
+              // DR-074 §2: TNum / TInt の eq-split (`--v=0xff`) も factory config を反映するよう
+              // ElemDef から LongEntry に持ち込む (他 kind は entry 側で参照されない)。
+              allow_base_prefix: e.allow_base_prefix,
+              piece_filters: e.piece_filters,
+              separator: e.separator,
+              merge: e.accumulator == Some("merge"),
+            })
+          }
         // BEnum (issue values-decode-support): eq-split (`--color=always`) for an enum-constrained
         // cell is OUT OF SCOPE for this issue (no target fixture exercises `--key=value` against a
         // `values`/`or` value-enum element) — `EqSplit`'s `LongEntry.kind : Ty` carrier has no slot
@@ -1536,8 +1620,17 @@ fn inst_long(
       }
     }
   }
-  if eq_entries.length() > 0 {
-    add_greedy(build, NativeMatch(EqSplit(prefix="--", entries=eq_entries)))
+  // DR-091 §3: emit one `EqSplit` matcher PER DISTINCT `long_prefix` seen (was: a single
+  // `EqSplit(prefix="--", ...)` for the whole Definition — `eq_group`'s doc comment).
+  let mut gi = 0
+  while gi < eq_prefixes.length() {
+    if eq_groups[gi].length() > 0 {
+      add_greedy(
+        build,
+        NativeMatch(EqSplit(prefix=eq_prefixes[gi], entries=eq_groups[gi])),
+      )
+    }
+    gi = gi + 1
   }
   // Variant entries (DR-011 / DR-045): `{exact, link (by name), effect}` に lowering。
   // `set` variant は Bind (SET degenerate); default/unset/empty は EffMark (0-token effect)。
@@ -1792,6 +1885,8 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     piece_filters: copy.piece_filters,
     value_filters: copy.value_filters,
     cell_filters: copy.cell_filters,
+    long_prefix: copy.long_prefix,
+    require_equal_separator: copy.require_equal_separator,
     body: copy.body,
   })
 }
@@ -1976,6 +2071,8 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     piece_filters: [], // write-target は filter chain を持たない (源 e の value_filters は source 側で既に適用済み)
     value_filters: [],
     cell_filters: [],
+    long_prefix: "--", // 通常の long 綴り (kebab, 未 prefix) — inst_long が既定 "--" を前置する
+    require_equal_separator: false,
     body: BCell,
   })
 }
@@ -2175,6 +2272,8 @@ fn alias_entry(
     piece_filters: [],
     value_filters: [],
     cell_filters: [],
+    long_prefix: "--",
+    require_equal_separator: false,
     body: BCell,
   }
 }
@@ -2591,6 +2690,7 @@ fn head_progresses(
   match node {
     StrArg(_, _)
     | SepArg(_, _, _, _, _, _, _)
+    | KvArg(_, _)
     | NumArg(_, _, _)
     | FloatArg(_, _)
     | IntArg(_, _, _, _)

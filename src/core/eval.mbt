@@ -325,6 +325,24 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // trigger consumed) this is the "--port with no value" state.
         [Pending([pend_value(TStr, name)], [])]
       }
+    // DR-091 §2: kv_map's consume-time gate — same shape as StrArg (1 token, piece_filters, VStr
+    // binding), plus one extra check AFTER piece_filters: the (filtered) token must contain `=`, or
+    // this is a Held `kind: parse` error (`pe_parse_kv`, node.mbt's `KvArg` doc comment) — same
+    // family as any other value primitive's type-parse failure, not a `KFilter` reject.
+    KvArg(name, piece_filters) =>
+      if pos < ctx.toks.length() {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            if contains_eq(s) {
+              [Accept(pos + 1, [mkb(name, VStr(s), Cli, at_pos=Some(pos))])]
+            } else {
+              [Held(pe_parse_kv(name, s, pos), [])]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
+        }
+      } else {
+        [Pending([pend_value(TStr, name)], [])]
+      }
     SepArg(name, sep, ty, int_round, base, piece_filters, merge) =>
       if pos < ctx.toks.length() {
         match
@@ -659,6 +677,20 @@ fn first_char(s : String) -> Char {
     return c
   }
   ',' // unreachable for a non-empty separator
+}
+
+///|
+/// DR-091 §2: whether `s` contains at least one `=` — the `KvArg` consume-time gate's structural
+/// precondition (a `kv_map` accumulator piece must be shaped `k=v`, checked BEFORE `build_result`
+/// ever tries to split it — this function only answers "is there a split point at all", the actual
+/// first-`=` split happens once in `resolve.mbt` at fold time, `split_first_eq`).
+fn contains_eq(s : String) -> Bool {
+  for c in s {
+    if c == '=' {
+      return true
+    }
+  }
+  false
 }
 
 ///|
@@ -1512,6 +1544,36 @@ fn scope_consume(
       } else {
         [] // 先食い: a greedy trigger sits here; the spine stays pending
       }
+    // DR-091 §2: kv_map on a positional spine — same shape as the StrArg arm above, plus the `=`
+    // containment gate (`eval`'s `KvArg` arm doc comment).
+    KvArg(name, piece_filters) =>
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            if contains_eq(s) {
+              scope_step(
+                sc,
+                ctx,
+                pos + 1,
+                pidx + 1,
+                cat(acc, [mkb(name, VStr(s), Cli, at_pos=Some(pos))]),
+                severed,
+                k,
+              )
+            } else {
+              [Held(pe_parse_kv(name, s, pos), acc)]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), acc)]
+        }
+      } else if pos >= ctx.toks.length() {
+        if in_complete(ctx) {
+          [Pending([pend_value(TStr, name)], acc)]
+        } else {
+          [Held(pe_missing(name, pos), acc)]
+        }
+      } else {
+        []
+      }
     SepArg(name, sep, ty, int_round, base, piece_filters, merge) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match
@@ -2040,6 +2102,28 @@ fn consume_head(
       } else {
         []
       }
+    // DR-091 §2: kv_map as a repeat head — same shape as the StrArg arm above, plus the `=`
+    // containment gate (`eval`'s `KvArg` arm doc comment).
+    KvArg(name, piece_filters) =>
+      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
+        match apply_piece_filters(piece_filters, ctx.toks[pos]) {
+          Ok(s) =>
+            if contains_eq(s) {
+              [Accept(pos + 1, [mkb(name, VStr(s), Cli, at_pos=Some(pos))])]
+            } else {
+              [Held(pe_parse_kv(name, s, pos), [])]
+            }
+          Err((reason, msg)) => [Held(pe_filter(name, pos, reason, msg), [])]
+        }
+      } else if pos >= ctx.toks.length() {
+        if in_complete(ctx) {
+          [Pending([pend_value(TStr, name)], [])]
+        } else {
+          [Held(pe_missing(name, pos), [])]
+        }
+      } else {
+        []
+      }
     SepArg(name, sep, ty, int_round, base, piece_filters, merge) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match
@@ -2249,6 +2333,7 @@ fn consume_compound(
   match node {
     StrArg(_, _)
     | SepArg(_, _, _, _, _, _, _)
+    | KvArg(_, _)
     | NumArg(_, _, _)
     | FloatArg(_, _)
     | IntArg(_, _, _, _)
@@ -2332,6 +2417,7 @@ fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
   match n {
     StrArg(name, _) => if !str_mem(out, name) { out.push(name) }
     SepArg(name, _, _, _, _, _, _) => if !str_mem(out, name) { out.push(name) }
+    KvArg(name, _) => if !str_mem(out, name) { out.push(name) }
     NumArg(name, _, _) => if !str_mem(out, name) { out.push(name) }
     FloatArg(name, _) => if !str_mem(out, name) { out.push(name) }
     IntArg(name, _, _, _) => if !str_mem(out, name) { out.push(name) }

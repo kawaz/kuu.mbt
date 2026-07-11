@@ -1624,3 +1624,109 @@ test "DR-080 resolve wiring: a lone Remove piece merges against the PRIOR firing
     Err(_) => fail("expected Ok")
   }
 }
+
+// ── DR-091 §2: kv_map accumulator fold (build_result) ────────────────────────
+
+///|
+/// Guarantees: a `kv_map` accum cell folds 2 fires (each already `=`-shaped, `KvArg`'s consume-
+/// time gate guarantees this — `split_first_eq` never sees a piece without `=`) into an RObj, one
+/// entry per DISTINCT key, in first-fire order — DR-091 §2's "piece `k=v` を最初の `=` で分割し...
+/// Map (結果は kv オブジェクト) に畳む" core case, no repeated key involved yet (paired with the
+/// last-wins case below).
+test "build_result: kv_map folds 2 fires into an RObj (distinct keys)" {
+  let binds : Array[Binding] = [
+    cb("assigns", VStr("A=1"), Cli),
+    cb("assigns", VStr("B=2"), Cli),
+  ]
+  let cells : Array[AccumCell] = [
+    {
+      path: [],
+      name: "assigns",
+      collector: None,
+      cell_filters: [],
+      accum: "kv_map",
+    },
+  ]
+  assert_eq(
+    build_result(binds, cells, [], []),
+    RObj([
+      ("assigns", RObj([("A", RScalar(VStr("1"))), ("B", RScalar(VStr("2")))])),
+    ]),
+  )
+}
+
+///|
+/// Guarantees (DR-015 あと勝ち, DR-091 §2 "重複キーは last-wins"): re-firing the SAME key
+/// overwrites its value but does NOT move its position — mirrors `Object.fromEntries` (a later
+/// assignment updates in place, JS's `{a:1,b:2,a:3}` fromEntries stays `{a:3,b:2}`, `a` keeps its
+/// FIRST-SEEN slot). 3 fires: A, B, A again — the fold must end up with `A` STILL FIRST (value 3),
+/// `B` second (value 2), not `[B, A]`.
+test "build_result: kv_map re-firing a key is last-wins on VALUE, first-seen on POSITION" {
+  let binds : Array[Binding] = [
+    cb("assigns", VStr("A=1"), Cli),
+    cb("assigns", VStr("B=2"), Cli),
+    cb("assigns", VStr("A=3"), Cli),
+  ]
+  let cells : Array[AccumCell] = [
+    {
+      path: [],
+      name: "assigns",
+      collector: None,
+      cell_filters: [],
+      accum: "kv_map",
+    },
+  ]
+  assert_eq(
+    build_result(binds, cells, [], []),
+    RObj([
+      ("assigns", RObj([("A", RScalar(VStr("3"))), ("B", RScalar(VStr("2")))])),
+    ]),
+  )
+}
+
+///|
+/// Guarantees (DR-091 §2 "最初の `=` で分割"): a piece whose VALUE itself contains further `=`
+/// characters splits ONLY at the first one — `"KEY=a=b"` → `("KEY", "a=b")`, never `("KEY", "a")`
+/// with `=b` silently dropped or re-joined some other way.
+test "build_result: kv_map splits a piece at the FIRST '=' only (value may itself contain '=')" {
+  let binds : Array[Binding] = [cb("assigns", VStr("KEY=a=b"), Cli)]
+  let cells : Array[AccumCell] = [
+    {
+      path: [],
+      name: "assigns",
+      collector: None,
+      cell_filters: [],
+      accum: "kv_map",
+    },
+  ]
+  assert_eq(
+    build_result(binds, cells, [], []),
+    RObj([("assigns", RObj([("KEY", RScalar(VStr("a=b")))]))]),
+  )
+}
+
+///|
+/// 対極 (regression guard): a plain "append" accum cell is UNAFFECTED by the kv_map branch added
+/// to `build_result`'s ACCUMULATE match — `accum_kind_here(...) == Some("kv_map")` is a targeted
+/// dispatch, not a change to the default fold path. Same shape as this file's very first test
+/// ("build_result folds scalar last-wins, accumulate array...") but written standalone here so
+/// this file's kv_map section carries its own non-collision witness.
+test "build_result: kv_map's RObj branch does not affect a sibling 'append' accum cell (対極)" {
+  let binds : Array[Binding] = [
+    cb("tags", VStr("a"), Cli),
+    cb("tags", VStr("b"), Cli),
+  ]
+  let cells : Array[AccumCell] = [
+    {
+      path: [],
+      name: "tags",
+      collector: None,
+      cell_filters: [],
+      accum: "append",
+    },
+  ]
+  assert_eq(
+    build_result(binds, cells, [], []),
+    RObj([("tags", RArr([RScalar(VStr("a")), RScalar(VStr("b"))]))]),
+  )
+}

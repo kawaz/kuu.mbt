@@ -1544,6 +1544,21 @@ fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
 }
 
 ///|
+/// A `kind: parse` held Error for a `kv_map` accumulator piece with no `=` (DR-091 §2, team-lead
+/// 裁定 2026-07-11: "= なし piece は reject、型 parse 失敗と同じ扱い" — same `KParse` kind /
+/// error-vocab family as `pe_parse`/`pe_parse_bool`, this is kv_map's own structural-shape check).
+fn pe_parse_kv(element : String, tok : String, pos : Int) -> ParseError {
+  {
+    element,
+    argv_pos: pos,
+    kind: KParse,
+    reason: "not_a_kv_pair",
+    message: "\"\{tok}\" does not contain '=' (expected key=value)",
+    path: [],
+  }
+}
+
+///|
 /// A `kind: filter` held Error for a piece_filters chain that rejected a raw token/piece before it
 /// ever reached its type parser (DR-034/DR-062, DR-037's Reject/Error distinction — see
 /// `apply_piece_filters`'s doc comment for why a filter chain's `Err` always becomes a `Held`, never

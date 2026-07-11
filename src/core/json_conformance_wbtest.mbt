@@ -327,6 +327,8 @@ fn opt(
   value_filters? : Array[FilterSpelling] = [],
   cell_filters? : Array[FilterSpelling] = [],
   ref_? : String? = None,
+  long_prefix? : String = "--",
+  require_equal_separator? : Bool = false,
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -365,6 +367,8 @@ fn opt(
     piece_filters,
     value_filters,
     cell_filters,
+    long_prefix,
+    require_equal_separator,
     body,
   }
 }
@@ -428,6 +432,11 @@ fn pos(
     piece_filters,
     value_filters,
     cell_filters,
+    // positional 要素は long spelling を持たない (`long: LList([])` 上、`long_of` は常に [] を返す)
+    // — `long_prefix`/`require_equal_separator` は DR-091 §3 の long-only 語彙なので既定値のまま
+    // 未使用フィールドとして持ち回るだけ (`opt`/`inst_long` 側の実際の消費経路と同じ理由付け)。
+    long_prefix: "--",
+    require_equal_separator: false,
     body,
   }
 }
@@ -470,6 +479,9 @@ fn dd_marker(match_? : String? = None, self_keep? : Bool = false) -> ElemDef {
     piece_filters: [],
     value_filters: [],
     cell_filters: [],
+    // dd marker element も `long: LList([])` で long spelling を持たない — 同じ理由で既定値。
+    long_prefix: "--",
+    require_equal_separator: false,
     body: BCell,
   }
 }
@@ -2225,6 +2237,10 @@ fn known_collector(name : String) -> Bool {
 /// は None = 未指定 (`ensure_entity` が既定 "append" にフォールバック)、Some("merge") が DR-080 の
 /// merge accumulator を選ぶ。bool/string 糖衣 (`true`/`"append"`) は常に "append" 相当 (accumulator
 /// 名 None = デフォルト) — merge は object 形の `accumulator` キーでのみ選べる (DR-080 §1 の宣言例)。
+/// DR-091 §2: "kv_map" を同じ枠 (object 形の `accumulator` キー限定) に追加 — `installer.mbt`'s
+/// `value_prim`/`elem_head`/`inst_long` main entry が `Some("kv_map")` を見て `KvArg` を emit し、
+/// `resolve.mbt`'s `build_result` が `AccumCell.accum == "kv_map"` を見て畳み結果を RObj にする
+/// (merge と同じ「宣言をそのまま Entity.accum へ通す」経路、ここは受理するだけ)。
 fn dec_multiple(j : Json) -> (Bool, String?, String?, String?) raise DecodeSkip {
   match j.j_bool() {
     Some(b) => return (b, None, None, None)
@@ -2241,6 +2257,7 @@ fn dec_multiple(j : Json) -> (Bool, String?, String?, String?) raise DecodeSkip 
       let accumulator = match jf_str(o, "accumulator") {
         Some("append") => None // 既定と同義 — Entity.accum への写しは ensure_entity が "append" にフォールバック
         Some("merge") => Some("merge")
+        Some("kv_map") => Some("kv_map")
         Some(a) => raise DecodeSkip("multiple.accumulator '" + a + "'")
         None => None
       }
@@ -2621,6 +2638,13 @@ fn dec_option(
   let piece_filters = dec_filter_chain(o.get("piece_filters"))
   let value_filters = dec_filter_chain(o.get("value_filters"))
   let cell_filters = dec_filter_chain(o.get("cell_filters"))
+  // DR-091 §3 (team-lead 裁定 2026-07-11 修正): `long_prefix`/`require_equal_separator` are NOT
+  // element-level wire keys — the canonical source is `dec_definition`'s scope-level read (DESIGN
+  // §7.2's sibling, "scope config" per DR-091 §3), which overrides every `ElemDef` this function
+  // returns AFTER decode. An option JSON object carrying either key hits the `allowed_keys` reject
+  // above (element-level override would be an un-specced vocabulary invention). `opt(...)` below
+  // omits both — they keep `opt`'s defaults (`"--"`/`false`) here and get set for real by the
+  // caller (`dec_definition`).
   let ref_ = jf_str(o, "ref")
   // DR-078 §1 option repeat (issue 2026-07-09-ref-template-result-shape, new capability): `repeat`
   // used to be positional-only (`dec_positional`'s own decode above) — mirrored here now that
@@ -2823,7 +2847,12 @@ fn dec_command(
   }
   allowed_keys(
     o,
-    ["type", "name", "options", "positionals", "commands", "export_key"],
+    [
+      "type", "name", "options", "positionals", "commands", "export_key",
+      // DR-091 §3 (scope config, DESIGN §7.2): a command's own object IS its Definition's `o`
+      // (`dec_definition` is called with THIS SAME map below) — so `config` is legal here too.
+       "config",
+    ],
     "command",
   )
   let name = match jf_str(o, "name") {
@@ -2846,6 +2875,49 @@ fn dec_definition(
   o : Map[String, Json],
   shadows? : Map[String, TypeShadow] = Map([]),
 ) -> Definition raise DecodeSkip {
+  // DR-091 §3 (scope config, DESIGN §7.2 の兄弟; team-lead 裁定 2026-07-11: 要素単位の
+  // long_prefix/require_equal_separator は spec 未規定の語彙発明になるため、正本を DEFINITION
+  // (= scope) レベルの wire キーへ変更): この呼び出しの `o` (root definition object、または
+  // 1つの command の own definition object — `dec_command` が自分の `o` をそのまま渡す) が持つ
+  // `config: {long_prefix, require_equal_separator}` (DESIGN §7.2 の wire 形そのもの — ネストした
+  // "config" object、フラットな definition 直下キーではない) を読み、直下の `options` 全要素の
+  // ElemDef へ配る。DESIGN §7.2 のフル config object (short_prefix/env_prefix/auto_env/
+  // allow_equal_separator/short_combine・階層継承) は issue scope-config-object-gap の管掌 —
+  // このアプリはその2フィールドだけを受理する部分実装 (config object 自体の allowed_keys で
+  // 他キーは reject)。階層継承は無い — `dec_definition` は command ごとに独立して再帰呼び出し
+  // されるので、子 command の own definition object が明示しない限り、親の値は伝播しない (この
+  // 呼び出し単位そのものが「継承しない」境界)。`config` 省略時は既定 `long_prefix:"--"` /
+  // `require_equal_separator:false` (§3 適用前と同じ挙動)。
+  let (long_prefix, require_equal_separator) = match o.get("config") {
+    Some(cj) => {
+      let co = match cj.j_obj() {
+        Some(x) => x
+        None => raise DecodeSkip("config is not an object")
+      }
+      allowed_keys(
+        co,
+        ["long_prefix", "require_equal_separator"],
+        "definition.config",
+      )
+      let lp = match jf_str(co, "long_prefix") {
+        Some(s) => s
+        None => "--"
+      }
+      let req = bool_field(co, "require_equal_separator", false)
+      (lp, req)
+    }
+    None => ("--", false)
+  }
+  // DR-091 §3 "単独の空 prefix は未定義動作のまま": `long_prefix: ""` は
+  // `require_equal_separator: true` との併用時のみ合法 — 空 prefix 単独ならこの scope の
+  // SPACE-FORM main entry が ANY トークンにマッチしてしまい、素 operand と衝突する
+  // (`ElemDef.require_equal_separator` の doc comment 参照)。definition-error として決定的に
+  // reject (`collect_unsupported_accum_update` 等と同じ「静的、実行時でない」姿勢)。
+  if long_prefix == "" && !require_equal_separator {
+    raise DecodeSkip(
+      "long_prefix: \"\" requires require_equal_separator: true (DR-091 §3)",
+    )
+  }
   let options : Array[ElemDef] = []
   let positionals : Array[ElemDef] = []
   let commands : Array[CommandDef] = []
@@ -2858,7 +2930,7 @@ fn dec_definition(
       }
       for oj in a {
         match dec_option(oj, shadows) {
-          DOpt(e) => options.push(e)
+          DOpt(e) => options.push({ ..e, long_prefix, require_equal_separator })
           DAlias(al) => aliases.push(al)
         }
       }
@@ -3164,7 +3236,11 @@ fn dec_definition_error_fixture(j : Json) -> DDefErrorFixture raise DecodeSkip {
   }
   allowed_keys(
     defo,
-    ["options", "positionals", "commands", "definitions"],
+    [
+      "options", "positionals", "commands", "definitions",
+      // DR-091 §3 (scope config, DESIGN §7.2 の兄弟): `dec_definition` が読む nested config object。
+       "config",
+    ],
     "definition",
   )
   let registry : Map[String, Node] = Map([])
@@ -3247,7 +3323,11 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
   // map) とは別の受け皿 (§2: templates は外部 registry を持たない唯一の区分、クロージャなしの純構造)。
   allowed_keys(
     defo,
-    ["options", "positionals", "commands", "definitions"],
+    [
+      "options", "positionals", "commands", "definitions",
+      // DR-091 §3 (scope config, DESIGN §7.2 の兄弟): `dec_definition` が読む nested config object。
+       "config",
+    ],
     "definition",
   )
   let registry : Map[String, Node] = Map([])
@@ -3708,7 +3788,11 @@ fn dec_lower(j : Json) -> DecodedLower raise DecodeSkip {
   // shadow は dec_definition に thread されて type 名解決で consultation される。
   allowed_keys(
     defo,
-    ["options", "positionals", "commands", "definitions"],
+    [
+      "options", "positionals", "commands", "definitions",
+      // DR-091 §3 (scope config, DESIGN §7.2 の兄弟): `dec_definition` が読む nested config object。
+       "config",
+    ],
     "definition",
   )
   let shadows = match defo.get("definitions") {
@@ -5008,6 +5092,63 @@ test "dec_filter_chain: an object-form arg value containing U+E000 (retired in-b
   assert_eq(result[0].args[0], raw_arg)
   assert_eq(result[1].name, "trim")
   assert_eq(result[1].args.length(), 0)
+}
+
+// ── DR-091 §3: long_prefix / require_equal_separator decode (scope-level, team-lead 裁定
+// 2026-07-11: 正本は definition/scope の wire キー — 要素単位は未規定語彙のため不受理) ──────────
+
+///|
+/// 保証 (DR-091 §3 "単独の空 prefix は未定義動作のまま" → decode-time definition-error): a
+/// DEFINITION (scope) declaring `long_prefix: ""` WITHOUT `require_equal_separator: true` is
+/// rejected at decode (`DecodeSkip`) — this is the exact ambiguity §3 exists to close (an
+/// empty-prefix space-form trigger would match ANY bare token in that scope), so it must never
+/// reach `parse_definition`/`inst_long` at all.
+test "dec_definition: long_prefix:\"\" without require_equal_separator:true is a decode-time reject (DR-091 §3)" {
+  let src =
+    #|{"options":[{"name":"if","type":"string","long":true}],"config":{"long_prefix":""}}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let _ = dec_definition(o) catch { DecodeSkip(_) => return }
+  fail("expected DecodeSkip, but dec_definition succeeded")
+}
+
+///|
+/// 対極: `long_prefix: ""` PAIRED with `require_equal_separator: true` decodes successfully AND
+/// propagates to every option in that scope's `options` array — the eq gate is what makes the
+/// empty prefix safe (`ElemDef.require_equal_separator`'s doc comment), and `dec_definition`
+/// (not `dec_option`) is the single place that writes these 2 fields onto each `ElemDef`.
+test "dec_definition: long_prefix:\"\" WITH require_equal_separator:true decodes successfully and propagates to options (対極)" {
+  let src =
+    #|{"options":[{"name":"if","type":"string","long":true},{"name":"of","type":"string","long":true}],"config":{"long_prefix":"","require_equal_separator":true}}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.options.length(), 2)
+  for e in def.options {
+    assert_eq(e.long_prefix, "")
+    assert_eq(e.require_equal_separator, true)
+  }
+}
+
+///|
+/// 保証 (要素単位の上書きは未規定語彙): an OPTION carrying `long_prefix` or
+/// `require_equal_separator` directly (not on the enclosing definition/scope) is rejected by
+/// `dec_option`'s `allowed_keys` as an unknown key — these 2 fields are scope-only wire vocabulary,
+/// never element-level (team-lead 裁定 2026-07-11, the 対極 half of the previous 2 tests: this
+/// pins that dec_option does NOT accept them, closing the door the earlier element-level design
+/// had left open).
+test "dec_option: long_prefix at the OPTION level is an unknown-key decode reject (scope-only vocabulary)" {
+  let src =
+    #|{"name":"if","type":"string","long":true,"long_prefix":""}
+  let j = @json.parse(src)
+  let _ = dec_option(j, Map([])) catch { DecodeSkip(_) => return }
+  fail("expected DecodeSkip (long_prefix is not a valid option-level key)")
 }
 
 ///|

@@ -37,6 +37,11 @@ fn el(
   piece_filters? : Array[String] = [],
   value_filters? : Array[String] = [],
   cell_filters? : Array[String] = [],
+  // DR-091 §3: long-only axis, `el`'s other builders (`opt`/`pos`, json_conformance_wbtest.mbt)
+  // already carry these — added here so lowering wbtest cases can exercise `require_equal_separator`
+  // without hand-writing a full ElemDef literal.
+  long_prefix? : String = "--",
+  require_equal_separator? : Bool = false,
 ) -> ElemDef {
   {
     name,
@@ -77,6 +82,8 @@ fn el(
     piece_filters: chain(piece_filters),
     value_filters: chain(value_filters),
     cell_filters: chain(cell_filters),
+    long_prefix,
+    require_equal_separator,
     body: BCell,
   }
 }
@@ -2349,5 +2356,113 @@ test "DR-090 対極: a compilable dd match pattern is NOT rejected" {
           )
         }
       }
+  }
+}
+
+// ── DR-091 §3: long_prefix / require_equal_separator end-to-end ─────────────
+
+///|
+/// Guarantees (DR-091 §3 "if=(type: file) 級" motivating case): a `long_prefix:"" +
+/// require_equal_separator:true` element parses its eq-split form (`if=abc`, one token) — this is
+/// the ONLY entry point left once the space-form main entry is withheld (below).
+test "DR-091 §3 end-to-end: long_prefix:\"\" + require_equal_separator:true accepts the eq form" {
+  let if_elem = {
+    ..el(
+      "if",
+      TStr,
+      long=LBool(true),
+      long_prefix="",
+      require_equal_separator=true,
+    )
+  }
+  let def : Definition = { ..empty_def(), options: [if_elem] }
+  let sc = ok_scope(def, all_installers())
+  let o = parse(ScopeNode(sc), ["if=abc"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      let mut found = false
+      for b in bs {
+        if b.key == "if" {
+          found = true
+          assert_eq(b.value, VStr("abc"))
+        }
+      }
+      assert_true(found)
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// Guarantees (DR-091 §3 "long の space-form main entry の登録をスキップ"): with
+/// `require_equal_separator:true`, the SPACE form (`if abc`, 2 tokens, no `=`) has NO entry point
+/// at all — `inst_long` withheld the main entry, and `EqSplit` never fires on a token without `=`
+/// (`node.mbt`'s `EqSplit` doc comment: "Fires only on tokens containing `=`"). With no other
+/// element in this Definition able to consume either token, the parse must FAIL — this is the
+/// direct 対極 of the eq-form acceptance case above.
+test "DR-091 §3 end-to-end: require_equal_separator:true rejects the space form (対極 of eq-form acceptance)" {
+  let if_elem = {
+    ..el(
+      "if",
+      TStr,
+      long=LBool(true),
+      long_prefix="",
+      require_equal_separator=true,
+    )
+  }
+  let def : Definition = { ..empty_def(), options: [if_elem] }
+  let sc = ok_scope(def, all_installers())
+  let o = parse(ScopeNode(sc), ["if", "abc"], defs=Map([]))
+  match o {
+    Failure(_) => ()
+    other =>
+      fail(
+        "expected Failure (space form must have no entry point), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// Guarantees (DR-091 §3 "空 prefix を許すと... 素 operand と long 経路が衝突しない" — the
+/// non-collision half): a `long_prefix:""` element coexisting with an UNRELATED plain positional
+/// in the SAME Definition does not swallow that positional's bare token — `foo` (no `=`) still
+/// binds to `target`, `if` stays unfired (absent from the bindings). This is what makes the empty
+/// prefix safe to declare alongside ordinary positionals, not just in isolation.
+test "DR-091 §3 end-to-end: a long_prefix:\"\" element does not collide with a sibling plain positional (素 operand 非衝突)" {
+  let if_elem = {
+    ..el(
+      "if",
+      TStr,
+      long=LBool(true),
+      long_prefix="",
+      require_equal_separator=true,
+    )
+  }
+  let target = el("target", TStr)
+  let def : Definition = {
+    ..empty_def(),
+    options: [if_elem],
+    positionals: [target],
+  }
+  let sc = ok_scope(def, all_installers())
+  let o = parse(ScopeNode(sc), ["foo"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      let mut target_found = false
+      let mut if_found = false
+      for b in bs {
+        if b.key == "target" {
+          target_found = true
+          assert_eq(b.value, VStr("foo"))
+        }
+        if b.key == "if" {
+          if_found = true
+        }
+      }
+      assert_true(target_found)
+      assert_false(if_found)
+    }
+    other => fail("expected Success, got " + render_outcome(other))
   }
 }

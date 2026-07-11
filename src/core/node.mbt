@@ -141,6 +141,15 @@ pub(all) enum Node {
   /// (merge-declared elements only, DR-080 §1) or treat every piece as a plain add (everyone else,
   /// unchanged pre-DR-080 behavior).
   SepArg(String, String?, Ty, RoundMode, Bool, Array[FilterSpelling], Bool)
+  /// DR-091 §2: kv_map accumulator の consume-time gate — consume 1 token, apply piece_filters,
+  /// then require the (filtered) token to contain `=` (the structural precondition "piece `k=v`
+  /// を最初の `=` で分割" needs). A token with no `=` is a Held Error (kind=KParse, same family as
+  /// any other type-parse failure per team-lead 裁定 2026-07-11 — 「piece の型 parse 失敗と同じ
+  /// 扱い」) — this node does NOT split at `=` itself (that's `resolve.mbt`'s `build_result` job,
+  /// once every accepted binding is guaranteed to contain `=`); it only gates malformed pieces
+  /// out at the same layer every other type mismatch surfaces at. Installer.mbt's `value_prim`
+  /// emits this instead of `StrArg` when `ElemDef.accumulator == Some("kv_map")`.
+  KvArg(String, Array[FilterSpelling])
   /// number value primitive (DR-074 §1 canonical + §2 opt-in `number_allow_base_prefix`)。consume 1
   /// token, parse via `parse_number_ext(_, allow_base_prefix)`。allow=false は canonical (10 進のみ、
   /// base prefix Error)、allow=true で `0xff` / `0x1.8p3` / `0o777` / `0b1010` も受理する統合 opt-in。

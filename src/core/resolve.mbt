@@ -32,6 +32,28 @@ pub(all) enum RVal {
 } derive(Eq, Debug)
 
 ///|
+/// DR-091 §2: split a `kv_map` piece at its FIRST `=` (the value may itself contain further `=`
+/// chars — `KEY=a=b` splits to `("KEY", "a=b")`, not `("KEY", "a")`). Every piece reaching this
+/// function is already guaranteed to contain `=` (`KvArg`'s consume-time gate, `eval.mbt`'s
+/// `contains_eq`) — a piece with no `=` never becomes a Binding in the first place (Held Error at
+/// consume time), so this function has no "no `=` found" case to handle.
+fn split_first_eq(s : String) -> (String, String) {
+  let mut key = ""
+  let mut value = ""
+  let mut seen_eq = false
+  for c in s {
+    if seen_eq {
+      value = value + c.to_string()
+    } else if c == '=' {
+      seen_eq = true
+    } else {
+      key = key + c.to_string()
+    }
+  }
+  (key, value)
+}
+
+///|
 fn str_contains(xs : Array[String], v : String) -> Bool {
   for x in xs {
     if x == v {
@@ -526,14 +548,43 @@ pub fn build_result(
         [] => vals
         chain => apply_cell_filter_chain(chain, vals)
       }
-      let items : Array[RVal] = []
-      for v in filtered_vals {
-        items.push(RScalar(v))
-      }
-      let arr = RArr(items)
-      let collected = match collector_here(cells, path, k) {
-        Some(cn) => apply_collector(cn, arr)
-        None => arr
+      let collected = if accum_kind_here(cells, path, k) == Some("kv_map") {
+        // DR-091 §2: a kv_map cell folds to an OBJECT, not the uniform array every other
+        // accumulator kind produces — each piece is guaranteed `k=v`-shaped (`KvArg`'s consume-time
+        // gate, no piece without `=` ever reaches here as a Binding). Re-firing the same key is
+        // last-wins (DR-015's あと勝ち — same rule as scalar cell mutation) while the key's
+        // POSITION stays at its first occurrence (`Object.fromEntries` convention: a later
+        // assignment updates the value in place, it does not move the key to the end). No
+        // `collector` application here (DR-036's `collector` vocab — `unwrap_single` etc. — targets
+        // an ARRAY shape; kv_map's minimal implementation, team-lead 裁定 2026-07-11, does not wire
+        // collector/kv_map interaction, no fixture requires it yet).
+        let pairs : Array[(String, RVal)] = []
+        let seen : Map[String, Int] = Map([])
+        for v in filtered_vals {
+          let raw = match v {
+            VStr(s) => s
+            _ => "" // unreachable: KvArg only ever binds VStr (eval.mbt's KvArg arm)
+          }
+          let (key, value) = split_first_eq(raw)
+          match seen.get(key) {
+            Some(i) => pairs[i] = (key, RScalar(VStr(value)))
+            None => {
+              seen.set(key, pairs.length())
+              pairs.push((key, RScalar(VStr(value))))
+            }
+          }
+        }
+        RObj(pairs)
+      } else {
+        let items : Array[RVal] = []
+        for v in filtered_vals {
+          items.push(RScalar(v))
+        }
+        let arr = RArr(items)
+        match collector_here(cells, path, k) {
+          Some(cn) => apply_collector(cn, arr)
+          None => arr
+        }
       }
       obj.push((k, collected))
     } else {

@@ -1623,3 +1623,56 @@ test "DR-047 §2: a constraint filters one of two complete paths (sibling greedy
     other => fail("expected Ambiguous, got " + render_outcome(other))
   }
 }
+
+// ── DR-091 §2: KvArg consume-time gate (kv_map accumulator) ─────────────────
+
+///|
+/// Guarantees: a `KvArg` piece that DOES contain `=` is a plain Accept — same shape as `StrArg`
+/// (1 token consumed, `VStr` binding of the WHOLE token, `=` split deferred to `resolve.mbt`'s
+/// `build_result` at fold time — this node only gates, it does not itself split).
+test "DR-091 §2: KvArg accepts a piece containing '=' (whole token becomes the binding value)" {
+  let root : Scope = {
+    greedy: [],
+    positional: [KvArg("kv", [])],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["KEY=value"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      assert_eq(bs.length(), 1)
+      assert_eq(bs[0].key, "kv")
+      assert_eq(bs[0].value, VStr("KEY=value"))
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// Guarantees (DR-091 §2 "`=` を含まない piece は... reject"): a `KvArg` piece with NO `=` is a
+/// Held `kind: parse` Error (`pe_parse_kv`, `reason: "not_a_kv_pair"`) — the same family as any
+/// other value primitive's type-parse failure, NOT a silent Reject and NOT a `KFilter` reject.
+/// This is the structural precondition `resolve.mbt`'s `split_first_eq` relies on: every piece
+/// that ever becomes a Binding is guaranteed splittable.
+test "DR-091 §2: KvArg rejects a piece with no '=' as a Held kind:parse Error (対極 of the accept case above)" {
+  let root : Scope = {
+    greedy: [],
+    positional: [KvArg("kv", [])],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["NOEQUALSIGN"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut found = false
+      for e in fd.errors {
+        if e.element == "kv" && e.reason == "not_a_kv_pair" {
+          found = true
+          assert_eq(render_kind(e.kind), "parse")
+        }
+      }
+      assert_true(found)
+    }
+    other => fail("expected Failure, got " + render_outcome(other))
+  }
+}
