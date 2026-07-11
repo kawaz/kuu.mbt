@@ -73,12 +73,12 @@ pub(all) struct ElemDef {
   // 値の帰属先 = 親 entity の非対称)。id 未指定時は parent entity name を branch_id にフォールバック
   // (parent 直属の value_requires と等価な挙動)。
   value_requires : Array[(String, String, Array[String])]
-  // DR-075 §2 int_round factory config (DR-061 §4 平坦 config キー、`kuu_int_parser` の唯一 config)。
+  // DR-075 §2 int_round factory config (DR-061 §4 平坦 config キー、`int_parser` の唯一 config)。
   // canonical default = `RError` (非整数値は Error)、opt-in で floor/trunc/half_even 等の丸めモード。
   // parse 相内部調整で、`value_prim` が IntArg(name, mode) にこの値を埋め込む。TInt 以外の element は
   // 参照しない (installer が読み取らない冗長フィールド)。
   int_round : RoundMode
-  // DR-074 §2 統合 opt-in `number_allow_base_prefix` (kuu_number_parser factory config)。canonical
+  // DR-074 §2 統合 opt-in `number_allow_base_prefix` (`number_parser` factory config)。canonical
   // default = false (基数 prefix / hex float は Error)、true で `0xff` / `0x1.8p3` / `0o777` / `0b1010`
   // を受理する。value_prim が NumArg(name, flag) / IntArg(name, mode, flag) に埋め込み、eval / matcher
   // で parse_number_ext / parse_int_value_ext に流す。TNum / TInt 以外は参照しない。

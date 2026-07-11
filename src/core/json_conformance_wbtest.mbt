@@ -2001,12 +2001,12 @@ fn dec_ty(t : String) -> Ty raise DecodeSkip {
 /// DR-061 §3 configurable factory の type shadow: user 定義の型名を base Ty + parse 相 config
 /// (現状 int_round のみ) に解決する。fixture の `definitions.types.<name>` → TypeShadow の map で
 /// 保持し、dec_option / dec_positional の `type: "<name>"` 解決で consultation する。canonical 型名
-/// (string/number/int/...) は shadow で override 可能だが本 fixture では未使用 (`kuu_int_parser` factory
-/// のみ扱う; `kuu_number_parser` = number_allow_base_prefix は次タスク)。
+/// (string/number/int/...) は shadow で override 可能だが本 fixture では未使用 (`int_parser` factory
+/// のみ扱う; `number_parser` = number_allow_base_prefix は次タスク)。
 struct TypeShadow {
   base : Ty
   int_round : RoundMode
-  // DR-074 §2 `number_allow_base_prefix` (kuu_number_parser factory config)。canonical default = false。
+  // DR-074 §2 `number_allow_base_prefix` (`number_parser` factory config)。canonical default = false。
   // TypeShadow が担う base 側の flag は canonical default が false なので、int_round と直交な平坦キー。
   allow_base_prefix : Bool
 } derive(Eq, Debug)
@@ -2014,9 +2014,13 @@ struct TypeShadow {
 ///|
 /// Decode `definitions.types` (DR-061 §3 `{name: <factory>, config: {<key>: <value>, ...}}`) into
 /// a shadow map. 各 shadow は base Ty (factory 名から導出) と平坦 config キーで構成される。
-/// 現状サポート: `kuu_int_parser` (base = TInt、config = `int_round`)。他の factory 名は
+/// 現状サポート: `int_parser` (base = TInt、config = `int_round`)。他の factory 名は
 /// DecodeSkip で明示的に unsupported 扱い (typo 検出、DR-061 §4 は factory 自身が config 値を検証
 /// する規定なので、type/factory 認識のこの層は capability gate として振る舞う)。
+///
+/// DR-094 §3/§9 案A: factory 名は `<bare>` (builtin ns の糖衣) / `builtin/<bare>` (ns 明示) /
+/// `kuu_<bare>` (旧 ad-hoc prefix、移行期間中は deprecated alias として受理) の 3 形が同一実体に
+/// 解決される。旧名の削除は fixture pin bump 完了後に別コミットで判断 (本 issue の射程外)。
 fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
@@ -2042,7 +2046,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
         )
     }
     match factory {
-      "kuu_int_parser" => {
+      "int_parser" | "builtin/int_parser" | "kuu_int_parser" => {
         // DR-075 §2 int_round (10 モード語彙、round_mode_of で解決) + DR-074 §2 の (int にも波及する)
         // `number_allow_base_prefix`。config 未指定は canonical default (RError + false)。
         let mut mode = RError
@@ -2059,7 +2063,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
             allowed_keys(
               co,
               ["int_round", "number_allow_base_prefix"],
-              "kuu_int_parser config",
+              "int_parser config",
             )
             match co.get("int_round") {
               Some(vj) =>
@@ -2107,7 +2111,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           allow_base_prefix: base_prefix,
         })
       }
-      "kuu_number_parser" => {
+      "number_parser" | "builtin/number_parser" | "kuu_number_parser" => {
         // DR-074 §2 `number_allow_base_prefix` = 統合 opt-in で 0x/0o/0b + hex float 一括有効化
         // (単一 flag、canonical default false)。他 config キー (`number_thousand_sep` /
         // `number_leading_zero`) は本 substrate 未サポート (fixture が使わないため)。
@@ -2124,7 +2128,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
             allowed_keys(
               co,
               ["number_allow_base_prefix"],
-              "kuu_number_parser config",
+              "number_parser config",
             )
             match co.get("number_allow_base_prefix") {
               Some(vj) =>
@@ -2154,7 +2158,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           name +
           "] unsupported factory '" +
           other +
-          "' (only kuu_int_parser / kuu_number_parser are wired in the current substrate)",
+          "' (only int_parser / number_parser are wired in the current substrate)",
         )
     }
   }
@@ -6109,4 +6113,129 @@ test "DR-092 §5 end-to-end: config-origin \"Infinity\" reaches a float element 
       abort("expected PASS for case '" + c.id + "', got: " + verdict)
     }
   }
+}
+
+// ── DR-094 §9 案A: kuu_ prefix factory 名のリネーム ──────────────────────────
+
+///|
+/// 保証 (DR-094 §3/§9 案A): `definitions.types` の factory 名は `int_parser` (builtin ns の bare
+/// 糖衣) / `builtin/int_parser` (ns 明示) / `kuu_int_parser` (旧 ad-hoc prefix、移行期間中の
+/// deprecated alias) の 3 表記形が同一 TypeShadow 実体に解決される。3 つの shadow を同じ
+/// `int_round: "floor"` config で並べ、同じ fractional 入力 `2.5` を横流しして全て `2` (floor 方向)
+/// に解決されることで実体の同一性を固定する — 表記が違うだけで挙動が分岐しないことの end-to-end 証跡。
+test "DR-094 §9: int_parser の 3 表記形 (bare / builtin/ ns / 旧 kuu_ prefix) が同一 factory に解決される" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "definitions": {
+    #|      "types": {
+    #|        "t_bare": {"name": "int_parser", "config": {"int_round": "floor"}},
+    #|        "t_ns": {"name": "builtin/int_parser", "config": {"int_round": "floor"}},
+    #|        "t_legacy": {"name": "kuu_int_parser", "config": {"int_round": "floor"}}
+    #|      }
+    #|    },
+    #|    "options": [
+    #|      {"name": "bare", "type": "t_bare", "long": true},
+    #|      {"name": "ns", "type": "t_ns", "long": true},
+    #|      {"name": "legacy", "type": "t_legacy", "long": true}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "all-three-forms-floor-2p5-to-2",
+    #|      "argv": ["--bare", "2.5", "--ns", "2.5", "--legacy", "2.5"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "result": {"bare": 2, "ns": 2, "legacy": 2}
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 1)
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// 保証 (DR-094 §3/§9 案A、number_parser 版): `number_parser` / `builtin/number_parser` /
+/// `kuu_number_parser` の 3 表記形が同一 TypeShadow 実体に解決される。`number_allow_base_prefix:
+/// true` を共有 config にして `0xff` (hex int opt-in) を横流しし、全て `255` に解決されることを
+/// 固定する。
+test "DR-094 §9: number_parser の 3 表記形 (bare / builtin/ ns / 旧 kuu_ prefix) が同一 factory に解決される" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "definitions": {
+    #|      "types": {
+    #|        "t_bare": {"name": "number_parser", "config": {"number_allow_base_prefix": true}},
+    #|        "t_ns": {"name": "builtin/number_parser", "config": {"number_allow_base_prefix": true}},
+    #|        "t_legacy": {"name": "kuu_number_parser", "config": {"number_allow_base_prefix": true}}
+    #|      }
+    #|    },
+    #|    "options": [
+    #|      {"name": "bare", "type": "t_bare", "long": true},
+    #|      {"name": "ns", "type": "t_ns", "long": true},
+    #|      {"name": "legacy", "type": "t_legacy", "long": true}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "all-three-forms-hex-prefix-accepted",
+    #|      "argv": ["--bare", "0xff", "--ns", "0xff", "--legacy", "0xff"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "result": {"bare": 255, "ns": 255, "legacy": 255}
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 1)
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// 対極確認 ([[self-written-rule-blind-spots]]): リネームで受理形が増えても、未知 factory 名 (typo) の
+/// capability gate は不変 — `int_parser` の typo `int_parsr` は unknown-factory DecodeSkip に落ちる。
+test "DR-094 §9 対極: factory 名の typo は 3 形式リネーム後も従来通り DecodeSkip される" {
+  let typo_src =
+    #|{"query":"parse","definition":{"definitions":{"types":{"t":{"name":"int_parsr","config":{}}}},"options":[{"name":"v","type":"t","long":true}]},"cases":[]}
+  let typo_j = @json.parse(typo_src)
+  let _ = dec_fixture(typo_j) catch {
+    DecodeSkip(r) => {
+      assert_true(r.contains("unsupported factory"))
+      assert_true(r.contains("int_parsr"))
+      return
+    }
+  }
+  abort("int_parsr: expected DecodeSkip, decode succeeded")
+}
+
+///|
+/// 対極確認その2: `builtin/bool_parser` (DR-094 §9 で新名が定義されたが、本 kuu.mbt substrate の
+/// `dec_types` にはまだ bool factory 自体が配線されていない — schema/builtin-descriptors.json 上は
+/// 正式な builtin だが実装未着手、本リネーム issue の射程外) も、ns 表記があるからといって特別扱いされ
+/// ず同じ unknown-factory DecodeSkip に落ちることを固定する。
+test "DR-094 §9 対極: builtin ns 表記でも未配線 factory (bool_parser) は DecodeSkip される" {
+  let unwired_src =
+    #|{"query":"parse","definition":{"definitions":{"types":{"t":{"name":"builtin/bool_parser","config":{}}}},"options":[{"name":"v","type":"t","long":true}]},"cases":[]}
+  let unwired_j = @json.parse(unwired_src)
+  let _ = dec_fixture(unwired_j) catch {
+    DecodeSkip(r) => {
+      assert_true(r.contains("unsupported factory"))
+      assert_true(r.contains("builtin/bool_parser"))
+      return
+    }
+  }
+  abort(
+    "builtin/bool_parser: expected DecodeSkip (not wired in this substrate), decode succeeded",
+  )
 }

@@ -153,7 +153,7 @@ pub(all) enum Node {
   /// number value primitive (DR-074 §1 canonical + §2 opt-in `number_allow_base_prefix`)。consume 1
   /// token, parse via `parse_number_ext(_, allow_base_prefix)`。allow=false は canonical (10 進のみ、
   /// base prefix Error)、allow=true で `0xff` / `0x1.8p3` / `0o777` / `0b1010` も受理する統合 opt-in。
-  /// flag は installer が ElemDef.allow_base_prefix から埋め込む (kuu_number_parser factory config、
+  /// flag は installer が ElemDef.allow_base_prefix から埋め込む (`number_parser` factory config、
   /// DR-061 §4)。parse-fail は `kind: parse` (DR-053)。4th field is DR-034's piece_filters (same
   /// carrier pattern as `StrArg`'s 2nd field) — applied to the raw token before `parse_number_ext`.
   NumArg(String, Bool, Array[FilterSpelling])
@@ -167,7 +167,7 @@ pub(all) enum Node {
   FloatArg(String, Array[FilterSpelling])
   /// int value primitive (DR-075 §1 値空間判定 + §2 int_round factory config). Consume 1 token, parse
   /// via `parse_int_value(_, mode)` where `mode` is the element's `int_round` (canonical default
-  /// `RError`, opt-in via `kuu_int_parser` factory config, DR-061 §4). RError: fractional は
+  /// `RError`, opt-in via `int_parser` factory config, DR-061 §4). RError: fractional は
   /// `not_an_integer`、それ以外 (RFloor/RCeil/RTrunc/RAway/RHalf{Floor,Ceil,Trunc,Away,Even}) では
   /// fractional 値を丸めて Ok。整数値 (`"3.0"` / `"1e3"` / `"1_000"`) は全モードで丸めなし。番号として
   /// 全く読めない token (`"abc"`) は全モードで `not_a_number`。mode は installer で ElemDef.int_round
