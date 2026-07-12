@@ -140,13 +140,12 @@ pub(all) struct ElemDef {
   // 明示 `env:` が優先 (DR-049 §4)。既定 `false`。
   auto_env : Bool
   // DESIGN §7.2 / DR-096 §1: 3 値 enum で `inst_long` の eq-split entry / SPACE-FORM main entry
-  // (`Seq([Exact(trigger), value_prim(...)])`, the `ref_target is None` branch) の配線をダイヤルする
-  // (旧 `allow_equal_separator`/`require_equal_separator` 2 bool ペアの統合置換)。`EsRequire` =
-  // SPACE-FORM main entry を withhold、eq-split entry のみ配線 (旧 `require_equal_separator:true`
-  // 相当 — これが `long_prefix: ""` を安全にする: space form が無ければこの要素の trigger は生
+  // (`Seq([Exact(trigger), value_prim(...)])`, the `ref_target is None` branch) の配線をダイヤルする。
+  // `EsRequire` =
+  // SPACE-FORM main entry を withhold、eq-split entry のみ配線 (これが `long_prefix: ""` を安全にする: space form が無ければこの要素の trigger は生
   // token に一切マッチしない、`EqSplit` は `=` を含む token にのみ発火するため、素の operand
   // (`foo`) が飲み込まれない)。`EsAllow` (既定) = 両方配線 (現行挙動そのまま)。`EsDeny` = eq-split
-  // entry を登録しない、SPACE-FORM のみ (旧 `allow_equal_separator:false` 相当)。3 値のため「両方
+  // entry を登録しない、SPACE-FORM のみ。3 値のため「両方
   // withhold」という旧矛盾状態は構文的に表現不能 (illegal states unrepresentable、DR-096 §1 —
   // 旧 `collect_eq_separator_conflict` definition-error 規定は本 DR で不要化・削除)。
   long_eq_sep : EqSepMode

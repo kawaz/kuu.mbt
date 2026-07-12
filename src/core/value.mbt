@@ -66,10 +66,10 @@ pub(all) enum RoundMode {
 ///|
 /// DESIGN §7.2 / DR-096 §1: scope config `long_eq_sep` の 3 値。long の eq 分割形 (`key=value`) と
 /// space 分割形 (`key value`) の入口をダイヤルする。`EsRequire` = eq 分割形のみ受理 (space-form main
-/// entry を withhold、DR-091 §3 の `require_equal_separator:true` 相当)、`EsAllow` (既定) = 両方受理、
-/// `EsDeny` = eq 分割 matcher を生成せず space 分割形のみ受理 (旧 `allow_equal_separator:false` 相当)。
+/// entry を withhold、DR-091 §3 の eq 必須意味論)、`EsAllow` (既定) = 両方受理、
+/// `EsDeny` = eq 分割 matcher を生成せず space 分割形のみ受理。
 /// 3 値 enum のため「eq 必須かつ eq 禁止」のような組合せはそもそも構文的に表現できない (illegal
-/// states unrepresentable、旧 2 bool ペアが持っていた矛盾検出規定はこの型そのものにより不要化)。
+/// states unrepresentable、DR-096 §1)。
 pub(all) enum EqSepMode {
   EsRequire
   EsAllow

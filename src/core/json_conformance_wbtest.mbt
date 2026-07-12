@@ -3179,10 +3179,6 @@ fn dec_scope_config(
 /// `long_prefix:""` を上書きしつつ `long_eq_sep` を明示しない場合、親から継承した値が `EsRequire`
 /// でなければ同じ「空 prefix が素 operand と衝突する」問題が要素単位で再現する) — checker を
 /// 関数化して両呼び出し点 (スコープ解決直後・要素ごとのマージ直後) から同一ロジックで検証する。
-///
-/// DR-096 §1: 旧 `require_equal_separator: true` × `allow_equal_separator: false` の矛盾チェックは
-/// 3 値 enum 化で構文的に表現不能になったため消滅した (illegal states unrepresentable) — 対応する
-/// definition-error 規定・`collect_eq_separator_conflict` (installer.mbt) は削除済み。
 fn validate_scope_config(cfg : ScopeConfig) -> Unit raise DecodeSkip {
   // DR-091 §3 "単独の空 prefix は未定義動作のまま" / DR-096 §3.3 (読み替え): `long_prefix: ""` は
   // `long_eq_sep: EsRequire` との併用時のみ合法 — 空 prefix 単独ならこの scope の SPACE-FORM main
