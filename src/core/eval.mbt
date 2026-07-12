@@ -1053,28 +1053,65 @@ fn eval_many(
 // the rest of the walk and everything falls raw into positionals.
 
 ///|
-/// A greedy entry "reads" at `pos` iff its TRIGGER engages the token there
-/// (spec DR-041 §4: 素通しはトリガ不一致 = 読みゼロの時のみ). This is a
-/// structural trigger-match, NOT "does the whole entry consume successfully":
-/// an engaged trigger whose value slot then fails (bad number, starved slot,
-/// unfulfillable child scope) still suppresses the raw-eat — the token is
-/// read HERE and the entry's Held/Pending is the outcome, never a silent
-/// positional fallback (deep review R1/R2: `--port xyz` and a value-less
-/// `build` used to silently succeed as positionals). Entries without a
-/// structural trigger (bare value primitives) keep the consumption-based
-/// probe, so a degenerate bare NumArg greedy does not over-suppress.
+/// DR-097: whether a SHALLOW (no-continuation) probe of `g` at `pos` yields a
+/// VIABLE reading — Accept that advances position. Held (value-space match
+/// failure, a dead end for THIS reading) does not count — that is exactly
+/// "missing operand でない" 's negation. Pending is mode-dependent: `eval`'s
+/// value-primitive arms (StrArg/NumArg/etc.) return an EXPLICIT Pending at
+/// argv end REGARDLESS of mode (their own doc comment: "the end of input at
+/// a value slot is an explicit Pending, not a silent []" — an off-spine/
+/// completion-probe design predating DR-097). In parse mode that Pending IS
+/// DR-097's "missing operand" (a value slot starved at argv end) and must
+/// NOT count as viable, or a value-less trigger at the tail of argv would
+/// wrongly suppress the pass-through fixture
+/// matcher-readings/long-empty-prefix-typed.json pins against. In complete
+/// mode the SAME Pending is the candidate carrier for completion (spec is
+/// silent on complete-mode 早閉じ/先食い semantics; this preserves the
+/// pre-DR-097 posture there via `eval_consumes`'s old `Pending(_, _) =>
+/// return true`, unchanged since this predicate is a parse-phase one).
+fn has_viable(brs : Array[Branch], pos : Int, ctx : Ctx) -> Bool {
+  for b in brs {
+    match b {
+      Accept(p2, _) => if p2 > pos { return true }
+      Held(_, _) => ()
+      Pending(_, _) => if in_complete(ctx) { return true }
+    }
+  }
+  false
+}
+
+///|
+/// A greedy entry "reads" at `pos` iff the READING ITSELF IS VIABLE (spec
+/// DR-097, precising DR-041 §4's 先食い/早閉じ抑制 predicate 「読める」):
+/// trigger fires, AND — for entries that carry a value slot — that slot's
+/// token is available (not missing_operand) and passes its OWN value-space
+/// match (parse phase, factory config included). Downstream consequences
+/// (sibling elements' fulfillment, deferred constraints §15.9, later
+/// tokens' fate) play NO part — DR-097 rejected the continuation-based
+/// "does the rest of the parse complete" formulation after a reference-impl
+/// experiment broke 39 existing fixtures (unrelated downstream failures
+/// leaking backward into an unrelated entry's suppression verdict, e.g. a
+/// value-less flag's reading going "unviable" because a SIBLING required
+/// positional starves at end-of-input).
+///
+/// Entries with NO value slot (flag/count/dd/command) are viable whenever
+/// the trigger fires, UNCONDITIONALLY — this is why CmdSat/DdSat/DdMatchSat
+/// stay a bare structural trigger test below rather than routing through
+/// the shallow `eval` probe: a CmdSat's "value slot" is its entire child
+/// scope, and evaluating that scope would pull in exactly the downstream
+/// failures (child-scope-internal missing/constraint) the predicate must
+/// not see.
+///
+/// Every other shape (Seq trigger+value-slot satellites, NativeMatch long/
+/// short/eq-split matchers, bare value primitives) reduces to ONE shallow
+/// `eval(g, ctx, pos)` probe with no continuation threaded — `eval_seq`
+/// already evaluates "trigger, then value slot" as a single unit, so this
+/// one probe naturally captures both trigger-match and value-space-match in
+/// one pass without any continuation/CPS machinery (spec `停止性と有界性`:
+/// the predicate is closed over the reading's own span, at most a handful
+/// of tokens, and never recurses into downstream search).
 fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
   match g {
-    Seq(items) =>
-      if items.length() >= 1 {
-        match items[0] {
-          Exact(s) => ctx.toks[pos] == s
-          NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
-          _ => eval_consumes(g, ctx, pos)
-        }
-      } else {
-        false
-      }
     Or(alts) => {
       for a in alts {
         if greedy_engages(a, ctx, pos) {
@@ -1085,32 +1122,11 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
     }
     CmdSat(name, _) => ctx.toks[pos] == name
     DdSat(t) => ctx.toks[pos] == t
-    // DR-090: a trigger test, same standing as `DdSat`/`CmdSat` above — NOT routed through the
-    // `_ => eval_consumes` fallback, because `eval_consumes` only counts a reading as "engaged"
-    // when it ADVANCES position (`p2 > pos`), which is wrong for `self_keep=true` (its Accept
-    // stays at the SAME `pos` by design, DR-090 §2 の 0-token Accept).
     DdMatchSat(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
-    // a matcher engages iff it yields ANY reading or held Error ([] = 素通し,
-    // e.g. an undefined --key= or a non-prefix token).
-    NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
     Rooted(inner, _) => greedy_engages(inner, ctx, pos)
-    _ => eval_consumes(g, ctx, pos)
+    _ => has_viable(eval(g, ctx, pos), pos, ctx)
   }
-}
-
-///|
-/// Consumption-based fallback probe for trigger-less greedy shapes: reads iff
-/// some branch consumes a token (or a Pending shows a trigger was consumed).
-fn eval_consumes(g : Node, ctx : Ctx, pos : Int) -> Bool {
-  for b in eval(g, ctx, pos) {
-    match b {
-      Accept(p2, _) => if p2 > pos { return true }
-      Held(_, _) => ()
-      Pending(_, _) => return true
-    }
-  }
-  false
 }
 
 ///|
@@ -1127,9 +1143,68 @@ fn greedy_reads(sc : Scope, ctx : Ctx, pos : Int) -> Bool {
 }
 
 ///|
+/// DR-097 早閉じ裁定の補助 (STRUCTURAL trigger test only, no value-slot
+/// evaluation — the pre-DR-097 predicate, kept ONLY for this narrow use):
+/// whether `g`'s trigger fires at `pos`, independent of whether its reading
+/// is viable. Used exclusively to distinguish, at an early-close decision
+/// point, "no entry's trigger matched at all" (a genuine unattributed
+/// residual token) from "some entry's trigger matched but its OWN reading
+/// is unviable" (that entry's `step_greedy` call already deposited a more
+/// specific Held into `out` — spec 不変ノート「受け皿の無い定義では held
+/// Error が唯一の結末」extends to 早閉じ: the coarser unexpected_token
+/// this early-close would ALSO produce is a strictly less informative
+/// restatement of the SAME reading's failure, not an independent one).
+fn greedy_trigger_matches(g : Node, ctx : Ctx, pos : Int) -> Bool {
+  match g {
+    Seq(items) =>
+      if items.length() >= 1 {
+        match items[0] {
+          Exact(s) => ctx.toks[pos] == s
+          NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
+          _ => greedy_engages(g, ctx, pos)
+        }
+      } else {
+        false
+      }
+    Or(alts) => {
+      for a in alts {
+        if greedy_trigger_matches(a, ctx, pos) {
+          return true
+        }
+      }
+      false
+    }
+    CmdSat(name, _) => ctx.toks[pos] == name
+    DdSat(t) => ctx.toks[pos] == t
+    DdMatchSat(spelling, is_pattern, _, _) =>
+      dd_match_token(spelling, is_pattern, ctx.toks[pos])
+    NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
+    Rooted(inner, _) => greedy_trigger_matches(inner, ctx, pos)
+    _ => greedy_engages(g, ctx, pos)
+  }
+}
+
+///|
+/// Whether ANY greedy entry's trigger fires at `pos` (see
+/// `greedy_trigger_matches`'s doc comment for why this is a separate,
+/// coarser probe than `greedy_reads`).
+fn any_trigger_matches(sc : Scope, ctx : Ctx, pos : Int) -> Bool {
+  if pos >= ctx.toks.length() {
+    return false
+  }
+  for g in sc.greedy {
+    if greedy_trigger_matches(g, ctx, pos) {
+      return true
+    }
+  }
+  false
+}
+
+///|
 /// Whether raw pass-through of the token at `pos` is suppressed. 先食い is
 /// greedy-ONLY (spec DR-041 §4): a raw-eat is suppressed iff some greedy
-/// entry reads the token. Once severed, nothing is suppressed.
+/// entry's reading here is VIABLE (spec DR-097, `greedy_reads` above). Once
+/// severed, nothing is suppressed.
 fn suppressed(sc : Scope, ctx : Ctx, pos : Int, severed : Bool) -> Bool {
   if severed {
     return false
@@ -1291,12 +1366,42 @@ fn scope_step(
   }
   // (B) advance the positional face
   if pidx >= sc.positional.length() {
-    // 早閉じ抑制 (spec DR-041 §4): a scope with a backbone cannot complete
-    // while one of its own greedy entries can read the next token — "that
-    // which can be read here, is read here".
-    if severed || !greedy_reads(sc, ctx, pos) {
+    // 早閉じ抑制 (spec DR-041 §4 + DR-097): a scope with a backbone cannot
+    // complete while one of its own greedy entries has a VIABLE reading of
+    // the next token — "that which can be read here, is read here" now
+    // means "that which reaches parse-phase viability here" (DR-097's
+    // precising of 「読める」), not merely trigger-match.
+    if severed {
       for r in run_cont(k, ctx, pos, acc) {
         out.push(r)
+      }
+    } else if !greedy_reads(sc, ctx, pos) {
+      // DR-097 裁定側 (生成と裁定の層分離): if some entry's trigger DID
+      // fire here but its reading is unviable, that entry's own `step_greedy`
+      // call above already deposited a more specific Held into `out` (value-
+      // space mismatch / missing operand). The early-close choice we are
+      // about to run is then a strictly coarser restatement of the SAME
+      // failure IF it too only reaches a dead end (a bare residual-token
+      // Held at this exact `pos`) — drop only that shape, so a genuine
+      // trigger-mismatch residual (no entry fired at all, e.g.
+      // constraints-parse/requires-dd-target.json's Many-share dead end) and
+      // any early-close outcome that reaches an Accept/Pending (e.g.
+      // command-scope/early-close-viability.json's build→rest hand-off)
+      // both still ride through untouched.
+      let drop_redundant_residual = any_trigger_matches(sc, ctx, pos)
+      for r in run_cont(k, ctx, pos, acc) {
+        match r {
+          Held(pe, _) =>
+            if drop_redundant_residual &&
+              pe.element == "" &&
+              pe.reason == "unexpected_token" &&
+              pe.argv_pos == pos {
+              ()
+            } else {
+              out.push(r)
+            }
+          _ => out.push(r)
+        }
       }
     }
   } else {

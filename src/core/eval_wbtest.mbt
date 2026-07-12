@@ -105,15 +105,19 @@ test "MDR-002 §1.4 control: without the trailing positional, greedy xs takes ev
 }
 
 ///|
-test "MDR-002 §2.6 acceptance: a value-less trigger at the end of input is a missing-operand failure, not a raw positional eat" {
+test "DR-097 (先食い述語の精密化): a value-less trigger at the end of input is 読みゼロ — the raw positional eats it, not a missing-operand failure" {
   // Root: permissive string positional `files` + greedy `--port <num>`.
-  // Input ["--port"]: the trigger is consumed but the value slot is starved.
-  //
-  // The slice's greedy_reads required FULL consumption, so the greedy entry
-  // vanished ([]), 先食い did not fire, and `files` raw-ate the literal
-  // string "--port" → a silent wrong Success. With Pending counted as
-  // "reads", the raw-eat is suppressed and the parse fails with a proper
-  // missing-operand error for `port`.
+  // Input ["--port"]: the trigger fires but the value slot is starved
+  // (missing operand) — DR-097's precised 「読める」predicate ("トリガ発火
+  // に加え、その entry 自身の値スロット消費が argv から確保でき... 値空間
+  // 照合を通ること") makes this reading NON-viable, so it counts as 読みゼロ
+  // and the raw-eat is NOT suppressed: `files` consumes the literal string
+  // "--port" and the parse succeeds. Supersedes the pre-DR-097 pin
+  // (MDR-002 §2.6's "Pending counts as reads" posture, which made a
+  // value-less trigger suppress 先食い even when its own value slot could
+  // never be filled) — DR-097 distinguishes "trigger fired but the reading
+  // itself cannot succeed" (読みゼロ) from "trigger fired and the reading
+  // holds" (先食い holds).
   let root : Scope = {
     greedy: [Seq([Exact("--port"), NumArg("port", false, [])])],
     positional: [StrArg("files", [])],
@@ -122,16 +126,20 @@ test "MDR-002 §2.6 acceptance: a value-less trigger at the end of input is a mi
   }
   let o = parse(ScopeNode(root), ["--port"], defs=Map([]))
   match o {
-    Failure(fd) => {
-      let mut port_missing = false
-      for e in fd.errors {
-        if e.element == "port" && e.kind == KParse {
-          port_missing = true
+    Success(bs) => {
+      let mut files_raw = false
+      for b in bs {
+        if b.key == "files" {
+          match b.value {
+            VStr(s) => if s == "--port" { files_raw = true }
+            _ => ()
+          }
         }
       }
-      assert_true(port_missing)
+      assert_true(files_raw)
     }
-    _ => fail("expected Failure")
+    _ =>
+      fail("expected Success (files raw-eats \"--port\", DR-097 読みゼロ)")
   }
 }
 
@@ -926,12 +934,15 @@ test "REVIEW-D4 入れ子スコープの constraints も完全経路の成立条
 }
 
 ///|
-test "REVIEW-D5 先食いはトリガ一致で成立: 値不正の --port は positional に raw 落ちしない (DR-041 §4)" {
-  // 旧 greedy_reads は「entry 全体が消費成功したか」を見ていたため、値が
-  // number として読めない `--port xyz` で entry が Held に落ちると suppress
-  // が外れ、寛容 positional 2 つが f="--port", g="xyz" を silent Success で
-  // 食っていた。トリガ一致意味論では --port は「ここで読まれる」ので、
-  // 結末は port の not_a_number を含む Failure。
+test "DR-097 (先食い述語の精密化, supersedes REVIEW-D5): 値不正の --port は読みゼロ扱いで positional に raw 落ちする" {
+  // `--port xyz`: --port のトリガは一致するが値 "xyz" が number 照合に失敗し、
+  // この読み自身は成立しない (DR-097「読める」= 読み自身の成立、値空間照合
+  // (parse 相) を通ること)。成立する読みが無い消費点は読みゼロと同じ扱いに
+  // なり、素通し枝が生きる — 寛容な positional 2 つが f="--port", g="xyz" を
+  // raw 消費して Success になる (held Error の not_a_number は素通し側の
+  // 完全経路が通るため DR-037「他ルートが通るならエラーは捨てる」で捨てられ
+  // る)。REVIEW-D5 が固定していた「トリガ一致のみで先食い成立」という
+  // 旧述語は DR-097 で置き換えられた (DR-041 §4 の Superseded 節)。
   let root : Scope = {
     greedy: [Seq([Exact("--port"), NumArg("port", false, [])])],
     positional: [StrArg("f", []), StrArg("g", [])],
@@ -940,16 +951,122 @@ test "REVIEW-D5 先食いはトリガ一致で成立: 値不正の --port は po
   }
   let o = parse(ScopeNode(root), ["--port", "xyz"], defs=Map([]))
   match o {
-    Failure(fd) => {
-      let mut port_err = false
-      for e in fd.errors {
-        if e.element == "port" && e.reason == "not_a_number" {
-          port_err = true
+    Success(bs) => {
+      let mut f_raw = false
+      let mut g_raw = false
+      for b in bs {
+        match (b.key, b.value) {
+          ("f", VStr(s)) => if s == "--port" { f_raw = true }
+          ("g", VStr(s)) => if s == "xyz" { g_raw = true }
+          _ => ()
         }
       }
-      assert_true(port_err)
+      assert_true(f_raw)
+      assert_true(g_raw)
     }
-    _ => fail("expected Failure (not a silent positional eat)")
+    _ =>
+      fail(
+        "expected Success (f=\"--port\", g=\"xyz\" raw-eaten, DR-097 読みゼロ)",
+      )
+  }
+}
+
+///|
+test "DR-097 述語 pin: 値スロットを持たない flag は常に成立し先食いを維持する (下流の失敗に関わらず)" {
+  // greedy `-b` (flag, 値スロットなし) の直後に構造的必須 positional `x`
+  // (string) を置く。argv=["-a","-b"] は x の値トークンが尽きているので
+  // x は missing_operand で失敗するが、これは -b 自身の読みとは無関係な
+  // 下流の帰結 — DR-097 は「値スロットを持たない flag/count/dd/command は
+  // 常に成立」と明記しており、下流で経路が死ぬ場合も先食いは維持される
+  // (spec 決定節「下流で経路が死ぬ場合 (制約未充足・同スコープの他要素の
+  // 欠落等) も維持され、その失敗は held Error 付きの failure として可視の
+  // まま残る」)。つまり -b は x に raw 落ちせず、b=true が commit され、
+  // x の missing_operand だけが可視 failure として残る。fixture の
+  // matcher-readings/* 系は値持ち option の読み不成立 (値照合失敗) だけを
+  // 対象にしており、値スロットなしエントリの「常に成立」側はこの wbtest が
+  // 唯一の pin (fixture と重複しない軸)。
+  let root : Scope = {
+    greedy: [
+      Seq([Exact("-a"), Bind("a", VBool(true))]),
+      Seq([Exact("-b"), Bind("b", VBool(true))]),
+    ],
+    positional: [StrArg("x", [])],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["-a", "-b"], defs=Map([]))
+  match o {
+    Failure(fd) => {
+      let mut x_missing = false
+      let mut b_raw_eaten = false
+      for e in fd.errors {
+        if e.element == "x" && e.reason == "missing_operand" {
+          x_missing = true
+        }
+        if e.element == "x" && e.reason == "not_a_number" {
+          // would only happen if -b were raw-eaten into x (it never is: x is
+          // string-typed, so a raw-eat would silently SUCCEED as x="-b" —
+          // this branch exists only to document the shape a regression
+          // would take, not because it is reachable via this Held path.
+          b_raw_eaten = true
+        }
+      }
+      assert_true(x_missing)
+      assert_false(b_raw_eaten)
+    }
+    Success(_) =>
+      fail(
+        "expected Failure (missing operand for x; a silent x=\"-b\" Success would mean -b's ALWAYS-viable flag reading was wrongly suppressed)",
+      )
+    _ => fail("expected Failure")
+  }
+}
+
+///|
+test "DR-097 述語 pin: requires (遅延述語) 未充足は先食い判定に参加しない — 読み自身が成立していれば維持される" {
+  // `--height <num>` (requires: weight) + 寛容な positional `rest` (repeat
+  // min 0)。argv=["--height","168.5"] は height の読み自身は成立する (値
+  // 168.5 は number 照合を通る) — DR-097「下流の帰結 (同スコープの他要素の
+  // 充足、遅延述語 §15.9、後続トークンの成否) は判定に参加しない」により、
+  // weight の未充足 (遅延述語、requires) は先食い判定を一切左右しない:
+  // height は正しく commit され、168.5 は rest に raw 落ちしない。
+  // apply_requires_filter (DR-047 §4 の post-parse requires 評価) を通すと
+  // requires_violated の可視 failure になる — これは「height が正しく
+  // commit された」ことの間接証拠 (旧述語のように 168.5 が rest に格下げ
+  // されていれば height 自体が commit されず requires のトリガも立たない)。
+  // spec 不変ノート「制約 (遅延述語) の未充足は先食い・早閉じに影響しない」
+  // の先食い側 pin — 早閉じ側は fixture
+  // command-scope/early-close-viability.json::constraint-not-consulted-on-exit
+  // が既に固定しているので、ここでは重複させず先食い側のみ固定する。
+  let root : Scope = {
+    greedy: [Seq([Exact("--height"), NumArg("height", false, [])])],
+    positional: [Many(StrArg("rest", []), false)],
+    entities: [ent("height", TNum), ent("weight", TStr)],
+    constraints: [CRequires("height", ["weight"])],
+  }
+  let root_node = ScopeNode(root)
+  let toks = ["--height", "168.5"]
+  let o = apply_requires_filter(
+    parse(root_node, toks, defs=Map([])),
+    root_node,
+    Map([]),
+    Map([]),
+    toks.length(),
+  )
+  match o {
+    Failure(fd) => {
+      let mut height_requires_violated = false
+      for e in fd.errors {
+        if e.element == "height" && e.reason == "requires_violated" {
+          height_requires_violated = true
+        }
+      }
+      assert_true(height_requires_violated)
+    }
+    _ =>
+      fail(
+        "expected Failure (height requires_violated; height's reading held despite the unmet requires)",
+      )
   }
 }
 
