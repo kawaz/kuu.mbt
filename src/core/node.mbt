@@ -369,9 +369,10 @@ pub(all) enum Constraint {
 /// A value cell (DR-030 "entity-only node"). Satellites/matchers with the same
 /// `name` all write here = link 合流. Carries the reduced value-source ladder:
 /// env seat (declared by the env installer), inherit seat (declared by the inherit
-/// installer), and default seat. Ladder order is engine-owned (DR-031, invariant ④):
-/// cli > env > inherit > default. The inherit seat looks up the nearest ancestor
-/// scope's same-named entity value (縮退ラダー: inherit → default for this PoC).
+/// installer), tty seat (declared by the tty installer, DR-098), and default seat.
+/// Ladder order is engine-owned (DR-031/DR-098, invariant ④): cli > env > config >
+/// inherit > tty > default. The inherit seat looks up the nearest ancestor scope's
+/// same-named entity value.
 pub(all) struct Entity {
   name : String
   ty : Ty
@@ -380,6 +381,10 @@ pub(all) struct Entity {
   mut config_key : Array[String]? // explicit absolute config path (DR-050 §3); None = 同型 (scope path + name)
   is_config_file : Bool // this cell's value is the config-file PATH (DR-050): resolves the provider, no config seat
   mut inherit_ : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013). MDR-003: `inherit` 予約語回避
+  // DR-098 §3: tty seat lookup key — the stream name ("stdin"|"stderr"|"stdout") the tty installer
+  // read off the element's `tty` attribute. None = no tty seat declared. Mirrors `env_key` (単一
+  // スロット lookup key、複数不可 — tty は 3 値 enum の単一値、env の複数候補配列とは違う形)。
+  mut tty_key : String?
   // The accumulators-registry name (DR-036) that folds this cell's effect list, or None for a
   // scalar cell. Built-ins: "flatten" (repeat's cons [T,[T,…]] → T[], DR-043) and "append"
   // (multiple's value fold, DR-034). Both realize a value LIST here; the name records WHICH

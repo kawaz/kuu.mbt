@@ -25,6 +25,7 @@ fn ent(
   config_key? : Array[String]? = None,
   is_config_file? : Bool = false,
   inherit_? : Bool = false,
+  tty_key? : String? = None,
   accum? : String? = None,
   collector? : String? = None,
   default_value? : Value? = None,
@@ -49,6 +50,7 @@ fn ent(
     config_key,
     is_config_file,
     inherit_,
+    tty_key,
     accum,
     collector,
     default_values,
@@ -537,6 +539,98 @@ test "resolve_scope: inherit seat fills from the parent context map" {
   // no inherited value present → falls through to default.
   let bound_no_parent = resolve_scope(sc, [], Map([]))
   assert_eq(bound_no_parent, Ok([mkb_pub("ttl", VNum(30.0), Default)]))
+}
+
+///|
+/// DR-098 §5: tty 席は inherit の直後・default の直前に位置する — 「明示 (CLI/env/config) >
+/// 継承 (inherit) > 観測 (tty) > 宣言既定 (default)」の序列そのものを固定する。fixture 側
+/// (`value-sources/tty-ladder.json`) は cli/env/tty/default の 4 値源の相互比較を固定するが、
+/// inherit との直接対決は fixture に無い軸 (fixture の definition は inherit を持たない) — ここで
+/// 補う。
+test "resolve_scope: tty seat fills strictly between inherit and default (DR-098 §5)" {
+  let use_color = ent(
+    "use_color",
+    TBool,
+    tty_key=Some("stdout"),
+    inherit_=true,
+    default_value=Some(VBool(true)),
+  )
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [use_color],
+    constraints: [],
+  }
+  // inherit と tty 供給が両方あり、値が食い違う場合 → inherit が勝つ (継承は観測より強い、DR-098 §5)。
+  let inherited = Map::from_array([("use_color", VBool(false))])
+  let inherit_wins = resolve_scope(
+    sc,
+    [],
+    Map([]),
+    inherited~,
+    tty=Map::from_array([("stdout", true)]),
+  )
+  assert_eq(inherit_wins, Ok([mkb_pub("use_color", VBool(false), Inherit)]))
+  // inherit 供給なし、tty 供給あり → tty が勝つ (観測は宣言 default より強い)。
+  let tty_wins = resolve_scope(
+    sc,
+    [],
+    Map([]),
+    tty=Map::from_array([("stdout", false)]),
+  )
+  assert_eq(tty_wins, Ok([mkb_pub("use_color", VBool(false), Tty)]))
+  // どちらも供給なし → default (最終フォールバック)。
+  let default_wins = resolve_scope(sc, [], Map([]))
+  assert_eq(default_wins, Ok([mkb_pub("use_color", VBool(true), Default)]))
+}
+
+///|
+/// DR-098 §1: tty_provider の応答は stream ごとに独立 ("null = 提供なし" は要素単位の stream
+/// lookup — 他 stream に値があっても伝播しない)。複数の bool 要素がそれぞれ別 stream (stdin/stdout/
+/// stderr) に紐付く場合、provider が一部 stream にのみ応答するケースで各要素が個別にフォールスルー
+/// することを固定する — fixture (`tty-ladder.json`) は単一要素 (stdout 1 本) の相互比較のみなので、
+/// 複数要素の stream 独立性は fixture から見えない軸。
+test "resolve_scope: tty seat resolution is independent per-stream across multiple entities" {
+  let stdin_tty = ent(
+    "stdin_tty",
+    TBool,
+    tty_key=Some("stdin"),
+    default_value=Some(VBool(false)),
+  )
+  let stdout_tty = ent(
+    "stdout_tty",
+    TBool,
+    tty_key=Some("stdout"),
+    default_value=Some(VBool(false)),
+  )
+  let stderr_tty = ent(
+    "stderr_tty",
+    TBool,
+    tty_key=Some("stderr"),
+    default_value=Some(VBool(false)),
+  )
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [stdin_tty, stdout_tty, stderr_tty],
+    constraints: [],
+  }
+  // provider は stdout にのみ応答 (true)。stdin/stderr は tty map にキー自体が無い = 提供なし
+  // (DR-098 §1「null = 提供なし」) — env_map の「未設定キー」と同じ縮退。
+  let bound = resolve_scope(
+    sc,
+    [],
+    Map([]),
+    tty=Map::from_array([("stdout", true)]),
+  )
+  assert_eq(
+    bound,
+    Ok([
+      mkb_pub("stdin_tty", VBool(false), Default),
+      mkb_pub("stdout_tty", VBool(true), Tty),
+      mkb_pub("stderr_tty", VBool(false), Default),
+    ]),
+  )
 }
 
 ///|

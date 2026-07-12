@@ -1514,6 +1514,7 @@ pub fn resolve_scope_tree(
   path? : Array[String] = [],
   inherited? : Map[String, Value] = Map([]),
   at_pos? : Int = -1,
+  tty? : Map[String, Bool] = Map([]),
 ) -> Result[Array[Binding], ParseError] {
   let here : Array[Binding] = []
   for b in binds {
@@ -1530,6 +1531,7 @@ pub fn resolve_scope_tree(
       path~,
       inherited~,
       at_pos~,
+      tty~,
     ) {
     Ok(rb) => rb
     Err(pe) => return Err(pe)
@@ -1564,6 +1566,7 @@ pub fn resolve_scope_tree(
               path=childpath,
               inherited=child_inherited,
               at_pos~,
+              tty~,
             ) {
             Ok(cb) =>
               for b in cb {
@@ -1610,6 +1613,7 @@ pub fn apply_requires_filter(
   env : Map[String, String],
   toks_len : Int,
   provider? : (String) -> ConfigVal? = fn(_) { None },
+  tty? : Map[String, Bool] = Map([]),
 ) -> Outcome {
   let table = collect_scopes(root, defs)
   let violations_of = fn(binds : Array[Binding]) -> Array[ParseError] {
@@ -1618,7 +1622,8 @@ pub fn apply_requires_filter(
     }
     match root {
       ScopeNode(sc) =>
-        match resolve_scope_tree(sc, binds, env, provider, at_pos=toks_len) {
+        match
+          resolve_scope_tree(sc, binds, env, provider, at_pos=toks_len, tty~) {
           Ok(resolved) => {
             let out : Array[ParseError] = []
             for sc2 in table {
@@ -1990,10 +1995,11 @@ fn resolve_entity(
   inherited : Map[String, Value],
   at_pos : Int,
   epath : Array[String],
+  tty_map : Map[String, Bool],
 ) -> Result[Array[Binding], ParseError] {
   match
     resolve_entity_raw(
-      e, cli, env_map, config_obj, config_path, inherited, at_pos, epath,
+      e, cli, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
     ) {
     Ok(bs) => apply_entity_filters(e, bs, at_pos, epath)
     Err(pe) => Err(pe)
@@ -2079,6 +2085,7 @@ fn resolve_entity_raw(
   inherited : Map[String, Value],
   at_pos : Int,
   epath : Array[String],
+  tty_map : Map[String, Bool],
 ) -> Result[Array[Binding], ParseError] {
   // cli seat (DR-015 last-wins + DR-077 §1 update fold): fold every same-name CLI effect in argv
   // order, not just peek at the last one. `update`'s result is OLD-DEPENDENT — a single "read the
@@ -2135,7 +2142,7 @@ fn resolve_entity_raw(
   // effect) — factored into its own function.
   if e.accum is Some("merge") {
     return resolve_merge_accum(
-      e, cli, env_map, config_obj, config_path, inherited, at_pos, epath,
+      e, cli, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
     )
   }
   if e.accum is Some(_) {
@@ -2176,7 +2183,7 @@ fn resolve_entity_raw(
             // 値であっても Set 側の source を Cli に上書きしないと sources=env に誤読される)。
             match
               resolve_ladder_below_cli(
-                e, env_map, config_obj, config_path, inherited, at_pos, epath,
+                e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
               ) {
               Ok(bs2) => {
                 bs.push({ ..b, source: Cli })
@@ -2221,7 +2228,7 @@ fn resolve_entity_raw(
             // behavior change from the pre-DR-081 code, which tagged `source: Default` here.
             match
               resolve_ladder_below_cli(
-                e, env_map, config_obj, config_path, inherited, at_pos, epath,
+                e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
               ) {
               Ok(bs2) => {
                 current = if bs2.length() > 0 {
@@ -2288,7 +2295,7 @@ fn resolve_entity_raw(
     }
   }
   resolve_ladder_below_cli(
-    e, env_map, config_obj, config_path, inherited, at_pos, epath,
+    e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
   )
 }
 
@@ -2315,6 +2322,7 @@ fn resolve_ladder_below_cli(
   inherited : Map[String, Value],
   at_pos : Int,
   epath : Array[String],
+  tty_map : Map[String, Bool],
 ) -> Result[Array[Binding], ParseError] {
   // env seat (DR-049 §2): the raw env string is ONE firing's argument (同 §2 「発火 1 回の 1 引数と
   // 同じ扱い」) — a `multiple` + `separator` cell splits it exactly like `eval.mbt`'s `sep_binds`
@@ -2413,6 +2421,21 @@ fn resolve_ladder_below_cli(
       None => ()
     }
   }
+  // tty seat (DR-098 §5, inherit の後・default の前): 供給値は既に native bool なので env/config と
+  // 違い pieceProcessor (piece_filters/parse, String→T の相) を経由しない — `mkb` へ直接 `VBool` を
+  // 渡すだけで DR-050 §4 の「型一致で T 域直行」原理そのまま (`apply_entity_filters` 側の
+  // value_filters/cell_filters, T→T の相は他の全 seat と同じく後段で通る)。null = 提供なし
+  // (`tty_map` にキーが無い) は env の「未設定」/ config の「読めない」と同じ「席が空」— フォール
+  // スルーして default 席へ進む。`collect_tty_invalid_range` が非 bool/none/flag/count を静的に
+  // 弾いているので、ここに来る `e.tty_key` は常に素の bool 値プリミティブに紐付く (DR-098 §4)。
+  match e.tty_key {
+    Some(stream) =>
+      match tty_map.get(stream) {
+        Some(b) => return Ok([mkb(e.name, VBool(b), Tty)])
+        None => ()
+      }
+    None => ()
+  }
   // default seat (DR-083 §1/§2): a scalar cell wants just the one value (`default_scalar`); an
   // accum cell's declared default supplies its WHOLE array as already-split pieces, config-array
   // precedent (DR-050 §4) — each piece routed through `config_to_value` (via `value_to_configval`)
@@ -2477,6 +2500,7 @@ fn resolve_merge_accum(
   inherited : Map[String, Value],
   at_pos : Int,
   epath : Array[String],
+  tty_map : Map[String, Bool],
 ) -> Result[Array[Binding], ParseError] {
   // グループ化: 同名 binding のうち、Set/Remove/Splice は「連続する同一 at_pos」の連なりを 1 発火
   // (GFire) として束ね、Update/Default/Unset/Empty は単独グループ (GCell) とする。
@@ -2529,7 +2553,7 @@ fn resolve_merge_accum(
             // 現在値、default 発火直後ならその値)。
             match
               resolve_ladder_below_cli(
-                e, env_map, config_obj, config_path, inherited, at_pos, epath,
+                e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
               ) {
               Ok(bs2) => {
                 let nb : Array[Binding] = [{ ..b, source: Cli }]
@@ -2593,6 +2617,7 @@ fn resolve_merge_accum(
               match
                 resolve_ladder_below_cli(
                   e, env_map, config_obj, config_path, inherited, at_pos, epath,
+                  tty_map,
                 ) {
                 Ok(bs2) => {
                   let vs : Array[Value] = []
@@ -2623,7 +2648,7 @@ fn resolve_merge_accum(
     return Ok(result_bs)
   }
   resolve_ladder_below_cli(
-    e, env_map, config_obj, config_path, inherited, at_pos, epath,
+    e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
   )
 }
 
@@ -2650,11 +2675,13 @@ pub fn resolve_scope(
   inherited? : Map[String, Value] = Map([]),
   at_pos? : Int = -1,
   path? : Array[String] = [],
+  tty? : Map[String, Bool] = Map([]),
 ) -> Result[Array[Binding], ParseError] {
   let out : Array[Binding] = []
   for e in sc.entities {
     if !e.is_config_file {
-      match resolve_entity(e, cli, env_map, None, [], inherited, at_pos, path) {
+      match
+        resolve_entity(e, cli, env_map, None, [], inherited, at_pos, path, tty) {
         Ok(bs) =>
           for b in bs {
             out.push(b)
@@ -2684,6 +2711,7 @@ pub fn resolve_scope_config(
   path? : Array[String] = [],
   inherited? : Map[String, Value] = Map([]),
   at_pos? : Int = -1,
+  tty? : Map[String, Bool] = Map([]),
 ) -> Result[Array[Binding], ParseError] {
   // Phase 1: resolve the config_file element's path (cli > env > default), track committed-ness.
   let mut cf_path : String? = None
@@ -2768,7 +2796,7 @@ pub fn resolve_scope_config(
       }
       match
         resolve_entity(
-          e, cli, env_map, config_obj, cpath, inherited, at_pos, path,
+          e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty,
         ) {
         Ok(bs) =>
           for b in bs {

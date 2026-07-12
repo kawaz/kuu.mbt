@@ -29,7 +29,8 @@ pub(all) enum Source {
   Env // environment variable seat (DR-031 #2)
   Config // config-file seat (DR-050 #3) — below env, above inherit
   Inherit // nearest ancestor scope's same-named value (DR-031 #4 / DR-013)
-  Default // fixed fallback (DR-031 #5)
+  Tty // tty-判定注入値 (DR-098 §5) — below inherit, above default (観測値は明示/継承より弱いが宣言既定より強い)
+  Default // fixed fallback (DR-031 #6)
 } derive(Eq, Debug)
 
 ///|

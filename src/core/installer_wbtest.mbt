@@ -24,6 +24,7 @@ fn el(
   long? : LongDecl = LList([]),
   short? : Array[Char] = [],
   env? : Array[String] = [],
+  tty? : String? = None,
   is_dd? : Bool = false,
   dd_match? : String? = None,
   dd_self_keep? : Bool = false,
@@ -55,6 +56,7 @@ fn el(
     variants: [],
     short,
     env,
+    tty,
     is_dd,
     dd_match,
     dd_self_keep,
@@ -103,12 +105,13 @@ fn el(
 }
 
 ///|
-/// canonical な installer chain (13 全部)。順列耐性テスト以外はこれを使う。
+/// canonical な installer chain (14 全部)。順列耐性テスト以外はこれを使う。
 fn all_installers() -> Array[Installer] {
   [
     LongInst,
     ShortInst,
     EnvInst,
+    TtyInst,
     DdInst,
     CommandInst,
     GlobalInst,
@@ -2334,6 +2337,54 @@ test "DR-089: a none-typed element declaring env/config_key/inherit is a definit
       assert_true(has_env_flagged)
       assert_true(has_config_key_flagged)
       assert_true(has_inherit_flagged)
+    }
+  }
+}
+
+///|
+/// DR-098 §4「値なし要素 (type: 'none'、dd 含む) への tty:」の dd 経由の軸 — fixture
+/// (`definition-error/tty-non-bool.json`) は type:"none" の一般ケースのみで dd 要素を含まないため、
+/// dd 経由の invalid-range が実際に検出されることを ここで固定する (fixture から見えない軸)。
+test "DR-098 §4: a dd element declaring tty is a definition-error (none 系、dd 含む)" {
+  let dd_elem = el("--", TStr, is_dd=true, tty=Some("stdout"))
+  let def : Definition = { ..empty_def(), options: [dd_elem] }
+  match parse_definition(def, all_installers()) {
+    Ok(_) =>
+      abort(
+        "expected Err (dd element with tty is a definition-error, DR-098 §4)",
+      )
+    Err(errs) => {
+      let mut flagged = false
+      for e in errs {
+        if e.element == "--" && e.kind == DInvalidRange {
+          flagged = true
+        }
+      }
+      assert_true(flagged)
+    }
+  }
+}
+
+///|
+/// DR-098 §4 の definition-error 検査が positionals にも一様に効くことの固定 — fixture
+/// (`definition-error/tty-non-bool.json`) は options のみを検査対象にしているため、positional 側の
+/// 同じ検査経路 (`collect_tty_invalid_range` の `def.positionals` 走査) は fixture から見えない軸。
+test "DR-098 §4: a non-bool positional declaring tty is a definition-error" {
+  let pos_elem = el("count_pos", TNum, tty=Some("stdout"))
+  let def : Definition = { ..empty_def(), positionals: [pos_elem] }
+  match parse_definition(def, all_installers()) {
+    Ok(_) =>
+      abort(
+        "expected Err (non-bool positional with tty is a definition-error, DR-098 §4)",
+      )
+    Err(errs) => {
+      let mut flagged = false
+      for e in errs {
+        if e.element == "count_pos" && e.kind == DInvalidRange {
+          flagged = true
+        }
+      }
+      assert_true(flagged)
     }
   }
 }
