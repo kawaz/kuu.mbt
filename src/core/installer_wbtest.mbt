@@ -24,7 +24,9 @@ fn el(
   long? : LongDecl = LList([]),
   short? : Array[Char] = [],
   env? : Array[String] = [],
-  tty? : String? = None,
+  is_tty? : Bool = false,
+  tty_stream? : String? = None,
+  tty_cygwin? : Bool = true,
   is_dd? : Bool = false,
   dd_match? : String? = None,
   dd_self_keep? : Bool = false,
@@ -56,7 +58,9 @@ fn el(
     variants: [],
     short,
     env,
-    tty,
+    is_tty,
+    tty_stream,
+    tty_cygwin,
     is_dd,
     dd_match,
     dd_self_keep,
@@ -105,13 +109,12 @@ fn el(
 }
 
 ///|
-/// canonical な installer chain (14 全部)。順列耐性テスト以外はこれを使う。
+/// canonical な installer chain (13 全部)。順列耐性テスト以外はこれを使う。
 fn all_installers() -> Array[Installer] {
   [
     LongInst,
     ShortInst,
     EnvInst,
-    TtyInst,
     DdInst,
     CommandInst,
     GlobalInst,
@@ -2342,21 +2345,23 @@ test "DR-089: a none-typed element declaring env/config_key/inherit is a definit
 }
 
 ///|
-/// DR-098 §4「値なし要素 (type: 'none'、dd 含む) への tty:」の dd 経由の軸 — fixture
-/// (`definition-error/tty-non-bool.json`) は type:"none" の一般ケースのみで dd 要素を含まないため、
-/// dd 経由の invalid-range が実際に検出されることを ここで固定する (fixture から見えない軸)。
-test "DR-098 §4: a dd element declaring tty is a definition-error (none 系、dd 含む)" {
-  let dd_elem = el("--", TStr, is_dd=true, tty=Some("stdout"))
-  let def : Definition = { ..empty_def(), options: [dd_elem] }
+/// DR-099 §3/§7: `is_tty=true` かつ `tty_stream=None` (= bare `type:"tty"`/`"builtin/tty"` の decode
+/// 結果、あるいは definitions.types 経由で `tty_stream` を書き忘れた shadow) は definition-error
+/// (kind=invalid-range) — fixture (`definition-error/tty-stream-missing.json`) は JSON decode 経由
+/// (bare/explicit_ns の 2 spelling) をまとめて検査するのに対し、ここでは `collect_tty_stream_missing`
+/// (installer.mbt) を ElemDef 直叩きで単体固定する (decode 層を経由しない、より狭い axis)。
+test "DR-099 §3/§7: an option selecting builtin/tty without tty_stream is a definition-error" {
+  let use_color = el("use_color", TBool, is_tty=true, tty_stream=None)
+  let def : Definition = { ..empty_def(), options: [use_color] }
   match parse_definition(def, all_installers()) {
     Ok(_) =>
       abort(
-        "expected Err (dd element with tty is a definition-error, DR-098 §4)",
+        "expected Err (builtin/tty preset missing tty_stream is a definition-error, DR-099 §3/§7)",
       )
     Err(errs) => {
       let mut flagged = false
       for e in errs {
-        if e.element == "--" && e.kind == DInvalidRange {
+        if e.element == "use_color" && e.kind == DInvalidRange {
           flagged = true
         }
       }
@@ -2366,27 +2371,42 @@ test "DR-098 §4: a dd element declaring tty is a definition-error (none 系、d
 }
 
 ///|
-/// DR-098 §4 の definition-error 検査が positionals にも一様に効くことの固定 — fixture
-/// (`definition-error/tty-non-bool.json`) は options のみを検査対象にしているため、positional 側の
-/// 同じ検査経路 (`collect_tty_invalid_range` の `def.positionals` 走査) は fixture から見えない軸。
-test "DR-098 §4: a non-bool positional declaring tty is a definition-error" {
-  let pos_elem = el("count_pos", TNum, tty=Some("stdout"))
+/// DR-099 §3/§7 の definition-error 検査が positionals にも一様に効くことの固定 — fixture は
+/// options のみを検査対象にしているため、positional 側の同じ検査経路
+/// (`collect_tty_stream_missing` の `def.positionals` 走査) は fixture から見えない軸 (旧 DR-098 §4
+/// テストと同じ役割分担)。
+test "DR-099 §3/§7: a positional selecting builtin/tty without tty_stream is a definition-error" {
+  let pos_elem = el("stdin_tty", TBool, is_tty=true, tty_stream=None)
   let def : Definition = { ..empty_def(), positionals: [pos_elem] }
   match parse_definition(def, all_installers()) {
     Ok(_) =>
       abort(
-        "expected Err (non-bool positional with tty is a definition-error, DR-098 §4)",
+        "expected Err (builtin/tty preset missing tty_stream is a definition-error, DR-099 §3/§7)",
       )
     Err(errs) => {
       let mut flagged = false
       for e in errs {
-        if e.element == "count_pos" && e.kind == DInvalidRange {
+        if e.element == "stdin_tty" && e.kind == DInvalidRange {
           flagged = true
         }
       }
       assert_true(flagged)
     }
   }
+}
+
+///|
+/// DR-099 §2: `ensure_entity` (installer.mbt) は is_tty 要素を TBool の暗黙 default:false プリセット
+/// (LOWERING §A.5 / DR-051 §2、上の flag テストが固定するのと同じ機構) から除外する — 除外しないと
+/// 「宣言 default 無し」という状態が `ensure_entity` の時点で消え、`resolve.mbt` の tty fold が観測
+/// なし時に absent へ落ちる余地を失う (常に false が浮かび上がってしまう)。ここでは `parse_definition`
+/// を通した実 Entity の `default_values` が `None` のままであることを直接固定する
+/// (resolve.mbt 側の fold-fallthrough 自体は resolve_wbtest.mbt が別途検証)。
+test "ensure_entity: a tty preset element without an explicit default keeps default_values None (DR-099 §2)" {
+  let use_color = el("use_color", TBool, is_tty=true, tty_stream=Some("stdout"))
+  let def : Definition = { ..empty_def(), options: [use_color] }
+  let sc = ok_scope(def, all_installers())
+  assert_eq(entity_of(sc, "use_color").unwrap().default_values, None)
 }
 
 ///|

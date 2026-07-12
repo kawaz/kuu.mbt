@@ -369,10 +369,10 @@ pub(all) enum Constraint {
 /// A value cell (DR-030 "entity-only node"). Satellites/matchers with the same
 /// `name` all write here = link 合流. Carries the reduced value-source ladder:
 /// env seat (declared by the env installer), inherit seat (declared by the inherit
-/// installer), tty seat (declared by the tty installer, DR-098), and default seat.
-/// Ladder order is engine-owned (DR-031/DR-098, invariant ④): cli > env > config >
-/// inherit > tty > default. The inherit seat looks up the nearest ancestor scope's
-/// same-named entity value.
+/// installer), and default seat. Ladder order is engine-owned (DR-031, invariant ④):
+/// cli > env > config > inherit > default (5 段固定、DR-099 が DR-098 の tty 専用席
+/// 挿入を撤回)。The inherit seat looks up the nearest ancestor scope's same-named
+/// entity value.
 pub(all) struct Entity {
   name : String
   ty : Ty
@@ -381,10 +381,20 @@ pub(all) struct Entity {
   mut config_key : Array[String]? // explicit absolute config path (DR-050 §3); None = 同型 (scope path + name)
   is_config_file : Bool // this cell's value is the config-file PATH (DR-050): resolves the provider, no config seat
   mut inherit_ : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013). MDR-003: `inherit` 予約語回避
-  // DR-098 §3: tty seat lookup key — the stream name ("stdin"|"stderr"|"stdout") the tty installer
-  // read off the element's `tty` attribute. None = no tty seat declared. Mirrors `env_key` (単一
-  // スロット lookup key、複数不可 — tty は 3 値 enum の単一値、env の複数候補配列とは違う形)。
-  mut tty_key : String?
+  // DR-099 §1/§2/§12b: この cell の型が `builtin/tty` preset (`type:` 経由) から来たかのマーカー。
+  // true のときだけ `default` 席の解決規則が差し替わる (`resolve.mbt`'s `resolve_ladder_below_cli`) —
+  // ラダー自体に tty 専用席は無い (DR-098 §5 の独立席モデルは撤回済み)。`ensure_entity` が
+  // `ElemDef.is_tty` からそのまま carry する (installer.mbt、int_round/bool_config と同じ「型
+  // shadow から carry するだけの冗長フィールド」パターン)。
+  is_tty : Bool
+  // DR-099 §3: `builtin/tty` factory の必須 config `tty_stream` — tty_provider へ渡すストリーム識別子
+  // ("stdin"|"stdout"|"stderr")。`is_tty` が false の cell では未使用 (冗長フィールド、int_round が
+  // TInt 以外で未使用なのと同じ扱い)。`is_tty` かつ None は definition-error で事前に弾かれている
+  // はずの防御的状態 (`collect_tty_stream_missing`)。
+  tty_stream : String?
+  // DR-099 §3: `builtin/tty` factory の config `tty_cygwin` — fold `terminal || (tty_cygwin &&
+  // cygwin)` のダイヤル。既定 true。`is_tty` が false の cell では未使用。
+  tty_cygwin : Bool
   // The accumulators-registry name (DR-036) that folds this cell's effect list, or None for a
   // scalar cell. Built-ins: "flatten" (repeat's cons [T,[T,…]] → T[], DR-043) and "append"
   // (multiple's value fold, DR-034). Both realize a value LIST here; the name records WHICH

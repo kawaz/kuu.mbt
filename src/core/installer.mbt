@@ -29,10 +29,21 @@ pub(all) struct ElemDef {
   variants : Array[Variant] // long installer 所有 (variant DSL, DR-011/045) — normalize_option が resolve_long の結果で埋める。宣言直後は常に []
   short : Array[Char] // short installer 所有
   env : Array[String] // env installer 所有
-  // DR-098 §3: tty installer 所有。値語彙は "stdin" | "stdout" | "stderr" の 3 値 enum (単一値 —
-  // env の複数候補配列 `Array[String]` とは違う形、tty_provider のシグネチャが単一 stream 引数を
-  // 取るため)。wire 上は要素の `tty` 属性に文字列 1 個で書く (`{"tty": "stdout"}`)。
-  tty : String?
+  // DR-099 §1/§3: `type:` が `builtin/tty` factory (bare "tty" 糖衣 / definitions.types 経由の
+  // shadow) に解決されたことを示すマーカー。decode 層 (dec_option/dec_positional,
+  // json_conformance_wbtest.mbt) が `type:` 解決の一部として直接 set する — DR-098 の独立 wire
+  // 属性 `tty:` は撤回され、installer は関与しない (int_round/bool_config と同じ「型 shadow から
+  // carry するだけ」のフィールド、専用の Installer variant を持たない)。
+  is_tty : Bool
+  // DR-099 §3: `builtin/tty` factory の必須 config。値語彙は "stdin" | "stdout" | "stderr" の 3 値
+  // enum (単一値 — env の複数候補配列 `Array[String]` とは違う形、tty_provider のシグネチャが単一
+  // stream 引数を取るため)。None は「未設定」— `is_tty` かつ None は definition-error
+  // (`collect_tty_stream_missing`、bare `type:"tty"` を含む — config を供給する経路が無いため常に
+  // definition-error)。
+  tty_stream : String?
+  // DR-099 §3: `builtin/tty` factory の config `tty_cygwin` (既定 true)。`is_tty` が false の要素
+  // では未使用 (int_round が TInt 以外で未使用なのと同じ冗長フィールド)。
+  tty_cygwin : Bool
   is_dd : Bool // dd installer 所有 (type:"dd")
   // DR-090 §2: dd installer 所有、is_dd 専用の軸拡張 — None/false なら従来の exact dd (§1「既存
   // dd」列) と完全に同じ。`dd_match` が Some のとき `name` はトリガ綴りに使われない (§2「match が
@@ -533,7 +544,6 @@ pub(all) enum Installer {
   LongInst
   ShortInst
   EnvInst
-  TtyInst
   DdInst
   CommandInst
   GlobalInst
@@ -552,7 +562,6 @@ fn owned_vocab(i : Installer) -> String {
     LongInst => "long"
     ShortInst => "short"
     EnvInst => "env"
-    TtyInst => "tty"
     DdInst => "dd"
     CommandInst => "command"
     GlobalInst => "global"
@@ -723,7 +732,9 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     variants: copy_variants(e.variants),
     short: copy_chars(e.short),
     env: copy_strs(e.env),
-    tty: e.tty,
+    is_tty: e.is_tty,
+    tty_stream: e.tty_stream,
+    tty_cygwin: e.tty_cygwin,
     is_dd: e.is_dd,
     dd_match: e.dd_match,
     dd_self_keep: e.dd_self_keep,
@@ -1399,10 +1410,18 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   // every reader now expects) — a decl-less preset is scalar by construction (none of the three
   // kinds can be `multiple` and carry a >1-element preset), so `[v]` is the correct degenerate
   // form, never `[]`.
+  // DR-099 §2: is_tty 要素は TBool の暗黙 default:false プリセットを受けない — 素の bool と違い、
+  // is_tty 要素の default 席は `resolve.mbt`'s `resolve_ladder_below_cli` が `fold(観測) ?? 宣言
+  // default ?? absent` という独自規則で解決する。ここで先回りに false を注入してしまうと「宣言
+  // default 無し」という状態が失われ、fold が観測なしの場合に absent へ落ちる余地が無くなる
+  // (常に false が浮かび上がってしまう) — is_tty 要素は default_values を宣言されたとおり (無指定
+  // なら None) に持ち回り、fold の側で吸収させる。
   let default_values : Array[Value]? = match e.default_values {
     Some(vs) => Some(vs)
     None =>
-      if e.ty == TFlag || e.ty == TBool {
+      if e.is_tty {
+        None
+      } else if e.ty == TFlag || e.ty == TBool {
         Some([VBool(false)])
       } else if e.ty == TCount {
         Some([VNum(0.0)])
@@ -1419,7 +1438,11 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     config_key: e.config_key,
     is_config_file: e.is_config_file,
     inherit_: false, // MDR-003: node.mbt 側 Entity.inherit_
-    tty_key: None, // tty installer (inst_tty) が seat_tty 経由で埋める (DR-098 §3、env_key と同型)
+    // DR-099 §1: is_tty/tty_stream/tty_cygwin は ElemDef からそのまま carry するだけ (int_round と
+    // 同じパターン) — 専用 installer が後から埋める mutable seat ではない。
+    is_tty: e.is_tty,
+    tty_stream: e.tty_stream,
+    tty_cygwin: e.tty_cygwin,
     accum,
     // DR-036: collector only means anything alongside an accum cell (Entity.collector's doc
     // comment, node.mbt) — a scalar cell (accum is None) drops any declared collector rather than
@@ -1882,36 +1905,6 @@ fn seat_env(build : Build, name : String, key : String) -> Unit {
 }
 
 ///|
-/// tty: `tty` を READ、entity の tty seat に登録 (DR-098 §3、invariant ④)。ladder 順序は engine 所有
-/// (DR-098 §5)。同 seat 再宣言は no-op (idempotent in-place set) — env installer と同型パターン。
-/// `collect_tty_invalid_range` (definition-error, normalize_surface より前に走る) が非 bool / none
-/// (dd 含む) / flag / count プリセットへの宣言を静的に弾いているので、ここに到達する `e.tty` は
-/// 常に素の bool 値プリミティブに紐付く (DR-098 §4)。
-fn inst_tty(def : Definition, build : Build) -> Unit {
-  for e in def.options {
-    match e.tty {
-      Some(stream) => seat_tty(build, e.name, stream)
-      None => ()
-    }
-  }
-  for e in def.positionals {
-    match e.tty {
-      Some(stream) => seat_tty(build, e.name, stream)
-      None => ()
-    }
-  }
-}
-
-///|
-fn seat_tty(build : Build, name : String, stream : String) -> Unit {
-  for ent in build.entities {
-    if ent.name == name {
-      ent.tty_key = Some(stream)
-    }
-  }
-}
-
-///|
 /// dd: `type:"dd"` を READ、greedy exact 衛星 (DdSat) を add-if-absent (DR-041 rev)。fire 時に spine
 /// walk が「severed」モードに切り替わり以降 greedy off — greedy internal consumption 一体化ルール。
 ///
@@ -2041,7 +2034,9 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     variants: copy.variants,
     short: copy.short,
     env: copy.env,
-    tty: copy.tty,
+    is_tty: copy.is_tty,
+    tty_stream: copy.tty_stream,
+    tty_cygwin: copy.tty_cygwin,
     is_dd: copy.is_dd,
     dd_match: copy.dd_match,
     dd_self_keep: copy.dd_self_keep,
@@ -2154,7 +2149,6 @@ fn apply_node(inst : Installer, sb : SB, registry : Map[String, Node]) -> Unit {
     LongInst => inst_long(sb.decl, sb.build, registry)
     ShortInst => inst_short(sb.decl, sb.build)
     EnvInst => inst_env(sb.decl, sb.build)
-    TtyInst => inst_tty(sb.decl, sb.build)
     DdInst => inst_dd(sb.decl, sb.build)
     InheritInst => inst_inherit(sb.decl, sb.build)
     GlobalInst => inst_global(sb)
@@ -2236,7 +2230,9 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     variants: [],
     short: [],
     env: [],
-    tty: None, // write-target copy は tty 席を持たない (env_prefix と同じ「canonical default 相当」)
+    is_tty: false, // write-target copy は tty preset を持たない (env_prefix と同じ「canonical default 相当」)
+    tty_stream: None,
+    tty_cygwin: true,
     is_dd: false,
     dd_match: None,
     dd_self_keep: false,
@@ -2450,7 +2446,9 @@ fn alias_entry(
     variants,
     short,
     env: [],
-    tty: None, // alias entry-copy も値源は実体側のまま (§3 と同じ理由、env と対称)
+    is_tty: false, // alias entry-copy も値源は実体側のまま (§3 と同じ理由、env と対称)
+    tty_stream: None,
+    tty_cygwin: true,
     is_dd: false,
     dd_match: None,
     dd_self_keep: false,
@@ -2725,74 +2723,28 @@ fn collect_invalid_alias_long_override(
 }
 
 ///|
-/// DR-098 §4: tty 席は素の bool 値プリミティブ (プリセットなし) にのみ許可 — tty_provider の供給値は
-/// 既に native bool (§4「型一致で T 域直行」) なので、値空間の型が bool でない要素・値空間を持たない
-/// 要素・「起動即書き込み」固有経路を持つ flag/count プリセットへの宣言は定義時点で静的に既知の構造
-/// 不一致 (kind=invalid-range、DR-083 §5 の筋)。
+/// DR-099 §3/§7: `builtin/tty` preset の必須 config `tty_stream` が未指定な要素は definition-error
+/// (kind=invalid-range)。bare `type:"tty"` / `type:"builtin/tty"` (config を供給する経路自体が無い —
+/// 直接参照は常にこの形、decode 層が `is_tty=true, tty_stream=None` で通す) と、definitions.types
+/// 経由で `tty_stream` を書き忘れた shadow の両方をこの一本で拾う。
 ///
-/// **normalize_surface (TFlag→TBool 変換) より前に呼ぶ**: `collect_invalid_long_dsl` と同じ理由
-/// (installer.mbt 冒頭コメント参照) — normalize 後は flag 由来の bool と素の bool が e.ty=TBool で
-/// 区別できなくなる (`normalize_option` のコメント参照)。TCount は installer chain 後段
-/// (`ensure_entity`) まで TNum に collapse されない設計 (installer.mbt:840 のコメント) だが、TFlag は
-/// normalize_surface が pre-check 前に潰してしまうため、tty 検査もこの pre-normalize window でしか
-/// flag/count を区別できない。
-fn collect_tty_invalid_range(def : Definition, out : Array[DefError]) -> Unit {
+/// DR-098 §4 が必要としていた 3 分類 (非 bool 型・値なし要素・flag/count プリセットへの `tty:`
+/// 付与) は、`type:` が単一選択のフィールドである以上、preset 型への転換で構文的に発生しなくなった
+/// (DR-099 §1「採用しなかった案」) — 残る唯一の definition-error はこの factory 自身の config 検証
+/// だけ (DR-061 §4「config 値の検証は factory 自身の責務」)。is_tty/tty_stream は `type:` 解決の
+/// decode 時点で確定し normalize_surface の影響を受けないため (TFlag→TBool 変換のような pre/post
+/// 区別は不要)、他の post-normalize な collect_* 群と同じ並びで呼んでよい。
+fn collect_tty_stream_missing(def : Definition, out : Array[DefError]) -> Unit {
   fn check(e : ElemDef) -> Unit {
-    match e.tty {
-      Some(stream) =>
-        // DR-098 §4 「値なし要素 (type: 'none'、dd 含む) への tty:」— dd も is_dd で判定 (dd 要素の
-        // e.ty は dd_marker が TStr に固定するため、TNone だけを見ると is_dd ケースを取りこぼす)。
-        if e.is_dd {
-          out.push(
-            def_err(
-              e.name,
-              DInvalidRange,
-              "'\{e.name}' is a dd element (no value space) but declares tty:\{stream} — a dd element cannot have a value source (DR-098 §4)",
-              "remove 'tty' from '\{e.name}'",
-            ),
-          )
-        } else {
-          match e.ty {
-            TNone =>
-              out.push(
-                def_err(
-                  e.name,
-                  DInvalidRange,
-                  "'\{e.name}' is type none (no value space) but declares tty:\{stream} — a none element cannot have a value source (DR-098 §4)",
-                  "remove 'tty' from '\{e.name}', or give it a real bool type",
-                ),
-              )
-            TFlag =>
-              out.push(
-                def_err(
-                  e.name,
-                  DInvalidRange,
-                  "'\{e.name}' is a flag preset but declares tty:\{stream} — flag's own 起動即書き込み経路 (bare fire = true) is a different channel to the same value cell than the tty seat (DR-098 §4)",
-                  "remove 'tty' from '\{e.name}', or use a plain bool element (no preset) instead of flag",
-                ),
-              )
-            TCount =>
-              out.push(
-                def_err(
-                  e.name,
-                  DInvalidRange,
-                  "'\{e.name}' is a count preset but declares tty:\{stream} — count's own 起動ごとの increment 経路 is a different channel to the same value cell than the tty seat (DR-098 §4)",
-                  "remove 'tty' from '\{e.name}', or use a plain bool element (no preset) instead of count",
-                ),
-              )
-            TBool => () // 素の bool 値プリミティブ — 唯一の正当宣言 (DR-098 §4)
-            TStr | TNum | TInt | TFloat =>
-              out.push(
-                def_err(
-                  e.name,
-                  DInvalidRange,
-                  "'\{e.name}' has a non-bool value type but declares tty:\{stream} — tty_provider supplies a native bool, so the value space's type must be bool (DR-098 §4)",
-                  "remove 'tty' from '\{e.name}', or change its type to bool",
-                ),
-              )
-          }
-        }
-      None => ()
+    if e.is_tty && e.tty_stream is None {
+      out.push(
+        def_err(
+          e.name,
+          DInvalidRange,
+          "'\{e.name}' selects the builtin/tty preset but its factory config is missing 'tty_stream' — bare type:\"tty\"/\"builtin/tty\" has no channel to supply it (DR-099 §3)",
+          "declare a definitions.types entry with config.tty_stream set to \"stdin\"|\"stdout\"|\"stderr\", and reference that name from 'type'",
+        ),
+      )
     }
   }
 
@@ -2803,7 +2755,7 @@ fn collect_tty_invalid_range(def : Definition, out : Array[DefError]) -> Unit {
     check(e)
   }
   for c in def.commands {
-    collect_tty_invalid_range(c.body, out)
+    collect_tty_stream_missing(c.body, out)
   }
 }
 
@@ -2929,9 +2881,6 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   }
   if e.env.length() > 0 && !vocab_owned(owned, "env") {
     return Some("env:" + e.env[0])
-  }
-  if e.tty is Some(stream) && !vocab_owned(owned, "tty") {
-    return Some("tty:" + stream)
   }
   if e.is_dd && !vocab_owned(owned, "dd") {
     return Some("dd")
@@ -3840,9 +3789,6 @@ pub fn parse_definition(
   // alias long_override も同じ colon DSL (DR-011 明確化は DSL が現れる全ての場所に効く)。desugar
   // (long_override → variants/long の展開) より前に検査する。
   collect_invalid_alias_long_override(def, errs)
-  // DR-098 §4: tty definition-error も TFlag/TCount marker が生きている pre-normalize window で検査
-  // (`collect_tty_invalid_range` のコメント参照、colon DSL 検査と同じ理由)。
-  collect_tty_invalid_range(def, errs)
   // 純構文 pre-pass (LOWERING §A / §C.4): `:set` → kebab (Fix 2, DR-071) + dd name 既定 "--" (Fix 3, DR-064 §5)
   normalize_surface(def)
   // init_sb が registry に repeat-lowering template を植える (静的 ref check が見えるように)。
@@ -3856,6 +3802,7 @@ pub fn parse_definition(
   collect_unsupported_accum_update(def, errs) // issue accum-fold-update-default-ops (multiple + update variant)
   collect_unsupported_count_multiple(def, errs) // codex 指摘 High 2 (count 型 × multiple)
   collect_scalar_array_default(def, errs) // DR-083 §5 (非 accum 要素への配列 default)
+  collect_tty_stream_missing(def, errs) // DR-099 §3/§7 (builtin/tty preset の tty_stream 必須違反)
   collect_none_value_source_decl(def, errs) // DR-089 §4 (none への env/config_key/inherit 宣言)
   collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 (accum cell_filters は配列語彙のみ)
   collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)

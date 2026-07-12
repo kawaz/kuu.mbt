@@ -25,7 +25,9 @@ fn ent(
   config_key? : Array[String]? = None,
   is_config_file? : Bool = false,
   inherit_? : Bool = false,
-  tty_key? : String? = None,
+  is_tty? : Bool = false,
+  tty_stream? : String? = None,
+  tty_cygwin? : Bool = true,
   accum? : String? = None,
   collector? : String? = None,
   default_value? : Value? = None,
@@ -50,7 +52,9 @@ fn ent(
     config_key,
     is_config_file,
     inherit_,
-    tty_key,
+    is_tty,
+    tty_stream,
+    tty_cygwin,
     accum,
     collector,
     default_values,
@@ -542,16 +546,19 @@ test "resolve_scope: inherit seat fills from the parent context map" {
 }
 
 ///|
-/// DR-098 §5: tty 席は inherit の直後・default の直前に位置する — 「明示 (CLI/env/config) >
-/// 継承 (inherit) > 観測 (tty) > 宣言既定 (default)」の序列そのものを固定する。fixture 側
-/// (`value-sources/tty-ladder.json`) は cli/env/tty/default の 4 値源の相互比較を固定するが、
-/// inherit との直接対決は fixture に無い軸 (fixture の definition は inherit を持たない) — ここで
-/// 補う。
-test "resolve_scope: tty seat fills strictly between inherit and default (DR-098 §5)" {
+/// DR-099 §2: tty preset 型要素の default 席解決規則は inherit 席より後に評価される — 「明示
+/// (CLI/env/config) > 継承 (inherit) > 観測 (tty) > 宣言既定 (default)」の序列そのものを固定する
+/// (DR-098 §5 が確立した優先順位は、独立ラダー席からこの型の default 解決ロジックへ実装位置が
+/// 移っただけで完全に維持される)。fixture 側 (`value-sources/tty-ladder.json`) は cli/env/tty/default
+/// の 4 値源の相互比較を固定するが、inherit との直接対決は fixture に無い軸 (fixture の definition
+/// は inherit を持たない) — ここで補う。
+test "resolve_scope: tty 型 default 席は inherit 席の後で評価される (DR-099 §2)" {
   let use_color = ent(
     "use_color",
     TBool,
-    tty_key=Some("stdout"),
+    is_tty=true,
+    tty_stream=Some("stdout"),
+    tty_cygwin=false, // cygwin 分岐を無効化し fold=terminal に単純化 (cygwin dial は別テストで検証)
     inherit_=true,
     default_value=Some(VBool(true)),
   )
@@ -561,52 +568,55 @@ test "resolve_scope: tty seat fills strictly between inherit and default (DR-098
     entities: [use_color],
     constraints: [],
   }
-  // inherit と tty 供給が両方あり、値が食い違う場合 → inherit が勝つ (継承は観測より強い、DR-098 §5)。
+  // inherit と tty 観測が両方あり、値が食い違う場合 → inherit が勝つ (継承は観測より強い、DR-099 §2)。
   let inherited = Map::from_array([("use_color", VBool(false))])
   let inherit_wins = resolve_scope(
     sc,
     [],
     Map([]),
     inherited~,
-    tty=Map::from_array([("stdout", true)]),
+    tty=Map::from_array([("stdout", { terminal: true, cygwin: false })]),
   )
   assert_eq(inherit_wins, Ok([mkb_pub("use_color", VBool(false), Inherit)]))
-  // inherit 供給なし、tty 供給あり → tty が勝つ (観測は宣言 default より強い)。
+  // inherit 供給なし、tty 観測あり → fold が宣言 default より勝つ。
   let tty_wins = resolve_scope(
     sc,
     [],
     Map([]),
-    tty=Map::from_array([("stdout", false)]),
+    tty=Map::from_array([("stdout", { terminal: false, cygwin: false })]),
   )
   assert_eq(tty_wins, Ok([mkb_pub("use_color", VBool(false), Tty)]))
-  // どちらも供給なし → default (最終フォールバック)。
+  // どちらも供給なし → 宣言 default (最終フォールバック)。
   let default_wins = resolve_scope(sc, [], Map([]))
   assert_eq(default_wins, Ok([mkb_pub("use_color", VBool(true), Default)]))
 }
 
 ///|
-/// DR-098 §1: tty_provider の応答は stream ごとに独立 ("null = 提供なし" は要素単位の stream
+/// DR-099 §4: tty_provider の応答は stream ごとに独立 ("null = 提供なし" は要素単位の stream
 /// lookup — 他 stream に値があっても伝播しない)。複数の bool 要素がそれぞれ別 stream (stdin/stdout/
 /// stderr) に紐付く場合、provider が一部 stream にのみ応答するケースで各要素が個別にフォールスルー
 /// することを固定する — fixture (`tty-ladder.json`) は単一要素 (stdout 1 本) の相互比較のみなので、
 /// 複数要素の stream 独立性は fixture から見えない軸。
-test "resolve_scope: tty seat resolution is independent per-stream across multiple entities" {
+test "resolve_scope: tty 型 default 席の解決は stream ごとに独立 (複数要素間で伝播しない)" {
   let stdin_tty = ent(
     "stdin_tty",
     TBool,
-    tty_key=Some("stdin"),
+    is_tty=true,
+    tty_stream=Some("stdin"),
     default_value=Some(VBool(false)),
   )
   let stdout_tty = ent(
     "stdout_tty",
     TBool,
-    tty_key=Some("stdout"),
+    is_tty=true,
+    tty_stream=Some("stdout"),
     default_value=Some(VBool(false)),
   )
   let stderr_tty = ent(
     "stderr_tty",
     TBool,
-    tty_key=Some("stderr"),
+    is_tty=true,
+    tty_stream=Some("stderr"),
     default_value=Some(VBool(false)),
   )
   let sc : Scope = {
@@ -615,13 +625,13 @@ test "resolve_scope: tty seat resolution is independent per-stream across multip
     entities: [stdin_tty, stdout_tty, stderr_tty],
     constraints: [],
   }
-  // provider は stdout にのみ応答 (true)。stdin/stderr は tty map にキー自体が無い = 提供なし
-  // (DR-098 §1「null = 提供なし」) — env_map の「未設定キー」と同じ縮退。
+  // provider は stdout にのみ応答 (terminal:true)。stdin/stderr は tty map にキー自体が無い = 提供なし
+  // (DR-099 §4「null = 提供なし」) — env_map の「未設定キー」と同じ縮退。
   let bound = resolve_scope(
     sc,
     [],
     Map([]),
-    tty=Map::from_array([("stdout", true)]),
+    tty=Map::from_array([("stdout", { terminal: true, cygwin: false })]),
   )
   assert_eq(
     bound,
@@ -631,6 +641,105 @@ test "resolve_scope: tty seat resolution is independent per-stream across multip
       mkb_pub("stderr_tty", VBool(false), Default),
     ]),
   )
+}
+
+///|
+/// DR-099 §3 の fold 計算式そのものの whitebox: `fold(観測) = terminal || (tty_cygwin && cygwin)`。
+/// 同一の生観測 `{terminal:false, cygwin:true}` を 2 要素に供給し、`tty_cygwin` config だけを変えて
+/// 結果が分岐することを Entity 直下で固定する (fixture `cygwin-dial-pair` の JSON 経由の対を
+/// ラダー層で裏取り — options/definitions.types の decode を介さず fold 式そのものを検証する axis)。
+test "resolve_scope: tty fold formula — tty_cygwin dial flips the result from the same raw observation (DR-099 §3)" {
+  let cygwin_on = ent(
+    "cygwin_on",
+    TBool,
+    is_tty=true,
+    tty_stream=Some("stderr"),
+    tty_cygwin=true, // 既定
+  )
+  let cygwin_off = ent(
+    "cygwin_off",
+    TBool,
+    is_tty=true,
+    tty_stream=Some("stderr"),
+    tty_cygwin=false,
+  )
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [cygwin_on, cygwin_off],
+    constraints: [],
+  }
+  let bound = resolve_scope(
+    sc,
+    [],
+    Map([]),
+    tty=Map::from_array([("stderr", { terminal: false, cygwin: true })]),
+  )
+  // fold(cygwin_on)  = false || (true  && true) = true
+  // fold(cygwin_off) = false || (false && true) = false
+  assert_eq(
+    bound,
+    Ok([
+      mkb_pub("cygwin_on", VBool(true), Tty),
+      mkb_pub("cygwin_off", VBool(false), Tty),
+    ]),
+  )
+}
+
+///|
+/// DR-099 §2 の優先順位そのものの whitebox: 宣言 default と観測が異なる値を持つとき、観測が必ず
+/// 勝つ (`resolved_default = fold(観測) ?? 宣言 default ?? absent` の `??` は「観測が得られる限り」
+/// という意味であり、値の一致/不一致では条件分岐しない — fixture の fold-overrides-default と同じ
+/// 主張をラダー層で直接固定する)。
+test "resolve_scope: tty 型要素は宣言 default と異なる観測値でも観測が勝つ (DR-099 §2)" {
+  let use_color = ent(
+    "use_color",
+    TBool,
+    is_tty=true,
+    tty_stream=Some("stdout"),
+    tty_cygwin=false,
+    default_value=Some(VBool(true)), // 宣言 default = true
+  )
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [use_color],
+    constraints: [],
+  }
+  // 観測 = false (宣言 default の true と食い違う)。
+  let bound = resolve_scope(
+    sc,
+    [],
+    Map([]),
+    tty=Map::from_array([("stdout", { terminal: false, cygwin: false })]),
+  )
+  assert_eq(bound, Ok([mkb_pub("use_color", VBool(false), Tty)]))
+}
+
+///|
+/// DR-099 §2「両方とも得られなければ absent (素の bool の default 無し要素と同じ帰結、§2.6)」—
+/// tty preset 要素は観測も宣言 default も無い場合、absent (result にキー自体が出ない) へ落ちること
+/// を resolve.mbt の fold-fallthrough 経路で固定する (`Entity.default_values` が None のケース)。
+/// どの fixture でも直接検証されていない軸: tty-ladder.json の null-observation-uses-default case は
+/// 必ず明示 default (`use_color` の `default: true`) を宣言しているため、「宣言 default も無い」は
+/// fixture から見えない。ElemDef→Entity 構築時に is_tty 要素へ TBool の暗黙 default:false を注入
+/// しないための `ensure_entity` 側の除外分岐 (installer.mbt) は installer_wbtest.mbt が別途固定する。
+test "resolve_scope: tty 型要素は観測も宣言 default も無ければ absent (DR-099 §2)" {
+  let use_color = ent(
+    "use_color",
+    TBool,
+    is_tty=true,
+    tty_stream=Some("stdout"),
+  )
+  // default_value 省略 = 宣言 default 無し。
+  let sc : Scope = {
+    greedy: [],
+    positional: [],
+    entities: [use_color],
+    constraints: [],
+  }
+  let bound = resolve_scope(sc, [], Map([])) // tty 供給なし・観測なし
+  assert_eq(bound, Ok([]))
 }
 
 ///|

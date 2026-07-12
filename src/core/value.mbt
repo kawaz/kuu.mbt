@@ -29,7 +29,10 @@ pub(all) enum Source {
   Env // environment variable seat (DR-031 #2)
   Config // config-file seat (DR-050 #3) — below env, above inherit
   Inherit // nearest ancestor scope's same-named value (DR-031 #4 / DR-013)
-  Tty // tty-判定注入値 (DR-098 §5) — below inherit, above default (観測値は明示/継承より弱いが宣言既定より強い)
+  // tty-判定注入値 (DR-099 §2/§12b)。専用ラダー席は持たない — `builtin/tty` preset 型要素の
+  // default 席の解決規則 (`fold(観測) ?? 宣言 default ?? absent`) が観測由来で確定したときのタグ。
+  // 明示/継承より弱く宣言既定より強いという優先度は不変 (由来が独立席からこの型依存規則へ移っただけ)。
+  Tty
   Default // fixed fallback (DR-031 #6)
 } derive(Eq, Debug)
 

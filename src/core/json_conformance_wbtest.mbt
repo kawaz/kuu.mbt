@@ -306,7 +306,9 @@ fn opt(
   variants? : Array[Variant] = [],
   short? : Array[Char] = [],
   env? : Array[String] = [],
-  tty? : String? = None,
+  is_tty? : Bool = false,
+  tty_stream? : String? = None,
+  tty_cygwin? : Bool = true,
   global? : Bool = false,
   inherit_? : Bool = false,
   inheritable? : Bool = false,
@@ -347,7 +349,9 @@ fn opt(
     variants,
     short,
     env,
-    tty,
+    is_tty,
+    tty_stream,
+    tty_cygwin,
     is_dd: false,
     dd_match: None,
     dd_self_keep: false,
@@ -412,7 +416,9 @@ fn pos(
   value_filters? : Array[FilterSpelling] = [],
   cell_filters? : Array[FilterSpelling] = [],
   env? : Array[String] = [],
-  tty? : String? = None,
+  is_tty? : Bool = false,
+  tty_stream? : String? = None,
+  tty_cygwin? : Bool = true,
   required? : Bool = false,
   requires? : Array[String] = [],
   body? : ElemBody = BCell,
@@ -424,7 +430,9 @@ fn pos(
     variants: [],
     short: [],
     env,
-    tty,
+    is_tty,
+    tty_stream,
+    tty_cygwin,
     is_dd: false,
     dd_match: None,
     dd_self_keep: false,
@@ -478,7 +486,6 @@ fn dd_marker(
   match_? : String? = None,
   self_keep? : Bool = false,
   required? : Bool = false,
-  tty? : String? = None,
 ) -> ElemDef {
   {
     name: "--",
@@ -487,7 +494,12 @@ fn dd_marker(
     variants: [],
     short: [],
     env: [],
-    tty,
+    // DR-099 §1: dd (type:"dd") と builtin/tty は `type:` の別選択なので同一要素に同時発生し得ない
+    // (DR-098 §4 が必要とした dd-vs-tty definition-error は構文的に発生しなくなった) — dd_marker は
+    // is_tty/tty_stream を常に canonical default のまま持ち回るだけの冗長フィールド。
+    is_tty: false,
+    tty_stream: None,
+    tty_cygwin: true,
     is_dd: true,
     dd_match: match_,
     dd_self_keep: self_keep,
@@ -538,7 +550,6 @@ fn full_installers() -> Array[Installer] {
     LongInst,
     ShortInst,
     EnvInst,
-    TtyInst,
     DdInst,
     CommandInst,
     GlobalInst,
@@ -1419,9 +1430,10 @@ struct DCase {
   tried_exp : String?
   resolve : Bool
   env : Map[String, String]
-  // DR-098 §3: tty_provider の runner 注入 — case JSON の `tty` フィールド (env と同型の注入形式)
-  // をそのまま Map[stream, bool] として保持。キー不在 = 提供なし (null、CONFORMANCE §1)。
-  tty : Map[String, Bool]
+  // DR-099 §4: tty_provider の runner 注入 — case JSON の `tty` フィールド (env と同型の注入形式)
+  // をそのまま Map[stream, TtyObs] として保持 (DR-098 の bool 単一値から生観測 2 値へ改訂)。
+  // キー不在 = 提供なし (null、CONFORMANCE §1)。
+  tty : Map[String, TtyObs]
   cfg : CfgInj
 }
 
@@ -1643,20 +1655,6 @@ fn dec_strs(j : Json?) -> Array[String] raise DecodeSkip {
             None => raise DecodeSkip("expected a string or string[]")
           }
       }
-  }
-}
-
-///|
-/// DR-098 §3: `tty` 属性の値語彙は "stdin" | "stderr" | "stdout" の 3 値 enum、単一値 (env の
-/// 複数候補配列とは違う形)。wire 上の綴りミスは decode 時点で拒否する (DR-054 の「構文の驚きは v1
-/// Error」筋、dd の `self` 属性と同じ扱い)。
-fn dec_tty(o : Map[String, Json]) -> String? raise DecodeSkip {
-  match jf_str(o, "tty") {
-    Some("stdin") => Some("stdin")
-    Some("stdout") => Some("stdout")
-    Some("stderr") => Some("stderr")
-    Some(other) => raise DecodeSkip("tty has unknown stream '" + other + "'")
-    None => None
   }
 }
 
@@ -2031,8 +2029,8 @@ fn dec_ty(t : String) -> Ty raise DecodeSkip {
 /// DR-061 §3 configurable factory の type shadow: user 定義の型名を base Ty + parse 相 config に
 /// 解決する。fixture の `definitions.types.<name>` → TypeShadow の map で保持し、dec_option /
 /// dec_positional の `type: "<name>"` 解決で consultation する。canonical 型名 (string/number/int/...)
-/// は shadow で override 可能だが本 fixture では未使用 (`int_parser`/`number_parser`/`bool_parser`
-/// factory のみ扱う)。
+/// は shadow で override 可能だが本 fixture では未使用 (`int_parser`/`number_parser`/`bool_parser`/
+/// `tty` factory のみ扱う)。
 struct TypeShadow {
   base : Ty
   int_round : RoundMode
@@ -2042,6 +2040,12 @@ struct TypeShadow {
   // DR-074 §4 `bool_parser` factory config (`true_values`/`false_values`/`case_insensitive` を 1
   // struct に束ねた carrier、ElemDef.bool_config と同型)。canonical default = `bool_config_canonical()`。
   bool_config : BoolConfig
+  // DR-099 §1/§3 `builtin/tty` factory: base=TBool + is_tty マーカー + tty_stream (必須 config、
+  // 未指定は definition-error) + tty_cygwin (既定 true)。他 factory と同じ「平坦 config キーを
+  // shadow に carry するだけ」パターン (ElemDef.is_tty/tty_stream/tty_cygwin と同型)。
+  is_tty : Bool
+  tty_stream : String?
+  tty_cygwin : Bool
 } derive(Eq, Debug)
 
 ///|
@@ -2146,6 +2150,9 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           int_round: mode,
           allow_base_prefix: base_prefix,
           bool_config: bool_config_canonical(),
+          is_tty: false,
+          tty_stream: None,
+          tty_cygwin: true,
         })
       }
       "number_parser" | "builtin/number_parser" => {
@@ -2188,6 +2195,9 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           int_round: RError,
           allow_base_prefix: base_prefix,
           bool_config: bool_config_canonical(),
+          is_tty: false,
+          tty_stream: None,
+          tty_cygwin: true,
         })
       }
       "bool_parser" | "builtin/bool_parser" => {
@@ -2243,6 +2253,76 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           int_round: RError,
           allow_base_prefix: false,
           bool_config: { true_values, false_values, case_insensitive },
+          is_tty: false,
+          tty_stream: None,
+          tty_cygwin: true,
+        })
+      }
+      "tty" | "builtin/tty" => {
+        // DR-099 §3: `tty_stream` は必須 (未指定は definition-error kind=invalid-range —
+        // `collect_tty_stream_missing`, installer.mbt が別途検査する。decode 自体は DecodeSkip に
+        // せず None のまま素通しする、definition-error という別チャンネルで表現する規約は
+        // int_parser 等の decode-time DecodeSkip とは異なる、DR-098 の同型検査の踏襲)。
+        // `tty_cygwin` は既定 true。
+        let mut stream : String? = None
+        let mut cygwin = true
+        match to.get("config") {
+          Some(cj) => {
+            let co = match cj.j_obj() {
+              Some(x) => x
+              None =>
+                raise DecodeSkip(
+                  "definitions.types[" + name + "].config is not an object",
+                )
+            }
+            allowed_keys(co, ["tty_stream", "tty_cygwin"], "tty config")
+            match co.get("tty_stream") {
+              Some(vj) =>
+                match vj.j_str() {
+                  Some("stdin") => stream = Some("stdin")
+                  Some("stdout") => stream = Some("stdout")
+                  Some("stderr") => stream = Some("stderr")
+                  Some(other) =>
+                    raise DecodeSkip(
+                      "definitions.types[" +
+                      name +
+                      "].config.tty_stream '" +
+                      other +
+                      "' is not stdin/stdout/stderr",
+                    )
+                  None =>
+                    raise DecodeSkip(
+                      "definitions.types[" +
+                      name +
+                      "].config.tty_stream is not a string",
+                    )
+                }
+              None => ()
+            }
+            match co.get("tty_cygwin") {
+              Some(vj) =>
+                match vj.j_bool() {
+                  Some(b) => cygwin = b
+                  None =>
+                    raise DecodeSkip(
+                      "definitions.types[" +
+                      name +
+                      "].config.tty_cygwin is not a bool",
+                    )
+                }
+              None => ()
+            }
+          }
+          None => ()
+        }
+        out.set(name, {
+          base: TBool,
+          int_round: RError,
+          allow_base_prefix: false,
+          bool_config: bool_config_canonical(),
+          is_tty: true,
+          tty_stream: stream,
+          tty_cygwin: cygwin,
         })
       }
       other =>
@@ -2251,7 +2331,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           name +
           "] unsupported factory '" +
           other +
-          "' (only int_parser / number_parser / bool_parser are wired in the current substrate)",
+          "' (only int_parser / number_parser / bool_parser / tty are wired in the current substrate)",
         )
     }
   }
@@ -2717,7 +2797,7 @@ fn dec_option(
   allowed_keys(
     o,
     [
-      "id", "name", "type", "long", "short", "env", "tty", "default", "global", "inherit",
+      "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "requires", "conflicts_with", "exclusive_group",
       "required", "export_key", "config_key", "deprecated", "or", "values", "piece_filters",
       "value_filters", "cell_filters", "ref", "repeat",
@@ -2800,14 +2880,18 @@ fn dec_option(
     }
     // DR-093 §2/§5: dd も required を持てる (`{"type":"dd","required":true}`、新規 wire 語彙ゼロ)。
     let required = bool_field(o, "required", false)
-    // DR-098 §4: dd (値なし要素) への tty: は definition-error (collect_tty_invalid_range) の対象 —
-    // decode 自体は素通しする (definition-error 検査は decode 後の静的検査フェーズの仕事)。
-    let tty = dec_tty(o)
-    return DOpt({ ..dd_marker(match_~, self_keep~, required~, tty~), name, })
+    // DR-099 §1: dd は `type:"dd"` — `type:` は単一選択のフィールドなので、同一要素が
+    // builtin/tty を同時に選ぶこと自体ができない (DR-098 §4 が必要とした dd-vs-tty
+    // definition-error は構文的に発生しなくなった、dd_marker のコメント参照)。
+    return DOpt({ ..dd_marker(match_~, self_keep~, required~), name, })
   }
   // DR-061 §3: type shadow lookup — user 定義の type 名なら base Ty + parse 相 config を採用、
   // canonical 型名 (string/int/...) にフォールバック。help/config_file は語彙 keyword で shadow の
   // 適用対象外 (installer 語彙、DR-042)。
+  // DR-099 §1/§3: bare `type:"tty"` (builtin ns の糖衣, DR-094 §3) / 明示 `type:"builtin/tty"` も
+  // help/config_file と同じ keyword 優先度で先に判定する — definitions.types を経由しない直接参照は
+  // config (tty_stream) を一切供給できないので、tty_stream は常に None のまま
+  // (`collect_tty_stream_missing` の definition-error に委ねる)。
   let (
     ty,
     fail_action,
@@ -2815,9 +2899,46 @@ fn dec_option(
     int_round_from_shadow,
     base_prefix_from_shadow,
     bool_config_from_shadow,
+    is_tty_from_shadow,
+    tty_stream_from_shadow,
+    tty_cygwin_from_shadow,
   ) = match tystr {
-    "help" => (TFlag, true, false, RError, false, bool_config_canonical())
-    "config_file" => (TStr, false, true, RError, false, bool_config_canonical())
+    "help" =>
+      (
+        TFlag,
+        true,
+        false,
+        RError,
+        false,
+        bool_config_canonical(),
+        false,
+        None,
+        true,
+      )
+    "config_file" =>
+      (
+        TStr,
+        false,
+        true,
+        RError,
+        false,
+        bool_config_canonical(),
+        false,
+        None,
+        true,
+      )
+    "tty" | "builtin/tty" =>
+      (
+        TBool,
+        false,
+        false,
+        RError,
+        false,
+        bool_config_canonical(),
+        true,
+        None,
+        true,
+      )
     _ =>
       match shadows.get(tystr) {
         Some(sh) =>
@@ -2828,9 +2949,22 @@ fn dec_option(
             sh.int_round,
             sh.allow_base_prefix,
             sh.bool_config,
+            sh.is_tty,
+            sh.tty_stream,
+            sh.tty_cygwin,
           )
         None =>
-          (dec_ty(tystr), false, false, RError, false, bool_config_canonical())
+          (
+            dec_ty(tystr),
+            false,
+            false,
+            RError,
+            false,
+            bool_config_canonical(),
+            false,
+            None,
+            true,
+          )
       }
   }
   // DR-071 §1 / kawaz 裁定 2026-07-08: decode は wire の bool|array 二形をそのまま `LongDecl` に写す
@@ -2842,7 +2976,6 @@ fn dec_option(
   }
   let short = dec_short(o)
   let env = dec_strs(o.get("env"))
-  let tty = dec_tty(o)
   let default : Array[Value]? = match o.get("default") {
     Some(d) => Some(json_to_default_values(d))
     None => None
@@ -2894,7 +3027,9 @@ fn dec_option(
       short~,
       repeat~,
       env~,
-      tty~,
+      is_tty=is_tty_from_shadow,
+      tty_stream=tty_stream_from_shadow,
+      tty_cygwin=tty_cygwin_from_shadow,
       global~,
       inherit_=inherit_flag,
       inheritable~,
@@ -2946,7 +3081,7 @@ fn dec_positional(
     [
       "id", "name", "type", "repeat", "optional", "multiple", "export_key", "config_key",
       "default", "positionals", "or", "piece_filters", "value_filters", "cell_filters",
-      "ref", "env", "tty", "required", "requires",
+      "ref", "env", "required", "requires",
       // codex 節目レビュー Major 1 (dec_option 側と同じ要素単位 scope config override、
       // 対称の positional 版)。
        "config",
@@ -2977,19 +3112,35 @@ fn dec_positional(
   // DR-089 の「採用しなかった案」が明示的に否定するパターン。`ref` 付きの場合はそもそも ty が
   // 未使用 (elem_head の Ref(r) head、下の `dec_or_structural`/`positionals` 分岐同様) なので
   // TNone に変えても無害)。
+  // DR-099 §1/§3: bare `type:"tty"` / `type:"builtin/tty"` は dec_option と同じ理由で shadow
+  // lookup より先に判定する (config を供給する経路が無いので tty_stream は常に None のまま)。
   let (
     ty,
     int_round_from_shadow,
     base_prefix_from_shadow,
     bool_config_from_shadow,
+    is_tty_from_shadow,
+    tty_stream_from_shadow,
+    tty_cygwin_from_shadow,
   ) = match jf_str(o, "type") {
+    Some("tty") | Some("builtin/tty") =>
+      (TBool, RError, false, bool_config_canonical(), true, None, true)
     Some(t) =>
       match shadows.get(t) {
         Some(sh) =>
-          (sh.base, sh.int_round, sh.allow_base_prefix, sh.bool_config)
-        None => (dec_ty(t), RError, false, bool_config_canonical())
+          (
+            sh.base,
+            sh.int_round,
+            sh.allow_base_prefix,
+            sh.bool_config,
+            sh.is_tty,
+            sh.tty_stream,
+            sh.tty_cygwin,
+          )
+        None =>
+          (dec_ty(t), RError, false, bool_config_canonical(), false, None, true)
       }
-    None => (TNone, RError, false, bool_config_canonical())
+    None => (TNone, RError, false, bool_config_canonical(), false, None, true)
   }
   let name = match jf_str(o, "name") {
     Some(s) => s
@@ -3026,9 +3177,6 @@ fn dec_positional(
   // field) — this was missing from the positional decoder entirely (`allowed_keys` rejected it
   // outright), a genuine decode gap surfaced by `positional-env-presence.json`.
   let env = dec_strs(o.get("env"))
-  // DR-098 §3: positional も tty seat を持てる (Entity.tty_key applies uniformly across
-  // options/positionals — env と同じ「両 face を走査」対称形、DR-098 §12b)。
-  let tty = dec_tty(o)
   // DR-093 §1/§2/§5: positional も required を持てる (corpus/real-cli の
   // `{"name":"path","type":"string","required":true}` 実例が示す通り、option 限定ではない)。
   let required = bool_field(o, "required", false)
@@ -3056,7 +3204,9 @@ fn dec_positional(
     piece_filters~,
     value_filters~,
     env~,
-    tty~,
+    is_tty=is_tty_from_shadow,
+    tty_stream=tty_stream_from_shadow,
+    tty_cygwin=tty_cygwin_from_shadow,
     cell_filters~,
     required~,
     requires~,
@@ -3534,9 +3684,11 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
     }
     None => ()
   }
-  // DR-098 §3: case の `tty` フィールド (env と同型の注入形式) — tty_provider の runner 実装。
-  // キー不在 = 提供なし (CONFORMANCE §1「null = 未設定」の tty 版、DR-098 §1)。
-  let tty : Map[String, Bool] = Map([])
+  // DR-099 §4: case の `tty` フィールド (env と同型の注入形式) — tty_provider の runner 実装。
+  // 各 stream キーは `{terminal, cygwin}` の生観測 2 値 (DR-098 の bool 単一値から改訂、
+  // schema/fixture.schema.json の `additionalProperties: false` に合わせ両キー必須で decode)。
+  // キー不在 = 提供なし (CONFORMANCE §1「null = 未設定」の tty 版、DR-098 §1 の規定を継承)。
+  let tty : Map[String, TtyObs] = Map([])
   match co.get("tty") {
     Some(tj) => {
       let tobj = match tj.j_obj() {
@@ -3544,10 +3696,30 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
         None => raise DecodeSkip("case tty is not an object")
       }
       for k, v in tobj {
-        match v.j_bool() {
-          Some(b) => tty.set(k, b)
-          None => raise DecodeSkip("case tty value is not a bool")
+        let vo = match v.j_obj() {
+          Some(x) => x
+          None => raise DecodeSkip("case tty[" + k + "] is not an object")
         }
+        allowed_keys(vo, ["terminal", "cygwin"], "case tty[" + k + "]")
+        let terminal = match vo.get("terminal") {
+          Some(bj) =>
+            match bj.j_bool() {
+              Some(b) => b
+              None =>
+                raise DecodeSkip("case tty[" + k + "].terminal is not a bool")
+            }
+          None => raise DecodeSkip("case tty[" + k + "] missing 'terminal'")
+        }
+        let cygwin = match vo.get("cygwin") {
+          Some(bj) =>
+            match bj.j_bool() {
+              Some(b) => b
+              None =>
+                raise DecodeSkip("case tty[" + k + "].cygwin is not a bool")
+            }
+          None => raise DecodeSkip("case tty[" + k + "] missing 'cygwin'")
+        }
+        tty.set(k, { terminal, cygwin })
       }
     }
     None => ()
@@ -4846,13 +5018,10 @@ fn known_divergences() -> Array[String] {
 /// a fixture the decoder cannot losslessly represent, so it raises DecodeSkip before any case runs.
 /// UNEXPECTED / VANISHED / CHANGED SKIP REASON all fail the run (like divergences, MDR-001 §6).
 ///
-/// MDR-004 (ElemBody body grammar) resolved the 4 structural-or / nested-group skips inherited from
-/// slice (BOr option/positional lowering + BGroup+IdxRepeat lowering), and the parallel
-/// number_allow_base_prefix work (hex/oct/bin integer + hex float lexer) resolved the remaining
-/// `definitions.types[number]` factory-config gap — DR-098 (tty 値源化) resolved the 2 tty fixture
-/// skips (tty_provider / wire 属性 tty / ladder 5 位、実装 land 済み) — all previously-frozen skip
-/// entries are removed since every fixture now decodes and runs losslessly (full conformance, no
-/// known skip gaps).
+/// Every fixture in the corpus (including DR-099's `builtin/tty` preset-type fixtures — the
+/// `definitions.types` factory branch and the case-level `{terminal, cygwin}` observation decode,
+/// both `dec_types`/`dec_case` above) decodes and runs losslessly — full conformance, no known skip
+/// gaps.
 fn expected_skips() -> Array[(String, String)] {
   []
 }
