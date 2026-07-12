@@ -2693,7 +2693,7 @@ fn dec_option(
     o,
     [
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
-      "inheritable", "multiple", "separator", "requires", "conflicts_with", "exclusive_group",
+      "inheritable", "multiple", "requires", "conflicts_with", "exclusive_group",
       "required", "export_key", "config_key", "deprecated", "or", "values", "piece_filters",
       "value_filters", "cell_filters", "ref", "repeat",
       // DR-090 §2: dd 専用の2軸拡張キー — 他 type では無意味だが、dd 分岐 (下) だけが読む
@@ -2914,9 +2914,9 @@ fn dec_positional(
   allowed_keys(
     o,
     [
-      "id", "name", "type", "repeat", "optional", "multiple", "separator", "export_key",
-      "config_key", "default", "positionals", "or", "piece_filters", "value_filters",
-      "cell_filters", "ref", "env", "required", "requires",
+      "id", "name", "type", "repeat", "optional", "multiple", "export_key", "config_key",
+      "default", "positionals", "or", "piece_filters", "value_filters", "cell_filters",
+      "ref", "env", "required", "requires",
       // codex 節目レビュー Major 1 (dec_option 側と同じ要素単位 scope config override、
       // 対称の positional 版)。
        "config",
