@@ -1,6 +1,6 @@
 ---
 title: bool_parser factory が未実装 (configurable factory の config キー true_values/false_values/case_insensitive が decode 不能)
-status: open
+status: resolved
 category: bug
 created: 2026-07-12T04:58:47+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-12T11:53:42+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented:kuu.mbt commit 4373e6cb 系 (現 6f5a5342) — BoolConfig (true_values/false_values/case_insensitive, DR-074 §3 canonical default) + parse_bool_ext + dec_types bare/builtin ns 2 形分岐 (int/number と対称) + BoolArg/SepArg/LongEntry/ElemDef 配線","implemented:wbtest 4本 (2形解決/canonical default 不変/ci:false 厳密照合/未知 config キー reject)","implemented:spec fixture value-typing/bool-dialect-config.json (yes/no opt-in 方言3 cases, spec d0b60798) + pin bump (ed4ab81d), CI success 確認済み","implemented:conformance 195/506/0/0, moon test 310本"]
 blocked_by:
 origin: kuu (spec リポ)
 ---
