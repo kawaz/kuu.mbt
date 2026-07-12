@@ -1,6 +1,6 @@
 ---
 title: dependabot 警告 2 件 — examples/archives の uv.lock 由来
-status: open
+status: resolved
 category: task
 created: 2026-07-12T17:57:21+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-13T08:24:01+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["examples/archives は main 書き直し時に既に削除済みで working copy にも git 管理下にも存在しない (gh api contents は 404 で確認)","alert は旧リモート枝時代の manifest を指す stale、#8/#18 とも GitHub 上で dismissed 済み (2026-07-13、dismissed_comment に経緯記載)","起票自体が alert の manifest_path だけを見て main に実在すると誤認したものと判明。実物確認を経ずに起票した点が原因"]
 blocked_by:
 origin: kuu (依頼元プロジェクト)
 ---
