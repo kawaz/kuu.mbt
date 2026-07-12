@@ -153,6 +153,7 @@ fn run_eq_split(
             e.kind,
             e.int_round,
             e.allow_base_prefix,
+            e.bool_config,
             e.piece_filters,
             pos,
             e.merge,
@@ -215,11 +216,12 @@ fn run_eq_split(
         // an eq-split LongEntry for a none-typed element).
         TNone => return []
         TBool =>
-          // DR-074 §3: a value-typed bool DOES take an eq-split value (`--enabled=true`), unlike a
-          // presence-only flag firing — the CLI vocab is canonical `parse_bool` (true/false/1/0/"",
-          // case-insensitive). An unrecognized token is a held Error (DR-037), not 素通し. (installer.mbt
+          // DR-074 §3/§4: a value-typed bool DOES take an eq-split value (`--enabled=true`), unlike a
+          // presence-only flag firing — the CLI vocab is `parse_bool_ext(_, e.bool_config)` (canonical
+          // default `true/false/1/0/""`, case-insensitive; bool_parser factory config opt-in via
+          // DR-061 §4). An unrecognized token is a held Error (DR-037), not 素通し. (installer.mbt
           // `inst_long` only registers this entry when the element has no variant spellings.)
-          match parse_bool(filtered) {
+          match parse_bool_ext(filtered, e.bool_config) {
             Some(b) =>
               return [
                 Accept(pos + 1, [mkb(e.name, VBool(b), Cli, at_pos=Some(pos))]),
@@ -299,6 +301,10 @@ fn short_val(
   // (`separator is Some(_) || e.merge`) — `-f-a` (in-cluster attach) / `-f -a` (space-form) いずれ
   // も merge 宣言なら separator 未宣言でも `sep_binds` 経由でマーカー認識させる。
   if e.separator is Some(_) || e.merge {
+    // `ShortEntry` carries no `bool_config` (TBool never reaches this attach path — node.mbt's
+    // `ShortEntry.piece_filters` doc comment: "Ignored for TFlag/TBool/TCount, no in-cluster/
+    // space-form VALUE attachment for those"), so `sep_binds`'s bool arm is structurally dead here;
+    // pass the canonical default purely to satisfy the shared signature.
     sep_binds(
       e.name,
       s,
@@ -306,6 +312,7 @@ fn short_val(
       e.kind,
       e.int_round,
       e.allow_base_prefix,
+      bool_config_canonical(),
       e.piece_filters,
       pos,
       e.merge,

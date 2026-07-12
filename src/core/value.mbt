@@ -64,6 +64,54 @@ pub(all) enum RoundMode {
 } derive(Eq, Debug)
 
 ///|
+/// bool の factory config (DR-074 §3/§4 `bool_parser`, DR-061 §3 configurable factory)。canonical
+/// default (`bool_config_canonical`) は `true_values: ["true","1"]` / `false_values: ["false","0",""]`
+/// / `case_insensitive: true` — 既存 `parse_bool` のハードコード語彙と同値 (置き換えではなく同じ表を
+/// データ化しただけ、対極確認は wbtest 側)。opt-in で `true_values`/`false_values` に `yes`/`on` 等を
+/// 追加する (DR-074 §4 の `+[...]` 表記は「default 配列に語彙を足した完成形をそのまま渡す」の意 — wire
+/// 上は置換であって merge ではない、config は純データという DR-061 §4 の原則通り)。
+pub(all) struct BoolConfig {
+  true_values : Array[String]
+  false_values : Array[String]
+  case_insensitive : Bool
+} derive(Eq, Debug)
+
+///|
+/// canonical default config (DR-074 §3)。TypeShadow/ElemDef の bool_config 既定値、および
+/// `parse_bool`(configなし呼び出し) が委譲する先。
+pub fn bool_config_canonical() -> BoolConfig {
+  {
+    true_values: ["true", "1"],
+    false_values: ["false", "0", ""],
+    case_insensitive: true,
+  }
+}
+
+///|
+/// Parse a String token as a bool through a configurable vocab (DR-074 §3/§4 `bool_parser` factory
+/// config). `case_insensitive` gates whether the token is compared against `true_values`/
+/// `false_values` case-insensitively (canonical `true`) or exactly (opt-in dialect, JSON/TOML 準拠
+/// `false`). A token matching neither list is None (→ Error at the call site, same `not_a_bool`
+/// posture as the canonical-only `parse_bool`). `parse_bool(s)` below is this function specialized to
+/// `bool_config_canonical()` — the SAME canonical table, just expressed as data instead of literal
+/// `if` branches (DR-061 §3 「クロージャをデータ化」).
+pub fn parse_bool_ext(s : String, config : BoolConfig) -> Bool? {
+  for t in config.true_values {
+    if (config.case_insensitive && eq_ci(s, t)) ||
+      (!config.case_insensitive && s == t) {
+      return Some(true)
+    }
+  }
+  for f in config.false_values {
+    if (config.case_insensitive && eq_ci(s, f)) ||
+      (!config.case_insensitive && s == f) {
+      return Some(false)
+    }
+  }
+  None
+}
+
+///|
 /// The reason an int/number parse failed (DR-066 語彙): `NotANumber` = not a number at all,
 /// `NotAnInteger` = a non-integer value under `int_round: error`. `IntOutOfRange` = a readable
 /// integer VALUE whose magnitude exceeds Int64's range (issue
@@ -1171,15 +1219,11 @@ fn lower_code(c : Char) -> Int {
 /// Parse a String token as a bool (DR-074 §3 canonical): `true_values = ["true","1"]`,
 /// `false_values = ["false","0",""]`, `case_insensitive = true`. An unrecognized token is None
 /// (→ Error at the call site — no silent bool化, DR-021 姿勢). The empty string is false (env's
-/// `FLAG=` pattern); `yes`/`no`/`on`/`off` are canonical-外 (Norway problem 回避).
+/// `FLAG=` pattern); `yes`/`no`/`on`/`off` are canonical-外 (Norway problem 回避). Every call site
+/// that has no `bool_parser` factory config to consult (config_to_value/env_value's canonical-only
+/// arms) keeps calling this — it is `parse_bool_ext` specialized to `bool_config_canonical()`.
 pub fn parse_bool(s : String) -> Bool? {
-  if eq_ci(s, "true") || s == "1" {
-    Some(true)
-  } else if eq_ci(s, "false") || s == "0" || s == "" {
-    Some(false)
-  } else {
-    None
-  }
+  parse_bool_ext(s, bool_config_canonical())
 }
 
 ///|

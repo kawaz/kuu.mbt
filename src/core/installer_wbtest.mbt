@@ -84,6 +84,7 @@ fn el(
     default_values: None,
     int_round: RError,
     allow_base_prefix: false,
+    bool_config: bool_config_canonical(),
     // `chain` (filters_wbtest.mbt, same package): keeps this builder's colon-shorthand ergonomics
     // (`piece_filters=["trim"]`) even though `ElemDef` fields are `Array[FilterSpelling]` in
     // production (issue filter-spelling-inband-encoding-retyping).
@@ -229,7 +230,8 @@ test "long installer: a flag's explicit `long:[\":set\"]` composes `:set:true` A
   let mut has_bare_bind = false
   for g in sc.greedy {
     match g {
-      Seq([Exact("--verbose"), BoolArg("verbose", _)]) => has_value_slot = true
+      Seq([Exact("--verbose"), BoolArg("verbose", _, _)]) =>
+        has_value_slot = true
       Seq([Exact("--verbose"), Bind("verbose", VBool(true))]) =>
         has_bare_bind = true
       _ => ()
@@ -1030,7 +1032,7 @@ test "desugar_aliases: alias long:true on a flag canonical composes :set:true (b
   for g in sc.greedy {
     match g {
       Seq([Exact("--v"), Bind("verbose", VBool(true))]) => has_bare_bind = true
-      Seq([Exact("--v"), BoolArg("verbose", _)]) => has_value_slot = true
+      Seq([Exact("--v"), BoolArg("verbose", _, _)]) => has_value_slot = true
       _ => ()
     }
   }
@@ -3154,7 +3156,7 @@ test "long installer: a variant trigger uses e.long_prefix, matching the main en
   let mut has_dash_variant = false
   for g in sc.greedy {
     match g {
-      Seq([Exact("+ssl"), BoolArg("ssl", _)]) => has_plus_main = true
+      Seq([Exact("+ssl"), BoolArg("ssl", _, _)]) => has_plus_main = true
       Seq([Exact("+no-ssl"), Bind("ssl", VBool(false))]) =>
         has_plus_variant = true
       Seq([Exact("--no-ssl"), ..]) => has_dash_variant = true
@@ -3184,7 +3186,7 @@ test "long installer: default long_prefix keeps variant trigger at \"--\" (å¯¾æ¥
   let mut has_variant = false
   for g in sc.greedy {
     match g {
-      Seq([Exact("--ssl"), BoolArg("ssl", _)]) => has_main = true
+      Seq([Exact("--ssl"), BoolArg("ssl", _, _)]) => has_main = true
       Seq([Exact("--no-ssl"), Bind("ssl", VBool(false))]) => has_variant = true
       _ => ()
     }

@@ -122,7 +122,8 @@ pub(all) enum Node {
   /// its own type (issue 2026-07-09-separator-non-string-type-parse-gap §段4 — a piece's type is
   /// independent of whether it came via separator or not, DR-034 §6.2's pieceProcessor). Fields:
   /// name, sep, ty (the element's declared type — TStr is the historical identity-parse default),
-  /// int_round (TInt only, mirrors `IntArg`'s carrier), allow_base_prefix (TNum/TInt), piece_filters
+  /// int_round (TInt only, mirrors `IntArg`'s carrier), allow_base_prefix (TNum/TInt), bool_config
+  /// (TBool only, mirrors `BoolArg`'s carrier — DR-074 §4 `bool_parser` factory config), piece_filters
   /// (applied to EACH split piece — not the whole raw token — right before that piece's own parse
   /// step, DESIGN §6.2: separator → piece_filters → parse → cell_filters, one piece at a time).
   /// `sep_binds` (eval.mbt) threads all of this through the split loop; a piece that fails its
@@ -135,12 +136,21 @@ pub(all) enum Node {
   /// instead of silently degrading to a literal add — without this, marker vocabulary was INERT for
   /// any merge element that omitted `separator` (issue: markers only worked when a comma actually
   /// split the token into ≥1 piece via the OLD mandatory-separator SepArg gate).
-  /// 7th field (DR-080 波及節): `merge` — whether the declaring element's `multiple.accumulator`
+  /// 8th field (DR-080 波及節): `merge` — whether the declaring element's `multiple.accumulator`
   /// is `"merge"`. Threaded from `ElemDef.accumulator` via `installer.mbt`'s `value_prim` so
   /// `sep_binds` (eval.mbt) knows whether to run `classify_merge_piece` on each split piece
   /// (merge-declared elements only, DR-080 §1) or treat every piece as a plain add (everyone else,
   /// unchanged pre-DR-080 behavior).
-  SepArg(String, String?, Ty, RoundMode, Bool, Array[FilterSpelling], Bool)
+  SepArg(
+    String,
+    String?,
+    Ty,
+    RoundMode,
+    Bool,
+    BoolConfig,
+    Array[FilterSpelling],
+    Bool
+  )
   /// DR-091 §2: kv_map accumulator の consume-time gate — consume 1 token, apply piece_filters,
   /// then require the (filtered) token to contain `=` (the structural precondition "piece `k=v`
   /// を最初の `=` で分割" needs). A token with no `=` is a Held Error (kind=KParse, same family as
@@ -178,15 +188,19 @@ pub(all) enum Node {
   /// 5th field is DR-034's piece_filters (same carrier pattern as the other value primitives).
   IntArg(String, RoundMode, Bool, Array[FilterSpelling])
   /// bool value primitive (DR-076 §1/§4: bool is a normal value type, same standing as
-  /// string/number). Consume 1 token, parsed via `parse_bool` (DR-074 §3 canonical vocab:
-  /// true/false/1/0/""，case-insensitive); an unrecognized token fails with reason `not_a_bool`
+  /// string/number). Consume 1 token, parsed via `parse_bool_ext(_, config)` where `config` is the
+  /// element's `bool_config` (canonical default = `bool_config_canonical()`, opt-in via `bool_parser`
+  /// factory config, DR-061 §4/DR-074 §4); an unrecognized token fails with reason `not_a_bool`
   /// (`pe_parse_bool`). A separate node from `NumArg`/`FloatArg`/`IntArg` for the same reason as
   /// those: `Ty::TBool` is the only place the value-typed-vs-presence-only (`Ty::TFlag`)
   /// distinction is known (installer.mbt `value_prim`); once lowered to a bare value node there is
   /// no other channel to carry it. A bare `--x` (presence-only) fire is `TFlag`'s job, not this
   /// node's — `BoolArg` only appears where a definition's `:set` explicitly wants a value slot.
-  /// 2nd field is DR-034's piece_filters (same carrier pattern as `StrArg`).
-  BoolArg(String, Array[FilterSpelling])
+  /// 2nd field is the bool_config carrier (mirrors `IntArg`'s `RoundMode` field — config is bundled
+  /// into one struct here, rather than 3 flat fields, since the 3 keys always travel together and
+  /// `RepeatSpec` already establishes the "bundle a multi-key factory config into one struct" pattern
+  /// in this same file). 3rd field is DR-034's piece_filters (same carrier pattern as `StrArg`).
+  BoolArg(String, BoolConfig, Array[FilterSpelling])
   /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
   /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
   /// held Error (a value that parsed but failed the filter — cell_filters reject 相当). Test-only
@@ -424,16 +438,19 @@ pub(all) struct Entity {
 
 ///|
 /// A long-option entry the eq-split matcher can resolve (`--key=value`). `int_round` /
-/// `allow_base_prefix` carry the element's DR-075 / DR-074 §2 factory config into the eq-split path
-/// (space form runs the greedy Num/IntArg node which already carries mode; eq-split needs its own
-/// copy since the entry table is the only channel run_eq_split reads). `int_round` は TInt のみ、
-/// `allow_base_prefix` は TNum / TInt が参照する。他 kind は無視。
+/// `allow_base_prefix` / `bool_config` carry the element's DR-075 / DR-074 §2/§4 factory config into
+/// the eq-split path (space form runs the greedy Num/IntArg/BoolArg node which already carries this
+/// config; eq-split needs its own copy since the entry table is the only channel run_eq_split reads).
+/// `int_round` は TInt のみ、`allow_base_prefix` は TNum / TInt、`bool_config` は TBool のみが参照する
+/// (DR-076 §1/§3: bool の eq-split `--enabled=true` は variant 綴りと共存する — TFlag と違い抑制
+/// されない)。他 kind は無視。
 pub(all) struct LongEntry {
   key : String
   name : String
   kind : Ty
   int_round : RoundMode
   allow_base_prefix : Bool
+  bool_config : BoolConfig
   // DR-034/DR-062 piece_filters (same carrier pattern as `int_round`/`allow_base_prefix`): run_eq_split
   // (matcher.mbt) applies it to `valstr` before the kind-specific parse. Ignored for TFlag/TCount
   // (no eq-split value slot to gate — a presence-only fire has no raw string to filter).

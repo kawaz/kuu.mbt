@@ -343,7 +343,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TStr, name)], [])]
       }
-    SepArg(name, sep, ty, int_round, base, piece_filters, merge) =>
+    SepArg(name, sep, ty, int_round, base, bool_config, piece_filters, merge) =>
       if pos < ctx.toks.length() {
         match
           sep_binds(
@@ -353,6 +353,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
             ty,
             int_round,
             base,
+            bool_config,
             piece_filters,
             pos,
             merge,
@@ -418,12 +419,13 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         [Pending([pend_value(TInt, name)], [])]
       }
-    BoolArg(name, piece_filters) =>
-      // DR-076 §1/§4: bool value slot (canonical vocab, DR-074 §3) — mirrors NumArg/FloatArg/IntArg.
+    BoolArg(name, bool_config, piece_filters) =>
+      // DR-076 §1/§4: bool value slot (DR-074 §3/§4 canonical + bool_parser factory config) —
+      // mirrors NumArg/FloatArg/IntArg.
       if pos < ctx.toks.length() {
         match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
-            match parse_bool(s) {
+            match parse_bool_ext(s, bool_config) {
               Some(b) =>
                 [Accept(pos + 1, [mkb(name, VBool(b), Cli, at_pos=Some(pos))])]
               None => [Held(pe_parse_bool(name, s, pos), [])]
@@ -750,6 +752,7 @@ fn sep_binds(
   ty : Ty,
   int_round : RoundMode,
   allow_base_prefix : Bool,
+  bool_config : BoolConfig,
   piece_filters : Array[FilterSpelling],
   pos : Int,
   merge : Bool,
@@ -781,7 +784,8 @@ fn sep_binds(
       PkRemove(payload) =>
         match
           sep_piece_value(
-            name, payload, ty, int_round, allow_base_prefix, piece_filters, pos,
+            name, payload, ty, int_round, allow_base_prefix, bool_config, piece_filters,
+            pos,
           ) {
           Ok(v) =>
             out.push({
@@ -798,7 +802,8 @@ fn sep_binds(
       PkAdd(payload) =>
         match
           sep_piece_value(
-            name, payload, ty, int_round, allow_base_prefix, piece_filters, pos,
+            name, payload, ty, int_round, allow_base_prefix, bool_config, piece_filters,
+            pos,
           ) {
           Ok(v) => out.push(mkb(name, v, Cli, at_pos=Some(pos)))
           Err(pe) => return Err(pe)
@@ -820,6 +825,7 @@ fn sep_piece_value(
   ty : Ty,
   int_round : RoundMode,
   allow_base_prefix : Bool,
+  bool_config : BoolConfig,
   piece_filters : Array[FilterSpelling],
   pos : Int,
 ) -> Result[Value, ParseError] {
@@ -845,7 +851,7 @@ fn sep_piece_value(
             None => Err(pe_parse(name, s, pos))
           }
         TBool =>
-          match parse_bool(s) {
+          match parse_bool_ext(s, bool_config) {
             Some(b) => Ok(VBool(b))
             None => Err(pe_parse_bool(name, s, pos))
           }
@@ -1587,7 +1593,7 @@ fn scope_consume(
       } else {
         []
       }
-    SepArg(name, sep, ty, int_round, base, piece_filters, merge) =>
+    SepArg(name, sep, ty, int_round, base, bool_config, piece_filters, merge) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match
           sep_binds(
@@ -1597,6 +1603,7 @@ fn scope_consume(
             ty,
             int_round,
             base,
+            bool_config,
             piece_filters,
             pos,
             merge,
@@ -1706,12 +1713,12 @@ fn scope_consume(
       } else {
         []
       }
-    BoolArg(name, piece_filters) =>
+    BoolArg(name, bool_config, piece_filters) =>
       // DR-076 §1/§4 CLI 値空間 (scope_step 経路: NumArg/IntArg/FloatArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
-            match parse_bool(s) {
+            match parse_bool_ext(s, bool_config) {
               Some(b) =>
                 scope_step(
                   sc,
@@ -2137,7 +2144,7 @@ fn consume_head(
       } else {
         []
       }
-    SepArg(name, sep, ty, int_round, base, piece_filters, merge) =>
+    SepArg(name, sep, ty, int_round, base, bool_config, piece_filters, merge) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match
           sep_binds(
@@ -2147,6 +2154,7 @@ fn consume_head(
             ty,
             int_round,
             base,
+            bool_config,
             piece_filters,
             pos,
             merge,
@@ -2233,12 +2241,12 @@ fn consume_head(
       } else {
         []
       }
-    BoolArg(name, piece_filters) =>
+    BoolArg(name, bool_config, piece_filters) =>
       // DR-076 §1/§4 CLI 値空間 (先食い分岐: NumArg/IntArg/FloatArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
-            match parse_bool(s) {
+            match parse_bool_ext(s, bool_config) {
               Some(b) =>
                 [Accept(pos + 1, [mkb(name, VBool(b), Cli, at_pos=Some(pos))])]
               None => [Held(pe_parse_bool(name, s, pos), [])]
@@ -2345,12 +2353,12 @@ fn consume_compound(
 ) -> Array[Branch] {
   match node {
     StrArg(_, _)
-    | SepArg(_, _, _, _, _, _, _)
+    | SepArg(_, _, _, _, _, _, _, _)
     | KvArg(_, _)
     | NumArg(_, _, _)
     | FloatArg(_, _)
     | IntArg(_, _, _, _)
-    | BoolArg(_, _)
+    | BoolArg(_, _, _)
     | ReqArg(_)
     | FilterArg(_, _) => consume_head(sc, node, ctx, pos, severed)
     Or(alts) => {
@@ -2429,12 +2437,15 @@ fn head_elem_names(head : Node) -> Array[String] {
 fn head_elem_names_into(n : Node, out : Array[String]) -> Unit {
   match n {
     StrArg(name, _) => if !str_mem(out, name) { out.push(name) }
-    SepArg(name, _, _, _, _, _, _) => if !str_mem(out, name) { out.push(name) }
+    SepArg(name, _, _, _, _, _, _, _) =>
+      if !str_mem(out, name) {
+        out.push(name)
+      }
     KvArg(name, _) => if !str_mem(out, name) { out.push(name) }
     NumArg(name, _, _) => if !str_mem(out, name) { out.push(name) }
     FloatArg(name, _) => if !str_mem(out, name) { out.push(name) }
     IntArg(name, _, _, _) => if !str_mem(out, name) { out.push(name) }
-    BoolArg(name, _) => if !str_mem(out, name) { out.push(name) }
+    BoolArg(name, _, _) => if !str_mem(out, name) { out.push(name) }
     FilterArg(name, _) => if !str_mem(out, name) { out.push(name) }
     ReqArg(name) => if !str_mem(out, name) { out.push(name) }
     Seq(items) =>
@@ -2647,12 +2658,12 @@ fn scope_consume_rep(
       } else {
         []
       }
-    BoolArg(name, piece_filters) =>
+    BoolArg(name, bool_config, piece_filters) =>
       // DR-076 §1/§4 CLI 値空間 (Many head 経路: NumArg/IntArg/FloatArg のミラー)。
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match apply_piece_filters(piece_filters, ctx.toks[pos]) {
           Ok(s) =>
-            match parse_bool(s) {
+            match parse_bool_ext(s, bool_config) {
               Some(b) =>
                 scope_step(
                   sc,

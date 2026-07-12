@@ -324,6 +324,7 @@ fn opt(
   default? : Array[Value]? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
+  bool_config? : BoolConfig = bool_config_canonical(),
   piece_filters? : Array[FilterSpelling] = [],
   value_filters? : Array[FilterSpelling] = [],
   cell_filters? : Array[FilterSpelling] = [],
@@ -371,6 +372,7 @@ fn opt(
     default_values: default,
     int_round,
     allow_base_prefix,
+    bool_config,
     piece_filters,
     value_filters,
     cell_filters,
@@ -402,6 +404,7 @@ fn pos(
   default? : Array[Value]? = None,
   int_round? : RoundMode = RError,
   allow_base_prefix? : Bool = false,
+  bool_config? : BoolConfig = bool_config_canonical(),
   piece_filters? : Array[FilterSpelling] = [],
   value_filters? : Array[FilterSpelling] = [],
   cell_filters? : Array[FilterSpelling] = [],
@@ -444,6 +447,7 @@ fn pos(
     default_values: default,
     int_round,
     allow_base_prefix,
+    bool_config,
     piece_filters,
     value_filters,
     cell_filters,
@@ -504,6 +508,7 @@ fn dd_marker(
     default_values: None,
     int_round: RError,
     allow_base_prefix: false,
+    bool_config: bool_config_canonical(),
     piece_filters: [],
     value_filters: [],
     cell_filters: [],
@@ -795,8 +800,8 @@ fn prim_name(n : Node) -> String? {
     IntArg(x, _, _, _) => Some(x)
     FloatArg(x, _) => Some(x)
     // DR-076 §1/§4: bool is now a normal value type, same satellite shape as string/number/int/float.
-    BoolArg(x, _) => Some(x)
-    SepArg(x, _, _, _, _, _, _) => Some(x)
+    BoolArg(x, _, _) => Some(x)
+    SepArg(x, _, _, _, _, _, _, _) => Some(x)
     FilterArg(x, _) => Some(x)
     ReqArg(x) => Some(x)
     NoDashStr(x) => Some(x)
@@ -1998,25 +2003,30 @@ fn dec_ty(t : String) -> Ty raise DecodeSkip {
 }
 
 ///|
-/// DR-061 §3 configurable factory の type shadow: user 定義の型名を base Ty + parse 相 config
-/// (現状 int_round のみ) に解決する。fixture の `definitions.types.<name>` → TypeShadow の map で
-/// 保持し、dec_option / dec_positional の `type: "<name>"` 解決で consultation する。canonical 型名
-/// (string/number/int/...) は shadow で override 可能だが本 fixture では未使用 (`int_parser` factory
-/// のみ扱う; `number_parser` = number_allow_base_prefix は次タスク)。
+/// DR-061 §3 configurable factory の type shadow: user 定義の型名を base Ty + parse 相 config に
+/// 解決する。fixture の `definitions.types.<name>` → TypeShadow の map で保持し、dec_option /
+/// dec_positional の `type: "<name>"` 解決で consultation する。canonical 型名 (string/number/int/...)
+/// は shadow で override 可能だが本 fixture では未使用 (`int_parser`/`number_parser`/`bool_parser`
+/// factory のみ扱う)。
 struct TypeShadow {
   base : Ty
   int_round : RoundMode
   // DR-074 §2 `number_allow_base_prefix` (`number_parser` factory config)。canonical default = false。
   // TypeShadow が担う base 側の flag は canonical default が false なので、int_round と直交な平坦キー。
   allow_base_prefix : Bool
+  // DR-074 §4 `bool_parser` factory config (`true_values`/`false_values`/`case_insensitive` を 1
+  // struct に束ねた carrier、ElemDef.bool_config と同型)。canonical default = `bool_config_canonical()`。
+  bool_config : BoolConfig
 } derive(Eq, Debug)
 
 ///|
 /// Decode `definitions.types` (DR-061 §3 `{name: <factory>, config: {<key>: <value>, ...}}`) into
 /// a shadow map. 各 shadow は base Ty (factory 名から導出) と平坦 config キーで構成される。
-/// 現状サポート: `int_parser` (base = TInt、config = `int_round`)。他の factory 名は
-/// DecodeSkip で明示的に unsupported 扱い (typo 検出、DR-061 §4 は factory 自身が config 値を検証
-/// する規定なので、type/factory 認識のこの層は capability gate として振る舞う)。
+/// 現状サポート: `int_parser` (base = TInt、config = `int_round`)、`number_parser` (base = TNum、
+/// config = `number_allow_base_prefix`)、`bool_parser` (base = TBool、config = `true_values` /
+/// `false_values` / `case_insensitive`、DR-074 §3/§4)。他の factory 名は DecodeSkip で明示的に
+/// unsupported 扱い (typo 検出、DR-061 §4 は factory 自身が config 値を検証する規定なので、
+/// type/factory 認識のこの層は capability gate として振る舞う)。
 ///
 /// DR-094 §3/§9 案A: factory 名は `<bare>` (builtin ns の糖衣) / `builtin/<bare>` (ns 明示) の
 /// 2 形が同一実体に解決される。旧 ad-hoc prefix `kuu_<bare>` は fixture pin bump (37aa3b3d) 完了に
@@ -2110,6 +2120,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           base: TInt,
           int_round: mode,
           allow_base_prefix: base_prefix,
+          bool_config: bool_config_canonical(),
         })
       }
       "number_parser" | "builtin/number_parser" => {
@@ -2151,6 +2162,62 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           base: TNum,
           int_round: RError,
           allow_base_prefix: base_prefix,
+          bool_config: bool_config_canonical(),
+        })
+      }
+      "bool_parser" | "builtin/bool_parser" => {
+        // DR-074 §3/§4 bool_parser factory config: `true_values`/`false_values`/`case_insensitive`
+        // の 3 平坦 config キー。canonical default は既存 parse_bool と同値
+        // (bool_config_canonical())、未指定キーはそれぞれの default を個別に維持する (3 キー独立
+        // override — 1 キーだけ opt-in しても他の 2 キーは canonical のまま、DR-061 §4 の平坦
+        // config キー原則と同じ「キー単位で独立」の扱い、int_parser/number_parser と同型)。
+        let canon = bool_config_canonical()
+        let mut true_values = canon.true_values
+        let mut false_values = canon.false_values
+        let mut case_insensitive = canon.case_insensitive
+        match to.get("config") {
+          Some(cj) => {
+            let co = match cj.j_obj() {
+              Some(x) => x
+              None =>
+                raise DecodeSkip(
+                  "definitions.types[" + name + "].config is not an object",
+                )
+            }
+            allowed_keys(
+              co,
+              ["true_values", "false_values", "case_insensitive"],
+              "bool_parser config",
+            )
+            match co.get("true_values") {
+              Some(vj) => true_values = dec_str_array(vj, name, "true_values")
+              None => ()
+            }
+            match co.get("false_values") {
+              Some(vj) => false_values = dec_str_array(vj, name, "false_values")
+              None => ()
+            }
+            match co.get("case_insensitive") {
+              Some(vj) =>
+                match vj.j_bool() {
+                  Some(b) => case_insensitive = b
+                  None =>
+                    raise DecodeSkip(
+                      "definitions.types[" +
+                      name +
+                      "].config.case_insensitive is not a bool",
+                    )
+                }
+              None => ()
+            }
+          }
+          None => ()
+        }
+        out.set(name, {
+          base: TBool,
+          int_round: RError,
+          allow_base_prefix: false,
+          bool_config: { true_values, false_values, case_insensitive },
         })
       }
       other =>
@@ -2159,7 +2226,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           name +
           "] unsupported factory '" +
           other +
-          "' (only int_parser / number_parser are wired in the current substrate)",
+          "' (only int_parser / number_parser / bool_parser are wired in the current substrate)",
         )
     }
   }
@@ -2481,6 +2548,44 @@ fn dec_values(j : Json) -> Array[String] raise DecodeSkip {
 }
 
 ///|
+/// Strict `Array[String]` decode for a factory config key that DR-061 §4 declares as `{"type":
+/// "array", "items": "string"}` (e.g. `bool_parser`'s `true_values`/`false_values`, DR-074 §4) —
+/// unlike `dec_strs`, no bare-string sugar (config schema says array, not `string | string[]`).
+/// `type_name`/`field` are only for the DecodeSkip message.
+fn dec_str_array(
+  j : Json,
+  type_name : String,
+  field : String,
+) -> Array[String] raise DecodeSkip {
+  let a = match j.j_arr() {
+    Some(x) => x
+    None =>
+      raise DecodeSkip(
+        "definitions.types[" +
+        type_name +
+        "].config." +
+        field +
+        " is not an array",
+      )
+  }
+  let out : Array[String] = []
+  for e in a {
+    match e.j_str() {
+      Some(s) => out.push(s)
+      None =>
+        raise DecodeSkip(
+          "definitions.types[" +
+          type_name +
+          "].config." +
+          field +
+          " element is not a string",
+        )
+    }
+  }
+  out
+}
+
+///|
 /// MDR-004 §2: shape-detect a JSON `"or"` array — `None` if it's the DR-055 value-enum form (every
 /// branch has `"exact"`, handled by `dec_or` instead), `Some(branches)` if it's the STRUCTURAL
 /// consumption-grammar form (any branch has `"seq"`/`"type"` — a multi-cell `{"seq":[...]}` branch
@@ -2681,13 +2786,23 @@ fn dec_option(
     config_file,
     int_round_from_shadow,
     base_prefix_from_shadow,
+    bool_config_from_shadow,
   ) = match tystr {
-    "help" => (TFlag, true, false, RError, false)
-    "config_file" => (TStr, false, true, RError, false)
+    "help" => (TFlag, true, false, RError, false, bool_config_canonical())
+    "config_file" => (TStr, false, true, RError, false, bool_config_canonical())
     _ =>
       match shadows.get(tystr) {
-        Some(sh) => (sh.base, false, false, sh.int_round, sh.allow_base_prefix)
-        None => (dec_ty(tystr), false, false, RError, false)
+        Some(sh) =>
+          (
+            sh.base,
+            false,
+            false,
+            sh.int_round,
+            sh.allow_base_prefix,
+            sh.bool_config,
+          )
+        None =>
+          (dec_ty(tystr), false, false, RError, false, bool_config_canonical())
       }
   }
   // DR-071 §1 / kawaz 裁定 2026-07-08: decode は wire の bool|array 二形をそのまま `LongDecl` に写す
@@ -2766,6 +2881,7 @@ fn dec_option(
       default~,
       int_round=int_round_from_shadow,
       allow_base_prefix=base_prefix_from_shadow,
+      bool_config=bool_config_from_shadow,
       piece_filters~,
       value_filters~,
       cell_filters~,
@@ -2830,14 +2946,19 @@ fn dec_positional(
   // DR-089 の「採用しなかった案」が明示的に否定するパターン。`ref` 付きの場合はそもそも ty が
   // 未使用 (elem_head の Ref(r) head、下の `dec_or_structural`/`positionals` 分岐同様) なので
   // TNone に変えても無害)。
-  let (ty, int_round_from_shadow, base_prefix_from_shadow) = match
-    jf_str(o, "type") {
+  let (
+    ty,
+    int_round_from_shadow,
+    base_prefix_from_shadow,
+    bool_config_from_shadow,
+  ) = match jf_str(o, "type") {
     Some(t) =>
       match shadows.get(t) {
-        Some(sh) => (sh.base, sh.int_round, sh.allow_base_prefix)
-        None => (dec_ty(t), RError, false)
+        Some(sh) =>
+          (sh.base, sh.int_round, sh.allow_base_prefix, sh.bool_config)
+        None => (dec_ty(t), RError, false, bool_config_canonical())
       }
-    None => (TNone, RError, false)
+    None => (TNone, RError, false, bool_config_canonical())
   }
   let name = match jf_str(o, "name") {
     Some(s) => s
@@ -2897,6 +3018,7 @@ fn dec_positional(
     default~,
     int_round=int_round_from_shadow,
     allow_base_prefix=base_prefix_from_shadow,
+    bool_config=bool_config_from_shadow,
     piece_filters~,
     value_filters~,
     env~,
@@ -6257,24 +6379,126 @@ test "DR-094 §9 対極: factory 名の typo は 3 形式リネーム後も従�
   abort("int_parsr: expected DecodeSkip, decode succeeded")
 }
 
+// ── issue bool-parser-factory-unimplemented: bool_parser configurable factory ──
+
 ///|
-/// 対極確認その2: `builtin/bool_parser` (DR-094 §9 で新名が定義されたが、本 kuu.mbt substrate の
-/// `dec_types` にはまだ bool factory 自体が配線されていない — schema/builtin-descriptors.json 上は
-/// 正式な builtin だが実装未着手、本リネーム issue の射程外) も、ns 表記があるからといって特別扱いされ
-/// ず同じ unknown-factory DecodeSkip に落ちることを固定する。
-test "DR-094 §9 対極: builtin ns 表記でも未配線 factory (bool_parser) は DecodeSkip される" {
-  let unwired_src =
-    #|{"query":"parse","definition":{"definitions":{"types":{"t":{"name":"builtin/bool_parser","config":{}}}},"options":[{"name":"v","type":"t","long":true}]},"cases":[]}
-  let unwired_j = @json.parse(unwired_src)
-  let _ = dec_fixture(unwired_j) catch {
+/// 保証 (DR-074 §3/§4, DR-094 §3/§9 案A): `definitions.types` の factory 名は `bool_parser`
+/// (builtin ns の bare 糖衣) / `builtin/bool_parser` (ns 明示) の 2 表記形が同一 TypeShadow 実体に
+/// 解決される (int_parser/number_parser の 2 形テストと対称)。`true_values` に `"yes"` を足した
+/// opt-in config を両表記で共有し、canonical-外の `"yes"` が両方とも `true` に解決されることで
+/// 実体の同一性と opt-in 語彙追加の両方を同時に固定する。
+test "issue bool-parser-factory-unimplemented: bool_parser の 2 表記形 (bare / builtin/ ns) が同一 factory に解決される" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "definitions": {
+    #|      "types": {
+    #|        "t_bare": {"name": "bool_parser", "config": {"true_values": ["true", "1", "yes"]}},
+    #|        "t_ns": {"name": "builtin/bool_parser", "config": {"true_values": ["true", "1", "yes"]}}
+    #|      }
+    #|    },
+    #|    "options": [
+    #|      {"name": "bare", "type": "t_bare", "long": true},
+    #|      {"name": "ns", "type": "t_ns", "long": true}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "both-forms-yes-optin-to-true",
+    #|      "argv": ["--bare", "yes", "--ns", "yes"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "result": {"bare": true, "ns": true}
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 1)
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// 対極確認 (DR-074 §3): `bool_parser` の config を全く指定しない (`"config": {}`) と、canonical
+/// default (`true_values: ["true","1"]` / `false_values: ["false","0",""]` / `case_insensitive:
+/// true`) が適用される — factory 経由でも既存 `parse_bool` ハードコード実装と同じ挙動になることの
+/// pin (config データ化が挙動を変えていないことの証跡)。
+test "issue bool-parser-factory-unimplemented: bool_parser canonical default (config省略) は既存 parse_bool と同値" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "definitions": {"types": {"t": {"name": "bool_parser", "config": {}}}},
+    #|    "options": [{"name": "v", "type": "t", "long": true}]
+    #|  },
+    #|  "cases": [
+    #|    {"id": "true-word", "argv": ["--v", "True"], "expect": {"outcome": "success", "result": {"v": true}}},
+    #|    {"id": "one", "argv": ["--v", "1"], "expect": {"outcome": "success", "result": {"v": true}}},
+    #|    {"id": "false-word", "argv": ["--v", "FALSE"], "expect": {"outcome": "success", "result": {"v": false}}},
+    #|    {"id": "zero", "argv": ["--v", "0"], "expect": {"outcome": "success", "result": {"v": false}}},
+    #|    {"id": "empty", "argv": ["--v", ""], "expect": {"outcome": "success", "result": {"v": false}}},
+    #|    {"id": "yes-still-rejected", "argv": ["--v", "yes"], "expect": {"outcome": "failure", "errors": [{"element": "v", "argv_pos": 1, "kind": "parse", "reason": "not_a_bool"}]}}
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 6)
+  for c in df.cases {
+    let verdict = run_case(df, c)
+    if verdict != "PASS" {
+      abort("expected PASS for case '" + c.id + "', got: " + verdict)
+    }
+  }
+}
+
+///|
+/// 保証 (DR-074 §4 `case_insensitive` config キー): `case_insensitive: false` の opt-in 方言
+/// (JSON/TOML 準拠) では canonical で通っていた大小混在の綴り (`"TRUE"` 等、`true_values` の
+/// 完全一致文字列以外) が `not_a_bool` に落ちる — case_insensitive の既定 `true` から明示的に
+/// 外れたときだけ厳密照合になることの pin。
+test "issue bool-parser-factory-unimplemented: case_insensitive:false で大小厳密照合になる" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "definitions": {"types": {"t": {"name": "bool_parser", "config": {"case_insensitive": false}}}},
+    #|    "options": [{"name": "v", "type": "t", "long": true}]
+    #|  },
+    #|  "cases": [
+    #|    {"id": "exact-true-still-ok", "argv": ["--v", "true"], "expect": {"outcome": "success", "result": {"v": true}}},
+    #|    {"id": "mixed-case-rejected", "argv": ["--v", "TRUE"], "expect": {"outcome": "failure", "errors": [{"element": "v", "argv_pos": 1, "kind": "parse", "reason": "not_a_bool"}]}}
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  assert_eq(df.cases.length(), 2)
+  for c in df.cases {
+    let verdict = run_case(df, c)
+    if verdict != "PASS" {
+      abort("expected PASS for case '" + c.id + "', got: " + verdict)
+    }
+  }
+}
+
+///|
+/// 対極確認 ([[self-written-rule-blind-spots]] / int_parser の未知キー扱いが手本): `bool_parser`
+/// の config に宣言されていないキーを渡すと、他の configurable factory (int_parser/number_parser)
+/// と同じ unknown-key decode reject に落ちる — bool_parser だけ特別に寛容になっていないことの pin。
+test "issue bool-parser-factory-unimplemented: bool_parser config の未知キーは decode-time reject (int_parser/number_parser と同型)" {
+  let src =
+    #|{"query":"parse","definition":{"definitions":{"types":{"t":{"name":"bool_parser","config":{"typo_key":true}}}},"options":[{"name":"v","type":"t","long":true}]},"cases":[]}
+  let j = @json.parse(src)
+  let _ = dec_fixture(j) catch {
     DecodeSkip(r) => {
-      assert_true(r.contains("unsupported factory"))
-      assert_true(r.contains("builtin/bool_parser"))
+      assert_true(r.contains("bool_parser config"))
+      assert_true(r.contains("typo_key"))
       return
     }
   }
   abort(
-    "builtin/bool_parser: expected DecodeSkip (not wired in this substrate), decode succeeded",
+    "bool_parser config with unknown key: expected DecodeSkip, decode succeeded",
   )
 }
 

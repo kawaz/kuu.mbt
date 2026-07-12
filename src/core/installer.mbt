@@ -83,6 +83,13 @@ pub(all) struct ElemDef {
   // を受理する。value_prim が NumArg(name, flag) / IntArg(name, mode, flag) に埋め込み、eval / matcher
   // で parse_number_ext / parse_int_value_ext に流す。TNum / TInt 以外は参照しない。
   allow_base_prefix : Bool
+  // DR-074 §3/§4 `bool_parser` factory config (DR-061 §4 平坦 config キー 3 つを 1 struct に束ねた
+  // carrier — `true_values`/`false_values`/`case_insensitive` は常にセットで使われるため、
+  // int_round/allow_base_prefix と違い個別フィールドに展開しない、`RepeatSpec` と同じ「複合 config を
+  // 1 struct にまとめる」パターン)。canonical default = `bool_config_canonical()`。value_prim が
+  // BoolArg(name, config, ...) に埋め込み、eval / matcher で parse_bool_ext に流す。TBool 以外は
+  // 参照しない (冗長フィールド、int_round/allow_base_prefix と同じ扱い)。
+  bool_config : BoolConfig
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
   // DR-083 §1/§波及: decode 層 (dec_option/dec_positional) 所有。JSON scalar → 長さ1へ持ち上げ、JSON
   // array → その piece 列そのまま (multiple/repeat/merge 要素のみ合法 — 非 accum 要素への配列は
@@ -596,6 +603,7 @@ fn value_prim(
   name : String,
   int_round : RoundMode,
   allow_base_prefix : Bool,
+  bool_config : BoolConfig,
   piece_filters : Array[FilterSpelling],
   separator? : String? = None,
   merge? : Bool = false,
@@ -605,7 +613,8 @@ fn value_prim(
     KvArg(name, piece_filters)
   } else if separator is Some(_) || merge {
     SepArg(
-      name, separator, ty, int_round, allow_base_prefix, piece_filters, merge,
+      name, separator, ty, int_round, allow_base_prefix, bool_config, piece_filters,
+      merge,
     )
   } else {
     match ty {
@@ -617,8 +626,9 @@ fn value_prim(
       TInt => IntArg(name, int_round, allow_base_prefix, piece_filters)
       // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
       TFloat => FloatArg(name, piece_filters)
-      // TBool は DR-076 §1/§4 で string/number と同格の値型 — BoolArg / parse_bool を通す
-      TBool => BoolArg(name, piece_filters)
+      // TBool は DR-076 §1/§4 で string/number と同格の値型 — BoolArg / parse_bool_ext を通す
+      // (DR-074 §4 bool_parser factory config、canonical default は既存 parse_bool と同値)。
+      TBool => BoolArg(name, bool_config, piece_filters)
       _ => StrArg(name, piece_filters)
     }
   }
@@ -719,6 +729,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     default_values: e.default_values,
     int_round: e.int_round,
     allow_base_prefix: e.allow_base_prefix,
+    bool_config: e.bool_config,
     piece_filters: copy_filter_spellings(e.piece_filters),
     value_filters: copy_filter_spellings(e.value_filters),
     cell_filters: copy_filter_spellings(e.cell_filters),
@@ -927,6 +938,7 @@ fn elem_head(e : ElemDef) -> Node {
         e.name,
         e.int_round,
         e.allow_base_prefix,
+        e.bool_config,
         e.piece_filters,
         separator=e.separator,
         merge=e.accumulator == Some("merge"),
@@ -1579,6 +1591,7 @@ fn inst_long(
                         e.name,
                         e.int_round,
                         e.allow_base_prefix,
+                        e.bool_config,
                         e.piece_filters,
                         separator=e.separator,
                         merge=e.accumulator == Some("merge"),
@@ -1627,6 +1640,7 @@ fn inst_long(
                   kind: leaf.ty,
                   int_round: leaf.int_round,
                   allow_base_prefix: leaf.allow_base_prefix,
+                  bool_config: leaf.bool_config,
                   piece_filters: leaf.piece_filters,
                   separator: leaf.separator,
                   merge: leaf.accumulator == Some("merge"),
@@ -1650,6 +1664,9 @@ fn inst_long(
               // DR-074 §2: TNum / TInt の eq-split (`--v=0xff`) も factory config を反映するよう
               // ElemDef から LongEntry に持ち込む (他 kind は entry 側で参照されない)。
               allow_base_prefix: e.allow_base_prefix,
+              // DR-074 §4: TBool の eq-split (`--enabled=yes`) も bool_parser factory config を反映
+              // (DR-076 §3 でこの eq-split は variant 綴りと共存する — TFlag と違い抑制されない)。
+              bool_config: e.bool_config,
               piece_filters: e.piece_filters,
               separator: e.separator,
               merge: e.accumulator == Some("merge"),
@@ -1993,6 +2010,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     default_values: copy.default_values,
     int_round: copy.int_round,
     allow_base_prefix: copy.allow_base_prefix,
+    bool_config: copy.bool_config,
     piece_filters: copy.piece_filters,
     value_filters: copy.value_filters,
     cell_filters: copy.cell_filters,
@@ -2185,6 +2203,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     default_values: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
     int_round: RError, // canonical default (DR-075 §2): write-target は int_round を持たない
     allow_base_prefix: false, // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
+    bool_config: bool_config_canonical(), // canonical default (DR-074 §4): write-target は bool_parser opt-in を持たない
     piece_filters: [], // write-target は filter chain を持たない (源 e の value_filters は source 側で既に適用済み)
     value_filters: [],
     cell_filters: [],
@@ -2397,6 +2416,7 @@ fn alias_entry(
     default_values: None,
     int_round: RError,
     allow_base_prefix: false,
+    bool_config: bool_config_canonical(),
     piece_filters: [],
     value_filters: [],
     cell_filters: [],
@@ -2822,12 +2842,12 @@ fn head_progresses(
 ) -> Bool {
   match node {
     StrArg(_, _)
-    | SepArg(_, _, _, _, _, _, _)
+    | SepArg(_, _, _, _, _, _, _, _)
     | KvArg(_, _)
     | NumArg(_, _, _)
     | FloatArg(_, _)
     | IntArg(_, _, _, _)
-    | BoolArg(_, _)
+    | BoolArg(_, _, _)
     | FilterArg(_, _)
     | ReqArg(_)
     | Exact(_)
