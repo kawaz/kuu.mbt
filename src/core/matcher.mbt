@@ -444,7 +444,12 @@ fn walk_short(
             // chars for a 2nd entry to combine with — skip it entirely (no reading, no Held error)
             // when combine is off. The FULL-TAIL length (`j == body.length()`, this entry alone
             // consumes everything left) is a single entry, never disallowed by `combine:false`.
-            if combine || j == body.length() {
+            // DESIGN §7.2 / DR-096 §2/§3.1: `short_attached_value:"deny"` withholds EVERY in-cluster
+            // attach reading (mid-token AND full-tail, cluster-tail included) — the mechanism itself
+            // is gated, not just a lone-entry case. `"require"` does NOT gate this loop (attach stays
+            // allowed, incl. cluster-tail attach, DR-096 §3.1).
+            if e.short_attached_value != AtDeny &&
+              (combine || j == body.length()) {
               let vstr = chars_to_str(body, vstart, j)
               match short_val(e, vstr, pos) {
                 Ok(bs) =>
@@ -478,12 +483,21 @@ fn walk_short(
           // next-token value (space form) only when this value char is the tail. Not gated by
           // `combine` (doc comment above): the value comes from the NEXT token entirely, no 2nd
           // entry shares THIS token.
-          if vstart == body.length() && pos + 1 < ctx.toks.length() {
+          // DESIGN §7.2 / DR-096 §2: `short_attached_value:"require"` withholds this space-form
+          // reading entirely (both the eager next-token Accept and the completion Pending branch) —
+          // this is what makes a `"require"` entry's bare tail token (e.g. `-q` with 0 leftover
+          // chars) have NO complete path at all (attach needs >=1 char, DR-096 §2「付着形は定義上
+          // 1 文字以上の残り文字列を要求する」), falling through to positional per DR-041 §5.
+          if e.short_attached_value != AtRequire &&
+            vstart == body.length() &&
+            pos + 1 < ctx.toks.length() {
             match short_val(e, ctx.toks[pos + 1], pos + 1) {
               Ok(bs) => out.push(Accept(pos + 2, cat(acc, cat(bs, dm))))
               Err(pe) => out.push(Held(pe, []))
             }
-          } else if vstart == body.length() && in_complete(ctx) {
+          } else if e.short_attached_value != AtRequire &&
+            vstart == body.length() &&
+            in_complete(ctx) {
             // complete: the cluster ends in a value char and the argv ends
             // here — the space-form value is exactly what could come next
             // (DR-060 §1). The flags already read stay as partial state.

@@ -37,16 +37,16 @@ fn el(
   piece_filters? : Array[String] = [],
   value_filters? : Array[String] = [],
   cell_filters? : Array[String] = [],
-  // DR-091 §3: long-only axis, `el`'s other builders (`opt`/`pos`, json_conformance_wbtest.mbt)
-  // already carry these — added here so lowering wbtest cases can exercise `require_equal_separator`
-  // without hand-writing a full ElemDef literal.
+  // DR-091 §3 / DR-096 §1: long-only axis, `el`'s other builders (`opt`/`pos`,
+  // json_conformance_wbtest.mbt) already carry these — added here so lowering wbtest cases can
+  // exercise `long_eq_sep` without hand-writing a full ElemDef literal.
   long_prefix? : String = "--",
-  require_equal_separator? : Bool = false,
+  long_eq_sep? : EqSepMode = EsAllow,
   // issue scope-config-object-gap: same rationale, for the DESIGN §7.2 fields `inst_short`/
-  // `inst_long` now consume directly (`short_prefix`/`allow_equal_separator`).
+  // `inst_long` now consume directly (`short_prefix`/`short_attached_value`).
   short_prefix? : String = "-",
-  allow_equal_separator? : Bool = true,
   short_combine? : Bool = true,
+  short_attached_value? : AttachMode = AtAllow,
 ) -> ElemDef {
   {
     name,
@@ -95,9 +95,9 @@ fn el(
     short_prefix,
     env_prefix: "",
     auto_env: false,
-    allow_equal_separator,
+    long_eq_sep,
     short_combine,
-    require_equal_separator,
+    short_attached_value,
     body: BCell,
   }
 }
@@ -2375,153 +2375,6 @@ test "DR-089 対極: a pre-existing explicit-type element is unaffected by none 
   }
 }
 
-// ── DESIGN §7.2 / DR-091 §3 (issue scope-config-object-gap 静的矛盾チェックの definition-error 化):
-// `require_equal_separator: true` × `allow_equal_separator: false` は installer 層
-// `collect_eq_separator_conflict` (installer.mbt) が element 単位で検出する。旧実装は decode 層
-// (`validate_scope_config`) が scope config 単位で `DecodeSkip` を raise していた
-// (query:definition_error fixture で element 別に pin できない) — 移設後は他の definition-error
-// (DR-089 の none 系) と同じ `parse_definition` の Err 経路になる。
-
-///|
-/// 保証: 要素単位 config override 由来 (この要素だけが独自に require:true/allow:false を持つ) の
-/// 場合、DInvalidRange は当該要素だけに付き、同じスコープの正常な兄弟要素 ("other") には波及しない
-/// — スコープ由来の全列挙 (下のテスト) との対比で「要素単位の帰属」を固定する。
-test "parse_definition: require_equal_separator:true × allow_equal_separator:false on a long-having element is DInvalidRange (DESIGN §7.2 / DR-091 §3, element override)" {
-  let def : Definition = {
-    ..empty_def(),
-    options: [
-      el(
-        "target",
-        TStr,
-        long=LList([":set"]),
-        require_equal_separator=true,
-        allow_equal_separator=false,
-      ),
-      el("other", TStr, long=LList([":set"])), // 既定 (require:false/allow:true) の正常な兄弟要素
-    ],
-  }
-  match parse_definition(def, [LongInst]) {
-    Ok(_) =>
-      abort(
-        "expected Err (require_equal_separator:true × allow_equal_separator:false on 'target')",
-      )
-    Err(errs) => {
-      let mut has_target = false
-      let mut has_other = false
-      for e in errs {
-        if e.kind == DInvalidRange && e.element == "target" {
-          has_target = true
-        }
-        if e.kind == DInvalidRange && e.element == "other" {
-          has_other = true
-        }
-      }
-      assert_true(has_target)
-      assert_false(has_other)
-    }
-  }
-}
-
-///|
-/// 保証: スコープ config 由来 (= 複数要素が同じ矛盾した値を継承/焼き込み済み) の場合、long を持つ
-/// 全要素に独立して DInvalidRange が付く (DR-054 §4 全列挙、打ち切りなし) — 「1 個検出したら終わり」
-/// ではないことを固定する。decode 層の scope-config マージ自体はこの層の対象外 (`el()` へ直接
-/// 焼き込むことで「マージ済みの結果」を模擬する — installer 層はマージ由来か要素単独指定かを区別
-/// しない、`collect_eq_separator_conflict` の doc comment 参照)。
-test "parse_definition: scope-wide config conflict flags every long-having element independently (全列挙, DR-054 §4)" {
-  let def : Definition = {
-    ..empty_def(),
-    options: [
-      el(
-        "a",
-        TStr,
-        long=LList([":set"]),
-        require_equal_separator=true,
-        allow_equal_separator=false,
-      ),
-      el(
-        "b",
-        TStr,
-        long=LList([":set"]),
-        require_equal_separator=true,
-        allow_equal_separator=false,
-      ),
-    ],
-  }
-  match parse_definition(def, [LongInst]) {
-    Ok(_) => abort("expected Err (both 'a' and 'b' conflict)")
-    Err(errs) => {
-      let mut count = 0
-      for e in errs {
-        if e.kind == DInvalidRange {
-          count = count + 1
-        }
-      }
-      assert_eq(count, 2)
-    }
-  }
-}
-
-///|
-/// 対極: `allow_equal_separator: true` (既定) との組合せでは SPACE-FORM/EQ-FORM のどちらかが必ず
-/// 生きるので definition-error にならない — 上 2 テストの反例 (矛盾条件そのものが誤検出でないこと
-/// の固定)。
-test "parse_definition: require_equal_separator:true with allow_equal_separator:true is NOT a definition-error (対極)" {
-  let def : Definition = {
-    ..empty_def(),
-    options: [
-      el(
-        "target",
-        TStr,
-        long=LList([":set"]),
-        require_equal_separator=true,
-        allow_equal_separator=true,
-      ),
-    ],
-  }
-  match parse_definition(def, [LongInst]) {
-    Ok(_) => ()
-    Err(errs) => {
-      let mut msg = ""
-      for e in errs {
-        msg = msg + e.element + ":" + e.hint + " "
-      }
-      abort("expected Ok, got Err: " + msg)
-    }
-  }
-}
-
-///|
-/// 対極 (境界条件): long エントリを持たない要素 (`long` 既定 `LList([])` — main entry も variant
-/// も無い) は、たとえ require:true/allow:false を焼き込まれていても対象外 — SPACE-FORM/EQ-FORM の
-/// 区別自体が「main entry を持つ要素」にしか意味を持たない (`long_of` が空を返す要素は `inst_long`
-/// の main entry ループを素通りする、`collect_eq_separator_conflict` の doc comment 参照)。
-test "parse_definition: require_equal_separator:true × allow_equal_separator:false on a long-less element is NOT flagged (long_of 空、対象外)" {
-  let def : Definition = {
-    ..empty_def(),
-    options: [
-      el(
-        "target",
-        TStr,
-        require_equal_separator=true,
-        allow_equal_separator=false,
-      ),
-    ],
-  }
-  match parse_definition(def, [LongInst]) {
-    Ok(_) => ()
-    Err(errs) => {
-      let mut has_eqsep = false
-      for e in errs {
-        if e.kind == DInvalidRange && e.element == "target" {
-          has_eqsep = true
-        }
-      }
-      assert_false(has_eqsep)
-    }
-  }
-}
-
 // ── issue dr-088-positional-default-verification: 素の positional (optional/repeat 無し) +
 // default 宣言は、DR-088 §1「宣言された値源はデフォルトの存在」により「トークンが無くても経路完全
 // → 遅延解決で default 実体化」となる。旧実装は default の宣言を無視し、トークン 0 個を常に
@@ -2746,21 +2599,15 @@ test "DR-090 対極: a compilable dd match pattern is NOT rejected" {
   }
 }
 
-// ── DR-091 §3: long_prefix / require_equal_separator end-to-end ─────────────
+// ── DR-091 §3 / DR-096 §1: long_prefix / long_eq_sep end-to-end ─────────────
 
 ///|
 /// Guarantees (DR-091 §3 "if=(type: file) 級" motivating case): a `long_prefix:"" +
-/// require_equal_separator:true` element parses its eq-split form (`if=abc`, one token) — this is
+/// long_eq_sep:EsRequire` element parses its eq-split form (`if=abc`, one token) — this is
 /// the ONLY entry point left once the space-form main entry is withheld (below).
-test "DR-091 §3 end-to-end: long_prefix:\"\" + require_equal_separator:true accepts the eq form" {
+test "DR-091 §3 / DR-096 §1 end-to-end: long_prefix:\"\" + long_eq_sep:EsRequire accepts the eq form" {
   let if_elem = {
-    ..el(
-      "if",
-      TStr,
-      long=LBool(true),
-      long_prefix="",
-      require_equal_separator=true,
-    )
+    ..el("if", TStr, long=LBool(true), long_prefix="", long_eq_sep=EsRequire)
   }
   let def : Definition = { ..empty_def(), options: [if_elem] }
   let sc = ok_scope(def, all_installers())
@@ -2782,20 +2629,14 @@ test "DR-091 §3 end-to-end: long_prefix:\"\" + require_equal_separator:true acc
 
 ///|
 /// Guarantees (DR-091 §3 "long の space-form main entry の登録をスキップ"): with
-/// `require_equal_separator:true`, the SPACE form (`if abc`, 2 tokens, no `=`) has NO entry point
+/// `long_eq_sep:EsRequire`, the SPACE form (`if abc`, 2 tokens, no `=`) has NO entry point
 /// at all — `inst_long` withheld the main entry, and `EqSplit` never fires on a token without `=`
 /// (`node.mbt`'s `EqSplit` doc comment: "Fires only on tokens containing `=`"). With no other
 /// element in this Definition able to consume either token, the parse must FAIL — this is the
 /// direct 対極 of the eq-form acceptance case above.
-test "DR-091 §3 end-to-end: require_equal_separator:true rejects the space form (対極 of eq-form acceptance)" {
+test "DR-091 §3 / DR-096 §1 end-to-end: long_eq_sep:EsRequire rejects the space form (対極 of eq-form acceptance)" {
   let if_elem = {
-    ..el(
-      "if",
-      TStr,
-      long=LBool(true),
-      long_prefix="",
-      require_equal_separator=true,
-    )
+    ..el("if", TStr, long=LBool(true), long_prefix="", long_eq_sep=EsRequire)
   }
   let def : Definition = { ..empty_def(), options: [if_elem] }
   let sc = ok_scope(def, all_installers())
@@ -2816,15 +2657,9 @@ test "DR-091 §3 end-to-end: require_equal_separator:true rejects the space form
 /// in the SAME Definition does not swallow that positional's bare token — `foo` (no `=`) still
 /// binds to `target`, `if` stays unfired (absent from the bindings). This is what makes the empty
 /// prefix safe to declare alongside ordinary positionals, not just in isolation.
-test "DR-091 §3 end-to-end: a long_prefix:\"\" element does not collide with a sibling plain positional (素 operand 非衝突)" {
+test "DR-091 §3 / DR-096 §1 end-to-end: a long_prefix:\"\" element does not collide with a sibling plain positional (素 operand 非衝突)" {
   let if_elem = {
-    ..el(
-      "if",
-      TStr,
-      long=LBool(true),
-      long_prefix="",
-      require_equal_separator=true,
-    )
+    ..el("if", TStr, long=LBool(true), long_prefix="", long_eq_sep=EsRequire)
   }
   let target = el("target", TStr)
   let def : Definition = {
@@ -2854,7 +2689,7 @@ test "DR-091 §3 end-to-end: a long_prefix:\"\" element does not collide with a 
   }
 }
 
-// ── issue scope-config-object-gap: short_prefix / allow_equal_separator wiring ──
+// ── issue scope-config-object-gap: short_prefix / long_eq_sep wiring ──
 
 ///|
 /// 保証 (DESIGN §7.2 / LOWERING §B.2「config `short_prefix`/`short_combine` がパラメータ」):
@@ -3024,17 +2859,15 @@ test "short installer end-to-end: short_combine:false rejects -ab but accepts -a
 }
 
 ///|
-/// 保証 (DR-014「--name=value の許可」/ DR-041「config (allow_equal_separator/long_prefix) から
-/// 規則を構成」): `allow_equal_separator: false` の要素は `inst_long` が eq-split entry を一切登録
+/// 保証 (DR-014「--name=value の許可」/ DESIGN §7.2 / DR-096 §1「config (long_eq_sep/long_prefix) から
+/// 規則を構成」): `long_eq_sep: EsDeny` の要素は `inst_long` が eq-split entry を一切登録
 /// しない — space-form の greedy Seq 衛星のみが残る (`EqSplit` matcher 自体、要素が唯一なので、
-/// 生成されない)。既定 (`true`) の対極として既存 "value option gets 1 greedy Seq + 1 EqSplit"
+/// 生成されない)。既定 (`EsAllow`) の対極として既存 "value option gets 1 greedy Seq + 1 EqSplit"
 /// テストと対で読む。
-test "long installer: allow_equal_separator:false withholds this element's eq-split entry (space form survives)" {
+test "long installer: long_eq_sep:EsDeny withholds this element's eq-split entry (space form survives)" {
   let def : Definition = {
     ..empty_def(),
-    options: [
-      el("port", TStr, long=LList([":set"]), allow_equal_separator=false),
-    ],
+    options: [el("port", TStr, long=LList([":set"]), long_eq_sep=EsDeny)],
   }
   let sc = ok_scope(def, [LongInst])
   // EqSplit entry が無いので、この要素単独では NativeMatch(EqSplit) 自体が greedy に現れない
@@ -3044,15 +2877,13 @@ test "long installer: allow_equal_separator:false withholds this element's eq-sp
 }
 
 ///|
-/// 保証 (同上、eq form の実行時失敗側): `allow_equal_separator:false` の要素へ `--port=80` を渡すと
+/// 保証 (同上、eq form の実行時失敗側): `long_eq_sep: EsDeny` の要素へ `--port=80` を渡すと
 /// eq-split の読みが存在しないため、`=` を含むトークンは丸ごと unrecognized になり parse は失敗する
 /// (space form `--port 80` は引き続き成功する、対比として同テスト内で確認)。
-test "long installer: allow_equal_separator:false end-to-end — eq form fails, space form succeeds" {
+test "long installer: long_eq_sep:EsDeny end-to-end — eq form fails, space form succeeds" {
   let def : Definition = {
     ..empty_def(),
-    options: [
-      el("port", TStr, long=LList([":set"]), allow_equal_separator=false),
-    ],
+    options: [el("port", TStr, long=LList([":set"]), long_eq_sep=EsDeny)],
   }
   let sc = ok_scope(def, all_installers())
   match parse(ScopeNode(sc), ["--port=80"], defs=Map([])) {

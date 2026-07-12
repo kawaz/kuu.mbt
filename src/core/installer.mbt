@@ -107,9 +107,9 @@ pub(all) struct ElemDef {
   piece_filters : Array[FilterSpelling]
   value_filters : Array[FilterSpelling]
   cell_filters : Array[FilterSpelling]
-  // DR-014 / DESIGN §7.2 / DR-091 §3 (issue scope-config-object-gap): the FULL hierarchical scope
-  // `config` object (long_prefix/short_prefix/env_prefix/auto_env/allow_equal_separator/
-  // short_combine/require_equal_separator). Decode (`dec_definition`, json_conformance_wbtest.mbt)
+  // DR-014 / DESIGN §7.2 / DR-096 §1 (issue scope-config-object-gap, 軸別再編): the FULL
+  // hierarchical scope `config` object (long_prefix/long_eq_sep/short_prefix/short_attached_value/
+  // short_combine/env_prefix/auto_env). Decode (`dec_definition`, json_conformance_wbtest.mbt)
   // reads `config` at EACH Definition/command scope, merges it with the parent scope's resolved
   // config (child key present → override, absent → inherit — DESIGN §7.2「子要素は親の config を
   // 継承、上書き可能」), and bakes the resolved 7-key tuple onto every option/positional ElemDef
@@ -119,8 +119,8 @@ pub(all) struct ElemDef {
   // prepends to this element's own long spellings when building each trigger (`e.long_prefix + l`,
   // replacing the old hardcoded `"--" + l`) — every OTHER element in the same `Definition` keeps its
   // own resolved value unless it also overrides. `""` is legal ONLY paired with
-  // `require_equal_separator: true` (dec_option 側で検証, DR-091 §3「単独の空 prefix は未定義動作の
-  // まま」) — an empty prefix without the eq gate would make a bare positional operand (`foo`)
+  // `long_eq_sep: EsRequire` (dec_option 側で検証, DR-096 §3.3 / DR-091 §3「単独の空 prefix は未定義
+  // 動作のまま」) — an empty prefix without the eq gate would make a bare positional operand (`foo`)
   // collide with this element's long candidacy, the exact ambiguity §3 exists to close.
   long_prefix : String
   // DESIGN §7.2 / LOWERING §B.2「config `short_prefix`/`short_combine` がパラメータ」: the string
@@ -139,22 +139,30 @@ pub(all) struct ElemDef {
   // UPPER(name)`、DR-049 §3 の名前導出規則そのまま — decode がこの計算を行い `env` 配列へ焼き込む)。
   // 明示 `env:` が優先 (DR-049 §4)。既定 `false`。
   auto_env : Bool
-  // DR-014「--name=value の許可」/ DR-041「config (allow_equal_separator/long_prefix) から規則を
-  // 構成」: false なら `inst_long` はこの要素の eq-split entry を登録しない (space form のみ、
-  // `--key=value` 読みを提供しない)。既定 `true` (現行の EqSplit 常時生成挙動を不変に保つ)。
-  allow_equal_separator : Bool
-  // DR-014「-abc の結合許可」/ LOWERING §B.2: decode は受理・階層継承するが、`ShortCombine` matcher
-  // への配線は未実装 — `short_combine: false` が「複数 short の cluster 結合のみ禁止」か「値付着
-  // (`-p80`) も含め禁止」か spec から一意に導出できず (issue scope-config-object-gap 2026-07-11
-  // 停止報告、main の裁定待ち)。既定 `true`、消費側 (`inst_short`) は現状このフィールドを読まない。
+  // DESIGN §7.2 / DR-096 §1: 3 値 enum で `inst_long` の eq-split entry / SPACE-FORM main entry
+  // (`Seq([Exact(trigger), value_prim(...)])`, the `ref_target is None` branch) の配線をダイヤルする
+  // (旧 `allow_equal_separator`/`require_equal_separator` 2 bool ペアの統合置換)。`EsRequire` =
+  // SPACE-FORM main entry を withhold、eq-split entry のみ配線 (旧 `require_equal_separator:true`
+  // 相当 — これが `long_prefix: ""` を安全にする: space form が無ければこの要素の trigger は生
+  // token に一切マッチしない、`EqSplit` は `=` を含む token にのみ発火するため、素の operand
+  // (`foo`) が飲み込まれない)。`EsAllow` (既定) = 両方配線 (現行挙動そのまま)。`EsDeny` = eq-split
+  // entry を登録しない、SPACE-FORM のみ (旧 `allow_equal_separator:false` 相当)。3 値のため「両方
+  // withhold」という旧矛盾状態は構文的に表現不能 (illegal states unrepresentable、DR-096 §1 —
+  // 旧 `collect_eq_separator_conflict` definition-error 規定は本 DR で不要化・削除)。
+  long_eq_sep : EqSepMode
+  // DR-014「-abc の結合許可」/ LOWERING §B.2: decode は受理・階層継承する。`short_combine: false` は
+  // 複数 short の cluster 結合のみを禁止 (値付着は別軸 `short_attached_value` の管掌、DR-096 §2 で
+  // 確定)。既定 `true`、消費側 (`inst_short`/`run_short`/`walk_short`) がこのフィールドの
+  // `combine` param として直接参照する。
   short_combine : Bool
-  // DR-091 §3: when true, `inst_long` withholds this element's SPACE-FORM main entry (`Seq([Exact
-  // (trigger), value_prim(...)])`, the `ref_target is None` branch) — only the eq-split form
-  // (`key=value`, `LongEntry`/`EqSplit`) reaches the entity. This is what makes `long_prefix: ""`
-  // safe: with the space form gone, this element's trigger NEVER matches a bare token (`EqSplit`
-  // only fires on a token containing `=`, `node.mbt`'s `EqSplit` doc comment), so a plain operand
-  // (`foo`) cannot be swallowed by it. 既定 `false` (現行の space-form main entry 挙動は不変)。
-  require_equal_separator : Bool
+  // DESIGN §7.2 / DR-096 §2: 値持ち short の付着形 (`-O2`) と space 分割形 (`-O 2`) の入口をダイヤル
+  // する新設 3 値 enum。`AtRequire` = 付着形のみ受理、space-form main entry を withhold (gcc/clang
+  // の `-O`/`-W` 型)。`AtAllow` (既定) = 両方受理 (現行挙動そのまま、DR-041 §4 の値スロット一般規則)。
+  // `AtDeny` = 付着読みの枝を生成しない、space 分割形のみ受理。値スロットを持たない要素
+  // (flag/count/none) には inert (DR-096 §3.2 — `walk_short` の該当 kind 分岐はこのフィールドを
+  // 参照しない)。`ShortEntry.short_attached_value` (node.mbt) へそのまま乗せる、`walk_short`
+  // (matcher.mbt) が唯一の消費者。
+  short_attached_value : AttachMode
   // MDR-004: 消費文法の軸。`BCell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
   // 縮退形、観測挙動不変)。`BOr`/`BGroup` の要素では `ty` は未使用 — 枝/内部要素の leaf ElemDef が
   // 各自の `ty` を持つ。
@@ -737,9 +745,9 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     short_prefix: e.short_prefix,
     env_prefix: e.env_prefix,
     auto_env: e.auto_env,
-    allow_equal_separator: e.allow_equal_separator,
+    long_eq_sep: e.long_eq_sep,
     short_combine: e.short_combine,
-    require_equal_separator: e.require_equal_separator,
+    short_attached_value: e.short_attached_value,
     body: clone_body(e.body),
   }
 }
@@ -1572,14 +1580,14 @@ fn inst_long(
               // presence-only lowering has fully collapsed into that generic variant path; this
               // arm no longer special-cases TFlag/TBool bare-true at all).
               //
-              // DR-091 §3: `require_equal_separator` withholds THIS space-form main entry — the
-              // only entry point left is the eq-split form registered below (`eq_group` push).
-              // This is the exact mechanism that makes `long_prefix: ""` safe (node.mbt's
-              // `require_equal_separator` doc comment on `ElemDef`): with no space-form trigger,
-              // `trigger` (== `l` when `long_prefix` is `""`) never matches a bare token — only
-              // `EqSplit`, which fires exclusively on tokens containing `=`, can reach this
-              // element, so a plain operand can never collide with it.
-              if !e.require_equal_separator {
+              // DESIGN §7.2 / DR-096 §1: `long_eq_sep == EsRequire` withholds THIS space-form main
+              // entry — the only entry point left is the eq-split form registered below (`eq_group`
+              // push). This is the exact mechanism that makes `long_prefix: ""` safe (node.mbt's
+              // `ElemDef.long_eq_sep` doc comment): with no space-form trigger, `trigger` (== `l`
+              // when `long_prefix` is `""`) never matches a bare token — only `EqSplit`, which fires
+              // exclusively on tokens containing `=`, can reach this element, so a plain operand can
+              // never collide with it.
+              if e.long_eq_sep != EsRequire {
                 add_greedy(
                   build,
                   maybe_root(
@@ -1624,16 +1632,17 @@ fn inst_long(
       // `{NOEQUALSIGN: ""}` instead of DR-091 §2's required Reject — same deliberate-absence posture
       // as `BEnum`'s "OUT OF SCOPE" comment below, not an oversight.
       //
-      // DR-014「--name=value の許可」/ DR-041: `e.allow_equal_separator` (scope config, decode-time
-      // baked — always the WRAPPING option's resolved value, never a BOr leaf's unbaked default,
-      // same reasoning `eq_group(..., e.long_prefix)` already applies below) gates every arm — false
-      // withholds the eq-split entry entirely, leaving only the space form registered above.
+      // DR-014「--name=value の許可」/ DESIGN §7.2 / DR-096 §1: `e.long_eq_sep` (scope config,
+      // decode-time baked — always the WRAPPING option's resolved value, never a BOr leaf's unbaked
+      // default, same reasoning `eq_group(..., e.long_prefix)` already applies below) gates every
+      // arm — `EsDeny` withholds the eq-split entry entirely, leaving only the space form registered
+      // above.
       match e.body {
         BOr(branches) =>
           for br in branches {
             if br.items.length() == 1 {
               let leaf = br.items[0]
-              if e.allow_equal_separator && leaf.accumulator != Some("kv_map") {
+              if e.long_eq_sep != EsDeny && leaf.accumulator != Some("kv_map") {
                 eq_group(eq_prefixes, eq_groups, e.long_prefix).push({
                   key: l,
                   name: leaf.name,
@@ -1655,7 +1664,7 @@ fn inst_long(
           // the guard was always vacuous for it; an explicit `long:[":set"]` flag (now TBool) SHOULD
           // register its eq-split form, which this unconditional push now does correctly (the guard
           // used to wrongly suppress it while `e.ty` still read TFlag pre-normalize_option).
-          if e.allow_equal_separator && e.accumulator != Some("kv_map") {
+          if e.long_eq_sep != EsDeny && e.accumulator != Some("kv_map") {
             eq_group(eq_prefixes, eq_groups, e.long_prefix).push({
               key: l,
               name: e.name,
@@ -1807,6 +1816,8 @@ fn inst_short(def : Definition, build : Build) -> Unit {
         piece_filters: e.piece_filters,
         separator: e.separator,
         merge: e.accumulator == Some("merge"),
+        // DESIGN §7.2 / DR-096 §2: walk_short (matcher.mbt) の唯一の消費者
+        short_attached_value: e.short_attached_value,
       })
     }
   }
@@ -2018,9 +2029,9 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     short_prefix: copy.short_prefix,
     env_prefix: copy.env_prefix,
     auto_env: copy.auto_env,
-    allow_equal_separator: copy.allow_equal_separator,
+    long_eq_sep: copy.long_eq_sep,
     short_combine: copy.short_combine,
-    require_equal_separator: copy.require_equal_separator,
+    short_attached_value: copy.short_attached_value,
     body: copy.body,
   })
 }
@@ -2211,9 +2222,9 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     short_prefix: "-", // write-target copy は short spelling を持たない (canonical default 相当)
     env_prefix: "", // write-target copy は env 席を持たない (canonical default 相当)
     auto_env: false,
-    allow_equal_separator: true, // canonical default (§3 と同じ「通常挙動」)
+    long_eq_sep: EsAllow, // canonical default (§3 と同じ「通常挙動」)
     short_combine: true, // canonical default
-    require_equal_separator: false,
+    short_attached_value: AtAllow, // canonical default
     body: BCell,
   })
 }
@@ -2424,9 +2435,9 @@ fn alias_entry(
     short_prefix: "-",
     env_prefix: "",
     auto_env: false,
-    allow_equal_separator: true,
+    long_eq_sep: EsAllow,
     short_combine: true,
-    require_equal_separator: false,
+    short_attached_value: AtAllow,
     body: BCell,
   }
 }
@@ -3398,56 +3409,6 @@ fn collect_none_value_source_decl(
 }
 
 ///|
-/// DESIGN §7.2 / DR-091 §3 (issue scope-config-object-gap 静的矛盾チェックの definition-error 化):
-/// `require_equal_separator: true` と `allow_equal_separator: false` を同じ要素が同時に持つと、
-/// `inst_long` はこの要素の SPACE-FORM main entry (`require_equal_separator` が withhold) も
-/// EQ-FORM entry (`allow_equal_separator` が withhold) も配線しない — long 語彙を持つのに一切発火
-/// できない要素になる (`inst_long` の "DR-091 §3" コメント参照)。この組合せは decode 時点で静的に
-/// 既知 (両フィールドとも `ElemDef` に焼き込み済み、実行時入力に依存しない) — 「静的に既知は定義時に
-/// 倒す」姿勢 (DR-083 §5、`collect_zero_progress` と同じ「到達不能な宣言を静的に拒否する」筋) で
-/// definition-error にする。
-///
-/// 旧実装は decode 層 (`dec_definition` が呼ぶ `validate_scope_config`) がスコープ config 単位で
-/// このチェックを行い `DecodeSkip` を raise していた — query:definition_error の fixture では
-/// decode 不能 = skip 扱いになり、errors 全列挙 (DR-054 §4) で element 別に pin できなかった。
-/// ここでは `collect_none_value_source_decl` 等と同じ「要素ごとに焼き込み済みフィールドを直接見る」
-/// 配置に移し、`parse_definition` の Err 経路 (installer 層、`normalize_surface` 済みの def を走る)
-/// で element 単位に報告する。
-///
-/// `long_of(e)` が空 (= long エントリを持たない要素、`opt`/`pos` のデフォルト `LList([])` および
-/// positional は常に該当) は対象外 — この2フィールドは long 語彙専用 (`long_prefix`/`short_prefix`/
-/// `allow_equal_separator`/`short_combine`/`require_equal_separator` の doc comment 参照) で、
-/// long エントリの無い要素には焼き込まれていても実害が無い。この関数は `normalize_surface` 後
-/// (`parse_definition` 内、`e.long` が `LList` に確定済み) に呼ぶ前提 — decode 直後の生 `LBool` の
-/// ままでは `long_of` が誤って空を返す (`normalize_option` の doc comment 参照)。
-///
-/// スコープ config 由来 (`config` オブジェクトでの指定) なら、そのスコープの long 持ち全要素に同じ
-/// 値が焼き込まれるので全列挙で複数エラーが並ぶ (DR-054 §4)。要素単位 config override 由来なら、
-/// 上書きした当該要素だけがエラーになる。
-fn collect_eq_separator_conflict(
-  def : Definition,
-  out : Array[DefError],
-) -> Unit {
-  for e in def.options {
-    if e.require_equal_separator &&
-      !e.allow_equal_separator &&
-      long_of(e).length() > 0 {
-      out.push(
-        def_err(
-          e.name,
-          DInvalidRange,
-          "'\{e.name}' has require_equal_separator: true with allow_equal_separator: false — both the SPACE-FORM and EQ-FORM entry points are withheld, this long option can never fire",
-          "set allow_equal_separator: true, or set require_equal_separator: false",
-        ),
-      )
-    }
-  }
-  for c in def.commands {
-    collect_eq_separator_conflict(c.body, out)
-  }
-}
-
-///|
 /// DR-009 段 7 (issue accum-post-filters-stage7): an accum (multiple/repeat/separator) element's
 /// `cell_filters` runs Acc→Acc over the WHOLE accumulated array (`filters.mbt`'s
 /// `ArrayFilterDescriptor` registry, e.g. `unique`) — a DIFFERENT vocabulary from a scalar
@@ -3756,7 +3717,6 @@ pub fn parse_definition(
   collect_unsupported_count_multiple(def, errs) // codex 指摘 High 2 (count 型 × multiple)
   collect_scalar_array_default(def, errs) // DR-083 §5 (非 accum 要素への配列 default)
   collect_none_value_source_decl(def, errs) // DR-089 §4 (none への env/config_key/inherit 宣言)
-  collect_eq_separator_conflict(def, errs) // DESIGN §7.2 / DR-091 §3 (require_equal_separator:true × allow_equal_separator:false)
   collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 (accum cell_filters は配列語彙のみ)
   collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)
   collect_invalid_dd_pattern(def, errs) // DR-090 §2 (dd match pattern compile 失敗)

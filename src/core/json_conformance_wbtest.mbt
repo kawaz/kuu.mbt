@@ -333,9 +333,9 @@ fn opt(
   short_prefix? : String = "-",
   env_prefix? : String = "",
   auto_env? : Bool = false,
-  allow_equal_separator? : Bool = true,
+  long_eq_sep? : EqSepMode = EsAllow,
   short_combine? : Bool = true,
-  require_equal_separator? : Bool = false,
+  short_attached_value? : AttachMode = AtAllow,
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -380,9 +380,9 @@ fn opt(
     short_prefix,
     env_prefix,
     auto_env,
-    allow_equal_separator,
+    long_eq_sep,
     short_combine,
-    require_equal_separator,
+    short_attached_value,
     body,
   }
 }
@@ -452,18 +452,18 @@ fn pos(
     value_filters,
     cell_filters,
     // positional 要素は long/short spelling を持たない (`long: LList([])`/`short: []` 上、`long_of`
-    // は常に [] を返す) — `long_prefix`/`short_prefix`/`allow_equal_separator`/`short_combine`/
-    // `require_equal_separator` は long/short-only 語彙なので既定値のまま未使用フィールドとして持ち
-    // 回るだけ (`opt`/`inst_long`/`inst_short` 側の実際の消費経路と同じ理由付け)。`env_prefix`/
-    // `auto_env` は env 席が positional にも効く (`inst_env` が def.positionals も走査) ため、
-    // `dec_definition` が呼び出し側でこの2つだけ scope config を焼き込む (下記コメント参照)。
+    // は常に [] を返す) — `long_prefix`/`long_eq_sep`/`short_prefix`/`short_attached_value`/
+    // `short_combine` は long/short-only 語彙なので既定値のまま未使用フィールドとして持ち回るだけ
+    // (`opt`/`inst_long`/`inst_short` 側の実際の消費経路と同じ理由付け)。`env_prefix`/`auto_env` は
+    // env 席が positional にも効く (`inst_env` が def.positionals も走査) ため、`dec_definition` が
+    // 呼び出し側でこの2つだけ scope config を焼き込む (下記コメント参照)。
     long_prefix: "--",
     short_prefix: "-",
     env_prefix: "",
     auto_env: false,
-    allow_equal_separator: true,
+    long_eq_sep: EsAllow,
     short_combine: true,
-    require_equal_separator: false,
+    short_attached_value: AtAllow,
     body,
   }
 }
@@ -517,9 +517,9 @@ fn dd_marker(
     short_prefix: "-",
     env_prefix: "",
     auto_env: false,
-    allow_equal_separator: true,
+    long_eq_sep: EsAllow,
     short_combine: true,
-    require_equal_separator: false,
+    short_attached_value: AtAllow,
     body: BCell,
   }
 }
@@ -2841,13 +2841,14 @@ fn dec_option(
   let piece_filters = dec_filter_chain(o.get("piece_filters"))
   let value_filters = dec_filter_chain(o.get("value_filters"))
   let cell_filters = dec_filter_chain(o.get("cell_filters"))
-  // DR-091 §3 (team-lead 裁定 2026-07-11 修正): `long_prefix`/`require_equal_separator` are NOT
+  // DR-091 §3 (team-lead 裁定 2026-07-11 修正) / DR-096: `long_prefix`/`long_eq_sep` are NOT
   // element-level wire keys — the canonical source is `dec_definition`'s scope-level read (DESIGN
   // §7.2's sibling, "scope config" per DR-091 §3), which overrides every `ElemDef` this function
   // returns AFTER decode. An option JSON object carrying either key hits the `allowed_keys` reject
-  // above (element-level override would be an un-specced vocabulary invention). `opt(...)` below
-  // omits both — they keep `opt`'s defaults (`"--"`/`false`) here and get set for real by the
-  // caller (`dec_definition`).
+  // above (element-level override would be an un-specced vocabulary invention — the DEDICATED
+  // per-element `config` object, a DIFFERENT key, IS the sanctioned override channel, DR-049 §4).
+  // `opt(...)` below omits both — they keep `opt`'s defaults (`"--"`/`EsAllow`) here and get set for
+  // real by the caller (`dec_definition`).
   let ref_ = jf_str(o, "ref")
   // DR-078 §1 option repeat (issue 2026-07-09-ref-template-result-shape, new capability): `repeat`
   // used to be positional-only (`dec_positional`'s own decode above) — mirrored here now that
@@ -3067,27 +3068,27 @@ fn dec_positional_group(
 /// for the original 2-field minimal implementation).
 struct ScopeConfig {
   long_prefix : String
+  long_eq_sep : EqSepMode
   short_prefix : String
+  short_attached_value : AttachMode
+  short_combine : Bool
   env_prefix : String
   auto_env : Bool
-  allow_equal_separator : Bool
-  short_combine : Bool
-  require_equal_separator : Bool
 } derive(Eq, Debug)
 
 ///|
 /// The canonical config, in effect at the root scope when no `config` object is ever written
-/// (equivalent to every key's DESIGN §7.2 default) — matches DR-091 §3's pre-issue defaults exactly
-/// (`long_prefix:"--"`, `require_equal_separator:false`) for the 2 fields that already existed.
+/// (equivalent to every key's DESIGN §7.2 default, DR-096 §1/§2 の 3 値 enum 既定 `EsAllow`/`AtAllow`
+/// を含む).
 fn default_scope_config() -> ScopeConfig {
   {
     long_prefix: "--",
+    long_eq_sep: EsAllow,
     short_prefix: "-",
+    short_attached_value: AtAllow,
+    short_combine: true,
     env_prefix: "",
     auto_env: false,
-    allow_equal_separator: true,
-    short_combine: true,
-    require_equal_separator: false,
   }
 }
 
@@ -3105,8 +3106,8 @@ fn dec_scope_config(
   allowed_keys(
     co,
     [
-      "long_prefix", "short_prefix", "env_prefix", "auto_env", "allow_equal_separator",
-      "short_combine", "require_equal_separator",
+      "long_prefix", "long_eq_sep", "short_prefix", "short_attached_value", "short_combine",
+      "env_prefix", "auto_env",
     ],
     "definition.config",
   )
@@ -3114,34 +3115,58 @@ fn dec_scope_config(
     Some(s) => s
     None => parent.long_prefix
   }
+  // DESIGN §7.2 / DR-096 §1: 3 値 enum decode — `int_round`/`round_mode_of` と同じ前例パターン
+  // (`value.mbt`'s `eq_sep_mode_of` doc comment)。不正値 (未知 token) は decode-time DecodeSkip。
+  let long_eq_sep = match co.get("long_eq_sep") {
+    Some(vj) =>
+      match vj.j_str() {
+        Some(s) =>
+          match eq_sep_mode_of(s) {
+            Some(m) => m
+            None =>
+              raise DecodeSkip(
+                "config.long_eq_sep '" + s + "' is not a canonical EqSepMode",
+              )
+          }
+        None => raise DecodeSkip("config.long_eq_sep is not a string")
+      }
+    None => parent.long_eq_sep
+  }
   let short_prefix = match jf_str(co, "short_prefix") {
     Some(s) => s
     None => parent.short_prefix
   }
+  let short_attached_value = match co.get("short_attached_value") {
+    Some(vj) =>
+      match vj.j_str() {
+        Some(s) =>
+          match attach_mode_of(s) {
+            Some(m) => m
+            None =>
+              raise DecodeSkip(
+                "config.short_attached_value '" +
+                s +
+                "' is not a canonical AttachMode",
+              )
+          }
+        None => raise DecodeSkip("config.short_attached_value is not a string")
+      }
+    None => parent.short_attached_value
+  }
+  let short_combine = bool_field(co, "short_combine", parent.short_combine)
   let env_prefix = match jf_str(co, "env_prefix") {
     Some(s) => s
     None => parent.env_prefix
   }
   let auto_env = bool_field(co, "auto_env", parent.auto_env)
-  let allow_equal_separator = bool_field(
-    co,
-    "allow_equal_separator",
-    parent.allow_equal_separator,
-  )
-  let short_combine = bool_field(co, "short_combine", parent.short_combine)
-  let require_equal_separator = bool_field(
-    co,
-    "require_equal_separator",
-    parent.require_equal_separator,
-  )
   {
     long_prefix,
+    long_eq_sep,
     short_prefix,
+    short_attached_value,
+    short_combine,
     env_prefix,
     auto_env,
-    allow_equal_separator,
-    short_combine,
-    require_equal_separator,
   }
 }
 
@@ -3151,23 +3176,22 @@ fn dec_scope_config(
 /// (DR-049 §4「その要素の config で env_prefix:"" を上書きする」で明示される、DESIGN §7.2「子要素」
 /// は command だけでなく option/positional も含む) を追加する以上、同じ不整合はスコープ単位の
 /// resolved config だけでなく、要素単位で resolved した config でも起こりうる (例: 要素が独自に
-/// `long_prefix:""` を上書きしつつ `require_equal_separator` を明示しない場合、親から継承した値が
-/// false のままだと同じ「空 prefix が素 operand と衝突する」問題が要素単位で再現する) — checker を
+/// `long_prefix:""` を上書きしつつ `long_eq_sep` を明示しない場合、親から継承した値が `EsRequire`
+/// でなければ同じ「空 prefix が素 operand と衝突する」問題が要素単位で再現する) — checker を
 /// 関数化して両呼び出し点 (スコープ解決直後・要素ごとのマージ直後) から同一ロジックで検証する。
 ///
-/// `require_equal_separator: true` × `allow_equal_separator: false` の矛盾チェックは、ここには
-/// 無い — installer 層 `collect_eq_separator_conflict` (installer.mbt) へ移設済み (DESIGN §7.2
-/// が definition-error と規範化、decode 層の `DecodeSkip` では query:definition_error fixture で
-/// element 別に pin できないため — `collect_eq_separator_conflict` の doc comment 参照)。
+/// DR-096 §1: 旧 `require_equal_separator: true` × `allow_equal_separator: false` の矛盾チェックは
+/// 3 値 enum 化で構文的に表現不能になったため消滅した (illegal states unrepresentable) — 対応する
+/// definition-error 規定・`collect_eq_separator_conflict` (installer.mbt) は削除済み。
 fn validate_scope_config(cfg : ScopeConfig) -> Unit raise DecodeSkip {
-  // DR-091 §3 "単独の空 prefix は未定義動作のまま": `long_prefix: ""` は
-  // `require_equal_separator: true` との併用時のみ合法 — 空 prefix 単独ならこの scope の
-  // SPACE-FORM main entry が ANY トークンにマッチしてしまい、素 operand と衝突する
-  // (`ElemDef.require_equal_separator` の doc comment 参照)。definition-error として決定的に
-  // reject (`collect_unsupported_accum_update` 等と同じ「静的、実行時でない」姿勢)。
-  if cfg.long_prefix == "" && !cfg.require_equal_separator {
+  // DR-091 §3 "単独の空 prefix は未定義動作のまま" / DR-096 §3.3 (読み替え): `long_prefix: ""` は
+  // `long_eq_sep: EsRequire` との併用時のみ合法 — 空 prefix 単独ならこの scope の SPACE-FORM main
+  // entry が ANY トークンにマッチしてしまい、素 operand と衝突する (`ElemDef.long_eq_sep` の doc
+  // comment 参照)。definition-error として決定的に reject (`collect_unsupported_accum_update` 等と
+  // 同じ「静的、実行時でない」姿勢)。
+  if cfg.long_prefix == "" && cfg.long_eq_sep != EsRequire {
     raise DecodeSkip(
-      "long_prefix: \"\" requires require_equal_separator: true (DR-091 §3)",
+      "long_prefix: \"\" requires long_eq_sep: \"require\" (DR-096 §3.3 / DR-091 §3)",
     )
   }
 }
@@ -3302,8 +3326,9 @@ fn dec_definition(
   // DR-014 / DESIGN §7.2 (issue scope-config-object-gap; supersedes DR-091 §3's original 2-field-
   // only, non-inheriting scope config): この呼び出しの `o` (root definition object、または 1つの
   // command の own definition object — `dec_command` が自分の `o` をそのまま渡す) が持つ
-  // `config: {long_prefix, short_prefix, env_prefix, auto_env, allow_equal_separator, short_combine,
-  // require_equal_separator}` (DESIGN §7.2 の wire 形そのもの) を `parent_config` (呼び出し元から
+  // `config: {long_prefix, long_eq_sep, short_prefix, short_attached_value, short_combine,
+  // env_prefix, auto_env}` (DESIGN §7.2 の wire 形そのもの、DR-096 §1/§2 軸別再編後) を
+  // `parent_config` (呼び出し元から
   // 継承した既解決値) の上に `dec_scope_config` でマージする — 明示したキーだけ上書き、省略した
   // キーは親の値をそのまま継承する (DESIGN §7.2「子要素は親の config を継承、上書き可能」)。
   // `config` 自体を省略したスコープは `parent_config` をそのまま使う (= 何も上書きしない、継承の
@@ -3362,9 +3387,9 @@ fn dec_definition(
                   ..e,
                   long_prefix: elem_config.long_prefix,
                   short_prefix: elem_config.short_prefix,
-                  allow_equal_separator: elem_config.allow_equal_separator,
+                  long_eq_sep: elem_config.long_eq_sep,
                   short_combine: elem_config.short_combine,
-                  require_equal_separator: elem_config.require_equal_separator,
+                  short_attached_value: elem_config.short_attached_value,
                 },
                 elem_config.env_prefix,
                 elem_config.auto_env,
@@ -3409,9 +3434,9 @@ fn dec_definition(
               ..e,
               long_prefix: elem_config.long_prefix,
               short_prefix: elem_config.short_prefix,
-              allow_equal_separator: elem_config.allow_equal_separator,
+              long_eq_sep: elem_config.long_eq_sep,
               short_combine: elem_config.short_combine,
-              require_equal_separator: elem_config.require_equal_separator,
+              short_attached_value: elem_config.short_attached_value,
             },
             elem_config.env_prefix,
             elem_config.auto_env,
@@ -5567,16 +5592,16 @@ test "dec_filter_chain: an object-form arg value containing U+E000 (retired in-b
   assert_eq(result[1].args.length(), 0)
 }
 
-// ── DR-091 §3: long_prefix / require_equal_separator decode (scope-level, team-lead 裁定
+// ── DR-091 §3 / DR-096 §3.3: long_prefix / long_eq_sep decode (scope-level, team-lead 裁定
 // 2026-07-11: 正本は definition/scope の wire キー — 要素単位は未規定語彙のため不受理) ──────────
 
 ///|
-/// 保証 (DR-091 §3 "単独の空 prefix は未定義動作のまま" → decode-time definition-error): a
-/// DEFINITION (scope) declaring `long_prefix: ""` WITHOUT `require_equal_separator: true` is
+/// 保証 (DR-091 §3 "単独の空 prefix は未定義動作のまま" → decode-time definition-error、DR-096 §3.3
+/// 読み替え): a DEFINITION (scope) declaring `long_prefix: ""` WITHOUT `long_eq_sep: "require"` is
 /// rejected at decode (`DecodeSkip`) — this is the exact ambiguity §3 exists to close (an
 /// empty-prefix space-form trigger would match ANY bare token in that scope), so it must never
 /// reach `parse_definition`/`inst_long` at all.
-test "dec_definition: long_prefix:\"\" without require_equal_separator:true is a decode-time reject (DR-091 §3)" {
+test "dec_definition: long_prefix:\"\" without long_eq_sep:\"require\" is a decode-time reject (DR-096 §3.3 / DR-091 §3)" {
   let src =
     #|{"options":[{"name":"if","type":"string","long":true}],"config":{"long_prefix":""}}
   let o = match @json.parse(src).j_obj() {
@@ -5588,13 +5613,13 @@ test "dec_definition: long_prefix:\"\" without require_equal_separator:true is a
 }
 
 ///|
-/// 対極: `long_prefix: ""` PAIRED with `require_equal_separator: true` decodes successfully AND
+/// 対極: `long_prefix: ""` PAIRED with `long_eq_sep: "require"` decodes successfully AND
 /// propagates to every option in that scope's `options` array — the eq gate is what makes the
-/// empty prefix safe (`ElemDef.require_equal_separator`'s doc comment), and `dec_definition`
+/// empty prefix safe (`ElemDef.long_eq_sep`'s doc comment), and `dec_definition`
 /// (not `dec_option`) is the single place that writes these 2 fields onto each `ElemDef`.
-test "dec_definition: long_prefix:\"\" WITH require_equal_separator:true decodes successfully and propagates to options (対極)" {
+test "dec_definition: long_prefix:\"\" WITH long_eq_sep:\"require\" decodes successfully and propagates to options (対極)" {
   let src =
-    #|{"options":[{"name":"if","type":"string","long":true},{"name":"of","type":"string","long":true}],"config":{"long_prefix":"","require_equal_separator":true}}
+    #|{"options":[{"name":"if","type":"string","long":true},{"name":"of","type":"string","long":true}],"config":{"long_prefix":"","long_eq_sep":"require"}}
   let o = match @json.parse(src).j_obj() {
     Some(x) => x
     None => abort("test src is not an object")
@@ -5605,13 +5630,13 @@ test "dec_definition: long_prefix:\"\" WITH require_equal_separator:true decodes
   assert_eq(def.options.length(), 2)
   for e in def.options {
     assert_eq(e.long_prefix, "")
-    assert_eq(e.require_equal_separator, true)
+    assert_eq(e.long_eq_sep, EsRequire)
   }
 }
 
 ///|
 /// 保証 (要素単位の上書きは未規定語彙): an OPTION carrying `long_prefix` or
-/// `require_equal_separator` directly (not on the enclosing definition/scope) is rejected by
+/// `long_eq_sep` directly (not on the enclosing definition/scope) is rejected by
 /// `dec_option`'s `allowed_keys` as an unknown key — these 2 fields are scope-only wire vocabulary,
 /// never element-level (team-lead 裁定 2026-07-11, the 対極 half of the previous 2 tests: this
 /// pins that dec_option does NOT accept them, closing the door the earlier element-level design
@@ -5823,40 +5848,13 @@ test "dec_definition: auto_env also derives env for positionals (値セル持ち
 }
 
 ///|
-/// 保証 (移設後 — DESIGN §7.2 が definition-error と規範化、installer.mbt
-/// `collect_eq_separator_conflict`): `require_equal_separator: true` (space form withhold) と
-/// `allow_equal_separator: false` (eq form withhold) の組合せは、もはや decode-time reject では
-/// ない — decode 自体は成功し、両フィールドがそのまま `options[0]` へ焼き込まれる。旧実装は
-/// decode 層 (`validate_scope_config`) が scope config 単位で `DecodeSkip` を raise していたが、
-/// query:definition_error fixture では decode 不能 = skip 扱いになり element 別に pin できない
-/// ため、element 単位で報告できる installer 層 (`parse_definition` の Err 経路、DR-054 §4 全列挙)
-/// へ矛盾検出そのものを移設した。矛盾が実際に definition-error として検出されることの固定は
-/// installer_wbtest.mbt の "parse_definition: require_equal_separator:true ×
-/// allow_equal_separator:false ..." 系テスト側で行う。
-test "dec_definition: require_equal_separator:true + allow_equal_separator:false decodes successfully (矛盾検出は installer 層 collect_eq_separator_conflict へ移設)" {
-  let src =
-    #|{"options":[{"name":"if","type":"string","long":true}],"config":{"require_equal_separator":true,"allow_equal_separator":false}}
-  let o = match @json.parse(src).j_obj() {
-    Some(x) => x
-    None => abort("test src is not an object")
-  }
-  let def = dec_definition(o) catch {
-    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
-  }
-  assert_eq(def.options[0].require_equal_separator, true)
-  assert_eq(def.options[0].allow_equal_separator, false)
-}
-
-///|
-/// 保証 (DR-014 フル 7 キーの decode 受理 + 階層継承の運搬): `short_prefix`/`allow_equal_separator`/
-/// `short_combine` も他の 4 キーと同じ decode-time bake パターンで各要素へ伝わる。`short_combine`
-/// は消費側配線が未実装 (issue scope-config-object-gap 停止報告) だが、decode・継承・保持は他
-/// キーと同等であることをここで固定する。
-test "dec_definition: short_prefix / allow_equal_separator / short_combine all decode and bake onto options" {
+/// 保証 (DR-014 フル 7 キーの decode 受理 + 階層継承の運搬): `short_prefix`/`long_eq_sep`/
+/// `short_combine` も他のキーと同じ decode-time bake パターンで各要素へ伝わる。
+test "dec_definition: short_prefix / long_eq_sep / short_combine all decode and bake onto options" {
   let src =
     #|{
     #|  "options": [{"name": "v", "type": "string", "long": true, "short": "v"}],
-    #|  "config": {"short_prefix": "+", "allow_equal_separator": false, "short_combine": false}
+    #|  "config": {"short_prefix": "+", "long_eq_sep": "deny", "short_combine": false}
     #|}
   let o = match @json.parse(src).j_obj() {
     Some(x) => x
@@ -5866,7 +5864,7 @@ test "dec_definition: short_prefix / allow_equal_separator / short_combine all d
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
   }
   assert_eq(def.options[0].short_prefix, "+")
-  assert_eq(def.options[0].allow_equal_separator, false)
+  assert_eq(def.options[0].long_eq_sep, EsDeny)
   assert_eq(def.options[0].short_combine, false)
 }
 
@@ -6114,12 +6112,11 @@ test "dec_definition: a positional's own config env_prefix override works the sa
 }
 
 ///|
-/// 保証 (要素単位 override でも DR-091 §3 の静的検査が働く — `validate_scope_config` を要素マージ
-/// 直後にも呼ぶことの直接確認): 要素が `config: {"long_prefix": ""}` だけを上書きし
-/// `require_equal_separator` を明示しない場合、scope 既定の `require_equal_separator: false` を
-/// 継承したままになるため、スコープレベルと同じ「空 prefix が素 operand と衝突する」不整合が
-/// 要素単位でも再現し decode-time reject される。
-test "dec_definition: an element's own config can ALSO trigger the long_prefix:\"\" + !require_equal_separator reject" {
+/// 保証 (要素単位 override でも DR-091 §3 / DR-096 §3.3 の静的検査が働く — `validate_scope_config`
+/// を要素マージ直後にも呼ぶことの直接確認): 要素が `config: {"long_prefix": ""}` だけを上書きし
+/// `long_eq_sep` を明示しない場合、scope 既定の `EsAllow` を継承したままになるため、スコープレベル
+/// と同じ「空 prefix が素 operand と衝突する」不整合が要素単位でも再現し decode-time reject される。
+test "dec_definition: an element's own config can ALSO trigger the long_prefix:\"\" + long_eq_sep!=require reject" {
   let src =
     #|{"options":[{"name":"if","type":"string","long":true,"config":{"long_prefix":""}}]}
   let o = match @json.parse(src).j_obj() {
@@ -6128,13 +6125,13 @@ test "dec_definition: an element's own config can ALSO trigger the long_prefix:\
   }
   let _ = dec_definition(o) catch { DecodeSkip(_) => return }
   fail(
-    "expected DecodeSkip (element-level long_prefix:\"\" without require_equal_separator:true)",
+    "expected DecodeSkip (element-level long_prefix:\"\" without long_eq_sep:\"require\")",
   )
 }
 
 ///|
 /// 保証 (要素単位 config の allowed_keys 網羅性): option の `config` object 内も scope config と
-/// 同じ 7 キーのみ受理 — 未知キーは decode-time reject (DR-014 の語彙を要素単位でも発明しない)。
+/// 同じキーのみ受理 — 未知キーは decode-time reject (DR-014 の語彙を要素単位でも発明しない)。
 test "dec_definition: an option's own config rejects an unknown key just like scope config does" {
   let src =
     #|{"options":[{"name":"a","type":"string","config":{"bogus_key":true}}]}

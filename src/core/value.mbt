@@ -64,6 +64,57 @@ pub(all) enum RoundMode {
 } derive(Eq, Debug)
 
 ///|
+/// DESIGN §7.2 / DR-096 §1: scope config `long_eq_sep` の 3 値。long の eq 分割形 (`key=value`) と
+/// space 分割形 (`key value`) の入口をダイヤルする。`EsRequire` = eq 分割形のみ受理 (space-form main
+/// entry を withhold、DR-091 §3 の `require_equal_separator:true` 相当)、`EsAllow` (既定) = 両方受理、
+/// `EsDeny` = eq 分割 matcher を生成せず space 分割形のみ受理 (旧 `allow_equal_separator:false` 相当)。
+/// 3 値 enum のため「eq 必須かつ eq 禁止」のような組合せはそもそも構文的に表現できない (illegal
+/// states unrepresentable、旧 2 bool ペアが持っていた矛盾検出規定はこの型そのものにより不要化)。
+pub(all) enum EqSepMode {
+  EsRequire
+  EsAllow
+  EsDeny
+} derive(Eq, Debug)
+
+///|
+/// Decode a canonical `long_eq_sep` config string (DR-096 §1) to its `EqSepMode`. Returns None on an
+/// unknown token — the caller surfaces this as a `DecodeSkip` (`int_round`/`round_mode_of` と同じ
+/// 前例パターン、`json_conformance_wbtest.mbt` の呼び出し側)。
+pub fn eq_sep_mode_of(s : String) -> EqSepMode? {
+  match s {
+    "require" => Some(EsRequire)
+    "allow" => Some(EsAllow)
+    "deny" => Some(EsDeny)
+    _ => None
+  }
+}
+
+///|
+/// DESIGN §7.2 / DR-096 §2: scope config `short_attached_value` の 3 値。値持ち short の付着形
+/// (`-O2`) と space 分割形 (`-O 2`) の入口をダイヤルする。`AtRequire` = 付着形のみ受理し space-form
+/// の読み枝が立たない (gcc/clang の `-O`/`-W` 型)、`AtAllow` (既定) = 両方受理 (DR-041 §4 の値スロット
+/// 一般規則そのまま)、`AtDeny` = 付着読みの枝を生成せず space 分割形のみ受理する。値スロットを持たない
+/// 要素 (flag/count) にはダイヤルが届いても inert (DR-096 §3.2)。`long_eq_sep` (`EqSepMode`) とは
+/// 軸そのものが異なる別型 — short に eq 分割形は存在しない (DR-096 §3.4)。
+pub(all) enum AttachMode {
+  AtRequire
+  AtAllow
+  AtDeny
+} derive(Eq, Debug)
+
+///|
+/// Decode a canonical `short_attached_value` config string (DR-096 §2) to its `AttachMode`.
+/// Returns None on an unknown token (`eq_sep_mode_of` と同型の前例パターン)。
+pub fn attach_mode_of(s : String) -> AttachMode? {
+  match s {
+    "require" => Some(AtRequire)
+    "allow" => Some(AtAllow)
+    "deny" => Some(AtDeny)
+    _ => None
+  }
+}
+
+///|
 /// bool の factory config (DR-074 §3/§4 `bool_parser`, DR-061 §3 configurable factory)。canonical
 /// default (`bool_config_canonical`) は `true_values: ["true","1"]` / `false_values: ["false","0",""]`
 /// / `case_insensitive: true` — 既存 `parse_bool` のハードコード語彙と同値 (置き換えではなく同じ表を

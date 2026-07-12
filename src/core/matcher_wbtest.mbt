@@ -176,6 +176,7 @@ test "short cluster: flag run and in-token numeric value" {
       piece_filters: [],
       separator: None,
       merge: false,
+      short_attached_value: AtAllow,
     },
     {
       ch: 'b',
@@ -187,6 +188,7 @@ test "short cluster: flag run and in-token numeric value" {
       piece_filters: [],
       separator: None,
       merge: false,
+      short_attached_value: AtAllow,
     },
     {
       ch: 'n',
@@ -198,6 +200,7 @@ test "short cluster: flag run and in-token numeric value" {
       piece_filters: [],
       separator: None,
       merge: false,
+      short_attached_value: AtAllow,
     },
   ])
   // `-ab`: a run of two flags → one reading binding a=true, b=true, consuming the single token.
@@ -235,6 +238,7 @@ test "short cluster: space-form value takes the next token" {
       piece_filters: [],
       separator: None,
       merge: false,
+      short_attached_value: AtAllow,
     },
   ])
   let r = run_matcher(short, pctx(["-n", "5"]), 0)
@@ -262,6 +266,7 @@ test "short cluster: deprecated entry rides a @depr marker" {
       piece_filters: [],
       separator: None,
       merge: false,
+      short_attached_value: AtAllow,
     },
   ])
   let r = run_matcher(short, pctx(["-d"]), 0)
@@ -290,6 +295,7 @@ fn combine_entries() -> Array[ShortEntry] {
       piece_filters: [],
       separator: None,
       merge: false,
+      short_attached_value: AtAllow,
     },
     {
       ch: 'b',
@@ -301,6 +307,7 @@ fn combine_entries() -> Array[ShortEntry] {
       piece_filters: [],
       separator: None,
       merge: false,
+      short_attached_value: AtAllow,
     },
     {
       ch: 'n',
@@ -312,6 +319,7 @@ fn combine_entries() -> Array[ShortEntry] {
       piece_filters: [],
       separator: None,
       merge: false,
+      short_attached_value: AtAllow,
     },
   ]
 }
