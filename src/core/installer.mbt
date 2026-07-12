@@ -118,10 +118,14 @@ pub(all) struct ElemDef {
   // `config`, only these per-element fields). `long_prefix` (既定 `"--"`): the string `inst_long`
   // prepends to this element's own long spellings when building each trigger (`e.long_prefix + l`,
   // replacing the old hardcoded `"--" + l`) — every OTHER element in the same `Definition` keeps its
-  // own resolved value unless it also overrides. `""` is legal ONLY paired with
-  // `long_eq_sep: EsRequire` (dec_option 側で検証, DR-096 §3.3 / DR-091 §3「単独の空 prefix は未定義
-  // 動作のまま」) — an empty prefix without the eq gate would make a bare positional operand (`foo`)
-  // collide with this element's long candidacy, the exact ambiguity §3 exists to close.
+  // own resolved value unless it also overrides. `""` is unconditionally legal (DR-096 §3.3, kawaz
+  // 裁定 2026-07-12 — 旧 DR-091 §3 の「`long_eq_sep: EsRequire` 併用時のみ合法」制約は撤廃): a bare
+  // long trigger colliding with a plain positional operand (`foo`) is an application-level concern,
+  // not a definition-time error — the normal reading enumeration surfaces the collision as
+  // `Ambiguous` (DR-053, `fixtures/matcher-readings/long-empty-prefix-operand-collision.json`), no
+  // static rejection is imposed. An app that wants to eliminate the collision can opt into
+  // `long_eq_sep: EsRequire` (only `=`-bearing tokens become long candidates) or simply declare no
+  // colliding positional — these are DESIGN choices, not prerequisites the parser enforces.
   long_prefix : String
   // DESIGN §7.2 / LOWERING §B.2「config `short_prefix`/`short_combine` がパラメータ」: the string
   // `inst_short` prepends when building the `ShortCombine` matcher's `prefix` (replacing the old
@@ -141,26 +145,30 @@ pub(all) struct ElemDef {
   auto_env : Bool
   // DESIGN §7.2 / DR-096 §1: 3 値 enum で `inst_long` の eq-split entry / SPACE-FORM main entry
   // (`Seq([Exact(trigger), value_prim(...)])`, the `ref_target is None` branch) の配線をダイヤルする。
-  // `EsRequire` =
-  // SPACE-FORM main entry を withhold、eq-split entry のみ配線 (これが `long_prefix: ""` を安全にする: space form が無ければこの要素の trigger は生
-  // token に一切マッチしない、`EqSplit` は `=` を含む token にのみ発火するため、素の operand
-  // (`foo`) が飲み込まれない)。`EsAllow` (既定) = 両方配線 (現行挙動そのまま)。`EsDeny` = eq-split
-  // entry を登録しない、SPACE-FORM のみ。3 値のため「両方
-  // withhold」という旧矛盾状態は構文的に表現不能 (illegal states unrepresentable、DR-096 §1 —
-  // 旧 `collect_eq_separator_conflict` definition-error 規定は本 DR で不要化・削除)。
+  // `EsRequire` = SPACE-FORM main entry を withhold、eq-split entry のみ配線 (DR-096 §3.3 — これを
+  // `long_prefix: ""` と併用すると、space form が無いので生 token に一切マッチせず `EqSplit` は `=`
+  // を含む token にのみ発火するため、素の operand (`foo`) との衝突をアプリ側で定義的に排除する
+  // 選択手段になる。ただし空 prefix 自体はこの併用を要求しない — 併用しない場合の衝突は Ambiguous
+  // として通常通り列挙される、`ElemDef.long_prefix` の doc comment 参照)。`EsAllow` (既定) = 両方
+  //配線 (現行挙動そのまま)。`EsDeny` = eq-split entry を登録しない、SPACE-FORM のみ。3 値のため
+  // 「両方 withhold」という旧矛盾状態は構文的に表現不能 (illegal states unrepresentable、DR-096 §1
+  // — 旧 `collect_eq_separator_conflict` definition-error 規定は本 DR で不要化・削除)。
   long_eq_sep : EqSepMode
   // DR-014「-abc の結合許可」/ LOWERING §B.2: decode は受理・階層継承する。`short_combine: false` は
   // 複数 short の cluster 結合のみを禁止 (値付着は別軸 `short_attached_value` の管掌、DR-096 §2 で
   // 確定)。既定 `true`、消費側 (`inst_short`/`run_short`/`walk_short`) がこのフィールドの
   // `combine` param として直接参照する。
   short_combine : Bool
-  // DESIGN §7.2 / DR-096 §2: 値持ち short の付着形 (`-O2`) と space 分割形 (`-O 2`) の入口をダイヤル
-  // する新設 3 値 enum。`AtRequire` = 付着形のみ受理、space-form main entry を withhold (gcc/clang
-  // の `-O`/`-W` 型)。`AtAllow` (既定) = 両方受理 (現行挙動そのまま、DR-041 §4 の値スロット一般規則)。
-  // `AtDeny` = 付着読みの枝を生成しない、space 分割形のみ受理。値スロットを持たない要素
-  // (flag/count/none) には inert (DR-096 §3.2 — `walk_short` の該当 kind 分岐はこのフィールドを
-  // 参照しない)。`ShortEntry.short_attached_value` (node.mbt) へそのまま乗せる、`walk_short`
-  // (matcher.mbt) が唯一の消費者。
+  // DESIGN §7.2 / DR-096 §2 (kawaz 裁定 2026-07-12 で `last_only` 追加、4 値): 値持ち short の付着形
+  // (`-O2`) と space 分割形 (`-O 2`) の読み生成をダイヤルする新設 4 値 enum — ダイヤルが条件にするの
+  // は読みの形だけで、単独発火かクラスタ内か・クラスタ内の位置は条件にならない (DR-096 §3.1)。
+  // `AtRequire` = 付着形のみ受理、space-form main entry を withhold (gcc/clang の `-O`/`-W` 型)。
+  // `AtAllow` (既定) = 両方受理 (現行挙動そのまま、DR-041 §4 の値スロット一般規則)。`AtDeny` = 付着
+  // 読みの枝を生成しない、space 分割形のみ受理。`AtLastOnly` = 付着読みを「残り全部の丸取り形」1 通り
+  // だけに制限 (mid-token 分割点を列挙しない、GNU getopt 慣習)、space 形は `AtAllow` 同様に生きる。
+  // 値スロットを持たない要素 (flag/count/none) には inert (DR-096 §3.2 — `walk_short` の該当 kind
+  // 分岐はこのフィールドを参照しない)。`ShortEntry.short_attached_value` (node.mbt) へそのまま乗せる、
+  // `walk_short` (matcher.mbt) が唯一の消費者。
   short_attached_value : AttachMode
   // MDR-004: 消費文法の軸。`BCell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
   // 縮退形、観測挙動不変)。`BOr`/`BGroup` の要素では `ty` は未使用 — 枝/内部要素の leaf ElemDef が
@@ -1581,11 +1589,13 @@ fn inst_long(
               //
               // DESIGN §7.2 / DR-096 §1: `long_eq_sep == EsRequire` withholds THIS space-form main
               // entry — the only entry point left is the eq-split form registered below (`eq_group`
-              // push). This is the exact mechanism that makes `long_prefix: ""` safe (node.mbt's
-              // `ElemDef.long_eq_sep` doc comment): with no space-form trigger, `trigger` (== `l`
-              // when `long_prefix` is `""`) never matches a bare token — only `EqSplit`, which fires
-              // exclusively on tokens containing `=`, can reach this element, so a plain operand can
-              // never collide with it.
+              // push). Paired with `long_prefix: ""` (DR-096 §3.3, node.mbt's `ElemDef.long_prefix`
+              // doc comment), this is the mechanism an app can opt into to definitionally eliminate
+              // the bare-operand collision: with no space-form trigger, `trigger` (== `l` when
+              // `long_prefix` is `""`) never matches a bare token — only `EqSplit`, which fires
+              // exclusively on tokens containing `=`, can reach this element. Neither `long_prefix`
+              // nor `long_eq_sep` requires this pairing — an unpaired empty prefix is legal and any
+              // resulting collision surfaces as Ambiguous instead.
               if e.long_eq_sep != EsRequire {
                 add_greedy(
                   build,

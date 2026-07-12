@@ -90,16 +90,22 @@ pub fn eq_sep_mode_of(s : String) -> EqSepMode? {
 }
 
 ///|
-/// DESIGN §7.2 / DR-096 §2: scope config `short_attached_value` の 3 値。値持ち short の付着形
-/// (`-O2`) と space 分割形 (`-O 2`) の入口をダイヤルする。`AtRequire` = 付着形のみ受理し space-form
-/// の読み枝が立たない (gcc/clang の `-O`/`-W` 型)、`AtAllow` (既定) = 両方受理 (DR-041 §4 の値スロット
-/// 一般規則そのまま)、`AtDeny` = 付着読みの枝を生成せず space 分割形のみ受理する。値スロットを持たない
-/// 要素 (flag/count) にはダイヤルが届いても inert (DR-096 §3.2)。`long_eq_sep` (`EqSepMode`) とは
-/// 軸そのものが異なる別型 — short に eq 分割形は存在しない (DR-096 §3.4)。
+/// DESIGN §7.2 / DR-096 §2 (kawaz 裁定 2026-07-12 で `last_only` 追加、4 値): scope config
+/// `short_attached_value` の 4 値。値持ち short の付着形 (`-O2`) と space 分割形 (`-O 2`) の**読み
+/// 生成**を entry 単位でダイヤルする — ダイヤルが条件にするのは読みの形だけで、単独発火かクラスタ内
+/// か・クラスタ内の位置は条件にならない (DR-096 §3.1、位置条件の除去)。`AtRequire` = 付着形のみ受理
+/// し space-form の読み枝が立たない (gcc/clang の `-O`/`-W` 型)、`AtAllow` (既定) = 両方受理 (DR-041
+/// §4 の値スロット一般規則そのまま)、`AtDeny` = 付着読みの枝を生成せず space 分割形のみ受理する、
+/// `AtLastOnly` = 付着読みを「残り全部の丸取り形」1 通りだけに制限 (mid-token の分割点を列挙しない、
+/// GNU getopt 慣習 — `allow`/`require` だと同一トークン内の全分割点が ambiguous を生みうるところを
+/// 一意化する)、space 形は `allow` 同様に生きる。値スロットを持たない要素 (flag/count) にはダイヤル
+/// が届いても inert (DR-096 §3.2)。`long_eq_sep` (`EqSepMode`) とは軸そのものが異なる別型 — short
+/// に eq 分割形は存在しない (DR-096 §3.4)。
 pub(all) enum AttachMode {
   AtRequire
   AtAllow
   AtDeny
+  AtLastOnly
 } derive(Eq, Debug)
 
 ///|
@@ -110,6 +116,7 @@ pub fn attach_mode_of(s : String) -> AttachMode? {
     "require" => Some(AtRequire)
     "allow" => Some(AtAllow)
     "deny" => Some(AtDeny)
+    "last_only" => Some(AtLastOnly)
     _ => None
   }
 }

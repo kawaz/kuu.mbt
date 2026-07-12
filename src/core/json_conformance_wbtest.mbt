@@ -3171,28 +3171,6 @@ fn dec_scope_config(
 }
 
 ///|
-/// DR-091 §3 自然な帰結チェックを 1 箇所に集約 (codex 節目レビュー Major 1 監査時点で発見: 元々
-/// `dec_definition` の SCOPE レベルにだけインライン展開されていた — 要素単位 config override
-/// (DR-049 §4「その要素の config で env_prefix:"" を上書きする」で明示される、DESIGN §7.2「子要素」
-/// は command だけでなく option/positional も含む) を追加する以上、同じ不整合はスコープ単位の
-/// resolved config だけでなく、要素単位で resolved した config でも起こりうる (例: 要素が独自に
-/// `long_prefix:""` を上書きしつつ `long_eq_sep` を明示しない場合、親から継承した値が `EsRequire`
-/// でなければ同じ「空 prefix が素 operand と衝突する」問題が要素単位で再現する) — checker を
-/// 関数化して両呼び出し点 (スコープ解決直後・要素ごとのマージ直後) から同一ロジックで検証する。
-fn validate_scope_config(cfg : ScopeConfig) -> Unit raise DecodeSkip {
-  // DR-091 §3 "単独の空 prefix は未定義動作のまま" / DR-096 §3.3 (読み替え): `long_prefix: ""` は
-  // `long_eq_sep: EsRequire` との併用時のみ合法 — 空 prefix 単独ならこの scope の SPACE-FORM main
-  // entry が ANY トークンにマッチしてしまい、素 operand と衝突する (`ElemDef.long_eq_sep` の doc
-  // comment 参照)。definition-error として決定的に reject (`collect_unsupported_accum_update` 等と
-  // 同じ「静的、実行時でない」姿勢)。
-  if cfg.long_prefix == "" && cfg.long_eq_sep != EsRequire {
-    raise DecodeSkip(
-      "long_prefix: \"\" requires long_eq_sep: \"require\" (DR-096 §3.3 / DR-091 §3)",
-    )
-  }
-}
-
-///|
 /// "_" 連結 (DR-049 §3 auto_env 名導出の連結セパレータ)。空 segment は呼び出し側が既に除外している
 /// 前提 (`auto_env_name` — env_prefix 未設定時に prefix segment 自体を積まない、DR-049 §3
 /// 「env_prefix 未設定なら prefix 部を省く」)。
@@ -3340,7 +3318,6 @@ fn dec_definition(
     }
     None => parent_config
   }
-  validate_scope_config(config)
   let options : Array[ElemDef] = []
   let positionals : Array[ElemDef] = []
   let commands : Array[CommandDef] = []
@@ -3369,9 +3346,7 @@ fn dec_definition(
                       Some(x) => x
                       None => raise DecodeSkip("option config is not an object")
                     }
-                    let merged = dec_scope_config(eco, config)
-                    validate_scope_config(merged)
-                    merged
+                    dec_scope_config(eco, config)
                   }
                   None => config
                 }
@@ -3416,9 +3391,7 @@ fn dec_definition(
                   Some(x) => x
                   None => raise DecodeSkip("positional config is not an object")
                 }
-                let merged = dec_scope_config(eco, config)
-                validate_scope_config(merged)
-                merged
+                dec_scope_config(eco, config)
               }
               None => config
             }
@@ -5588,32 +5561,17 @@ test "dec_filter_chain: an object-form arg value containing U+E000 (retired in-b
   assert_eq(result[1].args.length(), 0)
 }
 
-// ── DR-091 §3 / DR-096 §3.3: long_prefix / long_eq_sep decode (scope-level, team-lead 裁定
-// 2026-07-11: 正本は definition/scope の wire キー — 要素単位は未規定語彙のため不受理) ──────────
+// ── DR-096 §3.3 (kawaz 裁定 2026-07-12): long_prefix / long_eq_sep decode (scope-level, team-lead
+// 裁定 2026-07-11: 正本は definition/scope の wire キー — 要素単位は未規定語彙のため不受理) ──────
 
 ///|
-/// 保証 (DR-091 §3 "単独の空 prefix は未定義動作のまま" → decode-time definition-error、DR-096 §3.3
-/// 読み替え): a DEFINITION (scope) declaring `long_prefix: ""` WITHOUT `long_eq_sep: "require"` is
-/// rejected at decode (`DecodeSkip`) — this is the exact ambiguity §3 exists to close (an
-/// empty-prefix space-form trigger would match ANY bare token in that scope), so it must never
-/// reach `parse_definition`/`inst_long` at all.
-test "dec_definition: long_prefix:\"\" without long_eq_sep:\"require\" is a decode-time reject (DR-096 §3.3 / DR-091 §3)" {
-  let src =
-    #|{"options":[{"name":"if","type":"string","long":true}],"config":{"long_prefix":""}}
-  let o = match @json.parse(src).j_obj() {
-    Some(x) => x
-    None => abort("test src is not an object")
-  }
-  let _ = dec_definition(o) catch { DecodeSkip(_) => return }
-  fail("expected DecodeSkip, but dec_definition succeeded")
-}
-
-///|
-/// 対極: `long_prefix: ""` PAIRED with `long_eq_sep: "require"` decodes successfully AND
-/// propagates to every option in that scope's `options` array — the eq gate is what makes the
-/// empty prefix safe (`ElemDef.long_eq_sep`'s doc comment), and `dec_definition`
-/// (not `dec_option`) is the single place that writes these 2 fields onto each `ElemDef`.
-test "dec_definition: long_prefix:\"\" WITH long_eq_sep:\"require\" decodes successfully and propagates to options (対極)" {
+/// 保証 (DR-096 §3.3、kawaz 裁定 2026-07-12 — 空 prefix の無条件合法化): `long_prefix: ""` は
+/// `long_eq_sep: "require"` との併用を要求しない。旧 DR-091 §3 の合法条件 (併用時のみ合法、それ
+/// 以外は decode-time definition-error) は撤廃された — bare long トリガと素 operand の衝突は
+/// アプリ毎の事情であり、衝突時は通常の読み列挙が Ambiguous (DR-053) に落とす、先回り禁止は置かない
+/// (`fixtures/matcher-readings/long-empty-prefix-operand-collision.json` が衝突時の帰結を固定)。
+/// `long_eq_sep: "require"` はこの衝突を定義側で排除したいアプリが選べる解決手段の一つに過ぎない。
+test "dec_definition: long_prefix:\"\" WITH long_eq_sep:\"require\" decodes successfully and propagates to options" {
   let src =
     #|{"options":[{"name":"if","type":"string","long":true},{"name":"of","type":"string","long":true}],"config":{"long_prefix":"","long_eq_sep":"require"}}
   let o = match @json.parse(src).j_obj() {
@@ -5628,6 +5586,24 @@ test "dec_definition: long_prefix:\"\" WITH long_eq_sep:\"require\" decodes succ
     assert_eq(e.long_prefix, "")
     assert_eq(e.long_eq_sep, EsRequire)
   }
+}
+
+///|
+/// 対極 (撤廃の直接固定): `long_prefix: ""` ALONE, with scope 既定 `long_eq_sep: EsAllow`
+/// (= `long_eq_sep` を明示しない), decodes successfully — 旧 DR-091 §3 ならここが decode-time
+/// definition-error だったが、DR-096 §3.3 の無条件合法化でそのまま通る。
+test "dec_definition: long_prefix:\"\" ALONE (long_eq_sep unset, EsAllow) decodes successfully (対極, DR-096 §3.3 撤廃の固定)" {
+  let src =
+    #|{"options":[{"name":"if","type":"string","long":true}],"config":{"long_prefix":""}}
+  let o = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("test src is not an object")
+  }
+  let def = dec_definition(o) catch {
+    DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+  }
+  assert_eq(def.options[0].long_prefix, "")
+  assert_eq(def.options[0].long_eq_sep, EsAllow)
 }
 
 ///|
@@ -6105,24 +6081,6 @@ test "dec_definition: a positional's own config env_prefix override works the sa
   }
   assert_eq(def.positionals[0].env, ["MYAPP_TARGET"]) // auto_env 経由、scope env_prefix 連結
   assert_eq(def.positionals[1].env, ["HOME"]) // opt-out、明示 env: そのまま
-}
-
-///|
-/// 保証 (要素単位 override でも DR-091 §3 / DR-096 §3.3 の静的検査が働く — `validate_scope_config`
-/// を要素マージ直後にも呼ぶことの直接確認): 要素が `config: {"long_prefix": ""}` だけを上書きし
-/// `long_eq_sep` を明示しない場合、scope 既定の `EsAllow` を継承したままになるため、スコープレベル
-/// と同じ「空 prefix が素 operand と衝突する」不整合が要素単位でも再現し decode-time reject される。
-test "dec_definition: an element's own config can ALSO trigger the long_prefix:\"\" + long_eq_sep!=require reject" {
-  let src =
-    #|{"options":[{"name":"if","type":"string","long":true,"config":{"long_prefix":""}}]}
-  let o = match @json.parse(src).j_obj() {
-    Some(x) => x
-    None => abort("test src is not an object")
-  }
-  let _ = dec_definition(o) catch { DecodeSkip(_) => return }
-  fail(
-    "expected DecodeSkip (element-level long_prefix:\"\" without long_eq_sep:\"require\")",
-  )
 }
 
 ///|

@@ -492,11 +492,13 @@ pub(all) struct ShortEntry {
   separator : String?
   // DR-080 波及節 (same rationale as LongEntry's field): `ElemDef.accumulator == Some("merge")`.
   merge : Bool
-  // DESIGN §7.2 / DR-096 §2: gates whether `walk_short` may read this entry's value via in-cluster
-  // attach (`-O2`) vs. next-token space form (`-O 2`). `AtRequire` withholds the space-form reading,
-  // `AtDeny` withholds the attach reading (both the mid-token AND full-tail-length attach, plus the
-  // cluster-tail attach — DR-096 §3.1「付着という機構自体をダイヤルしているのであって、単独発火時に
-  // 限る規定ではない」), `AtAllow` (既定) withholds neither (`walk_short`, matcher.mbt, is the sole
+  // DESIGN §7.2 / DR-096 §2 (kawaz 裁定 2026-07-12 で `AtLastOnly` 追加): gates whether `walk_short`
+  // may read this entry's value via in-cluster attach (`-O2`) vs. next-token space form (`-O 2`).
+  // `AtRequire` withholds the space-form reading, `AtDeny` withholds the attach reading (both the
+  // mid-token AND full-tail-length attach, plus the cluster-tail attach — DR-096 §3.1「付着という
+  // 機構自体をダイヤルしているのであって、単独発火時に限る規定ではない」), `AtLastOnly` withholds
+  // every MID-token split attach (only the full-tail "丸取り" reading remains — GNU getopt 慣習の
+  // 分割 ambiguity 抑制), `AtAllow` (既定) withholds neither (`walk_short`, matcher.mbt, is the sole
   // consumer). Ignored for TFlag/TBool/TCount/TNone entries (DR-096 §3.2 inert — those kinds never
   // reach `short_val`'s in-cluster/space-form value attachment in the first place).
   short_attached_value : AttachMode

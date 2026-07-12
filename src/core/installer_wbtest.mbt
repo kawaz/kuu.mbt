@@ -2652,12 +2652,14 @@ test "DR-091 §3 / DR-096 §1 end-to-end: long_eq_sep:EsRequire rejects the spac
 }
 
 ///|
-/// Guarantees (DR-091 §3 "空 prefix を許すと... 素 operand と long 経路が衝突しない" — the
-/// non-collision half): a `long_prefix:""` element coexisting with an UNRELATED plain positional
+/// Guarantees (DR-096 §3.3 — `long_eq_sep:EsRequire` の opt-in 衝突排除手段の直接固定): a
+/// `long_prefix:""` + `long_eq_sep:EsRequire` element coexisting with an UNRELATED plain positional
 /// in the SAME Definition does not swallow that positional's bare token — `foo` (no `=`) still
-/// binds to `target`, `if` stays unfired (absent from the bindings). This is what makes the empty
-/// prefix safe to declare alongside ordinary positionals, not just in isolation.
-test "DR-091 §3 / DR-096 §1 end-to-end: a long_prefix:\"\" element does not collide with a sibling plain positional (素 operand 非衝突)" {
+/// binds to `target`, `if` stays unfired (absent from the bindings). This is the eq-gate mechanism
+/// an app can opt into to definitionally avoid the collision (空 prefix 単独では衝突は Ambiguous
+/// に落ちる、`fixtures/matcher-readings/long-empty-prefix-operand-collision.json` 参照 — この
+/// テストは EsRequire 併用時の非衝突を固定するもので、空 prefix の合法条件ではない)。
+test "DR-096 §3.3 end-to-end: long_prefix:\"\" + long_eq_sep:EsRequire does not collide with a sibling plain positional (opt-in 衝突排除)" {
   let if_elem = {
     ..el("if", TStr, long=LBool(true), long_prefix="", long_eq_sep=EsRequire)
   }

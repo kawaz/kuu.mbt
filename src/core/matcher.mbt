@@ -447,8 +447,12 @@ fn walk_short(
             // DESIGN §7.2 / DR-096 §2/§3.1: `short_attached_value:"deny"` withholds EVERY in-cluster
             // attach reading (mid-token AND full-tail, cluster-tail included) — the mechanism itself
             // is gated, not just a lone-entry case. `"require"` does NOT gate this loop (attach stays
-            // allowed, incl. cluster-tail attach, DR-096 §3.1).
+            // allowed, incl. cluster-tail attach, DR-096 §3.1). `"last_only"` (kawaz 裁定 2026-07-12)
+            // withholds every MID-token split (`j < body.length()`) — only the FULL-TAIL "丸取り"
+            // reading remains, so this entry never contributes to a split-point ambiguity (GNU
+            // getopt 慣習: 値オプションに達したら以降の文字列全部がその値、DR-096 §2)。
             if e.short_attached_value != AtDeny &&
+              (e.short_attached_value != AtLastOnly || j == body.length()) &&
               (combine || j == body.length()) {
               let vstr = chars_to_str(body, vstart, j)
               match short_val(e, vstr, pos) {
