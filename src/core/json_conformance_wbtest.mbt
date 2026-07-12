@@ -4780,7 +4780,14 @@ fn known_divergences() -> Array[String] {
 /// `definitions.types[number]` factory-config gap — all previously-frozen skip entries are removed
 /// since every fixture now decodes and runs losslessly (full conformance, no known skip gaps).
 fn expected_skips() -> Array[(String, String)] {
-  []
+  // DR-098 (tty 値源化) の fixture 2 本は spec 側に land 済みだが kuu.mbt の tty 実装
+  // (tty_provider / wire 属性 tty / ladder 5 位) が未着手のため decode 不能 —
+  // 実装 land と同時にこの 2 エントリを空へ戻す (issue: spec 2026-07-07-tty-value-as-injected-source は
+  // DR-098 起案で close 済み、実装追跡は本エントリ自体が可視化の役割を持つ)。
+  [
+    ("value-sources/tty-ladder.json", "option has unsupported key 'tty'"),
+    ("definition-error/tty-non-bool.json", "option has unsupported key 'tty'"),
+  ]
 }
 
 ///|
