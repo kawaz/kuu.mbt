@@ -1579,7 +1579,7 @@ test "DR-066 §4: a Pending-starvation missing_operand Error inside a nested com
 test "KNOWN GAP: IdxRepeat greedy-max has no downstream backtrack for a following mandatory positional" {
   let root : Scope = {
     greedy: [],
-    positional: [IdxRepeat("g", StrArg("x", []), 1), StrArg("tail", [])],
+    positional: [IdxRepeat("g", StrArg("x", []), 1, None), StrArg("tail", [])],
     entities: [],
     constraints: [],
   }
@@ -1598,6 +1598,84 @@ test "KNOWN GAP: IdxRepeat greedy-max has no downstream backtrack for a followin
       fail(
         "gap behavior changed: expected Failure (tail starved, no backtrack) — if this now succeeds, the backtrack gap is fixed; update this test and the issue accordingly",
       )
+  }
+}
+
+///|
+/// 保証 (issue 2026-07-13-positional-group-trailing-missing-operand): `budget=Some(0)` (a bounded
+/// `repeat:{min:1,max:1}` spec lowers to this, installer.mbt's BGroup case) does NOT hit the
+/// KNOWN GAP above — it never over-consumes in the first place, so no backtrack is needed to
+/// correct it. Same shape as the KNOWN GAP test (permissive head `StrArg("x")` immediately
+/// followed by a mandatory `tail`) but with the budget field set and an argv sized to exactly
+/// `min + tail's own 1 token = 2`: exactly 1 rep is taken (not greedy-max over everything), so
+/// `tail` gets the 2nd token instead of starving — mirrors the fixture's `["a","b"]` shape
+/// exactly (`fixtures/repeat-parse/group-trailing-positional.json::group-then-scalar-consumed`).
+test "IdxRepeat budget=Some(0): stops after min reps, does not starve a following mandatory positional" {
+  let root : Scope = {
+    greedy: [],
+    positional: [
+      IdxRepeat("g", StrArg("x", []), 1, Some(0)),
+      StrArg("tail", []),
+    ],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["a", "b"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      let mut g_count = 0
+      let mut tail_val : String? = None
+      for b in bs {
+        if b.key == "x" {
+          g_count = g_count + 1
+        }
+        if b.key == "tail" {
+          tail_val = Some(value_str(b.value))
+        }
+      }
+      // budget=0 → exactly 1 rep (min), NOT greedy-max over both tokens.
+      assert_eq(g_count, 1)
+      assert_eq(tail_val, Some("b"))
+    }
+    other =>
+      fail(
+        "expected Success (budget bounds the repeat so tail no longer starves), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 保証: `budget=Some(1)` (a bounded `repeat:{min:1,max:2}` spec) allows up to `min+budget=2`
+/// reps and stops there — confirms budget is a genuine upper bound (not just an on/off switch
+/// at 0) by observing how much the repeat consumes before yielding to `tail`.
+test "IdxRepeat budget=Some(1): consumes up to min+budget=2 reps, leaves the rest for tail" {
+  let root : Scope = {
+    greedy: [],
+    positional: [
+      IdxRepeat("g", StrArg("x", []), 1, Some(1)),
+      StrArg("tail", []),
+    ],
+    entities: [],
+    constraints: [],
+  }
+  let o = parse(ScopeNode(root), ["a", "b", "c"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      let mut g_count = 0
+      let mut tail_val : String? = None
+      for b in bs {
+        if b.key == "x" {
+          g_count = g_count + 1
+        }
+        if b.key == "tail" {
+          tail_val = Some(value_str(b.value))
+        }
+      }
+      assert_eq(g_count, 2)
+      assert_eq(tail_val, Some("c"))
+    }
+    other => fail("expected Success, got " + render_outcome(other))
   }
 }
 

@@ -554,7 +554,8 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         []
       }
-    IdxRepeat(label, head, min) => idx_repeat_eval(label, head, min, ctx, pos)
+    IdxRepeat(label, head, min, budget) =>
+      idx_repeat_eval(label, head, min, budget, ctx, pos)
     BoundedTail(head, budget, _) =>
       // off-spine fallback: degrade to the nested-Opt form (0..budget heads).
       eval(bounded_opt(head, budget), ctx, pos)
@@ -897,13 +898,20 @@ fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] 
 }
 
 ///|
-/// Greedy-max named indexed-array repeat (spec DR-043): consumes as many reps
-/// as the head allows, deterministically (the split is bounded by the head's
-/// Reject / exact mismatch, no downstream backtrack).
+/// Named indexed-array repeat (spec DR-043): consumes reps deterministically (the split is
+/// bounded by the head's Reject / exact mismatch, no downstream backtrack — see node.mbt's
+/// `IdxRepeat` doc comment for the still-open unbounded-case GAP).
+///
+/// `budget` (issue 2026-07-13-positional-group-trailing-missing-operand) caps reps beyond
+/// `min`: `None` = unbounded greedy-max (consumes as many reps as the head allows, the
+/// original behavior), `Some(b)` = stop once `rep >= min + b` (a bounded `repeat: {min,
+/// max}` spec, `b = max - min`) so a trailing mandatory positional isn't starved by a
+/// permissive head over-consuming past its declared upper bound.
 fn idx_repeat_eval(
   label : String,
   head : Node,
   min : Int,
+  budget : Int?,
   ctx : Ctx,
   pos : Int,
 ) -> Array[Branch] {
@@ -912,12 +920,20 @@ fn idx_repeat_eval(
   let mut rep = 0
   let mut go = true
   while go {
-    let p2 = idx_one(head, label, rep, ctx, cur, acc)
-    if p2 > cur {
-      cur = p2
-      rep = rep + 1
-    } else {
+    let at_budget = match budget {
+      Some(b) => rep >= min + b
+      None => false
+    }
+    if at_budget {
       go = false
+    } else {
+      let p2 = idx_one(head, label, rep, ctx, cur, acc)
+      if p2 > cur {
+        cur = p2
+        rep = rep + 1
+      } else {
+        go = false
+      }
     }
   }
   if rep < min {
@@ -931,9 +947,13 @@ fn idx_repeat_eval(
     }
   } else {
     let out : Array[Branch] = [Accept(cur, acc)]
-    if in_complete(ctx) {
-      // complete: min is met but one MORE rep is still typable — union in
-      // the head's boundary candidates (DR-060 §1 全生存 partial の和集合).
+    let more_typable = match budget {
+      Some(b) => rep < min + b
+      None => true
+    }
+    if in_complete(ctx) && more_typable {
+      // complete: min is met but one MORE rep is still typable (and budget allows it) —
+      // union in the head's boundary candidates (DR-060 §1 全生存 partial の和集合).
       for b in idx_head_pendings(head, ctx, cur, acc) {
         out.push(b)
       }

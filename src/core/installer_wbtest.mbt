@@ -393,6 +393,58 @@ test "repeat installer: bounded max lowers to min heads + BoundedTail (no Ref)" 
   assert_eq(ent.accum, Some("flatten"))
 }
 
+// ── BGroup + bounded repeat → IdxRepeat budget (issue
+// 2026-07-13-positional-group-trailing-missing-operand) ─────
+
+///|
+/// 保証: BGroup (named group repeat) の bounded (`max` 有限) spec は `IdxRepeat` の 4th field
+/// (budget = `max - min`) に反映される — 以前はこの field 自体が存在せず、`lower_positional` の
+/// BGroup ケースが `elem_repeat(e).max` を丸ごと無視して常に unbounded (budget=None) として lower
+/// していたため、`repeat:{min:1,max:1}` のような bounded named-group でも greedy-max-forever に
+/// なり、後続 positional のぶんまで over-consume していた
+/// (`fixtures/repeat-parse/group-trailing-positional.json` が end-to-end で pin する現象、本
+/// wbtest は lowering 層の budget 計算そのものを直接固定する — fixture が見るのは parse 結果だけで
+/// この中間表現は見えない)。
+test "BGroup installer: bounded max (min:1,max:1) lowers IdxRepeat's budget field to Some(0)" {
+  let grp : ElemDef = {
+    ..el("grp", TStr),
+    repeat: Some({ min: 1, max: Some(1), lazy_: false }),
+    body: BGroup([el("gflag", TStr)]),
+  }
+  let def : Definition = { ..empty_def(), positionals: [grp, el("ctrl", TStr)] }
+  let sc = ok_scope(def, all_installers())
+  assert_eq(sc.positional.length(), 2)
+  assert_eq(sc.positional[0], IdxRepeat("grp", StrArg("gflag", []), 1, Some(0)))
+  assert_eq(sc.positional[1], StrArg("ctrl", []))
+}
+
+///|
+/// 保証: budget は `max - min` (min:1,max:3 → budget=Some(2)) — 0 固定ではなく一般の bounded 範囲を
+/// 正しく計算することを確認する (上のケースだけだと budget が常に 0 になる特殊化バグを見逃しうる)。
+test "BGroup installer: bounded max (min:1,max:3) lowers IdxRepeat's budget field to Some(2)" {
+  let grp : ElemDef = {
+    ..el("grp", TStr),
+    repeat: Some({ min: 1, max: Some(3), lazy_: false }),
+    body: BGroup([el("gflag", TStr)]),
+  }
+  let def : Definition = { ..empty_def(), positionals: [grp] }
+  let sc = ok_scope(def, all_installers())
+  assert_eq(sc.positional.length(), 1)
+  assert_eq(sc.positional[0], IdxRepeat("grp", StrArg("gflag", []), 1, Some(2)))
+}
+
+///|
+/// 保証: repeat 属性を持たない BGroup (`elem_repeat(e) is None`) は従来どおり budget=None
+/// (min=0 の UNBOUNDED) — 本修正が「repeat 無指定 BGroup」の既存挙動を変えないことを固定する
+/// (対極確認、self-written-rule-blind-spots の「新規追加時は既存の無変更ケースも確認する」線)。
+test "BGroup installer: no repeat spec keeps IdxRepeat unbounded (min:0, budget:None)" {
+  let grp : ElemDef = { ..el("grp", TStr), body: BGroup([el("gflag", TStr)]) }
+  let def : Definition = { ..empty_def(), positionals: [grp] }
+  let sc = ok_scope(def, all_installers())
+  assert_eq(sc.positional.length(), 1)
+  assert_eq(sc.positional[0], IdxRepeat("grp", StrArg("gflag", []), 0, None))
+}
+
 // ── multiple の collector 属性 (DR-036, issue 2026-07-09-dec-multiple-collector-decode) ─────
 
 ///|

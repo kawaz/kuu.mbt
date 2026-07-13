@@ -310,8 +310,17 @@ pub(all) enum Node {
   /// the result builder yields an ARRAY of one element per firing (multiple:"append").
   /// `min` is the required rep count (0 = may be empty). Greedy-max is the 取り分選好
   /// default; for this raw pattern the split is bounded by the head's Reject / exact, so
-  /// no downstream backtrack is needed (DR-043 §取り分の選好, 大域完全経路).
-  IdxRepeat(String, Node, Int)
+  /// no downstream backtrack is needed (DR-043 §取り分の選好, 大域完全経路) for the
+  /// UNBOUNDED case. The 4th field `budget` (issue
+  /// 2026-07-13-positional-group-trailing-missing-operand) caps the ADDITIONAL reps beyond
+  /// `min` (same seat as `BoundedTail`'s 2nd field, `max - min`): `None` = unbounded (the
+  /// original greedy-max-forever behavior, unchanged), `Some(b)` = stop once `rep >= min +
+  /// b`, matching a bounded `repeat: {min, max}` spec exactly instead of silently degrading
+  /// every BGroup repeat to unbounded regardless of a declared `max`. This does NOT add
+  /// backtrack (the KNOWN GAP in `eval_wbtest.mbt`'s "IdxRepeat greedy-max has no downstream
+  /// backtrack" test is still open for the unbounded case) — a bounded head simply never
+  /// over-consumes in the first place, so no backtrack is needed to correct it.
+  IdxRepeat(String, Node, Int, Int?)
   /// an OPTION's repeat value slot (DR-078 §1 option-level repeat, new capability): wraps ONLY
   /// the repeat TAIL (`Ref`/`Many`/`BoundedTail`, the same node `lower_repeat_head` builds for a
   /// positional) — the trigger/marker prefix ahead of it in the satellite's `Seq` stays plain. A

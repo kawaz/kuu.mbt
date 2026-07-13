@@ -1190,20 +1190,26 @@ fn lower_positional(
           lower_repeat_head(e, Or(nodes), registry, out)
         }
         BGroup(items) => {
-          // MDR-004 §3 "BGroup + repeat": IdxRepeat(label=name, head=Seq(inner cells), min) に lower。
-          // スコープ限定: UNBOUNDED (max:null) のみ — IdxRepeat(String, Node, Int) は budget を
-          // 持たず bounded を表現できない (bounded named-group が来たら budget 拡張が別途要る)。
+          // MDR-004 §3 "BGroup + repeat": IdxRepeat(label=name, head=Seq(inner cells), min,
+          // budget) に lower。budget (issue
+          // 2026-07-13-positional-group-trailing-missing-operand) = `max - min` (bounded の
+          // とき) / `None` (max:null の UNBOUNDED、または repeat 属性自体が無い場合 —
+          // どちらも従来どおり greedy-max-forever)。以前は `elem_repeat(e).max` を丸ごと無視
+          // しており、`repeat:{min:1,max:1}` のような bounded named-group でも常に unbounded
+          // として評価されてトークンを over-consume していた (`fixtures/repeat-parse/group-
+          // trailing-positional.json` が pin する — group の直後に別 positional が続く形だけ
+          // で顕在化する)。
           //
           // bounded-head 前提 (issue 2026-07-08 greedy-once-and-idxrepeat-premises §2, kawaz 裁定
           // 待ち — installer 規約としての明文化を選択、eval 側への backtrack 追加は見送り): `idx_repeat_eval`
           // (eval.mbt) は宣言上 deterministic な greedy-max で、下流失敗時の後退 (regex backtracking,
           // DR-043 の通常 repeat が `ref_choice` で持つ機構) を持たない。head が permissive (bare string
-          // primitive 等、無制限にどんなトークンでも消費できる) だと、後続の必須 positional のぶんまで
-          // greedy-max に食われて starve しうる (backtrack が無いので回復しない) — 通常 repeat の
-          // backtrack.json fixture が固定する「縮小再分割」の保証は IdxRepeat には及ばない。この lowering
-          // (named-group repeat) を書く際は head の先頭に明示的な trigger (Exact 等) を持たせる、または
-          // 末尾に必須 positional を続けない設計にすること。現状 conformance fixture に BGroup+repeat の
-          // ケースが無いため実害未確認 (再現は eval_wbtest.mbt の低レベル Node 直接構築テストのみ)。
+          // primitive 等、無制限にどんなトークンでも消費できる) だと、budget が None (UNBOUNDED) の
+          // ときは後続の必須 positional のぶんまで greedy-max に食われて starve しうる (backtrack が
+          // 無いので回復しない) — 通常 repeat の backtrack.json fixture が固定する「縮小再分割」の
+          // 保証は IdxRepeat には及ばない。budget が Some (bounded) のときは over-consume 自体が
+          // 起きないためこの GAP を踏まない。UNBOUNDED のまま末尾に必須 positional を続ける設計を
+          // 書く際は head の先頭に明示的な trigger (Exact 等) を持たせること。
           let head = if items.length() == 1 {
             elem_head(items[0])
           } else {
@@ -1213,11 +1219,19 @@ fn lower_positional(
             }
             Seq(nodes)
           }
-          let min = match elem_repeat(e) {
-            Some(spec) => spec.min
-            None => 0
+          let (min, budget) = match elem_repeat(e) {
+            Some(spec) =>
+              (
+                spec.min,
+                match spec.max {
+                  Some(mx) =>
+                    Some(if mx - spec.min < 0 { 0 } else { mx - spec.min })
+                  None => None
+                },
+              )
+            None => (0, None)
           }
-          out.push(IdxRepeat(e.name, head, min))
+          out.push(IdxRepeat(e.name, head, min, budget))
         }
         BCell =>
           match e.ref_target {
@@ -2980,7 +2994,7 @@ fn head_progresses(
     // `keep` (true) is a 0-token Accept (same standing as `Bind`/`EffMark` below).
     DdMatchSat(_, _, self_keep, _) => !self_keep
     NoDashStr(_) => true // dash-reject でなければ 1 token 消費
-    IdxRepeat(_, _, _) => true // 名前付き indexed repeat は head を消費
+    IdxRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
     Bind(_, _) => false // 0-token
