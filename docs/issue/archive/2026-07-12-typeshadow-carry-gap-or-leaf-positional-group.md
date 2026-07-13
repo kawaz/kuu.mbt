@@ -1,6 +1,6 @@
 ---
 title: dec_or_leaf の型 shadow 配線が int_round のみ — 未配線 config が 4 つに拡大
-status: open
+status: resolved
 category: task
 created: 2026-07-12T20:21:51+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-13T10:21:23+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented: dec_or_leaf を dec_positional と同じ TypeShadow 全 7 フィールド carry に一般化 (kuu.mbt commit 77dc81ad)。spec fixture value-typing/or-leaf-factory-config.json (case 1/2/4) が pin、green 確認済み。positional group 側は調査で配線済みと判明し scope から除外済み"]
 blocked_by:
 origin: 自リポ TODO
 ---

@@ -1,6 +1,6 @@
 ---
 title: plain bool (TBool) への暗黙 default:false 注入は spec 違反 — 未発火は absent が正
-status: open
+status: resolved
 category: bug
 created: 2026-07-13T09:38:57+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-13T10:21:23+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented: plain bool への暗黙 default:false 注入を除去 (同 commit 77dc81ad)。ただし issue の修正方針節 (ensure_entity の条件を絞るだけ) は誤りで、normalize_option が TFlag→TBool を先に消すため単純適用では flag 系 65 件が回帰 — 実際の修正は flag preset の default:false 実体化を normalize_option (TFlag→TBool 書き換えと同じ場所 = LOWERING §A.5 の展開点) へ前倒しする形。ensure_entity の TFlag 分岐は未正規化経路 (or 枝 leaf の type:flag 等) の safety net として残置。spec fixture 4 case (or-leaf 3/5 + positional-group 6/7) green、既存 543 cases flip なし、requires-bool-target 系 green 個別確認済み"]
 blocked_by:
 origin: kuu (spec リポ)
 ---
