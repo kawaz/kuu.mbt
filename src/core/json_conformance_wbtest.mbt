@@ -2773,15 +2773,103 @@ fn dec_or_leaf(
   }
   check_reserved_name(name, "or branch leaf")
   // DR-089 §2: type 省略 = none の糖衣 (or branch leaf も他の要素種と同じ規約)。
-  let (ty, int_round_from_shadow) = match jf_str(o, "type") {
+  // issue typeshadow-carry-gap-or-leaf-positional-group: TypeShadow の全フィールドを carry する
+  // (dec_positional と同じ一般化パターン — base/int_round だけに絞る理由は無い、DESIGN §13.3
+  // 「全区分一様」に or 枝の葉も従う)。
+  let (
+    ty,
+    int_round_from_shadow,
+    base_prefix_from_shadow,
+    bool_config_from_shadow,
+    is_tty_from_shadow,
+    tty_stream_from_shadow,
+    tty_cygwin_from_shadow,
+  ) = match jf_str(o, "type") {
     Some(t) =>
       match shadows.get(t) {
-        Some(sh) => (sh.base, sh.int_round)
-        None => (dec_ty(t), RError)
+        Some(sh) =>
+          (
+            sh.base,
+            sh.int_round,
+            sh.allow_base_prefix,
+            sh.bool_config,
+            sh.is_tty,
+            sh.tty_stream,
+            sh.tty_cygwin,
+          )
+        None =>
+          (dec_ty(t), RError, false, bool_config_canonical(), false, None, true)
       }
-    None => (TNone, RError)
+    None => (TNone, RError, false, bool_config_canonical(), false, None, true)
   }
-  pos(name, ty, int_round=int_round_from_shadow)
+  pos(
+    name,
+    ty,
+    int_round=int_round_from_shadow,
+    allow_base_prefix=base_prefix_from_shadow,
+    bool_config=bool_config_from_shadow,
+    is_tty=is_tty_from_shadow,
+    tty_stream=tty_stream_from_shadow,
+    tty_cygwin=tty_cygwin_from_shadow,
+  )
+}
+
+///|
+/// issue typeshadow-carry-gap-or-leaf-positional-group: `dec_or_leaf` は TypeShadow の 7
+/// フィールド全てを carry する (base/int_round だけに絞っていた旧実装への回帰防止)。
+/// `fixtures/value-typing/or-leaf-factory-config.json` は bool_config / allow_base_prefix の
+/// carry を end-to-end (JSON result) で pin 済みだが、tty preset 由来の is_tty/tty_stream/
+/// tty_cygwin は同 fixture が触れていない軸 — 本 whitebox test で `dec_or_leaf` の返り値
+/// (ElemDef) を直接検査し、shadow の非 canonical 値 (is_tty=true, tty_stream=Some("stderr"),
+/// tty_cygwin=false, int_round=RFloor, allow_base_prefix=true, 非 canonical bool_config) が
+/// 1 つも canonical default に落ちずそのまま or leaf へ届くことを固定する。
+test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix/bool_config/is_tty/tty_stream/tty_cygwin) が or leaf に carry される" {
+  let shadows : Map[String, TypeShadow] = Map([])
+  let custom_bool_config : BoolConfig = {
+    true_values: ["on"],
+    false_values: ["off"],
+    case_insensitive: false,
+  }
+  shadows.set("dialect", {
+    base: TBool,
+    int_round: RFloor,
+    allow_base_prefix: true,
+    bool_config: custom_bool_config,
+    is_tty: true,
+    tty_stream: Some("stderr"),
+    tty_cygwin: false,
+  })
+  let src =
+    #|{"type": "dialect", "name": "leaf"}
+  let j = @json.parse(src)
+  let e = dec_or_leaf(j, shadows)
+  assert_eq(e.name, "leaf")
+  assert_eq(e.ty, TBool)
+  assert_eq(e.int_round, RFloor)
+  assert_eq(e.allow_base_prefix, true)
+  assert_eq(e.bool_config, custom_bool_config)
+  assert_eq(e.is_tty, true)
+  assert_eq(e.tty_stream, Some("stderr"))
+  assert_eq(e.tty_cygwin, false)
+}
+
+///|
+/// 対極 (shadow に無い bare 型名の場合): TypeShadow を経由しない or leaf は dec_ty の canonical
+/// 型解決 + RError/false/bool_config_canonical()/false/None/true の canonical default に落ちる
+/// ことの固定 (carry すべきものが無い場合に誤って何かを持ち込んでいないかの反証チェック)。
+test "dec_or_leaf: shadow に無い bare 型名 (\"int\") は canonical default (int_round=RError 等) に落ちる" {
+  let shadows : Map[String, TypeShadow] = Map([])
+  let src =
+    #|{"type": "int", "name": "leaf"}
+  let j = @json.parse(src)
+  let e = dec_or_leaf(j, shadows)
+  assert_eq(e.ty, TInt)
+  assert_eq(e.int_round, RError)
+  assert_eq(e.allow_base_prefix, false)
+  assert_eq(e.bool_config, bool_config_canonical())
+  assert_eq(e.is_tty, false)
+  assert_eq(e.tty_stream, None)
+  assert_eq(e.tty_cygwin, true)
 }
 
 ///|
@@ -6106,6 +6194,53 @@ test "dec_definition: an unknown config key is a decode-time reject" {
 /// effects にも現れない (team-lead 裁定 2026-07-11: 観測は ParserContext/explains 層の管掌、値
 /// 空間なしの set エントリを発明しない — 内部表現は `flag_bare_true_variant` 再利用の Set +
 /// VBool(true) placeholder のままだが、`proj_effects_ex` 側で none cell を除外する)。
+
+///|
+/// issue group-inner-bool-default-false-duplicate-top-level: `ensure_entity` (installer.mbt) の
+/// 暗黙 default:false 注入は flag preset (`type:"flag"`、TFlag) 固有であり、plain bool
+/// (`type:"bool"`、TBool) は未発火なら他の値型と同様 absent (`Entity.default_values == None`,
+/// DR-099 §2 の `?? absent` 終端)。`normalize_option` (installer.mbt) が TFlag→TBool の書き換え
+/// と同じ場所で default:false を前倒し確定させるため、`ensure_entity` 到達時点では両者とも
+/// `Ty::TBool` に揃っているにも関わらず default_values が食い違うことを Entity レベルで直接
+/// 検査する — `fixtures/value-typing/{or-leaf-factory-config,positional-group-factory-config}.json`
+/// は同じ回帰を JSON result (or 枝内 / group 内側) の断面で pin しているが、本 test は
+/// `Scope.entities` という別の断面 (内部表現) から同じ性質を固定する。
+test "ensure_entity: plain TBool は Entity.default_values=None (absent)、flag preset (TFlag→TBool) は Some([false]) を維持する" {
+  let src =
+    #|{"options": [
+    #|  {"name": "plain", "type": "bool", "long": true},
+    #|  {"name": "flg", "type": "flag", "long": true}
+    #|]}
+  let defo = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("bad json fixture")
+  }
+  let def = dec_definition(defo)
+  let scope = match parse_definition(def, full_installers()) {
+    Ok(sc) => sc
+    Err(errs) => abort("definition rejected: " + deferrs_str(errs))
+  }
+  let mut plain_found = false
+  let mut flg_found = false
+  for ent in scope.entities {
+    if ent.name == "plain" {
+      plain_found = true
+      assert_eq(ent.default_values, None)
+    }
+    if ent.name == "flg" {
+      flg_found = true
+      assert_eq(ent.default_values, Some([VBool(false)]))
+    }
+  }
+  if !plain_found {
+    abort("entity 'plain' not found in scope.entities")
+  }
+  if !flg_found {
+    abort("entity 'flg' not found in scope.entities")
+  }
+}
+
+///|
 test "DR-089 end-to-end: an omitted-type option decodes to none, fires as a pure trigger, absent from result" {
   let src =
     #|{

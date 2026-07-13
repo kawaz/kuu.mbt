@@ -868,8 +868,24 @@ fn normalize_option(e : ElemDef) -> ElemDef {
     normalize_dd_name(e)
   } else {
     let (longs, vars) = resolve_long(e.long, e.name, e.ty)
+    // TFlag は TBool へ書き換わり `ensure_entity` 到達時には元 TFlag だったかを判別できなくなる
+    // ため、flag preset の default:false (LOWERING §A.5) はこの型差し替えと同じ場所で確定させる
+    // (issue group-inner-bool-default-false-duplicate-top-level: plain TBool は暗黙 default を
+    // 持たないので `ensure_entity` 側の注入対象を絞る一方、flag 由来の TBool は preset を維持する
+    // 必要がある — 明示 default があればそちらが勝つのは変わらない)。
+    let default_values2 = if e.ty == TFlag && e.default_values is None {
+      Some([VBool(false)])
+    } else {
+      e.default_values
+    }
     let ty2 = if e.ty == TFlag { TBool } else { e.ty }
-    { ..e, ty: ty2, long: LList(longs), variants: vars }
+    {
+      ..e,
+      ty: ty2,
+      default_values: default_values2,
+      long: LList(longs),
+      variants: vars,
+    }
   }
 }
 
@@ -1395,12 +1411,21 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   // 同型 config seat (DR-050 §3): config_file 要素が存在すれば全 value cell に config seat を宣言
   // (自身が config_file の要素は循環禁止で除く)。config_key は path override; None = 同型。
   let config_seat = has_cf && !e.is_config_file
-  // flag/bool preset default (LOWERING §A.5 / DR-051 §2): a TFlag or DR-074 TBool cell presets
-  // default:false (未 fire でも false に落ちる)。明示 default があればそちらが勝つ (e.g. ssl の default:true)。
+  // flag preset default (LOWERING §A.5 / DR-051 §2): a TFlag cell presets default:false (未 fire
+  // でも false に落ちる)。ただし `normalize_option` (installer.mbt) が正規化の一環で TFlag を
+  // TBool へ既に書き換え済みなので、`ensure_entity` 到達時点の `e.ty` が TFlag のままであることは
+  // 実質無い (definitions.types にも flag factory は存在しないため shadow 経由でも生じない) —
+  // 実際の flag preset 注入は `normalize_option` 側 (TFlag→TBool 書き換えと同じ場所) で確定済み。
+  // ここに `e.ty == TFlag` を残すのは Ty::TFlag という型タグ自体の意味論 (「この型を持つセルは
+  // default:false」) を明示するため — TCount が ensure_entity まで自分の意味論を保持するのと
+  // 対称。plain TBool (definitions.types の `bool_parser` factory 由来含む) は暗黙 default を
+  // 持たない — 未発火なら他の値型と同様に absent (issue
+  // group-inner-bool-default-false-duplicate-top-level, DR-099 §2 の `?? absent` 終端と整合)。
+  // 明示 default があればそちらが勝つのは変わらない (e.g. ssl の default:true)。
   //
   // count preset default (DR-077 §3): a TCount cell presets default:0, mirroring flag's
-  // default:false — but unlike TBool (画一的ルールが型全体に効く), an ORDINARY TNum cell must NOT
-  // get an uninvited default:0 (a bare numeric slot commonly has no sensible default). This is
+  // default:false — an ORDINARY TNum cell must NOT get an uninvited default:0 (a bare numeric
+  // slot commonly has no sensible default). This is
   // exactly why `normalize_option` does NOT collapse `TCount → TNum` early (see its comment) — the
   // `TCount` tag survives the whole chain so THIS is the one place that can still tell a count cell
   // apart from an ordinary number cell. The `TNum` collapse itself happens right here too (`ty2`
@@ -1421,7 +1446,7 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     None =>
       if e.is_tty {
         None
-      } else if e.ty == TFlag || e.ty == TBool {
+      } else if e.ty == TFlag {
         Some([VBool(false)])
       } else if e.ty == TCount {
         Some([VNum(0.0)])
