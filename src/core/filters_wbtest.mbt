@@ -175,16 +175,6 @@ test "filter_increment adds 1 to a number, rejects args and non-numbers" {
 }
 
 ///|
-/// 保証: 未知の filter 名は "unknown_filter" reason で Err (DR-010 "登録済みかどうか" の機械判定 — DR-054
-/// definition-error 系の unknown-vocab と同族だが、こちらは filter chain 実行時の reason)。
-test "apply_filter_chain surfaces an unregistered name as unknown_filter" {
-  match apply_filter_chain(chain(["bogus"]), VNum(1.0)) {
-    Err((reason, _)) => assert_eq(reason, "unknown_filter")
-    Ok(_) => fail("expected Err")
-  }
-}
-
-///|
 /// 保証: chain は宣言順にそのまま流れる (DR-034 合成順「後ろほど優先」と同じく、chain 内は宣言順の
 /// 素通し — 上書きの概念はない)。trim → in_range で "  5  " → 5.0 の in_range 検証、という組合せは
 /// 現実には型が合わない (trim は文字列専用) ので、ここでは number 系だけを連結して合成順を固定する:

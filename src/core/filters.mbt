@@ -392,15 +392,19 @@ pub fn parse_filter_shorthand(s : String) -> FilterSpelling {
 /// (`json_conformance_wbtest.mbt`'s `dec_filter_chain`), so this function never re-parses a spelling
 /// string (issue filter-spelling-inband-encoding-retyping — replaces the earlier U+E000 PUA-tag
 /// single-string encoding that let an object-form arg containing that exact code point corrupt the
-/// split; a structured `args : Array[String]` has no such in-band collision to begin with). An
-/// unknown filter name or a filter's own Err both surface as `Err(reason, message)` — `reason` is a
-/// machine-readable DR-066-style identifier the caller threads into a ParseError (mirrors
-/// `apply_transform`'s `filter_rejected` fallback shape for its own defensive/definition-error
-/// paths — DR-095 §5's SCH-Q4 sole fallback for a reason not in its declared vocabulary),
-/// generalized: `unknown_filter` for an unregistered name; a filter's own Err already carries
-/// whatever reason its `FilterDescriptor.run` chose (its DR-095 declared vocabulary for a
-/// correctly-defined failure, `filter_rejected` fallback for a filter-definition-bug path — see
-/// `FilterDescriptor`'s doc comment), so this loop threads it through unchanged.
+/// split; a structured `args : Array[String]` has no such in-band collision to begin with). A
+/// filter's own Err surfaces as `Err(reason, message)` — `reason` is a machine-readable DR-066-style
+/// identifier the caller threads into a ParseError (mirrors `apply_transform`'s `filter_rejected`
+/// fallback shape for its own defensive/definition-error paths — DR-095 §5's SCH-Q4 sole fallback
+/// for a reason not in its declared vocabulary); a filter's own Err already carries whatever reason
+/// its `FilterDescriptor.run` chose (its DR-095 declared vocabulary for a correctly-defined failure,
+/// `filter_rejected` fallback for a filter-definition-bug path — see `FilterDescriptor`'s doc
+/// comment), so this loop threads it through unchanged.
+///
+/// DR-101: an unregistered filter name is unreachable — `installer.mbt`'s `collect_unknown_filter`
+/// definition-time gate has already reject-ed it as `kind=unknown-vocab`. Falls back to a no-op
+/// pass-through here (same defensive posture as `apply_cell_filter_chain`'s array-side counterpart,
+/// both guarded by a decode-time vocab check that runs before this ever sees the name).
 pub fn apply_filter_chain(
   chain : Array[FilterSpelling],
   v : Value,
@@ -408,7 +412,7 @@ pub fn apply_filter_chain(
   let mut current = v
   for fs in chain {
     match lookup_filter(fs.name) {
-      None => return Err(("unknown_filter", "unknown filter '" + fs.name + "'"))
+      None => ()
       Some(d) =>
         match (d.run)(current, fs.args) {
           Ok(v2) => current = v2

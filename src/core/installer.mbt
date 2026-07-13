@@ -3567,6 +3567,13 @@ fn collect_none_value_source_decl(
 /// is also what lets `filters.mbt`'s `apply_cell_filter_chain` (called from `build_result`, deep
 /// inside value resolution) skip an unregistered name silently instead of erroring: by the time it
 /// runs, this gate has already guaranteed every name it sees is valid.
+///
+/// DR-101 §3 判定順: 「両 registry どちらにも登録されていない綴り」は本 gate ではなく
+/// `collect_unknown_filter` が unknown-vocab として先に (一次判定) reject する。本 gate は
+/// scalar registry (T→T, `lookup_filter`) には載るが ARRAY registry には無い綴り — つまり
+/// 「別 registry には載るが本席の要求シグネチャに合わない」層違い (二次判定) — だけを
+/// invalid-range として拾う。両方に無い綴りを本 gate が invalid-range で拾ってしまうと
+/// unknown-vocab との二重報告が発生するため、条件で除外する。
 fn collect_invalid_accum_cell_filter(
   def : Definition,
   out : Array[DefError],
@@ -3578,7 +3585,11 @@ fn collect_invalid_accum_cell_filter(
   fn check(e : ElemDef) -> Unit {
     if is_accum_elem(e) {
       for fs in e.cell_filters {
-        if lookup_array_filter(fs.name) is None {
+        // DR-101 §3: 「scalar registry には載るが ARRAY registry には無い」場合のみ層違い判定
+        // (unknown-vocab は `collect_unknown_filter` が一次判定で拾うので、両方に無いケースは
+        // ここでは無視する)。
+        if lookup_array_filter(fs.name) is None &&
+          lookup_filter(fs.name) is Some(_) {
           out.push(
             def_err(
               e.name,
@@ -3602,6 +3613,91 @@ fn collect_invalid_accum_cell_filter(
   }
   for c in def.commands {
     collect_invalid_accum_cell_filter(c.body, out)
+  }
+}
+
+///|
+/// DR-101: filter chain 3 属性 (`value_filters` / `piece_filters` / `cell_filters` の非 accum 位置)
+/// に指定された filter 名が filters registry (T→T scalar, `lookup_filter`) の owns 集合に登録されて
+/// いない場合は definition-error (kind=`unknown-vocab`)。DR-042 §5 の installer / filter registry
+/// 同格原則により、long variant DSL の update transform 名検査 (`classify_long_spelling` の
+/// DR-077 §2 適用) と同族の判定。
+///
+/// accum 位置の cell_filters (multiple/repeat/separator 宣言あり) は判定順が異なる (DR-101 §3):
+/// - **一次判定** (本 gate): scalar registry (`lookup_filter`) にも ARRAY registry
+///   (`lookup_array_filter`) にも載らない綴りを unknown-vocab で reject する。
+/// - **二次判定** (`collect_invalid_accum_cell_filter`): scalar registry に載るが ARRAY registry
+///   に無い綴りを invalid-range (層違い) で reject する。
+///
+/// この判定順により、`filters.mbt` の `apply_filter_chain` に到達する時点で全 filter 名が既に
+/// 登録済み保証となり、runtime `unknown_filter` reason は wire から消滅する (DR-101 §1)。
+fn collect_unknown_filter(def : Definition, out : Array[DefError]) -> Unit {
+  fn is_accum_elem(e : ElemDef) -> Bool {
+    e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
+  }
+
+  fn push_unknown(
+    elem_name : String,
+    phase : String,
+    fs_name : String,
+  ) -> Unit {
+    out.push(
+      def_err(
+        elem_name,
+        DUnknownVocab,
+        "filter '" +
+        fs_name +
+        "' in " +
+        phase +
+        " is not registered in the filters registry (DR-101)",
+        "use a registered filter name (see DR-095 §3 canonical filter vocabulary) or remove this chain entry",
+      ),
+    )
+  }
+
+  fn check(e : ElemDef) -> Unit {
+    // value_filters (T→T, scalar filter registry): 綴り不在は unknown-vocab (DR-101 §1)
+    for fs in e.value_filters {
+      if lookup_filter(fs.name) is None {
+        push_unknown(e.name, "value_filters", fs.name)
+      }
+    }
+    // piece_filters (String→String, scalar filter registry 内の string 域): 綴り不在は
+    // unknown-vocab (value_filters と判定入力同一、DR-101 §1)
+    for fs in e.piece_filters {
+      if lookup_filter(fs.name) is None {
+        push_unknown(e.name, "piece_filters", fs.name)
+      }
+    }
+    // cell_filters は位置により対象 registry が切り替わる (DR-079 相区分):
+    if is_accum_elem(e) {
+      // accum 位置: 両 registry どちらにも綴りが無い場合だけ本 gate が unknown-vocab で拾う
+      // (scalar には載るが ARRAY には無いケースは `collect_invalid_accum_cell_filter` の
+      // invalid-range 二次判定に委ねる、DR-101 §3)
+      for fs in e.cell_filters {
+        if lookup_filter(fs.name) is None &&
+          lookup_array_filter(fs.name) is None {
+          push_unknown(e.name, "cell_filters", fs.name)
+        }
+      }
+    } else {
+      // 非 accum 位置: scalar registry (T→T) 対象、綴り不在は unknown-vocab
+      for fs in e.cell_filters {
+        if lookup_filter(fs.name) is None {
+          push_unknown(e.name, "cell_filters", fs.name)
+        }
+      }
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_unknown_filter(c.body, out)
   }
 }
 
@@ -3865,7 +3961,8 @@ pub fn parse_definition(
   collect_scalar_array_default(def, errs) // DR-083 §5 (非 accum 要素への配列 default)
   collect_tty_stream_missing(def, errs) // DR-099 §3/§7 (builtin/tty preset の tty_stream 必須違反)
   collect_none_value_source_decl(def, errs) // DR-089 §4 (none への env/config_key/inherit 宣言)
-  collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 (accum cell_filters は配列語彙のみ)
+  collect_unknown_filter(def, errs) // DR-101 (filter 3 属性 unknown-vocab、accum は両 registry 判定の一次)
+  collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 + DR-101 §3 (accum の scalar/array 層違いは二次判定)
   collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)
   collect_invalid_dd_pattern(def, errs) // DR-090 §2 (dd match pattern compile 失敗)
   collect_ref_merge_accum(def, errs) // DR-084 §3 (merge accumulator × ref)
