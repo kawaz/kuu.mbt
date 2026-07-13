@@ -1443,24 +1443,35 @@ fn eval_requires(
         }
       }
       CConflicts(_, _) | CExclusive(_, _) => () // committed 基準、値源不問なので KTop で確定済み
-      CRequired(elem) => {
+      CRequired(display, candidates) => {
         // DR-093 §1/§2: 自身の充足は型委譲。値空間なし (none) = 発火 (committed)、値空間あり =
         // 最終状態の値の有無 (default 込み、DR-047 §5 不変)。`satisfied` (上記 requires 目的語用) は
         // 再利用しない — bool の「解決後値 true」ルールは requires 目的語限定 (DR-047 §5 明確化) で
         // あり、required 自身の充足には持ち込まない (DESIGN §9.1 に bool 特例なし、bool は preset
         // default:false を常に持つため required 自身は「値の有無」で自明に充足する、それが spec の
         // 意図どおり)。
-        let ok = if is_none_entity(sc.entities, elem) {
-          is_committed(bindings, path, elem)
-        } else {
-          elem_value(resolved, path, elem) != None
+        //
+        // issue 2026-07-13-structural-or-type-branch-required-missing: `candidates` は BOr
+        // (structural or) の場合、各枝の leaf name の配列 (node.mbt の CRequired doc comment
+        // 参照、eval.mbt の同名 KTop 判定と対の最終判定)。いずれか 1 つでも型委譲で充足していれば
+        // OK。
+        let mut ok = false
+        for c in candidates {
+          let c_ok = if is_none_entity(sc.entities, c) {
+            is_committed(bindings, path, c)
+          } else {
+            elem_value(resolved, path, c) != None
+          }
+          if c_ok {
+            ok = true
+          }
         }
         if !ok {
           out.push({
             ..constraint_err(
-              elem,
+              display,
               "required_violated",
-              "required '\{elem}' is missing",
+              "required '\{display}' is missing",
               pos,
             ),
             path,

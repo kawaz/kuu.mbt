@@ -674,7 +674,8 @@ fn lcon_str(c : Constraint) -> String {
       "]}"
     CExclusive(g, ms) =>
       "exclusive_group{group=" + g + ",members=[" + sorted(ms) + "]}"
-    CRequired(el) => "required{element=" + el + "}"
+    CRequired(el, cands) =>
+      "required{element=" + el + ",candidates=[" + sorted(cands) + "]}"
   }
 }
 

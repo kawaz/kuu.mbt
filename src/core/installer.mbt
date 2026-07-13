@@ -2335,7 +2335,29 @@ fn inst_constraint(def : Definition, build : Build) -> Unit {
     }
     if e.required {
       // DR-093 §1/§2: required:true の要素自身を対象にした CRequired を 1 個登録。
-      add_constraint(build, CRequired(e.name))
+      //
+      // issue 2026-07-13-structural-or-type-branch-required-missing: `e.body` が `BOr`
+      // (structural or、型付き枝) のとき、単純に `[e.name]` を候補にすると required 判定は
+      // 常に失敗する — BOr wrapper 自身 (`e.name`) は値を持たない構造ディスパッチャで
+      // (ensure_entity_body の BOr コメント参照)、値は選ばれた枝の leaf entity にのみ commit
+      // される。候補集合を各枝の leaf name に展開し、「どの枝であれ発火して値が確定していれば
+      // 充足」(DR-093 の or 親充足の型委譲原理) を CRequired の判定側 (eval.mbt/resolve.mbt)
+      // に持ち込む。BEnum (value-enum 形) は全枝が SAME name/cell (`e.name`) に着地するため
+      // この展開は不要 (`[e.name]` のままで元々正しい — 対照 fixture
+      // `required-value-enum-or-branch.json` が既に green なのはこのため)。
+      let candidates = match e.body {
+        BOr(branches) => {
+          let names : Array[String] = []
+          for br in branches {
+            for it in br.items {
+              names.push(it.name)
+            }
+          }
+          names
+        }
+        _ => [e.name]
+      }
+      add_constraint(build, CRequired(e.name, candidates))
     }
     for vr in e.value_requires {
       // DR-055 §1 / DR-052 §値枝 id 直交: 4-tuple = (entity, branch_id, value, targets)。entity は

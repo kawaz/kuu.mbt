@@ -371,7 +371,19 @@ pub(all) enum Constraint {
   /// 値空間を持つ要素 (通常の type) は最終状態の値の有無 (default / env 等の値源込み、DR-047 §5 不変)、
   /// 値空間が空の要素 (`type: "none"`、dd 含む、DR-089) は発火したこと (committed)。判定入力に
   /// committed を使う点は CRequires と同じ線 (DR-047 §5 が selected を診断メタに留めた線を維持)。
-  CRequired(String)
+  ///
+  /// 2-tuple = (display, candidates)。issue
+  /// 2026-07-13-structural-or-type-branch-required-missing: `display` は違反時の error.element
+  /// (宣言元の name、DESIGN §9.1 のグループ的必須の宣言元、通常要素では下記 candidates[0] と同じ
+  /// 文字列)。`candidates` は型委譲判定を実際にどの name に対して行うかの候補集合 — 通常要素は
+  /// `[display]` 自身 (単一候補、既存挙動どおり)。structural or (`BOr`、型付き枝) が required を
+  /// 持つ場合は各枝の leaf name の配列: BOr wrapper 自身 (display) は "no own scalar/array value"
+  /// (installer.mbt の BOr entity 登録コメント参照) で値が committed されることが無く、値は選ばれた
+  /// 枝の leaf entity (num/flag 等) にのみ commit される。判定は candidates のいずれか 1 つでも
+  /// 型委譲で充足していれば OK (DR-093 の「or 親の値充足 = どの枝であれ発火して値が確定していること」
+  /// — 枝が exact (value-enum, BEnum) なら全枝が同じ display 名の cell に着地するため候補は元々
+  /// `[display]` のままで足りる、対称性が崩れるのは BOr だけ)。
+  CRequired(String, Array[String])
 } derive(Eq, Debug)
 
 ///|

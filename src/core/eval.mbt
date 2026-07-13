@@ -3065,22 +3065,35 @@ fn eval_constraints(
           )
         }
       }
-      CRequired(elem) =>
+      CRequired(display, candidates) => {
         // DR-093 §1/§2: KTop の粗判定 (完全経路の成立条件、DR-047 §2) — `value_declared` を
         // そのまま再利用する (CRequires 目的語と同じゲート)。値空間なし (none) の要素は
         // default_values/env_key/config_seat/inherit_ をそもそも持てない (DR-089 §7) ため、
         // `value_declared` は committed のみで判定される形に自動的に縮退する — 型分岐を新設する
         // 必要はない。最終判定 (bool 特例なしの型委譲) は resolve.mbt の後段フィルタが行う。
-        if !value_declared(elem, bindings, path, sc.entities) {
+        //
+        // issue 2026-07-13-structural-or-type-branch-required-missing: `candidates` は
+        // BOr (structural or) の場合、`display` 自身ではなく各枝の leaf name の配列 (node.mbt
+        // の CRequired doc comment 参照)。いずれか 1 つでも充足していれば OK — 「どの枝であれ
+        // 発火して値が確定していること」が or 親の required 充足 (DR-093)。通常要素は
+        // `candidates == [display]` なので判定は従来どおり単一名のまま。
+        let mut any_ok = false
+        for c in candidates {
+          if value_declared(c, bindings, path, sc.entities) {
+            any_ok = true
+          }
+        }
+        if !any_ok {
           out.push(
             constraint_err(
-              elem,
+              display,
               "required_violated",
-              "required '\{elem}' is missing",
+              "required '\{display}' is missing",
               pos,
             ),
           )
         }
+      }
     }
   }
   out
