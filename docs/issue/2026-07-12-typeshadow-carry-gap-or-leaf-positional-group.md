@@ -1,5 +1,5 @@
 ---
-title: dec_or_leaf / dec_positional_group の型 shadow 配線が int_round のみ — 未配線 config が 4 つに拡大
+title: dec_or_leaf の型 shadow 配線が int_round のみ — 未配線 config が 4 つに拡大
 status: open
 category: task
 created: 2026-07-12T20:21:51+09:00
@@ -17,17 +17,19 @@ blocked_by:
 origin: 自リポ TODO
 ---
 
-# dec_or_leaf / dec_positional_group の型 shadow 配線が int_round のみ — 未配線 config が 4 つに拡大
+# dec_or_leaf の型 shadow 配線が int_round のみ — 未配線 config が 4 つに拡大
 
 ## 概要
 
-or 分岐 (`dec_or_leaf`) と positional group 内側 leaf (`dec_positional_group`) の
-decode 経路は、`TypeShadow` から `base` と `int_round` の 2 フィールドしか carry
-していない。configurable factory で作った型を or 枝や group 内側に置くと、その
-枝だけ config が黙って canonical default に落ちる (エラーは出ない)。
+or 分岐 (`dec_or_leaf`) の decode 経路は、`TypeShadow` から `base` と `int_round`
+の 2 フィールドしか carry していない。configurable factory で作った型を or 枝に
+置くと、その枝だけ config が黙って canonical default に落ちる (エラーは出ない)。
 
-対象コード: `src/core/json_conformance_wbtest.mbt` の `dec_or_leaf` (L2759 付近)、
-`dec_positional_group` (L3220 付近)。
+対象コード: `src/core/json_conformance_wbtest.mbt` の `dec_or_leaf` (L2759 付近)。
+
+(参考: 同じ carry gap を疑われていた `dec_positional_group` (L3220 付近) は実地
+確認により対象外と判明した — 内側要素は `dec_positional` に再帰委譲されており、
+`dec_positional` 自身は TypeShadow の全フィールドを既に carry している。)
 
 ## 背景
 
@@ -47,16 +49,19 @@ DR-099 の実装 worker は「既存の狭いスコープに合わせた (要求
 ## 受け入れ条件
 
 - [ ] spec 側に「or 枝 × 方言型 (configurable factory で作った型)」の fixture を
-      先行追加する (fixture 先行ルールに従う)
-- [ ] `dec_or_leaf` / `dec_positional_group` の shadow carry を
-      「base と int_round だけ」から「TypeShadow の全フィールド carry」へ一般化
-- [ ] 一般化後、上記 fixture が or 枝内で config を保持したまま decode されることを確認
+      先行追加する (fixture 先行ルールに従う) —
+      `fixtures/value-typing/or-leaf-factory-config.json` として既に追加済み
+      (case: bool-dialect-or-leaf-carries-true/false, base-prefix-or-leaf-carries
+      が carry gap を pin、bool-dialect-or-leaf-fallback-to-int-branch と
+      bool-dialect-direct-option-baseline が対照ケース)
+- [ ] `dec_or_leaf` の shadow carry を「base と int_round だけ」から
+      「TypeShadow の全フィールド carry」へ一般化
+- [ ] 一般化後、上記 fixture の全 case が green になることを確認
 - [ ] `allow_base_prefix` / `bool_config` (yes/no 方言) / `is_tty` /
-      `tty_stream` / `tty_cygwin` の全てが or 枝・positional group 内側でも
-      config 通りに decode されることを確認
+      `tty_stream` / `tty_cygwin` の全てが or 枝内でも config 通りに decode
+      されることを確認
 
 ## TODO
 
-- [ ] spec 側 fixture (or 枝 × 方言型) の追加 — fixture 先行ルールにより
-      実装より先
-- [ ] TypeShadow 全フィールド carry への一般化実装
+- [ ] TypeShadow 全フィールド carry への一般化実装 (fixture は追加済みのため
+      実装のみ残り)
