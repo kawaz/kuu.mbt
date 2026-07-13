@@ -1,6 +1,6 @@
 ---
 title: structural or (type 付き枝) + required の組合せで、値供給時にも required missing になる
-status: open
+status: resolved
 category: bug
 created: 2026-07-13T10:02:52+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-13T11:14:14+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented: inst_constraint が BOr wrapper 名で CRequired を積んでいたのが根因 — 値は選ばれた枝の leaf entity にのみ commit されるため永遠に不成立だった。CRequired を候補集合 (display, candidates) に拡張し、BOr は各枝 leaf 名のいずれか充足で OK に (DR-093 型委譲、kuu.mbt commit a5d42b60)。pin fixture constraints-parse/required-structural-or-branch.json green、value-enum 形 (BEnum) は不変"]
 blocked_by:
 origin: kuu (spec リポ)
 ---

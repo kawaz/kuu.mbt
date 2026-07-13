@@ -1,6 +1,6 @@
 ---
 title: positional group の直後の positional がトークンを取れず missing_operand になる
-status: open
+status: resolved
 category: bug
 created: 2026-07-13T09:33:53+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-13T11:14:14+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented: BGroup bounded repeat が max を無視して over-consume する既知ギャップの解消 — IdxRepeat に budget フィールドを追加し min+budget で打ち切り (kuu.mbt commit 258ec5c2)。pin fixture repeat-parse/group-trailing-positional.json green、既存 flip なし。unbounded (budget=None) の既存挙動は不変"]
 blocked_by:
 origin: kuu (spec リポ)
 ---
