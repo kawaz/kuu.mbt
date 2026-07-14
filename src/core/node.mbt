@@ -106,7 +106,7 @@ pub(all) struct FilterSpelling {
 } derive(Eq, Debug)
 
 ///|
-/// A node of the AtomicAST. Consumption is measured in whole argv tokens.
+/// A node of the AtomicAST. Consumption is measured in whole args tokens.
 pub(all) enum Node {
   /// literal token match; binds nothing, consumes 1.
   Exact(String)
@@ -230,7 +230,7 @@ pub(all) enum Node {
   /// into ParserContext.warnings. The value propagates normally — only a warning is added.
   DeprMark(String)
   /// 0-token failure-action mark (DR-048): records that failure-action element `name` (e.g. help)
-  /// was SELECTED at the current argv position. Lowered from a `fail_action` element's satellite
+  /// was SELECTED at the current args position. Lowered from a `fail_action` element's satellite
   /// (`Seq([Exact("--help"), Bind("help", true), FailMark("help")])`). On a FAILED parse (0
   /// complete paths) the recorded action fires in place of the held Error; 先食い/内部一体 keeps
   /// a dd-internal `--help` from being selected (its trigger is raw-consumed, so FailMark never runs).

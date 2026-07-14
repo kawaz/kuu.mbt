@@ -1279,7 +1279,7 @@ test "resolve_scope: accum × value_filters(each) — all pieces passing preserv
 ///|
 /// 保証 (issue 2026-07-09-accum-entity-filters-wiring 完了条件、CONFORMANCE §2/§3 の piece
 /// 帰属規約): accum × value_filters(each) で 1 piece が reject すると全体が failure になり (「不正 piece
-/// を静かに除外して残りを累積する」経路ではない)、その argv_pos は reject した piece 自身が
+/// を静かに除外して残りを累積する」経路ではない)、その args_pos は reject した piece 自身が
 /// 由来する CLI トークン位置 (`Binding.at_pos`、issue のスコープで追加) — ladder 呼び出し側が
 /// 一律で渡す `at_pos` (env/config 由来の「トークン非帰属」フォールバック) には落ちない。
 /// multiple-parse/filters-each.json::one-piece-rejects-whole-not-partial-accumulate の wbtest 版。
@@ -1293,9 +1293,9 @@ test "resolve_scope: accum × value_filters(each) — one piece rejecting fails 
     entities: [ports],
     constraints: [],
   }
-  // "5" は argv トークン 1 由来、"500" は argv トークン 3 由来 (`--ports 5 --ports 500` を模す)。
-  // ladder 呼び出し側の at_pos=4 (仮に argv.length() 相当) を渡しても、reject は 500 自身の
-  // 位置 (3) に帰属することを固定する — env/config seat の argv.length フォールバックとの対比。
+  // "5" は args トークン 1 由来、"500" は args トークン 3 由来 (`--ports 5 --ports 500` を模す)。
+  // ladder 呼び出し側の at_pos=4 (仮に args.length() 相当) を渡しても、reject は 500 自身の
+  // 位置 (3) に帰属することを固定する — env/config seat の args.length フォールバックとの対比。
   let cli = [
     cb("ports", VNum(5.0), Cli, at_pos=Some(1)),
     cb("ports", VNum(500.0), Cli, at_pos=Some(3)),
@@ -1303,7 +1303,7 @@ test "resolve_scope: accum × value_filters(each) — one piece rejecting fails 
   match resolve_scope(sc, cli, Map([]), at_pos=4) {
     Err(pe) => {
       assert_eq(pe.kind, KFilter)
-      assert_eq(pe.argv_pos, 3)
+      assert_eq(pe.args_pos, 3)
       assert_eq(pe.reason, "too_large")
     }
     Ok(_) => fail("expected Err (500 is out of range [1, 100])")
@@ -1478,11 +1478,11 @@ test "resolve_scope: accum × value_filters(each) — Unset does not disable fil
 /// 保証 (issue 2026-07-09-post-filter-error-attribution): `value_filters`/`final_filters` reject の
 /// Error は `kind: KFilter` を持つ (DR-053 §2 の `parse` | `filter` | `constraint` 3 分類 — 値が
 /// パースできなかった `KParse` とは別カテゴリ、既にパース済みの値を validate/transform した結果の
-/// reject なので `filter` 分類に属する)。`argv_pos` は呼び出し側が渡した最終位置をそのまま持つ
+/// reject なので `filter` 分類に属する)。`args_pos` は呼び出し側が渡した最終位置をそのまま持つ
 /// (env/config seat のエラーと同じ規約 — `ladder_err`/`filter_err` の doc comment 参照、値がどの
-/// token でも読まれていないので位置は「argv 走査が完了した地点」= 呼び出し側の `toks.length()`
+/// token でも読まれていないので位置は「args 走査が完了した地点」= 呼び出し側の `toks.length()`
 /// 相当。本テストでは呼び出し側が明示的に `at_pos=3` を渡し、それがそのまま素通しされることを
-/// 固定する — 実際の conformance harness 側の配線 (`dc.argv.length()`) は
+/// 固定する — 実際の conformance harness 側の配線 (`dc.args.length()`) は
 /// json_conformance_wbtest.mbt の `do_resolve_pe`/`resolve_tree` が担う)。
 test "resolve_scope: a value_filters/final_filters reject carries kind=KFilter and the caller's at_pos" {
   let n = ent("n", TNum, final_filters=["in_range:0:100"])
@@ -1495,7 +1495,7 @@ test "resolve_scope: a value_filters/final_filters reject carries kind=KFilter a
   match resolve_scope(sc, [cb("n", VNum(101.0), Cli)], Map([]), at_pos=3) {
     Err(pe) => {
       assert_eq(pe.kind, KFilter)
-      assert_eq(pe.argv_pos, 3)
+      assert_eq(pe.args_pos, 3)
       assert_eq(pe.reason, "too_large")
     }
     Ok(_) => fail("expected Err (101 is out of range [0, 100])")

@@ -439,7 +439,7 @@ pub fn apply_filter_chain(
 /// message naming the contract violation). Callers convert the `Err` tuple to a `ParseError`
 /// themselves (eval.mbt/matcher.mbt build `kind: KFilter` inline per `filter_arg_eval`'s precedent;
 /// resolve.mbt reuses its own `filter_err`) — this function stays value-source-agnostic (no
-/// argv_pos/element to carry) so both the CLI-token-consumption callers and the ladder (env)
+/// args_pos/element to carry) so both the CLI-token-consumption callers and the ladder (env)
 /// caller can share it.
 pub fn apply_piece_filters(
   chain : Array[FilterSpelling],

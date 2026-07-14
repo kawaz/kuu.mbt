@@ -127,7 +127,7 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
   match ry[0] {
     Held(pe, _) => {
       assert_eq(pe.element, "enabled")
-      assert_eq(pe.argv_pos, 0)
+      assert_eq(pe.args_pos, 0)
       assert_eq(pe.kind, KParse)
       assert_eq(pe.reason, "not_a_bool")
     }

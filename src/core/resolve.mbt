@@ -1753,7 +1753,7 @@ fn value_str(v : Value) -> String {
 }
 
 ///|
-/// A DR-066 ladder-fill Error: `element`/`argv_pos` locate it like any ParseError; `at_pos` is the
+/// A DR-066 ladder-fill Error: `element`/`args_pos` locate it like any ParseError; `at_pos` is the
 /// caller-supplied final position (env/config seat errors are not read at a token position — they
 /// surface after the path completed, the same conceptual point `eval_constraints` evaluates at, so
 /// callers thread the same final `toks.length()`). kind is always `KParse` (a value-source failed
@@ -1770,7 +1770,7 @@ fn ladder_err(
   message : String,
   epath : Array[String],
 ) -> ParseError {
-  { element, argv_pos: at_pos, kind: KParse, reason, message, path: epath }
+  { element, args_pos: at_pos, kind: KParse, reason, message, path: epath }
 }
 
 ///|
@@ -1789,7 +1789,7 @@ fn filter_err(
   message : String,
   epath : Array[String],
 ) -> ParseError {
-  { element, argv_pos: at_pos, kind: KFilter, reason, message, path: epath }
+  { element, args_pos: at_pos, kind: KFilter, reason, message, path: epath }
 }
 
 ///|
@@ -2083,9 +2083,9 @@ fn apply_entity_filters(
       match apply_filter_chain(e.value_filters, b.value) {
         Err((reason, msg)) => {
           // value_filters(each、段5、DR-009): CONFORMANCE §3's piece-attribution rule — a reject here
-          // is attributed to the SPECIFIC argv token the rejected piece came from (`b.at_pos`,
+          // is attributed to the SPECIFIC args token the rejected piece came from (`b.at_pos`,
           // issue 2026-07-09-accum-entity-filters-wiring), not the ladder's own `at_pos` (which
-          // stays argv.length — the "no specific token" fallback for env/config/inherit/default-
+          // stays args.length — the "no specific token" fallback for env/config/inherit/default-
           // sourced bindings, where `b.at_pos` is always `None`).
           let pos = match b.at_pos {
             Some(p) => p
@@ -2126,7 +2126,7 @@ fn resolve_entity_raw(
   epath : Array[String],
   tty_map : Map[String, TtyObs],
 ) -> Result[Array[Binding], ParseError] {
-  // cli seat (DR-015 last-wins + DR-077 §1 update fold): fold every same-name CLI effect in argv
+  // cli seat (DR-015 last-wins + DR-077 §1 update fold): fold every same-name CLI effect in args
   // order, not just peek at the last one. `update`'s result is OLD-DEPENDENT — a single "read the
   // last binding" can no longer resolve the seat once update effects are mixed with
   // set/default/empty/unset (`-vvv` needs old=0→1→2, each rep depending on the ONE before it). For
@@ -2174,7 +2174,7 @@ fn resolve_entity_raw(
   //   (`unset-ladder.json`'s `unset-opens-ladder`) — this is the new `committed_now` gate replacing
   //   the old unconditional `bs.length() > 0` return.
   // DR-080 波及節: a merge-accumulator cell's CLI seat is NOT a per-binding fold — a "発火" is a
-  // GROUP of same-`at_pos` Set/Remove/Splice pieces (one argv token's separator-split), evaluated
+  // GROUP of same-`at_pos` Set/Remove/Splice pieces (one args token's separator-split), evaluated
   // together against the DR-080 §3 rule (old composition, remove/splice, implicit leading `@`).
   // That grouping cannot be expressed inside this function's per-binding `match b.op` loop (which
   // append/flatten's accumulators are correctly built around, one binding = one independent
@@ -2530,7 +2530,7 @@ fn resolve_ladder_below_cli(
 }
 
 ///|
-/// A merge accumulator's CLI-seat unit of work (DR-080 波及節「1 発火 = 同一 argv 位置の piece
+/// A merge accumulator's CLI-seat unit of work (DR-080 波及節「1 発火 = 同一 args 位置の piece
 /// 列」): either one cell-level op (`default`/`unset`/`empty`, 0-token `EffMark` bindings, `at_pos`
 /// always `None`) or a run of `Set`/`Remove`/`Splice` PIECE bindings sharing the SAME `at_pos`
 /// (`sep_binds`'s split of one separator token). `resolve_merge_accum` groups the CLI seat into

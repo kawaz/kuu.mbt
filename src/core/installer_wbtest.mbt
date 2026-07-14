@@ -875,7 +875,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
 /// update` の variant 走査ではこの経路が最初から見えないため、TCount×multiple という組合せ自体を
 /// 要素レベルで閉じる (`collect_unsupported_count_multiple`)。修正前の実際の repro:
 /// `{"name":"n","type":"count","short":["n"],"multiple":true}` は `parse_definition` を通過し、
-/// argv `["-n"]` の発火で resolve.mbt の accum 分岐の abort に到達していた。
+/// args `["-n"]` の発火で resolve.mbt の accum 分岐の abort に到達していた。
 /// spec fixture 昇格済み (DR-082、fixtures/definition-error/count-multiple-invalid-range.json) —
 /// 本 wbtest はそれに先行する unit 層の pin として残す。
 test "parse_definition: a count element with multiple is DInvalidRange (codex High 2, short-fired repro)" {
@@ -1789,7 +1789,7 @@ test "issue bool-requires-config-inherit-gap: existing CLI-committed bool target
 
 // ── codex Medium 追従 (issue merge-no-separator-marker-gap): separator 無し merge 宣言の
 // end-to-end 固定。resolve_wbtest.mbt の合成 Entity テストは eval.mbt/installer.mbt の value_prim
-// ルーティングを一切通らない (Binding を手組みするため) — この gap は「実 CLI argv → parse() →
+// ルーティングを一切通らない (Binding を手組みするため) — この gap は「実 CLI args → parse() →
 // resolve_scope」の一気通貫でしか顕在化しなかった (`el()` の `separator: None` 固定と組み合わせて
 // merge 宣言だけ足すことで、正に「separator 未宣言」の形が作れる)。 ─────────────────────────
 
@@ -3084,7 +3084,7 @@ test "long installer: long_eq_sep:EsDeny end-to-end — eq form fails, space for
 
 ///|
 /// 保証 (DR-092 実装調査 2026-07-11、fixtures/value-typing/number-inf-nan.json の
-/// `inf-on-float-accepted` 対の完全版): `--t inf` (float 型) が argv → matcher → `parse_float` →
+/// `inf-on-float-accepted` 対の完全版): `--t inf` (float 型) が args → matcher → `parse_float` →
 /// `Binding.value` の全経路を通っても `VNum` の inf がそのまま (saturate/丸めなど一切なく) 届く
 /// ことを end-to-end で固定する。fixture 側は「operand の JSON 表現が未確定」を理由に `result`
 /// pin を見送っている (main が本 DR 実装確定後に別段で追加) — この wbtest は fixture pin を待たず

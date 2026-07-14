@@ -1030,7 +1030,7 @@ fn enum_value_node(name : String, ty : Ty, values : Array[String]) -> Node {
 /// result scope, DESIGN §2.3/§2.4) with a leading "#row" sentinel marking the row boundary
 /// (`resolve.mbt`'s `build_result` ROW-GROUP branch groups same-scope bindings into one array
 /// element per "#row"). `Bind`'s 0-token binding rides IN FRONT of `head`'s own bindings within
-/// the SAME `Scoped` wrap, so both land at scope=[name] together in argv order — this is safe to
+/// the SAME `Scoped` wrap, so both land at scope=[name] together in args order — this is safe to
 /// apply per-rep (rather than wrapping the whole repeat spine once) because it changes only the
 /// CONTENT of one head-consumption, never the spine shape that drives 取り分選好/先食い
 /// (`lower_repeat_head` / `ref_choice` / `bounded_tail_step` remain untouched).
@@ -3402,7 +3402,7 @@ fn collect_unsupported_accum_update(
   // が同じ検査をすり抜けて `parse_definition` を通過し、発火時に canonical (multiple 要素) への
   // Update binding が届いて `resolve.mbt`'s accum 分岐の abort に到達する
   // (repro: canonical `{"name":"tags","multiple":true}` + alias `{"target":"tags",
-  // "long_override":["bump:update:increment"]}` + argv `["--bump-t"]`)。`desugar_aliases` (この
+  // "long_override":["bump:update:increment"]}` + args `["--bump-t"]`)。`desugar_aliases` (この
   // 検査より後に走る) が alias 用の entry-copy を作った後だと、そのcopy自身は `multiple: false`
   // 固定 (`alias_entry`) になり判定が別ロジックを要る — ここ (desugar 前、`def.aliases` を直接見る)
   // で `collect_invalid_alias_long_override` と同じパターン (colon DSL を `classify_long_spelling`
@@ -3454,7 +3454,7 @@ fn collect_unsupported_accum_update(
 /// TCount の **short** 発火 (`matcher.mbt` の `walk_short`'s `TCount` arm) は variant を一切経由せず
 /// `mk_eff(e.name, Update("increment", []), Cli)` を直接生成する — variants を持たない firing なので
 /// variant 走査ではそもそも見えない (repro: `{"name":"n","type":"count","short":["n"],
-/// "multiple":true}` + argv `["-n"]` で resolve.mbt の accum 分岐の abort に到達)。
+/// "multiple":true}` + args `["-n"]` で resolve.mbt の accum 分岐の abort に到達)。
 ///
 /// DR-077 §3 で count は `number + default:0 + update:increment の綴り合成` と規定されている —
 /// count という TYPE そのものが「update(increment) 効果を持つ」という契約を運ぶので、firing の綴り

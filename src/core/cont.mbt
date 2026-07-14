@@ -8,7 +8,7 @@
 // whether an Accept comes out."
 //
 // `Cont` is a defunctionalized ADT (not a raw closure) so a completes-cache
-// keyed by (continuation shape, argv position) stays possible (MDR-002 §1.3).
+// keyed by (continuation shape, args position) stays possible (MDR-002 §1.3).
 // Every payload derives Eq, keeping the whole Cont structurally comparable.
 
 ///|
@@ -97,7 +97,7 @@ fn run_cont(
           Held(
             {
               element: "",
-              argv_pos: pos,
+              args_pos: pos,
               kind: KParse,
               reason: "unexpected_token",
               message: "unexpected token",

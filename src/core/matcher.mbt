@@ -62,7 +62,7 @@ fn index_of_char(cs : Array[Char], c : Char) -> Int {
 ///|
 /// Interpret a matcher against the token at `pos`. Takes the whole Ctx so the
 /// cluster walk can emit a complete-mode Pending for a tail value char whose
-/// next-token value is past the argv end (DR-060 §1 readable-next set).
+/// next-token value is past the args end (DR-060 §1 readable-next set).
 fn run_matcher(m : Matcher, ctx : Ctx, pos : Int) -> Array[Branch] {
   if pos >= ctx.toks.length() {
     return []
@@ -287,7 +287,7 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 /// a kind guard at the call site: a `TStr` entry structurally never produces a type-parse `Err`
 /// (its parse is the identity), so "every `Err` at full-tail becomes `Held`" is equivalent to the
 /// old kind-gated condition, just simpler.
-/// `pos` (issue 2026-07-09-accum-entity-filters-wiring): the argv token this value char's raw
+/// `pos` (issue 2026-07-09-accum-entity-filters-wiring): the args token this value char's raw
 /// string was read from — the CALLING token for an in-cluster attach, the NEXT token for a
 /// space-form attach (`walk_short`'s two call sites pass `pos`/`pos + 1` respectively, mirroring
 /// the `pe_parse(..., pos)` / `pe_parse(..., pos + 1)` split those same call sites already made
@@ -502,7 +502,7 @@ fn walk_short(
           } else if e.short_attached_value != AtRequire &&
             vstart == body.length() &&
             in_complete(ctx) {
-            // complete: the cluster ends in a value char and the argv ends
+            // complete: the cluster ends in a value char and the args ends
             // here — the space-form value is exactly what could come next
             // (DR-060 §1). The flags already read stay as partial state.
             out.push(Pending([pend_value(e.kind, e.name)], cat(acc, dm)))

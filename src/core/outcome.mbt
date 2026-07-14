@@ -12,7 +12,7 @@ pub(all) enum Outcome {
 
 ///|
 /// spec DR-053 §2/§4: a failed parse. `errors` holds ALL held Errors; primary
-/// is the max-argv_pos subset (computed by the renderer). `fired_action` and
+/// is the max-args_pos subset (computed by the renderer). `fired_action` and
 /// `errors` coexist (表示が置換されるだけ、構造は残る).
 pub(all) struct FailureData {
   errors : Array[ParseError]
@@ -51,11 +51,11 @@ pub(all) struct AmbiguousData {
 pub(all) enum FailDef {
   AcceptsOnly // candidate = a path that reached the global end (dead ends ignored)
   WithHeld // + a path that reached an Error-held / value-pending point
-  DeepestOnly // only the maximal-argv-consumption candidate path(s)
+  DeepestOnly // only the maximal-args-consumption candidate path(s)
 } derive(Eq, Debug)
 
 ///|
-/// Push every failure-action marker in `bs` as (name, argv position).
+/// Push every failure-action marker in `bs` as (name, args position).
 fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit {
   for b in bs {
     match action_of(b) {
@@ -72,7 +72,7 @@ fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit {
 }
 
 ///|
-/// The action with the minimal argv position (先勝ち, spec DR-048 §4). Ties
+/// The action with the minimal args position (先勝ち, spec DR-048 §4). Ties
 /// keep first-seen.
 fn argmin_action(actions : Array[(String, Int)]) -> String {
   let mut best = actions[0]
@@ -96,13 +96,13 @@ fn argmin_action(actions : Array[(String, Int)]) -> String {
 fn find_help_entry(root : Node, errors : Array[ParseError]) -> String? {
   let mut deepest = -1
   for e in errors {
-    if e.argv_pos > deepest {
-      deepest = e.argv_pos
+    if e.args_pos > deepest {
+      deepest = e.args_pos
     }
   }
   let mut any_primary = false
   for e in errors {
-    if e.argv_pos == deepest {
+    if e.args_pos == deepest {
       any_primary = true
       match scope_at_path(root, e.path) {
         Some(sc) =>
@@ -174,7 +174,7 @@ fn find_help_entry_in_greedy(g : Node) -> String? {
 ///|
 /// The exact trigger literals available AT THE FAILURE POSITION (spec DR-053 §4 tried_triggers
 /// material, issue 2026-07-08 greedy-once-and-idxrepeat-premises §3). §4's "失敗位置" ties directly
-/// to §2's "primary の定義: argv 位置が最深の Error" (both live in the same DR, §4 immediately
+/// to §2's "primary の定義: args 位置が最深の Error" (both live in the same DR, §4 immediately
 /// follows §2's primary rule) — the failure POSITION is the primary error's position, and DR-041
 /// §4's "読める最内スコープが勝つ" means the triggers tried there are the scope the primary error
 /// actually failed IN, not always root's. Each primary error's `path` (DR-066 §4) already threads
@@ -185,14 +185,14 @@ fn find_help_entry_in_greedy(g : Node) -> String? {
 fn tried_triggers_of(root : Node, errors : Array[ParseError]) -> Array[String] {
   let mut deepest = -1
   for e in errors {
-    if e.argv_pos > deepest {
-      deepest = e.argv_pos
+    if e.args_pos > deepest {
+      deepest = e.args_pos
     }
   }
   let out : Array[String] = []
   let mut any_primary = false
   for e in errors {
-    if e.argv_pos == deepest {
+    if e.args_pos == deepest {
       any_primary = true
       match scope_at_path(root, e.path) {
         Some(sc) =>

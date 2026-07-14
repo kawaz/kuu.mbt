@@ -207,19 +207,19 @@ pub(all) enum ErrKind {
 } derive(Eq, Debug)
 
 ///|
-/// One held Error (DR-053 §2 + DR-066): which element, the argv position it failed at, its kind, a
+/// One held Error (DR-053 §2 + DR-066): which element, the args position it failed at, its kind, a
 /// machine-readable `reason` (snake_case, DR-066 §3 v1 vocab: missing_operand / unexpected_token /
 /// not_a_number / not_an_integer / <attr>_violated), the human message, and `path` (DR-066 §4): the
 /// root-first ancestor scope names the error fired under (snoc form — `path` = ancestors, `element` =
 /// self; `path: []` = root 直下, no separate null case, Maybe ⊂ List). The errors array keeps ALL of
-/// them (別候補経路の別 Error); primary = max argv_pos. Conformance compares errors by
-/// (element, argv_pos, kind, reason) — message is always ignored (CONFORMANCE §3), path is optional
+/// them (別候補経路の別 Error); primary = max args_pos. Conformance compares errors by
+/// (element, args_pos, kind, reason) — message is always ignored (CONFORMANCE §3), path is optional
 /// (DR-066 §4) — so every construction site emits a reason from the v1 vocabulary and a path (`[]`
 /// when the error has no ancestor scope to record, which conformance treats identically to "no path
 /// asserted" when the fixture opts out).
 pub(all) struct ParseError {
   element : String
-  argv_pos : Int
+  args_pos : Int
   kind : ErrKind
   reason : String // DR-066 §3: machine-readable failure identifier (snake_case v1 vocab)
   message : String
@@ -1498,7 +1498,7 @@ pub(all) enum EffectOp {
   // CLI firing's separator-split value list, distinct in kind from the 5 CELL-level ops above (a
   // merge-accumulator cell's own effect is still `Set` — these two only ever appear on the
   // per-piece Bindings `resolve_entity_raw`'s accum fold groups by `at_pos`, DR-080 波及節 "1
-  // 発火 = 同一 argv 位置の piece 列"). `Remove`'s operand (the Binding's `value`) is type-parsed
+  // 発火 = 同一 args 位置の piece 列"). `Remove`'s operand (the Binding's `value`) is type-parsed
   // like any add piece (DR-080 §2 "operand は要素 type で parse される"); `Splice` (`@`) carries
   // no operand (the Binding's value is a placeholder, same convention as default/unset/empty).
   // committed = true for both (mirrors `Update`) — `resolve_entity_raw`'s accum branch (which
@@ -1544,12 +1544,12 @@ pub(all) struct Binding {
   //           normally — so an intermediate-scope global (DR-042 shadow) lands at its declaring
   //           scope, not the absolute root. A root global (declared at depth 0) has N = its firing
   //           depth, which escapes all the way to the root (the original bool-`link` behaviour).
-  // DR-034/DR-062 piece_filters + issue 2026-07-09-accum-entity-filters-wiring: the argv token
+  // DR-034/DR-062 piece_filters + issue 2026-07-09-accum-entity-filters-wiring: the args token
   // position this binding's VALUE was read from, when it has one. `Some(pos)` for a CLI-seat
   // binding built at token-consumption time (eval.mbt/matcher.mbt's `mkb` call sites — a separator
   // piece carries the position of the WHOLE token it split from, not a per-piece offset, since a
   // piece is not itself a token). `None` for every non-token-consumption source (env/config/
-  // inherit/default seats, resolve.mbt) — those values were never read off an argv token, so there
+  // inherit/default seats, resolve.mbt) — those values were never read off an args token, so there
   // is no position to attribute a later value_filters(each) reject to (`apply_entity_filters`'s
   // `filter_err` falls back to the ladder's own `at_pos`, unchanged behavior, when this is `None`).
   at_pos : Int?
@@ -1592,7 +1592,7 @@ fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
 fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
   {
     element,
-    argv_pos: pos,
+    args_pos: pos,
     kind: KParse,
     reason: "not_a_number",
     message: "\"\{tok}\" is not a number",
@@ -1608,7 +1608,7 @@ fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
 fn pe_parse_int(element : String, tok : String, pos : Int) -> ParseError {
   {
     element,
-    argv_pos: pos,
+    args_pos: pos,
     kind: KParse,
     reason: "not_an_integer",
     message: "\"\{tok}\" is not an integer",
@@ -1624,7 +1624,7 @@ fn pe_parse_int(element : String, tok : String, pos : Int) -> ParseError {
 fn pe_int_out_of_range(element : String, tok : String, pos : Int) -> ParseError {
   {
     element,
-    argv_pos: pos,
+    args_pos: pos,
     kind: KParse,
     reason: "int_out_of_range",
     message: "\"\{tok}\" is out of Int64 range",
@@ -1641,7 +1641,7 @@ fn pe_int_out_of_range(element : String, tok : String, pos : Int) -> ParseError 
 fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
   {
     element,
-    argv_pos: pos,
+    args_pos: pos,
     kind: KParse,
     reason: "not_a_bool",
     message: "\"\{tok}\" is not a bool",
@@ -1656,7 +1656,7 @@ fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
 fn pe_parse_kv(element : String, tok : String, pos : Int) -> ParseError {
   {
     element,
-    argv_pos: pos,
+    args_pos: pos,
     kind: KParse,
     reason: "not_a_kv_pair",
     message: "\"\{tok}\" does not contain '=' (expected key=value)",
@@ -1681,7 +1681,7 @@ fn pe_filter(
   reason : String,
   message : String,
 ) -> ParseError {
-  { element, argv_pos: pos, kind: KFilter, reason, message, path: [] }
+  { element, args_pos: pos, kind: KFilter, reason, message, path: [] }
 }
 
 ///|

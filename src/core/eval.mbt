@@ -40,9 +40,9 @@ priv struct Ctx {
 /// parse counts complete paths (DR-038); complete collects expectations
 /// (DR-060). The walk is ONE implementation — mode switches the
 /// collection-policy points below (MDR-002 §2.4):
-/// - boundary trigger sites (Exact / CmdSat / DdSat / NativeMatch at argv
+/// - boundary trigger sites (Exact / CmdSat / DdSat / NativeMatch at args
 ///   end) emit `Pending` exact candidates instead of a silent Reject;
-/// - spine value primitives starved at argv end emit `Pending` value
+/// - spine value primitives starved at args end emit `Pending` value
 ///   candidates instead of a missing-operand Held;
 /// - 取り分選好 pruning is off (a losing share's Pending is still material).
 priv enum EvalMode {
@@ -105,7 +105,7 @@ fn mk_eff(key : String, op : EffectOp, source : Source) -> Binding {
 
 ///|
 /// A failure-action marker binding (spec DR-048): key `@act:<name>`, value =
-/// the argv position where the action was selected (argv-min tie-break).
+/// the args position where the action was selected (args-min tie-break).
 fn action_marker(name : String, pos : Int) -> Binding {
   {
     key: "@act:" + name,
@@ -303,7 +303,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       if pos < ctx.toks.length() && ctx.toks[pos] == s {
         [Accept(pos + 1, [])]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        // complete (DR-060 §1): the argv boundary at a trigger position means
+        // complete (DR-060 §1): the args boundary at a trigger position means
         // this spelling is exactly what could be typed next.
         [Pending([cand_trigger(s, s, TFlag, WordEnd, false)], [])]
       } else {
@@ -578,12 +578,12 @@ fn bounded_opt(head : Node, budget : Int) -> Node {
 
 ///|
 /// A `kind: parse` held Error for a structurally-mandatory value that had NO
-/// token to consume (構造的必須の不成立, spec DR-065 §3): argv_pos = argv
+/// token to consume (構造的必須の不成立, spec DR-065 §3): args_pos = args
 /// length (where the token was requested).
 fn pe_missing(element : String, pos : Int) -> ParseError {
   {
     element,
-    argv_pos: pos,
+    args_pos: pos,
     kind: KParse,
     reason: "missing_operand",
     message: "missing operand for \{element}",
@@ -609,7 +609,7 @@ fn filter_arg_eval(
             Held(
               {
                 element: name,
-                argv_pos: pos,
+                args_pos: pos,
                 kind: KFilter,
                 reason: "too_large",
                 message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
@@ -658,7 +658,7 @@ fn req_arg_eval(
       Held(
         {
           element: name,
-          argv_pos: pos,
+          args_pos: pos,
           kind: KConstraint,
           reason: "required_violated",
           message: "required \{name} is missing",
@@ -732,7 +732,7 @@ fn split_on(s : String, sep : String) -> Array[String] {
 /// value primitive has; the two failure kinds stay distinct (`KFilter` vs `KParse`, mirrored from
 /// the scalar value-primitive arms' own pe_filter/pe_parse split).
 /// `pos` (issue 2026-07-09-accum-entity-filters-wiring): every split piece is attributed to the
-/// SAME argv token position — a piece is not itself a token, so there is no finer-grained position
+/// SAME args token position — a piece is not itself a token, so there is no finer-grained position
 /// to give it (CONFORMANCE §3's piece-attribution regulation attributes per-piece failures to the
 /// whole token they came from, per `multiple-parse/filters-each.json::separator-piece-rejects-whole`
 /// and `separator-typed.json::option-separator-piece-parse-rejected`).
@@ -1079,11 +1079,11 @@ fn eval_many(
 /// failure, a dead end for THIS reading) does not count — that is exactly
 /// "missing operand でない" 's negation. Pending is mode-dependent: `eval`'s
 /// value-primitive arms (StrArg/NumArg/etc.) return an EXPLICIT Pending at
-/// argv end REGARDLESS of mode (their own doc comment: "the end of input at
+/// args end REGARDLESS of mode (their own doc comment: "the end of input at
 /// a value slot is an explicit Pending, not a silent []" — an off-spine/
 /// completion-probe design predating DR-097). In parse mode that Pending IS
-/// DR-097's "missing operand" (a value slot starved at argv end) and must
-/// NOT count as viable, or a value-less trigger at the tail of argv would
+/// DR-097's "missing operand" (a value slot starved at args end) and must
+/// NOT count as viable, or a value-less trigger at the tail of args would
 /// wrongly suppress the pass-through fixture
 /// matcher-readings/long-empty-prefix-typed.json pins against. In complete
 /// mode the SAME Pending is the candidate carrier for completion (spec is
@@ -1416,7 +1416,7 @@ fn scope_step(
             if drop_redundant_residual &&
               pe.element == "" &&
               pe.reason == "unexpected_token" &&
-              pe.argv_pos == pos {
+              pe.args_pos == pos {
               ()
             } else {
               out.push(r)
@@ -1678,7 +1678,7 @@ fn scope_consume(
         }
       } else if pos >= ctx.toks.length() {
         // 構造的必須の不成立 (spec DR-065 §3): the spine needs a token for
-        // `name` but the argv is exhausted. Held, not a silent Reject; in
+        // `name` but the args is exhausted. Held, not a silent Reject; in
         // complete mode the same boundary is the positional expectation
         // (DR-060 §1「positional 面の次の期待ノード」).
         if in_complete(ctx) {
@@ -1877,7 +1877,7 @@ fn scope_consume(
                 Held(
                   {
                     element: name,
-                    argv_pos: pos,
+                    args_pos: pos,
                     kind: KFilter,
                     reason: "too_large",
                     message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
@@ -1927,7 +1927,7 @@ fn scope_consume(
             Held(
               {
                 element: name,
-                argv_pos: pos,
+                args_pos: pos,
                 kind: KConstraint,
                 reason: "required_violated",
                 message: "required \{name} is missing",
@@ -2408,7 +2408,7 @@ fn consume_head(
             Held(
               {
                 element: name,
-                argv_pos: pos,
+                args_pos: pos,
                 kind: KConstraint,
                 reason: "required_violated",
                 message: "required \{name} is missing",
@@ -2430,7 +2430,7 @@ fn consume_head(
                 Held(
                   {
                     element: name,
-                    argv_pos: pos,
+                    args_pos: pos,
                     kind: KFilter,
                     reason: "too_large",
                     message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
@@ -2950,7 +2950,7 @@ fn constraint_err(
   // the continuation chain — NOT `sc.path` (ScopedCons's path is the
   // scope_path_eq lookup key, reusing it here would double the prefix once
   // the same Held crosses those same boundaries on its way out).
-  { element, argv_pos: pos, kind: KConstraint, reason, message, path: [] }
+  { element, args_pos: pos, kind: KConstraint, reason, message, path: [] }
 }
 
 ///|
@@ -3278,12 +3278,12 @@ pub fn parse(
   }
   let full : Array[Array[Binding]] = []
   let errors : Array[ParseError] = []
-  // the deepest argv position any branch reached (DeepestOnly candidate set).
+  // the deepest args position any branch reached (DeepestOnly candidate set).
   let mut max_reach = -1
   for b in branches {
     match b {
       Accept(p, _) => if p > max_reach { max_reach = p }
-      Held(pe, _) => if pe.argv_pos > max_reach { max_reach = pe.argv_pos }
+      Held(pe, _) => if pe.args_pos > max_reach { max_reach = pe.args_pos }
       Pending(_, _) =>
         // a Pending consumed every token it saw (input exhausted).
         if toks.length() > max_reach {
@@ -3333,7 +3333,7 @@ pub fn parse(
         let counts = match faildef {
           AcceptsOnly => false
           WithHeld => true
-          DeepestOnly => pe.argv_pos == max_reach
+          DeepestOnly => pe.args_pos == max_reach
         }
         if counts {
           collect_actions(bs, actions)
@@ -3387,7 +3387,7 @@ pub fn parse(
     if max_partial >= 0 {
       push_error(errors, {
         element: "",
-        argv_pos: max_partial,
+        args_pos: max_partial,
         kind: KParse,
         reason: "unexpected_token",
         message: "unexpected token",
@@ -3405,15 +3405,15 @@ pub fn parse(
   for e in errors {
     if e.element == "" &&
       e.reason == "unexpected_token" &&
-      e.argv_pos > deepest_resid {
-      deepest_resid = e.argv_pos
+      e.args_pos > deepest_resid {
+      deepest_resid = e.args_pos
     }
   }
   let errors2 : Array[ParseError] = []
   for e in errors {
     if e.element == "" &&
       e.reason == "unexpected_token" &&
-      e.argv_pos < deepest_resid {
+      e.args_pos < deepest_resid {
       continue
     }
     errors2.push(e)
