@@ -36,7 +36,7 @@ test "MDR-002 §1.5 acceptance: greedy repeat in a child command yields the pare
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["seq", "a", "b", "c"], defs~)
+  let o = parse_tree(ScopeNode(root), ["seq", "a", "b", "c"], defs~)
   match o {
     Success(bs) => {
       // xs reps nest under [seq]; tail lands at the root. The result-object
@@ -89,7 +89,7 @@ test "MDR-002 §1.4 control: without the trailing positional, greedy xs takes ev
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["seq", "a", "b", "c"], defs~)
+  let o = parse_tree(ScopeNode(root), ["seq", "a", "b", "c"], defs~)
   match o {
     Success(bs) => {
       let mut xs_count = 0
@@ -124,7 +124,7 @@ test "DR-097 (先食い述語の精密化): a value-less trigger at the end of i
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["--port"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["--port"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut files_raw = false
@@ -152,7 +152,7 @@ test "positional spine + greedy interjection sanity (order-free trigger between 
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a", "--v", "b"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["a", "--v", "b"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut got_v = false
@@ -191,7 +191,7 @@ test "dd sever: past `--`, a trigger-looking token falls raw into the positional
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["--", "--v"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["--", "--v"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut x_is_trigger = false
@@ -222,7 +222,7 @@ test "residual token failure: an unconsumable trailing token is a KTop held erro
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["zzz"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["zzz"], defs=Map([]))
   match o {
     Failure(fd) => {
       assert_true(fd.errors.length() >= 1)
@@ -255,7 +255,7 @@ test "REVIEW-H1 probe: repeat head = ScopeNode (off-spine KDone) with outer trai
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a", "b", "c"], defs~)
+  let o = parse_tree(ScopeNode(root), ["a", "b", "c"], defs~)
   match o {
     Success(bs) => {
       let mut xs_count = 0
@@ -290,7 +290,7 @@ test "DR-043 sequential repeats: xs ys over a b c d e — greedy xs takes the lo
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a", "b", "c", "d", "e"], defs~)
+  let o = parse_tree(ScopeNode(root), ["a", "b", "c", "d", "e"], defs~)
   match o {
     Success(bs) => {
       let mut xs_count = 0
@@ -323,7 +323,7 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["--help", "abc"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["--help", "abc"], defs=Map([]))
   match o {
     Failure(fd) => {
       assert_eq(fd.fired_action, Some("help"))
@@ -374,7 +374,7 @@ test "REVIEW-C3 head_name knows FilterArg: optional extra rep at EOF is a stop, 
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["5"], defs~)
+  let o = parse_tree(ScopeNode(root), ["5"], defs~)
   match o {
     Failure(fd) => {
       for e in fd.errors {
@@ -400,7 +400,7 @@ test "REVIEW-C4 non-scope root: residual of a partial Accept surfaces even when 
   // Both failure reasons must be retained (DR-053 §2 全保持): gating the
   // residual synthesis on "errors empty" would mask the partial reading.
   let root = Or([Exact("a"), Seq([Exact("a"), NumArg("n", false, [])])])
-  let o = parse(root, ["a", "xyz"], defs=Map([]))
+  let o = parse_tree(root, ["a", "xyz"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut saw_residual = false
@@ -441,7 +441,7 @@ test "REGRESSION dd sever transparent to positional inline ScopeNode child (DR-0
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["--", "-x", "w"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["--", "-x", "w"], defs=Map([]))
   match o {
     Failure(fd) => {
       // no x binding should exist (child greedy face is severed) and the
@@ -476,7 +476,7 @@ test "REGRESSION step_greedy Held carries acc so FailMark survives to DeepestOnl
     entities: [],
     constraints: [],
   }
-  let o = parse(
+  let o = parse_tree(
     ScopeNode(root),
     ["--help", "--num", "xyz"],
     defs=Map([]),
@@ -503,7 +503,7 @@ test "REGRESSION consume_head ReqArg respects 先食い (raw-eat suppression)" {
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a", "-v"], defs~)
+  let o = parse_tree(ScopeNode(root), ["a", "-v"], defs~)
   match o {
     Success(bs) => {
       let mut f_count = 0
@@ -538,7 +538,7 @@ test "REGRESSION Many spine takes preference (greedy default, no Ambiguous)" {
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a", "b"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["a", "b"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut xs_count = 0
@@ -571,7 +571,7 @@ test "DR-043: Many(lazy=true) prefers the shortest (0-rep) share, mirroring the 
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a", "b", "c"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["a", "b", "c"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut xs_count = 0
@@ -614,7 +614,7 @@ test "REGRESSION scope-shaped Ref head: more-branch drops internal missing_opera
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a"], defs~)
+  let o = parse_tree(ScopeNode(root), ["a"], defs~)
   match o {
     Failure(fd) => {
       let mut saw_n_missing = false
@@ -653,7 +653,7 @@ test "REGRESSION Or-wrapped greedy: find_help_entry / tried_triggers walk Or arm
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["--typo"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["--typo"], defs=Map([]))
   match o {
     Failure(fd) => {
       assert_eq(fd.help_entry, Some("--help"))
@@ -695,7 +695,7 @@ test "DR-053 §4: tried_triggers reflects the failure position's OWN scope, not 
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["sub", "zzz"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["sub", "zzz"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut saw_port = false
@@ -739,7 +739,7 @@ test "DR-053 §4: help_entry reflects the failure position's OWN scope, not root
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["sub", "zzz"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["sub", "zzz"], defs=Map([]))
   match o {
     Failure(fd) => assert_eq(fd.help_entry, Some("--help"))
     _ => fail("expected Failure (residual 'zzz' inside sub's scope)")
@@ -766,7 +766,7 @@ test "DR-053 §4: help_entry is None when the failure-position scope has no help
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["zzz"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["zzz"], defs=Map([]))
   match o {
     Failure(fd) => assert_eq(fd.help_entry, None)
     _ =>
@@ -804,7 +804,7 @@ test "REVIEW-D1 取り分選好オラクルは制約違反の全消費を「完�
   }
   let root_node = ScopeNode(root)
   let o = apply_requires_filter(
-    parse(root_node, ["a", "b"], defs~),
+    parse_tree(root_node, ["a", "b"], defs~),
     root_node,
     defs,
     Map([]),
@@ -846,7 +846,7 @@ test "REVIEW-D2 制約照合は scope-exact: 子スコープの同名 key は ro
     entities: [],
     constraints: [CRequires("x", ["z"])],
   }
-  let o = parse(ScopeNode(root), ["c", "v"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["c", "v"], defs=Map([]))
   match o {
     Success(_) => ()
     _ => fail("expected Success (root x is uncommitted)")
@@ -879,7 +879,7 @@ test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコー�
   }
   let root_node = ScopeNode(root)
   let o = apply_requires_filter(
-    parse(root_node, ["--file", "sub", "--out"], defs=Map([])),
+    parse_tree(root_node, ["--file", "sub", "--out"], defs=Map([])),
     root_node,
     Map([]),
     Map([]),
@@ -918,7 +918,7 @@ test "REVIEW-D4 入れ子スコープの constraints も完全経路の成立条
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["sub", "--x", "--y"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["sub", "--x", "--y"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut viol = false
@@ -949,7 +949,7 @@ test "DR-097 (先食い述語の精密化, supersedes REVIEW-D5): 値不正の -
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["--port", "xyz"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["--port", "xyz"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut f_raw = false
@@ -994,7 +994,7 @@ test "DR-097 述語 pin: 値スロットを持たない flag は常に成立し�
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["-a", "-b"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["-a", "-b"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut x_missing = false
@@ -1047,7 +1047,7 @@ test "DR-097 述語 pin: requires (遅延述語) 未充足は先食い判定に�
   let root_node = ScopeNode(root)
   let toks = ["--height", "168.5"]
   let o = apply_requires_filter(
-    parse(root_node, toks, defs=Map([])),
+    parse_tree(root_node, toks, defs=Map([])),
     root_node,
     Map([]),
     Map([]),
@@ -1088,7 +1088,7 @@ test "REVIEW-D6 CmdSat トリガ一致も先食い: 子スコープ不成立で�
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["build"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["build"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut x_missing = false
@@ -1120,7 +1120,7 @@ test "DR-074 §1: FloatArg accepts inf (ci, signed), NumArg rejects it" {
   }
   // float accepts inf, case-insensitive, and a signed spelling.
   for tok in ["inf", "Infinity", "-inf", "+INF"] {
-    match parse(ScopeNode(root), ["--t", tok], defs=Map([])) {
+    match parse_tree(ScopeNode(root), ["--t", tok], defs=Map([])) {
       Success(bs) => {
         let mut t_ok = false
         for b in bs {
@@ -1137,7 +1137,7 @@ test "DR-074 §1: FloatArg accepts inf (ci, signed), NumArg rejects it" {
     }
   }
   // number rejects inf (type-dependent accept-域 boundary, DR-074 §1) — the SAME lexeme fails here.
-  match parse(ScopeNode(root), ["--n", "inf"], defs=Map([])) {
+  match parse_tree(ScopeNode(root), ["--n", "inf"], defs=Map([])) {
     Failure(fd) => {
       let mut n_not_a_number = false
       for e in fd.errors {
@@ -1150,7 +1150,7 @@ test "DR-074 §1: FloatArg accepts inf (ci, signed), NumArg rejects it" {
     _ => fail("expected Failure for --n inf")
   }
   // nan is Error for BOTH types (§1: no lexeme, no opt-in) — float does not treat nan as an inf variant.
-  match parse(ScopeNode(root), ["--t", "nan"], defs=Map([])) {
+  match parse_tree(ScopeNode(root), ["--t", "nan"], defs=Map([])) {
     Failure(fd) => {
       let mut t_not_a_number = false
       for e in fd.errors {
@@ -1183,7 +1183,7 @@ test "REGRESSION scope_consume FloatArg respects 先食い (raw-eat suppression)
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["inf"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["inf"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut x_missing = false
@@ -1217,7 +1217,7 @@ test "REGRESSION consume_head FloatArg respects 先食い (raw-eat suppression)"
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["1.5", "inf"], defs~)
+  let o = parse_tree(ScopeNode(root), ["1.5", "inf"], defs~)
   match o {
     Success(bs) => {
       let mut f_count = 0
@@ -1258,7 +1258,7 @@ test "REGRESSION scope_consume_rep Many(FloatArg) respects 先食い (raw-eat su
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["1.5", "inf"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["1.5", "inf"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut f_count = 0
@@ -1309,7 +1309,7 @@ test "REGRESSION scope_consume_rep Many(compound ref-template head) respects 先
     constraints: [],
   }
   let defs : Map[String, Node] = Map([("color", StrArg("colorname", []))])
-  let o = parse(ScopeNode(root), ["red", "--verbose"], defs~)
+  let o = parse_tree(ScopeNode(root), ["red", "--verbose"], defs~)
   match o {
     Success(bs) => {
       let mut colorname_count = 0
@@ -1361,7 +1361,7 @@ test "DR-066 §4: a root-level held Error carries path: []" {
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["abc"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["abc"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut found = false
@@ -1396,7 +1396,7 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["sub", "abc"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["sub", "abc"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut found = false
@@ -1437,7 +1437,7 @@ test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (r
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a", "b", "abc"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["a", "b", "abc"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut found = false
@@ -1477,7 +1477,7 @@ test "DR-066 §4: a constraint violation declared in a child scope carries the c
   }
   let root_node = ScopeNode(root)
   let o = apply_requires_filter(
-    parse(root_node, ["sub", "--x"], defs=Map([])),
+    parse_tree(root_node, ["sub", "--x"], defs=Map([])),
     root_node,
     Map([]),
     Map([]),
@@ -1511,7 +1511,7 @@ test "DR-066 §4: a residual-token Error carries path: []" {
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["go", "zzz"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["go", "zzz"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut found = false
@@ -1548,7 +1548,7 @@ test "DR-066 §4: a Pending-starvation missing_operand Error inside a nested com
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["sub", "--port"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["sub", "--port"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut found = false
@@ -1583,7 +1583,7 @@ test "KNOWN GAP: IdxRepeat greedy-max has no downstream backtrack for a followin
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a", "b", "c"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["a", "b", "c"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut tail_missing = false
@@ -1620,7 +1620,7 @@ test "IdxRepeat budget=Some(0): stops after min reps, does not starve a followin
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a", "b"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["a", "b"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut g_count = 0
@@ -1659,7 +1659,7 @@ test "IdxRepeat budget=Some(1): consumes up to min+budget=2 reps, leaves the res
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["a", "b", "c"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["a", "b", "c"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut g_count = 0
@@ -1698,7 +1698,7 @@ test "DR-043 × DR-038: hand-built Many(Or(seq-rgb, string-name)) lets both or-b
     constraints: [],
   }
   // ["red", "blue"]: 2 non-numeric tokens — only the string branch can fire (twice) → success.
-  match parse(ScopeNode(root), ["red", "blue"], defs=Map([])) {
+  match parse_tree(ScopeNode(root), ["red", "blue"], defs=Map([])) {
     Success(bs) => {
       let mut names = 0
       for b in bs {
@@ -1711,7 +1711,7 @@ test "DR-043 × DR-038: hand-built Many(Or(seq-rgb, string-name)) lets both or-b
     other => fail("expected Success, got " + render_outcome(other))
   }
   // ["255", "0", "0"]: 3 numeric tokens — BOTH readings succeed (rgb once, OR name x3) → ambiguous.
-  match parse(ScopeNode(root), ["255", "0", "0"], defs=Map([])) {
+  match parse_tree(ScopeNode(root), ["255", "0", "0"], defs=Map([])) {
     Ambiguous(d) => assert_eq(d.interpretations.length(), 2)
     other => fail("expected Ambiguous, got " + render_outcome(other))
   }
@@ -1748,7 +1748,7 @@ test "DR-047 §2: a constraint filters one of two complete paths (Or-branch shap
     entities: [],
     constraints: [CConflicts("foo", ["bar"])],
   }
-  match parse(ScopeNode(sc), ["x"], defs=Map([])) {
+  match parse_tree(ScopeNode(sc), ["x"], defs=Map([])) {
     Success(bs) => {
       assert_eq(bs.length(), 1)
       assert_eq(bs[0].key, "foo")
@@ -1756,7 +1756,7 @@ test "DR-047 §2: a constraint filters one of two complete paths (Or-branch shap
     other => fail("expected Success, got " + render_outcome(other))
   }
   let sc_noc : Scope = { ..sc, constraints: [] }
-  match parse(ScopeNode(sc_noc), ["x"], defs=Map([])) {
+  match parse_tree(ScopeNode(sc_noc), ["x"], defs=Map([])) {
     Ambiguous(d) => assert_eq(d.interpretations.length(), 2)
     other => fail("expected Ambiguous, got " + render_outcome(other))
   }
@@ -1794,7 +1794,7 @@ test "DR-047 §2: a constraint filters one of two complete paths (sibling greedy
   let root_node = ScopeNode(sc)
   match
     apply_requires_filter(
-      parse(root_node, ["--v"], defs=Map([])),
+      parse_tree(root_node, ["--v"], defs=Map([])),
       root_node,
       Map([]),
       Map([]),
@@ -1808,7 +1808,7 @@ test "DR-047 §2: a constraint filters one of two complete paths (sibling greedy
   }
   match
     apply_requires_filter(
-      parse(root_node, ["--v", "--c"], defs=Map([])),
+      parse_tree(root_node, ["--v", "--c"], defs=Map([])),
       root_node,
       Map([]),
       Map([]),
@@ -1832,7 +1832,7 @@ test "DR-091 §2: KvArg accepts a piece containing '=' (whole token becomes the 
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["KEY=value"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["KEY=value"], defs=Map([]))
   match o {
     Success(bs) => {
       assert_eq(bs.length(), 1)
@@ -1856,7 +1856,7 @@ test "DR-091 §2: KvArg rejects a piece with no '=' as a Held kind:parse Error (
     entities: [],
     constraints: [],
   }
-  let o = parse(ScopeNode(root), ["NOEQUALSIGN"], defs=Map([]))
+  let o = parse_tree(ScopeNode(root), ["NOEQUALSIGN"], defs=Map([]))
   match o {
     Failure(fd) => {
       let mut found = false

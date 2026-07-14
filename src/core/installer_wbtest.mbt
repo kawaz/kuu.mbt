@@ -139,7 +139,7 @@ fn all_installers() -> Array[Installer] {
 /// Ok を expect して Scope を取り出すヘルパ (Err は panic テストで assert)。fixture 実食は task #5 の
 /// harness で扱うため、この層は「lowering が Ok を返した Scope の構造」を細かく検査する。
 fn ok_scope(def : Definition, order : Array[Installer]) -> Scope {
-  match parse_definition(def, order) {
+  match lower_definition(def, order) {
     Ok(sc) => sc
     Err(_) => abort("expected Ok(Scope), got Err")
   }
@@ -605,7 +605,7 @@ test "parse_definition enumerates all def-errors (no first-error 打ち切り, D
   }
   // chain には LongInst / RepeatInst 共に無い → long vocab は unknown、repeat vocab も unknown、
   // かつ min>max の invalid range も同時に。3 種の DefError が列挙されるはず。
-  match parse_definition(def, [ShortInst]) {
+  match lower_definition(def, [ShortInst]) {
     Ok(_) => abort("expected Err")
     Err(errs) => {
       // 少なくとも DUnknownVocab (long / repeat) と DInvalidRange の 3 種を含む — 打ち切っていれば
@@ -649,7 +649,7 @@ test "parse_definition: a ref target absent from registry is DAbsentRef (DR-078 
   }
   // "color" は scope 内の兄弟要素にも registry (definitions.templates 相当の事前登録) にも無い
   // (registry 未指定 = 既定の空 map)。
-  match parse_definition(def, [RepeatInst]) {
+  match lower_definition(def, [RepeatInst]) {
     Ok(_) => abort("expected Err (absent ref target 'color')")
     Err(errs) => {
       let mut has_absent_ref = false
@@ -688,7 +688,7 @@ test "parse_definition: an option's ref+repeat with min > 1 is DInvalidRange (co
       ),
     ],
   }
-  match parse_definition(def, [LongInst, RepeatInst]) {
+  match lower_definition(def, [LongInst, RepeatInst]) {
     Ok(_) => abort("expected Err (unsupported option ref+repeat min>1)")
     Err(errs) => {
       let mut has_range = false
@@ -720,7 +720,7 @@ test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (co
       ),
     ],
   }
-  match parse_definition(def, [LongInst, RepeatInst]) {
+  match lower_definition(def, [LongInst, RepeatInst]) {
     Ok(_) =>
       abort(
         "expected Err (absent ref target 'color', registry left empty on purpose)",
@@ -764,7 +764,7 @@ test "parse_definition: an update variant on a multiple element is DInvalidRange
       ),
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (update variant on a multiple element is unsupported)",
@@ -793,7 +793,7 @@ test "parse_definition: an update variant on a scalar (non-multiple) element is 
       el("verbosity", TNum, long=LList([":set", "bump:update:increment"])),
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
@@ -829,7 +829,7 @@ test "parse_definition: an alias's long_override update variant on a multiple ca
       },
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (alias long_override update variant on a multiple canonical is unsupported)",
@@ -864,7 +864,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
       },
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
@@ -892,7 +892,7 @@ test "parse_definition: a count element with multiple is DInvalidRange (codex Hi
     ..empty_def(),
     options: [el("n", TCount, short=['n'], multiple=true)],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => abort("expected Err (count element with multiple is unsupported)")
     Err(errs) => {
       let mut has_range = false
@@ -914,7 +914,7 @@ test "parse_definition: a count element without multiple is NOT rejected (対極
     ..empty_def(),
     options: [el("verbosity", TCount, short=['v'])],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
@@ -993,7 +993,7 @@ test "parse_definition: a colon-less long spelling is a DR-054 unknown-vocab def
     ..empty_def(),
     options: [el("verbose", TFlag, long=LList(["verbose"]))],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       fail(
         "expected Err (colon-less long spelling 'verbose' is a syntax error)",
@@ -1018,7 +1018,7 @@ test "parse_definition: an unrecognized effect word in long is a DR-054 unknown-
     ..empty_def(),
     options: [el("ssl", TBool, long=LList(["no:bogus:false"]))],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       fail("expected Err (unrecognized effect word 'bogus' is a syntax error)")
     Err(errs) => {
@@ -1054,7 +1054,7 @@ test "parse_definition: a colon-less alias long_override spelling is a DR-054 un
       },
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       fail(
         "expected Err (colon-less alias long_override spelling 'chatty' is a syntax error)",
@@ -1269,7 +1269,7 @@ test "DR-077 §2: an unrecognized update transform name is a DR-054 unknown-voca
     ..empty_def(),
     options: [el("verbose", TCount, long=LList([":update:bogus"]))],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       fail("expected Err (unrecognized transform 'bogus' is unknown-vocab)")
     Err(errs) => {
@@ -1297,7 +1297,7 @@ test "DR-077 §2: a registered but Validate-signature filter is also a DR-054 un
     ..empty_def(),
     options: [el("verbose", TCount, long=LList([":update:in_range"]))],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       fail(
         "expected Err ('in_range' is Validate signature, not usable as an update transform)",
@@ -1330,7 +1330,7 @@ test "DR-077 §2: extra args to a registered Transform are NOT a definition-erro
     ..empty_def(),
     options: [el("verbose", TCount, long=LList([":update:increment:5"]))],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       fail(
@@ -1351,7 +1351,7 @@ test "DR-077 end-to-end: parse_definition → parse → resolve_scope ledgers -v
     options: [el("verbose", TCount, long=LBool(true), short=['v'])],
   }
   let sc = ok_scope(def, all_installers())
-  let o = parse(ScopeNode(sc), ["-vvv"], defs=Map([]))
+  let o = parse_tree(ScopeNode(sc), ["-vvv"], defs=Map([]))
   match o {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
@@ -1397,12 +1397,12 @@ test "positional or+repeat installer: string branch repeats in parallel with the
   }
   let def : Definition = { ..empty_def(), positionals: [hlcolors] }
   let registry : Map[String, Node] = Map([])
-  let sc = match parse_definition(def, all_installers(), registry~) {
+  let sc = match lower_definition(def, all_installers(), registry~) {
     Ok(s) => s
     Err(_) => abort("expected Ok(Scope)")
   }
   // 2 つの文字列トークンは rgb 枝に一致せず、string 枝 (colorname) が 2 回反復して吸収する。
-  match parse(ScopeNode(sc), ["red", "blue"], defs=registry) {
+  match parse_tree(ScopeNode(sc), ["red", "blue"], defs=registry) {
     Success(bs) => {
       let mut count = 0
       for b in bs {
@@ -1416,7 +1416,7 @@ test "positional or+repeat installer: string branch repeats in parallel with the
   }
   // 3 つの数値トークンは (a) rgb 枝 1 反復、(b) string 枝 3 反復、の 2 通りに構造的に読める
   // (DR-038 完全経路 2 本) — ambiguous。
-  match parse(ScopeNode(sc), ["255", "0", "0"], defs=registry) {
+  match parse_tree(ScopeNode(sc), ["255", "0", "0"], defs=registry) {
     Ambiguous(d) => assert_eq(d.interpretations.length(), 2)
     other => fail("expected Ambiguous, got " + render_outcome(other))
   }
@@ -1440,7 +1440,7 @@ test "repeat installer: self-ref cons template key does not collide with a same-
       el("x", TStr, repeat=Some({ min: 1, max: None, lazy_: false })),
     ],
   }
-  match parse_definition(def, [RepeatInst], registry~) {
+  match lower_definition(def, [RepeatInst], registry~) {
     Ok(_) => {
       // ユーザが事前登録した "x" エントリは repeat lowering 後も無傷 (上書きされていない)。
       assert_eq(registry.get("x"), Some(Exact("user-defined-x")))
@@ -1477,7 +1477,7 @@ test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_requires_fi
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
   // parse() 単体: bool target なので KTop は常に pass 扱い (c を与えなくても Success)。
-  match parse(root, ["--a"], defs=Map([])) {
+  match parse_tree(root, ["--a"], defs=Map([])) {
     Success(_) => ()
     other =>
       fail(
@@ -1489,7 +1489,7 @@ test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_requires_fi
   // 違反が検出され Failure に確定する。
   match
     apply_requires_filter(
-      parse(root, ["--a"], defs=Map([])),
+      parse_tree(root, ["--a"], defs=Map([])),
       root,
       Map([]),
       Map([]),
@@ -1513,7 +1513,7 @@ test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_requires_fi
   // c を CLI で明示指定すれば true に解決され、フィルタ後も Success のまま。
   match
     apply_requires_filter(
-      parse(root, ["--a", "--c"], defs=Map([])),
+      parse_tree(root, ["--a", "--c"], defs=Map([])),
       root,
       Map([]),
       Map([]),
@@ -1536,7 +1536,7 @@ test "DR-088: requires targeting an env-declared non-flag is a complete path at 
   let def : Definition = { ..empty_def(), options: [a, c] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, ["--a"], defs=Map([])) {
+  match parse_tree(root, ["--a"], defs=Map([])) {
     Success(_) => ()
     other =>
       fail(
@@ -1560,7 +1560,7 @@ test "value-present-ladder-gap: requires targeting an env-only-sourced non-flag 
   let root = ScopeNode(sc)
   match
     apply_requires_filter(
-      parse(root, ["--a"], defs=Map([])),
+      parse_tree(root, ["--a"], defs=Map([])),
       root,
       Map([]),
       Map::from_array([("C", "x")]),
@@ -1585,7 +1585,7 @@ test "value-present-ladder-gap: requires targeting a non-flag with no env value 
   let root = ScopeNode(sc)
   match
     apply_requires_filter(
-      parse(root, ["--a"], defs=Map([])),
+      parse_tree(root, ["--a"], defs=Map([])),
       root,
       Map([]),
       Map([]),
@@ -1632,7 +1632,7 @@ test "issue bool-requires-config-inherit-gap: requires targeting a config-source
   let root = ScopeNode(sc)
   match
     apply_requires_filter(
-      parse(root, ["--a"], defs=Map([])),
+      parse_tree(root, ["--a"], defs=Map([])),
       root,
       Map([]),
       Map([]),
@@ -1680,7 +1680,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
   // config オブジェクトに c キー自体が無い (供給なし → default:false へフォールスルー)
   check_failure(
     apply_requires_filter(
-      parse(root, ["--a"], defs=Map([])),
+      parse_tree(root, ["--a"], defs=Map([])),
       root,
       Map([]),
       Map([]),
@@ -1691,7 +1691,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
   // config オブジェクトが c:false を明示供給
   check_failure(
     apply_requires_filter(
-      parse(root, ["--a"], defs=Map([])),
+      parse_tree(root, ["--a"], defs=Map([])),
       root,
       Map([]),
       Map([]),
@@ -1721,7 +1721,7 @@ test "issue bool-requires-config-inherit-gap: requires targeting an inherit-sour
   let root = ScopeNode(sc)
   match
     apply_requires_filter(
-      parse(root, ["--c", "sub", "--a"], defs=Map([])),
+      parse_tree(root, ["--c", "sub", "--a"], defs=Map([])),
       root,
       Map([]),
       Map([]),
@@ -1753,7 +1753,7 @@ test "issue bool-requires-config-inherit-gap: inherit-sourced bool absent still 
   let root = ScopeNode(sc)
   match
     apply_requires_filter(
-      parse(root, ["sub", "--a"], defs=Map([])),
+      parse_tree(root, ["sub", "--a"], defs=Map([])),
       root,
       Map([]),
       Map([]),
@@ -1785,7 +1785,7 @@ test "issue bool-requires-config-inherit-gap: existing CLI-committed bool target
   let root = ScopeNode(sc)
   match
     apply_requires_filter(
-      parse(root, ["--a", "--c"], defs=Map([])),
+      parse_tree(root, ["--a", "--c"], defs=Map([])),
       root,
       Map([]),
       Map([]),
@@ -1831,7 +1831,7 @@ test "codex Medium: merge without separator — no-marker single fire adds (over
     ],
   }
   let sc = ok_scope(def, all_installers())
-  match parse(ScopeNode(sc), ["--fields", "hello"], defs=Map([])) {
+  match parse_tree(ScopeNode(sc), ["--fields", "hello"], defs=Map([])) {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
@@ -1863,7 +1863,7 @@ test "codex Medium: merge without separator — a lone remove-marker fire merges
   }
   let sc = ok_scope(def, all_installers())
   match
-    parse(
+    parse_tree(
       ScopeNode(sc),
       ["--fields", "hello", "--fields", "-hello"],
       defs=Map([]),
@@ -1895,7 +1895,11 @@ test "codex Medium: merge without separator — a lone splice-marker fire is ide
   }
   let sc = ok_scope(def, all_installers())
   match
-    parse(ScopeNode(sc), ["--fields", "hello", "--fields", "@"], defs=Map([])) {
+    parse_tree(
+      ScopeNode(sc),
+      ["--fields", "hello", "--fields", "@"],
+      defs=Map([]),
+    ) {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
@@ -1923,7 +1927,7 @@ test "codex Medium: merge without separator — an escaped piece is a literal ad
     ],
   }
   let sc = ok_scope(def, all_installers())
-  match parse(ScopeNode(sc), ["--fields", "+-x"], defs=Map([])) {
+  match parse_tree(ScopeNode(sc), ["--fields", "+-x"], defs=Map([])) {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
@@ -1948,7 +1952,7 @@ test "parse_definition: a regex_match filter with an uncompilable pattern is DIn
       el("code", TStr, long=LBool(true), piece_filters=["regex_match:["]),
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => abort("expected Err (regex_match pattern '[' fails to compile)")
     Err(errs) => {
       let mut has_invalid_argument = false
@@ -1973,7 +1977,7 @@ test "parse_definition: a regex_match filter with a compilable pattern is NOT re
       el("code", TStr, long=LBool(true), piece_filters=["regex_match:^[a-z]+$"]),
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
@@ -1999,7 +2003,7 @@ test "parse_definition: regex_match compile check also fires for value_filters a
     ..empty_def(),
     options: [el("a", TStr, long=LBool(true), value_filters=["regex_match:["])],
   }
-  match parse_definition(def_value, all_installers()) {
+  match lower_definition(def_value, all_installers()) {
     Ok(_) => abort("expected Err (value_filters regex_match compile failure)")
     Err(errs) => {
       let mut found = false
@@ -2015,7 +2019,7 @@ test "parse_definition: regex_match compile check also fires for value_filters a
     ..empty_def(),
     options: [el("b", TStr, long=LBool(true), final_filters=["regex_match:["])],
   }
-  match parse_definition(def_final, all_installers()) {
+  match lower_definition(def_final, all_installers()) {
     Ok(_) => abort("expected Err (final_filters regex_match compile failure)")
     Err(errs) => {
       let mut found = false
@@ -2047,7 +2051,7 @@ test "parse_definition: an accum element's accum_filters regex_match entry is un
       ]),
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (accum_filters regex_match is not a registered ARRAY filter)",
@@ -2083,7 +2087,7 @@ test "DR-089: an omitted-type (none) pure trigger participates in conflicts as a
   let def : Definition = { ..empty_def(), options: [a, b] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, ["--a", "--b"], defs=Map([])) {
+  match parse_tree(root, ["--a", "--b"], defs=Map([])) {
     Failure(d) => {
       let mut found = false
       for e in d.errors {
@@ -2108,7 +2112,7 @@ test "DR-089: a fired none-typed pure trigger never appears in the result" {
   let def : Definition = { ..empty_def(), options: [sep] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, ["--sep"], defs=Map([])) {
+  match parse_tree(root, ["--sep"], defs=Map([])) {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
@@ -2127,7 +2131,7 @@ test "DR-089: explicit type:none behaves identically to an omitted type" {
   let def : Definition = { ..empty_def(), options: [sep] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, ["--sep2"], defs=Map([])) {
+  match parse_tree(root, ["--sep2"], defs=Map([])) {
     Success(bs) => assert_eq(bs.length(), 1)
     other => fail("expected Success, got " + render_outcome(other))
   }
@@ -2146,7 +2150,7 @@ test "DR-089: a none-typed repeat positional structurally consumes multiple toke
   let def : Definition = { ..empty_def(), positionals: [colon] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, ["x", "y"], defs=Map([])) {
+  match parse_tree(root, ["x", "y"], defs=Map([])) {
     Success(bs) => {
       let mut n = 0
       for b in bs {
@@ -2169,7 +2173,7 @@ test "DR-093: a none-typed requires target is NOT a definition-error (supersedes
   let a = { ..el("a", TFlag, long=LBool(true)), requires: ["c"] }
   let c = el("c", TNone, long=LBool(true))
   let def : Definition = { ..empty_def(), options: [a, c] }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(_) =>
       fail(
@@ -2190,7 +2194,7 @@ test "DR-093: a none-typed requires target is satisfied by firing (committed), u
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
   // c 発火あり: requires 充足、Success (a=true, c は値空間なしなので結果に現れない)。
-  match parse(root, ["--a", "--c"], defs=Map([])) {
+  match parse_tree(root, ["--a", "--c"], defs=Map([])) {
     Success(_) => ()
     other =>
       fail(
@@ -2199,7 +2203,7 @@ test "DR-093: a none-typed requires target is satisfied by firing (committed), u
       )
   }
   // c 発火なし: requires 未充足、constraint required_violated ではなく requires_violated の Failure。
-  match parse(root, ["--a"], defs=Map([])) {
+  match parse_tree(root, ["--a"], defs=Map([])) {
     Failure(d) => {
       let mut found = false
       for e in d.errors {
@@ -2227,7 +2231,7 @@ test "DR-093: a required:true option (value-space) is satisfied by CLI value, un
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
   // 未指定: 値源 (default/env/config/inherit) が無いので required 未充足、Failure。
-  match parse(root, [], defs=Map([])) {
+  match parse_tree(root, [], defs=Map([])) {
     Failure(d) => {
       let mut found = false
       for e in d.errors {
@@ -2244,7 +2248,7 @@ test "DR-093: a required:true option (value-space) is satisfied by CLI value, un
       )
   }
   // CLI 指定: 値が在るので Success。
-  match parse(root, ["--name", "x"], defs=Map([])) {
+  match parse_tree(root, ["--name", "x"], defs=Map([])) {
     Success(_) => ()
     other =>
       fail("expected Success (CLI value present), got " + render_outcome(other))
@@ -2264,7 +2268,7 @@ test "DR-093: a required:true option with a declared default is vacuously satisf
   let def : Definition = { ..empty_def(), options: [name] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, [], defs=Map([])) {
+  match parse_tree(root, [], defs=Map([])) {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
@@ -2294,7 +2298,7 @@ test "DR-093: a required:true dd element (DdSat) is satisfied by firing, unmet o
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
   // -- 発火あり: required 充足、Success。dd は値空間なしなので結果に "--" は現れない (DR-089 §3)。
-  match parse(root, ["--", "msg"], defs=Map([])) {
+  match parse_tree(root, ["--", "msg"], defs=Map([])) {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
@@ -2304,7 +2308,7 @@ test "DR-093: a required:true dd element (DdSat) is satisfied by firing, unmet o
     other => fail("expected Success (-- fired), got " + render_outcome(other))
   }
   // -- 発火なし: required 未充足、constraint required_violated の Failure (kawaz/die の `die msg` 相当)。
-  match parse(root, ["msg"], defs=Map([])) {
+  match parse_tree(root, ["msg"], defs=Map([])) {
     Failure(d) => {
       let mut found = false
       for e in d.errors {
@@ -2337,7 +2341,7 @@ test "DR-093: a required:true dd element with dd_match (DdMatchSat) is satisfied
   let def : Definition = { ..empty_def(), options: [dd], positionals: [x] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, ["--", "msg"], defs=Map([])) {
+  match parse_tree(root, ["--", "msg"], defs=Map([])) {
     Success(_) => ()
     other =>
       fail(
@@ -2345,7 +2349,7 @@ test "DR-093: a required:true dd element with dd_match (DdMatchSat) is satisfied
         render_outcome(other),
       )
   }
-  match parse(root, ["msg"], defs=Map([])) {
+  match parse_tree(root, ["msg"], defs=Map([])) {
     Failure(d) => {
       let mut found = false
       for e in d.errors {
@@ -2376,7 +2380,7 @@ test "DR-093: a positional's requires (trigger side) reaches constraint registra
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
   // -- 発火してから args が msg を消費: requires 充足、Success。
-  match parse(root, ["--", "msg"], defs=Map([])) {
+  match parse_tree(root, ["--", "msg"], defs=Map([])) {
     Success(_) => ()
     other =>
       fail(
@@ -2388,7 +2392,7 @@ test "DR-093: a positional's requires (trigger side) reaches constraint registra
   // 取り分次元の dead-end (0 消費側の残余 unexpected_token) も併走しうる (DR-053 §2「取り分次元の
   // dead-end も全保持」) ので、Failure であることと errors に requires_violated が「含まれる」こと
   // だけを見る (exact set 一致ではなく contains — fixture 側の輪郭確認とは異なる粒度で十分)。
-  match parse(root, ["msg"], defs=Map([])) {
+  match parse_tree(root, ["msg"], defs=Map([])) {
     Failure(d) => {
       let mut found = false
       for e in d.errors {
@@ -2424,7 +2428,7 @@ test "DR-089: a none-typed element declaring env/config_key/inherit is a definit
     ..empty_def(),
     options: [with_env, with_config_key, with_inherit],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (none element with env/config_key/inherit is a definition-error)",
@@ -2460,7 +2464,7 @@ test "DR-089: a none-typed element declaring env/config_key/inherit is a definit
 test "DR-099 §3/§7: an option selecting builtin/tty without tty_stream is a definition-error" {
   let use_color = el("use_color", TBool, is_tty=true, tty_stream=None)
   let def : Definition = { ..empty_def(), options: [use_color] }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (builtin/tty preset missing tty_stream is a definition-error, DR-099 §3/§7)",
@@ -2485,7 +2489,7 @@ test "DR-099 §3/§7: an option selecting builtin/tty without tty_stream is a de
 test "DR-099 §3/§7: a positional selecting builtin/tty without tty_stream is a definition-error" {
   let pos_elem = el("stdin_tty", TBool, is_tty=true, tty_stream=None)
   let def : Definition = { ..empty_def(), positionals: [pos_elem] }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (builtin/tty preset missing tty_stream is a definition-error, DR-099 §3/§7)",
@@ -2522,7 +2526,7 @@ test "ensure_entity: a tty preset element without an explicit default keeps defa
 test "DR-089 対極: a none-typed element with no value-source declaration is not a definition-error" {
   let sep = el("sep3", TNone, long=LBool(true))
   let def : Definition = { ..empty_def(), options: [sep] }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) => {
       let mut msg = ""
@@ -2542,7 +2546,7 @@ test "DR-089 対極: a pre-existing explicit-type element is unaffected by none 
   let def : Definition = { ..empty_def(), options: [x] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, ["--x"], defs=Map([])) {
+  match parse_tree(root, ["--x"], defs=Map([])) {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
@@ -2569,7 +2573,7 @@ test "DR-088: a plain scalar positional with a declared default is a complete pa
   let def : Definition = { ..empty_def(), positionals: [seconds] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, [], defs=Map([])) {
+  match parse_tree(root, [], defs=Map([])) {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
@@ -2592,7 +2596,7 @@ test "DR-088: a plain scalar positional with a declared default still consumes a
   let def : Definition = { ..empty_def(), positionals: [seconds] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, ["5"], defs=Map([])) {
+  match parse_tree(root, ["5"], defs=Map([])) {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
@@ -2613,7 +2617,7 @@ test "DR-088 対極: a plain scalar positional with NO declared default still mi
   let def : Definition = { ..empty_def(), positionals: [file] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, [], defs=Map([])) {
+  match parse_tree(root, [], defs=Map([])) {
     Failure(d) => {
       let mut found = false
       for e in d.errors {
@@ -2640,7 +2644,7 @@ test "DR-088 対極2: an explicit optional:true positional is unaffected (still 
   let def : Definition = { ..empty_def(), positionals: [tag] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, [], defs=Map([])) {
+  match parse_tree(root, [], defs=Map([])) {
     Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
@@ -2687,7 +2691,7 @@ test "DR-090: xargs-style pattern dd (self:keep) — option fires, value slot ra
   }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, ["-n", "1", "rm", "-f", "a"], defs=Map([])) {
+  match parse_tree(root, ["-n", "1", "rm", "-f", "a"], defs=Map([])) {
     Success(bs) => {
       assert_eq(elem_value_bs(bs, "n"), Some("1"))
       let rest_vals : Array[String] = []
@@ -2723,7 +2727,7 @@ test "DR-090 対極: exact dd (no match/self declared) is unaffected — drop + 
   let def : Definition = { ..empty_def(), options: [dd], positionals: [rest] }
   let sc = ok_scope(def, all_installers())
   let root = ScopeNode(sc)
-  match parse(root, ["--", "-x", "y"], defs=Map([])) {
+  match parse_tree(root, ["--", "-x", "y"], defs=Map([])) {
     Success(bs) => {
       let rest_vals : Array[String] = []
       for b in bs {
@@ -2744,7 +2748,7 @@ test "DR-090 対極: exact dd (no match/self declared) is unaffected — drop + 
 test "DR-090: an uncompilable dd match pattern is a definition-error" {
   let dd = { ..el("dd", TStr, is_dd=true, dd_match=Some("[")) }
   let def : Definition = { ..empty_def(), options: [dd] }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => abort("expected Err (uncompilable dd match pattern)")
     Err(errs) => {
       let mut found = false
@@ -2764,7 +2768,7 @@ test "DR-090: an uncompilable dd match pattern is a definition-error" {
 test "DR-090 対極: a compilable dd match pattern is NOT rejected" {
   let dd = { ..el("dd", TStr, is_dd=true, dd_match=Some("^[^\\-]")) }
   let def : Definition = { ..empty_def(), options: [dd] }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
@@ -2789,7 +2793,7 @@ test "DR-091 §3 / DR-096 §1 end-to-end: long_prefix:\"\" + long_eq_sep:EsRequi
   }
   let def : Definition = { ..empty_def(), options: [if_elem] }
   let sc = ok_scope(def, all_installers())
-  let o = parse(ScopeNode(sc), ["if=abc"], defs=Map([]))
+  let o = parse_tree(ScopeNode(sc), ["if=abc"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut found = false
@@ -2818,7 +2822,7 @@ test "DR-091 §3 / DR-096 §1 end-to-end: long_eq_sep:EsRequire rejects the spac
   }
   let def : Definition = { ..empty_def(), options: [if_elem] }
   let sc = ok_scope(def, all_installers())
-  let o = parse(ScopeNode(sc), ["if", "abc"], defs=Map([]))
+  let o = parse_tree(ScopeNode(sc), ["if", "abc"], defs=Map([]))
   match o {
     Failure(_) => ()
     other =>
@@ -2848,7 +2852,7 @@ test "DR-096 §3.3 end-to-end: long_prefix:\"\" + long_eq_sep:EsRequire does not
     positionals: [target],
   }
   let sc = ok_scope(def, all_installers())
-  let o = parse(ScopeNode(sc), ["foo"], defs=Map([]))
+  let o = parse_tree(ScopeNode(sc), ["foo"], defs=Map([]))
   match o {
     Success(bs) => {
       let mut target_found = false
@@ -3007,7 +3011,7 @@ test "short installer end-to-end: short_combine:false rejects -ab but accepts -a
     ],
   }
   let sc = ok_scope(def, all_installers())
-  match parse(ScopeNode(sc), ["-ab"], defs=Map([])) {
+  match parse_tree(ScopeNode(sc), ["-ab"], defs=Map([])) {
     Failure(_) => ()
     other =>
       fail(
@@ -3015,7 +3019,7 @@ test "short installer end-to-end: short_combine:false rejects -ab but accepts -a
         render_outcome(other),
       )
   }
-  match parse(ScopeNode(sc), ["-a", "-b"], defs=Map([])) {
+  match parse_tree(ScopeNode(sc), ["-a", "-b"], defs=Map([])) {
     Success(bs) => {
       let mut a_found = false
       let mut b_found = false
@@ -3066,7 +3070,7 @@ test "long installer: long_eq_sep:EsDeny end-to-end — eq form fails, space for
     options: [el("port", TStr, long=LList([":set"]), long_eq_sep=EsDeny)],
   }
   let sc = ok_scope(def, all_installers())
-  match parse(ScopeNode(sc), ["--port=80"], defs=Map([])) {
+  match parse_tree(ScopeNode(sc), ["--port=80"], defs=Map([])) {
     Failure(_) => ()
     other =>
       fail(
@@ -3074,7 +3078,7 @@ test "long installer: long_eq_sep:EsDeny end-to-end — eq form fails, space for
         render_outcome(other),
       )
   }
-  match parse(ScopeNode(sc), ["--port", "80"], defs=Map([])) {
+  match parse_tree(ScopeNode(sc), ["--port", "80"], defs=Map([])) {
     Success(bs) => {
       let mut found = false
       for b in bs {
@@ -3108,7 +3112,7 @@ test "long installer end-to-end: --t inf reaches the binding as VNum(Infinity) u
   }
   let sc = ok_scope(def, all_installers())
   let inf : Double = 1.0 / 0.0
-  match parse(ScopeNode(sc), ["--t", "inf"], defs=Map([])) {
+  match parse_tree(ScopeNode(sc), ["--t", "inf"], defs=Map([])) {
     Success(bs) => {
       let mut found = false
       for b in bs {
@@ -3122,7 +3126,7 @@ test "long installer end-to-end: --t inf reaches the binding as VNum(Infinity) u
     other => fail("expected Success, got " + render_outcome(other))
   }
   // 負の無限大 + Infinity の case-insensitive 綴り (DR-074 §7) も同経路で確認。
-  match parse(ScopeNode(sc), ["--t", "-Infinity"], defs=Map([])) {
+  match parse_tree(ScopeNode(sc), ["--t", "-Infinity"], defs=Map([])) {
     Success(bs) => {
       let mut found = false
       for b in bs {
@@ -3293,7 +3297,7 @@ test "parse_definition: length_range with a negative min is DInvalidArgument (DR
       ]),
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => abort("expected Err (length_range min -1 is negative)")
     Err(errs) => {
       let mut has_invalid_argument = false
@@ -3320,7 +3324,7 @@ test "parse_definition: length_range with a non-integer min is DInvalidArgument 
       ]),
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => abort("expected Err (length_range min 1.5 is not an integer)")
     Err(errs) => {
       let mut has_invalid_argument = false
@@ -3348,7 +3352,7 @@ test "parse_definition: in_range keeps canonical-number bounds, length_range acc
       ]),
     ],
   }
-  match parse_definition(def, all_installers()) {
+  match lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) => abort("expected Ok, got Err: " + errs.length().to_string())
   }

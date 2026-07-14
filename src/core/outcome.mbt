@@ -300,7 +300,7 @@ fn tried_triggers_in_greedy(g : Node, out : Array[String]) -> Unit {
 /// spellings (an eq-split `--key` needs `=value` typed in the same word)
 /// cannot be checked without inventing the user's input, so they pass the
 /// filter unexamined.
-pub fn complete(
+pub fn complete_tree(
   root : Node,
   before : Array[String],
   defs? : Map[String, Node] = Map([]),
@@ -357,7 +357,7 @@ pub fn complete(
       for t in after {
         toks2.push(t)
       }
-      match parse(root, toks2, defs~) {
+      match parse_tree(root, toks2, defs~) {
         Success(_) | Ambiguous(_) => out.push(c)
         Failure(_) => ()
       }

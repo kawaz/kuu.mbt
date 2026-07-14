@@ -4418,7 +4418,7 @@ fn materialize(sb : SB) -> Scope {
 ///
 /// Returns Ok(atomic scope) or Err(全 definition-time errors)。static check は全て走って 1 list に append
 /// (打ち切りなし)。各 DefError は {element, kind, message, hint} を持つ。
-pub fn parse_definition(
+pub fn lower_definition(
   def0 : Definition,
   order : Array[Installer],
   registry? : Map[String, Node] = Map([], capacity=0),

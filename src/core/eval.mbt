@@ -3508,7 +3508,7 @@ fn collect_pos_scopes(
 /// like a Held with a missing-operand Error, so what the slice silently
 /// dropped is now a visible failure reason. A Pending with only exact
 /// (trigger-spelling) candidates is completion material, not an error.
-pub fn parse(
+pub fn parse_tree(
   root : Node,
   toks : Array[String],
   defs? : Map[String, Node] = Map([]),
