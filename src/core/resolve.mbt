@@ -1479,6 +1479,33 @@ fn eval_requires(
           })
         }
       }
+      CRequiredGroup(group, members) => {
+        // DR-103 §1/§7: member 充足は `CRequired` と完全に同一の型委譲 (値空間なし = committed、
+        // 値空間あり = 値の有無、default 込み) — bool 特例 (`satisfied` の requires 目的語ルール)
+        // は適用しない。member のいずれか 1 つでも充足すればグループ成立 (少なくとも1つ必須)。
+        let mut ok = false
+        for m in members {
+          let m_ok = if is_none_entity(sc.entities, m) {
+            is_committed(bindings, path, m)
+          } else {
+            elem_value(resolved, path, m) != None
+          }
+          if m_ok {
+            ok = true
+          }
+        }
+        if !ok {
+          out.push({
+            ..constraint_err(
+              group,
+              "required_group_violated",
+              "required group '\{group}' has no satisfied member",
+              pos,
+            ),
+            path,
+          })
+        }
+      }
     }
   }
   out

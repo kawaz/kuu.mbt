@@ -323,6 +323,7 @@ fn opt(
   requires? : Array[String] = [],
   conflicts? : Array[String] = [],
   exclusive? : Array[String] = [],
+  required_group? : Array[String] = [],
   required? : Bool = false,
   value_requires? : Array[(String, String, Array[String])] = [],
   default? : Array[Value]? = None,
@@ -374,6 +375,7 @@ fn opt(
     requires,
     conflicts_with: conflicts,
     exclusive_group: exclusive,
+    required_group,
     required,
     value_requires,
     deprecated: false,
@@ -457,6 +459,7 @@ fn pos(
     requires,
     conflicts_with: [],
     exclusive_group: [],
+    required_group: [],
     required,
     value_requires: [],
     deprecated: false,
@@ -525,6 +528,7 @@ fn dd_marker(
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
+    required_group: [],
     required,
     value_requires: [],
     deprecated: false,
@@ -681,6 +685,8 @@ fn lcon_str(c : Constraint) -> String {
       "exclusive_group{group=" + g + ",members=[" + sorted(ms) + "]}"
     CRequired(el, cands) =>
       "required{element=" + el + ",candidates=[" + sorted(cands) + "]}"
+    CRequiredGroup(g, ms) =>
+      "required_group{group=" + g + ",members=[" + sorted(ms) + "]}"
   }
 }
 
@@ -2896,8 +2902,9 @@ fn dec_option(
     [
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "requires", "conflicts_with", "exclusive_group",
-      "required", "export_key", "config_key", "deprecated", "or", "values", "piece_filters",
-      "value_filters", "final_filters", "accum_filters", "ref", "repeat",
+      "required_group", "required", "export_key", "config_key", "deprecated", "or",
+      "values", "piece_filters", "value_filters", "final_filters", "accum_filters",
+      "ref", "repeat",
       // DR-090 §2: dd 専用の2軸拡張キー — 他 type では無意味だが、dd 分岐 (下) だけが読む
       // ("option" 共通 allowed_keys に足すのは他 wire 属性 (env/config_key 等) と同じ扱い方)。
        "match", "self",
@@ -3087,6 +3094,7 @@ fn dec_option(
   let requires = dec_strs(o.get("requires"))
   let conflicts = dec_strs(o.get("conflicts_with"))
   let exclusive = dec_strs(o.get("exclusive_group"))
+  let required_group = dec_strs(o.get("required_group"))
   let required = bool_field(o, "required", false)
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
@@ -3140,6 +3148,7 @@ fn dec_option(
       requires~,
       conflicts~,
       exclusive~,
+      required_group~,
       required~,
       value_requires~,
       default~,

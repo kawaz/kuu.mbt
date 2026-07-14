@@ -3095,6 +3095,27 @@ fn eval_constraints(
           )
         }
       }
+      CRequiredGroup(group, members) => {
+        // DR-103 §1: KTop の粗判定 — `CRequired` と全く同じゲート (`value_declared`、member の
+        // いずれか 1 つでも「値が来る可能性がある」なら OK)。最終判定 (型委譲の実値、bool 特例
+        // なし) は resolve.mbt の後段フィルタが行う。
+        let mut any_ok = false
+        for m in members {
+          if value_declared(m, bindings, path, sc.entities) {
+            any_ok = true
+          }
+        }
+        if !any_ok {
+          out.push(
+            constraint_err(
+              group,
+              "required_group_violated",
+              "required group '\{group}' has no satisfied member",
+              pos,
+            ),
+          )
+        }
+      }
     }
   }
   out

@@ -83,6 +83,7 @@ fn el(
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
+    required_group: [],
     // DR-093: `el()` follows the same "constraint axes stay at their zero value, spread-override
     // (`{ ..el(...), required: true }`) if a case needs it" pattern as requires/exclusive_group above.
     required: false,

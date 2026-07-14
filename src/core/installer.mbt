@@ -76,6 +76,10 @@ pub(all) struct ElemDef {
   requires : Array[String] // constraint installer (DR-055): 正の依存
   conflicts_with : Array[String] // constraint installer (DR-055): 対称ペア排他
   exclusive_group : Array[String] // constraint installer (DR-047): group labels
+  // DR-103 §1: constraint installer 所有、exclusive_group と同型の group labels。グループ内 member
+  // のいずれかが required 単項と同じ型委譲充足 (DR-093) を満たさなければ違反 (少なくとも1つ必須)。
+  // exclusive_group とは独立した名前空間 (同名文字列を両属性に書いても 2 つの独立述語、DR-103 §3)。
+  required_group : Array[String]
   // DR-093 §1/§2: constraint installer 所有。「解決後の充足」の保証であり、充足の定義は type (値空間)
   // が与える — 値空間を持つ要素 (通常 type) は最終状態の値の有無 (default 込み、DR-047 §5 不変)、
   // 値空間が空の要素 (`type: "none"`、dd 含む、DR-089) は発火したこと (committed)。option/positional
@@ -759,6 +763,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     requires: e.requires,
     conflicts_with: e.conflicts_with,
     exclusive_group: e.exclusive_group,
+    required_group: e.required_group,
     required: e.required,
     value_requires: e.value_requires,
     deprecated: e.deprecated,
@@ -2115,6 +2120,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     requires: copy.requires,
     conflicts_with: copy.conflicts_with,
     exclusive_group: copy.exclusive_group,
+    required_group: copy.required_group,
     required: copy.required,
     value_requires: copy.value_requires,
     deprecated: copy.deprecated,
@@ -2312,6 +2318,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
+    required_group: [],
     required: false, // write-target copy は required 制約を持たない (requires/exclusive_group と同じ理由)
     value_requires: [],
     deprecated: false,
@@ -2336,8 +2343,8 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
 
 ///|
 /// constraint installer (DR-055 / DR-042 席宣言型): requires / conflicts_with / exclusive_group /
-/// required / value_requires を scope の遅延述語として登録。構造衛星は無し (DR-047 完全 path の
-/// 最終状態で評価)。
+/// required / required_group (DR-103) / value_requires を scope の遅延述語として登録。構造衛星は
+/// 無し (DR-047 完全 path の最終状態で評価)。
 fn inst_constraint(def : Definition, build : Build) -> Unit {
   let all : Array[ElemDef] = []
   for e in def.options {
@@ -2402,6 +2409,25 @@ fn inst_constraint(def : Definition, build : Build) -> Unit {
       }
     }
     add_constraint(build, CExclusive(g, members))
+  }
+  // required_group (DR-103 §1/§3): exclusive_group と同じ集約パターン、独立した名前空間 (別の
+  // groups 配列)。1 CRequiredGroup per label。
+  let rg_groups : Array[String] = []
+  for e in all {
+    for g in e.required_group {
+      if !str_in(rg_groups, g) {
+        rg_groups.push(g)
+      }
+    }
+  }
+  for g in rg_groups {
+    let members : Array[String] = []
+    for e in all {
+      if str_in(e.required_group, g) {
+        members.push(e.name)
+      }
+    }
+    add_constraint(build, CRequiredGroup(g, members))
   }
 }
 
@@ -2551,6 +2577,7 @@ fn alias_entry(
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
+    required_group: [],
     required: false, // alias entry は AliasDef 自体に required 宣言経路を持たない (requires/exclusive_group と同じ理由)
     value_requires: [],
     deprecated,
@@ -3004,6 +3031,9 @@ fn scan_elem_vocab(e : ElemDef, owned : Array[String]) -> String? {
   }
   if e.exclusive_group.length() > 0 && !vocab_owned(owned, "constraint") {
     return Some("constraint:exclusive_group")
+  }
+  if e.required_group.length() > 0 && !vocab_owned(owned, "constraint") {
+    return Some("constraint:required_group")
   }
   if e.value_requires.length() > 0 && !vocab_owned(owned, "constraint") {
     return Some("constraint:value_requires")

@@ -386,6 +386,14 @@ pub(all) enum Constraint {
   /// — 枝が exact (value-enum, BEnum) なら全枝が同じ display 名の cell に着地するため候補は元々
   /// `[display]` のままで足りる、対称性が崩れるのは BOr だけ)。
   CRequired(String, Array[String])
+  /// required_group (DR-103): グループ単位「少なくとも1つ必須」— `exclusive_group` (CExclusive) と
+  /// 同型の 2-tuple = (group label, member names)。member の充足判定は `CRequired` と完全に同一の
+  /// 型委譲 (DR-093: 値空間ありは値の有無・default 込み、値空間なしは発火 committed) をグループの
+  /// 論理和に持ち上げたもの — bool 型の特殊化 (requires 目的語の truth-dispatch) は適用しない
+  /// (DR-103 §7、kawaz 裁定 2026-07-14「値述語と依存述語は別」)。member が 1 つだけの場合は
+  /// `CRequired` と観測上同じ結果になる (DR-103 §4 の縮退)。`required_group` と `exclusive_group` の
+  /// group 名前空間は独立 (DR-103 §3) — 同名文字列を両属性に書いても 2 つの独立述語として評価される。
+  CRequiredGroup(String, Array[String])
 } derive(Eq, Debug)
 
 ///|
