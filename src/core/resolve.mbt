@@ -400,7 +400,11 @@ fn accum_kind_here(
 /// same lookup shape) — defaults false when the cell isn't found (same "not found = the inert
 /// value" posture `accum_filters_here`'s `[]` default uses, since every real call site here already
 /// gates on `cell_here`/`is_accum` first).
-fn flatten_here(cells : Array[AccumCell], path : Array[String], name : String) -> Bool {
+fn flatten_here(
+  cells : Array[AccumCell],
+  path : Array[String],
+  name : String,
+) -> Bool {
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
       return c.flatten
@@ -682,7 +686,8 @@ pub fn build_result(
     // (both origins shared the "append"/"flatten" name split); DR-105 §3 collapsed both onto the
     // SAME accum name, so `is_multiple_decl_here` (the DR-084 §2 origin marker, independent of the
     // flatten dial) is what tells them apart now (`AccumCell.is_multiple_decl`'s doc comment).
-    let seg_is_multiple_ref = is_accum && is_multiple_decl_here(cells, path, seg)
+    let seg_is_multiple_ref = is_accum &&
+      is_multiple_decl_here(cells, path, seg)
     if seg_is_multiple_ref &&
       has_direct_key(seg_binds, "#fire") &&
       has_direct_key(seg_binds, "#row") {
@@ -2222,7 +2227,8 @@ fn apply_entity_filters(
     }
     match apply_accum_filter_chain(e.accum_filters, vals) {
       Ok(_) => ()
-      Err((reason, msg)) => return Err(filter_err(e.name, at_pos, reason, msg, epath))
+      Err((reason, msg)) =>
+        return Err(filter_err(e.name, at_pos, reason, msg, epath))
     }
   }
   Ok(out)

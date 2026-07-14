@@ -358,9 +358,7 @@ fn array_filter_length_range(
   if n < min {
     Err(("too_short", "array length \{vs.length()} is less than min \{min}"))
   } else if n > max {
-    Err(
-      ("too_long", "array length \{vs.length()} is greater than max \{max}"),
-    )
+    Err(("too_long", "array length \{vs.length()} is greater than max \{max}"))
   } else {
     Ok(vs)
   }

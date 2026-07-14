@@ -4827,8 +4827,7 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
   allowed_keys(
     o,
     [
-      "type", "default", "env", "inherit", "config_key", "accumulator",
-      "flatten",
+      "type", "default", "env", "inherit", "config_key", "accumulator", "flatten",
     ],
     "golden entity",
   )
