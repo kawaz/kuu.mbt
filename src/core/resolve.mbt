@@ -25,7 +25,7 @@
 
 ///|
 /// A built result value.
-pub(all) enum RVal {
+pub enum RVal {
   RScalar(Value)
   RArr(Array[RVal]) // an accumulator list or an indexed-repeat array
   RObj(Array[(String, RVal)]) // a name / command scope, keys in first-seen order
@@ -279,7 +279,7 @@ pub fn apply_export_to_defaults(
 /// An accumulate cell located at a result-scope path (DR-044 uniform array). `path` is the
 /// command/name nesting where the cell lives; `name` is its key. The builder needs this so an
 /// accumulate cell that fired 0 times still renders `[]` at its home level (not absent).
-pub(all) struct AccumCell {
+pub struct AccumCell {
   path : Array[String]
   name : String
   // DR-036 collector (Entity.collector's copy, threaded through so build_result — which only
@@ -791,7 +791,7 @@ pub fn build_result(
 /// to a nested structure maps every object-array keyed by `path` while a `value_filters` scalar array
 /// stays a list. A stage WITHOUT a matching key keeps its array (per-level independence, DR-044
 /// §2: from_entries is attached per repeat group; the key present at a level selects that level).
-pub(all) enum FromEntries {
+pub enum FromEntries {
   Entries // (a) no args: [[k, v], ...]
   KeyValue(String, String) // (b) {key, value}: two named fields
   KeyPromote(String) // (c) {key}: promote the key field, the rest is the value
@@ -1012,7 +1012,7 @@ fn collect_accum(
 /// flag preset (LOWERING §A.5 default:false) rides on this: an unfired flag renders `false` rather
 /// than dropping out (DR-051 §2 flag は absent にならない). Accum cells are excluded (they render
 /// `[]` via the AccumCell path, DR-044) so a cell has AT MOST one injection source.
-pub(all) struct DefaultCell {
+pub struct DefaultCell {
   path : Array[String]
   name : String
   value : Value
@@ -1074,7 +1074,7 @@ fn collect_defaults(
 /// (path, name) pairs `build_result` must exclude from `named` so a none cell's presence never
 /// surfaces in the result object (§3「値の結果には現れない」), mirroring `AccumCell`/`DefaultCell`'s
 /// own per-scope shape.
-pub(all) struct NoneCell {
+pub struct NoneCell {
   path : Array[String]
   name : String
 } derive(Eq, Debug)
@@ -1173,7 +1173,7 @@ pub fn unwrap_single(r : RVal) -> RVal {
 /// One export-key collision (DR-073): at result scope `path`, 2+ distinct elements' bindings map
 /// (via `ek`) to the same result key `key`. `claimants` lists the distinct entity (pre-export-key)
 /// names competing for it, first-seen order.
-pub(all) struct ExportCollision {
+pub struct ExportCollision {
   path : Array[String]
   key : String
   claimants : Array[String]
@@ -1252,7 +1252,7 @@ pub fn find_export_collisions(
 /// One built interpretation (DR-053 §3 result-object view), with the optional DR-073 claimants
 /// face: `claimants` maps an exposed key to the entity name that occupies it IN THIS VIEW. Empty
 /// when the interpretation carries no export-key collision (the common case).
-pub(all) struct Interpretation {
+pub struct Interpretation {
   result : RVal
   claimants : Array[(String, String)]
 } derive(Eq, Debug)
@@ -2466,7 +2466,7 @@ fn resolve_entity_raw(
 /// 「提供なし」(DR-098 §1 の規定を継承)。`fold = terminal || (tty_cygwin && cygwin)` — fold の計算
 /// 自体は `resolve_ladder_below_cli` 側 (spec 側の純データ計算、provider には委ねない、DR-099 §1
 /// 「採用しなかった案」参照)。
-pub(all) struct TtyObs {
+pub struct TtyObs {
   terminal : Bool
   cygwin : Bool
 } derive(Eq, Debug)
@@ -3039,7 +3039,7 @@ pub fn inherited_of(binds : Array[Binding]) -> Map[String, Value] {
 /// 型 parse 前 (DR-080 波及節) — この enum はその判定が終わった後の形で、`MRemove`/`MAdd` の
 /// payload は既に型 parse 済みの `Value` (remove の operand も要素 type で parse される、DR-080 §2)。
 /// `MSplice` (`@`) は operand を持たない (old をその位置に展開するだけ)。
-pub(all) enum MergeMark {
+pub enum MergeMark {
   MAdd(Value)
   MRemove(Value)
   MSplice
@@ -3149,7 +3149,7 @@ pub fn merge_pieces_with_implicit_splice(
 /// DR-080 §2 の piece 全体一致マーカー判定結果 (型 parse 前 — operand はまだ生の文字列)。
 /// `PkRemove`/`PkAdd` の文字列は `piece_filters` → 型 parse を通す payload (DR-080 波及節)、
 /// `PkSplice` は operand を持たない。
-pub(all) enum PieceMark {
+pub enum PieceMark {
   PkAdd(String)
   PkRemove(String)
   PkSplice

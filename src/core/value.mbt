@@ -40,7 +40,7 @@ pub(all) enum Source {
 /// A JSON-同型 hierarchical config value (DR-050 §2): what a config_provider returns. kuu core
 /// never sees TOML/YAML — only this shape. Leaf values are typed (string / number / bool); arrays
 /// feed a multiple element's pieces; objects mirror the name-scope hierarchy (同型対応).
-pub(all) enum ConfigVal {
+pub enum ConfigVal {
   CStr(String)
   CNum(Double)
   CBool(Bool)
@@ -54,7 +54,7 @@ pub(all) enum ConfigVal {
 /// + `half_even` + `error` = 10 modes, 体系完備. `error` is the canonical default (int silently
 /// coerces nothing; a non-integer VALUE is rejected). Direction語 name 0-起点 (`trunc`/`away`) と
 /// 無限-起点 (`floor`/`ceil`) を分け、Java/Python の "UP"/"DOWN" 多義を持ち込まない (DR-075 §3).
-pub(all) enum RoundMode {
+pub enum RoundMode {
   RFloor // →−∞
   RCeil // →+∞
   RTrunc // →0 方向 (小数部を捨てる)
@@ -74,7 +74,7 @@ pub(all) enum RoundMode {
 /// `EsDeny` = eq 分割 matcher を生成せず space 分割形のみ受理。
 /// 3 値 enum のため「eq 必須かつ eq 禁止」のような組合せはそもそも構文的に表現できない (illegal
 /// states unrepresentable、DR-096 §1)。
-pub(all) enum EqSepMode {
+pub enum EqSepMode {
   EsRequire
   EsAllow
   EsDeny
@@ -105,7 +105,7 @@ pub fn eq_sep_mode_of(s : String) -> EqSepMode? {
 /// 一意化する)、space 形は `allow` 同様に生きる。値スロットを持たない要素 (flag/count) にはダイヤル
 /// が届いても inert (DR-096 §3.2)。`long_eq_sep` (`EqSepMode`) とは軸そのものが異なる別型 — short
 /// に eq 分割形は存在しない (DR-096 §3.4)。
-pub(all) enum AttachMode {
+pub enum AttachMode {
   AtRequire
   AtAllow
   AtDeny
@@ -132,7 +132,7 @@ pub fn attach_mode_of(s : String) -> AttachMode? {
 /// データ化しただけ、対極確認は wbtest 側)。opt-in で `true_values`/`false_values` に `yes`/`on` 等を
 /// 追加する (DR-074 §4 の `+[...]` 表記は「default 配列に語彙を足した完成形をそのまま渡す」の意 — wire
 /// 上は置換であって merge ではない、config は純データという DR-061 §4 の原則通り)。
-pub(all) struct BoolConfig {
+pub struct BoolConfig {
   true_values : Array[String]
   false_values : Array[String]
   case_insensitive : Bool
@@ -182,7 +182,7 @@ pub fn parse_bool_ext(s : String, config : BoolConfig) -> Bool? {
 /// is a provisional reason, the SAME kind of gap-fill as `pe_parse_bool`'s `not_a_bool`
 /// (docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md); the spec-side vocab decision is
 /// tracked separately (spec repo kawaz/kuu issue, filed by the team lead).
-pub(all) enum ParseFail {
+pub enum ParseFail {
   NotANumber
   NotAnInteger
   IntOutOfRange

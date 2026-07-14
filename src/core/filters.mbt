@@ -22,7 +22,7 @@
 /// input unchanged, failure = Err) — e.g. `non_empty`, `in_range`. `Transform` computes a NEW value
 /// from the input — e.g. `trim`, `increment`. This distinction is what DR-077 §2 needs to reject a
 /// validate-only filter as an `update` transform (a validator has nothing meaningful to "become").
-pub(all) enum FilterSignature {
+pub enum FilterSignature {
   Validate
   Transform
 } derive(Eq, Debug)
@@ -42,7 +42,7 @@ pub(all) enum FilterSignature {
 /// concern this reference impl does not need to round-trip through JSON) — `FilterDescriptor`
 /// therefore has no `derive(Eq)` (closures aren't comparable); registry lookup is by `name`
 /// (String), never by descriptor equality.
-pub(all) struct FilterDescriptor {
+pub struct FilterDescriptor {
   name : String
   signature : FilterSignature
   reasons : Array[String]
@@ -389,7 +389,7 @@ fn array_filter_length_range(
 /// actually surfaces as a `ParseError` (DR-102 §4's `args.length()` attribution) — by the time
 /// `build_result` runs this chain again (to get the transformed array for rendering), every chain
 /// has already been proven non-rejecting, so that call site's `Err` arm is defensive-only.
-pub(all) struct ArrayFilterDescriptor {
+pub struct ArrayFilterDescriptor {
   name : String
   signature : FilterSignature
   reasons : Array[String]

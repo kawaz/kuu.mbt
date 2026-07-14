@@ -16,7 +16,7 @@
 /// KTop evaluates at the global completion point. `path` is the result
 /// nesting path of the declaring scope (root = []); bindings are matched
 /// scope-exactly against it.
-pub(all) struct ScopedCons {
+pub struct ScopedCons {
   path : Array[String]
   constraints : Array[Constraint]
   entities : Array[Entity]

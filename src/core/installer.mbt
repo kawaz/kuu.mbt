@@ -16,7 +16,7 @@
 /// UsefulAST element. Attribute arrays are READ-ONLY to installers (invariant ①': 宣言層 read-only).
 /// The declaration layer is never emptied — help / diagnose / 再シリアライズが元の宣言を保持し、後段
 /// installer (global 等) も引き続き参照できる。Idempotency は add-if-absent が担う。
-pub(all) struct ElemDef {
+pub struct ElemDef {
   name : String
   ty : Ty
   // long installer 所有: wire 二形 (DR-071 §1 — bool | array、"wire には二形とも載る、展開は long
@@ -231,7 +231,7 @@ pub(all) struct ElemDef {
 ///   既存の `or` value-enum 正規形 (`{"or":[{"exact":...}]}`, DR-055) は同じ消費意味論に合流する
 ///   (糖衣と展開形で観測挙動を割らない、team-lead 裁定 2026-07-10) — `dec_option` が両方をこの
 ///   variant へ decode する。
-pub(all) enum ElemBody {
+pub enum ElemBody {
   BCell
   BOr(Array[OrBranch])
   BGroup(Array[ElemDef])
@@ -245,7 +245,7 @@ pub(all) enum ElemBody {
 /// — wbtest で非露出を固定、実装順 §5 段目) — 枝の選択は Or ノードの構造そのもの (配列内の位置) で
 /// 行われ、id 照合には現状どの lowering 経路も依存しない。`items` は 1 個 = 単一セル枝、複数 = seq 枝
 /// (再帰可 — 枝の中に group/or を持てる、ただし本 MDR の対象 4 fixture は 1 階層のみ)。
-pub(all) struct OrBranch {
+pub struct OrBranch {
   id : String
   items : Array[ElemDef]
 } derive(Eq, Debug)
@@ -259,7 +259,7 @@ pub(all) struct OrBranch {
 /// 保持しないと、alias 側で DR-076 §2 の flag 差し替え/補完 (`resolve_long`) を適用できない (issue
 /// 2026-07-08 dec-alias-long-override-flag-sugar-gap: 旧 `Array[String]?` は `long:true` を型非依存に
 /// `[":set"]` へ潰しており、canonical が flag でも裸発火 `:set:true` へ差し替わらなかった)。
-pub(all) struct AliasDef {
+pub struct AliasDef {
   target : String
   name : String?
   short : Array[Char]
@@ -270,7 +270,7 @@ pub(all) struct AliasDef {
 ///|
 /// variant entry (DR-011 / DR-045). `--no-ssl` のような distinct trigger が cell に EFFECT を適用する。
 /// long installer が `{exact, link (by name), effect}` に lowering する (LOWERING §B.1)。
-pub(all) struct Variant {
+pub struct Variant {
   trigger : String
   op : EffectOp
   operand : Value? // set variant のみ操作数を持つ; default / unset / empty は None
@@ -284,7 +284,7 @@ pub(all) struct Variant {
 /// (DR-076 §2 flag 差し替え/補完) や colon DSL 分類 (DR-011) は installer 層の `resolve_long` が担う
 /// (二形の区別は wire 上でしか付かない情報なので、展開後の `Array[String]` 単独では復元できない —
 /// decode 層で糖衣を潰すと installer 層がこの区別を必要とする場面で情報が失われる)。
-pub(all) enum LongDecl {
+pub enum LongDecl {
   LBool(Bool)
   LList(Array[String])
 } derive(Eq, Debug)
@@ -541,7 +541,7 @@ fn resolve_long(
 /// Some(M) = 有限 (M-min BoundedTail heads、Ref 再帰なし LOWERING §B.8)。`optional:true` は
 /// `{min:0,max:Some(1)}` の糖衣 (ここで還元、独立概念ではない DR-043)。`lazy_` は取り分選好
 /// (greedy default / lazy 最短優先) — MDR-003 で bare `lazy` → `lazy_`。
-pub(all) struct RepeatSpec {
+pub struct RepeatSpec {
   min : Int
   max : Int? // None = unbounded (Ref tail), Some(M) = bounded (BoundedTail)
   lazy_ : Bool // MDR-003: bare `lazy` は予約語衝突 → `lazy_`
@@ -549,7 +549,7 @@ pub(all) struct RepeatSpec {
 
 ///|
 /// subcommand (DR-041 §4)。`export_key`: null = scope key drop, 子は親 scope へ promote (DR-052)。
-pub(all) struct CommandDef {
+pub struct CommandDef {
   name : String
   body : Definition
   export_key : ExportKey
@@ -558,7 +558,7 @@ pub(all) struct CommandDef {
 ///|
 /// 1 つの command scope の UsefulAST。`commands` は DR-018 sugar; command installer が greedy 排他
 /// trigger + 新 backbone (DR-041 §4) に展開する。
-pub(all) struct Definition {
+pub struct Definition {
   options : Array[ElemDef]
   positionals : Array[ElemDef]
   commands : Array[CommandDef]
@@ -567,7 +567,7 @@ pub(all) struct Definition {
 
 ///|
 /// canonical installers (DR-042 §canonical installer セット + DR-043 repeat/multiple)。
-pub(all) enum Installer {
+pub enum Installer {
   LongInst
   ShortInst
   EnvInst

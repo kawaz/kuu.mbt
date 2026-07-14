@@ -45,7 +45,7 @@ pub(all) struct DefError {
 /// name-derived key, a string = key-name override, null (or "" — normalized to null) = NO result
 /// key = nameless-同化 透過 (the value still propagates; only the key is gone). This is a RESULT
 /// concern only — lexical scope (name, DR-033) and id (ref/link, DR-046) are orthogonal, unchanged.
-pub(all) enum ExportKey {
+pub enum ExportKey {
   EkUnset // unspecified → the name is the key (DR-046 default supply)
   EkKey(String) // a string override → that key name
   EkNull // null / "" → 結果キー軸なし → 透過 (kv: value gone; seq: value stays as an array element)
@@ -100,14 +100,14 @@ pub(all) enum Ty {
 /// boundary (`json_conformance_wbtest.mbt`'s `dec_filter_chain`); every downstream consumer
 /// (filters.mbt/installer.mbt/eval.mbt/matcher.mbt/resolve.mbt/value.mbt) reads `name`/`args`
 /// directly, never re-parses a spelling string.
-pub(all) struct FilterSpelling {
+pub struct FilterSpelling {
   name : String
   args : Array[String]
 } derive(Eq, Debug)
 
 ///|
 /// A node of the AtomicAST. Consumption is measured in whole args tokens.
-pub(all) enum Node {
+pub enum Node {
   /// literal token match; binds nothing, consumes 1.
   Exact(String)
   /// string value primitive: consume 1 token, bind name=VStr(token). Maximally permissive (DR-041 §5).
@@ -345,7 +345,7 @@ pub(all) enum Node {
 ///   Each fires as a bound unit; its internal value slots raw-consume (getopt 同型).
 /// - `positional`: the ordered, porous token stream. Greedy may interject between items.
 /// - `entities`: value cells with the source ladder (env/default seats, DR-030/031).
-pub(all) struct Scope {
+pub struct Scope {
   greedy : Array[Node]
   positional : Array[Node]
   entities : Array[Entity]
@@ -363,7 +363,7 @@ pub(all) struct Scope {
 /// ref 分岐が `Scoped(e.name, ...)` で値をラップするため (DESIGN §2.4/2.5 の露出規則、
 /// `ref-template-no-repeat-degenerate.json` が既に pin する挙動と同型)。無制限透過ではなく
 /// **宣言元要素自身の部分木に限定** した探索 — 他要素・子 scope の値を誤って拾わないため。
-pub(all) struct RequiredCandidate {
+pub struct RequiredCandidate {
   name : String
   wrapper : String?
 } derive(Eq, Debug)
@@ -371,7 +371,7 @@ pub(all) struct RequiredCandidate {
 ///|
 /// A delayed-predicate constraint (DR-055 / DR-047), evaluated on a complete path's FINAL state. A
 /// violation makes the path NOT a complete解決経路 (DR-047 §2) — a DR-037 Error of kind:constraint.
-pub(all) enum Constraint {
+pub enum Constraint {
   /// element committed → each target must have a value (default 込み). requires = 正の依存 (DR-055 §3).
   CRequires(String, Array[String])
   /// value-dependent requires (DR-055 §1 + DR-052 §値枝 id 直交): 4-tuple = (entity, branch_id,
@@ -428,12 +428,15 @@ pub(all) enum Constraint {
 /// cli > env > config > inherit > default (5 段固定、DR-099 が DR-098 の tty 専用席
 /// 挿入を撤回)。The inherit seat looks up the nearest ancestor scope's same-named
 /// entity value.
-pub(all) struct Entity {
+pub struct Entity {
   name : String
   ty : Ty
   mut env_key : String? // env seat lookup; None = no env seat declared (env installer sets it)
-  mut config_seat : Bool // config seat declared (DR-050): fill from the config object by path
-  mut config_key : Array[String]? // explicit absolute config path (DR-050 §3); None = 同型 (scope path + name)
+  // MDR-005 §3: `pub(all)` → `pub` (公開面キュレーション) でフィールドの外部書き込みが無くなり、
+  // 元々パッケージ内でも一度も再代入されていなかった (`ensure_entity` が構築時に決め打つだけ) 実装
+  // 上のデッドな `mut` だったことが `unused_mut` 検査で顕在化した — 挙動には無関係、宣言を正す。
+  config_seat : Bool // config seat declared (DR-050): fill from the config object by path
+  config_key : Array[String]? // explicit absolute config path (DR-050 §3); None = 同型 (scope path + name)
   is_config_file : Bool // this cell's value is the config-file PATH (DR-050): resolves the provider, no config seat
   mut inherit_ : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013). MDR-003: `inherit` 予約語回避
   // DR-099 §1/§2/§12b: この cell の型が `builtin/tty` preset (`type:` 経由) から来たかのマーカー。
@@ -555,7 +558,7 @@ pub(all) struct Entity {
 /// `int_round` は TInt のみ、`allow_base_prefix` は TNum / TInt、`bool_config` は TBool のみが参照する
 /// (DR-076 §1/§3: bool の eq-split `--enabled=true` は variant 綴りと共存する — TFlag と違い抑制
 /// されない)。他 kind は無視。
-pub(all) struct LongEntry {
+pub struct LongEntry {
   key : String
   name : String
   kind : Ty
@@ -583,7 +586,7 @@ pub(all) struct LongEntry {
 /// `depr` (DR-057/058): this entry is a deprecated alias spelling — firing it emits a `@depr:<name>`
 /// warning marker (the value binding is unchanged). Only a deprecated ALIAS sets it; a canonical or
 /// non-deprecated alias short has `depr: false`.
-pub(all) struct ShortEntry {
+pub struct ShortEntry {
   ch : Char
   name : String
   kind : Ty
@@ -624,7 +627,7 @@ pub(all) struct ShortEntry {
 /// A native matcher (DR-041): reified token-reading capability as DATA.
 /// The evaluator interprets it (`run_matcher`); installers construct it from
 /// the collected entry table (DR-042: "回収したエントリ表が matcher の構成データ").
-pub(all) enum Matcher {
+pub enum Matcher {
   /// `--key=value` split. Fires only on tokens containing `=`. Undefined key = no reading (素通し).
   EqSplit(prefix~ : String, entries~ : Array[LongEntry])
   /// `-abc` cluster + value attachment. Enumerates ALL readings (DR-041 §3-4); ambiguous defs
