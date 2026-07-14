@@ -366,18 +366,20 @@ fn full_installers() -> Array[Installer] {
 // ── skip signal ────────────────────────────────────────────────────────────────
 
 ///|
-suberror DecodeSkip {
+/// wire JSON の構文検査 signal (MDR-005 §1)。`parse_definition` (front_door.mbt) がこれを
+/// catch して `DefLoadError::Malformed` に写像する — 外部シグネチャには型として現れないので priv。
+priv suberror DecodeSkip {
   DecodeSkip(String)
 }
 
 ///|
-enum DElem {
+priv enum DElem {
   DOpt(ElemDef)
   DAlias(AliasDef)
 }
 
 ///|
-enum DCmd {
+priv enum DCmd {
   DCommand(CommandDef)
   DCmdAlias(AliasDef)
 }

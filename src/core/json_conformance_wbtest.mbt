@@ -2150,49 +2150,37 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
     Some(d) => d
     None => raise DecodeSkip("missing 'definition'")
   }
+  // MDR-005 §2 ドッグフーディング: definition の wire decode + lowering は production の
+  // parse_definition (front_door.mbt) をそのまま使う — decode の挙動が変われば conformance が
+  // 即座に検出する。
+  let ast = match parse_definition(defj) {
+    Ok(a) => a
+    Err(Malformed(reason)) => raise DecodeSkip(reason)
+    Err(Rejected(errs)) =>
+      raise DecodeSkip("definition rejected: " + deferrs_str(errs))
+  }
+  // ekmap (result の export key 写像) は parse_definition の関心外 (射程外、MDR-005 — result
+  // encode は正面玄関に含めない) なので、`Definition` を別途 decode して `build_export_map` に渡す
+  // (shadows/types の 2 度読みは、正面玄関のドッグフーディングと ekmap 算出という異なる目的を
+  // 分離するための許容コスト)。
   let defo = match defj.j_obj() {
     Some(o) => o
     None => raise DecodeSkip("definition is not an object")
   }
-  // DR-061 §3 configurable factory: `definitions.types` を許容し、その中身を shadow map に decode。
-  // shadow は dec_definition に thread されて type 名解決で consultation される。
-  // DR-078 §1: `definitions.templates` (共有消費文法、id→Node) も同じ `definitions` オブジェクトの
-  // 区分として許容し、`registry` (parse_definition の ref 解決空間) を事前に埋める — types (shadow
-  // map) とは別の受け皿 (§2: templates は外部 registry を持たない唯一の区分、クロージャなしの純構造)。
-  allowed_keys(
-    defo,
-    [
-      "options", "positionals", "commands", "definitions",
-      // DR-091 §3 (scope config, DESIGN §7.2 の兄弟): `dec_definition` が読む nested config object。
-       "config",
-    ],
-    "definition",
-  )
-  let registry : Map[String, Node] = Map([])
   let shadows = match defo.get("definitions") {
     Some(dj) => {
       let d = match dj.j_obj() {
         Some(x) => x
         None => raise DecodeSkip("definitions is not an object")
       }
-      allowed_keys(d, ["types", "templates"], "definitions")
-      let ts = match d.get("types") {
+      match d.get("types") {
         Some(tj) => dec_types(tj)
         None => Map([])
       }
-      match d.get("templates") {
-        Some(tmplj) => dec_templates(tmplj, ts, registry)
-        None => ()
-      }
-      ts
     }
     None => Map([])
   }
   let def = dec_definition(defo, shadows~)
-  let scope = match lower_definition(def, full_installers(), registry~) {
-    Ok(sc) => sc
-    Err(errs) => raise DecodeSkip("definition rejected: " + deferrs_str(errs))
-  }
   let ekmap = build_export_map(def)
   let casesj = match top.get("cases") {
     Some(c) => c
@@ -2206,7 +2194,7 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
   for cj in carr {
     cases.push(dec_case(cj))
   }
-  { scope, registry, ekmap, cases }
+  { scope: ast.root, registry: ast.registry, ekmap, cases }
 }
 
 // ── lower path ────────────────────────────────────────────────────────────────

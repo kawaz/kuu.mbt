@@ -1,0 +1,105 @@
+// front_door.mbt — kuu-core の正面玄関 (MDR-005)。
+//
+// spec (kawaz/kuu VISION.md §2) が定める 3 契約 parse_definition (DR-054) / parse (DR-053) /
+// complete (DR-060 + DR-104) を、命名・引数名とも spec 語彙に一致させて公開する。内部の
+// Node/Scope 木を直接叩く低レベル実装 (parse_tree/complete_tree, eval.mbt/outcome.mbt) は
+// このファイルからだけ呼ばれる — 利用者が Node の 80+ variant を意識する必要はない。
+
+///|
+/// definition のロード結果 (`parse_definition` の戻り値、DR-054 §4 の `atomic: <AtomicAST>` に
+/// 対応する不透明ハンドル)。フィールド非公開 — 利用者は中身を読まず `parse`/`complete` に渡す
+/// だけでよい。`root` は lowering 済みの AtomicAST (`Scope`)、`registry` は
+/// `definitions.templates` 由来の ref 解決空間 (`lower_definition` が要求する第 3 引数と同じ)。
+/// `atomic` は MoonBit の予約語 (将来使用のため) なので変数名には `ast` を使う。
+pub struct AtomicAST {
+  root : Scope
+  registry : Map[String, Node]
+}
+
+///|
+/// `parse_definition` の失敗 (spec DR-054 §4 の「definition-error」とは別に、wire JSON 自体が
+/// 構文として崩れている場合を区別する、MDR-005 §1):
+/// - `Malformed`: wire JSON が decode できない (未知キー・型不一致・必須キー欠如 — 旧 `DecodeSkip`
+///   の写像。`schema/wire.schema.json` が additionalProperties を開けたまま残す語彙層の検査)
+/// - `Rejected`: wire 形として正しいが `parse_definition` (DR-054 §1-§3) が構成不能と判定した
+///   全 definition-error の列挙 (`Array[DefError]`)
+pub(all) enum DefLoadError {
+  Malformed(String)
+  Rejected(Array[DefError])
+} derive(Eq, Debug)
+
+///|
+/// 正面玄関 1: definition の wire JSON (`{options, positionals, commands, definitions?, config?}`)
+/// を受けて AtomicAST を得る (DR-054)。`definitions.types`/`definitions.templates`
+/// (DR-061 §3 / DR-078 §1) の decode、`lower_definition` (旧 `parse_definition`、installer.mbt) の
+/// 呼び出しまで一気通貫で行う — installer 順序は常に `full_installers()` (DR-042 §canonical set、
+/// 5 invariants により順序無依存)、呼び出し側が installer 順序を選ぶ理由は無い (順序を選べるのは
+/// conformance runner の lowering fixture だけの関心、DR-070)。
+pub fn parse_definition(json : Json) -> Result[AtomicAST, DefLoadError] {
+  let outcome : Result[AtomicAST, DefLoadError] = try {
+    let top = match json.j_obj() {
+      Some(o) => o
+      None => raise DecodeSkip("definition is not an object")
+    }
+    allowed_keys(
+      top,
+      ["options", "positionals", "commands", "definitions", "config"],
+      "definition",
+    )
+    let registry : Map[String, Node] = Map([])
+    let shadows = match top.get("definitions") {
+      Some(dj) => {
+        let d = match dj.j_obj() {
+          Some(x) => x
+          None => raise DecodeSkip("definitions is not an object")
+        }
+        allowed_keys(d, ["types", "templates"], "definitions")
+        let ts = match d.get("types") {
+          Some(tj) => dec_types(tj)
+          None => Map([])
+        }
+        match d.get("templates") {
+          Some(tmplj) => dec_templates(tmplj, ts, registry)
+          None => ()
+        }
+        ts
+      }
+      None => Map([])
+    }
+    let def = dec_definition(top, shadows~)
+    match lower_definition(def, full_installers(), registry~) {
+      Ok(root) => Ok({ root, registry })
+      Err(errs) => Err(Rejected(errs))
+    }
+  } catch {
+    DecodeSkip(reason) => Err(Malformed(reason))
+  } noraise {
+    r => r
+  }
+  outcome
+}
+
+///|
+/// 正面玄関 2: `ast` に対し `args` を解決する (DR-053)。低レベル `parse_tree` (Node 直渡し、
+/// eval.mbt) への薄いラッパー — `ast.registry` を ref 解決空間として thread する。
+pub fn parse(ast : AtomicAST, args : Array[String]) -> Outcome {
+  parse_tree(ScopeNode(ast.root), args, defs=ast.registry)
+}
+
+///|
+/// 正面玄関 3: `ast` に対し `args_before` (+ optional `args_after`) の補完候補集合を得る
+/// (DR-060 + DR-104)。低レベル `complete_tree` (Node 直渡し、outcome.mbt) への薄いラッパー。
+/// `word_before`/`word_after` は DR-104 §1 が v1 未実装のまま予約する語彙で、参照実装は
+/// パラメータを持たない (本関数も同様)。
+pub fn complete(
+  ast : AtomicAST,
+  args_before : Array[String],
+  args_after? : Array[String] = [],
+) -> Array[Cand] {
+  complete_tree(
+    ScopeNode(ast.root),
+    args_before,
+    defs=ast.registry,
+    after=args_after,
+  )
+}
