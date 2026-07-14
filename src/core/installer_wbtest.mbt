@@ -3276,3 +3276,97 @@ test "constraint installer: required on a plain BCell element keeps a single-nam
     _ => fail("expected a CRequired constraint to be registered for 'filename'")
   }
 }
+
+// ── length_range 非負整数 bound (DR-105 §5 明確化 note (a)、codex #3 反映) ───────
+
+///|
+/// 保証: `length_range` の bound は非負整数限定 — 負数は kind=invalid-argument (spec fixture 昇格済み:
+/// fixtures/definition-error/length-range-negative-argument-invalid-argument.json — 本 wbtest は
+/// それに先行する unit 層の pin として残す、regex_match compile 検査の wbtest/fixture 対と同じ運用)。
+/// `in_range` の canonical number (負数許容) とは異なる `length_range` 固有規則であることの片側。
+test "parse_definition: length_range with a negative min is DInvalidArgument (DR-105 §5 note (a))" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "tags",
+        TStr,
+        long=LBool(true),
+        multiple=true,
+        accum_filters=["length_range:-1:5"],
+      ),
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => abort("expected Err (length_range min -1 is negative)")
+    Err(errs) => {
+      let mut has_invalid_argument = false
+      for e in errs {
+        if e.kind == DInvalidArgument && e.element == "tags" {
+          has_invalid_argument = true
+        }
+      }
+      assert_true(has_invalid_argument)
+    }
+  }
+}
+
+///|
+/// 保証 (もう片側、上記の対): `length_range` の bound が小数 (`1.5`) の場合も同じ非負整数制約により
+/// kind=invalid-argument (spec fixture 昇格済み: fixtures/definition-error/
+/// length-range-non-integer-argument-invalid-argument.json)。
+test "parse_definition: length_range with a non-integer min is DInvalidArgument (DR-105 §5 note (a))" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "tags",
+        TStr,
+        long=LBool(true),
+        multiple=true,
+        accum_filters=["length_range:1.5:5"],
+      ),
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => abort("expected Err (length_range min 1.5 is not an integer)")
+    Err(errs) => {
+      let mut has_invalid_argument = false
+      for e in errs {
+        if e.kind == DInvalidArgument && e.element == "tags" {
+          has_invalid_argument = true
+        }
+      }
+      assert_true(has_invalid_argument)
+    }
+  }
+}
+
+///|
+/// 保証 (対極、[[self-written-rule-blind-spots]]): `in_range` は length_range と異なり canonical
+/// number (負数・小数) を引き続き受理し、`length_range` の非負整数 bound は正当に受理される —
+/// 新設した非負整数 gate が既存の in_range 挙動を巻き込んで壊していないことを固定する。
+test "parse_definition: in_range keeps canonical-number bounds, length_range accepts non-negative-int bounds (対極)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "ratio",
+        TNum,
+        long=LBool(true),
+        final_filters=["in_range:-1.5:2.5"],
+      ),
+      el(
+        "tags",
+        TStr,
+        long=LBool(true),
+        multiple=true,
+        accum_filters=["length_range:0:5"],
+      ),
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) => ()
+    Err(errs) => abort("expected Ok, got Err: " + errs.length().to_string())
+  }
+}

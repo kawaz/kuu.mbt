@@ -4190,7 +4190,21 @@ fn collect_invalid_numeric_filter_args(
     e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
   }
 
-  fn check_two_arg(name : String, fs : FilterSpelling) -> Unit {
+  // DR-105 §5 明確化 note (a) (codex #3 反映): `length_range` の bound は非負整数限定 — 配列長という
+  // 値域そのものの制約であり、`in_range` の canonical number (負数・小数も妥当) とは別の個別規則。
+  // `n.to_int().to_double() == n` は整数性判定 (value.mbt の `value_str` の同型パターンを流用)。
+  fn is_nonneg_int(n : Double) -> Bool {
+    n >= 0.0 && n.to_int().to_double() == n
+  }
+
+  // `nonneg_int`: true なら `length_range` 専用の非負整数制約 (min/max それぞれ独立に
+  // kind=invalid-argument、DR-082 §3「装置引数の値そのものが不正」) を追加で課す。`in_range` は
+  // false のまま (canonical number、既存挙動を変えない)。
+  fn check_two_arg(
+    name : String,
+    fs : FilterSpelling,
+    nonneg_int : Bool,
+  ) -> Unit {
     if fs.args.length() != 2 {
       out.push(
         def_err(
@@ -4223,7 +4237,29 @@ fn collect_invalid_numeric_filter_args(
             "provide a numeric max",
           ),
         )
-      (Some(mn), Some(mx)) =>
+      (Some(mn), Some(mx)) => {
+        if nonneg_int {
+          if !is_nonneg_int(mn) {
+            out.push(
+              def_err(
+                name,
+                DInvalidArgument,
+                "'\{fs.name}' min \{mn} is not a non-negative integer",
+                "provide a non-negative integer min, e.g. '\{fs.name}:0:5'",
+              ),
+            )
+          }
+          if !is_nonneg_int(mx) {
+            out.push(
+              def_err(
+                name,
+                DInvalidArgument,
+                "'\{fs.name}' max \{mx} is not a non-negative integer",
+                "provide a non-negative integer max, e.g. '\{fs.name}:0:5'",
+              ),
+            )
+          }
+        }
         if mn > mx {
           out.push(
             def_err(
@@ -4234,13 +4270,14 @@ fn collect_invalid_numeric_filter_args(
             ),
           )
         }
+      }
     }
   }
 
   fn check_scalar_chain(name : String, chain : Array[FilterSpelling]) -> Unit {
     for fs in chain {
       if fs.name == "in_range" {
-        check_two_arg(name, fs)
+        check_two_arg(name, fs, false)
       }
     }
   }
@@ -4248,7 +4285,7 @@ fn collect_invalid_numeric_filter_args(
   fn check_array_chain(name : String, chain : Array[FilterSpelling]) -> Unit {
     for fs in chain {
       if fs.name == "length_range" {
-        check_two_arg(name, fs)
+        check_two_arg(name, fs, true)
       }
     }
   }

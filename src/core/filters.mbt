@@ -323,6 +323,14 @@ fn array_filter_unique(
 /// fallback, same posture `filter_in_range`'s own arg-parse arms use), NOT one of this descriptor's
 /// declared reasons (`installer.mbt`'s `collect_invalid_numeric_filter_args`, DR-082 §3, catches a
 /// non-numeric/wrong-arity `length_range` at definition time — this runtime arm is defensive).
+/// DR-105 §5 明確化 note (a) (codex #3 反映): `length_range`'s bound is non-negative-integer-only
+/// (unlike `in_range`'s canonical number) — `collect_invalid_numeric_filter_args` gates this at
+/// definition time too (`nonneg_int=true` for this filter's chain entries only), so a negative or
+/// non-integer `min`/`max` never reaches this runtime arm in a correctly-defined chain; the `n <
+/// min`/`n > max` comparisons below stay simple `Double` comparisons (no re-validation here) because
+/// the gate already guarantees `min`/`max` are non-negative integers by the time parse_definition
+/// succeeds — same "push structural validity to definition-error, keep runtime paths total" posture
+/// `ArrayFilterDescriptor`'s own doc comment describes.
 /// `too_short`/`too_long` mirror `in_range`'s `too_small`/`too_large` naming (DR-066 reason-code
 /// symmetry, DR-105 §5).
 fn array_filter_length_range(
