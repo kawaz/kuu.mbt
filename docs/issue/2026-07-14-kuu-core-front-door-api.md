@@ -1,11 +1,11 @@
 ---
 title: kuu-core API の整理 — conformance エンジンから正面玄関のあるライブラリへ
-status: open
+status: wip
 category: task
 created: 2026-07-14T23:04:26+09:00
 last_read:
 open_entered: 2026-07-14T23:04:26+09:00
-wip_entered:
+wip_entered: 2026-07-15T00:22:41+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
