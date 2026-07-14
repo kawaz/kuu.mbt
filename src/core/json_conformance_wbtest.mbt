@@ -343,6 +343,10 @@ fn opt(
   short_combine? : Bool = true,
   short_attached_value? : AttachMode = AtAllow,
   body? : ElemBody = BCell,
+  // DR-104 §2/§4: option 専用の hidden 宣言 (meta.json fixture)。dec_option がここへ渡し、
+  // ensure_entity 経由で Entity.hidden へ carry される。alias は AliasDef に独立宣言経路が無いので
+  // is_alias は opt() の返す ElemDef 上では常に false (alias_entry が別途 true で構築する)。
+  hidden? : Bool = false,
 ) -> ElemDef {
   {
     name,
@@ -379,6 +383,8 @@ fn opt(
     required,
     value_requires,
     deprecated: false,
+    is_alias: false,
+    hidden,
     default_values: default,
     int_round,
     allow_base_prefix,
@@ -463,6 +469,10 @@ fn pos(
     required,
     value_requires: [],
     deprecated: false,
+    // DR-104 §2/§3: positional は alias/hidden 宣言経路を wire に持たない (現行 fixture が要求しない)
+    // ので常に false — opt() の同フィールドと対称。
+    is_alias: false,
+    hidden: false,
     default_values: default,
     int_round,
     allow_base_prefix,
@@ -532,6 +542,8 @@ fn dd_marker(
     required,
     value_requires: [],
     deprecated: false,
+    is_alias: false,
+    hidden: false,
     default_values: None,
     int_round: RError,
     allow_base_prefix: false,
@@ -2915,9 +2927,11 @@ fn dec_option(
     [
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "requires", "conflicts_with", "exclusive_group",
-      "required_group", "required", "export_key", "config_key", "deprecated", "or",
-      "values", "piece_filters", "value_filters", "final_filters", "accum_filters",
-      "ref", "repeat",
+      "required_group", "required", "export_key", "config_key", "deprecated",
+      // DR-104 §2/§4 (meta.json fixture): help/補完の既定表示から除外される入口 (DR-058 §1)。
+      // complete API 自体はこの値に関わらず候補を返す (DR-060 §3)。
+       "hidden", "or", "values", "piece_filters", "value_filters", "final_filters",
+      "accum_filters", "ref", "repeat",
       // DR-090 §2: dd 専用の2軸拡張キー — 他 type では無意味だが、dd 分岐 (下) だけが読む
       // ("option" 共通 allowed_keys に足すのは他 wire 属性 (env/config_key 等) と同じ扱い方)。
        "match", "self",
@@ -3118,6 +3132,7 @@ fn dec_option(
     None => None
   }
   let deprecated = bool_field(o, "deprecated", false)
+  let hidden = bool_field(o, "hidden", false)
   let piece_filters = dec_filter_chain(o.get("piece_filters"))
   let value_filters = dec_filter_chain(o.get("value_filters"))
   let final_filters = dec_filter_chain(o.get("final_filters"))
@@ -3173,6 +3188,7 @@ fn dec_option(
       final_filters~,
       accum_filters~,
       ref_~,
+      hidden~,
       body=match structural_or {
         Some(branches) => BOr(branches)
         None =>
@@ -4110,6 +4126,341 @@ fn run_definition_error(fx : DDefErrorFixture, c : DDefErrorCase) -> String {
         "errors got=\{got} want=\{c.exp_errors}"
       }
     }
+  }
+}
+
+// ── complete path (DR-104, CONFORMANCE §4) ─────────────────────────────────────
+
+///|
+/// Inverse of `dec_ty` (this file, §2 wire vocab) — needed to project `Cand.ty` (a `Ty` tag) back
+/// into the SAME wire string the fixture's `candidate.ty` field uses, so comparison can be a plain
+/// string `==` (mirrors `render_kind`/`render_def_kind`'s "one match, mirrors the decode direction"
+/// style in this same file).
+fn ty_str(t : Ty) -> String {
+  match t {
+    TStr => "string"
+    TNum => "number"
+    TFloat => "float"
+    TInt => "int"
+    TFlag => "flag"
+    TBool => "bool"
+    TCount => "count"
+    TNone => "none"
+  }
+}
+
+///|
+fn bool_str(b : Bool) -> String {
+  if b {
+    "true"
+  } else {
+    "false"
+  }
+}
+
+///|
+/// The canonical single-candidate projection BOTH the live `Cand` (`cand_str`) and the fixture's
+/// decoded expectation (`exp_candidate_str`) reduce to — CONFORMANCE §3's 6-field structural
+/// equality (spelling/is_value/ty/origin/term/meta), `completer` excluded (DR-104 §2: opt-in, and
+/// the reference `Cand` has no such field yet to compare against, "実装側の追随タスクとして残る").
+/// `spelling`/`ty` are normalized to `""` on their "doesn't apply" side (DR-104 §2: `spelling`
+/// meaningless when `is_value:true`, `ty` meaningless when `is_value:false`) so a fixture that
+/// omits the moot field and a live `Cand` that carries a leftover tag there (e.g. `cand_trigger`'s
+/// placeholder `TFlag`) still compare equal.
+fn cand_fields_str(
+  spelling : String,
+  is_value : Bool,
+  ty : String,
+  origin : String,
+  term : String,
+  is_alias : Bool,
+  hidden : Bool,
+  deprecated : Bool,
+) -> String {
+  "spelling=" +
+  spelling +
+  "|is_value=" +
+  bool_str(is_value) +
+  "|ty=" +
+  ty +
+  "|origin=" +
+  origin +
+  "|term=" +
+  term +
+  "|is_alias=" +
+  bool_str(is_alias) +
+  "|hidden=" +
+  bool_str(hidden) +
+  "|deprecated=" +
+  bool_str(deprecated)
+}
+
+///|
+fn cand_str(c : Cand) -> String {
+  let term_s = match c.term {
+    WordEnd => "word_end"
+    Cont => "cont"
+  }
+  let ty_s = if c.is_value { ty_str(c.ty) } else { "" }
+  let spelling_s = if c.is_value { "" } else { c.spelling }
+  cand_fields_str(
+    spelling_s,
+    c.is_value,
+    ty_s,
+    c.origin,
+    term_s,
+    c.meta.is_alias,
+    c.meta.hidden,
+    c.meta.deprecated,
+  )
+}
+
+///|
+/// `candidates` is a SET (CONFORMANCE §3/§4, DR-104 §4 — same treatment as `interpretations`):
+/// sort + join, mirroring `deferrs_str`'s pattern in this same file.
+fn cands_set_str(cs : Array[Cand]) -> String {
+  let items : Array[String] = []
+  for c in cs {
+    items.push(cand_str(c))
+  }
+  sort_items(items)
+  join_comma(items)
+}
+
+///|
+/// Decode ONE `expect.candidates[]` entry (DR-104 §2, schema `$defs/candidate`) straight into the
+/// SAME canonical string `cand_str` produces from a live `Cand` — `run_complete` then compares with
+/// a plain `==`, matching `deferrs_str`/`exp_errors_decode`'s decode-to-comparable-string pattern.
+fn exp_candidate_str(j : Json) -> String raise DecodeSkip {
+  let o = match j.j_obj() {
+    Some(x) => x
+    None => raise DecodeSkip("candidate is not an object")
+  }
+  allowed_keys(
+    o,
+    ["spelling", "is_value", "ty", "origin", "term", "meta", "completer"],
+    "candidate",
+  )
+  let is_value = match o.get("is_value") {
+    Some(bj) =>
+      match bj.j_bool() {
+        Some(b) => b
+        None => raise DecodeSkip("candidate.is_value is not a bool")
+      }
+    None => raise DecodeSkip("candidate missing 'is_value'")
+  }
+  // DR-104 §2: `spelling` は is_value:true では意味を持たず省略可 (省略 = "" と等価)。
+  let spelling = if is_value { "" } else { jf_str(o, "spelling").unwrap_or("") }
+  // DR-104 §2: `ty` は is_value:true でのみ意味を持つ (実質必須)。
+  let ty_s = if is_value {
+    match jf_str(o, "ty") {
+      Some(t) => {
+        // vocab 検証 (dec_ty が未知型を DecodeSkip する) — 綴りミスを黙って通さない。
+        ignore(dec_ty(t))
+        t
+      }
+      None => raise DecodeSkip("candidate.is_value:true missing 'ty'")
+    }
+  } else {
+    ""
+  }
+  let origin = match jf_str(o, "origin") {
+    Some(s) => s
+    None => raise DecodeSkip("candidate missing 'origin'")
+  }
+  let term = match jf_str(o, "term") {
+    Some("word_end") => "word_end"
+    Some("cont") => "cont"
+    Some(t) => raise DecodeSkip("candidate.term '" + t + "'")
+    None => raise DecodeSkip("candidate missing 'term'")
+  }
+  // CONFORMANCE §3 / DR-104 §2/§3 (COMP-Q2): meta は候補同一性の成分であり省略不可 — 他の
+  // optional 検証フィールド (reason/help_entry 等) とは異なり default 値への読み替えをしない。
+  let mo = match o.get("meta") {
+    Some(mj) =>
+      match mj.j_obj() {
+        Some(x) => x
+        None => raise DecodeSkip("candidate.meta is not an object")
+      }
+    None =>
+      raise DecodeSkip("candidate missing 'meta' (required, CONFORMANCE §3)")
+  }
+  allowed_keys(mo, ["is_alias", "hidden", "deprecated"], "candidate.meta")
+  let is_alias = match mo.get("is_alias") {
+    Some(bj) =>
+      match bj.j_bool() {
+        Some(b) => b
+        None => raise DecodeSkip("candidate.meta.is_alias is not a bool")
+      }
+    None => raise DecodeSkip("candidate.meta missing 'is_alias'")
+  }
+  let hidden = match mo.get("hidden") {
+    Some(bj) =>
+      match bj.j_bool() {
+        Some(b) => b
+        None => raise DecodeSkip("candidate.meta.hidden is not a bool")
+      }
+    None => raise DecodeSkip("candidate.meta missing 'hidden'")
+  }
+  let deprecated = match mo.get("deprecated") {
+    Some(bj) =>
+      match bj.j_bool() {
+        Some(b) => b
+        None => raise DecodeSkip("candidate.meta.deprecated is not a bool")
+      }
+    None => raise DecodeSkip("candidate.meta missing 'deprecated'")
+  }
+  cand_fields_str(
+    spelling, is_value, ty_s, origin, term, is_alias, hidden, deprecated,
+  )
+}
+
+///|
+/// DR-104 §1: `query: "complete"` fixture の 1 case — `args_before` (必須) / `args_after`
+/// (optional) を入力に `candidates` の期待集合 (ソート済み連結文字列) を持つ。
+struct DCompleteCase {
+  id : String
+  args_before : Array[String]
+  args_after : Array[String]
+  exp_candidates : String
+}
+
+///|
+struct DCompleteFixture {
+  scope : Scope
+  registry : Map[String, Node]
+  cases : Array[DCompleteCase]
+}
+
+///|
+fn dec_complete_case(cj : Json) -> DCompleteCase raise DecodeSkip {
+  let co = match cj.j_obj() {
+    Some(x) => x
+    None => raise DecodeSkip("case is not an object")
+  }
+  allowed_keys(
+    co,
+    ["id", "why", "args_before", "args_after", "expect"],
+    "complete case",
+  )
+  let id = match jf_str(co, "id") {
+    Some(s) => s
+    None => raise DecodeSkip("case missing 'id'")
+  }
+  // DR-104 §1: args_before は必須 (行末補完でも `[]` を明示する) — parse fixture の `args` と同じ
+  // 「キー自体は必須、空配列は正当値」の扱い (`dec_args` と対称)。
+  let args_before = match co.get("args_before") {
+    Some(aj) => dec_strs(Some(aj))
+    None => raise DecodeSkip("complete case missing 'args_before' (DR-104 §1)")
+  }
+  let args_after = dec_strs(co.get("args_after"))
+  let eo = match co.get("expect") {
+    Some(x) =>
+      match x.j_obj() {
+        Some(o) => o
+        None => raise DecodeSkip("expect is not an object")
+      }
+    None => raise DecodeSkip("case missing 'expect'")
+  }
+  allowed_keys(eo, ["outcome", "candidates"], "complete case's expect")
+  match jf_str(eo, "outcome") {
+    Some("complete") => ()
+    Some(o) => raise DecodeSkip("expect.outcome '" + o + "' is not 'complete'")
+    None => raise DecodeSkip("expect missing 'outcome'")
+  }
+  let candsj = match eo.get("candidates") {
+    Some(x) => x
+    None => raise DecodeSkip("expect missing 'candidates'")
+  }
+  let arr = match candsj.j_arr() {
+    Some(x) => x
+    None => raise DecodeSkip("expect.candidates is not an array")
+  }
+  let items : Array[String] = []
+  for cj2 in arr {
+    items.push(exp_candidate_str(cj2))
+  }
+  sort_items(items)
+  { id, args_before, args_after, exp_candidates: join_comma(items) }
+}
+
+///|
+/// `dec_fixture` (query="parse") と同じ definition-decode 経路の再利用 (`dec_definition_error_
+/// fixture`と同型の重複 — 差分は query チェックと cases の decode だけ、同ファイル内の既定パターン)。
+/// complete は result-export を使わないので `ekmap`は持たない。
+fn dec_complete_fixture(j : Json) -> DCompleteFixture raise DecodeSkip {
+  let top = match j.j_obj() {
+    Some(o) => o
+    None => raise DecodeSkip("fixture is not an object")
+  }
+  let defj = match top.get("definition") {
+    Some(d) => d
+    None => raise DecodeSkip("missing 'definition'")
+  }
+  let defo = match defj.j_obj() {
+    Some(o) => o
+    None => raise DecodeSkip("definition is not an object")
+  }
+  allowed_keys(
+    defo,
+    [
+      "options", "positionals", "commands", "definitions",
+      // DR-091 §3 (scope config, DESIGN §7.2 の兄弟): `dec_definition` が読む nested config object。
+       "config",
+    ],
+    "definition",
+  )
+  let registry : Map[String, Node] = Map([])
+  let shadows = match defo.get("definitions") {
+    Some(dj) => {
+      let d = match dj.j_obj() {
+        Some(x) => x
+        None => raise DecodeSkip("definitions is not an object")
+      }
+      allowed_keys(d, ["types", "templates"], "definitions")
+      let ts = match d.get("types") {
+        Some(tj) => dec_types(tj)
+        None => Map([])
+      }
+      match d.get("templates") {
+        Some(tmplj) => dec_templates(tmplj, ts, registry)
+        None => ()
+      }
+      ts
+    }
+    None => Map([])
+  }
+  let def = dec_definition(defo, shadows~)
+  let scope = match parse_definition(def, full_installers(), registry~) {
+    Ok(sc) => sc
+    Err(errs) => raise DecodeSkip("definition rejected: " + deferrs_str(errs))
+  }
+  let casesj = match top.get("cases") {
+    Some(c) => c
+    None => raise DecodeSkip("missing 'cases'")
+  }
+  let carr = match casesj.j_arr() {
+    Some(x) => x
+    None => raise DecodeSkip("cases is not an array")
+  }
+  let cases : Array[DCompleteCase] = []
+  for cj in carr {
+    cases.push(dec_complete_case(cj))
+  }
+  { scope, registry, cases }
+}
+
+///|
+/// DR-104 §4/§6: run `complete()` with the case's `args_before`/`args_after` and compare the
+/// projected candidate set against the fixture's expectation.
+fn run_complete(fx : DCompleteFixture, c : DCompleteCase) -> String {
+  let root = ScopeNode(fx.scope)
+  let cs = complete(root, c.args_before, defs=fx.registry, after=c.args_after)
+  let got = cands_set_str(cs)
+  if got == c.exp_candidates {
+    "PASS"
+  } else {
+    "candidates got=\{got} want=\{c.exp_candidates}"
   }
 }
 
@@ -5312,6 +5663,23 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       for c in fx.cases {
         ran_cases = ran_cases + 1
         let verdict = run_definition_error(fx, c)
+        if verdict != "PASS" {
+          mismatches.push(case_key(rel, c.id) + " :: " + verdict)
+        }
+      }
+      continue
+    }
+    if q == "complete" {
+      let fx = dec_complete_fixture(j) catch {
+        DecodeSkip(reason) => {
+          skips.push((rel, reason))
+          continue
+        }
+      }
+      decoded.push(rel)
+      for c in fx.cases {
+        ran_cases = ran_cases + 1
+        let verdict = run_complete(fx, c)
         if verdict != "PASS" {
           mismatches.push(case_key(rel, c.id) + " :: " + verdict)
         }

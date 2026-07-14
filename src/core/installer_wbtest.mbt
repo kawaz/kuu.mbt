@@ -89,6 +89,8 @@ fn el(
     required: false,
     value_requires: [],
     deprecated: false,
+    is_alias: false,
+    hidden: false,
     default_values: None,
     int_round: RError,
     allow_base_prefix: false,

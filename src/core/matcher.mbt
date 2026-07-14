@@ -89,7 +89,19 @@ fn matcher_cands(m : Matcher) -> Array[Cand] {
         // DR-077 §3: count (like flag) never fires through the eq face — see run_eq_split's
         // `TCount => return []` — so it contributes no completion candidate here either.
         if e.kind != TFlag && e.kind != TCount {
-          out.push(cand_trigger(prefix + e.key, e.name, e.kind, Cont, false))
+          // `LongEntry` carries no is_alias/hidden/deprecated axis (untested by any fixture
+          // today, DR-104 §2/§3 scope trimmed to what ShortEntry — meta.json's -n/-o — needs).
+          out.push(
+            cand_trigger(
+              prefix + e.key,
+              e.name,
+              e.kind,
+              Cont,
+              false,
+              false,
+              false,
+            ),
+          )
         }
       }
     ShortCombine(prefix~, entries~, ..) =>
@@ -97,7 +109,20 @@ fn matcher_cands(m : Matcher) -> Array[Cand] {
         let buf = StringBuilder::new()
         buf.write_string(prefix)
         buf.write_char(e.ch)
-        out.push(cand_trigger(buf.to_string(), e.name, e.kind, WordEnd, e.depr))
+        // DR-104 §2/§3: `e.is_alias` carries the canonical-vs-alias-entry distinction
+        // (meta.json's -p/-n/-o); `hidden` is not carried on ShortEntry (untested for short
+        // spellings today), `e.depr` already threads deprecated.
+        out.push(
+          cand_trigger(
+            buf.to_string(),
+            e.name,
+            e.kind,
+            WordEnd,
+            e.is_alias,
+            false,
+            e.depr,
+          ),
+        )
       }
   }
   out

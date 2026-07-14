@@ -513,6 +513,13 @@ pub(all) struct Entity {
   // `final_filters` above). 1 属性 1 registry (ARRAY filter registry) の対応 — multiple 有無で
   // registry を切り替える位置依存判定 (DR-101 §3) は本分割で不要化した。
   accum_filters : Array[FilterSpelling]
+  // DR-058 §1 / DR-104 §2: whether this element is excluded from help/補完 の既定表示
+  // (`CandMeta.hidden`, `ElemDef.hidden` からそのまま carry — `is_tty`/`int_round` と同じ
+  // 「冗長フィールドをそのまま運ぶだけ」パターン)。complete() 自身はこの値に関わらず候補を返す
+  // (DR-060 §3「素材とポリシーの分離」、既定除外は生成器の関心)。name-keyed lookup で足りる —
+  // alias と違い、hidden は要素そのものの属性であって spelling ごとに変わらない前提 (現行 fixture
+  // に alias 側の独立 hidden を要求するものは無い)。
+  hidden : Bool
 } derive(Eq, Debug)
 
 ///|
@@ -581,6 +588,11 @@ pub(all) struct ShortEntry {
   // consumer). Ignored for TFlag/TBool/TCount/TNone entries (DR-096 §3.2 inert — those kinds never
   // reach `short_val`'s in-cluster/space-form value attachment in the first place).
   short_attached_value : AttachMode
+  // DR-057 / DR-104 §2/§3: this entry is an alias入口 (canonical と別 spelling で同じ origin name
+  // へ束縛される、`CandMeta.is_alias`)。dedup 規則 (DR-104 §3) は spelling を含む組の完全一致なので、
+  // is_alias は spelling ごとに独立して立つ (canonical -p は false、alias -n/-o は true) — `depr` と
+  // 同じ carrier パターン。
+  is_alias : Bool
 } derive(Eq, Debug)
 
 ///|

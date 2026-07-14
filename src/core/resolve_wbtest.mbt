@@ -66,6 +66,7 @@ fn ent(
     value_filters: chain(value_filters),
     final_filters: chain(final_filters),
     accum_filters: chain(accum_filters),
+    hidden: false,
   }
 }
 

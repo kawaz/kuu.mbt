@@ -110,6 +110,14 @@ pub(all) struct ElemDef {
   // 参照しない (冗長フィールド、int_round/allow_base_prefix と同じ扱い)。
   bool_config : BoolConfig
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
+  // DR-057 / DR-104 §2/§3: この entry-copy が alias 宣言由来か (canonical=false、`alias_entry` が
+  // 常に true で構築する)。`inst_short`/`inst_long` が ShortEntry/LongEntry へそのまま carry し、
+  // complete() の CandMeta.is_alias 直訳元になる (deprecated と同じ carrier パターン)。
+  is_alias : Bool
+  // DR-058 §1 / DR-104 §2: help/補完の既定表示から除外される要素か (`CandMeta.hidden`)。
+  // `ensure_entity` が Entity へそのまま carry する — 要素単位の属性 (spelling ごとに変わらない)
+  // なので alias entry-copy はこの値を持たない (`alias_entry` は常に false)。
+  hidden : Bool
   // DR-083 §1/§波及: decode 層 (dec_option/dec_positional) 所有。JSON scalar → 長さ1へ持ち上げ、JSON
   // array → その piece 列そのまま (multiple/repeat/merge 要素のみ合法 — 非 accum 要素への配列は
   // `collect_scalar_array_default` が definition-error として静的に弾く)。`ensure_entity` がそのまま
@@ -767,6 +775,8 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     required: e.required,
     value_requires: e.value_requires,
     deprecated: e.deprecated,
+    is_alias: e.is_alias,
+    hidden: e.hidden,
     default_values: e.default_values,
     int_round: e.int_round,
     allow_base_prefix: e.allow_base_prefix,
@@ -1519,6 +1529,7 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     } else {
       []
     },
+    hidden: e.hidden,
   })
 }
 
@@ -1920,6 +1931,8 @@ fn inst_short(def : Definition, build : Build) -> Unit {
         merge: e.accumulator == Some("merge"),
         // DESIGN §7.2 / DR-096 §2: walk_short (matcher.mbt) の唯一の消費者
         short_attached_value: e.short_attached_value,
+        // DR-104 §2/§3: complete() の CandMeta.is_alias 直訳元 (depr と同じ carrier パターン)。
+        is_alias: e.is_alias,
       })
     }
   }
@@ -2124,6 +2137,8 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     required: copy.required,
     value_requires: copy.value_requires,
     deprecated: copy.deprecated,
+    is_alias: copy.is_alias,
+    hidden: copy.hidden,
     default_values: copy.default_values,
     int_round: copy.int_round,
     allow_base_prefix: copy.allow_base_prefix,
@@ -2322,6 +2337,8 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     required: false, // write-target copy は required 制約を持たない (requires/exclusive_group と同じ理由)
     value_requires: [],
     deprecated: false,
+    is_alias: false, // write-target copy は alias/hidden 宣言経路を持たない (canonical default 相当)
+    hidden: false,
     default_values: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
     int_round: RError, // canonical default (DR-075 §2): write-target は int_round を持たない
     allow_base_prefix: false, // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
@@ -2690,6 +2707,11 @@ fn alias_entry(
     required: false, // alias entry は AliasDef 自体に required 宣言経路を持たない (requires/exclusive_group と同じ理由)
     value_requires: [],
     deprecated,
+    // DR-104 §2/§3: alias entry-copy は常に is_alias:true (この関数自体が alias 宣言由来 entry-copy
+    // 専用のコンストラクタ)。hidden は AliasDef に独立宣言経路を持たない (deprecated と違い、現行
+    // fixture に alias 側の独立 hidden を要求するものが無い) ので canonical と同じ false 既定。
+    is_alias: true,
+    hidden: false,
     default_values: None,
     int_round: RError,
     allow_base_prefix: false,

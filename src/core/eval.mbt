@@ -83,6 +83,8 @@ fn cand_trigger(
   origin : String,
   ty : Ty,
   term : TermHint,
+  is_alias : Bool,
+  hidden : Bool,
   deprecated : Bool,
 ) -> Cand {
   {
@@ -91,7 +93,7 @@ fn cand_trigger(
     ty,
     origin,
     term,
-    meta: { is_alias: false, hidden: false, deprecated },
+    meta: { is_alias, hidden, deprecated },
     path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
   }
 }
@@ -304,8 +306,13 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         [Accept(pos + 1, [])]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         // complete (DR-060 §1): the args boundary at a trigger position means
-        // this spelling is exactly what could be typed next.
-        [Pending([cand_trigger(s, s, TFlag, WordEnd, false)], [])]
+        // this spelling is exactly what could be typed next. `origin` here is
+        // just `s` (this bare Exact has no further context of its own) — when
+        // this Node sits at the head of an option satellite's Seq, `step_greedy`'s
+        // catch-all arm (below) patches origin/hidden up from the satellite's tail
+        // (`fixup_boundary_cands`, DR-104 §2/§3); this fallback is what a truly
+        // standalone Exact (outside that shape) keeps.
+        [Pending([cand_trigger(s, s, TFlag, WordEnd, false, false, false)], [])]
       } else {
         // an unmatched (or, in parse mode, exhausted) trigger is a silent
         // Reject (spec DR-037), NOT a Pending: no part of the entry was
@@ -482,7 +489,22 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // evaluation はこの1本の Branch の bindings を返すだけ — 呼び出し元が outer acc と cat する)。
         [Accept(pos + 1, [mkb(trigger, VBool(true), Cli, at_pos=Some(pos))])]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        [Pending([cand_trigger(trigger, trigger, TFlag, WordEnd, false)], [])]
+        [
+          Pending(
+            [
+              cand_trigger(
+                trigger,
+                trigger,
+                TFlag,
+                WordEnd,
+                false,
+                false,
+                false,
+              ),
+            ],
+            [],
+          ),
+        ]
       } else {
         []
       }
@@ -503,7 +525,24 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else if pos >= ctx.toks.length() && in_complete(ctx) && !is_pattern {
         // DR-060 §1 completion candidates only make sense for an EXACT spelling (a regex
         // pattern has no single "next token to type" to surface as a candidate).
-        [Pending([cand_trigger(spelling, spelling, TFlag, WordEnd, false)], [])]
+        // DR-104 §2 origin = 由来要素名: `elem_name` (DR-090 §2, spelling と独立の同一性軸), NOT
+        // `spelling` (a `match` trigger's regex-derived literal is not the element's name).
+        [
+          Pending(
+            [
+              cand_trigger(
+                spelling,
+                elem_name,
+                TFlag,
+                WordEnd,
+                false,
+                false,
+                false,
+              ),
+            ],
+            [],
+          ),
+        ]
       } else {
         []
       }
@@ -520,7 +559,12 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           ),
         )
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        [Pending([cand_trigger(name, name, TFlag, WordEnd, false)], [])]
+        [
+          Pending(
+            [cand_trigger(name, name, TFlag, WordEnd, false, false, false)],
+            [],
+          ),
+        ]
       } else {
         []
       }
@@ -1445,6 +1489,84 @@ fn scope_step(
 }
 
 ///|
+/// DR-104 §2/§3 origin fixup (complete 専用): the boundary Pending a bare `Exact` node builds
+/// (eval's `Exact` arm) has no way to see what follows it in the OWNING Seq, so it falls back to
+/// `origin = spelling` (e.g. `--port`). When that `Exact` is actually an option satellite's head
+/// (`Seq([Exact(trigger), tail, ..])`, installer.mbt's `inst_long` main-entry / variant-entry
+/// shapes), the real origin is the element name `tail` carries — `NumArg`/`StrArg`/etc.'s own
+/// name field for a value-typed main entry, `Bind`/`EffMark`'s name field for a variant entry
+/// (`--secret`/`--no-color`-style), or a `Scoped` wrap's label for a ref/repeat entry. Mirrors
+/// `value_slot_trigger`/`prim_name`'s existing "peek at the Seq's tail node" style in this same
+/// file / json_conformance_wbtest.mbt.
+fn seq_boundary_name(n : Node) -> String? {
+  match n {
+    StrArg(x, _) => Some(x)
+    KvArg(x, _) => Some(x)
+    SepArg(x, _, _, _, _, _, _, _) => Some(x)
+    NumArg(x, _, _) => Some(x)
+    FloatArg(x, _) => Some(x)
+    IntArg(x, _, _, _) => Some(x)
+    BoolArg(x, _, _) => Some(x)
+    FilterArg(x, _) => Some(x)
+    ReqArg(x) => Some(x)
+    NoDashStr(x) => Some(x)
+    Bind(x, _) => Some(x)
+    EffMark(x, _) => Some(x)
+    Scoped(x, _) => Some(x)
+    _ => None
+  }
+}
+
+///|
+/// Whether `g` is (possibly through a `Rooted` global-link wrap) an option satellite's head Seq —
+/// and if so, the real origin name its tail carries. `None` for any other shape (CmdSat/DdSat/
+/// DdMatchSat/NativeMatch already carry their own correct origin, no fixup needed there; a bare
+/// `Exact` alone or an unrecognized tail shape is left as the spelling fallback, unchanged).
+fn cand_boundary_origin(g : Node) -> String? {
+  match g {
+    Rooted(inner, _) => cand_boundary_origin(inner)
+    Seq([Exact(_), rest, ..]) => seq_boundary_name(rest)
+    _ => None
+  }
+}
+
+///|
+/// DR-058 §1 / DR-104 §2: `sc.entities`から要素名で hidden を引く (element-level 属性、spelling
+/// ごとに変わらない前提 — `is_alias` と違い ShortEntry/LongEntry を経由しない spelling にも同じ
+/// 値を適用してよい)。見つからなければ false (command/dd 等、Entity を持たない origin は非-hidden)。
+fn entity_hidden(sc : Scope, name : String) -> Bool {
+  for e in sc.entities {
+    if e.name == name {
+      return e.hidden
+    }
+  }
+  false
+}
+
+///|
+/// Apply `cand_boundary_origin`'s correction (+ the owning element's `hidden` declaration) to every
+/// exact-trigger candidate (`is_value:false`) a satellite's Pending carries; a value-position
+/// candidate (`is_value:true`, always built via `pend_value` with the correct origin already) is
+/// left untouched. A `None` origin (not an option-satellite boundary shape) is a no-op passthrough.
+fn fixup_boundary_cands(g : Node, sc : Scope, cs : Array[Cand]) -> Array[Cand] {
+  match cand_boundary_origin(g) {
+    None => cs
+    Some(origin) => {
+      let hidden = entity_hidden(sc, origin)
+      let out : Array[Cand] = []
+      for c in cs {
+        if c.is_value {
+          out.push(c)
+        } else {
+          out.push({ ..c, origin, meta: { ..c.meta, hidden, } })
+        }
+      }
+      out
+    }
+  }
+}
+
+///|
 /// One greedy entry's interjection at (pos, pidx). Structural dispatch:
 /// - CmdSat: enter the child scope as a NEW backbone whose continuation is
 ///   "nest my bindings under the command name, then resume the parent at the
@@ -1493,7 +1615,10 @@ fn step_greedy(
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         // complete: the command name is readable at the boundary (DR-060 §1).
         out.push(
-          Pending([cand_trigger(name, name, TFlag, WordEnd, false)], acc),
+          Pending(
+            [cand_trigger(name, name, TFlag, WordEnd, false, false, false)],
+            acc,
+          ),
         )
       }
     DdSat(trigger) =>
@@ -1509,7 +1634,20 @@ fn step_greedy(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         out.push(
-          Pending([cand_trigger(trigger, trigger, TFlag, WordEnd, false)], acc),
+          Pending(
+            [
+              cand_trigger(
+                trigger,
+                trigger,
+                TFlag,
+                WordEnd,
+                false,
+                false,
+                false,
+              ),
+            ],
+            acc,
+          ),
         )
       }
     // DR-090 §1/§2: generalized dd. `severed=true` is unconditional here exactly like `DdSat`
@@ -1531,9 +1669,20 @@ fn step_greedy(
       } else if pos >= ctx.toks.length() && in_complete(ctx) && !is_pattern {
         // completion candidates only for an exact spelling (see the off-spine `eval` arm's
         // identical rationale) — a pattern trigger has no single "next token to type".
+        // DR-104 §2 origin = 由来要素名: `elem_name`, mirroring the off-spine arm's fix above.
         out.push(
           Pending(
-            [cand_trigger(spelling, spelling, TFlag, WordEnd, false)],
+            [
+              cand_trigger(
+                spelling,
+                elem_name,
+                TFlag,
+                WordEnd,
+                false,
+                false,
+                false,
+              ),
+            ],
             acc,
           ),
         )
@@ -1561,7 +1710,8 @@ fn step_greedy(
               // acc must be carried on Held so an earlier FailMark (fired_action
               // material, eval_seq comment DR-048/DR-053 §4) survives to parse().
               Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
-              Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+              Pending(cs, bs) =>
+                out.push(Pending(fixup_boundary_cands(g, sc, cs), cat(acc, bs)))
             }
           }
       }
@@ -1945,7 +2095,15 @@ fn scope_consume(
       if pos < ctx.toks.length() && ctx.toks[pos] == s {
         scope_step(sc, ctx, pos + 1, pidx + 1, acc, severed, k)
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        [Pending([cand_trigger(s, s, TFlag, WordEnd, false)], acc)]
+        // positional-spine literal (a structural or-branch's exact value, not an option
+        // trigger) — origin IS the spelling here, there is no separate element name to
+        // extract (none of our fixtures exercise this shape yet, kept as-is).
+        [
+          Pending(
+            [cand_trigger(s, s, TFlag, WordEnd, false, false, false)],
+            acc,
+          ),
+        ]
       } else {
         []
       }
