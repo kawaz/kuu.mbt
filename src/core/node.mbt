@@ -88,7 +88,8 @@ pub(all) enum Ty {
 } derive(Eq, Debug)
 
 ///|
-/// One filter-chain DSL entry (DR-009 §DSL 文法, `piece_filters`/`value_filters`/`cell_filters`):
+/// One filter-chain DSL entry (DR-009 §DSL 文法, `piece_filters`/`value_filters`/`final_filters`/
+/// `accum_filters`, DR-102 属性分割):
 /// name + args, structured — either from the colon shorthand (`"in_range:1:65535"` decodes to
 /// `{name:"in_range", args:["1","65535"]}`) or the DESIGN §8.4 / DR-085 §3 object form
 /// (`{"name":"regex_match","args":["^https?://"]}`, needed when an arg itself contains a colon,
@@ -125,7 +126,8 @@ pub(all) enum Node {
   /// int_round (TInt only, mirrors `IntArg`'s carrier), allow_base_prefix (TNum/TInt), bool_config
   /// (TBool only, mirrors `BoolArg`'s carrier — DR-074 §4 `bool_parser` factory config), piece_filters
   /// (applied to EACH split piece — not the whole raw token — right before that piece's own parse
-  /// step, DESIGN §6.2: separator → piece_filters → parse → cell_filters, one piece at a time).
+  /// step, DESIGN §6.2: separator → piece_filters → parse → final_filters/accum_filters, one piece
+  /// at a time).
   /// `sep_binds` (eval.mbt) threads all of this through the split loop; a piece that fails its
   /// type parse is `kind: KParse` (same reason vocab as the scalar value primitives), NOT a
   /// piece_filters-style `KFilter` reject — these are distinct pipeline stages (段3 vs 段4).
@@ -203,7 +205,7 @@ pub(all) enum Node {
   BoolArg(String, BoolConfig, Array[FilterSpelling])
   /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
   /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
-  /// held Error (a value that parsed but failed the filter — cell_filters reject 相当). Test-only
+  /// held Error (a value that parsed but failed the filter — final_filters reject 相当). Test-only
   /// (eval_wbtest.mbt): production lowering (`installer.mbt` の `elem_head`/`value_prim`) never
   /// constructs this node, so it carries no `piece_filters` field (DR-034 配線対象外、issue
   /// 2026-07-09-pre-split-filters-execution-wiring).
@@ -449,27 +451,36 @@ pub(all) struct Entity {
   // declared (the common case, and every non-`multiple` cell) — env value stays a single piece.
   separator : String?
   // DR-034/DR-062 piece_filters (String→String, per-piece / pre-parse 相): unlike `value_filters`/
-  // `cell_filters` below (which run AFTER a ladder seat's value is already resolved, in
-  // `resolve.mbt`'s `apply_entity_filters`), piece_filters only ever runs BEFORE a string→T parse —
-  // i.e. only for STRING-typed ladder inputs. The CLI seat's own piece_filters application happens
-  // upstream in eval.mbt/matcher.mbt (token consumption, before the value ever reaches this
-  // Entity) — this copy exists so the ladder's OTHER string-sourced seats (env: DR-049 §2 "env
-  // 値も pieceProcessor を通る") can run the SAME chain via `resolve.mbt`'s `env_value`. A non-
-  // string ladder source (config number/bool matching the type, default, inherit) has no parse
-  // step to gate, so this field is simply unused there (DR-050 §4's "型一致なら cell_filters のみ"
-  // — piece_filters/parse は元々 String→T の関数なので、型一致で供給された非 string 値には適用対象
-  // が無いという型の帰結、特別規則ではない).
+  // `final_filters`/`accum_filters` below (which run AFTER a ladder seat's value is already
+  // resolved, in `resolve.mbt`'s `apply_entity_filters`), piece_filters only ever runs BEFORE a
+  // string→T parse — i.e. only for STRING-typed ladder inputs. The CLI seat's own piece_filters
+  // application happens upstream in eval.mbt/matcher.mbt (token consumption, before the value ever
+  // reaches this Entity) — this copy exists so the ladder's OTHER string-sourced seats (env: DR-049
+  // §2 "env 値も pieceProcessor を通る") can run the SAME chain via `resolve.mbt`'s `env_value`. A
+  // non-string ladder source (config number/bool matching the type, default, inherit) has no parse
+  // step to gate, so this field is simply unused there (DR-050 §4's "型一致なら final_filters/
+  // accum_filters のみ" — piece_filters/parse は元々 String→T の関数なので、型一致で供給された非
+  // string 値には適用対象が無いという型の帰結、特別規則ではない).
   piece_filters : Array[FilterSpelling]
   // DR-009 value_filters (each, T→T): applied to EVERY value this cell resolves from ANY ladder seat
   // (cli/env/config/inherit/default) right after that seat's own value is determined — same timing
   // "type.parse の後、accumulator の前" DR-009's [4]→[5] describes. For a scalar cell (no accum)
-  // this collapses to "applied once, right before cell_filters" since only one seat ever wins.
+  // this collapses to "applied once, right before final_filters" since only one seat ever wins.
   value_filters : Array[FilterSpelling]
-  // DR-009 cell_filters (累積後の最終値、DR-077 §1 "cell_filters は update の結果にも通す" の実証対象):
-  // applied to the FINAL resolved value, after the ladder has picked a winning seat (and after any
-  // accumulation, for a multiple cell). This is the one place both `set` and `update` effects
-  // converge before the value leaves resolve_entity — the whole point of this issue.
-  cell_filters : Array[FilterSpelling]
+  // DR-009 / DR-102 §1 final_filters (T→T、確定した最終値ガード、non-accum 専用): applied to the
+  // FINAL resolved value, after the ladder has picked a winning seat — a scalar (non-accum) cell
+  // only. This is the one place both `set` and `update` effects converge before the value leaves
+  // resolve_entity (DR-077 §1 "final_filters は update の結果にも通す" の実証対象そのもの、the whole
+  // point of this issue). An accum cell (multiple/repeat/separator) leaves this empty — its
+  // ARRAY-shaped final gate is `accum_filters` below, applied at build_result instead
+  // (`apply_entity_filters` never reaches this field for an accum cell).
+  final_filters : Array[FilterSpelling]
+  // DR-009 段 7 / DR-102 §1 accum_filters (Acc→Acc、累積配列全体、accum 専用): applied to the WHOLE
+  // accumulated array, AFTER accumulation completes (`resolve.mbt`'s `build_result`, via
+  // `AccumCell.accum_filters`) — a scalar (non-accum) cell leaves this empty (its T→T final gate is
+  // `final_filters` above). 1 属性 1 registry (ARRAY filter registry) の対応 — multiple 有無で
+  // registry を切り替える位置依存判定 (DR-101 §3) は本分割で不要化した。
+  accum_filters : Array[FilterSpelling]
 } derive(Eq, Debug)
 
 ///|

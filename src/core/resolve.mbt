@@ -286,14 +286,15 @@ pub(all) struct AccumCell {
   // sees AccumCell, never the Scope/Entity it came from — can apply it to the final accumulated
   // array without a second lookup pass). None = no collector (render the plain array).
   collector : String?
-  // DR-009 段 7 post_filters (Entity.cell_filters's copy, issue accum-post-filters-stage7): an
-  // accum cell's cell_filters is Acc→Acc (the WHOLE accumulated array, `filters.mbt`'s
-  // `ArrayFilterDescriptor` registry — DIFFERENT signature from a scalar cell's cell_filters,
-  // which `apply_entity_filters` already applies per-value T→T and never reaches build_result at
-  // all). Applied BEFORE `collector` (DR-083 §2's literal order "accumulator 畳み → cell_filters"
-  // has no collector step in it; the collector/post_filters interaction — issue's "未裁定の論点1"
-  // — stays open for whenever a fixture actually exercises both on the same cell).
-  cell_filters : Array[FilterSpelling]
+  // DR-009 段 7 / DR-102 §1 accum_filters (Entity.accum_filters's copy, issue
+  // accum-post-filters-stage7): an accum cell's accum_filters is Acc→Acc (the WHOLE accumulated
+  // array, `filters.mbt`'s `ArrayFilterDescriptor` registry — DIFFERENT signature from a scalar
+  // cell's final_filters, which `apply_entity_filters` already applies per-value T→T and never
+  // reaches build_result at all). Applied BEFORE `collector` (DR-083 §2's literal order
+  // "accumulator 畳み → accum_filters" has no collector step in it; the collector/accum_filters
+  // interaction — issue's "未裁定の論点1" — stays open for whenever a fixture actually exercises
+  // both on the same cell).
+  accum_filters : Array[FilterSpelling]
   // DR-084 §2 (issue multiple-ref-accum-gap): the accumulator KIND (Entity.accum's copy — always
   // `Some(_)` for a cell that reaches `accum_cells` at all, so this is a plain `String` here, not
   // `String?`). `build_result`'s `segs` loop needs to tell apart a ref+repeat cell's "flatten"
@@ -352,17 +353,17 @@ fn collector_here(
 }
 
 ///|
-/// The DR-009 段 7 cell_filters chain declared for the accum cell at `path`/`name` (mirrors
-/// `collector_here`, same lookup shape). `[]` (no chain) is indistinguishable from "cell not
-/// found" here — both callers already gate on `cell_here` first, same as `collector_here`.
-fn cell_filters_here(
+/// The DR-009 段 7 / DR-102 §1 accum_filters chain declared for the accum cell at `path`/`name`
+/// (mirrors `collector_here`, same lookup shape). `[]` (no chain) is indistinguishable from "cell
+/// not found" here — both callers already gate on `cell_here` first, same as `collector_here`.
+fn accum_filters_here(
   cells : Array[AccumCell],
   path : Array[String],
   name : String,
 ) -> Array[FilterSpelling] {
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
-      return c.cell_filters
+      return c.accum_filters
     }
   }
   []
@@ -541,12 +542,12 @@ pub fn build_result(
           }
         }
       }
-      // DR-009 段 7 cell_filters (issue accum-post-filters-stage7): Acc→Acc self-map over the
-      // WHOLE folded array, BEFORE the collector (DR-083 §2's order — see AccumCell.cell_filters'
-      // doc comment for why collector comes after, not before).
-      let filtered_vals = match cell_filters_here(cells, path, k) {
+      // DR-009 段 7 / DR-102 §1 accum_filters (issue accum-post-filters-stage7): Acc→Acc self-map
+      // over the WHOLE folded array, BEFORE the collector (DR-083 §2's order — see
+      // AccumCell.accum_filters' doc comment for why collector comes after, not before).
+      let filtered_vals = match accum_filters_here(cells, path, k) {
         [] => vals
-        chain => apply_cell_filter_chain(chain, vals)
+        chain => apply_accum_filter_chain(chain, vals)
       }
       let collected = if accum_kind_here(cells, path, k) == Some("kv_map") {
         // DR-091 §2: a kv_map cell folds to an OBJECT, not the uniform array every other
@@ -908,7 +909,7 @@ fn collect_accum(
               path,
               name: new_name,
               collector: e.collector,
-              cell_filters: e.cell_filters,
+              accum_filters: e.accum_filters,
               accum: a,
             })
           }
@@ -1594,8 +1595,8 @@ pub fn resolve_scope_tree(
 }
 
 ///|
-/// Apply the DR-047 §4/§5 requires path filter to a `parse()` Outcome (cell_filters と同じ側の
-/// 後段処理、`promote_collision_ambiguous` と同型パターン — `parse()` 自体のシグネチャ・eval 層の
+/// Apply the DR-047 §4/§5 requires path filter to a `parse()` Outcome (final_filters/accum_filters
+/// と同じ側の後段処理、`promote_collision_ambiguous` と同型パターン — `parse()` 自体のシグネチャ・eval 層の
 /// Ctx は無改修のまま、値源 (env/config/inherit) を後から与える)。bool 目的語 (真理値判定) と非bool
 /// 目的語 (値の有無判定) の両方をここで扱う (issue value-present-ladder-gap 裁定 2026-07-10 で対象
 /// 拡張、旧名 `apply_requires_filter` から改名)。生存経路数で outcome を再構成する: 0 →
@@ -1746,8 +1747,9 @@ fn ladder_err(
 }
 
 ///|
-/// A DR-053 §2 filter-reject Error: `value_filters`/`cell_filters` (DR-009 §7) rejected an already-
-/// resolved value. Distinct from `ladder_err` (`kind: KParse`, a value-source failed to parse) —
+/// A DR-053 §2 filter-reject Error: `value_filters`/`final_filters`/`accum_filters` (DR-009 §7,
+/// DR-102 §1) rejected an already-resolved value. Distinct from `ladder_err` (`kind: KParse`, a
+/// value-source failed to parse) —
 /// a filter reject is a validation/transform rejection over a value that parsed fine, so it gets
 /// its own builder with `kind: KFilter` (DR-053 §2's 3-way `parse` | `filter` | `constraint` split;
 /// `eval.mbt`'s `filter_arg_eval` already emits `KFilter` for the same conceptual failure at the
@@ -1850,7 +1852,7 @@ fn apply_transform(
             // reason-family を KParse のまま残すのは内部不整合なので合わせて修正、報告に明記)。
             // codex 指摘 (2026-07-12, 節目レビュー): reason も `filter_rejected` に統一 (上 2 分岐と
             // 同じ理由、DR-095 の宣言集合に update-transform 軸の failure reason は無い)。`d.run`
-            // 自身の own reason (`_reason`) は piece/value/cell_filters チェーン用の別軸 (filters.mbt
+            // 自身の own reason (`_reason`) は piece/value/final/accum_filters チェーン用の別軸 (filters.mbt
             // `apply_filter_chain` doc comment 参照) であり、この update-transform 軸 (DR-077 §2) に
             // は使わず message だけ通す。
             Err(filter_err(name, at_pos, "filter_rejected", msg, epath))
@@ -2018,13 +2020,12 @@ fn resolve_entity(
 }
 
 ///|
-/// DR-009 §value_filters/cell_filters applied to whatever `resolve_entity_raw` resolved (any ladder
-/// seat: cli/env/config/inherit/default — DR-077 §1's whole point is that `set` and `update`
-/// effects converge here indistinguishably). `value_filters` (each) applies to every binding; `cell_filters`
-/// (累積後の最終値) applies ONLY to a scalar cell's (no accum) single binding — a `multiple`/accum
-/// cell's TRUE "post accumulation" point is build_result (resolve.mbt's caller), which this function
-/// does not reach; extending cell_filters to the accumulated array is a follow-up (this issue's
-/// scope is the count/update scalar case DR-077 §1 needed proven, not the general multiple case).
+/// DR-009 §value_filters/final_filters (DR-102 §1 属性分割) applied to whatever `resolve_entity_raw`
+/// resolved (any ladder seat: cli/env/config/inherit/default — DR-077 §1's whole point is that
+/// `set` and `update` effects converge here indistinguishably). `value_filters` (each) applies to
+/// every binding; `final_filters` (T→T、確定した最終値) applies ONLY to a scalar cell's (no accum)
+/// single binding — an accum cell's TRUE "post accumulation" gate is `accum_filters`, applied at
+/// build_result (resolve.mbt's caller) instead, which this function does not reach for that cell.
 /// `Empty`'s binding carries a PLACEHOLDER value (DR-045 — the real "clear the collection" effect
 /// has no value of its own), so it's exempt from both chains — running a number/string filter over
 /// a bogus `VBool(false)` placeholder would be nonsensical.
@@ -2068,7 +2069,7 @@ fn apply_entity_filters(
         Ok(v) => {
           let b2 = { ..b, value: v }
           if e.accum is None {
-            match apply_filter_chain(e.cell_filters, b2.value) {
+            match apply_filter_chain(e.final_filters, b2.value) {
               Err((reason, msg)) =>
                 return Err(filter_err(e.name, at_pos, reason, msg, epath))
               Ok(v2) => out.push({ ..b2, value: v2 })
@@ -2135,7 +2136,7 @@ fn resolve_entity_raw(
   // - `default`: resets to `[]` (DR-051 §2's uniform-array default — an accum cell carries no
   //   declared default BY DESIGN, `AccumCell` has no such field) with committed=true (locks the
   //   ladder, mirrors scalar's `unset-ladder.json` default-commits-locked precedent). The op itself
-  //   carries no operand, so there's no piece for value_filters/cell_filters to act on (DESIGN
+  //   carries no operand, so there's no piece for value_filters/accum_filters to act on (DESIGN
   //   §8.3) — build_result's ACCUMULATE match folds `Default` exactly like `Empty`/`Unset` (a
   //   clear-point), so only the SOURCE TAG differs here: rewriting `source` to `Default` (mirrors
   //   scalar's `mkb(e.name, v, Default)`) keeps `proj_sources`/harness correct without a
@@ -2448,7 +2449,7 @@ fn resolve_ladder_below_cli(
   //   fold(観測) = terminal || (tty_cygwin && cygwin)
   // 供給値は既に native bool なので env/config と違い pieceProcessor (piece_filters/parse,
   // String→T の相) を経由しない — `mkb` へ直接 `VBool` を渡すだけで DR-050 §4 の「型一致で T 域
-  // 直行」原理そのまま (`apply_entity_filters` 側の value_filters/cell_filters, T→T の相は他の全
+  // 直行」原理そのまま (`apply_entity_filters` 側の value_filters/final_filters, T→T の相は他の全
   // seat と同じく後段で通る)。観測が得られれば宣言 default より必ず勝つ (fold が定まった時点で
   // return するので下の宣言 default 分岐には進まない) — accum セルでも scalar セルでも単一 binding
   // として供給し、以降は通常の default 席と同じ経路に合流する (multiple×tty に個別規定は要らない、

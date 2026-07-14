@@ -39,7 +39,8 @@ fn el(
   ref_? : String? = None,
   piece_filters? : Array[String] = [],
   value_filters? : Array[String] = [],
-  cell_filters? : Array[String] = [],
+  final_filters? : Array[String] = [],
+  accum_filters? : Array[String] = [],
   // DR-091 §3 / DR-096 §1: long-only axis, `el`'s other builders (`opt`/`pos`,
   // json_conformance_wbtest.mbt) already carry these — added here so lowering wbtest cases can
   // exercise `long_eq_sep` without hand-writing a full ElemDef literal.
@@ -96,7 +97,8 @@ fn el(
     // production (issue filter-spelling-inband-encoding-retyping).
     piece_filters: chain(piece_filters),
     value_filters: chain(value_filters),
-    cell_filters: chain(cell_filters),
+    final_filters: chain(final_filters),
+    accum_filters: chain(accum_filters),
     long_prefix,
     short_prefix,
     env_prefix: "",
@@ -1454,7 +1456,7 @@ test "repeat installer: self-ref cons template key does not collide with a same-
 /// 解ける後段でしか行えないため、**`parse()` 単体では bool target の requires を KTop が常に
 /// スキップする** (常に pass 扱い、"c" を一切与えなくても Success のまま — これは vacuous
 /// satisfaction ではなく、後段フィルタを通す前の意図された中間状態)。`resolve.mbt` の
-/// `apply_requires_filter` (cell_filters と同じ側の後段処理) を通して初めて、c が
+/// `apply_requires_filter` (final_filters/accum_filters と同じ側の後段処理) を通して初めて、c が
 /// 未解決 (default:false のまま) なら requires 違反として Failure に確定する — vacuous
 /// satisfaction は後段フィルタ適用で解消されることを、この2段 (parse() 単体 / フィルタ後) で
 /// 固定する。次の wbtest (target が非フラグ = KTop のまま従来通り) との対で挙動差を確認する。
@@ -1975,11 +1977,14 @@ test "parse_definition: a regex_match filter with a compilable pattern is NOT re
 }
 
 ///|
-/// 保証: DR-085 波及節が要求する 3 相 (piece_filters/value_filters/cell_filters) 全てで regex_match
-/// pattern compile 検査が効く — `regex_match` は plain `FilterDescriptor` (filters.mbt) で3相どれでも
-/// 使える (accum cell_filters の array-vs-scalar 語彙分離のような相限定が無い)、その通り検査される
-/// ことを value_filters/cell_filters それぞれで固定する (piece_filters は上の2テストが既に固定済み)。
-test "parse_definition: regex_match compile check also fires for value_filters and cell_filters" {
+/// 保証: DR-085 波及節 / DR-102 属性分割が要求する 4 相 (piece_filters/value_filters/final_filters/
+/// accum_filters) 全てで regex_match pattern compile 検査が効く — `collect_invalid_regex_pattern`
+/// は綴りが `regex_match` かどうかの名前一致だけで判定するので、その要素が要求する registry が
+/// scalar (final_filters) か ARRAY (accum_filters) かに関わらず compile 検査は無条件に走る。
+/// value_filters/final_filters それぞれで固定する (piece_filters は上の2テストが既に固定済み)。
+/// accum_filters は非 accum-registry 綴り (unknown-vocab) と compile 失敗 (invalid-argument) が
+/// 同時に出るケース (下の対極テスト) で別途固定する。
+test "parse_definition: regex_match compile check also fires for value_filters and final_filters" {
   let def_value : Definition = {
     ..empty_def(),
     options: [el("a", TStr, long=LBool(true), value_filters=["regex_match:["])],
@@ -1996,12 +2001,12 @@ test "parse_definition: regex_match compile check also fires for value_filters a
       assert_true(found)
     }
   }
-  let def_cell : Definition = {
+  let def_final : Definition = {
     ..empty_def(),
-    options: [el("b", TStr, long=LBool(true), cell_filters=["regex_match:["])],
+    options: [el("b", TStr, long=LBool(true), final_filters=["regex_match:["])],
   }
-  match parse_definition(def_cell, all_installers()) {
-    Ok(_) => abort("expected Err (cell_filters regex_match compile failure)")
+  match parse_definition(def_final, all_installers()) {
+    Ok(_) => abort("expected Err (final_filters regex_match compile failure)")
     Err(errs) => {
       let mut found = false
       for e in errs {
@@ -2010,6 +2015,43 @@ test "parse_definition: regex_match compile check also fires for value_filters a
         }
       }
       assert_true(found)
+    }
+  }
+}
+
+///|
+/// 保証 (対極、DR-102 §2): `accum_filters` (ARRAY filter registry, accum 専用) に `regex_match` を
+/// 書いた場合、`collect_invalid_regex_pattern` は綴りの registry 所属を問わず名前一致だけで compile
+/// 検査するため DInvalidArgument が出る一方、`regex_match` は ARRAY registry の owns 集合に無いので
+/// `collect_unknown_filter` が独立に DUnknownVocab も出す (DR-054「全エラー列挙、first-error 打ち切り
+/// なし」) — 両方が同時に報告されることを固定する (一方だけ出て他方を握り潰す実装は誤り)。
+test "parse_definition: an accum element's accum_filters regex_match entry is BOTH invalid-argument (compile failure) and unknown-vocab (not an ARRAY filter)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      el("c", TStr, long=LBool(true), multiple=true, accum_filters=[
+        "regex_match:[",
+      ]),
+    ],
+  }
+  match parse_definition(def, all_installers()) {
+    Ok(_) =>
+      abort(
+        "expected Err (accum_filters regex_match is both compile-failing and unregistered)",
+      )
+    Err(errs) => {
+      let mut has_invalid_argument = false
+      let mut has_unknown_vocab = false
+      for e in errs {
+        if e.element == "c" && e.kind == DInvalidArgument {
+          has_invalid_argument = true
+        }
+        if e.element == "c" && e.kind == DUnknownVocab {
+          has_unknown_vocab = true
+        }
+      }
+      assert_true(has_invalid_argument)
+      assert_true(has_unknown_vocab)
     }
   }
 }

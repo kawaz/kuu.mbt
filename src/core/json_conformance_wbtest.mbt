@@ -331,7 +331,8 @@ fn opt(
   bool_config? : BoolConfig = bool_config_canonical(),
   piece_filters? : Array[FilterSpelling] = [],
   value_filters? : Array[FilterSpelling] = [],
-  cell_filters? : Array[FilterSpelling] = [],
+  final_filters? : Array[FilterSpelling] = [],
+  accum_filters? : Array[FilterSpelling] = [],
   ref_? : String? = None,
   long_prefix? : String = "--",
   short_prefix? : String = "-",
@@ -382,7 +383,8 @@ fn opt(
     bool_config,
     piece_filters,
     value_filters,
-    cell_filters,
+    final_filters,
+    accum_filters,
     long_prefix,
     short_prefix,
     env_prefix,
@@ -414,7 +416,8 @@ fn pos(
   bool_config? : BoolConfig = bool_config_canonical(),
   piece_filters? : Array[FilterSpelling] = [],
   value_filters? : Array[FilterSpelling] = [],
-  cell_filters? : Array[FilterSpelling] = [],
+  final_filters? : Array[FilterSpelling] = [],
+  accum_filters? : Array[FilterSpelling] = [],
   env? : Array[String] = [],
   is_tty? : Bool = false,
   tty_stream? : String? = None,
@@ -463,7 +466,8 @@ fn pos(
     bool_config,
     piece_filters,
     value_filters,
-    cell_filters,
+    final_filters,
+    accum_filters,
     // positional 要素は long/short spelling を持たない (`long: LList([])`/`short: []` 上、`long_of`
     // は常に [] を返す) — `long_prefix`/`long_eq_sep`/`short_prefix`/`short_attached_value`/
     // `short_combine` は long/short-only 語彙なので既定値のまま未使用フィールドとして持ち回るだけ
@@ -530,7 +534,8 @@ fn dd_marker(
     bool_config: bool_config_canonical(),
     piece_filters: [],
     value_filters: [],
-    cell_filters: [],
+    final_filters: [],
+    accum_filters: [],
     // dd marker element も `long: LList([])` で long spelling を持たない — 同じ理由で既定値。
     long_prefix: "--",
     short_prefix: "-",
@@ -1660,7 +1665,8 @@ fn dec_strs(j : Json?) -> Array[String] raise DecodeSkip {
 }
 
 ///|
-/// Decode a filters-chain field (`piece_filters`/`value_filters`/`cell_filters`, DR-009 §DSL 文法)
+/// Decode a filters-chain field (`piece_filters`/`value_filters`/`final_filters`/`accum_filters`,
+/// DR-009 §DSL 文法, DR-102 属性分割)
 /// into `Array[FilterSpelling]` (node.mbt, issue filter-spelling-inband-encoding-retyping): same
 /// shape as `dec_strs` (a string, or a string[]), but each array element may ALSO be the DR-085 §3
 /// / DESIGN §8.4 object form `{"name": ..., "args": [...]}` — needed when a filter's own arg
@@ -2891,7 +2897,7 @@ fn dec_option(
       "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
       "inheritable", "multiple", "requires", "conflicts_with", "exclusive_group",
       "required", "export_key", "config_key", "deprecated", "or", "values", "piece_filters",
-      "value_filters", "cell_filters", "ref", "repeat",
+      "value_filters", "final_filters", "accum_filters", "ref", "repeat",
       // DR-090 §2: dd 専用の2軸拡張キー — 他 type では無意味だが、dd 分岐 (下) だけが読む
       // ("option" 共通 allowed_keys に足すのは他 wire 属性 (env/config_key 等) と同じ扱い方)。
        "match", "self",
@@ -3093,7 +3099,8 @@ fn dec_option(
   let deprecated = bool_field(o, "deprecated", false)
   let piece_filters = dec_filter_chain(o.get("piece_filters"))
   let value_filters = dec_filter_chain(o.get("value_filters"))
-  let cell_filters = dec_filter_chain(o.get("cell_filters"))
+  let final_filters = dec_filter_chain(o.get("final_filters"))
+  let accum_filters = dec_filter_chain(o.get("accum_filters"))
   // DR-091 §3 (team-lead 裁定 2026-07-11 修正) / DR-096: `long_prefix`/`long_eq_sep` are NOT
   // element-level wire keys — the canonical source is `dec_definition`'s scope-level read (DESIGN
   // §7.2's sibling, "scope config" per DR-091 §3), which overrides every `ElemDef` this function
@@ -3141,7 +3148,8 @@ fn dec_option(
       bool_config=bool_config_from_shadow,
       piece_filters~,
       value_filters~,
-      cell_filters~,
+      final_filters~,
+      accum_filters~,
       ref_~,
       body=match structural_or {
         Some(branches) => BOr(branches)
@@ -3171,8 +3179,8 @@ fn dec_positional(
     o,
     [
       "id", "name", "type", "repeat", "optional", "multiple", "export_key", "config_key",
-      "default", "positionals", "or", "piece_filters", "value_filters", "cell_filters",
-      "ref", "env", "required", "requires",
+      "default", "positionals", "or", "piece_filters", "value_filters", "final_filters",
+      "accum_filters", "ref", "env", "required", "requires",
       // codex 節目レビュー Major 1 (dec_option 側と同じ要素単位 scope config override、
       // 対称の positional 版)。
        "config",
@@ -3261,7 +3269,8 @@ fn dec_positional(
   }
   let piece_filters = dec_filter_chain(o.get("piece_filters"))
   let value_filters = dec_filter_chain(o.get("value_filters"))
-  let cell_filters = dec_filter_chain(o.get("cell_filters"))
+  let final_filters = dec_filter_chain(o.get("final_filters"))
+  let accum_filters = dec_filter_chain(o.get("accum_filters"))
   let ref_ = jf_str(o, "ref")
   // DR-088 (issue dr-088-positional-default-verification): positionals can declare `env` too
   // (Entity.env_key applies uniformly across options/positionals, `dec_option`'s same-named
@@ -3298,7 +3307,8 @@ fn dec_positional(
     is_tty=is_tty_from_shadow,
     tty_stream=tty_stream_from_shadow,
     tty_cygwin=tty_cygwin_from_shadow,
-    cell_filters~,
+    final_filters~,
+    accum_filters~,
     required~,
     requires~,
   )
@@ -4672,17 +4682,22 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
     if e.ty != TFlag && e.ty != TBool && e.default_values is Some(_) {
       return true
     }
-    // DR-009 value_filters/cell_filters (issue 2026-07-09-filters-registry-foundation) are applied by
-    // `resolve_entity` (resolve.mbt's `apply_entity_filters`), NOT by the raw CLI `binds` array
-    // this function's `false` result routes to. `resolve_entity_raw`'s CLI-seat fold interprets an
-    // accum cell's op sequence now (issue 2026-07-09-accum-entity-filters-wiring's raw-preservation
-    // groundwork, extended by issue 2026-07-09-accum-fold-update-default-ops's committed tracking +
-    // ladder fall-through), so an accum cell with value_filters/cell_filters ALSO needs the resolve
-    // path — the guard that used to exclude accum (`e.accum is None &&`) is removed. `apply_entity_
-    // filters` already skips cell_filters for an accum cell (accumulated-array post is a separate
-    // stage, issue accum-post-filters-stage7); routing through resolve here only activates
-    // value_filters(each).
-    if e.value_filters.length() > 0 || e.cell_filters.length() > 0 {
+    // DR-009 value_filters/final_filters (DR-102 属性分割、issue
+    // 2026-07-09-filters-registry-foundation) are applied by `resolve_entity` (resolve.mbt's
+    // `apply_entity_filters`), NOT by the raw CLI `binds` array this function's `false` result
+    // routes to. `resolve_entity_raw`'s CLI-seat fold interprets an accum cell's op sequence now
+    // (issue 2026-07-09-accum-entity-filters-wiring's raw-preservation groundwork, extended by
+    // issue 2026-07-09-accum-fold-update-default-ops's committed tracking + ladder fall-through),
+    // so an accum cell with value_filters ALSO needs the resolve path — the guard that used to
+    // exclude accum (`e.accum is None &&`) is removed. `apply_entity_filters` never reaches
+    // `final_filters` for an accum cell (that cell's gate is `accum_filters`, applied at
+    // build_result — issue accum-post-filters-stage7 — which both the resolve and raw paths reach
+    // via `accum_cells`, so `accum_filters` alone would not strictly require this); routing through
+    // resolve here only activates value_filters(each). Both `final_filters`/`accum_filters` stay in
+    // this OR for symmetry with the declaration-presence heuristic this function already uses.
+    if e.value_filters.length() > 0 ||
+      e.final_filters.length() > 0 ||
+      e.accum_filters.length() > 0 {
       return true
     }
     // DR-080 波及節: a merge-accumulator cell's Set/Remove/Splice PIECE bindings only fold into
@@ -4727,16 +4742,16 @@ fn pe_msg(pe : ParseError) -> String {
 }
 
 ///|
-/// The `ParseError`-preserving form (`"failure"`-branch resolve check, DR-009 §7 cell_filters etc.
-/// surfacing as a resolve-layer Err even when `parse()` itself succeeded — see `do_resolve`'s
-/// string-message wrapper below, kept for its existing "success"-branch callers).
+/// The `ParseError`-preserving form (`"failure"`-branch resolve check, DR-009 §7 final_filters/
+/// accum_filters etc. surfacing as a resolve-layer Err even when `parse()` itself succeeded — see
+/// `do_resolve`'s string-message wrapper below, kept for its existing "success"-branch callers).
 fn do_resolve_pe(
   sc : Scope,
   cli : Array[Binding],
   dc : DCase,
 ) -> Result[Array[Binding], ParseError] {
   // `at_pos: dc.argv.length()` — a resolve-layer Error (env/config seat parse failure, or a
-  // DR-009 §7 value_filters/cell_filters reject) is not read at a token position, it surfaces after
+  // DR-009 §7 value_filters/final_filters/accum_filters reject) is not read at a token position, it surfaces after
   // the argv path completed (`ladder_err`'s doc comment, resolve.mbt). Threading the real final
   // position here (instead of `resolve_scope`/`resolve_scope_config`'s `at_pos? = -1` default)
   // matches `eval_constraints`'s convention for the same conceptual point (DR-053 §2).
@@ -4818,7 +4833,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
   let root = ScopeNode(sc)
   // DR-047 §5 明確化 (kawaz 裁定 2026-07-09): bool-target requires/CRequiresIf は KTop (CLI 面
   // のみ) では常にスキップされているので、値源 (env) が解ける後段でここでフィルタする
-  // (cell_filters と同じ側、`resolve.mbt` の `apply_requires_filter` — 経路数に応じて
+  // (final_filters/accum_filters と同じ側、`resolve.mbt` の `apply_requires_filter` — 経路数に応じて
   // success/ambiguous/failure を再確定)。DR-021 → DR-073 の export-key collision 昇格
   // (`promote_collision_ambiguous`) より先に適用する — 責務が異なる2つの後処理 (「経路の成立
   //自体」と「export-key 衝突による Success→Ambiguous 昇格」) を素直に直列に並べる。
@@ -4983,7 +4998,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             }
           }
         }
-        // DR-009 §7 cell_filters (and any other resolve-layer check, e.g. a future
+        // DR-009 §7 final_filters/accum_filters (and any other resolve-layer check, e.g. a future
         // constraint that only resolve sees): `parse()` itself can succeed while the VALUE
         // resolution layer (env/config/inherit/default ladder fill + filter chains,
         // resolve.mbt) still rejects — a "failure" fixture case exercising THAT path needs

@@ -1,7 +1,7 @@
 // filters.mbt — the filters registry (DR-009/010/036/061/077): the pure-function chain that
-// DR-009 threads through 3 phases (piece_filters / value_filters (each) / cell_filters). MDR-002 §3:
-// depends on {node, value} only (no eval dependency — filters run over already-parsed `Value`s,
-// not tokens).
+// DR-009 threads through 4 phases (piece_filters / value_filters (each) / final_filters (non-accum
+// final value) / accum_filters (累積配列, DR-102 attribute split)). MDR-002 §3: depends on {node,
+// value} only (no eval dependency — filters run over already-parsed `Value`s, not tokens).
 //
 // SCOPE (issue 2026-07-09-filters-registry-foundation): this is a MINIMAL kuu.mbt reference-
 // implementation register, not the full multi-host DR-010 registry machinery (tree-shake / Level
@@ -10,10 +10,11 @@
 // is simply always registered). DR-062's inheritance interface (`{prepend, append}` composition
 // against a ref/type-registry base chain) is likewise OUT OF SCOPE: kuu.mbt has no `type` registry
 // (a name → factory lookup for value parsers) to inherit FROM yet, so there is no base chain to
-// compose against — `value_filters`/`piece_filters`/`cell_filters` are plain `Array[FilterSpelling]`
-// (colon-shorthand DSL `"<name>:<arg>:<arg>..."` and DESIGN §8.4 object form, DR-009/DR-085 §3,
-// both decoded to the same structured shape — node.mbt's `FilterSpelling`) with no inherit/
-// prepend/append object form. Revisit when a type registry with per-type default chains exists.
+// compose against — `value_filters`/`piece_filters`/`final_filters`/`accum_filters` are plain
+// `Array[FilterSpelling]` (colon-shorthand DSL `"<name>:<arg>:<arg>..."` and DESIGN §8.4 object
+// form, DR-009/DR-085 §3, both decoded to the same structured shape — node.mbt's `FilterSpelling`)
+// with no inherit/prepend/append object form. Revisit when a type registry with per-type default
+// chains exists.
 
 ///|
 /// A filter's SIGNATURE (DR-061 §5 "factory config と filter の線引きは相で切る" + DR-077 §2 "使える
@@ -87,8 +88,9 @@ fn filter_non_empty(
 }
 
 ///|
-/// `in_range:<min>:<max>` (DR-040 §「count の上限は cell_filters (in_range 等) で書く」, DR-077 §1
-/// "cell_filters が update の結果にも通る" の実証対象そのもの): number-only `Validate`. `min`/`max`
+/// `in_range:<min>:<max>` (DR-040 §「count の上限は final_filters (in_range 等) で書く」, DR-077 §1
+/// "final_filters が update の結果にも通る" の実証対象そのもの、DR-102 属性分割): number-only
+/// `Validate`. `min`/`max`
 /// are the DSL args (DR-009 "args はすべて string、filter registry 側でキャスト") — parsed here via
 /// `parse_number` (canonical DR-074 §1 lexicon, same parser the value primitives use). A malformed
 /// arg is a filter-definition error surfaced as an Err with the `filter_rejected` fallback reason
@@ -287,10 +289,11 @@ pub fn lookup_filter(name : String) -> FilterDescriptor? {
 }
 
 ///|
-/// `unique`: an accum cell's ARRAY-shaped cell_filters entry (DR-009 段 7 "post_filters"/Acc→Acc,
+/// `unique`: an accum cell's ARRAY-shaped accum_filters entry (DR-009 段 7 "post_filters"/Acc→Acc,
 /// issue accum-post-filters-stage7 / DR-083 §2's "value_filters per piece → accumulator 畳み →
-/// cell_filters" order) — dedupes by `Value` structural equality, first-occurrence order preserved
-/// (stable, mirrors how a human reads "unique" — not sorted). 0-arg (same shape as `increment`).
+/// accum_filters" order, DR-102 属性分割) — dedupes by `Value` structural equality, first-occurrence
+/// order preserved (stable, mirrors how a human reads "unique" — not sorted). 0-arg (same shape as
+/// `increment`).
 fn array_filter_unique(
   vs : Array[Value],
   _args : Array[String],
@@ -312,15 +315,15 @@ fn array_filter_unique(
 }
 
 ///|
-/// One ARRAY cell_filters registry entry (DR-009 段 7): unlike `FilterDescriptor` (`Value =>
-/// Value`, piece/value_filters phases), this phase's `run` is `Array[Value] => Array[Value]` — the
-/// accumulated cell's WHOLE final array is the unit these filters see (issue accum-post-filters-
-/// stage7's "未裁定の論点1" resolved: whole-array, not per-element — a self-map over U, DR-083 §2's
-/// literal order "accumulator 畳み → cell_filters" has no per-piece step left to run this at). A
-/// separate registry from `filters_registry()` (not a variant/overload of it) because the two
-/// phases have genuinely different signatures — no name collision risk since `installer.mbt`'s
-/// `collect_invalid_accum_cell_filter` (DR-082 kind=invalid-range) rejects an accum entity's
-/// cell_filters chain containing a name this registry doesn't know, at DEFINITION time — by the
+/// One ARRAY accum_filters registry entry (DR-009 段 7, DR-102 属性分割): unlike `FilterDescriptor`
+/// (`Value => Value`, piece/value_filters/final_filters phases), this phase's `run` is
+/// `Array[Value] => Array[Value]` — the accumulated cell's WHOLE final array is the unit these
+/// filters see (issue accum-post-filters-stage7's "未裁定の論点1" resolved: whole-array, not
+/// per-element — a self-map over U, DR-083 §2's literal order "accumulator 畳み → accum_filters"
+/// has no per-piece step left to run this at). A separate registry from `filters_registry()` (not a
+/// variant/overload of it) because the two phases have genuinely different signatures — no name
+/// collision risk since `installer.mbt`'s `collect_unknown_filter` rejects an accum entity's
+/// accum_filters chain containing a name this registry doesn't know, at DEFINITION time — by the
 /// time `build_result` (resolve.mbt) runs this chain, every name is already known-valid, so this
 /// phase's `run` can stay a plain `Array[Value] => Array[Value]` (no `Result`, no error channel to
 /// thread through `build_result`'s existing `-> RVal` signature, DR-082's usual "push structural
@@ -336,22 +339,22 @@ fn array_filters_registry() -> Map[String, ArrayFilterDescriptor] {
 }
 
 ///|
-/// Look up one ARRAY cell_filters entry by name (DR-009 段7 registry, separate from
-/// `lookup_filter`'s per-value registry — see `ArrayFilterDescriptor`'s doc comment for why).
+/// Look up one ARRAY accum_filters entry by name (DR-009 段7 registry, DR-102 属性分割, separate
+/// from `lookup_filter`'s per-value registry — see `ArrayFilterDescriptor`'s doc comment for why).
 pub fn lookup_array_filter(name : String) -> ArrayFilterDescriptor? {
   array_filters_registry().get(name)
 }
 
 ///|
-/// Run an accum cell's cell_filters chain (DR-009 段 7, Array[Value] => Array[Value]) over its
-/// final accumulated array, in declared order. Unlike `apply_filter_chain`, this has no `Result`
-/// return — `installer.mbt`'s `collect_invalid_accum_cell_filter` already guarantees every chain
-/// entry reaching here is a registered array filter name (definition-time gate, `ArrayFilterDescriptor`'s
-/// doc comment). An unregistered name here is therefore unreachable in practice; falls back to a
-/// no-op pass-through rather than aborting (same defensive posture as `apply_collector`'s "unrecognized
-/// name — identity" fallback, both guarded by a decode-time vocab check that runs before this ever sees
-/// the name).
-pub fn apply_cell_filter_chain(
+/// Run an accum cell's accum_filters chain (DR-009 段 7, DR-102 属性分割, Array[Value] =>
+/// Array[Value]) over its final accumulated array, in declared order. Unlike `apply_filter_chain`,
+/// this has no `Result` return — `installer.mbt`'s `collect_unknown_filter` already guarantees
+/// every chain entry reaching here is a registered array filter name (definition-time gate,
+/// `ArrayFilterDescriptor`'s doc comment). An unregistered name here is therefore unreachable in
+/// practice; falls back to a no-op pass-through rather than aborting (same defensive posture as
+/// `apply_collector`'s "unrecognized name — identity" fallback, both guarded by a decode-time vocab
+/// check that runs before this ever sees the name).
+pub fn apply_accum_filter_chain(
   chain : Array[FilterSpelling],
   vs : Array[Value],
 ) -> Array[Value] {

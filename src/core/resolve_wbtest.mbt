@@ -34,7 +34,8 @@ fn ent(
   separator? : String? = None,
   piece_filters? : Array[String] = [],
   value_filters? : Array[String] = [],
-  cell_filters? : Array[String] = [],
+  final_filters? : Array[String] = [],
+  accum_filters? : Array[String] = [],
 ) -> Entity {
   // DR-083 §1: the field is the length-1-degenerate array (node.mbt's doc comment); this builder
   // keeps its OWN param scalar (every existing call site passes a single value, the common scalar-
@@ -63,7 +64,8 @@ fn ent(
     // production `Array[FilterSpelling]` fields (issue filter-spelling-inband-encoding-retyping).
     piece_filters: chain(piece_filters),
     value_filters: chain(value_filters),
-    cell_filters: chain(cell_filters),
+    final_filters: chain(final_filters),
+    accum_filters: chain(accum_filters),
   }
 }
 
@@ -86,7 +88,7 @@ test "build_result folds scalar last-wins, accumulate array, and default seat" {
       path: [],
       name: "tags",
       collector: None,
-      cell_filters: [],
+      accum_filters: [],
       accum: "append",
     },
   ]
@@ -126,7 +128,7 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
       path: [],
       name: "tags",
       collector: None,
-      cell_filters: [],
+      accum_filters: [],
       accum: "append",
     },
   ]
@@ -143,7 +145,7 @@ test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)
       path: [],
       name: "tags",
       collector: None,
-      cell_filters: [],
+      accum_filters: [],
       accum: "append",
     },
   ]
@@ -164,7 +166,7 @@ test "build_result: a collector (unwrap_single) collapses a length-1 accumulatio
       path: [],
       name: "tag",
       collector: Some("unwrap_single"),
-      cell_filters: [],
+      accum_filters: [],
       accum: "append",
     },
   ]
@@ -188,7 +190,7 @@ test "build_result: a collector (unwrap_single) leaves a 2+ element accumulation
       path: [],
       name: "tag",
       collector: Some("unwrap_single"),
-      cell_filters: [],
+      accum_filters: [],
       accum: "append",
     },
   ]
@@ -209,7 +211,7 @@ test "build_result: a collector on an unfired accum cell still renders [] (DR-04
       path: [],
       name: "tag",
       collector: Some("unwrap_single"),
-      cell_filters: [],
+      accum_filters: [],
       accum: "append",
     },
   ]
@@ -1151,16 +1153,16 @@ test "resolve_scope: count falls back to default:0 when unfired, and env SETS a 
   )
 }
 
-// ── DR-077 §1 / issue 2026-07-09-filters-registry-foundation: cell_filters が update 結果にも通る ──
+// ── DR-077 §1 / DR-102 §1 / issue 2026-07-09-filters-registry-foundation: final_filters が update 結果にも通る ──
 
 ///|
-/// 保証 (issue の受け入れ条件そのもの — DR-040 「count の上限は cell_filters (in_range 等) で書く」の
-/// 実体化、DR-077 §1 「cell_filters は update の結果にも通す」): count 要素 (update 効果で fold された
-/// 値) に cell_filters:["in_range:0:2"] を宣言すると、3 回連続 increment (-vvv 相当の ceff 3 個) の
-/// 結果 3 が in_range の外に出て Err になる。2 回 (境界内) は通る。cell_filters は set 経路・update
+/// 保証 (issue の受け入れ条件そのもの — DR-040 「count の上限は final_filters (in_range 等) で書く」の
+/// 実体化、DR-077 §1 「final_filters は update の結果にも通す」): count 要素 (update 効果で fold された
+/// 値) に final_filters:["in_range:0:2"] を宣言すると、3 回連続 increment (-vvv 相当の ceff 3 個) の
+/// 結果 3 が in_range の外に出て Err になる。2 回 (境界内) は通る。final_filters は set 経路・update
 /// 経路を区別せず、resolve_entity が最終確定した値に対して一様に適用される (apply_entity_filters)。
-test "resolve_scope: cell_filters (in_range) rejects an update-folded count value over the limit" {
-  let verbose = ent("verbose", TNum, default_value=Some(VNum(0.0)), cell_filters=[
+test "resolve_scope: final_filters (in_range) rejects an update-folded count value over the limit" {
+  let verbose = ent("verbose", TNum, default_value=Some(VNum(0.0)), final_filters=[
     "in_range:0:2",
   ])
   let sc : Scope = {
@@ -1188,11 +1190,11 @@ test "resolve_scope: cell_filters (in_range) rejects an update-folded count valu
 }
 
 ///|
-/// 保証: cell_filters は set 経路 (通常の value option) にも同じく効く — DR-077 §1 が強調するのは
-/// 「update の結果にも」という追加であって、set 経路の cell_filters 適用は元々の DR-009/040 契約
+/// 保証: final_filters は set 経路 (通常の value option) にも同じく効く — DR-077 §1 が強調するのは
+/// 「update の結果にも」という追加であって、set 経路の final_filters 適用は元々の DR-009/040 契約
 /// (update 導入前から成立すべき前提)。両経路が同じ apply_entity_filters を通ることを対で固定する。
-test "resolve_scope: cell_filters (in_range) also rejects a plain Set value over the limit" {
-  let n = ent("n", TNum, cell_filters=["in_range:0:100"])
+test "resolve_scope: final_filters (in_range) also rejects a plain Set value over the limit" {
+  let n = ent("n", TNum, final_filters=["in_range:0:100"])
   let sc : Scope = {
     greedy: [],
     positional: [],
@@ -1473,7 +1475,7 @@ test "resolve_scope: accum × value_filters(each) — Unset does not disable fil
 }
 
 ///|
-/// 保証 (issue 2026-07-09-post-filter-error-attribution): `value_filters`/`cell_filters` reject の
+/// 保証 (issue 2026-07-09-post-filter-error-attribution): `value_filters`/`final_filters` reject の
 /// Error は `kind: KFilter` を持つ (DR-053 §2 の `parse` | `filter` | `constraint` 3 分類 — 値が
 /// パースできなかった `KParse` とは別カテゴリ、既にパース済みの値を validate/transform した結果の
 /// reject なので `filter` 分類に属する)。`argv_pos` は呼び出し側が渡した最終位置をそのまま持つ
@@ -1482,8 +1484,8 @@ test "resolve_scope: accum × value_filters(each) — Unset does not disable fil
 /// 相当。本テストでは呼び出し側が明示的に `at_pos=3` を渡し、それがそのまま素通しされることを
 /// 固定する — 実際の conformance harness 側の配線 (`dc.argv.length()`) は
 /// json_conformance_wbtest.mbt の `do_resolve_pe`/`resolve_tree` が担う)。
-test "resolve_scope: a value_filters/cell_filters reject carries kind=KFilter and the caller's at_pos" {
-  let n = ent("n", TNum, cell_filters=["in_range:0:100"])
+test "resolve_scope: a value_filters/final_filters reject carries kind=KFilter and the caller's at_pos" {
+  let n = ent("n", TNum, final_filters=["in_range:0:100"])
   let sc : Scope = {
     greedy: [],
     positional: [],
@@ -1853,7 +1855,7 @@ test "build_result: kv_map folds 2 fires into an RObj (distinct keys)" {
       path: [],
       name: "assigns",
       collector: None,
-      cell_filters: [],
+      accum_filters: [],
       accum: "kv_map",
     },
   ]
@@ -1882,7 +1884,7 @@ test "build_result: kv_map re-firing a key is last-wins on VALUE, first-seen on 
       path: [],
       name: "assigns",
       collector: None,
-      cell_filters: [],
+      accum_filters: [],
       accum: "kv_map",
     },
   ]
@@ -1905,7 +1907,7 @@ test "build_result: kv_map splits a piece at the FIRST '=' only (value may itsel
       path: [],
       name: "assigns",
       collector: None,
-      cell_filters: [],
+      accum_filters: [],
       accum: "kv_map",
     },
   ]
@@ -1931,7 +1933,7 @@ test "build_result: kv_map's RObj branch does not affect a sibling 'append' accu
       path: [],
       name: "tags",
       collector: None,
-      cell_filters: [],
+      accum_filters: [],
       accum: "append",
     },
   ]

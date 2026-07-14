@@ -112,16 +112,19 @@ pub(all) struct ElemDef {
   // `Entity.default_values` へ写す (§1 の decode-time 持ち上げに加え、FLAG/BOOL/COUNT の暗黙 preset
   // も同じ長さ1形へ揃える)。node.mbt の `Entity.default_values` の doc comment 参照。
   default_values : Array[Value]?
-  // DR-034 pieceProcessor の 3 段 filter chain (DR-062: inheritance object 形は未実装 — filters.mbt
+  // DR-034 pieceProcessor の filter chain (DR-062: inheritance object 形は未実装 — filters.mbt
   // ヘッダ注記参照)。piece_filters: separator 分割後の各 piece 単位 (multiple 無しは長さ 1 に縮退、
   // 同じ管を通る) で type.parse の直前に適用 (String→String)。value_filters: 分割後の要素単位 (each
-  // 暗黙、DR-009)。cell_filters: 累積後の最終値に適用 (DR-077 §1 の主対象 — update の結果にもこれが
-  // 通る)。要素は `FilterSpelling` (node.mbt、issue filter-spelling-inband-encoding-retyping) —
-  // colon shorthand も DESIGN §8.4 object form も同じ構造体に decode 済み、chain 消費側は colon
-  // 分割を一切気にしない。
+  // 暗黙、DR-009)。final_filters (DR-102 §1、T→T、scalar filter registry): non-accum 要素専用の
+  // 確定した最終値ガード (DR-077 §1 の主対象、update の結果にもこれが通る)。accum_filters (DR-102 §1、
+  // Acc→Acc、ARRAY filter registry): accum (multiple/repeat/separator) 要素専用の累積配列全体ガード。
+  // 1 属性 1 registry の対応 (DR-102 §2)。要素は `FilterSpelling` (node.mbt、issue
+  // filter-spelling-inband-encoding-retyping) — colon shorthand も DESIGN §8.4 object form も同じ
+  // 構造体に decode 済み、chain 消費側は colon 分割を一切気にしない。
   piece_filters : Array[FilterSpelling]
   value_filters : Array[FilterSpelling]
-  cell_filters : Array[FilterSpelling]
+  final_filters : Array[FilterSpelling]
+  accum_filters : Array[FilterSpelling]
   // DR-014 / DESIGN §7.2 / DR-096 §1 (issue scope-config-object-gap, 軸別再編): the FULL
   // hierarchical scope `config` object (long_prefix/long_eq_sep/short_prefix/short_attached_value/
   // short_combine/env_prefix/auto_env). Decode (`dec_definition`, json_conformance_wbtest.mbt)
@@ -765,7 +768,8 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     bool_config: e.bool_config,
     piece_filters: copy_filter_spellings(e.piece_filters),
     value_filters: copy_filter_spellings(e.value_filters),
-    cell_filters: copy_filter_spellings(e.cell_filters),
+    final_filters: copy_filter_spellings(e.final_filters),
+    accum_filters: copy_filter_spellings(e.accum_filters),
     long_prefix: e.long_prefix,
     short_prefix: e.short_prefix,
     env_prefix: e.env_prefix,
@@ -1495,7 +1499,21 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     separator: e.separator,
     piece_filters: e.piece_filters,
     value_filters: e.value_filters,
-    cell_filters: e.cell_filters,
+    // DR-102 §1: final_filters (T→T) only means anything for a scalar (non-accum) cell, accum_filters
+    // (Acc→Acc) only for an accum cell — same "drop the attribute that doesn't apply to this cell's
+    // shape" posture `collector` above already uses. `collect_invalid_filter_attribute_mismatch`
+    // (definition-error, kind=invalid-range) already rejects the OTHER combination at parse_definition
+    // time, so in practice at most one side is ever non-empty here; this split is defense-in-depth.
+    final_filters: if accum is Some(_) {
+      []
+    } else {
+      e.final_filters
+    },
+    accum_filters: if accum is Some(_) {
+      e.accum_filters
+    } else {
+      []
+    },
   })
 }
 
@@ -2106,7 +2124,8 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     bool_config: copy.bool_config,
     piece_filters: copy.piece_filters,
     value_filters: copy.value_filters,
-    cell_filters: copy.cell_filters,
+    final_filters: copy.final_filters,
+    accum_filters: copy.accum_filters,
     long_prefix: copy.long_prefix,
     short_prefix: copy.short_prefix,
     env_prefix: copy.env_prefix,
@@ -2302,7 +2321,8 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     bool_config: bool_config_canonical(), // canonical default (DR-074 §4): write-target は bool_parser opt-in を持たない
     piece_filters: [], // write-target は filter chain を持たない (源 e の value_filters は source 側で既に適用済み)
     value_filters: [],
-    cell_filters: [],
+    final_filters: [],
+    accum_filters: [],
     long_prefix: "--", // 通常の long 綴り (kebab, 未 prefix) — inst_long が既定 "--" を前置する
     short_prefix: "-", // write-target copy は short spelling を持たない (canonical default 相当)
     env_prefix: "", // write-target copy は env 席を持たない (canonical default 相当)
@@ -2540,7 +2560,8 @@ fn alias_entry(
     bool_config: bool_config_canonical(),
     piece_filters: [],
     value_filters: [],
-    cell_filters: [],
+    final_filters: [],
+    accum_filters: [],
     long_prefix: "--",
     short_prefix: "-",
     env_prefix: "",
@@ -3556,25 +3577,17 @@ fn collect_none_value_source_decl(
 }
 
 ///|
-/// DR-009 段 7 (issue accum-post-filters-stage7): an accum (multiple/repeat/separator) element's
-/// `cell_filters` runs Acc→Acc over the WHOLE accumulated array (`filters.mbt`'s
-/// `ArrayFilterDescriptor` registry, e.g. `unique`) — a DIFFERENT vocabulary from a scalar
-/// element's `cell_filters` (`filters.mbt`'s per-Value `FilterDescriptor` registry, e.g.
-/// `in_range`). The two registries are disjoint on purpose (genuinely different signatures, no
-/// name is meant to serve both), so a chain entry that isn't a registered ARRAY filter is a
-/// definition-time mistake, known statically without I/O — same "構造的に宣言できるが実装が対応
-/// できない組合せを definition-error で落とす" contract `collect_scalar_array_default` uses. This
-/// is also what lets `filters.mbt`'s `apply_cell_filter_chain` (called from `build_result`, deep
-/// inside value resolution) skip an unregistered name silently instead of erroring: by the time it
-/// runs, this gate has already guaranteed every name it sees is valid.
-///
-/// DR-101 §3 判定順: 「両 registry どちらにも登録されていない綴り」は本 gate ではなく
-/// `collect_unknown_filter` が unknown-vocab として先に (一次判定) reject する。本 gate は
-/// scalar registry (T→T, `lookup_filter`) には載るが ARRAY registry には無い綴り — つまり
-/// 「別 registry には載るが本席の要求シグネチャに合わない」層違い (二次判定) — だけを
-/// invalid-range として拾う。両方に無い綴りを本 gate が invalid-range で拾ってしまうと
-/// unknown-vocab との二重報告が発生するため、条件で除外する。
-fn collect_invalid_accum_cell_filter(
+/// DR-102 §1/§3 (属性分割、issue accum-post-filters-stage7 の後継): `final_filters` (T→T, scalar
+/// filter registry, non-accum 要素専用) と `accum_filters` (Acc→Acc, ARRAY filter registry, accum
+/// 要素専用) は、要素の accum 適格性 (`multiple`/`repeat`/`separator` — `ensure_entity`/
+/// `collect_scalar_array_default` と同じ `is_accum_elem` 導出) と排他的に対応する。要素にそもそも
+/// 存在しない側の属性を書くのは構造不一致であり、`collect_scalar_array_default` (非 accum 要素への
+/// 配列 default 宣言) と同型の "構造的に宣言できるが実装が対応できない組合せを definition-error で
+/// 落とす" 契約で kind=invalid-range を reject する (fixtures/definition-error/
+/// filter-attribute-multiple-mismatch.json)。1 属性 1 registry の対応 (DR-102 §2) により、綴りの
+/// registry 未登録は `collect_unknown_filter` が単独で判定する — 本 gate は属性と要素の形の不一致
+/// (layer 違いではなく構造違反) だけを見る。
+fn collect_invalid_filter_attribute_mismatch(
   def : Definition,
   out : Array[DefError],
 ) -> Unit {
@@ -3584,24 +3597,25 @@ fn collect_invalid_accum_cell_filter(
 
   fn check(e : ElemDef) -> Unit {
     if is_accum_elem(e) {
-      for fs in e.cell_filters {
-        // DR-101 §3: 「scalar registry には載るが ARRAY registry には無い」場合のみ層違い判定
-        // (unknown-vocab は `collect_unknown_filter` が一次判定で拾うので、両方に無いケースは
-        // ここでは無視する)。
-        if lookup_array_filter(fs.name) is None &&
-          lookup_filter(fs.name) is Some(_) {
-          out.push(
-            def_err(
-              e.name,
-              DInvalidRange,
-              "an accum (multiple/repeat/separator) element's cell_filters entry '" +
-              fs.name +
-              "' is not a registered ARRAY filter (DR-009 段 7 — accum cell_filters runs Acc→Acc over the whole accumulated array, a different vocabulary from a scalar cell_filters' per-value T→T chain)",
-              "use an array-shaped filter (e.g. `unique`) or move this entry off an accum element",
-            ),
-          )
-        }
+      if e.final_filters.length() > 0 {
+        out.push(
+          def_err(
+            e.name,
+            DInvalidRange,
+            "an accum (multiple/repeat/separator) element cannot declare final_filters (T→T, non-accum-only final-value gate, DR-102 §1) — this element's final gate is accum_filters (Acc→Acc, over the whole accumulated array)",
+            "move this chain to accum_filters, or remove multiple/repeat/separator from this element",
+          ),
+        )
       }
+    } else if e.accum_filters.length() > 0 {
+      out.push(
+        def_err(
+          e.name,
+          DInvalidRange,
+          "a non-accum (scalar) element cannot declare accum_filters (Acc→Acc, accum-only whole-array gate, DR-102 §1) — this element's final gate is final_filters (T→T, over the single resolved value)",
+          "move this chain to final_filters, or declare multiple/repeat/separator on this element",
+        ),
+      )
     }
   }
 
@@ -3612,30 +3626,26 @@ fn collect_invalid_accum_cell_filter(
     check(e)
   }
   for c in def.commands {
-    collect_invalid_accum_cell_filter(c.body, out)
+    collect_invalid_filter_attribute_mismatch(c.body, out)
   }
 }
 
 ///|
-/// DR-101: filter chain 3 属性 (`value_filters` / `piece_filters` / `cell_filters` の非 accum 位置)
-/// に指定された filter 名が filters registry (T→T scalar, `lookup_filter`) の owns 集合に登録されて
+/// DR-101 / DR-102 §1/§2: filter chain 4 属性 (`value_filters` / `piece_filters` / `final_filters` /
+/// `accum_filters`) に指定された filter 名が、その属性が要求する registry の owns 集合に登録されて
 /// いない場合は definition-error (kind=`unknown-vocab`)。DR-042 §5 の installer / filter registry
 /// 同格原則により、long variant DSL の update transform 名検査 (`classify_long_spelling` の
 /// DR-077 §2 適用) と同族の判定。
 ///
-/// accum 位置の cell_filters (multiple/repeat/separator 宣言あり) は判定順が異なる (DR-101 §3):
-/// - **一次判定** (本 gate): scalar registry (`lookup_filter`) にも ARRAY registry
-///   (`lookup_array_filter`) にも載らない綴りを unknown-vocab で reject する。
-/// - **二次判定** (`collect_invalid_accum_cell_filter`): scalar registry に載るが ARRAY registry
-///   に無い綴りを invalid-range (層違い) で reject する。
+/// `value_filters`/`piece_filters`/`final_filters` は scalar filter registry (T→T, `lookup_filter`)
+/// を、`accum_filters` は ARRAY filter registry (Acc→Acc, `lookup_array_filter`) を要求する — 1
+/// 属性 1 registry の対応 (DR-102 §2) により、各属性は自分の registry の owns 集合のみを見て
+/// unknown-vocab を一意判定する。他 registry との層違い比較 (DR-101 §3、Superseded) は発生しない。
 ///
-/// この判定順により、`filters.mbt` の `apply_filter_chain` に到達する時点で全 filter 名が既に
-/// 登録済み保証となり、runtime `unknown_filter` reason は wire から消滅する (DR-101 §1)。
+/// この単純化により、`filters.mbt` の `apply_filter_chain`/`apply_accum_filter_chain` に到達する
+/// 時点で全 filter 名が既に登録済み保証となり、runtime `unknown_filter` reason は wire から消滅する
+/// (DR-101 §1)。
 fn collect_unknown_filter(def : Definition, out : Array[DefError]) -> Unit {
-  fn is_accum_elem(e : ElemDef) -> Bool {
-    e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
-  }
-
   fn push_unknown(
     elem_name : String,
     phase : String,
@@ -3669,23 +3679,19 @@ fn collect_unknown_filter(def : Definition, out : Array[DefError]) -> Unit {
         push_unknown(e.name, "piece_filters", fs.name)
       }
     }
-    // cell_filters は位置により対象 registry が切り替わる (DR-079 相区分):
-    if is_accum_elem(e) {
-      // accum 位置: 両 registry どちらにも綴りが無い場合だけ本 gate が unknown-vocab で拾う
-      // (scalar には載るが ARRAY には無いケースは `collect_invalid_accum_cell_filter` の
-      // invalid-range 二次判定に委ねる、DR-101 §3)
-      for fs in e.cell_filters {
-        if lookup_filter(fs.name) is None &&
-          lookup_array_filter(fs.name) is None {
-          push_unknown(e.name, "cell_filters", fs.name)
-        }
+    // final_filters (T→T, scalar filter registry, non-accum 専用、DR-102 §1): 綴り不在は
+    // unknown-vocab。他 registry (accum_filters が要求する ARRAY registry) との層違い比較は
+    // 1 属性 1 registry の対応 (DR-102 §2) により発生しない。
+    for fs in e.final_filters {
+      if lookup_filter(fs.name) is None {
+        push_unknown(e.name, "final_filters", fs.name)
       }
-    } else {
-      // 非 accum 位置: scalar registry (T→T) 対象、綴り不在は unknown-vocab
-      for fs in e.cell_filters {
-        if lookup_filter(fs.name) is None {
-          push_unknown(e.name, "cell_filters", fs.name)
-        }
+    }
+    // accum_filters (Acc→Acc, ARRAY filter registry, accum 専用、DR-102 §1): 綴り不在は
+    // unknown-vocab。scalar registry との層違い比較は発生しない (DR-102 §2)。
+    for fs in e.accum_filters {
+      if lookup_array_filter(fs.name) is None {
+        push_unknown(e.name, "accum_filters", fs.name)
       }
     }
   }
@@ -3705,20 +3711,21 @@ fn collect_unknown_filter(def : Definition, out : Array[DefError]) -> Unit {
 /// DR-085 §1 訂正 (kawaz 裁定 2026-07-10): a `regex_match` filter entry's pattern compile failure is
 /// a definition-error (kind=invalid-argument, DR-054 §4 更新2 / DR-082 §3) — the pattern is part of
 /// the definition and compile validity is statically knowable at definition time (same "静的に既知
-/// は定義時に倒す" posture `collect_scalar_array_default`/`collect_invalid_accum_cell_filter` use).
-/// Checked across all 3 filter-chain phases (piece_filters/value_filters/cell_filters, DR-034/
-/// DR-009) since `regex_match` is a plain `FilterDescriptor` (filters.mbt) usable in any of the 3
-/// phases — no phase-specific restriction exists for it (unlike the array-vs-scalar vocabulary
-/// split `collect_invalid_accum_cell_filter` enforces for cell_filters specifically). Uses
-/// `filters.mbt`'s `compile_regex` — the SAME compile path `filter_regex_match` runs at match time,
-/// so a pattern that passes this gate is guaranteed compilable at runtime too. A wrong arg count
-/// (not exactly 1) is left to the runtime "regex_match requires exactly 1 arg" Err (`filter_regex_
-/// match`) rather than duplicated here as a second definition-time check — this gate's sole job is
-/// "does the pattern compile", not general arity validation.
+/// は定義時に倒す" posture `collect_scalar_array_default` uses). Checked across all 4 filter-chain
+/// phases (piece_filters/value_filters/final_filters/accum_filters, DR-034/DR-009/DR-102) — a
+/// `regex_match` entry name-matches unconditionally regardless of which registry the declaring
+/// phase actually requires (an `accum_filters` entry named `regex_match` is ALSO independently
+/// rejected as unknown-vocab by `collect_unknown_filter`, since `regex_match` isn't a registered
+/// ARRAY filter — DR-054's "enumerate ALL errors, no first-error 打ち切り" means both fire, not a
+/// conflict). Uses `filters.mbt`'s `compile_regex` — the SAME compile path `filter_regex_match`
+/// runs at match time, so a pattern that passes this gate is guaranteed compilable at runtime too.
+/// A wrong arg count (not exactly 1) is left to the runtime "regex_match requires exactly 1 arg"
+/// Err (`filter_regex_match`) rather than duplicated here as a second definition-time check — this
+/// gate's sole job is "does the pattern compile", not general arity validation.
 /// DR-090 §2: a dd element's `match` regex — compile failure is a definition-error, the same
-/// treatment `collect_invalid_regex_pattern` gives `regex_match` piece/value/cell filter patterns
-/// (same `compile_regex` compile path, same `DInvalidArgument` kind — "pattern compile failure is
-/// a definition-time fact, known statically without I/O").
+/// treatment `collect_invalid_regex_pattern` gives `regex_match` filter-chain patterns (same
+/// `compile_regex` compile path, same `DInvalidArgument` kind — "pattern compile failure is a
+/// definition-time fact, known statically without I/O").
 fn collect_invalid_dd_pattern(def : Definition, out : Array[DefError]) -> Unit {
   fn check(e : ElemDef) -> Unit {
     match e.dd_match {
@@ -3773,7 +3780,8 @@ fn collect_invalid_regex_pattern(
   fn check(e : ElemDef) -> Unit {
     check_chain(e.name, e.piece_filters)
     check_chain(e.name, e.value_filters)
-    check_chain(e.name, e.cell_filters)
+    check_chain(e.name, e.final_filters)
+    check_chain(e.name, e.accum_filters)
   }
 
   for e in def.options {
@@ -3795,7 +3803,7 @@ fn collect_invalid_regex_pattern(
 /// there is nothing for a marker to match against. Both `ref` and `multiple:{accumulator:"merge"}`
 /// are declared, so the mismatch is known statically without I/O — same "構造的に宣言できるが実装
 /// が対応できない組合せを definition-error で落とす" contract `collect_scalar_array_default`/
-/// `collect_invalid_accum_cell_filter` use.
+/// `collect_invalid_filter_attribute_mismatch` use.
 fn collect_ref_merge_accum(def : Definition, out : Array[DefError]) -> Unit {
   fn check(e : ElemDef) -> Unit {
     if e.ref_target is Some(_) && e.accumulator is Some("merge") {
@@ -3961,8 +3969,8 @@ pub fn parse_definition(
   collect_scalar_array_default(def, errs) // DR-083 §5 (非 accum 要素への配列 default)
   collect_tty_stream_missing(def, errs) // DR-099 §3/§7 (builtin/tty preset の tty_stream 必須違反)
   collect_none_value_source_decl(def, errs) // DR-089 §4 (none への env/config_key/inherit 宣言)
-  collect_unknown_filter(def, errs) // DR-101 (filter 3 属性 unknown-vocab、accum は両 registry 判定の一次)
-  collect_invalid_accum_cell_filter(def, errs) // issue accum-post-filters-stage7 + DR-101 §3 (accum の scalar/array 層違いは二次判定)
+  collect_unknown_filter(def, errs) // DR-101 / DR-102 §1/§2 (filter 4 属性それぞれ自 registry のみで unknown-vocab)
+  collect_invalid_filter_attribute_mismatch(def, errs) // DR-102 §1/§3 (final_filters/accum_filters と要素の accum 適格性の排他制約)
   collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)
   collect_invalid_dd_pattern(def, errs) // DR-090 §2 (dd match pattern compile 失敗)
   collect_ref_merge_accum(def, errs) // DR-084 §3 (merge accumulator × ref)
