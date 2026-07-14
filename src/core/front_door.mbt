@@ -4,6 +4,32 @@
 // complete (DR-060 + DR-104) を、命名・引数名とも spec 語彙に一致させて公開する。内部の
 // Node/Scope 木を直接叩く低レベル実装 (parse_tree/complete_tree, eval.mbt/outcome.mbt) は
 // このファイルからだけ呼ばれる — 利用者が Node の 80+ variant を意識する必要はない。
+//
+// 典型的な使い方 (definition の wire JSON → parse → 結果):
+//
+// ```
+// let json = @json.parse(
+//   #|{"options": [{"name": "port", "type": "number", "long": true}]}
+//   ,
+// )
+// match parse_definition(json) {
+//   Ok(ast) =>
+//     match parse(ast, ["--port", "8080"]) {
+//       Success(binds) => ... // binds : Array[Binding] (DR-045 の効果列)
+//       Failure(data) => ... // data.errors : Array[ParseError] (DR-053 §2)
+//       Ambiguous(data) => ... // data.interpretations (DR-053 §3)
+//     }
+//   Err(Malformed(reason)) => ... // wire JSON 自体が構文として崩れている
+//   Err(Rejected(errs)) => ... // definition-error (DR-054 §4) の全列挙
+// }
+// ```
+//
+// 補完 (シェル統合の素材集めは呼び出し側の責務、DR-060 §5 層 2):
+//
+// ```
+// let cands = complete(ast, ["--po"]) // args_before のみ、行末補完
+// // cands[i].spelling / .is_value / .ty / .term / .meta が候補の素材 (DR-060 §3)
+// ```
 
 ///|
 /// definition のロード結果 (`parse_definition` の戻り値、DR-054 §4 の `atomic: <AtomicAST>` に
