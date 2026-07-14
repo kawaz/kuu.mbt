@@ -3288,13 +3288,9 @@ test "parse_definition: length_range with a negative min is DInvalidArgument (DR
   let def : Definition = {
     ..empty_def(),
     options: [
-      el(
-        "tags",
-        TStr,
-        long=LBool(true),
-        multiple=true,
-        accum_filters=["length_range:-1:5"],
-      ),
+      el("tags", TStr, long=LBool(true), multiple=true, accum_filters=[
+        "length_range:-1:5",
+      ]),
     ],
   }
   match parse_definition(def, all_installers()) {
@@ -3319,13 +3315,9 @@ test "parse_definition: length_range with a non-integer min is DInvalidArgument 
   let def : Definition = {
     ..empty_def(),
     options: [
-      el(
-        "tags",
-        TStr,
-        long=LBool(true),
-        multiple=true,
-        accum_filters=["length_range:1.5:5"],
-      ),
+      el("tags", TStr, long=LBool(true), multiple=true, accum_filters=[
+        "length_range:1.5:5",
+      ]),
     ],
   }
   match parse_definition(def, all_installers()) {
@@ -3350,19 +3342,10 @@ test "parse_definition: in_range keeps canonical-number bounds, length_range acc
   let def : Definition = {
     ..empty_def(),
     options: [
-      el(
-        "ratio",
-        TNum,
-        long=LBool(true),
-        final_filters=["in_range:-1.5:2.5"],
-      ),
-      el(
-        "tags",
-        TStr,
-        long=LBool(true),
-        multiple=true,
-        accum_filters=["length_range:0:5"],
-      ),
+      el("ratio", TNum, long=LBool(true), final_filters=["in_range:-1.5:2.5"]),
+      el("tags", TStr, long=LBool(true), multiple=true, accum_filters=[
+        "length_range:0:5",
+      ]),
     ],
   }
   match parse_definition(def, all_installers()) {
