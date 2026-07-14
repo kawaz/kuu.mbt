@@ -352,6 +352,22 @@ pub(all) struct Scope {
 } derive(Eq, Debug)
 
 ///|
+/// One candidate cell that `CRequired`/`CRequiredGroup` may look at (DR-093 の型委譲判定入力、
+/// codex レビュー M-2 修正): `name` は値が実際に bind される cell 名 (BOr 直書き structural or の
+/// leaf name、ref 先 template の leaf name、または通常要素なら要素自身の name)。`wrapper` は
+/// scope 判定の基準を切り替える — `None` なら宣言 scope path そのものと完全一致する scope を探す
+/// (BOr 直書きの leaf、または通常要素 — 値は親 scope に直接 bind される、`ensure_entity_body` の
+/// BOr コメント参照)。`Some(w)` なら宣言元要素自身 (ref 要素、`w` = ref 要素の name) の Scoped
+/// 部分木内 (scope が 宣言 scope path ++ [w] で始まる) を探す — `inst_long`/`lower_positional` の
+/// ref 分岐が `Scoped(e.name, ...)` で値をラップするため (DESIGN §2.4/2.5 の露出規則、
+/// `ref-template-no-repeat-degenerate.json` が既に pin する挙動と同型)。無制限透過ではなく
+/// **宣言元要素自身の部分木に限定** した探索 — 他要素・子 scope の値を誤って拾わないため。
+pub(all) struct RequiredCandidate {
+  name : String
+  wrapper : String?
+} derive(Eq, Debug)
+
+///|
 /// A delayed-predicate constraint (DR-055 / DR-047), evaluated on a complete path's FINAL state. A
 /// violation makes the path NOT a complete解決経路 (DR-047 §2) — a DR-037 Error of kind:constraint.
 pub(all) enum Constraint {
@@ -375,25 +391,32 @@ pub(all) enum Constraint {
   /// committed を使う点は CRequires と同じ線 (DR-047 §5 が selected を診断メタに留めた線を維持)。
   ///
   /// 2-tuple = (display, candidates)。issue
-  /// 2026-07-13-structural-or-type-branch-required-missing: `display` は違反時の error.element
-  /// (宣言元の name、DESIGN §9.1 のグループ的必須の宣言元、通常要素では下記 candidates[0] と同じ
-  /// 文字列)。`candidates` は型委譲判定を実際にどの name に対して行うかの候補集合 — 通常要素は
-  /// `[display]` 自身 (単一候補、既存挙動どおり)。structural or (`BOr`、型付き枝) が required を
-  /// 持つ場合は各枝の leaf name の配列: BOr wrapper 自身 (display) は "no own scalar/array value"
-  /// (installer.mbt の BOr entity 登録コメント参照) で値が committed されることが無く、値は選ばれた
-  /// 枝の leaf entity (num/flag 等) にのみ commit される。判定は candidates のいずれか 1 つでも
-  /// 型委譲で充足していれば OK (DR-093 の「or 親の値充足 = どの枝であれ発火して値が確定していること」
-  /// — 枝が exact (value-enum, BEnum) なら全枝が同じ display 名の cell に着地するため候補は元々
-  /// `[display]` のままで足りる、対称性が崩れるのは BOr だけ)。
-  CRequired(String, Array[String])
+  /// 2026-07-13-structural-or-type-branch-required-missing / codex-review-dr102-dr103-postland
+  /// (M-2): `display` は違反時の error.element (宣言元の name、DESIGN §9.1 のグループ的必須の宣言元、
+  /// 通常要素では下記 candidates[0].name と同じ文字列)。`candidates` (`RequiredCandidate` 配列) は
+  /// 型委譲判定を実際にどの cell に対して行うかの候補集合 — 通常要素は `[{name: display, wrapper:
+  /// None}]` 自身 (単一候補、既存挙動どおり)。structural or (`BOr`、型付き枝、直書き) が required を
+  /// 持つ場合は各枝の leaf name (`wrapper: None`、値は親 scope に直接 bind される) の配列: BOr
+  /// wrapper 自身 (display) は "no own scalar/array value" (installer.mbt の BOr entity 登録コメント
+  /// 参照) で値が committed されることが無く、値は選ばれた枝の leaf entity (num/flag 等) にのみ
+  /// commit される。`ref` 経由の structural or (テンプレート先が Or) も同様に leaf name を候補とする
+  /// が、この場合は `wrapper: Some(宣言元 ref 要素の name)` — ref 展開が `Scoped(ref要素名, ...)` で
+  /// 値をラップするため、判定は宣言元要素自身の Scoped 部分木内を探す必要がある
+  /// (`RequiredCandidate` の doc comment 参照)。判定は candidates のいずれか 1 つでも型委譲で
+  /// 充足していれば OK (DR-093 の「or 親の値充足 = どの枝であれ発火して値が確定していること」— 枝が
+  /// exact (value-enum, BEnum) なら全枝が同じ display 名の cell に着地するため候補は元々
+  /// `[{name: display, wrapper: None}]` のままで足りる、対称性が崩れるのは structural or だけ)。
+  CRequired(String, Array[RequiredCandidate])
   /// required_group (DR-103): グループ単位「少なくとも1つ必須」— `exclusive_group` (CExclusive) と
-  /// 同型の 2-tuple = (group label, member names)。member の充足判定は `CRequired` と完全に同一の
-  /// 型委譲 (DR-093: 値空間ありは値の有無・default 込み、値空間なしは発火 committed) をグループの
-  /// 論理和に持ち上げたもの — bool 型の特殊化 (requires 目的語の truth-dispatch) は適用しない
+  /// 同型の 2-tuple = (group label, member candidates)。member の充足判定は `CRequired` と完全に
+  /// 同一の型委譲 (DR-093: 値空間ありは値の有無・default 込み、値空間なしは発火 committed) をグループ
+  /// の論理和に持ち上げたもの — bool 型の特殊化 (requires 目的語の truth-dispatch) は適用しない
   /// (DR-103 §7、kawaz 裁定 2026-07-14「値述語と依存述語は別」)。member が 1 つだけの場合は
   /// `CRequired` と観測上同じ結果になる (DR-103 §4 の縮退)。`required_group` と `exclusive_group` の
   /// group 名前空間は独立 (DR-103 §3) — 同名文字列を両属性に書いても 2 つの独立述語として評価される。
-  CRequiredGroup(String, Array[String])
+  /// candidates の候補セル解決 (`RequiredCandidate` の name/wrapper 双方) は `CRequired` と完全に
+  /// 共有する (`installer.mbt` の `required_candidates` ヘルパー、codex M-2 の再発防止)。
+  CRequiredGroup(String, Array[RequiredCandidate])
 } derive(Eq, Debug)
 
 ///|

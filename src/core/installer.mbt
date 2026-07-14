@@ -2220,7 +2220,7 @@ fn apply_node(inst : Installer, sb : SB, registry : Map[String, Node]) -> Unit {
     RepeatInst => () // init_sb で決定的に lower (Ref 再帰 + template)
     MultipleInst => () // ensure_entity で accumulator flag を決定的に set
     ConfigInst => () // ensure_entity で config seat を決定的に set (席宣言型 DR-050/042 ④)
-    ConstraintInst => inst_constraint(sb.decl, sb.build)
+    ConstraintInst => inst_constraint(sb.decl, sb.build, registry)
     AliasInst => () // desugar_aliases (init_sb 前) で決定的に展開 — entry-copies は fixpoint で long/short/command が展開
     InheritableInst => inst_inheritable(sb)
   }
@@ -2342,10 +2342,134 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
 }
 
 ///|
+/// `node` が値を束縛する全ての leaf name を再帰的に集める (DR-093 の or/ref 親充足判定の実体解決 —
+/// `required_candidates` の `ref_target` 分岐が使う)。値プリミティブ (`StrArg`/`SepArg`/`KvArg`/
+/// `NumArg`/`FloatArg`/`IntArg`/`BoolArg`/`ReqArg`) の name フィールドが対象。`Or`/`Seq`/`Many`/
+/// `BoundedTail`/`Rooted`/`Scoped`/`GreedyRepeat`/`IdxRepeat` は値バインディングを持たない構造
+/// ラッパーなので内部を再帰的に辿る。`Ref` は registry を辿って参照先テンプレートに再帰する
+/// (`visiting` は `head_cycles` と同じ「訪問済み template 名」防御 — 循環 ref は
+/// `collect_circular_ref` が別途 definition-error で弾く前提だが、防御的に無限再帰を避ける)。
+/// `Exact`/`Bind`/`EffMark`/`DeprMark`/`FailMark`/`DdSat`/`DdMatchSat`/`CmdSat`/`NativeMatch`/
+/// `NoDashStr`/`FilterArg`/`ScopeNode` は値を束縛しない (トリガ・0-token マーク・生文字列ガード・
+/// test-only node・ネストスコープ自体) ので無視する。
+fn collect_value_names(
+  node : Node,
+  registry : Map[String, Node],
+  visiting : Array[String],
+  out : Array[String],
+) -> Unit {
+  match node {
+    StrArg(n, _)
+    | SepArg(n, _, _, _, _, _, _, _)
+    | KvArg(n, _)
+    | NumArg(n, _, _)
+    | FloatArg(n, _)
+    | IntArg(n, _, _, _)
+    | BoolArg(n, _, _)
+    | ReqArg(n) => out.push(n)
+    Or(alts) =>
+      for a in alts {
+        collect_value_names(a, registry, visiting, out)
+      }
+    Seq(items) =>
+      for it in items {
+        collect_value_names(it, registry, visiting, out)
+      }
+    Many(inner, _) => collect_value_names(inner, registry, visiting, out)
+    BoundedTail(inner, _, _) =>
+      collect_value_names(inner, registry, visiting, out)
+    Rooted(inner, _) => collect_value_names(inner, registry, visiting, out)
+    Scoped(_, inner) => collect_value_names(inner, registry, visiting, out)
+    GreedyRepeat(inner) => collect_value_names(inner, registry, visiting, out)
+    IdxRepeat(_, inner, _, _) =>
+      collect_value_names(inner, registry, visiting, out)
+    Ref(r) =>
+      if !str_in(visiting, r) {
+        match registry.get(r) {
+          Some(tpl) => {
+            visiting.push(r)
+            collect_value_names(tpl, registry, visiting, out)
+            let _ = visiting.pop()
+          }
+          None => ()
+        }
+      }
+    _ => ()
+  }
+}
+
+///|
+/// DR-093 §1/§2 の型委譲判定が「値が実際に着地する cell」を見るための候補セル解決 (codex レビュー
+/// M-2 修正): 宣言要素 `e` そのものが値を持つとは限らない。
+///
+/// `e.ref_target` が `Some(_)` (ref 要素) のとき、`e.body` は常に `BCell` のまま (ref 展開は
+/// registry 上の `Node` として存在し、`ElemDef.body` には反映されない —
+/// `ensure_entity_body`/`elem_head` の doc comment 参照)。参照先テンプレートが structural or の
+/// ような複合構造を持つ場合、`e.name` というセルは結果に存在せず (DR-025 の露出規則)、値は展開後の
+/// 枝の leaf entity に着地する — `collect_value_names` で registry 上の実体を辿って候補集合を得る
+/// (DR-007「ref は構造定義全てを引き継ぐ」の型委譲判定への反映)。
+///
+/// `e.ref_target` が `None` かつ `e.body` が `BOr` (直書き structural or、型付き枝) のときは、BOr
+/// wrapper 自身 (`e.name`) は値を持たない構造ディスパッチャで (ensure_entity_body の BOr コメント
+/// 参照)、値は選ばれた枝の leaf entity にのみ commit される。候補集合を各枝の leaf name に展開し、
+/// 「どの枝であれ発火して値が確定していれば充足」(DR-093 の or 親充足の型委譲原理) を呼び出し側
+/// (`CRequired`/`CRequiredGroup`) の判定に持ち込む。BEnum (value-enum 形) は全枝が SAME name/cell
+/// (`e.name`) に着地するためこの展開は不要 (`[e.name]` のままで元々正しい — 対照 fixture
+/// `required-value-enum-or-branch.json` が既に green なのはこのため)。
+///
+/// `CRequired` (required 単項) と `CRequiredGroup` (required_group, DR-103) の両方がこのヘルパーを
+/// 共有することで、「required 単項と required_group で候補セル解決が食い違う」構造的な余地を無くす
+/// (M-2 の再発防止、issue codex-review-dr102-dr103-postland)。
+///
+/// 戻り値は `RequiredCandidate` (name + wrapper) — ref 経由の場合、値は宣言元 `e` 自身の Scoped
+/// 部分木 (`Scoped(e.name, ...)`、`inst_long`/`lower_positional` の ref 分岐が作る) に着地するため、
+/// `wrapper: Some(e.name)` を付けて判定側 (`eval.mbt`/`resolve.mbt`) が「宣言元要素自身の部分木内」
+/// だけを探すようにする (DESIGN §2.4/2.5 の露出規則、無制限透過ではなく要素自身の部分木に限定 —
+/// `RequiredCandidate` の doc comment 参照)。直書き BOr の場合、値は親 scope に直接 bind されるため
+/// `wrapper: None`。
+fn required_candidates(
+  e : ElemDef,
+  registry : Map[String, Node],
+) -> Array[RequiredCandidate] {
+  match e.ref_target {
+    Some(r) => {
+      let names : Array[String] = []
+      collect_value_names(Ref(r), registry, [], names)
+      if names.length() > 0 {
+        let out : Array[RequiredCandidate] = []
+        for n in names {
+          out.push({ name: n, wrapper: Some(e.name) })
+        }
+        out
+      } else {
+        [{ name: e.name, wrapper: None }]
+      }
+    }
+    None =>
+      match e.body {
+        BOr(branches) => {
+          let out : Array[RequiredCandidate] = []
+          for br in branches {
+            for it in br.items {
+              out.push({ name: it.name, wrapper: None })
+            }
+          }
+          out
+        }
+        _ => [{ name: e.name, wrapper: None }]
+      }
+  }
+}
+
+///|
 /// constraint installer (DR-055 / DR-042 席宣言型): requires / conflicts_with / exclusive_group /
 /// required / required_group (DR-103) / value_requires を scope の遅延述語として登録。構造衛星は
 /// 無し (DR-047 完全 path の最終状態で評価)。
-fn inst_constraint(def : Definition, build : Build) -> Unit {
+fn inst_constraint(
+  def : Definition,
+  build : Build,
+  registry : Map[String, Node],
+) -> Unit {
   let all : Array[ElemDef] = []
   for e in def.options {
     all.push(e)
@@ -2361,30 +2485,9 @@ fn inst_constraint(def : Definition, build : Build) -> Unit {
       add_constraint(build, CConflicts(e.name, copy_strs(e.conflicts_with)))
     }
     if e.required {
-      // DR-093 §1/§2: required:true の要素自身を対象にした CRequired を 1 個登録。
-      //
-      // issue 2026-07-13-structural-or-type-branch-required-missing: `e.body` が `BOr`
-      // (structural or、型付き枝) のとき、単純に `[e.name]` を候補にすると required 判定は
-      // 常に失敗する — BOr wrapper 自身 (`e.name`) は値を持たない構造ディスパッチャで
-      // (ensure_entity_body の BOr コメント参照)、値は選ばれた枝の leaf entity にのみ commit
-      // される。候補集合を各枝の leaf name に展開し、「どの枝であれ発火して値が確定していれば
-      // 充足」(DR-093 の or 親充足の型委譲原理) を CRequired の判定側 (eval.mbt/resolve.mbt)
-      // に持ち込む。BEnum (value-enum 形) は全枝が SAME name/cell (`e.name`) に着地するため
-      // この展開は不要 (`[e.name]` のままで元々正しい — 対照 fixture
-      // `required-value-enum-or-branch.json` が既に green なのはこのため)。
-      let candidates = match e.body {
-        BOr(branches) => {
-          let names : Array[String] = []
-          for br in branches {
-            for it in br.items {
-              names.push(it.name)
-            }
-          }
-          names
-        }
-        _ => [e.name]
-      }
-      add_constraint(build, CRequired(e.name, candidates))
+      // DR-093 §1/§2: required:true の要素自身を対象にした CRequired を 1 個登録。候補セル解決は
+      // `required_candidates` (CRequiredGroup と共有)。
+      add_constraint(build, CRequired(e.name, required_candidates(e, registry)))
     }
     for vr in e.value_requires {
       // DR-055 §1 / DR-052 §値枝 id 直交: 4-tuple = (entity, branch_id, value, targets)。entity は
@@ -2410,8 +2513,12 @@ fn inst_constraint(def : Definition, build : Build) -> Unit {
     }
     add_constraint(build, CExclusive(g, members))
   }
-  // required_group (DR-103 §1/§3): exclusive_group と同じ集約パターン、独立した名前空間 (別の
-  // groups 配列)。1 CRequiredGroup per label。
+  // required_group (DR-103 §1/§3/§7 修正、codex M-2): exclusive_group と同じ集約パターン、独立
+  // した名前空間 (別の groups 配列)。member は宣言要素名でなく `required_candidates` の候補セル
+  // (structural or なら各枝の leaf name) をそのまま集める — グループ充足は「いずれかの member の
+  // いずれかの候補セルが型委譲充足していれば OK」という論理和で、候補セルをフラットに集約しても
+  // 数学的に等価 (OR(member1_candidates) OR OR(member2_candidates) OR ... = OR(全 candidates))。
+  // 1 CRequiredGroup per label。
   let rg_groups : Array[String] = []
   for e in all {
     for g in e.required_group {
@@ -2421,10 +2528,12 @@ fn inst_constraint(def : Definition, build : Build) -> Unit {
     }
   }
   for g in rg_groups {
-    let members : Array[String] = []
+    let members : Array[RequiredCandidate] = []
     for e in all {
       if str_in(e.required_group, g) {
-        members.push(e.name)
+        for c in required_candidates(e, registry) {
+          members.push(c)
+        }
       }
     }
     add_constraint(build, CRequiredGroup(g, members))

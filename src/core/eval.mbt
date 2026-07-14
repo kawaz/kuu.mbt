@@ -2982,6 +2982,95 @@ fn value_declared(
 }
 
 ///|
+/// `scope` が「宣言 scope `path` の直下に `wrapper` という 1 段だけネストした部分木」に属するか
+/// (`RequiredCandidate.wrapper` 判定、codex レビュー M-2 修正): ref 展開 (`inst_long`/
+/// `lower_positional` の ref 分岐) は値を `Scoped(ref要素名, ...)` で 1 段だけラップするため
+/// (`Scoped` の nest 動作は `eval.mbt` の `nest` 関数参照)、`scope` の `path.length()` 番目の要素が
+/// `wrapper` と一致すればよい — それ以降にさらに深い要素 (repeat 付き ref の row 等) があっても
+/// 構わない (`scope.length() >= path.length() + 1` のみ要求、それ以上の深さは無条件で許容)。
+/// 無制限透過 (`scope` が `path` を prefix に持つだけで OK) ではなく、`wrapper` という 1 段を
+/// 明示的に要求する — これにより他要素・別の子 scope の値を誤って拾わない
+/// (`RequiredCandidate` の doc comment 参照)。
+fn scope_in_wrapped_subtree(
+  scope : Array[String],
+  path : Array[String],
+  wrapper : String,
+) -> Bool {
+  if scope.length() < path.length() + 1 {
+    return false
+  }
+  for i in 0..<path.length() {
+    if scope[i] != path[i] {
+      return false
+    }
+  }
+  scope[path.length()] == wrapper
+}
+
+///|
+/// `is_committed` の `RequiredCandidate.wrapper` 対応版 (codex レビュー M-2 修正): `scope` の完全
+/// 一致 (`scope_path_eq`) の代わりに `scope_in_wrapped_subtree` で「宣言元 ref 要素の部分木内」を
+/// 探す。
+fn is_committed_in_subtree(
+  bindings : Array[Binding],
+  path : Array[String],
+  wrapper : String,
+  name : String,
+) -> Bool {
+  let mut committed = false
+  for b in bindings {
+    if b.key == name && scope_in_wrapped_subtree(b.scope, path, wrapper) {
+      match b.op {
+        Unset => committed = false
+        _ => committed = true
+      }
+    }
+  }
+  committed
+}
+
+///|
+/// `elem_value` の `RequiredCandidate.wrapper` 対応版 (codex レビュー M-2 修正、`is_committed_in_
+/// subtree` と対)。
+fn elem_value_in_subtree(
+  bindings : Array[Binding],
+  path : Array[String],
+  wrapper : String,
+  name : String,
+) -> String? {
+  let mut v : String? = None
+  for b in bindings {
+    if b.key == name && scope_in_wrapped_subtree(b.scope, path, wrapper) {
+      match b.op {
+        Unset => ()
+        _ => v = Some(value_str(b.value))
+      }
+    }
+  }
+  v
+}
+
+///|
+/// `value_declared` の `RequiredCandidate` 対応版 (KTop 粗判定、codex レビュー M-2 修正):
+/// `wrapper` が `None` なら宣言 scope path そのものを見る従来どおりの `value_declared`。
+/// `Some(w)` なら宣言元要素 `w` 自身の Scoped 部分木内を `is_committed_in_subtree` で探す — ref
+/// 経由の candidate (num/flag 等) は `Scope.entities` に登録されない (repeat/multiple 無しの ref
+/// 要素、`ensure_entity_body` の BCell コメント参照) ため、`value_declared` の entities フォール
+/// バック検索 (default/env/config/inherit の宣言有無) は wrapper 付き candidate には意味を持たず、
+/// committed 判定のみで足りる。
+fn candidate_declared(
+  c : RequiredCandidate,
+  bindings : Array[Binding],
+  path : Array[String],
+  entities : Array[Entity],
+) -> Bool {
+  match c.wrapper {
+    None => value_declared(c.name, bindings, path, entities)
+    Some(w) => is_committed_in_subtree(bindings, path, w, c.name)
+  }
+}
+
+///|
 /// Evaluate ONE scope's delayed predicates on a complete path's FINAL state.
 /// A non-empty result means the path is NOT a complete解決経路.
 fn eval_constraints(
@@ -3067,20 +3156,24 @@ fn eval_constraints(
         }
       }
       CRequired(display, candidates) => {
-        // DR-093 §1/§2: KTop の粗判定 (完全経路の成立条件、DR-047 §2) — `value_declared` を
-        // そのまま再利用する (CRequires 目的語と同じゲート)。値空間なし (none) の要素は
-        // default_values/env_key/config_seat/inherit_ をそもそも持てない (DR-089 §7) ため、
-        // `value_declared` は committed のみで判定される形に自動的に縮退する — 型分岐を新設する
-        // 必要はない。最終判定 (bool 特例なしの型委譲) は resolve.mbt の後段フィルタが行う。
+        // DR-093 §1/§2: KTop の粗判定 (完全経路の成立条件、DR-047 §2) — `candidate_declared`
+        // (`value_declared` の RequiredCandidate 対応版、codex M-2 修正) をそのまま再利用する
+        // (CRequires 目的語と同じゲート)。値空間なし (none) の要素は default_values/env_key/
+        // config_seat/inherit_ をそもそも持てない (DR-089 §7) ため、`value_declared` は committed
+        // のみで判定される形に自動的に縮退する — 型分岐を新設する必要はない。最終判定 (bool 特例
+        // なしの型委譲) は resolve.mbt の後段フィルタが行う。
         //
-        // issue 2026-07-13-structural-or-type-branch-required-missing: `candidates` は
-        // BOr (structural or) の場合、`display` 自身ではなく各枝の leaf name の配列 (node.mbt
-        // の CRequired doc comment 参照)。いずれか 1 つでも充足していれば OK — 「どの枝であれ
-        // 発火して値が確定していること」が or 親の required 充足 (DR-093)。通常要素は
-        // `candidates == [display]` なので判定は従来どおり単一名のまま。
+        // issue 2026-07-13-structural-or-type-branch-required-missing /
+        // codex-review-dr102-dr103-postland (M-2): `candidates` は structural or (直書き BOr /
+        // ref 経由) の場合、`display` 自身ではなく各枝の leaf name の配列 (node.mbt の
+        // `RequiredCandidate`/`CRequired` doc comment 参照)。ref 経由の candidate は
+        // `wrapper: Some(宣言元要素名)` を持ち、`candidate_declared` が宣言元要素自身の Scoped
+        // 部分木内を探す。いずれか 1 つでも充足していれば OK — 「どの枝であれ発火して値が確定して
+        // いること」が or 親の required 充足 (DR-093)。通常要素は `candidates ==
+        // [{name: display, wrapper: None}]` なので判定は従来どおり単一名のまま。
         let mut any_ok = false
         for c in candidates {
-          if value_declared(c, bindings, path, sc.entities) {
+          if candidate_declared(c, bindings, path, sc.entities) {
             any_ok = true
           }
         }
@@ -3096,12 +3189,12 @@ fn eval_constraints(
         }
       }
       CRequiredGroup(group, members) => {
-        // DR-103 §1: KTop の粗判定 — `CRequired` と全く同じゲート (`value_declared`、member の
+        // DR-103 §1: KTop の粗判定 — `CRequired` と全く同じゲート (`candidate_declared`、member の
         // いずれか 1 つでも「値が来る可能性がある」なら OK)。最終判定 (型委譲の実値、bool 特例
         // なし) は resolve.mbt の後段フィルタが行う。
         let mut any_ok = false
         for m in members {
-          if value_declared(m, bindings, path, sc.entities) {
+          if candidate_declared(m, bindings, path, sc.entities) {
             any_ok = true
           }
         }

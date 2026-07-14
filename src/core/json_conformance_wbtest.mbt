@@ -683,10 +683,23 @@ fn lcon_str(c : Constraint) -> String {
       "]}"
     CExclusive(g, ms) =>
       "exclusive_group{group=" + g + ",members=[" + sorted(ms) + "]}"
-    CRequired(el, cands) =>
-      "required{element=" + el + ",candidates=[" + sorted(cands) + "]}"
-    CRequiredGroup(g, ms) =>
-      "required_group{group=" + g + ",members=[" + sorted(ms) + "]}"
+    CRequired(el, cands) => {
+      // RequiredCandidate.name のみ projection (codex M-2 修正で候補が wrapper 付きになったが、
+      // lowering 断面はまだ CRequired/CRequiredGroup を対象にした fixture が無い — wrapper 込みの
+      // 表記が必要になったら拡張する)。
+      let names : Array[String] = []
+      for c in cands {
+        names.push(c.name)
+      }
+      "required{element=" + el + ",candidates=[" + sorted(names) + "]}"
+    }
+    CRequiredGroup(g, ms) => {
+      let names : Array[String] = []
+      for m in ms {
+        names.push(m.name)
+      }
+      "required_group{group=" + g + ",members=[" + sorted(names) + "]}"
+    }
   }
 }
 

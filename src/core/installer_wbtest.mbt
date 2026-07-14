@@ -3227,8 +3227,14 @@ test "constraint installer: required on a BOr element expands candidates to each
     Some(CRequired(display, cands)) => {
       assert_eq(display, "level") // error.element は宣言元の name のまま (DESIGN §9.1)
       assert_eq(cands.length(), 2)
-      assert_true(cands.contains("num"))
-      assert_true(cands.contains("flag"))
+      let names : Array[String] = []
+      for c in cands {
+        names.push(c.name)
+        // 直書き BOr の leaf は親 scope に直接 bind される (wrapper なし、codex M-2 修正)。
+        assert_eq(c.wrapper, None)
+      }
+      assert_true(names.contains("num"))
+      assert_true(names.contains("flag"))
     }
     _ => fail("expected a CRequired constraint to be registered for 'level'")
   }
@@ -3253,7 +3259,7 @@ test "constraint installer: required on a plain BCell element keeps a single-nam
   match found {
     Some(CRequired(display, cands)) => {
       assert_eq(display, "filename")
-      assert_eq(cands, ["filename"])
+      assert_eq(cands, [{ name: "filename", wrapper: None }])
     }
     _ => fail("expected a CRequired constraint to be registered for 'filename'")
   }

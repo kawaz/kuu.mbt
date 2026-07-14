@@ -1369,6 +1369,38 @@ pub fn is_none_entity(entities : Array[Entity], name : String) -> Bool {
 }
 
 ///|
+/// `RequiredCandidate` 1 件の最終判定 (型委譲、codex レビュー M-2 修正): `CRequired`/
+/// `CRequiredGroup` の resolve.mbt 側 (最終判定) 共有ヘルパー — `wrapper` が `None` なら宣言 scope
+/// path そのもの (`is_committed`/`elem_value`)、`Some(w)` なら宣言元要素 `w` 自身の Scoped 部分木内
+/// (`is_committed_in_subtree`/`elem_value_in_subtree`、eval.mbt 側の同名 subtree ヘルパーを resolve
+/// 層でも再利用) で判定する。`is_none_entity` (値空間なし = committed 判定、値空間あり = 値の有無
+/// 判定) のゲートは wrapper の有無と直交 — ref 経由の candidate は `Scope.entities` に登録されない
+/// ため常に `is_none_entity` は `true` (committed 判定) に倒れる (`ensure_entity_body` の BCell
+/// コメント参照、値空間はあるが entity が無いだけの縮退)。
+fn candidate_satisfied(
+  c : RequiredCandidate,
+  entities : Array[Entity],
+  bindings : Array[Binding],
+  resolved : Array[Binding],
+  path : Array[String],
+) -> Bool {
+  match c.wrapper {
+    None =>
+      if is_none_entity(entities, c.name) {
+        is_committed(bindings, path, c.name)
+      } else {
+        elem_value(resolved, path, c.name) != None
+      }
+    Some(w) =>
+      if is_none_entity(entities, c.name) {
+        is_committed_in_subtree(bindings, path, w, c.name)
+      } else {
+        elem_value_in_subtree(resolved, path, w, c.name) != None
+      }
+  }
+}
+
+///|
 /// One scope's `requires`/value 依存 requires violations, evaluated against a CANDIDATE path's
 /// CLI-only bindings (trigger 判定、DR-047 §5 表「トリガ側 = committed」) AND the SAME candidate's
 /// fully resolved bindings (目的語判定、「目的語側 = 値の有無/真理値」) — issue
@@ -1452,18 +1484,15 @@ fn eval_requires(
         // default:false を常に持つため required 自身は「値の有無」で自明に充足する、それが spec の
         // 意図どおり)。
         //
-        // issue 2026-07-13-structural-or-type-branch-required-missing: `candidates` は BOr
-        // (structural or) の場合、各枝の leaf name の配列 (node.mbt の CRequired doc comment
-        // 参照、eval.mbt の同名 KTop 判定と対の最終判定)。いずれか 1 つでも型委譲で充足していれば
-        // OK。
+        // issue 2026-07-13-structural-or-type-branch-required-missing /
+        // codex-review-dr102-dr103-postland (M-2): `candidates` は structural or (直書き BOr /
+        // ref 経由) の場合、各枝の leaf name の配列 (node.mbt の `RequiredCandidate`/`CRequired`
+        // doc comment 参照、eval.mbt の同名 KTop 判定と対の最終判定)。`candidate_satisfied` が
+        // wrapper (ref 経由なら宣言元要素の Scoped 部分木限定) を踏まえて判定する。いずれか 1 つ
+        // でも型委譲で充足していれば OK。
         let mut ok = false
         for c in candidates {
-          let c_ok = if is_none_entity(sc.entities, c) {
-            is_committed(bindings, path, c)
-          } else {
-            elem_value(resolved, path, c) != None
-          }
-          if c_ok {
+          if candidate_satisfied(c, sc.entities, bindings, resolved, path) {
             ok = true
           }
         }
@@ -1485,12 +1514,7 @@ fn eval_requires(
         // は適用しない。member のいずれか 1 つでも充足すればグループ成立 (少なくとも1つ必須)。
         let mut ok = false
         for m in members {
-          let m_ok = if is_none_entity(sc.entities, m) {
-            is_committed(bindings, path, m)
-          } else {
-            elem_value(resolved, path, m) != None
-          }
-          if m_ok {
+          if candidate_satisfied(m, sc.entities, bindings, resolved, path) {
             ok = true
           }
         }
