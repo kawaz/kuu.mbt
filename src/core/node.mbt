@@ -126,8 +126,9 @@ pub(all) enum Node {
   /// int_round (TInt only, mirrors `IntArg`'s carrier), allow_base_prefix (TNum/TInt), bool_config
   /// (TBool only, mirrors `BoolArg`'s carrier — DR-074 §4 `bool_parser` factory config), piece_filters
   /// (applied to EACH split piece — not the whole raw token — right before that piece's own parse
-  /// step, DESIGN §6.2: separator → piece_filters → parse → final_filters/accum_filters, one piece
-  /// at a time).
+  /// step, DESIGN §6.2: separator → piece_filters → parse → value_filters (each piece) → once the
+  /// value is committed, final_filters (non-accum element) or, after accumulation, accum_filters
+  /// (accum element), one piece at a time).
   /// `sep_binds` (eval.mbt) threads all of this through the split loop; a piece that fails its
   /// type parse is `kind: KParse` (same reason vocab as the scalar value primitives), NOT a
   /// piece_filters-style `KFilter` reject — these are distinct pipeline stages (段3 vs 段4).
@@ -489,9 +490,9 @@ pub(all) struct Entity {
   // reaches this Entity) — this copy exists so the ladder's OTHER string-sourced seats (env: DR-049
   // §2 "env 値も pieceProcessor を通る") can run the SAME chain via `resolve.mbt`'s `env_value`. A
   // non-string ladder source (config number/bool matching the type, default, inherit) has no parse
-  // step to gate, so this field is simply unused there (DR-050 §4's "型一致なら final_filters/
-  // accum_filters のみ" — piece_filters/parse は元々 String→T の関数なので、型一致で供給された非
-  // string 値には適用対象が無いという型の帰結、特別規則ではない).
+  // step to gate, so this field is simply unused there (DR-050 §4's "型一致なら value_filters のみ"
+  // — piece_filters/parse は元々 String→T の関数なので、型一致で供給された非 string 値には適用対象
+  // が無いという型の帰結、特別規則ではない).
   piece_filters : Array[FilterSpelling]
   // DR-009 value_filters (each, T→T): applied to EVERY value this cell resolves from ANY ladder seat
   // (cli/env/config/inherit/default) right after that seat's own value is determined — same timing

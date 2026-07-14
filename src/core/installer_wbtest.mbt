@@ -2021,12 +2021,15 @@ test "parse_definition: regex_match compile check also fires for value_filters a
 }
 
 ///|
-/// 保証 (対極、DR-102 §2): `accum_filters` (ARRAY filter registry, accum 専用) に `regex_match` を
-/// 書いた場合、`collect_invalid_regex_pattern` は綴りの registry 所属を問わず名前一致だけで compile
-/// 検査するため DInvalidArgument が出る一方、`regex_match` は ARRAY registry の owns 集合に無いので
-/// `collect_unknown_filter` が独立に DUnknownVocab も出す (DR-054「全エラー列挙、first-error 打ち切り
-/// なし」) — 両方が同時に報告されることを固定する (一方だけ出て他方を握り潰す実装は誤り)。
-test "parse_definition: an accum element's accum_filters regex_match entry is BOTH invalid-argument (compile failure) and unknown-vocab (not an ARRAY filter)" {
+/// 保証 (対極、DR-102 §2 の明確化 note、codex レビュー M-5 — registry 所有ゲート): `accum_filters`
+/// (ARRAY filter registry, accum 専用) に `regex_match` (scalar filter registry 専用の descriptor)
+/// を書いた場合、pattern compile 検査 (`collect_invalid_regex_pattern`) は「その属性が要求する
+/// registry が regex_match を実際に所有する場合のみ」走る — ARRAY filter registry は regex_match を
+/// 所有しないため、accum_filters には compile 検査が一切走らず、`collect_unknown_filter` が単純な
+/// DUnknownVocab (綴りが ARRAY registry の owns 集合に無い) のみを出す。旧テストは「両方出る」ことを
+/// 固定していたが、これは DR-102 §2「自 registry のみを見る」単純化と矛盾する副次検査だった —
+/// 明確化 note を反映しこの契約 (unknown-vocab のみ、invalid-argument は出ない) に更新する。
+test "parse_definition: an accum element's accum_filters regex_match entry is unknown-vocab ONLY (registry ownership gate, DR-102 §2)" {
   let def : Definition = {
     ..empty_def(),
     options: [
@@ -2038,7 +2041,7 @@ test "parse_definition: an accum element's accum_filters regex_match entry is BO
   match parse_definition(def, all_installers()) {
     Ok(_) =>
       abort(
-        "expected Err (accum_filters regex_match is both compile-failing and unregistered)",
+        "expected Err (accum_filters regex_match is not a registered ARRAY filter)",
       )
     Err(errs) => {
       let mut has_invalid_argument = false
@@ -2051,7 +2054,7 @@ test "parse_definition: an accum element's accum_filters regex_match entry is BO
           has_unknown_vocab = true
         }
       }
-      assert_true(has_invalid_argument)
+      assert_false(has_invalid_argument)
       assert_true(has_unknown_vocab)
     }
   }

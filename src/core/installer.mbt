@@ -3723,9 +3723,16 @@ fn collect_none_value_source_decl(
 /// 存在しない側の属性を書くのは構造不一致であり、`collect_scalar_array_default` (非 accum 要素への
 /// 配列 default 宣言) と同型の "構造的に宣言できるが実装が対応できない組合せを definition-error で
 /// 落とす" 契約で kind=invalid-range を reject する (fixtures/definition-error/
-/// filter-attribute-multiple-mismatch.json)。1 属性 1 registry の対応 (DR-102 §2) により、綴りの
-/// registry 未登録は `collect_unknown_filter` が単独で判定する — 本 gate は属性と要素の形の不一致
-/// (layer 違いではなく構造違反) だけを見る。
+/// accum-filters-on-non-multiple-invalid-range.json / final-filters-on-multiple-invalid-range.json)。
+/// 1 属性 1 registry の対応 (DR-102 §2) により、綴りの registry 未登録は `collect_unknown_filter` が
+/// 単独で判定する — 本 gate は属性と要素の形の不一致 (layer 違いではなく構造違反) だけを見る。
+///
+/// DR-102 §3 の明確化 note (codex レビュー M-9): `type:"none"` 要素 (値空間なし、DR-089) への
+/// `final_filters` 宣言も同じ invalid-range に属する — `final_filters` は T→T で値空間の型 T への
+/// 変換/検証を前提とするが、none には値空間そのものが無く T が存在しないため構成不能
+/// (DR-089 §4 と同型の帰結)。accum 適格な none 要素の `accum_filters` (Acc→Acc) 宣言も同じ理で
+/// invalid-range — 非 accum な none 要素の `accum_filters` は既に上の wrong-seat 判定でカバーされる
+/// ため、none 固有の追加判定は accum 要素の場合のみ必要。
 fn collect_invalid_filter_attribute_mismatch(
   def : Definition,
   out : Array[DefError],
@@ -3735,8 +3742,19 @@ fn collect_invalid_filter_attribute_mismatch(
   }
 
   fn check(e : ElemDef) -> Unit {
-    if is_accum_elem(e) {
-      if e.final_filters.length() > 0 {
+    let accum = is_accum_elem(e)
+    let none_ty = e.ty == TNone
+    if e.final_filters.length() > 0 {
+      if none_ty {
+        out.push(
+          def_err(
+            e.name,
+            DInvalidRange,
+            "a type:\"none\" element has no value space (DR-089) — final_filters (T→T, DR-102 §1) requires a T to operate over, which does not exist here",
+            "remove final_filters from this element, or give it a real value type",
+          ),
+        )
+      } else if accum {
         out.push(
           def_err(
             e.name,
@@ -3746,15 +3764,27 @@ fn collect_invalid_filter_attribute_mismatch(
           ),
         )
       }
-    } else if e.accum_filters.length() > 0 {
-      out.push(
-        def_err(
-          e.name,
-          DInvalidRange,
-          "a non-accum (scalar) element cannot declare accum_filters (Acc→Acc, accum-only whole-array gate, DR-102 §1) — this element's final gate is final_filters (T→T, over the single resolved value)",
-          "move this chain to final_filters, or declare multiple/repeat/separator on this element",
-        ),
-      )
+    }
+    if e.accum_filters.length() > 0 {
+      if !accum {
+        out.push(
+          def_err(
+            e.name,
+            DInvalidRange,
+            "a non-accum (scalar) element cannot declare accum_filters (Acc→Acc, accum-only whole-array gate, DR-102 §1) — this element's final gate is final_filters (T→T, over the single resolved value)",
+            "move this chain to final_filters, or declare multiple/repeat/separator on this element",
+          ),
+        )
+      } else if none_ty {
+        out.push(
+          def_err(
+            e.name,
+            DInvalidRange,
+            "a type:\"none\" element has no value space (DR-089) — accum_filters (Acc→Acc, DR-102 §1) requires a T domain to operate over, which does not exist here",
+            "remove accum_filters from this element, or give it a real value type",
+          ),
+        )
+      }
     }
   }
 
@@ -3784,7 +3814,18 @@ fn collect_invalid_filter_attribute_mismatch(
 /// この単純化により、`filters.mbt` の `apply_filter_chain`/`apply_accum_filter_chain` に到達する
 /// 時点で全 filter 名が既に登録済み保証となり、runtime `unknown_filter` reason は wire から消滅する
 /// (DR-101 §1)。
+///
+/// DR-102 §3 の明確化 note (codex レビュー M-6/M-9): `final_filters`/`accum_filters` が要素にとって
+/// wrong-seat (`collect_invalid_filter_attribute_mismatch` が invalid-range を出す非 accum 要素の
+/// accum_filters・accum 要素の final_filters・`type:"none"` 要素のいずれか) の場合、本 gate はその
+/// 属性の中身を一切解釈しない (unknown-vocab 判定をスキップする) — wrong-seat 判定が構造ゲート先行
+/// であり、綴りの登録有無を問わず invalid-range のみが報告される (definition_error の
+/// `expect.errors` は全エラーの完全一致集合、二重報告を避ける)。
 fn collect_unknown_filter(def : Definition, out : Array[DefError]) -> Unit {
+  fn is_accum_elem(e : ElemDef) -> Bool {
+    e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
+  }
+
   fn push_unknown(
     elem_name : String,
     phase : String,
@@ -3818,19 +3859,23 @@ fn collect_unknown_filter(def : Definition, out : Array[DefError]) -> Unit {
         push_unknown(e.name, "piece_filters", fs.name)
       }
     }
-    // final_filters (T→T, scalar filter registry, non-accum 専用、DR-102 §1): 綴り不在は
-    // unknown-vocab。他 registry (accum_filters が要求する ARRAY registry) との層違い比較は
-    // 1 属性 1 registry の対応 (DR-102 §2) により発生しない。
-    for fs in e.final_filters {
-      if lookup_filter(fs.name) is None {
-        push_unknown(e.name, "final_filters", fs.name)
+    // final_filters (T→T, scalar filter registry, non-accum 専用、DR-102 §1): 正しい席 (非 accum
+    // かつ 非 none) の場合のみ unknown-vocab 判定。wrong-seat/none-type は
+    // `collect_invalid_filter_attribute_mismatch` の invalid-range に一任 (M-6/M-9 構造ゲート先行)。
+    if !is_accum_elem(e) && e.ty != TNone {
+      for fs in e.final_filters {
+        if lookup_filter(fs.name) is None {
+          push_unknown(e.name, "final_filters", fs.name)
+        }
       }
     }
-    // accum_filters (Acc→Acc, ARRAY filter registry, accum 専用、DR-102 §1): 綴り不在は
-    // unknown-vocab。scalar registry との層違い比較は発生しない (DR-102 §2)。
-    for fs in e.accum_filters {
-      if lookup_array_filter(fs.name) is None {
-        push_unknown(e.name, "accum_filters", fs.name)
+    // accum_filters (Acc→Acc, ARRAY filter registry, accum 専用、DR-102 §1): 正しい席 (accum かつ
+    // 非 none) の場合のみ unknown-vocab 判定。
+    if is_accum_elem(e) && e.ty != TNone {
+      for fs in e.accum_filters {
+        if lookup_array_filter(fs.name) is None {
+          push_unknown(e.name, "accum_filters", fs.name)
+        }
       }
     }
   }
@@ -3895,10 +3940,25 @@ fn collect_invalid_dd_pattern(def : Definition, out : Array[DefError]) -> Unit {
 }
 
 ///|
+/// DR-102 §2 の明確化 note (codex レビュー M-5): registry 所有ゲート — `regex_match` は scalar
+/// filter registry のみが所有する descriptor (ARRAY filter registry は所有しない) なので、pattern
+/// compile 検査は `regex_match` を実際に所有する registry を要求する属性 (`piece_filters`/
+/// `value_filters`/`final_filters`) にのみ走る。`accum_filters` (ARRAY filter registry 専用) には
+/// 一切走らない — 綴りが `regex_match` でも ARRAY registry の owns 集合に無いので
+/// `collect_unknown_filter` が単純な unknown-vocab で reject するだけであり、layer 違いの副次検査は
+/// 発生しない (DR-102 §2 の「自 registry のみを見る」単純化と矛盾しないための限定)。
+///
+/// DR-102 §3 の明確化 note (codex レビュー M-6): `final_filters` が wrong-seat (accum 要素または
+/// `type:"none"` 要素、`collect_invalid_filter_attribute_mismatch` が invalid-range を出すケース)
+/// の場合、本 gate はその中身 (pattern compile) を一切解釈しない — 構造ゲート先行で二重報告を避ける。
 fn collect_invalid_regex_pattern(
   def : Definition,
   out : Array[DefError],
 ) -> Unit {
+  fn is_accum_elem(e : ElemDef) -> Bool {
+    e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
+  }
+
   fn check_chain(name : String, chain : Array[FilterSpelling]) -> Unit {
     for fs in chain {
       if fs.name == "regex_match" &&
@@ -3919,8 +3979,13 @@ fn collect_invalid_regex_pattern(
   fn check(e : ElemDef) -> Unit {
     check_chain(e.name, e.piece_filters)
     check_chain(e.name, e.value_filters)
-    check_chain(e.name, e.final_filters)
-    check_chain(e.name, e.accum_filters)
+    // final_filters: 正しい席 (非 accum かつ 非 none) の場合のみ pattern compile 検査
+    // (M-6 wrong-seat gate 先行)。
+    if !is_accum_elem(e) && e.ty != TNone {
+      check_chain(e.name, e.final_filters)
+    }
+    // accum_filters: ARRAY filter registry は regex_match を所有しないため常にスキップ
+    // (M-5 registry 所有ゲート)。
   }
 
   for e in def.options {

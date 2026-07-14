@@ -2523,11 +2523,18 @@ fn resolve_ladder_below_cli(
       None => ()
     }
   }
-  // default seat (DR-083 §1/§2): a scalar cell wants just the one value (`default_scalar`); an
-  // accum cell's declared default supplies its WHOLE array as already-split pieces, config-array
-  // precedent (DR-050 §4) — each piece routed through `config_to_value` (via `value_to_configval`)
-  // for the same T-domain / string-pipeline parse the CArr config branch above uses, so declared-
-  // default pieces and config-array pieces share one type-parse code path.
+  // default seat (DR-083 §1/§2, DR-102 §5): an accum cell's declared default supplies its WHOLE
+  // array as already-split pieces, config-array precedent (DR-050 §4) — each piece routed through
+  // `config_to_value` (via `value_to_configval`) for the same T-domain / string-pipeline parse the
+  // CArr config branch above uses. A scalar cell wants just the one value (`default_scalar`), but
+  // DR-102 §5 (DR-050 §4 / DR-083 §2 の対称性から導出) extends the SAME type-dependent pipeline to
+  // it — a JSON string default runs piece_filters → parse (`config_to_value`'s `CStr` arm), a JSON
+  // native (number/bool) default matching the element's type skips piece_filters/parse entirely
+  // (the type's own consequence, `config_to_value`'s `other => other` passthrough before its
+  // `(cv, ty)` match). This is NOT a special case for defaults — it's the same "値源の種別でなく
+  // 値の型が決める" rule DR-050 §4 already establishes, reused verbatim for the scalar default seat
+  // too (mirrors the accum branch immediately above; both call sites now share one type-parse code
+  // path with the config-array branch).
   if e.accum is Some(_) {
     match e.default_values {
       Some(vs) => {
@@ -2547,7 +2554,14 @@ fn resolve_ladder_below_cli(
     }
   } else {
     match default_scalar(e) {
-      Some(v) => Ok([mkb(e.name, v, Default)])
+      Some(v) =>
+        match config_to_value(value_to_configval(v), e.ty, e.piece_filters) {
+          Ok(vv) => Ok([mkb(e.name, vv, Default)])
+          Err((KFilter, reason, msg)) =>
+            Err(filter_err(e.name, at_pos, reason, msg, epath))
+          Err((_, reason, msg)) =>
+            Err(ladder_err(e.name, at_pos, reason, msg, epath))
+        }
       None => Ok([])
     }
   }

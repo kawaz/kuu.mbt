@@ -724,8 +724,9 @@ fn split_on(s : String, sep : String) -> Array[String] {
 /// separator split, one piece at a time (this is what distinguishes `per-piece-trim.json` from a
 /// "trim the whole raw string first" misreading). AFTER piece_filters, each piece goes through its
 /// OWN type parse (issue 2026-07-09-separator-non-string-type-parse-gap 段2 — DESIGN §6.2's
-/// pieceProcessor: separator → piece_filters → parse → final_filters/accum_filters, one piece at a
-/// time; a piece's
+/// pieceProcessor: separator → piece_filters → parse → value_filters (each piece) → once the value
+/// is committed, final_filters (non-accum element) or, after accumulation, accum_filters (accum
+/// element); a piece's
 /// type is independent of whether it came via separator, `elem_head`'s pre-段2 "always VStr"
 /// shortcut was the bug this closes). A piece_filters reject OR a type-parse failure on ANY piece
 /// fails the WHOLE binding (`Err` short-circuits) — same all-or-nothing contract a single-piece
