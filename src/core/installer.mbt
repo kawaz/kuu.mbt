@@ -59,11 +59,23 @@ pub(all) struct ElemDef {
   optional : Bool // repeat:{min:0,max:1} の糖衣 (DR-043) — repeat 語彙が所有
   multiple : Bool // multiple installer 所有 (DR-034/043)
   // DR-036 accumulator 名 (decode 層 dec_multiple 所有)。None = 未指定時のデフォルト ("append")、
-  // Some("merge") が DR-080 の merge accumulator を選ぶ。`ensure_entity` がそのまま `Entity.accum`
-  // へ写す — 中間の installer 変換は無い (collector と同じ「宣言をそのまま Entity へ通す」経路)。
-  // 「multiple:true なら常に append」という旧固定写像をこのフィールドで一般化する (DR-080 波及節)。
+  // Some("merge")/Some("kv_map") が DR-080/DR-091 §2 の accumulator を選ぶ。`ensure_entity` がそのまま
+  // `Entity.accum` へ写す — 中間の installer 変換は無い (collector と同じ「宣言をそのまま Entity へ通す」
+  // 経路)。「multiple:true なら常に append」という旧固定写像をこのフィールドで一般化する (DR-080 波及節)。
+  // DR-105 §3/M-17 (統括裁定): decode 層は "append"/"merge"/"kv_map" 以外の任意の文字列も
+  // (DecodeSkip せず) そのまま Some(生文字列) で通す — 未登録名 (廃止された旧 "flatten" 単独
+  // accumulator を含む) は definition-error kind=unknown-vocab として `collect_unknown_accumulator`
+  // が静的に弾く (decode-time の DecodeSkip ではなく definition-time の gate に一本化)。
   accumulator : String?
   separator : String? // multiple パイプラインの separator (DR-034)
+  // DR-105 §1/§2 (統括裁定 M-16、decode 層 dec_multiple 所有): `multiple: {..., flatten: <bool>}` の
+  // 宣言有無そのもの (値ではなく KEY の存在) を保持する — None = キー未宣言、Some(b) = 宣言された値。
+  // 存在ベースの gate (`collect_flatten_non_append`) が「値が false でも append 以外の accumulator に
+  // flatten キーが宣言されていれば invalid-range」を判定するために「宣言したかどうか」自体が必要
+  // (Bool 単体では false=未宣言と false=明示宣言を区別できない)。`ensure_entity` が `e.multiple` の
+  // 枝でのみ読み、repeat-cons 専用の枝は自前で true を立てる (Entity.flatten の doc comment 参照)。
+  flatten : Bool?
+
   // DR-036 collector: `multiple: {accumulator, collector}` の object 形が持つ collector 属性 (decode
   // 層 dec_multiple 所有、json_conformance_wbtest.mbt)。`ensure_entity` がそのまま `Entity.collector`
   // へ写す — 中間の installer 変換は無い (この属性を消費する唯一の installer は「宣言をそのまま Entity
@@ -762,6 +774,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     optional: e.optional,
     multiple: e.multiple,
     accumulator: e.accumulator,
+    flatten: e.flatten,
     separator: e.separator,
     collector: e.collector,
     fail_action: e.fail_action,
@@ -1423,22 +1436,39 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     }
   }
   // repeat / multiple / separator は値 LIST — 名前付き accumulator registry に落とす (DR-036)。
-  //   repeat → "flatten" (cons [T,[T,…]] → T[], DR-043)
+  //   repeat (multiple 無し) → "append" + flatten:true (DR-105 §3: 旧独立 "flatten" accumulator の
+  //     廃止、repeat installer の cons unfold [T,[T,…]] → T[] は append accumulator の flatten
+  //     ダイヤルで表現する)
   //   multiple / separator → "append" (DR-034)、あるいは `e.accumulator` が明示指定していれば
   //     それ (DR-080 §1: `multiple: {accumulator: "merge", ...}` — 旧「multiple なら常に append」
-  //     固定写像を、宣言された accumulator 名の一般写像に置き換える)。
+  //     固定写像を、宣言された accumulator 名の一般写像に置き換える)。この時点で `e.accumulator` は
+  //     definition-error gate (`collect_unknown_accumulator`) を通過済みなので "merge"/"kv_map" の
+  //     いずれかのみ (M-17)。
   // 両方立った場合は multiple の (accumulator 指定 or) append が勝つ (値 fold が支配)。
   // DR-044 §1 (kawaz 裁定): repeat / multiple / separator は cardinality 不問で常に配列
   //   (`repeat:{min:0,max:1}` = optional 糖衣も [] / [x] — scalar 昇格は collector 側の責務)。
-  let accum : String? = if e.multiple {
-    match e.accumulator {
-      Some(a) => Some(a)
-      None => Some("append")
+  // is_multiple_decl (DR-084 §2, DR-105 波及): `e.multiple` をそのまま carry する — resolve.mbt の
+  // SEGS-loop 判定 (ref+repeat cons cell の discard-earlier-firings と ref+repeat+multiple の
+  // firing-preserving を区別する) が、accum 名が両者とも "append" に揃った後もこの軸で判別する。
+  let (accum, flatten, is_multiple_decl) : (String?, Bool, Bool) = if e.multiple {
+    let acc_name = match e.accumulator {
+      Some(a) => a
+      None => "append"
     }
+    let flat = match e.flatten {
+      Some(b) => b
+      None => false
+    }
+    (Some(acc_name), flat, true)
   } else {
     match elem_repeat(e) {
-      Some(_) => Some("flatten")
-      None => if e.separator is Some(_) { Some("append") } else { None }
+      Some(_) => (Some("append"), true, false)
+      None =>
+        if e.separator is Some(_) {
+          (Some("append"), false, false)
+        } else {
+          (None, false, false)
+        }
     }
   }
   // 同型 config seat (DR-050 §3): config_file 要素が存在すれば全 value cell に config seat を宣言
@@ -1502,6 +1532,12 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     tty_stream: e.tty_stream,
     tty_cygwin: e.tty_cygwin,
     accum,
+    // DR-105 §1/§3: flatten (append-only dial) and is_multiple_decl (DR-084 §2 origin marker) —
+    // both already false-by-construction whenever `accum` is None (the tuple above only ever
+    // produces a non-false pair alongside `Some(_)`), mirroring `collector`'s "dead attribute never
+    // rides a scalar cell" posture without a redundant guard here.
+    flatten,
+    is_multiple_decl,
     // DR-036: collector only means anything alongside an accum cell (Entity.collector's doc
     // comment, node.mbt) — a scalar cell (accum is None) drops any declared collector rather than
     // carrying a dead attribute forward.
@@ -2124,6 +2160,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     optional: copy.optional,
     multiple: copy.multiple,
     accumulator: copy.accumulator,
+    flatten: copy.flatten,
     separator: copy.separator,
     collector: copy.collector,
     fail_action: copy.fail_action,
@@ -2324,6 +2361,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     optional: false,
     multiple: false,
     accumulator: None,
+    flatten: None,
     separator: None,
     collector: None,
     fail_action: false,
@@ -2694,6 +2732,7 @@ fn alias_entry(
     optional: false,
     multiple: false,
     accumulator: None,
+    flatten: None,
     separator: None,
     collector: None,
     fail_action: false,
@@ -4056,6 +4095,187 @@ fn collect_ref_merge_accum(def : Definition, out : Array[DefError]) -> Unit {
 }
 
 ///|
+/// DR-105 §2 (統括裁定 M-16, 存在ベース): `multiple.flatten` は `append` accumulator 専用のダイヤル
+/// (DR-105 §1) — `merge`/`kv_map` 等それ以外の accumulator に `flatten` キーが宣言されていること
+/// 自体 (true/false どちらの値でも) が構造不一致であり、`collect_ref_merge_accum`/
+/// `collect_invalid_filter_attribute_mismatch` と同型の "構造的に宣言できるが実装が対応できない
+/// 組合せを definition-error で落とす" 契約で kind=invalid-range を reject する (DR-102 §3 の
+/// wrong-seat 判定と同型 — 中身の値は解釈しない、宣言の有無だけを見る)。`e.flatten is Some(_)` は
+/// `dec_multiple` が「キーが JSON に存在したか」をそのまま運ぶ Option (`ElemDef.flatten`'s doc
+/// comment) — `Some(false)` (明示 `flatten:false` 宣言) も違反として扱う。
+fn collect_flatten_non_append(def : Definition, out : Array[DefError]) -> Unit {
+  fn check(e : ElemDef) -> Unit {
+    if e.multiple && e.flatten is Some(_) && e.accumulator is Some(_) {
+      out.push(
+        def_err(
+          e.name,
+          DInvalidRange,
+          "'\{e.name}' declares multiple.flatten but its accumulator is not \"append\" (DR-105 §2) — flatten is an append-only dial, and this element's accumulator is \"" +
+          e.accumulator.unwrap() +
+          "\"",
+          "remove 'flatten' from this element, or use accumulator:\"append\" (or omit accumulator, which defaults to append)",
+        ),
+      )
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_flatten_non_append(c.body, out)
+  }
+}
+
+///|
+/// DR-105 §3 (統括裁定 M-17): `multiple.accumulator` に宣言された名前が accumulators registry の
+/// owns 集合 (`"append"`(既定, decode 層で None に写る) / `"merge"`(DR-080) / `"kv_map"`(DR-091 §2))
+/// に無ければ definition-error kind=unknown-vocab — `collect_unknown_filter` (filter 4 属性の同型判定)
+/// の accumulator 版。旧独立 "flatten" accumulator (DR-036/043、DR-105 で廃止) の綴りもここで弾かれる
+/// — 廃止後は `{"accumulator":"append","flatten":true}` の組で表現する (DR-105 §1/§3)。
+fn collect_unknown_accumulator(def : Definition, out : Array[DefError]) -> Unit {
+  fn check(e : ElemDef) -> Unit {
+    match e.accumulator {
+      Some(a) =>
+        if a != "merge" && a != "kv_map" {
+          out.push(
+            def_err(
+              e.name,
+              DUnknownVocab,
+              "'\{e.name}' declares multiple.accumulator '" +
+              a +
+              "' which is not registered in the accumulators registry (DR-036/DR-105 §3) — the standalone \"flatten\" accumulator was retired by DR-105, use accumulator:\"append\" with flatten:true instead",
+              "use a registered accumulator name (\"append\" [default, omit the key], \"merge\", \"kv_map\") or remove this declaration",
+            ),
+          )
+        }
+      None => ()
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_unknown_accumulator(c.body, out)
+  }
+}
+
+///|
+/// DR-105 §5/§8 (統括裁定 M-18): `in_range`(scalar filter registry) / `length_range`(ARRAY filter
+/// registry, DR-105 §5 新設) の DSL 引数を definition time に静的検査する — `collect_invalid_regex_
+/// pattern` の regex pattern compile 検査と同型 ("静的に既知は定義時に倒す", DR-083 §5 / DR-082 §3)。
+/// 引数個数不一致・非数値は kind=invalid-argument (DR-082 §3 の「単一引数値そのものが装置の受理範囲外」)、
+/// min>max は kind=invalid-range (DR-082 §2 の「複数属性の組合せが値域外」、`DInvalidRange` の
+/// min>max 前例と同型)。filters.mbt の `filter_in_range`/`array_filter_length_range` 自身が持つ
+/// runtime fallback (`filter_rejected`) を置換するのではなく、その手前で definition-error として
+/// 確定させる — `regex_match` の pattern compile 検査と同じ「runtime 到達前に倒す」パターン。
+/// 各 filter 名は自分の registry を要求する属性でのみ検査する (`in_range` は piece/value/final_filters、
+/// `length_range` は accum_filters のみ) — cross-registry の綴り衝突 (`collect_unknown_filter` が
+/// 別途 unknown-vocab で弾く) と二重報告しないための限定 (DR-102 §2 の「自 registry のみを見る」と
+/// 同じ限定を踏襲)。wrong-seat (`collect_invalid_filter_attribute_mismatch` が invalid-range を出す
+/// accum 要素の final_filters・非 accum 要素の accum_filters・`type:"none"` 要素) は
+/// `collect_invalid_regex_pattern` と同じ構造ゲート先行で本 gate をスキップする (M-6/M-9 と同型)。
+fn collect_invalid_numeric_filter_args(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  fn is_accum_elem(e : ElemDef) -> Bool {
+    e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
+  }
+
+  fn check_two_arg(name : String, fs : FilterSpelling) -> Unit {
+    if fs.args.length() != 2 {
+      out.push(
+        def_err(
+          name,
+          DInvalidArgument,
+          "'\{fs.name}' requires exactly 2 args (min, max), got \{fs.args.length()}",
+          "provide exactly 2 numeric args, e.g. '\{fs.name}:1:5'",
+        ),
+      )
+      return
+    }
+    let min = parse_number(fs.args[0])
+    let max = parse_number(fs.args[1])
+    match (min, max) {
+      (None, _) =>
+        out.push(
+          def_err(
+            name,
+            DInvalidArgument,
+            "'\{fs.name}' min '" + fs.args[0] + "' is not a number",
+            "provide a numeric min",
+          ),
+        )
+      (_, None) =>
+        out.push(
+          def_err(
+            name,
+            DInvalidArgument,
+            "'\{fs.name}' max '" + fs.args[1] + "' is not a number",
+            "provide a numeric max",
+          ),
+        )
+      (Some(mn), Some(mx)) =>
+        if mn > mx {
+          out.push(
+            def_err(
+              name,
+              DInvalidRange,
+              "'\{fs.name}' min \{mn} is greater than max \{mx}",
+              "swap min/max so min <= max",
+            ),
+          )
+        }
+    }
+  }
+
+  fn check_scalar_chain(name : String, chain : Array[FilterSpelling]) -> Unit {
+    for fs in chain {
+      if fs.name == "in_range" {
+        check_two_arg(name, fs)
+      }
+    }
+  }
+
+  fn check_array_chain(name : String, chain : Array[FilterSpelling]) -> Unit {
+    for fs in chain {
+      if fs.name == "length_range" {
+        check_two_arg(name, fs)
+      }
+    }
+  }
+
+  fn check(e : ElemDef) -> Unit {
+    check_scalar_chain(e.name, e.piece_filters)
+    check_scalar_chain(e.name, e.value_filters)
+    if !is_accum_elem(e) && e.ty != TNone {
+      check_scalar_chain(e.name, e.final_filters)
+    }
+    if is_accum_elem(e) && e.ty != TNone {
+      check_array_chain(e.name, e.accum_filters)
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_invalid_numeric_filter_args(c.body, out)
+  }
+}
+
+///|
 /// 木のどこかに `type:"config_file"` 要素があるか (DR-050): あれば同型 config seat が全 value cell に立つ。
 fn has_config_file(def : Definition) -> Bool {
   for e in def.options {
@@ -4200,6 +4420,9 @@ pub fn parse_definition(
   collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)
   collect_invalid_dd_pattern(def, errs) // DR-090 §2 (dd match pattern compile 失敗)
   collect_ref_merge_accum(def, errs) // DR-084 §3 (merge accumulator × ref)
+  collect_flatten_non_append(def, errs) // DR-105 §2 (M-16, flatten は append 専用ダイヤル)
+  collect_unknown_accumulator(def, errs) // DR-105 §3 (M-17, multiple.accumulator の未登録名)
+  collect_invalid_numeric_filter_args(def, errs) // DR-105 §5/§8 (M-18, in_range/length_range の DSL 引数)
   collect_absent_ref(def, registry, errs) // DR-032
   collect_circular_ref(registry, errs) // DR-007/032
   collect_zero_progress(def, registry, errs) // DR-043

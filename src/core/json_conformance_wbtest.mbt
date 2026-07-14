@@ -315,6 +315,7 @@ fn opt(
   repeat? : RepeatSpec? = None,
   multiple? : Bool = false,
   accumulator? : String? = None,
+  flatten? : Bool? = None,
   collector? : String? = None,
   fail_action? : Bool = false,
   config_file? : Bool = false,
@@ -370,6 +371,7 @@ fn opt(
     optional: false,
     multiple,
     accumulator,
+    flatten,
     separator: None,
     collector,
     fail_action,
@@ -413,6 +415,7 @@ fn pos(
   optional? : Bool = false,
   multiple? : Bool = false,
   accumulator? : String? = None,
+  flatten? : Bool? = None,
   separator? : String? = None,
   collector? : String? = None,
   config_key? : Array[String]? = None,
@@ -456,6 +459,7 @@ fn pos(
     optional,
     multiple,
     accumulator,
+    flatten,
     separator,
     collector,
     fail_action: false,
@@ -529,6 +533,7 @@ fn dd_marker(
     optional: false,
     multiple: false,
     accumulator: None,
+    flatten: None,
     separator: None,
     collector: None,
     fail_action: false,
@@ -597,6 +602,10 @@ struct LEnt {
   inherit_ : Bool
   config_key : Array[String]?
   accum : String?
+  // DR-105 §1/§3: the append-only flatten dial — carried alongside `accum` so a "lower" fixture can
+  // pin the repeat installer's cons-unfold output as `{"accumulator":"append","flatten":true}`
+  // instead of the retired standalone "flatten" accumulator name (`Entity.flatten`'s doc comment).
+  flatten : Bool
 }
 
 ///|
@@ -659,6 +668,11 @@ fn lent_str(e : LEnt) -> String {
   match e.accum {
     Some(a) => fs.push("accumulator=" + a)
     None => ()
+  }
+  // DR-105 §1: omit-if-false, mirrors `inherit_=true` above — the common (undeclared) case renders
+  // no `flatten` field at all so pre-DR-105 "lower" fixtures without the key still compare equal.
+  if e.flatten {
+    fs.push("flatten=true")
   }
   sort_items(fs)
   e.name + "{" + join_comma(fs) + "}"
@@ -985,6 +999,7 @@ fn proj_entity(e : Entity) -> LEnt {
     inherit_: e.inherit_,
     config_key: e.config_key,
     accum: e.accum,
+    flatten: e.flatten,
   }
 }
 
@@ -2517,14 +2532,7 @@ fn known_collector(name : String) -> Bool {
 }
 
 ///|
-/// DR-036 `multiple`. Returns (fires, separator, collector). The `accumulator` key's accepted
-/// vocab stays "append"-only (issue acceptance criterion 判断: DR-036 also lists merge/override/
-/// increment/flatten, but `installer.mbt`'s `ensure_entity` hardcodes the accum registry entry
-/// from `e.multiple`/`elem_repeat`/`e.separator` alone — it never reads the decoded accumulator
-/// string. Accepting a wider vocab here would decode successfully while installer.mbt silently
-/// keeps treating every multiple cell as plain "append", a decode/runtime mismatch of the same
-/// kind `known_collector`'s doc comment describes for `to_set`/`from_entries`. Widening this needs
-/// `ensure_entity` to actually consult the accumulator name first).
+/// DR-036 `multiple`. Returns (fires, separator, collector, accumulator, flatten).
 /// DR-080 §1: "merge" を accumulator 語彙に追加 (append の兄弟)。戻り値の4番目 (accumulator 名)
 /// は None = 未指定 (`ensure_entity` が既定 "append" にフォールバック)、Some("merge") が DR-080 の
 /// merge accumulator を選ぶ。bool/string 糖衣 (`true`/`"append"`) は常に "append" 相当 (accumulator
@@ -2533,24 +2541,37 @@ fn known_collector(name : String) -> Bool {
 /// `value_prim`/`elem_head`/`inst_long` main entry が `Some("kv_map")` を見て `KvArg` を emit し、
 /// `resolve.mbt`'s `build_result` が `AccumCell.accum == "kv_map"` を見て畳み結果を RObj にする
 /// (merge と同じ「宣言をそのまま Entity.accum へ通す」経路、ここは受理するだけ)。
-fn dec_multiple(j : Json) -> (Bool, String?, String?, String?) raise DecodeSkip {
+/// DR-105 §3/M-17 (統括裁定): "append"/"merge"/"kv_map" 以外の任意の accumulator 文字列も
+/// DecodeSkip せず Some(生文字列) でそのまま通す — 廃止された旧独立 "flatten" accumulator を含む
+/// 未登録名は definition-error kind=unknown-vocab として `installer.mbt`'s
+/// `collect_unknown_accumulator` が definition-time に静的に弾く (decode-time DecodeSkip は「JSON
+/// として読めない」場合専用に戻し、「読めるが無効な語彙」は definition-error 側の役割に一本化)。
+/// DR-105 §1/§2 (統括裁定 M-16): 5 番目の戻り値 `flatten` は「`flatten` キーが宣言されたか」自体を
+/// Option で運ぶ (None=未宣言、Some(bool)=宣言値) — 値でなくキーの存在が gate の判定材料になる
+/// (`collect_flatten_non_append` の doc comment 参照)。bool/string 糖衣形は `flatten` を宣言する
+/// 経路を持たない (常に None)。
+fn dec_multiple(
+  j : Json,
+) -> (Bool, String?, String?, String?, Bool?) raise DecodeSkip {
   match j.j_bool() {
-    Some(b) => return (b, None, None, None)
+    Some(b) => return (b, None, None, None, None)
     None => ()
   }
   match j.j_str() {
-    Some("append") => return (true, None, None, None)
+    Some("append") => return (true, None, None, None, None)
     Some(other) => raise DecodeSkip("multiple preset '" + other + "'")
     None => ()
   }
   match j.j_obj() {
     Some(o) => {
-      allowed_keys(o, ["accumulator", "separator", "collector"], "multiple")
+      allowed_keys(
+        o,
+        ["accumulator", "separator", "collector", "flatten"],
+        "multiple",
+      )
       let accumulator = match jf_str(o, "accumulator") {
         Some("append") => None // 既定と同義 — Entity.accum への写しは ensure_entity が "append" にフォールバック
-        Some("merge") => Some("merge")
-        Some("kv_map") => Some("kv_map")
-        Some(a) => raise DecodeSkip("multiple.accumulator '" + a + "'")
+        Some(a) => Some(a) // "merge"/"kv_map"/未登録名いずれも通す — vocab 検査は definition-error 側
         None => None
       }
       let collector = match jf_str(o, "collector") {
@@ -2564,7 +2585,15 @@ fn dec_multiple(j : Json) -> (Bool, String?, String?, String?) raise DecodeSkip 
           }
         None => None
       }
-      (true, jf_str(o, "separator"), collector, accumulator)
+      let flatten = match o.get("flatten") {
+        Some(fj) =>
+          match fj.j_bool() {
+            Some(b) => Some(b)
+            None => raise DecodeSkip("multiple.flatten is not a bool")
+          }
+        None => None
+      }
+      (true, jf_str(o, "separator"), collector, accumulator, flatten)
     }
     None => raise DecodeSkip("multiple is not a bool/string/object")
   }
@@ -3114,9 +3143,9 @@ fn dec_option(
   let global = bool_field(o, "global", false)
   let inherit_flag = bool_field(o, "inherit", false)
   let inheritable = bool_field(o, "inheritable", false)
-  let (multiple, sep, coll, acc) = match o.get("multiple") {
+  let (multiple, sep, coll, acc, flat) = match o.get("multiple") {
     Some(m) => dec_multiple(m)
-    None => (false, None, None, None)
+    None => (false, None, None, None, None)
   }
   let requires = dec_strs(o.get("requires"))
   let conflicts = dec_strs(o.get("conflicts_with"))
@@ -3169,6 +3198,7 @@ fn dec_option(
       inheritable~,
       multiple~,
       accumulator=acc,
+      flatten=flat,
       fail_action~,
       config_file~,
       config_key~,
@@ -3289,9 +3319,9 @@ fn dec_positional(
     None => None
   }
   let optional = bool_field(o, "optional", false)
-  let (multiple, sep, coll, acc) = match o.get("multiple") {
+  let (multiple, sep, coll, acc, flat) = match o.get("multiple") {
     Some(m) => dec_multiple(m)
-    None => (false, None, None, None)
+    None => (false, None, None, None, None)
   }
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
@@ -3330,6 +3360,7 @@ fn dec_positional(
     optional~,
     multiple~,
     accumulator=acc,
+    flatten=flat,
     separator=sep,
     collector=coll,
     config_key~,
@@ -4795,7 +4826,10 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
   }
   allowed_keys(
     o,
-    ["type", "default", "env", "inherit", "config_key", "accumulator"],
+    [
+      "type", "default", "env", "inherit", "config_key", "accumulator",
+      "flatten",
+    ],
     "golden entity",
   )
   let typ = req_field(o, "type")
@@ -4815,6 +4849,7 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
     inherit_: bool_field(o, "inherit", false),
     config_key,
     accum: jf_str(o, "accumulator"),
+    flatten: bool_field(o, "flatten", false),
   }
 }
 

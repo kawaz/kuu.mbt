@@ -297,13 +297,21 @@ pub(all) struct AccumCell {
   accum_filters : Array[FilterSpelling]
   // DR-084 §2 (issue multiple-ref-accum-gap): the accumulator KIND (Entity.accum's copy — always
   // `Some(_)` for a cell that reaches `accum_cells` at all, so this is a plain `String` here, not
-  // `String?`). `build_result`'s `segs` loop needs to tell apart a ref+repeat cell's "flatten"
-  // (non-`multiple`, last-wins-WHOLE-CELL discard — `last-wins-repeat-rows.json`, "#fire" is a
-  // CUTOFF) from "append" (`multiple`, firing-boundary-PRESERVING — `ref-repeat-rows-nested.json`,
-  // "#fire" is a GROUPING boundary instead) — both shapes emit the SAME "#fire"/"#row" sentinels
-  // (`inst_long`'s repeat-bearing ref branch doesn't itself change per DR-084 §2), so only the
-  // accumulator kind distinguishes which interpretation applies.
+  // `String?`). Pre-DR-105 this alone told apart a ref+repeat cell's "flatten" (non-`multiple`,
+  // last-wins-WHOLE-CELL discard) from "append" (`multiple`, firing-boundary-preserving) — DR-105 §3
+  // collapsed both onto the SAME name ("append"), so `is_multiple_decl` below (not this field) is
+  // what `build_result`'s `segs` loop now reads for that distinction (both shapes still emit the
+  // SAME "#fire"/"#row" sentinels, `inst_long`'s repeat-bearing ref branch is unchanged by DR-105).
   accum : String
+  // DR-105 §1 flatten dial (Entity.flatten's copy): whether an array-shaped fire value expands by
+  // one level into the accumulated array (`build_result`'s SEGS-loop per-fire builder, the one
+  // reachable consumer — DR-084 §2's ref+repeat+multiple row array).
+  flatten : Bool
+  // DR-084 §2 origin marker (Entity.is_multiple_decl's copy): true iff this cell's accumulator seat
+  // came from a declared `multiple` (append-preserving-across-firings) as opposed to the repeat
+  // installer's own cons-unfold cell (discard-earlier-firings/last-wins-whole-cell). Replaces the
+  // pre-DR-105 `accum == "flatten"` test this struct's `accum` doc comment above describes.
+  is_multiple_decl : Bool
 } derive(Eq, Debug)
 
 ///|
@@ -385,6 +393,38 @@ fn accum_kind_here(
     }
   }
   None
+}
+
+///|
+/// The DR-105 §1 flatten dial declared for the accum cell at `path`/`name` (mirrors `collector_here`,
+/// same lookup shape) — defaults false when the cell isn't found (same "not found = the inert
+/// value" posture `accum_filters_here`'s `[]` default uses, since every real call site here already
+/// gates on `cell_here`/`is_accum` first).
+fn flatten_here(cells : Array[AccumCell], path : Array[String], name : String) -> Bool {
+  for c in cells {
+    if c.name == name && path_eq(c.path, path) {
+      return c.flatten
+    }
+  }
+  false
+}
+
+///|
+/// The DR-084 §2 origin marker declared for the accum cell at `path`/`name` (mirrors
+/// `collector_here`, same lookup shape) — replaces the pre-DR-105 `accum_kind_here(...) !=
+/// Some("flatten")` test `build_result`'s SEGS loop used (`AccumCell.is_multiple_decl`'s doc
+/// comment). Defaults false when not found, same posture as `flatten_here`.
+fn is_multiple_decl_here(
+  cells : Array[AccumCell],
+  path : Array[String],
+  name : String,
+) -> Bool {
+  for c in cells {
+    if c.name == name && path_eq(c.path, path) {
+      return c.is_multiple_decl
+    }
+  }
+  false
 }
 
 ///|
@@ -514,7 +554,7 @@ pub fn build_result(
   let obj : Array[(String, RVal)] = []
   for k in named {
     if cell_here(cells, path, k) {
-      // ACCUMULATE (repeat "flatten" / multiple "append", DR-043/034/036): fold same-key
+      // ACCUMULATE (repeat-cons and multiple both use "append", DR-105 §3 / DR-043/034/036): fold same-key
       // effects in order. A `set` effect appends; an `empty` effect CLEARS the collection
       // (DR-045 empty op, committed=true — a deliberate "make it empty"), so anything before
       // it is discarded and re-accumulation continues. An `unset` effect ALSO clears (issue
@@ -545,9 +585,20 @@ pub fn build_result(
       // DR-009 段 7 / DR-102 §1 accum_filters (issue accum-post-filters-stage7): Acc→Acc self-map
       // over the WHOLE folded array, BEFORE the collector (DR-083 §2's order — see
       // AccumCell.accum_filters' doc comment for why collector comes after, not before).
+      // DR-105 §4: `apply_accum_filter_chain` is Result-returning now (ARRAY filter registry can
+      // reject, e.g. `length_range`) — the REJECT itself is surfaced earlier, at `resolve_entity`
+      // time (`apply_entity_filters`'s own accum_filters gate, same `at_pos`/`epath` machinery
+      // `final_filters` already uses), so a binding set that reaches `build_result` at all is
+      // guaranteed to already satisfy this cell's accum_filters. The `Err` arm here is therefore
+      // unreachable in practice — defensive fallback to the pre-filter array, same posture
+      // `apply_collector`'s "unrecognized name — identity" fallback uses.
       let filtered_vals = match accum_filters_here(cells, path, k) {
         [] => vals
-        chain => apply_accum_filter_chain(chain, vals)
+        chain =>
+          match apply_accum_filter_chain(chain, vals) {
+            Ok(v) => v
+            Err(_) => vals
+          }
       }
       let collected = if accum_kind_here(cells, path, k) == Some("kv_map") {
         // DR-091 §2: a kv_map cell folds to an OBJECT, not the uniform array every other
@@ -623,16 +674,27 @@ pub fn build_result(
     // own rows — giving the DR-084 §2 shape directly: an outer element per firing (`T[]`), never
     // flattened, "two-fires-preserve-firing-boundary" fixture's contract.
     //
-    // The accumulator KIND (not just `is_accum`) is what gates this — `last-wins-repeat-rows.json`
-    // (non-`multiple` ref+repeat) IS an accum cell too (`ensure_entity`'s "flatten" fallback for a
+    // The origin marker (not just `is_accum`) is what gates this — `last-wins-repeat-rows.json`
+    // (non-`multiple` ref+repeat) IS an accum cell too (`ensure_entity`'s repeat-cons branch — a
     // repeat-only element), and its "#fire" is the ORIGINAL discard-earlier-firings cutoff
-    // (`row_groups`'s own contract) — only a `multiple` cell's "append"/other accumulator (never
-    // "flatten") wants the firing-PRESERVING read.
-    let seg_is_multiple_ref = is_accum &&
-      accum_kind_here(cells, path, seg) != Some("flatten")
+    // (`row_groups`'s own contract) — only a genuinely `multiple`-declared cell wants the
+    // firing-PRESERVING read. Pre-DR-105 this test was `accum_kind_here(...) != Some("flatten")`
+    // (both origins shared the "append"/"flatten" name split); DR-105 §3 collapsed both onto the
+    // SAME accum name, so `is_multiple_decl_here` (the DR-084 §2 origin marker, independent of the
+    // flatten dial) is what tells them apart now (`AccumCell.is_multiple_decl`'s doc comment).
+    let seg_is_multiple_ref = is_accum && is_multiple_decl_here(cells, path, seg)
     if seg_is_multiple_ref &&
       has_direct_key(seg_binds, "#fire") &&
       has_direct_key(seg_binds, "#row") {
+      // DR-105 §1 flatten dial: a `multiple`-declared ref+repeat cell's per-firing row array
+      // (T[], DR-084 §2) is exactly the "発火値が配列" shape the dial targets — `flatten:true`
+      // expands each firing's rows directly into the outer array (T[]) instead of nesting them
+      // one level (T[][], the flatten:false/default shape `ref-repeat-rows-nested.json` pins).
+      // A 0-row firing contributes 0 elements either way ("空配列 → 0要素"); this is the only
+      // reachable manifestation of the dial in kuu.mbt today (`value.mbt`'s `Value` has no array
+      // variant, so a plain scalar multiple cell's fire is never array-shaped — the dial is
+      // observationally inert there, DR-105 §1's "非配列 → 丸ごと1要素" holds vacuously).
+      let flat = flatten_here(cells, path, seg)
       let per_fire : Array[RVal] = []
       for chunk in fire_groups(seg_binds) {
         let rows : Array[RVal] = []
@@ -641,7 +703,13 @@ pub fn build_result(
             build_result(row, cells, defaults, path_push(path, seg), nones~),
           )
         }
-        per_fire.push(RArr(rows))
+        if flat {
+          for r in rows {
+            per_fire.push(r)
+          }
+        } else {
+          per_fire.push(RArr(rows))
+        }
       }
       obj.push((seg, RArr(per_fire)))
     } else if !unfired_ref_accum_seg {
@@ -664,7 +732,7 @@ pub fn build_result(
   //
   // issue 2026-07-09-accum-fold-update-default-ops 追記 (2026-07-10, ref-repeat-sibling-trigger.json
   // mismatch の修正): a ref+repeat option cell (`ensure_entity_body`'s BCell arm now registers one
-  // for its `accum: Some("flatten")`, so `accum_cells` sees it too) needs a DIFFERENT double-render
+  // for its accum cell, so `accum_cells` sees it too) needs a DIFFERENT double-render
   // guard than plain `!str_contains(named, c.name)` — its bindings never land in `named` at all
   // (`ref_row_head`'s `Scoped(e.name, ...)` wrap means every binding carries `scope=[e.name, ...]`,
   // never a bare top-level key), so `named` alone can't tell "fired >=1 time, ROW-GROUP already
@@ -911,6 +979,8 @@ fn collect_accum(
               collector: e.collector,
               accum_filters: e.accum_filters,
               accum: a,
+              flatten: e.flatten,
+              is_multiple_decl: e.is_multiple_decl,
             })
           }
         }
@@ -2130,6 +2200,29 @@ fn apply_entity_filters(
           }
         }
       }
+    }
+  }
+  // DR-105 §4 (統括裁定, ArrayFilterDescriptor の Result 化): an accum cell's accum_filters (Acc→Acc,
+  // ARRAY filter registry) can now reject (`length_range` etc, DR-105 §5) — the reject must surface
+  // HERE, at resolve time, not silently inside `build_result` (which has no error channel and runs
+  // for every fixture regardless of whether the ladder/`use_resolve` path was taken). `out` at this
+  // point is exactly this entity's own value_filters-applied binding list, ops preserved
+  // (`resolve_entity_raw`'s accum branch never folds an accum cell's bindings to last-wins) — the
+  // SAME fold `build_result`'s ACCUMULATE branch performs (Empty/Unset/Default clears the running
+  // array, everything else appends its value) is replicated here so the two stay in lockstep.
+  // `args.length()` attribution (DR-102 §4, effectuated by DR-105 §4): reuses `at_pos`, the same
+  // "no specific token" position `final_filters`'s own reject above already reports at.
+  if e.accum is Some(_) && e.accum_filters.length() > 0 {
+    let mut vals : Array[Value] = []
+    for b in out {
+      match b.op {
+        Empty | Unset | Default => vals = []
+        _ => vals.push(b.value)
+      }
+    }
+    match apply_accum_filter_chain(e.accum_filters, vals) {
+      Ok(_) => ()
+      Err((reason, msg)) => return Err(filter_err(e.name, at_pos, reason, msg, epath))
     }
   }
   Ok(out)

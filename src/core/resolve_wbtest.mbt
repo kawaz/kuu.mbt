@@ -29,6 +29,8 @@ fn ent(
   tty_stream? : String? = None,
   tty_cygwin? : Bool = true,
   accum? : String? = None,
+  flatten? : Bool = false,
+  is_multiple_decl? : Bool = false,
   collector? : String? = None,
   default_value? : Value? = None,
   separator? : String? = None,
@@ -57,6 +59,8 @@ fn ent(
     tty_stream,
     tty_cygwin,
     accum,
+    flatten,
+    is_multiple_decl,
     collector,
     default_values,
     separator,
@@ -91,6 +95,8 @@ test "build_result folds scalar last-wins, accumulate array, and default seat" {
       collector: None,
       accum_filters: [],
       accum: "append",
+      flatten: false,
+      is_multiple_decl: false,
     },
   ]
   let defaults : Array[DefaultCell] = [
@@ -131,6 +137,8 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
       collector: None,
       accum_filters: [],
       accum: "append",
+      flatten: false,
+      is_multiple_decl: false,
     },
   ]
   let r = build_result(binds, cells, [], [])
@@ -148,6 +156,8 @@ test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)
       collector: None,
       accum_filters: [],
       accum: "append",
+      flatten: false,
+      is_multiple_decl: false,
     },
   ]
   assert_eq(build_result([], cells, [], []), RObj([("tags", RArr([]))]))
@@ -169,6 +179,8 @@ test "build_result: a collector (unwrap_single) collapses a length-1 accumulatio
       collector: Some("unwrap_single"),
       accum_filters: [],
       accum: "append",
+      flatten: false,
+      is_multiple_decl: false,
     },
   ]
   assert_eq(
@@ -193,6 +205,8 @@ test "build_result: a collector (unwrap_single) leaves a 2+ element accumulation
       collector: Some("unwrap_single"),
       accum_filters: [],
       accum: "append",
+      flatten: false,
+      is_multiple_decl: false,
     },
   ]
   assert_eq(
@@ -214,6 +228,8 @@ test "build_result: a collector on an unfired accum cell still renders [] (DR-04
       collector: Some("unwrap_single"),
       accum_filters: [],
       accum: "append",
+      flatten: false,
+      is_multiple_decl: false,
     },
   ]
   assert_eq(build_result([], cells, [], []), RObj([("tag", RArr([]))]))
@@ -1858,6 +1874,8 @@ test "build_result: kv_map folds 2 fires into an RObj (distinct keys)" {
       collector: None,
       accum_filters: [],
       accum: "kv_map",
+      flatten: false,
+      is_multiple_decl: false,
     },
   ]
   assert_eq(
@@ -1887,6 +1905,8 @@ test "build_result: kv_map re-firing a key is last-wins on VALUE, first-seen on 
       collector: None,
       accum_filters: [],
       accum: "kv_map",
+      flatten: false,
+      is_multiple_decl: false,
     },
   ]
   assert_eq(
@@ -1910,6 +1930,8 @@ test "build_result: kv_map splits a piece at the FIRST '=' only (value may itsel
       collector: None,
       accum_filters: [],
       accum: "kv_map",
+      flatten: false,
+      is_multiple_decl: false,
     },
   ]
   assert_eq(
@@ -1936,6 +1958,8 @@ test "build_result: kv_map's RObj branch does not affect a sibling 'append' accu
       collector: None,
       accum_filters: [],
       accum: "append",
+      flatten: false,
+      is_multiple_decl: false,
     },
   ]
   assert_eq(

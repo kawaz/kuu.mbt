@@ -35,6 +35,7 @@ fn el(
   repeat? : RepeatSpec? = None,
   multiple? : Bool = false,
   accumulator? : String? = None,
+  flatten? : Bool? = None,
   collector? : String? = None,
   ref_? : String? = None,
   piece_filters? : Array[String] = [],
@@ -74,6 +75,7 @@ fn el(
     optional: false,
     multiple,
     accumulator,
+    flatten,
     separator: None,
     collector,
     fail_action: false,
@@ -332,14 +334,15 @@ test "env installer: seat env_key on entity, no greedy contribution" {
   assert_eq(ent.env_key, Some("HOST"))
 }
 
-// ── repeat (DR-043): flatten accumulator + Ref 再帰 ───────────────────────────
+// ── repeat (DR-043/DR-105 §3): append accum + flatten:true dial + Ref 再帰 ────
 
 ///|
 /// 保証: unbounded repeat (max=None) は positional に (min-1 mandatory heads + Ref(name)) を積み、
-/// entity には flatten accumulator を宣言する (DR-036 名前付き accumulator registry)。DR-044 §1
-/// (kawaz 裁定): repeat / multiple / separator は cardinality 不問で常に配列 — なので min:1 でも
-/// `repeat:{min:0,max:1}` (optional 糖衣) でも accumulator は必ず立つ。
-test "repeat installer: unbounded repeat installs 'flatten' accum + Ref-recursion on positional spine" {
+/// entity には append accumulator + flatten:true ダイヤルを宣言する (DR-036 名前付き accumulator
+/// registry、DR-105 §3: 旧独立 "flatten" accumulator は append の flatten ダイヤルに統合された)。
+/// DR-044 §1 (kawaz 裁定): repeat / multiple / separator は cardinality 不問で常に配列 — なので
+/// min:1 でも `repeat:{min:0,max:1}` (optional 糖衣) でも accumulator は必ず立つ。
+test "repeat installer: unbounded repeat installs 'append'+flatten:true accum + Ref-recursion on positional spine" {
   let def : Definition = {
     ..empty_def(),
     positionals: [
@@ -354,7 +357,9 @@ test "repeat installer: unbounded repeat installs 'flatten' accum + Ref-recursio
   assert_eq(sc.positional.length(), 1)
   assert_eq(sc.positional[0], Ref("src#cons"))
   let ent = entity_of(sc, "src").unwrap()
-  assert_eq(ent.accum, Some("flatten")) // DR-043 flatten
+  assert_eq(ent.accum, Some("append")) // DR-105 §3
+  assert_eq(ent.flatten, true)
+  assert_eq(ent.is_multiple_decl, false) // no `multiple` declared — repeat-cons origin
 }
 
 ///|
@@ -372,7 +377,8 @@ test "repeat installer: min:0 unbounded repeat lowers to Many(head, lazy_) carry
   assert_eq(sc.positional.length(), 1)
   assert_eq(sc.positional[0], Many(StrArg("xs", []), true))
   let ent = entity_of(sc, "xs").unwrap()
-  assert_eq(ent.accum, Some("flatten")) // DR-044 §1: cardinality 不問で常に配列
+  assert_eq(ent.accum, Some("append")) // DR-044 §1: cardinality 不問で常に配列 / DR-105 §3
+  assert_eq(ent.flatten, true)
 }
 
 // ── bounded repeat (LOWERING §B.8): min heads + BoundedTail、Ref 再帰なし ─────
@@ -395,7 +401,8 @@ test "repeat installer: bounded max lowers to min heads + BoundedTail (no Ref)" 
   assert_eq(sc.positional[1], BoundedTail(StrArg("f", []), 2, false))
   // Ref template は登録されない (Ref 再帰なし)
   let ent = entity_of(sc, "f").unwrap()
-  assert_eq(ent.accum, Some("flatten"))
+  assert_eq(ent.accum, Some("append")) // DR-105 §3
+  assert_eq(ent.flatten, true)
 }
 
 // ── BGroup + bounded repeat → IdxRepeat budget (issue

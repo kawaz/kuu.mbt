@@ -451,10 +451,35 @@ pub(all) struct Entity {
   // cygwin)` のダイヤル。既定 true。`is_tty` が false の cell では未使用。
   tty_cygwin : Bool
   // The accumulators-registry name (DR-036) that folds this cell's effect list, or None for a
-  // scalar cell. Built-ins: "flatten" (repeat's cons [T,[T,…]] → T[], DR-043) and "append"
-  // (multiple's value fold, DR-034). Both realize a value LIST here; the name records WHICH
-  // registry accumulator so the AST is self-describing (a scalar cell has None).
-  accum : String? // None = scalar; Some("flatten"|"append"|...) = accumulate via that registry entry
+  // scalar cell. Built-ins today: "append" (multiple's value fold, DR-034 — also the repeat
+  // installer's own cons-unfold cell as of DR-105 §3, `flatten` field below carries the dial that
+  // used to be the standalone "flatten" accumulator name), "merge" (DR-080), "kv_map" (DR-091 §2).
+  // Realizes a value LIST here; the name records WHICH registry accumulator so the AST is
+  // self-describing (a scalar cell has None).
+  accum : String? // None = scalar; Some("append"|"merge"|"kv_map") = accumulate via that registry entry
+  // DR-105 §1 flatten dial (append accumulator only, `installer.mbt`'s `ensure_entity` enforces
+  // this invariant — a non-append accum cell always carries false here, the definition-error gate
+  // `collect_flatten_non_append` rejects any other declared combination before lowering runs):
+  // whether an array-shaped fire value gets expanded by ONE level into the accumulated array
+  // instead of pushed as a single nested element (`resolve.mbt`'s SEGS-loop per-fire builder is the
+  // one reachable consumer today — DR-084 §2's ref+repeat+multiple row array is the only shape in
+  // kuu.mbt where a single fire's value is itself array-shaped; `Value` (value.mbt) has no array
+  // variant, so a plain scalar multiple cell's fire is never array-shaped and this dial is
+  // observationally inert there, DR-105 §1's "非配列 → 丸ごと1要素" clause holds vacuously).
+  // `ensure_entity`'s repeat-cons branch (no `multiple` declared) ALSO sets this true unconditionally
+  // (DR-105 §3: the old standalone "flatten" accumulator's lowering output is now `append` +
+  // `flatten:true`) — `is_multiple_decl` below is what still tells the two origins apart where the
+  // distinction actually matters (DR-084 §2's firing-preserving-vs-discard gate).
+  flatten : Bool
+  // DR-084 §2 origin marker: whether this cell's accumulator seat came from a declared `multiple`
+  // (append-preserving-across-firings) as opposed to the repeat installer's own cons-unfold cell
+  // (no `multiple` declared, discard-earlier-firings/last-wins-whole-cell — `last-wins-repeat-
+  // rows.json`). Before DR-105 this distinction rode on `accum == Some("flatten")` vs not; DR-105 §3
+  // collapses both origins onto the SAME accum name ("append") + flatten dial, so `resolve.mbt`'s
+  // SEGS-loop gate (`build_result`'s `seg_is_multiple_ref`) needs this independent copy of
+  // `ElemDef.multiple` to keep telling them apart (`ensure_entity`'s doc comment / `AccumCell`'s own
+  // copy in resolve.mbt).
+  is_multiple_decl : Bool
   // DR-036 collector: the T[]→U transform applied to an `accum` cell's FINAL accumulated array
   // (build_result's ACCUMULATE branch, `resolve.mbt`'s `apply_collector`). Only meaningful when
   // `accum is Some(_)` — a scalar cell has no accumulated array to collect from, so this stays

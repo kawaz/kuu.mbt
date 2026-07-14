@@ -293,11 +293,12 @@ pub fn lookup_filter(name : String) -> FilterDescriptor? {
 /// issue accum-post-filters-stage7 / DR-083 §2's "value_filters per piece → accumulator 畳み →
 /// accum_filters" order, DR-102 属性分割) — dedupes by `Value` structural equality, first-occurrence
 /// order preserved (stable, mirrors how a human reads "unique" — not sorted). 0-arg (same shape as
-/// `increment`).
+/// `increment`). A `Transform` (DR-105 §4's Validate/Transform split applied to the ARRAY registry
+/// for the first time) — never rejects, so this always returns `Ok`.
 fn array_filter_unique(
   vs : Array[Value],
   _args : Array[String],
-) -> Array[Value] {
+) -> Result[Array[Value], (String, String)] {
   let out : Array[Value] = []
   for v in vs {
     let mut dup = false
@@ -311,7 +312,58 @@ fn array_filter_unique(
       out.push(v)
     }
   }
-  out
+  Ok(out)
+}
+
+///|
+/// `length_range:<min>:<max>` (DR-105 §5): ARRAY filter registry's first `Validate` — checks the
+/// accumulated cell's array LENGTH (not its element values, unlike scalar `in_range`), never
+/// transforms it. `min`/`max` parsed via `parse_number` (same canonical DR-074 §1 lexicon
+/// `filter_in_range` uses) — a malformed arg is a filter-definition-bug path (`filter_rejected`
+/// fallback, same posture `filter_in_range`'s own arg-parse arms use), NOT one of this descriptor's
+/// declared reasons (`installer.mbt`'s `collect_invalid_numeric_filter_args`, DR-082 §3, catches a
+/// non-numeric/wrong-arity `length_range` at definition time — this runtime arm is defensive).
+/// `too_short`/`too_long` mirror `in_range`'s `too_small`/`too_large` naming (DR-066 reason-code
+/// symmetry, DR-105 §5).
+fn array_filter_length_range(
+  vs : Array[Value],
+  args : Array[String],
+) -> Result[Array[Value], (String, String)] {
+  if args.length() != 2 {
+    return Err(
+      ("filter_rejected", "length_range requires exactly 2 args (min, max)"),
+    )
+  }
+  let min = match parse_number(args[0]) {
+    Some(d) => d
+    None =>
+      return Err(
+        (
+          "filter_rejected",
+          "length_range min '" + args[0] + "' is not a number",
+        ),
+      )
+  }
+  let max = match parse_number(args[1]) {
+    Some(d) => d
+    None =>
+      return Err(
+        (
+          "filter_rejected",
+          "length_range max '" + args[1] + "' is not a number",
+        ),
+      )
+  }
+  let n = vs.length().to_double()
+  if n < min {
+    Err(("too_short", "array length \{vs.length()} is less than min \{min}"))
+  } else if n > max {
+    Err(
+      ("too_long", "array length \{vs.length()} is greater than max \{max}"),
+    )
+  } else {
+    Ok(vs)
+  }
 }
 
 ///|
@@ -323,19 +375,43 @@ fn array_filter_unique(
 /// has no per-piece step left to run this at). A separate registry from `filters_registry()` (not a
 /// variant/overload of it) because the two phases have genuinely different signatures — no name
 /// collision risk since `installer.mbt`'s `collect_unknown_filter` rejects an accum entity's
-/// accum_filters chain containing a name this registry doesn't know, at DEFINITION time — by the
-/// time `build_result` (resolve.mbt) runs this chain, every name is already known-valid, so this
-/// phase's `run` can stay a plain `Array[Value] => Array[Value]` (no `Result`, no error channel to
-/// thread through `build_result`'s existing `-> RVal` signature, DR-082's usual "push structural
-/// validity to definition-error, keep runtime paths total" pattern).
+/// accum_filters chain containing a name this registry doesn't know, at DEFINITION time.
+/// DR-105 §4: the ARRAY filter registry now shares the SAME Validate/Transform signature split as
+/// `FilterDescriptor` (`signature`/`reasons` fields, `run` returns `Result`) — `unique` stayed the
+/// sole resident as a `Transform` (never rejects) until `length_range` (DR-105 §5) became the first
+/// `Validate` resident able to reject. `resolve.mbt`'s `apply_entity_filters` is where the reject
+/// actually surfaces as a `ParseError` (DR-102 §4's `args.length()` attribution) — by the time
+/// `build_result` runs this chain again (to get the transformed array for rendering), every chain
+/// has already been proven non-rejecting, so that call site's `Err` arm is defensive-only.
 pub(all) struct ArrayFilterDescriptor {
   name : String
-  run : (Array[Value], Array[String]) -> Array[Value]
+  signature : FilterSignature
+  reasons : Array[String]
+  run : (Array[Value], Array[String]) -> Result[Array[Value], (String, String)]
 }
 
 ///|
 fn array_filters_registry() -> Map[String, ArrayFilterDescriptor] {
-  Map::from_array([("unique", { name: "unique", run: array_filter_unique })])
+  Map::from_array([
+    (
+      "unique",
+      {
+        name: "unique",
+        signature: Transform,
+        reasons: [],
+        run: array_filter_unique,
+      },
+    ),
+    (
+      "length_range",
+      {
+        name: "length_range",
+        signature: Validate,
+        reasons: ["too_short", "too_long"],
+        run: array_filter_length_range,
+      },
+    ),
+  ])
 }
 
 ///|
@@ -346,26 +422,29 @@ pub fn lookup_array_filter(name : String) -> ArrayFilterDescriptor? {
 }
 
 ///|
-/// Run an accum cell's accum_filters chain (DR-009 段 7, DR-102 属性分割, Array[Value] =>
-/// Array[Value]) over its final accumulated array, in declared order. Unlike `apply_filter_chain`,
-/// this has no `Result` return — `installer.mbt`'s `collect_unknown_filter` already guarantees
-/// every chain entry reaching here is a registered array filter name (definition-time gate,
-/// `ArrayFilterDescriptor`'s doc comment). An unregistered name here is therefore unreachable in
-/// practice; falls back to a no-op pass-through rather than aborting (same defensive posture as
-/// `apply_collector`'s "unrecognized name — identity" fallback, both guarded by a decode-time vocab
-/// check that runs before this ever sees the name).
+/// Run an accum cell's accum_filters chain (DR-009 段 7, DR-102 属性分割, DR-105 §4 Result-ified)
+/// over its final accumulated array, in declared order — short-circuits on the first `Err`, mirroring
+/// `apply_filter_chain`'s scalar-side chain walk. `installer.mbt`'s `collect_unknown_filter` already
+/// guarantees every chain entry reaching here is a registered array filter name (definition-time
+/// gate, `ArrayFilterDescriptor`'s doc comment); an unregistered name here is therefore unreachable
+/// in practice and is skipped (same defensive posture as `apply_collector`'s "unrecognized name —
+/// identity" fallback).
 pub fn apply_accum_filter_chain(
   chain : Array[FilterSpelling],
   vs : Array[Value],
-) -> Array[Value] {
+) -> Result[Array[Value], (String, String)] {
   let mut current = vs
   for fs in chain {
     match lookup_array_filter(fs.name) {
-      Some(d) => current = (d.run)(current, fs.args)
       None => ()
+      Some(d) =>
+        match (d.run)(current, fs.args) {
+          Ok(v2) => current = v2
+          Err(e) => return Err(e)
+        }
     }
   }
-  current
+  Ok(current)
 }
 
 ///|
