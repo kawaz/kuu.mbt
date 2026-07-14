@@ -1,6 +1,6 @@
 ---
 title: kuu-core API の整理 — conformance エンジンから正面玄関のあるライブラリへ
-status: wip
+status: resolved
 category: task
 created: 2026-07-14T23:04:26+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered: 2026-07-15T00:22:41+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-15T01:10:24+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/MDR-005","implemented","done: parse_definition(Json)->Result[AtomicAST,DefLoadError] / parse(ast,args)->Outcome / complete(ast,args_before,args_after?)->Array[Cand] の 3 関数を front_door.mbt に新設 (AtomicAST は不透明ハンドル、DefLoadError は Malformed/Rejected の 2 層)","done: wire decode を json_conformance_wbtest.mbt から wire_decode.mbt へ昇格、conformance runner が production decoder をドッグフーディング","done: 公開面キュレーション — 利用者向け 18 型は pub(all) 維持、内部 41 型は pub 格下げ (フィールド非公開)","done: パッケージ分割は不要と判明 (単一パッケージ + pub 調整で成立、MDR-005 に記録)","done: 観測不変確認 — conformance 263/644/0/0・moon test 327/327 がベースラインと完全一致、moon check --deny-warn クリーン","done: push 済み (main 24bbd18a)、CI run 29348271974 green","derived:audit-node-nodashstr-deprmark-variants"]
 blocked_by:
 origin: kuu spec session (kawaz 承認 2026-07-14 r14)
 ---
