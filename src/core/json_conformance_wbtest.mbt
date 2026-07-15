@@ -1827,12 +1827,13 @@ fn bool_str(b : Bool) -> String {
 ///|
 /// The canonical single-candidate projection BOTH the live `Cand` (`cand_str`) and the fixture's
 /// decoded expectation (`exp_candidate_str`) reduce to — CONFORMANCE §3's 6-field structural
-/// equality (spelling/is_value/ty/origin/term/meta), `completer` excluded (DR-104 §2: opt-in, and
-/// the reference `Cand` has no such field yet to compare against, "実装側の追随タスクとして残る").
-/// `spelling`/`ty` are normalized to `""` on their "doesn't apply" side (DR-104 §2: `spelling`
-/// meaningless when `is_value:true`, `ty` meaningless when `is_value:false`) so a fixture that
-/// omits the moot field and a live `Cand` that carries a leftover tag there (e.g. `cand_trigger`'s
-/// placeholder `TFlag`) still compare equal.
+/// equality (spelling/is_value/ty/origin/term/meta) PLUS an OPT-IN 7th field, `completer` (DR-104
+/// §2/§3, CONFORMANCE §3 COMP-Q3): included in the string only when `with_completer` is true (a
+/// per-fixture-set decision, mirroring `errors[].reason`'s own opt-in — see `exp_errors_decode`'s
+/// `with_reason`). `spelling`/`ty` are normalized to `""` on their "doesn't apply" side (DR-104 §2:
+/// `spelling` meaningless when `is_value:true`, `ty` meaningless when `is_value:false`) so a
+/// fixture that omits the moot field and a live `Cand` that carries a leftover tag there (e.g.
+/// `cand_trigger`'s placeholder `TFlag`) still compare equal.
 fn cand_fields_str(
   spelling : String,
   is_value : Bool,
@@ -1842,33 +1843,47 @@ fn cand_fields_str(
   is_alias : Bool,
   hidden : Bool,
   deprecated : Bool,
+  completer? : String? = None,
 ) -> String {
-  "spelling=" +
-  spelling +
-  "|is_value=" +
-  bool_str(is_value) +
-  "|ty=" +
-  ty +
-  "|origin=" +
-  origin +
-  "|term=" +
-  term +
-  "|is_alias=" +
-  bool_str(is_alias) +
-  "|hidden=" +
-  bool_str(hidden) +
-  "|deprecated=" +
-  bool_str(deprecated)
+  let base = "spelling=" +
+    spelling +
+    "|is_value=" +
+    bool_str(is_value) +
+    "|ty=" +
+    ty +
+    "|origin=" +
+    origin +
+    "|term=" +
+    term +
+    "|is_alias=" +
+    bool_str(is_alias) +
+    "|hidden=" +
+    bool_str(hidden) +
+    "|deprecated=" +
+    bool_str(deprecated)
+  match completer {
+    Some(c) => base + "|completer=" + c
+    None => base
+  }
 }
 
 ///|
-fn cand_str(c : Cand) -> String {
+/// `with_completer` (DR-104 §2/§3 opt-in, per-fixture-set — see `exp_candidate_str`'s detection):
+/// when true, `c.completer` (`None` normalized to `""`, mirroring `errors[].reason`'s absent-on-a-
+/// specific-element convention) joins the 6-field identity string; the dedup identity itself
+/// (`complete_tree`'s dedup loop, outcome.mbt) never looks at this field regardless.
+fn cand_str(c : Cand, with_completer : Bool) -> String {
   let term_s = match c.term {
     WordEnd => "word_end"
     Cont => "cont"
   }
   let ty_s = if c.is_value { ty_str(c.ty) } else { "" }
   let spelling_s = if c.is_value { "" } else { c.spelling }
+  let completer_arg = if with_completer {
+    Some(c.completer.unwrap_or(""))
+  } else {
+    None
+  }
   cand_fields_str(
     spelling_s,
     c.is_value,
@@ -1878,16 +1893,17 @@ fn cand_str(c : Cand) -> String {
     c.meta.is_alias,
     c.meta.hidden,
     c.meta.deprecated,
+    completer=completer_arg,
   )
 }
 
 ///|
 /// `candidates` is a SET (CONFORMANCE §3/§4, DR-104 §4 — same treatment as `interpretations`):
 /// sort + join, mirroring `deferrs_str`'s pattern in this same file.
-fn cands_set_str(cs : Array[Cand]) -> String {
+fn cands_set_str(cs : Array[Cand], with_completer : Bool) -> String {
   let items : Array[String] = []
   for c in cs {
-    items.push(cand_str(c))
+    items.push(cand_str(c, with_completer))
   }
   sort_items(items)
   join_comma(items)
@@ -1897,7 +1913,13 @@ fn cands_set_str(cs : Array[Cand]) -> String {
 /// Decode ONE `expect.candidates[]` entry (DR-104 §2, schema `$defs/candidate`) straight into the
 /// SAME canonical string `cand_str` produces from a live `Cand` — `run_complete` then compares with
 /// a plain `==`, matching `deferrs_str`/`exp_errors_decode`'s decode-to-comparable-string pattern.
-fn exp_candidate_str(j : Json) -> String raise DecodeSkip {
+/// `with_completer` (COMP-Q3 opt-in, detected per-fixture-set by `dec_complete_case` — mirrors
+/// `exp_errors_decode`'s `with_reason`) decides whether `completer` joins the comparison string;
+/// an element that omits the key while its siblings declare it compares against `""` (absent).
+fn exp_candidate_str(
+  j : Json,
+  with_completer : Bool,
+) -> String raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("candidate is not an object")
@@ -1976,19 +1998,39 @@ fn exp_candidate_str(j : Json) -> String raise DecodeSkip {
       }
     None => raise DecodeSkip("candidate.meta missing 'deprecated'")
   }
+  // DR-104 §2 (d) / COMP-Q3: opt-in — absent on THIS element compares as "" even when a sibling
+  // candidate in the same fixture case turned with_completer on (same convention as
+  // `errors[].reason`'s per-element absence, `exp_errors_decode`).
+  let completer_arg = if with_completer {
+    Some(jf_str(o, "completer").unwrap_or(""))
+  } else {
+    None
+  }
   cand_fields_str(
-    spelling, is_value, ty_s, origin, term, is_alias, hidden, deprecated,
+    spelling,
+    is_value,
+    ty_s,
+    origin,
+    term,
+    is_alias,
+    hidden,
+    deprecated,
+    completer=completer_arg,
   )
 }
 
 ///|
 /// DR-104 §1: `query: "complete"` fixture の 1 case — `args_before` (必須) / `args_after`
-/// (optional) を入力に `candidates` の期待集合 (ソート済み連結文字列) を持つ。
+/// (optional) を入力に `candidates` の期待集合 (ソート済み連結文字列) を持つ。`with_completer`
+/// (COMP-Q3 opt-in, detected per-case over this case's own `candidates[]` — mirrors
+/// `exp_errors_decode`'s per-errors-array `with_reason` detection) drives whether `run_complete`
+/// projects the live side's `completer` into the comparison string too.
 struct DCompleteCase {
   id : String
   args_before : Array[String]
   args_after : Array[String]
   exp_candidates : String
+  with_completer : Bool
 }
 
 ///|
@@ -2042,12 +2084,27 @@ fn dec_complete_case(cj : Json) -> DCompleteCase raise DecodeSkip {
     Some(x) => x
     None => raise DecodeSkip("expect.candidates is not an array")
   }
+  // detect completer opt-in first (per this case's candidates array, not per element — mirrors
+  // `exp_errors_decode`'s with_reason detection over its errors array).
+  let mut with_completer = false
+  for cj2 in arr {
+    match cj2.j_obj() {
+      Some(co2) => if has_key(co2, "completer") { with_completer = true }
+      None => raise DecodeSkip("candidate is not an object")
+    }
+  }
   let items : Array[String] = []
   for cj2 in arr {
-    items.push(exp_candidate_str(cj2))
+    items.push(exp_candidate_str(cj2, with_completer))
   }
   sort_items(items)
-  { id, args_before, args_after, exp_candidates: join_comma(items) }
+  {
+    id,
+    args_before,
+    args_after,
+    exp_candidates: join_comma(items),
+    with_completer,
+  }
 }
 
 ///|
@@ -2127,7 +2184,7 @@ fn run_complete(fx : DCompleteFixture, c : DCompleteCase) -> String {
     defs=fx.registry,
     after=c.args_after,
   )
-  let got = cands_set_str(cs)
+  let got = cands_set_str(cs, c.with_completer)
   if got == c.exp_candidates {
     "PASS"
   } else {
@@ -4941,6 +4998,188 @@ test "codex-20260712: differing dd placeholder keys do not split path dedup (DES
   let df = dec_fixture(@json.parse(src))
   assert_eq(df.cases.length(), 1)
   let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+// ── DR-060 §4 / DR-104 §2(d): completer 配線 (issue 2026-07-14-cand-completer-followup) ──────
+
+///|
+/// 配線の基本 + opt-in 比較 (CONFORMANCE §3 COMP-Q3): option の値位置候補に `completer:
+/// "<名前>"` (wire) → `Entity.completer` → `Cand.completer` の carry が通ることを、同一
+/// definition・同一 args_before に対して (a) completer を明記した case (opt-in 発火、値が
+/// 一致することを要求) と (b) completer を書かない case (opt-in 不発火、実装が completer を
+/// 持っていても比較対象外になり PASS する) の両方で pin する。
+test "DR-060 §4 / DR-104 §2(d): option の値位置候補に completer が配線される (opt-in 比較の両面)" {
+  let src =
+    #|{
+    #|  "why": "completer wiring pin (inline)",
+    #|  "query": "complete",
+    #|  "definition": {
+    #|    "options": [{"name": "port", "type": "number", "long": true, "completer": "files"}]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "completer-opt-in-checked",
+    #|      "why": "--port のトリガ消費後、値スロット候補 (number, origin=port) に completer=files が乗る (opt-in 発火、値まで比較)",
+    #|      "args_before": ["--port"],
+    #|      "expect": {"outcome": "complete", "candidates": [
+    #|        {"is_value": true, "ty": "number", "origin": "port", "term": "word_end", "meta": {"is_alias": false, "hidden": false, "deprecated": false}, "completer": "files"}
+    #|      ]}
+    #|    },
+    #|    {
+    #|      "id": "completer-opt-out-not-checked",
+    #|      "why": "同じ定義・同じ入力で completer キーを書かない case — 実装が completer=files を返しても opt-in 不発火のため比較対象外、PASS する (COMP-Q3)",
+    #|      "args_before": ["--port"],
+    #|      "expect": {"outcome": "complete", "candidates": [
+    #|        {"is_value": true, "ty": "number", "origin": "port", "term": "word_end", "meta": {"is_alias": false, "hidden": false, "deprecated": false}}
+    #|      ]}
+    #|    }
+    #|  ]
+    #|}
+  let fx = dec_complete_fixture(@json.parse(src))
+  assert_eq(fx.cases.length(), 2)
+  for c in fx.cases {
+    let verdict = run_complete(fx, c)
+    if verdict != "PASS" {
+      abort("case " + c.id + ": expected PASS, got: " + verdict)
+    }
+  }
+}
+
+///|
+/// positional の値スロットにも completer が配線されることの pin — DR-060 §4 は「アプリ固有の
+/// 動的候補」を option 限定と規定していない (option 専用の `hidden` とは対照的、CandMeta.hidden
+/// の doc comment 参照)。
+test "DR-060 §4: positional の値位置候補にも completer が配線される" {
+  let src =
+    #|{
+    #|  "why": "positional completer wiring pin (inline)",
+    #|  "query": "complete",
+    #|  "definition": {
+    #|    "positionals": [{"name": "target", "type": "string", "completer": "hosts"}]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "positional-value-slot-gets-completer",
+    #|      "why": "args_before 空: positional target がまだ何も消費していない先頭値スロット、completer=hosts が乗る",
+    #|      "args_before": [],
+    #|      "expect": {"outcome": "complete", "candidates": [
+    #|        {"is_value": true, "ty": "string", "origin": "target", "term": "word_end", "meta": {"is_alias": false, "hidden": false, "deprecated": false}, "completer": "hosts"}
+    #|      ]}
+    #|    }
+    #|  ]
+    #|}
+  let fx = dec_complete_fixture(@json.parse(src))
+  let verdict = run_complete(fx, fx.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// merge 規則: 6 フィールド一致・completer 一致 (2 つの独立 command 定義が同名 positional
+/// `target` を持ち、両方とも同じ completer を宣言する) — dedup 後も completer=files が
+/// 保持されることの pin (positive case)。
+test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が一致する場合は保持される" {
+  let src =
+    #|{
+    #|  "why": "merge rule positive pin (inline)",
+    #|  "query": "complete",
+    #|  "definition": {
+    #|    "commands": [
+    #|      {"type": "command", "name": "build", "positionals": [{"name": "target", "type": "string", "completer": "files"}]},
+    #|      {"type": "command", "name": "build", "positionals": [{"name": "target", "type": "string", "completer": "files"}]}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "matching-completer-across-sibling-command-defs-is-preserved",
+    #|      "why": "\"build\" 消費後、両 command 定義の子 scope それぞれから origin=target の値スロット候補が生成される (DR-067 §1 の重複トリガ経路と同型、dedup.json の command-scope 版)。6 フィールド一致 + completer 一致 (files=files) → 1 件に畳まれ completer=files を保持する",
+    #|      "args_before": ["build"],
+    #|      "expect": {"outcome": "complete", "candidates": [
+    #|        {"is_value": true, "ty": "string", "origin": "target", "term": "word_end", "meta": {"is_alias": false, "hidden": false, "deprecated": false}, "completer": "files"}
+    #|      ]}
+    #|    }
+    #|  ]
+    #|}
+  let fx = dec_complete_fixture(@json.parse(src))
+  let verdict = run_complete(fx, fx.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// Rooted-escape (global option) の completer 解決 pin: global option の値スロットは
+/// command 子 scope 内で消費されるが、その Entity は宣言元 (root) scope にしか存在しない
+/// (issue 2026-07-14-cand-completer-followup、実装過程で発見した Cand.link 機構 — `Binding.link`
+/// と同じ Rooted-escape カウンタが Cand にも必要だった)。子 scope 内の値スロット候補が正しく
+/// root 側の completer を引けることを固定する。
+test "DR-060 §4: global option の値スロット candidate は Rooted escape を跨いでも正しい completer を引く" {
+  let src =
+    #|{
+    #|  "why": "global-option completer lookup across Rooted escape (inline)",
+    #|  "query": "complete",
+    #|  "definition": {
+    #|    "options": [{"name": "verbose", "type": "number", "long": true, "completer": "levels", "global": true}],
+    #|    "commands": [
+    #|      {"type": "command", "name": "build", "options": []}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "global-value-slot-completer-survives-command-scope-copy",
+    #|      "why": "\"build\" で子 scope に入り、global コピーされた --verbose のトリガを消費、値スロット (number, origin=verbose) の completer は宣言元 root の completer=levels を指す — 子 scope 側には --verbose の Entity 自体が存在しない (link 衛星、実体は root のまま)",
+    #|      "args_before": ["build", "--verbose"],
+    #|      "expect": {"outcome": "complete", "candidates": [
+    #|        {"is_value": true, "ty": "number", "origin": "verbose", "term": "word_end", "meta": {"is_alias": false, "hidden": false, "deprecated": false}, "completer": "levels"}
+    #|      ]}
+    #|    }
+    #|  ]
+    #|}
+  let fx = dec_complete_fixture(@json.parse(src))
+  let verdict = run_complete(fx, fx.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// merge 規則: 6 フィールド一致・completer 不一致 (2 つの独立 command 定義が同名 `target`
+/// positional を持ち、異なる completer (files/urls) を宣言する) — DR-104 §3 明確化 note により
+/// dedup 後の候補は completer なし (None) へ畳まれることの pin (negative case)。`build`/`build`
+/// という同名の兄弟 command は path 表現 (scope 名の列) では区別できない (DR-067 §1 が合法化する
+/// 同名重複の兄弟版) ため、`collect_all_entities` の収集時点で衝突検出する実装になっている
+/// (positive case の一致 pin と対照させる)。opt-in は `target` 候補自身に `"completer": ""`
+/// (省略と同値、CONFORMANCE §3) を明示することで発火させる — before=["build"] の時点では
+/// `--verbose` 自体のトリガはまだ消費されておらず (exact 候補、completer は元々常に無意味) その
+/// 値スロットは同居しないため、他の候補と同居させる正の一致確認は別 test (positive case) の役目。
+test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が食い違う場合は completer なしへ畳まれる" {
+  let src =
+    #|{
+    #|  "why": "merge rule negative pin (inline)",
+    #|  "query": "complete",
+    #|  "definition": {
+    #|    "commands": [
+    #|      {"type": "command", "name": "build", "positionals": [{"name": "target", "type": "string", "completer": "files"}]},
+    #|      {"type": "command", "name": "build", "positionals": [{"name": "target", "type": "string", "completer": "urls"}]}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "conflicting-completer-across-sibling-command-defs-merges-to-none",
+    #|      "why": "\"build\" 消費後、両 command 定義の子 scope それぞれから origin=target の値スロット候補 (completer=files / completer=urls) が生成される。6 フィールドは一致するが completer が食い違うため、DR-104 §3 明確化 note によりこの候補は completer なしへ畳まれる (completer:\"\" で opt-in を発火させつつ、実際の値が空であることを assert する)",
+    #|      "args_before": ["build"],
+    #|      "expect": {"outcome": "complete", "candidates": [
+    #|        {"is_value": true, "ty": "string", "origin": "target", "term": "word_end", "meta": {"is_alias": false, "hidden": false, "deprecated": false}, "completer": ""}
+    #|      ]}
+    #|    }
+    #|  ]
+    #|}
+  let fx = dec_complete_fixture(@json.parse(src))
+  let verdict = run_complete(fx, fx.cases[0])
   if verdict != "PASS" {
     abort("expected PASS, got: " + verdict)
   }
