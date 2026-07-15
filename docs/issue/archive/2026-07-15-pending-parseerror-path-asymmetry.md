@@ -1,6 +1,6 @@
 ---
 title: Pending→ParseError (missing_operand) 変換経路の path が Held 直接経路と非対称 (Cand.link escape の漏れ出し疑い)
-status: wip
+status: resolved
 category: bug
 created: 2026-07-15T15:21:24+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered: 2026-07-15T15:48:34+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-15T16:45:55+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-066","implemented"]
 blocked_by:
 origin: audit-held-path-rooted-escape 調査の副次発見 (archive 済み、close_reason の note 参照)
 ---
@@ -88,8 +88,10 @@ Cand.link (complete() 専用の内部実装、node.mbt コメントで purely an
       でなく `c.fire_path` を読む)。simple 再現・sibling flag・nested
       depth2 の全反例パターンで 1 件 (正しい path) に収束することを
       wbtest で実機確認
-- [ ] spec fixture で global option 値 starve の errors 期待
+- [x] spec fixture で global option 値 starve の errors 期待
       (`path=["a"]` 1 件) を pin する (ロックステップ、統括側で後続手配)
+      → `fixtures/command-scope/global-missing-operand-path.json` (kawaz/kuu)
+      に depth 0/1/2 の 3 case で追加、全 case で path 1 件収束を pin 済み
 - [x] 既存 test green を維持する (344 → 346、conformance mismatches=0
       skipped=0)
 
