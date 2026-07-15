@@ -1743,26 +1743,30 @@ fn inst_long(
               // nor `long_eq_sep` requires this pairing — an unpaired empty prefix is legal and any
               // resulting collision surfaces as Ambiguous instead.
               if e.long_eq_sep != EsRequire {
-                add_greedy(
-                  build,
-                  maybe_root(
-                    e.link_depth,
-                    Seq([
-                      Exact(trigger),
-                      value_prim(
-                        e.ty,
-                        e.name,
-                        e.int_round,
-                        e.allow_base_prefix,
-                        e.bool_config,
-                        e.piece_filters,
-                        separator=e.separator,
-                        merge=e.accumulator == Some("merge"),
-                        kv_map=e.accumulator == Some("kv_map"),
-                      ),
-                    ]),
+                // DR-058 §2: a deprecated element's space-form main entry carries a `DeprMark`
+                // warning marker after its value slot (node.mbt's `DeprMark` doc shape), mirroring
+                // `inst_short`'s `depr: e.deprecated` on the SAME element (`e.deprecated` covers
+                // both a directly-deprecated canonical entry and a deprecated alias entry-copy,
+                // DR-057 §3 `alias_entry` — both fold into this ONE `ElemDef.deprecated` bool by
+                // the time lowering runs, so no alias-specific branch is needed here).
+                let sat : Array[Node] = [
+                  Exact(trigger),
+                  value_prim(
+                    e.ty,
+                    e.name,
+                    e.int_round,
+                    e.allow_base_prefix,
+                    e.bool_config,
+                    e.piece_filters,
+                    separator=e.separator,
+                    merge=e.accumulator == Some("merge"),
+                    kv_map=e.accumulator == Some("kv_map"),
                   ),
-                )
+                ]
+                if e.deprecated {
+                  sat.push(DeprMark(e.name))
+                }
+                add_greedy(build, maybe_root(e.link_depth, Seq(sat)))
               }
           }
       }
@@ -1874,21 +1878,29 @@ fn inst_long(
       // 綴りが long_prefix 非既定時に分裂する (DR-091 §3 の一貫性を variant にも及ぼす)。既定
       // "--" なので既存挙動 (main entry と揃った "--" 綴り) は不変。
       let trigger = e.long_prefix + v.trigger
-      let sat = match v.op {
+      // DR-058 §2: a deprecated element's variant satellite (Set's Bind OR a non-Set EffMark) also
+      // carries a trailing `DeprMark` — every long entry point this element owns fires the SAME
+      // warning, symmetric with `inst_short`'s per-char `depr: e.deprecated` (a short cluster char
+      // has no variant/main-entry split, so ONE application point covers it; long's split into
+      // main-entry (above) + variant (here) needs both covered for parity).
+      let nodes : Array[Node] = match v.op {
         Set => {
           let operand = match v.operand {
             Some(val) => val
             None => VBool(true)
           }
           if e.fail_action {
-            Seq([Exact(trigger), Bind(e.name, operand), FailMark(e.name)])
+            [Exact(trigger), Bind(e.name, operand), FailMark(e.name)]
           } else {
-            Seq([Exact(trigger), Bind(e.name, operand)])
+            [Exact(trigger), Bind(e.name, operand)]
           }
         }
-        _ => Seq([Exact(trigger), EffMark(e.name, v.op)])
+        _ => [Exact(trigger), EffMark(e.name, v.op)]
       }
-      add_greedy(build, maybe_root(e.link_depth, sat))
+      if e.deprecated {
+        nodes.push(DeprMark(e.name))
+      }
+      add_greedy(build, maybe_root(e.link_depth, Seq(nodes)))
     }
   }
 }

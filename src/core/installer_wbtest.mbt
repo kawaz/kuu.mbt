@@ -196,6 +196,68 @@ test "long installer: value option gets 1 greedy Seq satellite + 1 EqSplit match
   assert_eq(ent.default_values, None)
 }
 
+///|
+/// 保証 (DR-058 §2): a deprecated VALUE main entry's satellite carries a trailing `DeprMark`
+/// warning marker after its value slot (`inst_long`'s space-form main-entry arm, node.mbt's
+/// `DeprMark` doc shape) — mirrors `inst_short`'s `depr: e.deprecated` short-cluster coverage
+/// (matcher_wbtest.mbt「short cluster: deprecated entry rides a @depr marker」). `deprecated: true`
+/// on a plain (non-alias) element stands in for both cases DR-058 §2 requires a warning for — a
+/// directly-deprecated canonical entry, and a deprecated alias entry-copy (DR-057 §3
+/// `alias_entry`) — both fold into the SAME `ElemDef.deprecated` bool by the time `inst_long` runs,
+/// so lowering cannot (and need not) distinguish them. Firing the entry (`--port 8080`) must NOT
+/// alter the parsed value (`port` still binds `8080`) — only a `@depr:port` bookkeeping marker is
+/// added, collected by `warnings_of`.
+test "long installer: a deprecated value option's main-entry satellite carries a DeprMark warning marker (DR-058 §2)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [{ ..el("port", TStr, long=LList([":set"])), deprecated: true }],
+  }
+  let sc = ok_scope(def, [LongInst])
+  assert_eq(
+    sc.greedy[0],
+    Seq([Exact("--port"), StrArg("port", []), DeprMark("port")]),
+  )
+  let o = parse_tree(ScopeNode(sc), ["--port", "8080"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      assert_eq(resolved_values(bs, "port"), [VStr("8080")])
+      assert_eq(warnings_of(o), ["port"])
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証 (DR-058 §2): a deprecated FLAG's Set-variant satellite (`inst_long`'s "Variant entries"
+/// loop — the `:set:true` bare-fire DR-076 §2 規則1 composes for a classic flag) ALSO carries a
+/// trailing `DeprMark`, symmetric with the value main-entry case above. `inst_long` has 2 lowering
+/// sites for a long entry point (space-form main-entry vs the variant loop, since a bare flag fire
+/// is a Set variant, not a main entry — see the "long installer: a flag's `long:true`..." test
+/// above); `inst_short` has only 1 (a cluster char has no variant/main-entry split, `depr` rides
+/// the single `ShortEntry`). Both `inst_long` sites need their own DeprMark application for parity
+/// with the short side — this test locks the variant-loop site (the previous test locks the
+/// main-entry site). Firing `--verbose` both sets `verbose=true` AND records `@depr:verbose`.
+test "long installer: a deprecated flag's Set-variant satellite carries a DeprMark warning marker (DR-058 §2)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [{ ..el("verbose", TFlag, long=LBool(true)), deprecated: true }],
+  }
+  let sc = ok_scope(def, [LongInst])
+  assert_eq(sc.greedy.length(), 1)
+  assert_eq(
+    sc.greedy[0],
+    Seq([Exact("--verbose"), Bind("verbose", VBool(true)), DeprMark("verbose")]),
+  )
+  let o = parse_tree(ScopeNode(sc), ["--verbose"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      assert_eq(resolved_values(bs, "verbose"), [VBool(true)])
+      assert_eq(warnings_of(o), ["verbose"])
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
 // ── flag (TFlag) の default:false preset + fail_action ─────────────────────────
 
 ///|
