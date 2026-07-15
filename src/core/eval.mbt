@@ -616,19 +616,6 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       }
       out
     }
-    NoDashStr(name) =>
-      // pre_filter (spec DR-037): a dashed token REJECTS silently. At the end
-      // of input this stays a Reject too (the filter cannot promise a token
-      // would be accepted), not a Pending.
-      if pos < ctx.toks.length() && !starts_dash(ctx.toks[pos]) {
-        [
-          Accept(pos + 1, [
-            mkb(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos)),
-          ]),
-        ]
-      } else {
-        []
-      }
     IdxRepeat(label, head, min, budget) =>
       idx_repeat_eval(label, head, min, budget, ctx, pos)
     BoundedTail(head, budget, _) =>
@@ -743,14 +730,6 @@ fn req_arg_eval(
       ),
     ]
   }
-}
-
-///|
-fn starts_dash(s : String) -> Bool {
-  for c in s {
-    return c == '-'
-  }
-  false
 }
 
 ///|
@@ -1540,7 +1519,6 @@ fn seq_boundary_name(n : Node) -> String? {
     BoolArg(x, _, _) => Some(x)
     FilterArg(x, _) => Some(x)
     ReqArg(x) => Some(x)
-    NoDashStr(x) => Some(x)
     Bind(x, _) => Some(x)
     EffMark(x, _) => Some(x)
     Scoped(x, _) => Some(x)

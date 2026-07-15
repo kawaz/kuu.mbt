@@ -296,11 +296,6 @@ pub enum Node {
   /// syncs to the one declaring cell instead of a fresh child cell (depth 1 for a direct child,
   /// +1 per re-propagation level). A root global's depth = firing depth (escapes to the root).
   Rooted(Node, Int)
-  /// a filtered string value (DR-037 pre_filter): consumes a token ONLY if it does not
-  /// start with `-`; otherwise it REJECTS (no reading, silently drops — not an Error).
-  /// This is the structural stop that keeps a permissive repeat from eating a following
-  /// `--socket` / `--upstream` trigger inside a no-backbone region (DR-041 §4).
-  NoDashStr(String)
   /// a BOUNDED repeat tail (DR-043 max 有限 / LOWERING §B.8). Consumes 0..budget more heads
   /// on the spine, POROUSLY (via consume_head, so 先食い holds) and with the 取り分選好
   /// preference (greedy default / lazy). A bounded `repeat: {min, max}` lowers to `min`

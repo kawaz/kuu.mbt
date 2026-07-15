@@ -518,7 +518,6 @@ fn prim_name(n : Node) -> String? {
     SepArg(x, _, _, _, _, _, _, _) => Some(x)
     FilterArg(x, _) => Some(x)
     ReqArg(x) => Some(x)
-    NoDashStr(x) => Some(x)
     _ => None
   }
 }

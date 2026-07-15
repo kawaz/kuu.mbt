@@ -2413,8 +2413,8 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
 /// (`visiting` は `head_cycles` と同じ「訪問済み template 名」防御 — 循環 ref は
 /// `collect_circular_ref` が別途 definition-error で弾く前提だが、防御的に無限再帰を避ける)。
 /// `Exact`/`Bind`/`EffMark`/`DeprMark`/`FailMark`/`DdSat`/`DdMatchSat`/`CmdSat`/`NativeMatch`/
-/// `NoDashStr`/`FilterArg`/`ScopeNode` は値を束縛しない (トリガ・0-token マーク・生文字列ガード・
-/// test-only node・ネストスコープ自体) ので無視する。
+/// `FilterArg`/`ScopeNode` は値を束縛しない (トリガ・0-token マーク・test-only node・ネストスコープ
+/// 自体) ので無視する。
 fn collect_value_names(
   node : Node,
   registry : Map[String, Node],
@@ -3245,7 +3245,6 @@ fn head_progresses(
     // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `DdSat`,
     // `keep` (true) is a 0-token Accept (same standing as `Bind`/`EffMark` below).
     DdMatchSat(_, _, self_keep, _) => !self_keep
-    NoDashStr(_) => true // dash-reject でなければ 1 token 消費
     IdxRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
