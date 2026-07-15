@@ -1377,11 +1377,7 @@ fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
     }
   }
   for e in sb.decl.positionals {
-    // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め: `is_exact` (positional
-    // -face nameless exact-match leaf) has no value of its own (`ElemDef.is_exact` doc comment,
-    // `elem_head` lowers it straight to a bare `Exact`) — same "no entity" standing as `is_dd`,
-    // guarded the same way.
-    if not_dd(e) && !e.is_exact {
+    if not_dd(e) {
       ensure_entity_body(sb.build, e, has_cf)
     }
   }
@@ -1396,7 +1392,22 @@ fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
 /// (the array cell — `elem_repeat` on it still drives the existing "flatten" accumulator path,
 /// unaffected by `body`) in ADDITION to its inner leaves (e.g. transparent-seq's `k`, its own cell
 /// with `entity=k` effects).
+///
+/// codex レビュー Major 4 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見): the
+/// `is_exact` guard used to live ONLY at `ensure_entities`' top-level positionals loop (removed
+/// above) — a `BOr`/`BGroup` RECURSIVE call into this same function (branch leaves / group inner
+/// items, both below) bypassed it entirely, so an `is_exact` leaf nested inside a structural or /
+/// named group would fall into the `BCell`/`ref_target is None` arm and get a phantom
+/// `Entity{name: spelling, ty: TNone}` — occupying the namespace and blocking a real same-named
+/// entity's `ensure_entity` (add-if-absent already returns early once ANY entity with that name
+/// exists). Guarding HERE (single entry point every recursive path funnels through) closes both the
+/// top-level and the nested cases with one check, and any future `ElemBody` arm added to this match
+/// inherits the guard automatically (installer.mbt's `ElemDef.is_exact` doc comment: "value_prim/
+/// entity 経路を一切通らない" is the invariant this enforces).
 fn ensure_entity_body(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
+  if e.is_exact {
+    return
+  }
   match e.body {
     BCell =>
       // DR-078 §1 result 写像 (issue 2026-07-09-ref-template-result-shape): a `ref` element is

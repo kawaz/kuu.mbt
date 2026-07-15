@@ -59,3 +59,46 @@ test "dec_or_leaf: shadow に無い bare 型名 (\"int\") は canonical default 
   assert_eq(e.tty_stream, None)
   assert_eq(e.tty_cygwin, true)
 }
+
+///|
+/// codex レビュー Major 3 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見):
+/// `dec_positional` の bare `{"exact": "..."}` shape 検出は `exact` が「唯一のキー」であることを
+/// `only_key` で要求する。旧実装は `name`/`type`/`or`/`ref` の 4 キーだけを明示 deny していたため、
+/// それ以外の同居キー (`repeat`/`optional`/`default` 等) は黙って無視され「受理したように見えて
+/// 意味を捨てる」状態だった (`{"exact":"init","repeat":{...}}` が repeat 宣言を無視して
+/// decode 成功していた) — 代表 3 キーそれぞれで DecodeSkip になることを固定し、この class の
+/// silent-drop が再発しないことを確認する。
+test "dec_positional: bare 'exact' combined with repeat/optional/default DecodeSkips (codex レビュー Major 3)" {
+  let shadows : Map[String, TypeShadow] = Map([])
+  let srcs : Array[String] = [
+    (
+      #|{"exact": "init", "repeat": {"min": 0}}
+    ),
+    (
+      #|{"exact": "init", "optional": true}
+    ),
+    (
+      #|{"exact": "init", "default": "x"}
+    ),
+  ]
+  for src in srcs {
+    let j = @json.parse(src)
+    let _ = dec_positional(j, shadows) catch { DecodeSkip(_) => continue }
+    fail("expected DecodeSkip for: " + src)
+  }
+}
+
+///|
+/// 対極 (codex レビュー Major 3): `exact` が唯一のキーの場合は正常に decode され、`is_exact:true` /
+/// `name` = spelling の `ElemDef` (`exact_marker` 由来) を返す — `only_key` ガードが正当なケースまで
+/// 巻き込んで壊していないことの確認 (self-written-rule-blind-spots の「新規ガード追加時は無変更ケース
+/// も確認する」線)。
+test "dec_positional: bare 'exact' alone decodes to an is_exact marker (対極, codex レビュー Major 3)" {
+  let shadows : Map[String, TypeShadow] = Map([])
+  let src =
+    #|{"exact": "init"}
+  let j = @json.parse(src)
+  let e = dec_positional(j, shadows)
+  assert_eq(e.is_exact, true)
+  assert_eq(e.name, "init")
+}

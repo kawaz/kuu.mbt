@@ -604,6 +604,39 @@ test "BGroup installer: no repeat spec keeps IdxRepeat unbounded (min:0, budget:
   assert_eq(sc.positional[0], IdxRepeat("grp", StrArg("gflag", []), 0, None))
 }
 
+///|
+/// codex レビュー Major 4 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見): the
+/// `is_exact` guard used to live ONLY at `ensure_entities`' top-level positionals loop — a `BGroup`
+/// inner item never passed through that check (`ensure_entity_body`'s `BGroup` arm recurses into
+/// `ensure_entity_body` directly, bypassing the top-level loop entirely), so an `is_exact` leaf
+/// NESTED inside a group got a phantom `Entity{name: spelling, ty: TNone}`. Because `ensure_entity`
+/// is add-if-absent (returns early once ANY entity with that name exists), this phantom entity
+/// BLOCKED a real same-named element declared elsewhere from ever getting its own (correctly-typed)
+/// entity — the exact failure mode this test locks the fix for. `grp` (BGroup containing an
+/// `is_exact` leaf named "marker") is declared BEFORE the real "marker" positional so the bug (if
+/// present) wins the add-if-absent race; the fix routes `is_exact` through `ensure_entity_body`'s
+/// own top-of-function guard (now shared by every recursive call site), so the phantom never gets
+/// registered and the real element's entity lands correctly.
+test "ensure_entity_body: an is_exact leaf nested inside BGroup creates no phantom Entity, letting a same-named real element register its own (codex レビュー Major 4, DR-058 §2)" {
+  let grp : ElemDef = {
+    ..el("grp", TStr),
+    body: BGroup([el("marker", TNone, is_exact=true), el("val", TStr)]),
+  }
+  let marker_real : ElemDef = el("marker", TStr)
+  let def : Definition = { ..empty_def(), positionals: [grp, marker_real] }
+  let sc = ok_scope(def, all_installers())
+  let mut marker_count = 0
+  for ent in sc.entities {
+    if ent.name == "marker" {
+      marker_count = marker_count + 1
+      // the REAL element's type (TStr), not the phantom's TNone — proves the entity that landed
+      // is `marker_real`'s, not a leftover from the BGroup's `is_exact` leaf.
+      assert_eq(ent.ty, TStr)
+    }
+  }
+  assert_eq(marker_count, 1)
+}
+
 // ── multiple の collector 属性 (DR-036, issue 2026-07-09-dec-multiple-collector-decode) ─────
 
 ///|

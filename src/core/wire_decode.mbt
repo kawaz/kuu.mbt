@@ -508,6 +508,24 @@ fn has_key(o : Map[String, Json], k : String) -> Bool {
 }
 
 ///|
+/// codex レビュー Major 3 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見):
+/// whether `o` has EXACTLY `k` and no other key. `dec_positional`'s bare `{"exact": "..."}` shape
+/// detector uses this instead of an explicit deny-list of "other keys with no defined meaning here"
+/// (`repeat`/`optional`/`multiple`/`default`/`piece_filters`/... — the old form silently dropped
+/// any key it forgot to list, e.g. `{"exact":"init","repeat":{...}}` decoded successfully with
+/// `repeat` thrown away). Checking against the POSITIVE allow-set of 1 (rather than a growing
+/// negative deny-list) means any key `dec_positional`'s `allowed_keys` call adds in the future is
+/// automatically rejected here too when combined with `exact` — no separate list to keep in sync.
+fn only_key(o : Map[String, Json], k : String) -> Bool {
+  for key, _ in o {
+    if key != k {
+      return false
+    }
+  }
+  true
+}
+
+///|
 fn allowed_keys(
   o : Map[String, Json],
   allowed : Array[String],
@@ -1894,20 +1912,21 @@ fn dec_positional(
   // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め (DR-063 A.1 / DR-018 配置
   // で役割決定): shape-detect a bare `{"exact": "..."}` leaf BEFORE the "or"/type/name value-cell
   // dispatch below, same early-return style as "positionals" above. wire.schema.json's node $defs
-  // forbid `exact`+`or` / `exact`+`seq` co-occurrence (checked here too, defense in depth); `name`/
-  // `type`/`ref` co-occurring with `exact` has no target fixture and no defined meaning in this
-  // decoder, so it DecodeSkips rather than silently picking one side (deliberately absent, not
-  // deliberately wrong — same posture as this function's `BEnum` note below). Only the bare-string
-  // spelling form is wired (DR-063 §3's bool/number literal-origin `exact` forms are OUT OF SCOPE —
-  // no target fixture exercises them).
+  // forbid `exact`+`or` / `exact`+`seq` co-occurrence; this decoder goes further and requires
+  // `exact` to be the ONLY key present (`only_key`, codex レビュー Major 3) — `repeat`/`optional`/
+  // `multiple`/`default`/`piece_filters`/etc. co-occurring with `exact` has no target fixture and
+  // no defined meaning here, so any of them DecodeSkips rather than being silently swallowed
+  // (deliberately absent, not deliberately wrong — same posture as this function's `BEnum` note
+  // below; the OLD 4-key deny-list here let `{"exact":"init","repeat":{...}}` decode successfully
+  // with `repeat` thrown away — `only_key` closes that class of gap for every current AND future
+  // `allowed_keys` entry, not just the 4 that were enumerated). Only the bare-string spelling form
+  // is wired (DR-063 §3's bool/number literal-origin `exact` forms are OUT OF SCOPE — no target
+  // fixture exercises them).
   match o.get("exact") {
     Some(ej) =>
-      if has_key(o, "name") ||
-        has_key(o, "type") ||
-        has_key(o, "or") ||
-        has_key(o, "ref") {
+      if !only_key(o, "exact") {
         raise DecodeSkip(
-          "positional 'exact' combined with name/type/or/ref is not supported (bare exact-literal leaf only, DR-063 A.1)",
+          "positional 'exact' combined with any other key is not supported (bare exact-literal leaf only, DR-063 A.1)",
         )
       } else {
         match ej.j_str() {
