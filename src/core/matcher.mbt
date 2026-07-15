@@ -160,6 +160,11 @@ fn run_eq_split(
       if e.kind == TCount {
         return [] // DR-077 §3: count takes no =value either — the update effect has no operand
       }
+      // codex レビュー Major 1 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) /
+      // DR-058 §2: eq-split の deprecated warning marker — `walk_short` の `dm` と同じ carrier
+      // パターン (matcher.mbt 上の `dm` 定義コメント参照)。成功パス (Accept) だけに合成する — 値が
+      // 確定して初めて「受理された deprecated 入口」なので、Held (parse/filter 失敗) には積まない。
+      let dm : Array[Binding] = if e.depr { [depr_marker(e.name)] } else { [] }
       // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1): `--key=a,b`
       // goes through the SAME pieceProcessor as the space form (`sep_binds`) — split FIRST, then
       // piece_filters/parse run per PIECE, not once over the whole `valstr` (same ordering concern
@@ -183,7 +188,7 @@ fn run_eq_split(
             pos,
             e.merge,
           ) {
-          Ok(bs) => [Accept(pos + 1, bs)]
+          Ok(bs) => [Accept(pos + 1, cat(bs, dm))]
           Err(pe) => [Held(pe, [])]
         }
       }
@@ -198,13 +203,19 @@ fn run_eq_split(
       match e.kind {
         TStr =>
           return [
-            Accept(pos + 1, [mkb(e.name, VStr(filtered), Cli, at_pos=Some(pos))]),
+            Accept(
+              pos + 1,
+              cat([mkb(e.name, VStr(filtered), Cli, at_pos=Some(pos))], dm),
+            ),
           ]
         TNum => // canonical number 字句 (DR-074 §1) + opt-in base prefix (§2)
           match parse_number_ext(filtered, e.allow_base_prefix) {
             Some(d) =>
               return [
-                Accept(pos + 1, [mkb(e.name, VNum(d), Cli, at_pos=Some(pos))]),
+                Accept(
+                  pos + 1,
+                  cat([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))], dm),
+                ),
               ]
             None => return [Held(pe_parse(e.name, filtered, pos), [])]
           }
@@ -215,9 +226,13 @@ fn run_eq_split(
             parse_int_value_ext(filtered, e.int_round, e.allow_base_prefix) {
             Ok(i) =>
               return [
-                Accept(pos + 1, [
-                  mkb(e.name, VNum(i.to_double()), Cli, at_pos=Some(pos)),
-                ]),
+                Accept(
+                  pos + 1,
+                  cat(
+                    [mkb(e.name, VNum(i.to_double()), Cli, at_pos=Some(pos))],
+                    dm,
+                  ),
+                ),
               ]
             Err(NotAnInteger) =>
               return [Held(pe_parse_int(e.name, filtered, pos), [])]
@@ -230,7 +245,10 @@ fn run_eq_split(
           match parse_float(filtered) {
             Some(d) =>
               return [
-                Accept(pos + 1, [mkb(e.name, VNum(d), Cli, at_pos=Some(pos))]),
+                Accept(
+                  pos + 1,
+                  cat([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))], dm),
+                ),
               ]
             None => return [Held(pe_parse(e.name, filtered, pos), [])]
           }
@@ -249,7 +267,10 @@ fn run_eq_split(
           match parse_bool_ext(filtered, e.bool_config) {
             Some(b) =>
               return [
-                Accept(pos + 1, [mkb(e.name, VBool(b), Cli, at_pos=Some(pos))]),
+                Accept(
+                  pos + 1,
+                  cat([mkb(e.name, VBool(b), Cli, at_pos=Some(pos))], dm),
+                ),
               ]
             None => return [Held(pe_parse_bool(e.name, filtered, pos), [])]
           }

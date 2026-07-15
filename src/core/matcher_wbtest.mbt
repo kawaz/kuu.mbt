@@ -57,6 +57,7 @@ test "eq-split long option resolves, errors, and 素通し" {
       piece_filters: [],
       separator: None,
       merge: false,
+      depr: false,
     },
   ])
   // a defined numeric key: one Accept consuming 1 token, binding port=8080 from the CLI seat.
@@ -98,6 +99,7 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
       piece_filters: [],
       separator: None,
       merge: false,
+      depr: false,
     },
   ])
   // `true` / `1` / mixed-case / all-caps all resolve to VBool(true).
@@ -151,9 +153,76 @@ test "eq-split long option: a TFlag entry never fires on =value" {
       piece_filters: [],
       separator: None,
       merge: false,
+      depr: false,
     },
   ])
   assert_eq(run_matcher(long, pctx(["--verbose=true"]), 0).length(), 0)
+}
+
+///|
+/// codex レビュー Major 1 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) / DR-058
+/// §2: a deprecated eq-split entry (`LongEntry.depr`) rides a `@depr:<name>` warning marker alongside
+/// its value binding, symmetric with the short cluster deprecated test below ("short cluster:
+/// deprecated entry rides a @depr marker") and the space-form main entry (`installer_wbtest.mbt`'s
+/// deprecated main-entry tests) — DR-058 §2 draws no distinction between long入口形 (space form /
+/// eq-split), only that the SAME element fired. This freezes that firing `--port=8080` via the
+/// eq-split入口 does NOT alter the parsed value (still `port=8080`) — only a warning is added.
+test "eq-split long option: deprecated entry rides a @depr marker" {
+  let long = EqSplit(prefix="--", entries=[
+    {
+      key: "port",
+      name: "port",
+      kind: TNum,
+      int_round: RError,
+      allow_base_prefix: false,
+      bool_config: bool_config_canonical(),
+      piece_filters: [],
+      separator: None,
+      merge: false,
+      depr: true,
+    },
+  ])
+  let r = run_matcher(long, pctx(["--port=8080"]), 0)
+  assert_eq(r.length(), 1)
+  let b = acc_binds(r[0])
+  // two bindings: the value (port=8080) plus the deprecation marker (@depr:port).
+  assert_eq(b.length(), 2)
+  assert_eq(b[0].key, "port")
+  assert_eq(b[0].value, VNum(8080.0))
+  assert_eq(b[1].key, "@depr:port")
+}
+
+///|
+/// codex レビュー Major 1 続き: the `sep_binds` success path (`separator`/`merge` 経路、
+/// `run_eq_split` の別 return site) is a SEPARATE code path from the plain kind-match arm above — a
+/// naive fix could patch one and miss the other (which is exactly what the ORIGINAL DeprMark fix did
+/// to the 4 non-BCell `inst_long` main-entry arms, Major 2). This locks the separator-bearing entry's
+/// eq-split form (`--tags=a,b`) also carries the marker.
+test "eq-split long option: deprecated entry with separator (sep_binds path) also rides a @depr marker" {
+  let long = EqSplit(prefix="--", entries=[
+    {
+      key: "tags",
+      name: "tags",
+      kind: TStr,
+      int_round: RError,
+      allow_base_prefix: false,
+      bool_config: bool_config_canonical(),
+      piece_filters: [],
+      separator: Some(","),
+      merge: false,
+      depr: true,
+    },
+  ])
+  let r = run_matcher(long, pctx(["--tags=a,b"]), 0)
+  assert_eq(r.length(), 1)
+  let b = acc_binds(r[0])
+  let mut found_depr = false
+  for bd in b {
+    if bd.key == "@depr:tags" {
+      found_depr = true
+    }
+  }
+  assert_true(found_depr)
 }
 
 // ── DR-041 short cluster matcher (`-abc`, value attachment, space form) ─────────

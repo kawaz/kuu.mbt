@@ -264,6 +264,84 @@ test "long installer: a deprecated flag's Set-variant satellite carries a DeprMa
   }
 }
 
+///|
+/// codex レビュー Major 2 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) / DR-058
+/// §2: the DeprMark append used to live ONLY in the `BCell`/`ref_target is None` main-entry arm — a
+/// `BEnum` main entry (`enum_value_node`-shaped satellite) never got it, so a deprecated
+/// enum-constrained option silently warned NOTHING. DR-058 §2's warning contract is 値構造非依存 (it
+/// fires because the ELEMENT is deprecated, not because of what shape its value slot has) — this
+/// locks the BEnum arm now routes through the shared `with_depr` funnel (installer.mbt's `inst_long`)
+/// alongside BCell.
+test "long installer: a deprecated BEnum (values-constrained) main entry carries a DeprMark warning marker (codex レビュー Major 2, DR-058 §2)" {
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      {
+        ..el("color", TStr, long=LList([":set"])),
+        deprecated: true,
+        body: BEnum(["red", "blue"]),
+      },
+    ],
+  }
+  let sc = ok_scope(def, [LongInst])
+  assert_eq(
+    sc.greedy[0],
+    Seq([
+      Exact("--color"),
+      enum_value_node("color", TStr, ["red", "blue"]),
+      DeprMark("color"),
+    ]),
+  )
+  let o = parse_tree(ScopeNode(sc), ["--color", "red"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      assert_eq(resolved_values(bs, "color"), [VStr("red")])
+      assert_eq(warnings_of(o), ["color"])
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
+///|
+/// codex レビュー Major 2 続き: a `BOr` (structural or, variable-arity) main entry — the wrapper
+/// itself never binds a value (branch leaves do, `or_branch_node`'s doc comment), but DR-058 §2's
+/// warning still attaches to the WRAPPING element's `Seq` (the satellite `inst_long` installs for
+/// `e`, not to any individual branch — the deprecated axis lives on `e`, the BOr owner, not on the
+/// leaves). This is the 2nd of the "代表 1-2 種" structural arms this Major asks for (BEnum above +
+/// BOr here cover both non-BCell shapes `inst_long` special-cases before the generic `_` /
+/// `ref_target` dispatch; ref±repeat's own 2 arms already got direct coverage from the fix itself
+/// being applied there, per the commit's `with_depr` call sites).
+test "long installer: a deprecated BOr (structural or) main entry carries a DeprMark warning marker (codex レビュー Major 2, DR-058 §2)" {
+  let num_branch : OrBranch = { id: "num", items: [el("num", TInt)] }
+  let flag_branch : OrBranch = { id: "flag", items: [el("flag", TBool)] }
+  let def : Definition = {
+    ..empty_def(),
+    options: [
+      {
+        ..el("level", TStr, long=LList([":set"])),
+        deprecated: true,
+        body: BOr([num_branch, flag_branch]),
+      },
+    ],
+  }
+  let sc = ok_scope(def, [LongInst])
+  match sc.greedy[0] {
+    Seq([Exact("--level"), Or(_), DeprMark("level")]) => ()
+    _ =>
+      fail(
+        "expected sc.greedy[0] == Seq([Exact(\"--level\"), Or(_), DeprMark(\"level\")])",
+      )
+  }
+  let o = parse_tree(ScopeNode(sc), ["--level", "5"], defs=Map([]))
+  match o {
+    Success(bs) => {
+      assert_eq(resolved_values(bs, "num"), [VNum(5.0)])
+      assert_eq(warnings_of(o), ["level"])
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}
+
 // ── flag (TFlag) の default:false preset + fail_action ─────────────────────────
 
 ///|

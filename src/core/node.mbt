@@ -588,6 +588,14 @@ pub struct LongEntry {
   // the SAME `sep_binds` pieceProcessor as the space form, so it needs the same merge-marker flag
   // (same rationale as `separator` above: the entry point doesn't change the value-axis pipeline).
   merge : Bool
+  // codex レビュー Major 1 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) / DR-058
+  // §2: this entry-copy is a deprecated (canonical or alias, DR-057 §3) entry — firing the eq-split
+  // form emits a `@depr:<name>` warning marker, same standing as `ShortEntry.depr` (this field's doc
+  // comment). DR-058 §2 draws no入口形 distinction (space form / eq-split / short cluster all warn
+  // alike) — `run_eq_split` (matcher.mbt) was the one entry point missing this carrier before this
+  // fix (the space form already threads it via `installer.mbt`'s `DeprMark` satellite append, short
+  // via this field's `ShortEntry` sibling).
+  depr : Bool
 } derive(Eq, Debug)
 
 ///|

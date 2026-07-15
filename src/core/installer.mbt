@@ -1632,6 +1632,23 @@ fn eq_group(
 }
 
 ///|
+/// codex レビュー Major 2 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) / DR-058
+/// §2: append a trailing `DeprMark(e.name)` to a main-entry satellite's node array when `e.deprecated`
+/// — shared by EVERY `inst_long` main-entry arm (BOr / BEnum / ref±repeat / BCell, all below) so a
+/// deprecated element warns regardless of its value structure (DR-058 §2's contract is 値構造非依存;
+/// the previous fix only wired the BCell arm, missing the other 4). Centralizing the append here (one
+/// call site per arm, right before `Seq(...)`) means a FUTURE `e.body`/`ref_target` arm added to
+/// `inst_long` inherits the warning automatically as long as it routes its satellite nodes through
+/// this helper — the same "single funnel, no per-arm opt-in to forget" shape `ensure_entity_body`'s
+/// `is_exact` guard (Major 4 fix) uses.
+fn with_depr(e : ElemDef, nodes : Array[Node]) -> Array[Node] {
+  if e.deprecated {
+    nodes.push(DeprMark(e.name))
+  }
+  nodes
+}
+
+///|
 /// long: `long` を READ、name あたり greedy exact 衛星 (space form) と、value 系なら eq-split matcher
 /// を add-if-absent で追加。衛星は name で entity に link (DR-042 §展開の標準パターン)。
 fn inst_long(
@@ -1659,7 +1676,10 @@ fn inst_long(
           }
           add_greedy(
             build,
-            maybe_root(e.link_depth, Seq([Exact(trigger), Or(branch_nodes)])),
+            maybe_root(
+              e.link_depth,
+              Seq(with_depr(e, [Exact(trigger), Or(branch_nodes)])),
+            ),
           )
         }
         // BEnum (issue values-decode-support, DESIGN §5.3 / DR-028 追記): main entry の値スロット
@@ -1673,7 +1693,12 @@ fn inst_long(
             build,
             maybe_root(
               e.link_depth,
-              Seq([Exact(trigger), enum_value_node(e.name, e.ty, values)]),
+              Seq(
+                with_depr(e, [
+                  Exact(trigger),
+                  enum_value_node(e.name, e.ty, values),
+                ]),
+              ),
             ),
           )
         _ =>
@@ -1689,24 +1714,26 @@ fn inst_long(
                     build,
                     maybe_root(
                       e.link_depth,
-                      Seq([
-                        Exact(trigger),
-                        // DR-084 §1 (issue multiple-ref-accum-gap): a `multiple` repeat-less ref
-                        // element's row is the ACCUMULATOR's fold unit (one fire = one row) —
-                        // tag it with "#row" (`ref_row_head`, same sentinel repeat-bearing ref
-                        // uses) so `resolve.mbt`'s ROW-GROUP branch splits each firing into its
-                        // own row-group instead of merging every firing's leaves flat into one
-                        // object (the pre-DR-084 bug: 2 fires of an or-branch ref would land BOTH
-                        // branches' leaves under the same bare `Scoped(e.name, ...)`, e.g.
-                        // `{colorname:"red", r:0, g:128, b:255}` instead of 2 separate rows). No
-                        // `multiple` (the `ref-template-no-repeat-degenerate.json` baseline) keeps
-                        // the bare `Scoped` wrap — a single scalar row, never array-wrapped.
-                        if e.multiple {
-                          ref_row_head(e.name, elem_head(e))
-                        } else {
-                          Scoped(e.name, elem_head(e))
-                        },
-                      ]),
+                      Seq(
+                        with_depr(e, [
+                          Exact(trigger),
+                          // DR-084 §1 (issue multiple-ref-accum-gap): a `multiple` repeat-less ref
+                          // element's row is the ACCUMULATOR's fold unit (one fire = one row) —
+                          // tag it with "#row" (`ref_row_head`, same sentinel repeat-bearing ref
+                          // uses) so `resolve.mbt`'s ROW-GROUP branch splits each firing into its
+                          // own row-group instead of merging every firing's leaves flat into one
+                          // object (the pre-DR-084 bug: 2 fires of an or-branch ref would land BOTH
+                          // branches' leaves under the same bare `Scoped(e.name, ...)`, e.g.
+                          // `{colorname:"red", r:0, g:128, b:255}` instead of 2 separate rows). No
+                          // `multiple` (the `ref-template-no-repeat-degenerate.json` baseline) keeps
+                          // the bare `Scoped` wrap — a single scalar row, never array-wrapped.
+                          if e.multiple {
+                            ref_row_head(e.name, elem_head(e))
+                          } else {
+                            Scoped(e.name, elem_head(e))
+                          },
+                        ]),
+                      ),
                     ),
                   )
                 Some(_) => {
@@ -1731,16 +1758,18 @@ fn inst_long(
                     build,
                     maybe_root(
                       e.link_depth,
-                      Seq([
-                        Exact(trigger),
-                        // DR-034 last-wins-whole-cell (multiple 無しの再発火はセル丸ごと上書き):
-                        // "#fire" marks this firing's start so `resolve.mbt`'s ROW-GROUP branch
-                        // can discard every EARLIER firing's rows wholesale rather than merging
-                        // leaf-by-leaf (which would wrongly keep a superseded rep whose position
-                        // the later, shorter firing never touched).
-                        Scoped(e.name, Bind("#fire", VBool(false))),
-                        GreedyRepeat(tail),
-                      ]),
+                      Seq(
+                        with_depr(e, [
+                          Exact(trigger),
+                          // DR-034 last-wins-whole-cell (multiple 無しの再発火はセル丸ごと上書き):
+                          // "#fire" marks this firing's start so `resolve.mbt`'s ROW-GROUP branch
+                          // can discard every EARLIER firing's rows wholesale rather than merging
+                          // leaf-by-leaf (which would wrongly keep a superseded rep whose position
+                          // the later, shorter firing never touched).
+                          Scoped(e.name, Bind("#fire", VBool(false))),
+                          GreedyRepeat(tail),
+                        ]),
+                      ),
                     ),
                   )
                 }
@@ -1770,25 +1799,31 @@ fn inst_long(
                 // `inst_short`'s `depr: e.deprecated` on the SAME element (`e.deprecated` covers
                 // both a directly-deprecated canonical entry and a deprecated alias entry-copy,
                 // DR-057 §3 `alias_entry` — both fold into this ONE `ElemDef.deprecated` bool by
-                // the time lowering runs, so no alias-specific branch is needed here).
-                let sat : Array[Node] = [
-                  Exact(trigger),
-                  value_prim(
-                    e.ty,
-                    e.name,
-                    e.int_round,
-                    e.allow_base_prefix,
-                    e.bool_config,
-                    e.piece_filters,
-                    separator=e.separator,
-                    merge=e.accumulator == Some("merge"),
-                    kv_map=e.accumulator == Some("kv_map"),
+                // the time lowering runs, so no alias-specific branch is needed here). Routed
+                // through `with_depr` (codex レビュー Major 2) so this arm shares the SAME funnel
+                // as BOr/BEnum/ref±repeat above.
+                add_greedy(
+                  build,
+                  maybe_root(
+                    e.link_depth,
+                    Seq(
+                      with_depr(e, [
+                        Exact(trigger),
+                        value_prim(
+                          e.ty,
+                          e.name,
+                          e.int_round,
+                          e.allow_base_prefix,
+                          e.bool_config,
+                          e.piece_filters,
+                          separator=e.separator,
+                          merge=e.accumulator == Some("merge"),
+                          kv_map=e.accumulator == Some("kv_map"),
+                        ),
+                      ]),
+                    ),
                   ),
-                ]
-                if e.deprecated {
-                  sat.push(DeprMark(e.name))
-                }
-                add_greedy(build, maybe_root(e.link_depth, Seq(sat)))
+                )
               }
           }
       }
@@ -1834,6 +1869,11 @@ fn inst_long(
                   piece_filters: leaf.piece_filters,
                   separator: leaf.separator,
                   merge: leaf.accumulator == Some("merge"),
+                  // codex レビュー Major 1 (DR-058 §2): a BOr leaf carries its own `deprecated` axis
+                  // (`dec_or_leaf` decodes no such key today, so this is always false in practice —
+                  // wired anyway so the eq-split entry stays byte-for-byte parallel with the BCell
+                  // arm below, same "wired but未接続" posture `elem_head`'s BEnum arm already has).
+                  depr: leaf.deprecated,
                 })
               }
             }
@@ -1860,6 +1900,10 @@ fn inst_long(
               piece_filters: e.piece_filters,
               separator: e.separator,
               merge: e.accumulator == Some("merge"),
+              // codex レビュー Major 1 (DR-058 §2): eq-split 経路も deprecated warning marker を
+              // 合成する — main entry (space form, 上の `inst_long` DeprMark append) / short cluster
+              // (`inst_short`) と対称、入口形による例外は DR-058 §2 に無い。
+              depr: e.deprecated,
             })
           }
         // BEnum (issue values-decode-support): eq-split (`--color=always`) for an enum-constrained
@@ -1919,10 +1963,7 @@ fn inst_long(
         }
         _ => [Exact(trigger), EffMark(e.name, v.op)]
       }
-      if e.deprecated {
-        nodes.push(DeprMark(e.name))
-      }
-      add_greedy(build, maybe_root(e.link_depth, Seq(nodes)))
+      add_greedy(build, maybe_root(e.link_depth, Seq(with_depr(e, nodes))))
     }
   }
 }
