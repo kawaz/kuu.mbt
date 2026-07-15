@@ -71,18 +71,30 @@ Cand.link (complete() 専用の内部実装、node.mbt コメントで purely an
 
 ## 受け入れ条件
 
-- [ ] 修正案 A (KTop 変換で `c.link>0` の候補を変換対象から除外) の前提
+- [x] 修正案 A (KTop 変換で `c.link>0` の候補を変換対象から除外) の前提
       「root 再評価が必ず `link=0` の代替候補を供給する」を adversarial
       マトリクス検証する (子 scope に他 greedy entry があり
       `greedy_reads=true` で early-close しないケース等の反例探索)
-- [ ] 前提が成立するなら案 A、反例があれば案 B (`Cand` に発火時の walk 位置
+      → **前提が根本的に崩壊すると判明** (`nest_cands` は CmdSat 境界を
+      跨ぐたびに必ず `link` を 1 減算するため、depth 段の境界を全て
+      通過すれば必ず `link=0` になる。実機で `c.link` を dump し、KTop
+      到達時点の全候補が既に `link=0` であることを確認済み — 「`link>0`
+      を除外」は何も除外しない no-op で、誤った `path=[]` の候補は
+      `link=0` のまま残ってしまう)
+- [x] 前提が成立するなら案 A、反例があれば案 B (`Cand` に発火時の walk 位置
       `path` を分離保持し KTop 変換で使用) で実装する
+      → 案 B を実装 (`Cand.fire_path` 新設、`nest_cands` で `link` に
+      関わらず無条件 prepend、KTop の missing_operand 変換は `c.path`
+      でなく `c.fire_path` を読む)。simple 再現・sibling flag・nested
+      depth2 の全反例パターンで 1 件 (正しい path) に収束することを
+      wbtest で実機確認
 - [ ] spec fixture で global option 値 starve の errors 期待
-      (`path=["a"]` 1 件) を pin する (ロックステップ)
-- [ ] 既存 test green を維持する
+      (`path=["a"]` 1 件) を pin する (ロックステップ、統括側で後続手配)
+- [x] 既存 test green を維持する (344 → 346、conformance mismatches=0
+      skipped=0)
 
 ## TODO
 
-- [ ] adversarial マトリクス検証で修正案 A/B を確定する
-- [ ] 修正実装 + spec fixture pin
-- [ ] 既存 test green 確認
+- [x] adversarial マトリクス検証で修正案 A/B を確定する (→ 案 B)
+- [x] 修正実装 + wbtest 追加 (spec fixture pin は統括側で後続手配)
+- [x] 既存 test green 確認

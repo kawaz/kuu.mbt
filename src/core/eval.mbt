@@ -96,6 +96,9 @@ fn cand_trigger(
     meta: { is_alias, hidden, deprecated },
     path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
     link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
+    fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: same "starts empty, scope
+    // boundaries prepend unconditionally" posture as `path`/Held's own `ParseError.path` (`nest_path`
+    // in `nest_cands`) — this is the exact-trigger sibling of `pend_value`'s same field, kept in sync.
     completer: None, // DR-060 §3: an exact-trigger candidate never carries a completer
   }
 }
@@ -225,13 +228,28 @@ fn nest_path(label : String, path : Array[String]) -> Array[String] {
 /// option's value-slot candidate would accumulate the COPY-side scope path instead of the
 /// DECLARING scope's, and `complete_tree`'s `(path, origin)`-keyed completer lookup would miss
 /// the Entity (which lives only at the declaring scope).
+///
+/// `fire_path` (issue 2026-07-15-pending-parseerror-path-asymmetry) is prepended UNCONDITIONALLY,
+/// every call, regardless of `link` — it tracks the actual walk position (same rule `nest_path`
+/// applies to a Held's `ParseError.path`), never the Rooted-escape-adjusted `path`. This is what lets
+/// `missing_operand`'s KTop conversion (below) read a path that matches across every duplicate
+/// reading of the same starved slot (see `Cand.fire_path`'s doc comment for why `link`-gating the
+/// KTop conversion instead doesn't work — `link` is always 0 by the time a candidate reaches KTop).
 fn nest_cands(label : String, cs : Array[Cand]) -> Array[Cand] {
   let out : Array[Cand] = []
   for c in cs {
     if c.link > 0 {
-      out.push({ ..c, link: c.link - 1 })
+      out.push({
+        ..c,
+        link: c.link - 1,
+        fire_path: nest_path(label, c.fire_path),
+      })
     } else {
-      out.push({ ..c, path: nest_path(label, c.path) })
+      out.push({
+        ..c,
+        path: nest_path(label, c.path),
+        fire_path: nest_path(label, c.fire_path),
+      })
     }
   }
   out
@@ -301,6 +319,9 @@ fn pend_value(ty : Ty, origin : String) -> Cand {
     meta: { is_alias: false, hidden: false, deprecated: false },
     path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
     link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
+    fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: `Cand.fire_path`'s doc
+    // comment — the fire-time walk-position path a `missing_operand` ParseError conversion needs,
+    // tracked independently of `path`'s Rooted-escape (`link`) bookkeeping.
     // DR-060 §4 / DR-104 §2(d): filled in by `complete_tree`'s (path, origin)-keyed Entity-table
     // lookup (outcome.mbt) as candidates fold into the dedup loop, NOT here — `pend_value` has no
     // Entity table in scope at any of its 30+ call sites (see Cand.completer's doc comment).
@@ -3604,16 +3625,30 @@ pub fn parse_tree(
         // MDR-002 §2.3: a starved value slot is an error the slice used to
         // swallow. One missing-operand Error per value candidate origin.
         // DR-066 §4 (issue 2026-07-08 pending-starvation-missing-operand-path):
-        // the candidate's own `path` (already prepended by scope boundaries
+        // the candidate's own path (already prepended by scope boundaries
         // on its way out to this top-level branches array, same as a Held's
         // ParseError.path) overrides `pe_missing`'s default `[]` — this is
         // the ONE conversion point where a Pending becomes a ParseError, so
         // it is also the one place that needs to carry the path across.
+        //
+        // issue 2026-07-15-pending-parseerror-path-asymmetry: uses `c.fire_path`, NOT `c.path`.
+        // `path` carries the Rooted-escape adjustment (`link`) `complete_tree`'s completer lookup
+        // needs, which is the WRONG path for this conversion — a global option's value-slot
+        // candidate copied into a descendant command scope reports the DECLARING scope's path via
+        // `path` (by design, for completion), but `missing_operand` needs the scope it was actually
+        // READ under (DR-066 §4's "発火時の動的パス"). Using `path` here produced 2-3 duplicate
+        // errors for the SAME starved slot (one per re-evaluation the CPS walk performs — root-copy,
+        // any mid-nesting re-entry, and the innermost read), each with a DIFFERENT (and mostly wrong)
+        // path, because `link`'s escape bookkeeping diverges per candidate while `fire_path` does
+        // not. `fire_path` (`Cand.fire_path` doc comment) is prepended unconditionally by every scope
+        // boundary regardless of `link`, so every duplicate reading of the SAME starved slot carries
+        // the SAME `fire_path` — `push_error`'s dedup (element, args_pos, kind, reason, path) then
+        // collapses them to the single correct entry instead of leaving path-mismatched duplicates.
         for c in cands {
           if c.is_value {
             push_error(errors, {
               ..pe_missing(c.origin, toks.length()),
-              path: c.path,
+              path: c.fire_path,
             })
           }
         }

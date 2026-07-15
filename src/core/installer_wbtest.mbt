@@ -3599,3 +3599,93 @@ test "parse_definition: in_range keeps canonical-number bounds, length_range acc
     Err(errs) => abort("expected Ok, got Err: " + errs.length().to_string())
   }
 }
+
+// ── issue 2026-07-15-pending-parseerror-path-asymmetry: global option 値 starve の
+// missing_operand path 重複解消 (DR-066 §4「発火時の動的パス」) ──────────────────
+
+///|
+/// 保証 (統括裁定、実機実証済み): `global:true` の number option がサブコマンド内で値 starve
+/// (`["a", "--level"]`、"--level" の後に値が無い) したとき、`missing_operand` の ParseError は
+/// **`path=["a"]` の 1 件だけ** になる — DR-066 §4「発火時の動的パス」の規範通り、実際に
+/// "--level" が読まれた scope (子 command "a" の中) を指す。
+///
+/// 背景 (audit-held-path-rooted-escape 調査の副次発見、2026-07-15): global option は宣言元
+/// (root) の Entity に対する `Rooted(node, depth)` 衛星として子 scope へコピーされる
+/// (DR-042 global link-sync)。この衛星が値 starve すると、CPS の継続チェーンが同じ starve を
+/// 複数回 (root-copy 自身の読み取り + 早閉じ後の親 scope 再評価) 独立に Pending として観測し、
+/// 旧実装は各観測が `Cand.path` (`link` による Rooted-escape 調整込み、`complete_tree` の
+/// completer lookup 専用) をそのまま `ParseError.path` にコピーしていたため、`path=[]` (escape
+/// で prepend がスキップされたまま) と `path=["a"]` (正しく prepend されたもの) の 2 件が
+/// 併存していた (depth 2 の nested command では 3 件併存することも実証済み)。
+///
+/// 検証で判明した重要事実 (adversarial マトリクス、この wbtest 追加前に実施): 提案されていた
+/// 修正案 A (KTop 変換で `c.link > 0` の候補を除外) は **前提が成立しない** — `nest_cands`
+/// (eval.mbt) は CmdSat 境界を 1 回跨ぐごとに `link` を必ず 1 減算するため、`depth` 段の境界を
+/// 全て通過した時点で `link` は必ず 0 になる。実機確認 (`c.link` を dump) で、KTop に届く
+/// 全候補が既に `link=0` であることを確認済み — 「`link>0` を除外する」条件は何も除外しない
+/// no-op であり、`path=[]` の誤った候補は `link=0` のまま生き残ってしまう。
+///
+/// 採用した修正 (案 B): `Cand` に `fire_path` (`Cand.fire_path` の doc comment 参照) を新設し、
+/// `nest_cands` で `link` の値に関わらず無条件に prepend する (Held の `ParseError.path` と同じ
+/// 「発火時 walk 位置」の意味論)。`missing_operand` への変換 (eval.mbt KTop) は `c.path` ではなく
+/// `c.fire_path` を使う — 同じ starve を複数回観測した候補は全て同じ `fire_path` を持つため、
+/// `push_error` の (element, args_pos, kind, reason, path) dedup が自然に 1 件へ収束する。
+test "global option value-starve inside a child command: missing_operand converges to path=[\"a\"] only (issue 2026-07-15-pending-parseerror-path-asymmetry, DR-066 §4)" {
+  let level_opt : ElemDef = el(
+    "level",
+    TNum,
+    long=LList([":set"]),
+    is_global=true,
+  )
+  let def : Definition = {
+    ..empty_def(),
+    options: [level_opt],
+    commands: [{ name: "a", body: empty_def(), export_key: EkUnset }],
+  }
+  let sc = ok_scope(def, all_installers())
+  let o = parse_tree(ScopeNode(sc), ["a", "--level"], defs=Map([]))
+  match o {
+    Failure(d) => {
+      assert_eq(d.errors.length(), 1)
+      let e = d.errors[0]
+      assert_eq(e.element, "level")
+      assert_eq(e.reason, "missing_operand")
+      assert_eq(e.path, ["a"])
+    }
+    other =>
+      fail(
+        "expected Failure (value-starved global option), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// 保証 (対極、[[self-written-rule-blind-spots]]): 非 global (command-local) option の値 starve
+/// は元々この重複を持たなかった (issue 本文「(1) 発生源特定」— `Rooted` 衛星が無いため `link`
+/// escape 機構自体が発火しない) — `fire_path` 導入がこの既存の正常経路を壊していないことの確認。
+/// `path=["a"]` 1 件のみ、`level_opt` を global=false のまま子 command "a" 専用として宣言する。
+test "command-local (non-global) option value-starve: missing_operand path=[\"a\"] unaffected by fire_path (対極, issue 2026-07-15-pending-parseerror-path-asymmetry)" {
+  let level_opt : ElemDef = el("level", TNum, long=LList([":set"]))
+  let child : Definition = { ..empty_def(), options: [level_opt] }
+  let def : Definition = {
+    ..empty_def(),
+    commands: [{ name: "a", body: child, export_key: EkUnset }],
+  }
+  let sc = ok_scope(def, all_installers())
+  let o = parse_tree(ScopeNode(sc), ["a", "--level"], defs=Map([]))
+  match o {
+    Failure(d) => {
+      assert_eq(d.errors.length(), 1)
+      let e = d.errors[0]
+      assert_eq(e.element, "level")
+      assert_eq(e.reason, "missing_operand")
+      assert_eq(e.path, ["a"])
+    }
+    other =>
+      fail(
+        "expected Failure (value-starved command-local option), got " +
+        render_outcome(other),
+      )
+  }
+}
