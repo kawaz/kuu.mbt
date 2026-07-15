@@ -28,6 +28,11 @@ fn el(
   tty_stream? : String? = None,
   tty_cygwin? : Bool = true,
   is_dd? : Bool = false,
+  // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見: positional-face nameless
+  // exact-match leaf marker (installer.mbt's `ElemDef.is_exact` doc comment) — exposed here so
+  // lowering wbtest cases can exercise it without hand-writing a full ElemDef literal, same
+  // rationale as `is_dd` above.
+  is_exact? : Bool = false,
   dd_match? : String? = None,
   dd_self_keep? : Bool = false,
   is_global? : Bool = false,
@@ -64,6 +69,7 @@ fn el(
     tty_stream,
     tty_cygwin,
     is_dd,
+    is_exact,
     dd_match,
     dd_self_keep,
     is_global,
@@ -586,6 +592,68 @@ test "dd installer: options[] placement lowers to same DdSat with no entity (DR-
   }
   assert_true(has_dd)
   assert_eq(sc.entities.length(), 0)
+}
+
+// ── issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め: positional-face
+// nameless exact-match leaf (`{"exact": "init"}`, DR-063 A.1 裸文字列→exact 正規化 / DR-018 配置で
+// 役割決定)。lowering は `elem_head` の `is_exact` 分岐で `Exact(name)` へ直接落ち (dd と同じ「entity
+// を持たない」standing、上の dd installer テストと対称)、消費意味論は node.mbt の bare `Exact` の doc
+// comment (「literal token match; binds nothing, consumes 1」) がそのまま定義する — 新規の parse
+// 意味論を追加したわけではなく、既存 `Exact` node を positional spine 上で使えるようにしただけ。 ──
+
+///|
+/// 保証 (lowering 断面): `is_exact:true` の positional 要素は `elem_head` を経て spine に裸の
+/// `Exact(name)` が 1 本乗るだけで、entity は作られない (dd と同じ「値なし」standing、DR-064 §1 と
+/// 同型の判断が exact literal にも及ぶ)。
+test "positional exact literal: lowers to bare Exact(name) on the spine, no entity (issue 2026-07-15-audit-node-nodashstr-deprmark-variants)" {
+  let def : Definition = {
+    ..empty_def(),
+    positionals: [el("init", TNone, is_exact=true)],
+  }
+  let sc = ok_scope(def, all_installers())
+  assert_eq(sc.positional, [Exact("init")])
+  assert_eq(sc.entities.length(), 0)
+}
+
+///|
+/// 保証 (parse 側、一致): DR-041 の「照合消費プリミティブ」意味論通り、一致トークンは 1 消費で成功する
+/// (Exact 自身は何も bind しない — result は空、node.mbt の doc comment 「binds nothing」の直接確認)。
+test "positional exact literal: matching token consumes 1 and succeeds with no bindings (issue 2026-07-15-audit-node-nodashstr-deprmark-variants)" {
+  let def : Definition = {
+    ..empty_def(),
+    positionals: [el("init", TNone, is_exact=true)],
+  }
+  let sc = ok_scope(def, all_installers())
+  let o = parse_tree(ScopeNode(sc), ["init"], defs=Map([]))
+  match o {
+    Success(bs) => assert_eq(bs.length(), 0)
+    other =>
+      fail("expected Success (matching literal), got " + render_outcome(other))
+  }
+}
+
+///|
+/// 保証 (parse 側、不一致): DR-037 の「トリガ不一致は無音 Reject (held error を作らない)」通り、
+/// Exact node 自身は消費せず読みゼロで消える。唯一の spine 要素がその読みゼロの当事者なので、
+/// 完全経路が 1 本も残らない — held error も無い (実機確認: `d.errors.length() == 0`、
+/// `render_outcome` は "fail:no complete parse" — 他の long/short トリガ不一致と同じ「無音」standing
+/// であり、positional exact 専用の新規エラー経路は無い。node.mbt の bare `Exact` doc comment
+/// 「an unmatched trigger is a silent Reject, NOT a Pending: no part of the entry was consumed, so
+/// nothing is half-read」がそのままここでも成立する)。
+test "positional exact literal: non-matching token silently rejects (0 complete paths, 0 held errors, issue 2026-07-15-audit-node-nodashstr-deprmark-variants)" {
+  let def : Definition = {
+    ..empty_def(),
+    positionals: [el("init", TNone, is_exact=true)],
+  }
+  let sc = ok_scope(def, all_installers())
+  let o = parse_tree(ScopeNode(sc), ["nope"], defs=Map([]))
+  match o {
+    Failure(d) => assert_eq(d.errors.length(), 0)
+    other =>
+      fail(
+        "expected Failure (non-matching literal), got " + render_outcome(other),
+      )
+  }
 }
 
 // ── global installer + fixpoint: 子孫 scope へ link COPY 伝播 ─────────────────

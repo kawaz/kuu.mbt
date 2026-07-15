@@ -139,6 +139,7 @@ fn opt(
     tty_stream,
     tty_cygwin,
     is_dd: false,
+    is_exact: false,
     dd_match: None,
     dd_self_keep: false,
     is_global: global,
@@ -233,6 +234,7 @@ fn pos(
     tty_stream,
     tty_cygwin,
     is_dd: false,
+    is_exact: false,
     dd_match: None,
     dd_self_keep: false,
     is_global: false,
@@ -308,6 +310,7 @@ fn dd_marker(
     tty_stream: None,
     tty_cygwin: true,
     is_dd: true,
+    is_exact: false,
     dd_match: match_,
     dd_self_keep: self_keep,
     is_global: false,
@@ -345,6 +348,76 @@ fn dd_marker(
     final_filters: [],
     accum_filters: [],
     // dd marker element も `long: LList([])` で long spelling を持たない — 同じ理由で既定値。
+    long_prefix: "--",
+    short_prefix: "-",
+    env_prefix: "",
+    auto_env: false,
+    long_eq_sep: EsAllow,
+    short_combine: true,
+    short_attached_value: AtAllow,
+    body: BCell,
+  }
+}
+
+///|
+/// issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め: a positional-face
+/// nameless exact-match leaf (`{"exact": "init"}`, DR-063 A.1 裸文字列→exact 正規化 / DR-018 配置で
+/// 役割決定 — dec_positional の裸 `"exact"` 分岐から作る)。`is_dd`/`dd_marker` と同じ carrier
+/// パターン — `name` が trigger 綴りを運び (`is_exact` の doc comment 参照)、`elem_head`
+/// (installer.mbt) が `Exact(name)` へ直接 lower する (value_prim/entity 経路を通らない、
+/// `ensure_entities` が is_dd と同じガードでスキップする)。`ty: TNone` は値空間を持たない照合消費
+/// (dd_marker の `ty: TStr` と違うのは、dd が「捨てるが型タグは要る」旧経路の名残であるのに対し
+/// exact literal は値スロット自体が最初から無いため — DR-089 §2「type 省略 = none の糖衣」と同じ既定
+/// 型)。
+fn exact_marker(spelling : String) -> ElemDef {
+  {
+    name: spelling,
+    ty: TNone,
+    long: LList([]),
+    variants: [],
+    short: [],
+    env: [],
+    is_tty: false,
+    tty_stream: None,
+    tty_cygwin: true,
+    is_dd: false,
+    is_exact: true,
+    dd_match: None,
+    dd_self_keep: false,
+    is_global: false,
+    is_inherit: false,
+    is_inheritable: false,
+    link_depth: 0,
+    ref_target: None,
+    repeat: None,
+    optional: false,
+    multiple: false,
+    accumulator: None,
+    flatten: None,
+    separator: None,
+    collector: None,
+    fail_action: false,
+    is_config_file: false,
+    config_key: None,
+    export_key: EkUnset,
+    requires: [],
+    conflicts_with: [],
+    exclusive_group: [],
+    required_group: [],
+    required: false,
+    value_requires: [],
+    deprecated: false,
+    is_alias: false,
+    hidden: false,
+    completer: None, // exact literal は値空間を持たない — dd_marker と同じ理由
+    default_values: None,
+    int_round: RError,
+    allow_base_prefix: false,
+    bool_config: bool_config_canonical(),
+    piece_filters: [],
+    value_filters: [],
+    final_filters: [],
+    accum_filters: [],
     long_prefix: "--",
     short_prefix: "-",
     env_prefix: "",
@@ -1804,6 +1877,9 @@ fn dec_positional(
       // DR-060 §4 / DR-104 §2(d): dec_option 側と対称 — positional の値スロットも completer 名を
       // 宣言できる (例: ファイルパスを取る positional)。
        "completer",
+      // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め (DR-063 A.1 裸文字列
+      // → exact 正規化): `{"exact": "init"}` のような、位置消費される無名の照合 leaf。
+       "exact",
     ],
     "positional",
   )
@@ -1813,6 +1889,35 @@ fn dec_positional(
   // positionals — that's an option-only constraint-declaration sugar, §5.3).
   match o.get("positionals") {
     Some(pj) => return dec_positional_group(o, pj, shadows)
+    None => ()
+  }
+  // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め (DR-063 A.1 / DR-018 配置
+  // で役割決定): shape-detect a bare `{"exact": "..."}` leaf BEFORE the "or"/type/name value-cell
+  // dispatch below, same early-return style as "positionals" above. wire.schema.json's node $defs
+  // forbid `exact`+`or` / `exact`+`seq` co-occurrence (checked here too, defense in depth); `name`/
+  // `type`/`ref` co-occurring with `exact` has no target fixture and no defined meaning in this
+  // decoder, so it DecodeSkips rather than silently picking one side (deliberately absent, not
+  // deliberately wrong — same posture as this function's `BEnum` note below). Only the bare-string
+  // spelling form is wired (DR-063 §3's bool/number literal-origin `exact` forms are OUT OF SCOPE —
+  // no target fixture exercises them).
+  match o.get("exact") {
+    Some(ej) =>
+      if has_key(o, "name") ||
+        has_key(o, "type") ||
+        has_key(o, "or") ||
+        has_key(o, "ref") {
+        raise DecodeSkip(
+          "positional 'exact' combined with name/type/or/ref is not supported (bare exact-literal leaf only, DR-063 A.1)",
+        )
+      } else {
+        match ej.j_str() {
+          Some(spelling) => return exact_marker(spelling)
+          None =>
+            raise DecodeSkip(
+              "positional 'exact' is not a string (bool/number literal-origin exact forms not supported)",
+            )
+        }
+      }
     None => ()
   }
   match o.get("or") {

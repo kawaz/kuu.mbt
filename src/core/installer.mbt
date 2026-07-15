@@ -45,6 +45,14 @@ pub struct ElemDef {
   // では未使用 (int_round が TInt 以外で未使用なのと同じ冗長フィールド)。
   tty_cygwin : Bool
   is_dd : Bool // dd installer 所有 (type:"dd")
+  // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め (DR-063 A.1 裸文字列
+  // → exact 正規化 / DR-018 配置で役割決定): a positional-face nameless exact-match leaf
+  // (`{"exact": "init"}`) — DR-018 の「配置 (options[]/positionals[]) で役割決定」原理を、既に
+  // greedy 面で確立済みの is_dd と同じ carrier パターンで positional 面へ適用したもの。`true` の
+  // とき `name` はこの要素の trigger 綴りを運ぶ (is_dd の `name` 再利用と同じ理由付け、
+  // `dd_marker`/`normalize_dd_name` 参照) — `elem_head` が `Exact(e.name)` へ直接 lower し、
+  // value_prim/entity 経路を一切通らない (`ensure_entities` が is_dd と同じガードでスキップする)。
+  is_exact : Bool
   // DR-090 §2: dd installer 所有、is_dd 専用の軸拡張 — None/false なら従来の exact dd (§1「既存
   // dd」列) と完全に同じ。`dd_match` が Some のとき `name` はトリガ綴りに使われない (§2「match が
   // あるとき name はトリガ綴りに使われず、要素の同一性・表示軸のみに効く」)。
@@ -767,6 +775,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     tty_stream: e.tty_stream,
     tty_cygwin: e.tty_cygwin,
     is_dd: e.is_dd,
+    is_exact: e.is_exact,
     dd_match: e.dd_match,
     dd_self_keep: e.dd_self_keep,
     is_global: e.is_global,
@@ -1014,8 +1023,17 @@ fn collect_export_body(e : ElemDef, m : Map[String, ExportKey]) -> Unit {
 
 ///|
 /// 要素の lowered head: 値プリミティブ / Ref (ref_target) / SepArg (separator, `value_prim` 側に集約
-/// 済み — このヘルパー自身の役目は ref_target の分岐のみ)。
+/// 済み — このヘルパー自身の役目は ref_target の分岐のみ)。issue
+/// 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め: `is_exact` (positional-face
+/// nameless exact-match leaf, `ElemDef.is_exact` doc comment) は ref_target 分岐より先に判定する —
+/// value_prim/Ref どちらの経路も通らず `Exact(name)` へ直接 lower する、bare `Exact` node は「literal
+/// token match; binds nothing, consumes 1」(node.mbt) がそのまま欲しい挙動そのもの。この経路は
+/// `BOr`/`BGroup` の内側リーフ (`or_branch_node`/`lower_positional` の BGroup 分岐が `elem_head` を
+/// 共有する) にも自動的に及ぶ — DR-063 A.1 の裸文字列正規化が or 枝内でも成立する形と対称。
 fn elem_head(e : ElemDef) -> Node {
+  if e.is_exact {
+    return Exact(e.name)
+  }
   match e.ref_target {
     Some(r) => Ref(r)
     None =>
@@ -1359,7 +1377,11 @@ fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
     }
   }
   for e in sb.decl.positionals {
-    if not_dd(e) {
+    // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め: `is_exact` (positional
+    // -face nameless exact-match leaf) has no value of its own (`ElemDef.is_exact` doc comment,
+    // `elem_head` lowers it straight to a bare `Exact`) — same "no entity" standing as `is_dd`,
+    // guarded the same way.
+    if not_dd(e) && !e.is_exact {
       ensure_entity_body(sb.build, e, has_cf)
     }
   }
@@ -2167,6 +2189,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     tty_stream: copy.tty_stream,
     tty_cygwin: copy.tty_cygwin,
     is_dd: copy.is_dd,
+    is_exact: copy.is_exact,
     dd_match: copy.dd_match,
     dd_self_keep: copy.dd_self_keep,
     is_global: copy.is_global,
@@ -2369,6 +2392,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     tty_stream: None,
     tty_cygwin: true,
     is_dd: false,
+    is_exact: false,
     dd_match: None,
     dd_self_keep: false,
     is_global: false,
@@ -2741,6 +2765,7 @@ fn alias_entry(
     tty_stream: None,
     tty_cygwin: true,
     is_dd: false,
+    is_exact: false,
     dd_match: None,
     dd_self_keep: false,
     is_global: false,
