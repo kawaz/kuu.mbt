@@ -3689,3 +3689,53 @@ test "command-local (non-global) option value-starve: missing_operand path=[\"a\
       )
   }
 }
+
+// ── front_door: export_key map 露出 (issue 2026-07-15-front-door-export-key-map-access) ──
+
+///|
+/// front_door 経由だけで (`wire_decode.mbt` の非 pub fn — `dec_definition`/`build_export_map`
+/// 呼び出しの生 `Definition` 二度 decode 等 — に一切触れず) export_key 適用済み result が
+/// 組めることの固定 (MDR-005 追記)。発端は kuu-cli の MoonBit PoC (kawaz/kuu-cli
+/// impl/mbt、2026-07-15) が front_door の `parse_definition`/`parse` で conformance と同形の
+/// JSON 出力を組もうとしたが、result の export_key 適用に必要な ekmap (`build_export_map` の
+/// 結果) に到達できなかったこと — `AtomicAST` は MDR-005 §1 の不透明ハンドル原則
+/// (フィールド非公開、利用者は中身を読まず `parse`/`complete` に渡すだけでよい) により生
+/// `Definition` を保持せず、`build_export_map`/`dec_definition` はどちらも `wire_decode.mbt`
+/// 内部の非 pub fn だった。
+///
+/// 解決: `AtomicAST` に `ekmap` (definition から静的に決定される export_key 写像) を同梱し、
+/// `pub fn export_map(ast) -> Map[String, ExportKey]` を正面玄関に追加した — 不透明ハンドルの
+/// 原則を保ったまま (利用者は相変わらず `AtomicAST` の中身を読まない)、result 構築素材だけを
+/// 追加の玄関関数で取り出せる形。`apply_export_keys` (resolve.mbt) は元々 `pub` — 変換処理
+/// 自体は新設していない、ekmap への到達経路だけを追加した。
+///
+/// `port` (export_key: "alias" で結果キーを差し替え) と `verbose` (export_key 未指定、name
+/// 由来のまま) を混在させ、`parse_definition → export_map → parse → apply_export_keys` の
+/// 一気通貫で結果キーが `{alias, verbose}` になり `port` という素の cell 名では現れないことを
+/// 確認する (DR-052 §1: export_key は結果キー軸だけを差し替え、パース/effects の entity 名は
+/// 元の cell name のまま — 本テストは result 側だけを見る)。
+test "front_door: parse_definition -> export_map -> apply_export_keys builds a renamed result without touching wire_decode internals (issue 2026-07-15-front-door-export-key-map-access)" {
+  let json = @json.parse(
+    (
+      #|{"options": [
+      #|  {"name": "port", "type": "number", "long": true, "export_key": "alias"},
+      #|  {"name": "verbose", "type": "flag", "long": true}
+      #|]}
+    ),
+  )
+  let ast = match parse_definition(json) {
+    Ok(a) => a
+    Err(_) => fail("expected Ok(AtomicAST) for a well-formed definition")
+  }
+  let ekmap = export_map(ast)
+  match parse(ast, ["--port", "80", "--verbose"]) {
+    Success(binds) => {
+      let mapped = apply_export_keys(binds, ekmap)
+      let keys = mapped.map(fn(b) { b.key })
+      assert_true(keys.contains("alias"))
+      assert_true(keys.contains("verbose"))
+      assert_false(keys.contains("port"))
+    }
+    other => fail("expected Success, got " + render_outcome(other))
+  }
+}

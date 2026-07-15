@@ -2215,29 +2215,11 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
     Err(Rejected(errs)) =>
       raise DecodeSkip("definition rejected: " + deferrs_str(errs))
   }
-  // ekmap (result の export key 写像) は parse_definition の関心外 (射程外、MDR-005 — result
-  // encode は正面玄関に含めない) なので、`Definition` を別途 decode して `build_export_map` に渡す
-  // (shadows/types の 2 度読みは、正面玄関のドッグフーディングと ekmap 算出という異なる目的を
-  // 分離するための許容コスト)。
-  let defo = match defj.j_obj() {
-    Some(o) => o
-    None => raise DecodeSkip("definition is not an object")
-  }
-  let shadows = match defo.get("definitions") {
-    Some(dj) => {
-      let d = match dj.j_obj() {
-        Some(x) => x
-        None => raise DecodeSkip("definitions is not an object")
-      }
-      match d.get("types") {
-        Some(tj) => dec_types(tj)
-        None => Map([])
-      }
-    }
-    None => Map([])
-  }
-  let def = dec_definition(defo, shadows~)
-  let ekmap = build_export_map(def)
+  // ekmap (result の export key 写像) も production の正面玄関経由で取る (issue 2026-07-15
+  // front-door-export-key-map-access: AtomicAST が ekmap を同梱するようになり、`Definition` の
+  // 二重 decode が不要になった — 旧実装は shadows/types を dec_fixture 内でもう一度 decode して
+  // build_export_map に渡していた)。
+  let ekmap = export_map(ast)
   let casesj = match top.get("cases") {
     Some(c) => c
     None => raise DecodeSkip("missing 'cases'")

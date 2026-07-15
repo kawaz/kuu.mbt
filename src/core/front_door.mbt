@@ -36,10 +36,17 @@
 /// 対応する不透明ハンドル)。フィールド非公開 — 利用者は中身を読まず `parse`/`complete` に渡す
 /// だけでよい。`root` は lowering 済みの AtomicAST (`Scope`)、`registry` は
 /// `definitions.templates` 由来の ref 解決空間 (`lower_definition` が要求する第 3 引数と同じ)。
+/// `ekmap` は definition から静的に決定される export_key 写像 (DR-052、`build_export_map` の
+/// 結果) — `export_map` (下記) 経由で読める (issue 2026-07-15
+/// front-door-export-key-map-access: `parse`/`complete` の結果を CONFORMANCE.md §2 の
+/// `result: {...}` へ組み立てたい利用者が、AtomicAST から生 `Definition` を復元できず
+/// `build_export_map` を自分で呼べなかった)。ekmap は definition が確定した時点で決定的に
+/// 導出される静的情報なので、AtomicAST と生存期間が一致する — ここに同梱するのが自然。
 /// `atomic` は MoonBit の予約語 (将来使用のため) なので変数名には `ast` を使う。
 pub struct AtomicAST {
   root : Scope
   registry : Map[String, Node]
+  ekmap : Map[String, ExportKey]
 }
 
 ///|
@@ -94,7 +101,7 @@ pub fn parse_definition(json : Json) -> Result[AtomicAST, DefLoadError] {
     }
     let def = dec_definition(top, shadows~)
     match lower_definition(def, full_installers(), registry~) {
-      Ok(root) => Ok({ root, registry })
+      Ok(root) => Ok({ root, registry, ekmap: build_export_map(def) })
       Err(errs) => Err(Rejected(errs))
     }
   } catch {
@@ -128,4 +135,20 @@ pub fn complete(
     defs=ast.registry,
     after=args_after,
   )
+}
+
+///|
+/// 正面玄関の補助: `ast` の definition から静的に決定される export_key 写像 (DR-052) を返す。
+/// `parse` の結果 (`Outcome.Success` の `Array[Binding]`) を CONFORMANCE.md §2 の
+/// `result: {...}` オブジェクトへ組み立てたい利用者向けの素材 —
+/// `apply_export_keys(binds, export_map(ast))` (resolve.mbt、既に `pub`) にそのまま渡せる。
+///
+/// 経緯 (issue 2026-07-15 front-door-export-key-map-access): `AtomicAST` は生 `Definition` を
+/// 保持しない不透明ハンドルなので (本ファイル冒頭の `AtomicAST` doc)、利用者が
+/// `build_export_map` (installer.mbt、既に `pub`) を自分で呼ぶ経路が無かった。`Array[Binding]`
+/// → `result` オブジェクトへの変換処理そのもの (conformance runner の `build_result` 相当) の
+/// production 昇格は MDR-005 の射程外のまま — 本関数が運ぶのは「definition から決定的に導出
+/// される静的写像へのアクセス」であって、encode 処理そのものではない (MDR-005 追記, 本 issue)。
+pub fn export_map(ast : AtomicAST) -> Map[String, ExportKey] {
+  ast.ekmap
 }

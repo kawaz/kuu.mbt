@@ -152,7 +152,13 @@ DR-104/CONFORMANCE.md §3 は `Cand` の wire 表現に `path` を含めない (
 - `Outcome.Success` が運ぶ `Array[Binding]` を `result` オブジェクト (CONFORMANCE.md §2 の
   `result: {...}`) へ変換する処理 (conformance runner の `proj_result_export`/`build_result`
   相当) の production 昇格。今回の受け入れ条件は definition の decode (入力面) の昇格であり、
-  結果の encode (出力面) は含まれない
+  結果の encode (出力面) は含まれない。**ただし** 「definition から静的に導出される
+  export_key 写像 (`ekmap`) への到達経路」はこの除外の対象外 — `build_export_map`
+  (installer.mbt) / `apply_export_keys` (resolve.mbt) は元々 `pub` で変換処理自体は利用者
+  から既に呼べており、`AtomicAST` が生 `Definition` を保持しない不透明ハンドルであるために
+  ekmap だけ到達できない穴が残っていた。issue `2026-07-15-front-door-export-key-map-access`
+  (kuu-cli PoC dogfooding で発見) を受け `AtomicAST.ekmap` + `pub fn export_map(ast)` を
+  追加した — encode 処理そのものの昇格ではなく、静的写像への到達経路の追加
 - kuu-core/kuu-ux のパッケージ分割の実施可否そのもの (本 MDR の成果を見て kawaz が判断)
 - `word_before`/`word_after` (DR-104 が v1 未実装のまま予約) の実装
 
