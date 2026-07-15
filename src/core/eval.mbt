@@ -95,6 +95,8 @@ fn cand_trigger(
     term,
     meta: { is_alias, hidden, deprecated },
     path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
+    link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
+    completer: None, // DR-060 §3: an exact-trigger candidate never carries a completer
   }
 }
 
@@ -215,10 +217,22 @@ fn nest_path(label : String, path : Array[String]) -> Array[String] {
 /// Pending's value-slot candidate is parse mode's OTHER failure carrier (converted to a
 /// `missing_operand` ParseError at parse()'s top level, DR-053 §2.3), so it needs the same ancestor
 /// tracking Held already had, or the resulting Error's path is silently stuck at `[]`.
+///
+/// Also mirrors `nest`'s `Binding.link` decrement (DR-060 §4 / issue
+/// 2026-07-14-cand-completer-followup): a candidate with `link > 0` (set by `Rooted`'s eval arm)
+/// is still escaping toward its declaring scope — this level's prepend is SKIPPED and the counter
+/// decremented instead, exactly like a linked Binding's `scope` field. Without this, a global
+/// option's value-slot candidate would accumulate the COPY-side scope path instead of the
+/// DECLARING scope's, and `complete_tree`'s `(path, origin)`-keyed completer lookup would miss
+/// the Entity (which lives only at the declaring scope).
 fn nest_cands(label : String, cs : Array[Cand]) -> Array[Cand] {
   let out : Array[Cand] = []
   for c in cs {
-    out.push({ ..c, path: nest_path(label, c.path) })
+    if c.link > 0 {
+      out.push({ ..c, link: c.link - 1 })
+    } else {
+      out.push({ ..c, path: nest_path(label, c.path) })
+    }
   }
   out
 }
@@ -286,6 +300,11 @@ fn pend_value(ty : Ty, origin : String) -> Cand {
     term: WordEnd,
     meta: { is_alias: false, hidden: false, deprecated: false },
     path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
+    link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
+    // DR-060 §4 / DR-104 §2(d): filled in by `complete_tree`'s (path, origin)-keyed Entity-table
+    // lookup (outcome.mbt) as candidates fold into the dedup loop, NOT here — `pend_value` has no
+    // Entity table in scope at any of its 30+ call sites (see Cand.completer's doc comment).
+    completer: None,
   }
 }
 
@@ -580,7 +599,19 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
             out.push(Accept(p, marked))
           }
           Held(pe, bs) => out.push(Held(pe, bs))
-          Pending(cs, bs) => out.push(Pending(cs, bs))
+          Pending(cs, bs) => {
+            // Mirror the Accept arm's `link: depth` marking, but on Cand.link (DR-060 §4 /
+            // issue 2026-07-14-cand-completer-followup): a global option's copied satellite
+            // lives `depth` scopes below its OWN declaring scope, and its Entity (the one
+            // `complete_tree`'s completer lookup needs) sits at that declaring scope, not
+            // here — `nest_cands` (below) consumes this exactly like `nest` consumes
+            // `Binding.link`, skipping `depth` CmdSat-boundary prepends on the way out.
+            let marked : Array[Cand] = []
+            for c in cs {
+              marked.push({ ..c, link: depth })
+            }
+            out.push(Pending(marked, bs))
+          }
         }
       }
       out

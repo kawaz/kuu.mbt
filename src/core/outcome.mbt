@@ -312,30 +312,67 @@ pub fn complete_tree(
       scope_step(sc, ctx, 0, 0, [], false, KTop(collect_scopes(root, defs)))
     _ => eval(root, ctx, 0)
   }
+  // DR-060 §4 / DR-104 §2(d): value-position candidates' `completer` is resolved via a
+  // (path, origin)-keyed Entity lookup — NOT a bare name-keyed one. `pend_value` (eval.mbt) has
+  // no Entity table in scope at any of its 30+ call sites, so the completer cannot be threaded
+  // through at construction time; it must be looked up here instead. Looking it up by `origin`
+  // ALONE would be wrong: two structurally independent scopes (e.g. two separate `command`
+  // definitions sharing the same child element name, DR-067 §1's "same-scope trigger duplication
+  // is legal" extended across sibling command definitions) can each declare their OWN Entity
+  // named `origin` with a DIFFERENT completer — a bare name lookup would silently pick
+  // whichever one the tree walk happened to visit first. Keying by `(c.path, c.origin)` finds
+  // the Entity belonging to the SAME scope that produced this specific candidate, exactly
+  // mirroring how `nest_cands`/`nest_branches` built that candidate's `path` in the first place.
+  let entities = collect_all_entities(root, defs)
   let cands : Array[Cand] = []
   for b in branches {
     match b {
       Pending(cs, _) =>
-        for c in cs {
-          let mut dup = false
-          for e in cands {
+        for c0 in cs {
+          let c = if c0.is_value {
+            match entities.get(entity_key(c0.path, c0.origin)) {
+              // `Some(Some(ent))`: a clean, unambiguous Entity — carry its completer.
+              Some(Some(ent)) => { ..c0, completer: ent.completer }
+              // `Some(None)`: a key collision detected at collection time (see
+              // `collect_entities_into`'s doc comment) — no completer, same as "unresolved".
+              Some(None) => c0
+              // no Entity under this key at all (shouldn't happen for a well-formed tree, but
+              // stays defensive rather than erroring).
+              None => c0
+            }
+          } else {
+            c0
+          }
+          let mut dup_idx = -1
+          for j = 0; j < cands.length(); j = j + 1 {
+            let e = cands[j]
             // DR-060 §3's candidate structure is spelling/is_value/ty/origin/term/meta —
             // `path` (DR-066 §4) is NOT part of it, so two candidates that differ only
             // by which ancestor scope produced them are the same candidate here: the
             // same spelling is readable either way, and DR-060 §1's "union of what's
             // readable" is a union over SPELLINGS, not over the scopes that offer them.
+            // `completer` (DR-104 §3) is likewise NOT part of this identity.
             if e.spelling == c.spelling &&
               e.is_value == c.is_value &&
               e.ty == c.ty &&
               e.origin == c.origin &&
               e.term == c.term &&
               e.meta == c.meta {
-              dup = true
+              dup_idx = j
               break
             }
           }
-          if !dup {
+          if dup_idx < 0 {
             cands.push(c)
+          } else if cands[dup_idx].completer != c.completer {
+            // DR-104 §3 明確化 note: two candidates that dedup-match on the 6-field identity
+            // but resolve to DIFFERENT completers (via their distinct `path`s, per the doc
+            // comment above) merge to "no completer" — neither producer's guess is privileged
+            // over the other's, so the honest wire projection is `completer` absent (COMP-Q3's
+            // opt-in convention already treats absence as "unknown/untested", which fits this
+            // case exactly: which app-specific dynamic completer applies is genuinely
+            // ambiguous when the 6 identity-bearing fields cannot tell the two scopes apart).
+            cands[dup_idx] = { ..cands[dup_idx], completer: None }
           }
         }
       _ => () // Accept: already complete, nothing to read; Held: dead end
@@ -364,4 +401,146 @@ pub fn complete_tree(
     }
   }
   out
+}
+
+// ── Entity table for complete()'s completer lookup (DR-060 §4) ────────────────────────────
+
+///|
+/// Render a `(path, name)` pair into a single lookup key — root-first path segments joined
+/// by a separator that cannot appear in an element name (`>`, same separator convention as
+/// this file's other `render_path`-style joins), then `#name`. Two entities with the same
+/// `name` but a DIFFERENT `path` (distinct scopes — e.g. two independent `command` definitions
+/// that both happen to declare a child element called `target`) get DISTINCT keys here; a bare
+/// name-only key would conflate them (see `complete_tree`'s doc comment on why that would be
+/// wrong for the completer lookup specifically).
+fn entity_key(path : Array[String], name : String) -> String {
+  let buf = StringBuilder::new()
+  for p in path {
+    buf.write_string(p)
+    buf.write_string(">")
+  }
+  buf.write_string("#")
+  buf.write_string(name)
+  buf.to_string()
+}
+
+///|
+/// Collect every statically reachable Entity, keyed by `entity_key(path, name)`, over the WHOLE
+/// tree — root scope plus every nested CmdSat / inline positional ScopeNode / scope-shaped
+/// repeat head. Unlike `collect_scopes` (eval.mbt), which serves ONLY the KTop constraint table
+/// and therefore skips any scope with no constraints, this visits every scope unconditionally: a
+/// `Cand.origin` can name an Entity in a scope that has no constraints at all, and
+/// `complete_tree`'s completer lookup needs to find it regardless. Mirrors
+/// `collect_scopes`/`collect_scope_into`/`collect_greedy_scopes`/`collect_pos_scopes`'s traversal
+/// shape (same Ref/CmdSat/Or/Rooted/BoundedTail/Many cases and the SAME root-first path-building
+/// convention — `path + [name]` on CmdSat entry — so a `Cand.path` built by `nest_cands`/
+/// `nest_branches` lines up exactly with the path this collector attaches to that Entity).
+///
+/// Value is `Entity?`, NOT `Entity` — `None` marks a KEY COLLISION (DR-067 §1 legalizes two
+/// independent `command` definitions sharing the same command NAME, e.g. two sibling `build`
+/// commands each declaring their own `target` positional; `path` is built from scope NAMES
+/// (CmdSat's `name`), so it cannot tell these two structurally-independent scopes apart — they
+/// collide on the identical key). When a second Entity arrives under a key that already resolved
+/// to a DIFFERENT completer, this collision is indistinguishable (at lookup time) from the
+/// dedup-time "6-field match, different completer" case DR-104 §3's merge rule already covers —
+/// so it gets the SAME answer (`None`, i.e. "no completer") by construction here, rather than
+/// silently keeping whichever Entity was visited first.
+fn collect_all_entities(
+  root : Node,
+  defs : Map[String, Node],
+) -> Map[String, Entity?] {
+  let out : Map[String, Entity?] = Map([])
+  match root {
+    ScopeNode(sc) => collect_entities_into(sc, [], defs, out, [])
+    _ => ()
+  }
+  out
+}
+
+///|
+fn collect_entities_into(
+  sc : Scope,
+  path : Array[String],
+  defs : Map[String, Node],
+  out : Map[String, Entity?],
+  seen_refs : Array[String],
+) -> Unit {
+  for e in sc.entities {
+    let k = entity_key(path, e.name)
+    match out.get(k) {
+      None => out.set(k, Some(e))
+      Some(Some(existing)) =>
+        if existing.completer != e.completer {
+          out.set(k, None) // collision under an indistinguishable path — see doc comment
+        }
+      Some(None) => () // already a known collision, stays a collision
+    }
+  }
+  for g in sc.greedy {
+    collect_entities_greedy(g, path, defs, out, seen_refs)
+  }
+  for p in sc.positional {
+    collect_entities_pos(p, path, defs, out, seen_refs)
+  }
+}
+
+///|
+fn collect_entities_greedy(
+  g : Node,
+  path : Array[String],
+  defs : Map[String, Node],
+  out : Map[String, Entity?],
+  seen_refs : Array[String],
+) -> Unit {
+  match g {
+    CmdSat(name, child) => {
+      let p2 : Array[String] = []
+      for s in path {
+        p2.push(s)
+      }
+      p2.push(name)
+      collect_entities_into(child, p2, defs, out, seen_refs)
+    }
+    Or(alts) =>
+      for a in alts {
+        collect_entities_greedy(a, path, defs, out, seen_refs)
+      }
+    Rooted(inner, _) =>
+      collect_entities_greedy(inner, path, defs, out, seen_refs)
+    _ => ()
+  }
+}
+
+///|
+fn collect_entities_pos(
+  n : Node,
+  path : Array[String],
+  defs : Map[String, Node],
+  out : Map[String, Entity?],
+  seen_refs : Array[String],
+) -> Unit {
+  match n {
+    ScopeNode(child) => collect_entities_into(child, path, defs, out, seen_refs)
+    Ref(name) =>
+      if !str_mem(seen_refs, name) {
+        let seen2 : Array[String] = []
+        for s in seen_refs {
+          seen2.push(s)
+        }
+        seen2.push(name)
+        match ref_head(defs, name) {
+          ScopeNode(child) =>
+            collect_entities_into(child, path, defs, out, seen2)
+          _ => ()
+        }
+      }
+    BoundedTail(head, _, _) =>
+      match head {
+        ScopeNode(child) =>
+          collect_entities_into(child, path, defs, out, seen_refs)
+        _ => ()
+      }
+    Many(inner, _) => collect_entities_pos(inner, path, defs, out, seen_refs)
+    _ => ()
+  }
 }
