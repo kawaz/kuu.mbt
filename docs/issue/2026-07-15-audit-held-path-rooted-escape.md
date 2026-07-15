@@ -3,7 +3,7 @@ title: Held.path にも Rooted escape 未対応の疑い (Cand.path と同種の
 status: open
 category: idea
 created: 2026-07-15T11:37:35+09:00
-last_read:
+last_read: 2026-07-15T13:45:03+09:00
 open_entered: 2026-07-15T11:37:35+09:00
 wip_entered:
 blocked_entered:
