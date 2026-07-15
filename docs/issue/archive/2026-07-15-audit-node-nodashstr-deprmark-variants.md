@@ -1,6 +1,6 @@
 ---
 title: Node enum の NoDashStr/DeprMark variant がどこからも構築されていない疑い
-status: open
+status: resolved
 category: idea (要確認)
 created: 2026-07-15T01:08:09+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-15T15:15:33+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-041","dr/DR-058","dr/DR-085","implemented"]
 blocked_by:
 origin: kuu spec session (kuu-core API 整理作業中の副次発見, 2026-07-15)
 ---
