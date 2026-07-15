@@ -123,6 +123,10 @@ fn opt(
   // ensure_entity 経由で Entity.hidden へ carry される。alias は AliasDef に独立宣言経路が無いので
   // is_alias は opt() の返す ElemDef 上では常に false (alias_entry が別途 true で構築する)。
   hidden? : Bool = false,
+  // DR-060 §4 / DR-104 §2(d) / issue 2026-07-14-cand-completer-followup: the wire `completer:
+  // "<名前>"` attribute. `dec_option` reads it and passes it here; `ensure_entity` carries it
+  // through to `Entity.completer` (same carrier pattern as `hidden`).
+  completer? : String? = None,
 ) -> ElemDef {
   {
     name,
@@ -162,6 +166,7 @@ fn opt(
     deprecated: false,
     is_alias: false,
     hidden,
+    completer,
     default_values: default,
     int_round,
     allow_base_prefix,
@@ -210,6 +215,11 @@ fn pos(
   tty_cygwin? : Bool = true,
   required? : Bool = false,
   requires? : Array[String] = [],
+  // DR-060 §4 / DR-104 §2(d): a positional's value slot can name a dynamic completer too (e.g. a
+  // file-path positional) — unlike `hidden` (an option-only 補完 policy axis this file omits for
+  // positionals), `completer` targets the VALUE position itself, which positionals have just as
+  // much as options do.
+  completer? : String? = None,
   body? : ElemBody = BCell,
 ) -> ElemDef {
   {
@@ -252,6 +262,7 @@ fn pos(
     // ので常に false — opt() の同フィールドと対称。
     is_alias: false,
     hidden: false,
+    completer,
     default_values: default,
     int_round,
     allow_base_prefix,
@@ -324,6 +335,7 @@ fn dd_marker(
     deprecated: false,
     is_alias: false,
     hidden: false,
+    completer: None, // dd は値空間を持たない (DR-089) — completer が意味を持つ値位置スロットが無い
     default_values: None,
     int_round: RError,
     allow_base_prefix: false,
@@ -1490,6 +1502,9 @@ fn dec_option(
       // complete API 自体はこの値に関わらず候補を返す (DR-060 §3)。
        "hidden", "or", "values", "piece_filters", "value_filters", "final_filters",
       "accum_filters", "ref", "repeat",
+      // DR-060 §4 / DR-104 §2(d): この要素の値位置の動的 completer 名 (registry `completers` の
+      // 参照)。実行はしない、名前を Entity.completer へ運ぶだけ (DR-060 §3)。
+       "completer",
       // DR-090 §2: dd 専用の2軸拡張キー — 他 type では無意味だが、dd 分岐 (下) だけが読む
       // ("option" 共通 allowed_keys に足すのは他 wire 属性 (env/config_key 等) と同じ扱い方)。
        "match", "self",
@@ -1691,6 +1706,10 @@ fn dec_option(
   }
   let deprecated = bool_field(o, "deprecated", false)
   let hidden = bool_field(o, "hidden", false)
+  // DR-060 §4 / DR-104 §2(d): `completer` names a `completers` registry entry — decode reads the
+  // name verbatim, no lookup/validation against the registry happens here (same posture as
+  // `accumulator`'s registry-name carry: unknown-vocab detection, if any, is parse_definition's job).
+  let completer = jf_str(o, "completer")
   let piece_filters = dec_filter_chain(o.get("piece_filters"))
   let value_filters = dec_filter_chain(o.get("value_filters"))
   let final_filters = dec_filter_chain(o.get("final_filters"))
@@ -1748,6 +1767,7 @@ fn dec_option(
       accum_filters~,
       ref_~,
       hidden~,
+      completer~,
       body=match structural_or {
         Some(branches) => BOr(branches)
         None =>
@@ -1781,6 +1801,9 @@ fn dec_positional(
       // codex 節目レビュー Major 1 (dec_option 側と同じ要素単位 scope config override、
       // 対称の positional 版)。
        "config",
+      // DR-060 §4 / DR-104 §2(d): dec_option 側と対称 — positional の値スロットも completer 名を
+      // 宣言できる (例: ファイルパスを取る positional)。
+       "completer",
     ],
     "positional",
   )
@@ -1882,6 +1905,8 @@ fn dec_positional(
   // option 側 (`dec_option`) は既に対応済みだったが positional 側は decode gap だった
   // (fixtures/constraints-parse/requires-dd-target.json が発見)。
   let requires = dec_strs(o.get("requires"))
+  // DR-060 §4 / DR-104 §2(d): dec_option 側と対称の decode — completer 名の verbatim carry。
+  let completer = jf_str(o, "completer")
   pos(
     name,
     ty,
@@ -1909,6 +1934,7 @@ fn dec_positional(
     accum_filters~,
     required~,
     requires~,
+    completer~,
   )
 }
 

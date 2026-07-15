@@ -548,6 +548,20 @@ pub struct Entity {
   // alias と違い、hidden は要素そのものの属性であって spelling ごとに変わらない前提 (現行 fixture
   // に alias 側の独立 hidden を要求するものは無い)。
   hidden : Bool
+  // DR-060 §4 / DR-104 §2(d) / issue 2026-07-14-cand-completer-followup: the registry name of the
+  // dynamic completer this cell's value slot delegates to (`completer: "<名前>"` wire attribute,
+  // `ElemDef.completer` からそのまま carry — `hidden` と同じ「冗長フィールドをそのまま運ぶだけ」
+  // パターン)。`None` = no completer declared. Read by `complete_tree`'s post-dedup pass
+  // (outcome.mbt) via a name-keyed Entity lookup — NOT threaded through the value-primitive Node
+  // constructors (StrArg/NumArg/…) themselves, because every value-primitive call site would
+  // otherwise need its own completer plumbing (30+ sites across eval.mbt/matcher.mbt) for a value
+  // that is always determined by `origin` alone (same Entity, same completer, by construction —
+  // `ensure_entity` only ever creates ONE Entity per name). This is the structural reason DR-104
+  // §3's "merge rule for a completer-only divergent duplicate" never actually fires under this
+  // implementation: two candidates that dedup-match on the existing 6 fields always share the same
+  // `origin`, hence the same Entity, hence the same completer — there is no live path that produces
+  // a genuine conflict to merge.
+  completer : String?
 } derive(Eq, Debug)
 
 ///|
@@ -689,6 +703,31 @@ pub(all) struct Cand {
   term : TermHint
   meta : CandMeta
   path : Array[String] // DR-066 §4: root-first ancestor scope names (snoc form, [] = root 直下)
+  // Rooted-escape counter for `path`, mirroring `Binding.link` (DR-042 global link-sync): a
+  // global option's satellite is copied into a descendant command scope wrapped in
+  // `Rooted(node, depth)`, and its Entity lives ONLY at the declaring (shallower) scope — a
+  // value-slot Pending produced from inside that copy must therefore have `depth` levels of
+  // CmdSat-boundary prepend SKIPPED, or its `path` ends up pointing at the wrong (copy-side)
+  // scope while the Entity it names sits at the declaring scope. Bare `Array[String]` path alone
+  // cannot express "skip N prepends" — `nest_cands` (eval.mbt) consumes this exactly like
+  // `nest`'s own `Binding.link` decrement, so the two stay in lockstep. `0` (the common case) =
+  // no pending escape, prepend normally. NOT part of the 6-field dedup identity or the wire
+  // projection (same posture as `path` itself, DR-104 §2/§3) — purely an implementation detail of
+  // `complete_tree`'s completer lookup (outcome.mbt).
+  link : Int
+  // DR-060 §3 "値位置: 型情報 + completer 名" / DR-104 §2/§3: the dynamic completer name for a
+  // VALUE-position candidate (`is_value:true`); always `None` on an exact-trigger candidate (DR-060
+  // §3 does not attach a completer to a spelling). Deliberately NOT part of the 6-field dedup
+  // identity (DR-104 §3 "`completer` は同一性の成分ではない") — every `pend_value` call site keeps
+  // constructing `None` here (no Entity table is in scope at any of those 30+ sites); `complete_tree`
+  // (outcome.mbt) fills it in via a `(path, origin)`-keyed lookup into the tree's Entity table
+  // (`collect_all_entities`) as each candidate is folded into the dedup loop — keyed by `path` (not
+  // bare `origin`) because two structurally independent scopes can each declare their own Entity
+  // under the SAME name with a DIFFERENT completer, and a bare-name lookup could not tell them
+  // apart. When two candidates dedup-match on the 6-field identity but resolve to different
+  // completers via their distinct paths, the merge rule (DR-104 §3 明確化 note) folds them to
+  // `None` — see `complete_tree`'s dedup loop.
+  completer : String?
 } derive(Eq, Debug)
 
 ///|

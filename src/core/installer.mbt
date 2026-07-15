@@ -130,6 +130,10 @@ pub struct ElemDef {
   // `ensure_entity` が Entity へそのまま carry する — 要素単位の属性 (spelling ごとに変わらない)
   // なので alias entry-copy はこの値を持たない (`alias_entry` は常に false)。
   hidden : Bool
+  // DR-060 §4 / DR-104 §2(d): decode 層 (dec_option/dec_positional) 所有 — wire の
+  // `completer: "<名前>"` 属性をそのまま運ぶ。`ensure_entity` がそのまま `Entity.completer` へ写す
+  // (`hidden` と同じ carrier パターン)。`None` = completer 未宣言。
+  completer : String?
   // DR-083 §1/§波及: decode 層 (dec_option/dec_positional) 所有。JSON scalar → 長さ1へ持ち上げ、JSON
   // array → その piece 列そのまま (multiple/repeat/merge 要素のみ合法 — 非 accum 要素への配列は
   // `collect_scalar_array_default` が definition-error として静的に弾く)。`ensure_entity` がそのまま
@@ -790,6 +794,7 @@ fn clone_elem(e : ElemDef) -> ElemDef {
     deprecated: e.deprecated,
     is_alias: e.is_alias,
     hidden: e.hidden,
+    completer: e.completer,
     default_values: e.default_values,
     int_round: e.int_round,
     allow_base_prefix: e.allow_base_prefix,
@@ -1566,6 +1571,7 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
       []
     },
     hidden: e.hidden,
+    completer: e.completer,
   })
 }
 
@@ -2176,6 +2182,7 @@ fn copy_global_into(child : SB, opt : ElemDef) -> Unit {
     deprecated: copy.deprecated,
     is_alias: copy.is_alias,
     hidden: copy.hidden,
+    completer: copy.completer,
     default_values: copy.default_values,
     int_round: copy.int_round,
     allow_base_prefix: copy.allow_base_prefix,
@@ -2377,6 +2384,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
     deprecated: false,
     is_alias: false, // write-target copy は alias/hidden 宣言経路を持たない (canonical default 相当)
     hidden: false,
+    completer: None, // write-target copy は completer 宣言経路を持たない (hidden と同じ理由)
     default_values: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
     int_round: RError, // canonical default (DR-075 §2): write-target は int_round を持たない
     allow_base_prefix: false, // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
@@ -2751,6 +2759,7 @@ fn alias_entry(
     // fixture に alias 側の独立 hidden を要求するものが無い) ので canonical と同じ false 既定。
     is_alias: true,
     hidden: false,
+    completer: None,
     default_values: None,
     int_round: RError,
     allow_base_prefix: false,

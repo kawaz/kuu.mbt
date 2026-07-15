@@ -93,6 +93,7 @@ fn el(
     deprecated: false,
     is_alias: false,
     hidden: false,
+    completer: None,
     default_values: None,
     int_round: RError,
     allow_base_prefix: false,

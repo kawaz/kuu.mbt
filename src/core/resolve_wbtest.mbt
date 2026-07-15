@@ -71,6 +71,7 @@ fn ent(
     final_filters: chain(final_filters),
     accum_filters: chain(accum_filters),
     hidden: false,
+    completer: None,
   }
 }
 
