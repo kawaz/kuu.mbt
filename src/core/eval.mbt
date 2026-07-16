@@ -153,6 +153,46 @@ pub fn warnings_of(o : Outcome) -> Array[String] {
 }
 
 ///|
+/// One `warnings[]` entry (spec CONFORMANCE §2 warnings 面: kuu-cli の JSON wire は
+/// `{"element": <name>, "kind": <kind>}` のオブジェクト配列で返す)。`kind` は現状 `"deprecated"`
+/// のみ (spec DR-058)、将来の warning 語彙 (`lint` 等の DR-021 系譜、DR-047 §7 診断モード)
+/// が増えたときに variant を拡張しやすいよう、名前ペアを型として運ぶ (kuu-cli PoC codex レビュー
+/// 2026-07-15 の M-1 解消 — 素の element name 配列だと kind 情報が落ちるため、下流の JSON
+/// 射影に kind を持たせられない)。
+pub(all) struct Warning {
+  element : String
+  kind : String
+} derive(Eq, Debug)
+
+///|
+/// 構造化した warnings (spec CONFORMANCE §2 warnings 面素材)。現状 `@depr:` sentinel から
+/// `kind: "deprecated"` を組み立てて返す (spec DR-058) — `warnings_of` の同機能で kind 情報を
+/// 保持する版。element の重複は排除 (first-seen 順、`warnings_of` と同じ dedup 規約)。
+pub fn warnings_structured(o : Outcome) -> Array[Warning] {
+  let out : Array[Warning] = []
+  match o {
+    Success(binds) =>
+      for b in binds {
+        if is_depr_key(b.key) {
+          let name = b.key[6:].to_owned()
+          let mut seen = false
+          for w in out {
+            if w.element == name && w.kind == "deprecated" {
+              seen = true
+              break
+            }
+          }
+          if !seen {
+            out.push({ element: name, kind: "deprecated" })
+          }
+        }
+      }
+    _ => ()
+  }
+  out
+}
+
+///|
 fn str_mem(xs : Array[String], v : String) -> Bool {
   for x in xs {
     if x == v {

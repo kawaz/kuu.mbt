@@ -17,13 +17,55 @@ spec (VISION.md §2, DR-054/DR-053/DR-060+DR-104) が定める 3 契約をその
 
 ```moonbit
 pub fn parse_definition(json : Json) -> Result[AtomicAST, DefLoadError]
-pub fn parse(atomic : AtomicAST, args : Array[String]) -> Outcome
+pub fn parse(
+  atomic : AtomicAST,
+  args : Array[String],
+  env? : Map[String, String] = Map([]),
+  config? : (String) -> ConfigVal? = fn(_p) { None },
+  tty? : Map[String, TtyObs] = Map([]),
+) -> Outcome
+pub fn resolve(
+  atomic : AtomicAST,
+  outcome : Outcome,
+  args : Array[String],
+  env? : Map[String, String] = Map([]),
+  config? : (String) -> ConfigVal? = fn(_p) { None },
+  tty? : Map[String, TtyObs] = Map([]),
+) -> Outcome
 pub fn complete(
   atomic : AtomicAST,
   args_before : Array[String],
   args_after? : Array[String] = [],
 ) -> Array[Cand]
 ```
+
+> **追記 (issue `2026-07-15-front-door-parse-missing-postprocessing`)**: 初版の `parse` は
+> `parse_tree` の薄い wrapper で、spec DR-053 の Outcome 意味論として現われる 2 段の後段処理
+> (`apply_requires_filter` = DR-047 §5 明確化 = kawaz 裁定 2026-07-09 の bool-target requires
+> の値源解決後判定 / `promote_collision_ambiguous` = DR-021 → DR-073 の export-key 共露出昇格)
+> を通していなかった。kuu-cli PoC の dogfooding (2026-07-15) で spec 非準拠 outcome (fixtures
+> `export-key/collision.json` が Success、`inheritable-parse/basic.json` の子 scope が空) を
+> 返す実バグとして顕在化。以下 2 点を追加:
+>
+> 1. **`parse` が後段 2 段を内包する**: 内訳は `parse_tree` → `apply_requires_filter` →
+>    `promote_collision_ambiguous`。`env` / `config` / `tty` を optional 引数で受け、
+>    `apply_requires_filter` が候補ごとに `resolve_scope_tree` を実際に呼ぶ (値源が要る)。
+>    conformance runner の手組み後段はこれで解消 = 二重実装の解消 (kuu-cli も同じ玄関を叩けば
+>    spec 準拠 outcome を得る)
+> 2. **`resolve` を追加する**: DR-104 §5 の相区分「dead end 判定 = parse 相、制約評価 =
+>    resolve 相」に忠実に、値源ラダー (env/config/inherit/default seat fill、DR-047 §4) を
+>    `parse` の Success payload に適用して解決済み binds を返す独立関数。`Failure` / `Ambiguous`
+>    はパススルー、resolve 相の失敗 (DR-066 env/config seat parse 失敗、DR-009 §7 filter
+>    reject) は `Failure` に転落。`resolve_scope_tree(path=[])` 一本で command 木 / 単一 scope
+>    の両ケースを扱う。**採用理由**: kawaz 裁定「迷ったら 2 段案 (相区分に忠実な方) に倒す」
+>    と DR-104 §5 の明文の相区分。`parse` に含める案 (= 1 段)、`parse_and_resolve` 単発ラッパー
+>    の即時提供、は現状要件がないため見送り (呼び出し側便宜のラッパーは後で追加できる)
+>
+> **kuu-cli 側の追随**: `wire.mbt` は `front_door.parse` → `front_door.resolve` の 2 段呼び出し
+> に乗り換える。sentinel 除外は `pub fn is_sentinel(k : String) -> Bool` (resolve.mbt) を利用、
+> warnings 構造化は `pub fn warnings_structured(o : Outcome) -> Array[Warning]` (eval.mbt) を
+> 利用する — runner にしか要らない fixture 射影 (`proj_*`) は runner 側に残す一方、下流が
+> `{element, kind}` 形の JSON を組めるための production 面はここで整えた。
 
 - **`AtomicAST`**: 新設の不透明ハンドル型 `pub struct AtomicAST { root : Scope; registry : Map[String, Node] }`。
   フィールド非公開 (`pub`、`pub(all)` ではない) — 利用者は中身を読まず `parse`/`complete` に
@@ -158,7 +200,19 @@ DR-104/CONFORMANCE.md §3 は `Cand` の wire 表現に `path` を含めない (
   から既に呼べており、`AtomicAST` が生 `Definition` を保持しない不透明ハンドルであるために
   ekmap だけ到達できない穴が残っていた。issue `2026-07-15-front-door-export-key-map-access`
   (kuu-cli PoC dogfooding で発見) を受け `AtomicAST.ekmap` + `pub fn export_map(ast)` を
-  追加した — encode 処理そのものの昇格ではなく、静的写像への到達経路の追加
+  追加した — encode 処理そのものの昇格ではなく、静的写像への到達経路の追加。**類似の除外
+  対象外** (`2026-07-15-front-door-parse-missing-postprocessing`, 上記 §1 追記): sentinel
+  判定 (`is_sentinel`, resolve.mbt) と構造化 warnings (`warnings_structured` + `Warning`,
+  eval.mbt) の pub 化。前者は呼び出し側 (kuu-cli) が effects 列を組むために sentinel を除外
+  する必要があり、後者は spec CONFORMANCE §2 の `warnings: [{element, kind}]` 形の JSON を
+  組み立てるための production 面 (旧 `warnings_of` は element 名の配列で kind を失う)。両者
+  とも「Outcome を素材として消費するときの共通判定」であって encode 処理そのものではない
+- `Ambiguous` の各 interpretation の binds に対する resolve は現時点で未提供 (`resolve` は
+  `Ambiguous` をパススルー)。DR-053 §3 の interpretations は「結果オブジェクト形のビュー」で
+  並列レンダリング要件を持つが、interpretation ごとの解決は呼び出し側 (JSON 射影を組み立てる
+  コード) の責務とする。conformance runner も現状 `ambiguous` case で interpretations の
+  resolve を要求しない (`build_interpretations` が build_result を回すのは export-key 面の
+  ビュー生成であって値源ラダーの解決ではない)
 - kuu-core/kuu-ux のパッケージ分割の実施可否そのもの (本 MDR の成果を見て kawaz が判断)
 - `word_before`/`word_after` (DR-104 が v1 未実装のまま予約) の実装
 

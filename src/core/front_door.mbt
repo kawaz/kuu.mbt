@@ -113,10 +113,124 @@ pub fn parse_definition(json : Json) -> Result[AtomicAST, DefLoadError] {
 }
 
 ///|
-/// 正面玄関 2: `ast` に対し `args` を解決する (DR-053)。低レベル `parse_tree` (Node 直渡し、
-/// eval.mbt) への薄いラッパー — `ast.registry` を ref 解決空間として thread する。
-pub fn parse(ast : AtomicAST, args : Array[String]) -> Outcome {
-  parse_tree(ScopeNode(ast.root), args, defs=ast.registry)
+/// 正面玄関 2: `ast` に対し `args` を parse し、spec 準拠の Outcome (DR-053) を返す。
+///
+/// 内訳 (spec の parse 相の意味論として現われるもの、下 3 段は「相区分」表の parse 相に属する):
+///
+/// 1. **`parse_tree`** (eval.mbt): argv 消費 + eval 層の dead-end 判定 + 完全経路収集
+/// 2. **`apply_requires_filter`** (DR-047 §5 明確化 = kawaz 裁定 2026-07-09): bool-target
+///    requires / CRequiresIf は KTop (CLI 面のみ) では常に skip され、値源 (env/config/inherit)
+///    が解ける後段でしか判定できない。ここで候補ごとに `resolve_scope_tree` を実際に呼んで
+///    充足を確定し、生存経路数で outcome を再構成する (0 → Failure / 1 → Success / 2+ →
+///    Ambiguous)。値源が空でも bool 目的語の充足条件 (「解決後値が true」) の判定は必要 —
+///    `env` / `config` / `tty` が未指定なら default: false になり、requires が unfired を弾く
+///    (仕様通り)
+/// 3. **`promote_collision_ambiguous`** (DR-021 → DR-073): 同一入力で export_key に共露出する
+///    2 要素が実際に一緒に present な場合、Success を Ambiguous に昇格し claimants 面
+///    (露出キー → その解釈で当該キーを占める実体 entity name) を添える (DR-073 §1)
+///
+/// **相区分 (DR-104 §5)**: 値源ラダー (env/config/inherit/default seat fill) を binds に反映
+/// する **resolve 相** は本関数の射程外 — 別関数 `resolve()` (下記) に切り出す。理由: parse 相
+/// と resolve 相は spec の DR-104 §5 が「dead end 判定は parse 相、制約評価は resolve 相」で
+/// 明示的に相区分しており、玄関 API もこれに従う (kawaz 裁定「迷ったら 2 段案 (相区分に忠実)
+/// に倒す」)。したがって本関数の Success payload (`Array[Binding]`) は **CLI 由来の生 binds**
+/// (`parse_tree` の直接出力、resolve 未適用) であり、`resolve()` に渡してから
+/// `build_result` / `apply_export_keys` で最終 wire 表現を組み立てるのが呼び出し側の責務。
+///
+/// **なぜ 1 発 `parse_and_resolve` にしないか**: parse 相の outcome (Success/Failure/Ambiguous
+/// 骨格) だけ欲しい場面 (dogfooding 用の debug、部分的な取扱、fuzz 等) と、完全 wire を組み立て
+/// たい場面 (kuu-cli の JSON 出力) を型で区別する。呼び出し側便宜のラッパーが必要になれば別途足す
+/// (現状は runner + kuu-cli が 2 発直列で書くだけで済む)。
+///
+/// 引数の値源:
+///
+/// - `env`: DR-050 の env provider に相当する `Map[String, String]` (キー = env var name)。
+///   `apply_requires_filter` 内で `resolve_scope_tree` に渡される。未指定 = 空 Map
+/// - `config`: DR-050 の config provider シグネチャ `(path: String) -> ConfigVal?`。scope ごとに
+///   異なる config_file を動的に指す `CfgFiles` ケースも呼び出し元が対応する closure を渡すだけで
+///   均一に扱われる (単一 ConfigVal だった旧契約の残存ギャップが解消)。未指定 = 常に `None`
+///   を返す no-op provider
+/// - `tty`: DR-099 §4 の tty provider (stream 名 → 生観測 `TtyObs` の Map)。未指定 = 空 Map
+///   (提供なし、CONFORMANCE §1)
+pub fn parse(
+  ast : AtomicAST,
+  args : Array[String],
+  env? : Map[String, String] = Map([]),
+  config? : (String) -> ConfigVal? = fn(_p) { None },
+  tty? : Map[String, TtyObs] = Map([]),
+) -> Outcome {
+  let root = ScopeNode(ast.root)
+  promote_collision_ambiguous(
+    apply_requires_filter(
+      parse_tree(root, args, defs=ast.registry),
+      root,
+      ast.registry,
+      env,
+      args.length(),
+      provider=config,
+      tty~,
+    ),
+    ast.ekmap,
+  )
+}
+
+///|
+/// 正面玄関 2 の続き: `parse()` が返した Outcome の Success payload (CLI 生 binds) に**値源
+/// ラダー**を適用し、解決済み binds に置き換えて Outcome を返す (spec DR-047 §4 / DR-104 §5 の
+/// resolve 相)。`resolve_scope_tree` を root scope (path = []) から呼ぶ — command 木を持つ
+/// scope でも単一 scope でも同一関数で扱える (`resolve_scope_tree` は has_commands が false なら
+/// 再帰しないだけ、単一 scope の `resolve_scope_config` 呼び出しと等価な結果を返す)。
+///
+/// **転落**: resolve 相の失敗 (DR-066 の env/config seat parse 失敗 / DR-009 §7 の
+/// value_filters/final_filters/accum_filters reject) は Outcome を `Failure` に転落させ、その
+/// `ParseError` を errors に載せる (spec DR-053 §2 の failure ブランチが resolve 層失敗も含めて
+/// 全保持、DR-047 §4「評価対象は値源ラダー充填後の最終状態」の直接の帰結)。`fired_action` /
+/// `help_entry` / `tried_triggers` は None / None / [] (parse 段では発火しておらず、resolve
+/// 相の failure でこれらを合成する材料は spec に規定がない — kawaz/kuu conformance の resolve
+/// 系 failure fixture も同じ posture)。
+///
+/// `Ambiguous` / `Failure` は入力の Outcome をそのままパススルー (パース段で確定済みの意味論は
+/// resolve 相で書き換えない)。**Ambiguous の各 interpretation の binds を resolve するかは
+/// 現状の呼び出し規約では未定** — DR-053 §3 の interpretations は「結果オブジェクト形のビュー」
+/// で並列にレンダリング要件を持つが、resolve は 1 経路ずつ呼ぶ形が自然なので、interpretation
+/// ごとの解決は呼び出し側 (JSON 射影を組み立てるコード) に委ねる。現状 conformance runner も
+/// interpretations の resolve は要求しない (`ambiguous` case は success 経路の binds を解決
+/// するのみ、runner の `render_outcome` 参照)。
+///
+/// 引数は `parse()` と同じ値源 (env/config/tty)。同じ値を 2 発の関数呼び出しで渡す冗長さは
+/// あるが、相区分の明示性を優先する。
+pub fn resolve(
+  ast : AtomicAST,
+  outcome : Outcome,
+  args : Array[String],
+  env? : Map[String, String] = Map([]),
+  config? : (String) -> ConfigVal? = fn(_p) { None },
+  tty? : Map[String, TtyObs] = Map([]),
+) -> Outcome {
+  match outcome {
+    Success(binds) =>
+      match
+        resolve_scope_tree(
+          ast.root,
+          binds,
+          env,
+          config,
+          path=[],
+          inherited=Map([]),
+          at_pos=args.length(),
+          tty~,
+        ) {
+        Ok(rb) => Success(rb)
+        Err(pe) =>
+          Failure({
+            errors: [pe],
+            fired_action: None,
+            help_entry: None,
+            tried_triggers: [],
+          })
+      }
+    _ => outcome
+  }
 }
 
 ///|
