@@ -56,7 +56,7 @@ pub(all) enum FailDef {
 
 ///|
 /// Push every failure-action marker in `bs` as (name, args position).
-fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit {
+pub fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit {
   for b in bs {
     match action_of(b) {
       Some(name) => {
@@ -74,7 +74,7 @@ fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit {
 ///|
 /// The action with the minimal args position (先勝ち, spec DR-048 §4). Ties
 /// keep first-seen.
-fn argmin_action(actions : Array[(String, Int)]) -> String {
+pub fn argmin_action(actions : Array[(String, Int)]) -> String {
   let mut best = actions[0]
   for a in actions {
     if a.1 < best.1 {
@@ -93,7 +93,7 @@ fn argmin_action(actions : Array[(String, Int)]) -> String {
 /// tried-triggers-scope.json の subcommand-scope-excludes-ancestor-spelling が pin する)。`errors`
 /// が空 (呼び出し元が ambiguous 用に意図的に渡す — 複数完全経路が成立した状態には単一の「失敗位置」
 /// が無いので、root scope 全体を見る従来どおりの posture に留める) の場合は root scope のみを見る。
-fn find_help_entry(root : Node, errors : Array[ParseError]) -> String? {
+pub fn find_help_entry(root : Node, errors : Array[ParseError]) -> String? {
   let mut deepest = -1
   for e in errors {
     if e.args_pos > deepest {
@@ -182,7 +182,10 @@ fn find_help_entry_in_greedy(g : Node) -> String? {
 /// scope that offered the greedy entries at the failure site. 複数 primary (同深) なら全ての scope
 /// を和集合 (重複除去はしない — 呼び出し元 push_error と同じ非-dedup 方針)。素材のみ、near-match は
 /// DX 層の関心。
-fn tried_triggers_of(root : Node, errors : Array[ParseError]) -> Array[String] {
+pub fn tried_triggers_of(
+  root : Node,
+  errors : Array[ParseError],
+) -> Array[String] {
   let mut deepest = -1
   for e in errors {
     if e.args_pos > deepest {

@@ -21,6 +21,22 @@ pub(all) enum Value {
 } derive(Eq, Debug)
 
 ///|
+pub fn value_str(value : Value) -> String {
+  match value {
+    VStr(string) => string
+    VBool(boolean) => if boolean { "true" } else { "false" }
+    VNum(number) => {
+      let integer = number.to_int()
+      if integer.to_double() == number {
+        integer.to_string()
+      } else {
+        number.to_string()
+      }
+    }
+  }
+}
+
+///|
 /// Provenance of a value cell (DR-031 / DR-016 source tag).
 /// The evaluator preserves this so an appconfig store (DR-030) can ask
 /// "where did this value come from" without the ladder order being movable.
@@ -50,11 +66,37 @@ pub enum ConfigVal {
 } derive(Eq, Debug)
 
 ///|
+/// Convert the host-neutral JSON input tree into the engine's read-only config value.
+pub fn config_from_json(json : Json) -> ConfigVal {
+  match json {
+    Object(object) => {
+      let entries : Array[(String, ConfigVal)] = []
+      for key, value in object {
+        entries.push((key, config_from_json(value)))
+      }
+      CObj(entries)
+    }
+    Array(items) => {
+      let values : Array[ConfigVal] = []
+      for value in items {
+        values.push(config_from_json(value))
+      }
+      CArr(values)
+    }
+    True => CBool(true)
+    False => CBool(false)
+    String(value) => CStr(value)
+    Number(value, ..) => CNum(value)
+    _ => CNull
+  }
+}
+
+///|
 /// The int rounding mode (DR-075 §2). Direction 4 (`floor`/`ceil`/`trunc`/`away`) × {plain, half}
 /// + `half_even` + `error` = 10 modes, 体系完備. `error` is the canonical default (int silently
 /// coerces nothing; a non-integer VALUE is rejected). Direction語 name 0-起点 (`trunc`/`away`) と
 /// 無限-起点 (`floor`/`ceil`) を分け、Java/Python の "UP"/"DOWN" 多義を持ち込まない (DR-075 §3).
-pub enum RoundMode {
+pub(all) enum RoundMode {
   RFloor // →−∞
   RCeil // →+∞
   RTrunc // →0 方向 (小数部を捨てる)
@@ -74,7 +116,7 @@ pub enum RoundMode {
 /// `EsDeny` = eq 分割 matcher を生成せず space 分割形のみ受理。
 /// 3 値 enum のため「eq 必須かつ eq 禁止」のような組合せはそもそも構文的に表現できない (illegal
 /// states unrepresentable、DR-096 §1)。
-pub enum EqSepMode {
+pub(all) enum EqSepMode {
   EsRequire
   EsAllow
   EsDeny
@@ -105,7 +147,7 @@ pub fn eq_sep_mode_of(s : String) -> EqSepMode? {
 /// 一意化する)、space 形は `allow` 同様に生きる。値スロットを持たない要素 (flag/count) にはダイヤル
 /// が届いても inert (DR-096 §3.2)。`long_eq_sep` (`EqSepMode`) とは軸そのものが異なる別型 — short
 /// に eq 分割形は存在しない (DR-096 §3.4)。
-pub enum AttachMode {
+pub(all) enum AttachMode {
   AtRequire
   AtAllow
   AtDeny
@@ -132,7 +174,7 @@ pub fn attach_mode_of(s : String) -> AttachMode? {
 /// データ化しただけ、対極確認は wbtest 側)。opt-in で `true_values`/`false_values` に `yes`/`on` 等を
 /// 追加する (DR-074 §4 の `+[...]` 表記は「default 配列に語彙を足した完成形をそのまま渡す」の意 — wire
 /// 上は置換であって merge ではない、config は純データという DR-061 §4 の原則通り)。
-pub struct BoolConfig {
+pub(all) struct BoolConfig {
   true_values : Array[String]
   false_values : Array[String]
   case_insensitive : Bool
@@ -182,7 +224,7 @@ pub fn parse_bool_ext(s : String, config : BoolConfig) -> Bool? {
 /// is a provisional reason, the SAME kind of gap-fill as `pe_parse_bool`'s `not_a_bool`
 /// (docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md); the spec-side vocab decision is
 /// tracked separately (spec repo kawaz/kuu issue, filed by the team lead).
-pub enum ParseFail {
+pub(all) enum ParseFail {
   NotANumber
   NotAnInteger
   IntOutOfRange
@@ -1541,7 +1583,7 @@ pub(all) struct Binding {
 /// 2026-07-09-accum-entity-filters-wiring): the CLI-seat call sites (eval.mbt/matcher.mbt) pass
 /// `Some(pos)` — the token this binding's value was read from; every other caller (resolve.mbt's
 /// env/config/inherit/default seats) omits it, defaulting to `None`.
-fn mkb(
+pub fn mkb(
   key : String,
   value : Value,
   source : Source,
@@ -1552,7 +1594,7 @@ fn mkb(
 
 ///|
 /// Concatenate two binding arrays (accumulate readings along a path).
-fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
+pub fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
   let r : Array[Binding] = []
   for x in a {
     r.push(x)
@@ -1568,7 +1610,7 @@ fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
 /// `not_a_number` (DR-066 §3): a token that does not read as a number at all — an int element also
 /// lands here for a non-number token (int judges via the number 字句), while `not_an_integer` is the
 /// separate reason for a readable-but-fractional value under int_round=error.
-fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
+pub fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
   {
     element,
     args_pos: pos,
@@ -1580,11 +1622,29 @@ fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
 }
 
 ///|
+/// A resident-neutral parse failure preserving the TypeExt result vocabulary.
+pub fn pe_type_parse(
+  element : String,
+  token : String,
+  pos : Int,
+  failure : ParseFail,
+) -> ParseError {
+  {
+    element,
+    args_pos: pos,
+    kind: KParse,
+    reason: failure.reason(),
+    message: failure.message(token),
+    path: [],
+  }
+}
+
+///|
 /// A `kind: parse` held Error for a value that read as a number but is not an integer value under
 /// canonical `int_round: error` (DR-075 §2 / DR-066 §3). The reason `not_an_integer` is emitted ONLY
 /// when `int_round=error` (any rounding mode rounds to Ok and never raises this); a token that does
 /// not read as a number at all lands in `pe_parse` with reason `not_a_number`.
-fn pe_parse_int(element : String, tok : String, pos : Int) -> ParseError {
+pub fn pe_parse_int(element : String, tok : String, pos : Int) -> ParseError {
   {
     element,
     args_pos: pos,
@@ -1600,7 +1660,11 @@ fn pe_parse_int(element : String, tok : String, pos : Int) -> ParseError {
 /// (issue 2026-07-07-parse-int-value-huge-exponent-overflow). The provisional reason
 /// `int_out_of_range` follows the `pe_parse_bool`/`not_a_bool` precedent (DR-066 v1 has no reason
 /// for this yet).
-fn pe_int_out_of_range(element : String, tok : String, pos : Int) -> ParseError {
+pub fn pe_int_out_of_range(
+  element : String,
+  tok : String,
+  pos : Int,
+) -> ParseError {
   {
     element,
     args_pos: pos,
@@ -1617,7 +1681,7 @@ fn pe_int_out_of_range(element : String, tok : String, pos : Int) -> ParseError 
 /// vocab only lists `not_a_number`/`not_an_integer` (bool has no entry yet); this reason is the
 /// provisional `not_a_bool` used by resolve.mbt's config-path bool Error (§952 of resolve.mbt),
 /// kept until DR-066 v1 vocab is amended (docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md).
-fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
+pub fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
   {
     element,
     args_pos: pos,
@@ -1632,7 +1696,7 @@ fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
 /// A `kind: parse` held Error for a `kv_map` accumulator piece with no `=` (DR-091 §2, team-lead
 /// 裁定 2026-07-11: "= なし piece は reject、型 parse 失敗と同じ扱い" — same `KParse` kind /
 /// error-vocab family as `pe_parse`/`pe_parse_bool`, this is kv_map's own structural-shape check).
-fn pe_parse_kv(element : String, tok : String, pos : Int) -> ParseError {
+pub fn pe_parse_kv(element : String, tok : String, pos : Int) -> ParseError {
   {
     element,
     args_pos: pos,
@@ -1654,7 +1718,7 @@ fn pe_parse_kv(element : String, tok : String, pos : Int) -> ParseError {
 /// `apply_piece_filters`'s `Err` tuple. Mirrors `resolve.mbt`'s `filter_err` (the ladder-layer
 /// counterpart, used by `env_value`) — kept as a separate builder here because eval.mbt/value.mbt
 /// sit below resolve.mbt in the dependency graph (MDR-002 §3) and cannot call it.
-fn pe_filter(
+pub fn pe_filter(
   element : String,
   pos : Int,
   reason : String,
@@ -1667,7 +1731,7 @@ fn pe_filter(
 /// A deprecation marker binding (DR-058): key `@depr:<element>`, recording that a deprecated entry
 /// (DR-057 alias) was used to reach the canonical cell. Rides in the effect column like any binding;
 /// the result builder skips it (bookkeeping, not a value), and `warnings_of` collects it.
-fn depr_marker(element : String) -> Binding {
+pub fn depr_marker(element : String) -> Binding {
   {
     key: "@depr:" + element,
     op: Set,

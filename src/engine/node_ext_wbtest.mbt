@@ -33,6 +33,65 @@ fn synthetic_ext(kind_ : String, encoded : String) -> Node {
 }
 
 ///|
+priv struct SyntheticCapabilityExt {
+  name : String
+  failure_action : Bool
+  effect : (String, EffectOp)?
+}
+
+///|
+impl NodeExt for SyntheticCapabilityExt with fn kind(_self) {
+  "synthetic/capability"
+}
+
+///|
+impl NodeExt for SyntheticCapabilityExt with fn encode(_self) {
+  ().to_json()
+}
+
+///|
+impl NodeExt for SyntheticCapabilityExt with fn element_name(self) {
+  Some(self.name)
+}
+
+///|
+impl NodeExt for SyntheticCapabilityExt with fn is_failure_action(self) {
+  self.failure_action
+}
+
+///|
+impl NodeExt for SyntheticCapabilityExt with fn effect_mark(self) {
+  self.effect
+}
+
+///|
+impl NodeExt for SyntheticCapabilityExt with fn consumes_zero_tokens(_self) {
+  true
+}
+
+///|
+impl NodeExt for SyntheticCapabilityExt with fn eval(_self, ctx, pos, acc, next) {
+  next(ctx, pos, acc)
+}
+
+///|
+test "NodeExt semantic capabilities do not depend on builtin kind or encode layout" {
+  // Third-party residents expose engine metadata through methods while keeping their own namespace
+  // and arbitrary encoding shape.
+  let node = Ext(
+    SyntheticCapabilityExt::{
+      name: "custom",
+      failure_action: true,
+      effect: Some(("custom", Unset)),
+    }
+    as &NodeExt,
+  )
+  assert_eq(node_resident_name(node), Some("custom"))
+  assert_true(node_is_failure_mark(node))
+  assert_eq(node_effect_mark(node), Some(("custom", Unset)))
+}
+
+///|
 test "NodeExt equality is reflexive through Node" {
   // Reflexivity is required for structural AST comparison even though Ext
   // carries a trait object that cannot derive Eq.

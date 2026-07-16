@@ -1,7 +1,3 @@
 import {
   "kawaz/kuu/engine",
 }
-
-// Skeleton import intentionally establishes the package dependency edge.
-
-warnings = "-29"

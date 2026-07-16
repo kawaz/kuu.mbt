@@ -13,7 +13,7 @@
 // Array[Char] (iterating a String yields Char). Test tokens are ASCII.
 
 ///|
-fn to_chars(s : String) -> Array[Char] {
+pub fn to_chars(s : String) -> Array[Char] {
   let a : Array[Char] = []
   for c in s {
     a.push(c)
@@ -22,7 +22,7 @@ fn to_chars(s : String) -> Array[Char] {
 }
 
 ///|
-fn chars_to_str(cs : Array[Char], a : Int, b : Int) -> String {
+pub fn chars_to_str(cs : Array[Char], a : Int, b : Int) -> String {
   let buf = StringBuilder::new()
   let mut i = a
   while i < b {
@@ -63,7 +63,7 @@ fn index_of_char(cs : Array[Char], c : Char) -> Int {
 /// Interpret a matcher against the token at `pos`. Takes the whole Ctx so the
 /// cluster walk can emit a complete-mode Pending for a tail value char whose
 /// next-token value is past the args end (DR-060 §1 readable-next set).
-fn run_matcher(m : Matcher, ctx : Ctx, pos : Int) -> Array[Branch] {
+pub fn run_matcher(m : Matcher, ctx : Ctx, pos : Int) -> Array[Branch] {
   if pos >= ctx.toks.length() {
     return []
   }
@@ -81,7 +81,7 @@ fn run_matcher(m : Matcher, ctx : Ctx, pos : Int) -> Array[Branch] {
 /// entry never fires through the eq face, so it contributes no spelling
 /// here. A cluster char may end the word (flag) or take a space-form value
 /// (term = WordEnd either way); a deprecated alias char keeps its meta.
-fn matcher_cands(m : Matcher) -> Array[Cand] {
+pub fn matcher_cands(m : Matcher) -> Array[Cand] {
   let out : Array[Cand] = []
   match m {
     EqSplit(prefix~, entries~) =>
@@ -94,7 +94,7 @@ fn matcher_cands(m : Matcher) -> Array[Cand] {
             cand_trigger(
               prefix + e.key,
               e.name,
-              e.kind,
+              e.kind.name(),
               Cont,
               false,
               false,
@@ -115,7 +115,7 @@ fn matcher_cands(m : Matcher) -> Array[Cand] {
           cand_trigger(
             buf.to_string(),
             e.name,
-            e.kind,
+            e.kind.name(),
             WordEnd,
             e.is_alias,
             false,
@@ -425,7 +425,7 @@ fn walk_short(
           // complete: the cluster ends in a value char and the args ends
           // here — the space-form value is exactly what could come next
           // (DR-060 §1). The flags already read stay as partial state.
-          out.push(Pending([pend_value(e.kind, e.name)], cat(acc, dm)))
+          out.push(Pending([pend_value(e.kind.name(), e.name)], cat(acc, dm)))
         }
         out
       }

@@ -2,19 +2,19 @@
 //
 // PORTED FROM: kawaz/kuu.mbt slice/poc/{json_conformance_wbtest,lower_runner_wbtest,helpers_wbtest,
 // fixture_runner_wbtest}.mbt — verbatim structure with API adaptations for main src/kuu:
-//   - ParseError is a 6-tuple (element/args_pos/kind/reason/message/path, DR-066 §3/§4): proj_errors
+//   - @engine.ParseError is a 6-tuple (element/args_pos/kind/reason/message/path, DR-066 §3/§4): proj_errors
 //     and exp_errors_decode include `reason` when the fixture asserts it on ANY error in the set, and
 //     `path` likewise on its own independent opt-in (per-field, per-fixture-set — DR-066 §4/§5:
 //     message is never compared, reason/path are each optional and asserted independently).
-//   - resolve_scope / resolve_scope_config return `Result[Array[Binding], ParseError]` in main
-//     (slice returned Result[..., String] for the config variant and Array[Binding] for the flat
-//     variant). Both sites in resolve_tree/do_resolve wrap the ParseError message.
+//   - resolve_scope / resolve_scope_config return `Result[Array[@engine.Binding], @engine.ParseError]` in main
+//     (slice returned Result[..., String] for the config variant and Array[@engine.Binding] for the flat
+//     variant). Both sites in resolve_tree/do_resolve wrap the @engine.ParseError message.
 //   - env_value in main takes (element, ty, s, at_pos)->Result; the variant-DSL operand still needs
 //     the naive slice-form coercion → local `dsl_variant_value` helper.
 //
 // The two-ledger contract (expected_skips / known_divergences) starts EMPTY per MDR-001 §6: fixtures
 // are re-fed against the new implementation, and every observed skip / divergence is reported by the
-// test so we can classify them off-line. Empty ledger + failing test = the fixture-first mode.
+// test so we can classify them off-line. @engine.Empty ledger + failing test = the fixture-first mode.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 1 — Local helpers (mirror slice/poc/helpers_wbtest.mbt)
@@ -23,8 +23,8 @@
 ///|
 /// Deterministic codepoint ordering (MoonBit's builtin sorts by length first).
 fn str_less(a : String, b : String) -> Bool {
-  let ca = to_chars(a)
-  let cb = to_chars(b)
+  let ca = @engine.to_chars(a)
+  let cb = @engine.to_chars(b)
   let n = if ca.length() < cb.length() { ca.length() } else { cb.length() }
   let mut i = 0
   while i < n {
@@ -86,8 +86,8 @@ fn join_pipe(items : Array[String]) -> String {
 
 ///|
 fn str_has_prefix(s : String, pre : String) -> Bool {
-  let cs = to_chars(s)
-  let cp = to_chars(pre)
+  let cs = @engine.to_chars(s)
+  let cp = @engine.to_chars(pre)
   if cp.length() > cs.length() {
     return false
   }
@@ -104,11 +104,11 @@ fn str_has_prefix(s : String, pre : String) -> Bool {
 // ── render helpers ────────────────────────────────────────────────────────────
 
 ///|
-fn render_val(v : Value) -> String {
+fn render_val(v : @engine.Value) -> String {
   match v {
-    VStr(s) => s
-    VBool(b) => if b { "true" } else { "false" }
-    VNum(d) => {
+    @engine.VStr(s) => s
+    @engine.VBool(b) => if b { "true" } else { "false" }
+    @engine.VNum(d) => {
       let i = d.to_int()
       if i.to_double() == d {
         i.to_string()
@@ -120,42 +120,42 @@ fn render_val(v : Value) -> String {
 }
 
 ///|
-fn render_src(s : Source) -> String {
+fn render_src(s : @engine.Source) -> String {
   match s {
-    Cli => "cli"
-    Env => "env"
-    Config => "config"
-    Inherit => "inherit"
-    Tty => "tty"
-    Default => "default"
+    @engine.Cli => "cli"
+    @engine.Env => "env"
+    @engine.Config => "config"
+    @engine.Inherit => "inherit"
+    @engine.Tty => "tty"
+    @engine.Default => "default"
   }
 }
 
 ///|
-fn render_kind(k : ErrKind) -> String {
+fn render_kind(k : @engine.ErrKind) -> String {
   match k {
-    KParse => "parse"
-    KFilter => "filter"
-    KConstraint => "constraint"
+    @engine.KParse => "parse"
+    @engine.KFilter => "filter"
+    @engine.KConstraint => "constraint"
   }
 }
 
 ///|
-fn render_def_kind(k : DefErrKind) -> String {
+fn render_def_kind(k : @engine.DefErrKind) -> String {
   match k {
-    DVocabIntersection => "vocab-intersection"
-    DUnknownVocab => "unknown-vocab"
-    DInvalidRange => "invalid-range"
-    DAbsentRef => "absent-ref"
-    DCircularRef => "circular-ref"
-    DZeroProgress => "zero-progress"
-    DConfigCycle => "config-cycle"
-    DInvalidArgument => "invalid-argument"
+    @engine.DVocabIntersection => "vocab-intersection"
+    @engine.DUnknownVocab => "unknown-vocab"
+    @engine.DInvalidRange => "invalid-range"
+    @engine.DAbsentRef => "absent-ref"
+    @engine.DCircularRef => "circular-ref"
+    @engine.DZeroProgress => "zero-progress"
+    @engine.DConfigCycle => "config-cycle"
+    @engine.DInvalidArgument => "invalid-argument"
   }
 }
 
 ///|
-fn deferrs_str(errs : Array[DefError]) -> String {
+fn deferrs_str(errs : Array[@engine.DefError]) -> String {
   let items : Array[String] = []
   for e in errs {
     items.push("\{e.element}/\{render_def_kind(e.kind)}")
@@ -165,11 +165,11 @@ fn deferrs_str(errs : Array[DefError]) -> String {
 }
 
 ///|
-/// Compact one-line rendering of an Outcome for the runner's "EXPECTED-* got=" diagnostics.
-fn render_outcome(o : Outcome) -> String {
+/// Compact one-line rendering of an @engine.Outcome for the runner's "EXPECTED-* got=" diagnostics.
+fn render_outcome(o : @engine.Outcome) -> String {
   match o {
-    Success(binds) => "ok{" + render_binds_result(binds) + "}"
-    Failure(d) =>
+    @engine.Success(binds) => "ok{" + render_binds_result(binds) + "}"
+    @engine.Failure(d) =>
       match d.fired_action {
         Some(n) => "action:" + n
         None =>
@@ -179,12 +179,13 @@ fn render_outcome(o : Outcome) -> String {
             "fail:no complete parse"
           }
       }
-    Ambiguous(d) => "ambiguous:" + d.interpretations.length().to_string()
+    @engine.Ambiguous(d) =>
+      "ambiguous:" + d.interpretations.length().to_string()
   }
 }
 
 ///|
-fn primary_message(errors : Array[ParseError]) -> String {
+fn primary_message(errors : Array[@engine.ParseError]) -> String {
   let mut best = errors[0]
   for e in errors {
     if e.args_pos > best.args_pos {
@@ -196,7 +197,7 @@ fn primary_message(errors : Array[ParseError]) -> String {
 
 ///|
 /// Result-side binding renderer for render_outcome ("ok{k=v,…}"). Skips markers.
-fn render_binds_result(binds : Array[Binding]) -> String {
+fn render_binds_result(binds : Array[@engine.Binding]) -> String {
   let items : Array[String] = []
   for b in binds {
     if !is_sentinel(b.key) {
@@ -207,20 +208,20 @@ fn render_binds_result(binds : Array[Binding]) -> String {
   join_comma(items)
 }
 
-// ── EffectOp / ExportKey helpers ──────────────────────────────────────────────
+// ── @engine.EffectOp / @engine.ExportKey helpers ──────────────────────────────────────────────
 
 ///|
-fn eff_op(op : EffectOp) -> String {
+fn eff_op(op : @engine.EffectOp) -> String {
   match op {
-    Set => "set"
-    Default => "default"
-    Unset => "unset"
-    Empty => "empty"
+    @engine.Set => "set"
+    @engine.Default => "default"
+    @engine.Unset => "unset"
+    @engine.Empty => "empty"
     // DR-077 §1 (5th op): the transform name rides along so two DIFFERENT update transforms (e.g.
     // "increment" vs a future "add") render distinctly. Args are appended ONLY when non-empty
     // (mirrors DR-077 §2's colon-DSL nesting, `:update:add:5`) so the 0-arg `increment` case reads
     // as plain "update:increment", not "update:increment:" with a dangling separator.
-    Update(transform, args) =>
+    @engine.Update(transform, args) =>
       if args.length() == 0 {
         "update:" + transform
       } else {
@@ -228,8 +229,8 @@ fn eff_op(op : EffectOp) -> String {
       }
     // DR-080 §2 merge accumulator piece markers — fixture (merge-basic.json 等) の effects oracle
     // が pin する op 名そのもの ("set" は既存の add piece 表示と同じ、remove/splice がこの2値)。
-    Remove => "remove"
-    Splice => "splice"
+    @engine.Remove => "remove"
+    @engine.Splice => "splice"
   }
 }
 
@@ -241,22 +242,22 @@ fn eff_op(op : EffectOp) -> String {
 struct LEnt {
   name : String
   typ : String
-  default_ : Value?
+  default_ : @engine.Value?
   env : String?
   inherit_ : Bool
   config_key : Array[String]?
   accum : String?
   // DR-105 §1/§3: the append-only flatten dial — carried alongside `accum` so a "lower" fixture can
   // pin the repeat installer's cons-unfold output as `{"accumulator":"append","flatten":true}`
-  // instead of the retired standalone "flatten" accumulator name (`Entity.flatten`'s doc comment).
+  // instead of the retired standalone "flatten" accumulator name (`@engine.Entity.flatten`'s doc comment).
   flatten : Bool
 }
 
 ///|
 enum GItem {
   GExact(String)
-  GSet(String, Value, String)
-  GEff(String, String, EffectOp)
+  GSet(String, @engine.Value, String)
+  GEff(String, String, @engine.EffectOp)
   GSeqSat(String, String)
   GMatch(String, Array[(String, String)])
   GCmd(String, LSec)
@@ -275,7 +276,7 @@ struct LSec {
   greedy : Array[GItem]
   positionals : Array[TNode]
   entities : Array[LEnt]
-  constraints : Array[Constraint]
+  constraints : Array[@engine.Constraint]
   templates : Array[(String, TNode)]
 }
 
@@ -323,7 +324,7 @@ fn lent_str(e : LEnt) -> String {
 }
 
 ///|
-fn lcon_str(c : Constraint) -> String {
+fn lcon_str(c : @engine.Constraint) -> String {
   fn sorted(xs : Array[String]) -> String {
     let ss : Array[String] = []
     for x in xs {
@@ -354,7 +355,7 @@ fn lcon_str(c : Constraint) -> String {
     CExclusive(g, ms) =>
       "exclusive_group{group=" + g + ",members=[" + sorted(ms) + "]}"
     CRequired(el, cands) => {
-      // RequiredCandidate.name のみ projection (codex M-2 修正で候補が wrapper 付きになったが、
+      // @engine.RequiredCandidate.name のみ projection (codex M-2 修正で候補が wrapper 付きになったが、
       // lowering 断面はまだ CRequired/CRequiredGroup を対象にした fixture が無い — wrapper 込みの
       // 表記が必要になったら拡張する)。
       let names : Array[String] = []
@@ -405,21 +406,21 @@ fn gmatch_entries_str(entries : Array[(String, String)]) -> String {
 }
 
 ///|
-fn lower_eff_op(op : EffectOp) -> String {
+fn lower_eff_op(op : @engine.EffectOp) -> String {
   match op {
-    Set => "set"
-    Default => "default"
-    Unset => "unset"
-    Empty => "empty"
-    Update(transform, args) =>
+    @engine.Set => "set"
+    @engine.Default => "default"
+    @engine.Unset => "unset"
+    @engine.Empty => "empty"
+    @engine.Update(transform, args) =>
       if args.length() == 0 {
         "update:" + transform
       } else {
         "update:" + transform + ":" + join_comma(args)
       }
     // DR-080 §2 merge accumulator piece markers (eff_op と同じ語彙、lower path 用の並行実装)。
-    Remove => "remove"
-    Splice => "splice"
+    @engine.Remove => "remove"
+    @engine.Splice => "splice"
   }
 }
 
@@ -502,27 +503,28 @@ fn lsec_str(s : LSec) -> String {
   join_pipe(parts)
 }
 
-// ── projection: canon Scope → 断面 LSec ────────────────────────────────────────
+// ── projection: canon @engine.Scope → 断面 LSec ────────────────────────────────────────
 
 ///|
-fn prim_name(node : Node) -> String? {
-  match node_resident_name(node) {
+fn prim_name(node : @engine.Node) -> String? {
+  match @builtins.node_resident_name(node) {
     Some(name) => Some(name)
     None =>
       match node {
-        FilterArg(name, _) | ReqArg(name) => Some(name)
+        @engine.FilterArg(name, _) | @engine.ReqArg(name) => Some(name)
         _ => None
       }
   }
 }
 
 ///|
-fn proj_seq_sat(xs : Array[Node]) -> GItem {
+fn proj_seq_sat(xs : Array[@engine.Node]) -> GItem {
   match xs {
-    [Exact(trigger), Bind(name, value), .. markers] => {
+    [@engine.Exact(trigger), @engine.Bind(name, value), .. markers] => {
       let mut valid_markers = true
       for marker in markers {
-        if !node_is_failure_mark(marker) && !node_is_deprecation_mark(marker) {
+        if !@builtins.node_is_failure_mark(marker) &&
+          !node_is_deprecation_mark(marker) {
           valid_markers = false
         }
       }
@@ -532,8 +534,8 @@ fn proj_seq_sat(xs : Array[Node]) -> GItem {
         GExact("?seq:" + trigger)
       }
     }
-    [Exact(trigger), tail] =>
-      match node_effect_mark(tail) {
+    [@engine.Exact(trigger), tail] =>
+      match @builtins.node_effect_mark(tail) {
         Some((name, op)) => GEff(trigger, name, op)
         None =>
           match prim_name(tail) {
@@ -546,43 +548,43 @@ fn proj_seq_sat(xs : Array[Node]) -> GItem {
 }
 
 ///|
-fn proj_greedy(node : Node, reg : Map[String, Node]) -> GItem {
+fn proj_greedy(node : @engine.Node, reg : Map[String, @engine.Node]) -> GItem {
   match node {
-    DdSat(name) => GExact(name)
+    @engine.DdSat(name) => GExact(name)
     // DR-090: no golden lowering fixture exercises this yet (spec fixtures for DR-090 are
     // "query":"parse"輪郭, not lowering shape comparisons) — minimal, informative encoding via
     // the existing GMatch shape rather than inventing a new GItem variant for an untested path.
-    DdMatchSat(spelling, is_pattern, self_keep, _) =>
+    @engine.DdMatchSat(spelling, is_pattern, self_keep, _) =>
       GMatch("dd_match:" + (if self_keep { "keep" } else { "drop" }), [
         (spelling, if is_pattern { "pattern" } else { "exact" }),
       ])
-    Exact(s) => GExact(s)
-    Rooted(inner, _) => proj_greedy(inner, reg)
-    CmdSat(name, child) => GCmd(name, proj_scope(child, reg))
-    NativeMatch(EqSplit(prefix~, entries~)) => {
+    @engine.Exact(s) => GExact(s)
+    @engine.Rooted(inner, _) => proj_greedy(inner, reg)
+    @engine.CmdSat(name, child) => GCmd(name, proj_scope(child, reg))
+    @engine.NativeMatch(@engine.EqSplit(prefix~, entries~)) => {
       let es : Array[(String, String)] = []
       for e in entries {
         es.push((prefix + e.key, e.name))
       }
       GMatch("eq_split", es)
     }
-    NativeMatch(ShortCombine(prefix=_, entries~, ..)) => {
+    @engine.NativeMatch(@engine.ShortCombine(prefix=_, entries~, ..)) => {
       let es : Array[(String, String)] = []
       for e in entries {
         es.push(("\{e.ch}", e.name))
       }
       GMatch("short_combine", es)
     }
-    Seq(xs) => proj_seq_sat(xs)
+    @engine.Seq(xs) => proj_seq_sat(xs)
     _ => GExact("?greedy")
   }
 }
 
 ///|
-fn proj_pos(node : Node) -> TNode {
+fn proj_pos(node : @engine.Node) -> TNode {
   match node {
     Ref(k) => TRefTmpl(canon_tmpl(k), false)
-    Seq(xs) => {
+    @engine.Seq(xs) => {
       let items : Array[TNode] = []
       for x in xs {
         items.push(proj_tnode(x))
@@ -598,22 +600,22 @@ fn proj_pos(node : Node) -> TNode {
 }
 
 ///|
-fn proj_tnode(node : Node) -> TNode {
+fn proj_tnode(node : @engine.Node) -> TNode {
   match node {
-    Seq(xs) => {
+    @engine.Seq(xs) => {
       let items : Array[TNode] = []
       for x in xs {
         items.push(proj_tnode(x))
       }
       TSeq(items)
     }
-    Or([inner, Seq([])]) =>
+    @engine.Or([inner, @engine.Seq([])]) =>
       match inner {
         Ref(k) => TRefTmpl(canon_tmpl(k), true)
         other => proj_tnode(other)
       }
     Ref(k) => TRefTmpl(canon_tmpl(k), false)
-    Exact(s) => TExact(s)
+    @engine.Exact(s) => TExact(s)
     other =>
       match prim_name(other) {
         Some(n) => TRefEnt(n)
@@ -623,7 +625,7 @@ fn proj_tnode(node : Node) -> TNode {
 }
 
 ///|
-fn proj_entity(e : Entity) -> LEnt {
+fn proj_entity(e : @engine.Entity) -> LEnt {
   let typ = if e.is_config_file {
     "config_file"
   } else {
@@ -638,7 +640,7 @@ fn proj_entity(e : Entity) -> LEnt {
     typ,
     // DR-083 §1: LEnt is the golden-fixture "5-face" oracle format, which only knows a scalar
     // default (`dec_lent` below decodes `"default"` via a single `json_to_value`, no accum-array
-    // shape) — project the scalar face of `Entity.default_values` for this cross-check.
+    // shape) — project the scalar face of `@engine.Entity.default_values` for this cross-check.
     default_: default_scalar(e),
     env: e.env_key,
     inherit_: e.inherit_,
@@ -650,15 +652,15 @@ fn proj_entity(e : Entity) -> LEnt {
 
 ///|
 fn collect_reftmpls(
-  nodes : Array[Node],
-  reg : Map[String, Node],
+  nodes : Array[@engine.Node],
+  reg : Map[String, @engine.Node],
   out : Array[String],
 ) -> Unit {
   fn is_tmpl_key(k : String) -> Bool {
     !str_has_prefix(k, "lazy:") && reg.get(k) is Some(_)
   }
 
-  fn walk(n : Node) -> Unit {
+  fn walk(n : @engine.Node) -> Unit {
     match n {
       Ref(k) =>
         if is_tmpl_key(k) && !conformance_str_in(out, k) {
@@ -668,18 +670,18 @@ fn collect_reftmpls(
             None => ()
           }
         }
-      Seq(xs) =>
+      @engine.Seq(xs) =>
         for x in xs {
           walk(x)
         }
-      Or(xs) =>
+      @engine.Or(xs) =>
         for x in xs {
           walk(x)
         }
-      Many(inner, _) => walk(inner)
-      BoundedTail(inner, _, _) => walk(inner)
-      Scoped(_, inner) => walk(inner)
-      Rooted(inner, _) => walk(inner)
+      @engine.Many(inner, _) => walk(inner)
+      @engine.BoundedTail(inner, _, _) => walk(inner)
+      @engine.Scoped(_, inner) => walk(inner)
+      @engine.Rooted(inner, _) => walk(inner)
       _ => ()
     }
   }
@@ -690,7 +692,7 @@ fn collect_reftmpls(
 }
 
 ///|
-fn proj_scope(sc : Scope, reg : Map[String, Node]) -> LSec {
+fn proj_scope(sc : @engine.Scope, reg : Map[String, @engine.Node]) -> LSec {
   let greedy : Array[GItem] = []
   for g in sc.greedy {
     greedy.push(proj_greedy(g, reg))
@@ -703,7 +705,7 @@ fn proj_scope(sc : Scope, reg : Map[String, Node]) -> LSec {
   for e in sc.entities {
     entities.push(proj_entity(e))
   }
-  let constraints : Array[Constraint] = []
+  let constraints : Array[@engine.Constraint] = []
   for c in sc.constraints {
     constraints.push(c)
   }
@@ -723,7 +725,7 @@ fn proj_scope(sc : Scope, reg : Map[String, Node]) -> LSec {
 
 ///|
 fn canon_of(def : Definition, order : Array[Installer]) -> String {
-  let reg : Map[String, Node] = Map([])
+  let reg : Map[String, @engine.Node] = Map([])
   match lower_definition(def, order, registry=reg) {
     Ok(sc) => lsec_str(proj_scope(sc, reg))
     Err(e) => "ERR:" + deferrs_str(e)
@@ -825,7 +827,10 @@ fn render_rval_sorted(r : RVal) -> String {
 /// remove's operand is the type-parsed value being removed, same wire shape as set's); every other
 /// op (default/unset/empty/update/splice) renders bare — `splice` carries no operand (DR-080 §2 `@`
 /// just points at old, DESIGN's placeholder-value convention).
-fn proj_effects_ex(sc : Scope, binds : Array[Binding]) -> String {
+fn proj_effects_ex(
+  sc : @engine.Scope,
+  binds : Array[@engine.Binding],
+) -> String {
   let items : Array[String] = []
   for b in binds {
     if is_sentinel(b.key) {
@@ -836,8 +841,8 @@ fn proj_effects_ex(sc : Scope, binds : Array[Binding]) -> String {
     }
     // DR-089 §3 (team-lead 裁定 2026-07-11): none の発火は effects にも現れない (観測は
     // ParserContext/explains 層の管掌、値空間なしの set エントリを発明しない)。内部表現は
-    // `flag_bare_true_variant` 再利用の Set+VBool(true) placeholder のままで良く (installer.mbt)、
-    // ここ (射影層) だけで除外する — `is_config_file_cell` と同じ「Entity 属性を見て特定 cell を
+    // `flag_bare_true_variant` 再利用の @engine.Set+@engine.VBool(true) placeholder のままで良く (installer.mbt)、
+    // ここ (射影層) だけで除外する — `is_config_file_cell` と同じ「@engine.Entity 属性を見て特定 cell を
     // 射影から外す」パターン。
     if is_none_cell(sc, b.key) {
       continue
@@ -849,7 +854,7 @@ fn proj_effects_ex(sc : Scope, binds : Array[Binding]) -> String {
       continue
     }
     match b.op {
-      Set | Remove =>
+      @engine.Set | @engine.Remove =>
         items.push(
           "\{b.key}:\{eff_op(b.op)}(\{render_val(b.value)})@\{render_src(b.source)}",
         )
@@ -860,7 +865,7 @@ fn proj_effects_ex(sc : Scope, binds : Array[Binding]) -> String {
 }
 
 ///|
-fn is_config_file_cell(sc : Scope, name : String) -> Bool {
+fn is_config_file_cell(sc : @engine.Scope, name : String) -> Bool {
   for e in sc.entities {
     if e.name == name && e.is_config_file {
       return true
@@ -870,9 +875,9 @@ fn is_config_file_cell(sc : Scope, name : String) -> Bool {
 }
 
 ///|
-fn is_none_cell(sc : Scope, name : String) -> Bool {
+fn is_none_cell(sc : @engine.Scope, name : String) -> Bool {
   for e in sc.entities {
-    if e.name == name && e.ty == none_type() {
+    if e.name == name && e.ty.name() == "none" {
       return true
     }
   }
@@ -880,19 +885,19 @@ fn is_none_cell(sc : Scope, name : String) -> Bool {
 }
 
 ///|
-/// DR-093 §2/§7 波及: dd 要素 (`DdSat`/`DdMatchSat`) は entity を持たない (DR-030「実体=値セル」/
+/// DR-093 §2/§7 波及: dd 要素 (`@engine.DdSat`/`@engine.DdMatchSat`) は entity を持たない (DR-030「実体=値セル」/
 /// LOWERING §B.4、`ensure_entities` の `not_dd` ガード) が、DR-093 の committed 観測用 binding
-/// (発火時の `flag_bare_true_variant` 同型 `Set VBool(true)` placeholder) は他の値と同じ `binds`
+/// (発火時の `flag_bare_true_variant` 同型 `@engine.Set @engine.VBool(true)` placeholder) は他の値と同じ `binds`
 /// 配列に乗る。`is_none_cell` は entity 走査なので dd 要素の binding を捉えられない — scope の
 /// greedy 面を直接走査して dd 要素名を集める、対になる判定。`proj_effects_ex` は `binds` をルート
-/// scope 基準でフラットに舐める (`b.key` のみ比較、`b.scope` 不問) ので、`CmdSat` の子 scope も
+/// scope 基準でフラットに舐める (`b.key` のみ比較、`b.scope` 不問) ので、`@engine.CmdSat` の子 scope も
 /// 再帰的に見る (dd/global-sever.json のような子コマンドスコープ dd の実測で必須と判明)。
-fn is_dd_cell(sc : Scope, name : String) -> Bool {
-  fn scan(g : Node) -> Bool {
+fn is_dd_cell(sc : @engine.Scope, name : String) -> Bool {
+  fn scan(g : @engine.Node) -> Bool {
     match g {
-      DdSat(trigger) => trigger == name
-      DdMatchSat(_, _, _, elem_name) => elem_name == name
-      Or(alts) => {
+      @engine.DdSat(trigger) => trigger == name
+      @engine.DdMatchSat(_, _, _, elem_name) => elem_name == name
+      @engine.Or(alts) => {
         for a in alts {
           if scan(a) {
             return true
@@ -900,8 +905,8 @@ fn is_dd_cell(sc : Scope, name : String) -> Bool {
         }
         false
       }
-      Rooted(inner, _) => scan(inner)
-      CmdSat(_, child) => is_dd_cell(child, name)
+      @engine.Rooted(inner, _) => scan(inner)
+      @engine.CmdSat(_, child) => is_dd_cell(child, name)
       _ => false
     }
   }
@@ -938,7 +943,7 @@ fn render_path(path : Array[String]) -> String {
 /// asserting only reason), `|path` appended after (a separate delimiter so "no reason, but path
 /// asserted" cannot collide with "reason asserted, no path"). sorted as a set.
 fn proj_errors(
-  errs : Array[ParseError],
+  errs : Array[@engine.ParseError],
   with_reason : Bool,
   with_path : Bool,
 ) -> String {
@@ -958,8 +963,8 @@ fn proj_errors(
 }
 
 ///|
-fn proj_warnings(o : Outcome) -> String {
-  let ws = warnings_of(o)
+fn proj_warnings(o : @engine.Outcome) -> String {
+  let ws = @engine.warnings_of(o)
   sort_items(ws)
   join_comma(ws)
 }
@@ -983,31 +988,31 @@ fn proj_tried_triggers(triggers : Array[String]) -> String {
 /// (production API) への薄い委譲 — 4 素材の組み立てそのものはそちらに一本化し、ここは fixture
 /// 比較用の文字列レンダリング (`render_rval_sorted`) だけを残す。
 fn proj_result_export(
-  sc : Scope,
-  binds : Array[Binding],
-  ekmap : Map[String, ExportKey],
+  sc : @engine.Scope,
+  binds : Array[@engine.Binding],
+  ekmap : Map[String, @engine.ExportKey],
 ) -> String {
   render_rval_sorted(build_result_export(sc, binds, ekmap))
 }
 
 ///|
 /// Resolved value-source tags per cell (DR-031). Config_file infra cells are excluded. Flag-preset
-/// defaults report `default` when no other seat surfaced (LOWERING §A.5). An accum cell's `Unset`
+/// defaults report `default` when no other seat surfaced (LOWERING §A.5). An accum cell's `@engine.Unset`
 /// binding (issue 2026-07-09-accum-filters-non-set-op-semantics) reports `default` regardless of
-/// its own `source` field — `Unset` is CLI-fired (`b.source == Cli`) but uncommitted (DR-045
+/// its own `source` field — `@engine.Unset` is CLI-fired (`b.source == @engine.Cli`) but uncommitted (DR-045
 /// "default 値へ戻す... committed=false"), so the value tag must reflect the LADDER OUTCOME
 /// ("as if untouched", same as `unset-ladder.json`'s scalar precedent where a scalar cell's fold
 /// already re-seats to a lower ladder rung on unset) rather than the firing token's own source. A
-/// LATER `Set` after an `Unset` still wins normally (the loop keeps overwriting `src` in order) —
-/// mirrors `build_result`'s ACCUMULATE fold treating `Unset` as a clear-point, not a terminal state.
+/// LATER `@engine.Set` after an `@engine.Unset` still wins normally (the loop keeps overwriting `src` in order) —
+/// mirrors `build_result`'s ACCUMULATE fold treating `@engine.Unset` as a clear-point, not a terminal state.
 ///
 /// front_door 昇格後 (issue 2026-07-16-result-projection-production-promotion): 素材の収集は
 /// resolve.mbt の `collect_sources_flat` (production の `result_sources` が command 木なし判定で
 /// 内部委譲する先と同一実装) へ一本化した。ここは fixture 比較用の文字列レンダリングだけを残す。
 fn proj_sources(
-  sc : Scope,
-  resolved : Array[Binding],
-  ek : Map[String, ExportKey],
+  sc : @engine.Scope,
+  resolved : Array[@engine.Binding],
+  ek : Map[String, @engine.ExportKey],
 ) -> String {
   let items : Array[String] = []
   for se in collect_sources_flat(sc, resolved, ek) {
@@ -1022,7 +1027,7 @@ fn proj_sources(
 /// resolve.mbt の `collect_sources_tree` (production の `result_sources` が command 木あり判定で
 /// 内部委譲する先と同一実装) へ一本化した。ここは fixture 比較用の文字列レンダリング (scope path
 /// のドット結合含む) だけを残す。
-fn proj_sources_tree(resolved : Array[Binding]) -> String {
+fn proj_sources_tree(resolved : Array[@engine.Binding]) -> String {
   let items : Array[String] = []
   for se in collect_sources_tree(resolved) {
     let mut key = ""
@@ -1045,8 +1050,8 @@ fn proj_sources_tree(resolved : Array[Binding]) -> String {
 ///|
 enum CfgInj {
   NoCfg
-  CfgObj(ConfigVal)
-  CfgFiles(Array[(String, ConfigVal)])
+  CfgObj(@engine.ConfigVal)
+  CfgFiles(Array[(String, @engine.ConfigVal)])
 }
 
 ///|
@@ -1070,7 +1075,7 @@ struct DCase {
   help_cmp : Bool
   help_exp : String?
   // tried_triggers is opt-in on failure only, set comparison (順序非規範) — held as the SAME
-  // sorted `{a,b,c}` projection string `proj_tried_triggers` produces from the live Outcome, so
+  // sorted `{a,b,c}` projection string `proj_tried_triggers` produces from the live @engine.Outcome, so
   // comparison is a plain String `!=` like every other set-compared face (errors/warnings/sources).
   tried_cmp : Bool
   tried_exp : String?
@@ -1085,9 +1090,9 @@ struct DCase {
 
 ///|
 struct DecodedFixture {
-  scope : Scope
-  registry : Map[String, Node]
-  ekmap : Map[String, ExportKey]
+  scope : @engine.Scope
+  registry : Map[String, @engine.Node]
+  ekmap : Map[String, @engine.ExportKey]
   cases : Array[DCase]
 }
 
@@ -1096,8 +1101,8 @@ struct DecodedFixture {
 ///|
 /// `RVal` の decode は definition の wire decode (`wire_decode.mbt`) ではなく、fixture の expect
 /// (`result`/`interpretations`) を読む側のヘルパー — そのためここに残す (MDR-005 §2 の境界判定)。
-/// `ConfigVal` 側の同種ヘルパー (旧 `json_to_configval`、`cases[].config`/`config_files` の decode)
-/// は front_door の `config_from_json` へ昇格済み (MDR-005 追記、「ConfigVal/TtyObs の入力構築
+/// `@engine.ConfigVal` 側の同種ヘルパー (旧 `json_to_configval`、`cases[].config`/`config_files` の decode)
+/// は front_door の `config_from_json` へ昇格済み (MDR-005 追記、「@engine.ConfigVal/TtyObs の入力構築
 /// API」issue) — 用途が「fixture 入力の decode」から「production 呼び出し側の入力構築」まで
 /// 広がったため、runner 側もそちらを直接呼ぶ (下記 `cfg` 組み立て箇所参照)。
 fn json_to_rval(j : Json) -> RVal raise DecodeSkip {
@@ -1459,7 +1464,7 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
         Some(fj) =>
           match fj.j_obj() {
             Some(fo) => {
-              let files : Array[(String, ConfigVal)] = []
+              let files : Array[(String, @engine.ConfigVal)] = []
               for k, v in fo {
                 files.push((k, config_from_json(v)))
               }
@@ -1523,7 +1528,7 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
   }
   // tried_triggers is opt-in on failure only (DR-053 §4 material tied to the failure position —
   // ambiguous has no single failure position to derive it from). Projected to the SAME sorted
-  // `{a,b,c}` string the live Outcome comparison uses, at decode time — a plain String compare
+  // `{a,b,c}` string the live @engine.Outcome comparison uses, at decode time — a plain String compare
   // at the comparison site, matching every other set-compared face.
   let (tried_cmp, tried_exp) = if outcome == "failure" &&
     has_key(eo, "tried_triggers") {
@@ -1572,7 +1577,7 @@ struct DDefErrorCase {
 ///|
 struct DDefErrorFixture {
   def : Definition
-  registry : Map[String, Node]
+  registry : Map[String, @engine.Node]
   cases : Array[DDefErrorCase]
 }
 
@@ -1664,7 +1669,7 @@ fn dec_definition_error_fixture(j : Json) -> DDefErrorFixture raise DecodeSkip {
     ],
     "definition",
   )
-  let registry : Map[String, Node] = Map([])
+  let registry : Map[String, @engine.Node] = Map([])
   let shadows = match defo.get("definitions") {
     Some(dj) => {
       let d = match dj.j_obj() {
@@ -1677,7 +1682,7 @@ fn dec_definition_error_fixture(j : Json) -> DDefErrorFixture raise DecodeSkip {
         None => Map([])
       }
       match d.get("templates") {
-        Some(tmplj) => dec_templates(tmplj, ts, registry)
+        Some(tmplj) => dec_templates(tmplj, ts, registry, canonical_registry())
         None => ()
       }
       ts
@@ -1730,15 +1735,15 @@ fn bool_str(b : Bool) -> String {
 }
 
 ///|
-/// The canonical single-candidate projection BOTH the live `Cand` (`cand_str`) and the fixture's
+/// The canonical single-candidate projection BOTH the live `@engine.Cand` (`cand_str`) and the fixture's
 /// decoded expectation (`exp_candidate_str`) reduce to — CONFORMANCE §3's 6-field structural
 /// equality (spelling/is_value/ty/origin/term/meta) PLUS an OPT-IN 7th field, `completer` (DR-104
 /// §2/§3, CONFORMANCE §3 COMP-Q3): included in the string only when `with_completer` is true (a
 /// per-fixture-set decision, mirroring `errors[].reason`'s own opt-in — see `exp_errors_decode`'s
 /// `with_reason`). `spelling`/`ty` are normalized to `""` on their "doesn't apply" side (DR-104 §2:
 /// `spelling` meaningless when `is_value:true`, `ty` meaningless when `is_value:false`) so a
-/// fixture that omits the moot field and a live `Cand` that carries a leftover tag there (e.g.
-/// `cand_trigger`'s placeholder `flag_type()`) still compare equal.
+/// fixture that omits the moot field and a live `@engine.Cand` that carries a leftover tag there (e.g.
+/// `cand_trigger`'s placeholder `@builtins.flag_type()`) still compare equal.
 fn cand_fields_str(
   spelling : String,
   is_value : Bool,
@@ -1776,8 +1781,8 @@ fn cand_fields_str(
 /// `with_completer` (DR-104 §2/§3 opt-in, per-fixture-set — see `exp_candidate_str`'s detection):
 /// when true, `c.completer` (`None` normalized to `""`, mirroring `errors[].reason`'s absent-on-a-
 /// specific-element convention) joins the 6-field identity string; the dedup identity itself
-/// (`complete_tree`'s dedup loop, outcome.mbt) never looks at this field regardless.
-fn cand_str(c : Cand, with_completer : Bool) -> String {
+/// (`@engine.complete_tree`'s dedup loop, outcome.mbt) never looks at this field regardless.
+fn cand_str(c : @engine.Cand, with_completer : Bool) -> String {
   let term_s = match c.term {
     WordEnd => "word_end"
     Cont => "cont"
@@ -1805,7 +1810,7 @@ fn cand_str(c : Cand, with_completer : Bool) -> String {
 ///|
 /// `candidates` is a SET (CONFORMANCE §3/§4, DR-104 §4 — same treatment as `interpretations`):
 /// sort + join, mirroring `deferrs_str`'s pattern in this same file.
-fn cands_set_str(cs : Array[Cand], with_completer : Bool) -> String {
+fn cands_set_str(cs : Array[@engine.Cand], with_completer : Bool) -> String {
   let items : Array[String] = []
   for c in cs {
     items.push(cand_str(c, with_completer))
@@ -1816,7 +1821,7 @@ fn cands_set_str(cs : Array[Cand], with_completer : Bool) -> String {
 
 ///|
 /// Decode ONE `expect.candidates[]` entry (DR-104 §2, schema `$defs/candidate`) straight into the
-/// SAME canonical string `cand_str` produces from a live `Cand` — `run_complete` then compares with
+/// SAME canonical string `cand_str` produces from a live `@engine.Cand` — `run_complete` then compares with
 /// a plain `==`, matching `deferrs_str`/`exp_errors_decode`'s decode-to-comparable-string pattern.
 /// `with_completer` (COMP-Q3 opt-in, detected per-fixture-set by `dec_complete_case` — mirrors
 /// `exp_errors_decode`'s `with_reason`) decides whether `completer` joins the comparison string;
@@ -1849,7 +1854,7 @@ fn exp_candidate_str(
     match jf_str(o, "ty") {
       Some(t) => {
         // vocab 検証 (dec_ty が未知型を DecodeSkip する) — 綴りミスを黙って通さない。
-        ignore(dec_ty(t))
+        ignore(dec_ty(t, "candidate", canonical_registry()))
         t
       }
       None => raise DecodeSkip("candidate.is_value:true missing 'ty'")
@@ -1940,8 +1945,8 @@ struct DCompleteCase {
 
 ///|
 struct DCompleteFixture {
-  scope : Scope
-  registry : Map[String, Node]
+  scope : @engine.Scope
+  registry : Map[String, @engine.Node]
   cases : Array[DCompleteCase]
 }
 
@@ -2038,7 +2043,7 @@ fn dec_complete_fixture(j : Json) -> DCompleteFixture raise DecodeSkip {
     ],
     "definition",
   )
-  let registry : Map[String, Node] = Map([])
+  let registry : Map[String, @engine.Node] = Map([])
   let shadows = match defo.get("definitions") {
     Some(dj) => {
       let d = match dj.j_obj() {
@@ -2051,7 +2056,7 @@ fn dec_complete_fixture(j : Json) -> DCompleteFixture raise DecodeSkip {
         None => Map([])
       }
       match d.get("templates") {
-        Some(tmplj) => dec_templates(tmplj, ts, registry)
+        Some(tmplj) => dec_templates(tmplj, ts, registry, canonical_registry())
         None => ()
       }
       ts
@@ -2082,8 +2087,8 @@ fn dec_complete_fixture(j : Json) -> DCompleteFixture raise DecodeSkip {
 /// DR-104 §4/§6: run `complete()` with the case's `args_before`/`args_after` and compare the
 /// projected candidate set against the fixture's expectation.
 fn run_complete(fx : DCompleteFixture, c : DCompleteCase) -> String {
-  let root = ScopeNode(fx.scope)
-  let cs = complete_tree(
+  let root = @engine.ScopeNode(fx.scope)
+  let cs = @engine.complete_tree(
     root,
     c.args_before,
     defs=fx.registry,
@@ -2138,7 +2143,7 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
   for cj in carr {
     cases.push(dec_case(cj))
   }
-  { scope: ast.root, registry: ast.registry, ekmap, cases }
+  { scope: ast.root, registry: ast.templates, ekmap, cases }
 }
 
 // ── lower path ────────────────────────────────────────────────────────────────
@@ -2275,10 +2280,10 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
       req_field(o, "link"),
     )
   }
-  // DR-045 effect descriptor (`{exact, link, effect: {op, transform?, args?}}`) — the non-Set ops
-  // (default/unset/empty/update, DR-011/077) that lower to `Seq([Exact, effect resident])` (see the
-  // `[Exact(t), effect resident] => GEff(t, n, op)` projection below). No `lower fixture` used this
-  // shape before DR-077 (every prior lowering fixture only exercised Set), so this decode path is
+  // DR-045 effect descriptor (`{exact, link, effect: {op, transform?, args?}}`) — the non-@engine.Set ops
+  // (default/unset/empty/update, DR-011/077) that lower to `@engine.Seq([@engine.Exact, effect resident])` (see the
+  // `[@engine.Exact(t), effect resident] => GEff(t, n, op)` projection below). No `lower fixture` used this
+  // shape before DR-077 (every prior lowering fixture only exercised @engine.Set), so this decode path is
   // new — added for count's `:update:increment` lowering fixtures, but generic over all 4 non-set
   // ops.
   if has_key(o, "effect") {
@@ -2299,16 +2304,16 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
 /// DR-045 op vocab (`set`/`default`/`unset`/`empty`) + DR-077 §1's 5th op (`update`, which additionally
 /// carries a `transform` name + optional `args`). `set` is accepted for completeness even though
 /// GSet's dedicated `{value, link}` shorthand is the normal spelling for it in a fixture.
-fn dec_eff_op(o : Map[String, Json]) -> EffectOp raise DecodeSkip {
+fn dec_eff_op(o : Map[String, Json]) -> @engine.EffectOp raise DecodeSkip {
   let opstr = match jf_str(o, "op") {
     Some(s) => s
     None => raise DecodeSkip("effect missing 'op'")
   }
   match opstr {
-    "set" => Set
-    "default" => Default
-    "unset" => Unset
-    "empty" => Empty
+    "set" => @engine.Set
+    "default" => @engine.Default
+    "unset" => @engine.Unset
+    "empty" => @engine.Empty
     "update" => {
       let transform = match jf_str(o, "transform") {
         Some(t) => t
@@ -2334,7 +2339,7 @@ fn dec_eff_op(o : Map[String, Json]) -> EffectOp raise DecodeSkip {
           }
         None => []
       }
-      Update(transform, args)
+      @engine.Update(transform, args)
     }
     other => raise DecodeSkip("unrecognized effect op '" + other + "'")
   }
@@ -2425,7 +2430,7 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
 }
 
 ///|
-fn dec_lcon(j : Json) -> Constraint raise DecodeSkip {
+fn dec_lcon(j : Json) -> @engine.Constraint raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("constraint is not an object")
@@ -2516,7 +2521,7 @@ fn dec_lsec(o : Map[String, Json]) -> LSec raise DecodeSkip {
       }
     None => ()
   }
-  let constraints : Array[Constraint] = []
+  let constraints : Array[@engine.Constraint] = []
   match o.get("constraints") {
     Some(cj) =>
       match cj.j_arr() {
@@ -2599,7 +2604,7 @@ fn dec_lower(j : Json) -> DecodedLower raise DecodeSkip {
 
 ///|
 fn is_json_file(name : String) -> Bool {
-  let cs = to_chars(name)
+  let cs = @engine.to_chars(name)
   let n = cs.length()
   n >= 5 &&
   cs[n - 5] == '.' &&
@@ -2650,15 +2655,17 @@ fn collect_rel(root : String, rel : String, out : Array[String]) -> Unit raise {
 // ── the case runner ───────────────────────────────────────────────────────────
 
 ///|
-fn scope_needs_default_ladder(sc : Scope) -> Bool {
+fn scope_needs_default_ladder(sc : @engine.Scope) -> Bool {
   for g in sc.greedy {
     match g {
-      CmdSat(_, _) => return false
+      @engine.CmdSat(_, _) => return false
       _ => ()
     }
   }
   for e in sc.entities {
-    if e.ty != flag_type() && e.ty != bool_type() && e.default_values is Some(_) {
+    if e.ty.name() != "flag" &&
+      e.ty.name() != "bool" &&
+      e.default_values is Some(_) {
       return true
     }
     // DR-009 value_filters/final_filters (DR-102 属性分割、issue
@@ -2679,13 +2686,13 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
       e.accum_filters.length() > 0 {
       return true
     }
-    // DR-080 波及節: a merge-accumulator cell's Set/Remove/Splice PIECE bindings only fold into
+    // DR-080 波及節: a merge-accumulator cell's @engine.Set/@engine.Remove/@engine.Splice PIECE bindings only fold into
     // the cell's final state inside `resolve_merge_accum` (resolve.mbt) — the raw-`binds` fold
     // this function's `false` result routes to (`build_result`'s generic ACCUMULATE match) has no
     // concept of "同じ at_pos の piece 列 = 1 発火" grouping or old-composition, and would push a
-    // `Splice`/`Remove` binding's placeholder/operand value straight into the array (wrong on
-    // every axis: no overwrite-vs-merge distinction, no @ old-splice, `Remove`'s operand and
-    // `Splice`'s `VBool(false)` placeholder both leak into the result). A merge cell ALWAYS needs
+    // `@engine.Splice`/`@engine.Remove` binding's placeholder/operand value straight into the array (wrong on
+    // every axis: no overwrite-vs-merge distinction, no @ old-splice, `@engine.Remove`'s operand and
+    // `@engine.Splice`'s `@engine.VBool(false)` placeholder both leak into the result). A merge cell ALWAYS needs
     // the resolve path, even with no env/config/default/filters declared.
     if e.accum is Some("merge") {
       return true
@@ -2695,7 +2702,10 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
 }
 
 ///|
-fn cfg_lookup(files : Array[(String, ConfigVal)], p : String) -> ConfigVal? {
+fn cfg_lookup(
+  files : Array[(String, @engine.ConfigVal)],
+  p : String,
+) -> @engine.ConfigVal? {
   for kv in files {
     if kv.0 == p {
       return Some(kv.1)
@@ -2708,18 +2718,23 @@ fn cfg_lookup(files : Array[(String, ConfigVal)], p : String) -> ConfigVal? {
 fn run_case(df : DecodedFixture, dc : DCase) -> String {
   let sc = df.scope
   // MDR-005 追記 (issue front-door-parse-missing-postprocessing): 正面玄関 `parse` は spec 準拠の
-  // Outcome (DR-053) を返す = 内部で `parse_tree` → `apply_requires_filter` (DR-047 §5) →
+  // @engine.Outcome (DR-053) を返す = 内部で `@engine.parse_tree` → `apply_requires_filter` (DR-047 §5) →
   // `promote_collision_ambiguous` (DR-021 → DR-073) を直列適用する。runner はこの 3 段を手組みで
   // 書かず、玄関経由で受ける (kuu-cli PoC が front_door.parse を薄い wrapper のまま使うと spec
   // 非準拠 outcome を返す実バグの根治 — 二重実装の解消)。`dc.cfg` (NoCfg/CfgObj/CfgFiles) →
-  // `provider: (String) -> ConfigVal?` の変換は runner 固有 (fixture の JSON 形の解釈) なのでここに
+  // `provider: (String) -> @engine.ConfigVal?` の変換は runner 固有 (fixture の JSON 形の解釈) なのでここに
   // 残す。
-  let config_provider : (String) -> ConfigVal? = match dc.cfg {
+  let config_provider : (String) -> @engine.ConfigVal? = match dc.cfg {
     NoCfg => fn(_p) { None }
     CfgObj(obj) => fn(_p) { Some(obj) }
     CfgFiles(files) => fn(p) { cfg_lookup(files, p) }
   }
-  let ast : AtomicAST = { root: sc, registry: df.registry, ekmap: df.ekmap }
+  let ast : AtomicAST = {
+    root: sc,
+    templates: df.registry,
+    extensions: canonical_registry(),
+    ekmap: df.ekmap,
+  }
   let outcome = parse(
     ast,
     dc.args,
@@ -2732,7 +2747,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
   match dc.outcome {
     "success" =>
       match outcome {
-        Success(binds) => {
+        @engine.Success(binds) => {
           match dc.exp_effects {
             Some(ee) => {
               let ae = proj_effects_ex(sc, binds)
@@ -2760,7 +2775,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 config=config_provider,
                 tty=dc.tty,
               ) {
-              Success(rb) => {
+              @engine.Success(rb) => {
                 match dc.exp_result {
                   Some(er) => {
                     let ar = proj_result_export(sc, rb, df.ekmap)
@@ -2784,7 +2799,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                   None => ()
                 }
               }
-              Failure(d) =>
+              @engine.Failure(d) =>
                 problems.push(
                   "resolve error: " +
                   (if d.errors.length() > 0 {
@@ -2820,7 +2835,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
       }
     "failure" =>
       match outcome {
-        Failure(d) => {
+        @engine.Failure(d) => {
           match dc.exp_errors {
             Some(ex) => {
               let ae = proj_errors(
@@ -2878,9 +2893,9 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
         // the resolve check run here too, mirroring the "success" branch's
         // `use_resolve`-gated `do_resolve` call. Without this, a resolve-layer Err was
         // invisible to `"failure"` fixtures entirely (this function's `match outcome` never
-        // called resolve at all before) — `Success` fell straight to the `other` catch-all
+        // called resolve at all before) — `@engine.Success` fell straight to the `other` catch-all
         // below and got mis-reported as EXPECTED-FAILURE got=ok{...}.
-        Success(_) if use_resolve =>
+        @engine.Success(_) if use_resolve =>
           match
             resolve(
               ast,
@@ -2890,7 +2905,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
               config=config_provider,
               tty=dc.tty,
             ) {
-            Failure(d) =>
+            @engine.Failure(d) =>
               match dc.exp_errors {
                 Some(ex) => {
                   let ae = proj_errors(
@@ -2904,7 +2919,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 }
                 None => ()
               }
-            Success(_) =>
+            @engine.Success(_) =>
               problems.push("EXPECTED-FAILURE got=ok (resolve also succeeded)")
             _ => ()
           }
@@ -2912,7 +2927,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
       }
     _ =>
       match outcome {
-        Ambiguous(d) => {
+        @engine.Ambiguous(d) => {
           match dc.exp_interps {
             Some(ei) => {
               let got : Array[String] = []
@@ -2924,7 +2939,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                     accum_cells(sc, df.ekmap),
                     [],
                     [],
-                    nones=none_cells(sc),
+                    nones=@engine.none_cells(sc),
                   ),
                 )
                 // DR-073 §1: append `#claimants{...}` suffix only when the interpretation carries
@@ -2996,7 +3011,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// a KNOWN gap either INHERITED from slice/poc (未実装が正本仕様に追従していない) or a suspected
 /// fixture-authoring issue frozen for later resolution. The runner asserts the observed divergence
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
-/// MDR-001 §6). Empty = full conformance (no known gaps against the fixture corpus).
+/// MDR-001 §6). @engine.Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
   []
 }
@@ -3148,6 +3163,8 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     }
     if q == "lower" {
       let dl = dec_lower(j) catch {
+        UnknownType(element, type_name) =>
+          abort("unexpected UnknownType for " + element + ": " + type_name)
         DecodeSkip(reason) => {
           skips.push((rel, reason))
           continue
@@ -3163,6 +3180,8 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     }
     if q == "definition_error" {
       let fx = dec_definition_error_fixture(j) catch {
+        UnknownType(element, type_name) =>
+          abort("unexpected UnknownType for " + element + ": " + type_name)
         DecodeSkip(reason) => {
           skips.push((rel, reason))
           continue
@@ -3180,6 +3199,8 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     }
     if q == "complete" {
       let fx = dec_complete_fixture(j) catch {
+        UnknownType(element, type_name) =>
+          abort("unexpected UnknownType for " + element + ": " + type_name)
         DecodeSkip(reason) => {
           skips.push((rel, reason))
           continue
@@ -3196,6 +3217,8 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       continue
     }
     let df = dec_fixture(j) catch {
+      UnknownType(element, type_name) =>
+        abort("unexpected UnknownType for " + element + ": " + type_name)
       DecodeSkip(reason) => {
         skips.push((rel, reason))
         continue
@@ -3376,9 +3399,13 @@ test "conformance: OrBranch auto id (#{seq}) は held-error / ambiguous / succes
     }
   }
   // failure (0 本成立): 非数値 1 token は両枝とも同位置で dead-end (same-depth 同型)。
-  let fail_outcome = parse_tree(ScopeNode(df.scope), ["x"], defs=df.registry)
+  let fail_outcome = @engine.parse_tree(
+    @engine.ScopeNode(df.scope),
+    ["x"],
+    defs=df.registry,
+  )
   match fail_outcome {
-    Failure(d) => {
+    @engine.Failure(d) => {
       let texts : Array[String] = []
       for e in d.errors {
         texts.push(e.element + ":" + e.message)
@@ -3389,12 +3416,16 @@ test "conformance: OrBranch auto id (#{seq}) は held-error / ambiguous / succes
         abort("expected both leaf names (a/b) in failure text, got: \{joined}")
       }
     }
-    other => abort("expected Failure, got " + render_outcome(other))
+    other => abort("expected @engine.Failure, got " + render_outcome(other))
   }
   // ambiguous (2 本成立): 数値 1 token は両枝が同位置で成立 → 2 完全経路。
-  let amb_outcome = parse_tree(ScopeNode(df.scope), ["5"], defs=df.registry)
+  let amb_outcome = @engine.parse_tree(
+    @engine.ScopeNode(df.scope),
+    ["5"],
+    defs=df.registry,
+  )
   match amb_outcome {
-    Ambiguous(d) => {
+    @engine.Ambiguous(d) => {
       let views : Array[String] = []
       for interp in d.interpretations {
         views.push(
@@ -3416,7 +3447,7 @@ test "conformance: OrBranch auto id (#{seq}) は held-error / ambiguous / succes
         )
       }
     }
-    other => abort("expected Ambiguous, got " + render_outcome(other))
+    other => abort("expected @engine.Ambiguous, got " + render_outcome(other))
   }
   // success (1 本のみ生存) は対称 2 枝 (a/b 共に number) では作れない — 両枝は常に対称に成立/
   // 不成立するため、単一トークン args では必ず failure か ambiguous になる。success 面の非漏出は
@@ -3457,7 +3488,11 @@ test "DR-078: definitions.templates + ref — repeat over a shared or-template (
   // と同じ形、色テンプレの leaf 名は "colorname")。
   assert_eq(
     render_outcome(
-      parse_tree(ScopeNode(df.scope), ["red", "blue"], defs=df.registry),
+      @engine.parse_tree(
+        @engine.ScopeNode(df.scope),
+        ["red", "blue"],
+        defs=df.registry,
+      ),
     ),
     "ok{colorname=blue,colorname=red}",
   )
@@ -3465,7 +3500,11 @@ test "DR-078: definitions.templates + ref — repeat over a shared or-template (
   // が両立し ambiguous:2 (DR-038)。
   assert_eq(
     render_outcome(
-      parse_tree(ScopeNode(df.scope), ["255", "0", "0"], defs=df.registry),
+      @engine.parse_tree(
+        @engine.ScopeNode(df.scope),
+        ["255", "0", "0"],
+        defs=df.registry,
+      ),
     ),
     "ambiguous:2",
   )
@@ -3495,14 +3534,18 @@ test "DR-078: preference does not erode or-branch ambiguity (share-dimension onl
   let df = dec_fixture(@json.parse(src))
   assert_eq(
     render_outcome(
-      parse_tree(ScopeNode(df.scope), ["255", "0", "0"], defs=df.registry),
+      @engine.parse_tree(
+        @engine.ScopeNode(df.scope),
+        ["255", "0", "0"],
+        defs=df.registry,
+      ),
     ),
     "ambiguous:2",
   )
   assert_eq(
     render_outcome(
-      parse_tree(
-        ScopeNode(df.scope),
+      @engine.parse_tree(
+        @engine.ScopeNode(df.scope),
         ["red", "green", "blue"],
         defs=df.registry,
       ),
@@ -3520,12 +3563,14 @@ test "DR-078: preference does not erode or-branch ambiguity (share-dimension onl
 /// positional の name / option の name / definitions.templates の template key の 3 カテゴリで
 /// decode が `DecodeSkip` (definition の decode error、既存語彙のまま) を投げることを確認する。
 test "decode: a `#` in name/id is rejected at every user-facing name surface (codex review #1)" {
-  // (1) positional の name。`@json.parse` (raise ParseError) を try の外で先に評価しておく —
+  // (1) positional の name。`@json.parse` (raise @engine.ParseError) を try の外で先に評価しておく —
   // `dec_fixture` 自身の `raise DecodeSkip` だけを catch で汲む。
   let pos_src =
     #|{"query":"parse","definition":{"positionals":[{"name":"src#cons","type":"string"}]},"cases":[]}
   let pos_j = @json.parse(pos_src)
   let _ = dec_fixture(pos_j) catch {
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
     DecodeSkip(r) => {
       assert_true(r.contains("#"))
       return
@@ -3540,6 +3585,8 @@ test "decode: a `#` in an option's name is rejected (codex review #1)" {
     #|{"query":"parse","definition":{"options":[{"name":"hl#colors","type":"string","long":true}]},"cases":[]}
   let opt_j = @json.parse(opt_src)
   let _ = dec_fixture(opt_j) catch {
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
     DecodeSkip(r) => {
       assert_true(r.contains("#"))
       return
@@ -3556,6 +3603,8 @@ test "decode: a `#` in a definitions.templates key is rejected (codex review #1)
     #|{"query":"parse","definition":{"definitions":{"templates":{"co#lor":{"type":"string","name":"c"}}},"positionals":[{"name":"hlcolor","ref":"co#lor"}]},"cases":[]}
   let tmpl_j = @json.parse(tmpl_src)
   let _ = dec_fixture(tmpl_j) catch {
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
     DecodeSkip(r) => {
       assert_true(r.contains("#"))
       return
@@ -3586,7 +3635,9 @@ test "decode: an ordinary `#`-free name is unaffected by the reserved-name check
     #|}
   let df = dec_fixture(@json.parse(src))
   assert_eq(
-    render_outcome(parse_tree(ScopeNode(df.scope), ["red"], defs=df.registry)),
+    render_outcome(
+      @engine.parse_tree(@engine.ScopeNode(df.scope), ["red"], defs=df.registry),
+    ),
     "ok{colorname=red}",
   )
 }
@@ -3746,16 +3797,16 @@ test "DR-088 end-to-end: non-bool target requires is satisfied via the env rescu
 }
 
 ///|
-/// 保証 (team-lead 指摘: 生存 0 → Failure の fired_action/help_entry/tried_triggers が既存
-/// KTop 発 Failure と同じ素材関数 (`collect_actions`/`argmin_action`/`find_help_entry`/
-/// `tried_triggers_of`) から構築され、整合が取れていることの end-to-end 確認): help
+/// 保証 (team-lead 指摘: 生存 0 → @engine.Failure の fired_action/help_entry/tried_triggers が既存
+/// KTop 発 @engine.Failure と同じ素材関数 (`@engine.collect_actions`/`@engine.argmin_action`/`@engine.find_help_entry`/
+/// `@engine.tried_triggers_of`) から構築され、整合が取れていることの end-to-end 確認): help
 /// (`type:"help"`, DR-048 失敗時アクション) が selected な経路が、bool-target requires 違反で
-/// `apply_requires_filter` により Failure に変換されても、`fired_action` が正しく "help"
+/// `apply_requires_filter` により @engine.Failure に変換されても、`fired_action` が正しく "help"
 /// になることを固定する。`--help --a` で help・a 共に発火 (help selected)、a は requires:[c]
-/// 未充足 (c はフラグ、CLI/env どちらも未指定で false) → Success(1本) が Failure に変換される
-/// 経路で、KTop 発 Failure (`failure-actions/help-basic.json`) と同じ fired_action 契約が
-/// 保たれることを確認する (DR-053 §2 「fired_action と errors が 1 Failure に両立」)。
-test "DR-047 §5 end-to-end: fired_action (help) survives the post-filter Success→Failure conversion" {
+/// 未充足 (c はフラグ、CLI/env どちらも未指定で false) → @engine.Success(1本) が @engine.Failure に変換される
+/// 経路で、KTop 発 @engine.Failure (`failure-actions/help-basic.json`) と同じ fired_action 契約が
+/// 保たれることを確認する (DR-053 §2 「fired_action と errors が 1 @engine.Failure に両立」)。
+test "DR-047 §5 end-to-end: fired_action (help) survives the post-filter @engine.Success→@engine.Failure conversion" {
   let src =
     #|{
     #|  "query": "parse",
@@ -3790,7 +3841,7 @@ test "DR-047 §5 end-to-end: fired_action (help) survives the post-filter Succes
 /// 保証 (issue filter-spelling-inband-encoding-retyping — in-band 穴の閉鎖の pin): DESIGN §8.4 /
 /// DR-085 §3 のオブジェクト形式 filter spelling (`{"name":..,"args":[...]}`) は、args の値そのものに
 /// U+E000 (旧実装が colon 衝突回避のタグに使っていた Private Use Area 文字) が含まれていても、
-/// `FilterSpelling.args` (node.mbt) の各要素として一切分割されず literal のまま保持される。旧実装
+/// `@engine.FilterSpelling.args` (node.mbt) の各要素として一切分割されず literal のまま保持される。旧実装
 /// (U+E000 タグ付き単一文字列への in-band encode/decode) はこの入力で誤って分割・破壊していた —
 /// タグ文字を含む値そのものが decode を壊す潜在穴だったため、それを埋めた側の pin。`args` に U+E000
 /// を複数個 (要素の内部と要素境界紛いの位置の両方) 埋め込み、構造化フィールドがどこにも colon/tag
@@ -3804,6 +3855,8 @@ test "dec_filter_chain: an object-form arg value containing U+E000 (retired in-b
   let j = @json.parse(src)
   let result = dec_filter_chain(Some(j)) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(result.length(), 2)
   assert_eq(result[0].name, "regex_match")
@@ -3820,7 +3873,7 @@ test "dec_filter_chain: an object-form arg value containing U+E000 (retired in-b
 /// 保証 (DR-096 §3.3、kawaz 裁定 2026-07-12 — 空 prefix の無条件合法化): `long_prefix: ""` は
 /// `long_eq_sep: "require"` との併用を要求しない。旧 DR-091 §3 の合法条件 (併用時のみ合法、それ
 /// 以外は decode-time definition-error) は撤廃された — bare long トリガと素 operand の衝突は
-/// アプリ毎の事情であり、衝突時は通常の読み列挙が Ambiguous (DR-053) に落とす、先回り禁止は置かない
+/// アプリ毎の事情であり、衝突時は通常の読み列挙が @engine.Ambiguous (DR-053) に落とす、先回り禁止は置かない
 /// (`fixtures/matcher-readings/long-empty-prefix-operand-collision.json` が衝突時の帰結を固定)。
 /// `long_eq_sep: "require"` はこの衝突を定義側で排除したいアプリが選べる解決手段の一つに過ぎない。
 test "dec_definition: long_prefix:\"\" WITH long_eq_sep:\"require\" decodes successfully and propagates to options" {
@@ -3832,19 +3885,21 @@ test "dec_definition: long_prefix:\"\" WITH long_eq_sep:\"require\" decodes succ
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.options.length(), 2)
   for e in def.options {
     assert_eq(e.long_prefix, "")
-    assert_eq(e.long_eq_sep, EsRequire)
+    assert_eq(e.long_eq_sep, @engine.EsRequire)
   }
 }
 
 ///|
-/// 対極 (撤廃の直接固定): `long_prefix: ""` ALONE, with scope 既定 `long_eq_sep: EsAllow`
+/// 対極 (撤廃の直接固定): `long_prefix: ""` ALONE, with scope 既定 `long_eq_sep: @engine.EsAllow`
 /// (= `long_eq_sep` を明示しない), decodes successfully — 旧 DR-091 §3 ならここが decode-time
 /// definition-error だったが、DR-096 §3.3 の無条件合法化でそのまま通る。
-test "dec_definition: long_prefix:\"\" ALONE (long_eq_sep unset, EsAllow) decodes successfully (対極, DR-096 §3.3 撤廃の固定)" {
+test "dec_definition: long_prefix:\"\" ALONE (long_eq_sep unset, @engine.EsAllow) decodes successfully (対極, DR-096 §3.3 撤廃の固定)" {
   let src =
     #|{"options":[{"name":"if","type":"string","long":true}],"config":{"long_prefix":""}}
   let o = match @json.parse(src).j_obj() {
@@ -3853,9 +3908,11 @@ test "dec_definition: long_prefix:\"\" ALONE (long_eq_sep unset, EsAllow) decode
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.options[0].long_prefix, "")
-  assert_eq(def.options[0].long_eq_sep, EsAllow)
+  assert_eq(def.options[0].long_eq_sep, @engine.EsAllow)
 }
 
 ///|
@@ -3869,7 +3926,11 @@ test "dec_option: long_prefix at the OPTION level is an unknown-key decode rejec
   let src =
     #|{"name":"if","type":"string","long":true,"long_prefix":""}
   let j = @json.parse(src)
-  let _ = dec_option(j, Map([])) catch { DecodeSkip(_) => return }
+  let _ = dec_option(j, Map([])) catch {
+    DecodeSkip(_) => return
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
+  }
   fail("expected DecodeSkip (long_prefix is not a valid option-level key)")
 }
 
@@ -3895,6 +3956,8 @@ test "dec_definition: a child command with no own config inherits every key from
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.options[0].long_prefix, "+")
   assert_eq(def.commands.length(), 1)
@@ -3924,6 +3987,8 @@ test "dec_definition: a child command's own config overrides ONLY the keys it de
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   let sub_opt = def.commands[0].body.options[0]
   assert_eq(sub_opt.short_prefix, "=") // 子が明示した上書き
@@ -3955,6 +4020,8 @@ test "dec_definition: config inheritance threads through MULTIPLE nesting levels
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   let leaf = def.commands[0].body.commands[0].body
   assert_eq(leaf.options[0].long_prefix, "+")
@@ -3976,6 +4043,8 @@ test "dec_definition: explicit env: gets env_prefix concatenated (DR-049 §4)" {
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.options[0].env, ["MYAPP_PORT"])
 }
@@ -3993,6 +4062,8 @@ test "dec_definition: explicit env: is UNCHANGED when env_prefix is unset (対�
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.options[0].env, ["PORT"])
 }
@@ -4017,6 +4088,8 @@ test "dec_definition: auto_env derives UPPER(env_prefix)_UPPER(scope_path)_UPPER
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.commands[0].body.options[0].env, ["MYAPP_SERVE_PORT"])
 }
@@ -4046,6 +4119,8 @@ test "dec_definition: auto_env does NOT override an element's explicit env: (DR-
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   let opts = def.commands[0].body.options
   assert_eq(opts[0].env, ["MYAPP_SERVE_PORT"]) // auto 導出 (未指定)
@@ -4067,6 +4142,8 @@ test "dec_definition: auto_env also derives env for positionals (値セル持ち
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.positionals[0].env, ["MYAPP_TARGET"])
 }
@@ -4086,9 +4163,11 @@ test "dec_definition: short_prefix / long_eq_sep / short_combine all decode and 
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.options[0].short_prefix, "+")
-  assert_eq(def.options[0].long_eq_sep, EsDeny)
+  assert_eq(def.options[0].long_eq_sep, @engine.EsDeny)
   assert_eq(def.options[0].short_combine, false)
 }
 
@@ -4102,7 +4181,11 @@ test "dec_definition: an unknown config key is a decode-time reject" {
     Some(x) => x
     None => abort("test src is not an object")
   }
-  let _ = dec_definition(o) catch { DecodeSkip(_) => return }
+  let _ = dec_definition(o) catch {
+    DecodeSkip(_) => return
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
+  }
   fail("expected DecodeSkip (bogus_key is not a config vocabulary word)")
 }
 
@@ -4111,20 +4194,20 @@ test "dec_definition: an unknown config key is a decode-time reject" {
 /// none として decode され、消費 0 の純トリガとして発火・resolve を通り、シンプルモードの結果には
 /// キーが一切現れない (`result: {}`) — DR-051 §1/§4 の「値の無さはフィールド不在」と同型。
 /// effects にも現れない (team-lead 裁定 2026-07-11: 観測は ParserContext/explains 層の管掌、値
-/// 空間なしの set エントリを発明しない — 内部表現は `flag_bare_true_variant` 再利用の Set +
-/// VBool(true) placeholder のままだが、`proj_effects_ex` 側で none cell を除外する)。
+/// 空間なしの set エントリを発明しない — 内部表現は `flag_bare_true_variant` 再利用の @engine.Set +
+/// @engine.VBool(true) placeholder のままだが、`proj_effects_ex` 側で none cell を除外する)。
 
 ///|
 /// issue group-inner-bool-default-false-duplicate-top-level: `ensure_entity` (installer.mbt) の
-/// 暗黙 default:false 注入は flag preset (`type:"flag"`、flag_type()) 固有であり、plain bool
-/// (`type:"bool"`、bool_type()) は未発火なら他の値型と同様 absent (`Entity.default_values == None`,
-/// DR-099 §2 の `?? absent` 終端)。`normalize_option` (installer.mbt) が flag_type()→bool_type() の書き換え
+/// 暗黙 default:false 注入は flag preset (`type:"flag"`、@builtins.flag_type()) 固有であり、plain bool
+/// (`type:"bool"`、@builtins.bool_type()) は未発火なら他の値型と同様 absent (`@engine.Entity.default_values == None`,
+/// DR-099 §2 の `?? absent` 終端)。`normalize_option` (installer.mbt) が @builtins.flag_type()→@builtins.bool_type() の書き換え
 /// と同じ場所で default:false を前倒し確定させるため、`ensure_entity` 到達時点では両者とも
-/// 同じ bool resident でも default_values が食い違うことを Entity レベルで直接
+/// 同じ bool resident でも default_values が食い違うことを @engine.Entity レベルで直接
 /// 検査する — `fixtures/value-typing/{or-leaf-factory-config,positional-group-factory-config}.json`
 /// は同じ回帰を JSON result (or 枝内 / group 内側) の断面で pin しているが、本 test は
-/// `Scope.entities` という別の断面 (内部表現) から同じ性質を固定する。
-test "ensure_entity: plain bool_type() は Entity.default_values=None (absent)、flag preset (flag_type()→bool_type()) は Some([false]) を維持する" {
+/// `@engine.Scope.entities` という別の断面 (内部表現) から同じ性質を固定する。
+test "ensure_entity: plain @builtins.bool_type() は @engine.Entity.default_values=None (absent)、flag preset (@builtins.flag_type()→@builtins.bool_type()) は Some([false]) を維持する" {
   let src =
     #|{"options": [
     #|  {"name": "plain", "type": "bool", "long": true},
@@ -4148,7 +4231,7 @@ test "ensure_entity: plain bool_type() は Entity.default_values=None (absent)�
     }
     if ent.name == "flg" {
       flg_found = true
-      assert_eq(ent.default_values, Some([VBool(false)]))
+      assert_eq(ent.default_values, Some([@engine.VBool(false)]))
     }
   }
   if !plain_found {
@@ -4226,8 +4309,8 @@ test "DR-089 end-to-end: an explicit type:none option behaves identically to omi
 /// 保証 (DR-092 §1/§2「inf は JSON string sentinel "Infinity"/"-Infinity" で表す」、実装調査
 /// 2026-07-11 の実機確認結果): fixture の `result` 位置に JSON 文字列 `"Infinity"` を書いた期待値
 /// (DR-092 §1 の wire 表現そのもの) が、実際の `--t inf` (float 型) 実行結果と一致する — 双方とも
-/// `render_val` を経由し、GOT 側は `VNum(inf)` → MoonBit Ryu 実装の "Infinity" 特殊形、EXPECT 側は
-/// JSON string decode (`json_to_value` は文字列をそのまま `VStr` に写す) → `render_val(VStr(s)) =
+/// `render_val` を経由し、GOT 側は `@engine.VNum(inf)` → MoonBit Ryu 実装の "Infinity" 特殊形、EXPECT 側は
+/// JSON string decode (`json_to_value` は文字列をそのまま `@engine.VStr` に写す) → `render_val(@engine.VStr(s)) =
 /// s` の素通し、で同じ文字列 "Infinity" に収束する。**production コード変更なしで DR-092 の wire
 /// 表現規約が conformance harness 上で既に成立する**ことを end-to-end で固定する
 /// (fixtures/value-typing/number-inf-nan.json への実 pin は main が別段で行う予定、本テストは
@@ -4275,7 +4358,7 @@ test "DR-092 end-to-end: --t inf round-trips through result as the JSON string s
 ///|
 /// 保証 (DR-092 §4「非整数 float の canonical serialize = shortest round-trip」、end-to-end):
 /// `--t 3.14159` の result が入力綴りそのまま (丸め/桁欠落なし) で戻る — shortest round-trip の
-/// 「入力と同じ最短表現に落ち着く」性質を CLI 入力からの往復で確認する (`value_str`/`render_val`
+/// 「入力と同じ最短表現に落ち着く」性質を CLI 入力からの往復で確認する (`@engine.value_str`/`render_val`
 /// 直接テストの resolve_wbtest.mbt 版と対で、こちらは実 args からの end-to-end)。
 test "DR-092 end-to-end: a non-integer float CLI value round-trips via shortest round-trip in result" {
   let src =
@@ -4331,6 +4414,8 @@ test "dec_definition: an element's own config env_prefix:\"\" opts that element 
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.options[0].env, ["MYAPP_PORT"]) // 兄弟要素は scope の連結をそのまま受ける
   assert_eq(def.options[1].env, ["HOME"]) // opt-out 要素は連結されない
@@ -4354,6 +4439,8 @@ test "dec_definition: an element's own config long_prefix overrides ONLY that el
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.options[0].long_prefix, "--")
   assert_eq(def.options[1].long_prefix, "+")
@@ -4377,6 +4464,8 @@ test "dec_definition: a positional's own config env_prefix override works the sa
   }
   let def = dec_definition(o) catch {
     DecodeSkip(r) => abort("expected successful decode, got DecodeSkip: " + r)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.positionals[0].env, ["MYAPP_TARGET"]) // auto_env 経由、scope env_prefix 連結
   assert_eq(def.positionals[1].env, ["HOME"]) // opt-out、明示 env: そのまま
@@ -4392,7 +4481,11 @@ test "dec_definition: an option's own config rejects an unknown key just like sc
     Some(x) => x
     None => abort("test src is not an object")
   }
-  let _ = dec_definition(o) catch { DecodeSkip(_) => return }
+  let _ = dec_definition(o) catch {
+    DecodeSkip(_) => return
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
+  }
   fail("expected DecodeSkip (bogus_key is not a config vocabulary word)")
 }
 
@@ -4582,6 +4675,8 @@ test "DR-094 §9 移行期間終了: 旧 kuu_int_parser prefix は unsupported f
     #|{"query":"parse","definition":{"definitions":{"types":{"t":{"name":"kuu_int_parser","config":{}}}},"options":[{"name":"v","type":"t","long":true}]},"cases":[]}
   let int_j = @json.parse(int_src)
   let _ = dec_fixture(int_j) catch {
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
     DecodeSkip(r) => {
       assert_true(r.contains("unsupported factory"))
       assert_true(r.contains("kuu_int_parser"))
@@ -4601,6 +4696,8 @@ test "DR-094 §9 移行期間終了: 旧 kuu_number_parser prefix は unsupporte
     #|{"query":"parse","definition":{"definitions":{"types":{"t":{"name":"kuu_number_parser","config":{}}}},"options":[{"name":"v","type":"t","long":true}]},"cases":[]}
   let number_j = @json.parse(number_src)
   let _ = dec_fixture(number_j) catch {
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
     DecodeSkip(r) => {
       assert_true(r.contains("unsupported factory"))
       assert_true(r.contains("kuu_number_parser"))
@@ -4620,6 +4717,8 @@ test "DR-094 §9 対極: factory 名の typo は 3 形式リネーム後も従�
     #|{"query":"parse","definition":{"definitions":{"types":{"t":{"name":"int_parsr","config":{}}}},"options":[{"name":"v","type":"t","long":true}]},"cases":[]}
   let typo_j = @json.parse(typo_src)
   let _ = dec_fixture(typo_j) catch {
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
     DecodeSkip(r) => {
       assert_true(r.contains("unsupported factory"))
       assert_true(r.contains("int_parsr"))
@@ -4741,6 +4840,8 @@ test "issue bool-parser-factory-unimplemented: bool_parser config の未知キ�
     #|{"query":"parse","definition":{"definitions":{"types":{"t":{"name":"bool_parser","config":{"typo_key":true}}}},"options":[{"name":"v","type":"t","long":true}]},"cases":[]}
   let j = @json.parse(src)
   let _ = dec_fixture(j) catch {
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
     DecodeSkip(r) => {
       assert_true(r.contains("bool_parser config"))
       assert_true(r.contains("typo_key"))
@@ -4757,9 +4858,9 @@ test "issue bool-parser-factory-unimplemented: bool_parser config の未知キ�
 /// binding は完全経路の dedup に混入しない (DESIGN §15.1「経路の同一性は実体への観測可能な
 /// 効果列で判定する」/ DR-030「実体 = 値セル」/ DR-093 §6「none の発火事実は ParserContext 層」)。
 /// 同一 pattern の 2 つの dd 要素 (trig_a / trig_b) が同じトークンに発火しうる 2 枝は、
-/// observable な result/effects が同一 ({rest: ["x"]}) なので 1 経路に dedup され Success になる。
+/// observable な result/effects が同一 ({rest: ["x"]}) なので 1 経路に dedup され @engine.Success になる。
 /// 修正前は placeholder の key 差 (trig_a vs trig_b) が strip_link 後の binding 配列比較に
-/// 混入して偽 Ambiguous になっていた (eval.mbt の dedup キー側だけ strip_none_placeholders を
+/// 混入して偽 @engine.Ambiguous になっていた (eval.mbt の dedup キー側だけ strip_none_placeholders を
 /// 通す修正で解消 — `eff` 本体は保持するので build_result / ParserContext 側は不変)。
 /// 標準 comparator (run_case) を通すことで「result に dd 名が漏れない」も同時に固定する。
 test "codex-20260712: differing dd placeholder keys do not split path dedup (DESIGN §15.1)" {
@@ -4779,7 +4880,7 @@ test "codex-20260712: differing dd placeholder keys do not split path dedup (DES
     #|  "cases": [
     #|    {
     #|      "id": "same-observable-converges-to-success",
-    #|      "why": "両 dd が同一トークン x に発火しうるが観測可能効果列は同一 → 1 経路 (Success)、rest に x (self: keep)",
+    #|      "why": "両 dd が同一トークン x に発火しうるが観測可能効果列は同一 → 1 経路 (@engine.Success)、rest に x (self: keep)",
     #|      "args": ["x"],
     #|      "expect": {"outcome": "success", "result": {"rest": ["x"]}}
     #|    }
@@ -4797,7 +4898,7 @@ test "codex-20260712: differing dd placeholder keys do not split path dedup (DES
 
 ///|
 /// 配線の基本 + opt-in 比較 (CONFORMANCE §3 COMP-Q3): option の値位置候補に `completer:
-/// "<名前>"` (wire) → `Entity.completer` → `Cand.completer` の carry が通ることを、同一
+/// "<名前>"` (wire) → `@engine.Entity.completer` → `@engine.Cand.completer` の carry が通ることを、同一
 /// definition・同一 args_before に対して (a) completer を明記した case (opt-in 発火、値が
 /// 一致することを要求) と (b) completer を書かない case (opt-in 不発火、実装が completer を
 /// 持っていても比較対象外になり PASS する) の両方で pin する。
@@ -4902,15 +5003,15 @@ test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が一�
 }
 
 ///|
-/// Rooted-escape (global option) の completer 解決 pin: global option の値スロットは
-/// command 子 scope 内で消費されるが、その Entity は宣言元 (root) scope にしか存在しない
-/// (issue 2026-07-14-cand-completer-followup、実装過程で発見した Cand.link 機構 — `Binding.link`
-/// と同じ Rooted-escape カウンタが Cand にも必要だった)。子 scope 内の値スロット候補が正しく
+/// @engine.Rooted-escape (global option) の completer 解決 pin: global option の値スロットは
+/// command 子 scope 内で消費されるが、その @engine.Entity は宣言元 (root) scope にしか存在しない
+/// (issue 2026-07-14-cand-completer-followup、実装過程で発見した @engine.Cand.link 機構 — `@engine.Binding.link`
+/// と同じ @engine.Rooted-escape カウンタが @engine.Cand にも必要だった)。子 scope 内の値スロット候補が正しく
 /// root 側の completer を引けることを固定する。
-test "DR-060 §4: global option の値スロット candidate は Rooted escape を跨いでも正しい completer を引く" {
+test "DR-060 §4: global option の値スロット candidate は @engine.Rooted escape を跨いでも正しい completer を引く" {
   let src =
     #|{
-    #|  "why": "global-option completer lookup across Rooted escape (inline)",
+    #|  "why": "global-option completer lookup across @engine.Rooted escape (inline)",
     #|  "query": "complete",
     #|  "definition": {
     #|    "options": [{"name": "verbose", "type": "number", "long": true, "completer": "levels", "global": true}],
@@ -4921,7 +5022,7 @@ test "DR-060 §4: global option の値スロット candidate は Rooted escape �
     #|  "cases": [
     #|    {
     #|      "id": "global-value-slot-completer-survives-command-scope-copy",
-    #|      "why": "\"build\" で子 scope に入り、global コピーされた --verbose のトリガを消費、値スロット (number, origin=verbose) の completer は宣言元 root の completer=levels を指す — 子 scope 側には --verbose の Entity 自体が存在しない (link 衛星、実体は root のまま)",
+    #|      "why": "\"build\" で子 scope に入り、global コピーされた --verbose のトリガを消費、値スロット (number, origin=verbose) の completer は宣言元 root の completer=levels を指す — 子 scope 側には --verbose の @engine.Entity 自体が存在しない (link 衛星、実体は root のまま)",
     #|      "args_before": ["build", "--verbose"],
     #|      "expect": {"outcome": "complete", "candidates": [
     #|        {"is_value": true, "ty": "number", "origin": "verbose", "term": "word_end", "meta": {"is_alias": false, "hidden": false, "deprecated": false}, "completer": "levels"}

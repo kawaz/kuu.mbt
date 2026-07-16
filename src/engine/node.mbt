@@ -52,6 +52,24 @@ pub enum ExportKey {
 } derive(Eq, Debug)
 
 ///|
+/// Construct the name-derived result-key posture across the package boundary.
+pub fn export_key_unset() -> ExportKey {
+  EkUnset
+}
+
+///|
+/// Construct an explicit result-key override across the package boundary.
+pub fn export_key(key : String) -> ExportKey {
+  EkKey(key)
+}
+
+///|
+/// Construct the result-key-free transparent posture across the package boundary.
+pub fn export_key_null() -> ExportKey {
+  EkNull
+}
+
+///|
 /// Input to a type resident's default-seat resolver. `declared` is the explicit
 /// scalar default, if any; preset residents may supply a fallback only when it is absent.
 pub struct SeatCtx {
@@ -73,21 +91,27 @@ pub fn SeatCtx::declared(self : SeatCtx) -> Value? {
 /// residents; the evaluator sees only this capability surface.
 pub(open) trait TypeExt {
   fn name(Self) -> String
+  fn encode(Self) -> Json = _
   fn has_value_slot(Self) -> Bool
   fn parse_token(Self, String) -> Result[Value, ParseFail]
   fn default_seat_resolver(Self, SeatCtx) -> Value?
 }
 
 ///|
-/// A type resident's structural identity is its registry name. Per-use parser
-/// configuration remains in the concrete resident and in matcher/node encode data.
-impl Eq for &TypeExt with fn equal(self, other) {
-  self.name() == other.name()
+impl TypeExt with fn encode(_self) {
+  ().to_json()
 }
 
 ///|
-impl Debug for &TypeExt with fn to_repr(self) {
-  Debug::to_repr(self.name())
+/// A type resident's structural identity includes both its registry name and
+/// parser configuration, matching NodeExt's kind-plus-encode contract.
+pub impl Eq for &TypeExt with fn equal(self, other) {
+  self.name() == other.name() && self.encode() == other.encode()
+}
+
+///|
+pub impl Debug for &TypeExt with fn to_repr(self) {
+  Debug::to_repr((self.name(), self.encode()))
 }
 
 ///|
@@ -103,7 +127,7 @@ impl Debug for &TypeExt with fn to_repr(self) {
 /// boundary (`json_conformance_wbtest.mbt`'s `dec_filter_chain`); every downstream consumer
 /// (filters.mbt/installer.mbt/eval.mbt/matcher.mbt/resolve.mbt/value.mbt) reads `name`/`args`
 /// directly, never re-parses a spelling string.
-pub struct FilterSpelling {
+pub(all) struct FilterSpelling {
   name : String
   args : Array[String]
 } derive(Eq, Debug)
@@ -112,17 +136,24 @@ pub struct FilterSpelling {
 /// The evaluator continuation exposed to an open node resident. The private
 /// defunctionalized `Cont` stays captured by the closure that implements this
 /// function type, so extension code sees only the stable resume capability.
+/// A Resume belongs to the current eval call. Retaining it and invoking it from
+/// a later eval call replays a stale continuation; result consistency is not supported.
 pub type Resume = (Ctx, Int, Array[Binding]) -> Array[Branch]
 
 ///|
 /// An open AtomicAST leaf resident. `kind + encode` is its collision-free
 /// structural identity; the default `equal` keeps every resident on that one
 /// comparison contract. `consumes_zero_tokens` is evaluator contract data,
-/// replacing central enumeration of builtin marker variants.
+/// replacing central enumeration of builtin marker variants. `eval` may call
+/// the supplied Resume only as the continuation of that invocation; retaining
+/// it for a later invocation is unsupported.
 pub(open) trait NodeExt {
   fn kind(Self) -> String
   fn encode(Self) -> Json
   fn equal(Self, &NodeExt) -> Bool = _
+  fn element_name(Self) -> String? = _
+  fn is_failure_action(Self) -> Bool = _
+  fn effect_mark(Self) -> (String, EffectOp)? = _
   fn consumes_zero_tokens(Self) -> Bool
   fn eval(Self, Ctx, Int, Array[Binding], Resume) -> Array[Branch]
 }
@@ -133,8 +164,38 @@ impl NodeExt with fn equal(self, other) {
 }
 
 ///|
+impl NodeExt with fn element_name(_self) {
+  None
+}
+
+///|
+impl NodeExt with fn is_failure_action(_self) {
+  false
+}
+
+///|
+impl NodeExt with fn effect_mark(_self) {
+  None
+}
+
+///|
+/// Open native-matcher contract. Concrete reading semantics and configuration
+/// live in builtin residents; the engine only invokes this interpretation surface.
+pub(open) trait MatcherExt {
+  fn kind(Self) -> String
+  fn encode(Self) -> Json
+  fn equal(Self, &MatcherExt) -> Bool = _
+  fn interpret(Self, Ctx, Int, Array[Binding], Resume) -> Array[Branch]
+}
+
+///|
+impl MatcherExt with fn equal(self, other) {
+  self.kind() == other.kind() && self.encode() == other.encode()
+}
+
+///|
 /// A node of the AtomicAST. Consumption is measured in whole args tokens.
-pub enum Node {
+pub(all) enum Node {
   /// literal token match; binds nothing, consumes 1.
   Exact(String)
   /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
@@ -253,7 +314,7 @@ pub enum Node {
 }
 
 ///|
-impl Eq for Node with fn equal(self, other) {
+pub impl Eq for Node with fn equal(self, other) {
   match (self, other) {
     (Exact(a), Exact(b)) => a == b
     (FilterArg(an, am), FilterArg(bn, bm)) => an == bn && am == bm
@@ -282,7 +343,7 @@ impl Eq for Node with fn equal(self, other) {
 }
 
 ///|
-impl Debug for Node with fn to_repr(self) {
+pub impl Debug for Node with fn to_repr(self) {
   match self {
     Exact(a) => @debug.Repr::ctor("Exact", [(None, Debug::to_repr(a))])
     FilterArg(a, b) =>
@@ -359,7 +420,7 @@ impl Debug for Node with fn to_repr(self) {
 ///   Each fires as a bound unit; its internal value slots raw-consume (getopt 同型).
 /// - `positional`: the ordered, porous token stream. Greedy may interject between items.
 /// - `entities`: value cells with the source ladder (env/default seats, DR-030/031).
-pub struct Scope {
+pub(all) struct Scope {
   greedy : Array[Node]
   positional : Array[Node]
   entities : Array[Entity]
@@ -367,7 +428,7 @@ pub struct Scope {
 } derive(Debug)
 
 ///|
-impl Eq for Scope with fn equal(self, other) {
+pub impl Eq for Scope with fn equal(self, other) {
   self.greedy == other.greedy &&
   self.positional == other.positional &&
   self.entities == other.entities &&
@@ -385,7 +446,7 @@ impl Eq for Scope with fn equal(self, other) {
 /// ref 分岐が `Scoped(e.name, ...)` で値をラップするため (DESIGN §2.4/2.5 の露出規則、
 /// `ref-template-no-repeat-degenerate.json` が既に pin する挙動と同型)。無制限透過ではなく
 /// **宣言元要素自身の部分木に限定** した探索 — 他要素・子 scope の値を誤って拾わないため。
-pub struct RequiredCandidate {
+pub(all) struct RequiredCandidate {
   name : String
   wrapper : String?
 } derive(Eq, Debug)
@@ -393,7 +454,7 @@ pub struct RequiredCandidate {
 ///|
 /// A delayed-predicate constraint (DR-055 / DR-047), evaluated on a complete path's FINAL state. A
 /// violation makes the path NOT a complete解決経路 (DR-047 §2) — a DR-037 Error of kind:constraint.
-pub enum Constraint {
+pub(all) enum Constraint {
   /// element committed → each target must have a value (default 込み). requires = 正の依存 (DR-055 §3).
   CRequires(String, Array[String])
   /// value-dependent requires (DR-055 §1 + DR-052 §値枝 id 直交): 4-tuple = (entity, branch_id,
@@ -450,7 +511,7 @@ pub enum Constraint {
 /// cli > env > config > inherit > default (5 段固定、DR-099 が DR-098 の tty 専用席
 /// 挿入を撤回)。The inherit seat looks up the nearest ancestor scope's same-named
 /// entity value.
-pub struct Entity {
+pub(all) struct Entity {
   name : String
   ty : &TypeExt
   mut env_key : String? // env seat lookup; None = no env seat declared (env installer sets it)
@@ -594,7 +655,7 @@ pub struct Entity {
 /// `int_round` は int_type() のみ、`allow_base_prefix` は number_type() / int_type()、`bool_config` は bool_type() のみが参照する
 /// (DR-076 §1/§3: bool の eq-split `--enabled=true` は variant 綴りと共存する — flag_type() と違い抑制
 /// されない)。他 kind は無視。
-pub struct LongEntry {
+pub(all) struct LongEntry {
   key : String
   name : String
   kind : &TypeExt
@@ -630,7 +691,7 @@ pub struct LongEntry {
 /// `depr` (DR-057/058): this entry is a deprecated alias spelling — firing it emits a `@depr:<name>`
 /// warning marker (the value binding is unchanged). Only a deprecated ALIAS sets it; a canonical or
 /// non-deprecated alias short has `depr: false`.
-pub struct ShortEntry {
+pub(all) struct ShortEntry {
   ch : Char
   name : String
   kind : &TypeExt
@@ -671,7 +732,7 @@ pub struct ShortEntry {
 /// A native matcher (DR-041): reified token-reading capability as DATA.
 /// The evaluator interprets it (`run_matcher`); installers construct it from
 /// the collected entry table (DR-042: "回収したエントリ表が matcher の構成データ").
-pub enum Matcher {
+pub(all) enum Matcher {
   /// `--key=value` split. Fires only on tokens containing `=`. Undefined key = no reading (素通し).
   EqSplit(prefix~ : String, entries~ : Array[LongEntry])
   /// `-abc` cluster + value attachment. Enumerates ALL readings (DR-041 §3-4); ambiguous defs
@@ -785,7 +846,7 @@ pub(all) struct Cand {
 /// == a reading; `Pending(cands, binds)` == トリガ消費・値 pending (parse では Held 相当、complete では
 /// 補完候補の源, MDR-002 §2 案B). The matcher only CONSTRUCTS Accept/Held; the evaluator produces and
 /// consumes Pending. (Kept in node.mbt so both matcher and eval can return it; single package.)
-pub enum Branch {
+pub(all) enum Branch {
   Accept(Int, Array[Binding]) // (new position, accumulated bindings)
   Held(ParseError, Array[Binding]) // a DR-037 Error + the partial state (acc) at the error point
   Pending(Array[Cand], Array[Binding]) // trigger consumed, value slot's input absent

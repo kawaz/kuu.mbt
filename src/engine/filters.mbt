@@ -17,6 +17,22 @@
 // chains exists.
 
 ///|
+pub fn split_colon(s : String) -> Array[String] {
+  let out : Array[String] = []
+  let mut current = ""
+  for char in s {
+    if char == ':' {
+      out.push(current)
+      current = ""
+    } else {
+      current = current + char.to_string()
+    }
+  }
+  out.push(current)
+  out
+}
+
+///|
 /// A filter's SIGNATURE (DR-061 §5 "factory config と filter の線引きは相で切る" + DR-077 §2 "使える
 /// のは transform シグネチャ (T => T) の filter のみ"): `Validate` never changes its input (success =
 /// input unchanged, failure = Err) — e.g. `non_empty`, `in_range`. `Transform` computes a NEW value
@@ -26,6 +42,12 @@ pub enum FilterSignature {
   Validate
   Transform
 } derive(Eq, Debug)
+
+///|
+/// Whether this descriptor can produce a replacement value.
+pub fn FilterSignature::is_transform(self : FilterSignature) -> Bool {
+  self is Transform
+}
 
 ///|
 /// One filters-registry entry (DR-010 "filters" registry区分 + DR-061 descriptor 概念 applied to

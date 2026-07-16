@@ -23,7 +23,7 @@ pub struct ScopedCons {
 } derive(Debug)
 
 ///|
-impl Eq for ScopedCons with fn equal(self, other) {
+pub impl Eq for ScopedCons with fn equal(self, other) {
   self.path == other.path &&
   self.constraints == other.constraints &&
   self.entities == other.entities

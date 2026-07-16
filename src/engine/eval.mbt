@@ -91,11 +91,11 @@ fn dd_match_token(spelling : String, is_pattern : Bool, token : String) -> Bool 
 ///|
 /// An exact-spelling candidate (the Pending payload at a trigger boundary,
 /// DR-060 §3). `ty` is only meaningful when a value must follow the spelling
-/// (term = Cont, e.g. an eq-split `--key`); a plain trigger carries flag_type().
+/// (term = Cont, e.g. an eq-split `--key`); a plain trigger carries "flag".
 fn cand_trigger(
   spelling : String,
   origin : String,
-  ty : &TypeExt,
+  ty : String,
   term : TermHint,
   is_alias : Bool,
   hidden : Bool,
@@ -104,7 +104,7 @@ fn cand_trigger(
   {
     spelling,
     is_value: false,
-    ty: ty.name(),
+    ty,
     origin,
     term,
     meta: { is_alias, hidden, deprecated },
@@ -120,14 +120,14 @@ fn cand_trigger(
 ///|
 /// A non-set effect binding (default / unset / empty). The operand is a
 /// placeholder — these ops carry no operand (spec DR-045 table).
-fn mk_eff(key : String, op : EffectOp, source : Source) -> Binding {
+pub fn mk_eff(key : String, op : EffectOp, source : Source) -> Binding {
   { key, op, value: VBool(false), source, scope: [], link: 0, at_pos: None }
 }
 
 ///|
 /// A failure-action marker binding (spec DR-048): key `@act:<name>`, value =
 /// the args position where the action was selected (args-min tie-break).
-fn action_marker(name : String, pos : Int) -> Binding {
+pub fn action_marker(name : String, pos : Int) -> Binding {
   {
     key: "@act:" + name,
     op: Set,
@@ -363,11 +363,11 @@ fn array_marker(label : String) -> Binding {
 ///|
 /// A pending-value candidate (the Pending payload): the value slot of
 /// `origin`, of type `ty`, had no token left to consume.
-fn pend_value(ty : &TypeExt, origin : String) -> Cand {
+pub fn pend_value(ty : String, origin : String) -> Cand {
   {
     spelling: "",
     is_value: true,
-    ty: ty.name(),
+    ty,
     origin,
     term: WordEnd,
     meta: { is_alias: false, hidden: false, deprecated: false },
@@ -450,10 +450,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // (`fixup_boundary_cands`, DR-104 §2/§3); this fallback is what a truly
         // standalone Exact (outside that shape) keeps.
         [
-          Pending(
-            [cand_trigger(s, s, flag_type(), WordEnd, false, false, false)],
-            [],
-          ),
+          Pending([cand_trigger(s, s, "flag", WordEnd, false, false, false)], []),
         ]
       } else {
         // an unmatched (or, in parse mode, exhausted) trigger is a silent
@@ -515,7 +512,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
               cand_trigger(
                 trigger,
                 trigger,
-                flag_type(),
+                "flag",
                 WordEnd,
                 false,
                 false,
@@ -553,7 +550,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
               cand_trigger(
                 spelling,
                 elem_name,
-                flag_type(),
+                "flag",
                 WordEnd,
                 false,
                 false,
@@ -581,17 +578,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [
           Pending(
-            [
-              cand_trigger(
-                name,
-                name,
-                flag_type(),
-                WordEnd,
-                false,
-                false,
-                false,
-              ),
-            ],
+            [cand_trigger(name, name, "flag", WordEnd, false, false, false)],
             [],
           ),
         ]
@@ -702,7 +689,7 @@ fn filter_arg_eval(
       None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
     }
   } else if in_complete(ctx) {
-    [Pending([pend_value(number_type(), name)], acc)]
+    [Pending([pend_value("number", name)], acc)]
   } else {
     [Held(pe_missing(name, pos), acc)]
   }
@@ -725,7 +712,7 @@ fn req_arg_eval(
       ),
     ]
   } else if in_complete(ctx) {
-    [Pending([pend_value(string_type(), name)], acc)]
+    [Pending([pend_value("string", name)], acc)]
   } else {
     [
       Held(
@@ -756,7 +743,7 @@ fn first_char(s : String) -> Char {
 /// precondition (a `kv_map` accumulator piece must be shaped `k=v`, checked BEFORE `build_result`
 /// ever tries to split it — this function only answers "is there a split point at all", the actual
 /// first-`=` split happens once in `resolve.mbt` at fold time, `split_first_eq`).
-fn contains_eq(s : String) -> Bool {
+pub fn contains_eq(s : String) -> Bool {
   for c in s {
     if c == '=' {
       return true
@@ -767,7 +754,7 @@ fn contains_eq(s : String) -> Bool {
 
 ///|
 /// Split `s` on the first char of `sep` (spec DR-034 single-char separator).
-fn split_on(s : String, sep : String) -> Array[String] {
+pub fn split_on(s : String, sep : String) -> Array[String] {
   let sepc = first_char(sep)
   let out : Array[String] = []
   let mut cur = ""
@@ -828,7 +815,7 @@ fn parse_fail_error(
 }
 
 ///|
-fn sep_binds(
+pub fn sep_binds(
   name : String,
   tok : String,
   sep : String?,
@@ -1605,17 +1592,7 @@ fn step_greedy(
         // complete: the command name is readable at the boundary (DR-060 §1).
         out.push(
           Pending(
-            [
-              cand_trigger(
-                name,
-                name,
-                flag_type(),
-                WordEnd,
-                false,
-                false,
-                false,
-              ),
-            ],
+            [cand_trigger(name, name, "flag", WordEnd, false, false, false)],
             acc,
           ),
         )
@@ -1638,7 +1615,7 @@ fn step_greedy(
               cand_trigger(
                 trigger,
                 trigger,
-                flag_type(),
+                "flag",
                 WordEnd,
                 false,
                 false,
@@ -1675,7 +1652,7 @@ fn step_greedy(
               cand_trigger(
                 spelling,
                 elem_name,
-                flag_type(),
+                "flag",
                 WordEnd,
                 false,
                 false,
@@ -1854,7 +1831,7 @@ fn scope_consume(
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value(number_type(), name)], acc)]
+          [Pending([pend_value("number", name)], acc)]
         } else {
           [Held(pe_missing(name, pos), acc)]
         }
@@ -1874,7 +1851,7 @@ fn scope_consume(
         )
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value(string_type(), name)], acc)]
+          [Pending([pend_value("string", name)], acc)]
         } else {
           [
             Held(
@@ -1902,7 +1879,7 @@ fn scope_consume(
         // extract (none of our fixtures exercise this shape yet, kept as-is).
         [
           Pending(
-            [cand_trigger(s, s, flag_type(), WordEnd, false, false, false)],
+            [cand_trigger(s, s, "flag", WordEnd, false, false, false)],
             acc,
           ),
         ]
@@ -2215,7 +2192,7 @@ fn consume_head(
         ]
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value(string_type(), name)], [])]
+          [Pending([pend_value("string", name)], [])]
         } else {
           [
             Held(
@@ -2259,7 +2236,7 @@ fn consume_head(
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value(number_type(), name)], [])]
+          [Pending([pend_value("number", name)], [])]
         } else {
           [Held(pe_missing(name, pos), [])]
         }
@@ -2554,7 +2531,7 @@ fn strip_none_placeholders(
   for b in bs {
     let mut is_none = false
     for n in nones {
-      if n.name == b.key && scope_path_eq(n.path, b.scope) {
+      if n.name() == b.key && scope_path_eq(n.path(), b.scope) {
         is_none = true
         break
       }
@@ -2591,7 +2568,7 @@ fn scope_path_eq(a : Array[String], b : Array[String]) -> Bool {
 ///|
 /// Whether the (path, name) cell is committed on a path (spec DR-045): the
 /// LAST effect on the cell is not unset (last-wins).
-fn is_committed(
+pub fn is_committed(
   bindings : Array[Binding],
   path : Array[String],
   name : String,
@@ -2610,7 +2587,7 @@ fn is_committed(
 
 ///|
 /// The committed value of the (path, name) cell (last-wins), or None.
-fn elem_value(
+pub fn elem_value(
   bindings : Array[Binding],
   path : Array[String],
   name : String,
@@ -2628,7 +2605,7 @@ fn elem_value(
 }
 
 ///|
-fn constraint_err(
+pub fn constraint_err(
   element : String,
   reason : String,
   message : String,
@@ -2700,7 +2677,7 @@ fn scope_in_wrapped_subtree(
 /// `is_committed` の `RequiredCandidate.wrapper` 対応版 (codex レビュー M-2 修正): `scope` の完全
 /// 一致 (`scope_path_eq`) の代わりに `scope_in_wrapped_subtree` で「宣言元 ref 要素の部分木内」を
 /// 探す。
-fn is_committed_in_subtree(
+pub fn is_committed_in_subtree(
   bindings : Array[Binding],
   path : Array[String],
   wrapper : String,
@@ -2721,7 +2698,7 @@ fn is_committed_in_subtree(
 ///|
 /// `elem_value` の `RequiredCandidate.wrapper` 対応版 (codex レビュー M-2 修正、`is_committed_in_
 /// subtree` と対)。
-fn elem_value_in_subtree(
+pub fn elem_value_in_subtree(
   bindings : Array[Binding],
   path : Array[String],
   wrapper : String,
@@ -2937,7 +2914,10 @@ fn eval_all_constraints(
 /// transparent scope shares its path across reps, so its constraints see the
 /// MERGED final state of all reps; per-rep predicate instances are not spec'd
 /// (no DR defines them). IdxRepeat's indexed paths ("#k") are out of scope.
-fn collect_scopes(root : Node, defs : Map[String, Node]) -> Array[ScopedCons] {
+pub fn collect_scopes(
+  root : Node,
+  defs : Map[String, Node],
+) -> Array[ScopedCons] {
   let out : Array[ScopedCons] = []
   match root {
     ScopeNode(sc) => collect_scope_into(sc, [], defs, out, [])
