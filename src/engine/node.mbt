@@ -3,9 +3,8 @@
 // DR-039: AtomicAST = a declarative serialization of the bottom-up engine's node
 // graph. The core grammar is atomic (exact / or / seq / primitive + multiple)
 // plus name (result scope). DR-041 §1: matchers add runtime reading capability
-// WITHOUT adding schema — so `NativeMatch` carries matcher DATA (not an opaque
-// closure), keeping the whole AST comparable (`derive(Eq, Debug)`) for the
-// order-independence permutation test (DR-042).
+// without adding schema; `NativeMatch` carries an opaque resident whose
+// `kind + encode` identity keeps the whole AST structurally comparable.
 //
 // MDR-002 §3: this file is the dependency-free leaf (behaviour-free ADTs only).
 // MDR-003: reserved-word collisions (`alias` / `export` / `inherit` 単独) take a
@@ -125,7 +124,7 @@ pub impl Debug for &TypeExt with fn to_repr(self) {
 /// is needed since `args` carries the object form's values verbatim in a real `Array[String]` field
 /// rather than a single joined string. Colon-splitting for the shorthand happens ONCE at the decode
 /// boundary (`json_conformance_wbtest.mbt`'s `dec_filter_chain`); every downstream consumer
-/// (filters.mbt/installer.mbt/eval.mbt/matcher.mbt/resolve.mbt/value.mbt) reads `name`/`args`
+/// (filters.mbt/installer.mbt/eval.mbt/builtins/matcher_residents.mbt/resolve.mbt/value.mbt) reads `name`/`args`
 /// directly, never re-parses a spelling string.
 pub(all) struct FilterSpelling {
   name : String
@@ -180,23 +179,20 @@ impl NodeExt with fn effect_mark(_self) {
 
 ///|
 /// Open native-matcher contract. Concrete reading semantics and configuration
-/// live in builtin residents; the engine only invokes this interpretation surface.
+/// live in residents. `candidates` is required because every matcher owns its
+/// boundary completion spellings; `interpret` may receive an exhausted position
+/// and must treat it as no reading. The engine invokes both capability surfaces.
 pub(open) trait MatcherExt {
   fn kind(Self) -> String
   fn encode(Self) -> Json
   fn equal(Self, &MatcherExt) -> Bool = _
-  fn candidates(Self) -> Array[Cand] = _
+  fn candidates(Self) -> Array[Cand]
   fn interpret(Self, Ctx, Int, Array[Binding], Resume) -> Array[Branch]
 }
 
 ///|
 impl MatcherExt with fn equal(self, other) {
   self.kind() == other.kind() && self.encode() == other.encode()
-}
-
-///|
-impl MatcherExt with fn candidates(_self) {
-  []
 }
 
 ///|
@@ -613,7 +609,7 @@ pub(all) struct Entity {
   // `final_filters`/`accum_filters` below (which run AFTER a ladder seat's value is already
   // resolved, in `resolve.mbt`'s `apply_entity_filters`), piece_filters only ever runs BEFORE a
   // string→T parse — i.e. only for STRING-typed ladder inputs. The CLI seat's own piece_filters
-  // application happens upstream in eval.mbt/matcher.mbt (token consumption, before the value ever
+  // application happens upstream in eval.mbt/builtins/matcher_residents.mbt (token consumption, before the value ever
   // reaches this Entity) — this copy exists so the ladder's OTHER string-sourced seats (env: DR-049
   // §2 "env 値も pieceProcessor を通る") can run the SAME chain via `resolve.mbt`'s `env_value`. A
   // non-string ladder source (config number/bool matching the type, default, inherit) has no parse
@@ -653,7 +649,7 @@ pub(all) struct Entity {
   // パターン)。`None` = no completer declared. Read by `complete_tree`'s post-dedup pass
   // (outcome.mbt) via a name-keyed Entity lookup — NOT threaded through the value-primitive Node
   // constructors (string resident/number resident/…) themselves, because every value-primitive call site would
-  // otherwise need its own completer plumbing (30+ sites across eval.mbt/matcher.mbt) for a value
+  // otherwise need its own completer plumbing (30+ sites across eval.mbt/builtins/matcher_residents.mbt) for a value
   // that is always determined by `origin` alone (same Entity, same completer, by construction —
   // `ensure_entity` only ever creates ONE Entity per name). This is the structural reason DR-104
   // §3's "merge rule for a completer-only divergent duplicate" never actually fires under this

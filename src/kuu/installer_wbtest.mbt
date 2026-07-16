@@ -179,7 +179,7 @@ fn entity_of(sc : @engine.Scope, name : String) -> @engine.Entity? {
 /// value プリミティブを直後に置いた @engine.Seq)、(2) eq-split matcher 1 本を集約し (全 value 系 entry を集めて)、
 /// (3) entity を name で 1 個 ensure する。仕様根拠 = DR-042 §展開の標準パターン (installer は entry 表を
 /// matcher の構成 data として使う) + LOWERING §B.1 (long entry の 2 form: name-derived / 明示綴り)。
-test "long installer: value option gets 1 greedy @engine.Seq satellite + 1 @engine.EqSplit matcher + 1 entity" {
+test "long installer: value option gets 1 greedy @engine.Seq satellite + 1 @builtins.eq_split matcher + 1 entity" {
   let def : Definition = {
     ..empty_def()
     // DR-071 §1: `:set` is the main-entry sentinel `normalize_option` expands to kebab(name) — the
@@ -189,7 +189,7 @@ test "long installer: value option gets 1 greedy @engine.Seq satellite + 1 @engi
     options: [el("port", @builtins.string_type(), long=LList([":set"]))],
   }
   let sc = ok_scope(def, [LongInst])
-  // 貢献: (1) @engine.Seq([@engine.Exact("--port"), @builtins.string_arg("port")]) の satellite が 1 本、(2) @engine.NativeMatch(@engine.EqSplit(...))
+  // 貢献: (1) @engine.Seq([@engine.Exact("--port"), @builtins.string_arg("port")]) の satellite が 1 本、(2) @engine.NativeMatch(@builtins.eq_split(...))
   // 1 本、計 greedy = 2 本。@builtins.string_type() なので value_prim = string resident。
   assert_eq(sc.greedy.length(), 2)
   assert_eq(
@@ -197,13 +197,14 @@ test "long installer: value option gets 1 greedy @engine.Seq satellite + 1 @engi
     @engine.Seq([@engine.Exact("--port"), @builtins.string_arg("port", [])]),
   )
   match sc.greedy[1] {
-    @engine.NativeMatch(@engine.EqSplit(prefix=p, entries=es)) => {
-      assert_eq(p, "--")
-      assert_eq(es.length(), 1)
-      assert_eq(es[0].key, "port")
-      assert_eq(es[0].name, "port")
+    @engine.NativeMatch(matcher) => {
+      assert_eq(matcher.kind(), "eq_split")
+      let candidates = matcher.candidates()
+      assert_eq(candidates.length(), 1)
+      assert_eq(candidates[0].spelling, "--port")
+      assert_eq(candidates[0].origin, "port")
     }
-    _ => abort("expected @engine.NativeMatch(@engine.EqSplit)")
+    _ => abort("expected @engine.NativeMatch")
   }
   // entity は name=port で 1 個、@builtins.flag_type() ではないので default_values は None。inherit_ / env_key
   // / config_seat / accum は installer が触っていないので初期値のまま。
@@ -219,7 +220,7 @@ test "long installer: value option gets 1 greedy @engine.Seq satellite + 1 @engi
 /// 保証 (DR-058 §2): a deprecated VALUE main entry's satellite carries a trailing `deprecation resident`
 /// warning marker after its value slot (`inst_long`'s space-form main-entry arm, node.mbt's
 /// `deprecation resident` doc shape) — mirrors `inst_short`'s `depr: e.deprecated` short-cluster coverage
-/// (matcher_wbtest.mbt「short cluster: deprecated entry rides a @depr marker」). `deprecated: true`
+/// (builtins/matcher_residents_wbtest.mbt「short cluster: deprecated entry rides a @depr marker」). `deprecated: true`
 /// on a plain (non-alias) element stands in for both cases DR-058 §2 requires a warning for — a
 /// directly-deprecated canonical entry, and a deprecated alias entry-copy (DR-057 §3
 /// `alias_entry`) — both fold into the SAME `ElemDef.deprecated` bool by the time `inst_long` runs,
@@ -266,7 +267,7 @@ test "long installer: a deprecated value option's main-entry satellite carries a
 /// sites for a long entry point (space-form main-entry vs the variant loop, since a bare flag fire
 /// is a @engine.Set variant, not a main entry — see the "long installer: a flag's `long:true`..." test
 /// above); `inst_short` has only 1 (a cluster char has no variant/main-entry split, `depr` rides
-/// the single `@engine.ShortEntry`). Both `inst_long` sites need their own deprecation resident application for parity
+/// the single `@builtins.ShortEntry`). Both `inst_long` sites need their own deprecation resident application for parity
 /// with the short side — this test locks the variant-loop site (the previous test locks the
 /// main-entry site). Firing `--verbose` both sets `verbose=true` AND records `@depr:verbose`.
 test "long installer: a deprecated flag's @engine.Set-variant satellite carries a deprecation resident warning marker (DR-058 §2)" {
@@ -405,7 +406,7 @@ test "long installer: a deprecated BOr (structural or) main entry carries a depr
 /// flag の裸発火は合成された `:set:true` の @engine.Set variant が Variant entries loop 経由で @engine.Bind(name, true)
 /// 衛星を生む。eq-split matcher には登録されない (この要素は main entry `:set` を持たない = 値パイプ
 /// ライン自体が無い、古典 flag の糖衣 `long:true` → `[":set:true"]` のみのケース)。
-test "long installer: a flag's `long:true` composes a `:set:true` variant → bare @engine.Bind(true) satellite (no @engine.EqSplit entry), default:false preset (DR-076 §2 規則1)" {
+test "long installer: a flag's `long:true` composes a `:set:true` variant → bare @engine.Bind(true) satellite (no @builtins.eq_split entry), default:false preset (DR-076 §2 規則1)" {
   let def : Definition = {
     ..empty_def(),
     options: [el("verbose", @builtins.flag_type(), long=LBool(true))],
@@ -437,7 +438,7 @@ test "long installer: a flag's explicit `long:[\":set\"]` composes `:set:true` A
     options: [el("verbose", @builtins.flag_type(), long=LList([":set"]))],
   }
   let sc = ok_scope(def, [LongInst])
-  // main entry 1 本 (値スロット, @builtins.flag_type()→@builtins.bool_type() 差し替え後 bool resident) + @engine.EqSplit matcher 1 本 + variant 1 本
+  // main entry 1 本 (値スロット, @builtins.flag_type()→@builtins.bool_type() 差し替え後 bool resident) + @builtins.eq_split matcher 1 本 + variant 1 本
   // (裸発火 @engine.Bind) → greedy = 3 本。
   assert_eq(sc.greedy.length(), 3)
   let mut has_value_slot = false
@@ -467,10 +468,10 @@ test "long installer: a flag's explicit `long:[\":set\"]` composes `:set:true` A
 /// default:false と対称。DR-077 §3 規則1 (count の `long:true` 糖衣は `:update:increment`):
 /// `el("verbose", @builtins.count_type(), long=LBool(true))` は wire `{"long": true}` を模す。値セルの型 @builtins.count_type()→@builtins.number_type()
 /// 差し替えは flag と違い `normalize_option` ではなく `ensure_entity` (@engine.Entity 構築) まで遅延する —
-/// `@builtins.count_type()` タグは short/eq-split matcher (matcher.mbt) が「非消費・固定 increment」を判定するのに
+/// `@builtins.count_type()` タグは short/eq-split matcher (builtins/matcher_residents.mbt) が「非消費・固定 increment」を判定するのに
 /// installer chain 全体を通して必要だから (`normalize_option` のコメント参照、@builtins.bool_type() は画一ルールで
 /// 閉じるが @builtins.number_type() 全般には count 挙動を強制できない)。
-test "long installer: a count's `long:true` composes an `:update:increment` variant → bare update-effect satellite (no @engine.EqSplit entry), default:0 preset (DR-077 §3 規則1)" {
+test "long installer: a count's `long:true` composes an `:update:increment` variant → bare update-effect satellite (no @builtins.eq_split entry), default:0 preset (DR-077 §3 規則1)" {
   let def : Definition = {
     ..empty_def(),
     options: [el("verbose", @builtins.count_type(), long=LBool(true))],
@@ -1254,7 +1255,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
 
 ///|
 /// 保証 (codex レビュー High 2、2026-07-10): @builtins.count_type() の **short** 発火は variant を一切経由せず
-/// `matcher.mbt`'s `walk_short` が直接 `mk_eff(e.name, @engine.Update("increment", []), @engine.Cli)` を生成する
+/// `builtins/matcher_residents.mbt`'s `walk_short` が直接 `mk_eff(e.name, @engine.Update("increment", []), @engine.Cli)` を生成する
 /// (`count_increment_variant` の `long:true` 糖衣経路とは別の生成源) — `collect_unsupported_accum_
 /// update` の variant 走査ではこの経路が最初から見えないため、@builtins.count_type()×multiple という組合せ自体を
 /// 要素レベルで閉じる (`collect_unsupported_count_multiple`)。修正前の実際の repro:
@@ -1474,7 +1475,7 @@ test "desugar_aliases: alias long:true on a flag canonical composes :set:true (b
     ],
   }
   let sc = ok_scope(def, all_installers())
-  // alias 側の trigger --v は @engine.Bind (裸発火) 衛星 1 本のみ — @engine.EqSplit (値スロット形) には登録されない。
+  // alias 側の trigger --v は @engine.Bind (裸発火) 衛星 1 本のみ — @builtins.eq_split (値スロット形) には登録されない。
   let mut has_bare_bind = false
   let mut has_value_slot = false
   for g in sc.greedy {
@@ -3375,8 +3376,8 @@ test "DR-091 §3 / DR-096 §1 end-to-end: long_prefix:\"\" + long_eq_sep:@engine
 ///|
 /// Guarantees (DR-091 §3 "long の space-form main entry の登録をスキップ"): with
 /// `long_eq_sep:@engine.EsRequire`, the SPACE form (`if abc`, 2 tokens, no `=`) has NO entry point
-/// at all — `inst_long` withheld the main entry, and `@engine.EqSplit` never fires on a token without `=`
-/// (`node.mbt`'s `@engine.EqSplit` doc comment: "Fires only on tokens containing `=`"). With no other
+/// at all — `inst_long` withheld the main entry, and `@builtins.eq_split` never fires on a token without `=`
+/// (`node.mbt`'s `@builtins.eq_split` doc comment: "Fires only on tokens containing `=`"). With no other
 /// element in this Definition able to consume either token, the parse must FAIL — this is the
 /// direct 対極 of the eq-form acceptance case above.
 test "DR-091 §3 / DR-096 §1 end-to-end: long_eq_sep:@engine.EsRequire rejects the space form (対極 of eq-form acceptance)" {
@@ -3452,9 +3453,9 @@ test "DR-096 §3.3 end-to-end: long_prefix:\"\" + long_eq_sep:@engine.EsRequire 
 
 ///|
 /// 保証 (DESIGN §7.2 / LOWERING §B.2「config `short_prefix`/`short_combine` がパラメータ」):
-/// `inst_short` は `e.short_prefix` を `@engine.ShortCombine` matcher の `prefix` に使う (旧ハードコード
+/// `inst_short` は `e.short_prefix` を `@builtins.short_combine` matcher の `prefix` に使う (旧ハードコード
 /// `"-"` を置換)。既定の `"-"` はこのテストの対極 (long installer 同型テストの `"--"` 既定と対)。
-test "short installer: e.short_prefix drives the @engine.ShortCombine matcher's prefix (default \"-\")" {
+test "short installer: e.short_prefix drives the @builtins.short_combine matcher's prefix (default \"-\")" {
   let def : Definition = {
     ..empty_def(),
     options: [el("verbose", @builtins.flag_type(), short=['v'])],
@@ -3462,18 +3463,19 @@ test "short installer: e.short_prefix drives the @engine.ShortCombine matcher's 
   let sc = ok_scope(def, [ShortInst])
   assert_eq(sc.greedy.length(), 1)
   match sc.greedy[0] {
-    @engine.NativeMatch(@engine.ShortCombine(prefix=p, entries=es, ..)) => {
-      assert_eq(p, "-")
-      assert_eq(es.length(), 1)
-      assert_eq(es[0].ch, 'v')
-      assert_eq(es[0].name, "verbose")
+    @engine.NativeMatch(matcher) => {
+      assert_eq(matcher.kind(), "short_combine")
+      let candidates = matcher.candidates()
+      assert_eq(candidates.length(), 1)
+      assert_eq(candidates[0].spelling, "-v")
+      assert_eq(candidates[0].origin, "verbose")
     }
-    _ => abort("expected @engine.NativeMatch(@engine.ShortCombine)")
+    _ => abort("expected @engine.NativeMatch")
   }
 }
 
 ///|
-/// 保証 (同上、非既定側): `short_prefix: "+"` (BSD 慣習等) を指定した要素は `@engine.ShortCombine` matcher
+/// 保証 (同上、非既定側): `short_prefix: "+"` (BSD 慣習等) を指定した要素は `@builtins.short_combine` matcher
 /// の prefix にそのまま反映される。
 test "short installer: a non-default short_prefix (\"+\") is honored" {
   let def : Definition = {
@@ -3484,16 +3486,20 @@ test "short installer: a non-default short_prefix (\"+\") is honored" {
   }
   let sc = ok_scope(def, [ShortInst])
   match sc.greedy[0] {
-    @engine.NativeMatch(@engine.ShortCombine(prefix=p, ..)) => assert_eq(p, "+")
-    _ => abort("expected @engine.NativeMatch(@engine.ShortCombine)")
+    @engine.NativeMatch(matcher) => {
+      let candidates = matcher.candidates()
+      assert_eq(candidates.length(), 1)
+      assert_eq(candidates[0].spelling, "+v")
+    }
+    _ => abort("expected @engine.NativeMatch")
   }
 }
 
 ///|
 /// 保証 (同上、grouping 側 — DR-091 §3 の `eq_group`/`long_prefix` grouping と同型): 異なる
-/// `short_prefix` を持つ要素は同じ `@engine.ShortCombine` matcher に混ざらず、prefix ごとに別 matcher が
+/// `short_prefix` を持つ要素は同じ `@builtins.short_combine` matcher に混ざらず、prefix ごとに別 matcher が
 /// 立つ (異なる token 空間を誤って結合しない — `eq_group` の doc comment と同じ理由付け)。
-test "short installer: distinct short_prefix values get SEPARATE @engine.ShortCombine matchers (no cross-prefix combine)" {
+test "short installer: distinct short_prefix values get SEPARATE @builtins.short_combine matchers (no cross-prefix combine)" {
   let def : Definition = {
     ..empty_def(),
     options: [
@@ -3507,20 +3513,16 @@ test "short installer: distinct short_prefix values get SEPARATE @engine.ShortCo
   let mut plus_count = 0
   for g in sc.greedy {
     match g {
-      @engine.NativeMatch(@engine.ShortCombine(prefix="-", entries=es, ..)) => {
-        dash_count = dash_count + 1
-        assert_eq(es.length(), 1)
-        assert_eq(es[0].ch, 'v')
+      @engine.NativeMatch(matcher) => {
+        let candidates = matcher.candidates()
+        assert_eq(candidates.length(), 1)
+        match candidates[0].spelling {
+          "-v" => dash_count = dash_count + 1
+          "+w" => plus_count = plus_count + 1
+          other => abort("unexpected short matcher candidate: " + other)
+        }
       }
-      @engine.NativeMatch(@engine.ShortCombine(prefix="+", entries=es, ..)) => {
-        plus_count = plus_count + 1
-        assert_eq(es.length(), 1)
-        assert_eq(es[0].ch, 'w')
-      }
-      _ =>
-        abort(
-          "expected @engine.NativeMatch(@engine.ShortCombine) with prefix - or +",
-        )
+      _ => abort("expected @engine.NativeMatch")
     }
   }
   assert_eq(dash_count, 1)
@@ -3529,10 +3531,10 @@ test "short installer: distinct short_prefix values get SEPARATE @engine.ShortCo
 
 ///|
 /// 保証 (DR-014「-abc の結合許可」解釈A, team-lead 裁定 2026-07-11): `e.short_combine` は
-/// `inst_short` の grouping を素通りして `@engine.ShortCombine` matcher の `combine` param にそのまま
-/// 反映される (`short_group` の pair-key 化)。matcher レベルの意味論確認は matcher_wbtest.mbt、
+/// `inst_short` の grouping を素通りして `@builtins.short_combine` matcher の `combine` param にそのまま
+/// 反映される (`short_group` の pair-key 化)。matcher レベルの意味論確認は builtins/matcher_residents_wbtest.mbt、
 /// ここでは ElemDef → matcher の配線そのものを固定する。
-test "short installer: e.short_combine rides through to the @engine.ShortCombine matcher's combine param" {
+test "short installer: e.short_combine rides through to the @builtins.short_combine matcher's combine param" {
   let def : Definition = {
     ..empty_def(),
     options: [
@@ -3541,9 +3543,17 @@ test "short installer: e.short_combine rides through to the @engine.ShortCombine
   }
   let sc = ok_scope(def, [ShortInst])
   match sc.greedy[0] {
-    @engine.NativeMatch(@engine.ShortCombine(combine=c, ..)) =>
-      assert_eq(c, false)
-    _ => abort("expected @engine.NativeMatch(@engine.ShortCombine)")
+    @engine.NativeMatch(matcher) => {
+      assert_eq(
+        @engine.run_matcher(matcher, @engine.parse_context(["-vv"]), 0).length(),
+        0,
+      )
+      assert_eq(
+        @engine.run_matcher(matcher, @engine.parse_context(["-v"]), 0).length(),
+        1,
+      )
+    }
+    _ => abort("expected @engine.NativeMatch")
   }
 }
 
@@ -3565,15 +3575,28 @@ test "short installer: same short_prefix but DIFFERENT short_combine values get 
   let mut false_count = 0
   for g in sc.greedy {
     match g {
-      @engine.NativeMatch(@engine.ShortCombine(combine=true, entries=es, ..)) => {
-        true_count = true_count + 1
-        assert_eq(es[0].ch, 'v')
+      @engine.NativeMatch(matcher) => {
+        let candidates = matcher.candidates()
+        assert_eq(candidates.length(), 1)
+        match candidates[0].spelling {
+          "-v" => {
+            true_count = true_count + 1
+            assert_true(
+              @engine.run_matcher(matcher, @engine.parse_context(["-vv"]), 0).length() >
+              0,
+            )
+          }
+          "-w" => {
+            false_count = false_count + 1
+            assert_eq(
+              @engine.run_matcher(matcher, @engine.parse_context(["-ww"]), 0).length(),
+              0,
+            )
+          }
+          other => abort("unexpected short matcher candidate: " + other)
+        }
       }
-      @engine.NativeMatch(@engine.ShortCombine(combine=false, entries=es, ..)) => {
-        false_count = false_count + 1
-        assert_eq(es[0].ch, 'w')
-      }
-      _ => abort("expected @engine.NativeMatch(@engine.ShortCombine)")
+      _ => abort("expected @engine.NativeMatch")
     }
   }
   assert_eq(true_count, 1)
@@ -3582,7 +3605,7 @@ test "short installer: same short_prefix but DIFFERENT short_combine values get 
 
 ///|
 /// 保証 (同上、end-to-end): `short_combine:false` 下で `-ab` (2 flag の同時結合) は parse 失敗
-/// (読みが 0 本、matcher_wbtest.mbt の matcher レベル確認の end-to-end 版)。`-a -b` (別トークン)
+/// (読みが 0 本、builtins/matcher_residents_wbtest.mbt の matcher レベル確認の end-to-end 版)。`-a -b` (別トークン)
 /// は引き続き両方発火する — combine が禁じるのは「1 トークンでの複数 entry 結合」だけであって、
 /// 各 entry 個別の発火能力そのものではない、という解釈Aの帰結を実行結果で固定する。
 test "short installer end-to-end: short_combine:false rejects -ab but accepts -a -b (解釈A)" {
@@ -3628,8 +3651,8 @@ test "short installer end-to-end: short_combine:false rejects -ab but accepts -a
 ///|
 /// 保証 (DR-014「--name=value の許可」/ DESIGN §7.2 / DR-096 §1「config (long_eq_sep/long_prefix) から
 /// 規則を構成」): `long_eq_sep: @engine.EsDeny` の要素は `inst_long` が eq-split entry を一切登録
-/// しない — space-form の greedy @engine.Seq 衛星のみが残る (`@engine.EqSplit` matcher 自体、要素が唯一なので、
-/// 生成されない)。既定 (`@engine.EsAllow`) の対極として既存 "value option gets 1 greedy @engine.Seq + 1 @engine.EqSplit"
+/// しない — space-form の greedy @engine.Seq 衛星のみが残る (`@builtins.eq_split` matcher 自体、要素が唯一なので、
+/// 生成されない)。既定 (`@engine.EsAllow`) の対極として既存 "value option gets 1 greedy @engine.Seq + 1 @builtins.eq_split"
 /// テストと対で読む。
 test "long installer: long_eq_sep:@engine.EsDeny withholds this element's eq-split entry (space form survives)" {
   let def : Definition = {
@@ -3644,7 +3667,7 @@ test "long installer: long_eq_sep:@engine.EsDeny withholds this element's eq-spl
     ],
   }
   let sc = ok_scope(def, [LongInst])
-  // @engine.EqSplit entry が無いので、この要素単独では @engine.NativeMatch(@engine.EqSplit) 自体が greedy に現れない
+  // @builtins.eq_split entry が無いので、この要素単独では @engine.NativeMatch(@builtins.eq_split) 自体が greedy に現れない
   // (eq_prefixes/eq_groups が空のまま — inst_long の "0 entries なら matcher を足さない" ガード)。
   assert_eq(sc.greedy.length(), 1)
   assert_eq(

@@ -39,6 +39,11 @@ impl MatcherExt for RegistryMatcherExt with fn encode(_self) {
 }
 
 ///|
+impl MatcherExt for RegistryMatcherExt with fn candidates(_self) {
+  []
+}
+
+///|
 impl MatcherExt for RegistryMatcherExt with fn interpret(
   _self,
   ctx,

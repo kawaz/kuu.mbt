@@ -21,7 +21,17 @@ fn register_type(
 }
 
 ///|
-/// Register the canonical resident families. Node entries are identity-bearing
+fn register_matcher(
+  registry : @engine.Registry,
+  resident : &@engine.MatcherExt,
+) -> Unit {
+  guard registry.register_matcher(resident) else {
+    abort("duplicate builtin matcher resident kind: " + resident.kind())
+  }
+}
+
+///|
+/// Register the canonical resident families. Node and matcher entries are identity-bearing
 /// prototypes; lowering constructs configured instances of the same resident kinds.
 pub fn install(registry : @engine.Registry) -> Unit {
   register_node(registry, string_arg("", []))
@@ -47,6 +57,9 @@ pub fn install(registry : @engine.Registry) -> Unit {
   register_node(registry, effect_mark("", @engine.Set))
   register_node(registry, deprecation_mark(""))
   register_node(registry, failure_mark(""))
+
+  register_matcher(registry, eq_split("", []))
+  register_matcher(registry, short_combine("", [], true))
 
   register_type(registry, string_type())
   register_type(registry, number_type())

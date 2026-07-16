@@ -15,6 +15,12 @@ test "canonical_registry installs every builtin node and type resident" {
       None => fail("canonical node resident is missing: " + kind)
     }
   }
+  for kind in ["eq_split", "short_combine"] {
+    match registry.lookup_matcher(kind) {
+      Some(resident) => assert_eq(resident.kind(), kind)
+      None => fail("canonical matcher resident is missing: " + kind)
+    }
+  }
   for
     name in [
       "string", "number", "int", "float", "bool", "flag", "count", "none",

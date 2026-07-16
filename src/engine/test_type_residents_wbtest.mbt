@@ -99,39 +99,6 @@ fn int_type(
 }
 
 ///|
-priv struct TestBoolType {
-  value_slot : Bool
-}
-
-///|
-impl TypeExt for TestBoolType with fn name(_self) {
-  "bool"
-}
-
-///|
-impl TypeExt for TestBoolType with fn has_value_slot(self) {
-  self.value_slot
-}
-
-///|
-impl TypeExt for TestBoolType with fn parse_token(_self, token) {
-  match parse_bool(token) {
-    Some(value) => Ok(VBool(value))
-    None => Err(NotABool)
-  }
-}
-
-///|
-impl TypeExt for TestBoolType with fn default_seat_resolver(_self, ctx) {
-  ctx.declared()
-}
-
-///|
-fn bool_type(value_slot? : Bool = true) -> &TypeExt {
-  TestBoolType::{ value_slot, } as &TypeExt
-}
-
-///|
 priv struct TestFlagType {}
 
 ///|

@@ -535,7 +535,7 @@ pub fn apply_filter_chain(
 
 ///|
 /// DR-034/DR-062 piece_filters: run a String→String chain over one raw token / piece, immediately
-/// before that value reaches its type parser (eval.mbt's value-primitive arms, matcher.mbt's
+/// before that value reaches its type parser (eval.mbt's value-primitive arms, builtins/matcher_residents.mbt's
 /// `run_eq_split`/`short_val`, resolve.mbt's `env_value`). Thin wrapper over `apply_filter_chain`
 /// specialized to the piece_filters contract (string in, string out) — every registered filter that
 /// isn't string-aware already passes a non-`VStr` through untouched (`filter_trim`'s doc comment),
@@ -544,7 +544,7 @@ pub fn apply_filter_chain(
 /// `FilterChain[String, String]`); surfacing it as an Err keeps the bug visible instead of silently
 /// discarding the chain's work (reuses the `filter_rejected` reason — no new vocabulary — with a
 /// message naming the contract violation). Callers convert the `Err` tuple to a `ParseError`
-/// themselves (eval.mbt/matcher.mbt build `kind: KFilter` inline per `filter_arg_eval`'s precedent;
+/// themselves (eval.mbt/builtins/matcher_residents.mbt build `kind: KFilter` inline per `filter_arg_eval`'s precedent;
 /// resolve.mbt reuses its own `filter_err`) — this function stays value-source-agnostic (no
 /// args_pos/element to carry) so both the CLI-token-consumption callers and the ladder (env)
 /// caller can share it.

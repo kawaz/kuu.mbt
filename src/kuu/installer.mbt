@@ -131,7 +131,7 @@ pub struct ElemDef {
   bool_config : @engine.BoolConfig
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
   // DR-057 / DR-104 §2/§3: この entry-copy が alias 宣言由来か (canonical=false、`alias_entry` が
-  // 常に true で構築する)。`inst_short`/`inst_long` が @engine.ShortEntry/@engine.LongEntry へそのまま carry し、
+  // 常に true で構築する)。`inst_short`/`inst_long` が @builtins.ShortEntry/@builtins.EqEntry へそのまま carry し、
   // complete() の CandMeta.is_alias 直訳元になる (deprecated と同じ carrier パターン)。
   is_alias : Bool
   // DR-058 §1 / DR-104 §2: help/補完の既定表示から除外される要素か (`CandMeta.hidden`)。
@@ -182,7 +182,7 @@ pub struct ElemDef {
   // colliding positional — these are DESIGN choices, not prerequisites the parser enforces.
   long_prefix : String
   // DESIGN §7.2 / LOWERING §B.2「config `short_prefix`/`short_combine` がパラメータ」: the string
-  // `inst_short` prepends when building the `@engine.ShortCombine` matcher's `prefix` (replacing the old
+  // `inst_short` prepends when building the `@builtins.short_combine` matcher's `prefix` (replacing the old
   // hardcoded `"-"`). 既定 `"-"`. Positional 要素は short spelling を持たないため未使用のまま既定値
   // を持ち回る (`long_prefix` と同じ理由付け、opt/pos の doc comment 参照)。
   short_prefix : String
@@ -200,7 +200,7 @@ pub struct ElemDef {
   // DESIGN §7.2 / DR-096 §1: 3 値 enum で `inst_long` の eq-split entry / SPACE-FORM main entry
   // (`@engine.Seq([@engine.Exact(trigger), value_prim(...)])`, the `ref_target is None` branch) の配線をダイヤルする。
   // `@engine.EsRequire` = SPACE-FORM main entry を withhold、eq-split entry のみ配線 (DR-096 §3.3 — これを
-  // `long_prefix: ""` と併用すると、space form が無いので生 token に一切マッチせず `@engine.EqSplit` は `=`
+  // `long_prefix: ""` と併用すると、space form が無いので生 token に一切マッチせず `@builtins.eq_split` は `=`
   // を含む token にのみ発火するため、素の operand (`foo`) との衝突をアプリ側で定義的に排除する
   // 選択手段になる。ただし空 prefix 自体はこの併用を要求しない — 併用しない場合の衝突は @engine.Ambiguous
   // として通常通り列挙される、`ElemDef.long_prefix` の doc comment 参照)。`@engine.EsAllow` (既定) = 両方
@@ -221,8 +221,8 @@ pub struct ElemDef {
   // 読みの枝を生成しない、space 分割形のみ受理。`@engine.AtLastOnly` = 付着読みを「残り全部の丸取り形」1 通り
   // だけに制限 (mid-token 分割点を列挙しない、GNU getopt 慣習)、space 形は `@engine.AtAllow` 同様に生きる。
   // 値スロットを持たない要素 (flag/count/none) には inert (DR-096 §3.2 — `walk_short` の該当 kind
-  // 分岐はこのフィールドを参照しない)。`@engine.ShortEntry.short_attached_value` (node.mbt) へそのまま乗せる、
-  // `walk_short` (matcher.mbt) が唯一の消費者。
+  // 分岐はこのフィールドを参照しない)。`@builtins.ShortEntry.short_attached_value` (node.mbt) へそのまま乗せる、
+  // `walk_short` (builtins/matcher_residents.mbt) が唯一の消費者。
   short_attached_value : @engine.AttachMode
   // MDR-004: 消費文法の軸。`BCell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
   // 縮退形、観測挙動不変)。`BOr`/`BGroup` の要素では `ty` は未使用 — 枝/内部要素の leaf ElemDef が
@@ -872,7 +872,7 @@ fn normalize_surface(def : Definition) -> Unit {
 /// DR-076 §2: flag の展開後の値セルは bool (LOWERING §A.5) — resolve_long は元の型 (e.ty, まだ @builtins.flag_type())
 /// で判定する必要があるので、型差し替えより先に呼ぶ。`@builtins.flag_type() → @builtins.bool_type()` はここで確定してよい — `@builtins.bool_type()`
 /// 型の short/eq-split 挙動は "@builtins.bool_type() 全般に画一的なルール" (非消費・固定 true) で閉じるので、変換後も
-/// 「元 flag だったか」を覚えておく必要が無い (matcher.mbt の `@builtins.flag_type() | @builtins.bool_type()` アームが両方 flag 型と
+/// 「元 flag だったか」を覚えておく必要が無い (builtins/matcher_residents.mbt の `@builtins.flag_type() | @builtins.bool_type()` アームが両方 flag 型と
 /// して扱うのはこの画一性のおかげ)。
 ///
 /// DR-077 §3 (`@builtins.count_type()`) は対称的な糖衣に見えて **ここでは @builtins.number_type() に変換しない** — count 由来の short/
@@ -881,7 +881,7 @@ fn normalize_surface(def : Definition) -> Unit {
 /// おく必要がある。ElemDef に専用マーカーを新設する代わりに、**@builtins.count_type() というタグ自体を installer chain
 /// の間ずっと保持し、値セルの実体型 (@engine.Entity.ty = @builtins.number_type()) への収束を `ensure_entity` まで遅延させる**
 /// (`ensure_entity` のコメント参照) — 既存の型そのものが情報を運ぶ設計は崩さず、collapse のタイミングだけ
-/// 後ろにずらす。short/eq-split matcher (matcher.mbt) は `@builtins.count_type()` を `@builtins.flag_type() | @builtins.bool_type()` と並ぶ第 3 の
+/// 後ろにずらす。short/eq-split matcher (builtins/matcher_residents.mbt) は `@builtins.count_type()` を `@builtins.flag_type() | @builtins.bool_type()` と並ぶ第 3 の
 /// 非消費挙動として扱う。
 fn normalize_option(e : ElemDef) -> ElemDef {
   if e.is_dd {
@@ -1580,19 +1580,19 @@ fn not_dd(e : ElemDef) -> Bool {
 // ── 各 installer ─────────────────────────────────────────────────────────────
 
 ///|
-/// DR-091 §3: `@engine.EqSplit` bundles every eq-split entry it carries under ONE `prefix` (`node.mbt`'s
-/// `@engine.EqSplit(prefix~, entries~)` — a single matcher instance, single prefix). Before this DR every
-/// element shared the hardcoded `"--"`, so one `@engine.EqSplit` per `Definition` was correct; now an
+/// DR-091 §3: `@builtins.eq_split` bundles every eq-split entry it carries under ONE `prefix` (`node.mbt`'s
+/// `@builtins.eq_split(prefix~, entries~)` — a single matcher instance, single prefix). Before this DR every
+/// element shared the hardcoded `"--"`, so one `@builtins.eq_split` per `Definition` was correct; now an
 /// element MAY declare its own `long_prefix` (`if=`/`of=`'s `long_prefix: ""`), so `inst_long`
-/// groups eq entries by their declaring element's `long_prefix` and emits one `@engine.EqSplit` per
+/// groups eq entries by their declaring element's `long_prefix` and emits one `@builtins.eq_split` per
 /// distinct value actually present — `prefixes`/`groups` are parallel arrays (insertion order),
 /// mirroring this file's existing dedup-by-linear-scan style (`resolve.mbt`'s `named`/`segs`
 /// arrays) rather than a `Map` (whose iteration order this codebase doesn't otherwise rely on).
 fn eq_group(
   prefixes : Array[String],
-  groups : Array[Array[@engine.LongEntry]],
+  groups : Array[Array[@builtins.EqEntry]],
   prefix : String,
-) -> Array[@engine.LongEntry] {
+) -> Array[@builtins.EqEntry] {
   let mut i = 0
   while i < prefixes.length() {
     if prefixes[i] == prefix {
@@ -1600,7 +1600,7 @@ fn eq_group(
     }
     i = i + 1
   }
-  let g : Array[@engine.LongEntry] = []
+  let g : Array[@builtins.EqEntry] = []
   prefixes.push(prefix)
   groups.push(g)
   g
@@ -1632,7 +1632,7 @@ fn inst_long(
   registry : Map[String, @engine.Node],
 ) -> Unit {
   let eq_prefixes : Array[String] = []
-  let eq_groups : Array[Array[@engine.LongEntry]] = []
+  let eq_groups : Array[Array[@builtins.EqEntry]] = []
   for e in def.options {
     for l in long_of(e) {
       // DR-091 §3: `e.long_prefix` replaces the old hardcoded `"--"` (既定値は `"--"` そのものなので
@@ -1769,7 +1769,7 @@ fn inst_long(
               // push). Paired with `long_prefix: ""` (DR-096 §3.3, node.mbt's `ElemDef.long_prefix`
               // doc comment), this is the mechanism an app can opt into to definitionally eliminate
               // the bare-operand collision: with no space-form trigger, `trigger` (== `l` when
-              // `long_prefix` is `""`) never matches a bare token — only `@engine.EqSplit`, which fires
+              // `long_prefix` is `""`) never matches a bare token — only `@builtins.eq_split`, which fires
               // exclusively on tokens containing `=`, can reach this element. Neither `long_prefix`
               // nor `long_eq_sep` requires this pairing — an unpaired empty prefix is legal and any
               // resulting collision surfaces as @engine.Ambiguous instead.
@@ -1816,14 +1816,14 @@ fn inst_long(
       // variant triggers coexist (fixtures/lowering/long/variant.json's ssl: `--ssl=false` fires
       // alongside `--ssl`/`--no-ssl`).
       // DR-075 §2: @builtins.int_type() の eq-split (`--v=2.5`) が factory config int_round を反映するよう、
-      // ElemDef.int_round を @engine.LongEntry に持ち込む (@builtins.int_type() 以外は entry 側で参照されない)。
+      // ElemDef.int_round を @builtins.EqEntry に持ち込む (@builtins.int_type() 以外は entry 側で参照されない)。
       // MDR-004 §3: a BOr element's eq-split registers only for a single-value-cell branch (using
       // that leaf's own name/ty/int_round/allow_base_prefix, never the wrapper's) — a multi-cell
       // branch's `=` form is undefined (`--color=v` cannot supply 3 leaves).
       // DR-091 §2: a `kv_map`-accumulator leaf does NOT register an eq-split entry (unlike merge,
-      // which shares the same `sep_binds` pipeline as the space form) — `run_eq_split` (matcher.mbt)
+      // which shares the same `sep_binds` pipeline as the space form) — `run_eq_split` (builtins/matcher_residents.mbt)
       // builds its binding through `sep_binds`, which has no "the piece must contain `=`" gate (that
-      // gate lives in the `kv resident` node, `value_prim`'s dedicated kv_map branch, which `@engine.LongEntry`
+      // gate lives in the `kv resident` node, `value_prim`'s dedicated kv_map branch, which `@builtins.EqEntry`
       // never routes through). Registering here would let `--define=NOEQUALSIGN` silently produce
       // `{NOEQUALSIGN: ""}` instead of DR-091 §2's required Reject — same deliberate-absence posture
       // as `BEnum`'s "OUT OF SCOPE" comment below, not an oversight.
@@ -1840,27 +1840,22 @@ fn inst_long(
               let leaf = br.items[0]
               if e.long_eq_sep != @engine.EsDeny &&
                 leaf.accumulator != Some("kv_map") {
-                eq_group(eq_prefixes, eq_groups, e.long_prefix).push({
-                  key: l,
-                  name: leaf.name,
-                  kind: @builtins.configured_type(
-                    leaf.ty,
-                    leaf.int_round,
-                    leaf.allow_base_prefix,
-                    leaf.bool_config,
+                eq_group(eq_prefixes, eq_groups, e.long_prefix).push(
+                  @builtins.eq_entry(
+                    l,
+                    leaf.name,
+                    @builtins.configured_type(
+                      leaf.ty,
+                      leaf.int_round,
+                      leaf.allow_base_prefix,
+                      leaf.bool_config,
+                    ),
+                    leaf.piece_filters,
+                    leaf.separator,
+                    merge=leaf.accumulator == Some("merge"),
+                    depr=leaf.deprecated,
                   ),
-                  int_round: leaf.int_round,
-                  allow_base_prefix: leaf.allow_base_prefix,
-                  bool_config: leaf.bool_config,
-                  piece_filters: leaf.piece_filters,
-                  separator: leaf.separator,
-                  merge: leaf.accumulator == Some("merge"),
-                  // codex レビュー Major 1 (DR-058 §2): a BOr leaf carries its own `deprecated` axis
-                  // (`dec_or_leaf` decodes no such key today, so this is always false in practice —
-                  // wired anyway so the eq-split entry stays byte-for-byte parallel with the BCell
-                  // arm below, same "wired but未接続" posture `elem_head`'s BEnum arm already has).
-                  depr: leaf.deprecated,
-                })
+                )
               }
             }
           }
@@ -1872,49 +1867,39 @@ fn inst_long(
           // register its eq-split form, which this unconditional push now does correctly (the guard
           // used to wrongly suppress it while `e.ty` still read @builtins.flag_type() pre-normalize_option).
           if e.long_eq_sep != @engine.EsDeny && e.accumulator != Some("kv_map") {
-            eq_group(eq_prefixes, eq_groups, e.long_prefix).push({
-              key: l,
-              name: e.name,
-              kind: @builtins.configured_type(
-                e.ty,
-                e.int_round,
-                e.allow_base_prefix,
-                e.bool_config,
+            eq_group(eq_prefixes, eq_groups, e.long_prefix).push(
+              @builtins.eq_entry(
+                l,
+                e.name,
+                @builtins.configured_type(
+                  e.ty,
+                  e.int_round,
+                  e.allow_base_prefix,
+                  e.bool_config,
+                ),
+                e.piece_filters,
+                e.separator,
+                merge=e.accumulator == Some("merge"),
+                depr=e.deprecated,
               ),
-              int_round: e.int_round,
-              // DR-074 §2: @builtins.number_type() / @builtins.int_type() の eq-split (`--v=0xff`) も factory config を反映するよう
-              // ElemDef から @engine.LongEntry に持ち込む (他 kind は entry 側で参照されない)。
-              allow_base_prefix: e.allow_base_prefix,
-              // DR-074 §4: @builtins.bool_type() の eq-split (`--enabled=yes`) も bool_parser factory config を反映
-              // (DR-076 §3 でこの eq-split は variant 綴りと共存する — @builtins.flag_type() と違い抑制されない)。
-              bool_config: e.bool_config,
-              piece_filters: e.piece_filters,
-              separator: e.separator,
-              merge: e.accumulator == Some("merge"),
-              // codex レビュー Major 1 (DR-058 §2): eq-split 経路も deprecated warning marker を
-              // 合成する — main entry (space form, 上の `inst_long` deprecation resident append) / short cluster
-              // (`inst_short`) と対称、入口形による例外は DR-058 §2 に無い。
-              depr: e.deprecated,
-            })
+            )
           }
         // BEnum (issue values-decode-support): eq-split (`--color=always`) for an enum-constrained
         // cell is OUT OF SCOPE for this issue (no target fixture exercises `--key=value` against a
-        // `values`/`or` value-enum element) — the @engine.LongEntry type resident has no
+        // `values`/`or` value-enum element) — the @builtins.EqEntry type resident has no
         // enum-value set. Registering nothing avoids accepting an unvalidated value.
         BEnum(_) => ()
       }
     }
   }
-  // DR-091 §3: emit one `@engine.EqSplit` matcher PER DISTINCT `long_prefix` seen (was: a single
-  // `@engine.EqSplit(prefix="--", ...)` for the whole Definition — `eq_group`'s doc comment).
+  // DR-091 §3: emit one `@builtins.eq_split` matcher PER DISTINCT `long_prefix` seen (was: a single
+  // `@builtins.eq_split(prefix="--", ...)` for the whole Definition — `eq_group`'s doc comment).
   let mut gi = 0
   while gi < eq_prefixes.length() {
     if eq_groups[gi].length() > 0 {
       add_greedy(
         build,
-        @engine.NativeMatch(
-          @engine.EqSplit(prefix=eq_prefixes[gi], entries=eq_groups[gi]),
-        ),
+        @engine.NativeMatch(@builtins.eq_split(eq_prefixes[gi], eq_groups[gi])),
       )
     }
     gi = gi + 1
@@ -1978,7 +1963,7 @@ fn maybe_root(link_depth : Int, node : @engine.Node) -> @engine.Node {
 
 ///|
 /// DESIGN §7.2 / LOWERING §B.2: mirrors `eq_group` (long installer, DR-091 §3) — bundles every
-/// short-cluster entry under ONE `(short_prefix, short_combine)` PAIR per `@engine.ShortCombine` matcher
+/// short-cluster entry under ONE `(short_prefix, short_combine)` PAIR per `@builtins.short_combine` matcher
 /// instance. Keying on the pair (not `short_prefix` alone) matters because a `Definition`'s
 /// `def.options` can mix elements from 2 sources with different defaults: elements decoded in THIS
 /// scope (uniform `short_prefix`/`short_combine`, both baked from the SAME resolved `ScopeConfig`
@@ -1991,10 +1976,10 @@ fn maybe_root(link_depth : Int, node : @engine.Node) -> @engine.Node {
 fn short_group(
   prefixes : Array[String],
   combines : Array[Bool],
-  groups : Array[Array[@engine.ShortEntry]],
+  groups : Array[Array[@builtins.ShortEntry]],
   prefix : String,
   combine : Bool,
-) -> Array[@engine.ShortEntry] {
+) -> Array[@builtins.ShortEntry] {
   let mut i = 0
   while i < prefixes.length() {
     if prefixes[i] == prefix && combines[i] == combine {
@@ -2002,7 +1987,7 @@ fn short_group(
     }
     i = i + 1
   }
-  let g : Array[@engine.ShortEntry] = []
+  let g : Array[@builtins.ShortEntry] = []
   prefixes.push(prefix)
   combines.push(combine)
   groups.push(g)
@@ -2012,16 +1997,16 @@ fn short_group(
 ///|
 /// short: `short` を READ、cluster/value-attach matcher を 1 本 add-if-absent。PoC では single-char
 /// (`-v`, `-p 8080`) も matcher に集約するため、short は独立 exact 衛星を発しない (matcher-seat)。
-/// DESIGN §7.2: `e.short_prefix` replaces the old hardcoded `"-"` — one `@engine.ShortCombine` matcher PER
+/// DESIGN §7.2: `e.short_prefix` replaces the old hardcoded `"-"` — one `@builtins.short_combine` matcher PER
 /// DISTINCT `(short_prefix, short_combine)` pair actually present (was: a single
-/// `@engine.ShortCombine(prefix="-", ...)` for the whole `Definition`), same generalization DR-091 §3
-/// already applied to `inst_long`/`@engine.EqSplit`. `e.short_combine` (issue scope-config-object-gap
+/// `@builtins.short_combine(prefix="-", ...)` for the whole `Definition`), same generalization DR-091 §3
+/// already applied to `inst_long`/`@builtins.eq_split`. `e.short_combine` (issue scope-config-object-gap
 /// 解釈A, team-lead 裁定 2026-07-11) rides straight through to the matcher's `combine` param —
-/// `run_short`/`walk_short` (matcher.mbt) are the sole consumers of the flag's actual meaning.
+/// `run_short`/`walk_short` (builtins/matcher_residents.mbt) are the sole consumers of the flag's actual meaning.
 fn inst_short(def : Definition, build : Build) -> Unit {
   let sh_prefixes : Array[String] = []
   let sh_combines : Array[Bool] = []
-  let sh_groups : Array[Array[@engine.ShortEntry]] = []
+  let sh_groups : Array[Array[@builtins.ShortEntry]] = []
   for e in def.options {
     for c in e.short {
       // DR-058: deprecated alias entry-copy は cluster entry でも警告する
@@ -2032,27 +2017,24 @@ fn inst_short(def : Definition, build : Build) -> Unit {
         sh_groups,
         e.short_prefix,
         e.short_combine,
-      ).push({
-        ch: c,
-        name: e.name,
-        kind: @builtins.configured_short_type(
-          e.ty,
-          e.int_round,
-          e.allow_base_prefix,
-          e.bool_config,
+      ).push(
+        @builtins.short_entry(
+          c,
+          e.name,
+          @builtins.configured_short_type(
+            e.ty,
+            e.int_round,
+            e.allow_base_prefix,
+            e.bool_config,
+          ),
+          e.piece_filters,
+          e.separator,
+          depr=e.deprecated,
+          merge=e.accumulator == Some("merge"),
+          short_attached_value=e.short_attached_value,
+          is_alias=e.is_alias,
         ),
-        depr: e.deprecated,
-        int_round: e.int_round,
-        // DR-074 §2: short cluster / space-tail の @builtins.number_type() / @builtins.int_type() も allow_base_prefix を反映
-        allow_base_prefix: e.allow_base_prefix,
-        piece_filters: e.piece_filters,
-        separator: e.separator,
-        merge: e.accumulator == Some("merge"),
-        // DESIGN §7.2 / DR-096 §2: walk_short (matcher.mbt) の唯一の消費者
-        short_attached_value: e.short_attached_value,
-        // DR-104 §2/§3: complete() の CandMeta.is_alias 直訳元 (depr と同じ carrier パターン)。
-        is_alias: e.is_alias,
-      })
+      )
     }
   }
   let mut gi = 0
@@ -2061,10 +2043,10 @@ fn inst_short(def : Definition, build : Build) -> Unit {
       add_greedy(
         build,
         @engine.NativeMatch(
-          @engine.ShortCombine(
-            prefix=sh_prefixes[gi],
-            entries=sh_groups[gi],
-            combine=sh_combines[gi],
+          @builtins.short_combine(
+            sh_prefixes[gi],
+            sh_groups[gi],
+            sh_combines[gi],
           ),
         ),
       )
@@ -3724,7 +3706,7 @@ fn collect_unsupported_accum_update(
 ///|
 /// codex レビュー High 2 (2026-07-10): `collect_unsupported_accum_update` の variant 走査 (上記) は
 /// `count_increment_variant` 経由 (`long:true` 糖衣、DR-077 §3) の `:update:increment` は捕まえるが、
-/// @builtins.count_type() の **short** 発火 (`matcher.mbt` の `walk_short`'s `@builtins.count_type()` arm) は variant を一切経由せず
+/// @builtins.count_type() の **short** 発火 (`builtins/matcher_residents.mbt` の `walk_short`'s `@builtins.count_type()` arm) は variant を一切経由せず
 /// `mk_eff(e.name, @engine.Update("increment", []), @engine.Cli)` を直接生成する — variants を持たない firing なので
 /// variant 走査ではそもそも見えない (repro: `{"name":"n","type":"count","short":["n"],
 /// "multiple":true}` + args `["-n"]` で resolve.mbt の accum 分岐の abort に到達)。

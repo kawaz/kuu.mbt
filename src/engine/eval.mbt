@@ -51,6 +51,12 @@ pub fn Ctx::is_complete_mode(self : Ctx) -> Bool {
 }
 
 ///|
+/// Construct a parse-mode context for direct extension and matcher evaluation.
+pub fn parse_context(toks : Array[String]) -> Ctx {
+  { toks, defs: Map([]), mode: ModeParse }
+}
+
+///|
 /// parse counts complete paths (DR-038); complete collects expectations
 /// (DR-060). The walk is ONE implementation — mode switches the
 /// collection-policy points below (MDR-002 §2.4):
@@ -92,7 +98,7 @@ fn dd_match_token(spelling : String, is_pattern : Bool, token : String) -> Bool 
 /// An exact-spelling candidate (the Pending payload at a trigger boundary,
 /// DR-060 §3). `ty` is only meaningful when a value must follow the spelling
 /// (term = Cont, e.g. an eq-split `--key`); a plain trigger carries "flag".
-fn cand_trigger(
+pub fn cand_trigger(
   spelling : String,
   origin : String,
   ty : String,
@@ -459,6 +465,9 @@ pub fn run_matcher(
   ctx : Ctx,
   pos : Int,
 ) -> Array[Branch] {
+  if ctx.token_at(pos) is None {
+    return []
+  }
   matcher.interpret(ctx, pos, [], (_ctx, next_pos, next_acc) => {
     [Accept(next_pos, next_acc)]
   })
@@ -1546,7 +1555,7 @@ fn cand_boundary_origin(g : Node) -> String? {
 
 ///|
 /// DR-058 §1 / DR-104 §2: `sc.entities`から要素名で hidden を引く (element-level 属性、spelling
-/// ごとに変わらない前提 — `is_alias` と違い ShortEntry/LongEntry を経由しない spelling にも同じ
+/// ごとに変わらない前提 — `is_alias` と違い matcher entry を経由しない spelling にも同じ
 /// 値を適用してよい)。見つからなければ false (command/dd 等、Entity を持たない origin は非-hidden)。
 fn entity_hidden(sc : Scope, name : String) -> Bool {
   for e in sc.entities {

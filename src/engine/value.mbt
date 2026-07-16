@@ -310,11 +310,7 @@ fn num_to_string(d : Double) -> String {
 /// String indexing (`s[i]`) yields a UTF-16 code unit, not a Char, so the number 字句スキャン works
 /// on Array[Char] (iterating a String yields Char). Test tokens are ASCII.
 fn chars_of(s : String) -> Array[Char] {
-  let a : Array[Char] = []
-  for c in s {
-    a.push(c)
-  }
-  a
+  to_chars(s)
 }
 
 ///|
@@ -987,13 +983,7 @@ fn scan_inf(s : String) -> Double? {
 
 ///|
 fn chars_to_str_from(cs : Array[Char], start : Int) -> String {
-  let buf = StringBuilder::new()
-  let mut i = start
-  while i < cs.length() {
-    buf.write_char(cs[i])
-    i = i + 1
-  }
-  buf.to_string()
+  chars_to_str(cs, start, cs.length())
 }
 
 ///|
@@ -1567,7 +1557,7 @@ pub(all) struct Binding {
   //           depth, which escapes all the way to the root (the original bool-`link` behaviour).
   // DR-034/DR-062 piece_filters + issue 2026-07-09-accum-entity-filters-wiring: the args token
   // position this binding's VALUE was read from, when it has one. `Some(pos)` for a CLI-seat
-  // binding built at token-consumption time (eval.mbt/matcher.mbt's `mkb` call sites — a separator
+  // binding built at token-consumption time (eval.mbt/builtins/matcher_residents.mbt's `mkb` call sites — a separator
   // piece carries the position of the WHOLE token it split from, not a per-piece offset, since a
   // piece is not itself a token). `None` for every non-token-consumption source (env/config/
   // inherit/default seats, resolve.mbt) — those values were never read off an args token, so there
@@ -1580,7 +1570,7 @@ pub(all) struct Binding {
 
 ///|
 /// A plain value bind = the SET degenerate form of an effect (DR-045 §1). `at_pos` (issue
-/// 2026-07-09-accum-entity-filters-wiring): the CLI-seat call sites (eval.mbt/matcher.mbt) pass
+/// 2026-07-09-accum-entity-filters-wiring): the CLI-seat call sites (eval.mbt/builtins/matcher_residents.mbt) pass
 /// `Some(pos)` — the token this binding's value was read from; every other caller (resolve.mbt's
 /// env/config/inherit/default seats) omits it, defaulting to `None`.
 pub fn mkb(
@@ -1714,7 +1704,7 @@ pub fn pe_parse_kv(element : String, tok : String, pos : Int) -> ParseError {
 /// a silent `[]`: the Or/path-search machinery already discards a `Held` branch whenever a sibling
 /// branch `Accept`s, so a single `Held(kind: KFilter, ...)` return realizes BOTH DR-037 outcomes —
 /// no separate silent-Reject channel is needed). Token-consumption callers (eval.mbt's value-
-/// primitive arms, matcher.mbt's `run_eq_split`) pass `reason`/`message` straight from
+/// primitive arms, builtins/matcher_residents.mbt's `run_eq_split`) pass `reason`/`message` straight from
 /// `apply_piece_filters`'s `Err` tuple. Mirrors `resolve.mbt`'s `filter_err` (the ladder-layer
 /// counterpart, used by `env_value`) — kept as a separate builder here because eval.mbt/value.mbt
 /// sit below resolve.mbt in the dependency graph (MDR-002 §3) and cannot call it.

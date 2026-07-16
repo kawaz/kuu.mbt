@@ -548,6 +548,58 @@ fn proj_seq_sat(xs : Array[@engine.Node]) -> GItem {
 }
 
 ///|
+fn proj_matcher_entries(
+  matcher : &@engine.MatcherExt,
+) -> Array[(String, String)] {
+  let entries : Array[(String, String)] = []
+  guard matcher.encode() is Array(parts) && parts.length() >= 2 else {
+    return entries
+  }
+  guard parts[0] is String(prefix) else { return entries }
+  guard parts[1] is Array(encoded_entries) else { return entries }
+  for encoded_entry in encoded_entries {
+    match encoded_entry {
+      Array(fields) if fields.length() >= 2 =>
+        match (fields[0], fields[1]) {
+          (String(spelling), String(origin)) =>
+            entries.push(
+              (
+                if matcher.kind() == "eq_split" {
+                  prefix + spelling
+                } else {
+                  spelling
+                },
+                origin,
+              ),
+            )
+          _ => ()
+        }
+      _ => ()
+    }
+  }
+  entries
+}
+
+///|
+test "lowering matcher projection reads encode, not completion candidate policy" {
+  // A presence-only eq entry intentionally contributes no completion spelling, but LOWERING §C.5
+  // compares the matcher entry table itself. Reading encode keeps the structural entry observable.
+  let matcher = @builtins.eq_split("--", [
+    @builtins.eq_entry(
+      "verbose",
+      "verbose",
+      @builtins.flag_type(),
+      [],
+      None,
+      merge=false,
+      depr=false,
+    ),
+  ])
+  assert_eq(matcher.candidates().length(), 0)
+  assert_eq(proj_matcher_entries(matcher), [("--verbose", "verbose")])
+}
+
+///|
 fn proj_greedy(node : @engine.Node, reg : Map[String, @engine.Node]) -> GItem {
   match node {
     @engine.DdSat(name) => GExact(name)
@@ -561,20 +613,8 @@ fn proj_greedy(node : @engine.Node, reg : Map[String, @engine.Node]) -> GItem {
     @engine.Exact(s) => GExact(s)
     @engine.Rooted(inner, _) => proj_greedy(inner, reg)
     @engine.CmdSat(name, child) => GCmd(name, proj_scope(child, reg))
-    @engine.NativeMatch(@engine.EqSplit(prefix~, entries~)) => {
-      let es : Array[(String, String)] = []
-      for e in entries {
-        es.push((prefix + e.key, e.name))
-      }
-      GMatch("eq_split", es)
-    }
-    @engine.NativeMatch(@engine.ShortCombine(prefix=_, entries~, ..)) => {
-      let es : Array[(String, String)] = []
-      for e in entries {
-        es.push(("\{e.ch}", e.name))
-      }
-      GMatch("short_combine", es)
-    }
+    @engine.NativeMatch(matcher) =>
+      GMatch(matcher.kind(), proj_matcher_entries(matcher))
     @engine.Seq(xs) => proj_seq_sat(xs)
     _ => GExact("?greedy")
   }

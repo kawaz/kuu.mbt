@@ -177,21 +177,23 @@ test "DR-060 §1: cluster 末尾の値 char は space form の値候補を出す
   let root : @engine.Scope = {
     greedy: [
       @engine.NativeMatch(
-        @engine.ShortCombine(prefix="-", combine=true, entries=[
-          {
-            ch: 'n',
-            name: "n",
-            kind: @builtins.number_type(),
-            depr: false,
-            int_round: @engine.RError,
-            allow_base_prefix: false,
-            piece_filters: [],
-            separator: None,
-            merge: false,
-            short_attached_value: @engine.AtAllow,
-            is_alias: false,
-          },
-        ]),
+        @builtins.short_combine(
+          "-",
+          [
+            @builtins.short_entry(
+              'n',
+              "n",
+              @builtins.number_type(),
+              [],
+              None,
+              depr=false,
+              merge=false,
+              short_attached_value=@engine.AtAllow,
+              is_alias=false,
+            ),
+          ],
+          true,
+        ),
       ),
     ],
     positional: [],
@@ -210,37 +212,36 @@ test "DR-060 §3: matcher の元綴り (eq-split / cluster) が境界候補に�
   let root : @engine.Scope = {
     greedy: [
       @engine.NativeMatch(
-        @engine.EqSplit(prefix="--", entries=[
-          {
-            key: "port",
-            name: "port",
-            kind: @builtins.number_type(),
-            int_round: @engine.RError,
-            allow_base_prefix: false,
-            bool_config: @engine.bool_config_canonical(),
-            piece_filters: [],
-            separator: None,
-            merge: false,
-            depr: false,
-          },
+        @builtins.eq_split("--", [
+          @builtins.eq_entry(
+            "port",
+            "port",
+            @builtins.number_type(),
+            [],
+            None,
+            merge=false,
+            depr=false,
+          ),
         ]),
       ),
       @engine.NativeMatch(
-        @engine.ShortCombine(prefix="-", combine=true, entries=[
-          {
-            ch: 'n',
-            name: "n",
-            kind: @builtins.number_type(),
-            depr: false,
-            int_round: @engine.RError,
-            allow_base_prefix: false,
-            piece_filters: [],
-            separator: None,
-            merge: false,
-            short_attached_value: @engine.AtAllow,
-            is_alias: false,
-          },
-        ]),
+        @builtins.short_combine(
+          "-",
+          [
+            @builtins.short_entry(
+              'n',
+              "n",
+              @builtins.number_type(),
+              [],
+              None,
+              depr=false,
+              merge=false,
+              short_attached_value=@engine.AtAllow,
+              is_alias=false,
+            ),
+          ],
+          true,
+        ),
       ),
     ],
     positional: [],

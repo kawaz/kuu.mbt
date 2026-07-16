@@ -2270,7 +2270,7 @@ fn apply_transform(
 /// says env goes through the SAME pipeline as CLI, which includes piece_filters — applied here BEFORE
 /// the type-specific parse below (including the `@builtins.string_type()` arm, so `trim` etc. also affects a plain
 /// string env value, not just numeric rescue). This is env's OWN application point, distinct from
-/// the CLI seat's (eval.mbt/matcher.mbt, applied at token-consumption time, before the value ever
+/// the CLI seat's (eval.mbt/builtins/matcher_residents.mbt, applied at token-consumption time, before the value ever
 /// reaches this @engine.Entity-based ladder).
 fn env_value(
   element : String,

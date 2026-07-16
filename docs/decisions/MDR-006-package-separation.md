@@ -131,9 +131,14 @@ pub(open) trait MatcherExt {
   kind(Self) -> String
   encode(Self) -> Json                    // 「matcher = 名前付きデータ」(DR-042) の直列形。LOWERING §C.5 の断面はこれを比較する
   equal(Self, &MatcherExt) -> Bool = _
+  candidates(Self) -> Array[Cand]         // DR-060 §3 の境界補完素材。全 matcher が明示実装する
   interpret(Self, Ctx, Int, Array[Binding], Resume) -> Array[Branch]
 }
 ```
+
+`encode` は matcher の全構成データを保持する構造断面、`candidates` は補完向けの
+readable-next 射影であり責務を分ける。lowering fixture は `encode` を比較し、候補集合を
+entry 表の代用にしない。
 
 eq-split / short-combine は builtins の住人となり、`LongEntry` / `ShortEntry` /
 `Matcher` enum と型別分岐 (TFlag/TCount の presence-only、count の
