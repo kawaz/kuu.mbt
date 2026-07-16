@@ -220,7 +220,12 @@ pub fn resolve(
           at_pos=args.length(),
           tty~,
         ) {
-        Ok(rb) => Success(rb)
+        // `resolve_scope_tree` は accum entity scope (`Scoped(name, ...)` node、command でない)
+        // 下の `#row`/`#fire` sentinel を path 単位の here フィルタで落とす — build_result の
+        // ROW-GROUP / ACCUMULATE 分岐が発火するには sentinel が要るので、元の CLI 生 binds から
+        // 拾って merge する (issue 2026-07-16 K カテゴリ、`merge_sentinels_from_origin` の
+        // doc comment 参照)。
+        Ok(rb) => Success(merge_sentinels_from_origin(binds, rb))
         Err(pe) =>
           Failure({
             errors: [pe],

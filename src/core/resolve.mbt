@@ -82,6 +82,54 @@ pub fn is_sentinel(k : String) -> Bool {
 }
 
 ///|
+/// `resolve_scope_tree` が path 単位でしか sentinel を保存しない (each path=[] の here 抽出は
+/// `path_eq(b.scope, path)` に限定) 制約を補うための merge。**accum entity scope**
+/// (`Scoped(name, ...)` node、command でない = `resolve_scope_tree` の再帰対象外) 下の
+/// sentinel (`#row`/`#fire`、`installer.mbt` の `ref_row_head` / `inst_long` が発火時に付与) は
+/// `resolve_scope_tree` からは「path として枚挙されない」ため resolve 結果から落ちる — この
+/// 落ちた sentinel を元の CLI 生 binds から拾って resolve 済み binds に merge する。同一
+/// (key, scope) の sentinel が既に resolve 済み binds に居るなら skip (path=[] scope=[] の
+/// sentinel は `resolve_scope_tree` が既に保存しているため、二重を避ける)。
+///
+/// 経緯 (issue 2026-07-16 K カテゴリ = front-door-repeat-rows-collapse): kuu-cli 経由の
+/// `fixtures/multiple-parse/ref-rows-append.json::single-fire-list` が `result.hlcolors=[]`
+/// (期待 `[{colorname:"red"}]`) に退化していた実バグ。原因は `resolve_scope_tree` が accum
+/// entity scope 下の `#row` sentinel を落として `build_result` の ROW-GROUP 分岐 (`has_direct_
+/// key(binds, "#row")`) が発火しなくなること。**resolve 相の意味論**: 値源ラダーを充填する
+/// (値を最終化する) が、parse 相が付与した構造情報 (どこで累積境界を切るか) は保存する — sentinel
+/// は「構造」に属し値ではないため。
+///
+/// 呼び出し規約: `front_door.resolve()` が `resolve_scope_tree` の直後にこれを 1 度だけ呼ぶ形
+/// (再帰の中では呼ばない、二重防止)。resolve_scope_tree 自身を書き換える案は再帰と top-level の
+/// 区別が必要でコストが大きい割に、呼び出し元 (`apply_requires_filter` は結果 binds を捨てる、
+/// runner は use_resolve gate で経路分岐する) 全体で見ると front_door の 1 段で足りる。
+pub fn merge_sentinels_from_origin(
+  orig : Array[Binding],
+  resolved : Array[Binding],
+) -> Array[Binding] {
+  let out : Array[Binding] = []
+  for b in resolved {
+    out.push(b)
+  }
+  for b in orig {
+    if !is_sentinel(b.key) {
+      continue
+    }
+    let mut dup = false
+    for r in resolved {
+      if is_sentinel(r.key) && r.key == b.key && path_eq(r.scope, b.scope) {
+        dup = true
+        break
+      }
+    }
+    if !dup {
+      out.push(b)
+    }
+  }
+  out
+}
+
+///|
 fn has_direct_key(binds : Array[Binding], key : String) -> Bool {
   for b in binds {
     if b.scope.length() == 0 && b.key == key {
@@ -1792,6 +1840,23 @@ fn scope_entered_here(binds : Array[Binding], path : Array[String]) -> Bool {
 }
 
 ///|
+/// Whether `sc.greedy` enters a genuine command scope named `name` (a `CmdSat` node) — used by
+/// `resolve_scope_tree`'s pass-through below to tell a real child COMMAND scope apart from a
+/// ref-template accum entity's own one-level-deeper binding wrap (`ref_row_head`/`Scoped(e.name,
+/// ...)`, installer.mbt DR-078 §1). Only a `CmdSat` name is a scope `resolve_scope_tree` should
+/// recurse the ladder into; anything else sharing the same "one level deeper" shape is CLI-origin
+/// material that must be passed through untouched instead.
+fn is_cmdsat_child(sc : Scope, name : String) -> Bool {
+  for g in sc.greedy {
+    match g {
+      CmdSat(n, _) => if n == name { return true }
+      _ => ()
+    }
+  }
+  false
+}
+
+///|
 /// Resolve a WHOLE scope tree (root scope + every entered nested command scope) down the full
 /// value-source ladder (`resolve_scope_config`), threading `inherited` top-down so a child scope's
 /// inherit seat always sees its ANCESTOR's already-resolved values (DR-087 §3 dependency order —
@@ -1849,6 +1914,39 @@ pub fn resolve_scope_tree(
   }
   for b in resolved {
     out.push({ ..b, scope: path })
+  }
+  // DR-078 §1 pass-through (issue front-door-resolve-ref-repeat-row-drop, K カテゴリ: front_door
+  // 経由の repeat rows 行集約欠落): a ref-template accum entity (e.g. an `or`/`seq` ref option
+  // with `repeat`/`multiple`) wraps its OWN row/fire bindings one scope level deeper than its
+  // declaring scope (`ref_row_head`/`Scoped(e.name, ...)`, installer.mbt) — `colorname`/`r`/`g`/
+  // `b`/`#row`/`#fire` all land at `scope = path + [e.name]`, never at `scope == path` itself. The
+  // `here` filter above (exact `path_eq` match) therefore never sees them, and they are NOT a
+  // genuine command-scope child either (`is_cmdsat_child` below rules that out) — without this
+  // pass-through they were silently dropped by every `resolve()` call (kuu-cli's front_door path
+  // always resolves; the conformance runner only did for fixtures needing the default ladder,
+  // which is why `moon test` stayed green while kuu-cli lost the row array entirely, rendering
+  // `[]` instead of the fired rows). These bindings carry no ladder seat of their own (a ref
+  // template field has no individual env/config/inherit/default seat, DR-078 §1) — they are pure
+  // CLI-origin material `build_result`'s ROW-GROUP/SEGS branches (resolve.mbt) already know how to
+  // fold via `sub_under`, so forwarding them unchanged (not through `resolve_scope_config`) is the
+  // correct treatment, mirroring the sentinel-preservation loop just above.
+  for b in binds {
+    if b.scope.length() > path.length() {
+      let mut is_prefix = true
+      let mut i = 0
+      while i < path.length() {
+        if b.scope[i] != path[i] {
+          is_prefix = false
+        }
+        i = i + 1
+      }
+      if is_prefix {
+        let next = b.scope[path.length()]
+        if !is_cmdsat_child(sc, next) {
+          out.push(b)
+        }
+      }
+    }
   }
   let child_inherited : Map[String, Value] = Map([])
   for k, v in inherited {
