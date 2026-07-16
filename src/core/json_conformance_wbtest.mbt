@@ -2810,127 +2810,27 @@ fn cfg_lookup(files : Array[(String, ConfigVal)], p : String) -> ConfigVal? {
 }
 
 ///|
-fn pe_msg(pe : ParseError) -> String {
-  pe.message
-}
-
-///|
-/// The `ParseError`-preserving form (`"failure"`-branch resolve check, DR-009 §7 final_filters/
-/// accum_filters etc. surfacing as a resolve-layer Err even when `parse()` itself succeeded — see
-/// `do_resolve`'s string-message wrapper below, kept for its existing "success"-branch callers).
-fn do_resolve_pe(
-  sc : Scope,
-  cli : Array[Binding],
-  dc : DCase,
-) -> Result[Array[Binding], ParseError] {
-  // `at_pos: dc.args.length()` — a resolve-layer Error (env/config seat parse failure, or a
-  // DR-009 §7 value_filters/final_filters/accum_filters reject) is not read at a token position, it surfaces after
-  // the args path completed (`ladder_err`'s doc comment, resolve.mbt). Threading the real final
-  // position here (instead of `resolve_scope`/`resolve_scope_config`'s `at_pos? = -1` default)
-  // matches `eval_constraints`'s convention for the same conceptual point (DR-053 §2).
-  let at_pos = dc.args.length()
-  match dc.cfg {
-    NoCfg => resolve_scope(sc, cli, dc.env, at_pos~, tty=dc.tty)
-    CfgObj(obj) =>
-      resolve_scope_config(
-        sc,
-        cli,
-        dc.env,
-        fn(_p) { Some(obj) },
-        at_pos~,
-        tty=dc.tty,
-      )
-    CfgFiles(files) =>
-      resolve_scope_config(
-        sc,
-        cli,
-        dc.env,
-        fn(p) { cfg_lookup(files, p) },
-        at_pos~,
-        tty=dc.tty,
-      )
-  }
-}
-
-///|
-fn do_resolve(
-  sc : Scope,
-  cli : Array[Binding],
-  dc : DCase,
-) -> Result[Array[Binding], String] {
-  match do_resolve_pe(sc, cli, dc) {
-    Ok(rb) => Ok(rb)
-    Err(pe) => Err(pe_msg(pe))
-  }
-}
-
-///|
-/// `dc.cfg` (NoCfg/CfgObj/CfgFiles) → `resolve.mbt`'s `resolve_scope_tree` provider 契約への薄い
-/// アダプタ (issue resolve-first-constraint-pipeline Phase 1: 再帰的な木解決ロジック自体は
-/// `resolve_scope_tree` 側に一本化、ここでは DCase 分岐と `Result[..., ParseError]` →
-/// `Result[..., String]` のハーネス向け整形だけを担う — `do_resolve_pe`/`run_case` の
-/// `bool_requires_provider` と同型の分岐)。
-fn resolve_tree(
-  sc : Scope,
-  binds : Array[Binding],
-  dc : DCase,
-  path : Array[String],
-  inherited : Map[String, Value],
-) -> Result[Array[Binding], String] {
-  let provider : (String) -> ConfigVal? = match dc.cfg {
-    NoCfg => fn(_p) { None }
-    CfgObj(obj) => fn(_p) { Some(obj) }
-    CfgFiles(files) => fn(p) { cfg_lookup(files, p) }
-  }
-  // See `do_resolve_pe`'s comment: real final args position, not the `-1` default.
-  let at_pos = dc.args.length()
-  match
-    resolve_scope_tree(
-      sc,
-      binds,
-      dc.env,
-      provider,
-      path~,
-      inherited~,
-      at_pos~,
-      tty=dc.tty,
-    ) {
-    Ok(rb) => Ok(rb)
-    Err(pe) => Err(pe_msg(pe))
-  }
-}
-
-///|
 fn run_case(df : DecodedFixture, dc : DCase) -> String {
   let sc = df.scope
-  let root = ScopeNode(sc)
-  // DR-047 §5 明確化 (kawaz 裁定 2026-07-09): bool-target requires/CRequiresIf は KTop (CLI 面
-  // のみ) では常にスキップされているので、値源 (env) が解ける後段でここでフィルタする
-  // (final_filters/accum_filters と同じ側、`resolve.mbt` の `apply_requires_filter` — 経路数に応じて
-  // success/ambiguous/failure を再確定)。DR-021 → DR-073 の export-key collision 昇格
-  // (`promote_collision_ambiguous`) より先に適用する — 責務が異なる2つの後処理 (「経路の成立
-  //自体」と「export-key 衝突による Success→Ambiguous 昇格」) を素直に直列に並べる。
-  // issue resolve-first-constraint-pipeline (Phase 1、旧 bool-requires-config-inherit-gap 裁定
-  // 2026-07-10 (b) を置き換え): apply_requires_filter は候補ごとに `resolve_scope_tree` を
-  // 実際に呼ぶようになったので、`resolve_scope_config` と同じ `provider: (String) -> ConfigVal?`
-  // 契約をそのまま渡せる — `do_resolve_pe` が dc.cfg から作る provider と同型 (CfgFiles も
-  // 均一に扱われ、単一 ConfigVal だった旧契約の既知の残存ギャップが解消)。
-  let bool_requires_provider : (String) -> ConfigVal? = match dc.cfg {
+  // MDR-005 追記 (issue front-door-parse-missing-postprocessing): 正面玄関 `parse` は spec 準拠の
+  // Outcome (DR-053) を返す = 内部で `parse_tree` → `apply_requires_filter` (DR-047 §5) →
+  // `promote_collision_ambiguous` (DR-021 → DR-073) を直列適用する。runner はこの 3 段を手組みで
+  // 書かず、玄関経由で受ける (kuu-cli PoC が front_door.parse を薄い wrapper のまま使うと spec
+  // 非準拠 outcome を返す実バグの根治 — 二重実装の解消)。`dc.cfg` (NoCfg/CfgObj/CfgFiles) →
+  // `provider: (String) -> ConfigVal?` の変換は runner 固有 (fixture の JSON 形の解釈) なのでここに
+  // 残す。
+  let config_provider : (String) -> ConfigVal? = match dc.cfg {
     NoCfg => fn(_p) { None }
     CfgObj(obj) => fn(_p) { Some(obj) }
     CfgFiles(files) => fn(p) { cfg_lookup(files, p) }
   }
-  let outcome = promote_collision_ambiguous(
-    apply_requires_filter(
-      parse_tree(root, dc.args, defs=df.registry),
-      root,
-      df.registry,
-      dc.env,
-      dc.args.length(),
-      provider=bool_requires_provider,
-      tty=dc.tty,
-    ),
-    df.ekmap,
+  let ast : AtomicAST = { root: sc, registry: df.registry, ekmap: df.ekmap }
+  let outcome = parse(
+    ast,
+    dc.args,
+    env=dc.env,
+    config=config_provider,
+    tty=dc.tty,
   )
   let problems : Array[String] = []
   let use_resolve = dc.resolve || scope_needs_default_ladder(sc)
@@ -2947,9 +2847,25 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             }
             None => ()
           }
-          if dc.resolve && has_commands(sc) {
-            match resolve_tree(sc, binds, dc, [], Map([])) {
-              Ok(rb) => {
+          if use_resolve {
+            // 玄関経由の resolve (MDR-005 追記): `front_door.resolve` は `resolve_scope_tree(path=[])`
+            // を呼び、command 木 (has_commands=true) と単一 scope の両ケースを同一関数で扱う
+            // (resolve_scope_tree は has_commands=false なら再帰しないだけ、単一 scope の
+            // `resolve_scope_config` 呼び出しと等価な結果を返す + sentinel 保持面は
+            // proj_result_export/proj_sources の両射影で不変な差 — sentinel は projection 側の
+            // `is_sentinel` skip で吸収されるため観測差なし)。sources 射影の使い分け
+            // (proj_sources_tree vs proj_sources) は resolve の話ではなく projection 側の話
+            // (`dc.resolve && has_commands` = 木射影を要求する fixture 特性) なのでここに残す。
+            match
+              resolve(
+                ast,
+                outcome,
+                dc.args,
+                env=dc.env,
+                config=config_provider,
+                tty=dc.tty,
+              ) {
+              Success(rb) => {
                 match dc.exp_result {
                   Some(er) => {
                     let ar = proj_result_export(sc, rb, df.ekmap)
@@ -2961,7 +2877,11 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 }
                 match dc.exp_sources {
                   Some(es) => {
-                    let asr = proj_sources_tree(rb)
+                    let asr = if dc.resolve && has_commands(sc) {
+                      proj_sources_tree(rb)
+                    } else {
+                      proj_sources(sc, rb, df.ekmap)
+                    }
                     if asr != es {
                       problems.push("sources got=\{asr} want=\{es}")
                     }
@@ -2969,31 +2889,16 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                   None => ()
                 }
               }
-              Err(msg) => problems.push("resolve error: " + msg)
-            }
-          } else if use_resolve {
-            match do_resolve(sc, binds, dc) {
-              Ok(rb) => {
-                match dc.exp_result {
-                  Some(er) => {
-                    let ar = proj_result_export(sc, rb, df.ekmap)
-                    if ar != er {
-                      problems.push("result got=\{ar} want=\{er}")
-                    }
-                  }
-                  None => ()
-                }
-                match dc.exp_sources {
-                  Some(es) => {
-                    let asr = proj_sources(sc, rb, df.ekmap)
-                    if asr != es {
-                      problems.push("sources got=\{asr} want=\{es}")
-                    }
-                  }
-                  None => ()
-                }
-              }
-              Err(msg) => problems.push("resolve error: " + msg)
+              Failure(d) =>
+                problems.push(
+                  "resolve error: " +
+                  (if d.errors.length() > 0 {
+                    d.errors[0].message
+                  } else {
+                    "(no message)"
+                  }),
+                )
+              _ => problems.push("resolve returned unexpected outcome")
             }
           } else {
             match dc.exp_result {
@@ -3080,13 +2985,21 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
         // invisible to `"failure"` fixtures entirely (this function's `match outcome` never
         // called resolve at all before) — `Success` fell straight to the `other` catch-all
         // below and got mis-reported as EXPECTED-FAILURE got=ok{...}.
-        Success(binds) if use_resolve =>
-          match do_resolve_pe(sc, binds, dc) {
-            Err(pe) =>
+        Success(_) if use_resolve =>
+          match
+            resolve(
+              ast,
+              outcome,
+              dc.args,
+              env=dc.env,
+              config=config_provider,
+              tty=dc.tty,
+            ) {
+            Failure(d) =>
               match dc.exp_errors {
                 Some(ex) => {
                   let ae = proj_errors(
-                    [pe],
+                    d.errors,
                     dc.exp_errors_with_reason,
                     dc.exp_errors_with_path,
                   )
@@ -3096,8 +3009,9 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 }
                 None => ()
               }
-            Ok(_) =>
+            Success(_) =>
               problems.push("EXPECTED-FAILURE got=ok (resolve also succeeded)")
+            _ => ()
           }
         other => problems.push("EXPECTED-FAILURE got=" + render_outcome(other))
       }
