@@ -221,6 +221,34 @@ DR-104/CONFORMANCE.md §3 は `Cand` の wire 表現に `path` を含めない (
   `@core.result(ast, rbinds)` 1 呼び出しに縮み、`sources` フィールド (現状 wire.mbt 未実装) は
   `@core.sources(ast, rbinds)` を同様に walk して追加できる
 
+## 追記 (統括裁定「ConfigVal/TtyObs の入力構築 API」、issue 追加分 (b))
+
+> kuu-cli (外部利用者) が `front_door.parse`/`resolve` の `env?`/`config?`/`tty?` 入力を構築
+> できない不具合の解消。`ConfigVal`/`TtyObs` は `pub` (variant/フィールド非公開) のままで公開面を
+> 最小に保ち、代わりに構築専用の pub 関数を front_door.mbt に追加する (§3 の可視性方針は変更なし)。
+
+- **`front_door.mbt` に 2 本のコンストラクタ関数を追加**:
+  - `config_from_json(j: Json) -> ConfigVal` — JSON → `ConfigVal` の全域変換 (CObj/CArr 再帰、
+    bool/string/number 以外は `CNull`)。旧 runner `json_to_configval`
+    (`json_conformance_wbtest.mbt`、fixture `cases[].config`/`config_files` の decode ヘルパー、
+    本 MDR 冒頭「wire decode の昇格」節が「fixture 補助入力の decode なのでここに残す」と
+    裁定していた対象) と同一ロジック — 用途が「fixture 入力の decode」から「production 呼び出し側
+    の入力構築」まで広がったため、こちらへ昇格し runner 側は本関数へ委譲する形に書き換えた
+    (当該裁定を本関数の追加で上書き)。`value_to_configval` (value.mbt、既存 pub) はスカラ 3 種
+    のみで木構造の config を組めなかった gap の解消でもある
+  - `tty_obs(terminal: Bool, cygwin: Bool) -> TtyObs` — DR-099 §4 の生観測 2 値からの直接構築。
+    config と異なり JSON 経由を想定しない (呼び出し側プロセスの実観測値を直接渡す性質) ため
+    `_from_json` ではない
+- **runner の乗り換え**: `json_to_configval` (旧定義) を削除し `config_from_json` への直接呼び出し
+  に統一。fixture の `{terminal, cygwin}` struct literal 構築も `tty_obs(terminal, cygwin)` へ
+  ドッグフーディング (`dec_fixture` が `parse_definition` を呼ぶのと同じ精神)。乗り換え後も
+  conformance は `decoded=272 ran_cases=661 skipped=0 mismatches=0` で不変 (moon test 354/354
+  green、直前の result/sources 昇格分 352 + 本追加分の e2e wbtest 2 本)
+- **e2e wbtest 2 本を追加** (`front_door_wbtest.mbt`): `config_from_json` で組んだ値が
+  `config_key` 経由で result/sources (`source=config`) に反映されること、`tty_obs` で組んだ値が
+  `builtin/tty` preset 型の default 席解決規則 (`fold(観測) ?? 宣言 default ?? absent`) に反映
+  され観測が宣言 default に優先すること (`source=tty`) を、production API のみを叩いて固定
+
 ## 射程外 (本追記より前の記述、definition decode 昇格時点のもの)
 
 - ~~`Outcome.Success` が運ぶ `Array[Binding]` を `result` オブジェクト (CONFORMANCE.md §2 の
