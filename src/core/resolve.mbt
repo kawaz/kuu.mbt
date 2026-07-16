@@ -1410,13 +1410,14 @@ pub fn build_interpretations(
 /// Each promoted interpretation carries the DR-073 §1 claimants面 (exposed key → occupying entity
 /// name) so degenerate views (e.g. two flags both `true`) remain distinct under (view, claimants)
 /// pair comparison (CONFORMANCE §3, DR-073 §3).
-pub fn promote_collision_ambiguous(
+fn promote_collision_ambiguous_from(
   o : Outcome,
+  collision_binds : Array[Binding],
   ek : Map[String, ExportKey],
 ) -> Outcome {
   match o {
-    Success(binds) => {
-      let collisions = find_export_collisions(binds, ek)
+    Success(_) => {
+      let collisions = find_export_collisions(collision_binds, ek)
       if collisions.length() == 0 {
         return o
       }
@@ -1426,7 +1427,7 @@ pub fn promote_collision_ambiguous(
       let interps : Array[AmbInterp] = []
       for combo in claimant_combinations(collisions) {
         let filtered : Array[Binding] = []
-        for b in binds {
+        for b in collision_binds {
           let mut drop = false
           let mut gi = 0
           while gi < collisions.length() {
@@ -1456,6 +1457,19 @@ pub fn promote_collision_ambiguous(
       }
       Ambiguous({ interpretations: interps, help_entry: None })
     }
+    _ => o
+  }
+}
+
+///|
+/// Promote collisions already present in the parse bindings. The front door additionally supplies
+/// upper-seat resolved bindings through the private variant so env/config/inherit claims participate.
+pub fn promote_collision_ambiguous(
+  o : Outcome,
+  ek : Map[String, ExportKey],
+) -> Outcome {
+  match o {
+    Success(binds) => promote_collision_ambiguous_from(o, binds, ek)
     _ => o
   }
 }
@@ -1526,6 +1540,7 @@ fn collect_sources_flat(
   ek : Map[String, ExportKey],
 ) -> Array[SourceEntry] {
   let out : Array[SourceEntry] = []
+  let emitted : Array[String] = []
   for e in sc.entities {
     if e.is_config_file {
       continue
@@ -1535,33 +1550,41 @@ fn collect_sources_flat(
     }
     match exposed_key_of(e.name, ek) {
       None => ()
-      Some(exposed) => {
-        let mut src : Source? = None
-        for b in resolved {
-          if b.key == e.name && !is_sentinel(b.key) {
-            src = match b.op {
-              // issue 2026-07-09-accum-filters-non-set-op-semantics: `Unset` は CLI 発火済みだが
-              // 未確定 (committed=false、DR-045「default 値へ戻す... committed=false」) なので、
-              // 値源タグは発火トークン自身の `source` ではなくラダーの再着席結果
-              // ("as if untouched") を反映して `Default` を報告する。
-              Unset => Some(Default)
-              _ => Some(b.source)
-            }
-          }
-        }
-        match src {
-          Some(s) => out.push({ path: [], key: exposed, source: s })
-          None =>
-            if e.accum is Some(_) {
-              out.push({ path: [], key: exposed, source: Default })
-            } else if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
-              match default_scalar(e) {
-                Some(_) => out.push({ path: [], key: exposed, source: Default })
-                None => ()
+      Some(exposed) =>
+        if !str_contains(emitted, exposed) {
+          let mut src : Source? = None
+          for b in resolved {
+            if !is_sentinel(b.key) && exposed_key_of(b.key, ek) == Some(exposed) {
+              src = match b.op {
+                // issue 2026-07-09-accum-filters-non-set-op-semantics: `Unset` は CLI 発火済みだが
+                // 未確定 (committed=false、DR-045「default 値へ戻す... committed=false」) なので、
+                // 値源タグは発火トークン自身の `source` ではなくラダーの再着席結果
+                // ("as if untouched") を反映して `Default` を報告する。
+                Unset => Some(Default)
+                _ => Some(b.source)
               }
             }
+          }
+          match src {
+            Some(s) => {
+              out.push({ path: [], key: exposed, source: s })
+              emitted.push(exposed)
+            }
+            None =>
+              if e.accum is Some(_) {
+                out.push({ path: [], key: exposed, source: Default })
+                emitted.push(exposed)
+              } else if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
+                match default_scalar(e) {
+                  Some(_) => {
+                    out.push({ path: [], key: exposed, source: Default })
+                    emitted.push(exposed)
+                  }
+                  None => ()
+                }
+              }
+          }
         }
-      }
     }
   }
   out
@@ -1876,15 +1899,17 @@ fn is_cmdsat_child(sc : Scope, name : String) -> Bool {
 /// to its owning path (the same shape `build_result`/`proj_sources_tree` already consume) — a
 /// caller wanting a value at a nested path uses the ordinary `elem_value`/`is_committed` lookups
 /// with that path, no different from a single-scope `resolve_scope_config` caller.
-pub fn resolve_scope_tree(
+fn resolve_scope_tree_with_export(
   sc : Scope,
   binds : Array[Binding],
   env_map : Map[String, String],
   provider : (String) -> ConfigVal?,
-  path? : Array[String] = [],
-  inherited? : Map[String, Value] = Map([]),
-  at_pos? : Int = -1,
-  tty? : Map[String, TtyObs] = Map([]),
+  path : Array[String],
+  inherited : Map[String, Value],
+  at_pos : Int,
+  tty : Map[String, TtyObs],
+  ek : Map[String, ExportKey],
+  include_default : Bool,
 ) -> Result[Array[Binding], ParseError] {
   let here : Array[Binding] = []
   for b in binds {
@@ -1893,15 +1918,8 @@ pub fn resolve_scope_tree(
     }
   }
   let resolved = match
-    resolve_scope_config(
-      sc,
-      here,
-      env_map,
-      provider,
-      path~,
-      inherited~,
-      at_pos~,
-      tty~,
+    resolve_scope_config_with_export(
+      sc, here, env_map, provider, path, inherited, at_pos, tty, ek, include_default,
     ) {
     Ok(rb) => rb
     Err(pe) => return Err(pe)
@@ -1961,15 +1979,9 @@ pub fn resolve_scope_tree(
         let childpath = path_push(path, name)
         if scope_entered_here(binds, childpath) {
           match
-            resolve_scope_tree(
-              child,
-              binds,
-              env_map,
-              provider,
-              path=childpath,
-              inherited=child_inherited,
-              at_pos~,
-              tty~,
+            resolve_scope_tree_with_export(
+              child, binds, env_map, provider, childpath, child_inherited, at_pos,
+              tty, ek, include_default,
             ) {
             Ok(cb) =>
               for b in cb {
@@ -1983,6 +1995,33 @@ pub fn resolve_scope_tree(
     }
   }
   Ok(out)
+}
+
+///|
+/// Resolve a scope tree with identity result keys. The front door uses the export-aware internal
+/// variant because its AtomicAST carries the result-key map.
+pub fn resolve_scope_tree(
+  sc : Scope,
+  binds : Array[Binding],
+  env_map : Map[String, String],
+  provider : (String) -> ConfigVal?,
+  path? : Array[String] = [],
+  inherited? : Map[String, Value] = Map([]),
+  at_pos? : Int = -1,
+  tty? : Map[String, TtyObs] = Map([]),
+) -> Result[Array[Binding], ParseError] {
+  resolve_scope_tree_with_export(
+    sc,
+    binds,
+    env_map,
+    provider,
+    path,
+    inherited,
+    at_pos,
+    tty,
+    Map([]),
+    true,
+  )
 }
 
 ///|
@@ -2009,14 +2048,15 @@ pub fn resolve_scope_tree(
 /// `table.length() == 0` (このスコープ木に requires 制約が一つも無い) なら resolve を試みずに
 /// 即座に `[]` を返す — 制約が無い定義で resolve コストを払わない、かつ無関係な entity の env/config
 /// 解決エラーを不要に持ち込まない (両立できる速い経路)。
-pub fn apply_requires_filter(
+fn apply_requires_filter_with_export(
   o : Outcome,
   root : Node,
   defs : Map[String, Node],
   env : Map[String, String],
   toks_len : Int,
-  provider? : (String) -> ConfigVal? = fn(_) { None },
-  tty? : Map[String, TtyObs] = Map([]),
+  provider : (String) -> ConfigVal?,
+  tty : Map[String, TtyObs],
+  ek : Map[String, ExportKey],
 ) -> Outcome {
   let table = collect_scopes(root, defs)
   let violations_of = fn(binds : Array[Binding]) -> Array[ParseError] {
@@ -2026,7 +2066,18 @@ pub fn apply_requires_filter(
     match root {
       ScopeNode(sc) =>
         match
-          resolve_scope_tree(sc, binds, env, provider, at_pos=toks_len, tty~) {
+          resolve_scope_tree_with_export(
+            sc,
+            binds,
+            env,
+            provider,
+            [],
+            Map([]),
+            toks_len,
+            tty,
+            ek,
+            true,
+          ) {
           Ok(resolved) => {
             let out : Array[ParseError] = []
             for sc2 in table {
@@ -2092,6 +2143,30 @@ pub fn apply_requires_filter(
     }
     Failure(_) => o
   }
+}
+
+///|
+/// Apply requires with identity result keys. Front-door parsing uses the export-aware internal
+/// variant so default filling and requires observe the same result-cell partition.
+pub fn apply_requires_filter(
+  o : Outcome,
+  root : Node,
+  defs : Map[String, Node],
+  env : Map[String, String],
+  toks_len : Int,
+  provider? : (String) -> ConfigVal? = fn(_) { None },
+  tty? : Map[String, TtyObs] = Map([]),
+) -> Outcome {
+  apply_requires_filter_with_export(
+    o,
+    root,
+    defs,
+    env,
+    toks_len,
+    provider,
+    tty,
+    Map([]),
+  )
 }
 
 // ── value-source ladder (slice `poc/installer.mbt`'s resolve_scope / resolve_scope_config) ───
@@ -2400,12 +2475,19 @@ fn resolve_entity(
   at_pos : Int,
   epath : Array[String],
   tty_map : Map[String, TtyObs],
+  include_default : Bool,
 ) -> Result[Array[Binding], ParseError] {
   match
     resolve_entity_raw(
       e, cli, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
+      include_default,
     ) {
-    Ok(bs) => apply_entity_filters(e, bs, at_pos, epath)
+    Ok(bs) =>
+      if !include_default && bs.length() == 0 {
+        Ok([])
+      } else {
+        apply_entity_filters(e, bs, at_pos, epath)
+      }
     Err(pe) => Err(pe)
   }
 }
@@ -2513,6 +2595,7 @@ fn resolve_entity_raw(
   at_pos : Int,
   epath : Array[String],
   tty_map : Map[String, TtyObs],
+  include_default : Bool,
 ) -> Result[Array[Binding], ParseError] {
   // cli seat (DR-015 last-wins + DR-077 §1 update fold): fold every same-name CLI effect in args
   // order, not just peek at the last one. `update`'s result is OLD-DEPENDENT — a single "read the
@@ -2570,6 +2653,7 @@ fn resolve_entity_raw(
   if e.accum is Some("merge") {
     return resolve_merge_accum(
       e, cli, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
+      include_default,
     )
   }
   if e.accum is Some(_) {
@@ -2722,7 +2806,15 @@ fn resolve_entity_raw(
     }
   }
   resolve_ladder_below_cli(
-    e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
+    e,
+    env_map,
+    config_obj,
+    config_path,
+    inherited,
+    at_pos,
+    epath,
+    tty_map,
+    include_default~,
   )
 }
 
@@ -2760,6 +2852,7 @@ fn resolve_ladder_below_cli(
   at_pos : Int,
   epath : Array[String],
   tty_map : Map[String, TtyObs],
+  include_default? : Bool = true,
 ) -> Result[Array[Binding], ParseError] {
   // env seat (DR-049 §2): the raw env string is ONE firing's argument (同 §2 「発火 1 回の 1 引数と
   // 同じ扱い」) — a `multiple` + `separator` cell splits it exactly like `eval.mbt`'s `sep_binds`
@@ -2857,6 +2950,13 @@ fn resolve_ladder_below_cli(
       Some(v) => return Ok([mkb(e.name, v, Inherit)])
       None => ()
     }
+  }
+  // UX-Q7R: the caller first resolves only seats above default for every entity in the scope. A
+  // second pass enables this tail only for the first entity whose export-key-resolved result cell is
+  // still empty. CLI `:default` effects call this helper with the default enabled because the CLI
+  // effect itself is an upper-seat claim; only ordinary fall-through uses the scope-level gate.
+  if !include_default {
+    return Ok([])
   }
   // tty preset 型の default 席解決規則 (DR-099 §2/§12b): ラダーそのものに専用席は無い (5 段固定、
   // §11.4) — `is_tty` 要素だけが「default 席の中身」を fold(観測) で差し替える:
@@ -2966,6 +3066,7 @@ fn resolve_merge_accum(
   at_pos : Int,
   epath : Array[String],
   tty_map : Map[String, TtyObs],
+  include_default : Bool,
 ) -> Result[Array[Binding], ParseError] {
   // グループ化: 同名 binding のうち、Set/Remove/Splice は「連続する同一 at_pos」の連なりを 1 発火
   // (GFire) として束ね、Update/Default/Unset/Empty は単独グループ (GCell) とする。
@@ -3113,7 +3214,15 @@ fn resolve_merge_accum(
     return Ok(result_bs)
   }
   resolve_ladder_below_cli(
-    e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
+    e,
+    env_map,
+    config_obj,
+    config_path,
+    inherited,
+    at_pos,
+    epath,
+    tty_map,
+    include_default~,
   )
 }
 
@@ -3146,7 +3255,18 @@ pub fn resolve_scope(
   for e in sc.entities {
     if !e.is_config_file {
       match
-        resolve_entity(e, cli, env_map, None, [], inherited, at_pos, path, tty) {
+        resolve_entity(
+          e,
+          cli,
+          env_map,
+          None,
+          [],
+          inherited,
+          at_pos,
+          path,
+          tty,
+          true,
+        ) {
         Ok(bs) =>
           for b in bs {
             out.push(b)
@@ -3159,6 +3279,29 @@ pub fn resolve_scope(
 }
 
 ///|
+fn config_path_of(e : Entity, path : Array[String]) -> Array[String] {
+  match e.config_key {
+    Some(k) => k
+    None => {
+      let p : Array[String] = []
+      for s in path {
+        p.push(s)
+      }
+      p.push(e.name)
+      p
+    }
+  }
+}
+
+///|
+fn default_fills_cell(e : Entity, bs : Array[Binding]) -> Bool {
+  if bs.length() > 0 || e.accum is Some(_) {
+    return true
+  }
+  default_scalar(e) is Some(_)
+}
+
+///|
 /// Resolve a scope WITH a config-file value source (DR-050 §5 dependency order):
 ///   1. resolve the config_file element's path (cli > env > default; it has NO config seat, 循環禁止)
 ///   2. read the provider with that path → a config object (or None). A committed path (cli/env)
@@ -3168,15 +3311,17 @@ pub fn resolve_scope(
 ///      the config object and each entity's absolute config path (config_key, else 同型 = scope path + name)
 /// `provider` is the config_provider stub (path → config object | None). `path` is this scope's
 /// result path (for 同型 correspondence). `at_pos` is the position an Error is reported at.
-pub fn resolve_scope_config(
+fn resolve_scope_config_with_export(
   sc : Scope,
   cli : Array[Binding],
   env_map : Map[String, String],
   provider : (String) -> ConfigVal?,
-  path? : Array[String] = [],
-  inherited? : Map[String, Value] = Map([]),
-  at_pos? : Int = -1,
-  tty? : Map[String, TtyObs] = Map([]),
+  path : Array[String],
+  inherited : Map[String, Value],
+  at_pos : Int,
+  tty : Map[String, TtyObs],
+  ek : Map[String, ExportKey],
+  include_default : Bool,
 ) -> Result[Array[Binding], ParseError] {
   // Phase 1: resolve the config_file element's path (cli > env > default), track committed-ness.
   let mut cf_path : String? = None
@@ -3244,34 +3389,102 @@ pub fn resolve_scope_config(
       }
     None => ()
   }
-  // Phase 3: resolve every non config_file entity down the full ladder.
+  // Phase 3a: resolve CLI/env/config/inherit for every entity before considering any default. These
+  // seats are actual claims even when another entity already occupies the same exported result cell.
   let out : Array[Binding] = []
+  let supplied : Array[String] = []
+  let occupied : Array[String] = []
   for e in sc.entities {
     if !e.is_config_file {
-      let cpath = match e.config_key {
-        Some(k) => k // explicit absolute path
-        None => { // 同型: scope path + name
-          let p : Array[String] = []
-          for s in path {
-            p.push(s)
-          }
-          p.push(e.name)
-          p
-        }
-      }
+      let cpath = config_path_of(e, path)
       match
         resolve_entity(
-          e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty,
+          e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty, false,
         ) {
         Ok(bs) =>
-          for b in bs {
-            out.push(b)
+          if bs.length() > 0 {
+            supplied.push(e.name)
+            for b in bs {
+              out.push(b)
+            }
+            match exposed_key_of(e.name, ek) {
+              Some(key) =>
+                if !str_contains(occupied, key) {
+                  occupied.push(key)
+                }
+              None => ()
+            }
           }
         Err(pe) => return Err(pe)
       }
     }
   }
+  if !include_default {
+    return Ok(out)
+  }
+  // Phase 3b: defaults are fallbacks for the export-key-resolved result cell, not per-entity claims.
+  // Only the first default that can actually fill an empty cell is admitted; later co-exported
+  // defaults see the occupied cell and do not run their value pipeline at all.
+  for e in sc.entities {
+    if !e.is_config_file && !str_contains(supplied, e.name) {
+      let exposed = exposed_key_of(e.name, ek)
+      let cell_empty = match exposed {
+        Some(key) => !str_contains(occupied, key)
+        None => true
+      }
+      if cell_empty {
+        let cpath = config_path_of(e, path)
+        match
+          resolve_entity(
+            e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty, true,
+          ) {
+          Ok(bs) => {
+            for b in bs {
+              out.push(b)
+            }
+            if default_fills_cell(e, bs) {
+              match exposed {
+                Some(key) =>
+                  if !str_contains(occupied, key) {
+                    occupied.push(key)
+                  }
+                None => ()
+              }
+            }
+          }
+          Err(pe) => return Err(pe)
+        }
+      }
+    }
+  }
   Ok(out)
+}
+
+///|
+/// Resolve one scope with identity result keys. Front-door callers use the export-aware tree helper;
+/// this public low-level API keeps its existing signature for callers that only have a Scope.
+pub fn resolve_scope_config(
+  sc : Scope,
+  cli : Array[Binding],
+  env_map : Map[String, String],
+  provider : (String) -> ConfigVal?,
+  path? : Array[String] = [],
+  inherited? : Map[String, Value] = Map([]),
+  at_pos? : Int = -1,
+  tty? : Map[String, TtyObs] = Map([]),
+) -> Result[Array[Binding], ParseError] {
+  resolve_scope_config_with_export(
+    sc,
+    cli,
+    env_map,
+    provider,
+    path,
+    inherited,
+    at_pos,
+    tty,
+    Map([]),
+    true,
+  )
 }
 
 ///|

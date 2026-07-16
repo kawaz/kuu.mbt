@@ -125,9 +125,10 @@ pub fn parse_definition(json : Json) -> Result[AtomicAST, DefLoadError] {
 ///    Ambiguous)。値源が空でも bool 目的語の充足条件 (「解決後値が true」) の判定は必要 —
 ///    `env` / `config` / `tty` が未指定なら default: false になり、requires が unfired を弾く
 ///    (仕様通り)
-/// 3. **`promote_collision_ambiguous`** (DR-021 → DR-073): 同一入力で export_key に共露出する
-///    2 要素が実際に一緒に present な場合、Success を Ambiguous に昇格し claimants 面
-///    (露出キー → その解釈で当該キーを占める実体 entity name) を添える (DR-073 §1)
+/// 3. **export-key collision promotion** (DR-021 → DR-073 / UX-Q7R): 同一入力で export_key に
+///    共露出する発火 (cli/link) と default より上の席 (env/config/inherit) を解決して Success を
+///    Ambiguous に昇格し、claimants 面 (露出キー → その解釈で当該キーを占める実体 entity name) を
+///    添える。default 席は共露出 claim ではなく、射影後 result cell が空の時だけ注入される
 ///
 /// **相区分 (DR-104 §5)**: 値源ラダー (env/config/inherit/default seat fill) を binds に反映
 /// する **resolve 相** は本関数の射程外 — 別関数 `resolve()` (下記) に切り出す。理由: parse 相
@@ -136,6 +137,8 @@ pub fn parse_definition(json : Json) -> Result[AtomicAST, DefLoadError] {
 /// に倒す」)。したがって本関数の Success payload (`Array[Binding]`) は **CLI 由来の生 binds**
 /// (`parse_tree` の直接出力、resolve 未適用) であり、`resolve()` に渡してから
 /// `build_result` / `apply_export_keys` で最終 wire 表現を組み立てるのが呼び出し側の責務。
+/// ただし collision により Ambiguous へ昇格する解釈は、共露出した env/config/inherit の
+/// bindings も運ぶ。claimants と対になる結果ビューを構成するための解釈データである。
 ///
 /// **なぜ 1 発 `parse_and_resolve` にしないか**: parse 相の outcome (Success/Failure/Ambiguous
 /// 骨格) だけ欲しい場面 (dogfooding 用の debug、部分的な取扱、fuzz 等) と、完全 wire を組み立て
@@ -160,18 +163,37 @@ pub fn parse(
   tty? : Map[String, TtyObs] = Map([]),
 ) -> Outcome {
   let root = ScopeNode(ast.root)
-  promote_collision_ambiguous(
-    apply_requires_filter(
-      parse_tree(root, args, defs=ast.registry),
-      root,
-      ast.registry,
-      env,
-      args.length(),
-      provider=config,
-      tty~,
-    ),
+  let checked = apply_requires_filter_with_export(
+    parse_tree(root, args, defs=ast.registry),
+    root,
+    ast.registry,
+    env,
+    args.length(),
+    config,
+    tty,
     ast.ekmap,
   )
+  match checked {
+    Success(binds) =>
+      match
+        resolve_scope_tree_with_export(
+          ast.root,
+          binds,
+          env,
+          config,
+          [],
+          Map([]),
+          args.length(),
+          tty,
+          ast.ekmap,
+          false,
+        ) {
+        Ok(claims) =>
+          promote_collision_ambiguous_from(checked, claims, ast.ekmap)
+        Err(_) => promote_collision_ambiguous(checked, ast.ekmap)
+      }
+    _ => checked
+  }
 }
 
 ///|
@@ -210,15 +232,17 @@ pub fn resolve(
   match outcome {
     Success(binds) =>
       match
-        resolve_scope_tree(
+        resolve_scope_tree_with_export(
           ast.root,
           binds,
           env,
           config,
-          path=[],
-          inherited=Map([]),
-          at_pos=args.length(),
-          tty~,
+          [],
+          Map([]),
+          args.length(),
+          tty,
+          ast.ekmap,
+          true,
         ) {
         // `resolve_scope_tree` は accum entity scope (`Scoped(name, ...)` node、command でない)
         // 下の `#row`/`#fire` sentinel を path 単位の here フィルタで落とす — build_result の
