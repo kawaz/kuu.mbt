@@ -35,13 +35,20 @@ production API 化でこの重複を解消する。
 
 ## 受け入れ条件
 
-- [ ] result 構築 + sources 射影 + warnings 射影が front_door 経由で呼び出せる
-      (シグネチャは MDR-005 の玄関原則に沿って設計)
-- [ ] conformance runner が新 API に乗り換えて重複を解消
-- [ ] kuu-cli の wire.mbt も乗り換え (kuu-cli 側は別リポ作業として r27 経由)
-- [ ] moon test / conformance 全 green 維持
-- [ ] MDR-005 に追記 note
+- [x] result 構築 + sources 射影 + warnings 射影が front_door 経由で呼び出せる
+      (シグネチャは MDR-005 の玄関原則に沿って設計) — `front_door.result`/`front_door.sources`
+      追加、`warnings_structured` は既存 pub のまま (変更不要を確認)
+- [x] conformance runner が新 API に乗り換えて重複を解消 — `proj_result_export`/`proj_sources`/
+      `proj_sources_tree` を production 側ヘルパーへの薄い委譲に書き換え
+- [ ] kuu-cli の wire.mbt も乗り換え (kuu-cli 側は別リポ作業として r27 経由) — 未着手 (本 issue の
+      担当セッションの受け持ち外)。乗り換え片鱗のコード片は完了報告参照
+- [x] moon test / conformance 全 green 維持 — `decoded=272 ran_cases=661 skipped=0 mismatches=0`、
+      moon test 352/352 green (fresh 実行で確認)
+- [x] MDR-005 に追記 note — 追記済み
 
 ## TODO
 
 <!-- wip 時のみ -->
+- [ ] (別セッション) kuu-cli `wire.mbt` の `result_to_json`/`rval_to_json` を
+      `@core.result(ast, rbinds)` 呼び出しへ、`sources` フィールド (現状未出力) を
+      `@core.sources(ast, rbinds)` walk へ置き換え

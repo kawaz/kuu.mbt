@@ -189,12 +189,44 @@ DR-104/CONFORMANCE.md §3 は `Cand` の wire 表現に `path` を含めない (
 今回は `Cand` 型自体は変更せず (観測挙動不変の原則を優先)、doc comment で「`path` は内部診断
 用、spec wire 射影には含まれない」と明記するに留める。精密化は別 issue の射程
 
-## 射程外
+## 追記 (issue `2026-07-16-result-projection-production-promotion`、DR-109 §5 UX-Q5=a)
 
-- `Outcome.Success` が運ぶ `Array[Binding]` を `result` オブジェクト (CONFORMANCE.md §2 の
+> 下の「射程外」節が除外していた `Outcome.Success` → `result`/`sources` の encode 処理を
+> production 昇格した。DR-109 §3 (「sources は resolve 済み出力に常に含める」) の実装土台。
+
+- **`resolve.mbt` に 2 本のヘルパーを追加**:
+  - `build_result_export(sc: Scope, binds: Array[Binding], ek: Map[String, ExportKey]) -> RVal`
+    — 4 素材 (`apply_export_keys`/`accum_cells`/`apply_export_to_defaults`/`none_cells`) の合成を
+    一本化。runner の `proj_result_export` と kuu-cli PoC の手組み `result_to_json` (wire.mbt) が
+    同一の 5 行を重複実装していたのを解消
+  - `result_sources(sc: Scope, resolved: Array[Binding], ek: Map[String, ExportKey]) -> Array[SourceEntry]`
+    (新設 `pub(all) struct SourceEntry { path; key; source }`) — DR-031 値源タグの sources 射影。
+    command 木の有無 (`has_commands`、runner から昇格した private fn) で内部実装が
+    `collect_sources_flat`/`collect_sources_tree` に分かれる (前者は export_key rename + 未発火
+    セルの default フォールバックを持つ root-scope 専用、後者は resolve 済み全 binds を素の
+    entity 名で木ごと拾う) が、**呼び出し側はこの分岐を意識しない** — 1 本のシグネチャで両ケースを
+    覆う
+- **`front_door.mbt` に薄いラッパー 2 本を追加**: `result(ast: AtomicAST, binds) -> RVal` /
+  `sources(ast: AtomicAST, resolved) -> Array[SourceEntry]`。`export_map` と同じ「AtomicAST から
+  素材を引く」形で `ast.root`/`ast.ekmap` を上記 2 関数に渡すだけ
+- **runner (`json_conformance_wbtest.mbt`) の乗り換え**: `proj_result_export` は
+  `build_result_export` + `render_rval_sorted` の薄い委譲に、`proj_sources`/`proj_sources_tree`
+  は `collect_sources_flat`/`collect_sources_tree` + 文字列レンダリングの薄い委譲に書き換えた。
+  **runner 自身の呼び出し箇所は `dc.resolve && has_commands(sc)` という fixture 固有の分岐
+  (`resolve: <bool>` という production に存在しない対照実験ノブが絡む) を保持したまま** —
+  production 向けの `result_sources` (has_commands のみで分岐) を runner が直接呼ぶことはしない。
+  乗り換え後も conformance は `decoded=272 ran_cases=661 skipped=0 mismatches=0` で不変
+  (moon test 352/352 green)
+- **kuu-cli 側の追随は別セッション**: `wire.mbt` の `result_to_json`/`rval_to_json` は
+  `@core.result(ast, rbinds)` 1 呼び出しに縮み、`sources` フィールド (現状 wire.mbt 未実装) は
+  `@core.sources(ast, rbinds)` を同様に walk して追加できる
+
+## 射程外 (本追記より前の記述、definition decode 昇格時点のもの)
+
+- ~~`Outcome.Success` が運ぶ `Array[Binding]` を `result` オブジェクト (CONFORMANCE.md §2 の
   `result: {...}`) へ変換する処理 (conformance runner の `proj_result_export`/`build_result`
-  相当) の production 昇格。今回の受け入れ条件は definition の decode (入力面) の昇格であり、
-  結果の encode (出力面) は含まれない。**ただし** 「definition から静的に導出される
+  相当) の production 昇格。~~ 上記追記で解消。今回の受け入れ条件は definition の decode (入力面)
+  の昇格であり、結果の encode (出力面) は含まれない。**ただし** 「definition から静的に導出される
   export_key 写像 (`ekmap`) への到達経路」はこの除外の対象外 — `build_export_map`
   (installer.mbt) / `apply_export_keys` (resolve.mbt) は元々 `pub` で変換処理自体は利用者
   から既に呼べており、`AtomicAST` が生 `Definition` を保持しない不透明ハンドルであるために
