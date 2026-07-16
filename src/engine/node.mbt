@@ -185,12 +185,28 @@ pub(open) trait MatcherExt {
   fn kind(Self) -> String
   fn encode(Self) -> Json
   fn equal(Self, &MatcherExt) -> Bool = _
+  fn candidates(Self) -> Array[Cand] = _
   fn interpret(Self, Ctx, Int, Array[Binding], Resume) -> Array[Branch]
 }
 
 ///|
 impl MatcherExt with fn equal(self, other) {
   self.kind() == other.kind() && self.encode() == other.encode()
+}
+
+///|
+impl MatcherExt with fn candidates(_self) {
+  []
+}
+
+///|
+pub impl Eq for &MatcherExt with fn equal(self, other) {
+  self.equal(other)
+}
+
+///|
+pub impl Debug for &MatcherExt with fn to_repr(self) {
+  Debug::to_repr((self.kind(), self.encode()))
 }
 
 ///|
@@ -229,7 +245,7 @@ pub(all) enum Node {
   /// the two-face scope: greedy (order-free triggers) over a positional face (DR-041 §4).
   ScopeNode(Scope)
   /// native matcher: data-driven token readings (DR-041 §3-4), installed by long/short (DR-042).
-  NativeMatch(Matcher)
+  NativeMatch(&MatcherExt)
   /// open leaf resident. Builtin value and marker semantics enter the evaluator
   /// only through this one dispatch point.
   Ext(&NodeExt)
@@ -645,108 +661,6 @@ pub(all) struct Entity {
   // `origin`, hence the same Entity, hence the same completer — there is no live path that produces
   // a genuine conflict to merge.
   completer : String?
-} derive(Eq, Debug)
-
-///|
-/// A long-option entry the eq-split matcher can resolve (`--key=value`). `int_round` /
-/// `allow_base_prefix` / `bool_config` carry the element's DR-075 / DR-074 §2/§4 factory config into
-/// the eq-split path (space form runs the greedy Num/int resident/bool resident node which already carries this
-/// config; eq-split needs its own copy since the entry table is the only channel run_eq_split reads).
-/// `int_round` は int_type() のみ、`allow_base_prefix` は number_type() / int_type()、`bool_config` は bool_type() のみが参照する
-/// (DR-076 §1/§3: bool の eq-split `--enabled=true` は variant 綴りと共存する — flag_type() と違い抑制
-/// されない)。他 kind は無視。
-pub(all) struct LongEntry {
-  key : String
-  name : String
-  kind : &TypeExt
-  int_round : RoundMode
-  allow_base_prefix : Bool
-  bool_config : BoolConfig
-  // DR-034/DR-062 piece_filters (same carrier pattern as `int_round`/`allow_base_prefix`): run_eq_split
-  // (matcher.mbt) applies it to `valstr` before the kind-specific parse. Ignored for flag_type()/count_type()
-  // (no eq-split value slot to gate — a presence-only fire has no raw string to filter).
-  piece_filters : Array[FilterSpelling]
-  // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1): `--key=a,b` eq-split
-  // form goes through the SAME pieceProcessor as the space form — separator splitting is a value-
-  // axis concern independent of which entry point supplied the raw string (DR-034, matcher-readings/
-  // entry-forms.json's "入口形に関わらず同じ pieceProcessor 管を通る" precedent for piece_filters
-  // applies identically here). `None` = no split (single-piece degenerate, DR-034 §6.3).
-  separator : String?
-  // DR-080 波及節: `ElemDef.accumulator == Some("merge")` — the eq-split form (`--key=a,-a`) shares
-  // the SAME `sep_binds` pieceProcessor as the space form, so it needs the same merge-marker flag
-  // (same rationale as `separator` above: the entry point doesn't change the value-axis pipeline).
-  merge : Bool
-  // codex レビュー Major 1 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) / DR-058
-  // §2: this entry-copy is a deprecated (canonical or alias, DR-057 §3) entry — firing the eq-split
-  // form emits a `@depr:<name>` warning marker, same standing as `ShortEntry.depr` (this field's doc
-  // comment). DR-058 §2 draws no入口形 distinction (space form / eq-split / short cluster all warn
-  // alike) — `run_eq_split` (matcher.mbt) was the one entry point missing this carrier before this
-  // fix (the space form already threads it via `installer.mbt`'s `deprecation resident` satellite append, short
-  // via this field's `ShortEntry` sibling).
-  depr : Bool
-} derive(Eq, Debug)
-
-///|
-/// A short-option entry the cluster matcher can resolve (`-abc`, `-n1.0`).
-/// `depr` (DR-057/058): this entry is a deprecated alias spelling — firing it emits a `@depr:<name>`
-/// warning marker (the value binding is unchanged). Only a deprecated ALIAS sets it; a canonical or
-/// non-deprecated alias short has `depr: false`.
-pub(all) struct ShortEntry {
-  ch : Char
-  name : String
-  kind : &TypeExt
-  depr : Bool
-  // DR-075 int_round + DR-074 §2 allow_base_prefix: short cluster / space-tail の値 parse に運ぶ
-  // (LongEntry と同型)。int_round は int_type() のみ、allow_base_prefix は number_type()/int_type() が参照。
-  int_round : RoundMode
-  allow_base_prefix : Bool
-  // DR-034/DR-062 piece_filters (same carrier pattern as LongEntry): `short_val` (matcher.mbt) applies
-  // it to the in-cluster/space-form value string before the kind-specific parse. Ignored for
-  // flag_type()/bool_type()/count_type() (no in-cluster/space-form VALUE attachment for those — `short_val` already
-  // returns None unconditionally for them).
-  piece_filters : Array[FilterSpelling]
-  // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1, same rationale as
-  // LongEntry's field): in-cluster (`-p5,7`) and space-form (`-p 5,7`) both go through the same
-  // pieceProcessor as the long-option space form. `None` = no split.
-  separator : String?
-  // DR-080 波及節 (same rationale as LongEntry's field): `ElemDef.accumulator == Some("merge")`.
-  merge : Bool
-  // DESIGN §7.2 / DR-096 §2 (kawaz 裁定 2026-07-12 で `AtLastOnly` 追加): gates whether `walk_short`
-  // may read this entry's value via in-cluster attach (`-O2`) vs. next-token space form (`-O 2`).
-  // `AtRequire` withholds the space-form reading, `AtDeny` withholds the attach reading (both the
-  // mid-token AND full-tail-length attach, plus the cluster-tail attach — DR-096 §3.1「付着という
-  // 機構自体をダイヤルしているのであって、単独発火時に限る規定ではない」), `AtLastOnly` withholds
-  // every MID-token split attach (only the full-tail "丸取り" reading remains — GNU getopt 慣習の
-  // 分割 ambiguity 抑制), `AtAllow` (既定) withholds neither (`walk_short`, matcher.mbt, is the sole
-  // consumer). Ignored for flag_type()/bool_type()/count_type()/none_type() entries (DR-096 §3.2 inert — those kinds never
-  // reach `short_val`'s in-cluster/space-form value attachment in the first place).
-  short_attached_value : AttachMode
-  // DR-057 / DR-104 §2/§3: this entry is an alias入口 (canonical と別 spelling で同じ origin name
-  // へ束縛される、`CandMeta.is_alias`)。dedup 規則 (DR-104 §3) は spelling を含む組の完全一致なので、
-  // is_alias は spelling ごとに独立して立つ (canonical -p は false、alias -n/-o は true) — `depr` と
-  // 同じ carrier パターン。
-  is_alias : Bool
-} derive(Eq, Debug)
-
-///|
-/// A native matcher (DR-041): reified token-reading capability as DATA.
-/// The evaluator interprets it (`run_matcher`); installers construct it from
-/// the collected entry table (DR-042: "回収したエントリ表が matcher の構成データ").
-pub(all) enum Matcher {
-  /// `--key=value` split. Fires only on tokens containing `=`. Undefined key = no reading (素通し).
-  EqSplit(prefix~ : String, entries~ : Array[LongEntry])
-  /// `-abc` cluster + value attachment. Enumerates ALL readings (DR-041 §3-4); ambiguous defs
-  /// (the `-cv` problem) surface as multiple readings that both complete. `combine` (DR-014「-abc
-  /// の結合許可」, DESIGN §7.2 scope config `short_combine`, issue scope-config-object-gap 解釈A
-  /// team-lead 裁定 2026-07-11): when `false`, only a SINGLE short entry may occupy a token —
-  /// multi-entry clustering (`-ab` → 2 entries in 1 token) is withheld, while a lone flag fire
-  /// (`-p`) and a value-attach that consumes the ENTIRE token tail (`-p80`, no leftover chars for a
-  /// further entry to combine with) remain unaffected (`run_short`/`walk_short`, matcher.mbt, is the
-  /// sole consumer). Internal-only parameter — never projected into a lowering fixture's golden
-  ///断面 (`proj_greedy`'s `NativeMatch(ShortCombine(prefix=_, entries~))` arm in
-  /// json_conformance_wbtest.mbt already discards `prefix` too, DR-070 §2 loose compare: matcher
-  /// kind + entry table only). 既定 `true` (現行の cluster/値付着 全読み挙動は不変)。
-  ShortCombine(prefix~ : String, entries~ : Array[ShortEntry], combine~ : Bool)
 } derive(Eq, Debug)
 
 // ── completion candidate 型 (DR-060 §3) — 型のみ移植 (slice complete.mbt 1-57) ─

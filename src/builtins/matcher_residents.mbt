@@ -5,9 +5,9 @@
 // (DR-041 §4 "読みが生成した断片は再度読解しない"). The path-search treats every
 // reading as an equal branch (DR-041 §3, no matcher-internal priority).
 //
-// MDR-002 §3: matcher depends on {node, value} — it returns `Branch` (defined in node.mbt) and
-// uses the Binding/ParseError helpers (mkb / pe_parse / depr_marker / cat, defined in value.mbt).
-// The matcher only CONSTRUCTS Accept/Held; the evaluator produces/consumes the `Pending` variant.
+// MDR-002 §3: matcher depends on {node, value} — it returns `@engine.Branch` (defined in node.mbt) and
+// uses the @engine.Binding/@engine.ParseError helpers (@engine.mkb / pe_parse / @engine.depr_marker / @engine.cat, defined in value.mbt).
+// The matcher only CONSTRUCTS @engine.Accept/@engine.Held; the evaluator produces/consumes the `@engine.Pending` variant.
 
 // String indexing yields UTF-16 code units, so cluster/value work is done on
 // Array[Char] (iterating a String yields Char). Test tokens are ASCII.
@@ -60,71 +60,258 @@ fn index_of_char(cs : Array[Char], c : Char) -> Int {
 }
 
 ///|
-/// Interpret a matcher against the token at `pos`. Takes the whole Ctx so the
-/// cluster walk can emit a complete-mode Pending for a tail value char whose
-/// next-token value is past the args end (DR-060 §1 readable-next set).
-pub fn run_matcher(m : Matcher, ctx : Ctx, pos : Int) -> Array[Branch] {
-  if pos >= ctx.toks.length() {
-    return []
-  }
-  match m {
-    EqSplit(prefix~, entries~) => run_eq_split(prefix, entries, ctx.toks, pos)
-    ShortCombine(prefix~, entries~, combine~) =>
-      run_short(prefix, entries, combine, ctx, pos)
+/// Read-only construction data for one `--key=value` matcher entry.
+pub struct EqEntry {
+  priv key : String
+  priv name : String
+  priv kind : &@engine.TypeExt
+  priv piece_filters : Array[@engine.FilterSpelling]
+  priv separator : String?
+  priv merge : Bool
+  priv depr : Bool
+}
+
+///|
+pub fn eq_entry(
+  key : String,
+  name : String,
+  kind : &@engine.TypeExt,
+  piece_filters : Array[@engine.FilterSpelling],
+  separator : String?,
+  merge : Bool,
+  depr : Bool,
+) -> EqEntry {
+  { key, name, kind, piece_filters, separator, merge, depr }
+}
+
+///|
+/// Read-only construction data for one short-cluster matcher entry.
+pub struct ShortEntry {
+  priv ch : Char
+  priv name : String
+  priv kind : &@engine.TypeExt
+  priv depr : Bool
+  priv piece_filters : Array[@engine.FilterSpelling]
+  priv separator : String?
+  priv merge : Bool
+  priv short_attached_value : @engine.AttachMode
+  priv is_alias : Bool
+}
+
+///|
+pub fn short_entry(
+  ch : Char,
+  name : String,
+  kind : &@engine.TypeExt,
+  depr : Bool,
+  piece_filters : Array[@engine.FilterSpelling],
+  separator : String?,
+  merge : Bool,
+  short_attached_value : @engine.AttachMode,
+  is_alias : Bool,
+) -> ShortEntry {
+  {
+    ch,
+    name,
+    kind,
+    depr,
+    piece_filters,
+    separator,
+    merge,
+    short_attached_value,
+    is_alias,
   }
 }
 
 ///|
-/// The matcher's own trigger spellings as complete candidates (DR-060 §3
-/// 「eq-split / cluster の元綴り」). An eq-split key must be followed by
-/// `=value` in the same word (term = Cont, ty = the value type); a flag_type()
-/// entry never fires through the eq face, so it contributes no spelling
-/// here. A cluster char may end the word (flag) or take a space-form value
-/// (term = WordEnd either way); a deprecated alias char keeps its meta.
-pub fn matcher_cands(m : Matcher) -> Array[Cand] {
-  let out : Array[Cand] = []
-  match m {
-    EqSplit(prefix~, entries~) =>
-      for e in entries {
-        // Only residents with a value slot contribute an eq-split continuation candidate.
-        if e.kind.has_value_slot() {
-          // `LongEntry` carries no is_alias/hidden/deprecated axis (untested by any fixture
-          // today, DR-104 §2/§3 scope trimmed to what ShortEntry — meta.json's -n/-o — needs).
-          out.push(
-            cand_trigger(
-              prefix + e.key,
-              e.name,
-              e.kind.name(),
-              Cont,
-              false,
-              false,
-              false,
-            ),
-          )
-        }
-      }
-    ShortCombine(prefix~, entries~, ..) =>
-      for e in entries {
-        let buf = StringBuilder::new()
-        buf.write_string(prefix)
-        buf.write_char(e.ch)
-        // DR-104 §2/§3: `e.is_alias` carries the canonical-vs-alias-entry distinction
-        // (meta.json's -p/-n/-o); `hidden` is not carried on ShortEntry (untested for short
-        // spellings today), `e.depr` already threads deprecated.
-        out.push(
-          cand_trigger(
-            buf.to_string(),
-            e.name,
-            e.kind.name(),
-            WordEnd,
-            e.is_alias,
-            false,
-            e.depr,
-          ),
-        )
-      }
+fn trigger_candidate(
+  spelling : String,
+  origin : String,
+  ty : String,
+  term : @engine.TermHint,
+  is_alias : Bool,
+  deprecated : Bool,
+) -> @engine.Cand {
+  {
+    spelling,
+    is_value: false,
+    ty,
+    origin,
+    term,
+    meta: { is_alias, hidden: false, deprecated },
+    path: [],
+    link: 0,
+    fire_path: [],
+    completer: None,
+  }
+}
+
+///|
+fn eq_candidates(prefix : String, entries : Array[EqEntry]) -> Array[@engine.Cand] {
+  let out : Array[@engine.Cand] = []
+  for entry in entries {
+    if entry.kind.has_value_slot() {
+      out.push(
+        trigger_candidate(
+          prefix + entry.key,
+          entry.name,
+          entry.kind.name(),
+          @engine.Cont,
+          false,
+          entry.depr,
+        ),
+      )
+    }
   }
   out
+}
+
+///|
+fn short_candidates(
+  prefix : String,
+  entries : Array[ShortEntry],
+) -> Array[@engine.Cand] {
+  let out : Array[@engine.Cand] = []
+  for entry in entries {
+    let spelling = StringBuilder::new()
+    spelling.write_string(prefix)
+    spelling.write_char(entry.ch)
+    out.push(
+      trigger_candidate(
+        spelling.to_string(),
+        entry.name,
+        entry.kind.name(),
+        @engine.WordEnd,
+        entry.is_alias,
+        entry.depr,
+      ),
+    )
+  }
+  out
+}
+
+///|
+fn type_json(kind : &@engine.TypeExt) -> Json {
+  [kind.name().to_json(), kind.encode()].to_json()
+}
+
+///|
+fn attach_mode_json(mode : @engine.AttachMode) -> Json {
+  match mode {
+    @engine.AtAllow => "allow".to_json()
+    @engine.AtRequire => "require".to_json()
+    @engine.AtDeny => "deny".to_json()
+    @engine.AtLastOnly => "last_only".to_json()
+  }
+}
+
+///|
+fn eq_entry_json(entry : EqEntry) -> Json {
+  [
+    entry.key.to_json(),
+    entry.name.to_json(),
+    type_json(entry.kind),
+    filter_spellings_json(entry.piece_filters),
+    entry.separator.to_json(),
+    entry.merge.to_json(),
+    entry.depr.to_json(),
+  ].to_json()
+}
+
+///|
+fn short_entry_json(entry : ShortEntry) -> Json {
+  [
+    "\{entry.ch}".to_json(),
+    entry.name.to_json(),
+    type_json(entry.kind),
+    entry.depr.to_json(),
+    filter_spellings_json(entry.piece_filters),
+    entry.separator.to_json(),
+    entry.merge.to_json(),
+    attach_mode_json(entry.short_attached_value),
+    entry.is_alias.to_json(),
+  ].to_json()
+}
+
+///|
+priv struct EqSplitExt {
+  prefix : String
+  entries : Array[EqEntry]
+}
+
+///|
+impl @engine.MatcherExt for EqSplitExt with fn kind(_self) {
+  "eq_split"
+}
+
+///|
+impl @engine.MatcherExt for EqSplitExt with fn encode(self) {
+  let entries : Array[Json] = []
+  for entry in self.entries {
+    entries.push(eq_entry_json(entry))
+  }
+  [self.prefix.to_json(), entries.to_json()].to_json()
+}
+
+///|
+impl @engine.MatcherExt for EqSplitExt with fn candidates(self) {
+  eq_candidates(self.prefix, self.entries)
+}
+
+///|
+impl @engine.MatcherExt for EqSplitExt with fn interpret(self, ctx, pos, acc, next) {
+  let readings = run_eq_split(self.prefix, self.entries, ctx, pos)
+  @engine.continue_matcher(readings, ctx, acc, next)
+}
+
+///|
+pub fn eq_split(prefix : String, entries : Array[EqEntry]) -> &@engine.MatcherExt {
+  EqSplitExt::{ prefix, entries } as &@engine.MatcherExt
+}
+
+///|
+priv struct ShortCombineExt {
+  prefix : String
+  entries : Array[ShortEntry]
+  combine : Bool
+}
+
+///|
+impl @engine.MatcherExt for ShortCombineExt with fn kind(_self) {
+  "short_combine"
+}
+
+///|
+impl @engine.MatcherExt for ShortCombineExt with fn encode(self) {
+  let entries : Array[Json] = []
+  for entry in self.entries {
+    entries.push(short_entry_json(entry))
+  }
+  [
+    self.prefix.to_json(),
+    entries.to_json(),
+    self.combine.to_json(),
+  ].to_json()
+}
+
+///|
+impl @engine.MatcherExt for ShortCombineExt with fn candidates(self) {
+  short_candidates(self.prefix, self.entries)
+}
+
+///|
+impl @engine.MatcherExt for ShortCombineExt with fn interpret(self, ctx, pos, acc, next) {
+  let readings = run_short(self.prefix, self.entries, self.combine, ctx, pos)
+  @engine.continue_matcher(readings, ctx, acc, next)
+}
+
+///|
+pub fn short_combine(
+  prefix : String,
+  entries : Array[ShortEntry],
+  combine : Bool,
+) -> &@engine.MatcherExt {
+  ShortCombineExt::{ prefix, entries, combine } as &@engine.MatcherExt
 }
 
 ///|
@@ -132,11 +319,14 @@ pub fn matcher_cands(m : Matcher) -> Array[Cand] {
 /// Undefined key => no reading (素通し to positional). Space form is the satellite's job.
 fn run_eq_split(
   prefix : String,
-  entries : Array[LongEntry],
-  toks : Array[String],
+  entries : Array[EqEntry],
+  ctx : @engine.Ctx,
   pos : Int,
-) -> Array[Branch] {
-  let tok = to_chars(toks[pos])
+) -> Array[@engine.Branch] {
+  guard ctx.token_at(pos) is Some(token) else {
+    return []
+  }
+  let tok = to_chars(token)
   let pfx = to_chars(prefix)
   if !char_prefix(tok, pfx) {
     return []
@@ -157,21 +347,21 @@ fn run_eq_split(
       }
       // codex レビュー Major 1 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) /
       // DR-058 §2: eq-split の deprecated warning marker — `walk_short` の `dm` と同じ carrier
-      // パターン (matcher.mbt 上の `dm` 定義コメント参照)。成功パス (Accept) だけに合成する — 値が
-      // 確定して初めて「受理された deprecated 入口」なので、Held (parse/filter 失敗) には積まない。
-      let dm : Array[Binding] = if e.depr { [depr_marker(e.name)] } else { [] }
+      // パターン (matcher.mbt 上の `dm` 定義コメント参照)。成功パス (@engine.Accept) だけに合成する — 値が
+      // 確定して初めて「受理された deprecated 入口」なので、@engine.Held (parse/filter 失敗) には積まない。
+      let dm : Array[@engine.Binding] = if e.depr { [@engine.depr_marker(e.name)] } else { [] }
       // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1): `--key=a,b`
-      // goes through the SAME pieceProcessor as the space form (`sep_binds`) — split FIRST, then
+      // goes through the SAME pieceProcessor as the space form (`@engine.sep_binds`) — split FIRST, then
       // piece_filters/parse run per PIECE, not once over the whole `valstr` (same ordering concern
-      // `sep_binds`'s own doc comment explains).
+      // `@engine.sep_binds`'s own doc comment explains).
       // codex Medium 追従 (issue merge-no-separator-marker-gap): gate is `separator is Some(_) ||
       // e.merge`, not `separator` alone — a merge-declared entry with NO separator still needs
-      // `sep_binds` (DR-034 §6.3 の縮退: `None` → 1 piece = `valstr` 全体) so `classify_merge_piece`
+      // `@engine.sep_binds` (DR-034 §6.3 の縮退: `None` → 1 piece = `valstr` 全体) so `classify_merge_piece`
       // sees `--key=-a` as a remove marker instead of falling through to the plain literal-string
       // arm below.
       if e.separator is Some(_) || e.merge {
         return match
-          sep_binds(
+          @engine.sep_binds(
             e.name,
             valstr,
             e.separator,
@@ -180,28 +370,28 @@ fn run_eq_split(
             pos,
             e.merge,
           ) {
-          Ok(bs) => [Accept(pos + 1, cat(bs, dm))]
-          Err(pe) => [Held(pe, [])]
+          Ok(bs) => [@engine.Accept(pos + 1, @engine.cat(bs, dm))]
+          Err(pe) => [@engine.Held(pe, [])]
         }
       }
       // DR-034/DR-062 piece_filters: run BEFORE the kind-specific parse, same timing eval.mbt's
       // value-primitive arms use (this is the eq-split entry's own copy of the element's chain,
-      // LongEntry carries it the same way it carries int_round/allow_base_prefix).
-      let filtered = match apply_piece_filters(e.piece_filters, valstr) {
+      // EqEntry carries it the same way it carries int_round/allow_base_prefix).
+      let filtered = match @engine.apply_piece_filters(e.piece_filters, valstr) {
         Ok(s) => s
         Err((reason, msg)) =>
-          return [Held(pe_filter(e.name, pos, reason, msg), [])]
+          return [@engine.Held(@engine.pe_filter(e.name, pos, reason, msg), [])]
       }
       match e.kind.parse_token(filtered) {
         Ok(value) =>
           return [
-            Accept(
+            @engine.Accept(
               pos + 1,
-              cat([mkb(e.name, value, Cli, at_pos=Some(pos))], dm),
+              @engine.cat([@engine.mkb(e.name, value, @engine.Cli, at_pos=Some(pos))], dm),
             ),
           ]
         Err(fail) =>
-          return [Held(parse_fail_error(e.name, filtered, pos, fail), [])]
+          return [@engine.Held(@engine.parse_fail_error(e.name, filtered, pos, fail), [])]
       }
     }
   }
@@ -217,10 +407,13 @@ fn run_short(
   prefix : String,
   entries : Array[ShortEntry],
   combine : Bool,
-  ctx : Ctx,
+  ctx : @engine.Ctx,
   pos : Int,
-) -> Array[Branch] {
-  let tok = to_chars(ctx.toks[pos])
+) -> Array[@engine.Branch] {
+  guard ctx.token_at(pos) is Some(token) else {
+    return []
+  }
+  let tok = to_chars(token)
   let pfx = to_chars(prefix)
   if !char_prefix(tok, pfx) {
     return []
@@ -249,17 +442,17 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 }
 
 ///|
-/// `Ok` = the value char attached successfully (an `Array[Binding]` — usually length 1, but a
+/// `Ok` = the value char attached successfully (an `Array[@engine.Binding]` — usually length 1, but a
 /// `separator` entry can split one attach into several pieces, same as the long-option space form's
-/// `SepArg`/`sep_binds`, issue 2026-07-09-separator-non-string-type-parse-gap 段1). `Err` carries a
-/// full `ParseError` (`kind: KFilter` for a piece_filters reject, `kind: KParse` for a type-parse
-/// failure — both delegate straight to `sep_binds` when `e.separator` is `Some` OR `e.merge` is
+/// `SepArg`/`@engine.sep_binds`, issue 2026-07-09-separator-non-string-type-parse-gap 段1). `Err` carries a
+/// full `@engine.ParseError` (`kind: KFilter` for a piece_filters reject, `kind: KParse` for a type-parse
+/// failure — both delegate straight to `@engine.sep_binds` when `e.separator` is `Some` OR `e.merge` is
 /// `true`, codex Medium 追従: a merge entry needs the piece pipeline even with no separator).
 /// `walk_short`'s
-/// mid-token/full-tail split still governs whether an `Err` surfaces as a `Held` or is silently
-/// dropped (see its call sites) — unlike the old `Binding?`-based 2-way split, this no longer needs
+/// mid-token/full-tail split still governs whether an `Err` surfaces as a `@engine.Held` or is silently
+/// dropped (see its call sites) — unlike the old `@engine.Binding?`-based 2-way split, this no longer needs
 /// a kind guard at the call site: a `string_type()` entry structurally never produces a type-parse `Err`
-/// (its parse is the identity), so "every `Err` at full-tail becomes `Held`" is equivalent to the
+/// (its parse is the identity), so "every `Err` at full-tail becomes `@engine.Held`" is equivalent to the
 /// old kind-gated condition, just simpler.
 /// `pos` (issue 2026-07-09-accum-entity-filters-wiring): the args token this value char's raw
 /// string was read from — the CALLING token for an in-cluster attach, the NEXT token for a
@@ -270,24 +463,24 @@ fn short_val(
   e : ShortEntry,
   s : String,
   pos : Int,
-) -> Result[Array[Binding], ParseError] {
+) -> Result[Array[@engine.Binding], @engine.ParseError] {
   // codex Medium 追従 (issue merge-no-separator-marker-gap): `run_eq_split` と同じ gate 拡張
   // (`separator is Some(_) || e.merge`) — `-f-a` (in-cluster attach) / `-f -a` (space-form) いずれ
-  // も merge 宣言なら separator 未宣言でも `sep_binds` 経由でマーカー認識させる。
+  // も merge 宣言なら separator 未宣言でも `@engine.sep_binds` 経由でマーカー認識させる。
   if e.separator is Some(_) || e.merge {
     // `ShortEntry` carries no `bool_config` (bool_type() never reaches this attach path — node.mbt's
     // `ShortEntry.piece_filters` doc comment: "Ignored for flag_type()/bool_type()/count_type(), no in-cluster/
-    // space-form VALUE attachment for those"), so `sep_binds`'s bool arm is structurally dead here;
+    // space-form VALUE attachment for those"), so `@engine.sep_binds`'s bool arm is structurally dead here;
     // pass the canonical default purely to satisfy the shared signature.
-    sep_binds(e.name, s, e.separator, e.kind, e.piece_filters, pos, e.merge)
+    @engine.sep_binds(e.name, s, e.separator, e.kind, e.piece_filters, pos, e.merge)
   } else {
-    let filtered = match apply_piece_filters(e.piece_filters, s) {
+    let filtered = match @engine.apply_piece_filters(e.piece_filters, s) {
       Ok(v) => v
-      Err((reason, msg)) => return Err(pe_filter(e.name, pos, reason, msg))
+      Err((reason, msg)) => return Err(@engine.pe_filter(e.name, pos, reason, msg))
     }
     match e.kind.parse_token(filtered) {
-      Ok(value) => Ok([mkb(e.name, value, Cli, at_pos=Some(pos))])
-      Err(fail) => Err(parse_fail_error(e.name, filtered, pos, fail))
+      Ok(value) => Ok([@engine.mkb(e.name, value, @engine.Cli, at_pos=Some(pos))])
+      Err(fail) => Err(@engine.parse_fail_error(e.name, filtered, pos, fail))
     }
   }
 }
@@ -312,19 +505,19 @@ fn short_val(
 /// (`-p`, `i == 0`, `body.length() == 1`) and a value-attach consuming the ENTIRE remaining tail
 /// (`-p80`, `j == body.length()`, nothing left over) both still terminate immediately and are
 /// therefore unaffected — only a reading that would need a THIRD+ char to combine gets pruned. The
-/// next-token space-form value (`-p 80`) and the completion `Pending` branch consume no further
+/// next-token space-form value (`-p 80`) and the completion `@engine.Pending` branch consume no further
 /// same-token chars at all, so neither needs a `combine` check.
 fn walk_short(
   entries : Array[ShortEntry],
   combine : Bool,
   body : Array[Char],
   i : Int,
-  acc : Array[Binding],
-  ctx : Ctx,
+  acc : Array[@engine.Binding],
+  ctx : @engine.Ctx,
   pos : Int,
-) -> Array[Branch] {
+) -> Array[@engine.Branch] {
   if i == body.length() {
-    return [Accept(pos + 1, acc)] // whole cluster consumed within this one token
+    return [@engine.Accept(pos + 1, acc)] // whole cluster consumed within this one token
   }
   let c = body[i]
   match short_lookup(entries, c) {
@@ -332,14 +525,14 @@ fn walk_short(
     Some(e) => {
       // DR-058: a deprecated cluster entry rides a `@depr:<name>` warning marker alongside its
       // value binding (the value is unchanged; only a warning is added). `dm` is [] for a normal entry.
-      let dm : Array[Binding] = if e.depr { [depr_marker(e.name)] } else { [] }
+      let dm : Array[@engine.Binding] = if e.depr { [@engine.depr_marker(e.name)] } else { [] }
       if !e.kind.has_value_slot() {
         // Presence-only residents share the same reading shape. Count owns a distinct
         // effect payload; the matcher no longer enumerates type categories to find the shape.
         let presence = if e.kind.name() == "count" {
-          mk_eff(e.name, Update("increment", []), Cli)
+          @engine.mk_eff(e.name, @engine.Update("increment", []), @engine.Cli)
         } else {
-          mkb(e.name, VBool(true), Cli)
+          @engine.mkb(e.name, @engine.VBool(true), @engine.Cli)
         }
         if combine || i + 1 == body.length() {
           walk_short(
@@ -347,7 +540,7 @@ fn walk_short(
             combine,
             body,
             i + 1,
-            cat(acc, cat([presence], dm)),
+            @engine.cat(acc, @engine.cat([presence], dm)),
             ctx,
             pos,
           )
@@ -355,13 +548,13 @@ fn walk_short(
           []
         }
       } else {
-        let out : Array[Branch] = []
+        let out : Array[@engine.Branch] = []
         let vstart = i + 1
         // in-token value of every non-empty length; continue walking the rest.
         let mut j = vstart + 1
         while j <= body.length() {
           // `combine:false` gate: a PARTIAL-length value-attach (`j < body.length()`) would leave
-          // chars for a 2nd entry to combine with — skip it entirely (no reading, no Held error)
+          // chars for a 2nd entry to combine with — skip it entirely (no reading, no @engine.Held error)
           // when combine is off. The FULL-TAIL length (`j == body.length()`, this entry alone
           // consumes everything left) is a single entry, never disallowed by `combine:false`.
           // DESIGN §7.2 / DR-096 §2/§3.1: `short_attached_value:"deny"` withholds EVERY in-cluster
@@ -371,8 +564,8 @@ fn walk_short(
           // withholds every MID-token split (`j < body.length()`) — only the FULL-TAIL "丸取り"
           // reading remains, so this entry never contributes to a split-point ambiguity (GNU
           // getopt 慣習: 値オプションに達したら以降の文字列全部がその値、DR-096 §2)。
-          if e.short_attached_value != AtDeny &&
-            (e.short_attached_value != AtLastOnly || j == body.length()) &&
+          if e.short_attached_value != @engine.AtDeny &&
+            (e.short_attached_value != @engine.AtLastOnly || j == body.length()) &&
             (combine || j == body.length()) {
             let vstr = chars_to_str(body, vstart, j)
             match short_val(e, vstr, pos) {
@@ -383,7 +576,7 @@ fn walk_short(
                     combine,
                     body,
                     j,
-                    cat(acc, cat(bs, dm)),
+                    @engine.cat(acc, @engine.cat(bs, dm)),
                     ctx,
                     pos,
                   ) {
@@ -398,7 +591,7 @@ fn walk_short(
                 // piece-filters/reject.json が輪郭を固定する。string_type() が構造的に型 parse エラーを
                 // 起こさない (short_val の doc comment) ので、kind によるガードは不要。
                 if j == body.length() {
-                  out.push(Held(pe, acc))
+                  out.push(@engine.Held(pe, acc))
                 }
             }
           }
@@ -408,24 +601,24 @@ fn walk_short(
         // `combine` (doc comment above): the value comes from the NEXT token entirely, no 2nd
         // entry shares THIS token.
         // DESIGN §7.2 / DR-096 §2: `short_attached_value:"require"` withholds this space-form
-        // reading entirely (both the eager next-token Accept and the completion Pending branch) —
+        // reading entirely (both the eager next-token @engine.Accept and the completion @engine.Pending branch) —
         // this is what makes a `"require"` entry's bare tail token (e.g. `-q` with 0 leftover
         // chars) have NO complete path at all (attach needs >=1 char, DR-096 §2「付着形は定義上
         // 1 文字以上の残り文字列を要求する」), falling through to positional per DR-041 §5.
-        if e.short_attached_value != AtRequire &&
+        if e.short_attached_value != @engine.AtRequire &&
           vstart == body.length() &&
-          pos + 1 < ctx.toks.length() {
-          match short_val(e, ctx.toks[pos + 1], pos + 1) {
-            Ok(bs) => out.push(Accept(pos + 2, cat(acc, cat(bs, dm))))
-            Err(pe) => out.push(Held(pe, []))
+          ctx.token_at(pos + 1) is Some(next_token) {
+          match short_val(e, next_token, pos + 1) {
+            Ok(bs) => out.push(@engine.Accept(pos + 2, @engine.cat(acc, @engine.cat(bs, dm))))
+            Err(pe) => out.push(@engine.Held(pe, []))
           }
-        } else if e.short_attached_value != AtRequire &&
+        } else if e.short_attached_value != @engine.AtRequire &&
           vstart == body.length() &&
-          in_complete(ctx) {
+          ctx.is_complete_mode() {
           // complete: the cluster ends in a value char and the args ends
           // here — the space-form value is exactly what could come next
           // (DR-060 §1). The flags already read stay as partial state.
-          out.push(Pending([pend_value(e.kind.name(), e.name)], cat(acc, dm)))
+          out.push(@engine.Pending([@engine.pend_value(e.kind.name(), e.name)], @engine.cat(acc, dm)))
         }
         out
       }

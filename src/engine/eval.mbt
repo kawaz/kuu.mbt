@@ -426,6 +426,44 @@ fn eval_required_ext(
   out
 }
 
+///|
+/// Resume every native matcher reading through one evaluator continuation. The
+/// engine owns the common branch loop so all resident-produced readings keep
+/// equal standing; residents own only token interpretation and configuration.
+pub fn continue_matcher(
+  readings : Array[Branch],
+  ctx : Ctx,
+  acc : Array[Binding],
+  next : Resume,
+) -> Array[Branch] {
+  let out : Array[Branch] = []
+  for reading in readings {
+    match reading {
+      Accept(next_pos, bindings) =>
+        for branch in next(ctx, next_pos, cat(acc, bindings)) {
+          out.push(branch)
+        }
+      Held(error, bindings) => out.push(Held(error, cat(acc, bindings)))
+      Pending(candidates, bindings) =>
+        out.push(Pending(candidates, cat(acc, bindings)))
+    }
+  }
+  out
+}
+
+///|
+/// Interpret one opaque matcher with an identity continuation for direct-style
+/// probes and off-spine evaluation.
+pub fn run_matcher(
+  matcher : &MatcherExt,
+  ctx : Ctx,
+  pos : Int,
+) -> Array[Branch] {
+  matcher.interpret(ctx, pos, [], (_ctx, next_pos, next_acc) => {
+    [Accept(next_pos, next_acc)]
+  })
+}
+
 // ── off-spine node evaluation (direct style) ─────────────────────────────────
 //
 // Plain `eval` stays direct (returns branches to its caller) — CPS threading
@@ -487,7 +525,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       if pos >= ctx.toks.length() && in_complete(ctx) {
         // complete: the matcher's own spellings (eq-split keys, cluster
         // chars) are the readable-next set at the boundary (DR-060 §1).
-        [Pending(matcher_cands(m), [])]
+        [Pending(m.candidates(), [])]
       } else {
         run_matcher(m, ctx, pos)
       }
@@ -800,7 +838,7 @@ pub fn split_on(s : String, sep : String) -> Array[String] {
 /// gates on `separator is Some(_) || merge`); a MERGE element with no separator DOES reach here
 /// now, precisely so its single-piece operand still runs through `classify_merge_piece` (a bare
 /// `--fields -a` needs to recognize `-a` as a remove marker even with no comma to split on).
-fn parse_fail_error(
+pub fn parse_fail_error(
   name : String,
   token : String,
   pos : Int,
