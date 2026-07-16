@@ -20,12 +20,19 @@ pub struct ScopedCons {
   path : Array[String]
   constraints : Array[Constraint]
   entities : Array[Entity]
-} derive(Eq, Debug)
+} derive(Debug)
+
+///|
+impl Eq for ScopedCons with fn equal(self, other) {
+  self.path == other.path &&
+  self.constraints == other.constraints &&
+  self.entities == other.entities
+}
 
 ///|
 /// The continuation of a scope walk: what happens after the current scope
 /// finishes at some position.
-enum Cont {
+priv enum Cont {
   /// the top of the whole parse, carrying the static constraint table
   /// (collect_scopes). "complete解決経路" is decided HERE and only here:
   /// pos == toks.length() (MDR-002 §1.2) AND every scope's delayed
@@ -63,7 +70,34 @@ enum Cont {
   /// budget, lazy_, pidx, severed, entry_pos, outer). Runs bounded_tail_step
   /// from the head's end position with the decremented budget.
   KTailChoice(Scope, Node, Int, Bool, Int, Bool, Int, Cont)
-} derive(Eq, Debug)
+} derive(Debug)
+
+///|
+impl Eq for Cont with fn equal(self, other) {
+  match (self, other) {
+    (KTop(a), KTop(b)) => a == b
+    (KDone, KDone) => true
+    (KResumeScope(as_, ap, av, ao), KResumeScope(bs, bp, bv, bo)) =>
+      as_ == bs && ap == bp && av == bv && ao == bo
+    (KNest(al, ac, ai, ao), KNest(bl, bc, bi, bo)) =>
+      al == bl && ac == bc && ai == bi && ao == bo
+    (KRefChoice(as_, an, ap, av, ae, ao), KRefChoice(bs, bn, bp, bv, be, bo)) =>
+      as_ == bs && an == bn && ap == bp && av == bv && ae == be && ao == bo
+    (
+      KTailChoice(as_, ah, ab, al, ap, av, ae, ao),
+      KTailChoice(bs, bh, bb, bl, bp, bv, be, bo),
+    ) =>
+      as_ == bs &&
+      ah == bh &&
+      ab == bb &&
+      al == bl &&
+      ap == bp &&
+      av == bv &&
+      ae == be &&
+      ao == bo
+    _ => false
+  }
+}
 
 ///|
 /// Run a continuation from (pos, acc). This is the oracle's engine: the

@@ -106,6 +106,30 @@ pub struct FilterSpelling {
 } derive(Eq, Debug)
 
 ///|
+/// The evaluator continuation exposed to an open node resident. The private
+/// defunctionalized `Cont` stays captured by the closure that implements this
+/// function type, so extension code sees only the stable resume capability.
+pub type Resume = (Ctx, Int, Array[Binding]) -> Array[Branch]
+
+///|
+/// An open AtomicAST leaf resident. `kind + encode` is its collision-free
+/// structural identity; the default `equal` keeps every resident on that one
+/// comparison contract. `consumes_zero_tokens` is evaluator contract data,
+/// replacing central enumeration of builtin marker variants.
+pub(open) trait NodeExt {
+  fn kind(Self) -> String
+  fn encode(Self) -> Json
+  fn equal(Self, &NodeExt) -> Bool = _
+  fn consumes_zero_tokens(Self) -> Bool
+  fn eval(Self, Ctx, Int, Array[Binding], Resume) -> Array[Branch]
+}
+
+///|
+impl NodeExt with fn equal(self, other) {
+  self.kind() == other.kind() && self.encode() == other.encode()
+}
+
+///|
 /// A node of the AtomicAST. Consumption is measured in whole args tokens.
 pub enum Node {
   /// literal token match; binds nothing, consumes 1.
@@ -254,6 +278,9 @@ pub enum Node {
   ScopeNode(Scope)
   /// native matcher: data-driven token readings (DR-041 §3-4), installed by long/short (DR-042).
   NativeMatch(Matcher)
+  /// open leaf resident. Builtin value and marker semantics enter the evaluator
+  /// only through this one dispatch point.
+  Ext(&NodeExt)
   /// reference to a named template in the registry (DR-020 / DR-043). repeat lowers to
   /// a recursive `Seq([head, Opt(Ref(self))])`; a ref element (`{ref:"color"}`) points at
   /// a shared template. On the positional spine `Ref` unfolds POROUSLY (>= 1 head, greedy
@@ -332,7 +359,183 @@ pub enum Node {
   /// Off-spine `eval` (completion probes etc.) degrades to plain `eval(tail, ..)`, losing
   /// suppression — acceptable there (no sibling scope to suppress against).
   GreedyRepeat(Node)
-} derive(Eq, Debug)
+}
+
+///|
+impl Eq for Node with fn equal(self, other) {
+  match (self, other) {
+    (Exact(a), Exact(b)) => a == b
+    (StrArg(an, af), StrArg(bn, bf)) => an == bn && af == bf
+    (
+      SepArg(an, as_, at, ar, ab, ac, af, am),
+      SepArg(bn, bs, bt, br, bb, bc, bf, bm),
+    ) =>
+      an == bn &&
+      as_ == bs &&
+      at == bt &&
+      ar == br &&
+      ab == bb &&
+      ac == bc &&
+      af == bf &&
+      am == bm
+    (KvArg(an, af), KvArg(bn, bf)) => an == bn && af == bf
+    (NumArg(an, ab, af), NumArg(bn, bb, bf)) => an == bn && ab == bb && af == bf
+    (FloatArg(an, af), FloatArg(bn, bf)) => an == bn && af == bf
+    (IntArg(an, ar, ab, af), IntArg(bn, br, bb, bf)) =>
+      an == bn && ar == br && ab == bb && af == bf
+    (BoolArg(an, ac, af), BoolArg(bn, bc, bf)) =>
+      an == bn && ac == bc && af == bf
+    (FilterArg(an, am), FilterArg(bn, bm)) => an == bn && am == bm
+    (ReqArg(a), ReqArg(b)) => a == b
+    (Bind(an, av), Bind(bn, bv)) => an == bn && av == bv
+    (EffMark(an, ao), EffMark(bn, bo)) => an == bn && ao == bo
+    (DeprMark(a), DeprMark(b)) => a == b
+    (FailMark(a), FailMark(b)) => a == b
+    (Or(a), Or(b)) => a == b
+    (Seq(a), Seq(b)) => a == b
+    (Many(an, al), Many(bn, bl)) => an == bn && al == bl
+    (Scoped(an, ab), Scoped(bn, bb)) => an == bn && ab == bb
+    (ScopeNode(a), ScopeNode(b)) => a == b
+    (NativeMatch(a), NativeMatch(b)) => a == b
+    (Ext(a), Ext(b)) => a.equal(b)
+    (Ref(a), Ref(b)) => a == b
+    (DdSat(a), DdSat(b)) => a == b
+    (DdMatchSat(as_, ap, ak, an), DdMatchSat(bs, bp, bk, bn)) =>
+      as_ == bs && ap == bp && ak == bk && an == bn
+    (CmdSat(an, ac), CmdSat(bn, bc)) => an == bn && ac == bc
+    (Rooted(an, ad), Rooted(bn, bd)) => an == bn && ad == bd
+    (BoundedTail(an, ab, al), BoundedTail(bn, bb, bl)) =>
+      an == bn && ab == bb && al == bl
+    (IdxRepeat(an, ah, am, ab), IdxRepeat(bn, bh, bm, bb)) =>
+      an == bn && ah == bh && am == bm && ab == bb
+    (GreedyRepeat(a), GreedyRepeat(b)) => a == b
+    _ => false
+  }
+}
+
+///|
+impl Debug for Node with fn to_repr(self) {
+  match self {
+    Exact(a) => @debug.Repr::ctor("Exact", [(None, Debug::to_repr(a))])
+    StrArg(a, b) =>
+      @debug.Repr::ctor("StrArg", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+      ])
+    SepArg(a, b, c, d, e, f, g, h) =>
+      @debug.Repr::ctor("SepArg", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+        (None, Debug::to_repr(c)),
+        (None, Debug::to_repr(d)),
+        (None, Debug::to_repr(e)),
+        (None, Debug::to_repr(f)),
+        (None, Debug::to_repr(g)),
+        (None, Debug::to_repr(h)),
+      ])
+    KvArg(a, b) =>
+      @debug.Repr::ctor("KvArg", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+      ])
+    NumArg(a, b, c) =>
+      @debug.Repr::ctor("NumArg", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+        (None, Debug::to_repr(c)),
+      ])
+    FloatArg(a, b) =>
+      @debug.Repr::ctor("FloatArg", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+      ])
+    IntArg(a, b, c, d) =>
+      @debug.Repr::ctor("IntArg", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+        (None, Debug::to_repr(c)),
+        (None, Debug::to_repr(d)),
+      ])
+    BoolArg(a, b, c) =>
+      @debug.Repr::ctor("BoolArg", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+        (None, Debug::to_repr(c)),
+      ])
+    FilterArg(a, b) =>
+      @debug.Repr::ctor("FilterArg", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+      ])
+    ReqArg(a) => @debug.Repr::ctor("ReqArg", [(None, Debug::to_repr(a))])
+    Bind(a, b) =>
+      @debug.Repr::ctor("Bind", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+      ])
+    EffMark(a, b) =>
+      @debug.Repr::ctor("EffMark", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+      ])
+    DeprMark(a) => @debug.Repr::ctor("DeprMark", [(None, Debug::to_repr(a))])
+    FailMark(a) => @debug.Repr::ctor("FailMark", [(None, Debug::to_repr(a))])
+    Or(a) => @debug.Repr::ctor("Or", [(None, Debug::to_repr(a))])
+    Seq(a) => @debug.Repr::ctor("Seq", [(None, Debug::to_repr(a))])
+    Many(a, b) =>
+      @debug.Repr::ctor("Many", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+      ])
+    Scoped(a, b) =>
+      @debug.Repr::ctor("Scoped", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+      ])
+    ScopeNode(a) => @debug.Repr::ctor("ScopeNode", [(None, Debug::to_repr(a))])
+    NativeMatch(a) =>
+      @debug.Repr::ctor("NativeMatch", [(None, Debug::to_repr(a))])
+    Ext(extension) =>
+      @debug.Repr::ctor("Ext", [
+        (None, Debug::to_repr(extension.kind())),
+        (None, Debug::to_repr(extension.encode())),
+      ])
+    Ref(a) => @debug.Repr::ctor("Ref", [(None, Debug::to_repr(a))])
+    DdSat(a) => @debug.Repr::ctor("DdSat", [(None, Debug::to_repr(a))])
+    DdMatchSat(a, b, c, d) =>
+      @debug.Repr::ctor("DdMatchSat", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+        (None, Debug::to_repr(c)),
+        (None, Debug::to_repr(d)),
+      ])
+    CmdSat(a, b) =>
+      @debug.Repr::ctor("CmdSat", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+      ])
+    Rooted(a, b) =>
+      @debug.Repr::ctor("Rooted", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+      ])
+    BoundedTail(a, b, c) =>
+      @debug.Repr::ctor("BoundedTail", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+        (None, Debug::to_repr(c)),
+      ])
+    IdxRepeat(a, b, c, d) =>
+      @debug.Repr::ctor("IdxRepeat", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+        (None, Debug::to_repr(c)),
+        (None, Debug::to_repr(d)),
+      ])
+    GreedyRepeat(a) =>
+      @debug.Repr::ctor("GreedyRepeat", [(None, Debug::to_repr(a))])
+  }
+}
 
 ///|
 /// A scope carries two faces (DR-041 §4):
@@ -345,7 +548,15 @@ pub struct Scope {
   positional : Array[Node]
   entities : Array[Entity]
   constraints : Array[Constraint] // delayed predicates (DR-055/047), declared by the constraint installer
-} derive(Eq, Debug)
+} derive(Debug)
+
+///|
+impl Eq for Scope with fn equal(self, other) {
+  self.greedy == other.greedy &&
+  self.positional == other.positional &&
+  self.entities == other.entities &&
+  self.constraints == other.constraints
+}
 
 ///|
 /// One candidate cell that `CRequired`/`CRequiredGroup` may look at (DR-093 の型委譲判定入力、
@@ -758,7 +969,7 @@ pub(all) struct Cand {
 /// == a reading; `Pending(cands, binds)` == トリガ消費・値 pending (parse では Held 相当、complete では
 /// 補完候補の源, MDR-002 §2 案B). The matcher only CONSTRUCTS Accept/Held; the evaluator produces and
 /// consumes Pending. (Kept in node.mbt so both matcher and eval can return it; single package.)
-enum Branch {
+pub enum Branch {
   Accept(Int, Array[Binding]) // (new position, accumulated bindings)
   Held(ParseError, Array[Binding]) // a DR-037 Error + the partial state (acc) at the error point
   Pending(Array[Cand], Array[Binding]) // trigger consumed, value slot's input absent

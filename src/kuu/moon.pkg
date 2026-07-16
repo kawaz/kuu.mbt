@@ -2,6 +2,7 @@ import {
   "kawaz/kuu/engine",
   "kawaz/kuu/builtins",
   "moonbitlang/core/string",
+  "moonbitlang/core/debug",
 }
 
 import {

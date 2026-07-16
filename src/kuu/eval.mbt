@@ -30,10 +30,24 @@
 /// stream, the template registry (DR-020/043), and the evaluation mode
 /// (parse vs complete — the collection-policy switch MDR-002's TODO
 /// anticipates). A future completes-memoization table also lives here.
-priv struct Ctx {
-  toks : Array[String]
-  defs : Map[String, Node]
-  mode : EvalMode
+pub struct Ctx {
+  priv toks : Array[String]
+  priv defs : Map[String, Node]
+  priv mode : EvalMode
+}
+
+///|
+pub fn Ctx::token_at(self : Ctx, pos : Int) -> String? {
+  if pos < self.toks.length() {
+    Some(self.toks[pos])
+  } else {
+    None
+  }
+}
+
+///|
+pub fn Ctx::is_complete_mode(self : Ctx) -> Bool {
+  self.mode == ModeComplete
 }
 
 ///|
@@ -369,6 +383,43 @@ fn pend_value(ty : Ty, origin : String) -> Cand {
   }
 }
 
+///|
+/// A mandatory spine slot maps a resident's value `Pending` to the same
+/// missing-operand Held the closed primitive arms used in parse mode. Complete
+/// mode preserves Pending as candidate material; off-spine eval bypasses this
+/// helper and therefore preserves its existing Pending representation.
+fn eval_required_ext(
+  extension : &NodeExt,
+  ctx : Ctx,
+  pos : Int,
+  acc : Array[Binding],
+  next : Resume,
+) -> Array[Branch] {
+  let branches = extension.eval(ctx, pos, acc, next)
+  if in_complete(ctx) {
+    return branches
+  }
+  let out : Array[Branch] = []
+  for branch in branches {
+    match branch {
+      Pending(cands, bs) => {
+        let mut converted = false
+        for cand in cands {
+          if cand.is_value {
+            out.push(Held(pe_missing(cand.origin, pos), bs))
+            converted = true
+          }
+        }
+        if !converted {
+          out.push(Pending(cands, bs))
+        }
+      }
+      other => out.push(other)
+    }
+  }
+  out
+}
+
 // ── off-spine node evaluation (direct style) ─────────────────────────────────
 //
 // Plain `eval` stays direct (returns branches to its caller) — CPS threading
@@ -558,6 +609,10 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         run_matcher(m, ctx, pos)
       }
+    Ext(extension) =>
+      extension.eval(ctx, pos, [], (_ctx, next_pos, next_acc) => {
+        [Accept(next_pos, next_acc)]
+      })
     Ref(name) =>
       match ctx.defs.get(name) {
         Some(tpl) => eval(tpl, ctx, pos)
@@ -2089,6 +2144,16 @@ fn scope_consume(
       } else {
         []
       }
+    Ext(extension) =>
+      if extension.consumes_zero_tokens() ||
+        pos >= ctx.toks.length() ||
+        !suppressed(sc, ctx, pos, severed) {
+        eval_required_ext(extension, ctx, pos, acc, (ctx2, next_pos, next_acc) => {
+          scope_step(sc, ctx2, next_pos, pidx + 1, next_acc, severed, k)
+        })
+      } else {
+        []
+      }
     FilterArg(name, max) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         match parse_number(ctx.toks[pos]) {
@@ -2614,6 +2679,16 @@ fn consume_head(
         } else {
           [Held(pe_missing(name, pos), [])]
         }
+      } else {
+        []
+      }
+    Ext(extension) =>
+      if extension.consumes_zero_tokens() ||
+        pos >= ctx.toks.length() ||
+        !suppressed(sc, ctx, pos, severed) {
+        eval_required_ext(extension, ctx, pos, [], (_ctx, next_pos, next_acc) => {
+          [Accept(next_pos, next_acc)]
+        })
       } else {
         []
       }

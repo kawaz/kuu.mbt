@@ -3334,6 +3334,7 @@ fn head_progresses(
     // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `DdSat`,
     // `keep` (true) is a 0-token Accept (same standing as `Bind`/`EffMark` below).
     DdMatchSat(_, _, self_keep, _) => !self_keep
+    Ext(extension) => !extension.consumes_zero_tokens()
     IdxRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
