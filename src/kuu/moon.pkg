@@ -1,4 +1,6 @@
 import {
+  "kawaz/kuu/engine",
+  "kawaz/kuu/builtins",
   "moonbitlang/core/string",
 }
 
@@ -15,4 +17,6 @@ import {
 // でのみ構築) として新たに検出されるようになった。挙動には無関係な可視性変更の副作用であり、既存の
 // 未接続 variant/struct の是非は本 issue の射程外 (別途 issue 化の検討対象)。
 
-warnings = "-6-9"
+// Skeleton imports intentionally establish the package dependency edges.
+
+warnings = "-6-9-29"

@@ -1,7 +1,7 @@
 // json_conformance_wbtest.mbt — JSON-DIRECT conformance runner (query: "parse" + "lower").
 //
 // PORTED FROM: kawaz/kuu.mbt slice/poc/{json_conformance_wbtest,lower_runner_wbtest,helpers_wbtest,
-// fixture_runner_wbtest}.mbt — verbatim structure with API adaptations for main src/core:
+// fixture_runner_wbtest}.mbt — verbatim structure with API adaptations for main src/kuu:
 //   - ParseError is a 6-tuple (element/args_pos/kind/reason/message/path, DR-066 §3/§4): proj_errors
 //     and exp_errors_decode include `reason` when the fixture asserts it on ANY error in the set, and
 //     `path` likewise on its own independent opt-in (per-field, per-fixture-set — DR-066 §4/§5:
@@ -3006,7 +3006,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 // ── ledgers (MDR-001 §6: start empty, populate as fixtures classify) ─────────
 
 ///|
-/// The FROZEN divergence ledger (fixture = 正本, main src/core = 被検体).
+/// The FROZEN divergence ledger (fixture = 正本, main src/kuu = 被検体).
 ///
 /// Each entry is the FULL `rel::slug :: verdict` string of a comparison that currently diverges —
 /// a KNOWN gap either INHERITED from slice/poc (未実装が正本仕様に追従していない) or a suspected

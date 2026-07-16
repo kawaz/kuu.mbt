@@ -12,7 +12,9 @@
 
 | パス | 内容 |
 |---|---|
-| `src/core/` | 評価器コア (Phase B で設計・実装。現状はプレースホルダ) |
+| `src/engine/` | 構造・評価・解決の汎用 engine |
+| `src/builtins/` | canonical builtins |
+| `src/kuu/` | kuu assembly (組成・front door・conformance runner) |
 | [docs/decisions/](docs/decisions/INDEX.md) | Design Record (MDR-NNN)。仕様 DR とは別系統 |
 
 ## DR 番号空間
