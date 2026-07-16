@@ -369,6 +369,14 @@ kind + encode で構成する (PoC 示唆 4 が本実装への拡張として予
 - kuu-cli 側の実装変更そのもの (§7 は kuu.mbt 側から見た破壊面の列挙。実施は
   kuu-cli リポの作業)
 
+> **実施記録 note (M2〜M3 完了時点、2026-07-17)**: §6 の里程標割りは実装で次のとおり再配分された (裁定は統括、各 worker の実測に基づく)。
+>
+> - **M2 は「kuu package 内での契約完成」に縮退**: 構造 Node の engine 物理移動は `Branch→Cand→Ty` / `Ctx.defs` の型連鎖と Node 構築 986 箇所の factory 化を誘発し、Ty が M3 除去予定である以上 engine への一時移動は逆行のため。値住人は §3.3 記載の 5 型に Kv / Sep を加えた **7 型**、加えて EffMark / DeprMark / FailMark の 3 マーカーを Ext 化し、Bind は構造 variant に残した。Registry / 明示 install / `-29` 解除は M3 へ延期 (kind-only の形だけの registry を作らない判断)
+> - **M3 は依存矛盾により M3c → M3a → M3b の順で実施**: Entity.ty / Cand.ty が Ty を運ぶため「Ty を動かさず物理移動」が成立しない (bridge 型・型複製は往復工程のため不採用)。M3c = TypeExt 住人 8 種 + Ty 除去 + `Cand.ty : String` 化 (a97b0f10)、M3a = engine への物理移動 + Registry 配線 (b3db132c)、M3b = MatcherExt 住人化 (0e2f09eb)
+> - **契約の実装差分**: TypeExt にも `encode : Json` を追加し identity は name+encode (NodeExt と対称、configured 差の false-equal 回避)。MatcherExt に `candidates(Self) -> Array[Cand]` を追加 (complete の期待集合収集は interpret と責務が別)。Registry の重複 kind 登録は error (先勝ち非上書せず登録時に検出)。`parse_fail_error` は engine の公開 factory へ昇格
+> - §3.4 の `canonical_registry` は非 pub で実装 (production consumer は kuu package 内)。lowering の型名解決は registry lookup 経由に配線し、未知型名は silent 降格でなく definition-error
+> - 残課題 (M4 冒頭で拾う): canonical 字句 parser 群 (`parse_bool_ext` / number 系) と value_wbtest の builtins 移動 (M3a では green 化に不要のため未着手)
+
 ## 関連
 
 - kawaz/kuu DR-110 (3 層の規範、境界裁定表 — 本 MDR はその実装設計)
