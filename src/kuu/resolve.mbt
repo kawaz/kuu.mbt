@@ -2784,7 +2784,7 @@ fn resolve_ladder_below_cli(
                 if e.accum is Some(_) {
                   let bs : Array[@engine.Binding] = []
                   for it in items {
-                    match @engine.config_to_value(it, e.ty, e.piece_filters) {
+                    match @builtins.config_to_value(it, e.ty, e.piece_filters) {
                       Ok(v) => bs.push(@engine.mkb(e.name, v, @engine.Config))
                       Err((@engine.KFilter, reason, msg)) =>
                         return Err(
@@ -2809,10 +2809,10 @@ fn resolve_ladder_below_cli(
                   )
                 }
               // DR-050 §4 の string 全段 pipeline (issue 2026-07-09-config-string-pieceprocessor-gap):
-              // `@engine.config_to_value` が `e.piece_filters` を先頭で適用してから型 parse する — CLI/env の
+              // `@builtins.config_to_value` が `e.piece_filters` を先頭で適用してから型 parse する — CLI/env の
               // pieceProcessor と同じ窓口。
               _ =>
-                match @engine.config_to_value(cv, e.ty, e.piece_filters) {
+                match @builtins.config_to_value(cv, e.ty, e.piece_filters) {
                   Ok(v) => return Ok([@engine.mkb(e.name, v, @engine.Config)])
                   Err((@engine.KFilter, reason, msg)) =>
                     return Err(filter_err(e.name, at_pos, reason, msg, epath))
@@ -2872,12 +2872,12 @@ fn resolve_ladder_below_cli(
   }
   // default seat (DR-083 §1/§2, DR-102 §5): an accum cell's declared default supplies its WHOLE
   // array as already-split pieces, config-array precedent (DR-050 §4) — each piece routed through
-  // `@engine.config_to_value` (via `@engine.value_to_configval`) for the same T-domain / string-pipeline parse the
+  // `@builtins.config_to_value` (via `@engine.value_to_configval`) for the same T-domain / string-pipeline parse the
   // @engine.CArr config branch above uses. A scalar cell wants just the one value (`default_scalar`), but
   // DR-102 §5 (DR-050 §4 / DR-083 §2 の対称性から導出) extends the SAME type-dependent pipeline to
-  // it — a JSON string default runs piece_filters → parse (`@engine.config_to_value`'s `@engine.CStr` arm), a JSON
+  // it — a JSON string default runs piece_filters → parse (`@builtins.config_to_value`'s `@engine.CStr` arm), a JSON
   // native (number/bool) default matching the element's type skips piece_filters/parse entirely
-  // (the type's own consequence, `@engine.config_to_value`'s `other => other` passthrough before its
+  // (the type's own consequence, `@builtins.config_to_value`'s `other => other` passthrough before its
   // `(cv, ty)` match). This is NOT a special case for defaults — it's the same "値源の種別でなく
   // 値の型が決める" rule DR-050 §4 already establishes, reused verbatim for the scalar default seat
   // too (mirrors the accum branch immediately above; both call sites now share one type-parse code
@@ -2888,7 +2888,7 @@ fn resolve_ladder_below_cli(
         let bs : Array[@engine.Binding] = []
         for v in vs {
           match
-            @engine.config_to_value(
+            @builtins.config_to_value(
               @engine.value_to_configval(v),
               e.ty,
               e.piece_filters,
@@ -2908,7 +2908,7 @@ fn resolve_ladder_below_cli(
     match default_scalar(e) {
       Some(v) =>
         match
-          @engine.config_to_value(
+          @builtins.config_to_value(
             @engine.value_to_configval(v),
             e.ty,
             e.piece_filters,
