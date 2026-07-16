@@ -3053,7 +3053,10 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
 /// MDR-001 §6). @engine.Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
-  []
+  [
+    // EXP-Q1: 異なる default 値が同じ export key に共露出したとき ambiguous とする意味論は未実装。
+    "export-key/collision-default-divergent.json::divergent-defaults-ambiguous :: EXPECTED-AMBIGUOUS got=ok{}",
+  ]
 }
 
 ///|
@@ -3276,8 +3279,15 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       }
     }
   }
+  let known = known_divergences()
+  let unexpected : Array[String] = []
+  for mismatch in mismatches {
+    if !conformance_str_in(known, mismatch) {
+      unexpected.push(mismatch)
+    }
+  }
   println(
-    "[json-conformance] decoded=\{decoded.length()} ran_cases=\{ran_cases} skipped=\{skips.length()} mismatches=\{mismatches.length()}",
+    "[json-conformance] decoded=\{decoded.length()} ran_cases=\{ran_cases} skipped=\{skips.length()} mismatches=\{unexpected.length()}",
   )
   println("[json-conformance] decoded: " + join_comma(decoded))
   let hist : Map[String, Int] = Map([])
@@ -3377,14 +3387,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
     println(sb.to_string())
     abort(sb.to_string())
   }
-  // Divergence ledger assertion (empty ledger; any observed divergence is UNEXPECTED).
-  let known = known_divergences()
-  let unexpected : Array[String] = []
-  for m in mismatches {
-    if !conformance_str_in(known, m) {
-      unexpected.push(m)
-    }
-  }
+  // Divergence ledger assertion: unregistered or vanished entries fail the run.
   let vanished : Array[String] = []
   for k in known {
     if !conformance_str_in(mismatches, k) {
