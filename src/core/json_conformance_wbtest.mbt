@@ -1092,9 +1092,12 @@ struct DecodedFixture {
 // ── expected-string builders ──────────────────────────────────────────────────
 
 ///|
-/// `RVal`/`ConfigVal` の decode は definition の wire decode (`wire_decode.mbt`) ではなく、fixture
-/// の expect / case 補助入力 (`result`/`interpretations`、`cases[].config`) を読む側のヘルパー —
-/// そのためここに残す (MDR-005 §2 の境界判定)。
+/// `RVal` の decode は definition の wire decode (`wire_decode.mbt`) ではなく、fixture の expect
+/// (`result`/`interpretations`) を読む側のヘルパー — そのためここに残す (MDR-005 §2 の境界判定)。
+/// `ConfigVal` 側の同種ヘルパー (旧 `json_to_configval`、`cases[].config`/`config_files` の decode)
+/// は front_door の `config_from_json` へ昇格済み (MDR-005 追記、「ConfigVal/TtyObs の入力構築
+/// API」issue) — 用途が「fixture 入力の decode」から「production 呼び出し側の入力構築」まで
+/// 広がったため、runner 側もそちらを直接呼ぶ (下記 `cfg` 組み立て箇所参照)。
 fn json_to_rval(j : Json) -> RVal raise DecodeSkip {
   match j.j_obj() {
     Some(o) => {
@@ -1117,43 +1120,6 @@ fn json_to_rval(j : Json) -> RVal raise DecodeSkip {
     None => ()
   }
   RScalar(json_to_value(j))
-}
-
-///|
-fn json_to_configval(j : Json) -> ConfigVal {
-  match j.j_obj() {
-    Some(o) => {
-      let kvs : Array[(String, ConfigVal)] = []
-      for k, v in o {
-        kvs.push((k, json_to_configval(v)))
-      }
-      return CObj(kvs)
-    }
-    None => ()
-  }
-  match j.j_arr() {
-    Some(a) => {
-      let vs : Array[ConfigVal] = []
-      for v in a {
-        vs.push(json_to_configval(v))
-      }
-      return CArr(vs)
-    }
-    None => ()
-  }
-  match j.j_bool() {
-    Some(b) => return CBool(b)
-    None => ()
-  }
-  match j.j_str() {
-    Some(s) => return CStr(s)
-    None => ()
-  }
-  match j.j_num() {
-    Some(d) => return CNum(d)
-    None => ()
-  }
-  CNull
 }
 
 ///|
@@ -1479,13 +1445,13 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
             }
           None => raise DecodeSkip("case tty[" + k + "] missing 'cygwin'")
         }
-        tty.set(k, { terminal, cygwin })
+        tty.set(k, tty_obs(terminal, cygwin))
       }
     }
     None => ()
   }
   let cfg = match co.get("config") {
-    Some(cjj) => CfgObj(json_to_configval(cjj))
+    Some(cjj) => CfgObj(config_from_json(cjj))
     None =>
       match co.get("config_files") {
         Some(fj) =>
@@ -1493,7 +1459,7 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
             Some(fo) => {
               let files : Array[(String, ConfigVal)] = []
               for k, v in fo {
-                files.push((k, json_to_configval(v)))
+                files.push((k, config_from_json(v)))
               }
               CfgFiles(files)
             }

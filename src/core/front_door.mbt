@@ -294,3 +294,65 @@ pub fn sources(
 ) -> Array[SourceEntry] {
   result_sources(ast.root, resolved, ast.ekmap)
 }
+
+///|
+/// 正面玄関の補助 (issue 追加分「ConfigVal/TtyObs の入力構築 API」、統括裁定 (b)): `parse()`/
+/// `resolve()` の `config?` 引数 (`(path: String) -> ConfigVal?`) を組み立てたい利用者向けの JSON
+/// → `ConfigVal` 全域変換。`ConfigVal` は `pub` (フィールド/variant 非公開) のまま — `CObj`/`CArr`
+/// を含む全 variant を外部から直接構築する経路が無く (moonc [4036] で拒否される)、`value_to_configval`
+/// (value.mbt、既存 pub) はスカラ 3 種のみで木構造の config を組めなかった。DR-050 §2「kuu core は
+/// TOML/YAML を見ず、この JSON-同型 hierarchical 形だけを見る」の JSON 側の入口を production
+/// として塞ぐ。旧 conformance runner の `json_to_configval` (fixture `cases[].config`/
+/// `config_files` の decode ヘルパー、MDR-005 §2 で「fixture 補助入力の decode なので runner に
+/// 残す」と裁定されていた) と同一ロジック — 用途が「fixture 入力の decode」から「production
+/// 呼び出し側の入力構築」まで広がったため、こちらへ昇格し runner 側は本関数へ委譲する形にした
+/// (MDR-005 §2 の当該裁定を本関数の追加で上書き)。オブジェクト/配列は再帰的に変換、bool/string/
+/// number 以外 (JSON null 含む) は `CNull` (DR-050 §4 / DR-051「config seat が供給なしとして扱う」)
+/// に落ちる — decode 失敗という概念を持たない全域関数 (`Result`/`raise` を返さない)。
+pub fn config_from_json(j : Json) -> ConfigVal {
+  match j.j_obj() {
+    Some(o) => {
+      let kvs : Array[(String, ConfigVal)] = []
+      for k, v in o {
+        kvs.push((k, config_from_json(v)))
+      }
+      return CObj(kvs)
+    }
+    None => ()
+  }
+  match j.j_arr() {
+    Some(a) => {
+      let vs : Array[ConfigVal] = []
+      for v in a {
+        vs.push(config_from_json(v))
+      }
+      return CArr(vs)
+    }
+    None => ()
+  }
+  match j.j_bool() {
+    Some(b) => return CBool(b)
+    None => ()
+  }
+  match j.j_str() {
+    Some(s) => return CStr(s)
+    None => ()
+  }
+  match j.j_num() {
+    Some(d) => return CNum(d)
+    None => ()
+  }
+  CNull
+}
+
+///|
+/// 正面玄関の補助 (issue 追加分「ConfigVal/TtyObs の入力構築 API」、統括裁定 (b)): `parse()`/
+/// `resolve()` の `tty?` 引数 (`Map[String, TtyObs]`、DR-099 §4 の stream 名 → 生観測) を組み立てたい
+/// 利用者向けの構築関数。`TtyObs` は `pub` (フィールド非公開) のまま — 呼び出し側は自身で
+/// `isatty(2)` 相当を観測して得た 2 つの bool (`terminal`: TTY か、`cygwin`: DR-099 §12b の
+/// Cygwin/MSYS pty 判定) をここへ渡すだけでよい。config と異なり JSON 経由の入力を想定しない
+/// (呼び出し側プロセスの実観測値をそのまま渡す性質のため) ので `_from_json` ではなく直接の値
+/// コンストラクタとする。
+pub fn tty_obs(terminal : Bool, cygwin : Bool) -> TtyObs {
+  { terminal, cygwin }
+}
