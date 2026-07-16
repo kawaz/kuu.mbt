@@ -86,7 +86,7 @@ fn argmin_action(actions : Array[(String, Int)]) -> String {
 
 ///|
 /// The help entry's spelling (spec DR-053 §4 help_entry material): the exact trigger of the greedy
-/// satellite that carries a help FailMark, IN THE SCOPE AT THE FAILURE POSITION — same scope-
+/// satellite that carries a help failure resident, IN THE SCOPE AT THE FAILURE POSITION — same scope-
 /// resolution rule `tried_triggers_of` uses (DR-053 §4 の失敗位置基準、issue conformance-tried-
 /// triggers-help-entry-fields の実機確認で発覚: 旧実装は root scope の greedy しか見ておらず、
 /// サブコマンドの子スコープに宣言された help 入口を見逃していた — fixtures/failure-actions/
@@ -157,7 +157,7 @@ fn find_help_entry_in_greedy(g : Node) -> String? {
               None => trig = Some(s)
               _ => ()
             }
-          FailMark(_) => has_fail = true
+          Ext(_) => if node_is_failure_mark(it) { has_fail = true }
           _ => ()
         }
       }

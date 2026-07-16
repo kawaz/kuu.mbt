@@ -114,19 +114,19 @@ pub struct ElemDef {
   value_requires : Array[(String, String, Array[String])]
   // DR-075 §2 int_round factory config (DR-061 §4 平坦 config キー、`int_parser` の唯一 config)。
   // canonical default = `RError` (非整数値は Error)、opt-in で floor/trunc/half_even 等の丸めモード。
-  // parse 相内部調整で、`value_prim` が IntArg(name, mode) にこの値を埋め込む。TInt 以外の element は
+  // parse 相内部調整で、`value_prim` が int resident にこの値を埋め込む。TInt 以外の element は
   // 参照しない (installer が読み取らない冗長フィールド)。
   int_round : RoundMode
   // DR-074 §2 統合 opt-in `number_allow_base_prefix` (`number_parser` factory config)。canonical
   // default = false (基数 prefix / hex float は Error)、true で `0xff` / `0x1.8p3` / `0o777` / `0b1010`
-  // を受理する。value_prim が NumArg(name, flag) / IntArg(name, mode, flag) に埋め込み、eval / matcher
+  // を受理する。value_prim が number / int resident に埋め込み、eval / matcher
   // で parse_number_ext / parse_int_value_ext に流す。TNum / TInt 以外は参照しない。
   allow_base_prefix : Bool
   // DR-074 §3/§4 `bool_parser` factory config (DR-061 §4 平坦 config キー 3 つを 1 struct に束ねた
   // carrier — `true_values`/`false_values`/`case_insensitive` は常にセットで使われるため、
   // int_round/allow_base_prefix と違い個別フィールドに展開しない、`RepeatSpec` と同じ「複合 config を
   // 1 struct にまとめる」パターン)。canonical default = `bool_config_canonical()`。value_prim が
-  // BoolArg(name, config, ...) に埋め込み、eval / matcher で parse_bool_ext に流す。TBool 以外は
+  // bool resident に埋め込み、eval / matcher で parse_bool_ext に流す。TBool 以外は
   // 参照しない (冗長フィールド、int_round/allow_base_prefix と同じ扱い)。
   bool_config : BoolConfig
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
@@ -642,12 +642,12 @@ priv struct SBChild {
 ///|
 /// 値プリミティブの唯一の構築点 (positional / long / short いずれの value slot もここを通る,
 /// issue 2026-07-09-separator-non-string-type-parse-gap 段1: 以前は `elem_head` だけが
-/// `separator` を見て `SepArg` に分岐し、long/short main entry はこの関数を `separator` 抜きで
+/// `separator` を見て `separated resident` に分岐し、long/short main entry はこの関数を `separator` 抜きで
 /// 直接呼んでいたため、long/short option で `multiple + separator` を宣言しても分割が一切効かない
 /// 既存バグがあった — `separator` をこの関数自身の分岐に格上げし、呼び出し元 (positional の
 /// `elem_head` / long の `inst_long` main entry) が同じ判断を共有するよう一元化した。`separator`
-/// が `Some` なら `SepArg` を構築し、型情報 (ty/int_round/allow_base_prefix) をそのまま運搬する
-/// (段2: SepArg 自身が piece ごとに型 parse を行う、`sep_binds` 参照) — 段1 (分割自体を配線) と
+/// が `Some` なら `separated resident` を構築し、型情報 (ty/int_round/allow_base_prefix) をそのまま運搬する
+/// (段2: separated resident 自身が piece ごとに型 parse を行う、`sep_binds` 参照) — 段1 (分割自体を配線) と
 /// 段2 (分割後の型 parse) は同一サイクルで導入必須 (issue 追記2: 段1 単独では成功系が regress する
 /// 実測確認済み)。
 /// `merge` (DR-080 波及節): `ElemDef.accumulator == Some("merge")` の素通し。両呼び出し元
@@ -655,18 +655,18 @@ priv struct SBChild {
 ///
 /// codex Medium 追従 (2026-07-10, issue merge-no-separator-marker-gap): 経路選択は
 /// `separator is Some(_)` **単独**ではなく `separator is Some(_) || merge` — merge 宣言要素は
-/// `separator` 未宣言でも `SepArg` (piece 処理) 側へ進む。`separator` は `SepArg` へそのまま
+/// `separator` 未宣言でも `separated resident` (piece 処理) 側へ進む。`separator` は `separated resident` へそのまま
 /// `String?` で運び (`sep_binds` が `None` を「1 piece = 全体」として扱う、DR-034 §6.3 の縮退)、
 /// マーカー認識 (`classify_merge_piece`) は piece 数に関わらず同じ pipeline で効く — `--fields -a`
 /// (separator 無し、コンマで割る余地が無い) でも `-a` が remove マーカーとして解釈される。
 /// merge でない要素は従来通り `separator is Some(_)` のみが gate (この分岐は不変)。
 ///
-/// `kv_map` (DR-091 §2): `ElemDef.accumulator == Some("kv_map")` は `merge`/`separator` の SepArg
+/// `kv_map` (DR-091 §2): `ElemDef.accumulator == Some("kv_map")` は `merge`/`separator` の separated resident
 /// 経路とは別枝 — kv_map は「1 token = 1 piece」で separator 分割を必要としない (`k=v` の `=` 分割は
-/// この node の仕事ではなく `resolve.mbt`'s `build_result` が畳み時に行う、node.mbt の `KvArg` doc
+/// この node の仕事ではなく `resolve.mbt`'s `build_result` が畳み時に行う、node.mbt の `kv resident` doc
 /// comment参照)。`merge` より先に判定するのは两者が同時に真になることは無い (decode 層 `dec_multiple`
 /// が `accumulator` を単一 `String?` としてしか運ばない、DR-080/DR-091 のどちらか一方の語彙) ため
-/// 順序に意味は無いが、KvArg が SepArg の分岐に巻き込まれないよう最初に切り出す。
+/// 順序に意味は無いが、kv resident が separated resident の分岐に巻き込まれないよう最初に切り出す。
 fn value_prim(
   ty : Ty,
   name : String,
@@ -679,9 +679,9 @@ fn value_prim(
   kv_map? : Bool = false,
 ) -> Node {
   if kv_map {
-    KvArg(name, piece_filters)
+    kv_arg(name, piece_filters)
   } else if separator is Some(_) || merge {
-    SepArg(
+    separated_arg(
       name, separator, ty, int_round, allow_base_prefix, bool_config, piece_filters,
       merge,
     )
@@ -689,16 +689,16 @@ fn value_prim(
     match ty {
       // TNum は canonical (DR-074 §1) + opt-in base prefix (§2)。allow=true で hex/oct/bin 整数 +
       // hex float も受理する統合 opt-in (単一 flag、DR-074 §2)。
-      TNum => NumArg(name, allow_base_prefix, piece_filters)
-      // TInt は値空間判定 (DR-075 §1) + int_round (§2) + hex/oct/bin (DR-074 §2)。IntArg に mode /
-      // flag を埋め込み、eval が parse_int_value_ext(_, mode, flag) で丸め + 基数 prefix を反映する。
-      TInt => IntArg(name, int_round, allow_base_prefix, piece_filters)
-      // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (FloatArg / parse_float)
-      TFloat => FloatArg(name, piece_filters)
-      // TBool は DR-076 §1/§4 で string/number と同格の値型 — BoolArg / parse_bool_ext を通す
+      TNum => number_arg(name, allow_base_prefix, piece_filters)
+      // TInt は値空間判定 (DR-075 §1) + int_round (§2) + hex/oct/bin (DR-074 §2)。int resident resident に
+      // mode / flag を埋め込み、eval が parse_int_value_ext(_, mode, flag) で丸め + 基数 prefix を反映する。
+      TInt => int_arg(name, int_round, allow_base_prefix, piece_filters)
+      // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (float resident / parse_float)
+      TFloat => float_arg(name, piece_filters)
+      // TBool は DR-076 §1/§4 で string/number と同格の値型 — bool resident / parse_bool_ext を通す
       // (DR-074 §4 bool_parser factory config、canonical default は既存 parse_bool と同値)。
-      TBool => BoolArg(name, bool_config, piece_filters)
-      _ => StrArg(name, piece_filters)
+      TBool => bool_arg(name, bool_config, piece_filters)
+      _ => string_arg(name, piece_filters)
     }
   }
 }
@@ -1022,7 +1022,7 @@ fn collect_export_body(e : ElemDef, m : Map[String, ExportKey]) -> Unit {
 }
 
 ///|
-/// 要素の lowered head: 値プリミティブ / Ref (ref_target) / SepArg (separator, `value_prim` 側に集約
+/// 要素の lowered head: 値プリミティブ / Ref (ref_target) / separated resident (separator, `value_prim` 側に集約
 /// 済み — このヘルパー自身の役目は ref_target の分岐のみ)。issue
 /// 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め: `is_exact` (positional-face
 /// nameless exact-match leaf, `ElemDef.is_exact` doc comment) は ref_target 分岐より先に判定する —
@@ -1236,7 +1236,7 @@ fn lower_positional(
           // DR-038) がそのまま輪郭を満たす。DR-043 repeat との組合せ (issue
           // 2026-07-09-positional-or-repeat-lowering-gap で根治): `Or(nodes)` を head として
           // `lower_repeat_head` に渡す — repeat のレンズには「構造 or の 1 発火」も他の head と
-          // 同じ 1 unit で、Ref/Many/BoundedTail のどれになるかは head の形 (Or か StrArg か) に
+          // 同じ 1 unit で、Ref/Many/BoundedTail のどれになるかは head の形 (Or か string resident か) に
           // 依存しない。
           let nodes : Array[Node] = []
           for br in branches {
@@ -1644,7 +1644,7 @@ fn eq_group(
 
 ///|
 /// codex レビュー Major 2 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) / DR-058
-/// §2: append a trailing `DeprMark(e.name)` to a main-entry satellite's node array when `e.deprecated`
+/// §2: append a trailing deprecation resident to a main-entry satellite's node array when `e.deprecated`
 /// — shared by EVERY `inst_long` main-entry arm (BOr / BEnum / ref±repeat / BCell, all below) so a
 /// deprecated element warns regardless of its value structure (DR-058 §2's contract is 値構造非依存;
 /// the previous fix only wired the BCell arm, missing the other 4). Centralizing the append here (one
@@ -1654,7 +1654,7 @@ fn eq_group(
 /// `is_exact` guard (Major 4 fix) uses.
 fn with_depr(e : ElemDef, nodes : Array[Node]) -> Array[Node] {
   if e.deprecated {
-    nodes.push(DeprMark(e.name))
+    nodes.push(deprecation_mark(e.name))
   }
   nodes
 }
@@ -1791,7 +1791,7 @@ fn inst_long(
               // — `:set` always takes a value (space form here; eq form via eq_entries below). A
               // bare `--x` fire (the classic flag shape) needs the explicit `:set:true` variant
               // (decoded as a Set-op Variant with operand VBool(true), lowered by the "Variant
-              // entries" loop below, which also carries the fail_action FailMark — flag's
+              // entries" loop below, which also carries the fail_action failure resident — flag's
               // presence-only lowering has fully collapsed into that generic variant path; this
               // arm no longer special-cases TFlag/TBool bare-true at all).
               //
@@ -1805,8 +1805,8 @@ fn inst_long(
               // nor `long_eq_sep` requires this pairing — an unpaired empty prefix is legal and any
               // resulting collision surfaces as Ambiguous instead.
               if e.long_eq_sep != EsRequire {
-                // DR-058 §2: a deprecated element's space-form main entry carries a `DeprMark`
-                // warning marker after its value slot (node.mbt's `DeprMark` doc shape), mirroring
+                // DR-058 §2: a deprecated element's space-form main entry carries a `deprecation resident`
+                // warning marker after its value slot (node.mbt's `deprecation resident` doc shape), mirroring
                 // `inst_short`'s `depr: e.deprecated` on the SAME element (`e.deprecated` covers
                 // both a directly-deprecated canonical entry and a deprecated alias entry-copy,
                 // DR-057 §3 `alias_entry` — both fold into this ONE `ElemDef.deprecated` bool by
@@ -1854,7 +1854,7 @@ fn inst_long(
       // DR-091 §2: a `kv_map`-accumulator leaf does NOT register an eq-split entry (unlike merge,
       // which shares the same `sep_binds` pipeline as the space form) — `run_eq_split` (matcher.mbt)
       // builds its binding through `sep_binds`, which has no "the piece must contain `=`" gate (that
-      // gate lives in the `KvArg` node, `value_prim`'s dedicated kv_map branch, which `LongEntry`
+      // gate lives in the `kv resident` node, `value_prim`'s dedicated kv_map branch, which `LongEntry`
       // never routes through). Registering here would let `--define=NOEQUALSIGN` silently produce
       // `{NOEQUALSIGN: ""}` instead of DR-091 §2's required Reject — same deliberate-absence posture
       // as `BEnum`'s "OUT OF SCOPE" comment below, not an oversight.
@@ -1912,7 +1912,7 @@ fn inst_long(
               separator: e.separator,
               merge: e.accumulator == Some("merge"),
               // codex レビュー Major 1 (DR-058 §2): eq-split 経路も deprecated warning marker を
-              // 合成する — main entry (space form, 上の `inst_long` DeprMark append) / short cluster
+              // 合成する — main entry (space form, 上の `inst_long` deprecation resident append) / short cluster
               // (`inst_short`) と対称、入口形による例外は DR-058 §2 に無い。
               depr: e.deprecated,
             })
@@ -1941,10 +1941,10 @@ fn inst_long(
     gi = gi + 1
   }
   // Variant entries (DR-011 / DR-045): `{exact, link (by name), effect}` に lowering。
-  // `set` variant は Bind (SET degenerate); default/unset/empty は EffMark (0-token effect)。
+  // `set` variant は Bind (SET degenerate); default/unset/empty は effect resident (0-token effect)。
   // DR-076 §2/§4: a flag's classic bare-fire trigger IS a Set variant now (`:set:true`, composed in
   // by dec_long) — it rides through here, not through the old TFlag-only branch above. A fail_action
-  // element (DR-048, e.g. help) additionally emits a FailMark alongside its Set variant's Bind, so
+  // element (DR-048, e.g. help) additionally emits a failure resident alongside its Set variant's Bind, so
   // this loop must carry the SAME fail_action attachment the collapsed TFlag branch used to (a
   // fail_action flag firing here — its ONLY main-entry shape post-DR-076 §2 — must still be able to
   // select as a failed-parse action).
@@ -1955,8 +1955,8 @@ fn inst_long(
       // 綴りが long_prefix 非既定時に分裂する (DR-091 §3 の一貫性を variant にも及ぼす)。既定
       // "--" なので既存挙動 (main entry と揃った "--" 綴り) は不変。
       let trigger = e.long_prefix + v.trigger
-      // DR-058 §2: a deprecated element's variant satellite (Set's Bind OR a non-Set EffMark) also
-      // carries a trailing `DeprMark` — every long entry point this element owns fires the SAME
+      // DR-058 §2: a deprecated element's variant satellite (Set's Bind OR a non-Set effect resident) also
+      // carries a trailing `deprecation resident` — every long entry point this element owns fires the SAME
       // warning, symmetric with `inst_short`'s per-char `depr: e.deprecated` (a short cluster char
       // has no variant/main-entry split, so ONE application point covers it; long's split into
       // main-entry (above) + variant (here) needs both covered for parity).
@@ -1967,12 +1967,12 @@ fn inst_long(
             None => VBool(true)
           }
           if e.fail_action {
-            [Exact(trigger), Bind(e.name, operand), FailMark(e.name)]
+            [Exact(trigger), Bind(e.name, operand), failure_mark(e.name)]
           } else {
             [Exact(trigger), Bind(e.name, operand)]
           }
         }
-        _ => [Exact(trigger), EffMark(e.name, v.op)]
+        _ => [Exact(trigger), effect_mark(e.name, v.op)]
       }
       add_greedy(build, maybe_root(e.link_depth, Seq(with_depr(e, nodes))))
     }
@@ -2494,15 +2494,11 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
 
 ///|
 /// `node` が値を束縛する全ての leaf name を再帰的に集める (DR-093 の or/ref 親充足判定の実体解決 —
-/// `required_candidates` の `ref_target` 分岐が使う)。値プリミティブ (`StrArg`/`SepArg`/`KvArg`/
-/// `NumArg`/`FloatArg`/`IntArg`/`BoolArg`/`ReqArg`) の name フィールドが対象。`Or`/`Seq`/`Many`/
-/// `BoundedTail`/`Rooted`/`Scoped`/`GreedyRepeat`/`IdxRepeat` は値バインディングを持たない構造
-/// ラッパーなので内部を再帰的に辿る。`Ref` は registry を辿って参照先テンプレートに再帰する
-/// (`visiting` は `head_cycles` と同じ「訪問済み template 名」防御 — 循環 ref は
-/// `collect_circular_ref` が別途 definition-error で弾く前提だが、防御的に無限再帰を避ける)。
-/// `Exact`/`Bind`/`EffMark`/`DeprMark`/`FailMark`/`DdSat`/`DdMatchSat`/`CmdSat`/`NativeMatch`/
-/// `FilterArg`/`ScopeNode` は値を束縛しない (トリガ・0-token マーク・test-only node・ネストスコープ
-/// 自体) ので無視する。
+/// `required_candidates` の `ref_target` 分岐が使う)。open value resident と `ReqArg` の name が
+/// 対象。`Or`/`Seq`/`Many`/`BoundedTail`/`Rooted`/`Scoped`/`GreedyRepeat`/`IdxRepeat` は値
+/// バインディングを持たない構造ラッパーなので内部を再帰的に辿る。`Ref` は registry を辿って参照先
+/// テンプレートに再帰する (`visiting` は `head_cycles` と同じ「訪問済み template 名」防御 — 循環
+/// ref は `collect_circular_ref` が別途 definition-error で弾く前提だが、防御的に無限再帰を避ける)。
 fn collect_value_names(
   node : Node,
   registry : Map[String, Node],
@@ -2510,14 +2506,12 @@ fn collect_value_names(
   out : Array[String],
 ) -> Unit {
   match node {
-    StrArg(n, _)
-    | SepArg(n, _, _, _, _, _, _, _)
-    | KvArg(n, _)
-    | NumArg(n, _, _)
-    | FloatArg(n, _)
-    | IntArg(n, _, _, _)
-    | BoolArg(n, _, _)
-    | ReqArg(n) => out.push(n)
+    Ext(_) =>
+      match node_resident_name(node) {
+        Some(name) => out.push(name)
+        None => ()
+      }
+    ReqArg(name) => out.push(name)
     Or(alts) =>
       for a in alts {
         collect_value_names(a, registry, visiting, out)
@@ -3318,30 +3312,20 @@ fn head_progresses(
   visiting : Array[String],
 ) -> Bool {
   match node {
-    StrArg(_, _)
-    | SepArg(_, _, _, _, _, _, _, _)
-    | KvArg(_, _)
-    | NumArg(_, _, _)
-    | FloatArg(_, _)
-    | IntArg(_, _, _, _)
-    | BoolArg(_, _, _)
-    | FilterArg(_, _)
+    FilterArg(_, _)
     | ReqArg(_)
     | Exact(_)
     | NativeMatch(_)
     | DdSat(_)
     | CmdSat(_, _) => true
     // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `DdSat`,
-    // `keep` (true) is a 0-token Accept (same standing as `Bind`/`EffMark` below).
+    // `keep` (true) is a 0-token Accept (same standing as `Bind`/`effect resident` below).
     DdMatchSat(_, _, self_keep, _) => !self_keep
     Ext(extension) => !extension.consumes_zero_tokens()
     IdxRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
     Bind(_, _) => false // 0-token
-    EffMark(_, _) => false // 0-token effect (DR-045)
-    FailMark(_) => false // 0-token failure-action (DR-048)
-    DeprMark(_) => false // 0-token deprecation (DR-058)
     Ref(r) => {
       for v in visiting {
         if v == r {

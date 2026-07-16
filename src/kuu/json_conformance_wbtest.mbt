@@ -505,34 +505,41 @@ fn lsec_str(s : LSec) -> String {
 // ── projection: canon Scope → 断面 LSec ────────────────────────────────────────
 
 ///|
-fn prim_name(n : Node) -> String? {
-  match n {
-    StrArg(x, _) => Some(x)
-    NumArg(x, _, _) => Some(x)
-    // TInt は DR-075 §1 で値空間判定に切替、CLI 相で IntArg 経由。lower 断面では他の value primitive
-    // と同型の値セル (n) として扱う (Some(x) を返す)。
-    IntArg(x, _, _, _) => Some(x)
-    FloatArg(x, _) => Some(x)
-    // DR-076 §1/§4: bool is now a normal value type, same satellite shape as string/number/int/float.
-    BoolArg(x, _, _) => Some(x)
-    SepArg(x, _, _, _, _, _, _, _) => Some(x)
-    FilterArg(x, _) => Some(x)
-    ReqArg(x) => Some(x)
-    _ => None
+fn prim_name(node : Node) -> String? {
+  match node_resident_name(node) {
+    Some(name) => Some(name)
+    None =>
+      match node {
+        FilterArg(name, _) | ReqArg(name) => Some(name)
+        _ => None
+      }
   }
 }
 
 ///|
 fn proj_seq_sat(xs : Array[Node]) -> GItem {
   match xs {
-    [Exact(t), Bind(n, v)] => GSet(t, v, n)
-    [Exact(t), Bind(n, v), FailMark(_)] => GSet(t, v, n)
-    [Exact(t), Bind(n, v), DeprMark(_)] => GSet(t, v, n)
-    [Exact(t), EffMark(n, op)] => GEff(t, n, op)
-    [Exact(t), tail] =>
-      match prim_name(tail) {
-        Some(n) => GSeqSat(t, n)
-        None => GExact("?seq:" + t)
+    [Exact(trigger), Bind(name, value), .. markers] => {
+      let mut valid_markers = true
+      for marker in markers {
+        if !node_is_failure_mark(marker) && !node_is_deprecation_mark(marker) {
+          valid_markers = false
+        }
+      }
+      if valid_markers {
+        GSet(trigger, value, name)
+      } else {
+        GExact("?seq:" + trigger)
+      }
+    }
+    [Exact(trigger), tail] =>
+      match node_effect_mark(tail) {
+        Some((name, op)) => GEff(trigger, name, op)
+        None =>
+          match prim_name(tail) {
+            Some(name) => GSeqSat(trigger, name)
+            None => GExact("?seq:" + trigger)
+          }
       }
     _ => GExact("?seq:?")
   }
@@ -2292,8 +2299,8 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
     )
   }
   // DR-045 effect descriptor (`{exact, link, effect: {op, transform?, args?}}`) — the non-Set ops
-  // (default/unset/empty/update, DR-011/077) that lower to `Seq([Exact, EffMark])` (see the
-  // `[Exact(t), EffMark(n, op)] => GEff(t, n, op)` projection below). No `lower fixture` used this
+  // (default/unset/empty/update, DR-011/077) that lower to `Seq([Exact, effect resident])` (see the
+  // `[Exact(t), effect resident] => GEff(t, n, op)` projection below). No `lower fixture` used this
   // shape before DR-077 (every prior lowering fixture only exercised Set), so this decode path is
   // new — added for count's `:update:increment` lowering fixtures, but generic over all 4 non-set
   // ops.

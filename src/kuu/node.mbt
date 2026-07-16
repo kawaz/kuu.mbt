@@ -134,100 +134,6 @@ impl NodeExt with fn equal(self, other) {
 pub enum Node {
   /// literal token match; binds nothing, consumes 1.
   Exact(String)
-  /// string value primitive: consume 1 token, bind name=VStr(token). Maximally permissive (DR-041 §5).
-  /// 2nd field is DR-034's piece_filters (String→String FilterChain, DR-062 二形のうち kuu.mbt が実装
-  /// する `FilterSpelling` 配列のみ — filters.mbt ヘッダ注記参照): applied to the raw token BEFORE
-  /// this node's own (identity, for TStr) parse step. installer.mbt `value_prim` embeds it from
-  /// `ElemDef.piece_filters` (same carrier pattern as `IntArg`'s `int_round` / `allow_base_prefix`);
-  /// eval.mbt's consumption arms run it via `apply_piece_filters` immediately after reading
-  /// `ctx.toks[pos]`, before the value ever reaches its type parser.
-  StrArg(String, Array[FilterSpelling])
-  /// separator-splitting value primitive (DR-034 separator pipeline): consume 1 token, split it
-  /// on the separator char, and bind ONE `name=part` per split piece, EACH piece parsed through
-  /// its own type (issue 2026-07-09-separator-non-string-type-parse-gap §段4 — a piece's type is
-  /// independent of whether it came via separator or not, DR-034 §6.2's pieceProcessor). Fields:
-  /// name, sep, ty (the element's declared type — TStr is the historical identity-parse default),
-  /// int_round (TInt only, mirrors `IntArg`'s carrier), allow_base_prefix (TNum/TInt), bool_config
-  /// (TBool only, mirrors `BoolArg`'s carrier — DR-074 §4 `bool_parser` factory config), piece_filters
-  /// (applied to EACH split piece — not the whole raw token — right before that piece's own parse
-  /// step, DESIGN §6.2: separator → piece_filters → parse → value_filters (each piece) → once the
-  /// value is committed, final_filters (non-accum element) or, after accumulation, accum_filters
-  /// (accum element), one piece at a time).
-  /// `sep_binds` (eval.mbt) threads all of this through the split loop; a piece that fails its
-  /// type parse is `kind: KParse` (same reason vocab as the scalar value primitives), NOT a
-  /// piece_filters-style `KFilter` reject — these are distinct pipeline stages (段3 vs 段4).
-  /// 2nd field is `String?`, not `String` (codex Medium 追従, 2026-07-10): a merge-declared element
-  /// with NO `separator` still needs piece semantics (DR-034 §6.3's degenerate form — no separator
-  /// IS a 1-piece split, `sep_binds` treats `None` as `[tok]` rather than calling `split_on`). This
-  /// is what lets `--fields -a` (no separator declared) recognize `-a` as a merge remove marker
-  /// instead of silently degrading to a literal add — without this, marker vocabulary was INERT for
-  /// any merge element that omitted `separator` (issue: markers only worked when a comma actually
-  /// split the token into ≥1 piece via the OLD mandatory-separator SepArg gate).
-  /// 8th field (DR-080 波及節): `merge` — whether the declaring element's `multiple.accumulator`
-  /// is `"merge"`. Threaded from `ElemDef.accumulator` via `installer.mbt`'s `value_prim` so
-  /// `sep_binds` (eval.mbt) knows whether to run `classify_merge_piece` on each split piece
-  /// (merge-declared elements only, DR-080 §1) or treat every piece as a plain add (everyone else,
-  /// unchanged pre-DR-080 behavior).
-  SepArg(
-    String,
-    String?,
-    Ty,
-    RoundMode,
-    Bool,
-    BoolConfig,
-    Array[FilterSpelling],
-    Bool
-  )
-  /// DR-091 §2: kv_map accumulator の consume-time gate — consume 1 token, apply piece_filters,
-  /// then require the (filtered) token to contain `=` (the structural precondition "piece `k=v`
-  /// を最初の `=` で分割" needs). A token with no `=` is a Held Error (kind=KParse, same family as
-  /// any other type-parse failure per team-lead 裁定 2026-07-11 — 「piece の型 parse 失敗と同じ
-  /// 扱い」) — this node does NOT split at `=` itself (that's `resolve.mbt`'s `build_result` job,
-  /// once every accepted binding is guaranteed to contain `=`); it only gates malformed pieces
-  /// out at the same layer every other type mismatch surfaces at. Installer.mbt's `value_prim`
-  /// emits this instead of `StrArg` when `ElemDef.accumulator == Some("kv_map")`.
-  KvArg(String, Array[FilterSpelling])
-  /// number value primitive (DR-074 §1 canonical + §2 opt-in `number_allow_base_prefix`)。consume 1
-  /// token, parse via `parse_number_ext(_, allow_base_prefix)`。allow=false は canonical (10 進のみ、
-  /// base prefix Error)、allow=true で `0xff` / `0x1.8p3` / `0o777` / `0b1010` も受理する統合 opt-in。
-  /// flag は installer が ElemDef.allow_base_prefix から埋め込む (`number_parser` factory config、
-  /// DR-061 §4)。parse-fail は `kind: parse` (DR-053)。4th field is DR-034's piece_filters (same
-  /// carrier pattern as `StrArg`'s 2nd field) — applied to the raw token before `parse_number_ext`.
-  NumArg(String, Bool, Array[FilterSpelling])
-  /// float value primitive (DR-074 §1/§7): consume 1 token, parsed through the WIDER float lexicon
-  /// (canonical number + the 2-word inf/infinity vocab, case-insensitive, sign-合成可 — nan stays
-  /// Error for both number and float). A separate node from `NumArg` because the accept-域 differs
-  /// per TYPE (`number` rejects inf, `float` accepts it) and `Ty::TNum`/`Ty::TFloat` is the only
-  /// place that distinction is known (installer.mbt `value_prim`); once lowered to a bare value node
-  /// there is no other channel to carry it. Parse-fail is `kind: parse`, same reason vocab as NumArg.
-  /// 2nd field is DR-034's piece_filters (same carrier pattern as `StrArg`).
-  FloatArg(String, Array[FilterSpelling])
-  /// int value primitive (DR-075 §1 値空間判定 + §2 int_round factory config). Consume 1 token, parse
-  /// via `parse_int_value(_, mode)` where `mode` is the element's `int_round` (canonical default
-  /// `RError`, opt-in via `int_parser` factory config, DR-061 §4). RError: fractional は
-  /// `not_an_integer`、それ以外 (RFloor/RCeil/RTrunc/RAway/RHalf{Floor,Ceil,Trunc,Away,Even}) では
-  /// fractional 値を丸めて Ok。整数値 (`"3.0"` / `"1e3"` / `"1_000"`) は全モードで丸めなし。番号として
-  /// 全く読めない token (`"abc"`) は全モードで `not_a_number`。mode は installer で ElemDef.int_round
-  /// から埋め込まれる (parse 相内部調整、DR-061 §5); 一度 lowered value node になると他の carrier は
-  /// 無いため mode は node 自身が持つ。DR-074 §2 `allow_base_prefix` を第 3 引数で追加運搬 —
-  /// opt-in 時は `0xff` (整数値) / `0x1.8p3=12` (整数値) / `0x1.8p0=1.5` (非整数、mode に従う) の
-  /// 値空間判定を hex にも一般化する。canonical default は `false`。parse-fail は `kind: parse`。
-  /// 5th field is DR-034's piece_filters (same carrier pattern as the other value primitives).
-  IntArg(String, RoundMode, Bool, Array[FilterSpelling])
-  /// bool value primitive (DR-076 §1/§4: bool is a normal value type, same standing as
-  /// string/number). Consume 1 token, parsed via `parse_bool_ext(_, config)` where `config` is the
-  /// element's `bool_config` (canonical default = `bool_config_canonical()`, opt-in via `bool_parser`
-  /// factory config, DR-061 §4/DR-074 §4); an unrecognized token fails with reason `not_a_bool`
-  /// (`pe_parse_bool`). A separate node from `NumArg`/`FloatArg`/`IntArg` for the same reason as
-  /// those: `Ty::TBool` is the only place the value-typed-vs-presence-only (`Ty::TFlag`)
-  /// distinction is known (installer.mbt `value_prim`); once lowered to a bare value node there is
-  /// no other channel to carry it. A bare `--x` (presence-only) fire is `TFlag`'s job, not this
-  /// node's — `BoolArg` only appears where a definition's `:set` explicitly wants a value slot.
-  /// 2nd field is the bool_config carrier (mirrors `IntArg`'s `RoundMode` field — config is bundled
-  /// into one struct here, rather than 3 flat fields, since the 3 keys always travel together and
-  /// `RepeatSpec` already establishes the "bundle a multi-key factory config into one struct" pattern
-  /// in this same file). 3rd field is DR-034's piece_filters (same carrier pattern as `StrArg`).
-  BoolArg(String, BoolConfig, Array[FilterSpelling])
   /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
   /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
   /// held Error (a value that parsed but failed the filter — final_filters reject 相当). Test-only
@@ -242,24 +148,6 @@ pub enum Node {
   /// 0-token binder: bind name=value. Used to set a flag after its Exact trigger fired.
   /// This is the SET degenerate form of an effect (DR-045 §1).
   Bind(String, Value)
-  /// 0-token EFFECT binder (DR-045): apply a non-set op (default / unset / empty) to the
-  /// named cell after an Exact trigger fired. This is the lowering of a variant entry's
-  /// effect: `--no-color` → `Seq([Exact("--no-color"), EffMark("color", Unset)])` — the
-  /// `link` (to the color cell) is by-name, the `effect` is the op carried here.
-  EffMark(String, EffectOp)
-  /// 0-token deprecation mark (DR-058): records that a deprecated ENTRY (an alias with
-  /// `deprecated: true`, DR-057) was used to reach the named canonical cell. Lowered by the long
-  /// installer onto a deprecated element's satellite (`Seq([Exact("--old"), Bind("port", …),
-  /// DeprMark("port")])`); the short installer sets `depr: true` on the cluster entry instead. It
-  /// rides in the effect column as a `@depr:<name>` marker binding (like a FailMark), collected
-  /// into ParserContext.warnings. The value propagates normally — only a warning is added.
-  DeprMark(String)
-  /// 0-token failure-action mark (DR-048): records that failure-action element `name` (e.g. help)
-  /// was SELECTED at the current args position. Lowered from a `fail_action` element's satellite
-  /// (`Seq([Exact("--help"), Bind("help", true), FailMark("help")])`). On a FAILED parse (0
-  /// complete paths) the recorded action fires in place of the held Error; 先食い/内部一体 keeps
-  /// a dd-internal `--help` from being selected (its trigger is raw-consumed, so FailMark never runs).
-  FailMark(String)
   /// choice — every alternative's readings become branches (DR-037 / DR-041 §3).
   Or(Array[Node])
   /// ordered consumption; bindings accumulate across the sequence.
@@ -365,32 +253,9 @@ pub enum Node {
 impl Eq for Node with fn equal(self, other) {
   match (self, other) {
     (Exact(a), Exact(b)) => a == b
-    (StrArg(an, af), StrArg(bn, bf)) => an == bn && af == bf
-    (
-      SepArg(an, as_, at, ar, ab, ac, af, am),
-      SepArg(bn, bs, bt, br, bb, bc, bf, bm),
-    ) =>
-      an == bn &&
-      as_ == bs &&
-      at == bt &&
-      ar == br &&
-      ab == bb &&
-      ac == bc &&
-      af == bf &&
-      am == bm
-    (KvArg(an, af), KvArg(bn, bf)) => an == bn && af == bf
-    (NumArg(an, ab, af), NumArg(bn, bb, bf)) => an == bn && ab == bb && af == bf
-    (FloatArg(an, af), FloatArg(bn, bf)) => an == bn && af == bf
-    (IntArg(an, ar, ab, af), IntArg(bn, br, bb, bf)) =>
-      an == bn && ar == br && ab == bb && af == bf
-    (BoolArg(an, ac, af), BoolArg(bn, bc, bf)) =>
-      an == bn && ac == bc && af == bf
     (FilterArg(an, am), FilterArg(bn, bm)) => an == bn && am == bm
     (ReqArg(a), ReqArg(b)) => a == b
     (Bind(an, av), Bind(bn, bv)) => an == bn && av == bv
-    (EffMark(an, ao), EffMark(bn, bo)) => an == bn && ao == bo
-    (DeprMark(a), DeprMark(b)) => a == b
-    (FailMark(a), FailMark(b)) => a == b
     (Or(a), Or(b)) => a == b
     (Seq(a), Seq(b)) => a == b
     (Many(an, al), Many(bn, bl)) => an == bn && al == bl
@@ -417,51 +282,6 @@ impl Eq for Node with fn equal(self, other) {
 impl Debug for Node with fn to_repr(self) {
   match self {
     Exact(a) => @debug.Repr::ctor("Exact", [(None, Debug::to_repr(a))])
-    StrArg(a, b) =>
-      @debug.Repr::ctor("StrArg", [
-        (None, Debug::to_repr(a)),
-        (None, Debug::to_repr(b)),
-      ])
-    SepArg(a, b, c, d, e, f, g, h) =>
-      @debug.Repr::ctor("SepArg", [
-        (None, Debug::to_repr(a)),
-        (None, Debug::to_repr(b)),
-        (None, Debug::to_repr(c)),
-        (None, Debug::to_repr(d)),
-        (None, Debug::to_repr(e)),
-        (None, Debug::to_repr(f)),
-        (None, Debug::to_repr(g)),
-        (None, Debug::to_repr(h)),
-      ])
-    KvArg(a, b) =>
-      @debug.Repr::ctor("KvArg", [
-        (None, Debug::to_repr(a)),
-        (None, Debug::to_repr(b)),
-      ])
-    NumArg(a, b, c) =>
-      @debug.Repr::ctor("NumArg", [
-        (None, Debug::to_repr(a)),
-        (None, Debug::to_repr(b)),
-        (None, Debug::to_repr(c)),
-      ])
-    FloatArg(a, b) =>
-      @debug.Repr::ctor("FloatArg", [
-        (None, Debug::to_repr(a)),
-        (None, Debug::to_repr(b)),
-      ])
-    IntArg(a, b, c, d) =>
-      @debug.Repr::ctor("IntArg", [
-        (None, Debug::to_repr(a)),
-        (None, Debug::to_repr(b)),
-        (None, Debug::to_repr(c)),
-        (None, Debug::to_repr(d)),
-      ])
-    BoolArg(a, b, c) =>
-      @debug.Repr::ctor("BoolArg", [
-        (None, Debug::to_repr(a)),
-        (None, Debug::to_repr(b)),
-        (None, Debug::to_repr(c)),
-      ])
     FilterArg(a, b) =>
       @debug.Repr::ctor("FilterArg", [
         (None, Debug::to_repr(a)),
@@ -473,13 +293,6 @@ impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
       ])
-    EffMark(a, b) =>
-      @debug.Repr::ctor("EffMark", [
-        (None, Debug::to_repr(a)),
-        (None, Debug::to_repr(b)),
-      ])
-    DeprMark(a) => @debug.Repr::ctor("DeprMark", [(None, Debug::to_repr(a))])
-    FailMark(a) => @debug.Repr::ctor("FailMark", [(None, Debug::to_repr(a))])
     Or(a) => @debug.Repr::ctor("Or", [(None, Debug::to_repr(a))])
     Seq(a) => @debug.Repr::ctor("Seq", [(None, Debug::to_repr(a))])
     Many(a, b) =>
@@ -759,7 +572,7 @@ pub struct Entity {
   // `ElemDef.completer` からそのまま carry — `hidden` と同じ「冗長フィールドをそのまま運ぶだけ」
   // パターン)。`None` = no completer declared. Read by `complete_tree`'s post-dedup pass
   // (outcome.mbt) via a name-keyed Entity lookup — NOT threaded through the value-primitive Node
-  // constructors (StrArg/NumArg/…) themselves, because every value-primitive call site would
+  // constructors (string resident/number resident/…) themselves, because every value-primitive call site would
   // otherwise need its own completer plumbing (30+ sites across eval.mbt/matcher.mbt) for a value
   // that is always determined by `origin` alone (same Entity, same completer, by construction —
   // `ensure_entity` only ever creates ONE Entity per name). This is the structural reason DR-104
@@ -773,7 +586,7 @@ pub struct Entity {
 ///|
 /// A long-option entry the eq-split matcher can resolve (`--key=value`). `int_round` /
 /// `allow_base_prefix` / `bool_config` carry the element's DR-075 / DR-074 §2/§4 factory config into
-/// the eq-split path (space form runs the greedy Num/IntArg/BoolArg node which already carries this
+/// the eq-split path (space form runs the greedy Num/int resident/bool resident node which already carries this
 /// config; eq-split needs its own copy since the entry table is the only channel run_eq_split reads).
 /// `int_round` は TInt のみ、`allow_base_prefix` は TNum / TInt、`bool_config` は TBool のみが参照する
 /// (DR-076 §1/§3: bool の eq-split `--enabled=true` は variant 綴りと共存する — TFlag と違い抑制
@@ -804,7 +617,7 @@ pub struct LongEntry {
   // form emits a `@depr:<name>` warning marker, same standing as `ShortEntry.depr` (this field's doc
   // comment). DR-058 §2 draws no入口形 distinction (space form / eq-split / short cluster all warn
   // alike) — `run_eq_split` (matcher.mbt) was the one entry point missing this carrier before this
-  // fix (the space form already threads it via `installer.mbt`'s `DeprMark` satellite append, short
+  // fix (the space form already threads it via `installer.mbt`'s `deprecation resident` satellite append, short
   // via this field's `ShortEntry` sibling).
   depr : Bool
 } derive(Eq, Debug)

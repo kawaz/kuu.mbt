@@ -13,6 +13,15 @@ fn empty_def() -> Definition {
 }
 
 ///|
+fn is_resident(node : Node, kind : String, name : String) -> Bool {
+  match node {
+    Ext(extension) =>
+      extension.kind() == kind && node_resident_name(node) == Some(name)
+    _ => false
+  }
+}
+
+///|
 /// ElemDef を「必要な軸だけ named param で差し替える」ビルダー。全 field を毎回書くと slice の
 /// helpers_wbtest.mbt と同じ肥大化を招くため、ここでは lowering wbtest が触る軸だけ label に出す。
 fn el(
@@ -179,10 +188,10 @@ test "long installer: value option gets 1 greedy Seq satellite + 1 EqSplit match
     options: [el("port", TStr, long=LList([":set"]))],
   }
   let sc = ok_scope(def, [LongInst])
-  // 貢献: (1) Seq([Exact("--port"), StrArg("port")]) の satellite が 1 本、(2) NativeMatch(EqSplit(...))
-  // 1 本、計 greedy = 2 本。TStr なので value_prim = StrArg。
+  // 貢献: (1) Seq([Exact("--port"), string_arg("port")]) の satellite が 1 本、(2) NativeMatch(EqSplit(...))
+  // 1 本、計 greedy = 2 本。TStr なので value_prim = string resident。
   assert_eq(sc.greedy.length(), 2)
-  assert_eq(sc.greedy[0], Seq([Exact("--port"), StrArg("port", [])]))
+  assert_eq(sc.greedy[0], Seq([Exact("--port"), string_arg("port", [])]))
   match sc.greedy[1] {
     NativeMatch(EqSplit(prefix=p, entries=es)) => {
       assert_eq(p, "--")
@@ -203,9 +212,9 @@ test "long installer: value option gets 1 greedy Seq satellite + 1 EqSplit match
 }
 
 ///|
-/// 保証 (DR-058 §2): a deprecated VALUE main entry's satellite carries a trailing `DeprMark`
+/// 保証 (DR-058 §2): a deprecated VALUE main entry's satellite carries a trailing `deprecation resident`
 /// warning marker after its value slot (`inst_long`'s space-form main-entry arm, node.mbt's
-/// `DeprMark` doc shape) — mirrors `inst_short`'s `depr: e.deprecated` short-cluster coverage
+/// `deprecation resident` doc shape) — mirrors `inst_short`'s `depr: e.deprecated` short-cluster coverage
 /// (matcher_wbtest.mbt「short cluster: deprecated entry rides a @depr marker」). `deprecated: true`
 /// on a plain (non-alias) element stands in for both cases DR-058 §2 requires a warning for — a
 /// directly-deprecated canonical entry, and a deprecated alias entry-copy (DR-057 §3
@@ -213,7 +222,7 @@ test "long installer: value option gets 1 greedy Seq satellite + 1 EqSplit match
 /// so lowering cannot (and need not) distinguish them. Firing the entry (`--port 8080`) must NOT
 /// alter the parsed value (`port` still binds `8080`) — only a `@depr:port` bookkeeping marker is
 /// added, collected by `warnings_of`.
-test "long installer: a deprecated value option's main-entry satellite carries a DeprMark warning marker (DR-058 §2)" {
+test "long installer: a deprecated value option's main-entry satellite carries a deprecation resident warning marker (DR-058 §2)" {
   let def : Definition = {
     ..empty_def(),
     options: [{ ..el("port", TStr, long=LList([":set"])), deprecated: true }],
@@ -221,7 +230,7 @@ test "long installer: a deprecated value option's main-entry satellite carries a
   let sc = ok_scope(def, [LongInst])
   assert_eq(
     sc.greedy[0],
-    Seq([Exact("--port"), StrArg("port", []), DeprMark("port")]),
+    Seq([Exact("--port"), string_arg("port", []), deprecation_mark("port")]),
   )
   let o = parse_tree(ScopeNode(sc), ["--port", "8080"], defs=Map([]))
   match o {
@@ -236,14 +245,14 @@ test "long installer: a deprecated value option's main-entry satellite carries a
 ///|
 /// 保証 (DR-058 §2): a deprecated FLAG's Set-variant satellite (`inst_long`'s "Variant entries"
 /// loop — the `:set:true` bare-fire DR-076 §2 規則1 composes for a classic flag) ALSO carries a
-/// trailing `DeprMark`, symmetric with the value main-entry case above. `inst_long` has 2 lowering
+/// trailing `deprecation resident`, symmetric with the value main-entry case above. `inst_long` has 2 lowering
 /// sites for a long entry point (space-form main-entry vs the variant loop, since a bare flag fire
 /// is a Set variant, not a main entry — see the "long installer: a flag's `long:true`..." test
 /// above); `inst_short` has only 1 (a cluster char has no variant/main-entry split, `depr` rides
-/// the single `ShortEntry`). Both `inst_long` sites need their own DeprMark application for parity
+/// the single `ShortEntry`). Both `inst_long` sites need their own deprecation resident application for parity
 /// with the short side — this test locks the variant-loop site (the previous test locks the
 /// main-entry site). Firing `--verbose` both sets `verbose=true` AND records `@depr:verbose`.
-test "long installer: a deprecated flag's Set-variant satellite carries a DeprMark warning marker (DR-058 §2)" {
+test "long installer: a deprecated flag's Set-variant satellite carries a deprecation resident warning marker (DR-058 §2)" {
   let def : Definition = {
     ..empty_def(),
     options: [{ ..el("verbose", TFlag, long=LBool(true)), deprecated: true }],
@@ -252,7 +261,11 @@ test "long installer: a deprecated flag's Set-variant satellite carries a DeprMa
   assert_eq(sc.greedy.length(), 1)
   assert_eq(
     sc.greedy[0],
-    Seq([Exact("--verbose"), Bind("verbose", VBool(true)), DeprMark("verbose")]),
+    Seq([
+      Exact("--verbose"),
+      Bind("verbose", VBool(true)),
+      deprecation_mark("verbose"),
+    ]),
   )
   let o = parse_tree(ScopeNode(sc), ["--verbose"], defs=Map([]))
   match o {
@@ -266,13 +279,13 @@ test "long installer: a deprecated flag's Set-variant satellite carries a DeprMa
 
 ///|
 /// codex レビュー Major 2 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) / DR-058
-/// §2: the DeprMark append used to live ONLY in the `BCell`/`ref_target is None` main-entry arm — a
+/// §2: the deprecation resident append used to live ONLY in the `BCell`/`ref_target is None` main-entry arm — a
 /// `BEnum` main entry (`enum_value_node`-shaped satellite) never got it, so a deprecated
 /// enum-constrained option silently warned NOTHING. DR-058 §2's warning contract is 値構造非依存 (it
 /// fires because the ELEMENT is deprecated, not because of what shape its value slot has) — this
 /// locks the BEnum arm now routes through the shared `with_depr` funnel (installer.mbt's `inst_long`)
 /// alongside BCell.
-test "long installer: a deprecated BEnum (values-constrained) main entry carries a DeprMark warning marker (codex レビュー Major 2, DR-058 §2)" {
+test "long installer: a deprecated BEnum (values-constrained) main entry carries a deprecation resident warning marker (codex レビュー Major 2, DR-058 §2)" {
   let def : Definition = {
     ..empty_def(),
     options: [
@@ -289,7 +302,7 @@ test "long installer: a deprecated BEnum (values-constrained) main entry carries
     Seq([
       Exact("--color"),
       enum_value_node("color", TStr, ["red", "blue"]),
-      DeprMark("color"),
+      deprecation_mark("color"),
     ]),
   )
   let o = parse_tree(ScopeNode(sc), ["--color", "red"], defs=Map([]))
@@ -311,7 +324,7 @@ test "long installer: a deprecated BEnum (values-constrained) main entry carries
 /// BOr here cover both non-BCell shapes `inst_long` special-cases before the generic `_` /
 /// `ref_target` dispatch; ref±repeat's own 2 arms already got direct coverage from the fix itself
 /// being applied there, per the commit's `with_depr` call sites).
-test "long installer: a deprecated BOr (structural or) main entry carries a DeprMark warning marker (codex レビュー Major 2, DR-058 §2)" {
+test "long installer: a deprecated BOr (structural or) main entry carries a deprecation resident warning marker (codex レビュー Major 2, DR-058 §2)" {
   let num_branch : OrBranch = { id: "num", items: [el("num", TInt)] }
   let flag_branch : OrBranch = { id: "flag", items: [el("flag", TBool)] }
   let def : Definition = {
@@ -326,10 +339,11 @@ test "long installer: a deprecated BOr (structural or) main entry carries a Depr
   }
   let sc = ok_scope(def, [LongInst])
   match sc.greedy[0] {
-    Seq([Exact("--level"), Or(_), DeprMark("level")]) => ()
+    Seq([Exact("--level"), Or(_), marker]) if node_is_deprecation_mark(marker) =>
+      ()
     _ =>
       fail(
-        "expected sc.greedy[0] == Seq([Exact(\"--level\"), Or(_), DeprMark(\"level\")])",
+        "expected sc.greedy[0] == Seq([Exact(\"--level\"), Or(_), deprecation_mark(\"level\")])",
       )
   }
   let o = parse_tree(ScopeNode(sc), ["--level", "5"], defs=Map([]))
@@ -383,15 +397,16 @@ test "long installer: a flag's explicit `long:[\":set\"]` composes `:set:true` A
     options: [el("verbose", TFlag, long=LList([":set"]))],
   }
   let sc = ok_scope(def, [LongInst])
-  // main entry 1 本 (値スロット, TFlag→TBool 差し替え後 BoolArg) + EqSplit matcher 1 本 + variant 1 本
+  // main entry 1 本 (値スロット, TFlag→TBool 差し替え後 bool resident) + EqSplit matcher 1 本 + variant 1 本
   // (裸発火 Bind) → greedy = 3 本。
   assert_eq(sc.greedy.length(), 3)
   let mut has_value_slot = false
   let mut has_bare_bind = false
   for g in sc.greedy {
     match g {
-      Seq([Exact("--verbose"), BoolArg("verbose", _, _)]) =>
-        has_value_slot = true
+      Seq([Exact("--verbose"), resident]) if is_resident(
+          resident, "builtin/bool", "verbose",
+        ) => has_value_slot = true
       Seq([Exact("--verbose"), Bind("verbose", VBool(true))]) =>
         has_bare_bind = true
       _ => ()
@@ -417,11 +432,11 @@ test "long installer: a count's `long:true` composes an `:update:increment` vari
     options: [el("verbose", TCount, long=LBool(true))],
   }
   let sc = ok_scope(def, [LongInst])
-  // main entry 無し (long=[]) + Update variant 1 本 → eq-split entry は無い → greedy = EffMark 衛星 1 本のみ。
+  // main entry 無し (long=[]) + Update variant 1 本 → eq-split entry は無い → greedy = effect resident 衛星 1 本のみ。
   assert_eq(sc.greedy.length(), 1)
   assert_eq(
     sc.greedy[0],
-    Seq([Exact("--verbose"), EffMark("verbose", Update("increment", []))]),
+    Seq([Exact("--verbose"), effect_mark("verbose", Update("increment", []))]),
   )
   let ent = entity_of(sc, "verbose").unwrap()
   // ensure_entity が TCount→TNum の型差し替えを担う (normalize_option ではない)。
@@ -443,7 +458,7 @@ test "long installer: a count's explicit `long:[\":update:increment\"]` does not
   assert_eq(sc.greedy.length(), 1)
   assert_eq(
     sc.greedy[0],
-    Seq([Exact("--verbose"), EffMark("verbose", Update("increment", []))]),
+    Seq([Exact("--verbose"), effect_mark("verbose", Update("increment", []))]),
   )
 }
 
@@ -522,7 +537,7 @@ test "repeat installer: min:0 unbounded repeat lowers to Many(head, lazy_) carry
   }
   let sc = ok_scope(def, all_installers())
   assert_eq(sc.positional.length(), 1)
-  assert_eq(sc.positional[0], Many(StrArg("xs", []), true))
+  assert_eq(sc.positional[0], Many(string_arg("xs", []), true))
   let ent = entity_of(sc, "xs").unwrap()
   assert_eq(ent.accum, Some("append")) // DR-044 §1: cardinality 不問で常に配列 / DR-105 §3
   assert_eq(ent.flatten, true)
@@ -544,8 +559,8 @@ test "repeat installer: bounded max lowers to min heads + BoundedTail (no Ref)" 
   let sc = ok_scope(def, all_installers())
   // 1 mandatory head + BoundedTail(head, 2, false) — budget = 3-1
   assert_eq(sc.positional.length(), 2)
-  assert_eq(sc.positional[0], StrArg("f", []))
-  assert_eq(sc.positional[1], BoundedTail(StrArg("f", []), 2, false))
+  assert_eq(sc.positional[0], string_arg("f", []))
+  assert_eq(sc.positional[1], BoundedTail(string_arg("f", []), 2, false))
   // Ref template は登録されない (Ref 再帰なし)
   let ent = entity_of(sc, "f").unwrap()
   assert_eq(ent.accum, Some("append")) // DR-105 §3
@@ -573,8 +588,11 @@ test "BGroup installer: bounded max (min:1,max:1) lowers IdxRepeat's budget fiel
   let def : Definition = { ..empty_def(), positionals: [grp, el("ctrl", TStr)] }
   let sc = ok_scope(def, all_installers())
   assert_eq(sc.positional.length(), 2)
-  assert_eq(sc.positional[0], IdxRepeat("grp", StrArg("gflag", []), 1, Some(0)))
-  assert_eq(sc.positional[1], StrArg("ctrl", []))
+  assert_eq(
+    sc.positional[0],
+    IdxRepeat("grp", string_arg("gflag", []), 1, Some(0)),
+  )
+  assert_eq(sc.positional[1], string_arg("ctrl", []))
 }
 
 ///|
@@ -589,7 +607,10 @@ test "BGroup installer: bounded max (min:1,max:3) lowers IdxRepeat's budget fiel
   let def : Definition = { ..empty_def(), positionals: [grp] }
   let sc = ok_scope(def, all_installers())
   assert_eq(sc.positional.length(), 1)
-  assert_eq(sc.positional[0], IdxRepeat("grp", StrArg("gflag", []), 1, Some(2)))
+  assert_eq(
+    sc.positional[0],
+    IdxRepeat("grp", string_arg("gflag", []), 1, Some(2)),
+  )
 }
 
 ///|
@@ -601,7 +622,10 @@ test "BGroup installer: no repeat spec keeps IdxRepeat unbounded (min:0, budget:
   let def : Definition = { ..empty_def(), positionals: [grp] }
   let sc = ok_scope(def, all_installers())
   assert_eq(sc.positional.length(), 1)
-  assert_eq(sc.positional[0], IdxRepeat("grp", StrArg("gflag", []), 0, None))
+  assert_eq(
+    sc.positional[0],
+    IdxRepeat("grp", string_arg("gflag", []), 0, None),
+  )
 }
 
 ///|
@@ -1344,7 +1368,9 @@ test "desugar_aliases: alias long:true on a flag canonical composes :set:true (b
   for g in sc.greedy {
     match g {
       Seq([Exact("--v"), Bind("verbose", VBool(true))]) => has_bare_bind = true
-      Seq([Exact("--v"), BoolArg("verbose", _, _)]) => has_value_slot = true
+      Seq([Exact("--v"), resident]) if is_resident(
+          resident, "builtin/bool", "verbose",
+        ) => has_value_slot = true
       _ => ()
     }
   }
@@ -1373,7 +1399,9 @@ test "desugar_aliases: alias long:true on a string canonical stays a value-slot 
   let mut has_value_slot = false
   for g in sc.greedy {
     match g {
-      Seq([Exact("--h"), StrArg("host", _)]) => has_value_slot = true
+      Seq([Exact("--h"), resident]) if is_resident(
+          resident, "builtin/string", "host",
+        ) => has_value_slot = true
       _ => ()
     }
   }
@@ -2087,7 +2115,7 @@ test "codex Medium: merge without separator — no-marker single fire adds (over
 ///|
 /// 保証 (remove 単独): 2 回目の発火 `-hello` は separator が無いので 1 piece のまま
 /// `classify_merge_piece` に渡り、`-` 始まりなので remove マーカーと判定される (旧実装では
-/// separator 無しだと SepArg に一切進まず、`-hello` はただの literal 文字列として上書きされ
+/// separator 無しだと separated resident に一切進まず、`-hello` はただの literal 文字列として上書きされ
 /// `["-hello"]` になっていた — このケースが退行検知の主眼)。暗黙先頭 `@` が補われ old=[hello] を
 /// splice、remove("hello") がそれを削って結果は空になる。
 test "codex Medium: merge without separator — a lone remove-marker fire merges against prior old" {
@@ -3299,7 +3327,7 @@ test "long installer: long_eq_sep:EsDeny withholds this element's eq-split entry
   // EqSplit entry が無いので、この要素単独では NativeMatch(EqSplit) 自体が greedy に現れない
   // (eq_prefixes/eq_groups が空のまま — inst_long の "0 entries なら matcher を足さない" ガード)。
   assert_eq(sc.greedy.length(), 1)
-  assert_eq(sc.greedy[0], Seq([Exact("--port"), StrArg("port", [])]))
+  assert_eq(sc.greedy[0], Seq([Exact("--port"), string_arg("port", [])]))
 }
 
 ///|
@@ -3413,7 +3441,9 @@ test "long installer: a variant trigger uses e.long_prefix, matching the main en
   let mut has_dash_variant = false
   for g in sc.greedy {
     match g {
-      Seq([Exact("+ssl"), BoolArg("ssl", _, _)]) => has_plus_main = true
+      Seq([Exact("+ssl"), resident]) if is_resident(
+          resident, "builtin/bool", "ssl",
+        ) => has_plus_main = true
       Seq([Exact("+no-ssl"), Bind("ssl", VBool(false))]) =>
         has_plus_variant = true
       Seq([Exact("--no-ssl"), ..]) => has_dash_variant = true
@@ -3443,7 +3473,9 @@ test "long installer: default long_prefix keeps variant trigger at \"--\" (対�
   let mut has_variant = false
   for g in sc.greedy {
     match g {
-      Seq([Exact("--ssl"), BoolArg("ssl", _, _)]) => has_main = true
+      Seq([Exact("--ssl"), resident]) if is_resident(
+          resident, "builtin/bool", "ssl",
+        ) => has_main = true
       Seq([Exact("--no-ssl"), Bind("ssl", VBool(false))]) => has_variant = true
       _ => ()
     }
