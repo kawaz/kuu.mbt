@@ -18,7 +18,7 @@
 /// installer (global 等) も引き続き参照できる。Idempotency は add-if-absent が担う。
 pub struct ElemDef {
   name : String
-  ty : Ty
+  ty : &TypeExt
   // long installer 所有: wire 二形 (DR-071 §1 — bool | array、"wire には二形とも載る、展開は long
   // installer の解釈"）。糖衣展開 (bool→リスト、DR-076 §2 flag 差し替え/補完) と colon DSL 分類
   // (DR-011/076、main-entry / variant / 構文エラー) は共に installer 層 (`normalize_option` が呼ぶ
@@ -42,7 +42,7 @@ pub struct ElemDef {
   // definition-error)。
   tty_stream : String?
   // DR-099 §3: `builtin/tty` factory の config `tty_cygwin` (既定 true)。`is_tty` が false の要素
-  // では未使用 (int_round が TInt 以外で未使用なのと同じ冗長フィールド)。
+  // では未使用 (int_round が int_type() 以外で未使用なのと同じ冗長フィールド)。
   tty_cygwin : Bool
   is_dd : Bool // dd installer 所有 (type:"dd")
   // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め (DR-063 A.1 裸文字列
@@ -114,19 +114,19 @@ pub struct ElemDef {
   value_requires : Array[(String, String, Array[String])]
   // DR-075 §2 int_round factory config (DR-061 §4 平坦 config キー、`int_parser` の唯一 config)。
   // canonical default = `RError` (非整数値は Error)、opt-in で floor/trunc/half_even 等の丸めモード。
-  // parse 相内部調整で、`value_prim` が int resident にこの値を埋め込む。TInt 以外の element は
+  // parse 相内部調整で、`value_prim` が int resident にこの値を埋め込む。int_type() 以外の element は
   // 参照しない (installer が読み取らない冗長フィールド)。
   int_round : RoundMode
   // DR-074 §2 統合 opt-in `number_allow_base_prefix` (`number_parser` factory config)。canonical
   // default = false (基数 prefix / hex float は Error)、true で `0xff` / `0x1.8p3` / `0o777` / `0b1010`
   // を受理する。value_prim が number / int resident に埋め込み、eval / matcher
-  // で parse_number_ext / parse_int_value_ext に流す。TNum / TInt 以外は参照しない。
+  // で parse_number_ext / parse_int_value_ext に流す。number_type() / int_type() 以外は参照しない。
   allow_base_prefix : Bool
   // DR-074 §3/§4 `bool_parser` factory config (DR-061 §4 平坦 config キー 3 つを 1 struct に束ねた
   // carrier — `true_values`/`false_values`/`case_insensitive` は常にセットで使われるため、
   // int_round/allow_base_prefix と違い個別フィールドに展開しない、`RepeatSpec` と同じ「複合 config を
   // 1 struct にまとめる」パターン)。canonical default = `bool_config_canonical()`。value_prim が
-  // bool resident に埋め込み、eval / matcher で parse_bool_ext に流す。TBool 以外は
+  // bool resident に埋め込み、eval / matcher で parse_bool_ext に流す。bool_type() 以外は
   // 参照しない (冗長フィールド、int_round/allow_base_prefix と同じ扱い)。
   bool_config : BoolConfig
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
@@ -343,28 +343,15 @@ fn split_colon(s : String) -> Array[String] {
 /// parsers (DR-074/075/076 canonical lexicons) but with a permissive `VStr` fallback instead of an
 /// Error: a DSL operand is a literal the DEFINITION author wrote (not untrusted CLI input), so an
 /// unparseable operand degrading to a string is a defensive fallback, not a silent-coercion concern.
-fn dsl_operand_value(ty : Ty, s : String) -> Value {
-  match ty {
-    TNum | TInt | TCount =>
-      match parse_number(s) {
-        Some(d) => VNum(d)
-        None => VStr(s)
+fn dsl_operand_value(ty : &TypeExt, s : String) -> Value {
+  match ty.parse_token(s) {
+    Ok(value) => value
+    Err(_) =>
+      if ty.name() == "flag" || ty.name() == "bool" {
+        VBool(s == "true" || s == "1")
+      } else {
+        VStr(s)
       }
-    TFloat =>
-      match parse_float(s) {
-        Some(d) => VNum(d)
-        None => VStr(s)
-      }
-    TFlag | TBool =>
-      match parse_bool(s) {
-        Some(b) => VBool(b)
-        None => VBool(s == "true" || s == "1")
-      }
-    TStr => VStr(s)
-    // DR-089: none has no value space — this defensive arm is not a live path (a none-typed
-    // element carries no value-bearing DSL operand to reach here), same permissive VStr fallback
-    // as the rest of this function.
-    TNone => VStr(s)
   }
 }
 
@@ -380,7 +367,7 @@ fn dsl_operand_value(ty : Ty, s : String) -> Value {
 fn classify_long_spelling(
   s : String,
   own_name : String,
-  ty : Ty,
+  ty : &TypeExt,
 ) -> LongSpelling {
   if s == ":set" {
     return LMain(own_name)
@@ -457,7 +444,7 @@ fn classify_long_spelling(
 
 ///|
 /// DR-076 §2: the `:set:true` variant (bare-trigger fire → literal `true`) a flag's long展開
-/// composes in — `classify_long_spelling(":set:true", kebab(name), TFlag)` would build the SAME
+/// composes in — `classify_long_spelling(":set:true", kebab(name), flag_type())` would build the SAME
 /// value (colon-DSL round-trip), this just skips the string-splitting for the one fixed shape.
 fn flag_bare_true_variant(name : String) -> Variant {
   { trigger: kebab(name), op: Set, operand: Some(VBool(true)) }
@@ -490,18 +477,18 @@ fn count_increment_variant(name : String) -> Variant {
 fn resolve_long(
   decl : LongDecl,
   name : String,
-  ty : Ty,
+  ty : &TypeExt,
 ) -> (Array[String], Array[Variant]) {
   match decl {
     LBool(false) => ([], [])
     LBool(true) =>
-      if ty == TFlag {
+      if ty == flag_type() {
         ([], [flag_bare_true_variant(name)])
-      } else if ty == TCount {
+      } else if ty == count_type() {
         ([], [count_increment_variant(name)])
-      } else if ty == TNone {
+      } else if ty == none_type() {
         // DR-089 §2 の「消費 0 の純トリガ」canonical 例 (`{"name": "sep", "long": true}`) —
-        // TFlag/TCount と同じ「main entry を持たず bare-true variant だけ」の 3 例目。none には
+        // flag_type()/count_type() と同じ「main entry を持たず bare-true variant だけ」の 3 例目。none には
         // 運ぶ値が無いので `flag_bare_true_variant` のプレースホルダ (`Set VBool(true)`) をそのまま
         // 再利用してよい — この Binding は `build_result` 側で `NoneCell` により結果から除外される
         // (`resolve.mbt` 参照)、committed 参加 (conflicts/exclusive/requires トリガ側) だけが生きる。
@@ -519,7 +506,7 @@ fn resolve_long(
           LInvalid(_) => ()
         }
       }
-      if ty == TFlag && (longs.length() > 0 || vars.length() > 0) {
+      if ty == flag_type() && (longs.length() > 0 || vars.length() > 0) {
         let bare_true = flag_bare_true_variant(name)
         let mut already = false
         for v in vars {
@@ -531,7 +518,7 @@ fn resolve_long(
           vars.push(bare_true)
         }
       }
-      if ty == TCount && (longs.length() > 0 || vars.length() > 0) {
+      if ty == count_type() && (longs.length() > 0 || vars.length() > 0) {
         let bare_inc = count_increment_variant(name)
         let mut already = false
         for v in vars {
@@ -668,7 +655,7 @@ priv struct SBChild {
 /// が `accumulator` を単一 `String?` としてしか運ばない、DR-080/DR-091 のどちらか一方の語彙) ため
 /// 順序に意味は無いが、kv resident が separated resident の分岐に巻き込まれないよう最初に切り出す。
 fn value_prim(
-  ty : Ty,
+  ty : &TypeExt,
   name : String,
   int_round : RoundMode,
   allow_base_prefix : Bool,
@@ -678,26 +665,22 @@ fn value_prim(
   merge? : Bool = false,
   kv_map? : Bool = false,
 ) -> Node {
+  let configured = configured_type(
+    ty, int_round, allow_base_prefix, bool_config,
+  )
   if kv_map {
     kv_arg(name, piece_filters)
   } else if separator is Some(_) || merge {
     separated_arg(
-      name, separator, ty, int_round, allow_base_prefix, bool_config, piece_filters,
+      name, separator, configured, int_round, allow_base_prefix, bool_config, piece_filters,
       merge,
     )
   } else {
-    match ty {
-      // TNum は canonical (DR-074 §1) + opt-in base prefix (§2)。allow=true で hex/oct/bin 整数 +
-      // hex float も受理する統合 opt-in (単一 flag、DR-074 §2)。
-      TNum => number_arg(name, allow_base_prefix, piece_filters)
-      // TInt は値空間判定 (DR-075 §1) + int_round (§2) + hex/oct/bin (DR-074 §2)。int resident resident に
-      // mode / flag を埋め込み、eval が parse_int_value_ext(_, mode, flag) で丸め + 基数 prefix を反映する。
-      TInt => int_arg(name, int_round, allow_base_prefix, piece_filters)
-      // TFloat は DR-074 §1 の広い受理域 (number + inf) を持つ別 lexicon (float resident / parse_float)
-      TFloat => float_arg(name, piece_filters)
-      // TBool は DR-076 §1/§4 で string/number と同格の値型 — bool resident / parse_bool_ext を通す
-      // (DR-074 §4 bool_parser factory config、canonical default は既存 parse_bool と同値)。
-      TBool => bool_arg(name, bool_config, piece_filters)
+    match ty.name() {
+      "number" => number_arg(name, allow_base_prefix, piece_filters)
+      "int" => int_arg(name, int_round, allow_base_prefix, piece_filters)
+      "float" => float_arg(name, piece_filters)
+      "bool" => bool_arg(name, bool_config, piece_filters)
       _ => string_arg(name, piece_filters)
     }
   }
@@ -874,8 +857,8 @@ fn kebab(name : String) -> String {
 ///   colon DSL 分類はここに集約 — decode 層 (dec_long) はもう wire の形を写すだけ (二形の区別は decode
 ///   後に潰さない、`resolve_long` のコメント参照)。
 ///   Fix 3 (DR-064 §5): dd 要素で name 未指定なら trigger 綴りを "--" に既定
-///   Fix 4 (LOWERING §A.5 / DR-076 §2): TFlag の値セルを TBool へ差し替え (flag = bool + default:false +
-///   long 綴り合成)。これにより inst_long / eq_entries は TFlag を特殊扱いする必要がなくなり、bool と
+///   Fix 4 (LOWERING §A.5 / DR-076 §2): flag_type() の値セルを bool_type() へ差し替え (flag = bool + default:false +
+///   long 綴り合成)。これにより inst_long / eq_entries は flag_type() を特殊扱いする必要がなくなり、bool と
 ///   完全同一の lowering 経路に自然に乗る (flag 固有の lowering 分岐を「型差し替え + resolve_long」の
 ///   2 点だけに縮退させる、DR-076 §2 規則4)。
 fn normalize_surface(def : Definition) -> Unit {
@@ -895,36 +878,36 @@ fn normalize_surface(def : Definition) -> Unit {
 }
 
 ///|
-/// DR-076 §2: flag の展開後の値セルは bool (LOWERING §A.5) — resolve_long は元の型 (e.ty, まだ TFlag)
-/// で判定する必要があるので、型差し替えより先に呼ぶ。`TFlag → TBool` はここで確定してよい — `TBool`
-/// 型の short/eq-split 挙動は "TBool 全般に画一的なルール" (非消費・固定 true) で閉じるので、変換後も
-/// 「元 flag だったか」を覚えておく必要が無い (matcher.mbt の `TFlag | TBool` アームが両方 flag 型と
+/// DR-076 §2: flag の展開後の値セルは bool (LOWERING §A.5) — resolve_long は元の型 (e.ty, まだ flag_type())
+/// で判定する必要があるので、型差し替えより先に呼ぶ。`flag_type() → bool_type()` はここで確定してよい — `bool_type()`
+/// 型の short/eq-split 挙動は "bool_type() 全般に画一的なルール" (非消費・固定 true) で閉じるので、変換後も
+/// 「元 flag だったか」を覚えておく必要が無い (matcher.mbt の `flag_type() | bool_type()` アームが両方 flag 型と
 /// して扱うのはこの画一性のおかげ)。
 ///
-/// DR-077 §3 (`TCount`) は対称的な糖衣に見えて **ここでは TNum に変換しない** — count 由来の short/
-/// eq-split 挙動 (非消費・固定 increment) は「TNum 全般」には適用できない (ordinary number の short
+/// DR-077 §3 (`count_type()`) は対称的な糖衣に見えて **ここでは number_type() に変換しない** — count 由来の short/
+/// eq-split 挙動 (非消費・固定 increment) は「number_type() 全般」には適用できない (ordinary number の short
 /// は値を消費するのが正しい挙動、`-n5` 等) ので、flag と違って「型変換後も元 count だったか」を覚えて
-/// おく必要がある。ElemDef に専用マーカーを新設する代わりに、**TCount というタグ自体を installer chain
-/// の間ずっと保持し、値セルの実体型 (Entity.ty = TNum) への収束を `ensure_entity` まで遅延させる**
+/// おく必要がある。ElemDef に専用マーカーを新設する代わりに、**count_type() というタグ自体を installer chain
+/// の間ずっと保持し、値セルの実体型 (Entity.ty = number_type()) への収束を `ensure_entity` まで遅延させる**
 /// (`ensure_entity` のコメント参照) — 既存の型そのものが情報を運ぶ設計は崩さず、collapse のタイミングだけ
-/// 後ろにずらす。short/eq-split matcher (matcher.mbt) は `TCount` を `TFlag | TBool` と並ぶ第 3 の
+/// 後ろにずらす。short/eq-split matcher (matcher.mbt) は `count_type()` を `flag_type() | bool_type()` と並ぶ第 3 の
 /// 非消費挙動として扱う。
 fn normalize_option(e : ElemDef) -> ElemDef {
   if e.is_dd {
     normalize_dd_name(e)
   } else {
     let (longs, vars) = resolve_long(e.long, e.name, e.ty)
-    // TFlag は TBool へ書き換わり `ensure_entity` 到達時には元 TFlag だったかを判別できなくなる
+    // flag_type() は bool_type() へ書き換わり `ensure_entity` 到達時には元 flag_type() だったかを判別できなくなる
     // ため、flag preset の default:false (LOWERING §A.5) はこの型差し替えと同じ場所で確定させる
-    // (issue group-inner-bool-default-false-duplicate-top-level: plain TBool は暗黙 default を
-    // 持たないので `ensure_entity` 側の注入対象を絞る一方、flag 由来の TBool は preset を維持する
+    // (issue group-inner-bool-default-false-duplicate-top-level: plain bool_type() は暗黙 default を
+    // 持たないので `ensure_entity` 側の注入対象を絞る一方、flag 由来の bool_type() は preset を維持する
     // 必要がある — 明示 default があればそちらが勝つのは変わらない)。
-    let default_values2 = if e.ty == TFlag && e.default_values is None {
+    let default_values2 = if e.ty == flag_type() && e.default_values is None {
       Some([VBool(false)])
     } else {
       e.default_values
     }
-    let ty2 = if e.ty == TFlag { TBool } else { e.ty }
+    let ty2 = if e.ty == flag_type() { bool_type() } else { e.ty }
     {
       ..e,
       ty: ty2,
@@ -972,7 +955,7 @@ fn clone_def(d : Definition) -> Definition {
 pub fn build_export_map(def : Definition) -> Map[String, ExportKey] {
   let d = clone_def(def)
   // `d` は normalize_surface を経ていない生の (= pre-normalize) 複製なので、`orig` 引数にも
-  // 同じ `d` を渡してよい (TFlag 等の元の型はまだ書き換わっていない)。
+  // 同じ `d` を渡してよい (flag_type() 等の元の型はまだ書き換わっていない)。
   desugar_aliases(d, d)
   let m : Map[String, ExportKey] = Map([], capacity=0)
   collect_export(d, m)
@@ -1061,8 +1044,12 @@ fn elem_head(e : ElemDef) -> Node {
 /// through `dsl_operand_value` (the SAME type coercion `classify_long_spelling`'s DSL operand
 /// parsing already uses for variant operands) so a non-string-typed enum would get a correctly-
 /// typed value — moot for today's only callers (string-only `values`, this issue's scope) since
-/// `dsl_operand_value(TStr, s) = VStr(s)`.
-fn enum_value_node(name : String, ty : Ty, values : Array[String]) -> Node {
+/// `dsl_operand_value(string_type(), s) = VStr(s)`.
+fn enum_value_node(
+  name : String,
+  ty : &TypeExt,
+  values : Array[String],
+) -> Node {
   let branches : Array[Node] = []
   for v in values {
     branches.push(Seq([Exact(v), Bind(name, dsl_operand_value(ty, v))]))
@@ -1398,7 +1385,7 @@ fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
 /// above) — a `BOr`/`BGroup` RECURSIVE call into this same function (branch leaves / group inner
 /// items, both below) bypassed it entirely, so an `is_exact` leaf nested inside a structural or /
 /// named group would fall into the `BCell`/`ref_target is None` arm and get a phantom
-/// `Entity{name: spelling, ty: TNone}` — occupying the namespace and blocking a real same-named
+/// `Entity{name: spelling, ty: none_type()}` — occupying the namespace and blocking a real same-named
 /// entity's `ensure_entity` (add-if-absent already returns early once ANY entity with that name
 /// exists). Guarding HERE (single entry point every recursive path funnels through) closes both the
 /// top-level and the nested cases with one check, and any future `ElemBody` arm added to this match
@@ -1512,31 +1499,10 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
   // 同型 config seat (DR-050 §3): config_file 要素が存在すれば全 value cell に config seat を宣言
   // (自身が config_file の要素は循環禁止で除く)。config_key は path override; None = 同型。
   let config_seat = has_cf && !e.is_config_file
-  // flag preset default (LOWERING §A.5 / DR-051 §2): a TFlag cell presets default:false (未 fire
-  // でも false に落ちる)。ただし `normalize_option` (installer.mbt) が正規化の一環で TFlag を
-  // TBool へ既に書き換え済みなので、`ensure_entity` 到達時点の `e.ty` が TFlag のままであることは
-  // 実質無い (definitions.types にも flag factory は存在しないため shadow 経由でも生じない) —
-  // 実際の flag preset 注入は `normalize_option` 側 (TFlag→TBool 書き換えと同じ場所) で確定済み。
-  // ここに `e.ty == TFlag` を残すのは Ty::TFlag という型タグ自体の意味論 (「この型を持つセルは
-  // default:false」) を明示するため — TCount が ensure_entity まで自分の意味論を保持するのと
-  // 対称。plain TBool (definitions.types の `bool_parser` factory 由来含む) は暗黙 default を
-  // 持たない — 未発火なら他の値型と同様に absent (issue
-  // group-inner-bool-default-false-duplicate-top-level, DR-099 §2 の `?? absent` 終端と整合)。
-  // 明示 default があればそちらが勝つのは変わらない (e.g. ssl の default:true)。
-  //
-  // count preset default (DR-077 §3): a TCount cell presets default:0, mirroring flag's
-  // default:false — an ORDINARY TNum cell must NOT get an uninvited default:0 (a bare numeric
-  // slot commonly has no sensible default). This is
-  // exactly why `normalize_option` does NOT collapse `TCount → TNum` early (see its comment) — the
-  // `TCount` tag survives the whole chain so THIS is the one place that can still tell a count cell
-  // apart from an ordinary number cell. The `TNum` collapse itself happens right here too (`ty2`
-  // below), at the entity's actual value-cell type (Entity.ty) — the LAST point where the
-  // distinction still matters.
-  // DR-083 §1: the FLAG/BOOL/COUNT implicit preset is ALSO a length-1 array (the uniform shape
-  // every reader now expects) — a decl-less preset is scalar by construction (none of the three
-  // kinds can be `multiple` and carry a >1-element preset), so `[v]` is the correct degenerate
-  // form, never `[]`.
-  // DR-099 §2: is_tty 要素は TBool の暗黙 default:false プリセットを受けない — 素の bool と違い、
+  // Preset defaults are resident-owned: flag supplies false and count supplies 0 only
+  // when no explicit default exists. Ordinary bool/number residents remain absent.
+  // DR-083 keeps every scalar default in the uniform length-1 array representation.
+  // DR-099 §2: is_tty 要素は bool_type() の暗黙 default:false プリセットを受けない — 素の bool と違い、
   // is_tty 要素の default 席は `resolve.mbt`'s `resolve_ladder_below_cli` が `fold(観測) ?? 宣言
   // default ?? absent` という独自規則で解決する。ここで先回りに false を注入してしまうと「宣言
   // default 無し」という状態が失われ、fold が観測なしの場合に absent へ落ちる余地が無くなる
@@ -1547,15 +1513,14 @@ fn ensure_entity(build : Build, e : ElemDef, has_cf : Bool) -> Unit {
     None =>
       if e.is_tty {
         None
-      } else if e.ty == TFlag {
-        Some([VBool(false)])
-      } else if e.ty == TCount {
-        Some([VNum(0.0)])
       } else {
-        None
+        match e.ty.default_seat_resolver(seat_ctx(None)) {
+          Some(value) => Some([value])
+          None => None
+        }
       }
   }
-  let ty2 = if e.ty == TCount { TNum } else { e.ty }
+  let ty2 = if e.ty.name() == "count" { number_type() } else { e.ty }
   build.entities.push({
     name: e.name,
     ty: ty2,
@@ -1787,13 +1752,13 @@ fn inst_long(
               }
             None =>
               // DR-076 §1/§2/§4: every value-typed main entry (bool included, flag ALREADY
-              // normalized to TBool by `normalize_option`, DR-076 §2) is a NORMAL value satellite
+              // normalized to bool_type() by `normalize_option`, DR-076 §2) is a NORMAL value satellite
               // — `:set` always takes a value (space form here; eq form via eq_entries below). A
               // bare `--x` fire (the classic flag shape) needs the explicit `:set:true` variant
               // (decoded as a Set-op Variant with operand VBool(true), lowered by the "Variant
               // entries" loop below, which also carries the fail_action failure resident — flag's
               // presence-only lowering has fully collapsed into that generic variant path; this
-              // arm no longer special-cases TFlag/TBool bare-true at all).
+              // arm no longer special-cases flag_type()/bool_type() bare-true at all).
               //
               // DESIGN §7.2 / DR-096 §1: `long_eq_sep == EsRequire` withholds THIS space-form main
               // entry — the only entry point left is the eq-split form registered below (`eq_group`
@@ -1842,12 +1807,12 @@ fn inst_long(
       // DR-076 §1) — a flag's default sugar carries NO main entry at all (`e.long` stays [], DR-076
       // §2), so this loop never runs for a bare classic flag; an explicit `long:[":set"]` flag DOES
       // register its value-slot form here, coexisting with the bare `:set:true` variant (DR-076 §2
-      // "value形+裸の同居"). DR-076 §3: TBool's variant-guard exclusion (eq-split withheld when the
+      // "value形+裸の同居"). DR-076 §3: bool_type()'s variant-guard exclusion (eq-split withheld when the
       // element ALSO carries `--x`/`--no-x` variant spellings) is REPEALED — bool's eq-split and
       // variant triggers coexist (fixtures/lowering/long/variant.json's ssl: `--ssl=false` fires
       // alongside `--ssl`/`--no-ssl`).
-      // DR-075 §2: TInt の eq-split (`--v=2.5`) が factory config int_round を反映するよう、
-      // ElemDef.int_round を LongEntry に持ち込む (TInt 以外は entry 側で参照されない)。
+      // DR-075 §2: int_type() の eq-split (`--v=2.5`) が factory config int_round を反映するよう、
+      // ElemDef.int_round を LongEntry に持ち込む (int_type() 以外は entry 側で参照されない)。
       // MDR-004 §3: a BOr element's eq-split registers only for a single-value-cell branch (using
       // that leaf's own name/ty/int_round/allow_base_prefix, never the wrapper's) — a multi-cell
       // branch's `=` form is undefined (`--color=v` cannot supply 3 leaves).
@@ -1873,7 +1838,12 @@ fn inst_long(
                 eq_group(eq_prefixes, eq_groups, e.long_prefix).push({
                   key: l,
                   name: leaf.name,
-                  kind: leaf.ty,
+                  kind: configured_type(
+                    leaf.ty,
+                    leaf.int_round,
+                    leaf.allow_base_prefix,
+                    leaf.bool_config,
+                  ),
                   int_round: leaf.int_round,
                   allow_base_prefix: leaf.allow_base_prefix,
                   bool_config: leaf.bool_config,
@@ -1891,22 +1861,27 @@ fn inst_long(
           }
         BGroup(_) => () // positional-only shape (MDR-004 §3 scope) — no long spelling applies
         BCell =>
-          // DR-076 §2: no `e.ty != TFlag` guard needed here anymore — a classic flag never reaches
+          // DR-076 §2: no `e.ty != flag_type()` guard needed here anymore — a classic flag never reaches
           // this loop body at all (its `e.long` is empty, `long_of(e)` yields no `l` to iterate), so
-          // the guard was always vacuous for it; an explicit `long:[":set"]` flag (now TBool) SHOULD
+          // the guard was always vacuous for it; an explicit `long:[":set"]` flag (now bool_type()) SHOULD
           // register its eq-split form, which this unconditional push now does correctly (the guard
-          // used to wrongly suppress it while `e.ty` still read TFlag pre-normalize_option).
+          // used to wrongly suppress it while `e.ty` still read flag_type() pre-normalize_option).
           if e.long_eq_sep != EsDeny && e.accumulator != Some("kv_map") {
             eq_group(eq_prefixes, eq_groups, e.long_prefix).push({
               key: l,
               name: e.name,
-              kind: e.ty,
+              kind: configured_type(
+                e.ty,
+                e.int_round,
+                e.allow_base_prefix,
+                e.bool_config,
+              ),
               int_round: e.int_round,
-              // DR-074 §2: TNum / TInt の eq-split (`--v=0xff`) も factory config を反映するよう
+              // DR-074 §2: number_type() / int_type() の eq-split (`--v=0xff`) も factory config を反映するよう
               // ElemDef から LongEntry に持ち込む (他 kind は entry 側で参照されない)。
               allow_base_prefix: e.allow_base_prefix,
-              // DR-074 §4: TBool の eq-split (`--enabled=yes`) も bool_parser factory config を反映
-              // (DR-076 §3 でこの eq-split は variant 綴りと共存する — TFlag と違い抑制されない)。
+              // DR-074 §4: bool_type() の eq-split (`--enabled=yes`) も bool_parser factory config を反映
+              // (DR-076 §3 でこの eq-split は variant 綴りと共存する — flag_type() と違い抑制されない)。
               bool_config: e.bool_config,
               piece_filters: e.piece_filters,
               separator: e.separator,
@@ -1919,11 +1894,8 @@ fn inst_long(
           }
         // BEnum (issue values-decode-support): eq-split (`--color=always`) for an enum-constrained
         // cell is OUT OF SCOPE for this issue (no target fixture exercises `--key=value` against a
-        // `values`/`or` value-enum element) — `EqSplit`'s `LongEntry.kind : Ty` carrier has no slot
-        // for "enum of these strings", only a plain value-primitive type. Registering nothing here
-        // means `--color=always` simply doesn't match this entry (falls through to whatever else
-        // recognizes the raw token, most likely unexpected_token) rather than silently accepting an
-        // UNvalidated value via a `Ty`-based fallback — deliberately absent, not deliberately wrong.
+        // `values`/`or` value-enum element) — the LongEntry type resident has no
+        // enum-value set. Registering nothing avoids accepting an unvalidated value.
         BEnum(_) => ()
       }
     }
@@ -1943,9 +1915,9 @@ fn inst_long(
   // Variant entries (DR-011 / DR-045): `{exact, link (by name), effect}` に lowering。
   // `set` variant は Bind (SET degenerate); default/unset/empty は effect resident (0-token effect)。
   // DR-076 §2/§4: a flag's classic bare-fire trigger IS a Set variant now (`:set:true`, composed in
-  // by dec_long) — it rides through here, not through the old TFlag-only branch above. A fail_action
+  // by dec_long) — it rides through here, not through the old flag_type()-only branch above. A fail_action
   // element (DR-048, e.g. help) additionally emits a failure resident alongside its Set variant's Bind, so
-  // this loop must carry the SAME fail_action attachment the collapsed TFlag branch used to (a
+  // this loop must carry the SAME fail_action attachment the collapsed flag_type() branch used to (a
   // fail_action flag firing here — its ONLY main-entry shape post-DR-076 §2 — must still be able to
   // select as a failed-parse action).
   for e in def.options {
@@ -2039,7 +2011,7 @@ fn inst_short(def : Definition, build : Build) -> Unit {
   for e in def.options {
     for c in e.short {
       // DR-058: deprecated alias entry-copy は cluster entry でも警告する
-      // DR-075 §2: short cluster / space-tail 経路の TInt (`-n1.5` / `-n 1.5`) も factory config を反映
+      // DR-075 §2: short cluster / space-tail 経路の int_type() (`-n1.5` / `-n 1.5`) も factory config を反映
       short_group(
         sh_prefixes,
         sh_combines,
@@ -2049,10 +2021,15 @@ fn inst_short(def : Definition, build : Build) -> Unit {
       ).push({
         ch: c,
         name: e.name,
-        kind: e.ty,
+        kind: configured_short_type(
+          e.ty,
+          e.int_round,
+          e.allow_base_prefix,
+          e.bool_config,
+        ),
         depr: e.deprecated,
         int_round: e.int_round,
-        // DR-074 §2: short cluster / space-tail の TNum / TInt も allow_base_prefix を反映
+        // DR-074 §2: short cluster / space-tail の number_type() / int_type() も allow_base_prefix を反映
         allow_base_prefix: e.allow_base_prefix,
         piece_filters: e.piece_filters,
         separator: e.separator,
@@ -2791,7 +2768,7 @@ fn find_command(def : Definition, name : String) -> CommandDef? {
 /// まま (DR-057 §3)、それら field は set しない。
 fn alias_entry(
   canonical_name : String,
-  ty : Ty,
+  ty : &TypeExt,
   long : Array[String],
   variants : Array[Variant],
   short : Array[Char],
@@ -2869,8 +2846,8 @@ fn alias_entry(
 /// の long/short/command installer が展開する (DR-057 §4)。command subtree にも再帰。
 ///
 /// `orig` は normalize_surface 適用前の複製 (issue 2026-07-08 dec-alias-long-override-flag-sugar-
-/// gap): `def` 側の canonical 要素は既に TFlag→TBool 変換済みなので、DR-076 §2 規則1 (flag の
-/// `long:true` 糖衣は `:set:true` へ差し替え) を判定する材料 (元の型 TFlag) が失われている。`orig`
+/// gap): `def` 側の canonical 要素は既に flag_type()→bool_type() 変換済みなので、DR-076 §2 規則1 (flag の
+/// `long:true` 糖衣は `:set:true` へ差し替え) を判定する材料 (元の型 flag_type()) が失われている。`orig`
 /// から同じ target 要素の変換前の `ty`/`long` を引き、`resolve_long` を canonical 側と同じ形で
 /// 通すことで、alias 側にも同じ規則1/2 を適用する。
 fn desugar_aliases(def : Definition, orig : Definition) -> Unit {
@@ -3103,7 +3080,7 @@ fn collect_invalid_alias_long_override(
 /// 付与) は、`type:` が単一選択のフィールドである以上、preset 型への転換で構文的に発生しなくなった
 /// (DR-099 §1「採用しなかった案」) — 残る唯一の definition-error はこの factory 自身の config 検証
 /// だけ (DR-061 §4「config 値の検証は factory 自身の責務」)。is_tty/tty_stream は `type:` 解決の
-/// decode 時点で確定し normalize_surface の影響を受けないため (TFlag→TBool 変換のような pre/post
+/// decode 時点で確定し normalize_surface の影響を受けないため (flag_type()→bool_type() 変換のような pre/post
 /// 区別は不要)、他の post-normalize な collect_* 群と同じ並びで呼んでよい。
 fn collect_tty_stream_missing(def : Definition, out : Array[DefError]) -> Unit {
   fn check(e : ElemDef) -> Unit {
@@ -3703,24 +3680,24 @@ fn collect_unsupported_accum_update(
 ///|
 /// codex レビュー High 2 (2026-07-10): `collect_unsupported_accum_update` の variant 走査 (上記) は
 /// `count_increment_variant` 経由 (`long:true` 糖衣、DR-077 §3) の `:update:increment` は捕まえるが、
-/// TCount の **short** 発火 (`matcher.mbt` の `walk_short`'s `TCount` arm) は variant を一切経由せず
+/// count_type() の **short** 発火 (`matcher.mbt` の `walk_short`'s `count_type()` arm) は variant を一切経由せず
 /// `mk_eff(e.name, Update("increment", []), Cli)` を直接生成する — variants を持たない firing なので
 /// variant 走査ではそもそも見えない (repro: `{"name":"n","type":"count","short":["n"],
 /// "multiple":true}` + args `["-n"]` で resolve.mbt の accum 分岐の abort に到達)。
 ///
 /// DR-077 §3 で count は `number + default:0 + update:increment の綴り合成` と規定されている —
 /// count という TYPE そのものが「update(increment) 効果を持つ」という契約を運ぶので、firing の綴り
-/// (short/long/明示variant) を問わず、**TCount 要素への `multiple` 宣言そのもの**が accum×update と
+/// (short/long/明示variant) を問わず、**count_type() 要素への `multiple` 宣言そのもの**が accum×update と
 /// 構造的に同じ未対応構成 (T=>T transform vs 累積状態 T[]) になる。variant の有無に依存しない要素
 /// レベルの検査として、`collect_unsupported_accum_update` とは別条件で実装する (variant 走査を
-/// TCount にも広げるのではなく、TCount×multiple という組合せ自体を閉じる — short 経由はそもそも
+/// count_type() にも広げるのではなく、count_type()×multiple という組合せ自体を閉じる — short 経由はそもそも
 /// variant を生成しないため、variant 走査を広げても捕まえられない)。
 fn collect_unsupported_count_multiple(
   def : Definition,
   out : Array[DefError],
 ) -> Unit {
   for e in def.options {
-    if e.ty == TCount && e.multiple {
+    if e.ty == count_type() && e.multiple {
       out.push(
         def_err(
           e.name,
@@ -3732,7 +3709,7 @@ fn collect_unsupported_count_multiple(
     }
   }
   for e in def.positionals {
-    if e.ty == TCount && e.multiple {
+    if e.ty == count_type() && e.multiple {
       out.push(
         def_err(
           e.name,
@@ -3803,7 +3780,7 @@ fn collect_scalar_array_default(
 ///|
 /// DR-089 §4: none には値空間が無いので、値源を宣言する `env`/`config_key`/`inherit` は静的に既知の不成立構成
 /// — 「静的に既知は定義時に倒す」(DR-083 §5) の筋で definition-error にする。実行時側
-/// (`env_value`/`config_to_value` の TNone arm、resolve.mbt/value.mbt) は防御 (このチェックが
+/// (`env_value`/`config_to_value` の none_type() arm、resolve.mbt/value.mbt) は防御 (このチェックが
 /// 先に落とすので unreachable 想定) として残す。config_key の明示宣言のみを対象とし、
 /// `config_seat` (config_file 要素の存在で自動的に全 value cell へ同型付与される席、DR-050 §3)
 /// はここでは対象外 — 著者が明示的に書いた宣言だけを検査する (config_seat は個々の要素の意図では
@@ -3813,7 +3790,7 @@ fn collect_none_value_source_decl(
   out : Array[DefError],
 ) -> Unit {
   fn check(e : ElemDef) -> Unit {
-    if e.ty == TNone {
+    if e.ty == none_type() {
       if e.env.length() > 0 {
         out.push(
           def_err(
@@ -3886,7 +3863,7 @@ fn collect_invalid_filter_attribute_mismatch(
 
   fn check(e : ElemDef) -> Unit {
     let accum = is_accum_elem(e)
-    let none_ty = e.ty == TNone
+    let none_ty = e.ty == none_type()
     if e.final_filters.length() > 0 {
       if none_ty {
         out.push(
@@ -4005,7 +3982,7 @@ fn collect_unknown_filter(def : Definition, out : Array[DefError]) -> Unit {
     // final_filters (T→T, scalar filter registry, non-accum 専用、DR-102 §1): 正しい席 (非 accum
     // かつ 非 none) の場合のみ unknown-vocab 判定。wrong-seat/none-type は
     // `collect_invalid_filter_attribute_mismatch` の invalid-range に一任 (M-6/M-9 構造ゲート先行)。
-    if !is_accum_elem(e) && e.ty != TNone {
+    if !is_accum_elem(e) && e.ty != none_type() {
       for fs in e.final_filters {
         if lookup_filter(fs.name) is None {
           push_unknown(e.name, "final_filters", fs.name)
@@ -4014,7 +3991,7 @@ fn collect_unknown_filter(def : Definition, out : Array[DefError]) -> Unit {
     }
     // accum_filters (Acc→Acc, ARRAY filter registry, accum 専用、DR-102 §1): 正しい席 (accum かつ
     // 非 none) の場合のみ unknown-vocab 判定。
-    if is_accum_elem(e) && e.ty != TNone {
+    if is_accum_elem(e) && e.ty != none_type() {
       for fs in e.accum_filters {
         if lookup_array_filter(fs.name) is None {
           push_unknown(e.name, "accum_filters", fs.name)
@@ -4124,7 +4101,7 @@ fn collect_invalid_regex_pattern(
     check_chain(e.name, e.value_filters)
     // final_filters: 正しい席 (非 accum かつ 非 none) の場合のみ pattern compile 検査
     // (M-6 wrong-seat gate 先行)。
-    if !is_accum_elem(e) && e.ty != TNone {
+    if !is_accum_elem(e) && e.ty != none_type() {
       check_chain(e.name, e.final_filters)
     }
     // accum_filters: ARRAY filter registry は regex_match を所有しないため常にスキップ
@@ -4375,10 +4352,10 @@ fn collect_invalid_numeric_filter_args(
   fn check(e : ElemDef) -> Unit {
     check_scalar_chain(e.name, e.piece_filters)
     check_scalar_chain(e.name, e.value_filters)
-    if !is_accum_elem(e) && e.ty != TNone {
+    if !is_accum_elem(e) && e.ty != none_type() {
       check_scalar_chain(e.name, e.final_filters)
     }
-    if is_accum_elem(e) && e.ty != TNone {
+    if is_accum_elem(e) && e.ty != none_type() {
       check_array_chain(e.name, e.accum_filters)
     }
   }
@@ -4507,8 +4484,8 @@ pub fn lower_definition(
 ) -> Result[Scope, Array[DefError]] {
   let def = clone_def(def0)
   // DR-076 §2 flag 差し替え/補完の alias 側適用 (issue 2026-07-08 dec-alias-long-override-flag-sugar-
-  // gap): `desugar_aliases` は canonical 要素の「元の型」(TFlag のまま、resolve_long の規則1判定に
-  // 必須) を必要とするが、`normalize_surface` は canonical 要素を TBool へ書き換えてしまい、この情報
+  // gap): `desugar_aliases` は canonical 要素の「元の型」(flag_type() のまま、resolve_long の規則1判定に
+  // 必須) を必要とするが、`normalize_surface` は canonical 要素を bool_type() へ書き換えてしまい、この情報
   // を post-normalize な `def` から取り戻せない。normalize 前の複製を別途保持し、alias 解決時だけ
   // そちらを参照する (def 自体には normalize を通常どおり適用する — 二重 pipeline にしない)。
   let orig = clone_def(def0)

@@ -627,15 +627,10 @@ fn proj_entity(e : Entity) -> LEnt {
   let typ = if e.is_config_file {
     "config_file"
   } else {
-    match e.ty {
-      TStr => "string"
-      // DR-077 §3: `Entity.ty` is already collapsed TCount→TNum by `ensure_entity` for every real
-      // count cell — folded in defensively (this arm should never actually see TCount).
-      TNum | TCount => "number"
-      TFloat => "float"
-      TInt => "int"
-      TFlag | TBool => "bool"
-      TNone => "none"
+    match e.ty.name() {
+      "count" => "number"
+      "flag" => "bool"
+      name => name
     }
   }
   {
@@ -877,7 +872,7 @@ fn is_config_file_cell(sc : Scope, name : String) -> Bool {
 ///|
 fn is_none_cell(sc : Scope, name : String) -> Bool {
   for e in sc.entities {
-    if e.name == name && e.ty == TNone {
+    if e.name == name && e.ty == none_type() {
       return true
     }
   }
@@ -1726,24 +1721,6 @@ fn run_definition_error(fx : DDefErrorFixture, c : DDefErrorCase) -> String {
 // ── complete path (DR-104, CONFORMANCE §4) ─────────────────────────────────────
 
 ///|
-/// Inverse of `dec_ty` (this file, §2 wire vocab) — needed to project `Cand.ty` (a `Ty` tag) back
-/// into the SAME wire string the fixture's `candidate.ty` field uses, so comparison can be a plain
-/// string `==` (mirrors `render_kind`/`render_def_kind`'s "one match, mirrors the decode direction"
-/// style in this same file).
-fn ty_str(t : Ty) -> String {
-  match t {
-    TStr => "string"
-    TNum => "number"
-    TFloat => "float"
-    TInt => "int"
-    TFlag => "flag"
-    TBool => "bool"
-    TCount => "count"
-    TNone => "none"
-  }
-}
-
-///|
 fn bool_str(b : Bool) -> String {
   if b {
     "true"
@@ -1761,7 +1738,7 @@ fn bool_str(b : Bool) -> String {
 /// `with_reason`). `spelling`/`ty` are normalized to `""` on their "doesn't apply" side (DR-104 §2:
 /// `spelling` meaningless when `is_value:true`, `ty` meaningless when `is_value:false`) so a
 /// fixture that omits the moot field and a live `Cand` that carries a leftover tag there (e.g.
-/// `cand_trigger`'s placeholder `TFlag`) still compare equal.
+/// `cand_trigger`'s placeholder `flag_type()`) still compare equal.
 fn cand_fields_str(
   spelling : String,
   is_value : Bool,
@@ -1805,7 +1782,7 @@ fn cand_str(c : Cand, with_completer : Bool) -> String {
     WordEnd => "word_end"
     Cont => "cont"
   }
-  let ty_s = if c.is_value { ty_str(c.ty) } else { "" }
+  let ty_s = if c.is_value { c.ty } else { "" }
   let spelling_s = if c.is_value { "" } else { c.spelling }
   let completer_arg = if with_completer {
     Some(c.completer.unwrap_or(""))
@@ -2681,7 +2658,7 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
     }
   }
   for e in sc.entities {
-    if e.ty != TFlag && e.ty != TBool && e.default_values is Some(_) {
+    if e.ty != flag_type() && e.ty != bool_type() && e.default_values is Some(_) {
       return true
     }
     // DR-009 value_filters/final_filters (DR-102 属性分割、issue
@@ -4139,15 +4116,15 @@ test "dec_definition: an unknown config key is a decode-time reject" {
 
 ///|
 /// issue group-inner-bool-default-false-duplicate-top-level: `ensure_entity` (installer.mbt) の
-/// 暗黙 default:false 注入は flag preset (`type:"flag"`、TFlag) 固有であり、plain bool
-/// (`type:"bool"`、TBool) は未発火なら他の値型と同様 absent (`Entity.default_values == None`,
-/// DR-099 §2 の `?? absent` 終端)。`normalize_option` (installer.mbt) が TFlag→TBool の書き換え
+/// 暗黙 default:false 注入は flag preset (`type:"flag"`、flag_type()) 固有であり、plain bool
+/// (`type:"bool"`、bool_type()) は未発火なら他の値型と同様 absent (`Entity.default_values == None`,
+/// DR-099 §2 の `?? absent` 終端)。`normalize_option` (installer.mbt) が flag_type()→bool_type() の書き換え
 /// と同じ場所で default:false を前倒し確定させるため、`ensure_entity` 到達時点では両者とも
-/// `Ty::TBool` に揃っているにも関わらず default_values が食い違うことを Entity レベルで直接
+/// 同じ bool resident でも default_values が食い違うことを Entity レベルで直接
 /// 検査する — `fixtures/value-typing/{or-leaf-factory-config,positional-group-factory-config}.json`
 /// は同じ回帰を JSON result (or 枝内 / group 内側) の断面で pin しているが、本 test は
 /// `Scope.entities` という別の断面 (内部表現) から同じ性質を固定する。
-test "ensure_entity: plain TBool は Entity.default_values=None (absent)、flag preset (TFlag→TBool) は Some([false]) を維持する" {
+test "ensure_entity: plain bool_type() は Entity.default_values=None (absent)、flag preset (flag_type()→bool_type()) は Some([false]) を維持する" {
   let src =
     #|{"options": [
     #|  {"name": "plain", "type": "bool", "long": true},

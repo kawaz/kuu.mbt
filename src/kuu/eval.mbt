@@ -91,11 +91,11 @@ fn dd_match_token(spelling : String, is_pattern : Bool, token : String) -> Bool 
 ///|
 /// An exact-spelling candidate (the Pending payload at a trigger boundary,
 /// DR-060 §3). `ty` is only meaningful when a value must follow the spelling
-/// (term = Cont, e.g. an eq-split `--key`); a plain trigger carries TFlag.
+/// (term = Cont, e.g. an eq-split `--key`); a plain trigger carries flag_type().
 fn cand_trigger(
   spelling : String,
   origin : String,
-  ty : Ty,
+  ty : &TypeExt,
   term : TermHint,
   is_alias : Bool,
   hidden : Bool,
@@ -104,7 +104,7 @@ fn cand_trigger(
   {
     spelling,
     is_value: false,
-    ty,
+    ty: ty.name(),
     origin,
     term,
     meta: { is_alias, hidden, deprecated },
@@ -363,11 +363,11 @@ fn array_marker(label : String) -> Binding {
 ///|
 /// A pending-value candidate (the Pending payload): the value slot of
 /// `origin`, of type `ty`, had no token left to consume.
-fn pend_value(ty : Ty, origin : String) -> Cand {
+fn pend_value(ty : &TypeExt, origin : String) -> Cand {
   {
     spelling: "",
     is_value: true,
-    ty,
+    ty: ty.name(),
     origin,
     term: WordEnd,
     meta: { is_alias: false, hidden: false, deprecated: false },
@@ -449,7 +449,12 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // catch-all arm (below) patches origin/hidden up from the satellite's tail
         // (`fixup_boundary_cands`, DR-104 §2/§3); this fallback is what a truly
         // standalone Exact (outside that shape) keeps.
-        [Pending([cand_trigger(s, s, TFlag, WordEnd, false, false, false)], [])]
+        [
+          Pending(
+            [cand_trigger(s, s, flag_type(), WordEnd, false, false, false)],
+            [],
+          ),
+        ]
       } else {
         // an unmatched (or, in parse mode, exhausted) trigger is a silent
         // Reject (spec DR-037), NOT a Pending: no part of the entry was
@@ -510,7 +515,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
               cand_trigger(
                 trigger,
                 trigger,
-                TFlag,
+                flag_type(),
                 WordEnd,
                 false,
                 false,
@@ -548,7 +553,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
               cand_trigger(
                 spelling,
                 elem_name,
-                TFlag,
+                flag_type(),
                 WordEnd,
                 false,
                 false,
@@ -576,7 +581,17 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [
           Pending(
-            [cand_trigger(name, name, TFlag, WordEnd, false, false, false)],
+            [
+              cand_trigger(
+                name,
+                name,
+                flag_type(),
+                WordEnd,
+                false,
+                false,
+                false,
+              ),
+            ],
             [],
           ),
         ]
@@ -687,7 +702,7 @@ fn filter_arg_eval(
       None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
     }
   } else if in_complete(ctx) {
-    [Pending([pend_value(TNum, name)], acc)]
+    [Pending([pend_value(number_type(), name)], acc)]
   } else {
     [Held(pe_missing(name, pos), acc)]
   }
@@ -710,7 +725,7 @@ fn req_arg_eval(
       ),
     ]
   } else if in_complete(ctx) {
-    [Pending([pend_value(TStr, name)], acc)]
+    [Pending([pend_value(string_type(), name)], acc)]
   } else {
     [
       Held(
@@ -798,14 +813,26 @@ fn split_on(s : String, sep : String) -> Array[String] {
 /// gates on `separator is Some(_) || merge`); a MERGE element with no separator DOES reach here
 /// now, precisely so its single-piece operand still runs through `classify_merge_piece` (a bare
 /// `--fields -a` needs to recognize `-a` as a remove marker even with no comma to split on).
+fn parse_fail_error(
+  name : String,
+  token : String,
+  pos : Int,
+  fail : ParseFail,
+) -> ParseError {
+  match fail {
+    NotAnInteger => pe_parse_int(name, token, pos)
+    IntOutOfRange => pe_int_out_of_range(name, token, pos)
+    NotABool => pe_parse_bool(name, token, pos)
+    NotANumber | NoValueSpace => pe_parse(name, token, pos)
+  }
+}
+
+///|
 fn sep_binds(
   name : String,
   tok : String,
   sep : String?,
-  ty : Ty,
-  int_round : RoundMode,
-  allow_base_prefix : Bool,
-  bool_config : BoolConfig,
+  ty : &TypeExt,
   piece_filters : Array[FilterSpelling],
   pos : Int,
   merge : Bool,
@@ -835,11 +862,7 @@ fn sep_binds(
           at_pos: Some(pos),
         })
       PkRemove(payload) =>
-        match
-          sep_piece_value(
-            name, payload, ty, int_round, allow_base_prefix, bool_config, piece_filters,
-            pos,
-          ) {
+        match sep_piece_value(name, payload, ty, piece_filters, pos) {
           Ok(v) =>
             out.push({
               key: name,
@@ -853,11 +876,7 @@ fn sep_binds(
           Err(pe) => return Err(pe)
         }
       PkAdd(payload) =>
-        match
-          sep_piece_value(
-            name, payload, ty, int_round, allow_base_prefix, bool_config, piece_filters,
-            pos,
-          ) {
+        match sep_piece_value(name, payload, ty, piece_filters, pos) {
           Ok(v) => out.push(mkb(name, v, Cli, at_pos=Some(pos)))
           Err(pe) => return Err(pe)
         }
@@ -875,43 +894,16 @@ fn sep_binds(
 fn sep_piece_value(
   name : String,
   part : String,
-  ty : Ty,
-  int_round : RoundMode,
-  allow_base_prefix : Bool,
-  bool_config : BoolConfig,
+  ty : &TypeExt,
   piece_filters : Array[FilterSpelling],
   pos : Int,
 ) -> Result[Value, ParseError] {
   match apply_piece_filters(piece_filters, part) {
     Err((reason, msg)) => Err(pe_filter(name, pos, reason, msg))
     Ok(s) =>
-      match ty {
-        TNum =>
-          match parse_number_ext(s, allow_base_prefix) {
-            Some(d) => Ok(VNum(d))
-            None => Err(pe_parse(name, s, pos))
-          }
-        TInt =>
-          match parse_int_value_ext(s, int_round, allow_base_prefix) {
-            Ok(i) => Ok(VNum(i.to_double()))
-            Err(NotAnInteger) => Err(pe_parse_int(name, s, pos))
-            Err(IntOutOfRange) => Err(pe_int_out_of_range(name, s, pos))
-            Err(NotANumber) => Err(pe_parse(name, s, pos))
-          }
-        TFloat =>
-          match parse_float(s) {
-            Some(d) => Ok(VNum(d))
-            None => Err(pe_parse(name, s, pos))
-          }
-        TBool =>
-          match parse_bool_ext(s, bool_config) {
-            Some(b) => Ok(VBool(b))
-            None => Err(pe_parse_bool(name, s, pos))
-          }
-        // TStr (and any other kind that structurally never reaches a separated resident, e.g. TFlag/TCount —
-        // multiple/separator on a presence-only cell is not a real shape): identity parse, the
-        // pre-段2 default behavior preserved exactly for string elements.
-        _ => Ok(VStr(s))
+      match ty.parse_token(s) {
+        Ok(value) => Ok(value)
+        Err(fail) => Err(parse_fail_error(name, s, pos, fail))
       }
   }
 }
@@ -1613,7 +1605,17 @@ fn step_greedy(
         // complete: the command name is readable at the boundary (DR-060 §1).
         out.push(
           Pending(
-            [cand_trigger(name, name, TFlag, WordEnd, false, false, false)],
+            [
+              cand_trigger(
+                name,
+                name,
+                flag_type(),
+                WordEnd,
+                false,
+                false,
+                false,
+              ),
+            ],
             acc,
           ),
         )
@@ -1636,7 +1638,7 @@ fn step_greedy(
               cand_trigger(
                 trigger,
                 trigger,
-                TFlag,
+                flag_type(),
                 WordEnd,
                 false,
                 false,
@@ -1673,7 +1675,7 @@ fn step_greedy(
               cand_trigger(
                 spelling,
                 elem_name,
-                TFlag,
+                flag_type(),
                 WordEnd,
                 false,
                 false,
@@ -1852,7 +1854,7 @@ fn scope_consume(
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value(TNum, name)], acc)]
+          [Pending([pend_value(number_type(), name)], acc)]
         } else {
           [Held(pe_missing(name, pos), acc)]
         }
@@ -1872,7 +1874,7 @@ fn scope_consume(
         )
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value(TStr, name)], acc)]
+          [Pending([pend_value(string_type(), name)], acc)]
         } else {
           [
             Held(
@@ -1900,7 +1902,7 @@ fn scope_consume(
         // extract (none of our fixtures exercise this shape yet, kept as-is).
         [
           Pending(
-            [cand_trigger(s, s, TFlag, WordEnd, false, false, false)],
+            [cand_trigger(s, s, flag_type(), WordEnd, false, false, false)],
             acc,
           ),
         ]
@@ -2213,7 +2215,7 @@ fn consume_head(
         ]
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value(TStr, name)], [])]
+          [Pending([pend_value(string_type(), name)], [])]
         } else {
           [
             Held(
@@ -2257,7 +2259,7 @@ fn consume_head(
         }
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value(TNum, name)], [])]
+          [Pending([pend_value(number_type(), name)], [])]
         } else {
           [Held(pe_missing(name, pos), [])]
         }

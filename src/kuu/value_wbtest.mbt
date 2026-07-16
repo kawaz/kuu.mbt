@@ -295,24 +295,39 @@ fn cv_ok(r : Result[Value, (ErrKind, String, String)]) -> Value? {
 /// matrix from the filter chain.
 test "config_to_value type conversions" {
   // string → number / int (lenient parse), and 値空間 int acceptance of "3.0".
-  assert_eq(cv_ok(config_to_value(CStr("8080"), TNum, [])), Some(VNum(8080.0)))
-  assert_eq(cv_ok(config_to_value(CStr("3.0"), TInt, [])), Some(VNum(3.0)))
+  assert_eq(
+    cv_ok(config_to_value(CStr("8080"), number_type(), [])),
+    Some(VNum(8080.0)),
+  )
+  assert_eq(
+    cv_ok(config_to_value(CStr("3.0"), int_type(), [])),
+    Some(VNum(3.0)),
+  )
   // "2.5" into int is Error under canonical error mode (no silent 精度落ち).
-  assert_eq(cv_ok(config_to_value(CStr("2.5"), TInt, [])), None)
+  assert_eq(cv_ok(config_to_value(CStr("2.5"), int_type(), [])), None)
   // JSON scalar → string element stringifies (寛容の双方向対称): 1.5 → "1.5", true → "true".
-  assert_eq(cv_ok(config_to_value(CNum(1.5), TStr, [])), Some(VStr("1.5")))
-  assert_eq(cv_ok(config_to_value(CBool(true), TStr, [])), Some(VStr("true")))
+  assert_eq(
+    cv_ok(config_to_value(CNum(1.5), string_type(), [])),
+    Some(VStr("1.5")),
+  )
+  assert_eq(
+    cv_ok(config_to_value(CBool(true), string_type(), [])),
+    Some(VStr("true")),
+  )
   // string → bool via canonical vocab; an unknown word is an Error.
-  assert_eq(cv_ok(config_to_value(CStr("1"), TFlag, [])), Some(VBool(true)))
-  assert_eq(cv_ok(config_to_value(CStr("yes"), TFlag, [])), None)
+  assert_eq(
+    cv_ok(config_to_value(CStr("1"), flag_type(), [])),
+    Some(VBool(true)),
+  )
+  assert_eq(cv_ok(config_to_value(CStr("yes"), flag_type(), [])), None)
   // native number → int: JSON-由来 binary64 seat; 1.0 is integral (accepted), 1.5 is not (Error).
-  assert_eq(cv_ok(config_to_value(CNum(1.0), TInt, [])), Some(VNum(1.0)))
-  assert_eq(cv_ok(config_to_value(CNum(1.5), TInt, [])), None)
+  assert_eq(cv_ok(config_to_value(CNum(1.0), int_type(), [])), Some(VNum(1.0)))
+  assert_eq(cv_ok(config_to_value(CNum(1.5), int_type(), [])), None)
   // 意味の飛躍 (bool↔number) is always an Error — no coercion in either direction.
-  assert_eq(cv_ok(config_to_value(CNum(1.0), TFlag, [])), None)
-  assert_eq(cv_ok(config_to_value(CBool(true), TNum, [])), None)
+  assert_eq(cv_ok(config_to_value(CNum(1.0), flag_type(), [])), None)
+  assert_eq(cv_ok(config_to_value(CBool(true), number_type(), [])), None)
   // 構造不一致 (array/object → scalar) is an Error.
-  assert_eq(cv_ok(config_to_value(CArr([CNum(1.0)]), TNum, [])), None)
+  assert_eq(cv_ok(config_to_value(CArr([CNum(1.0)]), number_type(), [])), None)
 }
 
 ///|
@@ -326,21 +341,21 @@ test "config_to_value type conversions" {
 /// omission here — the type-leniency matrix above already covers those arms with `[]`).
 test "config_to_value: piece_filters runs on a CStr source before the type parse (DR-050 §4)" {
   assert_eq(
-    cv_ok(config_to_value(CStr(" 8080 "), TNum, chain(["trim"]))),
+    cv_ok(config_to_value(CStr(" 8080 "), number_type(), chain(["trim"]))),
     Some(VNum(8080.0)),
   )
   // without the piece_filter, the same raw string fails to parse (proves `trim` is load-bearing,
   // not a no-op the type parser would have tolerated anyway).
-  assert_eq(cv_ok(config_to_value(CStr(" 8080 "), TNum, [])), None)
-  // piece_filters ALSO runs for a string target (TStr の「何でも受ける」型でも trim は素通りしない —
+  assert_eq(cv_ok(config_to_value(CStr(" 8080 "), number_type(), [])), None)
+  // piece_filters ALSO runs for a string target (string_type() の「何でも受ける」型でも trim は素通りしない —
   // DR-050 §4 の全段 pipeline は target 型を問わない).
   assert_eq(
-    cv_ok(config_to_value(CStr(" hi "), TStr, chain(["trim"]))),
+    cv_ok(config_to_value(CStr(" hi "), string_type(), chain(["trim"]))),
     Some(VStr("hi")),
   )
   // a piece_filters REJECT (not just a parse failure) surfaces as KFilter, distinct from a KParse
   // type-mismatch — `resolve.mbt`'s caller picks the ParseError constructor by this tag.
-  match config_to_value(CStr(""), TNum, chain(["non_empty"])) {
+  match config_to_value(CStr(""), number_type(), chain(["non_empty"])) {
     Err((KFilter, _, _)) => ()
     Ok(_) => fail("expected Err(KFilter, ..), got Ok")
     Err((KParse, _, _)) =>

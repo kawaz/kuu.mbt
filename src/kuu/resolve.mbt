@@ -1107,7 +1107,7 @@ fn collect_defaults(
     // config / inherit seats can override the default, e.g. an inheritable ttl resolves via its
     // inherit seat), which this projection does not run; injecting the raw default would surface a
     // wrong value. Those cells stay ladder-resolved.
-    if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
+    if (e.ty == flag_type() || e.ty == bool_type()) && e.accum is None {
       match default_scalar(e) {
         Some(v) => out.push({ path, name: e.name, value: v })
         None => ()
@@ -1168,7 +1168,7 @@ fn collect_nones(
   out : Array[NoneCell],
 ) -> Unit {
   for e in sc.entities {
-    if e.ty == TNone {
+    if e.ty == none_type() {
       out.push({ path, name: e.name })
     }
   }
@@ -1532,7 +1532,7 @@ fn has_commands(sc : Scope) -> Bool {
 /// 保つ)。`sc.entities` を直接走査するので **root scope 単体のみ** (子 command scope は見ない) —
 /// 単一 scope 前提だからこそ「未発火セルは default 相当を報告する」フォールバック (accum セルの
 /// `[]` 既定 / flag・bool の preset default、DR-044 の uniform array 既定 / LOWERING §A.5) を
-/// 安全に持てる。config_file / `TNone` 型のセルは除外 (DR-089 §3: none has no value なので
+/// 安全に持てる。config_file / `none_type()` 型のセルは除外 (DR-089 §3: none has no value なので
 /// source も持たない)。
 fn collect_sources_flat(
   sc : Scope,
@@ -1545,7 +1545,7 @@ fn collect_sources_flat(
     if e.is_config_file {
       continue
     }
-    if e.ty == TNone {
+    if e.ty == none_type() {
       continue
     }
     match exposed_key_of(e.name, ek) {
@@ -1574,7 +1574,8 @@ fn collect_sources_flat(
               if e.accum is Some(_) {
                 out.push({ path: [], key: exposed, source: Default })
                 emitted.push(exposed)
-              } else if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
+              } else if (e.ty == flag_type() || e.ty == bool_type()) &&
+                e.accum is None {
                 match default_scalar(e) {
                   Some(_) => {
                     out.push({ path: [], key: exposed, source: Default })
@@ -1640,7 +1641,7 @@ pub fn result_sources(
 // bool-requires-config-inherit-gap 裁定 2026-07-09): requires の後段 path filter ───────────────
 //
 // requires (CRequires) / value 依存 requires (CRequiresIf) の目的語の充足条件は「値源ラダー
-// (env/config/inherit/default) 充填後の最終状態」で決まる — bool 型 (TFlag/TBool) なら「解決後の
+// (env/config/inherit/default) 充填後の最終状態」で決まる — bool 型 (flag_type()/bool_type()) なら「解決後の
 // 値が true であること」(値源不問)、非 bool なら「値の有無 (default 込み)」(DR-047 §5 表)。この
 // 判定は値源ラダーが解ける後段でしか行えないため、KTop (eval.mbt, CLI 面のみで完結する完全経路
 // 判定) では両方とも常に pass 扱いとしてスキップし (`is_bool_entity` が bool/非bool の分岐ゲート)、
@@ -1652,20 +1653,20 @@ pub fn result_sources(
 // 充填後の最終状態で評価する」規定と乖離、issue value-present-ladder-gap で発見・実機再現)。
 
 ///|
-/// `name` (entities 内で探した Entity) が bool 型 (TFlag/TBool) かどうか — DR-047 §5 の bool/非bool
+/// `name` (entities 内で探した Entity) が bool 型 (flag_type()/bool_type()) かどうか — DR-047 §5 の bool/非bool
 /// 目的語判定ゲート。この後段フィルタが bool 判定式 (真理値) と非bool 判定式 (値の有無) のどちらを
 /// 使うかを分ける。
 pub fn is_bool_entity(entities : Array[Entity], name : String) -> Bool {
   for e in entities {
     if e.name == name {
-      return e.ty == TFlag || e.ty == TBool
+      return e.ty == flag_type() || e.ty == bool_type()
     }
   }
   false
 }
 
 ///|
-/// `name` (entities 内で探した Entity) が値空間なし型 (`TNone`、dd 含む) かどうか — DR-093 §1/§2 の
+/// `name` (entities 内で探した Entity) が値空間なし型 (`none_type()`、dd 含む) かどうか — DR-093 §1/§2 の
 /// 型委譲ゲート。値空間なし要素の充足 (required 自身 / requires 目的語) は committed で判定し、
 /// 値空間あり要素は最終状態の値の有無で判定する (`is_bool_entity` と対になる、同じ形のゲート)。
 /// 見つからない場合は `true` (= 値空間なし扱い) — `is_bool_entity` (見つからなければ `false`) と
@@ -1675,7 +1676,7 @@ pub fn is_bool_entity(entities : Array[Entity], name : String) -> Bool {
 pub fn is_none_entity(entities : Array[Entity], name : String) -> Bool {
   for e in entities {
     if e.name == name {
-      return e.ty == TNone
+      return e.ty == none_type()
     }
   }
   true
@@ -2232,27 +2233,6 @@ fn filter_err(
 }
 
 ///|
-/// The DR-066 reason for a `parse_int_value` failure.
-fn int_fail_reason(f : ParseFail) -> String {
-  match f {
-    NotANumber => "not_a_number"
-    NotAnInteger => "not_an_integer"
-    IntOutOfRange => "int_out_of_range"
-  }
-}
-
-///|
-/// The human-readable (message field is never conformance-compared, DR-066 §4) phrase for a
-/// `parse_int_value` failure.
-fn int_fail_phrase(f : ParseFail) -> String {
-  match f {
-    NotANumber => "a number"
-    NotAnInteger => "an integer"
-    IntOutOfRange => "within Int64 range"
-  }
-}
-
-///|
 /// Apply an `update` effect's transform to the running `old` value (DR-077 §1/§2: `cell = f(old)`).
 /// `transform` is looked up in the filters registry (DR-077 §2 "transform の実体は filters registry
 /// の名前参照") — `installer.mbt`'s `classify_long_spelling` (definition-time gate, codex 指摘 2 /
@@ -2334,13 +2314,13 @@ fn apply_transform(
 /// DR-066 Error — a badly-typed env value is never silently coerced to a wrong-typed string cell.
 /// `piece_filters` (DR-034/DR-062, issue 2026-07-09-pre-split-filters-execution-wiring): DR-049 §2
 /// says env goes through the SAME pipeline as CLI, which includes piece_filters — applied here BEFORE
-/// the type-specific parse below (including the `TStr` arm, so `trim` etc. also affects a plain
+/// the type-specific parse below (including the `string_type()` arm, so `trim` etc. also affects a plain
 /// string env value, not just numeric rescue). This is env's OWN application point, distinct from
 /// the CLI seat's (eval.mbt/matcher.mbt, applied at token-consumption time, before the value ever
 /// reaches this Entity-based ladder).
 fn env_value(
   element : String,
-  ty : Ty,
+  ty : &TypeExt,
   s : String,
   piece_filters : Array[FilterSpelling],
   at_pos : Int,
@@ -2351,79 +2331,15 @@ fn env_value(
     Err((reason, msg)) =>
       return Err(filter_err(element, at_pos, reason, msg, epath))
   }
-  match ty {
-    TStr => Ok(VStr(s))
-    // DR-077 §3: count's env/config seat parses a plain number and SETs it (never increments) —
-    // the same lexicon TNum uses. `Entity.ty` is already collapsed to TNum by `ensure_entity` for
-    // every real count cell, so `TCount` never actually arrives here in practice; folded into the
-    // same arm defensively (this function's job is purely "how does this Ty parse", independent of
-    // which effect op eventually carries the result — DR-077 §3's `VERBOSITY=5` sets 5, it never
-    // increments, and this arm is exactly that: a plain env-string → number parse, no old/update
-    // involved at all).
-    TNum | TCount =>
-      match parse_number(s) {
-        Some(d) => Ok(VNum(d))
-        None =>
-          Err(
-            ladder_err(
-              element,
-              at_pos,
-              "not_a_number",
-              "env value \"\{s}\" is not a number",
-              epath,
-            ),
-          )
-      }
-    TInt =>
-      match parse_int_value(s, RError) {
-        Ok(i) => Ok(VNum(i.to_double()))
-        Err(f) =>
-          Err(
-            ladder_err(
-              element,
-              at_pos,
-              int_fail_reason(f),
-              "env value \"\{s}\" is not \{int_fail_phrase(f)}",
-              epath,
-            ),
-          )
-      }
-    TFloat =>
-      match parse_float(s) {
-        Some(d) => Ok(VNum(d))
-        None =>
-          Err(
-            ladder_err(
-              element,
-              at_pos,
-              "not_a_number",
-              "env value \"\{s}\" is not a number",
-              epath,
-            ),
-          )
-      }
-    TFlag | TBool =>
-      match parse_bool(s) {
-        Some(b) => Ok(VBool(b))
-        None =>
-          Err(
-            ladder_err(
-              element,
-              at_pos,
-              "not_a_bool",
-              "env value \"\{s}\" is not a bool",
-              epath,
-            ),
-          )
-      }
-    // DR-089: none has no value space, so an env seat on a none-typed entity is a structural
-    // mismatch (same family as `config_to_value`'s TNone arms in value.mbt — no defined DR-089
-    // seat semantics, consistent error treatment across the value-source ladder's runtime-input
-    // parsers).
-    TNone =>
+  match ty.parse_token(s) {
+    Ok(value) => Ok(value)
+    Err(fail) =>
       Err(
         ladder_err(
-          element, at_pos, "config_type_mismatch", "env value for a none element (no value space)",
+          element,
+          at_pos,
+          fail.reason(),
+          "env " + fail.message(s),
           epath,
         ),
       )
@@ -2970,7 +2886,7 @@ fn resolve_ladder_below_cli(
   // として供給し、以降は通常の default 席と同じ経路に合流する (multiple×tty に個別規定は要らない、
   // DR-099 §1)。観測なし (`tty_map` にキーが無い = 提供なし、env の「未設定」/ config の「読めない」
   // と同じ「席が空」) はフォールスルーして下の宣言 default 分岐へ進む — `ensure_entity`
-  // (installer.mbt) が is_tty 要素には TBool の暗黙 default:false を注入しないため、宣言 default も
+  // (installer.mbt) が is_tty 要素には bool_type() の暗黙 default:false を注入しないため、宣言 default も
   // 無ければ absent (下の分岐が `Ok([])` を返す、§2.6 の通常の absent と同じ帰結)。
   if e.is_tty {
     match e.tty_stream {

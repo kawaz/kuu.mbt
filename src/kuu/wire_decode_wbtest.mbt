@@ -19,7 +19,7 @@ test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix
     case_insensitive: false,
   }
   shadows.set("dialect", {
-    base: TBool,
+    base: bool_type(),
     int_round: RFloor,
     allow_base_prefix: true,
     bool_config: custom_bool_config,
@@ -32,7 +32,7 @@ test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix
   let j = @json.parse(src)
   let e = dec_or_leaf(j, shadows)
   assert_eq(e.name, "leaf")
-  assert_eq(e.ty, TBool)
+  assert_eq(e.ty, bool_type())
   assert_eq(e.int_round, RFloor)
   assert_eq(e.allow_base_prefix, true)
   assert_eq(e.bool_config, custom_bool_config)
@@ -51,7 +51,7 @@ test "dec_or_leaf: shadow に無い bare 型名 (\"int\") は canonical default 
     #|{"type": "int", "name": "leaf"}
   let j = @json.parse(src)
   let e = dec_or_leaf(j, shadows)
-  assert_eq(e.ty, TInt)
+  assert_eq(e.ty, int_type())
   assert_eq(e.int_round, RError)
   assert_eq(e.allow_base_prefix, false)
   assert_eq(e.bool_config, bool_config_canonical())

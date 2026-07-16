@@ -77,7 +77,7 @@ fn run_matcher(m : Matcher, ctx : Ctx, pos : Int) -> Array[Branch] {
 ///|
 /// The matcher's own trigger spellings as complete candidates (DR-060 §3
 /// 「eq-split / cluster の元綴り」). An eq-split key must be followed by
-/// `=value` in the same word (term = Cont, ty = the value type); a TFlag
+/// `=value` in the same word (term = Cont, ty = the value type); a flag_type()
 /// entry never fires through the eq face, so it contributes no spelling
 /// here. A cluster char may end the word (flag) or take a space-form value
 /// (term = WordEnd either way); a deprecated alias char keeps its meta.
@@ -86,9 +86,8 @@ fn matcher_cands(m : Matcher) -> Array[Cand] {
   match m {
     EqSplit(prefix~, entries~) =>
       for e in entries {
-        // DR-077 §3: count (like flag) never fires through the eq face — see run_eq_split's
-        // `TCount => return []` — so it contributes no completion candidate here either.
-        if e.kind != TFlag && e.kind != TCount {
+        // Only residents with a value slot contribute an eq-split continuation candidate.
+        if e.kind.has_value_slot() {
           // `LongEntry` carries no is_alias/hidden/deprecated axis (untested by any fixture
           // today, DR-104 §2/§3 scope trimmed to what ShortEntry — meta.json's -n/-o — needs).
           out.push(
@@ -151,14 +150,10 @@ fn run_eq_split(
   let valstr = chars_to_str(body, eq + 1, body.length())
   for e in entries {
     if e.key == key {
-      // TFlag/TCount take no eq-split value at all (no raw string to gate), so piece_filters is
-      // skipped for them entirely — checked BEFORE running the chain to avoid filtering a value
-      // slot that structurally doesn't exist for this kind.
-      if e.kind == TFlag {
-        return [] // presence-only trigger (DR-074 no eq-split): flags take no =value
-      }
-      if e.kind == TCount {
-        return [] // DR-077 §3: count takes no =value either — the update effect has no operand
+      // A matcher asks the resident whether a value slot exists; it does not enumerate
+      // flag/count/none categories itself.
+      if !e.kind.has_value_slot() {
+        return []
       }
       // codex レビュー Major 1 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) /
       // DR-058 §2: eq-split の deprecated warning marker — `walk_short` の `dm` と同じ carrier
@@ -181,9 +176,6 @@ fn run_eq_split(
             valstr,
             e.separator,
             e.kind,
-            e.int_round,
-            e.allow_base_prefix,
-            e.bool_config,
             e.piece_filters,
             pos,
             e.merge,
@@ -200,80 +192,16 @@ fn run_eq_split(
         Err((reason, msg)) =>
           return [Held(pe_filter(e.name, pos, reason, msg), [])]
       }
-      match e.kind {
-        TStr =>
+      match e.kind.parse_token(filtered) {
+        Ok(value) =>
           return [
             Accept(
               pos + 1,
-              cat([mkb(e.name, VStr(filtered), Cli, at_pos=Some(pos))], dm),
+              cat([mkb(e.name, value, Cli, at_pos=Some(pos))], dm),
             ),
           ]
-        TNum => // canonical number 字句 (DR-074 §1) + opt-in base prefix (§2)
-          match parse_number_ext(filtered, e.allow_base_prefix) {
-            Some(d) =>
-              return [
-                Accept(
-                  pos + 1,
-                  cat([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))], dm),
-                ),
-              ]
-            None => return [Held(pe_parse(e.name, filtered, pos), [])]
-          }
-        TInt =>
-          // DR-075 §1-§2 + DR-074 §2: eq-split (`--v=2.5` / `--v=0xff`) の TInt も値空間判定 + int_round
-          // + 基数 prefix を適用。int_round / allow_base_prefix は installer が LongEntry に埋め込む。
-          match
-            parse_int_value_ext(filtered, e.int_round, e.allow_base_prefix) {
-            Ok(i) =>
-              return [
-                Accept(
-                  pos + 1,
-                  cat(
-                    [mkb(e.name, VNum(i.to_double()), Cli, at_pos=Some(pos))],
-                    dm,
-                  ),
-                ),
-              ]
-            Err(NotAnInteger) =>
-              return [Held(pe_parse_int(e.name, filtered, pos), [])]
-            Err(IntOutOfRange) =>
-              return [Held(pe_int_out_of_range(e.name, filtered, pos), [])]
-            Err(NotANumber) =>
-              return [Held(pe_parse(e.name, filtered, pos), [])]
-          }
-        TFloat => // DR-074 §1: float's wider accept域 (number + inf) via parse_float
-          match parse_float(filtered) {
-            Some(d) =>
-              return [
-                Accept(
-                  pos + 1,
-                  cat([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))], dm),
-                ),
-              ]
-            None => return [Held(pe_parse(e.name, filtered, pos), [])]
-          }
-        TFlag => return [] // unreachable (guarded above); kept for exhaustiveness
-        TCount => return [] // unreachable (guarded above); kept for exhaustiveness
-        // DR-089: none has no value space, so it takes no eq-split value form either — same
-        // guarded-unreachable shape as TFlag/TCount (installer.mbt's `inst_long` never registers
-        // an eq-split LongEntry for a none-typed element).
-        TNone => return []
-        TBool =>
-          // DR-074 §3/§4: a value-typed bool DOES take an eq-split value (`--enabled=true`), unlike a
-          // presence-only flag firing — the CLI vocab is `parse_bool_ext(_, e.bool_config)` (canonical
-          // default `true/false/1/0/""`, case-insensitive; bool_parser factory config opt-in via
-          // DR-061 §4). An unrecognized token is a held Error (DR-037), not 素通し. (installer.mbt
-          // `inst_long` only registers this entry when the element has no variant spellings.)
-          match parse_bool_ext(filtered, e.bool_config) {
-            Some(b) =>
-              return [
-                Accept(
-                  pos + 1,
-                  cat([mkb(e.name, VBool(b), Cli, at_pos=Some(pos))], dm),
-                ),
-              ]
-            None => return [Held(pe_parse_bool(e.name, filtered, pos), [])]
-          }
+        Err(fail) =>
+          return [Held(parse_fail_error(e.name, filtered, pos, fail), [])]
       }
     }
   }
@@ -330,7 +258,7 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 /// `walk_short`'s
 /// mid-token/full-tail split still governs whether an `Err` surfaces as a `Held` or is silently
 /// dropped (see its call sites) — unlike the old `Binding?`-based 2-way split, this no longer needs
-/// a kind guard at the call site: a `TStr` entry structurally never produces a type-parse `Err`
+/// a kind guard at the call site: a `string_type()` entry structurally never produces a type-parse `Err`
 /// (its parse is the identity), so "every `Err` at full-tail becomes `Held`" is equivalent to the
 /// old kind-gated condition, just simpler.
 /// `pos` (issue 2026-07-09-accum-entity-filters-wiring): the args token this value char's raw
@@ -347,53 +275,19 @@ fn short_val(
   // (`separator is Some(_) || e.merge`) — `-f-a` (in-cluster attach) / `-f -a` (space-form) いずれ
   // も merge 宣言なら separator 未宣言でも `sep_binds` 経由でマーカー認識させる。
   if e.separator is Some(_) || e.merge {
-    // `ShortEntry` carries no `bool_config` (TBool never reaches this attach path — node.mbt's
-    // `ShortEntry.piece_filters` doc comment: "Ignored for TFlag/TBool/TCount, no in-cluster/
+    // `ShortEntry` carries no `bool_config` (bool_type() never reaches this attach path — node.mbt's
+    // `ShortEntry.piece_filters` doc comment: "Ignored for flag_type()/bool_type()/count_type(), no in-cluster/
     // space-form VALUE attachment for those"), so `sep_binds`'s bool arm is structurally dead here;
     // pass the canonical default purely to satisfy the shared signature.
-    sep_binds(
-      e.name,
-      s,
-      e.separator,
-      e.kind,
-      e.int_round,
-      e.allow_base_prefix,
-      bool_config_canonical(),
-      e.piece_filters,
-      pos,
-      e.merge,
-    )
+    sep_binds(e.name, s, e.separator, e.kind, e.piece_filters, pos, e.merge)
   } else {
     let filtered = match apply_piece_filters(e.piece_filters, s) {
       Ok(v) => v
       Err((reason, msg)) => return Err(pe_filter(e.name, pos, reason, msg))
     }
-    match e.kind {
-      TStr => Ok([mkb(e.name, VStr(filtered), Cli, at_pos=Some(pos))])
-      TNum =>
-        // DR-074 §1 + §2: short cluster / space-tail の TNum も opt-in base prefix を反映。
-        match parse_number_ext(filtered, e.allow_base_prefix) {
-          Some(d) => Ok([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))])
-          None => Err(pe_parse(e.name, filtered, pos))
-        }
-      TInt =>
-        // DR-075 §1-§2 + DR-074 §2: short cluster / space-tail の TInt も値空間判定 + int_round +
-        // base prefix を反映。
-        match parse_int_value_ext(filtered, e.int_round, e.allow_base_prefix) {
-          Ok(i) => Ok([mkb(e.name, VNum(i.to_double()), Cli, at_pos=Some(pos))])
-          Err(NotAnInteger) => Err(pe_parse_int(e.name, filtered, pos))
-          Err(IntOutOfRange) => Err(pe_int_out_of_range(e.name, filtered, pos))
-          Err(NotANumber) => Err(pe_parse(e.name, filtered, pos))
-        }
-      TFloat =>
-        match parse_float(filtered) {
-          Some(d) => Ok([mkb(e.name, VNum(d), Cli, at_pos=Some(pos))])
-          None => Err(pe_parse(e.name, filtered, pos))
-        }
-      // unreachable defensively: walk_short's TFlag/TBool/TCount/TNone arms never call short_val
-      // (no in-cluster/space-form VALUE attachment for those kinds — DR-089: none has no value
-      // space at all).
-      TFlag | TBool | TCount | TNone => Err(pe_parse(e.name, filtered, pos))
+    match e.kind.parse_token(filtered) {
+      Ok(value) => Ok([mkb(e.name, value, Cli, at_pos=Some(pos))])
+      Err(fail) => Err(parse_fail_error(e.name, filtered, pos, fail))
     }
   }
 }
@@ -439,122 +333,101 @@ fn walk_short(
       // DR-058: a deprecated cluster entry rides a `@depr:<name>` warning marker alongside its
       // value binding (the value is unchanged; only a warning is added). `dm` is [] for a normal entry.
       let dm : Array[Binding] = if e.depr { [depr_marker(e.name)] } else { [] }
-      match e.kind {
-        // DR-089: a none short cluster char is presence-only too — none carries no value space so
-        // it has nothing to attach in-cluster/space-form (the "食って捨てる" repeat+filter shape
-        // DR-089 §2 also allows operates at the value-slot/positional-consumption level, not
-        // short-cluster attachment).
-        TFlag | TBool | TNone =>
-          // a bool short cluster char is presence-only, same as a plain flag (DR-074 §3 canonical
-          // bool has no in-cluster/space-form `=value` short spelling, only the long eq-split form).
-          // `combine:false` gate: only continue when this char is the token's last (nothing left
-          // to combine with) — otherwise a 2nd entry would occupy the same token, disallowed.
-          if combine || i + 1 == body.length() {
-            walk_short(
-              entries,
-              combine,
-              body,
-              i + 1,
-              cat(acc, cat([mkb(e.name, VBool(true), Cli)], dm)),
-              ctx,
-              pos,
-            )
-          } else {
-            []
-          }
-        TCount =>
-          // DR-077 §3: count short is non-consuming, firing a 0-token `update(increment)` effect
-          // (same standing as a flag's fixed `true` supply above — the fired VALUE is resolved
-          // later, by resolve.mbt's CLI-seat fold, not something the matcher can compute at
-          // consume time). Same `combine:false` gate as the flag-like arm above.
-          if combine || i + 1 == body.length() {
-            walk_short(
-              entries,
-              combine,
-              body,
-              i + 1,
-              cat(acc, cat([mk_eff(e.name, Update("increment", []), Cli)], dm)),
-              ctx,
-              pos,
-            )
-          } else {
-            []
-          }
-        _ => {
-          let out : Array[Branch] = []
-          let vstart = i + 1
-          // in-token value of every non-empty length; continue walking the rest.
-          let mut j = vstart + 1
-          while j <= body.length() {
-            // `combine:false` gate: a PARTIAL-length value-attach (`j < body.length()`) would leave
-            // chars for a 2nd entry to combine with — skip it entirely (no reading, no Held error)
-            // when combine is off. The FULL-TAIL length (`j == body.length()`, this entry alone
-            // consumes everything left) is a single entry, never disallowed by `combine:false`.
-            // DESIGN §7.2 / DR-096 §2/§3.1: `short_attached_value:"deny"` withholds EVERY in-cluster
-            // attach reading (mid-token AND full-tail, cluster-tail included) — the mechanism itself
-            // is gated, not just a lone-entry case. `"require"` does NOT gate this loop (attach stays
-            // allowed, incl. cluster-tail attach, DR-096 §3.1). `"last_only"` (kawaz 裁定 2026-07-12)
-            // withholds every MID-token split (`j < body.length()`) — only the FULL-TAIL "丸取り"
-            // reading remains, so this entry never contributes to a split-point ambiguity (GNU
-            // getopt 慣習: 値オプションに達したら以降の文字列全部がその値、DR-096 §2)。
-            if e.short_attached_value != AtDeny &&
-              (e.short_attached_value != AtLastOnly || j == body.length()) &&
-              (combine || j == body.length()) {
-              let vstr = chars_to_str(body, vstart, j)
-              match short_val(e, vstr, pos) {
-                Ok(bs) =>
-                  for
-                    r in walk_short(
-                      entries,
-                      combine,
-                      body,
-                      j,
-                      cat(acc, cat(bs, dm)),
-                      ctx,
-                      pos,
-                    ) {
-                    out.push(r)
-                  }
-                Err(pe) =>
-                  // A mid-token split's failure (piece_filters reject OR type-parse failure) is a
-                  // silent non-reading (its remainder would need OTHER defined chars to progress,
-                  // DR-041 §3); only the FULL-TAIL attach — the「値 char が残余全体を値として取る」
-                  //唯一形の読み — surfaces as a held Error (DR-041 §5 値不正 = Error、DR-074 の
-                  // suffix 拒否がここに落ちる)。fixture matcher-readings/cluster-split-no-flag /
-                  // piece-filters/reject.json が輪郭を固定する。TStr が構造的に型 parse エラーを
-                  // 起こさない (short_val の doc comment) ので、kind によるガードは不要。
-                  if j == body.length() {
-                    out.push(Held(pe, acc))
-                  }
-              }
-            }
-            j = j + 1
-          }
-          // next-token value (space form) only when this value char is the tail. Not gated by
-          // `combine` (doc comment above): the value comes from the NEXT token entirely, no 2nd
-          // entry shares THIS token.
-          // DESIGN §7.2 / DR-096 §2: `short_attached_value:"require"` withholds this space-form
-          // reading entirely (both the eager next-token Accept and the completion Pending branch) —
-          // this is what makes a `"require"` entry's bare tail token (e.g. `-q` with 0 leftover
-          // chars) have NO complete path at all (attach needs >=1 char, DR-096 §2「付着形は定義上
-          // 1 文字以上の残り文字列を要求する」), falling through to positional per DR-041 §5.
-          if e.short_attached_value != AtRequire &&
-            vstart == body.length() &&
-            pos + 1 < ctx.toks.length() {
-            match short_val(e, ctx.toks[pos + 1], pos + 1) {
-              Ok(bs) => out.push(Accept(pos + 2, cat(acc, cat(bs, dm))))
-              Err(pe) => out.push(Held(pe, []))
-            }
-          } else if e.short_attached_value != AtRequire &&
-            vstart == body.length() &&
-            in_complete(ctx) {
-            // complete: the cluster ends in a value char and the args ends
-            // here — the space-form value is exactly what could come next
-            // (DR-060 §1). The flags already read stay as partial state.
-            out.push(Pending([pend_value(e.kind, e.name)], cat(acc, dm)))
-          }
-          out
+      if !e.kind.has_value_slot() {
+        // Presence-only residents share the same reading shape. Count owns a distinct
+        // effect payload; the matcher no longer enumerates type categories to find the shape.
+        let presence = if e.kind.name() == "count" {
+          mk_eff(e.name, Update("increment", []), Cli)
+        } else {
+          mkb(e.name, VBool(true), Cli)
         }
+        if combine || i + 1 == body.length() {
+          walk_short(
+            entries,
+            combine,
+            body,
+            i + 1,
+            cat(acc, cat([presence], dm)),
+            ctx,
+            pos,
+          )
+        } else {
+          []
+        }
+      } else {
+        let out : Array[Branch] = []
+        let vstart = i + 1
+        // in-token value of every non-empty length; continue walking the rest.
+        let mut j = vstart + 1
+        while j <= body.length() {
+          // `combine:false` gate: a PARTIAL-length value-attach (`j < body.length()`) would leave
+          // chars for a 2nd entry to combine with — skip it entirely (no reading, no Held error)
+          // when combine is off. The FULL-TAIL length (`j == body.length()`, this entry alone
+          // consumes everything left) is a single entry, never disallowed by `combine:false`.
+          // DESIGN §7.2 / DR-096 §2/§3.1: `short_attached_value:"deny"` withholds EVERY in-cluster
+          // attach reading (mid-token AND full-tail, cluster-tail included) — the mechanism itself
+          // is gated, not just a lone-entry case. `"require"` does NOT gate this loop (attach stays
+          // allowed, incl. cluster-tail attach, DR-096 §3.1). `"last_only"` (kawaz 裁定 2026-07-12)
+          // withholds every MID-token split (`j < body.length()`) — only the FULL-TAIL "丸取り"
+          // reading remains, so this entry never contributes to a split-point ambiguity (GNU
+          // getopt 慣習: 値オプションに達したら以降の文字列全部がその値、DR-096 §2)。
+          if e.short_attached_value != AtDeny &&
+            (e.short_attached_value != AtLastOnly || j == body.length()) &&
+            (combine || j == body.length()) {
+            let vstr = chars_to_str(body, vstart, j)
+            match short_val(e, vstr, pos) {
+              Ok(bs) =>
+                for
+                  r in walk_short(
+                    entries,
+                    combine,
+                    body,
+                    j,
+                    cat(acc, cat(bs, dm)),
+                    ctx,
+                    pos,
+                  ) {
+                  out.push(r)
+                }
+              Err(pe) =>
+                // A mid-token split's failure (piece_filters reject OR type-parse failure) is a
+                // silent non-reading (its remainder would need OTHER defined chars to progress,
+                // DR-041 §3); only the FULL-TAIL attach — the「値 char が残余全体を値として取る」
+                //唯一形の読み — surfaces as a held Error (DR-041 §5 値不正 = Error、DR-074 の
+                // suffix 拒否がここに落ちる)。fixture matcher-readings/cluster-split-no-flag /
+                // piece-filters/reject.json が輪郭を固定する。string_type() が構造的に型 parse エラーを
+                // 起こさない (short_val の doc comment) ので、kind によるガードは不要。
+                if j == body.length() {
+                  out.push(Held(pe, acc))
+                }
+            }
+          }
+          j = j + 1
+        }
+        // next-token value (space form) only when this value char is the tail. Not gated by
+        // `combine` (doc comment above): the value comes from the NEXT token entirely, no 2nd
+        // entry shares THIS token.
+        // DESIGN §7.2 / DR-096 §2: `short_attached_value:"require"` withholds this space-form
+        // reading entirely (both the eager next-token Accept and the completion Pending branch) —
+        // this is what makes a `"require"` entry's bare tail token (e.g. `-q` with 0 leftover
+        // chars) have NO complete path at all (attach needs >=1 char, DR-096 §2「付着形は定義上
+        // 1 文字以上の残り文字列を要求する」), falling through to positional per DR-041 §5.
+        if e.short_attached_value != AtRequire &&
+          vstart == body.length() &&
+          pos + 1 < ctx.toks.length() {
+          match short_val(e, ctx.toks[pos + 1], pos + 1) {
+            Ok(bs) => out.push(Accept(pos + 2, cat(acc, cat(bs, dm))))
+            Err(pe) => out.push(Held(pe, []))
+          }
+        } else if e.short_attached_value != AtRequire &&
+          vstart == body.length() &&
+          in_complete(ctx) {
+          // complete: the cluster ends in a value char and the args ends
+          // here — the space-form value is exactly what could come next
+          // (DR-060 §1). The flags already read stay as partial state.
+          out.push(Pending([pend_value(e.kind, e.name)], cat(acc, dm)))
+        }
+        out
       }
     }
   }

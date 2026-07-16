@@ -52,40 +52,43 @@ pub enum ExportKey {
 } derive(Eq, Debug)
 
 ///|
-/// Type category of a value cell / primitive. `number` (TNum) accepts integers and floats but
-/// rejects inf/nan (DR-074 §1); `int` (TInt) is integer-constrained by 値空間判定 — a non-integer
-/// VALUE follows `int_round` (DR-075, canonical default `error`). `float` (TFloat) shares TNum's
-/// accept域 PLUS inf (case-insensitive `inf`/`infinity`, sign-合成可) — nan stays Error for both
-/// (DR-074 §1/§7). `TFlag` is a PRESENCE-only trigger (bare `--x` fires name=true, no value token
-/// ever — e.g. `--help`/`--verbose`). `TBool` is DR-074 §3's value-typed canonical bool: the bare
-/// trigger ALSO fires true (same degenerate as TFlag), but it additionally takes an eq-split value
-/// (`--enabled=true`, parsed through the canonical bool vocab) UNLESS the element carries variant
-/// spellings (`--x`/`--no-x`) — a variant-bearing bool already has a dedicated true/false pair of
-/// triggers, so no separate `=value` form is registered for it (installer.mbt `inst_long`).
-pub(all) enum Ty {
-  TStr
-  TNum
-  TInt
-  TFloat
-  TFlag
-  TBool
-  /// count 糖衣の PRE-normalize marker (DR-077 §3, LOWERING §A.5): mirrors `TFlag`'s standing to
-  /// `TBool` — a bare `--x` fire applies the `increment` update effect (0-token, no value ever,
-  /// same presence-only shape as `TFlag`'s bare-true). `normalize_option` differentiates
-  /// `long:true` sugar (`[":update:increment"]` vs bool's `[":set:true"]`) and default-presets
-  /// (0 vs false) by this
-  /// tag BEFORE collapsing it to `TNum` — once lowered there is no other channel to tell a count
-  /// cell apart from an ordinary number cell (installer.mbt `normalize_option`).
-  TCount
-  /// DR-089: 値空間が空の型 — type 省略の糖衣先 (§2「type 省略 = none」)。type が規定するのは値
-  /// 空間だけで消費は構造 (repeat/値スロット/exact/filter の Accept 報告) の関心という直交 (§1) の
-  /// 帰結として、none は「発火しても値を運ばない」ことだけを意味し、消費数そのものは制約しない —
-  /// 消費 0 の純トリガ (long のみ) にも、repeat+filter で「食って捨てる」構造にも使える。値充足を
-  /// 要求する席 (requires の目的語) には立てない (静的 definition-error、§4)。結果には現れない
-  /// (フィールド非掲載、DR-051 §1/§4) — 発火の観測は ParserContext/explains 層の管掌で、この型は
-  /// 関与しない。
-  TNone
-} derive(Eq, Debug)
+/// Input to a type resident's default-seat resolver. `declared` is the explicit
+/// scalar default, if any; preset residents may supply a fallback only when it is absent.
+pub struct SeatCtx {
+  priv declared : Value?
+}
+
+///|
+pub fn seat_ctx(declared : Value?) -> SeatCtx {
+  { declared, }
+}
+
+///|
+pub fn SeatCtx::declared(self : SeatCtx) -> Value? {
+  self.declared
+}
+
+///|
+/// Open type-category contract. Value lexicons and preset defaults belong to
+/// residents; the evaluator sees only this capability surface.
+pub(open) trait TypeExt {
+  fn name(Self) -> String
+  fn has_value_slot(Self) -> Bool
+  fn parse_token(Self, String) -> Result[Value, ParseFail]
+  fn default_seat_resolver(Self, SeatCtx) -> Value?
+}
+
+///|
+/// A type resident's structural identity is its registry name. Per-use parser
+/// configuration remains in the concrete resident and in matcher/node encode data.
+impl Eq for &TypeExt with fn equal(self, other) {
+  self.name() == other.name()
+}
+
+///|
+impl Debug for &TypeExt with fn to_repr(self) {
+  Debug::to_repr(self.name())
+}
 
 ///|
 /// One filter-chain DSL entry (DR-009 §DSL 文法, `piece_filters`/`value_filters`/`final_filters`/
@@ -449,7 +452,7 @@ pub enum Constraint {
 /// entity value.
 pub struct Entity {
   name : String
-  ty : Ty
+  ty : &TypeExt
   mut env_key : String? // env seat lookup; None = no env seat declared (env installer sets it)
   // MDR-005 §3: `pub(all)` → `pub` (公開面キュレーション) でフィールドの外部書き込みが無くなり、
   // 元々パッケージ内でも一度も再代入されていなかった (`ensure_entity` が構築時に決め打つだけ) 実装
@@ -466,7 +469,7 @@ pub struct Entity {
   is_tty : Bool
   // DR-099 §3: `builtin/tty` factory の必須 config `tty_stream` — tty_provider へ渡すストリーム識別子
   // ("stdin"|"stdout"|"stderr")。`is_tty` が false の cell では未使用 (冗長フィールド、int_round が
-  // TInt 以外で未使用なのと同じ扱い)。`is_tty` かつ None は definition-error で事前に弾かれている
+  // int_type() 以外で未使用なのと同じ扱い)。`is_tty` かつ None は definition-error で事前に弾かれている
   // はずの防御的状態 (`collect_tty_stream_missing`)。
   tty_stream : String?
   // DR-099 §3: `builtin/tty` factory の config `tty_cygwin` — fold `terminal || (tty_cygwin &&
@@ -588,18 +591,18 @@ pub struct Entity {
 /// `allow_base_prefix` / `bool_config` carry the element's DR-075 / DR-074 §2/§4 factory config into
 /// the eq-split path (space form runs the greedy Num/int resident/bool resident node which already carries this
 /// config; eq-split needs its own copy since the entry table is the only channel run_eq_split reads).
-/// `int_round` は TInt のみ、`allow_base_prefix` は TNum / TInt、`bool_config` は TBool のみが参照する
-/// (DR-076 §1/§3: bool の eq-split `--enabled=true` は variant 綴りと共存する — TFlag と違い抑制
+/// `int_round` は int_type() のみ、`allow_base_prefix` は number_type() / int_type()、`bool_config` は bool_type() のみが参照する
+/// (DR-076 §1/§3: bool の eq-split `--enabled=true` は variant 綴りと共存する — flag_type() と違い抑制
 /// されない)。他 kind は無視。
 pub struct LongEntry {
   key : String
   name : String
-  kind : Ty
+  kind : &TypeExt
   int_round : RoundMode
   allow_base_prefix : Bool
   bool_config : BoolConfig
   // DR-034/DR-062 piece_filters (same carrier pattern as `int_round`/`allow_base_prefix`): run_eq_split
-  // (matcher.mbt) applies it to `valstr` before the kind-specific parse. Ignored for TFlag/TCount
+  // (matcher.mbt) applies it to `valstr` before the kind-specific parse. Ignored for flag_type()/count_type()
   // (no eq-split value slot to gate — a presence-only fire has no raw string to filter).
   piece_filters : Array[FilterSpelling]
   // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1): `--key=a,b` eq-split
@@ -630,15 +633,15 @@ pub struct LongEntry {
 pub struct ShortEntry {
   ch : Char
   name : String
-  kind : Ty
+  kind : &TypeExt
   depr : Bool
   // DR-075 int_round + DR-074 §2 allow_base_prefix: short cluster / space-tail の値 parse に運ぶ
-  // (LongEntry と同型)。int_round は TInt のみ、allow_base_prefix は TNum/TInt が参照。
+  // (LongEntry と同型)。int_round は int_type() のみ、allow_base_prefix は number_type()/int_type() が参照。
   int_round : RoundMode
   allow_base_prefix : Bool
   // DR-034/DR-062 piece_filters (same carrier pattern as LongEntry): `short_val` (matcher.mbt) applies
   // it to the in-cluster/space-form value string before the kind-specific parse. Ignored for
-  // TFlag/TBool/TCount (no in-cluster/space-form VALUE attachment for those — `short_val` already
+  // flag_type()/bool_type()/count_type() (no in-cluster/space-form VALUE attachment for those — `short_val` already
   // returns None unconditionally for them).
   piece_filters : Array[FilterSpelling]
   // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1, same rationale as
@@ -654,7 +657,7 @@ pub struct ShortEntry {
   // 機構自体をダイヤルしているのであって、単独発火時に限る規定ではない」), `AtLastOnly` withholds
   // every MID-token split attach (only the full-tail "丸取り" reading remains — GNU getopt 慣習の
   // 分割 ambiguity 抑制), `AtAllow` (既定) withholds neither (`walk_short`, matcher.mbt, is the sole
-  // consumer). Ignored for TFlag/TBool/TCount/TNone entries (DR-096 §3.2 inert — those kinds never
+  // consumer). Ignored for flag_type()/bool_type()/count_type()/none_type() entries (DR-096 §3.2 inert — those kinds never
   // reach `short_val`'s in-cluster/space-form value attachment in the first place).
   short_attached_value : AttachMode
   // DR-057 / DR-104 §2/§3: this entry is an alias入口 (canonical と別 spelling で同じ origin name
@@ -687,7 +690,7 @@ pub enum Matcher {
 
 // ── completion candidate 型 (DR-060 §3) — 型のみ移植 (slice complete.mbt 1-57) ─
 // The completion走査 (comp_scope 等) is outcome.mbt's job (MDR-002 §3); only the DATA the
-// evaluator's `Pending` branch carries lives here. `Cand` uses `Ty`, so it sits beside it.
+// evaluator's `Pending` branch carries lives here. `Cand.ty` carries the DR-104 base spelling.
 
 ///|
 /// A terminal hint on an exact candidate (DR-060 §3): `WordEnd` = 確定, a space may follow; `Cont` =
@@ -725,7 +728,7 @@ pub(all) struct CandMeta {
 pub(all) struct Cand {
   spelling : String // the exact spelling; "" for a value position
   is_value : Bool
-  ty : Ty // for a value position
+  ty : String // DR-104 §2 base spelling for a value position
   origin : String // the element name it came from
   term : TermHint
   meta : CandMeta

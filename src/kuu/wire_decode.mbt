@@ -76,7 +76,7 @@ fn conformance_str_in(xs : Array[String], v : String) -> Bool {
 ///|
 fn opt(
   name : String,
-  ty : Ty,
+  ty : &TypeExt,
   long? : LongDecl = LList([]),
   variants? : Array[Variant] = [],
   short? : Array[Char] = [],
@@ -190,7 +190,7 @@ fn opt(
 ///|
 fn pos(
   name : String,
-  ty : Ty,
+  ty : &TypeExt,
   inherit_? : Bool = false,
   repeat? : RepeatSpec? = None,
   optional? : Bool = false,
@@ -298,7 +298,7 @@ fn dd_marker(
 ) -> ElemDef {
   {
     name: "--",
-    ty: TStr,
+    ty: string_type(),
     long: LList([]),
     variants: [],
     short: [],
@@ -365,14 +365,14 @@ fn dd_marker(
 /// 役割決定 — dec_positional の裸 `"exact"` 分岐から作る)。`is_dd`/`dd_marker` と同じ carrier
 /// パターン — `name` が trigger 綴りを運び (`is_exact` の doc comment 参照)、`elem_head`
 /// (installer.mbt) が `Exact(name)` へ直接 lower する (value_prim/entity 経路を通らない、
-/// `ensure_entities` が is_dd と同じガードでスキップする)。`ty: TNone` は値空間を持たない照合消費
-/// (dd_marker の `ty: TStr` と違うのは、dd が「捨てるが型タグは要る」旧経路の名残であるのに対し
+/// `ensure_entities` が is_dd と同じガードでスキップする)。`ty: none_type()` は値空間を持たない照合消費
+/// (dd_marker の `ty: string_type()` と違うのは、dd が「捨てるが型タグは要る」旧経路の名残であるのに対し
 /// exact literal は値スロット自体が最初から無いため — DR-089 §2「type 省略 = none の糖衣」と同じ既定
 /// 型)。
 fn exact_marker(spelling : String) -> ElemDef {
   {
     name: spelling,
-    ty: TNone,
+    ty: none_type(),
     long: LList([]),
     variants: [],
     short: [],
@@ -742,40 +742,34 @@ fn dec_short(o : Map[String, Json]) -> Array[Char] raise DecodeSkip {
 }
 
 ///|
-/// DR-074 §3: `"flag"` is a presence-only trigger (`TFlag`, no `=value` form ever — e.g. `--help`);
-/// `"bool"` is the value-typed canonical bool (`TBool`, additionally takes `--x=value` unless it
-/// carries variant spellings, installer.mbt `inst_long`). The two JSON type strings map to
-/// DIFFERENT Ty variants now (they used to collapse to one `TFlag`, which made a value-typed
-/// bool's `--enabled=true` eq-split unreachable — see fixtures/value-typing/bool-canonical.json).
-/// Likewise DR-074 §1: `"number"` (`TNum`, rejects inf) and `"float"` (`TFloat`, accepts inf) map to
-/// DIFFERENT Ty variants (they used to collapse to one `TNum` — see
-/// fixtures/value-typing/number-inf-nan.json's `--t`/`--n` type-dependent inf accept域).
-fn dec_ty(t : String) -> Ty raise DecodeSkip {
+/// Decode a wire type name to its canonical TypeExt resident. Flag/count/none are
+/// presence presets; bool remains value-typed, and number/float retain distinct lexicons.
+fn dec_ty(t : String) -> &TypeExt raise DecodeSkip {
   match t {
-    "string" => TStr
-    "number" => TNum
-    "float" => TFloat
-    "int" => TInt
-    "flag" => TFlag
-    "bool" => TBool
-    // DR-077 §3: `"count"` is the PRE-normalize marker (mirrors `"flag"` → `TFlag`) — installer.mbt
-    // collapses it to `TNum` at `ensure_entity`, not here (decode's only job is the wire type
-    // string → Ty tag, same as every other arm).
-    "count" => TCount
+    "string" => string_type()
+    "number" => number_type()
+    "float" => float_type()
+    "int" => int_type()
+    "flag" => flag_type()
+    "bool" => bool_type()
+    // DR-077 §3: `"count"` is the PRE-normalize marker (mirrors `"flag"` → `flag_type()`) — installer.mbt
+    // collapses it to `number_type()` at `ensure_entity`, not here (decode's only job is the wire type
+    // string → TypeExt resident, same as every other arm).
+    "count" => count_type()
     // DR-089 §2: type:"none" は第一級 — 値空間が空の型 (省略の明示綴り、同じタグに解決する)。
-    "none" => TNone
+    "none" => none_type()
     other => raise DecodeSkip("value type '" + other + "'")
   }
 }
 
 ///|
-/// DR-061 §3 configurable factory の type shadow: user 定義の型名を base Ty + parse 相 config に
+/// DR-061 §3 configurable factory の type shadow: user 定義の型名を base type resident + parse 相 config に
 /// 解決する。fixture の `definitions.types.<name>` → TypeShadow の map で保持し、dec_option /
 /// dec_positional の `type: "<name>"` 解決で consultation する。canonical 型名 (string/number/int/...)
 /// は shadow で override 可能だが本 fixture では未使用 (`int_parser`/`number_parser`/`bool_parser`/
 /// `tty` factory のみ扱う)。
 struct TypeShadow {
-  base : Ty
+  base : &TypeExt
   int_round : RoundMode
   // DR-074 §2 `number_allow_base_prefix` (`number_parser` factory config)。canonical default = false。
   // TypeShadow が担う base 側の flag は canonical default が false なので、int_round と直交な平坦キー。
@@ -783,7 +777,7 @@ struct TypeShadow {
   // DR-074 §4 `bool_parser` factory config (`bool_true_values`/`bool_false_values`/`bool_case_insensitive` (DR-100 prefix 正準) を 1
   // struct に束ねた carrier、ElemDef.bool_config と同型)。canonical default = `bool_config_canonical()`。
   bool_config : BoolConfig
-  // DR-099 §1/§3 `builtin/tty` factory: base=TBool + is_tty マーカー + tty_stream (必須 config、
+  // DR-099 §1/§3 `builtin/tty` factory: base=bool_type() + is_tty マーカー + tty_stream (必須 config、
   // 未指定は definition-error) + tty_cygwin (既定 true)。他 factory と同じ「平坦 config キーを
   // shadow に carry するだけ」パターン (ElemDef.is_tty/tty_stream/tty_cygwin と同型)。
   is_tty : Bool
@@ -793,9 +787,9 @@ struct TypeShadow {
 
 ///|
 /// Decode `definitions.types` (DR-061 §3 `{name: <factory>, config: {<key>: <value>, ...}}`) into
-/// a shadow map. 各 shadow は base Ty (factory 名から導出) と平坦 config キーで構成される。
-/// 現状サポート: `int_parser` (base = TInt、config = `int_round`)、`number_parser` (base = TNum、
-/// config = `number_allow_base_prefix`)、`bool_parser` (base = TBool、config = `bool_true_values` /
+/// a shadow map. 各 shadow は base type resident (factory 名から導出) と平坦 config キーで構成される。
+/// 現状サポート: `int_parser` (base = int_type()、config = `int_round`)、`number_parser` (base = number_type()、
+/// config = `number_allow_base_prefix`)、`bool_parser` (base = bool_type()、config = `bool_true_values` /
 /// `false_values` / `case_insensitive`、DR-074 §3/§4)。他の factory 名は DecodeSkip で明示的に
 /// unsupported 扱い (typo 検出、DR-061 §4 は factory 自身が config 値を検証する規定なので、
 /// type/factory 認識のこの層は capability gate として振る舞う)。
@@ -889,7 +883,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           None => ()
         }
         out.set(name, {
-          base: TInt,
+          base: int_type(),
           int_round: mode,
           allow_base_prefix: base_prefix,
           bool_config: bool_config_canonical(),
@@ -934,7 +928,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           None => ()
         }
         out.set(name, {
-          base: TNum,
+          base: number_type(),
           int_round: RError,
           allow_base_prefix: base_prefix,
           bool_config: bool_config_canonical(),
@@ -994,7 +988,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           None => ()
         }
         out.set(name, {
-          base: TBool,
+          base: bool_type(),
           int_round: RError,
           allow_base_prefix: false,
           bool_config: { true_values, false_values, case_insensitive },
@@ -1061,7 +1055,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           None => ()
         }
         out.set(name, {
-          base: TBool,
+          base: bool_type(),
           int_round: RError,
           allow_base_prefix: false,
           bool_config: bool_config_canonical(),
@@ -1557,8 +1551,12 @@ fn dec_or_leaf(
         None =>
           (dec_ty(t), RError, false, bool_config_canonical(), false, None, true)
       }
-    None => (TNone, RError, false, bool_config_canonical(), false, None, true)
+    None =>
+      (none_type(), RError, false, bool_config_canonical(), false, None, true)
   }
+  let ty = configured_type(
+    ty, int_round_from_shadow, base_prefix_from_shadow, bool_config_from_shadow,
+  )
   pos(
     name,
     ty,
@@ -1680,7 +1678,7 @@ fn dec_option(
     // definition-error は構文的に発生しなくなった、dd_marker のコメント参照)。
     return DOpt({ ..dd_marker(match_~, self_keep~, required~), name, })
   }
-  // DR-061 §3: type shadow lookup — user 定義の type 名なら base Ty + parse 相 config を採用、
+  // DR-061 §3: type shadow lookup — user 定義の type 名なら base type resident + parse 相 config を採用、
   // canonical 型名 (string/int/...) にフォールバック。help/config_file は語彙 keyword で shadow の
   // 適用対象外 (installer 語彙、DR-042)。
   // DR-099 §1/§3: bare `type:"tty"` (builtin ns の糖衣, DR-094 §3) / 明示 `type:"builtin/tty"` も
@@ -1700,7 +1698,7 @@ fn dec_option(
   ) = match tystr {
     "help" =>
       (
-        TFlag,
+        flag_type(),
         true,
         false,
         RError,
@@ -1712,7 +1710,7 @@ fn dec_option(
       )
     "config_file" =>
       (
-        TStr,
+        string_type(),
         false,
         true,
         RError,
@@ -1724,7 +1722,7 @@ fn dec_option(
       )
     "tty" | "builtin/tty" =>
       (
-        TBool,
+        bool_type(),
         false,
         false,
         RError,
@@ -1762,6 +1760,9 @@ fn dec_option(
           )
       }
   }
+  let ty = configured_type(
+    ty, int_round_from_shadow, base_prefix_from_shadow, bool_config_from_shadow,
+  )
   // DR-071 §1 / kawaz 裁定 2026-07-08: decode は wire の bool|array 二形をそのまま `LongDecl` に写す
   // だけ — 糖衣展開・colon DSL 分類 (variants の分離を含む) は installer.mbt の `resolve_long` が
   // `normalize_option` から担う (下記 `opt(...)` は `variants` を渡さない = 常に [] のまま宣言層へ)。
@@ -1942,7 +1943,8 @@ fn dec_positional(
   match o.get("or") {
     Some(orj) =>
       match dec_or_structural(orj, shadows) {
-        Some(branches) => return { ..pos("", TStr), body: BOr(branches) }
+        Some(branches) =>
+          return { ..pos("", string_type()), body: BOr(branches) }
         None =>
           raise DecodeSkip(
             "positional 'or' has no structural branches (all-exact value-enum form is option-only, DR-055 §1 / §5.3)",
@@ -1951,10 +1953,10 @@ fn dec_positional(
     None => ()
   }
   // DR-061 §3: positional も type shadow を consultation (dec_option と同型)。
-  // DR-089 §2: type 省略 = none の糖衣 (旧実装は TStr を勝手にあてる default-typing だった —
+  // DR-089 §2: type 省略 = none の糖衣 (旧実装は string_type() を勝手にあてる default-typing だった —
   // DR-089 の「採用しなかった案」が明示的に否定するパターン。`ref` 付きの場合はそもそも ty が
   // 未使用 (elem_head の Ref(r) head、下の `dec_or_structural`/`positionals` 分岐同様) なので
-  // TNone に変えても無害)。
+  // none_type() に変えても無害)。
   // DR-099 §1/§3: bare `type:"tty"` / `type:"builtin/tty"` は dec_option と同じ理由で shadow
   // lookup より先に判定する (config を供給する経路が無いので tty_stream は常に None のまま)。
   let (
@@ -1967,7 +1969,7 @@ fn dec_positional(
     tty_cygwin_from_shadow,
   ) = match jf_str(o, "type") {
     Some("tty") | Some("builtin/tty") =>
-      (TBool, RError, false, bool_config_canonical(), true, None, true)
+      (bool_type(), RError, false, bool_config_canonical(), true, None, true)
     Some(t) =>
       match shadows.get(t) {
         Some(sh) =>
@@ -1983,8 +1985,12 @@ fn dec_positional(
         None =>
           (dec_ty(t), RError, false, bool_config_canonical(), false, None, true)
       }
-    None => (TNone, RError, false, bool_config_canonical(), false, None, true)
+    None =>
+      (none_type(), RError, false, bool_config_canonical(), false, None, true)
   }
+  let ty = configured_type(
+    ty, int_round_from_shadow, base_prefix_from_shadow, bool_config_from_shadow,
+  )
   let name = match jf_str(o, "name") {
     Some(s) => s
     None => raise DecodeSkip("positional missing 'name'")
@@ -2088,7 +2094,7 @@ fn dec_positional_group(
   for ij in inner_arr {
     items.push(dec_positional(ij, shadows))
   }
-  { ..pos(name, TStr, repeat~), body: BGroup(items) }
+  { ..pos(name, string_type(), repeat~), body: BGroup(items) }
 }
 
 ///|

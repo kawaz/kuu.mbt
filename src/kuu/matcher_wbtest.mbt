@@ -50,7 +50,7 @@ test "eq-split long option resolves, errors, and 素通し" {
     {
       key: "port",
       name: "port",
-      kind: TNum,
+      kind: number_type(),
       int_round: RError,
       allow_base_prefix: false,
       bool_config: bool_config_canonical(),
@@ -81,18 +81,18 @@ test "eq-split long option resolves, errors, and 素通し" {
 }
 
 ///|
-/// A `TBool` eq-split entry (DR-074 §3, value-typed canonical bool): `--enabled=true` parses the
+/// A `bool_type()` eq-split entry (DR-074 §3, value-typed canonical bool): `--enabled=true` parses the
 /// value through the canonical bool vocab (true/false/1/0/""，case-insensitive). An unrecognized
 /// token (`yes` etc., canonical-外) is a held Error with reason `not_a_bool` (DR-066 v1 has no bool
 /// reason yet, docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md) — not a silent 素通し. A
-/// PRESENCE-only `TFlag` entry never fires here at all (no eq-split registration, installer.mbt
-/// `inst_long`; `TFlag`'s own arm in `run_eq_split` returns `[]` unconditionally).
+/// PRESENCE-only `flag_type()` entry never fires here at all (no eq-split registration, installer.mbt
+/// `inst_long`; `flag_type()`'s own arm in `run_eq_split` returns `[]` unconditionally).
 test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Error" {
   let long = EqSplit(prefix="--", entries=[
     {
       key: "enabled",
       name: "enabled",
-      kind: TBool,
+      kind: bool_type(),
       int_round: RError,
       allow_base_prefix: false,
       bool_config: bool_config_canonical(),
@@ -138,15 +138,15 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
 }
 
 ///|
-/// A presence-only `TFlag` entry (e.g. `--help`/`--verbose`) has NO eq-split value pipeline at all
-/// (DR-074 §3 only applies to `TBool`): `--verbose=true` finds the key defined but the type has no
+/// A presence-only `flag_type()` entry (e.g. `--help`/`--verbose`) has NO eq-split value pipeline at all
+/// (DR-074 §3 only applies to `bool_type()`): `--verbose=true` finds the key defined but the type has no
 /// value arm, so `run_eq_split` returns `[]` (素通し to positional), not a held Error.
-test "eq-split long option: a TFlag entry never fires on =value" {
+test "eq-split long option: a flag_type() entry never fires on =value" {
   let long = EqSplit(prefix="--", entries=[
     {
       key: "verbose",
       name: "verbose",
-      kind: TFlag,
+      kind: flag_type(),
       int_round: RError,
       allow_base_prefix: false,
       bool_config: bool_config_canonical(),
@@ -172,7 +172,7 @@ test "eq-split long option: deprecated entry rides a @depr marker" {
     {
       key: "port",
       name: "port",
-      kind: TNum,
+      kind: number_type(),
       int_round: RError,
       allow_base_prefix: false,
       bool_config: bool_config_canonical(),
@@ -203,7 +203,7 @@ test "eq-split long option: deprecated entry with separator (sep_binds path) als
     {
       key: "tags",
       name: "tags",
-      kind: TStr,
+      kind: string_type(),
       int_round: RError,
       allow_base_prefix: false,
       bool_config: bool_config_canonical(),
@@ -238,7 +238,7 @@ test "short cluster: flag run and in-token numeric value" {
     {
       ch: 'a',
       name: "a",
-      kind: TFlag,
+      kind: flag_type(),
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
@@ -251,7 +251,7 @@ test "short cluster: flag run and in-token numeric value" {
     {
       ch: 'b',
       name: "b",
-      kind: TFlag,
+      kind: flag_type(),
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
@@ -264,7 +264,7 @@ test "short cluster: flag run and in-token numeric value" {
     {
       ch: 'n',
       name: "n",
-      kind: TNum,
+      kind: number_type(),
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
@@ -303,7 +303,7 @@ test "short cluster: space-form value takes the next token" {
     {
       ch: 'n',
       name: "n",
-      kind: TNum,
+      kind: number_type(),
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
@@ -332,7 +332,7 @@ test "short cluster: deprecated entry rides a @depr marker" {
     {
       ch: 'd',
       name: "d",
-      kind: TFlag,
+      kind: flag_type(),
       depr: true,
       int_round: RError,
       allow_base_prefix: false,
@@ -356,13 +356,13 @@ test "short cluster: deprecated entry rides a @depr marker" {
 // ── issue scope-config-object-gap: short_combine (解釈A, team-lead 裁定 2026-07-11) ──
 
 ///|
-/// entries を共有する 3 テスト共通の fixture: a (flag) / b (flag) / n (TNum, 値付着可)。
+/// entries を共有する 3 テスト共通の fixture: a (flag) / b (flag) / n (number_type(), 値付着可)。
 fn combine_entries() -> Array[ShortEntry] {
   [
     {
       ch: 'a',
       name: "a",
-      kind: TFlag,
+      kind: flag_type(),
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
@@ -375,7 +375,7 @@ fn combine_entries() -> Array[ShortEntry] {
     {
       ch: 'b',
       name: "b",
-      kind: TFlag,
+      kind: flag_type(),
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
@@ -388,7 +388,7 @@ fn combine_entries() -> Array[ShortEntry] {
     {
       ch: 'n',
       name: "n",
-      kind: TNum,
+      kind: number_type(),
       depr: false,
       int_round: RError,
       allow_base_prefix: false,
@@ -445,13 +445,13 @@ test "short cluster: combine:false still fires a FULL-TAIL value-attach (-n1.0)"
 /// 保証 (同上、部分長の値付着 + 後続 entry も結合の一種): `combine:false` で `-n1a` の PARTIAL
 /// attach 読み (n が "1" だけ値に取り、残った "a" を後続 flag として結合する読み) は禁止される —
 /// `j != body.length()` の場合 `combine:false` はそもそも `short_val` を試さない。残るのは
-/// FULL-TAIL attach 読み (n が "1a" を丸ごと値に取ろうとする、TNum parse が失敗して Held) だけ 1 本
+/// FULL-TAIL attach 読み (n が "1a" を丸ごと値に取ろうとする、number_type() parse が失敗して Held) だけ 1 本
 /// — full-tail 読みは combine の管轄外 (単一 entry) なので禁止されない。合計 1 本、かつ Held。
 test "short cluster: combine:false rejects the PARTIAL value-attach reading, keeps the FULL-TAIL Held (-n1a)" {
   let short = ShortCombine(prefix="-", combine=false, entries=combine_entries())
   let r = run_matcher(short, pctx(["-n1a"]), 0)
   assert_eq(r.length(), 1)
-  assert_true(is_held(r[0])) // full-tail "1a" は TNum として parse 失敗 → Held (DR-037)
+  assert_true(is_held(r[0])) // full-tail "1a" は number_type() として parse 失敗 → Held (DR-037)
 }
 
 ///|

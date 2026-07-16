@@ -10,18 +10,8 @@ fn filter_spellings_json(filters : Array[FilterSpelling]) -> Json {
 }
 
 ///|
-fn ty_json(ty : Ty) -> Json {
-  let name = match ty {
-    TStr => "string"
-    TNum => "number"
-    TInt => "int"
-    TFloat => "float"
-    TFlag => "flag"
-    TBool => "bool"
-    TCount => "count"
-    TNone => "none"
-  }
-  name.to_json()
+fn ty_json(ty : &TypeExt) -> Json {
+  ty.name().to_json()
 }
 
 ///|
@@ -99,7 +89,7 @@ impl NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
         Err((reason, message)) =>
           [Held(pe_filter(self.name, pos, reason, message), acc)]
       }
-    None => [Pending([pend_value(TStr, self.name)], acc)]
+    None => [Pending([pend_value(string_type(), self.name)], acc)]
   }
 }
 
@@ -149,7 +139,7 @@ impl NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
         Err((reason, message)) =>
           [Held(pe_filter(self.name, pos, reason, message), acc)]
       }
-    None => [Pending([pend_value(TStr, self.name)], acc)]
+    None => [Pending([pend_value(string_type(), self.name)], acc)]
   }
 }
 
@@ -162,7 +152,7 @@ fn kv_arg(name : String, piece_filters : Array[FilterSpelling]) -> Node {
 priv struct SeparatedNodeExt {
   name : String
   separator : String?
-  ty : Ty
+  ty : &TypeExt
   int_round : RoundMode
   allow_base_prefix : Bool
   bool_config : BoolConfig
@@ -204,9 +194,6 @@ impl NodeExt for SeparatedNodeExt with fn eval(self, ctx, pos, acc, next) {
           token,
           self.separator,
           self.ty,
-          self.int_round,
-          self.allow_base_prefix,
-          self.bool_config,
           self.piece_filters,
           pos,
           self.merge,
@@ -222,7 +209,7 @@ impl NodeExt for SeparatedNodeExt with fn eval(self, ctx, pos, acc, next) {
 fn separated_arg(
   name : String,
   separator : String?,
-  ty : Ty,
+  ty : &TypeExt,
   int_round : RoundMode,
   allow_base_prefix : Bool,
   bool_config : BoolConfig,
@@ -289,7 +276,7 @@ impl NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
         Err((reason, message)) =>
           [Held(pe_filter(self.name, pos, reason, message), acc)]
       }
-    None => [Pending([pend_value(TNum, self.name)], acc)]
+    None => [Pending([pend_value(number_type(), self.name)], acc)]
   }
 }
 
@@ -342,7 +329,7 @@ impl NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
         Err((reason, message)) =>
           [Held(pe_filter(self.name, pos, reason, message), acc)]
       }
-    None => [Pending([pend_value(TFloat, self.name)], acc)]
+    None => [Pending([pend_value(float_type(), self.name)], acc)]
   }
 }
 
@@ -406,12 +393,13 @@ impl NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
               [Held(pe_parse_int(self.name, value, pos), acc)]
             Err(IntOutOfRange) =>
               [Held(pe_int_out_of_range(self.name, value, pos), acc)]
-            Err(NotANumber) => [Held(pe_parse(self.name, value, pos), acc)]
+            Err(NotANumber) | Err(NotABool) | Err(NoValueSpace) =>
+              [Held(pe_parse(self.name, value, pos), acc)]
           }
         Err((reason, message)) =>
           [Held(pe_filter(self.name, pos, reason, message), acc)]
       }
-    None => [Pending([pend_value(TInt, self.name)], acc)]
+    None => [Pending([pend_value(int_type(), self.name)], acc)]
   }
 }
 
@@ -473,7 +461,7 @@ impl NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
         Err((reason, message)) =>
           [Held(pe_filter(self.name, pos, reason, message), acc)]
       }
-    None => [Pending([pend_value(TBool, self.name)], acc)]
+    None => [Pending([pend_value(bool_type(), self.name)], acc)]
   }
 }
 

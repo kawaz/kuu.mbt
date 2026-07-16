@@ -186,7 +186,31 @@ pub enum ParseFail {
   NotANumber
   NotAnInteger
   IntOutOfRange
+  NotABool
+  NoValueSpace
 } derive(Eq, Debug)
+
+///|
+pub fn ParseFail::reason(self : ParseFail) -> String {
+  match self {
+    NotANumber => "not_a_number"
+    NotAnInteger => "not_an_integer"
+    IntOutOfRange => "int_out_of_range"
+    NotABool => "not_a_bool"
+    NoValueSpace => "config_type_mismatch"
+  }
+}
+
+///|
+pub fn ParseFail::message(self : ParseFail, token : String) -> String {
+  match self {
+    NotANumber => "value \"\{token}\" is not a number"
+    NotAnInteger => "value \"\{token}\" is not an integer"
+    IntOutOfRange => "value \"\{token}\" is out of Int64 range"
+    NotABool => "value \"\{token}\" is not a bool"
+    NoValueSpace => "value for a none element (no value space)"
+  }
+}
 
 ///|
 /// Whether a double is integer-valued (for the int type on a config NATIVE number, DR-075 §5:
@@ -934,9 +958,9 @@ fn chars_to_str_from(cs : Array[Char], start : Int) -> String {
 /// Tolerant FLOAT parser (DR-074 §1/§7): the `float` type's accept域 is `parse_number`'s canonical
 /// number lexicon PLUS the 2-word inf/infinity vocab (case-insensitive, sign-合成可) — nan is Error
 /// for BOTH number and float (no lexeme accepted here, ever). A separate function from
-/// `parse_number` because the accept-域 differs per TYPE (`Ty::TNum` rejects inf, `Ty::TFloat`
+/// `parse_number` because the accept-域 differs per resident (`number` rejects inf, `float`
 /// accepts it, DR-074 §1) — `parse_number` itself stays number-canonical so every OTHER caller
-/// (int's 値空間判定, config's TNum path, matcher's TNum/TInt eq-split) is unaffected.
+/// (int's 値空間判定, config's number_type() path, matcher's number_type()/int_type() eq-split) is unaffected.
 pub fn parse_float(s : String) -> Double? {
   match parse_number(s) {
     Some(d) => Some(d)
@@ -1311,7 +1335,7 @@ pub fn parse_bool(s : String) -> Bool? {
 /// is caller-facing text only (conformance ignores it, per this file's `ParseError` doc comment).
 pub fn config_to_value(
   cv : ConfigVal,
-  ty : Ty,
+  ty : &TypeExt,
   piece_filters : Array[FilterSpelling],
 ) -> Result[Value, (ErrKind, String, String)] {
   let cv = match cv {
@@ -1322,116 +1346,72 @@ pub fn config_to_value(
       }
     other => other
   }
-  match (cv, ty) {
-    // string element: accept anything — string / lenient parse / JSON stringification
-    (CStr(s), TStr) => Ok(VStr(s))
-    (CNum(d), TStr) => Ok(VStr(num_to_string(d))) // 1.5 → "1.5" (寛容の双方向対称)
-    (CBool(b), TStr) => Ok(VStr(if b { "true" } else { "false" })) // true → "true"
-    // string → number: lenient canonical parse (DR-074). `TCount` folded in defensively (DR-077
-    // §3: count's config seat sets a plain number, never increments — `Entity.ty` is already
-    // collapsed to TNum for every real count cell by `ensure_entity`, so this arm never actually
-    // sees TCount in practice).
-    (CStr(s), TNum) | (CStr(s), TCount) =>
-      match parse_number(s) {
-        Some(d) => Ok(VNum(d))
-        None =>
-          Err((KParse, "not_a_number", "config value \"\{s}\" is not a number"))
+  match cv {
+    // Every string source crosses the resident parser after piece filtering. Parser
+    // configuration is therefore resident-owned for CLI, env, and config alike.
+    CStr(s) =>
+      match ty.parse_token(s) {
+        Ok(value) => Ok(value)
+        Err(fail) => Err((KParse, fail.reason(), "config " + fail.message(s)))
       }
-    // string → float: wider accept域 (number + inf, DR-074 §1) via parse_float
-    (CStr(s), TFloat) =>
-      match parse_float(s) {
-        Some(d) => Ok(VNum(d))
-        None =>
-          Err((KParse, "not_a_number", "config value \"\{s}\" is not a number"))
-      }
-    // string → int: 値空間判定, canonical int_round = error (DR-075 §1-§2)
-    (CStr(s), TInt) =>
-      match parse_int_value(s, RError) {
-        Ok(i) => Ok(VNum(i.to_double()))
-        Err(NotAnInteger) =>
+    // JSON-native scalars do not need lexical parsing. The resident identity still
+    // selects the permitted value space and preserves the symmetric string coercion.
+    CNum(d) =>
+      match ty.name() {
+        "string" => Ok(VStr(num_to_string(d)))
+        "number" | "float" | "count" => Ok(VNum(d))
+        "int" =>
+          if is_integer(d) {
+            Ok(VNum(d))
+          } else {
+            Err(
+              (
+                KParse,
+                "not_an_integer",
+                "config value \"\{num_to_string(d)}\" is not an integer",
+              ),
+            )
+          }
+        "flag" | "bool" =>
           Err(
             (
               KParse,
-              "not_an_integer",
-              "config value \"\{s}\" is not an integer",
+              "config_type_mismatch",
+              "config number for a bool element (no number↔bool coercion)",
             ),
           )
-        Err(IntOutOfRange) =>
+        _ =>
           Err(
             (
               KParse,
-              "int_out_of_range",
-              "config value \"\{s}\" is out of Int64 range",
+              "config_type_mismatch",
+              "config value for a none element (no value space)",
             ),
           )
-        Err(NotANumber) =>
-          Err((KParse, "not_a_number", "config value \"\{s}\" is not a number"))
       }
-    // string → bool: canonical vocab (DR-074 §3), unrecognized → Error (no silent 変換). Applies
-    // identically to a presence-only flag (TFlag) and a value-typed bool (TBool) — config's string
-    // seat doesn't distinguish the CLI-side eq-split capability (installer.mbt), only the value type.
-    (CStr(s), TFlag) | (CStr(s), TBool) =>
-      match parse_bool(s) {
-        Some(b) => Ok(VBool(b))
-        None =>
-          Err((KParse, "not_a_bool", "config value \"\{s}\" is not a bool"))
+    CBool(b) =>
+      match ty.name() {
+        "string" => Ok(VStr(if b { "true" } else { "false" }))
+        "flag" | "bool" => Ok(VBool(b))
+        "number" | "float" | "count" | "int" =>
+          Err(
+            (
+              KParse,
+              "config_type_mismatch",
+              "config bool for a numeric element (no number↔bool coercion)",
+            ),
+          )
+        _ =>
+          Err(
+            (
+              KParse,
+              "config_type_mismatch",
+              "config value for a none element (no value space)",
+            ),
+          )
       }
-    // typed number matching a number element (any) / a float element (a JSON-native number is
-    // already a valid float value — inf has no JSON literal, so this arm never carries it) / an
-    // int element (integer only)
-    (CNum(d), TNum) | (CNum(d), TFloat) | (CNum(d), TCount) => Ok(VNum(d))
-    // native number → int: JSON 由来 binary64 経由判定 (DR-075 §5 の非対称)
-    (CNum(d), TInt) =>
-      if is_integer(d) {
-        Ok(VNum(d))
-      } else {
-        Err(
-          (
-            KParse,
-            "not_an_integer",
-            "config value \"\{num_to_string(d)}\" is not an integer",
-          ),
-        )
-      }
-    (CBool(b), TFlag) | (CBool(b), TBool) => Ok(VBool(b))
-    // 意味の飛躍 (bool ↔ number) は Error — no coercion
-    (CNum(_), TFlag) | (CNum(_), TBool) =>
-      Err(
-        (
-          KParse,
-          "config_type_mismatch",
-          "config number for a bool element (no number↔bool coercion)",
-        ),
-      )
-    (CBool(_), TNum) | (CBool(_), TFloat) | (CBool(_), TCount) =>
-      Err(
-        (
-          KParse,
-          "config_type_mismatch",
-          "config bool for a number element (no number↔bool coercion)",
-        ),
-      )
-    // DR-089: none has no value space at all, so a config seat is a structural mismatch regardless
-    // of the JSON scalar kind supplied (same family as the CArr/CObj structural-mismatch arms
-    // below, just against a scalarless element instead of a non-scalar JSON value).
-    (CStr(_), TNone) | (CNum(_), TNone) | (CBool(_), TNone) =>
-      Err(
-        (
-          KParse,
-          "config_type_mismatch",
-          "config value for a none element (no value space)",
-        ),
-      )
-    (CBool(_), TInt) =>
-      Err(
-        (
-          KParse,
-          "config_type_mismatch",
-          "config bool for an int element (no number↔bool coercion)",
-        ),
-      )
-    // 構造不一致 (array / object → scalar element) は Error
-    (CArr(_), _) =>
+    // Structured values cannot fill a scalar resident.
+    CArr(_) =>
       Err(
         (
           KParse,
@@ -1439,7 +1419,7 @@ pub fn config_to_value(
           "config array for a scalar element (structural mismatch)",
         ),
       )
-    (CObj(_), _) =>
+    CObj(_) =>
       Err(
         (
           KParse,
@@ -1447,8 +1427,7 @@ pub fn config_to_value(
           "config object for a scalar element (structural mismatch)",
         ),
       )
-    // null is 供給なし (handled before this by resolve; defensive arm for exhaustiveness, DR-050 §4)
-    (CNull, _) =>
+    CNull =>
       Err(
         (
           KParse,
@@ -1461,7 +1440,7 @@ pub fn config_to_value(
 
 ///|
 /// DR-083 §2: a declared default's stored piece is already a `Value` (decoded straight off the
-/// JSON literal, `VStr`/`VNum`/`VBool` — never `VStr` coerced to the element's `Ty` at decode time,
+/// JSON literal, `VStr`/`VNum`/`VBool` — never `VStr` coerced through the element's TypeExt resident at decode time,
 /// mirroring how a config array's piece is stored as an untyped `ConfigVal` until READ). This is
 /// the bridge that lets `resolve_ladder_below_cli`'s default seat reuse `config_to_value` VERBATIM
 /// (DR-083 §2 "config array と同型に扱う") instead of re-deriving the same string/number/bool
