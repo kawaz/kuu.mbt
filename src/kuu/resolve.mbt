@@ -3198,6 +3198,30 @@ fn default_fills_cell(e : @engine.Entity, bs : Array[@engine.Binding]) -> Bool {
 }
 
 ///|
+priv struct DefaultClaimGroup {
+  key : String
+  claims : Array[Array[@engine.Binding]]
+}
+
+///|
+fn default_claim_values_equal(
+  left : Array[@engine.Binding],
+  right : Array[@engine.Binding],
+) -> Bool {
+  if left.length() != right.length() {
+    return false
+  }
+  let mut i = 0
+  while i < left.length() {
+    if left[i].op != right[i].op || left[i].value != right[i].value {
+      return false
+    }
+    i = i + 1
+  }
+  true
+}
+
+///|
 /// Resolve a scope WITH a config-file value source (DR-050 §5 dependency order):
 ///   1. resolve the config_file element's path (cli > env > default; it has NO config seat, 循環禁止)
 ///   2. read the provider with that path → a config object (or None). A committed path (cli/env)
@@ -3316,6 +3340,63 @@ fn resolve_scope_config_with_export(
     }
   }
   if !include_default {
+    // EXP-Q1: parse-time collision probing normally excludes defaults because they are fallbacks,
+    // not claims. The sole exception is an otherwise-empty exported cell with multiple default
+    // candidates whose resolved values differ: choosing the first by declaration order would make
+    // the result order-dependent, so all candidates become collision claims. Equal values remain
+    // observationally one fallback and contribute no claim (collision.json's defaults-only pin).
+    let groups : Array[DefaultClaimGroup] = []
+    for e in sc.entities {
+      if !e.is_config_file && !str_contains(supplied, e.name) {
+        match exposed_key_of(e.name, ek) {
+          Some(key) if !str_contains(occupied, key) => {
+            let cpath = config_path_of(e, path)
+            match
+              resolve_entity(
+                e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty,
+                true,
+              ) {
+              Ok(bs) =>
+                if default_fills_cell(e, bs) && bs.length() > 0 {
+                  let mut found = false
+                  for group in groups {
+                    if group.key == key {
+                      group.claims.push(bs)
+                      found = true
+                      break
+                    }
+                  }
+                  if !found {
+                    groups.push({ key, claims: [bs] })
+                  }
+                }
+              Err(pe) => return Err(pe)
+            }
+          }
+          _ => ()
+        }
+      }
+    }
+    for group in groups {
+      if group.claims.length() > 1 {
+        let mut divergent = false
+        let mut i = 1
+        while i < group.claims.length() {
+          if !default_claim_values_equal(group.claims[0], group.claims[i]) {
+            divergent = true
+            break
+          }
+          i = i + 1
+        }
+        if divergent {
+          for claim in group.claims {
+            for binding in claim {
+              out.push(binding)
+            }
+          }
+        }
+      }
+    }
     return Ok(out)
   }
   // Phase 3b: defaults are fallbacks for the export-key-resolved result cell, not per-entity claims.

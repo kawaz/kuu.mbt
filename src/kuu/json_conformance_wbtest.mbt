@@ -3053,10 +3053,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
 /// MDR-001 §6). @engine.Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
-  [
-    // EXP-Q1: 異なる default 値が同じ export key に共露出したとき ambiguous とする意味論は未実装。
-    "export-key/collision-default-divergent.json::divergent-defaults-ambiguous :: EXPECTED-AMBIGUOUS got=ok{}",
-  ]
+  []
 }
 
 ///|
