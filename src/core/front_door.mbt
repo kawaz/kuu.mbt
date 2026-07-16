@@ -266,3 +266,31 @@ pub fn complete(
 pub fn export_map(ast : AtomicAST) -> Map[String, ExportKey] {
   ast.ekmap
 }
+
+///|
+/// 正面玄関の補助: `resolve()` の Success payload から DR-052 result-key 軸を適用した `result`
+/// オブジェクト (CONFORMANCE.md §2 の `result: {...}`) を組み立てる。runner の
+/// `proj_result_export` (json_conformance_wbtest.mbt) と kuu-cli PoC の手組み `result_to_json`
+/// (wire.mbt) が同一の 4 素材 (apply_export_keys/accum_cells/apply_export_to_defaults/
+/// none_cells) を重複実装していた — production 昇格でその重複を解消する (issue
+/// 2026-07-16-result-projection-production-promotion, MDR-005「射程外」節の解消、DR-109 §5
+/// UX-Q5=a)。`binds` は `resolve()` の Success payload を渡すのが前提 (DR-109 §7「CLI は既定で
+/// resolve 適用」)。実装は resolve.mbt の `build_result_export` (Scope 直渡し版) への薄い委譲 —
+/// `AtomicAST` は生 `Scope` を保持しない不透明ハンドルなので、利用者が Scope を意識せず済むよう
+/// ここで `ast.root`/`ast.ekmap` を代わりに渡す (`export_map` と同じ「AtomicAST から素材を引く」
+/// 形、本ファイル冒頭 doc 参照)。
+pub fn result(ast : AtomicAST, binds : Array[Binding]) -> RVal {
+  build_result_export(ast.root, binds, ast.ekmap)
+}
+
+///|
+/// 正面玄関の補助: `resolve()` の Success payload から DR-109 §3 の `sources` 射影 (「resolve 済み
+/// 出力には常に sources を含める」) を組み立てる。実装は resolve.mbt の `result_sources` (command
+/// 木の有無を内部で吸収する 1 本の関数、詳細はそのコメント参照) への薄い委譲 — 呼び出し側は
+/// `ast`/`resolved` だけ渡せばよく、Scope の有無に関わる分岐を意識しない。
+pub fn sources(
+  ast : AtomicAST,
+  resolved : Array[Binding],
+) -> Array[SourceEntry] {
+  result_sources(ast.root, resolved, ast.ekmap)
+}

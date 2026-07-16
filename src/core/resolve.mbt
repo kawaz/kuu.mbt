@@ -1140,6 +1140,32 @@ fn collect_nones(
 }
 
 ///|
+/// front_door 昇格 (issue 2026-07-16-result-projection-production-promotion、MDR-005「射程外」節
+/// の解消、DR-109 §5 UX-Q5=a): `binds` → `result` オブジェクト (CONFORMANCE.md §2 の
+/// `result: {...}`) を組み立てる 4 素材 (`apply_export_keys`/`accum_cells`/
+/// `apply_export_to_defaults`/`none_cells`) の合成をここに一本化する。runner の
+/// `proj_result_export` (json_conformance_wbtest.mbt) と kuu-cli PoC の手組み `result_to_json`
+/// (wire.mbt) が同一の 5 行組み立てを重複実装していた — 両者ともこの関数を呼ぶ形に揃える。
+/// `binds` は `front_door.resolve()` の Success payload (解決済み binds、DR-109 §7「CLI は既定で
+/// resolve 適用」) を渡すのが前提だが、型としては素の `Array[Binding]` を受けるだけなので未解決の
+/// CLI binds を渡しても動く (runner が「default ladder 不要な fixture は resolve をスキップする」
+/// 最適化で未解決 binds をそのまま渡す既存経路があり、それを壊さないための性質 — 呼び出し側の
+/// 資格を型で強制することはしない)。
+pub fn build_result_export(
+  sc : Scope,
+  binds : Array[Binding],
+  ek : Map[String, ExportKey],
+) -> RVal {
+  build_result(
+    apply_export_keys(binds, ek),
+    accum_cells(sc, ek),
+    apply_export_to_defaults(default_cells(sc), ek),
+    [],
+    nones=none_cells(sc),
+  )
+}
+
+///|
 /// The `unwrap_single` collector (DR-034 縮退ケース, opt-in scalar): unwrap a length-1 array to
 /// its element, recursively. This is how an app gets a SCALAR from a repeat/optional cell without
 /// the uniform-array default folding it (`optional: true` yields `[x]`; unwrap_single gives `x`).
@@ -1403,6 +1429,140 @@ fn claimant_combinations(
     combos = next
   }
   combos
+}
+
+// ── result/sources の production 射影 (DR-109 §3 sources 常時出力 / MDR-005「射程外」節の解消、
+// issue 2026-07-16-result-projection-production-promotion) ───────────────────────────────────
+
+///|
+/// 1 つの export 済み result-key の値源タグ (DR-031)。`path` は結果スコープ木を降りる scope
+/// segment 列 (root なら `[]`)、`key` は `apply_export_keys` と同じ resolve (DR-052 §1) を経た
+/// 露出キー、`source` は値源 — `Source::Default` は「未発火 (default 相当)」または「accum セルの
+/// `Unset` op で未触の default 状態へ再着席した」を表す (`collect_sources_flat` のコメント参照)。
+/// `pub(all)` (MDR-005 §3 の「正面玄関の 3 関数が直接運ぶ型は pub(all) を維持」原則に準拠) —
+/// 呼び出し側 (kuu-cli 等) が `.path`/`.key`/`.source` を読んで JSON を組み立てる、フィールド
+/// 読み取りが本体の型なので `AccumCell`/`DefaultCell`/`NoneCell` (組み立て素材を build_result に
+/// 素通しするだけの不透明トークン、pub 止まり) とは扱いが異なる。
+pub(all) struct SourceEntry {
+  path : Array[String]
+  key : String
+  source : Source
+} derive(Eq, Debug)
+
+///|
+/// `sc.greedy` に `CmdSat` (サブコマンド確定ノード) が 1 つでもあるか — command 木を持つ scope か
+/// どうかの判定。runner (json_conformance_wbtest.mbt) の同名ヘルパーと同一実装で、production 側の
+/// `result_sources` にも同じ分岐が要るためこちらへ昇格した (runner 側は重複定義を避けるため
+/// 削除しこの private fn を直接呼ぶ、同一パッケージ内アクセスなので `pub` 化は不要)。
+fn has_commands(sc : Scope) -> Bool {
+  for g in sc.greedy {
+    match g {
+      CmdSat(_, _) => return true
+      _ => ()
+    }
+  }
+  false
+}
+
+///|
+/// command 木を持たない単一 scope 向けの sources 収集 (旧 runner `proj_sources` の構造化版、
+/// String 直書きの `"default"` を `Source::Default` に置き換えた以外は元実装のロジックを不変に
+/// 保つ)。`sc.entities` を直接走査するので **root scope 単体のみ** (子 command scope は見ない) —
+/// 単一 scope 前提だからこそ「未発火セルは default 相当を報告する」フォールバック (accum セルの
+/// `[]` 既定 / flag・bool の preset default、DR-044 の uniform array 既定 / LOWERING §A.5) を
+/// 安全に持てる。config_file / `TNone` 型のセルは除外 (DR-089 §3: none has no value なので
+/// source も持たない)。
+fn collect_sources_flat(
+  sc : Scope,
+  resolved : Array[Binding],
+  ek : Map[String, ExportKey],
+) -> Array[SourceEntry] {
+  let out : Array[SourceEntry] = []
+  for e in sc.entities {
+    if e.is_config_file {
+      continue
+    }
+    if e.ty == TNone {
+      continue
+    }
+    match exposed_key_of(e.name, ek) {
+      None => ()
+      Some(exposed) => {
+        let mut src : Source? = None
+        for b in resolved {
+          if b.key == e.name && !is_sentinel(b.key) {
+            src = match b.op {
+              // issue 2026-07-09-accum-filters-non-set-op-semantics: `Unset` は CLI 発火済みだが
+              // 未確定 (committed=false、DR-045「default 値へ戻す... committed=false」) なので、
+              // 値源タグは発火トークン自身の `source` ではなくラダーの再着席結果
+              // ("as if untouched") を反映して `Default` を報告する。
+              Unset => Some(Default)
+              _ => Some(b.source)
+            }
+          }
+        }
+        match src {
+          Some(s) => out.push({ path: [], key: exposed, source: s })
+          None =>
+            if e.accum is Some(_) {
+              out.push({ path: [], key: exposed, source: Default })
+            } else if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
+              match default_scalar(e) {
+                Some(_) => out.push({ path: [], key: exposed, source: Default })
+                None => ()
+              }
+            }
+        }
+      }
+    }
+  }
+  out
+}
+
+///|
+/// command 木全体を持つ scope 向けの sources 収集 (旧 runner `proj_sources_tree` の構造化版)。
+/// `resolved` (resolve 済み全 binds、子 scope 含む) をそのまま走査すれば木全体を一度に拾えるが、
+/// `collect_sources_flat` が持つ「未発火セルの default フォールバック」と export_key rename は
+/// 適用しない — `resolve_scope_tree` の出力は既に「実際に着席した binding」だけを運ぶため、この
+/// 経路では素の entity 名・生 scope path をそのまま使う (proj_sources_tree の元実装を踏襲、
+/// 意味論は無改変)。
+fn collect_sources_tree(resolved : Array[Binding]) -> Array[SourceEntry] {
+  let out : Array[SourceEntry] = []
+  for b in resolved {
+    if is_sentinel(b.key) {
+      continue
+    }
+    out.push({ path: b.scope, key: b.key, source: b.source })
+  }
+  out
+}
+
+///|
+/// front_door 昇格 (issue 2026-07-16-result-projection-production-promotion): `resolved`
+/// (resolve 済み binds) から DR-109 §3 の `sources` 射影 (「resolve 済み出力には常に sources を
+/// 含める」) を組み立てる。command 木の有無 (`has_commands`) で内部実装が分かれる
+/// (`collect_sources_flat` / `collect_sources_tree`、直上 2 関数のコメント参照) が、**呼び出し側
+/// はその分岐を意識しない** — 1 本のシグネチャで両ケースを覆う (front_door 玄関の「利用者は内部
+/// 構造を意識しない」原則、MDR-005 冒頭)。
+///
+/// **runner はこの関数を直接は呼ばない**: conformance fixture は `resolve: <bool>` という
+/// production に存在しない対照実験用ノブを持ち (「常時 resolve」前提の production とは異なり、
+/// fixture は resolve 有無を明示的に選べる)、`proj_sources_tree`/`proj_sources` の使い分けは
+/// 現状 `dc.resolve && has_commands(sc)` という fixture 固有条件に従う (`has_commands(sc)`
+/// 単独ではない — この差は既存 conformance の観測済み挙動で、本 promotion は数字不変を条件と
+/// するため保持する)。runner 側は代わりに本関数が内部で使う `collect_sources_flat`/
+/// `collect_sources_tree` を自身の `dc.resolve && has_commands` 分岐から直接呼び、射影ロジックの
+/// 重複だけを解消する。
+pub fn result_sources(
+  sc : Scope,
+  resolved : Array[Binding],
+  ek : Map[String, ExportKey],
+) -> Array[SourceEntry] {
+  if has_commands(sc) {
+    collect_sources_tree(resolved)
+  } else {
+    collect_sources_flat(sc, resolved, ek)
+  }
 }
 
 // ── DR-047 §4/§5 (issue value-present-ladder-gap 裁定 2026-07-10、bool target 分は元 issue

@@ -976,21 +976,16 @@ fn proj_tried_triggers(triggers : Array[String]) -> String {
 }
 
 ///|
-/// Result with the DR-052 result-key axis applied.
+/// Result with the DR-052 result-key axis applied. front_door 昇格 (issue
+/// 2026-07-16-result-projection-production-promotion) 後は resolve.mbt の `build_result_export`
+/// (production API) への薄い委譲 — 4 素材の組み立てそのものはそちらに一本化し、ここは fixture
+/// 比較用の文字列レンダリング (`render_rval_sorted`) だけを残す。
 fn proj_result_export(
   sc : Scope,
   binds : Array[Binding],
   ekmap : Map[String, ExportKey],
 ) -> String {
-  render_rval_sorted(
-    build_result(
-      apply_export_keys(binds, ekmap),
-      accum_cells(sc, ekmap),
-      apply_export_to_defaults(default_cells(sc), ekmap),
-      [],
-      nones=none_cells(sc),
-    ),
-  )
+  render_rval_sorted(build_result_export(sc, binds, ekmap))
 }
 
 ///|
@@ -1003,76 +998,37 @@ fn proj_result_export(
 /// already re-seats to a lower ladder rung on unset) rather than the firing token's own source. A
 /// LATER `Set` after an `Unset` still wins normally (the loop keeps overwriting `src` in order) —
 /// mirrors `build_result`'s ACCUMULATE fold treating `Unset` as a clear-point, not a terminal state.
+///
+/// front_door 昇格後 (issue 2026-07-16-result-projection-production-promotion): 素材の収集は
+/// resolve.mbt の `collect_sources_flat` (production の `result_sources` が command 木なし判定で
+/// 内部委譲する先と同一実装) へ一本化した。ここは fixture 比較用の文字列レンダリングだけを残す。
 fn proj_sources(
   sc : Scope,
   resolved : Array[Binding],
   ek : Map[String, ExportKey],
 ) -> String {
   let items : Array[String] = []
-  for e in sc.entities {
-    if e.is_config_file {
-      continue
-    }
-    // DR-089 §3: none has no value, so it has no "source" either (結果非掲載と同じ posture — 発火の
-    // 観測は explains 層の管掌で、この射影の関心ではない)。
-    if e.ty == TNone {
-      continue
-    }
-    // issue accum-export-key-rename-asymmetry の続き (fixture export-key/rename-multiple.json
-    // で実機確認): sources 射影も `proj_result_export`/`accum_cells` と同じ DR-052 §1 解決
-    // (`exposed_key_of`, resolve.mbt) を経由させる — こちらも今まで `ek` を一切見ておらず、
-    // rename された cell の source 行が旧名のまま出るバグだった (rename.json は元々 sources を
-    // 検証していなかったため顕在化していなかった)。EkNull (透過) の cell は sources にも出さない
-    // (result 側の透過と同じ posture)。
-    match exposed_key_of(e.name, ek) {
-      None => ()
-      Some(exposed) => {
-        let mut src : String? = None
-        for b in resolved {
-          if b.key == e.name && !is_sentinel(b.key) {
-            src = match b.op {
-              Unset => Some("default")
-              _ => Some(render_src(b.source))
-            }
-          }
-        }
-        match src {
-          Some(s) => items.push(exposed + "=" + s)
-          None =>
-            // DR-044 uniform array (issue 2026-07-09-env-separator-split-gap's env-separator-
-            // split.json, `sources` check): an unfired multiple/repeat cell decays to `[]` (never
-            // absent, same guarantee flag/bool's default preset gets below) — regardless of type,
-            // and regardless of whether the element ALSO declared an explicit `default:` (accum
-            // cells usually don't; the empty array IS the implicit default here, unconditionally).
-            if e.accum is Some(_) {
-              items.push(exposed + "=default")
-            } else if (e.ty == TFlag || e.ty == TBool) && e.accum is None {
-              match default_scalar(e) {
-                Some(_) => items.push(exposed + "=default")
-                None => ()
-              }
-            }
-        }
-      }
-    }
+  for se in collect_sources_flat(sc, resolved, ek) {
+    items.push(se.key + "=" + render_src(se.source))
   }
   sort_items(items)
   join_comma(items)
 }
 
 ///|
+/// front_door 昇格後 (issue 2026-07-16-result-projection-production-promotion): 素材の収集は
+/// resolve.mbt の `collect_sources_tree` (production の `result_sources` が command 木あり判定で
+/// 内部委譲する先と同一実装) へ一本化した。ここは fixture 比較用の文字列レンダリング (scope path
+/// のドット結合含む) だけを残す。
 fn proj_sources_tree(resolved : Array[Binding]) -> String {
   let items : Array[String] = []
-  for b in resolved {
-    if is_sentinel(b.key) {
-      continue
-    }
+  for se in collect_sources_tree(resolved) {
     let mut key = ""
-    for seg in b.scope {
+    for seg in se.path {
       key = key + seg + "."
     }
-    key = key + b.key
-    items.push(key + "=" + render_src(b.source))
+    key = key + se.key
+    items.push(key + "=" + render_src(se.source))
   }
   sort_items(items)
   join_comma(items)
@@ -2783,17 +2739,6 @@ fn scope_needs_default_ladder(sc : Scope) -> Bool {
     // the resolve path, even with no env/config/default/filters declared.
     if e.accum is Some("merge") {
       return true
-    }
-  }
-  false
-}
-
-///|
-fn has_commands(sc : Scope) -> Bool {
-  for g in sc.greedy {
-    match g {
-      CmdSat(_, _) => return true
-      _ => ()
     }
   }
   false
