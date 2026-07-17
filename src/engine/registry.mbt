@@ -7,12 +7,21 @@ pub struct Registry {
   priv nodes : Map[String, &NodeExt]
   priv matchers : Map[String, &MatcherExt]
   priv types : Map[String, &TypeExt]
+  priv accumulators : Map[String, &AccumulatorExt]
+  priv collectors : Map[String, &CollectorExt]
   priv installers : Array[&InstallerExt]
 }
 
 ///|
 pub fn Registry::new() -> Registry {
-  { nodes: Map([]), matchers: Map([]), types: Map([]), installers: [] }
+  {
+    nodes: Map([]),
+    matchers: Map([]),
+    types: Map([]),
+    accumulators: Map([]),
+    collectors: Map([]),
+    installers: [],
+  }
 }
 
 ///|
@@ -67,6 +76,52 @@ pub fn Registry::register_type(self : Registry, resident : &TypeExt) -> Bool {
 ///|
 pub fn Registry::lookup_type(self : Registry, name : String) -> &TypeExt? {
   self.types.get(name)
+}
+
+///|
+/// Register one accumulator resident. Returns false when the kind is already owned.
+pub fn Registry::register_accumulator(
+  self : Registry,
+  resident : &AccumulatorExt,
+) -> Bool {
+  let kind = resident.kind()
+  if self.accumulators.get(kind) is Some(_) {
+    false
+  } else {
+    self.accumulators.set(kind, resident)
+    true
+  }
+}
+
+///|
+pub fn Registry::lookup_accumulator(
+  self : Registry,
+  kind : String,
+) -> &AccumulatorExt? {
+  self.accumulators.get(kind)
+}
+
+///|
+/// Register one collector resident. Returns false when the kind is already owned.
+pub fn Registry::register_collector(
+  self : Registry,
+  resident : &CollectorExt,
+) -> Bool {
+  let kind = resident.kind()
+  if self.collectors.get(kind) is Some(_) {
+    false
+  } else {
+    self.collectors.set(kind, resident)
+    true
+  }
+}
+
+///|
+pub fn Registry::lookup_collector(
+  self : Registry,
+  kind : String,
+) -> &CollectorExt? {
+  self.collectors.get(kind)
 }
 
 ///|
