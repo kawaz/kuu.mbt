@@ -19,8 +19,6 @@ pub fn config_from_json(Json) -> @engine.ConfigVal
 
 pub fn export_map(AtomicAST) -> Map[String, @engine.ExportKey]
 
-pub fn is_sentinel(String) -> Bool
-
 pub fn output(AtomicAST, Array[@engine.Binding], resolved? : Array[@engine.Binding]) -> OutputView
 
 pub fn parse(AtomicAST, Array[String], env? : Map[String, String], config? : (String) -> @engine.ConfigVal?, tty? : Map[String, TtyObs]) -> @engine.Outcome

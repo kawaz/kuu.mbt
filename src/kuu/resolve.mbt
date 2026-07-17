@@ -37,12 +37,9 @@ fn str_contains(xs : Array[String], v : String) -> Bool {
 /// Whether `k` is a sentinel key that binds-level projections should skip. Covers the presence
 /// markers (`[]` / `{}` / empty), the accumulate row separators (`#row` / `#fire`, DR-078), the
 /// failure-action markers (`@act:...`, DR-048), and the deprecation-warning markers (`@depr:...`,
-/// DR-058). Pub化理由 (MDR-005 追記, issue front-door-parse-missing-postprocessing): 正面玄関
-/// `parse` の @engine.Success payload に上記 sentinel が乗ったまま返るため、下流 (kuu-cli など) が
-/// wire 射影 (`result` / `effects` / `warnings` の切り出し) を組み立てるときに sentinel を
-/// 弾く共通判定が要る。
-/// Deprecated: `output()` が内部 marker を除外するため、下流は OutputView を利用すること。
-pub fn is_sentinel(k : String) -> Bool {
+/// DR-058). 下流 (kuu-cli など) は本判定を直接使わず `output()` (OutputView) を通す — 内部
+/// marker の除外は front_door の射影が担う。
+fn is_sentinel(k : String) -> Bool {
   k == "[]" ||
   k == "{}" ||
   k == "" ||
