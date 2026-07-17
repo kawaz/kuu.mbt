@@ -30,8 +30,22 @@ test "canonical_registry installs every builtin node and type resident" {
       None => fail("canonical type resident is missing: " + name)
     }
   }
+  for kind in ["append", "merge", "kv_map"] {
+    match registry.lookup_accumulator(kind) {
+      Some(resident) => assert_eq(resident.kind(), kind)
+      None => fail("canonical accumulator resident is missing: " + kind)
+    }
+  }
+  for kind in ["unwrap_single", "from_entries"] {
+    match registry.lookup_collector(kind) {
+      Some(resident) => assert_eq(resident.kind(), kind)
+      None => fail("canonical collector resident is missing: " + kind)
+    }
+  }
   // Unknown identities remain observable as absent rather than producing a placeholder resident.
   assert_true(registry.lookup_matcher("missing") is None)
+  assert_true(registry.lookup_accumulator("missing") is None)
+  assert_true(registry.lookup_collector("missing") is None)
 }
 
 ///|

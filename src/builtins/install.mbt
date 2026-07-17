@@ -31,6 +31,26 @@ fn register_matcher(
 }
 
 ///|
+fn register_accumulator(
+  registry : @engine.Registry,
+  resident : &@engine.AccumulatorExt,
+) -> Unit {
+  guard registry.register_accumulator(resident) else {
+    abort("duplicate builtin accumulator resident kind: " + resident.kind())
+  }
+}
+
+///|
+fn register_collector(
+  registry : @engine.Registry,
+  resident : &@engine.CollectorExt,
+) -> Unit {
+  guard registry.register_collector(resident) else {
+    abort("duplicate builtin collector resident kind: " + resident.kind())
+  }
+}
+
+///|
 /// Register the canonical resident families. Node and matcher entries are identity-bearing
 /// prototypes; lowering constructs configured instances of the same resident kinds.
 pub fn install(registry : @engine.Registry) -> Unit {
@@ -70,4 +90,11 @@ pub fn install(registry : @engine.Registry) -> Unit {
   register_type(registry, flag_type())
   register_type(registry, count_type())
   register_type(registry, none_type())
+
+  register_accumulator(registry, append_accumulator())
+  register_accumulator(registry, merge_accumulator())
+  register_accumulator(registry, kv_map_accumulator())
+
+  register_collector(registry, unwrap_single_collector())
+  register_collector(registry, from_entries_collector(Entries))
 }

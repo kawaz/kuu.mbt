@@ -97,6 +97,7 @@ impl AccumulatorExt for RegistryAccumulatorExt with fn resolve_cli(
   _self,
   _name,
   cli,
+  _include_default,
   _lower,
 ) {
   Ok(cli)

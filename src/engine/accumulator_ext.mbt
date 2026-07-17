@@ -4,7 +4,7 @@
 /// Resolve the value-source ladder below the CLI seat. An accumulator resident
 /// invokes this capability only when its CLI fold does not commit a value or an
 /// operation explicitly requests the current lower-seat value.
-pub type LowerSeat = () -> Result[Array[Binding], ParseError]
+pub type LowerSeat = (Bool) -> Result[Array[Binding], ParseError]
 
 ///|
 /// Open accumulator contract. `resolve_cli` owns the accumulator-specific CLI
@@ -14,7 +14,7 @@ pub(open) trait AccumulatorExt {
   fn kind(Self) -> String
   fn encode(Self) -> Json
   fn equal(Self, &AccumulatorExt) -> Bool = _
-  fn resolve_cli(Self, String, Array[Binding], LowerSeat) -> Result[
+  fn resolve_cli(Self, String, Array[Binding], Bool, LowerSeat) -> Result[
     Array[Binding],
     ParseError,
   ]
