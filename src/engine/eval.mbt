@@ -2728,12 +2728,49 @@ fn eval_constraints(
 }
 
 ///|
-/// Evaluate EVERY collected scope's constraints (spec DR-047 §2 has no
-/// declaring-scope exemption — a nested scope's predicates are completion
-/// conditions too). Called from KTop: this makes "complete解決経路 = full
-/// consumption AND all constraints satisfied" a single definition that the
-/// 取り分選好 oracle (has_full_k) automatically shares — the parse() layer
-/// and the preference layer can no longer disagree about completeness.
+/// SCB-Q1=a (docs/QUESTIONS.md、kawaz 裁定 2026-07-17): 未選択 (未入場) command scope に
+/// 宣言された遅延述語は評価に参加しない。原理は「グローバルオプション以外、サブコマンドは完全に
+/// 別コマンドと見るべき」で、root scope は常に選択済み。「選択」は当該実行で CmdSat がその scope
+/// に入場したこと。判定は bindings 内の `scope_marker` (`cont.mbt` KNest の `is_cmd=true` 分岐が
+/// CmdSat 入場時に prepend する `{key:"{}", scope:[label], ...}` binding、`nest` 展開でフル path に
+/// 育つ) の存在で行う — 「入場したが何も発火しなかった」scope も scope_marker は自動で入るので、
+/// 未入場 (絶対 absent) と区別できる。SCB-Q2=a (集約は scope 局所) は現実装通りで変更不要 —
+/// `collect_scopes` が scope ごとに独立 ScopedCons を作り、`constraint installer` は宣言 scope 内で
+/// 集約する。DR-103 §5 の「横断集約」は spec 側で誤記として note 訂正済み。
+fn scope_selected(bindings : Array[Binding], path : Array[String]) -> Bool {
+  if path.length() == 0 {
+    return true
+  }
+  for b in bindings {
+    if b.key == "{}" && b.scope.length() == path.length() {
+      let mut eq = true
+      let mut i = 0
+      for s in b.scope {
+        if s != path[i] {
+          eq = false
+        }
+        i = i + 1
+      }
+      if eq {
+        return true
+      }
+    }
+  }
+  false
+}
+
+///|
+/// Evaluate every SELECTED scope's constraints (SCB-Q1=a、kawaz 裁定 2026-07-17): root scope
+/// (path=[]) is always selected; a nested (CmdSat) scope is selected only when it was actually
+/// entered during this run (its `scope_marker` is present in `bindings`). Unselected scopes have
+/// their predicates skipped — a subcommand's predicates are the *entered* subcommand's business,
+/// not a sibling command's. Called from KTop so that "complete解決経路 = full consumption AND all
+/// SELECTED-scope constraints satisfied" is a single definition the 取り分選好 oracle
+/// (`has_full_k`) automatically shares — the parse() layer and the preference layer can no
+/// longer disagree about completeness. For指定述語 (`exclusive_group`/`conflicts_with`/`requires`
+/// トリガ側) the skip is observation-equivalent to the previous vacuous-true evaluation (member
+/// count 0, no committed target); for値述語 (`required`/`required_group`) it changes behaviour
+/// exactly where the SCB-Q1 裁定 requires (未入場 scope の required は違反にしない).
 fn eval_all_constraints(
   table : Array[ScopedCons],
   bindings : Array[Binding],
@@ -2741,6 +2778,9 @@ fn eval_all_constraints(
 ) -> Array[ParseError] {
   let out : Array[ParseError] = []
   for sc in table {
+    if !scope_selected(bindings, sc.path) {
+      continue
+    }
     for v in eval_constraints(sc, bindings, pos) {
       out.push(v)
     }
