@@ -210,13 +210,6 @@ pub impl Debug for &MatcherExt with fn to_repr(self) {
 pub(all) enum Node {
   /// literal token match; binds nothing, consumes 1.
   Exact(String)
-  /// a number value with a max post-filter (DR-034 filter / DR-053 kind demo): consume 1 token,
-  /// parse a number; a parse failure is `kind: parse`, a value ABOVE `max` is a `kind: filter`
-  /// held Error (a value that parsed but failed the filter — final_filters reject 相当). Test-only
-  /// (eval_wbtest.mbt): production lowering (`installer.mbt` の `elem_head`/`value_prim`) never
-  /// constructs this node, so it carries no `piece_filters` field (DR-034 配線対象外、issue
-  /// 2026-07-09-pre-split-filters-execution-wiring).
-  FilterArg(String, Int)
   /// a REQUIRED string positional (DR-047 値充足 / DR-053 kind: constraint): consumes a token if
   /// present; if there is NO token to consume, it is a `kind: constraint` held Error (required
   /// 未充足) rather than a silent Reject — a delayed-predicate violation surfaced as an Error.
@@ -329,7 +322,6 @@ pub(all) enum Node {
 pub impl Eq for Node with fn equal(self, other) {
   match (self, other) {
     (Exact(a), Exact(b)) => a == b
-    (FilterArg(an, am), FilterArg(bn, bm)) => an == bn && am == bm
     (ReqArg(a), ReqArg(b)) => a == b
     (Bind(an, av), Bind(bn, bv)) => an == bn && av == bv
     (Or(a), Or(b)) => a == b
@@ -358,11 +350,6 @@ pub impl Eq for Node with fn equal(self, other) {
 pub impl Debug for Node with fn to_repr(self) {
   match self {
     Exact(a) => @debug.Repr::ctor("Exact", [(None, Debug::to_repr(a))])
-    FilterArg(a, b) =>
-      @debug.Repr::ctor("FilterArg", [
-        (None, Debug::to_repr(a)),
-        (None, Debug::to_repr(b)),
-      ])
     ReqArg(a) => @debug.Repr::ctor("ReqArg", [(None, Debug::to_repr(a))])
     Bind(a, b) =>
       @debug.Repr::ctor("Bind", [

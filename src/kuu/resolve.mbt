@@ -14,7 +14,7 @@
 // package, no import needed across files).
 //
 // DR-074/075 update over the slice: env's string→@engine.Value conversion goes through the canonical
-// lexers (`@engine.parse_number` / `parse_int_value` / `parse_bool`, value.mbt) instead of slice's
+// lexers (`@builtins.parse_number` / `parse_int_value` / `parse_bool`, value.mbt) instead of slice's
 // `env_value` which silently fell back to `@engine.VStr(s)` on a parse failure — a badly-typed env value
 // is now a DR-066 Error (reason `not_a_number` / `not_an_integer` / `not_a_bool`), never a
 // wrong-typed cell. `resolve_scope` / `resolve_scope_config` return `Result[.., @engine.ParseError]`
@@ -2263,7 +2263,7 @@ fn apply_transform(
 
 ///|
 /// Parse an env string into a @engine.Value per the entity's type (DR-049 §2: env goes through the same
-/// pipeline as CLI). Unlike slice's `env_value` (naive `@engine.parse_number` with a silent `@engine.VStr` fallback
+/// pipeline as CLI). Unlike slice's `env_value` (naive `@builtins.parse_number` with a silent `@engine.VStr` fallback
 /// on failure), this reuses the canonical lexers (DR-074/075) and surfaces a parse failure as a
 /// DR-066 Error — a badly-typed env value is never silently coerced to a wrong-typed string cell.
 /// `piece_filters` (DR-034/DR-062, issue 2026-07-09-pre-split-filters-execution-wiring): DR-049 §2

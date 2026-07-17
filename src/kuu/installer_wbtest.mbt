@@ -113,7 +113,7 @@ fn el(
     default_values: None,
     int_round: @engine.RError,
     allow_base_prefix: false,
-    bool_config: @engine.bool_config_canonical(),
+    bool_config: @builtins.bool_config_canonical(),
     // `chain` (filters_wbtest.mbt, same package): keeps this builder's colon-shorthand ergonomics
     // (`piece_filters=["trim"]`) even though `ElemDef` fields are `Array[@engine.FilterSpelling]` in
     // production (issue filter-spelling-inband-encoding-retyping).
@@ -3725,7 +3725,7 @@ test "long installer: long_eq_sep:@engine.EsDeny end-to-end — eq form fails, s
 
 ///|
 /// 保証 (DR-092 実装調査 2026-07-11、fixtures/value-typing/number-inf-nan.json の
-/// `inf-on-float-accepted` 対の完全版): `--t inf` (float 型) が args → matcher → `@engine.parse_float` →
+/// `inf-on-float-accepted` 対の完全版): `--t inf` (float 型) が args → matcher → `@builtins.parse_float` →
 /// `@engine.Binding.value` の全経路を通っても `@engine.VNum` の inf がそのまま (saturate/丸めなど一切なく) 届く
 /// ことを end-to-end で固定する。fixture 側は「operand の JSON 表現が未確定」を理由に `result`
 /// pin を見送っている (main が本 DR 実装確定後に別段で追加) — この wbtest は fixture pin を待たず

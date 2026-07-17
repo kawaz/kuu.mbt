@@ -125,7 +125,7 @@ pub struct ElemDef {
   // DR-074 §3/§4 `bool_parser` factory config (DR-061 §4 平坦 config キー 3 つを 1 struct に束ねた
   // carrier — `true_values`/`false_values`/`case_insensitive` は常にセットで使われるため、
   // int_round/allow_base_prefix と違い個別フィールドに展開しない、`RepeatSpec` と同じ「複合 config を
-  // 1 struct にまとめる」パターン)。canonical default = `@engine.bool_config_canonical()`。value_prim が
+  // 1 struct にまとめる」パターン)。canonical default = `@builtins.bool_config_canonical()`。value_prim が
   // bool resident に埋め込み、eval / matcher で parse_bool_ext に流す。@builtins.bool_type() 以外は
   // 参照しない (冗長フィールド、int_round/allow_base_prefix と同じ扱い)。
   bool_config : @engine.BoolConfig
@@ -2455,7 +2455,7 @@ fn add_inheritable_copy(sb : SB, e : ElemDef, trigger : String) -> Unit {
       int_round: @engine.RError,
       allow_base_prefix: false, // canonical default (DR-075 §2): write-target は int_round を持たない
       // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
-      bool_config: @engine.bool_config_canonical(), // canonical default (DR-074 §4): write-target は bool_parser opt-in を持たない
+      bool_config: @builtins.bool_config_canonical(), // canonical default (DR-074 §4): write-target は bool_parser opt-in を持たない
       piece_filters: [], // write-target は filter chain を持たない (源 e の value_filters は source 側で既に適用済み)
       value_filters: [],
       final_filters: [],
@@ -2832,7 +2832,7 @@ fn alias_entry(
     default_values: None,
     int_round: @engine.RError,
     allow_base_prefix: false,
-    bool_config: @engine.bool_config_canonical(),
+    bool_config: @builtins.bool_config_canonical(),
     piece_filters: [],
     value_filters: [],
     final_filters: [],
@@ -3304,8 +3304,7 @@ fn head_progresses(
   visiting : Array[String],
 ) -> Bool {
   match node {
-    @engine.FilterArg(_, _)
-    | @engine.ReqArg(_)
+    @engine.ReqArg(_)
     | @engine.Exact(_)
     | @engine.NativeMatch(_)
     | @engine.DdSat(_)
@@ -4316,8 +4315,8 @@ fn collect_invalid_numeric_filter_args(
       )
       return
     }
-    let min = @engine.parse_number(fs.args[0])
-    let max = @engine.parse_number(fs.args[1])
+    let min = @builtins.parse_number(fs.args[0])
+    let max = @builtins.parse_number(fs.args[1])
     match (min, max) {
       (None, _) =>
         out.push(

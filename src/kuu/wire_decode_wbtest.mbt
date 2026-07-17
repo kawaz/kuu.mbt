@@ -43,7 +43,7 @@ test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix
 
 ///|
 /// 対極 (shadow に無い bare 型名の場合): TypeShadow を経由しない or leaf は dec_ty の canonical
-/// 型解決 + @engine.RError/false/@engine.bool_config_canonical()/false/None/true の canonical default に落ちる
+/// 型解決 + @engine.RError/false/@builtins.bool_config_canonical()/false/None/true の canonical default に落ちる
 /// ことの固定 (carry すべきものが無い場合に誤って何かを持ち込んでいないかの反証チェック)。
 test "dec_or_leaf: shadow に無い bare 型名 (\"int\") は canonical default (int_round=@engine.RError 等) に落ちる" {
   let shadows : Map[String, TypeShadow] = Map([])
@@ -54,7 +54,7 @@ test "dec_or_leaf: shadow に無い bare 型名 (\"int\") は canonical default 
   assert_eq(e.ty, @builtins.int_type())
   assert_eq(e.int_round, @engine.RError)
   assert_eq(e.allow_base_prefix, false)
-  assert_eq(e.bool_config, @engine.bool_config_canonical())
+  assert_eq(e.bool_config, @builtins.bool_config_canonical())
   assert_eq(e.is_tty, false)
   assert_eq(e.tty_stream, None)
   assert_eq(e.tty_cygwin, true)

@@ -389,14 +389,14 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
 }
 
 ///|
-test "REVIEW-C3 head_name knows @engine.FilterArg: optional extra rep at EOF is a stop, not an error" {
-  // Repeat of a @engine.FilterArg head followed by a mandatory positional z, input
+test "REVIEW-C3 head_name knows filtered number resident: optional extra rep at EOF is a stop, not an error" {
+  // Repeat of a filtered number resident head followed by a mandatory positional z, input
   // exhausts after one rep. The genuine failure is "z missing"; the "one
   // more n" probe finding no token is a legitimate stop and must NOT add a
   // missing-operand-for-n error (drop_optional_missing needs the head's
-  // name, which @engine.FilterArg supplies via head_name).
+  // name, which the resident supplies via NodeExt::element_name).
   let defs : Map[String, @engine.Node] = Map([])
-  reg_repeat(defs, "ns", @engine.FilterArg("n", 100))
+  reg_repeat(defs, "ns", @builtins.filtered_number_arg("n", 100))
   let root : @engine.Scope = {
     greedy: [],
     positional: [Ref("ns"), @builtins.string_arg("z", [])],

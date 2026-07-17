@@ -44,7 +44,7 @@ pub fn install(registry : @engine.Registry) -> Unit {
       string_type(),
       @engine.RError,
       false,
-      @engine.bool_config_canonical(),
+      bool_config_canonical(),
       [],
       false,
     ),
@@ -52,7 +52,7 @@ pub fn install(registry : @engine.Registry) -> Unit {
   register_node(registry, number_arg("", false, []))
   register_node(registry, float_arg("", []))
   register_node(registry, int_arg("", @engine.RError, false, []))
-  register_node(registry, bool_arg("", @engine.bool_config_canonical(), []))
+  register_node(registry, bool_arg("", bool_config_canonical(), []))
   register_node(registry, typed_arg("", string_type(), []))
   register_node(registry, effect_mark("", @engine.Set))
   register_node(registry, deprecation_mark(""))

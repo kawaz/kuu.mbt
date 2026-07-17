@@ -105,7 +105,7 @@ fn opt(
   default? : Array[@engine.Value]? = None,
   int_round? : @engine.RoundMode = @engine.RError,
   allow_base_prefix? : Bool = false,
-  bool_config? : @engine.BoolConfig = @engine.bool_config_canonical(),
+  bool_config? : @engine.BoolConfig = @builtins.bool_config_canonical(),
   piece_filters? : Array[@engine.FilterSpelling] = [],
   value_filters? : Array[@engine.FilterSpelling] = [],
   final_filters? : Array[@engine.FilterSpelling] = [],
@@ -205,7 +205,7 @@ fn pos(
   default? : Array[@engine.Value]? = None,
   int_round? : @engine.RoundMode = @engine.RError,
   allow_base_prefix? : Bool = false,
-  bool_config? : @engine.BoolConfig = @engine.bool_config_canonical(),
+  bool_config? : @engine.BoolConfig = @builtins.bool_config_canonical(),
   piece_filters? : Array[@engine.FilterSpelling] = [],
   value_filters? : Array[@engine.FilterSpelling] = [],
   final_filters? : Array[@engine.FilterSpelling] = [],
@@ -342,7 +342,7 @@ fn dd_marker(
     default_values: None,
     int_round: @engine.RError,
     allow_base_prefix: false,
-    bool_config: @engine.bool_config_canonical(),
+    bool_config: @builtins.bool_config_canonical(),
     piece_filters: [],
     value_filters: [],
     final_filters: [],
@@ -413,7 +413,7 @@ fn exact_marker(spelling : String) -> ElemDef {
     default_values: None,
     int_round: @engine.RError,
     allow_base_prefix: false,
-    bool_config: @engine.bool_config_canonical(),
+    bool_config: @builtins.bool_config_canonical(),
     piece_filters: [],
     value_filters: [],
     final_filters: [],
@@ -772,7 +772,7 @@ struct TypeShadow {
   // TypeShadow が担う base 側の flag は canonical default が false なので、int_round と直交な平坦キー。
   allow_base_prefix : Bool
   // DR-074 §4 `bool_parser` factory config (`bool_true_values`/`bool_false_values`/`bool_case_insensitive` (DR-100 prefix 正準) を 1
-  // struct に束ねた carrier、ElemDef.bool_config と同型)。canonical default = `@engine.bool_config_canonical()`。
+  // struct に束ねた carrier、ElemDef.bool_config と同型)。canonical default = `@builtins.bool_config_canonical()`。
   bool_config : @engine.BoolConfig
   // DR-099 §1/§3 `builtin/tty` factory: base=@builtins.bool_type() + is_tty マーカー + tty_stream (必須 config、
   // 未指定は definition-error) + tty_cygwin (既定 true)。他 factory と同じ「平坦 config キーを
@@ -821,7 +821,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
     }
     match factory {
       "int_parser" | "builtin/int_parser" => {
-        // DR-075 §2 int_round (10 モード語彙、@engine.round_mode_of で解決) + DR-074 §2 の (int にも波及する)
+        // DR-075 §2 int_round (10 モード語彙、@builtins.round_mode_of で解決) + DR-074 §2 の (int にも波及する)
         // `number_allow_base_prefix`。config 未指定は canonical default (@engine.RError + false)。
         let mut mode = @engine.RError
         let mut base_prefix = false
@@ -843,7 +843,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
               Some(vj) =>
                 match vj.j_str() {
                   Some(s) =>
-                    match @engine.round_mode_of(s) {
+                    match @builtins.round_mode_of(s) {
                       Some(m) => mode = m
                       None =>
                         raise DecodeSkip(
@@ -883,7 +883,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           base: @builtins.int_type(),
           int_round: mode,
           allow_base_prefix: base_prefix,
-          bool_config: @engine.bool_config_canonical(),
+          bool_config: @builtins.bool_config_canonical(),
           is_tty: false,
           tty_stream: None,
           tty_cygwin: true,
@@ -928,7 +928,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           base: @builtins.number_type(),
           int_round: @engine.RError,
           allow_base_prefix: base_prefix,
-          bool_config: @engine.bool_config_canonical(),
+          bool_config: @builtins.bool_config_canonical(),
           is_tty: false,
           tty_stream: None,
           tty_cygwin: true,
@@ -937,10 +937,10 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
       "bool_parser" | "builtin/bool_parser" => {
         // DR-074 §3/§4 bool_parser factory config: `bool_true_values`/`bool_false_values`/`bool_case_insensitive` (DR-100)
         // の 3 平坦 config キー。canonical default は既存 parse_bool と同値
-        // (@engine.bool_config_canonical())、未指定キーはそれぞれの default を個別に維持する (3 キー独立
+        // (@builtins.bool_config_canonical())、未指定キーはそれぞれの default を個別に維持する (3 キー独立
         // override — 1 キーだけ opt-in しても他の 2 キーは canonical のまま、DR-061 §4 の平坦
         // config キー原則と同じ「キー単位で独立」の扱い、int_parser/number_parser と同型)。
-        let canon = @engine.bool_config_canonical()
+        let canon = @builtins.bool_config_canonical()
         let mut true_values = canon.true_values
         let mut false_values = canon.false_values
         let mut case_insensitive = canon.case_insensitive
@@ -1055,7 +1055,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
           base: @builtins.bool_type(),
           int_round: @engine.RError,
           allow_base_prefix: false,
-          bool_config: @engine.bool_config_canonical(),
+          bool_config: @builtins.bool_config_canonical(),
           is_tty: true,
           tty_stream: stream,
           tty_cygwin: cygwin,
@@ -1554,7 +1554,7 @@ fn dec_or_leaf(
             dec_ty(t, name, extensions),
             @engine.RError,
             false,
-            @engine.bool_config_canonical(),
+            @builtins.bool_config_canonical(),
             false,
             None,
             true,
@@ -1565,7 +1565,7 @@ fn dec_or_leaf(
         @builtins.none_type(),
         @engine.RError,
         false,
-        @engine.bool_config_canonical(),
+        @builtins.bool_config_canonical(),
         false,
         None,
         true,
@@ -1721,7 +1721,7 @@ fn dec_option(
         false,
         @engine.RError,
         false,
-        @engine.bool_config_canonical(),
+        @builtins.bool_config_canonical(),
         false,
         None,
         true,
@@ -1733,7 +1733,7 @@ fn dec_option(
         true,
         @engine.RError,
         false,
-        @engine.bool_config_canonical(),
+        @builtins.bool_config_canonical(),
         false,
         None,
         true,
@@ -1745,7 +1745,7 @@ fn dec_option(
         false,
         @engine.RError,
         false,
-        @engine.bool_config_canonical(),
+        @builtins.bool_config_canonical(),
         true,
         None,
         true,
@@ -1771,7 +1771,7 @@ fn dec_option(
             false,
             @engine.RError,
             false,
-            @engine.bool_config_canonical(),
+            @builtins.bool_config_canonical(),
             false,
             None,
             true,
@@ -1997,7 +1997,7 @@ fn dec_positional(
         @builtins.bool_type(),
         @engine.RError,
         false,
-        @engine.bool_config_canonical(),
+        @builtins.bool_config_canonical(),
         true,
         None,
         true,
@@ -2019,7 +2019,7 @@ fn dec_positional(
             dec_ty(t, name, extensions),
             @engine.RError,
             false,
-            @engine.bool_config_canonical(),
+            @builtins.bool_config_canonical(),
             false,
             None,
             true,
@@ -2030,7 +2030,7 @@ fn dec_positional(
         @builtins.none_type(),
         @engine.RError,
         false,
-        @engine.bool_config_canonical(),
+        @builtins.bool_config_canonical(),
         false,
         None,
         true,
@@ -2198,7 +2198,7 @@ fn dec_scope_config(
     Some(s) => s
     None => parent.long_prefix
   }
-  // DESIGN §7.2 / DR-096 §1: 3 値 enum decode — `int_round`/`@engine.round_mode_of` と同じ前例パターン
+  // DESIGN §7.2 / DR-096 §1: 3 値 enum decode — `int_round`/`@builtins.round_mode_of` と同じ前例パターン
   // (`value.mbt`'s `@engine.eq_sep_mode_of` doc comment)。不正値 (未知 token) は decode-time DecodeSkip。
   let long_eq_sep = match co.get("long_eq_sep") {
     Some(vj) =>

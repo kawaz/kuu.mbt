@@ -135,7 +135,7 @@ fn filter_in_range(
           ("filter_rejected", "in_range requires exactly 2 args (min, max)"),
         )
       }
-      let min = match @engine.parse_number(args[0]) {
+      let min = match parse_number(args[0]) {
         Some(d) => d
         None =>
           return Err(
@@ -145,7 +145,7 @@ fn filter_in_range(
             ),
           )
       }
-      let max = match @engine.parse_number(args[1]) {
+      let max = match parse_number(args[1]) {
         Some(d) => d
         None =>
           return Err(
@@ -352,7 +352,7 @@ fn array_filter_length_range(
       ("filter_rejected", "length_range requires exactly 2 args (min, max)"),
     )
   }
-  let min = match @engine.parse_number(args[0]) {
+  let min = match parse_number(args[0]) {
     Some(d) => d
     None =>
       return Err(
@@ -362,7 +362,7 @@ fn array_filter_length_range(
         ),
       )
   }
-  let max = match @engine.parse_number(args[1]) {
+  let max = match parse_number(args[1]) {
     Some(d) => d
     None =>
       return Err(

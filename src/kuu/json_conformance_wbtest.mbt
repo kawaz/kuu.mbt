@@ -511,7 +511,7 @@ fn prim_name(node : @engine.Node) -> String? {
     Some(name) => Some(name)
     None =>
       match node {
-        @engine.FilterArg(name, _) | @engine.ReqArg(name) => Some(name)
+        @engine.ReqArg(name) => Some(name)
         _ => None
       }
   }

@@ -505,7 +505,6 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // consumed, so nothing is "half-read".
         []
       }
-    FilterArg(name, max) => filter_arg_eval(name, max, ctx, pos, [])
     ReqArg(name) => req_arg_eval(name, ctx, pos, [])
     Bind(name, v) => [Accept(pos, [mkb(name, v, Cli)])]
     Or(alts) => {
@@ -695,50 +694,6 @@ fn pe_missing(element : String, pos : Int) -> ParseError {
     reason: "missing_operand",
     message: "missing operand for \{element}",
     path: [],
-  }
-}
-
-///|
-/// FilterArg: parse a number then apply a max post-filter. A parse failure is
-/// `kind: parse`; a value above `max` is `kind: filter`.
-fn filter_arg_eval(
-  name : String,
-  max : Int,
-  ctx : Ctx,
-  pos : Int,
-  acc : Array[Binding],
-) -> Array[Branch] {
-  if pos < ctx.toks.length() {
-    match parse_number(ctx.toks[pos]) {
-      Some(d) =>
-        if d > max.to_double() {
-          [
-            Held(
-              {
-                element: name,
-                args_pos: pos,
-                kind: KFilter,
-                reason: "too_large",
-                message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
-                path: [],
-              },
-              acc,
-            ),
-          ]
-        } else {
-          [
-            Accept(
-              pos + 1,
-              cat(acc, [mkb(name, VNum(d), Cli, at_pos=Some(pos))]),
-            ),
-          ]
-        }
-      None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
-    }
-  } else if in_complete(ctx) {
-    [Pending([pend_value("number", name)], acc)]
-  } else {
-    [Held(pe_missing(name, pos), acc)]
   }
 }
 
@@ -1449,10 +1404,7 @@ fn seq_boundary_name(node : Node) -> String? {
         Some((name, _)) => Some(name)
         None =>
           match node {
-            FilterArg(name, _)
-            | ReqArg(name)
-            | Bind(name, _)
-            | Scoped(name, _) => Some(name)
+            ReqArg(name) | Bind(name, _) | Scoped(name, _) => Some(name)
             _ => None
           }
       }
@@ -1761,46 +1713,6 @@ fn scope_consume(
         eval_required_ext(extension, ctx, pos, acc, (ctx2, next_pos, next_acc) => {
           scope_step(sc, ctx2, next_pos, pidx + 1, next_acc, severed, k)
         })
-      } else {
-        []
-      }
-    FilterArg(name, max) =>
-      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_number(ctx.toks[pos]) {
-          Some(d) =>
-            if d > max.to_double() {
-              [
-                Held(
-                  {
-                    element: name,
-                    args_pos: pos,
-                    kind: KFilter,
-                    reason: "too_large",
-                    message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
-                    path: [],
-                  },
-                  acc,
-                ),
-              ]
-            } else {
-              scope_step(
-                sc,
-                ctx,
-                pos + 1,
-                pidx + 1,
-                cat(acc, [mkb(name, VNum(d), Cli, at_pos=Some(pos))]),
-                severed,
-                k,
-              )
-            }
-          None => [Held(pe_parse(name, ctx.toks[pos], pos), acc)]
-        }
-      } else if pos >= ctx.toks.length() {
-        if in_complete(ctx) {
-          [Pending([pend_value("number", name)], acc)]
-        } else {
-          [Held(pe_missing(name, pos), acc)]
-        }
       } else {
         []
       }
@@ -2144,7 +2056,7 @@ fn consume_head(
       } else {
         []
       }
-    // ReqArg / FilterArg get their own arms so 先食い (suppressed) applies —
+    // ReqArg gets its own arm so 先食い (suppressed) applies —
     // eval() does not see the parent scope, so falling through would let a
     // greedy trigger token be raw-eaten as the repeat head's value. Held
     // shapes must match the primitive arms above so drop_optional_missing on
@@ -2177,38 +2089,6 @@ fn consume_head(
       } else {
         []
       }
-    FilterArg(name, max) =>
-      if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
-        match parse_number(ctx.toks[pos]) {
-          Some(d) =>
-            if d > max.to_double() {
-              [
-                Held(
-                  {
-                    element: name,
-                    args_pos: pos,
-                    kind: KFilter,
-                    reason: "too_large",
-                    message: "\{name} value \{ctx.toks[pos]} exceeds max \{max}",
-                    path: [],
-                  },
-                  [],
-                ),
-              ]
-            } else {
-              [Accept(pos + 1, [mkb(name, VNum(d), Cli, at_pos=Some(pos))])]
-            }
-          None => [Held(pe_parse(name, ctx.toks[pos], pos), [])]
-        }
-      } else if pos >= ctx.toks.length() {
-        if in_complete(ctx) {
-          [Pending([pend_value("number", name)], [])]
-        } else {
-          [Held(pe_missing(name, pos), [])]
-        }
-      } else {
-        []
-      }
     // DR-078 §1 (issue 2026-07-09-ref-template-result-shape): a `ref` element's head is a
     // COMPOUND node (Or/Seq/Scoped wrapping a shared template's leaves, never a bare primitive)
     // — plain off-spine `eval` has no `Scope`, so it could never apply 先食い (DR-041 §4) to a
@@ -2234,8 +2114,7 @@ fn consume_compound(
   severed : Bool,
 ) -> Array[Branch] {
   match node {
-    Ext(_) | ReqArg(_) | FilterArg(_, _) =>
-      consume_head(sc, node, ctx, pos, severed)
+    Ext(_) | ReqArg(_) => consume_head(sc, node, ctx, pos, severed)
     Or(alts) => {
       let out : Array[Branch] = []
       for a in alts {
@@ -2315,7 +2194,6 @@ fn head_elem_names_into(node : Node, out : Array[String]) -> Unit {
     None => ()
   }
   match node {
-    FilterArg(name, _) => if !str_mem(out, name) { out.push(name) }
     ReqArg(name) => if !str_mem(out, name) { out.push(name) }
     Seq(items) =>
       for it in items {

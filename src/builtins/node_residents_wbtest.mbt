@@ -72,10 +72,7 @@ test "bool resident preserves not_a_bool" {
   // Bool parsing has its own canonical vocabulary and must not collapse an
   // unknown token onto number parsing's error family.
   assert_eq(
-    resident_failure_reason(
-      bool_arg("b", @engine.bool_config_canonical(), []),
-      "yes",
-    ),
+    resident_failure_reason(bool_arg("b", bool_config_canonical(), []), "yes"),
     "not_a_bool",
   )
 }

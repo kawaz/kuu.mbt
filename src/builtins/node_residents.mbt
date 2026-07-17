@@ -333,7 +333,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
       match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           // Every number-lexicon rejection reports through @engine.pe_parse.
-          match @engine.parse_number_ext(value, self.allow_base_prefix) {
+          match parse_number_ext(value, self.allow_base_prefix) {
             Some(number) =>
               next(
                 ctx,
@@ -379,6 +379,94 @@ pub fn number_arg(
 }
 
 ///|
+/// Test-oriented number resident with a final maximum check. Production lowering
+/// expresses the same concern through `final_filters`; this resident keeps the
+/// engine contract tests independent of the closed Node enum.
+priv struct FilteredNumberArgExt {
+  name : String
+  max : Int
+}
+
+///|
+impl @engine.NodeExt for FilteredNumberArgExt with fn kind(_self) {
+  "builtin/filtered-number"
+}
+
+///|
+impl @engine.NodeExt for FilteredNumberArgExt with fn element_name(self) {
+  Some(self.name)
+}
+
+///|
+impl @engine.NodeExt for FilteredNumberArgExt with fn encode(self) {
+  [self.name.to_json(), self.max.to_json()].to_json()
+}
+
+///|
+impl @engine.NodeExt for FilteredNumberArgExt with fn consumes_zero_tokens(
+  _self,
+) {
+  false
+}
+
+///|
+impl @engine.NodeExt for FilteredNumberArgExt with fn eval(
+  self,
+  ctx,
+  pos,
+  acc,
+  next,
+) {
+  match ctx.token_at(pos) {
+    Some(token) =>
+      match parse_number(token) {
+        None => [@engine.Held(@engine.pe_parse(self.name, token, pos), acc)]
+        Some(number) =>
+          if number > self.max.to_double() {
+            [
+              @engine.Held(
+                {
+                  element: self.name,
+                  args_pos: pos,
+                  kind: @engine.KFilter,
+                  reason: "too_large",
+                  message: "\{self.name} value \{token} exceeds max \{self.max}",
+                  path: [],
+                },
+                acc,
+              ),
+            ]
+          } else {
+            next(
+              ctx,
+              pos + 1,
+              @engine.cat(acc, [
+                @engine.mkb(
+                  self.name,
+                  @engine.VNum(number),
+                  @engine.Cli,
+                  at_pos=Some(pos),
+                ),
+              ]),
+            )
+          }
+      }
+    None =>
+      [
+        @engine.Pending(
+          [@engine.pend_value(number_type().name(), self.name)],
+          acc,
+        ),
+      ]
+  }
+}
+
+///|
+pub fn filtered_number_arg(name : String, max : Int) -> @engine.Node {
+  @engine.Ext(FilteredNumberArgExt::{ name, max } as &@engine.NodeExt)
+}
+
+///|
 priv struct FloatNodeExt {
   name : String
   piece_filters : Array[@engine.FilterSpelling]
@@ -411,7 +499,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
       match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           // The wider float lexicon still reports lexical rejection through @engine.pe_parse.
-          match @engine.parse_float(value) {
+          match parse_float(value) {
             Some(number) =>
               next(
                 ctx,
@@ -495,11 +583,7 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
           // int resident has three distinct @engine.Held families; preserving this split is
           // part of the resident contract, not a generic number error path.
           match
-            @engine.parse_int_value_ext(
-              value,
-              self.int_round,
-              self.allow_base_prefix,
-            ) {
+            parse_int_value_ext(value, self.int_round, self.allow_base_prefix) {
             Ok(integer) =>
               next(
                 ctx,
@@ -591,7 +675,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
       match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           // bool resident retains @engine.pe_parse_bool rather than sharing number's @engine.pe_parse.
-          match @engine.parse_bool_ext(value, self.bool_config) {
+          match parse_bool_ext(value, self.bool_config) {
             Some(boolean) =>
               next(
                 ctx,
