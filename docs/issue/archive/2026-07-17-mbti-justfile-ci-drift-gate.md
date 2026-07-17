@@ -1,6 +1,6 @@
 ---
 title: mbti 生成の justfile フロー組み込み + CI drift 検査
-status: wip
+status: resolved
 category: task
 created: 2026-07-17T09:38:43+09:00
 last_read: 2026-07-17T11:45:46+09:00
@@ -9,10 +9,10 @@ wip_entered: 2026-07-17T09:59:21+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-17T12:04:37+09:00
 discard_reason:    # 1-line JSON array string[] 例: ["discarded","環境が変わった"]
 pending_reason:    # 1-line JSON array string[] 例: ["pending","v2 待ち"]
-close_reason:      # close 時に update が記録。1-line JSON array string[] 例: ["dr/DR-0007","implemented"]
+close_reason: ["implemented: just mbti + 3 package pkg.generated.mbti + CI drift gate"]
 blocked_by:
 origin: 自リポ TODO (kawaz 発題)
 ---
