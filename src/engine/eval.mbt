@@ -147,7 +147,7 @@ pub fn action_marker(name : String, pos : Int) -> Binding {
 
 ///|
 /// Whether a result key is a deprecation marker (`@depr:...`).
-pub fn is_depr_key(k : String) -> Bool {
+fn is_depr_key(k : String) -> Bool {
   let p = "@depr:"
   k.length() >= p.length() && k[0:p.length()].to_owned() == p
 }
@@ -234,7 +234,7 @@ fn action_of(b : Binding) -> String? {
 
 ///|
 /// Whether a result key is a failure-action marker (`@act:...`).
-pub fn is_action_key(k : String) -> Bool {
+fn is_action_key(k : String) -> Bool {
   let p = "@act:"
   k.length() >= p.length() && k[0:p.length()].to_owned() == p
 }
@@ -1395,7 +1395,7 @@ fn scope_step(
 /// name field for a value-typed main entry, `Bind`/`effect resident`'s name field for a variant entry
 /// (`--secret`/`--no-color`-style), or a `Scoped` wrap's label for a ref/repeat entry. Mirrors
 /// `value_slot_trigger`/`prim_name`'s existing "peek at the Seq's tail node" style in this same
-/// file / json_conformance_wbtest.mbt.
+/// file / json_conformance_test.mbt.
 fn seq_boundary_name(node : Node) -> String? {
   match node_resident_name(node) {
     Some(name) => Some(name)

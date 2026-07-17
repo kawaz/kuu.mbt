@@ -40,15 +40,16 @@ fn str_contains(xs : Array[String], v : String) -> Bool {
 /// DR-058). Pub化理由 (MDR-005 追記, issue front-door-parse-missing-postprocessing): 正面玄関
 /// `parse` の @engine.Success payload に上記 sentinel が乗ったまま返るため、下流 (kuu-cli など) が
 /// wire 射影 (`result` / `effects` / `warnings` の切り出し) を組み立てるときに sentinel を
-/// 弾く共通判定が要る — `@engine.is_action_key` / `@engine.is_depr_key` と同じ pub 抽象。
+/// 弾く共通判定が要る。
+/// Deprecated: `output()` が内部 marker を除外するため、下流は OutputView を利用すること。
 pub fn is_sentinel(k : String) -> Bool {
   k == "[]" ||
   k == "{}" ||
   k == "" ||
   k == "#row" ||
   k == "#fire" ||
-  @engine.is_action_key(k) ||
-  @engine.is_depr_key(k)
+  (k.length() >= 5 && k[0:5].to_owned() == "@act:") ||
+  (k.length() >= 6 && k[0:6].to_owned() == "@depr:")
 }
 
 ///|
@@ -73,7 +74,7 @@ pub fn is_sentinel(k : String) -> Bool {
 /// (再帰の中では呼ばない、二重防止)。resolve_scope_tree 自身を書き換える案は再帰と top-level の
 /// 区別が必要でコストが大きい割に、呼び出し元 (`apply_requires_filter` は結果 binds を捨てる、
 /// runner は use_resolve gate で経路分岐する) 全体で見ると front_door の 1 段で足りる。
-pub fn merge_sentinels_from_origin(
+fn merge_sentinels_from_origin(
   orig : Array[@engine.Binding],
   resolved : Array[@engine.Binding],
 ) -> Array[@engine.Binding] {
@@ -271,7 +272,7 @@ pub fn apply_export_keys(
 /// segments (command scope names) are renamed / promoted the same way. Keeps a flag's preset default
 /// subject to the same export transform as its fired value (so `--verbose` with export null neither
 /// appears as a value nor re-appears as an injected `false`).
-pub fn apply_export_to_defaults(
+fn apply_export_to_defaults(
   defaults : Array[DefaultCell],
   ek : Map[String, @engine.ExportKey],
 ) -> Array[DefaultCell] {
@@ -726,7 +727,7 @@ pub fn build_result(
   // direction: `resolve_scope`'s accum branch (this cell's `@engine.Entity.accum` seats no CLI binding, so
   // `resolve_entity` always resolves it to `Ok([])`) drops the raw eval-layer bindings entirely
   // before `build_result` ever runs, so THAT path never even reaches `segs` — but conformance's
-  // no-resolve path (`run_case`'s `else` arm, `json_conformance_wbtest.mbt`) feeds build_result the
+  // no-resolve path (`run_case`'s `else` arm, `json_conformance_test.mbt`) feeds build_result the
   // RAW eval bindings, where a 0-rep firing still leaves the `"#fire"` marker
   // (`inst_long`'s `@engine.Scoped(e.name, @engine.Bind("#fire", ...))`) under `scope=[e.name]` — landing THIS in
   // `segs` too, indistinguishable from a real "#row"-bearing firing by name alone. The precise
@@ -754,168 +755,6 @@ pub fn build_result(
     }
   }
   @engine.RObj(obj)
-}
-
-///|
-/// The `from_entries` collector (DR-044): turns an accumulated ARRAY into an OBJECT. It has the
-/// 3 usages of JS's Object.fromEntries, distinguished by how each element supplies (key, value):
-///
-///   Entries          — `from_entries()`         : each element is a 2-element seq `[k, v]`
-///   KeyValue(kf, vf) — `from_entries({key,value})`: each element is an object; kf/vf name the
-///                                                    two fields to use as key / value
-///   KeyPromote(kf)   — `from_entries({key})`     : each element is an object; kf is PROMOTED to
-///                                                    the key and removed, the REST becomes the value
-///
-/// It recurses through the structure, converting every array whose elements match the spec's
-/// shape and leaving the rest (e.g. scalar arrays) as arrays — so applying `KeyPromote("path")`
-/// to a nested structure maps every object-array keyed by `path` while a `value_filters` scalar array
-/// stays a list. A stage WITHOUT a matching key keeps its array (per-level independence, DR-044
-/// §2: from_entries is attached per repeat group; the key present at a level selects that level).
-pub enum FromEntries {
-  Entries // (a) no args: [[k, v], ...]
-  KeyValue(String, String) // (b) {key, value}: two named fields
-  KeyPromote(String) // (c) {key}: promote the key field, the rest is the value
-} derive(Eq, Debug)
-
-///|
-pub fn from_entries(r : @engine.RVal, spec : FromEntries) -> @engine.RVal {
-  match r {
-    @engine.RScalar(v) => @engine.RScalar(v)
-    @engine.RObj(kvs) => {
-      // recurse into an object's field values (a nested array may still match the spec)
-      let out : Array[(String, @engine.RVal)] = []
-      for kv in kvs {
-        out.push((kv.0, from_entries(kv.1, spec)))
-      }
-      @engine.RObj(out)
-    }
-    @engine.RArr(elems) =>
-      match spec {
-        Entries =>
-          if all_pairs(elems) {
-            let pairs : Array[(String, @engine.RVal)] = []
-            for e in elems {
-              match e {
-                @engine.RArr(xs) =>
-                  pairs.push((rval_key_str(xs[0]), from_entries(xs[1], spec)))
-                _ => ()
-              }
-            }
-            @engine.RObj(pairs)
-          } else {
-            recurse_arr(elems, spec)
-          }
-        KeyValue(kf, vf) =>
-          if all_have_fields(elems, [kf, vf]) {
-            let pairs : Array[(String, @engine.RVal)] = []
-            for e in elems {
-              let k = match rval_field(e, kf) {
-                Some(x) => rval_key_str(x)
-                None => "?"
-              }
-              let v = match rval_field(e, vf) {
-                Some(x) => x
-                None => @engine.RScalar(@engine.VBool(false))
-              }
-              pairs.push((k, from_entries(v, spec)))
-            }
-            @engine.RObj(pairs)
-          } else {
-            recurse_arr(elems, spec)
-          }
-        KeyPromote(kf) =>
-          // map only if EVERY element is an object carrying kf; else this level stays an array
-          // (this is the per-level selection: a level without kf is not mapped, DR-044 §2)
-          if all_have_fields(elems, [kf]) {
-            let pairs : Array[(String, @engine.RVal)] = []
-            for e in elems {
-              match e {
-                @engine.RObj(fields) => {
-                  let mut key = ""
-                  let rest : Array[(String, @engine.RVal)] = []
-                  for kv in fields {
-                    if kv.0 == kf {
-                      key = rval_key_str(kv.1)
-                    } else {
-                      rest.push((kv.0, from_entries(kv.1, spec)))
-                    }
-                  }
-                  pairs.push((key, @engine.RObj(rest)))
-                }
-                _ => ()
-              }
-            }
-            @engine.RObj(pairs)
-          } else {
-            recurse_arr(elems, spec)
-          }
-      }
-  }
-}
-
-///|
-fn recurse_arr(elems : Array[@engine.RVal], spec : FromEntries) -> @engine.RVal {
-  let items : Array[@engine.RVal] = []
-  for e in elems {
-    items.push(from_entries(e, spec))
-  }
-  @engine.RArr(items)
-}
-
-///|
-/// Look up an object field's value by name; None if absent or the @engine.RVal is not an object.
-fn rval_field(r : @engine.RVal, name : String) -> @engine.RVal? {
-  match r {
-    @engine.RObj(kvs) => {
-      for kv in kvs {
-        if kv.0 == name {
-          return Some(kv.1)
-        }
-      }
-      None
-    }
-    _ => None
-  }
-}
-
-///|
-/// Whether every element is a 2-element array (the `Entries` shape). @engine.Empty => false.
-fn all_pairs(elems : Array[@engine.RVal]) -> Bool {
-  if elems.length() == 0 {
-    return false
-  }
-  for e in elems {
-    match e {
-      @engine.RArr(xs) => if xs.length() != 2 { return false }
-      _ => return false
-    }
-  }
-  true
-}
-
-///|
-/// Whether every element is an object carrying ALL the named fields. @engine.Empty => false.
-fn all_have_fields(elems : Array[@engine.RVal], fields : Array[String]) -> Bool {
-  if elems.length() == 0 {
-    return false
-  }
-  for e in elems {
-    for f in fields {
-      match rval_field(e, f) {
-        Some(_) => ()
-        None => return false
-      }
-    }
-  }
-  true
-}
-
-///|
-fn rval_key_str(r : @engine.RVal) -> String {
-  match r {
-    @engine.RScalar(v) => @engine.value_str(v)
-    _ => "?"
-  }
 }
 
 ///|
@@ -1003,7 +842,7 @@ pub struct DefaultCell {
 } derive(Eq, Debug)
 
 ///|
-pub fn default_cells(sc : @engine.Scope) -> Array[DefaultCell] {
+fn default_cells(sc : @engine.Scope) -> Array[DefaultCell] {
   let out : Array[DefaultCell] = []
   collect_defaults(sc, [], out)
   out
@@ -1057,14 +896,14 @@ fn collect_defaults(
 /// の解消、DR-109 §5 UX-Q5=a): `binds` → `result` オブジェクト (CONFORMANCE.md §2 の
 /// `result: {...}`) を組み立てる 4 素材 (`apply_export_keys`/`accum_cells`/
 /// `apply_export_to_defaults`/`@engine.none_cells`) の合成をここに一本化する。runner の
-/// `proj_result_export` (json_conformance_wbtest.mbt) と kuu-cli PoC の手組み `result_to_json`
+/// `proj_result_export` (json_conformance_test.mbt) と kuu-cli PoC の手組み `result_to_json`
 /// (wire.mbt) が同一の 5 行組み立てを重複実装していた — 両者ともこの関数を呼ぶ形に揃える。
 /// `binds` は `front_door.resolve()` の @engine.Success payload (解決済み binds、DR-109 §7「CLI は既定で
 /// resolve 適用」) を渡すのが前提だが、型としては素の `Array[@engine.Binding]` を受けるだけなので未解決の
 /// CLI binds を渡しても動く (runner が「default ladder 不要な fixture は resolve をスキップする」
 /// 最適化で未解決 binds をそのまま渡す既存経路があり、それを壊さないための性質 — 呼び出し側の
 /// 資格を型で強制することはしない)。
-pub fn build_result_export(
+fn build_result_export(
   sc : @engine.Scope,
   binds : Array[@engine.Binding],
   ek : Map[String, @engine.ExportKey],
@@ -1076,34 +915,6 @@ pub fn build_result_export(
     [],
     nones=@engine.none_cells(sc),
   )
-}
-
-///|
-/// The `unwrap_single` collector (DR-034 縮退ケース, opt-in scalar): unwrap a length-1 array to
-/// its element, recursively. This is how an app gets a SCALAR from a repeat/optional cell without
-/// the uniform-array default folding it (`optional: true` yields `[x]`; unwrap_single gives `x`).
-/// Length 0 or >= 2 arrays are left unchanged (unwrap only applies to the unambiguous single case).
-pub fn unwrap_single(r : @engine.RVal) -> @engine.RVal {
-  match r {
-    @engine.RScalar(v) => @engine.RScalar(v)
-    @engine.RArr(elems) =>
-      if elems.length() == 1 {
-        unwrap_single(elems[0])
-      } else {
-        let items : Array[@engine.RVal] = []
-        for e in elems {
-          items.push(unwrap_single(e))
-        }
-        @engine.RArr(items)
-      }
-    @engine.RObj(kvs) => {
-      let out : Array[(String, @engine.RVal)] = []
-      for kv in kvs {
-        out.push((kv.0, unwrap_single(kv.1)))
-      }
-      @engine.RObj(out)
-    }
-  }
 }
 
 // ── export-key collision (DR-073: ambiguous 維持 + 解釈ごとの optional claimants 面) ─────────
@@ -1119,7 +930,7 @@ pub fn unwrap_single(r : @engine.RVal) -> @engine.RVal {
 /// One export-key collision (DR-073): at result scope `path`, 2+ distinct elements' bindings map
 /// (via `ek`) to the same result key `key`. `claimants` lists the distinct entity (pre-export-key)
 /// names competing for it, first-seen order.
-pub struct ExportCollision {
+struct ExportCollision {
   path : Array[String]
   key : String
   claimants : Array[String]
@@ -1158,7 +969,7 @@ fn exposed_key_of(raw : String, ek : Map[String, @engine.ExportKey]) -> String? 
 /// `find_export_collision`'s flat O(n²) scan). Groups by `exposed_key_of` (mapped OR identity-
 /// exposed, @engine.EkNull excluded) — see that function's doc comment for why identity exposure is now
 /// included (issue export-key-collision-identity-exposure-gap).
-pub fn find_export_collisions(
+fn find_export_collisions(
   binds : Array[@engine.Binding],
   ek : Map[String, @engine.ExportKey],
 ) -> Array[ExportCollision] {
@@ -1190,77 +1001,6 @@ pub fn find_export_collisions(
     if g.claimants.length() > 1 {
       out.push(g)
     }
-  }
-  out
-}
-
-///|
-/// One built interpretation (DR-053 §3 result-object view), with the optional DR-073 claimants
-/// face: `claimants` maps an exposed key to the entity name that occupies it IN THIS VIEW. @engine.Empty
-/// when the interpretation carries no export-key collision (the common case).
-pub struct Interpretation {
-  result : @engine.RVal
-  claimants : Array[(String, String)]
-} derive(Eq, Debug)
-
-///|
-/// Build every DR-073 interpretation of `binds`. With no collision this is a single interpretation
-/// (empty claimants) — the ordinary export_result rendering. With N simultaneous collision groups,
-/// every combination of "which claimant occupies which key" (cross product across groups) is a
-/// distinct interpretation: each keeps only its chosen claimant's bindings for that (path, key)
-/// group (the other claimants' bindings at that group are dropped from THIS view — DR-073 §2, the
-/// entity name is the only cross-view-stable identifier since value/source can coincide) before
-/// applying export keys and building the result. `cells`/`defaults` are passed through to
-/// `build_result` unchanged (accum cells and defaults are keyed by raw entity name, matching the
-/// caller's `accum_cells(sc)` / `apply_export_to_defaults(default_cells(sc), ek)` convention — see
-/// slice `poc/helpers_wbtest.mbt`).
-pub fn build_interpretations(
-  binds : Array[@engine.Binding],
-  ek : Map[String, @engine.ExportKey],
-  cells : Array[AccumCell],
-  defaults : Array[DefaultCell],
-  nones? : Array[@engine.NoneCell] = [],
-) -> Array[Interpretation] {
-  let collisions = find_export_collisions(binds, ek)
-  if collisions.length() == 0 {
-    let mapped = apply_export_keys(binds, ek)
-    return [
-      {
-        result: build_result(mapped, cells, defaults, [], nones~),
-        claimants: [],
-      },
-    ]
-  }
-  let out : Array[Interpretation] = []
-  for combo in claimant_combinations(collisions) {
-    let filtered : Array[@engine.Binding] = []
-    for b in binds {
-      let mut drop = false
-      let mut gi = 0
-      while gi < collisions.length() {
-        let c = collisions[gi]
-        if path_eq(c.path, b.scope) &&
-          exposed_key_of(b.key, ek) == Some(c.key) &&
-          b.key != combo[gi] {
-          drop = true
-        }
-        gi = gi + 1
-      }
-      if !drop {
-        filtered.push(b)
-      }
-    }
-    let mapped = apply_export_keys(filtered, ek)
-    let claimants : Array[(String, String)] = []
-    let mut gi = 0
-    while gi < collisions.length() {
-      claimants.push((collisions[gi].key, combo[gi]))
-      gi = gi + 1
-    }
-    out.push({
-      result: build_result(mapped, cells, defaults, [], nones~),
-      claimants,
-    })
   }
   out
 }
@@ -1329,7 +1069,7 @@ fn promote_collision_ambiguous_from(
 ///|
 /// Promote collisions already present in the parse bindings. The front door additionally supplies
 /// upper-seat resolved bindings through the private variant so env/config/inherit claims participate.
-pub fn promote_collision_ambiguous(
+fn promote_collision_ambiguous(
   o : @engine.Outcome,
   ek : Map[String, @engine.ExportKey],
 ) -> @engine.Outcome {
@@ -1378,7 +1118,7 @@ pub(all) struct SourceEntry {
 
 ///|
 /// `sc.greedy` に `@engine.CmdSat` (サブコマンド確定ノード) が 1 つでもあるか — command 木を持つ scope か
-/// どうかの判定。runner (json_conformance_wbtest.mbt) の同名ヘルパーと同一実装で、production 側の
+/// どうかの判定。runner (json_conformance_test.mbt) の同名ヘルパーと同一実装で、production 側の
 /// `result_sources` にも同じ分岐が要るためこちらへ昇格した (runner 側は重複定義を避けるため
 /// 削除しこの private fn を直接呼ぶ、同一パッケージ内アクセスなので `pub` 化は不要)。
 fn has_commands(sc : @engine.Scope) -> Bool {
@@ -1492,7 +1232,7 @@ fn collect_sources_tree(
 /// するため保持する)。runner 側は代わりに本関数が内部で使う `collect_sources_flat`/
 /// `collect_sources_tree` を自身の `dc.resolve && has_commands` 分岐から直接呼び、射影ロジックの
 /// 重複だけを解消する。
-pub fn result_sources(
+fn result_sources(
   sc : @engine.Scope,
   resolved : Array[@engine.Binding],
   ek : Map[String, @engine.ExportKey],
@@ -1523,7 +1263,7 @@ pub fn result_sources(
 /// `name` (entities 内で探した @engine.Entity) が bool 型 (@builtins.flag_type()/@builtins.bool_type()) かどうか — DR-047 §5 の bool/非bool
 /// 目的語判定ゲート。この後段フィルタが bool 判定式 (真理値) と非bool 判定式 (値の有無) のどちらを
 /// 使うかを分ける。
-pub fn is_bool_entity(entities : Array[@engine.Entity], name : String) -> Bool {
+fn is_bool_entity(entities : Array[@engine.Entity], name : String) -> Bool {
   for e in entities {
     if e.name == name {
       return e.ty.name() == "flag" || e.ty.name() == "bool"
@@ -1540,7 +1280,7 @@ pub fn is_bool_entity(entities : Array[@engine.Entity], name : String) -> Bool {
 /// 非対称に見えるが、dd 要素は DR-030「実体=値セル」/ LOWERING §B.4「dd は値を生まない」により
 /// `ensure_entities` が最初から entity を作らない (`not_dd` ガード)。値空間の有無は entity の有無と
 /// 一致するので、「entity が無い」は「値空間なし」の別表現であり、この既定側が正しい。
-pub fn is_none_entity(entities : Array[@engine.Entity], name : String) -> Bool {
+fn is_none_entity(entities : Array[@engine.Entity], name : String) -> Bool {
   for e in entities {
     if e.name == name {
       return e.ty.name() == "none"
@@ -1718,7 +1458,7 @@ fn eval_requires(
 
 ///|
 /// Whether ANY binding in `binds` was recorded at exactly this scope path — "this nested command
-/// scope was actually entered in this candidate". Ported from `json_conformance_wbtest.mbt`'s
+/// scope was actually entered in this candidate". Ported from `json_conformance_test.mbt`'s
 /// `scope_entered` (production code can't reference a wbtest-only symbol; wbtest files aren't
 /// linked into non-test builds) for `resolve_scope_tree`'s own use.
 fn scope_entered_here(
@@ -1756,12 +1496,12 @@ fn is_cmdsat_child(sc : @engine.Scope, name : String) -> Bool {
 /// inherit seat always sees its ANCESTOR's already-resolved values (DR-087 §3 dependency order —
 /// the parent must be fully resolved before the child's inherit lookup runs, never reversed).
 ///
-/// This is the production promotion of `json_conformance_wbtest.mbt`'s `resolve_tree` (issue
+/// This is the production promotion of `json_conformance_test.mbt`'s `resolve_tree` (issue
 /// resolve-first-constraint-pipeline, Phase 1): same recursive shape, generalized from the test
 /// harness's `DCase`-specific `NoCfg`/`CfgObj`/`CfgFiles` dispatch to a plain `provider` closure
 /// (`resolve_scope_config`'s own contract), so production callers — not just the conformance
 /// harness — can resolve a whole tree, not just one scope. `apply_requires_filter` below is
-/// the first such caller; `json_conformance_wbtest.mbt`'s own `resolve_tree` is expected to become
+/// the first such caller; `json_conformance_test.mbt`'s own `resolve_tree` is expected to become
 /// a thin `dc.cfg`-to-`provider` adapter over this function (not duplicated here).
 ///
 /// `binds` is the CLI-only raw bindings for ONE candidate path (`parse()`'s `@engine.Success`/`@engine.AmbInterp`
@@ -1866,33 +1606,6 @@ fn resolve_scope_tree_with_export(
     }
   }
   Ok(out)
-}
-
-///|
-/// Resolve a scope tree with identity result keys. The front door uses the export-aware internal
-/// variant because its AtomicAST carries the result-key map.
-pub fn resolve_scope_tree(
-  sc : @engine.Scope,
-  binds : Array[@engine.Binding],
-  env_map : Map[String, String],
-  provider : (String) -> @engine.ConfigVal?,
-  path? : Array[String] = [],
-  inherited? : Map[String, @engine.Value] = Map([]),
-  at_pos? : Int = -1,
-  tty? : Map[String, TtyObs] = Map([]),
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
-  resolve_scope_tree_with_export(
-    sc,
-    binds,
-    env_map,
-    provider,
-    path,
-    inherited,
-    at_pos,
-    tty,
-    Map([]),
-    true,
-  )
 }
 
 ///|
@@ -2020,30 +1733,6 @@ fn apply_requires_filter_with_export(
     }
     @engine.Failure(_) => o
   }
-}
-
-///|
-/// Apply requires with identity result keys. Front-door parsing uses the export-aware internal
-/// variant so default filling and requires observe the same result-cell partition.
-pub fn apply_requires_filter(
-  o : @engine.Outcome,
-  root : @engine.Node,
-  defs : Map[String, @engine.Node],
-  env : Map[String, String],
-  toks_len : Int,
-  provider? : (String) -> @engine.ConfigVal? = fn(_) { None },
-  tty? : Map[String, TtyObs] = Map([]),
-) -> @engine.Outcome {
-  apply_requires_filter_with_export(
-    o,
-    root,
-    defs,
-    env,
-    toks_len,
-    provider,
-    tty,
-    Map([]),
-  )
 }
 
 // ── value-source ladder (slice `poc/installer.mbt`'s resolve_scope / resolve_scope_config) ───
@@ -2809,58 +2498,6 @@ fn resolve_ladder_below_cli(
 }
 
 ///|
-/// Resolve every entity in a built scope against CLI bindings + an env map (no config seat). For
-/// the env / inherit ladder path. Unlike slice (whose config-less path "never errors"), a
-/// badly-typed env value now surfaces as an Err (DR-074/075 update above).
-/// `path` is this scope's DR-066 §4 result-nesting path (root-first, [] = root 直下), threaded into
-/// any ladder-fill Error the same way `resolve_scope_config`'s `path` is.
-///
-/// A scope MAY still declare a `config_file` element even on this no-config-object call path (a
-/// caller can choose not to supply config data for a particular case/run — issue
-/// bool-requires-config-inherit-gap の diverge 調査で顕在化: 元のドキュメント想定「no config_file
-/// element in scope」は呼び出し元の都合を entity 宣言の事実と混同していた)。`resolve_scope_config`
-/// の Phase 3 (`if !e.is_config_file`) と同じ規則 — config_file 要素は配線宣言であって結果 entity
-/// ではない — をここでも守る。守らないと、config データを供給しない呼び出しのときだけ config_file
-/// 要素の宣言 default が漏れて result に出現する非対称が起きる (config_seat を持つ通常 entity は
-/// config_obj=None のときの通常 default フォールスルーで正しく処理されるので対象外、config_file
-/// 自身だけがこの skip を必要とする)。
-pub fn resolve_scope(
-  sc : @engine.Scope,
-  cli : Array[@engine.Binding],
-  env_map : Map[String, String],
-  inherited? : Map[String, @engine.Value] = Map([]),
-  at_pos? : Int = -1,
-  path? : Array[String] = [],
-  tty? : Map[String, TtyObs] = Map([]),
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
-  let out : Array[@engine.Binding] = []
-  for e in sc.entities {
-    if !e.is_config_file {
-      match
-        resolve_entity(
-          e,
-          cli,
-          env_map,
-          None,
-          [],
-          inherited,
-          at_pos,
-          path,
-          tty,
-          true,
-        ) {
-        Ok(bs) =>
-          for b in bs {
-            out.push(b)
-          }
-        Err(pe) => return Err(pe)
-      }
-    }
-  }
-  Ok(out)
-}
-
-///|
 fn config_path_of(e : @engine.Entity, path : Array[String]) -> Array[String] {
   match e.config_key {
     Some(k) => k
@@ -3121,56 +2758,4 @@ fn resolve_scope_config_with_export(
     }
   }
   Ok(out)
-}
-
-///|
-/// Resolve one scope with identity result keys. Front-door callers use the export-aware tree helper;
-/// this public low-level API keeps its existing signature for callers that only have a @engine.Scope.
-pub fn resolve_scope_config(
-  sc : @engine.Scope,
-  cli : Array[@engine.Binding],
-  env_map : Map[String, String],
-  provider : (String) -> @engine.ConfigVal?,
-  path? : Array[String] = [],
-  inherited? : Map[String, @engine.Value] = Map([]),
-  at_pos? : Int = -1,
-  tty? : Map[String, TtyObs] = Map([]),
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
-  resolve_scope_config_with_export(
-    sc,
-    cli,
-    env_map,
-    provider,
-    path,
-    inherited,
-    at_pos,
-    tty,
-    Map([]),
-    true,
-  )
-}
-
-///|
-/// Fetch a subcommand's built @engine.Scope from a parent @engine.Scope by name. Subcommands are
-/// materialized as greedy `@engine.CmdSat(name, child)` entries.
-pub fn command_child(sc : @engine.Scope, name : String) -> @engine.Scope? {
-  for g in sc.greedy {
-    match g {
-      @engine.CmdSat(n, child) => if n == name { return Some(child) }
-      _ => ()
-    }
-  }
-  None
-}
-
-///|
-/// Build an inherited-context map from a parent scope's resolved bindings.
-pub fn inherited_of(
-  binds : Array[@engine.Binding],
-) -> Map[String, @engine.Value] {
-  let m : Map[String, @engine.Value] = Map([])
-  for b in binds {
-    m.set(b.key, b.value)
-  }
-  m
 }

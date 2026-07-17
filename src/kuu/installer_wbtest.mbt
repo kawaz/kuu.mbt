@@ -58,7 +58,7 @@ fn el(
   final_filters? : Array[String] = [],
   accum_filters? : Array[String] = [],
   // DR-091 §3 / DR-096 §1: long-only axis, `el`'s other builders (`opt`/`pos`,
-  // json_conformance_wbtest.mbt) already carry these — added here so lowering wbtest cases can
+  // json_conformance_test.mbt) already carry these — added here so lowering wbtest cases can
   // exercise `long_eq_sep` without hand-writing a full @engine.ElemDef literal.
   long_prefix? : String = "--",
   long_eq_sep? : @engine.EqSepMode = @engine.EsAllow,
@@ -783,7 +783,7 @@ test "multiple installer: a declared collector rides straight through to @engine
 /// 保証: collector は accum cell の伴属物 (node.mbt @engine.Entity.collector の doc comment) — multiple も
 /// repeat も無いスカラーセルに collector だけ宣言しても `ensure_entity` は捨てる (accum が None なら
 /// collector も強制 None、「累積すら起きないセルの collector」という無意味な組合せを AST に残さない)。
-/// 実運用の decode 層 (dec_multiple, json_conformance_wbtest.mbt) は collector を multiple:{...} の
+/// 実運用の decode 層 (dec_multiple, json_conformance_test.mbt) は collector を multiple:{...} の
 /// 内側キーとしてのみ受理するので、この経路 (multiple:false かつ collector 宣言) は decode からは
 /// 到達しない — installer 層の防御的な契約として単体で固定する。
 test "multiple installer: a collector declared without multiple/repeat is dropped (accum is None)" {
@@ -4243,5 +4243,53 @@ test "front_door: parse_definition -> export_map -> apply_export_keys builds a r
       assert_false(keys.contains("port"))
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
+  }
+}
+
+// ── moved whitebox coverage from the conformance runner ────────────────
+
+///|
+/// issue group-inner-bool-default-false-duplicate-top-level: `ensure_entity` (installer.mbt) の
+/// 暗黙 default:false 注入は flag preset (`type:"flag"`、@builtins.flag_type()) 固有であり、plain bool
+/// (`type:"bool"`、@builtins.bool_type()) は未発火なら他の値型と同様 absent (`@engine.Entity.default_values == None`,
+/// DR-099 §2 の `?? absent` 終端)。`normalize_option` (installer.mbt) が @builtins.flag_type()→@builtins.bool_type() の書き換え
+/// と同じ場所で default:false を前倒し確定させるため、`ensure_entity` 到達時点では両者とも
+/// 同じ bool resident でも default_values が食い違うことを @engine.Entity レベルで直接
+/// 検査する — `fixtures/value-typing/{or-leaf-factory-config,positional-group-factory-config}.json`
+/// は同じ回帰を JSON result (or 枝内 / group 内側) の断面で pin しているが、本 test は
+/// `@engine.Scope.entities` という別の断面 (内部表現) から同じ性質を固定する。
+test "ensure_entity: plain @builtins.bool_type() は @engine.Entity.default_values=None (absent)、flag preset (@builtins.flag_type()→@builtins.bool_type()) は Some([false]) を維持する" {
+  let src =
+    #|{"options": [
+    #|  {"name": "plain", "type": "bool", "long": true},
+    #|  {"name": "flg", "type": "flag", "long": true}
+    #|]}
+  let defo = match @json.parse(src).j_obj() {
+    Some(x) => x
+    None => abort("bad json fixture")
+  }
+  let def = dec_definition(defo)
+  let scope = match
+    @builtins.lower_definition(def, canonical_registry().installers()) {
+    Ok(sc) => sc
+    Err(errs) => abort("definition rejected: " + deferrs_str(errs))
+  }
+  let mut plain_found = false
+  let mut flg_found = false
+  for ent in scope.entities {
+    if ent.name == "plain" {
+      plain_found = true
+      assert_eq(ent.default_values, None)
+    }
+    if ent.name == "flg" {
+      flg_found = true
+      assert_eq(ent.default_values, Some([@engine.VBool(false)]))
+    }
+  }
+  if !plain_found {
+    abort("entity 'plain' not found in scope.entities")
+  }
+  if !flg_found {
+    abort("entity 'flg' not found in scope.entities")
   }
 }

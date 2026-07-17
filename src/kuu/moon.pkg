@@ -6,16 +6,12 @@ import {
 }
 
 import {
-  "moonbitlang/x/fs",
-  "moonbitlang/core/env",
   "moonbitlang/core/json",
 } for "wbtest"
 
-// MDR-005 §3: 公開面キュレーション (pub(all) → pub) で `Node`/`ConfigVal` 等が「外部から構築される
-// 前提」を失った結果、production コードから (wbtest からのみ、または DR-054 が定める射程外の機能
-// として) 構築される型・variant が unused_constructor (0006, 例: `FilterArg` — コメントで test-only
-// と明記済み) / struct_never_constructed (0009, 例: `TtyObs` — wbtest の tty_provider 注入 decode
-// でのみ構築) として新たに検出されるようになった。挙動には無関係な可視性変更の副作用であり、既存の
-// 未接続 variant/struct の是非は本 issue の射程外 (別途 issue 化の検討対象)。
-
-warnings = "-6-9"
+import {
+  "kawaz/kuu/kuu",
+  "moonbitlang/x/fs",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+} for "test"

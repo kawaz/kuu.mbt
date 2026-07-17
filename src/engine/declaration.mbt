@@ -21,7 +21,7 @@ pub(all) struct ElemDef {
   // the configured TypeExt directly; Entity no longer copies or interprets these fields.
   // DR-099 §1/§3: `type:` が `builtin/tty` factory (bare "tty" 糖衣 / definitions.types 経由の
   // shadow) に解決されたことを示すマーカー。decode 層 (dec_option/dec_positional,
-  // json_conformance_wbtest.mbt) が `type:` 解決の一部として直接 set する — DR-098 の独立 wire
+  // json_conformance_test.mbt) が `type:` 解決の一部として直接 set する — DR-098 の独立 wire
   // 属性 `tty:` は撤回され、installer は関与しない (int_round/bool_config と同じ「型 shadow から
   // carry するだけ」のフィールド、専用の Installer variant を持たない)。
   is_tty : Bool
@@ -155,7 +155,7 @@ pub(all) struct ElemDef {
   accum_filters : Array[FilterSpelling]
   // DR-014 / DESIGN §7.2 / DR-096 §1 (issue scope-config-object-gap, 軸別再編): the FULL
   // hierarchical scope `config` object (long_prefix/long_eq_sep/short_prefix/short_attached_value/
-  // short_combine/env_prefix/auto_env). Decode (`dec_definition`, json_conformance_wbtest.mbt)
+  // short_combine/env_prefix/auto_env). Decode (`dec_definition`, json_conformance_test.mbt)
   // reads `config` at EACH Definition/command scope, merges it with the parent scope's resolved
   // config (child key present → override, absent → inherit — DESIGN §7.2「子要素は親の config を
   // 継承、上書き可能」), and bakes the resolved 7-key tuple onto every option/positional ElemDef

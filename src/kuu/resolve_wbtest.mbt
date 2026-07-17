@@ -1670,7 +1670,7 @@ test "resolve_scope: accum × value_filters(each) — @engine.Unset does not dis
 /// token でも読まれていないので位置は「args 走査が完了した地点」= 呼び出し側の `toks.length()`
 /// 相当。本テストでは呼び出し側が明示的に `at_pos=3` を渡し、それがそのまま素通しされることを
 /// 固定する — 実際の conformance harness 側の配線 (`dc.args.length()`) は
-/// json_conformance_wbtest.mbt の `do_resolve_pe`/`resolve_tree` が担う)。
+/// json_conformance_test.mbt の `do_resolve_pe`/`resolve_tree` が担う)。
 test "resolve_scope: a value_filters/final_filters reject carries kind=@engine.KFilter and the caller's at_pos" {
   let n = ent("n", @builtins.number_type(), final_filters=["in_range:0:100"])
   let sc : @engine.Scope = {

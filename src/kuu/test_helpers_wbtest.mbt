@@ -13,3 +13,363 @@ fn chain(spellings : Array[String]) -> Array[@engine.FilterSpelling] {
 fn node_is_deprecation_mark(node : @engine.Node) -> Bool {
   node is @engine.Ext(extension) && extension.kind() == "builtin/deprecation"
 }
+
+///|
+/// Deterministic codepoint ordering for whitebox diagnostic renderers.
+fn test_str_less(a : String, b : String) -> Bool {
+  let ca = @engine.to_chars(a)
+  let cb = @engine.to_chars(b)
+  let n = if ca.length() < cb.length() { ca.length() } else { cb.length() }
+  let mut i = 0
+  while i < n {
+    let x = ca[i].to_int()
+    let y = cb[i].to_int()
+    if x < y {
+      return true
+    }
+    if x > y {
+      return false
+    }
+    i = i + 1
+  }
+  ca.length() < cb.length()
+}
+
+///|
+fn test_sort_items(arr : Array[String]) -> Unit {
+  let mut i = 1
+  while i < arr.length() {
+    let key = arr[i]
+    let mut j = i - 1
+    while j >= 0 && test_str_less(key, arr[j]) {
+      arr[j + 1] = arr[j]
+      j = j - 1
+    }
+    arr[j + 1] = key
+    i = i + 1
+  }
+}
+
+///|
+fn test_join_comma(items : Array[String]) -> String {
+  let buf = StringBuilder::new()
+  let mut first = true
+  for item in items {
+    if !first {
+      buf.write_string(",")
+    }
+    buf.write_string(item)
+    first = false
+  }
+  buf.to_string()
+}
+
+///|
+fn test_render_val(value : @engine.Value) -> String {
+  match value {
+    @engine.VStr(s) => s
+    @engine.VBool(b) => if b { "true" } else { "false" }
+    @engine.VNum(d) => {
+      let i = d.to_int()
+      if i.to_double() == d {
+        i.to_string()
+      } else {
+        d.to_string()
+      }
+    }
+  }
+}
+
+///|
+fn render_kind(kind : @engine.ErrKind) -> String {
+  match kind {
+    @engine.KParse => "parse"
+    @engine.KFilter => "filter"
+    @engine.KConstraint => "constraint"
+  }
+}
+
+///|
+fn test_render_def_kind(kind : @engine.DefErrKind) -> String {
+  match kind {
+    @engine.DVocabIntersection => "vocab-intersection"
+    @engine.DUnknownVocab => "unknown-vocab"
+    @engine.DInvalidRange => "invalid-range"
+    @engine.DAbsentRef => "absent-ref"
+    @engine.DCircularRef => "circular-ref"
+    @engine.DZeroProgress => "zero-progress"
+    @engine.DConfigCycle => "config-cycle"
+    @engine.DInvalidArgument => "invalid-argument"
+  }
+}
+
+///|
+fn deferrs_str(errors : Array[@engine.DefError]) -> String {
+  let items : Array[String] = []
+  for error in errors {
+    items.push("\{error.element}/\{test_render_def_kind(error.kind)}")
+  }
+  test_sort_items(items)
+  test_join_comma(items)
+}
+
+///|
+fn test_primary_message(errors : Array[@engine.ParseError]) -> String {
+  let mut best = errors[0]
+  for error in errors {
+    if error.args_pos > best.args_pos {
+      best = error
+    }
+  }
+  best.message
+}
+
+///|
+fn test_render_binds_result(binds : Array[@engine.Binding]) -> String {
+  let items : Array[String] = []
+  for binding in binds {
+    if !is_sentinel(binding.key) {
+      items.push("\{binding.key}=\{test_render_val(binding.value)}")
+    }
+  }
+  test_sort_items(items)
+  test_join_comma(items)
+}
+
+///|
+fn render_outcome(outcome : @engine.Outcome) -> String {
+  match outcome {
+    @engine.Success(binds) => "ok{" + test_render_binds_result(binds) + "}"
+    @engine.Failure(data) =>
+      match data.fired_action {
+        Some(name) => "action:" + name
+        None =>
+          if data.errors.length() > 0 {
+            "fail:" + test_primary_message(data.errors)
+          } else {
+            "fail:no complete parse"
+          }
+      }
+    @engine.Ambiguous(data) =>
+      "ambiguous:" + data.interpretations.length().to_string()
+  }
+}
+
+///|
+fn render_rval_sorted(value : @engine.RVal) -> String {
+  match value {
+    @engine.RScalar(scalar) => test_render_val(scalar)
+    @engine.RArr(values) => {
+      let items : Array[String] = []
+      for item in values {
+        items.push(render_rval_sorted(item))
+      }
+      "[" + test_join_comma(items) + "]"
+    }
+    @engine.RObj(fields) => {
+      let items : Array[String] = []
+      for field in fields {
+        items.push(field.0 + "=" + render_rval_sorted(field.1))
+      }
+      test_sort_items(items)
+      "{" + test_join_comma(items) + "}"
+    }
+  }
+}
+
+// ── whitebox-only wrappers removed from the production interface ──────────
+
+///|
+/// One built interpretation for whitebox collision projection checks.
+struct Interpretation {
+  result : @engine.RVal
+  claimants : Array[(String, String)]
+} derive(Eq, Debug)
+
+///|
+/// Build every DR-073 interpretation of `binds`. With no collision this is a single interpretation
+/// (empty claimants) — the ordinary export_result rendering. With N simultaneous collision groups,
+/// every combination of "which claimant occupies which key" (cross product across groups) is a
+/// distinct interpretation: each keeps only its chosen claimant's bindings for that (path, key)
+/// group (the other claimants' bindings at that group are dropped from THIS view — DR-073 §2, the
+/// entity name is the only cross-view-stable identifier since value/source can coincide) before
+/// applying export keys and building the result. `cells`/`defaults` are passed through to
+/// `build_result` unchanged (accum cells and defaults are keyed by raw entity name, matching the
+/// caller's `accum_cells(sc)` / `apply_export_to_defaults(default_cells(sc), ek)` convention — see
+/// slice `poc/helpers_wbtest.mbt`).
+fn build_interpretations(
+  binds : Array[@engine.Binding],
+  ek : Map[String, @engine.ExportKey],
+  cells : Array[AccumCell],
+  defaults : Array[DefaultCell],
+  nones? : Array[@engine.NoneCell] = [],
+) -> Array[Interpretation] {
+  let collisions = find_export_collisions(binds, ek)
+  if collisions.length() == 0 {
+    let mapped = apply_export_keys(binds, ek)
+    return [
+      {
+        result: build_result(mapped, cells, defaults, [], nones~),
+        claimants: [],
+      },
+    ]
+  }
+  let out : Array[Interpretation] = []
+  for combo in claimant_combinations(collisions) {
+    let filtered : Array[@engine.Binding] = []
+    for b in binds {
+      let mut drop = false
+      let mut gi = 0
+      while gi < collisions.length() {
+        let c = collisions[gi]
+        if path_eq(c.path, b.scope) &&
+          exposed_key_of(b.key, ek) == Some(c.key) &&
+          b.key != combo[gi] {
+          drop = true
+        }
+        gi = gi + 1
+      }
+      if !drop {
+        filtered.push(b)
+      }
+    }
+    let mapped = apply_export_keys(filtered, ek)
+    let claimants : Array[(String, String)] = []
+    let mut gi = 0
+    while gi < collisions.length() {
+      claimants.push((collisions[gi].key, combo[gi]))
+      gi = gi + 1
+    }
+    out.push({
+      result: build_result(mapped, cells, defaults, [], nones~),
+      claimants,
+    })
+  }
+  out
+}
+
+///|
+/// Apply requires with identity result keys. Front-door parsing uses the export-aware internal
+/// variant so default filling and requires observe the same result-cell partition.
+fn apply_requires_filter(
+  o : @engine.Outcome,
+  root : @engine.Node,
+  defs : Map[String, @engine.Node],
+  env : Map[String, String],
+  toks_len : Int,
+  provider? : (String) -> @engine.ConfigVal? = fn(_) { None },
+  tty? : Map[String, TtyObs] = Map([]),
+) -> @engine.Outcome {
+  apply_requires_filter_with_export(
+    o,
+    root,
+    defs,
+    env,
+    toks_len,
+    provider,
+    tty,
+    Map([]),
+  )
+}
+
+///|
+/// Resolve every entity in a built scope against CLI bindings + an env map (no config seat). For
+/// the env / inherit ladder path. Unlike slice (whose config-less path "never errors"), a
+/// badly-typed env value now surfaces as an Err (DR-074/075 update above).
+/// `path` is this scope's DR-066 §4 result-nesting path (root-first, [] = root 直下), threaded into
+/// any ladder-fill Error the same way `resolve_scope_config`'s `path` is.
+///
+/// A scope MAY still declare a `config_file` element even on this no-config-object call path (a
+/// caller can choose not to supply config data for a particular case/run — issue
+/// bool-requires-config-inherit-gap の diverge 調査で顕在化: 元のドキュメント想定「no config_file
+/// element in scope」は呼び出し元の都合を entity 宣言の事実と混同していた)。`resolve_scope_config`
+/// の Phase 3 (`if !e.is_config_file`) と同じ規則 — config_file 要素は配線宣言であって結果 entity
+/// ではない — をここでも守る。守らないと、config データを供給しない呼び出しのときだけ config_file
+/// 要素の宣言 default が漏れて result に出現する非対称が起きる (config_seat を持つ通常 entity は
+/// config_obj=None のときの通常 default フォールスルーで正しく処理されるので対象外、config_file
+/// 自身だけがこの skip を必要とする)。
+fn resolve_scope(
+  sc : @engine.Scope,
+  cli : Array[@engine.Binding],
+  env_map : Map[String, String],
+  inherited? : Map[String, @engine.Value] = Map([]),
+  at_pos? : Int = -1,
+  path? : Array[String] = [],
+  tty? : Map[String, TtyObs] = Map([]),
+) -> Result[Array[@engine.Binding], @engine.ParseError] {
+  let out : Array[@engine.Binding] = []
+  for e in sc.entities {
+    if !e.is_config_file {
+      match
+        resolve_entity(
+          e,
+          cli,
+          env_map,
+          None,
+          [],
+          inherited,
+          at_pos,
+          path,
+          tty,
+          true,
+        ) {
+        Ok(bs) =>
+          for b in bs {
+            out.push(b)
+          }
+        Err(pe) => return Err(pe)
+      }
+    }
+  }
+  Ok(out)
+}
+
+///|
+/// Resolve one scope with identity result keys. Front-door callers use the export-aware tree helper;
+/// this public low-level API keeps its existing signature for callers that only have a @engine.Scope.
+fn resolve_scope_config(
+  sc : @engine.Scope,
+  cli : Array[@engine.Binding],
+  env_map : Map[String, String],
+  provider : (String) -> @engine.ConfigVal?,
+  path? : Array[String] = [],
+  inherited? : Map[String, @engine.Value] = Map([]),
+  at_pos? : Int = -1,
+  tty? : Map[String, TtyObs] = Map([]),
+) -> Result[Array[@engine.Binding], @engine.ParseError] {
+  resolve_scope_config_with_export(
+    sc,
+    cli,
+    env_map,
+    provider,
+    path,
+    inherited,
+    at_pos,
+    tty,
+    Map([]),
+    true,
+  )
+}
+
+///|
+/// Fetch a subcommand's built @engine.Scope from a parent @engine.Scope by name. Subcommands are
+/// materialized as greedy `@engine.CmdSat(name, child)` entries.
+fn command_child(sc : @engine.Scope, name : String) -> @engine.Scope? {
+  for g in sc.greedy {
+    match g {
+      @engine.CmdSat(n, child) => if n == name { return Some(child) }
+      _ => ()
+    }
+  }
+  None
+}
+
+///|
+/// Build an inherited-context map from a parent scope's resolved bindings.
+fn inherited_of(binds : Array[@engine.Binding]) -> Map[String, @engine.Value] {
+  let m : Map[String, @engine.Value] = Map([])
+  for b in binds {
+    m.set(b.key, b.value)
+  }
+  m
+}

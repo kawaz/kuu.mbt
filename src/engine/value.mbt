@@ -125,7 +125,7 @@ pub(all) enum EqSepMode {
 ///|
 /// Decode a canonical `long_eq_sep` config string (DR-096 §1) to its `EqSepMode`. Returns None on an
 /// unknown token — the caller surfaces this as a `DecodeSkip` (`int_round`/`round_mode_of` と同じ
-/// 前例パターン、`json_conformance_wbtest.mbt` の呼び出し側)。
+/// 前例パターン、`json_conformance_test.mbt` の呼び出し側)。
 pub fn eq_sep_mode_of(s : String) -> EqSepMode? {
   match s {
     "require" => Some(EsRequire)

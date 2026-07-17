@@ -476,7 +476,7 @@ pub fn output(
 ///|
 /// 正面玄関の補助: `resolve()` の @engine.Success payload から DR-052 result-key 軸を適用した `result`
 /// オブジェクト (CONFORMANCE.md §2 の `result: {...}`) を組み立てる。runner の
-/// `proj_result_export` (json_conformance_wbtest.mbt) と kuu-cli PoC の手組み `result_to_json`
+/// `proj_result_export` (json_conformance_test.mbt) と kuu-cli PoC の手組み `result_to_json`
 /// (wire.mbt) が同一の 4 素材 (apply_export_keys/accum_cells/apply_export_to_defaults/
 /// @engine.none_cells) を重複実装していた — production 昇格でその重複を解消する (issue
 /// 2026-07-16-result-projection-production-promotion, MDR-005「射程外」節の解消、DR-109 §5

@@ -162,7 +162,7 @@ pub impl Debug for &TypeExt with fn to_repr(self) {
 /// (issue filter-spelling-inband-encoding-retyping) — no in-band string encoding / magic-tag scheme
 /// is needed since `args` carries the object form's values verbatim in a real `Array[String]` field
 /// rather than a single joined string. Colon-splitting for the shorthand happens ONCE at the decode
-/// boundary (`json_conformance_wbtest.mbt`'s `dec_filter_chain`); every downstream consumer
+/// boundary (`json_conformance_test.mbt`'s `dec_filter_chain`); every downstream consumer
 /// (filters.mbt/installer.mbt/eval.mbt/builtins/matcher_residents.mbt/resolve.mbt/value.mbt) reads `name`/`args`
 /// directly, never re-parses a spelling string.
 pub(all) struct FilterSpelling {

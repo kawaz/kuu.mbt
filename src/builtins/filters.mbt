@@ -470,7 +470,7 @@ pub fn apply_accum_filter_chain(
 /// Parse the colon-shorthand DSL string (`"in_range:1:65535"`, DR-009 §DSL 文法) into a
 /// `@engine.FilterSpelling` — the SOLE colon-splitting point for filter chains (mirrors `installer.mbt`'s
 /// `classify_long_spelling` being the sole interpreter of the variant colon DSL). The decode
-/// boundary (`json_conformance_wbtest.mbt`'s `dec_filter_chain`) calls this for every plain-string
+/// boundary (`json_conformance_test.mbt`'s `dec_filter_chain`) calls this for every plain-string
 /// chain element; wbtest call sites use it too, for the shorthand's ergonomics instead of hand-
 /// building a `@engine.FilterSpelling` struct literal per case.
 pub fn parse_filter_shorthand(s : String) -> @engine.FilterSpelling {
@@ -490,7 +490,7 @@ pub fn parse_filter_shorthand(s : String) -> @engine.FilterSpelling {
 /// order (DR-034 合成順「後ろほど優先」と同じ — chain 内は宣言順そのまま素通し、上書きの概念はない).
 /// `@engine.FilterSpelling` (node.mbt) already carries `name`/`args` structured — colon-shorthand splitting
 /// and DESIGN §8.4 / DR-085 §3 object-form decoding both happen ONCE at the decode boundary
-/// (`json_conformance_wbtest.mbt`'s `dec_filter_chain`), so this function never re-parses a spelling
+/// (`json_conformance_test.mbt`'s `dec_filter_chain`), so this function never re-parses a spelling
 /// string (issue filter-spelling-inband-encoding-retyping — replaces the earlier U+E000 PUA-tag
 /// single-string encoding that let an object-form arg containing that exact code point corrupt the
 /// split; a structured `args : Array[String]` has no such in-band collision to begin with). A

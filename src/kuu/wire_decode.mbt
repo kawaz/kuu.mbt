@@ -1,9 +1,9 @@
 // wire_decode.mbt — wire JSON (definition) の decode をプロダクションコードとして提供する層。
 //
-// MDR-005 (kuu-core 正面玄関 API): `json_conformance_wbtest.mbt` に埋もれていた definition
+// MDR-005 (kuu-core 正面玄関 API): `json_conformance_test.mbt` に埋もれていた definition
 // decode (`dec_definition` とその依存関数群) をここへ昇格する。conformance runner は本ファイル
 // の decoder をそのまま呼ぶ (ドッグフーディング) — expect 面の decode / fixture 全体の decode /
-// lowering 断面の decode はテストハーネス固有のまま `json_conformance_wbtest.mbt` に残る。
+// lowering 断面の decode はテストハーネス固有のまま `json_conformance_test.mbt` に残る。
 //
 // `DecodeSkip` は wire JSON が構文として崩れている場合の signal (未知キー・型不一致・必須キー
 // 欠如)。DR-054 の definition-error (`Array[@engine.DefError]`、`parse_definition` が返す) とは別の層 —
