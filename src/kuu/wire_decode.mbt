@@ -452,6 +452,139 @@ priv enum DCmd {
   DCommand(@engine.CommandDef)
   DCmdAlias(@engine.AliasDef)
 }
+
+///|
+priv struct InstallerDecoded {
+  vocab : Array[String]
+  long : @engine.LongDecl
+  short : Array[Char]
+  env : Array[String]
+  dd_match : String?
+  dd_self_keep : Bool
+  global_ : Bool
+  inherit_ : Bool
+  repeat : @engine.RepeatSpec?
+  optional : Bool
+  multiple : Bool
+  separator : String?
+  collector : String?
+  accumulator : String?
+  flatten : Bool?
+  config_file : Bool
+  config_key : Array[String]?
+  requires : Array[String]
+  conflicts : Array[String]
+  exclusive : Array[String]
+  required_group : Array[String]
+  required : Bool
+  alias_decl : @engine.AliasDef?
+  inheritable : Bool
+}
+
+///|
+fn decode_installer_owned(
+  json : Json,
+  context : @engine.DecodeCtx,
+  extensions : @engine.Registry,
+) -> InstallerDecoded raise DecodeSkip {
+  let vocab : Array[String] = []
+  let mut long : @engine.LongDecl = LList([])
+  let mut short : Array[Char] = []
+  let mut env : Array[String] = []
+  let mut dd_match : String? = None
+  let mut dd_self_keep = false
+  let mut global_ = false
+  let mut inherit_ = false
+  let mut repeat : @engine.RepeatSpec? = None
+  let mut optional = false
+  let mut multiple = false
+  let mut separator : String? = None
+  let mut collector : String? = None
+  let mut accumulator : String? = None
+  let mut flatten : Bool? = None
+  let mut config_file = false
+  let mut config_key : Array[String]? = None
+  let mut requires : Array[String] = []
+  let mut conflicts : Array[String] = []
+  let mut exclusive : Array[String] = []
+  let mut required_group : Array[String] = []
+  let mut required = false
+  let mut alias_decl : @engine.AliasDef? = None
+  let mut inheritable = false
+  for installer in extensions.installers() {
+    let decoded = match installer.decode(json, context) {
+      Ok(value) => value
+      Err(reason) => raise DecodeSkip(reason)
+    }
+    for key in decoded.vocab {
+      if !conformance_str_in(vocab, key) {
+        vocab.push(key)
+      }
+    }
+    match decoded.declaration {
+      ODLong(value) => long = value
+      ODShort(value) => short = value
+      ODEnv(value) => env = value
+      ODDd(match_, self_keep) => {
+        dd_match = match_
+        dd_self_keep = self_keep
+      }
+      ODGlobal(value) => global_ = value
+      ODInherit(value) => inherit_ = value
+      ODRepeat(spec, option) => {
+        repeat = spec
+        optional = option
+      }
+      ODMultiple(enabled, sep, coll, accum, flat) => {
+        multiple = enabled
+        separator = sep
+        collector = coll
+        accumulator = accum
+        flatten = flat
+      }
+      ODConfig(is_file, key) => {
+        config_file = is_file
+        config_key = key
+      }
+      ODConstraint(reqs, confs, groups, required_groups, is_required) => {
+        requires = reqs
+        conflicts = confs
+        exclusive = groups
+        required_group = required_groups
+        required = is_required
+      }
+      ODAlias(value) => alias_decl = value
+      ODInheritable(value) => inheritable = value
+      ODCommand => ()
+    }
+  }
+  {
+    vocab,
+    long,
+    short,
+    env,
+    dd_match,
+    dd_self_keep,
+    global_,
+    inherit_,
+    repeat,
+    optional,
+    multiple,
+    separator,
+    collector,
+    accumulator,
+    flatten,
+    config_file,
+    config_key,
+    requires,
+    conflicts,
+    exclusive,
+    required_group,
+    required,
+    alias_decl,
+    inheritable,
+  }
+}
 // ── JSON helpers ──────────────────────────────────────────────────────────────
 
 ///|
@@ -535,14 +668,6 @@ fn bool_field(
         Some(b) => b
         None => raise DecodeSkip(k + " is not a bool")
       }
-  }
-}
-
-///|
-fn num_int(j : Json, ctx : String) -> Int raise DecodeSkip {
-  match j.j_num() {
-    Some(d) => d.to_int()
-    None => raise DecodeSkip(ctx + " is not a number")
   }
 }
 
@@ -698,34 +823,6 @@ fn dec_filter_chain(
   }
 }
 // ── definition decoders ───────────────────────────────────────────────────────
-
-///|
-fn dec_short(o : Map[String, Json]) -> Array[Char] raise DecodeSkip {
-  match o.get("short") {
-    None => []
-    Some(j) =>
-      match j.j_str() {
-        Some(s) => @engine.to_chars(s)
-        None =>
-          match j.j_arr() {
-            Some(a) => {
-              let cs : Array[Char] = []
-              for e in a {
-                match e.j_str() {
-                  Some(s) =>
-                    for c in @engine.to_chars(s) {
-                      cs.push(c)
-                    }
-                  None => raise DecodeSkip("short[] element is not a string")
-                }
-              }
-              cs
-            }
-            None => raise DecodeSkip("short is a bool/other (stage 2)")
-          }
-      }
-  }
-}
 
 ///|
 /// Decode a wire type name through the active assembly's type-resident inventory.
@@ -1137,170 +1234,12 @@ fn dec_template_body(
 }
 
 ///|
-/// wire bool|array long → `@engine.LongDecl`, UNCHANGED — this is decode's entire responsibility for `long`
-/// now (kawaz 裁定 2026-07-08): the two-form distinction (DR-071 §1) is preserved as data instead of
-/// being collapsed into an `Array[String]` here, because collapsing it destroys information
-/// `resolve_long` (installer.mbt) needs (a bare `long:true` and an explicit `long:[":set"]` decode to
-/// the SAME `[":set"]` array, yet DR-076 §2 requires DIFFERENT flag sugar for each). Type-dependent
-/// sugar expansion, colon-DSL classification, and syntax-error detection all moved to installer.mbt's
-/// `resolve_long` / `collect_invalid_long_dsl` — decode only mirrors the wire shape.
-fn dec_long(j : Json) -> @engine.LongDecl raise DecodeSkip {
-  match j.j_bool() {
-    Some(b) => LBool(b)
-    None =>
-      match j.j_arr() {
-        Some(a) => {
-          let strs : Array[String] = []
-          for e in a {
-            match e.j_str() {
-              Some(s) => strs.push(s)
-              None => raise DecodeSkip("long[] element is not a string")
-            }
-          }
-          LList(strs)
-        }
-        None => raise DecodeSkip("long is not a bool/array")
-      }
-  }
-}
-
-///|
-fn dec_repeat(j : Json) -> @engine.RepeatSpec raise DecodeSkip {
-  let o = match j.j_obj() {
-    Some(x) => x
-    None => raise DecodeSkip("repeat is not an object")
-  }
-  allowed_keys(o, ["min", "max", "lazy"], "repeat")
-  let min = match o.get("min") {
-    Some(m) => num_int(m, "repeat.min")
-    None => 0
-  }
-  let max = match o.get("max") {
-    Some(m) => Some(num_int(m, "repeat.max"))
-    None => None
-  }
-  let lazy_ = bool_field(o, "lazy", false)
-  { min, max, lazy_ }
-}
-
-///|
-/// The DR-036 `collector` vocab this decode layer actually wires end-to-end (issue
-/// 2026-07-09-dec-multiple-collector-decode). `unwrap_single` has a real runtime (resolve.mbt's
-/// `apply_collector`/`unwrap_single`, applied to the accum cell's final array in `build_result`).
-/// `to_set`/`from_entries` are DR-036 registry presets but NOT reachable through this simple
-/// by-name field: `to_set` has no runtime implementation at all yet, and `from_entries` (DR-044)
-/// takes a shape config (`FromEntries`: Entries/KeyValue/KeyPromote) this single-string field can't
-/// carry — accepting either name here would decode successfully but silently render the plain
-/// array at runtime (a decode/runtime capability mismatch), so both are explicitly rejected with a
-/// reason instead of falling into the generic "unknown" message.
-fn known_collector(name : String) -> Bool {
-  name == "unwrap_single"
-}
-
-///|
-/// DR-036 `multiple`. Returns (fires, separator, collector, accumulator, flatten).
-/// DR-080 §1: "merge" を accumulator 語彙に追加 (append の兄弟)。戻り値の4番目 (accumulator 名)
-/// は None = 未指定 (`ensure_entity` が既定 "append" にフォールバック)、Some("merge") が DR-080 の
-/// merge accumulator を選ぶ。bool/string 糖衣 (`true`/`"append"`) は常に "append" 相当 (accumulator
-/// 名 None = デフォルト) — merge は object 形の `accumulator` キーでのみ選べる (DR-080 §1 の宣言例)。
-/// DR-091 §2: "kv_map" を同じ枠 (object 形の `accumulator` キー限定) に追加 — `installer.mbt`'s
-/// `value_prim`/`@builtins.elem_head`/`inst_long` main entry が `Some("kv_map")` を見て `KvArg` を emit し、
-/// `resolve.mbt`'s `build_result` が `AccumCell.accum == "kv_map"` を見て畳み結果を RObj にする
-/// (merge と同じ「宣言をそのまま @engine.Entity.accum へ通す」経路、ここは受理するだけ)。
-/// DR-105 §3/M-17 (統括裁定): "append"/"merge"/"kv_map" 以外の任意の accumulator 文字列も
-/// DecodeSkip せず Some(生文字列) でそのまま通す — 廃止された旧独立 "flatten" accumulator を含む
-/// 未登録名は definition-error kind=unknown-vocab として `installer.mbt`'s
-/// `collect_unknown_accumulator` が definition-time に静的に弾く (decode-time DecodeSkip は「JSON
-/// として読めない」場合専用に戻し、「読めるが無効な語彙」は definition-error 側の役割に一本化)。
-/// DR-105 §1/§2 (統括裁定 M-16): 5 番目の戻り値 `flatten` は「`flatten` キーが宣言されたか」自体を
-/// Option で運ぶ (None=未宣言、Some(bool)=宣言値) — 値でなくキーの存在が gate の判定材料になる
-/// (`collect_flatten_non_append` の doc comment 参照)。bool/string 糖衣形は `flatten` を宣言する
-/// 経路を持たない (常に None)。
-fn dec_multiple(
-  j : Json,
-) -> (Bool, String?, String?, String?, Bool?) raise DecodeSkip {
-  match j.j_bool() {
-    Some(b) => return (b, None, None, None, None)
-    None => ()
-  }
-  match j.j_str() {
-    Some("append") => return (true, None, None, None, None)
-    Some(other) => raise DecodeSkip("multiple preset '" + other + "'")
-    None => ()
-  }
-  match j.j_obj() {
-    Some(o) => {
-      allowed_keys(
-        o,
-        ["accumulator", "separator", "collector", "flatten"],
-        "multiple",
-      )
-      let accumulator = match jf_str(o, "accumulator") {
-        Some("append") => None // 既定と同義 — @engine.Entity.accum への写しは ensure_entity が "append" にフォールバック
-        Some(a) => Some(a) // "merge"/"kv_map"/未登録名いずれも通す — vocab 検査は definition-error 側
-        None => None
-      }
-      let collector = match jf_str(o, "collector") {
-        Some(c) =>
-          if known_collector(c) {
-            Some(c)
-          } else {
-            raise DecodeSkip(
-              "multiple.collector '" + c + "' has no wired runtime yet",
-            )
-          }
-        None => None
-      }
-      let flatten = match o.get("flatten") {
-        Some(fj) =>
-          match fj.j_bool() {
-            Some(b) => Some(b)
-            None => raise DecodeSkip("multiple.flatten is not a bool")
-          }
-        None => None
-      }
-      (true, jf_str(o, "separator"), collector, accumulator, flatten)
-    }
-    None => raise DecodeSkip("multiple is not a bool/string/object")
-  }
-}
-
-///|
 fn dec_export(j : Json) -> @engine.ExportKey {
   match j.j_str() {
     Some("") => @engine.export_key_null()
     Some(s) => @engine.export_key(s)
     None => @engine.export_key_null()
   }
-}
-
-///|
-fn dec_alias(o : Map[String, Json]) -> @engine.AliasDef raise DecodeSkip {
-  allowed_keys(
-    o,
-    ["alias", "name", "short", "long", "deprecated", "type"],
-    "alias",
-  )
-  let target = match jf_str(o, "alias") {
-    Some(t) => t
-    None => raise DecodeSkip("alias missing target")
-  }
-  let name = jf_str(o, "name")
-  match name {
-    Some(n) => check_reserved_name(n, "alias")
-    None => ()
-  }
-  let short = dec_short(o)
-  // DR-076 §2 flag 差し替え/補完の alias 側適用 (issue 2026-07-08 dec-alias-long-override-flag-
-  // sugar-gap): decode はここでも canonical 側の dec_long と同じく wire の bool|array 二形を
-  // `@engine.LongDecl` にそのまま写すだけ — 型依存の糖衣解釈は installer.mbt の desugar_aliases
-  // (resolve_long 経由) が担う。
-  let long_override : @engine.LongDecl? = match o.get("long") {
-    Some(lj) => Some(dec_long(lj))
-    None => None
-  }
-  let deprecated = bool_field(o, "deprecated", false)
-  { target, name, short, long_override, deprecated }
 }
 
 ///|
@@ -1579,33 +1518,20 @@ fn dec_option(
     Some(x) => x
     None => raise DecodeSkip("option is not an object")
   }
-  if has_key(o, "alias") {
-    return DAlias(dec_alias(o))
+  let owned = decode_installer_owned(j, DecodeOption, extensions)
+  match owned.alias_decl {
+    Some(value) => return DAlias(value)
+    None => ()
   }
-  allowed_keys(
-    o,
-    [
-      "id", "name", "type", "long", "short", "env", "default", "global", "inherit",
-      "inheritable", "multiple", "requires", "conflicts_with", "exclusive_group",
-      "required_group", "required", "export_key", "config_key", "deprecated",
-      // DR-104 §2/§4 (meta.json fixture): help/補完の既定表示から除外される入口 (DR-058 §1)。
-      // complete API 自体はこの値に関わらず候補を返す (DR-060 §3)。
-       "hidden", "or", "values", "piece_filters", "value_filters", "final_filters",
-      "accum_filters", "ref", "repeat",
-      // DR-060 §4 / DR-104 §2(d): この要素の値位置の動的 completer 名 (registry `completers` の
-      // 参照)。実行はしない、名前を @engine.Entity.completer へ運ぶだけ (DR-060 §3)。
-       "completer",
-      // DR-090 §2: dd 専用の2軸拡張キー — 他 type では無意味だが、dd 分岐 (下) だけが読む
-      // ("option" 共通 allowed_keys に足すのは他 wire 属性 (env/config_key 等) と同じ扱い方)。
-       "match", "self",
-      // codex 節目レビュー Major 1 (DESIGN §7.2「子要素は親の config を継承、上書き可能」/ DR-049
-      // §4 要素単位 env_prefix 上書き): 要素単位の scope config override — `dec_option` 自身は
-      // この値を消費しない (`allowed_keys` を通すためだけ)、実際の decode/merge は呼び出し元
-      // `dec_definition` が `oj` を再読して行う (`dec_scope_config` の 2 段目呼び出し)。
-       "config",
-    ],
-    "option",
-  )
+  let allowed = [
+    "id", "name", "type", "default", "export_key", "deprecated", "hidden", "or",
+    "values", "piece_filters", "value_filters", "final_filters", "accum_filters",
+    "ref", "completer", "config",
+  ]
+  for key in owned.vocab {
+    allowed.push(key)
+  }
+  allowed_keys(o, allowed, "option")
   let tystr = match jf_str(o, "type") {
     Some(t) => t
     None =>
@@ -1662,22 +1588,15 @@ fn dec_option(
           }
       }
   }
-  if tystr == "dd" {
-    // DR-090 §2: `match` (regex トリガ) / `self` (`"drop"` 既定 | `"keep"`)。`self` の語彙外文字列は
-    // decode 時点で拒否 (綴りミスを黙って drop 扱いにしない、DR-054 の「構文の驚きは v1 Error」筋)。
-    let match_ = jf_str(o, "match")
-    let self_keep = match jf_str(o, "self") {
-      Some("drop") | None => false
-      Some("keep") => true
-      Some(other) =>
-        raise DecodeSkip("dd 'self' has unknown value '" + other + "'")
-    }
-    // DR-093 §2/§5: dd も required を持てる (`{"type":"dd","required":true}`、新規 wire 語彙ゼロ)。
-    let required = bool_field(o, "required", false)
-    // DR-099 §1: dd は `type:"dd"` — `type:` は単一選択のフィールドなので、同一要素が
-    // builtin/tty を同時に選ぶこと自体ができない (DR-098 §4 が必要とした dd-vs-tty
-    // definition-error は構文的に発生しなくなった、dd_marker のコメント参照)。
-    return DOpt({ ..dd_marker(match_~, self_keep~, required~), name, })
+  if tystr == "dd" && conformance_str_in(owned.vocab, "match") {
+    return DOpt({
+      ..dd_marker(
+        match_=owned.dd_match,
+        self_keep=owned.dd_self_keep,
+        required=owned.required,
+      ),
+      name,
+    })
   }
   // DR-061 §3: type shadow lookup — user 定義の type 名なら base type resident + parse 相 config を採用、
   // canonical 型名 (string/int/...) にフォールバック。help/config_file は語彙 keyword で shadow の
@@ -1710,17 +1629,31 @@ fn dec_option(
         true,
       )
     "config_file" =>
-      (
-        @builtins.string_type(),
-        false,
-        true,
-        @engine.RError,
-        false,
-        @builtins.bool_config_canonical(),
-        false,
-        None,
-        true,
-      )
+      if owned.config_file {
+        (
+          @builtins.string_type(),
+          false,
+          true,
+          @engine.RError,
+          false,
+          @builtins.bool_config_canonical(),
+          false,
+          None,
+          true,
+        )
+      } else {
+        (
+          dec_ty(tystr, name, extensions),
+          false,
+          false,
+          @engine.RError,
+          false,
+          @builtins.bool_config_canonical(),
+          false,
+          None,
+          true,
+        )
+      }
     "tty" | "builtin/tty" =>
       (
         @builtins.bool_type(),
@@ -1767,36 +1700,31 @@ fn dec_option(
   // DR-071 §1 / kawaz 裁定 2026-07-08: decode は wire の bool|array 二形をそのまま `@engine.LongDecl` に写す
   // だけ — 糖衣展開・colon DSL 分類 (variants の分離を含む) は installer.mbt の `resolve_long` が
   // `normalize_option` から担う (下記 `opt(...)` は `variants` を渡さない = 常に [] のまま宣言層へ)。
-  let long_decl : @engine.LongDecl = match o.get("long") {
-    Some(lj) => dec_long(lj)
-    None => LList([])
-  }
-  let short = dec_short(o)
-  let env = dec_strs(o.get("env"))
+  let long_decl = owned.long
+  let short = owned.short
+  let env = owned.env
   let default : Array[@engine.Value]? = match o.get("default") {
     Some(d) => Some(json_to_default_values(d))
     None => None
   }
-  let global = bool_field(o, "global", false)
-  let inherit_flag = bool_field(o, "inherit", false)
-  let inheritable = bool_field(o, "inheritable", false)
-  let (multiple, sep, coll, acc, flat) = match o.get("multiple") {
-    Some(m) => dec_multiple(m)
-    None => (false, None, None, None, None)
-  }
-  let requires = dec_strs(o.get("requires"))
-  let conflicts = dec_strs(o.get("conflicts_with"))
-  let exclusive = dec_strs(o.get("exclusive_group"))
-  let required_group = dec_strs(o.get("required_group"))
-  let required = bool_field(o, "required", false)
+  let global = owned.global_
+  let inherit_flag = owned.inherit_
+  let inheritable = owned.inheritable
+  let multiple = owned.multiple
+  let sep = owned.separator
+  let coll = owned.collector
+  let acc = owned.accumulator
+  let flat = owned.flatten
+  let requires = owned.requires
+  let conflicts = owned.conflicts
+  let exclusive = owned.exclusive
+  let required_group = owned.required_group
+  let required = owned.required
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
     None => @engine.export_key_unset()
   }
-  let config_key : Array[String]? = match o.get("config_key") {
-    Some(c) => Some(dec_strs(Some(c)))
-    None => None
-  }
+  let config_key = owned.config_key
   let deprecated = bool_field(o, "deprecated", false)
   let hidden = bool_field(o, "hidden", false)
   // DR-060 §4 / DR-104 §2(d): `completer` names a `completers` registry entry — decode reads the
@@ -1816,13 +1744,7 @@ fn dec_option(
   // `opt(...)` below omits both — they keep `opt`'s defaults (`"--"`/`@engine.EsAllow`) here and get set for
   // real by the caller (`dec_definition`).
   let ref_ = jf_str(o, "ref")
-  // DR-078 §1 option repeat (issue 2026-07-09-ref-template-result-shape, new capability): `repeat`
-  // used to be positional-only (`dec_positional`'s own decode above) — mirrored here now that
-  // installer.mbt's `inst_long` wires it into an option's satellite (`@engine.GreedyRepeat`, eval.mbt).
-  let repeat : @engine.RepeatSpec? = match o.get("repeat") {
-    Some(r) => Some(dec_repeat(r))
-    None => None
-  }
+  let repeat = owned.repeat
   DOpt({
     ..opt(
       name,
@@ -1886,30 +1808,23 @@ fn dec_positional(
     Some(x) => x
     None => raise DecodeSkip("positional is not an object")
   }
-  allowed_keys(
-    o,
-    [
-      "id", "name", "type", "repeat", "optional", "multiple", "export_key", "config_key",
-      "default", "positionals", "or", "piece_filters", "value_filters", "final_filters",
-      "accum_filters", "ref", "env", "required", "requires",
-      // codex 節目レビュー Major 1 (dec_option 側と同じ要素単位 scope config override、
-      // 対称の positional 版)。
-       "config",
-      // DR-060 §4 / DR-104 §2(d): dec_option 側と対称 — positional の値スロットも completer 名を
-      // 宣言できる (例: ファイルパスを取る positional)。
-       "completer",
-      // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め (DR-063 A.1 裸文字列
-      // → exact 正規化): `{"exact": "init"}` のような、位置消費される無名の照合 leaf。
-       "exact",
-    ],
-    "positional",
-  )
+  let owned = decode_installer_owned(j, DecodePositional, extensions)
+  let allowed = [
+    "id", "name", "type", "export_key", "default", "positionals", "or", "piece_filters",
+    "value_filters", "final_filters", "accum_filters", "ref", "config", "completer",
+    "exact",
+  ]
+  for key in owned.vocab {
+    allowed.push(key)
+  }
+  allowed_keys(o, allowed, "positional")
   // MDR-004 §2: "positionals" (named nested group, BGroup) and "or" (anonymous structural or,
   // BOr) are decoded via @engine.ElemBody now — the gates that used to reject these keys are GONE. A
   // positional's "or" is ALWAYS structural (there is no DR-055 value-enum-or concept for
   // positionals — that's an option-only constraint-declaration sugar, §5.3).
   match o.get("positionals") {
-    Some(pj) => return dec_positional_group(o, pj, shadows, extensions)
+    Some(pj) =>
+      return dec_positional_group(o, pj, shadows, extensions, owned.repeat)
     None => ()
   }
   // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め (DR-063 A.1 / DR-018 配置
@@ -2022,23 +1937,18 @@ fn dec_positional(
   let ty = @builtins.configured_type(
     ty, int_round_from_shadow, base_prefix_from_shadow, bool_config_from_shadow,
   )
-  let repeat : @engine.RepeatSpec? = match o.get("repeat") {
-    Some(r) => Some(dec_repeat(r))
-    None => None
-  }
-  let optional = bool_field(o, "optional", false)
-  let (multiple, sep, coll, acc, flat) = match o.get("multiple") {
-    Some(m) => dec_multiple(m)
-    None => (false, None, None, None, None)
-  }
+  let repeat = owned.repeat
+  let optional = owned.optional
+  let multiple = owned.multiple
+  let sep = owned.separator
+  let coll = owned.collector
+  let acc = owned.accumulator
+  let flat = owned.flatten
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
     None => @engine.export_key_unset()
   }
-  let config_key : Array[String]? = match o.get("config_key") {
-    Some(c) => Some(dec_strs(Some(c)))
-    None => None
-  }
+  let config_key = owned.config_key
   let default : Array[@engine.Value]? = match o.get("default") {
     Some(d) => Some(json_to_default_values(d))
     None => None
@@ -2052,20 +1962,15 @@ fn dec_positional(
   // (@engine.Entity.env_key applies uniformly across options/positionals, `dec_option`'s same-named
   // field) — this was missing from the positional decoder entirely (`allowed_keys` rejected it
   // outright), a genuine decode gap surfaced by `positional-env-presence.json`.
-  let env = dec_strs(o.get("env"))
-  // DR-093 §1/§2/§5: positional も required を持てる (corpus/real-cli の
-  // `{"name":"path","type":"string","required":true}` 実例が示す通り、option 限定ではない)。
-  let required = bool_field(o, "required", false)
-  // DR-093 §3/§5: positional も requires (他要素への依存) を持てる — die の骨格
-  // (`{"name":"args","requires":["--"]}`) は requires のトリガ側が positional である実例。
-  // option 側 (`dec_option`) は既に対応済みだったが positional 側は decode gap だった
-  // (fixtures/constraints-parse/requires-dd-target.json が発見)。
-  let requires = dec_strs(o.get("requires"))
+  let env = owned.env
+  let required = owned.required
+  let requires = owned.requires
   // DR-060 §4 / DR-104 §2(d): dec_option 側と対称の decode — completer 名の verbatim carry。
   let completer = jf_str(o, "completer")
   pos(
     name,
     ty,
+    inherit_=owned.inherit_,
     repeat~,
     optional~,
     multiple~,
@@ -2103,16 +2008,13 @@ fn dec_positional_group(
   pj : Json,
   shadows : Map[String, TypeShadow],
   extensions : @engine.Registry,
+  repeat : @engine.RepeatSpec?,
 ) -> @engine.ElemDef raise DecodeSkip {
   let name = match jf_str(o, "name") {
     Some(s) => s
     None => raise DecodeSkip("positional (named group) missing 'name'")
   }
   check_reserved_name(name, "positional (named group)")
-  let repeat : @engine.RepeatSpec? = match o.get("repeat") {
-    Some(r) => Some(dec_repeat(r))
-    None => None
-  }
   let inner_arr = match pj.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("positionals is not an array")
@@ -2323,8 +2225,10 @@ fn dec_command(
     Some(x) => x
     None => raise DecodeSkip("command is not an object")
   }
-  if has_key(o, "alias") {
-    return DCmdAlias(dec_alias(o))
+  let owned = decode_installer_owned(j, DecodeCommand, extensions)
+  match owned.alias_decl {
+    Some(value) => return DCmdAlias(value)
+    None => ()
   }
   allowed_keys(
     o,

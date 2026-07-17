@@ -100,3 +100,44 @@ test "parse_definition rejects an unregistered type as a definition error" {
     _ => fail("unregistered type must produce one definition error")
   }
 }
+
+///|
+test "option and positional allowed keys exclude unregistered installer vocab" {
+  // The wire key surface is assembled from the active installer residents. A type resident alone
+  // does not authorize either long option spelling or repeat positional syntax.
+  let registry = @engine.Registry::new()
+  assert_true(registry.register_type(@builtins.string_type()))
+  let option = @json.parse(
+    "{\"options\":[{\"name\":\"value\",\"type\":\"string\",\"long\":true}]}",
+  )
+  match parse_definition(option, extensions=registry) {
+    Err(Malformed(reason)) =>
+      assert_true(reason.contains("unsupported key 'long'"))
+    _ => fail("long must require a registered long installer")
+  }
+  let positional = @json.parse(
+    "{\"positionals\":[{\"name\":\"value\",\"type\":\"string\",\"repeat\":{\"min\":0}}]}",
+  )
+  match parse_definition(positional, extensions=registry) {
+    Err(Malformed(reason)) =>
+      assert_true(reason.contains("unsupported key 'repeat'"))
+    _ => fail("repeat must require a registered repeat installer")
+  }
+}
+
+///|
+test "registered installer vocab extends option and positional allowed keys" {
+  // Registering the corresponding residents makes the same keys decodable; no hard-coded option
+  // or positional key table is needed in the assembly decoder.
+  let registry = @engine.Registry::new()
+  assert_true(registry.register_type(@builtins.string_type()))
+  registry.register_installer(@builtins.long_installer())
+  registry.register_installer(@builtins.repeat_installer())
+  let definition = @json.parse(
+    "{\"options\":[{\"name\":\"value\",\"type\":\"string\",\"long\":true}],\"positionals\":[{\"name\":\"rest\",\"type\":\"string\",\"repeat\":{\"min\":0}}]}",
+  )
+  match parse_definition(definition, extensions=registry) {
+    Ok(_) => ()
+    Err(_) => fail("registered long/repeat vocab must decode")
+  }
+}

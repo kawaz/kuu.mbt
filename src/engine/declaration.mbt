@@ -54,7 +54,7 @@ pub(all) struct ElemDef {
   repeat : RepeatSpec? // repeat installer 所有 (DR-043)
   optional : Bool // repeat:{min:0,max:1} の糖衣 (DR-043) — repeat 語彙が所有
   multiple : Bool // multiple installer 所有 (DR-034/043)
-  // DR-036 accumulator 名 (decode 層 dec_multiple 所有)。None = 未指定時のデフォルト ("append")、
+  // DR-036 accumulator 名 (multiple installer の decode 所有)。None = 未指定時のデフォルト ("append")、
   // Some("merge")/Some("kv_map") が DR-080/DR-091 §2 の accumulator を選ぶ。`ensure_entity` がそのまま
   // `Entity.accum` へ写す — 中間の installer 変換は無い (collector と同じ「宣言をそのまま Entity へ通す」
   // 経路)。「multiple:true なら常に append」という旧固定写像をこのフィールドで一般化する (DR-080 波及節)。
@@ -64,7 +64,7 @@ pub(all) struct ElemDef {
   // が静的に弾く (decode-time の DecodeSkip ではなく definition-time の gate に一本化)。
   accumulator : String?
   separator : String? // multiple パイプラインの separator (DR-034)
-  // DR-105 §1/§2 (統括裁定 M-16、decode 層 dec_multiple 所有): `multiple: {..., flatten: <bool>}` の
+  // DR-105 §1/§2 (統括裁定 M-16、multiple installer の decode 所有): `multiple: {..., flatten: <bool>}` の
   // 宣言有無そのもの (値ではなく KEY の存在) を保持する — None = キー未宣言、Some(b) = 宣言された値。
   // 存在ベースの gate (`collect_flatten_non_append`) が「値が false でも append 以外の accumulator に
   // flatten キーが宣言されていれば invalid-range」を判定するために「宣言したかどうか」自体が必要
@@ -73,7 +73,7 @@ pub(all) struct ElemDef {
   flatten : Bool?
 
   // DR-036 collector: `multiple: {accumulator, collector}` の object 形が持つ collector 属性 (decode
-  // 層 dec_multiple 所有、json_conformance_wbtest.mbt)。`ensure_entity` がそのまま `Entity.collector`
+  // 層の multiple installer decode 所有)。`ensure_entity` がそのまま `Entity.collector`
   // へ写す — 中間の installer 変換は無い (この属性を消費する唯一の installer は「宣言をそのまま Entity
   // へ通す」ensure_entity 自身)。None = collector 未指定 (accumulator 連動デフォルト、DR-036)。
   collector : String?
@@ -280,7 +280,7 @@ pub(all) struct Variant {
 
 ///|
 /// `long` attribute の wire 二形 (DR-071 §1): JSON では `true`/`false` (bool 糖衣) か `[...]` (variant
-/// DSL の配列) のどちらか。decode 層 (dec_long) はこの二形をそのまま写すだけ — 型依存の糖衣展開
+/// DSL の配列) のどちらか。long installer の decode はこの二形をそのまま写すだけ — 型依存の糖衣展開
 /// (DR-076 §2 flag 差し替え/補完) や colon DSL 分類 (DR-011) は installer 層の `resolve_long` が担う
 /// (二形の区別は wire 上でしか付かない情報なので、展開後の `Array[String]` 単独では復元できない —
 /// decode 層で糖衣を潰すと installer 層がこの区別を必要とする場面で情報が失われる)。

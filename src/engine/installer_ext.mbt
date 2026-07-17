@@ -142,8 +142,39 @@ pub fn InstallBuilder::templates(self : InstallBuilder) -> Map[String, Node] {
 }
 
 ///|
+pub(all) enum DecodeCtx {
+  DecodeOption
+  DecodePositional
+  DecodeCommand
+} derive(Eq, Debug)
+
+///|
+pub(all) enum OwnedDecl {
+  ODLong(LongDecl)
+  ODShort(Array[Char])
+  ODEnv(Array[String])
+  ODDd(String?, Bool)
+  ODGlobal(Bool)
+  ODInherit(Bool)
+  ODRepeat(RepeatSpec?, Bool)
+  ODMultiple(Bool, String?, String?, String?, Bool?)
+  ODConfig(Bool, Array[String]?)
+  ODConstraint(Array[String], Array[String], Array[String], Array[String], Bool)
+  ODAlias(AliasDef?)
+  ODInheritable(Bool)
+  ODCommand
+} derive(Eq, Debug)
+
+///|
+pub(all) struct DecodedOwnedDecl {
+  vocab : Array[String]
+  declaration : OwnedDecl
+}
+
+///|
 pub(open) trait InstallerExt {
   fn vocab(Self) -> Array[String]
+  fn decode(Self, Json, DecodeCtx) -> Result[DecodedOwnedDecl, String]
   fn apply(Self, InstallBuilder) -> Unit
   fn collect_defs_errors(Self, DefsView) -> Array[DefError]
 }
