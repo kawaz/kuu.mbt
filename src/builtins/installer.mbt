@@ -521,7 +521,10 @@ fn normalize_option(e : @engine.ElemDef) -> @engine.ElemDef {
     // 持たないので `ensure_entity` 側の注入対象を絞る一方、flag 由来の bool_type() は preset を維持する
     // 必要がある — 明示 default があればそちらが勝つのは変わらない)。
     let default_values2 = if e.ty.name() == "flag" && e.default_values is None {
-      Some([@engine.VBool(false)])
+      match e.ty.default_seat_resolver(@engine.seat_ctx(None)) {
+        Some(value) => Some([value])
+        None => None
+      }
     } else {
       e.default_values
     }
@@ -1173,28 +1176,23 @@ fn ensure_entity(
   // 同型 config seat (DR-050 §3): config_file 要素が存在すれば全 value cell に config seat を宣言
   // (自身が config_file の要素は循環禁止で除く)。config_key は path override; None = 同型。
   let config_seat = has_cf && !e.is_config_file
-  // Preset defaults are resident-owned: flag supplies false and count supplies 0 only
-  // when no explicit default exists. Ordinary bool/number residents remain absent.
-  // DR-083 keeps every scalar default in the uniform length-1 array representation.
-  // DR-099 §2: is_tty 要素は bool_type() の暗黙 default:false プリセットを受けない — 素の bool と違い、
-  // is_tty 要素の default 席は `resolve.mbt`'s `resolve_ladder_below_cli` が `fold(観測) ?? 宣言
-  // default ?? absent` という独自規則で解決する。ここで先回りに false を注入してしまうと「宣言
-  // default 無し」という状態が失われ、fold が観測なしの場合に absent へ落ちる余地が無くなる
-  // (常に false が浮かび上がってしまう) — is_tty 要素は default_values を宣言されたとおり (無指定
-  // なら None) に持ち回り、fold の側で吸収させる。
+  // Preset defaults are resident-owned. tty remains a distinct resident on Entity so its
+  // provider-backed default-seat resolver can run at ladder time; count supplies 0 before
+  // its value cell converges to the ordinary number resident.
+  let seat_ty = if e.is_tty {
+    tty_type(e.tty_stream, cygwin=e.tty_cygwin)
+  } else {
+    e.ty
+  }
   let default_values : Array[@engine.Value]? = match e.default_values {
     Some(vs) => Some(vs)
     None =>
-      if e.is_tty {
-        None
-      } else {
-        match e.ty.default_seat_resolver(@engine.seat_ctx(None)) {
-          Some(value) => Some([value])
-          None => None
-        }
+      match seat_ty.default_seat_resolver(@engine.seat_ctx(None)) {
+        Some(value) => Some([value])
+        None => None
       }
   }
-  let ty2 = if e.ty.name() == "count" { number_type() } else { e.ty }
+  let ty2 = if seat_ty.name() == "count" { number_type() } else { seat_ty }
   build
   .entities()
   .push({
@@ -1205,11 +1203,6 @@ fn ensure_entity(
     config_key: e.config_key,
     is_config_file: e.is_config_file,
     inherit_: false, // MDR-003: node.mbt 側 @engine.Entity.inherit_
-    // DR-099 §1: is_tty/tty_stream/tty_cygwin は @engine.ElemDef からそのまま carry するだけ (int_round と
-    // 同じパターン) — 専用 installer が後から埋める mutable seat ではない。
-    is_tty: e.is_tty,
-    tty_stream: e.tty_stream,
-    tty_cygwin: e.tty_cygwin,
     accum,
     // DR-105 §1/§3: flatten (append-only dial) and is_multiple_decl (DR-084 §2 origin marker) —
     // both already false-by-construction whenever `accum` is None (the tuple above only ever
@@ -1239,8 +1232,7 @@ fn ensure_entity(
     } else {
       []
     },
-    hidden: e.hidden,
-    completer: e.completer,
+    extension: entity_ext(hidden=e.hidden, completer=e.completer),
   })
 }
 

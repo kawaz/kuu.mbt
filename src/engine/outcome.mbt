@@ -334,8 +334,8 @@ pub fn complete_tree(
         for c0 in cs {
           let c = if c0.is_value {
             match entities.get(entity_key(c0.path, c0.origin)) {
-              // `Some(Some(ent))`: a clean, unambiguous Entity — carry its completer.
-              Some(Some(ent)) => { ..c0, completer: ent.completer }
+              // `Some(Some(ent))`: dispatch the clean Entity's opaque candidate metadata.
+              Some(Some(ent)) => ent.extension.complete_candidate(c0)
               // `Some(None)`: a key collision detected at collection time (see
               // `collect_entities_into`'s doc comment) — no completer, same as "unresolved".
               Some(None) => c0
@@ -473,7 +473,7 @@ fn collect_entities_into(
     match out.get(k) {
       None => out.set(k, Some(e))
       Some(Some(existing)) =>
-        if existing.completer != e.completer {
+        if existing.extension != e.extension {
           out.set(k, None) // collision under an indistinguishable path — see doc comment
         }
       Some(None) => () // already a known collision, stays a collision

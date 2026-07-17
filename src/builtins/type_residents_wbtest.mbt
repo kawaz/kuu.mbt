@@ -86,3 +86,39 @@ test "@engine.TypeExt default resolver supplies only preset defaults" {
     None,
   )
 }
+
+///|
+test "tty TypeExt owns its provider key and default-seat fold" {
+  // The resident, not Entity/resolve, owns stream selection and the terminal-or-Cygwin fold.
+  let tty = tty_type(Some("stdout"), cygwin=true)
+  assert_eq(tty.default_seat_observation_key(), Some("stdout"))
+  assert_eq(
+    tty.default_seat_resolver(
+      @engine.seat_ctx(
+        Some(@engine.VBool(false)),
+        observed=Some([false.to_json(), true.to_json()].to_json()),
+      ),
+    ),
+    Some(@engine.VBool(true)),
+  )
+  // Missing observation falls back to the declared default, then to absence.
+  assert_eq(
+    tty.default_seat_resolver(@engine.seat_ctx(Some(@engine.VBool(false)))),
+    Some(@engine.VBool(false)),
+  )
+  assert_eq(
+    tty_type(Some("stderr"), cygwin=false).default_seat_resolver(
+      @engine.seat_ctx(None),
+    ),
+    None,
+  )
+}
+
+///|
+test "EntityExt carries completion metadata opaquely into Cand" {
+  // Engine dispatches one opaque decorator; the builtin resident owns hidden/completer contents.
+  let extension = entity_ext(hidden=true, completer=Some("files"))
+  let cand = extension.complete_candidate(@engine.pend_value("string", "path"))
+  assert_eq(cand.meta.hidden, true)
+  assert_eq(cand.completer, Some("files"))
+}

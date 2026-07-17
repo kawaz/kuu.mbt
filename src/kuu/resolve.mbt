@@ -2705,36 +2705,54 @@ fn resolve_ladder_below_cli(
   if !include_default {
     return Ok([])
   }
-  // tty preset 型の default 席解決規則 (DR-099 §2/§12b): ラダーそのものに専用席は無い (5 段固定、
-  // §11.4) — `is_tty` 要素だけが「default 席の中身」を fold(観測) で差し替える:
-  //   resolved_default = fold(観測) ?? 宣言 default ?? absent
-  //   fold(観測) = terminal || (tty_cygwin && cygwin)
-  // 供給値は既に native bool なので env/config と違い pieceProcessor (piece_filters/parse,
-  // String→T の相) を経由しない — `@engine.mkb` へ直接 `@engine.VBool` を渡すだけで DR-050 §4 の「型一致で T 域
-  // 直行」原理そのまま (`apply_entity_filters` 側の value_filters/final_filters, T→T の相は他の全
-  // seat と同じく後段で通る)。観測が得られれば宣言 default より必ず勝つ (fold が定まった時点で
-  // return するので下の宣言 default 分岐には進まない) — accum セルでも scalar セルでも単一 binding
-  // として供給し、以降は通常の default 席と同じ経路に合流する (multiple×tty に個別規定は要らない、
-  // DR-099 §1)。観測なし (`tty_map` にキーが無い = 提供なし、env の「未設定」/ config の「読めない」
-  // と同じ「席が空」) はフォールスルーして下の宣言 default 分岐へ進む — `ensure_entity`
-  // (installer.mbt) が is_tty 要素には @builtins.bool_type() の暗黙 default:false を注入しないため、宣言 default も
-  // 無ければ absent (下の分岐が `Ok([])` を返す、§2.6 の通常の absent と同じ帰結)。
-  if e.is_tty {
-    match e.tty_stream {
-      Some(stream) =>
-        match tty_map.get(stream) {
-          Some(obs) => {
-            let computed = obs.terminal || (e.tty_cygwin && obs.cygwin)
-            return Ok([
-              @engine.mkb(e.name, @engine.VBool(computed), @engine.Tty),
-            ])
-          }
-          None => () // 観測なし → 下の宣言 default 分岐へフォールスルー
+  // Provider-backed preset resolution is descriptor dispatch: the type resident owns
+  // the opaque provider key and JSON schema, while this ladder only transports the
+  // selected observation. tty currently supplies `[terminal, cygwin]`; the resident owns
+  // `terminal || (tty_cygwin && cygwin)` and the declared-default fallback.
+  match e.ty.default_seat_observation_key() {
+    Some(key) => {
+      let observed : Json? = match tty_map.get(key) {
+        Some(obs) =>
+          Some([obs.terminal.to_json(), obs.cygwin.to_json()].to_json())
+        None => None
+      }
+      let declared : @engine.Value? = if e.accum is None {
+        match e.default_values {
+          Some([value]) => Some(value)
+          _ => None
         }
-      // tty_stream 未設定は `collect_tty_stream_missing` (installer.mbt) が定義時点で弾いている
-      // (DR-099 §7) — ここに到達する経路は無い防御的分岐。
-      None => ()
+      } else {
+        None
+      }
+      match e.ty.default_seat_resolver(@engine.seat_ctx(declared, observed~)) {
+        Some(value) =>
+          match
+            @builtins.config_to_value(
+              @engine.value_to_configval(value),
+              e.ty,
+              e.piece_filters,
+            ) {
+            Ok(resolved) =>
+              return Ok([
+                @engine.mkb(
+                  e.name,
+                  resolved,
+                  if observed is Some(_) {
+                    @engine.Tty
+                  } else {
+                    @engine.Default
+                  },
+                ),
+              ])
+            Err((@engine.KFilter, reason, msg)) =>
+              return Err(filter_err(e.name, at_pos, reason, msg, epath))
+            Err((_, reason, msg)) =>
+              return Err(ladder_err(e.name, at_pos, reason, msg, epath))
+          }
+        None => ()
+      }
     }
+    None => ()
   }
   // default seat (DR-083 §1/§2, DR-102 §5): an accum cell's declared default supplies its WHOLE
   // array as already-split pieces, config-array precedent (DR-050 §4) — each piece routed through

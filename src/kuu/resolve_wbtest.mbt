@@ -49,15 +49,16 @@ fn ent(
   }
   {
     name,
-    ty,
+    ty: if is_tty {
+      @builtins.tty_type(tty_stream, cygwin=tty_cygwin)
+    } else {
+      ty
+    },
     env_key,
     config_seat,
     config_key,
     is_config_file,
     inherit_,
-    is_tty,
-    tty_stream,
-    tty_cygwin,
     accum: match accum {
       Some(kind) => canonical_registry().lookup_accumulator(kind)
       None => None
@@ -76,8 +77,7 @@ fn ent(
     value_filters: chain(value_filters),
     final_filters: chain(final_filters),
     accum_filters: chain(accum_filters),
-    hidden: false,
-    completer: None,
+    extension: @builtins.entity_ext(),
   }
 }
 

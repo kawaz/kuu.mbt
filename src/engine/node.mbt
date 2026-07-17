@@ -70,14 +70,16 @@ pub fn export_key_null() -> ExportKey {
 
 ///|
 /// Input to a type resident's default-seat resolver. `declared` is the explicit
-/// scalar default, if any; preset residents may supply a fallback only when it is absent.
+/// scalar default, if any. `observed` is provider data selected by the resident's
+/// opaque key; engine transports the JSON value without knowing its schema.
 pub struct SeatCtx {
   priv declared : Value?
+  priv observed : Json?
 }
 
 ///|
-pub fn seat_ctx(declared : Value?) -> SeatCtx {
-  { declared, }
+pub fn seat_ctx(declared : Value?, observed? : Json? = None) -> SeatCtx {
+  { declared, observed }
 }
 
 ///|
@@ -86,19 +88,56 @@ pub fn SeatCtx::declared(self : SeatCtx) -> Value? {
 }
 
 ///|
+pub fn SeatCtx::observed(self : SeatCtx) -> Json? {
+  self.observed
+}
+
+///|
 /// Open type-category contract. Value lexicons and preset defaults belong to
-/// residents; the evaluator sees only this capability surface.
+/// residents; the evaluator sees only this capability surface. A resident may
+/// request one provider observation by opaque key and interpret its JSON payload
+/// inside `default_seat_resolver`.
 pub(open) trait TypeExt {
   fn name(Self) -> String
   fn encode(Self) -> Json = _
   fn has_value_slot(Self) -> Bool
   fn parse_token(Self, String) -> Result[Value, ParseFail]
+  fn default_seat_observation_key(Self) -> String? = _
   fn default_seat_resolver(Self, SeatCtx) -> Value?
 }
 
 ///|
 impl TypeExt with fn encode(_self) {
   ().to_json()
+}
+
+///|
+impl TypeExt with fn default_seat_observation_key(_self) {
+  None
+}
+
+///|
+/// Opaque declaration metadata attached to an Entity. Engine dispatches the
+/// capability without inspecting builtin-owned fields; the resident projects
+/// them onto the stable candidate wire structure.
+pub(open) trait EntityExt {
+  fn encode(Self) -> Json = _
+  fn complete_candidate(Self, Cand) -> Cand
+}
+
+///|
+impl EntityExt with fn encode(_self) {
+  ().to_json()
+}
+
+///|
+pub impl Eq for &EntityExt with fn equal(self, other) {
+  self.encode() == other.encode()
+}
+
+///|
+pub impl Debug for &EntityExt with fn to_repr(self) {
+  Debug::to_repr(self.encode())
 }
 
 ///|
@@ -521,20 +560,6 @@ pub(all) struct Entity {
   config_key : Array[String]? // explicit absolute config path (DR-050 §3); None = 同型 (scope path + name)
   is_config_file : Bool // this cell's value is the config-file PATH (DR-050): resolves the provider, no config seat
   mut inherit_ : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013). MDR-003: `inherit` 予約語回避
-  // DR-099 §1/§2/§12b: この cell の型が `builtin/tty` preset (`type:` 経由) から来たかのマーカー。
-  // true のときだけ `default` 席の解決規則が差し替わる (`resolve.mbt`'s `resolve_ladder_below_cli`) —
-  // ラダー自体に tty 専用席は無い (DR-098 §5 の独立席モデルは撤回済み)。`ensure_entity` が
-  // `ElemDef.is_tty` からそのまま carry する (installer.mbt、int_round/bool_config と同じ「型
-  // shadow から carry するだけの冗長フィールド」パターン)。
-  is_tty : Bool
-  // DR-099 §3: `builtin/tty` factory の必須 config `tty_stream` — tty_provider へ渡すストリーム識別子
-  // ("stdin"|"stdout"|"stderr")。`is_tty` が false の cell では未使用 (冗長フィールド、int_round が
-  // int_type() 以外で未使用なのと同じ扱い)。`is_tty` かつ None は definition-error で事前に弾かれている
-  // はずの防御的状態 (`collect_tty_stream_missing`)。
-  tty_stream : String?
-  // DR-099 §3: `builtin/tty` factory の config `tty_cygwin` — fold `terminal || (tty_cygwin &&
-  // cygwin)` のダイヤル。既定 true。`is_tty` が false の cell では未使用。
-  tty_cygwin : Bool
   // The registered accumulator resident that folds this cell's effect list, or None for a scalar
   // cell. Built-ins are append (multiple/repeat), merge, and kv_map; each resident owns both its
   // CLI-seat fold and final result projection, so the resolver dispatches without inspecting a name.
@@ -615,27 +640,9 @@ pub(all) struct Entity {
   // `final_filters` above). 1 属性 1 registry (ARRAY filter registry) の対応 — multiple 有無で
   // registry を切り替える位置依存判定 (DR-101 §3) は本分割で不要化した。
   accum_filters : Array[FilterSpelling]
-  // DR-058 §1 / DR-104 §2: whether this element is excluded from help/補完 の既定表示
-  // (`CandMeta.hidden`, `ElemDef.hidden` からそのまま carry — `is_tty`/`int_round` と同じ
-  // 「冗長フィールドをそのまま運ぶだけ」パターン)。complete() 自身はこの値に関わらず候補を返す
-  // (DR-060 §3「素材とポリシーの分離」、既定除外は生成器の関心)。name-keyed lookup で足りる —
-  // alias と違い、hidden は要素そのものの属性であって spelling ごとに変わらない前提 (現行 fixture
-  // に alias 側の独立 hidden を要求するものは無い)。
-  hidden : Bool
-  // DR-060 §4 / DR-104 §2(d) / issue 2026-07-14-cand-completer-followup: the registry name of the
-  // dynamic completer this cell's value slot delegates to (`completer: "<名前>"` wire attribute,
-  // `ElemDef.completer` からそのまま carry — `hidden` と同じ「冗長フィールドをそのまま運ぶだけ」
-  // パターン)。`None` = no completer declared. Read by `complete_tree`'s post-dedup pass
-  // (outcome.mbt) via a name-keyed Entity lookup — NOT threaded through the value-primitive Node
-  // constructors (string resident/number resident/…) themselves, because every value-primitive call site would
-  // otherwise need its own completer plumbing (30+ sites across eval.mbt/builtins/matcher_residents.mbt) for a value
-  // that is always determined by `origin` alone (same Entity, same completer, by construction —
-  // `ensure_entity` only ever creates ONE Entity per name). This is the structural reason DR-104
-  // §3's "merge rule for a completer-only divergent duplicate" never actually fires under this
-  // implementation: two candidates that dedup-match on the existing 6 fields always share the same
-  // `origin`, hence the same Entity, hence the same completer — there is no live path that produces
-  // a genuine conflict to merge.
-  completer : String?
+  // DR-110 §3-10 / §6 #20: builtin-owned completion metadata is an opaque resident.
+  // Engine carries and dispatches this slot but does not inspect hidden/completer fields.
+  extension : &EntityExt
 } derive(Eq, Debug)
 
 // ── completion candidate 型 (DR-060 §3) — 型のみ移植 (slice complete.mbt 1-57) ─

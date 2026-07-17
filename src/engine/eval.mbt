@@ -1425,16 +1425,15 @@ fn cand_boundary_origin(g : Node) -> String? {
 }
 
 ///|
-/// DR-058 §1 / DR-104 §2: `sc.entities`から要素名で hidden を引く (element-level 属性、spelling
-/// ごとに変わらない前提 — `is_alias` と違い matcher entry を経由しない spelling にも同じ
-/// 値を適用してよい)。見つからなければ false (command/dd 等、Entity を持たない origin は非-hidden)。
-fn entity_hidden(sc : Scope, name : String) -> Bool {
+/// Find the opaque declaration metadata resident for one element. Command/dd origins
+/// have no Entity and therefore no decorator.
+fn entity_extension(sc : Scope, name : String) -> &EntityExt? {
   for e in sc.entities {
     if e.name == name {
-      return e.hidden
+      return Some(e.extension)
     }
   }
-  false
+  None
 }
 
 ///|
@@ -1446,13 +1445,17 @@ fn fixup_boundary_cands(g : Node, sc : Scope, cs : Array[Cand]) -> Array[Cand] {
   match cand_boundary_origin(g) {
     None => cs
     Some(origin) => {
-      let hidden = entity_hidden(sc, origin)
+      let extension = entity_extension(sc, origin)
       let out : Array[Cand] = []
       for c in cs {
         if c.is_value {
           out.push(c)
         } else {
-          out.push({ ..c, origin, meta: { ..c.meta, hidden, } })
+          let candidate = { ..c, origin, }
+          match extension {
+            Some(resident) => out.push(resident.complete_candidate(candidate))
+            None => out.push(candidate)
+          }
         }
       }
       out

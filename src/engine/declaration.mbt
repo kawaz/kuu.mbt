@@ -123,12 +123,11 @@ pub(all) struct ElemDef {
   // complete() の CandMeta.is_alias 直訳元になる (deprecated と同じ carrier パターン)。
   is_alias : Bool
   // DR-058 §1 / DR-104 §2: help/補完の既定表示から除外される要素か (`CandMeta.hidden`)。
-  // `ensure_entity` が Entity へそのまま carry する — 要素単位の属性 (spelling ごとに変わらない)
-  // なので alias entry-copy はこの値を持たない (`alias_entry` は常に false)。
+  // `ensure_entity` が builtin の opaque EntityExt resident へ収める — 要素単位の属性
+  // (spelling ごとに変わらない) なので alias entry-copy はこの値を持たない。
   hidden : Bool
   // DR-060 §4 / DR-104 §2(d): decode 層 (dec_option/dec_positional) 所有 — wire の
-  // `completer: "<名前>"` 属性をそのまま運ぶ。`ensure_entity` がそのまま `Entity.completer` へ写す
-  // (`hidden` と同じ carrier パターン)。`None` = completer 未宣言。
+  // `completer: "<名前>"` 属性を opaque EntityExt resident へ収める。`None` = 未宣言。
   completer : String?
   // DR-083 §1/§波及: decode 層 (dec_option/dec_positional) 所有。JSON scalar → 長さ1へ持ち上げ、JSON
   // array → その piece 列そのまま (multiple/repeat/merge 要素のみ合法 — 非 accum 要素への配列は
