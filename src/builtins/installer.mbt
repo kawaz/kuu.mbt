@@ -227,65 +227,11 @@ fn resolve_long(
 }
 
 ///|
-/// canonical installers (DR-042 §canonical installer セット + DR-043 repeat/multiple)。
-pub(all) enum Installer {
-  LongInst
-  ShortInst
-  EnvInst
-  DdInst
-  CommandInst
-  GlobalInst
-  InheritInst
-  RepeatInst
-  MultipleInst
-  ConfigInst
-  ConstraintInst
-  AliasInst
-  InheritableInst
-} derive(Eq, Debug)
-
-///|
-pub fn owned_vocab(i : Installer) -> String {
-  match i {
-    LongInst => "long"
-    ShortInst => "short"
-    EnvInst => "env"
-    DdInst => "dd"
-    CommandInst => "command"
-    GlobalInst => "global"
-    InheritInst => "inherit"
-    RepeatInst => "repeat"
-    MultipleInst => "multiple"
-    ConfigInst => "config" // type:"config_file" と config_key 両方 (DR-050)
-    ConstraintInst => "constraint" // requires / conflicts_with / exclusive_group (DR-055)
-    AliasInst => "alias" // alias 宣言 (DR-057)
-    InheritableInst => "inheritable" // inheritable (DR-059)
+pub fn owned_vocab(installer : &@engine.InstallerExt) -> String {
+  match installer.vocab() {
+    [first, ..] => first
+    [] => ""
   }
-}
-
-///|
-/// 1 scope 分の mutable build accumulator。installer は ADD だけ (add-if-absent)。build 層は
-/// monotonically 成長し、全木の 1 pass が何も追加しなくなった時点で fixpoint。
-priv struct Build {
-  greedy : Array[@engine.Node]
-  entities : Array[@engine.Entity]
-  positional : Array[@engine.Node]
-  constraints : Array[@engine.Constraint]
-}
-
-///|
-/// scope-builder tree の 1 node。@engine.Definition tree を写す。`decl` は宣言層 (installer からは read-only
-/// だが global installer が `options` に COPY を push する — invariant ②)。`build` は lowering 層。
-priv struct SB {
-  decl : @engine.Definition
-  build : Build
-  children : Array[SBChild]
-}
-
-///|
-priv struct SBChild {
-  name : String
-  body : SB
 }
 
 ///|
@@ -1029,17 +975,18 @@ fn lower_positional(
 fn init_sb(
   def : @engine.Definition,
   registry : Map[String, @engine.Node],
-) -> SB {
+) -> @engine.InstallBuilder {
   let positional = lower_positional(def, registry)
-  let children : Array[SBChild] = []
+  let children : Array[@engine.InstallChild] = []
   for c in def.commands {
-    children.push({ name: c.name, body: init_sb(c.body, registry) })
+    children.push(@engine.InstallChild::new(c.name, init_sb(c.body, registry)))
   }
-  {
-    decl: def,
-    build: { greedy: [], entities: [], positional, constraints: [] },
+  @engine.InstallBuilder::new(
+    def,
+    @engine.InstallBuild::new(positional),
     children,
-  }
+    registry,
+  )
 }
 
 ///|
@@ -1048,15 +995,15 @@ fn init_sb(
 ///
 /// dd 要素は entity を持たない (LOWERING §B.4「値なし」/ DR-064 §1)。link_depth == 0 のみ ensure
 /// (global link COPY は declaring cell へ link 同期するため子 scope 側 entity は不要 — DR-070 §1b gap 5)。
-fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
-  for e in sb.decl.options {
+fn ensure_entities(sb : @engine.InstallBuilder, has_cf : Bool) -> Unit {
+  for e in sb.definition().options {
     if not_dd(e) && e.link_depth == 0 {
-      ensure_entity_body(sb.build, e, has_cf)
+      ensure_entity_body(sb.output(), e, has_cf)
     }
   }
-  for e in sb.decl.positionals {
+  for e in sb.definition().positionals {
     if not_dd(e) {
-      ensure_entity_body(sb.build, e, has_cf)
+      ensure_entity_body(sb.output(), e, has_cf)
     }
   }
 }
@@ -1083,7 +1030,7 @@ fn ensure_entities(sb : SB, has_cf : Bool) -> Unit {
 /// inherits the guard automatically (installer.mbt's `@engine.ElemDef.is_exact` doc comment: "value_prim/
 /// entity 経路を一切通らない" is the invariant this enforces).
 fn ensure_entity_body(
-  build : Build,
+  build : @engine.InstallBuild,
   e : @engine.ElemDef,
   has_cf : Bool,
 ) -> Unit {
@@ -1149,8 +1096,12 @@ fn ensure_entity_body(
 }
 
 ///|
-fn ensure_entity(build : Build, e : @engine.ElemDef, has_cf : Bool) -> Unit {
-  for ent in build.entities {
+fn ensure_entity(
+  build : @engine.InstallBuild,
+  e : @engine.ElemDef,
+  has_cf : Bool,
+) -> Unit {
+  for ent in build.entities() {
     if ent.name == e.name {
       return
     }
@@ -1216,7 +1167,9 @@ fn ensure_entity(build : Build, e : @engine.ElemDef, has_cf : Bool) -> Unit {
       }
   }
   let ty2 = if e.ty.name() == "count" { number_type() } else { e.ty }
-  build.entities.push({
+  build
+  .entities()
+  .push({
     name: e.name,
     ty: ty2,
     env_key: None,
@@ -1327,7 +1280,7 @@ fn with_depr(
 /// を add-if-absent で追加。衛星は name で entity に link (DR-042 §展開の標準パターン)。
 fn inst_long(
   def : @engine.Definition,
-  build : Build,
+  build : @engine.InstallBuild,
   registry : Map[String, @engine.Node],
 ) -> Unit {
   let eq_prefixes : Array[String] = []
@@ -1702,7 +1655,7 @@ fn short_group(
 /// already applied to `inst_long`/`eq_split`. `e.short_combine` (issue scope-config-object-gap
 /// 解釈A, team-lead 裁定 2026-07-11) rides straight through to the matcher's `combine` param —
 /// `run_short`/`walk_short` (builtins/matcher_residents.mbt) are the sole consumers of the flag's actual meaning.
-fn inst_short(def : @engine.Definition, build : Build) -> Unit {
+fn inst_short(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
   let sh_prefixes : Array[String] = []
   let sh_combines : Array[Bool] = []
   let sh_groups : Array[Array[ShortEntry]] = []
@@ -1753,7 +1706,7 @@ fn inst_short(def : @engine.Definition, build : Build) -> Unit {
 ///|
 /// env: `env` を READ、entity の env seat に登録 (invariant ④)。ladder 順序は engine 所有 (DR-031)、
 /// default_fn を wrap しない。同 seat 再宣言は no-op (idempotent in-place set)。
-fn inst_env(def : @engine.Definition, build : Build) -> Unit {
+fn inst_env(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
   for e in def.options {
     if e.env.length() > 0 {
       seat_env(build, e.name, e.env[0])
@@ -1767,8 +1720,8 @@ fn inst_env(def : @engine.Definition, build : Build) -> Unit {
 }
 
 ///|
-fn seat_env(build : Build, name : String, key : String) -> Unit {
-  for ent in build.entities {
+fn seat_env(build : @engine.InstallBuild, name : String, key : String) -> Unit {
+  for ent in build.entities() {
     if ent.name == name {
       ent.env_key = Some(key)
     }
@@ -1781,7 +1734,7 @@ fn seat_env(build : Build, name : String, key : String) -> Unit {
 ///
 /// DR-064 §2 配置不問回収: dd は canonical には options[] だが positionals[] に置いても回収する
 /// (env / inherit と同じく両 face を walk する対称形)。add-if-absent (add_greedy) が重複宣言を collapse。
-fn inst_dd(def : @engine.Definition, build : Build) -> Unit {
+fn inst_dd(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
   // DR-064 §5: dd の name は trigger 綴りに効く (normalize_surface が既定 "--" を供給、明示は上書き)。
   // DR-090 §2: `dd_match` が None かつ `dd_self_keep` が false (両軸とも既定) の要素だけ、既存
   // `@engine.DdSat` (exact/drop 専用ノード) をそのまま使う — 完全な後方互換 (既存 wbtest の `@engine.DdSat("--")`
@@ -1815,19 +1768,19 @@ fn inst_dd(def : @engine.Definition, build : Build) -> Unit {
 ///|
 /// add-if-absent (invariant ①' 非削除): 構造等価な既存があれば追加しない。再適用を no-op に、fixpoint
 /// を収束させる。
-fn add_greedy(build : Build, g : @engine.Node) -> Unit {
-  for existing in build.greedy {
+fn add_greedy(build : @engine.InstallBuild, g : @engine.Node) -> Unit {
+  for existing in build.greedy() {
     if existing == g {
       return
     }
   }
-  build.greedy.push(g)
+  build.greedy().push(g)
 }
 
 ///|
 /// inherit: `inherit` を READ、entity に inherit seat を宣言 (invariant ④, DR-031 cli>env>inherit>default)。
 /// seat の実 lookup 「最近祖先の同名 entity 値」は runtime (resolve_scope) で解く。env と対称の seat 宣言型。
-fn inst_inherit(def : @engine.Definition, build : Build) -> Unit {
+fn inst_inherit(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
   for e in def.options {
     if e.is_inherit {
       seat_inherit(build, e.name)
@@ -1841,8 +1794,8 @@ fn inst_inherit(def : @engine.Definition, build : Build) -> Unit {
 }
 
 ///|
-fn seat_inherit(build : Build, name : String) -> Unit {
-  for ent in build.entities {
+fn seat_inherit(build : @engine.InstallBuild, name : String) -> Unit {
+  for ent in build.entities() {
     if ent.name == name {
       ent.inherit_ = true // MDR-003
     }
@@ -1853,19 +1806,22 @@ fn seat_inherit(build : Build, name : String) -> Unit {
 /// global: `global` を READ、option 宣言を子孫 command scope の宣言層にコピー (invariant ②)。
 /// long/short は次 pass 以降で子で展開する。shadowing (DR-032/033, 最小 scope): 子が同トリガを既に
 /// 宣言していれば copy しない (自前が勝つ)。copy は `is_global` を保持し、fixpoint で更に下位へ再伝播。
-fn inst_global(sb : SB) -> Unit {
-  for opt in sb.decl.options {
+fn inst_global(sb : @engine.InstallBuilder) -> Unit {
+  for opt in sb.definition().options {
     if opt.is_global {
-      for child in sb.children {
-        copy_global_into(child.body, opt)
+      for child in sb.children() {
+        copy_global_into(child.body(), opt)
       }
     }
   }
 }
 
 ///|
-fn copy_global_into(child : SB, opt : @engine.ElemDef) -> Unit {
-  for existing in child.decl.options {
+fn copy_global_into(
+  child : @engine.InstallBuilder,
+  opt : @engine.ElemDef,
+) -> Unit {
+  for existing in child.definition().options {
     if triggers_overlap(existing, opt) {
       return // shadow または既に copy 済 (idempotent, トリガ基準)
     }
@@ -1899,7 +1855,7 @@ fn copy_global_into(child : SB, opt : @engine.ElemDef) -> Unit {
   // 成立する — 現行 lowering は @engine.Rooted を scope spine で wrap し、repeat head 内には入れないので満たす。
   // 将来 nested-group が scope/global を repeat 群に許容するなら、この +1 に rep-nesting depth も加算する。
   let copy = clone_elem(opt)
-  child.decl.options.push({
+  child.definition().options.push({
     name: copy.name,
     ty: copy.ty,
     long: copy.long,
@@ -2021,39 +1977,14 @@ fn triggers_overlap(a : @engine.ElemDef, b : @engine.ElemDef) -> Bool {
 // ── driver + completeness ────────────────────────────────────────────────────
 
 ///|
-/// 1 scope node に 1 installer を適用。long/short/env/dd/inherit は当該 node の build に貢献。
-/// global は子孫の宣言層にコピー。command は materialize 段で wire (展開は決定的 — DR-018 / DR-041 §4)。
-fn apply_node(
-  inst : Installer,
-  sb : SB,
-  registry : Map[String, @engine.Node],
-) -> Unit {
-  match inst {
-    LongInst => inst_long(sb.decl, sb.build, registry)
-    ShortInst => inst_short(sb.decl, sb.build)
-    EnvInst => inst_env(sb.decl, sb.build)
-    DdInst => inst_dd(sb.decl, sb.build)
-    InheritInst => inst_inherit(sb.decl, sb.build)
-    GlobalInst => inst_global(sb)
-    CommandInst => () // materialize で wire
-    RepeatInst => () // init_sb で決定的に lower (Ref 再帰 + template)
-    MultipleInst => () // ensure_entity で accumulator flag を決定的に set
-    ConfigInst => () // ensure_entity で config seat を決定的に set (席宣言型 DR-050/042 ④)
-    ConstraintInst => inst_constraint(sb.decl, sb.build, registry)
-    AliasInst => () // desugar_aliases (init_sb 前) で決定的に展開 — entry-copies は fixpoint で long/short/command が展開
-    InheritableInst => inst_inheritable(sb)
-  }
-}
-
-///|
 /// inheritable installer (DR-059): global の REVERSE 方向。子孫の inheritable 要素を全祖先 scope に
 /// `<定義スコープ名>-<name>` 綴りでコピー (§1)。祖先の `--socket-ttl` が祖先 `ttl` cell に bind。
 /// 全 `ttl` cell (定義 + 祖先コピー) に inherit seat が立つので、任意層の値が子孫の default として流れ下る
 /// (§3 値意味論 — inherit seat の対 DR-031)。祖先が同トリガを自宣言なら shadow で copy しない (global 対称)。
-fn inst_inheritable(sb : SB) -> Unit {
+fn inst_inheritable(sb : @engine.InstallBuilder) -> Unit {
   // (1) 子孫の inheritable → THIS (祖先) scope の宣言層に prefixed write-entry を追加
   let entries : Array[(String, @engine.ElemDef)] = []
-  gather_inheritable(sb.children, entries)
+  gather_inheritable(sb.children(), entries)
   for de in entries {
     let defining_name = de.0
     let e = de.1
@@ -2062,7 +1993,7 @@ fn inst_inheritable(sb : SB) -> Unit {
   }
   // (2) subtree の inheritable 対象名 (自宣言 + 祖先コピー) 全てに inherit seat を打つ (§3)
   let names : Array[String] = []
-  for e in sb.decl.options {
+  for e in sb.definition().options {
     if e.is_inheritable && !str_in(names, e.name) {
       names.push(e.name)
     }
@@ -2073,23 +2004,23 @@ fn inst_inheritable(sb : SB) -> Unit {
     }
   }
   for name in names {
-    seat_inherit(sb.build, name)
+    seat_inherit(sb.output(), name)
   }
 }
 
 ///|
 /// 子孫 scope の inheritable 要素を全て回収 (定義スコープ名で tag — §1 の prefix)。全 subtree を再帰。
 fn gather_inheritable(
-  children : Array[SBChild],
+  children : Array[@engine.InstallChild],
   out : Array[(String, @engine.ElemDef)],
 ) -> Unit {
   for ch in children {
-    for e in ch.body.decl.options {
+    for e in ch.body().definition().options {
       if e.is_inheritable {
-        out.push((ch.name, e))
+        out.push((ch.name(), e))
       }
     }
-    gather_inheritable(ch.body.children, out)
+    gather_inheritable(ch.body().children(), out)
   }
 }
 
@@ -2100,13 +2031,17 @@ fn gather_inheritable(
 /// (long + variants 横断) で判定する必要がある — codex 指摘、実機確認済み regression: alias が
 /// variants 側で提供するトリガを `long_of` だけでは見落とし、同じ綴りの inheritable コピーを重複
 /// 追加してしまう (materialize 後の @engine.Scope に同一トリガの greedy 衛星が 2 本立つ)。
-fn add_inheritable_copy(sb : SB, e : @engine.ElemDef, trigger : String) -> Unit {
-  for existing in sb.decl.options {
+fn add_inheritable_copy(
+  sb : @engine.InstallBuilder,
+  e : @engine.ElemDef,
+  trigger : String,
+) -> Unit {
+  for existing in sb.definition().options {
     if str_in(all_long_triggers(existing), trigger) {
       return // 自前優先 (shadow) / 既 copy (idempotent)
     }
   }
-  sb.decl.options.push({
+  sb.definition().options.push({
       name: e.name, // 祖先 write-target cell は要素名共有 (inherit-by-name)
       ty: e.ty,
       long: LList([trigger]), // prefixed inheritable trigger (post-normalize 相当の確定形、resolve_long を経由しない)
@@ -2293,7 +2228,7 @@ fn required_candidates(
 /// 無し (DR-047 完全 path の最終状態で評価)。
 fn inst_constraint(
   def : @engine.Definition,
-  build : Build,
+  build : @engine.InstallBuild,
   registry : Map[String, @engine.Node],
 ) -> Unit {
   let all : Array[@engine.ElemDef] = []
@@ -2544,7 +2479,7 @@ fn alias_entry(
 }
 
 ///|
-/// alias 宣言 (DR-057) を option entry-copies / command defs に desugar。完全性検査が AliasInst の
+/// alias 宣言 (DR-057) を option entry-copies / command defs に desugar。完全性検査が the alias installer resident の
 /// "alias" 所有を確認した後、init_sb 前に 1 度だけ走る決定的 pre-pass。各 entry-copy は canonical name
 /// で keying (satellites が canonical cell を bind、結果キーも canonical)、再導出綴りを携行し、fixpoint
 /// の long/short/command installer が展開する (DR-057 §4)。command subtree にも再帰。
@@ -2644,31 +2579,13 @@ fn desugar_aliases(def : @engine.Definition, orig : @engine.Definition) -> Unit 
 }
 
 ///|
-fn add_constraint(build : Build, c : @engine.Constraint) -> Unit {
-  for existing in build.constraints {
+fn add_constraint(build : @engine.InstallBuild, c : @engine.Constraint) -> Unit {
+  for existing in build.constraints() {
     if existing == c {
       return
     }
   }
-  build.constraints.push(c)
-}
-
-///|
-/// 全木 1 pass の fixpoint: entities ensure (core) → installer 適用 → 子 scope 再帰。global は再帰前に
-/// 子にコピーするので、`order` 内の global 位置に関わらず子は同 pass で成長した宣言層を見る。
-fn tree_pass(
-  order : Array[Installer],
-  sb : SB,
-  has_cf : Bool,
-  registry : Map[String, @engine.Node],
-) -> Unit {
-  ensure_entities(sb, has_cf)
-  for inst in order {
-    apply_node(inst, sb, registry)
-  }
-  for child in sb.children {
-    tree_pass(order, child.body, has_cf, registry)
-  }
+  build.constraints().push(c)
 }
 
 ///|
@@ -2818,179 +2735,6 @@ fn collect_tty_stream_missing(
   for c in def.commands {
     collect_tty_stream_missing(c.body, out)
   }
-}
-
-///|
-/// invariant ③ (DR-054): 2 installer が同 vocab を所有。全 intersection を収集。
-fn collect_vocab_intersection(
-  order : Array[Installer],
-  out : Array[@engine.DefError],
-) -> Unit {
-  let seen : Array[String] = []
-  for inst in order {
-    let v = owned_vocab(inst)
-    for s in seen {
-      if s == v {
-        out.push(
-          def_err(
-            v,
-            @engine.DVocabIntersection,
-            "vocab '\{v}' is claimed by two installers",
-            "remove the duplicate installer owning '\{v}' from the chain",
-          ),
-        )
-      }
-    }
-    seen.push(v)
-  }
-}
-
-///|
-/// invariant ①' completeness (DR-054): 木で使われているが chain のどの installer にも所有されない
-/// special vocab は Error。全 (element ごと + commands) 収集。
-fn collect_unknown_vocab(
-  def : @engine.Definition,
-  order : Array[Installer],
-  out : Array[@engine.DefError],
-) -> Unit {
-  let owned : Array[String] = []
-  for inst in order {
-    owned.push(owned_vocab(inst))
-  }
-  scan_unknown(def, owned, out)
-}
-
-///|
-fn scan_unknown(
-  def : @engine.Definition,
-  owned : Array[String],
-  out : Array[@engine.DefError],
-) -> Unit {
-  for e in def.options {
-    push_elem_unknown(e, owned, out)
-  }
-  for e in def.positionals {
-    push_elem_unknown(e, owned, out)
-  }
-  if def.commands.length() > 0 && !vocab_owned(owned, "command") {
-    out.push(
-      def_err(
-        "(commands)",
-        @engine.DUnknownVocab,
-        "unknown special vocab 'command'",
-        "add CommandInst to the installer chain",
-      ),
-    )
-  }
-  // alias vocab (DR-057): scope-level (aliases は per-@engine.ElemDef ではない)、commands と対称形。
-  if def.aliases.length() > 0 && !vocab_owned(owned, "alias") {
-    out.push(
-      def_err(
-        "(aliases)",
-        @engine.DUnknownVocab,
-        "unknown special vocab 'alias'",
-        "add AliasInst to the installer chain",
-      ),
-    )
-  }
-  for c in def.commands {
-    scan_unknown(c.body, owned, out)
-  }
-}
-
-///|
-fn push_elem_unknown(
-  e : @engine.ElemDef,
-  owned : Array[String],
-  out : Array[@engine.DefError],
-) -> Unit {
-  match scan_elem_vocab(e, owned) {
-    Some(v) =>
-      out.push(
-        def_err(
-          e.name,
-          @engine.DUnknownVocab,
-          "unknown special vocab '\{v}' — no installer claimed it",
-          "register an installer owning '\{v}' in the chain (§13.5)",
-        ),
-      )
-    None => ()
-  }
-}
-
-///|
-fn vocab_owned(owned : Array[String], v : String) -> Bool {
-  for o in owned {
-    if o == v {
-      return true
-    }
-  }
-  false
-}
-
-///|
-fn scan_elem_vocab(e : @engine.ElemDef, owned : Array[String]) -> String? {
-  if long_of(e).length() > 0 && !vocab_owned(owned, "long") {
-    return Some("long:" + long_of(e)[0])
-  }
-  // variant DSL は long 属性の値語彙 (DR-042 §所有権の粒度) — long installer が所有。
-  if e.variants.length() > 0 && !vocab_owned(owned, "long") {
-    return Some("long:variant:" + e.variants[0].trigger)
-  }
-  if e.short.length() > 0 && !vocab_owned(owned, "short") {
-    return Some("short")
-  }
-  if e.env.length() > 0 && !vocab_owned(owned, "env") {
-    return Some("env:" + e.env[0])
-  }
-  if e.is_dd && !vocab_owned(owned, "dd") {
-    return Some("dd")
-  }
-  if e.is_global && !vocab_owned(owned, "global") {
-    return Some("global")
-  }
-  if e.is_inherit && !vocab_owned(owned, "inherit") {
-    return Some("inherit")
-  }
-  if e.is_inheritable && !vocab_owned(owned, "inheritable") {
-    return Some("inheritable")
-  }
-  // repeat と optional 糖衣 (DR-043) は repeat installer 所有。
-  match elem_repeat(e) {
-    Some(_) => if !vocab_owned(owned, "repeat") { return Some("repeat") }
-    None => ()
-  }
-  if e.multiple && !vocab_owned(owned, "multiple") {
-    return Some("multiple")
-  }
-  // config vocab (DR-050): type:"config_file" と config_key 両方 config installer 所有。
-  if e.is_config_file && !vocab_owned(owned, "config") {
-    return Some("config:config_file")
-  }
-  match e.config_key {
-    Some(_) =>
-      if !vocab_owned(owned, "config") {
-        return Some("config:config_key")
-      }
-    None => ()
-  }
-  // constraint vocab (DR-055)
-  if e.requires.length() > 0 && !vocab_owned(owned, "constraint") {
-    return Some("constraint:requires")
-  }
-  if e.conflicts_with.length() > 0 && !vocab_owned(owned, "constraint") {
-    return Some("constraint:conflicts_with")
-  }
-  if e.exclusive_group.length() > 0 && !vocab_owned(owned, "constraint") {
-    return Some("constraint:exclusive_group")
-  }
-  if e.required_group.length() > 0 && !vocab_owned(owned, "constraint") {
-    return Some("constraint:required_group")
-  }
-  if e.value_requires.length() > 0 && !vocab_owned(owned, "constraint") {
-    return Some("constraint:value_requires")
-  }
-  None
 }
 
 ///|
@@ -4173,47 +3917,6 @@ fn collect_config_cycle(
 }
 
 ///|
-/// 1 scope 分の build 層の stable signature (fixpoint 検出用)。全て add-if-absent (monotonic 成長) で
-/// 増えるので、build 層 (greedy / entities / positional / constraints) と宣言層 (decl.options) の要素数
-/// 合計を Int で持てば十分。seat_env / seat_inherit は @engine.Entity 追加後に同 pass の apply_node で 1 回だけ
-/// set され (idempotent)、以後の pass では既 set の値を上書きするだけなので、count-based sig で不動点に達する。
-/// 注意: @engine.Node / @engine.Entity は Debug 派生のみで Show を持たないため、String 合成による sig は使えない (installer.mbt
-/// から node.mbt を触らない制約下での回避策 — count-based で monotonic 成長を捕捉する)。
-fn build_size(b : Build) -> Int {
-  b.greedy.length() + b.entities.length() + b.constraints.length()
-}
-
-///|
-fn tree_size(sb : SB) -> Int {
-  let mut n = build_size(sb.build) + sb.decl.options.length()
-  for child in sb.children {
-    n = n + tree_size(child.body)
-  }
-  n
-}
-
-///|
-/// scope-builder tree を @engine.Scope tree に materialize。subcommand は greedy `@engine.CmdSat(name, child)` に
-/// (greedy-face resident; 排他 trigger が先食いで守り DR-018 priority、子は新 backbone DR-041 §4、fire
-/// で親を sever)。
-fn materialize(sb : SB) -> @engine.Scope {
-  let greedy : Array[@engine.Node] = []
-  for g in sb.build.greedy {
-    greedy.push(g)
-  }
-  for child in sb.children {
-    let cs = materialize(child.body)
-    greedy.push(@engine.CmdSat(child.name, cs))
-  }
-  {
-    greedy,
-    positional: sb.build.positional,
-    entities: sb.build.entities,
-    constraints: sb.build.constraints,
-  }
-}
-
-///|
 /// UsefulAST → AtomicAST を installer chain として遂行 (DR-042)。`order` は適用 installer 列、5
 /// invariants により結果は順序無依存。
 ///
@@ -4226,7 +3929,7 @@ fn materialize(sb : SB) -> @engine.Scope {
 /// (打ち切りなし)。各 @engine.DefError は {element, kind, message, hint} を持つ。
 pub fn lower_definition(
   def0 : @engine.Definition,
-  order : Array[Installer],
+  order : Array[&@engine.InstallerExt],
   registry? : Map[String, @engine.Node] = Map([], capacity=0),
 ) -> Result[@engine.Scope, Array[@engine.DefError]] {
   let def = clone_def(def0)
@@ -4249,8 +3952,9 @@ pub fn lower_definition(
   // alias entry-copies は ref/repeat を持たず、command alias は check 済 body を clone するので、
   // static check は pre-desugar def で回す (この 1 本目の tree は registry 植え込みのみが目的)。
   let _ = init_sb(def, registry)
-  collect_vocab_intersection(order, errs) // DR-042③
-  collect_unknown_vocab(def, order, errs) // DR-042① (alias vocab check 込み)
+  for error in @engine.collect_installer_vocab_errors(def, order) {
+    errs.push(error)
+  }
   collect_invalid_range(def, errs) // DR-052 (repeat min > max)
   collect_unsupported_option_ref_repeat(def, errs) // codex 指摘4 (option ref+repeat min>1 未配線)
   collect_unsupported_accum_update(def, errs) // issue accum-fold-update-default-ops (multiple + update variant)
@@ -4280,24 +3984,7 @@ pub fn lower_definition(
   // 同型 default (DR-050 §3): config_file 要素があれば全 value cell に config seat を宣言。1 度計算、
   // ensure_entity に thread。
   let has_cf = has_config_file(def)
-  let mut iters = 0
-  while true {
-    let prev = tree_size(sb)
-    tree_pass(order, sb, has_cf, registry)
-    if tree_size(sb) == prev {
-      break
-    }
-    iters = iters + 1
-    if iters > 100 {
-      return Err([
-        def_err(
-          "(chain)",
-          @engine.DUnknownVocab,
-          "installer chain did not converge (> 100 iterations)",
-          "check for a runaway global copy or a mis-registered installer",
-        ),
-      ])
-    }
-  }
-  Ok(materialize(sb))
+  @engine.run_installer_fixpoint(sb, order, fn(builder) {
+    ensure_entities(builder, has_cf)
+  })
 }

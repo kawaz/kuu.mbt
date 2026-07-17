@@ -34,6 +34,7 @@ fn register_matcher(
 /// Register the canonical resident families. Node and matcher entries are identity-bearing
 /// prototypes; lowering constructs configured instances of the same resident kinds.
 pub fn install(registry : @engine.Registry) -> Unit {
+  install_installers(registry)
   register_node(registry, string_arg("", []))
   register_node(registry, kv_arg("", []))
   register_node(

@@ -429,25 +429,6 @@ fn exact_marker(spelling : String) -> @engine.ElemDef {
   }
 }
 
-///|
-/// Canonical full installer chain (DR-042 §canonical set + DR-043/050/055/057/059).
-fn full_installers() -> Array[@builtins.Installer] {
-  [
-    @builtins.LongInst,
-    @builtins.ShortInst,
-    @builtins.EnvInst,
-    @builtins.DdInst,
-    @builtins.CommandInst,
-    @builtins.GlobalInst,
-    @builtins.InheritInst,
-    @builtins.RepeatInst,
-    @builtins.MultipleInst,
-    @builtins.ConfigInst,
-    @builtins.ConstraintInst,
-    @builtins.AliasInst,
-    @builtins.InheritableInst,
-  ]
-}
 // ── skip signal ────────────────────────────────────────────────────────────────
 
 ///|

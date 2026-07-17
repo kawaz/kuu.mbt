@@ -66,7 +66,7 @@ pub(all) enum DefLoadError {
 /// 正面玄関 1: definition の wire JSON (`{options, positionals, commands, definitions?, config?}`)
 /// を受けて AtomicAST を得る (DR-054)。`definitions.types`/`definitions.templates`
 /// (DR-061 §3 / DR-078 §1) の decode、`@builtins.lower_definition` (旧 `parse_definition`、installer.mbt) の
-/// 呼び出しまで一気通貫で行う — installer 順序は常に `full_installers()` (DR-042 §canonical set、
+/// 呼び出しまで一気通貫で行う — installer 順序は常に `canonical_registry().installers()` (DR-042 §canonical set、
 /// 5 invariants により順序無依存)、呼び出し側が installer 順序を選ぶ理由は無い (順序を選べるのは
 /// conformance runner の lowering fixture だけの関心、DR-070)。
 pub fn parse_definition(
@@ -105,7 +105,11 @@ pub fn parse_definition(
     }
     let def = dec_definition(top, shadows~, extensions~)
     match
-      @builtins.lower_definition(def, full_installers(), registry=templates) {
+      @builtins.lower_definition(
+        def,
+        canonical_registry().installers(),
+        registry=templates,
+      ) {
       Ok(root) =>
         Ok({
           root,

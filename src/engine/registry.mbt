@@ -7,11 +7,12 @@ pub struct Registry {
   priv nodes : Map[String, &NodeExt]
   priv matchers : Map[String, &MatcherExt]
   priv types : Map[String, &TypeExt]
+  priv installers : Array[&InstallerExt]
 }
 
 ///|
 pub fn Registry::new() -> Registry {
-  { nodes: Map([]), matchers: Map([]), types: Map([]) }
+  { nodes: Map([]), matchers: Map([]), types: Map([]), installers: [] }
 }
 
 ///|
@@ -66,4 +67,19 @@ pub fn Registry::register_type(self : Registry, resident : &TypeExt) -> Bool {
 ///|
 pub fn Registry::lookup_type(self : Registry, name : String) -> &TypeExt? {
   self.types.get(name)
+}
+
+///|
+/// Register one installer resident. Overlapping vocabulary is retained so the
+/// generic definition check can report every intersection instead of hiding it.
+pub fn Registry::register_installer(
+  self : Registry,
+  resident : &InstallerExt,
+) -> Unit {
+  self.installers.push(resident)
+}
+
+///|
+pub fn Registry::installers(self : Registry) -> Array[&InstallerExt] {
+  self.installers
 }

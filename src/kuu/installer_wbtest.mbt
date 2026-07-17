@@ -134,21 +134,21 @@ fn el(
 
 ///|
 /// canonical な installer chain (13 全部)。順列耐性テスト以外はこれを使う。
-fn all_installers() -> Array[@builtins.Installer] {
+fn all_installers() -> Array[&@engine.InstallerExt] {
   [
-    LongInst,
-    ShortInst,
-    EnvInst,
-    DdInst,
-    CommandInst,
-    GlobalInst,
-    InheritInst,
-    RepeatInst,
-    MultipleInst,
-    ConfigInst,
-    ConstraintInst,
-    AliasInst,
-    InheritableInst,
+    @builtins.long_installer(),
+    @builtins.short_installer(),
+    @builtins.env_installer(),
+    @builtins.dd_installer(),
+    @builtins.command_installer(),
+    @builtins.global_installer(),
+    @builtins.inherit_installer(),
+    @builtins.repeat_installer(),
+    @builtins.multiple_installer(),
+    @builtins.config_installer(),
+    @builtins.constraint_installer(),
+    @builtins.alias_installer(),
+    @builtins.inheritable_installer(),
   ]
 }
 
@@ -157,7 +157,7 @@ fn all_installers() -> Array[@builtins.Installer] {
 /// harness で扱うため、この層は「lowering が Ok を返した @engine.Scope の構造」を細かく検査する。
 fn ok_scope(
   def : @engine.Definition,
-  order : Array[@builtins.Installer],
+  order : Array[&@engine.InstallerExt],
 ) -> @engine.Scope {
   match @builtins.lower_definition(def, order) {
     Ok(sc) => sc
@@ -191,7 +191,7 @@ test "long installer: value option gets 1 greedy @engine.Seq satellite + 1 @buil
     ,
     options: [el("port", @builtins.string_type(), long=LList([":set"]))],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   // 貢献: (1) @engine.Seq([@engine.Exact("--port"), @builtins.string_arg("port")]) の satellite が 1 本、(2) @engine.NativeMatch(@builtins.eq_split(...))
   // 1 本、計 greedy = 2 本。@builtins.string_type() なので value_prim = string resident。
   assert_eq(sc.greedy.length(), 2)
@@ -240,7 +240,7 @@ test "long installer: a deprecated value option's main-entry satellite carries a
       },
     ],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   assert_eq(
     sc.greedy[0],
     @engine.Seq([
@@ -283,7 +283,7 @@ test "long installer: a deprecated flag's @engine.Set-variant satellite carries 
       },
     ],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   assert_eq(sc.greedy.length(), 1)
   assert_eq(
     sc.greedy[0],
@@ -322,7 +322,7 @@ test "long installer: a deprecated BEnum (values-constrained) main entry carries
       },
     ],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   assert_eq(
     sc.greedy[0],
     @engine.Seq([
@@ -375,7 +375,7 @@ test "long installer: a deprecated BOr (structural or) main entry carries a depr
       },
     ],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   match sc.greedy[0] {
     @engine.Seq([@engine.Exact("--level"), @engine.Or(_), marker]) if node_is_deprecation_mark(
         marker,
@@ -416,7 +416,7 @@ test "long installer: a flag's `long:true` composes a `:set:true` variant → ba
     ..empty_def(),
     options: [el("verbose", @builtins.flag_type(), long=LBool(true))],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   // main entry 無し (long=[]) + @engine.Set variant 1 本 → eq-split entry は無い → greedy = @engine.Bind 衛星 1 本のみ。
   assert_eq(sc.greedy.length(), 1)
   assert_eq(
@@ -442,7 +442,7 @@ test "long installer: a flag's explicit `long:[\":set\"]` composes `:set:true` A
     ..empty_def(),
     options: [el("verbose", @builtins.flag_type(), long=LList([":set"]))],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   // main entry 1 本 (値スロット, @builtins.flag_type()→@builtins.bool_type() 差し替え後 bool resident) + @builtins.eq_split matcher 1 本 + variant 1 本
   // (裸発火 @engine.Bind) → greedy = 3 本。
   assert_eq(sc.greedy.length(), 3)
@@ -481,7 +481,7 @@ test "long installer: a count's `long:true` composes an `:update:increment` vari
     ..empty_def(),
     options: [el("verbose", @builtins.count_type(), long=LBool(true))],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   // main entry 無し (long=[]) + @engine.Update variant 1 本 → eq-split entry は無い → greedy = effect resident 衛星 1 本のみ。
   assert_eq(sc.greedy.length(), 1)
   assert_eq(
@@ -509,7 +509,7 @@ test "long installer: a count's explicit `long:[\":update:increment\"]` does not
       el("verbose", @builtins.count_type(), long=LList([":update:increment"])),
     ],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   assert_eq(sc.greedy.length(), 1)
   assert_eq(
     sc.greedy[0],
@@ -953,8 +953,14 @@ test "installer chain: order-independent thanks to 5 invariants + fixpoint" {
       el("host", @builtins.string_type(), long=LList([":set"]), env=["HOST"]),
     ],
   }
-  let sc1 = ok_scope(def, [LongInst, EnvInst])
-  let sc2 = ok_scope(def, [EnvInst, LongInst])
+  let sc1 = ok_scope(def, [
+    @builtins.long_installer(),
+    @builtins.env_installer(),
+  ])
+  let sc2 = ok_scope(def, [
+    @builtins.env_installer(),
+    @builtins.long_installer(),
+  ])
   // 両順で env seat / greedy 内容が一致
   assert_eq(entity_of(sc1, "host").unwrap().env_key, Some("HOST"))
   assert_eq(entity_of(sc2, "host").unwrap().env_key, Some("HOST"))
@@ -981,9 +987,9 @@ test "parse_definition enumerates all def-errors (no first-error 打ち切り, D
       ),
     ], // min > max
   }
-  // chain には LongInst / RepeatInst 共に無い → long vocab は unknown、repeat vocab も unknown、
+  // chain には @builtins.long_installer() / @builtins.repeat_installer() 共に無い → long vocab は unknown、repeat vocab も unknown、
   // かつ min>max の invalid range も同時に。3 種の @engine.DefError が列挙されるはず。
-  match @builtins.lower_definition(def, [ShortInst]) {
+  match @builtins.lower_definition(def, [@builtins.short_installer()]) {
     Ok(_) => abort("expected Err")
     Err(errs) => {
       // 少なくとも @engine.DUnknownVocab (long / repeat) と @engine.DInvalidRange の 3 種を含む — 打ち切っていれば
@@ -1027,7 +1033,7 @@ test "parse_definition: a ref target absent from registry is @engine.DAbsentRef 
   }
   // "color" は scope 内の兄弟要素にも registry (definitions.templates 相当の事前登録) にも無い
   // (registry 未指定 = 既定の空 map)。
-  match @builtins.lower_definition(def, [RepeatInst]) {
+  match @builtins.lower_definition(def, [@builtins.repeat_installer()]) {
     Ok(_) => abort("expected Err (absent ref target 'color')")
     Err(errs) => {
       let mut has_absent_ref = false
@@ -1066,7 +1072,11 @@ test "parse_definition: an option's ref+repeat with min > 1 is @engine.DInvalidR
       ),
     ],
   }
-  match @builtins.lower_definition(def, [LongInst, RepeatInst]) {
+  match
+    @builtins.lower_definition(def, [
+      @builtins.long_installer(),
+      @builtins.repeat_installer(),
+    ]) {
     Ok(_) => abort("expected Err (unsupported option ref+repeat min>1)")
     Err(errs) => {
       let mut has_range = false
@@ -1098,7 +1108,11 @@ test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (co
       ),
     ],
   }
-  match @builtins.lower_definition(def, [LongInst, RepeatInst]) {
+  match
+    @builtins.lower_definition(def, [
+      @builtins.long_installer(),
+      @builtins.repeat_installer(),
+    ]) {
     Ok(_) =>
       abort(
         "expected Err (absent ref target 'color', registry left empty on purpose)",
@@ -1890,7 +1904,8 @@ test "repeat installer: self-ref cons template key does not collide with a same-
       ),
     ],
   }
-  match @builtins.lower_definition(def, [RepeatInst], registry~) {
+  match
+    @builtins.lower_definition(def, [@builtins.repeat_installer()], registry~) {
     Ok(_) => {
       // ユーザが事前登録した "x" エントリは repeat lowering 後も無傷 (上書きされていない)。
       assert_eq(registry.get("x"), Some(@engine.Exact("user-defined-x")))
@@ -3510,7 +3525,7 @@ test "short installer: e.short_prefix drives the @builtins.short_combine matcher
     ..empty_def(),
     options: [el("verbose", @builtins.flag_type(), short=['v'])],
   }
-  let sc = ok_scope(def, [ShortInst])
+  let sc = ok_scope(def, [@builtins.short_installer()])
   assert_eq(sc.greedy.length(), 1)
   match sc.greedy[0] {
     @engine.NativeMatch(matcher) => {
@@ -3534,7 +3549,7 @@ test "short installer: a non-default short_prefix (\"+\") is honored" {
       el("verbose", @builtins.flag_type(), short=['v'], short_prefix="+"),
     ],
   }
-  let sc = ok_scope(def, [ShortInst])
+  let sc = ok_scope(def, [@builtins.short_installer()])
   match sc.greedy[0] {
     @engine.NativeMatch(matcher) => {
       let candidates = matcher.candidates()
@@ -3557,7 +3572,7 @@ test "short installer: distinct short_prefix values get SEPARATE @builtins.short
       el("weird", @builtins.flag_type(), short=['w'], short_prefix="+"),
     ],
   }
-  let sc = ok_scope(def, [ShortInst])
+  let sc = ok_scope(def, [@builtins.short_installer()])
   assert_eq(sc.greedy.length(), 2)
   let mut dash_count = 0
   let mut plus_count = 0
@@ -3591,7 +3606,7 @@ test "short installer: e.short_combine rides through to the @builtins.short_comb
       el("verbose", @builtins.flag_type(), short=['v'], short_combine=false),
     ],
   }
-  let sc = ok_scope(def, [ShortInst])
+  let sc = ok_scope(def, [@builtins.short_installer()])
   match sc.greedy[0] {
     @engine.NativeMatch(matcher) => {
       assert_eq(
@@ -3619,7 +3634,7 @@ test "short installer: same short_prefix but DIFFERENT short_combine values get 
       el("weird", @builtins.flag_type(), short=['w'], short_combine=false),
     ],
   }
-  let sc = ok_scope(def, [ShortInst])
+  let sc = ok_scope(def, [@builtins.short_installer()])
   assert_eq(sc.greedy.length(), 2)
   let mut true_count = 0
   let mut false_count = 0
@@ -3716,7 +3731,7 @@ test "long installer: long_eq_sep:@engine.EsDeny withholds this element's eq-spl
       ),
     ],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   // @builtins.eq_split entry が無いので、この要素単独では @engine.NativeMatch(@builtins.eq_split) 自体が greedy に現れない
   // (eq_prefixes/eq_groups が空のまま — inst_long の "0 entries なら matcher を足さない" ガード)。
   assert_eq(sc.greedy.length(), 1)
@@ -3846,7 +3861,7 @@ test "long installer: a variant trigger uses e.long_prefix, matching the main en
       },
     ],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   let mut has_plus_main = false
   let mut has_plus_variant = false
   let mut has_dash_variant = false
@@ -3880,7 +3895,7 @@ test "long installer: default long_prefix keeps variant trigger at \"--\" (対�
       },
     ],
   }
-  let sc = ok_scope(def, [LongInst])
+  let sc = ok_scope(def, [@builtins.long_installer()])
   let mut has_main = false
   let mut has_variant = false
   for g in sc.greedy {

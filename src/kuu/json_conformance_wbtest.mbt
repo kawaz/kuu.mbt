@@ -766,7 +766,7 @@ fn proj_scope(sc : @engine.Scope, reg : Map[String, @engine.Node]) -> LSec {
 ///|
 fn canon_of(
   def : @engine.Definition,
-  order : Array[@builtins.Installer],
+  order : Array[&@engine.InstallerExt],
 ) -> String {
   let reg : Map[String, @engine.Node] = Map([])
   match @builtins.lower_definition(def, order, registry=reg) {
@@ -776,7 +776,7 @@ fn canon_of(
 }
 
 ///|
-fn order_sig(order : Array[@builtins.Installer]) -> String {
+fn order_sig(order : Array[&@engine.InstallerExt]) -> String {
   let buf = StringBuilder::new()
   for x in order {
     buf.write_string(@builtins.owned_vocab(x))
@@ -787,19 +787,19 @@ fn order_sig(order : Array[@builtins.Installer]) -> String {
 
 ///|
 fn pick3(
-  order : Array[@builtins.Installer],
-) -> Array[Array[@builtins.Installer]] {
-  let ident : Array[@builtins.Installer] = []
+  order : Array[&@engine.InstallerExt],
+) -> Array[Array[&@engine.InstallerExt]] {
+  let ident : Array[&@engine.InstallerExt] = []
   for x in order {
     ident.push(x)
   }
-  let rev : Array[@builtins.Installer] = []
+  let rev : Array[&@engine.InstallerExt] = []
   let mut i = order.length() - 1
   while i >= 0 {
     rev.push(order[i])
     i = i - 1
   }
-  let rot : Array[@builtins.Installer] = []
+  let rot : Array[&@engine.InstallerExt] = []
   if order.length() > 0 {
     let mut j = 1
     while j < order.length() {
@@ -808,7 +808,7 @@ fn pick3(
     }
     rot.push(order[0])
   }
-  let out : Array[Array[@builtins.Installer]] = []
+  let out : Array[Array[&@engine.InstallerExt]] = []
   let sigs : Array[String] = []
   for cand in [ident, rev, rot] {
     let sig = order_sig(cand)
@@ -823,7 +823,7 @@ fn pick3(
 ///|
 fn run_lower(
   def : @engine.Definition,
-  order : Array[@builtins.Installer],
+  order : Array[&@engine.InstallerExt],
   want : LSec,
 ) -> String {
   let got = canon_of(def, order)
@@ -1760,7 +1760,11 @@ fn dec_definition_error_fixture(j : Json) -> DDefErrorFixture raise DecodeSkip {
 /// `render_outcome`-style "EXPECTED-*" convention mirrors the parse-path runner's diagnostics.
 fn run_definition_error(fx : DDefErrorFixture, c : DDefErrorCase) -> String {
   match
-    @builtins.lower_definition(fx.def, full_installers(), registry=fx.registry) {
+    @builtins.lower_definition(
+      fx.def,
+      canonical_registry().installers(),
+      registry=fx.registry,
+    ) {
     Ok(_) => "EXPECTED-DEFINITION-ERROR got=ok"
     Err(errs) => {
       let got = deferrs_str(errs)
@@ -2116,7 +2120,11 @@ fn dec_complete_fixture(j : Json) -> DCompleteFixture raise DecodeSkip {
   }
   let def = dec_definition(defo, shadows~)
   let scope = match
-    @builtins.lower_definition(def, full_installers(), registry~) {
+    @builtins.lower_definition(
+      def,
+      canonical_registry().installers(),
+      registry~,
+    ) {
     Ok(sc) => sc
     Err(errs) => raise DecodeSkip("definition rejected: " + deferrs_str(errs))
   }
@@ -2203,13 +2211,13 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
 ///|
 struct DecodedLower {
   def : @engine.Definition
-  order : Array[@builtins.Installer]
+  order : Array[&@engine.InstallerExt]
   want : LSec
 }
 
 ///|
-fn dec_installer(name : String) -> @builtins.Installer raise DecodeSkip {
-  for i in full_installers() {
+fn dec_installer(name : String) -> &@engine.InstallerExt raise DecodeSkip {
+  for i in canonical_registry().installers() {
     if @builtins.owned_vocab(i) == name {
       return i
     }
@@ -2220,14 +2228,14 @@ fn dec_installer(name : String) -> @builtins.Installer raise DecodeSkip {
 ///|
 fn dec_installers(
   top : Map[String, Json],
-) -> Array[@builtins.Installer] raise DecodeSkip {
+) -> Array[&@engine.InstallerExt] raise DecodeSkip {
   match top.get("installers") {
-    None => full_installers()
+    None => canonical_registry().installers()
     Some(j) =>
       match j.j_arr() {
-        None => full_installers()
+        None => canonical_registry().installers()
         Some(a) => {
-          let out : Array[@builtins.Installer] = []
+          let out : Array[&@engine.InstallerExt] = []
           for e in a {
             match e.j_str() {
               Some(s) => out.push(dec_installer(s))
@@ -4272,7 +4280,8 @@ test "ensure_entity: plain @builtins.bool_type() は @engine.Entity.default_valu
     None => abort("bad json fixture")
   }
   let def = dec_definition(defo)
-  let scope = match @builtins.lower_definition(def, full_installers()) {
+  let scope = match
+    @builtins.lower_definition(def, canonical_registry().installers()) {
     Ok(sc) => sc
     Err(errs) => abort("definition rejected: " + deferrs_str(errs))
   }
