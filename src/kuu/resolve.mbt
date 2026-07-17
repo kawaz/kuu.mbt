@@ -1664,6 +1664,19 @@ fn apply_requires_filter_with_export(
           Ok(resolved) => {
             let out : Array[@engine.ParseError] = []
             for sc2 in table {
+              // SCB-Q1=a (kawaz 裁定 2026-07-17、docs/QUESTIONS.md の SCB batch): 未選択 (= 当該実行で
+              // 未入場) command scope に宣言された遅延述語は評価に参加しない。原理は「グローバルオプション
+              // 以外、サブコマンドは完全に別コマンドと見るべき」で、root scope (path=[]) は常に選択済み。
+              // DR-103 §5 明確化 note が正本。engine 側 `eval_all_constraints` (KTop 相の粗判定) と同型
+              // の gate をここ resolve 相 (後段の最終判定) にも掛ける — gate が 1 相にしか無いと未入場
+              // child の CRequiredGroup/CRequired が resolve 相で偽陽性を出し、KTop の Success を Failure
+              // に落としてしまう (issue required-group-scope-participation、実測: `--r1` のみで
+              // child-a scope の g が違反として付随、path=[child-a] の error 生成)。gate の判定は engine
+              // 側と完全に同じ `@engine.scope_selected` を共用 — 判定意味論のドリフト防止 (bindings 内の
+              // `{}` scope_marker の存在で判定、CmdSat 入場時に cont.mbt KNest が prepend する)。
+              if !@engine.scope_selected(binds, sc2.path) {
+                continue
+              }
               for v in eval_requires(sc2, binds, resolved, toks_len) {
                 out.push(v)
               }

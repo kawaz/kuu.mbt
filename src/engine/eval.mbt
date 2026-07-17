@@ -2737,7 +2737,7 @@ fn eval_constraints(
 /// 未入場 (絶対 absent) と区別できる。SCB-Q2=a (集約は scope 局所) は現実装通りで変更不要 —
 /// `collect_scopes` が scope ごとに独立 ScopedCons を作り、`constraint installer` は宣言 scope 内で
 /// 集約する。DR-103 §5 の「横断集約」は spec 側で誤記として note 訂正済み。
-fn scope_selected(bindings : Array[Binding], path : Array[String]) -> Bool {
+pub fn scope_selected(bindings : Array[Binding], path : Array[String]) -> Bool {
   if path.length() == 0 {
     return true
   }

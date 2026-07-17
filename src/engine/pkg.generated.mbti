@@ -105,6 +105,8 @@ pub fn rval_object(Array[(String, RVal)]) -> RVal
 
 pub fn rval_scalar(Value) -> RVal
 
+pub fn scope_selected(Array[Binding], Array[String]) -> Bool
+
 pub fn seat_ctx(Value?, observed? : Json?) -> SeatCtx
 
 pub fn split_on(String, String) -> Array[String]
