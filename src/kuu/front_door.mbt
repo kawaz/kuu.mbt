@@ -36,11 +36,11 @@
 /// 対応する不透明ハンドル)。フィールド非公開 — 利用者は中身を読まず `parse`/`complete` に渡す
 /// だけでよい。`root` は lowering 済みの AtomicAST (`@engine.Scope`)、`templates` は
 /// `definitions.templates` 由来の ref 解決空間、`extensions` は active assembly の resident
-/// 組成表。`ekmap` は definition から静的に決定される export_key 写像 (DR-052、`build_export_map` の
+/// 組成表。`ekmap` は definition から静的に決定される export_key 写像 (DR-052、`@builtins.build_export_map` の
 /// 結果) — `export_map` (下記) 経由で読める (issue 2026-07-15
 /// front-door-export-key-map-access: `parse`/`complete` の結果を CONFORMANCE.md §2 の
-/// `result: {...}` へ組み立てたい利用者が、AtomicAST から生 `Definition` を復元できず
-/// `build_export_map` を自分で呼べなかった)。ekmap は definition が確定した時点で決定的に
+/// `result: {...}` へ組み立てたい利用者が、AtomicAST から生 `@engine.Definition` を復元できず
+/// `@builtins.build_export_map` を自分で呼べなかった)。ekmap は definition が確定した時点で決定的に
 /// 導出される静的情報なので、AtomicAST と生存期間が一致する — ここに同梱するのが自然。
 /// `atomic` は MoonBit の予約語 (将来使用のため) なので変数名には `ast` を使う。
 pub struct AtomicAST {
@@ -65,7 +65,7 @@ pub(all) enum DefLoadError {
 ///|
 /// 正面玄関 1: definition の wire JSON (`{options, positionals, commands, definitions?, config?}`)
 /// を受けて AtomicAST を得る (DR-054)。`definitions.types`/`definitions.templates`
-/// (DR-061 §3 / DR-078 §1) の decode、`lower_definition` (旧 `parse_definition`、installer.mbt) の
+/// (DR-061 §3 / DR-078 §1) の decode、`@builtins.lower_definition` (旧 `parse_definition`、installer.mbt) の
 /// 呼び出しまで一気通貫で行う — installer 順序は常に `full_installers()` (DR-042 §canonical set、
 /// 5 invariants により順序無依存)、呼び出し側が installer 順序を選ぶ理由は無い (順序を選べるのは
 /// conformance runner の lowering fixture だけの関心、DR-070)。
@@ -104,9 +104,15 @@ pub fn parse_definition(
       None => Map([])
     }
     let def = dec_definition(top, shadows~, extensions~)
-    match lower_definition(def, full_installers(), registry=templates) {
+    match
+      @builtins.lower_definition(def, full_installers(), registry=templates) {
       Ok(root) =>
-        Ok({ root, templates, extensions, ekmap: build_export_map(def) })
+        Ok({
+          root,
+          templates,
+          extensions,
+          ekmap: @builtins.build_export_map(def),
+        })
       Err(errs) => Err(Rejected(errs))
     }
   } catch {
@@ -302,9 +308,9 @@ pub fn complete(
 /// `result: {...}` オブジェクトへ組み立てたい利用者向けの素材 —
 /// `apply_export_keys(binds, export_map(ast))` (resolve.mbt、既に `pub`) にそのまま渡せる。
 ///
-/// 経緯 (issue 2026-07-15 front-door-export-key-map-access): `AtomicAST` は生 `Definition` を
+/// 経緯 (issue 2026-07-15 front-door-export-key-map-access): `AtomicAST` は生 `@engine.Definition` を
 /// 保持しない不透明ハンドルなので (本ファイル冒頭の `AtomicAST` doc)、利用者が
-/// `build_export_map` (installer.mbt、既に `pub`) を自分で呼ぶ経路が無かった。`Array[@engine.Binding]`
+/// `@builtins.build_export_map` (installer.mbt、既に `pub`) を自分で呼ぶ経路が無かった。`Array[@engine.Binding]`
 /// → `result` オブジェクトへの変換処理そのもの (conformance runner の `build_result` 相当) の
 /// production 昇格は MDR-005 の射程外のまま — 本関数が運ぶのは「definition から決定的に導出
 /// される静的写像へのアクセス」であって、encode 処理そのものではない (MDR-005 追記, 本 issue)。

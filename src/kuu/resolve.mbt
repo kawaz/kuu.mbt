@@ -2189,7 +2189,7 @@ fn filter_err(
 ///|
 /// Apply an `update` effect's transform to the running `old` value (DR-077 §1/§2: `cell = f(old)`).
 /// `transform` is looked up in the filters registry (DR-077 §2 "transform の実体は filters registry
-/// の名前参照") — `installer.mbt`'s `classify_long_spelling` (definition-time gate, codex 指摘 2 /
+/// の名前参照") — `installer.mbt`'s `@builtins.classify_long_spelling` (definition-time gate, codex 指摘 2 /
 /// DR-077 §2 の裁定で `parts[2] == "increment"` のハードコード allowlist から registry lookup +
 /// signature チェックへ置換済み) already rejects an unregistered name or a non-`Transform`-signature
 /// name as `unknown-vocab` (DR-054) at DEFINITION time, so `apply_transform` seeing either here
@@ -2228,7 +2228,7 @@ fn apply_transform(
       if !d.signature.is_transform() {
         // DR-077 §2 「シグネチャ不適合 → definition-error」: reached here only if the filters
         // registry later grows a name whose signature is Validate but installer.mbt's
-        // classify_long_spelling (definition-time gate) ever let it through — defensive, not a
+        // @builtins.classify_long_spelling (definition-time gate) ever let it through — defensive, not a
         // live path today. kind: @engine.KFilter (codex 指摘 3、上と同じ理由)。
         // codex 指摘 (2026-07-12, 節目レビュー): reason は `filter_rejected` — DR-095 §3 は型不一致
         // (非対象型が filter に渡る) を「filter-definition bug であり正しい定義における failure
@@ -2502,7 +2502,7 @@ fn resolve_entity_raw(
   //   (T[]) while every filters-registry transform is T=>T (scalar) — a structural mismatch with
   //   no legal resolution, so closing it statically (rather than at fold time) matches how
   //   DR-077 §2 already closes "unknown transform name" / "validate-only signature" one layer
-  //   earlier (`classify_long_spelling`'s `LInvalid`). The `@engine.Update` arm below is unreachable
+  //   earlier (`@builtins.classify_long_spelling`'s `@builtins.LInvalid`). The `@engine.Update` arm below is unreachable
   //   defensive code, not a live path.
   // - `default`: resets to `[]` (DR-051 §2's uniform-array default — an accum cell carries no
   //   declared default BY DESIGN, `AccumCell` has no such field) with committed=true (locks the

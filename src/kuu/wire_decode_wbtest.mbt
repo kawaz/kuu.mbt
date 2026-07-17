@@ -8,7 +8,7 @@
 /// `fixtures/value-typing/or-leaf-factory-config.json` は bool_config / allow_base_prefix の
 /// carry を end-to-end (JSON result) で pin 済みだが、tty preset 由来の is_tty/tty_stream/
 /// tty_cygwin は同 fixture が触れていない軸 — 本 whitebox test で `dec_or_leaf` の返り値
-/// (ElemDef) を直接検査し、shadow の非 canonical 値 (is_tty=true, tty_stream=Some("stderr"),
+/// (@engine.ElemDef) を直接検査し、shadow の非 canonical 値 (is_tty=true, tty_stream=Some("stderr"),
 /// tty_cygwin=false, int_round=@engine.RFloor, allow_base_prefix=true, 非 canonical bool_config) が
 /// 1 つも canonical default に落ちずそのまま or leaf へ届くことを固定する。
 test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix/bool_config/is_tty/tty_stream/tty_cygwin) が or leaf に carry される" {
@@ -94,7 +94,7 @@ test "dec_positional: bare 'exact' combined with repeat/optional/default DecodeS
 
 ///|
 /// 対極 (codex レビュー Major 3): `exact` が唯一のキーの場合は正常に decode され、`is_exact:true` /
-/// `name` = spelling の `ElemDef` (`exact_marker` 由来) を返す — `only_key` ガードが正当なケースまで
+/// `name` = spelling の `@engine.ElemDef` (`exact_marker` 由来) を返す — `only_key` ガードが正当なケースまで
 /// 巻き込んで壊していないことの確認 (self-written-rule-blind-spots の「新規ガード追加時は無変更ケース
 /// も確認する」線)。
 test "dec_positional: bare 'exact' alone decodes to an is_exact marker (対極, codex レビュー Major 3)" {

@@ -764,37 +764,42 @@ fn proj_scope(sc : @engine.Scope, reg : Map[String, @engine.Node]) -> LSec {
 // ── lower runner (canon_of / pick3 / run_lower) ────────────────────────────────
 
 ///|
-fn canon_of(def : Definition, order : Array[Installer]) -> String {
+fn canon_of(
+  def : @engine.Definition,
+  order : Array[@builtins.Installer],
+) -> String {
   let reg : Map[String, @engine.Node] = Map([])
-  match lower_definition(def, order, registry=reg) {
+  match @builtins.lower_definition(def, order, registry=reg) {
     Ok(sc) => lsec_str(proj_scope(sc, reg))
     Err(e) => "ERR:" + deferrs_str(e)
   }
 }
 
 ///|
-fn order_sig(order : Array[Installer]) -> String {
+fn order_sig(order : Array[@builtins.Installer]) -> String {
   let buf = StringBuilder::new()
   for x in order {
-    buf.write_string(owned_vocab(x))
+    buf.write_string(@builtins.owned_vocab(x))
     buf.write_string(";")
   }
   buf.to_string()
 }
 
 ///|
-fn pick3(order : Array[Installer]) -> Array[Array[Installer]] {
-  let ident : Array[Installer] = []
+fn pick3(
+  order : Array[@builtins.Installer],
+) -> Array[Array[@builtins.Installer]] {
+  let ident : Array[@builtins.Installer] = []
   for x in order {
     ident.push(x)
   }
-  let rev : Array[Installer] = []
+  let rev : Array[@builtins.Installer] = []
   let mut i = order.length() - 1
   while i >= 0 {
     rev.push(order[i])
     i = i - 1
   }
-  let rot : Array[Installer] = []
+  let rot : Array[@builtins.Installer] = []
   if order.length() > 0 {
     let mut j = 1
     while j < order.length() {
@@ -803,7 +808,7 @@ fn pick3(order : Array[Installer]) -> Array[Array[Installer]] {
     }
     rot.push(order[0])
   }
-  let out : Array[Array[Installer]] = []
+  let out : Array[Array[@builtins.Installer]] = []
   let sigs : Array[String] = []
   for cand in [ident, rev, rot] {
     let sig = order_sig(cand)
@@ -816,7 +821,11 @@ fn pick3(order : Array[Installer]) -> Array[Array[Installer]] {
 }
 
 ///|
-fn run_lower(def : Definition, order : Array[Installer], want : LSec) -> String {
+fn run_lower(
+  def : @engine.Definition,
+  order : Array[@builtins.Installer],
+  want : LSec,
+) -> String {
   let got = canon_of(def, order)
   let wantS = lsec_str(want)
   let mut perm_ok = true
@@ -1604,7 +1613,7 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
 // ── definition_error path (DR-082) ─────────────────────────────────────────────
 
 ///|
-/// DR-082 §1: `query: "definition_error"` fixture の 1 case — DR-054 §4 の `lower_definition()`
+/// DR-082 §1: `query: "definition_error"` fixture の 1 case — DR-054 §4 の `@builtins.lower_definition()`
 /// 返値をそのまま転用する。`args` は無い (定義の静的検査であり実行しない)。比較対象は
 /// element+kind の組の集合のみ (message/hint はレンダラ管轄なので比較しない、DR-082 §1 — parse
 /// fixture の `errors` が message を比較しないのと同流儀)。`exp_errors` は `deferrs_str` と同じ
@@ -1616,7 +1625,7 @@ struct DDefErrorCase {
 
 ///|
 struct DDefErrorFixture {
-  def : Definition
+  def : @engine.Definition
   registry : Map[String, @engine.Node]
   cases : Array[DDefErrorCase]
 }
@@ -1750,7 +1759,8 @@ fn dec_definition_error_fixture(j : Json) -> DDefErrorFixture raise DecodeSkip {
 /// expectation. An unexpected `Ok` (the definition was NOT rejected) is itself a mismatch —
 /// `render_outcome`-style "EXPECTED-*" convention mirrors the parse-path runner's diagnostics.
 fn run_definition_error(fx : DDefErrorFixture, c : DDefErrorCase) -> String {
-  match lower_definition(fx.def, full_installers(), registry=fx.registry) {
+  match
+    @builtins.lower_definition(fx.def, full_installers(), registry=fx.registry) {
     Ok(_) => "EXPECTED-DEFINITION-ERROR got=ok"
     Err(errs) => {
       let got = deferrs_str(errs)
@@ -2105,7 +2115,8 @@ fn dec_complete_fixture(j : Json) -> DCompleteFixture raise DecodeSkip {
     None => Map([])
   }
   let def = dec_definition(defo, shadows~)
-  let scope = match lower_definition(def, full_installers(), registry~) {
+  let scope = match
+    @builtins.lower_definition(def, full_installers(), registry~) {
     Ok(sc) => sc
     Err(errs) => raise DecodeSkip("definition rejected: " + deferrs_str(errs))
   }
@@ -2168,9 +2179,9 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
       raise DecodeSkip("definition rejected: " + deferrs_str(errs))
   }
   // ekmap (result の export key 写像) も production の正面玄関経由で取る (issue 2026-07-15
-  // front-door-export-key-map-access: AtomicAST が ekmap を同梱するようになり、`Definition` の
+  // front-door-export-key-map-access: AtomicAST が ekmap を同梱するようになり、`@engine.Definition` の
   // 二重 decode が不要になった — 旧実装は shadows/types を dec_fixture 内でもう一度 decode して
-  // build_export_map に渡していた)。
+  // @builtins.build_export_map に渡していた)。
   let ekmap = export_map(ast)
   let casesj = match top.get("cases") {
     Some(c) => c
@@ -2191,15 +2202,15 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
 
 ///|
 struct DecodedLower {
-  def : Definition
-  order : Array[Installer]
+  def : @engine.Definition
+  order : Array[@builtins.Installer]
   want : LSec
 }
 
 ///|
-fn dec_installer(name : String) -> Installer raise DecodeSkip {
+fn dec_installer(name : String) -> @builtins.Installer raise DecodeSkip {
   for i in full_installers() {
-    if owned_vocab(i) == name {
+    if @builtins.owned_vocab(i) == name {
       return i
     }
   }
@@ -2207,14 +2218,16 @@ fn dec_installer(name : String) -> Installer raise DecodeSkip {
 }
 
 ///|
-fn dec_installers(top : Map[String, Json]) -> Array[Installer] raise DecodeSkip {
+fn dec_installers(
+  top : Map[String, Json],
+) -> Array[@builtins.Installer] raise DecodeSkip {
   match top.get("installers") {
     None => full_installers()
     Some(j) =>
       match j.j_arr() {
         None => full_installers()
         Some(a) => {
-          let out : Array[Installer] = []
+          let out : Array[@builtins.Installer] = []
           for e in a {
             match e.j_str() {
               Some(s) => out.push(dec_installer(s))
@@ -3413,7 +3426,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
 }
 
 ///|
-/// MDR-004 §4 / 実装順 5: OrBranch.id (無指定なら自動採番 `#{seq}`) は内部照合専用で、観測面
+/// MDR-004 §4 / 実装順 5: @engine.OrBranch.id (無指定なら自動採番 `#{seq}`) は内部照合専用で、観測面
 /// (held Error / ambiguous interpretations / success result) のどこにも漏れてはいけない。対象
 /// 4 fixture はどれも "id" キー無指定 (= 自動採番のみ) なので、既にそれ自体が非漏出の状況証拠で
 /// はある — が、fixture 任せだと「将来誰かが .id を表示経路に配線してしまう」退行を検出できない
@@ -3421,7 +3434,7 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
 /// inline JSON で組み、failure (0 本成立) / ambiguous (2 本成立) / success (1 本のみ生存) の 3 outcome
 /// すべてで、rendered text に自動 id パターン ("#0" / "#1") が一切現れないこと、かつ本来の leaf 名
 /// (a/b) は現れることを同時に固定する。
-test "conformance: OrBranch auto id (#{seq}) は held-error / ambiguous / success のどこにも漏れない (MDR-004 §4)" {
+test "conformance: @engine.OrBranch auto id (#{seq}) は held-error / ambiguous / success のどこにも漏れない (MDR-004 §4)" {
   let src =
     #|{
     #|  "query": "parse",
@@ -4259,7 +4272,7 @@ test "ensure_entity: plain @builtins.bool_type() は @engine.Entity.default_valu
     None => abort("bad json fixture")
   }
   let def = dec_definition(defo)
-  let scope = match lower_definition(def, full_installers()) {
+  let scope = match @builtins.lower_definition(def, full_installers()) {
     Ok(sc) => sc
     Err(errs) => abort("definition rejected: " + deferrs_str(errs))
   }
