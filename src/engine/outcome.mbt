@@ -332,50 +332,52 @@ pub fn complete_tree(
     match b {
       Pending(cs, _) =>
         for c0 in cs {
-          let c = if c0.is_value {
+          let decorated : Array[Cand] = []
+          if c0.is_value {
             match entities.get(entity_key(c0.path, c0.origin)) {
-              // `Some(Some(ent))`: dispatch the clean Entity's opaque candidate metadata.
-              Some(Some(ent)) => ent.extension.complete_candidate(c0)
-              // `Some(None)`: a key collision detected at collection time (see
-              // `collect_entities_into`'s doc comment) — no completer, same as "unresolved".
-              Some(None) => c0
-              // no Entity under this key at all (shouldn't happen for a well-formed tree, but
-              // stays defensive rather than erroring).
-              None => c0
+              Some(extensions) =>
+                for extension in extensions {
+                  decorated.push(extension.complete_candidate(c0))
+                }
+              // No Entity under this key should not occur for a well-formed tree, but
+              // stays defensive rather than dropping the candidate.
+              None => decorated.push(c0)
             }
           } else {
-            c0
+            decorated.push(c0)
           }
-          let mut dup_idx = -1
-          for j = 0; j < cands.length(); j = j + 1 {
-            let e = cands[j]
-            // DR-060 §3's candidate structure is spelling/is_value/ty/origin/term/meta —
-            // `path` (DR-066 §4) is NOT part of it, so two candidates that differ only
-            // by which ancestor scope produced them are the same candidate here: the
-            // same spelling is readable either way, and DR-060 §1's "union of what's
-            // readable" is a union over SPELLINGS, not over the scopes that offer them.
-            // `completer` (DR-104 §3) is likewise NOT part of this identity.
-            if e.spelling == c.spelling &&
-              e.is_value == c.is_value &&
-              e.ty == c.ty &&
-              e.origin == c.origin &&
-              e.term == c.term &&
-              e.meta == c.meta {
-              dup_idx = j
-              break
+          for c in decorated {
+            let mut dup_idx = -1
+            for j = 0; j < cands.length(); j = j + 1 {
+              let e = cands[j]
+              // DR-060 §3's candidate structure is spelling/is_value/ty/origin/term/meta —
+              // `path` (DR-066 §4) is NOT part of it, so two candidates that differ only
+              // by which ancestor scope produced them are the same candidate here: the
+              // same spelling is readable either way, and DR-060 §1's "union of what's
+              // readable" is a union over SPELLINGS, not over the scopes that offer them.
+              // `completer` (DR-104 §3) is likewise NOT part of this identity.
+              if e.spelling == c.spelling &&
+                e.is_value == c.is_value &&
+                e.ty == c.ty &&
+                e.origin == c.origin &&
+                e.term == c.term &&
+                e.meta == c.meta {
+                dup_idx = j
+                break
+              }
             }
-          }
-          if dup_idx < 0 {
-            cands.push(c)
-          } else if cands[dup_idx].completer != c.completer {
-            // DR-104 §3 明確化 note: two candidates that dedup-match on the 6-field identity
-            // but resolve to DIFFERENT completers (via their distinct `path`s, per the doc
-            // comment above) merge to "no completer" — neither producer's guess is privileged
-            // over the other's, so the honest wire projection is `completer` absent (COMP-Q3's
-            // opt-in convention already treats absence as "unknown/untested", which fits this
-            // case exactly: which app-specific dynamic completer applies is genuinely
-            // ambiguous when the 6 identity-bearing fields cannot tell the two scopes apart).
-            cands[dup_idx] = { ..cands[dup_idx], completer: None }
+            if dup_idx < 0 {
+              cands.push(c)
+            } else if cands[dup_idx].completer != c.completer {
+              // DR-104 §3 明確化 note: two candidates that dedup-match on the 6-field identity
+              // but resolve to DIFFERENT completers (via their distinct `path`s, per the doc
+              // comment above) merge to "no completer" — neither producer's guess is privileged
+              // over the other's, so the honest wire projection is `completer` absent (COMP-Q3's
+              // opt-in convention already treats absence as "unknown/untested", which fits this
+              // case exactly: which app-specific dynamic completer applies is genuinely
+              // ambiguous when the 6 identity-bearing fields cannot tell the two scopes apart).
+              cands[dup_idx] = { ..cands[dup_idx], completer: None }
+            }
           }
         }
       _ => () // Accept: already complete, nothing to read; Held: dead end
@@ -439,20 +441,15 @@ fn entity_key(path : Array[String], name : String) -> String {
 /// convention — `path + [name]` on CmdSat entry — so a `Cand.path` built by `nest_cands`/
 /// `nest_branches` lines up exactly with the path this collector attaches to that Entity).
 ///
-/// Value is `Entity?`, NOT `Entity` — `None` marks a KEY COLLISION (DR-067 §1 legalizes two
-/// independent `command` definitions sharing the same command NAME, e.g. two sibling `build`
-/// commands each declaring their own `target` positional; `path` is built from scope NAMES
-/// (CmdSat's `name`), so it cannot tell these two structurally-independent scopes apart — they
-/// collide on the identical key). When a second Entity arrives under a key that already resolved
-/// to a DIFFERENT completer, this collision is indistinguishable (at lookup time) from the
-/// dedup-time "6-field match, different completer" case DR-104 §3's merge rule already covers —
-/// so it gets the SAME answer (`None`, i.e. "no completer") by construction here, rather than
-/// silently keeping whichever Entity was visited first.
+/// A key maps to every distinct opaque EntityExt resident found there. DR-067 §1 allows
+/// structurally independent command definitions to share the same path/name key; preserving
+/// the resident list lets `complete_tree` project each candidate first, then apply the stable
+/// Cand identity and completer merge rules without inspecting or discarding opaque metadata.
 fn collect_all_entities(
   root : Node,
   defs : Map[String, Node],
-) -> Map[String, Entity?] {
-  let out : Map[String, Entity?] = Map([])
+) -> Map[String, Array[&EntityExt]] {
+  let out : Map[String, Array[&EntityExt]] = Map([])
   match root {
     ScopeNode(sc) => collect_entities_into(sc, [], defs, out, [])
     _ => ()
@@ -465,18 +462,24 @@ fn collect_entities_into(
   sc : Scope,
   path : Array[String],
   defs : Map[String, Node],
-  out : Map[String, Entity?],
+  out : Map[String, Array[&EntityExt]],
   seen_refs : Array[String],
 ) -> Unit {
   for e in sc.entities {
     let k = entity_key(path, e.name)
     match out.get(k) {
-      None => out.set(k, Some(e))
-      Some(Some(existing)) =>
-        if existing.extension != e.extension {
-          out.set(k, None) // collision under an indistinguishable path — see doc comment
+      None => out.set(k, [e.extension])
+      Some(extensions) => {
+        let mut found = false
+        for extension in extensions {
+          if extension == e.extension {
+            found = true
+          }
         }
-      Some(None) => () // already a known collision, stays a collision
+        if !found {
+          extensions.push(e.extension)
+        }
+      }
     }
   }
   for g in sc.greedy {
@@ -492,7 +495,7 @@ fn collect_entities_greedy(
   g : Node,
   path : Array[String],
   defs : Map[String, Node],
-  out : Map[String, Entity?],
+  out : Map[String, Array[&EntityExt]],
   seen_refs : Array[String],
 ) -> Unit {
   match g {
@@ -519,7 +522,7 @@ fn collect_entities_pos(
   n : Node,
   path : Array[String],
   defs : Map[String, Node],
-  out : Map[String, Entity?],
+  out : Map[String, Array[&EntityExt]],
   seen_refs : Array[String],
 ) -> Unit {
   match n {

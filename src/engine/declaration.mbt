@@ -17,6 +17,8 @@ pub(all) struct ElemDef {
   variants : Array[Variant] // long installer 所有 (variant DSL, DR-011/045) — normalize_option が resolve_long の結果で埋める。宣言直後は常に []
   short : Array[Char] // short installer 所有
   env : Array[String] // env installer 所有
+  // TRANSITIONAL(M5c): tty config remains on the declaration carrier until wire decode constructs
+  // the configured TypeExt directly; Entity no longer copies or interprets these fields.
   // DR-099 §1/§3: `type:` が `builtin/tty` factory (bare "tty" 糖衣 / definitions.types 経由の
   // shadow) に解決されたことを示すマーカー。decode 層 (dec_option/dec_positional,
   // json_conformance_wbtest.mbt) が `type:` 解決の一部として直接 set する — DR-098 の独立 wire
@@ -100,6 +102,9 @@ pub(all) struct ElemDef {
   // 値の帰属先 = 親 entity の非対称)。id 未指定時は parent entity name を branch_id にフォールバック
   // (parent 直属の value_requires と等価な挙動)。
   value_requires : Array[(String, String, Array[String])]
+  // TRANSITIONAL(M5c): parser config also remains on ElemDef because builtin node/matcher
+  // residents still encode their stable lowering form from these explicit values. TypeExt already
+  // owns runtime parsing; removing this duplicate waits for those residents to accept one descriptor.
   // DR-075 §2 int_round factory config (DR-061 §4 平坦 config キー、`int_parser` の唯一 config)。
   // canonical default = `RError` (非整数値は Error)、opt-in で floor/trunc/half_even 等の丸めモード。
   // parse 相内部調整で、`value_prim` が int resident にこの値を埋め込む。@builtins.int_type() 以外の element は

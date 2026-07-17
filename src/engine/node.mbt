@@ -564,6 +564,8 @@ pub(all) struct Entity {
   // cell. Built-ins are append (multiple/repeat), merge, and kv_map; each resident owns both its
   // CLI-seat fold and final result projection, so the resolver dispatches without inspecting a name.
   accum : &AccumulatorExt? // None = scalar; Some(resident) = resident-owned fold/collect
+  // TRANSITIONAL(M5c): flatten/is_multiple_decl stay on Entity until AccumulatorExt owns
+  // the per-fire row-boundary policy used by build_result; moving only one would lose DR-084 semantics.
   // DR-105 §1 flatten dial (append accumulator only, `installer.mbt`'s `ensure_entity` enforces
   // this invariant — a non-append accum cell always carries false here, the definition-error gate
   // `collect_flatten_non_append` rejects any other declared combination before lowering runs):
@@ -602,6 +604,8 @@ pub(all) struct Entity {
   // whole array — this single field replaces the pre-DR-083 `default_value : Value?` (a design
   // taken up again after being shelved mid accum-fold-update-default-ops, now justified by DR-083).
   default_values : Array[Value]?
+  // TRANSITIONAL(M5c): separator remains because the env seat still performs pre-parse piece
+  // splitting; no seat/piece descriptor currently owns this cross-seat policy.
   // DR-034 multiple の separator (issue 2026-07-09-env-separator-split-gap): the env seat's OWN
   // copy, mirroring `piece_filters` below — `resolve.mbt`'s `env_value` runs the pieceProcessor once
   // per piece exactly like `eval.mbt`'s `sep_binds` does for the CLI seat's raw token, but the CLI
@@ -609,6 +613,8 @@ pub(all) struct Entity {
   // hasn't been split at all until this field tells `resolve_entity_raw` to. `None` = no separator
   // declared (the common case, and every non-`multiple` cell) — env value stays a single piece.
   separator : String?
+  // TRANSITIONAL(M5c): filter spellings remain until Entity can carry configured filter
+  // residents for every phase; the registry currently resolves them at each runtime application.
   // DR-034/DR-062 piece_filters (String→String, per-piece / pre-parse 相): unlike `value_filters`/
   // `final_filters`/`accum_filters` below (which run AFTER a ladder seat's value is already
   // resolved, in `resolve.mbt`'s `apply_entity_filters`), piece_filters only ever runs BEFORE a
