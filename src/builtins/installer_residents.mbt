@@ -717,7 +717,16 @@ impl @engine.InstallerExt for ConstraintInstaller with fn decode(
       [
         "requires", "conflicts_with", "exclusive_group", "required_group", "required",
       ]
-    DecodePositional => ["requires", "required"]
+    // DR-012 / DR-055 / DR-103: constraint 系は「要素属性」であり positional にも同型に付与できる
+    // (engine 側の CConflicts/CExclusive/CRequired/CRequiredGroup は committed 判定を entity 名で
+    // 行うため option/positional を区別しない)。option 版と同じ 5 語彙を positional にも許可する。
+    // value_requires は positional では trigger 経路が仕様上ない (positional の `or` は structural
+    // 専用、`values` キー未 allowed、DR-055 §5.3 の value-enum-or 誘導は option 限定 — 値の枝への
+    // requires は positional では structural or の各枝内の positional 要素自身の requires で表現される)。
+    DecodePositional =>
+      [
+        "requires", "conflicts_with", "exclusive_group", "required_group", "required",
+      ]
     _ => []
   }
   let object = match resident_object(json) {

@@ -216,6 +216,15 @@ fn pos(
   tty_cygwin? : Bool = true,
   required? : Bool = false,
   requires? : Array[String] = [],
+  // DR-012 / DR-055 / DR-103: constraint 系は「要素属性」なので positional にも同型に付与できる。
+  // engine の CConflicts/CExclusive/CRequired/CRequiredGroup は committed 判定を entity 名で行い
+  // option/positional を区別しないため、decode 側で pos() に流し込むだけで検査が動く (opt() の
+  // 同名フィールドと対称)。value_requires は positional では trigger 経路がない (positional の or は
+  // structural 専用、`values` キー未 allowed) ため対称化せず既存の空配列固定のまま残す (下記
+  // `value_requires: []` 参照)。
+  conflicts? : Array[String] = [],
+  exclusive? : Array[String] = [],
+  required_group? : Array[String] = [],
   // DR-060 §4 / DR-104 §2(d): a positional's value slot can name a dynamic completer too (e.g. a
   // file-path positional) — unlike `hidden` (an option-only 補完 policy axis this file omits for
   // positionals), `completer` targets the VALUE position itself, which positionals have just as
@@ -254,10 +263,14 @@ fn pos(
     config_key,
     export_key: export_,
     requires,
-    conflicts_with: [],
-    exclusive_group: [],
-    required_group: [],
+    conflicts_with: conflicts,
+    exclusive_group: exclusive,
+    required_group,
     required,
+    // DR-055 §5.3 の value-enum-or は option 限定 (positional の or は structural 専用、`values` キー
+    // 未 allowed) — positional 要素直属の value_requires を組む wire 経路が現時点で存在しないため
+    // 空配列固定 (structural or の各枝は BOr(items) の 1 要素 = positional 要素自身なので、値依存
+    // requires は各枝要素の requires 属性で表現される)。
     value_requires: [],
     deprecated: false,
     // DR-104 §2/§3: positional は alias/hidden 宣言経路を wire に持たない (現行 fixture が要求しない)
@@ -1965,6 +1978,15 @@ fn dec_positional(
   let env = owned.env
   let required = owned.required
   let requires = owned.requires
+  // DR-012 / DR-055 / DR-103: constraint 系は要素属性で positional にも同型に付与できる
+  // (`decode_installer_owned` が constraint installer 経由で 5 属性 = requires/conflicts/exclusive/
+  // required_group/required を positional context でも集約する — installer_residents.mbt の
+  // `ConstraintInstaller.decode` の DecodePositional 分岐参照)。engine 検査 (CConflicts / CExclusive /
+  // CRequired / CRequiredGroup) は entity 名の committed 判定のみを行い option/positional を区別
+  // しないので、decode 側で pos() に流し込むだけで動く (opt() の同名 owned 経路と対称)。
+  let conflicts = owned.conflicts
+  let exclusive = owned.exclusive
+  let required_group = owned.required_group
   // DR-060 §4 / DR-104 §2(d): dec_option 側と対称の decode — completer 名の verbatim carry。
   let completer = jf_str(o, "completer")
   pos(
@@ -1995,6 +2017,9 @@ fn dec_positional(
     accum_filters~,
     required~,
     requires~,
+    conflicts~,
+    exclusive~,
+    required_group~,
     completer~,
   )
 }
