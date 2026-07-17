@@ -140,11 +140,52 @@ test "option and positional allowed keys exclude unregistered installer vocab" {
 }
 
 ///|
-test "registered installer vocab extends option and positional allowed keys" {
-  // Registering the corresponding residents makes the same keys decodable; no hard-coded option
-  // or positional key table is needed in the assembly decoder.
+test "repeat lowering rejects an assembly without its implicit append accumulator" {
+  // repeat owns its wire vocabulary through the installer, but its value fold is a separate
+  // descriptor dependency; an incomplete subset assembly returns a definition error, never aborts.
   let registry = @engine.Registry::new()
   assert_true(registry.register_type(@builtins.string_type()))
+  registry.register_installer(@builtins.repeat_installer())
+  let definition = @json.parse(
+    "{\"positionals\":[{\"name\":\"rest\",\"type\":\"string\",\"repeat\":{\"min\":0}}]}",
+  )
+  match parse_definition(definition, extensions=registry) {
+    Err(Rejected([error])) => {
+      assert_eq(error.kind, @engine.DUnknownVocab)
+      assert_true(error.message.contains("accumulator 'append'"))
+    }
+    _ => fail("missing implicit append resident must be a definition error")
+  }
+}
+
+///|
+test "collector declarations reject an assembly without the named collector resident" {
+  // The accumulator and multiple vocabulary are present, isolating the collector descriptor as the
+  // only missing dependency; lookup failure is reported before lowering constructs the Entity.
+  let registry = @engine.Registry::new()
+  assert_true(registry.register_type(@builtins.string_type()))
+  assert_true(registry.register_accumulator(@builtins.append_accumulator()))
+  registry.register_installer(@builtins.long_installer())
+  registry.register_installer(@builtins.multiple_installer())
+  let definition = @json.parse(
+    "{\"options\":[{\"name\":\"value\",\"type\":\"string\",\"long\":true,\"multiple\":{\"collector\":\"unwrap_single\"}}]}",
+  )
+  match parse_definition(definition, extensions=registry) {
+    Err(Rejected([error])) => {
+      assert_eq(error.kind, @engine.DUnknownVocab)
+      assert_true(error.message.contains("collector 'unwrap_single'"))
+    }
+    _ => fail("missing collector resident must be a definition error")
+  }
+}
+
+///|
+test "registered installer vocab extends option and positional allowed keys" {
+  // Registering the corresponding residents makes the same keys decodable; the repeat declaration
+  // also needs its append accumulator because lowering resolves every descriptor through the same registry.
+  let registry = @engine.Registry::new()
+  assert_true(registry.register_type(@builtins.string_type()))
+  assert_true(registry.register_accumulator(@builtins.append_accumulator()))
   registry.register_installer(@builtins.long_installer())
   registry.register_installer(@builtins.repeat_installer())
   let definition = @json.parse(

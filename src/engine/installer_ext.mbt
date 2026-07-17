@@ -109,6 +109,7 @@ pub struct InstallBuilder {
   priv output : InstallBuild
   priv children : Array[InstallChild]
   priv templates : Map[String, Node]
+  priv extensions : Registry
 }
 
 ///|
@@ -117,8 +118,9 @@ pub fn InstallBuilder::new(
   output : InstallBuild,
   children : Array[InstallChild],
   templates : Map[String, Node],
+  extensions : Registry,
 ) -> InstallBuilder {
-  { definition, output, children, templates }
+  { definition, output, children, templates, extensions }
 }
 
 ///|
@@ -139,6 +141,11 @@ pub fn InstallBuilder::children(self : InstallBuilder) -> Array[InstallChild] {
 ///|
 pub fn InstallBuilder::templates(self : InstallBuilder) -> Map[String, Node] {
   self.templates
+}
+
+///|
+pub fn InstallBuilder::extensions(self : InstallBuilder) -> Registry {
+  self.extensions
 }
 
 ///|

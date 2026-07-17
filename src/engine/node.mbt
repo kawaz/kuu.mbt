@@ -535,13 +535,10 @@ pub(all) struct Entity {
   // DR-099 §3: `builtin/tty` factory の config `tty_cygwin` — fold `terminal || (tty_cygwin &&
   // cygwin)` のダイヤル。既定 true。`is_tty` が false の cell では未使用。
   tty_cygwin : Bool
-  // The accumulators-registry name (DR-036) that folds this cell's effect list, or None for a
-  // scalar cell. Built-ins today: "append" (multiple's value fold, DR-034 — also the repeat
-  // installer's own cons-unfold cell as of DR-105 §3, `flatten` field below carries the dial that
-  // used to be the standalone "flatten" accumulator name), "merge" (DR-080), "kv_map" (DR-091 §2).
-  // Realizes a value LIST here; the name records WHICH registry accumulator so the AST is
-  // self-describing (a scalar cell has None).
-  accum : String? // None = scalar; Some("append"|"merge"|"kv_map") = accumulate via that registry entry
+  // The registered accumulator resident that folds this cell's effect list, or None for a scalar
+  // cell. Built-ins are append (multiple/repeat), merge, and kv_map; each resident owns both its
+  // CLI-seat fold and final result projection, so the resolver dispatches without inspecting a name.
+  accum : &AccumulatorExt? // None = scalar; Some(resident) = resident-owned fold/collect
   // DR-105 §1 flatten dial (append accumulator only, `installer.mbt`'s `ensure_entity` enforces
   // this invariant — a non-append accum cell always carries false here, the definition-error gate
   // `collect_flatten_non_append` rejects any other declared combination before lowering runs):
@@ -565,15 +562,10 @@ pub(all) struct Entity {
   // `ElemDef.multiple` to keep telling them apart (`ensure_entity`'s doc comment / `AccumCell`'s own
   // copy in resolve.mbt).
   is_multiple_decl : Bool
-  // DR-036 collector: the T[]→U transform applied to an `accum` cell's FINAL accumulated array
-  // (build_result's ACCUMULATE branch, `resolve.mbt`'s `apply_collector`). Only meaningful when
-  // `accum is Some(_)` — a scalar cell has no accumulated array to collect from, so this stays
-  // None there. `None` here (the common case) means "no collector, render the plain accumulated
-  // array" — the multiple registry's `append` preset's `collector: なし` (DR-036 "省略時 accumulator
-  // 連動デフォルト"). Only `unwrap_single` is wired end-to-end today (issue
-  // 2026-07-09-dec-multiple-collector-decode); `to_set`/`from_entries` are DR-036 registry
-  // presets but not reachable through this simple by-name field yet.
-  collector : String?
+  // DR-036 collector resident: the T[]→U transform applied after the accumulator's final result
+  // projection. Only meaningful when `accum is Some(_)`; None renders the accumulator result as-is.
+  // The configured resident carries its own kind + encode identity and collect implementation.
+  collector : &CollectorExt?
   // DR-083 §1/§波及: default seat, stored as a length-1-degenerate UNIFORM array (`None` = no
   // declared default; a scalar cell's declared default is `Some([v])`, length exactly 1; a
   // `multiple`/repeat/merge (accum) cell's is `Some([v1, v2, ...])`, one piece per declared array

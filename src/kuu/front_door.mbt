@@ -130,6 +130,7 @@ pub fn parse_definition(
         def,
         extensions.installers(),
         registry=templates,
+        extensions~,
       ) {
       Ok(root) =>
         Ok({

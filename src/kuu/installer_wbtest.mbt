@@ -586,7 +586,7 @@ test "repeat installer: unbounded repeat installs 'append'+flatten:true accum + 
   assert_eq(sc.positional.length(), 1)
   assert_eq(sc.positional[0], Ref("src#cons"))
   let ent = entity_of(sc, "src").unwrap()
-  assert_eq(ent.accum, Some("append")) // DR-105 §3
+  assert_eq(ent.accum.unwrap().kind(), "append") // DR-105 §3
   assert_eq(ent.flatten, true)
   assert_eq(ent.is_multiple_decl, false) // no `multiple` declared — repeat-cons origin
 }
@@ -613,7 +613,7 @@ test "repeat installer: min:0 unbounded repeat lowers to @engine.Many(head, lazy
     @engine.Many(@builtins.string_arg("xs", []), true),
   )
   let ent = entity_of(sc, "xs").unwrap()
-  assert_eq(ent.accum, Some("append")) // DR-044 §1: cardinality 不問で常に配列 / DR-105 §3
+  assert_eq(ent.accum.unwrap().kind(), "append") // DR-044 §1: cardinality 不問で常に配列 / DR-105 §3
   assert_eq(ent.flatten, true)
 }
 
@@ -644,7 +644,7 @@ test "repeat installer: bounded max lowers to min heads + @engine.BoundedTail (n
   )
   // Ref template は登録されない (Ref 再帰なし)
   let ent = entity_of(sc, "f").unwrap()
-  assert_eq(ent.accum, Some("append")) // DR-105 §3
+  assert_eq(ent.accum.unwrap().kind(), "append") // DR-105 §3
   assert_eq(ent.flatten, true)
 }
 
@@ -775,8 +775,8 @@ test "multiple installer: a declared collector rides straight through to @engine
   }
   let sc = ok_scope(def, all_installers())
   let ent = entity_of(sc, "tags").unwrap()
-  assert_eq(ent.accum, Some("append")) // DR-034: multiple の値 fold は append
-  assert_eq(ent.collector, Some("unwrap_single"))
+  assert_eq(ent.accum.unwrap().kind(), "append") // DR-034: multiple の値 fold は append
+  assert_eq(ent.collector.unwrap().kind(), "unwrap_single")
 }
 
 ///|

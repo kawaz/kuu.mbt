@@ -685,7 +685,10 @@ fn proj_entity(e : @engine.Entity) -> LEnt {
     env: e.env_key,
     inherit_: e.inherit_,
     config_key: e.config_key,
-    accum: e.accum,
+    accum: match e.accum {
+      Some(resident) => Some(resident.kind())
+      None => None
+    },
     flatten: e.flatten,
   }
 }
@@ -2630,15 +2633,16 @@ fn scope_needs_default_ladder(sc : @engine.Scope) -> Bool {
       return true
     }
     // DR-080 波及節: a merge-accumulator cell's @engine.Set/@engine.Remove/@engine.Splice PIECE bindings only fold into
-    // the cell's final state inside `resolve_merge_accum` (resolve.mbt) — the raw-`binds` fold
+    // the cell's final state inside the merge accumulator resident's `resolve_cli` — the raw-`binds` fold
     // this function's `false` result routes to (`build_result`'s generic ACCUMULATE match) has no
     // concept of "同じ at_pos の piece 列 = 1 発火" grouping or old-composition, and would push a
     // `@engine.Splice`/`@engine.Remove` binding's placeholder/operand value straight into the array (wrong on
     // every axis: no overwrite-vs-merge distinction, no @ old-splice, `@engine.Remove`'s operand and
     // `@engine.Splice`'s `@engine.VBool(false)` placeholder both leak into the result). A merge cell ALWAYS needs
     // the resolve path, even with no env/config/default/filters declared.
-    if e.accum is Some("merge") {
-      return true
+    match e.accum {
+      Some(resident) => if resident.kind() == "merge" { return true }
+      None => ()
     }
   }
   false

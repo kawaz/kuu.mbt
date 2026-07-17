@@ -634,7 +634,6 @@ impl @engine.InstallerExt for MultipleInstaller with fn collect_defs_errors(
   collect_invalid_regex_pattern(definition, errors)
   collect_ref_merge_accum(definition, errors)
   collect_flatten_non_append(definition, errors)
-  collect_unknown_accumulator(definition, errors)
   collect_invalid_numeric_filter_args(definition, errors)
   errors
 }

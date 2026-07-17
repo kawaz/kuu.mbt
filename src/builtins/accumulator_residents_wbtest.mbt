@@ -138,3 +138,172 @@ test "from_entries collector resident converts entry pairs into an object" {
     ]),
   )
 }
+
+// ── DR-080 merge accumulator: §4 の canonical 例 ────────────────────────────
+
+///|
+/// DR-080 §4 の canonical 表を検証する共通ヘルパー。マーカーなしの発火は piece 列で
+/// cell を上書きし、マーカーを含む発火は暗黙先頭 `@` を補って old と合成する。
+fn merge_fire(
+  pieces : Array[MergeMark],
+  old : Array[@engine.Value],
+) -> Array[@engine.Value] {
+  if merge_pieces_has_no_marker(pieces) {
+    let out : Array[@engine.Value] = []
+    for p in pieces {
+      match p {
+        MAdd(v) => out.push(v)
+        _ =>
+          abort(
+            "unreachable: merge_pieces_has_no_marker already filtered non-MAdd",
+          )
+      }
+    }
+    out
+  } else {
+    eval_merge_pieces(merge_pieces_with_implicit_splice(pieces), old)
+  }
+}
+
+///|
+fn vs(s : String) -> @engine.Value {
+  @engine.VStr(s)
+}
+
+///|
+/// 保証: DR-080 §4 canonical 表 (old = 直前発火の `[a,a,b,a,c]`) の1行目「マーカーなし = 上書き」。
+/// `-f a,a,b,a,c` 単独発火は merge モードに入らず、piece 列そのものが結果になる。
+test "DR-080 merge: no-marker fire overwrites the cell (canonical row 1)" {
+  let pieces = [
+    MAdd(vs("a")),
+    MAdd(vs("a")),
+    MAdd(vs("b")),
+    MAdd(vs("a")),
+    MAdd(vs("c")),
+  ]
+  assert_eq(merge_fire(pieces, []), [
+    vs("a"),
+    vs("a"),
+    vs("b"),
+    vs("a"),
+    vs("c"),
+  ])
+}
+
+///|
+/// 保証 (canonical 表 2行目): 明示 `@` 単独発火は old をそのまま splice する (恒等)。
+test "DR-080 merge: explicit @ alone splices old verbatim (canonical row 2)" {
+  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
+  assert_eq(merge_fire([MSplice], old), old)
+}
+
+///|
+/// 保証 (canonical 表 3行目): remove のみの発火は暗黙先頭 `@` + 後方 remove として評価される。
+test "DR-080 merge: remove-only fire is implicit-@ + trailing remove (canonical row 3)" {
+  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
+  assert_eq(merge_fire([MRemove(vs("a"))], old), [vs("b"), vs("c")])
+}
+
+///|
+/// 保証 (canonical 表 4行目): 前置 remove が両方の `@` の splice 内容に効く — `seen_removes` が
+/// 発火全体を通じて蓄積されることの直接証拠 (2 つの @ が同じフィルタ結果になる)。
+test "DR-080 merge: a leading remove filters every subsequent splice (canonical row 4)" {
+  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
+  assert_eq(merge_fire([MRemove(vs("a")), MSplice, MSplice], old), [
+    vs("b"),
+    vs("c"),
+    vs("b"),
+    vs("c"),
+  ])
+}
+
+///|
+/// 保証 (canonical 表 5行目): マーカーなし発火は何度でも単純上書き (old は完全に無視される)。
+test "DR-080 merge: a second no-marker fire overwrites again, ignoring old (canonical row 5)" {
+  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
+  let pieces = [MAdd(vs("d"))]
+  assert_eq(merge_fire(pieces, old), [vs("d")])
+}
+
+///|
+/// 保証 (canonical 表 6行目): `-a,@` (remove の後に明示 @) — remove 後の @ splice はフィルタ済み。
+test "DR-080 merge: remove then explicit @ (canonical row 6)" {
+  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
+  assert_eq(merge_fire([MRemove(vs("a")), MSplice], old), [vs("b"), vs("c")])
+}
+
+///|
+/// 保証 (canonical 表 7行目): remove → @ → add — remove 後に追加された add は削除フィルタを
+/// 受けない (「remove はそれ以後の add には効かない」の直接証拠)。
+test "DR-080 merge: an add AFTER remove survives untouched (canonical row 7)" {
+  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
+  assert_eq(merge_fire([MRemove(vs("a")), MSplice, MAdd(vs("a"))], old), [
+    vs("b"),
+    vs("c"),
+    vs("a"),
+  ])
+}
+
+///|
+/// 保証 (canonical 表 8行目): remove → @ → add → remove — 後置 remove は「その時点までの
+/// work_list」(add で加わった要素も含む) に効く。
+test "DR-080 merge: a trailing remove strips a previously-surviving add (canonical row 8)" {
+  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
+  assert_eq(
+    merge_fire(
+      [MRemove(vs("a")), MSplice, MAdd(vs("a")), MRemove(vs("a"))],
+      old,
+    ),
+    [vs("b"), vs("c")],
+  )
+}
+
+///|
+/// 保証 (canonical 表 9行目): `-a,d` — 暗黙先頭 @ の後に remove、その後 add。
+test "DR-080 merge: implicit @ + remove + add (canonical row 9)" {
+  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
+  assert_eq(merge_fire([MRemove(vs("a")), MAdd(vs("d"))], old), [
+    vs("b"),
+    vs("c"),
+    vs("d"),
+  ])
+}
+
+///|
+/// 保証 (canonical 表 10行目): `@,-a,@` — remove が「それより前にある @」にも効く (splice
+/// フィルタは remove の位置に関わらず、その @ の評価時点で `seen_removes` に入っているかで決まる)。
+/// `-a,@,@` (canonical 表 4行目) と同値になることを固定する。
+test "DR-080 merge: @,-a,@ equals -a,@,@ (canonical row 10)" {
+  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
+  assert_eq(merge_fire([MSplice, MRemove(vs("a")), MSplice], old), [
+    vs("b"),
+    vs("c"),
+    vs("b"),
+    vs("c"),
+  ])
+}
+
+///|
+/// 保証 (canonical 表 11行目): `@,-a,a` — `-a,@,a` (canonical 表 7行目) と同値。
+test "DR-080 merge: @,-a,a equals -a,@,a (canonical row 11)" {
+  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
+  assert_eq(merge_fire([MSplice, MRemove(vs("a")), MAdd(vs("a"))], old), [
+    vs("b"),
+    vs("c"),
+    vs("a"),
+  ])
+}
+
+///|
+/// 保証 (canonical 表 12行目): 初回発火 (old = []) の `a,-a` — 暗黙 @ で old=[] を展開後、
+/// add した "a" 自身を後続 remove が削除する。
+test "DR-080 merge: first fire (old=[]) a,-a nets to empty (canonical row 12)" {
+  assert_eq(merge_fire([MAdd(vs("a")), MRemove(vs("a"))], []), [])
+}
+
+///|
+/// 保証 (canonical 表 13行目): 初回発火 (old = []) の `-a,a` — remove が先でも、その後の add は
+/// 生き残る (remove はそれ以後の add に効かない)。
+test "DR-080 merge: first fire (old=[]) -a,a keeps the trailing add (canonical row 13)" {
+  assert_eq(merge_fire([MRemove(vs("a")), MAdd(vs("a"))], []), [vs("a")])
+}

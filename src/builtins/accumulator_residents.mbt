@@ -99,9 +99,9 @@ priv enum MergeGroup {
 
 ///|
 priv enum MergeMark {
-  Add(@engine.Value)
-  Remove(@engine.Value)
-  Splice
+  MAdd(@engine.Value)
+  MRemove(@engine.Value)
+  MSplice
 }
 
 ///|
@@ -118,24 +118,26 @@ fn value_contains(
 }
 
 ///|
-fn has_merge_marker(marks : Array[MergeMark]) -> Bool {
+fn merge_pieces_has_no_marker(marks : Array[MergeMark]) -> Bool {
   for mark in marks {
     match mark {
-      Add(_) => ()
-      _ => return true
+      MAdd(_) => ()
+      _ => return false
     }
   }
-  false
+  true
 }
 
 ///|
-fn with_implicit_splice(marks : Array[MergeMark]) -> Array[MergeMark] {
+fn merge_pieces_with_implicit_splice(
+  marks : Array[MergeMark],
+) -> Array[MergeMark] {
   for mark in marks {
-    if mark is Splice {
+    if mark is MSplice {
       return marks
     }
   }
-  let out : Array[MergeMark] = [Splice]
+  let out : Array[MergeMark] = [MSplice]
   for mark in marks {
     out.push(mark)
   }
@@ -143,7 +145,7 @@ fn with_implicit_splice(marks : Array[MergeMark]) -> Array[MergeMark] {
 }
 
 ///|
-fn eval_merge_marks(
+fn eval_merge_pieces(
   marks : Array[MergeMark],
   old : Array[@engine.Value],
 ) -> Array[@engine.Value] {
@@ -151,8 +153,8 @@ fn eval_merge_marks(
   let removed : Array[@engine.Value] = []
   for mark in marks {
     match mark {
-      Add(value) => values.push(value)
-      Remove(value) => {
+      MAdd(value) => values.push(value)
+      MRemove(value) => {
         if !value_contains(removed, value) {
           removed.push(value)
         }
@@ -167,7 +169,7 @@ fn eval_merge_marks(
           values.push(current)
         }
       }
-      Splice =>
+      MSplice =>
         for value in old {
           if !value_contains(removed, value) {
             values.push(value)
@@ -262,14 +264,14 @@ fn merge_resolve_cli(
         let marks : Array[MergeMark] = []
         for piece in pieces {
           match piece.op {
-            @engine.Set => marks.push(Add(piece.value))
-            @engine.Remove => marks.push(Remove(piece.value))
-            @engine.Splice => marks.push(Splice)
+            @engine.Set => marks.push(MAdd(piece.value))
+            @engine.Remove => marks.push(MRemove(piece.value))
+            @engine.Splice => marks.push(MSplice)
             _ =>
               abort("unreachable: merge firing contains only set/remove/splice")
           }
         }
-        if !has_merge_marker(marks) {
+        if merge_pieces_has_no_marker(marks) {
           let values : Array[@engine.Value] = []
           for piece in pieces {
             values.push(piece.value)
@@ -292,7 +294,10 @@ fn merge_resolve_cli(
                 Err(error) => return Err(error)
               }
           }
-          let values = eval_merge_marks(with_implicit_splice(marks), old)
+          let values = eval_merge_pieces(
+            merge_pieces_with_implicit_splice(marks),
+            old,
+          )
           let next : Array[@engine.Binding] = []
           for value in values {
             next.push(@engine.mkb(name, value, @engine.Cli))

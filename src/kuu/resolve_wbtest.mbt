@@ -58,10 +58,16 @@ fn ent(
     is_tty,
     tty_stream,
     tty_cygwin,
-    accum,
+    accum: match accum {
+      Some(kind) => canonical_registry().lookup_accumulator(kind)
+      None => None
+    },
     flatten,
     is_multiple_decl,
-    collector,
+    collector: match collector {
+      Some(kind) => canonical_registry().lookup_collector(kind)
+      None => None
+    },
     default_values,
     separator,
     // `chain` (filters_wbtest.mbt, same package): colon-shorthand ergonomics over `@engine.Entity`'s
@@ -111,7 +117,7 @@ test "build_result folds scalar last-wins, accumulate array, and default seat" {
       name: "tags",
       collector: None,
       accum_filters: [],
-      accum: "append",
+      accum: @builtins.append_accumulator(),
       flatten: false,
       is_multiple_decl: false,
     },
@@ -159,7 +165,7 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
       name: "tags",
       collector: None,
       accum_filters: [],
-      accum: "append",
+      accum: @builtins.append_accumulator(),
       flatten: false,
       is_multiple_decl: false,
     },
@@ -181,7 +187,7 @@ test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)
       name: "tags",
       collector: None,
       accum_filters: [],
-      accum: "append",
+      accum: @builtins.append_accumulator(),
       flatten: false,
       is_multiple_decl: false,
     },
@@ -194,8 +200,7 @@ test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)
 
 ///|
 /// 保証 (DR-036, issue 2026-07-09-dec-multiple-collector-decode): an accum cell whose AccumCell
-/// carries `collector: Some("unwrap_single")` has the collector applied to the FINAL accumulated
-/// array (after fold, same spot `apply_collector`/`unwrap_single`, resolve.mbt, sits) — a
+/// carries the `unwrap_single` collector resident has it applied to the FINAL accumulated result — a
 /// length-1 accumulation collapses to a bare scalar (DR-034 縮退ケース: an app wants a SCALAR from
 /// a multiple/repeat cell without the uniform-array default folding it). Paired with the next case
 /// (2+ elements) to fix unwrap_single's actual boundary, not just "it does something".
@@ -207,9 +212,9 @@ test "build_result: a collector (unwrap_single) collapses a length-1 accumulatio
     {
       path: [],
       name: "tag",
-      collector: Some("unwrap_single"),
+      collector: Some(@builtins.unwrap_single_collector()),
       accum_filters: [],
-      accum: "append",
+      accum: @builtins.append_accumulator(),
       flatten: false,
       is_multiple_decl: false,
     },
@@ -233,9 +238,9 @@ test "build_result: a collector (unwrap_single) leaves a 2+ element accumulation
     {
       path: [],
       name: "tag",
-      collector: Some("unwrap_single"),
+      collector: Some(@builtins.unwrap_single_collector()),
       accum_filters: [],
-      accum: "append",
+      accum: @builtins.append_accumulator(),
       flatten: false,
       is_multiple_decl: false,
     },
@@ -264,9 +269,9 @@ test "build_result: a collector on an unfired accum cell still renders [] (DR-04
     {
       path: [],
       name: "tag",
-      collector: Some("unwrap_single"),
+      collector: Some(@builtins.unwrap_single_collector()),
       accum_filters: [],
-      accum: "append",
+      accum: @builtins.append_accumulator(),
       flatten: false,
       is_multiple_decl: false,
     },
@@ -1738,178 +1743,6 @@ test "resolve_scope: an update transform's own arity rejection surfaces at runti
   }
 }
 
-// ── DR-080 merge accumulator: 核アルゴリズムの先行 pin (§4 の 14 canonical 例) ──────────
-
-///|
-/// DR-080 §4 の canonical 表を検証する共通ヘルパー: 「マーカーを含まない発火」なら
-/// `merge_pieces_has_no_marker` が true になり piece 列そのものが結果になる (§3 冒頭の上書き)、
-/// マーカーを含むなら `merge_pieces_with_implicit_splice` (暗黙先頭 `@` 補完) を経て
-/// `eval_merge_pieces` (old 合成) に渡す — 呼び出し側 (このヘルパー) が「上書き vs merge モード」
-/// の分岐を担う想定は resolve_entity_raw の accum 分岐にそのまま持ち込める形。
-fn merge_fire(
-  pieces : Array[MergeMark],
-  old : Array[@engine.Value],
-) -> Array[@engine.Value] {
-  if merge_pieces_has_no_marker(pieces) {
-    let out : Array[@engine.Value] = []
-    for p in pieces {
-      match p {
-        MAdd(v) => out.push(v)
-        _ =>
-          abort(
-            "unreachable: merge_pieces_has_no_marker already filtered non-MAdd",
-          )
-      }
-    }
-    out
-  } else {
-    eval_merge_pieces(merge_pieces_with_implicit_splice(pieces), old)
-  }
-}
-
-///|
-fn vs(s : String) -> @engine.Value {
-  @engine.VStr(s)
-}
-
-///|
-/// 保証: DR-080 §4 canonical 表 (old = 直前発火の `[a,a,b,a,c]`) の1行目「マーカーなし = 上書き」。
-/// `-f a,a,b,a,c` 単独発火は merge モードに入らず、piece 列そのものが結果になる。
-test "DR-080 merge: no-marker fire overwrites the cell (canonical row 1)" {
-  let pieces = [
-    MAdd(vs("a")),
-    MAdd(vs("a")),
-    MAdd(vs("b")),
-    MAdd(vs("a")),
-    MAdd(vs("c")),
-  ]
-  assert_eq(merge_fire(pieces, []), [
-    vs("a"),
-    vs("a"),
-    vs("b"),
-    vs("a"),
-    vs("c"),
-  ])
-}
-
-///|
-/// 保証 (canonical 表 2行目): 明示 `@` 単独発火は old をそのまま splice する (恒等)。
-test "DR-080 merge: explicit @ alone splices old verbatim (canonical row 2)" {
-  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
-  assert_eq(merge_fire([MSplice], old), old)
-}
-
-///|
-/// 保証 (canonical 表 3行目): remove のみの発火は暗黙先頭 `@` + 後方 remove として評価される。
-test "DR-080 merge: remove-only fire is implicit-@ + trailing remove (canonical row 3)" {
-  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
-  assert_eq(merge_fire([MRemove(vs("a"))], old), [vs("b"), vs("c")])
-}
-
-///|
-/// 保証 (canonical 表 4行目): 前置 remove が両方の `@` の splice 内容に効く — `seen_removes` が
-/// 発火全体を通じて蓄積されることの直接証拠 (2 つの @ が同じフィルタ結果になる)。
-test "DR-080 merge: a leading remove filters every subsequent splice (canonical row 4)" {
-  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
-  assert_eq(merge_fire([MRemove(vs("a")), MSplice, MSplice], old), [
-    vs("b"),
-    vs("c"),
-    vs("b"),
-    vs("c"),
-  ])
-}
-
-///|
-/// 保証 (canonical 表 5行目): マーカーなし発火は何度でも単純上書き (old は完全に無視される)。
-test "DR-080 merge: a second no-marker fire overwrites again, ignoring old (canonical row 5)" {
-  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
-  let pieces = [MAdd(vs("d"))]
-  assert_eq(merge_fire(pieces, old), [vs("d")])
-}
-
-///|
-/// 保証 (canonical 表 6行目): `-a,@` (remove の後に明示 @) — remove 後の @ splice はフィルタ済み。
-test "DR-080 merge: remove then explicit @ (canonical row 6)" {
-  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
-  assert_eq(merge_fire([MRemove(vs("a")), MSplice], old), [vs("b"), vs("c")])
-}
-
-///|
-/// 保証 (canonical 表 7行目): remove → @ → add — remove 後に追加された add は削除フィルタを
-/// 受けない (「remove はそれ以後の add には効かない」の直接証拠)。
-test "DR-080 merge: an add AFTER remove survives untouched (canonical row 7)" {
-  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
-  assert_eq(merge_fire([MRemove(vs("a")), MSplice, MAdd(vs("a"))], old), [
-    vs("b"),
-    vs("c"),
-    vs("a"),
-  ])
-}
-
-///|
-/// 保証 (canonical 表 8行目): remove → @ → add → remove — 後置 remove は「その時点までの
-/// work_list」(add で加わった要素も含む) に効く。
-test "DR-080 merge: a trailing remove strips a previously-surviving add (canonical row 8)" {
-  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
-  assert_eq(
-    merge_fire(
-      [MRemove(vs("a")), MSplice, MAdd(vs("a")), MRemove(vs("a"))],
-      old,
-    ),
-    [vs("b"), vs("c")],
-  )
-}
-
-///|
-/// 保証 (canonical 表 9行目): `-a,d` — 暗黙先頭 @ の後に remove、その後 add。
-test "DR-080 merge: implicit @ + remove + add (canonical row 9)" {
-  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
-  assert_eq(merge_fire([MRemove(vs("a")), MAdd(vs("d"))], old), [
-    vs("b"),
-    vs("c"),
-    vs("d"),
-  ])
-}
-
-///|
-/// 保証 (canonical 表 10行目): `@,-a,@` — remove が「それより前にある @」にも効く (splice
-/// フィルタは remove の位置に関わらず、その @ の評価時点で `seen_removes` に入っているかで決まる)。
-/// `-a,@,@` (canonical 表 4行目) と同値になることを固定する。
-test "DR-080 merge: @,-a,@ equals -a,@,@ (canonical row 10)" {
-  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
-  assert_eq(merge_fire([MSplice, MRemove(vs("a")), MSplice], old), [
-    vs("b"),
-    vs("c"),
-    vs("b"),
-    vs("c"),
-  ])
-}
-
-///|
-/// 保証 (canonical 表 11行目): `@,-a,a` — `-a,@,a` (canonical 表 7行目) と同値。
-test "DR-080 merge: @,-a,a equals -a,@,a (canonical row 11)" {
-  let old = [vs("a"), vs("a"), vs("b"), vs("a"), vs("c")]
-  assert_eq(merge_fire([MSplice, MRemove(vs("a")), MAdd(vs("a"))], old), [
-    vs("b"),
-    vs("c"),
-    vs("a"),
-  ])
-}
-
-///|
-/// 保証 (canonical 表 12行目): 初回発火 (old = []) の `a,-a` — 暗黙 @ で old=[] を展開後、
-/// add した "a" 自身を後続 remove が削除する。
-test "DR-080 merge: first fire (old=[]) a,-a nets to empty (canonical row 12)" {
-  assert_eq(merge_fire([MAdd(vs("a")), MRemove(vs("a"))], []), [])
-}
-
-///|
-/// 保証 (canonical 表 13行目): 初回発火 (old = []) の `-a,a` — remove が先でも、その後の add は
-/// 生き残る (remove はそれ以後の add に効かない)。
-test "DR-080 merge: first fire (old=[]) -a,a keeps the trailing add (canonical row 13)" {
-  assert_eq(merge_fire([MRemove(vs("a")), MAdd(vs("a"))], []), [vs("a")])
-}
-
 ///|
 /// 保証 (canonical 表 14行目、DR-080 §2 escape 規約): `+-a,+@,++` は piece 全体が `+` + (`-`|`@`|`+`)
 /// で始まるので escape (先頭 `+` を 1 個剥がした literal) — マーカーを一切含まないので cell 上書き
@@ -1946,9 +1779,8 @@ test "DR-080 merge: partial matches and bare +/- are NOT markers (対極)" {
 }
 
 ///|
-/// A @engine.Binding literal carrying a non-@engine.Set op (`resolve_wbtest.mbt`'s own `cb` always builds `@engine.Set` —
-/// this helper is for hand-building the `@engine.Remove`/`@engine.Splice` piece bindings `resolve_merge_accum`'s
-/// grouping loop needs, mirroring `sep_binds`'s own construction shape).
+/// A @engine.Binding literal carrying a non-@engine.Set op. The merge resident groups these
+/// @engine.Remove/@engine.Splice pieces by `at_pos`, matching `sep_binds`'s construction shape.
 fn merge_piece_bind(
   key : String,
   op : @engine.EffectOp,
@@ -1959,12 +1791,9 @@ fn merge_piece_bind(
 }
 
 ///|
-/// 保証: `resolve_merge_accum` (resolve.mbt) が同一 at_pos の CLI piece 列を「1 発火」として正しく
-/// グループ化し、DR-080 §3 の評価規則を `resolve_scope` 経由の CLI 席折込みとして正しく適用する。
-/// `eval_merge_pieces` 自体の正しさは `merge_fire` 系の 15 wbtest (上記) が固定済みだが、それらは
-/// resolve.mbt の CLI 席配線 (グルーピング境界 / 「マーカーなし発火=置換、累積ではない」/ old の
-/// 引き渡し) を一切通らない — この wiring 自体の正しさは fixture (multiple-parse/merge-*.json、
-/// conformance harness 経由) でしか検証されておらず、resolve.mbt 単体では未検証だった。
+/// 保証: `resolve_scope` は merge resident の `resolve_cli` へ委譲し、同一 at_pos の CLI piece 列を
+/// 1 発火として扱う。builtins package の unit test が純粋 fold を固定し、ここでは lower-seat callback
+/// と前発火の old を含む resolve 配線を固定する。
 ///
 /// ケース1 (merge-basic.json::second-no-marker-fire-overwrites-again の cli 席を手組み): マーカー
 /// を含まない 2 回目の発火が 1 回目の 5 要素を消して単独の結果になる (append 累積とは異なる、
@@ -2000,10 +1829,8 @@ test "DR-080 resolve wiring: second no-marker fire REPLACES (not appends) the fi
 ///|
 /// ケース2 (merge-splice-remove.json::implicit-at-then-remove-only の cli 席を手組み): 1 回目は
 /// マーカーなし発火で `old` が確定 (`[a,a,b,a,c]`)、2 回目は同一 at_pos の `@engine.Remove(a)` 単独 piece —
-/// 暗黙先頭 `@` が補われ old を splice した後 remove が効き `[b,c]` になる。`resolve_merge_accum`
-/// が (a) @engine.Remove piece を正しく GFire にグループ化し、(b) 前の発火の結果を次発火の `old` として
-/// 引き渡すことを固定する (どちらも `eval_merge_pieces` 単体テストでは検証できない、resolve.mbt
-/// 固有の配線)。
+/// 暗黙先頭 `@` が補われ old を splice した後 remove が効き `[b,c]` になる。merge resident が
+/// @engine.Remove piece を同一発火へまとめ、前発火の結果を次発火の `old` として運ぶことを固定する。
 test "DR-080 resolve wiring: a lone @engine.Remove piece merges against the PRIOR firing's old, via resolve_scope" {
   let fields = ent("fields", @builtins.string_type(), accum=Some("merge"))
   let sc : @engine.Scope = {
@@ -2051,7 +1878,7 @@ test "build_result: kv_map folds 2 fires into an @engine.RObj (distinct keys)" {
       name: "assigns",
       collector: None,
       accum_filters: [],
-      accum: "kv_map",
+      accum: @builtins.kv_map_accumulator(),
       flatten: false,
       is_multiple_decl: false,
     },
@@ -2088,7 +1915,7 @@ test "build_result: kv_map re-firing a key is last-wins on VALUE, first-seen on 
       name: "assigns",
       collector: None,
       accum_filters: [],
-      accum: "kv_map",
+      accum: @builtins.kv_map_accumulator(),
       flatten: false,
       is_multiple_decl: false,
     },
@@ -2121,7 +1948,7 @@ test "build_result: kv_map splits a piece at the FIRST '=' only (value may itsel
       name: "assigns",
       collector: None,
       accum_filters: [],
-      accum: "kv_map",
+      accum: @builtins.kv_map_accumulator(),
       flatten: false,
       is_multiple_decl: false,
     },
@@ -2136,8 +1963,8 @@ test "build_result: kv_map splits a piece at the FIRST '=' only (value may itsel
 
 ///|
 /// 対極 (regression guard): a plain "append" accum cell is UNAFFECTED by the kv_map branch added
-/// to `build_result`'s ACCUMULATE match — `accum_kind_here(...) == Some("kv_map")` is a targeted
-/// dispatch, not a change to the default fold path. Same shape as this file's very first test
+/// to `build_result`'s ACCUMULATE match — descriptor dispatch selects kv_map without changing
+/// the sibling append resident's fold. Same shape as this file's very first test
 /// ("build_result folds scalar last-wins, accumulate array...") but written standalone here so
 /// this file's kv_map section carries its own non-collision witness.
 test "build_result: kv_map's @engine.RObj branch does not affect a sibling 'append' accum cell (対極)" {
@@ -2151,7 +1978,7 @@ test "build_result: kv_map's @engine.RObj branch does not affect a sibling 'appe
       name: "tags",
       collector: None,
       accum_filters: [],
-      accum: "append",
+      accum: @builtins.append_accumulator(),
       flatten: false,
       is_multiple_decl: false,
     },

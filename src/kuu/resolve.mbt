@@ -24,28 +24,6 @@
 // ── result value + builder (slice `poc/result.mbt`) ──────────────────────────────────────────
 
 ///|
-/// DR-091 §2: split a `kv_map` piece at its FIRST `=` (the value may itself contain further `=`
-/// chars — `KEY=a=b` splits to `("KEY", "a=b")`, not `("KEY", "a")`). Every piece reaching this
-/// function is already guaranteed to contain `=` (`KvArg`'s consume-time gate, `eval.mbt`'s
-/// `contains_eq`) — a piece with no `=` never becomes a @engine.Binding in the first place (@engine.Held Error at
-/// consume time), so this function has no "no `=` found" case to handle.
-fn split_first_eq(s : String) -> (String, String) {
-  let mut key = ""
-  let mut value = ""
-  let mut seen_eq = false
-  for c in s {
-    if seen_eq {
-      value = value + c.to_string()
-    } else if c == '=' {
-      seen_eq = true
-    } else {
-      key = key + c.to_string()
-    }
-  }
-  (key, value)
-}
-
-///|
 fn str_contains(xs : Array[String], v : String) -> Bool {
   for x in xs {
     if x == v {
@@ -335,7 +313,7 @@ pub struct AccumCell {
   // DR-036 collector (@engine.Entity.collector's copy, threaded through so build_result — which only
   // sees AccumCell, never the @engine.Scope/@engine.Entity it came from — can apply it to the final accumulated
   // array without a second lookup pass). None = no collector (render the plain array).
-  collector : String?
+  collector : &@engine.CollectorExt?
   // DR-009 段 7 / DR-102 §1 accum_filters (@engine.Entity.accum_filters's copy, issue
   // accum-post-filters-stage7): an accum cell's accum_filters is Acc→Acc (the WHOLE accumulated
   // array, `filters.mbt`'s `ArrayFilterDescriptor` registry — DIFFERENT signature from a scalar
@@ -352,7 +330,7 @@ pub struct AccumCell {
   // collapsed both onto the SAME name ("append"), so `is_multiple_decl` below (not this field) is
   // what `build_result`'s `segs` loop now reads for that distinction (both shapes still emit the
   // SAME "#fire"/"#row" sentinels, `inst_long`'s repeat-bearing ref branch is unchanged by DR-105).
-  accum : String
+  accum : &@engine.AccumulatorExt
   // DR-105 §1 flatten dial (@engine.Entity.flatten's copy): whether an array-shaped fire value expands by
   // one level into the accumulated array (`build_result`'s SEGS-loop per-fire builder, the one
   // reachable consumer — DR-084 §2's ref+repeat+multiple row array).
@@ -401,7 +379,7 @@ fn collector_here(
   cells : Array[AccumCell],
   path : Array[String],
   name : String,
-) -> String? {
+) -> &@engine.CollectorExt? {
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
       return c.collector
@@ -428,15 +406,12 @@ fn accum_filters_here(
 }
 
 ///|
-/// The accumulator KIND declared for the accum cell at `path`/`name` (mirrors `collector_here`,
-/// same lookup shape) — DR-084 §2's `build_result` needs to tell "flatten" (ref+repeat WITHOUT
-/// `multiple`, last-wins-WHOLE-CELL discard) apart from any other kind (`multiple`'s "append" etc,
-/// firing-boundary-PRESERVING), see `AccumCell.accum`'s doc comment.
-fn accum_kind_here(
+/// The accumulator resident declared for the cell at `path`/`name`.
+fn accumulator_here(
   cells : Array[AccumCell],
   path : Array[String],
   name : String,
-) -> String? {
+) -> &@engine.AccumulatorExt? {
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
       return Some(c.accum)
@@ -465,9 +440,8 @@ fn flatten_here(
 
 ///|
 /// The DR-084 §2 origin marker declared for the accum cell at `path`/`name` (mirrors
-/// `collector_here`, same lookup shape) — replaces the pre-DR-105 `accum_kind_here(...) !=
-/// Some("flatten")` test `build_result`'s SEGS loop used (`AccumCell.is_multiple_decl`'s doc
-/// comment). Defaults false when not found, same posture as `flatten_here`.
+/// `collector_here`, same lookup shape). It distinguishes a declared `multiple` cell from a
+/// repeat-only cell even though both use the append resident. Defaults false when not found.
 fn is_multiple_decl_here(
   cells : Array[AccumCell],
   path : Array[String],
@@ -479,19 +453,6 @@ fn is_multiple_decl_here(
     }
   }
   false
-}
-
-///|
-/// DR-036 collector dispatch by name: applies the named collector to an accum cell's final
-/// accumulated `@engine.RArr`. Only `unwrap_single` is wired end-to-end today (`@engine.Entity.collector`'s doc
-/// comment, node.mbt) — an unrecognized name is unreachable in practice (decode validates against
-/// this same vocab before ever setting `@engine.Entity.collector`, `dec_multiple` in
-/// json_conformance_wbtest.mbt), so this defensively falls back to identity rather than aborting.
-fn apply_collector(name : String, r : @engine.RVal) -> @engine.RVal {
-  match name {
-    "unwrap_single" => unwrap_single(r)
-    _ => r
-  }
 }
 
 ///|
@@ -654,43 +615,13 @@ pub fn build_result(
             Err(_) => vals
           }
       }
-      let collected = if accum_kind_here(cells, path, k) == Some("kv_map") {
-        // DR-091 §2: a kv_map cell folds to an OBJECT, not the uniform array every other
-        // accumulator kind produces — each piece is guaranteed `k=v`-shaped (`KvArg`'s consume-time
-        // gate, no piece without `=` ever reaches here as a @engine.Binding). Re-firing the same key is
-        // last-wins (DR-015's あと勝ち — same rule as scalar cell mutation) while the key's
-        // POSITION stays at its first occurrence (`Object.fromEntries` convention: a later
-        // assignment updates the value in place, it does not move the key to the end). No
-        // `collector` application here (DR-036's `collector` vocab — `unwrap_single` etc. — targets
-        // an ARRAY shape; kv_map's minimal implementation, team-lead 裁定 2026-07-11, does not wire
-        // collector/kv_map interaction, no fixture requires it yet).
-        let pairs : Array[(String, @engine.RVal)] = []
-        let seen : Map[String, Int] = Map([])
-        for v in filtered_vals {
-          let raw = match v {
-            @engine.VStr(s) => s
-            _ => "" // unreachable: KvArg only ever binds @engine.VStr (eval.mbt's KvArg arm)
-          }
-          let (key, value) = split_first_eq(raw)
-          match seen.get(key) {
-            Some(i) => pairs[i] = (key, @engine.RScalar(@engine.VStr(value)))
-            None => {
-              seen.set(key, pairs.length())
-              pairs.push((key, @engine.RScalar(@engine.VStr(value))))
-            }
-          }
-        }
-        @engine.RObj(pairs)
-      } else {
-        let items : Array[@engine.RVal] = []
-        for v in filtered_vals {
-          items.push(@engine.RScalar(v))
-        }
-        let arr = @engine.RArr(items)
-        match collector_here(cells, path, k) {
-          Some(cn) => apply_collector(cn, arr)
-          None => arr
-        }
+      let accumulated = match accumulator_here(cells, path, k) {
+        Some(resident) => resident.collect(filtered_vals)
+        None => abort("unreachable: an accumulated cell has no resident")
+      }
+      let collected = match collector_here(cells, path, k) {
+        Some(resident) => resident.collect(accumulated)
+        None => accumulated
       }
       obj.push((k, collected))
     } else {
@@ -732,10 +663,9 @@ pub fn build_result(
     // (non-`multiple` ref+repeat) IS an accum cell too (`ensure_entity`'s repeat-cons branch — a
     // repeat-only element), and its "#fire" is the ORIGINAL discard-earlier-firings cutoff
     // (`row_groups`'s own contract) — only a genuinely `multiple`-declared cell wants the
-    // firing-PRESERVING read. Pre-DR-105 this test was `accum_kind_here(...) != Some("flatten")`
-    // (both origins shared the "append"/"flatten" name split); DR-105 §3 collapsed both onto the
-    // SAME accum name, so `is_multiple_decl_here` (the DR-084 §2 origin marker, independent of the
-    // flatten dial) is what tells them apart now (`AccumCell.is_multiple_decl`'s doc comment).
+    // firing-PRESERVING read. `is_multiple_decl_here` is the independent origin marker that tells
+    // a declared multiple cell from a repeat-only cell; accumulator identity and the flatten dial
+    // do not encode that distinction.
     let seg_is_multiple_ref = is_accum &&
       is_multiple_decl_here(cells, path, seg)
     if seg_is_multiple_ref &&
@@ -807,9 +737,9 @@ pub fn build_result(
     if path_eq(c.path, path) &&
       !str_contains(named, c.name) &&
       !has_direct_key(sub_under(binds, c.name), "#row") {
-      let empty : @engine.RVal = @engine.RArr([])
+      let empty = c.accum.collect([])
       let collected = match c.collector {
-        Some(cn) => apply_collector(cn, empty)
+        Some(resident) => resident.collect(empty)
         None => empty
       }
       obj.push((c.name, collected))
@@ -2515,165 +2445,109 @@ fn resolve_entity_raw(
   // That grouping cannot be expressed inside this function's per-binding `match b.op` loop (which
   // append/flatten's accumulators are correctly built around, one binding = one independent
   // effect) — factored into its own function.
-  if e.accum is Some("merge") {
-    return resolve_merge_accum(
-      e, cli, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
-      include_default,
-    )
+  match e.accum {
+    Some(resident) => {
+      let lower : @engine.LowerSeat = fn(include_default_) {
+        resolve_ladder_below_cli(
+          e,
+          env_map,
+          config_obj,
+          config_path,
+          inherited,
+          at_pos,
+          epath,
+          tty_map,
+          include_default=include_default_,
+        )
+      }
+      return resident.resolve_cli(e.name, cli, include_default, lower)
+    }
+    None => ()
   }
-  if e.accum is Some(_) {
-    let bs : Array[@engine.Binding] = []
-    let mut committed_now = false
-    for b in cli {
-      if b.key == e.name {
-        match b.op {
-          @engine.Update(_, _) =>
-            // team-lead 裁定 2026-07-10 (更新): accum×update は実行時 Err ではなく静的
-            // definition-error (`installer.mbt`'s `collect_unsupported_accum_update`) — a
-            // `multiple` element carrying an `update` variant is rejected at `parse_definition`
-            // time, before a @engine.Scope (and this function) ever exists. This arm is therefore
-            // unreachable in practice; `abort` makes that contract visible instead of silently
-            // mis-handling a binding that should never arrive.
-            abort(
-              "unreachable: an accum (multiple) entity's `update` variant is rejected at definition time (installer.mbt's collect_unsupported_accum_update) — resolve_entity_raw should never see one",
-            )
-          @engine.Remove | @engine.Splice =>
-            // DR-080 §2: `sep_binds` only ever emits a `@engine.Remove`/`@engine.Splice` piece for an entity whose
-            // `accumulator` is `"merge"` (the `merge` flag gate on `@engine.classify_merge_piece`) — this
-            // branch is append/flatten's fold, reached only when `e.accum` is NOT `Some("merge")`
-            // (the `if` above already returned for that case). Unreachable in practice.
-            abort(
-              "unreachable: a @engine.Remove/@engine.Splice piece only fires for a merge-accumulator entity (DR-080 §1) — this is the non-merge (append/flatten) accum fold",
-            )
-          @engine.Default =>
-            // DR-081 §2: accum セルでも op=default は「その時点の (書き換え済み) default 値」を
-            // set する — 宣言 default が無ければ DR-051 §2 一様形 `[]` のまま (env/config 供給も
-            // 無ければ `resolve_ladder_below_cli` は `Ok([])` を返すので、何も push しない = 累積
-            // 列が空のまま = `[]`)、供給があればその配列 (複数 piece もそのまま) が書き換え済み
-            // default になる。build_result の ACCUMULATE match は `b.op` だけを見て
-            // `@engine.Default => items = []` とクリアするので、この @engine.Default 効果 binding 自身 (`b`) は
-            // そのままクリア点として残し、書き換え済み default の各要素は別の `@engine.Set` binding として
-            // 追加する (2 段構成: クリア点 1 個 + 書き換え済み default の要素 N 個、N=0 なら `[]`
-            // のまま)。`source` は両方 `@engine.Cli` に統一 (DR-081 §2 の確定主体読み — `proj_sources` は
-            // 累積列内 SAME KEY の最後の binding の source/op を見るので、途中の要素が env 由来の
-            // 値であっても @engine.Set 側の source を @engine.Cli に上書きしないと sources=env に誤読される)。
-            match
-              resolve_ladder_below_cli(
-                e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
-              ) {
-              Ok(bs2) => {
-                bs.push({ ..b, source: @engine.Cli })
-                for nb in bs2 {
-                  bs.push({ ..nb, op: @engine.Set, source: @engine.Cli })
-                }
-                committed_now = true
+  let mut current : @engine.Binding? = None
+  let mut committed_now = false
+  for b in cli {
+    if b.key == e.name {
+      match b.op {
+        @engine.Set => {
+          current = Some(b)
+          committed_now = true
+        }
+        @engine.Default =>
+          // DR-081 §2: op=default sets the CURRENT (already-rewritten) default value — env/
+          // config/inherit don't "win as a lower seat" here, they've already rewritten the
+          // cell's default (§1's model) by the time this fires, so querying the SAME ladder
+          // `resolve_ladder_below_cli` runs for a normal fall-through gets exactly that value.
+          // `source` is ALWAYS `@engine.Cli` now (DR-081 §2 "確定させた主体"重視 — the default's own
+          // provenance, even if it's env, doesn't change WHO committed it) — this is the one
+          // behavior change from the pre-DR-081 code, which tagged `source: @engine.Default` here.
+          match
+            resolve_ladder_below_cli(
+              e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
+            ) {
+            Ok(bs2) => {
+              current = if bs2.length() > 0 {
+                Some(
+                  @engine.mkb(e.name, bs2[bs2.length() - 1].value, @engine.Cli),
+                )
+              } else {
+                // no declared default AND no env/config/inherit supply — nothing to rewrite to,
+                // same degenerate fallback the pre-DR-081 code used (the placeholder binding
+                // itself, committed as-is; this element simply has no meaningful default here).
+                Some(b)
               }
-              Err(pe) => return Err(pe)
+              committed_now = true
             }
-          @engine.Unset => {
-            bs.push(b)
-            committed_now = false
+            Err(pe) => return Err(pe)
           }
-          @engine.Set | @engine.Empty => {
-            bs.push(b)
-            committed_now = true
+        @engine.Empty => {
+          current = Some(b)
+          committed_now = true
+        }
+        // NOT committed: resets the running value to default so a LATER update in the same
+        // fold sees the right "old" — but this seat stays eligible to fall through to
+        // env/config/inherit if nothing commits after it (unchanged pre-DR-077 contract).
+        @engine.Unset => {
+          current = match default_scalar(e) {
+            Some(v) => Some(@engine.mkb(e.name, v, @engine.Default))
+            None => None
+          }
+          committed_now = false
+        }
+        @engine.Update(transform, args) => {
+          // DR-077 §2 "old ?? default": no prior commit in THIS fold falls back to the entity's
+          // own default (which count presets to 0, LOWERING §A.5) — never a bare literal zero.
+          let old = match current {
+            Some(cb) => cb.value
+            None =>
+              match default_scalar(e) {
+                Some(v) => v
+                None => @engine.VNum(0.0)
+              }
+          }
+          match apply_transform(transform, old, args, e.name, at_pos, epath) {
+            Ok(v) => {
+              current = Some(@engine.mkb(e.name, v, @engine.Cli))
+              committed_now = true
+            }
+            Err(pe) => return Err(pe)
           }
         }
+        @engine.Remove | @engine.Splice =>
+          // DR-080 §2: a `@engine.Remove`/`@engine.Splice` piece only ever fires for a `multiple` element whose
+          // `accumulator` is `"merge"` — a merge accumulator REQUIRES `multiple` (DR-080 §1), so
+          // no scalar (non-multiple) entity's CLI seat can ever carry one. Unreachable in
+          // practice; `abort` matches the sibling accum branch's own defensive arm.
+          abort(
+            "unreachable: a @engine.Remove/@engine.Splice piece only fires for a multiple(merge) entity (DR-080 §1) — this is the scalar (non-multiple) fold",
+          )
       }
     }
-    if committed_now {
-      return Ok(bs)
-    }
-  } else {
-    let mut current : @engine.Binding? = None
-    let mut committed_now = false
-    for b in cli {
-      if b.key == e.name {
-        match b.op {
-          @engine.Set => {
-            current = Some(b)
-            committed_now = true
-          }
-          @engine.Default =>
-            // DR-081 §2: op=default sets the CURRENT (already-rewritten) default value — env/
-            // config/inherit don't "win as a lower seat" here, they've already rewritten the
-            // cell's default (§1's model) by the time this fires, so querying the SAME ladder
-            // `resolve_ladder_below_cli` runs for a normal fall-through gets exactly that value.
-            // `source` is ALWAYS `@engine.Cli` now (DR-081 §2 "確定させた主体"重視 — the default's own
-            // provenance, even if it's env, doesn't change WHO committed it) — this is the one
-            // behavior change from the pre-DR-081 code, which tagged `source: @engine.Default` here.
-            match
-              resolve_ladder_below_cli(
-                e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
-              ) {
-              Ok(bs2) => {
-                current = if bs2.length() > 0 {
-                  Some(
-                    @engine.mkb(
-                      e.name,
-                      bs2[bs2.length() - 1].value,
-                      @engine.Cli,
-                    ),
-                  )
-                } else {
-                  // no declared default AND no env/config/inherit supply — nothing to rewrite to,
-                  // same degenerate fallback the pre-DR-081 code used (the placeholder binding
-                  // itself, committed as-is; this element simply has no meaningful default here).
-                  Some(b)
-                }
-                committed_now = true
-              }
-              Err(pe) => return Err(pe)
-            }
-          @engine.Empty => {
-            current = Some(b)
-            committed_now = true
-          }
-          // NOT committed: resets the running value to default so a LATER update in the same
-          // fold sees the right "old" — but this seat stays eligible to fall through to
-          // env/config/inherit if nothing commits after it (unchanged pre-DR-077 contract).
-          @engine.Unset => {
-            current = match default_scalar(e) {
-              Some(v) => Some(@engine.mkb(e.name, v, @engine.Default))
-              None => None
-            }
-            committed_now = false
-          }
-          @engine.Update(transform, args) => {
-            // DR-077 §2 "old ?? default": no prior commit in THIS fold falls back to the entity's
-            // own default (which count presets to 0, LOWERING §A.5) — never a bare literal zero.
-            let old = match current {
-              Some(cb) => cb.value
-              None =>
-                match default_scalar(e) {
-                  Some(v) => v
-                  None => @engine.VNum(0.0)
-                }
-            }
-            match apply_transform(transform, old, args, e.name, at_pos, epath) {
-              Ok(v) => {
-                current = Some(@engine.mkb(e.name, v, @engine.Cli))
-                committed_now = true
-              }
-              Err(pe) => return Err(pe)
-            }
-          }
-          @engine.Remove | @engine.Splice =>
-            // DR-080 §2: a `@engine.Remove`/`@engine.Splice` piece only ever fires for a `multiple` element whose
-            // `accumulator` is `"merge"` — a merge accumulator REQUIRES `multiple` (DR-080 §1), so
-            // no scalar (non-multiple) entity's CLI seat can ever carry one. Unreachable in
-            // practice; `abort` matches the sibling accum branch's own defensive arm.
-            abort(
-              "unreachable: a @engine.Remove/@engine.Splice piece only fires for a multiple(merge) entity (DR-080 §1) — this is the scalar (non-multiple) fold",
-            )
-        }
-      }
-    }
-    if committed_now {
-      match current {
-        Some(b) => return Ok([b])
-        None => ()
-      }
+  }
+  if committed_now {
+    match current {
+      Some(b) => return Ok([b])
+      None => ()
     }
   }
   resolve_ladder_below_cli(
@@ -2914,204 +2788,6 @@ fn resolve_ladder_below_cli(
       None => Ok([])
     }
   }
-}
-
-///|
-/// A merge accumulator's CLI-seat unit of work (DR-080 波及節「1 発火 = 同一 args 位置の piece
-/// 列」): either one cell-level op (`default`/`unset`/`empty`, 0-token `EffMark` bindings, `at_pos`
-/// always `None`) or a run of `@engine.Set`/`@engine.Remove`/`@engine.Splice` PIECE bindings sharing the SAME `at_pos`
-/// (`sep_binds`'s split of one separator token). `resolve_merge_accum` groups the CLI seat into
-/// this shape before applying DR-080 §3's evaluation rule.
-priv enum MergeGroup {
-  GCell(@engine.Binding)
-  GFire(Array[@engine.Binding])
-}
-
-///|
-/// DR-080 の merge accumulator 専用 CLI 席折込み。append/flatten (`resolve_entity_raw`'s own accum
-/// loop) は「1 binding = 1 独立効果」の fold で済むが、merge は「同じ at_pos の @engine.Set/@engine.Remove/@engine.Splice
-/// piece 列 = 1 発火」という粒度で DR-080 §3 の規則 (old 合成、remove/splice、暗黙先頭 `@`) を適用
-/// する必要があり、その fold には収まらない — 独立関数として切り出した。
-///
-/// 各グループの処理は前段の結果を **完全に置き換える** (累積しない): DR-080 §3 冒頭「マーカーを
-/// 1 つも含まない発火 = cell 上書き」("second-no-marker-fire-overwrites-again" fixture — 2 回目の
-/// マーカーなし発火は 1 回目の 5 要素を消して単独の結果になる、append 累積とは異なる) — append の
-/// ような「毎発火の効果を保存して build_result に畳ませる」contract ではなく、merge 自身が「現在の
-/// 確定状態」を都度再計算し、その時点の状態だけを返り値 (`build_result` が解釈する素の binding 列)
-/// として持つ。次の発火の "old" は別途 `old_values` で運ぶ (返り値の binding 列そのものからは
-/// 再構成しない — `@engine.Default`/`@engine.Empty` の 2 段構成 binding 列から values を逆算するのは重複ロジックに
-/// なる)。
-fn resolve_merge_accum(
-  e : @engine.Entity,
-  cli : Array[@engine.Binding],
-  env_map : Map[String, String],
-  config_obj : @engine.ConfigVal?,
-  config_path : Array[String],
-  inherited : Map[String, @engine.Value],
-  at_pos : Int,
-  epath : Array[String],
-  tty_map : Map[String, TtyObs],
-  include_default : Bool,
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
-  // グループ化: 同名 binding のうち、@engine.Set/@engine.Remove/@engine.Splice は「連続する同一 at_pos」の連なりを 1 発火
-  // (GFire) として束ね、@engine.Update/@engine.Default/@engine.Unset/@engine.Empty は単独グループ (GCell) とする。
-  let groups : Array[MergeGroup] = []
-  let mut fire_buf : Array[@engine.Binding] = []
-  let mut fire_pos : Int? = None
-  for b in cli {
-    if b.key == e.name {
-      match b.op {
-        @engine.Set | @engine.Remove | @engine.Splice => {
-          if fire_buf.length() > 0 && fire_pos != b.at_pos {
-            groups.push(GFire(fire_buf))
-            fire_buf = []
-          }
-          fire_pos = b.at_pos
-          fire_buf.push(b)
-        }
-        @engine.Update(_, _)
-        | @engine.Default
-        | @engine.Unset
-        | @engine.Empty => {
-          if fire_buf.length() > 0 {
-            groups.push(GFire(fire_buf))
-            fire_buf = []
-            fire_pos = None
-          }
-          groups.push(GCell(b))
-        }
-      }
-    }
-  }
-  if fire_buf.length() > 0 {
-    groups.push(GFire(fire_buf))
-  }
-  let mut result_bs : Array[@engine.Binding] = []
-  let mut committed_now = false
-  let mut old_values : Array[@engine.Value]? = None
-  for g in groups {
-    match g {
-      GCell(b) =>
-        match b.op {
-          @engine.Update(_, _) =>
-            // team-lead 裁定 2026-07-10: accum×update は静的 definition-error (installer.mbt の
-            // collect_unsupported_accum_update) — merge accumulator も `multiple` の一種なので
-            // 同じ gate に掛かる。この arm に実際に来ることはない。
-            abort(
-              "unreachable: an accum (multiple) entity's `update` variant is rejected at definition time (installer.mbt's collect_unsupported_accum_update) — resolve_merge_accum should never see one",
-            )
-          @engine.Default =>
-            // DR-081 §2 の accum 節と同じ二段構成 (クリア点 1 個 + 書き換え済み default の要素
-            // N 個)。old_values はこの発火の結果 (書き換え済み default の値列) に更新する —
-            // 後続の merge 発火があれば、それが「その時点の old」になる (DR-080 §3 の old はセル
-            // 現在値、default 発火直後ならその値)。
-            match
-              resolve_ladder_below_cli(
-                e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
-              ) {
-              Ok(bs2) => {
-                let nb : Array[@engine.Binding] = [{ ..b, source: @engine.Cli }]
-                let vals : Array[@engine.Value] = []
-                for x in bs2 {
-                  nb.push({ ..x, op: @engine.Set, source: @engine.Cli })
-                  vals.push(x.value)
-                }
-                result_bs = nb
-                old_values = Some(vals)
-                committed_now = true
-              }
-              Err(pe) => return Err(pe)
-            }
-          @engine.Unset => {
-            // DR-045: uncommitted — the ladder re-opens. A LATER merge firing in this same CLI
-            // seat must re-query it fresh (mirrors "初回発火" — `old_values = None` signals that).
-            result_bs = [b]
-            old_values = None
-            committed_now = false
-          }
-          @engine.Empty => {
-            result_bs = [b]
-            old_values = Some([])
-            committed_now = true
-          }
-          @engine.Set | @engine.Remove | @engine.Splice =>
-            abort(
-              "unreachable: GCell only ever holds @engine.Update/@engine.Default/@engine.Unset/@engine.Empty (the grouping loop routes @engine.Set/@engine.Remove/@engine.Splice into GFire)",
-            )
-        }
-      GFire(pieces) => {
-        let marks : Array[MergeMark] = []
-        for p in pieces {
-          match p.op {
-            @engine.Set => marks.push(MAdd(p.value))
-            @engine.Remove => marks.push(MRemove(p.value))
-            @engine.Splice => marks.push(MSplice)
-            _ =>
-              abort(
-                "unreachable: a GFire piece is always @engine.Set/@engine.Remove/@engine.Splice (the grouping loop's own invariant)",
-              )
-          }
-        }
-        if merge_pieces_has_no_marker(marks) {
-          // DR-080 §3 冒頭: マーカーを1つも含まない発火 = cell 上書き。`pieces` は既に
-          // @engine.Set/@engine.Cli/at_pos 形 (`sep_binds` が組んだ通り) なので、そのまま採用する — old は
-          // 一切参照しない。
-          let vals : Array[@engine.Value] = []
-          for p in pieces {
-            vals.push(p.value)
-          }
-          result_bs = pieces
-          old_values = Some(vals)
-          committed_now = true
-        } else {
-          // DR-080 §3: old = セルの現在値 (直前発火の結果)、初回発火なら値源ラダーの下位席の勝者。
-          let old = match old_values {
-            Some(vs) => vs
-            None =>
-              match
-                resolve_ladder_below_cli(
-                  e, env_map, config_obj, config_path, inherited, at_pos, epath,
-                  tty_map,
-                ) {
-                Ok(bs2) => {
-                  let vs : Array[@engine.Value] = []
-                  for x in bs2 {
-                    vs.push(x.value)
-                  }
-                  vs
-                }
-                Err(pe) => return Err(pe)
-              }
-          }
-          let result_vals = eval_merge_pieces(
-            merge_pieces_with_implicit_splice(marks),
-            old,
-          )
-          let nb : Array[@engine.Binding] = []
-          for v in result_vals {
-            nb.push(@engine.mkb(e.name, v, @engine.Cli))
-          }
-          result_bs = nb
-          old_values = Some(result_vals)
-          committed_now = true
-        }
-      }
-    }
-  }
-  if committed_now {
-    return Ok(result_bs)
-  }
-  resolve_ladder_below_cli(
-    e,
-    env_map,
-    config_obj,
-    config_path,
-    inherited,
-    at_pos,
-    epath,
-    tty_map,
-    include_default~,
-  )
 }
 
 ///|
@@ -3479,117 +3155,4 @@ pub fn inherited_of(
     m.set(b.key, b.value)
   }
   m
-}
-
-// ── DR-080: merge accumulator — piece マーカー語彙と old 合成 ──────────────────
-
-///|
-/// DR-080 §2 のマーカー判定結果 (1 piece 分)。マーカー認識は piece 全体一致・separator 分割直後・
-/// 型 parse 前 (DR-080 波及節) — この enum はその判定が終わった後の形で、`MRemove`/`MAdd` の
-/// payload は既に型 parse 済みの `@engine.Value` (remove の operand も要素 type で parse される、DR-080 §2)。
-/// `MSplice` (`@`) は operand を持たない (old をその位置に展開するだけ)。
-pub enum MergeMark {
-  MAdd(@engine.Value)
-  MRemove(@engine.Value)
-  MSplice
-} derive(Eq, Debug)
-
-///|
-/// DR-080 §3 の評価規則 (左→右の一回走査)。呼び出し側の責務: (a) 「マーカーを 1 つも含まない発火」
-/// の判定 (この関数はマーカーが渡された前提で動く — マーカーなし発火は「cell 上書き」であり、この
-/// 合成規則を経由しない、DR-080 §3 冒頭)。(b) 明示 `@` が無い場合の暗黙先頭 `@` 補完 (DR-080 §3
-/// 「明示 `@` が無ければ先頭に暗黙の `@` が補われる」) — `pieces` はこの補完が既に済んだ列を渡す。
-///
-/// アルゴリズム (DR-080 §4 の 14 例全てで検証済み、kuu.mbt issue の逆算):
-/// - `seen_removes`: これまでに出現した remove の operand 集合 (発火全体を通じて蓄積、削除も
-///   splice フィルタも兼ねる)
-/// - `MAdd(v)`: work_list の末尾に追加 (それ以前/以後の remove からは影響を受けない自分自身の
-///   追加だが、後続の remove がこの要素を削除しうる — 削除は「その時点までの work_list 全体」に
-///   効くため)
-/// - `MRemove(v)`: `seen_removes` に `v` を追加した後、work_list 全体 (その時点までに構築された
-///   もの) から `v` と等しい要素を全削除 (DR-080 §3 (a) 後置 remove)
-/// - `MSplice`: `old` から「その時点で `seen_removes` に含まれる」要素を除いたコピーを work_list
-///   の末尾に連結 (DR-080 §3 (b) 前置 remove — old 展開時点の `seen_removes` を使うので、remove が
-///   splice より後にあっても、splice の時点でまだ出現していなければ及ばない。ただし同じ発火内で
-///   remove が先行していれば当然反映される)
-pub fn eval_merge_pieces(
-  pieces : Array[MergeMark],
-  old : Array[@engine.Value],
-) -> Array[@engine.Value] {
-  let work_list : Array[@engine.Value] = []
-  let seen_removes : Array[@engine.Value] = []
-  for p in pieces {
-    match p {
-      MAdd(v) => work_list.push(v)
-      MRemove(v) => {
-        if !array_contains_value(seen_removes, v) {
-          seen_removes.push(v)
-        }
-        let kept : Array[@engine.Value] = []
-        for x in work_list {
-          if x != v {
-            kept.push(x)
-          }
-        }
-        work_list.clear()
-        for x in kept {
-          work_list.push(x)
-        }
-      }
-      MSplice =>
-        for x in old {
-          if !array_contains_value(seen_removes, x) {
-            work_list.push(x)
-          }
-        }
-    }
-  }
-  work_list
-}
-
-///|
-fn array_contains_value(arr : Array[@engine.Value], v : @engine.Value) -> Bool {
-  for x in arr {
-    if x == v {
-      return true
-    }
-  }
-  false
-}
-
-///|
-/// `pieces` が 1 つも `MRemove`/`MSplice` を含まないか (= DR-080 §3 冒頭「マーカーを 1 つも含まない
-/// 発火」の判定)。全て `MAdd` なら true。
-pub fn merge_pieces_has_no_marker(pieces : Array[MergeMark]) -> Bool {
-  for p in pieces {
-    match p {
-      MAdd(_) => ()
-      _ => return false
-    }
-  }
-  true
-}
-
-///|
-/// DR-080 §3 「明示 `@` が無ければ先頭に暗黙の `@` が補われる」。`pieces` にマーカーが含まれる
-/// (merge モード) 前提で呼ぶ — マーカーなし発火 (cell 上書き) には適用しない。
-pub fn merge_pieces_with_implicit_splice(
-  pieces : Array[MergeMark],
-) -> Array[MergeMark] {
-  let mut has_explicit_splice = false
-  for p in pieces {
-    match p {
-      MSplice => has_explicit_splice = true
-      _ => ()
-    }
-  }
-  if has_explicit_splice {
-    pieces
-  } else {
-    let out : Array[MergeMark] = [MSplice]
-    for p in pieces {
-      out.push(p)
-    }
-    out
-  }
 }

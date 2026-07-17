@@ -974,18 +974,22 @@ fn lower_positional(
 /// しない — global copy は greedy 側に入る)。entities / greedy は fixpoint pass で埋める。
 fn init_sb(
   def : @engine.Definition,
-  registry : Map[String, @engine.Node],
+  templates : Map[String, @engine.Node],
+  extensions : @engine.Registry,
 ) -> @engine.InstallBuilder {
-  let positional = lower_positional(def, registry)
+  let positional = lower_positional(def, templates)
   let children : Array[@engine.InstallChild] = []
   for c in def.commands {
-    children.push(@engine.InstallChild::new(c.name, init_sb(c.body, registry)))
+    children.push(
+      @engine.InstallChild::new(c.name, init_sb(c.body, templates, extensions)),
+    )
   }
   @engine.InstallBuilder::new(
     def,
     @engine.InstallBuild::new(positional),
     children,
-    registry,
+    templates,
+    extensions,
   )
 }
 
@@ -998,12 +1002,12 @@ fn init_sb(
 fn ensure_entities(sb : @engine.InstallBuilder, has_cf : Bool) -> Unit {
   for e in sb.definition().options {
     if not_dd(e) && e.link_depth == 0 {
-      ensure_entity_body(sb.output(), e, has_cf)
+      ensure_entity_body(sb.output(), e, has_cf, sb.extensions())
     }
   }
   for e in sb.definition().positionals {
     if not_dd(e) {
-      ensure_entity_body(sb.output(), e, has_cf)
+      ensure_entity_body(sb.output(), e, has_cf, sb.extensions())
     }
   }
 }
@@ -1033,6 +1037,7 @@ fn ensure_entity_body(
   build : @engine.InstallBuild,
   e : @engine.ElemDef,
   has_cf : Bool,
+  extensions : @engine.Registry,
 ) -> Unit {
   if e.is_exact {
     return
@@ -1067,14 +1072,14 @@ fn ensure_entity_body(
       // `inst_long`/`lower_positional` 側 (このファイル、`ref_row_head` 分岐の条件) が発火ごとに
       // "#row" を打つよう連動して変わる — 両者は同じ `e.multiple` ガードで揃える必要がある。
       if e.ref_target is None {
-        ensure_entity(build, e, has_cf)
+        ensure_entity(build, e, has_cf, extensions)
       } else if elem_repeat(e) is Some(_) || e.multiple {
-        ensure_entity(build, e, has_cf)
+        ensure_entity(build, e, has_cf, extensions)
       }
     BOr(branches) =>
       for br in branches {
         for it in br.items {
-          ensure_entity_body(build, it, has_cf)
+          ensure_entity_body(build, it, has_cf, extensions)
         }
       }
     BGroup(items) =>
@@ -1085,13 +1090,13 @@ fn ensure_entity_body(
       // alongside the nested-scope array resolve.mbt already builds from the @engine.IdxRepeat bindings.
       // Only the inner leaf cells (value-source-ladder participants) need entities.
       for it in items {
-        ensure_entity_body(build, it, has_cf)
+        ensure_entity_body(build, it, has_cf, extensions)
       }
     // BEnum (issue values-decode-support): a single named cell like BCell (the enum's exact-value
     // branches all bind the SAME `e.name`, unlike BOr's per-branch leaves) — never has a
     // `ref_target` (values/or on a `ref` element is not a decodable shape today), so this always
     // registers unconditionally, simpler than BCell's ref_target-gated arm above.
-    BEnum(_) => ensure_entity(build, e, has_cf)
+    BEnum(_) => ensure_entity(build, e, has_cf, extensions)
   }
 }
 
@@ -1100,6 +1105,7 @@ fn ensure_entity(
   build : @engine.InstallBuild,
   e : @engine.ElemDef,
   has_cf : Bool,
+  extensions : @engine.Registry,
 ) -> Unit {
   for ent in build.entities() {
     if ent.name == e.name {
@@ -1121,7 +1127,7 @@ fn ensure_entity(
   // is_multiple_decl (DR-084 §2, DR-105 波及): `e.multiple` をそのまま carry する — resolve.mbt の
   // SEGS-loop 判定 (ref+repeat cons cell の discard-earlier-firings と ref+repeat+multiple の
   // firing-preserving を区別する) が、accum 名が両者とも "append" に揃った後もこの軸で判別する。
-  let (accum, flatten, is_multiple_decl) : (String?, Bool, Bool) = if e.multiple {
+  let (accum_name, flatten, is_multiple_decl) : (String?, Bool, Bool) = if e.multiple {
     let acc_name = match e.accumulator {
       Some(a) => a
       None => "append"
@@ -1141,6 +1147,28 @@ fn ensure_entity(
           (None, false, false)
         }
     }
+  }
+  let accum : &@engine.AccumulatorExt? = match accum_name {
+    Some(name) =>
+      match extensions.lookup_accumulator(name) {
+        Some(resident) => Some(resident)
+        None =>
+          abort("registered accumulator disappeared during lowering: " + name)
+      }
+    None => None
+  }
+  let collector : &@engine.CollectorExt? = if accum is Some(_) {
+    match e.collector {
+      Some(name) =>
+        match extensions.lookup_collector(name) {
+          Some(resident) => Some(resident)
+          None =>
+            abort("registered collector disappeared during lowering: " + name)
+        }
+      None => None
+    }
+  } else {
+    None
   }
   // 同型 config seat (DR-050 §3): config_file 要素が存在すれば全 value cell に config seat を宣言
   // (自身が config_file の要素は循環禁止で除く)。config_key は path override; None = 同型。
@@ -1189,14 +1217,9 @@ fn ensure_entity(
     // rides a scalar cell" posture without a redundant guard here.
     flatten,
     is_multiple_decl,
-    // DR-036: collector only means anything alongside an accum cell (@engine.Entity.collector's doc
-    // comment, node.mbt) — a scalar cell (accum is None) drops any declared collector rather than
-    // carrying a dead attribute forward.
-    collector: if accum is Some(_) {
-      e.collector
-    } else {
-      None
-    },
+    // DR-036: collector only means anything alongside an accum cell; the registered resident
+    // is resolved during lowering so runtime dispatch never branches on a collector name.
+    collector,
     default_values,
     separator: e.separator,
     piece_filters: e.piece_filters,
@@ -3669,30 +3692,58 @@ fn collect_flatten_non_append(
 }
 
 ///|
-/// DR-105 §3 (統括裁定 M-17): `multiple.accumulator` に宣言された名前が accumulators registry の
-/// owns 集合 (`"append"`(既定, decode 層で None に写る) / `"merge"`(DR-080) / `"kv_map"`(DR-091 §2))
-/// に無ければ definition-error kind=unknown-vocab — `collect_unknown_filter` (filter 4 属性の同型判定)
-/// の accumulator 版。旧独立 "flatten" accumulator (DR-036/043、DR-105 で廃止) の綴りもここで弾かれる
-/// — 廃止後は `{"accumulator":"append","flatten":true}` の組で表現する (DR-105 §1/§3)。
-fn collect_unknown_accumulator(
+/// Every accumulated cell must resolve both descriptor seats before lowering. Explicit accumulator
+/// names use that resident; repeat, multiple, and separator declarations require the implicit
+/// `append` resident. A collector attached to that accumulated cell must also resolve independently.
+fn collect_unknown_accumulation_resident(
   def : @engine.Definition,
+  extensions : @engine.Registry,
   out : Array[@engine.DefError],
 ) -> Unit {
   fn check(e : @engine.ElemDef) -> Unit {
-    match e.accumulator {
-      Some(a) =>
-        if a != "merge" && a != "kv_map" {
+    let accumulator = if e.multiple {
+      match e.accumulator {
+        Some(name) => Some(name)
+        None => Some("append")
+      }
+    } else if elem_repeat(e) is Some(_) || e.separator is Some(_) {
+      Some("append")
+    } else {
+      None
+    }
+    match accumulator {
+      Some(name) => {
+        if extensions.lookup_accumulator(name) is None {
           out.push(
             def_err(
               e.name,
               @engine.DUnknownVocab,
-              "'\{e.name}' declares multiple.accumulator '" +
-              a +
-              "' which is not registered in the accumulators registry (DR-036/DR-105 §3) — the standalone \"flatten\" accumulator was retired by DR-105, use accumulator:\"append\" with flatten:true instead",
-              "use a registered accumulator name (\"append\" [default, omit the key], \"merge\", \"kv_map\") or remove this declaration",
+              "'\{e.name}' requires accumulator '" +
+              name +
+              "' but no resident with that name is registered",
+              "register accumulator '" + name + "' in the active assembly",
             ),
           )
         }
+        match e.collector {
+          Some(collector) =>
+            if extensions.lookup_collector(collector) is None {
+              out.push(
+                def_err(
+                  e.name,
+                  @engine.DUnknownVocab,
+                  "'\{e.name}' requires collector '" +
+                  collector +
+                  "' but no resident with that name is registered",
+                  "register collector '" +
+                  collector +
+                  "' in the active assembly",
+                ),
+              )
+            }
+          None => ()
+        }
+      }
       None => ()
     }
   }
@@ -3704,7 +3755,7 @@ fn collect_unknown_accumulator(
     check(e)
   }
   for c in def.commands {
-    collect_unknown_accumulator(c.body, out)
+    collect_unknown_accumulation_resident(c.body, extensions, out)
   }
 }
 
@@ -3917,6 +3968,13 @@ fn collect_config_cycle(
 }
 
 ///|
+fn default_extensions() -> @engine.Registry {
+  let extensions = @engine.Registry::new()
+  install(extensions)
+  extensions
+}
+
+///|
 /// UsefulAST → AtomicAST を installer chain として遂行 (DR-042)。`order` は適用 installer 列、5
 /// invariants により結果は順序無依存。
 ///
@@ -3931,6 +3989,7 @@ pub fn lower_definition(
   def0 : @engine.Definition,
   order : Array[&@engine.InstallerExt],
   registry? : Map[String, @engine.Node] = Map([], capacity=0),
+  extensions? : @engine.Registry = default_extensions(),
 ) -> Result[@engine.Scope, Array[@engine.DefError]] {
   let def = clone_def(def0)
   // DR-076 §2 flag 差し替え/補完の alias 側適用 (issue 2026-07-08 dec-alias-long-override-flag-sugar-
@@ -3945,10 +4004,11 @@ pub fn lower_definition(
   // init_sb が registry に repeat-lowering template を植える (静的 ref check が見えるように)。
   // alias entry-copies は ref/repeat を持たず、command alias は check 済 body を clone するので、
   // static check は pre-desugar def で回す (この 1 本目の tree は registry 植え込みのみが目的)。
-  let _ = init_sb(def, registry)
+  let _ = init_sb(def, registry, extensions)
   for error in @engine.collect_installer_vocab_errors(def, order) {
     errs.push(error)
   }
+  collect_unknown_accumulation_resident(def, extensions, errs)
   let view = @engine.DefsView::new(orig, def, registry)
   for installer in order {
     for error in installer.collect_defs_errors(view) {
@@ -3961,7 +4021,7 @@ pub fn lower_definition(
   // alias 宣言 desugar (DR-057): 完全性検査 pass 後、決定的 pre-pass。option entry-copies /
   // command defs を追加 — fixpoint installer が展開する。
   desugar_aliases(def, orig)
-  let sb = init_sb(def, registry) // desugar 済 def で scope tree 再構築
+  let sb = init_sb(def, registry, extensions) // desugar 済 def で scope tree 再構築
   // 同型 default (DR-050 §3): config_file 要素があれば全 value cell に config seat を宣言。1 度計算、
   // ensure_entity に thread。
   let has_cf = has_config_file(def)
