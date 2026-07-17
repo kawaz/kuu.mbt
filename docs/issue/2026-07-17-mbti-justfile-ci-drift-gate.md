@@ -1,11 +1,11 @@
 ---
 title: mbti 生成の justfile フロー組み込み + CI drift 検査
-status: open
+status: wip
 category: task
 created: 2026-07-17T09:38:43+09:00
 last_read: 2026-07-17T09:58:24+09:00
 open_entered: 2026-07-17T09:38:43+09:00
-wip_entered:
+wip_entered: 2026-07-17T09:59:21+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
