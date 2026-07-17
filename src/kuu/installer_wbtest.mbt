@@ -2666,7 +2666,10 @@ test "DR-089: a fired none-typed pure trigger never appears in the result" {
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(proj_result_export(sc, resolved, Map([])), "{}")
+          assert_eq(
+            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            "{}",
+          )
         Err(_) => fail("expected Ok resolve")
       }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -2835,7 +2838,7 @@ test "DR-093: a required:true option with a declared default is vacuously satisf
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
           assert_eq(
-            proj_result_export(sc, resolved, Map([])),
+            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
             "{name=fallback}",
           )
         Err(_) => fail("expected Ok resolve")
@@ -2868,7 +2871,10 @@ test "DR-093: a required:true dd element (@engine.DdSat) is satisfied by firing,
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(proj_result_export(sc, resolved, Map([])), "{x=msg}")
+          assert_eq(
+            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            "{x=msg}",
+          )
         Err(_) => fail("expected Ok resolve")
       }
     other =>
@@ -3145,7 +3151,10 @@ test "DR-089 対極: a pre-existing explicit-type element is unaffected by none 
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(proj_result_export(sc, resolved, Map([])), "{x=true}")
+          assert_eq(
+            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            "{x=true}",
+          )
         Err(_) => fail("expected Ok resolve")
       }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -3175,7 +3184,10 @@ test "DR-088: a plain scalar positional with a declared default is a complete pa
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(proj_result_export(sc, resolved, Map([])), "{seconds=10}")
+          assert_eq(
+            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            "{seconds=10}",
+          )
         Err(_) => fail("expected Ok resolve")
       }
     other =>
@@ -3201,7 +3213,10 @@ test "DR-088: a plain scalar positional with a declared default still consumes a
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(proj_result_export(sc, resolved, Map([])), "{seconds=5}")
+          assert_eq(
+            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            "{seconds=5}",
+          )
         Err(_) => fail("expected Ok resolve")
       }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -3249,7 +3264,10 @@ test "DR-088 対極2: an explicit optional:true positional is unaffected (still 
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(proj_result_export(sc, resolved, Map([])), "{tag=[]}")
+          assert_eq(
+            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            "{tag=[]}",
+          )
         Err(_) => fail("expected Ok resolve")
       }
     other => fail("expected @engine.Success, got " + render_outcome(other))

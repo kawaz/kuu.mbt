@@ -63,6 +63,27 @@ pub(all) enum DefLoadError {
 } derive(Eq, Debug)
 
 ///|
+/// 利用者へ公開する 1 件の effect。`@engine.Binding` が持つ sentinel・内部 placeholder・
+/// parser bookkeeping (`link` / `at_pos`) は玄関で吸収し、wire の effects 列に必要な語彙だけを運ぶ。
+/// `operand` は値を伴う `set` / `remove` のみ `Some`、それ以外の op は `None`。
+pub struct OutputEffect {
+  entity : String
+  op : @engine.EffectOp
+  operand : @engine.Value?
+  source : @engine.Source
+} derive(Eq, Debug)
+
+///|
+/// `parse` / `resolve` の binds を利用者向け 3 射影へまとめた出力ビュー。`result` は repeat row
+/// 境界を含む解決済み binds を既存 builder で集約し、`effects` は parse 相の発火列から sentinel と
+/// config_file / none / dd の内部セルを除外し、`sources` は解決済み値の値源を返す。
+pub struct OutputView {
+  result : RVal
+  effects : Array[OutputEffect]
+  sources : Array[SourceEntry]
+} derive(Eq, Debug)
+
+///|
 /// 正面玄関 1: definition の wire JSON (`{options, positionals, commands, definitions?, config?}`)
 /// を受けて AtomicAST を得る (DR-054)。`definitions.types`/`definitions.templates`
 /// (DR-061 §3 / DR-078 §1) の decode、`@builtins.lower_definition` (旧 `parse_definition`、installer.mbt) の
@@ -323,6 +344,135 @@ pub fn export_map(ast : AtomicAST) -> Map[String, @engine.ExportKey] {
 }
 
 ///|
+priv struct ConfigFileCell {
+  path : Array[String]
+  name : String
+}
+
+///|
+fn output_path_push(path : Array[String], segment : String) -> Array[String] {
+  let out : Array[String] = []
+  for part in path {
+    out.push(part)
+  }
+  out.push(segment)
+  out
+}
+
+///|
+fn collect_config_file_cells(
+  scope : @engine.Scope,
+  path : Array[String],
+  out : Array[ConfigFileCell],
+) -> Unit {
+  for entity in scope.entities {
+    if entity.is_config_file {
+      out.push({ path, name: entity.name })
+    }
+  }
+  for node in scope.greedy {
+    match node {
+      @engine.CmdSat(name, child) =>
+        collect_config_file_cells(child, output_path_push(path, name), out)
+      _ => ()
+    }
+  }
+}
+
+///|
+fn output_internal_cell(
+  path : Array[String],
+  name : String,
+  none_cells : Array[@engine.NoneCell],
+  config_file_cells : Array[ConfigFileCell],
+) -> Bool {
+  for cell in none_cells {
+    if cell.name() == name && path_eq(cell.path(), path) {
+      return true
+    }
+  }
+  for cell in config_file_cells {
+    if cell.name == name && path_eq(cell.path, path) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn project_effects(
+  ast : AtomicAST,
+  binds : Array[@engine.Binding],
+) -> Array[OutputEffect] {
+  let none_cells = @engine.none_cells(ast.root)
+  let config_file_cells : Array[ConfigFileCell] = []
+  collect_config_file_cells(ast.root, [], config_file_cells)
+  let effects : Array[OutputEffect] = []
+  for binding in binds {
+    if is_sentinel(binding.key) ||
+      output_internal_cell(
+        binding.scope,
+        binding.key,
+        none_cells,
+        config_file_cells,
+      ) {
+      continue
+    }
+    let operand = match binding.op {
+      @engine.Set | @engine.Remove => Some(binding.value)
+      _ => None
+    }
+    effects.push({
+      entity: binding.key,
+      op: binding.op,
+      operand,
+      source: binding.source,
+    })
+  }
+  effects
+}
+
+///|
+fn project_sources(
+  ast : AtomicAST,
+  resolved : Array[@engine.Binding],
+) -> Array[SourceEntry] {
+  let none_cells = @engine.none_cells(ast.root)
+  let config_file_cells : Array[ConfigFileCell] = []
+  collect_config_file_cells(ast.root, [], config_file_cells)
+  let projected : Array[SourceEntry] = []
+  for entry in result_sources(ast.root, resolved, ast.ekmap) {
+    if !output_internal_cell(
+        entry.path,
+        entry.key,
+        none_cells,
+        config_file_cells,
+      ) {
+      projected.push(entry)
+    }
+  }
+  projected
+}
+
+///|
+/// 正面玄関の出力射影。`effects_binds` は `parse()` の Success payload、`resolved?` は
+/// `resolve()` の Success payloadを渡す。`resolved` 省略時は同じ binds を result/sources にも使うため、
+/// 値源ラダーを要しない parse-only 利用と既存 `result`/`sources` wrapper の両方を保つ。
+/// repeat row の境界は `resolve()` が復元した `#row`/`#fire` を `build_result_export` が読む既存経路へ
+/// そのまま渡し、本関数では sentinel の再 merge や row 集約を再実装しない。
+pub fn output(
+  ast : AtomicAST,
+  effects_binds : Array[@engine.Binding],
+  resolved? : Array[@engine.Binding] = effects_binds,
+) -> OutputView {
+  {
+    result: build_result_export(ast.root, resolved, ast.ekmap),
+    effects: project_effects(ast, effects_binds),
+    sources: project_sources(ast, resolved),
+  }
+}
+
+///|
 /// 正面玄関の補助: `resolve()` の @engine.Success payload から DR-052 result-key 軸を適用した `result`
 /// オブジェクト (CONFORMANCE.md §2 の `result: {...}`) を組み立てる。runner の
 /// `proj_result_export` (json_conformance_wbtest.mbt) と kuu-cli PoC の手組み `result_to_json`
@@ -335,7 +485,7 @@ pub fn export_map(ast : AtomicAST) -> Map[String, @engine.ExportKey] {
 /// ここで `ast.root`/`ast.ekmap` を代わりに渡す (`export_map` と同じ「AtomicAST から素材を引く」
 /// 形、本ファイル冒頭 doc 参照)。
 pub fn result(ast : AtomicAST, binds : Array[@engine.Binding]) -> RVal {
-  build_result_export(ast.root, binds, ast.ekmap)
+  output(ast, binds).result
 }
 
 ///|
@@ -347,7 +497,7 @@ pub fn sources(
   ast : AtomicAST,
   resolved : Array[@engine.Binding],
 ) -> Array[SourceEntry] {
-  result_sources(ast.root, resolved, ast.ekmap)
+  output(ast, resolved).sources
 }
 
 ///|

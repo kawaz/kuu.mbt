@@ -233,6 +233,73 @@ test "front_door.parse + @engine.warnings_structured: deprecated alias 発火は
 }
 
 ///|
+/// 保証 (MDR-006 §7-3): `output` の effects 射影は利用者が値セルの発火だけを観測できる形を返し、
+/// lowering/eval 内部の sentinel (`@depr:` を含む) と、値空間を持たない none/dd、config provider を
+/// 選ぶ config_file cell を一律に除外する。各内部表現を呼び出し側が `is_sentinel` や Scope/Node 走査で
+/// 再判定しないことが玄関契約であり、通常の値 effect は op/operand/source を失わず残る。
+test "front_door.output: effects は sentinel・config_file・none・dd を吸収し通常値だけを返す (MDR-006 §7-3)" {
+  fn view_of(src : String, args : Array[String]) -> OutputView raise {
+    let ast = match parse_definition(@json.parse(src)) {
+      Ok(a) => a
+      Err(_) => {
+        fail("parse_definition failed")
+        panic()
+      }
+    }
+    match parse(ast, args) {
+      @engine.Success(binds) => output(ast, binds)
+      other => {
+        fail("front_door.parse should succeed, got " + render_outcome(other))
+        panic()
+      }
+    }
+  }
+
+  // deprecated alias は canonical value effect だけを残し、warning 素材の @depr sentinel を隠す。
+  let normal = view_of(
+    (
+      #|{"options": [
+      #|  {"name": "port", "type": "number", "short": "p"},
+      #|  {"alias": "port", "short": "o", "deprecated": true}
+      #|]}
+    ),
+    ["-o", "80"],
+  )
+  assert_eq(normal.effects.length(), 1)
+  assert_eq(normal.effects[0].entity, "port")
+  assert_eq(normal.effects[0].op, @engine.Set)
+  assert_eq(normal.effects[0].operand, Some(@engine.VNum(80.0)))
+  assert_eq(normal.effects[0].source, @engine.Cli)
+
+  // config_file は config provider 選択用の配線セルであり、発火しても利用者 effects には出ない。
+  let config_file = view_of(
+    (
+      #|{"options": [{"name": "config", "type": "config_file", "long": true}]}
+    ),
+    ["--config", "/app.toml"],
+  )
+  assert_eq(config_file.effects, [])
+
+  // none は値空間を持たない発火観測であり、placeholder Binding を effect として発明しない。
+  let none = view_of(
+    (
+      #|{"options": [{"name": "sep", "type": "none", "long": true}]}
+    ),
+    ["--sep"],
+  )
+  assert_eq(none.effects, [])
+
+  // dd も none と同じ値なし観測だが Entity を持たないため、Node 走査は玄関内部だけで吸収する。
+  let dd = view_of(
+    (
+      #|{"options": [{"name": "--", "type": "dd"}]}
+    ),
+    ["--"],
+  )
+  assert_eq(dd.effects, [])
+}
+
+///|
 /// 保証 (issue 2026-07-16-result-projection-production-promotion、DR-109 §3「sources は resolve
 /// 済み出力に常に含める」/ §5 UX-Q5=a、MDR-005「射程外」節の解消): front_door の `result`/
 /// `sources` が `resolve()` の @engine.Success payload だけから DR-052 result-key 軸適用済みの `result`
@@ -265,7 +332,10 @@ test "front_door.result/sources: 単一 scope で export_key rename + flag prese
       panic()
     }
   }
-  let rval = result(ast, rb)
+  let view = output(ast, rb)
+  assert_eq(view.result, result(ast, rb))
+  assert_eq(view.sources, sources(ast, rb))
+  let rval = view.result
   match rval {
     RObj(kvs) => {
       let mut p_val : RVal? = None
@@ -283,7 +353,7 @@ test "front_door.result/sources: 単一 scope で export_key rename + flag prese
     }
     _ => fail("front_door.result should be RObj at root scope")
   }
-  let ses = sources(ast, rb)
+  let ses = view.sources
   let mut p_src : @engine.Source? = None
   let mut verbose_src : @engine.Source? = None
   for se in ses {
@@ -519,7 +589,10 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
         panic()
       }
     }
-    match result(ast, rb) {
+    // resolve が復元済みの #row/#fire を `output` は再 merge せず、その binds を result 射影へ渡す。
+    let view = output(ast, rb)
+    assert_eq(view.result, result(ast, rb))
+    match view.result {
       RObj(kvs) => {
         for kv in kvs {
           if kv.0 == "hlcolors" {

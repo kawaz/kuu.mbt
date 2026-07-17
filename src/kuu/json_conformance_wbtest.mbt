@@ -872,100 +872,23 @@ fn render_rval_sorted(r : RVal) -> String {
 }
 
 ///|
-/// §2 CLI effects, EXCLUDING config_file infra cells. `set`/`remove` render an operand (DR-080 §2:
-/// remove's operand is the type-parsed value being removed, same wire shape as set's); every other
-/// op (default/unset/empty/update/splice) renders bare — `splice` carries no operand (DR-080 §2 `@`
-/// just points at old, DESIGN's placeholder-value convention).
-fn proj_effects_ex(
-  sc : @engine.Scope,
-  binds : Array[@engine.Binding],
-) -> String {
+/// `OutputView.effects` の構造化射影を fixture 比較文字列へ変換する。sentinel・config_file・
+/// none・dd の除外は玄関が完了済みであり、runner は内部 Scope/Node を走査しない。
+fn render_effects(effects : Array[OutputEffect]) -> String {
   let items : Array[String] = []
-  for b in binds {
-    if is_sentinel(b.key) {
-      continue
-    }
-    if is_config_file_cell(sc, b.key) {
-      continue
-    }
-    // DR-089 §3 (team-lead 裁定 2026-07-11): none の発火は effects にも現れない (観測は
-    // ParserContext/explains 層の管掌、値空間なしの set エントリを発明しない)。内部表現は
-    // `flag_bare_true_variant` 再利用の @engine.Set+@engine.VBool(true) placeholder のままで良く (installer.mbt)、
-    // ここ (射影層) だけで除外する — `is_config_file_cell` と同じ「@engine.Entity 属性を見て特定 cell を
-    // 射影から外す」パターン。
-    if is_none_cell(sc, b.key) {
-      continue
-    }
-    // DR-093 §2/§7: dd 発火の committed 観測用 binding も同じ理由 (値空間なし、DR-089 §3) で
-    // effects から除外する — entity を持たないので `is_none_cell` では捉えられない (`is_dd_cell`
-    // 参照)。
-    if is_dd_cell(sc, b.key) {
-      continue
-    }
-    match b.op {
-      @engine.Set | @engine.Remove =>
+  for effect in effects {
+    match effect.operand {
+      Some(operand) =>
         items.push(
-          "\{b.key}:\{eff_op(b.op)}(\{render_val(b.value)})@\{render_src(b.source)}",
+          "\{effect.entity}:\{eff_op(effect.op)}(\{render_val(operand)})@\{render_src(effect.source)}",
         )
-      _ => items.push("\{b.key}:\{eff_op(b.op)}@\{render_src(b.source)}")
+      None =>
+        items.push(
+          "\{effect.entity}:\{eff_op(effect.op)}@\{render_src(effect.source)}",
+        )
     }
   }
   join_comma(items)
-}
-
-///|
-fn is_config_file_cell(sc : @engine.Scope, name : String) -> Bool {
-  for e in sc.entities {
-    if e.name == name && e.is_config_file {
-      return true
-    }
-  }
-  false
-}
-
-///|
-fn is_none_cell(sc : @engine.Scope, name : String) -> Bool {
-  for e in sc.entities {
-    if e.name == name && e.ty.name() == "none" {
-      return true
-    }
-  }
-  false
-}
-
-///|
-/// DR-093 §2/§7 波及: dd 要素 (`@engine.DdSat`/`@engine.DdMatchSat`) は entity を持たない (DR-030「実体=値セル」/
-/// LOWERING §B.4、`ensure_entities` の `not_dd` ガード) が、DR-093 の committed 観測用 binding
-/// (発火時の `flag_bare_true_variant` 同型 `@engine.Set @engine.VBool(true)` placeholder) は他の値と同じ `binds`
-/// 配列に乗る。`is_none_cell` は entity 走査なので dd 要素の binding を捉えられない — scope の
-/// greedy 面を直接走査して dd 要素名を集める、対になる判定。`proj_effects_ex` は `binds` をルート
-/// scope 基準でフラットに舐める (`b.key` のみ比較、`b.scope` 不問) ので、`@engine.CmdSat` の子 scope も
-/// 再帰的に見る (dd/global-sever.json のような子コマンドスコープ dd の実測で必須と判明)。
-fn is_dd_cell(sc : @engine.Scope, name : String) -> Bool {
-  fn scan(g : @engine.Node) -> Bool {
-    match g {
-      @engine.DdSat(trigger) => trigger == name
-      @engine.DdMatchSat(_, _, _, elem_name) => elem_name == name
-      @engine.Or(alts) => {
-        for a in alts {
-          if scan(a) {
-            return true
-          }
-        }
-        false
-      }
-      @engine.Rooted(inner, _) => scan(inner)
-      @engine.CmdSat(_, child) => is_dd_cell(child, name)
-      _ => false
-    }
-  }
-
-  for g in sc.greedy {
-    if scan(g) {
-      return true
-    }
-  }
-  false
 }
 
 ///|
@@ -1032,59 +955,17 @@ fn proj_tried_triggers(triggers : Array[String]) -> String {
 }
 
 ///|
-/// Result with the DR-052 result-key axis applied. front_door 昇格 (issue
-/// 2026-07-16-result-projection-production-promotion) 後は resolve.mbt の `build_result_export`
-/// (production API) への薄い委譲 — 4 素材の組み立てそのものはそちらに一本化し、ここは fixture
-/// 比較用の文字列レンダリング (`render_rval_sorted`) だけを残す。
-fn proj_result_export(
-  sc : @engine.Scope,
-  binds : Array[@engine.Binding],
-  ekmap : Map[String, @engine.ExportKey],
-) -> String {
-  render_rval_sorted(build_result_export(sc, binds, ekmap))
-}
-
-///|
-/// Resolved value-source tags per cell (DR-031). Config_file infra cells are excluded. Flag-preset
-/// defaults report `default` when no other seat surfaced (LOWERING §A.5). An accum cell's `@engine.Unset`
-/// binding (issue 2026-07-09-accum-filters-non-set-op-semantics) reports `default` regardless of
-/// its own `source` field — `@engine.Unset` is CLI-fired (`b.source == @engine.Cli`) but uncommitted (DR-045
-/// "default 値へ戻す... committed=false"), so the value tag must reflect the LADDER OUTCOME
-/// ("as if untouched", same as `unset-ladder.json`'s scalar precedent where a scalar cell's fold
-/// already re-seats to a lower ladder rung on unset) rather than the firing token's own source. A
-/// LATER `@engine.Set` after an `@engine.Unset` still wins normally (the loop keeps overwriting `src` in order) —
-/// mirrors `build_result`'s ACCUMULATE fold treating `@engine.Unset` as a clear-point, not a terminal state.
-///
-/// front_door 昇格後 (issue 2026-07-16-result-projection-production-promotion): 素材の収集は
-/// resolve.mbt の `collect_sources_flat` (production の `result_sources` が command 木なし判定で
-/// 内部委譲する先と同一実装) へ一本化した。ここは fixture 比較用の文字列レンダリングだけを残す。
-fn proj_sources(
-  sc : @engine.Scope,
-  resolved : Array[@engine.Binding],
-  ek : Map[String, @engine.ExportKey],
-) -> String {
+/// `OutputView.sources` の構造化射影を fixture 比較文字列へ変換する。path が空なら root key、
+/// command 木では `sub.key` の形にする。内部セル除外と tree/flat の分岐は玄関が完了済み。
+fn render_sources(sources : Array[SourceEntry]) -> String {
   let items : Array[String] = []
-  for se in collect_sources_flat(sc, resolved, ek) {
-    items.push(se.key + "=" + render_src(se.source))
-  }
-  sort_items(items)
-  join_comma(items)
-}
-
-///|
-/// front_door 昇格後 (issue 2026-07-16-result-projection-production-promotion): 素材の収集は
-/// resolve.mbt の `collect_sources_tree` (production の `result_sources` が command 木あり判定で
-/// 内部委譲する先と同一実装) へ一本化した。ここは fixture 比較用の文字列レンダリング (scope path
-/// のドット結合含む) だけを残す。
-fn proj_sources_tree(resolved : Array[@engine.Binding]) -> String {
-  let items : Array[String] = []
-  for se in collect_sources_tree(resolved) {
+  for entry in sources {
     let mut key = ""
-    for seg in se.path {
-      key = key + seg + "."
+    for segment in entry.path {
+      key = key + segment + "."
     }
-    key = key + se.key
-    items.push(key + "=" + render_src(se.source))
+    key = key + entry.key
+    items.push(key + "=" + render_src(entry.source))
   }
   sort_items(items)
   join_comma(items)
@@ -2810,9 +2691,10 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
     "success" =>
       match outcome {
         @engine.Success(binds) => {
+          let parse_view = output(ast, binds)
           match dc.exp_effects {
             Some(ee) => {
-              let ae = proj_effects_ex(sc, binds)
+              let ae = render_effects(parse_view.effects)
               if ae != ee {
                 problems.push("effects got=\{ae} want=\{ee}")
               }
@@ -2820,14 +2702,8 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             None => ()
           }
           if use_resolve {
-            // 玄関経由の resolve (MDR-005 追記): `front_door.resolve` は `resolve_scope_tree(path=[])`
-            // を呼び、command 木 (has_commands=true) と単一 scope の両ケースを同一関数で扱う
-            // (resolve_scope_tree は has_commands=false なら再帰しないだけ、単一 scope の
-            // `resolve_scope_config` 呼び出しと等価な結果を返す + sentinel 保持面は
-            // proj_result_export/proj_sources の両射影で不変な差 — sentinel は projection 側の
-            // `is_sentinel` skip で吸収されるため観測差なし)。sources 射影の使い分け
-            // (proj_sources_tree vs proj_sources) は resolve の話ではなく projection 側の話
-            // (`dc.resolve && has_commands` = 木射影を要求する fixture 特性) なのでここに残す。
+            // resolve は値源ラダーを充填し、parse 相が持つ repeat row sentinel を保存する。
+            // OutputView は parse binds を effects、resolved binds を result/sources に使い分ける。
             match
               resolve(
                 ast,
@@ -2838,9 +2714,10 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 tty=dc.tty,
               ) {
               @engine.Success(rb) => {
+                let view = output(ast, binds, resolved=rb)
                 match dc.exp_result {
                   Some(er) => {
-                    let ar = proj_result_export(sc, rb, df.ekmap)
+                    let ar = render_rval_sorted(view.result)
                     if ar != er {
                       problems.push("result got=\{ar} want=\{er}")
                     }
@@ -2849,11 +2726,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 }
                 match dc.exp_sources {
                   Some(es) => {
-                    let asr = if dc.resolve && has_commands(sc) {
-                      proj_sources_tree(rb)
-                    } else {
-                      proj_sources(sc, rb, df.ekmap)
-                    }
+                    let asr = render_sources(view.sources)
                     if asr != es {
                       problems.push("sources got=\{asr} want=\{es}")
                     }
@@ -2875,7 +2748,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
           } else {
             match dc.exp_result {
               Some(er) => {
-                let ar = proj_result_export(sc, binds, df.ekmap)
+                let ar = render_rval_sorted(parse_view.result)
                 if ar != er {
                   problems.push("result got=\{ar} want=\{er}")
                 }
@@ -4257,7 +4130,7 @@ test "dec_definition: an unknown config key is a decode-time reject" {
 /// キーが一切現れない (`result: {}`) — DR-051 §1/§4 の「値の無さはフィールド不在」と同型。
 /// effects にも現れない (team-lead 裁定 2026-07-11: 観測は ParserContext/explains 層の管掌、値
 /// 空間なしの set エントリを発明しない — 内部表現は `flag_bare_true_variant` 再利用の @engine.Set +
-/// @engine.VBool(true) placeholder のままだが、`proj_effects_ex` 側で none cell を除外する)。
+/// @engine.VBool(true) placeholder のままだが、`OutputView.effects` が none cell を除外する)。
 
 ///|
 /// issue group-inner-bool-default-false-duplicate-top-level: `ensure_entity` (installer.mbt) の
