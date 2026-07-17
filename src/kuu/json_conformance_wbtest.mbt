@@ -850,17 +850,17 @@ fn run_lower(
 ///|
 /// Key-sorted rendering of the built result object (CONFORMANCE §3: result is structural, key order
 /// non-normative). Arrays keep order.
-fn render_rval_sorted(r : RVal) -> String {
+fn render_rval_sorted(r : @engine.RVal) -> String {
   match r {
-    RScalar(v) => render_val(v)
-    RArr(vs) => {
+    @engine.RScalar(v) => render_val(v)
+    @engine.RArr(vs) => {
       let items : Array[String] = []
       for v in vs {
         items.push(render_rval_sorted(v))
       }
       "[" + join_comma(items) + "]"
     }
-    RObj(kvs) => {
+    @engine.RObj(kvs) => {
       let items : Array[String] = []
       for kv in kvs {
         items.push(kv.0 + "=" + render_rval_sorted(kv.1))
@@ -1029,34 +1029,34 @@ struct DecodedFixture {
 // ── expected-string builders ──────────────────────────────────────────────────
 
 ///|
-/// `RVal` の decode は definition の wire decode (`wire_decode.mbt`) ではなく、fixture の expect
+/// `@engine.RVal` の decode は definition の wire decode (`wire_decode.mbt`) ではなく、fixture の expect
 /// (`result`/`interpretations`) を読む側のヘルパー — そのためここに残す (MDR-005 §2 の境界判定)。
 /// `@engine.ConfigVal` 側の同種ヘルパー (旧 `json_to_configval`、`cases[].config`/`config_files` の decode)
 /// は front_door の `config_from_json` へ昇格済み (MDR-005 追記、「@engine.ConfigVal/TtyObs の入力構築
 /// API」issue) — 用途が「fixture 入力の decode」から「production 呼び出し側の入力構築」まで
 /// 広がったため、runner 側もそちらを直接呼ぶ (下記 `cfg` 組み立て箇所参照)。
-fn json_to_rval(j : Json) -> RVal raise DecodeSkip {
+fn json_to_rval(j : Json) -> @engine.RVal raise DecodeSkip {
   match j.j_obj() {
     Some(o) => {
-      let kvs : Array[(String, RVal)] = []
+      let kvs : Array[(String, @engine.RVal)] = []
       for k, v in o {
         kvs.push((k, json_to_rval(v)))
       }
-      return RObj(kvs)
+      return @engine.RObj(kvs)
     }
     None => ()
   }
   match j.j_arr() {
     Some(a) => {
-      let vs : Array[RVal] = []
+      let vs : Array[@engine.RVal] = []
       for v in a {
         vs.push(json_to_rval(v))
       }
-      return RArr(vs)
+      return @engine.RArr(vs)
     }
     None => ()
   }
-  RScalar(json_to_value(j))
+  @engine.RScalar(json_to_value(j))
 }
 
 ///|

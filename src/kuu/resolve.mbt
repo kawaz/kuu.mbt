@@ -1,6 +1,6 @@
 // resolve.mbt — the value-resolution layer (MDR-002 §3): the value-source ladder (env / config /
 // inherit / default seat fill, DR-031 / DR-049 / DR-050), the name-driven result builder (flat
-// bindings → nested RVal, DR-016 / DR-025 / DR-043), export-key application (DR-052), and
+// bindings → nested @engine.RVal, DR-016 / DR-025 / DR-043), export-key application (DR-052), and
 // export-key collision detection (DR-073). node/value 依存のみ; eval からは経路確定後の後処理
 // として呼ばれる (MDR-002 §3 table).
 //
@@ -22,14 +22,6 @@
 // value).
 
 // ── result value + builder (slice `poc/result.mbt`) ──────────────────────────────────────────
-
-///|
-/// A built result value.
-pub enum RVal {
-  RScalar(@engine.Value)
-  RArr(Array[RVal]) // an accumulator list or an indexed-repeat array
-  RObj(Array[(String, RVal)]) // a name / command scope, keys in first-seen order
-} derive(Eq, Debug)
 
 ///|
 /// DR-091 §2: split a `kv_map` piece at its FIRST `=` (the value may itself contain further `=`
@@ -491,11 +483,11 @@ fn is_multiple_decl_here(
 
 ///|
 /// DR-036 collector dispatch by name: applies the named collector to an accum cell's final
-/// accumulated `RArr`. Only `unwrap_single` is wired end-to-end today (`@engine.Entity.collector`'s doc
+/// accumulated `@engine.RArr`. Only `unwrap_single` is wired end-to-end today (`@engine.Entity.collector`'s doc
 /// comment, node.mbt) — an unrecognized name is unreachable in practice (decode validates against
 /// this same vocab before ever setting `@engine.Entity.collector`, `dec_multiple` in
 /// json_conformance_wbtest.mbt), so this defensively falls back to identity rather than aborting.
-fn apply_collector(name : String, r : RVal) -> RVal {
+fn apply_collector(name : String, r : @engine.RVal) -> @engine.RVal {
   match name {
     "unwrap_single" => unwrap_single(r)
     _ => r
@@ -522,17 +514,17 @@ pub fn build_result(
   defaults : Array[DefaultCell],
   path : Array[String],
   nones? : Array[@engine.NoneCell] = [],
-) -> RVal {
+) -> @engine.RVal {
   // ARRAY: a "[]" sentinel at this level => build one element per "#k" child. Elements keep the
   // array's path (an indexed repeat element is not a named result-scope segment cells key on).
   if has_direct_key(binds, "[]") {
-    let elems : Array[RVal] = []
+    let elems : Array[@engine.RVal] = []
     for idx in ordered_indices(binds) {
       elems.push(
         build_result(sub_under(binds, idx), cells, defaults, path, nones~),
       )
     }
-    return RArr(elems)
+    return @engine.RArr(elems)
   }
   // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
   // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
@@ -543,11 +535,11 @@ pub fn build_result(
   // AFTER THE LAST "#fire" survive — with no "#fire" at all (a positional fires its repeat
   // exactly once) the whole list is one firing.
   if has_direct_key(binds, "#row") {
-    let rows : Array[RVal] = []
+    let rows : Array[@engine.RVal] = []
     for row in row_groups(binds) {
       rows.push(build_result(row, cells, defaults, path, nones~))
     }
-    return RArr(rows)
+    return @engine.RArr(rows)
   }
   // gather direct named keys (skip sentinels) and nested (named) scopes
   // DR-089 §3: a none-typed cell's value never appears in the result (値の結果には現れない) — same
@@ -610,10 +602,10 @@ pub fn build_result(
         v = b.value
       }
     }
-    return RScalar(v)
+    return @engine.RScalar(v)
   }
   // OBJECT: named leaves (folding accum keys into a list) + nested scopes.
-  let obj : Array[(String, RVal)] = []
+  let obj : Array[(String, @engine.RVal)] = []
   for k in named {
     if cell_here(cells, path, k) {
       // ACCUMULATE (repeat-cons and multiple both use "append", DR-105 §3 / DR-043/034/036): fold same-key
@@ -672,7 +664,7 @@ pub fn build_result(
         // `collector` application here (DR-036's `collector` vocab — `unwrap_single` etc. — targets
         // an ARRAY shape; kv_map's minimal implementation, team-lead 裁定 2026-07-11, does not wire
         // collector/kv_map interaction, no fixture requires it yet).
-        let pairs : Array[(String, RVal)] = []
+        let pairs : Array[(String, @engine.RVal)] = []
         let seen : Map[String, Int] = Map([])
         for v in filtered_vals {
           let raw = match v {
@@ -681,20 +673,20 @@ pub fn build_result(
           }
           let (key, value) = split_first_eq(raw)
           match seen.get(key) {
-            Some(i) => pairs[i] = (key, RScalar(@engine.VStr(value)))
+            Some(i) => pairs[i] = (key, @engine.RScalar(@engine.VStr(value)))
             None => {
               seen.set(key, pairs.length())
-              pairs.push((key, RScalar(@engine.VStr(value))))
+              pairs.push((key, @engine.RScalar(@engine.VStr(value))))
             }
           }
         }
-        RObj(pairs)
+        @engine.RObj(pairs)
       } else {
-        let items : Array[RVal] = []
+        let items : Array[@engine.RVal] = []
         for v in filtered_vals {
-          items.push(RScalar(v))
+          items.push(@engine.RScalar(v))
         }
-        let arr = RArr(items)
+        let arr = @engine.RArr(items)
         match collector_here(cells, path, k) {
           Some(cn) => apply_collector(cn, arr)
           None => arr
@@ -709,7 +701,7 @@ pub fn build_result(
           v = b.value
         }
       }
-      obj.push((k, RScalar(v)))
+      obj.push((k, @engine.RScalar(v)))
     }
   }
   for seg in segs {
@@ -758,9 +750,9 @@ pub fn build_result(
       // variant, so a plain scalar multiple cell's fire is never array-shaped — the dial is
       // observationally inert there, DR-105 §1's "非配列 → 丸ごと1要素" holds vacuously).
       let flat = flatten_here(cells, path, seg)
-      let per_fire : Array[RVal] = []
+      let per_fire : Array[@engine.RVal] = []
       for chunk in fire_groups(seg_binds) {
-        let rows : Array[RVal] = []
+        let rows : Array[@engine.RVal] = []
         for row in row_groups(chunk) {
           rows.push(
             build_result(row, cells, defaults, path_push(path, seg), nones~),
@@ -771,10 +763,10 @@ pub fn build_result(
             per_fire.push(r)
           }
         } else {
-          per_fire.push(RArr(rows))
+          per_fire.push(@engine.RArr(rows))
         }
       }
-      obj.push((seg, RArr(per_fire)))
+      obj.push((seg, @engine.RArr(per_fire)))
     } else if !unfired_ref_accum_seg {
       obj.push(
         (
@@ -815,7 +807,7 @@ pub fn build_result(
     if path_eq(c.path, path) &&
       !str_contains(named, c.name) &&
       !has_direct_key(sub_under(binds, c.name), "#row") {
-      let empty : RVal = RArr([])
+      let empty : @engine.RVal = @engine.RArr([])
       let collected = match c.collector {
         Some(cn) => apply_collector(cn, empty)
         None => empty
@@ -828,10 +820,10 @@ pub fn build_result(
   // here — an unfired flag shows `false`, never absent). Skip names already present as a bound leaf.
   for d in defaults {
     if path_eq(d.path, path) && !str_contains(named, d.name) {
-      obj.push((d.name, RScalar(d.value)))
+      obj.push((d.name, @engine.RScalar(d.value)))
     }
   }
-  RObj(obj)
+  @engine.RObj(obj)
 }
 
 ///|
@@ -856,36 +848,36 @@ pub enum FromEntries {
 } derive(Eq, Debug)
 
 ///|
-pub fn from_entries(r : RVal, spec : FromEntries) -> RVal {
+pub fn from_entries(r : @engine.RVal, spec : FromEntries) -> @engine.RVal {
   match r {
-    RScalar(v) => RScalar(v)
-    RObj(kvs) => {
+    @engine.RScalar(v) => @engine.RScalar(v)
+    @engine.RObj(kvs) => {
       // recurse into an object's field values (a nested array may still match the spec)
-      let out : Array[(String, RVal)] = []
+      let out : Array[(String, @engine.RVal)] = []
       for kv in kvs {
         out.push((kv.0, from_entries(kv.1, spec)))
       }
-      RObj(out)
+      @engine.RObj(out)
     }
-    RArr(elems) =>
+    @engine.RArr(elems) =>
       match spec {
         Entries =>
           if all_pairs(elems) {
-            let pairs : Array[(String, RVal)] = []
+            let pairs : Array[(String, @engine.RVal)] = []
             for e in elems {
               match e {
-                RArr(xs) =>
+                @engine.RArr(xs) =>
                   pairs.push((rval_key_str(xs[0]), from_entries(xs[1], spec)))
                 _ => ()
               }
             }
-            RObj(pairs)
+            @engine.RObj(pairs)
           } else {
             recurse_arr(elems, spec)
           }
         KeyValue(kf, vf) =>
           if all_have_fields(elems, [kf, vf]) {
-            let pairs : Array[(String, RVal)] = []
+            let pairs : Array[(String, @engine.RVal)] = []
             for e in elems {
               let k = match rval_field(e, kf) {
                 Some(x) => rval_key_str(x)
@@ -893,11 +885,11 @@ pub fn from_entries(r : RVal, spec : FromEntries) -> RVal {
               }
               let v = match rval_field(e, vf) {
                 Some(x) => x
-                None => RScalar(@engine.VBool(false))
+                None => @engine.RScalar(@engine.VBool(false))
               }
               pairs.push((k, from_entries(v, spec)))
             }
-            RObj(pairs)
+            @engine.RObj(pairs)
           } else {
             recurse_arr(elems, spec)
           }
@@ -905,12 +897,12 @@ pub fn from_entries(r : RVal, spec : FromEntries) -> RVal {
           // map only if EVERY element is an object carrying kf; else this level stays an array
           // (this is the per-level selection: a level without kf is not mapped, DR-044 §2)
           if all_have_fields(elems, [kf]) {
-            let pairs : Array[(String, RVal)] = []
+            let pairs : Array[(String, @engine.RVal)] = []
             for e in elems {
               match e {
-                RObj(fields) => {
+                @engine.RObj(fields) => {
                   let mut key = ""
-                  let rest : Array[(String, RVal)] = []
+                  let rest : Array[(String, @engine.RVal)] = []
                   for kv in fields {
                     if kv.0 == kf {
                       key = rval_key_str(kv.1)
@@ -918,12 +910,12 @@ pub fn from_entries(r : RVal, spec : FromEntries) -> RVal {
                       rest.push((kv.0, from_entries(kv.1, spec)))
                     }
                   }
-                  pairs.push((key, RObj(rest)))
+                  pairs.push((key, @engine.RObj(rest)))
                 }
                 _ => ()
               }
             }
-            RObj(pairs)
+            @engine.RObj(pairs)
           } else {
             recurse_arr(elems, spec)
           }
@@ -932,19 +924,19 @@ pub fn from_entries(r : RVal, spec : FromEntries) -> RVal {
 }
 
 ///|
-fn recurse_arr(elems : Array[RVal], spec : FromEntries) -> RVal {
-  let items : Array[RVal] = []
+fn recurse_arr(elems : Array[@engine.RVal], spec : FromEntries) -> @engine.RVal {
+  let items : Array[@engine.RVal] = []
   for e in elems {
     items.push(from_entries(e, spec))
   }
-  RArr(items)
+  @engine.RArr(items)
 }
 
 ///|
-/// Look up an object field's value by name; None if absent or the RVal is not an object.
-fn rval_field(r : RVal, name : String) -> RVal? {
+/// Look up an object field's value by name; None if absent or the @engine.RVal is not an object.
+fn rval_field(r : @engine.RVal, name : String) -> @engine.RVal? {
   match r {
-    RObj(kvs) => {
+    @engine.RObj(kvs) => {
       for kv in kvs {
         if kv.0 == name {
           return Some(kv.1)
@@ -958,13 +950,13 @@ fn rval_field(r : RVal, name : String) -> RVal? {
 
 ///|
 /// Whether every element is a 2-element array (the `Entries` shape). @engine.Empty => false.
-fn all_pairs(elems : Array[RVal]) -> Bool {
+fn all_pairs(elems : Array[@engine.RVal]) -> Bool {
   if elems.length() == 0 {
     return false
   }
   for e in elems {
     match e {
-      RArr(xs) => if xs.length() != 2 { return false }
+      @engine.RArr(xs) => if xs.length() != 2 { return false }
       _ => return false
     }
   }
@@ -973,7 +965,7 @@ fn all_pairs(elems : Array[RVal]) -> Bool {
 
 ///|
 /// Whether every element is an object carrying ALL the named fields. @engine.Empty => false.
-fn all_have_fields(elems : Array[RVal], fields : Array[String]) -> Bool {
+fn all_have_fields(elems : Array[@engine.RVal], fields : Array[String]) -> Bool {
   if elems.length() == 0 {
     return false
   }
@@ -989,9 +981,9 @@ fn all_have_fields(elems : Array[RVal], fields : Array[String]) -> Bool {
 }
 
 ///|
-fn rval_key_str(r : RVal) -> String {
+fn rval_key_str(r : @engine.RVal) -> String {
   match r {
-    RScalar(v) => @engine.value_str(v)
+    @engine.RScalar(v) => @engine.value_str(v)
     _ => "?"
   }
 }
@@ -1146,7 +1138,7 @@ pub fn build_result_export(
   sc : @engine.Scope,
   binds : Array[@engine.Binding],
   ek : Map[String, @engine.ExportKey],
-) -> RVal {
+) -> @engine.RVal {
   build_result(
     apply_export_keys(binds, ek),
     accum_cells(sc, ek),
@@ -1161,25 +1153,25 @@ pub fn build_result_export(
 /// its element, recursively. This is how an app gets a SCALAR from a repeat/optional cell without
 /// the uniform-array default folding it (`optional: true` yields `[x]`; unwrap_single gives `x`).
 /// Length 0 or >= 2 arrays are left unchanged (unwrap only applies to the unambiguous single case).
-pub fn unwrap_single(r : RVal) -> RVal {
+pub fn unwrap_single(r : @engine.RVal) -> @engine.RVal {
   match r {
-    RScalar(v) => RScalar(v)
-    RArr(elems) =>
+    @engine.RScalar(v) => @engine.RScalar(v)
+    @engine.RArr(elems) =>
       if elems.length() == 1 {
         unwrap_single(elems[0])
       } else {
-        let items : Array[RVal] = []
+        let items : Array[@engine.RVal] = []
         for e in elems {
           items.push(unwrap_single(e))
         }
-        RArr(items)
+        @engine.RArr(items)
       }
-    RObj(kvs) => {
-      let out : Array[(String, RVal)] = []
+    @engine.RObj(kvs) => {
+      let out : Array[(String, @engine.RVal)] = []
       for kv in kvs {
         out.push((kv.0, unwrap_single(kv.1)))
       }
-      RObj(out)
+      @engine.RObj(out)
     }
   }
 }
@@ -1277,7 +1269,7 @@ pub fn find_export_collisions(
 /// face: `claimants` maps an exposed key to the entity name that occupies it IN THIS VIEW. @engine.Empty
 /// when the interpretation carries no export-key collision (the common case).
 pub struct Interpretation {
-  result : RVal
+  result : @engine.RVal
   claimants : Array[(String, String)]
 } derive(Eq, Debug)
 

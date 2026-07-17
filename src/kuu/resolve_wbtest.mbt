@@ -122,10 +122,16 @@ test "build_result folds scalar last-wins, accumulate array, and default seat" {
   let r = build_result(binds, cells, defaults, [])
   assert_eq(
     r,
-    RObj([
-      ("port", RScalar(@engine.VNum(9090.0))),
-      ("tags", RArr([RScalar(@engine.VStr("a")), RScalar(@engine.VStr("b"))])),
-      ("verbose", RScalar(@engine.VBool(false))),
+    @engine.RObj([
+      ("port", @engine.RScalar(@engine.VNum(9090.0))),
+      (
+        "tags",
+        @engine.RArr([
+          @engine.RScalar(@engine.VStr("a")),
+          @engine.RScalar(@engine.VStr("b")),
+        ]),
+      ),
+      ("verbose", @engine.RScalar(@engine.VBool(false))),
     ]),
   )
 }
@@ -159,7 +165,10 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
     },
   ]
   let r = build_result(binds, cells, [], [])
-  assert_eq(r, RObj([("tags", RArr([RScalar(@engine.VStr("c"))]))]))
+  assert_eq(
+    r,
+    @engine.RObj([("tags", @engine.RArr([@engine.RScalar(@engine.VStr("c"))]))]),
+  )
 }
 
 ///|
@@ -177,7 +186,10 @@ test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)
       is_multiple_decl: false,
     },
   ]
-  assert_eq(build_result([], cells, [], []), RObj([("tags", RArr([]))]))
+  assert_eq(
+    build_result([], cells, [], []),
+    @engine.RObj([("tags", @engine.RArr([]))]),
+  )
 }
 
 ///|
@@ -204,7 +216,7 @@ test "build_result: a collector (unwrap_single) collapses a length-1 accumulatio
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    RObj([("tag", RScalar(@engine.VStr("solo")))]),
+    @engine.RObj([("tag", @engine.RScalar(@engine.VStr("solo")))]),
   )
 }
 
@@ -230,8 +242,14 @@ test "build_result: a collector (unwrap_single) leaves a 2+ element accumulation
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    RObj([
-      ("tag", RArr([RScalar(@engine.VStr("a")), RScalar(@engine.VStr("b"))])),
+    @engine.RObj([
+      (
+        "tag",
+        @engine.RArr([
+          @engine.RScalar(@engine.VStr("a")),
+          @engine.RScalar(@engine.VStr("b")),
+        ]),
+      ),
     ]),
   )
 }
@@ -253,7 +271,10 @@ test "build_result: a collector on an unfired accum cell still renders [] (DR-04
       is_multiple_decl: false,
     },
   ]
-  assert_eq(build_result([], cells, [], []), RObj([("tag", RArr([]))]))
+  assert_eq(
+    build_result([], cells, [], []),
+    @engine.RObj([("tag", @engine.RArr([]))]),
+  )
 }
 
 ///|
@@ -294,8 +315,14 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
   let r = build_result(binds, [], [], [])
   assert_eq(
     r,
-    RObj([
-      ("xs", RArr([RScalar(@engine.VStr("a")), RScalar(@engine.VStr("b"))])),
+    @engine.RObj([
+      (
+        "xs",
+        @engine.RArr([
+          @engine.RScalar(@engine.VStr("a")),
+          @engine.RScalar(@engine.VStr("b")),
+        ]),
+      ),
     ]),
   )
 }
@@ -359,7 +386,15 @@ test "accum_cells resolves export_key rename — the accumulate fold fires under
   let r = build_result(apply_export_keys(binds, ek), cells, [], [])
   assert_eq(
     r,
-    RObj([("t", RArr([RScalar(@engine.VStr("a")), RScalar(@engine.VStr("b"))]))]),
+    @engine.RObj([
+      (
+        "t",
+        @engine.RArr([
+          @engine.RScalar(@engine.VStr("a")),
+          @engine.RScalar(@engine.VStr("b")),
+        ]),
+      ),
+    ]),
   )
 }
 
@@ -428,7 +463,7 @@ test "accum_cells + build_result: a renamed accum cell with zero fires still ren
   }
   let cells = accum_cells(sc, ek)
   let r = build_result(apply_export_keys([], ek), cells, [], [])
-  assert_eq(r, RObj([("t", RArr([]))]))
+  assert_eq(r, @engine.RObj([("t", @engine.RArr([]))]))
 }
 
 // ── export-key collision (DR-073) ─────────────────────────────────────────────
@@ -463,9 +498,15 @@ test "DR-073 co-exposure-collision: degenerate views distinguished by claimants"
   assert_eq(collisions[0].claimants, ["a", "b"])
   let interps = build_interpretations(binds, ek, [], [])
   assert_eq(interps.length(), 2)
-  assert_eq(interps[0].result, RObj([("x", RScalar(@engine.VBool(true)))]))
+  assert_eq(
+    interps[0].result,
+    @engine.RObj([("x", @engine.RScalar(@engine.VBool(true)))]),
+  )
   assert_eq(interps[0].claimants, [("x", "a")])
-  assert_eq(interps[1].result, RObj([("x", RScalar(@engine.VBool(true)))]))
+  assert_eq(
+    interps[1].result,
+    @engine.RObj([("x", @engine.RScalar(@engine.VBool(true)))]),
+  )
   assert_eq(interps[1].claimants, [("x", "b")])
 }
 
@@ -492,7 +533,10 @@ test "DR-073 single-exposure-ok: no collision, and the unfired co-exported defau
   )
   assert_eq(interps.length(), 1)
   assert_eq(interps[0].claimants, [])
-  assert_eq(interps[0].result, RObj([("x", RScalar(@engine.VBool(true)))]))
+  assert_eq(
+    interps[0].result,
+    @engine.RObj([("x", @engine.RScalar(@engine.VBool(true)))]),
+  )
 }
 
 ///|
@@ -524,9 +568,15 @@ test "DR-073 identity-exposure collision: @engine.EkUnset element vs @engine.EkK
   // 判定も同様に拡張」) — 2 interpretations、各々が claimant 1 個ずつを残し他方を drop する。
   let interps = build_interpretations(binds, ek, [], [])
   assert_eq(interps.length(), 2)
-  assert_eq(interps[0].result, RObj([("a", RScalar(@engine.VBool(true)))]))
+  assert_eq(
+    interps[0].result,
+    @engine.RObj([("a", @engine.RScalar(@engine.VBool(true)))]),
+  )
   assert_eq(interps[0].claimants, [("a", "a")])
-  assert_eq(interps[1].result, RObj([("a", RScalar(@engine.VBool(true)))]))
+  assert_eq(
+    interps[1].result,
+    @engine.RObj([("a", @engine.RScalar(@engine.VBool(true)))]),
+  )
   assert_eq(interps[1].claimants, [("a", "b")])
 }
 
@@ -1986,11 +2036,11 @@ test "DR-080 resolve wiring: a lone @engine.Remove piece merges against the PRIO
 
 ///|
 /// Guarantees: a `kv_map` accum cell folds 2 fires (each already `=`-shaped, `KvArg`'s consume-
-/// time gate guarantees this — `split_first_eq` never sees a piece without `=`) into an RObj, one
+/// time gate guarantees this — `split_first_eq` never sees a piece without `=`) into an @engine.RObj, one
 /// entry per DISTINCT key, in first-fire order — DR-091 §2's "piece `k=v` を最初の `=` で分割し...
 /// Map (結果は kv オブジェクト) に畳む" core case, no repeated key involved yet (paired with the
 /// last-wins case below).
-test "build_result: kv_map folds 2 fires into an RObj (distinct keys)" {
+test "build_result: kv_map folds 2 fires into an @engine.RObj (distinct keys)" {
   let binds : Array[@engine.Binding] = [
     cb("assigns", @engine.VStr("A=1"), @engine.Cli),
     cb("assigns", @engine.VStr("B=2"), @engine.Cli),
@@ -2008,12 +2058,12 @@ test "build_result: kv_map folds 2 fires into an RObj (distinct keys)" {
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    RObj([
+    @engine.RObj([
       (
         "assigns",
-        RObj([
-          ("A", RScalar(@engine.VStr("1"))),
-          ("B", RScalar(@engine.VStr("2"))),
+        @engine.RObj([
+          ("A", @engine.RScalar(@engine.VStr("1"))),
+          ("B", @engine.RScalar(@engine.VStr("2"))),
         ]),
       ),
     ]),
@@ -2045,12 +2095,12 @@ test "build_result: kv_map re-firing a key is last-wins on VALUE, first-seen on 
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    RObj([
+    @engine.RObj([
       (
         "assigns",
-        RObj([
-          ("A", RScalar(@engine.VStr("3"))),
-          ("B", RScalar(@engine.VStr("2"))),
+        @engine.RObj([
+          ("A", @engine.RScalar(@engine.VStr("3"))),
+          ("B", @engine.RScalar(@engine.VStr("2"))),
         ]),
       ),
     ]),
@@ -2078,7 +2128,9 @@ test "build_result: kv_map splits a piece at the FIRST '=' only (value may itsel
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    RObj([("assigns", RObj([("KEY", RScalar(@engine.VStr("a=b")))]))]),
+    @engine.RObj([
+      ("assigns", @engine.RObj([("KEY", @engine.RScalar(@engine.VStr("a=b")))])),
+    ]),
   )
 }
 
@@ -2088,7 +2140,7 @@ test "build_result: kv_map splits a piece at the FIRST '=' only (value may itsel
 /// dispatch, not a change to the default fold path. Same shape as this file's very first test
 /// ("build_result folds scalar last-wins, accumulate array...") but written standalone here so
 /// this file's kv_map section carries its own non-collision witness.
-test "build_result: kv_map's RObj branch does not affect a sibling 'append' accum cell (対極)" {
+test "build_result: kv_map's @engine.RObj branch does not affect a sibling 'append' accum cell (対極)" {
   let binds : Array[@engine.Binding] = [
     cb("tags", @engine.VStr("a"), @engine.Cli),
     cb("tags", @engine.VStr("b"), @engine.Cli),
@@ -2106,8 +2158,14 @@ test "build_result: kv_map's RObj branch does not affect a sibling 'append' accu
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    RObj([
-      ("tags", RArr([RScalar(@engine.VStr("a")), RScalar(@engine.VStr("b"))])),
+    @engine.RObj([
+      (
+        "tags",
+        @engine.RArr([
+          @engine.RScalar(@engine.VStr("a")),
+          @engine.RScalar(@engine.VStr("b")),
+        ]),
+      ),
     ]),
   )
 }
@@ -2154,7 +2212,7 @@ test "@engine.value_str: an integer-valued float keeps DR-050 §4's no-decimal-p
 
 ///|
 /// 保証 (DR-092 §3「適用範囲は一律 — result / effects / config 起因の値、いずれも同じ表現」):
-/// `build_result` (RVal 構築、report の値位置の 1 つ = result) は inf 値を型・値ともに一切変更
+/// `build_result` (@engine.RVal 構築、report の値位置の 1 つ = result) は inf 値を型・値ともに一切変更
 /// せず通す — `@engine.VNum` の Eq 比較は IEEE754 の `Infinity == Infinity` (true, NaN と違い比較可能)
 /// に従うため、`assert_eq` がそのまま構造等価を検証できる。value 位置の serialize 規約
 /// (`@engine.value_str`) とは独立に、値そのものが report の "result" 経路で失われない (clamp/丸め等が
@@ -2166,6 +2224,6 @@ test "build_result: an inf-valued cell passes through the result builder unchang
   ]
   assert_eq(
     build_result(binds, [], [], []),
-    RObj([("threshold", RScalar(@engine.VNum(inf)))]),
+    @engine.RObj([("threshold", @engine.RScalar(@engine.VNum(inf)))]),
   )
 }

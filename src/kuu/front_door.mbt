@@ -78,7 +78,7 @@ pub struct OutputEffect {
 /// 境界を含む解決済み binds を既存 builder で集約し、`effects` は parse 相の発火列から sentinel と
 /// config_file / none / dd の内部セルを除外し、`sources` は解決済み値の値源を返す。
 pub struct OutputView {
-  result : RVal
+  result : @engine.RVal
   effects : Array[OutputEffect]
   sources : Array[SourceEntry]
 } derive(Eq, Debug)
@@ -484,7 +484,7 @@ pub fn output(
 /// `AtomicAST` は生 `@engine.Scope` を保持しない不透明ハンドルなので、利用者が @engine.Scope を意識せず済むよう
 /// ここで `ast.root`/`ast.ekmap` を代わりに渡す (`export_map` と同じ「AtomicAST から素材を引く」
 /// 形、本ファイル冒頭 doc 参照)。
-pub fn result(ast : AtomicAST, binds : Array[@engine.Binding]) -> RVal {
+pub fn result(ast : AtomicAST, binds : Array[@engine.Binding]) -> @engine.RVal {
   output(ast, binds).result
 }
 
