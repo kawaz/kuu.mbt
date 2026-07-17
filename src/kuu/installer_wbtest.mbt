@@ -971,14 +971,14 @@ test "installer chain: order-independent thanks to 5 invariants + fixpoint" {
 // ── def-error 列挙 (DR-054 §4): 全 kind を 1 pass で収集 (打ち切りなし) ─────────
 
 ///|
-/// 保証: parse_definition の static check は全 kind を走らせて 1 list に append し、first-error 打ち切り
-/// しない (DR-054 §4 「コンパイラの定石」)。ここでは (a) unknown vocab (chain に long installer が無い、
-/// long 属性を持つ要素あり) と (b) invalid range (repeat min>max) を同時に混ぜ、両方の @engine.DefError が
-/// enumerate されることを確認する。
+/// 保証: parse_definition の static check は generic check と登録住人の check を全て走らせて 1 list に
+/// append し、first-error 打ち切りしない (DR-054 §4 「コンパイラの定石」)。ここでは (a) unknown vocab
+/// (chain に env installer が無い、env 属性を持つ要素あり) と (b) 登録済み repeat 住人の invalid range
+/// (repeat min>max) を同時に混ぜ、両方の @engine.DefError が enumerate されることを確認する。
 test "parse_definition enumerates all def-errors (no first-error 打ち切り, DR-054 §4)" {
   let def : @engine.Definition = {
     ..empty_def(),
-    options: [el("v", @builtins.flag_type(), long=LList(["v"]))], // long 属性あり
+    options: [el("v", @builtins.flag_type(), env=["V"])], // env 属性あり
     positionals: [
       el(
         "f",
@@ -987,9 +987,9 @@ test "parse_definition enumerates all def-errors (no first-error 打ち切り, D
       ),
     ], // min > max
   }
-  // chain には @builtins.long_installer() / @builtins.repeat_installer() 共に無い → long vocab は unknown、repeat vocab も unknown、
-  // かつ min>max の invalid range も同時に。3 種の @engine.DefError が列挙されるはず。
-  match @builtins.lower_definition(def, [@builtins.short_installer()]) {
+  // repeat 住人は登録するが env 住人は登録しない。env の generic unknown-vocab と repeat 住人の
+  // invalid-range が同じ pass で列挙される。
+  match @builtins.lower_definition(def, [@builtins.repeat_installer()]) {
     Ok(_) => abort("expected Err")
     Err(errs) => {
       // 少なくとも @engine.DUnknownVocab (long / repeat) と @engine.DInvalidRange の 3 種を含む — 打ち切っていれば

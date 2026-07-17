@@ -16,9 +16,12 @@ impl @engine.InstallerExt for LongInstaller with fn apply(_self, builder) {
 ///|
 impl @engine.InstallerExt for LongInstaller with fn collect_defs_errors(
   _self,
-  _view,
+  view,
 ) {
-  []
+  let errors = []
+  collect_invalid_long_dsl(view.source_definition(), errors)
+  collect_tty_stream_missing(view.definition(), errors)
+  errors
 }
 
 ///|
@@ -68,9 +71,11 @@ impl @engine.InstallerExt for EnvInstaller with fn apply(_self, builder) {
 ///|
 impl @engine.InstallerExt for EnvInstaller with fn collect_defs_errors(
   _self,
-  _view,
+  view,
 ) {
-  []
+  let errors = []
+  collect_none_value_source_decl(view.definition(), errors)
+  errors
 }
 
 ///|
@@ -94,9 +99,11 @@ impl @engine.InstallerExt for DdInstaller with fn apply(_self, builder) {
 ///|
 impl @engine.InstallerExt for DdInstaller with fn collect_defs_errors(
   _self,
-  _view,
+  view,
 ) {
-  []
+  let errors = []
+  collect_invalid_dd_pattern(view.definition(), errors)
+  errors
 }
 
 ///|
@@ -198,9 +205,17 @@ impl @engine.InstallerExt for RepeatInstaller with fn apply(_self, _builder) {
 ///|
 impl @engine.InstallerExt for RepeatInstaller with fn collect_defs_errors(
   _self,
-  _view,
+  view,
 ) {
-  []
+  let errors = []
+  let definition = view.definition()
+  let templates = view.templates()
+  collect_invalid_range(definition, errors)
+  collect_unsupported_option_ref_repeat(definition, errors)
+  collect_absent_ref(definition, templates, errors)
+  collect_circular_ref(templates, errors)
+  collect_zero_progress(definition, templates, errors)
+  errors
 }
 
 ///|
@@ -224,9 +239,21 @@ impl @engine.InstallerExt for MultipleInstaller with fn apply(_self, _builder) {
 ///|
 impl @engine.InstallerExt for MultipleInstaller with fn collect_defs_errors(
   _self,
-  _view,
+  view,
 ) {
-  []
+  let errors = []
+  let definition = view.definition()
+  collect_unsupported_accum_update(definition, errors)
+  collect_unsupported_count_multiple(definition, errors)
+  collect_scalar_array_default(definition, errors)
+  collect_unknown_filter(definition, errors)
+  collect_invalid_filter_attribute_mismatch(definition, errors)
+  collect_invalid_regex_pattern(definition, errors)
+  collect_ref_merge_accum(definition, errors)
+  collect_flatten_non_append(definition, errors)
+  collect_unknown_accumulator(definition, errors)
+  collect_invalid_numeric_filter_args(definition, errors)
+  errors
 }
 
 ///|
@@ -250,9 +277,11 @@ impl @engine.InstallerExt for ConfigInstaller with fn apply(_self, _builder) {
 ///|
 impl @engine.InstallerExt for ConfigInstaller with fn collect_defs_errors(
   _self,
-  _view,
+  view,
 ) {
-  []
+  let errors = []
+  collect_config_cycle(view.definition(), errors)
+  errors
 }
 
 ///|
@@ -302,9 +331,11 @@ impl @engine.InstallerExt for AliasInstaller with fn apply(_self, _builder) {
 ///|
 impl @engine.InstallerExt for AliasInstaller with fn collect_defs_errors(
   _self,
-  _view,
+  view,
 ) {
-  []
+  let errors = []
+  collect_invalid_alias_long_override(view.source_definition(), errors)
+  errors
 }
 
 ///|

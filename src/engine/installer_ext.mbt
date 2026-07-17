@@ -2,17 +2,33 @@
 
 ///|
 pub struct DefsView {
+  priv source_definition : Definition
   priv definition : Definition
+  priv templates : Map[String, Node]
 }
 
 ///|
-pub fn DefsView::new(definition : Definition) -> DefsView {
-  { definition, }
+pub fn DefsView::new(
+  source_definition : Definition,
+  definition : Definition,
+  templates : Map[String, Node],
+) -> DefsView {
+  { source_definition, definition, templates }
+}
+
+///|
+pub fn DefsView::source_definition(self : DefsView) -> Definition {
+  self.source_definition
 }
 
 ///|
 pub fn DefsView::definition(self : DefsView) -> Definition {
   self.definition
+}
+
+///|
+pub fn DefsView::templates(self : DefsView) -> Map[String, Node] {
+  self.templates
 }
 
 ///|

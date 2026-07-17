@@ -3940,12 +3940,6 @@ pub fn lower_definition(
   // そちらを参照する (def 自体には normalize を通常どおり適用する — 二重 pipeline にしない)。
   let orig = clone_def(def0)
   let errs : Array[@engine.DefError] = []
-  // DR-011 明確化 (2026-07-08): `:set` → kebab 展開 (normalize_surface) より前に検査する — 展開後は
-  // sentinel `":set"` 自体が消え、有効な main entry と無効な残存文字列を区別できなくなる。
-  collect_invalid_long_dsl(def, errs)
-  // alias long_override も同じ colon DSL (DR-011 明確化は DSL が現れる全ての場所に効く)。desugar
-  // (long_override → variants/long の展開) より前に検査する。
-  collect_invalid_alias_long_override(def, errs)
   // 純構文 pre-pass (LOWERING §A / §C.4): `:set` → kebab (Fix 2, DR-071) + dd name 既定 "--" (Fix 3, DR-064 §5)
   normalize_surface(def)
   // init_sb が registry に repeat-lowering template を植える (静的 ref check が見えるように)。
@@ -3955,25 +3949,12 @@ pub fn lower_definition(
   for error in @engine.collect_installer_vocab_errors(def, order) {
     errs.push(error)
   }
-  collect_invalid_range(def, errs) // DR-052 (repeat min > max)
-  collect_unsupported_option_ref_repeat(def, errs) // codex 指摘4 (option ref+repeat min>1 未配線)
-  collect_unsupported_accum_update(def, errs) // issue accum-fold-update-default-ops (multiple + update variant)
-  collect_unsupported_count_multiple(def, errs) // codex 指摘 High 2 (count 型 × multiple)
-  collect_scalar_array_default(def, errs) // DR-083 §5 (非 accum 要素への配列 default)
-  collect_tty_stream_missing(def, errs) // DR-099 §3/§7 (builtin/tty preset の tty_stream 必須違反)
-  collect_none_value_source_decl(def, errs) // DR-089 §4 (none への env/config_key/inherit 宣言)
-  collect_unknown_filter(def, errs) // DR-101 / DR-102 §1/§2 (filter 4 属性それぞれ自 registry のみで unknown-vocab)
-  collect_invalid_filter_attribute_mismatch(def, errs) // DR-102 §1/§3 (final_filters/accum_filters と要素の accum 適格性の排他制約)
-  collect_invalid_regex_pattern(def, errs) // DR-085 §1 訂正 (regex_match pattern compile 失敗)
-  collect_invalid_dd_pattern(def, errs) // DR-090 §2 (dd match pattern compile 失敗)
-  collect_ref_merge_accum(def, errs) // DR-084 §3 (merge accumulator × ref)
-  collect_flatten_non_append(def, errs) // DR-105 §2 (M-16, flatten は append 専用ダイヤル)
-  collect_unknown_accumulator(def, errs) // DR-105 §3 (M-17, multiple.accumulator の未登録名)
-  collect_invalid_numeric_filter_args(def, errs) // DR-105 §5/§8 (M-18, in_range/length_range の DSL 引数)
-  collect_absent_ref(def, registry, errs) // DR-032
-  collect_circular_ref(registry, errs) // DR-007/032
-  collect_zero_progress(def, registry, errs) // DR-043
-  collect_config_cycle(def, errs) // DR-050 §5
+  let view = @engine.DefsView::new(orig, def, registry)
+  for installer in order {
+    for error in installer.collect_defs_errors(view) {
+      errs.push(error)
+    }
+  }
   if errs.length() > 0 {
     return Err(errs) // ALL definition-error 列挙
   }
