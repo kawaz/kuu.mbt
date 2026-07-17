@@ -1,6 +1,6 @@
 ---
 title: binds → result object 構築の production 昇格
-status: open
+status: resolved
 category: task
 created: 2026-07-16T16:35:14+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-17T13:52:24+09:00
 discard_reason:    # 1-line JSON array string[] 例: ["discarded","環境が変わった"]
 pending_reason:    # 1-line JSON array string[] 例: ["pending","v2 待ち"]
-close_reason:      # close 時に update が記録。1-line JSON array string[] 例: ["dr/DR-0007","implemented"]
+close_reason: ["kuu-cli wire.mbt が OutputView (@kuu.output(ast, pbinds, resolved=rbinds)) 1発へ乗り換え (kuu-cli 86575f29、conformance 569/569 維持)、手組み is_excluded_cell/is_dd_cell_scan は削除。これを受けて kuu.mbt 側も is_sentinel を pub 降格 (92b9cee5、CI green)、kuu-cli pin bump 5e7d2911 で lockstep 完結","done"]
 blocked_by:
 origin: DR-109 波及 (統括起票)
 ---
@@ -40,8 +40,11 @@ production API 化でこの重複を解消する。
       追加、`warnings_structured` は既存 pub のまま (変更不要を確認)
 - [x] conformance runner が新 API に乗り換えて重複を解消 — `proj_result_export`/`proj_sources`/
       `proj_sources_tree` を production 側ヘルパーへの薄い委譲に書き換え
-- [ ] kuu-cli の wire.mbt も乗り換え (kuu-cli 側は別リポ作業として r27 経由) — 未着手 (本 issue の
-      担当セッションの受け持ち外)。乗り換え片鱗のコード片は完了報告参照
+- [x] kuu-cli の wire.mbt も乗り換え (kuu-cli 側は別リポ作業として r27 経由) — kuu-cli wire.mbt が
+      OutputView (`@kuu.output(ast, pbinds, resolved=rbinds)`) 1 発へ乗り換え (kuu-cli 86575f29、
+      conformance 569/569 維持)、手組み is_excluded_cell/is_dd_cell_scan は削除。これを受けて
+      kuu.mbt 側も is_sentinel を pub 降格 (92b9cee5、CI green)、kuu-cli pin bump 5e7d2911 で
+      lockstep 完結
 - [x] moon test / conformance 全 green 維持 — `decoded=272 ran_cases=661 skipped=0 mismatches=0`、
       moon test 352/352 green (fresh 実行で確認)
 - [x] MDR-005 に追記 note — 追記済み
@@ -49,6 +52,4 @@ production API 化でこの重複を解消する。
 ## TODO
 
 <!-- wip 時のみ -->
-- [ ] (別セッション) kuu-cli `wire.mbt` の `result_to_json`/`rval_to_json` を
-      `@core.result(ast, rbinds)` 呼び出しへ、`sources` フィールド (現状未出力) を
-      `@core.sources(ast, rbinds)` walk へ置き換え
+- [x] (別セッション) kuu-cli `wire.mbt` の乗り換え完了 (OutputView 1 発呼び出しへ、上記受け入れ条件参照)
