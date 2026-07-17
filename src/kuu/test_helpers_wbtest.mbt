@@ -4,7 +4,7 @@
 fn chain(spellings : Array[String]) -> Array[@engine.FilterSpelling] {
   let out : Array[@engine.FilterSpelling] = []
   for spelling in spellings {
-    out.push(@engine.parse_filter_shorthand(spelling))
+    out.push(@builtins.parse_filter_shorthand(spelling))
   }
   out
 }

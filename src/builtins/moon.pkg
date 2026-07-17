@@ -1,3 +1,4 @@
 import {
   "kawaz/kuu/engine",
+  "moonbitlang/core/string",
 }

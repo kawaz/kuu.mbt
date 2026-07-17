@@ -636,7 +636,7 @@ fn dec_strs(j : Json?) -> Array[String] raise DecodeSkip {
 /// / DESIGN §8.4 object form `{"name": ..., "args": [...]}` — needed when a filter's own arg
 /// contains a colon (e.g. `regex_match`'s `^https?://` pattern breaks the colon-shorthand DSL's
 /// all-colon-split rule, DR-009). Both forms decode to the SAME `@engine.FilterSpelling` struct (colon
-/// shorthand → `filters.mbt`'s `@engine.parse_filter_shorthand`, object form → `name`/`args` read straight
+/// shorthand → `filters.mbt`'s `@builtins.parse_filter_shorthand`, object form → `name`/`args` read straight
 /// off the JSON object) — no in-band string encoding is needed since the result type carries `args`
 /// as a real `Array[String]`, replacing the earlier U+E000 PUA-tag single-string encoding that
 /// shared `Array[String]` with plain shorthand strings (that scheme had a latent hole: an object-
@@ -651,14 +651,14 @@ fn dec_filter_chain(
     None => []
     Some(x) =>
       match x.j_str() {
-        Some(s) => [@engine.parse_filter_shorthand(s)]
+        Some(s) => [@builtins.parse_filter_shorthand(s)]
         None =>
           match x.j_arr() {
             Some(a) => {
               let r : Array[@engine.FilterSpelling] = []
               for e in a {
                 match e.j_str() {
-                  Some(s) => r.push(@engine.parse_filter_shorthand(s))
+                  Some(s) => r.push(@builtins.parse_filter_shorthand(s))
                   None =>
                     match e.j_obj() {
                       Some(o) => {

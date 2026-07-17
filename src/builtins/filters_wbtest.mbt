@@ -4,12 +4,12 @@
 
 ///|
 /// wbtest ergonomics only (issue filter-spelling-inband-encoding-retyping): `apply_filter_chain`
-/// takes `Array[FilterSpelling]` in production, but every case below wants the colon-shorthand's
-/// terseness (`"in_range:1:10"`) rather than a hand-built `FilterSpelling` struct literal per entry
+/// takes `Array[@engine.FilterSpelling]` in production, but every case below wants the colon-shorthand's
+/// terseness (`"in_range:1:10"`) rather than a hand-built `@engine.FilterSpelling` struct literal per entry
 /// — this maps a plain string chain through `parse_filter_shorthand` (filters.mbt, the SAME parser
 /// the decode boundary uses).
-fn chain(strs : Array[String]) -> Array[FilterSpelling] {
-  let out : Array[FilterSpelling] = []
+fn chain(strs : Array[String]) -> Array[@engine.FilterSpelling] {
+  let out : Array[@engine.FilterSpelling] = []
   for s in strs {
     out.push(parse_filter_shorthand(s))
   }
@@ -36,12 +36,12 @@ test "lookup_filter: built-in signatures match DR-077 §2's validate/transform s
 /// piece_filters 相は本来 string→string でしか呼ばれない契約、値型混入時に落とすより無害な
 /// pass-through の方が診断しやすい)。
 test "filter_trim strips whitespace, passes non-strings through" {
-  match apply_filter_chain(chain(["trim"]), VStr("  hi  ")) {
-    Ok(v) => assert_eq(v, VStr("hi"))
+  match apply_filter_chain(chain(["trim"]), @engine.VStr("  hi  ")) {
+    Ok(v) => assert_eq(v, @engine.VStr("hi"))
     Err(_) => fail("expected Ok")
   }
-  match apply_filter_chain(chain(["trim"]), VNum(5.0)) {
-    Ok(v) => assert_eq(v, VNum(5.0))
+  match apply_filter_chain(chain(["trim"]), @engine.VNum(5.0)) {
+    Ok(v) => assert_eq(v, @engine.VNum(5.0))
     Err(_) => fail("expected Ok (non-string passthrough)")
   }
 }
@@ -50,11 +50,11 @@ test "filter_trim strips whitespace, passes non-strings through" {
 /// 保証: `non_empty` は空文字列のみ Err、それ以外は値そのままの Ok (Validate、値を変えない)。
 /// reason は DR-095 §3 の宣言 `["empty_value"]` に細粒度化されている (filter_rejected 潰しの廃止)。
 test "filter_non_empty rejects only the empty string" {
-  match apply_filter_chain(chain(["non_empty"]), VStr("x")) {
-    Ok(v) => assert_eq(v, VStr("x"))
+  match apply_filter_chain(chain(["non_empty"]), @engine.VStr("x")) {
+    Ok(v) => assert_eq(v, @engine.VStr("x"))
     Err(_) => fail("expected Ok")
   }
-  match apply_filter_chain(chain(["non_empty"]), VStr("")) {
+  match apply_filter_chain(chain(["non_empty"]), @engine.VStr("")) {
     Err((reason, _)) => assert_eq(reason, "empty_value")
     Ok(_) => fail("expected Err (empty string)")
   }
@@ -65,19 +65,19 @@ test "filter_non_empty rejects only the empty string" {
 /// — 境界値は両方とも受理 (閉区間)、はみ出しは Err。reason は DR-095 §3 の宣言に細粒度化: 下限未満は
 /// `too_small`、上限超過は `too_large` (filter_rejected 潰しの廃止)。
 test "filter_in_range accepts a closed interval [min, max]" {
-  match apply_filter_chain(chain(["in_range:1:10"]), VNum(1.0)) {
-    Ok(v) => assert_eq(v, VNum(1.0))
+  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(1.0)) {
+    Ok(v) => assert_eq(v, @engine.VNum(1.0))
     Err(_) => fail("expected Ok (lower bound inclusive)")
   }
-  match apply_filter_chain(chain(["in_range:1:10"]), VNum(10.0)) {
-    Ok(v) => assert_eq(v, VNum(10.0))
+  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(10.0)) {
+    Ok(v) => assert_eq(v, @engine.VNum(10.0))
     Err(_) => fail("expected Ok (upper bound inclusive)")
   }
-  match apply_filter_chain(chain(["in_range:1:10"]), VNum(11.0)) {
+  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(11.0)) {
     Err((reason, _)) => assert_eq(reason, "too_large")
     Ok(_) => fail("expected Err (over the upper bound)")
   }
-  match apply_filter_chain(chain(["in_range:1:10"]), VNum(0.0)) {
+  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(0.0)) {
     Err((reason, _)) => assert_eq(reason, "too_small")
     Ok(_) => fail("expected Err (under the lower bound)")
   }
@@ -92,45 +92,49 @@ test "filter_in_range accepts a closed interval [min, max]" {
 /// 全ての不一致 reject が対象 — compile 失敗は別テストが担う防御的パス)。
 test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar escape" {
   // (a) 一致受理: literal 部分一致。
-  match apply_filter_chain(chain(["regex_match:abc"]), VStr("xxabcyy")) {
-    Ok(v) => assert_eq(v, VStr("xxabcyy"))
+  match
+    apply_filter_chain(chain(["regex_match:abc"]), @engine.VStr("xxabcyy")) {
+    Ok(v) => assert_eq(v, @engine.VStr("xxabcyy"))
     Err(_) => fail("expected Ok (unanchored partial match finds 'abc' inside)")
   }
   // (b) 不一致 reject。
-  match apply_filter_chain(chain(["regex_match:abc"]), VStr("xyz")) {
+  match apply_filter_chain(chain(["regex_match:abc"]), @engine.VStr("xyz")) {
     Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) => fail("expected Err (no 'abc' substring)")
   }
   // (c) 部分一致と全体一致の区別: unanchored pattern は末尾ゴミがあっても通る (DR-085 §1 "filter
   // 側で暗黙アンカーを足さない")。同じ入力に `^...$` を足すと reject に転じる — アンカーは pattern
   // 側の責務であることの直接証拠。
-  match apply_filter_chain(chain(["regex_match:abc"]), VStr("abcXYZ")) {
+  match apply_filter_chain(chain(["regex_match:abc"]), @engine.VStr("abcXYZ")) {
     Ok(_) => ()
     Err(_) =>
       fail("expected Ok (unanchored: trailing garbage after the match is fine)")
   }
-  match apply_filter_chain(chain(["regex_match:^abc$"]), VStr("abcXYZ")) {
+  match
+    apply_filter_chain(chain(["regex_match:^abc$"]), @engine.VStr("abcXYZ")) {
     Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) => fail("expected Err (full-anchor pattern rejects trailing garbage)")
   }
-  match apply_filter_chain(chain(["regex_match:^abc$"]), VStr("abc")) {
-    Ok(v) => assert_eq(v, VStr("abc"))
+  match apply_filter_chain(chain(["regex_match:^abc$"]), @engine.VStr("abc")) {
+    Ok(v) => assert_eq(v, @engine.VStr("abc"))
     Err(_) => fail("expected Ok (full-anchor pattern matches the exact string)")
   }
   // (d) メタ文字 escape: `a.c` (無escape) は任意 1 文字を挟んだ "abc"/"axc" 双方にマッチするが、
   // `a\.c` (escape 済み) はリテラル "." のみにマッチし "abc" にはマッチしない。
-  match apply_filter_chain(chain(["regex_match:^a.c$"]), VStr("abc")) {
+  match apply_filter_chain(chain(["regex_match:^a.c$"]), @engine.VStr("abc")) {
     Ok(_) => ()
     Err(_) =>
       fail("expected Ok (unescaped '.' matches any single char, including 'b')")
   }
-  match apply_filter_chain(chain(["regex_match:^a\\.c$"]), VStr("abc")) {
+  match
+    apply_filter_chain(chain(["regex_match:^a\\.c$"]), @engine.VStr("abc")) {
     Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) =>
       fail("expected Err (escaped '\\.' is a literal dot, does not match 'b')")
   }
-  match apply_filter_chain(chain(["regex_match:^a\\.c$"]), VStr("a.c")) {
-    Ok(v) => assert_eq(v, VStr("a.c"))
+  match
+    apply_filter_chain(chain(["regex_match:^a\\.c$"]), @engine.VStr("a.c")) {
+    Ok(v) => assert_eq(v, @engine.VStr("a.c"))
     Err(_) => fail("expected Ok (escaped '\\.' matches a literal dot)")
   }
 }
@@ -138,23 +142,24 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
 ///|
 /// 保証: pattern の compile 失敗 (定義不良) と照合不一致 (入力拒否) は別の失敗という DR-085 §1 の
 /// 区別 — 不正な pattern (閉じ括弧なしの group) は compile 時点で Err になる。非 string 値は他の
-/// string-only filter (`non_empty` 等) と同じく `VStr` 以外専用の Err (このフィルタは string-only
+/// string-only filter (`non_empty` 等) と同じく `@engine.VStr` 以外専用の Err (このフィルタは string-only
 /// で non-string 素通しの `trim` とは違う挙動、args 個数も 1 固定)。この3ケースはいずれも
 /// filter-definition-bug 系の防御的パス (DR-095 §3 の宣言 reasons 外) なので `filter_rejected`
 /// フォールバックのまま — `pattern_no_match` (宣言済み reason) は照合不一致のみに使う。
 test "filter_regex_match: malformed pattern, arg count, non-string input all Err distinctly" {
-  match apply_filter_chain(chain(["regex_match:(unclosed"]), VStr("x")) {
+  match
+    apply_filter_chain(chain(["regex_match:(unclosed"]), @engine.VStr("x")) {
     Err((reason, msg)) => {
       assert_eq(reason, "filter_rejected")
       assert_true(msg.contains("compile"))
     }
     Ok(_) => fail("expected Err (malformed pattern fails to compile)")
   }
-  match apply_filter_chain(chain(["regex_match"]), VStr("x")) {
+  match apply_filter_chain(chain(["regex_match"]), @engine.VStr("x")) {
     Err((reason, _)) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (regex_match requires exactly 1 arg)")
   }
-  match apply_filter_chain(chain(["regex_match:x"]), VNum(1.0)) {
+  match apply_filter_chain(chain(["regex_match:x"]), @engine.VNum(1.0)) {
     Err((reason, _)) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (regex_match requires a string value)")
   }
@@ -164,11 +169,11 @@ test "filter_regex_match: malformed pattern, arg count, non-string input all Err
 /// 保証: `increment` は 0-arg number Transform、DR-077 §3 count の built-in transform そのもの
 /// (apply_transform が registry lookup 経由でこの同じ closure を呼ぶ)。
 test "filter_increment adds 1 to a number, rejects args and non-numbers" {
-  match apply_filter_chain(chain(["increment"]), VNum(4.0)) {
-    Ok(v) => assert_eq(v, VNum(5.0))
+  match apply_filter_chain(chain(["increment"]), @engine.VNum(4.0)) {
+    Ok(v) => assert_eq(v, @engine.VNum(5.0))
     Err(_) => fail("expected Ok")
   }
-  match apply_filter_chain(chain(["increment:5"]), VNum(4.0)) {
+  match apply_filter_chain(chain(["increment:5"]), @engine.VNum(4.0)) {
     Err((reason, _)) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (increment takes no args)")
   }
@@ -180,8 +185,9 @@ test "filter_increment adds 1 to a number, rejects args and non-numbers" {
 /// 現実には型が合わない (trim は文字列専用) ので、ここでは number 系だけを連結して合成順を固定する:
 /// increment を2回連結すると +2 になる。
 test "apply_filter_chain runs entries in declared order" {
-  match apply_filter_chain(chain(["increment", "increment"]), VNum(1.0)) {
-    Ok(v) => assert_eq(v, VNum(3.0))
+  match
+    apply_filter_chain(chain(["increment", "increment"]), @engine.VNum(1.0)) {
+    Ok(v) => assert_eq(v, @engine.VNum(3.0))
     Err(_) => fail("expected Ok (1 -> 2 -> 3)")
   }
 }
@@ -224,22 +230,22 @@ test "reasons emitted for declared failure modes are a subset of the descriptor'
   }
 
   // non_empty: empty_value
-  match apply_filter_chain(chain(["non_empty"]), VStr("")) {
+  match apply_filter_chain(chain(["non_empty"]), @engine.VStr("")) {
     Err((reason, _)) => assert_declared("non_empty", reason)
     Ok(_) => fail("expected Err")
   }
   // in_range: too_small
-  match apply_filter_chain(chain(["in_range:1:10"]), VNum(0.0)) {
+  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(0.0)) {
     Err((reason, _)) => assert_declared("in_range", reason)
     Ok(_) => fail("expected Err")
   }
   // in_range: too_large
-  match apply_filter_chain(chain(["in_range:1:10"]), VNum(11.0)) {
+  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(11.0)) {
     Err((reason, _)) => assert_declared("in_range", reason)
     Ok(_) => fail("expected Err")
   }
   // regex_match: pattern_no_match
-  match apply_filter_chain(chain(["regex_match:abc"]), VStr("xyz")) {
+  match apply_filter_chain(chain(["regex_match:abc"]), @engine.VStr("xyz")) {
     Err((reason, _)) => assert_declared("regex_match", reason)
     Ok(_) => fail("expected Err")
   }

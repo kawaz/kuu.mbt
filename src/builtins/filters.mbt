@@ -1,7 +1,7 @@
-// filters.mbt — the filters registry (DR-009/010/036/061/077): the pure-function chain that
+// filters.mbt — builtin the filters registry (DR-009/010/036/061/077): the pure-function chain that
 // DR-009 threads through 4 phases (piece_filters / value_filters (each) / final_filters (non-accum
 // final value) / accum_filters (累積配列, DR-102 attribute split)). MDR-002 §3: depends on {node,
-// value} only (no eval dependency — filters run over already-parsed `Value`s, not tokens).
+// value} only (no eval dependency — filters run over already-parsed `@engine.Value`s, not tokens).
 //
 // SCOPE (issue 2026-07-09-filters-registry-foundation): this is a MINIMAL kuu.mbt reference-
 // implementation register, not the full multi-host DR-010 registry machinery (tree-shake / Level
@@ -11,8 +11,8 @@
 // against a ref/type-registry base chain) is likewise OUT OF SCOPE: kuu.mbt has no `type` registry
 // (a name → factory lookup for value parsers) to inherit FROM yet, so there is no base chain to
 // compose against — `value_filters`/`piece_filters`/`final_filters`/`accum_filters` are plain
-// `Array[FilterSpelling]` (colon-shorthand DSL `"<name>:<arg>:<arg>..."` and DESIGN §8.4 object
-// form, DR-009/DR-085 §3, both decoded to the same structured shape — node.mbt's `FilterSpelling`)
+// `Array[@engine.FilterSpelling]` (colon-shorthand DSL `"<name>:<arg>:<arg>..."` and DESIGN §8.4 object
+// form, DR-009/DR-085 §3, both decoded to the same structured shape — node.mbt's `@engine.FilterSpelling`)
 // with no inherit/prepend/append object form. Revisit when a type registry with per-type default
 // chains exists.
 
@@ -72,20 +72,23 @@ pub struct FilterDescriptor {
   // parsing/casting, uniformly for every filter (mirrors `dsl_operand_value`'s per-type casting,
   // just filter-side instead of variant-side). Err carries (reason, message) — reason is this
   // descriptor's DR-095 vocabulary (or `"filter_rejected"`, see this struct's doc comment).
-  run : (Value, Array[String]) -> Result[Value, (String, String)]
+  run : (@engine.Value, Array[String]) -> Result[
+    @engine.Value,
+    (String, String),
+  ]
 }
 
 ///|
 /// `trim` (DR-040 §piece_filters example, DR-009 §DSL 文法): string-only, strips ASCII whitespace
 /// from both ends. A `Transform` (the value CHANGES). Non-string input is untouched (defensive —
-/// every current call site only ever feeds `trim` a `VStr`, DR-009's piece_filters phase is
+/// every current call site only ever feeds `trim` a `@engine.VStr`, DR-009's piece_filters phase is
 /// string→string by construction).
 fn filter_trim(
-  v : Value,
+  v : @engine.Value,
   _args : Array[String],
-) -> Result[Value, (String, String)] {
+) -> Result[@engine.Value, (String, String)] {
   match v {
-    VStr(s) => Ok(VStr(s.trim(chars=" \t\n\r").to_owned()))
+    @engine.VStr(s) => Ok(@engine.VStr(s.trim(chars=" \t\n\r").to_owned()))
     other => Ok(other)
   }
 }
@@ -95,11 +98,11 @@ fn filter_trim(
 /// value unchanged otherwise. Non-string input passes through untouched (defensive, same rationale
 /// as `filter_trim`). Sole declared reason (DR-095 §3): `empty_value`.
 fn filter_non_empty(
-  v : Value,
+  v : @engine.Value,
   _args : Array[String],
-) -> Result[Value, (String, String)] {
+) -> Result[@engine.Value, (String, String)] {
   match v {
-    VStr(s) =>
+    @engine.VStr(s) =>
       if s == "" {
         Err(("empty_value", "value is empty"))
       } else {
@@ -122,17 +125,17 @@ fn filter_non_empty(
 /// `min` / above `max` — carry the descriptor's declared reasons (DR-095 §3): `too_small` /
 /// `too_large` respectively.
 fn filter_in_range(
-  v : Value,
+  v : @engine.Value,
   args : Array[String],
-) -> Result[Value, (String, String)] {
+) -> Result[@engine.Value, (String, String)] {
   match v {
-    VNum(n) => {
+    @engine.VNum(n) => {
       if args.length() != 2 {
         return Err(
           ("filter_rejected", "in_range requires exactly 2 args (min, max)"),
         )
       }
-      let min = match parse_number(args[0]) {
+      let min = match @engine.parse_number(args[0]) {
         Some(d) => d
         None =>
           return Err(
@@ -142,7 +145,7 @@ fn filter_in_range(
             ),
           )
       }
-      let max = match parse_number(args[1]) {
+      let max = match @engine.parse_number(args[1]) {
         Some(d) => d
         None =>
           return Err(
@@ -172,30 +175,15 @@ fn filter_in_range(
 /// `reasons: []`) — the arg-count / non-number Err arms below are filter-definition-bug paths
 /// (`filter_rejected` fallback, see `FilterDescriptor`'s doc comment), not a declared failure mode.
 fn filter_increment(
-  v : Value,
+  v : @engine.Value,
   args : Array[String],
-) -> Result[Value, (String, String)] {
+) -> Result[@engine.Value, (String, String)] {
   if args.length() != 0 {
     return Err(("filter_rejected", "increment takes no args"))
   }
   match v {
-    VNum(n) => Ok(VNum(n + 1.0))
+    @engine.VNum(n) => Ok(@engine.VNum(n + 1.0))
     _ => Err(("filter_rejected", "increment requires a number value"))
-  }
-}
-
-///|
-/// Compile a MoonBit core `string.Regex` from a pattern, converting the raise-on-malformed-pattern
-/// signature (`@string.Regex::Regex(StringView) -> Self raise`) into an `Option` — this repo's
-/// filter closures return `Result[Value, (String, String)]`, not a raise-effect signature, so the
-/// raise is caught at the narrowest point (mirrors `value.mbt`'s `try_parse_double` wrapping
-/// `@string.parse_double` the same way). `pub` (not just this file's `filter_regex_match`) because
-/// `installer.mbt`'s `collect_invalid_regex_pattern` (DR-085 §1 訂正 — pattern compile failure is a
-/// definition-error, kind=invalid-argument, DR-054 §4 更新2 / DR-082 §3) needs the SAME compile
-/// check at definition time, not just at runtime inside the filter closure.
-pub fn compile_regex(pattern : String) -> @string.Regex? {
-  Some(@string.Regex::Regex(pattern)) catch {
-    _ => None
   }
 }
 
@@ -216,18 +204,18 @@ pub fn compile_regex(pattern : String) -> @string.Regex? {
 /// `filter_rejected` (outside this descriptor's declared reasons), match failure carries
 /// `pattern_no_match` (DR-095 §3's sole declared reason for this descriptor).
 fn filter_regex_match(
-  v : Value,
+  v : @engine.Value,
   args : Array[String],
-) -> Result[Value, (String, String)] {
+) -> Result[@engine.Value, (String, String)] {
   match v {
-    VStr(s) => {
+    @engine.VStr(s) => {
       if args.length() != 1 {
         return Err(
           ("filter_rejected", "regex_match requires exactly 1 arg (pattern)"),
         )
       }
       let pattern = args[0]
-      match compile_regex(pattern) {
+      match @engine.compile_regex(pattern) {
         None =>
           Err(
             (
@@ -313,15 +301,15 @@ pub fn lookup_filter(name : String) -> FilterDescriptor? {
 ///|
 /// `unique`: an accum cell's ARRAY-shaped accum_filters entry (DR-009 段 7 "post_filters"/Acc→Acc,
 /// issue accum-post-filters-stage7 / DR-083 §2's "value_filters per piece → accumulator 畳み →
-/// accum_filters" order, DR-102 属性分割) — dedupes by `Value` structural equality, first-occurrence
+/// accum_filters" order, DR-102 属性分割) — dedupes by `@engine.Value` structural equality, first-occurrence
 /// order preserved (stable, mirrors how a human reads "unique" — not sorted). 0-arg (same shape as
 /// `increment`). A `Transform` (DR-105 §4's Validate/Transform split applied to the ARRAY registry
 /// for the first time) — never rejects, so this always returns `Ok`.
 fn array_filter_unique(
-  vs : Array[Value],
+  vs : Array[@engine.Value],
   _args : Array[String],
-) -> Result[Array[Value], (String, String)] {
-  let out : Array[Value] = []
+) -> Result[Array[@engine.Value], (String, String)] {
+  let out : Array[@engine.Value] = []
   for v in vs {
     let mut dup = false
     for o in out {
@@ -356,15 +344,15 @@ fn array_filter_unique(
 /// `too_short`/`too_long` mirror `in_range`'s `too_small`/`too_large` naming (DR-066 reason-code
 /// symmetry, DR-105 §5).
 fn array_filter_length_range(
-  vs : Array[Value],
+  vs : Array[@engine.Value],
   args : Array[String],
-) -> Result[Array[Value], (String, String)] {
+) -> Result[Array[@engine.Value], (String, String)] {
   if args.length() != 2 {
     return Err(
       ("filter_rejected", "length_range requires exactly 2 args (min, max)"),
     )
   }
-  let min = match parse_number(args[0]) {
+  let min = match @engine.parse_number(args[0]) {
     Some(d) => d
     None =>
       return Err(
@@ -374,7 +362,7 @@ fn array_filter_length_range(
         ),
       )
   }
-  let max = match parse_number(args[1]) {
+  let max = match @engine.parse_number(args[1]) {
     Some(d) => d
     None =>
       return Err(
@@ -396,8 +384,8 @@ fn array_filter_length_range(
 
 ///|
 /// One ARRAY accum_filters registry entry (DR-009 段 7, DR-102 属性分割): unlike `FilterDescriptor`
-/// (`Value => Value`, piece/value_filters/final_filters phases), this phase's `run` is
-/// `Array[Value] => Array[Value]` — the accumulated cell's WHOLE final array is the unit these
+/// (`@engine.Value => @engine.Value`, piece/value_filters/final_filters phases), this phase's `run` is
+/// `Array[@engine.Value] => Array[@engine.Value]` — the accumulated cell's WHOLE final array is the unit these
 /// filters see (issue accum-post-filters-stage7's "未裁定の論点1" resolved: whole-array, not
 /// per-element — a self-map over U, DR-083 §2's literal order "accumulator 畳み → accum_filters"
 /// has no per-piece step left to run this at). A separate registry from `filters_registry()` (not a
@@ -415,7 +403,10 @@ pub struct ArrayFilterDescriptor {
   name : String
   signature : FilterSignature
   reasons : Array[String]
-  run : (Array[Value], Array[String]) -> Result[Array[Value], (String, String)]
+  run : (Array[@engine.Value], Array[String]) -> Result[
+    Array[@engine.Value],
+    (String, String),
+  ]
 }
 
 ///|
@@ -458,9 +449,9 @@ pub fn lookup_array_filter(name : String) -> ArrayFilterDescriptor? {
 /// in practice and is skipped (same defensive posture as `apply_collector`'s "unrecognized name —
 /// identity" fallback).
 pub fn apply_accum_filter_chain(
-  chain : Array[FilterSpelling],
-  vs : Array[Value],
-) -> Result[Array[Value], (String, String)] {
+  chain : Array[@engine.FilterSpelling],
+  vs : Array[@engine.Value],
+) -> Result[Array[@engine.Value], (String, String)] {
   let mut current = vs
   for fs in chain {
     match lookup_array_filter(fs.name) {
@@ -477,12 +468,12 @@ pub fn apply_accum_filter_chain(
 
 ///|
 /// Parse the colon-shorthand DSL string (`"in_range:1:65535"`, DR-009 §DSL 文法) into a
-/// `FilterSpelling` — the SOLE colon-splitting point for filter chains (mirrors `installer.mbt`'s
+/// `@engine.FilterSpelling` — the SOLE colon-splitting point for filter chains (mirrors `installer.mbt`'s
 /// `classify_long_spelling` being the sole interpreter of the variant colon DSL). The decode
 /// boundary (`json_conformance_wbtest.mbt`'s `dec_filter_chain`) calls this for every plain-string
 /// chain element; wbtest call sites use it too, for the shorthand's ergonomics instead of hand-
-/// building a `FilterSpelling` struct literal per case.
-pub fn parse_filter_shorthand(s : String) -> FilterSpelling {
+/// building a `@engine.FilterSpelling` struct literal per case.
+pub fn parse_filter_shorthand(s : String) -> @engine.FilterSpelling {
   let parts = split_colon(s)
   let name = parts[0]
   let args : Array[String] = []
@@ -495,9 +486,9 @@ pub fn parse_filter_shorthand(s : String) -> FilterSpelling {
 }
 
 ///|
-/// Run one filter chain (an `Array[FilterSpelling]`, DR-009 §DSL 文法) over a value, in declared
+/// Run one filter chain (an `Array[@engine.FilterSpelling]`, DR-009 §DSL 文法) over a value, in declared
 /// order (DR-034 合成順「後ろほど優先」と同じ — chain 内は宣言順そのまま素通し、上書きの概念はない).
-/// `FilterSpelling` (node.mbt) already carries `name`/`args` structured — colon-shorthand splitting
+/// `@engine.FilterSpelling` (node.mbt) already carries `name`/`args` structured — colon-shorthand splitting
 /// and DESIGN §8.4 / DR-085 §3 object-form decoding both happen ONCE at the decode boundary
 /// (`json_conformance_wbtest.mbt`'s `dec_filter_chain`), so this function never re-parses a spelling
 /// string (issue filter-spelling-inband-encoding-retyping — replaces the earlier U+E000 PUA-tag
@@ -516,9 +507,9 @@ pub fn parse_filter_shorthand(s : String) -> FilterSpelling {
 /// pass-through here (same defensive posture as `apply_cell_filter_chain`'s array-side counterpart,
 /// both guarded by a decode-time vocab check that runs before this ever sees the name).
 pub fn apply_filter_chain(
-  chain : Array[FilterSpelling],
-  v : Value,
-) -> Result[Value, (String, String)] {
+  chain : Array[@engine.FilterSpelling],
+  v : @engine.Value,
+) -> Result[@engine.Value, (String, String)] {
   let mut current = v
   for fs in chain {
     match lookup_filter(fs.name) {
@@ -538,8 +529,8 @@ pub fn apply_filter_chain(
 /// before that value reaches its type parser (eval.mbt's value-primitive arms, builtins/matcher_residents.mbt's
 /// `run_eq_split`/`short_val`, resolve.mbt's `env_value`). Thin wrapper over `apply_filter_chain`
 /// specialized to the piece_filters contract (string in, string out) — every registered filter that
-/// isn't string-aware already passes a non-`VStr` through untouched (`filter_trim`'s doc comment),
-/// so the `Ok(VStr(s))` arm is the only reachable success shape today. A filter that returns a
+/// isn't string-aware already passes a non-`@engine.VStr` through untouched (`filter_trim`'s doc comment),
+/// so the `Ok(@engine.VStr(s))` arm is the only reachable success shape today. A filter that returns a
 /// non-string here is a filter-definition bug violating the String→String contract (DR-034's
 /// `FilterChain[String, String]`); surfacing it as an Err keeps the bug visible instead of silently
 /// discarding the chain's work (reuses the `filter_rejected` reason — no new vocabulary — with a
@@ -549,11 +540,11 @@ pub fn apply_filter_chain(
 /// args_pos/element to carry) so both the CLI-token-consumption callers and the ladder (env)
 /// caller can share it.
 pub fn apply_piece_filters(
-  chain : Array[FilterSpelling],
+  chain : Array[@engine.FilterSpelling],
   raw : String,
 ) -> Result[String, (String, String)] {
-  match apply_filter_chain(chain, VStr(raw)) {
-    Ok(VStr(s)) => Ok(s)
+  match apply_filter_chain(chain, @engine.VStr(raw)) {
+    Ok(@engine.VStr(s)) => Ok(s)
     Ok(_) =>
       Err(
         (

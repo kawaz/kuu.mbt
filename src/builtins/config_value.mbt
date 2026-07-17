@@ -42,7 +42,7 @@ pub fn config_to_value(
     // Every string source crosses the resident parser after piece filtering. Parser
     // configuration is therefore resident-owned for CLI, env, and config alike.
     @engine.CStr(raw) =>
-      match @engine.apply_piece_filters(piece_filters, raw) {
+      match apply_piece_filters(piece_filters, raw) {
         Err((reason, msg)) => Err((@engine.KFilter, reason, msg))
         Ok(s) =>
           match ty.parse_token(s) {

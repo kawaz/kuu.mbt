@@ -8,7 +8,7 @@ fn config(json : Json) -> @engine.ConfigVal {
 }
 
 ///|
-fn chain(names : Array[String]) -> Array[@engine.FilterSpelling] {
+fn config_chain(names : Array[String]) -> Array[@engine.FilterSpelling] {
   names.map(name => { name, args: [] })
 }
 
@@ -100,7 +100,7 @@ test "config_to_value: piece_filters runs on a CStr source before the type parse
       config_to_value(
         config(" 8080 ".to_json()),
         number_type(),
-        chain(["trim"]),
+        config_chain(["trim"]),
       ),
     ),
     Some(@engine.VNum(8080.0)),
@@ -115,14 +115,22 @@ test "config_to_value: piece_filters runs on a CStr source before the type parse
   // DR-050 §4 の全段 pipeline は target 型を問わない).
   assert_eq(
     cv_ok(
-      config_to_value(config(" hi ".to_json()), string_type(), chain(["trim"])),
+      config_to_value(
+        config(" hi ".to_json()),
+        string_type(),
+        config_chain(["trim"]),
+      ),
     ),
     Some(@engine.VStr("hi")),
   )
   // a piece_filters REJECT (not just a parse failure) surfaces as KFilter, distinct from a KParse
   // type-mismatch — `resolve.mbt`'s caller picks the ParseError constructor by this tag.
   match
-    config_to_value(config("".to_json()), number_type(), chain(["non_empty"])) {
+    config_to_value(
+      config("".to_json()),
+      number_type(),
+      config_chain(["non_empty"]),
+    ) {
     Err((@engine.KFilter, _, _)) => ()
     Ok(_) => fail("expected Err(KFilter, ..), got Ok")
     Err((@engine.KParse, _, _)) =>

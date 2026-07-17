@@ -352,7 +352,7 @@ fn classify_long_spelling(
   if s == ":set" {
     return LMain(own_name)
   }
-  let parts = @engine.split_colon(s)
+  let parts = @builtins.split_colon(s)
   if parts.length() == 1 {
     // DR-011 明確化: colon-less は文法エラー (literal 綴りへの fallback は不採用)。
     return LInvalid(s)
@@ -378,7 +378,7 @@ fn classify_long_spelling(
   if parts[1] == "update" {
     if parts.length() >= 3 {
       let transform = parts[2]
-      match @engine.lookup_filter(transform) {
+      match @builtins.lookup_filter(transform) {
         None => return LInvalid(s) // 不在: unknown-vocab (registry に無い名前)
         Some(d) =>
           if d.signature.is_transform() {
@@ -3952,12 +3952,12 @@ fn collect_invalid_filter_attribute_mismatch(
 /// 同格原則により、long variant DSL の update transform 名検査 (`classify_long_spelling` の
 /// DR-077 §2 適用) と同族の判定。
 ///
-/// `value_filters`/`piece_filters`/`final_filters` は scalar filter registry (T→T, `@engine.lookup_filter`)
-/// を、`accum_filters` は ARRAY filter registry (Acc→Acc, `@engine.lookup_array_filter`) を要求する — 1
+/// `value_filters`/`piece_filters`/`final_filters` は scalar filter registry (T→T, `@builtins.lookup_filter`)
+/// を、`accum_filters` は ARRAY filter registry (Acc→Acc, `@builtins.lookup_array_filter`) を要求する — 1
 /// 属性 1 registry の対応 (DR-102 §2) により、各属性は自分の registry の owns 集合のみを見て
 /// unknown-vocab を一意判定する。他 registry との層違い比較 (DR-101 §3、Superseded) は発生しない。
 ///
-/// この単純化により、`filters.mbt` の `@engine.apply_filter_chain`/`@engine.apply_accum_filter_chain` に到達する
+/// この単純化により、`filters.mbt` の `@builtins.apply_filter_chain`/`@builtins.apply_accum_filter_chain` に到達する
 /// 時点で全 filter 名が既に登録済み保証となり、runtime `unknown_filter` reason は wire から消滅する
 /// (DR-101 §1)。
 ///
@@ -3997,14 +3997,14 @@ fn collect_unknown_filter(
   fn check(e : ElemDef) -> Unit {
     // value_filters (T→T, scalar filter registry): 綴り不在は unknown-vocab (DR-101 §1)
     for fs in e.value_filters {
-      if @engine.lookup_filter(fs.name) is None {
+      if @builtins.lookup_filter(fs.name) is None {
         push_unknown(e.name, "value_filters", fs.name)
       }
     }
     // piece_filters (String→String, scalar filter registry 内の string 域): 綴り不在は
     // unknown-vocab (value_filters と判定入力同一、DR-101 §1)
     for fs in e.piece_filters {
-      if @engine.lookup_filter(fs.name) is None {
+      if @builtins.lookup_filter(fs.name) is None {
         push_unknown(e.name, "piece_filters", fs.name)
       }
     }
@@ -4013,7 +4013,7 @@ fn collect_unknown_filter(
     // `collect_invalid_filter_attribute_mismatch` の invalid-range に一任 (M-6/M-9 構造ゲート先行)。
     if !is_accum_elem(e) && e.ty.name() != "none" {
       for fs in e.final_filters {
-        if @engine.lookup_filter(fs.name) is None {
+        if @builtins.lookup_filter(fs.name) is None {
           push_unknown(e.name, "final_filters", fs.name)
         }
       }
@@ -4022,7 +4022,7 @@ fn collect_unknown_filter(
     // 非 none) の場合のみ unknown-vocab 判定。
     if is_accum_elem(e) && e.ty.name() != "none" {
       for fs in e.accum_filters {
-        if @engine.lookup_array_filter(fs.name) is None {
+        if @builtins.lookup_array_filter(fs.name) is None {
           push_unknown(e.name, "accum_filters", fs.name)
         }
       }

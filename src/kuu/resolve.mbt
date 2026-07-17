@@ -647,7 +647,7 @@ pub fn build_result(
       // DR-009 段 7 / DR-102 §1 accum_filters (issue accum-post-filters-stage7): Acc→Acc self-map
       // over the WHOLE folded array, BEFORE the collector (DR-083 §2's order — see
       // AccumCell.accum_filters' doc comment for why collector comes after, not before).
-      // DR-105 §4: `@engine.apply_accum_filter_chain` is Result-returning now (ARRAY filter registry can
+      // DR-105 §4: `@builtins.apply_accum_filter_chain` is Result-returning now (ARRAY filter registry can
       // reject, e.g. `length_range`) — the REJECT itself is surfaced earlier, at `resolve_entity`
       // time (`apply_entity_filters`'s own accum_filters gate, same `at_pos`/`epath` machinery
       // `final_filters` already uses), so a binding set that reaches `build_result` at all is
@@ -657,7 +657,7 @@ pub fn build_result(
       let filtered_vals = match accum_filters_here(cells, path, k) {
         [] => vals
         chain =>
-          match @engine.apply_accum_filter_chain(chain, vals) {
+          match @builtins.apply_accum_filter_chain(chain, vals) {
             Ok(v) => v
             Err(_) => vals
           }
@@ -2196,7 +2196,7 @@ fn filter_err(
 /// should never actually happen in practice — the `None` / non-`Transform` branches are defensive,
 /// not a live path. `args` (DR-077 §2's `:update:<name>:arg...` nesting convention) is threaded
 /// straight through to the registered closure unchecked — arity is a RUNTIME concern the closure
-/// itself enforces (mirrors `@engine.apply_filter_chain`'s split), so the 3rd branch (`d.run` itself
+/// itself enforces (mirrors `@builtins.apply_filter_chain`'s split), so the 3rd branch (`d.run` itself
 /// rejecting, e.g. a genuine arity mismatch) IS a live path even after the definition-time gate.
 fn apply_transform(
   transform : String,
@@ -2206,7 +2206,7 @@ fn apply_transform(
   at_pos : Int,
   epath : Array[String],
 ) -> Result[@engine.Value, @engine.ParseError] {
-  match @engine.lookup_filter(transform) {
+  match @builtins.lookup_filter(transform) {
     None =>
       // codex 指摘 3 (issue 2026-07-09, 節目レビュー): defensive kind を @engine.KParse (ladder_err) から
       // @engine.KFilter (filter_err) へ — 「値がパースできなかった」ではなく「filter/transform 語彙の拒否」
@@ -2253,7 +2253,7 @@ fn apply_transform(
             // codex 指摘 (2026-07-12, 節目レビュー): reason も `filter_rejected` に統一 (上 2 分岐と
             // 同じ理由、DR-095 の宣言集合に update-transform 軸の failure reason は無い)。`d.run`
             // 自身の own reason (`_reason`) は piece/value/final/accum_filters チェーン用の別軸 (filters.mbt
-            // `@engine.apply_filter_chain` doc comment 参照) であり、この update-transform 軸 (DR-077 §2) に
+            // `@builtins.apply_filter_chain` doc comment 参照) であり、この update-transform 軸 (DR-077 §2) に
             // は使わず message だけ通す。
             Err(filter_err(name, at_pos, "filter_rejected", msg, epath))
         }
@@ -2280,7 +2280,7 @@ fn env_value(
   at_pos : Int,
   epath : Array[String],
 ) -> Result[@engine.Value, @engine.ParseError] {
-  let s = match @engine.apply_piece_filters(piece_filters, s) {
+  let s = match @builtins.apply_piece_filters(piece_filters, s) {
     Ok(v) => v
     Err((reason, msg)) =>
       return Err(filter_err(element, at_pos, reason, msg, epath))
@@ -2399,7 +2399,7 @@ fn apply_entity_filters(
     if b.op != @engine.Set {
       out.push(b)
     } else {
-      match @engine.apply_filter_chain(e.value_filters, b.value) {
+      match @builtins.apply_filter_chain(e.value_filters, b.value) {
         Err((reason, msg)) => {
           // value_filters(each、段5、DR-009): CONFORMANCE §3's piece-attribution rule — a reject here
           // is attributed to the SPECIFIC args token the rejected piece came from (`b.at_pos`,
@@ -2415,7 +2415,7 @@ fn apply_entity_filters(
         Ok(v) => {
           let b2 = { ..b, value: v }
           if e.accum is None {
-            match @engine.apply_filter_chain(e.final_filters, b2.value) {
+            match @builtins.apply_filter_chain(e.final_filters, b2.value) {
               Err((reason, msg)) =>
                 return Err(filter_err(e.name, at_pos, reason, msg, epath))
               Ok(v2) => out.push({ ..b2, value: v2 })
@@ -2445,7 +2445,7 @@ fn apply_entity_filters(
         _ => vals.push(b.value)
       }
     }
-    match @engine.apply_accum_filter_chain(e.accum_filters, vals) {
+    match @builtins.apply_accum_filter_chain(e.accum_filters, vals) {
       Ok(_) => ()
       Err((reason, msg)) =>
         return Err(filter_err(e.name, at_pos, reason, msg, epath))

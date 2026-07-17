@@ -84,7 +84,7 @@ impl @engine.NodeExt for StringArgExt with fn consumes_zero_tokens(_self) {
 impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
   match ctx.token_at(pos) {
     Some(token) =>
-      match @engine.apply_piece_filters(self.piece_filters, token) {
+      match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           next(
             ctx,
@@ -154,7 +154,7 @@ impl @engine.NodeExt for KvNodeExt with fn consumes_zero_tokens(_self) {
 impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
   match ctx.token_at(pos) {
     Some(token) =>
-      match @engine.apply_piece_filters(self.piece_filters, token) {
+      match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           // DR-091 §2: piece filters run first, then the dedicated
           // contains-equals gate reports through the @engine.pe_parse_kv @engine.Held family.
@@ -252,7 +252,7 @@ impl @engine.NodeExt for SeparatedNodeExt with fn eval(
   match ctx.token_at(pos) {
     Some(token) =>
       match
-        @engine.sep_binds(
+        sep_binds(
           self.name,
           token,
           self.separator,
@@ -330,7 +330,7 @@ impl @engine.NodeExt for NumberArgExt with fn consumes_zero_tokens(_self) {
 impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
   match ctx.token_at(pos) {
     Some(token) =>
-      match @engine.apply_piece_filters(self.piece_filters, token) {
+      match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           // Every number-lexicon rejection reports through @engine.pe_parse.
           match @engine.parse_number_ext(value, self.allow_base_prefix) {
@@ -408,7 +408,7 @@ impl @engine.NodeExt for FloatNodeExt with fn consumes_zero_tokens(_self) {
 impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
   match ctx.token_at(pos) {
     Some(token) =>
-      match @engine.apply_piece_filters(self.piece_filters, token) {
+      match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           // The wider float lexicon still reports lexical rejection through @engine.pe_parse.
           match @engine.parse_float(value) {
@@ -490,7 +490,7 @@ impl @engine.NodeExt for IntNodeExt with fn consumes_zero_tokens(_self) {
 impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
   match ctx.token_at(pos) {
     Some(token) =>
-      match @engine.apply_piece_filters(self.piece_filters, token) {
+      match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           // int resident has three distinct @engine.Held families; preserving this split is
           // part of the resident contract, not a generic number error path.
@@ -588,7 +588,7 @@ impl @engine.NodeExt for BoolNodeExt with fn consumes_zero_tokens(_self) {
 impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
   match ctx.token_at(pos) {
     Some(token) =>
-      match @engine.apply_piece_filters(self.piece_filters, token) {
+      match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           // bool resident retains @engine.pe_parse_bool rather than sharing number's @engine.pe_parse.
           match @engine.parse_bool_ext(value, self.bool_config) {
@@ -673,7 +673,7 @@ impl @engine.NodeExt for TypedNodeExt with fn consumes_zero_tokens(_self) {
 impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
   match ctx.token_at(pos) {
     Some(token) =>
-      match @engine.apply_piece_filters(self.piece_filters, token) {
+      match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           match self.ty.parse_token(value) {
             Ok(parsed) =>

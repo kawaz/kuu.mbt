@@ -326,17 +326,17 @@ fn run_eq_split(
         []
       }
       // DR-034 separator (issue 2026-07-09-separator-non-string-type-parse-gap 段1): `--key=a,b`
-      // goes through the SAME pieceProcessor as the space form (`@engine.sep_binds`) — split FIRST, then
+      // goes through the SAME pieceProcessor as the space form (`sep_binds`) — split FIRST, then
       // piece_filters/parse run per PIECE, not once over the whole `valstr` (same ordering concern
-      // `@engine.sep_binds`'s own doc comment explains).
+      // `sep_binds`'s own doc comment explains).
       // codex Medium 追従 (issue merge-no-separator-marker-gap): gate is `separator is Some(_) ||
       // e.merge`, not `separator` alone — a merge-declared entry with NO separator still needs
-      // `@engine.sep_binds` (DR-034 §6.3 の縮退: `None` → 1 piece = `valstr` 全体) so `classify_merge_piece`
+      // `sep_binds` (DR-034 §6.3 の縮退: `None` → 1 piece = `valstr` 全体) so `classify_merge_piece`
       // sees `--key=-a` as a remove marker instead of falling through to the plain literal-string
       // arm below.
       if e.separator is Some(_) || e.merge {
         return match
-          @engine.sep_binds(
+          sep_binds(
             e.name,
             valstr,
             e.separator,
@@ -352,8 +352,7 @@ fn run_eq_split(
       // DR-034/DR-062 piece_filters: run BEFORE the kind-specific parse, same timing eval.mbt's
       // value-primitive arms use (this is the eq-split entry's own copy of the element's chain,
       // EqEntry carries it the same way it carries int_round/allow_base_prefix).
-      let filtered = match
-        @engine.apply_piece_filters(e.piece_filters, valstr) {
+      let filtered = match apply_piece_filters(e.piece_filters, valstr) {
         Ok(s) => s
         Err((reason, msg)) =>
           return [@engine.Held(@engine.pe_filter(e.name, pos, reason, msg), [])]
@@ -426,9 +425,9 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 ///|
 /// `Ok` = the value char attached successfully (an `Array[@engine.Binding]` — usually length 1, but a
 /// `separator` entry can split one attach into several pieces, same as the long-option space form's
-/// `SepArg`/`@engine.sep_binds`, issue 2026-07-09-separator-non-string-type-parse-gap 段1). `Err` carries a
+/// `SepArg`/`sep_binds`, issue 2026-07-09-separator-non-string-type-parse-gap 段1). `Err` carries a
 /// full `@engine.ParseError` (`kind: KFilter` for a piece_filters reject, `kind: KParse` for a type-parse
-/// failure — both delegate straight to `@engine.sep_binds` when `e.separator` is `Some` OR `e.merge` is
+/// failure — both delegate straight to `sep_binds` when `e.separator` is `Some` OR `e.merge` is
 /// `true`, codex Medium 追従: a merge entry needs the piece pipeline even with no separator).
 /// `walk_short`'s
 /// mid-token/full-tail split still governs whether an `Err` surfaces as a `@engine.Held` or is silently
@@ -448,23 +447,15 @@ fn short_val(
 ) -> Result[Array[@engine.Binding], @engine.ParseError] {
   // codex Medium 追従 (issue merge-no-separator-marker-gap): `run_eq_split` と同じ gate 拡張
   // (`separator is Some(_) || e.merge`) — `-f-a` (in-cluster attach) / `-f -a` (space-form) いずれ
-  // も merge 宣言なら separator 未宣言でも `@engine.sep_binds` 経由でマーカー認識させる。
+  // も merge 宣言なら separator 未宣言でも `sep_binds` 経由でマーカー認識させる。
   if e.separator is Some(_) || e.merge {
     // `ShortEntry` carries no `bool_config` (bool_type() never reaches this attach path — node.mbt's
     // `ShortEntry.piece_filters` doc comment: "Ignored for flag_type()/bool_type()/count_type(), no in-cluster/
-    // space-form VALUE attachment for those"), so `@engine.sep_binds`'s bool arm is structurally dead here;
+    // space-form VALUE attachment for those"), so `sep_binds`'s bool arm is structurally dead here;
     // pass the canonical default purely to satisfy the shared signature.
-    @engine.sep_binds(
-      e.name,
-      s,
-      e.separator,
-      e.kind,
-      e.piece_filters,
-      pos,
-      e.merge,
-    )
+    sep_binds(e.name, s, e.separator, e.kind, e.piece_filters, pos, e.merge)
   } else {
-    let filtered = match @engine.apply_piece_filters(e.piece_filters, s) {
+    let filtered = match apply_piece_filters(e.piece_filters, s) {
       Ok(v) => v
       Err((reason, msg)) =>
         return Err(@engine.pe_filter(e.name, pos, reason, msg))
