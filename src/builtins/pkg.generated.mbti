@@ -1,0 +1,208 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/builtins"
+
+import {
+  "kawaz/kuu/engine",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn alias_installer() -> &@engine.InstallerExt
+
+pub fn append_accumulator() -> &@engine.AccumulatorExt
+
+pub fn apply_accum_filter_chain(Array[@engine.FilterSpelling], Array[@engine.Value]) -> Result[Array[@engine.Value], (String, String)]
+
+pub fn apply_filter_chain(Array[@engine.FilterSpelling], @engine.Value) -> Result[@engine.Value, (String, String)]
+
+pub fn apply_piece_filters(Array[@engine.FilterSpelling], String) -> Result[String, (String, String)]
+
+pub fn bool_arg(String, @engine.BoolConfig, Array[@engine.FilterSpelling]) -> @engine.Node
+
+pub fn bool_config_canonical() -> @engine.BoolConfig
+
+pub fn bool_type(config? : @engine.BoolConfig, value_slot? : Bool) -> &@engine.TypeExt
+
+pub fn build_export_map(@engine.Definition) -> Map[String, @engine.ExportKey]
+
+pub fn classify_long_spelling(String, String, &@engine.TypeExt) -> LongSpelling
+
+pub fn command_installer() -> &@engine.InstallerExt
+
+pub fn config_installer() -> &@engine.InstallerExt
+
+pub fn config_to_value(@engine.ConfigVal, &@engine.TypeExt, Array[@engine.FilterSpelling]) -> Result[@engine.Value, (@engine.ErrKind, String, String)]
+
+pub fn configured_short_type(&@engine.TypeExt, @engine.RoundMode, Bool, @engine.BoolConfig) -> &@engine.TypeExt
+
+pub fn configured_type(&@engine.TypeExt, @engine.RoundMode, Bool, @engine.BoolConfig) -> &@engine.TypeExt
+
+pub fn constraint_installer() -> &@engine.InstallerExt
+
+pub fn count_type(allow_base_prefix? : Bool) -> &@engine.TypeExt
+
+pub fn dd_installer() -> &@engine.InstallerExt
+
+pub fn deprecation_mark(String) -> @engine.Node
+
+pub fn effect_mark(String, @engine.EffectOp) -> @engine.Node
+
+pub fn elem_head(@engine.ElemDef) -> @engine.Node
+
+pub fn entity_ext(hidden? : Bool, completer? : String?) -> &@engine.EntityExt
+
+pub fn enum_value_node(String, &@engine.TypeExt, Array[String]) -> @engine.Node
+
+pub fn env_installer() -> &@engine.InstallerExt
+
+pub fn eq_entry(String, String, &@engine.TypeExt, Array[@engine.FilterSpelling], String?, merge? : Bool, depr? : Bool) -> EqEntry
+
+pub fn eq_split(String, Array[EqEntry]) -> &@engine.MatcherExt
+
+pub fn failure_mark(String) -> @engine.Node
+
+pub fn filtered_number_arg(String, Int) -> @engine.Node
+
+pub fn flag_type(config? : @engine.BoolConfig) -> &@engine.TypeExt
+
+pub fn float_arg(String, Array[@engine.FilterSpelling]) -> @engine.Node
+
+pub fn float_type() -> &@engine.TypeExt
+
+pub fn from_entries_collector(FromEntriesSpec) -> &@engine.CollectorExt
+
+pub fn global_installer() -> &@engine.InstallerExt
+
+pub fn inherit_installer() -> &@engine.InstallerExt
+
+pub fn inheritable_installer() -> &@engine.InstallerExt
+
+pub fn install(@engine.Registry) -> Unit
+
+pub fn install_installers(@engine.Registry) -> Unit
+
+pub fn int_arg(String, @engine.RoundMode, Bool, Array[@engine.FilterSpelling]) -> @engine.Node
+
+pub fn int_type(round? : @engine.RoundMode, allow_base_prefix? : Bool) -> &@engine.TypeExt
+
+pub fn kv_arg(String, Array[@engine.FilterSpelling]) -> @engine.Node
+
+pub fn kv_map_accumulator() -> &@engine.AccumulatorExt
+
+pub fn long_installer() -> &@engine.InstallerExt
+
+pub fn lookup_array_filter(String) -> ArrayFilterDescriptor?
+
+pub fn lookup_filter(String) -> FilterDescriptor?
+
+pub fn lower_definition(@engine.Definition, Array[&@engine.InstallerExt], registry? : Map[String, @engine.Node], extensions? : @engine.Registry) -> Result[@engine.Scope, Array[@engine.DefError]]
+
+pub fn merge_accumulator() -> &@engine.AccumulatorExt
+
+pub fn multiple_installer() -> &@engine.InstallerExt
+
+pub fn node_effect_mark(@engine.Node) -> (String, @engine.EffectOp)?
+
+pub fn node_is_failure_mark(@engine.Node) -> Bool
+
+pub fn node_resident_name(@engine.Node) -> String?
+
+pub fn none_type() -> &@engine.TypeExt
+
+pub fn number_arg(String, Bool, Array[@engine.FilterSpelling]) -> @engine.Node
+
+pub fn number_type(allow_base_prefix? : Bool) -> &@engine.TypeExt
+
+pub fn or_branch_node(@engine.OrBranch) -> @engine.Node
+
+pub fn owned_vocab(&@engine.InstallerExt) -> String
+
+pub fn parse_bool(String) -> Bool?
+
+pub fn parse_bool_ext(String, @engine.BoolConfig) -> Bool?
+
+pub fn parse_filter_shorthand(String) -> @engine.FilterSpelling
+
+pub fn parse_float(String) -> Double?
+
+pub fn parse_int_value(String, @engine.RoundMode) -> Result[Int64, @engine.ParseFail]
+
+pub fn parse_int_value_ext(String, @engine.RoundMode, Bool) -> Result[Int64, @engine.ParseFail]
+
+pub fn parse_number(String) -> Double?
+
+pub fn parse_number_ext(String, Bool) -> Double?
+
+pub fn repeat_installer() -> &@engine.InstallerExt
+
+pub fn round_mode_of(String) -> @engine.RoundMode?
+
+pub fn sep_binds(String, String, String?, &@engine.TypeExt, Array[@engine.FilterSpelling], Int, Bool) -> Result[Array[@engine.Binding], @engine.ParseError]
+
+pub fn separated_arg(String, String?, &@engine.TypeExt, @engine.RoundMode, Bool, @engine.BoolConfig, Array[@engine.FilterSpelling], Bool) -> @engine.Node
+
+pub fn short_combine(String, Array[ShortEntry], Bool) -> &@engine.MatcherExt
+
+pub fn short_entry(Char, String, &@engine.TypeExt, Array[@engine.FilterSpelling], String?, depr? : Bool, merge? : Bool, short_attached_value? : @engine.AttachMode, is_alias? : Bool) -> ShortEntry
+
+pub fn short_installer() -> &@engine.InstallerExt
+
+pub fn split_colon(String) -> Array[String]
+
+pub fn string_arg(String, Array[@engine.FilterSpelling]) -> @engine.Node
+
+pub fn string_type() -> &@engine.TypeExt
+
+pub fn tty_type(String?, cygwin? : Bool) -> &@engine.TypeExt
+
+pub fn typed_arg(String, &@engine.TypeExt, Array[@engine.FilterSpelling]) -> @engine.Node
+
+pub fn unwrap_single_collector() -> &@engine.CollectorExt
+
+// Errors
+
+// Types and methods
+pub struct ArrayFilterDescriptor {
+  name : String
+  signature : FilterSignature
+  reasons : Array[String]
+  run : (Array[@engine.Value], Array[String]) -> Result[Array[@engine.Value], (String, String)]
+}
+
+pub struct EqEntry {
+  // private fields
+}
+
+pub struct FilterDescriptor {
+  name : String
+  signature : FilterSignature
+  reasons : Array[String]
+  run : (@engine.Value, Array[String]) -> Result[@engine.Value, (String, String)]
+}
+
+pub enum FilterSignature {
+  Validate
+  Transform
+} derive(Eq, @debug.Debug)
+pub fn FilterSignature::is_transform(Self) -> Bool
+
+pub(all) enum FromEntriesSpec {
+  Entries
+  KeyValue(String, String)
+  KeyPromote(String)
+} derive(Eq, @debug.Debug)
+
+pub(all) enum LongSpelling {
+  LMain(String)
+  LVariant(@engine.Variant)
+  LInvalid(String)
+} derive(Eq, @debug.Debug)
+
+pub struct ShortEntry {
+  // private fields
+}
+
+// Type aliases
+
+// Traits
+

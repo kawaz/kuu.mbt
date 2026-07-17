@@ -1,0 +1,104 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/kuu"
+
+import {
+  "kawaz/kuu/engine",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn accum_cells(@engine.Scope, Map[String, @engine.ExportKey]) -> Array[AccumCell]
+
+pub fn apply_export_keys(Array[@engine.Binding], Map[String, @engine.ExportKey]) -> Array[@engine.Binding]
+
+pub fn build_result(Array[@engine.Binding], Array[AccumCell], Array[DefaultCell], Array[String], nones? : Array[@engine.NoneCell]) -> @engine.RVal
+
+pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[@engine.Cand]
+
+pub fn config_from_json(Json) -> @engine.ConfigVal
+
+pub fn export_map(AtomicAST) -> Map[String, @engine.ExportKey]
+
+pub fn is_sentinel(String) -> Bool
+
+pub fn output(AtomicAST, Array[@engine.Binding], resolved? : Array[@engine.Binding]) -> OutputView
+
+pub fn parse(AtomicAST, Array[String], env? : Map[String, String], config? : (String) -> @engine.ConfigVal?, tty? : Map[String, TtyObs]) -> @engine.Outcome
+
+pub fn parse_definition(Json, extensions? : @engine.Registry) -> Result[AtomicAST, DefLoadError]
+
+pub fn resolve(AtomicAST, @engine.Outcome, Array[String], env? : Map[String, String], config? : (String) -> @engine.ConfigVal?, tty? : Map[String, TtyObs]) -> @engine.Outcome
+
+pub fn result(AtomicAST, Array[@engine.Binding]) -> @engine.RVal
+
+pub fn sources(AtomicAST, Array[@engine.Binding]) -> Array[SourceEntry]
+
+pub let spec_repo : String
+
+pub fn tty_obs(Bool, Bool) -> TtyObs
+
+// Errors
+
+// Types and methods
+pub struct AccumCell {
+  path : Array[String]
+  name : String
+  collector : &@engine.CollectorExt?
+  accum_filters : Array[@engine.FilterSpelling]
+  accum : &@engine.AccumulatorExt
+  flatten : Bool
+  is_multiple_decl : Bool
+} derive(Eq, @debug.Debug)
+
+pub struct AtomicAST {
+  root : @engine.Scope
+  templates : Map[String, @engine.Node]
+  extensions : @engine.Registry
+  ekmap : Map[String, @engine.ExportKey]
+}
+
+pub(all) enum DefLoadError {
+  Malformed(String)
+  Rejected(Array[@engine.DefError])
+} derive(Eq, @debug.Debug)
+
+pub struct DefaultCell {
+  path : Array[String]
+  name : String
+  value : @engine.Value
+} derive(Eq, @debug.Debug)
+
+type ExportCollision derive(Eq, @debug.Debug)
+
+pub struct OutputEffect {
+  entity : String
+  op : @engine.EffectOp
+  operand : @engine.Value?
+  source : @engine.Source
+} derive(Eq, @debug.Debug)
+
+pub struct OutputView {
+  result : @engine.RVal
+  effects : Array[OutputEffect]
+  sources : Array[SourceEntry]
+} derive(Eq, @debug.Debug)
+
+type ScopeConfig derive(Eq, @debug.Debug)
+
+pub(all) struct SourceEntry {
+  path : Array[String]
+  key : String
+  source : @engine.Source
+} derive(Eq, @debug.Debug)
+
+pub struct TtyObs {
+  terminal : Bool
+  cygwin : Bool
+} derive(Eq, @debug.Debug)
+
+type TypeShadow derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits
+

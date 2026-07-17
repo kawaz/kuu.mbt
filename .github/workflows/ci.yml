@@ -22,6 +22,10 @@ jobs:
       - run: moon update
       - run: moon fmt --check
       - run: moon check --deny-warn
+      - name: Check public interface drift
+        run: |
+          moon info src/engine src/builtins src/kuu
+          git diff --exit-code -- src/engine/pkg.generated.mbti src/builtins/pkg.generated.mbti src/kuu/pkg.generated.mbti
 
   test:
     name: Test (${{ matrix.target }})

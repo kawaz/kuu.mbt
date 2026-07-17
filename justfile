@@ -33,6 +33,10 @@ fmt:
 check:
     moon check --deny-warn
 
+# regenerate committed public API interfaces for the three library packages
+mbti:
+    moon info src/engine src/builtins src/kuu
+
 # ---------- test ----------
 
 # run native tests (conformance fixtures via $KUU_FIXTURES; fallback = 隣接 kawaz/kuu。runner は Phase B)
