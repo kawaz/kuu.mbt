@@ -1,25 +1,22 @@
 # kuu.mbt
 
-[kuu](https://github.com/kawaz/kuu) (言語非依存な CLI 引数定義仕様) の **MoonBit 参照実装**。
+> English | [日本語](./README-ja.md)
 
-- 仕様・API 契約・conformance fixture の正本: [kawaz/kuu](https://github.com/kawaz/kuu)
-- **移植の定義**: kawaz/kuu が公開する conformance fixture を pass すること (= 実装が仕様に適合したことの判定基準)
-- 立ち上げ方針: [docs/decisions/MDR-001](docs/decisions/MDR-001-bootstrap-policy.md)
-- 実装フェーズ: [kuu の ROADMAP](https://github.com/kawaz/kuu/blob/main/ROADMAP.md)
-- 初期の実験実装は [`kuu-v0`](https://github.com/kawaz/kuu.mbt/tree/kuu-v0) 枝、垂直スライス PoC は [`slice`](https://github.com/kawaz/kuu.mbt/tree/slice) 枝にアーカイブ
+The **MoonBit reference implementation** of [kuu](https://github.com/kawaz/kuu), a language-agnostic CLI argument definition specification.
 
-## 構成
+- The spec, API contract and conformance fixtures live in [kawaz/kuu](https://github.com/kawaz/kuu)
+- **Definition of a port**: passing the conformance fixtures published by kawaz/kuu — that is what "conforming to the spec" means
+- Published on [mooncakes.io](https://mooncakes.io/docs/kawaz/kuu) as `kawaz/kuu`
 
-| パス | 内容 |
+## Layout
+
+| Path | Contents |
 |---|---|
-| `src/engine/` | 構造・評価・解決の汎用 engine |
-| `src/builtins/` | canonical builtins |
-| `src/kuu/` | kuu assembly (組成・front door・conformance runner) |
-| [docs/decisions/](docs/decisions/INDEX.md) | Design Record (MDR-NNN)。仕様 DR とは別系統 |
+| `src/engine/` | The generic engine: structure, evaluation, resolution — contains no builtin vocabulary |
+| `src/builtins/` | Canonical builtin residents (types, filters, installers, …), implemented against the same public extension interfaces available to third parties |
+| `src/kuu/` | The kuu assembly: composition, front-door API, conformance runner |
 
-## DR 番号空間
-
-本リポの DR は **MDR-NNN** (3 桁)。仕様側 DR (kawaz/kuu の DR-NNN) は複製せず「kawaz/kuu の DR-NNN」形式で参照する ([MDR-001 §3](docs/decisions/MDR-001-bootstrap-policy.md))。
+Most in-repo documentation (design records under `docs/decisions/`, findings, journals) is currently written in Japanese while the implementation is under heavy iteration.
 
 ## License
 
