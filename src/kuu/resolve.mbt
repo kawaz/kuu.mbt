@@ -235,7 +235,7 @@ fn seg_num(seg : String) -> Int {
 ///     scope where it is a harmless sentinel (a nameless command has no key — 子が昇格).
 /// Sentinels ("[]" / "{}" / "" / "@act:" / "@depr:") and index segments ("#k") are not in the map
 /// → kept.
-pub fn apply_export_keys(
+fn apply_export_keys(
   binds : Array[@engine.Binding],
   ek : Map[String, @engine.ExportKey],
 ) -> Array[@engine.Binding] {
@@ -305,7 +305,7 @@ fn apply_export_to_defaults(
 /// An accumulate cell located at a result-scope path (DR-044 uniform array). `path` is the
 /// command/name nesting where the cell lives; `name` is its key. The builder needs this so an
 /// accumulate cell that fired 0 times still renders `[]` at its home level (not absent).
-pub struct AccumCell {
+struct AccumCell {
   path : Array[String]
   name : String
   // DR-036 collector (@engine.Entity.collector's copy, threaded through so build_result — which only
@@ -467,7 +467,7 @@ fn path_push(path : Array[String], seg : String) -> Array[String] {
 /// Build the nested result value from the winning flat bindings. `cells` locates every
 /// accumulate cell by result path (so an empty cell still renders `[]`, DR-044 uniform array);
 /// `path` is the current result-scope path.
-pub fn build_result(
+fn build_result(
   binds : Array[@engine.Binding],
   cells : Array[AccumCell],
   defaults : Array[DefaultCell],
@@ -786,7 +786,7 @@ pub fn build_result(
 /// resolution `apply_export_to_defaults` uses: `@engine.EkKey(s)` → rename to `s`, `@engine.EkNull` → drop (透過,
 /// DR-052 §2 — an accum cell whose OWN key is nulled carries no result-key axis, same posture a
 /// scalar default's @engine.EkNull already gets), otherwise unchanged.
-pub fn accum_cells(
+fn accum_cells(
   sc : @engine.Scope,
   ek : Map[String, @engine.ExportKey],
 ) -> Array[AccumCell] {
@@ -848,7 +848,7 @@ fn collect_accum(
 /// flag preset (LOWERING §A.5 default:false) rides on this: an unfired flag renders `false` rather
 /// than dropping out (DR-051 §2 flag は absent にならない). Accum cells are excluded (they render
 /// `[]` via the AccumCell path, DR-044) so a cell has AT MOST one injection source.
-pub struct DefaultCell {
+struct DefaultCell {
   path : Array[String]
   name : String
   value : @engine.Value

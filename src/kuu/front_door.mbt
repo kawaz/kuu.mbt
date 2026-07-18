@@ -33,16 +33,9 @@
 
 ///|
 /// definition のロード結果 (`parse_definition` の戻り値、DR-054 §4 の `atomic: <AtomicAST>` に
-/// 対応する不透明ハンドル)。フィールド非公開 — 利用者は中身を読まず `parse`/`complete` に渡す
-/// だけでよい。`root` は lowering 済みの AtomicAST (`@engine.Scope`)、`templates` は
-/// `definitions.templates` 由来の ref 解決空間、`extensions` は active assembly の resident
-/// 組成表。`ekmap` は definition から静的に決定される export_key 写像 (DR-052、`@builtins.build_export_map` の
-/// 結果) — `export_map` (下記) 経由で読める (issue 2026-07-15
-/// front-door-export-key-map-access: `parse`/`complete` の結果を CONFORMANCE.md §2 の
-/// `result: {...}` へ組み立てたい利用者が、AtomicAST から生 `@engine.Definition` を復元できず
-/// `@builtins.build_export_map` を自分で呼べなかった)。ekmap は definition が確定した時点で決定的に
-/// 導出される静的情報なので、AtomicAST と生存期間が一致する — ここに同梱するのが自然。
-/// `atomic` は MoonBit の予約語 (将来使用のため) なので変数名には `ast` を使う。
+/// 対応するハンドル)。lowering 済み scope・template 解決空間・resident 組成・export_key 写像・
+/// declaration を束ね、`parse` / `resolve` / `complete` / `output` / `help` が同じ snapshot を読む。
+/// `atomic` は MoonBit の予約語なので変数名には `ast` を使う。
 pub struct AtomicAST {
   root : @engine.Scope
   templates : Map[String, @engine.Node]
@@ -345,18 +338,9 @@ pub fn complete(
 }
 
 ///|
-/// 正面玄関の補助: `ast` の definition から静的に決定される export_key 写像 (DR-052) を返す。
-/// `parse` の結果 (`@engine.Outcome.@engine.Success` の `Array[@engine.Binding]`) を CONFORMANCE.md §2 の
-/// `result: {...}` オブジェクトへ組み立てたい利用者向けの素材 —
-/// `apply_export_keys(binds, export_map(ast))` (resolve.mbt、既に `pub`) にそのまま渡せる。
-///
-/// 経緯 (issue 2026-07-15 front-door-export-key-map-access): `AtomicAST` は生 `@engine.Definition` を
-/// 保持しない不透明ハンドルなので (本ファイル冒頭の `AtomicAST` doc)、利用者が
-/// `@builtins.build_export_map` (installer.mbt、既に `pub`) を自分で呼ぶ経路が無かった。`Array[@engine.Binding]`
-/// → `result` オブジェクトへの変換処理そのもの (conformance runner の `build_result` 相当) の
-/// production 昇格は MDR-005 の射程外のまま — 本関数が運ぶのは「definition から決定的に導出
-/// される静的写像へのアクセス」であって、encode 処理そのものではない (MDR-005 追記, 本 issue)。
-pub fn export_map(ast : AtomicAST) -> Map[String, @engine.ExportKey] {
+/// package 内の white-box test が AtomicAST と result-key 軸の整合を検証するため、definition から
+/// 静的に決定される export_key 写像 (DR-052) を返す。production の結果射影は `output` が担う。
+fn export_map(ast : AtomicAST) -> Map[String, @engine.ExportKey] {
   ast.ekmap
 }
 
@@ -374,6 +358,77 @@ fn output_path_push(path : Array[String], segment : String) -> Array[String] {
   }
   out.push(segment)
   out
+}
+
+///|
+fn interpretation_has_source(
+  sources : Array[SourceEntry],
+  path : Array[String],
+  key : String,
+) -> Bool {
+  for source in sources {
+    if source.key == key &&
+      source.path == path &&
+      source.source != @engine.Default {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn interpretation_has_claimant(
+  claimants : Array[(String, String)],
+  key : String,
+) -> Bool {
+  for claimant in claimants {
+    if claimant.0 == key {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn filter_interpretation_result(
+  result : @engine.RVal,
+  sources : Array[SourceEntry],
+  claimants : Array[(String, String)],
+  path : Array[String],
+) -> @engine.RVal {
+  match result {
+    @engine.RObj(fields) => {
+      let kept : Array[(String, @engine.RVal)] = []
+      for field in fields {
+        if interpretation_has_source(sources, path, field.0) ||
+          interpretation_has_claimant(claimants, field.0) {
+          kept.push(field)
+        } else {
+          match field.1 {
+            @engine.RScalar(_) => ()
+            @engine.RArr(_) => kept.push(field)
+            @engine.RObj(_) => {
+              let nested = filter_interpretation_result(
+                field.1,
+                sources,
+                claimants,
+                output_path_push(path, field.0),
+              )
+              match nested {
+                @engine.RObj(items) =>
+                  if items.length() > 0 {
+                    kept.push((field.0, nested))
+                  }
+                _ => kept.push((field.0, nested))
+              }
+            }
+          }
+        }
+      }
+      @engine.RObj(kept)
+    }
+    _ => result
+  }
 }
 
 ///|
@@ -473,8 +528,8 @@ fn project_sources(
 
 ///|
 /// 正面玄関の出力射影。`effects_binds` は `parse()` の Success payload、`resolved?` は
-/// `resolve()` の Success payloadを渡す。`resolved` 省略時は同じ binds を result/sources にも使うため、
-/// 値源ラダーを要しない parse-only 利用と既存 `result`/`sources` wrapper の両方を保つ。
+/// `resolve()` の Success payload を渡す。`resolved` 省略時は同じ binds を result/sources に使い、
+/// 値源ラダーを要しない parse-only 利用も同じ OutputView 径路で表す。
 /// repeat row の境界は `resolve()` が復元した `#row`/`#fire` を `build_result_export` が読む既存経路へ
 /// そのまま渡し、本関数では sentinel の再 merge や row 集約を再実装しない。
 pub fn output(
@@ -486,7 +541,7 @@ pub fn output(
     result: build_result_export(
       ast.root,
       resolved,
-      ast.ekmap,
+      export_map(ast),
       extensions=ast.extensions,
     ),
     effects: project_effects(ast, effects_binds),
@@ -495,31 +550,25 @@ pub fn output(
 }
 
 ///|
-/// 正面玄関の補助: `resolve()` の @engine.Success payload から DR-052 result-key 軸を適用した `result`
-/// オブジェクト (CONFORMANCE.md §2 の `result: {...}`) を組み立てる。runner の
-/// `proj_result_export` (json_conformance_test.mbt) と kuu-cli PoC の手組み `result_to_json`
-/// (wire.mbt) が同一の 4 素材 (apply_export_keys/accum_cells/apply_export_to_defaults/
-/// @engine.none_cells) を重複実装していた — production 昇格でその重複を解消する (issue
-/// 2026-07-16-result-projection-production-promotion, MDR-005「射程外」節の解消、DR-109 §5
-/// UX-Q5=a)。`binds` は `resolve()` の @engine.Success payload を渡すのが前提 (DR-109 §7「CLI は既定で
-/// resolve 適用」)。実装は resolve.mbt の `build_result_export` (@engine.Scope 直渡し版) への薄い委譲 —
-/// `AtomicAST` は生 `@engine.Scope` を保持しない不透明ハンドルなので、利用者が @engine.Scope を意識せず済むよう
-/// ここで `ast.root`/`ast.ekmap` を代わりに渡す (`export_map` と同じ「AtomicAST から素材を引く」
-/// 形、本ファイル冒頭 doc 参照)。
-pub fn result(ast : AtomicAST, binds : Array[@engine.Binding]) -> @engine.RVal {
-  output(ast, binds).result
+/// DR-053 §3 の ambiguous interpretation を、resolve 相を適用しない result-object view として
+/// 射影する。interpretation 自身の bindings が運ばない Default-source scalar は除外する一方、
+/// DR-073 §1 の claimants に載る key の default は衝突 provenance を保つため残し、空 accumulator
+/// 配列は interpretation の構造として残す。この 3 規則により、呼び出し側は result と sources を
+/// 個別に組み合わせず、解釈 1 件の表示意味論を玄関から直接得られる。
+pub fn output_of_interpretation(
+  ast : AtomicAST,
+  interp : @engine.AmbInterp,
+) -> @engine.RVal {
+  let view = output(ast, interp.binds)
+  filter_interpretation_result(view.result, view.sources, interp.claimants, [])
 }
 
 ///|
-/// 正面玄関の補助: `resolve()` の @engine.Success payload から DR-109 §3 の `sources` 射影 (「resolve 済み
-/// 出力には常に sources を含める」) を組み立てる。実装は resolve.mbt の `result_sources` (command
-/// 木の有無を内部で吸収する 1 本の関数、詳細はそのコメント参照) への薄い委譲 — 呼び出し側は
-/// `ast`/`resolved` だけ渡せばよく、@engine.Scope の有無に関わる分岐を意識しない。
-pub fn sources(
-  ast : AtomicAST,
-  resolved : Array[@engine.Binding],
-) -> Array[SourceEntry] {
-  output(ast, resolved).sources
+/// CONFORMANCE §2 / DR-058 §2 の warnings 面を返す。Success と Failure の双方で同じ玄関を
+/// 呼べるよう Outcome を受け、構造化 warning の組み立ては engine に委譲する。engine 直呼びを
+/// この関数で吸収し、warning 抽出実装の帰属変更 (TRI-Q9) が kuu package 内で閉じる境界を作る。
+pub fn warnings(outcome : @engine.Outcome) -> Array[@engine.Warning] {
+  @engine.warnings_structured(outcome)
 }
 
 ///|

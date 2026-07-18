@@ -1128,82 +1128,6 @@ fn render_rval_sorted(r : @engine.RVal) -> String {
 }
 
 ///|
-fn source_at(
-  sources : Array[@kuu.SourceEntry],
-  path : Array[String],
-  key : String,
-) -> Bool {
-  for source in sources {
-    if source.key == key &&
-      source.path == path &&
-      source.source != @engine.Default {
-      return true
-    }
-  }
-  false
-}
-
-///|
-fn claimant_key(claimants : Array[(String, String)], key : String) -> Bool {
-  for claimant in claimants {
-    if claimant.0 == key {
-      return true
-    }
-  }
-  false
-}
-
-///|
-/// `output()` adds declared bool defaults to a raw parse interpretation. The conformance
-/// interpretation face describes only values carried by that interpretation's bindings, while
-/// retaining structural arrays such as an unfired accumulator. SourceEntry is the public witness
-/// that a scalar came from those bindings, so unsourced scalar leaves are omitted here.
-fn interpretation_result(
-  result : @engine.RVal,
-  sources : Array[@kuu.SourceEntry],
-  claimants : Array[(String, String)],
-  path : Array[String],
-) -> @engine.RVal {
-  match result {
-    @engine.RObj(fields) => {
-      let kept : Array[(String, @engine.RVal)] = []
-      for field in fields {
-        if source_at(sources, path, field.0) || claimant_key(claimants, field.0) {
-          kept.push(field)
-        } else {
-          match field.1 {
-            @engine.RScalar(_) => ()
-            @engine.RArr(_) => kept.push(field)
-            @engine.RObj(_) => {
-              let nested_path : Array[String] = []
-              for segment in path {
-                nested_path.push(segment)
-              }
-              nested_path.push(field.0)
-              let nested = interpretation_result(
-                field.1,
-                sources,
-                claimants,
-                nested_path,
-              )
-              match nested {
-                @engine.RObj(items) =>
-                  if items.length() > 0 {
-                    kept.push((field.0, nested))
-                  }
-                _ => kept.push((field.0, nested))
-              }
-            }
-          }
-        }
-      }
-      @engine.RObj(kept)
-    }
-    _ => result
-  }
-}
-
-///|
 /// `OutputView.effects` の構造化射影を fixture 比較文字列へ変換する。sentinel・config_file・
 /// none・dd の除外は玄関が完了済みであり、runner は内部 Scope/Node を走査しない。
 fn render_effects(effects : Array[@kuu.OutputEffect]) -> String {
@@ -3429,15 +3353,9 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             Some(ei) => {
               let got : Array[String] = []
               for interp in d.interpretations {
-                // Result-object view is always rendered (DR-053 §3 骨格温存)
-                let output = @kuu.output(ast, interp.binds)
+                // Result-object view is always rendered (DR-053 §3 骨格温存)。
                 let view = render_rval_sorted(
-                  interpretation_result(
-                    output.result,
-                    output.sources,
-                    interp.claimants,
-                    [],
-                  ),
+                  @kuu.output_of_interpretation(ast, interp),
                 )
                 // DR-073 §1: append `#claimants{...}` suffix only when the interpretation carries
                 // a non-empty claimants面 (matches exp_interp_str's `view + "#claimants" + ...`
