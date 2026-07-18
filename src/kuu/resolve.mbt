@@ -949,7 +949,7 @@ priv struct ExportCollision {
   path : Array[String]
   key : String
   claimants : Array[String]
-} derive(Eq, Debug)
+}
 
 ///|
 /// The result-key axis (DR-052 §1) resolved to its ACTUAL exposed key string for `raw` (an entity

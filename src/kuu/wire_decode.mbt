@@ -871,7 +871,7 @@ priv struct TypeShadow {
   is_tty : Bool
   tty_stream : String?
   tty_cygwin : Bool
-} derive(Eq, Debug)
+}
 
 ///|
 /// Decode `definitions.types` (DR-061 §3 `{name: <factory>, config: {<key>: <value>, ...}}`) into
@@ -2067,7 +2067,7 @@ priv struct ScopeConfig {
   short_combine : Bool
   env_prefix : String
   auto_env : Bool
-} derive(Eq, Debug)
+}
 
 ///|
 /// The canonical config, in effect at the root scope when no `config` object is ever written

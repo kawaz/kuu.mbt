@@ -526,7 +526,7 @@ test "DR-073 single-exposure-ok: no collision, and the unfired co-exported defau
   let binds : Array[@engine.Binding] = [
     cb("a", @engine.VBool(true), @engine.Cli),
   ]
-  assert_eq(find_export_collisions(binds, ek), [])
+  assert_true(find_export_collisions(binds, ek).is_empty())
   let defaults : Array[DefaultCell] = [
     { path: [], name: "b", value: @engine.VBool(false) },
   ]
@@ -596,7 +596,7 @@ test "DR-073 identity-exposure 対極: two distinctly-named identity-exposed ele
     cb("a", @engine.VBool(true), @engine.Cli),
     cb("b", @engine.VBool(true), @engine.Cli),
   ]
-  assert_eq(find_export_collisions(binds, ek), [])
+  assert_true(find_export_collisions(binds, ek).is_empty())
 }
 
 // ── value-source ladder (DR-031/049/050) ──────────────────────────────────────
