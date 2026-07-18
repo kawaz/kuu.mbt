@@ -349,7 +349,7 @@ test "front_door.output: 単一 scope で export_key rename + flag preset defaul
       assert_eq(p_val, Some(@engine.RScalar(@engine.VNum(8080.0))))
       assert_eq(verbose_val, Some(@engine.RScalar(@engine.VBool(false))))
     }
-    _ => fail("front_door.result should be @engine.RObj at root scope")
+    _ => fail("output.result should be @engine.RObj at root scope")
   }
   let ses = view.sources
   let mut p_src : @engine.Source? = None
@@ -467,7 +467,7 @@ test "front_door.config_from_json: JSON から組んだ @engine.ConfigVal が co
       // config_file 要素自身はインフラで結果非掲載 (config-source.json の why 参照)。
       assert_false(has_config_key)
     }
-    _ => fail("front_door.result should be @engine.RObj")
+    _ => fail("output.result should be @engine.RObj")
   }
   let ses = output(ast, rb).sources
   let mut port_src : @engine.Source? = None
@@ -526,7 +526,7 @@ test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty �
       // 観測 terminal=true が宣言 default=false より優先する (DR-098 §5 の優先順位)。
       assert_eq(use_color_val, Some(@engine.RScalar(@engine.VBool(true))))
     }
-    _ => fail("front_door.result should be @engine.RObj")
+    _ => fail("output.result should be @engine.RObj")
   }
   let ses = output(ast, rb).sources
   let mut use_color_src : @engine.Source? = None
@@ -544,9 +544,9 @@ test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty �
 /// own row bindings one scope level deeper than its declaring scope (`ref_row_head`/`@engine.Scoped(e.name,
 /// ...)`, installer.mbt DR-078 §1) — `front_door.resolve` (= `resolve_scope_tree`) used to filter
 /// "this scope's own bindings" by an EXACT scope-path match, which silently dropped that one-level-
-/// deeper wrap (it is neither an exact-path binding nor a genuine `@engine.CmdSat` command child), so
-/// `front_door.result` always rendered `[]` for a fired ref+repeat cell no matter how many times it
-/// fired. `kawaz/kuu` fixture `multiple-parse/ref-rows-append.json` fixes this exact shape (spec の
+/// deeper wrap (it is neither an exact-path binding nor a genuine `@engine.CmdSat` command child)。
+/// `output.result` は fired ref+repeat cell の row を落とさず描画する。`kawaz/kuu` fixture
+/// `multiple-parse/ref-rows-append.json` fixes this exact shape (spec の
 /// 正本 — 個々の row / count は同 fixture の `zero-fires-empty` / `single-fire-list` /
 /// `two-fires-branch-append` case と 1:1); conformance runner stayed green for it because that
 /// fixture doesn't trip `use_resolve` (no default ladder needed) and so never exercised
@@ -600,7 +600,7 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
         panic()
       }
       _ => {
-        fail("front_door.result should be @engine.RObj at root scope")
+        fail("output.result should be @engine.RObj at root scope")
         panic()
       }
     }
