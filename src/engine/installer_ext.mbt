@@ -39,7 +39,7 @@ pub fn DefsView::extensions(self : DefsView) -> Registry {
 }
 
 ///|
-pub struct InstallBuild {
+pub struct InstallOutput {
   priv greedy : Array[Node]
   priv entities : Array[Entity]
   priv positional : Array[Node]
@@ -47,43 +47,46 @@ pub struct InstallBuild {
 }
 
 ///|
-pub fn InstallBuild::new(positional : Array[Node]) -> InstallBuild {
+pub fn InstallOutput::new(positional : Array[Node]) -> InstallOutput {
   { greedy: [], entities: [], positional, constraints: [] }
 }
 
 ///|
-pub fn InstallBuild::greedy(self : InstallBuild) -> Array[Node] {
+pub fn InstallOutput::greedy(self : InstallOutput) -> Array[Node] {
   self.greedy
 }
 
 ///|
-pub fn InstallBuild::entities(self : InstallBuild) -> Array[Entity] {
+pub fn InstallOutput::entities(self : InstallOutput) -> Array[Entity] {
   self.entities
 }
 
 ///|
-pub fn InstallBuild::positional(self : InstallBuild) -> Array[Node] {
+pub fn InstallOutput::positional(self : InstallOutput) -> Array[Node] {
   self.positional
 }
 
 ///|
-pub fn InstallBuild::constraints(self : InstallBuild) -> Array[Constraint] {
+pub fn InstallOutput::constraints(self : InstallOutput) -> Array[Constraint] {
   self.constraints
 }
 
 ///|
-pub fn InstallBuild::push_greedy(self : InstallBuild, node : Node) -> Unit {
+pub fn InstallOutput::push_greedy(self : InstallOutput, node : Node) -> Unit {
   self.greedy.push(node)
 }
 
 ///|
-pub fn InstallBuild::push_entity(self : InstallBuild, entity : Entity) -> Unit {
+pub fn InstallOutput::push_entity(
+  self : InstallOutput,
+  entity : Entity,
+) -> Unit {
   self.entities.push(entity)
 }
 
 ///|
-pub fn InstallBuild::push_constraint(
-  self : InstallBuild,
+pub fn InstallOutput::push_constraint(
+  self : InstallOutput,
   constraint : Constraint,
 ) -> Unit {
   self.constraints.push(constraint)
@@ -113,7 +116,7 @@ pub fn InstallChild::body(self : InstallChild) -> InstallBuilder {
 ///|
 pub struct InstallBuilder {
   priv definition : Definition
-  priv output : InstallBuild
+  priv output : InstallOutput
   priv children : Array[InstallChild]
   priv templates : Map[String, Node]
   priv extensions : Registry
@@ -122,7 +125,7 @@ pub struct InstallBuilder {
 ///|
 pub fn InstallBuilder::new(
   definition : Definition,
-  output : InstallBuild,
+  output : InstallOutput,
   children : Array[InstallChild],
   templates : Map[String, Node],
   extensions : Registry,
@@ -136,7 +139,7 @@ pub fn InstallBuilder::definition(self : InstallBuilder) -> Definition {
 }
 
 ///|
-pub fn InstallBuilder::output(self : InstallBuilder) -> InstallBuild {
+pub fn InstallBuilder::output(self : InstallBuilder) -> InstallOutput {
   self.output
 }
 
@@ -195,7 +198,7 @@ pub(open) trait InstallerExt {
 }
 
 ///|
-fn InstallBuild::size(self : InstallBuild) -> Int {
+fn InstallOutput::size(self : InstallOutput) -> Int {
   self.greedy.length() + self.entities.length() + self.constraints.length()
 }
 

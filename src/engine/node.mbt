@@ -730,7 +730,7 @@ pub(all) struct Cand {
   // DR-060 §3 "値位置: 型情報 + completer 名" / DR-104 §2/§3: the dynamic completer name for a
   // VALUE-position candidate (`is_value:true`); always `None` on an exact-trigger candidate (DR-060
   // §3 does not attach a completer to a spelling). Deliberately NOT part of the 6-field dedup
-  // identity (DR-104 §3 "`completer` は同一性の成分ではない") — every `pend_value` call site keeps
+  // identity (DR-104 §3 "`completer` は同一性の成分ではない") — every `pending_value_candidate` call site keeps
   // constructing `None` here (no Entity table is in scope at any of those 30+ sites); `complete_tree`
   // (outcome.mbt) fills it in via a `(path, origin)`-keyed lookup into the tree's Entity table
   // (`collect_all_entities`) as each candidate is folded into the dedup loop — keyed by `path` (not

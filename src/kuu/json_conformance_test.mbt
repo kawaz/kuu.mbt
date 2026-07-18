@@ -2012,7 +2012,7 @@ fn bool_str(b : Bool) -> String {
 /// normalized to `""` on their "doesn't apply" side (DR-104 §2: `spelling` is meaningless when
 /// `is_value:true`, `type` is meaningless when `is_value:false`) so a
 /// fixture that omits the moot field and a live `@engine.Cand` that carries a leftover tag there (e.g.
-/// `cand_trigger`'s placeholder `@builtins.flag_type()`) still compare equal.
+/// `trigger_candidate`'s placeholder `@builtins.flag_type()`) still compare equal.
 fn cand_fields_str(
   spelling : String,
   is_value : Bool,

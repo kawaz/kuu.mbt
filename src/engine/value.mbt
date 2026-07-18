@@ -9,7 +9,7 @@
 // lexical scanning here). MDR-002 §3: value.mbt depends on node.mbt only.
 //
 // `Binding` / `ParseError` (DR-066 5-field with reason) live here; `Branch` and `Cand` live in
-// node.mbt. The matcher builds bindings via the mkb / cat / pe_filter / depr_marker helpers at the
+// node.mbt. The matcher builds bindings via the mk_binding / cat / pe_filter / depr_marker helpers at the
 // end of this file.
 
 ///|
@@ -302,7 +302,7 @@ pub(all) struct Binding {
   //           depth, which escapes all the way to the root (the original bool-`link` behaviour).
   // DR-034/DR-062 piece_filters + issue 2026-07-09-accum-entity-filters-wiring: the args token
   // position this binding's VALUE was read from, when it has one. `Some(pos)` for a CLI-seat
-  // binding built at token-consumption time (eval.mbt/builtins/matcher_residents.mbt's `mkb` call sites — a separator
+  // binding built at token-consumption time (eval.mbt/builtins/matcher_residents.mbt's `mk_binding` call sites — a separator
   // piece carries the position of the WHOLE token it split from, not a per-piece offset, since a
   // piece is not itself a token). `None` for every non-token-consumption source (env/config/
   // inherit/default seats, resolve.mbt) — those values were never read off an args token, so there
@@ -318,7 +318,7 @@ pub(all) struct Binding {
 /// 2026-07-09-accum-entity-filters-wiring): the CLI-seat call sites (eval.mbt/builtins/matcher_residents.mbt) pass
 /// `Some(pos)` — the token this binding's value was read from; every other caller (resolve.mbt's
 /// env/config/inherit/default seats) omits it, defaulting to `None`.
-pub fn mkb(
+pub fn mk_binding(
   key : String,
   value : Value,
   source : Source,

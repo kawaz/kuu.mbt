@@ -1316,7 +1316,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
 
 ///|
 /// 保証 (codex レビュー High 2、2026-07-10): @builtins.count_type() の **short** 発火は variant を一切経由せず
-/// `builtins/matcher_residents.mbt`'s `walk_short` が直接 `mk_eff(e.name, @engine.Update("increment", []), @engine.Cli)` を生成する
+/// `builtins/matcher_residents.mbt`'s `walk_short` が直接 `mk_effect(e.name, @engine.Update("increment", []), @engine.Cli)` を生成する
 /// (`count_increment_variant` の `long:true` 糖衣経路とは別の生成源) — `collect_unsupported_accum_
 /// update` の variant 走査ではこの経路が最初から見えないため、@builtins.count_type()×multiple という組合せ自体を
 /// 要素レベルで閉じる (`collect_unsupported_count_multiple`)。修正前の実際の repro:

@@ -300,7 +300,7 @@ fn merge_resolve_cli(
           )
           let next : Array[@engine.Binding] = []
           for value in values {
-            next.push(@engine.mkb(name, value, @engine.Cli))
+            next.push(@engine.mk_binding(name, value, @engine.Cli))
           }
           result = next
           old_values = Some(values)

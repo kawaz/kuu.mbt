@@ -53,7 +53,8 @@ fn sep_binds(
       @engine.PkAdd(payload) =>
         match
           sep_piece_value(name, payload, ty, piece_filters, pos, extensions) {
-          Ok(v) => out.push(@engine.mkb(name, v, @engine.Cli, at_pos=Some(pos)))
+          Ok(v) =>
+            out.push(@engine.mk_binding(name, v, @engine.Cli, at_pos=Some(pos)))
           Err(pe) => return Err(pe)
         }
     }

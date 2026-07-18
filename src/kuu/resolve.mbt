@@ -2027,10 +2027,10 @@ fn apply_entity_filters(
     // value_filters(each、段5) applies only to a binding carrying a REAL value (kawaz 裁定
     // 2026-07-09、issue accum-filters-non-set-op-semantics): `@engine.Set` (a plain value bind) and
     // `@engine.Update`'s applied result. The scalar CLI-seat fold (resolve_entity_raw's non-accum branch)
-    // already converts a committed `@engine.Update` to a `@engine.Set` binding via `@engine.mkb` before it ever reaches
+    // already converts a committed `@engine.Update` to a `@engine.Set` binding via `@engine.mk_binding` before it ever reaches
     // here, so this function never special-cases `@engine.Update` itself — checking `op == @engine.Set` alone
     // covers both. `@engine.Unset`/`@engine.Default`/`@engine.Empty` are operations ON THE CELL, not a piece carrying a
-    // value — their bindings carry no meaningful operand (placeholder values, `mk_eff`'s doc
+    // value — their bindings carry no meaningful operand (placeholder values, `mk_effect`'s doc
     // comment) and must pass through untouched. This generalizes the old "only `@engine.Empty` is exempt"
     // rule: for a SCALAR cell the fold above already collapses everything else to `@engine.Set`/`@engine.Empty`
     // so the two rules were equivalent there, but an ACCUM cell's fold (resolve_entity_raw's
@@ -2124,7 +2124,7 @@ fn resolve_entity_raw(
   // `current` holds the FULL binding (not just its value) — @engine.Set/@engine.Default/@engine.Empty must be returned
   // VERBATIM downstream (@engine.Empty's `value` is a placeholder that a later result-builder interprets
   // by `op`, not by `value`; @engine.Default's `source` must read `@engine.Default`, not `@engine.Cli`) exactly as the
-  // pre-fold code did (`return Ok([b])` / `return Ok([@engine.mkb(e.name, v, @engine.Default)])`). Only `update`
+  // pre-fold code did (`return Ok([b])` / `return Ok([@engine.mk_binding(e.name, v, @engine.Default)])`). Only `update`
   // needs the running VALUE (as `old`) — `.value` is read off `current` at that point, never
   // reconstructed from scratch.
   // accum セル (multiple/repeat, DR-034/043): the CLI seat must preserve EVERY same-name @engine.Binding,
@@ -2153,7 +2153,7 @@ fn resolve_entity_raw(
   //   carries no operand, so there's no piece for value_filters/accum_filters to act on (DESIGN
   //   §8.3) — build_result's ACCUMULATE match folds `@engine.Default` exactly like `@engine.Empty`/`@engine.Unset` (a
   //   clear-point), so only the SOURCE TAG differs here: rewriting `source` to `@engine.Default` (mirrors
-  //   scalar's `@engine.mkb(e.name, v, @engine.Default)`) keeps `proj_sources`/harness correct without a
+  //   scalar's `@engine.mk_binding(e.name, v, @engine.Default)`) keeps `proj_sources`/harness correct without a
   //   default-specific branch there.
   // - `unset`: stays uncommitted (committed=false, unchanged from before) — if every same-name CLI
   //   effect in this seat ends up uncommitted, the CLI seat falls through to the lower ladder rungs
@@ -2211,7 +2211,11 @@ fn resolve_entity_raw(
             Ok(bs2) => {
               current = if bs2.length() > 0 {
                 Some(
-                  @engine.mkb(e.name, bs2[bs2.length() - 1].value, @engine.Cli),
+                  @engine.mk_binding(
+                    e.name,
+                    bs2[bs2.length() - 1].value,
+                    @engine.Cli,
+                  ),
                 )
               } else {
                 // no declared default AND no env/config/inherit supply — nothing to rewrite to,
@@ -2232,7 +2236,7 @@ fn resolve_entity_raw(
         // env/config/inherit if nothing commits after it (unchanged pre-DR-077 contract).
         @engine.Unset => {
           current = match default_scalar(e) {
-            Some(v) => Some(@engine.mkb(e.name, v, @engine.Default))
+            Some(v) => Some(@engine.mk_binding(e.name, v, @engine.Default))
             None => None
           }
           committed_now = false
@@ -2259,7 +2263,7 @@ fn resolve_entity_raw(
               extensions,
             ) {
             Ok(v) => {
-              current = Some(@engine.mkb(e.name, v, @engine.Cli))
+              current = Some(@engine.mk_binding(e.name, v, @engine.Cli))
               committed_now = true
             }
             Err(pe) => return Err(pe)
@@ -2358,7 +2362,7 @@ fn resolve_ladder_below_cli(
                     extensions,
                   ) {
                   Ok(parsed) =>
-                    bs.push(@engine.mkb(e.name, parsed, @engine.Env))
+                    bs.push(@engine.mk_binding(e.name, parsed, @engine.Env))
                   Err(pe) => return Err(pe)
                 }
               }
@@ -2376,7 +2380,7 @@ fn resolve_ladder_below_cli(
                   extensions,
                 ) {
                 Ok(parsed) =>
-                  return Ok([@engine.mkb(e.name, parsed, @engine.Env)])
+                  return Ok([@engine.mk_binding(e.name, parsed, @engine.Env)])
                 Err(pe) => return Err(pe)
               }
           }
@@ -2408,7 +2412,8 @@ fn resolve_ladder_below_cli(
                         e.piece_filters,
                         extensions,
                       ) {
-                      Ok(v) => bs.push(@engine.mkb(e.name, v, @engine.Config))
+                      Ok(v) =>
+                        bs.push(@engine.mk_binding(e.name, v, @engine.Config))
                       Err((@engine.KFilter, reason, msg)) =>
                         return Err(
                           filter_err(e.name, at_pos, reason, msg, epath),
@@ -2442,7 +2447,8 @@ fn resolve_ladder_below_cli(
                     e.piece_filters,
                     extensions,
                   ) {
-                  Ok(v) => return Ok([@engine.mkb(e.name, v, @engine.Config)])
+                  Ok(v) =>
+                    return Ok([@engine.mk_binding(e.name, v, @engine.Config)])
                   Err((@engine.KFilter, reason, msg)) =>
                     return Err(filter_err(e.name, at_pos, reason, msg, epath))
                   Err((_, reason, msg)) =>
@@ -2457,7 +2463,7 @@ fn resolve_ladder_below_cli(
   // inherit seat (DR-031 / DR-013). MDR-003: `inherit` 予約語回避 → `inherit_`.
   if e.inherit_ {
     match inherited.get(e.name) {
-      Some(v) => return Ok([@engine.mkb(e.name, v, @engine.Inherit)])
+      Some(v) => return Ok([@engine.mk_binding(e.name, v, @engine.Inherit)])
       None => ()
     }
   }
@@ -2498,7 +2504,7 @@ fn resolve_ladder_below_cli(
             ) {
             Ok(resolved) =>
               return Ok([
-                @engine.mkb(
+                @engine.mk_binding(
                   e.name,
                   resolved,
                   if observed is Some(_) {
@@ -2542,7 +2548,7 @@ fn resolve_ladder_below_cli(
               e.piece_filters,
               extensions,
             ) {
-            Ok(vv) => bs.push(@engine.mkb(e.name, vv, @engine.Default))
+            Ok(vv) => bs.push(@engine.mk_binding(e.name, vv, @engine.Default))
             Err((@engine.KFilter, reason, msg)) =>
               return Err(filter_err(e.name, at_pos, reason, msg, epath))
             Err((_, reason, msg)) =>
@@ -2563,7 +2569,7 @@ fn resolve_ladder_below_cli(
             e.piece_filters,
             extensions,
           ) {
-          Ok(vv) => Ok([@engine.mkb(e.name, vv, @engine.Default)])
+          Ok(vv) => Ok([@engine.mk_binding(e.name, vv, @engine.Default)])
           Err((@engine.KFilter, reason, msg)) =>
             Err(filter_err(e.name, at_pos, reason, msg, epath))
           Err((_, reason, msg)) =>

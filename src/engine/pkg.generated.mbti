@@ -19,8 +19,6 @@ pub fn argmin_action(Array[(String, Int)]) -> String
 
 pub fn attach_mode_of(String) -> AttachMode?
 
-pub fn cand_trigger(String, String, String, TermHint, Bool, Bool, Bool) -> Cand
-
 pub fn cat(Array[Binding], Array[Binding]) -> Array[Binding]
 
 pub fn chars_to_str(Array[Char], Int, Int) -> String
@@ -67,9 +65,9 @@ pub fn is_committed_in_subtree(Array[Binding], Array[String], String, String) ->
 
 pub fn is_integer(Double) -> Bool
 
-pub fn mk_eff(String, EffectOp, Source) -> Binding
+pub fn mk_binding(String, Value, Source, at_pos? : Int?) -> Binding
 
-pub fn mkb(String, Value, Source, at_pos? : Int?) -> Binding
+pub fn mk_effect(String, EffectOp, Source) -> Binding
 
 pub fn none_cells(Scope) -> Array[NoneCell]
 
@@ -77,7 +75,7 @@ pub fn parse_tree(Node, Array[String], defs? : Map[String, Node], faildef? : Fai
 
 pub fn pe_filter(String, Int, String, String) -> ParseError
 
-pub fn pend_value(String, String) -> Cand
+pub fn pending_value_candidate(String, String) -> Cand
 
 pub fn run_installer_fixpoint(InstallBuilder, Array[&InstallerExt], (InstallBuilder) -> Unit) -> Result[Scope, Array[DefError]]
 
@@ -90,6 +88,8 @@ pub fn split_on(String, String) -> Array[String]
 pub fn to_chars(String) -> Array[Char]
 
 pub fn tried_triggers_of(Node, Array[ParseError]) -> Array[String]
+
+pub fn trigger_candidate(String, String, String, TermHint, Bool, Bool, Bool) -> Cand
 
 pub fn value_str(Value) -> String
 
@@ -414,26 +414,14 @@ pub(all) struct HelpMetaDecl {
   help_after : String?
 } derive(Eq, @debug.Debug)
 
-pub struct InstallBuild {
-  // private fields
-}
-pub fn InstallBuild::constraints(Self) -> Array[Constraint]
-pub fn InstallBuild::entities(Self) -> Array[Entity]
-pub fn InstallBuild::greedy(Self) -> Array[Node]
-pub fn InstallBuild::new(Array[Node]) -> Self
-pub fn InstallBuild::positional(Self) -> Array[Node]
-pub fn InstallBuild::push_constraint(Self, Constraint) -> Unit
-pub fn InstallBuild::push_entity(Self, Entity) -> Unit
-pub fn InstallBuild::push_greedy(Self, Node) -> Unit
-
 pub struct InstallBuilder {
   // private fields
 }
 pub fn InstallBuilder::children(Self) -> Array[InstallChild]
 pub fn InstallBuilder::definition(Self) -> Definition
 pub fn InstallBuilder::extensions(Self) -> Registry
-pub fn InstallBuilder::new(Definition, InstallBuild, Array[InstallChild], Map[String, Node], Registry) -> Self
-pub fn InstallBuilder::output(Self) -> InstallBuild
+pub fn InstallBuilder::new(Definition, InstallOutput, Array[InstallChild], Map[String, Node], Registry) -> Self
+pub fn InstallBuilder::output(Self) -> InstallOutput
 pub fn InstallBuilder::templates(Self) -> Map[String, Node]
 
 pub struct InstallChild {
@@ -442,6 +430,18 @@ pub struct InstallChild {
 pub fn InstallChild::body(Self) -> InstallBuilder
 pub fn InstallChild::name(Self) -> String
 pub fn InstallChild::new(String, InstallBuilder) -> Self
+
+pub struct InstallOutput {
+  // private fields
+}
+pub fn InstallOutput::constraints(Self) -> Array[Constraint]
+pub fn InstallOutput::entities(Self) -> Array[Entity]
+pub fn InstallOutput::greedy(Self) -> Array[Node]
+pub fn InstallOutput::new(Array[Node]) -> Self
+pub fn InstallOutput::positional(Self) -> Array[Node]
+pub fn InstallOutput::push_constraint(Self, Constraint) -> Unit
+pub fn InstallOutput::push_entity(Self, Entity) -> Unit
+pub fn InstallOutput::push_greedy(Self, Node) -> Unit
 
 pub(all) enum LongDecl {
   LBool(Bool)

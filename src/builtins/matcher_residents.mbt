@@ -112,7 +112,7 @@ fn eq_candidates(
   for entry in entries {
     if entry.kind.has_value_slot() {
       out.push(
-        @engine.cand_trigger(
+        @engine.trigger_candidate(
           prefix + entry.key,
           entry.name,
           entry.kind.name(),
@@ -138,7 +138,7 @@ fn short_candidates(
     spelling.write_string(prefix)
     spelling.write_char(entry.ch)
     out.push(
-      @engine.cand_trigger(
+      @engine.trigger_candidate(
         spelling.to_string(),
         entry.name,
         entry.kind.name(),
@@ -365,7 +365,14 @@ fn run_eq_split(
             @engine.Accept(
               pos + 1,
               @engine.cat(
-                [@engine.mkb(e.name, value, @engine.Cli, at_pos=Some(pos))],
+                [
+                  @engine.mk_binding(
+                    e.name,
+                    value,
+                    @engine.Cli,
+                    at_pos=Some(pos),
+                  ),
+                ],
                 dm,
               ),
             ),
@@ -470,7 +477,7 @@ fn short_val(
     }
     match e.kind.parse_token(filtered) {
       Ok(value) =>
-        Ok([@engine.mkb(e.name, value, @engine.Cli, at_pos=Some(pos))])
+        Ok([@engine.mk_binding(e.name, value, @engine.Cli, at_pos=Some(pos))])
       Err(fail) => Err(type_parse_error(e.name, pos, fail))
     }
   }
@@ -525,9 +532,13 @@ fn walk_short(
         // Presence-only residents share the same reading shape. Count owns a distinct
         // effect payload; the matcher no longer enumerates type categories to find the shape.
         let presence = if e.kind.name() == "count" {
-          @engine.mk_eff(e.name, @engine.Update("increment", []), @engine.Cli)
+          @engine.mk_effect(
+            e.name,
+            @engine.Update("increment", []),
+            @engine.Cli,
+          )
         } else {
-          @engine.mkb(e.name, @engine.VBool(true), @engine.Cli)
+          @engine.mk_binding(e.name, @engine.VBool(true), @engine.Cli)
         }
         if combine || i + 1 == body.length() {
           walk_short(
@@ -618,7 +629,7 @@ fn walk_short(
           // (DR-060 §1). The flags already read stay as partial state.
           out.push(
             @engine.Pending(
-              [@engine.pend_value(e.kind.name(), e.name)],
+              [@engine.pending_value_candidate(e.kind.name(), e.name)],
               @engine.cat(acc, dm),
             ),
           )

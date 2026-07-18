@@ -7,7 +7,7 @@ fn binding(
   value : @engine.Value,
   pos? : Int = 0,
 ) -> @engine.Binding {
-  { ..@engine.mkb(name, value, @engine.Cli), op, at_pos: Some(pos) }
+  { ..@engine.mk_binding(name, value, @engine.Cli), op, at_pos: Some(pos) }
 }
 
 ///|
@@ -16,7 +16,7 @@ test "append accumulator resident preserves set order without consulting lower s
   let mut lower_calls = 0
   let lower : @engine.LowerSeat = fn(_include_default) {
     lower_calls = lower_calls + 1
-    Ok([@engine.mkb("x", @engine.VStr("lower"), @engine.Default)])
+    Ok([@engine.mk_binding("x", @engine.VStr("lower"), @engine.Default)])
   }
   let resident = append_accumulator()
   let result = resident.resolve_cli(
@@ -44,8 +44,8 @@ test "append accumulator resident preserves set order without consulting lower s
 test "merge accumulator resident owns grouped remove splice add semantics" {
   let lower : @engine.LowerSeat = fn(_include_default) {
     Ok([
-      @engine.mkb("x", @engine.VStr("a"), @engine.Default),
-      @engine.mkb("x", @engine.VStr("b"), @engine.Default),
+      @engine.mk_binding("x", @engine.VStr("a"), @engine.Default),
+      @engine.mk_binding("x", @engine.VStr("b"), @engine.Default),
     ])
   }
   let result = merge_accumulator().resolve_cli(

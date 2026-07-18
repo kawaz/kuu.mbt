@@ -91,7 +91,7 @@ impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
             ctx,
             pos + 1,
             @engine.cat(acc, [
-              @engine.mkb(
+              @engine.mk_binding(
                 self.name,
                 @engine.VStr(value),
                 @engine.Cli,
@@ -110,7 +110,7 @@ impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pend_value(string_type().name(), self.name)],
+          [@engine.pending_value_candidate(string_type().name(), self.name)],
           acc,
         ),
       ]
@@ -165,7 +165,7 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
               ctx,
               pos + 1,
               @engine.cat(acc, [
-                @engine.mkb(
+                @engine.mk_binding(
                   self.name,
                   @engine.VStr(value),
                   @engine.Cli,
@@ -192,7 +192,7 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pend_value(string_type().name(), self.name)],
+          [@engine.pending_value_candidate(string_type().name(), self.name)],
           acc,
         ),
       ]
@@ -273,7 +273,12 @@ impl @engine.NodeExt for SeparatedNodeExt with fn eval(
         Err(error) => [@engine.Held(error, acc)]
       }
     None =>
-      [@engine.Pending([@engine.pend_value(self.ty.name(), self.name)], acc)]
+      [
+        @engine.Pending(
+          [@engine.pending_value_candidate(self.ty.name(), self.name)],
+          acc,
+        ),
+      ]
   }
 }
 
@@ -348,7 +353,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
                 ctx,
                 pos + 1,
                 @engine.cat(acc, [
-                  @engine.mkb(
+                  @engine.mk_binding(
                     self.name,
                     @engine.VNum(number),
                     @engine.Cli,
@@ -375,7 +380,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pend_value(number_type().name(), self.name)],
+          [@engine.pending_value_candidate(number_type().name(), self.name)],
           acc,
         ),
       ]
@@ -457,7 +462,7 @@ impl @engine.NodeExt for FilteredNumberArgExt with fn eval(
               ctx,
               pos + 1,
               @engine.cat(acc, [
-                @engine.mkb(
+                @engine.mk_binding(
                   self.name,
                   @engine.VNum(number),
                   @engine.Cli,
@@ -470,7 +475,7 @@ impl @engine.NodeExt for FilteredNumberArgExt with fn eval(
     None =>
       [
         @engine.Pending(
-          [@engine.pend_value(number_type().name(), self.name)],
+          [@engine.pending_value_candidate(number_type().name(), self.name)],
           acc,
         ),
       ]
@@ -522,7 +527,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ctx,
                 pos + 1,
                 @engine.cat(acc, [
-                  @engine.mkb(
+                  @engine.mk_binding(
                     self.name,
                     @engine.VNum(number),
                     @engine.Cli,
@@ -549,7 +554,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pend_value(float_type().name(), self.name)],
+          [@engine.pending_value_candidate(float_type().name(), self.name)],
           acc,
         ),
       ]
@@ -617,7 +622,7 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ctx,
                 pos + 1,
                 @engine.cat(acc, [
-                  @engine.mkb(
+                  @engine.mk_binding(
                     self.name,
                     @engine.VNum(integer.to_double()),
                     @engine.Cli,
@@ -637,7 +642,12 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
           ]
       }
     None =>
-      [@engine.Pending([@engine.pend_value(int_type().name(), self.name)], acc)]
+      [
+        @engine.Pending(
+          [@engine.pending_value_candidate(int_type().name(), self.name)],
+          acc,
+        ),
+      ]
   }
 }
 
@@ -699,7 +709,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ctx,
                 pos + 1,
                 @engine.cat(acc, [
-                  @engine.mkb(
+                  @engine.mk_binding(
                     self.name,
                     @engine.VBool(boolean),
                     @engine.Cli,
@@ -721,7 +731,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pend_value(bool_type().name(), self.name)],
+          [@engine.pending_value_candidate(bool_type().name(), self.name)],
           acc,
         ),
       ]
@@ -784,7 +794,12 @@ impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ctx,
                 pos + 1,
                 @engine.cat(acc, [
-                  @engine.mkb(self.name, parsed, @engine.Cli, at_pos=Some(pos)),
+                  @engine.mk_binding(
+                    self.name,
+                    parsed,
+                    @engine.Cli,
+                    at_pos=Some(pos),
+                  ),
                 ]),
               )
             Err(failure) =>
@@ -799,7 +814,12 @@ impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
           ]
       }
     None =>
-      [@engine.Pending([@engine.pend_value(self.ty.name(), self.name)], acc)]
+      [
+        @engine.Pending(
+          [@engine.pending_value_candidate(self.ty.name(), self.name)],
+          acc,
+        ),
+      ]
   }
 }
 
@@ -843,7 +863,7 @@ impl @engine.NodeExt for EffectMarkExt with fn eval(self, ctx, pos, acc, next) {
   next(
     ctx,
     pos,
-    @engine.cat(acc, [@engine.mk_eff(self.name, self.op, @engine.Cli)]),
+    @engine.cat(acc, [@engine.mk_effect(self.name, self.op, @engine.Cli)]),
   )
 }
 

@@ -98,7 +98,7 @@ fn dd_match_token(spelling : String, is_pattern : Bool, token : String) -> Bool 
 /// An exact-spelling candidate (the Pending payload at a trigger boundary,
 /// DR-060 §3). `ty` is only meaningful when a value must follow the spelling
 /// (term = Cont, e.g. an eq-split `--key`); a plain trigger carries "flag".
-pub fn cand_trigger(
+pub fn trigger_candidate(
   spelling : String,
   origin : String,
   ty : String,
@@ -118,7 +118,7 @@ pub fn cand_trigger(
     link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
     fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: same "starts empty, scope
     // boundaries prepend unconditionally" posture as `path`/Held's own `ParseError.path` (`nest_path`
-    // in `nest_cands`) — this is the exact-trigger sibling of `pend_value`'s same field, kept in sync.
+    // in `nest_cands`) — this is the exact-trigger sibling of `pending_value_candidate`'s same field, kept in sync.
     completer: None, // DR-060 §3: an exact-trigger candidate never carries a completer
   }
 }
@@ -126,7 +126,7 @@ pub fn cand_trigger(
 ///|
 /// A non-set effect binding (default / unset / empty). The operand is a
 /// placeholder — these ops carry no operand (spec DR-045 table).
-pub fn mk_eff(key : String, op : EffectOp, source : Source) -> Binding {
+pub fn mk_effect(key : String, op : EffectOp, source : Source) -> Binding {
   { key, op, value: VBool(false), source, scope: [], link: 0, at_pos: None }
 }
 
@@ -369,7 +369,7 @@ fn array_marker(label : String) -> Binding {
 ///|
 /// A pending-value candidate (the Pending payload): the value slot of
 /// `origin`, of type `ty`, had no token left to consume.
-pub fn pend_value(ty : String, origin : String) -> Cand {
+pub fn pending_value_candidate(ty : String, origin : String) -> Cand {
   {
     spelling: "",
     is_value: true,
@@ -383,7 +383,7 @@ pub fn pend_value(ty : String, origin : String) -> Cand {
     // comment — the fire-time walk-position path a `missing_operand` ParseError conversion needs,
     // tracked independently of `path`'s Rooted-escape (`link`) bookkeeping.
     // DR-060 §4 / DR-104 §2(d): filled in by `complete_tree`'s (path, origin)-keyed Entity-table
-    // lookup (outcome.mbt) as candidates fold into the dedup loop, NOT here — `pend_value` has no
+    // lookup (outcome.mbt) as candidates fold into the dedup loop, NOT here — `pending_value_candidate` has no
     // Entity table in scope at any of its 30+ call sites (see Cand.completer's doc comment).
     completer: None,
   }
@@ -493,7 +493,10 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // (`fixup_boundary_cands`, DR-104 §2/§3); this fallback is what a truly
         // standalone Exact (outside that shape) keeps.
         [
-          Pending([cand_trigger(s, s, "flag", WordEnd, false, false, false)], []),
+          Pending(
+            [trigger_candidate(s, s, "flag", WordEnd, false, false, false)],
+            [],
+          ),
         ]
       } else {
         // an unmatched (or, in parse mode, exhausted) trigger is a silent
@@ -502,7 +505,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         []
       }
     ReqArg(name) => req_arg_eval(name, ctx, pos, [])
-    Bind(name, v) => [Accept(pos, [mkb(name, v, Cli)])]
+    Bind(name, v) => [Accept(pos, [mk_binding(name, v, Cli)])]
     Or(alts) => {
       let out : Array[Branch] = []
       for a in alts {
@@ -546,12 +549,16 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         // DR-093 §2/§7: step_greedy の同アームと同じ committed placeholder binding (off-spine
         // evaluation はこの1本の Branch の bindings を返すだけ — 呼び出し元が outer acc と cat する)。
-        [Accept(pos + 1, [mkb(trigger, VBool(true), Cli, at_pos=Some(pos))])]
+        [
+          Accept(pos + 1, [
+            mk_binding(trigger, VBool(true), Cli, at_pos=Some(pos)),
+          ]),
+        ]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [
           Pending(
             [
-              cand_trigger(
+              trigger_candidate(
                 trigger,
                 trigger,
                 "flag",
@@ -575,7 +582,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       if pos < ctx.toks.length() &&
         dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
         // DR-093 §2/§7: same committed placeholder as the DdSat arm above, keyed by `elem_name`.
-        let b = mkb(elem_name, VBool(true), Cli, at_pos=Some(pos))
+        let b = mk_binding(elem_name, VBool(true), Cli, at_pos=Some(pos))
         if self_keep {
           [Accept(pos, [b])]
         } else {
@@ -589,7 +596,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         [
           Pending(
             [
-              cand_trigger(
+              trigger_candidate(
                 spelling,
                 elem_name,
                 "flag",
@@ -620,7 +627,17 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [
           Pending(
-            [cand_trigger(name, name, "flag", WordEnd, false, false, false)],
+            [
+              trigger_candidate(
+                name,
+                name,
+                "flag",
+                WordEnd,
+                false,
+                false,
+                false,
+              ),
+            ],
             [],
           ),
         ]
@@ -706,11 +723,11 @@ fn req_arg_eval(
     [
       Accept(
         pos + 1,
-        cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos))]),
+        cat(acc, [mk_binding(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos))]),
       ),
     ]
   } else if in_complete(ctx) {
-    [Pending([pend_value("string", name)], acc)]
+    [Pending([pending_value_candidate("string", name)], acc)]
   } else {
     [
       Held(
@@ -1422,7 +1439,7 @@ fn entity_extension(sc : Scope, name : String) -> &EntityExt? {
 ///|
 /// Apply `cand_boundary_origin`'s correction (+ the owning element's `hidden` declaration) to every
 /// exact-trigger candidate (`is_value:false`) a satellite's Pending carries; a value-position
-/// candidate (`is_value:true`, always built via `pend_value` with the correct origin already) is
+/// candidate (`is_value:true`, always built via `pending_value_candidate` with the correct origin already) is
 /// left untouched. A `None` origin (not an option-satellite boundary shape) is a no-op passthrough.
 fn fixup_boundary_cands(g : Node, sc : Scope, cs : Array[Cand]) -> Array[Cand] {
   match cand_boundary_origin(g) {
@@ -1496,7 +1513,17 @@ fn step_greedy(
         // complete: the command name is readable at the boundary (DR-060 §1).
         out.push(
           Pending(
-            [cand_trigger(name, name, "flag", WordEnd, false, false, false)],
+            [
+              trigger_candidate(
+                name,
+                name,
+                "flag",
+                WordEnd,
+                false,
+                false,
+                false,
+              ),
+            ],
             acc,
           ),
         )
@@ -1508,7 +1535,9 @@ fn step_greedy(
         // build_result/effects から除外する — 値そのものは運ばない、DR-089 §3 不変)。DdSat の
         // trigger 文字列は要素名そのもの (dd_match 未使用の唯一のケースでのみ installer が
         // `DdSat(e.name)` を作る) なのでそのまま key に使える。
-        let acc2 = cat(acc, [mkb(trigger, VBool(true), Cli, at_pos=Some(pos))])
+        let acc2 = cat(acc, [
+          mk_binding(trigger, VBool(true), Cli, at_pos=Some(pos)),
+        ])
         for r in scope_step(sc, ctx, pos + 1, pidx, acc2, true, k) {
           out.push(r)
         }
@@ -1516,7 +1545,7 @@ fn step_greedy(
         out.push(
           Pending(
             [
-              cand_trigger(
+              trigger_candidate(
                 trigger,
                 trigger,
                 "flag",
@@ -1542,7 +1571,9 @@ fn step_greedy(
         let resume_pos = if self_keep { pos } else { pos + 1 }
         // DR-093 §2/§7: DdSat と同じ committed placeholder binding。key は `elem_name` (要素の
         // 同一性軸、DR-090 §2) — `spelling` は match 使用時トリガ綴りやパターンで要素名と一致しない。
-        let acc2 = cat(acc, [mkb(elem_name, VBool(true), Cli, at_pos=Some(pos))])
+        let acc2 = cat(acc, [
+          mk_binding(elem_name, VBool(true), Cli, at_pos=Some(pos)),
+        ])
         for r in scope_step(sc, ctx, resume_pos, pidx, acc2, true, k) {
           out.push(r)
         }
@@ -1553,7 +1584,7 @@ fn step_greedy(
         out.push(
           Pending(
             [
-              cand_trigger(
+              trigger_candidate(
                 spelling,
                 elem_name,
                 "flag",
@@ -1709,13 +1740,15 @@ fn scope_consume(
           ctx,
           pos + 1,
           pidx + 1,
-          cat(acc, [mkb(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos))]),
+          cat(acc, [
+            mk_binding(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos)),
+          ]),
           severed,
           k,
         )
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value("string", name)], acc)]
+          [Pending([pending_value_candidate("string", name)], acc)]
         } else {
           [
             Held(
@@ -1743,7 +1776,7 @@ fn scope_consume(
         // extract (none of our fixtures exercise this shape yet, kept as-is).
         [
           Pending(
-            [cand_trigger(s, s, "flag", WordEnd, false, false, false)],
+            [trigger_candidate(s, s, "flag", WordEnd, false, false, false)],
             acc,
           ),
         ]
@@ -2051,12 +2084,12 @@ fn consume_head(
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         [
           Accept(pos + 1, [
-            mkb(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos)),
+            mk_binding(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos)),
           ]),
         ]
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pend_value("string", name)], [])]
+          [Pending([pending_value_candidate("string", name)], [])]
         } else {
           [
             Held(
@@ -2118,7 +2151,7 @@ fn consume_compound(
         Some(tpl) => consume_compound(sc, tpl, ctx, pos, severed)
         None => []
       }
-    Bind(name, v) => [Accept(pos, [mkb(name, v, Cli)])]
+    Bind(name, v) => [Accept(pos, [mk_binding(name, v, Cli)])]
     _ => eval(node, ctx, pos)
   }
 }

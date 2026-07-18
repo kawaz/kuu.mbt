@@ -118,7 +118,9 @@ test "tty TypeExt owns its provider key and default-seat fold" {
 test "EntityExt carries completion metadata opaquely into Cand" {
   // Engine dispatches one opaque decorator; the builtin resident owns hidden/completer contents.
   let extension = entity_ext(hidden=true, completer=Some("files"))
-  let cand = extension.complete_candidate(@engine.pend_value("string", "path"))
+  let cand = extension.complete_candidate(
+    @engine.pending_value_candidate("string", "path"),
+  )
   assert_eq(cand.meta.hidden, true)
   assert_eq(cand.completer, Some("files"))
 }

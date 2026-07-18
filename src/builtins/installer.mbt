@@ -1000,7 +1000,7 @@ fn init_sb(
   }
   @engine.InstallBuilder::new(
     def,
-    @engine.InstallBuild::new(positional),
+    @engine.InstallOutput::new(positional),
     children,
     templates,
     extensions,
@@ -1053,7 +1053,7 @@ fn ensure_entities(sb : @engine.InstallBuilder, has_cf : Bool) -> Unit {
 /// inherits the guard automatically (installer.mbt's `@engine.ElemDef.is_exact` doc comment: "value_prim/
 /// entity 経路を一切通らない" is the invariant this enforces).
 fn ensure_entity_body(
-  build : @engine.InstallBuild,
+  build : @engine.InstallOutput,
   e : @engine.ElemDef,
   has_cf : Bool,
   extensions : @engine.Registry,
@@ -1121,7 +1121,7 @@ fn ensure_entity_body(
 
 ///|
 fn ensure_entity(
-  build : @engine.InstallBuild,
+  build : @engine.InstallOutput,
   e : @engine.ElemDef,
   has_cf : Bool,
   extensions : @engine.Registry,
@@ -1311,7 +1311,7 @@ fn with_depr(
 /// を add-if-absent で追加。衛星は name で entity に link (DR-042 §展開の標準パターン)。
 fn inst_long(
   def : @engine.Definition,
-  build : @engine.InstallBuild,
+  build : @engine.InstallOutput,
   registry : Map[String, @engine.Node],
 ) -> Unit {
   let eq_prefixes : Array[String] = []
@@ -1686,7 +1686,7 @@ fn short_group(
 /// already applied to `inst_long`/`eq_split`. `e.short_combine` (issue scope-config-object-gap
 /// 解釈A, team-lead 裁定 2026-07-11) rides straight through to the matcher's `combine` param —
 /// `run_short`/`walk_short` (builtins/matcher_residents.mbt) are the sole consumers of the flag's actual meaning.
-fn inst_short(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
+fn inst_short(def : @engine.Definition, build : @engine.InstallOutput) -> Unit {
   let sh_prefixes : Array[String] = []
   let sh_combines : Array[Bool] = []
   let sh_groups : Array[Array[ShortEntry]] = []
@@ -1737,7 +1737,7 @@ fn inst_short(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
 ///|
 /// env: `env` を READ、entity の env seat に登録 (invariant ④)。ladder 順序は engine 所有 (DR-031)、
 /// default_fn を wrap しない。同 seat 再宣言は no-op (idempotent in-place set)。
-fn inst_env(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
+fn inst_env(def : @engine.Definition, build : @engine.InstallOutput) -> Unit {
   for e in def.options {
     if e.env.length() > 0 {
       seat_env(build, e.name, e.env[0])
@@ -1751,7 +1751,7 @@ fn inst_env(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
 }
 
 ///|
-fn seat_env(build : @engine.InstallBuild, name : String, key : String) -> Unit {
+fn seat_env(build : @engine.InstallOutput, name : String, key : String) -> Unit {
   for ent in build.entities() {
     if ent.name == name {
       ent.env_key = Some(key)
@@ -1765,7 +1765,7 @@ fn seat_env(build : @engine.InstallBuild, name : String, key : String) -> Unit {
 ///
 /// DR-064 §2 配置不問回収: dd は canonical には options[] だが positionals[] に置いても回収する
 /// (env / inherit と同じく両 face を walk する対称形)。add-if-absent (add_greedy) が重複宣言を collapse。
-fn inst_dd(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
+fn inst_dd(def : @engine.Definition, build : @engine.InstallOutput) -> Unit {
   // DR-064 §5: dd の name は trigger 綴りに効く (normalize_surface が既定 "--" を供給、明示は上書き)。
   // DR-090 §2: `dd_match` が None かつ `dd_self_keep` が false (両軸とも既定) の要素だけ、既存
   // `@engine.DdSat` (exact/drop 専用ノード) をそのまま使う — 完全な後方互換 (既存 wbtest の `@engine.DdSat("--")`
@@ -1799,7 +1799,7 @@ fn inst_dd(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
 ///|
 /// add-if-absent (invariant ①' 非削除): 構造等価な既存があれば追加しない。再適用を no-op に、fixpoint
 /// を収束させる。
-fn add_greedy(build : @engine.InstallBuild, g : @engine.Node) -> Unit {
+fn add_greedy(build : @engine.InstallOutput, g : @engine.Node) -> Unit {
   for existing in build.greedy() {
     if existing == g {
       return
@@ -1811,7 +1811,10 @@ fn add_greedy(build : @engine.InstallBuild, g : @engine.Node) -> Unit {
 ///|
 /// inherit: `inherit` を READ、entity に inherit seat を宣言 (invariant ④, DR-031 cli>env>inherit>default)。
 /// seat の実 lookup 「最近祖先の同名 entity 値」は runtime (resolve_scope) で解く。env と対称の seat 宣言型。
-fn inst_inherit(def : @engine.Definition, build : @engine.InstallBuild) -> Unit {
+fn inst_inherit(
+  def : @engine.Definition,
+  build : @engine.InstallOutput,
+) -> Unit {
   for e in def.options {
     if e.is_inherit {
       seat_inherit(build, e.name)
@@ -1825,7 +1828,7 @@ fn inst_inherit(def : @engine.Definition, build : @engine.InstallBuild) -> Unit 
 }
 
 ///|
-fn seat_inherit(build : @engine.InstallBuild, name : String) -> Unit {
+fn seat_inherit(build : @engine.InstallOutput, name : String) -> Unit {
   for ent in build.entities() {
     if ent.name == name {
       ent.inherit_ = true // MDR-003
@@ -2263,7 +2266,7 @@ fn required_candidates(
 /// 無し (DR-047 完全 path の最終状態で評価)。
 fn inst_constraint(
   def : @engine.Definition,
-  build : @engine.InstallBuild,
+  build : @engine.InstallOutput,
   registry : Map[String, @engine.Node],
 ) -> Unit {
   let all : Array[@engine.ElemDef] = []
@@ -2625,7 +2628,10 @@ fn desugar_aliases(
 }
 
 ///|
-fn add_constraint(build : @engine.InstallBuild, c : @engine.Constraint) -> Unit {
+fn add_constraint(
+  build : @engine.InstallOutput,
+  c : @engine.Constraint,
+) -> Unit {
   for existing in build.constraints() {
     if existing == c {
       return
@@ -3200,7 +3206,7 @@ fn collect_unsupported_accum_update(
 /// codex レビュー High 2 (2026-07-10): `collect_unsupported_accum_update` の variant 走査 (上記) は
 /// `count_increment_variant` 経由 (`long:true` 糖衣、DR-077 §3) の `:update:increment` は捕まえるが、
 /// count_type() の **short** 発火 (`builtins/matcher_residents.mbt` の `walk_short`'s `count_type()` arm) は variant を一切経由せず
-/// `mk_eff(e.name, @engine.Update("increment", []), @engine.Cli)` を直接生成する — variants を持たない firing なので
+/// `mk_effect(e.name, @engine.Update("increment", []), @engine.Cli)` を直接生成する — variants を持たない firing なので
 /// variant 走査ではそもそも見えない (repro: `{"name":"n","type":"count","short":["n"],
 /// "multiple":true}` + args `["-n"]` で resolve.mbt の accum 分岐の abort に到達)。
 ///

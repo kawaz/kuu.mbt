@@ -322,7 +322,7 @@ pub fn complete_tree(
     _ => eval(root, ctx, 0)
   }
   // DR-060 §4 / DR-104 §2(d): value-position candidates' `completer` is resolved via a
-  // (path, origin)-keyed Entity lookup — NOT a bare name-keyed one. `pend_value` (eval.mbt) has
+  // (path, origin)-keyed Entity lookup — NOT a bare name-keyed one. `pending_value_candidate` (eval.mbt) has
   // no Entity table in scope at any of its 30+ call sites, so the completer cannot be threaded
   // through at construction time; it must be looked up here instead. Looking it up by `origin`
   // ALONE would be wrong: two structurally independent scopes (e.g. two separate `command`

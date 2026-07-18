@@ -636,7 +636,7 @@ test "resolve_scope: cli wins over env, env wins over default" {
 }
 
 ///|
-/// A `@engine.Set` binding builder exposed for assertions (mirrors `@engine.mkb`'s shape without re-exporting it).
+/// A `@engine.Set` binding builder exposed for assertions (mirrors `@engine.mk_binding`'s shape without re-exporting it).
 fn mkb_pub(
   key : String,
   value : @engine.Value,
@@ -1492,7 +1492,7 @@ test "resolve_scope: accum × value_filters(each) — one piece rejecting fails 
 ///|
 /// 保証 (issue 2026-07-09-accum-fold-update-default-ops、team-lead 裁定 2026-07-10 — 前サイクル
 /// (issue accum-filters-non-set-op-semantics) からの契約変更を明示する): このテストが検証する
-/// 「何を」は変わっていない (@engine.Unset の placeholder 値 (`mk_eff` の doc comment: "The operand is a
+/// 「何を」は変わっていない (@engine.Unset の placeholder 値 (`mk_effect` の doc comment: "The operand is a
 /// placeholder — these ops carry no operand", ここでは @engine.VBool(false)) が number 用 `in_range`
 /// value_filters に渡って型不一致で誤 reject しないこと) — この spec 面の正本は conformance fixture
 /// `multiple-parse/filters-cell-ops.json` (unset-after-set-resets-to-empty-without-filter ケース、
