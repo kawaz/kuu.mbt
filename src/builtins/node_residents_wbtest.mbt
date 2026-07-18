@@ -88,18 +88,25 @@ test "kv resident keeps the contains-equals gate" {
 }
 
 ///|
+fn test_node_consumes_zero_tokens(node : @engine.Node) -> Bool {
+  match node {
+    @engine.Bind(_, _) => true
+    @engine.Ext(extension) => extension.consumes_zero_tokens()
+    _ => false
+  }
+}
+
+///|
 test "marker residents declare zero-token consumption" {
   // Marker progress is contract data on @engine.NodeExt; @engine.Bind remains the sole closed
   // structural zero-token binder and both paths must report the same property.
+  assert_true(test_node_consumes_zero_tokens(effect_mark("x", @engine.Unset)))
+  assert_true(test_node_consumes_zero_tokens(deprecation_mark("x")))
+  assert_true(test_node_consumes_zero_tokens(failure_mark("x")))
   assert_true(
-    @engine.node_consumes_zero_tokens(effect_mark("x", @engine.Unset)),
+    test_node_consumes_zero_tokens(@engine.Bind("x", @engine.VBool(true))),
   )
-  assert_true(@engine.node_consumes_zero_tokens(deprecation_mark("x")))
-  assert_true(@engine.node_consumes_zero_tokens(failure_mark("x")))
-  assert_true(
-    @engine.node_consumes_zero_tokens(@engine.Bind("x", @engine.VBool(true))),
-  )
-  assert_false(@engine.node_consumes_zero_tokens(string_arg("x", [])))
+  assert_false(test_node_consumes_zero_tokens(string_arg("x", [])))
 }
 
 ///|

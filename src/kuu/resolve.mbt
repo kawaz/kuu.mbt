@@ -927,7 +927,7 @@ fn build_result_export(
 /// One export-key collision (DR-073): at result scope `path`, 2+ distinct elements' bindings map
 /// (via `ek`) to the same result key `key`. `claimants` lists the distinct entity (pre-export-key)
 /// names competing for it, first-seen order.
-struct ExportCollision {
+priv struct ExportCollision {
   path : Array[String]
   key : String
   claimants : Array[String]

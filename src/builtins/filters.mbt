@@ -17,7 +17,7 @@
 // chains exists.
 
 ///|
-pub fn split_colon(s : String) -> Array[String] {
+fn split_colon(s : String) -> Array[String] {
   let out : Array[String] = []
   let mut current = ""
   for char in s {

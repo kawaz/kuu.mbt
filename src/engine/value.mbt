@@ -308,17 +308,6 @@ pub(all) enum EffectOp {
 } derive(Eq, Debug)
 
 ///|
-/// committed is DERIVED from the op, never a separate field (DR-045 §2: selected and
-/// committed are independent, and the effect explicitly controls committed). Only `unset`
-/// is un-committed, which is exactly what opens the later value-source ladder seats.
-pub fn committed(op : EffectOp) -> Bool {
-  match op {
-    Unset => false
-    _ => true
-  }
-}
-
-///|
 /// One EFFECT written onto a result path: `key`'s cell gets operation `op` with operand
 /// `value`, from `source` (DR-045). `key` is the leaf name; same-key bindings from
 /// different entries (e.g. `--port` satellite and `-p` matcher) merge onto one cell =

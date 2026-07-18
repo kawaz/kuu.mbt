@@ -27,8 +27,6 @@ pub fn collect_installer_vocab_errors(Definition, Array[&InstallerExt]) -> Array
 
 pub fn collect_scopes(Node, Map[String, Node]) -> Array[ScopedCons]
 
-pub fn committed(EffectOp) -> Bool
-
 pub fn compile_regex(String) -> @string.Regex?
 
 pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Array[String]) -> Array[Cand]
@@ -67,13 +65,7 @@ pub fn mk_eff(String, EffectOp, Source) -> Binding
 
 pub fn mkb(String, Value, Source, at_pos? : Int?) -> Binding
 
-pub fn node_consumes_zero_tokens(Node) -> Bool
-
-pub fn none_cell(Array[String], String) -> NoneCell
-
 pub fn none_cells(Scope) -> Array[NoneCell]
-
-pub fn parse_context(Array[String]) -> Ctx
 
 pub fn parse_fail_error(String, String, Int, ParseFail) -> ParseError
 
@@ -96,14 +88,6 @@ pub fn pe_type_parse(String, String, Int, ParseFail) -> ParseError
 pub fn pend_value(String, String) -> Cand
 
 pub fn run_installer_fixpoint(InstallBuilder, Array[&InstallerExt], (InstallBuilder) -> Unit) -> Result[Scope, Array[DefError]]
-
-pub fn run_matcher(&MatcherExt, Ctx, Int) -> Array[Branch]
-
-pub fn rval_array(Array[RVal]) -> RVal
-
-pub fn rval_object(Array[(String, RVal)]) -> RVal
-
-pub fn rval_scalar(Value) -> RVal
 
 pub fn scope_selected(Array[Binding], Array[String]) -> Bool
 

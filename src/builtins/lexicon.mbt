@@ -16,10 +16,11 @@ pub fn bool_config_canonical() -> @engine.BoolConfig {
 /// config). `case_insensitive` gates whether the token is compared against `true_values`/
 /// `false_values` case-insensitively (canonical `true`) or exactly (opt-in dialect, JSON/TOML 準拠
 /// `false`). A token matching neither list is None (→ Error at the call site, same `not_a_bool`
-/// posture as the canonical-only `parse_bool`). `parse_bool(s)` below is this function specialized to
-/// `bool_config_canonical()` — the SAME canonical table, just expressed as data instead of literal
-/// `if` branches (DR-061 §3 「クロージャをデータ化」).
-pub fn parse_bool_ext(s : String, config : @engine.BoolConfig) -> Bool? {
+/// posture). Without `config`, the canonical table is used (DR-061 §3 「クロージャをデータ化」).
+fn parse_bool(
+  s : String,
+  config? : @engine.BoolConfig = bool_config_canonical(),
+) -> Bool? {
   for t in config.true_values {
     if (config.case_insensitive && eq_ci(s, t)) ||
       (!config.case_insensitive && s == t) {
@@ -472,11 +473,11 @@ fn parse_base_prefixed(s : String) -> Double? {
 }
 
 ///|
-/// DR-074 §2 統合 opt-in の number parser: `allow_base_prefix=false` は既存 canonical parse_number と
-/// 等価 (10 進のみ、base prefix は None)。`true` では 10 進を先に試し、失敗時のみ base prefix を試す
+/// DR-074 §2 統合 number parser: `allow_base_prefix=false` は canonical な 10 進のみを受理し、
+/// `true` では 10 進を先に試し、失敗時のみ base prefix を試す
 /// (canonical と opt-in の受理域が排他なので順序に影響なし、DR-074 §2 「両方が一括で成功に転じる」)。
-pub fn parse_number_ext(s : String, allow_base_prefix : Bool) -> Double? {
-  match parse_number(s) {
+pub fn parse_number(s : String, allow_base_prefix? : Bool = false) -> Double? {
+  match parse_decimal_number(s) {
     Some(d) => return Some(d)
     None => ()
   }
@@ -488,21 +489,21 @@ pub fn parse_number_ext(s : String, allow_base_prefix : Bool) -> Double? {
 }
 
 ///|
-/// DR-075 § 値空間判定 + DR-074 §2 opt-in の int parser。canonical (allow=false) は既存 parse_int_value
-/// と等価。opt-in 時は base prefix 経路も試し、hex integer (0xff=255) は整数値、hex float (0x1.8p3=12) は
+/// DR-075 § 値空間判定 + DR-074 §2 の int parser。canonical (allow=false) は 10 進のみを受理し、
+/// opt-in 時は base prefix 経路も試す。hex integer (0xff=255) は整数値、hex float (0x1.8p3=12) は
 /// binary64 の値が整数なら受理、非整数 (0x1.8=1.5) は int_round に従う (DR-074 §2 「10 進と同一規則を
 /// hex にも適用」)。DR-075 §5 の binary64 非経由要件は 10 進 tie 判定に対する規定で、hex float は
 /// base-2 aligned で binary64 に exactly 表現可能なので本経路の binary64 経由は spec 意図と整合。
 /// NB: exact なのは mantissa 53 bit (hex ~13 桁) まで — それを超える hex mantissa は binary64 丸めが
 /// 入り tie 判定が 10 進 false-tie と同型の問題を持ちうるが、その値域の挙動は DR-074 §2 が未規定
 /// (fixture 未固定、病的入力域)。spec が規定したら追従する。
-pub fn parse_int_value_ext(
+fn parse_int_value(
   s : String,
   mode : @engine.RoundMode,
-  allow_base_prefix : Bool,
+  allow_base_prefix? : Bool = false,
 ) -> Result[Int64, @engine.ParseFail] {
   // 10 進経路を先に試す (canonical と opt-in で挙動同一)
-  match parse_int_value(s, mode) {
+  match parse_decimal_int_value(s, mode) {
     Ok(i) => return Ok(i)
     Err(@engine.NotANumber) => () // 10 進 lexer で not_a_number = base prefix 試行に落とす
     Err(e) => return Err(e) // @engine.NotAnInteger / @engine.IntOutOfRange は 10 進経路で確定した Error なので伝播
@@ -657,7 +658,7 @@ fn digits_to_i64(s : String) -> Int64 {
 /// inf/nan are NOT accepted (all → None). The value conversion delegates to the host's binary64
 /// parser on a normalized, `_`-stripped lexeme (validating the 字句 is this leaf's job; DR-075's
 /// binary64-非経由 requirement is on INT rounding only, handled in `parse_int_value`).
-pub fn parse_number(s : String) -> Double? {
+fn parse_decimal_number(s : String) -> Double? {
   match scan_number_parts(s) {
     None => None
     Some((neg, int_d, frac_d, exp)) => {
@@ -724,7 +725,7 @@ fn chars_to_str_from(cs : Array[Char], start : Int) -> String {
 /// `parse_number` because the accept-域 differs per resident (`number` rejects inf, `float`
 /// accepts it, DR-074 §1) — `parse_number` itself stays number-canonical so every OTHER caller
 /// (int's 値空間判定, config's number_type() path, matcher's number_type()/int_type() eq-split) is unaffected.
-pub fn parse_float(s : String) -> Double? {
+fn parse_float(s : String) -> Double? {
   match parse_number(s) {
     Some(d) => Some(d)
     None => scan_inf(s)
@@ -988,7 +989,7 @@ pub fn round_mode_of(s : String) -> @engine.RoundMode? {
 /// accepted directly under every mode. A truly-fractional value follows `mode`: `@engine.RError` (canonical
 /// default) → `@engine.NotAnInteger`; any rounding mode → the rounded Int64. A non-number token → `@engine.NotANumber`.
 /// The整数性 and tie decisions are lexical (binary64-非経由, DR-075 §5).
-pub fn parse_int_value(
+fn parse_decimal_int_value(
   s : String,
   mode : @engine.RoundMode,
 ) -> Result[Int64, @engine.ParseFail] {
@@ -1062,15 +1063,4 @@ fn lower_code(c : Char) -> Int {
   } else {
     x
   }
-}
-
-///|
-/// Parse a String token as a bool (DR-074 §3 canonical): `true_values = ["true","1"]`,
-/// `false_values = ["false","0",""]`, `case_insensitive = true`. An unrecognized token is None
-/// (→ Error at the call site — no silent bool化, DR-021 姿勢). The empty string is false (env's
-/// `FLAG=` pattern); `yes`/`no`/`on`/`off` are canonical-外 (Norway problem 回避). Every call site
-/// that has no `bool_parser` factory config to consult (config_to_value/env_value's canonical-only
-/// arms) keeps calling this — it is `parse_bool_ext` specialized to `bool_config_canonical()`.
-pub fn parse_bool(s : String) -> Bool? {
-  parse_bool_ext(s, bool_config_canonical())
 }

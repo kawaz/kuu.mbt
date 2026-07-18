@@ -1,8 +1,54 @@
 ///|
-/// wbtest helper: a parse-mode @engine.Ctx over bare tokens (@engine.run_matcher takes @engine.Ctx
-/// since the complete-mode boundary @engine.Pending was added to the cluster walk).
-fn pctx(toks : Array[String]) -> @engine.Ctx {
-  @engine.parse_context(toks)
+/// Test-only node resident that captures a matcher's raw branch stream while `parse_tree`
+/// supplies the private engine context. This keeps direct matcher probes out of the public API.
+priv struct MatcherProbeExt {
+  matcher : &@engine.MatcherExt
+  captured : Array[Array[@engine.Branch]]
+}
+
+///|
+impl @engine.NodeExt for MatcherProbeExt with fn kind(_self) {
+  "test/matcher-probe"
+}
+
+///|
+impl @engine.NodeExt for MatcherProbeExt with fn encode(_self) {
+  ().to_json()
+}
+
+///|
+impl @engine.NodeExt for MatcherProbeExt with fn consumes_zero_tokens(_self) {
+  false
+}
+
+///|
+impl @engine.NodeExt for MatcherProbeExt with fn eval(
+  self,
+  ctx,
+  pos,
+  acc,
+  _next,
+) {
+  self.captured.push(
+    self.matcher.interpret(ctx, pos, acc, (_ctx, next_pos, next_acc) => {
+      [@engine.Accept(next_pos, next_acc)]
+    }),
+  )
+  []
+}
+
+///|
+fn probe_matcher(
+  matcher : &@engine.MatcherExt,
+  toks : Array[String],
+) -> Array[@engine.Branch] {
+  let captured : Array[Array[@engine.Branch]] = []
+  let probe = @engine.Ext(
+    MatcherProbeExt::{ matcher, captured } as &@engine.NodeExt,
+  )
+  ignore(@engine.parse_tree(probe, toks))
+  guard captured.length() == 1 else { return [] }
+  captured[0]
 }
 
 // matcher_residents_wbtest.mbt — builtin matcher residents as executable spec (DR-041 §3-4).
@@ -50,7 +96,7 @@ test "eq-split long option resolves, errors, and 素通し" {
     eq_entry("port", "port", number_type(), [], None, merge=false, depr=false),
   ])
   // a defined numeric key: one @engine.Accept consuming 1 token, binding port=8080 from the CLI seat.
-  let r1 = @engine.run_matcher(long, pctx(["--port=8080"]), 0)
+  let r1 = probe_matcher(long, ["--port=8080"])
   assert_eq(r1.length(), 1)
   assert_eq(acc_pos(r1[0]), 1)
   let b1 = acc_binds(r1[0])
@@ -59,14 +105,14 @@ test "eq-split long option resolves, errors, and 素通し" {
   assert_eq(b1[0].value, @engine.VNum(8080.0))
   assert_eq(b1[0].source, @engine.Cli)
   // a defined key with a non-number value is a held Error (DR-037), NOT a silent 素通し.
-  let r2 = @engine.run_matcher(long, pctx(["--port=abc"]), 0)
+  let r2 = probe_matcher(long, ["--port=abc"])
   assert_eq(r2.length(), 1)
   assert_eq(is_held(r2[0]), true)
   // an undefined key produces no reading (素通し to positional).
-  assert_eq(@engine.run_matcher(long, pctx(["--host=x"]), 0).length(), 0)
+  assert_eq(probe_matcher(long, ["--host=x"]).length(), 0)
   // a token without `=` (or without the prefix) does not fire this matcher.
-  assert_eq(@engine.run_matcher(long, pctx(["--port"]), 0).length(), 0)
-  assert_eq(@engine.run_matcher(long, pctx(["plain"]), 0).length(), 0)
+  assert_eq(probe_matcher(long, ["--port"]).length(), 0)
+  assert_eq(probe_matcher(long, ["plain"]).length(), 0)
 }
 
 ///|
@@ -91,7 +137,7 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
   // `true` / `1` / mixed-case / all-caps all resolve to @engine.VBool(true).
   for
     tok in ["--enabled=true", "--enabled=1", "--enabled=True", "--enabled=TRUE"] {
-    let r = @engine.run_matcher(long, pctx([tok]), 0)
+    let r = probe_matcher(long, [tok])
     assert_eq(r.length(), 1)
     assert_eq(acc_pos(r[0]), 1)
     let b = acc_binds(r[0])
@@ -102,14 +148,14 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
   }
   // `false` / `0` / `""` all resolve to @engine.VBool(false) — the empty string is the env `FLAG=` pattern.
   for tok in ["--enabled=false", "--enabled=0", "--enabled="] {
-    let r = @engine.run_matcher(long, pctx([tok]), 0)
+    let r = probe_matcher(long, [tok])
     assert_eq(r.length(), 1)
     let b = acc_binds(r[0])
     assert_eq(b.length(), 1)
     assert_eq(b[0].value, @engine.VBool(false))
   }
   // `yes` is canonical-外 (Norway problem 回避, DR-074 §3): a held Error, not a silent 素通し.
-  let ry = @engine.run_matcher(long, pctx(["--enabled=yes"]), 0)
+  let ry = probe_matcher(long, ["--enabled=yes"])
   assert_eq(ry.length(), 1)
   assert_eq(is_held(ry[0]), true)
   match ry[0] {
@@ -139,7 +185,7 @@ test "eq-split long option: a flag_type() entry never fires on =value" {
       depr=false,
     ),
   ])
-  assert_eq(@engine.run_matcher(long, pctx(["--verbose=true"]), 0).length(), 0)
+  assert_eq(probe_matcher(long, ["--verbose=true"]).length(), 0)
 }
 
 ///|
@@ -159,7 +205,7 @@ test "eq-split long option: deprecated entry rides a @depr marker" {
   let candidates = long.candidates()
   assert_eq(candidates.length(), 1)
   assert_false(candidates[0].meta.deprecated)
-  let r = @engine.run_matcher(long, pctx(["--port=8080"]), 0)
+  let r = probe_matcher(long, ["--port=8080"])
   assert_eq(r.length(), 1)
   let b = acc_binds(r[0])
   // two bindings: the value (port=8080) plus the deprecation marker (@depr:port).
@@ -187,7 +233,7 @@ test "eq-split long option: deprecated entry with separator (sep_binds path) als
       depr=true,
     ),
   ])
-  let r = @engine.run_matcher(long, pctx(["--tags=a,b"]), 0)
+  let r = probe_matcher(long, ["--tags=a,b"])
   assert_eq(r.length(), 1)
   let b = acc_binds(r[0])
   let mut found_depr = false
@@ -248,7 +294,7 @@ test "short cluster: flag run and in-token numeric value" {
     true,
   )
   // `-ab`: a run of two flags → one reading binding a=true, b=true, consuming the single token.
-  let rf = @engine.run_matcher(short, pctx(["-ab"]), 0)
+  let rf = probe_matcher(short, ["-ab"])
   assert_eq(rf.length(), 1)
   assert_eq(acc_pos(rf[0]), 1)
   let bf = acc_binds(rf[0])
@@ -258,7 +304,7 @@ test "short cluster: flag run and in-token numeric value" {
   assert_eq(bf[1].key, "b")
   assert_eq(bf[1].value, @engine.VBool(true))
   // `-n1.0`: only the full value `1.0` completes the cluster → exactly one reading n=1.0.
-  let rn = @engine.run_matcher(short, pctx(["-n1.0"]), 0)
+  let rn = probe_matcher(short, ["-n1.0"])
   assert_eq(rn.length(), 1)
   assert_eq(acc_pos(rn[0]), 1)
   let bn = acc_binds(rn[0])
@@ -288,7 +334,7 @@ test "short cluster: space-form value takes the next token" {
     ],
     true,
   )
-  let r = @engine.run_matcher(short, pctx(["-n", "5"]), 0)
+  let r = probe_matcher(short, ["-n", "5"])
   assert_eq(r.length(), 1)
   assert_eq(acc_pos(r[0]), 2) // consumed BOTH the `-n` token and the `5` token
   let b = acc_binds(r[0])
@@ -319,7 +365,7 @@ test "short cluster: deprecated entry rides a @depr marker" {
     ],
     true,
   )
-  let r = @engine.run_matcher(short, pctx(["-d"]), 0)
+  let r = probe_matcher(short, ["-d"])
   assert_eq(r.length(), 1)
   let b = acc_binds(r[0])
   // two bindings: the flag value (d=true) plus the deprecation marker (@depr:d).
@@ -378,7 +424,7 @@ fn combine_entries() -> Array[ShortEntry] {
 /// combine:true の既存テスト "flag run and in-token numeric value" の `-ab` 成功ケースと対で読む)。
 test "short cluster: combine:false rejects a 2-flag cluster (-ab)" {
   let short = short_combine("-", combine_entries(), false)
-  let r = @engine.run_matcher(short, pctx(["-ab"]), 0)
+  let r = probe_matcher(short, ["-ab"])
   assert_eq(r.length(), 0)
 }
 
@@ -387,7 +433,7 @@ test "short cluster: combine:false rejects a 2-flag cluster (-ab)" {
 /// 引き続き発火する — 「複数 entry の結合」だけが禁止される、単一 entry のトークン占有は禁止されない。
 test "short cluster: combine:false still fires a LONE flag (-a)" {
   let short = short_combine("-", combine_entries(), false)
-  let r = @engine.run_matcher(short, pctx(["-a"]), 0)
+  let r = probe_matcher(short, ["-a"])
   assert_eq(r.length(), 1)
   assert_eq(acc_pos(r[0]), 1)
   let b = acc_binds(r[0])
@@ -402,7 +448,7 @@ test "short cluster: combine:false still fires a LONE flag (-a)" {
 /// line 77 の「値付着は short_combine と独立パラメータ」という設計意図の直接の帰結。
 test "short cluster: combine:false still fires a FULL-TAIL value-attach (-n1.0)" {
   let short = short_combine("-", combine_entries(), false)
-  let r = @engine.run_matcher(short, pctx(["-n1.0"]), 0)
+  let r = probe_matcher(short, ["-n1.0"])
   assert_eq(r.length(), 1)
   assert_eq(acc_pos(r[0]), 1)
   let b = acc_binds(r[0])
@@ -419,7 +465,7 @@ test "short cluster: combine:false still fires a FULL-TAIL value-attach (-n1.0)"
 /// — full-tail 読みは combine の管轄外 (単一 entry) なので禁止されない。合計 1 本、かつ @engine.Held。
 test "short cluster: combine:false rejects the PARTIAL value-attach reading, keeps the FULL-TAIL @engine.Held (-n1a)" {
   let short = short_combine("-", combine_entries(), false)
-  let r = @engine.run_matcher(short, pctx(["-n1a"]), 0)
+  let r = probe_matcher(short, ["-n1a"])
   assert_eq(r.length(), 1)
   assert_true(is_held(r[0])) // full-tail "1a" は number_type() として parse 失敗 → @engine.Held (DR-037)
 }
@@ -431,7 +477,7 @@ test "short cluster: combine:false rejects the PARTIAL value-attach reading, kee
 /// 追加で許可されるか」を固定する。
 test "short cluster: combine:true adds the PARTIAL-attach-then-combine reading on top of the FULL-TAIL @engine.Held (対極, -n1a)" {
   let short = short_combine("-", combine_entries(), true)
-  let r = @engine.run_matcher(short, pctx(["-n1a"]), 0)
+  let r = probe_matcher(short, ["-n1a"])
   assert_eq(r.length(), 2)
   let mut accept_found = false
   let mut held_found = false
@@ -460,7 +506,7 @@ test "short cluster: combine:true adds the PARTIAL-attach-then-combine reading o
 /// トークンでの結合」に該当しない)。
 test "short cluster: combine:false still fires the space-form (next-token) value (-n 5)" {
   let short = short_combine("-", combine_entries(), false)
-  let r = @engine.run_matcher(short, pctx(["-n", "5"]), 0)
+  let r = probe_matcher(short, ["-n", "5"])
   assert_eq(r.length(), 1)
   assert_eq(acc_pos(r[0]), 2)
   let b = acc_binds(r[0])

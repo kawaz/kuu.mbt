@@ -8,18 +8,3 @@ pub(all) enum RVal {
   RArr(Array[RVal])
   RObj(Array[(String, RVal)])
 } derive(Eq, Debug)
-
-///|
-pub fn rval_scalar(value : Value) -> RVal {
-  RScalar(value)
-}
-
-///|
-pub fn rval_array(values : Array[RVal]) -> RVal {
-  RArr(values)
-}
-
-///|
-pub fn rval_object(fields : Array[(String, RVal)]) -> RVal {
-  RObj(fields)
-}

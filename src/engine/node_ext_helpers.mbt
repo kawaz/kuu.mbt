@@ -18,7 +18,7 @@ fn node_effect_mark(node : Node) -> (String, EffectOp)? {
 }
 
 ///|
-pub fn node_consumes_zero_tokens(node : Node) -> Bool {
+fn node_consumes_zero_tokens(node : Node) -> Bool {
   match node {
     Bind(_, _) => true
     Ext(extension) => extension.consumes_zero_tokens()

@@ -1,7 +1,7 @@
 // separated.mbt — builtin separator/filter/type pipeline.
 
 ///|
-pub fn sep_binds(
+fn sep_binds(
   name : String,
   tok : String,
   sep : String?,

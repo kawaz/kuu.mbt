@@ -856,7 +856,7 @@ fn dec_ty(
 /// dec_positional の `type: "<name>"` 解決で consultation する。canonical 型名 (string/number/int/...)
 /// は shadow で override 可能だが本 fixture では未使用 (`int_parser`/`number_parser`/`bool_parser`/
 /// `tty` factory のみ扱う)。
-struct TypeShadow {
+priv struct TypeShadow {
   base : &@engine.TypeExt
   int_round : @engine.RoundMode
   // DR-074 §2 `number_allow_base_prefix` (`number_parser` factory config)。canonical default = false。
@@ -2059,7 +2059,7 @@ fn dec_positional_group(
 /// than a stored-on-`@engine.Definition` carrier (installer.mbt never reads a `@engine.Definition`-level config; the
 /// resolved tuple gets baked onto each `@engine.ElemDef` the scope owns, same pattern DR-091 §3 established
 /// for the original 2-field minimal implementation).
-struct ScopeConfig {
+priv struct ScopeConfig {
   long_prefix : String
   long_eq_sep : @engine.EqSepMode
   short_prefix : String

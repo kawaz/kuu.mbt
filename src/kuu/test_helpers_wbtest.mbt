@@ -1,6 +1,59 @@
 // test_helpers_wbtest.mbt — assembly whitebox helpers shared across test files.
 
 ///|
+/// Test-only node resident that captures a matcher's raw branch stream while `parse_tree`
+/// supplies the private engine context.
+priv struct TestMatcherProbeExt {
+  matcher : &@engine.MatcherExt
+  captured : Array[Array[@engine.Branch]]
+}
+
+///|
+impl @engine.NodeExt for TestMatcherProbeExt with fn kind(_self) {
+  "test/matcher-probe"
+}
+
+///|
+impl @engine.NodeExt for TestMatcherProbeExt with fn encode(_self) {
+  ().to_json()
+}
+
+///|
+impl @engine.NodeExt for TestMatcherProbeExt with fn consumes_zero_tokens(_self) {
+  false
+}
+
+///|
+impl @engine.NodeExt for TestMatcherProbeExt with fn eval(
+  self,
+  ctx,
+  pos,
+  acc,
+  _next,
+) {
+  self.captured.push(
+    self.matcher.interpret(ctx, pos, acc, (_ctx, next_pos, next_acc) => {
+      [@engine.Accept(next_pos, next_acc)]
+    }),
+  )
+  []
+}
+
+///|
+fn test_run_matcher(
+  matcher : &@engine.MatcherExt,
+  toks : Array[String],
+) -> Array[@engine.Branch] {
+  let captured : Array[Array[@engine.Branch]] = []
+  let probe = @engine.Ext(
+    TestMatcherProbeExt::{ matcher, captured } as &@engine.NodeExt,
+  )
+  ignore(@engine.parse_tree(probe, toks))
+  guard captured.length() == 1 else { return [] }
+  captured[0]
+}
+
+///|
 fn chain(spellings : Array[String]) -> Array[@engine.FilterSpelling] {
   let out : Array[@engine.FilterSpelling] = []
   for spelling in spellings {

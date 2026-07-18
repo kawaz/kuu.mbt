@@ -333,7 +333,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
       match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           // Every number-lexicon rejection reports through @engine.pe_parse.
-          match parse_number_ext(value, self.allow_base_prefix) {
+          match parse_number(value, allow_base_prefix=self.allow_base_prefix) {
             Some(number) =>
               next(
                 ctx,
@@ -583,7 +583,11 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
           // int resident has three distinct @engine.Held families; preserving this split is
           // part of the resident contract, not a generic number error path.
           match
-            parse_int_value_ext(value, self.int_round, self.allow_base_prefix) {
+            parse_int_value(
+              value,
+              self.int_round,
+              allow_base_prefix=self.allow_base_prefix,
+            ) {
             Ok(integer) =>
               next(
                 ctx,
@@ -675,7 +679,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
       match apply_piece_filters(self.piece_filters, token) {
         Ok(value) =>
           // bool resident retains @engine.pe_parse_bool rather than sharing number's @engine.pe_parse.
-          match parse_bool_ext(value, self.bool_config) {
+          match parse_bool(value, config=self.bool_config) {
             Some(boolean) =>
               next(
                 ctx,
@@ -913,15 +917,4 @@ pub fn failure_mark(name : String) -> @engine.Node {
 pub fn node_resident_name(node : @engine.Node) -> String? {
   guard node is @engine.Ext(extension) else { return None }
   extension.element_name()
-}
-
-///|
-pub fn node_is_failure_mark(node : @engine.Node) -> Bool {
-  node is @engine.Ext(extension) && extension.is_failure_action()
-}
-
-///|
-pub fn node_effect_mark(node : @engine.Node) -> (String, @engine.EffectOp)? {
-  guard node is @engine.Ext(extension) else { return None }
-  extension.effect_mark()
 }

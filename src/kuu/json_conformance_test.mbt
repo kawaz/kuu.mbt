@@ -689,12 +689,23 @@ fn prim_name(node : @engine.Node) -> String? {
 }
 
 ///|
+fn test_node_is_failure_mark(node : @engine.Node) -> Bool {
+  node is @engine.Ext(extension) && extension.is_failure_action()
+}
+
+///|
+fn test_node_effect_mark(node : @engine.Node) -> (String, @engine.EffectOp)? {
+  guard node is @engine.Ext(extension) else { return None }
+  extension.effect_mark()
+}
+
+///|
 fn proj_seq_sat(xs : Array[@engine.Node]) -> GItem {
   match xs {
     [@engine.Exact(trigger), @engine.Bind(name, value), .. markers] => {
       let mut valid_markers = true
       for marker in markers {
-        if !@builtins.node_is_failure_mark(marker) &&
+        if !test_node_is_failure_mark(marker) &&
           !node_is_deprecation_mark(marker) {
           valid_markers = false
         }
@@ -706,7 +717,7 @@ fn proj_seq_sat(xs : Array[@engine.Node]) -> GItem {
       }
     }
     [@engine.Exact(trigger), tail] =>
-      match @builtins.node_effect_mark(tail) {
+      match test_node_effect_mark(tail) {
         Some((name, op)) => GEff(trigger, name, op)
         None =>
           match prim_name(tail) {

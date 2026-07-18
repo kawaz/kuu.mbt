@@ -66,8 +66,6 @@ pub struct DefaultCell {
   value : @engine.Value
 } derive(Eq, @debug.Debug)
 
-type ExportCollision derive(Eq, @debug.Debug)
-
 pub struct OutputEffect {
   entity : String
   op : @engine.EffectOp
@@ -81,8 +79,6 @@ pub struct OutputView {
   sources : Array[SourceEntry]
 } derive(Eq, @debug.Debug)
 
-type ScopeConfig derive(Eq, @debug.Debug)
-
 pub(all) struct SourceEntry {
   path : Array[String]
   key : String
@@ -93,8 +89,6 @@ pub struct TtyObs {
   terminal : Bool
   cygwin : Bool
 } derive(Eq, @debug.Debug)
-
-type TypeShadow derive(Eq, @debug.Debug)
 
 // Type aliases
 

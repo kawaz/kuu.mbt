@@ -101,10 +101,6 @@ pub fn merge_accumulator() -> &@engine.AccumulatorExt
 
 pub fn multiple_installer() -> &@engine.InstallerExt
 
-pub fn node_effect_mark(@engine.Node) -> (String, @engine.EffectOp)?
-
-pub fn node_is_failure_mark(@engine.Node) -> Bool
-
 pub fn node_resident_name(@engine.Node) -> String?
 
 pub fn none_type() -> &@engine.TypeExt
@@ -117,27 +113,13 @@ pub fn or_branch_node(@engine.OrBranch) -> @engine.Node
 
 pub fn owned_vocab(&@engine.InstallerExt) -> String
 
-pub fn parse_bool(String) -> Bool?
-
-pub fn parse_bool_ext(String, @engine.BoolConfig) -> Bool?
-
 pub fn parse_filter_shorthand(String) -> @engine.FilterSpelling
 
-pub fn parse_float(String) -> Double?
-
-pub fn parse_int_value(String, @engine.RoundMode) -> Result[Int64, @engine.ParseFail]
-
-pub fn parse_int_value_ext(String, @engine.RoundMode, Bool) -> Result[Int64, @engine.ParseFail]
-
-pub fn parse_number(String) -> Double?
-
-pub fn parse_number_ext(String, Bool) -> Double?
+pub fn parse_number(String, allow_base_prefix? : Bool) -> Double?
 
 pub fn repeat_installer() -> &@engine.InstallerExt
 
 pub fn round_mode_of(String) -> @engine.RoundMode?
-
-pub fn sep_binds(String, String, String?, &@engine.TypeExt, Array[@engine.FilterSpelling], Int, Bool) -> Result[Array[@engine.Binding], @engine.ParseError]
 
 pub fn separated_arg(String, String?, &@engine.TypeExt, @engine.RoundMode, Bool, @engine.BoolConfig, Array[@engine.FilterSpelling], Bool) -> @engine.Node
 
@@ -146,8 +128,6 @@ pub fn short_combine(String, Array[ShortEntry], Bool) -> &@engine.MatcherExt
 pub fn short_entry(Char, String, &@engine.TypeExt, Array[@engine.FilterSpelling], String?, depr? : Bool, merge? : Bool, short_attached_value? : @engine.AttachMode, is_alias? : Bool) -> ShortEntry
 
 pub fn short_installer() -> &@engine.InstallerExt
-
-pub fn split_colon(String) -> Array[String]
 
 pub fn string_arg(String, Array[@engine.FilterSpelling]) -> @engine.Node
 

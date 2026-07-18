@@ -3627,14 +3627,8 @@ test "short installer: e.short_combine rides through to the @builtins.short_comb
   let sc = ok_scope(def, [@builtins.short_installer()])
   match sc.greedy[0] {
     @engine.NativeMatch(matcher) => {
-      assert_eq(
-        @engine.run_matcher(matcher, @engine.parse_context(["-vv"]), 0).length(),
-        0,
-      )
-      assert_eq(
-        @engine.run_matcher(matcher, @engine.parse_context(["-v"]), 0).length(),
-        1,
-      )
+      assert_eq(test_run_matcher(matcher, ["-vv"]).length(), 0)
+      assert_eq(test_run_matcher(matcher, ["-v"]).length(), 1)
     }
     _ => abort("expected @engine.NativeMatch")
   }
@@ -3664,17 +3658,11 @@ test "short installer: same short_prefix but DIFFERENT short_combine values get 
         match candidates[0].spelling {
           "-v" => {
             true_count = true_count + 1
-            assert_true(
-              @engine.run_matcher(matcher, @engine.parse_context(["-vv"]), 0).length() >
-              0,
-            )
+            assert_true(test_run_matcher(matcher, ["-vv"]).length() > 0)
           }
           "-w" => {
             false_count = false_count + 1
-            assert_eq(
-              @engine.run_matcher(matcher, @engine.parse_context(["-ww"]), 0).length(),
-              0,
-            )
+            assert_eq(test_run_matcher(matcher, ["-ww"]).length(), 0)
           }
           other => abort("unexpected short matcher candidate: " + other)
         }

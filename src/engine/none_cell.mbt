@@ -7,7 +7,7 @@ pub struct NoneCell {
 } derive(Eq, Debug)
 
 ///|
-pub fn none_cell(path : Array[String], name : String) -> NoneCell {
+fn none_cell(path : Array[String], name : String) -> NoneCell {
   { path_: path, name_: name }
 }
 

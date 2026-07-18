@@ -51,12 +51,6 @@ pub fn Ctx::is_complete_mode(self : Ctx) -> Bool {
 }
 
 ///|
-/// Construct a parse-mode context for direct extension and matcher evaluation.
-pub fn parse_context(toks : Array[String]) -> Ctx {
-  { toks, defs: Map([]), mode: ModeParse }
-}
-
-///|
 /// parse counts complete paths (DR-038); complete collects expectations
 /// (DR-060). The walk is ONE implementation — mode switches the
 /// collection-policy points below (MDR-002 §2.4):
@@ -460,11 +454,7 @@ pub fn continue_matcher(
 ///|
 /// Interpret one opaque matcher with an identity continuation for direct-style
 /// probes and off-spine evaluation.
-pub fn run_matcher(
-  matcher : &MatcherExt,
-  ctx : Ctx,
-  pos : Int,
-) -> Array[Branch] {
+fn run_matcher(matcher : &MatcherExt, ctx : Ctx, pos : Int) -> Array[Branch] {
   if ctx.token_at(pos) is None {
     return []
   }
