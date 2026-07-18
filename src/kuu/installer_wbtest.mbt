@@ -147,6 +147,7 @@ fn el(
     hidden: false,
     completer: None,
     default_values: None,
+    default_declared: false,
     int_round: @engine.RError,
     allow_base_prefix: false,
     bool_config: @builtins.bool_config_canonical(),

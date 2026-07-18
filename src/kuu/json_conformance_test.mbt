@@ -2334,6 +2334,365 @@ fn run_complete(fx : DCompleteFixture, c : DCompleteCase) -> String {
   }
 }
 
+// ── help path (DR-112, CONFORMANCE §5) ────────────────────────────────────────
+
+///|
+struct DHelpCase {
+  id : String
+  path : Array[String]
+  depth : @kuu.HelpDepth
+  category : String?
+  expect : Json
+}
+
+///|
+struct DHelpFixture {
+  ast : @kuu.AtomicAST
+  cases : Array[DHelpCase]
+}
+
+///|
+fn dec_help_case(cj : Json) -> DHelpCase raise DecodeSkip {
+  let co = match cj.j_obj() {
+    Some(value) => value
+    None => raise DecodeSkip("help case is not an object")
+  }
+  allowed_keys(
+    co,
+    ["id", "why", "path", "depth", "category", "expect"],
+    "help case",
+  )
+  let id = match jf_str(co, "id") {
+    Some(value) => value
+    None => raise DecodeSkip("help case missing 'id'")
+  }
+  let path = dec_strs(co.get("path"))
+  let depth = match jf_str(co, "depth") {
+    None | Some("scope") => @kuu.DScope
+    Some("all") => @kuu.DAll
+    Some(value) =>
+      raise DecodeSkip("help depth '" + value + "' is not scope/all")
+  }
+  let category = jf_str(co, "category")
+  let expect = match co.get("expect") {
+    Some(value) => value
+    None => raise DecodeSkip("help case missing 'expect'")
+  }
+  { id, path, depth, category, expect }
+}
+
+///|
+fn dec_help_fixture(j : Json) -> DHelpFixture raise DecodeSkip {
+  let top = match j.j_obj() {
+    Some(value) => value
+    None => raise DecodeSkip("help fixture is not an object")
+  }
+  let definition = match top.get("definition") {
+    Some(value) => value
+    None => raise DecodeSkip("help fixture missing 'definition'")
+  }
+  let ast = match @kuu.parse_definition(definition) {
+    Ok(value) => value
+    Err(@kuu.Malformed(reason)) => raise DecodeSkip(reason)
+    Err(@kuu.Rejected(errors)) =>
+      raise DecodeSkip("definition rejected: " + deferrs_str(errors))
+  }
+  let cases_json = match top.get("cases") {
+    Some(value) => value
+    None => raise DecodeSkip("help fixture missing 'cases'")
+  }
+  let cases_array = match cases_json.j_arr() {
+    Some(value) => value
+    None => raise DecodeSkip("help fixture cases is not an array")
+  }
+  let cases : Array[DHelpCase] = []
+  for case_json in cases_array {
+    cases.push(dec_help_case(case_json))
+  }
+  { ast, cases }
+}
+
+///|
+fn help_value_json(value : @engine.Value) -> Json {
+  match value {
+    @engine.VStr(text) => text.to_json()
+    @engine.VNum(number) => number.to_json()
+    @engine.VBool(boolean) => boolean.to_json()
+  }
+}
+
+///|
+fn help_default_json(value : @kuu.HelpDefault) -> Json {
+  match value {
+    @kuu.HDefaultScalar(scalar) => help_value_json(scalar)
+    @kuu.HDefaultArray(values) => {
+      let output : Array[Json] = []
+      for item in values {
+        output.push(help_value_json(item))
+      }
+      output.to_json()
+    }
+  }
+}
+
+///|
+fn help_repeat_json(repeat : @engine.RepeatSpec) -> Json {
+  let object : Map[String, Json] = Map([])
+  if repeat.min != 0 {
+    object.set("min", repeat.min.to_json())
+  }
+  match repeat.max {
+    Some(max) => object.set("max", max.to_json())
+    None => ()
+  }
+  if repeat.lazy_ {
+    object.set("lazy", true.to_json())
+  }
+  object.to_json()
+}
+
+///|
+fn help_usage_positional_json(positional : @kuu.HelpUsagePositional) -> Json {
+  let object : Map[String, Json] = Map([])
+  match positional.value_name {
+    Some(value) => object.set("value_name", value.to_json())
+    None => ()
+  }
+  match positional.repeat {
+    Some(value) => object.set("repeat", help_repeat_json(value))
+    None => ()
+  }
+  if positional.optional {
+    object.set("optional", true.to_json())
+  }
+  object.to_json()
+}
+
+///|
+fn help_usage_json(usage : @kuu.HelpUsage) -> Json {
+  let object : Map[String, Json] = Map([])
+  if usage.has_options {
+    object.set("has_options", true.to_json())
+  }
+  if usage.positionals.length() > 0 {
+    let positionals : Array[Json] = []
+    for positional in usage.positionals {
+      positionals.push(help_usage_positional_json(positional))
+    }
+    object.set("positionals", positionals.to_json())
+  }
+  if usage.has_subcommands {
+    object.set("has_subcommands", true.to_json())
+  }
+  if usage.has_dd {
+    object.set("has_dd", true.to_json())
+  }
+  object.to_json()
+}
+
+///|
+fn help_option_json(option : @kuu.HelpOption) -> Json {
+  let object : Map[String, Json] = Map([])
+  object.set("spellings", option.spellings.to_json())
+  if option.alias_spellings.length() > 0 {
+    object.set("alias_spellings", option.alias_spellings.to_json())
+  }
+  match option.value_name {
+    Some(value) => object.set("value_name", value.to_json())
+    None => ()
+  }
+  match option.display_name {
+    Some(value) => object.set("display_name", value.to_json())
+    None => ()
+  }
+  match option.help {
+    Some(value) => object.set("help", value.to_json())
+    None => ()
+  }
+  match option.help_long {
+    Some(value) => object.set("help_long", value.to_json())
+    None => ()
+  }
+  match option.help_group_name {
+    Some(value) => object.set("help_group_name", value.to_json())
+    None => ()
+  }
+  match option.default_ {
+    Some(value) => object.set("default", help_default_json(value))
+    None => ()
+  }
+  if option.env.length() == 1 {
+    object.set("env", option.env[0].to_json())
+  } else if option.env.length() > 1 {
+    object.set("env", option.env.to_json())
+  }
+  if option.required {
+    object.set("required", true.to_json())
+  }
+  if option.multiple {
+    object.set("multiple", true.to_json())
+  }
+  if option.hidden {
+    object.set("hidden", true.to_json())
+  }
+  if option.deprecated {
+    object.set("deprecated", true.to_json())
+  }
+  object.to_json()
+}
+
+///|
+fn help_option_entry_json(entry : @kuu.HelpOptionEntry) -> Json {
+  match entry {
+    @kuu.HGroup(group) => {
+      let group_object : Map[String, Json] = Map([])
+      group_object.set("name", group.name.to_json())
+      match group.title {
+        Some(value) => group_object.set("title", value.to_json())
+        None => ()
+      }
+      match group.description {
+        Some(value) => group_object.set("description", value.to_json())
+        None => ()
+      }
+      let object : Map[String, Json] = Map([])
+      object.set("group", group_object.to_json())
+      object.to_json()
+    }
+    @kuu.HOption(option) => help_option_json(option)
+  }
+}
+
+///|
+fn help_command_json(command : @kuu.HelpCommand) -> Json {
+  let object : Map[String, Json] = Map([])
+  object.set("name", command.name.to_json())
+  if command.aliases.length() > 0 {
+    object.set("aliases", command.aliases.to_json())
+  }
+  match command.help {
+    Some(value) => object.set("help", value.to_json())
+    None => ()
+  }
+  match command.help_long {
+    Some(value) => object.set("help_long", value.to_json())
+    None => ()
+  }
+  if command.hidden {
+    object.set("hidden", true.to_json())
+  }
+  if command.deprecated {
+    object.set("deprecated", true.to_json())
+  }
+  object.to_json()
+}
+
+///|
+fn help_positional_json(positional : @kuu.HelpPositional) -> Json {
+  let object : Map[String, Json] = Map([])
+  match positional.value_name {
+    Some(value) => object.set("value_name", value.to_json())
+    None => ()
+  }
+  match positional.help {
+    Some(value) => object.set("help", value.to_json())
+    None => ()
+  }
+  match positional.repeat {
+    Some(value) => object.set("repeat", help_repeat_json(value))
+    None => ()
+  }
+  if positional.hidden {
+    object.set("hidden", true.to_json())
+  }
+  if positional.deprecated {
+    object.set("deprecated", true.to_json())
+  }
+  object.to_json()
+}
+
+///|
+fn help_model_json(model : @kuu.HelpModel) -> Json {
+  let object : Map[String, Json] = Map([])
+  object.set("outcome", "help".to_json())
+  object.set("command_path", model.command_path.to_json())
+  object.set("usage", help_usage_json(model.usage))
+  match model.description {
+    Some(value) => object.set("description", value.to_json())
+    None => ()
+  }
+  match model.description_long {
+    Some(value) => object.set("description_long", value.to_json())
+    None => ()
+  }
+  match model.epilog {
+    Some(value) => object.set("epilog", value.to_json())
+    None => ()
+  }
+  if model.commands.length() > 0 {
+    let commands : Array[Json] = []
+    for command in model.commands {
+      commands.push(help_command_json(command))
+    }
+    object.set("commands", commands.to_json())
+  }
+  if model.options.length() > 0 {
+    let options : Array[Json] = []
+    for option in model.options {
+      options.push(help_option_entry_json(option))
+    }
+    object.set("options", options.to_json())
+  }
+  if model.positionals.length() > 0 {
+    let positionals : Array[Json] = []
+    for positional in model.positionals {
+      positionals.push(help_positional_json(positional))
+    }
+    object.set("positionals", positionals.to_json())
+  }
+  match model.help_entry {
+    Some(value) => object.set("help_entry", value.to_json())
+    None => ()
+  }
+  object.to_json()
+}
+
+///|
+fn help_errors_json(errors : Array[@engine.DefError]) -> Json {
+  let entries : Array[Json] = []
+  for error in errors {
+    let object : Map[String, Json] = Map([])
+    if error.element != "" {
+      object.set("element", error.element.to_json())
+    }
+    object.set("kind", render_def_kind(error.kind).to_json())
+    entries.push(object.to_json())
+  }
+  let outcome : Map[String, Json] = Map([])
+  outcome.set("outcome", "definition-error".to_json())
+  outcome.set("errors", entries.to_json())
+  outcome.to_json()
+}
+
+///|
+fn run_help(fixture : DHelpFixture, case : DHelpCase) -> String {
+  let actual = match
+    @kuu.help(
+      fixture.ast,
+      path=case.path,
+      depth=case.depth,
+      category=case.category,
+    ) {
+    Ok(model) => help_model_json(model)
+    Err(errors) => help_errors_json(errors)
+  }
+  if actual == case.expect {
+    "PASS"
+  } else {
+    "help got=" + actual.stringify() + " want=" + case.expect.stringify()
+  }
+}
+
 ///|
 fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
   let top = match j.j_obj() {
@@ -3325,6 +3684,23 @@ test "conformance: fixtures を JSON 直読みで実食 (parse 語彙網羅 + lo
       for c in fx.cases {
         ran_cases = ran_cases + 1
         let verdict = run_definition_error(fx, c)
+        if verdict != "PASS" {
+          mismatches.push(case_key(rel, c.id) + " :: " + verdict)
+        }
+      }
+      continue
+    }
+    if q == "help" {
+      let fx = dec_help_fixture(j) catch {
+        DecodeSkip(reason) => {
+          skips.push((rel, reason))
+          continue
+        }
+      }
+      decoded.push(rel)
+      for c in fx.cases {
+        ran_cases = ran_cases + 1
+        let verdict = run_help(fx, c)
         if verdict != "PASS" {
           mismatches.push(case_key(rel, c.id) + " :: " + verdict)
         }

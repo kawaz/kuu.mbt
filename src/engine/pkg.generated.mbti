@@ -315,6 +315,7 @@ pub(all) struct ElemDef {
   hidden : Bool
   completer : String?
   default_values : Array[Value]?
+  default_declared : Bool
   piece_filters : Array[FilterSpelling]
   value_filters : Array[FilterSpelling]
   final_filters : Array[FilterSpelling]

@@ -409,6 +409,7 @@ fn clone_elem(e : @engine.ElemDef) -> @engine.ElemDef {
     hidden: e.hidden,
     completer: e.completer,
     default_values: e.default_values,
+    default_declared: e.default_declared,
     int_round: e.int_round,
     allow_base_prefix: e.allow_base_prefix,
     bool_config: e.bool_config,
@@ -1927,6 +1928,7 @@ fn copy_global_into(
     hidden: copy.hidden,
     completer: copy.completer,
     default_values: copy.default_values,
+    default_declared: copy.default_declared,
     int_round: copy.int_round,
     allow_base_prefix: copy.allow_base_prefix,
     bool_config: copy.bool_config,
@@ -2113,7 +2115,8 @@ fn add_inheritable_copy(
       is_alias: false, // write-target copy は alias/hidden 宣言経路を持たない (canonical default 相当)
       hidden: false,
       completer: None, // write-target copy は completer 宣言経路を持たない (hidden と同じ理由)
-      default_values: None, // write-target に default を置かない (§3): 実書き込みのみが伝播する
+      default_values: None,
+      default_declared: false, // write-target に default を置かない (§3): 実書き込みのみが伝播する
       int_round: @engine.RError,
       allow_base_prefix: false, // canonical default (DR-075 §2): write-target は int_round を持たない
       // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
@@ -2494,6 +2497,7 @@ fn alias_entry(
     hidden: false,
     completer: None,
     default_values: None,
+    default_declared: false,
     int_round: @engine.RError,
     allow_base_prefix: false,
     bool_config: bool_config_canonical(),

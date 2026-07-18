@@ -158,6 +158,7 @@ pub(all) struct ElemDef {
   // `Entity.default_values` へ写す (§1 の decode-time 持ち上げに加え、FLAG/BOOL/COUNT の暗黙 preset
   // も同じ長さ1形へ揃える)。node.mbt の `Entity.default_values` の doc comment 参照。
   default_values : Array[Value]?
+  default_declared : Bool // wire に default キーが明示されたか (help 素材と preset 暗黙値を区別)
   // DR-034 pieceProcessor の filter chain (DR-062: inheritance object 形は未実装 — filters.mbt
   // ヘッダ注記参照)。piece_filters: separator 分割後の各 piece 単位 (multiple 無しは長さ 1 に縮退、
   // 同じ管を通る) で type.parse の直前に適用 (String→String)。value_filters: 分割後の要素単位 (each

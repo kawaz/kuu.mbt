@@ -115,20 +115,30 @@ fn copy_strings(values : Array[String]) -> Array[String] {
 }
 
 ///|
+fn push_unique(values : Array[String], value : String) -> Unit {
+  for existing in values {
+    if existing == value {
+      return
+    }
+  }
+  values.push(value)
+}
+
+///|
 fn option_spellings(element : @engine.ElemDef) -> Array[String] {
   let spellings : Array[String] = []
   match element.long {
     LList(values) =>
       for value in values {
-        spellings.push(element.long_prefix + value)
+        push_unique(spellings, element.long_prefix + value)
       }
     LBool(_) => ()
   }
   for variant in element.variants {
-    spellings.push(element.long_prefix + variant.trigger)
+    push_unique(spellings, element.long_prefix + variant.trigger)
   }
   for short in element.short {
-    spellings.push(element.short_prefix + short.to_string())
+    push_unique(spellings, element.short_prefix + short.to_string())
   }
   spellings
 }
@@ -193,12 +203,22 @@ fn option_alias_pairs(
 fn alias_spellings_for(
   pairs : Array[(@engine.AliasDef, @engine.ElemDef)],
   target : String,
+  canonical_spellings : Array[String],
 ) -> Array[String] {
   let output : Array[String] = []
   for pair in pairs {
     if pair.0.target == target && pair.0.name is None {
       for spelling in option_spellings(pair.1) {
-        output.push(spelling)
+        let mut canonical = false
+        for existing in canonical_spellings {
+          if existing == spelling {
+            canonical = true
+            break
+          }
+        }
+        if !canonical {
+          push_unique(output, spelling)
+        }
       }
     }
   }
@@ -219,7 +239,11 @@ fn help_option_from(
     help: meta.help,
     help_long: meta.help_long,
     help_group_name: meta.help_group_name,
-    default_: help_default(element.default_values),
+    default_: if element.default_declared {
+      help_default(element.default_values)
+    } else {
+      None
+    },
     env: copy_strings(element.env),
     required: element.required,
     multiple: element.multiple || element.repeat is Some(_),
@@ -305,11 +329,12 @@ fn ordered_options(definition : @engine.Definition) -> Array[HelpOptionEntry] {
         description: meta.help_group_description,
       })
     } else {
+      let canonical_spellings = option_spellings(element)
       HOption(
         help_option_from(
           element,
           meta,
-          alias_spellings_for(pairs, element.name),
+          alias_spellings_for(pairs, element.name, canonical_spellings),
         ),
       )
     }
