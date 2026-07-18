@@ -6,7 +6,7 @@
 // reading as an equal branch (DR-041 §3, no matcher-internal priority).
 //
 // MDR-002 §3: matcher depends on {node, value} — it returns `@engine.Branch` (defined in node.mbt) and
-// uses the @engine.Binding/@engine.ParseError helpers (@engine.mkb / pe_parse / @engine.depr_marker / @engine.cat, defined in value.mbt).
+// uses engine Binding/ParseError helpers and the resident-owned type-parse failure adapter.
 // The matcher only CONSTRUCTS @engine.Accept/@engine.Held; the evaluator produces/consumes the `@engine.Pending` variant.
 
 // String indexing yields UTF-16 code units, so cluster/value work is done on
@@ -371,12 +371,7 @@ fn run_eq_split(
             ),
           ]
         Err(fail) =>
-          return [
-            @engine.Held(
-              @engine.parse_fail_error(e.name, filtered, pos, fail),
-              [],
-            ),
-          ]
+          return [@engine.Held(type_parse_error(e.name, pos, fail), [])]
       }
     }
   }
@@ -440,7 +435,7 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 /// `pos` (issue 2026-07-09-accum-entity-filters-wiring): the args token this value char's raw
 /// string was read from — the CALLING token for an in-cluster attach, the NEXT token for a
 /// space-form attach (`walk_short`'s two call sites pass `pos`/`pos + 1` respectively, mirroring
-/// the `pe_parse(..., pos)` / `pe_parse(..., pos + 1)` split those same call sites already made
+/// the token-position split those same call sites already make
 /// pre-existing for ordinary parse failures).
 fn short_val(
   ctx : @engine.Ctx,
@@ -476,7 +471,7 @@ fn short_val(
     match e.kind.parse_token(filtered) {
       Ok(value) =>
         Ok([@engine.mkb(e.name, value, @engine.Cli, at_pos=Some(pos))])
-      Err(fail) => Err(@engine.parse_fail_error(e.name, filtered, pos, fail))
+      Err(fail) => Err(type_parse_error(e.name, pos, fail))
     }
   }
 }

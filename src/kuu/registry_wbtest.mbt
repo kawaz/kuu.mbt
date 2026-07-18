@@ -68,7 +68,14 @@ impl @engine.TypeExt for CustomTypeExt with fn has_value_slot(_self) {
 
 ///|
 impl @engine.TypeExt for CustomTypeExt with fn parse_token(_self, token) {
-  Ok(@engine.VStr("custom:" + token))
+  if token == "rejected" {
+    Err(@engine.TypeParseFail::{
+      reason: "custom_rejected",
+      message: "custom parser rejected the token",
+    })
+  } else {
+    Ok(@engine.VStr("custom:" + token))
+  }
 }
 
 ///|
@@ -93,6 +100,29 @@ test "parse_definition resolves a custom type through the supplied Registry" {
           assert_eq(bindings[0].value, @engine.VStr("custom:x"))
         }
         _ => fail("custom type input must parse through its TypeExt")
+      }
+    Err(_) => fail("registered custom type must lower")
+  }
+}
+
+///|
+test "a third-party type controls its parse failure reason and message" {
+  // The open engine contract transports resident-owned failure vocabulary unchanged. A custom type
+  // can therefore add a reason without changing an engine enum or importing builtin failure names.
+  let registry = canonical_registry()
+  assert_true(registry.register_type(CustomTypeExt::{  } as &@engine.TypeExt))
+  let definition = @json.parse(
+    "{\"options\":[{\"name\":\"value\",\"type\":\"custom\",\"long\":true}]}",
+  )
+  match parse_definition(definition, extensions=registry) {
+    Ok(ast) =>
+      match parse(ast, ["--value", "rejected"]) {
+        @engine.Failure(data) => {
+          assert_eq(data.errors.length(), 1)
+          assert_eq(data.errors[0].reason, "custom_rejected")
+          assert_eq(data.errors[0].message, "custom parser rejected the token")
+        }
+        _ => fail("custom parse rejection must become a parse failure")
       }
     Err(_) => fail("registered custom type must lower")
   }

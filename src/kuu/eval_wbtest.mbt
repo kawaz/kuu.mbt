@@ -2041,7 +2041,7 @@ test "DR-091 §2: kv resident accepts a piece containing '=' (whole token become
 
 ///|
 /// Guarantees (DR-091 §2 "`=` を含まない piece は... reject"): a `kv resident` piece with NO `=` is a
-/// @engine.Held `kind: parse` Error (`pe_parse_kv`, `reason: "not_a_kv_pair"`) — the same family as any
+/// @engine.Held `kind: parse` Error (`reason: "not_a_kv_pair"`) — the same family as any
 /// other value primitive's type-parse failure, NOT a silent Reject and NOT a `@engine.KFilter` reject.
 /// This is the structural precondition `resolve.mbt`'s `split_first_eq` relies on: every piece
 /// that ever becomes a @engine.Binding is guaranteed splittable.

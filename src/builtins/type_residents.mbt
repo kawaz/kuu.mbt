@@ -57,7 +57,7 @@ impl @engine.TypeExt for NumberTypeExt with fn has_value_slot(_self) {
 impl @engine.TypeExt for NumberTypeExt with fn parse_token(self, token) {
   match parse_number(token, allow_base_prefix=self.allow_base_prefix) {
     Some(value) => Ok(@engine.VNum(value))
-    None => Err(@engine.NotANumber)
+    None => Err(type_parse_not_a_number(token))
   }
 }
 
@@ -136,7 +136,7 @@ impl @engine.TypeExt for FloatTypeExt with fn has_value_slot(_self) {
 impl @engine.TypeExt for FloatTypeExt with fn parse_token(_self, token) {
   match parse_float(token) {
     Some(value) => Ok(@engine.VNum(value))
-    None => Err(@engine.NotANumber)
+    None => Err(type_parse_not_a_number(token))
   }
 }
 
@@ -175,7 +175,7 @@ impl @engine.TypeExt for BoolTypeExt with fn has_value_slot(self) {
 impl @engine.TypeExt for BoolTypeExt with fn parse_token(self, token) {
   match parse_bool(token, config=self.config) {
     Some(value) => Ok(@engine.VBool(value))
-    None => Err(@engine.NotABool)
+    None => Err(type_parse_not_a_bool(token))
   }
 }
 
@@ -216,7 +216,7 @@ impl @engine.TypeExt for FlagTypeExt with fn has_value_slot(_self) {
 impl @engine.TypeExt for FlagTypeExt with fn parse_token(self, token) {
   match parse_bool(token, config=self.config) {
     Some(value) => Ok(@engine.VBool(value))
-    None => Err(@engine.NotABool)
+    None => Err(type_parse_not_a_bool(token))
   }
 }
 
@@ -259,7 +259,7 @@ impl @engine.TypeExt for CountTypeExt with fn has_value_slot(_self) {
 impl @engine.TypeExt for CountTypeExt with fn parse_token(self, token) {
   match parse_number(token, allow_base_prefix=self.allow_base_prefix) {
     Some(value) => Ok(@engine.VNum(value))
-    None => Err(@engine.NotANumber)
+    None => Err(type_parse_not_a_number(token))
   }
 }
 
@@ -301,7 +301,7 @@ impl @engine.TypeExt for TtyTypeExt with fn has_value_slot(_self) {
 impl @engine.TypeExt for TtyTypeExt with fn parse_token(_self, token) {
   match parse_bool(token, config=bool_config_canonical()) {
     Some(value) => Ok(@engine.VBool(value))
-    None => Err(@engine.NotABool)
+    None => Err(type_parse_not_a_bool(token))
   }
 }
 
@@ -366,7 +366,7 @@ impl @engine.TypeExt for NoneTypeExt with fn has_value_slot(_self) {
 
 ///|
 impl @engine.TypeExt for NoneTypeExt with fn parse_token(_self, _token) {
-  Err(@engine.NoValueSpace)
+  Err(type_parse_no_value_space())
 }
 
 ///|

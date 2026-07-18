@@ -1934,13 +1934,7 @@ fn env_value(
     Ok(value) => Ok(value)
     Err(fail) =>
       Err(
-        ladder_err(
-          element,
-          at_pos,
-          fail.reason(),
-          "env " + fail.message(s),
-          epath,
-        ),
+        ladder_err(element, at_pos, fail.reason, "env " + fail.message, epath),
       )
   }
 }

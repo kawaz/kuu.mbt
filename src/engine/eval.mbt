@@ -781,7 +781,7 @@ pub fn split_on(s : String, sep : String) -> Array[String] {
 /// shortcut was the bug this closes). A piece_filters reject OR a type-parse failure on ANY piece
 /// fails the WHOLE binding (`Err` short-circuits) — same all-or-nothing contract a single-piece
 /// value primitive has; the two failure kinds stay distinct (`KFilter` vs `KParse`, mirrored from
-/// the scalar value-primitive arms' own pe_filter/pe_parse split).
+/// the scalar value-primitive arms' own filter/type-parse split).
 /// `pos` (issue 2026-07-09-accum-entity-filters-wiring): every split piece is attributed to the
 /// SAME args token position — a piece is not itself a token, so there is no finer-grained position
 /// to give it (CONFORMANCE §3's piece-attribution regulation attributes per-piece failures to the
@@ -798,19 +798,6 @@ pub fn split_on(s : String, sep : String) -> Array[String] {
 /// gates on `separator is Some(_) || merge`); a MERGE element with no separator DOES reach here
 /// now, precisely so its single-piece operand still runs through `classify_merge_piece` (a bare
 /// `--fields -a` needs to recognize `-a` as a remove marker even with no comma to split on).
-pub fn parse_fail_error(
-  name : String,
-  token : String,
-  pos : Int,
-  fail : ParseFail,
-) -> ParseError {
-  match fail {
-    NotAnInteger => pe_parse_int(name, token, pos)
-    IntOutOfRange => pe_int_out_of_range(name, token, pos)
-    NotABool => pe_parse_bool(name, token, pos)
-    NotANumber | NoValueSpace => pe_parse(name, token, pos)
-  }
-}
 
 ///|
 /// Prepend the `{}` presence marker to each Accept.

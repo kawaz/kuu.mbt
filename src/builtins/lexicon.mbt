@@ -501,18 +501,17 @@ fn parse_int_value(
   s : String,
   mode : @engine.RoundMode,
   allow_base_prefix? : Bool = false,
-) -> Result[Int64, @engine.ParseFail] {
+) -> Result[Int64, @engine.TypeParseFail] {
   // 10 進経路を先に試す (canonical と opt-in で挙動同一)
   match parse_decimal_int_value(s, mode) {
     Ok(i) => return Ok(i)
-    Err(@engine.NotANumber) => () // 10 進 lexer で not_a_number = base prefix 試行に落とす
-    Err(e) => return Err(e) // @engine.NotAnInteger / @engine.IntOutOfRange は 10 進経路で確定した Error なので伝播
+    Err(failure) => if failure.reason != "not_a_number" { return Err(failure) }
   }
   if !allow_base_prefix {
-    return Err(@engine.NotANumber)
+    return Err(type_parse_not_a_number(s))
   }
   match parse_base_prefixed(s) {
-    None => Err(@engine.NotANumber)
+    None => Err(type_parse_not_a_number(s))
     Some(d) =>
       if @engine.is_integer(d) {
         // 整数値: mode 問わず受理。Int64 域内チェックは境界のみ (fixture は 0xff=255 レベル)
@@ -520,12 +519,12 @@ fn parse_int_value(
         if i.to_double() == d {
           Ok(i)
         } else {
-          Err(@engine.IntOutOfRange)
+          Err(type_parse_int_out_of_range(s))
         }
       } else {
         // fractional hex float: mode に従う
         match mode {
-          @engine.RError => Err(@engine.NotAnInteger)
+          @engine.RError => Err(type_parse_not_an_integer(s))
           _ => {
             // 単純化: binary64 上で is_integer 判定 + 丸め。DR-075 §5 の厳密判定は 10 進 tie のための
             // 規定 (findings 2026-07-06 の false-tie 域) で、hex float は base-2 aligned なので binary64
@@ -535,7 +534,7 @@ fn parse_int_value(
             if i.to_double() == rounded {
               Ok(i)
             } else {
-              Err(@engine.IntOutOfRange)
+              Err(type_parse_int_out_of_range(s))
             }
           }
         }
@@ -987,38 +986,38 @@ pub fn round_mode_of(s : String) -> @engine.RoundMode? {
 /// Parse a String token as an `int` element per DR-075: 値空間判定. Parse the token as a canonical
 /// number, then judge its VALUE. An integer value (`"3.0"`→3 / `"1e3"`→1000 / `"1_000"`→1000) is
 /// accepted directly under every mode. A truly-fractional value follows `mode`: `@engine.RError` (canonical
-/// default) → `@engine.NotAnInteger`; any rounding mode → the rounded Int64. A non-number token → `@engine.NotANumber`.
+/// default) → `not_an_integer`; any rounding mode → the rounded Int64. A non-number token → `not_a_number`.
 /// The整数性 and tie decisions are lexical (binary64-非経由, DR-075 §5).
 fn parse_decimal_int_value(
   s : String,
   mode : @engine.RoundMode,
-) -> Result[Int64, @engine.ParseFail] {
+) -> Result[Int64, @engine.TypeParseFail] {
   match scan_number_parts(s) {
-    None => Err(@engine.NotANumber)
+    None => Err(type_parse_not_a_number(s))
     Some((neg, int_d, frac_d, exp)) => {
       // Range guard BEFORE materializing apply_exponent's zero-padding (issue
       // 2026-07-07-parse-int-value-huge-exponent-overflow): reject up front when the significant
       // digit count already exceeds Int64's 19-digit max, so a huge `exp` (`"1e300"`) never builds
       // the giant digit string just to discover it overflows.
       if int_part_significant_len(int_d, frac_d, exp) > 19 {
-        return Err(@engine.IntOutOfRange)
+        return Err(type_parse_int_out_of_range(s))
       }
       let (ipart, fpart) = apply_exponent(int_d, frac_d, exp)
       if all_zero(fpart) {
         // integer value — accepted under every mode, no rounding
         match signed_magnitude_of(ipart, neg) {
-          None => Err(@engine.IntOutOfRange)
+          None => Err(type_parse_int_out_of_range(s))
           Some(m) => Ok(m)
         }
       } else {
         match mode {
-          @engine.RError => Err(@engine.NotAnInteger)
+          @engine.RError => Err(type_parse_not_an_integer(s))
           _ =>
             // round_magnitude needs an UNSIGNED magnitude (it applies +1 / the sign itself, DR-075
             // §2), so the pre-rounding range check always uses the POSITIVE boundary regardless of
             // `neg` — see `unsigned_magnitude_of`'s doc for the narrow residual gap this implies.
             match unsigned_magnitude_of(ipart) {
-              None => Err(@engine.IntOutOfRange)
+              None => Err(type_parse_int_out_of_range(s))
               Some(m) => {
                 let d0 = fpart[0].to_int() - 48
                 let rest_nonzero = has_nonzero(fpart, 1)
@@ -1026,7 +1025,7 @@ fn parse_decimal_int_value(
                 if mag < 0L {
                   // `m + 1` silently wrapped past Int64::max (m was already at the exact boundary
                   // and rounding pushed it over) — surface as out-of-range, not a wrapped sign.
-                  Err(@engine.IntOutOfRange)
+                  Err(type_parse_int_out_of_range(s))
                 } else {
                   Ok(if neg { -mag } else { mag })
                 }

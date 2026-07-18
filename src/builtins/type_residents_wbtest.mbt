@@ -56,7 +56,7 @@ test "@engine.TypeExt parse_token delegates to each resident lexicon and config"
     Ok(@engine.VBool(true)),
   )
   assert_eq(
-    none_type().parse_token("x").unwrap_err().reason(),
+    none_type().parse_token("x").unwrap_err().reason,
     "config_type_mismatch",
   )
 }

@@ -80,7 +80,7 @@ fn sep_piece_value(
     Ok(s) =>
       match ty.parse_token(s) {
         Ok(value) => Ok(value)
-        Err(fail) => Err(@engine.parse_fail_error(name, s, pos, fail))
+        Err(fail) => Err(type_parse_error(name, pos, fail))
       }
   }
 }

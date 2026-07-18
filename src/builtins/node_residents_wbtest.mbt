@@ -43,7 +43,7 @@ fn resident_failure_reason(node : @engine.Node, token : String) -> String {
 
 ///|
 test "number resident preserves not_a_number" {
-  // Every token outside the number lexicon maps to @engine.pe_parse's exact @engine.Held
+  // Every token outside the number lexicon maps to the resident-owned parse failure's exact @engine.Held
   // reason through the @engine.NodeExt resident.
   assert_eq(
     resident_failure_reason(number_arg("n", false, []), "nope"),

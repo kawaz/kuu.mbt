@@ -9,7 +9,7 @@
 // lexical scanning here). MDR-002 §3: value.mbt depends on node.mbt only.
 //
 // `Binding` / `ParseError` (DR-066 5-field with reason) live here; `Branch` and `Cand` live in
-// node.mbt. The matcher builds bindings via the mkb / cat / pe_parse / depr_marker helpers at the
+// node.mbt. The matcher builds bindings via the mkb / cat / pe_filter / depr_marker helpers at the
 // end of this file.
 
 ///|
@@ -181,43 +181,12 @@ pub(all) struct BoolConfig {
 } derive(Eq, Debug)
 
 ///|
-/// The reason an int/number parse failed (DR-066 語彙): `NotANumber` = not a number at all,
-/// `NotAnInteger` = a non-integer value under `int_round: error`. `IntOutOfRange` = a readable
-/// integer VALUE whose magnitude exceeds Int64's range (issue
-/// 2026-07-07-parse-int-value-huge-exponent-overflow: `"1e300"` etc. used to silently wrap via
-/// `digits_to_i64` instead of erroring). DR-066 v1 has no reason for this yet — `int_out_of_range`
-/// is a provisional reason, the SAME kind of gap-fill as `pe_parse_bool`'s `not_a_bool`
-/// (docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md); the spec-side vocab decision is
-/// tracked separately (spec repo kawaz/kuu issue, filed by the team lead).
-pub(all) enum ParseFail {
-  NotANumber
-  NotAnInteger
-  IntOutOfRange
-  NotABool
-  NoValueSpace
+/// A type resident's parse rejection. The resident owns both the machine-readable reason and
+/// caller-facing message; engine transports them without closing the vocabulary over builtin cases.
+pub(all) struct TypeParseFail {
+  reason : String
+  message : String
 } derive(Eq, Debug)
-
-///|
-pub fn ParseFail::reason(self : ParseFail) -> String {
-  match self {
-    NotANumber => "not_a_number"
-    NotAnInteger => "not_an_integer"
-    IntOutOfRange => "int_out_of_range"
-    NotABool => "not_a_bool"
-    NoValueSpace => "config_type_mismatch"
-  }
-}
-
-///|
-pub fn ParseFail::message(self : ParseFail, token : String) -> String {
-  match self {
-    NotANumber => "value \"\{token}\" is not a number"
-    NotAnInteger => "value \"\{token}\" is not an integer"
-    IntOutOfRange => "value \"\{token}\" is out of Int64 range"
-    NotABool => "value \"\{token}\" is not a bool"
-    NoValueSpace => "value for a none element (no value space)"
-  }
-}
 
 ///|
 /// Whether a double is integer-valued (for the int type on a config NATIVE number, DR-075 §5:
@@ -369,108 +338,6 @@ pub fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
     r.push(x)
   }
   r
-}
-
-///|
-/// A `kind: parse` held Error for a value that failed to parse as a number (DR-053 §2). The reason is
-/// `not_a_number` (DR-066 §3): a token that does not read as a number at all — an int element also
-/// lands here for a non-number token (int judges via the number 字句), while `not_an_integer` is the
-/// separate reason for a readable-but-fractional value under int_round=error.
-pub fn pe_parse(element : String, tok : String, pos : Int) -> ParseError {
-  {
-    element,
-    args_pos: pos,
-    kind: KParse,
-    reason: "not_a_number",
-    message: "\"\{tok}\" is not a number",
-    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
-  }
-}
-
-///|
-/// A resident-neutral parse failure preserving the TypeExt result vocabulary.
-pub fn pe_type_parse(
-  element : String,
-  token : String,
-  pos : Int,
-  failure : ParseFail,
-) -> ParseError {
-  {
-    element,
-    args_pos: pos,
-    kind: KParse,
-    reason: failure.reason(),
-    message: failure.message(token),
-    path: [],
-  }
-}
-
-///|
-/// A `kind: parse` held Error for a value that read as a number but is not an integer value under
-/// canonical `int_round: error` (DR-075 §2 / DR-066 §3). The reason `not_an_integer` is emitted ONLY
-/// when `int_round=error` (any rounding mode rounds to Ok and never raises this); a token that does
-/// not read as a number at all lands in `pe_parse` with reason `not_a_number`.
-pub fn pe_parse_int(element : String, tok : String, pos : Int) -> ParseError {
-  {
-    element,
-    args_pos: pos,
-    kind: KParse,
-    reason: "not_an_integer",
-    message: "\"\{tok}\" is not an integer",
-    path: [],
-  }
-}
-
-///|
-/// A `kind: parse` held Error for a readable integer VALUE whose magnitude exceeds Int64's range
-/// (issue 2026-07-07-parse-int-value-huge-exponent-overflow). The provisional reason
-/// `int_out_of_range` follows the `pe_parse_bool`/`not_a_bool` precedent (DR-066 v1 has no reason
-/// for this yet).
-pub fn pe_int_out_of_range(
-  element : String,
-  tok : String,
-  pos : Int,
-) -> ParseError {
-  {
-    element,
-    args_pos: pos,
-    kind: KParse,
-    reason: "int_out_of_range",
-    message: "\"\{tok}\" is out of Int64 range",
-    path: [],
-  }
-}
-
-///|
-/// A `kind: parse` held Error for a value that failed to parse as a bool (DR-074 §3 canonical vocab:
-/// unrecognized tokens like `yes`/`on` are canonical-外, Error not silent 変換). DR-066 v1's reason
-/// vocab only lists `not_a_number`/`not_an_integer` (bool has no entry yet); this reason is the
-/// provisional `not_a_bool` used by resolve.mbt's config-path bool Error (§952 of resolve.mbt),
-/// kept until DR-066 v1 vocab is amended (docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md).
-pub fn pe_parse_bool(element : String, tok : String, pos : Int) -> ParseError {
-  {
-    element,
-    args_pos: pos,
-    kind: KParse,
-    reason: "not_a_bool",
-    message: "\"\{tok}\" is not a bool",
-    path: [],
-  }
-}
-
-///|
-/// A `kind: parse` held Error for a `kv_map` accumulator piece with no `=` (DR-091 §2, team-lead
-/// 裁定 2026-07-11: "= なし piece は reject、型 parse 失敗と同じ扱い" — same `KParse` kind /
-/// error-vocab family as `pe_parse`/`pe_parse_bool`, this is kv_map's own structural-shape check).
-pub fn pe_parse_kv(element : String, tok : String, pos : Int) -> ParseError {
-  {
-    element,
-    args_pos: pos,
-    kind: KParse,
-    reason: "not_a_kv_pair",
-    message: "\"\{tok}\" does not contain '=' (expected key=value)",
-    path: [],
-  }
 }
 
 ///|

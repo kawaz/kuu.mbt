@@ -101,7 +101,7 @@ pub(open) trait TypeExt {
   fn name(Self) -> String
   fn encode(Self) -> Json = _
   fn has_value_slot(Self) -> Bool
-  fn parse_token(Self, String) -> Result[Value, ParseFail]
+  fn parse_token(Self, String) -> Result[Value, TypeParseFail]
   fn default_seat_observation_key(Self) -> String? = _
   fn default_seat_resolver(Self, SeatCtx) -> Value?
 }

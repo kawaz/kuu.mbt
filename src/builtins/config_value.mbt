@@ -49,7 +49,7 @@ pub fn config_to_value(
           match ty.parse_token(s) {
             Ok(value) => Ok(value)
             Err(fail) =>
-              Err((@engine.KParse, fail.reason(), "config " + fail.message(s)))
+              Err((@engine.KParse, fail.reason, "config " + fail.message))
           }
       }
     // JSON-native scalars do not need lexical parsing. The resident identity still

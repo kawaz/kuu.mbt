@@ -159,7 +159,7 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
         @engine.apply_piece_filters(ctx.extensions(), self.piece_filters, token) {
         Ok(value) =>
           // DR-091 §2: piece filters run first, then the dedicated
-          // contains-equals gate reports through the @engine.pe_parse_kv @engine.Held family.
+          // contains-equals gate reports through the parse_error_not_a_kv_pair @engine.Held family.
           if @engine.contains_eq(value) {
             next(
               ctx,
@@ -174,7 +174,12 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
               ]),
             )
           } else {
-            [@engine.Held(@engine.pe_parse_kv(self.name, value, pos), acc)]
+            [
+              @engine.Held(
+                parse_error_not_a_kv_pair(self.name, value, pos),
+                acc,
+              ),
+            ]
           }
         Err((reason, message)) =>
           [
@@ -336,7 +341,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
       match
         @engine.apply_piece_filters(ctx.extensions(), self.piece_filters, token) {
         Ok(value) =>
-          // Every number-lexicon rejection reports through @engine.pe_parse.
+          // Every number-lexicon rejection reports through parse_error_not_a_number.
           match parse_number(value, allow_base_prefix=self.allow_base_prefix) {
             Some(number) =>
               next(
@@ -351,7 +356,13 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
                   ),
                 ]),
               )
-            None => [@engine.Held(@engine.pe_parse(self.name, value, pos), acc)]
+            None =>
+              [
+                @engine.Held(
+                  parse_error_not_a_number(self.name, value, pos),
+                  acc,
+                ),
+              ]
           }
         Err((reason, message)) =>
           [
@@ -424,7 +435,8 @@ impl @engine.NodeExt for FilteredNumberArgExt with fn eval(
   match ctx.token_at(pos) {
     Some(token) =>
       match parse_number(token) {
-        None => [@engine.Held(@engine.pe_parse(self.name, token, pos), acc)]
+        None =>
+          [@engine.Held(parse_error_not_a_number(self.name, token, pos), acc)]
         Some(number) =>
           if number > self.max.to_double() {
             [
@@ -503,7 +515,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
       match
         @engine.apply_piece_filters(ctx.extensions(), self.piece_filters, token) {
         Ok(value) =>
-          // The wider float lexicon still reports lexical rejection through @engine.pe_parse.
+          // The wider float lexicon still reports lexical rejection through parse_error_not_a_number.
           match parse_float(value) {
             Some(number) =>
               next(
@@ -518,7 +530,13 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
                   ),
                 ]),
               )
-            None => [@engine.Held(@engine.pe_parse(self.name, value, pos), acc)]
+            None =>
+              [
+                @engine.Held(
+                  parse_error_not_a_number(self.name, value, pos),
+                  acc,
+                ),
+              ]
           }
         Err((reason, message)) =>
           [
@@ -607,19 +625,8 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
                   ),
                 ]),
               )
-            Err(@engine.NotAnInteger) =>
-              [@engine.Held(@engine.pe_parse_int(self.name, value, pos), acc)]
-            Err(@engine.IntOutOfRange) =>
-              [
-                @engine.Held(
-                  @engine.pe_int_out_of_range(self.name, value, pos),
-                  acc,
-                ),
-              ]
-            Err(@engine.NotANumber)
-            | Err(@engine.NotABool)
-            | Err(@engine.NoValueSpace) =>
-              [@engine.Held(@engine.pe_parse(self.name, value, pos), acc)]
+            Err(failure) =>
+              [@engine.Held(type_parse_error(self.name, pos, failure), acc)]
           }
         Err((reason, message)) =>
           [
@@ -685,7 +692,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
       match
         @engine.apply_piece_filters(ctx.extensions(), self.piece_filters, token) {
         Ok(value) =>
-          // bool resident retains @engine.pe_parse_bool rather than sharing number's @engine.pe_parse.
+          // bool resident retains parse_error_not_a_bool rather than sharing number's parse_error_not_a_number.
           match parse_bool(value, config=self.bool_config) {
             Some(boolean) =>
               next(
@@ -701,7 +708,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ]),
               )
             None =>
-              [@engine.Held(@engine.pe_parse_bool(self.name, value, pos), acc)]
+              [@engine.Held(parse_error_not_a_bool(self.name, value, pos), acc)]
           }
         Err((reason, message)) =>
           [
@@ -781,12 +788,7 @@ impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ]),
               )
             Err(failure) =>
-              [
-                @engine.Held(
-                  @engine.pe_type_parse(self.name, value, pos, failure),
-                  acc,
-                ),
-              ]
+              [@engine.Held(type_parse_error(self.name, pos, failure), acc)]
           }
         Err((reason, message)) =>
           [
