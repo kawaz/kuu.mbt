@@ -33,10 +33,11 @@
 
 ///|
 /// definition のロード結果 (`parse_definition` の戻り値、DR-054 §4 の `atomic: <AtomicAST>` に
-/// 対応するハンドル)。lowering 済み scope・template 解決空間・resident 組成・export_key 写像・
-/// declaration を束ね、`parse` / `resolve` / `complete` / `output` / `help` が同じ snapshot を読む。
+/// 対応する abstract ハンドル)。型名だけを公開し、lowering 済み scope・template 解決空間・
+/// resident 組成・export_key 写像・declaration は玄関内部に閉じる。利用者はフィールドを読まず、
+/// `parse` / `resolve` / `complete` / `output` / `help` へ渡す。
 /// `atomic` は MoonBit の予約語なので変数名には `ast` を使う。
-pub struct AtomicAST {
+struct AtomicAST {
   root : @engine.Scope
   templates : Map[String, @engine.Node]
   extensions : @engine.Registry

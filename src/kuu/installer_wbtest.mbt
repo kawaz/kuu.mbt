@@ -980,9 +980,9 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
 // ── 順列耐性 (5 invariants + fixpoint): 順序が違っても同じ @engine.Scope に収束 ─────────
 
 ///|
-/// 保証: 5 invariants + fixpoint により、chain の順序を変えても同じ @engine.Scope が組み上がる (DR-042 §invariants)。
-/// long→env vs env→long で env seat が正しく立つか (env → ensure_entities → seat_env が同 pass に走るか
-/// を fixpoint が救うか) を、chain の順序 2 種で確認する。
+/// 保証: 5 invariants + fixpoint により、chain の順序を変えても同じ @engine.Scope が組み上がる
+/// (DR-042 §invariants)。long→env / env→long の局所比較に加え、lower query fixture 全件の
+/// 5 面断面を installer 順序 3 種で比較し、個別 installer の組合せでも同じ不変性を固定する。
 test "installer chain: order-independent thanks to 5 invariants + fixpoint" {
   let def : @engine.Definition = {
     ..empty_def(),
@@ -1003,6 +1003,7 @@ test "installer chain: order-independent thanks to 5 invariants + fixpoint" {
   assert_eq(entity_of(sc2, "host").unwrap().env_key, Some("HOST"))
   assert_eq(sc1.greedy.length(), sc2.greedy.length())
   assert_eq(sc1.entities, sc2.entities)
+  verify_lower_conformance_fixtures()
 }
 
 // ── def-error 列挙 (DR-054 §4): 全 kind を 1 pass で収集 (打ち切りなし) ─────────

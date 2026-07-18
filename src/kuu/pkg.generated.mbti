@@ -36,13 +36,7 @@ pub fn warnings(@engine.Outcome) -> Array[@engine.Warning]
 // Errors
 
 // Types and methods
-pub struct AtomicAST {
-  root : @engine.Scope
-  templates : Map[String, @engine.Node]
-  extensions : @engine.Registry
-  ekmap : Map[String, @engine.ExportKey]
-  declaration : @engine.Definition
-}
+type AtomicAST
 
 pub(all) enum DefLoadError {
   Malformed(String)

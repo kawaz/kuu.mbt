@@ -6,6 +6,8 @@ import {
 }
 
 import {
+  "moonbitlang/x/fs",
+  "moonbitlang/core/env",
   "moonbitlang/core/json",
 } for "wbtest"
 
