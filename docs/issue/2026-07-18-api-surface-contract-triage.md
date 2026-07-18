@@ -45,11 +45,20 @@ origin: 自リポ TODO
 
 ## 受け入れ条件
 
-- [ ] 全 identifier 分類表 findings が land
-- [ ] Filter 契約型の engine 帰属修正 + 3rd party filter 実装が builtins 非依存で書けることの確認
-- [ ] C 分類の pub 降格完了 (mbti drift gate で凍結)
-- [ ] 命名揺れの修正 (リネーム一覧は分類表で確定)
-- [ ] moon test / conformance green 維持、kuu-cli pin bump
+- [x] 全 identifier 分類表 findings が land (2a035958、既知の誤記 2 件: filter 住人 19→7、`configured_short_type` は dead でなく使用中)
+- [x] Filter 契約型の engine 帰属修正 + 3rd party filter が builtins 非依存で書けることの確認 (fba093d8、engine に filter 契約 + Registry 系統増設、synthetic 住人 wbtest で実証)
+- [x] C 分類の pub 降格完了 (mbti drift gate で凍結) — 部分達成。段 0 c8585109 + mbti 凍結 0ac2843f。carrier 12 型 + D-3 の pub(all) 撤廃は MoonBit の可視性制約 (sibling package 限定の friend 可視性なし、builtins/kuu が境界越し直接構築) により今サイクル不成立 — (a) pub(all) 維持 + (c) installer 契約 opaque 化 issue へ統合、の統括裁定 2026-07-18
+- [ ] 命名揺れの修正 (リネーム一覧は分類表にあり、段 4 相当は後続)
+- [x] moon test / conformance green 維持、kuu-cli pin bump (393/393 + 280/686/0、kuu-cli 588/588 pin bump 06e088a2)
+
+## 実施記録
+
+- **TRI-Q 裁定**: Q1=分割案 / Q2=a TypeParseFail 開放 (4d5f290e) / Q4=a は径路整理として未実施・interpretation-view issue と統合予定 / Q8=a 組成必須化 (b2cda9d9)
+- **carrier の実施形訂正の経緯**: 当初 carrier 型 (12 型) + D-3 の pub(all) 撤廃を段 0 実装範囲に含める想定だったが、MoonBit の可視性制約 (sibling package 限定の friend 可視性が無く、builtins/kuu が境界を越えて直接構築している) により opaque 化が今サイクルでは不成立と判明。pub(all) を維持したまま、installer 契約の opaque 化を独立 issue へ切り出す方針に訂正 (統括裁定 2026-07-18)
+- **残作業**:
+  - 命名揺れの修正 (リネーム一覧は分類表にあり、段 4 相当)
+  - TRI-Q4 実装 (径路整理、kuu-cli 追随込み) — interpretation-view issue と統合予定
+  - installer 契約 opaque 化の issue 起票
 
 ## 関連
 
