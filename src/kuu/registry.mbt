@@ -85,6 +85,7 @@ pub fn install_installers(registry : @engine.Registry) -> Unit {
   registry.register_installer(@builtins.alias_installer())
   registry.register_installer(@builtins.inheritable_installer())
   registry.register_installer(@builtins.command_installer())
+  registry.register_installer(@builtins.help_meta_installer())
 }
 
 ///|

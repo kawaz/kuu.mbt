@@ -1831,9 +1831,15 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
 /// element+kind の組の集合のみ (message/hint はレンダラ管轄なので比較しない、DR-082 §1 — parse
 /// fixture の `errors` が message を比較しないのと同流儀)。`exp_errors` は `deferrs_str` と同じ
 /// ソート済み "element/kind" 連結表現なので、実行時にそのまま文字列比較できる。
+struct DExpectedDefError {
+  element : String?
+  kind : String
+}
+
+///|
 struct DDefErrorCase {
   id : String
-  exp_errors : String
+  exp_errors : Array[DExpectedDefError]
 }
 
 ///|
@@ -1876,7 +1882,7 @@ fn dec_def_error_case(cj : Json) -> DDefErrorCase raise DecodeSkip {
     Some(x) => x
     None => raise DecodeSkip("expect.errors is not an array")
   }
-  let items : Array[String] = []
+  let items : Array[DExpectedDefError] = []
   for ej in arr {
     let ejo = match ej.j_obj() {
       Some(x) => x
@@ -1887,18 +1893,13 @@ fn dec_def_error_case(cj : Json) -> DDefErrorCase raise DecodeSkip {
       ["element", "kind"],
       "definition_error case's expect.errors entry",
     )
-    let element = match jf_str(ejo, "element") {
-      Some(s) => s
-      None => raise DecodeSkip("errors entry missing 'element'")
-    }
     let kind = match jf_str(ejo, "kind") {
       Some(s) => s
       None => raise DecodeSkip("errors entry missing 'kind'")
     }
-    items.push(element + "/" + kind)
+    items.push({ element: jf_str(ejo, "element"), kind })
   }
-  sort_items(items)
-  { id, exp_errors: join_comma(items) }
+  { id, exp_errors: items }
 }
 
 ///|
@@ -1936,19 +1937,57 @@ fn dec_definition_error_fixture(j : Json) -> DDefErrorFixture raise DecodeSkip {
 /// DR-082 §1: run `parse_definition` and compare its `Err` (element+kind set) against the fixture's
 /// expectation. An unexpected `Ok` (the definition was NOT rejected) is itself a mismatch —
 /// `render_outcome`-style "EXPECTED-*" convention mirrors the parse-path runner's diagnostics.
+fn expected_def_errors_match(
+  expected : Array[DExpectedDefError],
+  actual : Array[@engine.DefError],
+) -> Bool {
+  if expected.length() != actual.length() {
+    return false
+  }
+  let used = Array::make(actual.length(), false)
+  for want in expected {
+    let mut found = false
+    for i = 0; i < actual.length(); i = i + 1 {
+      if !used[i] &&
+        render_def_kind(actual[i].kind) == want.kind &&
+        (match want.element {
+          Some(element) => actual[i].element == element
+          None => true
+        }) {
+        used[i] = true
+        found = true
+        break
+      }
+    }
+    if !found {
+      return false
+    }
+  }
+  true
+}
+
+///|
+fn expected_def_errors_str(expected : Array[DExpectedDefError]) -> String {
+  let items : Array[String] = []
+  for item in expected {
+    items.push(item.element.unwrap_or("*") + "/" + item.kind)
+  }
+  sort_items(items)
+  join_comma(items)
+}
+
+///|
 fn run_definition_error(fx : DDefErrorFixture, c : DDefErrorCase) -> String {
   match @kuu.parse_definition(fx.definition) {
     Ok(_) => "EXPECTED-DEFINITION-ERROR got=ok"
     Err(@kuu.Malformed(reason)) =>
       "EXPECTED-DEFINITION-ERROR got=malformed:" + reason
-    Err(@kuu.Rejected(errors)) => {
-      let got = deferrs_str(errors)
-      if got == c.exp_errors {
+    Err(@kuu.Rejected(errors)) =>
+      if expected_def_errors_match(c.exp_errors, errors) {
         "PASS"
       } else {
-        "errors got=\{got} want=\{c.exp_errors}"
+        "errors got=\{deferrs_str(errors)} want=\{expected_def_errors_str(c.exp_errors)}"
       }
-    }
   }
 }
 

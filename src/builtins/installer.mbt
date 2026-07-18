@@ -374,6 +374,7 @@ fn clone_elem(e : @engine.ElemDef) -> @engine.ElemDef {
     variants: copy_variants(e.variants),
     short: copy_chars(e.short),
     env: copy_strs(e.env),
+    help_meta: e.help_meta,
     is_tty: e.is_tty,
     tty_stream: e.tty_stream,
     tty_cygwin: e.tty_cygwin,
@@ -1011,9 +1012,14 @@ fn init_sb(
 ///
 /// dd 要素は entity を持たない (LOWERING §B.4「値なし」/ DR-064 §1)。link_depth == 0 のみ ensure
 /// (global link COPY は declaring cell へ link 同期するため子 scope 側 entity は不要 — DR-070 §1b gap 5)。
+fn is_help_group_declaration(e : @engine.ElemDef) -> Bool {
+  e.name == "" && e.help_meta.help_group_name is Some(_)
+}
+
+///|
 fn ensure_entities(sb : @engine.InstallBuilder, has_cf : Bool) -> Unit {
   for e in sb.definition().options {
-    if not_dd(e) && e.link_depth == 0 {
+    if not_dd(e) && !is_help_group_declaration(e) && e.link_depth == 0 {
       ensure_entity_body(sb.output(), e, has_cf, sb.extensions())
     }
   }
@@ -1886,6 +1892,7 @@ fn copy_global_into(
     variants: copy.variants,
     short: copy.short,
     env: copy.env,
+    help_meta: copy.help_meta,
     is_tty: copy.is_tty,
     tty_stream: copy.tty_stream,
     tty_cygwin: copy.tty_cygwin,
@@ -2072,6 +2079,7 @@ fn add_inheritable_copy(
       variants: [],
       short: [],
       env: [],
+      help_meta: e.help_meta,
       is_tty: false, // write-target copy は tty preset を持たない (env_prefix と同じ「canonical default 相当」)
       tty_stream: None,
       tty_cygwin: true,
@@ -2436,6 +2444,7 @@ fn alias_entry(
   variants : Array[@engine.Variant],
   short : Array[Char],
   deprecated : Bool,
+  help_meta : @engine.HelpMetaDecl,
 ) -> @engine.ElemDef {
   {
     name: canonical_name, // effect / entity / result key は全て canonical name で keying (link 同型)
@@ -2447,6 +2456,7 @@ fn alias_entry(
     variants,
     short,
     env: [],
+    help_meta,
     is_tty: false, // alias entry-copy も値源は実体側のまま (§3 と同じ理由、env と対称)
     tty_stream: None,
     tty_cygwin: true,
@@ -2584,6 +2594,7 @@ fn desugar_aliases(
             variants,
             copy_chars(a.short),
             a.deprecated,
+            a.help_meta,
           ),
         )
       }

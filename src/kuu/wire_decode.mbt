@@ -74,6 +74,23 @@ fn conformance_str_in(xs : Array[String], v : String) -> Bool {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 ///|
+fn empty_help_meta() -> @engine.HelpMetaDecl {
+  {
+    help: None,
+    help_long: None,
+    help_epilog: None,
+    display_name: None,
+    value_name: None,
+    help_group_name: None,
+    help_group_title: None,
+    help_group_description: None,
+    help_order: None,
+    help_group_order: None,
+    help_after: None,
+  }
+}
+
+///|
 fn opt(
   name : String,
   ty : &@engine.TypeExt,
@@ -81,6 +98,7 @@ fn opt(
   variants? : Array[@engine.Variant] = [],
   short? : Array[Char] = [],
   env? : Array[String] = [],
+  help_meta? : @engine.HelpMetaDecl = empty_help_meta(),
   is_tty? : Bool = false,
   tty_stream? : String? = None,
   tty_cygwin? : Bool = true,
@@ -135,6 +153,7 @@ fn opt(
     variants,
     short,
     env,
+    help_meta,
     is_tty,
     tty_stream,
     tty_cygwin,
@@ -211,6 +230,7 @@ fn pos(
   final_filters? : Array[@engine.FilterSpelling] = [],
   accum_filters? : Array[@engine.FilterSpelling] = [],
   env? : Array[String] = [],
+  help_meta? : @engine.HelpMetaDecl = empty_help_meta(),
   is_tty? : Bool = false,
   tty_stream? : String? = None,
   tty_cygwin? : Bool = true,
@@ -239,6 +259,7 @@ fn pos(
     variants: [],
     short: [],
     env,
+    help_meta,
     is_tty,
     tty_stream,
     tty_cygwin,
@@ -316,6 +337,7 @@ fn dd_marker(
     variants: [],
     short: [],
     env: [],
+    help_meta: empty_help_meta(),
     // DR-099 §1: dd (type:"dd") と builtin/tty は `type:` の別選択なので同一要素に同時発生し得ない
     // (DR-098 §4 が必要とした dd-vs-tty definition-error は構文的に発生しなくなった) — dd_marker は
     // is_tty/tty_stream を常に canonical default のまま持ち回るだけの冗長フィールド。
@@ -390,6 +412,7 @@ fn exact_marker(spelling : String) -> @engine.ElemDef {
     variants: [],
     short: [],
     env: [],
+    help_meta: empty_help_meta(),
     is_tty: false,
     tty_stream: None,
     tty_cygwin: true,
@@ -492,6 +515,7 @@ priv struct InstallerDecoded {
   required : Bool
   alias_decl : @engine.AliasDef?
   inheritable : Bool
+  help_meta : @engine.HelpMetaDecl
 }
 
 ///|
@@ -524,6 +548,7 @@ fn decode_installer_owned(
   let mut required = false
   let mut alias_decl : @engine.AliasDef? = None
   let mut inheritable = false
+  let mut help_meta = empty_help_meta()
   for installer in extensions.installers() {
     let decoded = match installer.decode(json, context) {
       Ok(value) => value
@@ -568,6 +593,7 @@ fn decode_installer_owned(
       }
       ODAlias(value) => alias_decl = value
       ODInheritable(value) => inheritable = value
+      ODHelpMeta(value) => help_meta = value
       ODCommand => ()
     }
   }
@@ -596,6 +622,7 @@ fn decode_installer_owned(
     required,
     alias_decl,
     inheritable,
+    help_meta,
   }
 }
 // ── JSON helpers ──────────────────────────────────────────────────────────────
@@ -1522,6 +1549,21 @@ fn dec_or_leaf(
 }
 
 ///|
+fn is_help_group_declaration(o : Map[String, Json]) -> Bool {
+  has_key(o, "help_group_name") &&
+  !has_key(o, "name") &&
+  !has_key(o, "id") &&
+  !has_key(o, "type") &&
+  !has_key(o, "long") &&
+  !has_key(o, "short") &&
+  !has_key(o, "env") &&
+  !has_key(o, "alias") &&
+  !has_key(o, "ref") &&
+  !has_key(o, "or") &&
+  !has_key(o, "values")
+}
+
+///|
 fn dec_option(
   j : Json,
   shadows : Map[String, TypeShadow],
@@ -1533,8 +1575,19 @@ fn dec_option(
   }
   let owned = decode_installer_owned(j, DecodeOption, extensions)
   match owned.alias_decl {
-    Some(value) => return DAlias(value)
+    Some(value) => {
+      let allowed = ["alias", "name", "short", "long", "deprecated", "type"]
+      for key in owned.vocab {
+        allowed.push(key)
+      }
+      allowed_keys(o, allowed, "alias")
+      return DAlias({ ..value, help_meta: owned.help_meta })
+    }
     None => ()
+  }
+  if is_help_group_declaration(o) {
+    allowed_keys(o, owned.vocab, "help group declaration")
+    return DOpt(opt("", @builtins.none_type(), help_meta=owned.help_meta))
   }
   let allowed = [
     "id", "name", "type", "default", "export_key", "deprecated", "hidden", "or",
@@ -1766,6 +1819,7 @@ fn dec_option(
       short~,
       repeat~,
       env~,
+      help_meta=owned.help_meta,
       is_tty=is_tty_from_shadow,
       tty_stream=tty_stream_from_shadow,
       tty_cygwin=tty_cygwin_from_shadow,
@@ -2010,6 +2064,7 @@ fn dec_positional(
     piece_filters~,
     value_filters~,
     env~,
+    help_meta=owned.help_meta,
     is_tty=is_tty_from_shadow,
     tty_stream=tty_stream_from_shadow,
     tty_cygwin=tty_cygwin_from_shadow,
@@ -2252,19 +2307,23 @@ fn dec_command(
   }
   let owned = decode_installer_owned(j, DecodeCommand, extensions)
   match owned.alias_decl {
-    Some(value) => return DCmdAlias(value)
+    Some(value) => {
+      let allowed = ["alias", "name", "deprecated", "type"]
+      for key in owned.vocab {
+        allowed.push(key)
+      }
+      allowed_keys(o, allowed, "command alias")
+      return DCmdAlias({ ..value, help_meta: owned.help_meta })
+    }
     None => ()
   }
-  allowed_keys(
-    o,
-    [
-      "type", "name", "options", "positionals", "commands", "export_key",
-      // DR-014 / DESIGN §7.2 / DR-091 §3: a command's own object IS its @engine.Definition's `o`
-      // (`dec_definition` is called with THIS SAME map below) — so `config` is legal here too.
-       "config",
-    ],
-    "command",
-  )
+  let allowed = [
+    "type", "name", "options", "positionals", "commands", "export_key", "config",
+  ]
+  for key in owned.vocab {
+    allowed.push(key)
+  }
+  allowed_keys(o, allowed, "command")
   let name = match jf_str(o, "name") {
     Some(s) => s
     None => raise DecodeSkip("command missing 'name'")

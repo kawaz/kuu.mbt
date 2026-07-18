@@ -176,6 +176,7 @@ pub(all) enum OwnedDecl {
   ODConstraint(Array[String], Array[String], Array[String], Array[String], Bool)
   ODAlias(AliasDef?)
   ODInheritable(Bool)
+  ODHelpMeta(HelpMetaDecl)
   ODCommand
 } derive(Eq, Debug)
 

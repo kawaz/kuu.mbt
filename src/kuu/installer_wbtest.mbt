@@ -13,6 +13,23 @@ fn empty_def() -> @engine.Definition {
 }
 
 ///|
+fn empty_help_meta_for_test() -> @engine.HelpMetaDecl {
+  {
+    help: None,
+    help_long: None,
+    help_epilog: None,
+    display_name: None,
+    value_name: None,
+    help_group_name: None,
+    help_group_title: None,
+    help_group_description: None,
+    help_order: None,
+    help_group_order: None,
+    help_after: None,
+  }
+}
+
+///|
 fn is_resident(node : @engine.Node, kind : String, name : String) -> Bool {
   match node {
     Ext(extension) =>
@@ -75,6 +92,19 @@ fn el(
     variants: [],
     short,
     env,
+    help_meta: {
+      help: None,
+      help_long: None,
+      help_epilog: None,
+      display_name: None,
+      value_name: None,
+      help_group_name: None,
+      help_group_title: None,
+      help_group_description: None,
+      help_order: None,
+      help_group_order: None,
+      help_after: None,
+    },
     is_tty,
     tty_stream,
     tty_cygwin,
@@ -1224,6 +1254,7 @@ test "parse_definition: an alias's long_override update variant on a multiple ca
         short: [],
         long_override: Some(LList(["bump:update:increment"])),
         deprecated: false,
+        help_meta: empty_help_meta_for_test(),
       },
     ],
   }
@@ -1259,6 +1290,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
         short: [],
         long_override: Some(LList(["bump:update:increment"])),
         deprecated: false,
+        help_meta: empty_help_meta_for_test(),
       },
     ],
   }
@@ -1487,6 +1519,7 @@ test "parse_definition: a colon-less alias long_override spelling is a DR-054 un
         short: [],
         long_override: Some(LList(["chatty"])), // colon-less — 文法エラー
         deprecated: false,
+        help_meta: empty_help_meta_for_test(),
       },
     ],
   }
@@ -1528,6 +1561,7 @@ test "desugar_aliases: alias long:true on a flag canonical composes :set:true (b
         short: [],
         long_override: Some(LBool(true)),
         deprecated: false,
+        help_meta: empty_help_meta_for_test(),
       },
     ],
   }
@@ -1564,6 +1598,7 @@ test "desugar_aliases: alias long:true on a string canonical stays a value-slot 
         short: [],
         long_override: Some(LBool(true)),
         deprecated: false,
+        help_meta: empty_help_meta_for_test(),
       },
     ],
   }
@@ -1696,6 +1731,7 @@ test "add_inheritable_copy: an alias-provided (variants-side) trigger shadows th
         short: [],
         long_override: Some(LList([":set:true"])),
         deprecated: false,
+        help_meta: empty_help_meta_for_test(),
       },
     ],
   }

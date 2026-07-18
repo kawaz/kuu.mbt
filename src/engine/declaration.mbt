@@ -1,6 +1,23 @@
 // declaration.mbt — read/write declaration carriers crossing decode and installer residents.
 
 ///|
+/// help_meta installer が所有する宣言層の inert 表示属性。lowering 産物へは搬送せず、
+/// definition-time 検査と help query が宣言層から参照する。
+pub(all) struct HelpMetaDecl {
+  help : String?
+  help_long : String?
+  help_epilog : String?
+  display_name : String?
+  value_name : String?
+  help_group_name : String?
+  help_group_title : String?
+  help_group_description : String?
+  help_order : Double?
+  help_group_order : Double?
+  help_after : String?
+} derive(Eq, Debug)
+
+///|
 /// UsefulAST element. Attribute arrays are READ-ONLY to installers (invariant ①': 宣言層 read-only).
 /// The declaration layer is never emptied — help / diagnose / 再シリアライズが元の宣言を保持し、後段
 /// installer (global 等) も引き続き参照できる。Idempotency は add-if-absent が担う。
@@ -17,6 +34,7 @@ pub(all) struct ElemDef {
   variants : Array[Variant] // long installer 所有 (variant DSL, DR-011/045) — normalize_option が resolve_long の結果で埋める。宣言直後は常に []
   short : Array[Char] // short installer 所有
   env : Array[String] // env installer 所有
+  help_meta : HelpMetaDecl // help_meta installer 所有 (表示専用、lowering 寄与ゼロ)
   // TRANSITIONAL(M5c): tty config remains on the declaration carrier until wire decode constructs
   // the configured TypeExt directly; Entity no longer copies or interprets these fields.
   // DR-099 §1/§3: `type:` が `builtin/tty` factory (bare "tty" 糖衣 / definitions.types 経由の
@@ -269,6 +287,7 @@ pub(all) struct AliasDef {
   short : Array[Char]
   long_override : LongDecl?
   deprecated : Bool
+  help_meta : HelpMetaDecl
 } derive(Eq, Debug)
 
 ///|

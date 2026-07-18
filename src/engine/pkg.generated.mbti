@@ -108,6 +108,7 @@ pub(all) struct AliasDef {
   short : Array[Char]
   long_override : LongDecl?
   deprecated : Bool
+  help_meta : HelpMetaDecl
 } derive(Eq, @debug.Debug)
 
 pub(all) struct AmbInterp {
@@ -275,6 +276,7 @@ pub(all) struct ElemDef {
   variants : Array[Variant]
   short : Array[Char]
   env : Array[String]
+  help_meta : HelpMetaDecl
   is_tty : Bool
   tty_stream : String?
   tty_cygwin : Bool
@@ -396,6 +398,20 @@ pub(all) struct FilterSpelling {
   args : Array[String]
 } derive(Eq, @debug.Debug)
 
+pub(all) struct HelpMetaDecl {
+  help : String?
+  help_long : String?
+  help_epilog : String?
+  display_name : String?
+  value_name : String?
+  help_group_name : String?
+  help_group_title : String?
+  help_group_description : String?
+  help_order : Double?
+  help_group_order : Double?
+  help_after : String?
+} derive(Eq, @debug.Debug)
+
 pub struct InstallBuild {
   // private fields
 }
@@ -483,6 +499,7 @@ pub(all) enum OwnedDecl {
   ODConstraint(Array[String], Array[String], Array[String], Array[String], Bool)
   ODAlias(AliasDef?)
   ODInheritable(Bool)
+  ODHelpMeta(HelpMetaDecl)
   ODCommand
 } derive(Eq, @debug.Debug)
 
