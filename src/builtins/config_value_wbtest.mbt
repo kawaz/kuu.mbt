@@ -33,54 +33,141 @@ fn cv_ok(
 test "config_to_value type conversions" {
   // string → number / int (lenient parse), and 値空間 int acceptance of "3.0".
   assert_eq(
-    cv_ok(config_to_value(config("8080".to_json()), number_type(), [])),
+    cv_ok(
+      config_to_value(
+        config("8080".to_json()),
+        number_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     Some(@engine.VNum(8080.0)),
   )
   assert_eq(
-    cv_ok(config_to_value(config("3.0".to_json()), int_type(), [])),
+    cv_ok(
+      config_to_value(
+        config("3.0".to_json()),
+        int_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     Some(@engine.VNum(3.0)),
   )
   // "2.5" into int is Error under canonical error mode (no silent 精度落ち).
   assert_eq(
-    cv_ok(config_to_value(config("2.5".to_json()), int_type(), [])),
+    cv_ok(
+      config_to_value(
+        config("2.5".to_json()),
+        int_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     None,
   )
   // JSON scalar → string element stringifies (寛容の双方向対称): 1.5 → "1.5", true → "true".
   assert_eq(
-    cv_ok(config_to_value(config(1.5.to_json()), string_type(), [])),
+    cv_ok(
+      config_to_value(
+        config(1.5.to_json()),
+        string_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     Some(@engine.VStr("1.5")),
   )
   assert_eq(
-    cv_ok(config_to_value(config(true.to_json()), string_type(), [])),
+    cv_ok(
+      config_to_value(
+        config(true.to_json()),
+        string_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     Some(@engine.VStr("true")),
   )
   // string → bool via canonical vocab; an unknown word is an Error.
   assert_eq(
-    cv_ok(config_to_value(config("1".to_json()), flag_type(), [])),
+    cv_ok(
+      config_to_value(
+        config("1".to_json()),
+        flag_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     Some(@engine.VBool(true)),
   )
   assert_eq(
-    cv_ok(config_to_value(config("yes".to_json()), flag_type(), [])),
+    cv_ok(
+      config_to_value(
+        config("yes".to_json()),
+        flag_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     None,
   )
   // native number → int: JSON-由来 binary64 seat; 1.0 is integral (accepted), 1.5 is not (Error).
   assert_eq(
-    cv_ok(config_to_value(config(1.0.to_json()), int_type(), [])),
+    cv_ok(
+      config_to_value(
+        config(1.0.to_json()),
+        int_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     Some(@engine.VNum(1.0)),
   )
-  assert_eq(cv_ok(config_to_value(config(1.5.to_json()), int_type(), [])), None)
+  assert_eq(
+    cv_ok(
+      config_to_value(
+        config(1.5.to_json()),
+        int_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
+    None,
+  )
   // 意味の飛躍 (bool↔number) is always an Error — no coercion in either direction.
   assert_eq(
-    cv_ok(config_to_value(config(1.0.to_json()), flag_type(), [])),
+    cv_ok(
+      config_to_value(
+        config(1.0.to_json()),
+        flag_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     None,
   )
   assert_eq(
-    cv_ok(config_to_value(config(true.to_json()), number_type(), [])),
+    cv_ok(
+      config_to_value(
+        config(true.to_json()),
+        number_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     None,
   )
   // 構造不一致 (array/object → scalar) is an Error.
   assert_eq(
-    cv_ok(config_to_value(config([1.0].to_json()), number_type(), [])),
+    cv_ok(
+      config_to_value(
+        config([1.0].to_json()),
+        number_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     None,
   )
 }
@@ -101,6 +188,7 @@ test "config_to_value: piece_filters runs on a CStr source before the type parse
         config(" 8080 ".to_json()),
         number_type(),
         config_chain(["trim"]),
+        test_filter_registry(),
       ),
     ),
     Some(@engine.VNum(8080.0)),
@@ -108,7 +196,14 @@ test "config_to_value: piece_filters runs on a CStr source before the type parse
   // without the piece_filter, the same raw string fails to parse (proves `trim` is load-bearing,
   // not a no-op the type parser would have tolerated anyway).
   assert_eq(
-    cv_ok(config_to_value(config(" 8080 ".to_json()), number_type(), [])),
+    cv_ok(
+      config_to_value(
+        config(" 8080 ".to_json()),
+        number_type(),
+        [],
+        test_filter_registry(),
+      ),
+    ),
     None,
   )
   // piece_filters ALSO runs for a string target (string_type() の「何でも受ける」型でも trim は素通りしない —
@@ -119,6 +214,7 @@ test "config_to_value: piece_filters runs on a CStr source before the type parse
         config(" hi ".to_json()),
         string_type(),
         config_chain(["trim"]),
+        test_filter_registry(),
       ),
     ),
     Some(@engine.VStr("hi")),
@@ -130,6 +226,7 @@ test "config_to_value: piece_filters runs on a CStr source before the type parse
       config("".to_json()),
       number_type(),
       config_chain(["non_empty"]),
+      test_filter_registry(),
     ) {
     Err((@engine.KFilter, _, _)) => ()
     Ok(_) => fail("expected Err(KFilter, ..), got Ok")

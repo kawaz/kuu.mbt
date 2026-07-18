@@ -59,6 +59,7 @@ pub fn classify_long_spelling(
   s : String,
   own_name : String,
   ty : &@engine.TypeExt,
+  extensions : @engine.Registry,
 ) -> LongSpelling {
   if s == ":set" {
     return LMain(own_name)
@@ -89,7 +90,7 @@ pub fn classify_long_spelling(
   if parts[1] == "update" {
     if parts.length() >= 3 {
       let transform = parts[2]
-      match lookup_filter(transform) {
+      match extensions.lookup_filter(transform) {
         None => return LInvalid(s) // 不在: unknown-vocab (registry に無い名前)
         Some(d) =>
           if d.signature.is_transform() {
@@ -169,6 +170,7 @@ fn resolve_long(
   decl : @engine.LongDecl,
   name : String,
   ty : &@engine.TypeExt,
+  extensions : @engine.Registry,
 ) -> (Array[String], Array[@engine.Variant]) {
   match decl {
     LBool(false) => ([], [])
@@ -191,7 +193,7 @@ fn resolve_long(
       let longs : Array[String] = []
       let vars : Array[@engine.Variant] = []
       for l in strs {
-        match classify_long_spelling(l, kebab(name), ty) {
+        match classify_long_spelling(l, kebab(name), ty, extensions) {
           LMain(n) => longs.push(n)
           LVariant(v) => vars.push(v)
           LInvalid(_) => ()
@@ -479,10 +481,13 @@ fn kebab(name : String) -> String {
 ///   long 綴り合成)。これにより inst_long / eq_entries は flag_type() を特殊扱いする必要がなくなり、bool と
 ///   完全同一の lowering 経路に自然に乗る (flag 固有の lowering 分岐を「型差し替え + resolve_long」の
 ///   2 点だけに縮退させる、DR-076 §2 規則4)。
-fn normalize_surface(def : @engine.Definition) -> Unit {
+fn normalize_surface(
+  def : @engine.Definition,
+  extensions : @engine.Registry,
+) -> Unit {
   let mut i = 0
   while i < def.options.length() {
-    def.options[i] = normalize_option(def.options[i])
+    def.options[i] = normalize_option(def.options[i], extensions)
     i = i + 1
   }
   i = 0
@@ -491,7 +496,7 @@ fn normalize_surface(def : @engine.Definition) -> Unit {
     i = i + 1
   }
   for c in def.commands {
-    normalize_surface(c.body)
+    normalize_surface(c.body, extensions)
   }
 }
 
@@ -510,11 +515,14 @@ fn normalize_surface(def : @engine.Definition) -> Unit {
 /// (`ensure_entity` のコメント参照) — 既存の型そのものが情報を運ぶ設計は崩さず、collapse のタイミングだけ
 /// 後ろにずらす。short/eq-split matcher (builtins/matcher_residents.mbt) は `count_type()` を `flag_type() | bool_type()` と並ぶ第 3 の
 /// 非消費挙動として扱う。
-fn normalize_option(e : @engine.ElemDef) -> @engine.ElemDef {
+fn normalize_option(
+  e : @engine.ElemDef,
+  extensions : @engine.Registry,
+) -> @engine.ElemDef {
   if e.is_dd {
     normalize_dd_name(e)
   } else {
-    let (longs, vars) = resolve_long(e.long, e.name, e.ty)
+    let (longs, vars) = resolve_long(e.long, e.name, e.ty, extensions)
     // flag_type() は bool_type() へ書き換わり `ensure_entity` 到達時には元 flag_type() だったかを判別できなくなる
     // ため、flag preset の default:false (LOWERING §A.5) はこの型差し替えと同じ場所で確定させる
     // (issue group-inner-bool-default-false-duplicate-top-level: plain bool_type() は暗黙 default を
@@ -575,11 +583,12 @@ fn clone_def(d : @engine.Definition) -> @engine.Definition {
 /// 建った @engine.Scope の keying と一致するように。
 pub fn build_export_map(
   def : @engine.Definition,
+  extensions : @engine.Registry,
 ) -> Map[String, @engine.ExportKey] {
   let d = clone_def(def)
   // `d` は normalize_surface を経ていない生の (= pre-normalize) 複製なので、`orig` 引数にも
   // 同じ `d` を渡してよい (flag_type() 等の元の型はまだ書き換わっていない)。
-  desugar_aliases(d, d)
+  desugar_aliases(d, d, extensions)
   let m : Map[String, @engine.ExportKey] = Map([], capacity=0)
   collect_export(d, m)
   m
@@ -2504,7 +2513,11 @@ fn alias_entry(
 /// `long:true` 糖衣は `:set:true` へ差し替え) を判定する材料 (元の型 flag_type()) が失われている。`orig`
 /// から同じ target 要素の変換前の `ty`/`long` を引き、`resolve_long` を canonical 側と同じ形で
 /// 通すことで、alias 側にも同じ規則1/2 を適用する。
-fn desugar_aliases(def : @engine.Definition, orig : @engine.Definition) -> Unit {
+fn desugar_aliases(
+  def : @engine.Definition,
+  orig : @engine.Definition,
+  extensions : @engine.Registry,
+) -> Unit {
   for a in def.aliases {
     let alias_name = match a.name {
       Some(n) => n
@@ -2524,6 +2537,7 @@ fn desugar_aliases(def : @engine.Definition, orig : @engine.Definition) -> Unit 
           orig_long,
           canon.name,
           orig_ty,
+          extensions,
         )
         let long : Array[String] = []
         if str_in(canon_longs, kebab(canon.name)) {
@@ -2536,7 +2550,9 @@ fn desugar_aliases(def : @engine.Definition, orig : @engine.Definition) -> Unit 
         let variants : Array[@engine.Variant] = []
         match a.long_override {
           Some(decl) => {
-            let (longs, vars) = resolve_long(decl, alias_name, orig_ty)
+            let (longs, vars) = resolve_long(
+              decl, alias_name, orig_ty, extensions,
+            )
             for n in longs {
               if !str_in(long, n) {
                 long.push(n)
@@ -2589,7 +2605,7 @@ fn desugar_aliases(def : @engine.Definition, orig : @engine.Definition) -> Unit 
       Some(oc) => oc.body
       None => c.body // 理論上起きない防御的フォールバック (orig 側の対応 command が見つからない)
     }
-    desugar_aliases(c.body, orig_body)
+    desugar_aliases(c.body, orig_body, extensions)
   }
 }
 
@@ -2623,15 +2639,16 @@ fn def_err(
 fn collect_invalid_long_dsl(
   def : @engine.Definition,
   out : Array[@engine.DefError],
+  extensions : @engine.Registry,
 ) -> Unit {
   for e in def.options {
-    push_invalid_long(e, out)
+    push_invalid_long(e, out, extensions)
   }
   for e in def.positionals {
-    push_invalid_long(e, out)
+    push_invalid_long(e, out, extensions)
   }
   for c in def.commands {
-    collect_invalid_long_dsl(c.body, out)
+    collect_invalid_long_dsl(c.body, out, extensions)
   }
 }
 
@@ -2639,12 +2656,13 @@ fn collect_invalid_long_dsl(
 fn push_invalid_long(
   e : @engine.ElemDef,
   out : Array[@engine.DefError],
+  extensions : @engine.Registry,
 ) -> Unit {
   match e.long {
     LBool(_) => () // bool 糖衣は常に妥当 (DR-071 §1 / DR-076 §2)
     LList(strs) =>
       for l in strs {
-        match classify_long_spelling(l, kebab(e.name), e.ty) {
+        match classify_long_spelling(l, kebab(e.name), e.ty, extensions) {
           LInvalid(s) =>
             out.push(
               def_err(
@@ -2673,6 +2691,7 @@ fn push_invalid_long(
 fn collect_invalid_alias_long_override(
   def : @engine.Definition,
   out : Array[@engine.DefError],
+  extensions : @engine.Registry,
 ) -> Unit {
   for a in def.aliases {
     match a.long_override {
@@ -2687,7 +2706,8 @@ fn collect_invalid_alias_long_override(
               LBool(_) => () // bool 糖衣は常に妥当 (DR-071 §1 / DR-076 §2)
               LList(strs) =>
                 for l in strs {
-                  match classify_long_spelling(l, alias_name, canon.ty) {
+                  match
+                    classify_long_spelling(l, alias_name, canon.ty, extensions) {
                     LInvalid(s) =>
                       out.push(
                         def_err(
@@ -2708,7 +2728,7 @@ fn collect_invalid_alias_long_override(
     }
   }
   for c in def.commands {
-    collect_invalid_alias_long_override(c.body, out)
+    collect_invalid_alias_long_override(c.body, out, extensions)
   }
 }
 
@@ -3051,7 +3071,7 @@ fn collect_unsupported_option_ref_repeat(
 /// で落とす」契約): an `update` variant (DR-077 §1's `:update:<transform>` DSL) targeting a `multiple`
 /// (accum) element is REJECTED at definition time. DR-077's `update` semantics are `cell = f(old)`
 /// where `old` is the CELL'S CURRENT VALUE — for an accum cell that value is the accumulated array
-/// (T[]), but every filters-registry transform is T=>T (scalar, `filters.mbt`'s `FilterSignature`,
+/// (T[]), but every filters-registry transform is T=>T (scalar, `@engine.FilterSignature`,
 /// DR-077 §2 "使えるのは transform シグネチャ T=>T の filter のみ"). Applying a scalar transform to an
 /// array is a STRUCTURAL type mismatch with no legal resolution today (no Acc=>Acc transform exists
 /// in the registry) — rather than let it reach the ACCUMULATE fold and fail unpredictably there
@@ -3070,6 +3090,7 @@ fn collect_unsupported_option_ref_repeat(
 fn collect_unsupported_accum_update(
   def : @engine.Definition,
   out : Array[@engine.DefError],
+  extensions : @engine.Registry,
 ) -> Unit {
   for e in def.options {
     if e.multiple {
@@ -3130,7 +3151,8 @@ fn collect_unsupported_accum_update(
                 None => a.target
               }
               for l in strs {
-                match classify_long_spelling(l, alias_name, canon.ty) {
+                match
+                  classify_long_spelling(l, alias_name, canon.ty, extensions) {
                   LVariant(v) =>
                     match v.op {
                       @engine.Update(_, _) =>
@@ -3155,7 +3177,7 @@ fn collect_unsupported_accum_update(
     }
   }
   for c in def.commands {
-    collect_unsupported_accum_update(c.body, out)
+    collect_unsupported_accum_update(c.body, out, extensions)
   }
 }
 
@@ -3426,6 +3448,7 @@ fn collect_invalid_filter_attribute_mismatch(
 fn collect_unknown_filter(
   def : @engine.Definition,
   out : Array[@engine.DefError],
+  extensions : @engine.Registry,
 ) -> Unit {
   fn is_accum_elem(e : @engine.ElemDef) -> Bool {
     e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
@@ -3453,14 +3476,14 @@ fn collect_unknown_filter(
   fn check(e : @engine.ElemDef) -> Unit {
     // value_filters (T→T, scalar filter registry): 綴り不在は unknown-vocab (DR-101 §1)
     for fs in e.value_filters {
-      if lookup_filter(fs.name) is None {
+      if extensions.lookup_filter(fs.name) is None {
         push_unknown(e.name, "value_filters", fs.name)
       }
     }
     // piece_filters (String→String, scalar filter registry 内の string 域): 綴り不在は
     // unknown-vocab (value_filters と判定入力同一、DR-101 §1)
     for fs in e.piece_filters {
-      if lookup_filter(fs.name) is None {
+      if extensions.lookup_filter(fs.name) is None {
         push_unknown(e.name, "piece_filters", fs.name)
       }
     }
@@ -3469,7 +3492,7 @@ fn collect_unknown_filter(
     // `collect_invalid_filter_attribute_mismatch` の invalid-range に一任 (M-6/M-9 構造ゲート先行)。
     if !is_accum_elem(e) && e.ty.name() != "none" {
       for fs in e.final_filters {
-        if lookup_filter(fs.name) is None {
+        if extensions.lookup_filter(fs.name) is None {
           push_unknown(e.name, "final_filters", fs.name)
         }
       }
@@ -3478,7 +3501,7 @@ fn collect_unknown_filter(
     // 非 none) の場合のみ unknown-vocab 判定。
     if is_accum_elem(e) && e.ty.name() != "none" {
       for fs in e.accum_filters {
-        if lookup_array_filter(fs.name) is None {
+        if extensions.lookup_array_filter(fs.name) is None {
           push_unknown(e.name, "accum_filters", fs.name)
         }
       }
@@ -3492,7 +3515,7 @@ fn collect_unknown_filter(
     check(e)
   }
   for c in def.commands {
-    collect_unknown_filter(c.body, out)
+    collect_unknown_filter(c.body, out, extensions)
   }
 }
 
@@ -3962,7 +3985,7 @@ fn collect_config_cycle(
 ///|
 fn default_extensions() -> @engine.Registry {
   let extensions = @engine.Registry::new()
-  install(extensions)
+  install_default_extensions(extensions)
   extensions
 }
 
@@ -3992,7 +4015,7 @@ pub fn lower_definition(
   let orig = clone_def(def0)
   let errs : Array[@engine.DefError] = []
   // 純構文 pre-pass (LOWERING §A / §C.4): `:set` → kebab (Fix 2, DR-071) + dd name 既定 "--" (Fix 3, DR-064 §5)
-  normalize_surface(def)
+  normalize_surface(def, extensions)
   // init_sb が registry に repeat-lowering template を植える (静的 ref check が見えるように)。
   // alias entry-copies は ref/repeat を持たず、command alias は check 済 body を clone するので、
   // static check は pre-desugar def で回す (この 1 本目の tree は registry 植え込みのみが目的)。
@@ -4001,7 +4024,7 @@ pub fn lower_definition(
     errs.push(error)
   }
   collect_unknown_accumulation_resident(def, extensions, errs)
-  let view = @engine.DefsView::new(orig, def, registry)
+  let view = @engine.DefsView::new(orig, def, registry, extensions)
   for installer in order {
     for error in installer.collect_defs_errors(view) {
       errs.push(error)
@@ -4012,7 +4035,7 @@ pub fn lower_definition(
   }
   // alias 宣言 desugar (DR-057): 完全性検査 pass 後、決定的 pre-pass。option entry-copies /
   // command defs を追加 — fixpoint installer が展開する。
-  desugar_aliases(def, orig)
+  desugar_aliases(def, orig, extensions)
   let sb = init_sb(def, registry, extensions) // desugar 済 def で scope tree 再構築
   // 同型 default (DR-050 §3): config_file 要素があれば全 value cell に config seat を宣言。1 度計算、
   // ensure_entity に thread。

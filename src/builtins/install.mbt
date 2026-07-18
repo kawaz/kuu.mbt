@@ -51,9 +51,28 @@ fn register_collector(
 }
 
 ///|
-/// Register the canonical resident families. Node and matcher entries are identity-bearing
-/// prototypes; lowering constructs configured instances of the same resident kinds.
-pub fn install(registry : @engine.Registry) -> Unit {
+fn register_filter(
+  registry : @engine.Registry,
+  resident : @engine.FilterDescriptor,
+) -> Unit {
+  guard registry.register_filter(resident) else {
+    abort("duplicate builtin filter resident name: " + resident.name)
+  }
+}
+
+///|
+fn register_array_filter(
+  registry : @engine.Registry,
+  resident : @engine.ArrayFilterDescriptor,
+) -> Unit {
+  guard registry.register_array_filter(resident) else {
+    abort("duplicate builtin array filter resident name: " + resident.name)
+  }
+}
+
+///|
+/// Build the implicit assembly used only by `lower_definition`'s pending default.
+fn install_default_extensions(registry : @engine.Registry) -> Unit {
   install_installers(registry)
   register_node(registry, string_arg("", []))
   register_node(registry, kv_arg("", []))
@@ -97,4 +116,12 @@ pub fn install(registry : @engine.Registry) -> Unit {
 
   register_collector(registry, unwrap_single_collector())
   register_collector(registry, from_entries_collector(Entries))
+
+  register_filter(registry, trim_filter())
+  register_filter(registry, non_empty_filter())
+  register_filter(registry, in_range_filter())
+  register_filter(registry, regex_match_filter())
+  register_filter(registry, increment_filter())
+  register_array_filter(registry, unique_array_filter())
+  register_array_filter(registry, length_range_array_filter())
 }

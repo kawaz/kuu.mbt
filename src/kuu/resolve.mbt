@@ -314,7 +314,7 @@ pub struct AccumCell {
   collector : &@engine.CollectorExt?
   // DR-009 段 7 / DR-102 §1 accum_filters (@engine.Entity.accum_filters's copy, issue
   // accum-post-filters-stage7): an accum cell's accum_filters is Acc→Acc (the WHOLE accumulated
-  // array, `filters.mbt`'s `ArrayFilterDescriptor` registry — DIFFERENT signature from a scalar
+  // array, the engine `ArrayFilterDescriptor` registry — DIFFERENT signature from a scalar
   // cell's final_filters, which `apply_entity_filters` already applies per-value T→T and never
   // reaches build_result at all). Applied BEFORE `collector` (DR-083 §2's literal order
   // "accumulator 畳み → accum_filters" has no collector step in it; the collector/accum_filters
@@ -473,6 +473,7 @@ pub fn build_result(
   defaults : Array[DefaultCell],
   path : Array[String],
   nones? : Array[@engine.NoneCell] = [],
+  extensions? : @engine.Registry = canonical_registry(),
 ) -> @engine.RVal {
   // ARRAY: a "[]" sentinel at this level => build one element per "#k" child. Elements keep the
   // array's path (an indexed repeat element is not a named result-scope segment cells key on).
@@ -480,7 +481,14 @@ pub fn build_result(
     let elems : Array[@engine.RVal] = []
     for idx in ordered_indices(binds) {
       elems.push(
-        build_result(sub_under(binds, idx), cells, defaults, path, nones~),
+        build_result(
+          sub_under(binds, idx),
+          cells,
+          defaults,
+          path,
+          nones~,
+          extensions~,
+        ),
       )
     }
     return @engine.RArr(elems)
@@ -496,7 +504,7 @@ pub fn build_result(
   if has_direct_key(binds, "#row") {
     let rows : Array[@engine.RVal] = []
     for row in row_groups(binds) {
-      rows.push(build_result(row, cells, defaults, path, nones~))
+      rows.push(build_result(row, cells, defaults, path, nones~, extensions~))
     }
     return @engine.RArr(rows)
   }
@@ -598,7 +606,7 @@ pub fn build_result(
       // DR-009 段 7 / DR-102 §1 accum_filters (issue accum-post-filters-stage7): Acc→Acc self-map
       // over the WHOLE folded array, BEFORE the collector (DR-083 §2's order — see
       // AccumCell.accum_filters' doc comment for why collector comes after, not before).
-      // DR-105 §4: `@builtins.apply_accum_filter_chain` is Result-returning now (ARRAY filter registry can
+      // DR-105 §4: `@engine.apply_accum_filter_chain` returns Result (ARRAY filter registry can
       // reject, e.g. `length_range`) — the REJECT itself is surfaced earlier, at `resolve_entity`
       // time (`apply_entity_filters`'s own accum_filters gate, same `at_pos`/`epath` machinery
       // `final_filters` already uses), so a binding set that reaches `build_result` at all is
@@ -608,7 +616,7 @@ pub fn build_result(
       let filtered_vals = match accum_filters_here(cells, path, k) {
         [] => vals
         chain =>
-          match @builtins.apply_accum_filter_chain(chain, vals) {
+          match @engine.apply_accum_filter_chain(extensions, chain, vals) {
             Ok(v) => v
             Err(_) => vals
           }
@@ -683,7 +691,14 @@ pub fn build_result(
         let rows : Array[@engine.RVal] = []
         for row in row_groups(chunk) {
           rows.push(
-            build_result(row, cells, defaults, path_push(path, seg), nones~),
+            build_result(
+              row,
+              cells,
+              defaults,
+              path_push(path, seg),
+              nones~,
+              extensions~,
+            ),
           )
         }
         if flat {
@@ -705,6 +720,7 @@ pub fn build_result(
             defaults,
             path_push(path, seg),
             nones~,
+            extensions~,
           ),
         ),
       )
@@ -904,6 +920,7 @@ fn build_result_export(
   sc : @engine.Scope,
   binds : Array[@engine.Binding],
   ek : Map[String, @engine.ExportKey],
+  extensions? : @engine.Registry = canonical_registry(),
 ) -> @engine.RVal {
   build_result(
     apply_export_keys(binds, ek),
@@ -911,6 +928,7 @@ fn build_result_export(
     apply_export_to_defaults(default_cells(sc), ek),
     [],
     nones=@engine.none_cells(sc),
+    extensions~,
   )
 }
 
@@ -1517,6 +1535,7 @@ fn resolve_scope_tree_with_export(
   at_pos : Int,
   tty : Map[String, TtyObs],
   ek : Map[String, @engine.ExportKey],
+  extensions : @engine.Registry,
   include_default : Bool,
 ) -> Result[Array[@engine.Binding], @engine.ParseError] {
   let here : Array[@engine.Binding] = []
@@ -1527,7 +1546,8 @@ fn resolve_scope_tree_with_export(
   }
   let resolved = match
     resolve_scope_config_with_export(
-      sc, here, env_map, provider, path, inherited, at_pos, tty, ek, include_default,
+      sc, here, env_map, provider, path, inherited, at_pos, tty, ek, extensions,
+      include_default,
     ) {
     Ok(rb) => rb
     Err(pe) => return Err(pe)
@@ -1589,7 +1609,7 @@ fn resolve_scope_tree_with_export(
           match
             resolve_scope_tree_with_export(
               child, binds, env_map, provider, childpath, child_inherited, at_pos,
-              tty, ek, include_default,
+              tty, ek, extensions, include_default,
             ) {
             Ok(cb) =>
               for b in cb {
@@ -1638,6 +1658,7 @@ fn apply_requires_filter_with_export(
   provider : (String) -> @engine.ConfigVal?,
   tty : Map[String, TtyObs],
   ek : Map[String, @engine.ExportKey],
+  extensions : @engine.Registry,
 ) -> @engine.Outcome {
   let table = @engine.collect_scopes(root, defs)
   let violations_of = fn(
@@ -1659,6 +1680,7 @@ fn apply_requires_filter_with_export(
             toks_len,
             tty,
             ek,
+            extensions,
             true,
           ) {
           Ok(resolved) => {
@@ -1817,7 +1839,7 @@ fn filter_err(
 /// should never actually happen in practice — the `None` / non-`Transform` branches are defensive,
 /// not a live path. `args` (DR-077 §2's `:update:<name>:arg...` nesting convention) is threaded
 /// straight through to the registered closure unchecked — arity is a RUNTIME concern the closure
-/// itself enforces (mirrors `@builtins.apply_filter_chain`'s split), so the 3rd branch (`d.run` itself
+/// itself enforces (mirrors `@engine.apply_filter_chain`'s split), so the 3rd branch (`d.run` itself
 /// rejecting, e.g. a genuine arity mismatch) IS a live path even after the definition-time gate.
 fn apply_transform(
   transform : String,
@@ -1826,8 +1848,9 @@ fn apply_transform(
   name : String,
   at_pos : Int,
   epath : Array[String],
+  extensions : @engine.Registry,
 ) -> Result[@engine.Value, @engine.ParseError] {
-  match @builtins.lookup_filter(transform) {
+  match extensions.lookup_filter(transform) {
     None =>
       // codex 指摘 3 (issue 2026-07-09, 節目レビュー): defensive kind を @engine.KParse (ladder_err) から
       // @engine.KFilter (filter_err) へ — 「値がパースできなかった」ではなく「filter/transform 語彙の拒否」
@@ -1873,8 +1896,8 @@ fn apply_transform(
             // reason-family を @engine.KParse のまま残すのは内部不整合なので合わせて修正、報告に明記)。
             // codex 指摘 (2026-07-12, 節目レビュー): reason も `filter_rejected` に統一 (上 2 分岐と
             // 同じ理由、DR-095 の宣言集合に update-transform 軸の failure reason は無い)。`d.run`
-            // 自身の own reason (`_reason`) は piece/value/final/accum_filters チェーン用の別軸 (filters.mbt
-            // `@builtins.apply_filter_chain` doc comment 参照) であり、この update-transform 軸 (DR-077 §2) に
+            // 自身の own reason (`_reason`) は piece/value/final/accum_filters チェーン用の別軸
+            // (`@engine.apply_filter_chain` doc comment 参照) であり、この update-transform 軸 (DR-077 §2) に
             // は使わず message だけ通す。
             Err(filter_err(name, at_pos, "filter_rejected", msg, epath))
         }
@@ -1900,8 +1923,9 @@ fn env_value(
   piece_filters : Array[@engine.FilterSpelling],
   at_pos : Int,
   epath : Array[String],
+  extensions : @engine.Registry,
 ) -> Result[@engine.Value, @engine.ParseError] {
-  let s = match @builtins.apply_piece_filters(piece_filters, s) {
+  let s = match @engine.apply_piece_filters(extensions, piece_filters, s) {
     Ok(v) => v
     Err((reason, msg)) =>
       return Err(filter_err(element, at_pos, reason, msg, epath))
@@ -1969,18 +1993,19 @@ fn resolve_entity(
   at_pos : Int,
   epath : Array[String],
   tty_map : Map[String, TtyObs],
+  extensions : @engine.Registry,
   include_default : Bool,
 ) -> Result[Array[@engine.Binding], @engine.ParseError] {
   match
     resolve_entity_raw(
       e, cli, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
-      include_default,
+      extensions, include_default,
     ) {
     Ok(bs) =>
       if !include_default && bs.length() == 0 {
         Ok([])
       } else {
-        apply_entity_filters(e, bs, at_pos, epath)
+        apply_entity_filters(e, bs, at_pos, epath, extensions)
       }
     Err(pe) => Err(pe)
   }
@@ -2001,6 +2026,7 @@ fn apply_entity_filters(
   bs : Array[@engine.Binding],
   at_pos : Int,
   epath : Array[String],
+  extensions : @engine.Registry,
 ) -> Result[Array[@engine.Binding], @engine.ParseError] {
   let out : Array[@engine.Binding] = []
   for b in bs {
@@ -2020,7 +2046,7 @@ fn apply_entity_filters(
     if b.op != @engine.Set {
       out.push(b)
     } else {
-      match @builtins.apply_filter_chain(e.value_filters, b.value) {
+      match @engine.apply_filter_chain(extensions, e.value_filters, b.value) {
         Err((reason, msg)) => {
           // value_filters(each、段5、DR-009): CONFORMANCE §3's piece-attribution rule — a reject here
           // is attributed to the SPECIFIC args token the rejected piece came from (`b.at_pos`,
@@ -2036,7 +2062,8 @@ fn apply_entity_filters(
         Ok(v) => {
           let b2 = { ..b, value: v }
           if e.accum is None {
-            match @builtins.apply_filter_chain(e.final_filters, b2.value) {
+            match
+              @engine.apply_filter_chain(extensions, e.final_filters, b2.value) {
               Err((reason, msg)) =>
                 return Err(filter_err(e.name, at_pos, reason, msg, epath))
               Ok(v2) => out.push({ ..b2, value: v2 })
@@ -2066,7 +2093,7 @@ fn apply_entity_filters(
         _ => vals.push(b.value)
       }
     }
-    match @builtins.apply_accum_filter_chain(e.accum_filters, vals) {
+    match @engine.apply_accum_filter_chain(extensions, e.accum_filters, vals) {
       Ok(_) => ()
       Err((reason, msg)) =>
         return Err(filter_err(e.name, at_pos, reason, msg, epath))
@@ -2089,6 +2116,7 @@ fn resolve_entity_raw(
   at_pos : Int,
   epath : Array[String],
   tty_map : Map[String, TtyObs],
+  extensions : @engine.Registry,
   include_default : Bool,
 ) -> Result[Array[@engine.Binding], @engine.ParseError] {
   // cli seat (DR-015 last-wins + DR-077 §1 update fold): fold every same-name CLI effect in args
@@ -2156,6 +2184,7 @@ fn resolve_entity_raw(
           at_pos,
           epath,
           tty_map,
+          extensions,
           include_default=include_default_,
         )
       }
@@ -2183,6 +2212,7 @@ fn resolve_entity_raw(
           match
             resolve_ladder_below_cli(
               e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
+              extensions,
             ) {
             Ok(bs2) => {
               current = if bs2.length() > 0 {
@@ -2224,7 +2254,16 @@ fn resolve_entity_raw(
                 None => @engine.VNum(0.0)
               }
           }
-          match apply_transform(transform, old, args, e.name, at_pos, epath) {
+          match
+            apply_transform(
+              transform,
+              old,
+              args,
+              e.name,
+              at_pos,
+              epath,
+              extensions,
+            ) {
             Ok(v) => {
               current = Some(@engine.mkb(e.name, v, @engine.Cli))
               committed_now = true
@@ -2258,6 +2297,7 @@ fn resolve_entity_raw(
     at_pos,
     epath,
     tty_map,
+    extensions,
     include_default~,
   )
 }
@@ -2296,6 +2336,7 @@ fn resolve_ladder_below_cli(
   at_pos : Int,
   epath : Array[String],
   tty_map : Map[String, TtyObs],
+  extensions : @engine.Registry,
   include_default? : Bool = true,
 ) -> Result[Array[@engine.Binding], @engine.ParseError] {
   // env seat (DR-049 §2): the raw env string is ONE firing's argument (同 §2 「発火 1 回の 1 引数と
@@ -2313,7 +2354,15 @@ fn resolve_ladder_below_cli(
               let bs : Array[@engine.Binding] = []
               for part in @engine.split_on(v, sep) {
                 match
-                  env_value(e.name, e.ty, part, e.piece_filters, at_pos, epath) {
+                  env_value(
+                    e.name,
+                    e.ty,
+                    part,
+                    e.piece_filters,
+                    at_pos,
+                    epath,
+                    extensions,
+                  ) {
                   Ok(parsed) =>
                     bs.push(@engine.mkb(e.name, parsed, @engine.Env))
                   Err(pe) => return Err(pe)
@@ -2322,7 +2371,16 @@ fn resolve_ladder_below_cli(
               return Ok(bs)
             }
             None =>
-              match env_value(e.name, e.ty, v, e.piece_filters, at_pos, epath) {
+              match
+                env_value(
+                  e.name,
+                  e.ty,
+                  v,
+                  e.piece_filters,
+                  at_pos,
+                  epath,
+                  extensions,
+                ) {
                 Ok(parsed) =>
                   return Ok([@engine.mkb(e.name, parsed, @engine.Env)])
                 Err(pe) => return Err(pe)
@@ -2349,7 +2407,13 @@ fn resolve_ladder_below_cli(
                 if e.accum is Some(_) {
                   let bs : Array[@engine.Binding] = []
                   for it in items {
-                    match @builtins.config_to_value(it, e.ty, e.piece_filters) {
+                    match
+                      @builtins.config_to_value(
+                        it,
+                        e.ty,
+                        e.piece_filters,
+                        extensions,
+                      ) {
                       Ok(v) => bs.push(@engine.mkb(e.name, v, @engine.Config))
                       Err((@engine.KFilter, reason, msg)) =>
                         return Err(
@@ -2377,7 +2441,13 @@ fn resolve_ladder_below_cli(
               // `@builtins.config_to_value` が `e.piece_filters` を先頭で適用してから型 parse する — CLI/env の
               // pieceProcessor と同じ窓口。
               _ =>
-                match @builtins.config_to_value(cv, e.ty, e.piece_filters) {
+                match
+                  @builtins.config_to_value(
+                    cv,
+                    e.ty,
+                    e.piece_filters,
+                    extensions,
+                  ) {
                   Ok(v) => return Ok([@engine.mkb(e.name, v, @engine.Config)])
                   Err((@engine.KFilter, reason, msg)) =>
                     return Err(filter_err(e.name, at_pos, reason, msg, epath))
@@ -2430,6 +2500,7 @@ fn resolve_ladder_below_cli(
               @engine.value_to_configval(value),
               e.ty,
               e.piece_filters,
+              extensions,
             ) {
             Ok(resolved) =>
               return Ok([
@@ -2475,6 +2546,7 @@ fn resolve_ladder_below_cli(
               @engine.value_to_configval(v),
               e.ty,
               e.piece_filters,
+              extensions,
             ) {
             Ok(vv) => bs.push(@engine.mkb(e.name, vv, @engine.Default))
             Err((@engine.KFilter, reason, msg)) =>
@@ -2495,6 +2567,7 @@ fn resolve_ladder_below_cli(
             @engine.value_to_configval(v),
             e.ty,
             e.piece_filters,
+            extensions,
           ) {
           Ok(vv) => Ok([@engine.mkb(e.name, vv, @engine.Default)])
           Err((@engine.KFilter, reason, msg)) =>
@@ -2574,6 +2647,7 @@ fn resolve_scope_config_with_export(
   at_pos : Int,
   tty : Map[String, TtyObs],
   ek : Map[String, @engine.ExportKey],
+  extensions : @engine.Registry,
   include_default : Bool,
 ) -> Result[Array[@engine.Binding], @engine.ParseError] {
   // Phase 1: resolve the config_file element's path (cli > env > default), track committed-ness.
@@ -2652,7 +2726,8 @@ fn resolve_scope_config_with_export(
       let cpath = config_path_of(e, path)
       match
         resolve_entity(
-          e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty, false,
+          e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty, extensions,
+          false,
         ) {
         Ok(bs) =>
           if bs.length() > 0 {
@@ -2687,7 +2762,7 @@ fn resolve_scope_config_with_export(
             match
               resolve_entity(
                 e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty,
-                true,
+                extensions, true,
               ) {
               Ok(bs) =>
                 if default_fills_cell(e, bs) && bs.length() > 0 {
@@ -2746,7 +2821,8 @@ fn resolve_scope_config_with_export(
         let cpath = config_path_of(e, path)
         match
           resolve_entity(
-            e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty, true,
+            e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty, extensions,
+            true,
           ) {
           Ok(bs) => {
             for b in bs {

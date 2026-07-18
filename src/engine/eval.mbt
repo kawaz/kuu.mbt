@@ -27,12 +27,12 @@
 ///|
 /// The evaluator's ambient context, threaded through the whole walk.
 /// Bundles what every walk function needs but never mutates: the token
-/// stream, the template registry (DR-020/043), and the evaluation mode
-/// (parse vs complete — the collection-policy switch MDR-002's TODO
-/// anticipates). A future completes-memoization table also lives here.
+/// stream, the template registry (DR-020/043), the active extension registry,
+/// and the evaluation mode (parse vs complete — the collection-policy switch).
 pub struct Ctx {
   priv toks : Array[String]
   priv defs : Map[String, Node]
+  priv extensions_ : Registry
   priv mode : EvalMode
 }
 
@@ -48,6 +48,12 @@ pub fn Ctx::token_at(self : Ctx, pos : Int) -> String? {
 ///|
 pub fn Ctx::is_complete_mode(self : Ctx) -> Bool {
   self.mode == ModeComplete
+}
+
+///|
+/// The active extension assembly for registry-driven resident invocation.
+pub fn Ctx::extensions(self : Ctx) -> Registry {
+  self.extensions_
 }
 
 ///|
@@ -2900,8 +2906,9 @@ pub fn parse_tree(
   toks : Array[String],
   defs? : Map[String, Node] = Map([]),
   faildef? : FailDef = WithHeld,
+  extensions? : Registry = Registry::new(),
 ) -> Outcome {
-  let ctx : Ctx = { toks, defs, mode: ModeParse }
+  let ctx : Ctx = { toks, defs, extensions_: extensions, mode: ModeParse }
   // codex 指摘 (2026-07-12): dedup 判定 (下の `eff`/`dedup_key`) から dd/none の committed
   // placeholder binding を除外するための (path, name) 集合 — `none_cells` (resolve.mbt、
   // build_result が NoneCell として結果から除外する既存機構をそのまま再利用)。root が

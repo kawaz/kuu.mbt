@@ -17,15 +17,52 @@ fn chain(strs : Array[String]) -> Array[@engine.FilterSpelling] {
 }
 
 ///|
+fn test_filter_registry() -> @engine.Registry {
+  let registry = @engine.Registry::new()
+  guard registry.register_filter(trim_filter()) else { abort("duplicate trim") }
+  guard registry.register_filter(non_empty_filter()) else {
+    abort("duplicate non_empty")
+  }
+  guard registry.register_filter(in_range_filter()) else {
+    abort("duplicate in_range")
+  }
+  guard registry.register_filter(regex_match_filter()) else {
+    abort("duplicate regex_match")
+  }
+  guard registry.register_filter(increment_filter()) else {
+    abort("duplicate increment")
+  }
+  guard registry.register_array_filter(unique_array_filter()) else {
+    abort("duplicate unique")
+  }
+  guard registry.register_array_filter(length_range_array_filter()) else {
+    abort("duplicate length_range")
+  }
+  registry
+}
+
+///|
 /// 保証: DR-010 "フィールド名でレジストリが暗黙決定" — 名前で引くと正しい descriptor (signature 込み)
 /// が返る。`trim` は Transform (値を変える)、`in_range`/`non_empty` は Validate (値は変えない、
 /// 成否のみ) — DR-077 §2 "使えるのは transform シグネチャの filter のみ" が区別する軸そのもの。
 test "lookup_filter: built-in signatures match DR-077 §2's validate/transform split" {
-  assert_eq(lookup_filter("trim").unwrap().signature, Transform)
-  assert_eq(lookup_filter("increment").unwrap().signature, Transform)
-  assert_eq(lookup_filter("non_empty").unwrap().signature, Validate)
-  assert_eq(lookup_filter("in_range").unwrap().signature, Validate)
-  match lookup_filter("nonexistent") {
+  assert_eq(
+    test_filter_registry().lookup_filter("trim").unwrap().signature,
+    @engine.Transform,
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("increment").unwrap().signature,
+    @engine.Transform,
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("non_empty").unwrap().signature,
+    @engine.Validate,
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("in_range").unwrap().signature,
+    @engine.Validate,
+  )
+  match test_filter_registry().lookup_filter("nonexistent") {
     None => ()
     Some(_) => fail("expected None")
   }
@@ -36,11 +73,21 @@ test "lookup_filter: built-in signatures match DR-077 §2's validate/transform s
 /// piece_filters 相は本来 string→string でしか呼ばれない契約、値型混入時に落とすより無害な
 /// pass-through の方が診断しやすい)。
 test "filter_trim strips whitespace, passes non-strings through" {
-  match apply_filter_chain(chain(["trim"]), @engine.VStr("  hi  ")) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["trim"]),
+      @engine.VStr("  hi  "),
+    ) {
     Ok(v) => assert_eq(v, @engine.VStr("hi"))
     Err(_) => fail("expected Ok")
   }
-  match apply_filter_chain(chain(["trim"]), @engine.VNum(5.0)) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["trim"]),
+      @engine.VNum(5.0),
+    ) {
     Ok(v) => assert_eq(v, @engine.VNum(5.0))
     Err(_) => fail("expected Ok (non-string passthrough)")
   }
@@ -50,11 +97,21 @@ test "filter_trim strips whitespace, passes non-strings through" {
 /// 保証: `non_empty` は空文字列のみ Err、それ以外は値そのままの Ok (Validate、値を変えない)。
 /// reason は DR-095 §3 の宣言 `["empty_value"]` に細粒度化されている (filter_rejected 潰しの廃止)。
 test "filter_non_empty rejects only the empty string" {
-  match apply_filter_chain(chain(["non_empty"]), @engine.VStr("x")) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["non_empty"]),
+      @engine.VStr("x"),
+    ) {
     Ok(v) => assert_eq(v, @engine.VStr("x"))
     Err(_) => fail("expected Ok")
   }
-  match apply_filter_chain(chain(["non_empty"]), @engine.VStr("")) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["non_empty"]),
+      @engine.VStr(""),
+    ) {
     Err((reason, _)) => assert_eq(reason, "empty_value")
     Ok(_) => fail("expected Err (empty string)")
   }
@@ -65,19 +122,39 @@ test "filter_non_empty rejects only the empty string" {
 /// — 境界値は両方とも受理 (閉区間)、はみ出しは Err。reason は DR-095 §3 の宣言に細粒度化: 下限未満は
 /// `too_small`、上限超過は `too_large` (filter_rejected 潰しの廃止)。
 test "filter_in_range accepts a closed interval [min, max]" {
-  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(1.0)) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @engine.VNum(1.0),
+    ) {
     Ok(v) => assert_eq(v, @engine.VNum(1.0))
     Err(_) => fail("expected Ok (lower bound inclusive)")
   }
-  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(10.0)) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @engine.VNum(10.0),
+    ) {
     Ok(v) => assert_eq(v, @engine.VNum(10.0))
     Err(_) => fail("expected Ok (upper bound inclusive)")
   }
-  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(11.0)) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @engine.VNum(11.0),
+    ) {
     Err((reason, _)) => assert_eq(reason, "too_large")
     Ok(_) => fail("expected Err (over the upper bound)")
   }
-  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(0.0)) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @engine.VNum(0.0),
+    ) {
     Err((reason, _)) => assert_eq(reason, "too_small")
     Ok(_) => fail("expected Err (under the lower bound)")
   }
@@ -93,47 +170,83 @@ test "filter_in_range accepts a closed interval [min, max]" {
 test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar escape" {
   // (a) 一致受理: literal 部分一致。
   match
-    apply_filter_chain(chain(["regex_match:abc"]), @engine.VStr("xxabcyy")) {
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:abc"]),
+      @engine.VStr("xxabcyy"),
+    ) {
     Ok(v) => assert_eq(v, @engine.VStr("xxabcyy"))
     Err(_) => fail("expected Ok (unanchored partial match finds 'abc' inside)")
   }
   // (b) 不一致 reject。
-  match apply_filter_chain(chain(["regex_match:abc"]), @engine.VStr("xyz")) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:abc"]),
+      @engine.VStr("xyz"),
+    ) {
     Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) => fail("expected Err (no 'abc' substring)")
   }
   // (c) 部分一致と全体一致の区別: unanchored pattern は末尾ゴミがあっても通る (DR-085 §1 "filter
   // 側で暗黙アンカーを足さない")。同じ入力に `^...$` を足すと reject に転じる — アンカーは pattern
   // 側の責務であることの直接証拠。
-  match apply_filter_chain(chain(["regex_match:abc"]), @engine.VStr("abcXYZ")) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:abc"]),
+      @engine.VStr("abcXYZ"),
+    ) {
     Ok(_) => ()
     Err(_) =>
       fail("expected Ok (unanchored: trailing garbage after the match is fine)")
   }
   match
-    apply_filter_chain(chain(["regex_match:^abc$"]), @engine.VStr("abcXYZ")) {
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:^abc$"]),
+      @engine.VStr("abcXYZ"),
+    ) {
     Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) => fail("expected Err (full-anchor pattern rejects trailing garbage)")
   }
-  match apply_filter_chain(chain(["regex_match:^abc$"]), @engine.VStr("abc")) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:^abc$"]),
+      @engine.VStr("abc"),
+    ) {
     Ok(v) => assert_eq(v, @engine.VStr("abc"))
     Err(_) => fail("expected Ok (full-anchor pattern matches the exact string)")
   }
   // (d) メタ文字 escape: `a.c` (無escape) は任意 1 文字を挟んだ "abc"/"axc" 双方にマッチするが、
   // `a\.c` (escape 済み) はリテラル "." のみにマッチし "abc" にはマッチしない。
-  match apply_filter_chain(chain(["regex_match:^a.c$"]), @engine.VStr("abc")) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:^a.c$"]),
+      @engine.VStr("abc"),
+    ) {
     Ok(_) => ()
     Err(_) =>
       fail("expected Ok (unescaped '.' matches any single char, including 'b')")
   }
   match
-    apply_filter_chain(chain(["regex_match:^a\\.c$"]), @engine.VStr("abc")) {
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:^a\\.c$"]),
+      @engine.VStr("abc"),
+    ) {
     Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) =>
       fail("expected Err (escaped '\\.' is a literal dot, does not match 'b')")
   }
   match
-    apply_filter_chain(chain(["regex_match:^a\\.c$"]), @engine.VStr("a.c")) {
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:^a\\.c$"]),
+      @engine.VStr("a.c"),
+    ) {
     Ok(v) => assert_eq(v, @engine.VStr("a.c"))
     Err(_) => fail("expected Ok (escaped '\\.' matches a literal dot)")
   }
@@ -148,18 +261,32 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
 /// フォールバックのまま — `pattern_no_match` (宣言済み reason) は照合不一致のみに使う。
 test "filter_regex_match: malformed pattern, arg count, non-string input all Err distinctly" {
   match
-    apply_filter_chain(chain(["regex_match:(unclosed"]), @engine.VStr("x")) {
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:(unclosed"]),
+      @engine.VStr("x"),
+    ) {
     Err((reason, msg)) => {
       assert_eq(reason, "filter_rejected")
       assert_true(msg.contains("compile"))
     }
     Ok(_) => fail("expected Err (malformed pattern fails to compile)")
   }
-  match apply_filter_chain(chain(["regex_match"]), @engine.VStr("x")) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match"]),
+      @engine.VStr("x"),
+    ) {
     Err((reason, _)) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (regex_match requires exactly 1 arg)")
   }
-  match apply_filter_chain(chain(["regex_match:x"]), @engine.VNum(1.0)) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:x"]),
+      @engine.VNum(1.0),
+    ) {
     Err((reason, _)) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (regex_match requires a string value)")
   }
@@ -169,11 +296,21 @@ test "filter_regex_match: malformed pattern, arg count, non-string input all Err
 /// 保証: `increment` は 0-arg number Transform、DR-077 §3 count の built-in transform そのもの
 /// (apply_transform が registry lookup 経由でこの同じ closure を呼ぶ)。
 test "filter_increment adds 1 to a number, rejects args and non-numbers" {
-  match apply_filter_chain(chain(["increment"]), @engine.VNum(4.0)) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["increment"]),
+      @engine.VNum(4.0),
+    ) {
     Ok(v) => assert_eq(v, @engine.VNum(5.0))
     Err(_) => fail("expected Ok")
   }
-  match apply_filter_chain(chain(["increment:5"]), @engine.VNum(4.0)) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["increment:5"]),
+      @engine.VNum(4.0),
+    ) {
     Err((reason, _)) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (increment takes no args)")
   }
@@ -186,7 +323,11 @@ test "filter_increment adds 1 to a number, rejects args and non-numbers" {
 /// increment を2回連結すると +2 になる。
 test "apply_filter_chain runs entries in declared order" {
   match
-    apply_filter_chain(chain(["increment", "increment"]), @engine.VNum(1.0)) {
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["increment", "increment"]),
+      @engine.VNum(1.0),
+    ) {
     Ok(v) => assert_eq(v, @engine.VNum(3.0))
     Err(_) => fail("expected Ok (1 -> 2 -> 3)")
   }
@@ -200,13 +341,22 @@ test "apply_filter_chain runs entries in declared order" {
 /// カバー済み。ここでは "宣言側が正しいか" を別テストとして固定する)。`trim`/`increment` は
 /// Transform で常に成功 (reasons: [])。
 test "built-in filter descriptors declare exactly the DR-095 §3 reason vocabulary" {
-  assert_eq(lookup_filter("trim").unwrap().reasons, [])
-  assert_eq(lookup_filter("non_empty").unwrap().reasons, ["empty_value"])
-  assert_eq(lookup_filter("in_range").unwrap().reasons, [
+  assert_eq(test_filter_registry().lookup_filter("trim").unwrap().reasons, [])
+  assert_eq(
+    test_filter_registry().lookup_filter("non_empty").unwrap().reasons,
+    ["empty_value"],
+  )
+  assert_eq(test_filter_registry().lookup_filter("in_range").unwrap().reasons, [
     "too_small", "too_large",
   ])
-  assert_eq(lookup_filter("regex_match").unwrap().reasons, ["pattern_no_match"])
-  assert_eq(lookup_filter("increment").unwrap().reasons, [])
+  assert_eq(
+    test_filter_registry().lookup_filter("regex_match").unwrap().reasons,
+    ["pattern_no_match"],
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("increment").unwrap().reasons,
+    [],
+  )
 }
 
 ///|
@@ -217,7 +367,7 @@ test "built-in filter descriptors declare exactly the DR-095 §3 reason vocabula
 /// 個別テストが既に別途 assert 済み)。
 test "reasons emitted for declared failure modes are a subset of the descriptor's reasons" {
   fn assert_declared(filter_name : String, got_reason : String) -> Unit raise {
-    let reasons = lookup_filter(filter_name).unwrap().reasons
+    let reasons = test_filter_registry().lookup_filter(filter_name).unwrap().reasons
     if !reasons.contains(got_reason) {
       fail(
         "filter '" +
@@ -230,22 +380,42 @@ test "reasons emitted for declared failure modes are a subset of the descriptor'
   }
 
   // non_empty: empty_value
-  match apply_filter_chain(chain(["non_empty"]), @engine.VStr("")) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["non_empty"]),
+      @engine.VStr(""),
+    ) {
     Err((reason, _)) => assert_declared("non_empty", reason)
     Ok(_) => fail("expected Err")
   }
   // in_range: too_small
-  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(0.0)) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @engine.VNum(0.0),
+    ) {
     Err((reason, _)) => assert_declared("in_range", reason)
     Ok(_) => fail("expected Err")
   }
   // in_range: too_large
-  match apply_filter_chain(chain(["in_range:1:10"]), @engine.VNum(11.0)) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @engine.VNum(11.0),
+    ) {
     Err((reason, _)) => assert_declared("in_range", reason)
     Ok(_) => fail("expected Err")
   }
   // regex_match: pattern_no_match
-  match apply_filter_chain(chain(["regex_match:abc"]), @engine.VStr("xyz")) {
+  match
+    @engine.apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:abc"]),
+      @engine.VStr("xyz"),
+    ) {
     Err((reason, _)) => assert_declared("regex_match", reason)
     Ok(_) => fail("expected Err")
   }

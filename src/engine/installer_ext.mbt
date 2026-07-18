@@ -5,6 +5,7 @@ pub struct DefsView {
   priv source_definition : Definition
   priv definition : Definition
   priv templates : Map[String, Node]
+  priv extensions_ : Registry
 }
 
 ///|
@@ -12,8 +13,9 @@ pub fn DefsView::new(
   source_definition : Definition,
   definition : Definition,
   templates : Map[String, Node],
+  extensions : Registry,
 ) -> DefsView {
-  { source_definition, definition, templates }
+  { source_definition, definition, templates, extensions_: extensions }
 }
 
 ///|
@@ -29,6 +31,11 @@ pub fn DefsView::definition(self : DefsView) -> Definition {
 ///|
 pub fn DefsView::templates(self : DefsView) -> Map[String, Node] {
   self.templates
+}
+
+///|
+pub fn DefsView::extensions(self : DefsView) -> Registry {
+  self.extensions_
 }
 
 ///|

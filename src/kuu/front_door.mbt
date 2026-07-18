@@ -137,7 +137,7 @@ pub fn parse_definition(
           root,
           templates,
           extensions,
-          ekmap: @builtins.build_export_map(def),
+          ekmap: @builtins.build_export_map(def, extensions),
         })
       Err(errs) => Err(Rejected(errs))
     }
@@ -212,7 +212,12 @@ pub fn parse(
 ) -> @engine.Outcome {
   let root = @engine.ScopeNode(ast.root)
   let checked = apply_requires_filter_with_export(
-    @engine.parse_tree(root, args, defs=ast.templates),
+    @engine.parse_tree(
+      root,
+      args,
+      defs=ast.templates,
+      extensions=ast.extensions,
+    ),
     root,
     ast.templates,
     env,
@@ -220,6 +225,7 @@ pub fn parse(
     config,
     tty,
     ast.ekmap,
+    ast.extensions,
   )
   match checked {
     @engine.Success(binds) =>
@@ -234,6 +240,7 @@ pub fn parse(
           args.length(),
           tty,
           ast.ekmap,
+          ast.extensions,
           false,
         ) {
         Ok(claims) =>
@@ -290,6 +297,7 @@ pub fn resolve(
           args.length(),
           tty,
           ast.ekmap,
+          ast.extensions,
           true,
         ) {
         // `resolve_scope_tree` は accum entity scope (`@engine.Scoped(name, ...)` node、command でない)
@@ -325,6 +333,7 @@ pub fn complete(
     args_before,
     defs=ast.templates,
     after=args_after,
+    extensions=ast.extensions,
   )
 }
 
@@ -467,7 +476,12 @@ pub fn output(
   resolved? : Array[@engine.Binding] = effects_binds,
 ) -> OutputView {
   {
-    result: build_result_export(ast.root, resolved, ast.ekmap),
+    result: build_result_export(
+      ast.root,
+      resolved,
+      ast.ekmap,
+      extensions=ast.extensions,
+    ),
     effects: project_effects(ast, effects_binds),
     sources: project_sources(ast, resolved),
   }

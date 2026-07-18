@@ -251,7 +251,7 @@ impl @engine.InstallerExt for LongInstaller with fn collect_defs_errors(
   view,
 ) {
   let errors = []
-  collect_invalid_long_dsl(view.source_definition(), errors)
+  collect_invalid_long_dsl(view.source_definition(), errors, view.extensions())
   collect_tty_stream_missing(view.definition(), errors)
   errors
 }
@@ -626,10 +626,10 @@ impl @engine.InstallerExt for MultipleInstaller with fn collect_defs_errors(
 ) {
   let errors = []
   let definition = view.definition()
-  collect_unsupported_accum_update(definition, errors)
+  collect_unsupported_accum_update(definition, errors, view.extensions())
   collect_unsupported_count_multiple(definition, errors)
   collect_scalar_array_default(definition, errors)
-  collect_unknown_filter(definition, errors)
+  collect_unknown_filter(definition, errors, view.extensions())
   collect_invalid_filter_attribute_mismatch(definition, errors)
   collect_invalid_regex_pattern(definition, errors)
   collect_ref_merge_accum(definition, errors)
@@ -810,7 +810,11 @@ impl @engine.InstallerExt for AliasInstaller with fn collect_defs_errors(
   view,
 ) {
   let errors = []
-  collect_invalid_alias_long_override(view.source_definition(), errors)
+  collect_invalid_alias_long_override(
+    view.source_definition(),
+    errors,
+    view.extensions(),
+  )
   errors
 }
 
@@ -866,7 +870,7 @@ pub fn inheritable_installer() -> &@engine.InstallerExt {
 }
 
 ///|
-pub fn install_installers(registry : @engine.Registry) -> Unit {
+fn install_installers(registry : @engine.Registry) -> Unit {
   registry.register_installer(long_installer())
   registry.register_installer(short_installer())
   registry.register_installer(env_installer())

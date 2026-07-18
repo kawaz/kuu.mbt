@@ -308,8 +308,14 @@ pub fn complete_tree(
   before : Array[String],
   defs? : Map[String, Node] = Map([]),
   after? : Array[String] = [],
+  extensions? : Registry = Registry::new(),
 ) -> Array[Cand] {
-  let ctx : Ctx = { toks: before, defs, mode: ModeComplete }
+  let ctx : Ctx = {
+    toks: before,
+    defs,
+    extensions_: extensions,
+    mode: ModeComplete,
+  }
   let branches = match root {
     ScopeNode(sc) =>
       scope_step(sc, ctx, 0, 0, [], false, KTop(collect_scopes(root, defs)))

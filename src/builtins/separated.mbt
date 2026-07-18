@@ -9,6 +9,7 @@ fn sep_binds(
   piece_filters : Array[@engine.FilterSpelling],
   pos : Int,
   merge : Bool,
+  extensions : @engine.Registry,
 ) -> Result[Array[@engine.Binding], @engine.ParseError] {
   let out : Array[@engine.Binding] = []
   let parts = match sep {
@@ -35,7 +36,8 @@ fn sep_binds(
           at_pos: Some(pos),
         })
       @engine.PkRemove(payload) =>
-        match sep_piece_value(name, payload, ty, piece_filters, pos) {
+        match
+          sep_piece_value(name, payload, ty, piece_filters, pos, extensions) {
           Ok(v) =>
             out.push({
               key: name,
@@ -49,7 +51,8 @@ fn sep_binds(
           Err(pe) => return Err(pe)
         }
       @engine.PkAdd(payload) =>
-        match sep_piece_value(name, payload, ty, piece_filters, pos) {
+        match
+          sep_piece_value(name, payload, ty, piece_filters, pos, extensions) {
           Ok(v) => out.push(@engine.mkb(name, v, @engine.Cli, at_pos=Some(pos)))
           Err(pe) => return Err(pe)
         }
@@ -70,8 +73,9 @@ fn sep_piece_value(
   ty : &@engine.TypeExt,
   piece_filters : Array[@engine.FilterSpelling],
   pos : Int,
+  extensions : @engine.Registry,
 ) -> Result[@engine.Value, @engine.ParseError] {
-  match apply_piece_filters(piece_filters, part) {
+  match @engine.apply_piece_filters(extensions, piece_filters, part) {
     Err((reason, msg)) => Err(@engine.pe_filter(name, pos, reason, msg))
     Ok(s) =>
       match ty.parse_token(s) {

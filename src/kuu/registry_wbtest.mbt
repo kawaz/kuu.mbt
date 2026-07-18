@@ -80,8 +80,7 @@ impl @engine.TypeExt for CustomTypeExt with fn default_seat_resolver(_self, ctx)
 test "parse_definition resolves a custom type through the supplied Registry" {
   // The registry is a live lowering input: a third-party TypeExt can be selected by wire name
   // without adding a builtin switch arm.
-  let registry = @engine.Registry::new()
-  @builtins.install(registry)
+  let registry = canonical_registry()
   assert_true(registry.register_type(CustomTypeExt::{  } as &@engine.TypeExt))
   let definition = @json.parse(
     "{\"options\":[{\"name\":\"value\",\"type\":\"custom\",\"long\":true}]}",
@@ -96,6 +95,48 @@ test "parse_definition resolves a custom type through the supplied Registry" {
         _ => fail("custom type input must parse through its TypeExt")
       }
     Err(_) => fail("registered custom type must lower")
+  }
+}
+
+///|
+fn third_party_prefix_filter() -> @engine.FilterDescriptor {
+  {
+    name: "third_party_prefix",
+    signature: @engine.Transform,
+    reasons: [],
+    run: fn(value, _args) {
+      match value {
+        @engine.VStr(text) => Ok(@engine.VStr("third-party:" + text))
+        other => Ok(other)
+      }
+    },
+  }
+}
+
+///|
+test "a third-party filter parses through the engine contract without a builtin filter API" {
+  // The custom resident is expressed only with engine-owned descriptor/value types. Registering it
+  // into the active assembly makes definition checking and resolve-time execution observe the same
+  // name, proving that builtin filter tables are not required for extension filters.
+  let registry = canonical_registry()
+  assert_true(registry.register_filter(third_party_prefix_filter()))
+  let definition = @json.parse(
+    "{\"options\":[{\"name\":\"value\",\"type\":\"string\",\"long\":true,\"value_filters\":[\"third_party_prefix\"]}]}",
+  )
+  match parse_definition(definition, extensions=registry) {
+    Ok(ast) => {
+      let parsed = parse(ast, ["--value", "x"])
+      match resolve(ast, parsed, ["--value", "x"]) {
+        @engine.Success([binding]) =>
+          assert_eq(binding.value, @engine.VStr("third-party:x"))
+        _ =>
+          fail(
+            "registered third-party filter must transform the resolved value",
+          )
+      }
+    }
+    Err(_) =>
+      fail("registered third-party filter must pass definition checking")
   }
 }
 

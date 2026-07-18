@@ -48,7 +48,12 @@ fn test_value(name : String, resident_kind : String) -> Node {
 test "REVIEW-C2 eval_many: a Pending after successful reps carries the reps' bindings" {
   // One synthetic value rep consumes the only token; the next rep starves and returns Pending.
   // Pending must retain v=x, matching eval_seq's starved-branch state contract.
-  let ctx : Ctx = { toks: ["x"], defs: Map([]), mode: ModeParse }
+  let ctx : Ctx = {
+    toks: ["x"],
+    defs: Map([]),
+    extensions_: Registry::new(),
+    mode: ModeParse,
+  }
   let brs = eval_many(test_value("v", "synthetic/string"), ctx, 0, [])
   let mut pending_has_acc = false
   for branch in brs {

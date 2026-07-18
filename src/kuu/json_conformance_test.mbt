@@ -951,7 +951,7 @@ fn proj_scope(sc : @engine.Scope, reg : Map[String, @engine.Node]) -> LSec {
 ///|
 fn canonical_registry_for_test() -> @engine.Registry {
   let registry = @engine.Registry::new()
-  @builtins.install(registry)
+  install(registry)
   registry
 }
 

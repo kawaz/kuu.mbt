@@ -344,6 +344,7 @@ fn run_eq_split(
             e.piece_filters,
             pos,
             e.merge,
+            ctx.extensions(),
           ) {
           Ok(bs) => [@engine.Accept(pos + 1, @engine.cat(bs, dm))]
           Err(pe) => [@engine.Held(pe, [])]
@@ -352,7 +353,8 @@ fn run_eq_split(
       // DR-034/DR-062 piece_filters: run BEFORE the kind-specific parse, same timing eval.mbt's
       // value-primitive arms use (this is the eq-split entry's own copy of the element's chain,
       // EqEntry carries it the same way it carries int_round/allow_base_prefix).
-      let filtered = match apply_piece_filters(e.piece_filters, valstr) {
+      let filtered = match
+        @engine.apply_piece_filters(ctx.extensions(), e.piece_filters, valstr) {
         Ok(s) => s
         Err((reason, msg)) =>
           return [@engine.Held(@engine.pe_filter(e.name, pos, reason, msg), [])]
@@ -441,6 +443,7 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 /// the `pe_parse(..., pos)` / `pe_parse(..., pos + 1)` split those same call sites already made
 /// pre-existing for ordinary parse failures).
 fn short_val(
+  ctx : @engine.Ctx,
   e : ShortEntry,
   s : String,
   pos : Int,
@@ -453,9 +456,19 @@ fn short_val(
     // `ShortEntry.piece_filters` doc comment: "Ignored for flag_type()/bool_type()/count_type(), no in-cluster/
     // space-form VALUE attachment for those"), so `sep_binds`'s bool arm is structurally dead here;
     // pass the canonical default purely to satisfy the shared signature.
-    sep_binds(e.name, s, e.separator, e.kind, e.piece_filters, pos, e.merge)
+    sep_binds(
+      e.name,
+      s,
+      e.separator,
+      e.kind,
+      e.piece_filters,
+      pos,
+      e.merge,
+      ctx.extensions(),
+    )
   } else {
-    let filtered = match apply_piece_filters(e.piece_filters, s) {
+    let filtered = match
+      @engine.apply_piece_filters(ctx.extensions(), e.piece_filters, s) {
       Ok(v) => v
       Err((reason, msg)) =>
         return Err(@engine.pe_filter(e.name, pos, reason, msg))
@@ -555,7 +568,7 @@ fn walk_short(
             (e.short_attached_value != @engine.AtLastOnly || j == body.length()) &&
             (combine || j == body.length()) {
             let vstr = @engine.chars_to_str(body, vstart, j)
-            match short_val(e, vstr, pos) {
+            match short_val(ctx, e, vstr, pos) {
               Ok(bs) =>
                 for
                   r in walk_short(
@@ -595,7 +608,7 @@ fn walk_short(
         if e.short_attached_value != @engine.AtRequire &&
           vstart == body.length() &&
           ctx.token_at(pos + 1) is Some(next_token) {
-          match short_val(e, next_token, pos + 1) {
+          match short_val(ctx, e, next_token, pos + 1) {
             Ok(bs) =>
               out.push(
                 @engine.Accept(pos + 2, @engine.cat(acc, @engine.cat(bs, dm))),

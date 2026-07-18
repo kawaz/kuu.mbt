@@ -9,6 +9,8 @@ pub struct Registry {
   priv types : Map[String, &TypeExt]
   priv accumulators : Map[String, &AccumulatorExt]
   priv collectors : Map[String, &CollectorExt]
+  priv filters : Map[String, FilterDescriptor]
+  priv array_filters : Map[String, ArrayFilterDescriptor]
   priv installers : Array[&InstallerExt]
 }
 
@@ -20,6 +22,8 @@ pub fn Registry::new() -> Registry {
     types: Map([]),
     accumulators: Map([]),
     collectors: Map([]),
+    filters: Map([]),
+    array_filters: Map([]),
     installers: [],
   }
 }
@@ -122,6 +126,50 @@ pub fn Registry::lookup_collector(
   kind : String,
 ) -> &CollectorExt? {
   self.collectors.get(kind)
+}
+
+///|
+/// Register one scalar filter resident. Returns false when the name is already owned.
+pub fn Registry::register_filter(
+  self : Registry,
+  resident : FilterDescriptor,
+) -> Bool {
+  if self.filters.get(resident.name) is Some(_) {
+    false
+  } else {
+    self.filters.set(resident.name, resident)
+    true
+  }
+}
+
+///|
+pub fn Registry::lookup_filter(
+  self : Registry,
+  name : String,
+) -> FilterDescriptor? {
+  self.filters.get(name)
+}
+
+///|
+/// Register one whole-array filter resident. Returns false when the name is already owned.
+pub fn Registry::register_array_filter(
+  self : Registry,
+  resident : ArrayFilterDescriptor,
+) -> Bool {
+  if self.array_filters.get(resident.name) is Some(_) {
+    false
+  } else {
+    self.array_filters.set(resident.name, resident)
+    true
+  }
+}
+
+///|
+pub fn Registry::lookup_array_filter(
+  self : Registry,
+  name : String,
+) -> ArrayFilterDescriptor? {
+  self.array_filters.get(name)
 }
 
 ///|

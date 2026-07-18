@@ -33,52 +33,6 @@ fn split_colon(s : String) -> Array[String] {
 }
 
 ///|
-/// A filter's SIGNATURE (DR-061 §5 "factory config と filter の線引きは相で切る" + DR-077 §2 "使える
-/// のは transform シグネチャ (T => T) の filter のみ"): `Validate` never changes its input (success =
-/// input unchanged, failure = Err) — e.g. `non_empty`, `in_range`. `Transform` computes a NEW value
-/// from the input — e.g. `trim`, `increment`. This distinction is what DR-077 §2 needs to reject a
-/// validate-only filter as an `update` transform (a validator has nothing meaningful to "become").
-pub enum FilterSignature {
-  Validate
-  Transform
-} derive(Eq, Debug)
-
-///|
-/// Whether this descriptor can produce a replacement value.
-pub fn FilterSignature::is_transform(self : FilterSignature) -> Bool {
-  self is Transform
-}
-
-///|
-/// One filters-registry entry (DR-010 "filters" registry区分 + DR-061 descriptor 概念 applied to
-/// filters, not just installers — signature is the descriptor axis DR-077 §2 needs). `reasons` is
-/// this descriptor's declared failure-mode vocabulary (DR-095 §3's per-filter table; spec 正本 is
-/// `schema/builtin-descriptors.json`) — `run`'s `Err` reason must be a member of this list for a
-/// correctly-defined filter invocation, EXCEPT filter-definition-bug paths (arg-count mismatch, a
-/// malformed regex pattern, a value whose type this filter doesn't handle), which fall back to
-/// `"filter_rejected"` and sit outside the declared vocabulary (DR-095 §3: these are not a failure
-/// mode of a *correctly defined* filter, so completeness/typo checking doesn't cover them — same
-/// posture `apply_filter_chain` already uses for an unregistered filter NAME, generalized here to
-/// an unregistered filter REASON). `run` is genuinely a closure (kuu.mbt is the single MoonBit
-/// reference host — DR-010's wire-serializable `{name, config}` factory form is a multi-host
-/// concern this reference impl does not need to round-trip through JSON) — `FilterDescriptor`
-/// therefore has no `derive(Eq)` (closures aren't comparable); registry lookup is by `name`
-/// (String), never by descriptor equality.
-pub struct FilterDescriptor {
-  name : String
-  signature : FilterSignature
-  reasons : Array[String]
-  // DR-009 "args はすべて string、filter registry 側でキャスト": the closure owns its own arg
-  // parsing/casting, uniformly for every filter (mirrors `dsl_operand_value`'s per-type casting,
-  // just filter-side instead of variant-side). Err carries (reason, message) — reason is this
-  // descriptor's DR-095 vocabulary (or `"filter_rejected"`, see this struct's doc comment).
-  run : (@engine.Value, Array[String]) -> Result[
-    @engine.Value,
-    (String, String),
-  ]
-}
-
-///|
 /// `trim` (DR-040 §piece_filters example, DR-009 §DSL 文法): string-only, strips ASCII whitespace
 /// from both ends. A `Transform` (the value CHANGES). Non-string input is untouched (defensive —
 /// every current call site only ever feeds `trim` a `@engine.VStr`, DR-009's piece_filters phase is
@@ -241,61 +195,48 @@ fn filter_regex_match(
 }
 
 ///|
-/// The filters registry (DR-010 §filters 区分). A minimal built-in set (DR-040 §「filters registry
-/// の階層」canonical/標準 layer — no 拡張/opt-in tier exists in this single-host reference impl, see
-/// this file's header note). Constructed fresh per lookup rather than held as a top-level `let`
-/// (kuu.mbt has no existing top-level-registry pattern to follow; a fresh `Map` per call keeps this
-/// symmetrical with the rest of the codebase's "build what you need, when you need it" style — the
-/// map is tiny and lookups are not hot-path).
-fn filters_registry() -> Map[String, FilterDescriptor] {
-  Map::from_array([
-    (
-      "trim",
-      { name: "trim", signature: Transform, reasons: [], run: filter_trim },
-    ),
-    (
-      "non_empty",
-      {
-        name: "non_empty",
-        signature: Validate,
-        reasons: ["empty_value"],
-        run: filter_non_empty,
-      },
-    ),
-    (
-      "in_range",
-      {
-        name: "in_range",
-        signature: Validate,
-        reasons: ["too_small", "too_large"],
-        run: filter_in_range,
-      },
-    ),
-    (
-      "regex_match",
-      {
-        name: "regex_match",
-        signature: Validate,
-        reasons: ["pattern_no_match"],
-        run: filter_regex_match,
-      },
-    ),
-    (
-      "increment",
-      {
-        name: "increment",
-        signature: Transform,
-        reasons: [],
-        run: filter_increment,
-      },
-    ),
-  ])
+pub fn trim_filter() -> @engine.FilterDescriptor {
+  { name: "trim", signature: @engine.Transform, reasons: [], run: filter_trim }
 }
 
 ///|
-/// Look up one filter by name (registry lookup — DR-010 "フィールド名でレジストリが暗黙決定").
-pub fn lookup_filter(name : String) -> FilterDescriptor? {
-  filters_registry().get(name)
+pub fn non_empty_filter() -> @engine.FilterDescriptor {
+  {
+    name: "non_empty",
+    signature: @engine.Validate,
+    reasons: ["empty_value"],
+    run: filter_non_empty,
+  }
+}
+
+///|
+pub fn in_range_filter() -> @engine.FilterDescriptor {
+  {
+    name: "in_range",
+    signature: @engine.Validate,
+    reasons: ["too_small", "too_large"],
+    run: filter_in_range,
+  }
+}
+
+///|
+pub fn regex_match_filter() -> @engine.FilterDescriptor {
+  {
+    name: "regex_match",
+    signature: @engine.Validate,
+    reasons: ["pattern_no_match"],
+    run: filter_regex_match,
+  }
+}
+
+///|
+pub fn increment_filter() -> @engine.FilterDescriptor {
+  {
+    name: "increment",
+    signature: @engine.Transform,
+    reasons: [],
+    run: filter_increment,
+  }
 }
 
 ///|
@@ -383,87 +324,23 @@ fn array_filter_length_range(
 }
 
 ///|
-/// One ARRAY accum_filters registry entry (DR-009 段 7, DR-102 属性分割): unlike `FilterDescriptor`
-/// (`@engine.Value => @engine.Value`, piece/value_filters/final_filters phases), this phase's `run` is
-/// `Array[@engine.Value] => Array[@engine.Value]` — the accumulated cell's WHOLE final array is the unit these
-/// filters see (issue accum-post-filters-stage7's "未裁定の論点1" resolved: whole-array, not
-/// per-element — a self-map over U, DR-083 §2's literal order "accumulator 畳み → accum_filters"
-/// has no per-piece step left to run this at). A separate registry from `filters_registry()` (not a
-/// variant/overload of it) because the two phases have genuinely different signatures — no name
-/// collision risk since `installer.mbt`'s `collect_unknown_filter` rejects an accum entity's
-/// accum_filters chain containing a name this registry doesn't know, at DEFINITION time.
-/// DR-105 §4: the ARRAY filter registry now shares the SAME Validate/Transform signature split as
-/// `FilterDescriptor` (`signature`/`reasons` fields, `run` returns `Result`) — `unique` stayed the
-/// sole resident as a `Transform` (never rejects) until `length_range` (DR-105 §5) became the first
-/// `Validate` resident able to reject. `resolve.mbt`'s `apply_entity_filters` is where the reject
-/// actually surfaces as a `ParseError` (DR-102 §4's `args.length()` attribution) — by the time
-/// `build_result` runs this chain again (to get the transformed array for rendering), every chain
-/// has already been proven non-rejecting, so that call site's `Err` arm is defensive-only.
-pub struct ArrayFilterDescriptor {
-  name : String
-  signature : FilterSignature
-  reasons : Array[String]
-  run : (Array[@engine.Value], Array[String]) -> Result[
-    Array[@engine.Value],
-    (String, String),
-  ]
-}
-
-///|
-fn array_filters_registry() -> Map[String, ArrayFilterDescriptor] {
-  Map::from_array([
-    (
-      "unique",
-      {
-        name: "unique",
-        signature: Transform,
-        reasons: [],
-        run: array_filter_unique,
-      },
-    ),
-    (
-      "length_range",
-      {
-        name: "length_range",
-        signature: Validate,
-        reasons: ["too_short", "too_long"],
-        run: array_filter_length_range,
-      },
-    ),
-  ])
-}
-
-///|
-/// Look up one ARRAY accum_filters entry by name (DR-009 段7 registry, DR-102 属性分割, separate
-/// from `lookup_filter`'s per-value registry — see `ArrayFilterDescriptor`'s doc comment for why).
-pub fn lookup_array_filter(name : String) -> ArrayFilterDescriptor? {
-  array_filters_registry().get(name)
-}
-
-///|
-/// Run an accum cell's accum_filters chain (DR-009 段 7, DR-102 属性分割, DR-105 §4 Result-ified)
-/// over its final accumulated array, in declared order — short-circuits on the first `Err`, mirroring
-/// `apply_filter_chain`'s scalar-side chain walk. `installer.mbt`'s `collect_unknown_filter` already
-/// guarantees every chain entry reaching here is a registered array filter name (definition-time
-/// gate, `ArrayFilterDescriptor`'s doc comment); an unregistered name here is therefore unreachable
-/// in practice and is skipped (same defensive posture as `apply_collector`'s "unrecognized name —
-/// identity" fallback).
-pub fn apply_accum_filter_chain(
-  chain : Array[@engine.FilterSpelling],
-  vs : Array[@engine.Value],
-) -> Result[Array[@engine.Value], (String, String)] {
-  let mut current = vs
-  for fs in chain {
-    match lookup_array_filter(fs.name) {
-      None => ()
-      Some(d) =>
-        match (d.run)(current, fs.args) {
-          Ok(v2) => current = v2
-          Err(e) => return Err(e)
-        }
-    }
+pub fn unique_array_filter() -> @engine.ArrayFilterDescriptor {
+  {
+    name: "unique",
+    signature: @engine.Transform,
+    reasons: [],
+    run: array_filter_unique,
   }
-  Ok(current)
+}
+
+///|
+pub fn length_range_array_filter() -> @engine.ArrayFilterDescriptor {
+  {
+    name: "length_range",
+    signature: @engine.Validate,
+    reasons: ["too_short", "too_long"],
+    run: array_filter_length_range,
+  }
 }
 
 ///|
@@ -483,74 +360,4 @@ pub fn parse_filter_shorthand(s : String) -> @engine.FilterSpelling {
     i = i + 1
   }
   { name, args }
-}
-
-///|
-/// Run one filter chain (an `Array[@engine.FilterSpelling]`, DR-009 §DSL 文法) over a value, in declared
-/// order (DR-034 合成順「後ろほど優先」と同じ — chain 内は宣言順そのまま素通し、上書きの概念はない).
-/// `@engine.FilterSpelling` (node.mbt) already carries `name`/`args` structured — colon-shorthand splitting
-/// and DESIGN §8.4 / DR-085 §3 object-form decoding both happen ONCE at the decode boundary
-/// (`json_conformance_test.mbt`'s `dec_filter_chain`), so this function never re-parses a spelling
-/// string (issue filter-spelling-inband-encoding-retyping — replaces the earlier U+E000 PUA-tag
-/// single-string encoding that let an object-form arg containing that exact code point corrupt the
-/// split; a structured `args : Array[String]` has no such in-band collision to begin with). A
-/// filter's own Err surfaces as `Err(reason, message)` — `reason` is a machine-readable DR-066-style
-/// identifier the caller threads into a ParseError (mirrors `apply_transform`'s `filter_rejected`
-/// fallback shape for its own defensive/definition-error paths — DR-095 §5's SCH-Q4 sole fallback
-/// for a reason not in its declared vocabulary); a filter's own Err already carries whatever reason
-/// its `FilterDescriptor.run` chose (its DR-095 declared vocabulary for a correctly-defined failure,
-/// `filter_rejected` fallback for a filter-definition-bug path — see `FilterDescriptor`'s doc
-/// comment), so this loop threads it through unchanged.
-///
-/// DR-101: an unregistered filter name is unreachable — `installer.mbt`'s `collect_unknown_filter`
-/// definition-time gate has already reject-ed it as `kind=unknown-vocab`. Falls back to a no-op
-/// pass-through here (same defensive posture as `apply_cell_filter_chain`'s array-side counterpart,
-/// both guarded by a decode-time vocab check that runs before this ever sees the name).
-pub fn apply_filter_chain(
-  chain : Array[@engine.FilterSpelling],
-  v : @engine.Value,
-) -> Result[@engine.Value, (String, String)] {
-  let mut current = v
-  for fs in chain {
-    match lookup_filter(fs.name) {
-      None => ()
-      Some(d) =>
-        match (d.run)(current, fs.args) {
-          Ok(v2) => current = v2
-          Err(e) => return Err(e)
-        }
-    }
-  }
-  Ok(current)
-}
-
-///|
-/// DR-034/DR-062 piece_filters: run a String→String chain over one raw token / piece, immediately
-/// before that value reaches its type parser (eval.mbt's value-primitive arms, builtins/matcher_residents.mbt's
-/// `run_eq_split`/`short_val`, resolve.mbt's `env_value`). Thin wrapper over `apply_filter_chain`
-/// specialized to the piece_filters contract (string in, string out) — every registered filter that
-/// isn't string-aware already passes a non-`@engine.VStr` through untouched (`filter_trim`'s doc comment),
-/// so the `Ok(@engine.VStr(s))` arm is the only reachable success shape today. A filter that returns a
-/// non-string here is a filter-definition bug violating the String→String contract (DR-034's
-/// `FilterChain[String, String]`); surfacing it as an Err keeps the bug visible instead of silently
-/// discarding the chain's work (reuses the `filter_rejected` reason — no new vocabulary — with a
-/// message naming the contract violation). Callers convert the `Err` tuple to a `ParseError`
-/// themselves (eval.mbt/builtins/matcher_residents.mbt build `kind: KFilter` inline per `filter_arg_eval`'s precedent;
-/// resolve.mbt reuses its own `filter_err`) — this function stays value-source-agnostic (no
-/// args_pos/element to carry) so both the CLI-token-consumption callers and the ladder (env)
-/// caller can share it.
-pub fn apply_piece_filters(
-  chain : Array[@engine.FilterSpelling],
-  raw : String,
-) -> Result[String, (String, String)] {
-  match apply_filter_chain(chain, @engine.VStr(raw)) {
-    Ok(@engine.VStr(s)) => Ok(s)
-    Ok(_) =>
-      Err(
-        (
-          "filter_rejected", "piece_filters chain returned a non-string value (String→String contract violation, filter-definition bug)",
-        ),
-      )
-    Err(e) => Err(e)
-  }
 }

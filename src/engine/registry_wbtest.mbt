@@ -133,6 +133,37 @@ impl CollectorExt for RegistryCollectorExt with fn collect(_self, value) {
 }
 
 ///|
+fn registry_filter(name : String, prefix : String) -> FilterDescriptor {
+  {
+    name,
+    signature: Transform,
+    reasons: [],
+    run: fn(value, _args) {
+      match value {
+        VStr(text) => Ok(VStr(prefix + text))
+        other => Ok(other)
+      }
+    },
+  }
+}
+
+///|
+fn registry_array_filter(name : String) -> ArrayFilterDescriptor {
+  {
+    name,
+    signature: Validate,
+    reasons: ["empty"],
+    run: fn(values, _args) {
+      if values.length() == 0 {
+        Err(("empty", "array is empty"))
+      } else {
+        Ok(values)
+      }
+    },
+  }
+}
+
+///|
 test "Registry registers and looks up each extension category in an independent namespace" {
   // Node, matcher, and type identities occupy separate maps, so registering one category cannot
   // displace another category's resident.
@@ -152,6 +183,14 @@ test "Registry registers and looks up each extension category in an independent 
   assert_true(
     registry.register_collector(
       RegistryCollectorExt::{ encoded: "collector" } as &CollectorExt,
+    ),
+  )
+  assert_true(
+    registry.register_filter(registry_filter("synthetic/filter", "x:")),
+  )
+  assert_true(
+    registry.register_array_filter(
+      registry_array_filter("synthetic/array-filter"),
     ),
   )
 
@@ -175,11 +214,27 @@ test "Registry registers and looks up each extension category in an independent 
     Some(resident) => assert_eq(resident.encode(), "collector".to_json())
     None => fail("registered collector resident must be found")
   }
+  match registry.lookup_filter("synthetic/filter") {
+    Some(resident) => {
+      assert_eq(resident.signature, Transform)
+      assert_eq((resident.run)(VStr("value"), []), Ok(VStr("x:value")))
+    }
+    None => fail("registered scalar filter resident must be found")
+  }
+  match registry.lookup_array_filter("synthetic/array-filter") {
+    Some(resident) => {
+      assert_eq(resident.signature, Validate)
+      assert_eq((resident.run)([], []), Err(("empty", "array is empty")))
+    }
+    None => fail("registered array filter resident must be found")
+  }
   assert_true(registry.lookup_node("missing") is None)
   assert_true(registry.lookup_matcher("missing") is None)
   assert_true(registry.lookup_type("missing") is None)
   assert_true(registry.lookup_accumulator("missing") is None)
   assert_true(registry.lookup_collector("missing") is None)
+  assert_true(registry.lookup_filter("missing") is None)
+  assert_true(registry.lookup_array_filter("missing") is None)
 }
 
 ///|
@@ -227,4 +282,58 @@ test "Registry rejects duplicate identity without replacing the first resident" 
     Some(resident) => assert_eq(resident.encode(), "first".to_json())
     None => fail("first collector resident must remain registered")
   }
+
+  // Scalar and array filter namespaces use the same first-owner rule independently.
+  assert_true(
+    registry.register_filter(registry_filter("synthetic/filter", "first:")),
+  )
+  assert_false(
+    registry.register_filter(registry_filter("synthetic/filter", "second:")),
+  )
+  assert_true(
+    registry.register_array_filter(
+      registry_array_filter("synthetic/array-filter"),
+    ),
+  )
+  assert_false(
+    registry.register_array_filter(
+      registry_array_filter("synthetic/array-filter"),
+    ),
+  )
+  match registry.lookup_filter("synthetic/filter") {
+    Some(resident) =>
+      assert_eq((resident.run)(VStr("value"), []), Ok(VStr("first:value")))
+    None => fail("first filter resident must remain registered")
+  }
+}
+
+///|
+test "filter invocation is driven exclusively by the supplied Registry" {
+  // The engine invocation mechanism has no builtin-name table: a synthetic descriptor becomes
+  // executable solely through registration, for both scalar and whole-array phases.
+  let registry = Registry::new()
+  assert_true(
+    registry.register_filter(registry_filter("synthetic/filter", "custom:")),
+  )
+  assert_true(
+    registry.register_array_filter(
+      registry_array_filter("synthetic/array-filter"),
+    ),
+  )
+  assert_eq(
+    apply_filter_chain(
+      registry,
+      [{ name: "synthetic/filter", args: [] }],
+      VStr("value"),
+    ),
+    Ok(VStr("custom:value")),
+  )
+  assert_eq(
+    apply_accum_filter_chain(
+      registry,
+      [{ name: "synthetic/array-filter", args: [] }],
+      [],
+    ),
+    Err(("empty", "array is empty")),
+  )
 }

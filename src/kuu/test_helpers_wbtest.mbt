@@ -322,6 +322,7 @@ fn apply_requires_filter(
     provider,
     tty,
     Map([]),
+    canonical_registry(),
   )
 }
 
@@ -364,6 +365,7 @@ fn resolve_scope(
           at_pos,
           path,
           tty,
+          canonical_registry(),
           true,
         ) {
         Ok(bs) =>
@@ -400,6 +402,7 @@ fn resolve_scope_config(
     at_pos,
     tty,
     Map([]),
+    canonical_registry(),
     true,
   )
 }

@@ -1134,7 +1134,7 @@ test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (co
 /// @engine.DInvalidRange — `collect_unsupported_option_ref_repeat` (上記) と同型の「構造的に宣言できるが
 /// 実装が対応できない組合せを definition-error で落とす」契約の3例目。DR-077 の `update` semantics
 /// は `cell = f(old)` で `old` はセルの現在値だが、accum セルではその値が累積状態 (T[]) であり、
-/// filters registry の transform は全て T=>T (scalar、`filters.mbt`'s `FilterSignature`、DR-077 §2
+/// filters registry の transform は全て T=>T (scalar、`@engine.FilterSignature`、DR-077 §2
 /// 「使えるのは transform シグネチャ T=>T の filter のみ」) — 構造的に型が噴合し、legal な解決が今の
 /// registry には存在しない。これを ACCUMULATE fold の実行時に検出するのではなく、DR-077 §2 が既に
 /// 「未登録の transform 名」「validate-only signature」を definition-error で閉じている
@@ -1335,7 +1335,13 @@ test "parse_definition: a count element without multiple is NOT rejected (対極
 /// spellings, keyed on `own_name` (the caller's own resolved name — canonical OR alias, DR-057 §3).
 test "@builtins.classify_long_spelling: the 4 outcomes on representative spellings" {
   // (1) @builtins.LMain: the bare `:set` sentinel resolves to `own_name` verbatim, no operand.
-  match @builtins.classify_long_spelling(":set", "ssl", @builtins.bool_type()) {
+  match
+    @builtins.classify_long_spelling(
+      ":set",
+      "ssl",
+      @builtins.bool_type(),
+      canonical_registry(),
+    ) {
     @builtins.LMain(n) => assert_eq(n, "ssl")
     _ => fail("expected @builtins.LMain")
   }
@@ -1343,7 +1349,12 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
   // main entry — trigger is `own_name` verbatim (NOT "-"+own_name — that would be a bogus extra
   // spelling installer.mbt never intended, since it always does `"--" + v.trigger`).
   match
-    @builtins.classify_long_spelling(":set:true", "ssl", @builtins.bool_type()) {
+    @builtins.classify_long_spelling(
+      ":set:true",
+      "ssl",
+      @builtins.bool_type(),
+      canonical_registry(),
+    ) {
     @builtins.LVariant({ trigger, op, operand }) => {
       assert_eq(trigger, "ssl")
       assert_eq(op, @engine.Set)
@@ -1358,6 +1369,7 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
       "no:set:false",
       "ssl",
       @builtins.bool_type(),
+      canonical_registry(),
     ) {
     @builtins.LVariant({ trigger, op, operand }) => {
       assert_eq(trigger, "no-ssl")
@@ -1374,6 +1386,7 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
       "gzip",
       "compress",
       @builtins.string_type(),
+      canonical_registry(),
     ) {
     @builtins.LInvalid(s) => assert_eq(s, "gzip")
     _ => fail("expected @builtins.LInvalid")
@@ -1385,6 +1398,7 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
       "default:default:5",
       "port",
       @builtins.number_type(),
+      canonical_registry(),
     ) {
     @builtins.LVariant({ trigger, op, operand }) => {
       assert_eq(trigger, "default-port")
@@ -1400,6 +1414,7 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
       "no:bogus:false",
       "ssl",
       @builtins.bool_type(),
+      canonical_registry(),
     ) {
     @builtins.LInvalid(s) => assert_eq(s, "no:bogus:false")
     _ => fail("expected @builtins.LInvalid (unrecognized op word)")
