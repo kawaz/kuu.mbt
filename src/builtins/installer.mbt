@@ -3983,13 +3983,6 @@ fn collect_config_cycle(
 }
 
 ///|
-fn default_extensions() -> @engine.Registry {
-  let extensions = @engine.Registry::new()
-  install_default_extensions(extensions)
-  extensions
-}
-
-///|
 /// UsefulAST → AtomicAST を installer chain として遂行 (DR-042)。`order` は適用 installer 列、5
 /// invariants により結果は順序無依存。
 ///
@@ -4003,8 +3996,8 @@ fn default_extensions() -> @engine.Registry {
 pub fn lower_definition(
   def0 : @engine.Definition,
   order : Array[&@engine.InstallerExt],
+  extensions : @engine.Registry,
   registry? : Map[String, @engine.Node] = Map([], capacity=0),
-  extensions? : @engine.Registry = default_extensions(),
 ) -> Result[@engine.Scope, Array[@engine.DefError]] {
   let def = clone_def(def0)
   // DR-076 §2 flag 差し替え/補完の alias 側適用 (issue 2026-07-08 dec-alias-long-override-flag-sugar-

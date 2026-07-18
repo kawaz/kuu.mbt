@@ -129,8 +129,8 @@ pub fn parse_definition(
       @builtins.lower_definition(
         def,
         extensions.installers(),
+        extensions,
         registry=templates,
-        extensions~,
       ) {
       Ok(root) =>
         Ok({

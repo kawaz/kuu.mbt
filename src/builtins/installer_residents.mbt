@@ -868,20 +868,3 @@ impl @engine.InstallerExt for InheritableInstaller with fn collect_defs_errors(
 pub fn inheritable_installer() -> &@engine.InstallerExt {
   InheritableInstaller::{  } as &@engine.InstallerExt
 }
-
-///|
-fn install_installers(registry : @engine.Registry) -> Unit {
-  registry.register_installer(long_installer())
-  registry.register_installer(short_installer())
-  registry.register_installer(env_installer())
-  registry.register_installer(dd_installer())
-  registry.register_installer(command_installer())
-  registry.register_installer(global_installer())
-  registry.register_installer(inherit_installer())
-  registry.register_installer(repeat_installer())
-  registry.register_installer(multiple_installer())
-  registry.register_installer(config_installer())
-  registry.register_installer(constraint_installer())
-  registry.register_installer(alias_installer())
-  registry.register_installer(inheritable_installer())
-}

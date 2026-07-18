@@ -63,6 +63,18 @@ fn chain(spellings : Array[String]) -> Array[@engine.FilterSpelling] {
 }
 
 ///|
+/// Test assembly convenience: every lowering test uses kuu's canonical resident set unless it
+/// explicitly supplies a custom registry. The production builtins API itself has no implicit set.
+fn test_lower_definition(
+  definition : @engine.Definition,
+  installers : Array[&@engine.InstallerExt],
+  registry? : Map[String, @engine.Node] = Map([], capacity=0),
+  extensions? : @engine.Registry = canonical_registry(),
+) -> Result[@engine.Scope, Array[@engine.DefError]] {
+  @builtins.lower_definition(definition, installers, extensions, registry~)
+}
+
+///|
 fn node_is_deprecation_mark(node : @engine.Node) -> Bool {
   node is @engine.Ext(extension) && extension.kind() == "builtin/deprecation"
 }

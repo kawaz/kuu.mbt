@@ -159,7 +159,7 @@ fn ok_scope(
   def : @engine.Definition,
   order : Array[&@engine.InstallerExt],
 ) -> @engine.Scope {
-  match @builtins.lower_definition(def, order) {
+  match test_lower_definition(def, order) {
     Ok(sc) => sc
     Err(_) => abort("expected Ok(@engine.Scope), got Err")
   }
@@ -989,7 +989,7 @@ test "parse_definition enumerates all def-errors (no first-error 打ち切り, D
   }
   // repeat 住人は登録するが env 住人は登録しない。env の generic unknown-vocab と repeat 住人の
   // invalid-range が同じ pass で列挙される。
-  match @builtins.lower_definition(def, [@builtins.repeat_installer()]) {
+  match test_lower_definition(def, [@builtins.repeat_installer()]) {
     Ok(_) => abort("expected Err")
     Err(errs) => {
       // 少なくとも @engine.DUnknownVocab (long / repeat) と @engine.DInvalidRange の 3 種を含む — 打ち切っていれば
@@ -1033,7 +1033,7 @@ test "parse_definition: a ref target absent from registry is @engine.DAbsentRef 
   }
   // "color" は scope 内の兄弟要素にも registry (definitions.templates 相当の事前登録) にも無い
   // (registry 未指定 = 既定の空 map)。
-  match @builtins.lower_definition(def, [@builtins.repeat_installer()]) {
+  match test_lower_definition(def, [@builtins.repeat_installer()]) {
     Ok(_) => abort("expected Err (absent ref target 'color')")
     Err(errs) => {
       let mut has_absent_ref = false
@@ -1073,7 +1073,7 @@ test "parse_definition: an option's ref+repeat with min > 1 is @engine.DInvalidR
     ],
   }
   match
-    @builtins.lower_definition(def, [
+    test_lower_definition(def, [
       @builtins.long_installer(),
       @builtins.repeat_installer(),
     ]) {
@@ -1109,7 +1109,7 @@ test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (co
     ],
   }
   match
-    @builtins.lower_definition(def, [
+    test_lower_definition(def, [
       @builtins.long_installer(),
       @builtins.repeat_installer(),
     ]) {
@@ -1156,7 +1156,7 @@ test "parse_definition: an update variant on a multiple element is @engine.DInva
       ),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (update variant on a multiple element is unsupported)",
@@ -1189,7 +1189,7 @@ test "parse_definition: an update variant on a scalar (non-multiple) element is 
       ),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
@@ -1227,7 +1227,7 @@ test "parse_definition: an alias's long_override update variant on a multiple ca
       },
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (alias long_override update variant on a multiple canonical is unsupported)",
@@ -1262,7 +1262,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
       },
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
@@ -1290,7 +1290,7 @@ test "parse_definition: a count element with multiple is @engine.DInvalidRange (
     ..empty_def(),
     options: [el("n", @builtins.count_type(), short=['n'], multiple=true)],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => abort("expected Err (count element with multiple is unsupported)")
     Err(errs) => {
       let mut has_range = false
@@ -1312,7 +1312,7 @@ test "parse_definition: a count element without multiple is NOT rejected (対極
     ..empty_def(),
     options: [el("verbosity", @builtins.count_type(), short=['v'])],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
@@ -1429,7 +1429,7 @@ test "parse_definition: a colon-less long spelling is a DR-054 unknown-vocab def
     ..empty_def(),
     options: [el("verbose", @builtins.flag_type(), long=LList(["verbose"]))],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       fail(
         "expected Err (colon-less long spelling 'verbose' is a syntax error)",
@@ -1454,7 +1454,7 @@ test "parse_definition: an unrecognized effect word in long is a DR-054 unknown-
     ..empty_def(),
     options: [el("ssl", @builtins.bool_type(), long=LList(["no:bogus:false"]))],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       fail("expected Err (unrecognized effect word 'bogus' is a syntax error)")
     Err(errs) => {
@@ -1490,7 +1490,7 @@ test "parse_definition: a colon-less alias long_override spelling is a DR-054 un
       },
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       fail(
         "expected Err (colon-less alias long_override spelling 'chatty' is a syntax error)",
@@ -1729,7 +1729,7 @@ test "DR-077 §2: an unrecognized update transform name is a DR-054 unknown-voca
       el("verbose", @builtins.count_type(), long=LList([":update:bogus"])),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       fail("expected Err (unrecognized transform 'bogus' is unknown-vocab)")
     Err(errs) => {
@@ -1759,7 +1759,7 @@ test "DR-077 §2: a registered but Validate-signature filter is also a DR-054 un
       el("verbose", @builtins.count_type(), long=LList([":update:in_range"])),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       fail(
         "expected Err ('in_range' is Validate signature, not usable as an update transform)",
@@ -1794,7 +1794,7 @@ test "DR-077 §2: extra args to a registered Transform are NOT a definition-erro
       el("verbose", @builtins.count_type(), long=LList([":update:increment:5"])),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       fail(
@@ -1870,7 +1870,7 @@ test "positional or+repeat installer: string branch repeats in parallel with the
   }
   let def : @engine.Definition = { ..empty_def(), positionals: [hlcolors] }
   let registry : Map[String, @engine.Node] = Map([])
-  let sc = match @builtins.lower_definition(def, all_installers(), registry~) {
+  let sc = match test_lower_definition(def, all_installers(), registry~) {
     Ok(s) => s
     Err(_) => abort("expected Ok(@engine.Scope)")
   }
@@ -1919,8 +1919,7 @@ test "repeat installer: self-ref cons template key does not collide with a same-
       ),
     ],
   }
-  match
-    @builtins.lower_definition(def, [@builtins.repeat_installer()], registry~) {
+  match test_lower_definition(def, [@builtins.repeat_installer()], registry~) {
     Ok(_) => {
       // ユーザが事前登録した "x" エントリは repeat lowering 後も無傷 (上書きされていない)。
       assert_eq(registry.get("x"), Some(@engine.Exact("user-defined-x")))
@@ -2503,7 +2502,7 @@ test "parse_definition: a regex_match filter with an uncompilable pattern is @en
       ]),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => abort("expected Err (regex_match pattern '[' fails to compile)")
     Err(errs) => {
       let mut has_invalid_argument = false
@@ -2530,7 +2529,7 @@ test "parse_definition: a regex_match filter with a compilable pattern is NOT re
       ]),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
@@ -2560,7 +2559,7 @@ test "parse_definition: regex_match compile check also fires for value_filters a
       ]),
     ],
   }
-  match @builtins.lower_definition(def_value, all_installers()) {
+  match test_lower_definition(def_value, all_installers()) {
     Ok(_) => abort("expected Err (value_filters regex_match compile failure)")
     Err(errs) => {
       let mut found = false
@@ -2580,7 +2579,7 @@ test "parse_definition: regex_match compile check also fires for value_filters a
       ]),
     ],
   }
-  match @builtins.lower_definition(def_final, all_installers()) {
+  match test_lower_definition(def_final, all_installers()) {
     Ok(_) => abort("expected Err (final_filters regex_match compile failure)")
     Err(errs) => {
       let mut found = false
@@ -2612,7 +2611,7 @@ test "parse_definition: an accum element's accum_filters regex_match entry is un
       ]),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (accum_filters regex_match is not a registered ARRAY filter)",
@@ -2744,7 +2743,7 @@ test "DR-093: a none-typed requires target is NOT a definition-error (supersedes
   }
   let c = el("c", @builtins.none_type(), long=LBool(true))
   let def : @engine.Definition = { ..empty_def(), options: [a, c] }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(_) =>
       fail(
@@ -3029,7 +3028,7 @@ test "DR-089: a none-typed element declaring env/config_key/inherit is a definit
     ..empty_def(),
     options: [with_env, with_config_key, with_inherit],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (none element with env/config_key/inherit is a definition-error)",
@@ -3070,7 +3069,7 @@ test "DR-099 §3/§7: an option selecting builtin/tty without tty_stream is a de
     tty_stream=None,
   )
   let def : @engine.Definition = { ..empty_def(), options: [use_color] }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (builtin/tty preset missing tty_stream is a definition-error, DR-099 §3/§7)",
@@ -3100,7 +3099,7 @@ test "DR-099 §3/§7: a positional selecting builtin/tty without tty_stream is a
     tty_stream=None,
   )
   let def : @engine.Definition = { ..empty_def(), positionals: [pos_elem] }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
         "expected Err (builtin/tty preset missing tty_stream is a definition-error, DR-099 §3/§7)",
@@ -3142,7 +3141,7 @@ test "ensure_entity: a tty preset element without an explicit default keeps defa
 test "DR-089 対極: a none-typed element with no value-source declaration is not a definition-error" {
   let sep = el("sep3", @builtins.none_type(), long=LBool(true))
   let def : @engine.Definition = { ..empty_def(), options: [sep] }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) => {
       let mut msg = ""
@@ -3402,7 +3401,7 @@ test "DR-090: an uncompilable dd match pattern is a definition-error" {
     ..el("dd", @builtins.string_type(), is_dd=true, dd_match=Some("["))
   }
   let def : @engine.Definition = { ..empty_def(), options: [dd] }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => abort("expected Err (uncompilable dd match pattern)")
     Err(errs) => {
       let mut found = false
@@ -3424,7 +3423,7 @@ test "DR-090 対極: a compilable dd match pattern is NOT rejected" {
     ..el("dd", @builtins.string_type(), is_dd=true, dd_match=Some("^[^\\-]"))
   }
   let def : @engine.Definition = { ..empty_def(), options: [dd] }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
@@ -4030,7 +4029,7 @@ test "parse_definition: length_range with a negative min is @engine.DInvalidArgu
       ]),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => abort("expected Err (length_range min -1 is negative)")
     Err(errs) => {
       let mut has_invalid_argument = false
@@ -4057,7 +4056,7 @@ test "parse_definition: length_range with a non-integer min is @engine.DInvalidA
       ]),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => abort("expected Err (length_range min 1.5 is not an integer)")
     Err(errs) => {
       let mut has_invalid_argument = false
@@ -4087,7 +4086,7 @@ test "parse_definition: in_range keeps canonical-number bounds, length_range acc
       ]),
     ],
   }
-  match @builtins.lower_definition(def, all_installers()) {
+  match test_lower_definition(def, all_installers()) {
     Ok(_) => ()
     Err(errs) => abort("expected Ok, got Err: " + errs.length().to_string())
   }
@@ -4273,7 +4272,7 @@ test "ensure_entity: plain @builtins.bool_type() は @engine.Entity.default_valu
   }
   let def = dec_definition(defo)
   let scope = match
-    @builtins.lower_definition(def, canonical_registry().installers()) {
+    test_lower_definition(def, canonical_registry().installers()) {
     Ok(sc) => sc
     Err(errs) => abort("definition rejected: " + deferrs_str(errs))
   }
