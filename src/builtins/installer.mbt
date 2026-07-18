@@ -575,7 +575,7 @@ fn clone_def(d : @engine.Definition) -> @engine.Definition {
   for a in d.aliases {
     als.push(a) // @engine.AliasDef は immutable value data (nested mutable array を持たない)
   }
-  { options: os, positionals: ps, commands: cs, aliases: als }
+  { scope: d.scope, options: os, positionals: ps, commands: cs, aliases: als }
 }
 
 ///|
@@ -4004,12 +4004,30 @@ fn collect_config_cycle(
 ///
 /// Returns Ok(atomic scope) or Err(全 definition-time errors)。static check は全て走って 1 list に append
 /// (打ち切りなし)。各 @engine.DefError は {element, kind, message, hint} を持つ。
-pub fn lower_definition(
+pub struct LoweredDefinition {
+  scope : @engine.Scope
+  declaration : @engine.Definition
+}
+
+///|
+pub fn LoweredDefinition::scope(self : LoweredDefinition) -> @engine.Scope {
+  self.scope
+}
+
+///|
+pub fn LoweredDefinition::declaration(
+  self : LoweredDefinition,
+) -> @engine.Definition {
+  self.declaration
+}
+
+///|
+fn lower_definition_snapshot_impl(
   def0 : @engine.Definition,
   order : Array[&@engine.InstallerExt],
   extensions : @engine.Registry,
-  registry? : Map[String, @engine.Node] = Map([], capacity=0),
-) -> Result[@engine.Scope, Array[@engine.DefError]] {
+  registry : Map[String, @engine.Node],
+) -> Result[LoweredDefinition, Array[@engine.DefError]] {
   let def = clone_def(def0)
   // DR-076 §2 flag 差し替え/補完の alias 側適用 (issue 2026-07-08 dec-alias-long-override-flag-sugar-
   // gap): `desugar_aliases` は canonical 要素の「元の型」(flag_type() のまま、resolve_long の規則1判定に
@@ -4044,7 +4062,36 @@ pub fn lower_definition(
   // 同型 default (DR-050 §3): config_file 要素があれば全 value cell に config seat を宣言。1 度計算、
   // ensure_entity に thread。
   let has_cf = has_config_file(def)
-  @engine.run_installer_fixpoint(sb, order, fn(builder) {
-    ensure_entities(builder, has_cf)
-  })
+  match
+    @engine.run_installer_fixpoint(sb, order, fn(builder) {
+      ensure_entities(builder, has_cf)
+    }) {
+    Ok(scope) => Ok({ scope, declaration: def })
+    Err(errors) => Err(errors)
+  }
+}
+
+///|
+pub fn lower_definition(
+  def0 : @engine.Definition,
+  order : Array[&@engine.InstallerExt],
+  extensions : @engine.Registry,
+  registry? : Map[String, @engine.Node] = Map([], capacity=0),
+) -> Result[@engine.Scope, Array[@engine.DefError]] {
+  match lower_definition_snapshot_impl(def0, order, extensions, registry) {
+    Ok(lowered) => Ok(lowered.scope())
+    Err(errors) => Err(errors)
+  }
+}
+
+///|
+/// installer fixpoint 後の lowered scope と、global / alias / inheritable の宣言層寄与を
+/// 適用し終えた declaration snapshot を同時に返す。
+pub fn lower_definition_snapshot(
+  def0 : @engine.Definition,
+  order : Array[&@engine.InstallerExt],
+  extensions : @engine.Registry,
+  registry? : Map[String, @engine.Node] = Map([], capacity=0),
+) -> Result[LoweredDefinition, Array[@engine.DefError]] {
+  lower_definition_snapshot_impl(def0, order, extensions, registry)
 }

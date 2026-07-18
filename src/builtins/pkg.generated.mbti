@@ -91,6 +91,8 @@ pub fn long_installer() -> &@engine.InstallerExt
 
 pub fn lower_definition(@engine.Definition, Array[&@engine.InstallerExt], @engine.Registry, registry? : Map[String, @engine.Node]) -> Result[@engine.Scope, Array[@engine.DefError]]
 
+pub fn lower_definition_snapshot(@engine.Definition, Array[&@engine.InstallerExt], @engine.Registry, registry? : Map[String, @engine.Node]) -> Result[LoweredDefinition, Array[@engine.DefError]]
+
 pub fn merge_accumulator() -> &@engine.AccumulatorExt
 
 pub fn multiple_installer() -> &@engine.InstallerExt
@@ -159,6 +161,13 @@ pub(all) enum LongSpelling {
   LVariant(@engine.Variant)
   LInvalid(String)
 } derive(Eq, @debug.Debug)
+
+pub struct LoweredDefinition {
+  scope : @engine.Scope
+  declaration : @engine.Definition
+}
+pub fn LoweredDefinition::declaration(Self) -> @engine.Definition
+pub fn LoweredDefinition::scope(Self) -> @engine.Scope
 
 pub struct ShortEntry {
   // private fields

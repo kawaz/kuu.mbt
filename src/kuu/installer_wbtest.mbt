@@ -9,7 +9,13 @@
 /// 空の @engine.Definition (options / positionals / commands / aliases 全空)。個別 case は spread で必要 field
 /// だけ差し替える。
 fn empty_def() -> @engine.Definition {
-  { options: [], positionals: [], commands: [], aliases: [] }
+  {
+    scope: { name: None, help_meta: empty_help_meta_for_test() },
+    options: [],
+    positionals: [],
+    commands: [],
+    aliases: [],
+  }
 }
 
 ///|

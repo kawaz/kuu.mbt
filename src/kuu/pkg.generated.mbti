@@ -19,6 +19,8 @@ pub fn config_from_json(Json) -> @engine.ConfigVal
 
 pub fn export_map(AtomicAST) -> Map[String, @engine.ExportKey]
 
+pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category? : String?) -> Result[HelpModel, Array[@engine.DefError]]
+
 pub fn install(@engine.Registry) -> Unit
 
 pub fn install_installers(@engine.Registry) -> Unit
@@ -57,6 +59,7 @@ pub struct AtomicAST {
   templates : Map[String, @engine.Node]
   extensions : @engine.Registry
   ekmap : Map[String, @engine.ExportKey]
+  declaration : @engine.Definition
 }
 
 pub(all) enum DefLoadError {
@@ -68,6 +71,85 @@ pub struct DefaultCell {
   path : Array[String]
   name : String
   value : @engine.Value
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpCommand {
+  name : String
+  aliases : Array[String]
+  help : String?
+  help_long : String?
+  hidden : Bool
+  deprecated : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) enum HelpDefault {
+  HDefaultScalar(@engine.Value)
+  HDefaultArray(Array[@engine.Value])
+} derive(Eq, @debug.Debug)
+
+pub(all) enum HelpDepth {
+  DScope
+  DAll
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpGroup {
+  name : String
+  title : String?
+  description : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpModel {
+  command_path : Array[String]
+  usage : HelpUsage
+  description : String?
+  description_long : String?
+  epilog : String?
+  commands : Array[HelpCommand]
+  options : Array[HelpOptionEntry]
+  positionals : Array[HelpPositional]
+  help_entry : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpOption {
+  spellings : Array[String]
+  alias_spellings : Array[String]
+  value_name : String?
+  display_name : String?
+  help : String?
+  help_long : String?
+  help_group_name : String?
+  default_ : HelpDefault?
+  env : Array[String]
+  required : Bool
+  multiple : Bool
+  hidden : Bool
+  deprecated : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) enum HelpOptionEntry {
+  HGroup(HelpGroup)
+  HOption(HelpOption)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpPositional {
+  value_name : String?
+  help : String?
+  repeat : @engine.RepeatSpec?
+  hidden : Bool
+  deprecated : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpUsage {
+  has_options : Bool
+  positionals : Array[HelpUsagePositional]
+  has_subcommands : Bool
+  has_dd : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpUsagePositional {
+  value_name : String?
+  repeat : @engine.RepeatSpec?
+  optional : Bool
 } derive(Eq, @debug.Debug)
 
 pub struct OutputEffect {

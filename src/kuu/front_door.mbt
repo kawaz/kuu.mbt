@@ -48,6 +48,7 @@ pub struct AtomicAST {
   templates : Map[String, @engine.Node]
   extensions : @engine.Registry
   ekmap : Map[String, @engine.ExportKey]
+  declaration : @engine.Definition
 }
 
 ///|
@@ -101,7 +102,12 @@ pub fn parse_definition(
     }
     allowed_keys(
       top,
-      ["options", "positionals", "commands", "definitions", "config"],
+      [
+        "name", "options", "positionals", "commands", "definitions", "config", "help",
+        "help_long", "help_epilog", "display_name", "value_name", "help_group_name",
+        "help_group_title", "help_group_description", "help_order", "help_group_order",
+        "help_after",
+      ],
       "definition",
     )
     let templates : Map[String, @engine.Node] = Map([])
@@ -126,18 +132,19 @@ pub fn parse_definition(
     }
     let def = dec_definition(top, shadows~, extensions~)
     match
-      @builtins.lower_definition(
+      @builtins.lower_definition_snapshot(
         def,
         extensions.installers(),
         extensions,
         registry=templates,
       ) {
-      Ok(root) =>
+      Ok(lowered) =>
         Ok({
-          root,
+          root: lowered.scope(),
           templates,
           extensions,
           ekmap: @builtins.build_export_map(def, extensions),
+          declaration: lowered.declaration(),
         })
       Err(errs) => Err(Rejected(errs))
     }

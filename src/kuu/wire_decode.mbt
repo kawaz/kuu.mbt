@@ -91,6 +91,29 @@ fn empty_help_meta() -> @engine.HelpMetaDecl {
 }
 
 ///|
+fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDecl {
+  {
+    help: jf_str(o, "help"),
+    help_long: jf_str(o, "help_long"),
+    help_epilog: jf_str(o, "help_epilog"),
+    display_name: jf_str(o, "display_name"),
+    value_name: jf_str(o, "value_name"),
+    help_group_name: jf_str(o, "help_group_name"),
+    help_group_title: jf_str(o, "help_group_title"),
+    help_group_description: jf_str(o, "help_group_description"),
+    help_order: match o.get("help_order") {
+      Some(value) => value.j_num()
+      None => None
+    },
+    help_group_order: match o.get("help_group_order") {
+      Some(value) => value.j_num()
+      None => None
+    },
+    help_after: jf_str(o, "help_after"),
+  }
+}
+
+///|
 fn opt(
   name : String,
   ty : &@engine.TypeExt,
@@ -2356,6 +2379,10 @@ fn dec_definition(
   parent_config? : ScopeConfig = default_scope_config(),
   scope_path? : Array[String] = [],
 ) -> @engine.Definition raise DecodeSkip {
+  let scope : @engine.ScopeDecl = {
+    name: jf_str(o, "name"),
+    help_meta: help_meta_from_object(o),
+  }
   // DR-014 / DESIGN §7.2 (issue scope-config-object-gap; supersedes DR-091 §3's original 2-field-
   // only, non-inheriting scope config): この呼び出しの `o` (root definition object、または 1つの
   // command の own definition object — `dec_command` が自分の `o` をそのまま渡す) が持つ
@@ -2490,5 +2517,5 @@ fn dec_definition(
     }
     None => ()
   }
-  { options, positionals, commands, aliases }
+  { scope, options, positionals, commands, aliases }
 }

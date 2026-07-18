@@ -332,9 +332,17 @@ pub(all) struct CommandDef {
 } derive(Eq, Debug)
 
 ///|
+/// ルートまたは command のスコープ自身に属する宣言層メタデータ。
+pub(all) struct ScopeDecl {
+  name : String?
+  help_meta : HelpMetaDecl
+} derive(Eq, Debug)
+
+///|
 /// 1 つの command scope の UsefulAST。`commands` は DR-018 sugar; command installer が greedy 排他
 /// trigger + 新 backbone (DR-041 §4) に展開する。
 pub(all) struct Definition {
+  scope : ScopeDecl
   options : Array[ElemDef]
   positionals : Array[ElemDef]
   commands : Array[CommandDef]

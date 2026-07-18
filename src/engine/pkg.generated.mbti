@@ -237,6 +237,7 @@ pub(all) struct DefError {
 } derive(Eq, @debug.Debug)
 
 pub(all) struct Definition {
+  scope : ScopeDecl
   options : Array[ElemDef]
   positionals : Array[ElemDef]
   commands : Array[CommandDef]
@@ -576,6 +577,11 @@ pub(all) struct Scope {
   constraints : Array[Constraint]
 } derive(@debug.Debug)
 pub impl Eq for Scope
+
+pub(all) struct ScopeDecl {
+  name : String?
+  help_meta : HelpMetaDecl
+} derive(Eq, @debug.Debug)
 
 pub struct ScopedCons {
   path : Array[String]
