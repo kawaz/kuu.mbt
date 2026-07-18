@@ -11,27 +11,21 @@ pub fn alias_installer() -> &@engine.InstallerExt
 
 pub fn append_accumulator() -> &@engine.AccumulatorExt
 
-pub fn apply_accum_filter_chain(Array[@engine.FilterSpelling], Array[@engine.Value]) -> Result[Array[@engine.Value], (String, String)]
-
-pub fn apply_filter_chain(Array[@engine.FilterSpelling], @engine.Value) -> Result[@engine.Value, (String, String)]
-
-pub fn apply_piece_filters(Array[@engine.FilterSpelling], String) -> Result[String, (String, String)]
-
 pub fn bool_arg(String, @engine.BoolConfig, Array[@engine.FilterSpelling]) -> @engine.Node
 
 pub fn bool_config_canonical() -> @engine.BoolConfig
 
 pub fn bool_type(config? : @engine.BoolConfig, value_slot? : Bool) -> &@engine.TypeExt
 
-pub fn build_export_map(@engine.Definition) -> Map[String, @engine.ExportKey]
+pub fn build_export_map(@engine.Definition, @engine.Registry) -> Map[String, @engine.ExportKey]
 
-pub fn classify_long_spelling(String, String, &@engine.TypeExt) -> LongSpelling
+pub fn classify_long_spelling(String, String, &@engine.TypeExt, @engine.Registry) -> LongSpelling
 
 pub fn command_installer() -> &@engine.InstallerExt
 
 pub fn config_installer() -> &@engine.InstallerExt
 
-pub fn config_to_value(@engine.ConfigVal, &@engine.TypeExt, Array[@engine.FilterSpelling]) -> Result[@engine.Value, (@engine.ErrKind, String, String)]
+pub fn config_to_value(@engine.ConfigVal, &@engine.TypeExt, Array[@engine.FilterSpelling], @engine.Registry) -> Result[@engine.Value, (@engine.ErrKind, String, String)]
 
 pub fn configured_short_type(&@engine.TypeExt, @engine.RoundMode, Bool, @engine.BoolConfig) -> &@engine.TypeExt
 
@@ -73,13 +67,13 @@ pub fn from_entries_collector(FromEntriesSpec) -> &@engine.CollectorExt
 
 pub fn global_installer() -> &@engine.InstallerExt
 
+pub fn in_range_filter() -> @engine.FilterDescriptor
+
+pub fn increment_filter() -> @engine.FilterDescriptor
+
 pub fn inherit_installer() -> &@engine.InstallerExt
 
 pub fn inheritable_installer() -> &@engine.InstallerExt
-
-pub fn install(@engine.Registry) -> Unit
-
-pub fn install_installers(@engine.Registry) -> Unit
 
 pub fn int_arg(String, @engine.RoundMode, Bool, Array[@engine.FilterSpelling]) -> @engine.Node
 
@@ -89,19 +83,19 @@ pub fn kv_arg(String, Array[@engine.FilterSpelling]) -> @engine.Node
 
 pub fn kv_map_accumulator() -> &@engine.AccumulatorExt
 
+pub fn length_range_array_filter() -> @engine.ArrayFilterDescriptor
+
 pub fn long_installer() -> &@engine.InstallerExt
 
-pub fn lookup_array_filter(String) -> ArrayFilterDescriptor?
-
-pub fn lookup_filter(String) -> FilterDescriptor?
-
-pub fn lower_definition(@engine.Definition, Array[&@engine.InstallerExt], registry? : Map[String, @engine.Node], extensions? : @engine.Registry) -> Result[@engine.Scope, Array[@engine.DefError]]
+pub fn lower_definition(@engine.Definition, Array[&@engine.InstallerExt], @engine.Registry, registry? : Map[String, @engine.Node]) -> Result[@engine.Scope, Array[@engine.DefError]]
 
 pub fn merge_accumulator() -> &@engine.AccumulatorExt
 
 pub fn multiple_installer() -> &@engine.InstallerExt
 
 pub fn node_resident_name(@engine.Node) -> String?
+
+pub fn non_empty_filter() -> @engine.FilterDescriptor
 
 pub fn none_type() -> &@engine.TypeExt
 
@@ -116,6 +110,8 @@ pub fn owned_vocab(&@engine.InstallerExt) -> String
 pub fn parse_filter_shorthand(String) -> @engine.FilterSpelling
 
 pub fn parse_number(String, allow_base_prefix? : Bool) -> Double?
+
+pub fn regex_match_filter() -> @engine.FilterDescriptor
 
 pub fn repeat_installer() -> &@engine.InstallerExt
 
@@ -133,38 +129,22 @@ pub fn string_arg(String, Array[@engine.FilterSpelling]) -> @engine.Node
 
 pub fn string_type() -> &@engine.TypeExt
 
+pub fn trim_filter() -> @engine.FilterDescriptor
+
 pub fn tty_type(String?, cygwin? : Bool) -> &@engine.TypeExt
 
 pub fn typed_arg(String, &@engine.TypeExt, Array[@engine.FilterSpelling]) -> @engine.Node
+
+pub fn unique_array_filter() -> @engine.ArrayFilterDescriptor
 
 pub fn unwrap_single_collector() -> &@engine.CollectorExt
 
 // Errors
 
 // Types and methods
-pub struct ArrayFilterDescriptor {
-  name : String
-  signature : FilterSignature
-  reasons : Array[String]
-  run : (Array[@engine.Value], Array[String]) -> Result[Array[@engine.Value], (String, String)]
-}
-
 pub struct EqEntry {
   // private fields
 }
-
-pub struct FilterDescriptor {
-  name : String
-  signature : FilterSignature
-  reasons : Array[String]
-  run : (@engine.Value, Array[String]) -> Result[@engine.Value, (String, String)]
-}
-
-pub enum FilterSignature {
-  Validate
-  Transform
-} derive(Eq, @debug.Debug)
-pub fn FilterSignature::is_transform(Self) -> Bool
 
 pub(all) enum FromEntriesSpec {
   Entries

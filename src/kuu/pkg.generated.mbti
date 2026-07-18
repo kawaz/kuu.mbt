@@ -11,13 +11,17 @@ pub fn accum_cells(@engine.Scope, Map[String, @engine.ExportKey]) -> Array[Accum
 
 pub fn apply_export_keys(Array[@engine.Binding], Map[String, @engine.ExportKey]) -> Array[@engine.Binding]
 
-pub fn build_result(Array[@engine.Binding], Array[AccumCell], Array[DefaultCell], Array[String], nones? : Array[@engine.NoneCell]) -> @engine.RVal
+pub fn build_result(Array[@engine.Binding], Array[AccumCell], Array[DefaultCell], Array[String], nones? : Array[@engine.NoneCell], extensions? : @engine.Registry) -> @engine.RVal
 
 pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[@engine.Cand]
 
 pub fn config_from_json(Json) -> @engine.ConfigVal
 
 pub fn export_map(AtomicAST) -> Map[String, @engine.ExportKey]
+
+pub fn install(@engine.Registry) -> Unit
+
+pub fn install_installers(@engine.Registry) -> Unit
 
 pub fn output(AtomicAST, Array[@engine.Binding], resolved? : Array[@engine.Binding]) -> OutputView
 

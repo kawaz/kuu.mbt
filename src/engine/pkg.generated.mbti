@@ -9,6 +9,12 @@ import {
 // Values
 pub fn action_marker(String, Int) -> Binding
 
+pub fn apply_accum_filter_chain(Registry, Array[FilterSpelling], Array[Value]) -> Result[Array[Value], (String, String)]
+
+pub fn apply_filter_chain(Registry, Array[FilterSpelling], Value) -> Result[Value, (String, String)]
+
+pub fn apply_piece_filters(Registry, Array[FilterSpelling], String) -> Result[String, (String, String)]
+
 pub fn argmin_action(Array[(String, Int)]) -> String
 
 pub fn attach_mode_of(String) -> AttachMode?
@@ -29,7 +35,7 @@ pub fn collect_scopes(Node, Map[String, Node]) -> Array[ScopedCons]
 
 pub fn compile_regex(String) -> @string.Regex?
 
-pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Array[String]) -> Array[Cand]
+pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Array[String], extensions? : Registry) -> Array[Cand]
 
 pub fn config_from_json(Json) -> ConfigVal
 
@@ -67,23 +73,9 @@ pub fn mkb(String, Value, Source, at_pos? : Int?) -> Binding
 
 pub fn none_cells(Scope) -> Array[NoneCell]
 
-pub fn parse_fail_error(String, String, Int, ParseFail) -> ParseError
-
-pub fn parse_tree(Node, Array[String], defs? : Map[String, Node], faildef? : FailDef) -> Outcome
+pub fn parse_tree(Node, Array[String], defs? : Map[String, Node], faildef? : FailDef, extensions? : Registry) -> Outcome
 
 pub fn pe_filter(String, Int, String, String) -> ParseError
-
-pub fn pe_int_out_of_range(String, String, Int) -> ParseError
-
-pub fn pe_parse(String, String, Int) -> ParseError
-
-pub fn pe_parse_bool(String, String, Int) -> ParseError
-
-pub fn pe_parse_int(String, String, Int) -> ParseError
-
-pub fn pe_parse_kv(String, String, Int) -> ParseError
-
-pub fn pe_type_parse(String, String, Int, ParseFail) -> ParseError
 
 pub fn pend_value(String, String) -> Cand
 
@@ -127,6 +119,13 @@ pub(all) struct AmbiguousData {
   interpretations : Array[AmbInterp]
   help_entry : String?
 } derive(Eq, @debug.Debug)
+
+pub(all) struct ArrayFilterDescriptor {
+  name : String
+  signature : FilterSignature
+  reasons : Array[String]
+  run : (Array[Value], Array[String]) -> Result[Array[Value], (String, String)]
+}
 
 pub(all) enum AttachMode {
   AtRequire
@@ -203,6 +202,7 @@ pub(all) enum Constraint {
 pub struct Ctx {
   // private fields
 }
+pub fn Ctx::extensions(Self) -> Registry
 pub fn Ctx::is_complete_mode(Self) -> Bool
 pub fn Ctx::token_at(Self, Int) -> String?
 
@@ -246,7 +246,8 @@ pub struct DefsView {
   // private fields
 }
 pub fn DefsView::definition(Self) -> Definition
-pub fn DefsView::new(Definition, Definition, Map[String, Node]) -> Self
+pub fn DefsView::extensions(Self) -> Registry
+pub fn DefsView::new(Definition, Definition, Map[String, Node], Registry) -> Self
 pub fn DefsView::source_definition(Self) -> Definition
 pub fn DefsView::templates(Self) -> Map[String, Node]
 
@@ -377,6 +378,19 @@ pub(all) struct FailureData {
   tried_triggers : Array[String]
 } derive(Eq, @debug.Debug)
 
+pub(all) struct FilterDescriptor {
+  name : String
+  signature : FilterSignature
+  reasons : Array[String]
+  run : (Value, Array[String]) -> Result[Value, (String, String)]
+}
+
+pub(all) enum FilterSignature {
+  Validate
+  Transform
+} derive(Eq, @debug.Debug)
+pub fn FilterSignature::is_transform(Self) -> Bool
+
 pub(all) struct FilterSpelling {
   name : String
   args : Array[String]
@@ -481,16 +495,6 @@ pub(all) struct ParseError {
   path : Array[String]
 } derive(Eq, @debug.Debug)
 
-pub(all) enum ParseFail {
-  NotANumber
-  NotAnInteger
-  IntOutOfRange
-  NotABool
-  NoValueSpace
-} derive(Eq, @debug.Debug)
-pub fn ParseFail::message(Self, String) -> String
-pub fn ParseFail::reason(Self) -> String
-
 pub(all) enum PieceMark {
   PkAdd(String)
   PkRemove(String)
@@ -508,13 +512,17 @@ pub struct Registry {
 }
 pub fn Registry::installers(Self) -> Array[&InstallerExt]
 pub fn Registry::lookup_accumulator(Self, String) -> &AccumulatorExt?
+pub fn Registry::lookup_array_filter(Self, String) -> ArrayFilterDescriptor?
 pub fn Registry::lookup_collector(Self, String) -> &CollectorExt?
+pub fn Registry::lookup_filter(Self, String) -> FilterDescriptor?
 pub fn Registry::lookup_matcher(Self, String) -> &MatcherExt?
 pub fn Registry::lookup_node(Self, String) -> &NodeExt?
 pub fn Registry::lookup_type(Self, String) -> &TypeExt?
 pub fn Registry::new() -> Self
 pub fn Registry::register_accumulator(Self, &AccumulatorExt) -> Bool
+pub fn Registry::register_array_filter(Self, ArrayFilterDescriptor) -> Bool
 pub fn Registry::register_collector(Self, &CollectorExt) -> Bool
+pub fn Registry::register_filter(Self, FilterDescriptor) -> Bool
 pub fn Registry::register_installer(Self, &InstallerExt) -> Unit
 pub fn Registry::register_matcher(Self, &MatcherExt) -> Bool
 pub fn Registry::register_node(Self, &NodeExt) -> Bool
@@ -577,6 +585,11 @@ pub(all) enum Source {
 pub(all) enum TermHint {
   WordEnd
   Cont
+} derive(Eq, @debug.Debug)
+
+pub(all) struct TypeParseFail {
+  reason : String
+  message : String
 } derive(Eq, @debug.Debug)
 
 pub(all) enum Value {
@@ -660,7 +673,7 @@ pub(open) trait TypeExt {
   fn name(Self) -> String
   fn encode(Self) -> Json = _
   fn has_value_slot(Self) -> Bool
-  fn parse_token(Self, String) -> Result[Value, ParseFail]
+  fn parse_token(Self, String) -> Result[Value, TypeParseFail]
   fn default_seat_observation_key(Self) -> String? = _
   fn default_seat_resolver(Self, SeatCtx) -> Value?
 }
