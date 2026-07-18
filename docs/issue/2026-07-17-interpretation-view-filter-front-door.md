@@ -46,9 +46,12 @@ API (別名関数) 化を再判断する (= 今すぐ昇格するのではなく
 
 ## 受け入れ条件
 
-- [ ] kuu-cli 側で interpretation view の filter 規則が実際に必要になった
+- [x] kuu-cli 側で interpretation view の filter 規則が実際に必要になった
       タイミングで、front_door への昇格要否を再判断する
-- [ ] 昇格すると判断した場合、3 つの filter 規則 (Default scalar 除外 /
+- [x] 昇格すると判断した場合、3 つの filter 規則 (Default scalar 除外 /
       collision claimant key の default 保持 / 空 accumulator 配列保持) を
       production API として `front_door` に実装し、conformance runner を
       薄い委譲に書き換える
+
+TRI-Q4 実装で `output_of_interpretation` として front_door へ昇格済み。issue の close は
+kuu-cli の玄関 API 追随 (Part B) 完了後に統括が行う。

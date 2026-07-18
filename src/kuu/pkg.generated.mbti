@@ -7,17 +7,9 @@ import {
 }
 
 // Values
-pub fn accum_cells(@engine.Scope, Map[String, @engine.ExportKey]) -> Array[AccumCell]
-
-pub fn apply_export_keys(Array[@engine.Binding], Map[String, @engine.ExportKey]) -> Array[@engine.Binding]
-
-pub fn build_result(Array[@engine.Binding], Array[AccumCell], Array[DefaultCell], Array[String], nones? : Array[@engine.NoneCell], extensions? : @engine.Registry) -> @engine.RVal
-
 pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[@engine.Cand]
 
 pub fn config_from_json(Json) -> @engine.ConfigVal
-
-pub fn export_map(AtomicAST) -> Map[String, @engine.ExportKey]
 
 pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category? : String?) -> Result[HelpModel, Array[@engine.DefError]]
 
@@ -27,33 +19,23 @@ pub fn install_installers(@engine.Registry) -> Unit
 
 pub fn output(AtomicAST, Array[@engine.Binding], resolved? : Array[@engine.Binding]) -> OutputView
 
+pub fn output_of_interpretation(AtomicAST, @engine.AmbInterp) -> @engine.RVal
+
 pub fn parse(AtomicAST, Array[String], env? : Map[String, String], config? : (String) -> @engine.ConfigVal?, tty? : Map[String, TtyObs]) -> @engine.Outcome
 
 pub fn parse_definition(Json, extensions? : @engine.Registry) -> Result[AtomicAST, DefLoadError]
 
 pub fn resolve(AtomicAST, @engine.Outcome, Array[String], env? : Map[String, String], config? : (String) -> @engine.ConfigVal?, tty? : Map[String, TtyObs]) -> @engine.Outcome
 
-pub fn result(AtomicAST, Array[@engine.Binding]) -> @engine.RVal
-
-pub fn sources(AtomicAST, Array[@engine.Binding]) -> Array[SourceEntry]
-
 pub let spec_repo : String
 
 pub fn tty_obs(Bool, Bool) -> TtyObs
 
+pub fn warnings(@engine.Outcome) -> Array[@engine.Warning]
+
 // Errors
 
 // Types and methods
-pub struct AccumCell {
-  path : Array[String]
-  name : String
-  collector : &@engine.CollectorExt?
-  accum_filters : Array[@engine.FilterSpelling]
-  accum : &@engine.AccumulatorExt
-  flatten : Bool
-  is_multiple_decl : Bool
-} derive(Eq, @debug.Debug)
-
 pub struct AtomicAST {
   root : @engine.Scope
   templates : Map[String, @engine.Node]
@@ -65,12 +47,6 @@ pub struct AtomicAST {
 pub(all) enum DefLoadError {
   Malformed(String)
   Rejected(Array[@engine.DefError])
-} derive(Eq, @debug.Debug)
-
-pub struct DefaultCell {
-  path : Array[String]
-  name : String
-  value : @engine.Value
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpCommand {

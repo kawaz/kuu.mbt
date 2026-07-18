@@ -417,7 +417,7 @@ test "accum_cells 対極: an @engine.EkNull accum cell carries no result-key axi
     entities: [ent("tags", @builtins.string_type(), accum=Some("append"))],
     constraints: [],
   }
-  assert_eq(accum_cells(sc, ek), [])
+  assert_eq(accum_cells(sc, ek).length(), 0)
 }
 
 ///|

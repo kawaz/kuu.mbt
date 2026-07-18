@@ -305,7 +305,7 @@ fn apply_export_to_defaults(
 /// An accumulate cell located at a result-scope path (DR-044 uniform array). `path` is the
 /// command/name nesting where the cell lives; `name` is its key. The builder needs this so an
 /// accumulate cell that fired 0 times still renders `[]` at its home level (not absent).
-struct AccumCell {
+priv struct AccumCell {
   path : Array[String]
   name : String
   // DR-036 collector (@engine.Entity.collector's copy, threaded through so build_result — which only
@@ -338,7 +338,7 @@ struct AccumCell {
   // installer's own cons-unfold cell (discard-earlier-firings/last-wins-whole-cell). Replaces the
   // pre-DR-105 `accum == "flatten"` test this struct's `accum` doc comment above describes.
   is_multiple_decl : Bool
-} derive(Eq, Debug)
+}
 
 ///|
 fn path_eq(a : Array[String], b : Array[String]) -> Bool {
@@ -848,11 +848,11 @@ fn collect_accum(
 /// flag preset (LOWERING §A.5 default:false) rides on this: an unfired flag renders `false` rather
 /// than dropping out (DR-051 §2 flag は absent にならない). Accum cells are excluded (they render
 /// `[]` via the AccumCell path, DR-044) so a cell has AT MOST one injection source.
-struct DefaultCell {
+priv struct DefaultCell {
   path : Array[String]
   name : String
   value : @engine.Value
-} derive(Eq, Debug)
+}
 
 ///|
 fn default_cells(sc : @engine.Scope) -> Array[DefaultCell] {
