@@ -1,6 +1,6 @@
 ---
 title: interpretation view の filter 規則を front_door へ昇格する
-status: open
+status: resolved
 category: design
 created: 2026-07-17T12:12:02+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-19T14:34:29+09:00
 discard_reason:    # 1-line JSON array string[] 例: ["discarded","環境が変わった"]
 pending_reason:    # 1-line JSON array string[] 例: ["pending","v2 待ち"]
-close_reason:      # close 時に update が記録。1-line JSON array string[] 例: ["dr/DR-0007","implemented"]
+close_reason: ["done:TRI-Q4実装(PartA kuu.mbt 6a8173ee=OutputView一本化+AtomicAST opaque化 / PartB kuu-cli 342d4dd=wire.mbt玄関乗り換え)で受け入れ条件2項目を満たして完了","done:3リポCI green lockstep窓で締結"]
 blocked_by:
 origin: M5d 残課題 (統括受理条件 2026-07-17)
 ---
