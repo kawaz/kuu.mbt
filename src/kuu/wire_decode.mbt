@@ -1014,13 +1014,13 @@ priv struct TypeShadow {
 /// DR-054)。
 fn dec_types(
   j : Json,
-) -> (Map[String, TypeShadow], Array[@engine.HelpTypeEntry]) raise DecodeSkip {
+) -> (Map[String, TypeShadow], Array[@engine.HelpTypeDecl]) raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("definitions.types is not an object")
   }
   let out : Map[String, TypeShadow] = Map([])
-  let help_types : Array[@engine.HelpTypeEntry] = []
+  let help_types : Array[@engine.HelpTypeDecl] = []
   for name, tj in o {
     let to = match tj.j_obj() {
       Some(x) => x

@@ -1007,7 +1007,7 @@ fn filter_category(
 /// or/seq/repeat の順序を保持 (fixture value-structure-and-types が期待する COLOR/INFO/WARN/
 /// DEBUG 順は options 順 fg → level-colors → 各 seq 要素)。
 fn help_types_projection(
-  root_types : Array[@engine.HelpTypeEntry],
+  root_types : Array[@engine.HelpTypeDecl],
   root_def : @engine.Definition,
 ) -> Array[HelpTypeEntry] {
   let output : Array[HelpTypeEntry] = []

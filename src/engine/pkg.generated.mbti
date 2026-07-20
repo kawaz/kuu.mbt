@@ -310,7 +310,7 @@ pub(all) struct Definition {
   positionals : Array[ElemDef]
   commands : Array[CommandDef]
   aliases : Array[AliasDef]
-  help_types : Array[HelpTypeEntry]
+  help_types : Array[HelpTypeDecl]
 } derive(Eq, @debug.Debug)
 
 pub struct DefsView {
@@ -565,7 +565,7 @@ pub(all) struct HelpSingleValue {
   values_enum : Array[String]?
 } derive(Eq, @debug.Debug)
 
-pub(all) struct HelpTypeEntry {
+pub(all) struct HelpTypeDecl {
   id : String
   help : String?
   value_structure : HelpValueStructure

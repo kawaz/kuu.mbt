@@ -37,7 +37,7 @@ pub(all) struct HelpTypeRef {
 /// DR-113 §4.2 共有型定義の carrier。Definition.help_types に定義出現順で並ぶ。
 /// used_as は wire 上の直接情報でなく参照側からの逆向き収集なので、ここでは carry しない
 /// (help_installer が projection 時に options/positionals を走査して補う)。
-pub(all) struct HelpTypeEntry {
+pub(all) struct HelpTypeDecl {
   id : String
   help : String?
   value_structure : HelpValueStructure
@@ -446,5 +446,5 @@ pub(all) struct Definition {
   // 親子で shadows を継承しているため実装的にも root で完結)。help_installer は root Definition
   // の help_types だけを読んで types 集約 (used_as 逆収集を含む) を組む。root 以外の scope で
   // 追加宣言する用法は未サポート (fixture も root のみ)。
-  help_types : Array[HelpTypeEntry]
+  help_types : Array[HelpTypeDecl]
 } derive(Eq, Debug)
