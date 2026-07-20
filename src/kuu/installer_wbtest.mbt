@@ -147,6 +147,7 @@ fn el(
     hidden: false,
     completer: None,
     default_values: None,
+    default_fn: None,
     default_declared: false,
     int_round: @engine.RError,
     allow_base_prefix: false,
@@ -525,7 +526,7 @@ test "long installer: a count's `long:true` composes an `:update:increment` vari
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--verbose"),
-      @builtins.effect_mark("verbose", @engine.Update("increment", [])),
+      @builtins.effect_mark("verbose", @engine.Invoke({ name: "incr", args: [] })),
     ]),
   )
   let ent = entity_of(sc, "verbose").unwrap()
@@ -536,14 +537,15 @@ test "long installer: a count's `long:true` composes an `:update:increment` vari
 }
 
 ///|
-/// 保証: DR-077 §3 規則2 (count の明示 variant リストは非空なら `:update:increment` を冪等に補完):
-/// `long=LList([":update:increment"])` を明示しても二重に足されない。flag の規則2 (§1 の 2 番目の
-/// test) と対称。
-test "long installer: a count's explicit `long:[\":update:increment\"]` does not duplicate the composed variant (DR-077 §3 規則2, 冪等)" {
+/// 保証: DR-114 §6.2 — count の明示 `long` list は "exactly as written" で解釈される (DR-077 §3
+/// 規則2 の冪等補完は DR-114 で廃止)。明示 `":incr"` variant を 1 本書いた宣言が、long:true 糖衣と
+/// **同一の** bare-fire increment 衛星 1 本に lower されることを固定する。`long:true` (規則1) の
+/// preset 糖衣が展開する式と、明示 `":incr"` を書いた式が同一 lowering に着地することの pin。
+test "long installer: a count's explicit `long:[\":incr\"]` lowers to the same bare-fire increment variant (DR-114 §6.2, exact-as-written)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
-      el("verbose", @builtins.count_type(), long=LList([":update:increment"])),
+      el("verbose", @builtins.count_type(), long=LList([":incr"])),
     ],
   }
   let sc = ok_scope(def, [@builtins.long_installer()])
@@ -552,7 +554,7 @@ test "long installer: a count's explicit `long:[\":update:increment\"]` does not
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--verbose"),
-      @builtins.effect_mark("verbose", @engine.Update("increment", [])),
+      @builtins.effect_mark("verbose", @engine.Invoke({ name: "incr", args: [] })),
     ]),
   )
 }
@@ -1189,7 +1191,7 @@ test "parse_definition: an update variant on a multiple element is @engine.DInva
       el(
         "tags",
         @builtins.string_type(),
-        long=LList([":set", "bump:update:increment"]),
+        long=LList([":set", "bump:incr"]),
         multiple=true,
       ),
     ],
@@ -1223,7 +1225,7 @@ test "parse_definition: an update variant on a scalar (non-multiple) element is 
       el(
         "verbosity",
         @builtins.number_type(),
-        long=LList([":set", "bump:update:increment"]),
+        long=LList([":set", "bump:incr"]),
       ),
     ],
   }
@@ -1247,7 +1249,7 @@ test "parse_definition: an update variant on a scalar (non-multiple) element is 
 /// しか見ないと、alias 経由の update variant が検査をすり抜けて `parse_definition` を通過し、発火時
 /// に canonical (multiple 要素) への @engine.Update binding が resolve.mbt の accum 分岐に届いて abort に
 /// 到達してしまう (修正前の実際の repro)。canonical `tags` (multiple:true) は自身は update variant
-/// を持たず、alias `t` の long_override だけが `bump:update:increment` を持つ形で、alias 経由の
+/// を持たず、alias `t` の long_override だけが `bump:incr` を持つ形で、alias 経由の
 /// 検査が独立して機能することを固定する。
 test "parse_definition: an alias's long_override update variant on a multiple canonical is @engine.DInvalidRange (codex High 1)" {
   let def : @engine.Definition = {
@@ -1260,7 +1262,7 @@ test "parse_definition: an alias's long_override update variant on a multiple ca
         target: "tags",
         name: Some("t"),
         short: [],
-        long_override: Some(LList(["bump:update:increment"])),
+        long_override: Some(LList(["bump:incr"])),
         deprecated: false,
         help_meta: empty_help_meta_for_test(),
       },
@@ -1296,7 +1298,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
         target: "verbosity",
         name: Some("v"),
         short: [],
-        long_override: Some(LList(["bump:update:increment"])),
+        long_override: Some(LList(["bump:incr"])),
         deprecated: false,
         help_meta: empty_help_meta_for_test(),
       },
@@ -1317,7 +1319,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
 
 ///|
 /// 保証 (codex レビュー High 2、2026-07-10): @builtins.count_type() の **short** 発火は variant を一切経由せず
-/// `builtins/matcher_residents.mbt`'s `walk_short` が直接 `mk_effect(e.name, @engine.Update("increment", []), @engine.Cli)` を生成する
+/// `builtins/matcher_residents.mbt`'s `walk_short` が直接 `mk_effect(e.name, @engine.Invoke({ name: "incr", args: [] }), @engine.Cli)` を生成する
 /// (`count_increment_variant` の `long:true` 糖衣経路とは別の生成源) — `collect_unsupported_accum_
 /// update` の variant 走査ではこの経路が最初から見えないため、@builtins.count_type()×multiple という組合せ自体を
 /// 要素レベルで閉じる (`collect_unsupported_count_multiple`)。修正前の実際の repro:
@@ -1428,11 +1430,14 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
       @builtins.string_type(),
       canonical_registry(),
     ) {
-    @builtins.LInvalid(s) => assert_eq(s, "gzip")
+    @builtins.LInvalid(s, _) => assert_eq(s, "gzip")
     _ => fail("expected @builtins.LInvalid")
   }
-  // a non-bool variant operand parses per the element's OWN type (DR-074/075 canonical lexicons) —
-  // not just bool. `default:5` on a @builtins.number_type() element parses the operand as a number.
+  // (4b) DR-114 §5.1: `default` cell_fn descriptor は arity 0 (sentinel `UseDefault` を返す)、
+  // よって `"default:default:5"` (args=["5"]) は `descriptor.validate_invocation` で reject され
+  // `LInvalid(DInvalidArgument)` に落ちる — 旧仕様 (default variant が任意 operand を carry) は
+  // DR-114 で廃止 (default sentinel 化)。正例として裸の `":default"` (arity 0 充足) は operand を
+  // 持たない `LVariant(Default, operand=None)` に classify される。
   match
     @builtins.classify_long_spelling(
       "default:default:5",
@@ -1440,12 +1445,25 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
       @builtins.number_type(),
       canonical_registry(),
     ) {
-    @builtins.LVariant({ trigger, op, operand }) => {
-      assert_eq(trigger, "default-port")
-      assert_eq(op, @engine.Default)
-      assert_eq(operand, Some(@engine.VNum(5.0)))
+    @builtins.LInvalid(s, kind) => {
+      assert_eq(s, "default:default:5")
+      assert_eq(kind, @engine.DInvalidArgument)
     }
-    _ => fail("expected @builtins.LVariant")
+    _ => fail("expected @builtins.LInvalid (default is arity-0 in DR-114)")
+  }
+  match
+    @builtins.classify_long_spelling(
+      ":default",
+      "port",
+      @builtins.number_type(),
+      canonical_registry(),
+    ) {
+    @builtins.LVariant({ trigger, op, operand }) => {
+      assert_eq(trigger, "port")
+      assert_eq(op, @engine.Default)
+      assert_eq(operand, None)
+    }
+    _ => fail("expected @builtins.LVariant (bare `:default`, DR-114 §5.1 arity 0)")
   }
   // (5) @builtins.LInvalid: an unrecognized effect word (colon present, but not set/unset/empty/default) is
   // ALSO a syntax error (DR-011 明確化) — not a literal-spelling fallback either.
@@ -1456,7 +1474,7 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
       @builtins.bool_type(),
       canonical_registry(),
     ) {
-    @builtins.LInvalid(s) => assert_eq(s, "no:bogus:false")
+    @builtins.LInvalid(s, _) => assert_eq(s, "no:bogus:false")
     _ => fail("expected @builtins.LInvalid (unrecognized op word)")
   }
 }
@@ -1821,30 +1839,32 @@ test "DR-077 §2: a registered but Validate-signature filter is also a DR-054 un
 }
 
 ///|
-/// 保証 (codex 指摘 2、DR-077 §2 の definition-time gate 精密化): 引数の arity は RUNTIME 関心
-/// (`apply_transform`, resolve.mbt — closure 自身が拒否する、`@engine.apply_filter_chain` と同じ split)。
-/// `@builtins.classify_long_spelling` の definition-time gate は「registry に存在するか」「signature が
-/// Transform か」の 2 点だけを見る — args の個数は関知しない。よって `:update:increment:5` (0-arg
-/// 組み込み `increment` に余分な args) は **definition としては妥当** (increment は登録済み・
-/// Transform signature)、Err にはならない。旧実装は `parts.length() == 3` を definition-time で
-/// 強制する hardcoded allowlist だったため extra args を unknown-vocab として弾いていたが、
-/// registry lookup ベースの新実装ではこの静的チェックが無くなった (意図的な設計変更 — arity
-/// mismatch は resolve.mbt 側で kind:filter の実行時 Error として顕在化する、対で固定する次の
-/// wbtest 参照)。
-test "DR-077 §2: extra args to a registered Transform are NOT a definition-error (arity is a runtime concern)" {
+/// 保証 (DR-114 §5.1 転換 — 旧 DR-077 §2 の「arity は runtime 関心」宣言は撤回): cell_fn の
+/// descriptor は arity を parameters 定義で明示する (`incr` は arity 0)。`classify_long_spelling`
+/// は `descriptor.validate_invocation` を definition-time で必ず通し、arity mismatch は
+/// **definition-time DInvalidArgument** として弾く (registry lookup 通過後の第 2 gate)。
+/// これで「登録はされているが arity が合わない」誤用が resolve まで届く前に static に閉じる。
+/// 旧実装 (DR-077) は arity を runtime に持ち越す設計だったが、cell_fn 統合 (DR-114) では
+/// descriptor.parameters が declarative な arity 契約になるため、この gate が spec 化された。
+test "DR-114 §5.1: extra args to a registered cell_fn are a definition-time DInvalidArgument (arity is descriptor-declared)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
-      el("verbose", @builtins.count_type(), long=LList([":update:increment:5"])),
+      el("verbose", @builtins.count_type(), long=LList([":incr:5"])),
     ],
   }
   match test_lower_definition(def, all_installers()) {
-    Ok(_) => ()
-    Err(errs) =>
-      fail(
-        "expected Ok (increment:5 is definition-valid, arity is checked at runtime): " +
-        deferrs_str(errs),
-      )
+    Ok(_) =>
+      fail("expected Err (`:incr:5` supplies args to arity-0 cell_fn `incr`)")
+    Err(errs) => {
+      let mut found = false
+      for e in errs {
+        if e.kind == @engine.DInvalidArgument && e.element == "verbose" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
   }
 }
 

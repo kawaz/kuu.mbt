@@ -70,6 +70,11 @@ fn ent(
       None => None
     },
     default_values,
+    default_fn: match default_values {
+      Some(values) =>
+        Some(@engine.TypedDefaultFn(@engine.typed_fn_call("set", values)))
+      None => None
+    },
     separator,
     // `chain` (filters_wbtest.mbt, same package): colon-shorthand ergonomics over `@engine.Entity`'s
     // production `Array[@engine.FilterSpelling]` fields (issue filter-spelling-inband-encoding-retyping).
@@ -1224,7 +1229,7 @@ test "resolve_scope_config: a ladder-fill Error's path is the caller-supplied sc
 fn ceff(key : String, transform : String) -> @engine.Binding {
   {
     key,
-    op: @engine.Update(transform, []),
+    op: @engine.Invoke({ name: transform, args: [] }),
     value: @engine.VBool(false),
     source: @engine.Cli,
     scope: [],
@@ -1251,9 +1256,9 @@ test "resolve_scope: 3 chained update(increment) effects ledger old=0→1→2→
     constraints: [],
   }
   let cli = [
-    ceff("verbose", "increment"),
-    ceff("verbose", "increment"),
-    ceff("verbose", "increment"),
+    ceff("verbose", "incr"),
+    ceff("verbose", "incr"),
+    ceff("verbose", "incr"),
   ]
   assert_eq(
     resolve_scope(sc, cli, Map([])),
@@ -1275,7 +1280,7 @@ test "resolve_scope: update(increment) with no declared default falls back to a 
     constraints: [],
   }
   assert_eq(
-    resolve_scope(sc, [ceff("n", "increment")], Map([])),
+    resolve_scope(sc, [ceff("n", "incr")], Map([])),
     Ok([mkb_pub("n", @engine.VNum(1.0), @engine.Cli)]),
   )
 }
@@ -1333,16 +1338,16 @@ test "resolve_scope: final_filters (in_range) rejects an update-folded count val
   }
   // 3 回 update(increment): old=0->1->2->3, 3 は in_range:0:2 の外。
   let cli3 = [
-    ceff("verbose", "increment"),
-    ceff("verbose", "increment"),
-    ceff("verbose", "increment"),
+    ceff("verbose", "incr"),
+    ceff("verbose", "incr"),
+    ceff("verbose", "incr"),
   ]
   match resolve_scope(sc, cli3, Map([])) {
     Err(pe) => assert_eq(pe.reason, "too_large")
     Ok(_) => fail("expected Err (3 is out of range [0, 2])")
   }
   // 2 回 (境界内) は通る。
-  let cli2 = [ceff("verbose", "increment"), ceff("verbose", "increment")]
+  let cli2 = [ceff("verbose", "incr"), ceff("verbose", "incr")]
   assert_eq(
     resolve_scope(sc, cli2, Map([])),
     Ok([mkb_pub("verbose", @engine.VNum(2.0), @engine.Cli)]),
@@ -1726,7 +1731,7 @@ test "resolve_scope: an update transform's own arity rejection surfaces at runti
   let cli : Array[@engine.Binding] = [
     {
       key: "n",
-      op: @engine.Update("increment", ["5"]),
+      op: @engine.Invoke({ name: "incr", args: ["5"] }),
       value: @engine.VBool(false),
       source: @engine.Cli,
       scope: [],
@@ -1736,8 +1741,8 @@ test "resolve_scope: an update transform's own arity rejection surfaces at runti
   ]
   match resolve_scope(sc, cli, Map([])) {
     Err(pe) => {
-      assert_eq(pe.kind, @engine.KFilter)
-      assert_eq(pe.reason, "filter_rejected")
+      assert_eq(pe.kind, @engine.KParse)
+      assert_eq(pe.reason, "invalid-argument")
     }
     Ok(_) => fail("expected Err (increment takes no args)")
   }

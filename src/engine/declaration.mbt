@@ -158,6 +158,9 @@ pub(all) struct ElemDef {
   // `Entity.default_values` へ写す (§1 の decode-time 持ち上げに加え、FLAG/BOOL/COUNT の暗黙 preset
   // も同じ長さ1形へ揃える)。node.mbt の `Entity.default_values` の doc comment 参照。
   default_values : Array[Value]?
+  // Canonical default-seat invocation. `default:` decodes to TypedDefaultFn(set(values)); explicit
+  // `default_fn:` decodes to WireDefaultFn and stays lazy until dependency-ordered resolution.
+  default_fn : DefaultFnCall?
   default_declared : Bool // wire に default キーが明示されたか (help 素材と preset 暗黙値を区別)
   // DR-034 pieceProcessor の filter chain (DR-062: inheritance object 形は未実装 — filters.mbt
   // ヘッダ注記参照)。piece_filters: separator 分割後の各 piece 単位 (multiple 無しは長さ 1 に縮退、
@@ -310,7 +313,12 @@ pub(all) struct Variant {
 /// decode 層で糖衣を潰すと installer 層がこの区別を必要とする場面で情報が失われる)。
 pub(all) enum LongDecl {
   LBool(Bool)
+  // String-only wire arrays and the post-normalize trigger list retain the compact legacy carrier.
   LList(Array[String])
+  // A wire array containing at least one one-level array invocation preserves every entry as the
+  // universal-fn form until normalize_surface classifies it. Post-normalize declarations always
+  // converge to LList(trigger spellings).
+  LForms(Array[FnInvocationForm])
 } derive(Eq, Debug)
 
 ///|

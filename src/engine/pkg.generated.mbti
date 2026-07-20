@@ -23,7 +23,7 @@ pub fn attach_mode_of(String) -> AttachMode?
 
 pub fn cat(Array[Binding], Array[Binding]) -> Array[Binding]
 
-pub fn cell_fn_descriptor(String, Array[CellFnParameter], CellFnOutput, FnFallibility, observes? : Array[String], reasons? : Array[String]) -> CellFnDescriptor
+pub fn cell_fn_descriptor(String, Array[CellFnParameter], CellFnOutput, FnFallibility, observes? : Array[String], reasons? : Array[String], validate? : (FnCall) -> Result[Unit, (String, String)], run? : (Array[FnArg], FnCtx) -> Result[FnOutput, (String, String)]) -> CellFnDescriptor
 
 pub fn cell_fn_parameter(String, kind? : CellFnParameterKind, repetition? : CellFnRepetition) -> CellFnParameter
 
@@ -69,7 +69,7 @@ pub fn filter_descriptor(String, FilterSignature, Array[String], (Value, Array[S
 
 pub fn find_help_entry(Node, Array[ParseError]) -> String?
 
-pub fn fn_ctx_default(String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
+pub fn fn_ctx_default(String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, dependency? : ((String) -> Value?)?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
 
 pub fn fn_ctx_effect(String, String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
 
@@ -199,6 +199,7 @@ pub(all) struct CandMeta {
 
 pub(all) enum CellFnArity {
   ExactArity(Int)
+  BetweenArity(Int, Int)
   AtLeastArity(Int)
 } derive(Eq, @debug.Debug)
 pub fn CellFnArity::accepts(Self, Int) -> Bool
@@ -209,6 +210,7 @@ pub struct CellFnDescriptor {
 pub fn CellFnDescriptor::arity(Self) -> CellFnArity
 pub fn CellFnDescriptor::concrete_observes(Self, FnInvocation) -> Result[Array[String], (String, String)]
 pub fn CellFnDescriptor::fallibility(Self) -> FnFallibility
+pub fn CellFnDescriptor::invoke(Self, FnCall, FnCtx) -> Result[FnOutput, (String, String)]
 pub fn CellFnDescriptor::name(Self) -> String
 pub fn CellFnDescriptor::observes(Self) -> Array[String]
 pub fn CellFnDescriptor::output(Self) -> CellFnOutput
@@ -238,6 +240,7 @@ pub(all) enum CellFnParameterKind {
 
 pub(all) enum CellFnRepetition {
   Once
+  ZeroOrOne
   OneOrMore
 } derive(Eq, @debug.Debug)
 
@@ -313,6 +316,13 @@ pub struct DefaultCtx {
 pub fn DefaultCtx::dependency(Self, String) -> Value?
 pub fn DefaultCtx::target(Self) -> String
 
+pub(all) enum DefaultFnCall {
+  WireDefaultFn(FnInvocation)
+  TypedDefaultFn(FnCall)
+} derive(Eq, @debug.Debug)
+pub fn DefaultFnCall::to_call(Self) -> FnCall
+pub fn DefaultFnCall::wire_invocation(Self) -> FnInvocation?
+
 pub(all) struct Definition {
   scope : ScopeDecl
   options : Array[ElemDef]
@@ -341,7 +351,7 @@ pub(all) enum EffectOp {
   Default
   Unset
   Empty
-  Update(String, Array[String])
+  Invoke(FnInvocation)
   Remove
   Splice
 } derive(Eq, @debug.Debug)
@@ -398,6 +408,7 @@ pub(all) struct ElemDef {
   hidden : Bool
   completer : String?
   default_values : Array[Value]?
+  default_fn : DefaultFnCall?
   default_declared : Bool
   piece_filters : Array[FnInvocation]
   value_filters : Array[FnInvocation]
@@ -426,6 +437,7 @@ pub(all) struct Entity {
   is_multiple_decl : Bool
   collector : &CollectorExt?
   default_values : Array[Value]?
+  default_fn : DefaultFnCall?
   separator : String?
   piece_filters : Array[FnInvocation]
   value_filters : Array[FnInvocation]
@@ -580,6 +592,7 @@ pub fn InstallOutput::push_greedy(Self, Node) -> Unit
 pub(all) enum LongDecl {
   LBool(Bool)
   LList(Array[String])
+  LForms(Array[FnInvocationForm])
 } derive(Eq, @debug.Debug)
 
 pub(all) enum Node {

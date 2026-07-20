@@ -115,12 +115,17 @@ pub fn fn_ctx_default(
   old? : Value? = None,
   observes? : Array[String] = [],
   option? : (String) -> Value? = fn(_) { None },
+  dependency? : ((String) -> Value?)? = None,
   env? : (String) -> Value? = fn(_) { None },
   system? : (String) -> Value? = fn(_) { None },
 ) -> FnCtx {
   let concrete = observes.copy()
+  let dependency_provider = match dependency {
+    Some(provider) => provider
+    None => option
+  }
   let dependency = fn(name) {
-    observed_value(concrete, "option:", name, option)
+    observed_value(concrete, "option:", name, dependency_provider)
   }
   make_fn_ctx(
     DefaultPhase(DefaultCtx::{ target_: target, dependency_: dependency }),

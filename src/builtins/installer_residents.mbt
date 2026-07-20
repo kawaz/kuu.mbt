@@ -70,14 +70,30 @@ fn resident_long(json : Json) -> Result[@engine.LongDecl, String] {
     True => Ok(LBool(true))
     False => Ok(LBool(false))
     Array(values) => {
-      let output : Array[String] = []
+      let strings : Array[String] = []
+      let forms : Array[@engine.FnInvocationForm] = []
+      let mut has_array = false
       for value in values {
         match value {
-          String(text) => output.push(text)
-          _ => return Err("long[] element is not a string")
+          String(text) => {
+            strings.push(text)
+            forms.push(@engine.ColonString(text))
+          }
+          Array(parts_json) => {
+            has_array = true
+            let parts : Array[String] = []
+            for part_json in parts_json {
+              match part_json {
+                String(part) => parts.push(part)
+                _ => return Err("long array-form element is not a string")
+              }
+            }
+            forms.push(@engine.ArrayParts(parts))
+          }
+          _ => return Err("long[] element is not a string or string[]")
         }
       }
-      Ok(LList(output))
+      if has_array { Ok(LForms(forms)) } else { Ok(LList(strings)) }
     }
     _ => Err("long is not a bool/array")
   }

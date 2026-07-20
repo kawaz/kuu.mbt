@@ -25,7 +25,7 @@
 pub(all) enum LongSpelling {
   LMain(String) // resolved main-entry spelling (`own_name`, verbatim — see `classify_long_spelling`)
   LVariant(@engine.Variant) // a fully-built variant (trigger/op/operand already resolved against own_name)
-  LInvalid(String) // syntax error (colon-less, or unrecognized effect word) — the original string
+  LInvalid(String, @engine.DefErrKind) // definition-time classification and the original spelling
 } derive(Eq, Debug)
 
 ///|
@@ -55,86 +55,100 @@ fn dsl_operand_value(ty : &@engine.TypeExt, s : String) -> @engine.Value {
 /// `desugar_aliases` (alias override desugaring) call this so the two paths can never drift apart
 /// (issue 2026-07-08 alias `long_override` gap: aliases used to skip DSL classification entirely,
 /// silently misinterpreting `":set:true"` as a literal `"--:set:true"` spelling).
+fn invocation_form_text(form : @engine.FnInvocationForm) -> String {
+  match form {
+    @engine.ColonString(spelling) => spelling
+    @engine.ArrayParts(parts) => {
+      let out = StringBuilder::new()
+      out.write_char('[')
+      let mut index = 0
+      while index < parts.length() {
+        if index > 0 {
+          out.write_char(',')
+        }
+        out.write_string(parts[index])
+        index = index + 1
+      }
+      out.write_char(']')
+      out.to_string()
+    }
+  }
+}
+
+///|
+fn classify_long_form(
+  form : @engine.FnInvocationForm,
+  own_name : String,
+  ty : &@engine.TypeExt,
+  extensions : @engine.Registry,
+) -> LongSpelling {
+  let original = invocation_form_text(form)
+  let parts = match @engine.decode_fn_invocation_parts(form) {
+    Ok(parts) => parts
+    Err(_) => return LInvalid(original, @engine.DInvalidArgument)
+  }
+  if parts.length() < 2 {
+    return LInvalid(original, @engine.DUnknownVocab)
+  }
+  let prefix = parts[0]
+  let trigger = if prefix == "" { own_name } else { prefix + "-" + own_name }
+  let args : Array[String] = []
+  let mut index = 2
+  while index < parts.length() {
+    args.push(parts[index])
+    index = index + 1
+  }
+  let invocation : @engine.FnInvocation = { name: parts[1], args }
+  // The no-arg bare set spelling prepares the ordinary value slot; it is a lowering sugar rather
+  // than a call to the one-or-more-argument set resident.
+  if invocation.name == "set" && invocation.args.length() == 0 && prefix == "" {
+    return LMain(own_name)
+  }
+  let descriptor = match extensions.lookup_cell_fn(invocation.name) {
+    None => return LInvalid(original, @engine.DUnknownVocab)
+    Some(descriptor) => descriptor
+  }
+  match descriptor.validate_invocation(invocation) {
+    Err(_) => return LInvalid(original, @engine.DInvalidArgument)
+    Ok(_) => ()
+  }
+  match invocation.name {
+    "set" =>
+      match invocation.args {
+        [] =>
+          if prefix == "" {
+            LMain(own_name)
+          } else {
+            LVariant({ trigger, op: @engine.Set, operand: None })
+          }
+        [value] =>
+          LVariant({
+            trigger,
+            op: @engine.Set,
+            operand: Some(dsl_operand_value(ty, value)),
+          })
+        _ =>
+          // A scalar target cannot map multiple logical values. Structured seq/repeat aggregation
+          // requires a structured Value carrier and is kept as an explicit unimplemented boundary.
+          LInvalid(original, @engine.DInvalidArgument)
+      }
+    "default" =>
+      LVariant({ trigger, op: @engine.Default, operand: None })
+    "unset" => LVariant({ trigger, op: @engine.Unset, operand: None })
+    "empty" => LVariant({ trigger, op: @engine.Empty, operand: None })
+    _ =>
+      LVariant({ trigger, op: @engine.Invoke(invocation), operand: None })
+  }
+}
+
+///|
 pub fn classify_long_spelling(
   s : String,
   own_name : String,
   ty : &@engine.TypeExt,
   extensions : @engine.Registry,
 ) -> LongSpelling {
-  if s == ":set" {
-    return LMain(own_name)
-  }
-  let parts = match @engine.decode_fn_invocation_parts(@engine.ColonString(s)) {
-    Ok(parts) => parts
-    Err(_) => return LInvalid(s)
-  }
-  if parts.length() == 1 {
-    // DR-011 明確化: colon-less は文法エラー (literal 綴りへの fallback は不採用)。
-    return LInvalid(s)
-  }
-  let prefix = parts[0]
-  let trigger = if prefix == "" { own_name } else { prefix + "-" + own_name }
-  // DR-077 §2 `update` (5th effect word): a SEPARATE arity from set/unset/empty/default — parts[2]
-  // is the filters-registry TRANSFORM NAME (not an operand to coerce via dsl_operand_value), and
-  // any remaining segments (parts[3..]) are that transform's own args, threaded through unchecked
-  // (arity is a RUNTIME concern — `apply_transform`, resolve.mbt — the same split DR-009's filter
-  // chain already uses: definition-time only gates existence + signature, DR-077 §2 "シグネチャ不適合
-  // → definition-error"). `unknown-vocab` (DR-054, §2 "不在 → unknown-vocab") is realized by folding
-  // BOTH failure modes into `LInvalid` HERE — this reuses `push_invalid_long`'s existing
-  // @engine.DUnknownVocab collection wholesale instead of a parallel definition-error check
-  // (design-priority: 既存の枠組みの組み合わせで解決). codex 指摘 (issue 2026-07-09, DR-047 の設計
-  // 報告と同じ節目レビュー): 旧実装は `parts[2] == "increment"` のハードコード allowlist だった —
-  // DR-077 §2 の契約通り filters registry を実際に引いて signature を検査する形に置換。不在
-  // (registry に無い名前) と、存在するが `Validate` signature (transform として使えない、
-  // DR-077 §2 "validate-only filters cannot be used as an update transform" と同じ判定) の 2 つを
-  // 区別して弾く — どちらも現行 `@engine.DefErrKind` 列挙 (DR-054) に "invalid-signature" 相当の細分 kind が
-  // 無いため、両方とも `@engine.DUnknownVocab` のまま kind は共通、メッセージ文言だけで理由を分ける
-  // (実装の裁量、細分 kind 追加は spec 側の DR-054 拡張判断が要るため見送り — 報告に明記)。
-  if parts[1] == "update" {
-    if parts.length() >= 3 {
-      let transform = parts[2]
-      match extensions.lookup_filter(transform) {
-        None => return LInvalid(s) // 不在: unknown-vocab (registry に無い名前)
-        Some(d) =>
-          if d.signature.is_transform() {
-            let args : Array[String] = []
-            let mut i = 3
-            while i < parts.length() {
-              args.push(parts[i])
-              i = i + 1
-            }
-            return LVariant({
-              trigger,
-              op: @engine.Update(transform, args),
-              operand: None,
-            })
-          } else {
-            return LInvalid(s) // 存在するが Validate signature: transform として使えない
-          }
-      }
-    }
-    return LInvalid(s)
-  }
-  let op : @engine.EffectOp? = match parts[1] {
-    "set" => Some(@engine.Set)
-    "unset" => Some(@engine.Unset)
-    "empty" => Some(@engine.Empty)
-    "default" => Some(@engine.Default)
-    _ => None
-  }
-  match op {
-    // DR-011 明確化: 語彙外の effect word も文法エラー (colon-less と同じ扱い — typo が「マッチしない
-    // 入口」として黙って通るのを防ぐ、DR-054 の機械検出思想)。
-    None => LInvalid(s)
-    Some(o) => {
-      let operand = if parts.length() >= 3 {
-        Some(dsl_operand_value(ty, parts[2]))
-      } else {
-        None
-      }
-      LVariant({ trigger, op: o, operand })
-    }
-  }
+  classify_long_form(@engine.ColonString(s), own_name, ty, extensions)
 }
 
 ///|
@@ -151,7 +165,11 @@ fn flag_bare_true_variant(name : String) -> @engine.Variant {
 /// exactly, just with `@engine.Update("increment", [])` in place of `@engine.Set`/`true` (count has no operand to
 /// carry; the fired value depends on the cell's running state, computed by resolve.mbt's fold).
 fn count_increment_variant(name : String) -> @engine.Variant {
-  { trigger: kebab(name), op: @engine.Update("increment", []), operand: None }
+  {
+    trigger: kebab(name),
+    op: @engine.Invoke({ name: "incr", args: [] }),
+    operand: None,
+  }
 }
 
 ///|
@@ -199,7 +217,7 @@ fn resolve_long(
         match classify_long_spelling(l, kebab(name), ty, extensions) {
           LMain(n) => longs.push(n)
           LVariant(v) => vars.push(v)
-          LInvalid(_) => ()
+          LInvalid(_, _) => ()
         }
       }
       if ty.name() == "flag" && (longs.length() > 0 || vars.length() > 0) {
@@ -214,18 +232,32 @@ fn resolve_long(
           vars.push(bare_true)
         }
       }
-      if ty.name() == "count" && (longs.length() > 0 || vars.length() > 0) {
-        let bare_inc = count_increment_variant(name)
+      (longs, vars)
+    }
+    LForms(forms) => {
+      let longs : Array[String] = []
+      let vars : Array[@engine.Variant] = []
+      for form in forms {
+        match classify_long_form(form, kebab(name), ty, extensions) {
+          LMain(n) => longs.push(n)
+          LVariant(v) => vars.push(v)
+          LInvalid(_, _) => ()
+        }
+      }
+      if ty.name() == "flag" && (longs.length() > 0 || vars.length() > 0) {
+        let bare_true = flag_bare_true_variant(name)
         let mut already = false
         for v in vars {
-          if v == bare_inc {
+          if v == bare_true {
             already = true
           }
         }
         if !already {
-          vars.push(bare_inc)
+          vars.push(bare_true)
         }
       }
+      // DR-114 §6.2: count explicit lists are interpreted exactly as written. Only long:true
+      // replaces the type-independent :set sugar with :incr; there is no list completion.
       (longs, vars)
     }
   }
@@ -338,7 +370,7 @@ fn copy_filter_spellings(
 fn long_of(e : @engine.ElemDef) -> Array[String] {
   match e.long {
     LList(strs) => strs
-    LBool(_) => []
+    LForms(_) | LBool(_) => []
   }
 }
 
@@ -347,6 +379,16 @@ fn copy_long(l : @engine.LongDecl) -> @engine.LongDecl {
   match l {
     LBool(b) => LBool(b)
     LList(strs) => LList(copy_strs(strs))
+    LForms(forms) => {
+      let copied : Array[@engine.FnInvocationForm] = []
+      for form in forms {
+        copied.push(match form {
+          @engine.ColonString(spelling) => @engine.ColonString(spelling)
+          @engine.ArrayParts(parts) => @engine.ArrayParts(copy_strs(parts))
+        })
+      }
+      LForms(copied)
+    }
   }
 }
 
@@ -412,6 +454,7 @@ fn clone_elem(e : @engine.ElemDef) -> @engine.ElemDef {
     hidden: e.hidden,
     completer: e.completer,
     default_values: e.default_values,
+    default_fn: e.default_fn,
     default_declared: e.default_declared,
     int_round: e.int_round,
     allow_base_prefix: e.allow_base_prefix,
@@ -541,11 +584,21 @@ fn normalize_option(
     } else {
       e.default_values
     }
+    let default_fn2 = match e.default_fn {
+      Some(call) => Some(call)
+      None =>
+        match default_values2 {
+          Some(values) if !e.multiple && e.repeat is None && e.separator is None && !e.is_tty =>
+            Some(@engine.TypedDefaultFn(@engine.typed_fn_call("set", values)))
+          _ => None
+        }
+    }
     let ty2 = if e.ty.name() == "flag" { bool_type() } else { e.ty }
     {
       ..e,
       ty: ty2,
       default_values: default_values2,
+      default_fn: default_fn2,
       long: LList(longs),
       variants: vars,
     }
@@ -1211,6 +1264,15 @@ fn ensure_entity(
         None => None
       }
   }
+  let default_fn = match e.default_fn {
+    Some(call) => Some(call)
+    None =>
+      match default_values {
+        Some(values) if accum is None && seat_ty.default_seat_observation_key() is None =>
+          Some(@engine.TypedDefaultFn(@engine.typed_fn_call("set", values)))
+        _ => None
+      }
+  }
   let ty2 = if seat_ty.name() == "count" { number_type() } else { seat_ty }
   build
   .entities()
@@ -1233,6 +1295,7 @@ fn ensure_entity(
     // is resolved during lowering so runtime dispatch never branches on a collector name.
     collector,
     default_values,
+    default_fn,
     separator: e.separator,
     piece_filters: e.piece_filters,
     value_filters: e.value_filters,
@@ -1934,6 +1997,7 @@ fn copy_global_into(
     hidden: copy.hidden,
     completer: copy.completer,
     default_values: copy.default_values,
+    default_fn: copy.default_fn,
     default_declared: copy.default_declared,
     int_round: copy.int_round,
     allow_base_prefix: copy.allow_base_prefix,
@@ -2122,6 +2186,7 @@ fn add_inheritable_copy(
       hidden: false,
       completer: None, // write-target copy は completer 宣言経路を持たない (hidden と同じ理由)
       default_values: None,
+      default_fn: None,
       default_declared: false, // write-target に default を置かない (§3): 実書き込みのみが伝播する
       int_round: @engine.RError,
       allow_base_prefix: false, // canonical default (DR-075 §2): write-target は int_round を持たない
@@ -2503,6 +2568,7 @@ fn alias_entry(
     hidden: false,
     completer: None,
     default_values: None,
+    default_fn: None,
     default_declared: false,
     int_round: @engine.RError,
     allow_base_prefix: false,
@@ -2654,6 +2720,144 @@ fn def_err(
 }
 
 ///|
+fn default_fn_edges(
+  element : @engine.ElemDef,
+  extensions : @engine.Registry,
+) -> Array[String] {
+  let edges : Array[String] = []
+  match element.default_fn {
+    Some(@engine.WireDefaultFn(invocation)) =>
+      match extensions.lookup_cell_fn(invocation.name) {
+        Some(descriptor) =>
+          match descriptor.concrete_observes(invocation) {
+            Ok(observes) =>
+              for edge in observes {
+                if edge.has_prefix("option:") {
+                  edges.push(edge[7:].to_owned())
+                }
+              }
+            Err(_) => ()
+          }
+        None => ()
+      }
+    _ => ()
+  }
+  edges
+}
+
+///|
+fn default_fn_cycle_from(
+  start : String,
+  current : String,
+  graph : Map[String, Array[String]],
+  visiting : Array[String],
+) -> Bool {
+  if current == start && visiting.length() > 0 {
+    return true
+  }
+  if str_in(visiting, current) {
+    return false
+  }
+  let next_visiting = copy_strs(visiting)
+  next_visiting.push(current)
+  match graph.get(current) {
+    Some(edges) =>
+      for edge in edges {
+        if default_fn_cycle_from(start, edge, graph, next_visiting) {
+          return true
+        }
+      }
+    None => ()
+  }
+  false
+}
+
+///|
+fn collect_default_fn_errors(
+  def : @engine.Definition,
+  out : Array[@engine.DefError],
+  extensions : @engine.Registry,
+) -> Unit {
+  let elements : Array[@engine.ElemDef] = []
+  for element in def.options {
+    elements.push(element)
+  }
+  for element in def.positionals {
+    elements.push(element)
+  }
+  let graph : Map[String, Array[String]] = Map([])
+  for element in elements {
+    match element.default_fn {
+      Some(call) => {
+        if element.default_declared && call is @engine.WireDefaultFn(_) {
+          out.push(
+            def_err(
+              element.name,
+              @engine.DInvalidRange,
+              "default and default_fn both declare the default seat",
+              "declare exactly one default-seat supplier",
+            ),
+          )
+        }
+        let fn_call = call.to_call()
+        match extensions.lookup_cell_fn(fn_call.name) {
+          None =>
+            out.push(
+              def_err(
+                element.name,
+                @engine.DUnknownVocab,
+                "default_fn '" + fn_call.name + "' is not registered",
+                "register the cell fn or use a registered name",
+              ),
+            )
+          Some(descriptor) => {
+            match descriptor.validate_call(fn_call) {
+              Err((_, message)) =>
+                out.push(
+                  def_err(
+                    element.name,
+                    @engine.DInvalidArgument,
+                    message,
+                    "match the cell fn descriptor's argument contract",
+                  ),
+                )
+              Ok(_) => ()
+            }
+            if descriptor.output() is @engine.SentinelOutput(_) {
+              out.push(
+                def_err(
+                  element.name,
+                  @engine.DInvalidRange,
+                  "default_fn '" + fn_call.name + "' returns a cell-operation sentinel",
+                  "use a cell fn whose descriptor returns Value",
+                ),
+              )
+            }
+          }
+        }
+      }
+      None => ()
+    }
+    graph.set(element.name, default_fn_edges(element, extensions))
+  }
+  for element in elements {
+    if default_fn_cycle_from(element.name, element.name, graph, []) {
+      out.push(
+        def_err(
+          element.name,
+          @engine.DCircularRef,
+          "default_fn observes cycle includes '" + element.name + "'",
+          "remove one option dependency edge from the cycle",
+        ),
+      )
+    }
+  }
+  for command in def.commands {
+    collect_default_fn_errors(command.body, out, extensions)
+  }
+}
+
+///|
 /// DR-011 明確化 (kawaz 裁定 2026-07-08): `long` の array 形の各要素は `classify_long_spelling` が
 /// `LMain`/`LVariant` に分類できる形でなければならない — colon-less な文字列、または語彙外 effect
 /// word を持つ文字列 (`LInvalid`) は文法エラーで `unknown-vocab` (DR-054) に落とす。`normalize_option`
@@ -2687,13 +2891,28 @@ fn push_invalid_long(
     LList(strs) =>
       for l in strs {
         match classify_long_spelling(l, kebab(e.name), e.ty, extensions) {
-          LInvalid(s) =>
+          LInvalid(s, kind) =>
             out.push(
               def_err(
                 e.name,
-                @engine.DUnknownVocab,
-                "long spelling '\{s}' is not valid variant DSL (colon-less, or an unrecognized effect word) — DR-011 明確化 2026-07-08",
-                "use `:set` / a colon-DSL variant (e.g. `:set:true`, `no:set:false`), or a DR-057 alias element for an explicit spelling",
+                kind,
+                "long spelling '\{s}' is not a valid cell-fn invocation",
+                "use a registered cell_fns name with arguments matching its descriptor",
+              ),
+            )
+          LMain(_) | LVariant(_) => ()
+        }
+      }
+    LForms(forms) =>
+      for form in forms {
+        match classify_long_form(form, kebab(e.name), e.ty, extensions) {
+          LInvalid(s, kind) =>
+            out.push(
+              def_err(
+                e.name,
+                kind,
+                "long spelling '\{s}' is not a valid cell-fn invocation",
+                "use a registered cell_fns name with arguments matching its descriptor",
               ),
             )
           LMain(_) | LVariant(_) => ()
@@ -2732,13 +2951,28 @@ fn collect_invalid_alias_long_override(
                 for l in strs {
                   match
                     classify_long_spelling(l, alias_name, canon.ty, extensions) {
-                    LInvalid(s) =>
+                    LInvalid(s, kind) =>
                       out.push(
                         def_err(
                           alias_name,
-                          @engine.DUnknownVocab,
-                          "alias long_override spelling '\{s}' is not valid variant DSL (colon-less, or an unrecognized effect word) — DR-011 明確化 2026-07-08",
-                          "use `:set` / a colon-DSL variant (e.g. `:set:true`, `no:set:false`) in long_override",
+                          kind,
+                          "alias long_override spelling '\{s}' is not a valid cell-fn invocation",
+                          "use a registered cell_fns name with arguments matching its descriptor",
+                        ),
+                      )
+                    LMain(_) | LVariant(_) => ()
+                  }
+                }
+              LForms(forms) =>
+                for form in forms {
+                  match classify_long_form(form, alias_name, canon.ty, extensions) {
+                    LInvalid(s, kind) =>
+                      out.push(
+                        def_err(
+                          alias_name,
+                          kind,
+                          "alias long_override spelling '\{s}' is not a valid cell-fn invocation",
+                          "use a registered cell_fns name with arguments matching its descriptor",
                         ),
                       )
                     LMain(_) | LVariant(_) => ()
@@ -3120,7 +3354,7 @@ fn collect_unsupported_accum_update(
     if e.multiple {
       for v in e.variants {
         match v.op {
-          @engine.Update(_, _) =>
+          @engine.Invoke(_) =>
             out.push(
               def_err(
                 e.name,
@@ -3138,7 +3372,7 @@ fn collect_unsupported_accum_update(
     if e.multiple {
       for v in e.variants {
         match v.op {
-          @engine.Update(_, _) =>
+          @engine.Invoke(_) =>
             out.push(
               def_err(
                 e.name,
@@ -3179,7 +3413,7 @@ fn collect_unsupported_accum_update(
                   classify_long_spelling(l, alias_name, canon.ty, extensions) {
                   LVariant(v) =>
                     match v.op {
-                      @engine.Update(_, _) =>
+                      @engine.Invoke(_) =>
                         out.push(
                           def_err(
                             canon.name,
@@ -3190,13 +3424,42 @@ fn collect_unsupported_accum_update(
                         )
                       _ => ()
                     }
-                  LMain(_) | LInvalid(_) => () // not an update variant; other errors caught by collect_invalid_alias_long_override
+                  LMain(_) | LInvalid(_, _) => ()
                 }
               }
             }
           None => () // dangling alias target — absent-ref check が別途拾う
         }
-      Some(LBool(_)) => () // bool 糖衣 (:set/:set:true 相当) は update DSL を含まない
+      Some(LForms(forms)) =>
+        match find_elem(def, a.target) {
+          Some(canon) =>
+            if canon.multiple {
+              let alias_name = match a.name {
+                Some(n) => n
+                None => a.target
+              }
+              for form in forms {
+                match classify_long_form(form, alias_name, canon.ty, extensions) {
+                  LVariant(v) =>
+                    match v.op {
+                      @engine.Invoke(_) =>
+                        out.push(
+                          def_err(
+                            canon.name,
+                            @engine.DInvalidRange,
+                            "alias long_override cell-fn variant '\{v.trigger}' targets an accumulated element whose structured Value aggregation is not implemented",
+                            "use a direct set operation or target a scalar element",
+                          ),
+                        )
+                      _ => ()
+                    }
+                  LMain(_) | LInvalid(_, _) => ()
+                }
+              }
+            }
+          None => ()
+        }
+      Some(LBool(_)) => ()
       None => ()
     }
   }
@@ -4065,6 +4328,7 @@ fn lower_definition_snapshot_impl(
       errs.push(error)
     }
   }
+  collect_default_fn_errors(def, errs, extensions)
   if errs.length() > 0 {
     return Err(errs) // ALL definition-error 列挙
   }

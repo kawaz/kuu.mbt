@@ -132,7 +132,7 @@ fn option_spellings(element : @engine.ElemDef) -> Array[String] {
       for value in values {
         push_unique(spellings, element.long_prefix + value)
       }
-    LBool(_) => ()
+    LForms(_) | LBool(_) => ()
   }
   for variant in element.variants {
     push_unique(spellings, element.long_prefix + variant.trigger)

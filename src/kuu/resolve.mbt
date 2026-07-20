@@ -1830,86 +1830,6 @@ fn filter_err(
 }
 
 ///|
-/// Apply an `update` effect's transform to the running `old` value (DR-077 §1/§2: `cell = f(old)`).
-/// `transform` is looked up in the filters registry (DR-077 §2 "transform の実体は filters registry
-/// の名前参照") — `installer.mbt`'s `@builtins.classify_long_spelling` (definition-time gate, codex 指摘 2 /
-/// DR-077 §2 の裁定で `parts[2] == "increment"` のハードコード allowlist から registry lookup +
-/// signature チェックへ置換済み) already rejects an unregistered name or a non-`Transform`-signature
-/// name as `unknown-vocab` (DR-054) at DEFINITION time, so `apply_transform` seeing either here
-/// should never actually happen in practice — the `None` / non-`Transform` branches are defensive,
-/// not a live path. `args` (DR-077 §2's `:update:<name>:arg...` nesting convention) is threaded
-/// straight through to the registered closure unchecked — arity is a RUNTIME concern the closure
-/// itself enforces (mirrors `@engine.apply_filter_chain`'s split), so the 3rd branch (`d.run` itself
-/// rejecting, e.g. a genuine arity mismatch) IS a live path even after the definition-time gate.
-fn apply_transform(
-  transform : String,
-  old : @engine.Value,
-  args : Array[String],
-  name : String,
-  at_pos : Int,
-  epath : Array[String],
-  extensions : @engine.Registry,
-) -> Result[@engine.Value, @engine.ParseError] {
-  match extensions.lookup_filter(transform) {
-    None =>
-      // codex 指摘 3 (issue 2026-07-09, 節目レビュー): defensive kind を @engine.KParse (ladder_err) から
-      // @engine.KFilter (filter_err) へ — 「値がパースできなかった」ではなく「filter/transform 語彙の拒否」
-      // なので DR-053 §2 の 3 分類上 filter が正しい (filter_err の doc comment 参照)。
-      // codex 指摘 (2026-07-12, 節目レビュー): reason は `filter_rejected` — この分岐は definition-
-      // time gate 済みで到達しない防御的パス (上の doc comment 参照)。`unknown_update_transform` は
-      // DR-095 の宣言集合にも spec 全体 (docs/fixtures/schema grep 0 hit) にも存在しない実装発明
-      // だったため、DR-095 §5 の宣言外防御的失敗 fallback `filter_rejected` へ畳む。
-      Err(
-        filter_err(
-          name,
-          at_pos,
-          "filter_rejected",
-          "unknown update transform '\{transform}'",
-          epath,
-        ),
-      )
-    Some(d) =>
-      if !d.signature.is_transform() {
-        // DR-077 §2 「シグネチャ不適合 → definition-error」: reached here only if the filters
-        // registry later grows a name whose signature is Validate but installer.mbt's
-        // @builtins.classify_long_spelling (definition-time gate) ever let it through — defensive, not a
-        // live path today. kind: @engine.KFilter (codex 指摘 3、上と同じ理由)。
-        // codex 指摘 (2026-07-12, 節目レビュー): reason は `filter_rejected` — DR-095 §3 は型不一致
-        // (非対象型が filter に渡る) を「filter-definition bug であり正しい定義における failure
-        // mode ではない」として reasons 宣言から明示的に除外している (increment 行の根拠と同じ)。
-        // `update_transform_type_mismatch` は宣言外の実装発明だったため fallback へ畳む。
-        Err(
-          filter_err(
-            name,
-            at_pos,
-            "filter_rejected",
-            "filter '\{transform}' is not a transform (validate-only filters cannot be used as an update transform)",
-            epath,
-          ),
-        )
-      } else {
-        let ctx = @engine.fn_ctx_filter(
-          @engine.ScalarInput(old),
-          observes=d.observes,
-        )
-        match (d.run)(args, ctx) {
-          Ok(v) => Ok(v)
-          Err((_reason, msg)) =>
-            // live path (arity mismatch 等、closure 自身の拒否) — defensive な上 2 分岐と同じ理由で
-            // kind: @engine.KFilter に揃える (team-lead 指摘は上 2 分岐限定だったが、同一関数内の同じ
-            // reason-family を @engine.KParse のまま残すのは内部不整合なので合わせて修正、報告に明記)。
-            // codex 指摘 (2026-07-12, 節目レビュー): reason も `filter_rejected` に統一 (上 2 分岐と
-            // 同じ理由、DR-095 の宣言集合に update-transform 軸の failure reason は無い)。`d.run`
-            // 自身の own reason (`_reason`) は piece/value/final/accum_filters チェーン用の別軸
-            // (`@engine.apply_filter_chain` doc comment 参照) であり、この update-transform 軸 (DR-077 §2) に
-            // は使わず message だけ通す。
-            Err(filter_err(name, at_pos, "filter_rejected", msg, epath))
-        }
-      }
-  }
-}
-
-///|
 /// Parse an env string into a @engine.Value per the entity's type (DR-049 §2: env goes through the same
 /// pipeline as CLI). Unlike slice's `env_value` (naive `@builtins.parse_number` with a silent `@engine.VStr` fallback
 /// on failure), this reuses the canonical lexers (DR-074/075) and surfaces a parse failure as a
@@ -2245,32 +2165,75 @@ fn resolve_entity_raw(
           }
           committed_now = false
         }
-        @engine.Update(transform, args) => {
-          // DR-077 §2 "old ?? default": no prior commit in THIS fold falls back to the entity's
-          // own default (which count presets to 0, LOWERING §A.5) — never a bare literal zero.
-          let old = match current {
-            Some(cb) => cb.value
-            None =>
-              match default_scalar(e) {
-                Some(v) => v
-                None => @engine.VNum(0.0)
-              }
+        @engine.Invoke(invocation) => {
+          let old : @engine.Value? = match current {
+            Some(binding) => Some(binding.value)
+            None => default_scalar(e)
           }
-          match
-            apply_transform(
-              transform,
-              old,
-              args,
-              e.name,
-              at_pos,
-              epath,
-              extensions,
-            ) {
-            Ok(v) => {
-              current = Some(@engine.mk_binding(e.name, v, @engine.Cli))
+          let descriptor = match extensions.lookup_cell_fn(invocation.name) {
+            Some(descriptor) => descriptor
+            None =>
+              return Err(
+                ladder_err(
+                  e.name,
+                  at_pos,
+                  "unknown-vocab",
+                  "cell fn '" + invocation.name + "' is not registered",
+                  epath,
+                ),
+              )
+          }
+          let observes = match descriptor.concrete_observes(invocation) {
+            Ok(observes) => observes
+            Err((reason, message)) =>
+              return Err(ladder_err(e.name, at_pos, reason, message, epath))
+          }
+          let ctx = @engine.fn_ctx_effect(
+            e.name,
+            e.name,
+            old~,
+            observes~,
+          )
+          match descriptor.invoke(invocation.to_call(), ctx) {
+            Err((reason, message)) =>
+              return Err(ladder_err(e.name, at_pos, reason, message, epath))
+            Ok(@engine.FnValue(value)) => {
+              current = Some({ ..b, op: @engine.Set, value, source: @engine.Cli })
               committed_now = true
             }
-            Err(pe) => return Err(pe)
+            Ok(@engine.FnSentinel(@engine.UseDefault)) =>
+              match
+                resolve_ladder_below_cli(
+                  e, env_map, config_obj, config_path, inherited, at_pos, epath,
+                  tty_map, extensions,
+                ) {
+                Ok(defaults) => {
+                  current = if defaults.length() > 0 {
+                    Some({
+                      ..b,
+                      op: @engine.Set,
+                      value: defaults[defaults.length() - 1].value,
+                      source: @engine.Cli,
+                    })
+                  } else {
+                    Some({ ..b, op: @engine.Default })
+                  }
+                  committed_now = true
+                }
+                Err(error) => return Err(error)
+              }
+            Ok(@engine.FnSentinel(@engine.Unset)) => {
+              current = match default_scalar(e) {
+                Some(value) =>
+                  Some(@engine.mk_binding(e.name, value, @engine.Default))
+                None => None
+              }
+              committed_now = false
+            }
+            Ok(@engine.FnSentinel(@engine.Empty)) => {
+              current = Some({ ..b, op: @engine.Empty })
+              committed_now = true
+            }
           }
         }
         @engine.Remove | @engine.Splice =>
@@ -2614,6 +2577,180 @@ priv struct DefaultClaimGroup {
 }
 
 ///|
+fn entity_named(
+  entities : Array[@engine.Entity],
+  name : String,
+) -> @engine.Entity? {
+  for entity in entities {
+    if entity.name == name {
+      return Some(entity)
+    }
+  }
+  None
+}
+
+///|
+fn default_fn_option_edges(
+  entity : @engine.Entity,
+  extensions : @engine.Registry,
+) -> Array[String] {
+  let edges : Array[String] = []
+  match entity.default_fn {
+    Some(@engine.WireDefaultFn(invocation)) =>
+      match extensions.lookup_cell_fn(invocation.name) {
+        Some(descriptor) =>
+          match descriptor.concrete_observes(invocation) {
+            Ok(observes) =>
+              for edge in observes {
+                if edge.has_prefix("option:") {
+                  edges.push(edge[7:].to_owned())
+                }
+              }
+            Err(_) => ()
+          }
+        None => ()
+      }
+    _ => ()
+  }
+  edges
+}
+
+///|
+fn append_default_order(
+  entity : @engine.Entity,
+  entities : Array[@engine.Entity],
+  extensions : @engine.Registry,
+  visiting : Array[String],
+  done : Array[String],
+  ordered : Array[@engine.Entity],
+) -> Unit {
+  if str_contains(done, entity.name) || str_contains(visiting, entity.name) {
+    return
+  }
+  let next_visiting = visiting.copy()
+  next_visiting.push(entity.name)
+  for dependency in default_fn_option_edges(entity, extensions) {
+    match entity_named(entities, dependency) {
+      Some(source) =>
+        append_default_order(
+          source,
+          entities,
+          extensions,
+          next_visiting,
+          done,
+          ordered,
+        )
+      None => ()
+    }
+  }
+  if !str_contains(done, entity.name) {
+    done.push(entity.name)
+    ordered.push(entity)
+  }
+}
+
+///|
+fn default_order(
+  entities : Array[@engine.Entity],
+  extensions : @engine.Registry,
+) -> Array[@engine.Entity] {
+  let ordered : Array[@engine.Entity] = []
+  let done : Array[String] = []
+  for entity in entities {
+    append_default_order(entity, entities, extensions, [], done, ordered)
+  }
+  ordered
+}
+
+///|
+fn resolve_default_fn(
+  entity : @engine.Entity,
+  option_values : Map[String, @engine.Value],
+  inherited : Map[String, @engine.Value],
+  env_map : Map[String, String],
+  at_pos : Int,
+  epath : Array[String],
+  extensions : @engine.Registry,
+) -> Result[Array[@engine.Binding], @engine.ParseError] {
+  let call = match entity.default_fn {
+    Some(call) => call
+    None => return Ok([])
+  }
+  let fn_call = call.to_call()
+  let descriptor = match extensions.lookup_cell_fn(fn_call.name) {
+    Some(descriptor) => descriptor
+    None =>
+      return Err(
+        ladder_err(
+          entity.name,
+          at_pos,
+          "unknown-vocab",
+          "default_fn '" + fn_call.name + "' is not registered",
+          epath,
+        ),
+      )
+  }
+  let observes = match call.wire_invocation() {
+    Some(invocation) =>
+      match descriptor.concrete_observes(invocation) {
+        Ok(observes) => observes
+        Err((reason, message)) =>
+          return Err(ladder_err(entity.name, at_pos, reason, message, epath))
+      }
+    None => []
+  }
+  let ctx = @engine.fn_ctx_default(
+    entity.name,
+    old=option_values.get(entity.name),
+    observes~,
+    option=fn(name) { inherited.get(name) },
+    dependency=Some(fn(name) { option_values.get(name) }),
+    env=fn(variable) {
+      match env_map.get(variable) {
+        Some(value) => Some(@engine.VStr(value))
+        None => None
+      }
+    },
+  )
+  match descriptor.invoke(fn_call, ctx) {
+    Err(("absent-source", _)) => Ok([])
+    Err((reason, message)) =>
+      Err(ladder_err(entity.name, at_pos, reason, message, epath))
+    Ok(@engine.FnSentinel(_)) =>
+      Err(
+        ladder_err(
+          entity.name,
+          at_pos,
+          "invalid-range",
+          "default_fn returned a sentinel in the default seat",
+          epath,
+        ),
+      )
+    Ok(@engine.FnValue(value)) =>
+      match
+        @builtins.config_to_value(
+          @engine.value_to_configval(value),
+          entity.ty,
+          entity.piece_filters,
+          extensions,
+        ) {
+        Ok(decoded) =>
+          apply_entity_filters(
+            entity,
+            [@engine.mk_binding(entity.name, decoded, @engine.Default)],
+            at_pos,
+            epath,
+            extensions,
+          )
+        Err((@engine.KFilter, reason, message)) =>
+          Err(filter_err(entity.name, at_pos, reason, message, epath))
+        Err((_, reason, message)) =>
+          Err(ladder_err(entity.name, at_pos, reason, message, epath))
+      }
+  }
+}
+
+///|
 fn default_claim_values_equal(
   left : Array[@engine.Binding],
   right : Array[@engine.Binding],
@@ -2725,6 +2862,7 @@ fn resolve_scope_config_with_export(
   let out : Array[@engine.Binding] = []
   let supplied : Array[String] = []
   let occupied : Array[String] = []
+  let option_values : Map[String, @engine.Value] = Map([])
   for e in sc.entities {
     if !e.is_config_file {
       let cpath = config_path_of(e, path)
@@ -2738,6 +2876,9 @@ fn resolve_scope_config_with_export(
             supplied.push(e.name)
             for b in bs {
               out.push(b)
+              if b.op is @engine.Set {
+                option_values.set(e.name, b.value)
+              }
             }
             match exposed_key_of(e.name, ek) {
               Some(key) =>
@@ -2814,7 +2955,7 @@ fn resolve_scope_config_with_export(
   // Phase 3b: defaults are fallbacks for the export-key-resolved result cell, not per-entity claims.
   // Only the first default that can actually fill an empty cell is admitted; later co-exported
   // defaults see the occupied cell and do not run their value pipeline at all.
-  for e in sc.entities {
+  for e in default_order(sc.entities, extensions) {
     if !e.is_config_file && !str_contains(supplied, e.name) {
       let exposed = exposed_key_of(e.name, ek)
       let cell_empty = match exposed {
@@ -2822,15 +2963,30 @@ fn resolve_scope_config_with_export(
         None => true
       }
       if cell_empty {
-        let cpath = config_path_of(e, path)
-        match
+        let resolved = if e.default_fn is Some(_) {
+          resolve_default_fn(
+            e,
+            option_values,
+            inherited,
+            env_map,
+            at_pos,
+            path,
+            extensions,
+          )
+        } else {
+          let cpath = config_path_of(e, path)
           resolve_entity(
             e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty, extensions,
             true,
-          ) {
+          )
+        }
+        match resolved {
           Ok(bs) => {
             for b in bs {
               out.push(b)
+              if b.op is @engine.Set {
+                option_values.set(e.name, b.value)
+              }
             }
             if default_fills_cell(e, bs) {
               match exposed {

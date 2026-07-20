@@ -586,6 +586,9 @@ pub(all) struct Entity {
   // whole array — this single field replaces the pre-DR-083 `default_value : Value?` (a design
   // taken up again after being shelved mid accum-fold-update-default-ops, now justified by DR-083).
   default_values : Array[Value]?
+  // Canonical lazy default-seat cell-fn placeholder. Scalar fixed defaults carry typed set(value);
+  // explicit default_fn declarations carry their wire invocation for observes binding.
+  default_fn : DefaultFnCall?
   // TRANSITIONAL(M5c): separator remains because the env seat still performs pre-parse piece
   // splitting; no seat/piece descriptor currently owns this cross-seat policy.
   // DR-034 multiple の separator (issue 2026-07-09-env-separator-split-gap): the env seat's OWN

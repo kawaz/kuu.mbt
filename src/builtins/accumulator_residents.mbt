@@ -12,7 +12,7 @@ fn append_resolve_cli(
   for binding in cli {
     if binding.key == name {
       match binding.op {
-        @engine.Update(_, _) =>
+        @engine.Invoke(_) =>
           abort(
             "unreachable: accumulated cells reject update operations at definition time",
           )
@@ -201,7 +201,7 @@ fn merge_resolve_cli(
           fire_pos = binding.at_pos
           fire.push(binding)
         }
-        @engine.Update(_, _)
+        @engine.Invoke(_)
         | @engine.Default
         | @engine.Unset
         | @engine.Empty => {
@@ -226,7 +226,7 @@ fn merge_resolve_cli(
     match group {
       Cell(binding) =>
         match binding.op {
-          @engine.Update(_, _) =>
+          @engine.Invoke(_) =>
             abort(
               "unreachable: accumulated cells reject update operations at definition time",
             )

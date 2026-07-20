@@ -473,6 +473,117 @@ fn output_internal_cell(
 }
 
 ///|
+fn effect_cell_key(binding : @engine.Binding) -> String {
+  let out = StringBuilder::new()
+  for segment in binding.scope {
+    out.write_string(segment)
+    out.write_char('>')
+  }
+  out.write_char('#')
+  out.write_string(binding.key)
+  out.to_string()
+}
+
+///|
+fn root_entity(ast : AtomicAST, binding : @engine.Binding) -> @engine.Entity? {
+  if binding.scope.length() > 0 {
+    return None
+  }
+  for entity in ast.root.entities {
+    if entity.name == binding.key {
+      return Some(entity)
+    }
+  }
+  None
+}
+
+///|
+fn projected_effect(
+  ast : AtomicAST,
+  binding : @engine.Binding,
+  current : Map[String, @engine.Value],
+) -> OutputEffect {
+  let key = effect_cell_key(binding)
+  match binding.op {
+    @engine.Invoke(invocation) => {
+      let old = match current.get(key) {
+        Some(value) => Some(value)
+        None =>
+          match root_entity(ast, binding) {
+            Some(entity) =>
+              match entity.default_values {
+                Some([value]) => Some(value)
+                _ => None
+              }
+            None => None
+          }
+      }
+      match ast.extensions.lookup_cell_fn(invocation.name) {
+        Some(descriptor) => {
+          let observes = match descriptor.concrete_observes(invocation) {
+            Ok(edges) => edges
+            Err(_) => []
+          }
+          let ctx = @engine.fn_ctx_effect(
+            binding.key,
+            binding.key,
+            old~,
+            observes~,
+          )
+          match descriptor.invoke(invocation.to_call(), ctx) {
+            Ok(@engine.FnValue(value)) => {
+              current.set(key, value)
+              return {
+                entity: binding.key,
+                op: @engine.Set,
+                operand: Some(value),
+                source: binding.source,
+              }
+            }
+            Ok(@engine.FnSentinel(sentinel)) => {
+              let op = match sentinel {
+                @engine.UseDefault => @engine.EffectOp::Default
+                @engine.CellSentinel::Unset => @engine.EffectOp::Unset
+                @engine.CellSentinel::Empty => @engine.EffectOp::Empty
+              }
+              return {
+                entity: binding.key,
+                op,
+                operand: None,
+                source: binding.source,
+              }
+            }
+            Err(_) => ()
+          }
+        }
+        None => ()
+      }
+      {
+        entity: binding.key,
+        op: binding.op,
+        operand: None,
+        source: binding.source,
+      }
+    }
+    @engine.Set | @engine.Remove => {
+      current.set(key, binding.value)
+      {
+        entity: binding.key,
+        op: binding.op,
+        operand: Some(binding.value),
+        source: binding.source,
+      }
+    }
+    _ => {
+      entity: binding.key,
+      op: binding.op,
+      operand: None,
+      source: binding.source,
+    }
+  }
+}
+
+///|
 fn project_effects(
   ast : AtomicAST,
   binds : Array[@engine.Binding],
@@ -481,6 +592,7 @@ fn project_effects(
   let config_file_cells : Array[ConfigFileCell] = []
   collect_config_file_cells(ast.root, [], config_file_cells)
   let effects : Array[OutputEffect] = []
+  let current : Map[String, @engine.Value] = Map([])
   for binding in binds {
     if is_sentinel(binding.key) ||
       output_internal_cell(
@@ -491,16 +603,7 @@ fn project_effects(
       ) {
       continue
     }
-    let operand = match binding.op {
-      @engine.Set | @engine.Remove => Some(binding.value)
-      _ => None
-    }
-    effects.push({
-      entity: binding.key,
-      op: binding.op,
-      operand,
-      source: binding.source,
-    })
+    effects.push(projected_effect(ast, binding, current))
   }
   effects
 }

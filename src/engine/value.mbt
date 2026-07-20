@@ -253,14 +253,11 @@ pub(all) enum EffectOp {
   Default // reset to the default value; committed (the user explicitly wants default)
   Unset // reset to the default; NOT committed — later ladder seats (env/config/inherit) may override
   Empty // clear a collection (array / map) to empty; committed
-  // DR-077 §1 (5th op): apply an old-dependent transform to the linked cell — `cell = f(old)`. No
-  // operand (the Binding's value is a placeholder, same as default/unset/empty) — the RESULT
-  // depends on the cell's running value at fire time, which resolve.mbt's CLI-seat fold computes,
-  // not something the parser can precompute at consume time. `String` is the transform's filters-
-  // registry name (DR-077 §2, e.g. "increment"); `Array[String]` are that transform's own args (the
-  // registry name is arity-1 of the colon DSL, remaining segments are its args — same nesting
-  // convention filters already use). committed = true (a user-explicit CLI op, like set).
-  Update(String, Array[String])
+  // DR-114 §6.1: a lowered cell-fn invocation. The name and string args remain pure data until
+  // the CLI-seat fold invokes the registered resident with an effect-mode FnCtx and the current
+  // cell value as ctx.old. Value output becomes an ordinary Set binding; Sentinel output becomes
+  // the corresponding direct operation.
+  Invoke(FnInvocation)
   // DR-080 §2 (merge accumulator piece marker vocabulary): a `remove`/`splice` PIECE within one
   // CLI firing's separator-split value list, distinct in kind from the 5 CELL-level ops above (a
   // merge-accumulator cell's own effect is still `Set` — these two only ever appear on the

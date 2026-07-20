@@ -47,8 +47,8 @@ fn effect_op_json(op : @engine.EffectOp) -> Json {
     @engine.Default => ["default".to_json()].to_json()
     @engine.Unset => ["unset".to_json()].to_json()
     @engine.Empty => ["empty".to_json()].to_json()
-    @engine.Update(name, args) =>
-      ["update".to_json(), name.to_json(), args.to_json()].to_json()
+    @engine.Invoke(invocation) =>
+      ["fn".to_json(), invocation.name.to_json(), invocation.args.to_json()].to_json()
     @engine.Remove => ["remove".to_json()].to_json()
     @engine.Splice => ["splice".to_json()].to_json()
   }

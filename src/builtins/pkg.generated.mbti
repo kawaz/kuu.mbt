@@ -161,7 +161,7 @@ pub(all) enum FromEntriesSpec {
 pub(all) enum LongSpelling {
   LMain(String)
   LVariant(@engine.Variant)
-  LInvalid(String)
+  LInvalid(String, @engine.DefErrKind)
 } derive(Eq, @debug.Debug)
 
 pub struct LoweredDefinition {

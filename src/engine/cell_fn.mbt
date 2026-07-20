@@ -3,6 +3,7 @@
 ///|
 pub(all) enum CellFnRepetition {
   Once
+  ZeroOrOne
   OneOrMore
 } derive(Eq, Debug)
 
@@ -33,6 +34,7 @@ pub fn cell_fn_parameter(
 ///|
 pub(all) enum CellFnArity {
   ExactArity(Int)
+  BetweenArity(Int, Int)
   AtLeastArity(Int)
 } derive(Eq, Debug)
 
@@ -40,6 +42,7 @@ pub(all) enum CellFnArity {
 pub fn CellFnArity::accepts(self : CellFnArity, count : Int) -> Bool {
   match self {
     ExactArity(expected) => count == expected
+    BetweenArity(minimum, maximum) => count >= minimum && count <= maximum
     AtLeastArity(minimum) => count >= minimum
   }
 }
@@ -94,6 +97,8 @@ pub struct CellFnDescriptor {
   priv fallibility_ : FnFallibility
   priv observes_ : Array[String]
   priv reasons_ : Array[String]
+  priv validate_ : (FnCall) -> Result[Unit, FnReason]
+  priv run_ : CellFn
 }
 
 ///|
@@ -104,6 +109,10 @@ pub fn cell_fn_descriptor(
   fallibility : FnFallibility,
   observes? : Array[String] = [],
   reasons? : Array[String] = [],
+  validate? : (FnCall) -> Result[Unit, FnReason] = fn(_) { Ok(()) },
+  run? : CellFn = fn(_, _) {
+    Err(("absent-source", "cell fn implementation is not registered"))
+  },
 ) -> CellFnDescriptor {
   {
     name_: name,
@@ -112,6 +121,8 @@ pub fn cell_fn_descriptor(
     fallibility_: fallibility,
     observes_: observes.copy(),
     reasons_: reasons.copy(),
+    validate_: validate,
+    run_: run,
   }
 }
 
@@ -134,16 +145,28 @@ pub fn CellFnDescriptor::output(self : CellFnDescriptor) -> CellFnOutput {
 
 ///|
 pub fn CellFnDescriptor::arity(self : CellFnDescriptor) -> CellFnArity {
-  let mut repeated = false
+  let mut minimum = 0
+  let mut maximum = 0
+  let mut unbounded = false
   for parameter in self.parameters_ {
-    if parameter.repetition is OneOrMore {
-      repeated = true
+    match parameter.repetition {
+      Once => {
+        minimum = minimum + 1
+        maximum = maximum + 1
+      }
+      ZeroOrOne => maximum = maximum + 1
+      OneOrMore => {
+        minimum = minimum + 1
+        unbounded = true
+      }
     }
   }
-  if repeated {
-    AtLeastArity(self.parameters_.length())
+  if unbounded {
+    AtLeastArity(minimum)
+  } else if minimum == maximum {
+    ExactArity(minimum)
   } else {
-    ExactArity(self.parameters_.length())
+    BetweenArity(minimum, maximum)
   }
 }
 
@@ -163,6 +186,21 @@ pub fn CellFnDescriptor::reasons(self : CellFnDescriptor) -> Array[String] {
 }
 
 ///|
+/// Validate the carrier before entering the resident implementation. Definition-time validation
+/// should make the error branch unreachable for accepted wire definitions; keeping the same gate at
+/// the registry boundary protects native typed calls and third-party callers.
+pub fn CellFnDescriptor::invoke(
+  self : CellFnDescriptor,
+  call : FnCall,
+  ctx : FnCtx,
+) -> FnResult {
+  match self.validate_call(call) {
+    Err(reason) => Err(reason)
+    Ok(_) => (self.run_)(call.args, ctx)
+  }
+}
+
+///|
 fn CellFnDescriptor::invalid_argument(
   self : CellFnDescriptor,
   message : String,
@@ -176,7 +214,7 @@ fn CellFnDescriptor::has_valid_parameter_shape(self : CellFnDescriptor) -> Bool 
   let mut index = 0
   while index < self.parameters_.length() {
     let parameter = self.parameters_[index]
-    if parameter.repetition is OneOrMore {
+    if parameter.repetition is OneOrMore || parameter.repetition is ZeroOrOne {
       if repeated || index + 1 != self.parameters_.length() {
         return false
       }
@@ -263,7 +301,7 @@ pub fn CellFnDescriptor::validate_call(
     }
     index = index + 1
   }
-  Ok(())
+  (self.validate_)(call)
 }
 
 ///|
@@ -282,7 +320,7 @@ fn CellFnDescriptor::parameter_value(
   args : Array[String],
 ) -> Result[String, FnReason] {
   match parameter.repetition {
-    Once => Ok(args[index])
+    Once | ZeroOrOne => Ok(args[index])
     OneOrMore =>
       if args.length() - index == 1 {
         Ok(args[index])

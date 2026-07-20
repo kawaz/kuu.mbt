@@ -144,6 +144,7 @@ fn opt(
   required? : Bool = false,
   value_requires? : Array[(String, String, Array[String])] = [],
   default? : Array[@engine.Value]? = None,
+  default_fn? : @engine.DefaultFnCall? = None,
   default_declared? : Bool = false,
   int_round? : @engine.RoundMode = @engine.RError,
   allow_base_prefix? : Bool = false,
@@ -212,6 +213,7 @@ fn opt(
     hidden,
     completer,
     default_values: default,
+    default_fn,
     default_declared,
     int_round,
     allow_base_prefix,
@@ -247,6 +249,7 @@ fn pos(
   export_? : @engine.ExportKey = @engine.export_key_unset(),
   ref_? : String? = None,
   default? : Array[@engine.Value]? = None,
+  default_fn? : @engine.DefaultFnCall? = None,
   default_declared? : Bool = false,
   int_round? : @engine.RoundMode = @engine.RError,
   allow_base_prefix? : Bool = false,
@@ -326,6 +329,7 @@ fn pos(
     hidden: false,
     completer,
     default_values: default,
+    default_fn,
     default_declared,
     int_round,
     allow_base_prefix,
@@ -402,6 +406,7 @@ fn dd_marker(
     hidden: false,
     completer: None, // dd は値空間を持たない (DR-089) — completer が意味を持つ値位置スロットが無い
     default_values: None,
+    default_fn: None,
     default_declared: false,
     int_round: @engine.RError,
     allow_base_prefix: false,
@@ -475,6 +480,7 @@ fn exact_marker(spelling : String) -> @engine.ElemDef {
     hidden: false,
     completer: None, // exact literal は値空間を持たない — dd_marker と同じ理由
     default_values: None,
+    default_fn: None,
     default_declared: false,
     int_round: @engine.RError,
     allow_base_prefix: false,
@@ -774,6 +780,34 @@ fn json_to_default_values(j : Json) -> Array[@engine.Value] raise DecodeSkip {
       vs
     }
     None => [json_to_value(j)]
+  }
+}
+
+///|
+fn dec_default_fn(j : Json) -> @engine.DefaultFnCall raise DecodeSkip {
+  match j.j_str() {
+    Some(spelling) =>
+      match @engine.parse_fn_invocation(@engine.ColonString(spelling)) {
+        Ok(invocation) => @engine.WireDefaultFn(invocation)
+        Err(message) => raise DecodeSkip(message)
+      }
+    None =>
+      match j.j_arr() {
+        Some(parts_json) => {
+          let parts : Array[String] = []
+          for part_json in parts_json {
+            match part_json.j_str() {
+              Some(part) => parts.push(part)
+              None => raise DecodeSkip("default_fn array element is not a string")
+            }
+          }
+          match @engine.parse_fn_invocation(@engine.ArrayParts(parts)) {
+            Ok(invocation) => @engine.WireDefaultFn(invocation)
+            Err(message) => raise DecodeSkip(message)
+          }
+        }
+        None => raise DecodeSkip("default_fn is not a string or string[]")
+      }
   }
 }
 
@@ -1630,7 +1664,7 @@ fn dec_option(
     return DOpt(opt("", @builtins.none_type(), help_meta=owned.help_meta))
   }
   let allowed = [
-    "id", "name", "type", "default", "export_key", "deprecated", "hidden", "or",
+    "id", "name", "type", "default", "default_fn", "export_key", "deprecated", "hidden", "or",
     "values", "piece_filters", "value_filters", "final_filters", "accum_filters",
     "ref", "completer", "config",
   ]
@@ -1813,6 +1847,10 @@ fn dec_option(
     Some(d) => Some(json_to_default_values(d))
     None => None
   }
+  let default_fn : @engine.DefaultFnCall? = match o.get("default_fn") {
+    Some(invocation) => Some(dec_default_fn(invocation))
+    None => None
+  }
   let global = owned.global_
   let inherit_flag = owned.inherit_
   let inheritable = owned.inheritable
@@ -1880,6 +1918,7 @@ fn dec_option(
       required~,
       value_requires~,
       default~,
+      default_fn~,
       default_declared=has_key(o, "default"),
       int_round=int_round_from_shadow,
       allow_base_prefix=base_prefix_from_shadow,
@@ -1918,7 +1957,7 @@ fn dec_positional(
   }
   let owned = decode_installer_owned(j, DecodePositional, extensions)
   let allowed = [
-    "id", "name", "type", "export_key", "default", "positionals", "or", "piece_filters",
+    "id", "name", "type", "export_key", "default", "default_fn", "positionals", "or", "piece_filters",
     "value_filters", "final_filters", "accum_filters", "ref", "config", "completer",
     "exact",
   ]
@@ -2061,6 +2100,10 @@ fn dec_positional(
     Some(d) => Some(json_to_default_values(d))
     None => None
   }
+  let default_fn : @engine.DefaultFnCall? = match o.get("default_fn") {
+    Some(invocation) => Some(dec_default_fn(invocation))
+    None => None
+  }
   let piece_filters = dec_filter_chain(o.get("piece_filters"))
   let value_filters = dec_filter_chain(o.get("value_filters"))
   let final_filters = dec_filter_chain(o.get("final_filters"))
@@ -2099,6 +2142,8 @@ fn dec_positional(
     export_~,
     ref_~,
     default~,
+    default_fn~,
+    default_declared=has_key(o, "default"),
     int_round=int_round_from_shadow,
     allow_base_prefix=base_prefix_from_shadow,
     bool_config=bool_config_from_shadow,

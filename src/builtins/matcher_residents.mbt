@@ -534,7 +534,7 @@ fn walk_short(
         let presence = if e.kind.name() == "count" {
           @engine.mk_effect(
             e.name,
-            @engine.Update("increment", []),
+            @engine.Invoke({ name: "incr", args: [] }),
             @engine.Cli,
           )
         } else {

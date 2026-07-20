@@ -276,11 +276,11 @@ fn lower_eff_op(op : @engine.EffectOp) -> String {
     @engine.Default => "default"
     @engine.Unset => "unset"
     @engine.Empty => "empty"
-    @engine.Update(transform, args) =>
-      if args.length() == 0 {
-        "update:" + transform
+    @engine.Invoke(invocation) =>
+      if invocation.args.length() == 0 {
+        "fn:" + invocation.name
       } else {
-        "update:" + transform + ":" + join_comma(args)
+        "fn:" + invocation.name + ":" + join_comma(invocation.args)
       }
     // DR-080 §2 merge accumulator piece markers (eff_op と同じ語彙、lower path 用の並行実装)。
     @engine.Remove => "remove"
@@ -708,6 +708,9 @@ fn registry_with_installers(
       @builtins.from_entries_collector(@builtins.Entries),
     ),
   )
+  for descriptor in @builtins.cell_fn_descriptors() {
+    ignore(registry.register_cell_fn(descriptor))
+  }
   registry
 }
 
@@ -950,42 +953,40 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
 /// carries a `transform` name + optional `args`). `set` is accepted for completeness even though
 /// GSet's dedicated `{value, link}` shorthand is the normal spelling for it in a fixture.
 fn dec_eff_op(o : Map[String, Json]) -> @engine.EffectOp raise DecodeSkip {
+  match jf_str(o, "fn") {
+    Some(name) => {
+      allowed_keys(o, ["fn", "args"], "cell fn effect")
+      let args : Array[String] = match o.get("args") {
+        Some(aj) =>
+          match aj.j_arr() {
+            Some(values) => {
+              let decoded : Array[String] = []
+              for value in values {
+                match value.j_str() {
+                  Some(text) => decoded.push(text)
+                  None => raise DecodeSkip("cell fn effect args element is not a string")
+                }
+              }
+              decoded
+            }
+            None => raise DecodeSkip("cell fn effect 'args' is not an array")
+          }
+        None => []
+      }
+      return @engine.Invoke({ name, args })
+    }
+    None => ()
+  }
   let opstr = match jf_str(o, "op") {
     Some(s) => s
-    None => raise DecodeSkip("effect missing 'op'")
+    None => raise DecodeSkip("effect missing 'op' or 'fn'")
   }
+  allowed_keys(o, ["op"], "direct effect")
   match opstr {
     "set" => @engine.Set
     "default" => @engine.Default
     "unset" => @engine.Unset
     "empty" => @engine.Empty
-    "update" => {
-      let transform = match jf_str(o, "transform") {
-        Some(t) => t
-        None => raise DecodeSkip("update effect missing 'transform'")
-      }
-      let args : Array[String] = match o.get("args") {
-        Some(aj) =>
-          match aj.j_arr() {
-            Some(a) => {
-              let r : Array[String] = []
-              for e in a {
-                match e.j_str() {
-                  Some(s) => r.push(s)
-                  None =>
-                    raise DecodeSkip(
-                      "update effect args element is not a string",
-                    )
-                }
-              }
-              r
-            }
-            None => raise DecodeSkip("update effect 'args' is not an array")
-          }
-        None => []
-      }
-      @engine.Update(transform, args)
-    }
     other => raise DecodeSkip("unrecognized effect op '" + other + "'")
   }
 }

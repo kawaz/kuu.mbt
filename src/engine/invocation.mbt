@@ -26,6 +26,30 @@ pub(all) struct FnCall {
 } derive(Eq, Debug)
 
 ///|
+/// Default-seat placeholder. Fixed JSON defaults retain native values in a typed call; explicit
+/// default_fn wire spellings retain their canonical string invocation until target-aware execution.
+pub(all) enum DefaultFnCall {
+  WireDefaultFn(FnInvocation)
+  TypedDefaultFn(FnCall)
+} derive(Eq, Debug)
+
+///|
+pub fn DefaultFnCall::to_call(self : DefaultFnCall) -> FnCall {
+  match self {
+    WireDefaultFn(invocation) => invocation.to_call()
+    TypedDefaultFn(call) => call
+  }
+}
+
+///|
+pub fn DefaultFnCall::wire_invocation(self : DefaultFnCall) -> FnInvocation? {
+  match self {
+    WireDefaultFn(invocation) => Some(invocation)
+    TypedDefaultFn(_) => None
+  }
+}
+
+///|
 pub fn FnInvocation::to_call(self : FnInvocation) -> FnCall {
   let args : Array[FnArg] = []
   for arg in self.args {

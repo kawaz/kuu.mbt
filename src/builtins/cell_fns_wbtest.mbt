@@ -87,8 +87,10 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(inherit_descriptor.reasons(), ["absent-source"])
 
   let uuid = registry.lookup_cell_fn("uuid").unwrap()
-  assert_eq(uuid.parameters(), [@engine.cell_fn_parameter("version")])
-  assert_eq(uuid.arity(), @engine.ExactArity(1))
+  assert_eq(uuid.parameters(), [
+    @engine.cell_fn_parameter("version", repetition=@engine.ZeroOrOne),
+  ])
+  assert_eq(uuid.arity(), @engine.BetweenArity(0, 1))
   assert_eq(uuid.output(), @engine.StringOutput)
   assert_eq(uuid.fallibility(), @engine.TotalFn)
   assert_eq(uuid.observes(), [])
@@ -163,4 +165,76 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
     @engine.ArrayParts(["computed", "clock:utc"]),
   ).unwrap()
   assert_eq(computed.concrete_observes(invocation), Ok(["system:clock:utc"]))
+}
+
+///|
+test "builtin cell fn residents execute through their registered descriptors" {
+  let registry = builtin_cell_fn_registry()
+  let set = registry.lookup_cell_fn("set").unwrap()
+  let ctx = @engine.fn_ctx_effect("target", "--target")
+  assert_eq(
+    set.invoke(@engine.typed_fn_call("set", [@engine.VBool(true)]), ctx),
+    Ok(@engine.FnValue(@engine.VBool(true))),
+  )
+  assert_eq(
+    set.invoke({ name: "set", args: [@engine.StringArg("value")] }, ctx),
+    Ok(@engine.FnValue(@engine.VStr("value"))),
+  )
+
+  let incr = registry.lookup_cell_fn("incr").unwrap()
+  assert_eq(
+    incr.invoke({ name: "incr", args: [] }, ctx),
+    Ok(@engine.FnValue(@engine.VNum(1.0))),
+  )
+  assert_eq(
+    incr.invoke(
+      { name: "incr", args: [] },
+      @engine.fn_ctx_effect("target", "--target", old=Some(@engine.VNum(4.0))),
+    ),
+    Ok(@engine.FnValue(@engine.VNum(5.0))),
+  )
+
+  let borrow = registry.lookup_cell_fn("borrow").unwrap()
+  let borrow_invocation = @engine.parse_fn_invocation(
+    @engine.ColonString("borrow:source"),
+  ).unwrap()
+  let borrow_observes = borrow.concrete_observes(borrow_invocation).unwrap()
+  let borrow_ctx = @engine.fn_ctx_default(
+    "target",
+    observes=borrow_observes,
+    dependency=Some(fn(name) {
+      if name == "source" { Some(@engine.VNum(7.0)) } else { None }
+    }),
+  )
+  assert_eq(
+    borrow.invoke(borrow_invocation.to_call(), borrow_ctx),
+    Ok(@engine.FnValue(@engine.VNum(7.0))),
+  )
+
+  for name in ["default", "unset", "empty"] {
+    let descriptor = registry.lookup_cell_fn(name).unwrap()
+    assert_true(descriptor.invoke({ name, args: [] }, ctx) is Ok(@engine.FnSentinel(_)))
+  }
+
+  let uuid = registry.lookup_cell_fn("uuid").unwrap()
+  match uuid.invoke({ name: "uuid", args: [] }, ctx) {
+    Ok(@engine.FnValue(@engine.VStr(value))) => assert_eq(value.length(), 36)
+    _ => fail("uuid() must return a v4-shaped string")
+  }
+  assert_true(
+    uuid.validate_call({ name: "uuid", args: [@engine.StringArg("5")] }) is Err(_),
+  )
+
+  let env = registry.lookup_cell_fn("env").unwrap()
+  let env_invocation = @engine.parse_fn_invocation(
+    @engine.ColonString("env:MISSING"),
+  ).unwrap()
+  let env_ctx = @engine.fn_ctx_default(
+    "target",
+    observes=env.concrete_observes(env_invocation).unwrap(),
+  )
+  assert_eq(
+    env.invoke(env_invocation.to_call(), env_ctx),
+    Err(("absent-source", "env source 'MISSING' is absent")),
+  )
 }
