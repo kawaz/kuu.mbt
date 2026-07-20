@@ -34,9 +34,9 @@ pub fn continue_matcher(Array[Branch], Ctx, Array[Binding], (Ctx, Int, Array[Bin
 
 pub fn decode_fn_invocation_parts(FnInvocationForm) -> Result[Array[String], String]
 
-pub fn elem_value(Array[Binding], Array[String], String) -> String?
+pub fn element_value(Array[Binding], Array[String], String) -> String?
 
-pub fn elem_value_in_subtree(Array[Binding], Array[String], String, String) -> String?
+pub fn element_value_in_subtree(Array[Binding], Array[String], String, String) -> String?
 
 pub fn eq_sep_mode_of(String) -> EqSepMode?
 
@@ -75,19 +75,19 @@ pub(all) struct AliasDef {
   target : String
   name : String?
   short : Array[Char]
-  long_override : LongDecl?
+  long_override : LongDeclaration?
   deprecated : Bool
-  help_meta : HelpMetaDecl
-} derive(Eq, @debug.Debug)
-
-pub(all) struct AmbInterp {
-  binds : Array[Binding]
-  claimants : Array[(String, String)]
+  help_meta : HelpMetaDeclaration
 } derive(Eq, @debug.Debug)
 
 pub(all) struct AmbiguousData {
-  interpretations : Array[AmbInterp]
+  interpretations : Array[AmbiguousInterpretation]
   help_entry : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct AmbiguousInterpretation {
+  binds : Array[Binding]
+  claimants : Array[(String, String)]
 } derive(Eq, @debug.Debug)
 
 pub struct ArrayFilterDescriptor {
@@ -116,7 +116,7 @@ pub(all) struct Binding {
   at_pos : Int?
 } derive(Eq, @debug.Debug)
 pub fn Binding::action_marker(String, Int) -> Self
-pub fn Binding::depr_marker(String) -> Self
+pub fn Binding::deprecation_mark(String) -> Self
 pub fn Binding::effect(String, EffectOp, Source) -> Self
 pub fn Binding::new(String, Value, Source, at_pos? : Int?) -> Self
 
@@ -239,12 +239,19 @@ pub(all) enum DecodeCtx {
   Command
 } derive(Eq, @debug.Debug)
 
-pub(all) struct DecodedOwnedDecl {
+pub(all) struct DecodedOwnedDeclaration {
   vocab : Array[String]
-  declaration : OwnedDecl
+  declaration : OwnedDeclaration
 }
 
-pub(all) enum DefErrKind {
+pub(all) struct DefError {
+  element : String
+  kind : DefErrorKind
+  message : String
+  hint : String
+} derive(Eq, @debug.Debug)
+
+pub(all) enum DefErrorKind {
   VocabIntersection
   UnknownVocab
   InvalidRange
@@ -253,13 +260,6 @@ pub(all) enum DefErrKind {
   ZeroProgress
   ConfigCycle
   InvalidArgument
-} derive(Eq, @debug.Debug)
-
-pub(all) struct DefError {
-  element : String
-  kind : DefErrKind
-  message : String
-  hint : String
 } derive(Eq, @debug.Debug)
 
 pub struct DefaultCtx {
@@ -276,12 +276,12 @@ pub fn DefaultFnCall::to_call(Self) -> FnCall
 pub fn DefaultFnCall::wire_invocation(Self) -> FnInvocation?
 
 pub(all) struct Definition {
-  scope : ScopeDecl
-  options : Array[ElemDef]
-  positionals : Array[ElemDef]
+  scope : ScopeDeclaration
+  options : Array[ElementDef]
+  positionals : Array[ElementDef]
   commands : Array[CommandDef]
   aliases : Array[AliasDef]
-  help_types : Array[HelpTypeDecl]
+  help_types : Array[HelpTypeDeclaration]
 } derive(Eq, @debug.Debug)
 
 pub struct DefsView {
@@ -309,21 +309,21 @@ pub(all) enum EffectOp {
   Splice
 } derive(Eq, @debug.Debug)
 
-pub(all) enum ElemBody {
+pub(all) enum ElementBody {
   Cell
   Or(Array[OrBranch])
-  Group(Array[ElemDef])
+  Group(Array[ElementDef])
   Enum(Array[String])
 } derive(Eq, @debug.Debug)
 
-pub(all) struct ElemDef {
+pub(all) struct ElementDef {
   name : String
   ty : &TypeExt
-  long : LongDecl
+  long : LongDeclaration
   variants : Array[Variant]
   short : Array[Char]
   env : Array[String]
-  help_meta : HelpMetaDecl
+  help_meta : HelpMetaDeclaration
   is_tty : Bool
   tty_stream : String?
   tty_cygwin : Bool
@@ -374,7 +374,7 @@ pub(all) struct ElemDef {
   long_eq_sep : EqSepMode
   short_combine : Bool
   short_attached_value : AttachMode
-  body : ElemBody
+  body : ElementBody
 } derive(Eq, @debug.Debug)
 
 pub(all) struct Entity {
@@ -405,7 +405,7 @@ pub(all) enum EqSepMode {
   Deny
 } derive(Eq, @debug.Debug)
 
-pub(all) enum ErrKind {
+pub(all) enum ErrorKind {
   Parse
   Filter
   Constraint
@@ -509,7 +509,7 @@ pub(all) struct FnReason {
   message : String
 } derive(Eq, @debug.Debug)
 
-pub(all) struct HelpMetaDecl {
+pub(all) struct HelpMetaDeclaration {
   help : String?
   help_long : String?
   help_epilog : String?
@@ -541,7 +541,7 @@ pub(all) struct HelpSingleValue {
   values_enum : Array[String]?
 } derive(Eq, @debug.Debug)
 
-pub(all) struct HelpTypeDecl {
+pub(all) struct HelpTypeDeclaration {
   id : String
   help : String?
   value_structure : HelpValueStructure
@@ -589,7 +589,7 @@ pub fn InstallOutput::push_constraint(Self, Constraint) -> Unit
 pub fn InstallOutput::push_entity(Self, Entity) -> Unit
 pub fn InstallOutput::push_greedy(Self, Node) -> Unit
 
-pub(all) enum LongDecl {
+pub(all) enum LongDeclaration {
   Bool(Bool)
   List(Array[String])
   Forms(Array[FnInvocationForm])
@@ -597,7 +597,7 @@ pub(all) enum LongDecl {
 
 pub(all) enum Node {
   Exact(String)
-  ReqArg(String)
+  RequiredArgument(String)
   Bind(String, Value)
   Or(Array[Node])
   Seq(Array[Node])
@@ -609,10 +609,10 @@ pub(all) enum Node {
   Ref(String)
   DdSatisfied(String)
   DdMatchSatisfied(String, Bool, Bool, String)
-  CmdSatisfied(String, Scope)
+  CommandSatisfied(String, Scope)
   Rooted(Node, Int)
   BoundedTail(Node, Int, Bool)
-  IdxRepeat(String, Node, Int, Int?)
+  IndexedRepeat(String, Node, Int, Int?)
   GreedyRepeat(Node)
 }
 pub impl Eq for Node
@@ -626,7 +626,7 @@ pub fn NoneCell::path(Self) -> Array[String]
 
 pub(all) struct OrBranch {
   id : String
-  items : Array[ElemDef]
+  items : Array[ElementDef]
 } derive(Eq, @debug.Debug)
 
 pub(all) enum Outcome {
@@ -635,8 +635,8 @@ pub(all) enum Outcome {
   Ambiguous(AmbiguousData)
 } derive(Eq, @debug.Debug)
 
-pub(all) enum OwnedDecl {
-  Long(LongDecl)
+pub(all) enum OwnedDeclaration {
+  Long(LongDeclaration)
   Short(Array[Char])
   Env(Array[String])
   Dd(String?, Bool)
@@ -648,14 +648,14 @@ pub(all) enum OwnedDecl {
   Constraint(Array[String], Array[String], Array[String], Array[String], Bool)
   Alias(AliasDef?)
   Inheritable(Bool)
-  HelpMeta(HelpMetaDecl)
+  HelpMeta(HelpMetaDeclaration)
   Command
 } derive(Eq, @debug.Debug)
 
 pub(all) struct ParseError {
   element : String
   args_pos : Int
-  kind : ErrKind
+  kind : ErrorKind
   reason : String
   message : String
   path : Array[String]
@@ -732,9 +732,9 @@ pub(all) struct Scope {
 } derive(@debug.Debug)
 pub impl Eq for Scope
 
-pub(all) struct ScopeDecl {
+pub(all) struct ScopeDeclaration {
   name : String?
-  help_meta : HelpMetaDecl
+  help_meta : HelpMetaDeclaration
 } derive(Eq, @debug.Debug)
 
 pub struct ScopedCons {
@@ -833,7 +833,7 @@ pub impl @debug.Debug for &EntityExt
 
 pub(open) trait InstallerExt {
   fn vocab(Self) -> Array[String]
-  fn decode(Self, Json, DecodeCtx) -> Result[DecodedOwnedDecl, String]
+  fn decode(Self, Json, DecodeCtx) -> Result[DecodedOwnedDeclaration, String]
   fn apply(Self, InstallBuilder) -> Unit
   fn collect_defs_errors(Self, DefsView) -> Array[DefError]
 }

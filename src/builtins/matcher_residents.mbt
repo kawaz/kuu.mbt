@@ -317,7 +317,7 @@ fn run_eq_split(
       // パターン (builtins/matcher_residents.mbt 上の `dm` 定義コメント参照)。成功パス (@engine.Accept) だけに合成する — 値が
       // 確定して初めて「受理された deprecated 入口」なので、@engine.Held (parse/filter 失敗) には積まない。
       let dm : Array[@engine.Binding] = if e.deprecated {
-        [@engine.Binding::depr_marker(e.name)]
+        [@engine.Binding::deprecation_mark(e.name)]
       } else {
         []
       }
@@ -520,7 +520,7 @@ fn walk_short(
       // DR-058: a deprecated cluster entry rides a `@deprecated:<name>` warning marker alongside its
       // value binding (the value is unchanged; only a warning is added). `dm` is [] for a normal entry.
       let dm : Array[@engine.Binding] = if e.deprecated {
-        [@engine.Binding::depr_marker(e.name)]
+        [@engine.Binding::deprecation_mark(e.name)]
       } else {
         []
       }

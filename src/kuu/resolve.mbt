@@ -829,7 +829,7 @@ fn collect_accum(
   }
   for g in sc.greedy {
     match g {
-      @engine.CmdSatisfied(name, child) =>
+      @engine.CommandSatisfied(name, child) =>
         match ek.get(name) {
           Some(@engine.Null) => collect_accum(child, path, ek, out) // dropped label → children promote (DR-052 §2)
           Some(@engine.Key(s)) =>
@@ -897,7 +897,7 @@ fn collect_defaults(
   }
   for g in sc.greedy {
     match g {
-      @engine.CmdSatisfied(name, child) =>
+      @engine.CommandSatisfied(name, child) =>
         collect_defaults(child, path_push(path, name), out)
       _ => ()
     }
@@ -1044,7 +1044,7 @@ fn promote_collision_ambiguous_from(
       // Cross product of claimant choices per collision group — each combo picks one claimant per
       // group and drops the rivals' bindings at that (path, mapped-key) from THIS view (DR-073 §2:
       // entity name is the sole cross-view-stable identifier; value/source can coincide).
-      let interps : Array[@engine.AmbInterp] = []
+      let interps : Array[@engine.AmbiguousInterpretation] = []
       for combo in claimant_combinations(collisions) {
         let filtered : Array[@engine.Binding] = []
         for b in collision_binds {
@@ -1132,14 +1132,14 @@ pub(all) struct SourceEntry {
 } derive(Eq, Debug)
 
 ///|
-/// `sc.greedy` に `@engine.CmdSatisfied` (サブコマンド確定ノード) が 1 つでもあるか — command 木を持つ scope か
+/// `sc.greedy` に `@engine.CommandSatisfied` (サブコマンド確定ノード) が 1 つでもあるか — command 木を持つ scope か
 /// どうかの判定。runner (json_conformance_test.mbt) の同名ヘルパーと同一実装で、production 側の
 /// `result_sources` にも同じ分岐が要るためこちらへ昇格した (runner 側は重複定義を避けるため
 /// 削除しこの private fn を直接呼ぶ、同一パッケージ内アクセスなので `pub` 化は不要)。
 fn has_commands(sc : @engine.Scope) -> Bool {
   for g in sc.greedy {
     match g {
-      @engine.CmdSatisfied(_, _) => return true
+      @engine.CommandSatisfied(_, _) => return true
       _ => ()
     }
   }
@@ -1307,8 +1307,8 @@ fn is_none_entity(entities : Array[@engine.Entity], name : String) -> Bool {
 ///|
 /// `@engine.RequiredCandidate` 1 件の最終判定 (型委譲、codex レビュー M-2 修正): `Required`/
 /// `RequiredGroup` の resolve.mbt 側 (最終判定) 共有ヘルパー — `wrapper` が `None` なら宣言 scope
-/// path そのもの (`@engine.is_committed`/`@engine.elem_value`)、`Some(w)` なら宣言元要素 `w` 自身の @engine.Scoped 部分木内
-/// (`@engine.is_committed_in_subtree`/`@engine.elem_value_in_subtree`、eval.mbt 側の同名 subtree ヘルパーを resolve
+/// path そのもの (`@engine.is_committed`/`@engine.element_value`)、`Some(w)` なら宣言元要素 `w` 自身の @engine.Scoped 部分木内
+/// (`@engine.is_committed_in_subtree`/`@engine.element_value_in_subtree`、eval.mbt 側の同名 subtree ヘルパーを resolve
 /// 層でも再利用) で判定する。`is_none_entity` (値空間なし = committed 判定、値空間あり = 値の有無
 /// 判定) のゲートは wrapper の有無と直交 — ref 経由の candidate は `@engine.Scope.entities` に登録されない
 /// ため常に `is_none_entity` は `true` (committed 判定) に倒れる (`ensure_entity_body` の Cell
@@ -1325,13 +1325,13 @@ fn candidate_satisfied(
       if is_none_entity(entities, c.name) {
         @engine.is_committed(bindings, path, c.name)
       } else {
-        @engine.elem_value(resolved, path, c.name) != None
+        @engine.element_value(resolved, path, c.name) != None
       }
     Some(w) =>
       if is_none_entity(entities, c.name) {
         @engine.is_committed_in_subtree(bindings, path, w, c.name)
       } else {
-        @engine.elem_value_in_subtree(resolved, path, w, c.name) != None
+        @engine.element_value_in_subtree(resolved, path, w, c.name) != None
       }
   }
 }
@@ -1342,10 +1342,10 @@ fn candidate_satisfied(
 /// fully resolved bindings (目的語判定、「目的語側 = 値の有無/真理値」) — issue
 /// resolve-first-constraint-pipeline (Phase 1) 裁定 2026-07-10: 目的語の充足判定は、もはやこの関数が
 /// 自前のラダー (env/config/inherit) を再演するのではなく、呼び出し元が既に `resolve_scope_tree` で
-/// 解決済みの `resolved` を渡してくるので `@engine.elem_value` の単純参照で済む (値源不問は「resolve 済み
+/// 解決済みの `resolved` を渡してくるので `@engine.element_value` の単純参照で済む (値源不問は「resolve 済み
 /// なら値源を意識する必要がない」という形で自然に成立する)。issue value-present-ladder-gap 裁定
-/// 2026-07-10 でこの読者化を非bool 目的語にも拡張した — bool は `@engine.elem_value(resolved,...) ==
-/// Some("true")`、非bool は `@engine.elem_value(resolved,...) != None` (値の有無) の 2 分岐。
+/// 2026-07-10 でこの読者化を非bool 目的語にも拡張した — bool は `@engine.element_value(resolved,...) ==
+/// Some("true")`、非bool は `@engine.element_value(resolved,...) != None` (値の有無) の 2 分岐。
 ///
 /// `@engine.constraint_err`'s `path` defaults to `[]` (KTop's contract: a @engine.Held rides the cont chain and
 /// scope boundaries prepend the path on the way out) — that mechanism doesn't run here (the path
@@ -1366,9 +1366,9 @@ fn eval_requires(
     if is_none_entity(sc.entities, t) {
       @engine.is_committed(bindings, path, t)
     } else if is_bool_entity(sc.entities, t) {
-      @engine.elem_value(resolved, path, t) == Some("true")
+      @engine.element_value(resolved, path, t) == Some("true")
     } else {
-      @engine.elem_value(resolved, path, t) != None
+      @engine.element_value(resolved, path, t) != None
     }
   }
   for c in sc.constraints {
@@ -1391,7 +1391,7 @@ fn eval_requires(
         }
       RequiresIf(entity, branch_id, v, targets) => {
         let active = @engine.is_committed(bindings, path, entity) &&
-          (match @engine.elem_value(bindings, path, entity) {
+          (match @engine.element_value(bindings, path, entity) {
             Some(x) => x == v
             None => false
           })
@@ -1489,16 +1489,16 @@ fn scope_entered_here(
 }
 
 ///|
-/// Whether `sc.greedy` enters a genuine command scope named `name` (a `@engine.CmdSatisfied` node) — used by
+/// Whether `sc.greedy` enters a genuine command scope named `name` (a `@engine.CommandSatisfied` node) — used by
 /// `resolve_scope_tree`'s pass-through below to tell a real child COMMAND scope apart from a
 /// ref-template accum entity's own one-level-deeper binding wrap (`ref_row_head`/`@engine.Scoped(e.name,
-/// ...)`, installer.mbt DR-078 §1). Only a `@engine.CmdSatisfied` name is a scope `resolve_scope_tree` should
+/// ...)`, installer.mbt DR-078 §1). Only a `@engine.CommandSatisfied` name is a scope `resolve_scope_tree` should
 /// recurse the ladder into; anything else sharing the same "one level deeper" shape is CLI-origin
 /// material that must be passed through untouched instead.
 fn is_cmdsat_child(sc : @engine.Scope, name : String) -> Bool {
   for g in sc.greedy {
     match g {
-      @engine.CmdSatisfied(n, _) => if n == name { return true }
+      @engine.CommandSatisfied(n, _) => if n == name { return true }
       _ => ()
     }
   }
@@ -1519,11 +1519,11 @@ fn is_cmdsat_child(sc : @engine.Scope, name : String) -> Bool {
 /// the first such caller; `json_conformance_test.mbt`'s own `resolve_tree` is expected to become
 /// a thin `dc.cfg`-to-`provider` adapter over this function (not duplicated here).
 ///
-/// `binds` is the CLI-only raw bindings for ONE candidate path (`parse()`'s `@engine.Success`/`@engine.AmbInterp`
+/// `binds` is the CLI-only raw bindings for ONE candidate path (`parse()`'s `@engine.Success`/`@engine.AmbiguousInterpretation`
 /// payload) — not yet split by scope; this function filters to `path`'s own direct bindings at
 /// each recursion level. The returned `Array[@engine.Binding]` is flat with every binding's `scope` tagged
 /// to its owning path (the same shape `build_result`/`proj_sources_tree` already consume) — a
-/// caller wanting a value at a nested path uses the ordinary `@engine.elem_value`/`@engine.is_committed` lookups
+/// caller wanting a value at a nested path uses the ordinary `@engine.element_value`/`@engine.is_committed` lookups
 /// with that path, no different from a single-scope `resolve_scope_config` caller.
 fn resolve_scope_tree_with_export(
   sc : @engine.Scope,
@@ -1603,7 +1603,7 @@ fn resolve_scope_tree_with_export(
   }
   for g in sc.greedy {
     match g {
-      @engine.CmdSatisfied(name, child) => {
+      @engine.CommandSatisfied(name, child) => {
         let childpath = path_push(path, name)
         if scope_entered_here(binds, childpath) {
           match
@@ -1638,7 +1638,7 @@ fn resolve_scope_tree_with_export(
 /// と `@engine.find_help_entry`/`@engine.tried_triggers_of` の素材取得に使う。
 ///
 /// issue resolve-first-constraint-pipeline (Phase 1、audit issue lazy-default-resolution-audit の
-/// finding への根治): 候補ごとに `resolve_scope_tree` で実際に解決してから `@engine.elem_value` を読むだけの
+/// finding への根治): 候補ごとに `resolve_scope_tree` で実際に解決してから `@engine.element_value` を読むだけの
 /// 「読者」に再設計した (以前の `resolved_bool_value_ladder` 自前ミニラダー + `config_obj:
 /// @engine.ConfigVal?` 単一オブジェクト契約 + `collect_all_scopes` 祖先探索テーブルは全廃)。
 /// `provider~` は `resolve_scope_config` と同じ `(String) -> @engine.ConfigVal?` 契約 — スコープごとに
@@ -1695,7 +1695,7 @@ fn apply_requires_filter_with_export(
               // に落としてしまう (issue required-group-scope-participation、実測: `--r1` のみで
               // child-a scope の g が違反として付随、path=[child-a] の error 生成)。gate の判定は engine
               // 側と完全に同じ `@engine.scope_selected` を共用 — 判定意味論のドリフト防止 (bindings 内の
-              // `{}` scope_marker の存在で判定、CmdSatisfied 入場時に cont.mbt KNest が prepend する)。
+              // `{}` scope_marker の存在で判定、CommandSatisfied 入場時に cont.mbt KNest が prepend する)。
               if !@engine.scope_selected(binds, sc2.path) {
                 continue
               }
@@ -1732,7 +1732,7 @@ fn apply_requires_filter_with_export(
         viol => build_failure([binds], viol)
       }
     @engine.Ambiguous(d) => {
-      let survivors : Array[@engine.AmbInterp] = []
+      let survivors : Array[@engine.AmbiguousInterpretation] = []
       let all_violations : Array[@engine.ParseError] = []
       let all_binds : Array[Array[@engine.Binding]] = []
       for interp in d.interpretations {
@@ -1765,7 +1765,7 @@ fn apply_requires_filter_with_export(
 /// A @engine.Value rendered as its comparison string (constraint value matching: integers print without
 /// the trailing `.0`). The resolve layer owns the result-object rendering; this is also the
 /// RequiresIf comparison form (moved here from eval.mbt, MDR-002 §3 table — this is resolve.mbt's
-/// canonical home; eval.mbt's `@engine.elem_value` calls this file's copy, same package).
+/// canonical home; eval.mbt's `@engine.element_value` calls this file's copy, same package).
 
 ///|
 /// A DR-066 ladder-fill Error: `element`/`args_pos` locate it like any @engine.ParseError; `at_pos` is the

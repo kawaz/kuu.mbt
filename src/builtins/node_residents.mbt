@@ -908,7 +908,7 @@ impl @engine.NodeExt for DeprecationMarkExt with fn eval(
   acc,
   next,
 ) {
-  next(ctx, pos, acc + [@engine.Binding::depr_marker(self.name)])
+  next(ctx, pos, acc + [@engine.Binding::deprecation_mark(self.name)])
 }
 
 ///|

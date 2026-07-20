@@ -65,7 +65,7 @@ fn resident_strings(
 }
 
 ///|
-fn resident_long(json : Json) -> Result[@engine.LongDecl, String] {
+fn resident_long(json : Json) -> Result[@engine.LongDeclaration, String] {
   match json {
     True => Ok(Bool(true))
     False => Ok(Bool(false))
@@ -182,7 +182,7 @@ fn resident_multiple(
 }
 
 ///|
-fn resident_empty_help_meta() -> @engine.HelpMetaDecl {
+fn resident_empty_help_meta() -> @engine.HelpMetaDeclaration {
   {
     help: None,
     help_long: None,
@@ -994,7 +994,7 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn apply(_self, _builder) {
 }
 
 ///|
-fn help_group_declaration(e : @engine.ElemDef) -> Bool {
+fn help_group_declaration(e : @engine.ElementDef) -> Bool {
   e.name == "" && e.help_meta.help_group_name is Some(_)
 }
 

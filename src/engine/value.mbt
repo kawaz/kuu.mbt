@@ -9,7 +9,7 @@
 // lexical scanning here). MDR-002 §3: value.mbt depends on node.mbt only.
 //
 // `Binding` / `ParseError` (DR-066 5-field with reason) live here; `Branch` and `Candidate` live in
-// node.mbt. The matcher builds bindings via the mk_binding / cat / pe_filter / depr_marker helpers at the
+// node.mbt. The matcher builds bindings via the mk_binding / cat / pe_filter / deprecation_mark helpers at the
 // end of this file.
 
 ///|
@@ -192,7 +192,7 @@ pub(all) struct TypeParseFail {
 /// The category of a held Error (DR-053 §2 / DR-037 / DR-047): `parse` = type parse failure,
 /// `filter` = a piece/value/cell filter reject (a value that parsed but failed a filter), `constraint` = a
 /// delayed-predicate violation (required 未充足 etc., DR-047). All three ride the errors array.
-pub(all) enum ErrKind {
+pub(all) enum ErrorKind {
   Parse
   Filter
   Constraint
@@ -212,7 +212,7 @@ pub(all) enum ErrKind {
 pub(all) struct ParseError {
   element : String
   args_pos : Int
-  kind : ErrKind
+  kind : ErrorKind
   reason : String // DR-066 §3: machine-readable failure identifier (snake_case v1 vocab)
   message : String
   path : Array[String] // DR-066 §4: root-first ancestor scope names (snoc form, [] = root 直下)
@@ -284,7 +284,7 @@ pub(all) struct Binding {
   scope : Array[String]
   link : Int // a link/global-copy binding (DR-042/007): the number of result-nesting levels it
   //           still ESCAPES before settling at its declaring scope. 0 = a normal binding (every
-  //           CmdSatisfied/Scoped level prepends its label). N>0 = a global copied N scopes BELOW its
+  //           CommandSatisfied/Scoped level prepends its label). N>0 = a global copied N scopes BELOW its
   //           declaration; the next N nest levels skip prepending (decrementing), then it nests
   //           normally — so an intermediate-scope global (DR-042 shadow) lands at its declaring
   //           scope, not the absolute root. A root global (declared at depth 0) has N = its firing
@@ -340,7 +340,7 @@ pub fn ParseError::filter(
 /// A deprecation marker binding (DR-058): key `@depr:<element>`, recording that a deprecated entry
 /// (DR-057 alias) was used to reach the canonical cell. Rides in the effect column like any binding;
 /// the result builder skips it (bookkeeping, not a value), and `warnings_of` collects it.
-pub fn Binding::depr_marker(element : String) -> Binding {
+pub fn Binding::deprecation_mark(element : String) -> Binding {
   {
     key: "@depr:" + element,
     op: Set,

@@ -166,8 +166,8 @@ pub(all) enum DecodeCtx {
 } derive(Eq, Debug)
 
 ///|
-pub(all) enum OwnedDecl {
-  Long(LongDecl)
+pub(all) enum OwnedDeclaration {
+  Long(LongDeclaration)
   Short(Array[Char])
   Env(Array[String])
   Dd(String?, Bool)
@@ -179,20 +179,20 @@ pub(all) enum OwnedDecl {
   Constraint(Array[String], Array[String], Array[String], Array[String], Bool)
   Alias(AliasDef?)
   Inheritable(Bool)
-  HelpMeta(HelpMetaDecl)
+  HelpMeta(HelpMetaDeclaration)
   Command
 } derive(Eq, Debug)
 
 ///|
-pub(all) struct DecodedOwnedDecl {
+pub(all) struct DecodedOwnedDeclaration {
   vocab : Array[String]
-  declaration : OwnedDecl
+  declaration : OwnedDeclaration
 }
 
 ///|
 pub(open) trait InstallerExt {
   fn vocab(Self) -> Array[String]
-  fn decode(Self, Json, DecodeCtx) -> Result[DecodedOwnedDecl, String]
+  fn decode(Self, Json, DecodeCtx) -> Result[DecodedOwnedDeclaration, String]
   fn apply(Self, InstallBuilder) -> Unit
   fn collect_defs_errors(Self, DefsView) -> Array[DefError]
 }
@@ -233,7 +233,7 @@ fn InstallBuilder::materialize(self : InstallBuilder) -> Scope {
     greedy.push(node)
   }
   for child in self.children {
-    greedy.push(CmdSatisfied(child.name, child.body.materialize()))
+    greedy.push(CommandSatisfied(child.name, child.body.materialize()))
   }
   {
     greedy,
@@ -254,7 +254,7 @@ fn vocab_owned(vocab : Array[String], name : String) -> Bool {
 }
 
 ///|
-fn effective_repeat(element : ElemDef) -> RepeatSpec? {
+fn effective_repeat(element : ElementDef) -> RepeatSpec? {
   match element.repeat {
     Some(spec) => Some(spec)
     None =>
@@ -267,7 +267,7 @@ fn effective_repeat(element : ElemDef) -> RepeatSpec? {
 }
 
 ///|
-fn long_spellings(element : ElemDef) -> Array[String] {
+fn long_spellings(element : ElementDef) -> Array[String] {
   match element.long {
     List(spellings) => spellings
     Forms(forms) => if forms.length() == 0 { [] } else { ["<fn-invocation>"] }
@@ -276,7 +276,7 @@ fn long_spellings(element : ElemDef) -> Array[String] {
 }
 
 ///|
-fn first_unknown_vocab(element : ElemDef, owned : Array[String]) -> String? {
+fn first_unknown_vocab(element : ElementDef, owned : Array[String]) -> String? {
   if long_spellings(element).length() > 0 && !vocab_owned(owned, "long") {
     return Some("long:" + long_spellings(element)[0])
   }

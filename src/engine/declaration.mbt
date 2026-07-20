@@ -3,7 +3,7 @@
 ///|
 /// DR-113 §4.1 の value_structure tree carrier。single / seq / or / repeat / type_ref を任意
 /// ネストで表す。wire_decode が option/positional の値形 (type/or/seq/repeat 系 wire キー) と
-/// definitions.types 内の共有型定義 tree を decode 時点で組み立て、HelpMetaDecl と Definition の
+/// definitions.types 内の共有型定義 tree を decode 時点で組み立て、HelpMetaDeclaration と Definition の
 /// 側テーブルへ carry する — help_installer は projection 時に読むだけ (計算しない)。
 pub(all) enum HelpValueStructure {
   Single(HelpSingleValue)
@@ -37,7 +37,7 @@ pub(all) struct HelpTypeRef {
 /// DR-113 §4.2 共有型定義の carrier。Definition.help_types に定義出現順で並ぶ。
 /// used_as は wire 上の直接情報でなく参照側からの逆向き収集なので、ここでは carry しない
 /// (help_installer が projection 時に options/positionals を走査して補う)。
-pub(all) struct HelpTypeDecl {
+pub(all) struct HelpTypeDeclaration {
   id : String
   help : String?
   value_structure : HelpValueStructure
@@ -46,7 +46,7 @@ pub(all) struct HelpTypeDecl {
 ///|
 /// help_meta installer が所有する宣言層の inert 表示属性。lowering 産物へは搬送せず、
 /// definition-time 検査と help query が宣言層から参照する。
-pub(all) struct HelpMetaDecl {
+pub(all) struct HelpMetaDeclaration {
   help : String?
   help_long : String?
   help_epilog : String?
@@ -66,9 +66,9 @@ pub(all) struct HelpMetaDecl {
   help_on_failure : Bool?
   // DR-113 §7.2 / §8.1 の非 help preset 判定に必要な構造情報 carry — `type:` が 5 help
   // preset のいずれかに解決したかどうかを wire_decode 側で立てて HelpMetaInstaller へ渡す。
-  // HelpMetaDecl は本来 inert な表示メタだが、help_on_failure 糖衣の invalid-range 判定は
+  // HelpMetaDeclaration は本来 inert な表示メタだが、help_on_failure 糖衣の invalid-range 判定は
   // 「help preset か否か」を必要とし、この判定を実施する installer もこの carrier の唯一の
-  // 読者である (M3a 申し送り: preset 由来 type 名は構造情報なので HelpMetaDecl carry を許容
+  // 読者である (M3a 申し送り: preset 由来 type 名は構造情報なので HelpMetaDeclaration carry を許容
   // する統括判断)。help preset 展開後は wire 側で flag_type + fail_action に落ちて元の type
   // 名が消えるため、is_help_preset で bool 化して carry する方が installer 側の分岐を単純化
   // できる。help group declaration entry (name == "") や positional は常に false。
@@ -106,20 +106,20 @@ pub(all) struct HelpMetaDecl {
 /// UsefulAST element. Attribute arrays are READ-ONLY to installers (invariant ①': 宣言層 read-only).
 /// The declaration layer is never emptied — help / diagnose / 再シリアライズが元の宣言を保持し、後段
 /// installer (global 等) も引き続き参照できる。Idempotency は add-if-absent が担う。
-pub(all) struct ElemDef {
+pub(all) struct ElementDef {
   name : String
   ty : &TypeExt
   // long installer 所有: wire 二形 (DR-071 §1 — bool | array、"wire には二形とも載る、展開は long
   // installer の解釈"）。糖衣展開 (bool→リスト、DR-076 §2 flag 差し替え/補完) と colon DSL 分類
   // (DR-011/076、main-entry / variant / 構文エラー) は共に installer 層 (`normalize_option` が呼ぶ
-  // `resolve_long`) が担う — decode 層は wire の形をそのまま `LongDecl` に写すだけ。normalize 前
+  // `resolve_long`) が担う — decode 層は wire の形をそのまま `LongDeclaration` に写すだけ。normalize 前
   // (宣言直後) はこの二形のまま、normalize 後は `List([<kebab main entries>])`（`variants` フィール
   // ドへ分離済みの variant は含まない）に統一される。
-  long : LongDecl
+  long : LongDeclaration
   variants : Array[Variant] // long installer 所有 (variant DSL, DR-011/045) — normalize_option が resolve_long の結果で埋める。宣言直後は常に []
   short : Array[Char] // short installer 所有
   env : Array[String] // env installer 所有
-  help_meta : HelpMetaDecl // help_meta installer 所有 (表示専用、lowering 寄与ゼロ)
+  help_meta : HelpMetaDeclaration // help_meta installer 所有 (表示専用、lowering 寄与ゼロ)
   // TRANSITIONAL(M5c): tty config remains on the declaration carrier until wire decode constructs
   // the configured TypeExt directly; Entity no longer copies or interprets these fields.
   // DR-099 §1/§3: `type:` が `builtin/tty` factory (bare "tty" 糖衣 / definitions.types 経由の
@@ -143,7 +143,7 @@ pub(all) struct ElemDef {
   // (`{"exact": "init"}`) — DR-018 の「配置 (options[]/positionals[]) で役割決定」原理を、既に
   // greedy 面で確立済みの is_dd と同じ carrier パターンで positional 面へ適用したもの。`true` の
   // とき `name` はこの要素の trigger 綴りを運ぶ (is_dd の `name` 再利用と同じ理由付け、
-  // `dd_marker`/`normalize_dd_name` 参照) — `elem_head` が `Exact(e.name)` へ直接 lower し、
+  // `dd_marker`/`normalize_dd_name` 参照) — `element_head` が `Exact(e.name)` へ直接 lower し、
   // value_prim/entity 経路を一切通らない (`ensure_entities` が is_dd と同じガードでスキップする)。
   is_exact : Bool
   // DR-090 §2: dd installer 所有、is_dd 専用の軸拡張 — None/false なら従来の exact dd (§1「既存
@@ -205,7 +205,7 @@ pub(all) struct ElemDef {
   // 値の帰属先 = 親 entity の非対称)。id 未指定時は parent entity name を branch_id にフォールバック
   // (parent 直属の value_requires と等価な挙動)。
   value_requires : Array[(String, String, Array[String])]
-  // TRANSITIONAL(M5c): parser config also remains on ElemDef because builtin node/matcher
+  // TRANSITIONAL(M5c): parser config also remains on ElementDef because builtin node/matcher
   // residents still encode their stable lowering form from these explicit values. TypeExt already
   // owns runtime parsing; removing this duplicate waits for those residents to accept one descriptor.
   // DR-075 §2 int_round factory config (DR-061 §4 平坦 config キー、`int_parser` の唯一 config)。
@@ -265,7 +265,7 @@ pub(all) struct ElemDef {
   // short_combine/env_prefix/auto_env). Decode (`dec_definition`, json_conformance_test.mbt)
   // reads `config` at EACH Definition/command scope, merges it with the parent scope's resolved
   // config (child key present → override, absent → inherit — DESIGN §7.2「子要素は親の config を
-  // 継承、上書き可能」), and bakes the resolved 7-key tuple onto every option/positional ElemDef
+  // 継承、上書き可能」), and bakes the resolved 7-key tuple onto every option/positional ElementDef
   // that scope owns (same "decode-time bake, no Definition-level config carrier" pattern DR-091 §3
   // established for the original 2-field minimal implementation — installer.mbt itself never reads
   // `config`, only these per-element fields). `long_prefix` (既定 `"--"`): the string `inst_long`
@@ -302,7 +302,7 @@ pub(all) struct ElemDef {
   // `long_prefix: ""` と併用すると、space form が無いので生 token に一切マッチせず `@builtins.eq_split` は `=`
   // を含む token にのみ発火するため、素の operand (`foo`) との衝突をアプリ側で定義的に排除する
   // 選択手段になる。ただし空 prefix 自体はこの併用を要求しない — 併用しない場合の衝突は Ambiguous
-  // として通常通り列挙される、`ElemDef.long_prefix` の doc comment 参照)。`Allow` (既定) = 両方
+  // として通常通り列挙される、`ElementDef.long_prefix` の doc comment 参照)。`Allow` (既定) = 両方
   //配線 (現行挙動そのまま)。`Deny` = eq-split entry を登録しない、SPACE-FORM のみ。3 値のため
   // 「両方 withhold」という旧矛盾状態は構文的に表現不能 (illegal states unrepresentable、DR-096 §1
   // — 旧 `collect_eq_separator_conflict` definition-error 規定は本 DR で不要化・削除)。
@@ -324,13 +324,13 @@ pub(all) struct ElemDef {
   // `walk_short` (builtins/matcher_residents.mbt) が唯一の消費者。
   short_attached_value : AttachMode
   // MDR-004: 消費文法の軸。`Cell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
-  // 縮退形、観測挙動不変)。`Or`/`Group` の要素では `ty` は未使用 — 枝/内部要素の leaf ElemDef が
+  // 縮退形、観測挙動不変)。`Or`/`Group` の要素では `ty` は未使用 — 枝/内部要素の leaf ElementDef が
   // 各自の `ty` を持つ。
-  body : ElemBody
+  body : ElementBody
 } derive(Eq, Debug)
 
 ///|
-/// MDR-004: ElemDef の消費文法軸。`Cell` (単一値セル) 以外の3つは構造化された消費文法:
+/// MDR-004: ElementDef の消費文法軸。`Cell` (単一値セル) 以外の3つは構造化された消費文法:
 /// - `Or`: 構造 or (DR-038 / DESIGN §15.4) — 枝ごとに別の named cell を束縛する「消費文法の枝」。
 ///   DR-055 の値 enum 枝 (exact 照合、RequiresIf の素材) とは別物 — `Enum` (下記) と対になり、
 ///   value_requires (制約) は enum 枝の有無に関わらず `dec_or` が引き続き担う (§5.3 values 正規形)。
@@ -342,10 +342,10 @@ pub(all) struct ElemDef {
 ///   既存の `or` value-enum 正規形 (`{"or":[{"exact":...}]}`, DR-055) は同じ消費意味論に合流する
 ///   (糖衣と展開形で観測挙動を割らない、team-lead 裁定 2026-07-10) — `dec_option` が両方をこの
 ///   variant へ decode する。
-pub(all) enum ElemBody {
+pub(all) enum ElementBody {
   Cell
   Or(Array[OrBranch])
-  Group(Array[ElemDef])
+  Group(Array[ElementDef])
   Enum(Array[String])
 } derive(Eq, Debug)
 
@@ -358,7 +358,7 @@ pub(all) enum ElemBody {
 /// (再帰可 — 枝の中に group/or を持てる、ただし本 MDR の対象 4 fixture は 1 階層のみ)。
 pub(all) struct OrBranch {
   id : String
-  items : Array[ElemDef]
+  items : Array[ElementDef]
 } derive(Eq, Debug)
 
 ///|
@@ -366,7 +366,7 @@ pub(all) struct OrBranch {
 /// `{alias:"port", short:"n"}` の形で書く。`target` = canonical, `name` = alias 自身の名 (None なら
 /// canonical と同名), `short` = alias 明示 short (canonical の short は継承しない §3), `long_override`
 /// (DR-007 差分上書き): None = alias 名で name-derived variants を再導出, Some(decl) = 明示置換。
-/// `LongDecl` (wire 二形保持) を canonical の `long` と同じ型にする — bool/array の区別を decode 後も
+/// `LongDeclaration` (wire 二形保持) を canonical の `long` と同じ型にする — bool/array の区別を decode 後も
 /// 保持しないと、alias 側で DR-076 §2 の flag 差し替え/補完 (`resolve_long`) を適用できない (issue
 /// 2026-07-08 dec-alias-long-override-flag-sugar-gap: 旧 `Array[String]?` は `long:true` を型非依存に
 /// `[":set"]` へ潰しており、canonical が flag でも裸発火 `:set:true` へ差し替わらなかった)。
@@ -374,9 +374,9 @@ pub(all) struct AliasDef {
   target : String
   name : String?
   short : Array[Char]
-  long_override : LongDecl?
+  long_override : LongDeclaration?
   deprecated : Bool
-  help_meta : HelpMetaDecl
+  help_meta : HelpMetaDeclaration
 } derive(Eq, Debug)
 
 ///|
@@ -396,7 +396,7 @@ pub(all) struct Variant {
 /// (DR-076 §2 flag 差し替え/補完) や colon DSL 分類 (DR-011) は installer 層の `resolve_long` が担う
 /// (二形の区別は wire 上でしか付かない情報なので、展開後の `Array[String]` 単独では復元できない —
 /// decode 層で糖衣を潰すと installer 層がこの区別を必要とする場面で情報が失われる)。
-pub(all) enum LongDecl {
+pub(all) enum LongDeclaration {
   Bool(Bool)
   // String-only wire arrays and the post-normalize trigger list retain the compact legacy carrier.
   List(Array[String])
@@ -427,18 +427,18 @@ pub(all) struct CommandDef {
 
 ///|
 /// ルートまたは command のスコープ自身に属する宣言層メタデータ。
-pub(all) struct ScopeDecl {
+pub(all) struct ScopeDeclaration {
   name : String?
-  help_meta : HelpMetaDecl
+  help_meta : HelpMetaDeclaration
 } derive(Eq, Debug)
 
 ///|
 /// 1 つの command scope の UsefulAST。`commands` は DR-018 sugar; command installer が greedy 排他
 /// trigger + 新 backbone (DR-041 §4) に展開する。
 pub(all) struct Definition {
-  scope : ScopeDecl
-  options : Array[ElemDef]
-  positionals : Array[ElemDef]
+  scope : ScopeDeclaration
+  options : Array[ElementDef]
+  positionals : Array[ElementDef]
   commands : Array[CommandDef]
   aliases : Array[AliasDef] // DR-057
   // DR-113 §4.2 共有型定義。definitions.types に宣言された tree 形の型を定義出現順で保持する。
@@ -446,5 +446,5 @@ pub(all) struct Definition {
   // 親子で shadows を継承しているため実装的にも root で完結)。help_installer は root Definition
   // の help_types だけを読んで types 集約 (used_as 逆収集を含む) を組む。root 以外の scope で
   // 追加宣言する用法は未サポート (fixture も root のみ)。
-  help_types : Array[HelpTypeDecl]
+  help_types : Array[HelpTypeDeclaration]
 } derive(Eq, Debug)

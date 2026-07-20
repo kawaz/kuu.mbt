@@ -17,7 +17,7 @@ fn num_to_string(d : Double) -> String {
 /// caller uses (`@engine.Filter` = piece_filters rejection, `@engine.Parse` = type mismatch /
 /// parse failure), `reason`/`message` follow the `@engine.FnReason` shape.
 pub(all) struct ConfigValueError {
-  kind : @engine.ErrKind
+  kind : @engine.ErrorKind
   reason : String
   message : String
 } derive(Eq, Debug)

@@ -3,8 +3,8 @@
 ///|
 fn def_error_kinds(
   errors : Array[@engine.DefError],
-) -> Map[String, @engine.DefErrKind] {
-  let kinds : Map[String, @engine.DefErrKind] = Map([])
+) -> Map[String, @engine.DefErrorKind] {
+  let kinds : Map[String, @engine.DefErrorKind] = Map([])
   for error in errors {
     kinds.set(error.element, error.kind)
   }
@@ -41,8 +41,8 @@ test "default_fn observes dependency evaluates before its declaration-order pred
       let parsed = parse(ast, [])
       match resolve(ast, parsed, []) {
         @engine.Success(bindings) => {
-          assert_eq(@engine.elem_value(bindings, [], "source"), Some("true"))
-          assert_eq(@engine.elem_value(bindings, [], "target"), Some("true"))
+          assert_eq(@engine.element_value(bindings, [], "source"), Some("true"))
+          assert_eq(@engine.element_value(bindings, [], "target"), Some("true"))
         }
         _ => fail("borrow default must resolve in dependency order")
       }

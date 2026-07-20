@@ -450,7 +450,7 @@ fn collect_config_file_cells(
   }
   for node in scope.greedy {
     match node {
-      @engine.CmdSatisfied(name, child) =>
+      @engine.CommandSatisfied(name, child) =>
         collect_config_file_cells(child, output_path_push(path, name), out)
       _ => ()
     }
@@ -668,7 +668,7 @@ pub fn output(
 /// 個別に組み合わせず、解釈 1 件の表示意味論を玄関から直接得られる。
 pub fn output_of_interpretation(
   ast : AtomicAST,
-  interp : @engine.AmbInterp,
+  interp : @engine.AmbiguousInterpretation,
 ) -> @engine.ResultValue {
   let view = output(ast, effects=interp.binds)
   filter_interpretation_result(view.result, view.sources, interp.claimants, [])

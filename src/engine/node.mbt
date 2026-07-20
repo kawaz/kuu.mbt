@@ -14,7 +14,7 @@
 ///|
 /// A definition-time (parse_definition) Error category (DR-054 §1). All are "lowering が構成できない
 /// / 全入力で壊れる" — Error, not warn. (warn 層 = 一部入力で驚きうるだけ, は lint の関心で PoC 射程外.)
-pub(all) enum DefErrKind {
+pub(all) enum DefErrorKind {
   VocabIntersection // two installers own the same vocab (DR-042③)
   UnknownVocab // a special vocab owned by no installer in the chain (DR-042①)
   InvalidRange // an invalid value range (repeat min > max, etc., DR-052 ほか)
@@ -34,7 +34,7 @@ pub(all) enum DefErrKind {
 /// (DR-042 完全性検査の様式). parse_definition enumerates ALL of these (no first-error 打ち切り).
 pub(all) struct DefError {
   element : String
-  kind : DefErrKind
+  kind : DefErrorKind
   message : String
   hint : String
 } derive(Eq, Debug)
@@ -234,7 +234,7 @@ pub(all) enum Node {
   /// a REQUIRED string positional (DR-047 値充足 / DR-053 kind: constraint): consumes a token if
   /// present; if there is NO token to consume, it is a `kind: constraint` held Error (required
   /// 未充足) rather than a silent Reject — a delayed-predicate violation surfaced as an Error.
-  ReqArg(String)
+  RequiredArgument(String)
   /// 0-token binder: bind name=value. Used to set a flag after its Exact trigger fired.
   /// This is the SET degenerate form of an effect (DR-045 §1).
   Bind(String, Value)
@@ -292,7 +292,7 @@ pub(all) enum Node {
   /// a plain exact match on the command name. Firing enters the child scope as a NEW
   /// backbone (the parent greedy face does not interject inside it). 先食い protects the
   /// command name from a positional raw-eat, which is the DR-018 "commands が先" priority.
-  CmdSatisfied(String, Scope)
+  CommandSatisfied(String, Scope)
   /// link/scope-targeted wrapper (DR-042 global link-sync / DR-007 link). Evaluates its inner
   /// node but marks every binding it produces as a link that escapes `Int` result-nesting levels
   /// (= the scopes this copied satellite sits BELOW its declaration). Those bindings climb out of
@@ -320,10 +320,10 @@ pub(all) enum Node {
   /// original greedy-max-forever behavior, unchanged), `Some(b)` = stop once `rep >= min +
   /// b`, matching a bounded `repeat: {min, max}` spec exactly instead of silently degrading
   /// every Group repeat to unbounded regardless of a declared `max`. This does NOT add
-  /// backtrack (the KNOWN GAP in `eval_wbtest.mbt`'s "IdxRepeat greedy-max has no downstream
+  /// backtrack (the KNOWN GAP in `eval_wbtest.mbt`'s "IndexedRepeat greedy-max has no downstream
   /// backtrack" test is still open for the unbounded case) — a bounded head simply never
   /// over-consumes in the first place, so no backtrack is needed to correct it.
-  IdxRepeat(String, Node, Int, Int?)
+  IndexedRepeat(String, Node, Int, Int?)
   /// an OPTION's repeat value slot (DR-078 §1 option-level repeat, new capability): wraps ONLY
   /// the repeat TAIL (`Ref`/`Many`/`BoundedTail`, the same node `lower_repeat_head` builds for a
   /// positional) — the trigger/marker prefix ahead of it in the satellite's `Seq` stays plain. A
@@ -343,7 +343,7 @@ pub(all) enum Node {
 pub impl Eq for Node with fn equal(self, other) {
   match (self, other) {
     (Exact(a), Exact(b)) => a == b
-    (ReqArg(a), ReqArg(b)) => a == b
+    (RequiredArgument(a), RequiredArgument(b)) => a == b
     (Bind(an, av), Bind(bn, bv)) => an == bn && av == bv
     (Or(a), Or(b)) => a == b
     (Seq(a), Seq(b)) => a == b
@@ -356,11 +356,11 @@ pub impl Eq for Node with fn equal(self, other) {
     (DdSatisfied(a), DdSatisfied(b)) => a == b
     (DdMatchSatisfied(as_, ap, ak, an), DdMatchSatisfied(bs, bp, bk, bn)) =>
       as_ == bs && ap == bp && ak == bk && an == bn
-    (CmdSatisfied(an, ac), CmdSatisfied(bn, bc)) => an == bn && ac == bc
+    (CommandSatisfied(an, ac), CommandSatisfied(bn, bc)) => an == bn && ac == bc
     (Rooted(an, ad), Rooted(bn, bd)) => an == bn && ad == bd
     (BoundedTail(an, ab, al), BoundedTail(bn, bb, bl)) =>
       an == bn && ab == bb && al == bl
-    (IdxRepeat(an, ah, am, ab), IdxRepeat(bn, bh, bm, bb)) =>
+    (IndexedRepeat(an, ah, am, ab), IndexedRepeat(bn, bh, bm, bb)) =>
       an == bn && ah == bh && am == bm && ab == bb
     (GreedyRepeat(a), GreedyRepeat(b)) => a == b
     _ => false
@@ -371,7 +371,8 @@ pub impl Eq for Node with fn equal(self, other) {
 pub impl Debug for Node with fn to_repr(self) {
   match self {
     Exact(a) => @debug.Repr::ctor("Exact", [(None, Debug::to_repr(a))])
-    ReqArg(a) => @debug.Repr::ctor("ReqArg", [(None, Debug::to_repr(a))])
+    RequiredArgument(a) =>
+      @debug.Repr::ctor("RequiredArgument", [(None, Debug::to_repr(a))])
     Bind(a, b) =>
       @debug.Repr::ctor("Bind", [
         (None, Debug::to_repr(a)),
@@ -407,8 +408,8 @@ pub impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(c)),
         (None, Debug::to_repr(d)),
       ])
-    CmdSatisfied(a, b) =>
-      @debug.Repr::ctor("CmdSatisfied", [
+    CommandSatisfied(a, b) =>
+      @debug.Repr::ctor("CommandSatisfied", [
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
       ])
@@ -423,8 +424,8 @@ pub impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(b)),
         (None, Debug::to_repr(c)),
       ])
-    IdxRepeat(a, b, c, d) =>
-      @debug.Repr::ctor("IdxRepeat", [
+    IndexedRepeat(a, b, c, d) =>
+      @debug.Repr::ctor("IndexedRepeat", [
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
         (None, Debug::to_repr(c)),
@@ -569,7 +570,7 @@ pub(all) struct Entity {
   // rows.json`). Before DR-105 this distinction rode on `accum == Some("flatten")` vs not; DR-105 §3
   // collapses both origins onto the SAME accum name ("append") + flatten dial, so `resolve.mbt`'s
   // SEGS-loop gate (`build_result`'s `seg_is_multiple_ref`) needs this independent copy of
-  // `ElemDef.multiple` to keep telling them apart (`ensure_entity`'s doc comment / `AccumCell`'s own
+  // `ElementDef.multiple` to keep telling them apart (`ensure_entity`'s doc comment / `AccumCell`'s own
   // copy in resolve.mbt).
   is_multiple_decl : Bool
   // DR-036 collector resident: the T[]→U transform applied after the accumulator's final result
@@ -658,7 +659,7 @@ pub(all) enum TermHint {
 /// scope names, mirroring `ParseError.path`'s snoc form ([] = root 直下). `origin` already answers
 /// "which element" a candidate came from; `path` answers "under which ancestor scopes" — the same
 /// pairing `ParseError` uses (`element` + `path`). Threaded the SAME way Held's path is (starts `[]`
-/// at construction, `nest_branches`/CmdSatisfied prepend the traversed scope labels on the way out) so a
+/// at construction, `nest_branches`/CommandSatisfied prepend the traversed scope labels on the way out) so a
 /// `Pending`'s value-slot candidate can be converted to a `missing_operand` `ParseError` (parse()
 /// top-level, DR-053 §2.3) WITHOUT losing the ancestor path the way it used to (Held already worked;
 /// Pending — parse mode's other failure carrier — did not, because prepend only touched Held). Also
@@ -683,7 +684,7 @@ pub(all) struct Candidate {
   // global option's satellite is copied into a descendant command scope wrapped in
   // `Rooted(node, depth)`, and its Entity lives ONLY at the declaring (shallower) scope — a
   // value-slot Pending produced from inside that copy must therefore have `depth` levels of
-  // CmdSatisfied-boundary prepend SKIPPED, or its `path` ends up pointing at the wrong (copy-side)
+  // CommandSatisfied-boundary prepend SKIPPED, or its `path` ends up pointing at the wrong (copy-side)
   // scope while the Entity it names sits at the declaring scope. Bare `Array[String]` path alone
   // cannot express "skip N prepends" — `nest_cands` (eval.mbt) consumes this exactly like
   // `nest`'s own `Binding.link` decrement, so the two stay in lockstep. `0` (the common case) =
@@ -693,14 +694,14 @@ pub(all) struct Candidate {
   link : Int
   // issue 2026-07-15-pending-parseerror-path-asymmetry (DR-066 §4): the FIRE-TIME walk-position
   // path — root-first ancestor scope names, prepended UNCONDITIONALLY as the branch rides out
-  // through each CmdSatisfied boundary (`nest_path`, the SAME no-exception rule a Held's `ParseError.path`
+  // through each CommandSatisfied boundary (`nest_path`, the SAME no-exception rule a Held's `ParseError.path`
   // already follows). Deliberately a SEPARATE field from `path` above: `path`'s Rooted-escape skip
   // (`link`) answers "where does complete_tree's completer lookup find this candidate's declaring
   // Entity" (a completion-only question), while `fire_path` answers "which scope was this candidate
   // actually read under" (the question `missing_operand`'s `ParseError.path` needs, DR-066 §4's own
   // "発火時の動的パス" wording). Adversarial verification (installer_wbtest.mbt debug probes, this
   // issue) found `link` is ALWAYS 0 by the time a Pending reaches KTop — a Rooted candidate's escape
-  // counter is fully consumed by the SAME CmdSatisfied boundaries `path` needs prepended, so gating KTop's
+  // counter is fully consumed by the SAME CommandSatisfied boundaries `path` needs prepended, so gating KTop's
   // conversion on `c.link > 0` (the originally proposed fix) is a no-op: nothing is ever excluded,
   // and the wrong-path duplicate survives with `link` already 0. `fire_path` sidesteps the escape
   // bookkeeping entirely by tracking the walk position directly, so KTop's missing_operand conversion

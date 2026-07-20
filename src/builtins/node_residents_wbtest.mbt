@@ -177,13 +177,13 @@ test "mandatory resident preserves downstream @engine.Pending fire path" {
     constraints: [],
   }
   let sub : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("inner", inner)],
+    greedy: [@engine.CommandSatisfied("inner", inner)],
     positional: [string_arg("file", [])],
     entities: [],
     constraints: [],
   }
   let root = @engine.ScopeNode({
-    greedy: [@engine.CmdSatisfied("sub", sub)],
+    greedy: [@engine.CommandSatisfied("sub", sub)],
     positional: [],
     entities: [],
     constraints: [],

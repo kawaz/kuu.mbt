@@ -62,7 +62,7 @@ fn collect_nones(
   }
   for node in scope.greedy {
     match node {
-      CmdSatisfied(name, child) =>
+      CommandSatisfied(name, child) =>
         collect_nones(child, append_path(path, name), out)
       _ => ()
     }

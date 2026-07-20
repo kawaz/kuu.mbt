@@ -146,7 +146,7 @@ fn test_render_val(value : @engine.Value) -> String {
 }
 
 ///|
-fn render_kind(kind : @engine.ErrKind) -> String {
+fn render_kind(kind : @engine.ErrorKind) -> String {
   match kind {
     @engine.Parse => "parse"
     @engine.Filter => "filter"
@@ -155,7 +155,7 @@ fn render_kind(kind : @engine.ErrKind) -> String {
 }
 
 ///|
-fn test_render_def_kind(kind : @engine.DefErrKind) -> String {
+fn test_render_def_kind(kind : @engine.DefErrorKind) -> String {
   match kind {
     @engine.VocabIntersection => "vocab-intersection"
     @engine.UnknownVocab => "unknown-vocab"
@@ -421,11 +421,11 @@ fn resolve_scope_config(
 
 ///|
 /// Fetch a subcommand's built @engine.Scope from a parent @engine.Scope by name. Subcommands are
-/// materialized as greedy `@engine.CmdSatisfied(name, child)` entries.
+/// materialized as greedy `@engine.CommandSatisfied(name, child)` entries.
 fn command_child(sc : @engine.Scope, name : String) -> @engine.Scope? {
   for g in sc.greedy {
     match g {
-      @engine.CmdSatisfied(n, child) => if n == name { return Some(child) }
+      @engine.CommandSatisfied(n, child) => if n == name { return Some(child) }
       _ => ()
     }
   }

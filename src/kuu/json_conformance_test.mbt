@@ -230,7 +230,7 @@ fn render_src(s : @engine.Source) -> String {
 }
 
 ///|
-fn render_kind(k : @engine.ErrKind) -> String {
+fn render_kind(k : @engine.ErrorKind) -> String {
   match k {
     @engine.Parse => "parse"
     @engine.Filter => "filter"
@@ -239,7 +239,7 @@ fn render_kind(k : @engine.ErrKind) -> String {
 }
 
 ///|
-fn render_def_kind(k : @engine.DefErrKind) -> String {
+fn render_def_kind(k : @engine.DefErrorKind) -> String {
   match k {
     @engine.VocabIntersection => "vocab-intersection"
     @engine.UnknownVocab => "unknown-vocab"

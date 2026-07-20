@@ -41,7 +41,7 @@ pub fn deprecation_mark(String) -> @engine.Node
 
 pub fn effect_mark(String, @engine.EffectOp) -> @engine.Node
 
-pub fn elem_head(@engine.ElemDef) -> @engine.Node
+pub fn element_head(@engine.ElementDef) -> @engine.Node
 
 pub fn entity_ext(hidden? : Bool, completer? : String?) -> &@engine.EntityExt
 
@@ -145,7 +145,7 @@ pub fn unwrap_single_collector() -> &@engine.CollectorExt
 
 // Types and methods
 pub(all) struct ConfigValueError {
-  kind : @engine.ErrKind
+  kind : @engine.ErrorKind
   reason : String
   message : String
 } derive(Eq, @debug.Debug)
@@ -163,7 +163,7 @@ pub(all) enum FromEntriesSpec {
 pub(all) enum LongSpelling {
   Main(String)
   Variant(@engine.Variant)
-  Invalid(String, @engine.DefErrKind)
+  Invalid(String, @engine.DefErrorKind)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct LoweredDefinition {

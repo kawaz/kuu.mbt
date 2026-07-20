@@ -1,7 +1,7 @@
 // lexicon.mbt — canonical builtin number, int, float, and bool lexicons.
 
 ///|
-/// canonical default config (DR-074 §3)。TypeShadow/ElemDef の bool_config 既定値、および
+/// canonical default config (DR-074 §3)。TypeShadow/ElementDef の bool_config 既定値、および
 /// `parse_bool`(configなし呼び出し) が委譲する先。
 pub fn bool_config_canonical() -> @engine.BoolConfig {
   {

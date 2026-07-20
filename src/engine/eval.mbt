@@ -60,7 +60,7 @@ pub fn Ctx::extensions(self : Ctx) -> Registry {
 /// parse counts complete paths (DR-038); complete collects expectations
 /// (DR-060). The walk is ONE implementation — mode switches the
 /// collection-policy points below (MDR-002 §2.4):
-/// - boundary trigger sites (Exact / CmdSatisfied / DdSatisfied / NativeMatch at args
+/// - boundary trigger sites (Exact / CommandSatisfied / DdSatisfied / NativeMatch at args
 ///   end) emit `Pending` exact candidates instead of a silent Reject;
 /// - spine value primitives starved at args end emit `Pending` value
 ///   candidates instead of a missing-operand Held;
@@ -116,7 +116,7 @@ pub fn Candidate::trigger(
     is_alias,
     hidden,
     deprecated,
-    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSatisfied)
+    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CommandSatisfied)
     link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
     fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: same "starts empty, scope
     // boundaries prepend unconditionally" posture as `path`/Held's own `ParseError.path` (`nest_path`
@@ -252,7 +252,7 @@ fn nest(label : String, binds : Array[Binding]) -> Array[Binding] {
 /// Prepend `label` onto a held Error's `path` (DR-066 §4 snoc form, root-first
 /// ancestor list). Mirrors `nest`'s scope-prepend on Binding, but for the
 /// error's path instead of a binding's scope — the two are threaded through
-/// the same scope-boundary crossings (Scoped / CmdSatisfied) so a path built this
+/// the same scope-boundary crossings (Scoped / CommandSatisfied) so a path built this
 /// way lines up with the equivalent Binding.scope.
 fn nest_path(label : String, path : Array[String]) -> Array[String] {
   let out : Array[String] = [label]
@@ -367,7 +367,7 @@ pub fn Candidate::pending_value(ty : String, origin : String) -> Candidate {
     is_alias: false,
     hidden: false,
     deprecated: false,
-    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSatisfied)
+    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CommandSatisfied)
     link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
     fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: `Candidate.fire_path`'s doc
     // comment — the fire-time walk-position path a `missing_operand` ParseError conversion needs,
@@ -489,7 +489,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // consumed, so nothing is "half-read".
         []
       }
-    ReqArg(name) => req_arg_eval(name, ctx, pos, [])
+    RequiredArgument(name) => req_arg_eval(name, ctx, pos, [])
     Bind(name, v) => [Accept(pos, [Binding::new(name, v, Cli)])]
     Or(alts) => {
       let out : Array[Branch] = []
@@ -569,7 +569,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else {
         []
       }
-    CmdSatisfied(name, child) =>
+    CommandSatisfied(name, child) =>
       // off-spine command (a probe or a nested context): child evaluated with
       // KDone; bindings nest under the name + presence marker. The greedy
       // face path (step_greedy) threads the real continuation instead.
@@ -604,7 +604,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
             // lives `depth` scopes below its OWN declaring scope, and its Entity (the one
             // `complete_tree`'s completer lookup needs) sits at that declaring scope, not
             // here — `nest_cands` (below) consumes this exactly like `nest` consumes
-            // `Binding.link`, skipping `depth` CmdSatisfied-boundary prepends on the way out.
+            // `Binding.link`, skipping `depth` CommandSatisfied-boundary prepends on the way out.
             let marked : Array[Candidate] = []
             for c in cs {
               marked.push({ ..c, link: depth })
@@ -615,7 +615,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       }
       out
     }
-    IdxRepeat(label, head, min, budget) =>
+    IndexedRepeat(label, head, min, budget) =>
       idx_repeat_eval(label, head, min, budget, ctx, pos)
     BoundedTail(head, budget, _) =>
       // off-spine fallback: degrade to the nested-Opt form (0..budget heads).
@@ -653,7 +653,7 @@ fn pe_missing(element : String, pos : Int) -> ParseError {
 }
 
 ///|
-/// ReqArg (spec DR-047 / DR-053 kind: constraint): NO token to consume is a
+/// RequiredArgument (spec DR-047 / DR-053 kind: constraint): NO token to consume is a
 /// `kind: constraint` held Error, not a silent Reject.
 fn req_arg_eval(
   name : String,
@@ -696,7 +696,7 @@ fn req_arg_eval(
 /// pieceProcessor: separator → piece_filters → parse → value_filters (each piece) → once the value
 /// is committed, final_filters (non-accum element) or, after accumulation, accum_filters (accum
 /// element); a piece's
-/// type is independent of whether it came via separator, `elem_head`'s pre-段2 "always String"
+/// type is independent of whether it came via separator, `element_head`'s pre-段2 "always String"
 /// shortcut was the bug this closes). A piece_filters reject OR a type-parse failure on ANY piece
 /// fails the WHOLE binding (`Err` short-circuits) — same all-or-nothing contract a single-piece
 /// value primitive has; the two failure kinds stay distinct (`Filter` vs `Parse`, mirrored from
@@ -754,7 +754,7 @@ fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] 
 ///|
 /// Named indexed-array repeat (spec DR-043): consumes reps deterministically (the split is
 /// bounded by the head's Reject / exact mismatch, no downstream backtrack — see node.mbt's
-/// `IdxRepeat` doc comment for the still-open unbounded-case GAP).
+/// `IndexedRepeat` doc comment for the still-open unbounded-case GAP).
 ///
 /// `budget` (issue 2026-07-13-positional-group-trailing-missing-operand) caps reps beyond
 /// `min`: `None` = unbounded greedy-max (consumes as many reps as the head allows, the
@@ -969,9 +969,9 @@ fn has_viable(brs : Array[Branch], pos : Int, ctx : Ctx) -> Bool {
 /// positional starves at end-of-input).
 ///
 /// Entries with NO value slot (flag/count/dd/command) are viable whenever
-/// the trigger fires, UNCONDITIONALLY — this is why CmdSatisfied/DdSatisfied/DdMatchSatisfied
+/// the trigger fires, UNCONDITIONALLY — this is why CommandSatisfied/DdSatisfied/DdMatchSatisfied
 /// stay a bare structural trigger test below rather than routing through
-/// the shallow `eval` probe: a CmdSatisfied's "value slot" is its entire child
+/// the shallow `eval` probe: a CommandSatisfied's "value slot" is its entire child
 /// scope, and evaluating that scope would pull in exactly the downstream
 /// failures (child-scope-internal missing/constraint) the predicate must
 /// not see.
@@ -994,7 +994,7 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
       }
       false
     }
-    CmdSatisfied(name, _) => ctx.toks[pos] == name
+    CommandSatisfied(name, _) => ctx.toks[pos] == name
     DdSatisfied(t) => ctx.toks[pos] == t
     DdMatchSatisfied(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
@@ -1048,7 +1048,7 @@ fn greedy_trigger_matches(g : Node, ctx : Ctx, pos : Int) -> Bool {
       }
       false
     }
-    CmdSatisfied(name, _) => ctx.toks[pos] == name
+    CommandSatisfied(name, _) => ctx.toks[pos] == name
     DdSatisfied(t) => ctx.toks[pos] == t
     DdMatchSatisfied(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
@@ -1169,7 +1169,7 @@ fn scope_step(
 ) -> Array[Branch] {
   let out : Array[Branch] = []
   // (A) greedy interjection — re-enter at the same pidx (positional face
-  // untouched). CmdSatisfied / DdSatisfied are dispatched structurally so their child
+  // untouched). CommandSatisfied / DdSatisfied are dispatched structurally so their child
   // walk gets the REAL continuation (this is where phase16 is won: the
   // child's repeats must see that the parent still wants a token).
   //
@@ -1306,7 +1306,8 @@ fn seq_boundary_name(node : Node) -> String? {
         Some((name, _)) => Some(name)
         None =>
           match node {
-            ReqArg(name) | Bind(name, _) | Scoped(name, _) => Some(name)
+            RequiredArgument(name) | Bind(name, _) | Scoped(name, _) =>
+              Some(name)
             _ => None
           }
       }
@@ -1315,7 +1316,7 @@ fn seq_boundary_name(node : Node) -> String? {
 
 ///|
 /// Whether `g` is (possibly through a `Rooted` global-link wrap) an option satellite's head Seq —
-/// and if so, the real origin name its tail carries. `None` for any other shape (CmdSatisfied/DdSatisfied/
+/// and if so, the real origin name its tail carries. `None` for any other shape (CommandSatisfied/DdSatisfied/
 /// DdMatchSatisfied/NativeMatch already carry their own correct origin, no fixup needed there; a bare
 /// `Exact` alone or an unrecognized tail shape is left as the spelling fallback, unchanged).
 fn cand_boundary_origin(g : Node) -> String? {
@@ -1371,7 +1372,7 @@ fn fixup_boundary_cands(
 
 ///|
 /// One greedy entry's interjection at (pos, pidx). Structural dispatch:
-/// - CmdSatisfied: enter the child scope as a NEW backbone whose continuation is
+/// - CommandSatisfied: enter the child scope as a NEW backbone whose continuation is
 ///   "nest my bindings under the command name, then resume the parent at the
 ///   same pidx" — the child sees the whole outside world through `k`.
 /// - DdSatisfied: consume the trigger and sever the rest of the walk.
@@ -1389,7 +1390,7 @@ fn step_greedy(
   out : Array[Branch],
 ) -> Unit {
   match g {
-    CmdSatisfied(name, child) =>
+    CommandSatisfied(name, child) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == name {
         let kk = KNest(
           name,
@@ -1600,7 +1601,7 @@ fn scope_consume(
       } else {
         []
       }
-    ReqArg(name) =>
+    RequiredArgument(name) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         scope_step(
           sc,
@@ -1936,12 +1937,12 @@ fn consume_head(
       } else {
         []
       }
-    // ReqArg gets its own arm so 先食い (suppressed) applies —
+    // RequiredArgument gets its own arm so 先食い (suppressed) applies —
     // eval() does not see the parent scope, so falling through would let a
     // greedy trigger token be raw-eaten as the repeat head's value. Held
     // shapes must match the primitive arms above so drop_optional_missing on
     // the OPTIONAL "more" branch can filter them uniformly.
-    ReqArg(name) =>
+    RequiredArgument(name) =>
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         [
           Accept(pos + 1, [
@@ -1994,7 +1995,7 @@ fn consume_compound(
   severed : Bool,
 ) -> Array[Branch] {
   match node {
-    Ext(_) | ReqArg(_) => consume_head(sc, node, ctx, pos, severed)
+    Ext(_) | RequiredArgument(_) => consume_head(sc, node, ctx, pos, severed)
     Or(alts) => {
       let out : Array[Branch] = []
       for a in alts {
@@ -2074,7 +2075,7 @@ fn head_elem_names_into(node : Node, out : Array[String]) -> Unit {
     None => ()
   }
   match node {
-    ReqArg(name) => if !str_mem(out, name) { out.push(name) }
+    RequiredArgument(name) => if !str_mem(out, name) { out.push(name) }
     Seq(items) =>
       for it in items {
         head_elem_names_into(it, out)
@@ -2093,7 +2094,7 @@ fn head_elem_names_into(node : Node, out : Array[String]) -> Unit {
         head_elem_names_into(p, out)
       }
     }
-    // Ref/CmdSatisfied/DdSatisfied/Rooted/etc.: opaque or heavy — do not recurse (Ref
+    // Ref/CommandSatisfied/DdSatisfied/Rooted/etc.: opaque or heavy — do not recurse (Ref
     // could loop; command/dd satellites are not walked by the head reps).
     _ => ()
   }
@@ -2311,7 +2312,7 @@ pub fn is_committed(
 
 ///|
 /// The committed value of the (path, name) cell (last-wins), or None.
-pub fn elem_value(
+pub fn element_value(
   bindings : Array[Binding],
   path : Array[String],
   name : String,
@@ -2336,7 +2337,7 @@ pub fn ParseError::constraint(
   pos : Int,
 ) -> ParseError {
   // DR-066 §4: path starts empty here and is prepended by scope boundaries
-  // (nest_branches / CmdSatisfied) as the Held rides KTop's result back out through
+  // (nest_branches / CommandSatisfied) as the Held rides KTop's result back out through
   // the continuation chain — NOT `sc.path` (ScopedCons's path is the
   // scope_path_eq lookup key, reusing it here would double the prefix once
   // the same Held crosses those same boundaries on its way out).
@@ -2420,9 +2421,9 @@ pub fn is_committed_in_subtree(
 }
 
 ///|
-/// `elem_value` の `RequiredCandidate.wrapper` 対応版 (codex レビュー M-2 修正、`is_committed_in_
+/// `element_value` の `RequiredCandidate.wrapper` 対応版 (codex レビュー M-2 修正、`is_committed_in_
 /// subtree` と対)。
-pub fn elem_value_in_subtree(
+pub fn element_value_in_subtree(
   bindings : Array[Binding],
   path : Array[String],
   wrapper : String,
@@ -2493,7 +2494,7 @@ fn eval_constraints(
         // branch_id は installer で id 未指定時に entity 名にフォールバックされているので、id なしの
         // parent 直属 value_requires は従来通り entity 名で attribution される。
         let active = is_committed(bindings, path, entity) &&
-          (match elem_value(bindings, path, entity) {
+          (match element_value(bindings, path, entity) {
             Some(x) => x == v
             None => false
           })
@@ -2607,9 +2608,9 @@ fn eval_constraints(
 ///|
 /// SCB-Q1=a (docs/QUESTIONS.md、kawaz 裁定 2026-07-17): 未選択 (未入場) command scope に
 /// 宣言された遅延述語は評価に参加しない。原理は「グローバルオプション以外、サブコマンドは完全に
-/// 別コマンドと見るべき」で、root scope は常に選択済み。「選択」は当該実行で CmdSatisfied がその scope
+/// 別コマンドと見るべき」で、root scope は常に選択済み。「選択」は当該実行で CommandSatisfied がその scope
 /// に入場したこと。判定は bindings 内の `scope_marker` (`cont.mbt` KNest の `is_cmd=true` 分岐が
-/// CmdSatisfied 入場時に prepend する `{key:"{}", scope:[label], ...}` binding、`nest` 展開でフル path に
+/// CommandSatisfied 入場時に prepend する `{key:"{}", scope:[label], ...}` binding、`nest` 展開でフル path に
 /// 育つ) の存在で行う — 「入場したが何も発火しなかった」scope も scope_marker は自動で入るので、
 /// 未入場 (絶対 absent) と区別できる。SCB-Q2=a (集約は scope 局所) は現実装通りで変更不要 —
 /// `collect_scopes` が scope ごとに独立 ScopedCons を作り、`constraint installer` は宣言 scope 内で
@@ -2638,7 +2639,7 @@ pub fn scope_selected(bindings : Array[Binding], path : Array[String]) -> Bool {
 
 ///|
 /// Evaluate every SELECTED scope's constraints (SCB-Q1=a、kawaz 裁定 2026-07-17): root scope
-/// (path=[]) is always selected; a nested (CmdSatisfied) scope is selected only when it was actually
+/// (path=[]) is always selected; a nested (CommandSatisfied) scope is selected only when it was actually
 /// entered during this run (its `scope_marker` is present in `bindings`). Unselected scopes have
 /// their predicates skipped — a subcommand's predicates are the *entered* subcommand's business,
 /// not a sibling command's. Called from KTop so that "complete解決経路 = full consumption AND all
@@ -2669,7 +2670,7 @@ fn eval_all_constraints(
 
 ///|
 /// Collect (result-path, constraints, entities) for the root scope and every
-/// statically reachable nested scope: CmdSatisfied children (path + [name], also
+/// statically reachable nested scope: CommandSatisfied children (path + [name], also
 /// inside Or-bundled greedy entries), inline positional ScopeNodes and
 /// scope-shaped repeat heads (transparent — same path, their bindings are
 /// not nested). Scopes with no constraints are skipped (nothing to check).
@@ -2677,7 +2678,7 @@ fn eval_all_constraints(
 /// Known limitation (documented, not enforced): a repeat-instantiated
 /// transparent scope shares its path across reps, so its constraints see the
 /// MERGED final state of all reps; per-rep predicate instances are not spec'd
-/// (no DR defines them). IdxRepeat's indexed paths ("#k") are out of scope.
+/// (no DR defines them). IndexedRepeat's indexed paths ("#k") are out of scope.
 pub fn collect_scopes(
   root : Node,
   defs : Map[String, Node],
@@ -2718,7 +2719,7 @@ fn collect_greedy_scopes(
   seen_refs : Array[String],
 ) -> Unit {
   match g {
-    CmdSatisfied(name, child) => {
+    CommandSatisfied(name, child) => {
       let p2 : Array[String] = []
       for s in path {
         p2.push(s)
@@ -2983,7 +2984,7 @@ pub fn parse_tree(
       // 留める (`find_help_entry`のフォールバック分岐、failure 側の失敗位置基準とは意図的に別)。
       Ambiguous({
         interpretations: {
-          let a : Array[AmbInterp] = []
+          let a : Array[AmbiguousInterpretation] = []
           for f in full {
             a.push({ binds: f, claimants: [] })
           }

@@ -375,7 +375,7 @@ fn prim_name(node : @engine.Node) -> String? {
     Some(name) => Some(name)
     None =>
       match node {
-        @engine.ReqArg(name) => Some(name)
+        @engine.RequiredArgument(name) => Some(name)
         _ => None
       }
   }
@@ -487,7 +487,7 @@ fn proj_greedy(node : @engine.Node, reg : Map[String, @engine.Node]) -> GItem {
       ])
     @engine.Exact(s) => GExact(s)
     @engine.Rooted(inner, _) => proj_greedy(inner, reg)
-    @engine.CmdSatisfied(name, child) => GCmd(name, proj_scope(child, reg))
+    @engine.CommandSatisfied(name, child) => GCmd(name, proj_scope(child, reg))
     @engine.NativeMatch(matcher) =>
       GMatch(matcher.kind(), proj_matcher_entries(matcher))
     @engine.Seq(xs) => proj_seq_sat(xs)

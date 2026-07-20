@@ -1,6 +1,6 @@
 // installer.mbt — builtin parse_definition as a chain of installers (DR-042).
 //
-// UsefulAST (@engine.ElemDef / @engine.Definition / …) → AtomicAST (@engine.Scope / @engine.Node / @engine.Entity / …) を組み立てる lowering 層。
+// UsefulAST (@engine.ElementDef / @engine.Definition / …) → AtomicAST (@engine.Scope / @engine.Node / @engine.Entity / …) を組み立てる lowering 層。
 // 各 installer は special vocab (long / short / env / dd / ...) を所有し、apply 時に (1) その vocab を
 // READ (削除しない — 宣言層は read-only, invariant ①'), (2) greedy 衛星 / matcher / re-scoping を
 // add-if-absent で implant する, (3) 実体 (@engine.Entity) の seat (env / inherit) を宣言する。5 invariants により
@@ -25,7 +25,7 @@
 pub(all) enum LongSpelling {
   Main(String) // resolved main-entry spelling (`own_name`, verbatim — see `classify_long_spelling`)
   Variant(@engine.Variant) // a fully-built variant (trigger/op/operand already resolved against own_name)
-  Invalid(String, @engine.DefErrKind) // definition-time classification and the original spelling
+  Invalid(String, @engine.DefErrorKind) // definition-time classification and the original spelling
 } derive(Eq, Debug)
 
 ///|
@@ -171,13 +171,13 @@ fn count_increment_variant(name : String) -> @engine.Variant {
 }
 
 ///|
-/// `@engine.LongDecl` (wire 二形) → (main-entry spellings — kebab 展開済み, variants)。DR-071 §1's
+/// `@engine.LongDeclaration` (wire 二形) → (main-entry spellings — kebab 展開済み, variants)。DR-071 §1's
 /// type-independent `long: true` → `[":set"]` sugar is what every OTHER type gets; DR-076 §2 gives
 /// `type:"flag"` a DIFFERENT sugar (規則1: 差し替え) and an explicit non-empty list gets `:set:true`
 /// COMPOSED IN alongside whatever the author wrote (規則2: 補完、idempotent). DR-077 §3 gives
 /// `type:"count"` the SAME two-rule treatment with `:update:increment` in place of `:set:true` —
 /// count is the 2nd instance of this exact 糖衣差し替え+補完 machinery (not a parallel mechanism).
-/// This is the ONLY place that needs the bool/array distinction `@engine.LongDecl` preserves — once
+/// This is the ONLY place that needs the bool/array distinction `@engine.LongDeclaration` preserves — once
 /// collapsed to `Array[String]` (the old design), `long:true` and `long:[":set"]` become
 /// indistinguishable, yet DR-076/077 require different flag/count sugar for each (kawaz 裁定
 /// 2026-07-08, spec DR-071 §1 "wire には二形とも載る、展開は long installer の解釈"). `Invalid`
@@ -186,7 +186,7 @@ fn count_increment_variant(name : String) -> @engine.Variant {
 /// `collect_invalid_long_dsl` has already surfaced them as definition-errors and `parse_definition`
 /// has returned early on any error, so none should be live at this point in practice.
 fn resolve_long(
-  decl : @engine.LongDecl,
+  decl : @engine.LongDeclaration,
   name : String,
   ty : &@engine.TypeExt,
   extensions : @engine.Registry,
@@ -271,17 +271,17 @@ pub fn owned_vocab(installer : &@engine.InstallerExt) -> String {
 
 ///|
 /// 値プリミティブの唯一の構築点 (positional / long / short いずれの value slot もここを通る,
-/// issue 2026-07-09-separator-non-string-type-parse-gap 段1: 以前は `elem_head` だけが
+/// issue 2026-07-09-separator-non-string-type-parse-gap 段1: 以前は `element_head` だけが
 /// `separator` を見て `separated resident` に分岐し、long/short main entry はこの関数を `separator` 抜きで
 /// 直接呼んでいたため、long/short option で `multiple + separator` を宣言しても分割が一切効かない
 /// 既存バグがあった — `separator` をこの関数自身の分岐に格上げし、呼び出し元 (positional の
-/// `elem_head` / long の `inst_long` main entry) が同じ判断を共有するよう一元化した。`separator`
+/// `element_head` / long の `inst_long` main entry) が同じ判断を共有するよう一元化した。`separator`
 /// が `Some` なら `separated resident` を構築し、型情報 (ty/int_round/allow_base_prefix) をそのまま運搬する
 /// (段2: separated resident 自身が piece ごとに型 parse を行う、`sep_binds` 参照) — 段1 (分割自体を配線) と
 /// 段2 (分割後の型 parse) は同一サイクルで導入必須 (issue 追記2: 段1 単独では成功系が regress する
 /// 実測確認済み)。
-/// `merge` (DR-080 波及節): `@engine.ElemDef.accumulator == Some("merge")` の素通し。両呼び出し元
-/// (`elem_head` / `inst_long` main entry) が同じ判断 (`e.accumulator` を見る) を共有する。
+/// `merge` (DR-080 波及節): `@engine.ElementDef.accumulator == Some("merge")` の素通し。両呼び出し元
+/// (`element_head` / `inst_long` main entry) が同じ判断 (`e.accumulator` を見る) を共有する。
 ///
 /// codex Medium 追従 (2026-07-10, issue merge-no-separator-marker-gap): 経路選択は
 /// `separator is Some(_)` **単独**ではなく `separator is Some(_) || merge` — merge 宣言要素は
@@ -291,7 +291,7 @@ pub fn owned_vocab(installer : &@engine.InstallerExt) -> String {
 /// (separator 無し、コンマで割る余地が無い) でも `-a` が remove マーカーとして解釈される。
 /// merge でない要素は従来通り `separator is Some(_)` のみが gate (この分岐は不変)。
 ///
-/// `kv_map` (DR-091 §2): `@engine.ElemDef.accumulator == Some("kv_map")` は `merge`/`separator` の separated resident
+/// `kv_map` (DR-091 §2): `@engine.ElementDef.accumulator == Some("kv_map")` は `merge`/`separator` の separated resident
 /// 経路とは別枝 — kv_map は「1 token = 1 piece」で separator 分割を必要としない (`k=v` の `=` 分割は
 /// この node の仕事ではなく `resolve.mbt`'s `build_result` が畳み時に行う、node.mbt の `kv resident` doc
 /// comment参照)。`merge` より先に判定するのは两者が同時に真になることは無い (decode 層 `dec_multiple`
@@ -372,9 +372,9 @@ fn copy_filter_spellings(
 
 ///|
 /// 有効 long 綴り一覧 (post-normalize; `:set` は既に kebab(name) に展開済み、`normalize_option` が
-/// `@engine.LongDecl` を `List([<kebab main entries>])` に確定させた後の形)。[] = main-entry なし (DR-071)。
+/// `@engine.LongDeclaration` を `List([<kebab main entries>])` に確定させた後の形)。[] = main-entry なし (DR-071)。
 /// pre-normalize な `Bool` はここに来ない前提 (呼び出しは全て normalize 後)。
-fn long_of(e : @engine.ElemDef) -> Array[String] {
+fn long_of(e : @engine.ElementDef) -> Array[String] {
   match e.long {
     List(strs) => strs
     Forms(_) | Bool(_) => []
@@ -382,7 +382,7 @@ fn long_of(e : @engine.ElemDef) -> Array[String] {
 }
 
 ///|
-fn copy_long(l : @engine.LongDecl) -> @engine.LongDecl {
+fn copy_long(l : @engine.LongDeclaration) -> @engine.LongDeclaration {
   match l {
     Bool(b) => Bool(b)
     List(strs) => List(copy_strs(strs))
@@ -420,7 +420,7 @@ fn copy_variants(a : Array[@engine.Variant]) -> Array[@engine.Variant] {
 }
 
 ///|
-fn clone_elem(e : @engine.ElemDef) -> @engine.ElemDef {
+fn clone_elem(e : @engine.ElementDef) -> @engine.ElementDef {
   {
     name: e.name,
     ty: e.ty,
@@ -484,17 +484,17 @@ fn clone_elem(e : @engine.ElemDef) -> @engine.ElemDef {
 }
 
 ///|
-/// MDR-004: deep-clone `@engine.ElemBody`'s nested `@engine.ElemDef`s (mirrors the Array-field deep-copy discipline
+/// MDR-004: deep-clone `@engine.ElementBody`'s nested `@engine.ElementDef`s (mirrors the Array-field deep-copy discipline
 /// `clone_elem` already applies to `long`/`variants`/`short`/`env` — global/alias desugaring pushes
 /// COPIES into descendant scopes, so aliasing the same mutable nested arrays across scopes would be
 /// a bug).
-fn clone_body(b : @engine.ElemBody) -> @engine.ElemBody {
+fn clone_body(b : @engine.ElementBody) -> @engine.ElementBody {
   match b {
     Cell => Cell
     Or(branches) => {
       let out : Array[@engine.OrBranch] = []
       for br in branches {
-        let items : Array[@engine.ElemDef] = []
+        let items : Array[@engine.ElementDef] = []
         for it in br.items {
           items.push(clone_elem(it))
         }
@@ -503,7 +503,7 @@ fn clone_body(b : @engine.ElemBody) -> @engine.ElemBody {
       Or(out)
     }
     Group(items) => {
-      let out : Array[@engine.ElemDef] = []
+      let out : Array[@engine.ElementDef] = []
       for it in items {
         out.push(clone_elem(it))
       }
@@ -529,7 +529,7 @@ fn kebab(name : String) -> String {
 
 ///|
 /// 純構文 pre-pass (LOWERING §A / §C.4)。static check と installer fixpoint の前に走る:
-///   Fix 2 (§B.1 / DR-071 / DR-076 §2, kawaz 裁定 2026-07-08): `resolve_long` が `@engine.LongDecl` (wire 二形)
+///   Fix 2 (§B.1 / DR-071 / DR-076 §2, kawaz 裁定 2026-07-08): `resolve_long` が `@engine.LongDeclaration` (wire 二形)
 ///   を解釈し、main entry (kebab 展開済み) と variants に確定させる。糖衣展開・flag 差し替え/補完・
 ///   colon DSL 分類はここに集約 — decode 層 (dec_long) はもう wire の形を写すだけ (二形の区別は decode
 ///   後に潰さない、`resolve_long` のコメント参照)。
@@ -567,15 +567,15 @@ fn normalize_surface(
 /// DR-077 §3 (`count_type()`) は対称的な糖衣に見えて **ここでは number_type() に変換しない** — count 由来の short/
 /// eq-split 挙動 (非消費・固定 increment) は「number_type() 全般」には適用できない (ordinary number の short
 /// は値を消費するのが正しい挙動、`-n5` 等) ので、flag と違って「型変換後も元 count だったか」を覚えて
-/// おく必要がある。@engine.ElemDef に専用マーカーを新設する代わりに、**count_type() というタグ自体を installer chain
+/// おく必要がある。@engine.ElementDef に専用マーカーを新設する代わりに、**count_type() というタグ自体を installer chain
 /// の間ずっと保持し、値セルの実体型 (@engine.Entity.ty = number_type()) への収束を `ensure_entity` まで遅延させる**
 /// (`ensure_entity` のコメント参照) — 既存の型そのものが情報を運ぶ設計は崩さず、collapse のタイミングだけ
 /// 後ろにずらす。short/eq-split matcher (builtins/matcher_residents.mbt) は `count_type()` を `flag_type() | bool_type()` と並ぶ第 3 の
 /// 非消費挙動として扱う。
 fn normalize_option(
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   extensions : @engine.Registry,
-) -> @engine.ElemDef {
+) -> @engine.ElementDef {
   if e.is_dd {
     normalize_dd_name(e)
   } else {
@@ -618,7 +618,7 @@ fn normalize_option(
 }
 
 ///|
-fn normalize_dd_name(e : @engine.ElemDef) -> @engine.ElemDef {
+fn normalize_dd_name(e : @engine.ElementDef) -> @engine.ElementDef {
   if e.is_dd && e.name == "" {
     { ..e, name: "--" } // DR-064 §5
   } else {
@@ -628,11 +628,11 @@ fn normalize_dd_name(e : @engine.ElemDef) -> @engine.ElemDef {
 
 ///|
 fn clone_def(d : @engine.Definition) -> @engine.Definition {
-  let os : Array[@engine.ElemDef] = []
+  let os : Array[@engine.ElementDef] = []
   for e in d.options {
     os.push(clone_elem(e))
   }
-  let ps : Array[@engine.ElemDef] = []
+  let ps : Array[@engine.ElementDef] = []
   for e in d.positionals {
     ps.push(clone_elem(e))
   }
@@ -689,14 +689,14 @@ fn collect_export(
 }
 
 ///|
-/// MDR-004 §3b: `collect_export` needs to recurse into `@engine.ElemBody` — a `Group`/`Or` element's
+/// MDR-004 §3b: `collect_export` needs to recurse into `@engine.ElementBody` — a `Group`/`Or` element's
 /// nested leaves (e.g. transparent-seq's `k`, export_key:null) each have their OWN export_key that
 /// must reach the map, or their `export_key:null` 裸値化 (DR-052 §2) never gets applied downstream
 /// (resolve's export-key remap only consults this map). `Group` registers BOTH the wrapper (the
 /// array cell itself) and its inner leaves; `Or`'s wrapper has no export_key of its own concern
 /// (structural dispatcher, no scalar/array value) — only its branch leaves register.
 fn collect_export_body(
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   m : Map[String, @engine.ExportKey],
 ) -> Unit {
   match e.body {
@@ -723,12 +723,12 @@ fn collect_export_body(
 /// 要素の lowered head: 値プリミティブ / Ref (ref_target) / separated resident (separator, `value_prim` 側に集約
 /// 済み — このヘルパー自身の役目は ref_target の分岐のみ)。issue
 /// 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め: `is_exact` (positional-face
-/// nameless exact-match leaf, `@engine.ElemDef.is_exact` doc comment) は ref_target 分岐より先に判定する —
+/// nameless exact-match leaf, `@engine.ElementDef.is_exact` doc comment) は ref_target 分岐より先に判定する —
 /// value_prim/Ref どちらの経路も通らず `@engine.Exact(name)` へ直接 lower する、bare `@engine.Exact` node は「literal
 /// token match; binds nothing, consumes 1」(node.mbt) がそのまま欲しい挙動そのもの。この経路は
-/// `Or`/`Group` の内側リーフ (`or_branch_node`/`lower_positional` の Group 分岐が `elem_head` を
+/// `Or`/`Group` の内側リーフ (`or_branch_node`/`lower_positional` の Group 分岐が `element_head` を
 /// 共有する) にも自動的に及ぶ — DR-063 A.1 の裸文字列正規化が or 枝内でも成立する形と対称。
-pub fn elem_head(e : @engine.ElemDef) -> @engine.Node {
+pub fn element_head(e : @engine.ElementDef) -> @engine.Node {
   if e.is_exact {
     return @engine.Exact(e.name)
   }
@@ -797,15 +797,15 @@ fn ref_row_head(name : String, head : @engine.Node) -> @engine.Node {
 ///|
 /// MDR-004 §3: one `@engine.OrBranch`'s consumption grammar node — a single node for a 1-item branch, a
 /// `@engine.Seq` of value primitives (consumed in order) for a multi-item branch. Each item's own `name`
-/// carries through `elem_head` unchanged, so held-Error / binding attribution lands on the LEAF
+/// carries through `element_head` unchanged, so held-Error / binding attribution lands on the LEAF
 /// (e.g. `a`/`s`/`b`/`r`/`g`/`b`/`name`) with no extra provenance wiring needed (§4).
 pub fn or_branch_node(br : @engine.OrBranch) -> @engine.Node {
   if br.items.length() == 1 {
-    elem_head(br.items[0])
+    element_head(br.items[0])
   } else {
     let nodes : Array[@engine.Node] = []
     for it in br.items {
-      nodes.push(elem_head(it))
+      nodes.push(element_head(it))
     }
     @engine.Seq(nodes)
   }
@@ -813,7 +813,7 @@ pub fn or_branch_node(br : @engine.OrBranch) -> @engine.Node {
 
 ///|
 /// 有効 repeat spec (DR-043)。`optional:true` は `{min:0,max:1}` の糖衣 (独立概念ではない)。
-fn elem_repeat(e : @engine.ElemDef) -> @engine.RepeatSpec? {
+fn elem_repeat(e : @engine.ElementDef) -> @engine.RepeatSpec? {
   match e.repeat {
     Some(s) => Some(s)
     None =>
@@ -835,8 +835,8 @@ fn opt_node(x : @engine.Node) -> @engine.Node {
 /// DR-088 §1: 「宣言された値源はデフォルトの存在」— `default_values` (明示 default) だけでなく
 /// `env`/`config_key`/`inherit` の宣言も「遅延解決する default_fn が設定されているのと同型」。
 /// `eval.mbt`'s `value_declared` (resolve-first-constraint-pipeline / value-present-ladder-gap の
-/// 静的宣言述語) と同じ4要素判定を、installer 層 (lowering 時点、@engine.ElemDef ベース) で行う版。
-fn has_declared_value_source(e : @engine.ElemDef) -> Bool {
+/// 静的宣言述語) と同じ4要素判定を、installer 層 (lowering 時点、@engine.ElementDef ベース) で行う版。
+fn has_declared_value_source(e : @engine.ElementDef) -> Bool {
   e.default_values is Some(_) ||
   e.env.length() > 0 ||
   e.config_key is Some(_) ||
@@ -861,7 +861,7 @@ fn has_declared_value_source(e : @engine.ElemDef) -> Bool {
 
 ///|
 /// DR-043 repeat lowering for a single positional `head` node, shared by `Cell` (head =
-/// `elem_head(e)`) and `Or` (head = `@engine.Or(branch_node...)`, issue
+/// `element_head(e)`) and `Or` (head = `@engine.Or(branch_node...)`, issue
 /// 2026-07-09-positional-or-repeat-lowering-gap: Or used to push `@engine.Or(nodes)` directly and
 /// silently ignore `elem_repeat(e)` entirely — a structural-or head is JUST a head like any other
 /// for repeat's purposes, DR-043 §「repeat の対象要素は形を問わない」already says this for `ref`
@@ -870,7 +870,7 @@ fn has_declared_value_source(e : @engine.ElemDef) -> Bool {
 /// existing multi-branch semantics (DR-038); `elem_repeat` only ever governs REPETITION count,
 /// never branch structure.
 fn lower_repeat_head(
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   head : @engine.Node,
   registry : Map[String, @engine.Node],
   out : Array[@engine.Node],
@@ -955,7 +955,7 @@ fn lower_positional(
           lower_repeat_head(e, @engine.Or(nodes), registry, out)
         }
         Group(items) => {
-          // MDR-004 §3 "Group + repeat": @engine.IdxRepeat(label=name, head=@engine.Seq(inner cells), min,
+          // MDR-004 §3 "Group + repeat": @engine.IndexedRepeat(label=name, head=@engine.Seq(inner cells), min,
           // budget) に lower。budget (issue
           // 2026-07-13-positional-group-trailing-missing-operand) = `max - min` (bounded の
           // とき) / `None` (max:null の UNBOUNDED、または repeat 属性自体が無い場合 —
@@ -972,15 +972,15 @@ fn lower_positional(
           // primitive 等、無制限にどんなトークンでも消費できる) だと、budget が None (UNBOUNDED) の
           // ときは後続の必須 positional のぶんまで greedy-max に食われて starve しうる (backtrack が
           // 無いので回復しない) — 通常 repeat の backtrack.json fixture が固定する「縮小再分割」の
-          // 保証は @engine.IdxRepeat には及ばない。budget が Some (bounded) のときは over-consume 自体が
+          // 保証は @engine.IndexedRepeat には及ばない。budget が Some (bounded) のときは over-consume 自体が
           // 起きないためこの GAP を踏まない。UNBOUNDED のまま末尾に必須 positional を続ける設計を
           // 書く際は head の先頭に明示的な trigger (@engine.Exact 等) を持たせること。
           let head = if items.length() == 1 {
-            elem_head(items[0])
+            element_head(items[0])
           } else {
             let nodes : Array[@engine.Node] = []
             for it in items {
-              nodes.push(elem_head(it))
+              nodes.push(element_head(it))
             }
             @engine.Seq(nodes)
           }
@@ -996,12 +996,12 @@ fn lower_positional(
               )
             None => (0, None)
           }
-          out.push(@engine.IdxRepeat(e.name, head, min, budget))
+          out.push(@engine.IndexedRepeat(e.name, head, min, budget))
         }
         Cell =>
           match e.ref_target {
             // DR-078 §1 result 写像 (issue 2026-07-09-ref-template-result-shape): a `ref`
-            // element's own `name` must create a result scope (DESIGN §2.3/§2.4) — `elem_head`
+            // element's own `name` must create a result scope (DESIGN §2.3/§2.4) — `element_head`
             // returns the bare `Ref(target)`, discarding `e.name` entirely, so without this the
             // referenced template's OWN leaf names (colorname/r/g/b) surface at the TOP level
             // instead of nested under `e.name`.
@@ -1010,11 +1010,11 @@ fn lower_positional(
                 // no repeat: single occurrence, degenerate row (DESIGN §6.1 の逆 — repeat が
                 // 「配列に包む」操作を担う、外すと row がそのまま値になる) — no "#row" marker
                 // needed, `sub_under(binds, e.name)` already yields the row's flat leaves.
-                None => out.push(@engine.Scoped(e.name, elem_head(e)))
+                None => out.push(@engine.Scoped(e.name, element_head(e)))
                 Some(_) =>
                   lower_repeat_head(
                     e,
-                    ref_row_head(e.name, elem_head(e)),
+                    ref_row_head(e.name, element_head(e)),
                     registry,
                     out,
                   )
@@ -1035,9 +1035,9 @@ fn lower_positional(
               // the scalar's OWN default_values / lower ladder rungs as usual — this only fixes
               // the STRUCTURAL completeness gate, not the value resolution itself.
               if elem_repeat(e) is None && has_declared_value_source(e) {
-                lower_repeat_head(e, opt_node(elem_head(e)), registry, out)
+                lower_repeat_head(e, opt_node(element_head(e)), registry, out)
               } else {
-                lower_repeat_head(e, elem_head(e), registry, out)
+                lower_repeat_head(e, element_head(e), registry, out)
               }
           }
         // Enum (issue values-decode-support): `dec_positional` never produces this shape today
@@ -1088,7 +1088,7 @@ fn init_sb(
 ///
 /// dd 要素は entity を持たない (LOWERING §B.4「値なし」/ DR-064 §1)。link_depth == 0 のみ ensure
 /// (global link COPY は declaring cell へ link 同期するため子 scope 側 entity は不要 — DR-070 §1b gap 5)。
-fn is_help_group_declaration(e : @engine.ElemDef) -> Bool {
+fn is_help_group_declaration(e : @engine.ElementDef) -> Bool {
   e.name == "" && e.help_meta.help_group_name is Some(_)
 }
 
@@ -1107,8 +1107,8 @@ fn ensure_entities(sb : @engine.InstallBuilder, has_cf : Bool) -> Unit {
 }
 
 ///|
-/// MDR-004 §3b: register `e` (and any `@engine.ElemBody`-nested leaves) as top-level entities — the
-/// evaluator's `@engine.Or`/`@engine.Seq`/`@engine.IdxRepeat` nodes don't know about entities at all, so this recursive
+/// MDR-004 §3b: register `e` (and any `@engine.ElementBody`-nested leaves) as top-level entities — the
+/// evaluator's `@engine.Or`/`@engine.Seq`/`@engine.IndexedRepeat` nodes don't know about entities at all, so this recursive
 /// walk is the ONLY registration point. `Or`'s wrapper is a structural dispatcher with no
 /// scalar/array value of its own (e.g. "color" never itself holds a value — only its branch leaves
 /// r/g/b/name do), so ONLY the branch leaves register. `Group`'s wrapper DOES need its own entity
@@ -1124,12 +1124,12 @@ fn ensure_entities(sb : @engine.InstallBuilder, has_cf : Bool) -> Unit {
 /// `@engine.Entity{name: spelling, ty: none_type()}` — occupying the namespace and blocking a real same-named
 /// entity's `ensure_entity` (add-if-absent already returns early once ANY entity with that name
 /// exists). Guarding HERE (single entry point every recursive path funnels through) closes both the
-/// top-level and the nested cases with one check, and any future `@engine.ElemBody` arm added to this match
-/// inherits the guard automatically (installer.mbt's `@engine.ElemDef.is_exact` doc comment: "value_prim/
+/// top-level and the nested cases with one check, and any future `@engine.ElementBody` arm added to this match
+/// inherits the guard automatically (installer.mbt's `@engine.ElementDef.is_exact` doc comment: "value_prim/
 /// entity 経路を一切通らない" is the invariant this enforces).
 fn ensure_entity_body(
   build : @engine.InstallOutput,
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   has_cf : Bool,
   extensions : @engine.Registry,
 ) -> Unit {
@@ -1177,11 +1177,11 @@ fn ensure_entity_body(
         }
       }
     Group(items) =>
-      // The wrapper (e.g. "xs") lowers to @engine.IdxRepeat (MDR-004 §3): its array is built entirely by
+      // The wrapper (e.g. "xs") lowers to @engine.IndexedRepeat (MDR-004 §3): its array is built entirely by
       // eval.mbt's array_marker/nest_index scope mechanism, never via the accum-entity ladder. If
       // registered here, ensure_entity would set accum:flatten (elem_repeat(e) is Some for a
       // repeat group), making accum_cells double-count "xs" and inject a spurious extra `[]`
-      // alongside the nested-scope array resolve.mbt already builds from the @engine.IdxRepeat bindings.
+      // alongside the nested-scope array resolve.mbt already builds from the @engine.IndexedRepeat bindings.
       // Only the inner leaf cells (value-source-ladder participants) need entities.
       for it in items {
         ensure_entity_body(build, it, has_cf, extensions)
@@ -1197,7 +1197,7 @@ fn ensure_entity_body(
 ///|
 fn ensure_entity(
   build : @engine.InstallOutput,
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   has_cf : Bool,
   extensions : @engine.Registry,
 ) -> Unit {
@@ -1339,7 +1339,7 @@ fn ensure_entity(
 }
 
 ///|
-fn not_dd(e : @engine.ElemDef) -> Bool {
+fn not_dd(e : @engine.ElementDef) -> Bool {
   !e.is_dd
 }
 
@@ -1383,7 +1383,7 @@ fn eq_group(
 /// this helper — the same "single funnel, no per-arm opt-in to forget" shape `ensure_entity_body`'s
 /// `is_exact` guard (Major 4 fix) uses.
 fn with_depr(
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   nodes : Array[@engine.Node],
 ) -> Array[@engine.Node] {
   if e.deprecated {
@@ -1411,7 +1411,7 @@ fn inst_long(
         // MDR-004 §3: Or option (variable-arity) — greedy satellite
         // @engine.Seq([@engine.Exact(trigger), @engine.Or([branch_node...])]). `e.ty` is unused (a Or wrapper carries no
         // value of its own); each branch's own leaf name(s) flow through unchanged via
-        // or_branch_node/elem_head, so held-Error / binding attribution lands on the leaf with no
+        // or_branch_node/element_head, so held-Error / binding attribution lands on the leaf with no
         // extra provenance wiring (§4).
         Or(branches) => {
           let branch_nodes : Array[@engine.Node] = []
@@ -1474,9 +1474,9 @@ fn inst_long(
                           // `multiple` (the `ref-template-no-repeat-degenerate.json` baseline) keeps
                           // the bare `@engine.Scoped` wrap — a single scalar row, never array-wrapped.
                           if e.multiple {
-                            ref_row_head(e.name, elem_head(e))
+                            ref_row_head(e.name, element_head(e))
                           } else {
-                            @engine.Scoped(e.name, elem_head(e))
+                            @engine.Scoped(e.name, element_head(e))
                           },
                         ]),
                       ),
@@ -1491,7 +1491,7 @@ fn inst_long(
                   let spine : Array[@engine.Node] = []
                   lower_repeat_head(
                     e,
-                    ref_row_head(e.name, elem_head(e)),
+                    ref_row_head(e.name, element_head(e)),
                     registry,
                     spine,
                   )
@@ -1535,7 +1535,7 @@ fn inst_long(
               //
               // DESIGN §7.2 / DR-096 §1: `long_eq_sep == @engine.Require` withholds THIS space-form main
               // entry — the only entry point left is the eq-split form registered below (`eq_group`
-              // push). Paired with `long_prefix: ""` (DR-096 §3.3, node.mbt's `@engine.ElemDef.long_prefix`
+              // push). Paired with `long_prefix: ""` (DR-096 §3.3, node.mbt's `@engine.ElementDef.long_prefix`
               // doc comment), this is the mechanism an app can opt into to definitionally eliminate
               // the bare-operand collision: with no space-form trigger, `trigger` (== `l` when
               // `long_prefix` is `""`) never matches a bare token — only `eq_split`, which fires
@@ -1547,7 +1547,7 @@ fn inst_long(
                 // warning marker after its value slot (node.mbt's `deprecation resident` doc shape), mirroring
                 // `inst_short`'s `depr: e.deprecated` on the SAME element (`e.deprecated` covers
                 // both a directly-deprecated canonical entry and a deprecated alias entry-copy,
-                // DR-057 §3 `alias_entry` — both fold into this ONE `@engine.ElemDef.deprecated` bool by
+                // DR-057 §3 `alias_entry` — both fold into this ONE `@engine.ElementDef.deprecated` bool by
                 // the time lowering runs, so no alias-specific branch is needed here). Routed
                 // through `with_depr` (codex レビュー Major 2) so this arm shares the SAME funnel
                 // as Or/Enum/ref±repeat above.
@@ -1585,7 +1585,7 @@ fn inst_long(
       // variant triggers coexist (fixtures/lowering/long/variant.json's ssl: `--ssl=false` fires
       // alongside `--ssl`/`--no-ssl`).
       // DR-075 §2: int_type() の eq-split (`--v=2.5`) が factory config int_round を反映するよう、
-      // @engine.ElemDef.int_round を EqEntry に持ち込む (int_type() 以外は entry 側で参照されない)。
+      // @engine.ElementDef.int_round を EqEntry に持ち込む (int_type() 以外は entry 側で参照されない)。
       // MDR-004 §3: a Or element's eq-split registers only for a single-value-cell branch (using
       // that leaf's own name/ty/int_round/allow_base_prefix, never the wrapper's) — a multi-cell
       // branch's `=` form is undefined (`--color=v` cannot supply 3 leaves).
@@ -1858,7 +1858,7 @@ fn inst_dd(def : @engine.Definition, build : @engine.InstallOutput) -> Unit {
   // 手組みと構造一致し続ける)。どちらかの軸が既定から外れたら一般化ノード `@engine.DdMatchSatisfied` を積む
   // (`match` が Some のとき name はトリガ綴りに使われない、§2 の規定通り `e.name` の代わりに
   // `dd_match` の pattern を spelling に使う)。
-  fn dd_node(e : @engine.ElemDef) -> @engine.Node {
+  fn dd_node(e : @engine.ElementDef) -> @engine.Node {
     if e.dd_match is None && !e.dd_self_keep {
       @engine.DdSatisfied(e.name)
     } else {
@@ -1939,7 +1939,7 @@ fn inst_global(sb : @engine.InstallBuilder) -> Unit {
 ///|
 fn copy_global_into(
   child : @engine.InstallBuilder,
-  opt : @engine.ElemDef,
+  opt : @engine.ElementDef,
 ) -> Unit {
   for existing in child.definition().options {
     if triggers_overlap(existing, opt) {
@@ -1971,7 +1971,7 @@ fn copy_global_into(
   // INVARIANT (install-time count ↔ eval-time decrement, 現制約): この +1 は SCOPE (name/command) copy
   // level のみ数える (copy_global_into 1 段につき 1)。eval 側の @engine.Rooted `link` counter は 2 種の nesting
   // (nest = scope 段 / nest_index = rep #k 段) で減算される。したがって「link_depth == 衛星と declaring
-  // scope の間の eval nesting 段数」の不変条件は「@engine.Rooted 衛星が @engine.IdxRepeat の下に置かれない」条件下でのみ
+  // scope の間の eval nesting 段数」の不変条件は「@engine.Rooted 衛星が @engine.IndexedRepeat の下に置かれない」条件下でのみ
   // 成立する — 現行 lowering は @engine.Rooted を scope spine で wrap し、repeat head 内には入れないので満たす。
   // 将来 nested-group が scope/global を repeat 群に許容するなら、この +1 に rep-nesting depth も加算する。
   let copy = clone_elem(opt)
@@ -2046,7 +2046,7 @@ fn copy_global_into(
 /// at both together — otherwise the SAME spelling can hide in `long` on one element and `variants` on
 /// the other (e.g. a flag's `:set:true` composed bare-fire trigger lands in `variants`, DR-076 §2,
 /// while a plain `:set` main entry lands in `long`) and a real collision goes undetected.
-fn all_long_triggers(e : @engine.ElemDef) -> Array[String] {
+fn all_long_triggers(e : @engine.ElementDef) -> Array[String] {
   let out : Array[String] = []
   for l in long_of(e) {
     out.push(l)
@@ -2061,7 +2061,7 @@ fn all_long_triggers(e : @engine.ElemDef) -> Array[String] {
 /// 2 要素のトリガ集合が完全一致するか (順序無視、`all_long_triggers` の集合として比較)。
 /// `copy_global_into` の idempotent 判定 (同名 + コピー由来 + トリガ集合一致) 専用 — トリガ集合が
 /// 両方とも空なら自明に一致する (trigger-less canonical の idempotent 判定を保つ)。
-fn trigger_sets_equal(a : @engine.ElemDef, b : @engine.ElemDef) -> Bool {
+fn trigger_sets_equal(a : @engine.ElementDef, b : @engine.ElementDef) -> Bool {
   let ta = all_long_triggers(a)
   let tb = all_long_triggers(b)
   if ta.length() != tb.length() {
@@ -2079,7 +2079,7 @@ fn trigger_sets_equal(a : @engine.ElemDef, b : @engine.ElemDef) -> Bool {
 /// トリガ衝突: 2 option が long / short / long variant いずれかを共有すれば衝突 (shadow はトリガ基準 =
 /// 同名トリガ)。long の main entry と variant は格納場所が違うだけで同じ trigger 語彙 (`all_long_triggers`
 /// 参照) なので、比較は両者を合わせた集合同士で行う。
-fn triggers_overlap(a : @engine.ElemDef, b : @engine.ElemDef) -> Bool {
+fn triggers_overlap(a : @engine.ElementDef, b : @engine.ElementDef) -> Bool {
   for ta in all_long_triggers(a) {
     for tb in all_long_triggers(b) {
       if ta == tb {
@@ -2106,7 +2106,7 @@ fn triggers_overlap(a : @engine.ElemDef, b : @engine.ElemDef) -> Bool {
 /// (§3 値意味論 — inherit seat の対 DR-031)。祖先が同トリガを自宣言なら shadow で copy しない (global 対称)。
 fn inst_inheritable(sb : @engine.InstallBuilder) -> Unit {
   // (1) 子孫の inheritable → THIS (祖先) scope の宣言層に prefixed write-entry を追加
-  let entries : Array[(String, @engine.ElemDef)] = []
+  let entries : Array[(String, @engine.ElementDef)] = []
   gather_inheritable(sb.children(), entries)
   for de in entries {
     let defining_name = de.0
@@ -2135,7 +2135,7 @@ fn inst_inheritable(sb : @engine.InstallBuilder) -> Unit {
 /// 子孫 scope の inheritable 要素を全て回収 (定義スコープ名で tag — §1 の prefix)。全 subtree を再帰。
 fn gather_inheritable(
   children : Array[@engine.InstallChild],
-  out : Array[(String, @engine.ElemDef)],
+  out : Array[(String, @engine.ElementDef)],
 ) -> Unit {
   for ch in children {
     for e in ch.body().definition().options {
@@ -2156,7 +2156,7 @@ fn gather_inheritable(
 /// 追加してしまう (materialize 後の @engine.Scope に同一トリガの greedy 衛星が 2 本立つ)。
 fn add_inheritable_copy(
   sb : @engine.InstallBuilder,
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   trigger : String,
 ) -> Unit {
   for existing in sb.definition().options {
@@ -2232,8 +2232,8 @@ fn add_inheritable_copy(
 
 ///|
 /// `node` が値を束縛する全ての leaf name を再帰的に集める (DR-093 の or/ref 親充足判定の実体解決 —
-/// `required_candidates` の `ref_target` 分岐が使う)。open value resident と `@engine.ReqArg` の name が
-/// 対象。`@engine.Or`/`@engine.Seq`/`@engine.Many`/`@engine.BoundedTail`/`@engine.Rooted`/`@engine.Scoped`/`@engine.GreedyRepeat`/`@engine.IdxRepeat` は値
+/// `required_candidates` の `ref_target` 分岐が使う)。open value resident と `@engine.RequiredArgument` の name が
+/// 対象。`@engine.Or`/`@engine.Seq`/`@engine.Many`/`@engine.BoundedTail`/`@engine.Rooted`/`@engine.Scoped`/`@engine.GreedyRepeat`/`@engine.IndexedRepeat` は値
 /// バインディングを持たない構造ラッパーなので内部を再帰的に辿る。`Ref` は registry を辿って参照先
 /// テンプレートに再帰する (`visiting` は `head_cycles` と同じ「訪問済み template 名」防御 — 循環
 /// ref は `collect_circular_ref` が別途 definition-error で弾く前提だが、防御的に無限再帰を避ける)。
@@ -2249,7 +2249,7 @@ fn collect_value_names(
         Some(name) => out.push(name)
         None => ()
       }
-    @engine.ReqArg(name) => out.push(name)
+    @engine.RequiredArgument(name) => out.push(name)
     @engine.Or(alts) =>
       for a in alts {
         collect_value_names(a, registry, visiting, out)
@@ -2268,7 +2268,7 @@ fn collect_value_names(
       collect_value_names(inner, registry, visiting, out)
     @engine.GreedyRepeat(inner) =>
       collect_value_names(inner, registry, visiting, out)
-    @engine.IdxRepeat(_, inner, _, _) =>
+    @engine.IndexedRepeat(_, inner, _, _) =>
       collect_value_names(inner, registry, visiting, out)
     Ref(r) =>
       if !str_in(visiting, r) {
@@ -2290,8 +2290,8 @@ fn collect_value_names(
 /// M-2 修正): 宣言要素 `e` そのものが値を持つとは限らない。
 ///
 /// `e.ref_target` が `Some(_)` (ref 要素) のとき、`e.body` は常に `Cell` のまま (ref 展開は
-/// registry 上の `@engine.Node` として存在し、`@engine.ElemDef.body` には反映されない —
-/// `ensure_entity_body`/`elem_head` の doc comment 参照)。参照先テンプレートが structural or の
+/// registry 上の `@engine.Node` として存在し、`@engine.ElementDef.body` には反映されない —
+/// `ensure_entity_body`/`element_head` の doc comment 参照)。参照先テンプレートが structural or の
 /// ような複合構造を持つ場合、`e.name` というセルは結果に存在せず (DR-025 の露出規則)、値は展開後の
 /// 枝の leaf entity に着地する — `collect_value_names` で registry 上の実体を辿って候補集合を得る
 /// (DR-007「ref は構造定義全てを引き継ぐ」の型委譲判定への反映)。
@@ -2315,7 +2315,7 @@ fn collect_value_names(
 /// `@engine.RequiredCandidate` の doc comment 参照)。直書き Or の場合、値は親 scope に直接 bind されるため
 /// `wrapper: None`。
 fn required_candidates(
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   registry : Map[String, @engine.Node],
 ) -> Array[@engine.RequiredCandidate] {
   match e.ref_target {
@@ -2357,7 +2357,7 @@ fn inst_constraint(
   build : @engine.InstallOutput,
   registry : Map[String, @engine.Node],
 ) -> Unit {
-  let all : Array[@engine.ElemDef] = []
+  let all : Array[@engine.ElementDef] = []
   for e in def.options {
     all.push(e)
   }
@@ -2504,7 +2504,7 @@ fn str_replace_first(s : String, from : String, to : String) -> String {
 
 ///|
 /// canonical option / positional 要素を name で検索。
-fn find_elem(def : @engine.Definition, name : String) -> @engine.ElemDef? {
+fn find_elem(def : @engine.Definition, name : String) -> @engine.ElementDef? {
   for e in def.options {
     if e.name == name {
       return Some(e)
@@ -2538,8 +2538,8 @@ fn alias_entry(
   variants : Array[@engine.Variant],
   short : Array[Char],
   deprecated : Bool,
-  help_meta : @engine.HelpMetaDecl,
-) -> @engine.ElemDef {
+  help_meta : @engine.HelpMetaDeclaration,
+) -> @engine.ElementDef {
   {
     name: canonical_name, // effect / entity / result key は全て canonical name で keying (link 同型)
     ty,
@@ -2732,7 +2732,7 @@ fn add_constraint(
 ///|
 fn def_err(
   element : String,
-  kind : @engine.DefErrKind,
+  kind : @engine.DefErrorKind,
   message : String,
   hint : String,
 ) -> @engine.DefError {
@@ -2741,7 +2741,7 @@ fn def_err(
 
 ///|
 fn default_fn_edges(
-  element : @engine.ElemDef,
+  element : @engine.ElementDef,
   extensions : @engine.Registry,
 ) -> Array[String] {
   let edges : Array[String] = []
@@ -2798,7 +2798,7 @@ fn collect_default_fn_errors(
   out : Array[@engine.DefError],
   extensions : @engine.Registry,
 ) -> Unit {
-  let elements : Array[@engine.ElemDef] = []
+  let elements : Array[@engine.ElementDef] = []
   for element in def.options {
     elements.push(element)
   }
@@ -2904,7 +2904,7 @@ fn collect_invalid_long_dsl(
 
 ///|
 fn push_invalid_long(
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   out : Array[@engine.DefError],
   extensions : @engine.Registry,
 ) -> Unit {
@@ -2950,7 +2950,7 @@ fn push_invalid_long(
 /// 規則なので、colon-less / 語彙外 effect は canonical 側 (`push_invalid_long`) と同じく `unknown-vocab`
 /// (DR-054) に落とす。canonical 側と別関数にしているのは、target canonical 要素の `ty` を
 /// `find_elem` で引く必要があり (`classify_long_spelling` の operand 解釈に使う)、`push_invalid_long`
-/// の「自分の @engine.ElemDef を検査する」形と入力の形が違うため — dangling alias target (見つからない場合)
+/// の「自分の @engine.ElementDef を検査する」形と入力の形が違うため — dangling alias target (見つからない場合)
 /// は absent-ref check が別途拾うのでここでは静かにスキップする。desugar_aliases (Invalid を
 /// rename-only で通す経路) より前、static check フェーズで検出する。
 fn collect_invalid_alias_long_override(
@@ -3029,7 +3029,7 @@ fn collect_tty_stream_missing(
   def : @engine.Definition,
   out : Array[@engine.DefError],
 ) -> Unit {
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     if e.is_tty && e.tty_stream is None {
       out.push(
         def_err(
@@ -3062,16 +3062,16 @@ fn head_progresses(
   visiting : Array[String],
 ) -> Bool {
   match node {
-    @engine.ReqArg(_)
+    @engine.RequiredArgument(_)
     | @engine.Exact(_)
     | @engine.NativeMatch(_)
     | @engine.DdSatisfied(_)
-    | @engine.CmdSatisfied(_, _) => true
+    | @engine.CommandSatisfied(_, _) => true
     // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `@engine.DdSatisfied`,
     // `keep` (true) is a 0-token @engine.Accept (same standing as `@engine.Bind`/`effect resident` below).
     @engine.DdMatchSatisfied(_, _, self_keep, _) => !self_keep
     Ext(extension) => !extension.consumes_zero_tokens()
-    @engine.IdxRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
+    @engine.IndexedRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     @engine.BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
     @engine.Rooted(inner, _) => head_progresses(inner, registry, visiting)
     @engine.Bind(_, _) => false // 0-token
@@ -3189,7 +3189,7 @@ fn collect_zero_progress(
   for e in def.positionals {
     match elem_repeat(e) {
       Some(_) => {
-        let head = elem_head(e)
+        let head = element_head(e)
         if !head_progresses(head, registry, []) &&
           !head_node_cycles(head, registry) {
           out.push(
@@ -3256,7 +3256,7 @@ fn collect_absent_ref(
 
 ///|
 fn check_elem_absent_ref(
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   registry : Map[String, @engine.Node],
   out : Array[@engine.DefError],
 ) -> Unit {
@@ -3361,7 +3361,7 @@ fn collect_unsupported_option_ref_repeat(
 /// folded into `@engine.UnknownVocab` there) — `multiple` + `update` is a third static-known-bad
 /// combination, just discovered one step later (after `normalize_surface` has resolved `variants`,
 /// unlike the two above which classify_long_spelling catches at DSL-parse time). `@engine.InvalidRange` is
-/// reused (not a new `@engine.DefErrKind`) for the same reason `classify_long_spelling`'s comment gives:
+/// reused (not a new `@engine.DefErrorKind`) for the same reason `classify_long_spelling`'s comment gives:
 /// introducing a finer-grained kind is a spec-side DR-054 decision, not kuu.mbt's to make alone.
 ///
 /// spec fixture pin 状況 (2026-07-10 team-lead 連絡): definition_error format 自体が DR-065 で予約の
@@ -3550,7 +3550,7 @@ fn collect_unsupported_count_multiple(
 ///
 /// "non-accum" mirrors `ensure_entity`'s OWN accum-eligibility derivation exactly (`e.multiple ||
 /// elem_repeat(e) is Some(_) || e.separator is Some(_)`) — computed here on the pre-`ensure_entity`
-/// `@engine.ElemDef` fields directly, since this check runs before `@engine.Entity`/`@engine.Entity.accum` exist. Using
+/// `@engine.ElementDef` fields directly, since this check runs before `@engine.Entity`/`@engine.Entity.accum` exist. Using
 /// the narrower `e.multiple` alone would misfire on a `repeat`-only or bare-`separator` element
 /// (both legitimately accum cells per `ensure_entity`, DR-043/034) declaring a multi-piece default
 /// — this derivation must stay IN SYNC with `ensure_entity`'s if it ever changes.
@@ -3558,11 +3558,11 @@ fn collect_scalar_array_default(
   def : @engine.Definition,
   out : Array[@engine.DefError],
 ) -> Unit {
-  fn is_accum_elem(e : @engine.ElemDef) -> Bool {
+  fn is_accum_elem(e : @engine.ElementDef) -> Bool {
     e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
   }
 
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     if !is_accum_elem(e) {
       match e.default_values {
         Some(vs) =>
@@ -3604,7 +3604,7 @@ fn collect_none_value_source_decl(
   def : @engine.Definition,
   out : Array[@engine.DefError],
 ) -> Unit {
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     if e.ty.name() == "none" {
       if e.env.length() > 0 {
         out.push(
@@ -3672,11 +3672,11 @@ fn collect_invalid_filter_attribute_mismatch(
   def : @engine.Definition,
   out : Array[@engine.DefError],
 ) -> Unit {
-  fn is_accum_elem(e : @engine.ElemDef) -> Bool {
+  fn is_accum_elem(e : @engine.ElementDef) -> Bool {
     e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
   }
 
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     let accum = is_accum_elem(e)
     let none_ty = e.ty.name() == "none"
     if e.final_filters.length() > 0 {
@@ -3761,7 +3761,7 @@ fn collect_unknown_filter(
   out : Array[@engine.DefError],
   extensions : @engine.Registry,
 ) -> Unit {
-  fn is_accum_elem(e : @engine.ElemDef) -> Bool {
+  fn is_accum_elem(e : @engine.ElementDef) -> Bool {
     e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
   }
 
@@ -3784,7 +3784,7 @@ fn collect_unknown_filter(
     )
   }
 
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     // value_filters (T→T, scalar filter registry): 綴り不在は unknown-vocab (DR-101 §1)
     for fs in e.value_filters {
       if extensions.lookup_filter(fs.name) is None {
@@ -3853,7 +3853,7 @@ fn collect_invalid_dd_pattern(
   def : @engine.Definition,
   out : Array[@engine.DefError],
 ) -> Unit {
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     match e.dd_match {
       Some(pattern) =>
         if compile_regex(pattern) is None {
@@ -3897,7 +3897,7 @@ fn collect_invalid_regex_pattern(
   def : @engine.Definition,
   out : Array[@engine.DefError],
 ) -> Unit {
-  fn is_accum_elem(e : @engine.ElemDef) -> Bool {
+  fn is_accum_elem(e : @engine.ElementDef) -> Bool {
     e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
   }
 
@@ -3918,7 +3918,7 @@ fn collect_invalid_regex_pattern(
     }
   }
 
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     check_chain(e.name, e.piece_filters)
     check_chain(e.name, e.value_filters)
     // final_filters: 正しい席 (非 accum かつ 非 none) の場合のみ pattern compile 検査
@@ -3954,7 +3954,7 @@ fn collect_ref_merge_accum(
   def : @engine.Definition,
   out : Array[@engine.DefError],
 ) -> Unit {
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     if e.ref_target is Some(_) && e.accumulator is Some("merge") {
       out.push(
         def_err(
@@ -3985,13 +3985,13 @@ fn collect_ref_merge_accum(
 /// `collect_invalid_filter_attribute_mismatch` と同型の "構造的に宣言できるが実装が対応できない
 /// 組合せを definition-error で落とす" 契約で kind=invalid-range を reject する (DR-102 §3 の
 /// wrong-seat 判定と同型 — 中身の値は解釈しない、宣言の有無だけを見る)。`e.flatten is Some(_)` は
-/// `dec_multiple` が「キーが JSON に存在したか」をそのまま運ぶ Option (`@engine.ElemDef.flatten`'s doc
+/// `dec_multiple` が「キーが JSON に存在したか」をそのまま運ぶ Option (`@engine.ElementDef.flatten`'s doc
 /// comment) — `Some(false)` (明示 `flatten:false` 宣言) も違反として扱う。
 fn collect_flatten_non_append(
   def : @engine.Definition,
   out : Array[@engine.DefError],
 ) -> Unit {
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     if e.multiple && e.flatten is Some(_) && e.accumulator is Some(_) {
       out.push(
         def_err(
@@ -4026,7 +4026,7 @@ fn collect_unknown_accumulation_resident(
   extensions : @engine.Registry,
   out : Array[@engine.DefError],
 ) -> Unit {
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     let accumulator = if e.multiple {
       match e.accumulator {
         Some(name) => Some(name)
@@ -4104,7 +4104,7 @@ fn collect_invalid_numeric_filter_args(
   def : @engine.Definition,
   out : Array[@engine.DefError],
 ) -> Unit {
-  fn is_accum_elem(e : @engine.ElemDef) -> Bool {
+  fn is_accum_elem(e : @engine.ElementDef) -> Bool {
     e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
   }
 
@@ -4214,7 +4214,7 @@ fn collect_invalid_numeric_filter_args(
     }
   }
 
-  fn check(e : @engine.ElemDef) -> Unit {
+  fn check(e : @engine.ElementDef) -> Unit {
     check_scalar_chain(e.name, e.piece_filters)
     check_scalar_chain(e.name, e.value_filters)
     if !is_accum_elem(e) && e.ty.name() != "none" {

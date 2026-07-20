@@ -74,7 +74,7 @@ fn conformance_str_in(xs : Array[String], v : String) -> Bool {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 ///|
-fn empty_help_meta() -> @engine.HelpMetaDecl {
+fn empty_help_meta() -> @engine.HelpMetaDeclaration {
   {
     help: None,
     help_long: None,
@@ -97,7 +97,7 @@ fn empty_help_meta() -> @engine.HelpMetaDecl {
 }
 
 ///|
-fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDecl {
+fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDeclaration {
   {
     help: jf_str(o, "help"),
     help_long: jf_str(o, "help_long"),
@@ -137,11 +137,11 @@ fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDecl {
 fn opt(
   name : String,
   ty : &@engine.TypeExt,
-  long? : @engine.LongDecl = List([]),
+  long? : @engine.LongDeclaration = List([]),
   variants? : Array[@engine.Variant] = [],
   short? : Array[Char] = [],
   env? : Array[String] = [],
-  help_meta? : @engine.HelpMetaDecl = empty_help_meta(),
+  help_meta? : @engine.HelpMetaDeclaration = empty_help_meta(),
   is_tty? : Bool = false,
   tty_stream? : String? = None,
   tty_cygwin? : Bool = true,
@@ -181,16 +181,16 @@ fn opt(
   long_eq_sep? : @engine.EqSepMode = @engine.Allow,
   short_combine? : Bool = true,
   short_attached_value? : @engine.AttachMode = @engine.Allow,
-  body? : @engine.ElemBody = Cell,
+  body? : @engine.ElementBody = Cell,
   // DR-104 §2/§4: option 専用の hidden 宣言 (meta.json fixture)。dec_option がここへ渡し、
   // ensure_entity 経由で @engine.Entity.hidden へ carry される。alias は @engine.AliasDef に独立宣言経路が無いので
-  // is_alias は opt() の返す @engine.ElemDef 上では常に false (alias_entry が別途 true で構築する)。
+  // is_alias は opt() の返す @engine.ElementDef 上では常に false (alias_entry が別途 true で構築する)。
   hidden? : Bool = false,
   // DR-060 §4 / DR-104 §2(d) / issue 2026-07-14-cand-completer-followup: the wire `completer:
   // "<名前>"` attribute. `dec_option` reads it and passes it here; `ensure_entity` carries it
   // through to `@engine.Entity.completer` (same carrier pattern as `hidden`).
   completer? : String? = None,
-) -> @engine.ElemDef {
+) -> @engine.ElementDef {
   {
     name,
     ty,
@@ -279,7 +279,7 @@ fn pos(
   final_filters? : Array[@engine.FnInvocation] = [],
   accum_filters? : Array[@engine.FnInvocation] = [],
   env? : Array[String] = [],
-  help_meta? : @engine.HelpMetaDecl = empty_help_meta(),
+  help_meta? : @engine.HelpMetaDeclaration = empty_help_meta(),
   is_tty? : Bool = false,
   tty_stream? : String? = None,
   tty_cygwin? : Bool = true,
@@ -299,8 +299,8 @@ fn pos(
   // positionals), `completer` targets the VALUE position itself, which positionals have just as
   // much as options do.
   completer? : String? = None,
-  body? : @engine.ElemBody = Cell,
-) -> @engine.ElemDef {
+  body? : @engine.ElementBody = Cell,
+) -> @engine.ElementDef {
   {
     name,
     ty,
@@ -380,7 +380,7 @@ fn dd_marker(
   match_? : String? = None,
   self_keep? : Bool = false,
   required? : Bool = false,
-) -> @engine.ElemDef {
+) -> @engine.ElementDef {
   {
     name: "--",
     ty: @builtins.string_type(),
@@ -451,13 +451,13 @@ fn dd_marker(
 /// issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め: a positional-face
 /// nameless exact-match leaf (`{"exact": "init"}`, DR-063 A.1 裸文字列→exact 正規化 / DR-018 配置で
 /// 役割決定 — dec_positional の裸 `"exact"` 分岐から作る)。`is_dd`/`dd_marker` と同じ carrier
-/// パターン — `name` が trigger 綴りを運び (`is_exact` の doc comment 参照)、`@builtins.elem_head`
+/// パターン — `name` が trigger 綴りを運び (`is_exact` の doc comment 参照)、`@builtins.element_head`
 /// (installer.mbt) が `@engine.Exact(name)` へ直接 lower する (value_prim/entity 経路を通らない、
 /// `ensure_entities` が is_dd と同じガードでスキップする)。`ty: @builtins.none_type()` は値空間を持たない照合消費
 /// (dd_marker の `ty: @builtins.string_type()` と違うのは、dd が「捨てるが型タグは要る」旧経路の名残であるのに対し
 /// exact literal は値スロット自体が最初から無いため — DR-089 §2「type 省略 = none の糖衣」と同じ既定
 /// 型)。
-fn exact_marker(spelling : String) -> @engine.ElemDef {
+fn exact_marker(spelling : String) -> @engine.ElementDef {
   {
     name: spelling,
     ty: @builtins.none_type(),
@@ -534,7 +534,7 @@ priv suberror DecodeSkip {
 
 ///|
 priv enum DElem {
-  DOpt(@engine.ElemDef)
+  DOpt(@engine.ElementDef)
   DAlias(@engine.AliasDef)
 }
 
@@ -547,7 +547,7 @@ priv enum DCmd {
 ///|
 priv struct InstallerDecoded {
   vocab : Array[String]
-  long : @engine.LongDecl
+  long : @engine.LongDeclaration
   short : Array[Char]
   env : Array[String]
   dd_match : String?
@@ -570,7 +570,7 @@ priv struct InstallerDecoded {
   required : Bool
   alias_decl : @engine.AliasDef?
   inheritable : Bool
-  help_meta : @engine.HelpMetaDecl
+  help_meta : @engine.HelpMetaDeclaration
 }
 
 ///|
@@ -580,7 +580,7 @@ fn decode_installer_owned(
   extensions : @engine.Registry,
 ) -> InstallerDecoded raise DecodeSkip {
   let vocab : Array[String] = []
-  let mut long : @engine.LongDecl = List([])
+  let mut long : @engine.LongDeclaration = List([])
   let mut short : Array[Char] = []
   let mut env : Array[String] = []
   let mut dd_match : String? = None
@@ -987,11 +987,11 @@ priv struct TypeShadow {
   // TypeShadow が担う base 側の flag は canonical default が false なので、int_round と直交な平坦キー。
   allow_base_prefix : Bool
   // DR-074 §4 `bool_parser` factory config (`bool_true_values`/`bool_false_values`/`bool_case_insensitive` (DR-100 prefix 正準) を 1
-  // struct に束ねた carrier、@engine.ElemDef.bool_config と同型)。canonical default = `@builtins.bool_config_canonical()`。
+  // struct に束ねた carrier、@engine.ElementDef.bool_config と同型)。canonical default = `@builtins.bool_config_canonical()`。
   bool_config : @engine.BoolConfig
   // DR-099 §1/§3 `builtin/tty` factory: base=@builtins.bool_type() + is_tty マーカー + tty_stream (必須 config、
   // 未指定は definition-error) + tty_cygwin (既定 true)。他 factory と同じ「平坦 config キーを
-  // shadow に carry するだけ」パターン (@engine.ElemDef.is_tty/tty_stream/tty_cygwin と同型)。
+  // shadow に carry するだけ」パターン (@engine.ElementDef.is_tty/tty_stream/tty_cygwin と同型)。
   is_tty : Bool
   tty_stream : String?
   tty_cygwin : Bool
@@ -1012,13 +1012,13 @@ priv struct TypeShadow {
 /// DR-054)。
 fn dec_types(
   j : Json,
-) -> (Map[String, TypeShadow], Array[@engine.HelpTypeDecl]) raise DecodeSkip {
+) -> (Map[String, TypeShadow], Array[@engine.HelpTypeDeclaration]) raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("definitions.types is not an object")
   }
   let out : Map[String, TypeShadow] = Map([])
-  let help_types : Array[@engine.HelpTypeDecl] = []
+  let help_types : Array[@engine.HelpTypeDeclaration] = []
   for name, tj in o {
     let to = match tj.j_obj() {
       Some(x) => x
@@ -1453,7 +1453,7 @@ fn dec_help_single_from_object(
 
 ///|
 /// DR-078 §1 `definitions.templates`: name → shared consumption-grammar `@engine.Node`, decoded straight
-/// into the `registry` a `ref` element's head resolves against (`@engine.ElemDef.ref_target`/`@builtins.elem_head`,
+/// into the `registry` a `ref` element's head resolves against (`@engine.ElementDef.ref_target`/`@builtins.element_head`,
 /// installer.mbt — this decode is the ONLY missing piece, the runtime side was already complete).
 /// Mutates `registry` in place (same map `dec_fixture` later threads into `parse_definition`) rather
 /// than returning a fresh map — `registry` also receives `parse_definition`'s OWN repeat-recursion
@@ -1522,12 +1522,12 @@ fn dec_template_body(
           let nodes : Array[@engine.Node] = []
           for e in sa {
             nodes.push(
-              @builtins.elem_head(dec_or_leaf(e, shadows, extensions~)),
+              @builtins.element_head(dec_or_leaf(e, shadows, extensions~)),
             )
           }
           @engine.Seq(nodes)
         }
-        None => @builtins.elem_head(dec_or_leaf(j, shadows, extensions~)) // bare leaf {"type":..,"name":..}
+        None => @builtins.element_head(dec_or_leaf(j, shadows, extensions~)) // bare leaf {"type":..,"name":..}
       }
   }
 }
@@ -1703,13 +1703,13 @@ fn dec_or_structural(
       }
       None => next_or_branch_id()
     }
-    let items : Array[@engine.ElemDef] = match bo.get("seq") {
+    let items : Array[@engine.ElementDef] = match bo.get("seq") {
       Some(sj) => {
         let sa = match sj.j_arr() {
           Some(x) => x
           None => raise DecodeSkip("or branch 'seq' is not an array")
         }
-        let its : Array[@engine.ElemDef] = []
+        let its : Array[@engine.ElementDef] = []
         for ij in sa {
           its.push(dec_or_leaf(ij, shadows, extensions~))
         }
@@ -1734,7 +1734,7 @@ fn dec_or_leaf(
   j : Json,
   shadows : Map[String, TypeShadow],
   extensions? : @engine.Registry = canonical_registry(),
-) -> @engine.ElemDef raise DecodeSkip {
+) -> @engine.ElementDef raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("or branch leaf is not an object")
@@ -1878,7 +1878,7 @@ fn dec_option(
         has_key(o, "values") ||
         has_key(o, "seq") {
         // DR-078 §1: a `ref` element's own consumption is replaced by the referenced template
-        // (`@builtins.elem_head`'s `Ref(r)` head, ty unused there) — same "type is moot" reasoning `or`
+        // (`@builtins.element_head`'s `Ref(r)` head, ty unused there) — same "type is moot" reasoning `or`
         // already gets. `values` gets the same default (DR-028 追記: values を持つ node は type
         // フィールドなしで enum 型を兼ねる) — DESIGN §5.3's `values` shorthand is string-literal-
         // only in this issue's scope (seq-branch values form not implemented), so the enum's own
@@ -2064,7 +2064,7 @@ fn dec_option(
     bool_config_from_shadow,
     allow_base_prefix=base_prefix_from_shadow,
   )
-  // DR-071 §1 / kawaz 裁定 2026-07-08: decode は wire の bool|array 二形をそのまま `@engine.LongDecl` に写す
+  // DR-071 §1 / kawaz 裁定 2026-07-08: decode は wire の bool|array 二形をそのまま `@engine.LongDeclaration` に写す
   // だけ — 糖衣展開・colon DSL 分類 (variants の分離を含む) は installer.mbt の `resolve_long` が
   // `normalize_option` から担う (下記 `opt(...)` は `variants` を渡さない = 常に [] のまま宣言層へ)。
   let long_decl = owned.long
@@ -2108,7 +2108,7 @@ fn dec_option(
   let accum_filters = dec_filter_chain(o.get("accum_filters"))
   // DR-091 §3 (team-lead 裁定 2026-07-11 修正) / DR-096: `long_prefix`/`long_eq_sep` are NOT
   // element-level wire keys — the canonical source is `dec_definition`'s scope-level read (DESIGN
-  // §7.2's sibling, "scope config" per DR-091 §3), which overrides every `@engine.ElemDef` this function
+  // §7.2's sibling, "scope config" per DR-091 §3), which overrides every `@engine.ElementDef` this function
   // returns AFTER decode. An option JSON object carrying either key hits the `allowed_keys` reject
   // above (element-level override would be an un-specced vocabulary invention — the DEDICATED
   // per-element `config` object, a DIFFERENT key, IS the sanctioned override channel, DR-049 §4).
@@ -2119,7 +2119,7 @@ fn dec_option(
   // DR-113 §7.2: HelpMetaInstaller.collect_defs_errors が非 help preset 上の
   // help_on_failure を invalid-range として弾くための構造情報 carry。help preset 判定は
   // wire 上の元 tystr で行う (M3b では 5 preset は wire_decode 側で flag_type + fail_action
-  // に落ちて元の type 名が消えるため、ここで bool 化して HelpMetaDecl に carry する)。
+  // に落ちて元の type 名が消えるため、ここで bool 化して HelpMetaDeclaration に carry する)。
   let is_help_preset = match tystr {
     "help"
     | "help_all_category"
@@ -2239,7 +2239,7 @@ fn dec_positional(
   j : Json,
   shadows : Map[String, TypeShadow],
   extensions? : @engine.Registry = canonical_registry(),
-) -> @engine.ElemDef raise DecodeSkip {
+) -> @engine.ElementDef raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("positional is not an object")
@@ -2255,7 +2255,7 @@ fn dec_positional(
   }
   allowed_keys(o, allowed, "positional")
   // MDR-004 §2: "positionals" (named nested group, Group) and "or" (anonymous structural or,
-  // Or) are decoded via @engine.ElemBody now — the gates that used to reject these keys are GONE. A
+  // Or) are decoded via @engine.ElementBody now — the gates that used to reject these keys are GONE. A
   // positional's "or" is ALWAYS structural (there is no DR-055 value-enum-or concept for
   // positionals — that's an option-only constraint-declaration sugar, §5.3).
   match o.get("positionals") {
@@ -2313,7 +2313,7 @@ fn dec_positional(
   // DR-061 §3: positional も type shadow を consultation (dec_option と同型)。
   // DR-089 §2: type 省略 = none の糖衣 (旧実装は @builtins.string_type() を勝手にあてる default-typing だった —
   // DR-089 の「採用しなかった案」が明示的に否定するパターン。`ref` 付きの場合はそもそも ty が
-  // 未使用 (@builtins.elem_head の Ref(r) head、下の `dec_or_structural`/`positionals` 分岐同様) なので
+  // 未使用 (@builtins.element_head の Ref(r) head、下の `dec_or_structural`/`positionals` 分岐同様) なので
   // @builtins.none_type() に変えても無害)。
   // DR-099 §1/§3: bare `type:"tty"` / `type:"builtin/tty"` は dec_option と同じ理由で shadow
   // lookup より先に判定する (config を供給する経路が無いので tty_stream は常に None のまま)。
@@ -2511,7 +2511,7 @@ fn dec_positional_group(
   shadows : Map[String, TypeShadow],
   extensions : @engine.Registry,
   repeat : @engine.RepeatSpec?,
-) -> @engine.ElemDef raise DecodeSkip {
+) -> @engine.ElementDef raise DecodeSkip {
   let name = match jf_str(o, "name") {
     Some(s) => s
     None => raise DecodeSkip("positional (named group) missing 'name'")
@@ -2521,7 +2521,7 @@ fn dec_positional_group(
     Some(x) => x
     None => raise DecodeSkip("positionals is not an array")
   }
-  let items : Array[@engine.ElemDef] = []
+  let items : Array[@engine.ElementDef] = []
   for ij in inner_arr {
     items.push(dec_positional(ij, shadows, extensions~))
   }
@@ -2534,7 +2534,7 @@ fn dec_positional_group(
 /// this IS the "子要素は親の config を継承、上書き可能" hierarchy (DESIGN §7.2), realized as
 /// "each scope merges its own `config` object over the value it received from its parent" rather
 /// than a stored-on-`@engine.Definition` carrier (installer.mbt never reads a `@engine.Definition`-level config; the
-/// resolved tuple gets baked onto each `@engine.ElemDef` the scope owns, same pattern DR-091 §3 established
+/// resolved tuple gets baked onto each `@engine.ElementDef` the scope owns, same pattern DR-091 §3 established
 /// for the original 2-field minimal implementation).
 priv struct ScopeConfig {
   long_prefix : String
@@ -2693,11 +2693,11 @@ fn auto_env_name(
 ///   has no single value slot for a scalar env lookup to bind to, matcher/leaf-level auto_env is not
 ///   specified anywhere and would be an invented extension).
 fn apply_env_config(
-  e : @engine.ElemDef,
+  e : @engine.ElementDef,
   env_prefix : String,
   auto_env : Bool,
   scope_path : Array[String],
-) -> @engine.ElemDef {
+) -> @engine.ElementDef {
   if e.env.length() > 0 {
     if env_prefix == "" {
       e
@@ -2778,7 +2778,7 @@ fn dec_definition(
   parent_config? : ScopeConfig = default_scope_config(),
   scope_path? : Array[String] = [],
 ) -> @engine.Definition raise DecodeSkip {
-  let scope : @engine.ScopeDecl = {
+  let scope : @engine.ScopeDeclaration = {
     name: jf_str(o, "name"),
     help_meta: help_meta_from_object(o),
   }
@@ -2803,8 +2803,8 @@ fn dec_definition(
     }
     None => parent_config
   }
-  let options : Array[@engine.ElemDef] = []
-  let positionals : Array[@engine.ElemDef] = []
+  let options : Array[@engine.ElementDef] = []
+  let positionals : Array[@engine.ElementDef] = []
   let commands : Array[@engine.CommandDef] = []
   let aliases : Array[@engine.AliasDef] = []
   match o.get("options") {

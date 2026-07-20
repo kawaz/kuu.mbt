@@ -231,7 +231,7 @@ fn push_unique(values : Array[String], value : String) -> Unit {
 }
 
 ///|
-fn option_spellings(element : @engine.ElemDef) -> Array[String] {
+fn option_spellings(element : @engine.ElementDef) -> Array[String] {
   let spellings : Array[String] = []
   match element.long {
     List(values) =>
@@ -263,7 +263,7 @@ fn help_default(values : Array[@engine.Value]?) -> HelpDefault? {
 }
 
 ///|
-fn is_group_declaration(element : @engine.ElemDef) -> Bool {
+fn is_group_declaration(element : @engine.ElementDef) -> Bool {
   element.name == "" && element.help_meta.help_group_name is Some(_)
 }
 
@@ -282,20 +282,20 @@ fn find_option(definition : @engine.Definition, name : String) -> Bool {
 ///|
 fn option_alias_pairs(
   definition : @engine.Definition,
-) -> Array[(@engine.AliasDef, @engine.ElemDef)] {
+) -> Array[(@engine.AliasDef, @engine.ElementDef)] {
   let aliases : Array[@engine.AliasDef] = []
   for alias_def in definition.aliases {
     if find_option(definition, alias_def.target) {
       aliases.push(alias_def)
     }
   }
-  let entries : Array[@engine.ElemDef] = []
+  let entries : Array[@engine.ElementDef] = []
   for element in definition.options {
     if element.is_alias {
       entries.push(element)
     }
   }
-  let output : Array[(@engine.AliasDef, @engine.ElemDef)] = []
+  let output : Array[(@engine.AliasDef, @engine.ElementDef)] = []
   let count = if aliases.length() < entries.length() {
     aliases.length()
   } else {
@@ -309,7 +309,7 @@ fn option_alias_pairs(
 
 ///|
 fn alias_spellings_for(
-  pairs : Array[(@engine.AliasDef, @engine.ElemDef)],
+  pairs : Array[(@engine.AliasDef, @engine.ElementDef)],
   target : String,
   canonical_spellings : Array[String],
 ) -> Array[String] {
@@ -403,11 +403,11 @@ fn alias_command_names(definition : @engine.Definition) -> Array[String] {
 // ── value_structure derivation (DR-113 §4.1) ─────────────────────────────────
 
 ///|
-/// DR-113 §4.1 の value_structure `single{value_name, type, values_enum}` 素材を ElemDef から組む。
+/// DR-113 §4.1 の value_structure `single{value_name, type, values_enum}` 素材を ElementDef から組む。
 /// `type_name` が None の要素 (flag / count / help preset / none / dd / config_file / tty / etc — value-less
 /// preset や structural node) は None を返す。help_category (preset_kind="help_category") のみ
 /// or[bool, string] 特殊展開。将来 seq/repeat 拡張ポイントは @engine.Repeat / @engine.Seq を追加すれば良い。
-fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
+fn value_structure_of(element : @engine.ElementDef) -> HelpValueStructure? {
   let meta = element.help_meta
   // DR-113 §4.1/§4.2: wire_decode が完全 tree を組んで value_structure_hint に carry している
   // ケース (or/seq/repeat 系 wire キー、あるいは tree-form shadow type 参照) を最優先。
@@ -466,7 +466,7 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
 /// positional 用: 常に何らかの value_structure を返す (schema required — positional は type "none" 相当でも
 /// `{"single":{}}` の空箱を返す)。root-basic / subcommand-path 等で type "string" が typical。
 fn positional_value_structure_of(
-  element : @engine.ElemDef,
+  element : @engine.ElementDef,
 ) -> HelpValueStructure {
   match value_structure_of(element) {
     Some(vs) => vs
@@ -527,7 +527,7 @@ fn collect_scope_entries(
 /// - name-derived prefix pattern + descendant scope に is_inheritable=true 同名要素 → inheritable 由来。
 /// - 上記いずれでもなければ Local。
 fn resolve_origin(
-  element : @engine.ElemDef,
+  element : @engine.ElementDef,
   current_path : Array[String],
   index : ScopeIndex,
 ) -> HelpOrigin {
@@ -613,8 +613,8 @@ fn str_has_suffix(s : String, suffix : String) -> Bool {
 
 ///|
 fn help_option_from(
-  element : @engine.ElemDef,
-  meta : @engine.HelpMetaDecl,
+  element : @engine.ElementDef,
+  meta : @engine.HelpMetaDeclaration,
   alias_spellings : Array[String],
   origin : HelpOrigin,
 ) -> HelpOption {
@@ -1019,7 +1019,7 @@ fn filter_category(
 /// or/seq/repeat の順序を保持 (fixture value-structure-and-types が期待する COLOR/INFO/WARN/
 /// DEBUG 順は options 順 fg → level-colors → 各 seq 要素)。
 fn help_types_projection(
-  root_types : Array[@engine.HelpTypeDecl],
+  root_types : Array[@engine.HelpTypeDeclaration],
   root_def : @engine.Definition,
 ) -> Array[HelpTypeEntry] {
   let output : Array[HelpTypeEntry] = []

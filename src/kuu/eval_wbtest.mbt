@@ -35,7 +35,7 @@ test "MDR-002 §1.5 acceptance: greedy repeat in a child command yields the pare
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("seq", child)],
+    greedy: [@engine.CommandSatisfied("seq", child)],
     positional: [@builtins.string_arg("tail", [])],
     entities: [],
     constraints: [],
@@ -95,7 +95,7 @@ test "MDR-002 §1.4 control: without the trailing positional, greedy xs takes ev
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("seq", child)],
+    greedy: [@engine.CommandSatisfied("seq", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -529,14 +529,14 @@ test "REGRESSION step_greedy @engine.Held carries acc so failure resident surviv
 }
 
 ///|
-test "REGRESSION consume_head @engine.ReqArg respects 先食い (raw-eat suppression)" {
-  // deep-review LENS-T2b: `fs` is a Ref-repeat over @engine.ReqArg head. Without
-  // the @engine.ReqArg arm in consume_head, the fallback eval() sees no scope and
+test "REGRESSION consume_head @engine.RequiredArgument respects 先食い (raw-eat suppression)" {
+  // deep-review LENS-T2b: `fs` is a Ref-repeat over @engine.RequiredArgument head. Without
+  // the @engine.RequiredArgument arm in consume_head, the fallback eval() sees no scope and
   // cannot apply suppressed(), so the "more" rep of fs raw-eats the
   // greedy trigger "-v" as another f value. Correct: -v fires the greedy
   // entry (verbose=true), fs has ONE binding.
   let defs : Map[String, @engine.Node] = Map([])
-  defs.set("fs", @engine.Seq([@engine.ReqArg("f")]))
+  defs.set("fs", @engine.Seq([@engine.RequiredArgument("f")]))
   let root : @engine.Scope = {
     greedy: [
       @engine.Seq([
@@ -754,7 +754,7 @@ test "DR-053 §4: tried_triggers reflects the failure position's OWN scope, not 
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("sub", child)],
+    greedy: [@engine.CommandSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -806,7 +806,7 @@ test "DR-053 §4: help_entry reflects the failure position's OWN scope, not root
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("sub", child)],
+    greedy: [@engine.CommandSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -841,7 +841,7 @@ test "DR-053 §4: help_entry is None when the failure-position scope has no help
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("sub", child)],
+    greedy: [@engine.CommandSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -923,7 +923,7 @@ test "REVIEW-D2 制約照合は scope-exact: 子スコープの同名 key は ro
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("c", child)],
+    greedy: [@engine.CommandSatisfied("c", child)],
     positional: [],
     entities: [],
     constraints: [Requires("x", ["z"])],
@@ -942,7 +942,7 @@ test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコー�
   // が正 (旧実装は key 名一致で誤充足して @engine.Success にしていた)。
   //
   // issue value-present-ladder-gap 裁定 2026-07-10 (更新): Requires 目的語判定は KTop から
-  // apply_requires_filter (post-parse) へ委譲された — scope-exact 判定自体 (`@engine.elem_value` の
+  // apply_requires_filter (post-parse) へ委譲された — scope-exact 判定自体 (`@engine.element_value` の
   // `scope_path_eq` フィルタ) は変わらないので、`apply_requires_filter` を通した結果で確認する。
   let child : @engine.Scope = {
     greedy: [
@@ -961,7 +961,7 @@ test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコー�
         @engine.Exact("--file"),
         @engine.Bind("file", @engine.Bool(true)),
       ]),
-      @engine.CmdSatisfied("sub", child),
+      @engine.CommandSatisfied("sub", child),
     ],
     positional: [],
     entities: [],
@@ -1003,7 +1003,7 @@ test "REVIEW-D4 入れ子スコープの constraints も完全経路の成立条
     constraints: [Conflicts("x", ["y"])],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("sub", child)],
+    greedy: [@engine.CommandSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1183,9 +1183,9 @@ test "DR-097 述語 pin: requires (遅延述語) 未充足は先食い判定に�
 }
 
 ///|
-test "REVIEW-D6 @engine.CmdSatisfied トリガ一致も先食い: 子スコープ不成立でも command 名は raw 落ちしない" {
+test "REVIEW-D6 @engine.CommandSatisfied トリガ一致も先食い: 子スコープ不成立でも command 名は raw 落ちしない" {
   // `build` が最終トークンで子スコープの必須 positional x が満たせない場合、
-  // 旧実装は @engine.CmdSatisfied の読みが立たず build が親 positional f に raw 落ちして
+  // 旧実装は @engine.CommandSatisfied の読みが立たず build が親 positional f に raw 落ちして
   // silent @engine.Success になっていた。トリガ (command 名) 一致で suppress し、
   // 結末は x の missing_operand を含む @engine.Failure。
   let child : @engine.Scope = {
@@ -1195,7 +1195,7 @@ test "REVIEW-D6 @engine.CmdSatisfied トリガ一致も先食い: 子スコー�
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("build", child)],
+    greedy: [@engine.CommandSatisfied("build", child)],
     positional: [@builtins.string_arg("f", [])],
     entities: [],
     constraints: [],
@@ -1281,7 +1281,7 @@ test "DR-074 §1: float resident accepts inf (ci, signed), number resident rejec
 
 ///|
 /// REGRESSION scope_consume: a BARE positional `float resident` (not wrapped in a greedy
-/// @engine.Seq/@engine.Exact satellite) must respect 先食い (suppressed) just like number resident/int resident/@engine.ReqArg do
+/// @engine.Seq/@engine.Exact satellite) must respect 先食い (suppressed) just like number resident/int resident/@engine.RequiredArgument do
 /// (docs/issue/2026-07-08-floatarg-spine-arm-gap.md). Without a dedicated float resident arm in
 /// `scope_consume`, the item falls to the generic `other => eval(other, ctx, pos)` catch-all,
 /// which has no access to the parent scope and so cannot call `suppressed()` — it tries to
@@ -1323,7 +1323,7 @@ test "REGRESSION scope_consume float resident respects 先食い (raw-eat suppre
 
 ///|
 /// REGRESSION consume_head: a Ref-repeat over a `float resident` head must respect 先食い, mirroring
-/// the established @engine.ReqArg precedent above ("REGRESSION consume_head @engine.ReqArg respects 先食い").
+/// the established @engine.RequiredArgument precedent above ("REGRESSION consume_head @engine.RequiredArgument respects 先食い").
 /// Without the float resident arm in `consume_head`, the repeat's "one more rep" attempt raw-eats the
 /// greedy trigger token "inf" as ANOTHER float value (again silently, since "inf" parses) instead
 /// of stopping at 1 rep and letting the greedy `verbose` entry fire on it. Correct: `fs` = [1.5],
@@ -1488,7 +1488,7 @@ test "REGRESSION scope_consume_rep @engine.Many(compound ref-template head) resp
 
 ///|
 /// A held Error at the ROOT scope carries `path: []` (root 直下, DR-066 §4):
-/// no @engine.CmdSatisfied/@engine.Scoped boundary was crossed on the way out, so there is no
+/// no @engine.CommandSatisfied/@engine.Scoped boundary was crossed on the way out, so there is no
 /// ancestor to record.
 test "DR-066 §4: a root-level held Error carries path: []" {
   let root : @engine.Scope = {
@@ -1514,11 +1514,11 @@ test "DR-066 §4: a root-level held Error carries path: []" {
 }
 
 ///|
-/// A held Error one @engine.CmdSatisfied deep carries `path: [<command name>]` (DR-066 §4
+/// A held Error one @engine.CommandSatisfied deep carries `path: [<command name>]` (DR-066 §4
 /// snoc form: `path` = ancestors, `element` = self). The error fires INSIDE
 /// the child scope (a bare `number resident` parse failure straight from `eval`,
 /// `path: []` at construction) and crosses exactly one command boundary on
-/// its way out through `step_greedy`'s @engine.CmdSatisfied arm.
+/// its way out through `step_greedy`'s @engine.CommandSatisfied arm.
 test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
   let child : @engine.Scope = {
     greedy: [],
@@ -1527,7 +1527,7 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("sub", child)],
+    greedy: [@engine.CommandSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1553,11 +1553,11 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
 }
 
 ///|
-/// A held Error two @engine.CmdSatisfied levels deep carries `path: ["a", "b"]` (root-first,
+/// A held Error two @engine.CommandSatisfied levels deep carries `path: ["a", "b"]` (root-first,
 /// DR-066 §4): the error crosses TWO command boundaries on its way out — "b"
 /// prepends first (innermost, its own step_greedy loop), then "a" prepends in
 /// front of that (its parent's), landing root-first as the CPS @engine.Held bubbles
-/// out through both KNest/@engine.CmdSatisfied crossings.
+/// out through both KNest/@engine.CommandSatisfied crossings.
 test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (root-first)" {
   let grandchild : @engine.Scope = {
     greedy: [],
@@ -1566,13 +1566,13 @@ test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (r
     constraints: [],
   }
   let child : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("b", grandchild)],
+    greedy: [@engine.CommandSatisfied("b", grandchild)],
     positional: [],
     entities: [],
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("a", child)],
+    greedy: [@engine.CommandSatisfied("a", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1616,7 +1616,7 @@ test "DR-066 §4: a constraint violation declared in a child scope carries the c
     constraints: [Requires("x", ["y"])],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("sub", child)],
+    greedy: [@engine.CommandSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1681,7 +1681,7 @@ test "DR-066 §4: a residual-token Error carries path: []" {
 /// DR-066 §4 (issue 2026-07-08 pending-starvation-missing-operand-path): a @engine.Pending's
 /// starved value slot converts to a `missing_operand` Error at parse()'s top level
 /// (MDR-002 §2.3). That conversion point sat OUTSIDE the CPS scope-boundary prepend
-/// (`nest_branches` / `step_greedy`'s @engine.CmdSatisfied case) that a @engine.Held's `@engine.ParseError.path`
+/// (`nest_branches` / `step_greedy`'s @engine.CommandSatisfied case) that a @engine.Held's `@engine.ParseError.path`
 /// already rode through, so nested-scope starvation always surfaced `path: []` no
 /// matter how deep the starved slot actually was. `sub --port` (no value token after
 /// `--port`) starves the value slot at input end one command-scope deep.
@@ -1695,7 +1695,7 @@ test "DR-066 §4: a @engine.Pending-starvation missing_operand Error inside a ne
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSatisfied("sub", child)],
+    greedy: [@engine.CommandSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1732,11 +1732,11 @@ test "DR-066 §4: a @engine.Pending-starvation missing_operand Error inside a ne
 /// do NOT "fix" this test to make it pass differently without updating the issue. installer.mbt's
 /// Group lowering comment documents the "bounded-head" workaround (give the head an explicit
 /// leading trigger) until this is resolved one way or the other.
-test "KNOWN GAP: @engine.IdxRepeat greedy-max has no downstream backtrack for a following mandatory positional" {
+test "KNOWN GAP: @engine.IndexedRepeat greedy-max has no downstream backtrack for a following mandatory positional" {
   let root : @engine.Scope = {
     greedy: [],
     positional: [
-      @engine.IdxRepeat("g", @builtins.string_arg("x", []), 1, None),
+      @engine.IndexedRepeat("g", @builtins.string_arg("x", []), 1, None),
       @builtins.string_arg("tail", []),
     ],
     entities: [],
@@ -1773,11 +1773,11 @@ test "KNOWN GAP: @engine.IdxRepeat greedy-max has no downstream backtrack for a 
 /// `min + tail's own 1 token = 2`: exactly 1 rep is taken (not greedy-max over everything), so
 /// `tail` gets the 2nd token instead of starving — mirrors the fixture's `["a","b"]` shape
 /// exactly (`fixtures/repeat-parse/group-trailing-positional.json::group-then-scalar-consumed`).
-test "@engine.IdxRepeat budget=Some(0): stops after min reps, does not starve a following mandatory positional" {
+test "@engine.IndexedRepeat budget=Some(0): stops after min reps, does not starve a following mandatory positional" {
   let root : @engine.Scope = {
     greedy: [],
     positional: [
-      @engine.IdxRepeat("g", @builtins.string_arg("x", []), 1, Some(0)),
+      @engine.IndexedRepeat("g", @builtins.string_arg("x", []), 1, Some(0)),
       @builtins.string_arg("tail", []),
     ],
     entities: [],
@@ -1812,11 +1812,11 @@ test "@engine.IdxRepeat budget=Some(0): stops after min reps, does not starve a 
 /// 保証: `budget=Some(1)` (a bounded `repeat:{min:1,max:2}` spec) allows up to `min+budget=2`
 /// reps and stops there — confirms budget is a genuine upper bound (not just an on/off switch
 /// at 0) by observing how much the repeat consumes before yielding to `tail`.
-test "@engine.IdxRepeat budget=Some(1): consumes up to min+budget=2 reps, leaves the rest for tail" {
+test "@engine.IndexedRepeat budget=Some(1): consumes up to min+budget=2 reps, leaves the rest for tail" {
   let root : @engine.Scope = {
     greedy: [],
     positional: [
-      @engine.IdxRepeat("g", @builtins.string_arg("x", []), 1, Some(1)),
+      @engine.IndexedRepeat("g", @builtins.string_arg("x", []), 1, Some(1)),
       @builtins.string_arg("tail", []),
     ],
     entities: [],

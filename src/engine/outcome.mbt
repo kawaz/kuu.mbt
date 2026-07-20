@@ -31,7 +31,7 @@ pub(all) struct FailureData {
 /// apart). Non-empty only for export-key co-exposure collisions where degenerate views (e.g.
 /// two flags both `true`) share a result key but come from different entities (DR-073 §2:
 /// entity name is the only cross-view-stable identifier since value/source can coincide).
-pub(all) struct AmbInterp {
+pub(all) struct AmbiguousInterpretation {
   binds : Array[Binding]
   claimants : Array[(String, String)]
 } derive(Eq, Debug)
@@ -41,7 +41,7 @@ pub(all) struct AmbInterp {
 /// claimants面 (DR-073 §1 の「解釈に claimants を束ねた組」= 並行配列ではなく組で保持し、集合
 /// 比較 (CONFORMANCE §3) が (view, claimants) の対を単位として突き合わせられる)。
 pub(all) struct AmbiguousData {
-  interpretations : Array[AmbInterp]
+  interpretations : Array[AmbiguousInterpretation]
   help_entry : String?
 } derive(Eq, Debug)
 
@@ -240,10 +240,10 @@ pub fn tried_triggers_of(
 }
 
 ///|
-/// Walk `root` down `path` (root-first ancestor scope names, DR-066 §4) through CmdSatisfied children
+/// Walk `root` down `path` (root-first ancestor scope names, DR-066 §4) through CommandSatisfied children
 /// ONLY — a `Scoped` label (DR-025 result scope label) wraps an arbitrary Node, not necessarily a
 /// child Scope (MDR-002 "light layer-3 hook; does not change path count"), so a path segment that
-/// doesn't match any CmdSatisfied name stops the walk short (returns `None`, tried_triggers_of falls back
+/// doesn't match any CommandSatisfied name stops the walk short (returns `None`, tried_triggers_of falls back
 /// to the root-scope material rather than guessing). `[]` resolves straight to `root`'s own scope.
 fn scope_at_path(root : Node, path : Array[String]) -> Scope? {
   let mut cur = root
@@ -253,7 +253,7 @@ fn scope_at_path(root : Node, path : Array[String]) -> Scope? {
         let mut next : Node? = None
         for g in sc.greedy {
           match g {
-            CmdSatisfied(name, child) =>
+            CommandSatisfied(name, child) =>
               if name == label {
                 next = Some(ScopeNode(child))
               }
@@ -299,7 +299,7 @@ fn tried_triggers_in_greedy(g : Node, out : Array[String]) -> Unit {
       if !is_pattern {
         out.push(spelling)
       }
-    CmdSatisfied(name, _) => out.push(name)
+    CommandSatisfied(name, _) => out.push(name)
     _ => ()
   }
 }
@@ -459,14 +459,14 @@ fn entity_key(path : Array[String], name : String) -> String {
 
 ///|
 /// Collect every statically reachable Entity, keyed by `entity_key(path, name)`, over the WHOLE
-/// tree — root scope plus every nested CmdSatisfied / inline positional ScopeNode / scope-shaped
+/// tree — root scope plus every nested CommandSatisfied / inline positional ScopeNode / scope-shaped
 /// repeat head. Unlike `collect_scopes` (eval.mbt), which serves ONLY the KTop constraint table
 /// and therefore skips any scope with no constraints, this visits every scope unconditionally: a
 /// `Candidate.origin` can name an Entity in a scope that has no constraints at all, and
 /// `complete_tree`'s completer lookup needs to find it regardless. Mirrors
 /// `collect_scopes`/`collect_scope_into`/`collect_greedy_scopes`/`collect_pos_scopes`'s traversal
-/// shape (same Ref/CmdSatisfied/Or/Rooted/BoundedTail/Many cases and the SAME root-first path-building
-/// convention — `path + [name]` on CmdSatisfied entry — so a `Candidate.path` built by `nest_cands`/
+/// shape (same Ref/CommandSatisfied/Or/Rooted/BoundedTail/Many cases and the SAME root-first path-building
+/// convention — `path + [name]` on CommandSatisfied entry — so a `Candidate.path` built by `nest_cands`/
 /// `nest_branches` lines up exactly with the path this collector attaches to that Entity).
 ///
 /// A key maps to every distinct opaque EntityExt resident found there. DR-067 §1 allows
@@ -527,7 +527,7 @@ fn collect_entities_greedy(
   seen_refs : Array[String],
 ) -> Unit {
   match g {
-    CmdSatisfied(name, child) => {
+    CommandSatisfied(name, child) => {
       let p2 : Array[String] = []
       for s in path {
         p2.push(s)

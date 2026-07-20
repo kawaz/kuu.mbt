@@ -20,7 +20,7 @@ fn empty_def() -> @engine.Definition {
 }
 
 ///|
-fn empty_help_meta_for_test() -> @engine.HelpMetaDecl {
+fn empty_help_meta_for_test() -> @engine.HelpMetaDeclaration {
   {
     help: None,
     help_long: None,
@@ -53,15 +53,15 @@ fn is_resident(node : @engine.Node, kind : String, name : String) -> Bool {
 }
 
 ///|
-/// @engine.ElemDef を「必要な軸だけ named param で差し替える」ビルダー。全 field を毎回書くと slice の
+/// @engine.ElementDef を「必要な軸だけ named param で差し替える」ビルダー。全 field を毎回書くと slice の
 /// helpers_wbtest.mbt と同じ肥大化を招くため、ここでは lowering wbtest が触る軸だけ label に出す。
 fn el(
   name : String,
   ty : &@engine.TypeExt,
-  // DR-071 §1 / kawaz 裁定 2026-07-08: `long` は wire 二形 (@engine.LongDecl) をそのまま受け取る — bool/array
+  // DR-071 §1 / kawaz 裁定 2026-07-08: `long` は wire 二形 (@engine.LongDeclaration) をそのまま受け取る — bool/array
   // の区別が installer 層の resolve_long (糖衣展開・DR-076 §2 flag 差し替え/補完) に必要なため、
   // Array[String] へ潰さない。既定は `List([])` (= absent = 入口なし)。
-  long? : @engine.LongDecl = List([]),
+  long? : @engine.LongDeclaration = List([]),
   short? : Array[Char] = [],
   env? : Array[String] = [],
   is_tty? : Bool = false,
@@ -69,8 +69,8 @@ fn el(
   tty_cygwin? : Bool = true,
   is_dd? : Bool = false,
   // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見: positional-face nameless
-  // exact-match leaf marker (installer.mbt's `@engine.ElemDef.is_exact` doc comment) — exposed here so
-  // lowering wbtest cases can exercise it without hand-writing a full @engine.ElemDef literal, same
+  // exact-match leaf marker (installer.mbt's `@engine.ElementDef.is_exact` doc comment) — exposed here so
+  // lowering wbtest cases can exercise it without hand-writing a full @engine.ElementDef literal, same
   // rationale as `is_dd` above.
   is_exact? : Bool = false,
   dd_match? : String? = None,
@@ -89,7 +89,7 @@ fn el(
   accum_filters? : Array[String] = [],
   // DR-091 §3 / DR-096 §1: long-only axis, `el`'s other builders (`opt`/`pos`,
   // json_conformance_test.mbt) already carry these — added here so lowering wbtest cases can
-  // exercise `long_eq_sep` without hand-writing a full @engine.ElemDef literal.
+  // exercise `long_eq_sep` without hand-writing a full @engine.ElementDef literal.
   long_prefix? : String = "--",
   long_eq_sep? : @engine.EqSepMode = @engine.Allow,
   // issue scope-config-object-gap: same rationale, for the DESIGN §7.2 fields `inst_short`/
@@ -97,7 +97,7 @@ fn el(
   short_prefix? : String = "-",
   short_combine? : Bool = true,
   short_attached_value? : @engine.AttachMode = @engine.Allow,
-) -> @engine.ElemDef {
+) -> @engine.ElementDef {
   {
     name,
     ty,
@@ -166,7 +166,7 @@ fn el(
     allow_base_prefix: false,
     bool_config: @builtins.bool_config_canonical(),
     // `chain` (filters_wbtest.mbt, same package): keeps this builder's colon-shorthand ergonomics
-    // (`piece_filters=["trim"]`) even though `@engine.ElemDef` fields are `Array[@engine.FnInvocation]` in
+    // (`piece_filters=["trim"]`) even though `@engine.ElementDef` fields are `Array[@engine.FnInvocation]` in
     // production (issue filter-spelling-inband-encoding-retyping).
     piece_filters: chain(piece_filters),
     value_filters: chain(value_filters),
@@ -277,7 +277,7 @@ test "long installer: value option gets 1 greedy @engine.Seq satellite + 1 @buil
 /// (builtins/matcher_residents_wbtest.mbt「short cluster: deprecated entry rides a @depr marker」). `deprecated: true`
 /// on a plain (non-alias) element stands in for both cases DR-058 §2 requires a warning for — a
 /// directly-deprecated canonical entry, and a deprecated alias entry-copy (DR-057 §3
-/// `alias_entry`) — both fold into the SAME `@engine.ElemDef.deprecated` bool by the time `inst_long` runs,
+/// `alias_entry`) — both fold into the SAME `@engine.ElementDef.deprecated` bool by the time `inst_long` runs,
 /// so lowering cannot (and need not) distinguish them. Firing the entry (`--port 8080`) must NOT
 /// alter the parsed value (`port` still binds `8080`) — only a `@depr:port` bookkeeping marker is
 /// added, collected by `@engine.warnings_of`.
@@ -704,11 +704,11 @@ test "repeat installer: bounded max lowers to min heads + @engine.BoundedTail (n
   assert_eq(ent.flatten, true)
 }
 
-// ── Group + bounded repeat → @engine.IdxRepeat budget (issue
+// ── Group + bounded repeat → @engine.IndexedRepeat budget (issue
 // 2026-07-13-positional-group-trailing-missing-operand) ─────
 
 ///|
-/// 保証: Group (named group repeat) の bounded (`max` 有限) spec は `@engine.IdxRepeat` の 4th field
+/// 保証: Group (named group repeat) の bounded (`max` 有限) spec は `@engine.IndexedRepeat` の 4th field
 /// (budget = `max - min`) に反映される — 以前はこの field 自体が存在せず、`lower_positional` の
 /// Group ケースが `elem_repeat(e).max` を丸ごと無視して常に unbounded (budget=None) として lower
 /// していたため、`repeat:{min:1,max:1}` のような bounded named-group でも greedy-max-forever に
@@ -716,8 +716,8 @@ test "repeat installer: bounded max lowers to min heads + @engine.BoundedTail (n
 /// (`fixtures/repeat-parse/group-trailing-positional.json` が end-to-end で pin する現象、本
 /// wbtest は lowering 層の budget 計算そのものを直接固定する — fixture が見るのは parse 結果だけで
 /// この中間表現は見えない)。
-test "Group installer: bounded max (min:1,max:1) lowers @engine.IdxRepeat's budget field to Some(0)" {
-  let grp : @engine.ElemDef = {
+test "Group installer: bounded max (min:1,max:1) lowers @engine.IndexedRepeat's budget field to Some(0)" {
+  let grp : @engine.ElementDef = {
     ..el("grp", @builtins.string_type()),
     repeat: Some({ min: 1, max: Some(1), is_lazy: false }),
     body: Group([el("gflag", @builtins.string_type())]),
@@ -730,7 +730,7 @@ test "Group installer: bounded max (min:1,max:1) lowers @engine.IdxRepeat's budg
   assert_eq(sc.positional.length(), 2)
   assert_eq(
     sc.positional[0],
-    @engine.IdxRepeat("grp", @builtins.string_arg("gflag", []), 1, Some(0)),
+    @engine.IndexedRepeat("grp", @builtins.string_arg("gflag", []), 1, Some(0)),
   )
   assert_eq(sc.positional[1], @builtins.string_arg("ctrl", []))
 }
@@ -738,8 +738,8 @@ test "Group installer: bounded max (min:1,max:1) lowers @engine.IdxRepeat's budg
 ///|
 /// 保証: budget は `max - min` (min:1,max:3 → budget=Some(2)) — 0 固定ではなく一般の bounded 範囲を
 /// 正しく計算することを確認する (上のケースだけだと budget が常に 0 になる特殊化バグを見逃しうる)。
-test "Group installer: bounded max (min:1,max:3) lowers @engine.IdxRepeat's budget field to Some(2)" {
-  let grp : @engine.ElemDef = {
+test "Group installer: bounded max (min:1,max:3) lowers @engine.IndexedRepeat's budget field to Some(2)" {
+  let grp : @engine.ElementDef = {
     ..el("grp", @builtins.string_type()),
     repeat: Some({ min: 1, max: Some(3), is_lazy: false }),
     body: Group([el("gflag", @builtins.string_type())]),
@@ -749,7 +749,7 @@ test "Group installer: bounded max (min:1,max:3) lowers @engine.IdxRepeat's budg
   assert_eq(sc.positional.length(), 1)
   assert_eq(
     sc.positional[0],
-    @engine.IdxRepeat("grp", @builtins.string_arg("gflag", []), 1, Some(2)),
+    @engine.IndexedRepeat("grp", @builtins.string_arg("gflag", []), 1, Some(2)),
   )
 }
 
@@ -757,8 +757,8 @@ test "Group installer: bounded max (min:1,max:3) lowers @engine.IdxRepeat's budg
 /// 保証: repeat 属性を持たない Group (`elem_repeat(e) is None`) は従来どおり budget=None
 /// (min=0 の UNBOUNDED) — 本修正が「repeat 無指定 Group」の既存挙動を変えないことを固定する
 /// (対極確認、self-written-rule-blind-spots の「新規追加時は既存の無変更ケースも確認する」線)。
-test "Group installer: no repeat spec keeps @engine.IdxRepeat unbounded (min:0, budget:None)" {
-  let grp : @engine.ElemDef = {
+test "Group installer: no repeat spec keeps @engine.IndexedRepeat unbounded (min:0, budget:None)" {
+  let grp : @engine.ElementDef = {
     ..el("grp", @builtins.string_type()),
     body: Group([el("gflag", @builtins.string_type())]),
   }
@@ -767,7 +767,7 @@ test "Group installer: no repeat spec keeps @engine.IdxRepeat unbounded (min:0, 
   assert_eq(sc.positional.length(), 1)
   assert_eq(
     sc.positional[0],
-    @engine.IdxRepeat("grp", @builtins.string_arg("gflag", []), 0, None),
+    @engine.IndexedRepeat("grp", @builtins.string_arg("gflag", []), 0, None),
   )
 }
 
@@ -785,14 +785,14 @@ test "Group installer: no repeat spec keeps @engine.IdxRepeat unbounded (min:0, 
 /// own top-of-function guard (now shared by every recursive call site), so the phantom never gets
 /// registered and the real element's entity lands correctly.
 test "ensure_entity_body: an is_exact leaf nested inside Group creates no phantom @engine.Entity, letting a same-named real element register its own (codex レビュー Major 4, DR-058 §2)" {
-  let grp : @engine.ElemDef = {
+  let grp : @engine.ElementDef = {
     ..el("grp", @builtins.string_type()),
     body: Group([
       el("marker", @builtins.none_type(), is_exact=true),
       el("val", @builtins.string_type()),
     ]),
   }
-  let marker_real : @engine.ElemDef = el("marker", @builtins.string_type())
+  let marker_real : @engine.ElementDef = el("marker", @builtins.string_type())
   let def : @engine.Definition = {
     ..empty_def(),
     positionals: [grp, marker_real],
@@ -813,7 +813,7 @@ test "ensure_entity_body: an is_exact leaf nested inside Group creates no phanto
 // ── multiple の collector 属性 (DR-036, issue 2026-07-09-dec-multiple-collector-decode) ─────
 
 ///|
-/// 保証: `multiple:true` + collector 宣言 (@engine.ElemDef) は accum cell の @engine.Entity へそのまま写る
+/// 保証: `multiple:true` + collector 宣言 (@engine.ElementDef) は accum cell の @engine.Entity へそのまま写る
 /// (`ensure_entity` の write-through、installer.mbt) — collector 自体を解釈・変換する installer は
 /// 無く、宣言をそのまま @engine.Entity.collector に通す (DR-036 の decode/実体 lookup の「実体」側)。
 test "multiple installer: a declared collector rides straight through to @engine.Entity.collector" {
@@ -885,13 +885,13 @@ test "dd installer: options[] placement lowers to same @engine.DdSatisfied with 
 
 // ── issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め: positional-face
 // nameless exact-match leaf (`{"exact": "init"}`, DR-063 A.1 裸文字列→exact 正規化 / DR-018 配置で
-// 役割決定)。lowering は `@builtins.elem_head` の `is_exact` 分岐で `@engine.Exact(name)` へ直接落ち (dd と同じ「entity
+// 役割決定)。lowering は `@builtins.element_head` の `is_exact` 分岐で `@engine.Exact(name)` へ直接落ち (dd と同じ「entity
 // を持たない」standing、上の dd installer テストと対称)、消費意味論は node.mbt の bare `@engine.Exact` の doc
 // comment (「literal token match; binds nothing, consumes 1」) がそのまま定義する — 新規の parse
 // 意味論を追加したわけではなく、既存 `@engine.Exact` node を positional spine 上で使えるようにしただけ。 ──
 
 ///|
-/// 保証 (lowering 断面): `is_exact:true` の positional 要素は `@builtins.elem_head` を経て spine に裸の
+/// 保証 (lowering 断面): `is_exact:true` の positional 要素は `@builtins.element_head` を経て spine に裸の
 /// `@engine.Exact(name)` が 1 本乗るだけで、entity は作られない (dd と同じ「値なし」standing、DR-064 §1 と
 /// 同型の判断が exact literal にも及ぶ)。
 test "positional exact literal: lowers to bare @engine.Exact(name) on the spine, no entity (issue 2026-07-15-audit-node-nodashstr-deprmark-variants)" {
@@ -971,11 +971,11 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
     ],
   }
   let sc = ok_scope(def, all_installers())
-  // 子 scope (@engine.CmdSatisfied("sub", child_scope)) を取り出す
+  // 子 scope (@engine.CommandSatisfied("sub", child_scope)) を取り出す
   let mut child_sc : @engine.Scope? = None
   for g in sc.greedy {
     match g {
-      @engine.CmdSatisfied(n, cs) => if n == "sub" { child_sc = Some(cs) }
+      @engine.CommandSatisfied(n, cs) => if n == "sub" { child_sc = Some(cs) }
       _ => ()
     }
   }
@@ -1707,7 +1707,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
   let mut mid_sc : @engine.Scope? = None
   for g in sc.greedy {
     match g {
-      @engine.CmdSatisfied(n, cs) => if n == "mid" { mid_sc = Some(cs) }
+      @engine.CommandSatisfied(n, cs) => if n == "mid" { mid_sc = Some(cs) }
       _ => ()
     }
   }
@@ -1715,7 +1715,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
   let mut sub_sc : @engine.Scope? = None
   for g in mid_sc.greedy {
     match g {
-      @engine.CmdSatisfied(n, cs) => if n == "sub" { sub_sc = Some(cs) }
+      @engine.CommandSatisfied(n, cs) => if n == "sub" { sub_sc = Some(cs) }
       _ => ()
     }
   }
@@ -1825,7 +1825,7 @@ test "DR-077 §2: an unrecognized update transform name is a DR-054 unknown-voca
 /// registry に**実在する**が signature は `Validate` (`filters.mbt`) — `T→T` の transform ではなく
 /// `T→T raise` の validator なので `update` (DR-077 §1 `cell = f(old)`、旧値から新値を計算する
 /// transform を要求) には使えない。前の wbtest (`bogus` = 不在) と対で「存在するが signature 不適合」
-/// ケースを分離 pin する — どちらも現行 `@engine.DefErrKind` (DR-054) に signature 専用の細分 kind が無い
+/// ケースを分離 pin する — どちらも現行 `@engine.DefErrorKind` (DR-054) に signature 専用の細分 kind が無い
 /// ため同じ `@engine.UnknownVocab` に倒れる (installer.mbt の `@builtins.classify_long_spelling` doc comment 参照、
 /// 実装の裁量として報告済み)。
 test "DR-077 §2: a registered but Validate-signature filter is also a DR-054 unknown-vocab definition-error" {
@@ -1939,7 +1939,7 @@ test "positional or+repeat installer: string branch repeats in parallel with the
     id: "colorname",
     items: [el("colorname", @builtins.string_type())],
   }
-  let hlcolors : @engine.ElemDef = {
+  let hlcolors : @engine.ElementDef = {
     ..el("hlcolors", @builtins.string_type()),
     repeat: Some({ min: 1, max: None, is_lazy: false }),
     body: Or([rgb_seq, name_leaf]),
@@ -3132,7 +3132,7 @@ test "DR-089: a none-typed element declaring env/config_key/inherit is a definit
 /// 結果、あるいは definitions.types 経由で `tty_stream` を書き忘れた shadow) は definition-error
 /// (kind=invalid-range) — fixture (`definition-error/tty-stream-missing.json`) は JSON decode 経由
 /// (bare/explicit_ns の 2 spelling) をまとめて検査するのに対し、ここでは `collect_tty_stream_missing`
-/// (installer.mbt) を @engine.ElemDef 直叩きで単体固定する (decode 層を経由しない、より狭い axis)。
+/// (installer.mbt) を @engine.ElementDef 直叩きで単体固定する (decode 層を経由しない、より狭い axis)。
 test "DR-099 §3/§7: an option selecting builtin/tty without tty_stream is a definition-error" {
   let use_color = el(
     "use_color",
@@ -3702,7 +3702,7 @@ test "short installer: distinct short_prefix values get SEPARATE @builtins.short
 /// 保証 (DR-014「-abc の結合許可」解釈A, team-lead 裁定 2026-07-11): `e.short_combine` は
 /// `inst_short` の grouping を素通りして `@builtins.short_combine` matcher の `combine` param にそのまま
 /// 反映される (`short_group` の pair-key 化)。matcher レベルの意味論確認は builtins/matcher_residents_wbtest.mbt、
-/// ここでは @engine.ElemDef → matcher の配線そのものを固定する。
+/// ここでは @engine.ElementDef → matcher の配線そのものを固定する。
 test "short installer: e.short_combine rides through to the @builtins.short_combine matcher's combine param" {
   let def : @engine.Definition = {
     ..empty_def(),
@@ -4026,7 +4026,7 @@ test "constraint installer: required on a Or element expands candidates to each 
     id: "flag",
     items: [el("flag", @builtins.bool_type())],
   }
-  let level : @engine.ElemDef = {
+  let level : @engine.ElementDef = {
     ..el("level", @builtins.string_type()),
     required: true,
     body: Or([num_branch, flag_branch]),
@@ -4063,7 +4063,7 @@ test "constraint installer: required on a Or element expands candidates to each 
 /// 要素自身の name 1 個だけ (`[e.name]`) — Or 展開ロジックが非 Or ケースを巻き込んで壊さないこと
 /// を固定する。
 test "constraint installer: required on a plain Cell element keeps a single-name candidate list" {
-  let filename : @engine.ElemDef = {
+  let filename : @engine.ElementDef = {
     ..el("filename", @builtins.string_type()),
     required: true,
   }
@@ -4184,7 +4184,7 @@ test "parse_definition: in_range keeps canonical-number bounds, length_range acc
 ///
 /// 検証で判明した重要事実 (adversarial マトリクス、この wbtest 追加前に実施): 提案されていた
 /// 修正案 A (KTop 変換で `c.link > 0` の候補を除外) は **前提が成立しない** — `nest_cands`
-/// (eval.mbt) は @engine.CmdSatisfied 境界を 1 回跨ぐごとに `link` を必ず 1 減算するため、`depth` 段の境界を
+/// (eval.mbt) は @engine.CommandSatisfied 境界を 1 回跨ぐごとに `link` を必ず 1 減算するため、`depth` 段の境界を
 /// 全て通過した時点で `link` は必ず 0 になる。実機確認 (`c.link` を dump) で、KTop に届く
 /// 全候補が既に `link=0` であることを確認済み — 「`link>0` を除外する」条件は何も除外しない
 /// no-op であり、`path=[]` の誤った候補は `link=0` のまま生き残ってしまう。
@@ -4195,7 +4195,7 @@ test "parse_definition: in_range keeps canonical-number bounds, length_range acc
 /// `c.fire_path` を使う — 同じ starve を複数回観測した候補は全て同じ `fire_path` を持つため、
 /// `push_error` の (element, args_pos, kind, reason, path) dedup が自然に 1 件へ収束する。
 test "global option value-starve inside a child command: missing_operand converges to path=[\"a\"] only (issue 2026-07-15-pending-parseerror-path-asymmetry, DR-066 §4)" {
-  let level_opt : @engine.ElemDef = el(
+  let level_opt : @engine.ElementDef = el(
     "level",
     @builtins.number_type(),
     long=List([":set"]),
@@ -4236,7 +4236,7 @@ test "global option value-starve inside a child command: missing_operand converg
 /// escape 機構自体が発火しない) — `fire_path` 導入がこの既存の正常経路を壊していないことの確認。
 /// `path=["a"]` 1 件のみ、`level_opt` を global=false のまま子 command "a" 専用として宣言する。
 test "command-local (non-global) option value-starve: missing_operand path=[\"a\"] unaffected by fire_path (対極, issue 2026-07-15-pending-parseerror-path-asymmetry)" {
-  let level_opt : @engine.ElemDef = el(
+  let level_opt : @engine.ElementDef = el(
     "level",
     @builtins.number_type(),
     long=List([":set"]),
