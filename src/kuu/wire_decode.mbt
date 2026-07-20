@@ -1757,10 +1757,33 @@ fn dec_option(
     tty_stream_from_shadow,
     tty_cygwin_from_shadow,
   ) = match tystr {
-    "help" =>
+    // DR-113 §2: 5 直交 help preset (help / help_all_category / help_category /
+    // help_show_hidden / help_tree)。M3a では decode 層で 5 type すべてを受理し、旧
+    // 単独 `"help"` 分岐を撤去。fail_action の既定は DR-113 §7.2 の help_on_failure
+    // 既定に一致 (help_show_hidden のみ false、他 4 種は true)。DR-113 §1 が謳う
+    // help_installer.apply への preset canonical 展開 (内部セル `#help` 等への
+    // cell_fns set:true 植え付け、`help_category` の or[bool,string] 展開) は
+    // M3b/M3c で HelpMetaInstaller へ移送する — 本ブランチは M3a 範囲で「type 名
+    // 受理 + fail_action 既定」のみ担う (旧 `"help"` 単体分岐を 5 preset に一般化した
+    // 中継点)。help_category は暫定的に flag_type として decode、or[bool,string]
+    // の value_structure 露出は M4 の help model 側で解決する (fixture
+    // help-types-and-default-fn.json の value_structure 期待は divergence 継続)。
+    "help" | "help_all_category" | "help_category" | "help_tree" =>
       (
         @builtins.flag_type(),
         true,
+        false,
+        @engine.RError,
+        false,
+        @builtins.bool_config_canonical(),
+        false,
+        None,
+        true,
+      )
+    "help_show_hidden" =>
+      (
+        @builtins.flag_type(),
+        false, // DR-113 §7.2: help_show_hidden のみ help_on_failure=false 既定
         false,
         @engine.RError,
         false,
