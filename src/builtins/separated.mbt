@@ -29,7 +29,7 @@ fn sep_binds(
         out.push({
           key: name,
           op: @engine.Splice,
-          value: @engine.VBool(false),
+          value: @engine.Bool(false),
           source: @engine.Cli,
           scope: [],
           link: 0,

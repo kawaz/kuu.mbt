@@ -132,9 +132,9 @@ fn test_join_comma(items : Array[String]) -> String {
 ///|
 fn test_render_val(value : @engine.Value) -> String {
   match value {
-    @engine.VStr(s) => s
-    @engine.VBool(b) => if b { "true" } else { "false" }
-    @engine.VNum(d) => {
+    @engine.String(s) => s
+    @engine.Bool(b) => if b { "true" } else { "false" }
+    @engine.Number(d) => {
       let i = d.to_int()
       if i.to_double() == d {
         i.to_string()
@@ -223,15 +223,15 @@ fn render_outcome(outcome : @engine.Outcome) -> String {
 ///|
 fn render_rval_sorted(value : @engine.RVal) -> String {
   match value {
-    @engine.RScalar(scalar) => test_render_val(scalar)
-    @engine.RArr(values) => {
+    @engine.Scalar(scalar) => test_render_val(scalar)
+    @engine.Array(values) => {
       let items : Array[String] = []
       for item in values {
         items.push(render_rval_sorted(item))
       }
       "[" + test_join_comma(items) + "]"
     }
-    @engine.RObj(fields) => {
+    @engine.Object(fields) => {
       let items : Array[String] = []
       for field in fields {
         items.push(field.0 + "=" + render_rval_sorted(field.1))

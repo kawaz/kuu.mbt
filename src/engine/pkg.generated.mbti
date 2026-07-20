@@ -257,12 +257,12 @@ pub(all) struct CommandDef {
 } derive(Eq, @debug.Debug)
 
 pub enum ConfigVal {
-  CStr(String)
-  CNum(Double)
-  CBool(Bool)
-  CArr(Array[ConfigVal])
-  CObj(Array[(String, ConfigVal)])
-  CNull
+  String(String)
+  Number(Double)
+  Bool(Bool)
+  Array(Array[ConfigVal])
+  Object(Array[(String, ConfigVal)])
+  Null
 } derive(Eq, @debug.Debug)
 
 pub(all) enum Constraint {
@@ -706,9 +706,9 @@ pub(all) enum PieceMark {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum RVal {
-  RScalar(Value)
-  RArr(Array[RVal])
-  RObj(Array[(String, RVal)])
+  Scalar(Value)
+  Array(Array[RVal])
+  Object(Array[(String, RVal)])
 } derive(Eq, @debug.Debug)
 
 pub struct Registry {
@@ -806,9 +806,9 @@ pub(all) struct TypeParseFail {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum Value {
-  VStr(String)
-  VNum(Double)
-  VBool(Bool)
+  String(String)
+  Number(Double)
+  Bool(Bool)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct Variant {

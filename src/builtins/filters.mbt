@@ -5,14 +5,14 @@
 ///|
 /// `trim` (DR-040 §piece_filters example, DR-009 §DSL 文法): string-only, strips ASCII whitespace
 /// from both ends. A `Transform` (the value CHANGES). Non-string input is untouched (defensive —
-/// every current call site only ever feeds `trim` a `@engine.VStr`, DR-009's piece_filters phase is
+/// every current call site only ever feeds `trim` a `@engine.String`, DR-009's piece_filters phase is
 /// string→string by construction).
 fn filter_trim(
   v : @engine.Value,
   _args : Array[String],
 ) -> Result[@engine.Value, (String, String)] {
   match v {
-    @engine.VStr(s) => Ok(@engine.VStr(s.trim(chars=" \t\n\r").to_owned()))
+    @engine.String(s) => Ok(@engine.String(s.trim(chars=" \t\n\r").to_owned()))
     other => Ok(other)
   }
 }
@@ -26,7 +26,7 @@ fn filter_non_empty(
   _args : Array[String],
 ) -> Result[@engine.Value, (String, String)] {
   match v {
-    @engine.VStr(s) =>
+    @engine.String(s) =>
       if s == "" {
         Err(("empty_value", "value is empty"))
       } else {
@@ -53,7 +53,7 @@ fn filter_in_range(
   args : Array[String],
 ) -> Result[@engine.Value, (String, String)] {
   match v {
-    @engine.VNum(n) => {
+    @engine.Number(n) => {
       if args.length() != 2 {
         return Err(
           ("filter_rejected", "in_range requires exactly 2 args (min, max)"),
@@ -106,7 +106,7 @@ fn filter_increment(
     return Err(("filter_rejected", "increment takes no args"))
   }
   match v {
-    @engine.VNum(n) => Ok(@engine.VNum(n + 1.0))
+    @engine.Number(n) => Ok(@engine.Number(n + 1.0))
     _ => Err(("filter_rejected", "increment requires a number value"))
   }
 }
@@ -132,7 +132,7 @@ fn filter_regex_match(
   args : Array[String],
 ) -> Result[@engine.Value, (String, String)] {
   match v {
-    @engine.VStr(s) => {
+    @engine.String(s) => {
       if args.length() != 1 {
         return Err(
           ("filter_rejected", "regex_match requires exactly 1 arg (pattern)"),

@@ -69,7 +69,7 @@ impl TypeExt for RegistryTypeExt with fn has_value_slot(_self) {
 
 ///|
 impl TypeExt for RegistryTypeExt with fn parse_token(_self, token) {
-  Ok(VStr(token))
+  Ok(String(token))
 }
 
 ///|
@@ -107,9 +107,9 @@ impl AccumulatorExt for RegistryAccumulatorExt with fn resolve_cli(
 impl AccumulatorExt for RegistryAccumulatorExt with fn collect(_self, values) {
   let out : Array[RVal] = []
   for value in values {
-    out.push(RScalar(value))
+    out.push(Scalar(value))
   }
-  RArr(out)
+  Array(out)
 }
 
 ///|
@@ -136,7 +136,7 @@ impl CollectorExt for RegistryCollectorExt with fn collect(_self, value) {
 fn registry_filter(name : String, prefix : String) -> FilterDescriptor {
   filter_descriptor(name, Transform, [], fn(value, _args) {
     match value {
-      VStr(text) => Ok(VStr(prefix + text))
+      String(text) => Ok(String(prefix + text))
       other => Ok(other)
     }
   })
@@ -208,8 +208,8 @@ test "Registry registers and looks up each extension category in an independent 
     Some(resident) => {
       assert_eq(resident.signature, Transform)
       assert_eq(
-        (resident.run)([], fn_ctx_filter(ScalarInput(VStr("value")))),
-        Ok(VStr("x:value")),
+        (resident.run)([], fn_ctx_filter(ScalarInput(String("value")))),
+        Ok(String("x:value")),
       )
     }
     None => fail("registered scalar filter resident must be found")
@@ -299,8 +299,8 @@ test "Registry rejects duplicate identity without replacing the first resident" 
   match registry.lookup_filter("synthetic/filter") {
     Some(resident) =>
       assert_eq(
-        (resident.run)([], fn_ctx_filter(ScalarInput(VStr("value")))),
-        Ok(VStr("first:value")),
+        (resident.run)([], fn_ctx_filter(ScalarInput(String("value")))),
+        Ok(String("first:value")),
       )
     None => fail("first filter resident must remain registered")
   }
@@ -323,9 +323,9 @@ test "filter invocation is driven exclusively by the supplied Registry" {
     apply_filter_chain(
       registry,
       [{ name: "synthetic/filter", args: [] }],
-      VStr("value"),
+      String("value"),
     ),
-    Ok(VStr("custom:value")),
+    Ok(String("custom:value")),
   )
   assert_eq(
     apply_accum_filter_chain(

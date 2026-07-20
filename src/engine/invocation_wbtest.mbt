@@ -14,9 +14,9 @@ test "colon-string and array forms decode to the same fn invocation" {
 
 ///|
 test "typed internal calls preserve Value args without string serialization" {
-  assert_eq(typed_fn_call("set", [VBool(true), VNum(2.0)]), {
+  assert_eq(typed_fn_call("set", [Bool(true), Number(2.0)]), {
     name: "set",
-    args: [ValueArg(VBool(true)), ValueArg(VNum(2.0))],
+    args: [ValueArg(Bool(true)), ValueArg(Number(2.0))],
   })
 }
 

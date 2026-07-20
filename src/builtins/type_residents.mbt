@@ -20,7 +20,7 @@ impl @engine.TypeExt for StringTypeExt with fn has_value_slot(_self) {
 
 ///|
 impl @engine.TypeExt for StringTypeExt with fn parse_token(_self, token) {
-  Ok(@engine.VStr(token))
+  Ok(@engine.String(token))
 }
 
 ///|
@@ -56,7 +56,7 @@ impl @engine.TypeExt for NumberTypeExt with fn has_value_slot(_self) {
 ///|
 impl @engine.TypeExt for NumberTypeExt with fn parse_token(self, token) {
   match parse_number(token, allow_base_prefix=self.allow_base_prefix) {
-    Some(value) => Ok(@engine.VNum(value))
+    Some(value) => Ok(@engine.Number(value))
     None => Err(type_parse_not_a_number(token))
   }
 }
@@ -96,7 +96,7 @@ impl @engine.TypeExt for IntTypeExt with fn has_value_slot(_self) {
 impl @engine.TypeExt for IntTypeExt with fn parse_token(self, token) {
   match
     parse_int_value(token, self.round, allow_base_prefix=self.allow_base_prefix) {
-    Ok(value) => Ok(@engine.VNum(value.to_double()))
+    Ok(value) => Ok(@engine.Number(value.to_double()))
     Err(fail) => Err(fail)
   }
 }
@@ -135,7 +135,7 @@ impl @engine.TypeExt for FloatTypeExt with fn has_value_slot(_self) {
 ///|
 impl @engine.TypeExt for FloatTypeExt with fn parse_token(_self, token) {
   match parse_float(token) {
-    Some(value) => Ok(@engine.VNum(value))
+    Some(value) => Ok(@engine.Number(value))
     None => Err(type_parse_not_a_number(token))
   }
 }
@@ -174,7 +174,7 @@ impl @engine.TypeExt for BoolTypeExt with fn has_value_slot(self) {
 ///|
 impl @engine.TypeExt for BoolTypeExt with fn parse_token(self, token) {
   match parse_bool(token, config=self.config) {
-    Some(value) => Ok(@engine.VBool(value))
+    Some(value) => Ok(@engine.Bool(value))
     None => Err(type_parse_not_a_bool(token))
   }
 }
@@ -215,7 +215,7 @@ impl @engine.TypeExt for FlagTypeExt with fn has_value_slot(_self) {
 ///|
 impl @engine.TypeExt for FlagTypeExt with fn parse_token(self, token) {
   match parse_bool(token, config=self.config) {
-    Some(value) => Ok(@engine.VBool(value))
+    Some(value) => Ok(@engine.Bool(value))
     None => Err(type_parse_not_a_bool(token))
   }
 }
@@ -224,7 +224,7 @@ impl @engine.TypeExt for FlagTypeExt with fn parse_token(self, token) {
 impl @engine.TypeExt for FlagTypeExt with fn default_seat_resolver(_self, ctx) {
   match ctx.declared() {
     Some(value) => Some(value)
-    None => Some(@engine.VBool(false))
+    None => Some(@engine.Bool(false))
   }
 }
 
@@ -258,7 +258,7 @@ impl @engine.TypeExt for CountTypeExt with fn has_value_slot(_self) {
 ///|
 impl @engine.TypeExt for CountTypeExt with fn parse_token(self, token) {
   match parse_number(token, allow_base_prefix=self.allow_base_prefix) {
-    Some(value) => Ok(@engine.VNum(value))
+    Some(value) => Ok(@engine.Number(value))
     None => Err(type_parse_not_a_number(token))
   }
 }
@@ -267,7 +267,7 @@ impl @engine.TypeExt for CountTypeExt with fn parse_token(self, token) {
 impl @engine.TypeExt for CountTypeExt with fn default_seat_resolver(_self, ctx) {
   match ctx.declared() {
     Some(value) => Some(value)
-    None => Some(@engine.VNum(0.0))
+    None => Some(@engine.Number(0.0))
   }
 }
 
@@ -300,7 +300,7 @@ impl @engine.TypeExt for TtyTypeExt with fn has_value_slot(_self) {
 ///|
 impl @engine.TypeExt for TtyTypeExt with fn parse_token(_self, token) {
   match parse_bool(token, config=bool_config_canonical()) {
-    Some(value) => Ok(@engine.VBool(value))
+    Some(value) => Ok(@engine.Bool(value))
     None => Err(type_parse_not_a_bool(token))
   }
 }
@@ -331,7 +331,7 @@ impl @engine.TypeExt for TtyTypeExt with fn default_seat_resolver(self, ctx) {
         }
         match (terminal, cygwin) {
           (Some(terminal), Some(cygwin)) =>
-            Some(@engine.VBool(terminal || (self.cygwin && cygwin)))
+            Some(@engine.Bool(terminal || (self.cygwin && cygwin)))
           _ => ctx.declared()
         }
       } else {

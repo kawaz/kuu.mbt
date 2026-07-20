@@ -61,7 +61,7 @@ pub fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit 
     match action_of(b) {
       Some(name) => {
         let pos = match b.value {
-          VNum(d) => d.to_int()
+          Number(d) => d.to_int()
           _ => 0
         }
         out.push((name, pos))

@@ -307,7 +307,7 @@ test "long installer: a deprecated value option's main-entry satellite carries a
   )
   match o {
     @engine.Success(bs) => {
-      assert_eq(resolved_values(bs, "port"), [@engine.VStr("8080")])
+      assert_eq(resolved_values(bs, "port"), [@engine.String("8080")])
       assert_eq(@engine.warnings_of(o), ["port"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -340,14 +340,14 @@ test "long installer: a deprecated flag's @engine.Set-variant satellite carries 
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--verbose"),
-      @engine.Bind("verbose", @engine.VBool(true)),
+      @engine.Bind("verbose", @engine.Bool(true)),
       @builtins.deprecation_mark("verbose"),
     ]),
   )
   let o = @engine.parse_tree(@engine.ScopeNode(sc), ["--verbose"], defs=Map([]))
   match o {
     @engine.Success(bs) => {
-      assert_eq(resolved_values(bs, "verbose"), [@engine.VBool(true)])
+      assert_eq(resolved_values(bs, "verbose"), [@engine.Bool(true)])
       assert_eq(@engine.warnings_of(o), ["verbose"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -391,7 +391,7 @@ test "long installer: a deprecated BEnum (values-constrained) main entry carries
   )
   match o {
     @engine.Success(bs) => {
-      assert_eq(resolved_values(bs, "color"), [@engine.VStr("red")])
+      assert_eq(resolved_values(bs, "color"), [@engine.String("red")])
       assert_eq(@engine.warnings_of(o), ["color"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -443,7 +443,7 @@ test "long installer: a deprecated BOr (structural or) main entry carries a depr
   )
   match o {
     @engine.Success(bs) => {
-      assert_eq(resolved_values(bs, "num"), [@engine.VNum(5.0)])
+      assert_eq(resolved_values(bs, "num"), [@engine.Number(5.0)])
       assert_eq(@engine.warnings_of(o), ["level"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -474,14 +474,14 @@ test "long installer: a flag's `long:true` composes a `:set:true` variant → ba
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--verbose"),
-      @engine.Bind("verbose", @engine.VBool(true)),
+      @engine.Bind("verbose", @engine.Bool(true)),
     ]),
   )
   // normalize_option の @builtins.flag_type()→@builtins.bool_type() 差し替えは値セルの型のみに効く。entity 自体は name=verbose のまま。
   let ent = entity_of(sc, "verbose").unwrap()
   assert_eq(ent.ty, @builtins.bool_type())
   // default:false preset (DR-051 §2), stored as the length-1-degenerate array (DR-083 §1)
-  assert_eq(ent.default_values, Some([@engine.VBool(false)]))
+  assert_eq(ent.default_values, Some([@engine.Bool(false)]))
 }
 
 ///|
@@ -507,7 +507,7 @@ test "long installer: a flag's explicit `long:[\":set\"]` composes `:set:true` A
       @engine.Seq(
         [
           @engine.Exact("--verbose"),
-          @engine.Bind("verbose", @engine.VBool(true)),
+          @engine.Bind("verbose", @engine.Bool(true)),
         ]
       ) => has_bare_bind = true
       _ => ()
@@ -549,7 +549,7 @@ test "long installer: a count's `long:true` composes an `:update:increment` vari
   // ensure_entity が @builtins.count_type()→@builtins.number_type() の型差し替えを担う (normalize_option ではない)。
   assert_eq(ent.ty, @builtins.number_type())
   // default:0 preset (DR-077 §3), stored as the length-1-degenerate array (DR-083 §1)
-  assert_eq(ent.default_values, Some([@engine.VNum(0.0)]))
+  assert_eq(ent.default_values, Some([@engine.Number(0.0)]))
 }
 
 ///|
@@ -993,7 +993,7 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
   assert_eq(entity_of(child_sc, "verbose"), None)
   // root には verbose entity + default:false preset がある (DR-083 §1: 長さ 1 縮退配列)
   let root_ent = entity_of(sc, "verbose").unwrap()
-  assert_eq(root_ent.default_values, Some([@engine.VBool(false)]))
+  assert_eq(root_ent.default_values, Some([@engine.Bool(false)]))
 }
 
 // ── 順列耐性 (5 invariants + fixpoint): 順序が違っても同じ @engine.Scope に収束 ─────────
@@ -1417,7 +1417,7 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
     @builtins.LVariant({ trigger, op, operand }) => {
       assert_eq(trigger, "ssl")
       assert_eq(op, @engine.Set)
-      assert_eq(operand, Some(@engine.VBool(true)))
+      assert_eq(operand, Some(@engine.Bool(true)))
     }
     _ => fail("expected @builtins.LVariant")
   }
@@ -1433,7 +1433,7 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
     @builtins.LVariant({ trigger, op, operand }) => {
       assert_eq(trigger, "no-ssl")
       assert_eq(op, @engine.Set)
-      assert_eq(operand, Some(@engine.VBool(false)))
+      assert_eq(operand, Some(@engine.Bool(false)))
     }
     _ => fail("expected @builtins.LVariant")
   }
@@ -1618,7 +1618,7 @@ test "desugar_aliases: alias long:true on a flag canonical composes :set:true (b
   for g in sc.greedy {
     match g {
       @engine.Seq(
-        [@engine.Exact("--v"), @engine.Bind("verbose", @engine.VBool(true))]
+        [@engine.Exact("--v"), @engine.Bind("verbose", @engine.Bool(true))]
       ) => has_bare_bind = true
       @engine.Seq([@engine.Exact("--v"), resident]) if is_resident(
           resident, "builtin/bool", "verbose",
@@ -1763,7 +1763,7 @@ test "add_inheritable_copy: an alias-provided (variants-side) trigger shadows th
             {
               ..el("ttl", @builtins.number_type()),
               is_inheritable: true,
-              default_values: Some([@engine.VNum(60.0)]),
+              default_values: Some([@engine.Number(60.0)]),
             },
           ],
         },
@@ -1908,7 +1908,7 @@ test "DR-077 end-to-end: parse_definition → parse → resolve_scope ledgers -v
           for b in resolved {
             if b.key == "verbose" {
               found = true
-              assert_eq(b.value, @engine.VNum(3.0))
+              assert_eq(b.value, @engine.Number(3.0))
             }
           }
           assert_true(found)
@@ -2200,7 +2200,7 @@ test "issue bool-requires-config-inherit-gap: requires targeting a config-source
   let cfg_file = {
     ..el("cfg", @builtins.string_type(), long=LList([":set"])),
     is_config_file: true,
-    default_values: Some([@engine.VStr("/app.toml")]),
+    default_values: Some([@engine.String("/app.toml")]),
   }
   let a = {
     ..el("a", @builtins.flag_type(), long=LList([":set"])),
@@ -2236,7 +2236,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
   let cfg_file = {
     ..el("cfg", @builtins.string_type(), long=LList([":set"])),
     is_config_file: true,
-    default_values: Some([@engine.VStr("/app.toml")]),
+    default_values: Some([@engine.String("/app.toml")]),
   }
   let a = {
     ..el("a", @builtins.flag_type(), long=LList([":set"])),
@@ -2464,7 +2464,9 @@ test "codex Medium: merge without separator — no-marker single fire adds (over
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(resolved_values(resolved, "fields"), [@engine.VStr("hello")])
+          assert_eq(resolved_values(resolved, "fields"), [
+            @engine.String("hello"),
+          ])
         Err(_) => fail("expected Ok")
       }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -2532,7 +2534,9 @@ test "codex Medium: merge without separator — a lone splice-marker fire is ide
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(resolved_values(resolved, "fields"), [@engine.VStr("hello")])
+          assert_eq(resolved_values(resolved, "fields"), [
+            @engine.String("hello"),
+          ])
         Err(_) => fail("expected Ok")
       }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -2561,7 +2565,7 @@ test "codex Medium: merge without separator — an escaped piece is a literal ad
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(resolved_values(resolved, "fields"), [@engine.VStr("-x")])
+          assert_eq(resolved_values(resolved, "fields"), [@engine.String("-x")])
         Err(_) => fail("expected Ok")
       }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -2924,7 +2928,7 @@ test "DR-093: a required:true option with a declared default is vacuously satisf
   let name = {
     ..el("name", @builtins.string_type(), long=LBool(true)),
     required: true,
-    default_values: Some([@engine.VStr("fallback")]),
+    default_values: Some([@engine.String("fallback")]),
   }
   let def : @engine.Definition = { ..empty_def(), options: [name] }
   let sc = ok_scope(def, all_installers())
@@ -3271,7 +3275,7 @@ test "DR-089 対極: a pre-existing explicit-type element is unaffected by none 
 test "DR-088: a plain scalar positional with a declared default is a complete path with 0 tokens" {
   let seconds = {
     ..pos("seconds", @builtins.int_type()),
-    default_values: Some([@engine.VNum(10.0)]),
+    default_values: Some([@engine.Number(10.0)]),
   }
   let def : @engine.Definition = { ..empty_def(), positionals: [seconds] }
   let sc = ok_scope(def, all_installers())
@@ -3300,7 +3304,7 @@ test "DR-088: a plain scalar positional with a declared default is a complete pa
 test "DR-088: a plain scalar positional with a declared default still consumes a supplied token" {
   let seconds = {
     ..pos("seconds", @builtins.int_type()),
-    default_values: Some([@engine.VNum(10.0)]),
+    default_values: Some([@engine.Number(10.0)]),
   }
   let def : @engine.Definition = { ..empty_def(), positionals: [seconds] }
   let sc = ok_scope(def, all_installers())
@@ -3381,9 +3385,9 @@ test "DR-088 対極2: an explicit optional:true positional is unaffected (still 
 ///|
 fn dd_value_to_str(v : @engine.Value) -> String {
   match v {
-    @engine.VStr(s) => s
-    @engine.VNum(d) => d.to_string()
-    @engine.VBool(b) => b.to_string()
+    @engine.String(s) => s
+    @engine.Number(d) => d.to_string()
+    @engine.Bool(b) => b.to_string()
   }
 }
 
@@ -3543,7 +3547,7 @@ test "DR-091 §3 / DR-096 §1 end-to-end: long_prefix:\"\" + long_eq_sep:@engine
       for b in bs {
         if b.key == "if" {
           found = true
-          assert_eq(b.value, @engine.VStr("abc"))
+          assert_eq(b.value, @engine.String("abc"))
         }
       }
       assert_true(found)
@@ -3615,7 +3619,7 @@ test "DR-096 §3.3 end-to-end: long_prefix:\"\" + long_eq_sep:@engine.EsRequire 
       for b in bs {
         if b.key == "target" {
           target_found = true
-          assert_eq(b.value, @engine.VStr("foo"))
+          assert_eq(b.value, @engine.String("foo"))
         }
         if b.key == "if" {
           if_found = true
@@ -3875,7 +3879,7 @@ test "long installer: long_eq_sep:@engine.EsDeny end-to-end — eq form fails, s
       for b in bs {
         if b.key == "port" {
           found = true
-          assert_eq(b.value, @engine.VStr("80"))
+          assert_eq(b.value, @engine.String("80"))
         }
       }
       assert_true(found)
@@ -3893,11 +3897,11 @@ test "long installer: long_eq_sep:@engine.EsDeny end-to-end — eq form fails, s
 ///|
 /// 保証 (DR-092 実装調査 2026-07-11、fixtures/value-typing/number-inf-nan.json の
 /// `inf-on-float-accepted` 対の完全版): `--t inf` (float 型) が args → matcher → `@builtins.parse_float` →
-/// `@engine.Binding.value` の全経路を通っても `@engine.VNum` の inf がそのまま (saturate/丸めなど一切なく) 届く
+/// `@engine.Binding.value` の全経路を通っても `@engine.Number` の inf がそのまま (saturate/丸めなど一切なく) 届く
 /// ことを end-to-end で固定する。fixture 側は「operand の JSON 表現が未確定」を理由に `result`
 /// pin を見送っている (main が本 DR 実装確定後に別段で追加) — この wbtest は fixture pin を待たず
 /// production コードパスの値保持を先に固定する。
-test "long installer end-to-end: --t inf reaches the binding as @engine.VNum(Infinity) unaltered (DR-092)" {
+test "long installer end-to-end: --t inf reaches the binding as @engine.Number(Infinity) unaltered (DR-092)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [el("t", @builtins.float_type(), long=LBool(true))],
@@ -3911,7 +3915,7 @@ test "long installer end-to-end: --t inf reaches the binding as @engine.VNum(Inf
       for b in bs {
         if b.key == "t" {
           found = true
-          assert_eq(b.value, @engine.VNum(inf))
+          assert_eq(b.value, @engine.Number(inf))
         }
       }
       assert_true(found)
@@ -3930,7 +3934,7 @@ test "long installer end-to-end: --t inf reaches the binding as @engine.VNum(Inf
       for b in bs {
         if b.key == "t" {
           found = true
-          assert_eq(b.value, @engine.VNum(-inf))
+          assert_eq(b.value, @engine.Number(-inf))
         }
       }
       assert_true(found)
@@ -3959,7 +3963,7 @@ test "long installer: a variant trigger uses e.long_prefix, matching the main en
           long=LList([":set", "no:set:false"]),
           long_prefix="+",
         ),
-        default_values: Some([@engine.VBool(true)]),
+        default_values: Some([@engine.Bool(true)]),
       },
     ],
   }
@@ -3973,7 +3977,7 @@ test "long installer: a variant trigger uses e.long_prefix, matching the main en
           resident, "builtin/bool", "ssl",
         ) => has_plus_main = true
       @engine.Seq(
-        [@engine.Exact("+no-ssl"), @engine.Bind("ssl", @engine.VBool(false))]
+        [@engine.Exact("+no-ssl"), @engine.Bind("ssl", @engine.Bool(false))]
       ) => has_plus_variant = true
       @engine.Seq([@engine.Exact("--no-ssl"), ..]) => has_dash_variant = true
       _ => ()
@@ -3993,7 +3997,7 @@ test "long installer: default long_prefix keeps variant trigger at \"--\" (対�
     options: [
       {
         ..el("ssl", @builtins.bool_type(), long=LList([":set", "no:set:false"])),
-        default_values: Some([@engine.VBool(true)]),
+        default_values: Some([@engine.Bool(true)]),
       },
     ],
   }
@@ -4006,7 +4010,7 @@ test "long installer: default long_prefix keeps variant trigger at \"--\" (対�
           resident, "builtin/bool", "ssl",
         ) => has_main = true
       @engine.Seq(
-        [@engine.Exact("--no-ssl"), @engine.Bind("ssl", @engine.VBool(false))]
+        [@engine.Exact("--no-ssl"), @engine.Bind("ssl", @engine.Bool(false))]
       ) => has_variant = true
       _ => ()
     }
@@ -4303,7 +4307,7 @@ test "front_door.output: export_key rename を result に適用する (DR-052 §
   match parse(ast, ["--port", "80", "--verbose"]) {
     @engine.Success(binds) =>
       match output(ast, binds).result {
-        @engine.RObj(fields) => {
+        @engine.Object(fields) => {
           let keys = fields.map(fn(field) { field.0 })
           assert_true(keys.contains("alias"))
           assert_true(keys.contains("verbose"))
@@ -4352,7 +4356,7 @@ test "ensure_entity: plain @builtins.bool_type() は @engine.Entity.default_valu
     }
     if ent.name == "flg" {
       flg_found = true
-      assert_eq(ent.default_values, Some([@engine.VBool(false)]))
+      assert_eq(ent.default_values, Some([@engine.Bool(false)]))
     }
   }
   if !plain_found {

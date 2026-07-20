@@ -33,7 +33,7 @@ impl NodeExt for TestValueExt with fn eval(self, ctx, pos, acc, next) {
       next(
         ctx,
         pos + 1,
-        cat(acc, [mk_binding(self.name, VStr(token), Cli, at_pos=Some(pos))]),
+        cat(acc, [mk_binding(self.name, String(token), Cli, at_pos=Some(pos))]),
       )
     None => [Pending([pending_value_candidate("string", self.name)], acc)]
   }

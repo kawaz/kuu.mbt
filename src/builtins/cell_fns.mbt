@@ -4,7 +4,7 @@
 fn fn_arg_value(arg : @engine.FnArg) -> @engine.Value {
   match arg {
     @engine.ValueArg(value) => value
-    @engine.StringArg(value) => @engine.VStr(value)
+    @engine.StringArg(value) => @engine.String(value)
   }
 }
 
@@ -65,10 +65,10 @@ fn incr_fn(
 ) -> @engine.FnResult {
   let old = match ctx.old() {
     None => 0.0
-    Some(@engine.VNum(value)) => value
+    Some(@engine.Number(value)) => value
     Some(_) => return Err(("invalid-range", "incr requires a number target"))
   }
-  Ok(@engine.FnValue(@engine.VNum(old + 1.0)))
+  Ok(@engine.FnValue(@engine.Number(old + 1.0)))
 }
 
 ///|
@@ -160,7 +160,7 @@ fn uuid_fn(
   if version != "4" {
     Err(("invalid-argument", "uuid version must be '4'"))
   } else {
-    Ok(@engine.FnValue(@engine.VStr(uuid_v4())))
+    Ok(@engine.FnValue(@engine.String(uuid_v4())))
   }
 }
 

@@ -93,7 +93,7 @@ impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
             @engine.cat(acc, [
               @engine.mk_binding(
                 self.name,
-                @engine.VStr(value),
+                @engine.String(value),
                 @engine.Cli,
                 at_pos=Some(pos),
               ),
@@ -167,7 +167,7 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
               @engine.cat(acc, [
                 @engine.mk_binding(
                   self.name,
-                  @engine.VStr(value),
+                  @engine.String(value),
                   @engine.Cli,
                   at_pos=Some(pos),
                 ),
@@ -355,7 +355,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
                 @engine.cat(acc, [
                   @engine.mk_binding(
                     self.name,
-                    @engine.VNum(number),
+                    @engine.Number(number),
                     @engine.Cli,
                     at_pos=Some(pos),
                   ),
@@ -464,7 +464,7 @@ impl @engine.NodeExt for FilteredNumberArgExt with fn eval(
               @engine.cat(acc, [
                 @engine.mk_binding(
                   self.name,
-                  @engine.VNum(number),
+                  @engine.Number(number),
                   @engine.Cli,
                   at_pos=Some(pos),
                 ),
@@ -529,7 +529,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
                 @engine.cat(acc, [
                   @engine.mk_binding(
                     self.name,
-                    @engine.VNum(number),
+                    @engine.Number(number),
                     @engine.Cli,
                     at_pos=Some(pos),
                   ),
@@ -624,7 +624,7 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
                 @engine.cat(acc, [
                   @engine.mk_binding(
                     self.name,
-                    @engine.VNum(integer.to_double()),
+                    @engine.Number(integer.to_double()),
                     @engine.Cli,
                     at_pos=Some(pos),
                   ),
@@ -711,7 +711,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
                 @engine.cat(acc, [
                   @engine.mk_binding(
                     self.name,
-                    @engine.VBool(boolean),
+                    @engine.Bool(boolean),
                     @engine.Cli,
                     at_pos=Some(pos),
                   ),

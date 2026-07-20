@@ -84,7 +84,7 @@ impl @engine.TypeExt for CustomTypeExt with fn parse_token(_self, token) {
       message: "custom parser rejected the token",
     })
   } else {
-    Ok(@engine.VStr("custom:" + token))
+    Ok(@engine.String("custom:" + token))
   }
 }
 
@@ -107,7 +107,7 @@ test "parse_definition resolves a custom type through the supplied Registry" {
       match parse(ast, ["--value", "x"]) {
         @engine.Success(bindings) => {
           assert_eq(bindings.length(), 1)
-          assert_eq(bindings[0].value, @engine.VStr("custom:x"))
+          assert_eq(bindings[0].value, @engine.String("custom:x"))
         }
         _ => fail("custom type input must parse through its TypeExt")
       }
@@ -145,7 +145,7 @@ fn third_party_prefix_filter() -> @engine.FilterDescriptor {
     _args,
   ) {
     match value {
-      @engine.VStr(text) => Ok(@engine.VStr("third-party:" + text))
+      @engine.String(text) => Ok(@engine.String("third-party:" + text))
       other => Ok(other)
     }
   })
@@ -166,7 +166,7 @@ test "a third-party filter parses through the engine contract without a builtin 
       let parsed = parse(ast, ["--value", "x"])
       match resolve(ast, parsed, ["--value", "x"]) {
         @engine.Success([binding]) =>
-          assert_eq(binding.value, @engine.VStr("third-party:x"))
+          assert_eq(binding.value, @engine.String("third-party:x"))
         _ =>
           fail(
             "registered third-party filter must transform the resolved value",

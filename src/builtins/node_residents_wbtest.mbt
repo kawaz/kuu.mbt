@@ -104,7 +104,7 @@ test "marker residents declare zero-token consumption" {
   assert_true(test_node_consumes_zero_tokens(deprecation_mark("x")))
   assert_true(test_node_consumes_zero_tokens(failure_mark("x")))
   assert_true(
-    test_node_consumes_zero_tokens(@engine.Bind("x", @engine.VBool(true))),
+    test_node_consumes_zero_tokens(@engine.Bind("x", @engine.Bool(true))),
   )
   assert_false(test_node_consumes_zero_tokens(string_arg("x", [])))
 }

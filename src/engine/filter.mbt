@@ -150,8 +150,8 @@ pub fn apply_piece_filters(
   chain : Array[FilterSpelling],
   raw : String,
 ) -> Result[String, (String, String)] {
-  match apply_filter_chain(registry, chain, VStr(raw)) {
-    Ok(VStr(value)) => Ok(value)
+  match apply_filter_chain(registry, chain, String(raw)) {
+    Ok(String(value)) => Ok(value)
     Ok(_) =>
       Err(
         (

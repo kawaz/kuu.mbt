@@ -22,11 +22,11 @@ fn num_to_string(d : Double) -> String {
 ///
 /// `piece_filters` (DR-050 §4 "string → CLI/env と完全に同一の全段 pipeline"、issue
 /// 2026-07-09-config-string-pieceprocessor-gap): applied ONCE, up front, ONLY when the JSON source
-/// is a string (`CStr`) — a non-string source matching its type (`CNum`/`CBool`) has no
+/// is a string (`String`) — a non-string source matching its type (`Number`/`Bool`) has no
 /// String→String step to gate, per §4's "型一致なら piece_filters/parse はスキップ" (the type's own
 /// consequence, not a special case here; mirrors `resolve.mbt`'s `env_value`, whose source is
 /// ALWAYS a string so it always runs piece_filters — config's source varies, so this runs it exactly
-/// when config's source happens to be a string). Every `(@engine.CStr(s), _)` arm below sees the
+/// when config's source happens to be a string). Every `(@engine.String(s), _)` arm below sees the
 /// ALREADY-filtered string.
 ///
 /// Error shape `(ErrKind, reason, message)`: `@engine.KFilter` for a piece_filters rejection (mirrors
@@ -42,7 +42,7 @@ pub fn config_to_value(
   match cv {
     // Every string source crosses the resident parser after piece filtering. Parser
     // configuration is therefore resident-owned for CLI, env, and config alike.
-    @engine.CStr(raw) =>
+    @engine.String(raw) =>
       match @engine.apply_piece_filters(extensions, piece_filters, raw) {
         Err((reason, msg)) => Err((@engine.KFilter, reason, msg))
         Ok(s) =>
@@ -54,13 +54,13 @@ pub fn config_to_value(
       }
     // JSON-native scalars do not need lexical parsing. The resident identity still
     // selects the permitted value space and preserves the symmetric string coercion.
-    @engine.CNum(d) =>
+    @engine.Number(d) =>
       match ty.name() {
-        "string" => Ok(@engine.VStr(num_to_string(d)))
-        "number" | "float" | "count" => Ok(@engine.VNum(d))
+        "string" => Ok(@engine.String(num_to_string(d)))
+        "number" | "float" | "count" => Ok(@engine.Number(d))
         "int" =>
           if @engine.is_integer(d) {
-            Ok(@engine.VNum(d))
+            Ok(@engine.Number(d))
           } else {
             Err(
               (
@@ -87,10 +87,10 @@ pub fn config_to_value(
             ),
           )
       }
-    @engine.CBool(b) =>
+    @engine.Bool(b) =>
       match ty.name() {
-        "string" => Ok(@engine.VStr(if b { "true" } else { "false" }))
-        "flag" | "bool" => Ok(@engine.VBool(b))
+        "string" => Ok(@engine.String(if b { "true" } else { "false" }))
+        "flag" | "bool" => Ok(@engine.Bool(b))
         "number" | "float" | "count" | "int" =>
           Err(
             (
@@ -109,7 +109,7 @@ pub fn config_to_value(
           )
       }
     // Structured values cannot fill a scalar resident.
-    @engine.CArr(_) =>
+    @engine.Array(_) =>
       Err(
         (
           @engine.KParse,
@@ -117,7 +117,7 @@ pub fn config_to_value(
           "config array for a scalar element (structural mismatch)",
         ),
       )
-    @engine.CObj(_) =>
+    @engine.Object(_) =>
       Err(
         (
           @engine.KParse,
@@ -125,7 +125,7 @@ pub fn config_to_value(
           "config object for a scalar element (structural mismatch)",
         ),
       )
-    @engine.CNull =>
+    @engine.Null =>
       Err(
         (
           @engine.KParse,

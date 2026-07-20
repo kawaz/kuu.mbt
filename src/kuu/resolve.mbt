@@ -15,7 +15,7 @@
 //
 // DR-074/075 update over the slice: env's string→@engine.Value conversion goes through the canonical
 // lexers (`@builtins.parse_number` / `parse_int_value` / `parse_bool`, value.mbt) instead of slice's
-// `env_value` which silently fell back to `@engine.VStr(s)` on a parse failure — a badly-typed env value
+// `env_value` which silently fell back to `@engine.String(s)` on a parse failure — a badly-typed env value
 // is now a DR-066 Error (reason `not_a_number` / `not_an_integer` / `not_a_bool`), never a
 // wrong-typed cell. `resolve_scope` / `resolve_scope_config` return `Result[.., @engine.ParseError]`
 // accordingly (slice's config-less `resolve_scope` could not error; it now can, from a bad env
@@ -491,7 +491,7 @@ fn build_result(
         ),
       )
     }
-    return @engine.RArr(elems)
+    return @engine.Array(elems)
   }
   // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
   // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
@@ -506,7 +506,7 @@ fn build_result(
     for row in row_groups(binds) {
       rows.push(build_result(row, cells, defaults, path, nones~, extensions~))
     }
-    return @engine.RArr(rows)
+    return @engine.Array(rows)
   }
   // gather direct named keys (skip sentinels) and nested (named) scopes
   // DR-089 §3: a none-typed cell's value never appears in the result (値の結果には現れない) — same
@@ -563,13 +563,13 @@ fn build_result(
     named.length() == 0 &&
     segs.length() == 0 &&
     !has_object_cell_here {
-    let mut v = @engine.VBool(false)
+    let mut v = @engine.Value::Bool(false)
     for b in binds {
       if b.scope.length() == 0 && b.key == "" {
         v = b.value
       }
     }
-    return @engine.RScalar(v)
+    return @engine.Scalar(v)
   }
   // OBJECT: named leaves (folding accum keys into a list) + nested scopes.
   let obj : Array[(String, @engine.RVal)] = []
@@ -632,13 +632,13 @@ fn build_result(
       obj.push((k, collected))
     } else {
       // SCALAR last-wins (DR-015): the last value written to the cell.
-      let mut v = @engine.VBool(false)
+      let mut v = @engine.Value::Bool(false)
       for b in binds {
         if b.scope.length() == 0 && b.key == k {
           v = b.value
         }
       }
-      obj.push((k, @engine.RScalar(v)))
+      obj.push((k, @engine.Scalar(v)))
     }
   }
   for seg in segs {
@@ -706,10 +706,10 @@ fn build_result(
             per_fire.push(r)
           }
         } else {
-          per_fire.push(@engine.RArr(rows))
+          per_fire.push(@engine.Array(rows))
         }
       }
-      obj.push((seg, @engine.RArr(per_fire)))
+      obj.push((seg, @engine.Array(per_fire)))
     } else if !unfired_ref_accum_seg {
       obj.push(
         (
@@ -764,10 +764,10 @@ fn build_result(
   // here — an unfired flag shows `false`, never absent). Skip names already present as a bound leaf.
   for d in defaults {
     if path_eq(d.path, path) && !str_contains(named, d.name) {
-      obj.push((d.name, @engine.RScalar(d.value)))
+      obj.push((d.name, @engine.Scalar(d.value)))
     }
   }
-  @engine.RObj(obj)
+  @engine.Object(obj)
 }
 
 ///|
@@ -1831,7 +1831,7 @@ fn filter_err(
 
 ///|
 /// Parse an env string into a @engine.Value per the entity's type (DR-049 §2: env goes through the same
-/// pipeline as CLI). Unlike slice's `env_value` (naive `@builtins.parse_number` with a silent `@engine.VStr` fallback
+/// pipeline as CLI). Unlike slice's `env_value` (naive `@builtins.parse_number` with a silent `@engine.String` fallback
 /// on failure), this reuses the canonical lexers (DR-074/075) and surfaces a parse failure as a
 /// DR-066 Error — a badly-typed env value is never silently coerced to a wrong-typed string cell.
 /// `piece_filters` (DR-034/DR-062, issue 2026-07-09-pre-split-filters-execution-wiring): DR-049 §2
@@ -1864,7 +1864,7 @@ fn env_value(
 }
 
 ///|
-/// Navigate a config object by an absolute path (DR-050 §3). Each segment indexes into a @engine.CObj;
+/// Navigate a config object by an absolute path (DR-050 §3). Each segment indexes into a @engine.Object;
 /// a missing key or a non-object mid-path yields None (this cell is not supplied by config).
 fn config_lookup(
   obj : @engine.ConfigVal,
@@ -1873,7 +1873,7 @@ fn config_lookup(
   let mut cur = obj
   for seg in path {
     match cur {
-      @engine.CObj(kvs) => {
+      @engine.Object(kvs) => {
         let mut found : @engine.ConfigVal? = None
         for kv in kvs {
           if kv.0 == seg {
@@ -1938,7 +1938,7 @@ fn resolve_entity(
 /// build_result (resolve.mbt's caller) instead, which this function does not reach for that cell.
 /// `@engine.Empty`'s binding carries a PLACEHOLDER value (DR-045 — the real "clear the collection" effect
 /// has no value of its own), so it's exempt from both chains — running a number/string filter over
-/// a bogus `@engine.VBool(false)` placeholder would be nonsensical.
+/// a bogus `@engine.Bool(false)` placeholder would be nonsensical.
 fn apply_entity_filters(
   e : @engine.Entity,
   bs : Array[@engine.Binding],
@@ -2364,11 +2364,11 @@ fn resolve_ladder_below_cli(
             match cv {
               // JSON null = 供給なし (DR-050 §4 / DR-051): the config seat supplies nothing; fall
               // through to inherit / default (null is NOT a value in kuu's value space).
-              @engine.CNull => ()
+              @engine.Null => ()
               // array → a multiple cell's pieces (DR-050 §4); each item typed per §4 — including
               // §4's string pipeline (issue 2026-07-09-config-string-pieceprocessor-gap), so a
               // string array item ALSO runs `e.piece_filters` before its type parse.
-              @engine.CArr(items) =>
+              @engine.Array(items) =>
                 if e.accum is Some(_) {
                   let bs : Array[@engine.Binding] = []
                   for it in items {
@@ -2494,9 +2494,9 @@ fn resolve_ladder_below_cli(
   // default seat (DR-083 §1/§2, DR-102 §5): an accum cell's declared default supplies its WHOLE
   // array as already-split pieces, config-array precedent (DR-050 §4) — each piece routed through
   // `@builtins.config_to_value` (via `@engine.value_to_configval`) for the same T-domain / string-pipeline parse the
-  // @engine.CArr config branch above uses. A scalar cell wants just the one value (`default_scalar`), but
+  // @engine.Array config branch above uses. A scalar cell wants just the one value (`default_scalar`), but
   // DR-102 §5 (DR-050 §4 / DR-083 §2 の対称性から導出) extends the SAME type-dependent pipeline to
-  // it — a JSON string default runs piece_filters → parse (`@builtins.config_to_value`'s `@engine.CStr` arm), a JSON
+  // it — a JSON string default runs piece_filters → parse (`@builtins.config_to_value`'s `@engine.String` arm), a JSON
   // native (number/bool) default matching the element's type skips piece_filters/parse entirely
   // (the type's own consequence, `@builtins.config_to_value`'s `other => other` passthrough before its
   // `(cv, ty)` match). This is NOT a special case for defaults — it's the same "値源の種別でなく
@@ -2702,7 +2702,7 @@ fn resolve_default_fn(
     dependency=Some(fn(name) { option_values.get(name) }),
     env=fn(variable) {
       match env_map.get(variable) {
-        Some(value) => Some(@engine.VStr(value))
+        Some(value) => Some(@engine.String(value))
         None => None
       }
     },

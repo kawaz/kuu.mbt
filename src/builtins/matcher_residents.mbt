@@ -538,7 +538,7 @@ fn walk_short(
             @engine.Cli,
           )
         } else {
-          @engine.mk_binding(e.name, @engine.VBool(true), @engine.Cli)
+          @engine.mk_binding(e.name, @engine.Bool(true), @engine.Cli)
         }
         if combine || i + 1 == body.length() {
           walk_short(

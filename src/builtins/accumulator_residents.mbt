@@ -81,9 +81,9 @@ impl @engine.AccumulatorExt for AppendAccumulator with fn resolve_cli(
 impl @engine.AccumulatorExt for AppendAccumulator with fn collect(_self, values) {
   let out : Array[@engine.RVal] = []
   for value in values {
-    out.push(@engine.RScalar(value))
+    out.push(@engine.Scalar(value))
   }
-  @engine.RArr(out)
+  @engine.Array(out)
 }
 
 ///|
@@ -341,9 +341,9 @@ impl @engine.AccumulatorExt for MergeAccumulator with fn resolve_cli(
 impl @engine.AccumulatorExt for MergeAccumulator with fn collect(_self, values) {
   let out : Array[@engine.RVal] = []
   for value in values {
-    out.push(@engine.RScalar(value))
+    out.push(@engine.Scalar(value))
   }
-  @engine.RArr(out)
+  @engine.Array(out)
 }
 
 ///|
@@ -398,19 +398,19 @@ impl @engine.AccumulatorExt for KvMapAccumulator with fn collect(_self, values) 
   let seen : Map[String, Int] = Map([])
   for value in values {
     let raw = match value {
-      @engine.VStr(text) => text
+      @engine.String(text) => text
       _ => ""
     }
     let (key, rest) = split_first_eq(raw)
     match seen.get(key) {
-      Some(index) => fields[index] = (key, @engine.RScalar(@engine.VStr(rest)))
+      Some(index) => fields[index] = (key, @engine.Scalar(@engine.String(rest)))
       None => {
         seen.set(key, fields.length())
-        fields.push((key, @engine.RScalar(@engine.VStr(rest))))
+        fields.push((key, @engine.Scalar(@engine.String(rest))))
       }
     }
   }
-  @engine.RObj(fields)
+  @engine.Object(fields)
 }
 
 ///|
@@ -421,8 +421,8 @@ pub fn kv_map_accumulator() -> &@engine.AccumulatorExt {
 ///|
 fn unwrap_single(value : @engine.RVal) -> @engine.RVal {
   match value {
-    @engine.RScalar(value) => @engine.RScalar(value)
-    @engine.RArr(values) =>
+    @engine.Scalar(value) => @engine.Scalar(value)
+    @engine.Array(values) =>
       if values.length() == 1 {
         unwrap_single(values[0])
       } else {
@@ -430,14 +430,14 @@ fn unwrap_single(value : @engine.RVal) -> @engine.RVal {
         for value in values {
           out.push(unwrap_single(value))
         }
-        @engine.RArr(out)
+        @engine.Array(out)
       }
-    @engine.RObj(fields) => {
+    @engine.Object(fields) => {
       let out : Array[(String, @engine.RVal)] = []
       for field in fields {
         out.push((field.0, unwrap_single(field.1)))
       }
-      @engine.RObj(out)
+      @engine.Object(out)
     }
   }
 }
@@ -478,7 +478,7 @@ pub(all) enum FromEntriesSpec {
 ///|
 fn result_key(value : @engine.RVal) -> String {
   match value {
-    @engine.RScalar(value) => @engine.value_str(value)
+    @engine.Scalar(value) => @engine.value_str(value)
     _ => "?"
   }
 }
@@ -486,7 +486,7 @@ fn result_key(value : @engine.RVal) -> String {
 ///|
 fn result_field(value : @engine.RVal, name : String) -> @engine.RVal? {
   match value {
-    @engine.RObj(fields) => {
+    @engine.Object(fields) => {
       for field in fields {
         if field.0 == name {
           return Some(field.1)
@@ -505,7 +505,7 @@ fn all_pairs(values : Array[@engine.RVal]) -> Bool {
   }
   for value in values {
     match value {
-      @engine.RArr(items) => if items.length() != 2 { return false }
+      @engine.Array(items) => if items.length() != 2 { return false }
       _ => return false
     }
   }
@@ -533,35 +533,35 @@ fn all_have_fields(
 ///|
 fn from_entries(value : @engine.RVal, spec : FromEntriesSpec) -> @engine.RVal {
   match value {
-    @engine.RScalar(value) => @engine.RScalar(value)
-    @engine.RObj(fields) => {
+    @engine.Scalar(value) => @engine.Scalar(value)
+    @engine.Object(fields) => {
       let out : Array[(String, @engine.RVal)] = []
       for field in fields {
         out.push((field.0, from_entries(field.1, spec)))
       }
-      @engine.RObj(out)
+      @engine.Object(out)
     }
-    @engine.RArr(values) =>
+    @engine.Array(values) =>
       match spec {
         Entries =>
           if all_pairs(values) {
             let fields : Array[(String, @engine.RVal)] = []
             for value in values {
               match value {
-                @engine.RArr(items) =>
+                @engine.Array(items) =>
                   fields.push(
                     (result_key(items[0]), from_entries(items[1], spec)),
                   )
                 _ => ()
               }
             }
-            @engine.RObj(fields)
+            @engine.Object(fields)
           } else {
             let out : Array[@engine.RVal] = []
             for value in values {
               out.push(from_entries(value, spec))
             }
-            @engine.RArr(out)
+            @engine.Array(out)
           }
         KeyValue(key_field, value_field) =>
           if all_have_fields(values, [key_field, value_field]) {
@@ -573,24 +573,24 @@ fn from_entries(value : @engine.RVal, spec : FromEntriesSpec) -> @engine.RVal {
               }
               let item = match result_field(value, value_field) {
                 Some(item) => item
-                None => @engine.RScalar(@engine.VBool(false))
+                None => @engine.Scalar(@engine.Bool(false))
               }
               fields.push((key, from_entries(item, spec)))
             }
-            @engine.RObj(fields)
+            @engine.Object(fields)
           } else {
             let out : Array[@engine.RVal] = []
             for value in values {
               out.push(from_entries(value, spec))
             }
-            @engine.RArr(out)
+            @engine.Array(out)
           }
         KeyPromote(key_field) =>
           if all_have_fields(values, [key_field]) {
             let fields : Array[(String, @engine.RVal)] = []
             for value in values {
               match value {
-                @engine.RObj(items) => {
+                @engine.Object(items) => {
                   let mut key = ""
                   let rest : Array[(String, @engine.RVal)] = []
                   for item in items {
@@ -600,18 +600,18 @@ fn from_entries(value : @engine.RVal, spec : FromEntriesSpec) -> @engine.RVal {
                       rest.push((item.0, from_entries(item.1, spec)))
                     }
                   }
-                  fields.push((key, @engine.RObj(rest)))
+                  fields.push((key, @engine.Object(rest)))
                 }
                 _ => ()
               }
             }
-            @engine.RObj(fields)
+            @engine.Object(fields)
           } else {
             let out : Array[@engine.RVal] = []
             for value in values {
               out.push(from_entries(value, spec))
             }
-            @engine.RArr(out)
+            @engine.Array(out)
           }
       }
   }

@@ -160,9 +160,9 @@ test "front_door.resolve: inheritable が親 write-target → 子 scope の inhe
           }
         }
       }
-      assert_eq(root_ttl, Some(@engine.VNum(30.0)))
+      assert_eq(root_ttl, Some(@engine.Number(30.0)))
       assert_eq(root_src, Some(@engine.Cli))
-      assert_eq(sub_ttl, Some(@engine.VNum(30.0)))
+      assert_eq(sub_ttl, Some(@engine.Number(30.0)))
       assert_eq(sub_src, Some(@engine.Inherit))
     }
     other =>
@@ -204,7 +204,7 @@ test "front_door.parse + @engine.warnings_structured: deprecated alias 発火は
           port_val = Some(b.value)
         }
       }
-      assert_eq(port_val, Some(@engine.VNum(80.0)))
+      assert_eq(port_val, Some(@engine.Number(80.0)))
       // 構造化 warnings が `{element:"port", kind:"deprecated"}` の 1 件を返す。
       let ws = @engine.warnings_structured(o)
       assert_eq(ws, [{ element: "port", kind: "deprecated" }])
@@ -268,7 +268,7 @@ test "front_door.output: effects は sentinel・config_file・none・dd を吸�
   assert_eq(normal.effects.length(), 1)
   assert_eq(normal.effects[0].entity, "port")
   assert_eq(normal.effects[0].op, @engine.Set)
-  assert_eq(normal.effects[0].operand, Some(@engine.VNum(80.0)))
+  assert_eq(normal.effects[0].operand, Some(@engine.Number(80.0)))
   assert_eq(normal.effects[0].source, @engine.Cli)
 
   // config_file は config provider 選択用の配線セルであり、発火しても利用者 effects には出ない。
@@ -335,7 +335,7 @@ test "front_door.output: 単一 scope で export_key rename + flag preset defaul
   let view = output(ast, rb)
   let rval = view.result
   match rval {
-    @engine.RObj(kvs) => {
+    @engine.Object(kvs) => {
       let mut p_val : @engine.RVal? = None
       let mut verbose_val : @engine.RVal? = None
       for kv in kvs {
@@ -346,10 +346,10 @@ test "front_door.output: 単一 scope で export_key rename + flag preset defaul
           verbose_val = Some(kv.1)
         }
       }
-      assert_eq(p_val, Some(@engine.RScalar(@engine.VNum(8080.0))))
-      assert_eq(verbose_val, Some(@engine.RScalar(@engine.VBool(false))))
+      assert_eq(p_val, Some(@engine.Scalar(@engine.Number(8080.0))))
+      assert_eq(verbose_val, Some(@engine.Scalar(@engine.Bool(false))))
     }
-    _ => fail("output.result should be @engine.RObj at root scope")
+    _ => fail("output.result should be @engine.Object at root scope")
   }
   let ses = view.sources
   let mut p_src : @engine.Source? = None
@@ -412,7 +412,7 @@ test "front_door.output: command 木でも子 scope の値源を OutputView.sour
 
 ///|
 /// 保証 (統括裁定「@engine.ConfigVal/TtyObs の入力構築 API」(b)、DR-050 §2/§4): 外部利用者が `@engine.ConfigVal`
-/// の variant (`@engine.CObj`/`@engine.CArr` 含む) を直接構築できない (`pub` でフィールド/variant 非公開) 制約下で、
+/// の variant (`@engine.Object`/`@engine.Array` 含む) を直接構築できない (`pub` でフィールド/variant 非公開) 制約下で、
 /// `config_from_json` が JSON から組んだ `@engine.ConfigVal` を `parse()`/`resolve()` の `config?` provider
 /// 経由で実際に config 席へ流し込めることを e2e で固定する。`config_file` 型要素 + `config_key`
 /// を持つ `port` の値が config 由来 (`8080`, source=config) で result/sources 双方に現れ、
@@ -432,7 +432,7 @@ test "front_door.config_from_json: JSON から組んだ @engine.ConfigVal が co
       panic()
     }
   }
-  // 利用者は自前で @engine.CObj を組めない — config_from_json に生 JSON を渡すだけで良い。
+  // 利用者は自前で @engine.Object を組めない — config_from_json に生 JSON を渡すだけで良い。
   let cfg_json = @json.parse(
     (
       #|{"port": 8080}
@@ -452,7 +452,7 @@ test "front_door.config_from_json: JSON から組んだ @engine.ConfigVal が co
   }
   let rval = output(ast, rb).result
   match rval {
-    @engine.RObj(kvs) => {
+    @engine.Object(kvs) => {
       let mut port_val : @engine.RVal? = None
       let mut has_config_key = false
       for kv in kvs {
@@ -463,11 +463,11 @@ test "front_door.config_from_json: JSON から組んだ @engine.ConfigVal が co
           has_config_key = true
         }
       }
-      assert_eq(port_val, Some(@engine.RScalar(@engine.VNum(8080.0))))
+      assert_eq(port_val, Some(@engine.Scalar(@engine.Number(8080.0))))
       // config_file 要素自身はインフラで結果非掲載 (config-source.json の why 参照)。
       assert_false(has_config_key)
     }
-    _ => fail("output.result should be @engine.RObj")
+    _ => fail("output.result should be @engine.Object")
   }
   let ses = output(ast, rb).sources
   let mut port_src : @engine.Source? = None
@@ -516,7 +516,7 @@ test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty �
   }
   let rval = output(ast, rb).result
   match rval {
-    @engine.RObj(kvs) => {
+    @engine.Object(kvs) => {
       let mut use_color_val : @engine.RVal? = None
       for kv in kvs {
         if kv.0 == "use_color" {
@@ -524,9 +524,9 @@ test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty �
         }
       }
       // 観測 terminal=true が宣言 default=false より優先する (DR-098 §5 の優先順位)。
-      assert_eq(use_color_val, Some(@engine.RScalar(@engine.VBool(true))))
+      assert_eq(use_color_val, Some(@engine.Scalar(@engine.Bool(true))))
     }
-    _ => fail("output.result should be @engine.RObj")
+    _ => fail("output.result should be @engine.Object")
   }
   let ses = output(ast, rb).sources
   let mut use_color_src : @engine.Source? = None
@@ -590,7 +590,7 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
     // resolve が復元済みの #row/#fire を `output` は再 merge せず、その binds を result 射影へ渡す。
     let view = output(ast, rb)
     match view.result {
-      @engine.RObj(kvs) => {
+      @engine.Object(kvs) => {
         for kv in kvs {
           if kv.0 == "hlcolors" {
             return kv.1
@@ -600,30 +600,30 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
         panic()
       }
       _ => {
-        fail("output.result should be @engine.RObj at root scope")
+        fail("output.result should be @engine.Object at root scope")
         panic()
       }
     }
   }
 
   // zero-fires-empty: 0 発火でも accum cell は absent にならず `[]` (DR-044 uniform array)。
-  assert_eq(hlcolors_of([]), @engine.RArr([]))
+  assert_eq(hlcolors_of([]), @engine.Array([]))
   // single-fire-list: 1 発火でも要素1件の配列 (scalar への unwrap をしない、DR-034)。
   assert_eq(
     hlcolors_of(["--hlcolors", "red"]),
-    @engine.RArr([
-      @engine.RObj([("colorname", @engine.RScalar(@engine.VStr("red")))]),
+    @engine.Array([
+      @engine.Object([("colorname", @engine.Scalar(@engine.String("red")))]),
     ]),
   )
   // two-fires-branch-append: 2 発火 (or の異なる枝) は row をそのまま順に積む (枝の違いを畳まない)。
   assert_eq(
     hlcolors_of(["--hlcolors", "red", "--hlcolors", "0", "128", "255"]),
-    @engine.RArr([
-      @engine.RObj([("colorname", @engine.RScalar(@engine.VStr("red")))]),
-      @engine.RObj([
-        ("r", @engine.RScalar(@engine.VNum(0.0))),
-        ("g", @engine.RScalar(@engine.VNum(128.0))),
-        ("b", @engine.RScalar(@engine.VNum(255.0))),
+    @engine.Array([
+      @engine.Object([("colorname", @engine.Scalar(@engine.String("red")))]),
+      @engine.Object([
+        ("r", @engine.Scalar(@engine.Number(0.0))),
+        ("g", @engine.Scalar(@engine.Number(128.0))),
+        ("b", @engine.Scalar(@engine.Number(255.0))),
       ]),
     ]),
   )

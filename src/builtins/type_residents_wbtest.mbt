@@ -41,11 +41,11 @@ test "@engine.TypeExt parse_token delegates to each resident lexicon and config"
   // Configured number/int/bool residents must parse through their own construction data, not a central type switch.
   assert_eq(
     number_type(allow_base_prefix=true).parse_token("0xff"),
-    Ok(@engine.VNum(255.0)),
+    Ok(@engine.Number(255.0)),
   )
   assert_eq(
     int_type(round=@engine.RFloor).parse_token("2.9"),
-    Ok(@engine.VNum(2.0)),
+    Ok(@engine.Number(2.0)),
   )
   assert_eq(
     bool_type(config={
@@ -53,7 +53,7 @@ test "@engine.TypeExt parse_token delegates to each resident lexicon and config"
       false_values: ["no"],
       case_insensitive: false,
     }).parse_token("yes"),
-    Ok(@engine.VBool(true)),
+    Ok(@engine.Bool(true)),
   )
   assert_eq(
     none_type().parse_token("x").unwrap_err().reason,
@@ -66,22 +66,22 @@ test "@engine.TypeExt default resolver supplies only preset defaults" {
   // Explicit defaults win; otherwise flag/count supply their presets while ordinary and none types stay absent.
   assert_eq(
     flag_type().default_seat_resolver(@engine.seat_ctx(None)),
-    Some(@engine.VBool(false)),
+    Some(@engine.Bool(false)),
   )
   assert_eq(
     count_type().default_seat_resolver(@engine.seat_ctx(None)),
-    Some(@engine.VNum(0.0)),
+    Some(@engine.Number(0.0)),
   )
   assert_eq(
     flag_type().default_seat_resolver(
-      @engine.seat_ctx(Some(@engine.VBool(true))),
+      @engine.seat_ctx(Some(@engine.Bool(true))),
     ),
-    Some(@engine.VBool(true)),
+    Some(@engine.Bool(true)),
   )
   assert_eq(string_type().default_seat_resolver(@engine.seat_ctx(None)), None)
   assert_eq(
     none_type().default_seat_resolver(
-      @engine.seat_ctx(Some(@engine.VStr("ignored"))),
+      @engine.seat_ctx(Some(@engine.String("ignored"))),
     ),
     None,
   )
@@ -95,16 +95,16 @@ test "tty TypeExt owns its provider key and default-seat fold" {
   assert_eq(
     tty.default_seat_resolver(
       @engine.seat_ctx(
-        Some(@engine.VBool(false)),
+        Some(@engine.Bool(false)),
         observed=Some([false.to_json(), true.to_json()].to_json()),
       ),
     ),
-    Some(@engine.VBool(true)),
+    Some(@engine.Bool(true)),
   )
   // Missing observation falls back to the declared default, then to absence.
   assert_eq(
-    tty.default_seat_resolver(@engine.seat_ctx(Some(@engine.VBool(false)))),
-    Some(@engine.VBool(false)),
+    tty.default_seat_resolver(@engine.seat_ctx(Some(@engine.Bool(false)))),
+    Some(@engine.Bool(false)),
   )
   assert_eq(
     tty_type(Some("stderr"), cygwin=false).default_seat_resolver(

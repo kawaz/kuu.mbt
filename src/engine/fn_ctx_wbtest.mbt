@@ -2,7 +2,7 @@
 
 ///|
 test "FnCtx mode and specialization accessors agree" {
-  let default_ctx = fn_ctx_default("target", old=Some(VNum(2.0)))
+  let default_ctx = fn_ctx_default("target", old=Some(Number(2.0)))
   assert_eq(default_ctx.mode(), "default")
   assert_true(default_ctx.as_effect() is None)
   assert_true(default_ctx.as_filter() is None)
@@ -10,7 +10,7 @@ test "FnCtx mode and specialization accessors agree" {
     Some(specialized) => assert_eq(specialized.target(), "target")
     None => fail("default mode must expose DefaultCtx")
   }
-  assert_eq(default_ctx.old(), Some(VNum(2.0)))
+  assert_eq(default_ctx.old(), Some(Number(2.0)))
 
   let effect_ctx = fn_ctx_effect("target", "--count")
   assert_eq(effect_ctx.mode(), "effect")
@@ -24,13 +24,13 @@ test "FnCtx mode and specialization accessors agree" {
     None => fail("effect mode must expose EffectCtx")
   }
 
-  let filter_ctx = fn_ctx_filter(ScalarInput(VStr("input")))
+  let filter_ctx = fn_ctx_filter(ScalarInput(String("input")))
   assert_eq(filter_ctx.mode(), "filter")
   assert_true(filter_ctx.as_default() is None)
   assert_true(filter_ctx.as_effect() is None)
   match filter_ctx.as_filter() {
     Some(specialized) =>
-      assert_eq(specialized.input(), ScalarInput(VStr("input")))
+      assert_eq(specialized.input(), ScalarInput(String("input")))
     None => fail("filter mode must expose FilterCtx")
   }
 }
@@ -42,32 +42,32 @@ test "FnCtx option env and system reads are restricted to concrete observes edge
     observes=["option:source", "env:VISIBLE", "system:clock"],
     option=fn(name) {
       if name == "source" {
-        Some(VStr("dependency"))
+        Some(String("dependency"))
       } else {
         None
       }
     },
     env=fn(variable) {
       if variable == "VISIBLE" {
-        Some(VStr("env-value"))
+        Some(String("env-value"))
       } else {
         None
       }
     },
-    system=fn(key) { if key == "clock" { Some(VNum(12.0)) } else { None } },
+    system=fn(key) { if key == "clock" { Some(Number(12.0)) } else { None } },
   )
-  assert_eq(ctx.option("source"), Some(VStr("dependency")))
+  assert_eq(ctx.option("source"), Some(String("dependency")))
   assert_true(ctx.option("hidden") is None)
   match ctx.as_default() {
     Some(specialized) => {
-      assert_eq(specialized.dependency("source"), Some(VStr("dependency")))
+      assert_eq(specialized.dependency("source"), Some(String("dependency")))
       assert_true(specialized.dependency("hidden") is None)
     }
     None => fail("default mode must expose DefaultCtx")
   }
-  assert_eq(ctx.env("VISIBLE"), Some(VStr("env-value")))
+  assert_eq(ctx.env("VISIBLE"), Some(String("env-value")))
   assert_true(ctx.env("HIDDEN") is None)
-  assert_eq(ctx.system("clock"), Some(VNum(12.0)))
+  assert_eq(ctx.system("clock"), Some(Number(12.0)))
   assert_true(ctx.system("secret") is None)
 
   let observations = ctx.observes()

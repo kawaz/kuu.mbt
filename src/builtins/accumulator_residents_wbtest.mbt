@@ -16,14 +16,14 @@ test "append accumulator resident preserves set order without consulting lower s
   let mut lower_calls = 0
   let lower : @engine.LowerSeat = fn(_include_default) {
     lower_calls = lower_calls + 1
-    Ok([@engine.mk_binding("x", @engine.VStr("lower"), @engine.Default)])
+    Ok([@engine.mk_binding("x", @engine.String("lower"), @engine.Default)])
   }
   let resident = append_accumulator()
   let result = resident.resolve_cli(
     "x",
     [
-      binding("x", @engine.Set, @engine.VStr("a")),
-      binding("x", @engine.Set, @engine.VStr("b")),
+      binding("x", @engine.Set, @engine.String("a")),
+      binding("x", @engine.Set, @engine.String("b")),
     ],
     true,
     lower,
@@ -31,8 +31,8 @@ test "append accumulator resident preserves set order without consulting lower s
   match result {
     Ok(bindings) => {
       assert_eq(bindings.length(), 2)
-      assert_eq(bindings[0].value, @engine.VStr("a"))
-      assert_eq(bindings[1].value, @engine.VStr("b"))
+      assert_eq(bindings[0].value, @engine.String("a"))
+      assert_eq(bindings[1].value, @engine.String("b"))
       assert_eq(lower_calls, 0)
     }
     Err(_) => fail("append fold must succeed")
@@ -44,16 +44,16 @@ test "append accumulator resident preserves set order without consulting lower s
 test "merge accumulator resident owns grouped remove splice add semantics" {
   let lower : @engine.LowerSeat = fn(_include_default) {
     Ok([
-      @engine.mk_binding("x", @engine.VStr("a"), @engine.Default),
-      @engine.mk_binding("x", @engine.VStr("b"), @engine.Default),
+      @engine.mk_binding("x", @engine.String("a"), @engine.Default),
+      @engine.mk_binding("x", @engine.String("b"), @engine.Default),
     ])
   }
   let result = merge_accumulator().resolve_cli(
     "x",
     [
-      binding("x", @engine.Remove, @engine.VStr("a"), pos=1),
-      binding("x", @engine.Splice, @engine.VBool(false), pos=1),
-      binding("x", @engine.Set, @engine.VStr("c"), pos=1),
+      binding("x", @engine.Remove, @engine.String("a"), pos=1),
+      binding("x", @engine.Splice, @engine.Bool(false), pos=1),
+      binding("x", @engine.Set, @engine.String("c"), pos=1),
     ],
     true,
     lower,
@@ -61,8 +61,8 @@ test "merge accumulator resident owns grouped remove splice add semantics" {
   match result {
     Ok(bindings) => {
       assert_eq(bindings.length(), 2)
-      assert_eq(bindings[0].value, @engine.VStr("b"))
-      assert_eq(bindings[1].value, @engine.VStr("c"))
+      assert_eq(bindings[0].value, @engine.String("b"))
+      assert_eq(bindings[1].value, @engine.String("c"))
     }
     Err(_) => fail("merge fold must succeed")
   }
@@ -72,15 +72,15 @@ test "merge accumulator resident owns grouped remove splice add semantics" {
 /// kv_map の collect は first `=` split と同一 key のあと勝ちを resident 自身で行う。
 test "kv_map accumulator resident collects values into a last-wins object" {
   let result = kv_map_accumulator().collect([
-    @engine.VStr("A=1"),
-    @engine.VStr("B=2"),
-    @engine.VStr("A=3"),
+    @engine.String("A=1"),
+    @engine.String("B=2"),
+    @engine.String("A=3"),
   ])
   assert_eq(
     result,
-    @engine.RObj([
-      ("A", @engine.RScalar(@engine.VStr("3"))),
-      ("B", @engine.RScalar(@engine.VStr("2"))),
+    @engine.Object([
+      ("A", @engine.Scalar(@engine.String("3"))),
+      ("B", @engine.Scalar(@engine.String("2"))),
     ]),
   )
 }
@@ -89,26 +89,26 @@ test "kv_map accumulator resident collects values into a last-wins object" {
 /// unwrap_single は単一配列を再帰的に scalar へ縮退し、複数要素配列は配列形を保つ。
 test "unwrap_single collector resident recursively unwraps only singleton arrays" {
   let result = unwrap_single_collector().collect(
-    @engine.RObj([
-      ("one", @engine.RArr([@engine.RScalar(@engine.VStr("x"))])),
+    @engine.Object([
+      ("one", @engine.Array([@engine.Scalar(@engine.String("x"))])),
       (
         "many",
-        @engine.RArr([
-          @engine.RScalar(@engine.VStr("a")),
-          @engine.RScalar(@engine.VStr("b")),
+        @engine.Array([
+          @engine.Scalar(@engine.String("a")),
+          @engine.Scalar(@engine.String("b")),
         ]),
       ),
     ]),
   )
   assert_eq(
     result,
-    @engine.RObj([
-      ("one", @engine.RScalar(@engine.VStr("x"))),
+    @engine.Object([
+      ("one", @engine.Scalar(@engine.String("x"))),
       (
         "many",
-        @engine.RArr([
-          @engine.RScalar(@engine.VStr("a")),
-          @engine.RScalar(@engine.VStr("b")),
+        @engine.Array([
+          @engine.Scalar(@engine.String("a")),
+          @engine.Scalar(@engine.String("b")),
         ]),
       ),
     ]),
@@ -119,22 +119,22 @@ test "unwrap_single collector resident recursively unwraps only singleton arrays
 /// from_entries の無引数 resident は 2 要素配列の列を object へ変換する。
 test "from_entries collector resident converts entry pairs into an object" {
   let result = from_entries_collector(Entries).collect(
-    @engine.RArr([
-      @engine.RArr([
-        @engine.RScalar(@engine.VStr("a")),
-        @engine.RScalar(@engine.VNum(1.0)),
+    @engine.Array([
+      @engine.Array([
+        @engine.Scalar(@engine.String("a")),
+        @engine.Scalar(@engine.Number(1.0)),
       ]),
-      @engine.RArr([
-        @engine.RScalar(@engine.VStr("b")),
-        @engine.RScalar(@engine.VNum(2.0)),
+      @engine.Array([
+        @engine.Scalar(@engine.String("b")),
+        @engine.Scalar(@engine.Number(2.0)),
       ]),
     ]),
   )
   assert_eq(
     result,
-    @engine.RObj([
-      ("a", @engine.RScalar(@engine.VNum(1.0))),
-      ("b", @engine.RScalar(@engine.VNum(2.0))),
+    @engine.Object([
+      ("a", @engine.Scalar(@engine.Number(1.0))),
+      ("b", @engine.Scalar(@engine.Number(2.0))),
     ]),
   )
 }
@@ -167,7 +167,7 @@ fn merge_fire(
 
 ///|
 fn vs(s : String) -> @engine.Value {
-  @engine.VStr(s)
+  @engine.String(s)
 }
 
 ///|

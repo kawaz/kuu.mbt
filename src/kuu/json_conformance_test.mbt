@@ -111,15 +111,15 @@ fn allowed_keys(
 ///|
 fn json_to_value(json : Json) -> @engine.Value raise DecodeSkip {
   match json.j_bool() {
-    Some(value) => return @engine.VBool(value)
+    Some(value) => return @engine.Bool(value)
     None => ()
   }
   match json.j_str() {
-    Some(value) => return @engine.VStr(value)
+    Some(value) => return @engine.String(value)
     None => ()
   }
   match json.j_num() {
-    Some(value) => return @engine.VNum(value)
+    Some(value) => return @engine.Number(value)
     None => ()
   }
   raise DecodeSkip("non-scalar value in effects/result")
@@ -204,9 +204,9 @@ fn join_comma(items : Array[String]) -> String {
 ///|
 fn render_val(v : @engine.Value) -> String {
   match v {
-    @engine.VStr(s) => s
-    @engine.VBool(b) => if b { "true" } else { "false" }
-    @engine.VNum(d) => {
+    @engine.String(s) => s
+    @engine.Bool(b) => if b { "true" } else { "false" }
+    @engine.Number(d) => {
       let i = d.to_int()
       if i.to_double() == d {
         i.to_string()
@@ -355,15 +355,15 @@ fn canonical_registry_for_test() -> @engine.Registry {
 /// non-normative). Arrays keep order.
 fn render_rval_sorted(r : @engine.RVal) -> String {
   match r {
-    @engine.RScalar(v) => render_val(v)
-    @engine.RArr(vs) => {
+    @engine.Scalar(v) => render_val(v)
+    @engine.Array(vs) => {
       let items : Array[String] = []
       for v in vs {
         items.push(render_rval_sorted(v))
       }
       "[" + join_comma(items) + "]"
     }
-    @engine.RObj(kvs) => {
+    @engine.Object(kvs) => {
       let items : Array[String] = []
       for kv in kvs {
         items.push(kv.0 + "=" + render_rval_sorted(kv.1))
@@ -543,7 +543,7 @@ fn json_to_rval(j : Json) -> @engine.RVal raise DecodeSkip {
       for k, v in o {
         kvs.push((k, json_to_rval(v)))
       }
-      return @engine.RObj(kvs)
+      return @engine.Object(kvs)
     }
     None => ()
   }
@@ -553,11 +553,11 @@ fn json_to_rval(j : Json) -> @engine.RVal raise DecodeSkip {
       for v in a {
         vs.push(json_to_rval(v))
       }
-      return @engine.RArr(vs)
+      return @engine.Array(vs)
     }
     None => ()
   }
-  @engine.RScalar(json_to_value(j))
+  @engine.Scalar(json_to_value(j))
 }
 
 ///|
@@ -1610,9 +1610,9 @@ fn dec_help_fixture(j : Json) -> DHelpFixture raise DecodeSkip {
 ///|
 fn help_value_json(value : @engine.Value) -> Json {
   match value {
-    @engine.VStr(text) => text.to_json()
-    @engine.VNum(number) => number.to_json()
-    @engine.VBool(boolean) => boolean.to_json()
+    @engine.String(text) => text.to_json()
+    @engine.Number(number) => number.to_json()
+    @engine.Bool(boolean) => boolean.to_json()
   }
 }
 
@@ -3181,7 +3181,7 @@ test "DR-047 §5 end-to-end: fired_action (help) survives the post-filter @engin
 /// キーが一切現れない (`result: {}`) — DR-051 §1/§4 の「値の無さはフィールド不在」と同型。
 /// effects にも現れない (team-lead 裁定 2026-07-11: 観測は ParserContext/explains 層の管掌、値
 /// 空間なしの set エントリを発明しない — 内部表現は `flag_bare_true_variant` 再利用の @engine.Set +
-/// @engine.VBool(true) placeholder のままだが、`OutputView.effects` が none cell を除外する)。
+/// @engine.Bool(true) placeholder のままだが、`OutputView.effects` が none cell を除外する)。
 
 ///|
 test "DR-089 end-to-end: an omitted-type option decodes to none, fires as a pure trigger, absent from result" {
@@ -3250,8 +3250,8 @@ test "DR-089 end-to-end: an explicit type:none option behaves identically to omi
 /// 保証 (DR-092 §1/§2「inf は JSON string sentinel "Infinity"/"-Infinity" で表す」、実装調査
 /// 2026-07-11 の実機確認結果): fixture の `result` 位置に JSON 文字列 `"Infinity"` を書いた期待値
 /// (DR-092 §1 の wire 表現そのもの) が、実際の `--t inf` (float 型) 実行結果と一致する — 双方とも
-/// `render_val` を経由し、GOT 側は `@engine.VNum(inf)` → MoonBit Ryu 実装の "Infinity" 特殊形、EXPECT 側は
-/// JSON string decode (`json_to_value` は文字列をそのまま `@engine.VStr` に写す) → `render_val(@engine.VStr(s)) =
+/// `render_val` を経由し、GOT 側は `@engine.Number(inf)` → MoonBit Ryu 実装の "Infinity" 特殊形、EXPECT 側は
+/// JSON string decode (`json_to_value` は文字列をそのまま `@engine.String` に写す) → `render_val(@engine.String(s)) =
 /// s` の素通し、で同じ文字列 "Infinity" に収束する。**production コード変更なしで DR-092 の wire
 /// 表現規約が conformance harness 上で既に成立する**ことを end-to-end で固定する
 /// (fixtures/value-typing/number-inf-nan.json への実 pin は main が別段で行う予定、本テストは

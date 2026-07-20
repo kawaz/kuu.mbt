@@ -403,7 +403,7 @@ fn filter_interpretation_result(
   path : Array[String],
 ) -> @engine.RVal {
   match result {
-    @engine.RObj(fields) => {
+    @engine.Object(fields) => {
       let kept : Array[(String, @engine.RVal)] = []
       for field in fields {
         if interpretation_has_source(sources, path, field.0) ||
@@ -411,9 +411,9 @@ fn filter_interpretation_result(
           kept.push(field)
         } else {
           match field.1 {
-            @engine.RScalar(_) => ()
-            @engine.RArr(_) => kept.push(field)
-            @engine.RObj(_) => {
+            @engine.Scalar(_) => ()
+            @engine.Array(_) => kept.push(field)
+            @engine.Object(_) => {
               let nested = filter_interpretation_result(
                 field.1,
                 sources,
@@ -421,7 +421,7 @@ fn filter_interpretation_result(
                 output_path_push(path, field.0),
               )
               match nested {
-                @engine.RObj(items) =>
+                @engine.Object(items) =>
                   if items.length() > 0 {
                     kept.push((field.0, nested))
                   }
@@ -431,7 +431,7 @@ fn filter_interpretation_result(
           }
         }
       }
-      @engine.RObj(kept)
+      @engine.Object(kept)
     }
     _ => result
   }
@@ -684,7 +684,7 @@ pub fn warnings(outcome : @engine.Outcome) -> Array[@engine.Warning] {
 ///|
 /// 正面玄関の補助 (issue 追加分「@engine.ConfigVal/TtyObs の入力構築 API」、統括裁定 (b)): `parse()`/
 /// `resolve()` の `config?` 引数 (`(path: String) -> @engine.ConfigVal?`) を組み立てたい利用者向けの JSON
-/// → `@engine.ConfigVal` 全域変換。`@engine.ConfigVal` は `pub` (フィールド/variant 非公開) のまま — `@engine.CObj`/`@engine.CArr`
+/// → `@engine.ConfigVal` 全域変換。`@engine.ConfigVal` は `pub` (フィールド/variant 非公開) のまま — `@engine.Object`/`@engine.Array`
 /// を含む全 variant を外部から直接構築する経路が無く (moonc [4036] で拒否される)、`@engine.value_to_configval`
 /// (value.mbt、既存 pub) はスカラ 3 種のみで木構造の config を組めなかった。DR-050 §2「kuu core は
 /// TOML/YAML を見ず、この JSON-同型 hierarchical 形だけを見る」の JSON 側の入口を production
@@ -693,7 +693,7 @@ pub fn warnings(outcome : @engine.Outcome) -> Array[@engine.Warning] {
 /// 残す」と裁定されていた) と同一ロジック — 用途が「fixture 入力の decode」から「production
 /// 呼び出し側の入力構築」まで広がったため、こちらへ昇格し runner 側は本関数へ委譲する形にした
 /// (MDR-005 §2 の当該裁定を本関数の追加で上書き)。オブジェクト/配列は再帰的に変換、bool/string/
-/// number 以外 (JSON null 含む) は `@engine.CNull` (DR-050 §4 / DR-051「config seat が供給なしとして扱う」)
+/// number 以外 (JSON null 含む) は `@engine.Null` (DR-050 §4 / DR-051「config seat が供給なしとして扱う」)
 /// に落ちる — decode 失敗という概念を持たない全域関数 (`Result`/`raise` を返さない)。
 pub fn config_from_json(j : Json) -> @engine.ConfigVal {
   @engine.config_from_json(j)

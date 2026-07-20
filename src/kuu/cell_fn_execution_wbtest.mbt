@@ -22,7 +22,7 @@ test "default value normalizes to a typed internal set call" {
       match entity.default_fn {
         Some(@engine.TypedDefaultFn(call)) => {
           assert_eq(call.name, "set")
-          assert_eq(call.args, [@engine.ValueArg(@engine.VBool(true))])
+          assert_eq(call.args, [@engine.ValueArg(@engine.Bool(true))])
         }
         _ => fail("fixed default must lower to typed set(value)")
       }

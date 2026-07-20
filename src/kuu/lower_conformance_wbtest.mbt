@@ -85,9 +85,9 @@ fn str_has_prefix(value : String, prefix : String) -> Bool {
 ///|
 fn render_val(value : @engine.Value) -> String {
   match value {
-    @engine.VStr(text) => text
-    @engine.VBool(flag) => if flag { "true" } else { "false" }
-    @engine.VNum(number) => {
+    @engine.String(text) => text
+    @engine.Bool(flag) => if flag { "true" } else { "false" }
+    @engine.Number(number) => {
       let integer = number.to_int()
       if integer.to_double() == number {
         integer.to_string()

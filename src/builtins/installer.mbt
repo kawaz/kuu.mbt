@@ -31,7 +31,7 @@ pub(all) enum LongSpelling {
 ///|
 /// Naive scalar coercion for a colon-DSL operand string (`no:set:false`'s `"false"`, `:set:true`'s
 /// `"true"`, etc.) into the element's `@engine.Value` per its type — mirrors `@engine.config_to_value`'s per-type
-/// parsers (DR-074/075/076 canonical lexicons) but with a permissive `@engine.VStr` fallback instead of an
+/// parsers (DR-074/075/076 canonical lexicons) but with a permissive `@engine.String` fallback instead of an
 /// Error: a DSL operand is a literal the DEFINITION author wrote (not untrusted CLI input), so an
 /// unparseable operand degrading to a string is a defensive fallback, not a silent-coercion concern.
 fn dsl_operand_value(ty : &@engine.TypeExt, s : String) -> @engine.Value {
@@ -39,9 +39,9 @@ fn dsl_operand_value(ty : &@engine.TypeExt, s : String) -> @engine.Value {
     Ok(value) => value
     Err(_) =>
       if ty.name() == "flag" || ty.name() == "bool" {
-        @engine.VBool(s == "true" || s == "1")
+        @engine.Bool(s == "true" || s == "1")
       } else {
-        @engine.VStr(s)
+        @engine.String(s)
       }
   }
 }
@@ -154,7 +154,7 @@ pub fn classify_long_spelling(
 /// composes in — `classify_long_spelling(":set:true", kebab(name), flag_type())` would build the SAME
 /// value (colon-DSL round-trip), this just skips the string-splitting for the one fixed shape.
 fn flag_bare_true_variant(name : String) -> @engine.Variant {
-  { trigger: kebab(name), op: @engine.Set, operand: Some(@engine.VBool(true)) }
+  { trigger: kebab(name), op: @engine.Set, operand: Some(@engine.Bool(true)) }
 }
 
 ///|
@@ -201,7 +201,7 @@ fn resolve_long(
       } else if ty.name() == "none" {
         // DR-089 §2 の「消費 0 の純トリガ」canonical 例 (`{"name": "sep", "long": true}`) —
         // flag_type()/count_type() と同じ「main entry を持たず bare-true variant だけ」の 3 例目。none には
-        // 運ぶ値が無いので `flag_bare_true_variant` のプレースホルダ (`@engine.Set @engine.VBool(true)`) をそのまま
+        // 運ぶ値が無いので `flag_bare_true_variant` のプレースホルダ (`@engine.Set @engine.Bool(true)`) をそのまま
         // 再利用してよい — この @engine.Binding は `build_result` 側で `@engine.NoneCell` により結果から除外される
         // (`resolve.mbt` 参照)、committed 参加 (conflicts/exclusive/requires トリガ側) だけが生きる。
         ([], [flag_bare_true_variant(name)])
@@ -750,7 +750,7 @@ pub fn elem_head(e : @engine.ElemDef) -> @engine.Node {
 /// through `dsl_operand_value` (the SAME type coercion `classify_long_spelling`'s DSL operand
 /// parsing already uses for variant operands) so a non-string-typed enum would get a correctly-
 /// typed value — moot for today's only callers (string-only `values`, this issue's scope) since
-/// `dsl_operand_value(string_type(), s) = @engine.VStr(s)`.
+/// `dsl_operand_value(string_type(), s) = @engine.String(s)`.
 pub fn enum_value_node(
   name : String,
   ty : &@engine.TypeExt,
@@ -781,7 +781,7 @@ pub fn enum_value_node(
 fn ref_row_head(name : String, head : @engine.Node) -> @engine.Node {
   @engine.Scoped(
     name,
-    @engine.Seq([@engine.Bind("#row", @engine.VBool(false)), head]),
+    @engine.Seq([@engine.Bind("#row", @engine.Bool(false)), head]),
   )
 }
 
@@ -1505,7 +1505,7 @@ fn inst_long(
                           // the later, shorter firing never touched).
                           @engine.Scoped(
                             e.name,
-                            @engine.Bind("#fire", @engine.VBool(false)),
+                            @engine.Bind("#fire", @engine.Bool(false)),
                           ),
                           @engine.GreedyRepeat(tail),
                         ]),
@@ -1519,7 +1519,7 @@ fn inst_long(
               // normalized to bool_type() by `normalize_option`, DR-076 §2) is a NORMAL value satellite
               // — `:set` always takes a value (space form here; eq form via eq_entries below). A
               // bare `--x` fire (the classic flag shape) needs the explicit `:set:true` variant
-              // (decoded as a @engine.Set-op @engine.Variant with operand @engine.VBool(true), lowered by the "@engine.Variant
+              // (decoded as a @engine.Set-op @engine.Variant with operand @engine.Bool(true), lowered by the "@engine.Variant
               // entries" loop below, which also carries the fail_action failure resident — flag's
               // presence-only lowering has fully collapsed into that generic variant path; this
               // arm no longer special-cases flag_type()/bool_type() bare-true at all).
@@ -1688,7 +1688,7 @@ fn inst_long(
         @engine.Set => {
           let operand = match v.operand {
             Some(val) => val
-            None => @engine.VBool(true)
+            None => @engine.Bool(true)
           }
           if e.fail_action {
             [

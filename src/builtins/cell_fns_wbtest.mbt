@@ -116,9 +116,9 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
   ).unwrap()
   assert_eq(set.validate_invocation(invocation), Ok(()))
   assert_eq(set.concrete_observes(invocation), Ok([]))
-  let typed = @engine.typed_fn_call("set", [@engine.VBool(true)])
+  let typed = @engine.typed_fn_call("set", [@engine.Bool(true)])
   assert_eq(set.validate_call(typed), Ok(()))
-  assert_eq(typed.args, [@engine.ValueArg(@engine.VBool(true))])
+  assert_eq(typed.args, [@engine.ValueArg(@engine.Bool(true))])
   assert_eq(
     set.validate_arity(0),
     Err(("invalid-argument", "cell fn 'set' does not accept 0 args")),
@@ -134,16 +134,16 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
     name,
   ) {
     if name == "help-full" {
-      Some(@engine.VStr("source"))
+      Some(@engine.String("source"))
     } else {
       None
     }
   })
-  assert_eq(ctx.option("help-full"), Some(@engine.VStr("source")))
+  assert_eq(ctx.option("help-full"), Some(@engine.String("source")))
   assert_true(ctx.option("other") is None)
   assert_eq(
     borrow.validate_call(
-      @engine.typed_fn_call("borrow", [@engine.VStr("help-full")]),
+      @engine.typed_fn_call("borrow", [@engine.String("help-full")]),
     ),
     Err(
       (
@@ -173,25 +173,25 @@ test "builtin cell fn residents execute through their registered descriptors" {
   let set = registry.lookup_cell_fn("set").unwrap()
   let ctx = @engine.fn_ctx_effect("target", "--target")
   assert_eq(
-    set.invoke(@engine.typed_fn_call("set", [@engine.VBool(true)]), ctx),
-    Ok(@engine.FnValue(@engine.VBool(true))),
+    set.invoke(@engine.typed_fn_call("set", [@engine.Bool(true)]), ctx),
+    Ok(@engine.FnValue(@engine.Bool(true))),
   )
   assert_eq(
     set.invoke({ name: "set", args: [@engine.StringArg("value")] }, ctx),
-    Ok(@engine.FnValue(@engine.VStr("value"))),
+    Ok(@engine.FnValue(@engine.String("value"))),
   )
 
   let incr = registry.lookup_cell_fn("incr").unwrap()
   assert_eq(
     incr.invoke({ name: "incr", args: [] }, ctx),
-    Ok(@engine.FnValue(@engine.VNum(1.0))),
+    Ok(@engine.FnValue(@engine.Number(1.0))),
   )
   assert_eq(
     incr.invoke(
       { name: "incr", args: [] },
-      @engine.fn_ctx_effect("target", "--target", old=Some(@engine.VNum(4.0))),
+      @engine.fn_ctx_effect("target", "--target", old=Some(@engine.Number(4.0))),
     ),
-    Ok(@engine.FnValue(@engine.VNum(5.0))),
+    Ok(@engine.FnValue(@engine.Number(5.0))),
   )
 
   let borrow = registry.lookup_cell_fn("borrow").unwrap()
@@ -204,7 +204,7 @@ test "builtin cell fn residents execute through their registered descriptors" {
     observes=borrow_observes,
     dependency=Some(fn(name) {
       if name == "source" {
-        Some(@engine.VNum(7.0))
+        Some(@engine.Number(7.0))
       } else {
         None
       }
@@ -212,7 +212,7 @@ test "builtin cell fn residents execute through their registered descriptors" {
   )
   assert_eq(
     borrow.invoke(borrow_invocation.to_call(), borrow_ctx),
-    Ok(@engine.FnValue(@engine.VNum(7.0))),
+    Ok(@engine.FnValue(@engine.Number(7.0))),
   )
 
   for name in ["default", "unset", "empty"] {
@@ -224,7 +224,7 @@ test "builtin cell fn residents execute through their registered descriptors" {
 
   let uuid = registry.lookup_cell_fn("uuid").unwrap()
   match uuid.invoke({ name: "uuid", args: [] }, ctx) {
-    Ok(@engine.FnValue(@engine.VStr(value))) => assert_eq(value.length(), 36)
+    Ok(@engine.FnValue(@engine.String(value))) => assert_eq(value.length(), 36)
     _ => fail("uuid() must return a v4-shaped string")
   }
   assert_true(

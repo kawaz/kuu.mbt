@@ -77,18 +77,18 @@ test "filter_trim strips whitespace, passes non-strings through" {
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["trim"]),
-      @engine.VStr("  hi  "),
+      @engine.String("  hi  "),
     ) {
-    Ok(v) => assert_eq(v, @engine.VStr("hi"))
+    Ok(v) => assert_eq(v, @engine.String("hi"))
     Err(_) => fail("expected Ok")
   }
   match
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["trim"]),
-      @engine.VNum(5.0),
+      @engine.Number(5.0),
     ) {
-    Ok(v) => assert_eq(v, @engine.VNum(5.0))
+    Ok(v) => assert_eq(v, @engine.Number(5.0))
     Err(_) => fail("expected Ok (non-string passthrough)")
   }
 }
@@ -101,16 +101,16 @@ test "filter_non_empty rejects only the empty string" {
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["non_empty"]),
-      @engine.VStr("x"),
+      @engine.String("x"),
     ) {
-    Ok(v) => assert_eq(v, @engine.VStr("x"))
+    Ok(v) => assert_eq(v, @engine.String("x"))
     Err(_) => fail("expected Ok")
   }
   match
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["non_empty"]),
-      @engine.VStr(""),
+      @engine.String(""),
     ) {
     Err((reason, _)) => assert_eq(reason, "empty_value")
     Ok(_) => fail("expected Err (empty string)")
@@ -126,25 +126,25 @@ test "filter_in_range accepts a closed interval [min, max]" {
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["in_range:1:10"]),
-      @engine.VNum(1.0),
+      @engine.Number(1.0),
     ) {
-    Ok(v) => assert_eq(v, @engine.VNum(1.0))
+    Ok(v) => assert_eq(v, @engine.Number(1.0))
     Err(_) => fail("expected Ok (lower bound inclusive)")
   }
   match
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["in_range:1:10"]),
-      @engine.VNum(10.0),
+      @engine.Number(10.0),
     ) {
-    Ok(v) => assert_eq(v, @engine.VNum(10.0))
+    Ok(v) => assert_eq(v, @engine.Number(10.0))
     Err(_) => fail("expected Ok (upper bound inclusive)")
   }
   match
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["in_range:1:10"]),
-      @engine.VNum(11.0),
+      @engine.Number(11.0),
     ) {
     Err((reason, _)) => assert_eq(reason, "too_large")
     Ok(_) => fail("expected Err (over the upper bound)")
@@ -153,7 +153,7 @@ test "filter_in_range accepts a closed interval [min, max]" {
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["in_range:1:10"]),
-      @engine.VNum(0.0),
+      @engine.Number(0.0),
     ) {
     Err((reason, _)) => assert_eq(reason, "too_small")
     Ok(_) => fail("expected Err (under the lower bound)")
@@ -173,9 +173,9 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:abc"]),
-      @engine.VStr("xxabcyy"),
+      @engine.String("xxabcyy"),
     ) {
-    Ok(v) => assert_eq(v, @engine.VStr("xxabcyy"))
+    Ok(v) => assert_eq(v, @engine.String("xxabcyy"))
     Err(_) => fail("expected Ok (unanchored partial match finds 'abc' inside)")
   }
   // (b) 不一致 reject。
@@ -183,7 +183,7 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:abc"]),
-      @engine.VStr("xyz"),
+      @engine.String("xyz"),
     ) {
     Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) => fail("expected Err (no 'abc' substring)")
@@ -195,7 +195,7 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:abc"]),
-      @engine.VStr("abcXYZ"),
+      @engine.String("abcXYZ"),
     ) {
     Ok(_) => ()
     Err(_) =>
@@ -205,7 +205,7 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:^abc$"]),
-      @engine.VStr("abcXYZ"),
+      @engine.String("abcXYZ"),
     ) {
     Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) => fail("expected Err (full-anchor pattern rejects trailing garbage)")
@@ -214,9 +214,9 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:^abc$"]),
-      @engine.VStr("abc"),
+      @engine.String("abc"),
     ) {
-    Ok(v) => assert_eq(v, @engine.VStr("abc"))
+    Ok(v) => assert_eq(v, @engine.String("abc"))
     Err(_) => fail("expected Ok (full-anchor pattern matches the exact string)")
   }
   // (d) メタ文字 escape: `a.c` (無escape) は任意 1 文字を挟んだ "abc"/"axc" 双方にマッチするが、
@@ -225,7 +225,7 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:^a.c$"]),
-      @engine.VStr("abc"),
+      @engine.String("abc"),
     ) {
     Ok(_) => ()
     Err(_) =>
@@ -235,7 +235,7 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:^a\\.c$"]),
-      @engine.VStr("abc"),
+      @engine.String("abc"),
     ) {
     Err((reason, _)) => assert_eq(reason, "pattern_no_match")
     Ok(_) =>
@@ -245,9 +245,9 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:^a\\.c$"]),
-      @engine.VStr("a.c"),
+      @engine.String("a.c"),
     ) {
-    Ok(v) => assert_eq(v, @engine.VStr("a.c"))
+    Ok(v) => assert_eq(v, @engine.String("a.c"))
     Err(_) => fail("expected Ok (escaped '\\.' matches a literal dot)")
   }
 }
@@ -255,7 +255,7 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
 ///|
 /// 保証: pattern の compile 失敗 (定義不良) と照合不一致 (入力拒否) は別の失敗という DR-085 §1 の
 /// 区別 — 不正な pattern (閉じ括弧なしの group) は compile 時点で Err になる。非 string 値は他の
-/// string-only filter (`non_empty` 等) と同じく `@engine.VStr` 以外専用の Err (このフィルタは string-only
+/// string-only filter (`non_empty` 等) と同じく `@engine.String` 以外専用の Err (このフィルタは string-only
 /// で non-string 素通しの `trim` とは違う挙動、args 個数も 1 固定)。この3ケースはいずれも
 /// filter-definition-bug 系の防御的パス (DR-095 §3 の宣言 reasons 外) なので `filter_rejected`
 /// フォールバックのまま — `pattern_no_match` (宣言済み reason) は照合不一致のみに使う。
@@ -264,7 +264,7 @@ test "filter_regex_match: malformed pattern, arg count, non-string input all Err
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:(unclosed"]),
-      @engine.VStr("x"),
+      @engine.String("x"),
     ) {
     Err((reason, msg)) => {
       assert_eq(reason, "filter_rejected")
@@ -276,7 +276,7 @@ test "filter_regex_match: malformed pattern, arg count, non-string input all Err
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match"]),
-      @engine.VStr("x"),
+      @engine.String("x"),
     ) {
     Err((reason, _)) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (regex_match requires exactly 1 arg)")
@@ -285,7 +285,7 @@ test "filter_regex_match: malformed pattern, arg count, non-string input all Err
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:x"]),
-      @engine.VNum(1.0),
+      @engine.Number(1.0),
     ) {
     Err((reason, _)) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (regex_match requires a string value)")
@@ -300,16 +300,16 @@ test "filter_increment adds 1 to a number, rejects args and non-numbers" {
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["increment"]),
-      @engine.VNum(4.0),
+      @engine.Number(4.0),
     ) {
-    Ok(v) => assert_eq(v, @engine.VNum(5.0))
+    Ok(v) => assert_eq(v, @engine.Number(5.0))
     Err(_) => fail("expected Ok")
   }
   match
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["increment:5"]),
-      @engine.VNum(4.0),
+      @engine.Number(4.0),
     ) {
     Err((reason, _)) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (increment takes no args)")
@@ -326,9 +326,9 @@ test "apply_filter_chain runs entries in declared order" {
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["increment", "increment"]),
-      @engine.VNum(1.0),
+      @engine.Number(1.0),
     ) {
-    Ok(v) => assert_eq(v, @engine.VNum(3.0))
+    Ok(v) => assert_eq(v, @engine.Number(3.0))
     Err(_) => fail("expected Ok (1 -> 2 -> 3)")
   }
 }
@@ -384,7 +384,7 @@ test "reasons emitted for declared failure modes are a subset of the descriptor'
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["non_empty"]),
-      @engine.VStr(""),
+      @engine.String(""),
     ) {
     Err((reason, _)) => assert_declared("non_empty", reason)
     Ok(_) => fail("expected Err")
@@ -394,7 +394,7 @@ test "reasons emitted for declared failure modes are a subset of the descriptor'
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["in_range:1:10"]),
-      @engine.VNum(0.0),
+      @engine.Number(0.0),
     ) {
     Err((reason, _)) => assert_declared("in_range", reason)
     Ok(_) => fail("expected Err")
@@ -404,7 +404,7 @@ test "reasons emitted for declared failure modes are a subset of the descriptor'
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["in_range:1:10"]),
-      @engine.VNum(11.0),
+      @engine.Number(11.0),
     ) {
     Err((reason, _)) => assert_declared("in_range", reason)
     Ok(_) => fail("expected Err")
@@ -414,7 +414,7 @@ test "reasons emitted for declared failure modes are a subset of the descriptor'
     @engine.apply_filter_chain(
       test_filter_registry(),
       chain(["regex_match:abc"]),
-      @engine.VStr("xyz"),
+      @engine.String("xyz"),
     ) {
     Err((reason, _)) => assert_declared("regex_match", reason)
     Ok(_) => fail("expected Err")

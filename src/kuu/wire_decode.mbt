@@ -769,15 +769,15 @@ fn bool_field(
 ///|
 fn json_to_value(j : Json) -> @engine.Value raise DecodeSkip {
   match j.j_bool() {
-    Some(b) => return @engine.VBool(b)
+    Some(b) => return @engine.Bool(b)
     None => ()
   }
   match j.j_str() {
-    Some(s) => return @engine.VStr(s)
+    Some(s) => return @engine.String(s)
     None => ()
   }
   match j.j_num() {
-    Some(d) => return @engine.VNum(d)
+    Some(d) => return @engine.Number(d)
     None => ()
   }
   raise DecodeSkip("non-scalar value in effects/result")

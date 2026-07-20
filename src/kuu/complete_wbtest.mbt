@@ -271,7 +271,7 @@ test "DR-060 §1: 全消費も一意性も課さない — 既に完全でも続
   // そのまま候補になる。
   let root : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @engine.VBool(true))]),
+      @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @engine.Bool(true))]),
     ],
     positional: [@builtins.string_arg("file", [])],
     entities: [],

@@ -62,7 +62,7 @@ test "MDR-002 §1.5 acceptance: greedy repeat in a child command yields the pare
         }
         if b.key == "tail" {
           match b.value {
-            @engine.VStr(s) =>
+            @engine.String(s) =>
               if s == "c" && b.scope.length() == 0 {
                 tail_ok = true
               }
@@ -151,7 +151,7 @@ test "DR-097 (先食い述語の精密化): a value-less trigger at the end of i
       for b in bs {
         if b.key == "files" {
           match b.value {
-            @engine.VStr(s) => if s == "--port" { files_raw = true }
+            @engine.String(s) => if s == "--port" { files_raw = true }
             _ => ()
           }
         }
@@ -170,7 +170,7 @@ test "positional spine + greedy interjection sanity (order-free trigger between 
   // prog a --v b : greedy flag --v interjects between two positionals.
   let root : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @engine.VBool(true))]),
+      @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @engine.Bool(true))]),
     ],
     positional: [@builtins.string_arg("x", []), @builtins.string_arg("y", [])],
     entities: [],
@@ -192,13 +192,13 @@ test "positional spine + greedy interjection sanity (order-free trigger between 
         }
         if b.key == "x" {
           match b.value {
-            @engine.VStr(s) => if s == "a" { got_x = true }
+            @engine.String(s) => if s == "a" { got_x = true }
             _ => ()
           }
         }
         if b.key == "y" {
           match b.value {
-            @engine.VStr(s) => if s == "b" { got_y = true }
+            @engine.String(s) => if s == "b" { got_y = true }
             _ => ()
           }
         }
@@ -215,7 +215,7 @@ test "positional spine + greedy interjection sanity (order-free trigger between 
 test "dd sever: past `--`, a trigger-looking token falls raw into the positional" {
   let root : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @engine.VBool(true))]),
+      @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @engine.Bool(true))]),
       @engine.DdSat("--"),
     ],
     positional: [@builtins.string_arg("x", [])],
@@ -233,7 +233,7 @@ test "dd sever: past `--`, a trigger-looking token falls raw into the positional
       for b in bs {
         if b.key == "x" {
           match b.value {
-            @engine.VStr(s) => if s == "--v" { x_is_trigger = true }
+            @engine.String(s) => if s == "--v" { x_is_trigger = true }
             _ => ()
           }
         }
@@ -463,7 +463,7 @@ test "REGRESSION dd sever transparent to positional inline @engine.ScopeNode chi
   // "w" is a residual token → @engine.Failure.
   let child : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("-x"), @engine.Bind("x", @engine.VBool(true))]),
+      @engine.Seq([@engine.Exact("-x"), @engine.Bind("x", @engine.Bool(true))]),
     ],
     positional: [@builtins.string_arg("a", [])],
     entities: [],
@@ -510,7 +510,7 @@ test "REGRESSION step_greedy @engine.Held carries acc so failure resident surviv
     greedy: [
       @engine.Seq([
         @engine.Exact("--help"),
-        @engine.Bind("help", @engine.VBool(true)),
+        @engine.Bind("help", @engine.Bool(true)),
         @builtins.failure_mark("help"),
       ]),
       @engine.Seq([@engine.Exact("--num"), @builtins.number_arg("n", false, [])]),
@@ -544,7 +544,7 @@ test "REGRESSION consume_head @engine.ReqArg respects 先食い (raw-eat suppres
     greedy: [
       @engine.Seq([
         @engine.Exact("-v"),
-        @engine.Bind("verbose", @engine.VBool(true)),
+        @engine.Bind("verbose", @engine.Bool(true)),
       ]),
     ],
     positional: [Ref("fs")],
@@ -562,7 +562,7 @@ test "REGRESSION consume_head @engine.ReqArg respects 先食い (raw-eat suppres
         }
         if b.key == "verbose" {
           match b.value {
-            @engine.VBool(v) => if v { verbose_ok = true }
+            @engine.Bool(v) => if v { verbose_ok = true }
             _ => ()
           }
         }
@@ -705,12 +705,12 @@ test "REGRESSION @engine.Or-wrapped greedy: @engine.find_help_entry / tried_trig
       @engine.Or([
         @engine.Seq([
           @engine.Exact("--help"),
-          @engine.Bind("help", @engine.VBool(true)),
+          @engine.Bind("help", @engine.Bool(true)),
           @builtins.failure_mark("help"),
         ]),
         @engine.Seq([
           @engine.Exact("--verbose"),
-          @engine.Bind("v", @engine.VBool(true)),
+          @engine.Bind("v", @engine.Bool(true)),
         ]),
       ]),
     ],
@@ -802,7 +802,7 @@ test "DR-053 §4: help_entry reflects the failure position's OWN scope, not root
     greedy: [
       @engine.Seq([
         @engine.Exact("--help"),
-        @engine.Bind("help", @engine.VBool(true)),
+        @engine.Bind("help", @engine.Bool(true)),
         @builtins.failure_mark("help"),
       ]),
       @engine.Seq([
@@ -841,7 +841,7 @@ test "DR-053 §4: help_entry is None when the failure-position scope has no help
     greedy: [
       @engine.Seq([
         @engine.Exact("--help"),
-        @engine.Bind("help", @engine.VBool(true)),
+        @engine.Bind("help", @engine.Bool(true)),
         @builtins.failure_mark("help"),
       ]),
     ],
@@ -957,7 +957,7 @@ test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコー�
     greedy: [
       @engine.Seq([
         @engine.Exact("--out"),
-        @engine.Bind("out", @engine.VBool(true)),
+        @engine.Bind("out", @engine.Bool(true)),
       ]),
     ],
     positional: [],
@@ -968,7 +968,7 @@ test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコー�
     greedy: [
       @engine.Seq([
         @engine.Exact("--file"),
-        @engine.Bind("file", @engine.VBool(true)),
+        @engine.Bind("file", @engine.Bool(true)),
       ]),
       @engine.CmdSat("sub", child),
     ],
@@ -1004,8 +1004,8 @@ test "REVIEW-D4 入れ子スコープの constraints も完全経路の成立条
   // 弾く。旧実装は root 直下の constraints しか評価していなかった。
   let child : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--x"), @engine.Bind("x", @engine.VBool(true))]),
-      @engine.Seq([@engine.Exact("--y"), @engine.Bind("y", @engine.VBool(true))]),
+      @engine.Seq([@engine.Exact("--x"), @engine.Bind("x", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("--y"), @engine.Bind("y", @engine.Bool(true))]),
     ],
     positional: [],
     entities: [],
@@ -1068,8 +1068,8 @@ test "DR-097 (先食い述語の精密化, supersedes REVIEW-D5): 値不正の -
       let mut g_raw = false
       for b in bs {
         match (b.key, b.value) {
-          ("f", @engine.VStr(s)) => if s == "--port" { f_raw = true }
-          ("g", @engine.VStr(s)) => if s == "xyz" { g_raw = true }
+          ("f", @engine.String(s)) => if s == "--port" { f_raw = true }
+          ("g", @engine.String(s)) => if s == "xyz" { g_raw = true }
           _ => ()
         }
       }
@@ -1099,8 +1099,8 @@ test "DR-097 述語 pin: 値スロットを持たない flag は常に成立し�
   // 唯一の pin (fixture と重複しない軸)。
   let root : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("-a"), @engine.Bind("a", @engine.VBool(true))]),
-      @engine.Seq([@engine.Exact("-b"), @engine.Bind("b", @engine.VBool(true))]),
+      @engine.Seq([@engine.Exact("-a"), @engine.Bind("a", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("-b"), @engine.Bind("b", @engine.Bool(true))]),
     ],
     positional: [@builtins.string_arg("x", [])],
     entities: [],
@@ -1251,7 +1251,7 @@ test "DR-074 §1: float resident accepts inf (ci, signed), number resident rejec
         for b in bs {
           if b.key == "t" {
             match b.value {
-              @engine.VNum(_) => t_ok = true
+              @engine.Number(_) => t_ok = true
               _ => ()
             }
           }
@@ -1308,7 +1308,7 @@ test "REGRESSION scope_consume float resident respects 先食い (raw-eat suppre
     greedy: [
       @engine.Seq([
         @engine.Exact("inf"),
-        @engine.Bind("verbose", @engine.VBool(true)),
+        @engine.Bind("verbose", @engine.Bool(true)),
       ]),
     ],
     positional: [@builtins.float_arg("x", [])],
@@ -1347,7 +1347,7 @@ test "REGRESSION consume_head float resident respects 先食い (raw-eat suppres
     greedy: [
       @engine.Seq([
         @engine.Exact("inf"),
-        @engine.Bind("verbose", @engine.VBool(true)),
+        @engine.Bind("verbose", @engine.Bool(true)),
       ]),
     ],
     positional: [Ref("fs")],
@@ -1365,7 +1365,7 @@ test "REGRESSION consume_head float resident respects 先食い (raw-eat suppres
         }
         if b.key == "verbose" {
           match b.value {
-            @engine.VBool(v) => if v { verbose_ok = true }
+            @engine.Bool(v) => if v { verbose_ok = true }
             _ => ()
           }
         }
@@ -1393,7 +1393,7 @@ test "REGRESSION scope_consume_rep @engine.Many(float resident) respects 先食�
     greedy: [
       @engine.Seq([
         @engine.Exact("inf"),
-        @engine.Bind("verbose", @engine.VBool(true)),
+        @engine.Bind("verbose", @engine.Bool(true)),
       ]),
     ],
     positional: [@engine.Many(@builtins.float_arg("f", []), false)],
@@ -1415,7 +1415,7 @@ test "REGRESSION scope_consume_rep @engine.Many(float resident) respects 先食�
         }
         if b.key == "verbose" {
           match b.value {
-            @engine.VBool(v) => if v { verbose_ok = true }
+            @engine.Bool(v) => if v { verbose_ok = true }
             _ => ()
           }
         }
@@ -1449,13 +1449,13 @@ test "REGRESSION scope_consume_rep @engine.Many(compound ref-template head) resp
   // `{"name":"hlcolors","ref":"color","repeat":{"min":0}}` の lowering そのもの。
   let head = @engine.Scoped(
     "hlcolors",
-    @engine.Seq([@engine.Bind("#row", @engine.VBool(false)), Ref("color")]),
+    @engine.Seq([@engine.Bind("#row", @engine.Bool(false)), Ref("color")]),
   )
   let root : @engine.Scope = {
     greedy: [
       @engine.Seq([
         @engine.Exact("--verbose"),
-        @engine.Bind("verbose", @engine.VBool(true)),
+        @engine.Bind("verbose", @engine.Bool(true)),
       ]),
     ],
     positional: [@engine.Many(head, false)],
@@ -1480,7 +1480,7 @@ test "REGRESSION scope_consume_rep @engine.Many(compound ref-template head) resp
         }
         if b.key == "verbose" {
           match b.value {
-            @engine.VBool(v) => if v { verbose_ok = true }
+            @engine.Bool(v) => if v { verbose_ok = true }
             _ => ()
           }
         }
@@ -1621,7 +1621,7 @@ test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (r
 test "DR-066 §4: a constraint violation declared in a child scope carries the child's path" {
   let child : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--x"), @engine.Bind("x", @engine.VBool(true))]),
+      @engine.Seq([@engine.Exact("--x"), @engine.Bind("x", @engine.Bool(true))]),
     ],
     positional: [],
     entities: [],
@@ -1928,10 +1928,10 @@ test "DR-047 §2: a constraint filters one of two complete paths (@engine.Or-bra
     @engine.Or([
       @engine.Seq([
         @engine.Exact("x"),
-        @engine.Bind("foo", @engine.VBool(true)),
-        @engine.Bind("bar", @engine.VBool(true)),
+        @engine.Bind("foo", @engine.Bool(true)),
+        @engine.Bind("bar", @engine.Bool(true)),
       ]),
-      @engine.Seq([@engine.Exact("x"), @engine.Bind("foo", @engine.VBool(true))]),
+      @engine.Seq([@engine.Exact("x"), @engine.Bind("foo", @engine.Bool(true))]),
     ]),
   ]
   let sc : @engine.Scope = {
@@ -1975,9 +1975,9 @@ test "DR-047 §2: a constraint filters one of two complete paths (sibling greedy
   // よる vacuous-satisfaction は混ぜない、上のコメント通り)。
   let sc : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--v"), @engine.Bind("a", @engine.VBool(true))]),
-      @engine.Seq([@engine.Exact("--v"), @engine.Bind("b", @engine.VBool(true))]),
-      @engine.Seq([@engine.Exact("--c"), @engine.Bind("c", @engine.VBool(true))]),
+      @engine.Seq([@engine.Exact("--v"), @engine.Bind("a", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("--v"), @engine.Bind("b", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("--c"), @engine.Bind("c", @engine.Bool(true))]),
     ],
     positional: [],
     entities: [ent("c", @builtins.string_type())],
@@ -2015,7 +2015,7 @@ test "DR-047 §2: a constraint filters one of two complete paths (sibling greedy
 
 ///|
 /// Guarantees: a `kv resident` piece that DOES contain `=` is a plain @engine.Accept — same shape as `string resident`
-/// (1 token consumed, `@engine.VStr` binding of the WHOLE token, `=` split deferred to `resolve.mbt`'s
+/// (1 token consumed, `@engine.String` binding of the WHOLE token, `=` split deferred to `resolve.mbt`'s
 /// `build_result` at fold time — this node only gates, it does not itself split).
 test "DR-091 §2: kv resident accepts a piece containing '=' (whole token becomes the binding value)" {
   let root : @engine.Scope = {
@@ -2033,7 +2033,7 @@ test "DR-091 §2: kv resident accepts a piece containing '=' (whole token become
     @engine.Success(bs) => {
       assert_eq(bs.length(), 1)
       assert_eq(bs[0].key, "kv")
-      assert_eq(bs[0].value, @engine.VStr("KEY=value"))
+      assert_eq(bs[0].value, @engine.String("KEY=value"))
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
   }

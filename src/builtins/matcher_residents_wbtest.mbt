@@ -102,7 +102,7 @@ test "eq-split long option resolves, errors, and 素通し" {
   let b1 = acc_binds(r1[0])
   assert_eq(b1.length(), 1)
   assert_eq(b1[0].key, "port")
-  assert_eq(b1[0].value, @engine.VNum(8080.0))
+  assert_eq(b1[0].value, @engine.Number(8080.0))
   assert_eq(b1[0].source, @engine.Cli)
   // a defined key with a non-number value is a held Error (DR-037), NOT a silent 素通し.
   let r2 = probe_matcher(long, ["--port=abc"])
@@ -134,7 +134,7 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
       depr=false,
     ),
   ])
-  // `true` / `1` / mixed-case / all-caps all resolve to @engine.VBool(true).
+  // `true` / `1` / mixed-case / all-caps all resolve to @engine.Bool(true).
   for
     tok in ["--enabled=true", "--enabled=1", "--enabled=True", "--enabled=TRUE"] {
     let r = probe_matcher(long, [tok])
@@ -143,16 +143,16 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
     let b = acc_binds(r[0])
     assert_eq(b.length(), 1)
     assert_eq(b[0].key, "enabled")
-    assert_eq(b[0].value, @engine.VBool(true))
+    assert_eq(b[0].value, @engine.Bool(true))
     assert_eq(b[0].source, @engine.Cli)
   }
-  // `false` / `0` / `""` all resolve to @engine.VBool(false) — the empty string is the env `FLAG=` pattern.
+  // `false` / `0` / `""` all resolve to @engine.Bool(false) — the empty string is the env `FLAG=` pattern.
   for tok in ["--enabled=false", "--enabled=0", "--enabled="] {
     let r = probe_matcher(long, [tok])
     assert_eq(r.length(), 1)
     let b = acc_binds(r[0])
     assert_eq(b.length(), 1)
-    assert_eq(b[0].value, @engine.VBool(false))
+    assert_eq(b[0].value, @engine.Bool(false))
   }
   // `yes` is canonical-外 (Norway problem 回避, DR-074 §3): a held Error, not a silent 素通し.
   let ry = probe_matcher(long, ["--enabled=yes"])
@@ -211,7 +211,7 @@ test "eq-split long option: deprecated entry rides a @depr marker" {
   // two bindings: the value (port=8080) plus the deprecation marker (@depr:port).
   assert_eq(b.length(), 2)
   assert_eq(b[0].key, "port")
-  assert_eq(b[0].value, @engine.VNum(8080.0))
+  assert_eq(b[0].value, @engine.Number(8080.0))
   assert_eq(b[1].key, "@depr:port")
 }
 
@@ -300,9 +300,9 @@ test "short cluster: flag run and in-token numeric value" {
   let bf = acc_binds(rf[0])
   assert_eq(bf.length(), 2)
   assert_eq(bf[0].key, "a")
-  assert_eq(bf[0].value, @engine.VBool(true))
+  assert_eq(bf[0].value, @engine.Bool(true))
   assert_eq(bf[1].key, "b")
-  assert_eq(bf[1].value, @engine.VBool(true))
+  assert_eq(bf[1].value, @engine.Bool(true))
   // `-n1.0`: only the full value `1.0` completes the cluster → exactly one reading n=1.0.
   let rn = probe_matcher(short, ["-n1.0"])
   assert_eq(rn.length(), 1)
@@ -310,7 +310,7 @@ test "short cluster: flag run and in-token numeric value" {
   let bn = acc_binds(rn[0])
   assert_eq(bn.length(), 1)
   assert_eq(bn[0].key, "n")
-  assert_eq(bn[0].value, @engine.VNum(1.0))
+  assert_eq(bn[0].value, @engine.Number(1.0))
 }
 
 ///|
@@ -340,7 +340,7 @@ test "short cluster: space-form value takes the next token" {
   let b = acc_binds(r[0])
   assert_eq(b.length(), 1)
   assert_eq(b[0].key, "n")
-  assert_eq(b[0].value, @engine.VNum(5.0))
+  assert_eq(b[0].value, @engine.Number(5.0))
 }
 
 ///|
@@ -371,7 +371,7 @@ test "short cluster: deprecated entry rides a @depr marker" {
   // two bindings: the flag value (d=true) plus the deprecation marker (@depr:d).
   assert_eq(b.length(), 2)
   assert_eq(b[0].key, "d")
-  assert_eq(b[0].value, @engine.VBool(true))
+  assert_eq(b[0].value, @engine.Bool(true))
   assert_eq(b[1].key, "@depr:d")
 }
 
@@ -439,7 +439,7 @@ test "short cluster: combine:false still fires a LONE flag (-a)" {
   let b = acc_binds(r[0])
   assert_eq(b.length(), 1)
   assert_eq(b[0].key, "a")
-  assert_eq(b[0].value, @engine.VBool(true))
+  assert_eq(b[0].value, @engine.Bool(true))
 }
 
 ///|
@@ -454,7 +454,7 @@ test "short cluster: combine:false still fires a FULL-TAIL value-attach (-n1.0)"
   let b = acc_binds(r[0])
   assert_eq(b.length(), 1)
   assert_eq(b[0].key, "n")
-  assert_eq(b[0].value, @engine.VNum(1.0))
+  assert_eq(b[0].value, @engine.Number(1.0))
 }
 
 ///|
@@ -490,9 +490,9 @@ test "short cluster: combine:true adds the PARTIAL-attach-then-combine reading o
       let b = acc_binds(br)
       assert_eq(b.length(), 2)
       assert_eq(b[0].key, "n")
-      assert_eq(b[0].value, @engine.VNum(1.0))
+      assert_eq(b[0].value, @engine.Number(1.0))
       assert_eq(b[1].key, "a")
-      assert_eq(b[1].value, @engine.VBool(true))
+      assert_eq(b[1].value, @engine.Bool(true))
     }
   }
   assert_true(accept_found)
@@ -512,5 +512,5 @@ test "short cluster: combine:false still fires the space-form (next-token) value
   let b = acc_binds(r[0])
   assert_eq(b.length(), 1)
   assert_eq(b[0].key, "n")
-  assert_eq(b[0].value, @engine.VNum(5.0))
+  assert_eq(b[0].value, @engine.Number(5.0))
 }

@@ -15,17 +15,17 @@
 ///|
 /// A resolved value that can land in the result object.
 pub(all) enum Value {
-  VStr(String)
-  VNum(Double)
-  VBool(Bool)
+  String(String)
+  Number(Double)
+  Bool(Bool)
 } derive(Eq, Debug)
 
 ///|
 pub fn value_str(value : Value) -> String {
   match value {
-    VStr(string) => string
-    VBool(boolean) => if boolean { "true" } else { "false" }
-    VNum(number) => {
+    String(string) => string
+    Bool(boolean) => if boolean { "true" } else { "false" }
+    Number(number) => {
       let integer = number.to_int()
       if integer.to_double() == number {
         integer.to_string()
@@ -57,12 +57,12 @@ pub(all) enum Source {
 /// never sees TOML/YAML — only this shape. Leaf values are typed (string / number / bool); arrays
 /// feed a multiple element's pieces; objects mirror the name-scope hierarchy (同型対応).
 pub enum ConfigVal {
-  CStr(String)
-  CNum(Double)
-  CBool(Bool)
-  CArr(Array[ConfigVal])
-  CObj(Array[(String, ConfigVal)])
-  CNull // JSON null (DR-050 §4 / DR-051): treated as 供給なし — the config seat supplies nothing
+  String(String)
+  Number(Double)
+  Bool(Bool)
+  Array(Array[ConfigVal])
+  Object(Array[(String, ConfigVal)])
+  Null // JSON null (DR-050 §4 / DR-051): treated as 供給なし — the config seat supplies nothing
 } derive(Eq, Debug)
 
 ///|
@@ -74,20 +74,20 @@ pub fn config_from_json(json : Json) -> ConfigVal {
       for key, value in object {
         entries.push((key, config_from_json(value)))
       }
-      CObj(entries)
+      Object(entries)
     }
     Array(items) => {
       let values : Array[ConfigVal] = []
       for value in items {
         values.push(config_from_json(value))
       }
-      CArr(values)
+      Array(values)
     }
-    True => CBool(true)
-    False => CBool(false)
-    String(value) => CStr(value)
-    Number(value, ..) => CNum(value)
-    _ => CNull
+    True => Bool(true)
+    False => Bool(false)
+    String(value) => String(value)
+    Number(value, ..) => Number(value)
+    _ => Null
   }
 }
 
@@ -228,16 +228,16 @@ pub(all) struct ParseError {
 
 ///|
 /// DR-083 §2: a declared default's stored piece is already a `Value` (decoded straight off the
-/// JSON literal, `VStr`/`VNum`/`VBool` — never `VStr` coerced through the element's TypeExt resident at decode time,
+/// JSON literal, `String`/`Number`/`Bool` — never `String` coerced through the element's TypeExt resident at decode time,
 /// mirroring how a config array's piece is stored as an untyped `ConfigVal` until READ). This is
 /// the bridge that lets `resolve_ladder_below_cli`'s default seat reuse `config_to_value` VERBATIM
 /// (DR-083 §2 "config array と同型に扱う") instead of re-deriving the same string/number/bool
 /// leniency table a second time — `Value`'s 3 variants map 1:1 onto `ConfigVal`'s 3 scalar ones.
 pub fn value_to_configval(v : Value) -> ConfigVal {
   match v {
-    VStr(s) => CStr(s)
-    VNum(d) => CNum(d)
-    VBool(b) => CBool(b)
+    String(s) => String(s)
+    Number(d) => Number(d)
+    Bool(b) => Bool(b)
   }
 }
 
@@ -365,7 +365,7 @@ pub fn depr_marker(element : String) -> Binding {
   {
     key: "@depr:" + element,
     op: Set,
-    value: VBool(false),
+    value: Bool(false),
     source: Cli,
     scope: [],
     link: 0,

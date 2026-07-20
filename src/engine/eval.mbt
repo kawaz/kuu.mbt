@@ -127,7 +127,7 @@ pub fn trigger_candidate(
 /// A non-set effect binding (default / unset / empty). The operand is a
 /// placeholder — these ops carry no operand (spec DR-045 table).
 pub fn mk_effect(key : String, op : EffectOp, source : Source) -> Binding {
-  { key, op, value: VBool(false), source, scope: [], link: 0, at_pos: None }
+  { key, op, value: Bool(false), source, scope: [], link: 0, at_pos: None }
 }
 
 ///|
@@ -137,7 +137,7 @@ pub fn action_marker(name : String, pos : Int) -> Binding {
   {
     key: "@act:" + name,
     op: Set,
-    value: VNum(pos.to_double()),
+    value: Number(pos.to_double()),
     source: Cli,
     scope: [],
     link: 0,
@@ -343,7 +343,7 @@ fn scope_marker(label : String) -> Binding {
   {
     key: "{}",
     op: Set,
-    value: VBool(false),
+    value: Bool(false),
     source: Cli,
     scope: [label],
     link: 0,
@@ -358,7 +358,7 @@ fn array_marker(label : String) -> Binding {
   {
     key: "[]",
     op: Set,
-    value: VBool(false),
+    value: Bool(false),
     source: Cli,
     scope: [label],
     link: 0,
@@ -551,7 +551,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // evaluation はこの1本の Branch の bindings を返すだけ — 呼び出し元が outer acc と cat する)。
         [
           Accept(pos + 1, [
-            mk_binding(trigger, VBool(true), Cli, at_pos=Some(pos)),
+            mk_binding(trigger, Bool(true), Cli, at_pos=Some(pos)),
           ]),
         ]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
@@ -582,7 +582,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       if pos < ctx.toks.length() &&
         dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
         // DR-093 §2/§7: same committed placeholder as the DdSat arm above, keyed by `elem_name`.
-        let b = mk_binding(elem_name, VBool(true), Cli, at_pos=Some(pos))
+        let b = mk_binding(elem_name, Bool(true), Cli, at_pos=Some(pos))
         if self_keep {
           [Accept(pos, [b])]
         } else {
@@ -723,7 +723,9 @@ fn req_arg_eval(
     [
       Accept(
         pos + 1,
-        cat(acc, [mk_binding(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos))]),
+        cat(acc, [
+          mk_binding(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos)),
+        ]),
       ),
     ]
   } else if in_complete(ctx) {
@@ -794,7 +796,7 @@ pub fn split_on(s : String, sep : String) -> Array[String] {
 /// pieceProcessor: separator → piece_filters → parse → value_filters (each piece) → once the value
 /// is committed, final_filters (non-accum element) or, after accumulation, accum_filters (accum
 /// element); a piece's
-/// type is independent of whether it came via separator, `elem_head`'s pre-段2 "always VStr"
+/// type is independent of whether it came via separator, `elem_head`'s pre-段2 "always String"
 /// shortcut was the bug this closes). A piece_filters reject OR a type-parse failure on ANY piece
 /// fails the WHOLE binding (`Err` short-circuits) — same all-or-nothing contract a single-piece
 /// value primitive has; the two failure kinds stay distinct (`KFilter` vs `KParse`, mirrored from
@@ -1531,12 +1533,12 @@ fn step_greedy(
     DdSat(trigger) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         // DR-093 §2/§7: fire を committed として観測可能にする placeholder binding
-        // (`flag_bare_true_variant` と同型の `Set VBool(true)`、`NoneCell`/`none_cells` が
+        // (`flag_bare_true_variant` と同型の `Set Bool(true)`、`NoneCell`/`none_cells` が
         // build_result/effects から除外する — 値そのものは運ばない、DR-089 §3 不変)。DdSat の
         // trigger 文字列は要素名そのもの (dd_match 未使用の唯一のケースでのみ installer が
         // `DdSat(e.name)` を作る) なのでそのまま key に使える。
         let acc2 = cat(acc, [
-          mk_binding(trigger, VBool(true), Cli, at_pos=Some(pos)),
+          mk_binding(trigger, Bool(true), Cli, at_pos=Some(pos)),
         ])
         for r in scope_step(sc, ctx, pos + 1, pidx, acc2, true, k) {
           out.push(r)
@@ -1572,7 +1574,7 @@ fn step_greedy(
         // DR-093 §2/§7: DdSat と同じ committed placeholder binding。key は `elem_name` (要素の
         // 同一性軸、DR-090 §2) — `spelling` は match 使用時トリガ綴りやパターンで要素名と一致しない。
         let acc2 = cat(acc, [
-          mk_binding(elem_name, VBool(true), Cli, at_pos=Some(pos)),
+          mk_binding(elem_name, Bool(true), Cli, at_pos=Some(pos)),
         ])
         for r in scope_step(sc, ctx, resume_pos, pidx, acc2, true, k) {
           out.push(r)
@@ -1741,7 +1743,7 @@ fn scope_consume(
           pos + 1,
           pidx + 1,
           cat(acc, [
-            mk_binding(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos)),
+            mk_binding(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos)),
           ]),
           severed,
           k,
@@ -2084,7 +2086,7 @@ fn consume_head(
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         [
           Accept(pos + 1, [
-            mk_binding(name, VStr(ctx.toks[pos]), Cli, at_pos=Some(pos)),
+            mk_binding(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos)),
           ]),
         ]
       } else if pos >= ctx.toks.length() {

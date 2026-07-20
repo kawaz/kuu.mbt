@@ -41,7 +41,7 @@ test "config_to_value type conversions" {
         test_filter_registry(),
       ),
     ),
-    Some(@engine.VNum(8080.0)),
+    Some(@engine.Number(8080.0)),
   )
   assert_eq(
     cv_ok(
@@ -52,7 +52,7 @@ test "config_to_value type conversions" {
         test_filter_registry(),
       ),
     ),
-    Some(@engine.VNum(3.0)),
+    Some(@engine.Number(3.0)),
   )
   // "2.5" into int is Error under canonical error mode (no silent 精度落ち).
   assert_eq(
@@ -76,7 +76,7 @@ test "config_to_value type conversions" {
         test_filter_registry(),
       ),
     ),
-    Some(@engine.VStr("1.5")),
+    Some(@engine.String("1.5")),
   )
   assert_eq(
     cv_ok(
@@ -87,7 +87,7 @@ test "config_to_value type conversions" {
         test_filter_registry(),
       ),
     ),
-    Some(@engine.VStr("true")),
+    Some(@engine.String("true")),
   )
   // string → bool via canonical vocab; an unknown word is an Error.
   assert_eq(
@@ -99,7 +99,7 @@ test "config_to_value type conversions" {
         test_filter_registry(),
       ),
     ),
-    Some(@engine.VBool(true)),
+    Some(@engine.Bool(true)),
   )
   assert_eq(
     cv_ok(
@@ -122,7 +122,7 @@ test "config_to_value type conversions" {
         test_filter_registry(),
       ),
     ),
-    Some(@engine.VNum(1.0)),
+    Some(@engine.Number(1.0)),
   )
   assert_eq(
     cv_ok(
@@ -174,14 +174,14 @@ test "config_to_value type conversions" {
 
 ///|
 /// 保証 (codex 節目レビュー想定と同型の観点、issue 2026-07-09-config-string-pieceprocessor-gap): a
-/// `CStr` config source runs `piece_filters` BEFORE its type parse — exactly like `resolve.mbt`'s
+/// `String` config source runs `piece_filters` BEFORE its type parse — exactly like `resolve.mbt`'s
 /// `env_value` does for the env seat (DR-049 §2), and `eval.mbt`'s CLI token-consumption path.
 /// `trim` (DR-034 built-in piece_filter) rescues a config string with surrounding whitespace that
 /// would otherwise fail `parse_number` outright — this is the concrete, previously-impossible
-/// case the gap issue's TODO describes (`{"port": " 8080 "}`). A non-string source (CNum/CBool
+/// case the gap issue's TODO describes (`{"port": " 8080 "}`). A non-string source (Number/Bool
 /// matching its type) has NO piece_filters step to skip past (§4's type-consequence, not tested by
 /// omission here — the type-leniency matrix above already covers those arms with `[]`).
-test "config_to_value: piece_filters runs on a CStr source before the type parse (DR-050 §4)" {
+test "config_to_value: piece_filters runs on a String source before the type parse (DR-050 §4)" {
   assert_eq(
     cv_ok(
       config_to_value(
@@ -191,7 +191,7 @@ test "config_to_value: piece_filters runs on a CStr source before the type parse
         test_filter_registry(),
       ),
     ),
-    Some(@engine.VNum(8080.0)),
+    Some(@engine.Number(8080.0)),
   )
   // without the piece_filter, the same raw string fails to parse (proves `trim` is load-bearing,
   // not a no-op the type parser would have tolerated anyway).
@@ -217,7 +217,7 @@ test "config_to_value: piece_filters runs on a CStr source before the type parse
         test_filter_registry(),
       ),
     ),
-    Some(@engine.VStr("hi")),
+    Some(@engine.String("hi")),
   )
   // a piece_filters REJECT (not just a parse failure) surfaces as KFilter, distinct from a KParse
   // type-mismatch — `resolve.mbt`'s caller picks the ParseError constructor by this tag.
