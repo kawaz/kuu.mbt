@@ -195,6 +195,8 @@ fn resident_empty_help_meta() -> @engine.HelpMetaDecl {
     help_order: None,
     help_group_order: None,
     help_after: None,
+    help_on_failure: None,
+    is_help_preset: false,
   }
 }
 
@@ -925,7 +927,7 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn vocab(_self) {
   [
     "help", "help_long", "help_epilog", "display_name", "value_name", "help_group_name",
     "help_group_title", "help_group_description", "help_order", "help_group_order",
-    "help_after",
+    "help_after", "help_on_failure",
   ]
 }
 
@@ -947,11 +949,20 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn decode(
     Ok(value) => value
     Err(reason) => return Err(reason)
   }
+  // DR-113 §7.2: `help_on_failure` は help_installer 所有の糖衣。5 preset 判定は decode 層
+  // (`dec_option` の tystr match) が上書きするため、ここでは wire 上の宣言値だけを写し取り
+  // is_help_preset は false のまま渡す (dec_option 側で `is_help_preset: true` へ差し替える)。
+  let help_on_failure : Bool? = match object.get("help_on_failure") {
+    None => None
+    Some(True) => Some(true)
+    Some(False) => Some(false)
+    Some(_) => return Err("help_on_failure is not a bool")
+  }
   Ok({
     vocab: [
       "help", "help_long", "help_epilog", "display_name", "value_name", "help_group_name",
       "help_group_title", "help_group_description", "help_order", "help_group_order",
-      "help_after",
+      "help_after", "help_on_failure",
     ],
     declaration: ODHelpMeta({
       help: resident_string(object, "help"),
@@ -965,6 +976,8 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn decode(
       help_order,
       help_group_order,
       help_after: resident_string(object, "help_after"),
+      help_on_failure,
+      is_help_preset: false,
     }),
   })
 }
@@ -1030,6 +1043,19 @@ fn collect_help_meta_errors(
   let groups : Map[String, (String?, String?)] = Map([])
   for e in def.options {
     let meta = e.help_meta
+    // DR-113 §7.2: `help_on_failure` は 5 help preset (help / help_all_category /
+    // help_category / help_show_hidden / help_tree) が on_failure へ展開する糖衣であり、
+    // 非 help preset (flag / string / help group declaration / positional 等) 上に宣言
+    // した場合は definition-error `invalid-range`。help preset 上での糖衣展開
+    // (fail_action override) は M3c 以降で HelpMetaInstaller.apply へ移送する。
+    if meta.help_on_failure is Some(_) && !meta.is_help_preset {
+      errors.push({
+        element: e.name,
+        kind: @engine.DInvalidRange,
+        message: "help_on_failure requires a help preset type",
+        hint: "declare help_on_failure only on help / help_all_category / help_category / help_show_hidden / help_tree",
+      })
+    }
     if help_group_declaration(e) {
       if meta.help_order is Some(_) {
         errors.push({
@@ -1042,18 +1068,19 @@ fn collect_help_meta_errors(
       match meta.help_group_name {
         Some(name) => {
           let setting = (meta.help_group_title, meta.help_group_description)
+          // DR-113 §8.1: 同じ help_group_name の重複宣言は設定同一か否かを問わず
+          // 無条件で definition-error `invalid-range` (グループ宣言箇所を一意にする
+          // 先頭宣言スタイルを崩さない)。冪等受理しない存在ベース規則。
           match groups.get(name) {
-            Some(previous) =>
-              if previous != setting {
-                errors.push({
-                  element: "",
-                  kind: @engine.DInvalidRange,
-                  message: "help group '" +
-                  name +
-                  "' has conflicting declarations",
-                  hint: "keep one declaration or make repeated declarations identical",
-                })
-              }
+            Some(_) =>
+              errors.push({
+                element: "",
+                kind: @engine.DInvalidRange,
+                message: "help group '" +
+                name +
+                "' is declared more than once",
+                hint: "keep exactly one declaration per help_group_name",
+              })
             None => groups.set(name, setting)
           }
         }

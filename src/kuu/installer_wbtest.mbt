@@ -32,6 +32,8 @@ fn empty_help_meta_for_test() -> @engine.HelpMetaDecl {
     help_order: None,
     help_group_order: None,
     help_after: None,
+    help_on_failure: None,
+    is_help_preset: false,
   }
 }
 
@@ -110,6 +112,8 @@ fn el(
       help_order: None,
       help_group_order: None,
       help_after: None,
+      help_on_failure: None,
+      is_help_preset: false,
     },
     is_tty,
     tty_stream,

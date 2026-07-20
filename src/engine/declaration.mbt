@@ -15,6 +15,21 @@ pub(all) struct HelpMetaDecl {
   help_order : Double?
   help_group_order : Double?
   help_after : String?
+  // DR-113 §7.2: help_installer が所有する糖衣属性。5 help preset (help / help_all_category /
+  // help_category / help_show_hidden / help_tree) 上でのみ on_failure へ展開され、非 help
+  // preset 上の宣言は definition-error `invalid-range` (`collect_help_meta_errors` が判定)。
+  // None = wire に宣言なし、Some(bool) = 明示宣言。M3b では糖衣展開自体は先送り (5 preset の
+  // fail_action 既定は wire_decode 側で先食い、明示 help_on_failure による override は M3c 以降)。
+  help_on_failure : Bool?
+  // DR-113 §7.2 / §8.1 の非 help preset 判定に必要な構造情報 carry — `type:` が 5 help
+  // preset のいずれかに解決したかどうかを wire_decode 側で立てて HelpMetaInstaller へ渡す。
+  // HelpMetaDecl は本来 inert な表示メタだが、help_on_failure 糖衣の invalid-range 判定は
+  // 「help preset か否か」を必要とし、この判定を実施する installer もこの carrier の唯一の
+  // 読者である (M3a 申し送り: preset 由来 type 名は構造情報なので HelpMetaDecl carry を許容
+  // する統括判断)。help preset 展開後は wire 側で flag_type + fail_action に落ちて元の type
+  // 名が消えるため、is_help_preset で bool 化して carry する方が installer 側の分岐を単純化
+  // できる。help group declaration entry (name == "") や positional は常に false。
+  is_help_preset : Bool
 } derive(Eq, Debug)
 
 ///|

@@ -87,6 +87,8 @@ fn empty_help_meta() -> @engine.HelpMetaDecl {
     help_order: None,
     help_group_order: None,
     help_after: None,
+    help_on_failure: None,
+    is_help_preset: false,
   }
 }
 
@@ -110,6 +112,13 @@ fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDecl {
       None => None
     },
     help_after: jf_str(o, "help_after"),
+    help_on_failure: match o.get("help_on_failure") {
+      Some(value) => value.j_bool()
+      None => None
+    },
+    // 実際の 5 preset 判定は dec_option の type match 後に上書きされる
+    // (`help_meta = { ..help_meta, is_help_preset: true }`)。ここでは既定 false。
+    is_help_preset: false,
   }
 }
 
@@ -1913,6 +1922,16 @@ fn dec_option(
   // real by the caller (`dec_definition`).
   let ref_ = jf_str(o, "ref")
   let repeat = owned.repeat
+  // DR-113 §7.2: HelpMetaInstaller.collect_defs_errors が非 help preset 上の
+  // help_on_failure を invalid-range として弾くための構造情報 carry。help preset 判定は
+  // wire 上の元 tystr で行う (M3b では 5 preset は wire_decode 側で flag_type + fail_action
+  // に落ちて元の type 名が消えるため、ここで bool 化して HelpMetaDecl に carry する)。
+  let is_help_preset = match tystr {
+    "help" | "help_all_category" | "help_category" | "help_show_hidden"
+    | "help_tree" => true
+    _ => false
+  }
+  let help_meta = { ..owned.help_meta, is_help_preset, }
   DOpt({
     ..opt(
       name,
@@ -1921,7 +1940,7 @@ fn dec_option(
       short~,
       repeat~,
       env~,
-      help_meta=owned.help_meta,
+      help_meta~,
       is_tty=is_tty_from_shadow,
       tty_stream=tty_stream_from_shadow,
       tty_cygwin=tty_cygwin_from_shadow,
