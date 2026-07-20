@@ -118,15 +118,13 @@ pub fn install_canonical(registry : @engine.Registry) -> Unit {
       None,
       @builtins.string_type(),
       @engine.Error,
-      false,
       @builtins.bool_config_canonical(),
       [],
-      false,
     ),
   )
-  register_node(registry, @builtins.number_arg("", false, []))
+  register_node(registry, @builtins.number_arg("", []))
   register_node(registry, @builtins.float_arg("", []))
-  register_node(registry, @builtins.int_arg("", @engine.Error, false, []))
+  register_node(registry, @builtins.int_arg("", @engine.Error, []))
   register_node(
     registry,
     @builtins.bool_arg("", @builtins.bool_config_canonical(), []),
@@ -137,7 +135,7 @@ pub fn install_canonical(registry : @engine.Registry) -> Unit {
   register_node(registry, @builtins.failure_mark(""))
 
   register_matcher(registry, @builtins.eq_split("", []))
-  register_matcher(registry, @builtins.short_combine("", [], true))
+  register_matcher(registry, @builtins.short_combine("", []))
 
   register_type(registry, @builtins.string_type())
   register_type(registry, @builtins.number_type())

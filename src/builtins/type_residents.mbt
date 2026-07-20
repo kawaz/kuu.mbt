@@ -385,8 +385,8 @@ pub fn none_type() -> &@engine.TypeExt {
 pub fn configured_type(
   ty : &@engine.TypeExt,
   round : @engine.RoundMode,
-  allow_base_prefix : Bool,
   bool_config : @engine.BoolConfig,
+  allow_base_prefix? : Bool = false,
 ) -> &@engine.TypeExt {
   match ty.name() {
     "string" => string_type()
@@ -412,6 +412,6 @@ fn configured_short_type(
   if ty.name() == "bool" {
     bool_type(config=bool_config, value_slot=false)
   } else {
-    configured_type(ty, round, allow_base_prefix, bool_config)
+    configured_type(ty, round, bool_config, allow_base_prefix~)
   }
 }

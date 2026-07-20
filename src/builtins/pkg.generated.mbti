@@ -29,7 +29,7 @@ pub fn config_installer() -> &@engine.InstallerExt
 
 pub fn config_to_value(@engine.ConfigVal, &@engine.TypeExt, Array[@engine.FnInvocation], @engine.Registry) -> Result[@engine.Value, ConfigValueError]
 
-pub fn configured_type(&@engine.TypeExt, @engine.RoundMode, Bool, @engine.BoolConfig) -> &@engine.TypeExt
+pub fn configured_type(&@engine.TypeExt, @engine.RoundMode, @engine.BoolConfig, allow_base_prefix? : Bool) -> &@engine.TypeExt
 
 pub fn constraint_installer() -> &@engine.InstallerExt
 
@@ -77,7 +77,7 @@ pub fn inherit_installer() -> &@engine.InstallerExt
 
 pub fn inheritable_installer() -> &@engine.InstallerExt
 
-pub fn int_arg(String, @engine.RoundMode, Bool, Array[@engine.FnInvocation]) -> @engine.Node
+pub fn int_arg(String, @engine.RoundMode, Array[@engine.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
 
 pub fn int_type(round? : @engine.RoundMode, allow_base_prefix? : Bool) -> &@engine.TypeExt
 
@@ -103,7 +103,7 @@ pub fn non_empty_filter() -> @engine.FilterDescriptor
 
 pub fn none_type() -> &@engine.TypeExt
 
-pub fn number_arg(String, Bool, Array[@engine.FnInvocation]) -> @engine.Node
+pub fn number_arg(String, Array[@engine.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
 
 pub fn number_type(allow_base_prefix? : Bool) -> &@engine.TypeExt
 
@@ -119,9 +119,9 @@ pub fn repeat_installer() -> &@engine.InstallerExt
 
 pub fn round_mode_of(String) -> @engine.RoundMode?
 
-pub fn separated_arg(String, String?, &@engine.TypeExt, @engine.RoundMode, Bool, @engine.BoolConfig, Array[@engine.FnInvocation], Bool) -> @engine.Node
+pub fn separated_arg(String, String?, &@engine.TypeExt, @engine.RoundMode, @engine.BoolConfig, Array[@engine.FnInvocation], allow_base_prefix? : Bool, merge? : Bool) -> @engine.Node
 
-pub fn short_combine(String, Array[ShortEntry], Bool) -> &@engine.MatcherExt
+pub fn short_combine(String, Array[ShortEntry], combine? : Bool) -> &@engine.MatcherExt
 
 pub fn short_entry(Char, String, &@engine.TypeExt, Array[@engine.FnInvocation], String?, depr? : Bool, merge? : Bool, short_attached_value? : @engine.AttachMode, is_alias? : Bool) -> ShortEntry
 

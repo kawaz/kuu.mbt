@@ -1799,7 +1799,10 @@ fn dec_or_leaf(
       )
   }
   let ty = @builtins.configured_type(
-    ty, int_round_from_shadow, base_prefix_from_shadow, bool_config_from_shadow,
+    ty,
+    int_round_from_shadow,
+    bool_config_from_shadow,
+    allow_base_prefix=base_prefix_from_shadow,
   )
   pos(
     name,
@@ -2056,7 +2059,10 @@ fn dec_option(
       }
   }
   let ty = @builtins.configured_type(
-    ty, int_round_from_shadow, base_prefix_from_shadow, bool_config_from_shadow,
+    ty,
+    int_round_from_shadow,
+    bool_config_from_shadow,
+    allow_base_prefix=base_prefix_from_shadow,
   )
   // DR-071 §1 / kawaz 裁定 2026-07-08: decode は wire の bool|array 二形をそのまま `@engine.LongDecl` に写す
   // だけ — 糖衣展開・colon DSL 分類 (variants の分離を含む) は installer.mbt の `resolve_long` が
@@ -2365,7 +2371,10 @@ fn dec_positional(
       )
   }
   let ty = @builtins.configured_type(
-    ty, int_round_from_shadow, base_prefix_from_shadow, bool_config_from_shadow,
+    ty,
+    int_round_from_shadow,
+    bool_config_from_shadow,
+    allow_base_prefix=base_prefix_from_shadow,
   )
   let repeat = owned.repeat
   let optional = owned.optional

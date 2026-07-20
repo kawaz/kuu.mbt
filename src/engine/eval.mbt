@@ -103,9 +103,9 @@ pub fn Cand::trigger(
   origin : String,
   ty : String,
   term : TermHint,
-  is_alias : Bool,
-  hidden : Bool,
-  deprecated : Bool,
+  is_alias? : Bool = false,
+  hidden? : Bool = false,
+  deprecated? : Bool = false,
 ) -> Cand {
   {
     spelling,
@@ -478,9 +478,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // catch-all arm (below) patches origin/hidden up from the satellite's tail
         // (`fixup_boundary_cands`, DR-104 §2/§3); this fallback is what a truly
         // standalone Exact (outside that shape) keeps.
-        [
-          Pending([Cand::trigger(s, s, "flag", WordEnd, false, false, false)], []),
-        ]
+        [Pending([Cand::trigger(s, s, "flag", WordEnd)], [])]
       } else {
         // an unmatched (or, in parse mode, exhausted) trigger is a silent
         // Reject (spec DR-037), NOT a Pending: no part of the entry was
@@ -538,22 +536,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           ]),
         ]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        [
-          Pending(
-            [
-              Cand::trigger(
-                trigger,
-                trigger,
-                "flag",
-                WordEnd,
-                false,
-                false,
-                false,
-              ),
-            ],
-            [],
-          ),
-        ]
+        [Pending([Cand::trigger(trigger, trigger, "flag", WordEnd)], [])]
       } else {
         []
       }
@@ -576,22 +559,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // pattern has no single "next token to type" to surface as a candidate).
         // DR-104 §2 origin = 由来要素名: `elem_name` (DR-090 §2, spelling と独立の同一性軸), NOT
         // `spelling` (a `match` trigger's regex-derived literal is not the element's name).
-        [
-          Pending(
-            [
-              Cand::trigger(
-                spelling,
-                elem_name,
-                "flag",
-                WordEnd,
-                false,
-                false,
-                false,
-              ),
-            ],
-            [],
-          ),
-        ]
+        [Pending([Cand::trigger(spelling, elem_name, "flag", WordEnd)], [])]
       } else {
         []
       }
@@ -608,12 +576,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           ),
         )
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        [
-          Pending(
-            [Cand::trigger(name, name, "flag", WordEnd, false, false, false)],
-            [],
-          ),
-        ]
+        [Pending([Cand::trigger(name, name, "flag", WordEnd)], [])]
       } else {
         []
       }
@@ -1444,12 +1407,7 @@ fn step_greedy(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         // complete: the command name is readable at the boundary (DR-060 §1).
-        out.push(
-          Pending(
-            [Cand::trigger(name, name, "flag", WordEnd, false, false, false)],
-            acc,
-          ),
-        )
+        out.push(Pending([Cand::trigger(name, name, "flag", WordEnd)], acc))
       }
     DdSat(trigger) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
@@ -1465,20 +1423,7 @@ fn step_greedy(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         out.push(
-          Pending(
-            [
-              Cand::trigger(
-                trigger,
-                trigger,
-                "flag",
-                WordEnd,
-                false,
-                false,
-                false,
-              ),
-            ],
-            acc,
-          ),
+          Pending([Cand::trigger(trigger, trigger, "flag", WordEnd)], acc),
         )
       }
     // DR-090 §1/§2: generalized dd. `severed=true` is unconditional here exactly like `DdSat`
@@ -1503,20 +1448,7 @@ fn step_greedy(
         // identical rationale) — a pattern trigger has no single "next token to type".
         // DR-104 §2 origin = 由来要素名: `elem_name`, mirroring the off-spine arm's fix above.
         out.push(
-          Pending(
-            [
-              Cand::trigger(
-                spelling,
-                elem_name,
-                "flag",
-                WordEnd,
-                false,
-                false,
-                false,
-              ),
-            ],
-            acc,
-          ),
+          Pending([Cand::trigger(spelling, elem_name, "flag", WordEnd)], acc),
         )
       }
     Or(alts) =>
@@ -1693,12 +1625,7 @@ fn scope_consume(
         // positional-spine literal (a structural or-branch's exact value, not an option
         // trigger) — origin IS the spelling here, there is no separate element name to
         // extract (none of our fixtures exercise this shape yet, kept as-is).
-        [
-          Pending(
-            [Cand::trigger(s, s, "flag", WordEnd, false, false, false)],
-            acc,
-          ),
-        ]
+        [Pending([Cand::trigger(s, s, "flag", WordEnd)], acc)]
       } else {
         []
       }

@@ -117,9 +117,6 @@ fn eq_candidates(
           entry.name,
           entry.kind.name(),
           @engine.Cont,
-          false,
-          false,
-          false,
         ),
       )
     }
@@ -143,9 +140,8 @@ fn short_candidates(
         entry.name,
         entry.kind.name(),
         @engine.WordEnd,
-        entry.is_alias,
-        false,
-        entry.depr,
+        is_alias=entry.is_alias,
+        deprecated=entry.depr,
       ),
     )
   }
@@ -282,7 +278,7 @@ impl @engine.MatcherExt for ShortCombineExt with fn interpret(
 pub fn short_combine(
   prefix : String,
   entries : Array[ShortEntry],
-  combine : Bool,
+  combine? : Bool = true,
 ) -> &@engine.MatcherExt {
   ShortCombineExt::{ prefix, entries, combine } as &@engine.MatcherExt
 }

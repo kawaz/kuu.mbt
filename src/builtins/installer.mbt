@@ -309,19 +309,28 @@ fn value_prim(
   kv_map? : Bool = false,
 ) -> @engine.Node {
   let configured = configured_type(
-    ty, int_round, allow_base_prefix, bool_config,
+    ty,
+    int_round,
+    bool_config,
+    allow_base_prefix~,
   )
   if kv_map {
     kv_arg(name, piece_filters)
   } else if separator is Some(_) || merge {
     separated_arg(
-      name, separator, configured, int_round, allow_base_prefix, bool_config, piece_filters,
-      merge,
+      name,
+      separator,
+      configured,
+      int_round,
+      bool_config,
+      piece_filters,
+      allow_base_prefix~,
+      merge~,
     )
   } else {
     match ty.name() {
-      "number" => number_arg(name, allow_base_prefix, piece_filters)
-      "int" => int_arg(name, int_round, allow_base_prefix, piece_filters)
+      "number" => number_arg(name, piece_filters, allow_base_prefix~)
+      "int" => int_arg(name, int_round, piece_filters, allow_base_prefix~)
       "float" => float_arg(name, piece_filters)
       "bool" => bool_arg(name, bool_config, piece_filters)
       "string" => string_arg(name, piece_filters)
@@ -1607,8 +1616,8 @@ fn inst_long(
                     configured_type(
                       leaf.ty,
                       leaf.int_round,
-                      leaf.allow_base_prefix,
                       leaf.bool_config,
+                      allow_base_prefix=leaf.allow_base_prefix,
                     ),
                     leaf.piece_filters,
                     leaf.separator,
@@ -1634,8 +1643,8 @@ fn inst_long(
                 configured_type(
                   e.ty,
                   e.int_round,
-                  e.allow_base_prefix,
                   e.bool_config,
+                  allow_base_prefix=e.allow_base_prefix,
                 ),
                 e.piece_filters,
                 e.separator,
@@ -1803,7 +1812,7 @@ fn inst_short(def : @engine.Definition, build : @engine.InstallOutput) -> Unit {
       add_greedy(
         build,
         @engine.NativeMatch(
-          short_combine(sh_prefixes[gi], sh_groups[gi], sh_combines[gi]),
+          short_combine(sh_prefixes[gi], sh_groups[gi], combine=sh_combines[gi]),
         ),
       )
     }

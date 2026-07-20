@@ -254,45 +254,41 @@ test "eq-split long option: deprecated entry with separator (sep_binds path) als
 /// (the `1`/`1.` prefixes leave undefined chars that kill their readings), so exactly one reading
 /// results. This is DR-041 §3-4 "enumerate ALL readings" narrowed by the completion requirement.
 test "short cluster: flag run and in-token numeric value" {
-  let short = short_combine(
-    "-",
-    [
-      short_entry(
-        'a',
-        "a",
-        flag_type(),
-        [],
-        None,
-        depr=false,
-        merge=false,
-        short_attached_value=@engine.Allow,
-        is_alias=false,
-      ),
-      short_entry(
-        'b',
-        "b",
-        flag_type(),
-        [],
-        None,
-        depr=false,
-        merge=false,
-        short_attached_value=@engine.Allow,
-        is_alias=false,
-      ),
-      short_entry(
-        'n',
-        "n",
-        number_type(),
-        [],
-        None,
-        depr=false,
-        merge=false,
-        short_attached_value=@engine.Allow,
-        is_alias=false,
-      ),
-    ],
-    true,
-  )
+  let short = short_combine("-", [
+    short_entry(
+      'a',
+      "a",
+      flag_type(),
+      [],
+      None,
+      depr=false,
+      merge=false,
+      short_attached_value=@engine.Allow,
+      is_alias=false,
+    ),
+    short_entry(
+      'b',
+      "b",
+      flag_type(),
+      [],
+      None,
+      depr=false,
+      merge=false,
+      short_attached_value=@engine.Allow,
+      is_alias=false,
+    ),
+    short_entry(
+      'n',
+      "n",
+      number_type(),
+      [],
+      None,
+      depr=false,
+      merge=false,
+      short_attached_value=@engine.Allow,
+      is_alias=false,
+    ),
+  ])
   // `-ab`: a run of two flags → one reading binding a=true, b=true, consuming the single token.
   let rf = probe_matcher(short, ["-ab"])
   assert_eq(rf.length(), 1)
@@ -317,23 +313,19 @@ test "short cluster: flag run and in-token numeric value" {
 /// A value char at the cluster tail may take the NEXT token as its value (space form, consuming 2
 /// tokens) — `-n 5` → n=5 at position 2. This is the getopt-同型 tail consumption (DR-041 §4).
 test "short cluster: space-form value takes the next token" {
-  let short = short_combine(
-    "-",
-    [
-      short_entry(
-        'n',
-        "n",
-        number_type(),
-        [],
-        None,
-        depr=false,
-        merge=false,
-        short_attached_value=@engine.Allow,
-        is_alias=false,
-      ),
-    ],
-    true,
-  )
+  let short = short_combine("-", [
+    short_entry(
+      'n',
+      "n",
+      number_type(),
+      [],
+      None,
+      depr=false,
+      merge=false,
+      short_attached_value=@engine.Allow,
+      is_alias=false,
+    ),
+  ])
   let r = probe_matcher(short, ["-n", "5"])
   assert_eq(r.length(), 1)
   assert_eq(acc_pos(r[0]), 2) // consumed BOTH the `-n` token and the `5` token
@@ -348,23 +340,19 @@ test "short cluster: space-form value takes the next token" {
 /// the value binding is unchanged (only a warning is later collected from the marker). This freezes
 /// that firing a deprecated spelling does NOT alter the parsed value — it only adds bookkeeping.
 test "short cluster: deprecated entry rides a @depr marker" {
-  let short = short_combine(
-    "-",
-    [
-      short_entry(
-        'd',
-        "d",
-        flag_type(),
-        [],
-        None,
-        depr=true,
-        merge=false,
-        short_attached_value=@engine.Allow,
-        is_alias=false,
-      ),
-    ],
-    true,
-  )
+  let short = short_combine("-", [
+    short_entry(
+      'd',
+      "d",
+      flag_type(),
+      [],
+      None,
+      depr=true,
+      merge=false,
+      short_attached_value=@engine.Allow,
+      is_alias=false,
+    ),
+  ])
   let r = probe_matcher(short, ["-d"])
   assert_eq(r.length(), 1)
   let b = acc_binds(r[0])
@@ -423,7 +411,7 @@ fn combine_entries() -> Array[ShortEntry] {
 /// body.length()(=2)` により 2 文字目への継続を打ち切り、読みが 0 本になる (素通し — 対極として
 /// combine:true の既存テスト "flag run and in-token numeric value" の `-ab` 成功ケースと対で読む)。
 test "short cluster: combine:false rejects a 2-flag cluster (-ab)" {
-  let short = short_combine("-", combine_entries(), false)
+  let short = short_combine("-", combine_entries(), combine=false)
   let r = probe_matcher(short, ["-ab"])
   assert_eq(r.length(), 0)
 }
@@ -432,7 +420,7 @@ test "short cluster: combine:false rejects a 2-flag cluster (-ab)" {
 /// 対極 (同上、単一 flag は combine の管轄外): `combine:false` でも `-a` 単独 (body.length()==1) は
 /// 引き続き発火する — 「複数 entry の結合」だけが禁止される、単一 entry のトークン占有は禁止されない。
 test "short cluster: combine:false still fires a LONE flag (-a)" {
-  let short = short_combine("-", combine_entries(), false)
+  let short = short_combine("-", combine_entries(), combine=false)
   let r = probe_matcher(short, ["-a"])
   assert_eq(r.length(), 1)
   assert_eq(acc_pos(r[0]), 1)
@@ -447,7 +435,7 @@ test "short cluster: combine:false still fires a LONE flag (-a)" {
 /// char が残余トークン全体を値として取る、後続 entry が存在しない) は引き続き発火する — DR-041
 /// line 77 の「値付着は short_combine と独立パラメータ」という設計意図の直接の帰結。
 test "short cluster: combine:false still fires a FULL-TAIL value-attach (-n1.0)" {
-  let short = short_combine("-", combine_entries(), false)
+  let short = short_combine("-", combine_entries(), combine=false)
   let r = probe_matcher(short, ["-n1.0"])
   assert_eq(r.length(), 1)
   assert_eq(acc_pos(r[0]), 1)
@@ -464,7 +452,7 @@ test "short cluster: combine:false still fires a FULL-TAIL value-attach (-n1.0)"
 /// FULL-TAIL attach 読み (n が "1a" を丸ごと値に取ろうとする、number_type() parse が失敗して @engine.Held) だけ 1 本
 /// — full-tail 読みは combine の管轄外 (単一 entry) なので禁止されない。合計 1 本、かつ @engine.Held。
 test "short cluster: combine:false rejects the PARTIAL value-attach reading, keeps the FULL-TAIL @engine.Held (-n1a)" {
-  let short = short_combine("-", combine_entries(), false)
+  let short = short_combine("-", combine_entries(), combine=false)
   let r = probe_matcher(short, ["-n1a"])
   assert_eq(r.length(), 1)
   assert_true(is_held(r[0])) // full-tail "1a" は number_type() として parse 失敗 → @engine.Held (DR-037)
@@ -476,7 +464,7 @@ test "short cluster: combine:false rejects the PARTIAL value-attach reading, kee
 /// して結合、n=1.0/a=true) の読みも生成され、計 2 本になる — `combine:false` テストとの対比で「何が
 /// 追加で許可されるか」を固定する。
 test "short cluster: combine:true adds the PARTIAL-attach-then-combine reading on top of the FULL-TAIL @engine.Held (対極, -n1a)" {
-  let short = short_combine("-", combine_entries(), true)
+  let short = short_combine("-", combine_entries())
   let r = probe_matcher(short, ["-n1a"])
   assert_eq(r.length(), 2)
   let mut accept_found = false
@@ -505,7 +493,7 @@ test "short cluster: combine:true adds the PARTIAL-attach-then-combine reading o
 /// 来るため、combine の対象外 (node.mbt の `ShortCombine` doc comment、次トークン borrow は「同じ
 /// トークンでの結合」に該当しない)。
 test "short cluster: combine:false still fires the space-form (next-token) value (-n 5)" {
-  let short = short_combine("-", combine_entries(), false)
+  let short = short_combine("-", combine_entries(), combine=false)
   let r = probe_matcher(short, ["-n", "5"])
   assert_eq(r.length(), 1)
   assert_eq(acc_pos(r[0]), 2)

@@ -46,7 +46,7 @@ test "number resident preserves not_a_number" {
   // Every token outside the number lexicon maps to the resident-owned parse failure's exact @engine.Held
   // reason through the @engine.NodeExt resident.
   assert_eq(
-    resident_failure_reason(number_arg("n", false, []), "nope"),
+    resident_failure_reason(number_arg("n", []), "nope"),
     "not_a_number",
   )
 }
@@ -56,13 +56,13 @@ test "int resident preserves integer-specific failures" {
   // A readable fractional number under @engine.Error is not_an_integer, distinct from
   // the number resident's not_a_number and the magnitude overflow reason.
   assert_eq(
-    resident_failure_reason(int_arg("n", @engine.Error, false, []), "1.5"),
+    resident_failure_reason(int_arg("n", @engine.Error, []), "1.5"),
     "not_an_integer",
   )
   // A readable integer outside Int64 reports its dedicated range reason rather
   // than being folded into either lexical failure family.
   assert_eq(
-    resident_failure_reason(int_arg("n", @engine.Error, false, []), "1e300"),
+    resident_failure_reason(int_arg("n", @engine.Error, []), "1e300"),
     "int_out_of_range",
   )
 }
@@ -144,9 +144,7 @@ test "mandatory resident preserves downstream @engine.Pending position" {
   // starves at argv end. Its downstream @engine.Pending belongs to position 2, not the
   // positional resident's start position 0.
   let root = @engine.ScopeNode({
-    greedy: [
-      @engine.Seq([@engine.Exact("--port"), number_arg("port", false, [])]),
-    ],
+    greedy: [@engine.Seq([@engine.Exact("--port"), number_arg("port", [])])],
     positional: [string_arg("file", [])],
     entities: [],
     constraints: [],
@@ -173,9 +171,7 @@ test "mandatory resident preserves downstream @engine.Pending fire path" {
   // The outer positional resident must pass it through without rebuilding the
   // error at its own position or dropping the inner command boundary.
   let inner : @engine.Scope = {
-    greedy: [
-      @engine.Seq([@engine.Exact("--port"), number_arg("port", false, [])]),
-    ],
+    greedy: [@engine.Seq([@engine.Exact("--port"), number_arg("port", [])])],
     positional: [],
     entities: [],
     constraints: [],

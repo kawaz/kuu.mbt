@@ -290,10 +290,10 @@ pub fn separated_arg(
   separator : String?,
   ty : &@engine.TypeExt,
   int_round : @engine.RoundMode,
-  allow_base_prefix : Bool,
   bool_config : @engine.BoolConfig,
   piece_filters : Array[@engine.FnInvocation],
-  merge : Bool,
+  allow_base_prefix? : Bool = false,
+  merge? : Bool = false,
 ) -> @engine.Node {
   @engine.Ext(
     SeparatedNodeExt::{
@@ -393,8 +393,8 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
 ///|
 pub fn number_arg(
   name : String,
-  allow_base_prefix : Bool,
   piece_filters : Array[@engine.FnInvocation],
+  allow_base_prefix? : Bool = false,
 ) -> @engine.Node {
   @engine.Ext(
     NumberArgExt::{ name, allow_base_prefix, piece_filters } as &@engine.NodeExt,
@@ -661,8 +661,8 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
 pub fn int_arg(
   name : String,
   int_round : @engine.RoundMode,
-  allow_base_prefix : Bool,
   piece_filters : Array[@engine.FnInvocation],
+  allow_base_prefix? : Bool = false,
 ) -> @engine.Node {
   @engine.Ext(
     IntNodeExt::{ name, int_round, allow_base_prefix, piece_filters }

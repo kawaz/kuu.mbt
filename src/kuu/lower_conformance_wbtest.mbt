@@ -665,14 +665,12 @@ fn registry_with_installers(
         None,
         @builtins.string_type(),
         @engine.Error,
-        false,
         @builtins.bool_config_canonical(),
         [],
-        false,
       ),
-      @builtins.number_arg("", false, []),
+      @builtins.number_arg("", []),
       @builtins.float_arg("", []),
-      @builtins.int_arg("", @engine.Error, false, []),
+      @builtins.int_arg("", @engine.Error, []),
       @builtins.bool_arg("", @builtins.bool_config_canonical(), []),
       @builtins.typed_arg("", @builtins.string_type(), []),
       @builtins.effect_mark("", @engine.Set),
@@ -685,7 +683,7 @@ fn registry_with_installers(
     ignore(registry.register_node(resident))
   }
   ignore(registry.register_matcher(@builtins.eq_split("", [])))
-  ignore(registry.register_matcher(@builtins.short_combine("", [], true)))
+  ignore(registry.register_matcher(@builtins.short_combine("", [])))
   for
     resident in [
       @builtins.string_type(),
