@@ -158,7 +158,7 @@ pub fn fn_ctx_effect(
 }
 
 ///|
-pub fn fn_ctx_filter(
+fn fn_ctx_filter(
   input : FilterInput,
   old? : Value? = None,
   observes? : Array[String] = [],

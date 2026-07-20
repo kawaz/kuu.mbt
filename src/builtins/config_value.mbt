@@ -75,7 +75,7 @@ pub fn config_to_value(
         "string" => Ok(@engine.String(num_to_string(d)))
         "number" | "float" | "count" => Ok(@engine.Number(d))
         "int" =>
-          if @engine.is_integer(d) {
+          if is_integer(d) {
             Ok(@engine.Number(d))
           } else {
             Err({

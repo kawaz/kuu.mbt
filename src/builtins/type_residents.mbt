@@ -403,7 +403,7 @@ pub fn configured_type(
 ///|
 /// A short spelling for bool is presence-only even though the same bool resident
 /// accepts a value on long eq-split and positional value paths.
-pub fn configured_short_type(
+fn configured_short_type(
   ty : &@engine.TypeExt,
   round : @engine.RoundMode,
   allow_base_prefix : Bool,

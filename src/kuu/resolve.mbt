@@ -1718,17 +1718,9 @@ fn apply_requires_filter_with_export(
     binds_for_actions : Array[Array[@engine.Binding]],
     errors : Array[@engine.ParseError],
   ) -> @engine.Outcome {
-    let actions : Array[(String, Int)] = []
-    for bs in binds_for_actions {
-      @engine.collect_actions(bs, actions)
-    }
     @engine.Failure({
       errors,
-      fired_action: if actions.length() > 0 {
-        Some(@engine.argmin_action(actions))
-      } else {
-        None
-      },
+      fired_action: @engine.fired_action_of(binds_for_actions),
       help_entry: @engine.find_help_entry(root, errors),
       tried_triggers: @engine.tried_triggers_of(root, errors),
     })
@@ -2317,7 +2309,7 @@ fn resolve_ladder_below_cli(
           match e.separator {
             Some(sep) => {
               let bs : Array[@engine.Binding] = []
-              for part in @engine.split_on(v, sep) {
+              for part in split_on_sep(v, sep) {
                 match
                   env_value(
                     e.name,
@@ -2993,4 +2985,26 @@ fn resolve_scope_config_with_export(
     }
   }
   Ok(out)
+}
+
+///|
+/// Split `s` on the first char of `sep` (spec DR-034 single-char separator).
+fn split_on_sep(s : String, sep : String) -> Array[String] {
+  let mut sepc = ','
+  for c in sep {
+    sepc = c
+    break
+  }
+  let out : Array[String] = []
+  let cur = StringBuilder::new()
+  for c in s {
+    if c == sepc {
+      out.push(cur.to_string())
+      cur.reset()
+    } else {
+      cur.write_char(c)
+    }
+  }
+  out.push(cur.to_string())
+  out
 }

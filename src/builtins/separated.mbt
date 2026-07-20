@@ -13,7 +13,7 @@ fn sep_binds(
 ) -> Result[Array[@engine.Binding], @engine.ParseError] {
   let out : Array[@engine.Binding] = []
   let parts = match sep {
-    Some(s) => @engine.split_on(tok, s)
+    Some(s) => split_on_sep(tok, s)
     None => [tok]
   }
   for part in parts {
@@ -85,4 +85,26 @@ fn sep_piece_value(
         Err(fail) => Err(type_parse_error(name, pos, fail))
       }
   }
+}
+
+///|
+/// Split `s` on the first char of `sep` (spec DR-034 single-char separator).
+fn split_on_sep(s : String, sep : String) -> Array[String] {
+  let mut sepc = ','
+  for c in sep {
+    sepc = c
+    break
+  }
+  let out : Array[String] = []
+  let cur = StringBuilder::new()
+  for c in s {
+    if c == sepc {
+      out.push(cur.to_string())
+      cur.reset()
+    } else {
+      cur.write_char(c)
+    }
+  }
+  out.push(cur.to_string())
+  out
 }

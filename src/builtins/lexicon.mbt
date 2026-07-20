@@ -42,7 +42,7 @@ fn parse_bool(
 /// String indexing (`s[i]`) yields a UTF-16 code unit, not a Char, so the number 字句スキャン works
 /// on Array[Char] (iterating a String yields Char). Test tokens are ASCII.
 fn chars_of(s : String) -> Array[Char] {
-  @engine.to_chars(s)
+  s.to_array()
 }
 
 ///|
@@ -476,7 +476,7 @@ fn parse_base_prefixed(s : String) -> Double? {
 /// DR-074 §2 統合 number parser: `allow_base_prefix=false` は canonical な 10 進のみを受理し、
 /// `true` では 10 進を先に試し、失敗時のみ base prefix を試す
 /// (canonical と opt-in の受理域が排他なので順序に影響なし、DR-074 §2 「両方が一括で成功に転じる」)。
-pub fn parse_number(s : String, allow_base_prefix? : Bool = false) -> Double? {
+fn parse_number(s : String, allow_base_prefix? : Bool = false) -> Double? {
   match parse_decimal_number(s) {
     Some(d) => return Some(d)
     None => ()
@@ -513,7 +513,7 @@ fn parse_int_value(
   match parse_base_prefixed(s) {
     None => Err(type_parse_not_a_number(s))
     Some(d) =>
-      if @engine.is_integer(d) {
+      if is_integer(d) {
         // 整数値: mode 問わず受理。Int64 域内チェックは境界のみ (fixture は 0xff=255 レベル)
         let i = d.to_int64()
         if i.to_double() == d {
@@ -714,7 +714,7 @@ fn scan_inf(s : String) -> Double? {
 
 ///|
 fn chars_to_str_from(cs : Array[Char], start : Int) -> String {
-  @engine.chars_to_str(cs, start, cs.length())
+  chars_to_str(cs, start, cs.length())
 }
 
 ///|
@@ -1062,4 +1062,12 @@ fn lower_code(c : Char) -> Int {
   } else {
     x
   }
+}
+
+///|
+/// Whether a double is integer-valued (for the int type on a config NATIVE number, DR-075 §5:
+/// a JSON-由来 native number is already binary64, so this seat判定 is binary64-based — the
+/// non-transit requirement applies to String源 only, handled by `parse_int_value`).
+fn is_integer(d : Double) -> Bool {
+  d.to_int().to_double() == d
 }

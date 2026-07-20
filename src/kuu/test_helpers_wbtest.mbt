@@ -82,8 +82,8 @@ fn node_is_deprecation_mark(node : @engine.Node) -> Bool {
 ///|
 /// Deterministic codepoint ordering for whitebox diagnostic renderers.
 fn test_str_less(a : String, b : String) -> Bool {
-  let ca = @engine.to_chars(a)
-  let cb = @engine.to_chars(b)
+  let ca = a.to_array()
+  let cb = b.to_array()
   let n = if ca.length() < cb.length() { ca.length() } else { cb.length() }
   let mut i = 0
   while i < n {

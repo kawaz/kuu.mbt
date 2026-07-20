@@ -29,8 +29,6 @@ pub fn config_installer() -> &@engine.InstallerExt
 
 pub fn config_to_value(@engine.ConfigVal, &@engine.TypeExt, Array[@engine.FnInvocation], @engine.Registry) -> Result[@engine.Value, ConfigValueError]
 
-pub fn configured_short_type(&@engine.TypeExt, @engine.RoundMode, Bool, @engine.BoolConfig) -> &@engine.TypeExt
-
 pub fn configured_type(&@engine.TypeExt, @engine.RoundMode, Bool, @engine.BoolConfig) -> &@engine.TypeExt
 
 pub fn constraint_installer() -> &@engine.InstallerExt
@@ -114,8 +112,6 @@ pub fn or_branch_node(@engine.OrBranch) -> @engine.Node
 pub fn owned_vocab(&@engine.InstallerExt) -> String
 
 pub fn parse_filter_shorthand(String) -> @engine.FnInvocation
-
-pub fn parse_number(String, allow_base_prefix? : Bool) -> Double?
 
 pub fn regex_match_filter() -> @engine.FilterDescriptor
 

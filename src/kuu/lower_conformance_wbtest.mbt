@@ -4,8 +4,8 @@
 
 ///|
 fn lower_str_less(a : String, b : String) -> Bool {
-  let ca = @engine.to_chars(a)
-  let cb = @engine.to_chars(b)
+  let ca = a.to_array()
+  let cb = b.to_array()
   let n = if ca.length() < cb.length() { ca.length() } else { cb.length() }
   let mut i = 0
   while i < n {
@@ -67,8 +67,8 @@ fn join_pipe(items : Array[String]) -> String {
 
 ///|
 fn str_has_prefix(value : String, prefix : String) -> Bool {
-  let chars = @engine.to_chars(value)
-  let prefix_chars = @engine.to_chars(prefix)
+  let chars = value.to_array()
+  let prefix_chars = prefix.to_array()
   if prefix_chars.length() > chars.length() {
     return false
   }
@@ -1221,7 +1221,7 @@ fn dec_lower(j : Json) -> DecodedLower raise DecodeSkip {
 
 ///|
 fn is_json_file(name : String) -> Bool {
-  let cs = @engine.to_chars(name)
+  let cs = name.to_array()
   let n = cs.length()
   n >= 5 &&
   cs[n - 5] == '.' &&

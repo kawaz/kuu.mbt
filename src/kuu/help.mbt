@@ -583,8 +583,8 @@ fn path_prefix(prefix : Array[String], full : Array[String]) -> Bool {
 
 ///|
 fn str_has_suffix(s : String, suffix : String) -> Bool {
-  let sc = @engine.to_chars(s)
-  let sfc = @engine.to_chars(suffix)
+  let sc = s.to_array()
+  let sfc = suffix.to_array()
   if sfc.length() > sc.length() {
     return false
   }

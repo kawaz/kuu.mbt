@@ -3,7 +3,6 @@ package "kawaz/kuu/engine"
 
 import {
   "moonbitlang/core/debug",
-  "moonbitlang/core/string",
 }
 
 // Values
@@ -15,37 +14,25 @@ pub fn apply_filter_chain(Registry, Array[FnInvocation], Value) -> Result[Value,
 
 pub fn apply_piece_filters(Registry, Array[FnInvocation], String) -> Result[String, FnReason]
 
-pub fn argmin_action(Array[(String, Int)]) -> String
-
 pub fn array_filter_descriptor(String, FilterSignature, Array[String], (Array[Value], Array[String]) -> Result[Array[Value], FnReason], observes? : Array[String]) -> ArrayFilterDescriptor
 
 pub fn attach_mode_of(String) -> AttachMode?
-
-pub fn cat(Array[Binding], Array[Binding]) -> Array[Binding]
 
 pub fn cell_fn_descriptor(String, Array[CellFnParameter], CellFnOutput, FnFallibility, observes? : Array[String], reasons? : Array[String], validate? : (FnCall) -> Result[Unit, FnReason], run? : (Array[FnArg], FnCtx) -> Result[FnOutput, FnReason]) -> CellFnDescriptor
 
 pub fn cell_fn_parameter(String, kind? : CellFnParameterKind, repetition? : CellFnRepetition) -> CellFnParameter
 
-pub fn chars_to_str(Array[Char], Int, Int) -> String
-
 pub fn classify_merge_piece(String) -> PieceMark
-
-pub fn collect_actions(Array[Binding], Array[(String, Int)]) -> Unit
 
 pub fn collect_installer_vocab_errors(Definition, Array[&InstallerExt]) -> Array[DefError]
 
 pub fn collect_scopes(Node, Map[String, Node]) -> Array[ScopedCons]
-
-pub fn compile_regex(String) -> @string.Regex?
 
 pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Array[String], extensions? : Registry) -> Array[Cand]
 
 pub fn config_from_json(Json) -> ConfigVal
 
 pub fn constraint_err(String, String, String, Int) -> ParseError
-
-pub fn contains_eq(String) -> Bool
 
 pub fn continue_matcher(Array[Branch], Ctx, Array[Binding], (Ctx, Int, Array[Binding]) -> Array[Branch]) -> Array[Branch]
 
@@ -69,17 +56,15 @@ pub fn filter_descriptor(String, FilterSignature, Array[String], (Value, Array[S
 
 pub fn find_help_entry(Node, Array[ParseError]) -> String?
 
+pub fn fired_action_of(Array[Array[Binding]]) -> String?
+
 pub fn fn_ctx_default(String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, dependency? : ((String) -> Value?)?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
 
 pub fn fn_ctx_effect(String, String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
 
-pub fn fn_ctx_filter(FilterInput, old? : Value?, observes? : Array[String], option? : (String) -> Value?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
-
 pub fn is_committed(Array[Binding], Array[String], String) -> Bool
 
 pub fn is_committed_in_subtree(Array[Binding], Array[String], String, String) -> Bool
-
-pub fn is_integer(Double) -> Bool
 
 pub fn mk_binding(String, Value, Source, at_pos? : Int?) -> Binding
 
@@ -100,10 +85,6 @@ pub fn run_installer_fixpoint(InstallBuilder, Array[&InstallerExt], (InstallBuil
 pub fn scope_selected(Array[Binding], Array[String]) -> Bool
 
 pub fn seat_ctx(Value?, observed? : Json?) -> SeatCtx
-
-pub fn split_on(String, String) -> Array[String]
-
-pub fn to_chars(String) -> Array[Char]
 
 pub fn tried_triggers_of(Node, Array[ParseError]) -> Array[String]
 

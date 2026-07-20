@@ -297,8 +297,8 @@ fn run_eq_split(
   pos : Int,
 ) -> Array[@engine.Branch] {
   guard ctx.token_at(pos) is Some(token) else { return [] }
-  let tok = @engine.to_chars(token)
-  let pfx = @engine.to_chars(prefix)
+  let tok = token.to_array()
+  let pfx = prefix.to_array()
   if !char_prefix(tok, pfx) {
     return []
   }
@@ -307,8 +307,8 @@ fn run_eq_split(
   if eq < 0 || eq <= pfx.length() {
     return [] // no '=' (or nothing before it) => this matcher does not fire
   }
-  let key = @engine.chars_to_str(body, pfx.length(), eq)
-  let valstr = @engine.chars_to_str(body, eq + 1, body.length())
+  let key = chars_to_str(body, pfx.length(), eq)
+  let valstr = chars_to_str(body, eq + 1, body.length())
   for e in entries {
     if e.key == key {
       // A matcher asks the resident whether a value slot exists; it does not enumerate
@@ -346,7 +346,7 @@ fn run_eq_split(
             e.merge,
             ctx.extensions(),
           ) {
-          Ok(bs) => [@engine.Accept(pos + 1, @engine.cat(bs, dm))]
+          Ok(bs) => [@engine.Accept(pos + 1, bs + dm)]
           Err(pe) => [@engine.Held(pe, [])]
         }
       }
@@ -364,17 +364,8 @@ fn run_eq_split(
           return [
             @engine.Accept(
               pos + 1,
-              @engine.cat(
-                [
-                  @engine.mk_binding(
-                    e.name,
-                    value,
-                    @engine.Cli,
-                    at_pos=Some(pos),
-                  ),
-                ],
-                dm,
-              ),
+              [@engine.mk_binding(e.name, value, @engine.Cli, at_pos=Some(pos))] +
+              dm,
             ),
           ]
         Err(fail) =>
@@ -398,8 +389,8 @@ fn run_short(
   pos : Int,
 ) -> Array[@engine.Branch] {
   guard ctx.token_at(pos) is Some(token) else { return [] }
-  let tok = @engine.to_chars(token)
-  let pfx = @engine.to_chars(prefix)
+  let tok = token.to_array()
+  let pfx = prefix.to_array()
   if !char_prefix(tok, pfx) {
     return []
   }
@@ -546,7 +537,7 @@ fn walk_short(
             combine,
             body,
             i + 1,
-            @engine.cat(acc, @engine.cat([presence], dm)),
+            acc + ([presence] + dm),
             ctx,
             pos,
           )
@@ -573,7 +564,7 @@ fn walk_short(
           if e.short_attached_value != @engine.Deny &&
             (e.short_attached_value != @engine.LastOnly || j == body.length()) &&
             (combine || j == body.length()) {
-            let vstr = @engine.chars_to_str(body, vstart, j)
+            let vstr = chars_to_str(body, vstart, j)
             match short_val(ctx, e, vstr, pos) {
               Ok(bs) =>
                 for
@@ -582,7 +573,7 @@ fn walk_short(
                     combine,
                     body,
                     j,
-                    @engine.cat(acc, @engine.cat(bs, dm)),
+                    acc + (bs + dm),
                     ctx,
                     pos,
                   ) {
@@ -615,10 +606,7 @@ fn walk_short(
           vstart == body.length() &&
           ctx.token_at(pos + 1) is Some(next_token) {
           match short_val(ctx, e, next_token, pos + 1) {
-            Ok(bs) =>
-              out.push(
-                @engine.Accept(pos + 2, @engine.cat(acc, @engine.cat(bs, dm))),
-              )
+            Ok(bs) => out.push(@engine.Accept(pos + 2, acc + (bs + dm)))
             Err(pe) => out.push(@engine.Held(pe, []))
           }
         } else if e.short_attached_value != @engine.Require &&
@@ -630,7 +618,7 @@ fn walk_short(
           out.push(
             @engine.Pending(
               [@engine.pending_value_candidate(e.kind.name(), e.name)],
-              @engine.cat(acc, dm),
+              acc + dm,
             ),
           )
         }

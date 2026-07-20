@@ -446,12 +446,12 @@ pub fn continue_matcher(
   for reading in readings {
     match reading {
       Accept(next_pos, bindings) =>
-        for branch in next(ctx, next_pos, cat(acc, bindings)) {
+        for branch in next(ctx, next_pos, acc + bindings) {
           out.push(branch)
         }
-      Held(error, bindings) => out.push(Held(error, cat(acc, bindings)))
+      Held(error, bindings) => out.push(Held(error, acc + bindings))
       Pending(candidates, bindings) =>
-        out.push(Pending(candidates, cat(acc, bindings)))
+        out.push(Pending(candidates, acc + bindings))
     }
   }
   out
@@ -723,9 +723,7 @@ fn req_arg_eval(
     [
       Accept(
         pos + 1,
-        cat(acc, [
-          mk_binding(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos)),
-        ]),
+        acc + [mk_binding(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos))],
       ),
     ]
   } else if in_complete(ctx) {
@@ -745,46 +743,6 @@ fn req_arg_eval(
       ),
     ]
   }
-}
-
-///|
-fn first_char(s : String) -> Char {
-  for c in s {
-    return c
-  }
-  ',' // unreachable for a non-empty separator
-}
-
-///|
-/// DR-091 §2: whether `s` contains at least one `=` — the `kv resident` consume-time gate's structural
-/// precondition (a `kv_map` accumulator piece must be shaped `k=v`, checked BEFORE `build_result`
-/// ever tries to split it — this function only answers "is there a split point at all", the actual
-/// first-`=` split happens once in `resolve.mbt` at fold time, `split_first_eq`).
-pub fn contains_eq(s : String) -> Bool {
-  for c in s {
-    if c == '=' {
-      return true
-    }
-  }
-  false
-}
-
-///|
-/// Split `s` on the first char of `sep` (spec DR-034 single-char separator).
-pub fn split_on(s : String, sep : String) -> Array[String] {
-  let sepc = first_char(sep)
-  let out : Array[String] = []
-  let mut cur = ""
-  for c in s {
-    if c == sepc {
-      out.push(cur)
-      cur = ""
-    } else {
-      cur = cur + c.to_string()
-    }
-  }
-  out.push(cur)
-  out
 }
 
 ///|
@@ -824,7 +782,7 @@ fn mark_scope(name : String, brs : Array[Branch]) -> Array[Branch] {
   let out : Array[Branch] = []
   for b in brs {
     match b {
-      Accept(p, bs) => out.push(Accept(p, cat([scope_marker(name)], bs)))
+      Accept(p, bs) => out.push(Accept(p, [scope_marker(name)] + bs))
       Held(pe, bs) => out.push(Held(pe, bs))
       Pending(cs, bs) => out.push(Pending(cs, bs))
     }
@@ -929,7 +887,7 @@ fn idx_head_pendings(
   let out : Array[Branch] = []
   for b in eval(head, ctx, pos) {
     match b {
-      Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+      Pending(cs, bs) => out.push(Pending(cs, acc + bs))
       _ => ()
     }
   }
@@ -980,7 +938,7 @@ fn eval_seq(
   for b in eval(items[idx], ctx, pos) {
     match b {
       Accept(p2, bs) =>
-        for r in eval_seq(items, idx + 1, ctx, p2, cat(acc, bs)) {
+        for r in eval_seq(items, idx + 1, ctx, p2, acc + bs) {
           out.push(r)
         }
       // the Held carries the Seq's accumulated partial state too: a marker
@@ -988,8 +946,8 @@ fn eval_seq(
       // failing value slot) must reach parse() for fired_action selection
       // (DR-048 / DR-053 §4 共存). The slice dropped acc here — a defect the
       // adversarial review caught, not a parity to keep.
-      Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
-      Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+      Held(pe, bs) => out.push(Held(pe, acc + bs))
+      Pending(cs, bs) => out.push(Pending(cs, acc + bs))
     }
   }
   out
@@ -1008,14 +966,14 @@ fn eval_many(
     match b {
       Accept(p2, bs) =>
         if p2 > pos {
-          for r in eval_many(inner, ctx, p2, cat(acc, bs)) {
+          for r in eval_many(inner, ctx, p2, acc + bs) {
             out.push(r)
           }
         }
       Held(pe, bs) => out.push(Held(pe, bs))
       // a Pending after >= 1 successful reps still carries the reps' acc
       // (same contract as eval_seq: Pending = starved branch WITH its state).
-      Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+      Pending(cs, bs) => out.push(Pending(cs, acc + bs))
     }
   }
   out
@@ -1537,9 +1495,8 @@ fn step_greedy(
         // build_result/effects から除外する — 値そのものは運ばない、DR-089 §3 不変)。DdSat の
         // trigger 文字列は要素名そのもの (dd_match 未使用の唯一のケースでのみ installer が
         // `DdSat(e.name)` を作る) なのでそのまま key に使える。
-        let acc2 = cat(acc, [
-          mk_binding(trigger, Bool(true), Cli, at_pos=Some(pos)),
-        ])
+        let acc2 = acc +
+          [mk_binding(trigger, Bool(true), Cli, at_pos=Some(pos))]
         for r in scope_step(sc, ctx, pos + 1, pidx, acc2, true, k) {
           out.push(r)
         }
@@ -1573,9 +1530,8 @@ fn step_greedy(
         let resume_pos = if self_keep { pos } else { pos + 1 }
         // DR-093 §2/§7: DdSat と同じ committed placeholder binding。key は `elem_name` (要素の
         // 同一性軸、DR-090 §2) — `spelling` は match 使用時トリガ綴りやパターンで要素名と一致しない。
-        let acc2 = cat(acc, [
-          mk_binding(elem_name, Bool(true), Cli, at_pos=Some(pos)),
-        ])
+        let acc2 = acc +
+          [mk_binding(elem_name, Bool(true), Cli, at_pos=Some(pos))]
         for r in scope_step(sc, ctx, resume_pos, pidx, acc2, true, k) {
           out.push(r)
         }
@@ -1615,16 +1571,15 @@ fn step_greedy(
             match b {
               Accept(p2, bs) =>
                 if p2 > pos {
-                  for
-                    r in scope_step(sc, ctx, p2, pidx, cat(acc, bs), severed, k) {
+                  for r in scope_step(sc, ctx, p2, pidx, acc + bs, severed, k) {
                     out.push(r)
                   }
                 }
               // acc must be carried on Held so an earlier failure resident (fired_action
               // material, eval_seq comment DR-048/DR-053 §4) survives to parse().
-              Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
+              Held(pe, bs) => out.push(Held(pe, acc + bs))
               Pending(cs, bs) =>
-                out.push(Pending(fixup_boundary_cands(g, sc, cs), cat(acc, bs)))
+                out.push(Pending(fixup_boundary_cands(g, sc, cs), acc + bs))
             }
           }
       }
@@ -1693,19 +1648,19 @@ fn step_greedy_repeat(
                   ctx,
                   p3,
                   pidx,
-                  cat(acc, cat(bs, bs2)),
+                  acc + (bs + bs2),
                   severed,
                   k,
                 ) {
                 out.push(rr)
               }
-            Held(pe, bs2) => out.push(Held(pe, cat(acc, cat(bs, bs2))))
-            Pending(cs, bs2) => out.push(Pending(cs, cat(acc, cat(bs, bs2))))
+            Held(pe, bs2) => out.push(Held(pe, acc + (bs + bs2)))
+            Pending(cs, bs2) => out.push(Pending(cs, acc + (bs + bs2)))
           }
         }
       }
-      Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
-      Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+      Held(pe, bs) => out.push(Held(pe, acc + bs))
+      Pending(cs, bs) => out.push(Pending(cs, acc + bs))
     }
   }
 }
@@ -1742,9 +1697,7 @@ fn scope_consume(
           ctx,
           pos + 1,
           pidx + 1,
-          cat(acc, [
-            mk_binding(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos)),
-          ]),
+          acc + [mk_binding(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos))],
           severed,
           k,
         )
@@ -1828,7 +1781,7 @@ fn scope_consume(
                       ctx,
                       p2,
                       pidx,
-                      cat(acc, bs),
+                      acc + bs,
                       severed,
                       k,
                     ) {
@@ -1836,8 +1789,8 @@ fn scope_consume(
                   }
                 }
               // Carry acc on Held (fired_action material preservation).
-              Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
-              Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+              Held(pe, bs) => out.push(Held(pe, acc + bs))
+              Pending(cs, bs) => out.push(Pending(cs, acc + bs))
             }
           }
           out
@@ -1905,12 +1858,12 @@ fn scope_consume(
       for b in consume_compound(sc, other, ctx, pos, severed) {
         match b {
           Accept(p2, bs) =>
-            for r in scope_step(sc, ctx, p2, pidx + 1, cat(acc, bs), severed, k) {
+            for r in scope_step(sc, ctx, p2, pidx + 1, acc + bs, severed, k) {
               out.push(r)
             }
           // Carry acc on Held (fired_action material preservation).
-          Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
-          Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+          Held(pe, bs) => out.push(Held(pe, acc + bs))
+          Pending(cs, bs) => out.push(Pending(cs, acc + bs))
         }
       }
       out
@@ -2009,7 +1962,7 @@ fn bounded_tail_step(
                     ctx,
                     p2,
                     pidx,
-                    cat(acc, bs),
+                    acc + bs,
                     severed,
                     k,
                   ) {
@@ -2021,7 +1974,7 @@ fn bounded_tail_step(
             // scope_step / scope_consume family only. Revisit if a failure resident
             // preservation gap surfaces in the bounded tail path.
             Held(pe, bs) => out.push(Held(pe, bs))
-            Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+            Pending(cs, bs) => out.push(Pending(cs, acc + bs))
           }
         }
         out
@@ -2182,13 +2135,13 @@ fn consume_compound_seq(
             idx + 1,
             ctx,
             p2,
-            cat(acc, bs),
+            acc + bs,
             severed,
           ) {
           out.push(r)
         }
-      Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
-      Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+      Held(pe, bs) => out.push(Held(pe, acc + bs))
+      Pending(cs, bs) => out.push(Pending(cs, acc + bs))
     }
   }
   out
@@ -2354,13 +2307,13 @@ fn scope_consume_rep(
         match b {
           Accept(p2, bs) =>
             if p2 > pos {
-              for r in scope_step(sc, ctx, p2, pidx, cat(acc, bs), severed, k) {
+              for r in scope_step(sc, ctx, p2, pidx, acc + bs, severed, k) {
                 out.push(r)
               }
             }
           // Carry acc on Held (fired_action material preservation).
-          Held(pe, bs) => out.push(Held(pe, cat(acc, bs)))
-          Pending(cs, bs) => out.push(Pending(cs, cat(acc, bs)))
+          Held(pe, bs) => out.push(Held(pe, acc + bs))
+          Pending(cs, bs) => out.push(Pending(cs, acc + bs))
         }
       }
       out

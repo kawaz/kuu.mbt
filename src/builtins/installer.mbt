@@ -2437,8 +2437,8 @@ fn str_has_sub(s : String, sub : String) -> Bool {
   if sub.length() == 0 {
     return true
   }
-  let cs = @engine.to_chars(s)
-  let cu = @engine.to_chars(sub)
+  let cs = s.to_array()
+  let cu = sub.to_array()
   if cu.length() > cs.length() {
     return false
   }
@@ -2465,8 +2465,8 @@ fn str_has_sub(s : String, sub : String) -> Bool {
 /// `s` の最初の `from` 出現を `to` に置換 (name-derived variant を alias 名で再導出: DR-057 §3
 /// "--no-ssl" (canonical ssl) → alias tls で "--no-tls")。
 fn str_replace_first(s : String, from : String, to : String) -> String {
-  let cs = @engine.to_chars(s)
-  let cf = @engine.to_chars(from)
+  let cs = s.to_array()
+  let cf = from.to_array()
   if cf.length() == 0 || cf.length() > cs.length() {
     return s
   }
@@ -2483,9 +2483,9 @@ fn str_replace_first(s : String, from : String, to : String) -> String {
     }
     if ok {
       let buf = StringBuilder::new()
-      buf.write_string(@engine.chars_to_str(cs, 0, i))
+      buf.write_string(chars_to_str(cs, 0, i))
       buf.write_string(to)
-      buf.write_string(@engine.chars_to_str(cs, i + cf.length(), cs.length()))
+      buf.write_string(chars_to_str(cs, i + cf.length(), cs.length()))
       return buf.to_string()
     }
     i = i + 1
@@ -3847,7 +3847,7 @@ fn collect_invalid_dd_pattern(
   fn check(e : @engine.ElemDef) -> Unit {
     match e.dd_match {
       Some(pattern) =>
-        if @engine.compile_regex(pattern) is None {
+        if compile_regex(pattern) is None {
           out.push(
             def_err(
               e.name,
@@ -3896,7 +3896,7 @@ fn collect_invalid_regex_pattern(
     for fs in chain {
       if fs.name == "regex_match" &&
         fs.args.length() == 1 &&
-        @engine.compile_regex(fs.args[0]) is None {
+        compile_regex(fs.args[0]) is None {
         out.push(
           def_err(
             name,

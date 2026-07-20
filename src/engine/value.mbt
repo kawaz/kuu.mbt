@@ -189,14 +189,6 @@ pub(all) struct TypeParseFail {
 } derive(Eq, Debug)
 
 ///|
-/// Whether a double is integer-valued (for the int type on a config NATIVE number, DR-075 §5:
-/// a JSON-由来 native number is already binary64, so this seat判定 is binary64-based — the
-/// non-transit requirement applies to String源 only, handled by `parse_int_value`).
-pub fn is_integer(d : Double) -> Bool {
-  d.to_int().to_double() == d
-}
-
-///|
 /// The category of a held Error (DR-053 §2 / DR-037 / DR-047): `parse` = type parse failure,
 /// `filter` = a piece/value/cell filter reject (a value that parsed but failed a filter), `constraint` = a
 /// delayed-predicate violation (required 未充足 etc., DR-047). All three ride the errors array.
@@ -322,19 +314,6 @@ pub fn mk_binding(
   at_pos? : Int? = None,
 ) -> Binding {
   { key, op: Set, value, source, scope: [], link: 0, at_pos }
-}
-
-///|
-/// Concatenate two binding arrays (accumulate readings along a path).
-pub fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
-  let r : Array[Binding] = []
-  for x in a {
-    r.push(x)
-  }
-  for x in b {
-    r.push(x)
-  }
-  r
 }
 
 ///|

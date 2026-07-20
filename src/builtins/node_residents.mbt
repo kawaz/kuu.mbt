@@ -90,14 +90,15 @@ impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
           next(
             ctx,
             pos + 1,
-            @engine.cat(acc, [
+            acc +
+            [
               @engine.mk_binding(
                 self.name,
                 @engine.String(value),
                 @engine.Cli,
                 at_pos=Some(pos),
               ),
-            ]),
+            ],
           )
         Err({ reason, message }) =>
           [
@@ -160,18 +161,19 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
         Ok(value) =>
           // DR-091 §2: piece filters run first, then the dedicated
           // contains-equals gate reports through the parse_error_not_a_kv_pair @engine.Held family.
-          if @engine.contains_eq(value) {
+          if value.contains("=") {
             next(
               ctx,
               pos + 1,
-              @engine.cat(acc, [
+              acc +
+              [
                 @engine.mk_binding(
                   self.name,
                   @engine.String(value),
                   @engine.Cli,
                   at_pos=Some(pos),
                 ),
-              ]),
+              ],
             )
           } else {
             [
@@ -269,7 +271,7 @@ impl @engine.NodeExt for SeparatedNodeExt with fn eval(
           self.merge,
           ctx.extensions(),
         ) {
-        Ok(bindings) => next(ctx, pos + 1, @engine.cat(acc, bindings))
+        Ok(bindings) => next(ctx, pos + 1, acc + bindings)
         Err(error) => [@engine.Held(error, acc)]
       }
     None =>
@@ -352,14 +354,15 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
               next(
                 ctx,
                 pos + 1,
-                @engine.cat(acc, [
+                acc +
+                [
                   @engine.mk_binding(
                     self.name,
                     @engine.Number(number),
                     @engine.Cli,
                     at_pos=Some(pos),
                   ),
-                ]),
+                ],
               )
             None =>
               [
@@ -461,14 +464,15 @@ impl @engine.NodeExt for FilteredNumberArgExt with fn eval(
             next(
               ctx,
               pos + 1,
-              @engine.cat(acc, [
+              acc +
+              [
                 @engine.mk_binding(
                   self.name,
                   @engine.Number(number),
                   @engine.Cli,
                   at_pos=Some(pos),
                 ),
-              ]),
+              ],
             )
           }
       }
@@ -526,14 +530,15 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
               next(
                 ctx,
                 pos + 1,
-                @engine.cat(acc, [
+                acc +
+                [
                   @engine.mk_binding(
                     self.name,
                     @engine.Number(number),
                     @engine.Cli,
                     at_pos=Some(pos),
                   ),
-                ]),
+                ],
               )
             None =>
               [
@@ -621,14 +626,15 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
               next(
                 ctx,
                 pos + 1,
-                @engine.cat(acc, [
+                acc +
+                [
                   @engine.mk_binding(
                     self.name,
                     @engine.Number(integer.to_double()),
                     @engine.Cli,
                     at_pos=Some(pos),
                   ),
-                ]),
+                ],
               )
             Err(failure) =>
               [@engine.Held(type_parse_error(self.name, pos, failure), acc)]
@@ -708,14 +714,15 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
               next(
                 ctx,
                 pos + 1,
-                @engine.cat(acc, [
+                acc +
+                [
                   @engine.mk_binding(
                     self.name,
                     @engine.Bool(boolean),
                     @engine.Cli,
                     at_pos=Some(pos),
                   ),
-                ]),
+                ],
               )
             None =>
               [@engine.Held(parse_error_not_a_bool(self.name, value, pos), acc)]
@@ -793,14 +800,15 @@ impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
               next(
                 ctx,
                 pos + 1,
-                @engine.cat(acc, [
+                acc +
+                [
                   @engine.mk_binding(
                     self.name,
                     parsed,
                     @engine.Cli,
                     at_pos=Some(pos),
                   ),
-                ]),
+                ],
               )
             Err(failure) =>
               [@engine.Held(type_parse_error(self.name, pos, failure), acc)]
@@ -860,11 +868,7 @@ impl @engine.NodeExt for EffectMarkExt with fn consumes_zero_tokens(_self) {
 
 ///|
 impl @engine.NodeExt for EffectMarkExt with fn eval(self, ctx, pos, acc, next) {
-  next(
-    ctx,
-    pos,
-    @engine.cat(acc, [@engine.mk_effect(self.name, self.op, @engine.Cli)]),
-  )
+  next(ctx, pos, acc + [@engine.mk_effect(self.name, self.op, @engine.Cli)])
 }
 
 ///|
@@ -900,7 +904,7 @@ impl @engine.NodeExt for DeprecationMarkExt with fn eval(
   acc,
   next,
 ) {
-  next(ctx, pos, @engine.cat(acc, [@engine.depr_marker(self.name)]))
+  next(ctx, pos, acc + [@engine.depr_marker(self.name)])
 }
 
 ///|
@@ -935,7 +939,7 @@ impl @engine.NodeExt for FailureMarkExt with fn consumes_zero_tokens(_self) {
 
 ///|
 impl @engine.NodeExt for FailureMarkExt with fn eval(self, ctx, pos, acc, next) {
-  next(ctx, pos, @engine.cat(acc, [@engine.action_marker(self.name, pos)]))
+  next(ctx, pos, acc + [@engine.action_marker(self.name, pos)])
 }
 
 ///|

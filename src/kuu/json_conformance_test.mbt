@@ -154,8 +154,8 @@ fn dec_strs(json : Json?) -> Array[String] raise DecodeSkip {
 ///|
 /// Deterministic codepoint ordering (MoonBit's builtin sorts by length first).
 fn str_less(a : String, b : String) -> Bool {
-  let ca = @engine.to_chars(a)
-  let cb = @engine.to_chars(b)
+  let ca = a.to_array()
+  let cb = b.to_array()
   let n = if ca.length() < cb.length() { ca.length() } else { cb.length() }
   let mut i = 0
   while i < n {
@@ -2034,7 +2034,7 @@ fn dec_fixture(j : Json) -> DecodedFixture raise DecodeSkip {
 
 ///|
 fn is_json_file(name : String) -> Bool {
-  let cs = @engine.to_chars(name)
+  let cs = name.to_array()
   let n = cs.length()
   n >= 5 &&
   cs[n - 5] == '.' &&

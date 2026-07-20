@@ -151,7 +151,7 @@ fn filter_regex_match(
         })
       }
       let pattern = args[0]
-      match @engine.compile_regex(pattern) {
+      match compile_regex(pattern) {
         None =>
           Err({
             reason: "filter_rejected",
@@ -341,5 +341,16 @@ pub fn parse_filter_shorthand(s : String) -> @engine.FilterSpelling {
   match @engine.parse_fn_invocation(@engine.ColonString(s)) {
     Ok(invocation) => invocation
     Err(message) => abort(message)
+  }
+}
+
+///|
+/// Compile a MoonBit core `string.Regex`, converting the raise signature into an Option —
+/// the same host-dialect compile path the engine's dd `match` uses (DR-085/DR-090 §2
+/// "照合方言は host 実装準拠"; definition-time validation in `installer.mbt` and the runtime
+/// `regex_match` filter share THIS compile so both see the same dialect).
+fn compile_regex(pattern : String) -> @string.Regex? {
+  Some(@string.Regex::Regex(pattern)) catch {
+    _ => None
   }
 }

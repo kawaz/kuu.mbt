@@ -233,7 +233,7 @@ fn resident_alias(json : Json) -> Result[@engine.AliasDef?, String] {
     Ok(values) => {
       let chars : Array[Char] = []
       for value in values {
-        for char in @engine.to_chars(value) {
+        for char in value.to_array() {
           chars.push(char)
         }
       }
@@ -339,7 +339,7 @@ impl @engine.InstallerExt for ShortInstaller with fn decode(_self, json, ctx) {
   }
   let chars : Array[Char] = []
   for value in values {
-    for char in @engine.to_chars(value) {
+    for char in value.to_array() {
       chars.push(char)
     }
   }

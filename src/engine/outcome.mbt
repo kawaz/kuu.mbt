@@ -55,8 +55,27 @@ pub(all) enum FailDef {
 } derive(Eq, Debug)
 
 ///|
+/// The fired failure-action for a Failure built from these candidate binding sets (spec DR-048
+/// §4/§5): every failure-action marker across `binds_groups` is collected as (name, args
+/// position) and the minimal-position action wins (先勝ち; ties keep first-seen). None when no
+/// action fired. This is the SAME material `parse_tree` uses for its own Failure, exposed so a
+/// post-parse Success→Failure conversion (constraint violations found at resolve time) derives
+/// `fired_action` under the identical rule.
+pub fn fired_action_of(binds_groups : Array[Array[Binding]]) -> String? {
+  let actions : Array[(String, Int)] = []
+  for bs in binds_groups {
+    collect_actions(bs, actions)
+  }
+  if actions.length() > 0 {
+    Some(argmin_action(actions))
+  } else {
+    None
+  }
+}
+
+///|
 /// Push every failure-action marker in `bs` as (name, args position).
-pub fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit {
+fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit {
   for b in bs {
     match action_of(b) {
       Some(name) => {
@@ -74,7 +93,7 @@ pub fn collect_actions(bs : Array[Binding], out : Array[(String, Int)]) -> Unit 
 ///|
 /// The action with the minimal args position (先勝ち, spec DR-048 §4). Ties
 /// keep first-seen.
-pub fn argmin_action(actions : Array[(String, Int)]) -> String {
+fn argmin_action(actions : Array[(String, Int)]) -> String {
   let mut best = actions[0]
   for a in actions {
     if a.1 < best.1 {
