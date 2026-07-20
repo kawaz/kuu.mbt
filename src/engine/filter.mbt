@@ -173,7 +173,7 @@ pub fn array_filter_descriptor(
 /// unknown names; the missing-name branch remains a defensive identity fallback.
 pub fn apply_filter_chain(
   registry : Registry,
-  chain : Array[FilterSpelling],
+  chain : Array[FnInvocation],
   value : Value,
 ) -> Result[Value, FnReason] {
   let mut current = value
@@ -196,7 +196,7 @@ pub fn apply_filter_chain(
 /// Run a whole-array filter chain in declaration order.
 pub fn apply_accum_filter_chain(
   registry : Registry,
-  chain : Array[FilterSpelling],
+  chain : Array[FnInvocation],
   values : Array[Value],
 ) -> Result[Array[Value], FnReason] {
   let mut current = values
@@ -219,7 +219,7 @@ pub fn apply_accum_filter_chain(
 /// Run the String-to-String piece phase through the scalar registry.
 pub fn apply_piece_filters(
   registry : Registry,
-  chain : Array[FilterSpelling],
+  chain : Array[FnInvocation],
   raw : String,
 ) -> Result[String, FnReason] {
   match apply_filter_chain(registry, chain, String(raw)) {

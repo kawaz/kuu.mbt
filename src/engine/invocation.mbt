@@ -68,10 +68,6 @@ pub fn FnCall::typed(name : String, values : Array[Value]) -> FnCall {
 }
 
 ///|
-/// Filter chains use the universal invocation carrier directly.
-pub type FilterSpelling = FnInvocation
-
-///|
 /// The two equivalent universal-fn wire spellings. `ArrayParts` is already one
 /// decoded array level; nested arrays never enter the engine parser.
 pub(all) enum FnInvocationForm {

@@ -166,7 +166,7 @@ fn el(
     allow_base_prefix: false,
     bool_config: @builtins.bool_config_canonical(),
     // `chain` (filters_wbtest.mbt, same package): keeps this builder's colon-shorthand ergonomics
-    // (`piece_filters=["trim"]`) even though `@engine.ElemDef` fields are `Array[@engine.FilterSpelling]` in
+    // (`piece_filters=["trim"]`) even though `@engine.ElemDef` fields are `Array[@engine.FnInvocation]` in
     // production (issue filter-spelling-inband-encoding-retyping).
     piece_filters: chain(piece_filters),
     value_filters: chain(value_filters),

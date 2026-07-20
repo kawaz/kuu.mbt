@@ -611,12 +611,12 @@ pub(all) struct Entity {
   // step to gate, so this field is simply unused there (DR-050 §4's "型一致なら value_filters のみ"
   // — piece_filters/parse は元々 String→T の関数なので、型一致で供給された非 string 値には適用対象
   // が無いという型の帰結、特別規則ではない).
-  piece_filters : Array[FilterSpelling]
+  piece_filters : Array[FnInvocation]
   // DR-009 value_filters (each, T→T): applied to EVERY value this cell resolves from ANY ladder seat
   // (cli/env/config/inherit/default) right after that seat's own value is determined — same timing
   // "type.parse の後、accumulator の前" DR-009's [4]→[5] describes. For a scalar cell (no accum)
   // this collapses to "applied once, right before final_filters" since only one seat ever wins.
-  value_filters : Array[FilterSpelling]
+  value_filters : Array[FnInvocation]
   // DR-009 / DR-102 §1 final_filters (T→T、確定した最終値ガード、non-accum 専用): applied to the
   // FINAL resolved value, after the ladder has picked a winning seat — a scalar (non-accum) cell
   // only. This is the one place both `set` and `update` effects converge before the value leaves
@@ -624,13 +624,13 @@ pub(all) struct Entity {
   // point of this issue). An accum cell (multiple/repeat/separator) leaves this empty — its
   // ARRAY-shaped final gate is `accum_filters` below, applied at build_result instead
   // (`apply_entity_filters` never reaches this field for an accum cell).
-  final_filters : Array[FilterSpelling]
+  final_filters : Array[FnInvocation]
   // DR-009 段 7 / DR-102 §1 accum_filters (Acc→Acc、累積配列全体、accum 専用): applied to the WHOLE
   // accumulated array, AFTER accumulation completes (`resolve.mbt`'s `build_result`, via
   // `AccumCell.accum_filters`) — a scalar (non-accum) cell leaves this empty (its T→T final gate is
   // `final_filters` above). 1 属性 1 registry (ARRAY filter registry) の対応 — multiple 有無で
   // registry を切り替える位置依存判定 (DR-101 §3) は本分割で不要化した。
-  accum_filters : Array[FilterSpelling]
+  accum_filters : Array[FnInvocation]
   // DR-110 §3-10 / §6 #20: builtin-owned completion metadata is an opaque resident.
   // Engine carries and dispatches this slot but does not inspect hidden/completer fields.
   extension : &EntityExt

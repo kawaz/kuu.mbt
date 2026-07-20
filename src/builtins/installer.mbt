@@ -303,7 +303,7 @@ fn value_prim(
   int_round : @engine.RoundMode,
   allow_base_prefix : Bool,
   bool_config : @engine.BoolConfig,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
   separator? : String? = None,
   merge? : Bool = false,
   kv_map? : Bool = false,
@@ -347,14 +347,14 @@ fn copy_strs(a : Array[String]) -> Array[String] {
 }
 
 ///|
-/// Deep-copy an `Array[@engine.FilterSpelling]` — mirrors `copy_strs`'s discipline (global/alias desugaring
+/// Deep-copy an `Array[@engine.FnInvocation]` — mirrors `copy_strs`'s discipline (global/alias desugaring
 /// pushes COPIES into descendant scopes, `clone_elem`'s doc comment) but also copies each entry's
 /// own `args : Array[String]` (a mutable nested array `copy_strs`-style aliasing would otherwise
 /// share across scope copies).
 fn copy_filter_spellings(
-  a : Array[@engine.FilterSpelling],
-) -> Array[@engine.FilterSpelling] {
-  let r : Array[@engine.FilterSpelling] = []
+  a : Array[@engine.FnInvocation],
+) -> Array[@engine.FnInvocation] {
+  let r : Array[@engine.FnInvocation] = []
   for fs in a {
     r.push({ name: fs.name, args: copy_strs(fs.args) })
   }
@@ -3892,7 +3892,7 @@ fn collect_invalid_regex_pattern(
     e.multiple || elem_repeat(e) is Some(_) || e.separator is Some(_)
   }
 
-  fn check_chain(name : String, chain : Array[@engine.FilterSpelling]) -> Unit {
+  fn check_chain(name : String, chain : Array[@engine.FnInvocation]) -> Unit {
     for fs in chain {
       if fs.name == "regex_match" &&
         fs.args.length() == 1 &&
@@ -4111,7 +4111,7 @@ fn collect_invalid_numeric_filter_args(
   // false のまま (canonical number、既存挙動を変えない)。
   fn check_two_arg(
     name : String,
-    fs : @engine.FilterSpelling,
+    fs : @engine.FnInvocation,
     nonneg_int : Bool,
   ) -> Unit {
     if fs.args.length() != 2 {
@@ -4185,7 +4185,7 @@ fn collect_invalid_numeric_filter_args(
 
   fn check_scalar_chain(
     name : String,
-    chain : Array[@engine.FilterSpelling],
+    chain : Array[@engine.FnInvocation],
   ) -> Unit {
     for fs in chain {
       if fs.name == "in_range" {
@@ -4196,7 +4196,7 @@ fn collect_invalid_numeric_filter_args(
 
   fn check_array_chain(
     name : String,
-    chain : Array[@engine.FilterSpelling],
+    chain : Array[@engine.FnInvocation],
   ) -> Unit {
     for fs in chain {
       if fs.name == "length_range" {

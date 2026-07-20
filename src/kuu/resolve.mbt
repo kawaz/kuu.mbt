@@ -320,7 +320,7 @@ priv struct AccumCell {
   // "accumulator 畳み → accum_filters" has no collector step in it; the collector/accum_filters
   // interaction — issue's "未裁定の論点1" — stays open for whenever a fixture actually exercises
   // both on the same cell).
-  accum_filters : Array[@engine.FilterSpelling]
+  accum_filters : Array[@engine.FnInvocation]
   // DR-084 §2 (issue multiple-ref-accum-gap): the accumulator KIND (@engine.Entity.accum's copy — always
   // `Some(_)` for a cell that reaches `accum_cells` at all, so this is a plain `String` here, not
   // `String?`). Pre-DR-105 this alone told apart a ref+repeat cell's "flatten" (non-`multiple`,
@@ -394,7 +394,7 @@ fn accum_filters_here(
   cells : Array[AccumCell],
   path : Array[String],
   name : String,
-) -> Array[@engine.FilterSpelling] {
+) -> Array[@engine.FnInvocation] {
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
       return c.accum_filters
@@ -1836,7 +1836,7 @@ fn env_value(
   element : String,
   ty : &@engine.TypeExt,
   s : String,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
   at_pos : Int,
   epath : Array[String],
   extensions : @engine.Registry,

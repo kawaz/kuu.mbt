@@ -81,7 +81,10 @@ fn register_cell_fn(
 }
 
 ///|
-pub fn install_installers(registry : @engine.Registry) -> Unit {
+/// Register only the canonical installer vocabulary (long / short / env / dd / ... — the
+/// DR-042 table) into `registry`. A subset of `install_canonical`; call this directly when
+/// composing a custom assembly that swaps residents but keeps the standard vocabulary.
+pub fn install_vocabulary(registry : @engine.Registry) -> Unit {
   registry.register_installer(@builtins.long_installer())
   registry.register_installer(@builtins.short_installer())
   registry.register_installer(@builtins.env_installer())
@@ -99,10 +102,12 @@ pub fn install_installers(registry : @engine.Registry) -> Unit {
 }
 
 ///|
-/// Register the canonical all-resident assembly. Builtins provides resident factories;
-/// the front-door package owns which residents form the default product.
-pub fn install(registry : @engine.Registry) -> Unit {
-  install_installers(registry)
+/// Register the canonical all-resident assembly (vocabulary + node / matcher / type /
+/// filter / accumulator / collector / cell-fn residents + the help_query capability).
+/// Builtins provides resident factories; the front-door package owns which residents
+/// form the default product. `install_vocabulary` is the installer-only subset.
+pub fn install_canonical(registry : @engine.Registry) -> Unit {
+  install_vocabulary(registry)
 
   register_node(registry, @builtins.string_arg("", []))
   register_node(registry, @builtins.kv_arg("", []))
@@ -166,7 +171,7 @@ pub fn install(registry : @engine.Registry) -> Unit {
   }
 
   // DR-113 §1: help_query capability の登録経路。M3c-B では器のみ (fixture runner の invoke
-  // 経路への統合は M4 で切り替える)。重複名登録の戻り値は install() が単発呼びで無視して良い
+  // 経路への統合は M4 で切り替える)。重複名登録の戻り値は install_canonical() が単発呼びで無視して良い
   // (canonical assembly は 1 度だけ install される、cell_fn_descriptors 群と同じ扱い)。
   let _ = registry.register_capability(help_query_capability())
 }
@@ -174,6 +179,6 @@ pub fn install(registry : @engine.Registry) -> Unit {
 ///|
 fn canonical_registry() -> @engine.Registry {
   let registry = @engine.Registry::new()
-  install(registry)
+  install_canonical(registry)
   registry
 }

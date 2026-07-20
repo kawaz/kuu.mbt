@@ -17,9 +17,9 @@ pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode?
 
 pub fn help_query_capability() -> &@engine.CapabilityExt
 
-pub fn install(@engine.Registry) -> Unit
+pub fn install_canonical(@engine.Registry) -> Unit
 
-pub fn install_installers(@engine.Registry) -> Unit
+pub fn install_vocabulary(@engine.Registry) -> Unit
 
 pub fn output(AtomicAST, Array[@engine.Binding], resolved? : Array[@engine.Binding]) -> OutputView
 

@@ -76,7 +76,7 @@ fn ent(
     },
     separator,
     // `chain` (filters_wbtest.mbt, same package): colon-shorthand ergonomics over `@engine.Entity`'s
-    // production `Array[@engine.FilterSpelling]` fields (issue filter-spelling-inband-encoding-retyping).
+    // production `Array[@engine.FnInvocation]` fields (issue filter-spelling-inband-encoding-retyping).
     piece_filters: chain(piece_filters),
     value_filters: chain(value_filters),
     final_filters: chain(final_filters),

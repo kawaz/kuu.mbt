@@ -45,7 +45,7 @@ pub struct EqEntry {
   priv key : String
   priv name : String
   priv kind : &@engine.TypeExt
-  priv piece_filters : Array[@engine.FilterSpelling]
+  priv piece_filters : Array[@engine.FnInvocation]
   priv separator : String?
   priv merge : Bool
   priv depr : Bool
@@ -56,7 +56,7 @@ pub fn eq_entry(
   key : String,
   name : String,
   kind : &@engine.TypeExt,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
   separator : String?,
   merge? : Bool = false,
   depr? : Bool = false,
@@ -71,7 +71,7 @@ pub struct ShortEntry {
   priv name : String
   priv kind : &@engine.TypeExt
   priv depr : Bool
-  priv piece_filters : Array[@engine.FilterSpelling]
+  priv piece_filters : Array[@engine.FnInvocation]
   priv separator : String?
   priv merge : Bool
   priv short_attached_value : @engine.AttachMode
@@ -83,7 +83,7 @@ pub fn short_entry(
   ch : Char,
   name : String,
   kind : &@engine.TypeExt,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
   separator : String?,
   depr? : Bool = false,
   merge? : Bool = false,

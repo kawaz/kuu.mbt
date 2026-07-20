@@ -8,7 +8,7 @@ fn config(json : Json) -> @engine.ConfigVal {
 }
 
 ///|
-fn config_chain(names : Array[String]) -> Array[@engine.FilterSpelling] {
+fn config_chain(names : Array[String]) -> Array[@engine.FnInvocation] {
   names.map(name => { name, args: [] })
 }
 

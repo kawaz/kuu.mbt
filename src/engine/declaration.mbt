@@ -254,12 +254,12 @@ pub(all) struct ElemDef {
   // 確定した最終値ガード (DR-077 §1 の主対象、update の結果にもこれが通る)。accum_filters (DR-102 §1、
   // Acc→Acc、ARRAY filter registry): accum (multiple/repeat/separator) 要素専用の累積配列全体ガード。
   // 1 属性 1 registry の対応 (DR-102 §2)。要素は universal invocation carrier の
-  // `FilterSpelling` alias。colon shorthand / 1 段 array / object form は decode 境界で同じ
+  // `FnInvocation` alias。colon shorthand / 1 段 array / object form は decode 境界で同じ
   // name + args 形になり、chain 消費側は wire 表現を扱わない。
-  piece_filters : Array[FilterSpelling]
-  value_filters : Array[FilterSpelling]
-  final_filters : Array[FilterSpelling]
-  accum_filters : Array[FilterSpelling]
+  piece_filters : Array[FnInvocation]
+  value_filters : Array[FnInvocation]
+  final_filters : Array[FnInvocation]
+  accum_filters : Array[FnInvocation]
   // DR-014 / DESIGN §7.2 / DR-096 §1 (issue scope-config-object-gap, 軸別再編): the FULL
   // hierarchical scope `config` object (long_prefix/long_eq_sep/short_prefix/short_attached_value/
   // short_combine/env_prefix/auto_env). Decode (`dec_definition`, json_conformance_test.mbt)

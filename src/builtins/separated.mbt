@@ -6,7 +6,7 @@ fn sep_binds(
   tok : String,
   sep : String?,
   ty : &@engine.TypeExt,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
   pos : Int,
   merge : Bool,
   extensions : @engine.Registry,
@@ -74,7 +74,7 @@ fn sep_piece_value(
   name : String,
   part : String,
   ty : &@engine.TypeExt,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
   pos : Int,
   extensions : @engine.Registry,
 ) -> Result[@engine.Value, @engine.ParseError] {

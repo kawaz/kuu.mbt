@@ -169,10 +169,10 @@ fn opt(
   int_round? : @engine.RoundMode = @engine.Error,
   allow_base_prefix? : Bool = false,
   bool_config? : @engine.BoolConfig = @builtins.bool_config_canonical(),
-  piece_filters? : Array[@engine.FilterSpelling] = [],
-  value_filters? : Array[@engine.FilterSpelling] = [],
-  final_filters? : Array[@engine.FilterSpelling] = [],
-  accum_filters? : Array[@engine.FilterSpelling] = [],
+  piece_filters? : Array[@engine.FnInvocation] = [],
+  value_filters? : Array[@engine.FnInvocation] = [],
+  final_filters? : Array[@engine.FnInvocation] = [],
+  accum_filters? : Array[@engine.FnInvocation] = [],
   ref_? : String? = None,
   long_prefix? : String = "--",
   short_prefix? : String = "-",
@@ -274,10 +274,10 @@ fn pos(
   int_round? : @engine.RoundMode = @engine.Error,
   allow_base_prefix? : Bool = false,
   bool_config? : @engine.BoolConfig = @builtins.bool_config_canonical(),
-  piece_filters? : Array[@engine.FilterSpelling] = [],
-  value_filters? : Array[@engine.FilterSpelling] = [],
-  final_filters? : Array[@engine.FilterSpelling] = [],
-  accum_filters? : Array[@engine.FilterSpelling] = [],
+  piece_filters? : Array[@engine.FnInvocation] = [],
+  value_filters? : Array[@engine.FnInvocation] = [],
+  final_filters? : Array[@engine.FnInvocation] = [],
+  accum_filters? : Array[@engine.FnInvocation] = [],
   env? : Array[String] = [],
   help_meta? : @engine.HelpMetaDecl = empty_help_meta(),
   is_tty? : Bool = false,
@@ -865,9 +865,7 @@ fn dec_strs(j : Json?) -> Array[String] raise DecodeSkip {
 /// object form. Array and object args remain literal, including embedded colons.
 /// `dec_strs` is not reused because the other string-list attributes do not
 /// carry nested invocation entries.
-fn dec_filter_chain(
-  j : Json?,
-) -> Array[@engine.FilterSpelling] raise DecodeSkip {
+fn dec_filter_chain(j : Json?) -> Array[@engine.FnInvocation] raise DecodeSkip {
   match j {
     None => []
     Some(x) =>
@@ -876,7 +874,7 @@ fn dec_filter_chain(
         None =>
           match x.j_arr() {
             Some(a) => {
-              let r : Array[@engine.FilterSpelling] = []
+              let r : Array[@engine.FnInvocation] = []
               for e in a {
                 match e.j_str() {
                   Some(s) => r.push(@builtins.parse_filter_shorthand(s))

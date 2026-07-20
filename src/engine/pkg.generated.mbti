@@ -493,7 +493,6 @@ pub(all) enum FnFallibility {
   Reject
 } derive(Eq, @debug.Debug)
 
-#alias(FilterSpelling)
 pub(all) struct FnInvocation {
   name : String
   args : Array[String]

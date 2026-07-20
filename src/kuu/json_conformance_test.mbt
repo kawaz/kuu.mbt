@@ -342,7 +342,7 @@ fn eff_op(op : @engine.EffectOp) -> String {
 ///|
 fn canonical_registry_for_test() -> @engine.Registry {
   let registry = @engine.Registry::new()
-  install(registry)
+  install_canonical(registry)
   registry
 }
 

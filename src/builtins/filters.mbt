@@ -337,7 +337,7 @@ pub fn length_range_array_filter() -> @engine.ArrayFilterDescriptor {
 /// engine-owned universal invocation parser. Wire decoding and wbtests use this
 /// wrapper for the plain-string form; one-level arrays call the same engine
 /// parser with `ArrayParts`.
-pub fn parse_filter_shorthand(s : String) -> @engine.FilterSpelling {
+pub fn parse_filter_shorthand(s : String) -> @engine.FnInvocation {
   match @engine.parse_fn_invocation(@engine.ColonString(s)) {
     Ok(invocation) => invocation
     Err(message) => abort(message)

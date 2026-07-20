@@ -47,7 +47,7 @@ pub(all) struct ConfigValueError {
 pub fn config_to_value(
   cv : @engine.ConfigVal,
   ty : &@engine.TypeExt,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
   extensions : @engine.Registry,
 ) -> Result[@engine.Value, ConfigValueError] {
   match cv {

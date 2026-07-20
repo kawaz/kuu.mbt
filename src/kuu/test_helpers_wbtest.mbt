@@ -54,8 +54,8 @@ fn test_run_matcher(
 }
 
 ///|
-fn chain(spellings : Array[String]) -> Array[@engine.FilterSpelling] {
-  let out : Array[@engine.FilterSpelling] = []
+fn chain(spellings : Array[String]) -> Array[@engine.FnInvocation] {
+  let out : Array[@engine.FnInvocation] = []
   for spelling in spellings {
     out.push(@builtins.parse_filter_shorthand(spelling))
   }

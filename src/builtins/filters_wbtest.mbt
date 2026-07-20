@@ -4,12 +4,12 @@
 
 ///|
 /// wbtest ergonomics only (issue filter-spelling-inband-encoding-retyping): `apply_filter_chain`
-/// takes `Array[@engine.FilterSpelling]` in production, but every case below wants the colon-shorthand's
-/// terseness (`"in_range:1:10"`) rather than a hand-built `@engine.FilterSpelling` struct literal per entry
+/// takes `Array[@engine.FnInvocation]` in production, but every case below wants the colon-shorthand's
+/// terseness (`"in_range:1:10"`) rather than a hand-built `@engine.FnInvocation` struct literal per entry
 /// — this maps a plain string chain through `parse_filter_shorthand` (filters.mbt, the SAME parser
 /// the decode boundary uses).
-fn chain(strs : Array[String]) -> Array[@engine.FilterSpelling] {
-  let out : Array[@engine.FilterSpelling] = []
+fn chain(strs : Array[String]) -> Array[@engine.FnInvocation] {
+  let out : Array[@engine.FnInvocation] = []
   for s in strs {
     out.push(parse_filter_shorthand(s))
   }

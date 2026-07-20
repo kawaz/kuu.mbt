@@ -1,7 +1,7 @@
 // node_residents.mbt — concrete open-node residents for builtin value and marker semantics.
 
 ///|
-fn filter_spellings_json(filters : Array[@engine.FilterSpelling]) -> Json {
+fn filter_spellings_json(filters : Array[@engine.FnInvocation]) -> Json {
   let encoded : Array[Json] = []
   for filter in filters {
     encoded.push([filter.name.to_json(), filter.args.to_json()].to_json())
@@ -57,7 +57,7 @@ fn effect_op_json(op : @engine.EffectOp) -> Json {
 ///|
 priv struct StringArgExt {
   name : String
-  piece_filters : Array[@engine.FilterSpelling]
+  piece_filters : Array[@engine.FnInvocation]
 }
 
 ///|
@@ -121,7 +121,7 @@ impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
 ///|
 pub fn string_arg(
   name : String,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
 ) -> @engine.Node {
   @engine.Ext(StringArgExt::{ name, piece_filters } as &@engine.NodeExt)
 }
@@ -129,7 +129,7 @@ pub fn string_arg(
 ///|
 priv struct KvNodeExt {
   name : String
-  piece_filters : Array[@engine.FilterSpelling]
+  piece_filters : Array[@engine.FnInvocation]
 }
 
 ///|
@@ -204,7 +204,7 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
 ///|
 pub fn kv_arg(
   name : String,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
 ) -> @engine.Node {
   @engine.Ext(KvNodeExt::{ name, piece_filters } as &@engine.NodeExt)
 }
@@ -217,7 +217,7 @@ priv struct SeparatedNodeExt {
   int_round : @engine.RoundMode
   allow_base_prefix : Bool
   bool_config : @engine.BoolConfig
-  piece_filters : Array[@engine.FilterSpelling]
+  piece_filters : Array[@engine.FnInvocation]
   merge : Bool
 }
 
@@ -292,7 +292,7 @@ pub fn separated_arg(
   int_round : @engine.RoundMode,
   allow_base_prefix : Bool,
   bool_config : @engine.BoolConfig,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
   merge : Bool,
 ) -> @engine.Node {
   @engine.Ext(
@@ -314,7 +314,7 @@ pub fn separated_arg(
 priv struct NumberArgExt {
   name : String
   allow_base_prefix : Bool
-  piece_filters : Array[@engine.FilterSpelling]
+  piece_filters : Array[@engine.FnInvocation]
 }
 
 ///|
@@ -394,7 +394,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
 pub fn number_arg(
   name : String,
   allow_base_prefix : Bool,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
 ) -> @engine.Node {
   @engine.Ext(
     NumberArgExt::{ name, allow_base_prefix, piece_filters } as &@engine.NodeExt,
@@ -494,7 +494,7 @@ pub fn filtered_number_arg(name : String, max : Int) -> @engine.Node {
 ///|
 priv struct FloatNodeExt {
   name : String
-  piece_filters : Array[@engine.FilterSpelling]
+  piece_filters : Array[@engine.FnInvocation]
 }
 
 ///|
@@ -569,7 +569,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
 ///|
 pub fn float_arg(
   name : String,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
 ) -> @engine.Node {
   @engine.Ext(FloatNodeExt::{ name, piece_filters } as &@engine.NodeExt)
 }
@@ -579,7 +579,7 @@ priv struct IntNodeExt {
   name : String
   int_round : @engine.RoundMode
   allow_base_prefix : Bool
-  piece_filters : Array[@engine.FilterSpelling]
+  piece_filters : Array[@engine.FnInvocation]
 }
 
 ///|
@@ -662,7 +662,7 @@ pub fn int_arg(
   name : String,
   int_round : @engine.RoundMode,
   allow_base_prefix : Bool,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
 ) -> @engine.Node {
   @engine.Ext(
     IntNodeExt::{ name, int_round, allow_base_prefix, piece_filters }
@@ -674,7 +674,7 @@ pub fn int_arg(
 priv struct BoolNodeExt {
   name : String
   bool_config : @engine.BoolConfig
-  piece_filters : Array[@engine.FilterSpelling]
+  piece_filters : Array[@engine.FnInvocation]
 }
 
 ///|
@@ -749,7 +749,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
 pub fn bool_arg(
   name : String,
   bool_config : @engine.BoolConfig,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
 ) -> @engine.Node {
   @engine.Ext(
     BoolNodeExt::{ name, bool_config, piece_filters } as &@engine.NodeExt,
@@ -760,7 +760,7 @@ pub fn bool_arg(
 priv struct TypedNodeExt {
   name : String
   ty : &@engine.TypeExt
-  piece_filters : Array[@engine.FilterSpelling]
+  piece_filters : Array[@engine.FnInvocation]
 }
 
 ///|
@@ -835,7 +835,7 @@ impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
 pub fn typed_arg(
   name : String,
   ty : &@engine.TypeExt,
-  piece_filters : Array[@engine.FilterSpelling],
+  piece_filters : Array[@engine.FnInvocation],
 ) -> @engine.Node {
   @engine.Ext(TypedNodeExt::{ name, ty, piece_filters } as &@engine.NodeExt)
 }
