@@ -637,15 +637,16 @@ fn project_sources(
 }
 
 ///|
-/// 正面玄関の出力射影。`effects_binds` は `parse()` の Success payload、`resolved?` は
-/// `resolve()` の Success payload を渡す。`resolved` 省略時は同じ binds を result/sources に使い、
+/// 正面玄関の出力射影。`effects~` は `parse()` の Success payload、`resolved?` は
+/// `resolve()` の Success payload を渡す (どちらも `Array[Binding]` なので取り違え防止に両方
+/// labeled)。`resolved` 省略時は同じ binds を result/sources に使い、
 /// 値源ラダーを要しない parse-only 利用も同じ OutputView 径路で表す。
 /// repeat row の境界は `resolve()` が復元した `#row`/`#fire` を `build_result_export` が読む既存経路へ
 /// そのまま渡し、本関数では sentinel の再 merge や row 集約を再実装しない。
 pub fn output(
   ast : AtomicAST,
-  effects_binds : Array[@engine.Binding],
-  resolved? : Array[@engine.Binding] = effects_binds,
+  effects~ : Array[@engine.Binding],
+  resolved? : Array[@engine.Binding] = effects,
 ) -> OutputView {
   {
     result: build_result_export(
@@ -654,7 +655,7 @@ pub fn output(
       export_map(ast),
       extensions=ast.extensions,
     ),
-    effects: project_effects(ast, effects_binds),
+    effects: project_effects(ast, effects),
     sources: project_sources(ast, resolved),
   }
 }
@@ -669,7 +670,7 @@ pub fn output_of_interpretation(
   ast : AtomicAST,
   interp : @engine.AmbInterp,
 ) -> @engine.RVal {
-  let view = output(ast, interp.binds)
+  let view = output(ast, effects=interp.binds)
   filter_interpretation_result(view.result, view.sources, interp.claimants, [])
 }
 

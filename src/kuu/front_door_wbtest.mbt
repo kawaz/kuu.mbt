@@ -247,7 +247,7 @@ test "front_door.output: effects は sentinel・config_file・none・dd を吸�
       }
     }
     match parse(ast, args) {
-      @engine.Success(binds) => output(ast, binds)
+      @engine.Success(binds) => output(ast, effects=binds)
       other => {
         fail("front_door.parse should succeed, got " + render_outcome(other))
         panic()
@@ -332,7 +332,7 @@ test "front_door.output: 単一 scope で export_key rename + flag preset defaul
       panic()
     }
   }
-  let view = output(ast, rb)
+  let view = output(ast, effects=rb)
   let rval = view.result
   match rval {
     @engine.Object(kvs) => {
@@ -397,7 +397,7 @@ test "front_door.output: command 木でも子 scope の値源を OutputView.sour
       panic()
     }
   }
-  let ses = output(ast, rb).sources
+  let ses = output(ast, effects=rb).sources
   let mut found : SourceEntry? = None
   for se in ses {
     if se.key == "ttl" && se.path.length() == 1 && se.path[0] == "sub" {
@@ -450,7 +450,7 @@ test "front_door.config_from_json: JSON から組んだ @engine.ConfigVal が co
       panic()
     }
   }
-  let rval = output(ast, rb).result
+  let rval = output(ast, effects=rb).result
   match rval {
     @engine.Object(kvs) => {
       let mut port_val : @engine.RVal? = None
@@ -469,7 +469,7 @@ test "front_door.config_from_json: JSON から組んだ @engine.ConfigVal が co
     }
     _ => fail("output.result should be @engine.Object")
   }
-  let ses = output(ast, rb).sources
+  let ses = output(ast, effects=rb).sources
   let mut port_src : @engine.Source? = None
   for se in ses {
     if se.key == "port" {
@@ -514,7 +514,7 @@ test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty �
       panic()
     }
   }
-  let rval = output(ast, rb).result
+  let rval = output(ast, effects=rb).result
   match rval {
     @engine.Object(kvs) => {
       let mut use_color_val : @engine.RVal? = None
@@ -528,7 +528,7 @@ test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty �
     }
     _ => fail("output.result should be @engine.Object")
   }
-  let ses = output(ast, rb).sources
+  let ses = output(ast, effects=rb).sources
   let mut use_color_src : @engine.Source? = None
   for se in ses {
     if se.key == "use_color" {
@@ -588,7 +588,7 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
       }
     }
     // resolve が復元済みの #row/#fire を `output` は再 merge せず、その binds を result 射影へ渡す。
-    let view = output(ast, rb)
+    let view = output(ast, effects=rb)
     match view.result {
       @engine.Object(kvs) => {
         for kv in kvs {

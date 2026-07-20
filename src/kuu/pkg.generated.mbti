@@ -21,7 +21,7 @@ pub fn install_canonical(@engine.Registry) -> Unit
 
 pub fn install_vocabulary(@engine.Registry) -> Unit
 
-pub fn output(AtomicAST, Array[@engine.Binding], resolved? : Array[@engine.Binding]) -> OutputView
+pub fn output(AtomicAST, effects~ : Array[@engine.Binding], resolved? : Array[@engine.Binding]) -> OutputView
 
 pub fn output_of_interpretation(AtomicAST, @engine.AmbInterp) -> @engine.RVal
 

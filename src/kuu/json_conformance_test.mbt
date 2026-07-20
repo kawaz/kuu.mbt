@@ -2126,7 +2126,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
     "success" =>
       match outcome {
         @engine.Success(binds) => {
-          let parse_view = @kuu.output(ast, binds)
+          let parse_view = @kuu.output(ast, effects=binds)
           match dc.exp_effects {
             Some(ee) => {
               let ae = render_effects(parse_view.effects)
@@ -2149,7 +2149,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 tty=dc.tty,
               ) {
               @engine.Success(rb) => {
-                let view = @kuu.output(ast, binds, resolved=rb)
+                let view = @kuu.output(ast, effects=binds, resolved=rb)
                 match dc.exp_result {
                   Some(er) => {
                     let ar = render_rval_sorted(view.result)
@@ -2806,7 +2806,9 @@ test "conformance: @engine.OrBranch auto id (#{seq}) は held-error / ambiguous 
     @engine.Ambiguous(d) => {
       let views : Array[String] = []
       for interp in d.interpretations {
-        views.push(render_rval_sorted(@kuu.output(df.ast, interp.binds).result))
+        views.push(
+          render_rval_sorted(@kuu.output(df.ast, effects=interp.binds).result),
+        )
       }
       let joined = join_comma(views)
       no_leak(joined)

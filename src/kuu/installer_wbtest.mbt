@@ -4292,7 +4292,7 @@ test "front_door.output: export_key rename を result に適用する (DR-052 §
   }
   match parse(ast, ["--port", "80", "--verbose"]) {
     @engine.Success(binds) =>
-      match output(ast, binds).result {
+      match output(ast, effects=binds).result {
         @engine.Object(fields) => {
           let keys = fields.map(fn(field) { field.0 })
           assert_true(keys.contains("alias"))
