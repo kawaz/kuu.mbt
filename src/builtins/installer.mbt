@@ -1622,7 +1622,7 @@ fn inst_long(
                     leaf.piece_filters,
                     leaf.separator,
                     merge=leaf.accumulator == Some("merge"),
-                    depr=leaf.deprecated,
+                    deprecated=leaf.deprecated,
                   ),
                 )
               }
@@ -1649,7 +1649,7 @@ fn inst_long(
                 e.piece_filters,
                 e.separator,
                 merge=e.accumulator == Some("merge"),
-                depr=e.deprecated,
+                deprecated=e.deprecated,
               ),
             )
           }
@@ -1798,7 +1798,7 @@ fn inst_short(def : @engine.Definition, build : @engine.InstallOutput) -> Unit {
           ),
           e.piece_filters,
           e.separator,
-          depr=e.deprecated,
+          deprecated=e.deprecated,
           merge=e.accumulator == Some("merge"),
           short_attached_value=e.short_attached_value,
           is_alias=e.is_alias,
@@ -4304,21 +4304,9 @@ fn collect_config_cycle(
 ///
 /// Returns Ok(atomic scope) or Err(全 definition-time errors)。static check は全て走って 1 list に append
 /// (打ち切りなし)。各 @engine.DefError は {element, kind, message, hint} を持つ。
-pub struct LoweredDefinition {
+pub(all) struct LoweredDefinition {
   scope : @engine.Scope
   declaration : @engine.Definition
-}
-
-///|
-pub fn LoweredDefinition::scope(self : LoweredDefinition) -> @engine.Scope {
-  self.scope
-}
-
-///|
-pub fn LoweredDefinition::declaration(
-  self : LoweredDefinition,
-) -> @engine.Definition {
-  self.declaration
 }
 
 ///|
@@ -4380,7 +4368,7 @@ pub fn lower_definition(
   registry? : Map[String, @engine.Node] = Map([], capacity=0),
 ) -> Result[@engine.Scope, Array[@engine.DefError]] {
   match lower_definition_snapshot_impl(def0, order, extensions, registry) {
-    Ok(lowered) => Ok(lowered.scope())
+    Ok(lowered) => Ok(lowered.scope)
     Err(errors) => Err(errors)
   }
 }

@@ -467,7 +467,7 @@ test "lowering matcher projection reads encode, not completion candidate policy"
       [],
       None,
       merge=false,
-      depr=false,
+      deprecated=false,
     ),
   ])
   assert_eq(matcher.candidates().length(), 0)

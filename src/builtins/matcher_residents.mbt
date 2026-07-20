@@ -48,7 +48,7 @@ pub struct EqEntry {
   priv piece_filters : Array[@engine.FnInvocation]
   priv separator : String?
   priv merge : Bool
-  priv depr : Bool
+  priv deprecated : Bool
 }
 
 ///|
@@ -59,9 +59,9 @@ pub fn eq_entry(
   piece_filters : Array[@engine.FnInvocation],
   separator : String?,
   merge? : Bool = false,
-  depr? : Bool = false,
+  deprecated? : Bool = false,
 ) -> EqEntry {
-  { key, name, kind, piece_filters, separator, merge, depr }
+  { key, name, kind, piece_filters, separator, merge, deprecated }
 }
 
 ///|
@@ -70,7 +70,7 @@ pub struct ShortEntry {
   priv ch : Char
   priv name : String
   priv kind : &@engine.TypeExt
-  priv depr : Bool
+  priv deprecated : Bool
   priv piece_filters : Array[@engine.FnInvocation]
   priv separator : String?
   priv merge : Bool
@@ -85,7 +85,7 @@ pub fn short_entry(
   kind : &@engine.TypeExt,
   piece_filters : Array[@engine.FnInvocation],
   separator : String?,
-  depr? : Bool = false,
+  deprecated? : Bool = false,
   merge? : Bool = false,
   short_attached_value? : @engine.AttachMode = @engine.Allow,
   is_alias? : Bool = false,
@@ -94,7 +94,7 @@ pub fn short_entry(
     ch,
     name,
     kind,
-    depr,
+    deprecated,
     piece_filters,
     separator,
     merge,
@@ -141,7 +141,7 @@ fn short_candidates(
         entry.kind.name(),
         @engine.WordEnd,
         is_alias=entry.is_alias,
-        deprecated=entry.depr,
+        deprecated=entry.deprecated,
       ),
     )
   }
@@ -172,7 +172,7 @@ fn eq_entry_json(entry : EqEntry) -> Json {
     filter_spellings_json(entry.piece_filters),
     entry.separator.to_json(),
     entry.merge.to_json(),
-    entry.depr.to_json(),
+    entry.deprecated.to_json(),
   ].to_json()
 }
 
@@ -182,7 +182,7 @@ fn short_entry_json(entry : ShortEntry) -> Json {
     "\{entry.ch}".to_json(),
     entry.name.to_json(),
     type_json(entry.kind),
-    entry.depr.to_json(),
+    entry.deprecated.to_json(),
     filter_spellings_json(entry.piece_filters),
     entry.separator.to_json(),
     entry.merge.to_json(),
@@ -316,7 +316,7 @@ fn run_eq_split(
       // DR-058 §2: eq-split の deprecated warning marker — `walk_short` の `dm` と同じ carrier
       // パターン (builtins/matcher_residents.mbt 上の `dm` 定義コメント参照)。成功パス (@engine.Accept) だけに合成する — 値が
       // 確定して初めて「受理された deprecated 入口」なので、@engine.Held (parse/filter 失敗) には積まない。
-      let dm : Array[@engine.Binding] = if e.depr {
+      let dm : Array[@engine.Binding] = if e.deprecated {
         [@engine.Binding::depr_marker(e.name)]
       } else {
         []
@@ -517,9 +517,9 @@ fn walk_short(
   match short_lookup(entries, c) {
     None => []
     Some(e) => {
-      // DR-058: a deprecated cluster entry rides a `@depr:<name>` warning marker alongside its
+      // DR-058: a deprecated cluster entry rides a `@deprecated:<name>` warning marker alongside its
       // value binding (the value is unchanged; only a warning is added). `dm` is [] for a normal entry.
-      let dm : Array[@engine.Binding] = if e.depr {
+      let dm : Array[@engine.Binding] = if e.deprecated {
         [@engine.Binding::depr_marker(e.name)]
       } else {
         []

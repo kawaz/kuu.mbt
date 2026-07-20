@@ -93,7 +93,15 @@ fn is_held(b : @engine.Branch) -> Bool {
 /// falls through to the positional face (素通し). A token without the prefix/`=` does not fire.
 test "eq-split long option resolves, errors, and 素通し" {
   let long = eq_split("--", [
-    eq_entry("port", "port", number_type(), [], None, merge=false, depr=false),
+    eq_entry(
+      "port",
+      "port",
+      number_type(),
+      [],
+      None,
+      merge=false,
+      deprecated=false,
+    ),
   ])
   // a defined numeric key: one @engine.Accept consuming 1 token, binding port=8080 from the CLI seat.
   let r1 = probe_matcher(long, ["--port=8080"])
@@ -131,7 +139,7 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
       [],
       None,
       merge=false,
-      depr=false,
+      deprecated=false,
     ),
   ])
   // `true` / `1` / mixed-case / all-caps all resolve to @engine.Bool(true).
@@ -182,7 +190,7 @@ test "eq-split long option: a flag_type() entry never fires on =value" {
       [],
       None,
       merge=false,
-      depr=false,
+      deprecated=false,
     ),
   ])
   assert_eq(probe_matcher(long, ["--verbose=true"]).length(), 0)
@@ -198,7 +206,15 @@ test "eq-split long option: a flag_type() entry never fires on =value" {
 /// eq-split入口 does NOT alter the parsed value (still `port=8080`) — only a warning is added.
 test "eq-split long option: deprecated entry rides a @depr marker" {
   let long = eq_split("--", [
-    eq_entry("port", "port", number_type(), [], None, merge=false, depr=true),
+    eq_entry(
+      "port",
+      "port",
+      number_type(),
+      [],
+      None,
+      merge=false,
+      deprecated=true,
+    ),
   ])
   // Entry deprecation warns only after a successful fire; the unread boundary spelling keeps the
   // established neutral completion metadata until a separate completion policy specifies otherwise.
@@ -230,7 +246,7 @@ test "eq-split long option: deprecated entry with separator (sep_binds path) als
       [],
       Some(","),
       merge=false,
-      depr=true,
+      deprecated=true,
     ),
   ])
   let r = probe_matcher(long, ["--tags=a,b"])
@@ -261,7 +277,7 @@ test "short cluster: flag run and in-token numeric value" {
       flag_type(),
       [],
       None,
-      depr=false,
+      deprecated=false,
       merge=false,
       short_attached_value=@engine.Allow,
       is_alias=false,
@@ -272,7 +288,7 @@ test "short cluster: flag run and in-token numeric value" {
       flag_type(),
       [],
       None,
-      depr=false,
+      deprecated=false,
       merge=false,
       short_attached_value=@engine.Allow,
       is_alias=false,
@@ -283,7 +299,7 @@ test "short cluster: flag run and in-token numeric value" {
       number_type(),
       [],
       None,
-      depr=false,
+      deprecated=false,
       merge=false,
       short_attached_value=@engine.Allow,
       is_alias=false,
@@ -320,7 +336,7 @@ test "short cluster: space-form value takes the next token" {
       number_type(),
       [],
       None,
-      depr=false,
+      deprecated=false,
       merge=false,
       short_attached_value=@engine.Allow,
       is_alias=false,
@@ -347,7 +363,7 @@ test "short cluster: deprecated entry rides a @depr marker" {
       flag_type(),
       [],
       None,
-      depr=true,
+      deprecated=true,
       merge=false,
       short_attached_value=@engine.Allow,
       is_alias=false,
@@ -375,7 +391,7 @@ fn combine_entries() -> Array[ShortEntry] {
       flag_type(),
       [],
       None,
-      depr=false,
+      deprecated=false,
       merge=false,
       short_attached_value=@engine.Allow,
       is_alias=false,
@@ -386,7 +402,7 @@ fn combine_entries() -> Array[ShortEntry] {
       flag_type(),
       [],
       None,
-      depr=false,
+      deprecated=false,
       merge=false,
       short_attached_value=@engine.Allow,
       is_alias=false,
@@ -397,7 +413,7 @@ fn combine_entries() -> Array[ShortEntry] {
       number_type(),
       [],
       None,
-      depr=false,
+      deprecated=false,
       merge=false,
       short_attached_value=@engine.Allow,
       is_alias=false,

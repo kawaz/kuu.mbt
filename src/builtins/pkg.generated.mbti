@@ -49,7 +49,7 @@ pub fn enum_value_node(String, &@engine.TypeExt, Array[String]) -> @engine.Node
 
 pub fn env_installer() -> &@engine.InstallerExt
 
-pub fn eq_entry(String, String, &@engine.TypeExt, Array[@engine.FnInvocation], String?, merge? : Bool, depr? : Bool) -> EqEntry
+pub fn eq_entry(String, String, &@engine.TypeExt, Array[@engine.FnInvocation], String?, merge? : Bool, deprecated? : Bool) -> EqEntry
 
 pub fn eq_split(String, Array[EqEntry]) -> &@engine.MatcherExt
 
@@ -123,7 +123,7 @@ pub fn separated_arg(String, String?, &@engine.TypeExt, @engine.RoundMode, @engi
 
 pub fn short_combine(String, Array[ShortEntry], combine? : Bool) -> &@engine.MatcherExt
 
-pub fn short_entry(Char, String, &@engine.TypeExt, Array[@engine.FnInvocation], String?, depr? : Bool, merge? : Bool, short_attached_value? : @engine.AttachMode, is_alias? : Bool) -> ShortEntry
+pub fn short_entry(Char, String, &@engine.TypeExt, Array[@engine.FnInvocation], String?, deprecated? : Bool, merge? : Bool, short_attached_value? : @engine.AttachMode, is_alias? : Bool) -> ShortEntry
 
 pub fn short_installer() -> &@engine.InstallerExt
 
@@ -166,12 +166,10 @@ pub(all) enum LongSpelling {
   Invalid(String, @engine.DefErrKind)
 } derive(Eq, @debug.Debug)
 
-pub struct LoweredDefinition {
+pub(all) struct LoweredDefinition {
   scope : @engine.Scope
   declaration : @engine.Definition
 }
-pub fn LoweredDefinition::declaration(Self) -> @engine.Definition
-pub fn LoweredDefinition::scope(Self) -> @engine.Scope
 
 pub struct ShortEntry {
   // private fields

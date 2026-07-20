@@ -139,11 +139,11 @@ pub fn parse_definition(
       ) {
       Ok(lowered) =>
         Ok({
-          root: lowered.scope(),
+          root: lowered.scope,
           templates,
           extensions,
           ekmap: @builtins.build_export_map(def, extensions),
-          declaration: lowered.declaration(),
+          declaration: lowered.declaration,
         })
       Err(errs) => Err(Rejected(errs))
     }
