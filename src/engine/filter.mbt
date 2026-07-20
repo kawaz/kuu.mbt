@@ -13,14 +13,46 @@ pub fn FilterSignature::is_transform(self : FilterSignature) -> Bool {
 }
 
 ///|
-/// One scalar filter resident. Invocation uses the universal args-plus-FnCtx
-/// ABI; `FilterCtx.input()` supplies the scalar value.
-pub(all) struct FilterDescriptor {
-  name : String
-  signature : FilterSignature
-  reasons : Array[String]
-  observes : Array[String]
-  run : (Array[String], FnCtx) -> Result[Value, FnReason]
+/// One scalar filter resident. Constructed exclusively through `filter_descriptor`,
+/// which adapts a plain (Value, args) transformer to the universal args-plus-FnCtx
+/// invocation ABI (`FilterCtx.input()` supplies the scalar value) — private fields
+/// keep the two shapes from diverging (same posture as CellFnDescriptor).
+pub struct FilterDescriptor {
+  priv name_ : String
+  priv signature_ : FilterSignature
+  priv reasons_ : Array[String]
+  priv observes_ : Array[String]
+  priv run_ : (Array[String], FnCtx) -> Result[Value, FnReason]
+}
+
+///|
+pub fn FilterDescriptor::name(self : Self) -> String {
+  self.name_
+}
+
+///|
+pub fn FilterDescriptor::signature(self : Self) -> FilterSignature {
+  self.signature_
+}
+
+///|
+pub fn FilterDescriptor::reasons(self : Self) -> Array[String] {
+  self.reasons_
+}
+
+///|
+pub fn FilterDescriptor::observes(self : Self) -> Array[String] {
+  self.observes_
+}
+
+///|
+/// Invoke through the universal ABI (chain runners build the FnCtx).
+pub fn FilterDescriptor::invoke(
+  self : Self,
+  args : Array[String],
+  ctx : FnCtx,
+) -> Result[Value, FnReason] {
+  (self.run_)(args, ctx)
 }
 
 ///|
@@ -33,11 +65,11 @@ pub fn filter_descriptor(
   observes? : Array[String] = [],
 ) -> FilterDescriptor {
   {
-    name,
-    signature,
-    reasons: reasons.copy(),
-    observes: observes.copy(),
-    run: fn(args, ctx) {
+    name_: name,
+    signature_: signature,
+    reasons_: reasons.copy(),
+    observes_: observes.copy(),
+    run_: fn(args, ctx) {
       match ctx.as_filter() {
         None =>
           Err({
@@ -59,13 +91,45 @@ pub fn filter_descriptor(
 }
 
 ///|
-/// One whole-array filter resident for the accumulated-value phase.
-pub(all) struct ArrayFilterDescriptor {
-  name : String
-  signature : FilterSignature
-  reasons : Array[String]
-  observes : Array[String]
-  run : (Array[String], FnCtx) -> Result[Array[Value], FnReason]
+/// One whole-array filter resident for the accumulated-value phase. Constructed
+/// exclusively through `array_filter_descriptor` (same private-fields posture as
+/// FilterDescriptor).
+pub struct ArrayFilterDescriptor {
+  priv name_ : String
+  priv signature_ : FilterSignature
+  priv reasons_ : Array[String]
+  priv observes_ : Array[String]
+  priv run_ : (Array[String], FnCtx) -> Result[Array[Value], FnReason]
+}
+
+///|
+pub fn ArrayFilterDescriptor::name(self : Self) -> String {
+  self.name_
+}
+
+///|
+pub fn ArrayFilterDescriptor::signature(self : Self) -> FilterSignature {
+  self.signature_
+}
+
+///|
+pub fn ArrayFilterDescriptor::reasons(self : Self) -> Array[String] {
+  self.reasons_
+}
+
+///|
+pub fn ArrayFilterDescriptor::observes(self : Self) -> Array[String] {
+  self.observes_
+}
+
+///|
+/// Invoke through the universal ABI (chain runners build the FnCtx).
+pub fn ArrayFilterDescriptor::invoke(
+  self : Self,
+  args : Array[String],
+  ctx : FnCtx,
+) -> Result[Array[Value], FnReason] {
+  (self.run_)(args, ctx)
 }
 
 ///|
@@ -79,11 +143,11 @@ pub fn array_filter_descriptor(
   observes? : Array[String] = [],
 ) -> ArrayFilterDescriptor {
   {
-    name,
-    signature,
-    reasons: reasons.copy(),
-    observes: observes.copy(),
-    run: fn(args, ctx) {
+    name_: name,
+    signature_: signature,
+    reasons_: reasons.copy(),
+    observes_: observes.copy(),
+    run_: fn(args, ctx) {
       match ctx.as_filter() {
         None =>
           Err({
@@ -117,8 +181,8 @@ pub fn apply_filter_chain(
     match registry.lookup_filter(spelling.name) {
       None => ()
       Some(descriptor) => {
-        let ctx = fn_ctx_filter(Scalar(current), observes=descriptor.observes)
-        match (descriptor.run)(spelling.args, ctx) {
+        let ctx = fn_ctx_filter(Scalar(current), observes=descriptor.observes())
+        match descriptor.invoke(spelling.args, ctx) {
           Ok(next) => current = next
           Err(error) => return Err(error)
         }
@@ -140,8 +204,8 @@ pub fn apply_accum_filter_chain(
     match registry.lookup_array_filter(spelling.name) {
       None => ()
       Some(descriptor) => {
-        let ctx = fn_ctx_filter(Array(current), observes=descriptor.observes)
-        match (descriptor.run)(spelling.args, ctx) {
+        let ctx = fn_ctx_filter(Array(current), observes=descriptor.observes())
+        match descriptor.invoke(spelling.args, ctx) {
           Ok(next) => current = next
           Err(error) => return Err(error)
         }

@@ -47,19 +47,19 @@ fn test_filter_registry() -> @engine.Registry {
 /// 成否のみ) — DR-077 §2 "使えるのは transform シグネチャの filter のみ" が区別する軸そのもの。
 test "lookup_filter: built-in signatures match DR-077 §2's validate/transform split" {
   assert_eq(
-    test_filter_registry().lookup_filter("trim").unwrap().signature,
+    test_filter_registry().lookup_filter("trim").unwrap().signature(),
     @engine.Transform,
   )
   assert_eq(
-    test_filter_registry().lookup_filter("increment").unwrap().signature,
+    test_filter_registry().lookup_filter("increment").unwrap().signature(),
     @engine.Transform,
   )
   assert_eq(
-    test_filter_registry().lookup_filter("non_empty").unwrap().signature,
+    test_filter_registry().lookup_filter("non_empty").unwrap().signature(),
     @engine.Validate,
   )
   assert_eq(
-    test_filter_registry().lookup_filter("in_range").unwrap().signature,
+    test_filter_registry().lookup_filter("in_range").unwrap().signature(),
     @engine.Validate,
   )
   match test_filter_registry().lookup_filter("nonexistent") {
@@ -341,20 +341,21 @@ test "apply_filter_chain runs entries in declared order" {
 /// カバー済み。ここでは "宣言側が正しいか" を別テストとして固定する)。`trim`/`increment` は
 /// Transform で常に成功 (reasons: [])。
 test "built-in filter descriptors declare exactly the DR-095 §3 reason vocabulary" {
-  assert_eq(test_filter_registry().lookup_filter("trim").unwrap().reasons, [])
+  assert_eq(test_filter_registry().lookup_filter("trim").unwrap().reasons(), [])
   assert_eq(
-    test_filter_registry().lookup_filter("non_empty").unwrap().reasons,
+    test_filter_registry().lookup_filter("non_empty").unwrap().reasons(),
     ["empty_value"],
   )
-  assert_eq(test_filter_registry().lookup_filter("in_range").unwrap().reasons, [
-    "too_small", "too_large",
-  ])
   assert_eq(
-    test_filter_registry().lookup_filter("regex_match").unwrap().reasons,
+    test_filter_registry().lookup_filter("in_range").unwrap().reasons(),
+    ["too_small", "too_large"],
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("regex_match").unwrap().reasons(),
     ["pattern_no_match"],
   )
   assert_eq(
-    test_filter_registry().lookup_filter("increment").unwrap().reasons,
+    test_filter_registry().lookup_filter("increment").unwrap().reasons(),
     [],
   )
 }
@@ -367,7 +368,10 @@ test "built-in filter descriptors declare exactly the DR-095 §3 reason vocabula
 /// 個別テストが既に別途 assert 済み)。
 test "reasons emitted for declared failure modes are a subset of the descriptor's reasons" {
   fn assert_declared(filter_name : String, got_reason : String) -> Unit raise {
-    let reasons = test_filter_registry().lookup_filter(filter_name).unwrap().reasons
+    let reasons = test_filter_registry()
+      .lookup_filter(filter_name)
+      .unwrap()
+      .reasons()
     if !reasons.contains(got_reason) {
       fail(
         "filter '" +

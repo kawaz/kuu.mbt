@@ -142,10 +142,10 @@ pub fn Registry::register_filter(
   self : Registry,
   resident : FilterDescriptor,
 ) -> Bool {
-  if self.filters.get(resident.name) is Some(_) {
+  if self.filters.get(resident.name()) is Some(_) {
     false
   } else {
-    self.filters.set(resident.name, resident)
+    self.filters.set(resident.name(), resident)
     true
   }
 }
@@ -164,10 +164,10 @@ pub fn Registry::register_array_filter(
   self : Registry,
   resident : ArrayFilterDescriptor,
 ) -> Bool {
-  if self.array_filters.get(resident.name) is Some(_) {
+  if self.array_filters.get(resident.name()) is Some(_) {
     false
   } else {
-    self.array_filters.set(resident.name, resident)
+    self.array_filters.set(resident.name(), resident)
     true
   }
 }

@@ -56,7 +56,7 @@ fn register_filter(
   resident : @engine.FilterDescriptor,
 ) -> Unit {
   guard registry.register_filter(resident) else {
-    abort("duplicate builtin filter resident name: " + resident.name)
+    abort("duplicate builtin filter resident name: " + resident.name())
   }
 }
 
@@ -66,7 +66,7 @@ fn register_array_filter(
   resident : @engine.ArrayFilterDescriptor,
 ) -> Unit {
   guard registry.register_array_filter(resident) else {
-    abort("duplicate builtin array filter resident name: " + resident.name)
+    abort("duplicate builtin array filter resident name: " + resident.name())
   }
 }
 

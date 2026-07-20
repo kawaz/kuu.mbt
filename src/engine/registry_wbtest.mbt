@@ -206,9 +206,9 @@ test "Registry registers and looks up each extension category in an independent 
   }
   match registry.lookup_filter("synthetic/filter") {
     Some(resident) => {
-      assert_eq(resident.signature, Transform)
+      assert_eq(resident.signature(), Transform)
       assert_eq(
-        (resident.run)([], fn_ctx_filter(Scalar(String("value")))),
+        resident.invoke([], fn_ctx_filter(Scalar(String("value")))),
         Ok(String("x:value")),
       )
     }
@@ -216,9 +216,9 @@ test "Registry registers and looks up each extension category in an independent 
   }
   match registry.lookup_array_filter("synthetic/array-filter") {
     Some(resident) => {
-      assert_eq(resident.signature, Validate)
+      assert_eq(resident.signature(), Validate)
       assert_eq(
-        (resident.run)([], fn_ctx_filter(Array([]))),
+        resident.invoke([], fn_ctx_filter(Array([]))),
         Err({ reason: "empty", message: "array is empty" }),
       )
     }
@@ -299,7 +299,7 @@ test "Registry rejects duplicate identity without replacing the first resident" 
   match registry.lookup_filter("synthetic/filter") {
     Some(resident) =>
       assert_eq(
-        (resident.run)([], fn_ctx_filter(Scalar(String("value")))),
+        resident.invoke([], fn_ctx_filter(Scalar(String("value")))),
         Ok(String("first:value")),
       )
     None => fail("first filter resident must remain registered")

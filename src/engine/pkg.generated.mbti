@@ -120,13 +120,14 @@ pub(all) struct AmbiguousData {
   help_entry : String?
 } derive(Eq, @debug.Debug)
 
-pub(all) struct ArrayFilterDescriptor {
-  name : String
-  signature : FilterSignature
-  reasons : Array[String]
-  observes : Array[String]
-  run : (Array[String], FnCtx) -> Result[Array[Value], FnReason]
+pub struct ArrayFilterDescriptor {
+  // private fields
 }
+pub fn ArrayFilterDescriptor::invoke(Self, Array[String], FnCtx) -> Result[Array[Value], FnReason]
+pub fn ArrayFilterDescriptor::name(Self) -> String
+pub fn ArrayFilterDescriptor::observes(Self) -> Array[String]
+pub fn ArrayFilterDescriptor::reasons(Self) -> Array[String]
+pub fn ArrayFilterDescriptor::signature(Self) -> FilterSignature
 
 pub(all) enum AttachMode {
   Require
@@ -462,13 +463,14 @@ pub struct FilterCtx {
 }
 pub fn FilterCtx::input(Self) -> FilterInput
 
-pub(all) struct FilterDescriptor {
-  name : String
-  signature : FilterSignature
-  reasons : Array[String]
-  observes : Array[String]
-  run : (Array[String], FnCtx) -> Result[Value, FnReason]
+pub struct FilterDescriptor {
+  // private fields
 }
+pub fn FilterDescriptor::invoke(Self, Array[String], FnCtx) -> Result[Value, FnReason]
+pub fn FilterDescriptor::name(Self) -> String
+pub fn FilterDescriptor::observes(Self) -> Array[String]
+pub fn FilterDescriptor::reasons(Self) -> Array[String]
+pub fn FilterDescriptor::signature(Self) -> FilterSignature
 
 pub(all) enum FilterInput {
   Scalar(Value)
