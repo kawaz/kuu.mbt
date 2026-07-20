@@ -89,6 +89,8 @@ fn empty_help_meta() -> @engine.HelpMetaDecl {
     help_after: None,
     help_on_failure: None,
     is_help_preset: false,
+    type_name: None,
+    preset_kind: None,
   }
 }
 
@@ -119,6 +121,11 @@ fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDecl {
     // 実際の 5 preset 判定は dec_option の type match 後に上書きされる
     // (`help_meta = { ..help_meta, is_help_preset: true }`)。ここでは既定 false。
     is_help_preset: false,
+    // type_name / preset_kind は dec_option / dec_positional の tystr 解決後に
+    // `{ ..help_meta, type_name: ..., preset_kind: ... }` で上書きされる (help_meta_from_object
+    // 段階では type は未読)。ここでは None を植える。
+    type_name: None,
+    preset_kind: None,
   }
 }
 
@@ -1934,7 +1941,37 @@ fn dec_option(
     | "help_tree" => true
     _ => false
   }
-  let help_meta = { ..owned.help_meta, is_help_preset, }
+  // DR-113 §4.1 value_structure `single{type}` の素材: value-less な preset (flag/count/help*/
+  // none/dd/config_file/tty/bool の内部発火) は None、value-bearing な type だけ canonical
+  // base 名 (string/number/int/bool) を保持。user 定義 shadow は base 名を代入。
+  let type_name_field : String? = match tystr {
+    "string" | "number" | "int" | "bool" => Some(tystr)
+    _ =>
+      match shadows.get(tystr) {
+        Some(sh) => {
+          // shadow → base TypeExt.name() は canonical 名 (string/number/int/bool 等)。
+          let base_name = sh.base.name()
+          match base_name {
+            "string" | "number" | "int" | "bool" => Some(base_name)
+            _ => None
+          }
+        }
+        None => None
+      }
+  }
+  // DR-113 §2 help_category の or[bool,string] 展開シグナル。他 4 preset は None
+  // (or 素材が要らない = 単純 value-less)。
+  let preset_kind_field : String? = if tystr == "help_category" {
+    Some("help_category")
+  } else {
+    None
+  }
+  let help_meta = {
+    ..owned.help_meta,
+    is_help_preset,
+    type_name: type_name_field,
+    preset_kind: preset_kind_field,
+  }
   DOpt({
     ..opt(
       name,
@@ -2173,6 +2210,28 @@ fn dec_positional(
   let required_group = owned.required_group
   // DR-060 §4 / DR-104 §2(d): dec_option 側と対称の decode — completer 名の verbatim carry。
   let completer = jf_str(o, "completer")
+  // DR-113 §4.1 value_structure `single{type}` 素材 (dec_option と同型)。
+  let type_name_field : String? = match jf_str(o, "type") {
+    Some("string") | Some("number") | Some("int") | Some("bool") =>
+      Some(jf_str(o, "type").unwrap())
+    Some(t) =>
+      match shadows.get(t) {
+        Some(sh) => {
+          let base_name = sh.base.name()
+          match base_name {
+            "string" | "number" | "int" | "bool" => Some(base_name)
+            _ => None
+          }
+        }
+        None => None
+      }
+    None => None
+  }
+  let help_meta_with_type = {
+    ..owned.help_meta,
+    type_name: type_name_field,
+    preset_kind: None,
+  }
   pos(
     name,
     ty,
@@ -2196,7 +2255,6 @@ fn dec_positional(
     piece_filters~,
     value_filters~,
     env~,
-    help_meta=owned.help_meta,
     is_tty=is_tty_from_shadow,
     tty_stream=tty_stream_from_shadow,
     tty_cygwin=tty_cygwin_from_shadow,
@@ -2208,6 +2266,7 @@ fn dec_positional(
     exclusive~,
     required_group~,
     completer~,
+    help_meta=help_meta_with_type,
   )
 }
 

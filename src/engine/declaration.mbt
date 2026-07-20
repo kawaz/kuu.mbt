@@ -30,6 +30,21 @@ pub(all) struct HelpMetaDecl {
   // 名が消えるため、is_help_preset で bool 化して carry する方が installer 側の分岐を単純化
   // できる。help group declaration entry (name == "") や positional は常に false。
   is_help_preset : Bool
+  // DR-113 §4/§4.1 の value_structure `single{type}` フィールド素材。wire_decode 側で
+  // `type: "<name>"` の元文字列を canonical (string/number/int/bool) に正規化して保持する。
+  // help/help_all_category/help_tree/help_show_hidden など value-less な preset や flag/count/
+  // none/dd/config_file/tty は None。help_installer が help model 射影で value_structure を
+  // 組み立てるとき、None → value_structure 出力なし、Some(t) → `{"single":{"type":t}}` 系素材。
+  // user 定義の type shadow 経由の場合は shadow 解決後の base 名 (string/number/int/bool) を
+  // 保持する — type_ref (共有型参照) の集約射影は M5+ で別途 (types map と併走で解決)。
+  type_name : String?
+  // DR-113 §2 の 5 直交 help preset のうち、value_structure 射影で特殊形が要るものだけを
+  // 明示的に carry する。現状は `help_category` の or[bool,string] 展開のみが該当
+  // (`Some("help_category")`)、他 4 種 (help / help_all_category / help_show_hidden / help_tree)
+  // と非 help preset は None。is_help_preset (bool) と併存: is_help_preset は definition-time
+  // 検査 (help_on_failure の invalid-range 判定) が読む、preset_kind は help model 射影が
+  // 読む — 別の関心事の carry。
+  preset_kind : String?
 } derive(Eq, Debug)
 
 ///|

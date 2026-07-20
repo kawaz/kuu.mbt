@@ -197,6 +197,8 @@ fn resident_empty_help_meta() -> @engine.HelpMetaDecl {
     help_after: None,
     help_on_failure: None,
     is_help_preset: false,
+    type_name: None,
+    preset_kind: None,
   }
 }
 
@@ -978,6 +980,8 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn decode(
       help_after: resident_string(object, "help_after"),
       help_on_failure,
       is_help_preset: false,
+      type_name: None,
+      preset_kind: None,
     }),
   })
 }
