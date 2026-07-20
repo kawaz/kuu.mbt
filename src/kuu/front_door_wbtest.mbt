@@ -11,7 +11,7 @@
 //    inherit 席に流下する。front_door.resolve が返す binds に子 scope 側の解決済み値 (source=
 //    @engine.Inherit) が現れる
 // 3. deprecated warnings (DR-058 §2): deprecated:true の alias 入口を発火した @engine.Success outcome
-//    から `@engine.warnings_structured` が `{element, kind}` の構造化 warning を返す。sentinel
+//    から `@engine.warnings_of` が `{element, kind}` の構造化 warning を返す。sentinel
 //    `@depr:...` は effects (非 sentinel binds) に混じらない (`is_sentinel` で除外可能)
 //
 // 期待値の根拠は kawaz/kuu の fixtures (`export-key/collision.json` /
@@ -172,12 +172,12 @@ test "front_door.resolve: inheritable が親 write-target → 子 scope の inhe
 
 ///|
 /// 保証 (MDR-005 §1 / DR-058 §2): deprecated:true が付いた alias 入口の発火は、値の束縛 (canonical
-/// セル `port` = 80) と並行して、@engine.Success outcome から `@engine.warnings_structured` が
+/// セル `port` = 80) と並行して、@engine.Success outcome から `@engine.warnings_of` が
 /// `{element: "port", kind: "deprecated"}` を返す。同時に、`@depr:port` sentinel binding は
 /// `is_sentinel` で除外可能 = kuu-cli 相当の呼び出し側が effects (非 sentinel binds のリスト) を
 /// 組み立てるときに漏れない (kuu-cli PoC codex レビュー M-1 = warnings の構造化 + sentinel を
 /// effects に漏らさないためのプロダクション pub 面を要件化)。
-test "front_door.parse + @engine.warnings_structured: deprecated alias 発火は構造化 warning + effects から @depr sentinel 除外 (DR-058 §2, MDR-005 §1)" {
+test "front_door.parse + @engine.warnings_of: deprecated alias 発火は構造化 warning + effects から @depr sentinel 除外 (DR-058 §2, MDR-005 §1)" {
   let src =
     #|{"options": [
     #|  {"name": "port", "type": "number", "short": "p"},
@@ -206,9 +206,9 @@ test "front_door.parse + @engine.warnings_structured: deprecated alias 発火は
       }
       assert_eq(port_val, Some(@engine.Number(80.0)))
       // 構造化 warnings が `{element:"port", kind:"deprecated"}` の 1 件を返す。
-      let ws = @engine.warnings_structured(o)
+      let ws = @engine.warnings_of(o)
       assert_eq(ws, [{ element: "port", kind: "deprecated" }])
-      // sentinel `@depr:port` は binds に含まれる (@engine.warnings_of/@engine.warnings_structured の素材) が、
+      // sentinel `@depr:port` は binds に含まれる (@engine.warnings_of/@engine.warnings_of の素材) が、
       // `is_sentinel` で除外可能 = 呼び出し側が effects を組み立てるときに漏れない。
       let mut had_depr_sentinel = false
       let mut non_sentinel_count = 0

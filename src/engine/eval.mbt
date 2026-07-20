@@ -153,26 +153,6 @@ fn is_depr_key(k : String) -> Bool {
 }
 
 ///|
-/// The deprecated canonical element names recorded on a Success outcome
-/// (spec DR-058 warnings), deduped in first-seen order.
-pub fn warnings_of(o : Outcome) -> Array[String] {
-  let out : Array[String] = []
-  match o {
-    Success(binds) =>
-      for b in binds {
-        if is_depr_key(b.key) {
-          let name = b.key[6:].to_owned()
-          if !str_mem(out, name) {
-            out.push(name)
-          }
-        }
-      }
-    _ => ()
-  }
-  out
-}
-
-///|
 /// One `warnings[]` entry (spec CONFORMANCE §2 warnings 面: kuu-cli の JSON wire は
 /// `{"element": <name>, "kind": <kind>}` のオブジェクト配列で返す)。`kind` は現状 `"deprecated"`
 /// のみ (spec DR-058)、将来の warning 語彙 (`lint` 等の DR-021 系譜、DR-047 §7 診断モード)
@@ -186,9 +166,8 @@ pub(all) struct Warning {
 
 ///|
 /// 構造化した warnings (spec CONFORMANCE §2 warnings 面素材)。現状 `@depr:` sentinel から
-/// `kind: "deprecated"` を組み立てて返す (spec DR-058) — `warnings_of` の同機能で kind 情報を
-/// 保持する版。element の重複は排除 (first-seen 順、`warnings_of` と同じ dedup 規約)。
-pub fn warnings_structured(o : Outcome) -> Array[Warning] {
+/// `kind: "deprecated"` を組み立てて返す (spec DR-058)。element の重複は排除 (first-seen 順)。
+pub fn warnings_of(o : Outcome) -> Array[Warning] {
   let out : Array[Warning] = []
   match o {
     Success(binds) =>

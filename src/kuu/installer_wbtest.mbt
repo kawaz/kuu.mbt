@@ -308,7 +308,7 @@ test "long installer: a deprecated value option's main-entry satellite carries a
   match o {
     @engine.Success(bs) => {
       assert_eq(resolved_values(bs, "port"), [@engine.String("8080")])
-      assert_eq(@engine.warnings_of(o), ["port"])
+      assert_eq(@engine.warnings_of(o).map(w => w.element), ["port"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
   }
@@ -348,7 +348,7 @@ test "long installer: a deprecated flag's @engine.Set-variant satellite carries 
   match o {
     @engine.Success(bs) => {
       assert_eq(resolved_values(bs, "verbose"), [@engine.Bool(true)])
-      assert_eq(@engine.warnings_of(o), ["verbose"])
+      assert_eq(@engine.warnings_of(o).map(w => w.element), ["verbose"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
   }
@@ -392,7 +392,7 @@ test "long installer: a deprecated Enum (values-constrained) main entry carries 
   match o {
     @engine.Success(bs) => {
       assert_eq(resolved_values(bs, "color"), [@engine.String("red")])
-      assert_eq(@engine.warnings_of(o), ["color"])
+      assert_eq(@engine.warnings_of(o).map(w => w.element), ["color"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
   }
@@ -444,7 +444,7 @@ test "long installer: a deprecated Or (structural or) main entry carries a depre
   match o {
     @engine.Success(bs) => {
       assert_eq(resolved_values(bs, "num"), [@engine.Number(5.0)])
-      assert_eq(@engine.warnings_of(o), ["level"])
+      assert_eq(@engine.warnings_of(o).map(w => w.element), ["level"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
   }

@@ -51,23 +51,35 @@ pub fn help_query_capability() -> &@engine.CapabilityExt {
 }
 
 ///|
+/// The three phases a dispatched help query can land in, each a distinct caller posture:
+/// `Model` = render it; `QueryError` = a legal definition rejected the caller's input (absent
+/// path / absent category, DR-113 §1.1); `Unavailable` = the "help_query" capability is not in
+/// the registry. Unavailable is abnormal (kuu's canonical registry always contains help_query) —
+/// it surfaces a registration regression early and is deliberately NOT a QueryError case
+/// (query-error is caller-input failure; missing runtime configuration is a different phase).
+pub(all) enum HelpQueryOutcome {
+  Model(HelpModel)
+  QueryError(HelpQueryError)
+  Unavailable
+} derive(Eq, Debug)
+
+///|
 /// DR-113 §1/§9 capability dispatch: registry で "help_query" capability の登録を確認し、
-/// 登録済みなら help singleton の invoke ABI を呼ぶ。未登録なら None を返す (fixture runner や
-/// アプリ側が「capability が登録されていないので出力できない」を検知できる)。
-///
-/// 未登録は abnormal (kuu の canonical registry は必ず help_query を含む) — 登録忘れの実装ミス
-/// を早期に surface するのが目的で、query-error の一部として扱わない (query-error は「合法な
-/// definition に対する呼び出し側入力の失敗」であり、runtime configuration の欠落は別位相)。
+/// 登録済みなら help singleton の invoke ABI を呼ぶ。未登録なら Unavailable を返す。
 pub fn dispatch_help_query(
   registry : @engine.Registry,
   ast : AtomicAST,
   path? : Array[String] = [],
   depth? : HelpDepth = Scope,
   category_mode? : HelpCategoryMode = Default,
-) -> Result[HelpModel, HelpQueryError]? {
+) -> HelpQueryOutcome {
   match registry.lookup_capability("help_query") {
-    None => None
-    Some(_) => Some(help(ast, path~, depth~, category_mode~))
+    None => Unavailable
+    Some(_) =>
+      match help(ast, path~, depth~, category_mode~) {
+        Ok(model) => Model(model)
+        Err(err) => QueryError(err)
+      }
   }
 }
 

@@ -96,9 +96,7 @@ pub fn value_str(Value) -> String
 
 pub fn value_to_configval(Value) -> ConfigVal
 
-pub fn warnings_of(Outcome) -> Array[String]
-
-pub fn warnings_structured(Outcome) -> Array[Warning]
+pub fn warnings_of(Outcome) -> Array[Warning]
 
 // Errors
 

@@ -678,7 +678,7 @@ pub fn output_of_interpretation(
 /// 呼べるよう Outcome を受け、構造化 warning の組み立ては engine に委譲する。engine 直呼びを
 /// この関数で吸収し、warning 抽出実装の帰属変更 (TRI-Q9) が kuu package 内で閉じる境界を作る。
 pub fn warnings(outcome : @engine.Outcome) -> Array[@engine.Warning] {
-  @engine.warnings_structured(outcome)
+  @engine.warnings_of(outcome)
 }
 
 ///|

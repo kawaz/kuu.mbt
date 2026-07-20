@@ -11,7 +11,7 @@ pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[
 
 pub fn config_from_json(Json) -> @engine.ConfigVal
 
-pub fn dispatch_help_query(@engine.Registry, AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> Result[HelpModel, HelpQueryError]?
+pub fn dispatch_help_query(@engine.Registry, AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> HelpQueryOutcome
 
 pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> Result[HelpModel, HelpQueryError]
 
@@ -137,6 +137,12 @@ pub impl @engine.CapabilityExt for HelpQueryCapability
 pub(all) enum HelpQueryError {
   AbsentPath
   AbsentCategory
+} derive(Eq, @debug.Debug)
+
+pub(all) enum HelpQueryOutcome {
+  Model(HelpModel)
+  QueryError(HelpQueryError)
+  Unavailable
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpTypeEntry {

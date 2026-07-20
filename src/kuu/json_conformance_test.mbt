@@ -439,7 +439,7 @@ fn proj_errors(
 
 ///|
 fn proj_warnings(o : @engine.Outcome) -> String {
-  let ws = @engine.warnings_of(o)
+  let ws = @engine.warnings_of(o).map(w => w.element)
   sort_items(ws)
   join_comma(ws)
 }
@@ -1980,9 +1980,10 @@ fn run_help(fixture : DHelpFixture, case : DHelpCase) -> String {
       depth=case.depth,
       category_mode=case.category_mode,
     ) {
-    None => return "help_query capability not registered in canonical registry"
-    Some(Ok(model)) => help_model_json(model)
-    Some(Err(err)) => help_query_error_json(err)
+    @kuu.Unavailable =>
+      return "help_query capability not registered in canonical registry"
+    @kuu.Model(model) => help_model_json(model)
+    @kuu.QueryError(err) => help_query_error_json(err)
   }
   if actual == case.expect {
     "PASS"
