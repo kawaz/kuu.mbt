@@ -524,7 +524,7 @@ fn parse_int_value(
       } else {
         // fractional hex float: mode に従う
         match mode {
-          @engine.RError => Err(type_parse_not_an_integer(s))
+          @engine.Error => Err(type_parse_not_an_integer(s))
           _ => {
             // 単純化: binary64 上で is_integer 判定 + 丸め。DR-075 §5 の厳密判定は 10 進 tie のための
             // 規定 (findings 2026-07-06 の false-tie 域) で、hex float は base-2 aligned なので binary64
@@ -571,11 +571,11 @@ fn round_double_by_mode(d : Double, mode : @engine.RoundMode) -> Double {
   let is_tie = frac == 0.5
   let gt_half = frac > 0.5
   match mode {
-    @engine.RFloor => floor_d
-    @engine.RCeil => ceil_d
-    @engine.RTrunc => if d >= 0.0 { floor_d } else { ceil_d }
-    @engine.RAway => if d >= 0.0 { ceil_d } else { floor_d }
-    @engine.RHalfFloor =>
+    @engine.Floor => floor_d
+    @engine.Ceil => ceil_d
+    @engine.Trunc => if d >= 0.0 { floor_d } else { ceil_d }
+    @engine.Away => if d >= 0.0 { ceil_d } else { floor_d }
+    @engine.HalfFloor =>
       if is_tie {
         floor_d
       } else if gt_half {
@@ -583,7 +583,7 @@ fn round_double_by_mode(d : Double, mode : @engine.RoundMode) -> Double {
       } else {
         floor_d
       }
-    @engine.RHalfCeil =>
+    @engine.HalfCeil =>
       if is_tie {
         ceil_d
       } else if gt_half {
@@ -591,7 +591,7 @@ fn round_double_by_mode(d : Double, mode : @engine.RoundMode) -> Double {
       } else {
         floor_d
       }
-    @engine.RHalfTrunc =>
+    @engine.HalfTrunc =>
       if is_tie {
         if d >= 0.0 {
           floor_d
@@ -603,7 +603,7 @@ fn round_double_by_mode(d : Double, mode : @engine.RoundMode) -> Double {
       } else {
         floor_d
       }
-    @engine.RHalfAway =>
+    @engine.HalfAway =>
       if is_tie {
         if d >= 0.0 {
           ceil_d
@@ -615,7 +615,7 @@ fn round_double_by_mode(d : Double, mode : @engine.RoundMode) -> Double {
       } else {
         floor_d
       }
-    @engine.RHalfEven =>
+    @engine.HalfEven =>
       if is_tie {
         let fi = floor_d.to_int64()
         if fi % 2L == 0L {
@@ -628,7 +628,7 @@ fn round_double_by_mode(d : Double, mode : @engine.RoundMode) -> Double {
       } else {
         floor_d
       }
-    @engine.RError => d // caller の是非判定で拾われる
+    @engine.Error => d // caller の是非判定で拾われる
   }
 }
 
@@ -915,11 +915,11 @@ fn round_magnitude(
   let is_tie = d0 == 5 && !rest_nonzero
   let up = m + 1L
   match mode {
-    @engine.RFloor => if neg { up } else { m } // →−∞
-    @engine.RCeil => if neg { m } else { up } // →+∞
-    @engine.RTrunc => m // →0 (drop fraction)
-    @engine.RAway => up // →0 の反対 (abs 切り上げ)
-    @engine.RHalfFloor =>
+    @engine.Floor => if neg { up } else { m } // →−∞
+    @engine.Ceil => if neg { m } else { up } // →+∞
+    @engine.Trunc => m // →0 (drop fraction)
+    @engine.Away => up // →0 の反対 (abs 切り上げ)
+    @engine.HalfFloor =>
       if is_tie {
         if neg {
           up
@@ -931,7 +931,7 @@ fn round_magnitude(
       } else {
         m
       }
-    @engine.RHalfCeil =>
+    @engine.HalfCeil =>
       if is_tie {
         if neg {
           m
@@ -943,9 +943,9 @@ fn round_magnitude(
       } else {
         m
       }
-    @engine.RHalfTrunc => if is_tie { m } else if gt_half { up } else { m }
-    @engine.RHalfAway => if is_tie { up } else if gt_half { up } else { m }
-    @engine.RHalfEven =>
+    @engine.HalfTrunc => if is_tie { m } else if gt_half { up } else { m }
+    @engine.HalfAway => if is_tie { up } else if gt_half { up } else { m }
+    @engine.HalfEven =>
       if is_tie {
         if m % 2L == 0L {
           m
@@ -957,7 +957,7 @@ fn round_magnitude(
       } else {
         m
       }
-    @engine.RError => m // caller handles @engine.RError before reaching here
+    @engine.Error => m // caller handles @engine.Error before reaching here
   }
 }
 
@@ -968,16 +968,16 @@ fn round_magnitude(
 /// 責務). The 10 tokens are byte-identical to DR-075's naming (no HALF_UP/HALF_DOWN aliases).
 pub fn round_mode_of(s : String) -> @engine.RoundMode? {
   match s {
-    "error" => Some(@engine.RError)
-    "floor" => Some(@engine.RFloor)
-    "ceil" => Some(@engine.RCeil)
-    "trunc" => Some(@engine.RTrunc)
-    "away" => Some(@engine.RAway)
-    "half_floor" => Some(@engine.RHalfFloor)
-    "half_ceil" => Some(@engine.RHalfCeil)
-    "half_trunc" => Some(@engine.RHalfTrunc)
-    "half_away" => Some(@engine.RHalfAway)
-    "half_even" => Some(@engine.RHalfEven)
+    "error" => Some(@engine.Error)
+    "floor" => Some(@engine.Floor)
+    "ceil" => Some(@engine.Ceil)
+    "trunc" => Some(@engine.Trunc)
+    "away" => Some(@engine.Away)
+    "half_floor" => Some(@engine.HalfFloor)
+    "half_ceil" => Some(@engine.HalfCeil)
+    "half_trunc" => Some(@engine.HalfTrunc)
+    "half_away" => Some(@engine.HalfAway)
+    "half_even" => Some(@engine.HalfEven)
     _ => None
   }
 }
@@ -985,7 +985,7 @@ pub fn round_mode_of(s : String) -> @engine.RoundMode? {
 ///|
 /// Parse a String token as an `int` element per DR-075: 値空間判定. Parse the token as a canonical
 /// number, then judge its VALUE. An integer value (`"3.0"`→3 / `"1e3"`→1000 / `"1_000"`→1000) is
-/// accepted directly under every mode. A truly-fractional value follows `mode`: `@engine.RError` (canonical
+/// accepted directly under every mode. A truly-fractional value follows `mode`: `@engine.Error` (canonical
 /// default) → `not_an_integer`; any rounding mode → the rounded Int64. A non-number token → `not_a_number`.
 /// The整数性 and tie decisions are lexical (binary64-非経由, DR-075 §5).
 fn parse_decimal_int_value(
@@ -1011,7 +1011,7 @@ fn parse_decimal_int_value(
         }
       } else {
         match mode {
-          @engine.RError => Err(type_parse_not_an_integer(s))
+          @engine.Error => Err(type_parse_not_an_integer(s))
           _ =>
             // round_magnitude needs an UNSIGNED magnitude (it applies +1 / the sign itself, DR-075
             // §2), so the pre-rounding range check always uses the POSITIVE boundary regardless of

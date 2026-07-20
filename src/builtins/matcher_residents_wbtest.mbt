@@ -162,7 +162,7 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
     @engine.Held(pe, _) => {
       assert_eq(pe.element, "enabled")
       assert_eq(pe.args_pos, 0)
-      assert_eq(pe.kind, @engine.KParse)
+      assert_eq(pe.kind, @engine.Parse)
       assert_eq(pe.reason, "not_a_bool")
     }
     _ => fail("expected @engine.Held")
@@ -265,7 +265,7 @@ test "short cluster: flag run and in-token numeric value" {
         None,
         depr=false,
         merge=false,
-        short_attached_value=@engine.AtAllow,
+        short_attached_value=@engine.Allow,
         is_alias=false,
       ),
       short_entry(
@@ -276,7 +276,7 @@ test "short cluster: flag run and in-token numeric value" {
         None,
         depr=false,
         merge=false,
-        short_attached_value=@engine.AtAllow,
+        short_attached_value=@engine.Allow,
         is_alias=false,
       ),
       short_entry(
@@ -287,7 +287,7 @@ test "short cluster: flag run and in-token numeric value" {
         None,
         depr=false,
         merge=false,
-        short_attached_value=@engine.AtAllow,
+        short_attached_value=@engine.Allow,
         is_alias=false,
       ),
     ],
@@ -328,7 +328,7 @@ test "short cluster: space-form value takes the next token" {
         None,
         depr=false,
         merge=false,
-        short_attached_value=@engine.AtAllow,
+        short_attached_value=@engine.Allow,
         is_alias=false,
       ),
     ],
@@ -359,7 +359,7 @@ test "short cluster: deprecated entry rides a @depr marker" {
         None,
         depr=true,
         merge=false,
-        short_attached_value=@engine.AtAllow,
+        short_attached_value=@engine.Allow,
         is_alias=false,
       ),
     ],
@@ -389,7 +389,7 @@ fn combine_entries() -> Array[ShortEntry] {
       None,
       depr=false,
       merge=false,
-      short_attached_value=@engine.AtAllow,
+      short_attached_value=@engine.Allow,
       is_alias=false,
     ),
     short_entry(
@@ -400,7 +400,7 @@ fn combine_entries() -> Array[ShortEntry] {
       None,
       depr=false,
       merge=false,
-      short_attached_value=@engine.AtAllow,
+      short_attached_value=@engine.Allow,
       is_alias=false,
     ),
     short_entry(
@@ -411,7 +411,7 @@ fn combine_entries() -> Array[ShortEntry] {
       None,
       depr=false,
       merge=false,
-      short_attached_value=@engine.AtAllow,
+      short_attached_value=@engine.Allow,
       is_alias=false,
     ),
   ]

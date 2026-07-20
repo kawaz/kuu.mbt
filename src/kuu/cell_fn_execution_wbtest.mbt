@@ -59,9 +59,9 @@ test "default_fn static failures classify unknown arity and sentinel output" {
   match parse_definition(json) {
     Err(Rejected(errors)) => {
       let kinds = def_error_kinds(errors)
-      assert_eq(kinds.get("unknown"), Some(@engine.DUnknownVocab))
-      assert_eq(kinds.get("arity"), Some(@engine.DInvalidArgument))
-      assert_eq(kinds.get("sentinel"), Some(@engine.DInvalidRange))
+      assert_eq(kinds.get("unknown"), Some(@engine.UnknownVocab))
+      assert_eq(kinds.get("arity"), Some(@engine.InvalidArgument))
+      assert_eq(kinds.get("sentinel"), Some(@engine.InvalidRange))
     }
     _ => fail("invalid default_fn declarations must be definition errors")
   }
@@ -75,8 +75,8 @@ test "default_fn observes cycle reports every participant as circular-ref" {
   match parse_definition(json) {
     Err(Rejected(errors)) => {
       let kinds = def_error_kinds(errors)
-      assert_eq(kinds.get("a"), Some(@engine.DCircularRef))
-      assert_eq(kinds.get("b"), Some(@engine.DCircularRef))
+      assert_eq(kinds.get("a"), Some(@engine.CircularRef))
+      assert_eq(kinds.get("b"), Some(@engine.CircularRef))
     }
     _ => fail("cyclic default_fn dependencies must be rejected")
   }

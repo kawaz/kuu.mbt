@@ -703,7 +703,7 @@ fn pe_missing(element : String, pos : Int) -> ParseError {
   {
     element,
     args_pos: pos,
-    kind: KParse,
+    kind: Parse,
     reason: "missing_operand",
     message: "missing operand for \{element}",
     path: [],
@@ -736,7 +736,7 @@ fn req_arg_eval(
         {
           element: name,
           args_pos: pos,
-          kind: KConstraint,
+          kind: Constraint,
           reason: "required_violated",
           message: "required \{name} is missing",
           path: [],
@@ -799,7 +799,7 @@ pub fn split_on(s : String, sep : String) -> Array[String] {
 /// type is independent of whether it came via separator, `elem_head`'s pre-段2 "always String"
 /// shortcut was the bug this closes). A piece_filters reject OR a type-parse failure on ANY piece
 /// fails the WHOLE binding (`Err` short-circuits) — same all-or-nothing contract a single-piece
-/// value primitive has; the two failure kinds stay distinct (`KFilter` vs `KParse`, mirrored from
+/// value primitive has; the two failure kinds stay distinct (`Filter` vs `Parse`, mirrored from
 /// the scalar value-primitive arms' own filter/type-parse split).
 /// `pos` (issue 2026-07-09-accum-entity-filters-wiring): every split piece is attributed to the
 /// SAME args token position — a piece is not itself a token, so there is no finer-grained position
@@ -809,7 +809,7 @@ pub fn split_on(s : String, sep : String) -> Array[String] {
 /// `merge` (DR-080 波及節): whether `name`'s element declared `accumulator: "merge"` — the marker
 /// vocabulary (`classify_merge_piece`) only applies to a merge-declared element's pieces (DR-080
 /// §1 "マーカー語彙は accumulator=merge を宣言した要素の CLI 発火 piece 列にのみ適用"). When false,
-/// every piece is treated as a plain add (`PkAdd(part)`, no classification) — degenerates to the
+/// every piece is treated as a plain add (`Add(part)`, no classification) — degenerates to the
 /// pre-DR-080 behavior exactly (no piece is ever `-`/`@`-prefixed specially for append etc).
 /// `sep` is `String?`, not `String` (codex Medium 追従): `None` = no declared separator, DR-034
 /// §6.3's degenerate form — `tok` itself is the ONE piece (`[tok]`), never split. A non-merge
@@ -1757,7 +1757,7 @@ fn scope_consume(
               {
                 element: name,
                 args_pos: pos,
-                kind: KConstraint,
+                kind: Constraint,
                 reason: "required_violated",
                 message: "required \{name} is missing",
                 path: [],
@@ -2098,7 +2098,7 @@ fn consume_head(
               {
                 element: name,
                 args_pos: pos,
-                kind: KConstraint,
+                kind: Constraint,
                 reason: "required_violated",
                 message: "required \{name} is missing",
                 path: [],
@@ -2481,7 +2481,7 @@ pub fn constraint_err(
   // the continuation chain — NOT `sc.path` (ScopedCons's path is the
   // scope_path_eq lookup key, reusing it here would double the prefix once
   // the same Held crosses those same boundaries on its way out).
-  { element, args_pos: pos, kind: KConstraint, reason, message, path: [] }
+  { element, args_pos: pos, kind: Constraint, reason, message, path: [] }
 }
 
 ///|
@@ -2613,7 +2613,7 @@ fn eval_constraints(
   let path = sc.path
   for c in sc.constraints {
     match c {
-      CRequires(elem, targets) =>
+      Requires(elem, targets) =>
         if is_committed(bindings, path, elem) {
           for t in targets {
             if !value_declared(t, bindings, path, sc.entities) {
@@ -2628,7 +2628,7 @@ fn eval_constraints(
             }
           }
         }
-      CRequiresIf(entity, branch_id, v, targets) => {
+      RequiresIf(entity, branch_id, v, targets) => {
         // DR-055 §1 + DR-052 §値枝 id 直交: committed 判定 / 値照合は親 entity (format) を対象に、
         // 違反時の error.element は branch_id (fmt_json = 制約の宣言元 = 値枝の id) を emit する。
         // branch_id は installer で id 未指定時に entity 名にフォールバックされているので、id なしの
@@ -2653,7 +2653,7 @@ fn eval_constraints(
           }
         }
       }
-      CConflicts(elem, targets) =>
+      Conflicts(elem, targets) =>
         if is_committed(bindings, path, elem) {
           for t in targets {
             if is_committed(bindings, path, t) {
@@ -2668,7 +2668,7 @@ fn eval_constraints(
             }
           }
         }
-      CExclusive(group, members) => {
+      Exclusive(group, members) => {
         let mut count = 0
         for m in members {
           if is_committed(bindings, path, m) {
@@ -2686,10 +2686,10 @@ fn eval_constraints(
           )
         }
       }
-      CRequired(display, candidates) => {
+      Required(display, candidates) => {
         // DR-093 §1/§2: KTop の粗判定 (完全経路の成立条件、DR-047 §2) — `candidate_declared`
         // (`value_declared` の RequiredCandidate 対応版、codex M-2 修正) をそのまま再利用する
-        // (CRequires 目的語と同じゲート)。値空間なし (none) の要素は default_values/env_key/
+        // (Requires 目的語と同じゲート)。値空間なし (none) の要素は default_values/env_key/
         // config_seat/inherit_ をそもそも持てない (DR-089 §7) ため、`value_declared` は committed
         // のみで判定される形に自動的に縮退する — 型分岐を新設する必要はない。最終判定 (bool 特例
         // なしの型委譲) は resolve.mbt の後段フィルタが行う。
@@ -2697,7 +2697,7 @@ fn eval_constraints(
         // issue 2026-07-13-structural-or-type-branch-required-missing /
         // codex-review-dr102-dr103-postland (M-2): `candidates` は structural or (直書き BOr /
         // ref 経由) の場合、`display` 自身ではなく各枝の leaf name の配列 (node.mbt の
-        // `RequiredCandidate`/`CRequired` doc comment 参照)。ref 経由の candidate は
+        // `RequiredCandidate`/`Required` doc comment 参照)。ref 経由の candidate は
         // `wrapper: Some(宣言元要素名)` を持ち、`candidate_declared` が宣言元要素自身の Scoped
         // 部分木内を探す。いずれか 1 つでも充足していれば OK — 「どの枝であれ発火して値が確定して
         // いること」が or 親の required 充足 (DR-093)。通常要素は `candidates ==
@@ -2719,8 +2719,8 @@ fn eval_constraints(
           )
         }
       }
-      CRequiredGroup(group, members) => {
-        // DR-103 §1: KTop の粗判定 — `CRequired` と全く同じゲート (`candidate_declared`、member の
+      RequiredGroup(group, members) => {
+        // DR-103 §1: KTop の粗判定 — `Required` と全く同じゲート (`candidate_declared`、member の
         // いずれか 1 つでも「値が来る可能性がある」なら OK)。最終判定 (型委譲の実値、bool 特例
         // なし) は resolve.mbt の後段フィルタが行う。
         let mut any_ok = false
@@ -3070,7 +3070,7 @@ pub fn parse_tree(
       push_error(errors, {
         element: "",
         args_pos: max_partial,
-        kind: KParse,
+        kind: Parse,
         reason: "unexpected_token",
         message: "unexpected token",
         path: [], // NON-scope root: no ancestor scope to record

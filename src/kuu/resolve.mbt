@@ -9,7 +9,7 @@
 // which stays installer.mbt's job). MDR-003: `e.inherit` → `e.inherit_` (node.mbt already applies
 // the trailing-underscore convention).
 //
-// `@engine.value_str` used to live in eval.mbt for the CRequiresIf constraint comparison — this is its
+// `@engine.value_str` used to live in eval.mbt for the RequiresIf constraint comparison — this is its
 // canonical home per the MDR-002 §3 module table; eval.mbt now calls this file's copy (single
 // package, no import needed across files).
 //
@@ -228,10 +228,10 @@ fn seg_num(seg : String) -> Int {
 ///|
 /// Apply the result-key axis (DR-052) to the winning bindings, BEFORE build_result. This is a
 /// pure result-shape remap — the AtomicAST / parse are untouched (export_key is orthogonal):
-///   - a value cell's key: @engine.EkKey(s) → s (override); @engine.EkNull → "" (nameless: kv 文脈で消え、seq/array
-///     文脈では値が nameless 要素として残る); @engine.EkUnset → the name (unchanged).
-///   - a scope label (command / name scope): @engine.EkKey(s) → s; @engine.EkNull → DROP the label (子が昇格露出);
-///     @engine.EkUnset → unchanged. A "{}" presence marker whose only label was dropped floats to the root
+///   - a value cell's key: @engine.Key(s) → s (override); @engine.Null → "" (nameless: kv 文脈で消え、seq/array
+///     文脈では値が nameless 要素として残る); @engine.Unset → the name (unchanged).
+///   - a scope label (command / name scope): @engine.Key(s) → s; @engine.Null → DROP the label (子が昇格露出);
+///     @engine.Unset → unchanged. A "{}" presence marker whose only label was dropped floats to the root
 ///     scope where it is a harmless sentinel (a nameless command has no key — 子が昇格).
 /// Sentinels ("[]" / "{}" / "" / "@act:" / "@depr:") and index segments ("#k") are not in the map
 /// → kept.
@@ -247,15 +247,15 @@ fn apply_export_keys(
         new_scope.push(seg) // an array index segment — never a name
       } else {
         match ek.get(seg) {
-          Some(@engine.EkNull) => () // drop the label → children promote to the parent (DR-052 §2)
-          Some(@engine.EkKey(s)) => new_scope.push(s)
-          _ => new_scope.push(seg) // @engine.EkUnset or not a mapped name
+          Some(@engine.Null) => () // drop the label → children promote to the parent (DR-052 §2)
+          Some(@engine.Key(s)) => new_scope.push(s)
+          _ => new_scope.push(seg) // @engine.Unset or not a mapped name
         }
       }
     }
     let new_key = match ek.get(b.key) {
-      Some(@engine.EkNull) => "" // nameless value axis
-      Some(@engine.EkKey(s)) => s
+      Some(@engine.Null) => "" // nameless value axis
+      Some(@engine.Key(s)) => s
       _ => b.key
     }
     out.push({ ..b, key: new_key, scope: new_scope })
@@ -265,7 +265,7 @@ fn apply_export_keys(
 
 ///|
 /// Apply the result-key axis (DR-052) to the injected default cells, mirroring apply_export_keys on
-/// bindings: an @engine.EkNull cell is 透過 (dropped from the kv result), an @engine.EkKey renames it, and path
+/// bindings: an @engine.Null cell is 透過 (dropped from the kv result), an @engine.Key renames it, and path
 /// segments (command scope names) are renamed / promoted the same way. Keeps a flag's preset default
 /// subject to the same export transform as its fired value (so `--verbose` with export null neither
 /// appears as a value nor re-appears as an injected `false`).
@@ -276,7 +276,7 @@ fn apply_export_to_defaults(
   let out : Array[DefaultCell] = []
   for d in defaults {
     match ek.get(d.name) {
-      Some(@engine.EkNull) => () // 透過: the value has no result key → not injected
+      Some(@engine.Null) => () // 透過: the value has no result key → not injected
       _ => {
         let new_path : Array[String] = []
         for seg in d.path {
@@ -284,14 +284,14 @@ fn apply_export_to_defaults(
             new_path.push(seg)
           } else {
             match ek.get(seg) {
-              Some(@engine.EkNull) => () // dropped scope label → children promote
-              Some(@engine.EkKey(s)) => new_path.push(s)
+              Some(@engine.Null) => () // dropped scope label → children promote
+              Some(@engine.Key(s)) => new_path.push(s)
               _ => new_path.push(seg)
             }
           }
         }
         let new_name = match ek.get(d.name) {
-          Some(@engine.EkKey(s)) => s
+          Some(@engine.Key(s)) => s
           _ => d.name
         }
         out.push({ path: new_path, name: new_name, value: d.value })
@@ -783,9 +783,9 @@ fn build_result(
 /// mapped binding keys, an unmapped AccumCell for a renamed accum entity silently failed to
 /// match — the accumulate fold never fired (the entity's bindings fell through to plain last-wins
 /// scalar rendering under its OLD name instead of `[]`-folding under the renamed key). Same 3-way
-/// resolution `apply_export_to_defaults` uses: `@engine.EkKey(s)` → rename to `s`, `@engine.EkNull` → drop (透過,
+/// resolution `apply_export_to_defaults` uses: `@engine.Key(s)` → rename to `s`, `@engine.Null` → drop (透過,
 /// DR-052 §2 — an accum cell whose OWN key is nulled carries no result-key axis, same posture a
-/// scalar default's @engine.EkNull already gets), otherwise unchanged.
+/// scalar default's @engine.Null already gets), otherwise unchanged.
 fn accum_cells(
   sc : @engine.Scope,
   ek : Map[String, @engine.ExportKey],
@@ -807,10 +807,10 @@ fn collect_accum(
     match e.accum {
       Some(a) =>
         match ek.get(e.name) {
-          Some(@engine.EkNull) => () // 透過: this accum cell's own result-key axis is dropped
+          Some(@engine.Null) => () // 透過: this accum cell's own result-key axis is dropped
           _ => {
             let new_name = match ek.get(e.name) {
-              Some(@engine.EkKey(s)) => s
+              Some(@engine.Key(s)) => s
               _ => e.name
             }
             out.push({
@@ -831,8 +831,8 @@ fn collect_accum(
     match g {
       @engine.CmdSat(name, child) =>
         match ek.get(name) {
-          Some(@engine.EkNull) => collect_accum(child, path, ek, out) // dropped label → children promote (DR-052 §2)
-          Some(@engine.EkKey(s)) =>
+          Some(@engine.Null) => collect_accum(child, path, ek, out) // dropped label → children promote (DR-052 §2)
+          Some(@engine.Key(s)) =>
             collect_accum(child, path_push(path, s), ek, out)
           _ => collect_accum(child, path_push(path, name), ek, out)
         }
@@ -953,15 +953,15 @@ priv struct ExportCollision {
 
 ///|
 /// The result-key axis (DR-052 §1) resolved to its ACTUAL exposed key string for `raw` (an entity
-/// name / binding key), or `None` when the axis carries no key at all (@engine.EkNull, DR-052 §2 透過).
+/// name / binding key), or `None` when the axis carries no key at all (@engine.Null, DR-052 §2 透過).
 /// Mirrors `apply_export_keys`'s own resolution exactly (same 3-way match, same `_` fallback to
-/// `raw` for @engine.EkUnset AND for an unmapped name — sentinels `"[]"`/`"{}"`/`""`/`"@act:"`/`"@depr:"`
+/// `raw` for @engine.Unset AND for an unmapped name — sentinels `"[]"`/`"{}"`/`""`/`"@act:"`/`"@depr:"`
 /// and `"#k"` index segments are never in `ek`, `apply_export_keys`'s doc comment) — this is the
 /// SAME "未指定 → name 由来のキーで露出" resolution DR-052 §1's table specifies, just queried
 /// instead of applied. issue export-key-collision-identity-exposure-gap: `find_export_collisions`
-/// used to skip this `_` (@engine.EkUnset / unmapped) case entirely, treating "no `ek` entry" as "not
-/// exposed" — but DR-052 §1 says @engine.EkUnset resolves to a REAL exposed key (the name), so an identity-
-/// exposed element competing with another element's `@engine.EkKey`-mapped key for the same result-scope
+/// used to skip this `_` (@engine.Unset / unmapped) case entirely, treating "no `ek` entry" as "not
+/// exposed" — but DR-052 §1 says @engine.Unset resolves to a REAL exposed key (the name), so an identity-
+/// exposed element competing with another element's `@engine.Key`-mapped key for the same result-scope
 /// key was invisible to collision detection. Spec precedent (DESIGN §15.5: "衝突の本質は結果キーの
 /// provenance の曖昧さ") talks about "同じ export_key へ解決する" — export_key's own value-domain
 /// (DR-052 §1) already includes "未指定 → name 由来のキー" as a resolved value, not a separate
@@ -969,8 +969,8 @@ priv struct ExportCollision {
 /// collision-detection policy.
 fn exposed_key_of(raw : String, ek : Map[String, @engine.ExportKey]) -> String? {
   match ek.get(raw) {
-    Some(@engine.EkNull) => None
-    Some(@engine.EkKey(s)) => Some(s)
+    Some(@engine.Null) => None
+    Some(@engine.Key(s)) => Some(s)
     _ => Some(raw)
   }
 }
@@ -982,7 +982,7 @@ fn exposed_key_of(raw : String, ek : Map[String, @engine.ExportKey]) -> String? 
 /// compares the raw `scope` path directly (two bindings at the identical remaining nesting are
 /// candidates regardless of depth — no per-level recursion needed, mirroring the original
 /// `find_export_collision`'s flat O(n²) scan). Groups by `exposed_key_of` (mapped OR identity-
-/// exposed, @engine.EkNull excluded) — see that function's doc comment for why identity exposure is now
+/// exposed, @engine.Null excluded) — see that function's doc comment for why identity exposure is now
 /// included (issue export-key-collision-identity-exposure-gap).
 fn find_export_collisions(
   binds : Array[@engine.Binding],
@@ -1055,7 +1055,7 @@ fn promote_collision_ambiguous_from(
             if path_eq(c.path, b.scope) &&
               c.key ==
               (match ek.get(b.key) {
-                Some(@engine.EkKey(s)) => s
+                Some(@engine.Key(s)) => s
                 _ => ""
               }) &&
               b.key != combo[gi] {
@@ -1262,7 +1262,7 @@ fn result_sources(
 // ── DR-047 §4/§5 (issue value-present-ladder-gap 裁定 2026-07-10、bool target 分は元 issue
 // bool-requires-config-inherit-gap 裁定 2026-07-09): requires の後段 path filter ───────────────
 //
-// requires (CRequires) / value 依存 requires (CRequiresIf) の目的語の充足条件は「値源ラダー
+// requires (Requires) / value 依存 requires (RequiresIf) の目的語の充足条件は「値源ラダー
 // (env/config/inherit/default) 充填後の最終状態」で決まる — bool 型 (@builtins.flag_type()/@builtins.bool_type()) なら「解決後の
 // 値が true であること」(値源不問)、非 bool なら「値の有無 (default 込み)」(DR-047 §5 表)。この
 // 判定は値源ラダーが解ける後段でしか行えないため、KTop (eval.mbt, CLI 面のみで完結する完全経路
@@ -1305,8 +1305,8 @@ fn is_none_entity(entities : Array[@engine.Entity], name : String) -> Bool {
 }
 
 ///|
-/// `@engine.RequiredCandidate` 1 件の最終判定 (型委譲、codex レビュー M-2 修正): `CRequired`/
-/// `CRequiredGroup` の resolve.mbt 側 (最終判定) 共有ヘルパー — `wrapper` が `None` なら宣言 scope
+/// `@engine.RequiredCandidate` 1 件の最終判定 (型委譲、codex レビュー M-2 修正): `Required`/
+/// `RequiredGroup` の resolve.mbt 側 (最終判定) 共有ヘルパー — `wrapper` が `None` なら宣言 scope
 /// path そのもの (`@engine.is_committed`/`@engine.elem_value`)、`Some(w)` なら宣言元要素 `w` 自身の @engine.Scoped 部分木内
 /// (`@engine.is_committed_in_subtree`/`@engine.elem_value_in_subtree`、eval.mbt 側の同名 subtree ヘルパーを resolve
 /// 層でも再利用) で判定する。`is_none_entity` (値空間なし = committed 判定、値空間あり = 値の有無
@@ -1373,7 +1373,7 @@ fn eval_requires(
   }
   for c in sc.constraints {
     match c {
-      CRequires(elem, targets) =>
+      Requires(elem, targets) =>
         if @engine.is_committed(bindings, path, elem) {
           for t in targets {
             if !satisfied(t) {
@@ -1389,7 +1389,7 @@ fn eval_requires(
             }
           }
         }
-      CRequiresIf(entity, branch_id, v, targets) => {
+      RequiresIf(entity, branch_id, v, targets) => {
         let active = @engine.is_committed(bindings, path, entity) &&
           (match @engine.elem_value(bindings, path, entity) {
             Some(x) => x == v
@@ -1411,8 +1411,8 @@ fn eval_requires(
           }
         }
       }
-      CConflicts(_, _) | CExclusive(_, _) => () // committed 基準、値源不問なので KTop で確定済み
-      CRequired(display, candidates) => {
+      Conflicts(_, _) | Exclusive(_, _) => () // committed 基準、値源不問なので KTop で確定済み
+      Required(display, candidates) => {
         // DR-093 §1/§2: 自身の充足は型委譲。値空間なし (none) = 発火 (committed)、値空間あり =
         // 最終状態の値の有無 (default 込み、DR-047 §5 不変)。`satisfied` (上記 requires 目的語用) は
         // 再利用しない — bool の「解決後値 true」ルールは requires 目的語限定 (DR-047 §5 明確化) で
@@ -1422,7 +1422,7 @@ fn eval_requires(
         //
         // issue 2026-07-13-structural-or-type-branch-required-missing /
         // codex-review-dr102-dr103-postland (M-2): `candidates` は structural or (直書き BOr /
-        // ref 経由) の場合、各枝の leaf name の配列 (node.mbt の `@engine.RequiredCandidate`/`CRequired`
+        // ref 経由) の場合、各枝の leaf name の配列 (node.mbt の `@engine.RequiredCandidate`/`Required`
         // doc comment 参照、eval.mbt の同名 KTop 判定と対の最終判定)。`candidate_satisfied` が
         // wrapper (ref 経由なら宣言元要素の @engine.Scoped 部分木限定) を踏まえて判定する。いずれか 1 つ
         // でも型委譲で充足していれば OK。
@@ -1444,8 +1444,8 @@ fn eval_requires(
           })
         }
       }
-      CRequiredGroup(group, members) => {
-        // DR-103 §1/§7: member 充足は `CRequired` と完全に同一の型委譲 (値空間なし = committed、
+      RequiredGroup(group, members) => {
+        // DR-103 §1/§7: member 充足は `Required` と完全に同一の型委譲 (値空間なし = committed、
         // 値空間あり = 値の有無、default 込み) — bool 特例 (`satisfied` の requires 目的語ルール)
         // は適用しない。member のいずれか 1 つでも充足すればグループ成立 (少なくとも1つ必須)。
         let mut ok = false
@@ -1691,7 +1691,7 @@ fn apply_requires_filter_with_export(
               // 以外、サブコマンドは完全に別コマンドと見るべき」で、root scope (path=[]) は常に選択済み。
               // DR-103 §5 明確化 note が正本。engine 側 `eval_all_constraints` (KTop 相の粗判定) と同型
               // の gate をここ resolve 相 (後段の最終判定) にも掛ける — gate が 1 相にしか無いと未入場
-              // child の CRequiredGroup/CRequired が resolve 相で偽陽性を出し、KTop の Success を Failure
+              // child の RequiredGroup/Required が resolve 相で偽陽性を出し、KTop の Success を Failure
               // に落としてしまう (issue required-group-scope-participation、実測: `--r1` のみで
               // child-a scope の g が違反として付随、path=[child-a] の error 生成)。gate の判定は engine
               // 側と完全に同じ `@engine.scope_selected` を共用 — 判定意味論のドリフト防止 (bindings 内の
@@ -1772,14 +1772,14 @@ fn apply_requires_filter_with_export(
 ///|
 /// A @engine.Value rendered as its comparison string (constraint value matching: integers print without
 /// the trailing `.0`). The resolve layer owns the result-object rendering; this is also the
-/// CRequiresIf comparison form (moved here from eval.mbt, MDR-002 §3 table — this is resolve.mbt's
+/// RequiresIf comparison form (moved here from eval.mbt, MDR-002 §3 table — this is resolve.mbt's
 /// canonical home; eval.mbt's `@engine.elem_value` calls this file's copy, same package).
 
 ///|
 /// A DR-066 ladder-fill Error: `element`/`args_pos` locate it like any @engine.ParseError; `at_pos` is the
 /// caller-supplied final position (env/config seat errors are not read at a token position — they
 /// surface after the path completed, the same conceptual point `eval_constraints` evaluates at, so
-/// callers thread the same final `toks.length()`). kind is always `@engine.KParse` (a value-source failed
+/// callers thread the same final `toks.length()`). kind is always `@engine.Parse` (a value-source failed
 /// to parse into the entity's type — the same category as a bad CLI token, DR-053). `epath` is the
 /// DR-066 §4 ancestor path (root-first, [] = root 直下): this ladder walk resolves ONE scope's
 /// entities at a time and already carries the scope's own result-nesting path (the `resolve_tree`
@@ -1796,7 +1796,7 @@ fn ladder_err(
   {
     element,
     args_pos: at_pos,
-    kind: @engine.KParse,
+    kind: @engine.Parse,
     reason,
     message,
     path: epath,
@@ -1805,11 +1805,11 @@ fn ladder_err(
 
 ///|
 /// A DR-053 §2 filter-reject Error: `value_filters`/`final_filters`/`accum_filters` (DR-009 §7,
-/// DR-102 §1) rejected an already-resolved value. Distinct from `ladder_err` (`kind: @engine.KParse`, a
+/// DR-102 §1) rejected an already-resolved value. Distinct from `ladder_err` (`kind: @engine.Parse`, a
 /// value-source failed to parse) —
 /// a filter reject is a validation/transform rejection over a value that parsed fine, so it gets
-/// its own builder with `kind: @engine.KFilter` (DR-053 §2's 3-way `parse` | `filter` | `constraint` split;
-/// `eval.mbt`'s `filter_arg_eval` already emits `@engine.KFilter` for the same conceptual failure at the
+/// its own builder with `kind: @engine.Filter` (DR-053 §2's 3-way `parse` | `filter` | `constraint` split;
+/// `eval.mbt`'s `filter_arg_eval` already emits `@engine.Filter` for the same conceptual failure at the
 /// token-parsing layer, this is `apply_entity_filters`'s resolve-layer counterpart). Same
 /// `at_pos`/`epath` threading contract as `ladder_err`.
 fn filter_err(
@@ -1822,7 +1822,7 @@ fn filter_err(
   {
     element,
     args_pos: at_pos,
-    kind: @engine.KFilter,
+    kind: @engine.Filter,
     reason,
     message,
     path: epath,
@@ -2381,7 +2381,7 @@ fn resolve_ladder_below_cli(
                       ) {
                       Ok(v) =>
                         bs.push(@engine.mk_binding(e.name, v, @engine.Config))
-                      Err((@engine.KFilter, reason, msg)) =>
+                      Err((@engine.Filter, reason, msg)) =>
                         return Err(
                           filter_err(e.name, at_pos, reason, msg, epath),
                         )
@@ -2416,7 +2416,7 @@ fn resolve_ladder_below_cli(
                   ) {
                   Ok(v) =>
                     return Ok([@engine.mk_binding(e.name, v, @engine.Config)])
-                  Err((@engine.KFilter, reason, msg)) =>
+                  Err((@engine.Filter, reason, msg)) =>
                     return Err(filter_err(e.name, at_pos, reason, msg, epath))
                   Err((_, reason, msg)) =>
                     return Err(ladder_err(e.name, at_pos, reason, msg, epath)) // §4 型不一致 → DR-037/DR-066 Error
@@ -2481,7 +2481,7 @@ fn resolve_ladder_below_cli(
                   },
                 ),
               ])
-            Err((@engine.KFilter, reason, msg)) =>
+            Err((@engine.Filter, reason, msg)) =>
               return Err(filter_err(e.name, at_pos, reason, msg, epath))
             Err((_, reason, msg)) =>
               return Err(ladder_err(e.name, at_pos, reason, msg, epath))
@@ -2516,7 +2516,7 @@ fn resolve_ladder_below_cli(
               extensions,
             ) {
             Ok(vv) => bs.push(@engine.mk_binding(e.name, vv, @engine.Default))
-            Err((@engine.KFilter, reason, msg)) =>
+            Err((@engine.Filter, reason, msg)) =>
               return Err(filter_err(e.name, at_pos, reason, msg, epath))
             Err((_, reason, msg)) =>
               return Err(ladder_err(e.name, at_pos, reason, msg, epath))
@@ -2537,7 +2537,7 @@ fn resolve_ladder_below_cli(
             extensions,
           ) {
           Ok(vv) => Ok([@engine.mk_binding(e.name, vv, @engine.Default)])
-          Err((@engine.KFilter, reason, msg)) =>
+          Err((@engine.Filter, reason, msg)) =>
             Err(filter_err(e.name, at_pos, reason, msg, epath))
           Err((_, reason, msg)) =>
             Err(ladder_err(e.name, at_pos, reason, msg, epath))
@@ -2737,7 +2737,7 @@ fn resolve_default_fn(
             epath,
             extensions,
           )
-        Err((@engine.KFilter, reason, message)) =>
+        Err((@engine.Filter, reason, message)) =>
           Err(filter_err(entity.name, at_pos, reason, message, epath))
         Err((_, reason, message)) =>
           Err(ladder_err(entity.name, at_pos, reason, message, epath))

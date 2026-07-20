@@ -112,7 +112,7 @@ pub fn install(registry : @engine.Registry) -> Unit {
       "",
       None,
       @builtins.string_type(),
-      @engine.RError,
+      @engine.Error,
       false,
       @builtins.bool_config_canonical(),
       [],
@@ -121,7 +121,7 @@ pub fn install(registry : @engine.Registry) -> Unit {
   )
   register_node(registry, @builtins.number_arg("", false, []))
   register_node(registry, @builtins.float_arg("", []))
-  register_node(registry, @builtins.int_arg("", @engine.RError, false, []))
+  register_node(registry, @builtins.int_arg("", @engine.Error, false, []))
   register_node(
     registry,
     @builtins.bool_arg("", @builtins.bool_config_canonical(), []),

@@ -166,7 +166,7 @@ fn opt(
   default? : Array[@engine.Value]? = None,
   default_fn? : @engine.DefaultFnCall? = None,
   default_declared? : Bool = false,
-  int_round? : @engine.RoundMode = @engine.RError,
+  int_round? : @engine.RoundMode = @engine.Error,
   allow_base_prefix? : Bool = false,
   bool_config? : @engine.BoolConfig = @builtins.bool_config_canonical(),
   piece_filters? : Array[@engine.FilterSpelling] = [],
@@ -178,9 +178,9 @@ fn opt(
   short_prefix? : String = "-",
   env_prefix? : String = "",
   auto_env? : Bool = false,
-  long_eq_sep? : @engine.EqSepMode = @engine.EsAllow,
+  long_eq_sep? : @engine.EqSepMode = @engine.Allow,
   short_combine? : Bool = true,
-  short_attached_value? : @engine.AttachMode = @engine.AtAllow,
+  short_attached_value? : @engine.AttachMode = @engine.Allow,
   body? : @engine.ElemBody = BCell,
   // DR-104 §2/§4: option 専用の hidden 宣言 (meta.json fixture)。dec_option がここへ渡し、
   // ensure_entity 経由で @engine.Entity.hidden へ carry される。alias は @engine.AliasDef に独立宣言経路が無いので
@@ -271,7 +271,7 @@ fn pos(
   default? : Array[@engine.Value]? = None,
   default_fn? : @engine.DefaultFnCall? = None,
   default_declared? : Bool = false,
-  int_round? : @engine.RoundMode = @engine.RError,
+  int_round? : @engine.RoundMode = @engine.Error,
   allow_base_prefix? : Bool = false,
   bool_config? : @engine.BoolConfig = @builtins.bool_config_canonical(),
   piece_filters? : Array[@engine.FilterSpelling] = [],
@@ -286,7 +286,7 @@ fn pos(
   required? : Bool = false,
   requires? : Array[String] = [],
   // DR-012 / DR-055 / DR-103: constraint 系は「要素属性」なので positional にも同型に付与できる。
-  // engine の CConflicts/CExclusive/CRequired/CRequiredGroup は committed 判定を entity 名で行い
+  // engine の Conflicts/Exclusive/Required/RequiredGroup は committed 判定を entity 名で行い
   // option/positional を区別しないため、decode 側で pos() に流し込むだけで検査が動く (opt() の
   // 同名フィールドと対称)。value_requires は positional では trigger 経路がない (positional の or は
   // structural 専用、`values` キー未 allowed) ため対称化せず既存の空配列固定のまま残す (下記
@@ -368,9 +368,9 @@ fn pos(
     short_prefix: "-",
     env_prefix: "",
     auto_env: false,
-    long_eq_sep: @engine.EsAllow,
+    long_eq_sep: @engine.Allow,
     short_combine: true,
-    short_attached_value: @engine.AtAllow,
+    short_attached_value: @engine.Allow,
     body,
   }
 }
@@ -428,7 +428,7 @@ fn dd_marker(
     default_values: None,
     default_fn: None,
     default_declared: false,
-    int_round: @engine.RError,
+    int_round: @engine.Error,
     allow_base_prefix: false,
     bool_config: @builtins.bool_config_canonical(),
     piece_filters: [],
@@ -440,9 +440,9 @@ fn dd_marker(
     short_prefix: "-",
     env_prefix: "",
     auto_env: false,
-    long_eq_sep: @engine.EsAllow,
+    long_eq_sep: @engine.Allow,
     short_combine: true,
-    short_attached_value: @engine.AtAllow,
+    short_attached_value: @engine.Allow,
     body: BCell,
   }
 }
@@ -502,7 +502,7 @@ fn exact_marker(spelling : String) -> @engine.ElemDef {
     default_values: None,
     default_fn: None,
     default_declared: false,
-    int_round: @engine.RError,
+    int_round: @engine.Error,
     allow_base_prefix: false,
     bool_config: @builtins.bool_config_canonical(),
     piece_filters: [],
@@ -513,9 +513,9 @@ fn exact_marker(spelling : String) -> @engine.ElemDef {
     short_prefix: "-",
     env_prefix: "",
     auto_env: false,
-    long_eq_sep: @engine.EsAllow,
+    long_eq_sep: @engine.Allow,
     short_combine: true,
-    short_attached_value: @engine.AtAllow,
+    short_attached_value: @engine.Allow,
     body: BCell,
   }
 }
@@ -1054,7 +1054,7 @@ fn dec_types(
       out.set(name, {
         base: @builtins.string_type(), // dummy: parse 相は tree 型を実行しない (help query 専用素材)
         is_tree_form: true,
-        int_round: @engine.RError,
+        int_round: @engine.Error,
         allow_base_prefix: false,
         bool_config: @builtins.bool_config_canonical(),
         is_tty: false,
@@ -1075,8 +1075,8 @@ fn dec_types(
     match factory {
       "int_parser" | "builtin/int_parser" => {
         // DR-075 §2 int_round (10 モード語彙、@builtins.round_mode_of で解決) + DR-074 §2 の (int にも波及する)
-        // `number_allow_base_prefix`。config 未指定は canonical default (@engine.RError + false)。
-        let mut mode = @engine.RError
+        // `number_allow_base_prefix`。config 未指定は canonical default (@engine.Error + false)。
+        let mut mode = @engine.Error
         let mut base_prefix = false
         match to.get("config") {
           Some(cj) => {
@@ -1181,7 +1181,7 @@ fn dec_types(
         out.set(name, {
           base: @builtins.number_type(),
           is_tree_form: false,
-          int_round: @engine.RError,
+          int_round: @engine.Error,
           allow_base_prefix: base_prefix,
           bool_config: @builtins.bool_config_canonical(),
           is_tty: false,
@@ -1242,7 +1242,7 @@ fn dec_types(
         out.set(name, {
           base: @builtins.bool_type(),
           is_tree_form: false,
-          int_round: @engine.RError,
+          int_round: @engine.Error,
           allow_base_prefix: false,
           bool_config: { true_values, false_values, case_insensitive },
           is_tty: false,
@@ -1310,7 +1310,7 @@ fn dec_types(
         out.set(name, {
           base: @builtins.bool_type(),
           is_tree_form: false,
-          int_round: @engine.RError,
+          int_round: @engine.Error,
           allow_base_prefix: false,
           bool_config: @builtins.bool_config_canonical(),
           is_tty: true,
@@ -1777,7 +1777,7 @@ fn dec_or_leaf(
         None =>
           (
             dec_ty(t, name, extensions),
-            @engine.RError,
+            @engine.Error,
             false,
             @builtins.bool_config_canonical(),
             false,
@@ -1788,7 +1788,7 @@ fn dec_or_leaf(
     None =>
       (
         @builtins.none_type(),
-        @engine.RError,
+        @engine.Error,
         false,
         @builtins.bool_config_canonical(),
         false,
@@ -1968,7 +1968,7 @@ fn dec_option(
         @builtins.flag_type(),
         true,
         false,
-        @engine.RError,
+        @engine.Error,
         false,
         @builtins.bool_config_canonical(),
         false,
@@ -1980,7 +1980,7 @@ fn dec_option(
         @builtins.flag_type(),
         false, // DR-113 §7.2: help_show_hidden のみ help_on_failure=false 既定
         false,
-        @engine.RError,
+        @engine.Error,
         false,
         @builtins.bool_config_canonical(),
         false,
@@ -1993,7 +1993,7 @@ fn dec_option(
           @builtins.string_type(),
           false,
           true,
-          @engine.RError,
+          @engine.Error,
           false,
           @builtins.bool_config_canonical(),
           false,
@@ -2005,7 +2005,7 @@ fn dec_option(
           dec_ty(tystr, name, extensions),
           false,
           false,
-          @engine.RError,
+          @engine.Error,
           false,
           @builtins.bool_config_canonical(),
           false,
@@ -2018,7 +2018,7 @@ fn dec_option(
         @builtins.bool_type(),
         false,
         false,
-        @engine.RError,
+        @engine.Error,
         false,
         @builtins.bool_config_canonical(),
         true,
@@ -2044,7 +2044,7 @@ fn dec_option(
             dec_ty(tystr, name, extensions),
             false,
             false,
-            @engine.RError,
+            @engine.Error,
             false,
             @builtins.bool_config_canonical(),
             false,
@@ -2104,7 +2104,7 @@ fn dec_option(
   // returns AFTER decode. An option JSON object carrying either key hits the `allowed_keys` reject
   // above (element-level override would be an un-specced vocabulary invention — the DEDICATED
   // per-element `config` object, a DIFFERENT key, IS the sanctioned override channel, DR-049 §4).
-  // `opt(...)` below omits both — they keep `opt`'s defaults (`"--"`/`@engine.EsAllow`) here and get set for
+  // `opt(...)` below omits both — they keep `opt`'s defaults (`"--"`/`@engine.Allow`) here and get set for
   // real by the caller (`dec_definition`).
   let ref_ = jf_str(o, "ref")
   let repeat = owned.repeat
@@ -2321,7 +2321,7 @@ fn dec_positional(
     Some("tty") | Some("builtin/tty") =>
       (
         @builtins.bool_type(),
-        @engine.RError,
+        @engine.Error,
         false,
         @builtins.bool_config_canonical(),
         true,
@@ -2343,7 +2343,7 @@ fn dec_positional(
         None =>
           (
             dec_ty(t, name, extensions),
-            @engine.RError,
+            @engine.Error,
             false,
             @builtins.bool_config_canonical(),
             false,
@@ -2354,7 +2354,7 @@ fn dec_positional(
     None =>
       (
         @builtins.none_type(),
-        @engine.RError,
+        @engine.Error,
         false,
         @builtins.bool_config_canonical(),
         false,
@@ -2400,8 +2400,8 @@ fn dec_positional(
   // DR-012 / DR-055 / DR-103: constraint 系は要素属性で positional にも同型に付与できる
   // (`decode_installer_owned` が constraint installer 経由で 5 属性 = requires/conflicts/exclusive/
   // required_group/required を positional context でも集約する — installer_residents.mbt の
-  // `ConstraintInstaller.decode` の DecodePositional 分岐参照)。engine 検査 (CConflicts / CExclusive /
-  // CRequired / CRequiredGroup) は entity 名の committed 判定のみを行い option/positional を区別
+  // `ConstraintInstaller.decode` の DecodePositional 分岐参照)。engine 検査 (Conflicts / Exclusive /
+  // Required / RequiredGroup) は entity 名の committed 判定のみを行い option/positional を区別
   // しないので、decode 側で pos() に流し込むだけで動く (opt() の同名 owned 経路と対称)。
   let conflicts = owned.conflicts
   let exclusive = owned.exclusive
@@ -2537,14 +2537,14 @@ priv struct ScopeConfig {
 
 ///|
 /// The canonical config, in effect at the root scope when no `config` object is ever written
-/// (equivalent to every key's DESIGN §7.2 default, DR-096 §1/§2 の 3 値 enum 既定 `@engine.EsAllow`/`@engine.AtAllow`
+/// (equivalent to every key's DESIGN §7.2 default, DR-096 §1/§2 の 3 値 enum 既定 `@engine.Allow`/`@engine.Allow`
 /// を含む).
 fn default_scope_config() -> ScopeConfig {
   {
     long_prefix: "--",
-    long_eq_sep: @engine.EsAllow,
+    long_eq_sep: @engine.Allow,
     short_prefix: "-",
-    short_attached_value: @engine.AtAllow,
+    short_attached_value: @engine.Allow,
     short_combine: true,
     env_prefix: "",
     auto_env: false,

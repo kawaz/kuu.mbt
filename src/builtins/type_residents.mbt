@@ -108,7 +108,7 @@ impl @engine.TypeExt for IntTypeExt with fn default_seat_resolver(_self, ctx) {
 
 ///|
 pub fn int_type(
-  round? : @engine.RoundMode = @engine.RError,
+  round? : @engine.RoundMode = @engine.Error,
   allow_base_prefix? : Bool = false,
 ) -> &@engine.TypeExt {
   IntTypeExt::{ round, allow_base_prefix } as &@engine.TypeExt

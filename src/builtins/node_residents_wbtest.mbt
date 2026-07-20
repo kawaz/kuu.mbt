@@ -53,16 +53,16 @@ test "number resident preserves not_a_number" {
 
 ///|
 test "int resident preserves integer-specific failures" {
-  // A readable fractional number under @engine.RError is not_an_integer, distinct from
+  // A readable fractional number under @engine.Error is not_an_integer, distinct from
   // the number resident's not_a_number and the magnitude overflow reason.
   assert_eq(
-    resident_failure_reason(int_arg("n", @engine.RError, false, []), "1.5"),
+    resident_failure_reason(int_arg("n", @engine.Error, false, []), "1.5"),
     "not_an_integer",
   )
   // A readable integer outside Int64 reports its dedicated range reason rather
   // than being folded into either lexical failure family.
   assert_eq(
-    resident_failure_reason(int_arg("n", @engine.RError, false, []), "1e300"),
+    resident_failure_reason(int_arg("n", @engine.Error, false, []), "1e300"),
     "int_out_of_range",
   )
 }

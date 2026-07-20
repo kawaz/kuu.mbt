@@ -87,7 +87,7 @@ pub fn short_entry(
   separator : String?,
   depr? : Bool = false,
   merge? : Bool = false,
-  short_attached_value? : @engine.AttachMode = @engine.AtAllow,
+  short_attached_value? : @engine.AttachMode = @engine.Allow,
   is_alias? : Bool = false,
 ) -> ShortEntry {
   {
@@ -160,10 +160,10 @@ fn type_json(kind : &@engine.TypeExt) -> Json {
 ///|
 fn attach_mode_json(mode : @engine.AttachMode) -> Json {
   match mode {
-    @engine.AtAllow => "allow".to_json()
-    @engine.AtRequire => "require".to_json()
-    @engine.AtDeny => "deny".to_json()
-    @engine.AtLastOnly => "last_only".to_json()
+    @engine.Allow => "allow".to_json()
+    @engine.Require => "require".to_json()
+    @engine.Deny => "deny".to_json()
+    @engine.LastOnly => "last_only".to_json()
   }
 }
 
@@ -430,7 +430,7 @@ fn short_lookup(entries : Array[ShortEntry], c : Char) -> ShortEntry? {
 /// `Ok` = the value char attached successfully (an `Array[@engine.Binding]` — usually length 1, but a
 /// `separator` entry can split one attach into several pieces, same as the long-option space form's
 /// `SepArg`/`sep_binds`, issue 2026-07-09-separator-non-string-type-parse-gap 段1). `Err` carries a
-/// full `@engine.ParseError` (`kind: KFilter` for a piece_filters reject, `kind: KParse` for a type-parse
+/// full `@engine.ParseError` (`kind: Filter` for a piece_filters reject, `kind: Parse` for a type-parse
 /// failure — both delegate straight to `sep_binds` when `e.separator` is `Some` OR `e.merge` is
 /// `true`, codex Medium 追従: a merge entry needs the piece pipeline even with no separator).
 /// `walk_short`'s
@@ -570,8 +570,8 @@ fn walk_short(
           // withholds every MID-token split (`j < body.length()`) — only the FULL-TAIL "丸取り"
           // reading remains, so this entry never contributes to a split-point ambiguity (GNU
           // getopt 慣習: 値オプションに達したら以降の文字列全部がその値、DR-096 §2)。
-          if e.short_attached_value != @engine.AtDeny &&
-            (e.short_attached_value != @engine.AtLastOnly || j == body.length()) &&
+          if e.short_attached_value != @engine.Deny &&
+            (e.short_attached_value != @engine.LastOnly || j == body.length()) &&
             (combine || j == body.length()) {
             let vstr = @engine.chars_to_str(body, vstart, j)
             match short_val(ctx, e, vstr, pos) {
@@ -611,7 +611,7 @@ fn walk_short(
         // this is what makes a `"require"` entry's bare tail token (e.g. `-q` with 0 leftover
         // chars) have NO complete path at all (attach needs >=1 char, DR-096 §2「付着形は定義上
         // 1 文字以上の残り文字列を要求する」), falling through to positional per DR-041 §5.
-        if e.short_attached_value != @engine.AtRequire &&
+        if e.short_attached_value != @engine.Require &&
           vstart == body.length() &&
           ctx.token_at(pos + 1) is Some(next_token) {
           match short_val(ctx, e, next_token, pos + 1) {
@@ -621,7 +621,7 @@ fn walk_short(
               )
             Err(pe) => out.push(@engine.Held(pe, []))
           }
-        } else if e.short_attached_value != @engine.AtRequire &&
+        } else if e.short_attached_value != @engine.Require &&
           vstart == body.length() &&
           ctx.is_complete_mode() {
           // complete: the cluster ends in a value char and the args ends

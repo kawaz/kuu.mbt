@@ -188,7 +188,7 @@ test "parse_definition rejects an unregistered type as a definition error" {
   match parse_definition(definition) {
     Err(Rejected([error])) => {
       assert_eq(error.element, "value")
-      assert_eq(error.kind, @engine.DUnknownVocab)
+      assert_eq(error.kind, @engine.UnknownVocab)
     }
     _ => fail("unregistered type must produce one definition error")
   }
@@ -230,7 +230,7 @@ test "repeat lowering rejects an assembly without its implicit append accumulato
   )
   match parse_definition(definition, extensions=registry) {
     Err(Rejected([error])) => {
-      assert_eq(error.kind, @engine.DUnknownVocab)
+      assert_eq(error.kind, @engine.UnknownVocab)
       assert_true(error.message.contains("accumulator 'append'"))
     }
     _ => fail("missing implicit append resident must be a definition error")
@@ -251,7 +251,7 @@ test "collector declarations reject an assembly without the named collector resi
   )
   match parse_definition(definition, extensions=registry) {
     Err(Rejected([error])) => {
-      assert_eq(error.kind, @engine.DUnknownVocab)
+      assert_eq(error.kind, @engine.UnknownVocab)
       assert_true(error.message.contains("collector 'unwrap_single'"))
     }
     _ => fail("missing collector resident must be a definition error")

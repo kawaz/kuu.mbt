@@ -15,18 +15,18 @@
 /// A definition-time (parse_definition) Error category (DR-054 §1). All are "lowering が構成できない
 /// / 全入力で壊れる" — Error, not warn. (warn 層 = 一部入力で驚きうるだけ, は lint の関心で PoC 射程外.)
 pub(all) enum DefErrKind {
-  DVocabIntersection // two installers own the same vocab (DR-042③)
-  DUnknownVocab // a special vocab owned by no installer in the chain (DR-042①)
-  DInvalidRange // an invalid value range (repeat min > max, etc., DR-052 ほか)
-  DAbsentRef // a ref target resolvable nowhere (scope + definitions, DR-032)
-  DCircularRef // a ref cycle with infinite structural expansion (DR-007/032)
-  DZeroProgress // a repeat unfold whose 1 iteration consumes no token (DR-043)
-  DConfigCycle // a config_file element taking its own path from config (DR-050 §5)
+  VocabIntersection // two installers own the same vocab (DR-042③)
+  UnknownVocab // a special vocab owned by no installer in the chain (DR-042①)
+  InvalidRange // an invalid value range (repeat min > max, etc., DR-052 ほか)
+  AbsentRef // a ref target resolvable nowhere (scope + definitions, DR-032)
+  CircularRef // a ref cycle with infinite structural expansion (DR-007/032)
+  ZeroProgress // a repeat unfold whose 1 iteration consumes no token (DR-043)
+  ConfigCycle // a config_file element taking its own path from config (DR-050 §5)
   // a single argument value itself is outside a registry device's acceptance range (DR-054 §4
   // 更新2 / DR-082 §3, DR-085 §1 訂正) — e.g. regex_match's pattern failing to compile. Distinct
-  // from DInvalidRange (a COMBINATION of attributes is out of range, e.g. repeat min > max):
-  // DInvalidArgument is about a single value's own internal validity.
-  DInvalidArgument
+  // from InvalidRange (a COMBINATION of attributes is out of range, e.g. repeat min > max):
+  // InvalidArgument is about a single value's own internal validity.
+  InvalidArgument
 } derive(Eq, Debug)
 
 ///|
@@ -45,27 +45,27 @@ pub(all) struct DefError {
 /// key = nameless-同化 透過 (the value still propagates; only the key is gone). This is a RESULT
 /// concern only — lexical scope (name, DR-033) and id (ref/link, DR-046) are orthogonal, unchanged.
 pub enum ExportKey {
-  EkUnset // unspecified → the name is the key (DR-046 default supply)
-  EkKey(String) // a string override → that key name
-  EkNull // null / "" → 結果キー軸なし → 透過 (kv: value gone; seq: value stays as an array element)
+  Unset // unspecified → the name is the key (DR-046 default supply)
+  Key(String) // a string override → that key name
+  Null // null / "" → 結果キー軸なし → 透過 (kv: value gone; seq: value stays as an array element)
 } derive(Eq, Debug)
 
 ///|
 /// Construct the name-derived result-key posture across the package boundary.
 pub fn export_key_unset() -> ExportKey {
-  EkUnset
+  Unset
 }
 
 ///|
 /// Construct an explicit result-key override across the package boundary.
 pub fn export_key(key : String) -> ExportKey {
-  EkKey(key)
+  Key(key)
 }
 
 ///|
 /// Construct the result-key-free transparent posture across the package boundary.
 pub fn export_key_null() -> ExportKey {
-  EkNull
+  Null
 }
 
 ///|
@@ -456,7 +456,7 @@ pub impl Eq for Scope with fn equal(self, other) {
 }
 
 ///|
-/// One candidate cell that `CRequired`/`CRequiredGroup` may look at (DR-093 の型委譲判定入力、
+/// One candidate cell that `Required`/`RequiredGroup` may look at (DR-093 の型委譲判定入力、
 /// codex レビュー M-2 修正): `name` は値が実際に bind される cell 名 (BOr 直書き structural or の
 /// leaf name、ref 先 template の leaf name、または通常要素なら要素自身の name)。`wrapper` は
 /// scope 判定の基準を切り替える — `None` なら宣言 scope path そのものと完全一致する scope を探す
@@ -476,23 +476,23 @@ pub(all) struct RequiredCandidate {
 /// violation makes the path NOT a complete解決経路 (DR-047 §2) — a DR-037 Error of kind:constraint.
 pub(all) enum Constraint {
   /// element committed → each target must have a value (default 込み). requires = 正の依存 (DR-055 §3).
-  CRequires(String, Array[String])
+  Requires(String, Array[String])
   /// value-dependent requires (DR-055 §1 + DR-052 §値枝 id 直交): 4-tuple = (entity, branch_id,
   /// value, targets). Semantics: `entity` が committed AND その値 == `value` のとき、`targets` の値
   /// 充足を要求する。違反時の error.element は `branch_id` (= or 値枝の匿名要素に付いた id、fixture
   /// の `id: "fmt_json"` に相当) を emit する — 値の帰属先は親 entity (format) だが制約の宣言元は
   /// 枝 (fmt_json) なので、element 属性は宣言元を指す (DR-052 と直交)。`branch_id` == `entity` の
   /// ときは or 匿名枝に id が付いていない (parent 直属の value_requires を模したフォールバック)。
-  CRequiresIf(String, String, String, Array[String])
+  RequiresIf(String, String, String, Array[String])
   /// conflicts_with (DR-055 §2, 対称): element committed + any target committed → conflict. Declaring
   /// on one side works both ways (the check is「両方 committed」regardless of who declared it).
-  CConflicts(String, Array[String])
+  Conflicts(String, Array[String])
   /// exclusive_group: at most one member of the group may be committed (DR-047 指定述語).
-  CExclusive(String, Array[String])
+  Exclusive(String, Array[String])
   /// required (DR-093 §1/§2): この entity 自身の「解決後の充足」。充足の定義は型 (値空間) への委譲 —
   /// 値空間を持つ要素 (通常の type) は最終状態の値の有無 (default / env 等の値源込み、DR-047 §5 不変)、
   /// 値空間が空の要素 (`type: "none"`、dd 含む、DR-089) は発火したこと (committed)。判定入力に
-  /// committed を使う点は CRequires と同じ線 (DR-047 §5 が selected を診断メタに留めた線を維持)。
+  /// committed を使う点は Requires と同じ線 (DR-047 §5 が selected を診断メタに留めた線を維持)。
   ///
   /// 2-tuple = (display, candidates)。issue
   /// 2026-07-13-structural-or-type-branch-required-missing / codex-review-dr102-dr103-postland
@@ -510,17 +510,17 @@ pub(all) enum Constraint {
   /// 充足していれば OK (DR-093 の「or 親の値充足 = どの枝であれ発火して値が確定していること」— 枝が
   /// exact (value-enum, BEnum) なら全枝が同じ display 名の cell に着地するため候補は元々
   /// `[{name: display, wrapper: None}]` のままで足りる、対称性が崩れるのは structural or だけ)。
-  CRequired(String, Array[RequiredCandidate])
-  /// required_group (DR-103): グループ単位「少なくとも1つ必須」— `exclusive_group` (CExclusive) と
-  /// 同型の 2-tuple = (group label, member candidates)。member の充足判定は `CRequired` と完全に
+  Required(String, Array[RequiredCandidate])
+  /// required_group (DR-103): グループ単位「少なくとも1つ必須」— `exclusive_group` (Exclusive) と
+  /// 同型の 2-tuple = (group label, member candidates)。member の充足判定は `Required` と完全に
   /// 同一の型委譲 (DR-093: 値空間ありは値の有無・default 込み、値空間なしは発火 committed) をグループ
   /// の論理和に持ち上げたもの — bool 型の特殊化 (requires 目的語の truth-dispatch) は適用しない
   /// (DR-103 §7、kawaz 裁定 2026-07-14「値述語と依存述語は別」)。member が 1 つだけの場合は
-  /// `CRequired` と観測上同じ結果になる (DR-103 §4 の縮退)。`required_group` と `exclusive_group` の
+  /// `Required` と観測上同じ結果になる (DR-103 §4 の縮退)。`required_group` と `exclusive_group` の
   /// group 名前空間は独立 (DR-103 §3) — 同名文字列を両属性に書いても 2 つの独立述語として評価される。
-  /// candidates の候補セル解決 (`RequiredCandidate` の name/wrapper 双方) は `CRequired` と完全に
+  /// candidates の候補セル解決 (`RequiredCandidate` の name/wrapper 双方) は `Required` と完全に
   /// 共有する (`installer.mbt` の `required_candidates` ヘルパー、codex M-2 の再発防止)。
-  CRequiredGroup(String, Array[RequiredCandidate])
+  RequiredGroup(String, Array[RequiredCandidate])
 } derive(Eq, Debug)
 
 ///|

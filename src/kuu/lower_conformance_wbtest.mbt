@@ -199,11 +199,11 @@ fn lcon_str(c : @engine.Constraint) -> String {
   }
 
   match c {
-    CRequires(el, ts) =>
+    Requires(el, ts) =>
       "requires{element=" + el + ",targets=[" + sorted(ts) + "]}"
-    CConflicts(el, ts) =>
+    Conflicts(el, ts) =>
       "conflicts_with{element=" + el + ",targets=[" + sorted(ts) + "]}"
-    CRequiresIf(entity, branch_id, v, ts) =>
+    RequiresIf(entity, branch_id, v, ts) =>
       // DR-055 §1 + DR-052 §値枝 id 直交: entity は committed 判定対象、branch_id は違反時 element。
       // 断面には両方 emit する (entity と branch_id が別ならその非対称が読める; id なしの parent 直属
       // 値依存 requires では entity == branch_id となり冗長だが projection は fixture 側と対称に保つ)。
@@ -216,11 +216,11 @@ fn lcon_str(c : @engine.Constraint) -> String {
       ",targets=[" +
       sorted(ts) +
       "]}"
-    CExclusive(g, ms) =>
+    Exclusive(g, ms) =>
       "exclusive_group{group=" + g + ",members=[" + sorted(ms) + "]}"
-    CRequired(el, cands) => {
+    Required(el, cands) => {
       // @engine.RequiredCandidate.name のみ projection (codex M-2 修正で候補が wrapper 付きになったが、
-      // lowering 断面はまだ CRequired/CRequiredGroup を対象にした fixture が無い — wrapper 込みの
+      // lowering 断面はまだ Required/RequiredGroup を対象にした fixture が無い — wrapper 込みの
       // 表記が必要になったら拡張する)。
       let names : Array[String] = []
       for c in cands {
@@ -228,7 +228,7 @@ fn lcon_str(c : @engine.Constraint) -> String {
       }
       "required{element=" + el + ",candidates=[" + sorted(names) + "]}"
     }
-    CRequiredGroup(g, ms) => {
+    RequiredGroup(g, ms) => {
       let names : Array[String] = []
       for m in ms {
         names.push(m.name)
@@ -664,7 +664,7 @@ fn registry_with_installers(
         "",
         None,
         @builtins.string_type(),
-        @engine.RError,
+        @engine.Error,
         false,
         @builtins.bool_config_canonical(),
         [],
@@ -672,7 +672,7 @@ fn registry_with_installers(
       ),
       @builtins.number_arg("", false, []),
       @builtins.float_arg("", []),
-      @builtins.int_arg("", @engine.RError, false, []),
+      @builtins.int_arg("", @engine.Error, false, []),
       @builtins.bool_arg("", @builtins.bool_config_canonical(), []),
       @builtins.typed_arg("", @builtins.string_type(), []),
       @builtins.effect_mark("", @engine.Set),
@@ -1087,7 +1087,7 @@ fn dec_lcon(j : Json) -> @engine.Constraint raise DecodeSkip {
   match req_field(o, "kind") {
     "requires" => {
       allowed_keys(o, ["kind", "element", "targets"], "requires constraint")
-      CRequires(req_field(o, "element"), dec_strs(o.get("targets")))
+      Requires(req_field(o, "element"), dec_strs(o.get("targets")))
     }
     "conflicts_with" => {
       allowed_keys(
@@ -1095,7 +1095,7 @@ fn dec_lcon(j : Json) -> @engine.Constraint raise DecodeSkip {
         ["kind", "element", "targets"],
         "conflicts_with constraint",
       )
-      CConflicts(req_field(o, "element"), dec_strs(o.get("targets")))
+      Conflicts(req_field(o, "element"), dec_strs(o.get("targets")))
     }
     "requires_if" => {
       // DR-055 §1 + DR-052 §値枝 id 直交: fixture 側が constraints[] を直宣言する場面での decoder。
@@ -1108,7 +1108,7 @@ fn dec_lcon(j : Json) -> @engine.Constraint raise DecodeSkip {
       )
       let element = req_field(o, "element")
       let entity = jf_str(o, "entity").unwrap_or(element)
-      CRequiresIf(
+      RequiresIf(
         entity,
         element,
         req_field(o, "value"),
@@ -1121,7 +1121,7 @@ fn dec_lcon(j : Json) -> @engine.Constraint raise DecodeSkip {
         ["kind", "group", "members"],
         "exclusive_group constraint",
       )
-      CExclusive(req_field(o, "group"), dec_strs(o.get("members")))
+      Exclusive(req_field(o, "group"), dec_strs(o.get("members")))
     }
     other => raise DecodeSkip("unsupported constraint kind '" + other + "'")
   }

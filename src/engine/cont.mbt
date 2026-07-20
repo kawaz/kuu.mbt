@@ -132,7 +132,7 @@ fn run_cont(
             {
               element: "",
               args_pos: pos,
-              kind: KParse,
+              kind: Parse,
               reason: "unexpected_token",
               message: "unexpected token",
               // DR-066 §4: starts empty, prepended by scope boundaries

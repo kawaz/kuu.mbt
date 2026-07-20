@@ -44,7 +44,7 @@ fn type_parse_error(
   {
     element,
     args_pos: pos,
-    kind: @engine.KParse,
+    kind: @engine.Parse,
     reason: failure.reason,
     message: failure.message,
     path: [],

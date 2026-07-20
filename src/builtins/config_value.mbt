@@ -29,8 +29,8 @@ fn num_to_string(d : Double) -> String {
 /// when config's source happens to be a string). Every `(@engine.String(s), _)` arm below sees the
 /// ALREADY-filtered string.
 ///
-/// Error shape `(ErrKind, reason, message)`: `@engine.KFilter` for a piece_filters rejection (mirrors
-/// `resolve.mbt`'s `filter_err`), `@engine.KParse` for every type-mismatch/parse-failure arm (mirrors
+/// Error shape `(ErrKind, reason, message)`: `@engine.Filter` for a piece_filters rejection (mirrors
+/// `resolve.mbt`'s `filter_err`), `@engine.Parse` for every type-mismatch/parse-failure arm (mirrors
 /// `ladder_err`) — the caller picks the matching `ParseError` constructor by this tag. `message`
 /// is caller-facing text only (conformance ignores it, per this file's `ParseError` doc comment).
 pub fn config_to_value(
@@ -44,12 +44,12 @@ pub fn config_to_value(
     // configuration is therefore resident-owned for CLI, env, and config alike.
     @engine.String(raw) =>
       match @engine.apply_piece_filters(extensions, piece_filters, raw) {
-        Err((reason, msg)) => Err((@engine.KFilter, reason, msg))
+        Err((reason, msg)) => Err((@engine.Filter, reason, msg))
         Ok(s) =>
           match ty.parse_token(s) {
             Ok(value) => Ok(value)
             Err(fail) =>
-              Err((@engine.KParse, fail.reason, "config " + fail.message))
+              Err((@engine.Parse, fail.reason, "config " + fail.message))
           }
       }
     // JSON-native scalars do not need lexical parsing. The resident identity still
@@ -64,7 +64,7 @@ pub fn config_to_value(
           } else {
             Err(
               (
-                @engine.KParse,
+                @engine.Parse,
                 "not_an_integer",
                 "config value \"\{num_to_string(d)}\" is not an integer",
               ),
@@ -73,7 +73,7 @@ pub fn config_to_value(
         "flag" | "bool" =>
           Err(
             (
-              @engine.KParse,
+              @engine.Parse,
               "config_type_mismatch",
               "config number for a bool element (no number↔bool coercion)",
             ),
@@ -81,7 +81,7 @@ pub fn config_to_value(
         _ =>
           Err(
             (
-              @engine.KParse,
+              @engine.Parse,
               "config_type_mismatch",
               "config value for a none element (no value space)",
             ),
@@ -94,7 +94,7 @@ pub fn config_to_value(
         "number" | "float" | "count" | "int" =>
           Err(
             (
-              @engine.KParse,
+              @engine.Parse,
               "config_type_mismatch",
               "config bool for a numeric element (no number↔bool coercion)",
             ),
@@ -102,7 +102,7 @@ pub fn config_to_value(
         _ =>
           Err(
             (
-              @engine.KParse,
+              @engine.Parse,
               "config_type_mismatch",
               "config value for a none element (no value space)",
             ),
@@ -112,7 +112,7 @@ pub fn config_to_value(
     @engine.Array(_) =>
       Err(
         (
-          @engine.KParse,
+          @engine.Parse,
           "config_structural_mismatch",
           "config array for a scalar element (structural mismatch)",
         ),
@@ -120,7 +120,7 @@ pub fn config_to_value(
     @engine.Object(_) =>
       Err(
         (
-          @engine.KParse,
+          @engine.Parse,
           "config_structural_mismatch",
           "config object for a scalar element (structural mismatch)",
         ),
@@ -128,7 +128,7 @@ pub fn config_to_value(
     @engine.Null =>
       Err(
         (
-          @engine.KParse,
+          @engine.Parse,
           "config_type_mismatch",
           "config null is 供給なし (should be handled as no-supply, not converted)",
         ),

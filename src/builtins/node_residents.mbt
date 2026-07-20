@@ -17,16 +17,16 @@ fn ty_json(ty : &@engine.TypeExt) -> Json {
 ///|
 fn round_mode_json(mode : @engine.RoundMode) -> Json {
   let name = match mode {
-    @engine.RFloor => "floor"
-    @engine.RCeil => "ceil"
-    @engine.RTrunc => "trunc"
-    @engine.RAway => "away"
-    @engine.RHalfFloor => "half_floor"
-    @engine.RHalfCeil => "half_ceil"
-    @engine.RHalfTrunc => "half_trunc"
-    @engine.RHalfAway => "half_away"
-    @engine.RHalfEven => "half_even"
-    @engine.RError => "error"
+    @engine.Floor => "floor"
+    @engine.Ceil => "ceil"
+    @engine.Trunc => "trunc"
+    @engine.Away => "away"
+    @engine.HalfFloor => "half_floor"
+    @engine.HalfCeil => "half_ceil"
+    @engine.HalfTrunc => "half_trunc"
+    @engine.HalfAway => "half_away"
+    @engine.HalfEven => "half_even"
+    @engine.Error => "error"
   }
   name.to_json()
 }
@@ -449,7 +449,7 @@ impl @engine.NodeExt for FilteredNumberArgExt with fn eval(
                 {
                   element: self.name,
                   args_pos: pos,
-                  kind: @engine.KFilter,
+                  kind: @engine.Filter,
                   reason: "too_large",
                   message: "\{self.name} value \{token} exceeds max \{self.max}",
                   path: [],

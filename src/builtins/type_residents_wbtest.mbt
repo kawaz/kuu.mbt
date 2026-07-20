@@ -44,7 +44,7 @@ test "@engine.TypeExt parse_token delegates to each resident lexicon and config"
     Ok(@engine.Number(255.0)),
   )
   assert_eq(
-    int_type(round=@engine.RFloor).parse_token("2.9"),
+    int_type(round=@engine.Floor).parse_token("2.9"),
     Ok(@engine.Number(2.0)),
   )
   assert_eq(

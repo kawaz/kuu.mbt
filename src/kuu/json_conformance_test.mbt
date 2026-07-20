@@ -232,23 +232,23 @@ fn render_src(s : @engine.Source) -> String {
 ///|
 fn render_kind(k : @engine.ErrKind) -> String {
   match k {
-    @engine.KParse => "parse"
-    @engine.KFilter => "filter"
-    @engine.KConstraint => "constraint"
+    @engine.Parse => "parse"
+    @engine.Filter => "filter"
+    @engine.Constraint => "constraint"
   }
 }
 
 ///|
 fn render_def_kind(k : @engine.DefErrKind) -> String {
   match k {
-    @engine.DVocabIntersection => "vocab-intersection"
-    @engine.DUnknownVocab => "unknown-vocab"
-    @engine.DInvalidRange => "invalid-range"
-    @engine.DAbsentRef => "absent-ref"
-    @engine.DCircularRef => "circular-ref"
-    @engine.DZeroProgress => "zero-progress"
-    @engine.DConfigCycle => "config-cycle"
-    @engine.DInvalidArgument => "invalid-argument"
+    @engine.VocabIntersection => "vocab-intersection"
+    @engine.UnknownVocab => "unknown-vocab"
+    @engine.InvalidRange => "invalid-range"
+    @engine.AbsentRef => "absent-ref"
+    @engine.CircularRef => "circular-ref"
+    @engine.ZeroProgress => "zero-progress"
+    @engine.ConfigCycle => "config-cycle"
+    @engine.InvalidArgument => "invalid-argument"
   }
 }
 

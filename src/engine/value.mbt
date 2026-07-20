@@ -97,29 +97,29 @@ pub fn config_from_json(json : Json) -> ConfigVal {
 /// coerces nothing; a non-integer VALUE is rejected). Direction語 name 0-起点 (`trunc`/`away`) と
 /// 無限-起点 (`floor`/`ceil`) を分け、Java/Python の "UP"/"DOWN" 多義を持ち込まない (DR-075 §3).
 pub(all) enum RoundMode {
-  RFloor // →−∞
-  RCeil // →+∞
-  RTrunc // →0 方向 (小数部を捨てる)
-  RAway // →0 の反対方向 (絶対値切り上げ)
-  RHalfFloor // tie→−∞
-  RHalfCeil // tie→+∞
-  RHalfTrunc // tie→0 方向
-  RHalfAway // tie→0 の反対 (学校四捨五入)
-  RHalfEven // banker's rounding
-  RError // 非整数値は Error
+  Floor // →−∞
+  Ceil // →+∞
+  Trunc // →0 方向 (小数部を捨てる)
+  Away // →0 の反対方向 (絶対値切り上げ)
+  HalfFloor // tie→−∞
+  HalfCeil // tie→+∞
+  HalfTrunc // tie→0 方向
+  HalfAway // tie→0 の反対 (学校四捨五入)
+  HalfEven // banker's rounding
+  Error // 非整数値は Error
 } derive(Eq, Debug)
 
 ///|
 /// DESIGN §7.2 / DR-096 §1: scope config `long_eq_sep` の 3 値。long の eq 分割形 (`key=value`) と
-/// space 分割形 (`key value`) の入口をダイヤルする。`EsRequire` = eq 分割形のみ受理 (space-form main
-/// entry を withhold、DR-091 §3 の eq 必須意味論)、`EsAllow` (既定) = 両方受理、
-/// `EsDeny` = eq 分割 matcher を生成せず space 分割形のみ受理。
+/// space 分割形 (`key value`) の入口をダイヤルする。`Require` = eq 分割形のみ受理 (space-form main
+/// entry を withhold、DR-091 §3 の eq 必須意味論)、`Allow` (既定) = 両方受理、
+/// `Deny` = eq 分割 matcher を生成せず space 分割形のみ受理。
 /// 3 値 enum のため「eq 必須かつ eq 禁止」のような組合せはそもそも構文的に表現できない (illegal
 /// states unrepresentable、DR-096 §1)。
 pub(all) enum EqSepMode {
-  EsRequire
-  EsAllow
-  EsDeny
+  Require
+  Allow
+  Deny
 } derive(Eq, Debug)
 
 ///|
@@ -128,9 +128,9 @@ pub(all) enum EqSepMode {
 /// 前例パターン、`json_conformance_test.mbt` の呼び出し側)。
 pub fn eq_sep_mode_of(s : String) -> EqSepMode? {
   match s {
-    "require" => Some(EsRequire)
-    "allow" => Some(EsAllow)
-    "deny" => Some(EsDeny)
+    "require" => Some(Require)
+    "allow" => Some(Allow)
+    "deny" => Some(Deny)
     _ => None
   }
 }
@@ -139,19 +139,19 @@ pub fn eq_sep_mode_of(s : String) -> EqSepMode? {
 /// DESIGN §7.2 / DR-096 §2 (kawaz 裁定 2026-07-12 で `last_only` 追加、4 値): scope config
 /// `short_attached_value` の 4 値。値持ち short の付着形 (`-O2`) と space 分割形 (`-O 2`) の**読み
 /// 生成**を entry 単位でダイヤルする — ダイヤルが条件にするのは読みの形だけで、単独発火かクラスタ内
-/// か・クラスタ内の位置は条件にならない (DR-096 §3.1、位置条件の除去)。`AtRequire` = 付着形のみ受理
-/// し space-form の読み枝が立たない (gcc/clang の `-O`/`-W` 型)、`AtAllow` (既定) = 両方受理 (DR-041
-/// §4 の値スロット一般規則そのまま)、`AtDeny` = 付着読みの枝を生成せず space 分割形のみ受理する、
-/// `AtLastOnly` = 付着読みを「残り全部の丸取り形」1 通りだけに制限 (mid-token の分割点を列挙しない、
+/// か・クラスタ内の位置は条件にならない (DR-096 §3.1、位置条件の除去)。`Require` = 付着形のみ受理
+/// し space-form の読み枝が立たない (gcc/clang の `-O`/`-W` 型)、`Allow` (既定) = 両方受理 (DR-041
+/// §4 の値スロット一般規則そのまま)、`Deny` = 付着読みの枝を生成せず space 分割形のみ受理する、
+/// `LastOnly` = 付着読みを「残り全部の丸取り形」1 通りだけに制限 (mid-token の分割点を列挙しない、
 /// GNU getopt 慣習 — `allow`/`require` だと同一トークン内の全分割点が ambiguous を生みうるところを
 /// 一意化する)、space 形は `allow` 同様に生きる。値スロットを持たない要素 (flag/count) にはダイヤル
 /// が届いても inert (DR-096 §3.2)。`long_eq_sep` (`EqSepMode`) とは軸そのものが異なる別型 — short
 /// に eq 分割形は存在しない (DR-096 §3.4)。
 pub(all) enum AttachMode {
-  AtRequire
-  AtAllow
-  AtDeny
-  AtLastOnly
+  Require
+  Allow
+  Deny
+  LastOnly
 } derive(Eq, Debug)
 
 ///|
@@ -159,10 +159,10 @@ pub(all) enum AttachMode {
 /// Returns None on an unknown token (`eq_sep_mode_of` と同型の前例パターン)。
 pub fn attach_mode_of(s : String) -> AttachMode? {
   match s {
-    "require" => Some(AtRequire)
-    "allow" => Some(AtAllow)
-    "deny" => Some(AtDeny)
-    "last_only" => Some(AtLastOnly)
+    "require" => Some(Require)
+    "allow" => Some(Allow)
+    "deny" => Some(Deny)
+    "last_only" => Some(LastOnly)
     _ => None
   }
 }
@@ -201,9 +201,9 @@ pub fn is_integer(d : Double) -> Bool {
 /// `filter` = a piece/value/cell filter reject (a value that parsed but failed a filter), `constraint` = a
 /// delayed-predicate violation (required 未充足 etc., DR-047). All three ride the errors array.
 pub(all) enum ErrKind {
-  KParse
-  KFilter
-  KConstraint
+  Parse
+  Filter
+  Constraint
 } derive(Eq, Debug)
 
 ///|
@@ -342,7 +342,7 @@ pub fn cat(a : Array[Binding], b : Array[Binding]) -> Array[Binding] {
 /// ever reached its type parser (DR-034/DR-062, DR-037's Reject/Error distinction — see
 /// `apply_piece_filters`'s doc comment for why a filter chain's `Err` always becomes a `Held`, never
 /// a silent `[]`: the Or/path-search machinery already discards a `Held` branch whenever a sibling
-/// branch `Accept`s, so a single `Held(kind: KFilter, ...)` return realizes BOTH DR-037 outcomes —
+/// branch `Accept`s, so a single `Held(kind: Filter, ...)` return realizes BOTH DR-037 outcomes —
 /// no separate silent-Reject channel is needed). Token-consumption callers (eval.mbt's value-
 /// primitive arms, builtins/matcher_residents.mbt's `run_eq_split`) pass `reason`/`message` straight from
 /// `apply_piece_filters`'s `Err` tuple. Mirrors `resolve.mbt`'s `filter_err` (the ladder-layer
@@ -354,7 +354,7 @@ pub fn pe_filter(
   reason : String,
   message : String,
 ) -> ParseError {
-  { element, args_pos: pos, kind: KFilter, reason, message, path: [] }
+  { element, args_pos: pos, kind: Filter, reason, message, path: [] }
 }
 
 ///|

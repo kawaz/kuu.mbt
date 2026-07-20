@@ -219,7 +219,7 @@ test "config_to_value: piece_filters runs on a String source before the type par
     ),
     Some(@engine.String("hi")),
   )
-  // a piece_filters REJECT (not just a parse failure) surfaces as KFilter, distinct from a KParse
+  // a piece_filters REJECT (not just a parse failure) surfaces as Filter, distinct from a Parse
   // type-mismatch — `resolve.mbt`'s caller picks the ParseError constructor by this tag.
   match
     config_to_value(
@@ -228,11 +228,11 @@ test "config_to_value: piece_filters runs on a String source before the type par
       config_chain(["non_empty"]),
       test_filter_registry(),
     ) {
-    Err((@engine.KFilter, _, _)) => ()
-    Ok(_) => fail("expected Err(KFilter, ..), got Ok")
-    Err((@engine.KParse, _, _)) =>
-      fail("expected Err(KFilter, ..), got Err(KParse, ..)")
-    Err((@engine.KConstraint, _, _)) =>
-      fail("expected Err(KFilter, ..), got Err(KConstraint, ..)")
+    Err((@engine.Filter, _, _)) => ()
+    Ok(_) => fail("expected Err(Filter, ..), got Ok")
+    Err((@engine.Parse, _, _)) =>
+      fail("expected Err(Filter, ..), got Err(Parse, ..)")
+    Err((@engine.Constraint, _, _)) =>
+      fail("expected Err(Filter, ..), got Err(Constraint, ..)")
   }
 }

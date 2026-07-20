@@ -201,7 +201,7 @@ pub(all) struct ElemDef {
   required : Bool
   // DR-055 §1 + DR-052 §値枝 id 直交: 値の枝に付いた requires。tuple 各成分 =
   // (branch_id, value, targets)。branch_id は or 値枝の匿名要素に付いた識別子 (fixture の `id:
-  // "fmt_json"`) で、CRequiresIf 違反時の error.element として emit する (制約の宣言元 = 枝、
+  // "fmt_json"`) で、RequiresIf 違反時の error.element として emit する (制約の宣言元 = 枝、
   // 値の帰属先 = 親 entity の非対称)。id 未指定時は parent entity name を branch_id にフォールバック
   // (parent 直属の value_requires と等価な挙動)。
   value_requires : Array[(String, String, Array[String])]
@@ -209,7 +209,7 @@ pub(all) struct ElemDef {
   // residents still encode their stable lowering form from these explicit values. TypeExt already
   // owns runtime parsing; removing this duplicate waits for those residents to accept one descriptor.
   // DR-075 §2 int_round factory config (DR-061 §4 平坦 config キー、`int_parser` の唯一 config)。
-  // canonical default = `RError` (非整数値は Error)、opt-in で floor/trunc/half_even 等の丸めモード。
+  // canonical default = `Error` (非整数値は Error)、opt-in で floor/trunc/half_even 等の丸めモード。
   // parse 相内部調整で、`value_prim` が int resident にこの値を埋め込む。@builtins.int_type() 以外の element は
   // 参照しない (installer が読み取らない冗長フィールド)。
   int_round : RoundMode
@@ -272,12 +272,12 @@ pub(all) struct ElemDef {
   // prepends to this element's own long spellings when building each trigger (`e.long_prefix + l`,
   // replacing the old hardcoded `"--" + l`) — every OTHER element in the same `Definition` keeps its
   // own resolved value unless it also overrides. `""` is unconditionally legal (DR-096 §3.3, kawaz
-  // 裁定 2026-07-12 — 旧 DR-091 §3 の「`long_eq_sep: EsRequire` 併用時のみ合法」制約は撤廃): a bare
+  // 裁定 2026-07-12 — 旧 DR-091 §3 の「`long_eq_sep: Require` 併用時のみ合法」制約は撤廃): a bare
   // long trigger colliding with a plain positional operand (`foo`) is an application-level concern,
   // not a definition-time error — the normal reading enumeration surfaces the collision as
   // `Ambiguous` (DR-053, `fixtures/matcher-readings/long-empty-prefix-operand-collision.json`), no
   // static rejection is imposed. An app that wants to eliminate the collision can opt into
-  // `long_eq_sep: EsRequire` (only `=`-bearing tokens become long candidates) or simply declare no
+  // `long_eq_sep: Require` (only `=`-bearing tokens become long candidates) or simply declare no
   // colliding positional — these are DESIGN choices, not prerequisites the parser enforces.
   long_prefix : String
   // DESIGN §7.2 / LOWERING §B.2「config `short_prefix`/`short_combine` がパラメータ」: the string
@@ -298,12 +298,12 @@ pub(all) struct ElemDef {
   auto_env : Bool
   // DESIGN §7.2 / DR-096 §1: 3 値 enum で `inst_long` の eq-split entry / SPACE-FORM main entry
   // (`Seq([Exact(trigger), value_prim(...)])`, the `ref_target is None` branch) の配線をダイヤルする。
-  // `EsRequire` = SPACE-FORM main entry を withhold、eq-split entry のみ配線 (DR-096 §3.3 — これを
+  // `Require` = SPACE-FORM main entry を withhold、eq-split entry のみ配線 (DR-096 §3.3 — これを
   // `long_prefix: ""` と併用すると、space form が無いので生 token に一切マッチせず `@builtins.eq_split` は `=`
   // を含む token にのみ発火するため、素の operand (`foo`) との衝突をアプリ側で定義的に排除する
   // 選択手段になる。ただし空 prefix 自体はこの併用を要求しない — 併用しない場合の衝突は Ambiguous
-  // として通常通り列挙される、`ElemDef.long_prefix` の doc comment 参照)。`EsAllow` (既定) = 両方
-  //配線 (現行挙動そのまま)。`EsDeny` = eq-split entry を登録しない、SPACE-FORM のみ。3 値のため
+  // として通常通り列挙される、`ElemDef.long_prefix` の doc comment 参照)。`Allow` (既定) = 両方
+  //配線 (現行挙動そのまま)。`Deny` = eq-split entry を登録しない、SPACE-FORM のみ。3 値のため
   // 「両方 withhold」という旧矛盾状態は構文的に表現不能 (illegal states unrepresentable、DR-096 §1
   // — 旧 `collect_eq_separator_conflict` definition-error 規定は本 DR で不要化・削除)。
   long_eq_sep : EqSepMode
@@ -315,10 +315,10 @@ pub(all) struct ElemDef {
   // DESIGN §7.2 / DR-096 §2 (kawaz 裁定 2026-07-12 で `last_only` 追加、4 値): 値持ち short の付着形
   // (`-O2`) と space 分割形 (`-O 2`) の読み生成をダイヤルする新設 4 値 enum — ダイヤルが条件にするの
   // は読みの形だけで、単独発火かクラスタ内か・クラスタ内の位置は条件にならない (DR-096 §3.1)。
-  // `AtRequire` = 付着形のみ受理、space-form main entry を withhold (gcc/clang の `-O`/`-W` 型)。
-  // `AtAllow` (既定) = 両方受理 (現行挙動そのまま、DR-041 §4 の値スロット一般規則)。`AtDeny` = 付着
-  // 読みの枝を生成しない、space 分割形のみ受理。`AtLastOnly` = 付着読みを「残り全部の丸取り形」1 通り
-  // だけに制限 (mid-token 分割点を列挙しない、GNU getopt 慣習)、space 形は `AtAllow` 同様に生きる。
+  // `Require` = 付着形のみ受理、space-form main entry を withhold (gcc/clang の `-O`/`-W` 型)。
+  // `Allow` (既定) = 両方受理 (現行挙動そのまま、DR-041 §4 の値スロット一般規則)。`Deny` = 付着
+  // 読みの枝を生成しない、space 分割形のみ受理。`LastOnly` = 付着読みを「残り全部の丸取り形」1 通り
+  // だけに制限 (mid-token 分割点を列挙しない、GNU getopt 慣習)、space 形は `Allow` 同様に生きる。
   // 値スロットを持たない要素 (flag/count/none) には inert (DR-096 §3.2 — `walk_short` の該当 kind
   // 分岐はこのフィールドを参照しない)。`@builtins.ShortEntry.short_attached_value` (node.mbt) へそのまま乗せる、
   // `walk_short` (builtins/matcher_residents.mbt) が唯一の消費者。
@@ -332,7 +332,7 @@ pub(all) struct ElemDef {
 ///|
 /// MDR-004: ElemDef の消費文法軸。`BCell` (単一値セル) 以外の3つは構造化された消費文法:
 /// - `BOr`: 構造 or (DR-038 / DESIGN §15.4) — 枝ごとに別の named cell を束縛する「消費文法の枝」。
-///   DR-055 の値 enum 枝 (exact 照合、CRequiresIf の素材) とは別物 — `BEnum` (下記) と対になり、
+///   DR-055 の値 enum 枝 (exact 照合、RequiresIf の素材) とは別物 — `BEnum` (下記) と対になり、
 ///   value_requires (制約) は enum 枝の有無に関わらず `dec_or` が引き続き担う (§5.3 values 正規形)。
 /// - `BGroup`: named group (DR-044 反復グループ) — repeat と組んで、発火ごとに内部 positionals を
 ///   1 セットずつ束ねる (transparent-seq の `xs{k}` がこの形)。

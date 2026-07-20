@@ -150,10 +150,10 @@ pub(all) struct ArrayFilterDescriptor {
 }
 
 pub(all) enum AttachMode {
-  AtRequire
-  AtAllow
-  AtDeny
-  AtLastOnly
+  Require
+  Allow
+  Deny
+  LastOnly
 } derive(Eq, @debug.Debug)
 
 pub(all) struct Binding {
@@ -266,12 +266,12 @@ pub enum ConfigVal {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum Constraint {
-  CRequires(String, Array[String])
-  CRequiresIf(String, String, String, Array[String])
-  CConflicts(String, Array[String])
-  CExclusive(String, Array[String])
-  CRequired(String, Array[RequiredCandidate])
-  CRequiredGroup(String, Array[RequiredCandidate])
+  Requires(String, Array[String])
+  RequiresIf(String, String, String, Array[String])
+  Conflicts(String, Array[String])
+  Exclusive(String, Array[String])
+  Required(String, Array[RequiredCandidate])
+  RequiredGroup(String, Array[RequiredCandidate])
 } derive(Eq, @debug.Debug)
 
 pub struct Ctx {
@@ -293,14 +293,14 @@ pub(all) struct DecodedOwnedDecl {
 }
 
 pub(all) enum DefErrKind {
-  DVocabIntersection
-  DUnknownVocab
-  DInvalidRange
-  DAbsentRef
-  DCircularRef
-  DZeroProgress
-  DConfigCycle
-  DInvalidArgument
+  VocabIntersection
+  UnknownVocab
+  InvalidRange
+  AbsentRef
+  CircularRef
+  ZeroProgress
+  ConfigCycle
+  InvalidArgument
 } derive(Eq, @debug.Debug)
 
 pub(all) struct DefError {
@@ -448,21 +448,21 @@ pub(all) struct Entity {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum EqSepMode {
-  EsRequire
-  EsAllow
-  EsDeny
+  Require
+  Allow
+  Deny
 } derive(Eq, @debug.Debug)
 
 pub(all) enum ErrKind {
-  KParse
-  KFilter
-  KConstraint
+  Parse
+  Filter
+  Constraint
 } derive(Eq, @debug.Debug)
 
 pub enum ExportKey {
-  EkUnset
-  EkKey(String)
-  EkNull
+  Unset
+  Key(String)
+  Null
 } derive(Eq, @debug.Debug)
 
 pub(all) enum FailDef {
@@ -700,9 +700,9 @@ pub(all) struct ParseError {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum PieceMark {
-  PkAdd(String)
-  PkRemove(String)
-  PkSplice
+  Add(String)
+  Remove(String)
+  Splice
 } derive(Eq, @debug.Debug)
 
 pub(all) enum RVal {
@@ -748,16 +748,16 @@ pub(all) struct RequiredCandidate {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum RoundMode {
-  RFloor
-  RCeil
-  RTrunc
-  RAway
-  RHalfFloor
-  RHalfCeil
-  RHalfTrunc
-  RHalfAway
-  RHalfEven
-  RError
+  Floor
+  Ceil
+  Trunc
+  Away
+  HalfFloor
+  HalfCeil
+  HalfTrunc
+  HalfAway
+  HalfEven
+  Error
 } derive(Eq, @debug.Debug)
 
 pub(all) struct Scope {

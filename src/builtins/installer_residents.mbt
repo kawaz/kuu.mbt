@@ -772,7 +772,7 @@ impl @engine.InstallerExt for ConstraintInstaller with fn decode(
         "requires", "conflicts_with", "exclusive_group", "required_group", "required",
       ]
     // DR-012 / DR-055 / DR-103: constraint 系は「要素属性」であり positional にも同型に付与できる
-    // (engine 側の CConflicts/CExclusive/CRequired/CRequiredGroup は committed 判定を entity 名で
+    // (engine 側の Conflicts/Exclusive/Required/RequiredGroup は committed 判定を entity 名で
     // 行うため option/positional を区別しない)。option 版と同じ 5 語彙を positional にも許可する。
     // value_requires は positional では trigger 経路が仕様上ない (positional の `or` は structural
     // 専用、`values` キー未 allowed、DR-055 §5.3 の value-enum-or 誘導は option 限定 — 値の枝への
@@ -1059,7 +1059,7 @@ fn collect_help_meta_errors(
     if meta.help_on_failure is Some(_) && !meta.is_help_preset {
       errors.push({
         element: e.name,
-        kind: @engine.DInvalidRange,
+        kind: @engine.InvalidRange,
         message: "help_on_failure requires a help preset type",
         hint: "declare help_on_failure only on help / help_all_category / help_category / help_show_hidden / help_tree",
       })
@@ -1068,7 +1068,7 @@ fn collect_help_meta_errors(
       if meta.help_order is Some(_) {
         errors.push({
           element: "",
-          kind: @engine.DInvalidRange,
+          kind: @engine.InvalidRange,
           message: "help group declaration cannot use help_order",
           hint: "use help_group_order for a group declaration",
         })
@@ -1083,7 +1083,7 @@ fn collect_help_meta_errors(
             Some(_) =>
               errors.push({
                 element: "",
-                kind: @engine.DInvalidRange,
+                kind: @engine.InvalidRange,
                 message: "help group '" + name + "' is declared more than once",
                 hint: "keep exactly one declaration per help_group_name",
               })
@@ -1095,7 +1095,7 @@ fn collect_help_meta_errors(
     } else if meta.help_group_order is Some(_) {
       errors.push({
         element: e.name,
-        kind: @engine.DInvalidRange,
+        kind: @engine.InvalidRange,
         message: "normal help entry cannot use help_group_order",
         hint: "use help_order for a normal entry",
       })
@@ -1104,7 +1104,7 @@ fn collect_help_meta_errors(
       (meta.help_order is Some(_) || meta.help_group_order is Some(_)) {
       errors.push({
         element: e.name,
-        kind: @engine.DInvalidRange,
+        kind: @engine.InvalidRange,
         message: "help order and help_after cannot be declared together",
         hint: "choose either absolute order or relative help_after placement",
       })
@@ -1116,7 +1116,7 @@ fn collect_help_meta_errors(
       help_after_returns_to(def, e.name) {
       errors.push({
         element: e.name,
-        kind: @engine.DCircularRef,
+        kind: @engine.CircularRef,
         message: "help_after placement for '" + e.name + "' is circular",
         hint: "break the help_after cycle",
       })

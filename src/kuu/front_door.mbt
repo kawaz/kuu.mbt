@@ -154,7 +154,7 @@ pub fn parse_definition(
         Rejected([
           {
             element,
-            kind: @engine.DUnknownVocab,
+            kind: @engine.UnknownVocab,
             message: "value type '" + type_name + "' is not registered",
             hint: "register a TypeExt resident named '" + type_name + "'",
           },
@@ -173,7 +173,7 @@ pub fn parse_definition(
 ///
 /// 1. **`@engine.parse_tree`** (eval.mbt): argv 消費 + eval 層の dead-end 判定 + 完全経路収集
 /// 2. **`apply_requires_filter`** (DR-047 §5 明確化 = kawaz 裁定 2026-07-09): bool-target
-///    requires / CRequiresIf は KTop (CLI 面のみ) では常に skip され、値源 (env/config/inherit)
+///    requires / RequiresIf は KTop (CLI 面のみ) では常に skip され、値源 (env/config/inherit)
 ///    が解ける後段でしか判定できない。ここで候補ごとに `resolve_scope_tree` を実際に呼んで
 ///    充足を確定し、生存経路数で outcome を再構成する (0 → @engine.Failure / 1 → @engine.Success / 2+ →
 ///    @engine.Ambiguous)。値源が空でも bool 目的語の充足条件 (「解決後値が true」) の判定は必要 —

@@ -85,10 +85,10 @@ fn classify_long_form(
   let original = invocation_form_text(form)
   let parts = match @engine.decode_fn_invocation_parts(form) {
     Ok(parts) => parts
-    Err(_) => return LInvalid(original, @engine.DInvalidArgument)
+    Err(_) => return LInvalid(original, @engine.InvalidArgument)
   }
   if parts.length() < 2 {
-    return LInvalid(original, @engine.DUnknownVocab)
+    return LInvalid(original, @engine.UnknownVocab)
   }
   let prefix = parts[0]
   let trigger = if prefix == "" { own_name } else { prefix + "-" + own_name }
@@ -105,11 +105,11 @@ fn classify_long_form(
     return LMain(own_name)
   }
   let descriptor = match extensions.lookup_cell_fn(invocation.name) {
-    None => return LInvalid(original, @engine.DUnknownVocab)
+    None => return LInvalid(original, @engine.UnknownVocab)
     Some(descriptor) => descriptor
   }
   match descriptor.validate_invocation(invocation) {
-    Err(_) => return LInvalid(original, @engine.DInvalidArgument)
+    Err(_) => return LInvalid(original, @engine.InvalidArgument)
     Ok(_) => ()
   }
   match invocation.name {
@@ -130,7 +130,7 @@ fn classify_long_form(
         _ =>
           // A scalar target cannot map multiple logical values. Structured seq/repeat aggregation
           // requires a structured Value carrier and is kept as an explicit unimplemented boundary.
-          LInvalid(original, @engine.DInvalidArgument)
+          LInvalid(original, @engine.InvalidArgument)
       }
     "default" => LVariant({ trigger, op: @engine.Default, operand: None })
     "unset" => LVariant({ trigger, op: @engine.Unset, operand: None })
@@ -647,7 +647,7 @@ fn clone_def(d : @engine.Definition) -> @engine.Definition {
 
 ///|
 /// 結果キー map の構築 (DR-052)。要素/コマンド名 → export_key。post-parse の結果 remap 用。alias
-/// を desugar 済みの clone に対して収集する — command alias の export_key = @engine.EkKey(canonical) が
+/// を desugar 済みの clone に対して収集する — command alias の export_key = @engine.Key(canonical) が
 /// 建った @engine.Scope の keying と一致するように。
 pub fn build_export_map(
   def : @engine.Definition,
@@ -1524,7 +1524,7 @@ fn inst_long(
               // presence-only lowering has fully collapsed into that generic variant path; this
               // arm no longer special-cases flag_type()/bool_type() bare-true at all).
               //
-              // DESIGN §7.2 / DR-096 §1: `long_eq_sep == @engine.EsRequire` withholds THIS space-form main
+              // DESIGN §7.2 / DR-096 §1: `long_eq_sep == @engine.Require` withholds THIS space-form main
               // entry — the only entry point left is the eq-split form registered below (`eq_group`
               // push). Paired with `long_prefix: ""` (DR-096 §3.3, node.mbt's `@engine.ElemDef.long_prefix`
               // doc comment), this is the mechanism an app can opt into to definitionally eliminate
@@ -1533,7 +1533,7 @@ fn inst_long(
               // exclusively on tokens containing `=`, can reach this element. Neither `long_prefix`
               // nor `long_eq_sep` requires this pairing — an unpaired empty prefix is legal and any
               // resulting collision surfaces as @engine.Ambiguous instead.
-              if e.long_eq_sep != @engine.EsRequire {
+              if e.long_eq_sep != @engine.Require {
                 // DR-058 §2: a deprecated element's space-form main entry carries a `deprecation resident`
                 // warning marker after its value slot (node.mbt's `deprecation resident` doc shape), mirroring
                 // `inst_short`'s `depr: e.deprecated` on the SAME element (`e.deprecated` covers
@@ -1591,14 +1591,14 @@ fn inst_long(
       // DR-014「--name=value の許可」/ DESIGN §7.2 / DR-096 §1: `e.long_eq_sep` (scope config,
       // decode-time baked — always the WRAPPING option's resolved value, never a BOr leaf's unbaked
       // default, same reasoning `eq_group(..., e.long_prefix)` already applies below) gates every
-      // arm — `@engine.EsDeny` withholds the eq-split entry entirely, leaving only the space form registered
+      // arm — `@engine.Deny` withholds the eq-split entry entirely, leaving only the space form registered
       // above.
       match e.body {
         BOr(branches) =>
           for br in branches {
             if br.items.length() == 1 {
               let leaf = br.items[0]
-              if e.long_eq_sep != @engine.EsDeny &&
+              if e.long_eq_sep != @engine.Deny &&
                 leaf.accumulator != Some("kv_map") {
                 eq_group(eq_prefixes, eq_groups, e.long_prefix).push(
                   eq_entry(
@@ -1626,7 +1626,7 @@ fn inst_long(
           // the guard was always vacuous for it; an explicit `long:[":set"]` flag (now bool_type()) SHOULD
           // register its eq-split form, which this unconditional push now does correctly (the guard
           // used to wrongly suppress it while `e.ty` still read flag_type() pre-normalize_option).
-          if e.long_eq_sep != @engine.EsDeny && e.accumulator != Some("kv_map") {
+          if e.long_eq_sep != @engine.Deny && e.accumulator != Some("kv_map") {
             eq_group(eq_prefixes, eq_groups, e.long_prefix).push(
               eq_entry(
                 l,
@@ -2199,7 +2199,7 @@ fn add_inheritable_copy(
       default_values: None,
       default_fn: None,
       default_declared: false, // write-target に default を置かない (§3): 実書き込みのみが伝播する
-      int_round: @engine.RError,
+      int_round: @engine.Error,
       allow_base_prefix: false, // canonical default (DR-075 §2): write-target は int_round を持たない
       // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
       bool_config: bool_config_canonical(), // canonical default (DR-074 §4): write-target は bool_parser opt-in を持たない
@@ -2211,9 +2211,9 @@ fn add_inheritable_copy(
       short_prefix: "-", // write-target copy は short spelling を持たない (canonical default 相当)
       env_prefix: "", // write-target copy は env 席を持たない (canonical default 相当)
       auto_env: false,
-      long_eq_sep: @engine.EsAllow,
+      long_eq_sep: @engine.Allow,
       short_combine: true,
-      short_attached_value: @engine.AtAllow,
+      short_attached_value: @engine.Allow,
       body: BCell,
     }, // canonical default (§3 と同じ「通常挙動」)
     // canonical default
@@ -2291,11 +2291,11 @@ fn collect_value_names(
 /// wrapper 自身 (`e.name`) は値を持たない構造ディスパッチャで (ensure_entity_body の BOr コメント
 /// 参照)、値は選ばれた枝の leaf entity にのみ commit される。候補集合を各枝の leaf name に展開し、
 /// 「どの枝であれ発火して値が確定していれば充足」(DR-093 の or 親充足の型委譲原理) を呼び出し側
-/// (`CRequired`/`CRequiredGroup`) の判定に持ち込む。BEnum (value-enum 形) は全枝が SAME name/cell
+/// (`Required`/`RequiredGroup`) の判定に持ち込む。BEnum (value-enum 形) は全枝が SAME name/cell
 /// (`e.name`) に着地するためこの展開は不要 (`[e.name]` のままで元々正しい — 対照 fixture
 /// `required-value-enum-or-branch.json` が既に green なのはこのため)。
 ///
-/// `CRequired` (required 単項) と `CRequiredGroup` (required_group, DR-103) の両方がこのヘルパーを
+/// `Required` (required 単項) と `RequiredGroup` (required_group, DR-103) の両方がこのヘルパーを
 /// 共有することで、「required 単項と required_group で候補セル解決が食い違う」構造的な余地を無くす
 /// (M-2 の再発防止、issue codex-review-dr102-dr103-postland)。
 ///
@@ -2357,23 +2357,23 @@ fn inst_constraint(
   }
   for e in all {
     if e.requires.length() > 0 {
-      add_constraint(build, CRequires(e.name, copy_strs(e.requires)))
+      add_constraint(build, Requires(e.name, copy_strs(e.requires)))
     }
     if e.conflicts_with.length() > 0 {
-      add_constraint(build, CConflicts(e.name, copy_strs(e.conflicts_with)))
+      add_constraint(build, Conflicts(e.name, copy_strs(e.conflicts_with)))
     }
     if e.required {
-      // DR-093 §1/§2: required:true の要素自身を対象にした CRequired を 1 個登録。候補セル解決は
-      // `required_candidates` (CRequiredGroup と共有)。
-      add_constraint(build, CRequired(e.name, required_candidates(e, registry)))
+      // DR-093 §1/§2: required:true の要素自身を対象にした Required を 1 個登録。候補セル解決は
+      // `required_candidates` (RequiredGroup と共有)。
+      add_constraint(build, Required(e.name, required_candidates(e, registry)))
     }
     for vr in e.value_requires {
       // DR-055 §1 / DR-052 §値枝 id 直交: 4-tuple = (entity, branch_id, value, targets)。entity は
       // committed 判定 / 値照合の対象 (親 name)、branch_id は違反時の error.element (枝の id)。
-      add_constraint(build, CRequiresIf(e.name, vr.0, vr.1, copy_strs(vr.2)))
+      add_constraint(build, RequiresIf(e.name, vr.0, vr.1, copy_strs(vr.2)))
     }
   }
-  // exclusive_group: label per scope でメンバを集約 → 1 CExclusive per label
+  // exclusive_group: label per scope でメンバを集約 → 1 Exclusive per label
   let groups : Array[String] = []
   for e in all {
     for g in e.exclusive_group {
@@ -2389,14 +2389,14 @@ fn inst_constraint(
         members.push(e.name)
       }
     }
-    add_constraint(build, CExclusive(g, members))
+    add_constraint(build, Exclusive(g, members))
   }
   // required_group (DR-103 §1/§3/§7 修正、codex M-2): exclusive_group と同じ集約パターン、独立
   // した名前空間 (別の groups 配列)。member は宣言要素名でなく `required_candidates` の候補セル
   // (structural or なら各枝の leaf name) をそのまま集める — グループ充足は「いずれかの member の
   // いずれかの候補セルが型委譲充足していれば OK」という論理和で、候補セルをフラットに集約しても
   // 数学的に等価 (OR(member1_candidates) OR OR(member2_candidates) OR ... = OR(全 candidates))。
-  // 1 CRequiredGroup per label。
+  // 1 RequiredGroup per label。
   let rg_groups : Array[String] = []
   for e in all {
     for g in e.required_group {
@@ -2414,7 +2414,7 @@ fn inst_constraint(
         }
       }
     }
-    add_constraint(build, CRequiredGroup(g, members))
+    add_constraint(build, RequiredGroup(g, members))
   }
 }
 
@@ -2581,7 +2581,7 @@ fn alias_entry(
     default_values: None,
     default_fn: None,
     default_declared: false,
-    int_round: @engine.RError,
+    int_round: @engine.Error,
     allow_base_prefix: false,
     bool_config: bool_config_canonical(),
     piece_filters: [],
@@ -2592,9 +2592,9 @@ fn alias_entry(
     short_prefix: "-",
     env_prefix: "",
     auto_env: false,
-    long_eq_sep: @engine.EsAllow,
+    long_eq_sep: @engine.Allow,
     short_combine: true,
-    short_attached_value: @engine.AtAllow,
+    short_attached_value: @engine.Allow,
     body: BCell,
   }
 }
@@ -2804,7 +2804,7 @@ fn collect_default_fn_errors(
           out.push(
             def_err(
               element.name,
-              @engine.DInvalidRange,
+              @engine.InvalidRange,
               "default and default_fn both declare the default seat",
               "declare exactly one default-seat supplier",
             ),
@@ -2816,7 +2816,7 @@ fn collect_default_fn_errors(
             out.push(
               def_err(
                 element.name,
-                @engine.DUnknownVocab,
+                @engine.UnknownVocab,
                 "default_fn '" + fn_call.name + "' is not registered",
                 "register the cell fn or use a registered name",
               ),
@@ -2827,7 +2827,7 @@ fn collect_default_fn_errors(
                 out.push(
                   def_err(
                     element.name,
-                    @engine.DInvalidArgument,
+                    @engine.InvalidArgument,
                     message,
                     "match the cell fn descriptor's argument contract",
                   ),
@@ -2838,7 +2838,7 @@ fn collect_default_fn_errors(
               out.push(
                 def_err(
                   element.name,
-                  @engine.DInvalidRange,
+                  @engine.InvalidRange,
                   "default_fn '" +
                   fn_call.name +
                   "' returns a cell-operation sentinel",
@@ -2858,7 +2858,7 @@ fn collect_default_fn_errors(
       out.push(
         def_err(
           element.name,
-          @engine.DCircularRef,
+          @engine.CircularRef,
           "default_fn observes cycle includes '" + element.name + "'",
           "remove one option dependency edge from the cycle",
         ),
@@ -3025,7 +3025,7 @@ fn collect_tty_stream_missing(
       out.push(
         def_err(
           e.name,
-          @engine.DInvalidRange,
+          @engine.InvalidRange,
           "'\{e.name}' selects the builtin/tty preset but its factory config is missing 'tty_stream' — bare type:\"tty\"/\"builtin/tty\" has no channel to supply it (DR-099 §3)",
           "declare a definitions.types entry with config.tty_stream set to \"stdin\"|\"stdout\"|\"stderr\", and reference that name from 'type'",
         ),
@@ -3186,7 +3186,7 @@ fn collect_zero_progress(
           out.push(
             def_err(
               e.name,
-              @engine.DZeroProgress,
+              @engine.ZeroProgress,
               "repeat element '\{e.name}' has a zero-progress head",
               "give the repeat head a token-consuming element",
             ),
@@ -3217,7 +3217,7 @@ fn collect_circular_ref(
       out.push(
         def_err(
           name,
-          @engine.DCircularRef,
+          @engine.CircularRef,
           "ref template '\{name}' is circular (infinite structural expansion)",
           "break the ref cycle or add a token-consuming head before the self-reference",
         ),
@@ -3259,7 +3259,7 @@ fn check_elem_absent_ref(
           out.push(
             def_err(
               e.name,
-              @engine.DAbsentRef,
+              @engine.AbsentRef,
               "ref target '\{r}' is not defined in scope or definitions",
               "define '\{r}' as a template (definitions) or in the scope",
             ),
@@ -3284,7 +3284,7 @@ fn collect_invalid_range(
               out.push(
                 def_err(
                   e.name,
-                  @engine.DInvalidRange,
+                  @engine.InvalidRange,
                   "repeat min \{spec.min} > max \{mx}",
                   "set the repeat max >= min",
                 ),
@@ -3322,7 +3322,7 @@ fn collect_unsupported_option_ref_repeat(
             out.push(
               def_err(
                 e.name,
-                @engine.DInvalidRange,
+                @engine.InvalidRange,
                 "option repeat min \{spec.min} > 1 is not supported for a `ref` element (@engine.GreedyRepeat wires a single spine slot only)",
                 "use repeat: {\"min\": 0} or {\"min\": 1} on this option, or move the mandatory reps to a positional",
               ),
@@ -3349,9 +3349,9 @@ fn collect_unsupported_option_ref_repeat(
 /// in the registry) — rather than let it reach the ACCUMULATE fold and fail unpredictably there
 /// (or silently coerce), this closes the gap at the SAME layer DR-077 §2 already closes "unknown
 /// transform name" / "validate-only signature" (`classify_long_spelling`'s `LInvalid` path, both
-/// folded into `@engine.DUnknownVocab` there) — `multiple` + `update` is a third static-known-bad
+/// folded into `@engine.UnknownVocab` there) — `multiple` + `update` is a third static-known-bad
 /// combination, just discovered one step later (after `normalize_surface` has resolved `variants`,
-/// unlike the two above which classify_long_spelling catches at DSL-parse time). `@engine.DInvalidRange` is
+/// unlike the two above which classify_long_spelling catches at DSL-parse time). `@engine.InvalidRange` is
 /// reused (not a new `@engine.DefErrKind`) for the same reason `classify_long_spelling`'s comment gives:
 /// introducing a finer-grained kind is a spec-side DR-054 decision, not kuu.mbt's to make alone.
 ///
@@ -3372,7 +3372,7 @@ fn collect_unsupported_accum_update(
             out.push(
               def_err(
                 e.name,
-                @engine.DInvalidRange,
+                @engine.InvalidRange,
                 "update variant '\{v.trigger}' targets a multiple (accum) element — every filters-registry transform is T=>T (scalar) but this cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
                 "remove the update variant from this element, or move the transform to a non-multiple (scalar) element",
               ),
@@ -3390,7 +3390,7 @@ fn collect_unsupported_accum_update(
             out.push(
               def_err(
                 e.name,
-                @engine.DInvalidRange,
+                @engine.InvalidRange,
                 "update variant '\{v.trigger}' targets a multiple (accum) element — every filters-registry transform is T=>T (scalar) but this cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
                 "remove the update variant from this element, or move the transform to a non-multiple (scalar) element",
               ),
@@ -3431,7 +3431,7 @@ fn collect_unsupported_accum_update(
                         out.push(
                           def_err(
                             canon.name,
-                            @engine.DInvalidRange,
+                            @engine.InvalidRange,
                             "alias long_override update variant '\{v.trigger}' targets '\{canon.name}', a multiple (accum) element — every filters-registry transform is T=>T (scalar) but this cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
                             "remove the update variant from this alias's long_override, or move the transform to a non-multiple (scalar) element",
                           ),
@@ -3461,7 +3461,7 @@ fn collect_unsupported_accum_update(
                         out.push(
                           def_err(
                             canon.name,
-                            @engine.DInvalidRange,
+                            @engine.InvalidRange,
                             "alias long_override cell-fn variant '\{v.trigger}' targets an accumulated element whose structured Value aggregation is not implemented",
                             "use a direct set operation or target a scalar element",
                           ),
@@ -3507,7 +3507,7 @@ fn collect_unsupported_count_multiple(
       out.push(
         def_err(
           e.name,
-          @engine.DInvalidRange,
+          @engine.InvalidRange,
           "a `count` element cannot declare `multiple` — count's type contract IS an update(increment) effect (DR-077 §3), and every filters-registry transform is T=>T (scalar) while a multiple (accum) cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
           "remove `multiple` from this count element, or use a plain `number` element with an explicit `:update:<transform>` variant on a non-multiple cell",
         ),
@@ -3519,7 +3519,7 @@ fn collect_unsupported_count_multiple(
       out.push(
         def_err(
           e.name,
-          @engine.DInvalidRange,
+          @engine.InvalidRange,
           "a `count` element cannot declare `multiple` — count's type contract IS an update(increment) effect (DR-077 §3), and every filters-registry transform is T=>T (scalar) while a multiple (accum) cell's current value is an accumulated array (T[]), a structural type mismatch with no legal transform today",
           "remove `multiple` from this count element, or use a plain `number` element with an explicit `:update:<transform>` variant on a non-multiple cell",
         ),
@@ -3561,7 +3561,7 @@ fn collect_scalar_array_default(
             out.push(
               def_err(
                 e.name,
-                @engine.DInvalidRange,
+                @engine.InvalidRange,
                 "a non-multiple (scalar) element's declared default must be exactly ONE piece, got \{vs.length()} — an array-shaped default is only legal for a multiple/repeat/separator (accum) element (DR-083 §1/§5)",
                 "wrap this element's default in `multiple`/`repeat` if it should accumulate, or write a single scalar default value",
               ),
@@ -3601,7 +3601,7 @@ fn collect_none_value_source_decl(
         out.push(
           def_err(
             e.name,
-            @engine.DInvalidRange,
+            @engine.InvalidRange,
             "'\{e.name}' is type none (no value space) but declares env — a none element cannot have a value source (DR-089 §4)",
             "remove 'env' from '\{e.name}', or give it a real value type",
           ),
@@ -3611,7 +3611,7 @@ fn collect_none_value_source_decl(
         out.push(
           def_err(
             e.name,
-            @engine.DInvalidRange,
+            @engine.InvalidRange,
             "'\{e.name}' is type none (no value space) but declares config_key — a none element cannot have a value source (DR-089 §4)",
             "remove 'config_key' from '\{e.name}', or give it a real value type",
           ),
@@ -3621,7 +3621,7 @@ fn collect_none_value_source_decl(
         out.push(
           def_err(
             e.name,
-            @engine.DInvalidRange,
+            @engine.InvalidRange,
             "'\{e.name}' is type none (no value space) but declares inherit — a none element cannot have a value source (DR-089 §4)",
             "remove 'inherit' from '\{e.name}', or give it a real value type",
           ),
@@ -3675,7 +3675,7 @@ fn collect_invalid_filter_attribute_mismatch(
         out.push(
           def_err(
             e.name,
-            @engine.DInvalidRange,
+            @engine.InvalidRange,
             "a type:\"none\" element has no value space (DR-089) — final_filters (T→T, DR-102 §1) requires a T to operate over, which does not exist here",
             "remove final_filters from this element, or give it a real value type",
           ),
@@ -3684,7 +3684,7 @@ fn collect_invalid_filter_attribute_mismatch(
         out.push(
           def_err(
             e.name,
-            @engine.DInvalidRange,
+            @engine.InvalidRange,
             "an accum (multiple/repeat/separator) element cannot declare final_filters (T→T, non-accum-only final-value gate, DR-102 §1) — this element's final gate is accum_filters (Acc→Acc, over the whole accumulated array)",
             "move this chain to accum_filters, or remove multiple/repeat/separator from this element",
           ),
@@ -3696,7 +3696,7 @@ fn collect_invalid_filter_attribute_mismatch(
         out.push(
           def_err(
             e.name,
-            @engine.DInvalidRange,
+            @engine.InvalidRange,
             "a non-accum (scalar) element cannot declare accum_filters (Acc→Acc, accum-only whole-array gate, DR-102 §1) — this element's final gate is final_filters (T→T, over the single resolved value)",
             "move this chain to final_filters, or declare multiple/repeat/separator on this element",
           ),
@@ -3705,7 +3705,7 @@ fn collect_invalid_filter_attribute_mismatch(
         out.push(
           def_err(
             e.name,
-            @engine.DInvalidRange,
+            @engine.InvalidRange,
             "a type:\"none\" element has no value space (DR-089) — accum_filters (Acc→Acc, DR-102 §1) requires a T domain to operate over, which does not exist here",
             "remove accum_filters from this element, or give it a real value type",
           ),
@@ -3764,7 +3764,7 @@ fn collect_unknown_filter(
     out.push(
       def_err(
         elem_name,
-        @engine.DUnknownVocab,
+        @engine.UnknownVocab,
         "filter '" +
         fs_name +
         "' in " +
@@ -3838,7 +3838,7 @@ fn collect_unknown_filter(
 /// gate's sole job is "does the pattern compile", not general arity validation.
 /// DR-090 §2: a dd element's `match` regex — compile failure is a definition-error, the same
 /// treatment `collect_invalid_regex_pattern` gives `regex_match` filter-chain patterns (same
-/// `@engine.compile_regex` compile path, same `@engine.DInvalidArgument` kind — "pattern compile failure is a
+/// `@engine.compile_regex` compile path, same `@engine.InvalidArgument` kind — "pattern compile failure is a
 /// definition-time fact, known statically without I/O").
 fn collect_invalid_dd_pattern(
   def : @engine.Definition,
@@ -3851,7 +3851,7 @@ fn collect_invalid_dd_pattern(
           out.push(
             def_err(
               e.name,
-              @engine.DInvalidArgument,
+              @engine.InvalidArgument,
               "dd match pattern '" + pattern + "' failed to compile",
               "fix the pattern syntax for this host's regex dialect (DR-085 §2 / DR-090 §2)",
             ),
@@ -3900,7 +3900,7 @@ fn collect_invalid_regex_pattern(
         out.push(
           def_err(
             name,
-            @engine.DInvalidArgument,
+            @engine.InvalidArgument,
             "regex_match pattern '" + fs.args[0] + "' failed to compile",
             "fix the pattern syntax for this host's regex dialect (DR-085 §2)",
           ),
@@ -3950,7 +3950,7 @@ fn collect_ref_merge_accum(
       out.push(
         def_err(
           e.name,
-          @engine.DInvalidRange,
+          @engine.InvalidRange,
           "a `ref` element cannot use the merge accumulator — merge's marker vocabulary (DR-080 §2) requires a separator-split string piece list, but a ref element's firing value is a row (DR-078 §1), which has no piece list to match markers against",
           "use `multiple: \"append\"` (or omit `accumulator`, which defaults to append) instead of `accumulator: \"merge\"` on this ref element",
         ),
@@ -3987,7 +3987,7 @@ fn collect_flatten_non_append(
       out.push(
         def_err(
           e.name,
-          @engine.DInvalidRange,
+          @engine.InvalidRange,
           "'\{e.name}' declares multiple.flatten but its accumulator is not \"append\" (DR-105 §2) — flatten is an append-only dial, and this element's accumulator is \"" +
           e.accumulator.unwrap() +
           "\"",
@@ -4034,7 +4034,7 @@ fn collect_unknown_accumulation_resident(
           out.push(
             def_err(
               e.name,
-              @engine.DUnknownVocab,
+              @engine.UnknownVocab,
               "'\{e.name}' requires accumulator '" +
               name +
               "' but no resident with that name is registered",
@@ -4048,7 +4048,7 @@ fn collect_unknown_accumulation_resident(
               out.push(
                 def_err(
                   e.name,
-                  @engine.DUnknownVocab,
+                  @engine.UnknownVocab,
                   "'\{e.name}' requires collector '" +
                   collector +
                   "' but no resident with that name is registered",
@@ -4081,7 +4081,7 @@ fn collect_unknown_accumulation_resident(
 /// registry, DR-105 §5 新設) の DSL 引数を definition time に静的検査する — `collect_invalid_regex_
 /// pattern` の regex pattern compile 検査と同型 ("静的に既知は定義時に倒す", DR-083 §5 / DR-082 §3)。
 /// 引数個数不一致・非数値は kind=invalid-argument (DR-082 §3 の「単一引数値そのものが装置の受理範囲外」)、
-/// min>max は kind=invalid-range (DR-082 §2 の「複数属性の組合せが値域外」、`@engine.DInvalidRange` の
+/// min>max は kind=invalid-range (DR-082 §2 の「複数属性の組合せが値域外」、`@engine.InvalidRange` の
 /// min>max 前例と同型)。filters.mbt の `filter_in_range`/`array_filter_length_range` 自身が持つ
 /// runtime fallback (`filter_rejected`) を置換するのではなく、その手前で definition-error として
 /// 確定させる — `regex_match` の pattern compile 検査と同じ「runtime 到達前に倒す」パターン。
@@ -4118,7 +4118,7 @@ fn collect_invalid_numeric_filter_args(
       out.push(
         def_err(
           name,
-          @engine.DInvalidArgument,
+          @engine.InvalidArgument,
           "'\{fs.name}' requires exactly 2 args (min, max), got \{fs.args.length()}",
           "provide exactly 2 numeric args, e.g. '\{fs.name}:1:5'",
         ),
@@ -4132,7 +4132,7 @@ fn collect_invalid_numeric_filter_args(
         out.push(
           def_err(
             name,
-            @engine.DInvalidArgument,
+            @engine.InvalidArgument,
             "'\{fs.name}' min '" + fs.args[0] + "' is not a number",
             "provide a numeric min",
           ),
@@ -4141,7 +4141,7 @@ fn collect_invalid_numeric_filter_args(
         out.push(
           def_err(
             name,
-            @engine.DInvalidArgument,
+            @engine.InvalidArgument,
             "'\{fs.name}' max '" + fs.args[1] + "' is not a number",
             "provide a numeric max",
           ),
@@ -4152,7 +4152,7 @@ fn collect_invalid_numeric_filter_args(
             out.push(
               def_err(
                 name,
-                @engine.DInvalidArgument,
+                @engine.InvalidArgument,
                 "'\{fs.name}' min \{mn} is not a non-negative integer",
                 "provide a non-negative integer min, e.g. '\{fs.name}:0:5'",
               ),
@@ -4162,7 +4162,7 @@ fn collect_invalid_numeric_filter_args(
             out.push(
               def_err(
                 name,
-                @engine.DInvalidArgument,
+                @engine.InvalidArgument,
                 "'\{fs.name}' max \{mx} is not a non-negative integer",
                 "provide a non-negative integer max, e.g. '\{fs.name}:0:5'",
               ),
@@ -4173,7 +4173,7 @@ fn collect_invalid_numeric_filter_args(
           out.push(
             def_err(
               name,
-              @engine.DInvalidRange,
+              @engine.InvalidRange,
               "'\{fs.name}' min \{mn} is greater than max \{mx}",
               "swap min/max so min <= max",
             ),
@@ -4260,7 +4260,7 @@ fn collect_config_cycle(
       out.push(
         def_err(
           e.name,
-          @engine.DConfigCycle,
+          @engine.ConfigCycle,
           "config_file element '\{e.name}' cannot have a config_key (循環禁止)",
           "remove config_key from the config_file element",
         ),
@@ -4272,7 +4272,7 @@ fn collect_config_cycle(
       out.push(
         def_err(
           e.name,
-          @engine.DConfigCycle,
+          @engine.ConfigCycle,
           "config_file element '\{e.name}' cannot have a config_key (循環禁止)",
           "remove config_key from the config_file element",
         ),

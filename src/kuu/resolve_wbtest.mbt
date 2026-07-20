@@ -342,9 +342,9 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
 // ── export-key application (DR-052) ───────────────────────────────────────────
 
 ///|
-/// Guarantees: `apply_export_keys` overrides a value cell's key (@engine.EkKey) and drops a scope label
-/// entirely (@engine.EkNull, DR-052 §2 透過 — children promote to the parent), leaving an unmapped
-/// (@engine.EkUnset) name unchanged.
+/// Guarantees: `apply_export_keys` overrides a value cell's key (@engine.Key) and drops a scope label
+/// entirely (@engine.Null, DR-052 §2 透過 — children promote to the parent), leaving an unmapped
+/// (@engine.Unset) name unchanged.
 test "apply_export_keys renames a leaf key and drops a null-exported scope label" {
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
     ("port", @engine.export_key("p")),
@@ -365,7 +365,7 @@ test "apply_export_keys renames a leaf key and drops a null-exported scope label
   let mapped = apply_export_keys(binds, ek)
   assert_eq(mapped[0].key, "p")
   assert_eq(mapped[1].scope, []) // "wrapper" label dropped → child promotes to root
-  assert_eq(mapped[1].key, "verbose") // unmapped name unchanged (@engine.EkUnset default)
+  assert_eq(mapped[1].key, "verbose") // unmapped name unchanged (@engine.Unset default)
 }
 
 ///|
@@ -412,9 +412,9 @@ test "accum_cells resolves export_key rename — the accumulate fold fires under
 
 ///|
 /// 保証 (対極、上のテストの境界、[[self-written-rule-blind-spots]] の対極確認): export_key: null
-/// を持つ accum セル自身は結果キー軸を失う (DR-052 §2 透過、スカラー default の @engine.EkNull と同じ posture)
+/// を持つ accum セル自身は結果キー軸を失う (DR-052 §2 透過、スカラー default の @engine.Null と同じ posture)
 /// — 変更が「常に何らかのキーで accum セルを出力してしまう」誤動作を生んでいないことを固定する。
-test "accum_cells 対極: an @engine.EkNull accum cell carries no result-key axis (dropped)" {
+test "accum_cells 対極: an @engine.Null accum cell carries no result-key axis (dropped)" {
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
     ("tags", @engine.export_key_null()),
   ])
@@ -554,13 +554,13 @@ test "DR-073 single-exposure-ok: no collision, and the unfired co-exported defau
 ///|
 /// issue export-key-collision-identity-exposure-gap: an IDENTITY-exposed element (export_key
 /// unset, DR-052 §1 "未指定 → name 由来のキーで露出" — `a`'s own name "a" IS its resolved exposed
-/// key) competing with another element's `@engine.EkKey`-MAPPED key for the same result-scope key is a
+/// key) competing with another element's `@engine.Key`-MAPPED key for the same result-scope key is a
 /// genuine collision, same as the co-exposure-collision test above where both sides are mapped.
-/// `find_export_collisions` used to only group `@engine.EkKey`-mapped bindings, silently excluding
+/// `find_export_collisions` used to only group `@engine.Key`-mapped bindings, silently excluding
 /// identity-exposed ones (DR-052 §1's resolution table treats "未指定" as resolving to a real key,
 /// not a separate "no key" state — same posture `apply_export_keys` already takes for the SAME `_`
 /// fallback, this fix brings collision detection into parity with it).
-test "DR-073 identity-exposure collision: @engine.EkUnset element vs @engine.EkKey-mapped element sharing a key" {
+test "DR-073 identity-exposure collision: @engine.Unset element vs @engine.Key-mapped element sharing a key" {
   // `a` has no ek entry at all (map doesn't even mention it — the common "declared without
   // export_key" shape) — resolves to identity exposure under "a" itself. `b` explicitly maps to
   // the SAME key "a".
@@ -952,7 +952,7 @@ test "resolve_scope: a badly-typed env value is a DR-066 Error, not a silent @en
   match resolve_scope(sc_num, [], Map::from_array([("N", "abc")])) {
     Err(pe) => {
       assert_eq(pe.element, "n")
-      assert_eq(pe.kind, @engine.KParse)
+      assert_eq(pe.kind, @engine.Parse)
       assert_eq(pe.reason, "not_a_number")
     }
     Ok(_) => fail("expected an Err, env value \"abc\" is not a number")
@@ -1491,7 +1491,7 @@ test "resolve_scope: accum × value_filters(each) — one piece rejecting fails 
   ]
   match resolve_scope(sc, cli, Map([]), at_pos=4) {
     Err(pe) => {
-      assert_eq(pe.kind, @engine.KFilter)
+      assert_eq(pe.kind, @engine.Filter)
       assert_eq(pe.args_pos, 3)
       assert_eq(pe.reason, "too_large")
     }
@@ -1661,7 +1661,7 @@ test "resolve_scope: accum × value_filters(each) — @engine.Unset does not dis
   ]
   match resolve_scope(sc, cli_reject, Map([])) {
     Err(pe) => {
-      assert_eq(pe.kind, @engine.KFilter)
+      assert_eq(pe.kind, @engine.Filter)
       assert_eq(pe.reason, "too_large")
     }
     Ok(_) =>
@@ -1673,15 +1673,15 @@ test "resolve_scope: accum × value_filters(each) — @engine.Unset does not dis
 
 ///|
 /// 保証 (issue 2026-07-09-post-filter-error-attribution): `value_filters`/`final_filters` reject の
-/// Error は `kind: @engine.KFilter` を持つ (DR-053 §2 の `parse` | `filter` | `constraint` 3 分類 — 値が
-/// パースできなかった `@engine.KParse` とは別カテゴリ、既にパース済みの値を validate/transform した結果の
+/// Error は `kind: @engine.Filter` を持つ (DR-053 §2 の `parse` | `filter` | `constraint` 3 分類 — 値が
+/// パースできなかった `@engine.Parse` とは別カテゴリ、既にパース済みの値を validate/transform した結果の
 /// reject なので `filter` 分類に属する)。`args_pos` は呼び出し側が渡した最終位置をそのまま持つ
 /// (env/config seat のエラーと同じ規約 — `ladder_err`/`filter_err` の doc comment 参照、値がどの
 /// token でも読まれていないので位置は「args 走査が完了した地点」= 呼び出し側の `toks.length()`
 /// 相当。本テストでは呼び出し側が明示的に `at_pos=3` を渡し、それがそのまま素通しされることを
 /// 固定する — 実際の conformance harness 側の配線 (`dc.args.length()`) は
 /// json_conformance_test.mbt の `do_resolve_pe`/`resolve_tree` が担う)。
-test "resolve_scope: a value_filters/final_filters reject carries kind=@engine.KFilter and the caller's at_pos" {
+test "resolve_scope: a value_filters/final_filters reject carries kind=@engine.Filter and the caller's at_pos" {
   let n = ent("n", @builtins.number_type(), final_filters=["in_range:0:100"])
   let sc : @engine.Scope = {
     greedy: [],
@@ -1697,7 +1697,7 @@ test "resolve_scope: a value_filters/final_filters reject carries kind=@engine.K
       at_pos=3,
     ) {
     Err(pe) => {
-      assert_eq(pe.kind, @engine.KFilter)
+      assert_eq(pe.kind, @engine.Filter)
       assert_eq(pe.args_pos, 3)
       assert_eq(pe.reason, "too_large")
     }
@@ -1711,9 +1711,9 @@ test "resolve_scope: a value_filters/final_filters reject carries kind=@engine.K
 /// `:update:increment:5` (0-arg 組み込み `increment` への余分な args) は definition-time では
 /// 通る (installer_wbtest.mbt の対テスト参照 — registry に存在し signature も Transform なので
 /// gate を通過する) が、**RUNTIME** で `apply_transform` が `(d.run)(old, args)` を呼んだ時点で
-/// `filter_increment` 自身が `args.length() != 0` を拒否し (`filters.mbt`)、`kind: @engine.KFilter` の
-/// Error になることを固定する (codex 指摘 3: この Error の kind は `ladder_err` (@engine.KParse) から
-/// `filter_err` (@engine.KFilter) へ置換済み — 値のパース失敗ではなく filter/transform 語彙の拒否なので
+/// `filter_increment` 自身が `args.length() != 0` を拒否し (`filters.mbt`)、`kind: @engine.Filter` の
+/// Error になることを固定する (codex 指摘 3: この Error の kind は `ladder_err` (@engine.Parse) から
+/// `filter_err` (@engine.Filter) へ置換済み — 値のパース失敗ではなく filter/transform 語彙の拒否なので
 /// DR-053 §2 の分類上こちらが正しい)。`reason` は `filter_rejected` — `increment` は DR-095 §3
 /// で `Transform` (失敗しない) と分類され `reasons: []`、かつこの arity 拒否は type-contract
 /// violation (filter-definition bug) であって DR-095 が正しい定義の failure mode として宣言する
@@ -1721,7 +1721,7 @@ test "resolve_scope: a value_filters/final_filters reject carries kind=@engine.K
 /// という subset invariant を守るため、宣言外の防御的失敗は全て DR-095 §5 の宣言済み fallback
 /// `filter_rejected` に畳む (旧 `update_transform_type_mismatch` は spec 全体 grep 0 hit の
 /// 実装発明だったため廃止)。
-test "resolve_scope: an update transform's own arity rejection surfaces at runtime as kind=@engine.KFilter, reason=filter_rejected (DR-095 subset invariant — no declared reason for this defensive path)" {
+test "resolve_scope: an update transform's own arity rejection surfaces at runtime as kind=@engine.Filter, reason=filter_rejected (DR-095 subset invariant — no declared reason for this defensive path)" {
   let n = ent(
     "n",
     @builtins.number_type(),
@@ -1746,7 +1746,7 @@ test "resolve_scope: an update transform's own arity rejection surfaces at runti
   ]
   match resolve_scope(sc, cli, Map([])) {
     Err(pe) => {
-      assert_eq(pe.kind, @engine.KParse)
+      assert_eq(pe.kind, @engine.Parse)
       assert_eq(pe.reason, "invalid-argument")
     }
     Ok(_) => fail("expected Err (increment takes no args)")
@@ -1760,10 +1760,10 @@ test "resolve_scope: an update transform's own arity rejection surfaces at runti
 /// 直接検証する (eval 層のマーカー判定関数、`eval_merge_pieces` の入力である `MergeMark` 列を作る
 /// 前段)。
 test "DR-080 merge: +-a,+@,++ escapes to literal -a,@,+ (canonical row 14)" {
-  assert_eq(@engine.classify_merge_piece("+-a"), PkAdd("-a"))
-  assert_eq(@engine.classify_merge_piece("+@"), PkAdd("@"))
-  assert_eq(@engine.classify_merge_piece("++"), PkAdd("+"))
-  // 3 piece とも PkAdd (escape 後は marker を持たない) なので、cell 上書き経路に落ちる。
+  assert_eq(@engine.classify_merge_piece("+-a"), Add("-a"))
+  assert_eq(@engine.classify_merge_piece("+@"), Add("@"))
+  assert_eq(@engine.classify_merge_piece("++"), Add("+"))
+  // 3 piece とも Add (escape 後は marker を持たない) なので、cell 上書き経路に落ちる。
   let marks = [
     @engine.classify_merge_piece("+-a"),
     @engine.classify_merge_piece("+@"),
@@ -1771,8 +1771,8 @@ test "DR-080 merge: +-a,+@,++ escapes to literal -a,@,+ (canonical row 14)" {
   ]
   for m in marks {
     match m {
-      PkAdd(_) => ()
-      _ => fail("expected all-PkAdd after escape, got a marker")
+      Add(_) => ()
+      _ => fail("expected all-Add after escape, got a marker")
     }
   }
 }
@@ -1782,10 +1782,10 @@ test "DR-080 merge: +-a,+@,++ escapes to literal -a,@,+ (canonical row 14)" {
 /// 含むが piece 全体一致ではないので add。`+` 単独は 2 文字目が存在しないので escape にならず
 /// literal `"+"`。`-` 単独は remove("") (operand が空文字列)。
 test "DR-080 merge: partial matches and bare +/- are NOT markers (対極)" {
-  assert_eq(@engine.classify_merge_piece("a@b"), PkAdd("a@b"))
-  assert_eq(@engine.classify_merge_piece("+"), PkAdd("+"))
-  assert_eq(@engine.classify_merge_piece("-"), PkRemove(""))
-  assert_eq(@engine.classify_merge_piece("+x"), PkAdd("+x")) // +x (x は -/@/+ 以外) は literal のまま
+  assert_eq(@engine.classify_merge_piece("a@b"), Add("a@b"))
+  assert_eq(@engine.classify_merge_piece("+"), Add("+"))
+  assert_eq(@engine.classify_merge_piece("-"), Remove(""))
+  assert_eq(@engine.classify_merge_piece("+x"), Add("+x")) // +x (x は -/@/+ 以外) は literal のまま
 }
 
 ///|

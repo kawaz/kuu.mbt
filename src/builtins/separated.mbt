@@ -20,12 +20,12 @@ fn sep_binds(
     let mark : @engine.PieceMark = if merge {
       @engine.classify_merge_piece(part)
     } else {
-      @engine.PkAdd(part)
+      @engine.Add(part)
     }
     match mark {
       // DR-080 §2 splice: no payload, no filters/parse — a pure cell-marker binding
       // (mirrors Default/Unset/Empty's placeholder-value convention).
-      @engine.PkSplice =>
+      @engine.Splice =>
         out.push({
           key: name,
           op: @engine.Splice,
@@ -35,7 +35,7 @@ fn sep_binds(
           link: 0,
           at_pos: Some(pos),
         })
-      @engine.PkRemove(payload) =>
+      @engine.Remove(payload) =>
         match
           sep_piece_value(name, payload, ty, piece_filters, pos, extensions) {
           Ok(v) =>
@@ -50,7 +50,7 @@ fn sep_binds(
             })
           Err(pe) => return Err(pe)
         }
-      @engine.PkAdd(payload) =>
+      @engine.Add(payload) =>
         match
           sep_piece_value(name, payload, ty, piece_filters, pos, extensions) {
           Ok(v) =>

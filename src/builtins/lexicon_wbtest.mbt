@@ -106,16 +106,16 @@ fn ir(s : String, m : @engine.RoundMode) -> Result[Int64, String] {
 /// `+5` are integers. A base-prefix token is `not_a_number` in canonical. `int_round` never fires
 /// on these because there is no fractional part to resolve.
 test "parse_int_value accepts integer VALUES regardless of syntax" {
-  assert_eq(ir("3.0", @engine.RError), Ok(3L)) // "3.0" is the integer 3 — value空間, not 整数構文
-  assert_eq(ir("1e3", @engine.RError), Ok(1000L)) // exponent-notation integer
-  assert_eq(ir("1_000", @engine.RError), Ok(1000L)) // separators removed
-  assert_eq(ir("007", @engine.RError), Ok(7L)) // decimal leading zero
-  assert_eq(ir("+5", @engine.RError), Ok(5L)) // leading `+`
-  assert_eq(ir("-4", @engine.RError), Ok(-4L))
-  assert_eq(ir("2.50e1", @engine.RError), Ok(25L)) // 2.50e1 = 25, an integer value despite the fraction 字面
+  assert_eq(ir("3.0", @engine.Error), Ok(3L)) // "3.0" is the integer 3 — value空間, not 整数構文
+  assert_eq(ir("1e3", @engine.Error), Ok(1000L)) // exponent-notation integer
+  assert_eq(ir("1_000", @engine.Error), Ok(1000L)) // separators removed
+  assert_eq(ir("007", @engine.Error), Ok(7L)) // decimal leading zero
+  assert_eq(ir("+5", @engine.Error), Ok(5L)) // leading `+`
+  assert_eq(ir("-4", @engine.Error), Ok(-4L))
+  assert_eq(ir("2.50e1", @engine.Error), Ok(25L)) // 2.50e1 = 25, an integer value despite the fraction 字面
   // a non-number token is `not_a_number` (distinct from `not_an_integer`).
-  assert_eq(ir("0x10", @engine.RError), Err("not_a_number"))
-  assert_eq(ir("abc", @engine.RError), Err("not_a_number"))
+  assert_eq(ir("0x10", @engine.Error), Err("not_a_number"))
+  assert_eq(ir("abc", @engine.Error), Err("not_a_number"))
 }
 
 ///|
@@ -125,14 +125,14 @@ test "parse_int_value accepts integer VALUES regardless of syntax" {
 /// digits — Int64's max magnitude is 19 digits, so 20+ ALWAYS overflows regardless of digit values,
 /// while 19 needs the exact-boundary comparison covered by the next test).
 test "parse_int_value rejects huge-exponent overflow instead of silently wrapping" {
-  assert_eq(ir("1e300", @engine.RError), Err("int_out_of_range")) // the exact repro from the issue (was Ok(0L))
-  assert_eq(ir("-1e300", @engine.RError), Err("int_out_of_range"))
-  assert_eq(ir("1e19", @engine.RError), Err("int_out_of_range")) // 20 significant digits — always out of range
-  assert_eq(ir("1e18", @engine.RError), Ok(1000000000000000000L)) // 19 digits, well under max — in range
+  assert_eq(ir("1e300", @engine.Error), Err("int_out_of_range")) // the exact repro from the issue (was Ok(0L))
+  assert_eq(ir("-1e300", @engine.Error), Err("int_out_of_range"))
+  assert_eq(ir("1e19", @engine.Error), Err("int_out_of_range")) // 20 significant digits — always out of range
+  assert_eq(ir("1e18", @engine.Error), Ok(1000000000000000000L)) // 19 digits, well under max — in range
   // a huge exponent whose combined digits are ALL zero is still exactly 0 (padding zeros stay zero,
   // not "significant" — `int_part_significant_len`'s all_zero short-circuit).
-  assert_eq(ir("0e300", @engine.RError), Ok(0L))
-  assert_eq(ir("0.0e300", @engine.RError), Ok(0L))
+  assert_eq(ir("0e300", @engine.Error), Ok(0L))
+  assert_eq(ir("0.0e300", @engine.Error), Ok(0L))
 }
 
 ///|
@@ -143,33 +143,30 @@ test "parse_int_value rejects huge-exponent overflow instead of silently wrappin
 /// adjacent in-range values (`±1` off each boundary) to pin the edge is exactly right, not off-by-one.
 test "parse_int_value pins the exact Int64 boundary decade" {
   // positive max and its neighbors.
-  assert_eq(ir("9223372036854775807", @engine.RError), Ok(9223372036854775807L)) // Int64::max exactly
-  assert_eq(ir("9223372036854775806", @engine.RError), Ok(9223372036854775806L)) // max - 1, in range
-  assert_eq(ir("9223372036854775808", @engine.RError), Err("int_out_of_range")) // max + 1, out of range
+  assert_eq(ir("9223372036854775807", @engine.Error), Ok(9223372036854775807L)) // Int64::max exactly
+  assert_eq(ir("9223372036854775806", @engine.Error), Ok(9223372036854775806L)) // max - 1, in range
+  assert_eq(ir("9223372036854775808", @engine.Error), Err("int_out_of_range")) // max + 1, out of range
   // negative min and its neighbors — min's magnitude (9223372036854775808) is NOT representable as
   // a positive Int64 at all, so this is the case `digits_to_i64` + negate could never produce.
   assert_eq(
-    ir("-9223372036854775808", @engine.RError),
+    ir("-9223372036854775808", @engine.Error),
     Ok(-9223372036854775808L),
   ) // Int64::min exactly
   assert_eq(
-    ir("-9223372036854775807", @engine.RError),
+    ir("-9223372036854775807", @engine.Error),
     Ok(-9223372036854775807L),
   ) // min + 1, in range
-  assert_eq(ir("-9223372036854775809", @engine.RError), Err("int_out_of_range")) // min - 1, out of range
+  assert_eq(ir("-9223372036854775809", @engine.Error), Err("int_out_of_range")) // min - 1, out of range
   // a decimal form of the same boundary values (value空間判定, not just integer literal syntax).
   assert_eq(
-    ir("9223372036854775807.0", @engine.RError),
+    ir("9223372036854775807.0", @engine.Error),
     Ok(9223372036854775807L),
   )
-  assert_eq(
-    ir("9223372036854775808.0", @engine.RError),
-    Err("int_out_of_range"),
-  )
+  assert_eq(ir("9223372036854775808.0", @engine.Error), Err("int_out_of_range"))
 }
 
 ///|
-/// The `int_out_of_range` reason surfaces through the ROUNDING branches too (non-`@engine.RError` modes),
+/// The `int_out_of_range` reason surfaces through the ROUNDING branches too (non-`@engine.Error` modes),
 /// not just the direct-integer-value path above — `magnitude_of`'s pre-rounding check uses the
 /// POSITIVE boundary unconditionally (round_magnitude needs an unsigned magnitude to add `+1`), and
 /// a SEPARATE post-rounding guard catches the narrower case where rounding pushes an in-range
@@ -177,19 +174,16 @@ test "parse_int_value pins the exact Int64 boundary decade" {
 test "parse_int_value surfaces int_out_of_range through rounding modes too" {
   // truncated magnitude alone already exceeds Int64 range (huge exponent, genuinely fractional
   // literal digits so this exercises the rounding branch, not the direct-integer-value one).
-  assert_eq(ir("1.5e300", @engine.RFloor), Err("int_out_of_range"))
+  assert_eq(ir("1.5e300", @engine.Floor), Err("int_out_of_range"))
   // truncated magnitude is exactly Int64::max and the fraction rounds UP past it (round_magnitude's
   // `m + 1` would silently wrap to Int64::min without the post-rounding `mag < 0L` guard).
-  assert_eq(ir("9223372036854775807.5", @engine.RCeil), Err("int_out_of_range"))
+  assert_eq(ir("9223372036854775807.5", @engine.Ceil), Err("int_out_of_range"))
   assert_eq(
-    ir("9223372036854775807.5", @engine.RHalfEven),
+    ir("9223372036854775807.5", @engine.HalfEven),
     Err("int_out_of_range"),
   ) // 807 is odd → banker's rounds up too
   // a rounding-mode value comfortably within range still rounds normally (no false-positive rejection).
-  assert_eq(
-    ir("9223372036854775806.5", @engine.RCeil),
-    Ok(9223372036854775807L),
-  )
+  assert_eq(ir("9223372036854775806.5", @engine.Ceil), Ok(9223372036854775807L))
 }
 
 ///|
@@ -197,9 +191,9 @@ test "parse_int_value surfaces int_out_of_range through rounding modes too" {
 /// (DR-075 §4: the CLI-parser 界 precedent is error-only; silent 精度落ち is a surprise). This is the
 /// only mode that emits `not_an_integer`; every rounding mode below turns the same input into a value.
 test "parse_int_value under error mode rejects fractional values" {
-  assert_eq(ir("2.5", @engine.RError), Err("not_an_integer"))
-  assert_eq(ir("-3.7", @engine.RError), Err("not_an_integer"))
-  assert_eq(ir(".5", @engine.RError), Err("not_an_integer"))
+  assert_eq(ir("2.5", @engine.Error), Err("not_an_integer"))
+  assert_eq(ir("-3.7", @engine.Error), Err("not_an_integer"))
+  assert_eq(ir(".5", @engine.Error), Err("not_an_integer"))
 }
 
 ///|
@@ -209,50 +203,50 @@ test "parse_int_value under error mode rejects fractional values" {
 /// (DR-075 §期待値表 読み方). The integer/tie decision is lexical — no binary64 transit (§5).
 test "parse_int_value int_round table (DR-075 discriminator vector)" {
   // floor →−∞ : both non-tie and tie fall toward −∞.
-  assert_eq(ir("-3.7", @engine.RFloor), Ok(-4L))
-  assert_eq(ir("-2.5", @engine.RFloor), Ok(-3L))
-  assert_eq(ir("2.5", @engine.RFloor), Ok(2L))
-  assert_eq(ir("3.5", @engine.RFloor), Ok(3L))
+  assert_eq(ir("-3.7", @engine.Floor), Ok(-4L))
+  assert_eq(ir("-2.5", @engine.Floor), Ok(-3L))
+  assert_eq(ir("2.5", @engine.Floor), Ok(2L))
+  assert_eq(ir("3.5", @engine.Floor), Ok(3L))
   // ceil →+∞
-  assert_eq(ir("-3.7", @engine.RCeil), Ok(-3L))
-  assert_eq(ir("-2.5", @engine.RCeil), Ok(-2L))
-  assert_eq(ir("2.5", @engine.RCeil), Ok(3L))
-  assert_eq(ir("3.5", @engine.RCeil), Ok(4L))
+  assert_eq(ir("-3.7", @engine.Ceil), Ok(-3L))
+  assert_eq(ir("-2.5", @engine.Ceil), Ok(-2L))
+  assert_eq(ir("2.5", @engine.Ceil), Ok(3L))
+  assert_eq(ir("3.5", @engine.Ceil), Ok(4L))
   // trunc →0 (drop the fraction, sign kept)
-  assert_eq(ir("-3.7", @engine.RTrunc), Ok(-3L))
-  assert_eq(ir("-2.5", @engine.RTrunc), Ok(-2L))
-  assert_eq(ir("2.5", @engine.RTrunc), Ok(2L))
-  assert_eq(ir("3.5", @engine.RTrunc), Ok(3L))
+  assert_eq(ir("-3.7", @engine.Trunc), Ok(-3L))
+  assert_eq(ir("-2.5", @engine.Trunc), Ok(-2L))
+  assert_eq(ir("2.5", @engine.Trunc), Ok(2L))
+  assert_eq(ir("3.5", @engine.Trunc), Ok(3L))
   // away →0 の反対 (magnitude 切り上げ)
-  assert_eq(ir("-3.7", @engine.RAway), Ok(-4L))
-  assert_eq(ir("-2.5", @engine.RAway), Ok(-3L))
-  assert_eq(ir("2.5", @engine.RAway), Ok(3L))
-  assert_eq(ir("3.5", @engine.RAway), Ok(4L))
+  assert_eq(ir("-3.7", @engine.Away), Ok(-4L))
+  assert_eq(ir("-2.5", @engine.Away), Ok(-3L))
+  assert_eq(ir("2.5", @engine.Away), Ok(3L))
+  assert_eq(ir("3.5", @engine.Away), Ok(4L))
   // half_floor: nearest, tie→−∞
-  assert_eq(ir("-3.7", @engine.RHalfFloor), Ok(-4L))
-  assert_eq(ir("-2.5", @engine.RHalfFloor), Ok(-3L))
-  assert_eq(ir("2.5", @engine.RHalfFloor), Ok(2L))
-  assert_eq(ir("3.5", @engine.RHalfFloor), Ok(3L))
+  assert_eq(ir("-3.7", @engine.HalfFloor), Ok(-4L))
+  assert_eq(ir("-2.5", @engine.HalfFloor), Ok(-3L))
+  assert_eq(ir("2.5", @engine.HalfFloor), Ok(2L))
+  assert_eq(ir("3.5", @engine.HalfFloor), Ok(3L))
   // half_ceil: nearest, tie→+∞
-  assert_eq(ir("-3.7", @engine.RHalfCeil), Ok(-4L))
-  assert_eq(ir("-2.5", @engine.RHalfCeil), Ok(-2L))
-  assert_eq(ir("2.5", @engine.RHalfCeil), Ok(3L))
-  assert_eq(ir("3.5", @engine.RHalfCeil), Ok(4L))
+  assert_eq(ir("-3.7", @engine.HalfCeil), Ok(-4L))
+  assert_eq(ir("-2.5", @engine.HalfCeil), Ok(-2L))
+  assert_eq(ir("2.5", @engine.HalfCeil), Ok(3L))
+  assert_eq(ir("3.5", @engine.HalfCeil), Ok(4L))
   // half_trunc: nearest, tie→0
-  assert_eq(ir("-3.7", @engine.RHalfTrunc), Ok(-4L))
-  assert_eq(ir("-2.5", @engine.RHalfTrunc), Ok(-2L))
-  assert_eq(ir("2.5", @engine.RHalfTrunc), Ok(2L))
-  assert_eq(ir("3.5", @engine.RHalfTrunc), Ok(3L))
+  assert_eq(ir("-3.7", @engine.HalfTrunc), Ok(-4L))
+  assert_eq(ir("-2.5", @engine.HalfTrunc), Ok(-2L))
+  assert_eq(ir("2.5", @engine.HalfTrunc), Ok(2L))
+  assert_eq(ir("3.5", @engine.HalfTrunc), Ok(3L))
   // half_away: nearest, tie→0 の反対 (学校四捨五入)
-  assert_eq(ir("-3.7", @engine.RHalfAway), Ok(-4L))
-  assert_eq(ir("-2.5", @engine.RHalfAway), Ok(-3L))
-  assert_eq(ir("2.5", @engine.RHalfAway), Ok(3L))
-  assert_eq(ir("3.5", @engine.RHalfAway), Ok(4L))
+  assert_eq(ir("-3.7", @engine.HalfAway), Ok(-4L))
+  assert_eq(ir("-2.5", @engine.HalfAway), Ok(-3L))
+  assert_eq(ir("2.5", @engine.HalfAway), Ok(3L))
+  assert_eq(ir("3.5", @engine.HalfAway), Ok(4L))
   // half_even: nearest, tie→偶数 (banker's)
-  assert_eq(ir("-3.7", @engine.RHalfEven), Ok(-4L))
-  assert_eq(ir("-2.5", @engine.RHalfEven), Ok(-2L))
-  assert_eq(ir("2.5", @engine.RHalfEven), Ok(2L))
-  assert_eq(ir("3.5", @engine.RHalfEven), Ok(4L))
+  assert_eq(ir("-3.7", @engine.HalfEven), Ok(-4L))
+  assert_eq(ir("-2.5", @engine.HalfEven), Ok(-2L))
+  assert_eq(ir("2.5", @engine.HalfEven), Ok(2L))
+  assert_eq(ir("3.5", @engine.HalfEven), Ok(4L))
 }
 
 // ── DR-075 §5 binary64 非経由の厳密性 (偽 tie 回避) ─────────────────────────────
@@ -264,13 +258,13 @@ test "parse_int_value int_round table (DR-075 discriminator vector)" {
 /// value just above (leading digit 5 with non-zero tail) rounds up. This is the guarantee §5 makes spec.
 test "parse_int_value tie判定 is lexical, not binary64 (DR-075 §5)" {
   // 0.4999… < 0.5 lexically (first fractional digit is 4) → rounds to 0 under half_even, NOT a tie.
-  assert_eq(ir("0.4999999999999999999", @engine.RHalfEven), Ok(0L))
+  assert_eq(ir("0.4999999999999999999", @engine.HalfEven), Ok(0L))
   // 0.5000…001 > 0.5 (digit 5 then a non-zero tail) → strictly above half → rounds up to 1.
-  assert_eq(ir("0.5000000000000000001", @engine.RHalfEven), Ok(1L))
+  assert_eq(ir("0.5000000000000000001", @engine.HalfEven), Ok(1L))
   // an exact 0.5 tie under half_even goes to the even neighbour 0.
-  assert_eq(ir("0.5", @engine.RHalfEven), Ok(0L))
+  assert_eq(ir("0.5", @engine.HalfEven), Ok(0L))
   // and the same exact 0.5 under half_away (学校四捨五入) goes up to 1.
-  assert_eq(ir("0.5", @engine.RHalfAway), Ok(1L))
+  assert_eq(ir("0.5", @engine.HalfAway), Ok(1L))
 }
 
 // ── DR-074 §3 bool canonical 字句 ──────────────────────────────────────────────
@@ -375,40 +369,40 @@ test "parse_number: `0x1e2` = hex 482 (e は hex 桁、p が二進指数)" {
 
 ///|
 /// DR-075 §値空間判定 と DR-074 §2 の合成: `parse_int_value` は hex 経路も値空間で判定する。
-/// `0xff` は整数値なので @engine.RError でも Ok(255)、`0x1.8p3` = 12 は整数値なので Ok(12)、`0x1.8` = 1.5 は
-/// 非整数なので @engine.RError で `not_an_integer`、丸めモードで Ok(rounded)。opt-in off で hex は not_a_number。
+/// `0xff` は整数値なので @engine.Error でも Ok(255)、`0x1.8p3` = 12 は整数値なので Ok(12)、`0x1.8` = 1.5 は
+/// 非整数なので @engine.Error で `not_an_integer`、丸めモードで Ok(rounded)。opt-in off で hex は not_a_number。
 test "parse_int_value: hex 整数値は Ok、hex 非整数は int_round に従う (DR-075 §1 / §2)" {
   // hex integer は整数値なので全モードで Ok
   assert_eq(
-    parse_int_value("0xff", @engine.RError, allow_base_prefix=true),
+    parse_int_value("0xff", @engine.Error, allow_base_prefix=true),
     Ok(255L),
   )
   // hex float で整数値 (0x1.8p3 = 12) も全モードで Ok
   assert_eq(
-    parse_int_value("0x1.8p3", @engine.RError, allow_base_prefix=true),
+    parse_int_value("0x1.8p3", @engine.Error, allow_base_prefix=true),
     Ok(12L),
   )
-  // hex float で非整数 (0x1.8 = 1.5) は @engine.RError で `not_an_integer`
+  // hex float で非整数 (0x1.8 = 1.5) は @engine.Error で `not_an_integer`
   assert_eq(
-    parse_int_value("0x1.8", @engine.RError, allow_base_prefix=true).unwrap_err().reason,
+    parse_int_value("0x1.8", @engine.Error, allow_base_prefix=true).unwrap_err().reason,
     "not_an_integer",
   )
   // 丸めモードなら Ok (1.5 を trunc → 1、floor → 1、ceil → 2)
   assert_eq(
-    parse_int_value("0x1.8", @engine.RTrunc, allow_base_prefix=true),
+    parse_int_value("0x1.8", @engine.Trunc, allow_base_prefix=true),
     Ok(1L),
   )
   assert_eq(
-    parse_int_value("0x1.8", @engine.RFloor, allow_base_prefix=true),
+    parse_int_value("0x1.8", @engine.Floor, allow_base_prefix=true),
     Ok(1L),
   )
   assert_eq(
-    parse_int_value("0x1.8", @engine.RCeil, allow_base_prefix=true),
+    parse_int_value("0x1.8", @engine.Ceil, allow_base_prefix=true),
     Ok(2L),
   )
   // opt-in off なら hex は not_a_number
   assert_eq(
-    parse_int_value("0xff", @engine.RError, allow_base_prefix=false).unwrap_err().reason,
+    parse_int_value("0xff", @engine.Error, allow_base_prefix=false).unwrap_err().reason,
     "not_a_number",
   )
 }

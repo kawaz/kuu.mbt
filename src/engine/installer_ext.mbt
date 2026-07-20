@@ -342,7 +342,7 @@ fn collect_unknown_vocab(
       Some(vocab) =>
         errors.push({
           element: element.name,
-          kind: DUnknownVocab,
+          kind: UnknownVocab,
           message: "unknown special vocab '\{vocab}' — no installer claimed it",
           hint: "register an installer owning '\{vocab}' in the chain (§13.5)",
         })
@@ -354,7 +354,7 @@ fn collect_unknown_vocab(
       Some(vocab) =>
         errors.push({
           element: element.name,
-          kind: DUnknownVocab,
+          kind: UnknownVocab,
           message: "unknown special vocab '\{vocab}' — no installer claimed it",
           hint: "register an installer owning '\{vocab}' in the chain (§13.5)",
         })
@@ -364,7 +364,7 @@ fn collect_unknown_vocab(
   if definition.commands.length() > 0 && !vocab_owned(owned, "command") {
     errors.push({
       element: "(commands)",
-      kind: DUnknownVocab,
+      kind: UnknownVocab,
       message: "unknown special vocab 'command'",
       hint: "register an installer owning 'command'",
     })
@@ -372,7 +372,7 @@ fn collect_unknown_vocab(
   if definition.aliases.length() > 0 && !vocab_owned(owned, "alias") {
     errors.push({
       element: "(aliases)",
-      kind: DUnknownVocab,
+      kind: UnknownVocab,
       message: "unknown special vocab 'alias'",
       hint: "register an installer owning 'alias'",
     })
@@ -395,7 +395,7 @@ pub fn collect_installer_vocab_errors(
       if vocab_owned(owned, vocab) {
         errors.push({
           element: vocab,
-          kind: DVocabIntersection,
+          kind: VocabIntersection,
           message: "vocab '\{vocab}' is claimed by two installers",
           hint: "remove the duplicate installer owning '\{vocab}' from the chain",
         })
@@ -428,7 +428,7 @@ pub fn run_installer_fixpoint(
       return Err([
         {
           element: "(chain)",
-          kind: DUnknownVocab,
+          kind: UnknownVocab,
           message: "installer chain did not converge (> 100 iterations)",
           hint: "check for a runaway global copy or a mis-registered installer",
         },

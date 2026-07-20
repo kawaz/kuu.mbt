@@ -9,7 +9,7 @@
 /// carry を end-to-end (JSON result) で pin 済みだが、tty preset 由来の is_tty/tty_stream/
 /// tty_cygwin は同 fixture が触れていない軸 — 本 whitebox test で `dec_or_leaf` の返り値
 /// (@engine.ElemDef) を直接検査し、shadow の非 canonical 値 (is_tty=true, tty_stream=Some("stderr"),
-/// tty_cygwin=false, int_round=@engine.RFloor, allow_base_prefix=true, 非 canonical bool_config) が
+/// tty_cygwin=false, int_round=@engine.Floor, allow_base_prefix=true, 非 canonical bool_config) が
 /// 1 つも canonical default に落ちずそのまま or leaf へ届くことを固定する。
 test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix/bool_config/is_tty/tty_stream/tty_cygwin) が or leaf に carry される" {
   let shadows : Map[String, TypeShadow] = Map([])
@@ -21,7 +21,7 @@ test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix
   shadows.set("dialect", {
     base: @builtins.bool_type(),
     is_tree_form: false,
-    int_round: @engine.RFloor,
+    int_round: @engine.Floor,
     allow_base_prefix: true,
     bool_config: custom_bool_config,
     is_tty: true,
@@ -34,7 +34,7 @@ test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix
   let e = dec_or_leaf(j, shadows)
   assert_eq(e.name, "leaf")
   assert_eq(e.ty, @builtins.bool_type(config=custom_bool_config))
-  assert_eq(e.int_round, @engine.RFloor)
+  assert_eq(e.int_round, @engine.Floor)
   assert_eq(e.allow_base_prefix, true)
   assert_eq(e.bool_config, custom_bool_config)
   assert_eq(e.is_tty, true)
@@ -44,16 +44,16 @@ test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix
 
 ///|
 /// 対極 (shadow に無い bare 型名の場合): TypeShadow を経由しない or leaf は dec_ty の canonical
-/// 型解決 + @engine.RError/false/@builtins.bool_config_canonical()/false/None/true の canonical default に落ちる
+/// 型解決 + @engine.Error/false/@builtins.bool_config_canonical()/false/None/true の canonical default に落ちる
 /// ことの固定 (carry すべきものが無い場合に誤って何かを持ち込んでいないかの反証チェック)。
-test "dec_or_leaf: shadow に無い bare 型名 (\"int\") は canonical default (int_round=@engine.RError 等) に落ちる" {
+test "dec_or_leaf: shadow に無い bare 型名 (\"int\") は canonical default (int_round=@engine.Error 等) に落ちる" {
   let shadows : Map[String, TypeShadow] = Map([])
   let src =
     #|{"type": "int", "name": "leaf"}
   let j = @json.parse(src)
   let e = dec_or_leaf(j, shadows)
   assert_eq(e.ty, @builtins.int_type())
-  assert_eq(e.int_round, @engine.RError)
+  assert_eq(e.int_round, @engine.Error)
   assert_eq(e.allow_base_prefix, false)
   assert_eq(e.bool_config, @builtins.bool_config_canonical())
   assert_eq(e.is_tty, false)
@@ -172,15 +172,15 @@ test "dec_definition: long_prefix:\"\" WITH long_eq_sep:\"require\" decodes succ
   assert_eq(def.options.length(), 2)
   for e in def.options {
     assert_eq(e.long_prefix, "")
-    assert_eq(e.long_eq_sep, @engine.EsRequire)
+    assert_eq(e.long_eq_sep, @engine.Require)
   }
 }
 
 ///|
-/// 対極 (撤廃の直接固定): `long_prefix: ""` ALONE, with scope 既定 `long_eq_sep: @engine.EsAllow`
+/// 対極 (撤廃の直接固定): `long_prefix: ""` ALONE, with scope 既定 `long_eq_sep: @engine.Allow`
 /// (= `long_eq_sep` を明示しない), decodes successfully — 旧 DR-091 §3 ならここが decode-time
 /// definition-error だったが、DR-096 §3.3 の無条件合法化でそのまま通る。
-test "dec_definition: long_prefix:\"\" ALONE (long_eq_sep unset, @engine.EsAllow) decodes successfully (対極, DR-096 §3.3 撤廃の固定)" {
+test "dec_definition: long_prefix:\"\" ALONE (long_eq_sep unset, @engine.Allow) decodes successfully (対極, DR-096 §3.3 撤廃の固定)" {
   let src =
     #|{"options":[{"name":"if","type":"string","long":true}],"config":{"long_prefix":""}}
   let o = match @json.parse(src).j_obj() {
@@ -193,7 +193,7 @@ test "dec_definition: long_prefix:\"\" ALONE (long_eq_sep unset, @engine.EsAllow
       abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.options[0].long_prefix, "")
-  assert_eq(def.options[0].long_eq_sep, @engine.EsAllow)
+  assert_eq(def.options[0].long_eq_sep, @engine.Allow)
 }
 
 ///|
@@ -446,7 +446,7 @@ test "dec_definition: short_prefix / long_eq_sep / short_combine all decode and 
       abort("unexpected UnknownType for " + element + ": " + type_name)
   }
   assert_eq(def.options[0].short_prefix, "+")
-  assert_eq(def.options[0].long_eq_sep, @engine.EsDeny)
+  assert_eq(def.options[0].long_eq_sep, @engine.Deny)
   assert_eq(def.options[0].short_combine, false)
 }
 
