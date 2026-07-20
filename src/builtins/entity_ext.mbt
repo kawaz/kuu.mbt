@@ -18,7 +18,7 @@ impl @engine.EntityExt for BuiltinEntityExt with fn complete_candidate(
 ) {
   {
     ..candidate,
-    meta: { ..candidate.meta, hidden: self.hidden },
+    hidden: self.hidden,
     completer: if candidate.is_value {
       self.completer
     } else {

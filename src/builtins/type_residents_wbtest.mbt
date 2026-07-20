@@ -124,6 +124,6 @@ test "EntityExt carries completion metadata opaquely into Candidate" {
   let cand = extension.complete_candidate(
     @engine.Candidate::pending_value("string", "path"),
   )
-  assert_eq(cand.meta.hidden, true)
+  assert_eq(cand.hidden, true)
   assert_eq(cand.completer, Some("files"))
 }

@@ -650,15 +650,6 @@ pub(all) enum TermHint {
 } derive(Eq, Debug)
 
 ///|
-/// Declaration-layer meta a completion reads by reference (DR-056 / DR-057 / DR-058): whether a
-/// spelling is an alias entry, hidden (excluded from candidates by default, kept in meta), deprecated.
-pub(all) struct CandMeta {
-  is_alias : Bool
-  hidden : Bool
-  deprecated : Bool
-} derive(Eq, Debug)
-
-///|
 /// A completion candidate (DR-060 §3): either an exact trigger spelling, or a value position (type +
 /// completer名, PoC shows the type). Meta rides alongside; policy / replacement / landing is the
 /// generator's & shell's (kuu returns素材 only).
@@ -680,7 +671,13 @@ pub(all) struct Candidate {
   ty : String // DR-104 §2 base spelling for a value position
   origin : String // the element name it came from
   term : TermHint
-  meta : CandMeta
+  // Declaration-layer meta a completion reads by reference (DR-056 / DR-057 / DR-058): whether a
+  // spelling is an alias entry, hidden (excluded from candidates by default, kept here), deprecated.
+  // The wire projection nests these three fields under `meta: {...}` (DR-104's wire contract); the
+  // in-memory Candidate carries them flat.
+  is_alias : Bool
+  hidden : Bool
+  deprecated : Bool
   path : Array[String] // DR-066 §4: root-first ancestor scope names (snoc form, [] = root 直下)
   // Rooted-escape counter for `path`, mirroring `Binding.link` (DR-042 global link-sync): a
   // global option's satellite is copied into a descendant command scope wrapped in

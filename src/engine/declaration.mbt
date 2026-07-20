@@ -228,9 +228,9 @@ pub(all) struct ElemDef {
   deprecated : Bool // DR-058: 使用時 `@depr:<name>` warning
   // DR-057 / DR-104 §2/§3: この entry-copy が alias 宣言由来か (canonical=false、`alias_entry` が
   // 常に true で構築する)。`inst_short`/`inst_long` が @builtins.ShortEntry/@builtins.EqEntry へそのまま carry し、
-  // complete() の CandMeta.is_alias 直訳元になる (deprecated と同じ carrier パターン)。
+  // complete() の Candidate.is_alias 直訳元になる (deprecated と同じ carrier パターン)。
   is_alias : Bool
-  // DR-058 §1 / DR-104 §2: help/補完の既定表示から除外される要素か (`CandMeta.hidden`)。
+  // DR-058 §1 / DR-104 §2: help/補完の既定表示から除外される要素か (`Candidate.hidden`)。
   // `ensure_entity` が builtin の opaque EntityExt resident へ収める — 要素単位の属性
   // (spelling ごとに変わらない) なので alias entry-copy はこの値を持たない。
   hidden : Bool

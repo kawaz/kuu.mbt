@@ -132,19 +132,15 @@ pub(all) enum Branch {
   Pending(Array[Candidate], Array[Binding])
 } derive(@debug.Debug)
 
-pub(all) struct CandMeta {
-  is_alias : Bool
-  hidden : Bool
-  deprecated : Bool
-} derive(Eq, @debug.Debug)
-
 pub(all) struct Candidate {
   spelling : String
   is_value : Bool
   ty : String
   origin : String
   term : TermHint
-  meta : CandMeta
+  is_alias : Bool
+  hidden : Bool
+  deprecated : Bool
   path : Array[String]
   link : Int
   fire_path : Array[String]

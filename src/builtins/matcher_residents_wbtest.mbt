@@ -220,7 +220,7 @@ test "eq-split long option: deprecated entry rides a @depr marker" {
   // established neutral completion metadata until a separate completion policy specifies otherwise.
   let candidates = long.candidates()
   assert_eq(candidates.length(), 1)
-  assert_false(candidates[0].meta.deprecated)
+  assert_false(candidates[0].deprecated)
   let r = probe_matcher(long, ["--port=8080"])
   assert_eq(r.length(), 1)
   let b = acc_binds(r[0])

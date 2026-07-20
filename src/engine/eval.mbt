@@ -113,7 +113,9 @@ pub fn Candidate::trigger(
     ty,
     origin,
     term,
-    meta: { is_alias, hidden, deprecated },
+    is_alias,
+    hidden,
+    deprecated,
     path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSatisfied)
     link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
     fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: same "starts empty, scope
@@ -362,7 +364,9 @@ pub fn Candidate::pending_value(ty : String, origin : String) -> Candidate {
     ty,
     origin,
     term: WordEnd,
-    meta: { is_alias: false, hidden: false, deprecated: false },
+    is_alias: false,
+    hidden: false,
+    deprecated: false,
     path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSatisfied)
     link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
     fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: `Candidate.fire_path`'s doc

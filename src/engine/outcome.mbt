@@ -375,9 +375,10 @@ pub fn complete_tree(
             let mut dup_idx = -1
             for j = 0; j < cands.length(); j = j + 1 {
               let e = cands[j]
-              // DR-060 §3's candidate structure is spelling/is_value/ty/origin/term/meta —
-              // `path` (DR-066 §4) is NOT part of it, so two candidates that differ only
-              // by which ancestor scope produced them are the same candidate here: the
+              // DR-060 §3's candidate structure is spelling/is_value/ty/origin/term/meta (wire
+              // shape; `meta` bundles is_alias/hidden/deprecated, carried flat on the in-memory
+              // Candidate) — `path` (DR-066 §4) is NOT part of it, so two candidates that differ
+              // only by which ancestor scope produced them are the same candidate here: the
               // same spelling is readable either way, and DR-060 §1's "union of what's
               // readable" is a union over SPELLINGS, not over the scopes that offer them.
               // `completer` (DR-104 §3) is likewise NOT part of this identity.
@@ -386,7 +387,9 @@ pub fn complete_tree(
                 e.ty == c.ty &&
                 e.origin == c.origin &&
                 e.term == c.term &&
-                e.meta == c.meta {
+                e.is_alias == c.is_alias &&
+                e.hidden == c.hidden &&
+                e.deprecated == c.deprecated {
                 dup_idx = j
                 break
               }
