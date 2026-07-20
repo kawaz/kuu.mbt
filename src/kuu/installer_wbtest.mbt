@@ -260,7 +260,7 @@ test "long installer: value option gets 1 greedy @engine.Seq satellite + 1 @buil
     }
     _ => abort("expected @engine.NativeMatch")
   }
-  // entity は name=port で 1 個、@builtins.flag_type() ではないので default_values は None。inherit_ / env_key
+  // entity は name=port で 1 個、@builtins.flag_type() ではないので default_values は None。is_inherit / env_key
   // / config_seat / accum は installer が触っていないので初期値のまま。
   assert_eq(sc.entities.length(), 1)
   let ent = entity_of(sc, "port").unwrap()
@@ -630,7 +630,7 @@ test "repeat installer: unbounded repeat installs 'append'+flatten:true accum + 
       el(
         "src",
         @builtins.string_type(),
-        repeat=Some({ min: 1, max: None, lazy_: false }),
+        repeat=Some({ min: 1, max: None, is_lazy: false }),
       ),
     ],
   }
@@ -648,17 +648,17 @@ test "repeat installer: unbounded repeat installs 'append'+flatten:true accum + 
 }
 
 ///|
-/// 保証: unbounded min:0 は `Ref` (0 でもよいを表現できない) ではなく `@engine.Many(head, lazy_)` に落ち、
-/// `lazy_` は宣言の `repeat.lazy` がそのまま `@engine.Many` の 2nd field に渡る (issue 2026-07-08
+/// 保証: unbounded min:0 は `Ref` (0 でもよいを表現できない) ではなく `@engine.Many(head, is_lazy)` に落ち、
+/// `is_lazy` は宣言の `repeat.lazy` がそのまま `@engine.Many` の 2nd field に渡る (issue 2026-07-08
 /// min0-lazy-repeat-gap 根治: `@engine.BoundedTail`'s 3rd field と同じ座席を min:0 UNBOUNDED 側にも用意)。
-test "repeat installer: min:0 unbounded repeat lowers to @engine.Many(head, lazy_) carrying the lazy spec" {
+test "repeat installer: min:0 unbounded repeat lowers to @engine.Many(head, is_lazy) carrying the lazy spec" {
   let def : @engine.Definition = {
     ..empty_def(),
     positionals: [
       el(
         "xs",
         @builtins.string_type(),
-        repeat=Some({ min: 0, max: None, lazy_: true }),
+        repeat=Some({ min: 0, max: None, is_lazy: true }),
       ),
     ],
   }
@@ -676,7 +676,7 @@ test "repeat installer: min:0 unbounded repeat lowers to @engine.Many(head, lazy
 // ── bounded repeat (LOWERING §B.8): min heads + @engine.BoundedTail、Ref 再帰なし ─────
 
 ///|
-/// 保証: bounded (max 有限) は Ref 再帰を作らず @engine.BoundedTail(head, max-min, lazy_) に落ちる。取り分選好
+/// 保証: bounded (max 有限) は Ref 再帰を作らず @engine.BoundedTail(head, max-min, is_lazy) に落ちる。取り分選好
 /// (greedy default / lazy) は @engine.BoundedTail の 3 番目 field で保持され、unbounded 版 (Ref tail) と同じく
 /// 先食い/取り分選好が効く (LOWERING §B.8: 「bounded repeats compose like unbounded ones」)。
 test "repeat installer: bounded max lowers to min heads + @engine.BoundedTail (no Ref)" {
@@ -686,7 +686,7 @@ test "repeat installer: bounded max lowers to min heads + @engine.BoundedTail (n
       el(
         "f",
         @builtins.string_type(),
-        repeat=Some({ min: 1, max: Some(3), lazy_: false }),
+        repeat=Some({ min: 1, max: Some(3), is_lazy: false }),
       ),
     ],
   }
@@ -719,7 +719,7 @@ test "repeat installer: bounded max lowers to min heads + @engine.BoundedTail (n
 test "Group installer: bounded max (min:1,max:1) lowers @engine.IdxRepeat's budget field to Some(0)" {
   let grp : @engine.ElemDef = {
     ..el("grp", @builtins.string_type()),
-    repeat: Some({ min: 1, max: Some(1), lazy_: false }),
+    repeat: Some({ min: 1, max: Some(1), is_lazy: false }),
     body: Group([el("gflag", @builtins.string_type())]),
   }
   let def : @engine.Definition = {
@@ -741,7 +741,7 @@ test "Group installer: bounded max (min:1,max:1) lowers @engine.IdxRepeat's budg
 test "Group installer: bounded max (min:1,max:3) lowers @engine.IdxRepeat's budget field to Some(2)" {
   let grp : @engine.ElemDef = {
     ..el("grp", @builtins.string_type()),
-    repeat: Some({ min: 1, max: Some(3), lazy_: false }),
+    repeat: Some({ min: 1, max: Some(3), is_lazy: false }),
     body: Group([el("gflag", @builtins.string_type())]),
   }
   let def : @engine.Definition = { ..empty_def(), positionals: [grp] }
@@ -1040,7 +1040,7 @@ test "parse_definition enumerates all def-errors (no first-error 打ち切り, D
       el(
         "f",
         @builtins.string_type(),
-        repeat=Some({ min: 3, max: Some(1), lazy_: false }),
+        repeat=Some({ min: 3, max: Some(1), is_lazy: false }),
       ),
     ], // min > max
   }
@@ -1084,7 +1084,7 @@ test "parse_definition: a ref target absent from registry is @engine.AbsentRef (
         "hlcolors",
         @builtins.string_type(),
         ref_=Some("color"),
-        repeat=Some({ min: 1, max: None, lazy_: false }),
+        repeat=Some({ min: 1, max: None, is_lazy: false }),
       ),
     ],
   }
@@ -1125,7 +1125,7 @@ test "parse_definition: an option's ref+repeat with min > 1 is @engine.InvalidRa
         @builtins.string_type(),
         long=List([":set"]),
         ref_=Some("color"),
-        repeat=Some({ min: 2, max: None, lazy_: false }),
+        repeat=Some({ min: 2, max: None, is_lazy: false }),
       ),
     ],
   }
@@ -1161,7 +1161,7 @@ test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (co
         @builtins.string_type(),
         long=List([":set"]),
         ref_=Some("color"),
-        repeat=Some({ min: 1, max: None, lazy_: false }),
+        repeat=Some({ min: 1, max: None, is_lazy: false }),
       ),
     ],
   }
@@ -1941,7 +1941,7 @@ test "positional or+repeat installer: string branch repeats in parallel with the
   }
   let hlcolors : @engine.ElemDef = {
     ..el("hlcolors", @builtins.string_type()),
-    repeat: Some({ min: 1, max: None, lazy_: false }),
+    repeat: Some({ min: 1, max: None, is_lazy: false }),
     body: Or([rgb_seq, name_leaf]),
   }
   let def : @engine.Definition = { ..empty_def(), positionals: [hlcolors] }
@@ -1991,7 +1991,7 @@ test "repeat installer: self-ref cons template key does not collide with a same-
       el(
         "x",
         @builtins.string_type(),
-        repeat=Some({ min: 1, max: None, lazy_: false }),
+        repeat=Some({ min: 1, max: None, is_lazy: false }),
       ),
     ],
   }
@@ -2792,7 +2792,7 @@ test "DR-089: a none-typed repeat positional structurally consumes multiple toke
   let colon = pos(
     "colon",
     @builtins.none_type(),
-    repeat=Some({ min: 0, max: None, lazy_: false }),
+    repeat=Some({ min: 0, max: None, is_lazy: false }),
   )
   let def : @engine.Definition = { ..empty_def(), positionals: [colon] }
   let sc = ok_scope(def, all_installers())
@@ -3397,7 +3397,7 @@ test "DR-090: xargs-style pattern dd (self:keep) — option fires, value slot ra
   let rest = pos(
     "rest",
     @builtins.string_type(),
-    repeat=Some({ min: 0, max: None, lazy_: false }),
+    repeat=Some({ min: 0, max: None, is_lazy: false }),
   )
   let def : @engine.Definition = {
     ..empty_def(),
@@ -3441,7 +3441,7 @@ test "DR-090 対極: exact dd (no match/self declared) is unaffected — drop + 
   let rest = pos(
     "rest",
     @builtins.string_type(),
-    repeat=Some({ min: 0, max: None, lazy_: false }),
+    repeat=Some({ min: 0, max: None, is_lazy: false }),
   )
   let def : @engine.Definition = {
     ..empty_def(),

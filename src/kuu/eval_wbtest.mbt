@@ -578,7 +578,7 @@ test "REGRESSION consume_head @engine.ReqArg respects 先食い (raw-eat suppres
 test "REGRESSION @engine.Many spine takes preference (greedy default, no @engine.Ambiguous)" {
   // deep-review LENS-T6: two adjacent @engine.Many closures without preference
   // return @engine.Ambiguous (3-way split of ["a","b"] between xs and ys). DR-043
-  // "取り分次元は代表 1 本に確定" — greedy default (@engine.Many has no lazy_
+  // "取り分次元は代表 1 本に確定" — greedy default (@engine.Many has no is_lazy
   // knob) picks the more-rep-first split: xs=[a,b], ys=[].
   let root : @engine.Scope = {
     greedy: [],

@@ -9,8 +9,8 @@
 // MDR-002 §3 準拠: installer は node / value / matcher / resolve に依存し、評価器 (eval) には依存しない。
 // MDR-002 追記「CPS の射程」の installer 規約: repeat はスパイン形 (positional の Ref / @engine.BoundedTail /
 // @engine.ScopeNode) にのみ正規化し、@engine.Or / @engine.Seq / @engine.Rooted 内部への埋め込みは生成しない (取り分選好の局所化を避けるため)。
-// MDR-003 命名規約: bare 予約語は末尾 `_` 化 — @engine.RepeatSpec の bare `lazy` は `lazy_` に rename。
-// @engine.Entity 側の `inherit_` は node.mbt が rename 済み。
+// MDR-003 命名規約: bare 予約語は末尾 `_` 化 — @engine.RepeatSpec の bare `lazy` は `is_lazy` に rename。
+// @engine.Entity 側の `is_inherit` は node.mbt が rename 済み。
 
 ///|
 /// One `long` DSL string (DR-011/071/076), classified. `":set"` (bare sentinel) is `Main`; any
@@ -809,7 +809,7 @@ fn elem_repeat(e : @engine.ElemDef) -> @engine.RepeatSpec? {
     Some(s) => Some(s)
     None =>
       if e.optional {
-        Some({ min: 0, max: Some(1), lazy_: false })
+        Some({ min: 0, max: Some(1), is_lazy: false })
       } else {
         None
       }
@@ -847,7 +847,7 @@ fn has_declared_value_source(e : @engine.ElemDef) -> Bool {
 /// **@engine.Many**) にのみ正規化し、@engine.Or/@engine.Seq/@engine.Rooted 内部への埋め込みは生成しない (取り分選好の局所化を避け
 /// るため)。`@engine.Many` は `Ref`/`@engine.BoundedTail` と対称な取り分選好 (既定 greedy = 長い方から試す、
 /// `lazy:true` で反転 = 短い方から試す、`has_full_k` で pruning) を scope_consume 側に持つ spine 形
-/// (eval.mbt の `@engine.Many(inner, lazy_) =>` アーム、"parity with Ref/@engine.BoundedTail 取り分選好 spec
+/// (eval.mbt の `@engine.Many(inner, is_lazy) =>` アーム、"parity with Ref/@engine.BoundedTail 取り分選好 spec
 /// DR-043")。輪郭は fixtures/path-search/ambiguous-receptacles.json が固定する。
 
 ///|
@@ -880,11 +880,11 @@ fn lower_repeat_head(
             // reading DR-043 requires — exactly this fixture's 3 divergences). `@engine.Many(head)` is
             // the existing spine form with the IDENTICAL preference algorithm already wired in
             // scope_consume, so no registry/self-ref is needed at all (each further rep re-enters
-            // the SAME `@engine.Many` node at the same `pidx`, not a named template). `spec.lazy_` rides
+            // the SAME `@engine.Many` node at the same `pidx`, not a named template). `spec.is_lazy` rides
             // straight into `@engine.Many`'s 2nd field (issue 2026-07-08 min0-lazy-repeat-gap resolved:
             // @engine.BoundedTail's 3rd field is the same seat for the bounded sibling, DR-043 lazy is
             // declarative preference regardless of min/max shape).
-            out.push(@engine.Many(head, spec.lazy_))
+            out.push(@engine.Many(head, spec.is_lazy))
           } else {
             // UNBOUNDED min>=1 (DR-043): `name#cons = @engine.Seq([head, Opt(Ref(name#cons))])` の porous
             // 自参照。`#cons` サフィックス (DR-046 §4 の自動 id 空間、`#` は user ns 外の既裁定) で
@@ -895,7 +895,7 @@ fn lower_repeat_head(
             // 実装側のプレーン名との差を吸収して隠していただけ — 本 mangle で golden と実体が一致する)。
             let cons = e.name + "#cons"
             registry.set(cons, @engine.Seq([head, opt_node(Ref(cons))]))
-            if spec.lazy_ {
+            if spec.is_lazy {
               // lazy marker (evaluator が split 選好を引くための mangled key)
               registry.set("lazy:" + cons, @engine.Exact("lazy"))
             }
@@ -916,7 +916,7 @@ fn lower_repeat_head(
             k = k + 1
           }
           let budget = if mx - m < 0 { 0 } else { mx - m }
-          out.push(@engine.BoundedTail(head, budget, spec.lazy_))
+          out.push(@engine.BoundedTail(head, budget, spec.is_lazy))
         }
       }
   }
@@ -1294,7 +1294,7 @@ fn ensure_entity(
     config_seat,
     config_key: e.config_key,
     is_config_file: e.is_config_file,
-    inherit_: false, // MDR-003: node.mbt 側 @engine.Entity.inherit_
+    is_inherit: false, // MDR-003: node.mbt 側 @engine.Entity.is_inherit
     accum,
     // DR-105 §1/§3: flatten (append-only dial) and is_multiple_decl (DR-084 §2 origin marker) —
     // both already false-by-construction whenever `accum` is None (the tuple above only ever
@@ -1908,7 +1908,7 @@ fn inst_inherit(
 fn seat_inherit(build : @engine.InstallOutput, name : String) -> Unit {
   for ent in build.entities() {
     if ent.name == name {
-      ent.inherit_ = true // MDR-003
+      ent.is_inherit = true // MDR-003
     }
   }
 }

@@ -8,7 +8,7 @@
 //
 // MDR-002 §3: this file is the dependency-free leaf (behaviour-free ADTs only).
 // MDR-003: reserved-word collisions (`alias` / `export` / `inherit` 単独) take a
-// trailing underscore. Here only `Entity.inherit` collides → `inherit_`; compound
+// trailing underscore. Here only `Entity.inherit` collides → `is_inherit`; compound
 // spellings (`export_key`, `ExportKey`, `is_config_file`) are already safe.
 
 ///|
@@ -541,7 +541,7 @@ pub(all) struct Entity {
   config_seat : Bool // config seat declared (DR-050): fill from the config object by path
   config_key : Array[String]? // explicit absolute config path (DR-050 §3); None = 同型 (scope path + name)
   is_config_file : Bool // this cell's value is the config-file PATH (DR-050): resolves the provider, no config seat
-  mut inherit_ : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013). MDR-003: `inherit` 予約語回避
+  mut is_inherit : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013). MDR-003: `inherit` 予約語回避
   // The registered accumulator resident that folds this cell's effect list, or None for a scalar
   // cell. Built-ins are append (multiple/repeat), merge, and kv_map; each resident owns both its
   // CLI-seat fold and final result projection, so the resolver dispatches without inspecting a name.

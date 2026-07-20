@@ -146,7 +146,7 @@ fn opt(
   tty_stream? : String? = None,
   tty_cygwin? : Bool = true,
   global? : Bool = false,
-  inherit_? : Bool = false,
+  is_inherit? : Bool = false,
   inheritable? : Bool = false,
   repeat? : @engine.RepeatSpec? = None,
   multiple? : Bool = false,
@@ -207,7 +207,7 @@ fn opt(
     dd_match: None,
     dd_self_keep: false,
     is_global: global,
-    is_inherit: inherit_,
+    is_inherit,
     is_inheritable: inheritable,
     link_depth: 0,
     ref_target: ref_,
@@ -257,7 +257,7 @@ fn opt(
 fn pos(
   name : String,
   ty : &@engine.TypeExt,
-  inherit_? : Bool = false,
+  is_inherit? : Bool = false,
   repeat? : @engine.RepeatSpec? = None,
   optional? : Bool = false,
   multiple? : Bool = false,
@@ -317,7 +317,7 @@ fn pos(
     dd_match: None,
     dd_self_keep: false,
     is_global: false,
-    is_inherit: inherit_,
+    is_inherit,
     is_inheritable: false,
     link_depth: 0,
     ref_target: ref_,
@@ -553,7 +553,7 @@ priv struct InstallerDecoded {
   dd_match : String?
   dd_self_keep : Bool
   global_ : Bool
-  inherit_ : Bool
+  is_inherit : Bool
   repeat : @engine.RepeatSpec?
   optional : Bool
   multiple : Bool
@@ -586,7 +586,7 @@ fn decode_installer_owned(
   let mut dd_match : String? = None
   let mut dd_self_keep = false
   let mut global_ = false
-  let mut inherit_ = false
+  let mut is_inherit = false
   let mut repeat : @engine.RepeatSpec? = None
   let mut optional = false
   let mut multiple = false
@@ -623,7 +623,7 @@ fn decode_installer_owned(
         dd_self_keep = self_keep
       }
       Global(value) => global_ = value
-      Inherit(value) => inherit_ = value
+      Inherit(value) => is_inherit = value
       Repeat(spec, option) => {
         repeat = spec
         optional = option
@@ -660,7 +660,7 @@ fn decode_installer_owned(
     dd_match,
     dd_self_keep,
     global_,
-    inherit_,
+    is_inherit,
     repeat,
     optional,
     multiple,
@@ -1439,13 +1439,17 @@ fn dec_help_single_from_object(
           } else {
             // factory shadow: base name (int/number/string/bool) を single leaf として carry
             let base_name = sh.base.name()
-            Single({ value_name, type_: Some(base_name), values_enum: None })
+            Single({
+              value_name,
+              value_type: Some(base_name),
+              values_enum: None,
+            })
           }
         None =>
           // primitive: string/number/int/bool そのまま carry
-          Single({ value_name, type_: Some(t), values_enum: None })
+          Single({ value_name, value_type: Some(t), values_enum: None })
       }
-    None => Single({ value_name, type_: None, values_enum: None })
+    None => Single({ value_name, value_type: None, values_enum: None })
   }
 }
 
@@ -2071,7 +2075,7 @@ fn dec_option(
     None => None
   }
   let global = owned.global_
-  let inherit_flag = owned.inherit_
+  let inherit_flag = owned.is_inherit
   let inheritable = owned.inheritable
   let multiple = owned.multiple
   let sep = owned.separator
@@ -2183,7 +2187,7 @@ fn dec_option(
       tty_stream=tty_stream_from_shadow,
       tty_cygwin=tty_cygwin_from_shadow,
       global~,
-      inherit_=inherit_flag,
+      is_inherit=inherit_flag,
       inheritable~,
       multiple~,
       accumulator=acc,
@@ -2455,7 +2459,7 @@ fn dec_positional(
   pos(
     name,
     ty,
-    inherit_=owned.inherit_,
+    is_inherit=owned.is_inherit,
     repeat~,
     optional~,
     multiple~,

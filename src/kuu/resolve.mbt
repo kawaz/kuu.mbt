@@ -6,7 +6,7 @@
 //
 // Ported from slice `poc/result.mbt` (full file) and the value-ladder portion of slice
 // `poc/installer.mbt` (`resolve_scope` / `resolve_scope_config` / `@engine.value_str` — NOT the lowering,
-// which stays installer.mbt's job). MDR-003: `e.inherit` → `e.inherit_` (node.mbt already applies
+// which stays installer.mbt's job). MDR-003: `e.inherit` → `e.is_inherit` (node.mbt already applies
 // the trailing-underscore convention).
 //
 // `@engine.value_str` used to live in eval.mbt for the RequiresIf constraint comparison — this is its
@@ -2427,8 +2427,8 @@ fn resolve_ladder_below_cli(
       None => () // no config object (no config_file, or default-path read failure) → fall through
     }
   }
-  // inherit seat (DR-031 / DR-013). MDR-003: `inherit` 予約語回避 → `inherit_`.
-  if e.inherit_ {
+  // inherit seat (DR-031 / DR-013). MDR-003: `inherit` 予約語回避 → `is_inherit`.
+  if e.is_inherit {
     match inherited.get(e.name) {
       Some(v) => return Ok([@engine.mk_binding(e.name, v, @engine.Inherit)])
       None => ()

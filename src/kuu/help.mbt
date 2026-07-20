@@ -118,7 +118,7 @@ pub(all) struct HelpOption {
   help : String?
   help_long : String?
   help_group_name : String?
-  default_ : HelpDefault?
+  default : HelpDefault?
   env : Array[String]
   required : Bool
   multiple : Bool
@@ -414,7 +414,7 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
   if meta.preset_kind == Some("help_category") {
     let bool_branch = @engine.Single({
       value_name: None,
-      type_: Some("bool"),
+      value_type: Some("bool"),
       values_enum: None,
     })
     // DR-113 §2.3: string 枝の value_name 明示なしなら preset canonical "CATEGORY" を当てる
@@ -426,7 +426,7 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
     }
     let str_branch = @engine.Single({
       value_name: str_value_name,
-      type_: Some("string"),
+      value_type: Some("string"),
       values_enum: None,
     })
     return Some(@engine.Or([bool_branch, str_branch]))
@@ -442,7 +442,7 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
       Some(
         @engine.Single({
           value_name: meta.value_name,
-          type_: Some(t),
+          value_type: Some(t),
           values_enum,
         }),
       )
@@ -461,7 +461,7 @@ fn positional_value_structure_of(
     None =>
       @engine.Single({
         value_name: element.help_meta.value_name,
-        type_: None,
+        value_type: None,
         values_enum: None,
       })
   }
@@ -614,7 +614,7 @@ fn help_option_from(
     help: meta.help,
     help_long: meta.help_long,
     help_group_name: meta.help_group_name,
-    default_: if element.default_declared {
+    default: if element.default_declared {
       help_default(element.default_values)
     } else {
       None

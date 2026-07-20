@@ -106,9 +106,9 @@ fn render_val(value : @engine.Value) -> String {
 struct LEnt {
   name : String
   typ : String
-  default_ : @engine.Value?
+  default : @engine.Value?
   env : String?
-  inherit_ : Bool
+  is_inherit : Bool
   config_key : Array[String]?
   accum : String?
   // DR-105 §1/§3: the append-only flatten dial — carried alongside `accum` so a "lower" fixture can
@@ -159,7 +159,7 @@ fn canon_tmpl(k : String) -> String {
 ///|
 fn lent_str(e : LEnt) -> String {
   let fs : Array[String] = ["type=" + e.typ]
-  match e.default_ {
+  match e.default {
     Some(v) => fs.push("default=" + render_val(v))
     None => ()
   }
@@ -167,8 +167,8 @@ fn lent_str(e : LEnt) -> String {
     Some(k) => fs.push("env=" + k)
     None => ()
   }
-  if e.inherit_ {
-    fs.push("inherit_=true")
+  if e.is_inherit {
+    fs.push("is_inherit=true")
   }
   match e.config_key {
     Some(p) => fs.push("config_key=[" + join_comma(p) + "]")
@@ -178,7 +178,7 @@ fn lent_str(e : LEnt) -> String {
     Some(a) => fs.push("accumulator=" + a)
     None => ()
   }
-  // DR-105 §1: omit-if-false, mirrors `inherit_=true` above — the common (undeclared) case renders
+  // DR-105 §1: omit-if-false, mirrors `is_inherit=true` above — the common (undeclared) case renders
   // no `flatten` field at all so pre-DR-105 "lower" fixtures without the key still compare equal.
   if e.flatten {
     fs.push("flatten=true")
@@ -556,9 +556,9 @@ fn proj_entity(e : @engine.Entity) -> LEnt {
     // DR-083 §1: LEnt is the golden-fixture "5-face" oracle format, which only knows a scalar
     // default (`dec_lent` below decodes `"default"` via a single `json_to_value`, no accum-array
     // shape) — project the scalar face of `@engine.Entity.default_values` for this cross-check.
-    default_: default_scalar(e),
+    default: default_scalar(e),
     env: e.env_key,
-    inherit_: e.inherit_,
+    is_inherit: e.is_inherit,
     config_key: e.config_key,
     accum: match e.accum {
       Some(resident) => Some(resident.kind())
@@ -1058,7 +1058,7 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
     "golden entity",
   )
   let typ = req_field(o, "type")
-  let default_ = match o.get("default") {
+  let default = match o.get("default") {
     Some(d) => Some(json_to_value(d))
     None => None
   }
@@ -1069,9 +1069,9 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
   {
     name,
     typ,
-    default_,
+    default,
     env: jf_str(o, "env"),
-    inherit_: bool_field(o, "inherit", false),
+    is_inherit: bool_field(o, "inherit", false),
     config_key,
     accum: jf_str(o, "accumulator"),
     flatten: bool_field(o, "flatten", false),

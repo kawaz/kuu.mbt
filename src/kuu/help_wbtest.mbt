@@ -48,7 +48,7 @@ test "help: root scope projects semantic materials" {
     abort("port value_structure missing")
   }
   assert_eq(port_single.value_name, Some("PORT"))
-  assert_eq(port_single.type_, Some("number"))
+  assert_eq(port_single.value_type, Some("number"))
   assert_eq(port.env, ["PORT"])
   guard model.positionals[0].value_structure is Single(file_single) else {
     abort("file positional value_structure missing")

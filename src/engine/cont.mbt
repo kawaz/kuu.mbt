@@ -67,7 +67,7 @@ priv enum Cont {
   /// zero-progress heads (a scope accepting 0 tokens cannot be a rep).
   KRefChoice(Scope, String, Int, Bool, Int, Cont)
   /// same for a BoundedTail whose head is a ScopeNode: (sc, head, remaining
-  /// budget, lazy_, pidx, severed, entry_pos, outer). Runs bounded_tail_step
+  /// budget, is_lazy, pidx, severed, entry_pos, outer). Runs bounded_tail_step
   /// from the head's end position with the decremented budget.
   KTailChoice(Scope, Node, Int, Bool, Int, Bool, Int, Cont)
 } derive(Debug)
@@ -178,12 +178,12 @@ fn run_cont(
       } else {
         ref_choice(sc, name, ctx, pos, pidx, acc, severed, outer)
       }
-    KTailChoice(sc, head, budget, lazy_, pidx, severed, entry_pos, outer) =>
+    KTailChoice(sc, head, budget, is_lazy, pidx, severed, entry_pos, outer) =>
       if pos <= entry_pos {
         []
       } else {
         bounded_tail_step(
-          sc, head, budget, lazy_, ctx, pos, pidx, acc, severed, outer,
+          sc, head, budget, is_lazy, ctx, pos, pidx, acc, severed, outer,
         )
       }
   }

@@ -1641,7 +1641,7 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
         Some(value) => inner.set("value_name", value.to_json())
         None => ()
       }
-      match single.type_ {
+      match single.value_type {
         Some(t) => inner.set("type", t.to_json())
         None => ()
       }
@@ -1787,7 +1787,7 @@ fn help_option_json(option : @kuu.HelpOption) -> Json {
     Some(value) => object.set("help_group_name", value.to_json())
     None => ()
   }
-  match option.default_ {
+  match option.default {
     Some(value) => object.set("default", help_default_json(value))
     None => ()
   }

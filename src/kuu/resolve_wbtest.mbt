@@ -24,7 +24,7 @@ fn ent(
   config_seat? : Bool = false,
   config_key? : Array[String]? = None,
   is_config_file? : Bool = false,
-  inherit_? : Bool = false,
+  is_inherit? : Bool = false,
   is_tty? : Bool = false,
   tty_stream? : String? = None,
   tty_cygwin? : Bool = true,
@@ -58,7 +58,7 @@ fn ent(
     config_seat,
     config_key,
     is_config_file,
-    inherit_,
+    is_inherit,
     accum: match accum {
       Some(kind) => canonical_registry().lookup_accumulator(kind)
       None => None
@@ -663,7 +663,7 @@ test "resolve_scope: inherit seat fills from the parent context map" {
   let ttl = ent(
     "ttl",
     @builtins.number_type(),
-    inherit_=true,
+    is_inherit=true,
     default_value=Some(@engine.Number(30.0)),
   )
   let sc : @engine.Scope = {
@@ -697,7 +697,7 @@ test "resolve_scope: tty 型 default 席は inherit 席の後で評価される 
     is_tty=true,
     tty_stream=Some("stdout"),
     tty_cygwin=false, // cygwin 分岐を無効化し fold=terminal に単純化 (cygwin dial は別テストで検証)
-    inherit_=true,
+    is_inherit=true,
     default_value=Some(@engine.Bool(true)),
   )
   let sc : @engine.Scope = {

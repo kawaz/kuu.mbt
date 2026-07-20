@@ -432,7 +432,7 @@ pub(all) struct Entity {
   config_seat : Bool
   config_key : Array[String]?
   is_config_file : Bool
-  mut inherit_ : Bool
+  mut is_inherit : Bool
   accum : &AccumulatorExt?
   flatten : Bool
   is_multiple_decl : Bool
@@ -575,7 +575,7 @@ pub(all) struct HelpRepeatSpec {
 
 pub(all) struct HelpSingleValue {
   value_name : String?
-  type_ : String?
+  value_type : String?
   values_enum : Array[String]?
 } derive(Eq, @debug.Debug)
 
@@ -739,7 +739,7 @@ pub fn Registry::register_type(Self, &TypeExt) -> Bool
 pub(all) struct RepeatSpec {
   min : Int
   max : Int?
-  lazy_ : Bool
+  is_lazy : Bool
 } derive(Eq, @debug.Debug)
 
 pub(all) struct RequiredCandidate {

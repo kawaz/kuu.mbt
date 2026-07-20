@@ -520,7 +520,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
     // MDR-002 §CPS 規約: lowering never generates this shape today) has no
     // 取り分選好 to apply here — `eval_many` already returns every share
     // unfiltered, so the lazy knob has nothing to invert. Ignored, not lost:
-    // the spine form (scope_consume's `Many` arm below) is where lazy_ acts.
+    // the spine form (scope_consume's `Many` arm below) is where is_lazy acts.
     Many(inner, _) => eval_many(inner, ctx, pos, [])
     Scoped(label, body) => nest_branches(label, eval(body, ctx, pos))
     ScopeNode(sc) =>
@@ -1789,7 +1789,7 @@ fn scope_consume(
     //
     // 取り分の選好: the split between adjacent closures is ONE
     // interpretation's freedom of division, not an ambiguity. greedy
-    // (default) prefers the LONGER share, lazy_ the shorter. We commit to the
+    // (default) prefers the LONGER share, is_lazy the shorter. We commit to the
     // FIRST preference whose continuation reaches a FULL parse and PRUNE the
     // other. Under CPS, `stop`/`more` are the results of running EVERYTHING
     // that follows (this scope's rest + the parent's rest + the global end
@@ -1843,15 +1843,15 @@ fn scope_consume(
           out
         }
       }
-    BoundedTail(head, budget, lazy_) =>
+    BoundedTail(head, budget, is_lazy) =>
       bounded_tail_step(
-        sc, head, budget, lazy_, ctx, pos, pidx, acc, severed, k,
+        sc, head, budget, is_lazy, ctx, pos, pidx, acc, severed, k,
       )
-    Many(inner, lazy_) => {
+    Many(inner, is_lazy) => {
       // Two closures on the spine — parity with Ref/BoundedTail 取り分選好
       // (spec DR-043). Without preference, `[Many(xs), Many(ys)]` on ["a","b"]
       // returns Ambiguous (3-way split) even though the greedy default fixes
-      // xs=[a,b], ys=[] as the representative. `lazy_` (issue 2026-07-08
+      // xs=[a,b], ys=[] as the representative. `is_lazy` (issue 2026-07-08
       // min0-lazy-repeat-gap) inverts which share wins EXACTLY the way
       // `bounded_tail_step` does below — same two closures, same tie-break
       // order flip, just no budget countdown (unbounded).
@@ -1861,7 +1861,7 @@ fn scope_consume(
         // complete: no pruning — the losing share's Pending is candidate
         // material too (MDR-002 §2.4: union over ALL surviving partials).
         cat_branches(stop, more)
-      } else if lazy_ {
+      } else if is_lazy {
         if has_full_k(stop) {
           stop
         } else if has_full_k(more) {
@@ -1933,7 +1933,7 @@ fn ref_choice(
   k : Cont,
 ) -> Array[Branch] {
   let head = ref_head(ctx.defs, name)
-  let lazy_ = ref_is_lazy(ctx.defs, name)
+  let is_lazy = ref_is_lazy(ctx.defs, name)
   let stop = scope_step(sc, ctx, p2, pidx + 1, acc2, severed, k)
   // "more" = one more OPTIONAL rep; a missing-operand for ANY value
   // primitive reachable inside the repeat head (scope-shaped included) is a
@@ -1946,7 +1946,7 @@ fn ref_choice(
   if in_complete(ctx) {
     // complete: no pruning (union over ALL surviving partials, MDR-002 §2.4).
     cat_branches(stop, more)
-  } else if lazy_ {
+  } else if is_lazy {
     if has_full_k(stop) {
       stop
     } else if has_full_k(more) {
@@ -1970,7 +1970,7 @@ fn bounded_tail_step(
   sc : Scope,
   head : Node,
   budget : Int,
-  lazy_ : Bool,
+  is_lazy : Bool,
   ctx : Ctx,
   pos : Int,
   pidx : Int,
@@ -1992,7 +1992,7 @@ fn bounded_tail_step(
           0,
           acc,
           severed,
-          KTailChoice(sc, head, budget - 1, lazy_, pidx, severed, pos, k),
+          KTailChoice(sc, head, budget - 1, is_lazy, pidx, severed, pos, k),
         )
       _ => {
         let out : Array[Branch] = []
@@ -2005,7 +2005,7 @@ fn bounded_tail_step(
                     sc,
                     head,
                     budget - 1,
-                    lazy_,
+                    is_lazy,
                     ctx,
                     p2,
                     pidx,
@@ -2037,7 +2037,7 @@ fn bounded_tail_step(
   let more = drop_optional_missing(more_raw, head_elem_names(head))
   if in_complete(ctx) {
     cat_branches(stop, more)
-  } else if lazy_ {
+  } else if is_lazy {
     if has_full_k(stop) {
       stop
     } else if has_full_k(more) {
@@ -2287,7 +2287,7 @@ fn ref_head(defs : Map[String, Node], name : String) -> Node {
 /// Whether the repeat named `name` prefers the SHORTER share (lazy). The flag
 /// is stored under a mangled registry key by the repeat installer. NB: the
 /// key is the wire-ish vocabulary string "lazy:" (paired with the installer) —
-/// MDR-003's identifier rename (lazy → lazy_) does NOT apply to this string
+/// MDR-003's identifier rename (lazy → is_lazy) does NOT apply to this string
 /// (a blanket rename once broke lazy preference entirely; pinned by the
 /// conformance fixture repeat-parse/preference-lazy).
 fn ref_is_lazy(defs : Map[String, Node], name : String) -> Bool {
@@ -2506,7 +2506,7 @@ fn value_declared(
       return e.default_values is Some(_) ||
         e.env_key is Some(_) ||
         e.config_seat ||
-        e.inherit_
+        e.is_inherit
     }
   }
   false
@@ -2690,7 +2690,7 @@ fn eval_constraints(
         // DR-093 §1/§2: KTop の粗判定 (完全経路の成立条件、DR-047 §2) — `candidate_declared`
         // (`value_declared` の RequiredCandidate 対応版、codex M-2 修正) をそのまま再利用する
         // (Requires 目的語と同じゲート)。値空間なし (none) の要素は default_values/env_key/
-        // config_seat/inherit_ をそもそも持てない (DR-089 §7) ため、`value_declared` は committed
+        // config_seat/is_inherit をそもそも持てない (DR-089 §7) ため、`value_declared` は committed
         // のみで判定される形に自動的に縮退する — 型分岐を新設する必要はない。最終判定 (bool 特例
         // なしの型委譲) は resolve.mbt の後段フィルタが行う。
         //

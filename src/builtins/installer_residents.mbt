@@ -124,11 +124,11 @@ fn resident_repeat(json : Json) -> Result[@engine.RepeatSpec, String] {
     Some(Number(value, ..)) => Some(value.to_int())
     Some(_) => return Err("repeat.max is not a number")
   }
-  let lazy_ = match resident_bool(object, "lazy", false) {
+  let is_lazy = match resident_bool(object, "lazy", false) {
     Ok(value) => value
     Err(reason) => return Err(reason)
   }
-  Ok({ min, max, lazy_ })
+  Ok({ min, max, is_lazy })
 }
 
 ///|

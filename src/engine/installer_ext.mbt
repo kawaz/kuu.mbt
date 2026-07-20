@@ -259,7 +259,7 @@ fn effective_repeat(element : ElemDef) -> RepeatSpec? {
     Some(spec) => Some(spec)
     None =>
       if element.optional {
-        Some({ min: 0, max: Some(1), lazy_: false })
+        Some({ min: 0, max: Some(1), is_lazy: false })
       } else {
         None
       }

@@ -101,7 +101,7 @@ pub(all) struct HelpOption {
   help : String?
   help_long : String?
   help_group_name : String?
-  default_ : HelpDefault?
+  default : HelpDefault?
   env : Array[String]
   required : Bool
   multiple : Bool

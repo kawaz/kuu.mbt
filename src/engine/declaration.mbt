@@ -16,7 +16,7 @@ pub(all) enum HelpValueStructure {
 ///|
 pub(all) struct HelpSingleValue {
   value_name : String?
-  type_ : String?
+  value_type : String?
   values_enum : Array[String]?
 } derive(Eq, Debug)
 
@@ -409,12 +409,12 @@ pub(all) enum LongDecl {
 ///|
 /// repeat 閉包 (DR-043)。`min` は必須 rep 数 (mandatory-head unroll)。`max`: None = 無限 (Ref tail),
 /// Some(M) = 有限 (M-min BoundedTail heads、Ref 再帰なし LOWERING §B.8)。`optional:true` は
-/// `{min:0,max:Some(1)}` の糖衣 (ここで還元、独立概念ではない DR-043)。`lazy_` は取り分選好
-/// (greedy default / lazy 最短優先) — MDR-003 で bare `lazy` → `lazy_`。
+/// `{min:0,max:Some(1)}` の糖衣 (ここで還元、独立概念ではない DR-043)。`is_lazy` は取り分選好
+/// (greedy default / lazy 最短優先) — MDR-003 で bare `lazy` → `is_lazy`。
 pub(all) struct RepeatSpec {
   min : Int
   max : Int? // None = unbounded (Ref tail), Some(M) = bounded (BoundedTail)
-  lazy_ : Bool // MDR-003: bare `lazy` は予約語衝突 → `lazy_`
+  is_lazy : Bool // MDR-003: bare `lazy` は予約語衝突 → `is_lazy`
 } derive(Eq, Debug)
 
 ///|
