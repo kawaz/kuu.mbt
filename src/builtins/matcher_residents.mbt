@@ -112,7 +112,7 @@ fn eq_candidates(
   for entry in entries {
     if entry.kind.has_value_slot() {
       out.push(
-        @engine.trigger_candidate(
+        @engine.Cand::trigger(
           prefix + entry.key,
           entry.name,
           entry.kind.name(),
@@ -138,7 +138,7 @@ fn short_candidates(
     spelling.write_string(prefix)
     spelling.write_char(entry.ch)
     out.push(
-      @engine.trigger_candidate(
+      @engine.Cand::trigger(
         spelling.to_string(),
         entry.name,
         entry.kind.name(),
@@ -321,7 +321,7 @@ fn run_eq_split(
       // パターン (builtins/matcher_residents.mbt 上の `dm` 定義コメント参照)。成功パス (@engine.Accept) だけに合成する — 値が
       // 確定して初めて「受理された deprecated 入口」なので、@engine.Held (parse/filter 失敗) には積まない。
       let dm : Array[@engine.Binding] = if e.depr {
-        [@engine.depr_marker(e.name)]
+        [@engine.Binding::depr_marker(e.name)]
       } else {
         []
       }
@@ -357,14 +357,23 @@ fn run_eq_split(
         @engine.apply_piece_filters(ctx.extensions(), e.piece_filters, valstr) {
         Ok(s) => s
         Err({ reason, message: msg }) =>
-          return [@engine.Held(@engine.pe_filter(e.name, pos, reason, msg), [])]
+          return [
+            @engine.Held(@engine.ParseError::filter(e.name, pos, reason, msg), []),
+          ]
       }
       match e.kind.parse_token(filtered) {
         Ok(value) =>
           return [
             @engine.Accept(
               pos + 1,
-              [@engine.mk_binding(e.name, value, @engine.Cli, at_pos=Some(pos))] +
+              [
+                @engine.Binding::new(
+                  e.name,
+                  value,
+                  @engine.Cli,
+                  at_pos=Some(pos),
+                ),
+              ] +
               dm,
             ),
           ]
@@ -464,11 +473,11 @@ fn short_val(
       @engine.apply_piece_filters(ctx.extensions(), e.piece_filters, s) {
       Ok(v) => v
       Err({ reason, message: msg }) =>
-        return Err(@engine.pe_filter(e.name, pos, reason, msg))
+        return Err(@engine.ParseError::filter(e.name, pos, reason, msg))
     }
     match e.kind.parse_token(filtered) {
       Ok(value) =>
-        Ok([@engine.mk_binding(e.name, value, @engine.Cli, at_pos=Some(pos))])
+        Ok([@engine.Binding::new(e.name, value, @engine.Cli, at_pos=Some(pos))])
       Err(fail) => Err(type_parse_error(e.name, pos, fail))
     }
   }
@@ -515,7 +524,7 @@ fn walk_short(
       // DR-058: a deprecated cluster entry rides a `@depr:<name>` warning marker alongside its
       // value binding (the value is unchanged; only a warning is added). `dm` is [] for a normal entry.
       let dm : Array[@engine.Binding] = if e.depr {
-        [@engine.depr_marker(e.name)]
+        [@engine.Binding::depr_marker(e.name)]
       } else {
         []
       }
@@ -523,13 +532,13 @@ fn walk_short(
         // Presence-only residents share the same reading shape. Count owns a distinct
         // effect payload; the matcher no longer enumerates type categories to find the shape.
         let presence = if e.kind.name() == "count" {
-          @engine.mk_effect(
+          @engine.Binding::effect(
             e.name,
             @engine.Invoke({ name: "incr", args: [] }),
             @engine.Cli,
           )
         } else {
-          @engine.mk_binding(e.name, @engine.Bool(true), @engine.Cli)
+          @engine.Binding::new(e.name, @engine.Bool(true), @engine.Cli)
         }
         if combine || i + 1 == body.length() {
           walk_short(
@@ -617,7 +626,7 @@ fn walk_short(
           // (DR-060 §1). The flags already read stay as partial state.
           out.push(
             @engine.Pending(
-              [@engine.pending_value_candidate(e.kind.name(), e.name)],
+              [@engine.Cand::pending_value(e.kind.name(), e.name)],
               acc + dm,
             ),
           )

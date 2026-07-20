@@ -529,7 +529,7 @@ fn projected_effect(
             Ok(edges) => edges
             Err(_) => []
           }
-          let ctx = @engine.fn_ctx_effect(
+          let ctx = @engine.FnCtx::for_effect(
             binding.key,
             binding.key,
             old~,

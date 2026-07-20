@@ -1378,7 +1378,7 @@ fn eval_requires(
           for t in targets {
             if !satisfied(t) {
               out.push({
-                ..@engine.constraint_err(
+                ..@engine.ParseError::constraint(
                   elem,
                   "requires_violated",
                   "'\{elem}' requires '\{t}'",
@@ -1399,7 +1399,7 @@ fn eval_requires(
           for t in targets {
             if !satisfied(t) {
               out.push({
-                ..@engine.constraint_err(
+                ..@engine.ParseError::constraint(
                   branch_id,
                   "requires_violated",
                   "'\{entity}'=\{v} requires '\{t}'",
@@ -1434,7 +1434,7 @@ fn eval_requires(
         }
         if !ok {
           out.push({
-            ..@engine.constraint_err(
+            ..@engine.ParseError::constraint(
               display,
               "required_violated",
               "required '\{display}' is missing",
@@ -1456,7 +1456,7 @@ fn eval_requires(
         }
         if !ok {
           out.push({
-            ..@engine.constraint_err(
+            ..@engine.ParseError::constraint(
               group,
               "required_group_violated",
               "required group '\{group}' has no satisfied member",
@@ -2040,7 +2040,7 @@ fn resolve_entity_raw(
   // `current` holds the FULL binding (not just its value) — @engine.Set/@engine.Default/@engine.Empty must be returned
   // VERBATIM downstream (@engine.Empty's `value` is a placeholder that a later result-builder interprets
   // by `op`, not by `value`; @engine.Default's `source` must read `@engine.Default`, not `@engine.Cli`) exactly as the
-  // pre-fold code did (`return Ok([b])` / `return Ok([@engine.mk_binding(e.name, v, @engine.Default)])`). Only `update`
+  // pre-fold code did (`return Ok([b])` / `return Ok([@engine.Binding::new(e.name, v, @engine.Default)])`). Only `update`
   // needs the running VALUE (as `old`) — `.value` is read off `current` at that point, never
   // reconstructed from scratch.
   // accum セル (multiple/repeat, DR-034/043): the CLI seat must preserve EVERY same-name @engine.Binding,
@@ -2069,7 +2069,7 @@ fn resolve_entity_raw(
   //   carries no operand, so there's no piece for value_filters/accum_filters to act on (DESIGN
   //   §8.3) — build_result's ACCUMULATE match folds `@engine.Default` exactly like `@engine.Empty`/`@engine.Unset` (a
   //   clear-point), so only the SOURCE TAG differs here: rewriting `source` to `@engine.Default` (mirrors
-  //   scalar's `@engine.mk_binding(e.name, v, @engine.Default)`) keeps `proj_sources`/harness correct without a
+  //   scalar's `@engine.Binding::new(e.name, v, @engine.Default)`) keeps `proj_sources`/harness correct without a
   //   default-specific branch there.
   // - `unset`: stays uncommitted (committed=false, unchanged from before) — if every same-name CLI
   //   effect in this seat ends up uncommitted, the CLI seat falls through to the lower ladder rungs
@@ -2127,7 +2127,7 @@ fn resolve_entity_raw(
             Ok(bs2) => {
               current = if bs2.length() > 0 {
                 Some(
-                  @engine.mk_binding(
+                  @engine.Binding::new(
                     e.name,
                     bs2[bs2.length() - 1].value,
                     @engine.Cli,
@@ -2152,7 +2152,7 @@ fn resolve_entity_raw(
         // env/config/inherit if nothing commits after it (unchanged pre-DR-077 contract).
         @engine.Unset => {
           current = match default_scalar(e) {
-            Some(v) => Some(@engine.mk_binding(e.name, v, @engine.Default))
+            Some(v) => Some(@engine.Binding::new(e.name, v, @engine.Default))
             None => None
           }
           committed_now = false
@@ -2180,7 +2180,7 @@ fn resolve_entity_raw(
             Err({ reason, message }) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
           }
-          let ctx = @engine.fn_ctx_effect(e.name, e.name, old~, observes~)
+          let ctx = @engine.FnCtx::for_effect(e.name, e.name, old~, observes~)
           match descriptor.invoke(invocation.to_call(), ctx) {
             Err({ reason, message }) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
@@ -2217,7 +2217,7 @@ fn resolve_entity_raw(
             Ok(@engine.Sentinel(@engine.Unset)) => {
               current = match default_scalar(e) {
                 Some(value) =>
-                  Some(@engine.mk_binding(e.name, value, @engine.Default))
+                  Some(@engine.Binding::new(e.name, value, @engine.Default))
                 None => None
               }
               committed_now = false
@@ -2321,7 +2321,7 @@ fn resolve_ladder_below_cli(
                     extensions,
                   ) {
                   Ok(parsed) =>
-                    bs.push(@engine.mk_binding(e.name, parsed, @engine.Env))
+                    bs.push(@engine.Binding::new(e.name, parsed, @engine.Env))
                   Err(pe) => return Err(pe)
                 }
               }
@@ -2339,7 +2339,7 @@ fn resolve_ladder_below_cli(
                   extensions,
                 ) {
                 Ok(parsed) =>
-                  return Ok([@engine.mk_binding(e.name, parsed, @engine.Env)])
+                  return Ok([@engine.Binding::new(e.name, parsed, @engine.Env)])
                 Err(pe) => return Err(pe)
               }
           }
@@ -2372,7 +2372,7 @@ fn resolve_ladder_below_cli(
                         extensions,
                       ) {
                       Ok(v) =>
-                        bs.push(@engine.mk_binding(e.name, v, @engine.Config))
+                        bs.push(@engine.Binding::new(e.name, v, @engine.Config))
                       Err({ kind: @engine.Filter, reason, message: msg }) =>
                         return Err(
                           filter_err(e.name, at_pos, reason, msg, epath),
@@ -2407,7 +2407,7 @@ fn resolve_ladder_below_cli(
                     extensions,
                   ) {
                   Ok(v) =>
-                    return Ok([@engine.mk_binding(e.name, v, @engine.Config)])
+                    return Ok([@engine.Binding::new(e.name, v, @engine.Config)])
                   Err({ kind: @engine.Filter, reason, message: msg }) =>
                     return Err(filter_err(e.name, at_pos, reason, msg, epath))
                   Err({ reason, message: msg, .. }) =>
@@ -2422,7 +2422,7 @@ fn resolve_ladder_below_cli(
   // inherit seat (DR-031 / DR-013). MDR-003: `inherit` 予約語回避 → `is_inherit`.
   if e.is_inherit {
     match inherited.get(e.name) {
-      Some(v) => return Ok([@engine.mk_binding(e.name, v, @engine.Inherit)])
+      Some(v) => return Ok([@engine.Binding::new(e.name, v, @engine.Inherit)])
       None => ()
     }
   }
@@ -2452,7 +2452,8 @@ fn resolve_ladder_below_cli(
       } else {
         None
       }
-      match e.ty.default_seat_resolver(@engine.seat_ctx(declared, observed~)) {
+      match
+        e.ty.default_seat_resolver(@engine.SeatCtx::new(declared, observed~)) {
         Some(value) =>
           match
             @builtins.config_to_value(
@@ -2463,7 +2464,7 @@ fn resolve_ladder_below_cli(
             ) {
             Ok(resolved) =>
               return Ok([
-                @engine.mk_binding(
+                @engine.Binding::new(
                   e.name,
                   resolved,
                   if observed is Some(_) {
@@ -2507,7 +2508,7 @@ fn resolve_ladder_below_cli(
               e.piece_filters,
               extensions,
             ) {
-            Ok(vv) => bs.push(@engine.mk_binding(e.name, vv, @engine.Default))
+            Ok(vv) => bs.push(@engine.Binding::new(e.name, vv, @engine.Default))
             Err({ kind: @engine.Filter, reason, message: msg }) =>
               return Err(filter_err(e.name, at_pos, reason, msg, epath))
             Err({ reason, message: msg, .. }) =>
@@ -2528,7 +2529,7 @@ fn resolve_ladder_below_cli(
             e.piece_filters,
             extensions,
           ) {
-          Ok(vv) => Ok([@engine.mk_binding(e.name, vv, @engine.Default)])
+          Ok(vv) => Ok([@engine.Binding::new(e.name, vv, @engine.Default)])
           Err({ kind: @engine.Filter, reason, message: msg }) =>
             Err(filter_err(e.name, at_pos, reason, msg, epath))
           Err({ reason, message: msg, .. }) =>
@@ -2686,7 +2687,7 @@ fn resolve_default_fn(
       }
     None => []
   }
-  let ctx = @engine.fn_ctx_default(
+  let ctx = @engine.FnCtx::for_default(
     entity.name,
     old=option_values.get(entity.name),
     observes~,
@@ -2724,7 +2725,7 @@ fn resolve_default_fn(
         Ok(decoded) =>
           apply_entity_filters(
             entity,
-            [@engine.mk_binding(entity.name, decoded, @engine.Default)],
+            [@engine.Binding::new(entity.name, decoded, @engine.Default)],
             at_pos,
             epath,
             extensions,

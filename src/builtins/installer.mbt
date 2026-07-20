@@ -577,7 +577,7 @@ fn normalize_option(
     // 持たないので `ensure_entity` 側の注入対象を絞る一方、flag 由来の bool_type() は preset を維持する
     // 必要がある — 明示 default があればそちらが勝つのは変わらない)。
     let default_values2 = if e.ty.name() == "flag" && e.default_values is None {
-      match e.ty.default_seat_resolver(@engine.seat_ctx(None)) {
+      match e.ty.default_seat_resolver(@engine.SeatCtx::new(None)) {
         Some(value) => Some([value])
         None => None
       }
@@ -592,7 +592,7 @@ fn normalize_option(
             e.repeat is None &&
             e.separator is None &&
             !e.is_tty =>
-            Some(@engine.Typed(@engine.typed_fn_call("set", values)))
+            Some(@engine.Typed(@engine.FnCall::typed("set", values)))
           _ => None
         }
     }
@@ -1269,7 +1269,7 @@ fn ensure_entity(
   let default_values : Array[@engine.Value]? = match e.default_values {
     Some(vs) => Some(vs)
     None =>
-      match seat_ty.default_seat_resolver(@engine.seat_ctx(None)) {
+      match seat_ty.default_seat_resolver(@engine.SeatCtx::new(None)) {
         Some(value) => Some([value])
         None => None
       }
@@ -1280,7 +1280,7 @@ fn ensure_entity(
       match default_values {
         Some(values) if accum is None &&
           seat_ty.default_seat_observation_key() is None =>
-          Some(@engine.Typed(@engine.typed_fn_call("set", values)))
+          Some(@engine.Typed(@engine.FnCall::typed("set", values)))
         _ => None
       }
   }
@@ -2185,7 +2185,7 @@ fn add_inheritable_copy(
       fail_action: false,
       is_config_file: false,
       config_key: None,
-      export_key: @engine.export_key_unset(),
+      export_key: @engine.ExportKey::unset(),
       requires: [],
       conflicts_with: [],
       exclusive_group: [],
@@ -2564,7 +2564,7 @@ fn alias_entry(
     fail_action: false,
     is_config_file: false,
     config_key: None,
-    export_key: @engine.export_key_unset(),
+    export_key: @engine.ExportKey::unset(),
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
@@ -2692,7 +2692,7 @@ fn desugar_aliases(
             def.commands.push({
               name: alias_name,
               body: clone_def(cmd.body),
-              export_key: @engine.export_key(a.target),
+              export_key: @engine.ExportKey::key(a.target),
             })
           None => () // dangling alias target — 将来の absent-ref check 用に残置
         }
@@ -3487,7 +3487,7 @@ fn collect_unsupported_accum_update(
 /// codex レビュー High 2 (2026-07-10): `collect_unsupported_accum_update` の variant 走査 (上記) は
 /// `count_increment_variant` 経由 (`long:true` 糖衣、DR-077 §3) の `:update:increment` は捕まえるが、
 /// count_type() の **short** 発火 (`builtins/matcher_residents.mbt` の `walk_short`'s `count_type()` arm) は variant を一切経由せず
-/// `mk_effect(e.name, @engine.Update("increment", []), @engine.Cli)` を直接生成する — variants を持たない firing なので
+/// `Binding::effect(e.name, @engine.Update("increment", []), @engine.Cli)` を直接生成する — variants を持たない firing なので
 /// variant 走査ではそもそも見えない (repro: `{"name":"n","type":"count","short":["n"],
 /// "multiple":true}` + args `["-n"]` で resolve.mbt の accum 分岐の abort に到達)。
 ///

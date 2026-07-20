@@ -59,7 +59,7 @@ pub fn FnInvocation::to_call(self : FnInvocation) -> FnCall {
 }
 
 ///|
-pub fn typed_fn_call(name : String, values : Array[Value]) -> FnCall {
+pub fn FnCall::typed(name : String, values : Array[Value]) -> FnCall {
   let args : Array[FnArg] = []
   for value in values {
     args.push(Value(value))

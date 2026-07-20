@@ -52,19 +52,19 @@ pub enum ExportKey {
 
 ///|
 /// Construct the name-derived result-key posture across the package boundary.
-pub fn export_key_unset() -> ExportKey {
+pub fn ExportKey::unset() -> ExportKey {
   Unset
 }
 
 ///|
 /// Construct an explicit result-key override across the package boundary.
-pub fn export_key(key : String) -> ExportKey {
+pub fn ExportKey::key(key : String) -> ExportKey {
   Key(key)
 }
 
 ///|
 /// Construct the result-key-free transparent posture across the package boundary.
-pub fn export_key_null() -> ExportKey {
+pub fn ExportKey::null() -> ExportKey {
   Null
 }
 
@@ -78,7 +78,7 @@ pub struct SeatCtx {
 }
 
 ///|
-pub fn seat_ctx(declared : Value?, observed? : Json? = None) -> SeatCtx {
+pub fn SeatCtx::new(declared : Value?, observed? : Json? = None) -> SeatCtx {
   { declared, observed }
 }
 

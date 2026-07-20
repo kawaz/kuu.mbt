@@ -98,7 +98,7 @@ fn dd_match_token(spelling : String, is_pattern : Bool, token : String) -> Bool 
 /// An exact-spelling candidate (the Pending payload at a trigger boundary,
 /// DR-060 §3). `ty` is only meaningful when a value must follow the spelling
 /// (term = Cont, e.g. an eq-split `--key`); a plain trigger carries "flag".
-pub fn trigger_candidate(
+pub fn Cand::trigger(
   spelling : String,
   origin : String,
   ty : String,
@@ -126,14 +126,14 @@ pub fn trigger_candidate(
 ///|
 /// A non-set effect binding (default / unset / empty). The operand is a
 /// placeholder — these ops carry no operand (spec DR-045 table).
-pub fn mk_effect(key : String, op : EffectOp, source : Source) -> Binding {
+pub fn Binding::effect(key : String, op : EffectOp, source : Source) -> Binding {
   { key, op, value: Bool(false), source, scope: [], link: 0, at_pos: None }
 }
 
 ///|
 /// A failure-action marker binding (spec DR-048): key `@act:<name>`, value =
 /// the args position where the action was selected (args-min tie-break).
-pub fn action_marker(name : String, pos : Int) -> Binding {
+pub fn Binding::action_marker(name : String, pos : Int) -> Binding {
   {
     key: "@act:" + name,
     op: Set,
@@ -348,7 +348,7 @@ fn array_marker(label : String) -> Binding {
 ///|
 /// A pending-value candidate (the Pending payload): the value slot of
 /// `origin`, of type `ty`, had no token left to consume.
-pub fn pending_value_candidate(ty : String, origin : String) -> Cand {
+pub fn Cand::pending_value(ty : String, origin : String) -> Cand {
   {
     spelling: "",
     is_value: true,
@@ -472,10 +472,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // (`fixup_boundary_cands`, DR-104 §2/§3); this fallback is what a truly
         // standalone Exact (outside that shape) keeps.
         [
-          Pending(
-            [trigger_candidate(s, s, "flag", WordEnd, false, false, false)],
-            [],
-          ),
+          Pending([Cand::trigger(s, s, "flag", WordEnd, false, false, false)], []),
         ]
       } else {
         // an unmatched (or, in parse mode, exhausted) trigger is a silent
@@ -484,7 +481,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         []
       }
     ReqArg(name) => req_arg_eval(name, ctx, pos, [])
-    Bind(name, v) => [Accept(pos, [mk_binding(name, v, Cli)])]
+    Bind(name, v) => [Accept(pos, [Binding::new(name, v, Cli)])]
     Or(alts) => {
       let out : Array[Branch] = []
       for a in alts {
@@ -530,14 +527,14 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // evaluation はこの1本の Branch の bindings を返すだけ — 呼び出し元が outer acc と cat する)。
         [
           Accept(pos + 1, [
-            mk_binding(trigger, Bool(true), Cli, at_pos=Some(pos)),
+            Binding::new(trigger, Bool(true), Cli, at_pos=Some(pos)),
           ]),
         ]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [
           Pending(
             [
-              trigger_candidate(
+              Cand::trigger(
                 trigger,
                 trigger,
                 "flag",
@@ -561,7 +558,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       if pos < ctx.toks.length() &&
         dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
         // DR-093 §2/§7: same committed placeholder as the DdSat arm above, keyed by `elem_name`.
-        let b = mk_binding(elem_name, Bool(true), Cli, at_pos=Some(pos))
+        let b = Binding::new(elem_name, Bool(true), Cli, at_pos=Some(pos))
         if self_keep {
           [Accept(pos, [b])]
         } else {
@@ -575,7 +572,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         [
           Pending(
             [
-              trigger_candidate(
+              Cand::trigger(
                 spelling,
                 elem_name,
                 "flag",
@@ -606,17 +603,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         [
           Pending(
-            [
-              trigger_candidate(
-                name,
-                name,
-                "flag",
-                WordEnd,
-                false,
-                false,
-                false,
-              ),
-            ],
+            [Cand::trigger(name, name, "flag", WordEnd, false, false, false)],
             [],
           ),
         ]
@@ -702,11 +689,11 @@ fn req_arg_eval(
     [
       Accept(
         pos + 1,
-        acc + [mk_binding(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos))],
+        acc + [Binding::new(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos))],
       ),
     ]
   } else if in_complete(ctx) {
-    [Pending([pending_value_candidate("string", name)], acc)]
+    [Pending([Cand::pending_value("string", name)], acc)]
   } else {
     [
       Held(
@@ -1452,17 +1439,7 @@ fn step_greedy(
         // complete: the command name is readable at the boundary (DR-060 §1).
         out.push(
           Pending(
-            [
-              trigger_candidate(
-                name,
-                name,
-                "flag",
-                WordEnd,
-                false,
-                false,
-                false,
-              ),
-            ],
+            [Cand::trigger(name, name, "flag", WordEnd, false, false, false)],
             acc,
           ),
         )
@@ -1475,7 +1452,7 @@ fn step_greedy(
         // trigger 文字列は要素名そのもの (dd_match 未使用の唯一のケースでのみ installer が
         // `DdSat(e.name)` を作る) なのでそのまま key に使える。
         let acc2 = acc +
-          [mk_binding(trigger, Bool(true), Cli, at_pos=Some(pos))]
+          [Binding::new(trigger, Bool(true), Cli, at_pos=Some(pos))]
         for r in scope_step(sc, ctx, pos + 1, pidx, acc2, true, k) {
           out.push(r)
         }
@@ -1483,7 +1460,7 @@ fn step_greedy(
         out.push(
           Pending(
             [
-              trigger_candidate(
+              Cand::trigger(
                 trigger,
                 trigger,
                 "flag",
@@ -1510,7 +1487,7 @@ fn step_greedy(
         // DR-093 §2/§7: DdSat と同じ committed placeholder binding。key は `elem_name` (要素の
         // 同一性軸、DR-090 §2) — `spelling` は match 使用時トリガ綴りやパターンで要素名と一致しない。
         let acc2 = acc +
-          [mk_binding(elem_name, Bool(true), Cli, at_pos=Some(pos))]
+          [Binding::new(elem_name, Bool(true), Cli, at_pos=Some(pos))]
         for r in scope_step(sc, ctx, resume_pos, pidx, acc2, true, k) {
           out.push(r)
         }
@@ -1521,7 +1498,7 @@ fn step_greedy(
         out.push(
           Pending(
             [
-              trigger_candidate(
+              Cand::trigger(
                 spelling,
                 elem_name,
                 "flag",
@@ -1676,13 +1653,14 @@ fn scope_consume(
           ctx,
           pos + 1,
           pidx + 1,
-          acc + [mk_binding(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos))],
+          acc +
+          [Binding::new(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos))],
           severed,
           k,
         )
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pending_value_candidate("string", name)], acc)]
+          [Pending([Cand::pending_value("string", name)], acc)]
         } else {
           [
             Held(
@@ -1710,7 +1688,7 @@ fn scope_consume(
         // extract (none of our fixtures exercise this shape yet, kept as-is).
         [
           Pending(
-            [trigger_candidate(s, s, "flag", WordEnd, false, false, false)],
+            [Cand::trigger(s, s, "flag", WordEnd, false, false, false)],
             acc,
           ),
         ]
@@ -2018,12 +1996,12 @@ fn consume_head(
       if pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed) {
         [
           Accept(pos + 1, [
-            mk_binding(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos)),
+            Binding::new(name, String(ctx.toks[pos]), Cli, at_pos=Some(pos)),
           ]),
         ]
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([pending_value_candidate("string", name)], [])]
+          [Pending([Cand::pending_value("string", name)], [])]
         } else {
           [
             Held(
@@ -2085,7 +2063,7 @@ fn consume_compound(
         Some(tpl) => consume_compound(sc, tpl, ctx, pos, severed)
         None => []
       }
-    Bind(name, v) => [Accept(pos, [mk_binding(name, v, Cli)])]
+    Bind(name, v) => [Accept(pos, [Binding::new(name, v, Cli)])]
     _ => eval(node, ctx, pos)
   }
 }
@@ -2402,7 +2380,7 @@ pub fn elem_value(
 }
 
 ///|
-pub fn constraint_err(
+pub fn ParseError::constraint(
   element : String,
   reason : String,
   message : String,
@@ -2550,7 +2528,7 @@ fn eval_constraints(
           for t in targets {
             if !value_declared(t, bindings, path, sc.entities) {
               out.push(
-                constraint_err(
+                ParseError::constraint(
                   elem,
                   "requires_violated",
                   "'\{elem}' requires '\{t}'",
@@ -2574,7 +2552,7 @@ fn eval_constraints(
           for t in targets {
             if !value_declared(t, bindings, path, sc.entities) {
               out.push(
-                constraint_err(
+                ParseError::constraint(
                   branch_id,
                   "requires_violated",
                   "'\{entity}'=\{v} requires '\{t}'",
@@ -2590,7 +2568,7 @@ fn eval_constraints(
           for t in targets {
             if is_committed(bindings, path, t) {
               out.push(
-                constraint_err(
+                ParseError::constraint(
                   elem,
                   "conflicts_with_violated",
                   "'\{elem}' conflicts with '\{t}'",
@@ -2609,7 +2587,7 @@ fn eval_constraints(
         }
         if count > 1 {
           out.push(
-            constraint_err(
+            ParseError::constraint(
               group,
               "exclusive_group_violated",
               "exclusive group '\{group}' allows at most one",
@@ -2642,7 +2620,7 @@ fn eval_constraints(
         }
         if !any_ok {
           out.push(
-            constraint_err(
+            ParseError::constraint(
               display,
               "required_violated",
               "required '\{display}' is missing",
@@ -2663,7 +2641,7 @@ fn eval_constraints(
         }
         if !any_ok {
           out.push(
-            constraint_err(
+            ParseError::constraint(
               group,
               "required_group_violated",
               "required group '\{group}' has no satisfied member",

@@ -146,7 +146,7 @@ fn el(
     fail_action: false,
     is_config_file: false,
     config_key: None,
-    export_key: @engine.export_key_unset(),
+    export_key: @engine.ExportKey::unset(),
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
@@ -967,7 +967,7 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
       el("verbose", @builtins.flag_type(), long=Bool(true), is_global=true),
     ],
     commands: [
-      { name: "sub", body: child, export_key: @engine.export_key_unset() },
+      { name: "sub", body: child, export_key: @engine.ExportKey::unset() },
     ],
   }
   let sc = ok_scope(def, all_installers())
@@ -1332,7 +1332,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
 
 ///|
 /// 保証 (codex レビュー High 2、2026-07-10): @builtins.count_type() の **short** 発火は variant を一切経由せず
-/// `builtins/matcher_residents.mbt`'s `walk_short` が直接 `mk_effect(e.name, @engine.Invoke({ name: "incr", args: [] }), @engine.Cli)` を生成する
+/// `builtins/matcher_residents.mbt`'s `walk_short` が直接 `Binding::effect(e.name, @engine.Invoke({ name: "incr", args: [] }), @engine.Cli)` を生成する
 /// (`count_increment_variant` の `long:true` 糖衣経路とは別の生成源) — `collect_unsupported_accum_
 /// update` の variant 走査ではこの経路が最初から見えないため、@builtins.count_type()×multiple という組合せ自体を
 /// 要素レベルで閉じる (`collect_unsupported_count_multiple`)。修正前の実際の repro:
@@ -1695,11 +1695,11 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
             {
               name: "sub",
               body: empty_def(),
-              export_key: @engine.export_key_unset(),
+              export_key: @engine.ExportKey::unset(),
             },
           ],
         },
-        export_key: @engine.export_key_unset(),
+        export_key: @engine.ExportKey::unset(),
       },
     ],
   }
@@ -1761,7 +1761,7 @@ test "add_inheritable_copy: an alias-provided (variants-side) trigger shadows th
             },
           ],
         },
-        export_key: @engine.export_key_unset(),
+        export_key: @engine.ExportKey::unset(),
       },
     ],
     aliases: [
@@ -2310,7 +2310,7 @@ test "issue bool-requires-config-inherit-gap: requires targeting an inherit-sour
     ..empty_def(),
     options: [root_c],
     commands: [
-      { name: "sub", body: child, export_key: @engine.export_key_unset() },
+      { name: "sub", body: child, export_key: @engine.ExportKey::unset() },
     ],
   }
   let sc = ok_scope(def, all_installers())
@@ -2355,7 +2355,7 @@ test "issue bool-requires-config-inherit-gap: inherit-sourced bool absent still 
     ..empty_def(),
     options: [root_c],
     commands: [
-      { name: "sub", body: child, export_key: @engine.export_key_unset() },
+      { name: "sub", body: child, export_key: @engine.ExportKey::unset() },
     ],
   }
   let sc = ok_scope(def, all_installers())
@@ -4205,7 +4205,7 @@ test "global option value-starve inside a child command: missing_operand converg
     ..empty_def(),
     options: [level_opt],
     commands: [
-      { name: "a", body: empty_def(), export_key: @engine.export_key_unset() },
+      { name: "a", body: empty_def(), export_key: @engine.ExportKey::unset() },
     ],
   }
   let sc = ok_scope(def, all_installers())
@@ -4245,7 +4245,7 @@ test "command-local (non-global) option value-starve: missing_operand path=[\"a\
   let def : @engine.Definition = {
     ..empty_def(),
     commands: [
-      { name: "a", body: child, export_key: @engine.export_key_unset() },
+      { name: "a", body: child, export_key: @engine.ExportKey::unset() },
     ],
   }
   let sc = ok_scope(def, all_installers())

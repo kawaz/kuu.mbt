@@ -2,7 +2,7 @@
 
 ///|
 test "FnCtx mode and specialization accessors agree" {
-  let default_ctx = fn_ctx_default("target", old=Some(Number(2.0)))
+  let default_ctx = FnCtx::for_default("target", old=Some(Number(2.0)))
   assert_eq(default_ctx.mode(), "default")
   assert_true(default_ctx.as_effect() is None)
   assert_true(default_ctx.as_filter() is None)
@@ -12,7 +12,7 @@ test "FnCtx mode and specialization accessors agree" {
   }
   assert_eq(default_ctx.old(), Some(Number(2.0)))
 
-  let effect_ctx = fn_ctx_effect("target", "--count")
+  let effect_ctx = FnCtx::for_effect("target", "--count")
   assert_eq(effect_ctx.mode(), "effect")
   assert_true(effect_ctx.as_default() is None)
   assert_true(effect_ctx.as_filter() is None)
@@ -36,7 +36,7 @@ test "FnCtx mode and specialization accessors agree" {
 
 ///|
 test "FnCtx option env and system reads are restricted to concrete observes edges" {
-  let ctx = fn_ctx_default(
+  let ctx = FnCtx::for_default(
     "target",
     observes=["option:source", "env:VISIBLE", "system:clock"],
     option=fn(name) {

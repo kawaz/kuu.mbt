@@ -65,23 +65,26 @@ test "@engine.TypeExt parse_token delegates to each resident lexicon and config"
 test "@engine.TypeExt default resolver supplies only preset defaults" {
   // Explicit defaults win; otherwise flag/count supply their presets while ordinary and none types stay absent.
   assert_eq(
-    flag_type().default_seat_resolver(@engine.seat_ctx(None)),
+    flag_type().default_seat_resolver(@engine.SeatCtx::new(None)),
     Some(@engine.Bool(false)),
   )
   assert_eq(
-    count_type().default_seat_resolver(@engine.seat_ctx(None)),
+    count_type().default_seat_resolver(@engine.SeatCtx::new(None)),
     Some(@engine.Number(0.0)),
   )
   assert_eq(
     flag_type().default_seat_resolver(
-      @engine.seat_ctx(Some(@engine.Bool(true))),
+      @engine.SeatCtx::new(Some(@engine.Bool(true))),
     ),
     Some(@engine.Bool(true)),
   )
-  assert_eq(string_type().default_seat_resolver(@engine.seat_ctx(None)), None)
+  assert_eq(
+    string_type().default_seat_resolver(@engine.SeatCtx::new(None)),
+    None,
+  )
   assert_eq(
     none_type().default_seat_resolver(
-      @engine.seat_ctx(Some(@engine.String("ignored"))),
+      @engine.SeatCtx::new(Some(@engine.String("ignored"))),
     ),
     None,
   )
@@ -94,7 +97,7 @@ test "tty TypeExt owns its provider key and default-seat fold" {
   assert_eq(tty.default_seat_observation_key(), Some("stdout"))
   assert_eq(
     tty.default_seat_resolver(
-      @engine.seat_ctx(
+      @engine.SeatCtx::new(
         Some(@engine.Bool(false)),
         observed=Some([false.to_json(), true.to_json()].to_json()),
       ),
@@ -103,12 +106,12 @@ test "tty TypeExt owns its provider key and default-seat fold" {
   )
   // Missing observation falls back to the declared default, then to absence.
   assert_eq(
-    tty.default_seat_resolver(@engine.seat_ctx(Some(@engine.Bool(false)))),
+    tty.default_seat_resolver(@engine.SeatCtx::new(Some(@engine.Bool(false)))),
     Some(@engine.Bool(false)),
   )
   assert_eq(
     tty_type(Some("stderr"), cygwin=false).default_seat_resolver(
-      @engine.seat_ctx(None),
+      @engine.SeatCtx::new(None),
     ),
     None,
   )
@@ -119,7 +122,7 @@ test "EntityExt carries completion metadata opaquely into Cand" {
   // Engine dispatches one opaque decorator; the builtin resident owns hidden/completer contents.
   let extension = entity_ext(hidden=true, completer=Some("files"))
   let cand = extension.complete_candidate(
-    @engine.pending_value_candidate("string", "path"),
+    @engine.Cand::pending_value("string", "path"),
   )
   assert_eq(cand.meta.hidden, true)
   assert_eq(cand.completer, Some("files"))

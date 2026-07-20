@@ -156,7 +156,7 @@ fn opt(
   fail_action? : Bool = false,
   config_file? : Bool = false,
   config_key? : Array[String]? = None,
-  export_? : @engine.ExportKey = @engine.export_key_unset(),
+  export_? : @engine.ExportKey = @engine.ExportKey::unset(),
   requires? : Array[String] = [],
   conflicts? : Array[String] = [],
   exclusive? : Array[String] = [],
@@ -266,7 +266,7 @@ fn pos(
   separator? : String? = None,
   collector? : String? = None,
   config_key? : Array[String]? = None,
-  export_? : @engine.ExportKey = @engine.export_key_unset(),
+  export_? : @engine.ExportKey = @engine.ExportKey::unset(),
   ref_? : String? = None,
   default? : Array[@engine.Value]? = None,
   default_fn? : @engine.DefaultFnCall? = None,
@@ -414,7 +414,7 @@ fn dd_marker(
     fail_action: false,
     is_config_file: false,
     config_key: None,
-    export_key: @engine.export_key_unset(),
+    export_key: @engine.ExportKey::unset(),
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
@@ -488,7 +488,7 @@ fn exact_marker(spelling : String) -> @engine.ElemDef {
     fail_action: false,
     is_config_file: false,
     config_key: None,
-    export_key: @engine.export_key_unset(),
+    export_key: @engine.ExportKey::unset(),
     requires: [],
     conflicts_with: [],
     exclusive_group: [],
@@ -1537,9 +1537,9 @@ fn dec_template_body(
 ///|
 fn dec_export(j : Json) -> @engine.ExportKey {
   match j.j_str() {
-    Some("") => @engine.export_key_null()
-    Some(s) => @engine.export_key(s)
-    None => @engine.export_key_null()
+    Some("") => @engine.ExportKey::null()
+    Some(s) => @engine.ExportKey::key(s)
+    None => @engine.ExportKey::null()
   }
 }
 
@@ -2089,7 +2089,7 @@ fn dec_option(
   let required = owned.required
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
-    None => @engine.export_key_unset()
+    None => @engine.ExportKey::unset()
   }
   let config_key = owned.config_key
   let deprecated = bool_field(o, "deprecated", false)
@@ -2378,7 +2378,7 @@ fn dec_positional(
   let flat = owned.flatten
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
-    None => @engine.export_key_unset()
+    None => @engine.ExportKey::unset()
   }
   let config_key = owned.config_key
   let default : Array[@engine.Value]? = match o.get("default") {
@@ -2758,7 +2758,7 @@ fn dec_command(
   )
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
-    None => @engine.export_key_unset()
+    None => @engine.ExportKey::unset()
   }
   DCommand({ name, body, export_key: export_ })
 }

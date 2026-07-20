@@ -307,7 +307,7 @@ pub(all) struct Binding {
 /// 2026-07-09-accum-entity-filters-wiring): the CLI-seat call sites (eval.mbt/builtins/matcher_residents.mbt) pass
 /// `Some(pos)` — the token this binding's value was read from; every other caller (resolve.mbt's
 /// env/config/inherit/default seats) omits it, defaulting to `None`.
-pub fn mk_binding(
+pub fn Binding::new(
   key : String,
   value : Value,
   source : Source,
@@ -327,7 +327,7 @@ pub fn mk_binding(
 /// `apply_piece_filters`'s `Err` tuple. Mirrors `resolve.mbt`'s `filter_err` (the ladder-layer
 /// counterpart, used by `env_value`) — kept as a separate builder here because eval.mbt/value.mbt
 /// sit below resolve.mbt in the dependency graph (MDR-002 §3) and cannot call it.
-pub fn pe_filter(
+pub fn ParseError::filter(
   element : String,
   pos : Int,
   reason : String,
@@ -340,7 +340,7 @@ pub fn pe_filter(
 /// A deprecation marker binding (DR-058): key `@depr:<element>`, recording that a deprecated entry
 /// (DR-057 alias) was used to reach the canonical cell. Rides in the effect column like any binding;
 /// the result builder skips it (bookkeeping, not a value), and `warnings_of` collects it.
-pub fn depr_marker(element : String) -> Binding {
+pub fn Binding::depr_marker(element : String) -> Binding {
   {
     key: "@depr:" + element,
     op: Set,

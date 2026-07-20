@@ -110,7 +110,7 @@ fn make_fn_ctx(
 }
 
 ///|
-pub fn fn_ctx_default(
+pub fn FnCtx::for_default(
   target : String,
   old? : Value? = None,
   observes? : Array[String] = [],
@@ -138,7 +138,7 @@ pub fn fn_ctx_default(
 }
 
 ///|
-pub fn fn_ctx_effect(
+pub fn FnCtx::for_effect(
   target : String,
   trigger : String,
   old? : Value? = None,

@@ -6,8 +6,6 @@ import {
 }
 
 // Values
-pub fn action_marker(String, Int) -> Binding
-
 pub fn apply_accum_filter_chain(Registry, Array[FnInvocation], Array[Value]) -> Result[Array[Value], FnReason]
 
 pub fn apply_filter_chain(Registry, Array[FnInvocation], Value) -> Result[Value, FnReason]
@@ -32,13 +30,9 @@ pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Ar
 
 pub fn config_from_json(Json) -> ConfigVal
 
-pub fn constraint_err(String, String, String, Int) -> ParseError
-
 pub fn continue_matcher(Array[Branch], Ctx, Array[Binding], (Ctx, Int, Array[Binding]) -> Array[Branch]) -> Array[Branch]
 
 pub fn decode_fn_invocation_parts(FnInvocationForm) -> Result[Array[String], String]
-
-pub fn depr_marker(String) -> Binding
 
 pub fn elem_value(Array[Binding], Array[String], String) -> String?
 
@@ -46,29 +40,15 @@ pub fn elem_value_in_subtree(Array[Binding], Array[String], String, String) -> S
 
 pub fn eq_sep_mode_of(String) -> EqSepMode?
 
-pub fn export_key(String) -> ExportKey
-
-pub fn export_key_null() -> ExportKey
-
-pub fn export_key_unset() -> ExportKey
-
 pub fn filter_descriptor(String, FilterSignature, Array[String], (Value, Array[String]) -> Result[Value, FnReason], observes? : Array[String]) -> FilterDescriptor
 
 pub fn find_help_entry(Node, Array[ParseError]) -> String?
 
 pub fn fired_action_of(Array[Array[Binding]]) -> String?
 
-pub fn fn_ctx_default(String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, dependency? : ((String) -> Value?)?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
-
-pub fn fn_ctx_effect(String, String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
-
 pub fn is_committed(Array[Binding], Array[String], String) -> Bool
 
 pub fn is_committed_in_subtree(Array[Binding], Array[String], String, String) -> Bool
-
-pub fn mk_binding(String, Value, Source, at_pos? : Int?) -> Binding
-
-pub fn mk_effect(String, EffectOp, Source) -> Binding
 
 pub fn none_cells(Scope) -> Array[NoneCell]
 
@@ -76,21 +56,11 @@ pub fn parse_fn_invocation(FnInvocationForm) -> Result[FnInvocation, String]
 
 pub fn parse_tree(Node, Array[String], defs? : Map[String, Node], faildef? : FailDef, extensions? : Registry) -> Outcome
 
-pub fn pe_filter(String, Int, String, String) -> ParseError
-
-pub fn pending_value_candidate(String, String) -> Cand
-
 pub fn run_installer_fixpoint(InstallBuilder, Array[&InstallerExt], (InstallBuilder) -> Unit) -> Result[Scope, Array[DefError]]
 
 pub fn scope_selected(Array[Binding], Array[String]) -> Bool
 
-pub fn seat_ctx(Value?, observed? : Json?) -> SeatCtx
-
 pub fn tried_triggers_of(Node, Array[ParseError]) -> Array[String]
-
-pub fn trigger_candidate(String, String, String, TermHint, Bool, Bool, Bool) -> Cand
-
-pub fn typed_fn_call(String, Array[Value]) -> FnCall
 
 pub fn value_str(Value) -> String
 
@@ -145,6 +115,10 @@ pub(all) struct Binding {
   link : Int
   at_pos : Int?
 } derive(Eq, @debug.Debug)
+pub fn Binding::action_marker(String, Int) -> Self
+pub fn Binding::depr_marker(String) -> Self
+pub fn Binding::effect(String, EffectOp, Source) -> Self
+pub fn Binding::new(String, Value, Source, at_pos? : Int?) -> Self
 
 pub(all) struct BoolConfig {
   true_values : Array[String]
@@ -170,6 +144,8 @@ pub(all) struct Cand {
   fire_path : Array[String]
   completer : String?
 } derive(Eq, @debug.Debug)
+pub fn Cand::pending_value(String, String) -> Self
+pub fn Cand::trigger(String, String, String, TermHint, Bool, Bool, Bool) -> Self
 
 pub(all) struct CandMeta {
   is_alias : Bool
@@ -444,6 +420,9 @@ pub enum ExportKey {
   Key(String)
   Null
 } derive(Eq, @debug.Debug)
+pub fn ExportKey::key(String) -> Self
+pub fn ExportKey::null() -> Self
+pub fn ExportKey::unset() -> Self
 
 pub(all) enum FailDef {
   AcceptsOnly
@@ -492,6 +471,7 @@ pub(all) struct FnCall {
   name : String
   args : Array[FnArg]
 } derive(Eq, @debug.Debug)
+pub fn FnCall::typed(String, Array[Value]) -> Self
 
 pub struct FnCtx {
   // private fields
@@ -500,6 +480,8 @@ pub fn FnCtx::as_default(Self) -> DefaultCtx?
 pub fn FnCtx::as_effect(Self) -> EffectCtx?
 pub fn FnCtx::as_filter(Self) -> FilterCtx?
 pub fn FnCtx::env(Self, String) -> Value?
+pub fn FnCtx::for_default(String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, dependency? : ((String) -> Value?)?, env? : (String) -> Value?, system? : (String) -> Value?) -> Self
+pub fn FnCtx::for_effect(String, String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, env? : (String) -> Value?, system? : (String) -> Value?) -> Self
 pub fn FnCtx::mode(Self) -> String
 pub fn FnCtx::observes(Self) -> Array[String]
 pub fn FnCtx::old(Self) -> Value?
@@ -684,6 +666,8 @@ pub(all) struct ParseError {
   message : String
   path : Array[String]
 } derive(Eq, @debug.Debug)
+pub fn ParseError::constraint(String, String, String, Int) -> Self
+pub fn ParseError::filter(String, Int, String, String) -> Self
 
 pub(all) enum PieceMark {
   Add(String)
@@ -770,6 +754,7 @@ pub struct SeatCtx {
   // private fields
 }
 pub fn SeatCtx::declared(Self) -> Value?
+pub fn SeatCtx::new(Value?, observed? : Json?) -> Self
 pub fn SeatCtx::observed(Self) -> Json?
 
 pub(all) enum Source {

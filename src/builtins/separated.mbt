@@ -54,7 +54,9 @@ fn sep_binds(
         match
           sep_piece_value(name, payload, ty, piece_filters, pos, extensions) {
           Ok(v) =>
-            out.push(@engine.mk_binding(name, v, @engine.Cli, at_pos=Some(pos)))
+            out.push(
+              @engine.Binding::new(name, v, @engine.Cli, at_pos=Some(pos)),
+            )
           Err(pe) => return Err(pe)
         }
     }
@@ -78,7 +80,7 @@ fn sep_piece_value(
 ) -> Result[@engine.Value, @engine.ParseError] {
   match @engine.apply_piece_filters(extensions, piece_filters, part) {
     Err({ reason, message: msg }) =>
-      Err(@engine.pe_filter(name, pos, reason, msg))
+      Err(@engine.ParseError::filter(name, pos, reason, msg))
     Ok(s) =>
       match ty.parse_token(s) {
         Ok(value) => Ok(value)

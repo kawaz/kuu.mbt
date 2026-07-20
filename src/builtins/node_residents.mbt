@@ -92,7 +92,7 @@ impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
             pos + 1,
             acc +
             [
-              @engine.mk_binding(
+              @engine.Binding::new(
                 self.name,
                 @engine.String(value),
                 @engine.Cli,
@@ -103,7 +103,7 @@ impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
         Err({ reason, message }) =>
           [
             @engine.Held(
-              @engine.pe_filter(self.name, pos, reason, message),
+              @engine.ParseError::filter(self.name, pos, reason, message),
               acc,
             ),
           ]
@@ -111,7 +111,7 @@ impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pending_value_candidate(string_type().name(), self.name)],
+          [@engine.Cand::pending_value(string_type().name(), self.name)],
           acc,
         ),
       ]
@@ -167,7 +167,7 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
               pos + 1,
               acc +
               [
-                @engine.mk_binding(
+                @engine.Binding::new(
                   self.name,
                   @engine.String(value),
                   @engine.Cli,
@@ -186,7 +186,7 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
         Err({ reason, message }) =>
           [
             @engine.Held(
-              @engine.pe_filter(self.name, pos, reason, message),
+              @engine.ParseError::filter(self.name, pos, reason, message),
               acc,
             ),
           ]
@@ -194,7 +194,7 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pending_value_candidate(string_type().name(), self.name)],
+          [@engine.Cand::pending_value(string_type().name(), self.name)],
           acc,
         ),
       ]
@@ -277,7 +277,7 @@ impl @engine.NodeExt for SeparatedNodeExt with fn eval(
     None =>
       [
         @engine.Pending(
-          [@engine.pending_value_candidate(self.ty.name(), self.name)],
+          [@engine.Cand::pending_value(self.ty.name(), self.name)],
           acc,
         ),
       ]
@@ -356,7 +356,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
                 pos + 1,
                 acc +
                 [
-                  @engine.mk_binding(
+                  @engine.Binding::new(
                     self.name,
                     @engine.Number(number),
                     @engine.Cli,
@@ -375,7 +375,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
         Err({ reason, message }) =>
           [
             @engine.Held(
-              @engine.pe_filter(self.name, pos, reason, message),
+              @engine.ParseError::filter(self.name, pos, reason, message),
               acc,
             ),
           ]
@@ -383,7 +383,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pending_value_candidate(number_type().name(), self.name)],
+          [@engine.Cand::pending_value(number_type().name(), self.name)],
           acc,
         ),
       ]
@@ -466,7 +466,7 @@ impl @engine.NodeExt for FilteredNumberArgExt with fn eval(
               pos + 1,
               acc +
               [
-                @engine.mk_binding(
+                @engine.Binding::new(
                   self.name,
                   @engine.Number(number),
                   @engine.Cli,
@@ -479,7 +479,7 @@ impl @engine.NodeExt for FilteredNumberArgExt with fn eval(
     None =>
       [
         @engine.Pending(
-          [@engine.pending_value_candidate(number_type().name(), self.name)],
+          [@engine.Cand::pending_value(number_type().name(), self.name)],
           acc,
         ),
       ]
@@ -532,7 +532,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
                 pos + 1,
                 acc +
                 [
-                  @engine.mk_binding(
+                  @engine.Binding::new(
                     self.name,
                     @engine.Number(number),
                     @engine.Cli,
@@ -551,7 +551,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
         Err({ reason, message }) =>
           [
             @engine.Held(
-              @engine.pe_filter(self.name, pos, reason, message),
+              @engine.ParseError::filter(self.name, pos, reason, message),
               acc,
             ),
           ]
@@ -559,7 +559,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pending_value_candidate(float_type().name(), self.name)],
+          [@engine.Cand::pending_value(float_type().name(), self.name)],
           acc,
         ),
       ]
@@ -628,7 +628,7 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
                 pos + 1,
                 acc +
                 [
-                  @engine.mk_binding(
+                  @engine.Binding::new(
                     self.name,
                     @engine.Number(integer.to_double()),
                     @engine.Cli,
@@ -642,7 +642,7 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
         Err({ reason, message }) =>
           [
             @engine.Held(
-              @engine.pe_filter(self.name, pos, reason, message),
+              @engine.ParseError::filter(self.name, pos, reason, message),
               acc,
             ),
           ]
@@ -650,7 +650,7 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pending_value_candidate(int_type().name(), self.name)],
+          [@engine.Cand::pending_value(int_type().name(), self.name)],
           acc,
         ),
       ]
@@ -716,7 +716,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
                 pos + 1,
                 acc +
                 [
-                  @engine.mk_binding(
+                  @engine.Binding::new(
                     self.name,
                     @engine.Bool(boolean),
                     @engine.Cli,
@@ -730,7 +730,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
         Err({ reason, message }) =>
           [
             @engine.Held(
-              @engine.pe_filter(self.name, pos, reason, message),
+              @engine.ParseError::filter(self.name, pos, reason, message),
               acc,
             ),
           ]
@@ -738,7 +738,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pending_value_candidate(bool_type().name(), self.name)],
+          [@engine.Cand::pending_value(bool_type().name(), self.name)],
           acc,
         ),
       ]
@@ -802,7 +802,7 @@ impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
                 pos + 1,
                 acc +
                 [
-                  @engine.mk_binding(
+                  @engine.Binding::new(
                     self.name,
                     parsed,
                     @engine.Cli,
@@ -816,7 +816,7 @@ impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
         Err({ reason, message }) =>
           [
             @engine.Held(
-              @engine.pe_filter(self.name, pos, reason, message),
+              @engine.ParseError::filter(self.name, pos, reason, message),
               acc,
             ),
           ]
@@ -824,7 +824,7 @@ impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.pending_value_candidate(self.ty.name(), self.name)],
+          [@engine.Cand::pending_value(self.ty.name(), self.name)],
           acc,
         ),
       ]
@@ -868,7 +868,11 @@ impl @engine.NodeExt for EffectMarkExt with fn consumes_zero_tokens(_self) {
 
 ///|
 impl @engine.NodeExt for EffectMarkExt with fn eval(self, ctx, pos, acc, next) {
-  next(ctx, pos, acc + [@engine.mk_effect(self.name, self.op, @engine.Cli)])
+  next(
+    ctx,
+    pos,
+    acc + [@engine.Binding::effect(self.name, self.op, @engine.Cli)],
+  )
 }
 
 ///|
@@ -904,7 +908,7 @@ impl @engine.NodeExt for DeprecationMarkExt with fn eval(
   acc,
   next,
 ) {
-  next(ctx, pos, acc + [@engine.depr_marker(self.name)])
+  next(ctx, pos, acc + [@engine.Binding::depr_marker(self.name)])
 }
 
 ///|
@@ -939,7 +943,7 @@ impl @engine.NodeExt for FailureMarkExt with fn consumes_zero_tokens(_self) {
 
 ///|
 impl @engine.NodeExt for FailureMarkExt with fn eval(self, ctx, pos, acc, next) {
-  next(ctx, pos, acc + [@engine.action_marker(self.name, pos)])
+  next(ctx, pos, acc + [@engine.Binding::action_marker(self.name, pos)])
 }
 
 ///|

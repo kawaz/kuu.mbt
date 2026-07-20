@@ -116,7 +116,7 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
   ).unwrap()
   assert_eq(set.validate_invocation(invocation), Ok(()))
   assert_eq(set.concrete_observes(invocation), Ok([]))
-  let typed = @engine.typed_fn_call("set", [@engine.Bool(true)])
+  let typed = @engine.FnCall::typed("set", [@engine.Bool(true)])
   assert_eq(set.validate_call(typed), Ok(()))
   assert_eq(typed.args, [@engine.Value(@engine.Bool(true))])
   assert_eq(
@@ -133,7 +133,7 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
   ).unwrap()
   let concrete = borrow.concrete_observes(invocation).unwrap()
   assert_eq(concrete, ["option:help-full"])
-  let ctx = @engine.fn_ctx_effect("target", "--copy", observes=concrete, option=fn(
+  let ctx = @engine.FnCtx::for_effect("target", "--copy", observes=concrete, option=fn(
     name,
   ) {
     if name == "help-full" {
@@ -146,7 +146,7 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
   assert_true(ctx.option("other") is None)
   assert_eq(
     borrow.validate_call(
-      @engine.typed_fn_call("borrow", [@engine.String("help-full")]),
+      @engine.FnCall::typed("borrow", [@engine.String("help-full")]),
     ),
     Err({
       reason: "invalid-argument",
@@ -176,9 +176,9 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
 test "builtin cell fn residents execute through their registered descriptors" {
   let registry = builtin_cell_fn_registry()
   let set = registry.lookup_cell_fn("set").unwrap()
-  let ctx = @engine.fn_ctx_effect("target", "--target")
+  let ctx = @engine.FnCtx::for_effect("target", "--target")
   assert_eq(
-    set.invoke(@engine.typed_fn_call("set", [@engine.Bool(true)]), ctx),
+    set.invoke(@engine.FnCall::typed("set", [@engine.Bool(true)]), ctx),
     Ok(@engine.Value(@engine.Bool(true))),
   )
   assert_eq(
@@ -194,7 +194,11 @@ test "builtin cell fn residents execute through their registered descriptors" {
   assert_eq(
     incr.invoke(
       { name: "incr", args: [] },
-      @engine.fn_ctx_effect("target", "--target", old=Some(@engine.Number(4.0))),
+      @engine.FnCtx::for_effect(
+        "target",
+        "--target",
+        old=Some(@engine.Number(4.0)),
+      ),
     ),
     Ok(@engine.Value(@engine.Number(5.0))),
   )
@@ -204,7 +208,7 @@ test "builtin cell fn residents execute through their registered descriptors" {
     @engine.ColonString("borrow:source"),
   ).unwrap()
   let borrow_observes = borrow.concrete_observes(borrow_invocation).unwrap()
-  let borrow_ctx = @engine.fn_ctx_default(
+  let borrow_ctx = @engine.FnCtx::for_default(
     "target",
     observes=borrow_observes,
     dependency=Some(fn(name) {
@@ -240,7 +244,7 @@ test "builtin cell fn residents execute through their registered descriptors" {
   let env_invocation = @engine.parse_fn_invocation(
     @engine.ColonString("env:MISSING"),
   ).unwrap()
-  let env_ctx = @engine.fn_ctx_default(
+  let env_ctx = @engine.FnCtx::for_default(
     "target",
     observes=env.concrete_observes(env_invocation).unwrap(),
   )

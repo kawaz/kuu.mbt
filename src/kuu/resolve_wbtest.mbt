@@ -71,7 +71,7 @@ fn ent(
     },
     default_values,
     default_fn: match default_values {
-      Some(values) => Some(@engine.Typed(@engine.typed_fn_call("set", values)))
+      Some(values) => Some(@engine.Typed(@engine.FnCall::typed("set", values)))
       None => None
     },
     separator,
@@ -346,8 +346,8 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
 /// (@engine.Unset) name unchanged.
 test "apply_export_keys renames a leaf key and drops a null-exported scope label" {
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
-    ("port", @engine.export_key("p")),
-    ("wrapper", @engine.export_key_null()),
+    ("port", @engine.ExportKey::key("p")),
+    ("wrapper", @engine.ExportKey::null()),
   ])
   let binds : Array[@engine.Binding] = [
     cb("port", @engine.Number(80.0), @engine.Cli),
@@ -379,7 +379,7 @@ test "apply_export_keys renames a leaf key and drops a null-exported scope label
 /// actually happen (2 elements, not a last-wins scalar).
 test "accum_cells resolves export_key rename — the accumulate fold fires under the renamed key" {
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
-    ("tags", @engine.export_key("t")),
+    ("tags", @engine.ExportKey::key("t")),
   ])
   let sc : @engine.Scope = {
     greedy: [],
@@ -415,7 +415,7 @@ test "accum_cells resolves export_key rename — the accumulate fold fires under
 /// — 変更が「常に何らかのキーで accum セルを出力してしまう」誤動作を生んでいないことを固定する。
 test "accum_cells 対極: an @engine.Null accum cell carries no result-key axis (dropped)" {
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
-    ("tags", @engine.export_key_null()),
+    ("tags", @engine.ExportKey::null()),
   ])
   let sc : @engine.Scope = {
     greedy: [],
@@ -432,7 +432,7 @@ test "accum_cells 対極: an @engine.Null accum cell carries no result-key axis 
 /// `collect_accum` の @engine.CmdSat 再帰でも固定する。
 test "accum_cells resolves export_key rename on a command scope label (nested path)" {
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
-    ("sub", @engine.export_key("s")),
+    ("sub", @engine.ExportKey::key("s")),
   ])
   let child : @engine.Scope = {
     greedy: [],
@@ -464,7 +464,7 @@ test "accum_cells resolves export_key rename on a command scope label (nested pa
 /// し、修正せず report した (team-lead 裁定待ち)。
 test "accum_cells + build_result: a renamed accum cell with zero fires still renders `[]` under the renamed key (DR-051 §2)" {
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
-    ("tags", @engine.export_key("t")),
+    ("tags", @engine.ExportKey::key("t")),
   ])
   let sc : @engine.Scope = {
     greedy: [],
@@ -485,8 +485,8 @@ test "accum_cells + build_result: a renamed accum cell with zero fires still ren
 ///|
 fn collision_ek() -> Map[String, @engine.ExportKey] {
   Map::from_array([
-    ("a", @engine.export_key("x")),
-    ("b", @engine.export_key("x")),
+    ("a", @engine.ExportKey::key("x")),
+    ("b", @engine.ExportKey::key("x")),
   ])
 }
 
@@ -564,7 +564,7 @@ test "DR-073 identity-exposure collision: @engine.Unset element vs @engine.Key-m
   // export_key" shape) — resolves to identity exposure under "a" itself. `b` explicitly maps to
   // the SAME key "a".
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
-    ("b", @engine.export_key("a")),
+    ("b", @engine.ExportKey::key("a")),
   ])
   let binds : Array[@engine.Binding] = [
     cb("a", @engine.Bool(true), @engine.Cli),
