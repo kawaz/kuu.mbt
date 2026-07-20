@@ -1,4 +1,4 @@
-// help.mbt — DR-112 の宣言層 help query と semantic help model。
+// help.mbt — DR-113 §1/§4 の宣言層 help query と構造化 help model 実装。
 
 ///|
 pub(all) enum HelpDepth {
@@ -30,11 +30,7 @@ pub(all) enum HelpQueryError {
 ///|
 /// DR-113 §1 の help_query capability carrier struct。CapabilityExt.name() で "help_query" を
 /// 返し、`Registry.register_capability` 経由で engine registry へ載せる。実際の invoke ABI は
-/// `pub fn help(...)` (このファイル内) で、capability 抽象は名前空間 discriminator と登録経路の
-/// ためだけの薄い皮 — help_query 以外の capability が入る時のシグネチャ差を吸収するため
-/// engine/capability.mbt の trait は `name()` のみを持つ (§9 の「kuu.mbt runner が capability
-/// を直接呼ぶ」経路の下地)。M3c-B 段階では登録経路のみ整え、fixture runner からの invoke は
-/// M4 で `Registry.lookup_capability("help_query")` 経由 dispatch へ切り替える差し替え点。
+/// `pub fn help(...)` (このファイル内)。
 pub struct HelpQueryCapability {}
 
 ///|
@@ -54,10 +50,44 @@ pub(all) enum HelpDefault {
 } derive(Eq, Debug)
 
 ///|
-pub(all) struct HelpUsagePositional {
+/// DR-113 §4.3 origin 4 形。model の options / commands entry の由来を表す — Local 以外は
+/// `declared_at` 相当情報を保持する。§4.4「alias は canonical entry の alias_spellings / aliases に
+/// 併記し、独立一覧しない」により、HOAlias は現状の fixture 走査経路では独立 entry としては現れない
+/// (spec 完備性のため carrier だけ持つ)。
+pub(all) enum HelpOrigin {
+  HOLocal
+  HOGlobal(Array[String])
+  HOInheritable(Array[String])
+  HOAlias(String)
+} derive(Eq, Debug)
+
+///|
+/// DR-113 §4.1 の value_structure tree。任意ネスト可 (single / seq / or / repeat / type_ref)。
+pub(all) enum HelpValueStructure {
+  HVSingle(HelpSingleValue)
+  HVSeq(Array[HelpValueStructure])
+  HVOr(Array[HelpValueStructure])
+  HVRepeat(HelpRepeatSpec)
+  HVTypeRef(String, String?)
+} derive(Eq, Debug)
+
+///|
+pub(all) struct HelpSingleValue {
   value_name : String?
-  repeat : @engine.RepeatSpec?
-  optional : Bool
+  type_ : String?
+  values_enum : Array[String]?
+} derive(Eq, Debug)
+
+///|
+pub(all) struct HelpRepeatSpec {
+  min : Int?
+  max : Int?
+  node : HelpValueStructure
+} derive(Eq, Debug)
+
+///|
+pub(all) struct HelpUsagePositional {
+  value_structure : HelpValueStructure
 } derive(Eq, Debug)
 
 ///|
@@ -79,7 +109,7 @@ pub(all) struct HelpGroup {
 pub(all) struct HelpOption {
   spellings : Array[String]
   alias_spellings : Array[String]
-  value_name : String?
+  value_structure : HelpValueStructure?
   display_name : String?
   help : String?
   help_long : String?
@@ -90,6 +120,7 @@ pub(all) struct HelpOption {
   multiple : Bool
   hidden : Bool
   deprecated : Bool
+  origin : HelpOrigin
 } derive(Eq, Debug)
 
 ///|
@@ -100,9 +131,9 @@ pub(all) enum HelpOptionEntry {
 
 ///|
 pub(all) struct HelpPositional {
-  value_name : String?
+  value_structure : HelpValueStructure
   help : String?
-  repeat : @engine.RepeatSpec?
+  help_long : String?
   hidden : Bool
   deprecated : Bool
 } derive(Eq, Debug)
@@ -115,6 +146,9 @@ pub(all) struct HelpCommand {
   help_long : String?
   hidden : Bool
   deprecated : Bool
+  origin : HelpOrigin
+  // DR-113 §4.4 depth="all" で子 help model を scope フィールドへ再帰埋め込みする。
+  scope : HelpModel?
 } derive(Eq, Debug)
 
 ///|
@@ -129,6 +163,8 @@ pub(all) struct HelpModel {
   positionals : Array[HelpPositional]
   help_entry : String?
 } derive(Eq, Debug)
+
+// ── sortable carriers ────────────────────────────────────────────────────────
 
 ///|
 priv struct SortableOption {
@@ -145,6 +181,8 @@ priv struct SortableCommand {
   order : Double
   after : String?
 }
+
+// ── small helpers ────────────────────────────────────────────────────────────
 
 ///|
 fn copy_strings(values : Array[String]) -> Array[String] {
@@ -201,6 +239,8 @@ fn help_default(values : Array[@engine.Value]?) -> HelpDefault? {
 fn is_group_declaration(element : @engine.ElemDef) -> Bool {
   element.name == "" && element.help_meta.help_group_name is Some(_)
 }
+
+// ── alias merging (DR-113 §4.4) ──────────────────────────────────────────────
 
 ///|
 fn find_option(definition : @engine.Definition, name : String) -> Bool {
@@ -267,15 +307,277 @@ fn alias_spellings_for(
 }
 
 ///|
+/// command aliases (DR-113 §4.4): `def.aliases` 内の command 対象 alias の name (or target) を
+/// 集める。canonical command 名 → aliases 名一覧 の Map を返す。alias 用の CommandDef が
+/// installer によって `def.commands` に別 entry として追加されているので、この Map で
+/// 「独立一覧しない」フィルタも兼ねる (下記 `alias_command_names`)。
+fn command_alias_map(
+  definition : @engine.Definition,
+) -> Map[String, Array[String]] {
+  let output : Map[String, Array[String]] = Map([])
+  for a in definition.aliases {
+    // command alias: target が def.commands にあり、`name` が明示されているもののみ。
+    let mut is_command = false
+    for c in definition.commands {
+      if c.name == a.target {
+        is_command = true
+        break
+      }
+    }
+    if !is_command {
+      continue
+    }
+    let alias_name = match a.name {
+      Some(n) => n
+      None => a.target
+    }
+    if alias_name == a.target {
+      continue
+    }
+    match output.get(a.target) {
+      Some(existing) => push_unique(existing, alias_name)
+      None => {
+        let arr : Array[String] = []
+        arr.push(alias_name)
+        output.set(a.target, arr)
+      }
+    }
+  }
+  output
+}
+
+///|
+/// installer が追加した command-alias 用の CommandDef (`clone_def` された副本) の name 一覧。
+/// projected commands から除外する対象。
+fn alias_command_names(definition : @engine.Definition) -> Array[String] {
+  let output : Array[String] = []
+  for a in definition.aliases {
+    let mut is_command = false
+    for c in definition.commands {
+      if c.name == a.target {
+        is_command = true
+        break
+      }
+    }
+    if !is_command {
+      continue
+    }
+    let alias_name = match a.name {
+      Some(n) => n
+      None => a.target
+    }
+    if alias_name != a.target {
+      push_unique(output, alias_name)
+    }
+  }
+  output
+}
+
+// ── value_structure derivation (DR-113 §4.1) ─────────────────────────────────
+
+///|
+/// DR-113 §4.1 の value_structure `single{value_name, type, values_enum}` 素材を ElemDef から組む。
+/// `type_name` が None の要素 (flag / count / help preset / none / dd / config_file / tty / etc — value-less
+/// preset や structural node) は None を返す。help_category (preset_kind="help_category") のみ
+/// or[bool, string] 特殊展開。将来 seq/repeat 拡張ポイントは HVRepeat / HVSeq を追加すれば良い。
+fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
+  let meta = element.help_meta
+  // help_category 特殊: or[bool, string] を展開 (DR-113 §2.3)。value_name は string 側の枝に付く。
+  if meta.preset_kind == Some("help_category") {
+    let bool_branch = HVSingle({
+      value_name: None,
+      type_: Some("bool"),
+      values_enum: None,
+    })
+    // DR-113 §2.3: string 枝の value_name 明示なしなら preset canonical "CATEGORY" を当てる
+    // (help_category の値スロット既定名)。M4 では help.mbt 側で defaulting、M5 で
+    // HelpMetaInstaller.apply 移送時に wire 段で立てる (fixture 期待は "CATEGORY")。
+    let str_value_name = match meta.value_name {
+      Some(name) => Some(name)
+      None => Some("CATEGORY")
+    }
+    let str_branch = HVSingle({
+      value_name: str_value_name,
+      type_: Some("string"),
+      values_enum: None,
+    })
+    return Some(HVOr([bool_branch, str_branch]))
+  }
+  match meta.type_name {
+    None => None
+    Some(t) => {
+      // BEnum の場合、values_enum を素材として拾う (fixture では enum 値の順序が定義順で pin)。
+      let values_enum : Array[String]? = match element.body {
+        BEnum(values) => Some(copy_strings(values))
+        _ => None
+      }
+      Some(
+        HVSingle({ value_name: meta.value_name, type_: Some(t), values_enum }),
+      )
+    }
+  }
+}
+
+///|
+/// positional 用: 常に何らかの value_structure を返す (schema required — positional は type "none" 相当でも
+/// `{"single":{}}` の空箱を返す)。root-basic / subcommand-path 等で type "string" が typical。
+fn positional_value_structure_of(
+  element : @engine.ElemDef,
+) -> HelpValueStructure {
+  match value_structure_of(element) {
+    Some(vs) => vs
+    None =>
+      HVSingle({
+        value_name: element.help_meta.value_name,
+        type_: None,
+        values_enum: None,
+      })
+  }
+}
+
+// ── origin resolution (DR-113 §4.3) ──────────────────────────────────────────
+
+///|
+/// help.mbt が保持する scope tree の側テーブル: 各 scope の root-first path と Definition
+/// への参照。origin (global copy / inheritable copy) の declared_at 逆引きに使う。
+priv struct ScopeIndex {
+  entries : Array[ScopeEntry]
+}
+
+///|
+priv struct ScopeEntry {
+  path : Array[String]
+  definition : @engine.Definition
+}
+
+///|
+fn build_scope_index(root : @engine.Definition) -> ScopeIndex {
+  let entries : Array[ScopeEntry] = []
+  let base_path : Array[String] = []
+  match root.scope.name {
+    Some(name) => base_path.push(name)
+    None => ()
+  }
+  collect_scope_entries(root, base_path, entries)
+  { entries, }
+}
+
+///|
+fn collect_scope_entries(
+  definition : @engine.Definition,
+  path : Array[String],
+  out : Array[ScopeEntry],
+) -> Unit {
+  out.push({ path: copy_strings(path), definition })
+  for command in definition.commands {
+    let child_path = copy_strings(path)
+    child_path.push(command.name)
+    collect_scope_entries(command.body, child_path, out)
+  }
+}
+
+///|
+/// current_path にある element の origin を逆推定。
+/// - link_depth > 0 → global 由来。宣言 scope は現在から link_depth 段 (root 側へ) 遡った祖先。
+///   ただし root scope の name は path[0] にあるので、declared_at は path[:len - link_depth] (先頭は保持)。
+/// - name-derived prefix pattern + descendant scope に is_inheritable=true 同名要素 → inheritable 由来。
+/// - 上記いずれでもなければ HOLocal。
+fn resolve_origin(
+  element : @engine.ElemDef,
+  current_path : Array[String],
+  index : ScopeIndex,
+) -> HelpOrigin {
+  if element.link_depth > 0 {
+    let len = current_path.length()
+    let anchor = len - element.link_depth
+    let declared_at : Array[String] = []
+    let bound = if anchor < 0 { 0 } else { anchor }
+    for i = 0; i < bound; i = i + 1 {
+      declared_at.push(current_path[i])
+    }
+    // root scope の name が current_path 先頭にあるとき (fixture の典型)、declared_at が空になる
+    // ケースは無い (link_depth <= len が installer 不変)。念のため空なら root name を残す。
+    if declared_at.length() == 0 && current_path.length() > 0 {
+      declared_at.push(current_path[0])
+    }
+    return HOGlobal(declared_at)
+  }
+  // inheritable 逆推定: 名前が prefix 付きなら (`<child>-<name>` トリガ) descendant scope に
+  // is_inheritable=true 同 element 名の option があるはず。Fixture: `--socket-timeout` の name は
+  // "timeout" (add_inheritable_copy が e.name をそのまま name として set)、trigger は "socket-timeout"。
+  // 検索方針: current_path 配下の全 scope を走査し、`is_inheritable=true` かつ name が element.name と
+  // 一致し、かつ trigger 綴りが `<childname>-<element.name>` のパターンにマッチするものを探す。
+  let triggers = option_spellings(element)
+  for entry in index.entries {
+    if !path_prefix(current_path, entry.path) ||
+      entry.path.length() <= current_path.length() {
+      continue
+    }
+    for opt in entry.definition.options {
+      if !opt.is_inheritable || opt.name != element.name {
+        continue
+      }
+      // 綴りマッチ検証: 現在 element の trigger のいずれかが child scope 名 + "-" + name を含む形。
+      let child_name = entry.path[entry.path.length() - 1]
+      let expected_trigger = child_name + "-" + element.name
+      let mut matched = false
+      for t in triggers {
+        // t は long_prefix 付き (`--socket-timeout`)。expected_trigger は無し (`socket-timeout`)。
+        if str_has_suffix(t, expected_trigger) {
+          matched = true
+          break
+        }
+      }
+      if matched {
+        return HOInheritable(copy_strings(entry.path))
+      }
+    }
+  }
+  HOLocal
+}
+
+///|
+fn path_prefix(prefix : Array[String], full : Array[String]) -> Bool {
+  if prefix.length() > full.length() {
+    return false
+  }
+  for i = 0; i < prefix.length(); i = i + 1 {
+    if prefix[i] != full[i] {
+      return false
+    }
+  }
+  true
+}
+
+///|
+fn str_has_suffix(s : String, suffix : String) -> Bool {
+  let sc = @engine.to_chars(s)
+  let sfc = @engine.to_chars(suffix)
+  if sfc.length() > sc.length() {
+    return false
+  }
+  let off = sc.length() - sfc.length()
+  for i = 0; i < sfc.length(); i = i + 1 {
+    if sc[off + i] != sfc[i] {
+      return false
+    }
+  }
+  true
+}
+
+// ── option / command / positional projection ─────────────────────────────────
+
+///|
 fn help_option_from(
   element : @engine.ElemDef,
   meta : @engine.HelpMetaDecl,
   alias_spellings : Array[String],
+  origin : HelpOrigin,
 ) -> HelpOption {
   {
     spellings: option_spellings(element),
     alias_spellings,
-    value_name: meta.value_name,
+    value_structure: value_structure_of(element),
     display_name: meta.display_name,
     help: meta.help,
     help_long: meta.help_long,
@@ -290,6 +592,7 @@ fn help_option_from(
     multiple: element.multiple || element.repeat is Some(_),
     hidden: element.hidden,
     deprecated: element.deprecated,
+    origin,
   }
 }
 
@@ -353,7 +656,11 @@ fn emit_option_after_tree(
 }
 
 ///|
-fn ordered_options(definition : @engine.Definition) -> Array[HelpOptionEntry] {
+fn ordered_options(
+  definition : @engine.Definition,
+  current_path : Array[String],
+  index : ScopeIndex,
+) -> Array[HelpOptionEntry] {
   let pairs = option_alias_pairs(definition)
   let sorted : Array[SortableOption] = []
   let mut declaration_index = 0
@@ -371,11 +678,13 @@ fn ordered_options(definition : @engine.Definition) -> Array[HelpOptionEntry] {
       })
     } else {
       let canonical_spellings = option_spellings(element)
+      let origin = resolve_origin(element, current_path, index)
       HOption(
         help_option_from(
           element,
           meta,
           alias_spellings_for(pairs, element.name, canonical_spellings),
+          origin,
         ),
       )
     }
@@ -404,8 +713,9 @@ fn ordered_options(definition : @engine.Definition) -> Array[HelpOptionEntry] {
     match pair.0.name {
       Some(name) => {
         let meta = pair.0.help_meta
+        let origin = resolve_origin(pair.1, current_path, index)
         insert_option_sorted(sorted, {
-          entry: HOption(help_option_from(pair.1, meta, [])),
+          entry: HOption(help_option_from(pair.1, meta, [], origin)),
           identity: Some(name),
           order: match meta.help_order {
             Some(value) => value
@@ -477,24 +787,49 @@ fn emit_command_after_tree(
 }
 
 ///|
-fn ordered_commands(definition : @engine.Definition) -> Array[HelpCommand] {
+fn ordered_commands(
+  definition : @engine.Definition,
+  current_path : Array[String],
+  depth : HelpDepth,
+  index : ScopeIndex,
+) -> Array[HelpCommand] {
   let sorted : Array[SortableCommand] = []
-  for i = 0; i < definition.commands.length(); i = i + 1 {
-    let command = definition.commands[i]
+  let alias_map = command_alias_map(definition)
+  let alias_names = alias_command_names(definition)
+  let mut declaration_index = 0
+  for command in definition.commands {
+    // installer 追加の alias-copy CommandDef は独立列挙しない (DR-113 §4.4)
+    if str_in_arr(alias_names, command.name) {
+      declaration_index = declaration_index + 1
+      continue
+    }
     let meta = command.body.scope.help_meta
+    let aliases = match alias_map.get(command.name) {
+      Some(list) => copy_strings(list)
+      None => []
+    }
+    let child_path = copy_strings(current_path)
+    child_path.push(command.name)
+    let scope : HelpModel? = match depth {
+      DAll => Some(build_help_model(command.body, child_path, depth, index))
+      DScope => None
+    }
     insert_command_sorted(sorted, {
       entry: {
         name: command.name,
-        aliases: [],
+        aliases,
         help: meta.help,
         help_long: meta.help_long,
         hidden: false,
         deprecated: false,
+        origin: HOLocal,
+        scope,
       },
       identity: command.name,
-      order: meta.help_order.unwrap_or(i.to_double()),
+      order: meta.help_order.unwrap_or(declaration_index.to_double()),
       after: meta.help_after,
     })
+    declaration_index = declaration_index + 1
   }
   let emitted = Array::make(sorted.length(), false)
   let output : Array[HelpCommand] = []
@@ -511,16 +846,22 @@ fn ordered_commands(definition : @engine.Definition) -> Array[HelpCommand] {
 }
 
 ///|
+fn str_in_arr(arr : Array[String], value : String) -> Bool {
+  for x in arr {
+    if x == value {
+      return true
+    }
+  }
+  false
+}
+
+///|
 fn usage_positionals(
   definition : @engine.Definition,
 ) -> Array[HelpUsagePositional] {
   let output : Array[HelpUsagePositional] = []
   for positional in definition.positionals {
-    output.push({
-      value_name: positional.help_meta.value_name,
-      repeat: positional.repeat,
-      optional: positional.optional,
-    })
+    output.push({ value_structure: positional_value_structure_of(positional) })
   }
   output
 }
@@ -530,9 +871,9 @@ fn help_positionals(definition : @engine.Definition) -> Array[HelpPositional] {
   let output : Array[HelpPositional] = []
   for positional in definition.positionals {
     output.push({
-      value_name: positional.help_meta.value_name,
+      value_structure: positional_value_structure_of(positional),
       help: positional.help_meta.help,
-      repeat: positional.repeat,
+      help_long: positional.help_meta.help_long,
       hidden: positional.hidden,
       deprecated: positional.deprecated,
     })
@@ -625,15 +966,35 @@ fn filter_category(
 }
 
 ///|
+/// path (current scope path) と depth を伝搬しつつ 1 scope 分の HelpModel を組む。depth=DAll では
+/// commands の scope フィールドへ子 HelpModel を再帰埋め込みする。
+fn build_help_model(
+  selected : @engine.Definition,
+  command_path : Array[String],
+  depth : HelpDepth,
+  index : ScopeIndex,
+) -> HelpModel {
+  let options = ordered_options(selected, command_path, index)
+  {
+    command_path,
+    usage: help_usage(selected),
+    description: selected.scope.help_meta.help,
+    description_long: selected.scope.help_meta.help_long,
+    epilog: selected.scope.help_meta.help_epilog,
+    commands: ordered_commands(selected, command_path, depth, index),
+    options,
+    positionals: help_positionals(selected),
+    help_entry: help_entry(selected),
+  }
+}
+
+///|
 /// DR-113 §1 の help_query 正面玄関。installer fixpoint 後の宣言層 snapshot だけを読み、パースは
 /// 実行しない。合法な definition に対する呼び出し側入力の失敗 (path / named category の不在) は
-/// query-error envelope で返す — definition-error とは別位相 (definition_error profile は installer
-/// が担う、DR-113 §1)。
+/// query-error envelope で返す。
 ///
 /// - `path`: 選択スコープの root-first 相対 path。既定はルート
-/// - `depth`: `DScope` (既定、選択 scope の 1 層のみ) / `DAll` (再帰 scope 埋め込み)。M3c 時点では
-///   DAll の再帰埋め込みは未実装、fixture の subcommand-path.json::depth-all-embeds-recursive-scopes
-///   の diverge 継続 (M4 で model 側実装)
+/// - `depth`: `DScope` (既定、選択 scope の 1 層のみ) / `DAll` (再帰 scope 埋め込み、DR-113 §4.4)
 /// - `category_mode`: DR-113 §1 の 3 分岐。default / all は model 素材を絞らず (renderer への
 ///   policy 指示だけ、HIP-META-Q13=a)、named 分岐だけが素材を絞る
 pub fn help(
@@ -646,17 +1007,7 @@ pub fn help(
     Some(definition) => definition
     None => return Err(HQAbsentPath)
   }
-  let mut options = ordered_options(selected)
-  match category_mode {
-    HCMNamed(name) =>
-      if category_exists(options, name) {
-        options = filter_category(options, name)
-      } else {
-        return Err(HQAbsentCategory)
-      }
-    // HCMDefault / HCMAll: model 素材は同一 (HIP-META-Q13=a)、絞りをかけない。
-    HCMDefault | HCMAll => ()
-  }
+  let index = build_scope_index(ast.declaration)
   let command_path : Array[String] = []
   match ast.declaration.scope.name {
     Some(name) => command_path.push(name)
@@ -665,16 +1016,15 @@ pub fn help(
   for segment in path {
     command_path.push(segment)
   }
-  let _ = depth
-  Ok({
-    command_path,
-    usage: help_usage(selected),
-    description: selected.scope.help_meta.help,
-    description_long: selected.scope.help_meta.help_long,
-    epilog: selected.scope.help_meta.help_epilog,
-    commands: ordered_commands(selected),
-    options,
-    positionals: help_positionals(selected),
-    help_entry: help_entry(selected),
-  })
+  let mut model = build_help_model(selected, command_path, depth, index)
+  match category_mode {
+    HCMNamed(name) =>
+      if category_exists(model.options, name) {
+        model = { ..model, options: filter_category(model.options, name) }
+      } else {
+        return Err(HQAbsentCategory)
+      }
+    HCMDefault | HCMAll => ()
+  }
+  Ok(model)
 }

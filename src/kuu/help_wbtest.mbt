@@ -44,9 +44,16 @@ test "help: root scope projects semantic materials" {
   assert_eq(help_option_spellings(model.options), ["--port", "--help"])
   guard model.options[0] is HOption(port) else { abort("port option missing") }
   assert_eq(port.spellings, ["--port", "-p"])
-  assert_eq(port.value_name, Some("PORT"))
+  guard port.value_structure is Some(HVSingle(port_single)) else {
+    abort("port value_structure missing")
+  }
+  assert_eq(port_single.value_name, Some("PORT"))
+  assert_eq(port_single.type_, Some("number"))
   assert_eq(port.env, ["PORT"])
-  assert_eq(model.positionals[0].value_name, Some("FILE"))
+  guard model.positionals[0].value_structure is HVSingle(file_single) else {
+    abort("file positional value_structure missing")
+  }
+  assert_eq(file_single.value_name, Some("FILE"))
   assert_eq(model.help_entry, Some("--help"))
 }
 

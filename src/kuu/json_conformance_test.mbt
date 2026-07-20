@@ -1631,35 +1631,107 @@ fn help_default_json(value : @kuu.HelpDefault) -> Json {
 }
 
 ///|
-fn help_repeat_json(repeat : @engine.RepeatSpec) -> Json {
-  let object : Map[String, Json] = Map([])
-  if repeat.min != 0 {
-    object.set("min", repeat.min.to_json())
+/// DR-113 §4.1 helpValueStructure oneOf 直訳。single / seq / or / repeat / type_ref それぞれの
+/// object 形へ写す (schema $defs/helpValueStructure と対応)。
+fn help_value_structure_json(vs : @kuu.HelpValueStructure) -> Json {
+  match vs {
+    @kuu.HVSingle(single) => {
+      let inner : Map[String, Json] = Map([])
+      match single.value_name {
+        Some(value) => inner.set("value_name", value.to_json())
+        None => ()
+      }
+      match single.type_ {
+        Some(t) => inner.set("type", t.to_json())
+        None => ()
+      }
+      match single.values_enum {
+        Some(values) => inner.set("values_enum", values.to_json())
+        None => ()
+      }
+      let out : Map[String, Json] = Map([])
+      out.set("single", inner.to_json())
+      out.to_json()
+    }
+    @kuu.HVSeq(nodes) => {
+      let arr : Array[Json] = []
+      for n in nodes {
+        arr.push(help_value_structure_json(n))
+      }
+      let out : Map[String, Json] = Map([])
+      out.set("seq", arr.to_json())
+      out.to_json()
+    }
+    @kuu.HVOr(nodes) => {
+      let arr : Array[Json] = []
+      for n in nodes {
+        arr.push(help_value_structure_json(n))
+      }
+      let out : Map[String, Json] = Map([])
+      out.set("or", arr.to_json())
+      out.to_json()
+    }
+    @kuu.HVRepeat(spec) => {
+      let inner : Map[String, Json] = Map([])
+      match spec.min {
+        Some(m) => inner.set("min", m.to_json())
+        None => ()
+      }
+      match spec.max {
+        Some(m) => inner.set("max", m.to_json())
+        None => ()
+      }
+      inner.set("node", help_value_structure_json(spec.node))
+      let out : Map[String, Json] = Map([])
+      out.set("repeat", inner.to_json())
+      out.to_json()
+    }
+    @kuu.HVTypeRef(id, value_name) => {
+      let out : Map[String, Json] = Map([])
+      out.set("type_ref", id.to_json())
+      match value_name {
+        Some(v) => out.set("value_name", v.to_json())
+        None => ()
+      }
+      out.to_json()
+    }
   }
-  match repeat.max {
-    Some(max) => object.set("max", max.to_json())
-    None => ()
+}
+
+///|
+/// DR-113 §4.3 helpOrigin oneOf 直訳。Local は string "local"、Global/Inheritable は object、
+/// Alias は object。
+fn help_origin_json(origin : @kuu.HelpOrigin) -> Json {
+  match origin {
+    @kuu.HOLocal => "local".to_json()
+    @kuu.HOGlobal(declared_at) => {
+      let out : Map[String, Json] = Map([])
+      out.set("kind", "global".to_json())
+      out.set("declared_at", declared_at.to_json())
+      out.to_json()
+    }
+    @kuu.HOInheritable(declared_at) => {
+      let out : Map[String, Json] = Map([])
+      out.set("kind", "inheritable".to_json())
+      out.set("declared_at", declared_at.to_json())
+      out.to_json()
+    }
+    @kuu.HOAlias(of) => {
+      let out : Map[String, Json] = Map([])
+      out.set("kind", "alias".to_json())
+      out.set("of", of.to_json())
+      out.to_json()
+    }
   }
-  if repeat.lazy_ {
-    object.set("lazy", true.to_json())
-  }
-  object.to_json()
 }
 
 ///|
 fn help_usage_positional_json(positional : @kuu.HelpUsagePositional) -> Json {
   let object : Map[String, Json] = Map([])
-  match positional.value_name {
-    Some(value) => object.set("value_name", value.to_json())
-    None => ()
-  }
-  match positional.repeat {
-    Some(value) => object.set("repeat", help_repeat_json(value))
-    None => ()
-  }
-  if positional.optional {
-    object.set("optional", true.to_json())
-  }
+  object.set(
+    "value_structure",
+    help_value_structure_json(positional.value_structure),
+  )
   object.to_json()
 }
 
@@ -1686,14 +1758,17 @@ fn help_usage_json(usage : @kuu.HelpUsage) -> Json {
 }
 
 ///|
+/// DR-113 §4/§4.4 helpOptionEntry の serialize。hidden / deprecated / origin は schema required
+/// (常に emit)。value_structure は value-less preset (flag/count/help/none/dd/config_file/tty) では
+/// 省略、value-bearing 要素 (string/number/int/bool)・help_category (or[bool,string]) では emit。
 fn help_option_json(option : @kuu.HelpOption) -> Json {
   let object : Map[String, Json] = Map([])
   object.set("spellings", option.spellings.to_json())
   if option.alias_spellings.length() > 0 {
     object.set("alias_spellings", option.alias_spellings.to_json())
   }
-  match option.value_name {
-    Some(value) => object.set("value_name", value.to_json())
+  match option.value_structure {
+    Some(vs) => object.set("value_structure", help_value_structure_json(vs))
     None => ()
   }
   match option.display_name {
@@ -1727,12 +1802,10 @@ fn help_option_json(option : @kuu.HelpOption) -> Json {
   if option.multiple {
     object.set("multiple", true.to_json())
   }
-  if option.hidden {
-    object.set("hidden", true.to_json())
-  }
-  if option.deprecated {
-    object.set("deprecated", true.to_json())
-  }
+  // hidden / deprecated / origin は schema required — false であっても常に emit。
+  object.set("hidden", option.hidden.to_json())
+  object.set("deprecated", option.deprecated.to_json())
+  object.set("origin", help_origin_json(option.origin))
   object.to_json()
 }
 
@@ -1759,6 +1832,9 @@ fn help_option_entry_json(entry : @kuu.HelpOptionEntry) -> Json {
 }
 
 ///|
+/// DR-113 §4/§4.4 helpCommandEntry の serialize。hidden / deprecated / origin は schema required
+/// (常に emit)。scope フィールドは depth="all" 時にのみ Some(HelpModel) — その時だけ子 help model
+/// を再帰埋め込みして emit。
 fn help_command_json(command : @kuu.HelpCommand) -> Json {
   let object : Map[String, Json] = Map([])
   object.set("name", command.name.to_json())
@@ -1773,36 +1849,35 @@ fn help_command_json(command : @kuu.HelpCommand) -> Json {
     Some(value) => object.set("help_long", value.to_json())
     None => ()
   }
-  if command.hidden {
-    object.set("hidden", true.to_json())
-  }
-  if command.deprecated {
-    object.set("deprecated", true.to_json())
+  object.set("hidden", command.hidden.to_json())
+  object.set("deprecated", command.deprecated.to_json())
+  object.set("origin", help_origin_json(command.origin))
+  match command.scope {
+    Some(sub) => object.set("scope", help_model_json(sub))
+    None => ()
   }
   object.to_json()
 }
 
 ///|
+/// DR-113 §4 helpPositionalEntry の serialize。value_structure / hidden / deprecated は schema
+/// required (常に emit)。
 fn help_positional_json(positional : @kuu.HelpPositional) -> Json {
   let object : Map[String, Json] = Map([])
-  match positional.value_name {
-    Some(value) => object.set("value_name", value.to_json())
-    None => ()
-  }
+  object.set(
+    "value_structure",
+    help_value_structure_json(positional.value_structure),
+  )
   match positional.help {
     Some(value) => object.set("help", value.to_json())
     None => ()
   }
-  match positional.repeat {
-    Some(value) => object.set("repeat", help_repeat_json(value))
+  match positional.help_long {
+    Some(value) => object.set("help_long", value.to_json())
     None => ()
   }
-  if positional.hidden {
-    object.set("hidden", true.to_json())
-  }
-  if positional.deprecated {
-    object.set("deprecated", true.to_json())
-  }
+  object.set("hidden", positional.hidden.to_json())
+  object.set("deprecated", positional.deprecated.to_json())
   object.to_json()
 }
 
@@ -2273,35 +2348,21 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
 /// MDR-001 §6). @engine.Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
-  // M2 gap: help scope (help model implementation is M3+). Each entry is the FULL
-  // `rel::slug :: verdict` string (verdict-granularity freeze, MDR-001 §6). Pinned so any
-  // regression or accidental fix surfaces in the ledger delta. Remove entries when M3 wires
-  // up the help model.
+  // M4 (DR-113 §4): help model 構築を新 schema へ全面移行 (value_structure tree / origin 4 形 /
+  // hidden・deprecated required emit / command aliases 併記 / depth=all 再帰 scope 埋め込み /
+  // help_category の or[bool,string] 展開)。origin 逆推定 (link_depth → global declared_at /
+  // 名前 prefix + descendant inheritable 検索 → inheritable declared_at) は help.mbt 側で
+  // scope 側テーブルを組んで解決する — installer は変更していない (5 preset canonical 展開の
+  // HelpMetaInstaller.apply 移送と capability dispatch は次 milestone、以下 「M5 残」)。
+  //
+  // M5 残 (本 milestone 未実装 — help.mbt 単独では埋められない箇所):
+  //   - 5 preset canonical 展開の HelpMetaInstaller.apply 移送 (現在 wire_decode 暫定)。
+  //     help_category の value_name "CATEGORY" default は現在 help.mbt 側で defaulting。
+  //   - help_query capability の runner dispatch 化 (現在 @kuu.help 直呼び)。
+  //   - types 集約射影 + type_ref + used_as (value-structure-and-types.json は decode skip 継続)。
+  //   - fixed default_fn の default 席射影 (P2H-Q3 裁定に沿った dynamic default_fn は model 非搭載)。
   [
-    // M3c-A (DR-113 §1): absent-category.json は decode 成功 (category_mode 3 分岐対応済) +
-    // absent-named-category-is-query-error は green 化。他 3 case は model 素材 (value_structure /
-    // origin / hidden / deprecated) が M4 未実装のため diverge 継続 (default/all は model 素材
-    // が同一で絞らない、named は素材を絞る挙動そのものは正しく動いているが model 側 field 展開が未)。
-    "help/absent-category.json::named-mode-filters-to-selected-group :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_name\":\"PORT\",\"help\":\"listen port\",\"help_group_name\":\"net\"}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_structure\":{\"single\":{\"value_name\":\"PORT\",\"type\":\"number\"}},\"help_group_name\":\"net\",\"help\":\"listen port\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}]}",
-    "help/absent-category.json::default-mode-keeps-all-model-material :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_name\":\"PORT\",\"help\":\"listen port\",\"help_group_name\":\"net\"},{\"spellings\":[\"--verbose\"],\"help\":\"verbose output\"},{\"spellings\":[\"--secret\"],\"help\":\"internal option\",\"hidden\":true}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_structure\":{\"single\":{\"value_name\":\"PORT\",\"type\":\"number\"}},\"help_group_name\":\"net\",\"help\":\"listen port\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--verbose\"],\"help\":\"verbose output\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--secret\"],\"help\":\"internal option\",\"hidden\":true,\"deprecated\":false,\"origin\":\"local\"}]}",
-    "help/absent-category.json::all-mode-keeps-same-model-material :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_name\":\"PORT\",\"help\":\"listen port\",\"help_group_name\":\"net\"},{\"spellings\":[\"--verbose\"],\"help\":\"verbose output\"},{\"spellings\":[\"--secret\"],\"help\":\"internal option\",\"hidden\":true}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_structure\":{\"single\":{\"value_name\":\"PORT\",\"type\":\"number\"}},\"help_group_name\":\"net\",\"help\":\"listen port\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--verbose\"],\"help\":\"verbose output\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--secret\"],\"help\":\"internal option\",\"hidden\":true,\"deprecated\":false,\"origin\":\"local\"}]}",
-    "help/after-chain-and-multi.json::multiple-after-same-target-definition-order :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--a\"],\"help\":\"target\"},{\"spellings\":[\"--b\"],\"help\":\"first after\"},{\"spellings\":[\"--c\"],\"help\":\"second after\"},{\"spellings\":[\"--x\"],\"help\":\"unrelated tail\"}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--a\"],\"help\":\"target\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--b\"],\"help\":\"first after\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--c\"],\"help\":\"second after\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--x\"],\"help\":\"unrelated tail\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}]}",
-    "help/after-chain.json::chain-resolves-and-absent-target-falls-back :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--c\"],\"help\":\"chain root\"},{\"spellings\":[\"--b\"],\"help\":\"after c\"},{\"spellings\":[\"--a\"],\"help\":\"after b\"},{\"spellings\":[\"--orphan\"],\"help\":\"missing target fallback\"},{\"spellings\":[\"--x\"],\"help\":\"bystander\"}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--c\"],\"help\":\"chain root\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--b\"],\"help\":\"after c\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--a\"],\"help\":\"after b\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--orphan\"],\"help\":\"missing target fallback\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--x\"],\"help\":\"bystander\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}]}",
-    "help/alias-and-meta.json::alias-merged-hidden-deprecated-kept :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--port\",\"-p\"],\"alias_spellings\":[\"-n\"],\"value_name\":\"PORT\",\"help\":\"listen port\"},{\"spellings\":[\"--secret\"],\"help\":\"internal switch\",\"hidden\":true},{\"spellings\":[\"--legacy\"],\"help\":\"old switch\",\"deprecated\":true}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--port\",\"-p\"],\"alias_spellings\":[\"-n\"],\"value_structure\":{\"single\":{\"value_name\":\"PORT\",\"type\":\"number\"}},\"help\":\"listen port\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--secret\"],\"help\":\"internal switch\",\"hidden\":true,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--legacy\"],\"help\":\"old switch\",\"hidden\":false,\"deprecated\":true,\"origin\":\"local\"}]}",
-    "help/group-and-order.json::group-order-stable-sort-then-after :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\",\"description\":\"socket & TLS\"}},{\"group\":{\"name\":\"misc\",\"title\":\"Misc options\"}},{\"spellings\":[\"--port\"],\"value_name\":\"PORT\",\"help\":\"listen port\",\"help_group_name\":\"net\"},{\"spellings\":[\"--old-port\"],\"help\":\"use --port instead\",\"deprecated\":true},{\"spellings\":[\"--verbose\"],\"help\":\"verbose output\",\"help_group_name\":\"misc\"},{\"spellings\":[\"--help\"],\"help\":\"show help\"}],\"help_entry\":\"--help\"} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\",\"description\":\"socket & TLS\"}},{\"group\":{\"name\":\"misc\",\"title\":\"Misc options\"}},{\"spellings\":[\"--port\"],\"value_structure\":{\"single\":{\"value_name\":\"PORT\",\"type\":\"number\"}},\"help_group_name\":\"net\",\"help\":\"listen port\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--old-port\"],\"help\":\"use --port instead\",\"hidden\":false,\"deprecated\":true,\"origin\":\"local\"},{\"spellings\":[\"--verbose\"],\"help_group_name\":\"misc\",\"help\":\"verbose output\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}],\"help_entry\":\"--help\"}",
-    // M3a (DR-113 §2): help-types-and-default-fn.json は decode 成功へ移行、model
-    // 側の value_structure / origin / hidden / deprecated が M4 未実装のため diverge。
-    // help_category の or[bool,string] は wire_decode で flag_type 暫定処理、M4 で
-    // help_installer の preset canonical expansion により or-枝を model へ露出予定。
-     "help/help-types-and-default-fn.json::five-types-and-default-fn-are-modelable :: help got={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--help\"],\"help\":\"basic help\"},{\"spellings\":[\"--help-category\"],\"help\":\"select category\"},{\"spellings\":[\"--help-full\"],\"help\":\"full help composition source\"},{\"spellings\":[\"--help-all\"],\"help\":\"all category and hidden source\"},{\"spellings\":[\"--help-tree\"],\"help\":\"show command tree\"},{\"spellings\":[\"--help-all-category\"],\"help\":\"show every category\"},{\"spellings\":[\"--help-show-hidden\"],\"help\":\"show hidden entries\"},{\"spellings\":[\"--help-computed-mode\"],\"help\":\"colon-bearing array argument\"}],\"help_entry\":\"--help\"} want={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--help\"],\"help\":\"basic help\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--help-category\"],\"value_structure\":{\"or\":[{\"single\":{\"type\":\"bool\"}},{\"single\":{\"value_name\":\"CATEGORY\",\"type\":\"string\"}}]},\"help\":\"select category\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--help-full\"],\"help\":\"full help composition source\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--help-all\"],\"help\":\"all category and hidden source\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--help-tree\"],\"help\":\"show command tree\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--help-all-category\"],\"help\":\"show every category\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--help-show-hidden\"],\"help\":\"show hidden entries\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--help-computed-mode\"],\"help\":\"colon-bearing array argument\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}],\"help_entry\":\"--help\"}",
-    "help/long-and-epilog.json::no-fallback-materials-as-declared :: help got={\"outcome\":\"help\",\"command_path\":[\"tool\"],\"usage\":{\"has_options\":true},\"description\":\"short description\",\"description_long\":\"Long description with full detail.\\nMultiple lines are just string content.\",\"epilog\":\"Report bugs to <bugs@example.com>.\",\"options\":[{\"spellings\":[\"--short-only\"],\"help\":\"has help only\"},{\"spellings\":[\"--long-only\"],\"help_long\":\"has help_long only\"},{\"spellings\":[\"--both\"],\"help\":\"short text\",\"help_long\":\"long text\"}]} want={\"outcome\":\"help\",\"command_path\":[\"tool\"],\"usage\":{\"has_options\":true},\"description\":\"short description\",\"description_long\":\"Long description with full detail.\\nMultiple lines are just string content.\",\"epilog\":\"Report bugs to <bugs@example.com>.\",\"options\":[{\"spellings\":[\"--short-only\"],\"help\":\"has help only\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--long-only\"],\"help_long\":\"has help_long only\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--both\"],\"help\":\"short text\",\"help_long\":\"long text\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}]}",
-    "help/origin-inheritable.json::child-inheritable-copies-to-ancestor :: help got={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"commands\":[{\"name\":\"socket\",\"help\":\"manage sockets\"}],\"options\":[{\"spellings\":[\"--socket-timeout\"],\"value_name\":\"SECONDS\",\"help\":\"socket timeout\"}]} want={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"commands\":[{\"name\":\"socket\",\"help\":\"manage sockets\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}],\"options\":[{\"spellings\":[\"--socket-timeout\"],\"value_structure\":{\"single\":{\"value_name\":\"SECONDS\",\"type\":\"number\"}},\"help\":\"socket timeout\",\"hidden\":false,\"deprecated\":false,\"origin\":{\"kind\":\"inheritable\",\"declared_at\":[\"prog\",\"socket\"]}}]}",
-    "help/root-basic.json::root-scope-typed-model :: help got={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"positionals\":[{\"value_name\":\"FILE\"}]},\"description\":\"Serve files over HTTP\",\"options\":[{\"spellings\":[\"--port\",\"-p\"],\"value_name\":\"PORT\",\"display_name\":\"Listen port\",\"help\":\"listen port\",\"default\":8080,\"env\":\"PORT\"},{\"spellings\":[\"--token\"],\"value_name\":\"TOKEN\",\"help\":\"required token\",\"required\":true},{\"spellings\":[\"--tag\"],\"value_name\":\"TAG\",\"help\":\"repeatable tag\",\"multiple\":true},{\"spellings\":[\"--help\"],\"help\":\"show help\"}],\"positionals\":[{\"value_name\":\"FILE\",\"help\":\"input file\"}],\"help_entry\":\"--help\"} want={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"positionals\":[{\"value_structure\":{\"single\":{\"value_name\":\"FILE\",\"type\":\"string\"}}}]},\"description\":\"Serve files over HTTP\",\"options\":[{\"spellings\":[\"--port\",\"-p\"],\"value_structure\":{\"single\":{\"value_name\":\"PORT\",\"type\":\"number\"}},\"display_name\":\"Listen port\",\"help\":\"listen port\",\"default\":8080,\"env\":\"PORT\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--token\"],\"value_structure\":{\"single\":{\"value_name\":\"TOKEN\",\"type\":\"string\"}},\"help\":\"required token\",\"required\":true,\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--tag\"],\"value_structure\":{\"single\":{\"value_name\":\"TAG\",\"type\":\"string\"}},\"help\":\"repeatable tag\",\"multiple\":true,\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}],\"positionals\":[{\"value_structure\":{\"single\":{\"value_name\":\"FILE\",\"type\":\"string\"}},\"help\":\"input file\",\"hidden\":false,\"deprecated\":false}],\"help_entry\":\"--help\"}",
-    "help/stable-sort-equal.json::equal-order-keeps-declaration-order :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--head\"],\"help\":\"explicit front\"},{\"spellings\":[\"--zeta\"],\"help\":\"declared first\"},{\"spellings\":[\"--alpha\"],\"help\":\"declared second\"}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--head\"],\"help\":\"explicit front\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--zeta\"],\"help\":\"declared first\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--alpha\"],\"help\":\"declared second\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}]}",
-    "help/subcommand-path.json::root-lists-subcommands-one-layer :: help got={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"commands\":[{\"name\":\"remote\",\"help\":\"manage remotes\"},{\"name\":\"r\",\"help\":\"manage remotes\"}],\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\"}],\"help_entry\":\"--help\"} want={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"commands\":[{\"name\":\"remote\",\"aliases\":[\"r\"],\"help\":\"manage remotes\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}],\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}],\"help_entry\":\"--help\"}",
-    "help/subcommand-path.json::nested-path-shows-global-copy-origin :: help got={\"outcome\":\"help\",\"command_path\":[\"prog\",\"remote\",\"add\"],\"usage\":{\"has_options\":true,\"positionals\":[{\"value_name\":\"URL\"}]},\"description\":\"add a remote\",\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\"}],\"positionals\":[{\"value_name\":\"URL\",\"help\":\"remote url\"}],\"help_entry\":\"--help\"} want={\"outcome\":\"help\",\"command_path\":[\"prog\",\"remote\",\"add\"],\"usage\":{\"has_options\":true,\"positionals\":[{\"value_structure\":{\"single\":{\"value_name\":\"URL\",\"type\":\"string\"}}}]},\"description\":\"add a remote\",\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":{\"kind\":\"global\",\"declared_at\":[\"prog\"]}}],\"positionals\":[{\"value_structure\":{\"single\":{\"value_name\":\"URL\",\"type\":\"string\"}},\"help\":\"remote url\",\"hidden\":false,\"deprecated\":false}],\"help_entry\":\"--help\"}",
-    "help/subcommand-path.json::depth-all-embeds-recursive-scopes :: help got={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"commands\":[{\"name\":\"remote\",\"help\":\"manage remotes\"},{\"name\":\"r\",\"help\":\"manage remotes\"}],\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\"}],\"help_entry\":\"--help\"} want={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"commands\":[{\"name\":\"remote\",\"aliases\":[\"r\"],\"help\":\"manage remotes\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\",\"scope\":{\"outcome\":\"help\",\"command_path\":[\"prog\",\"remote\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"description\":\"manage remotes\",\"commands\":[{\"name\":\"add\",\"help\":\"add a remote\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\",\"scope\":{\"outcome\":\"help\",\"command_path\":[\"prog\",\"remote\",\"add\"],\"usage\":{\"has_options\":true,\"positionals\":[{\"value_structure\":{\"single\":{\"value_name\":\"URL\",\"type\":\"string\"}}}]},\"description\":\"add a remote\",\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":{\"kind\":\"global\",\"declared_at\":[\"prog\"]}}],\"positionals\":[{\"value_structure\":{\"single\":{\"value_name\":\"URL\",\"type\":\"string\"}},\"help\":\"remote url\",\"hidden\":false,\"deprecated\":false}],\"help_entry\":\"--help\"}}],\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":{\"kind\":\"global\",\"declared_at\":[\"prog\"]}}],\"help_entry\":\"--help\"}}],\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}],\"help_entry\":\"--help\"}",
-    "help/variant-spellings.json::variant-entries-and-short-listed-in-order :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--ssl\",\"--no-ssl\",\"-s\"],\"help\":\"enable TLS\"}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--ssl\",\"--no-ssl\",\"-s\"],\"help\":\"enable TLS\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}]}",
+  // M4: help model 全面移行完了 — 全 help fixture case が green (以下 ledger は空)。
   ]
 }
 

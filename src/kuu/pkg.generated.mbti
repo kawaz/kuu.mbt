@@ -58,6 +58,8 @@ pub(all) struct HelpCommand {
   help_long : String?
   hidden : Bool
   deprecated : Bool
+  origin : HelpOrigin
+  scope : HelpModel?
 } derive(Eq, @debug.Debug)
 
 pub(all) enum HelpDefault {
@@ -91,7 +93,7 @@ pub(all) struct HelpModel {
 pub(all) struct HelpOption {
   spellings : Array[String]
   alias_spellings : Array[String]
-  value_name : String?
+  value_structure : HelpValueStructure?
   display_name : String?
   help : String?
   help_long : String?
@@ -102,6 +104,7 @@ pub(all) struct HelpOption {
   multiple : Bool
   hidden : Bool
   deprecated : Bool
+  origin : HelpOrigin
 } derive(Eq, @debug.Debug)
 
 pub(all) enum HelpOptionEntry {
@@ -109,10 +112,17 @@ pub(all) enum HelpOptionEntry {
   HOption(HelpOption)
 } derive(Eq, @debug.Debug)
 
+pub(all) enum HelpOrigin {
+  HOLocal
+  HOGlobal(Array[String])
+  HOInheritable(Array[String])
+  HOAlias(String)
+} derive(Eq, @debug.Debug)
+
 pub(all) struct HelpPositional {
-  value_name : String?
+  value_structure : HelpValueStructure
   help : String?
-  repeat : @engine.RepeatSpec?
+  help_long : String?
   hidden : Bool
   deprecated : Bool
 } derive(Eq, @debug.Debug)
@@ -126,6 +136,18 @@ pub(all) enum HelpQueryError {
   HQAbsentCategory
 } derive(Eq, @debug.Debug)
 
+pub(all) struct HelpRepeatSpec {
+  min : Int?
+  max : Int?
+  node : HelpValueStructure
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpSingleValue {
+  value_name : String?
+  type_ : String?
+  values_enum : Array[String]?
+} derive(Eq, @debug.Debug)
+
 pub(all) struct HelpUsage {
   has_options : Bool
   positionals : Array[HelpUsagePositional]
@@ -134,9 +156,15 @@ pub(all) struct HelpUsage {
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpUsagePositional {
-  value_name : String?
-  repeat : @engine.RepeatSpec?
-  optional : Bool
+  value_structure : HelpValueStructure
+} derive(Eq, @debug.Debug)
+
+pub(all) enum HelpValueStructure {
+  HVSingle(HelpSingleValue)
+  HVSeq(Array[HelpValueStructure])
+  HVOr(Array[HelpValueStructure])
+  HVRepeat(HelpRepeatSpec)
+  HVTypeRef(String, String?)
 } derive(Eq, @debug.Debug)
 
 pub struct OutputEffect {

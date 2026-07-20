@@ -560,6 +560,8 @@ pub(all) struct HelpMetaDecl {
   help_after : String?
   help_on_failure : Bool?
   is_help_preset : Bool
+  type_name : String?
+  preset_kind : String?
 } derive(Eq, @debug.Debug)
 
 pub struct InstallBuilder {
