@@ -177,15 +177,6 @@ fn fn_ctx_filter(
 }
 
 ///|
-pub fn FnCtx::mode(self : FnCtx) -> String {
-  match self.phase {
-    DefaultPhase(_) => "default"
-    EffectPhase(_) => "effect"
-    FilterPhase(_) => "filter"
-  }
-}
-
-///|
 pub fn FnCtx::as_default(self : FnCtx) -> DefaultCtx? {
   match self.phase {
     DefaultPhase(ctx) => Some(ctx)

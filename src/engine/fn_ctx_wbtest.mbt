@@ -1,19 +1,17 @@
-// fn_ctx_wbtest.mbt — unified context mode and observation capability ABI.
+// fn_ctx_wbtest.mbt — unified context phase and observation capability ABI.
 
 ///|
-test "FnCtx mode and specialization accessors agree" {
+test "FnCtx specialization accessors are mutually exclusive per phase" {
   let default_ctx = FnCtx::for_default("target", old=Some(Number(2.0)))
-  assert_eq(default_ctx.mode(), "default")
   assert_true(default_ctx.as_effect() is None)
   assert_true(default_ctx.as_filter() is None)
   match default_ctx.as_default() {
     Some(specialized) => assert_eq(specialized.target(), "target")
-    None => fail("default mode must expose DefaultCtx")
+    None => fail("default phase must expose DefaultCtx")
   }
   assert_eq(default_ctx.old(), Some(Number(2.0)))
 
   let effect_ctx = FnCtx::for_effect("target", "--count")
-  assert_eq(effect_ctx.mode(), "effect")
   assert_true(effect_ctx.as_default() is None)
   assert_true(effect_ctx.as_filter() is None)
   match effect_ctx.as_effect() {
@@ -21,11 +19,10 @@ test "FnCtx mode and specialization accessors agree" {
       assert_eq(specialized.target(), "target")
       assert_eq(specialized.trigger(), "--count")
     }
-    None => fail("effect mode must expose EffectCtx")
+    None => fail("effect phase must expose EffectCtx")
   }
 
   let filter_ctx = fn_ctx_filter(Scalar(String("input")))
-  assert_eq(filter_ctx.mode(), "filter")
   assert_true(filter_ctx.as_default() is None)
   assert_true(filter_ctx.as_effect() is None)
   match filter_ctx.as_filter() {
@@ -62,7 +59,7 @@ test "FnCtx option env and system reads are restricted to concrete observes edge
       assert_eq(specialized.dependency("source"), Some(String("dependency")))
       assert_true(specialized.dependency("hidden") is None)
     }
-    None => fail("default mode must expose DefaultCtx")
+    None => fail("default phase must expose DefaultCtx")
   }
   assert_eq(ctx.env("VISIBLE"), Some(String("env-value")))
   assert_true(ctx.env("HIDDEN") is None)

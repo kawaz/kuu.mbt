@@ -482,7 +482,6 @@ pub fn FnCtx::as_filter(Self) -> FilterCtx?
 pub fn FnCtx::env(Self, String) -> Value?
 pub fn FnCtx::for_default(String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, dependency? : ((String) -> Value?)?, env? : (String) -> Value?, system? : (String) -> Value?) -> Self
 pub fn FnCtx::for_effect(String, String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, env? : (String) -> Value?, system? : (String) -> Value?) -> Self
-pub fn FnCtx::mode(Self) -> String
 pub fn FnCtx::observes(Self) -> Array[String]
 pub fn FnCtx::old(Self) -> Value?
 pub fn FnCtx::option(Self, String) -> Value?
@@ -789,7 +788,11 @@ pub(all) struct Variant {
 
 pub(all) struct Warning {
   element : String
-  kind : String
+  kind : WarningKind
+} derive(Eq, @debug.Debug)
+
+pub(all) enum WarningKind {
+  Deprecated
 } derive(Eq, @debug.Debug)
 
 // Type aliases

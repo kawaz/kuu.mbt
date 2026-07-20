@@ -207,7 +207,7 @@ test "front_door.parse + @engine.warnings_of: deprecated alias 発火は構造�
       assert_eq(port_val, Some(@engine.Number(80.0)))
       // 構造化 warnings が `{element:"port", kind:"deprecated"}` の 1 件を返す。
       let ws = @engine.warnings_of(o)
-      assert_eq(ws, [{ element: "port", kind: "deprecated" }])
+      assert_eq(ws, [{ element: "port", kind: @engine.Deprecated }])
       // sentinel `@depr:port` は binds に含まれる (@engine.warnings_of/@engine.warnings_of の素材) が、
       // `is_sentinel` で除外可能 = 呼び出し側が effects を組み立てるときに漏れない。
       let mut had_depr_sentinel = false

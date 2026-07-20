@@ -161,7 +161,14 @@ fn is_depr_key(k : String) -> Bool {
 /// 射影に kind を持たせられない)。
 pub(all) struct Warning {
   element : String
-  kind : String
+  kind : WarningKind
+} derive(Eq, Debug)
+
+///|
+/// The warning vocabulary (spec DR-058: `deprecated` only for now; the enum leaves room for
+/// the DR-021/DR-047 §7 lint lineage without stringly-typed kinds on the public face).
+pub(all) enum WarningKind {
+  Deprecated
 } derive(Eq, Debug)
 
 ///|
@@ -176,13 +183,13 @@ pub fn warnings_of(o : Outcome) -> Array[Warning] {
           let name = b.key[6:].to_owned()
           let mut seen = false
           for w in out {
-            if w.element == name && w.kind == "deprecated" {
+            if w.element == name && w.kind == Deprecated {
               seen = true
               break
             }
           }
           if !seen {
-            out.push({ element: name, kind: "deprecated" })
+            out.push({ element: name, kind: Deprecated })
           }
         }
       }
