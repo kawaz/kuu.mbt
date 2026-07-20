@@ -20,7 +20,7 @@ pub(all) struct FilterDescriptor {
   signature : FilterSignature
   reasons : Array[String]
   observes : Array[String]
-  run : (Array[String], FnCtx) -> Result[Value, (String, String)]
+  run : (Array[String], FnCtx) -> Result[Value, FnReason]
 }
 
 ///|
@@ -29,7 +29,7 @@ pub fn filter_descriptor(
   name : String,
   signature : FilterSignature,
   reasons : Array[String],
-  run : (Value, Array[String]) -> Result[Value, (String, String)],
+  run : (Value, Array[String]) -> Result[Value, FnReason],
   observes? : Array[String] = [],
 ) -> FilterDescriptor {
   {
@@ -39,12 +39,19 @@ pub fn filter_descriptor(
     observes: observes.copy(),
     run: fn(args, ctx) {
       match ctx.as_filter() {
-        None => Err(("filter_rejected", "filter invoked outside filter mode"))
+        None =>
+          Err({
+            reason: "filter_rejected",
+            message: "filter invoked outside filter mode",
+          })
         Some(filter_ctx) =>
           match filter_ctx.input() {
             Scalar(value) => run(value, args)
             Array(_) =>
-              Err(("filter_rejected", "scalar filter received an array input"))
+              Err({
+                reason: "filter_rejected",
+                message: "scalar filter received an array input",
+              })
           }
       }
     },
@@ -58,7 +65,7 @@ pub(all) struct ArrayFilterDescriptor {
   signature : FilterSignature
   reasons : Array[String]
   observes : Array[String]
-  run : (Array[String], FnCtx) -> Result[Array[Value], (String, String)]
+  run : (Array[String], FnCtx) -> Result[Array[Value], FnReason]
 }
 
 ///|
@@ -68,7 +75,7 @@ pub fn array_filter_descriptor(
   name : String,
   signature : FilterSignature,
   reasons : Array[String],
-  run : (Array[Value], Array[String]) -> Result[Array[Value], (String, String)],
+  run : (Array[Value], Array[String]) -> Result[Array[Value], FnReason],
   observes? : Array[String] = [],
 ) -> ArrayFilterDescriptor {
   {
@@ -78,12 +85,19 @@ pub fn array_filter_descriptor(
     observes: observes.copy(),
     run: fn(args, ctx) {
       match ctx.as_filter() {
-        None => Err(("filter_rejected", "filter invoked outside filter mode"))
+        None =>
+          Err({
+            reason: "filter_rejected",
+            message: "filter invoked outside filter mode",
+          })
         Some(filter_ctx) =>
           match filter_ctx.input() {
             Array(values) => run(values, args)
             Scalar(_) =>
-              Err(("filter_rejected", "array filter received a scalar input"))
+              Err({
+                reason: "filter_rejected",
+                message: "array filter received a scalar input",
+              })
           }
       }
     },
@@ -97,7 +111,7 @@ pub fn apply_filter_chain(
   registry : Registry,
   chain : Array[FilterSpelling],
   value : Value,
-) -> Result[Value, (String, String)] {
+) -> Result[Value, FnReason] {
   let mut current = value
   for spelling in chain {
     match registry.lookup_filter(spelling.name) {
@@ -120,7 +134,7 @@ pub fn apply_accum_filter_chain(
   registry : Registry,
   chain : Array[FilterSpelling],
   values : Array[Value],
-) -> Result[Array[Value], (String, String)] {
+) -> Result[Array[Value], FnReason] {
   let mut current = values
   for spelling in chain {
     match registry.lookup_array_filter(spelling.name) {
@@ -143,15 +157,14 @@ pub fn apply_piece_filters(
   registry : Registry,
   chain : Array[FilterSpelling],
   raw : String,
-) -> Result[String, (String, String)] {
+) -> Result[String, FnReason] {
   match apply_filter_chain(registry, chain, String(raw)) {
     Ok(String(value)) => Ok(value)
     Ok(_) =>
-      Err(
-        (
-          "filter_rejected", "piece_filters chain returned a non-string value (String→String contract violation, filter-definition bug)",
-        ),
-      )
+      Err({
+        reason: "filter_rejected",
+        message: "piece_filters chain returned a non-string value (String→String contract violation, filter-definition bug)",
+      })
     Err(error) => Err(error)
   }
 }

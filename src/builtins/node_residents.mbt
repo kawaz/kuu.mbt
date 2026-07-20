@@ -99,7 +99,7 @@ impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
               ),
             ]),
           )
-        Err((reason, message)) =>
+        Err({ reason, message }) =>
           [
             @engine.Held(
               @engine.pe_filter(self.name, pos, reason, message),
@@ -181,7 +181,7 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
               ),
             ]
           }
-        Err((reason, message)) =>
+        Err({ reason, message }) =>
           [
             @engine.Held(
               @engine.pe_filter(self.name, pos, reason, message),
@@ -369,7 +369,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
                 ),
               ]
           }
-        Err((reason, message)) =>
+        Err({ reason, message }) =>
           [
             @engine.Held(
               @engine.pe_filter(self.name, pos, reason, message),
@@ -543,7 +543,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ),
               ]
           }
-        Err((reason, message)) =>
+        Err({ reason, message }) =>
           [
             @engine.Held(
               @engine.pe_filter(self.name, pos, reason, message),
@@ -633,7 +633,7 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
             Err(failure) =>
               [@engine.Held(type_parse_error(self.name, pos, failure), acc)]
           }
-        Err((reason, message)) =>
+        Err({ reason, message }) =>
           [
             @engine.Held(
               @engine.pe_filter(self.name, pos, reason, message),
@@ -720,7 +720,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
             None =>
               [@engine.Held(parse_error_not_a_bool(self.name, value, pos), acc)]
           }
-        Err((reason, message)) =>
+        Err({ reason, message }) =>
           [
             @engine.Held(
               @engine.pe_filter(self.name, pos, reason, message),
@@ -805,7 +805,7 @@ impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
             Err(failure) =>
               [@engine.Held(type_parse_error(self.name, pos, failure), acc)]
           }
-        Err((reason, message)) =>
+        Err({ reason, message }) =>
           [
             @engine.Held(
               @engine.pe_filter(self.name, pos, reason, message),

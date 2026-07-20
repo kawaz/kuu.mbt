@@ -77,7 +77,8 @@ fn sep_piece_value(
   extensions : @engine.Registry,
 ) -> Result[@engine.Value, @engine.ParseError] {
   match @engine.apply_piece_filters(extensions, piece_filters, part) {
-    Err((reason, msg)) => Err(@engine.pe_filter(name, pos, reason, msg))
+    Err({ reason, message: msg }) =>
+      Err(@engine.pe_filter(name, pos, reason, msg))
     Ok(s) =>
       match ty.parse_token(s) {
         Ok(value) => Ok(value)

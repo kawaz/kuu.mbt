@@ -31,7 +31,10 @@ fn fn_string_arg(args : Array[@engine.FnArg], name : String) -> String {
 
 ///|
 fn absent_source(kind : String, key : String) -> @engine.FnResult {
-  Err(("absent-source", kind + " source '" + key + "' is absent"))
+  Err({
+    reason: "absent-source",
+    message: kind + " source '" + key + "' is absent",
+  })
 }
 
 ///|
@@ -45,11 +48,10 @@ fn set_fn(
   match args {
     [arg] => Ok(@engine.Value(fn_arg_value(arg)))
     _ =>
-      Err(
-        (
-          "invalid-argument", "set on a scalar target requires exactly one value",
-        ),
-      )
+      Err({
+        reason: "invalid-argument",
+        message: "set on a scalar target requires exactly one value",
+      })
   }
 }
 
@@ -66,7 +68,11 @@ fn incr_fn(
   let old = match ctx.old() {
     None => 0.0
     Some(@engine.Number(value)) => value
-    Some(_) => return Err(("invalid-range", "incr requires a number target"))
+    Some(_) =>
+      return Err({
+        reason: "invalid-range",
+        message: "incr requires a number target",
+      })
   }
   Ok(@engine.Value(@engine.Number(old + 1.0)))
 }
@@ -138,9 +144,15 @@ fn validate_uuid(call : @engine.FnCall) -> Result[Unit, @engine.FnReason] {
   match call.args {
     [] | [@engine.String("4")] => Ok(())
     [@engine.String(_)] =>
-      Err(("invalid-argument", "cell fn 'uuid' version must be '4'"))
+      Err({
+        reason: "invalid-argument",
+        message: "cell fn 'uuid' version must be '4'",
+      })
     _ =>
-      Err(("invalid-argument", "cell fn 'uuid' has an invalid version carrier"))
+      Err({
+        reason: "invalid-argument",
+        message: "cell fn 'uuid' has an invalid version carrier",
+      })
   }
 }
 
@@ -158,7 +170,7 @@ fn uuid_fn(
       )
   }
   if version != "4" {
-    Err(("invalid-argument", "uuid version must be '4'"))
+    Err({ reason: "invalid-argument", message: "uuid version must be '4'" })
   } else {
     Ok(@engine.Value(@engine.String(uuid_v4())))
   }

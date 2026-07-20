@@ -13,6 +13,16 @@ fn num_to_string(d : Double) -> String {
 }
 
 ///|
+/// Structured failure of `config_to_value`: `kind` selects the `ParseError` constructor the
+/// caller uses (`@engine.Filter` = piece_filters rejection, `@engine.Parse` = type mismatch /
+/// parse failure), `reason`/`message` follow the `@engine.FnReason` shape.
+pub(all) struct ConfigValueError {
+  kind : @engine.ErrKind
+  reason : String
+  message : String
+} derive(Eq, Debug)
+
+///|
 /// Convert one leaf config value to the element's expected type (DR-050 §4). Leniency is
 /// BIDIRECTIONALLY SYMMETRIC (DR-040 canonical): a string parses into any type (`"8080"` → number),
 /// AND a JSON scalar stringifies into a string element (`1.5` → "1.5", `true` → "true"). The int
@@ -29,27 +39,33 @@ fn num_to_string(d : Double) -> String {
 /// when config's source happens to be a string). Every `(@engine.String(s), _)` arm below sees the
 /// ALREADY-filtered string.
 ///
-/// Error shape `(ErrKind, reason, message)`: `@engine.Filter` for a piece_filters rejection (mirrors
-/// `resolve.mbt`'s `filter_err`), `@engine.Parse` for every type-mismatch/parse-failure arm (mirrors
-/// `ladder_err`) — the caller picks the matching `ParseError` constructor by this tag. `message`
-/// is caller-facing text only (conformance ignores it, per this file's `ParseError` doc comment).
+/// Error shape `ConfigValueError { kind, reason, message }`: `@engine.Filter` for a piece_filters
+/// rejection (mirrors `resolve.mbt`'s `filter_err`), `@engine.Parse` for every type-mismatch/
+/// parse-failure arm (mirrors `ladder_err`) — the caller picks the matching `ParseError`
+/// constructor by `kind`. `message` is caller-facing text only (conformance ignores it, per this
+/// file's `ParseError` doc comment).
 pub fn config_to_value(
   cv : @engine.ConfigVal,
   ty : &@engine.TypeExt,
   piece_filters : Array[@engine.FilterSpelling],
   extensions : @engine.Registry,
-) -> Result[@engine.Value, (@engine.ErrKind, String, String)] {
+) -> Result[@engine.Value, ConfigValueError] {
   match cv {
     // Every string source crosses the resident parser after piece filtering. Parser
     // configuration is therefore resident-owned for CLI, env, and config alike.
     @engine.String(raw) =>
       match @engine.apply_piece_filters(extensions, piece_filters, raw) {
-        Err((reason, msg)) => Err((@engine.Filter, reason, msg))
+        Err({ reason, message: msg }) =>
+          Err({ kind: @engine.Filter, reason, message: msg })
         Ok(s) =>
           match ty.parse_token(s) {
             Ok(value) => Ok(value)
             Err(fail) =>
-              Err((@engine.Parse, fail.reason, "config " + fail.message))
+              Err({
+                kind: @engine.Parse,
+                reason: fail.reason,
+                message: "config " + fail.message,
+              })
           }
       }
     // JSON-native scalars do not need lexical parsing. The resident identity still
@@ -62,76 +78,60 @@ pub fn config_to_value(
           if @engine.is_integer(d) {
             Ok(@engine.Number(d))
           } else {
-            Err(
-              (
-                @engine.Parse,
-                "not_an_integer",
-                "config value \"\{num_to_string(d)}\" is not an integer",
-              ),
-            )
+            Err({
+              kind: @engine.Parse,
+              reason: "not_an_integer",
+              message: "config value \"\{num_to_string(d)}\" is not an integer",
+            })
           }
         "flag" | "bool" =>
-          Err(
-            (
-              @engine.Parse,
-              "config_type_mismatch",
-              "config number for a bool element (no number↔bool coercion)",
-            ),
-          )
+          Err({
+            kind: @engine.Parse,
+            reason: "config_type_mismatch",
+            message: "config number for a bool element (no number↔bool coercion)",
+          })
         _ =>
-          Err(
-            (
-              @engine.Parse,
-              "config_type_mismatch",
-              "config value for a none element (no value space)",
-            ),
-          )
+          Err({
+            kind: @engine.Parse,
+            reason: "config_type_mismatch",
+            message: "config value for a none element (no value space)",
+          })
       }
     @engine.Bool(b) =>
       match ty.name() {
         "string" => Ok(@engine.String(if b { "true" } else { "false" }))
         "flag" | "bool" => Ok(@engine.Bool(b))
         "number" | "float" | "count" | "int" =>
-          Err(
-            (
-              @engine.Parse,
-              "config_type_mismatch",
-              "config bool for a numeric element (no number↔bool coercion)",
-            ),
-          )
+          Err({
+            kind: @engine.Parse,
+            reason: "config_type_mismatch",
+            message: "config bool for a numeric element (no number↔bool coercion)",
+          })
         _ =>
-          Err(
-            (
-              @engine.Parse,
-              "config_type_mismatch",
-              "config value for a none element (no value space)",
-            ),
-          )
+          Err({
+            kind: @engine.Parse,
+            reason: "config_type_mismatch",
+            message: "config value for a none element (no value space)",
+          })
       }
     // Structured values cannot fill a scalar resident.
     @engine.Array(_) =>
-      Err(
-        (
-          @engine.Parse,
-          "config_structural_mismatch",
-          "config array for a scalar element (structural mismatch)",
-        ),
-      )
+      Err({
+        kind: @engine.Parse,
+        reason: "config_structural_mismatch",
+        message: "config array for a scalar element (structural mismatch)",
+      })
     @engine.Object(_) =>
-      Err(
-        (
-          @engine.Parse,
-          "config_structural_mismatch",
-          "config object for a scalar element (structural mismatch)",
-        ),
-      )
+      Err({
+        kind: @engine.Parse,
+        reason: "config_structural_mismatch",
+        message: "config object for a scalar element (structural mismatch)",
+      })
     @engine.Null =>
-      Err(
-        (
-          @engine.Parse,
-          "config_type_mismatch",
-          "config null is 供給なし (should be handled as no-supply, not converted)",
-        ),
-      )
+      Err({
+        kind: @engine.Parse,
+        reason: "config_type_mismatch",
+        message: "config null is 供給なし (should be handled as no-supply, not converted)",
+      })
   }
 }

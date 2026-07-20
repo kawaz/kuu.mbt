@@ -121,7 +121,10 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
   assert_eq(typed.args, [@engine.Value(@engine.Bool(true))])
   assert_eq(
     set.validate_arity(0),
-    Err(("invalid-argument", "cell fn 'set' does not accept 0 args")),
+    Err({
+      reason: "invalid-argument",
+      message: "cell fn 'set' does not accept 0 args",
+    }),
   )
 
   let borrow = registry.lookup_cell_fn("borrow").unwrap()
@@ -145,15 +148,17 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
     borrow.validate_call(
       @engine.typed_fn_call("borrow", [@engine.String("help-full")]),
     ),
-    Err(
-      (
-        "invalid-argument", "cell fn 'borrow' argument 0 for parameter 'source' has an incompatible carrier",
-      ),
-    ),
+    Err({
+      reason: "invalid-argument",
+      message: "cell fn 'borrow' argument 0 for parameter 'source' has an incompatible carrier",
+    }),
   )
   assert_eq(
     borrow.validate_arity(0),
-    Err(("invalid-argument", "cell fn 'borrow' does not accept 0 args")),
+    Err({
+      reason: "invalid-argument",
+      message: "cell fn 'borrow' does not accept 0 args",
+    }),
   )
 
   let env = registry.lookup_cell_fn("env").unwrap()
@@ -241,6 +246,6 @@ test "builtin cell fn residents execute through their registered descriptors" {
   )
   assert_eq(
     env.invoke(env_invocation.to_call(), env_ctx),
-    Err(("absent-source", "env source 'MISSING' is absent")),
+    Err({ reason: "absent-source", message: "env source 'MISSING' is absent" }),
   )
 }

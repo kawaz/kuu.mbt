@@ -9,21 +9,21 @@ import {
 // Values
 pub fn action_marker(String, Int) -> Binding
 
-pub fn apply_accum_filter_chain(Registry, Array[FnInvocation], Array[Value]) -> Result[Array[Value], (String, String)]
+pub fn apply_accum_filter_chain(Registry, Array[FnInvocation], Array[Value]) -> Result[Array[Value], FnReason]
 
-pub fn apply_filter_chain(Registry, Array[FnInvocation], Value) -> Result[Value, (String, String)]
+pub fn apply_filter_chain(Registry, Array[FnInvocation], Value) -> Result[Value, FnReason]
 
-pub fn apply_piece_filters(Registry, Array[FnInvocation], String) -> Result[String, (String, String)]
+pub fn apply_piece_filters(Registry, Array[FnInvocation], String) -> Result[String, FnReason]
 
 pub fn argmin_action(Array[(String, Int)]) -> String
 
-pub fn array_filter_descriptor(String, FilterSignature, Array[String], (Array[Value], Array[String]) -> Result[Array[Value], (String, String)], observes? : Array[String]) -> ArrayFilterDescriptor
+pub fn array_filter_descriptor(String, FilterSignature, Array[String], (Array[Value], Array[String]) -> Result[Array[Value], FnReason], observes? : Array[String]) -> ArrayFilterDescriptor
 
 pub fn attach_mode_of(String) -> AttachMode?
 
 pub fn cat(Array[Binding], Array[Binding]) -> Array[Binding]
 
-pub fn cell_fn_descriptor(String, Array[CellFnParameter], CellFnOutput, FnFallibility, observes? : Array[String], reasons? : Array[String], validate? : (FnCall) -> Result[Unit, (String, String)], run? : (Array[FnArg], FnCtx) -> Result[FnOutput, (String, String)]) -> CellFnDescriptor
+pub fn cell_fn_descriptor(String, Array[CellFnParameter], CellFnOutput, FnFallibility, observes? : Array[String], reasons? : Array[String], validate? : (FnCall) -> Result[Unit, FnReason], run? : (Array[FnArg], FnCtx) -> Result[FnOutput, FnReason]) -> CellFnDescriptor
 
 pub fn cell_fn_parameter(String, kind? : CellFnParameterKind, repetition? : CellFnRepetition) -> CellFnParameter
 
@@ -65,7 +65,7 @@ pub fn export_key_null() -> ExportKey
 
 pub fn export_key_unset() -> ExportKey
 
-pub fn filter_descriptor(String, FilterSignature, Array[String], (Value, Array[String]) -> Result[Value, (String, String)], observes? : Array[String]) -> FilterDescriptor
+pub fn filter_descriptor(String, FilterSignature, Array[String], (Value, Array[String]) -> Result[Value, FnReason], observes? : Array[String]) -> FilterDescriptor
 
 pub fn find_help_entry(Node, Array[ParseError]) -> String?
 
@@ -146,7 +146,7 @@ pub(all) struct ArrayFilterDescriptor {
   signature : FilterSignature
   reasons : Array[String]
   observes : Array[String]
-  run : (Array[String], FnCtx) -> Result[Array[Value], (String, String)]
+  run : (Array[String], FnCtx) -> Result[Array[Value], FnReason]
 }
 
 pub(all) enum AttachMode {
@@ -208,17 +208,17 @@ pub struct CellFnDescriptor {
   // private fields
 }
 pub fn CellFnDescriptor::arity(Self) -> CellFnArity
-pub fn CellFnDescriptor::concrete_observes(Self, FnInvocation) -> Result[Array[String], (String, String)]
+pub fn CellFnDescriptor::concrete_observes(Self, FnInvocation) -> Result[Array[String], FnReason]
 pub fn CellFnDescriptor::fallibility(Self) -> FnFallibility
-pub fn CellFnDescriptor::invoke(Self, FnCall, FnCtx) -> Result[FnOutput, (String, String)]
+pub fn CellFnDescriptor::invoke(Self, FnCall, FnCtx) -> Result[FnOutput, FnReason]
 pub fn CellFnDescriptor::name(Self) -> String
 pub fn CellFnDescriptor::observes(Self) -> Array[String]
 pub fn CellFnDescriptor::output(Self) -> CellFnOutput
 pub fn CellFnDescriptor::parameters(Self) -> Array[CellFnParameter]
 pub fn CellFnDescriptor::reasons(Self) -> Array[String]
-pub fn CellFnDescriptor::validate_arity(Self, Int) -> Result[Unit, (String, String)]
-pub fn CellFnDescriptor::validate_call(Self, FnCall) -> Result[Unit, (String, String)]
-pub fn CellFnDescriptor::validate_invocation(Self, FnInvocation) -> Result[Unit, (String, String)]
+pub fn CellFnDescriptor::validate_arity(Self, Int) -> Result[Unit, FnReason]
+pub fn CellFnDescriptor::validate_call(Self, FnCall) -> Result[Unit, FnReason]
+pub fn CellFnDescriptor::validate_invocation(Self, FnInvocation) -> Result[Unit, FnReason]
 
 pub(all) enum CellFnOutput {
   Value
@@ -488,7 +488,7 @@ pub(all) struct FilterDescriptor {
   signature : FilterSignature
   reasons : Array[String]
   observes : Array[String]
-  run : (Array[String], FnCtx) -> Result[Value, (String, String)]
+  run : (Array[String], FnCtx) -> Result[Value, FnReason]
 }
 
 pub(all) enum FilterInput {
@@ -545,6 +545,11 @@ pub(all) enum FnInvocationForm {
 pub(all) enum FnOutput {
   Value(Value)
   Sentinel(CellSentinel)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct FnReason {
+  reason : String
+  message : String
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpMetaDecl {
@@ -823,11 +828,9 @@ pub(all) struct Warning {
 } derive(Eq, @debug.Debug)
 
 // Type aliases
-pub type CellFn = (Array[FnArg], FnCtx) -> Result[FnOutput, (String, String)]
+pub type CellFn = (Array[FnArg], FnCtx) -> Result[FnOutput, FnReason]
 
-pub type FnReason = (String, String)
-
-pub type FnResult = Result[FnOutput, (String, String)]
+pub type FnResult = Result[FnOutput, FnReason]
 
 pub type LowerSeat = (Bool) -> Result[Array[Binding], ParseError]
 

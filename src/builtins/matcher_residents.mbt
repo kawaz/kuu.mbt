@@ -356,7 +356,7 @@ fn run_eq_split(
       let filtered = match
         @engine.apply_piece_filters(ctx.extensions(), e.piece_filters, valstr) {
         Ok(s) => s
-        Err((reason, msg)) =>
+        Err({ reason, message: msg }) =>
           return [@engine.Held(@engine.pe_filter(e.name, pos, reason, msg), [])]
       }
       match e.kind.parse_token(filtered) {
@@ -472,7 +472,7 @@ fn short_val(
     let filtered = match
       @engine.apply_piece_filters(ctx.extensions(), e.piece_filters, s) {
       Ok(v) => v
-      Err((reason, msg)) =>
+      Err({ reason, message: msg }) =>
         return Err(@engine.pe_filter(e.name, pos, reason, msg))
     }
     match e.kind.parse_token(filtered) {

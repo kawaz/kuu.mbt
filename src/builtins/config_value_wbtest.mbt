@@ -13,9 +13,7 @@ fn config_chain(names : Array[String]) -> Array[@engine.FilterSpelling] {
 }
 
 ///|
-fn cv_ok(
-  r : Result[@engine.Value, (@engine.ErrKind, String, String)],
-) -> @engine.Value? {
+fn cv_ok(r : Result[@engine.Value, ConfigValueError]) -> @engine.Value? {
   match r {
     Ok(v) => Some(v)
     Err(_) => None
@@ -228,11 +226,11 @@ test "config_to_value: piece_filters runs on a String source before the type par
       config_chain(["non_empty"]),
       test_filter_registry(),
     ) {
-    Err((@engine.Filter, _, _)) => ()
+    Err({ kind: @engine.Filter, .. }) => ()
     Ok(_) => fail("expected Err(Filter, ..), got Ok")
-    Err((@engine.Parse, _, _)) =>
+    Err({ kind: @engine.Parse, .. }) =>
       fail("expected Err(Filter, ..), got Err(Parse, ..)")
-    Err((@engine.Constraint, _, _)) =>
+    Err({ kind: @engine.Constraint, .. }) =>
       fail("expected Err(Filter, ..), got Err(Constraint, ..)")
   }
 }

@@ -78,7 +78,10 @@ pub(all) enum FnOutput {
 } derive(Eq, Debug)
 
 ///|
-pub type FnReason = (String, String)
+pub(all) struct FnReason {
+  reason : String
+  message : String
+} derive(Eq, Debug)
 
 ///|
 pub type FnResult = Result[FnOutput, FnReason]
@@ -111,7 +114,10 @@ pub fn cell_fn_descriptor(
   reasons? : Array[String] = [],
   validate? : (FnCall) -> Result[Unit, FnReason] = fn(_) { Ok(()) },
   run? : CellFn = fn(_, _) {
-    Err(("absent-source", "cell fn implementation is not registered"))
+    Err({
+      reason: "absent-source",
+      message: "cell fn implementation is not registered",
+    })
   },
 ) -> CellFnDescriptor {
   {
@@ -205,7 +211,10 @@ fn CellFnDescriptor::invalid_argument(
   self : CellFnDescriptor,
   message : String,
 ) -> FnReason {
-  ("invalid-argument", "cell fn '" + self.name_ + "' " + message)
+  {
+    reason: "invalid-argument",
+    message: "cell fn '" + self.name_ + "' " + message,
+  }
 }
 
 ///|

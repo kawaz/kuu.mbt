@@ -146,7 +146,7 @@ fn registry_filter(name : String, prefix : String) -> FilterDescriptor {
 fn registry_array_filter(name : String) -> ArrayFilterDescriptor {
   array_filter_descriptor(name, Validate, ["empty"], fn(values, _args) {
     if values.length() == 0 {
-      Err(("empty", "array is empty"))
+      Err({ reason: "empty", message: "array is empty" })
     } else {
       Ok(values)
     }
@@ -219,7 +219,7 @@ test "Registry registers and looks up each extension category in an independent 
       assert_eq(resident.signature, Validate)
       assert_eq(
         (resident.run)([], fn_ctx_filter(Array([]))),
-        Err(("empty", "array is empty")),
+        Err({ reason: "empty", message: "array is empty" }),
       )
     }
     None => fail("registered array filter resident must be found")
@@ -333,7 +333,7 @@ test "filter invocation is driven exclusively by the supplied Registry" {
       [{ name: "synthetic/array-filter", args: [] }],
       [],
     ),
-    Err(("empty", "array is empty")),
+    Err({ reason: "empty", message: "array is empty" }),
   )
 }
 

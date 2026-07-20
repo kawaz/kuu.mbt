@@ -10,7 +10,7 @@
 fn filter_trim(
   v : @engine.Value,
   _args : Array[String],
-) -> Result[@engine.Value, (String, String)] {
+) -> Result[@engine.Value, @engine.FnReason] {
   match v {
     @engine.String(s) => Ok(@engine.String(s.trim(chars=" \t\n\r").to_owned()))
     other => Ok(other)
@@ -24,11 +24,11 @@ fn filter_trim(
 fn filter_non_empty(
   v : @engine.Value,
   _args : Array[String],
-) -> Result[@engine.Value, (String, String)] {
+) -> Result[@engine.Value, @engine.FnReason] {
   match v {
     @engine.String(s) =>
       if s == "" {
-        Err(("empty_value", "value is empty"))
+        Err({ reason: "empty_value", message: "value is empty" })
       } else {
         Ok(v)
       }
@@ -51,43 +51,50 @@ fn filter_non_empty(
 fn filter_in_range(
   v : @engine.Value,
   args : Array[String],
-) -> Result[@engine.Value, (String, String)] {
+) -> Result[@engine.Value, @engine.FnReason] {
   match v {
     @engine.Number(n) => {
       if args.length() != 2 {
-        return Err(
-          ("filter_rejected", "in_range requires exactly 2 args (min, max)"),
-        )
+        return Err({
+          reason: "filter_rejected",
+          message: "in_range requires exactly 2 args (min, max)",
+        })
       }
       let min = match parse_number(args[0]) {
         Some(d) => d
         None =>
-          return Err(
-            (
-              "filter_rejected",
-              "in_range min '" + args[0] + "' is not a number",
-            ),
-          )
+          return Err({
+            reason: "filter_rejected",
+            message: "in_range min '" + args[0] + "' is not a number",
+          })
       }
       let max = match parse_number(args[1]) {
         Some(d) => d
         None =>
-          return Err(
-            (
-              "filter_rejected",
-              "in_range max '" + args[1] + "' is not a number",
-            ),
-          )
+          return Err({
+            reason: "filter_rejected",
+            message: "in_range max '" + args[1] + "' is not a number",
+          })
       }
       if n < min {
-        Err(("too_small", "value \{n} is less than min \{min}"))
+        Err({
+          reason: "too_small",
+          message: "value \{n} is less than min \{min}",
+        })
       } else if n > max {
-        Err(("too_large", "value \{n} is greater than max \{max}"))
+        Err({
+          reason: "too_large",
+          message: "value \{n} is greater than max \{max}",
+        })
       } else {
         Ok(v)
       }
     }
-    _ => Err(("filter_rejected", "in_range requires a number value"))
+    _ =>
+      Err({
+        reason: "filter_rejected",
+        message: "in_range requires a number value",
+      })
   }
 }
 
@@ -101,13 +108,17 @@ fn filter_in_range(
 fn filter_increment(
   v : @engine.Value,
   args : Array[String],
-) -> Result[@engine.Value, (String, String)] {
+) -> Result[@engine.Value, @engine.FnReason] {
   if args.length() != 0 {
-    return Err(("filter_rejected", "increment takes no args"))
+    return Err({ reason: "filter_rejected", message: "increment takes no args" })
   }
   match v {
     @engine.Number(n) => Ok(@engine.Number(n + 1.0))
-    _ => Err(("filter_rejected", "increment requires a number value"))
+    _ =>
+      Err({
+        reason: "filter_rejected",
+        message: "increment requires a number value",
+      })
   }
 }
 
@@ -130,37 +141,42 @@ fn filter_increment(
 fn filter_regex_match(
   v : @engine.Value,
   args : Array[String],
-) -> Result[@engine.Value, (String, String)] {
+) -> Result[@engine.Value, @engine.FnReason] {
   match v {
     @engine.String(s) => {
       if args.length() != 1 {
-        return Err(
-          ("filter_rejected", "regex_match requires exactly 1 arg (pattern)"),
-        )
+        return Err({
+          reason: "filter_rejected",
+          message: "regex_match requires exactly 1 arg (pattern)",
+        })
       }
       let pattern = args[0]
       match @engine.compile_regex(pattern) {
         None =>
-          Err(
-            (
-              "filter_rejected",
-              "regex_match pattern '" + pattern + "' failed to compile",
-            ),
-          )
+          Err({
+            reason: "filter_rejected",
+            message: "regex_match pattern '" + pattern + "' failed to compile",
+          })
         Some(re) =>
           match re.execute(s) {
             Some(_) => Ok(v)
             None =>
-              Err(
-                (
-                  "pattern_no_match",
-                  "value '" + s + "' does not match pattern '" + pattern + "'",
-                ),
-              )
+              Err({
+                reason: "pattern_no_match",
+                message: "value '" +
+                s +
+                "' does not match pattern '" +
+                pattern +
+                "'",
+              })
           }
       }
     }
-    _ => Err(("filter_rejected", "regex_match requires a string value"))
+    _ =>
+      Err({
+        reason: "filter_rejected",
+        message: "regex_match requires a string value",
+      })
   }
 }
 
@@ -219,7 +235,7 @@ pub fn increment_filter() -> @engine.FilterDescriptor {
 fn array_filter_unique(
   vs : Array[@engine.Value],
   _args : Array[String],
-) -> Result[Array[@engine.Value], (String, String)] {
+) -> Result[Array[@engine.Value], @engine.FnReason] {
   let out : Array[@engine.Value] = []
   for v in vs {
     let mut dup = false
@@ -257,37 +273,40 @@ fn array_filter_unique(
 fn array_filter_length_range(
   vs : Array[@engine.Value],
   args : Array[String],
-) -> Result[Array[@engine.Value], (String, String)] {
+) -> Result[Array[@engine.Value], @engine.FnReason] {
   if args.length() != 2 {
-    return Err(
-      ("filter_rejected", "length_range requires exactly 2 args (min, max)"),
-    )
+    return Err({
+      reason: "filter_rejected",
+      message: "length_range requires exactly 2 args (min, max)",
+    })
   }
   let min = match parse_number(args[0]) {
     Some(d) => d
     None =>
-      return Err(
-        (
-          "filter_rejected",
-          "length_range min '" + args[0] + "' is not a number",
-        ),
-      )
+      return Err({
+        reason: "filter_rejected",
+        message: "length_range min '" + args[0] + "' is not a number",
+      })
   }
   let max = match parse_number(args[1]) {
     Some(d) => d
     None =>
-      return Err(
-        (
-          "filter_rejected",
-          "length_range max '" + args[1] + "' is not a number",
-        ),
-      )
+      return Err({
+        reason: "filter_rejected",
+        message: "length_range max '" + args[1] + "' is not a number",
+      })
   }
   let n = vs.length().to_double()
   if n < min {
-    Err(("too_short", "array length \{vs.length()} is less than min \{min}"))
+    Err({
+      reason: "too_short",
+      message: "array length \{vs.length()} is less than min \{min}",
+    })
   } else if n > max {
-    Err(("too_long", "array length \{vs.length()} is greater than max \{max}"))
+    Err({
+      reason: "too_long",
+      message: "array length \{vs.length()} is greater than max \{max}",
+    })
   } else {
     Ok(vs)
   }

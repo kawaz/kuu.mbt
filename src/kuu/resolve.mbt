@@ -1851,7 +1851,7 @@ fn env_value(
 ) -> Result[@engine.Value, @engine.ParseError] {
   let s = match @engine.apply_piece_filters(extensions, piece_filters, s) {
     Ok(v) => v
-    Err((reason, msg)) =>
+    Err({ reason, message: msg }) =>
       return Err(filter_err(element, at_pos, reason, msg, epath))
   }
   match ty.parse_token(s) {
@@ -1965,7 +1965,7 @@ fn apply_entity_filters(
       out.push(b)
     } else {
       match @engine.apply_filter_chain(extensions, e.value_filters, b.value) {
-        Err((reason, msg)) => {
+        Err({ reason, message: msg }) => {
           // value_filters(each、段5、DR-009): CONFORMANCE §3's piece-attribution rule — a reject here
           // is attributed to the SPECIFIC args token the rejected piece came from (`b.at_pos`,
           // issue 2026-07-09-accum-entity-filters-wiring), not the ladder's own `at_pos` (which
@@ -1982,7 +1982,7 @@ fn apply_entity_filters(
           if e.accum is None {
             match
               @engine.apply_filter_chain(extensions, e.final_filters, b2.value) {
-              Err((reason, msg)) =>
+              Err({ reason, message: msg }) =>
                 return Err(filter_err(e.name, at_pos, reason, msg, epath))
               Ok(v2) => out.push({ ..b2, value: v2 })
             }
@@ -2013,7 +2013,7 @@ fn apply_entity_filters(
     }
     match @engine.apply_accum_filter_chain(extensions, e.accum_filters, vals) {
       Ok(_) => ()
-      Err((reason, msg)) =>
+      Err({ reason, message: msg }) =>
         return Err(filter_err(e.name, at_pos, reason, msg, epath))
     }
   }
@@ -2185,12 +2185,12 @@ fn resolve_entity_raw(
           }
           let observes = match descriptor.concrete_observes(invocation) {
             Ok(observes) => observes
-            Err((reason, message)) =>
+            Err({ reason, message }) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
           }
           let ctx = @engine.fn_ctx_effect(e.name, e.name, old~, observes~)
           match descriptor.invoke(invocation.to_call(), ctx) {
-            Err((reason, message)) =>
+            Err({ reason, message }) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
             Ok(@engine.Value(value)) => {
               current = Some({
@@ -2381,11 +2381,11 @@ fn resolve_ladder_below_cli(
                       ) {
                       Ok(v) =>
                         bs.push(@engine.mk_binding(e.name, v, @engine.Config))
-                      Err((@engine.Filter, reason, msg)) =>
+                      Err({ kind: @engine.Filter, reason, message: msg }) =>
                         return Err(
                           filter_err(e.name, at_pos, reason, msg, epath),
                         )
-                      Err((_, reason, msg)) =>
+                      Err({ reason, message: msg, .. }) =>
                         return Err(
                           ladder_err(e.name, at_pos, reason, msg, epath),
                         )
@@ -2416,9 +2416,9 @@ fn resolve_ladder_below_cli(
                   ) {
                   Ok(v) =>
                     return Ok([@engine.mk_binding(e.name, v, @engine.Config)])
-                  Err((@engine.Filter, reason, msg)) =>
+                  Err({ kind: @engine.Filter, reason, message: msg }) =>
                     return Err(filter_err(e.name, at_pos, reason, msg, epath))
-                  Err((_, reason, msg)) =>
+                  Err({ reason, message: msg, .. }) =>
                     return Err(ladder_err(e.name, at_pos, reason, msg, epath)) // §4 型不一致 → DR-037/DR-066 Error
                 }
             }
@@ -2481,9 +2481,9 @@ fn resolve_ladder_below_cli(
                   },
                 ),
               ])
-            Err((@engine.Filter, reason, msg)) =>
+            Err({ kind: @engine.Filter, reason, message: msg }) =>
               return Err(filter_err(e.name, at_pos, reason, msg, epath))
-            Err((_, reason, msg)) =>
+            Err({ reason, message: msg, .. }) =>
               return Err(ladder_err(e.name, at_pos, reason, msg, epath))
           }
         None => ()
@@ -2516,9 +2516,9 @@ fn resolve_ladder_below_cli(
               extensions,
             ) {
             Ok(vv) => bs.push(@engine.mk_binding(e.name, vv, @engine.Default))
-            Err((@engine.Filter, reason, msg)) =>
+            Err({ kind: @engine.Filter, reason, message: msg }) =>
               return Err(filter_err(e.name, at_pos, reason, msg, epath))
-            Err((_, reason, msg)) =>
+            Err({ reason, message: msg, .. }) =>
               return Err(ladder_err(e.name, at_pos, reason, msg, epath))
           }
         }
@@ -2537,9 +2537,9 @@ fn resolve_ladder_below_cli(
             extensions,
           ) {
           Ok(vv) => Ok([@engine.mk_binding(e.name, vv, @engine.Default)])
-          Err((@engine.Filter, reason, msg)) =>
+          Err({ kind: @engine.Filter, reason, message: msg }) =>
             Err(filter_err(e.name, at_pos, reason, msg, epath))
-          Err((_, reason, msg)) =>
+          Err({ reason, message: msg, .. }) =>
             Err(ladder_err(e.name, at_pos, reason, msg, epath))
         }
       None => Ok([])
@@ -2689,7 +2689,7 @@ fn resolve_default_fn(
     Some(invocation) =>
       match descriptor.concrete_observes(invocation) {
         Ok(observes) => observes
-        Err((reason, message)) =>
+        Err({ reason, message }) =>
           return Err(ladder_err(entity.name, at_pos, reason, message, epath))
       }
     None => []
@@ -2708,8 +2708,8 @@ fn resolve_default_fn(
     },
   )
   match descriptor.invoke(fn_call, ctx) {
-    Err(("absent-source", _)) => Ok([])
-    Err((reason, message)) =>
+    Err({ reason: "absent-source", message: _ }) => Ok([])
+    Err({ reason, message }) =>
       Err(ladder_err(entity.name, at_pos, reason, message, epath))
     Ok(@engine.Sentinel(_)) =>
       Err(
@@ -2737,9 +2737,9 @@ fn resolve_default_fn(
             epath,
             extensions,
           )
-        Err((@engine.Filter, reason, message)) =>
+        Err({ kind: @engine.Filter, reason, message }) =>
           Err(filter_err(entity.name, at_pos, reason, message, epath))
-        Err((_, reason, message)) =>
+        Err({ reason, message, .. }) =>
           Err(ladder_err(entity.name, at_pos, reason, message, epath))
       }
   }

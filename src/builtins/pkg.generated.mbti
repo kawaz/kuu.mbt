@@ -27,7 +27,7 @@ pub fn command_installer() -> &@engine.InstallerExt
 
 pub fn config_installer() -> &@engine.InstallerExt
 
-pub fn config_to_value(@engine.ConfigVal, &@engine.TypeExt, Array[@engine.FnInvocation], @engine.Registry) -> Result[@engine.Value, (@engine.ErrKind, String, String)]
+pub fn config_to_value(@engine.ConfigVal, &@engine.TypeExt, Array[@engine.FnInvocation], @engine.Registry) -> Result[@engine.Value, ConfigValueError]
 
 pub fn configured_short_type(&@engine.TypeExt, @engine.RoundMode, Bool, @engine.BoolConfig) -> &@engine.TypeExt
 
@@ -148,6 +148,12 @@ pub fn unwrap_single_collector() -> &@engine.CollectorExt
 // Errors
 
 // Types and methods
+pub(all) struct ConfigValueError {
+  kind : @engine.ErrKind
+  reason : String
+  message : String
+} derive(Eq, @debug.Debug)
+
 pub struct EqEntry {
   // private fields
 }
