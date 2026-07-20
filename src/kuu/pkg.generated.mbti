@@ -7,7 +7,7 @@ import {
 }
 
 // Values
-pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[@engine.Cand]
+pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[@engine.Candidate]
 
 pub fn config_from_json(Json) -> @engine.ConfigVal
 

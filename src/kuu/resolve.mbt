@@ -829,7 +829,7 @@ fn collect_accum(
   }
   for g in sc.greedy {
     match g {
-      @engine.CmdSat(name, child) =>
+      @engine.CmdSatisfied(name, child) =>
         match ek.get(name) {
           Some(@engine.Null) => collect_accum(child, path, ek, out) // dropped label → children promote (DR-052 §2)
           Some(@engine.Key(s)) =>
@@ -897,7 +897,7 @@ fn collect_defaults(
   }
   for g in sc.greedy {
     match g {
-      @engine.CmdSat(name, child) =>
+      @engine.CmdSatisfied(name, child) =>
         collect_defaults(child, path_push(path, name), out)
       _ => ()
     }
@@ -1132,14 +1132,14 @@ pub(all) struct SourceEntry {
 } derive(Eq, Debug)
 
 ///|
-/// `sc.greedy` に `@engine.CmdSat` (サブコマンド確定ノード) が 1 つでもあるか — command 木を持つ scope か
+/// `sc.greedy` に `@engine.CmdSatisfied` (サブコマンド確定ノード) が 1 つでもあるか — command 木を持つ scope か
 /// どうかの判定。runner (json_conformance_test.mbt) の同名ヘルパーと同一実装で、production 側の
 /// `result_sources` にも同じ分岐が要るためこちらへ昇格した (runner 側は重複定義を避けるため
 /// 削除しこの private fn を直接呼ぶ、同一パッケージ内アクセスなので `pub` 化は不要)。
 fn has_commands(sc : @engine.Scope) -> Bool {
   for g in sc.greedy {
     match g {
-      @engine.CmdSat(_, _) => return true
+      @engine.CmdSatisfied(_, _) => return true
       _ => ()
     }
   }
@@ -1489,16 +1489,16 @@ fn scope_entered_here(
 }
 
 ///|
-/// Whether `sc.greedy` enters a genuine command scope named `name` (a `@engine.CmdSat` node) — used by
+/// Whether `sc.greedy` enters a genuine command scope named `name` (a `@engine.CmdSatisfied` node) — used by
 /// `resolve_scope_tree`'s pass-through below to tell a real child COMMAND scope apart from a
 /// ref-template accum entity's own one-level-deeper binding wrap (`ref_row_head`/`@engine.Scoped(e.name,
-/// ...)`, installer.mbt DR-078 §1). Only a `@engine.CmdSat` name is a scope `resolve_scope_tree` should
+/// ...)`, installer.mbt DR-078 §1). Only a `@engine.CmdSatisfied` name is a scope `resolve_scope_tree` should
 /// recurse the ladder into; anything else sharing the same "one level deeper" shape is CLI-origin
 /// material that must be passed through untouched instead.
 fn is_cmdsat_child(sc : @engine.Scope, name : String) -> Bool {
   for g in sc.greedy {
     match g {
-      @engine.CmdSat(n, _) => if n == name { return true }
+      @engine.CmdSatisfied(n, _) => if n == name { return true }
       _ => ()
     }
   }
@@ -1603,7 +1603,7 @@ fn resolve_scope_tree_with_export(
   }
   for g in sc.greedy {
     match g {
-      @engine.CmdSat(name, child) => {
+      @engine.CmdSatisfied(name, child) => {
         let childpath = path_push(path, name)
         if scope_entered_here(binds, childpath) {
           match
@@ -1695,7 +1695,7 @@ fn apply_requires_filter_with_export(
               // に落としてしまう (issue required-group-scope-participation、実測: `--r1` のみで
               // child-a scope の g が違反として付随、path=[child-a] の error 生成)。gate の判定は engine
               // 側と完全に同じ `@engine.scope_selected` を共用 — 判定意味論のドリフト防止 (bindings 内の
-              // `{}` scope_marker の存在で判定、CmdSat 入場時に cont.mbt KNest が prepend する)。
+              // `{}` scope_marker の存在で判定、CmdSatisfied 入場時に cont.mbt KNest が prepend する)。
               if !@engine.scope_selected(binds, sc2.path) {
                 continue
               }

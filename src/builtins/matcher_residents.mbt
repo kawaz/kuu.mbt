@@ -107,16 +107,16 @@ pub fn short_entry(
 fn eq_candidates(
   prefix : String,
   entries : Array[EqEntry],
-) -> Array[@engine.Cand] {
-  let out : Array[@engine.Cand] = []
+) -> Array[@engine.Candidate] {
+  let out : Array[@engine.Candidate] = []
   for entry in entries {
     if entry.kind.has_value_slot() {
       out.push(
-        @engine.Cand::trigger(
+        @engine.Candidate::trigger(
           prefix + entry.key,
           entry.name,
           entry.kind.name(),
-          @engine.Cont,
+          @engine.Continue,
         ),
       )
     }
@@ -128,14 +128,14 @@ fn eq_candidates(
 fn short_candidates(
   prefix : String,
   entries : Array[ShortEntry],
-) -> Array[@engine.Cand] {
-  let out : Array[@engine.Cand] = []
+) -> Array[@engine.Candidate] {
+  let out : Array[@engine.Candidate] = []
   for entry in entries {
     let spelling = StringBuilder::new()
     spelling.write_string(prefix)
     spelling.write_char(entry.ch)
     out.push(
-      @engine.Cand::trigger(
+      @engine.Candidate::trigger(
         spelling.to_string(),
         entry.name,
         entry.kind.name(),
@@ -622,7 +622,7 @@ fn walk_short(
           // (DR-060 §1). The flags already read stay as partial state.
           out.push(
             @engine.Pending(
-              [@engine.Cand::pending_value(e.kind.name(), e.name)],
+              [@engine.Candidate::pending_value(e.kind.name(), e.name)],
               acc + dm,
             ),
           )

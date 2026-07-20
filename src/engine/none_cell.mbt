@@ -31,8 +31,8 @@ pub fn none_cells(scope : Scope) -> Array[NoneCell] {
 ///|
 fn collect_dd_names(node : Node, out : Array[String]) -> Unit {
   match node {
-    DdSat(trigger) => out.push(trigger)
-    DdMatchSat(_, _, _, element) => out.push(element)
+    DdSatisfied(trigger) => out.push(trigger)
+    DdMatchSatisfied(_, _, _, element) => out.push(element)
     Or(alternatives) =>
       for alternative in alternatives {
         collect_dd_names(alternative, out)
@@ -62,7 +62,8 @@ fn collect_nones(
   }
   for node in scope.greedy {
     match node {
-      CmdSat(name, child) => collect_nones(child, append_path(path, name), out)
+      CmdSatisfied(name, child) =>
+        collect_nones(child, append_path(path, name), out)
       _ => ()
     }
   }

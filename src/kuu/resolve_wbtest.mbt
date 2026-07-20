@@ -429,7 +429,7 @@ test "accum_cells 対極: an @engine.Null accum cell carries no result-key axis 
 ///|
 /// 保証: command scope の export_key rename も path (accum セルのネスト先) に正しく反映される —
 /// `apply_export_to_defaults` の scope-label 変換ロジック (233-243行) と同じ意味論を
-/// `collect_accum` の @engine.CmdSat 再帰でも固定する。
+/// `collect_accum` の @engine.CmdSatisfied 再帰でも固定する。
 test "accum_cells resolves export_key rename on a command scope label (nested path)" {
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
     ("sub", @engine.ExportKey::key("s")),
@@ -441,7 +441,7 @@ test "accum_cells resolves export_key rename on a command scope label (nested pa
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("sub", child)],
+    greedy: [@engine.CmdSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1110,7 +1110,7 @@ test "resolve_scope_config: a structural config mismatch is an Error" {
 
 ///|
 /// Guarantees: `command_child` fetches a subcommand's built @engine.Scope by name from its parent's
-/// `@engine.CmdSat` greedy entries; `inherited_of` turns a resolved-bindings array into the name→value
+/// `@engine.CmdSatisfied` greedy entries; `inherited_of` turns a resolved-bindings array into the name→value
 /// map the next scope's inherit seat reads (`resolve_scope`'s `inherited?` parameter).
 test "command_child fetches a subcommand scope; inherited_of builds the parent context map" {
   let child : @engine.Scope = {
@@ -1120,7 +1120,7 @@ test "command_child fetches a subcommand scope; inherited_of builds the parent c
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("serve", child)],
+    greedy: [@engine.CmdSatisfied("serve", child)],
     positional: [],
     entities: [],
     constraints: [],

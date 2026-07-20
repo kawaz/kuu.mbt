@@ -233,7 +233,7 @@ fn InstallBuilder::materialize(self : InstallBuilder) -> Scope {
     greedy.push(node)
   }
   for child in self.children {
-    greedy.push(CmdSat(child.name, child.body.materialize()))
+    greedy.push(CmdSatisfied(child.name, child.body.materialize()))
   }
   {
     greedy,

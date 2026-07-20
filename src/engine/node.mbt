@@ -122,7 +122,7 @@ impl TypeExt with fn default_seat_observation_key(_self) {
 /// them onto the stable candidate wire structure.
 pub(open) trait EntityExt {
   fn encode(Self) -> Json = _
-  fn complete_candidate(Self, Cand) -> Cand
+  fn complete_candidate(Self, Candidate) -> Candidate
 }
 
 ///|
@@ -207,7 +207,7 @@ pub(open) trait MatcherExt {
   fn kind(Self) -> String
   fn encode(Self) -> Json
   fn equal(Self, &MatcherExt) -> Bool = _
-  fn candidates(Self) -> Array[Cand]
+  fn candidates(Self) -> Array[Candidate]
   fn interpret(Self, Ctx, Int, Array[Binding], Resume) -> Array[Branch]
 }
 
@@ -269,30 +269,30 @@ pub(all) enum Node {
   /// entry, 先食い (greedy-only) keeps `--` from being raw-eaten; when it fires the
   /// spine walk switches to "severed" mode (greedy off) for the rest — the sever is
   /// the "greedy internal consumption is 一体" rule, not a dd special case.
-  DdSat(String)
-  /// DR-090: the 2-axis generalization of `DdSat` — a SEPARATE variant (not `DdSat`'s own
-  /// arity extended) to keep every existing `DdSat("--")` hand-construction (wbtest files,
+  DdSatisfied(String)
+  /// DR-090: the 2-axis generalization of `DdSatisfied` — a SEPARATE variant (not `DdSatisfied`'s own
+  /// arity extended) to keep every existing `DdSatisfied("--")` hand-construction (wbtest files,
   /// installer's canonical exact-dd path) untouched; the installer only ever emits THIS
   /// variant when the definition actually declares `match` and/or `self:"keep"` (§2).
   /// Fields: `(spelling, is_pattern, self_keep, elem_name)`.
-  /// - `spelling`: the exact trigger string (`is_pattern=false`, same matching as `DdSat`)
+  /// - `spelling`: the exact trigger string (`is_pattern=false`, same matching as `DdSatisfied`)
   ///   OR a regex pattern source (`is_pattern=true`, compiled via `compile_regex` — the SAME
   ///   host-dialect compile path DR-085's `regex_match` filter uses, unanchored substring-vs-
   ///   whole-token semantics per DR-090 §2's "match" being a trigger test on the WHOLE token).
-  /// - `self_keep`: `false` (drop, DR-090 §2 既定 — consume 1 token, discard it, same as `DdSat`)
+  /// - `self_keep`: `false` (drop, DR-090 §2 既定 — consume 1 token, discard it, same as `DdSatisfied`)
   ///   | `true` (keep — consume 0 tokens, Accept immediately; the triggering token itself
   ///   flows into the positional face along with everything after it, still severed).
   /// - `elem_name` (DR-093 §2/§5): the declaring element's `name`, independent of `spelling`
   ///   (§2's "match があるとき name はトリガ綴りに使われず、要素の同一性・表示軸のみに効く" —
   ///   this is that axis, made concrete). Used ONLY to key the committed-observation binding
-  ///   the firing arm produces (mirrors `DdSat`'s own trigger-string-as-name shortcut, which only
-  ///   works there because `DdSat` never decouples spelling from name). Never used for matching.
-  DdMatchSat(String, Bool, Bool, String)
+  ///   the firing arm produces (mirrors `DdSatisfied`'s own trigger-string-as-name shortcut, which only
+  ///   works there because `DdSatisfied` never decouples spelling from name). Never used for matching.
+  DdMatchSatisfied(String, Bool, Bool, String)
   /// command satellite (DR-018 / DR-041 §4). A GREEDY-face resident whose matcher is
   /// a plain exact match on the command name. Firing enters the child scope as a NEW
   /// backbone (the parent greedy face does not interject inside it). 先食い protects the
   /// command name from a positional raw-eat, which is the DR-018 "commands が先" priority.
-  CmdSat(String, Scope)
+  CmdSatisfied(String, Scope)
   /// link/scope-targeted wrapper (DR-042 global link-sync / DR-007 link). Evaluates its inner
   /// node but marks every binding it produces as a link that escapes `Int` result-nesting levels
   /// (= the scopes this copied satellite sits BELOW its declaration). Those bindings climb out of
@@ -353,10 +353,10 @@ pub impl Eq for Node with fn equal(self, other) {
     (NativeMatch(a), NativeMatch(b)) => a == b
     (Ext(a), Ext(b)) => a.equal(b)
     (Ref(a), Ref(b)) => a == b
-    (DdSat(a), DdSat(b)) => a == b
-    (DdMatchSat(as_, ap, ak, an), DdMatchSat(bs, bp, bk, bn)) =>
+    (DdSatisfied(a), DdSatisfied(b)) => a == b
+    (DdMatchSatisfied(as_, ap, ak, an), DdMatchSatisfied(bs, bp, bk, bn)) =>
       as_ == bs && ap == bp && ak == bk && an == bn
-    (CmdSat(an, ac), CmdSat(bn, bc)) => an == bn && ac == bc
+    (CmdSatisfied(an, ac), CmdSatisfied(bn, bc)) => an == bn && ac == bc
     (Rooted(an, ad), Rooted(bn, bd)) => an == bn && ad == bd
     (BoundedTail(an, ab, al), BoundedTail(bn, bb, bl)) =>
       an == bn && ab == bb && al == bl
@@ -398,16 +398,17 @@ pub impl Debug for Node with fn to_repr(self) {
         (None, Debug::to_repr(extension.encode())),
       ])
     Ref(a) => @debug.Repr::ctor("Ref", [(None, Debug::to_repr(a))])
-    DdSat(a) => @debug.Repr::ctor("DdSat", [(None, Debug::to_repr(a))])
-    DdMatchSat(a, b, c, d) =>
-      @debug.Repr::ctor("DdMatchSat", [
+    DdSatisfied(a) =>
+      @debug.Repr::ctor("DdSatisfied", [(None, Debug::to_repr(a))])
+    DdMatchSatisfied(a, b, c, d) =>
+      @debug.Repr::ctor("DdMatchSatisfied", [
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
         (None, Debug::to_repr(c)),
         (None, Debug::to_repr(d)),
       ])
-    CmdSat(a, b) =>
-      @debug.Repr::ctor("CmdSat", [
+    CmdSatisfied(a, b) =>
+      @debug.Repr::ctor("CmdSatisfied", [
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
       ])
@@ -638,14 +639,14 @@ pub(all) struct Entity {
 
 // ── completion candidate 型 (DR-060 §3) — 型のみ移植 (slice complete.mbt 1-57) ─
 // The completion走査 (comp_scope 等) is outcome.mbt's job (MDR-002 §3); only the DATA the
-// evaluator's `Pending` branch carries lives here. `Cand.ty` carries the DR-104 base spelling.
+// evaluator's `Pending` branch carries lives here. `Candidate.ty` carries the DR-104 base spelling.
 
 ///|
-/// A terminal hint on an exact candidate (DR-060 §3): `WordEnd` = 確定, a space may follow; `Cont` =
+/// A terminal hint on an exact candidate (DR-060 §3): `WordEnd` = 確定, a space may follow; `Continue` =
 /// 継続, no space (a value must follow — e.g. a value-taking --port, or a `--key=` / dir `/` in prod).
 pub(all) enum TermHint {
   WordEnd
-  Cont
+  Continue
 } derive(Eq, Debug)
 
 ///|
@@ -666,14 +667,14 @@ pub(all) struct CandMeta {
 /// scope names, mirroring `ParseError.path`'s snoc form ([] = root 直下). `origin` already answers
 /// "which element" a candidate came from; `path` answers "under which ancestor scopes" — the same
 /// pairing `ParseError` uses (`element` + `path`). Threaded the SAME way Held's path is (starts `[]`
-/// at construction, `nest_branches`/CmdSat prepend the traversed scope labels on the way out) so a
+/// at construction, `nest_branches`/CmdSatisfied prepend the traversed scope labels on the way out) so a
 /// `Pending`'s value-slot candidate can be converted to a `missing_operand` `ParseError` (parse()
 /// top-level, DR-053 §2.3) WITHOUT losing the ancestor path the way it used to (Held already worked;
 /// Pending — parse mode's other failure carrier — did not, because prepend only touched Held). Also
 /// carried by the exact-trigger (`is_value:false`) candidates for consistency, even though those
 /// never feed `missing_operand` today — DR-060's completion consumers are free to ignore the field
 /// (additive, not a breaking change to the §3 candidate structure).
-pub(all) struct Cand {
+pub(all) struct Candidate {
   spelling : String // the exact spelling; "" for a value position
   is_value : Bool
   ty : String // DR-104 §2 base spelling for a value position
@@ -685,7 +686,7 @@ pub(all) struct Cand {
   // global option's satellite is copied into a descendant command scope wrapped in
   // `Rooted(node, depth)`, and its Entity lives ONLY at the declaring (shallower) scope — a
   // value-slot Pending produced from inside that copy must therefore have `depth` levels of
-  // CmdSat-boundary prepend SKIPPED, or its `path` ends up pointing at the wrong (copy-side)
+  // CmdSatisfied-boundary prepend SKIPPED, or its `path` ends up pointing at the wrong (copy-side)
   // scope while the Entity it names sits at the declaring scope. Bare `Array[String]` path alone
   // cannot express "skip N prepends" — `nest_cands` (eval.mbt) consumes this exactly like
   // `nest`'s own `Binding.link` decrement, so the two stay in lockstep. `0` (the common case) =
@@ -695,14 +696,14 @@ pub(all) struct Cand {
   link : Int
   // issue 2026-07-15-pending-parseerror-path-asymmetry (DR-066 §4): the FIRE-TIME walk-position
   // path — root-first ancestor scope names, prepended UNCONDITIONALLY as the branch rides out
-  // through each CmdSat boundary (`nest_path`, the SAME no-exception rule a Held's `ParseError.path`
+  // through each CmdSatisfied boundary (`nest_path`, the SAME no-exception rule a Held's `ParseError.path`
   // already follows). Deliberately a SEPARATE field from `path` above: `path`'s Rooted-escape skip
   // (`link`) answers "where does complete_tree's completer lookup find this candidate's declaring
   // Entity" (a completion-only question), while `fire_path` answers "which scope was this candidate
   // actually read under" (the question `missing_operand`'s `ParseError.path` needs, DR-066 §4's own
   // "発火時の動的パス" wording). Adversarial verification (installer_wbtest.mbt debug probes, this
   // issue) found `link` is ALWAYS 0 by the time a Pending reaches KTop — a Rooted candidate's escape
-  // counter is fully consumed by the SAME CmdSat boundaries `path` needs prepended, so gating KTop's
+  // counter is fully consumed by the SAME CmdSatisfied boundaries `path` needs prepended, so gating KTop's
   // conversion on `c.link > 0` (the originally proposed fix) is a no-op: nothing is ever excluded,
   // and the wrong-path duplicate survives with `link` already 0. `fire_path` sidesteps the escape
   // bookkeeping entirely by tracking the walk position directly, so KTop's missing_operand conversion
@@ -736,5 +737,5 @@ pub(all) struct Cand {
 pub(all) enum Branch {
   Accept(Int, Array[Binding]) // (new position, accumulated bindings)
   Held(ParseError, Array[Binding]) // a DR-037 Error + the partial state (acc) at the error point
-  Pending(Array[Cand], Array[Binding]) // trigger consumed, value slot's input absent
+  Pending(Array[Candidate], Array[Binding]) // trigger consumed, value slot's input absent
 } derive(Debug)

@@ -240,10 +240,10 @@ pub fn tried_triggers_of(
 }
 
 ///|
-/// Walk `root` down `path` (root-first ancestor scope names, DR-066 §4) through CmdSat children
+/// Walk `root` down `path` (root-first ancestor scope names, DR-066 §4) through CmdSatisfied children
 /// ONLY — a `Scoped` label (DR-025 result scope label) wraps an arbitrary Node, not necessarily a
 /// child Scope (MDR-002 "light layer-3 hook; does not change path count"), so a path segment that
-/// doesn't match any CmdSat name stops the walk short (returns `None`, tried_triggers_of falls back
+/// doesn't match any CmdSatisfied name stops the walk short (returns `None`, tried_triggers_of falls back
 /// to the root-scope material rather than guessing). `[]` resolves straight to `root`'s own scope.
 fn scope_at_path(root : Node, path : Array[String]) -> Scope? {
   let mut cur = root
@@ -253,7 +253,7 @@ fn scope_at_path(root : Node, path : Array[String]) -> Scope? {
         let mut next : Node? = None
         for g in sc.greedy {
           match g {
-            CmdSat(name, child) =>
+            CmdSatisfied(name, child) =>
               if name == label {
                 next = Some(ScopeNode(child))
               }
@@ -292,14 +292,14 @@ fn tried_triggers_in_greedy(g : Node, out : Array[String]) -> Unit {
           _ => ()
         }
       }
-    DdSat(s) => out.push(s)
+    DdSatisfied(s) => out.push(s)
     // DR-090: only an EXACT dd trigger is a "tried spelling" a user could type (same rationale
     // as the eval.mbt Pending arms — a regex pattern has no single literal candidate to surface).
-    DdMatchSat(spelling, is_pattern, _, _) =>
+    DdMatchSatisfied(spelling, is_pattern, _, _) =>
       if !is_pattern {
         out.push(spelling)
       }
-    CmdSat(name, _) => out.push(name)
+    CmdSatisfied(name, _) => out.push(name)
     _ => ()
   }
 }
@@ -318,7 +318,7 @@ fn tried_triggers_in_greedy(g : Node, out : Array[String]) -> Unit {
 ///
 /// `after` (DR-060 §2 整合フィルタ): when the cursor sits mid-line, a
 /// WordEnd exact candidate survives only if adopting it still lets some path
-/// consume `after` to a complete parse. Value candidates and Cont-term
+/// consume `after` to a complete parse. Value candidates and Continue-term
 /// spellings (an eq-split `--key` needs `=value` typed in the same word)
 /// cannot be checked without inventing the user's input, so they pass the
 /// filter unexamined.
@@ -328,7 +328,7 @@ pub fn complete_tree(
   defs? : Map[String, Node] = Map([]),
   after? : Array[String] = [],
   extensions? : Registry = Registry::new(),
-) -> Array[Cand] {
+) -> Array[Candidate] {
   let ctx : Ctx = {
     toks: before,
     defs,
@@ -352,12 +352,12 @@ pub fn complete_tree(
   // the Entity belonging to the SAME scope that produced this specific candidate, exactly
   // mirroring how `nest_cands`/`nest_branches` built that candidate's `path` in the first place.
   let entities = collect_all_entities(root, defs)
-  let cands : Array[Cand] = []
+  let cands : Array[Candidate] = []
   for b in branches {
     match b {
       Pending(cs, _) =>
         for c0 in cs {
-          let decorated : Array[Cand] = []
+          let decorated : Array[Candidate] = []
           if c0.is_value {
             match entities.get(entity_key(c0.path, c0.origin)) {
               Some(extensions) =>
@@ -411,9 +411,9 @@ pub fn complete_tree(
   if after.length() == 0 {
     return cands
   }
-  let out : Array[Cand] = []
+  let out : Array[Candidate] = []
   for c in cands {
-    if c.is_value || c.term == Cont {
+    if c.is_value || c.term == Continue {
       out.push(c)
     } else {
       let toks2 : Array[String] = []
@@ -456,20 +456,20 @@ fn entity_key(path : Array[String], name : String) -> String {
 
 ///|
 /// Collect every statically reachable Entity, keyed by `entity_key(path, name)`, over the WHOLE
-/// tree — root scope plus every nested CmdSat / inline positional ScopeNode / scope-shaped
+/// tree — root scope plus every nested CmdSatisfied / inline positional ScopeNode / scope-shaped
 /// repeat head. Unlike `collect_scopes` (eval.mbt), which serves ONLY the KTop constraint table
 /// and therefore skips any scope with no constraints, this visits every scope unconditionally: a
-/// `Cand.origin` can name an Entity in a scope that has no constraints at all, and
+/// `Candidate.origin` can name an Entity in a scope that has no constraints at all, and
 /// `complete_tree`'s completer lookup needs to find it regardless. Mirrors
 /// `collect_scopes`/`collect_scope_into`/`collect_greedy_scopes`/`collect_pos_scopes`'s traversal
-/// shape (same Ref/CmdSat/Or/Rooted/BoundedTail/Many cases and the SAME root-first path-building
-/// convention — `path + [name]` on CmdSat entry — so a `Cand.path` built by `nest_cands`/
+/// shape (same Ref/CmdSatisfied/Or/Rooted/BoundedTail/Many cases and the SAME root-first path-building
+/// convention — `path + [name]` on CmdSatisfied entry — so a `Candidate.path` built by `nest_cands`/
 /// `nest_branches` lines up exactly with the path this collector attaches to that Entity).
 ///
 /// A key maps to every distinct opaque EntityExt resident found there. DR-067 §1 allows
 /// structurally independent command definitions to share the same path/name key; preserving
 /// the resident list lets `complete_tree` project each candidate first, then apply the stable
-/// Cand identity and completer merge rules without inspecting or discarding opaque metadata.
+/// Candidate identity and completer merge rules without inspecting or discarding opaque metadata.
 fn collect_all_entities(
   root : Node,
   defs : Map[String, Node],
@@ -524,7 +524,7 @@ fn collect_entities_greedy(
   seen_refs : Array[String],
 ) -> Unit {
   match g {
-    CmdSat(name, child) => {
+    CmdSatisfied(name, child) => {
       let p2 : Array[String] = []
       for s in path {
         p2.push(s)

@@ -333,7 +333,7 @@ pub fn complete(
   ast : AtomicAST,
   args_before : Array[String],
   args_after? : Array[String] = [],
-) -> Array[@engine.Cand] {
+) -> Array[@engine.Candidate] {
   @engine.complete_tree(
     @engine.ScopeNode(ast.root),
     args_before,
@@ -450,7 +450,7 @@ fn collect_config_file_cells(
   }
   for node in scope.greedy {
     match node {
-      @engine.CmdSat(name, child) =>
+      @engine.CmdSatisfied(name, child) =>
         collect_config_file_cells(child, output_path_push(path, name), out)
       _ => ()
     }

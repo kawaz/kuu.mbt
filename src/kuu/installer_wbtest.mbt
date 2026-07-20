@@ -863,19 +863,19 @@ test "multiple installer: a collector declared without multiple/repeat is droppe
 // ── dd installer (DR-064): 配置不問回収 (options[] / positionals[] 両対応) ──────
 
 ///|
-/// 保証: dd (`type:"dd"`) は options[] と positionals[] のどちらに宣言しても回収され、@engine.DdSat 衛星が
+/// 保証: dd (`type:"dd"`) は options[] と positionals[] のどちらに宣言しても回収され、@engine.DdSatisfied 衛星が
 /// greedy に 1 本入る (add-if-absent が重複を collapse)。ensure_entities は dd に entity を作らない
 /// (LOWERING §B.4「値なし」)。DR-064 §2「dd は配置不問で lowered 形が同一」の仕様準拠テスト。
-test "dd installer: options[] placement lowers to same @engine.DdSat with no entity (DR-064 §2)" {
+test "dd installer: options[] placement lowers to same @engine.DdSatisfied with no entity (DR-064 §2)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [el("--", @builtins.string_type(), is_dd=true)],
   }
   let sc = ok_scope(def, all_installers())
-  // @engine.DdSat("--") が greedy に 1 本、entity は 0 個 (dd は値なし)
+  // @engine.DdSatisfied("--") が greedy に 1 本、entity は 0 個 (dd は値なし)
   let mut has_dd = false
   for g in sc.greedy {
-    if g == @engine.DdSat("--") {
+    if g == @engine.DdSatisfied("--") {
       has_dd = true
     }
   }
@@ -971,11 +971,11 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
     ],
   }
   let sc = ok_scope(def, all_installers())
-  // 子 scope (@engine.CmdSat("sub", child_scope)) を取り出す
+  // 子 scope (@engine.CmdSatisfied("sub", child_scope)) を取り出す
   let mut child_sc : @engine.Scope? = None
   for g in sc.greedy {
     match g {
-      @engine.CmdSat(n, cs) => if n == "sub" { child_sc = Some(cs) }
+      @engine.CmdSatisfied(n, cs) => if n == "sub" { child_sc = Some(cs) }
       _ => ()
     }
   }
@@ -1707,7 +1707,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
   let mut mid_sc : @engine.Scope? = None
   for g in sc.greedy {
     match g {
-      @engine.CmdSat(n, cs) => if n == "mid" { mid_sc = Some(cs) }
+      @engine.CmdSatisfied(n, cs) => if n == "mid" { mid_sc = Some(cs) }
       _ => ()
     }
   }
@@ -1715,7 +1715,7 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
   let mut sub_sc : @engine.Scope? = None
   for g in mid_sc.greedy {
     match g {
-      @engine.CmdSat(n, cs) => if n == "sub" { sub_sc = Some(cs) }
+      @engine.CmdSatisfied(n, cs) => if n == "sub" { sub_sc = Some(cs) }
       _ => ()
     }
   }
@@ -2941,10 +2941,10 @@ test "DR-093: a required:true option with a declared default is vacuously satisf
 
 ///|
 /// 保証 (DR-093 §2/§5、die の motivating case そのもの): none 型の dd 要素 (`dd_match` 未使用、
-/// `@engine.DdSat` 発火経路) に required:true を付けると、発火 (committed) で充足し、未発火は
+/// `@engine.DdSatisfied` 発火経路) に required:true を付けると、発火 (committed) で充足し、未発火は
 /// required_violated の constraint Error で完全経路 0 本 = @engine.Failure になる。kawaz/die の `--`
 /// 必須が `{"type":"dd","required":true}` (新規 wire 語彙ゼロ) で表現できることの実装側の固定。
-test "DR-093: a required:true dd element (@engine.DdSat) is satisfied by firing, unmet otherwise" {
+test "DR-093: a required:true dd element (@engine.DdSatisfied) is satisfied by firing, unmet otherwise" {
   let dd = { ..el("--", @builtins.none_type(), is_dd=true), required: true }
   let x = pos("x", @builtins.string_type())
   let def : @engine.Definition = {
@@ -2988,12 +2988,12 @@ test "DR-093: a required:true dd element (@engine.DdSat) is satisfied by firing,
 }
 
 ///|
-/// 保証 (DR-093 §2/§5 の一般化、DR-090 拡張軸): `dd_match` を使う dd 要素 (`@engine.DdMatchSat` 発火経路) も
+/// 保証 (DR-093 §2/§5 の一般化、DR-090 拡張軸): `dd_match` を使う dd 要素 (`@engine.DdMatchSatisfied` 発火経路) も
 /// 同じ型委譲で required:true を扱う — 発火 (committed) で充足、未発火は required_violated。spelling
 /// (トリガ綴り/パターン) と要素名が分離するケース (DR-090 §2「match があるとき name はトリガ綴りに
 /// 使われず、要素の同一性・表示軸のみに効く」) でも、committed 観測は要素名で正しく行われることを
-/// 固定する (`@engine.DdMatchSat` の 4 番目フィールド `elem_name` がこの委譲判定の実装対象)。
-test "DR-093: a required:true dd element with dd_match (@engine.DdMatchSat) is satisfied by firing, unmet otherwise" {
+/// 固定する (`@engine.DdMatchSatisfied` の 4 番目フィールド `elem_name` がこの委譲判定の実装対象)。
+test "DR-093: a required:true dd element with dd_match (@engine.DdMatchSatisfied) is satisfied by firing, unmet otherwise" {
   let dd = {
     ..el("marker", @builtins.none_type(), is_dd=true, dd_match=Some("^--$")),
     required: true,
@@ -3435,7 +3435,7 @@ fn elem_value_bs(bs : Array[@engine.Binding], key : String) -> String? {
 ///|
 /// 対極 (輪郭固定): 従来の exact dd (`match`/`self` いずれも未宣言) は本 DR の変更で一切
 /// 影響を受けない — `--` を消費して捨て (self:drop 既定)、以降が severed で全 raw になる
-/// 挙動は不変。@engine.DdSat ノードがそのまま使われ続けることの間接固定 (`@engine.DdMatchSat` へ切り替わらない)。
+/// 挙動は不変。@engine.DdSatisfied ノードがそのまま使われ続けることの間接固定 (`@engine.DdMatchSatisfied` へ切り替わらない)。
 test "DR-090 対極: exact dd (no match/self declared) is unaffected — drop + severed as before" {
   let dd = el("--", @builtins.string_type(), is_dd=true)
   let rest = pos(
@@ -4177,19 +4177,19 @@ test "parse_definition: in_range keeps canonical-number bounds, length_range acc
 /// (root) の @engine.Entity に対する `@engine.Rooted(node, depth)` 衛星として子 scope へコピーされる
 /// (DR-042 global link-sync)。この衛星が値 starve すると、CPS の継続チェーンが同じ starve を
 /// 複数回 (root-copy 自身の読み取り + 早閉じ後の親 scope 再評価) 独立に @engine.Pending として観測し、
-/// 旧実装は各観測が `@engine.Cand.path` (`link` による @engine.Rooted-escape 調整込み、`@engine.complete_tree` の
+/// 旧実装は各観測が `@engine.Candidate.path` (`link` による @engine.Rooted-escape 調整込み、`@engine.complete_tree` の
 /// completer lookup 専用) をそのまま `@engine.ParseError.path` にコピーしていたため、`path=[]` (escape
 /// で prepend がスキップされたまま) と `path=["a"]` (正しく prepend されたもの) の 2 件が
 /// 併存していた (depth 2 の nested command では 3 件併存することも実証済み)。
 ///
 /// 検証で判明した重要事実 (adversarial マトリクス、この wbtest 追加前に実施): 提案されていた
 /// 修正案 A (KTop 変換で `c.link > 0` の候補を除外) は **前提が成立しない** — `nest_cands`
-/// (eval.mbt) は @engine.CmdSat 境界を 1 回跨ぐごとに `link` を必ず 1 減算するため、`depth` 段の境界を
+/// (eval.mbt) は @engine.CmdSatisfied 境界を 1 回跨ぐごとに `link` を必ず 1 減算するため、`depth` 段の境界を
 /// 全て通過した時点で `link` は必ず 0 になる。実機確認 (`c.link` を dump) で、KTop に届く
 /// 全候補が既に `link=0` であることを確認済み — 「`link>0` を除外する」条件は何も除外しない
 /// no-op であり、`path=[]` の誤った候補は `link=0` のまま生き残ってしまう。
 ///
-/// 採用した修正 (案 B): `@engine.Cand` に `fire_path` (`@engine.Cand.fire_path` の doc comment 参照) を新設し、
+/// 採用した修正 (案 B): `@engine.Candidate` に `fire_path` (`@engine.Candidate.fire_path` の doc comment 参照) を新設し、
 /// `nest_cands` で `link` の値に関わらず無条件に prepend する (@engine.Held の `@engine.ParseError.path` と同じ
 /// 「発火時 walk 位置」の意味論)。`missing_operand` への変換 (eval.mbt KTop) は `c.path` ではなく
 /// `c.fire_path` を使う — 同じ starve を複数回観測した候補は全て同じ `fire_path` を持つため、

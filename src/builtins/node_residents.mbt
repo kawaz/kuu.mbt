@@ -111,7 +111,7 @@ impl @engine.NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.Cand::pending_value(string_type().name(), self.name)],
+          [@engine.Candidate::pending_value(string_type().name(), self.name)],
           acc,
         ),
       ]
@@ -194,7 +194,7 @@ impl @engine.NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.Cand::pending_value(string_type().name(), self.name)],
+          [@engine.Candidate::pending_value(string_type().name(), self.name)],
           acc,
         ),
       ]
@@ -277,7 +277,7 @@ impl @engine.NodeExt for SeparatedNodeExt with fn eval(
     None =>
       [
         @engine.Pending(
-          [@engine.Cand::pending_value(self.ty.name(), self.name)],
+          [@engine.Candidate::pending_value(self.ty.name(), self.name)],
           acc,
         ),
       ]
@@ -383,7 +383,7 @@ impl @engine.NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.Cand::pending_value(number_type().name(), self.name)],
+          [@engine.Candidate::pending_value(number_type().name(), self.name)],
           acc,
         ),
       ]
@@ -479,7 +479,7 @@ impl @engine.NodeExt for FilteredNumberArgExt with fn eval(
     None =>
       [
         @engine.Pending(
-          [@engine.Cand::pending_value(number_type().name(), self.name)],
+          [@engine.Candidate::pending_value(number_type().name(), self.name)],
           acc,
         ),
       ]
@@ -559,7 +559,7 @@ impl @engine.NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.Cand::pending_value(float_type().name(), self.name)],
+          [@engine.Candidate::pending_value(float_type().name(), self.name)],
           acc,
         ),
       ]
@@ -650,7 +650,7 @@ impl @engine.NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.Cand::pending_value(int_type().name(), self.name)],
+          [@engine.Candidate::pending_value(int_type().name(), self.name)],
           acc,
         ),
       ]
@@ -738,7 +738,7 @@ impl @engine.NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.Cand::pending_value(bool_type().name(), self.name)],
+          [@engine.Candidate::pending_value(bool_type().name(), self.name)],
           acc,
         ),
       ]
@@ -824,7 +824,7 @@ impl @engine.NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
     None =>
       [
         @engine.Pending(
-          [@engine.Cand::pending_value(self.ty.name(), self.name)],
+          [@engine.Candidate::pending_value(self.ty.name(), self.name)],
           acc,
         ),
       ]

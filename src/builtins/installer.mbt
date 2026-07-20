@@ -1846,7 +1846,7 @@ fn seat_env(build : @engine.InstallOutput, name : String, key : String) -> Unit 
 }
 
 ///|
-/// dd: `type:"dd"` を READ、greedy exact 衛星 (@engine.DdSat) を add-if-absent (DR-041 rev)。fire 時に spine
+/// dd: `type:"dd"` を READ、greedy exact 衛星 (@engine.DdSatisfied) を add-if-absent (DR-041 rev)。fire 時に spine
 /// walk が「severed」モードに切り替わり以降 greedy off — greedy internal consumption 一体化ルール。
 ///
 /// DR-064 §2 配置不問回収: dd は canonical には options[] だが positionals[] に置いても回収する
@@ -1854,18 +1854,18 @@ fn seat_env(build : @engine.InstallOutput, name : String, key : String) -> Unit 
 fn inst_dd(def : @engine.Definition, build : @engine.InstallOutput) -> Unit {
   // DR-064 §5: dd の name は trigger 綴りに効く (normalize_surface が既定 "--" を供給、明示は上書き)。
   // DR-090 §2: `dd_match` が None かつ `dd_self_keep` が false (両軸とも既定) の要素だけ、既存
-  // `@engine.DdSat` (exact/drop 専用ノード) をそのまま使う — 完全な後方互換 (既存 wbtest の `@engine.DdSat("--")`
-  // 手組みと構造一致し続ける)。どちらかの軸が既定から外れたら一般化ノード `@engine.DdMatchSat` を積む
+  // `@engine.DdSatisfied` (exact/drop 専用ノード) をそのまま使う — 完全な後方互換 (既存 wbtest の `@engine.DdSatisfied("--")`
+  // 手組みと構造一致し続ける)。どちらかの軸が既定から外れたら一般化ノード `@engine.DdMatchSatisfied` を積む
   // (`match` が Some のとき name はトリガ綴りに使われない、§2 の規定通り `e.name` の代わりに
   // `dd_match` の pattern を spelling に使う)。
   fn dd_node(e : @engine.ElemDef) -> @engine.Node {
     if e.dd_match is None && !e.dd_self_keep {
-      @engine.DdSat(e.name)
+      @engine.DdSatisfied(e.name)
     } else {
       match e.dd_match {
         Some(pattern) =>
-          @engine.DdMatchSat(pattern, true, e.dd_self_keep, e.name)
-        None => @engine.DdMatchSat(e.name, false, e.dd_self_keep, e.name)
+          @engine.DdMatchSatisfied(pattern, true, e.dd_self_keep, e.name)
+        None => @engine.DdMatchSatisfied(e.name, false, e.dd_self_keep, e.name)
       }
     }
   }
@@ -3065,11 +3065,11 @@ fn head_progresses(
     @engine.ReqArg(_)
     | @engine.Exact(_)
     | @engine.NativeMatch(_)
-    | @engine.DdSat(_)
-    | @engine.CmdSat(_, _) => true
-    // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `@engine.DdSat`,
+    | @engine.DdSatisfied(_)
+    | @engine.CmdSatisfied(_, _) => true
+    // DR-090: progress depends on `self_keep` — `drop` (false) consumes 1 token like `@engine.DdSatisfied`,
     // `keep` (true) is a 0-token @engine.Accept (same standing as `@engine.Bind`/`effect resident` below).
-    @engine.DdMatchSat(_, _, self_keep, _) => !self_keep
+    @engine.DdMatchSatisfied(_, _, self_keep, _) => !self_keep
     Ext(extension) => !extension.consumes_zero_tokens()
     @engine.IdxRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     @engine.BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費

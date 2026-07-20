@@ -544,7 +544,7 @@ test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty �
 /// own row bindings one scope level deeper than its declaring scope (`ref_row_head`/`@engine.Scoped(e.name,
 /// ...)`, installer.mbt DR-078 §1) — `front_door.resolve` (= `resolve_scope_tree`) used to filter
 /// "this scope's own bindings" by an EXACT scope-path match, which silently dropped that one-level-
-/// deeper wrap (it is neither an exact-path binding nor a genuine `@engine.CmdSat` command child)。
+/// deeper wrap (it is neither an exact-path binding nor a genuine `@engine.CmdSatisfied` command child)。
 /// `output.result` は fired ref+repeat cell の row を落とさず描画する。`kawaz/kuu` fixture
 /// `multiple-parse/ref-rows-append.json` fixes this exact shape (spec の
 /// 正本 — 個々の row / count は同 fixture の `zero-fires-empty` / `single-fire-list` /

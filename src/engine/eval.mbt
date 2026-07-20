@@ -60,7 +60,7 @@ pub fn Ctx::extensions(self : Ctx) -> Registry {
 /// parse counts complete paths (DR-038); complete collects expectations
 /// (DR-060). The walk is ONE implementation — mode switches the
 /// collection-policy points below (MDR-002 §2.4):
-/// - boundary trigger sites (Exact / CmdSat / DdSat / NativeMatch at args
+/// - boundary trigger sites (Exact / CmdSatisfied / DdSatisfied / NativeMatch at args
 ///   end) emit `Pending` exact candidates instead of a silent Reject;
 /// - spine value primitives starved at args end emit `Pending` value
 ///   candidates instead of a missing-operand Held;
@@ -76,8 +76,8 @@ fn in_complete(ctx : Ctx) -> Bool {
 }
 
 ///|
-/// DR-090 §2: whether `token` fires a `DdMatchSat` trigger — exact string equality
-/// (`is_pattern=false`, same test `DdSat` itself uses) or a compiled-regex unanchored search
+/// DR-090 §2: whether `token` fires a `DdMatchSatisfied` trigger — exact string equality
+/// (`is_pattern=false`, same test `DdSatisfied` itself uses) or a compiled-regex unanchored search
 /// (`is_pattern=true`, `filters.mbt`'s `compile_regex`/`execute` — the SAME host-dialect compile
 /// path DR-085's `regex_match` filter uses, per DR-090 §2 "照合方言は host 実装準拠"). A pattern
 /// that fails to compile is treated as never-matching here (defensive — `installer.mbt`'s
@@ -97,8 +97,8 @@ fn dd_match_token(spelling : String, is_pattern : Bool, token : String) -> Bool 
 ///|
 /// An exact-spelling candidate (the Pending payload at a trigger boundary,
 /// DR-060 §3). `ty` is only meaningful when a value must follow the spelling
-/// (term = Cont, e.g. an eq-split `--key`); a plain trigger carries "flag".
-pub fn Cand::trigger(
+/// (term = Continue, e.g. an eq-split `--key`); a plain trigger carries "flag".
+pub fn Candidate::trigger(
   spelling : String,
   origin : String,
   ty : String,
@@ -106,7 +106,7 @@ pub fn Cand::trigger(
   is_alias? : Bool = false,
   hidden? : Bool = false,
   deprecated? : Bool = false,
-) -> Cand {
+) -> Candidate {
   {
     spelling,
     is_value: false,
@@ -114,7 +114,7 @@ pub fn Cand::trigger(
     origin,
     term,
     meta: { is_alias, hidden, deprecated },
-    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
+    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSatisfied)
     link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
     fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: same "starts empty, scope
     // boundaries prepend unconditionally" posture as `path`/Held's own `ParseError.path` (`nest_path`
@@ -250,7 +250,7 @@ fn nest(label : String, binds : Array[Binding]) -> Array[Binding] {
 /// Prepend `label` onto a held Error's `path` (DR-066 §4 snoc form, root-first
 /// ancestor list). Mirrors `nest`'s scope-prepend on Binding, but for the
 /// error's path instead of a binding's scope — the two are threaded through
-/// the same scope-boundary crossings (Scoped / CmdSat) so a path built this
+/// the same scope-boundary crossings (Scoped / CmdSatisfied) so a path built this
 /// way lines up with the equivalent Binding.scope.
 fn nest_path(label : String, path : Array[String]) -> Array[String] {
   let out : Array[String] = [label]
@@ -279,10 +279,10 @@ fn nest_path(label : String, path : Array[String]) -> Array[String] {
 /// every call, regardless of `link` — it tracks the actual walk position (same rule `nest_path`
 /// applies to a Held's `ParseError.path`), never the Rooted-escape-adjusted `path`. This is what lets
 /// `missing_operand`'s KTop conversion (below) read a path that matches across every duplicate
-/// reading of the same starved slot (see `Cand.fire_path`'s doc comment for why `link`-gating the
+/// reading of the same starved slot (see `Candidate.fire_path`'s doc comment for why `link`-gating the
 /// KTop conversion instead doesn't work — `link` is always 0 by the time a candidate reaches KTop).
-fn nest_cands(label : String, cs : Array[Cand]) -> Array[Cand] {
-  let out : Array[Cand] = []
+fn nest_cands(label : String, cs : Array[Candidate]) -> Array[Candidate] {
+  let out : Array[Candidate] = []
   for c in cs {
     if c.link > 0 {
       out.push({
@@ -355,7 +355,7 @@ fn array_marker(label : String) -> Binding {
 ///|
 /// A pending-value candidate (the Pending payload): the value slot of
 /// `origin`, of type `ty`, had no token left to consume.
-pub fn Cand::pending_value(ty : String, origin : String) -> Cand {
+pub fn Candidate::pending_value(ty : String, origin : String) -> Candidate {
   {
     spelling: "",
     is_value: true,
@@ -363,14 +363,14 @@ pub fn Cand::pending_value(ty : String, origin : String) -> Cand {
     origin,
     term: WordEnd,
     meta: { is_alias: false, hidden: false, deprecated: false },
-    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSat)
+    path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CmdSatisfied)
     link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
-    fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: `Cand.fire_path`'s doc
+    fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: `Candidate.fire_path`'s doc
     // comment — the fire-time walk-position path a `missing_operand` ParseError conversion needs,
     // tracked independently of `path`'s Rooted-escape (`link`) bookkeeping.
     // DR-060 §4 / DR-104 §2(d): filled in by `complete_tree`'s (path, origin)-keyed Entity-table
     // lookup (outcome.mbt) as candidates fold into the dedup loop, NOT here — `pending_value_candidate` has no
-    // Entity table in scope at any of its 30+ call sites (see Cand.completer's doc comment).
+    // Entity table in scope at any of its 30+ call sites (see Candidate.completer's doc comment).
     completer: None,
   }
 }
@@ -478,7 +478,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // catch-all arm (below) patches origin/hidden up from the satellite's tail
         // (`fixup_boundary_cands`, DR-104 §2/§3); this fallback is what a truly
         // standalone Exact (outside that shape) keeps.
-        [Pending([Cand::trigger(s, s, "flag", WordEnd)], [])]
+        [Pending([Candidate::trigger(s, s, "flag", WordEnd)], [])]
       } else {
         // an unmatched (or, in parse mode, exhausted) trigger is a silent
         // Reject (spec DR-037), NOT a Pending: no part of the entry was
@@ -526,7 +526,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         Some(tpl) => eval(tpl, ctx, pos)
         None => []
       }
-    DdSat(trigger) =>
+    DdSatisfied(trigger) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         // DR-093 §2/§7: step_greedy の同アームと同じ committed placeholder binding (off-spine
         // evaluation はこの1本の Branch の bindings を返すだけ — 呼び出し元が outer acc と cat する)。
@@ -536,18 +536,18 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           ]),
         ]
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        [Pending([Cand::trigger(trigger, trigger, "flag", WordEnd)], [])]
+        [Pending([Candidate::trigger(trigger, trigger, "flag", WordEnd)], [])]
       } else {
         []
       }
-    // DR-090: off-spine mirror of `DdSat`'s own arm above, generalized to pattern matching +
+    // DR-090: off-spine mirror of `DdSatisfied`'s own arm above, generalized to pattern matching +
     // self_keep's 0-token Accept. Off-spine evaluation never threads `severed` (that's the SPINE
-    // walk's job, `step_greedy`'s own DdMatchSat arm below) — this arm only answers "does this
-    // node accept here", same degenerate scope `DdSat`'s off-spine arm already has.
-    DdMatchSat(spelling, is_pattern, self_keep, elem_name) =>
+    // walk's job, `step_greedy`'s own DdMatchSatisfied arm below) — this arm only answers "does this
+    // node accept here", same degenerate scope `DdSatisfied`'s off-spine arm already has.
+    DdMatchSatisfied(spelling, is_pattern, self_keep, elem_name) =>
       if pos < ctx.toks.length() &&
         dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
-        // DR-093 §2/§7: same committed placeholder as the DdSat arm above, keyed by `elem_name`.
+        // DR-093 §2/§7: same committed placeholder as the DdSatisfied arm above, keyed by `elem_name`.
         let b = Binding::new(elem_name, Bool(true), Cli, at_pos=Some(pos))
         if self_keep {
           [Accept(pos, [b])]
@@ -559,11 +559,13 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
         // pattern has no single "next token to type" to surface as a candidate).
         // DR-104 §2 origin = 由来要素名: `elem_name` (DR-090 §2, spelling と独立の同一性軸), NOT
         // `spelling` (a `match` trigger's regex-derived literal is not the element's name).
-        [Pending([Cand::trigger(spelling, elem_name, "flag", WordEnd)], [])]
+        [
+          Pending([Candidate::trigger(spelling, elem_name, "flag", WordEnd)], []),
+        ]
       } else {
         []
       }
-    CmdSat(name, child) =>
+    CmdSatisfied(name, child) =>
       // off-spine command (a probe or a nested context): child evaluated with
       // KDone; bindings nest under the name + presence marker. The greedy
       // face path (step_greedy) threads the real continuation instead.
@@ -576,7 +578,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           ),
         )
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        [Pending([Cand::trigger(name, name, "flag", WordEnd)], [])]
+        [Pending([Candidate::trigger(name, name, "flag", WordEnd)], [])]
       } else {
         []
       }
@@ -593,13 +595,13 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           }
           Held(pe, bs) => out.push(Held(pe, bs))
           Pending(cs, bs) => {
-            // Mirror the Accept arm's `link: depth` marking, but on Cand.link (DR-060 §4 /
+            // Mirror the Accept arm's `link: depth` marking, but on Candidate.link (DR-060 §4 /
             // issue 2026-07-14-cand-completer-followup): a global option's copied satellite
             // lives `depth` scopes below its OWN declaring scope, and its Entity (the one
             // `complete_tree`'s completer lookup needs) sits at that declaring scope, not
             // here — `nest_cands` (below) consumes this exactly like `nest` consumes
-            // `Binding.link`, skipping `depth` CmdSat-boundary prepends on the way out.
-            let marked : Array[Cand] = []
+            // `Binding.link`, skipping `depth` CmdSatisfied-boundary prepends on the way out.
+            let marked : Array[Candidate] = []
             for c in cs {
               marked.push({ ..c, link: depth })
             }
@@ -663,7 +665,7 @@ fn req_arg_eval(
       ),
     ]
   } else if in_complete(ctx) {
-    [Pending([Cand::pending_value("string", name)], acc)]
+    [Pending([Candidate::pending_value("string", name)], acc)]
   } else {
     [
       Held(
@@ -963,9 +965,9 @@ fn has_viable(brs : Array[Branch], pos : Int, ctx : Ctx) -> Bool {
 /// positional starves at end-of-input).
 ///
 /// Entries with NO value slot (flag/count/dd/command) are viable whenever
-/// the trigger fires, UNCONDITIONALLY — this is why CmdSat/DdSat/DdMatchSat
+/// the trigger fires, UNCONDITIONALLY — this is why CmdSatisfied/DdSatisfied/DdMatchSatisfied
 /// stay a bare structural trigger test below rather than routing through
-/// the shallow `eval` probe: a CmdSat's "value slot" is its entire child
+/// the shallow `eval` probe: a CmdSatisfied's "value slot" is its entire child
 /// scope, and evaluating that scope would pull in exactly the downstream
 /// failures (child-scope-internal missing/constraint) the predicate must
 /// not see.
@@ -988,9 +990,9 @@ fn greedy_engages(g : Node, ctx : Ctx, pos : Int) -> Bool {
       }
       false
     }
-    CmdSat(name, _) => ctx.toks[pos] == name
-    DdSat(t) => ctx.toks[pos] == t
-    DdMatchSat(spelling, is_pattern, _, _) =>
+    CmdSatisfied(name, _) => ctx.toks[pos] == name
+    DdSatisfied(t) => ctx.toks[pos] == t
+    DdMatchSatisfied(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
     Rooted(inner, _) => greedy_engages(inner, ctx, pos)
     _ => has_viable(eval(g, ctx, pos), pos, ctx)
@@ -1042,9 +1044,9 @@ fn greedy_trigger_matches(g : Node, ctx : Ctx, pos : Int) -> Bool {
       }
       false
     }
-    CmdSat(name, _) => ctx.toks[pos] == name
-    DdSat(t) => ctx.toks[pos] == t
-    DdMatchSat(spelling, is_pattern, _, _) =>
+    CmdSatisfied(name, _) => ctx.toks[pos] == name
+    DdSatisfied(t) => ctx.toks[pos] == t
+    DdMatchSatisfied(spelling, is_pattern, _, _) =>
       dd_match_token(spelling, is_pattern, ctx.toks[pos])
     NativeMatch(m) => run_matcher(m, ctx, pos).length() > 0
     Rooted(inner, _) => greedy_trigger_matches(inner, ctx, pos)
@@ -1163,7 +1165,7 @@ fn scope_step(
 ) -> Array[Branch] {
   let out : Array[Branch] = []
   // (A) greedy interjection — re-enter at the same pidx (positional face
-  // untouched). CmdSat / DdSat are dispatched structurally so their child
+  // untouched). CmdSatisfied / DdSatisfied are dispatched structurally so their child
   // walk gets the REAL continuation (this is where phase16 is won: the
   // child's repeats must see that the parent still wants a token).
   //
@@ -1309,8 +1311,8 @@ fn seq_boundary_name(node : Node) -> String? {
 
 ///|
 /// Whether `g` is (possibly through a `Rooted` global-link wrap) an option satellite's head Seq —
-/// and if so, the real origin name its tail carries. `None` for any other shape (CmdSat/DdSat/
-/// DdMatchSat/NativeMatch already carry their own correct origin, no fixup needed there; a bare
+/// and if so, the real origin name its tail carries. `None` for any other shape (CmdSatisfied/DdSatisfied/
+/// DdMatchSatisfied/NativeMatch already carry their own correct origin, no fixup needed there; a bare
 /// `Exact` alone or an unrecognized tail shape is left as the spelling fallback, unchanged).
 fn cand_boundary_origin(g : Node) -> String? {
   match g {
@@ -1337,12 +1339,16 @@ fn entity_extension(sc : Scope, name : String) -> &EntityExt? {
 /// exact-trigger candidate (`is_value:false`) a satellite's Pending carries; a value-position
 /// candidate (`is_value:true`, always built via `pending_value_candidate` with the correct origin already) is
 /// left untouched. A `None` origin (not an option-satellite boundary shape) is a no-op passthrough.
-fn fixup_boundary_cands(g : Node, sc : Scope, cs : Array[Cand]) -> Array[Cand] {
+fn fixup_boundary_cands(
+  g : Node,
+  sc : Scope,
+  cs : Array[Candidate],
+) -> Array[Candidate] {
   match cand_boundary_origin(g) {
     None => cs
     Some(origin) => {
       let extension = entity_extension(sc, origin)
-      let out : Array[Cand] = []
+      let out : Array[Candidate] = []
       for c in cs {
         if c.is_value {
           out.push(c)
@@ -1361,10 +1367,10 @@ fn fixup_boundary_cands(g : Node, sc : Scope, cs : Array[Cand]) -> Array[Cand] {
 
 ///|
 /// One greedy entry's interjection at (pos, pidx). Structural dispatch:
-/// - CmdSat: enter the child scope as a NEW backbone whose continuation is
+/// - CmdSatisfied: enter the child scope as a NEW backbone whose continuation is
 ///   "nest my bindings under the command name, then resume the parent at the
 ///   same pidx" — the child sees the whole outside world through `k`.
-/// - DdSat: consume the trigger and sever the rest of the walk.
+/// - DdSatisfied: consume the trigger and sever the rest of the walk.
 /// - Or: each alternative is its own interjection.
 /// - anything else: plain eval, then re-enter the walk on each reading.
 fn step_greedy(
@@ -1379,7 +1385,7 @@ fn step_greedy(
   out : Array[Branch],
 ) -> Unit {
   match g {
-    CmdSat(name, child) =>
+    CmdSatisfied(name, child) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == name {
         let kk = KNest(
           name,
@@ -1407,15 +1413,17 @@ fn step_greedy(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         // complete: the command name is readable at the boundary (DR-060 §1).
-        out.push(Pending([Cand::trigger(name, name, "flag", WordEnd)], acc))
+        out.push(
+          Pending([Candidate::trigger(name, name, "flag", WordEnd)], acc),
+        )
       }
-    DdSat(trigger) =>
+    DdSatisfied(trigger) =>
       if pos < ctx.toks.length() && ctx.toks[pos] == trigger {
         // DR-093 §2/§7: fire を committed として観測可能にする placeholder binding
         // (`flag_bare_true_variant` と同型の `Set Bool(true)`、`NoneCell`/`none_cells` が
-        // build_result/effects から除外する — 値そのものは運ばない、DR-089 §3 不変)。DdSat の
+        // build_result/effects から除外する — 値そのものは運ばない、DR-089 §3 不変)。DdSatisfied の
         // trigger 文字列は要素名そのもの (dd_match 未使用の唯一のケースでのみ installer が
-        // `DdSat(e.name)` を作る) なのでそのまま key に使える。
+        // `DdSatisfied(e.name)` を作る) なのでそのまま key に使える。
         let acc2 = acc +
           [Binding::new(trigger, Bool(true), Cli, at_pos=Some(pos))]
         for r in scope_step(sc, ctx, pos + 1, pidx, acc2, true, k) {
@@ -1423,20 +1431,20 @@ fn step_greedy(
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
         out.push(
-          Pending([Cand::trigger(trigger, trigger, "flag", WordEnd)], acc),
+          Pending([Candidate::trigger(trigger, trigger, "flag", WordEnd)], acc),
         )
       }
-    // DR-090 §1/§2: generalized dd. `severed=true` is unconditional here exactly like `DdSat`
+    // DR-090 §1/§2: generalized dd. `severed=true` is unconditional here exactly like `DdSatisfied`
     // above (the sever is the "greedy internal consumption is 一体" rule, unaffected by which
     // axis fired). `self_keep` only changes the RESUMED position: `false` (drop) consumes the
-    // triggering token (`pos + 1`, same as `DdSat`); `true` (keep) resumes at the SAME `pos` —
+    // triggering token (`pos + 1`, same as `DdSatisfied`); `true` (keep) resumes at the SAME `pos` —
     // the triggering token itself is never consumed here, so it flows into the positional face
     // (now severed = raw) starting with itself, matching §2's "自身を含めて以降が positional 域".
-    DdMatchSat(spelling, is_pattern, self_keep, elem_name) =>
+    DdMatchSatisfied(spelling, is_pattern, self_keep, elem_name) =>
       if pos < ctx.toks.length() &&
         dd_match_token(spelling, is_pattern, ctx.toks[pos]) {
         let resume_pos = if self_keep { pos } else { pos + 1 }
-        // DR-093 §2/§7: DdSat と同じ committed placeholder binding。key は `elem_name` (要素の
+        // DR-093 §2/§7: DdSatisfied と同じ committed placeholder binding。key は `elem_name` (要素の
         // 同一性軸、DR-090 §2) — `spelling` は match 使用時トリガ綴りやパターンで要素名と一致しない。
         let acc2 = acc +
           [Binding::new(elem_name, Bool(true), Cli, at_pos=Some(pos))]
@@ -1448,7 +1456,10 @@ fn step_greedy(
         // identical rationale) — a pattern trigger has no single "next token to type".
         // DR-104 §2 origin = 由来要素名: `elem_name`, mirroring the off-spine arm's fix above.
         out.push(
-          Pending([Cand::trigger(spelling, elem_name, "flag", WordEnd)], acc),
+          Pending(
+            [Candidate::trigger(spelling, elem_name, "flag", WordEnd)],
+            acc,
+          ),
         )
       }
     Or(alts) =>
@@ -1599,7 +1610,7 @@ fn scope_consume(
         )
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([Cand::pending_value("string", name)], acc)]
+          [Pending([Candidate::pending_value("string", name)], acc)]
         } else {
           [
             Held(
@@ -1625,7 +1636,7 @@ fn scope_consume(
         // positional-spine literal (a structural or-branch's exact value, not an option
         // trigger) — origin IS the spelling here, there is no separate element name to
         // extract (none of our fixtures exercise this shape yet, kept as-is).
-        [Pending([Cand::trigger(s, s, "flag", WordEnd)], acc)]
+        [Pending([Candidate::trigger(s, s, "flag", WordEnd)], acc)]
       } else {
         []
       }
@@ -1935,7 +1946,7 @@ fn consume_head(
         ]
       } else if pos >= ctx.toks.length() {
         if in_complete(ctx) {
-          [Pending([Cand::pending_value("string", name)], [])]
+          [Pending([Candidate::pending_value("string", name)], [])]
         } else {
           [
             Held(
@@ -2078,7 +2089,7 @@ fn head_elem_names_into(node : Node, out : Array[String]) -> Unit {
         head_elem_names_into(p, out)
       }
     }
-    // Ref/CmdSat/DdSat/Rooted/etc.: opaque or heavy — do not recurse (Ref
+    // Ref/CmdSatisfied/DdSatisfied/Rooted/etc.: opaque or heavy — do not recurse (Ref
     // could loop; command/dd satellites are not walked by the head reps).
     _ => ()
   }
@@ -2321,7 +2332,7 @@ pub fn ParseError::constraint(
   pos : Int,
 ) -> ParseError {
   // DR-066 §4: path starts empty here and is prepended by scope boundaries
-  // (nest_branches / CmdSat) as the Held rides KTop's result back out through
+  // (nest_branches / CmdSatisfied) as the Held rides KTop's result back out through
   // the continuation chain — NOT `sc.path` (ScopedCons's path is the
   // scope_path_eq lookup key, reusing it here would double the prefix once
   // the same Held crosses those same boundaries on its way out).
@@ -2592,9 +2603,9 @@ fn eval_constraints(
 ///|
 /// SCB-Q1=a (docs/QUESTIONS.md、kawaz 裁定 2026-07-17): 未選択 (未入場) command scope に
 /// 宣言された遅延述語は評価に参加しない。原理は「グローバルオプション以外、サブコマンドは完全に
-/// 別コマンドと見るべき」で、root scope は常に選択済み。「選択」は当該実行で CmdSat がその scope
+/// 別コマンドと見るべき」で、root scope は常に選択済み。「選択」は当該実行で CmdSatisfied がその scope
 /// に入場したこと。判定は bindings 内の `scope_marker` (`cont.mbt` KNest の `is_cmd=true` 分岐が
-/// CmdSat 入場時に prepend する `{key:"{}", scope:[label], ...}` binding、`nest` 展開でフル path に
+/// CmdSatisfied 入場時に prepend する `{key:"{}", scope:[label], ...}` binding、`nest` 展開でフル path に
 /// 育つ) の存在で行う — 「入場したが何も発火しなかった」scope も scope_marker は自動で入るので、
 /// 未入場 (絶対 absent) と区別できる。SCB-Q2=a (集約は scope 局所) は現実装通りで変更不要 —
 /// `collect_scopes` が scope ごとに独立 ScopedCons を作り、`constraint installer` は宣言 scope 内で
@@ -2623,7 +2634,7 @@ pub fn scope_selected(bindings : Array[Binding], path : Array[String]) -> Bool {
 
 ///|
 /// Evaluate every SELECTED scope's constraints (SCB-Q1=a、kawaz 裁定 2026-07-17): root scope
-/// (path=[]) is always selected; a nested (CmdSat) scope is selected only when it was actually
+/// (path=[]) is always selected; a nested (CmdSatisfied) scope is selected only when it was actually
 /// entered during this run (its `scope_marker` is present in `bindings`). Unselected scopes have
 /// their predicates skipped — a subcommand's predicates are the *entered* subcommand's business,
 /// not a sibling command's. Called from KTop so that "complete解決経路 = full consumption AND all
@@ -2654,7 +2665,7 @@ fn eval_all_constraints(
 
 ///|
 /// Collect (result-path, constraints, entities) for the root scope and every
-/// statically reachable nested scope: CmdSat children (path + [name], also
+/// statically reachable nested scope: CmdSatisfied children (path + [name], also
 /// inside Or-bundled greedy entries), inline positional ScopeNodes and
 /// scope-shaped repeat heads (transparent — same path, their bindings are
 /// not nested). Scopes with no constraints are skipped (nothing to check).
@@ -2703,7 +2714,7 @@ fn collect_greedy_scopes(
   seen_refs : Array[String],
 ) -> Unit {
   match g {
-    CmdSat(name, child) => {
+    CmdSatisfied(name, child) => {
       let p2 : Array[String] = []
       for s in path {
         p2.push(s)
@@ -2870,7 +2881,7 @@ pub fn parse_tree(
         // errors for the SAME starved slot (one per re-evaluation the CPS walk performs — root-copy,
         // any mid-nesting re-entry, and the innermost read), each with a DIFFERENT (and mostly wrong)
         // path, because `link`'s escape bookkeeping diverges per candidate while `fire_path` does
-        // not. `fire_path` (`Cand.fire_path` doc comment) is prepended unconditionally by every scope
+        // not. `fire_path` (`Candidate.fire_path` doc comment) is prepended unconditionally by every scope
         // boundary regardless of `link`, so every duplicate reading of the SAME starved slot carries
         // the SAME `fire_path` — `push_error`'s dedup (element, args_pos, kind, reason, path) then
         // collapses them to the single correct entry instead of leaving path-mismatched duplicates.

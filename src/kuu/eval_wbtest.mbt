@@ -35,7 +35,7 @@ test "MDR-002 §1.5 acceptance: greedy repeat in a child command yields the pare
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("seq", child)],
+    greedy: [@engine.CmdSatisfied("seq", child)],
     positional: [@builtins.string_arg("tail", [])],
     entities: [],
     constraints: [],
@@ -95,7 +95,7 @@ test "MDR-002 §1.4 control: without the trailing positional, greedy xs takes ev
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("seq", child)],
+    greedy: [@engine.CmdSatisfied("seq", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -213,7 +213,7 @@ test "dd sever: past `--`, a trigger-looking token falls raw into the positional
   let root : @engine.Scope = {
     greedy: [
       @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @engine.Bool(true))]),
-      @engine.DdSat("--"),
+      @engine.DdSatisfied("--"),
     ],
     positional: [@builtins.string_arg("x", [])],
     entities: [],
@@ -451,7 +451,7 @@ test "REVIEW-C4 non-scope root: residual of a partial @engine.Accept surfaces ev
 
 ///|
 test "REGRESSION dd sever transparent to positional inline @engine.ScopeNode child (DR-041 dashdash)" {
-  // deep-review R4a: root's @engine.DdSat("--") fires; the positional walk then
+  // deep-review R4a: root's @engine.DdSatisfied("--") fires; the positional walk then
   // enters a @engine.ScopeNode child; without the sever pass-through the child's
   // greedy face resurrects and reads "-x" as the child's -x option
   // (@engine.Success x=true, a="w"). Spec DR-041/042 ⑤: dd's continuation is raw
@@ -467,7 +467,7 @@ test "REGRESSION dd sever transparent to positional inline @engine.ScopeNode chi
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.DdSat("--")],
+    greedy: [@engine.DdSatisfied("--")],
     positional: [@engine.ScopeNode(child)],
     entities: [],
     constraints: [],
@@ -754,7 +754,7 @@ test "DR-053 §4: tried_triggers reflects the failure position's OWN scope, not 
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("sub", child)],
+    greedy: [@engine.CmdSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -806,7 +806,7 @@ test "DR-053 §4: help_entry reflects the failure position's OWN scope, not root
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("sub", child)],
+    greedy: [@engine.CmdSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -841,7 +841,7 @@ test "DR-053 §4: help_entry is None when the failure-position scope has no help
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("sub", child)],
+    greedy: [@engine.CmdSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -923,7 +923,7 @@ test "REVIEW-D2 制約照合は scope-exact: 子スコープの同名 key は ro
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("c", child)],
+    greedy: [@engine.CmdSatisfied("c", child)],
     positional: [],
     entities: [],
     constraints: [Requires("x", ["z"])],
@@ -961,7 +961,7 @@ test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコー�
         @engine.Exact("--file"),
         @engine.Bind("file", @engine.Bool(true)),
       ]),
-      @engine.CmdSat("sub", child),
+      @engine.CmdSatisfied("sub", child),
     ],
     positional: [],
     entities: [],
@@ -1003,7 +1003,7 @@ test "REVIEW-D4 入れ子スコープの constraints も完全経路の成立条
     constraints: [Conflicts("x", ["y"])],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("sub", child)],
+    greedy: [@engine.CmdSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1183,9 +1183,9 @@ test "DR-097 述語 pin: requires (遅延述語) 未充足は先食い判定に�
 }
 
 ///|
-test "REVIEW-D6 @engine.CmdSat トリガ一致も先食い: 子スコープ不成立でも command 名は raw 落ちしない" {
+test "REVIEW-D6 @engine.CmdSatisfied トリガ一致も先食い: 子スコープ不成立でも command 名は raw 落ちしない" {
   // `build` が最終トークンで子スコープの必須 positional x が満たせない場合、
-  // 旧実装は @engine.CmdSat の読みが立たず build が親 positional f に raw 落ちして
+  // 旧実装は @engine.CmdSatisfied の読みが立たず build が親 positional f に raw 落ちして
   // silent @engine.Success になっていた。トリガ (command 名) 一致で suppress し、
   // 結末は x の missing_operand を含む @engine.Failure。
   let child : @engine.Scope = {
@@ -1195,7 +1195,7 @@ test "REVIEW-D6 @engine.CmdSat トリガ一致も先食い: 子スコープ不�
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("build", child)],
+    greedy: [@engine.CmdSatisfied("build", child)],
     positional: [@builtins.string_arg("f", [])],
     entities: [],
     constraints: [],
@@ -1488,7 +1488,7 @@ test "REGRESSION scope_consume_rep @engine.Many(compound ref-template head) resp
 
 ///|
 /// A held Error at the ROOT scope carries `path: []` (root 直下, DR-066 §4):
-/// no @engine.CmdSat/@engine.Scoped boundary was crossed on the way out, so there is no
+/// no @engine.CmdSatisfied/@engine.Scoped boundary was crossed on the way out, so there is no
 /// ancestor to record.
 test "DR-066 §4: a root-level held Error carries path: []" {
   let root : @engine.Scope = {
@@ -1514,11 +1514,11 @@ test "DR-066 §4: a root-level held Error carries path: []" {
 }
 
 ///|
-/// A held Error one @engine.CmdSat deep carries `path: [<command name>]` (DR-066 §4
+/// A held Error one @engine.CmdSatisfied deep carries `path: [<command name>]` (DR-066 §4
 /// snoc form: `path` = ancestors, `element` = self). The error fires INSIDE
 /// the child scope (a bare `number resident` parse failure straight from `eval`,
 /// `path: []` at construction) and crosses exactly one command boundary on
-/// its way out through `step_greedy`'s @engine.CmdSat arm.
+/// its way out through `step_greedy`'s @engine.CmdSatisfied arm.
 test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
   let child : @engine.Scope = {
     greedy: [],
@@ -1527,7 +1527,7 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("sub", child)],
+    greedy: [@engine.CmdSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1553,11 +1553,11 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
 }
 
 ///|
-/// A held Error two @engine.CmdSat levels deep carries `path: ["a", "b"]` (root-first,
+/// A held Error two @engine.CmdSatisfied levels deep carries `path: ["a", "b"]` (root-first,
 /// DR-066 §4): the error crosses TWO command boundaries on its way out — "b"
 /// prepends first (innermost, its own step_greedy loop), then "a" prepends in
 /// front of that (its parent's), landing root-first as the CPS @engine.Held bubbles
-/// out through both KNest/@engine.CmdSat crossings.
+/// out through both KNest/@engine.CmdSatisfied crossings.
 test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (root-first)" {
   let grandchild : @engine.Scope = {
     greedy: [],
@@ -1566,13 +1566,13 @@ test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (r
     constraints: [],
   }
   let child : @engine.Scope = {
-    greedy: [@engine.CmdSat("b", grandchild)],
+    greedy: [@engine.CmdSatisfied("b", grandchild)],
     positional: [],
     entities: [],
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("a", child)],
+    greedy: [@engine.CmdSatisfied("a", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1616,7 +1616,7 @@ test "DR-066 §4: a constraint violation declared in a child scope carries the c
     constraints: [Requires("x", ["y"])],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("sub", child)],
+    greedy: [@engine.CmdSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],
@@ -1681,7 +1681,7 @@ test "DR-066 §4: a residual-token Error carries path: []" {
 /// DR-066 §4 (issue 2026-07-08 pending-starvation-missing-operand-path): a @engine.Pending's
 /// starved value slot converts to a `missing_operand` Error at parse()'s top level
 /// (MDR-002 §2.3). That conversion point sat OUTSIDE the CPS scope-boundary prepend
-/// (`nest_branches` / `step_greedy`'s @engine.CmdSat case) that a @engine.Held's `@engine.ParseError.path`
+/// (`nest_branches` / `step_greedy`'s @engine.CmdSatisfied case) that a @engine.Held's `@engine.ParseError.path`
 /// already rode through, so nested-scope starvation always surfaced `path: []` no
 /// matter how deep the starved slot actually was. `sub --port` (no value token after
 /// `--port`) starves the value slot at input end one command-scope deep.
@@ -1695,7 +1695,7 @@ test "DR-066 §4: a @engine.Pending-starvation missing_operand Error inside a ne
     constraints: [],
   }
   let root : @engine.Scope = {
-    greedy: [@engine.CmdSat("sub", child)],
+    greedy: [@engine.CmdSatisfied("sub", child)],
     positional: [],
     entities: [],
     constraints: [],

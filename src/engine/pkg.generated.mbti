@@ -26,7 +26,7 @@ pub fn collect_installer_vocab_errors(Definition, Array[&InstallerExt]) -> Array
 
 pub fn collect_scopes(Node, Map[String, Node]) -> Array[ScopedCons]
 
-pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Array[String], extensions? : Registry) -> Array[Cand]
+pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Array[String], extensions? : Registry) -> Array[Candidate]
 
 pub fn config_from_json(Json) -> ConfigVal
 
@@ -129,10 +129,16 @@ pub(all) struct BoolConfig {
 pub(all) enum Branch {
   Accept(Int, Array[Binding])
   Held(ParseError, Array[Binding])
-  Pending(Array[Cand], Array[Binding])
+  Pending(Array[Candidate], Array[Binding])
 } derive(@debug.Debug)
 
-pub(all) struct Cand {
+pub(all) struct CandMeta {
+  is_alias : Bool
+  hidden : Bool
+  deprecated : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Candidate {
   spelling : String
   is_value : Bool
   ty : String
@@ -144,14 +150,8 @@ pub(all) struct Cand {
   fire_path : Array[String]
   completer : String?
 } derive(Eq, @debug.Debug)
-pub fn Cand::pending_value(String, String) -> Self
-pub fn Cand::trigger(String, String, String, TermHint, is_alias? : Bool, hidden? : Bool, deprecated? : Bool) -> Self
-
-pub(all) struct CandMeta {
-  is_alias : Bool
-  hidden : Bool
-  deprecated : Bool
-} derive(Eq, @debug.Debug)
+pub fn Candidate::pending_value(String, String) -> Self
+pub fn Candidate::trigger(String, String, String, TermHint, is_alias? : Bool, hidden? : Bool, deprecated? : Bool) -> Self
 
 pub(all) enum CellFnArity {
   Exact(Int)
@@ -611,9 +611,9 @@ pub(all) enum Node {
   NativeMatch(&MatcherExt)
   Ext(&NodeExt)
   Ref(String)
-  DdSat(String)
-  DdMatchSat(String, Bool, Bool, String)
-  CmdSat(String, Scope)
+  DdSatisfied(String)
+  DdMatchSatisfied(String, Bool, Bool, String)
+  CmdSatisfied(String, Scope)
   Rooted(Node, Int)
   BoundedTail(Node, Int, Bool)
   IdxRepeat(String, Node, Int, Int?)
@@ -766,7 +766,7 @@ pub(all) enum Source {
 
 pub(all) enum TermHint {
   WordEnd
-  Cont
+  Continue
 } derive(Eq, @debug.Debug)
 
 pub(all) struct TypeParseFail {
@@ -830,7 +830,7 @@ pub impl @debug.Debug for &CollectorExt
 
 pub(open) trait EntityExt {
   fn encode(Self) -> Json = _
-  fn complete_candidate(Self, Cand) -> Cand
+  fn complete_candidate(Self, Candidate) -> Candidate
 }
 pub impl Eq for &EntityExt
 pub impl @debug.Debug for &EntityExt
@@ -846,7 +846,7 @@ pub(open) trait MatcherExt {
   fn kind(Self) -> String
   fn encode(Self) -> Json
   fn equal(Self, &MatcherExt) -> Bool = _
-  fn candidates(Self) -> Array[Cand]
+  fn candidates(Self) -> Array[Candidate]
   fn interpret(Self, Ctx, Int, Array[Binding], (Ctx, Int, Array[Binding]) -> Array[Branch]) -> Array[Branch]
 }
 pub impl Eq for &MatcherExt

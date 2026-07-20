@@ -35,7 +35,7 @@ impl NodeExt for TestValueExt with fn eval(self, ctx, pos, acc, next) {
         pos + 1,
         acc + [Binding::new(self.name, String(token), Cli, at_pos=Some(pos))],
       )
-    None => [Pending([Cand::pending_value("string", self.name)], acc)]
+    None => [Pending([Candidate::pending_value("string", self.name)], acc)]
   }
 }
 

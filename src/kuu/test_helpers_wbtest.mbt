@@ -421,11 +421,11 @@ fn resolve_scope_config(
 
 ///|
 /// Fetch a subcommand's built @engine.Scope from a parent @engine.Scope by name. Subcommands are
-/// materialized as greedy `@engine.CmdSat(name, child)` entries.
+/// materialized as greedy `@engine.CmdSatisfied(name, child)` entries.
 fn command_child(sc : @engine.Scope, name : String) -> @engine.Scope? {
   for g in sc.greedy {
     match g {
-      @engine.CmdSat(n, child) => if n == name { return Some(child) }
+      @engine.CmdSatisfied(n, child) => if n == name { return Some(child) }
       _ => ()
     }
   }

@@ -8,7 +8,7 @@
 // the `int_round` rounding modes (with the binary64-非経由 requirement realized by
 // lexical scanning here). MDR-002 §3: value.mbt depends on node.mbt only.
 //
-// `Binding` / `ParseError` (DR-066 5-field with reason) live here; `Branch` and `Cand` live in
+// `Binding` / `ParseError` (DR-066 5-field with reason) live here; `Branch` and `Candidate` live in
 // node.mbt. The matcher builds bindings via the mk_binding / cat / pe_filter / depr_marker helpers at the
 // end of this file.
 
@@ -284,7 +284,7 @@ pub(all) struct Binding {
   scope : Array[String]
   link : Int // a link/global-copy binding (DR-042/007): the number of result-nesting levels it
   //           still ESCAPES before settling at its declaring scope. 0 = a normal binding (every
-  //           CmdSat/Scoped level prepends its label). N>0 = a global copied N scopes BELOW its
+  //           CmdSatisfied/Scoped level prepends its label). N>0 = a global copied N scopes BELOW its
   //           declaration; the next N nest levels skip prepending (decrementing), then it nests
   //           normally — so an intermediate-scope global (DR-042 shadow) lands at its declaring
   //           scope, not the absolute root. A root global (declared at depth 0) has N = its firing
