@@ -526,8 +526,8 @@ pub fn FnCtx::option(Self, String) -> Value?
 pub fn FnCtx::system(Self, String) -> Value?
 
 pub(all) enum FnFallibility {
-  TotalFn
-  RejectFn
+  Total
+  Reject
 } derive(Eq, @debug.Debug)
 
 #alias(FilterSpelling)

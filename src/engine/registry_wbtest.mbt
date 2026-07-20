@@ -342,7 +342,7 @@ test "filters and cell_fns keep independent registries even for the same name" {
   let registry = Registry::new()
   assert_true(registry.register_filter(registry_filter("shared", "filter:")))
   assert_true(
-    registry.register_cell_fn(cell_fn_descriptor("shared", [], Value, TotalFn)),
+    registry.register_cell_fn(cell_fn_descriptor("shared", [], Value, Total)),
   )
   assert_true(registry.lookup_filter("shared") is Some(_))
   assert_true(registry.lookup_cell_fn("shared") is Some(_))
@@ -350,7 +350,7 @@ test "filters and cell_fns keep independent registries even for the same name" {
   assert_false(registry.register_filter(registry_filter("shared", "other:")))
   assert_false(
     registry.register_cell_fn(
-      cell_fn_descriptor("shared", [cell_fn_parameter("arg")], Value, RejectFn),
+      cell_fn_descriptor("shared", [cell_fn_parameter("arg")], Value, Reject),
     ),
   )
   assert_eq(registry.lookup_cell_fn("shared").unwrap().arity(), Exact(0))

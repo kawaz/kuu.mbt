@@ -33,7 +33,7 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   ])
   assert_eq(set.arity(), @engine.AtLeast(1))
   assert_eq(set.output(), @engine.Value)
-  assert_eq(set.fallibility(), @engine.TotalFn)
+  assert_eq(set.fallibility(), @engine.Total)
   assert_eq(set.observes(), [])
   assert_eq(set.reasons(), [])
 
@@ -49,7 +49,7 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   for name in ["default", "unset", "empty"] {
     let descriptor = registry.lookup_cell_fn(name).unwrap()
     assert_eq(descriptor.arity(), @engine.Exact(0))
-    assert_eq(descriptor.fallibility(), @engine.TotalFn)
+    assert_eq(descriptor.fallibility(), @engine.Total)
     assert_eq(descriptor.observes(), [])
     assert_eq(descriptor.reasons(), [])
   }
@@ -58,13 +58,13 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(incr.parameters(), [])
   assert_eq(incr.arity(), @engine.Exact(0))
   assert_eq(incr.output(), @engine.Number)
-  assert_eq(incr.fallibility(), @engine.TotalFn)
+  assert_eq(incr.fallibility(), @engine.Total)
 
   let borrow = registry.lookup_cell_fn("borrow").unwrap()
   assert_eq(borrow.parameters(), [@engine.cell_fn_parameter("source")])
   assert_eq(borrow.arity(), @engine.Exact(1))
   assert_eq(borrow.output(), @engine.Value)
-  assert_eq(borrow.fallibility(), @engine.RejectFn)
+  assert_eq(borrow.fallibility(), @engine.Reject)
   assert_eq(borrow.observes(), ["option:<source>"])
   assert_eq(borrow.reasons(), ["absent-source"])
 
@@ -72,7 +72,7 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(env.parameters(), [@engine.cell_fn_parameter("var")])
   assert_eq(env.arity(), @engine.Exact(1))
   assert_eq(env.output(), @engine.Value)
-  assert_eq(env.fallibility(), @engine.RejectFn)
+  assert_eq(env.fallibility(), @engine.Reject)
   assert_eq(env.observes(), ["env:<var>"])
   assert_eq(env.reasons(), ["absent-source"])
 
@@ -82,7 +82,7 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   ])
   assert_eq(inherit_descriptor.arity(), @engine.Exact(1))
   assert_eq(inherit_descriptor.output(), @engine.Value)
-  assert_eq(inherit_descriptor.fallibility(), @engine.RejectFn)
+  assert_eq(inherit_descriptor.fallibility(), @engine.Reject)
   assert_eq(inherit_descriptor.observes(), ["option:<source>"])
   assert_eq(inherit_descriptor.reasons(), ["absent-source"])
 
@@ -92,7 +92,7 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   ])
   assert_eq(uuid.arity(), @engine.Between(0, 1))
   assert_eq(uuid.output(), @engine.String)
-  assert_eq(uuid.fallibility(), @engine.TotalFn)
+  assert_eq(uuid.fallibility(), @engine.Total)
   assert_eq(uuid.observes(), [])
   assert_eq(uuid.reasons(), [])
 
@@ -100,7 +100,7 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(computed.parameters(), [@engine.cell_fn_parameter("key")])
   assert_eq(computed.arity(), @engine.Exact(1))
   assert_eq(computed.output(), @engine.Value)
-  assert_eq(computed.fallibility(), @engine.RejectFn)
+  assert_eq(computed.fallibility(), @engine.Reject)
   assert_eq(computed.observes(), ["system:<key>"])
   assert_eq(computed.reasons(), ["absent-source"])
 }

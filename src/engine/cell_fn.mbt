@@ -49,8 +49,8 @@ pub fn CellFnArity::accepts(self : CellFnArity, count : Int) -> Bool {
 
 ///|
 pub(all) enum FnFallibility {
-  TotalFn
-  RejectFn
+  Total
+  Reject
 } derive(Eq, Debug)
 
 ///|
