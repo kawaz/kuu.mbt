@@ -37,8 +37,8 @@ fn empty_help_meta_for_test() -> @engine.HelpMetaDecl {
     is_help_preset: false,
     type_name: None,
     preset_kind: None,
-  value_structure_hint: None,
-  type_ref: None,
+    value_structure_hint: None,
+    type_ref: None,
   }
 }
 
@@ -121,8 +121,8 @@ fn el(
       is_help_preset: false,
       type_name: None,
       preset_kind: None,
-    value_structure_hint: None,
-    type_ref: None,
+      value_structure_hint: None,
+      type_ref: None,
     },
     is_tty,
     tty_stream,

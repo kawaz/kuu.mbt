@@ -1967,15 +1967,22 @@ fn help_query_error_json(err : @kuu.HelpQueryError) -> Json {
 
 ///|
 fn run_help(fixture : DHelpFixture, case : DHelpCase) -> String {
+  // DR-113 §1/§9 (M5-2): runner は @kuu.help を直呼びせず、canonical registry の
+  // help_query capability を lookup 経由で dispatch する。未登録なら
+  // "capability not registered" を surface (kuu の canonical registry は必ず含むので
+  // 通常の fixture 経路では発生しない — 登録忘れの実装 regression を検知するガード)。
+  let registry = canonical_registry_for_test()
   let actual = match
-    @kuu.help(
+    @kuu.dispatch_help_query(
+      registry,
       fixture.ast,
       path=case.path,
       depth=case.depth,
       category_mode=case.category_mode,
     ) {
-    Ok(model) => help_model_json(model)
-    Err(err) => help_query_error_json(err)
+    None => return "help_query capability not registered in canonical registry"
+    Some(Ok(model)) => help_model_json(model)
+    Some(Err(err)) => help_query_error_json(err)
   }
   if actual == case.expect {
     "PASS"

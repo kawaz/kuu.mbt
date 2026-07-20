@@ -1,7 +1,7 @@
 // help.mbt — DR-113 §1/§4 の宣言層 help query と構造化 help model 実装。
 
 ///|
-using @engine { type HelpValueStructure }
+using @engine {type HelpValueStructure}
 
 ///|
 pub(all) enum HelpDepth {
@@ -33,7 +33,11 @@ pub(all) enum HelpQueryError {
 ///|
 /// DR-113 §1 の help_query capability carrier struct。CapabilityExt.name() で "help_query" を
 /// 返し、`Registry.register_capability` 経由で engine registry へ載せる。実際の invoke ABI は
-/// `pub fn help(...)` (このファイル内)。
+/// `pub fn help(...)` (このファイル内)。runner は `dispatch_help_query` (下記) を経由して
+/// capability lookup 後に invoke する — capability trait 側の generic invoke は各能力の
+/// signature 差 (help_query は Result[HelpModel, HelpQueryError]、将来の complete_query は別型)
+/// を吸収できないため、engine/capability.mbt の設計 (「具体的な singleton を経由して invoke」)
+/// に従い、名前 lookup で登録有無を確認したうえで known singleton の `help` を直接呼ぶ。
 pub struct HelpQueryCapability {}
 
 ///|
@@ -44,6 +48,27 @@ pub impl @engine.CapabilityExt for HelpQueryCapability with fn name(_self) {
 ///|
 pub fn help_query_capability() -> &@engine.CapabilityExt {
   HelpQueryCapability::{  } as &@engine.CapabilityExt
+}
+
+///|
+/// DR-113 §1/§9 capability dispatch: registry で "help_query" capability の登録を確認し、
+/// 登録済みなら help singleton の invoke ABI を呼ぶ。未登録なら None を返す (fixture runner や
+/// アプリ側が「capability が登録されていないので出力できない」を検知できる)。
+///
+/// 未登録は abnormal (kuu の canonical registry は必ず help_query を含む) — 登録忘れの実装ミス
+/// を早期に surface するのが目的で、query-error の一部として扱わない (query-error は「合法な
+/// definition に対する呼び出し側入力の失敗」であり、runtime configuration の欠落は別位相)。
+pub fn dispatch_help_query(
+  registry : @engine.Registry,
+  ast : AtomicAST,
+  path? : Array[String] = [],
+  depth? : HelpDepth = DScope,
+  category_mode? : HelpCategoryMode = HCMDefault,
+) -> Result[HelpModel, HelpQueryError]? {
+  match registry.lookup_capability("help_query") {
+    None => None
+    Some(_) => Some(help(ast, path~, depth~, category_mode~))
+  }
 }
 
 ///|
@@ -382,9 +407,7 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
   // 拾わない) は type_ref を優先する — value_name は wire の value_name を上書き名として使う。
   match meta.type_ref {
     Some(id) =>
-      return Some(
-        @engine.HVTypeRef({ id, value_name: meta.value_name }),
-      )
+      return Some(@engine.HVTypeRef({ id, value_name: meta.value_name }))
     None => ()
   }
   // help_category 特殊: or[bool, string] を展開 (DR-113 §2.3)。value_name は string 側の枝に付く。
@@ -417,7 +440,11 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
         _ => None
       }
       Some(
-        @engine.HVSingle({ value_name: meta.value_name, type_: Some(t), values_enum }),
+        @engine.HVSingle({
+          value_name: meta.value_name,
+          type_: Some(t),
+          values_enum,
+        }),
       )
     }
   }
@@ -1012,8 +1039,14 @@ fn collect_used_as_from_vs(
           None => ()
         }
       }
-    @engine.HVSeq(nodes) => for n in nodes { collect_used_as_from_vs(n, target, out) }
-    @engine.HVOr(nodes) => for n in nodes { collect_used_as_from_vs(n, target, out) }
+    @engine.HVSeq(nodes) =>
+      for n in nodes {
+        collect_used_as_from_vs(n, target, out)
+      }
+    @engine.HVOr(nodes) =>
+      for n in nodes {
+        collect_used_as_from_vs(n, target, out)
+      }
     @engine.HVRepeat(spec) => collect_used_as_from_vs(spec.node, target, out)
     @engine.HVSingle(_) => ()
   }
@@ -1113,7 +1146,11 @@ pub fn help(
     command_path.push(segment)
   }
   let mut model = build_help_model(
-    selected, command_path, depth, index, ast.declaration,
+    selected,
+    command_path,
+    depth,
+    index,
+    ast.declaration,
   )
   match category_mode {
     HCMNamed(name) =>

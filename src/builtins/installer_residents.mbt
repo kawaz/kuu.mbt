@@ -199,8 +199,8 @@ fn resident_empty_help_meta() -> @engine.HelpMetaDecl {
     is_help_preset: false,
     type_name: None,
     preset_kind: None,
-  value_structure_hint: None,
-  type_ref: None,
+    value_structure_hint: None,
+    type_ref: None,
   }
 }
 
@@ -984,8 +984,8 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn decode(
       is_help_preset: false,
       type_name: None,
       preset_kind: None,
-    value_structure_hint: None,
-    type_ref: None,
+      value_structure_hint: None,
+      type_ref: None,
     }),
   })
 }

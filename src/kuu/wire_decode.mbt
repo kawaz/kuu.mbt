@@ -91,8 +91,8 @@ fn empty_help_meta() -> @engine.HelpMetaDecl {
     is_help_preset: false,
     type_name: None,
     preset_kind: None,
-  value_structure_hint: None,
-  type_ref: None,
+    value_structure_hint: None,
+    type_ref: None,
   }
 }
 
@@ -128,8 +128,8 @@ fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDecl {
     // 段階では type は未読)。ここでは None を植える。
     type_name: None,
     preset_kind: None,
-  value_structure_hint: None,
-  type_ref: None,
+    value_structure_hint: None,
+    type_ref: None,
   }
 }
 
@@ -1034,14 +1034,15 @@ fn dec_types(
     // DR-113 §4.2 tree-form 判定: factory 形は `name` (factory 名) を持つ、tree 形は代わりに
     // `help` / `or` / `seq` / `type` / `value_name` を持つ。両者は排他 (fixture の
     // value-structure-and-types.json は tree 形のみ、他 fixture は factory 形のみ)。
-    let is_tree =
-      !has_key(to, "name") &&
-      (has_key(to, "help") ||
-      has_key(to, "or") ||
-      has_key(to, "seq") ||
-      has_key(to, "type") ||
-      has_key(to, "value_name") ||
-      has_key(to, "repeat"))
+    let is_tree = !has_key(to, "name") &&
+      (
+        has_key(to, "help") ||
+        has_key(to, "or") ||
+        has_key(to, "seq") ||
+        has_key(to, "type") ||
+        has_key(to, "value_name") ||
+        has_key(to, "repeat")
+      )
     if is_tree {
       allowed_keys(
         to,
@@ -1358,8 +1359,7 @@ fn dec_help_value_structure(
     Some(rj) => {
       let ro = match rj.j_obj() {
         Some(x) => x
-        None =>
-          raise DecodeSkip("value_structure repeat is not an object")
+        None => raise DecodeSkip("value_structure repeat is not an object")
       }
       let min = match ro.get("min") {
         Some(mj) =>
@@ -1441,10 +1441,9 @@ fn dec_help_single_from_object(
             let base_name = sh.base.name()
             HVSingle({ value_name, type_: Some(base_name), values_enum: None })
           }
-        None => {
+        None =>
           // primitive: string/number/int/bool そのまま carry
           HVSingle({ value_name, type_: Some(t), values_enum: None })
-        }
       }
     None => HVSingle({ value_name, type_: None, values_enum: None })
   }
@@ -1860,7 +1859,7 @@ fn dec_option(
     // DR-113 §4.1 value_structure 素材: option root の seq / value_name wire キー
     // (help-only fixture 用 — parse 相は seq を活用しないが、help_installer が hint 経由で
     // model 射影する)。
-    "seq", "value_name",
+     "seq", "value_name",
   ]
   for key in owned.vocab {
     allowed.push(key)
@@ -1869,7 +1868,10 @@ fn dec_option(
   let tystr = match jf_str(o, "type") {
     Some(t) => t
     None =>
-      if has_key(o, "or") || has_key(o, "ref") || has_key(o, "values") || has_key(o, "seq") {
+      if has_key(o, "or") ||
+        has_key(o, "ref") ||
+        has_key(o, "values") ||
+        has_key(o, "seq") {
         // DR-078 §1: a `ref` element's own consumption is replaced by the referenced template
         // (`@builtins.elem_head`'s `Ref(r)` head, ty unused there) — same "type is moot" reasoning `or`
         // already gets. `values` gets the same default (DR-028 追記: values を持つ node は type

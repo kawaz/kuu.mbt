@@ -11,6 +11,8 @@ pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[
 
 pub fn config_from_json(Json) -> @engine.ConfigVal
 
+pub fn dispatch_help_query(@engine.Registry, AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> Result[HelpModel, HelpQueryError]?
+
 pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> Result[HelpModel, HelpQueryError]
 
 pub fn help_query_capability() -> &@engine.CapabilityExt
