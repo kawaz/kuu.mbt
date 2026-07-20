@@ -407,9 +407,9 @@ test "dec_definition: auto_env does NOT override an element's explicit env: (DR-
 }
 
 ///|
-/// 保証 (DESIGN §7.2 line 842「env: 未指定の値セル持ち要素」— BCell gate): auto_env は positional
+/// 保証 (DESIGN §7.2 line 842「env: 未指定の値セル持ち要素」— Cell gate): auto_env は positional
 /// にも効く (`inst_env` が options/positionals 両方を走査するのと対称)。
-test "dec_definition: auto_env also derives env for positionals (値セル持ち要素は BCell 全般)" {
+test "dec_definition: auto_env also derives env for positionals (値セル持ち要素は Cell 全般)" {
   let src =
     #|{
     #|  "positionals": [{"name": "target", "type": "string"}],

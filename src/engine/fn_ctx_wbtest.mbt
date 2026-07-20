@@ -24,13 +24,12 @@ test "FnCtx mode and specialization accessors agree" {
     None => fail("effect mode must expose EffectCtx")
   }
 
-  let filter_ctx = fn_ctx_filter(ScalarInput(String("input")))
+  let filter_ctx = fn_ctx_filter(Scalar(String("input")))
   assert_eq(filter_ctx.mode(), "filter")
   assert_true(filter_ctx.as_default() is None)
   assert_true(filter_ctx.as_effect() is None)
   match filter_ctx.as_filter() {
-    Some(specialized) =>
-      assert_eq(specialized.input(), ScalarInput(String("input")))
+    Some(specialized) => assert_eq(specialized.input(), Scalar(String("input")))
     None => fail("filter mode must expose FilterCtx")
   }
 }

@@ -8,7 +8,7 @@ test "colon-string and array forms decode to the same fn invocation" {
   assert_eq(from_string, { name: "in_range", args: ["1", "10"] })
   assert_eq(from_string.to_call(), {
     name: "in_range",
-    args: [StringArg("1"), StringArg("10")],
+    args: [String("1"), String("10")],
   })
 }
 
@@ -16,7 +16,7 @@ test "colon-string and array forms decode to the same fn invocation" {
 test "typed internal calls preserve Value args without string serialization" {
   assert_eq(typed_fn_call("set", [Bool(true), Number(2.0)]), {
     name: "set",
-    args: [ValueArg(Bool(true)), ValueArg(Number(2.0))],
+    args: [Value(Bool(true)), Value(Number(2.0))],
   })
 }
 

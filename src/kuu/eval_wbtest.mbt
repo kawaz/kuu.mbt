@@ -1745,7 +1745,7 @@ test "DR-066 §4: a @engine.Pending-starvation missing_operand Error inside a ne
 /// and there is no backtrack to try `g=[a,b], tail=c` instead. This test PINS the current (gap)
 /// behavior so a future backtrack fix flips it to @engine.Success and this assertion catches the flip —
 /// do NOT "fix" this test to make it pass differently without updating the issue. installer.mbt's
-/// BGroup lowering comment documents the "bounded-head" workaround (give the head an explicit
+/// Group lowering comment documents the "bounded-head" workaround (give the head an explicit
 /// leading trigger) until this is resolved one way or the other.
 test "KNOWN GAP: @engine.IdxRepeat greedy-max has no downstream backtrack for a following mandatory positional" {
   let root : @engine.Scope = {
@@ -1781,7 +1781,7 @@ test "KNOWN GAP: @engine.IdxRepeat greedy-max has no downstream backtrack for a 
 
 ///|
 /// 保証 (issue 2026-07-13-positional-group-trailing-missing-operand): `budget=Some(0)` (a bounded
-/// `repeat:{min:1,max:1}` spec lowers to this, installer.mbt's BGroup case) does NOT hit the
+/// `repeat:{min:1,max:1}` spec lowers to this, installer.mbt's Group case) does NOT hit the
 /// KNOWN GAP above — it never over-consumes in the first place, so no backtrack is needed to
 /// correct it. Same shape as the KNOWN GAP test (permissive head `@builtins.string_arg("x")` immediately
 /// followed by a mandatory `tail`) but with the budget field set and an args sized to exactly
@@ -1865,7 +1865,7 @@ test "@engine.IdxRepeat budget=Some(1): consumes up to min+budget=2 reps, leaves
 /// 保証 (issue 2026-07-09-positional-or-repeat-lowering-gap の slice-equivalent 確認): 手組み
 /// `@engine.Many(@engine.Or([@engine.Seq(rgb), @builtins.string_arg(name)]))` は元々 (installer 経由の wire lowering ギャップとは独立に)
 /// 両 or 枝が並列に反復できる — evaluator 自体 (@engine.Many の取り分選好、@engine.Or の全枝保持) には問題が無く、
-/// ギャップは installer.mbt の `lower_positional` BOr ケースが `elem_repeat` を無視していたことに
+/// ギャップは installer.mbt の `lower_positional` Or ケースが `elem_repeat` を無視していたことに
 /// 限定される (installer_wbtest.mbt の対応する wire テストと対で、evaluator 層 / installer 層のどちら
 /// が壊れていたかを切り分ける)。
 test "DR-043 × DR-038: hand-built @engine.Many(@engine.Or(seq-rgb, string-name)) lets both or-branches repeat" {

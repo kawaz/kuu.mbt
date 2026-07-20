@@ -643,7 +643,7 @@ fn build_result(
   }
   for seg in segs {
     // issue 2026-07-09-accum-fold-update-default-ops 追記 (2026-07-10): a ref+repeat option cell
-    // registered as an accum entity (`ensure_entity_body`'s BCell arm) that fired 0 times has
+    // registered as an accum entity (`ensure_entity_body`'s Cell arm) that fired 0 times has
     // ONLY its "#fire" marker under `scope=[e.name]` (`inst_long`'s `@engine.Scoped(e.name, @engine.Bind("#fire",
     // ...))`) — no "#row" sentinel (`ref_row_head`) at all, since `@engine.GreedyRepeat` never ran. Its
     // `scope[0]` still lands in `segs` (any `scope.length()>0` binding does, sentinel or not), so
@@ -730,7 +730,7 @@ fn build_result(
   // renders `[]` (not absent) — inject empties for cells not already present as named leaves.
   //
   // issue 2026-07-09-accum-fold-update-default-ops 追記 (2026-07-10, ref-repeat-sibling-trigger.json
-  // mismatch の修正): a ref+repeat option cell (`ensure_entity_body`'s BCell arm now registers one
+  // mismatch の修正): a ref+repeat option cell (`ensure_entity_body`'s Cell arm now registers one
   // for its accum cell, so `accum_cells` sees it too) needs a DIFFERENT double-render
   // guard than plain `!str_contains(named, c.name)` — its bindings never land in `named` at all
   // (`ref_row_head`'s `@engine.Scoped(e.name, ...)` wrap means every binding carries `scope=[e.name, ...]`,
@@ -1311,7 +1311,7 @@ fn is_none_entity(entities : Array[@engine.Entity], name : String) -> Bool {
 /// (`@engine.is_committed_in_subtree`/`@engine.elem_value_in_subtree`、eval.mbt 側の同名 subtree ヘルパーを resolve
 /// 層でも再利用) で判定する。`is_none_entity` (値空間なし = committed 判定、値空間あり = 値の有無
 /// 判定) のゲートは wrapper の有無と直交 — ref 経由の candidate は `@engine.Scope.entities` に登録されない
-/// ため常に `is_none_entity` は `true` (committed 判定) に倒れる (`ensure_entity_body` の BCell
+/// ため常に `is_none_entity` は `true` (committed 判定) に倒れる (`ensure_entity_body` の Cell
 /// コメント参照、値空間はあるが entity が無いだけの縮退)。
 fn candidate_satisfied(
   c : @engine.RequiredCandidate,
@@ -1421,7 +1421,7 @@ fn eval_requires(
         // 意図どおり)。
         //
         // issue 2026-07-13-structural-or-type-branch-required-missing /
-        // codex-review-dr102-dr103-postland (M-2): `candidates` は structural or (直書き BOr /
+        // codex-review-dr102-dr103-postland (M-2): `candidates` は structural or (直書き Or /
         // ref 経由) の場合、各枝の leaf name の配列 (node.mbt の `@engine.RequiredCandidate`/`Required`
         // doc comment 参照、eval.mbt の同名 KTop 判定と対の最終判定)。`candidate_satisfied` が
         // wrapper (ref 経由なら宣言元要素の @engine.Scoped 部分木限定) を踏まえて判定する。いずれか 1 つ
@@ -2069,7 +2069,7 @@ fn resolve_entity_raw(
   //   (T[]) while every filters-registry transform is T=>T (scalar) — a structural mismatch with
   //   no legal resolution, so closing it statically (rather than at fold time) matches how
   //   DR-077 §2 already closes "unknown transform name" / "validate-only signature" one layer
-  //   earlier (`@builtins.classify_long_spelling`'s `@builtins.LInvalid`). The `@engine.Update` arm below is unreachable
+  //   earlier (`@builtins.classify_long_spelling`'s `@builtins.Invalid`). The `@engine.Update` arm below is unreachable
   //   defensive code, not a live path.
   // - `default`: resets to `[]` (DR-051 §2's uniform-array default — an accum cell carries no
   //   declared default BY DESIGN, `AccumCell` has no such field) with committed=true (locks the
@@ -2192,7 +2192,7 @@ fn resolve_entity_raw(
           match descriptor.invoke(invocation.to_call(), ctx) {
             Err((reason, message)) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
-            Ok(@engine.FnValue(value)) => {
+            Ok(@engine.Value(value)) => {
               current = Some({
                 ..b,
                 op: @engine.Set,
@@ -2201,7 +2201,7 @@ fn resolve_entity_raw(
               })
               committed_now = true
             }
-            Ok(@engine.FnSentinel(@engine.UseDefault)) =>
+            Ok(@engine.Sentinel(@engine.UseDefault)) =>
               match
                 resolve_ladder_below_cli(
                   e, env_map, config_obj, config_path, inherited, at_pos, epath,
@@ -2222,7 +2222,7 @@ fn resolve_entity_raw(
                 }
                 Err(error) => return Err(error)
               }
-            Ok(@engine.FnSentinel(@engine.Unset)) => {
+            Ok(@engine.Sentinel(@engine.Unset)) => {
               current = match default_scalar(e) {
                 Some(value) =>
                   Some(@engine.mk_binding(e.name, value, @engine.Default))
@@ -2230,7 +2230,7 @@ fn resolve_entity_raw(
               }
               committed_now = false
             }
-            Ok(@engine.FnSentinel(@engine.Empty)) => {
+            Ok(@engine.Sentinel(@engine.Empty)) => {
               current = Some({ ..b, op: @engine.Empty })
               committed_now = true
             }
@@ -2596,7 +2596,7 @@ fn default_fn_option_edges(
 ) -> Array[String] {
   let edges : Array[String] = []
   match entity.default_fn {
-    Some(@engine.WireDefaultFn(invocation)) =>
+    Some(@engine.Wire(invocation)) =>
       match extensions.lookup_cell_fn(invocation.name) {
         Some(descriptor) =>
           match descriptor.concrete_observes(invocation) {
@@ -2711,7 +2711,7 @@ fn resolve_default_fn(
     Err(("absent-source", _)) => Ok([])
     Err((reason, message)) =>
       Err(ladder_err(entity.name, at_pos, reason, message, epath))
-    Ok(@engine.FnSentinel(_)) =>
+    Ok(@engine.Sentinel(_)) =>
       Err(
         ladder_err(
           entity.name,
@@ -2721,7 +2721,7 @@ fn resolve_default_fn(
           epath,
         ),
       )
-    Ok(@engine.FnValue(value)) =>
+    Ok(@engine.Value(value)) =>
       match
         @builtins.config_to_value(
           @engine.value_to_configval(value),

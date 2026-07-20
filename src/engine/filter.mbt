@@ -42,8 +42,8 @@ pub fn filter_descriptor(
         None => Err(("filter_rejected", "filter invoked outside filter mode"))
         Some(filter_ctx) =>
           match filter_ctx.input() {
-            ScalarInput(value) => run(value, args)
-            ArrayInput(_) =>
+            Scalar(value) => run(value, args)
+            Array(_) =>
               Err(("filter_rejected", "scalar filter received an array input"))
           }
       }
@@ -81,8 +81,8 @@ pub fn array_filter_descriptor(
         None => Err(("filter_rejected", "filter invoked outside filter mode"))
         Some(filter_ctx) =>
           match filter_ctx.input() {
-            ArrayInput(values) => run(values, args)
-            ScalarInput(_) =>
+            Array(values) => run(values, args)
+            Scalar(_) =>
               Err(("filter_rejected", "array filter received a scalar input"))
           }
       }
@@ -103,10 +103,7 @@ pub fn apply_filter_chain(
     match registry.lookup_filter(spelling.name) {
       None => ()
       Some(descriptor) => {
-        let ctx = fn_ctx_filter(
-          ScalarInput(current),
-          observes=descriptor.observes,
-        )
+        let ctx = fn_ctx_filter(Scalar(current), observes=descriptor.observes)
         match (descriptor.run)(spelling.args, ctx) {
           Ok(next) => current = next
           Err(error) => return Err(error)
@@ -129,10 +126,7 @@ pub fn apply_accum_filter_chain(
     match registry.lookup_array_filter(spelling.name) {
       None => ()
       Some(descriptor) => {
-        let ctx = fn_ctx_filter(
-          ArrayInput(current),
-          observes=descriptor.observes,
-        )
+        let ctx = fn_ctx_filter(Array(current), observes=descriptor.observes)
         match (descriptor.run)(spelling.args, ctx) {
           Ok(next) => current = next
           Err(error) => return Err(error)

@@ -13,19 +13,19 @@
 // @engine.Entity 側の `inherit_` は node.mbt が rename 済み。
 
 ///|
-/// One `long` DSL string (DR-011/071/076), classified. `":set"` (bare sentinel) is `LMain`; any
-/// OTHER colon form is `LVariant` (an empty prefix, e.g. `":set:true"`, is the element's own
+/// One `long` DSL string (DR-011/071/076), classified. `":set"` (bare sentinel) is `Main`; any
+/// OTHER colon form is `Variant` (an empty prefix, e.g. `":set:true"`, is the element's own
 /// bare-degenerate main entry — DR-076 §4 — a NON-empty prefix, e.g. `"no:set:false"`, is a
 /// separately-triggered named variant — DR-011). DR-011 明確化 (kawaz 裁定 2026-07-08): a colon-less
 /// string (e.g. `"verbose"`) and a colon-having string whose effect word is outside the vocabulary
 /// (`set`/`default`/`unset`/`empty`) are BOTH a variant DSL syntax error, not a literal spelling
-/// fallback — `LInvalid` carries the offending string for the caller to surface as a DR-054
+/// fallback — `Invalid` carries the offending string for the caller to surface as a DR-054
 /// definition-error `unknown-vocab`. An explicit-spelling entry point belongs to DR-057's alias
 /// element, not to `long`'s DSL (there is no "colon-less = literal" escape hatch here anymore).
 pub(all) enum LongSpelling {
-  LMain(String) // resolved main-entry spelling (`own_name`, verbatim — see `classify_long_spelling`)
-  LVariant(@engine.Variant) // a fully-built variant (trigger/op/operand already resolved against own_name)
-  LInvalid(String, @engine.DefErrKind) // definition-time classification and the original spelling
+  Main(String) // resolved main-entry spelling (`own_name`, verbatim — see `classify_long_spelling`)
+  Variant(@engine.Variant) // a fully-built variant (trigger/op/operand already resolved against own_name)
+  Invalid(String, @engine.DefErrKind) // definition-time classification and the original spelling
 } derive(Eq, Debug)
 
 ///|
@@ -50,7 +50,7 @@ fn dsl_operand_value(ty : &@engine.TypeExt, s : String) -> @engine.Value {
 /// Classify one `long`/`long_override` DSL string against `own_name` (the caller decides WHICH name
 /// applies — a canonical element's own kebab name for `resolve_long`/`normalize_option`, or an
 /// alias's re-derived name for `@engine.AliasDef.long_override` desugaring, DR-057 §3) and the element's
-/// type (for `LVariant`'s operand parsing, DR-074/075/076). This is the SOLE interpreter of the
+/// type (for `Variant`'s operand parsing, DR-074/075/076). This is the SOLE interpreter of the
 /// colon DSL (DR-011/071/076 wire vocab) — both `resolve_long` (main `long` attribute) and
 /// `desugar_aliases` (alias override desugaring) call this so the two paths can never drift apart
 /// (issue 2026-07-08 alias `long_override` gap: aliases used to skip DSL classification entirely,
@@ -85,10 +85,10 @@ fn classify_long_form(
   let original = invocation_form_text(form)
   let parts = match @engine.decode_fn_invocation_parts(form) {
     Ok(parts) => parts
-    Err(_) => return LInvalid(original, @engine.InvalidArgument)
+    Err(_) => return Invalid(original, @engine.InvalidArgument)
   }
   if parts.length() < 2 {
-    return LInvalid(original, @engine.UnknownVocab)
+    return Invalid(original, @engine.UnknownVocab)
   }
   let prefix = parts[0]
   let trigger = if prefix == "" { own_name } else { prefix + "-" + own_name }
@@ -102,14 +102,14 @@ fn classify_long_form(
   // The no-arg bare set spelling prepares the ordinary value slot; it is a lowering sugar rather
   // than a call to the one-or-more-argument set resident.
   if invocation.name == "set" && invocation.args.length() == 0 && prefix == "" {
-    return LMain(own_name)
+    return Main(own_name)
   }
   let descriptor = match extensions.lookup_cell_fn(invocation.name) {
-    None => return LInvalid(original, @engine.UnknownVocab)
+    None => return Invalid(original, @engine.UnknownVocab)
     Some(descriptor) => descriptor
   }
   match descriptor.validate_invocation(invocation) {
-    Err(_) => return LInvalid(original, @engine.InvalidArgument)
+    Err(_) => return Invalid(original, @engine.InvalidArgument)
     Ok(_) => ()
   }
   match invocation.name {
@@ -117,12 +117,12 @@ fn classify_long_form(
       match invocation.args {
         [] =>
           if prefix == "" {
-            LMain(own_name)
+            Main(own_name)
           } else {
-            LVariant({ trigger, op: @engine.Set, operand: None })
+            Variant({ trigger, op: @engine.Set, operand: None })
           }
         [value] =>
-          LVariant({
+          Variant({
             trigger,
             op: @engine.Set,
             operand: Some(dsl_operand_value(ty, value)),
@@ -130,12 +130,12 @@ fn classify_long_form(
         _ =>
           // A scalar target cannot map multiple logical values. Structured seq/repeat aggregation
           // requires a structured Value carrier and is kept as an explicit unimplemented boundary.
-          LInvalid(original, @engine.InvalidArgument)
+          Invalid(original, @engine.InvalidArgument)
       }
-    "default" => LVariant({ trigger, op: @engine.Default, operand: None })
-    "unset" => LVariant({ trigger, op: @engine.Unset, operand: None })
-    "empty" => LVariant({ trigger, op: @engine.Empty, operand: None })
-    _ => LVariant({ trigger, op: @engine.Invoke(invocation), operand: None })
+    "default" => Variant({ trigger, op: @engine.Default, operand: None })
+    "unset" => Variant({ trigger, op: @engine.Unset, operand: None })
+    "empty" => Variant({ trigger, op: @engine.Empty, operand: None })
+    _ => Variant({ trigger, op: @engine.Invoke(invocation), operand: None })
   }
 }
 
@@ -180,7 +180,7 @@ fn count_increment_variant(name : String) -> @engine.Variant {
 /// This is the ONLY place that needs the bool/array distinction `@engine.LongDecl` preserves — once
 /// collapsed to `Array[String]` (the old design), `long:true` and `long:[":set"]` become
 /// indistinguishable, yet DR-076/077 require different flag/count sugar for each (kawaz 裁定
-/// 2026-07-08, spec DR-071 §1 "wire には二形とも載る、展開は long installer の解釈"). `LInvalid`
+/// 2026-07-08, spec DR-071 §1 "wire には二形とも載る、展開は long installer の解釈"). `Invalid`
 /// spellings (DR-011 明確化: colon-less / 語彙外 effect, DR-077 §2 unknown transform) are silently
 /// skipped here — the caller (`normalize_option`) only reaches this AFTER
 /// `collect_invalid_long_dsl` has already surfaced them as definition-errors and `parse_definition`
@@ -192,8 +192,8 @@ fn resolve_long(
   extensions : @engine.Registry,
 ) -> (Array[String], Array[@engine.Variant]) {
   match decl {
-    LBool(false) => ([], [])
-    LBool(true) =>
+    Bool(false) => ([], [])
+    Bool(true) =>
       if ty.name() == "flag" {
         ([], [flag_bare_true_variant(name)])
       } else if ty.name() == "count" {
@@ -208,14 +208,14 @@ fn resolve_long(
       } else {
         ([kebab(name)], [])
       }
-    LList(strs) => {
+    List(strs) => {
       let longs : Array[String] = []
       let vars : Array[@engine.Variant] = []
       for l in strs {
         match classify_long_spelling(l, kebab(name), ty, extensions) {
-          LMain(n) => longs.push(n)
-          LVariant(v) => vars.push(v)
-          LInvalid(_, _) => ()
+          Main(n) => longs.push(n)
+          Variant(v) => vars.push(v)
+          Invalid(_, _) => ()
         }
       }
       if ty.name() == "flag" && (longs.length() > 0 || vars.length() > 0) {
@@ -232,14 +232,14 @@ fn resolve_long(
       }
       (longs, vars)
     }
-    LForms(forms) => {
+    Forms(forms) => {
       let longs : Array[String] = []
       let vars : Array[@engine.Variant] = []
       for form in forms {
         match classify_long_form(form, kebab(name), ty, extensions) {
-          LMain(n) => longs.push(n)
-          LVariant(v) => vars.push(v)
-          LInvalid(_, _) => ()
+          Main(n) => longs.push(n)
+          Variant(v) => vars.push(v)
+          Invalid(_, _) => ()
         }
       }
       if ty.name() == "flag" && (longs.length() > 0 || vars.length() > 0) {
@@ -363,21 +363,21 @@ fn copy_filter_spellings(
 
 ///|
 /// 有効 long 綴り一覧 (post-normalize; `:set` は既に kebab(name) に展開済み、`normalize_option` が
-/// `@engine.LongDecl` を `LList([<kebab main entries>])` に確定させた後の形)。[] = main-entry なし (DR-071)。
-/// pre-normalize な `LBool` はここに来ない前提 (呼び出しは全て normalize 後)。
+/// `@engine.LongDecl` を `List([<kebab main entries>])` に確定させた後の形)。[] = main-entry なし (DR-071)。
+/// pre-normalize な `Bool` はここに来ない前提 (呼び出しは全て normalize 後)。
 fn long_of(e : @engine.ElemDef) -> Array[String] {
   match e.long {
-    LList(strs) => strs
-    LForms(_) | LBool(_) => []
+    List(strs) => strs
+    Forms(_) | Bool(_) => []
   }
 }
 
 ///|
 fn copy_long(l : @engine.LongDecl) -> @engine.LongDecl {
   match l {
-    LBool(b) => LBool(b)
-    LList(strs) => LList(copy_strs(strs))
-    LForms(forms) => {
+    Bool(b) => Bool(b)
+    List(strs) => List(copy_strs(strs))
+    Forms(forms) => {
       let copied : Array[@engine.FnInvocationForm] = []
       for form in forms {
         copied.push(
@@ -387,7 +387,7 @@ fn copy_long(l : @engine.LongDecl) -> @engine.LongDecl {
           },
         )
       }
-      LForms(copied)
+      Forms(copied)
     }
   }
 }
@@ -481,8 +481,8 @@ fn clone_elem(e : @engine.ElemDef) -> @engine.ElemDef {
 /// a bug).
 fn clone_body(b : @engine.ElemBody) -> @engine.ElemBody {
   match b {
-    BCell => BCell
-    BOr(branches) => {
+    Cell => Cell
+    Or(branches) => {
       let out : Array[@engine.OrBranch] = []
       for br in branches {
         let items : Array[@engine.ElemDef] = []
@@ -491,16 +491,16 @@ fn clone_body(b : @engine.ElemBody) -> @engine.ElemBody {
         }
         out.push({ id: br.id, items })
       }
-      BOr(out)
+      Or(out)
     }
-    BGroup(items) => {
+    Group(items) => {
       let out : Array[@engine.ElemDef] = []
       for it in items {
         out.push(clone_elem(it))
       }
-      BGroup(out)
+      Group(out)
     }
-    BEnum(values) => BEnum(copy_strs(values))
+    Enum(values) => Enum(copy_strs(values))
   }
 }
 
@@ -592,7 +592,7 @@ fn normalize_option(
             e.repeat is None &&
             e.separator is None &&
             !e.is_tty =>
-            Some(@engine.TypedDefaultFn(@engine.typed_fn_call("set", values)))
+            Some(@engine.Typed(@engine.typed_fn_call("set", values)))
           _ => None
         }
     }
@@ -602,7 +602,7 @@ fn normalize_option(
       ty: ty2,
       default_values: default_values2,
       default_fn: default_fn2,
-      long: LList(longs),
+      long: List(longs),
       variants: vars,
     }
   }
@@ -680,33 +680,33 @@ fn collect_export(
 }
 
 ///|
-/// MDR-004 §3b: `collect_export` needs to recurse into `@engine.ElemBody` — a `BGroup`/`BOr` element's
+/// MDR-004 §3b: `collect_export` needs to recurse into `@engine.ElemBody` — a `Group`/`Or` element's
 /// nested leaves (e.g. transparent-seq's `k`, export_key:null) each have their OWN export_key that
 /// must reach the map, or their `export_key:null` 裸値化 (DR-052 §2) never gets applied downstream
-/// (resolve's export-key remap only consults this map). `BGroup` registers BOTH the wrapper (the
-/// array cell itself) and its inner leaves; `BOr`'s wrapper has no export_key of its own concern
+/// (resolve's export-key remap only consults this map). `Group` registers BOTH the wrapper (the
+/// array cell itself) and its inner leaves; `Or`'s wrapper has no export_key of its own concern
 /// (structural dispatcher, no scalar/array value) — only its branch leaves register.
 fn collect_export_body(
   e : @engine.ElemDef,
   m : Map[String, @engine.ExportKey],
 ) -> Unit {
   match e.body {
-    BCell => m.set(e.name, e.export_key)
-    BOr(branches) =>
+    Cell => m.set(e.name, e.export_key)
+    Or(branches) =>
       for br in branches {
         for it in br.items {
           collect_export_body(it, m)
         }
       }
-    BGroup(items) => {
+    Group(items) => {
       m.set(e.name, e.export_key)
       for it in items {
         collect_export_body(it, m)
       }
     }
-    // BEnum (issue values-decode-support): same standing as BCell — a single named cell whose
+    // Enum (issue values-decode-support): same standing as Cell — a single named cell whose
     // consumption structure happens to be an exact-value enum (no nested leaves to recurse into).
-    BEnum(_) => m.set(e.name, e.export_key)
+    Enum(_) => m.set(e.name, e.export_key)
   }
 }
 
@@ -717,7 +717,7 @@ fn collect_export_body(
 /// nameless exact-match leaf, `@engine.ElemDef.is_exact` doc comment) は ref_target 分岐より先に判定する —
 /// value_prim/Ref どちらの経路も通らず `@engine.Exact(name)` へ直接 lower する、bare `@engine.Exact` node は「literal
 /// token match; binds nothing, consumes 1」(node.mbt) がそのまま欲しい挙動そのもの。この経路は
-/// `BOr`/`BGroup` の内側リーフ (`or_branch_node`/`lower_positional` の BGroup 分岐が `elem_head` を
+/// `Or`/`Group` の内側リーフ (`or_branch_node`/`lower_positional` の Group 分岐が `elem_head` を
 /// 共有する) にも自動的に及ぶ — DR-063 A.1 の裸文字列正規化が or 枝内でも成立する形と対称。
 pub fn elem_head(e : @engine.ElemDef) -> @engine.Node {
   if e.is_exact {
@@ -742,7 +742,7 @@ pub fn elem_head(e : @engine.ElemDef) -> @engine.Node {
 
 ///|
 /// DESIGN §5.3 (values は or のショートハンド) / DR-028 追記 (values を持つ node は type フィールド
-/// なしで enum 型を兼ねる): the consumption structure for a `BEnum` cell — ONE token that must
+/// なしで enum 型を兼ねる): the consumption structure for a `Enum` cell — ONE token that must
 /// match one of the exact values, or the whole read doesn't exist (DR-028 §3.1 "enum 的テンプレへの
 /// 未定義値は or 全枝の綴り不一致 (Reject)" — no held error, same posture bare `@engine.Exact` already has:
 /// a non-matching token means every branch of the `@engine.Or` below fails to @engine.Accept, so the read simply
@@ -851,9 +851,9 @@ fn has_declared_value_source(e : @engine.ElemDef) -> Bool {
 /// DR-043")。輪郭は fixtures/path-search/ambiguous-receptacles.json が固定する。
 
 ///|
-/// DR-043 repeat lowering for a single positional `head` node, shared by `BCell` (head =
-/// `elem_head(e)`) and `BOr` (head = `@engine.Or(branch_node...)`, issue
-/// 2026-07-09-positional-or-repeat-lowering-gap: BOr used to push `@engine.Or(nodes)` directly and
+/// DR-043 repeat lowering for a single positional `head` node, shared by `Cell` (head =
+/// `elem_head(e)`) and `Or` (head = `@engine.Or(branch_node...)`, issue
+/// 2026-07-09-positional-or-repeat-lowering-gap: Or used to push `@engine.Or(nodes)` directly and
 /// silently ignore `elem_repeat(e)` entirely — a structural-or head is JUST a head like any other
 /// for repeat's purposes, DR-043 §「repeat の対象要素は形を問わない」already says this for `ref`
 /// heads, it applies identically to an `@engine.Or` head). When `elem_repeat(e)` is `None` the bare `head`
@@ -931,8 +931,8 @@ fn lower_positional(
   for e in def.positionals {
     if not_dd(e) {
       match e.body {
-        BOr(branches) => {
-          // MDR-004 §3 "BOr (positional, 匿名)": spine に @engine.Or([branch_node...]) を直接積む。評価器の
+        Or(branches) => {
+          // MDR-004 §3 "Or (positional, 匿名)": spine に @engine.Or([branch_node...]) を直接積む。評価器の
           // 既存 @engine.Or 意味論 (全枝評価 + @engine.Held 全保持、DR-053 §2 / 完全経路 2 本以上で ambiguous 保存、
           // DR-038) がそのまま輪郭を満たす。DR-043 repeat との組合せ (issue
           // 2026-07-09-positional-or-repeat-lowering-gap で根治): `@engine.Or(nodes)` を head として
@@ -945,8 +945,8 @@ fn lower_positional(
           }
           lower_repeat_head(e, @engine.Or(nodes), registry, out)
         }
-        BGroup(items) => {
-          // MDR-004 §3 "BGroup + repeat": @engine.IdxRepeat(label=name, head=@engine.Seq(inner cells), min,
+        Group(items) => {
+          // MDR-004 §3 "Group + repeat": @engine.IdxRepeat(label=name, head=@engine.Seq(inner cells), min,
           // budget) に lower。budget (issue
           // 2026-07-13-positional-group-trailing-missing-operand) = `max - min` (bounded の
           // とき) / `None` (max:null の UNBOUNDED、または repeat 属性自体が無い場合 —
@@ -989,7 +989,7 @@ fn lower_positional(
           }
           out.push(@engine.IdxRepeat(e.name, head, min, budget))
         }
-        BCell =>
+        Cell =>
           match e.ref_target {
             // DR-078 §1 result 写像 (issue 2026-07-09-ref-template-result-shape): a `ref`
             // element's own `name` must create a result scope (DESIGN §2.3/§2.4) — `elem_head`
@@ -1031,12 +1031,12 @@ fn lower_positional(
                 lower_repeat_head(e, elem_head(e), registry, out)
               }
           }
-        // BEnum (issue values-decode-support): `dec_positional` never produces this shape today
+        // Enum (issue values-decode-support): `dec_positional` never produces this shape today
         // (positionals only decode structural "or"/"positionals" — DESIGN §5.3's value-enum
         // shorthand is option-only, `dec_positional`'s own comment). Wired anyway (not aborted) so
         // a future positional-values fixture works without another round-trip here — same
         // `enum_value_node` consumption structure the option side (`inst_long`) uses.
-        BEnum(values) =>
+        Enum(values) =>
           lower_repeat_head(
             e,
             enum_value_node(e.name, e.ty, values),
@@ -1100,18 +1100,18 @@ fn ensure_entities(sb : @engine.InstallBuilder, has_cf : Bool) -> Unit {
 ///|
 /// MDR-004 §3b: register `e` (and any `@engine.ElemBody`-nested leaves) as top-level entities — the
 /// evaluator's `@engine.Or`/`@engine.Seq`/`@engine.IdxRepeat` nodes don't know about entities at all, so this recursive
-/// walk is the ONLY registration point. `BOr`'s wrapper is a structural dispatcher with no
+/// walk is the ONLY registration point. `Or`'s wrapper is a structural dispatcher with no
 /// scalar/array value of its own (e.g. "color" never itself holds a value — only its branch leaves
-/// r/g/b/name do), so ONLY the branch leaves register. `BGroup`'s wrapper DOES need its own entity
+/// r/g/b/name do), so ONLY the branch leaves register. `Group`'s wrapper DOES need its own entity
 /// (the array cell — `elem_repeat` on it still drives the existing "flatten" accumulator path,
 /// unaffected by `body`) in ADDITION to its inner leaves (e.g. transparent-seq's `k`, its own cell
 /// with `entity=k` effects).
 ///
 /// codex レビュー Major 4 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見): the
 /// `is_exact` guard used to live ONLY at `ensure_entities`' top-level positionals loop (removed
-/// above) — a `BOr`/`BGroup` RECURSIVE call into this same function (branch leaves / group inner
+/// above) — a `Or`/`Group` RECURSIVE call into this same function (branch leaves / group inner
 /// items, both below) bypassed it entirely, so an `is_exact` leaf nested inside a structural or /
-/// named group would fall into the `BCell`/`ref_target is None` arm and get a phantom
+/// named group would fall into the `Cell`/`ref_target is None` arm and get a phantom
 /// `@engine.Entity{name: spelling, ty: none_type()}` — occupying the namespace and blocking a real same-named
 /// entity's `ensure_entity` (add-if-absent already returns early once ANY entity with that name
 /// exists). Guarding HERE (single entry point every recursive path funnels through) closes both the
@@ -1128,7 +1128,7 @@ fn ensure_entity_body(
     return
   }
   match e.body {
-    BCell =>
+    Cell =>
       // DR-078 §1 result 写像 (issue 2026-07-09-ref-template-result-shape): a `ref` element is
       // ALSO a structural dispatcher with no scalar/array value of its own — its "value" is a
       // name-scoped projection of the REFERENCED template's own leaves (installer.mbt's
@@ -1161,13 +1161,13 @@ fn ensure_entity_body(
       } else if elem_repeat(e) is Some(_) || e.multiple {
         ensure_entity(build, e, has_cf, extensions)
       }
-    BOr(branches) =>
+    Or(branches) =>
       for br in branches {
         for it in br.items {
           ensure_entity_body(build, it, has_cf, extensions)
         }
       }
-    BGroup(items) =>
+    Group(items) =>
       // The wrapper (e.g. "xs") lowers to @engine.IdxRepeat (MDR-004 §3): its array is built entirely by
       // eval.mbt's array_marker/nest_index scope mechanism, never via the accum-entity ladder. If
       // registered here, ensure_entity would set accum:flatten (elem_repeat(e) is Some for a
@@ -1177,11 +1177,11 @@ fn ensure_entity_body(
       for it in items {
         ensure_entity_body(build, it, has_cf, extensions)
       }
-    // BEnum (issue values-decode-support): a single named cell like BCell (the enum's exact-value
-    // branches all bind the SAME `e.name`, unlike BOr's per-branch leaves) — never has a
+    // Enum (issue values-decode-support): a single named cell like Cell (the enum's exact-value
+    // branches all bind the SAME `e.name`, unlike Or's per-branch leaves) — never has a
     // `ref_target` (values/or on a `ref` element is not a decodable shape today), so this always
-    // registers unconditionally, simpler than BCell's ref_target-gated arm above.
-    BEnum(_) => ensure_entity(build, e, has_cf, extensions)
+    // registers unconditionally, simpler than Cell's ref_target-gated arm above.
+    Enum(_) => ensure_entity(build, e, has_cf, extensions)
   }
 }
 
@@ -1280,7 +1280,7 @@ fn ensure_entity(
       match default_values {
         Some(values) if accum is None &&
           seat_ty.default_seat_observation_key() is None =>
-          Some(@engine.TypedDefaultFn(@engine.typed_fn_call("set", values)))
+          Some(@engine.Typed(@engine.typed_fn_call("set", values)))
         _ => None
       }
   }
@@ -1366,9 +1366,9 @@ fn eq_group(
 ///|
 /// codex レビュー Major 2 (issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見) / DR-058
 /// §2: append a trailing deprecation resident to a main-entry satellite's node array when `e.deprecated`
-/// — shared by EVERY `inst_long` main-entry arm (BOr / BEnum / ref±repeat / BCell, all below) so a
+/// — shared by EVERY `inst_long` main-entry arm (Or / Enum / ref±repeat / Cell, all below) so a
 /// deprecated element warns regardless of its value structure (DR-058 §2's contract is 値構造非依存;
-/// the previous fix only wired the BCell arm, missing the other 4). Centralizing the append here (one
+/// the previous fix only wired the Cell arm, missing the other 4). Centralizing the append here (one
 /// call site per arm, right before `@engine.Seq(...)`) means a FUTURE `e.body`/`ref_target` arm added to
 /// `inst_long` inherits the warning automatically as long as it routes its satellite nodes through
 /// this helper — the same "single funnel, no per-arm opt-in to forget" shape `ensure_entity_body`'s
@@ -1399,12 +1399,12 @@ fn inst_long(
       // this element's own trigger is unchanged unless it explicitly overrides).
       let trigger = e.long_prefix + l
       match e.body {
-        // MDR-004 §3: BOr option (variable-arity) — greedy satellite
-        // @engine.Seq([@engine.Exact(trigger), @engine.Or([branch_node...])]). `e.ty` is unused (a BOr wrapper carries no
+        // MDR-004 §3: Or option (variable-arity) — greedy satellite
+        // @engine.Seq([@engine.Exact(trigger), @engine.Or([branch_node...])]). `e.ty` is unused (a Or wrapper carries no
         // value of its own); each branch's own leaf name(s) flow through unchanged via
         // or_branch_node/elem_head, so held-Error / binding attribution lands on the leaf with no
         // extra provenance wiring (§4).
-        BOr(branches) => {
+        Or(branches) => {
           let branch_nodes : Array[@engine.Node] = []
           for br in branches {
             branch_nodes.push(or_branch_node(br))
@@ -1419,13 +1419,13 @@ fn inst_long(
             ),
           )
         }
-        // BEnum (issue values-decode-support, DESIGN §5.3 / DR-028 追記): main entry の値スロット
-        // 消費構造が `enum_value_node` (exact 値の or 展開) になる — BCell の `value_prim` に相当する
+        // Enum (issue values-decode-support, DESIGN §5.3 / DR-028 追記): main entry の値スロット
+        // 消費構造が `enum_value_node` (exact 値の or 展開) になる — Cell の `value_prim` に相当する
         // 差し替え。DR-086 §1 の cut (同一 trigger の 0引数 @engine.Set variant との競合解決) は lowering
         // 構造 (ここで積む greedy 衛星の個数・形) を変えず eval.mbt 側で扱う (lowering query fixture
         // への影響回避、team-lead 裁定 2026-07-10) — ここでは通常の main entry と同じ形で単独登録
         // するだけでよい。
-        BEnum(values) =>
+        Enum(values) =>
           add_greedy(
             build,
             maybe_root(
@@ -1441,7 +1441,7 @@ fn inst_long(
         _ =>
           match e.ref_target {
             // DR-078 §1 option repeat (issue 2026-07-09-ref-template-result-shape, new
-            // capability): mirrors `lower_positional`'s BCell/ref_target arm — a `ref` element's
+            // capability): mirrors `lower_positional`'s Cell/ref_target arm — a `ref` element's
             // own `name` creates a result scope, and (when repeated) each rep's row groups under
             // a "#row" sentinel (`ref_row_head`, `resolve.mbt`'s ROW-GROUP branch).
             Some(_) =>
@@ -1541,7 +1541,7 @@ fn inst_long(
                 // DR-057 §3 `alias_entry` — both fold into this ONE `@engine.ElemDef.deprecated` bool by
                 // the time lowering runs, so no alias-specific branch is needed here). Routed
                 // through `with_depr` (codex レビュー Major 2) so this arm shares the SAME funnel
-                // as BOr/BEnum/ref±repeat above.
+                // as Or/Enum/ref±repeat above.
                 add_greedy(
                   build,
                   maybe_root(
@@ -1577,7 +1577,7 @@ fn inst_long(
       // alongside `--ssl`/`--no-ssl`).
       // DR-075 §2: int_type() の eq-split (`--v=2.5`) が factory config int_round を反映するよう、
       // @engine.ElemDef.int_round を EqEntry に持ち込む (int_type() 以外は entry 側で参照されない)。
-      // MDR-004 §3: a BOr element's eq-split registers only for a single-value-cell branch (using
+      // MDR-004 §3: a Or element's eq-split registers only for a single-value-cell branch (using
       // that leaf's own name/ty/int_round/allow_base_prefix, never the wrapper's) — a multi-cell
       // branch's `=` form is undefined (`--color=v` cannot supply 3 leaves).
       // DR-091 §2: a `kv_map`-accumulator leaf does NOT register an eq-split entry (unlike merge,
@@ -1586,15 +1586,15 @@ fn inst_long(
       // gate lives in the `kv resident` node, `value_prim`'s dedicated kv_map branch, which `EqEntry`
       // never routes through). Registering here would let `--define=NOEQUALSIGN` silently produce
       // `{NOEQUALSIGN: ""}` instead of DR-091 §2's required Reject — same deliberate-absence posture
-      // as `BEnum`'s "OUT OF SCOPE" comment below, not an oversight.
+      // as `Enum`'s "OUT OF SCOPE" comment below, not an oversight.
       //
       // DR-014「--name=value の許可」/ DESIGN §7.2 / DR-096 §1: `e.long_eq_sep` (scope config,
-      // decode-time baked — always the WRAPPING option's resolved value, never a BOr leaf's unbaked
+      // decode-time baked — always the WRAPPING option's resolved value, never a Or leaf's unbaked
       // default, same reasoning `eq_group(..., e.long_prefix)` already applies below) gates every
       // arm — `@engine.Deny` withholds the eq-split entry entirely, leaving only the space form registered
       // above.
       match e.body {
-        BOr(branches) =>
+        Or(branches) =>
           for br in branches {
             if br.items.length() == 1 {
               let leaf = br.items[0]
@@ -1619,8 +1619,8 @@ fn inst_long(
               }
             }
           }
-        BGroup(_) => () // positional-only shape (MDR-004 §3 scope) — no long spelling applies
-        BCell =>
+        Group(_) => () // positional-only shape (MDR-004 §3 scope) — no long spelling applies
+        Cell =>
           // DR-076 §2: no `e.ty.name() != "flag"` guard needed here anymore — a classic flag never reaches
           // this loop body at all (its `e.long` is empty, `long_of(e)` yields no `l` to iterate), so
           // the guard was always vacuous for it; an explicit `long:[":set"]` flag (now bool_type()) SHOULD
@@ -1644,11 +1644,11 @@ fn inst_long(
               ),
             )
           }
-        // BEnum (issue values-decode-support): eq-split (`--color=always`) for an enum-constrained
+        // Enum (issue values-decode-support): eq-split (`--color=always`) for an enum-constrained
         // cell is OUT OF SCOPE for this issue (no target fixture exercises `--key=value` against a
         // `values`/`or` value-enum element) — the EqEntry type resident has no
         // enum-value set. Registering nothing avoids accepting an unvalidated value.
-        BEnum(_) => ()
+        Enum(_) => ()
       }
     }
   }
@@ -2158,7 +2158,7 @@ fn add_inheritable_copy(
   sb.definition().options.push({
       name: e.name, // 祖先 write-target cell は要素名共有 (inherit-by-name)
       ty: e.ty,
-      long: LList([trigger]), // prefixed inheritable trigger (post-normalize 相当の確定形、resolve_long を経由しない)
+      long: List([trigger]), // prefixed inheritable trigger (post-normalize 相当の確定形、resolve_long を経由しない)
       variants: [],
       short: [],
       env: [],
@@ -2214,7 +2214,7 @@ fn add_inheritable_copy(
       long_eq_sep: @engine.Allow,
       short_combine: true,
       short_attached_value: @engine.Allow,
-      body: BCell,
+      body: Cell,
     }, // canonical default (§3 と同じ「通常挙動」)
     // canonical default
     // canonical default
@@ -2280,18 +2280,18 @@ fn collect_value_names(
 /// DR-093 §1/§2 の型委譲判定が「値が実際に着地する cell」を見るための候補セル解決 (codex レビュー
 /// M-2 修正): 宣言要素 `e` そのものが値を持つとは限らない。
 ///
-/// `e.ref_target` が `Some(_)` (ref 要素) のとき、`e.body` は常に `BCell` のまま (ref 展開は
+/// `e.ref_target` が `Some(_)` (ref 要素) のとき、`e.body` は常に `Cell` のまま (ref 展開は
 /// registry 上の `@engine.Node` として存在し、`@engine.ElemDef.body` には反映されない —
 /// `ensure_entity_body`/`elem_head` の doc comment 参照)。参照先テンプレートが structural or の
 /// ような複合構造を持つ場合、`e.name` というセルは結果に存在せず (DR-025 の露出規則)、値は展開後の
 /// 枝の leaf entity に着地する — `collect_value_names` で registry 上の実体を辿って候補集合を得る
 /// (DR-007「ref は構造定義全てを引き継ぐ」の型委譲判定への反映)。
 ///
-/// `e.ref_target` が `None` かつ `e.body` が `BOr` (直書き structural or、型付き枝) のときは、BOr
-/// wrapper 自身 (`e.name`) は値を持たない構造ディスパッチャで (ensure_entity_body の BOr コメント
+/// `e.ref_target` が `None` かつ `e.body` が `Or` (直書き structural or、型付き枝) のときは、Or
+/// wrapper 自身 (`e.name`) は値を持たない構造ディスパッチャで (ensure_entity_body の Or コメント
 /// 参照)、値は選ばれた枝の leaf entity にのみ commit される。候補集合を各枝の leaf name に展開し、
 /// 「どの枝であれ発火して値が確定していれば充足」(DR-093 の or 親充足の型委譲原理) を呼び出し側
-/// (`Required`/`RequiredGroup`) の判定に持ち込む。BEnum (value-enum 形) は全枝が SAME name/cell
+/// (`Required`/`RequiredGroup`) の判定に持ち込む。Enum (value-enum 形) は全枝が SAME name/cell
 /// (`e.name`) に着地するためこの展開は不要 (`[e.name]` のままで元々正しい — 対照 fixture
 /// `required-value-enum-or-branch.json` が既に green なのはこのため)。
 ///
@@ -2303,7 +2303,7 @@ fn collect_value_names(
 /// 部分木 (`@engine.Scoped(e.name, ...)`、`inst_long`/`lower_positional` の ref 分岐が作る) に着地するため、
 /// `wrapper: Some(e.name)` を付けて判定側 (`eval.mbt`/`resolve.mbt`) が「宣言元要素自身の部分木内」
 /// だけを探すようにする (DESIGN §2.4/2.5 の露出規則、無制限透過ではなく要素自身の部分木に限定 —
-/// `@engine.RequiredCandidate` の doc comment 参照)。直書き BOr の場合、値は親 scope に直接 bind されるため
+/// `@engine.RequiredCandidate` の doc comment 参照)。直書き Or の場合、値は親 scope に直接 bind されるため
 /// `wrapper: None`。
 fn required_candidates(
   e : @engine.ElemDef,
@@ -2325,7 +2325,7 @@ fn required_candidates(
     }
     None =>
       match e.body {
-        BOr(branches) => {
+        Or(branches) => {
           let out : Array[@engine.RequiredCandidate] = []
           for br in branches {
             for it in br.items {
@@ -2535,9 +2535,9 @@ fn alias_entry(
     name: canonical_name, // effect / entity / result key は全て canonical name で keying (link 同型)
     ty,
     // 既に導出済み explicit 綴り列 (`:set` は含まない — normalize/resolve_long の対象外、post-normalize
-    // 相当の確定形として直接 LList で持つ)。alias entry-copies は fixpoint installer (inst_long 等) が
+    // 相当の確定形として直接 List で持つ)。alias entry-copies は fixpoint installer (inst_long 等) が
     // そのまま処理する対象で、二度目の resolve_long は起きない。
-    long: LList(long),
+    long: List(long),
     variants,
     short,
     env: [],
@@ -2595,7 +2595,7 @@ fn alias_entry(
     long_eq_sep: @engine.Allow,
     short_combine: true,
     short_attached_value: @engine.Allow,
-    body: BCell,
+    body: Cell,
   }
 }
 
@@ -2737,7 +2737,7 @@ fn default_fn_edges(
 ) -> Array[String] {
   let edges : Array[String] = []
   match element.default_fn {
-    Some(@engine.WireDefaultFn(invocation)) =>
+    Some(@engine.Wire(invocation)) =>
       match extensions.lookup_cell_fn(invocation.name) {
         Some(descriptor) =>
           match descriptor.concrete_observes(invocation) {
@@ -2800,7 +2800,7 @@ fn collect_default_fn_errors(
   for element in elements {
     match element.default_fn {
       Some(call) => {
-        if element.default_declared && call is @engine.WireDefaultFn(_) {
+        if element.default_declared && call is @engine.Wire(_) {
           out.push(
             def_err(
               element.name,
@@ -2834,7 +2834,7 @@ fn collect_default_fn_errors(
                 )
               Ok(_) => ()
             }
-            if descriptor.output() is @engine.SentinelOutput(_) {
+            if descriptor.output() is @engine.Sentinel(_) {
               out.push(
                 def_err(
                   element.name,
@@ -2872,9 +2872,9 @@ fn collect_default_fn_errors(
 
 ///|
 /// DR-011 明確化 (kawaz 裁定 2026-07-08): `long` の array 形の各要素は `classify_long_spelling` が
-/// `LMain`/`LVariant` に分類できる形でなければならない — colon-less な文字列、または語彙外 effect
-/// word を持つ文字列 (`LInvalid`) は文法エラーで `unknown-vocab` (DR-054) に落とす。`normalize_option`
-/// (`resolve_long` 経由) の**前**に検査する必要がある — `resolve_long` は `LInvalid` を黙って捨てる
+/// `Main`/`Variant` に分類できる形でなければならない — colon-less な文字列、または語彙外 effect
+/// word を持つ文字列 (`Invalid`) は文法エラーで `unknown-vocab` (DR-054) に落とす。`normalize_option`
+/// (`resolve_long` 経由) の**前**に検査する必要がある — `resolve_long` は `Invalid` を黙って捨てる
 /// (呼び出し前提が「無効文字列は既に definition-error として検出済み」なので) ため、normalize 後の
 /// `e.long` には無効な生文字列がもう残っていない。
 fn collect_invalid_long_dsl(
@@ -2900,11 +2900,11 @@ fn push_invalid_long(
   extensions : @engine.Registry,
 ) -> Unit {
   match e.long {
-    LBool(_) => () // bool 糖衣は常に妥当 (DR-071 §1 / DR-076 §2)
-    LList(strs) =>
+    Bool(_) => () // bool 糖衣は常に妥当 (DR-071 §1 / DR-076 §2)
+    List(strs) =>
       for l in strs {
         match classify_long_spelling(l, kebab(e.name), e.ty, extensions) {
-          LInvalid(s, kind) =>
+          Invalid(s, kind) =>
             out.push(
               def_err(
                 e.name,
@@ -2913,13 +2913,13 @@ fn push_invalid_long(
                 "use a registered cell_fns name with arguments matching its descriptor",
               ),
             )
-          LMain(_) | LVariant(_) => ()
+          Main(_) | Variant(_) => ()
         }
       }
-    LForms(forms) =>
+    Forms(forms) =>
       for form in forms {
         match classify_long_form(form, kebab(e.name), e.ty, extensions) {
-          LInvalid(s, kind) =>
+          Invalid(s, kind) =>
             out.push(
               def_err(
                 e.name,
@@ -2928,7 +2928,7 @@ fn push_invalid_long(
                 "use a registered cell_fns name with arguments matching its descriptor",
               ),
             )
-          LMain(_) | LVariant(_) => ()
+          Main(_) | Variant(_) => ()
         }
       }
   }
@@ -2942,7 +2942,7 @@ fn push_invalid_long(
 /// (DR-054) に落とす。canonical 側と別関数にしているのは、target canonical 要素の `ty` を
 /// `find_elem` で引く必要があり (`classify_long_spelling` の operand 解釈に使う)、`push_invalid_long`
 /// の「自分の @engine.ElemDef を検査する」形と入力の形が違うため — dangling alias target (見つからない場合)
-/// は absent-ref check が別途拾うのでここでは静かにスキップする。desugar_aliases (LInvalid を
+/// は absent-ref check が別途拾うのでここでは静かにスキップする。desugar_aliases (Invalid を
 /// rename-only で通す経路) より前、static check フェーズで検出する。
 fn collect_invalid_alias_long_override(
   def : @engine.Definition,
@@ -2959,12 +2959,12 @@ fn collect_invalid_alias_long_override(
         match find_elem(def, a.target) {
           Some(canon) =>
             match decl {
-              LBool(_) => () // bool 糖衣は常に妥当 (DR-071 §1 / DR-076 §2)
-              LList(strs) =>
+              Bool(_) => () // bool 糖衣は常に妥当 (DR-071 §1 / DR-076 §2)
+              List(strs) =>
                 for l in strs {
                   match
                     classify_long_spelling(l, alias_name, canon.ty, extensions) {
-                    LInvalid(s, kind) =>
+                    Invalid(s, kind) =>
                       out.push(
                         def_err(
                           alias_name,
@@ -2973,14 +2973,14 @@ fn collect_invalid_alias_long_override(
                           "use a registered cell_fns name with arguments matching its descriptor",
                         ),
                       )
-                    LMain(_) | LVariant(_) => ()
+                    Main(_) | Variant(_) => ()
                   }
                 }
-              LForms(forms) =>
+              Forms(forms) =>
                 for form in forms {
                   match
                     classify_long_form(form, alias_name, canon.ty, extensions) {
-                    LInvalid(s, kind) =>
+                    Invalid(s, kind) =>
                       out.push(
                         def_err(
                           alias_name,
@@ -2989,7 +2989,7 @@ fn collect_invalid_alias_long_override(
                           "use a registered cell_fns name with arguments matching its descriptor",
                         ),
                       )
-                    LMain(_) | LVariant(_) => ()
+                    Main(_) | Variant(_) => ()
                   }
                 }
             }
@@ -3348,7 +3348,7 @@ fn collect_unsupported_option_ref_repeat(
 /// array is a STRUCTURAL type mismatch with no legal resolution today (no Acc=>Acc transform exists
 /// in the registry) — rather than let it reach the ACCUMULATE fold and fail unpredictably there
 /// (or silently coerce), this closes the gap at the SAME layer DR-077 §2 already closes "unknown
-/// transform name" / "validate-only signature" (`classify_long_spelling`'s `LInvalid` path, both
+/// transform name" / "validate-only signature" (`classify_long_spelling`'s `Invalid` path, both
 /// folded into `@engine.UnknownVocab` there) — `multiple` + `update` is a third static-known-bad
 /// combination, just discovered one step later (after `normalize_surface` has resolved `variants`,
 /// unlike the two above which classify_long_spelling catches at DSL-parse time). `@engine.InvalidRange` is
@@ -3414,7 +3414,7 @@ fn collect_unsupported_accum_update(
   // `parse_definition` 全体の実行順序も変えずに済む。
   for a in def.aliases {
     match a.long_override {
-      Some(LList(strs)) =>
+      Some(List(strs)) =>
         match find_elem(def, a.target) {
           Some(canon) =>
             if canon.multiple {
@@ -3425,7 +3425,7 @@ fn collect_unsupported_accum_update(
               for l in strs {
                 match
                   classify_long_spelling(l, alias_name, canon.ty, extensions) {
-                  LVariant(v) =>
+                  Variant(v) =>
                     match v.op {
                       @engine.Invoke(_) =>
                         out.push(
@@ -3438,13 +3438,13 @@ fn collect_unsupported_accum_update(
                         )
                       _ => ()
                     }
-                  LMain(_) | LInvalid(_, _) => ()
+                  Main(_) | Invalid(_, _) => ()
                 }
               }
             }
           None => () // dangling alias target — absent-ref check が別途拾う
         }
-      Some(LForms(forms)) =>
+      Some(Forms(forms)) =>
         match find_elem(def, a.target) {
           Some(canon) =>
             if canon.multiple {
@@ -3455,7 +3455,7 @@ fn collect_unsupported_accum_update(
               for form in forms {
                 match
                   classify_long_form(form, alias_name, canon.ty, extensions) {
-                  LVariant(v) =>
+                  Variant(v) =>
                     match v.op {
                       @engine.Invoke(_) =>
                         out.push(
@@ -3468,13 +3468,13 @@ fn collect_unsupported_accum_update(
                         )
                       _ => ()
                     }
-                  LMain(_) | LInvalid(_, _) => ()
+                  Main(_) | Invalid(_, _) => ()
                 }
               }
             }
           None => ()
         }
-      Some(LBool(_)) => ()
+      Some(Bool(_)) => ()
       None => ()
     }
   }

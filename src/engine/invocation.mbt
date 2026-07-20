@@ -10,12 +10,12 @@ pub(all) struct FnInvocation {
 } derive(Eq, Debug)
 
 ///|
-/// One implementation argument. Wire invocations carry `StringArg`; typed
-/// internal calls such as fixed `set(value)` carry `ValueArg` without
+/// One implementation argument. Wire invocations carry `String`; typed
+/// internal calls such as fixed `set(value)` carry `Value` without
 /// serializing the value through the string DSL.
 pub(all) enum FnArg {
-  StringArg(String)
-  ValueArg(Value)
+  String(String)
+  Value(Value)
 } derive(Eq, Debug)
 
 ///|
@@ -29,23 +29,23 @@ pub(all) struct FnCall {
 /// Default-seat placeholder. Fixed JSON defaults retain native values in a typed call; explicit
 /// default_fn wire spellings retain their canonical string invocation until target-aware execution.
 pub(all) enum DefaultFnCall {
-  WireDefaultFn(FnInvocation)
-  TypedDefaultFn(FnCall)
+  Wire(FnInvocation)
+  Typed(FnCall)
 } derive(Eq, Debug)
 
 ///|
 pub fn DefaultFnCall::to_call(self : DefaultFnCall) -> FnCall {
   match self {
-    WireDefaultFn(invocation) => invocation.to_call()
-    TypedDefaultFn(call) => call
+    Wire(invocation) => invocation.to_call()
+    Typed(call) => call
   }
 }
 
 ///|
 pub fn DefaultFnCall::wire_invocation(self : DefaultFnCall) -> FnInvocation? {
   match self {
-    WireDefaultFn(invocation) => Some(invocation)
-    TypedDefaultFn(_) => None
+    Wire(invocation) => Some(invocation)
+    Typed(_) => None
   }
 }
 
@@ -53,7 +53,7 @@ pub fn DefaultFnCall::wire_invocation(self : DefaultFnCall) -> FnInvocation? {
 pub fn FnInvocation::to_call(self : FnInvocation) -> FnCall {
   let args : Array[FnArg] = []
   for arg in self.args {
-    args.push(StringArg(arg))
+    args.push(String(arg))
   }
   { name: self.name, args }
 }
@@ -62,7 +62,7 @@ pub fn FnInvocation::to_call(self : FnInvocation) -> FnCall {
 pub fn typed_fn_call(name : String, values : Array[Value]) -> FnCall {
   let args : Array[FnArg] = []
   for value in values {
-    args.push(ValueArg(value))
+    args.push(Value(value))
   }
   { name, args }
 }

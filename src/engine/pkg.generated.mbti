@@ -198,9 +198,9 @@ pub(all) struct CandMeta {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum CellFnArity {
-  ExactArity(Int)
-  BetweenArity(Int, Int)
-  AtLeastArity(Int)
+  Exact(Int)
+  Between(Int, Int)
+  AtLeast(Int)
 } derive(Eq, @debug.Debug)
 pub fn CellFnArity::accepts(Self, Int) -> Bool
 
@@ -221,10 +221,10 @@ pub fn CellFnDescriptor::validate_call(Self, FnCall) -> Result[Unit, (String, St
 pub fn CellFnDescriptor::validate_invocation(Self, FnInvocation) -> Result[Unit, (String, String)]
 
 pub(all) enum CellFnOutput {
-  ValueOutput
-  NumberOutput
-  StringOutput
-  SentinelOutput(CellSentinel)
+  Value
+  Number
+  String
+  Sentinel(CellSentinel)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct CellFnParameter {
@@ -234,8 +234,8 @@ pub(all) struct CellFnParameter {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum CellFnParameterKind {
-  StringParameter
-  ValueParameter
+  String
+  Value
 } derive(Eq, @debug.Debug)
 
 pub(all) enum CellFnRepetition {
@@ -282,9 +282,9 @@ pub fn Ctx::is_complete_mode(Self) -> Bool
 pub fn Ctx::token_at(Self, Int) -> String?
 
 pub(all) enum DecodeCtx {
-  DecodeOption
-  DecodePositional
-  DecodeCommand
+  Option
+  Positional
+  Command
 } derive(Eq, @debug.Debug)
 
 pub(all) struct DecodedOwnedDecl {
@@ -317,8 +317,8 @@ pub fn DefaultCtx::dependency(Self, String) -> Value?
 pub fn DefaultCtx::target(Self) -> String
 
 pub(all) enum DefaultFnCall {
-  WireDefaultFn(FnInvocation)
-  TypedDefaultFn(FnCall)
+  Wire(FnInvocation)
+  Typed(FnCall)
 } derive(Eq, @debug.Debug)
 pub fn DefaultFnCall::to_call(Self) -> FnCall
 pub fn DefaultFnCall::wire_invocation(Self) -> FnInvocation?
@@ -358,10 +358,10 @@ pub(all) enum EffectOp {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum ElemBody {
-  BCell
-  BOr(Array[OrBranch])
-  BGroup(Array[ElemDef])
-  BEnum(Array[String])
+  Cell
+  Or(Array[OrBranch])
+  Group(Array[ElemDef])
+  Enum(Array[String])
 } derive(Eq, @debug.Debug)
 
 pub(all) struct ElemDef {
@@ -492,8 +492,8 @@ pub(all) struct FilterDescriptor {
 }
 
 pub(all) enum FilterInput {
-  ScalarInput(Value)
-  ArrayInput(Array[Value])
+  Scalar(Value)
+  Array(Array[Value])
 } derive(Eq, @debug.Debug)
 
 pub(all) enum FilterSignature {
@@ -503,8 +503,8 @@ pub(all) enum FilterSignature {
 pub fn FilterSignature::is_transform(Self) -> Bool
 
 pub(all) enum FnArg {
-  StringArg(String)
-  ValueArg(Value)
+  String(String)
+  Value(Value)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct FnCall {
@@ -543,8 +543,8 @@ pub(all) enum FnInvocationForm {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum FnOutput {
-  FnValue(Value)
-  FnSentinel(CellSentinel)
+  Value(Value)
+  Sentinel(CellSentinel)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpMetaDecl {
@@ -628,9 +628,9 @@ pub fn InstallOutput::push_entity(Self, Entity) -> Unit
 pub fn InstallOutput::push_greedy(Self, Node) -> Unit
 
 pub(all) enum LongDecl {
-  LBool(Bool)
-  LList(Array[String])
-  LForms(Array[FnInvocationForm])
+  Bool(Bool)
+  List(Array[String])
+  Forms(Array[FnInvocationForm])
 } derive(Eq, @debug.Debug)
 
 pub(all) enum Node {
@@ -674,20 +674,20 @@ pub(all) enum Outcome {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum OwnedDecl {
-  ODLong(LongDecl)
-  ODShort(Array[Char])
-  ODEnv(Array[String])
-  ODDd(String?, Bool)
-  ODGlobal(Bool)
-  ODInherit(Bool)
-  ODRepeat(RepeatSpec?, Bool)
-  ODMultiple(Bool, String?, String?, String?, Bool?)
-  ODConfig(Bool, Array[String]?)
-  ODConstraint(Array[String], Array[String], Array[String], Array[String], Bool)
-  ODAlias(AliasDef?)
-  ODInheritable(Bool)
-  ODHelpMeta(HelpMetaDecl)
-  ODCommand
+  Long(LongDecl)
+  Short(Array[Char])
+  Env(Array[String])
+  Dd(String?, Bool)
+  Global(Bool)
+  Inherit(Bool)
+  Repeat(RepeatSpec?, Bool)
+  Multiple(Bool, String?, String?, String?, Bool?)
+  Config(Bool, Array[String]?)
+  Constraint(Array[String], Array[String], Array[String], Array[String], Bool)
+  Alias(AliasDef?)
+  Inheritable(Bool)
+  HelpMeta(HelpMetaDecl)
+  Command
 } derive(Eq, @debug.Debug)
 
 pub(all) struct ParseError {

@@ -71,8 +71,7 @@ fn ent(
     },
     default_values,
     default_fn: match default_values {
-      Some(values) =>
-        Some(@engine.TypedDefaultFn(@engine.typed_fn_call("set", values)))
+      Some(values) => Some(@engine.Typed(@engine.typed_fn_call("set", values)))
       None => None
     },
     separator,

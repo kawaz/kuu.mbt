@@ -2586,7 +2586,7 @@ pub fn elem_value_in_subtree(
 /// `wrapper` が `None` なら宣言 scope path そのものを見る従来どおりの `value_declared`。
 /// `Some(w)` なら宣言元要素 `w` 自身の Scoped 部分木内を `is_committed_in_subtree` で探す — ref
 /// 経由の candidate (num/flag 等) は `Scope.entities` に登録されない (repeat/multiple 無しの ref
-/// 要素、`ensure_entity_body` の BCell コメント参照) ため、`value_declared` の entities フォール
+/// 要素、`ensure_entity_body` の Cell コメント参照) ため、`value_declared` の entities フォール
 /// バック検索 (default/env/config/inherit の宣言有無) は wrapper 付き candidate には意味を持たず、
 /// committed 判定のみで足りる。
 fn candidate_declared(
@@ -2695,7 +2695,7 @@ fn eval_constraints(
         // なしの型委譲) は resolve.mbt の後段フィルタが行う。
         //
         // issue 2026-07-13-structural-or-type-branch-required-missing /
-        // codex-review-dr102-dr103-postland (M-2): `candidates` は structural or (直書き BOr /
+        // codex-review-dr102-dr103-postland (M-2): `candidates` は structural or (直書き Or /
         // ref 経由) の場合、`display` 自身ではなく各枝の leaf name の配列 (node.mbt の
         // `RequiredCandidate`/`Required` doc comment 参照)。ref 経由の candidate は
         // `wrapper: Some(宣言元要素名)` を持ち、`candidate_declared` が宣言元要素自身の Scoped

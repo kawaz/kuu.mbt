@@ -67,8 +67,8 @@ fn resident_strings(
 ///|
 fn resident_long(json : Json) -> Result[@engine.LongDecl, String] {
   match json {
-    True => Ok(LBool(true))
-    False => Ok(LBool(false))
+    True => Ok(Bool(true))
+    False => Ok(Bool(false))
     Array(values) => {
       let strings : Array[String] = []
       let forms : Array[@engine.FnInvocationForm] = []
@@ -94,9 +94,9 @@ fn resident_long(json : Json) -> Result[@engine.LongDecl, String] {
         }
       }
       if has_array {
-        Ok(LForms(forms))
+        Ok(Forms(forms))
       } else {
-        Ok(LList(strings))
+        Ok(List(strings))
       }
     }
     _ => Err("long is not a bool/array")
@@ -276,7 +276,7 @@ impl @engine.InstallerExt for LongInstaller with fn vocab(_self) {
 ///|
 impl @engine.InstallerExt for LongInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    DecodeOption => ["long"]
+    Option => ["long"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -289,9 +289,9 @@ impl @engine.InstallerExt for LongInstaller with fn decode(_self, json, ctx) {
         Ok(decoded) => decoded
         Err(reason) => return Err(reason)
       }
-    None => LList([])
+    None => List([])
   }
-  Ok({ vocab, declaration: ODLong(declaration) })
+  Ok({ vocab, declaration: Long(declaration) })
 }
 
 ///|
@@ -326,7 +326,7 @@ impl @engine.InstallerExt for ShortInstaller with fn vocab(_self) {
 ///|
 impl @engine.InstallerExt for ShortInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    DecodeOption => ["short"]
+    Option => ["short"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -343,7 +343,7 @@ impl @engine.InstallerExt for ShortInstaller with fn decode(_self, json, ctx) {
       chars.push(char)
     }
   }
-  Ok({ vocab, declaration: ODShort(chars) })
+  Ok({ vocab, declaration: Short(chars) })
 }
 
 ///|
@@ -375,7 +375,7 @@ impl @engine.InstallerExt for EnvInstaller with fn vocab(_self) {
 ///|
 impl @engine.InstallerExt for EnvInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    DecodeOption | DecodePositional => ["env"]
+    Option | Positional => ["env"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -383,7 +383,7 @@ impl @engine.InstallerExt for EnvInstaller with fn decode(_self, json, ctx) {
     Err(reason) => return Err(reason)
   }
   match resident_strings(object, "env") {
-    Ok(values) => Ok({ vocab, declaration: ODEnv(values) })
+    Ok(values) => Ok({ vocab, declaration: Env(values) })
     Err(reason) => Err(reason)
   }
 }
@@ -419,7 +419,7 @@ impl @engine.InstallerExt for DdInstaller with fn vocab(_self) {
 ///|
 impl @engine.InstallerExt for DdInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    DecodeOption => ["match", "self"]
+    Option => ["match", "self"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -431,7 +431,7 @@ impl @engine.InstallerExt for DdInstaller with fn decode(_self, json, ctx) {
     Some("keep") => true
     Some(other) => return Err("dd 'self' has unknown value '" + other + "'")
   }
-  Ok({ vocab, declaration: ODDd(resident_string(object, "match"), self_keep) })
+  Ok({ vocab, declaration: Dd(resident_string(object, "match"), self_keep) })
 }
 
 ///|
@@ -468,7 +468,7 @@ impl @engine.InstallerExt for CommandInstaller with fn decode(
   _json,
   _ctx,
 ) {
-  Ok({ vocab: [], declaration: ODCommand })
+  Ok({ vocab: [], declaration: Command })
 }
 
 ///|
@@ -500,7 +500,7 @@ impl @engine.InstallerExt for GlobalInstaller with fn vocab(_self) {
 ///|
 impl @engine.InstallerExt for GlobalInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    DecodeOption => ["global"]
+    Option => ["global"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -508,7 +508,7 @@ impl @engine.InstallerExt for GlobalInstaller with fn decode(_self, json, ctx) {
     Err(reason) => return Err(reason)
   }
   match resident_bool(object, "global", false) {
-    Ok(value) => Ok({ vocab, declaration: ODGlobal(value) })
+    Ok(value) => Ok({ vocab, declaration: Global(value) })
     Err(reason) => Err(reason)
   }
 }
@@ -542,7 +542,7 @@ impl @engine.InstallerExt for InheritInstaller with fn vocab(_self) {
 ///|
 impl @engine.InstallerExt for InheritInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    DecodeOption | DecodePositional => ["inherit"]
+    Option | Positional => ["inherit"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -550,7 +550,7 @@ impl @engine.InstallerExt for InheritInstaller with fn decode(_self, json, ctx) 
     Err(reason) => return Err(reason)
   }
   match resident_bool(object, "inherit", false) {
-    Ok(value) => Ok({ vocab, declaration: ODInherit(value) })
+    Ok(value) => Ok({ vocab, declaration: Inherit(value) })
     Err(reason) => Err(reason)
   }
 }
@@ -584,8 +584,8 @@ impl @engine.InstallerExt for RepeatInstaller with fn vocab(_self) {
 ///|
 impl @engine.InstallerExt for RepeatInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    DecodeOption => ["repeat"]
-    DecodePositional => ["repeat", "optional"]
+    Option => ["repeat"]
+    Positional => ["repeat", "optional"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -604,7 +604,7 @@ impl @engine.InstallerExt for RepeatInstaller with fn decode(_self, json, ctx) {
     Ok(value) => value
     Err(reason) => return Err(reason)
   }
-  Ok({ vocab, declaration: ODRepeat(repeat, optional) })
+  Ok({ vocab, declaration: Repeat(repeat, optional) })
 }
 
 ///|
@@ -644,7 +644,7 @@ impl @engine.InstallerExt for MultipleInstaller with fn vocab(_self) {
 ///|
 impl @engine.InstallerExt for MultipleInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    DecodeOption | DecodePositional => ["multiple"]
+    Option | Positional => ["multiple"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -662,9 +662,7 @@ impl @engine.InstallerExt for MultipleInstaller with fn decode(_self, json, ctx)
   let (multiple, separator, collector, accumulator, flatten) = decoded
   Ok({
     vocab,
-    declaration: ODMultiple(
-      multiple, separator, collector, accumulator, flatten,
-    ),
+    declaration: Multiple(multiple, separator, collector, accumulator, flatten),
   })
 }
 
@@ -708,7 +706,7 @@ impl @engine.InstallerExt for ConfigInstaller with fn vocab(_self) {
 ///|
 impl @engine.InstallerExt for ConfigInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    DecodeOption | DecodePositional => ["config_key"]
+    Option | Positional => ["config_key"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -725,7 +723,7 @@ impl @engine.InstallerExt for ConfigInstaller with fn decode(_self, json, ctx) {
   }
   Ok({
     vocab,
-    declaration: ODConfig(
+    declaration: Config(
       resident_string(object, "type") == Some("config_file"),
       config_key,
     ),
@@ -767,7 +765,7 @@ impl @engine.InstallerExt for ConstraintInstaller with fn decode(
   ctx,
 ) {
   let vocab = match ctx {
-    DecodeOption =>
+    Option =>
       [
         "requires", "conflicts_with", "exclusive_group", "required_group", "required",
       ]
@@ -777,7 +775,7 @@ impl @engine.InstallerExt for ConstraintInstaller with fn decode(
     // value_requires は positional では trigger 経路が仕様上ない (positional の `or` は structural
     // 専用、`values` キー未 allowed、DR-055 §5.3 の value-enum-or 誘導は option 限定 — 値の枝への
     // requires は positional では structural or の各枝内の positional 要素自身の requires で表現される)。
-    DecodePositional =>
+    Positional =>
       [
         "requires", "conflicts_with", "exclusive_group", "required_group", "required",
       ]
@@ -809,7 +807,7 @@ impl @engine.InstallerExt for ConstraintInstaller with fn decode(
   }
   Ok({
     vocab,
-    declaration: ODConstraint(
+    declaration: Constraint(
       requires, conflicts, exclusive, required_group, required,
     ),
   })
@@ -844,11 +842,11 @@ impl @engine.InstallerExt for AliasInstaller with fn vocab(_self) {
 ///|
 impl @engine.InstallerExt for AliasInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    DecodeOption | DecodeCommand => ["alias"]
+    Option | Command => ["alias"]
     _ => []
   }
   match resident_alias(json) {
-    Ok(value) => Ok({ vocab, declaration: ODAlias(value) })
+    Ok(value) => Ok({ vocab, declaration: Alias(value) })
     Err(reason) => Err(reason)
   }
 }
@@ -892,7 +890,7 @@ impl @engine.InstallerExt for InheritableInstaller with fn decode(
   ctx,
 ) {
   let vocab = match ctx {
-    DecodeOption => ["inheritable"]
+    Option => ["inheritable"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -900,7 +898,7 @@ impl @engine.InstallerExt for InheritableInstaller with fn decode(
     Err(reason) => return Err(reason)
   }
   match resident_bool(object, "inheritable", false) {
-    Ok(value) => Ok({ vocab, declaration: ODInheritable(value) })
+    Ok(value) => Ok({ vocab, declaration: Inheritable(value) })
     Err(reason) => Err(reason)
   }
 }
@@ -968,7 +966,7 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn decode(
       "help_group_title", "help_group_description", "help_order", "help_group_order",
       "help_after", "help_on_failure",
     ],
-    declaration: ODHelpMeta({
+    declaration: HelpMeta({
       help: resident_string(object, "help"),
       help_long: resident_string(object, "help_long"),
       help_epilog: resident_string(object, "help_epilog"),

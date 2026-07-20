@@ -536,7 +536,7 @@ fn projected_effect(
             observes~,
           )
           match descriptor.invoke(invocation.to_call(), ctx) {
-            Ok(@engine.FnValue(value)) => {
+            Ok(@engine.Value(value)) => {
               current.set(key, value)
               return {
                 entity: binding.key,
@@ -545,7 +545,7 @@ fn projected_effect(
                 source: binding.source,
               }
             }
-            Ok(@engine.FnSentinel(sentinel)) => {
+            Ok(@engine.Sentinel(sentinel)) => {
               let op = match sentinel {
                 @engine.UseDefault => @engine.EffectOp::Default
                 @engine.CellSentinel::Unset => @engine.EffectOp::Unset

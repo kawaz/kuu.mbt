@@ -27,28 +27,28 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(set.parameters(), [
     @engine.cell_fn_parameter(
       "value",
-      kind=@engine.ValueParameter,
+      kind=@engine.Value,
       repetition=@engine.OneOrMore,
     ),
   ])
-  assert_eq(set.arity(), @engine.AtLeastArity(1))
-  assert_eq(set.output(), @engine.ValueOutput)
+  assert_eq(set.arity(), @engine.AtLeast(1))
+  assert_eq(set.output(), @engine.Value)
   assert_eq(set.fallibility(), @engine.TotalFn)
   assert_eq(set.observes(), [])
   assert_eq(set.reasons(), [])
 
   let default_fn = registry.lookup_cell_fn("default").unwrap()
   assert_eq(default_fn.parameters(), [])
-  assert_eq(default_fn.output(), @engine.SentinelOutput(@engine.UseDefault))
+  assert_eq(default_fn.output(), @engine.Sentinel(@engine.UseDefault))
   let unset = registry.lookup_cell_fn("unset").unwrap()
   assert_eq(unset.parameters(), [])
-  assert_eq(unset.output(), @engine.SentinelOutput(@engine.Unset))
+  assert_eq(unset.output(), @engine.Sentinel(@engine.Unset))
   let empty = registry.lookup_cell_fn("empty").unwrap()
   assert_eq(empty.parameters(), [])
-  assert_eq(empty.output(), @engine.SentinelOutput(@engine.Empty))
+  assert_eq(empty.output(), @engine.Sentinel(@engine.Empty))
   for name in ["default", "unset", "empty"] {
     let descriptor = registry.lookup_cell_fn(name).unwrap()
-    assert_eq(descriptor.arity(), @engine.ExactArity(0))
+    assert_eq(descriptor.arity(), @engine.Exact(0))
     assert_eq(descriptor.fallibility(), @engine.TotalFn)
     assert_eq(descriptor.observes(), [])
     assert_eq(descriptor.reasons(), [])
@@ -56,22 +56,22 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
 
   let incr = registry.lookup_cell_fn("incr").unwrap()
   assert_eq(incr.parameters(), [])
-  assert_eq(incr.arity(), @engine.ExactArity(0))
-  assert_eq(incr.output(), @engine.NumberOutput)
+  assert_eq(incr.arity(), @engine.Exact(0))
+  assert_eq(incr.output(), @engine.Number)
   assert_eq(incr.fallibility(), @engine.TotalFn)
 
   let borrow = registry.lookup_cell_fn("borrow").unwrap()
   assert_eq(borrow.parameters(), [@engine.cell_fn_parameter("source")])
-  assert_eq(borrow.arity(), @engine.ExactArity(1))
-  assert_eq(borrow.output(), @engine.ValueOutput)
+  assert_eq(borrow.arity(), @engine.Exact(1))
+  assert_eq(borrow.output(), @engine.Value)
   assert_eq(borrow.fallibility(), @engine.RejectFn)
   assert_eq(borrow.observes(), ["option:<source>"])
   assert_eq(borrow.reasons(), ["absent-source"])
 
   let env = registry.lookup_cell_fn("env").unwrap()
   assert_eq(env.parameters(), [@engine.cell_fn_parameter("var")])
-  assert_eq(env.arity(), @engine.ExactArity(1))
-  assert_eq(env.output(), @engine.ValueOutput)
+  assert_eq(env.arity(), @engine.Exact(1))
+  assert_eq(env.output(), @engine.Value)
   assert_eq(env.fallibility(), @engine.RejectFn)
   assert_eq(env.observes(), ["env:<var>"])
   assert_eq(env.reasons(), ["absent-source"])
@@ -80,8 +80,8 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(inherit_descriptor.parameters(), [
     @engine.cell_fn_parameter("source"),
   ])
-  assert_eq(inherit_descriptor.arity(), @engine.ExactArity(1))
-  assert_eq(inherit_descriptor.output(), @engine.ValueOutput)
+  assert_eq(inherit_descriptor.arity(), @engine.Exact(1))
+  assert_eq(inherit_descriptor.output(), @engine.Value)
   assert_eq(inherit_descriptor.fallibility(), @engine.RejectFn)
   assert_eq(inherit_descriptor.observes(), ["option:<source>"])
   assert_eq(inherit_descriptor.reasons(), ["absent-source"])
@@ -90,16 +90,16 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(uuid.parameters(), [
     @engine.cell_fn_parameter("version", repetition=@engine.ZeroOrOne),
   ])
-  assert_eq(uuid.arity(), @engine.BetweenArity(0, 1))
-  assert_eq(uuid.output(), @engine.StringOutput)
+  assert_eq(uuid.arity(), @engine.Between(0, 1))
+  assert_eq(uuid.output(), @engine.String)
   assert_eq(uuid.fallibility(), @engine.TotalFn)
   assert_eq(uuid.observes(), [])
   assert_eq(uuid.reasons(), [])
 
   let computed = registry.lookup_cell_fn("computed").unwrap()
   assert_eq(computed.parameters(), [@engine.cell_fn_parameter("key")])
-  assert_eq(computed.arity(), @engine.ExactArity(1))
-  assert_eq(computed.output(), @engine.ValueOutput)
+  assert_eq(computed.arity(), @engine.Exact(1))
+  assert_eq(computed.output(), @engine.Value)
   assert_eq(computed.fallibility(), @engine.RejectFn)
   assert_eq(computed.observes(), ["system:<key>"])
   assert_eq(computed.reasons(), ["absent-source"])
@@ -118,7 +118,7 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
   assert_eq(set.concrete_observes(invocation), Ok([]))
   let typed = @engine.typed_fn_call("set", [@engine.Bool(true)])
   assert_eq(set.validate_call(typed), Ok(()))
-  assert_eq(typed.args, [@engine.ValueArg(@engine.Bool(true))])
+  assert_eq(typed.args, [@engine.Value(@engine.Bool(true))])
   assert_eq(
     set.validate_arity(0),
     Err(("invalid-argument", "cell fn 'set' does not accept 0 args")),
@@ -174,24 +174,24 @@ test "builtin cell fn residents execute through their registered descriptors" {
   let ctx = @engine.fn_ctx_effect("target", "--target")
   assert_eq(
     set.invoke(@engine.typed_fn_call("set", [@engine.Bool(true)]), ctx),
-    Ok(@engine.FnValue(@engine.Bool(true))),
+    Ok(@engine.Value(@engine.Bool(true))),
   )
   assert_eq(
-    set.invoke({ name: "set", args: [@engine.StringArg("value")] }, ctx),
-    Ok(@engine.FnValue(@engine.String("value"))),
+    set.invoke({ name: "set", args: [@engine.String("value")] }, ctx),
+    Ok(@engine.Value(@engine.String("value"))),
   )
 
   let incr = registry.lookup_cell_fn("incr").unwrap()
   assert_eq(
     incr.invoke({ name: "incr", args: [] }, ctx),
-    Ok(@engine.FnValue(@engine.Number(1.0))),
+    Ok(@engine.Value(@engine.Number(1.0))),
   )
   assert_eq(
     incr.invoke(
       { name: "incr", args: [] },
       @engine.fn_ctx_effect("target", "--target", old=Some(@engine.Number(4.0))),
     ),
-    Ok(@engine.FnValue(@engine.Number(5.0))),
+    Ok(@engine.Value(@engine.Number(5.0))),
   )
 
   let borrow = registry.lookup_cell_fn("borrow").unwrap()
@@ -212,24 +212,23 @@ test "builtin cell fn residents execute through their registered descriptors" {
   )
   assert_eq(
     borrow.invoke(borrow_invocation.to_call(), borrow_ctx),
-    Ok(@engine.FnValue(@engine.Number(7.0))),
+    Ok(@engine.Value(@engine.Number(7.0))),
   )
 
   for name in ["default", "unset", "empty"] {
     let descriptor = registry.lookup_cell_fn(name).unwrap()
     assert_true(
-      descriptor.invoke({ name, args: [] }, ctx) is Ok(@engine.FnSentinel(_)),
+      descriptor.invoke({ name, args: [] }, ctx) is Ok(@engine.Sentinel(_)),
     )
   }
 
   let uuid = registry.lookup_cell_fn("uuid").unwrap()
   match uuid.invoke({ name: "uuid", args: [] }, ctx) {
-    Ok(@engine.FnValue(@engine.String(value))) => assert_eq(value.length(), 36)
+    Ok(@engine.Value(@engine.String(value))) => assert_eq(value.length(), 36)
     _ => fail("uuid() must return a v4-shaped string")
   }
   assert_true(
-    uuid.validate_call({ name: "uuid", args: [@engine.StringArg("5")] })
-    is Err(_),
+    uuid.validate_call({ name: "uuid", args: [@engine.String("5")] }) is Err(_),
   )
 
   let env = registry.lookup_cell_fn("env").unwrap()

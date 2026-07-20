@@ -319,7 +319,7 @@ pub(all) enum Node {
   /// `min` (same seat as `BoundedTail`'s 2nd field, `max - min`): `None` = unbounded (the
   /// original greedy-max-forever behavior, unchanged), `Some(b)` = stop once `rep >= min +
   /// b`, matching a bounded `repeat: {min, max}` spec exactly instead of silently degrading
-  /// every BGroup repeat to unbounded regardless of a declared `max`. This does NOT add
+  /// every Group repeat to unbounded regardless of a declared `max`. This does NOT add
   /// backtrack (the KNOWN GAP in `eval_wbtest.mbt`'s "IdxRepeat greedy-max has no downstream
   /// backtrack" test is still open for the unbounded case) — a bounded head simply never
   /// over-consumes in the first place, so no backtrack is needed to correct it.
@@ -457,11 +457,11 @@ pub impl Eq for Scope with fn equal(self, other) {
 
 ///|
 /// One candidate cell that `Required`/`RequiredGroup` may look at (DR-093 の型委譲判定入力、
-/// codex レビュー M-2 修正): `name` は値が実際に bind される cell 名 (BOr 直書き structural or の
+/// codex レビュー M-2 修正): `name` は値が実際に bind される cell 名 (Or 直書き structural or の
 /// leaf name、ref 先 template の leaf name、または通常要素なら要素自身の name)。`wrapper` は
 /// scope 判定の基準を切り替える — `None` なら宣言 scope path そのものと完全一致する scope を探す
-/// (BOr 直書きの leaf、または通常要素 — 値は親 scope に直接 bind される、`ensure_entity_body` の
-/// BOr コメント参照)。`Some(w)` なら宣言元要素自身 (ref 要素、`w` = ref 要素の name) の Scoped
+/// (Or 直書きの leaf、または通常要素 — 値は親 scope に直接 bind される、`ensure_entity_body` の
+/// Or コメント参照)。`Some(w)` なら宣言元要素自身 (ref 要素、`w` = ref 要素の name) の Scoped
 /// 部分木内 (scope が 宣言 scope path ++ [w] で始まる) を探す — `inst_long`/`lower_positional` の
 /// ref 分岐が `Scoped(e.name, ...)` で値をラップするため (DESIGN §2.4/2.5 の露出規則、
 /// `ref-template-no-repeat-degenerate.json` が既に pin する挙動と同型)。無制限透過ではなく
@@ -499,16 +499,16 @@ pub(all) enum Constraint {
   /// (M-2): `display` は違反時の error.element (宣言元の name、DESIGN §9.1 のグループ的必須の宣言元、
   /// 通常要素では下記 candidates[0].name と同じ文字列)。`candidates` (`RequiredCandidate` 配列) は
   /// 型委譲判定を実際にどの cell に対して行うかの候補集合 — 通常要素は `[{name: display, wrapper:
-  /// None}]` 自身 (単一候補、既存挙動どおり)。structural or (`BOr`、型付き枝、直書き) が required を
-  /// 持つ場合は各枝の leaf name (`wrapper: None`、値は親 scope に直接 bind される) の配列: BOr
-  /// wrapper 自身 (display) は "no own scalar/array value" (installer.mbt の BOr entity 登録コメント
+  /// None}]` 自身 (単一候補、既存挙動どおり)。structural or (`Or`、型付き枝、直書き) が required を
+  /// 持つ場合は各枝の leaf name (`wrapper: None`、値は親 scope に直接 bind される) の配列: Or
+  /// wrapper 自身 (display) は "no own scalar/array value" (installer.mbt の Or entity 登録コメント
   /// 参照) で値が committed されることが無く、値は選ばれた枝の leaf entity (num/flag 等) にのみ
   /// commit される。`ref` 経由の structural or (テンプレート先が Or) も同様に leaf name を候補とする
   /// が、この場合は `wrapper: Some(宣言元 ref 要素の name)` — ref 展開が `Scoped(ref要素名, ...)` で
   /// 値をラップするため、判定は宣言元要素自身の Scoped 部分木内を探す必要がある
   /// (`RequiredCandidate` の doc comment 参照)。判定は candidates のいずれか 1 つでも型委譲で
   /// 充足していれば OK (DR-093 の「or 親の値充足 = どの枝であれ発火して値が確定していること」— 枝が
-  /// exact (value-enum, BEnum) なら全枝が同じ display 名の cell に着地するため候補は元々
+  /// exact (value-enum, Enum) なら全枝が同じ display 名の cell に着地するため候補は元々
   /// `[{name: display, wrapper: None}]` のままで足りる、対称性が崩れるのは structural or だけ)。
   Required(String, Array[RequiredCandidate])
   /// required_group (DR-103): グループ単位「少なくとも1つ必須」— `exclusive_group` (Exclusive) と

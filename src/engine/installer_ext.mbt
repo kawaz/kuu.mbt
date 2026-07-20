@@ -160,27 +160,27 @@ pub fn InstallBuilder::extensions(self : InstallBuilder) -> Registry {
 
 ///|
 pub(all) enum DecodeCtx {
-  DecodeOption
-  DecodePositional
-  DecodeCommand
+  Option
+  Positional
+  Command
 } derive(Eq, Debug)
 
 ///|
 pub(all) enum OwnedDecl {
-  ODLong(LongDecl)
-  ODShort(Array[Char])
-  ODEnv(Array[String])
-  ODDd(String?, Bool)
-  ODGlobal(Bool)
-  ODInherit(Bool)
-  ODRepeat(RepeatSpec?, Bool)
-  ODMultiple(Bool, String?, String?, String?, Bool?)
-  ODConfig(Bool, Array[String]?)
-  ODConstraint(Array[String], Array[String], Array[String], Array[String], Bool)
-  ODAlias(AliasDef?)
-  ODInheritable(Bool)
-  ODHelpMeta(HelpMetaDecl)
-  ODCommand
+  Long(LongDecl)
+  Short(Array[Char])
+  Env(Array[String])
+  Dd(String?, Bool)
+  Global(Bool)
+  Inherit(Bool)
+  Repeat(RepeatSpec?, Bool)
+  Multiple(Bool, String?, String?, String?, Bool?)
+  Config(Bool, Array[String]?)
+  Constraint(Array[String], Array[String], Array[String], Array[String], Bool)
+  Alias(AliasDef?)
+  Inheritable(Bool)
+  HelpMeta(HelpMetaDecl)
+  Command
 } derive(Eq, Debug)
 
 ///|
@@ -269,9 +269,9 @@ fn effective_repeat(element : ElemDef) -> RepeatSpec? {
 ///|
 fn long_spellings(element : ElemDef) -> Array[String] {
   match element.long {
-    LList(spellings) => spellings
-    LForms(forms) => if forms.length() == 0 { [] } else { ["<fn-invocation>"] }
-    LBool(_) => []
+    List(spellings) => spellings
+    Forms(forms) => if forms.length() == 0 { [] } else { ["<fn-invocation>"] }
+    Bool(_) => []
   }
 }
 

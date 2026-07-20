@@ -222,11 +222,11 @@ fn push_unique(values : Array[String], value : String) -> Unit {
 fn option_spellings(element : @engine.ElemDef) -> Array[String] {
   let spellings : Array[String] = []
   match element.long {
-    LList(values) =>
+    List(values) =>
       for value in values {
         push_unique(spellings, element.long_prefix + value)
       }
-    LForms(_) | LBool(_) => ()
+    Forms(_) | Bool(_) => ()
   }
   for variant in element.variants {
     push_unique(spellings, element.long_prefix + variant.trigger)
@@ -434,9 +434,9 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
   match meta.type_name {
     None => None
     Some(t) => {
-      // BEnum の場合、values_enum を素材として拾う (fixture では enum 値の順序が定義順で pin)。
+      // Enum の場合、values_enum を素材として拾う (fixture では enum 値の順序が定義順で pin)。
       let values_enum : Array[String]? = match element.body {
-        BEnum(values) => Some(copy_strings(values))
+        Enum(values) => Some(copy_strings(values))
         _ => None
       }
       Some(

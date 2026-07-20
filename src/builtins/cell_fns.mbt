@@ -3,8 +3,8 @@
 ///|
 fn fn_arg_value(arg : @engine.FnArg) -> @engine.Value {
   match arg {
-    @engine.ValueArg(value) => value
-    @engine.StringArg(value) => @engine.String(value)
+    @engine.Value(value) => value
+    @engine.String(value) => @engine.String(value)
   }
 }
 
@@ -21,8 +21,8 @@ fn one_arg(args : Array[@engine.FnArg], name : String) -> @engine.FnArg {
 ///|
 fn fn_string_arg(args : Array[@engine.FnArg], name : String) -> String {
   match one_arg(args, name) {
-    @engine.StringArg(value) => value
-    @engine.ValueArg(_) =>
+    @engine.String(value) => value
+    @engine.Value(_) =>
       abort(
         "validated cell fn '" + name + "' reached its resident with a typed arg",
       )
@@ -43,7 +43,7 @@ fn set_fn(
   // scalar targets; seq/repeat aggregation needs the structured Value carrier that is not present in
   // the current engine Value ADT and is intentionally left visible to the next structural slice.
   match args {
-    [arg] => Ok(@engine.FnValue(fn_arg_value(arg)))
+    [arg] => Ok(@engine.Value(fn_arg_value(arg)))
     _ =>
       Err(
         (
@@ -55,7 +55,7 @@ fn set_fn(
 
 ///|
 fn sentinel_fn(sentinel : @engine.CellSentinel) -> @engine.CellFn {
-  fn(_, _) { Ok(@engine.FnSentinel(sentinel)) }
+  fn(_, _) { Ok(@engine.Sentinel(sentinel)) }
 }
 
 ///|
@@ -68,7 +68,7 @@ fn incr_fn(
     Some(@engine.Number(value)) => value
     Some(_) => return Err(("invalid-range", "incr requires a number target"))
   }
-  Ok(@engine.FnValue(@engine.Number(old + 1.0)))
+  Ok(@engine.Value(@engine.Number(old + 1.0)))
 }
 
 ///|
@@ -82,7 +82,7 @@ fn borrow_fn(
     None => ctx.option(source)
   }
   match value {
-    Some(value) => Ok(@engine.FnValue(value))
+    Some(value) => Ok(@engine.Value(value))
     None => absent_source("option", source)
   }
 }
@@ -91,7 +91,7 @@ fn borrow_fn(
 fn env_fn(args : Array[@engine.FnArg], ctx : @engine.FnCtx) -> @engine.FnResult {
   let variable = fn_string_arg(args, "env")
   match ctx.env(variable) {
-    Some(value) => Ok(@engine.FnValue(value))
+    Some(value) => Ok(@engine.Value(value))
     None => absent_source("env", variable)
   }
 }
@@ -103,7 +103,7 @@ fn inherit_fn(
 ) -> @engine.FnResult {
   let source = fn_string_arg(args, "inherit")
   match ctx.option(source) {
-    Some(value) => Ok(@engine.FnValue(value))
+    Some(value) => Ok(@engine.Value(value))
     None => absent_source("ancestor option", source)
   }
 }
@@ -136,8 +136,8 @@ fn uuid_v4() -> String {
 ///|
 fn validate_uuid(call : @engine.FnCall) -> Result[Unit, @engine.FnReason] {
   match call.args {
-    [] | [@engine.StringArg("4")] => Ok(())
-    [@engine.StringArg(_)] =>
+    [] | [@engine.String("4")] => Ok(())
+    [@engine.String(_)] =>
       Err(("invalid-argument", "cell fn 'uuid' version must be '4'"))
     _ =>
       Err(("invalid-argument", "cell fn 'uuid' has an invalid version carrier"))
@@ -151,7 +151,7 @@ fn uuid_fn(
 ) -> @engine.FnResult {
   let version = match args {
     [] => "4"
-    [@engine.StringArg(value)] => value
+    [@engine.String(value)] => value
     _ =>
       abort(
         "validated uuid invocation reached its resident with an invalid carrier",
@@ -160,7 +160,7 @@ fn uuid_fn(
   if version != "4" {
     Err(("invalid-argument", "uuid version must be '4'"))
   } else {
-    Ok(@engine.FnValue(@engine.String(uuid_v4())))
+    Ok(@engine.Value(@engine.String(uuid_v4())))
   }
 }
 
@@ -171,7 +171,7 @@ fn computed_fn(
 ) -> @engine.FnResult {
   let key = fn_string_arg(args, "computed")
   match ctx.system(key) {
-    Some(value) => Ok(@engine.FnValue(value))
+    Some(value) => Ok(@engine.Value(value))
     None => absent_source("system", key)
   }
 }
@@ -186,46 +186,46 @@ pub fn cell_fn_descriptors() -> Array[@engine.CellFnDescriptor] {
       [
         @engine.cell_fn_parameter(
           "value",
-          kind=@engine.ValueParameter,
+          kind=@engine.Value,
           repetition=@engine.OneOrMore,
         ),
       ],
-      @engine.ValueOutput,
+      @engine.Value,
       @engine.TotalFn,
       run=set_fn,
     ),
     @engine.cell_fn_descriptor(
       "default",
       [],
-      @engine.SentinelOutput(@engine.UseDefault),
+      @engine.Sentinel(@engine.UseDefault),
       @engine.TotalFn,
       run=sentinel_fn(@engine.UseDefault),
     ),
     @engine.cell_fn_descriptor(
       "unset",
       [],
-      @engine.SentinelOutput(@engine.Unset),
+      @engine.Sentinel(@engine.Unset),
       @engine.TotalFn,
       run=sentinel_fn(@engine.Unset),
     ),
     @engine.cell_fn_descriptor(
       "empty",
       [],
-      @engine.SentinelOutput(@engine.Empty),
+      @engine.Sentinel(@engine.Empty),
       @engine.TotalFn,
       run=sentinel_fn(@engine.Empty),
     ),
     @engine.cell_fn_descriptor(
       "incr",
       [],
-      @engine.NumberOutput,
+      @engine.Number,
       @engine.TotalFn,
       run=incr_fn,
     ),
     @engine.cell_fn_descriptor(
       "borrow",
       [@engine.cell_fn_parameter("source")],
-      @engine.ValueOutput,
+      @engine.Value,
       @engine.RejectFn,
       observes=["option:<source>"],
       reasons=["absent-source"],
@@ -234,7 +234,7 @@ pub fn cell_fn_descriptors() -> Array[@engine.CellFnDescriptor] {
     @engine.cell_fn_descriptor(
       "env",
       [@engine.cell_fn_parameter("var")],
-      @engine.ValueOutput,
+      @engine.Value,
       @engine.RejectFn,
       observes=["env:<var>"],
       reasons=["absent-source"],
@@ -243,7 +243,7 @@ pub fn cell_fn_descriptors() -> Array[@engine.CellFnDescriptor] {
     @engine.cell_fn_descriptor(
       "inherit",
       [@engine.cell_fn_parameter("source")],
-      @engine.ValueOutput,
+      @engine.Value,
       @engine.RejectFn,
       observes=["option:<source>"],
       reasons=["absent-source"],
@@ -252,7 +252,7 @@ pub fn cell_fn_descriptors() -> Array[@engine.CellFnDescriptor] {
     @engine.cell_fn_descriptor(
       "uuid",
       [@engine.cell_fn_parameter("version", repetition=@engine.ZeroOrOne)],
-      @engine.StringOutput,
+      @engine.String,
       @engine.TotalFn,
       validate=validate_uuid,
       run=uuid_fn,
@@ -260,7 +260,7 @@ pub fn cell_fn_descriptors() -> Array[@engine.CellFnDescriptor] {
     @engine.cell_fn_descriptor(
       "computed",
       [@engine.cell_fn_parameter("key")],
-      @engine.ValueOutput,
+      @engine.Value,
       @engine.RejectFn,
       observes=["system:<key>"],
       reasons=["absent-source"],

@@ -208,7 +208,7 @@ test "Registry registers and looks up each extension category in an independent 
     Some(resident) => {
       assert_eq(resident.signature, Transform)
       assert_eq(
-        (resident.run)([], fn_ctx_filter(ScalarInput(String("value")))),
+        (resident.run)([], fn_ctx_filter(Scalar(String("value")))),
         Ok(String("x:value")),
       )
     }
@@ -218,7 +218,7 @@ test "Registry registers and looks up each extension category in an independent 
     Some(resident) => {
       assert_eq(resident.signature, Validate)
       assert_eq(
-        (resident.run)([], fn_ctx_filter(ArrayInput([]))),
+        (resident.run)([], fn_ctx_filter(Array([]))),
         Err(("empty", "array is empty")),
       )
     }
@@ -299,7 +299,7 @@ test "Registry rejects duplicate identity without replacing the first resident" 
   match registry.lookup_filter("synthetic/filter") {
     Some(resident) =>
       assert_eq(
-        (resident.run)([], fn_ctx_filter(ScalarInput(String("value")))),
+        (resident.run)([], fn_ctx_filter(Scalar(String("value")))),
         Ok(String("first:value")),
       )
     None => fail("first filter resident must remain registered")
@@ -342,9 +342,7 @@ test "filters and cell_fns keep independent registries even for the same name" {
   let registry = Registry::new()
   assert_true(registry.register_filter(registry_filter("shared", "filter:")))
   assert_true(
-    registry.register_cell_fn(
-      cell_fn_descriptor("shared", [], ValueOutput, TotalFn),
-    ),
+    registry.register_cell_fn(cell_fn_descriptor("shared", [], Value, TotalFn)),
   )
   assert_true(registry.lookup_filter("shared") is Some(_))
   assert_true(registry.lookup_cell_fn("shared") is Some(_))
@@ -352,13 +350,8 @@ test "filters and cell_fns keep independent registries even for the same name" {
   assert_false(registry.register_filter(registry_filter("shared", "other:")))
   assert_false(
     registry.register_cell_fn(
-      cell_fn_descriptor(
-        "shared",
-        [cell_fn_parameter("arg")],
-        ValueOutput,
-        RejectFn,
-      ),
+      cell_fn_descriptor("shared", [cell_fn_parameter("arg")], Value, RejectFn),
     ),
   )
-  assert_eq(registry.lookup_cell_fn("shared").unwrap().arity(), ExactArity(0))
+  assert_eq(registry.lookup_cell_fn("shared").unwrap().arity(), Exact(0))
 }

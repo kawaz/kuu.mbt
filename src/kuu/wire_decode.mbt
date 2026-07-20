@@ -137,7 +137,7 @@ fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDecl {
 fn opt(
   name : String,
   ty : &@engine.TypeExt,
-  long? : @engine.LongDecl = LList([]),
+  long? : @engine.LongDecl = List([]),
   variants? : Array[@engine.Variant] = [],
   short? : Array[Char] = [],
   env? : Array[String] = [],
@@ -181,7 +181,7 @@ fn opt(
   long_eq_sep? : @engine.EqSepMode = @engine.Allow,
   short_combine? : Bool = true,
   short_attached_value? : @engine.AttachMode = @engine.Allow,
-  body? : @engine.ElemBody = BCell,
+  body? : @engine.ElemBody = Cell,
   // DR-104 §2/§4: option 専用の hidden 宣言 (meta.json fixture)。dec_option がここへ渡し、
   // ensure_entity 経由で @engine.Entity.hidden へ carry される。alias は @engine.AliasDef に独立宣言経路が無いので
   // is_alias は opt() の返す @engine.ElemDef 上では常に false (alias_entry が別途 true で構築する)。
@@ -299,12 +299,12 @@ fn pos(
   // positionals), `completer` targets the VALUE position itself, which positionals have just as
   // much as options do.
   completer? : String? = None,
-  body? : @engine.ElemBody = BCell,
+  body? : @engine.ElemBody = Cell,
 ) -> @engine.ElemDef {
   {
     name,
     ty,
-    long: LList([]),
+    long: List([]),
     variants: [],
     short: [],
     env,
@@ -339,7 +339,7 @@ fn pos(
     required,
     // DR-055 §5.3 の value-enum-or は option 限定 (positional の or は structural 専用、`values` キー
     // 未 allowed) — positional 要素直属の value_requires を組む wire 経路が現時点で存在しないため
-    // 空配列固定 (structural or の各枝は BOr(items) の 1 要素 = positional 要素自身なので、値依存
+    // 空配列固定 (structural or の各枝は Or(items) の 1 要素 = positional 要素自身なので、値依存
     // requires は各枝要素の requires 属性で表現される)。
     value_requires: [],
     deprecated: false,
@@ -358,7 +358,7 @@ fn pos(
     value_filters,
     final_filters,
     accum_filters,
-    // positional 要素は long/short spelling を持たない (`long: LList([])`/`short: []` 上、`long_of`
+    // positional 要素は long/short spelling を持たない (`long: List([])`/`short: []` 上、`long_of`
     // は常に [] を返す) — `long_prefix`/`long_eq_sep`/`short_prefix`/`short_attached_value`/
     // `short_combine` は long/short-only 語彙なので既定値のまま未使用フィールドとして持ち回るだけ
     // (`opt`/`inst_long`/`inst_short` 側の実際の消費経路と同じ理由付け)。`env_prefix`/`auto_env` は
@@ -384,7 +384,7 @@ fn dd_marker(
   {
     name: "--",
     ty: @builtins.string_type(),
-    long: LList([]),
+    long: List([]),
     variants: [],
     short: [],
     env: [],
@@ -435,7 +435,7 @@ fn dd_marker(
     value_filters: [],
     final_filters: [],
     accum_filters: [],
-    // dd marker element も `long: LList([])` で long spelling を持たない — 同じ理由で既定値。
+    // dd marker element も `long: List([])` で long spelling を持たない — 同じ理由で既定値。
     long_prefix: "--",
     short_prefix: "-",
     env_prefix: "",
@@ -443,7 +443,7 @@ fn dd_marker(
     long_eq_sep: @engine.Allow,
     short_combine: true,
     short_attached_value: @engine.Allow,
-    body: BCell,
+    body: Cell,
   }
 }
 
@@ -461,7 +461,7 @@ fn exact_marker(spelling : String) -> @engine.ElemDef {
   {
     name: spelling,
     ty: @builtins.none_type(),
-    long: LList([]),
+    long: List([]),
     variants: [],
     short: [],
     env: [],
@@ -516,7 +516,7 @@ fn exact_marker(spelling : String) -> @engine.ElemDef {
     long_eq_sep: @engine.Allow,
     short_combine: true,
     short_attached_value: @engine.Allow,
-    body: BCell,
+    body: Cell,
   }
 }
 
@@ -580,7 +580,7 @@ fn decode_installer_owned(
   extensions : @engine.Registry,
 ) -> InstallerDecoded raise DecodeSkip {
   let vocab : Array[String] = []
-  let mut long : @engine.LongDecl = LList([])
+  let mut long : @engine.LongDecl = List([])
   let mut short : Array[Char] = []
   let mut env : Array[String] = []
   let mut dd_match : String? = None
@@ -615,41 +615,41 @@ fn decode_installer_owned(
       }
     }
     match decoded.declaration {
-      ODLong(value) => long = value
-      ODShort(value) => short = value
-      ODEnv(value) => env = value
-      ODDd(match_, self_keep) => {
+      Long(value) => long = value
+      Short(value) => short = value
+      Env(value) => env = value
+      Dd(match_, self_keep) => {
         dd_match = match_
         dd_self_keep = self_keep
       }
-      ODGlobal(value) => global_ = value
-      ODInherit(value) => inherit_ = value
-      ODRepeat(spec, option) => {
+      Global(value) => global_ = value
+      Inherit(value) => inherit_ = value
+      Repeat(spec, option) => {
         repeat = spec
         optional = option
       }
-      ODMultiple(enabled, sep, coll, accum, flat) => {
+      Multiple(enabled, sep, coll, accum, flat) => {
         multiple = enabled
         separator = sep
         collector = coll
         accumulator = accum
         flatten = flat
       }
-      ODConfig(is_file, key) => {
+      Config(is_file, key) => {
         config_file = is_file
         config_key = key
       }
-      ODConstraint(reqs, confs, groups, required_groups, is_required) => {
+      Constraint(reqs, confs, groups, required_groups, is_required) => {
         requires = reqs
         conflicts = confs
         exclusive = groups
         required_group = required_groups
         required = is_required
       }
-      ODAlias(value) => alias_decl = value
-      ODInheritable(value) => inheritable = value
-      ODHelpMeta(value) => help_meta = value
-      ODCommand => ()
+      Alias(value) => alias_decl = value
+      Inheritable(value) => inheritable = value
+      HelpMeta(value) => help_meta = value
+      Command => ()
     }
   }
   {
@@ -808,7 +808,7 @@ fn dec_default_fn(j : Json) -> @engine.DefaultFnCall raise DecodeSkip {
   match j.j_str() {
     Some(spelling) =>
       match @engine.parse_fn_invocation(@engine.ColonString(spelling)) {
-        Ok(invocation) => @engine.WireDefaultFn(invocation)
+        Ok(invocation) => @engine.Wire(invocation)
         Err(message) => raise DecodeSkip(message)
       }
     None =>
@@ -823,7 +823,7 @@ fn dec_default_fn(j : Json) -> @engine.DefaultFnCall raise DecodeSkip {
             }
           }
           match @engine.parse_fn_invocation(@engine.ArrayParts(parts)) {
-            Ok(invocation) => @engine.WireDefaultFn(invocation)
+            Ok(invocation) => @engine.Wire(invocation)
             Err(message) => raise DecodeSkip(message)
           }
         }
@@ -1541,7 +1541,7 @@ fn dec_export(j : Json) -> @engine.ExportKey {
 
 ///|
 /// DR-055 value-enum 形式の or 枝を decode し、(1) enum 消費構造用の全 exact 値 (requires の有無を
-/// 問わない — issue values-decode-support, BEnum の `dec_option` 呼び出しが使う) と (2) 制約用の
+/// 問わない — issue values-decode-support, Enum の `dec_option` 呼び出しが使う) と (2) 制約用の
 /// value_requires (requires を持つ枝だけ) の両方を1パスで返す。従来は (2) だけを返していたが、今回
 /// values/or の消費意味論を合流させるにあたり同じ走査で (1) も一緒に収集するよう拡張した (二重
 /// 実装を避ける)。
@@ -1724,7 +1724,7 @@ fn dec_or_structural(
 }
 
 ///|
-/// A leaf cell inside a structural `"or"` branch: `{"type":..,"name":..}`. Minimal — BCell only, no
+/// A leaf cell inside a structural `"or"` branch: `{"type":..,"name":..}`. Minimal — Cell only, no
 /// long/short/env/etc (the shared trigger, if any, lives on the PARENT option's `long`, factored out
 /// per the `variable-arity-ambiguous.json` wire form; an anonymous positional or-branch leaf has no
 /// trigger at all).
@@ -1836,7 +1836,7 @@ fn dec_option(
     Some(x) => x
     None => raise DecodeSkip("option is not an object")
   }
-  let owned = decode_installer_owned(j, DecodeOption, extensions)
+  let owned = decode_installer_owned(j, Option, extensions)
   match owned.alias_decl {
     Some(value) => {
       let allowed = ["alias", "name", "short", "long", "deprecated", "type"]
@@ -1894,7 +1894,7 @@ fn dec_option(
   check_reserved_name(name, "option")
   // MDR-004 §2: "or" is shape-detected FIRST — the DR-055 value-enum form ({"exact":...} branches,
   // dec_or, parent name = branch-id フォールバック先) and the structural consumption-grammar form
-  // (BOr, dec_or_structural) share the same JSON key but are otherwise unrelated (§5.3 values 正規形
+  // (Or, dec_or_structural) share the same JSON key but are otherwise unrelated (§5.3 values 正規形
   // vs §1 消費文法の枝)。
   let structural_or = match o.get("or") {
     Some(orj) => dec_or_structural(orj, shadows, extensions)
@@ -2212,11 +2212,11 @@ fn dec_option(
       hidden~,
       completer~,
       body=match structural_or {
-        Some(branches) => BOr(branches)
+        Some(branches) => Or(branches)
         None =>
           match value_enum {
-            Some(values) => BEnum(values)
-            None => BCell
+            Some(values) => Enum(values)
+            None => Cell
           }
       },
     ),
@@ -2236,7 +2236,7 @@ fn dec_positional(
     Some(x) => x
     None => raise DecodeSkip("positional is not an object")
   }
-  let owned = decode_installer_owned(j, DecodePositional, extensions)
+  let owned = decode_installer_owned(j, Positional, extensions)
   let allowed = [
     "id", "name", "type", "export_key", "default", "default_fn", "positionals", "or",
     "piece_filters", "value_filters", "final_filters", "accum_filters", "ref", "config",
@@ -2246,8 +2246,8 @@ fn dec_positional(
     allowed.push(key)
   }
   allowed_keys(o, allowed, "positional")
-  // MDR-004 §2: "positionals" (named nested group, BGroup) and "or" (anonymous structural or,
-  // BOr) are decoded via @engine.ElemBody now — the gates that used to reject these keys are GONE. A
+  // MDR-004 §2: "positionals" (named nested group, Group) and "or" (anonymous structural or,
+  // Or) are decoded via @engine.ElemBody now — the gates that used to reject these keys are GONE. A
   // positional's "or" is ALWAYS structural (there is no DR-055 value-enum-or concept for
   // positionals — that's an option-only constraint-declaration sugar, §5.3).
   match o.get("positionals") {
@@ -2262,7 +2262,7 @@ fn dec_positional(
   // `exact` to be the ONLY key present (`only_key`, codex レビュー Major 3) — `repeat`/`optional`/
   // `multiple`/`default`/`piece_filters`/etc. co-occurring with `exact` has no target fixture and
   // no defined meaning here, so any of them DecodeSkips rather than being silently swallowed
-  // (deliberately absent, not deliberately wrong — same posture as this function's `BEnum` note
+  // (deliberately absent, not deliberately wrong — same posture as this function's `Enum` note
   // below; the OLD 4-key deny-list here let `{"exact":"init","repeat":{...}}` decode successfully
   // with `repeat` thrown away — `only_key` closes that class of gap for every current AND future
   // `allowed_keys` entry, not just the 4 that were enumerated). Only the bare-string spelling form
@@ -2289,7 +2289,7 @@ fn dec_positional(
     Some(orj) =>
       match dec_or_structural(orj, shadows, extensions) {
         Some(branches) =>
-          return { ..pos("", @builtins.string_type()), body: BOr(branches) }
+          return { ..pos("", @builtins.string_type()), body: Or(branches) }
         None =>
           raise DecodeSkip(
             "positional 'or' has no structural branches (all-exact value-enum form is option-only, DR-055 §1 / §5.3)",
@@ -2400,7 +2400,7 @@ fn dec_positional(
   // DR-012 / DR-055 / DR-103: constraint 系は要素属性で positional にも同型に付与できる
   // (`decode_installer_owned` が constraint installer 経由で 5 属性 = requires/conflicts/exclusive/
   // required_group/required を positional context でも集約する — installer_residents.mbt の
-  // `ConstraintInstaller.decode` の DecodePositional 分岐参照)。engine 検査 (Conflicts / Exclusive /
+  // `ConstraintInstaller.decode` の Positional 分岐参照)。engine 検査 (Conflicts / Exclusive /
   // Required / RequiredGroup) は entity 名の committed 判定のみを行い option/positional を区別
   // しないので、decode 側で pos() に流し込むだけで動く (opt() の同名 owned 経路と対称)。
   let conflicts = owned.conflicts
@@ -2492,7 +2492,7 @@ fn dec_positional(
 
 ///|
 /// MDR-004 §1/§3: a named group positional (`{"name":"xs","repeat":{...},"positionals":[...]}`) —
-/// `BGroup(items)`. Inner items are decoded via `dec_positional` itself (recursive — an inner leaf
+/// `Group(items)`. Inner items are decoded via `dec_positional` itself (recursive — an inner leaf
 /// like transparent-seq's `k` is just a normal positional decode, `export_key:null` included).
 fn dec_positional_group(
   o : Map[String, Json],
@@ -2514,7 +2514,7 @@ fn dec_positional_group(
   for ij in inner_arr {
     items.push(dec_positional(ij, shadows, extensions~))
   }
-  { ..pos(name, @builtins.string_type(), repeat~), body: BGroup(items) }
+  { ..pos(name, @builtins.string_type(), repeat~), body: Group(items) }
 }
 
 ///|
@@ -2678,7 +2678,7 @@ fn auto_env_name(
 ///   を省く" — the element is left byte-for-byte unchanged, preserving every pre-issue fixture that
 ///   declares `env:` with no scope config at all).
 /// - no explicit `env:` + `auto_env: true` (§3): derives the full name via `auto_env_name` — gated to
-///   `BCell` bodies only ("値セル持ち要素", DESIGN §7.2 line 842 — a `BOr`/`BGroup`/`BEnum` wrapper
+///   `Cell` bodies only ("値セル持ち要素", DESIGN §7.2 line 842 — a `Or`/`Group`/`Enum` wrapper
 ///   has no single value slot for a scalar env lookup to bind to, matcher/leaf-level auto_env is not
 ///   specified anywhere and would be an invented extension).
 fn apply_env_config(
@@ -2697,7 +2697,7 @@ fn apply_env_config(
       }
       { ..e, env: prefixed }
     }
-  } else if auto_env && e.body is BCell {
+  } else if auto_env && e.body is Cell {
     { ..e, env: [auto_env_name(env_prefix, scope_path, e.name)] }
   } else {
     e
@@ -2716,7 +2716,7 @@ fn dec_command(
     Some(x) => x
     None => raise DecodeSkip("command is not an object")
   }
-  let owned = decode_installer_owned(j, DecodeCommand, extensions)
+  let owned = decode_installer_owned(j, Command, extensions)
   match owned.alias_decl {
     Some(value) => {
       let allowed = ["alias", "name", "deprecated", "type"]

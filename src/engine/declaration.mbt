@@ -113,7 +113,7 @@ pub(all) struct ElemDef {
   // installer の解釈"）。糖衣展開 (bool→リスト、DR-076 §2 flag 差し替え/補完) と colon DSL 分類
   // (DR-011/076、main-entry / variant / 構文エラー) は共に installer 層 (`normalize_option` が呼ぶ
   // `resolve_long`) が担う — decode 層は wire の形をそのまま `LongDecl` に写すだけ。normalize 前
-  // (宣言直後) はこの二形のまま、normalize 後は `LList([<kebab main entries>])`（`variants` フィール
+  // (宣言直後) はこの二形のまま、normalize 後は `List([<kebab main entries>])`（`variants` フィール
   // ドへ分離済みの variant は含まない）に統一される。
   long : LongDecl
   variants : Array[Variant] // long installer 所有 (variant DSL, DR-011/045) — normalize_option が resolve_long の結果で埋める。宣言直後は常に []
@@ -243,8 +243,8 @@ pub(all) struct ElemDef {
   // `Entity.default_values` へ写す (§1 の decode-time 持ち上げに加え、FLAG/BOOL/COUNT の暗黙 preset
   // も同じ長さ1形へ揃える)。node.mbt の `Entity.default_values` の doc comment 参照。
   default_values : Array[Value]?
-  // Canonical default-seat invocation. `default:` decodes to TypedDefaultFn(set(values)); explicit
-  // `default_fn:` decodes to WireDefaultFn and stays lazy until dependency-ordered resolution.
+  // Canonical default-seat invocation. `default:` decodes to Typed(set(values)); explicit
+  // `default_fn:` decodes to Wire and stays lazy until dependency-ordered resolution.
   default_fn : DefaultFnCall?
   default_declared : Bool // wire に default キーが明示されたか (help 素材と preset 暗黙値を区別)
   // DR-034 pieceProcessor の filter chain (DR-062: inheritance object 形は未実装 — filters.mbt
@@ -291,7 +291,7 @@ pub(all) struct ElemDef {
   // `env` 配列そのものへ焼き込む (この `env_prefix` フィールドは階層継承の運搬用、installer 層は
   // 読まない)。既定 `""` = prefix 部を省く (DR-049 §3「env_prefix 未設定なら prefix 部を省く」)。
   env_prefix : String
-  // DESIGN §7.2 line 842 / DR-049 §3: true なら `env:` 未指定の値セル (`BCell`) 持ち要素に
+  // DESIGN §7.2 line 842 / DR-049 §3: true なら `env:` 未指定の値セル (`Cell`) 持ち要素に
   // decode 時点で env 席を自動宣言する (`UPPER(env_prefix) + "_" + UPPER(scope_path 連結) + "_" +
   // UPPER(name)`、DR-049 §3 の名前導出規則そのまま — decode がこの計算を行い `env` 配列へ焼き込む)。
   // 明示 `env:` が優先 (DR-049 §4)。既定 `false`。
@@ -323,30 +323,30 @@ pub(all) struct ElemDef {
   // 分岐はこのフィールドを参照しない)。`@builtins.ShortEntry.short_attached_value` (node.mbt) へそのまま乗せる、
   // `walk_short` (builtins/matcher_residents.mbt) が唯一の消費者。
   short_attached_value : AttachMode
-  // MDR-004: 消費文法の軸。`BCell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
-  // 縮退形、観測挙動不変)。`BOr`/`BGroup` の要素では `ty` は未使用 — 枝/内部要素の leaf ElemDef が
+  // MDR-004: 消費文法の軸。`Cell` (既定) = 従来の単一値セル (`ty` フィールドが型、既存全経路の
+  // 縮退形、観測挙動不変)。`Or`/`Group` の要素では `ty` は未使用 — 枝/内部要素の leaf ElemDef が
   // 各自の `ty` を持つ。
   body : ElemBody
 } derive(Eq, Debug)
 
 ///|
-/// MDR-004: ElemDef の消費文法軸。`BCell` (単一値セル) 以外の3つは構造化された消費文法:
-/// - `BOr`: 構造 or (DR-038 / DESIGN §15.4) — 枝ごとに別の named cell を束縛する「消費文法の枝」。
-///   DR-055 の値 enum 枝 (exact 照合、RequiresIf の素材) とは別物 — `BEnum` (下記) と対になり、
+/// MDR-004: ElemDef の消費文法軸。`Cell` (単一値セル) 以外の3つは構造化された消費文法:
+/// - `Or`: 構造 or (DR-038 / DESIGN §15.4) — 枝ごとに別の named cell を束縛する「消費文法の枝」。
+///   DR-055 の値 enum 枝 (exact 照合、RequiresIf の素材) とは別物 — `Enum` (下記) と対になり、
 ///   value_requires (制約) は enum 枝の有無に関わらず `dec_or` が引き続き担う (§5.3 values 正規形)。
-/// - `BGroup`: named group (DR-044 反復グループ) — repeat と組んで、発火ごとに内部 positionals を
+/// - `Group`: named group (DR-044 反復グループ) — repeat と組んで、発火ごとに内部 positionals を
 ///   1 セットずつ束ねる (transparent-seq の `xs{k}` がこの形)。
-/// - `BEnum` (issue values-decode-support, DESIGN §5.3 / DR-028 追記): 単一 named cell の消費構造が
-///   exact 値の列のどれか一つ (BOr と違い全枝が SAME name/cell に着地する — 「どの named cell を
+/// - `Enum` (issue values-decode-support, DESIGN §5.3 / DR-028 追記): 単一 named cell の消費構造が
+///   exact 値の列のどれか一つ (Or と違い全枝が SAME name/cell に着地する — 「どの named cell を
 ///   選ぶか」ではなく「1つの cell にどの値が入るか」)。DESIGN §5.3 の `values` ショートハンド と
 ///   既存の `or` value-enum 正規形 (`{"or":[{"exact":...}]}`, DR-055) は同じ消費意味論に合流する
 ///   (糖衣と展開形で観測挙動を割らない、team-lead 裁定 2026-07-10) — `dec_option` が両方をこの
 ///   variant へ decode する。
 pub(all) enum ElemBody {
-  BCell
-  BOr(Array[OrBranch])
-  BGroup(Array[ElemDef])
-  BEnum(Array[String])
+  Cell
+  Or(Array[OrBranch])
+  Group(Array[ElemDef])
+  Enum(Array[String])
 } derive(Eq, Debug)
 
 ///|
@@ -397,13 +397,13 @@ pub(all) struct Variant {
 /// (二形の区別は wire 上でしか付かない情報なので、展開後の `Array[String]` 単独では復元できない —
 /// decode 層で糖衣を潰すと installer 層がこの区別を必要とする場面で情報が失われる)。
 pub(all) enum LongDecl {
-  LBool(Bool)
+  Bool(Bool)
   // String-only wire arrays and the post-normalize trigger list retain the compact legacy carrier.
-  LList(Array[String])
+  List(Array[String])
   // A wire array containing at least one one-level array invocation preserves every entry as the
   // universal-fn form until normalize_surface classifies it. Post-normalize declarations always
-  // converge to LList(trigger spellings).
-  LForms(Array[FnInvocationForm])
+  // converge to List(trigger spellings).
+  Forms(Array[FnInvocationForm])
 } derive(Eq, Debug)
 
 ///|

@@ -219,7 +219,7 @@ test "eq-split long option: deprecated entry rides a @depr marker" {
 /// codex レビュー Major 1 続き: the `sep_binds` success path (`separator`/`merge` 経路、
 /// `run_eq_split` の別 return site) is a SEPARATE code path from the plain kind-match arm above — a
 /// naive fix could patch one and miss the other (which is exactly what the ORIGINAL DeprMark fix did
-/// to the 4 non-BCell `inst_long` main-entry arms, Major 2). This locks the separator-bearing entry's
+/// to the 4 non-Cell `inst_long` main-entry arms, Major 2). This locks the separator-bearing entry's
 /// eq-split form (`--tags=a,b`) also carries the marker.
 test "eq-split long option: deprecated entry with separator (sep_binds path) also rides a @depr marker" {
   let long = eq_split("--", [

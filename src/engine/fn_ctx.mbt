@@ -38,8 +38,8 @@ pub fn EffectCtx::trigger(self : EffectCtx) -> String {
 /// A filter specialization may carry either one scalar value or the accumulated
 /// array consumed by an array-filter resident.
 pub(all) enum FilterInput {
-  ScalarInput(Value)
-  ArrayInput(Array[Value])
+  Scalar(Value)
+  Array(Array[Value])
 } derive(Eq, Debug)
 
 ///|

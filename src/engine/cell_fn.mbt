@@ -9,10 +9,10 @@ pub(all) enum CellFnRepetition {
 
 ///|
 /// Descriptor parameter input kind. A `value` parameter accepts either a wire
-/// string awaiting target-aware decode or a typed internal `ValueArg`.
+/// string awaiting target-aware decode or a typed internal `Value`.
 pub(all) enum CellFnParameterKind {
-  StringParameter
-  ValueParameter
+  String
+  Value
 } derive(Eq, Debug)
 
 ///|
@@ -25,7 +25,7 @@ pub(all) struct CellFnParameter {
 ///|
 pub fn cell_fn_parameter(
   name : String,
-  kind? : CellFnParameterKind = StringParameter,
+  kind? : CellFnParameterKind = String,
   repetition? : CellFnRepetition = Once,
 ) -> CellFnParameter {
   { name, kind, repetition }
@@ -33,17 +33,17 @@ pub fn cell_fn_parameter(
 
 ///|
 pub(all) enum CellFnArity {
-  ExactArity(Int)
-  BetweenArity(Int, Int)
-  AtLeastArity(Int)
+  Exact(Int)
+  Between(Int, Int)
+  AtLeast(Int)
 } derive(Eq, Debug)
 
 ///|
 pub fn CellFnArity::accepts(self : CellFnArity, count : Int) -> Bool {
   match self {
-    ExactArity(expected) => count == expected
-    BetweenArity(minimum, maximum) => count >= minimum && count <= maximum
-    AtLeastArity(minimum) => count >= minimum
+    Exact(expected) => count == expected
+    Between(minimum, maximum) => count >= minimum && count <= maximum
+    AtLeast(minimum) => count >= minimum
   }
 }
 
@@ -63,18 +63,18 @@ pub(all) enum CellSentinel {
 ///|
 /// Static output contract used to validate a call seat before execution.
 pub(all) enum CellFnOutput {
-  ValueOutput
-  NumberOutput
-  StringOutput
-  SentinelOutput(CellSentinel)
+  Value
+  Number
+  String
+  Sentinel(CellSentinel)
 } derive(Eq, Debug)
 
 ///|
 /// Cell-fn output is either a value to send through the normal set path or a
 /// sentinel cell operation.
 pub(all) enum FnOutput {
-  FnValue(Value)
-  FnSentinel(CellSentinel)
+  Value(Value)
+  Sentinel(CellSentinel)
 } derive(Eq, Debug)
 
 ///|
@@ -162,11 +162,11 @@ pub fn CellFnDescriptor::arity(self : CellFnDescriptor) -> CellFnArity {
     }
   }
   if unbounded {
-    AtLeastArity(minimum)
+    AtLeast(minimum)
   } else if minimum == maximum {
-    ExactArity(minimum)
+    Exact(minimum)
   } else {
-    BetweenArity(minimum, maximum)
+    Between(minimum, maximum)
   }
 }
 
@@ -254,8 +254,8 @@ pub fn CellFnDescriptor::validate_arity(
 ///|
 fn CellFnParameter::accepts(self : CellFnParameter, argument : FnArg) -> Bool {
   match self.kind {
-    StringParameter => argument is StringArg(_)
-    ValueParameter => true
+    String => argument is String(_)
+    Value => true
   }
 }
 
