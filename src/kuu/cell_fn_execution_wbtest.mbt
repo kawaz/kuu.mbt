@@ -1,7 +1,9 @@
 // cell_fn_execution_wbtest.mbt — DR-114 cell-fn execution, default placeholders, and observes order.
 
 ///|
-fn def_error_kinds(errors : Array[@engine.DefError]) -> Map[String, @engine.DefErrKind] {
+fn def_error_kinds(
+  errors : Array[@engine.DefError],
+) -> Map[String, @engine.DefErrKind] {
   let kinds : Map[String, @engine.DefErrKind] = Map([])
   for error in errors {
     kinds.set(error.element, error.kind)
@@ -16,9 +18,7 @@ test "default value normalizes to a typed internal set call" {
   )
   match parse_definition(json) {
     Ok(ast) => {
-      guard ast.root.entities is [entity] else {
-        fail("expected one entity")
-      }
+      guard ast.root.entities is [entity] else { fail("expected one entity") }
       match entity.default_fn {
         Some(@engine.TypedDefaultFn(call)) => {
           assert_eq(call.name, "set")

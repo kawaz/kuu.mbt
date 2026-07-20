@@ -93,7 +93,11 @@ fn resident_long(json : Json) -> Result[@engine.LongDecl, String] {
           _ => return Err("long[] element is not a string or string[]")
         }
       }
-      if has_array { Ok(LForms(forms)) } else { Ok(LList(strings)) }
+      if has_array {
+        Ok(LForms(forms))
+      } else {
+        Ok(LList(strings))
+      }
     }
     _ => Err("long is not a bool/array")
   }

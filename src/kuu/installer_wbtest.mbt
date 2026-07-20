@@ -526,7 +526,10 @@ test "long installer: a count's `long:true` composes an `:update:increment` vari
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--verbose"),
-      @builtins.effect_mark("verbose", @engine.Invoke({ name: "incr", args: [] })),
+      @builtins.effect_mark(
+        "verbose",
+        @engine.Invoke({ name: "incr", args: [] }),
+      ),
     ]),
   )
   let ent = entity_of(sc, "verbose").unwrap()
@@ -544,9 +547,7 @@ test "long installer: a count's `long:true` composes an `:update:increment` vari
 test "long installer: a count's explicit `long:[\":incr\"]` lowers to the same bare-fire increment variant (DR-114 §6.2, exact-as-written)" {
   let def : @engine.Definition = {
     ..empty_def(),
-    options: [
-      el("verbose", @builtins.count_type(), long=LList([":incr"])),
-    ],
+    options: [el("verbose", @builtins.count_type(), long=LList([":incr"]))],
   }
   let sc = ok_scope(def, [@builtins.long_installer()])
   assert_eq(sc.greedy.length(), 1)
@@ -554,7 +555,10 @@ test "long installer: a count's explicit `long:[\":incr\"]` lowers to the same b
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--verbose"),
-      @builtins.effect_mark("verbose", @engine.Invoke({ name: "incr", args: [] })),
+      @builtins.effect_mark(
+        "verbose",
+        @engine.Invoke({ name: "incr", args: [] }),
+      ),
     ]),
   )
 }
@@ -1463,7 +1467,10 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
       assert_eq(op, @engine.Default)
       assert_eq(operand, None)
     }
-    _ => fail("expected @builtins.LVariant (bare `:default`, DR-114 §5.1 arity 0)")
+    _ =>
+      fail(
+        "expected @builtins.LVariant (bare `:default`, DR-114 §5.1 arity 0)",
+      )
   }
   // (5) @builtins.LInvalid: an unrecognized effect word (colon present, but not set/unset/empty/default) is
   // ALSO a syntax error (DR-011 明確化) — not a literal-spelling fallback either.
@@ -1849,9 +1856,7 @@ test "DR-077 §2: a registered but Validate-signature filter is also a DR-054 un
 test "DR-114 §5.1: extra args to a registered cell_fn are a definition-time DInvalidArgument (arity is descriptor-declared)" {
   let def : @engine.Definition = {
     ..empty_def(),
-    options: [
-      el("verbose", @builtins.count_type(), long=LList([":incr:5"])),
-    ],
+    options: [el("verbose", @builtins.count_type(), long=LList([":incr:5"]))],
   }
   match test_lower_definition(def, all_installers()) {
     Ok(_) =>

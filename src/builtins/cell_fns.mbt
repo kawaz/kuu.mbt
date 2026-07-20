@@ -11,7 +11,9 @@ fn fn_arg_value(arg : @engine.FnArg) -> @engine.Value {
 ///|
 fn one_arg(args : Array[@engine.FnArg], name : String) -> @engine.FnArg {
   guard args is [arg] else {
-    abort("validated cell fn '" + name + "' reached its resident with wrong arity")
+    abort(
+      "validated cell fn '" + name + "' reached its resident with wrong arity",
+    )
   }
   arg
 }
@@ -21,7 +23,9 @@ fn fn_string_arg(args : Array[@engine.FnArg], name : String) -> String {
   match one_arg(args, name) {
     @engine.StringArg(value) => value
     @engine.ValueArg(_) =>
-      abort("validated cell fn '" + name + "' reached its resident with a typed arg")
+      abort(
+        "validated cell fn '" + name + "' reached its resident with a typed arg",
+      )
   }
 }
 
@@ -31,13 +35,21 @@ fn absent_source(kind : String, key : String) -> @engine.FnResult {
 }
 
 ///|
-fn set_fn(args : Array[@engine.FnArg], _ctx : @engine.FnCtx) -> @engine.FnResult {
+fn set_fn(
+  args : Array[@engine.FnArg],
+  _ctx : @engine.FnCtx,
+) -> @engine.FnResult {
   // A scalar target admits one logical value. Definition checking rejects multiple string args for
   // scalar targets; seq/repeat aggregation needs the structured Value carrier that is not present in
   // the current engine Value ADT and is intentionally left visible to the next structural slice.
   match args {
     [arg] => Ok(@engine.FnValue(fn_arg_value(arg)))
-    _ => Err(("invalid-argument", "set on a scalar target requires exactly one value"))
+    _ =>
+      Err(
+        (
+          "invalid-argument", "set on a scalar target requires exactly one value",
+        ),
+      )
   }
 }
 
@@ -47,18 +59,23 @@ fn sentinel_fn(sentinel : @engine.CellSentinel) -> @engine.CellFn {
 }
 
 ///|
-fn incr_fn(_args : Array[@engine.FnArg], ctx : @engine.FnCtx) -> @engine.FnResult {
+fn incr_fn(
+  _args : Array[@engine.FnArg],
+  ctx : @engine.FnCtx,
+) -> @engine.FnResult {
   let old = match ctx.old() {
     None => 0.0
     Some(@engine.VNum(value)) => value
-    Some(_) =>
-      return Err(("invalid-range", "incr requires a number target"))
+    Some(_) => return Err(("invalid-range", "incr requires a number target"))
   }
   Ok(@engine.FnValue(@engine.VNum(old + 1.0)))
 }
 
 ///|
-fn borrow_fn(args : Array[@engine.FnArg], ctx : @engine.FnCtx) -> @engine.FnResult {
+fn borrow_fn(
+  args : Array[@engine.FnArg],
+  ctx : @engine.FnCtx,
+) -> @engine.FnResult {
   let source = fn_string_arg(args, "borrow")
   let value = match ctx.as_default() {
     Some(default_ctx) => default_ctx.dependency(source)
@@ -80,7 +97,10 @@ fn env_fn(args : Array[@engine.FnArg], ctx : @engine.FnCtx) -> @engine.FnResult 
 }
 
 ///|
-fn inherit_fn(args : Array[@engine.FnArg], ctx : @engine.FnCtx) -> @engine.FnResult {
+fn inherit_fn(
+  args : Array[@engine.FnArg],
+  ctx : @engine.FnCtx,
+) -> @engine.FnResult {
   let source = fn_string_arg(args, "inherit")
   match ctx.option(source) {
     Some(value) => Ok(@engine.FnValue(value))
@@ -88,6 +108,7 @@ fn inherit_fn(args : Array[@engine.FnArg], ctx : @engine.FnCtx) -> @engine.FnRes
   }
 }
 
+///|
 let cell_fn_rng : @random.Rand = @random.Rand::new()
 
 ///|
@@ -118,16 +139,23 @@ fn validate_uuid(call : @engine.FnCall) -> Result[Unit, @engine.FnReason] {
     [] | [@engine.StringArg("4")] => Ok(())
     [@engine.StringArg(_)] =>
       Err(("invalid-argument", "cell fn 'uuid' version must be '4'"))
-    _ => Err(("invalid-argument", "cell fn 'uuid' has an invalid version carrier"))
+    _ =>
+      Err(("invalid-argument", "cell fn 'uuid' has an invalid version carrier"))
   }
 }
 
 ///|
-fn uuid_fn(args : Array[@engine.FnArg], _ctx : @engine.FnCtx) -> @engine.FnResult {
+fn uuid_fn(
+  args : Array[@engine.FnArg],
+  _ctx : @engine.FnCtx,
+) -> @engine.FnResult {
   let version = match args {
     [] => "4"
     [@engine.StringArg(value)] => value
-    _ => abort("validated uuid invocation reached its resident with an invalid carrier")
+    _ =>
+      abort(
+        "validated uuid invocation reached its resident with an invalid carrier",
+      )
   }
   if version != "4" {
     Err(("invalid-argument", "uuid version must be '4'"))
@@ -137,7 +165,10 @@ fn uuid_fn(args : Array[@engine.FnArg], _ctx : @engine.FnCtx) -> @engine.FnResul
 }
 
 ///|
-fn computed_fn(args : Array[@engine.FnArg], ctx : @engine.FnCtx) -> @engine.FnResult {
+fn computed_fn(
+  args : Array[@engine.FnArg],
+  ctx : @engine.FnCtx,
+) -> @engine.FnResult {
   let key = fn_string_arg(args, "computed")
   match ctx.system(key) {
     Some(value) => Ok(@engine.FnValue(value))

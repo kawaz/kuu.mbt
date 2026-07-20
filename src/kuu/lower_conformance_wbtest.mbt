@@ -964,7 +964,10 @@ fn dec_eff_op(o : Map[String, Json]) -> @engine.EffectOp raise DecodeSkip {
               for value in values {
                 match value.j_str() {
                   Some(text) => decoded.push(text)
-                  None => raise DecodeSkip("cell fn effect args element is not a string")
+                  None =>
+                    raise DecodeSkip(
+                      "cell fn effect args element is not a string",
+                    )
                 }
               }
               decoded

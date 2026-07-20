@@ -132,12 +132,10 @@ fn classify_long_form(
           // requires a structured Value carrier and is kept as an explicit unimplemented boundary.
           LInvalid(original, @engine.DInvalidArgument)
       }
-    "default" =>
-      LVariant({ trigger, op: @engine.Default, operand: None })
+    "default" => LVariant({ trigger, op: @engine.Default, operand: None })
     "unset" => LVariant({ trigger, op: @engine.Unset, operand: None })
     "empty" => LVariant({ trigger, op: @engine.Empty, operand: None })
-    _ =>
-      LVariant({ trigger, op: @engine.Invoke(invocation), operand: None })
+    _ => LVariant({ trigger, op: @engine.Invoke(invocation), operand: None })
   }
 }
 
@@ -382,10 +380,12 @@ fn copy_long(l : @engine.LongDecl) -> @engine.LongDecl {
     LForms(forms) => {
       let copied : Array[@engine.FnInvocationForm] = []
       for form in forms {
-        copied.push(match form {
-          @engine.ColonString(spelling) => @engine.ColonString(spelling)
-          @engine.ArrayParts(parts) => @engine.ArrayParts(copy_strs(parts))
-        })
+        copied.push(
+          match form {
+            @engine.ColonString(spelling) => @engine.ColonString(spelling)
+            @engine.ArrayParts(parts) => @engine.ArrayParts(copy_strs(parts))
+          },
+        )
       }
       LForms(copied)
     }
@@ -588,7 +588,10 @@ fn normalize_option(
       Some(call) => Some(call)
       None =>
         match default_values2 {
-          Some(values) if !e.multiple && e.repeat is None && e.separator is None && !e.is_tty =>
+          Some(values) if !e.multiple &&
+            e.repeat is None &&
+            e.separator is None &&
+            !e.is_tty =>
             Some(@engine.TypedDefaultFn(@engine.typed_fn_call("set", values)))
           _ => None
         }
@@ -1268,7 +1271,8 @@ fn ensure_entity(
     Some(call) => Some(call)
     None =>
       match default_values {
-        Some(values) if accum is None && seat_ty.default_seat_observation_key() is None =>
+        Some(values) if accum is None &&
+          seat_ty.default_seat_observation_key() is None =>
           Some(@engine.TypedDefaultFn(@engine.typed_fn_call("set", values)))
         _ => None
       }
@@ -2828,7 +2832,9 @@ fn collect_default_fn_errors(
                 def_err(
                   element.name,
                   @engine.DInvalidRange,
-                  "default_fn '" + fn_call.name + "' returns a cell-operation sentinel",
+                  "default_fn '" +
+                  fn_call.name +
+                  "' returns a cell-operation sentinel",
                   "use a cell fn whose descriptor returns Value",
                 ),
               )
@@ -2965,7 +2971,8 @@ fn collect_invalid_alias_long_override(
                 }
               LForms(forms) =>
                 for form in forms {
-                  match classify_long_form(form, alias_name, canon.ty, extensions) {
+                  match
+                    classify_long_form(form, alias_name, canon.ty, extensions) {
                     LInvalid(s, kind) =>
                       out.push(
                         def_err(
@@ -3439,7 +3446,8 @@ fn collect_unsupported_accum_update(
                 None => a.target
               }
               for form in forms {
-                match classify_long_form(form, alias_name, canon.ty, extensions) {
+                match
+                  classify_long_form(form, alias_name, canon.ty, extensions) {
                   LVariant(v) =>
                     match v.op {
                       @engine.Invoke(_) =>

@@ -270,8 +270,7 @@ fn effective_repeat(element : ElemDef) -> RepeatSpec? {
 fn long_spellings(element : ElemDef) -> Array[String] {
   match element.long {
     LList(spellings) => spellings
-    LForms(forms) =>
-      if forms.length() == 0 { [] } else { ["<fn-invocation>"] }
+    LForms(forms) => if forms.length() == 0 { [] } else { ["<fn-invocation>"] }
     LBool(_) => []
   }
 }

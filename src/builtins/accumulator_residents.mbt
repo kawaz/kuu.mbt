@@ -201,10 +201,7 @@ fn merge_resolve_cli(
           fire_pos = binding.at_pos
           fire.push(binding)
         }
-        @engine.Invoke(_)
-        | @engine.Default
-        | @engine.Unset
-        | @engine.Empty => {
+        @engine.Invoke(_) | @engine.Default | @engine.Unset | @engine.Empty => {
           if fire.length() > 0 {
             groups.push(Fire(fire))
             fire = []

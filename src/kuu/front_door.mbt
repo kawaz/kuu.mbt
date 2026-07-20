@@ -574,12 +574,13 @@ fn projected_effect(
         source: binding.source,
       }
     }
-    _ => {
-      entity: binding.key,
-      op: binding.op,
-      operand: None,
-      source: binding.source,
-    }
+    _ =>
+      {
+        entity: binding.key,
+        op: binding.op,
+        operand: None,
+        source: binding.source,
+      }
   }
 }
 

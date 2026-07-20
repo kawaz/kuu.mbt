@@ -203,7 +203,11 @@ test "builtin cell fn residents execute through their registered descriptors" {
     "target",
     observes=borrow_observes,
     dependency=Some(fn(name) {
-      if name == "source" { Some(@engine.VNum(7.0)) } else { None }
+      if name == "source" {
+        Some(@engine.VNum(7.0))
+      } else {
+        None
+      }
     }),
   )
   assert_eq(
@@ -213,7 +217,9 @@ test "builtin cell fn residents execute through their registered descriptors" {
 
   for name in ["default", "unset", "empty"] {
     let descriptor = registry.lookup_cell_fn(name).unwrap()
-    assert_true(descriptor.invoke({ name, args: [] }, ctx) is Ok(@engine.FnSentinel(_)))
+    assert_true(
+      descriptor.invoke({ name, args: [] }, ctx) is Ok(@engine.FnSentinel(_)),
+    )
   }
 
   let uuid = registry.lookup_cell_fn("uuid").unwrap()
@@ -222,7 +228,8 @@ test "builtin cell fn residents execute through their registered descriptors" {
     _ => fail("uuid() must return a v4-shaped string")
   }
   assert_true(
-    uuid.validate_call({ name: "uuid", args: [@engine.StringArg("5")] }) is Err(_),
+    uuid.validate_call({ name: "uuid", args: [@engine.StringArg("5")] })
+    is Err(_),
   )
 
   let env = registry.lookup_cell_fn("env").unwrap()

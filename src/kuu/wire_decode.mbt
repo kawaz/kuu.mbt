@@ -798,7 +798,8 @@ fn dec_default_fn(j : Json) -> @engine.DefaultFnCall raise DecodeSkip {
           for part_json in parts_json {
             match part_json.j_str() {
               Some(part) => parts.push(part)
-              None => raise DecodeSkip("default_fn array element is not a string")
+              None =>
+                raise DecodeSkip("default_fn array element is not a string")
             }
           }
           match @engine.parse_fn_invocation(@engine.ArrayParts(parts)) {
@@ -1664,8 +1665,8 @@ fn dec_option(
     return DOpt(opt("", @builtins.none_type(), help_meta=owned.help_meta))
   }
   let allowed = [
-    "id", "name", "type", "default", "default_fn", "export_key", "deprecated", "hidden", "or",
-    "values", "piece_filters", "value_filters", "final_filters", "accum_filters",
+    "id", "name", "type", "default", "default_fn", "export_key", "deprecated", "hidden",
+    "or", "values", "piece_filters", "value_filters", "final_filters", "accum_filters",
     "ref", "completer", "config",
   ]
   for key in owned.vocab {
@@ -1957,9 +1958,9 @@ fn dec_positional(
   }
   let owned = decode_installer_owned(j, DecodePositional, extensions)
   let allowed = [
-    "id", "name", "type", "export_key", "default", "default_fn", "positionals", "or", "piece_filters",
-    "value_filters", "final_filters", "accum_filters", "ref", "config", "completer",
-    "exact",
+    "id", "name", "type", "export_key", "default", "default_fn", "positionals", "or",
+    "piece_filters", "value_filters", "final_filters", "accum_filters", "ref", "config",
+    "completer", "exact",
   ]
   for key in owned.vocab {
     allowed.push(key)

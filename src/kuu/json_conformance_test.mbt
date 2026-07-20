@@ -2286,9 +2286,15 @@ fn expected_skips() -> Array[(String, String)] {
   // that carry these unsupported keys are skipped at decode time; entries pinned here so a decode
   // regression (unexpected new skip) or accidental fix (vanished skip) fails the run.
   [
-    ("help/absent-category.json", "help case has unsupported key 'category_mode'"),
-    ("help/help-types-and-default-fn.json", "definition rejected: help-category/unknown-vocab"),
-    ("help/value-structure-and-types.json", "type shadow has unsupported key 'help'"),
+    (
+      "help/absent-category.json", "help case has unsupported key 'category_mode'",
+    ),
+    (
+      "help/help-types-and-default-fn.json", "definition rejected: help-category/unknown-vocab",
+    ),
+    (
+      "help/value-structure-and-types.json", "type shadow has unsupported key 'help'",
+    ),
   ]
 }
 

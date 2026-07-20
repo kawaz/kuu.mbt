@@ -2188,17 +2188,17 @@ fn resolve_entity_raw(
             Err((reason, message)) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
           }
-          let ctx = @engine.fn_ctx_effect(
-            e.name,
-            e.name,
-            old~,
-            observes~,
-          )
+          let ctx = @engine.fn_ctx_effect(e.name, e.name, old~, observes~)
           match descriptor.invoke(invocation.to_call(), ctx) {
             Err((reason, message)) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
             Ok(@engine.FnValue(value)) => {
-              current = Some({ ..b, op: @engine.Set, value, source: @engine.Cli })
+              current = Some({
+                ..b,
+                op: @engine.Set,
+                value,
+                source: @engine.Cli,
+              })
               committed_now = true
             }
             Ok(@engine.FnSentinel(@engine.UseDefault)) =>
@@ -2633,12 +2633,7 @@ fn append_default_order(
     match entity_named(entities, dependency) {
       Some(source) =>
         append_default_order(
-          source,
-          entities,
-          extensions,
-          next_visiting,
-          done,
-          ordered,
+          source, entities, extensions, next_visiting, done, ordered,
         )
       None => ()
     }
@@ -2965,13 +2960,7 @@ fn resolve_scope_config_with_export(
       if cell_empty {
         let resolved = if e.default_fn is Some(_) {
           resolve_default_fn(
-            e,
-            option_values,
-            inherited,
-            env_map,
-            at_pos,
-            path,
-            extensions,
+            e, option_values, inherited, env_map, at_pos, path, extensions,
           )
         } else {
           let cpath = config_path_of(e, path)
