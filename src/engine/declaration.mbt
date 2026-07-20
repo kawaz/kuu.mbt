@@ -165,9 +165,9 @@ pub(all) struct ElemDef {
   // 暗黙、DR-009)。final_filters (DR-102 §1、T→T、scalar filter registry): non-accum 要素専用の
   // 確定した最終値ガード (DR-077 §1 の主対象、update の結果にもこれが通る)。accum_filters (DR-102 §1、
   // Acc→Acc、ARRAY filter registry): accum (multiple/repeat/separator) 要素専用の累積配列全体ガード。
-  // 1 属性 1 registry の対応 (DR-102 §2)。要素は `FilterSpelling` (node.mbt、issue
-  // filter-spelling-inband-encoding-retyping) — colon shorthand も DESIGN §8.4 object form も同じ
-  // 構造体に decode 済み、chain 消費側は colon 分割を一切気にしない。
+  // 1 属性 1 registry の対応 (DR-102 §2)。要素は universal invocation carrier の
+  // `FilterSpelling` alias。colon shorthand / 1 段 array / object form は decode 境界で同じ
+  // name + args 形になり、chain 消費側は wire 表現を扱わない。
   piece_filters : Array[FilterSpelling]
   value_filters : Array[FilterSpelling]
   final_filters : Array[FilterSpelling]

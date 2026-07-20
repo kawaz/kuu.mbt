@@ -110,15 +110,10 @@ test "dec_positional: bare 'exact' alone decodes to an is_exact marker (対極, 
 // ── moved whitebox coverage from the conformance runner ────────────────
 
 ///|
-/// 保証 (issue filter-spelling-inband-encoding-retyping — in-band 穴の閉鎖の pin): DESIGN §8.4 /
-/// DR-085 §3 のオブジェクト形式 filter spelling (`{"name":..,"args":[...]}`) は、args の値そのものに
-/// U+E000 (旧実装が colon 衝突回避のタグに使っていた Private Use Area 文字) が含まれていても、
-/// `@engine.FilterSpelling.args` (node.mbt) の各要素として一切分割されず literal のまま保持される。旧実装
-/// (U+E000 タグ付き単一文字列への in-band encode/decode) はこの入力で誤って分割・破壊していた —
-/// タグ文字を含む値そのものが decode を壊す潜在穴だったため、それを埋めた側の pin。`args` に U+E000
-/// を複数個 (要素の内部と要素境界紛いの位置の両方) 埋め込み、構造化フィールドがどこにも colon/tag
-/// 分割ロジックを経由しないことを固定する。
-test "dec_filter_chain: an object-form arg value containing U+E000 (retired in-band PUA tag) survives as a literal, unsplit" {
+/// DESIGN §8.4 / DR-085 §3 の object-form filter args は構造化された
+/// `FnInvocation.args` として保持される。U+E000 を複数含む値も分割せず
+/// literal のまま decode することを固定する。
+test "dec_filter_chain preserves U+E000 inside an object-form arg as one literal" {
   let tag = "\u{E000}"
   let raw_arg = "a" + tag + "b" + tag + tag + "c"
   let src = "[{\"name\":\"regex_match\",\"args\":[\"" +
@@ -136,6 +131,22 @@ test "dec_filter_chain: an object-form arg value containing U+E000 (retired in-b
   assert_eq(result[0].args[0], raw_arg)
   assert_eq(result[1].name, "trim")
   assert_eq(result[1].args.length(), 0)
+}
+
+///|
+test "dec_filter_chain gives colon-string and one-level array forms identical meaning" {
+  let source =
+    #|["in_range:1:10",["in_range","1","10"],["regex_match","a:b"]]
+  let j = @json.parse(source)
+  let result = dec_filter_chain(Some(j)) catch {
+    DecodeSkip(reason) => abort("expected successful decode: " + reason)
+    UnknownType(element, type_name) =>
+      abort("unexpected UnknownType for " + element + ": " + type_name)
+  }
+  assert_eq(result.length(), 3)
+  assert_eq(result[0], result[1])
+  assert_eq(result[0], { name: "in_range", args: ["1", "10"] })
+  assert_eq(result[2], { name: "regex_match", args: ["a:b"] })
 }
 
 ///|

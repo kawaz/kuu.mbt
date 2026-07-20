@@ -11,6 +11,7 @@ pub struct Registry {
   priv collectors : Map[String, &CollectorExt]
   priv filters : Map[String, FilterDescriptor]
   priv array_filters : Map[String, ArrayFilterDescriptor]
+  priv cell_fns : Map[String, CellFnDescriptor]
   priv installers : Array[&InstallerExt]
 }
 
@@ -24,6 +25,7 @@ pub fn Registry::new() -> Registry {
     collectors: Map([]),
     filters: Map([]),
     array_filters: Map([]),
+    cell_fns: Map([]),
     installers: [],
   }
 }
@@ -170,6 +172,30 @@ pub fn Registry::lookup_array_filter(
   name : String,
 ) -> ArrayFilterDescriptor? {
   self.array_filters.get(name)
+}
+
+///|
+/// Register one cell-fn contract. `filters` and `cell_fns` deliberately occupy
+/// independent namespaces.
+pub fn Registry::register_cell_fn(
+  self : Registry,
+  resident : CellFnDescriptor,
+) -> Bool {
+  let name = resident.name()
+  if self.cell_fns.get(name) is Some(_) {
+    false
+  } else {
+    self.cell_fns.set(name, resident)
+    true
+  }
+}
+
+///|
+pub fn Registry::lookup_cell_fn(
+  self : Registry,
+  name : String,
+) -> CellFnDescriptor? {
+  self.cell_fns.get(name)
 }
 
 ///|

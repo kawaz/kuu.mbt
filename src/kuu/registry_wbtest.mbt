@@ -42,6 +42,16 @@ test "canonical_registry installs every builtin node and type resident" {
       None => fail("canonical collector resident is missing: " + kind)
     }
   }
+  for
+    name in [
+      "set", "default", "unset", "empty", "incr", "borrow", "env", "inherit", "uuid",
+      "computed",
+    ] {
+    match registry.lookup_cell_fn(name) {
+      Some(resident) => assert_eq(resident.name(), name)
+      None => fail("canonical cell fn resident is missing: " + name)
+    }
+  }
   // Unknown identities remain observable as absent rather than producing a placeholder resident.
   assert_true(registry.lookup_matcher("missing") is None)
   assert_true(registry.lookup_accumulator("missing") is None)
@@ -130,17 +140,15 @@ test "a third-party type controls its parse failure reason and message" {
 
 ///|
 fn third_party_prefix_filter() -> @engine.FilterDescriptor {
-  {
-    name: "third_party_prefix",
-    signature: @engine.Transform,
-    reasons: [],
-    run: fn(value, _args) {
-      match value {
-        @engine.VStr(text) => Ok(@engine.VStr("third-party:" + text))
-        other => Ok(other)
-      }
-    },
-  }
+  @engine.filter_descriptor("third_party_prefix", @engine.Transform, [], fn(
+    value,
+    _args,
+  ) {
+    match value {
+      @engine.VStr(text) => Ok(@engine.VStr("third-party:" + text))
+      other => Ok(other)
+    }
+  })
 }
 
 ///|

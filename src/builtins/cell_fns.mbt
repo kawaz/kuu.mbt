@@ -1,0 +1,83 @@
+// cell_fns.mbt — builtin cell-fn descriptor contracts (DR-114).
+
+///|
+/// Canonical builtin `cell_fns` definition-time contracts: ordered parameters,
+/// output, fallibility, reasons, and runtime observation declarations.
+pub fn cell_fn_descriptors() -> Array[@engine.CellFnDescriptor] {
+  [
+    @engine.cell_fn_descriptor(
+      "set",
+      [
+        @engine.cell_fn_parameter(
+          "value",
+          kind=@engine.ValueParameter,
+          repetition=@engine.OneOrMore,
+        ),
+      ],
+      @engine.ValueOutput,
+      @engine.TotalFn,
+    ),
+    @engine.cell_fn_descriptor(
+      "default",
+      [],
+      @engine.SentinelOutput(@engine.UseDefault),
+      @engine.TotalFn,
+    ),
+    @engine.cell_fn_descriptor(
+      "unset",
+      [],
+      @engine.SentinelOutput(@engine.Unset),
+      @engine.TotalFn,
+    ),
+    @engine.cell_fn_descriptor(
+      "empty",
+      [],
+      @engine.SentinelOutput(@engine.Empty),
+      @engine.TotalFn,
+    ),
+    @engine.cell_fn_descriptor(
+      "incr",
+      [],
+      @engine.NumberOutput,
+      @engine.TotalFn,
+    ),
+    @engine.cell_fn_descriptor(
+      "borrow",
+      [@engine.cell_fn_parameter("source")],
+      @engine.ValueOutput,
+      @engine.RejectFn,
+      observes=["option:<source>"],
+      reasons=["absent-source"],
+    ),
+    @engine.cell_fn_descriptor(
+      "env",
+      [@engine.cell_fn_parameter("var")],
+      @engine.ValueOutput,
+      @engine.RejectFn,
+      observes=["env:<var>"],
+      reasons=["absent-source"],
+    ),
+    @engine.cell_fn_descriptor(
+      "inherit",
+      [@engine.cell_fn_parameter("source")],
+      @engine.ValueOutput,
+      @engine.RejectFn,
+      observes=["option:<source>"],
+      reasons=["absent-source"],
+    ),
+    @engine.cell_fn_descriptor(
+      "uuid",
+      [@engine.cell_fn_parameter("version")],
+      @engine.StringOutput,
+      @engine.TotalFn,
+    ),
+    @engine.cell_fn_descriptor(
+      "computed",
+      [@engine.cell_fn_parameter("key")],
+      @engine.ValueOutput,
+      @engine.RejectFn,
+      observes=["system:<key>"],
+      reasons=["absent-source"],
+    ),
+  ]
+}

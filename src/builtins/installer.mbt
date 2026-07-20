@@ -64,7 +64,10 @@ pub fn classify_long_spelling(
   if s == ":set" {
     return LMain(own_name)
   }
-  let parts = split_colon(s)
+  let parts = match @engine.decode_fn_invocation_parts(@engine.ColonString(s)) {
+    Ok(parts) => parts
+    Err(_) => return LInvalid(s)
+  }
   if parts.length() == 1 {
     // DR-011 明確化: colon-less は文法エラー (literal 綴りへの fallback は不採用)。
     return LInvalid(s)

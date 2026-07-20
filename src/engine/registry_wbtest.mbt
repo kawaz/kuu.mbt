@@ -134,33 +134,23 @@ impl CollectorExt for RegistryCollectorExt with fn collect(_self, value) {
 
 ///|
 fn registry_filter(name : String, prefix : String) -> FilterDescriptor {
-  {
-    name,
-    signature: Transform,
-    reasons: [],
-    run: fn(value, _args) {
-      match value {
-        VStr(text) => Ok(VStr(prefix + text))
-        other => Ok(other)
-      }
-    },
-  }
+  filter_descriptor(name, Transform, [], fn(value, _args) {
+    match value {
+      VStr(text) => Ok(VStr(prefix + text))
+      other => Ok(other)
+    }
+  })
 }
 
 ///|
 fn registry_array_filter(name : String) -> ArrayFilterDescriptor {
-  {
-    name,
-    signature: Validate,
-    reasons: ["empty"],
-    run: fn(values, _args) {
-      if values.length() == 0 {
-        Err(("empty", "array is empty"))
-      } else {
-        Ok(values)
-      }
-    },
-  }
+  array_filter_descriptor(name, Validate, ["empty"], fn(values, _args) {
+    if values.length() == 0 {
+      Err(("empty", "array is empty"))
+    } else {
+      Ok(values)
+    }
+  })
 }
 
 ///|
@@ -217,14 +207,20 @@ test "Registry registers and looks up each extension category in an independent 
   match registry.lookup_filter("synthetic/filter") {
     Some(resident) => {
       assert_eq(resident.signature, Transform)
-      assert_eq((resident.run)(VStr("value"), []), Ok(VStr("x:value")))
+      assert_eq(
+        (resident.run)([], fn_ctx_filter(ScalarInput(VStr("value")))),
+        Ok(VStr("x:value")),
+      )
     }
     None => fail("registered scalar filter resident must be found")
   }
   match registry.lookup_array_filter("synthetic/array-filter") {
     Some(resident) => {
       assert_eq(resident.signature, Validate)
-      assert_eq((resident.run)([], []), Err(("empty", "array is empty")))
+      assert_eq(
+        (resident.run)([], fn_ctx_filter(ArrayInput([]))),
+        Err(("empty", "array is empty")),
+      )
     }
     None => fail("registered array filter resident must be found")
   }
@@ -302,7 +298,10 @@ test "Registry rejects duplicate identity without replacing the first resident" 
   )
   match registry.lookup_filter("synthetic/filter") {
     Some(resident) =>
-      assert_eq((resident.run)(VStr("value"), []), Ok(VStr("first:value")))
+      assert_eq(
+        (resident.run)([], fn_ctx_filter(ScalarInput(VStr("value")))),
+        Ok(VStr("first:value")),
+      )
     None => fail("first filter resident must remain registered")
   }
 }
@@ -336,4 +335,30 @@ test "filter invocation is driven exclusively by the supplied Registry" {
     ),
     Err(("empty", "array is empty")),
   )
+}
+
+///|
+test "filters and cell_fns keep independent registries even for the same name" {
+  let registry = Registry::new()
+  assert_true(registry.register_filter(registry_filter("shared", "filter:")))
+  assert_true(
+    registry.register_cell_fn(
+      cell_fn_descriptor("shared", [], ValueOutput, TotalFn),
+    ),
+  )
+  assert_true(registry.lookup_filter("shared") is Some(_))
+  assert_true(registry.lookup_cell_fn("shared") is Some(_))
+
+  assert_false(registry.register_filter(registry_filter("shared", "other:")))
+  assert_false(
+    registry.register_cell_fn(
+      cell_fn_descriptor(
+        "shared",
+        [cell_fn_parameter("arg")],
+        ValueOutput,
+        RejectFn,
+      ),
+    ),
+  )
+  assert_eq(registry.lookup_cell_fn("shared").unwrap().arity(), ExactArity(0))
 }

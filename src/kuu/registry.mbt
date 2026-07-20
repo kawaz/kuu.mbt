@@ -71,6 +71,16 @@ fn register_array_filter(
 }
 
 ///|
+fn register_cell_fn(
+  registry : @engine.Registry,
+  resident : @engine.CellFnDescriptor,
+) -> Unit {
+  guard registry.register_cell_fn(resident) else {
+    abort("duplicate builtin cell fn resident name: " + resident.name())
+  }
+}
+
+///|
 pub fn install_installers(registry : @engine.Registry) -> Unit {
   registry.register_installer(@builtins.long_installer())
   registry.register_installer(@builtins.short_installer())
@@ -150,6 +160,10 @@ pub fn install(registry : @engine.Registry) -> Unit {
   register_filter(registry, @builtins.increment_filter())
   register_array_filter(registry, @builtins.unique_array_filter())
   register_array_filter(registry, @builtins.length_range_array_filter())
+
+  for descriptor in @builtins.cell_fn_descriptors() {
+    register_cell_fn(registry, descriptor)
+  }
 }
 
 ///|

@@ -13,14 +13,42 @@ pub fn FilterSignature::is_transform(self : FilterSignature) -> Bool {
 }
 
 ///|
-/// One scalar filter resident. `name` is its registry identity, `signature`
-/// declares whether update variants may invoke it, and `reasons` is its
-/// machine-readable failure vocabulary.
+/// One scalar filter resident. Invocation uses the universal args-plus-FnCtx
+/// ABI; `FilterCtx.input()` supplies the scalar value.
 pub(all) struct FilterDescriptor {
   name : String
   signature : FilterSignature
   reasons : Array[String]
-  run : (Value, Array[String]) -> Result[Value, (String, String)]
+  observes : Array[String]
+  run : (Array[String], FnCtx) -> Result[Value, (String, String)]
+}
+
+///|
+/// Adapt a scalar value transformer to the universal filter invocation ABI.
+pub fn filter_descriptor(
+  name : String,
+  signature : FilterSignature,
+  reasons : Array[String],
+  run : (Value, Array[String]) -> Result[Value, (String, String)],
+  observes? : Array[String] = [],
+) -> FilterDescriptor {
+  {
+    name,
+    signature,
+    reasons: reasons.copy(),
+    observes: observes.copy(),
+    run: fn(args, ctx) {
+      match ctx.as_filter() {
+        None => Err(("filter_rejected", "filter invoked outside filter mode"))
+        Some(filter_ctx) =>
+          match filter_ctx.input() {
+            ScalarInput(value) => run(value, args)
+            ArrayInput(_) =>
+              Err(("filter_rejected", "scalar filter received an array input"))
+          }
+      }
+    },
+  }
 }
 
 ///|
@@ -29,7 +57,37 @@ pub(all) struct ArrayFilterDescriptor {
   name : String
   signature : FilterSignature
   reasons : Array[String]
-  run : (Array[Value], Array[String]) -> Result[Array[Value], (String, String)]
+  observes : Array[String]
+  run : (Array[String], FnCtx) -> Result[Array[Value], (String, String)]
+}
+
+///|
+/// Adapt an accumulated-array transformer to the universal filter invocation
+/// ABI.
+pub fn array_filter_descriptor(
+  name : String,
+  signature : FilterSignature,
+  reasons : Array[String],
+  run : (Array[Value], Array[String]) -> Result[Array[Value], (String, String)],
+  observes? : Array[String] = [],
+) -> ArrayFilterDescriptor {
+  {
+    name,
+    signature,
+    reasons: reasons.copy(),
+    observes: observes.copy(),
+    run: fn(args, ctx) {
+      match ctx.as_filter() {
+        None => Err(("filter_rejected", "filter invoked outside filter mode"))
+        Some(filter_ctx) =>
+          match filter_ctx.input() {
+            ArrayInput(values) => run(values, args)
+            ScalarInput(_) =>
+              Err(("filter_rejected", "array filter received a scalar input"))
+          }
+      }
+    },
+  }
 }
 
 ///|
@@ -44,11 +102,16 @@ pub fn apply_filter_chain(
   for spelling in chain {
     match registry.lookup_filter(spelling.name) {
       None => ()
-      Some(descriptor) =>
-        match (descriptor.run)(current, spelling.args) {
+      Some(descriptor) => {
+        let ctx = fn_ctx_filter(
+          ScalarInput(current),
+          observes=descriptor.observes,
+        )
+        match (descriptor.run)(spelling.args, ctx) {
           Ok(next) => current = next
           Err(error) => return Err(error)
         }
+      }
     }
   }
   Ok(current)
@@ -65,11 +128,16 @@ pub fn apply_accum_filter_chain(
   for spelling in chain {
     match registry.lookup_array_filter(spelling.name) {
       None => ()
-      Some(descriptor) =>
-        match (descriptor.run)(current, spelling.args) {
+      Some(descriptor) => {
+        let ctx = fn_ctx_filter(
+          ArrayInput(current),
+          observes=descriptor.observes,
+        )
+        match (descriptor.run)(spelling.args, ctx) {
           Ok(next) => current = next
           Err(error) => return Err(error)
         }
+      }
     }
   }
   Ok(current)

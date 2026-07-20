@@ -1888,7 +1888,11 @@ fn apply_transform(
           ),
         )
       } else {
-        match (d.run)(old, args) {
+        let ctx = @engine.fn_ctx_filter(
+          @engine.ScalarInput(old),
+          observes=d.observes,
+        )
+        match (d.run)(args, ctx) {
           Ok(v) => Ok(v)
           Err((_reason, msg)) =>
             // live path (arity mismatch 等、closure 自身の拒否) — defensive な上 2 分岐と同じ理由で

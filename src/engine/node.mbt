@@ -153,24 +153,6 @@ pub impl Debug for &TypeExt with fn to_repr(self) {
 }
 
 ///|
-/// One filter-chain DSL entry (DR-009 §DSL 文法, `piece_filters`/`value_filters`/`final_filters`/
-/// `accum_filters`, DR-102 属性分割):
-/// name + args, structured — either from the colon shorthand (`"in_range:1:65535"` decodes to
-/// `{name:"in_range", args:["1","65535"]}`) or the DESIGN §8.4 / DR-085 §3 object form
-/// (`{"name":"regex_match","args":["^https?://"]}`, needed when an arg itself contains a colon,
-/// e.g. `regex_match`'s `^https?://` pattern). Both forms decode to the SAME `FilterSpelling` shape
-/// (issue filter-spelling-inband-encoding-retyping) — no in-band string encoding / magic-tag scheme
-/// is needed since `args` carries the object form's values verbatim in a real `Array[String]` field
-/// rather than a single joined string. Colon-splitting for the shorthand happens ONCE at the decode
-/// boundary (`json_conformance_test.mbt`'s `dec_filter_chain`); every downstream consumer
-/// (filters.mbt/installer.mbt/eval.mbt/builtins/matcher_residents.mbt/resolve.mbt/value.mbt) reads `name`/`args`
-/// directly, never re-parses a spelling string.
-pub(all) struct FilterSpelling {
-  name : String
-  args : Array[String]
-} derive(Eq, Debug)
-
-///|
 /// The evaluator continuation exposed to an open node resident. The private
 /// defunctionalized `Cont` stays captured by the closure that implements this
 /// function type, so extension code sees only the stable resume capability.

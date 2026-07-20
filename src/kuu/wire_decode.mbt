@@ -804,21 +804,12 @@ fn dec_strs(j : Json?) -> Array[String] raise DecodeSkip {
 }
 
 ///|
-/// Decode a filters-chain field (`piece_filters`/`value_filters`/`final_filters`/`accum_filters`,
-/// DR-009 §DSL 文法, DR-102 属性分割)
-/// into `Array[@engine.FilterSpelling]` (node.mbt, issue filter-spelling-inband-encoding-retyping): same
-/// shape as `dec_strs` (a string, or a string[]), but each array element may ALSO be the DR-085 §3
-/// / DESIGN §8.4 object form `{"name": ..., "args": [...]}` — needed when a filter's own arg
-/// contains a colon (e.g. `regex_match`'s `^https?://` pattern breaks the colon-shorthand DSL's
-/// all-colon-split rule, DR-009). Both forms decode to the SAME `@engine.FilterSpelling` struct (colon
-/// shorthand → `filters.mbt`'s `@builtins.parse_filter_shorthand`, object form → `name`/`args` read straight
-/// off the JSON object) — no in-band string encoding is needed since the result type carries `args`
-/// as a real `Array[String]`, replacing the earlier U+E000 PUA-tag single-string encoding that
-/// shared `Array[String]` with plain shorthand strings (that scheme had a latent hole: an object-
-/// form arg VALUE containing the tag character itself would have mis-split). `dec_strs` itself is
-/// intentionally NOT reused here: it's shared by `requires`/`conflicts_with`/`exclusive_group`/
-/// `env`/`targets`/`members`, none of which have an object form — this is a sibling decoder
-/// specific to the 3 filter-chain fields, not a generalized replacement.
+/// Decode a filters-chain field (`piece_filters`/`value_filters`/`final_filters`/`accum_filters`)
+/// into the engine-owned universal invocation carrier. Each chain entry accepts
+/// a colon shorthand string, a DR-114 one-level string array, or the structured
+/// object form. Array and object args remain literal, including embedded colons.
+/// `dec_strs` is not reused because the other string-list attributes do not
+/// carry nested invocation entries.
 fn dec_filter_chain(
   j : Json?,
 ) -> Array[@engine.FilterSpelling] raise DecodeSkip {
@@ -835,49 +826,69 @@ fn dec_filter_chain(
                 match e.j_str() {
                   Some(s) => r.push(@builtins.parse_filter_shorthand(s))
                   None =>
-                    match e.j_obj() {
-                      Some(o) => {
-                        allowed_keys(
-                          o,
-                          ["name", "args"],
-                          "filter (object form)",
-                        )
-                        let name = match jf_str(o, "name") {
-                          Some(n) => n
-                          None =>
-                            raise DecodeSkip(
-                              "filter object form missing 'name'",
-                            )
+                    match e.j_arr() {
+                      Some(parts_json) => {
+                        let parts : Array[String] = []
+                        for part_json in parts_json {
+                          match part_json.j_str() {
+                            Some(part) => parts.push(part)
+                            None =>
+                              raise DecodeSkip(
+                                "filter array-form element is not a string",
+                              )
+                          }
                         }
-                        let args = match o.get("args") {
-                          Some(aj) =>
-                            match aj.j_arr() {
-                              Some(aa) => {
-                                let out : Array[String] = []
-                                for av in aa {
-                                  match av.j_str() {
-                                    Some(s) => out.push(s)
-                                    None =>
-                                      raise DecodeSkip(
-                                        "filter object form 'args' element is not a string",
-                                      )
-                                  }
-                                }
-                                out
-                              }
-                              None =>
-                                raise DecodeSkip(
-                                  "filter object form 'args' is not an array",
-                                )
-                            }
-                          None => []
+                        match
+                          @engine.parse_fn_invocation(@engine.ArrayParts(parts)) {
+                          Ok(invocation) => r.push(invocation)
+                          Err(message) => raise DecodeSkip(message)
                         }
-                        r.push({ name, args })
                       }
                       None =>
-                        raise DecodeSkip(
-                          "filter chain element is not a string or object",
-                        )
+                        match e.j_obj() {
+                          Some(o) => {
+                            allowed_keys(
+                              o,
+                              ["name", "args"],
+                              "filter (object form)",
+                            )
+                            let name = match jf_str(o, "name") {
+                              Some(n) => n
+                              None =>
+                                raise DecodeSkip(
+                                  "filter object form missing 'name'",
+                                )
+                            }
+                            let args = match o.get("args") {
+                              Some(aj) =>
+                                match aj.j_arr() {
+                                  Some(aa) => {
+                                    let out : Array[String] = []
+                                    for av in aa {
+                                      match av.j_str() {
+                                        Some(s) => out.push(s)
+                                        None =>
+                                          raise DecodeSkip(
+                                            "filter object form 'args' element is not a string",
+                                          )
+                                      }
+                                    }
+                                    out
+                                  }
+                                  None =>
+                                    raise DecodeSkip(
+                                      "filter object form 'args' is not an array",
+                                    )
+                                }
+                              None => []
+                            }
+                            r.push({ name, args })
+                          }
+                          None =>
+                            raise DecodeSkip(
+                              "filter chain element is not a string, string array, or object",
+                            )
+                        }
                     }
                 }
               }
@@ -885,7 +896,7 @@ fn dec_filter_chain(
             }
             None =>
               raise DecodeSkip(
-                "expected a string or filter[] (string | object form)",
+                "expected a string or filter[] (string | string[] | object form)",
               )
           }
       }

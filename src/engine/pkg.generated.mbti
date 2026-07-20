@@ -9,17 +9,23 @@ import {
 // Values
 pub fn action_marker(String, Int) -> Binding
 
-pub fn apply_accum_filter_chain(Registry, Array[FilterSpelling], Array[Value]) -> Result[Array[Value], (String, String)]
+pub fn apply_accum_filter_chain(Registry, Array[FnInvocation], Array[Value]) -> Result[Array[Value], (String, String)]
 
-pub fn apply_filter_chain(Registry, Array[FilterSpelling], Value) -> Result[Value, (String, String)]
+pub fn apply_filter_chain(Registry, Array[FnInvocation], Value) -> Result[Value, (String, String)]
 
-pub fn apply_piece_filters(Registry, Array[FilterSpelling], String) -> Result[String, (String, String)]
+pub fn apply_piece_filters(Registry, Array[FnInvocation], String) -> Result[String, (String, String)]
 
 pub fn argmin_action(Array[(String, Int)]) -> String
+
+pub fn array_filter_descriptor(String, FilterSignature, Array[String], (Array[Value], Array[String]) -> Result[Array[Value], (String, String)], observes? : Array[String]) -> ArrayFilterDescriptor
 
 pub fn attach_mode_of(String) -> AttachMode?
 
 pub fn cat(Array[Binding], Array[Binding]) -> Array[Binding]
+
+pub fn cell_fn_descriptor(String, Array[CellFnParameter], CellFnOutput, FnFallibility, observes? : Array[String], reasons? : Array[String]) -> CellFnDescriptor
+
+pub fn cell_fn_parameter(String, kind? : CellFnParameterKind, repetition? : CellFnRepetition) -> CellFnParameter
 
 pub fn chars_to_str(Array[Char], Int, Int) -> String
 
@@ -43,6 +49,8 @@ pub fn contains_eq(String) -> Bool
 
 pub fn continue_matcher(Array[Branch], Ctx, Array[Binding], (Ctx, Int, Array[Binding]) -> Array[Branch]) -> Array[Branch]
 
+pub fn decode_fn_invocation_parts(FnInvocationForm) -> Result[Array[String], String]
+
 pub fn depr_marker(String) -> Binding
 
 pub fn elem_value(Array[Binding], Array[String], String) -> String?
@@ -57,7 +65,15 @@ pub fn export_key_null() -> ExportKey
 
 pub fn export_key_unset() -> ExportKey
 
+pub fn filter_descriptor(String, FilterSignature, Array[String], (Value, Array[String]) -> Result[Value, (String, String)], observes? : Array[String]) -> FilterDescriptor
+
 pub fn find_help_entry(Node, Array[ParseError]) -> String?
+
+pub fn fn_ctx_default(String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
+
+pub fn fn_ctx_effect(String, String, old? : Value?, observes? : Array[String], option? : (String) -> Value?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
+
+pub fn fn_ctx_filter(FilterInput, old? : Value?, observes? : Array[String], option? : (String) -> Value?, env? : (String) -> Value?, system? : (String) -> Value?) -> FnCtx
 
 pub fn is_committed(Array[Binding], Array[String], String) -> Bool
 
@@ -70,6 +86,8 @@ pub fn mk_binding(String, Value, Source, at_pos? : Int?) -> Binding
 pub fn mk_effect(String, EffectOp, Source) -> Binding
 
 pub fn none_cells(Scope) -> Array[NoneCell]
+
+pub fn parse_fn_invocation(FnInvocationForm) -> Result[FnInvocation, String]
 
 pub fn parse_tree(Node, Array[String], defs? : Map[String, Node], faildef? : FailDef, extensions? : Registry) -> Outcome
 
@@ -90,6 +108,8 @@ pub fn to_chars(String) -> Array[Char]
 pub fn tried_triggers_of(Node, Array[ParseError]) -> Array[String]
 
 pub fn trigger_candidate(String, String, String, TermHint, Bool, Bool, Bool) -> Cand
+
+pub fn typed_fn_call(String, Array[Value]) -> FnCall
 
 pub fn value_str(Value) -> String
 
@@ -125,7 +145,8 @@ pub(all) struct ArrayFilterDescriptor {
   name : String
   signature : FilterSignature
   reasons : Array[String]
-  run : (Array[Value], Array[String]) -> Result[Array[Value], (String, String)]
+  observes : Array[String]
+  run : (Array[String], FnCtx) -> Result[Array[Value], (String, String)]
 }
 
 pub(all) enum AttachMode {
@@ -174,6 +195,56 @@ pub(all) struct CandMeta {
   is_alias : Bool
   hidden : Bool
   deprecated : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CellFnArity {
+  ExactArity(Int)
+  AtLeastArity(Int)
+} derive(Eq, @debug.Debug)
+pub fn CellFnArity::accepts(Self, Int) -> Bool
+
+pub struct CellFnDescriptor {
+  // private fields
+}
+pub fn CellFnDescriptor::arity(Self) -> CellFnArity
+pub fn CellFnDescriptor::concrete_observes(Self, FnInvocation) -> Result[Array[String], (String, String)]
+pub fn CellFnDescriptor::fallibility(Self) -> FnFallibility
+pub fn CellFnDescriptor::name(Self) -> String
+pub fn CellFnDescriptor::observes(Self) -> Array[String]
+pub fn CellFnDescriptor::output(Self) -> CellFnOutput
+pub fn CellFnDescriptor::parameters(Self) -> Array[CellFnParameter]
+pub fn CellFnDescriptor::reasons(Self) -> Array[String]
+pub fn CellFnDescriptor::validate_arity(Self, Int) -> Result[Unit, (String, String)]
+pub fn CellFnDescriptor::validate_call(Self, FnCall) -> Result[Unit, (String, String)]
+pub fn CellFnDescriptor::validate_invocation(Self, FnInvocation) -> Result[Unit, (String, String)]
+
+pub(all) enum CellFnOutput {
+  ValueOutput
+  NumberOutput
+  StringOutput
+  SentinelOutput(CellSentinel)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct CellFnParameter {
+  name : String
+  kind : CellFnParameterKind
+  repetition : CellFnRepetition
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CellFnParameterKind {
+  StringParameter
+  ValueParameter
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CellFnRepetition {
+  Once
+  OneOrMore
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CellSentinel {
+  UseDefault
+  Unset
+  Empty
 } derive(Eq, @debug.Debug)
 
 pub(all) struct CommandDef {
@@ -236,6 +307,12 @@ pub(all) struct DefError {
   hint : String
 } derive(Eq, @debug.Debug)
 
+pub struct DefaultCtx {
+  // private fields
+}
+pub fn DefaultCtx::dependency(Self, String) -> Value?
+pub fn DefaultCtx::target(Self) -> String
+
 pub(all) struct Definition {
   scope : ScopeDecl
   options : Array[ElemDef]
@@ -252,6 +329,12 @@ pub fn DefsView::extensions(Self) -> Registry
 pub fn DefsView::new(Definition, Definition, Map[String, Node], Registry) -> Self
 pub fn DefsView::source_definition(Self) -> Definition
 pub fn DefsView::templates(Self) -> Map[String, Node]
+
+pub struct EffectCtx {
+  // private fields
+}
+pub fn EffectCtx::target(Self) -> String
+pub fn EffectCtx::trigger(Self) -> String
 
 pub(all) enum EffectOp {
   Set
@@ -316,10 +399,10 @@ pub(all) struct ElemDef {
   completer : String?
   default_values : Array[Value]?
   default_declared : Bool
-  piece_filters : Array[FilterSpelling]
-  value_filters : Array[FilterSpelling]
-  final_filters : Array[FilterSpelling]
-  accum_filters : Array[FilterSpelling]
+  piece_filters : Array[FnInvocation]
+  value_filters : Array[FnInvocation]
+  final_filters : Array[FnInvocation]
+  accum_filters : Array[FnInvocation]
   long_prefix : String
   short_prefix : String
   env_prefix : String
@@ -344,10 +427,10 @@ pub(all) struct Entity {
   collector : &CollectorExt?
   default_values : Array[Value]?
   separator : String?
-  piece_filters : Array[FilterSpelling]
-  value_filters : Array[FilterSpelling]
-  final_filters : Array[FilterSpelling]
-  accum_filters : Array[FilterSpelling]
+  piece_filters : Array[FnInvocation]
+  value_filters : Array[FnInvocation]
+  final_filters : Array[FnInvocation]
+  accum_filters : Array[FnInvocation]
   extension : &EntityExt
 } derive(Eq, @debug.Debug)
 
@@ -382,12 +465,23 @@ pub(all) struct FailureData {
   tried_triggers : Array[String]
 } derive(Eq, @debug.Debug)
 
+pub struct FilterCtx {
+  // private fields
+}
+pub fn FilterCtx::input(Self) -> FilterInput
+
 pub(all) struct FilterDescriptor {
   name : String
   signature : FilterSignature
   reasons : Array[String]
-  run : (Value, Array[String]) -> Result[Value, (String, String)]
+  observes : Array[String]
+  run : (Array[String], FnCtx) -> Result[Value, (String, String)]
 }
+
+pub(all) enum FilterInput {
+  ScalarInput(Value)
+  ArrayInput(Array[Value])
+} derive(Eq, @debug.Debug)
 
 pub(all) enum FilterSignature {
   Validate
@@ -395,9 +489,49 @@ pub(all) enum FilterSignature {
 } derive(Eq, @debug.Debug)
 pub fn FilterSignature::is_transform(Self) -> Bool
 
-pub(all) struct FilterSpelling {
+pub(all) enum FnArg {
+  StringArg(String)
+  ValueArg(Value)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct FnCall {
+  name : String
+  args : Array[FnArg]
+} derive(Eq, @debug.Debug)
+
+pub struct FnCtx {
+  // private fields
+}
+pub fn FnCtx::as_default(Self) -> DefaultCtx?
+pub fn FnCtx::as_effect(Self) -> EffectCtx?
+pub fn FnCtx::as_filter(Self) -> FilterCtx?
+pub fn FnCtx::env(Self, String) -> Value?
+pub fn FnCtx::mode(Self) -> String
+pub fn FnCtx::observes(Self) -> Array[String]
+pub fn FnCtx::old(Self) -> Value?
+pub fn FnCtx::option(Self, String) -> Value?
+pub fn FnCtx::system(Self, String) -> Value?
+
+pub(all) enum FnFallibility {
+  TotalFn
+  RejectFn
+} derive(Eq, @debug.Debug)
+
+#alias(FilterSpelling)
+pub(all) struct FnInvocation {
   name : String
   args : Array[String]
+} derive(Eq, @debug.Debug)
+pub fn FnInvocation::to_call(Self) -> FnCall
+
+pub(all) enum FnInvocationForm {
+  ColonString(String)
+  ArrayParts(Array[String])
+} derive(Eq, @debug.Debug)
+
+pub(all) enum FnOutput {
+  FnValue(Value)
+  FnSentinel(CellSentinel)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpMetaDecl {
@@ -532,6 +666,7 @@ pub struct Registry {
 pub fn Registry::installers(Self) -> Array[&InstallerExt]
 pub fn Registry::lookup_accumulator(Self, String) -> &AccumulatorExt?
 pub fn Registry::lookup_array_filter(Self, String) -> ArrayFilterDescriptor?
+pub fn Registry::lookup_cell_fn(Self, String) -> CellFnDescriptor?
 pub fn Registry::lookup_collector(Self, String) -> &CollectorExt?
 pub fn Registry::lookup_filter(Self, String) -> FilterDescriptor?
 pub fn Registry::lookup_matcher(Self, String) -> &MatcherExt?
@@ -540,6 +675,7 @@ pub fn Registry::lookup_type(Self, String) -> &TypeExt?
 pub fn Registry::new() -> Self
 pub fn Registry::register_accumulator(Self, &AccumulatorExt) -> Bool
 pub fn Registry::register_array_filter(Self, ArrayFilterDescriptor) -> Bool
+pub fn Registry::register_cell_fn(Self, CellFnDescriptor) -> Bool
 pub fn Registry::register_collector(Self, &CollectorExt) -> Bool
 pub fn Registry::register_filter(Self, FilterDescriptor) -> Bool
 pub fn Registry::register_installer(Self, &InstallerExt) -> Unit
@@ -634,6 +770,12 @@ pub(all) struct Warning {
 } derive(Eq, @debug.Debug)
 
 // Type aliases
+pub type CellFn = (Array[FnArg], FnCtx) -> Result[FnOutput, (String, String)]
+
+pub type FnReason = (String, String)
+
+pub type FnResult = Result[FnOutput, (String, String)]
+
 pub type LowerSeat = (Bool) -> Result[Array[Binding], ParseError]
 
 pub type Resume = (Ctx, Int, Array[Binding]) -> Array[Branch]

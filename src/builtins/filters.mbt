@@ -1,36 +1,6 @@
-// filters.mbt — builtin the filters registry (DR-009/010/036/061/077): the pure-function chain that
-// DR-009 threads through 4 phases (piece_filters / value_filters (each) / final_filters (non-accum
-// final value) / accum_filters (累積配列, DR-102 attribute split)). MDR-002 §3: depends on {node,
-// value} only (no eval dependency — filters run over already-parsed `@engine.Value`s, not tokens).
-//
-// SCOPE (issue 2026-07-09-filters-registry-foundation): this is a MINIMAL kuu.mbt reference-
-// implementation register, not the full multi-host DR-010 registry machinery (tree-shake / Level
-// 0-3 dynamic injection / explicit opt-in extension tiers — those are language-DX concerns for
-// OTHER host bindings, moot for a single MoonBit reference implementation: every built-in filter
-// is simply always registered). DR-062's inheritance interface (`{prepend, append}` composition
-// against a ref/type-registry base chain) is likewise OUT OF SCOPE: kuu.mbt has no `type` registry
-// (a name → factory lookup for value parsers) to inherit FROM yet, so there is no base chain to
-// compose against — `value_filters`/`piece_filters`/`final_filters`/`accum_filters` are plain
-// `Array[@engine.FilterSpelling]` (colon-shorthand DSL `"<name>:<arg>:<arg>..."` and DESIGN §8.4 object
-// form, DR-009/DR-085 §3, both decoded to the same structured shape — node.mbt's `@engine.FilterSpelling`)
-// with no inherit/prepend/append object form. Revisit when a type registry with per-type default
-// chains exists.
-
-///|
-fn split_colon(s : String) -> Array[String] {
-  let out : Array[String] = []
-  let mut current = ""
-  for char in s {
-    if char == ':' {
-      out.push(current)
-      current = ""
-    } else {
-      current = current + char.to_string()
-    }
-  }
-  out.push(current)
-  out
-}
+// filters.mbt — builtin filter residents for piece/value/final/accum phases.
+// Every chain entry uses the engine-owned universal invocation carrier and is
+// executed over an already parsed `@engine.Value` through `FnCtx[filter]`.
 
 ///|
 /// `trim` (DR-040 §piece_filters example, DR-009 §DSL 文法): string-only, strips ASCII whitespace
@@ -196,47 +166,47 @@ fn filter_regex_match(
 
 ///|
 pub fn trim_filter() -> @engine.FilterDescriptor {
-  { name: "trim", signature: @engine.Transform, reasons: [], run: filter_trim }
+  @engine.filter_descriptor("trim", @engine.Transform, [], filter_trim)
 }
 
 ///|
 pub fn non_empty_filter() -> @engine.FilterDescriptor {
-  {
-    name: "non_empty",
-    signature: @engine.Validate,
-    reasons: ["empty_value"],
-    run: filter_non_empty,
-  }
+  @engine.filter_descriptor(
+    "non_empty",
+    @engine.Validate,
+    ["empty_value"],
+    filter_non_empty,
+  )
 }
 
 ///|
 pub fn in_range_filter() -> @engine.FilterDescriptor {
-  {
-    name: "in_range",
-    signature: @engine.Validate,
-    reasons: ["too_small", "too_large"],
-    run: filter_in_range,
-  }
+  @engine.filter_descriptor(
+    "in_range",
+    @engine.Validate,
+    ["too_small", "too_large"],
+    filter_in_range,
+  )
 }
 
 ///|
 pub fn regex_match_filter() -> @engine.FilterDescriptor {
-  {
-    name: "regex_match",
-    signature: @engine.Validate,
-    reasons: ["pattern_no_match"],
-    run: filter_regex_match,
-  }
+  @engine.filter_descriptor(
+    "regex_match",
+    @engine.Validate,
+    ["pattern_no_match"],
+    filter_regex_match,
+  )
 }
 
 ///|
 pub fn increment_filter() -> @engine.FilterDescriptor {
-  {
-    name: "increment",
-    signature: @engine.Transform,
-    reasons: [],
-    run: filter_increment,
-  }
+  @engine.filter_descriptor(
+    "increment",
+    @engine.Transform,
+    [],
+    filter_increment,
+  )
 }
 
 ///|
@@ -325,39 +295,32 @@ fn array_filter_length_range(
 
 ///|
 pub fn unique_array_filter() -> @engine.ArrayFilterDescriptor {
-  {
-    name: "unique",
-    signature: @engine.Transform,
-    reasons: [],
-    run: array_filter_unique,
-  }
+  @engine.array_filter_descriptor(
+    "unique",
+    @engine.Transform,
+    [],
+    array_filter_unique,
+  )
 }
 
 ///|
 pub fn length_range_array_filter() -> @engine.ArrayFilterDescriptor {
-  {
-    name: "length_range",
-    signature: @engine.Validate,
-    reasons: ["too_short", "too_long"],
-    run: array_filter_length_range,
-  }
+  @engine.array_filter_descriptor(
+    "length_range",
+    @engine.Validate,
+    ["too_short", "too_long"],
+    array_filter_length_range,
+  )
 }
 
 ///|
-/// Parse the colon-shorthand DSL string (`"in_range:1:65535"`, DR-009 §DSL 文法) into a
-/// `@engine.FilterSpelling` — the SOLE colon-splitting point for filter chains (mirrors `installer.mbt`'s
-/// `classify_long_spelling` being the sole interpreter of the variant colon DSL). The decode
-/// boundary (`json_conformance_test.mbt`'s `dec_filter_chain`) calls this for every plain-string
-/// chain element; wbtest call sites use it too, for the shorthand's ergonomics instead of hand-
-/// building a `@engine.FilterSpelling` struct literal per case.
+/// Parse one filter colon shorthand (`"in_range:1:65535"`) through the
+/// engine-owned universal invocation parser. Wire decoding and wbtests use this
+/// wrapper for the plain-string form; one-level arrays call the same engine
+/// parser with `ArrayParts`.
 pub fn parse_filter_shorthand(s : String) -> @engine.FilterSpelling {
-  let parts = split_colon(s)
-  let name = parts[0]
-  let args : Array[String] = []
-  let mut i = 1
-  while i < parts.length() {
-    args.push(parts[i])
-    i = i + 1
+  match @engine.parse_fn_invocation(@engine.ColonString(s)) {
+    Ok(invocation) => invocation
+    Err(message) => abort(message)
   }
-  { name, args }
 }
