@@ -5,8 +5,8 @@ using @engine {type HelpValueStructure}
 
 ///|
 pub(all) enum HelpDepth {
-  DScope
-  DAll
+  Scope
+  All
 } derive(Eq, Debug)
 
 ///|
@@ -15,19 +15,19 @@ pub(all) enum HelpDepth {
 /// named だけが `help_group_name` が name に一致する entry と当該グループ宣言 entry に model 素材を
 /// 絞る唯一の分岐。
 pub(all) enum HelpCategoryMode {
-  HCMDefault
-  HCMAll
-  HCMNamed(String)
+  Default
+  All
+  Named(String)
 } derive(Eq, Debug)
 
 ///|
 /// DR-113 §1/§9 の query-error envelope。合法な definition に対する呼び出し側入力の失敗を
 /// definition-error と別位相で返す (query-error は definition-error でなく、逆もまた然り)。
-/// - `HQAbsentPath`: help_query に不在の command path を渡した
-/// - `HQAbsentCategory`: help_query の category_mode `{"named": name}` に不在の名前を渡した
+/// - `AbsentPath`: help_query に不在の command path を渡した
+/// - `AbsentCategory`: help_query の category_mode `{"named": name}` に不在の名前を渡した
 pub(all) enum HelpQueryError {
-  HQAbsentPath
-  HQAbsentCategory
+  AbsentPath
+  AbsentCategory
 } derive(Eq, Debug)
 
 ///|
@@ -62,8 +62,8 @@ pub fn dispatch_help_query(
   registry : @engine.Registry,
   ast : AtomicAST,
   path? : Array[String] = [],
-  depth? : HelpDepth = DScope,
-  category_mode? : HelpCategoryMode = HCMDefault,
+  depth? : HelpDepth = Scope,
+  category_mode? : HelpCategoryMode = Default,
 ) -> Result[HelpModel, HelpQueryError]? {
   match registry.lookup_capability("help_query") {
     None => None
@@ -73,20 +73,20 @@ pub fn dispatch_help_query(
 
 ///|
 pub(all) enum HelpDefault {
-  HDefaultScalar(@engine.Value)
-  HDefaultArray(Array[@engine.Value])
+  Scalar(@engine.Value)
+  Array(Array[@engine.Value])
 } derive(Eq, Debug)
 
 ///|
 /// DR-113 §4.3 origin 4 形。model の options / commands entry の由来を表す — Local 以外は
 /// `declared_at` 相当情報を保持する。§4.4「alias は canonical entry の alias_spellings / aliases に
-/// 併記し、独立一覧しない」により、HOAlias は現状の fixture 走査経路では独立 entry としては現れない
+/// 併記し、独立一覧しない」により、Alias は現状の fixture 走査経路では独立 entry としては現れない
 /// (spec 完備性のため carrier だけ持つ)。
 pub(all) enum HelpOrigin {
-  HOLocal
-  HOGlobal(Array[String])
-  HOInheritable(Array[String])
-  HOAlias(String)
+  Local
+  Global(Array[String])
+  Inheritable(Array[String])
+  Alias(String)
 } derive(Eq, Debug)
 
 ///|
@@ -129,8 +129,8 @@ pub(all) struct HelpOption {
 
 ///|
 pub(all) enum HelpOptionEntry {
-  HGroup(HelpGroup)
-  HOption(HelpOption)
+  Group(HelpGroup)
+  Option(HelpOption)
 } derive(Eq, Debug)
 
 ///|
@@ -243,9 +243,9 @@ fn help_default(values : Array[@engine.Value]?) -> HelpDefault? {
     None => None
     Some(items) =>
       if items.length() == 1 {
-        Some(HDefaultScalar(items[0]))
+        Some(Scalar(items[0]))
       } else {
-        Some(HDefaultArray(items))
+        Some(Array(items))
       }
   }
 }
@@ -394,7 +394,7 @@ fn alias_command_names(definition : @engine.Definition) -> Array[String] {
 /// DR-113 §4.1 の value_structure `single{value_name, type, values_enum}` 素材を ElemDef から組む。
 /// `type_name` が None の要素 (flag / count / help preset / none / dd / config_file / tty / etc — value-less
 /// preset や structural node) は None を返す。help_category (preset_kind="help_category") のみ
-/// or[bool, string] 特殊展開。将来 seq/repeat 拡張ポイントは @engine.HVRepeat / @engine.HVSeq を追加すれば良い。
+/// or[bool, string] 特殊展開。将来 seq/repeat 拡張ポイントは @engine.Repeat / @engine.Seq を追加すれば良い。
 fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
   let meta = element.help_meta
   // DR-113 §4.1/§4.2: wire_decode が完全 tree を組んで value_structure_hint に carry している
@@ -407,12 +407,12 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
   // 拾わない) は type_ref を優先する — value_name は wire の value_name を上書き名として使う。
   match meta.type_ref {
     Some(id) =>
-      return Some(@engine.HVTypeRef({ id, value_name: meta.value_name }))
+      return Some(@engine.TypeRef({ id, value_name: meta.value_name }))
     None => ()
   }
   // help_category 特殊: or[bool, string] を展開 (DR-113 §2.3)。value_name は string 側の枝に付く。
   if meta.preset_kind == Some("help_category") {
-    let bool_branch = @engine.HVSingle({
+    let bool_branch = @engine.Single({
       value_name: None,
       type_: Some("bool"),
       values_enum: None,
@@ -424,12 +424,12 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
       Some(name) => Some(name)
       None => Some("CATEGORY")
     }
-    let str_branch = @engine.HVSingle({
+    let str_branch = @engine.Single({
       value_name: str_value_name,
       type_: Some("string"),
       values_enum: None,
     })
-    return Some(@engine.HVOr([bool_branch, str_branch]))
+    return Some(@engine.Or([bool_branch, str_branch]))
   }
   match meta.type_name {
     None => None
@@ -440,7 +440,7 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
         _ => None
       }
       Some(
-        @engine.HVSingle({
+        @engine.Single({
           value_name: meta.value_name,
           type_: Some(t),
           values_enum,
@@ -459,7 +459,7 @@ fn positional_value_structure_of(
   match value_structure_of(element) {
     Some(vs) => vs
     None =>
-      @engine.HVSingle({
+      @engine.Single({
         value_name: element.help_meta.value_name,
         type_: None,
         values_enum: None,
@@ -513,7 +513,7 @@ fn collect_scope_entries(
 /// - link_depth > 0 → global 由来。宣言 scope は現在から link_depth 段 (root 側へ) 遡った祖先。
 ///   ただし root scope の name は path[0] にあるので、declared_at は path[:len - link_depth] (先頭は保持)。
 /// - name-derived prefix pattern + descendant scope に is_inheritable=true 同名要素 → inheritable 由来。
-/// - 上記いずれでもなければ HOLocal。
+/// - 上記いずれでもなければ Local。
 fn resolve_origin(
   element : @engine.ElemDef,
   current_path : Array[String],
@@ -532,7 +532,7 @@ fn resolve_origin(
     if declared_at.length() == 0 && current_path.length() > 0 {
       declared_at.push(current_path[0])
     }
-    return HOGlobal(declared_at)
+    return Global(declared_at)
   }
   // inheritable 逆推定: 名前が prefix 付きなら (`<child>-<name>` トリガ) descendant scope に
   // is_inheritable=true 同 element 名の option があるはず。Fixture: `--socket-timeout` の name は
@@ -561,11 +561,11 @@ fn resolve_origin(
         }
       }
       if matched {
-        return HOInheritable(copy_strings(entry.path))
+        return Inheritable(copy_strings(entry.path))
       }
     }
   }
-  HOLocal
+  Local
 }
 
 ///|
@@ -703,7 +703,7 @@ fn ordered_options(
     let meta = element.help_meta
     let entry : HelpOptionEntry = if is_group_declaration(element) {
       let name = meta.help_group_name.unwrap()
-      HGroup({
+      Group({
         name,
         title: meta.help_group_title,
         description: meta.help_group_description,
@@ -711,7 +711,7 @@ fn ordered_options(
     } else {
       let canonical_spellings = option_spellings(element)
       let origin = resolve_origin(element, current_path, index)
-      HOption(
+      Option(
         help_option_from(
           element,
           meta,
@@ -747,7 +747,7 @@ fn ordered_options(
         let meta = pair.0.help_meta
         let origin = resolve_origin(pair.1, current_path, index)
         insert_option_sorted(sorted, {
-          entry: HOption(help_option_from(pair.1, meta, [], origin)),
+          entry: Option(help_option_from(pair.1, meta, [], origin)),
           identity: Some(name),
           order: match meta.help_order {
             Some(value) => value
@@ -844,9 +844,9 @@ fn ordered_commands(
     let child_path = copy_strings(current_path)
     child_path.push(command.name)
     let scope : HelpModel? = match depth {
-      DAll =>
+      All =>
         Some(build_help_model(command.body, child_path, depth, index, root))
-      DScope => None
+      Scope => None
     }
     insert_command_sorted(sorted, {
       entry: {
@@ -856,7 +856,7 @@ fn ordered_commands(
         help_long: meta.help_long,
         hidden: false,
         deprecated: false,
-        origin: HOLocal,
+        origin: Local,
         scope,
       },
       identity: command.name,
@@ -974,8 +974,8 @@ fn select_definition(
 fn category_exists(options : Array[HelpOptionEntry], category : String) -> Bool {
   for entry in options {
     match entry {
-      HGroup(group) => if group.name == category { return true }
-      HOption(_) => ()
+      Group(group) => if group.name == category { return true }
+      Option(_) => ()
     }
   }
   false
@@ -989,8 +989,8 @@ fn filter_category(
   let output : Array[HelpOptionEntry] = []
   for entry in options {
     match entry {
-      HGroup(group) => if group.name == category { output.push(entry) }
-      HOption(option) =>
+      Group(group) => if group.name == category { output.push(entry) }
+      Option(option) =>
         if option.help_group_name == Some(category) {
           output.push(entry)
         }
@@ -1003,7 +1003,7 @@ fn filter_category(
 /// DR-113 §4.2 の types 集約射影: root Definition の help_types (定義出現順) に、
 /// 参照側から逆収集した used_as (定義出現順の value_name 一覧) を紐づける。
 /// 「参照側」= 現在の scope + 全 subtree の options / positionals の value_structure tree を
-/// 走査して HVTypeRef を拾う。walk 順は options → positionals、element 順、tree 内は
+/// 走査して TypeRef を拾う。walk 順は options → positionals、element 順、tree 内は
 /// or/seq/repeat の順序を保持 (fixture value-structure-and-types が期待する COLOR/INFO/WARN/
 /// DEBUG 順は options 順 fg → level-colors → 各 seq 要素)。
 fn help_types_projection(
@@ -1025,36 +1025,36 @@ fn help_types_projection(
 }
 
 ///|
-/// value_structure tree 内の HVTypeRef で id が target の value_name を定義出現順で拾う。
+/// value_structure tree 内の TypeRef で id が target の value_name を定義出現順で拾う。
 fn collect_used_as_from_vs(
   vs : @engine.HelpValueStructure,
   target : String,
   out : Array[String],
 ) -> Unit {
   match vs {
-    @engine.HVTypeRef(ref_) =>
+    @engine.TypeRef(ref_) =>
       if ref_.id == target {
         match ref_.value_name {
           Some(v) => out.push(v)
           None => ()
         }
       }
-    @engine.HVSeq(nodes) =>
+    @engine.Seq(nodes) =>
       for n in nodes {
         collect_used_as_from_vs(n, target, out)
       }
-    @engine.HVOr(nodes) =>
+    @engine.Or(nodes) =>
       for n in nodes {
         collect_used_as_from_vs(n, target, out)
       }
-    @engine.HVRepeat(spec) => collect_used_as_from_vs(spec.node, target, out)
-    @engine.HVSingle(_) => ()
+    @engine.Repeat(spec) => collect_used_as_from_vs(spec.node, target, out)
+    @engine.Single(_) => ()
   }
 }
 
 ///|
 /// Definition の options / positionals を定義順で走査し、value_structure tree 内の
-/// HVTypeRef(target, ...) を拾って used_as を積む。subcommand の subtree は現状の fixture では
+/// TypeRef(target, ...) を拾って used_as を積む。subcommand の subtree は現状の fixture では
 /// 使わないが、DR-113 §4.2 「共有型は model トップの types に集約射影する」の意図から
 /// 再帰的に拾う (全 scope から集約)。
 fn collect_used_as(
@@ -1081,7 +1081,7 @@ fn collect_used_as(
 }
 
 ///|
-/// path (current scope path) と depth を伝搬しつつ 1 scope 分の HelpModel を組む。depth=DAll では
+/// path (current scope path) と depth を伝搬しつつ 1 scope 分の HelpModel を組む。depth=All では
 /// commands の scope フィールドへ子 HelpModel を再帰埋め込みする。types は root Definition が
 /// 保持する help_types を全 scope から used_as 逆収集して projection する — 現在の scope より
 /// 深い層は含まれるが、root より浅い層への参照はそもそも fixture で想定されていない。
@@ -1123,18 +1123,18 @@ fn build_help_model(
 /// query-error envelope で返す。
 ///
 /// - `path`: 選択スコープの root-first 相対 path。既定はルート
-/// - `depth`: `DScope` (既定、選択 scope の 1 層のみ) / `DAll` (再帰 scope 埋め込み、DR-113 §4.4)
+/// - `depth`: `Scope` (既定、選択 scope の 1 層のみ) / `All` (再帰 scope 埋め込み、DR-113 §4.4)
 /// - `category_mode`: DR-113 §1 の 3 分岐。default / all は model 素材を絞らず (renderer への
 ///   policy 指示だけ、HIP-META-Q13=a)、named 分岐だけが素材を絞る
 pub fn help(
   ast : AtomicAST,
   path? : Array[String] = [],
-  depth? : HelpDepth = DScope,
-  category_mode? : HelpCategoryMode = HCMDefault,
+  depth? : HelpDepth = Scope,
+  category_mode? : HelpCategoryMode = Default,
 ) -> Result[HelpModel, HelpQueryError] {
   let selected = match select_definition(ast.declaration, path) {
     Some(definition) => definition
-    None => return Err(HQAbsentPath)
+    None => return Err(AbsentPath)
   }
   let index = build_scope_index(ast.declaration)
   let command_path : Array[String] = []
@@ -1153,13 +1153,13 @@ pub fn help(
     ast.declaration,
   )
   match category_mode {
-    HCMNamed(name) =>
+    Named(name) =>
       if category_exists(model.options, name) {
         model = { ..model, options: filter_category(model.options, name) }
       } else {
-        return Err(HQAbsentCategory)
+        return Err(AbsentCategory)
       }
-    HCMDefault | HCMAll => ()
+    Default | All => ()
   }
   Ok(model)
 }

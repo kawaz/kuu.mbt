@@ -1335,11 +1335,11 @@ fn dec_types(
 /// DR-113 §4.1 の value_structure tree 構築: wire subtree を再帰的に読んで HelpValueStructure を
 /// 組む。option/positional root の値形 (type/or/seq/repeat) と、definitions.types の tree-form
 /// 型定義、および or/seq 内部の leaf の双方から呼ばれる — キー配置が同じなので同じ関数で扱う。
-/// - `type` (primitive) + optional `value_name` → HVSingle(type)
-/// - `type` (user shadow) + optional `value_name` → HVTypeRef(shadow_name, value_name)
-/// - `or` → HVOr (再帰)
-/// - `seq` → HVSeq (再帰)
-/// - `repeat: {min, max, ...}` → HVRepeat(HVSingle or 参照) — repeat 単独 wire form での使用
+/// - `type` (primitive) + optional `value_name` → Single(type)
+/// - `type` (user shadow) + optional `value_name` → TypeRef(shadow_name, value_name)
+/// - `or` → Or (再帰)
+/// - `seq` → Seq (再帰)
+/// - `repeat: {min, max, ...}` → Repeat(Single or 参照) — repeat 単独 wire form での使用
 ///   (files positional: `{name: "files", type: "string", value_name: "FILE", repeat: {...}}`) を対応
 ///
 /// shadows は type-ref 判定 (定義済みの shadow か否か) のためだけに参照 — tree-form/factory-form
@@ -1386,7 +1386,7 @@ fn dec_help_value_structure(
           single
         }
       }
-      return HVRepeat({ min, max, node })
+      return Repeat({ min, max, node })
     }
     None => ()
   }
@@ -1400,7 +1400,7 @@ fn dec_help_value_structure(
       for bj in arr {
         branches.push(dec_help_value_structure(bj, shadows))
       }
-      return HVOr(branches)
+      return Or(branches)
     }
     None => ()
   }
@@ -1414,7 +1414,7 @@ fn dec_help_value_structure(
       for ij in arr {
         items.push(dec_help_value_structure(ij, shadows))
       }
-      return HVSeq(items)
+      return Seq(items)
     }
     None => ()
   }
@@ -1423,7 +1423,7 @@ fn dec_help_value_structure(
 }
 
 ///|
-/// wire object の `type` / `value_name` から HVSingle か HVTypeRef を組む (or/seq/repeat 外殻の
+/// wire object の `type` / `value_name` から Single か TypeRef を組む (or/seq/repeat 外殻の
 /// 内側 leaf 用)。shadow に登録されている名前は type_ref、それ以外は primitive single。
 fn dec_help_single_from_object(
   o : Map[String, Json],
@@ -1435,17 +1435,17 @@ fn dec_help_single_from_object(
       match shadows.get(t) {
         Some(sh) =>
           if sh.is_tree_form {
-            HVTypeRef({ id: t, value_name })
+            TypeRef({ id: t, value_name })
           } else {
             // factory shadow: base name (int/number/string/bool) を single leaf として carry
             let base_name = sh.base.name()
-            HVSingle({ value_name, type_: Some(base_name), values_enum: None })
+            Single({ value_name, type_: Some(base_name), values_enum: None })
           }
         None =>
           // primitive: string/number/int/bool そのまま carry
-          HVSingle({ value_name, type_: Some(t), values_enum: None })
+          Single({ value_name, type_: Some(t), values_enum: None })
       }
-    None => HVSingle({ value_name, type_: None, values_enum: None })
+    None => Single({ value_name, type_: None, values_enum: None })
   }
 }
 
@@ -2148,7 +2148,7 @@ fn dec_option(
   // DR-113 §4.1/§4.2: value_structure_hint (完全 tree) と type_ref (shadow 参照名) を
   // wire キー配置から算出。優先順:
   // - or/seq/repeat のいずれかがある: dec_help_value_structure で tree 全体を構築 → hint 立て
-  // - type がユーザ定義 tree-form shadow: HVTypeRef 素材 → type_ref に shadow 名を stamp
+  // - type がユーザ定義 tree-form shadow: TypeRef 素材 → type_ref に shadow 名を stamp
   // - どちらもなければ hint は None (help.mbt が type_name の simple 形へフォールバック)
   let has_shape_wire = has_key(o, "or") ||
     has_key(o, "seq") ||
@@ -2428,7 +2428,7 @@ fn dec_positional(
   // DR-113 §4.1: positional の value_structure_hint (repeat + inner type / or / seq)。
   // fixture の `files` positional は `{type: string, value_name: FILE, repeat: {min:1, max:3}}` の
   // 平坦形。dec_help_value_structure が repeat 分岐で外側 object の残キーから single leaf を
-  // 組み立てるため、この呼び出し 1 発で HVRepeat(HVSingle) が得られる。
+  // 組み立てるため、この呼び出し 1 発で Repeat(Single) が得られる。
   let has_shape_pos = has_key(o, "or") ||
     has_key(o, "seq") ||
     has_key(o, "repeat")

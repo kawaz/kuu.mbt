@@ -18,8 +18,8 @@ fn help_option_spellings(entries : Array[HelpOptionEntry]) -> Array[String] {
   let output : Array[String] = []
   for entry in entries {
     match entry {
-      HGroup(group) => output.push("group:" + group.name)
-      HOption(option) =>
+      Group(group) => output.push("group:" + group.name)
+      Option(option) =>
         if option.spellings.length() > 0 {
           output.push(option.spellings[0])
         } else {
@@ -42,15 +42,15 @@ test "help: root scope projects semantic materials" {
   assert_eq(model.command_path, ["prog"])
   assert_eq(model.description, Some("Serve files"))
   assert_eq(help_option_spellings(model.options), ["--port", "--help"])
-  guard model.options[0] is HOption(port) else { abort("port option missing") }
+  guard model.options[0] is Option(port) else { abort("port option missing") }
   assert_eq(port.spellings, ["--port", "-p"])
-  guard port.value_structure is Some(HVSingle(port_single)) else {
+  guard port.value_structure is Some(Single(port_single)) else {
     abort("port value_structure missing")
   }
   assert_eq(port_single.value_name, Some("PORT"))
   assert_eq(port_single.type_, Some("number"))
   assert_eq(port.env, ["PORT"])
-  guard model.positionals[0].value_structure is HVSingle(file_single) else {
+  guard model.positionals[0].value_structure is Single(file_single) else {
     abort("file positional value_structure missing")
   }
   assert_eq(file_single.value_name, Some("FILE"))
@@ -69,7 +69,7 @@ test "help: group order and named alias after compose" {
   assert_eq(help_option_spellings(model.options), [
     "group:net", "--port", "--old-port", "--verbose", "--help",
   ])
-  guard model.options[2] is HOption(old_port) else {
+  guard model.options[2] is Option(old_port) else {
     abort("named alias entry missing")
   }
   assert_true(old_port.deprecated)

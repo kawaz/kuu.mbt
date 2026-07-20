@@ -428,7 +428,7 @@ test "REVIEW-C4 non-scope root: residual of a partial @engine.Accept surfaces ev
   // branch 2 helds a not_a_number on "xyz". 0 complete paths -> failure.
   // Both failure reasons must be retained (DR-053 §2 全保持): gating the
   // residual synthesis on "errors empty" would mask the partial reading.
-  let root = @engine.Or([
+  let root = @engine.Node::Or([
     @engine.Exact("a"),
     @engine.Seq([@engine.Exact("a"), @builtins.number_arg("n", false, [])]),
   ])
@@ -1869,8 +1869,8 @@ test "@engine.IdxRepeat budget=Some(1): consumes up to min+budget=2 reps, leaves
 /// 限定される (installer_wbtest.mbt の対応する wire テストと対で、evaluator 層 / installer 層のどちら
 /// が壊れていたかを切り分ける)。
 test "DR-043 × DR-038: hand-built @engine.Many(@engine.Or(seq-rgb, string-name)) lets both or-branches repeat" {
-  let head = @engine.Or([
-    @engine.Seq([
+  let head = @engine.Node::Or([
+    @engine.Node::Seq([
       @builtins.number_arg("r", false, []),
       @builtins.number_arg("g", false, []),
       @builtins.number_arg("b", false, []),

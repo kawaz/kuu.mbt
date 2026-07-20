@@ -1524,18 +1524,18 @@ struct DHelpFixture {
 
 ///|
 /// DR-113 §1 の category_mode: string "default" / "all"、または object `{"named": name}`。
-/// 未指定は既定 `HCMDefault`。他の string / 形は decode skip。
+/// 未指定は既定 `Default`。他の string / 形は decode skip。
 fn dec_category_mode(cmj : Json) -> @kuu.HelpCategoryMode raise DecodeSkip {
   match cmj {
-    String("default") => @kuu.HCMDefault
-    String("all") => @kuu.HCMAll
+    String("default") => @kuu.Default
+    String("all") => @kuu.All
     String(other) =>
       raise DecodeSkip(
         "category_mode string '" + other + "' is not default/all",
       )
     Object(obj) =>
       match obj.get("named") {
-        Some(String(name)) => @kuu.HCMNamed(name)
+        Some(String(name)) => @kuu.Named(name)
         Some(_) => raise DecodeSkip("category_mode.named is not a string")
         None => raise DecodeSkip("category_mode object missing 'named'")
       }
@@ -1560,13 +1560,13 @@ fn dec_help_case(cj : Json) -> DHelpCase raise DecodeSkip {
   }
   let path = dec_strs(co.get("path"))
   let depth = match jf_str(co, "depth") {
-    None | Some("scope") => @kuu.DScope
-    Some("all") => @kuu.DAll
+    None | Some("scope") => @kuu.Scope
+    Some("all") => @kuu.All
     Some(value) =>
       raise DecodeSkip("help depth '" + value + "' is not scope/all")
   }
   let category_mode = match co.get("category_mode") {
-    None => @kuu.HCMDefault
+    None => @kuu.Default
     Some(cmj) => dec_category_mode(cmj)
   }
   let expect = match co.get("expect") {
@@ -1619,8 +1619,8 @@ fn help_value_json(value : @engine.Value) -> Json {
 ///|
 fn help_default_json(value : @kuu.HelpDefault) -> Json {
   match value {
-    @kuu.HDefaultScalar(scalar) => help_value_json(scalar)
-    @kuu.HDefaultArray(values) => {
+    @kuu.Scalar(scalar) => help_value_json(scalar)
+    @kuu.Array(values) => {
       let output : Array[Json] = []
       for item in values {
         output.push(help_value_json(item))
@@ -1635,7 +1635,7 @@ fn help_default_json(value : @kuu.HelpDefault) -> Json {
 /// object 形へ写す (schema $defs/helpValueStructure と対応)。
 fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
   match vs {
-    @engine.HVSingle(single) => {
+    @engine.Single(single) => {
       let inner : Map[String, Json] = Map([])
       match single.value_name {
         Some(value) => inner.set("value_name", value.to_json())
@@ -1653,7 +1653,7 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
       out.set("single", inner.to_json())
       out.to_json()
     }
-    @engine.HVSeq(nodes) => {
+    @engine.Seq(nodes) => {
       let arr : Array[Json] = []
       for n in nodes {
         arr.push(help_value_structure_json(n))
@@ -1662,7 +1662,7 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
       out.set("seq", arr.to_json())
       out.to_json()
     }
-    @engine.HVOr(nodes) => {
+    @engine.Or(nodes) => {
       let arr : Array[Json] = []
       for n in nodes {
         arr.push(help_value_structure_json(n))
@@ -1671,7 +1671,7 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
       out.set("or", arr.to_json())
       out.to_json()
     }
-    @engine.HVRepeat(spec) => {
+    @engine.Repeat(spec) => {
       let inner : Map[String, Json] = Map([])
       match spec.min {
         Some(m) => inner.set("min", m.to_json())
@@ -1686,7 +1686,7 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
       out.set("repeat", inner.to_json())
       out.to_json()
     }
-    @engine.HVTypeRef(ref_) => {
+    @engine.TypeRef(ref_) => {
       let out : Map[String, Json] = Map([])
       out.set("type_ref", ref_.id.to_json())
       match ref_.value_name {
@@ -1703,20 +1703,20 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
 /// Alias は object。
 fn help_origin_json(origin : @kuu.HelpOrigin) -> Json {
   match origin {
-    @kuu.HOLocal => "local".to_json()
-    @kuu.HOGlobal(declared_at) => {
+    @kuu.Local => "local".to_json()
+    @kuu.Global(declared_at) => {
       let out : Map[String, Json] = Map([])
       out.set("kind", "global".to_json())
       out.set("declared_at", declared_at.to_json())
       out.to_json()
     }
-    @kuu.HOInheritable(declared_at) => {
+    @kuu.Inheritable(declared_at) => {
       let out : Map[String, Json] = Map([])
       out.set("kind", "inheritable".to_json())
       out.set("declared_at", declared_at.to_json())
       out.to_json()
     }
-    @kuu.HOAlias(of) => {
+    @kuu.Alias(of) => {
       let out : Map[String, Json] = Map([])
       out.set("kind", "alias".to_json())
       out.set("of", of.to_json())
@@ -1812,7 +1812,7 @@ fn help_option_json(option : @kuu.HelpOption) -> Json {
 ///|
 fn help_option_entry_json(entry : @kuu.HelpOptionEntry) -> Json {
   match entry {
-    @kuu.HGroup(group) => {
+    @kuu.Group(group) => {
       let group_object : Map[String, Json] = Map([])
       group_object.set("name", group.name.to_json())
       match group.title {
@@ -1827,7 +1827,7 @@ fn help_option_entry_json(entry : @kuu.HelpOptionEntry) -> Json {
       object.set("group", group_object.to_json())
       object.to_json()
     }
-    @kuu.HOption(option) => help_option_json(option)
+    @kuu.Option(option) => help_option_json(option)
   }
 }
 
@@ -1954,8 +1954,8 @@ fn help_model_json(model : @kuu.HelpModel) -> Json {
 /// `{"outcome":"query-error","errors":[{"kind":"absent-path"}]}` の形式。
 fn help_query_error_json(err : @kuu.HelpQueryError) -> Json {
   let kind = match err {
-    @kuu.HQAbsentPath => "absent-path"
-    @kuu.HQAbsentCategory => "absent-category"
+    @kuu.AbsentPath => "absent-path"
+    @kuu.AbsentCategory => "absent-category"
   }
   let entry : Map[String, Json] = Map([])
   entry.set("kind", kind.to_json())

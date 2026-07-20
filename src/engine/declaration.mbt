@@ -6,11 +6,11 @@
 /// definitions.types 内の共有型定義 tree を decode 時点で組み立て、HelpMetaDecl と Definition の
 /// 側テーブルへ carry する — help_installer は projection 時に読むだけ (計算しない)。
 pub(all) enum HelpValueStructure {
-  HVSingle(HelpSingleValue)
-  HVSeq(Array[HelpValueStructure])
-  HVOr(Array[HelpValueStructure])
-  HVRepeat(HelpRepeatSpec)
-  HVTypeRef(HelpTypeRef)
+  Single(HelpSingleValue)
+  Seq(Array[HelpValueStructure])
+  Or(Array[HelpValueStructure])
+  Repeat(HelpRepeatSpec)
+  TypeRef(HelpTypeRef)
 } derive(Eq, Debug)
 
 ///|
@@ -98,7 +98,7 @@ pub(all) struct HelpMetaDecl {
   value_structure_hint : HelpValueStructure?
   // DR-113 §4.2 型参照マーカー: wire の `type: "<shadow_name>"` が definitions.types の
   // ユーザ定義型を指すとき、その shadow 名を保持する。None = builtin type 直接指定 or 参照なし。
-  // help_installer の value_structure 射影で type_ref (HVTypeRef) 素材を組む鍵になる。
+  // help_installer の value_structure 射影で type_ref (TypeRef) 素材を組む鍵になる。
   type_ref : String?
 } derive(Eq, Debug)
 

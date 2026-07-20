@@ -48,9 +48,9 @@ pub(all) enum DefLoadError {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum HelpCategoryMode {
-  HCMDefault
-  HCMAll
-  HCMNamed(String)
+  Default
+  All
+  Named(String)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpCommand {
@@ -65,13 +65,13 @@ pub(all) struct HelpCommand {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum HelpDefault {
-  HDefaultScalar(@engine.Value)
-  HDefaultArray(Array[@engine.Value])
+  Scalar(@engine.Value)
+  Array(Array[@engine.Value])
 } derive(Eq, @debug.Debug)
 
 pub(all) enum HelpDepth {
-  DScope
-  DAll
+  Scope
+  All
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpGroup {
@@ -111,15 +111,15 @@ pub(all) struct HelpOption {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum HelpOptionEntry {
-  HGroup(HelpGroup)
-  HOption(HelpOption)
+  Group(HelpGroup)
+  Option(HelpOption)
 } derive(Eq, @debug.Debug)
 
 pub(all) enum HelpOrigin {
-  HOLocal
-  HOGlobal(Array[String])
-  HOInheritable(Array[String])
-  HOAlias(String)
+  Local
+  Global(Array[String])
+  Inheritable(Array[String])
+  Alias(String)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpPositional {
@@ -135,8 +135,8 @@ pub struct HelpQueryCapability {
 pub impl @engine.CapabilityExt for HelpQueryCapability
 
 pub(all) enum HelpQueryError {
-  HQAbsentPath
-  HQAbsentCategory
+  AbsentPath
+  AbsentCategory
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpTypeEntry {
