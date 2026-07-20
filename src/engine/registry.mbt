@@ -13,6 +13,11 @@ pub struct Registry {
   priv array_filters : Map[String, ArrayFilterDescriptor]
   priv cell_fns : Map[String, CellFnDescriptor]
   priv installers : Array[&InstallerExt]
+  // DR-113 §1: installer 3 役の「能力提供」面 (help_query に代表される、宣言層寄与適用後の
+  // 断面から model / query 結果を組む機能) を、node / matcher / installer と同じ registry
+  // スロットで宣言・lookup できるようにする。M3c 時点では登録経路のみ (fixture runner
+  // からの invoke 経路への統合は M4 の model 側実装と同期して切り替える)。
+  priv capabilities : Map[String, &CapabilityExt]
 }
 
 ///|
@@ -27,6 +32,7 @@ pub fn Registry::new() -> Registry {
     array_filters: Map([]),
     cell_fns: Map([]),
     installers: [],
+    capabilities: Map([]),
   }
 }
 
@@ -211,4 +217,28 @@ pub fn Registry::register_installer(
 ///|
 pub fn Registry::installers(self : Registry) -> Array[&InstallerExt] {
   self.installers
+}
+
+///|
+/// DR-113 §1: capability を registry に登録する。重複名は false を返して弾く (name は
+/// 名前空間内で一意な discriminator、fixture の `query` フィールドと対応する)。
+pub fn Registry::register_capability(
+  self : Registry,
+  resident : &CapabilityExt,
+) -> Bool {
+  let name = resident.name()
+  if self.capabilities.get(name) is Some(_) {
+    false
+  } else {
+    self.capabilities.set(name, resident)
+    true
+  }
+}
+
+///|
+pub fn Registry::lookup_capability(
+  self : Registry,
+  name : String,
+) -> &CapabilityExt? {
+  self.capabilities.get(name)
 }

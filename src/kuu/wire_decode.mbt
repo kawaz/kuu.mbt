@@ -1927,7 +1927,10 @@ fn dec_option(
   // wire 上の元 tystr で行う (M3b では 5 preset は wire_decode 側で flag_type + fail_action
   // に落ちて元の type 名が消えるため、ここで bool 化して HelpMetaDecl に carry する)。
   let is_help_preset = match tystr {
-    "help" | "help_all_category" | "help_category" | "help_show_hidden"
+    "help"
+    | "help_all_category"
+    | "help_category"
+    | "help_show_hidden"
     | "help_tree" => true
     _ => false
   }

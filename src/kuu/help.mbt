@@ -28,6 +28,26 @@ pub(all) enum HelpQueryError {
 } derive(Eq, Debug)
 
 ///|
+/// DR-113 §1 の help_query capability carrier struct。CapabilityExt.name() で "help_query" を
+/// 返し、`Registry.register_capability` 経由で engine registry へ載せる。実際の invoke ABI は
+/// `pub fn help(...)` (このファイル内) で、capability 抽象は名前空間 discriminator と登録経路の
+/// ためだけの薄い皮 — help_query 以外の capability が入る時のシグネチャ差を吸収するため
+/// engine/capability.mbt の trait は `name()` のみを持つ (§9 の「kuu.mbt runner が capability
+/// を直接呼ぶ」経路の下地)。M3c-B 段階では登録経路のみ整え、fixture runner からの invoke は
+/// M4 で `Registry.lookup_capability("help_query")` 経由 dispatch へ切り替える差し替え点。
+pub struct HelpQueryCapability {}
+
+///|
+pub impl @engine.CapabilityExt for HelpQueryCapability with fn name(_self) {
+  "help_query"
+}
+
+///|
+pub fn help_query_capability() -> &@engine.CapabilityExt {
+  HelpQueryCapability::{  } as &@engine.CapabilityExt
+}
+
+///|
 pub(all) enum HelpDefault {
   HDefaultScalar(@engine.Value)
   HDefaultArray(Array[@engine.Value])

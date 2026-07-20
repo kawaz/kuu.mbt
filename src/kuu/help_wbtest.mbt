@@ -9,7 +9,7 @@ fn help_model(src : String, path? : Array[String] = []) -> HelpModel {
   }
   match help(ast, path~) {
     Ok(model) => model
-    Err(_) => abort("test help query rejected")  // HelpQueryError の分岐は M3c-A で導入、この wbtest は Ok path のみ
+    Err(_) => abort("test help query rejected") // HelpQueryError の分岐は M3c-A で導入、この wbtest は Ok path のみ
   }
 }
 

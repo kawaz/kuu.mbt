@@ -164,6 +164,11 @@ pub fn install(registry : @engine.Registry) -> Unit {
   for descriptor in @builtins.cell_fn_descriptors() {
     register_cell_fn(registry, descriptor)
   }
+
+  // DR-113 §1: help_query capability の登録経路。M3c-B では器のみ (fixture runner の invoke
+  // 経路への統合は M4 で切り替える)。重複名登録の戻り値は install() が単発呼びで無視して良い
+  // (canonical assembly は 1 度だけ install される、cell_fn_descriptors 群と同じ扱い)。
+  let _ = registry.register_capability(help_query_capability())
 }
 
 ///|

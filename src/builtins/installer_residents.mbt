@@ -1076,9 +1076,7 @@ fn collect_help_meta_errors(
               errors.push({
                 element: "",
                 kind: @engine.DInvalidRange,
-                message: "help group '" +
-                name +
-                "' is declared more than once",
+                message: "help group '" + name + "' is declared more than once",
                 hint: "keep exactly one declaration per help_group_name",
               })
             None => groups.set(name, setting)

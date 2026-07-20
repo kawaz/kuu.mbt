@@ -681,6 +681,7 @@ pub struct Registry {
 pub fn Registry::installers(Self) -> Array[&InstallerExt]
 pub fn Registry::lookup_accumulator(Self, String) -> &AccumulatorExt?
 pub fn Registry::lookup_array_filter(Self, String) -> ArrayFilterDescriptor?
+pub fn Registry::lookup_capability(Self, String) -> &CapabilityExt?
 pub fn Registry::lookup_cell_fn(Self, String) -> CellFnDescriptor?
 pub fn Registry::lookup_collector(Self, String) -> &CollectorExt?
 pub fn Registry::lookup_filter(Self, String) -> FilterDescriptor?
@@ -690,6 +691,7 @@ pub fn Registry::lookup_type(Self, String) -> &TypeExt?
 pub fn Registry::new() -> Self
 pub fn Registry::register_accumulator(Self, &AccumulatorExt) -> Bool
 pub fn Registry::register_array_filter(Self, ArrayFilterDescriptor) -> Bool
+pub fn Registry::register_capability(Self, &CapabilityExt) -> Bool
 pub fn Registry::register_cell_fn(Self, CellFnDescriptor) -> Bool
 pub fn Registry::register_collector(Self, &CollectorExt) -> Bool
 pub fn Registry::register_filter(Self, FilterDescriptor) -> Bool
@@ -805,6 +807,10 @@ pub(open) trait AccumulatorExt {
 }
 pub impl Eq for &AccumulatorExt
 pub impl @debug.Debug for &AccumulatorExt
+
+pub(open) trait CapabilityExt {
+  fn name(Self) -> String
+}
 
 pub(open) trait CollectorExt {
   fn kind(Self) -> String
