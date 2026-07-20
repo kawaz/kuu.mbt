@@ -18,7 +18,7 @@ pub(open) trait AccumulatorExt {
     Array[Binding],
     ParseError,
   ]
-  fn collect(Self, Array[Value]) -> RVal
+  fn collect(Self, Array[Value]) -> ResultValue
 }
 
 ///|
@@ -43,7 +43,7 @@ pub(open) trait CollectorExt {
   fn kind(Self) -> String
   fn encode(Self) -> Json
   fn equal(Self, &CollectorExt) -> Bool = _
-  fn collect(Self, RVal) -> RVal
+  fn collect(Self, ResultValue) -> ResultValue
 }
 
 ///|

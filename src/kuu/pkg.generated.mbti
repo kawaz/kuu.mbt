@@ -23,7 +23,7 @@ pub fn install_vocabulary(@engine.Registry) -> Unit
 
 pub fn output(AtomicAST, effects~ : Array[@engine.Binding], resolved? : Array[@engine.Binding]) -> OutputView
 
-pub fn output_of_interpretation(AtomicAST, @engine.AmbInterp) -> @engine.RVal
+pub fn output_of_interpretation(AtomicAST, @engine.AmbInterp) -> @engine.ResultValue
 
 pub fn parse(AtomicAST, Array[String], env? : Map[String, String], config? : (String) -> @engine.ConfigVal?, tty? : Map[String, TtyObs]) -> @engine.Outcome
 
@@ -171,7 +171,7 @@ pub struct OutputEffect {
 } derive(Eq, @debug.Debug)
 
 pub struct OutputView {
-  result : @engine.RVal
+  result : @engine.ResultValue
   effects : Array[OutputEffect]
   sources : Array[SourceEntry]
 } derive(Eq, @debug.Debug)

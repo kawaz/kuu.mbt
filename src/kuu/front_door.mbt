@@ -73,7 +73,7 @@ pub struct OutputEffect {
 /// 境界を含む解決済み binds を既存 builder で集約し、`effects` は parse 相の発火列から sentinel と
 /// config_file / none / dd の内部セルを除外し、`sources` は解決済み値の値源を返す。
 pub struct OutputView {
-  result : @engine.RVal
+  result : @engine.ResultValue
   effects : Array[OutputEffect]
   sources : Array[SourceEntry]
 } derive(Eq, Debug)
@@ -397,14 +397,14 @@ fn interpretation_has_claimant(
 
 ///|
 fn filter_interpretation_result(
-  result : @engine.RVal,
+  result : @engine.ResultValue,
   sources : Array[SourceEntry],
   claimants : Array[(String, String)],
   path : Array[String],
-) -> @engine.RVal {
+) -> @engine.ResultValue {
   match result {
     @engine.Object(fields) => {
-      let kept : Array[(String, @engine.RVal)] = []
+      let kept : Array[(String, @engine.ResultValue)] = []
       for field in fields {
         if interpretation_has_source(sources, path, field.0) ||
           interpretation_has_claimant(claimants, field.0) {
@@ -669,7 +669,7 @@ pub fn output(
 pub fn output_of_interpretation(
   ast : AtomicAST,
   interp : @engine.AmbInterp,
-) -> @engine.RVal {
+) -> @engine.ResultValue {
   let view = output(ast, effects=interp.binds)
   filter_interpretation_result(view.result, view.sources, interp.claimants, [])
 }

@@ -105,7 +105,7 @@ impl AccumulatorExt for RegistryAccumulatorExt with fn resolve_cli(
 
 ///|
 impl AccumulatorExt for RegistryAccumulatorExt with fn collect(_self, values) {
-  let out : Array[RVal] = []
+  let out : Array[ResultValue] = []
   for value in values {
     out.push(Scalar(value))
   }

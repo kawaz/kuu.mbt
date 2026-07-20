@@ -673,12 +673,6 @@ pub(all) enum PieceMark {
   Splice
 } derive(Eq, @debug.Debug)
 
-pub(all) enum RVal {
-  Scalar(Value)
-  Array(Array[RVal])
-  Object(Array[(String, RVal)])
-} derive(Eq, @debug.Debug)
-
 pub struct Registry {
   // private fields
 }
@@ -713,6 +707,12 @@ pub(all) struct RepeatSpec {
 pub(all) struct RequiredCandidate {
   name : String
   wrapper : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) enum ResultValue {
+  Scalar(Value)
+  Array(Array[ResultValue])
+  Object(Array[(String, ResultValue)])
 } derive(Eq, @debug.Debug)
 
 pub(all) enum RoundMode {
@@ -810,7 +810,7 @@ pub(open) trait AccumulatorExt {
   fn encode(Self) -> Json
   fn equal(Self, &AccumulatorExt) -> Bool = _
   fn resolve_cli(Self, String, Array[Binding], Bool, (Bool) -> Result[Array[Binding], ParseError]) -> Result[Array[Binding], ParseError]
-  fn collect(Self, Array[Value]) -> RVal
+  fn collect(Self, Array[Value]) -> ResultValue
 }
 pub impl Eq for &AccumulatorExt
 pub impl @debug.Debug for &AccumulatorExt
@@ -823,7 +823,7 @@ pub(open) trait CollectorExt {
   fn kind(Self) -> String
   fn encode(Self) -> Json
   fn equal(Self, &CollectorExt) -> Bool = _
-  fn collect(Self, RVal) -> RVal
+  fn collect(Self, ResultValue) -> ResultValue
 }
 pub impl Eq for &CollectorExt
 pub impl @debug.Debug for &CollectorExt

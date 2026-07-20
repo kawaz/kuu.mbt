@@ -1,6 +1,6 @@
 // resolve.mbt — the value-resolution layer (MDR-002 §3): the value-source ladder (env / config /
 // inherit / default seat fill, DR-031 / DR-049 / DR-050), the name-driven result builder (flat
-// bindings → nested @engine.RVal, DR-016 / DR-025 / DR-043), export-key application (DR-052), and
+// bindings → nested @engine.ResultValue, DR-016 / DR-025 / DR-043), export-key application (DR-052), and
 // export-key collision detection (DR-073). node/value 依存のみ; eval からは経路確定後の後処理
 // として呼ばれる (MDR-002 §3 table).
 //
@@ -474,11 +474,11 @@ fn build_result(
   path : Array[String],
   nones? : Array[@engine.NoneCell] = [],
   extensions? : @engine.Registry = canonical_registry(),
-) -> @engine.RVal {
+) -> @engine.ResultValue {
   // ARRAY: a "[]" sentinel at this level => build one element per "#k" child. Elements keep the
   // array's path (an indexed repeat element is not a named result-scope segment cells key on).
   if has_direct_key(binds, "[]") {
-    let elems : Array[@engine.RVal] = []
+    let elems : Array[@engine.ResultValue] = []
     for idx in ordered_indices(binds) {
       elems.push(
         build_result(
@@ -502,7 +502,7 @@ fn build_result(
   // AFTER THE LAST "#fire" survive — with no "#fire" at all (a positional fires its repeat
   // exactly once) the whole list is one firing.
   if has_direct_key(binds, "#row") {
-    let rows : Array[@engine.RVal] = []
+    let rows : Array[@engine.ResultValue] = []
     for row in row_groups(binds) {
       rows.push(build_result(row, cells, defaults, path, nones~, extensions~))
     }
@@ -572,7 +572,7 @@ fn build_result(
     return @engine.Scalar(v)
   }
   // OBJECT: named leaves (folding accum keys into a list) + nested scopes.
-  let obj : Array[(String, @engine.RVal)] = []
+  let obj : Array[(String, @engine.ResultValue)] = []
   for k in named {
     if cell_here(cells, path, k) {
       // ACCUMULATE (repeat-cons and multiple both use "append", DR-105 §3 / DR-043/034/036): fold same-key
@@ -686,9 +686,9 @@ fn build_result(
       // variant, so a plain scalar multiple cell's fire is never array-shaped — the dial is
       // observationally inert there, DR-105 §1's "非配列 → 丸ごと1要素" holds vacuously).
       let flat = flatten_here(cells, path, seg)
-      let per_fire : Array[@engine.RVal] = []
+      let per_fire : Array[@engine.ResultValue] = []
       for chunk in fire_groups(seg_binds) {
-        let rows : Array[@engine.RVal] = []
+        let rows : Array[@engine.ResultValue] = []
         for row in row_groups(chunk) {
           rows.push(
             build_result(
@@ -921,7 +921,7 @@ fn build_result_export(
   binds : Array[@engine.Binding],
   ek : Map[String, @engine.ExportKey],
   extensions? : @engine.Registry = canonical_registry(),
-) -> @engine.RVal {
+) -> @engine.ResultValue {
   build_result(
     apply_export_keys(binds, ek),
     accum_cells(sc, ek),

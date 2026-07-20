@@ -79,7 +79,7 @@ impl @engine.AccumulatorExt for AppendAccumulator with fn resolve_cli(
 
 ///|
 impl @engine.AccumulatorExt for AppendAccumulator with fn collect(_self, values) {
-  let out : Array[@engine.RVal] = []
+  let out : Array[@engine.ResultValue] = []
   for value in values {
     out.push(@engine.Scalar(value))
   }
@@ -339,7 +339,7 @@ impl @engine.AccumulatorExt for MergeAccumulator with fn resolve_cli(
 
 ///|
 impl @engine.AccumulatorExt for MergeAccumulator with fn collect(_self, values) {
-  let out : Array[@engine.RVal] = []
+  let out : Array[@engine.ResultValue] = []
   for value in values {
     out.push(@engine.Scalar(value))
   }
@@ -394,7 +394,7 @@ impl @engine.AccumulatorExt for KvMapAccumulator with fn resolve_cli(
 
 ///|
 impl @engine.AccumulatorExt for KvMapAccumulator with fn collect(_self, values) {
-  let fields : Array[(String, @engine.RVal)] = []
+  let fields : Array[(String, @engine.ResultValue)] = []
   let seen : Map[String, Int] = Map([])
   for value in values {
     let raw = match value {
@@ -419,21 +419,21 @@ pub fn kv_map_accumulator() -> &@engine.AccumulatorExt {
 }
 
 ///|
-fn unwrap_single(value : @engine.RVal) -> @engine.RVal {
+fn unwrap_single(value : @engine.ResultValue) -> @engine.ResultValue {
   match value {
     @engine.Scalar(value) => @engine.Scalar(value)
     @engine.Array(values) =>
       if values.length() == 1 {
         unwrap_single(values[0])
       } else {
-        let out : Array[@engine.RVal] = []
+        let out : Array[@engine.ResultValue] = []
         for value in values {
           out.push(unwrap_single(value))
         }
         @engine.Array(out)
       }
     @engine.Object(fields) => {
-      let out : Array[(String, @engine.RVal)] = []
+      let out : Array[(String, @engine.ResultValue)] = []
       for field in fields {
         out.push((field.0, unwrap_single(field.1)))
       }
@@ -476,7 +476,7 @@ pub(all) enum FromEntriesSpec {
 } derive(Eq, Debug)
 
 ///|
-fn result_key(value : @engine.RVal) -> String {
+fn result_key(value : @engine.ResultValue) -> String {
   match value {
     @engine.Scalar(value) => @engine.value_str(value)
     _ => "?"
@@ -484,7 +484,10 @@ fn result_key(value : @engine.RVal) -> String {
 }
 
 ///|
-fn result_field(value : @engine.RVal, name : String) -> @engine.RVal? {
+fn result_field(
+  value : @engine.ResultValue,
+  name : String,
+) -> @engine.ResultValue? {
   match value {
     @engine.Object(fields) => {
       for field in fields {
@@ -499,7 +502,7 @@ fn result_field(value : @engine.RVal, name : String) -> @engine.RVal? {
 }
 
 ///|
-fn all_pairs(values : Array[@engine.RVal]) -> Bool {
+fn all_pairs(values : Array[@engine.ResultValue]) -> Bool {
   if values.length() == 0 {
     return false
   }
@@ -514,7 +517,7 @@ fn all_pairs(values : Array[@engine.RVal]) -> Bool {
 
 ///|
 fn all_have_fields(
-  values : Array[@engine.RVal],
+  values : Array[@engine.ResultValue],
   fields : Array[String],
 ) -> Bool {
   if values.length() == 0 {
@@ -531,11 +534,14 @@ fn all_have_fields(
 }
 
 ///|
-fn from_entries(value : @engine.RVal, spec : FromEntriesSpec) -> @engine.RVal {
+fn from_entries(
+  value : @engine.ResultValue,
+  spec : FromEntriesSpec,
+) -> @engine.ResultValue {
   match value {
     @engine.Scalar(value) => @engine.Scalar(value)
     @engine.Object(fields) => {
-      let out : Array[(String, @engine.RVal)] = []
+      let out : Array[(String, @engine.ResultValue)] = []
       for field in fields {
         out.push((field.0, from_entries(field.1, spec)))
       }
@@ -545,7 +551,7 @@ fn from_entries(value : @engine.RVal, spec : FromEntriesSpec) -> @engine.RVal {
       match spec {
         Entries =>
           if all_pairs(values) {
-            let fields : Array[(String, @engine.RVal)] = []
+            let fields : Array[(String, @engine.ResultValue)] = []
             for value in values {
               match value {
                 @engine.Array(items) =>
@@ -557,7 +563,7 @@ fn from_entries(value : @engine.RVal, spec : FromEntriesSpec) -> @engine.RVal {
             }
             @engine.Object(fields)
           } else {
-            let out : Array[@engine.RVal] = []
+            let out : Array[@engine.ResultValue] = []
             for value in values {
               out.push(from_entries(value, spec))
             }
@@ -565,7 +571,7 @@ fn from_entries(value : @engine.RVal, spec : FromEntriesSpec) -> @engine.RVal {
           }
         KeyValue(key_field, value_field) =>
           if all_have_fields(values, [key_field, value_field]) {
-            let fields : Array[(String, @engine.RVal)] = []
+            let fields : Array[(String, @engine.ResultValue)] = []
             for value in values {
               let key = match result_field(value, key_field) {
                 Some(key) => result_key(key)
@@ -579,7 +585,7 @@ fn from_entries(value : @engine.RVal, spec : FromEntriesSpec) -> @engine.RVal {
             }
             @engine.Object(fields)
           } else {
-            let out : Array[@engine.RVal] = []
+            let out : Array[@engine.ResultValue] = []
             for value in values {
               out.push(from_entries(value, spec))
             }
@@ -587,12 +593,12 @@ fn from_entries(value : @engine.RVal, spec : FromEntriesSpec) -> @engine.RVal {
           }
         KeyPromote(key_field) =>
           if all_have_fields(values, [key_field]) {
-            let fields : Array[(String, @engine.RVal)] = []
+            let fields : Array[(String, @engine.ResultValue)] = []
             for value in values {
               match value {
                 @engine.Object(items) => {
                   let mut key = ""
-                  let rest : Array[(String, @engine.RVal)] = []
+                  let rest : Array[(String, @engine.ResultValue)] = []
                   for item in items {
                     if item.0 == key_field {
                       key = result_key(item.1)
@@ -607,7 +613,7 @@ fn from_entries(value : @engine.RVal, spec : FromEntriesSpec) -> @engine.RVal {
             }
             @engine.Object(fields)
           } else {
-            let out : Array[@engine.RVal] = []
+            let out : Array[@engine.ResultValue] = []
             for value in values {
               out.push(from_entries(value, spec))
             }

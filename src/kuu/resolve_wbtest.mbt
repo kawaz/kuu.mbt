@@ -2051,7 +2051,7 @@ test "@engine.value_str: an integer-valued float keeps DR-050 §4's no-decimal-p
 
 ///|
 /// 保証 (DR-092 §3「適用範囲は一律 — result / effects / config 起因の値、いずれも同じ表現」):
-/// `build_result` (@engine.RVal 構築、report の値位置の 1 つ = result) は inf 値を型・値ともに一切変更
+/// `build_result` (@engine.ResultValue 構築、report の値位置の 1 つ = result) は inf 値を型・値ともに一切変更
 /// せず通す — `@engine.Number` の Eq 比較は IEEE754 の `Infinity == Infinity` (true, NaN と違い比較可能)
 /// に従うため、`assert_eq` がそのまま構造等価を検証できる。value 位置の serialize 規約
 /// (`@engine.value_str`) とは独立に、値そのものが report の "result" 経路で失われない (clamp/丸め等が

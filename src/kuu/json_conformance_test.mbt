@@ -353,7 +353,7 @@ fn canonical_registry_for_test() -> @engine.Registry {
 ///|
 /// Key-sorted rendering of the built result object (CONFORMANCE §3: result is structural, key order
 /// non-normative). Arrays keep order.
-fn render_rval_sorted(r : @engine.RVal) -> String {
+fn render_rval_sorted(r : @engine.ResultValue) -> String {
   match r {
     @engine.Scalar(v) => render_val(v)
     @engine.Array(vs) => {
@@ -530,16 +530,16 @@ struct DecodedFixture {
 // ── expected-string builders ──────────────────────────────────────────────────
 
 ///|
-/// `@engine.RVal` の decode は definition の wire decode (`wire_decode.mbt`) ではなく、fixture の expect
+/// `@engine.ResultValue` の decode は definition の wire decode (`wire_decode.mbt`) ではなく、fixture の expect
 /// (`result`/`interpretations`) を読む側のヘルパー — そのためここに残す (MDR-005 §2 の境界判定)。
 /// `@engine.ConfigVal` 側の同種ヘルパー (旧 `json_to_configval`、`cases[].config`/`config_files` の decode)
 /// は front_door の `config_from_json` へ昇格済み (MDR-005 追記、「@engine.ConfigVal/TtyObs の入力構築
 /// API」issue) — 用途が「fixture 入力の decode」から「production 呼び出し側の入力構築」まで
 /// 広がったため、runner 側もそちらを直接呼ぶ (下記 `cfg` 組み立て箇所参照)。
-fn json_to_rval(j : Json) -> @engine.RVal raise DecodeSkip {
+fn json_to_rval(j : Json) -> @engine.ResultValue raise DecodeSkip {
   match j.j_obj() {
     Some(o) => {
-      let kvs : Array[(String, @engine.RVal)] = []
+      let kvs : Array[(String, @engine.ResultValue)] = []
       for k, v in o {
         kvs.push((k, json_to_rval(v)))
       }
@@ -549,7 +549,7 @@ fn json_to_rval(j : Json) -> @engine.RVal raise DecodeSkip {
   }
   match j.j_arr() {
     Some(a) => {
-      let vs : Array[@engine.RVal] = []
+      let vs : Array[@engine.ResultValue] = []
       for v in a {
         vs.push(json_to_rval(v))
       }

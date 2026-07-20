@@ -3,8 +3,8 @@
 ///|
 /// A built result value. The engine contract owns this general recursive shape;
 /// the kuu front door decides when and how it is exposed to users.
-pub(all) enum RVal {
+pub(all) enum ResultValue {
   Scalar(Value)
-  Array(Array[RVal])
-  Object(Array[(String, RVal)])
+  Array(Array[ResultValue])
+  Object(Array[(String, ResultValue)])
 } derive(Eq, Debug)

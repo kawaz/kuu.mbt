@@ -221,7 +221,7 @@ fn render_outcome(outcome : @engine.Outcome) -> String {
 }
 
 ///|
-fn render_rval_sorted(value : @engine.RVal) -> String {
+fn render_rval_sorted(value : @engine.ResultValue) -> String {
   match value {
     @engine.Scalar(scalar) => test_render_val(scalar)
     @engine.Array(values) => {
@@ -247,7 +247,7 @@ fn render_rval_sorted(value : @engine.RVal) -> String {
 ///|
 /// One built interpretation for whitebox collision projection checks.
 struct Interpretation {
-  result : @engine.RVal
+  result : @engine.ResultValue
   claimants : Array[(String, String)]
 } derive(Eq, Debug)
 

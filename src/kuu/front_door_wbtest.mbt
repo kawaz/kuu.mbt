@@ -336,8 +336,8 @@ test "front_door.output: 単一 scope で export_key rename + flag preset defaul
   let rval = view.result
   match rval {
     @engine.Object(kvs) => {
-      let mut p_val : @engine.RVal? = None
-      let mut verbose_val : @engine.RVal? = None
+      let mut p_val : @engine.ResultValue? = None
+      let mut verbose_val : @engine.ResultValue? = None
       for kv in kvs {
         if kv.0 == "p" {
           p_val = Some(kv.1)
@@ -453,7 +453,7 @@ test "front_door.config_from_json: JSON から組んだ @engine.ConfigVal が co
   let rval = output(ast, effects=rb).result
   match rval {
     @engine.Object(kvs) => {
-      let mut port_val : @engine.RVal? = None
+      let mut port_val : @engine.ResultValue? = None
       let mut has_config_key = false
       for kv in kvs {
         if kv.0 == "port" {
@@ -517,7 +517,7 @@ test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty �
   let rval = output(ast, effects=rb).result
   match rval {
     @engine.Object(kvs) => {
-      let mut use_color_val : @engine.RVal? = None
+      let mut use_color_val : @engine.ResultValue? = None
       for kv in kvs {
         if kv.0 == "use_color" {
           use_color_val = Some(kv.1)
@@ -577,7 +577,7 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
   }
   // ref-rows-append.json の 3 case を front_door.parse → resolve → result の一気通貫で再現する
   // (conformance runner の no-resolve 抜け道を経由しない = kuu-cli が実際に叩く経路そのもの)。
-  fn hlcolors_of(args : Array[String]) -> @engine.RVal raise {
+  fn hlcolors_of(args : Array[String]) -> @engine.ResultValue raise {
     let po = parse(ast, args)
     let ro = resolve(ast, po, args)
     let rb = match ro {
