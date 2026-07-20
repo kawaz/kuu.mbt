@@ -39,6 +39,9 @@ fn empty_help_meta_for_test() -> @engine.HelpMetaDeclaration {
     preset_kind: None,
     value_structure_hint: None,
     type_ref: None,
+    render_declared: None,
+    render_effective: None,
+    value_structure_style: None,
   }
 }
 
@@ -123,6 +126,9 @@ fn el(
       preset_kind: None,
       value_structure_hint: None,
       type_ref: None,
+      render_declared: None,
+      render_effective: None,
+      value_structure_style: None,
     },
     is_tty,
     tty_stream,

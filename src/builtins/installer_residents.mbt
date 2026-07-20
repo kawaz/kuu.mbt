@@ -201,6 +201,9 @@ fn resident_empty_help_meta() -> @engine.HelpMetaDeclaration {
     preset_kind: None,
     value_structure_hint: None,
     type_ref: None,
+    render_declared: None,
+    render_effective: None,
+    value_structure_style: None,
   }
 }
 
@@ -930,6 +933,12 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn vocab(_self) {
     "help", "help_long", "help_epilog", "display_name", "value_name", "help_group_name",
     "help_group_title", "help_group_description", "help_order", "help_group_order",
     "help_after", "help_on_failure",
+    // DR-115 §1.1 / §1.2: 一括席 `help_render` (scope 単位、element 席は §1.1 で席違い =
+    // invalid-range) と entry 個別席 `help_value_structure_style` (element 単位) を回収する。
+    // 席違いの判定は collect_defs_errors 側で「render_declared が element 上に載っているか」
+    // を見る (vocab に入れないと allowed_keys が unknown-vocab で先に弾き、意図した invalid-range
+    // まで到達しないため、両席とも語彙として一旦受理する)。
+     "help_render", "help_value_structure_style",
   ]
 }
 
@@ -960,11 +969,33 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn decode(
     Some(False) => Some(false)
     Some(_) => return Err("help_on_failure is not a bool")
   }
+  // DR-115 §1.1 / §1.4: element 側 (dec_option / dec_positional) の HelpMetaInstaller.decode 経路。
+  // scope 側 (help_meta_from_object) と同じ 4 キー carrier を組む — decode-time は enum / template
+  // 検査を行わず、席違い含めて collect_defs_errors の invalid-range に一本化する (M3a の
+  // help_on_failure と同じ posture)。
+  let render_declared : @engine.HelpRenderDecl? = match
+    object.get("help_render") {
+    None => None
+    Some(rj) =>
+      match rj {
+        Object(ro) =>
+          Some({
+            template: resident_string(ro, "template"),
+            value_structure_style: resident_string(ro, "value_structure_style"),
+            types_style: resident_string(ro, "types_style"),
+            origin_style: resident_string(ro, "origin_style"),
+          })
+        _ => return Err("help_render is not an object")
+      }
+  }
+  let value_structure_style = resident_string(
+    object, "help_value_structure_style",
+  )
   Ok({
     vocab: [
       "help", "help_long", "help_epilog", "display_name", "value_name", "help_group_name",
       "help_group_title", "help_group_description", "help_order", "help_group_order",
-      "help_after", "help_on_failure",
+      "help_after", "help_on_failure", "help_render", "help_value_structure_style",
     ],
     declaration: HelpMeta({
       help: resident_string(object, "help"),
@@ -984,6 +1015,9 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn decode(
       preset_kind: None,
       value_structure_hint: None,
       type_ref: None,
+      render_declared,
+      render_effective: None,
+      value_structure_style,
     }),
   })
 }
@@ -1042,10 +1076,214 @@ fn help_after_returns_to(def : @engine.Definition, start : String) -> Bool {
 }
 
 ///|
+/// DR-115 §5.1: `value_structure_style` の enum 値域。
+fn help_render_vss_ok(value : String) -> Bool {
+  value == "auto" || value == "inline" || value == "detail"
+}
+
+///|
+/// DR-115 §5.2: `types_style` の enum 値域。
+fn help_render_types_style_ok(value : String) -> Bool {
+  value == "auto" || value == "aggregate" || value == "inline"
+}
+
+///|
+/// DR-115 §5.3: `origin_style` の enum 値域。
+fn help_render_origin_style_ok(value : String) -> Bool {
+  value == "merge" ||
+  value == "separate_section" ||
+  value == "reference" ||
+  value == "omit"
+}
+
+///|
+/// DR-115 §2.4: template 文字列の well-formedness 検査。
+/// - 未閉の `{` (対応する `}` が無い)
+/// - 空 `{}`
+/// - 識別子規則違反: `[A-Za-z_][A-Za-z0-9_]*`
+/// - `{{` は literal `{` のエスケープ、`}}` は literal `}` のエスケープ (通過)
+/// 違反があれば true を返す (呼び出し側が invalid-range を emit)。
+fn help_render_template_invalid(template : String) -> Bool {
+  let chars = template.to_array()
+  let n = chars.length()
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if c == '{' {
+      // `{{` は literal `{` エスケープ
+      if i + 1 < n && chars[i + 1] == '{' {
+        i = i + 2
+        continue
+      }
+      // `{...}` プレースホルダ: 対応する `}` を探し、中身の識別子規則を検査
+      let start = i + 1
+      let mut end = -1
+      let mut j = start
+      while j < n {
+        if chars[j] == '}' {
+          end = j
+          break
+        }
+        j = j + 1
+      }
+      if end < 0 {
+        return true // 未閉の `{`
+      }
+      if end == start {
+        return true // 空 `{}`
+      }
+      // 識別子規則: 先頭は letter or '_'、以降は letter/digit/'_'
+      let head = chars[start]
+      if !ident_head_char(head) {
+        return true
+      }
+      let mut k = start + 1
+      while k < end {
+        if !ident_tail_char(chars[k]) {
+          return true
+        }
+        k = k + 1
+      }
+      i = end + 1
+      continue
+    }
+    if c == '}' {
+      // `}}` は literal `}` エスケープ (通過)。単独 `}` は他実装では error 扱いのケースもあるが、
+      // DR-115 §2.4 は「未閉 `{` / 空 `{}` / 識別子規則違反」の 3 項目のみ列挙するため、単独 `}`
+      // は本 DR の範囲外 (spec が emit を要求しない — 呼び出し側 fixture も対象にしていない)。
+      if i + 1 < n && chars[i + 1] == '}' {
+        i = i + 2
+        continue
+      }
+      i = i + 1
+      continue
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
+fn ident_head_char(c : Char) -> Bool {
+  (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
+}
+
+///|
+fn ident_tail_char(c : Char) -> Bool {
+  ident_head_char(c) || (c >= '0' && c <= '9')
+}
+
+///|
+/// DR-115 §1.1 / §2.4 / §5: scope 席 (root / command) の `help_render` を検査する。
+/// enum 値域外・template 構文不正のいずれも invalid-range として積む — element は
+/// element.name、scope 直付けは "" を使う (help group declaration 検査と同じ posture)。
+fn collect_help_render_scope_errors(
+  render : @engine.HelpRenderDecl,
+  element_name : String,
+  errors : Array[@engine.DefError],
+) -> Unit {
+  match render.value_structure_style {
+    Some(v) =>
+      if !help_render_vss_ok(v) {
+        errors.push({
+          element: element_name,
+          kind: @engine.InvalidRange,
+          message: "help_render.value_structure_style '" +
+          v +
+          "' is not one of auto/inline/detail",
+          hint: "use one of the DR-115 §5.1 enum values",
+        })
+      }
+    None => ()
+  }
+  match render.types_style {
+    Some(v) =>
+      if !help_render_types_style_ok(v) {
+        errors.push({
+          element: element_name,
+          kind: @engine.InvalidRange,
+          message: "help_render.types_style '" +
+          v +
+          "' is not one of auto/aggregate/inline",
+          hint: "use one of the DR-115 §5.2 enum values",
+        })
+      }
+    None => ()
+  }
+  match render.origin_style {
+    Some(v) =>
+      if !help_render_origin_style_ok(v) {
+        errors.push({
+          element: element_name,
+          kind: @engine.InvalidRange,
+          message: "help_render.origin_style '" +
+          v +
+          "' is not one of merge/separate_section/reference/omit",
+          hint: "use one of the DR-115 §5.3 enum values",
+        })
+      }
+    None => ()
+  }
+  match render.template {
+    Some(t) =>
+      if help_render_template_invalid(t) {
+        errors.push({
+          element: element_name,
+          kind: @engine.InvalidRange,
+          message: "help_render.template is not well-formed (unclosed '{' / empty '{}' / non-identifier body)",
+          hint: "DR-115 §2.4: templates are strict — literal braces need '{{' / '}}' escape",
+        })
+      }
+    None => ()
+  }
+}
+
+///|
+/// DR-115 §1.1 / §1.2: element 席の help_render / help_value_structure_style を検査する。
+/// - `help_render` の宣言そのものが席違い (§1.1、option/positional 上は不可) → invalid-range
+/// - `help_value_structure_style` の enum 値域外 (§1.2) → invalid-range
+/// 席違いは値によらず 1 element 1 error に集約する (§1.4 の集合比較、fixture
+/// help-render-invalid-range 期待どおり)。
+fn collect_help_render_element_errors(
+  element : @engine.ElementDef,
+  errors : Array[@engine.DefError],
+) -> Unit {
+  match element.help_meta.render_declared {
+    Some(_) =>
+      errors.push({
+        element: element.name,
+        kind: @engine.InvalidRange,
+        message: "help_render is not allowed on option/positional elements (scope-level seat only)",
+        hint: "DR-115 §1.1: declare help_render on the root definition or a command scope; use help_value_structure_style for entry-level style overrides",
+      })
+    None => ()
+  }
+  match element.help_meta.value_structure_style {
+    Some(v) =>
+      if !help_render_vss_ok(v) {
+        errors.push({
+          element: element.name,
+          kind: @engine.InvalidRange,
+          message: "help_value_structure_style '" +
+          v +
+          "' is not one of auto/inline/detail",
+          hint: "DR-115 §5.1 enum",
+        })
+      }
+    None => ()
+  }
+}
+
+///|
 fn collect_help_meta_errors(
   def : @engine.Definition,
   errors : Array[@engine.DefError],
 ) -> Unit {
+  // DR-115 §1.1 / §2.4 / §5: scope 直付け help_render の宣言 (継承値ではない) を検査。
+  match def.scope.help_meta.render_declared {
+    Some(render) => collect_help_render_scope_errors(render, "", errors)
+    None => ()
+  }
   let groups : Map[String, (String?, String?)] = Map([])
   for e in def.options {
     let meta = e.help_meta
@@ -1119,6 +1357,15 @@ fn collect_help_meta_errors(
         hint: "break the help_after cycle",
       })
     }
+  }
+  // DR-115 §1.1 / §1.2: element 席の help_render / help_value_structure_style を検査。
+  // options / positionals の両方 (help group declaration entry は name=="" だが render_declared
+  // /value_structure_style を持ちうるので同じ検査を通す — 席違いは値によらず emit)。
+  for e in def.options {
+    collect_help_render_element_errors(e, errors)
+  }
+  for e in def.positionals {
+    collect_help_render_element_errors(e, errors)
   }
   for c in def.commands {
     collect_help_meta_errors(c.body, errors)

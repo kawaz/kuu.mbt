@@ -101,6 +101,10 @@ pub fn parse_definition(
         "help_long", "help_epilog", "display_name", "value_name", "help_group_name",
         "help_group_title", "help_group_description", "help_order", "help_group_order",
         "help_after",
+        // DR-115 §1.1: 一括席 `help_render` (root scope) と参考として entry 個別席
+        // `help_value_structure_style` は installer 語彙で elements 側に受理されるため
+        // definition top-level には出現しない (root scope 側は本 allowlist が受理)。
+         "help_render",
       ],
       "definition",
     )

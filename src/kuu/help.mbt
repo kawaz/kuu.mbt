@@ -119,6 +119,10 @@ pub(all) struct HelpGroup {
   name : String
   title : String?
   description : String?
+  // DR-115 §4 (DR-113 §8.1 update): グループ宣言 entry の `hidden`。model には sibling として
+  // 射影される (JSON: `{"group": {...}, "hidden": true}`) が、carrier は Group struct が保持する
+  // ほうが素直 (help_option_entry_json が写す時に sibling へ持ち上げる)。
+  hidden : Bool
 } derive(Eq, Debug)
 
 ///|
@@ -137,6 +141,10 @@ pub(all) struct HelpOption {
   hidden : Bool
   deprecated : Bool
   origin : HelpOrigin
+  // DR-115 §1.4: entry 個別席 `help_value_structure_style` を model 側 `value_structure_style`
+  // へ射影する。当該 entry の value_structure 表記だけを一括席の実効値から上書きする素材。
+  // 値空間を持たない entry (flag 等) への付与は vacuous だが搬送は行う (§1.2 の lint 領分)。
+  value_structure_style : String?
 } derive(Eq, Debug)
 
 ///|
@@ -152,6 +160,8 @@ pub(all) struct HelpPositional {
   help_long : String?
   hidden : Bool
   deprecated : Bool
+  // DR-115 §1.4: entry 個別席 (positional 版)。option と同型の projection。
+  value_structure_style : String?
 } derive(Eq, Debug)
 
 ///|
@@ -189,6 +199,19 @@ pub(all) struct HelpModel {
   options : Array[HelpOptionEntry]
   positionals : Array[HelpPositional]
   help_entry : String?
+  // DR-115 §1.4: 一括席 `help_render` の実効値 (キー単位階層継承の適用後) を model トップレベル
+  // `render` として保持する。宣言 (親含む) が全く無ければ None (JSON 側で emit しない)。
+  render : HelpRenderView?
+} derive(Eq, Debug)
+
+///|
+/// DR-115 §1.1 / §1.4: model トップレベル `render` の 4 キー carrier (all optional)。
+/// declaration 層の HelpRenderDecl と同じ形だが、model は engine 依存を切って自前で持つ。
+pub(all) struct HelpRenderView {
+  template : String?
+  value_structure_style : String?
+  types_style : String?
+  origin_style : String?
 } derive(Eq, Debug)
 
 // ── sortable carriers ────────────────────────────────────────────────────────
@@ -637,6 +660,7 @@ fn help_option_from(
     hidden: element.hidden,
     deprecated: element.deprecated,
     origin,
+    value_structure_style: meta.value_structure_style,
   }
 }
 
@@ -719,6 +743,7 @@ fn ordered_options(
         name,
         title: meta.help_group_title,
         description: meta.help_group_description,
+        hidden: element.hidden,
       })
     } else {
       let canonical_spellings = option_spellings(element)
@@ -922,6 +947,7 @@ fn help_positionals(definition : @engine.Definition) -> Array[HelpPositional] {
       help_long: positional.help_meta.help_long,
       hidden: positional.hidden,
       deprecated: positional.deprecated,
+      value_structure_style: positional.help_meta.value_structure_style,
     })
   }
   output
@@ -1126,6 +1152,30 @@ fn build_help_model(
     options,
     positionals: help_positionals(selected),
     help_entry: help_entry(selected),
+    render: help_render_view_of(selected.scope.help_meta.render_effective),
+  }
+}
+
+///|
+/// DR-115 §1.4: scope.help_meta.render_effective (declaration 層 carrier) を model の
+/// HelpRenderView へ写す。全キー None なら None を返す (model の `render` フィールドを省略)。
+fn help_render_view_of(render : @engine.HelpRenderDecl?) -> HelpRenderView? {
+  match render {
+    None => None
+    Some(r) => {
+      if r.template is None &&
+        r.value_structure_style is None &&
+        r.types_style is None &&
+        r.origin_style is None {
+        return None
+      }
+      Some({
+        template: r.template,
+        value_structure_style: r.value_structure_style,
+        types_style: r.types_style,
+        origin_style: r.origin_style,
+      })
+    }
   }
 }
 

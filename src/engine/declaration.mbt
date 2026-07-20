@@ -100,6 +100,30 @@ pub(all) struct HelpMetaDeclaration {
   // ユーザ定義型を指すとき、その shadow 名を保持する。None = builtin type 直接指定 or 参照なし。
   // help_installer の value_structure 射影で type_ref (TypeRef) 素材を組む鍵になる。
   type_ref : String?
+  // DR-115 §1.1 / §1.4: 一括席 `help_render` (scope 単位、root / command のみ合法)。
+  // 本 scope で明示された値のみ保持し、階層継承は適用しない (定義-time 検査は「宣言そのもの」を
+  // 対象にするため — 継承値まで検査すると同じ違反を親と子の両方で二重 emit する)。element の
+  // help_meta にこのフィールドが Some(_) で載れば席違い (invalid-range) の判定素材になる。
+  render_declared : HelpRenderDecl?
+  // DR-115 §1.1 の階層継承を適用した実効値。dec_definition が親 scope の実効値と本 scope の
+  // 宣言値をキー単位マージして格納する。help model 射影の唯一の読者。element では常に None。
+  render_effective : HelpRenderDecl?
+  // DR-115 §1.2 / §1.4: entry 個別席 `help_value_structure_style`。当該 entry の
+  // value_structure 表記だけを一括席の実効値から上書きする素材。scope 側では未使用 (scope に
+  // 宣言しても vacuous、DR-115 は席違いにしない — 実装は installer が enum 検査だけ行い、
+  // scope 位置の宣言は搬送しない扱い)。value 空間: §5.1 の enum ("auto" / "inline" / "detail")。
+  value_structure_style : String?
+} derive(Eq, Debug)
+
+///|
+/// DR-115 §1.1 / §5: `help_render` 席 (scope 単位) の 4 キー carrier。全キー optional で「宣言なし」を
+/// None、宣言あり (階層継承の source) を Some で持つ — 未宣言キーは階層継承で親の実効値をそのまま
+/// 受け継ぐため、既定値の baking はしない (spec §1.1「キー単位継承」の恒等射)。
+pub(all) struct HelpRenderDecl {
+  template : String?
+  value_structure_style : String?
+  types_style : String?
+  origin_style : String?
 } derive(Eq, Debug)
 
 ///|

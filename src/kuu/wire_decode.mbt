@@ -93,6 +93,9 @@ fn empty_help_meta() -> @engine.HelpMetaDeclaration {
     preset_kind: None,
     value_structure_hint: None,
     type_ref: None,
+    render_declared: None,
+    render_effective: None,
+    value_structure_style: None,
   }
 }
 
@@ -130,6 +133,68 @@ fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDeclaration {
     preset_kind: None,
     value_structure_hint: None,
     type_ref: None,
+    // DR-115 §1.1 / §1.4: scope 席 (root / command) の help_render 宣言そのまま (階層継承は
+    // dec_definition が別途 render_effective に組む)。element 側は installer.decode 経路が
+    // これを Some で立てる — 席違い判定 (collect_help_meta_errors) の唯一の素材。
+    render_declared: decode_help_render(o),
+    render_effective: None,
+    value_structure_style: jf_str(o, "help_value_structure_style"),
+  }
+}
+
+///|
+/// DR-115 §1.1: `help_render` の階層継承。親 scope の実効値の上に本 scope の宣言値をキー単位で
+/// 上書きする — 未宣言キーは親の値をそのまま受け継ぐ (config 継承と同型の恒等射)。両者とも
+/// None なら None を返す (「一度も宣言されていない」を明示保持し、model 射影でも `render` を
+/// 省略する)。
+fn merge_help_render(
+  parent : @engine.HelpRenderDecl?,
+  child : @engine.HelpRenderDecl?,
+) -> @engine.HelpRenderDecl? {
+  match (parent, child) {
+    (None, None) => None
+    (Some(p), None) => Some(p)
+    (None, Some(c)) => Some(c)
+    (Some(p), Some(c)) =>
+      Some({
+        template: match c.template {
+          Some(_) => c.template
+          None => p.template
+        },
+        value_structure_style: match c.value_structure_style {
+          Some(_) => c.value_structure_style
+          None => p.value_structure_style
+        },
+        types_style: match c.types_style {
+          Some(_) => c.types_style
+          None => p.types_style
+        },
+        origin_style: match c.origin_style {
+          Some(_) => c.origin_style
+          None => p.origin_style
+        },
+      })
+  }
+}
+
+///|
+/// DR-115 §1.1 / §5: `help_render` オブジェクトを 4 キー carrier に写す。オブジェクトでない値や
+/// 型不一致のキーは None に落とす (definition-error は installer.collect_defs_errors の enum /
+/// template 検査で emit する — decode-time はここで raise しない、他の inert 属性と同じ posture)。
+fn decode_help_render(o : Map[String, Json]) -> @engine.HelpRenderDecl? {
+  match o.get("help_render") {
+    None => None
+    Some(rj) =>
+      match rj.j_obj() {
+        None => None
+        Some(ro) =>
+          Some({
+            template: jf_str(ro, "template"),
+            value_structure_style: jf_str(ro, "value_structure_style"),
+            types_style: jf_str(ro, "types_style"),
+            origin_style: jf_str(ro, "origin_style"),
+          })
+      }
   }
 }
 
@@ -1854,8 +1919,23 @@ fn dec_option(
     None => ()
   }
   if is_help_group_declaration(o) {
-    allowed_keys(o, owned.vocab, "help group declaration")
-    return DOpt(opt("", @builtins.none_type(), help_meta=owned.help_meta))
+    // DR-115 §4 (DR-113 §8.1 update): グループ宣言 entry に `hidden` を許可する。§8.1 の
+    // 「グループ属性だけ」は「グループ属性と `hidden` だけ」へ改訂 — allowed に "hidden" を
+    // 積み、`opt("")` の hidden param へ carry する (model の group entry sibling として射影)。
+    let allowed = ["hidden"]
+    for key in owned.vocab {
+      allowed.push(key)
+    }
+    allowed_keys(o, allowed, "help group declaration")
+    let group_hidden = bool_field(o, "hidden", false)
+    return DOpt(
+      opt(
+        "",
+        @builtins.none_type(),
+        help_meta=owned.help_meta,
+        hidden=group_hidden,
+      ),
+    )
   }
   let allowed = [
     "id", "name", "type", "default", "default_fn", "export_key", "deprecated", "hidden",
@@ -2722,6 +2802,7 @@ fn dec_command(
   extensions : @engine.Registry,
   parent_config : ScopeConfig,
   scope_path : Array[String],
+  parent_render : @engine.HelpRenderDecl?,
 ) -> DCmd raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
@@ -2762,6 +2843,7 @@ fn dec_command(
     extensions~,
     parent_config~,
     scope_path=scope_path + [name],
+    parent_render~,
   )
   let export_ = match o.get("export_key") {
     Some(e) => dec_export(e)
@@ -2777,10 +2859,21 @@ fn dec_definition(
   extensions? : @engine.Registry = canonical_registry(),
   parent_config? : ScopeConfig = default_scope_config(),
   scope_path? : Array[String] = [],
+  parent_render? : @engine.HelpRenderDecl? = None,
 ) -> @engine.Definition raise DecodeSkip {
+  let base_help_meta = help_meta_from_object(o)
+  // DR-115 §1.1: 一括席 `help_render` のキー単位階層継承。親 scope の実効値の上に本 scope の
+  // 宣言値をキー単位で上書きする — 未宣言キーは親の値をそのまま受け継ぐ (config 継承と同型)。
+  // 実効値は render_effective に、本 scope の生宣言は render_declared に格納 (2 者は分離
+  // — render_declared は「宣言そのもの」を対象にする definition-error 検査に使い、
+  // render_effective は help model 射影に使う)。
+  let render_effective = merge_help_render(
+    parent_render,
+    base_help_meta.render_declared,
+  )
   let scope : @engine.ScopeDeclaration = {
     name: jf_str(o, "name"),
-    help_meta: help_meta_from_object(o),
+    help_meta: { ..base_help_meta, render_effective, },
   }
   // DR-014 / DESIGN §7.2 (issue scope-config-object-gap; supersedes DR-091 §3's original 2-field-
   // only, non-inheriting scope config): この呼び出しの `o` (root definition object、または 1つの
@@ -2908,7 +3001,10 @@ fn dec_definition(
         None => raise DecodeSkip("commands is not an array")
       }
       for cj in a {
-        match dec_command(cj, shadows, extensions, config, scope_path) {
+        match
+          dec_command(
+            cj, shadows, extensions, config, scope_path, render_effective,
+          ) {
           DCommand(c) => commands.push(c)
           DCmdAlias(al) => aliases.push(al)
         }

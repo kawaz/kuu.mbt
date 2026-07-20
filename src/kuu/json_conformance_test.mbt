@@ -1774,6 +1774,11 @@ fn help_option_json(option : @kuu.HelpOption) -> Json {
     Some(vs) => object.set("value_structure", help_value_structure_json(vs))
     None => ()
   }
+  // DR-115 §1.4: value_structure に隣接して value_structure_style を配置 (fixture 順)。
+  match option.value_structure_style {
+    Some(v) => object.set("value_structure_style", v.to_json())
+    None => ()
+  }
   match option.display_name {
     Some(value) => object.set("display_name", value.to_json())
     None => ()
@@ -1828,6 +1833,11 @@ fn help_option_entry_json(entry : @kuu.HelpOptionEntry) -> Json {
       }
       let object : Map[String, Json] = Map([])
       object.set("group", group_object.to_json())
+      // DR-115 §4: グループ宣言 entry の hidden は group サブオブジェクトの sibling として emit
+      // (true 時のみ、false は省略 — fixture help-render-group-hidden の期待どおり)。
+      if group.hidden {
+        object.set("hidden", true.to_json())
+      }
       object.to_json()
     }
     @kuu.Option(option) => help_option_json(option)
@@ -1871,6 +1881,11 @@ fn help_positional_json(positional : @kuu.HelpPositional) -> Json {
     "value_structure",
     help_value_structure_json(positional.value_structure),
   )
+  // DR-115 §1.4: positional 側 value_structure_style を value_structure の直後に配置。
+  match positional.value_structure_style {
+    Some(v) => object.set("value_structure_style", v.to_json())
+    None => ()
+  }
   match positional.help {
     Some(value) => object.set("help", value.to_json())
     None => ()
@@ -1899,11 +1914,43 @@ fn help_type_entry_json(entry : @kuu.HelpTypeEntry) -> Json {
 }
 
 ///|
+/// DR-115 §1.4: model トップレベル `render` の JSON 化。宣言されたキーだけ emit する
+/// (未宣言キーは省略 — fixture help-render-* 系の期待どおり)。
+fn help_render_view_json(view : @kuu.HelpRenderView) -> Json {
+  let object : Map[String, Json] = Map([])
+  match view.template {
+    Some(v) => object.set("template", v.to_json())
+    None => ()
+  }
+  match view.value_structure_style {
+    Some(v) => object.set("value_structure_style", v.to_json())
+    None => ()
+  }
+  match view.types_style {
+    Some(v) => object.set("types_style", v.to_json())
+    None => ()
+  }
+  match view.origin_style {
+    Some(v) => object.set("origin_style", v.to_json())
+    None => ()
+  }
+  object.to_json()
+}
+
+///|
 fn help_model_json(model : @kuu.HelpModel) -> Json {
   let object : Map[String, Json] = Map([])
   object.set("outcome", "help".to_json())
   object.set("command_path", model.command_path.to_json())
-  object.set("usage", help_usage_json(model.usage))
+  // DR-115 §1.4 fixture help-render-inheritance の child scope は usage 4 軸全て空 (options/
+  // positionals/subcommands/dd いずれも無し) — expected JSON は `usage` フィールドを持たない。
+  // usage が空オブジェクトになる場合は emit を省く (schema optional の運用に揃える)。
+  if model.usage.has_options ||
+    model.usage.positionals.length() > 0 ||
+    model.usage.has_subcommands ||
+    model.usage.has_dd {
+    object.set("usage", help_usage_json(model.usage))
+  }
   match model.description {
     Some(value) => object.set("description", value.to_json())
     None => ()
@@ -1914,6 +1961,12 @@ fn help_model_json(model : @kuu.HelpModel) -> Json {
   }
   match model.epilog {
     Some(value) => object.set("epilog", value.to_json())
+    None => ()
+  }
+  // DR-115 §1.4: 一括席 `help_render` の実効値を model トップレベル `render` として emit。
+  // 全キー None なら model 側で None が入っているのでここで skip。
+  match model.render {
+    Some(view) => object.set("render", help_render_view_json(view))
     None => ()
   }
   if model.types.length() > 0 {

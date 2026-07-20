@@ -527,6 +527,16 @@ pub(all) struct HelpMetaDeclaration {
   preset_kind : String?
   value_structure_hint : HelpValueStructure?
   type_ref : String?
+  render_declared : HelpRenderDecl?
+  render_effective : HelpRenderDecl?
+  value_structure_style : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpRenderDecl {
+  template : String?
+  value_structure_style : String?
+  types_style : String?
+  origin_style : String?
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpRepeatSpec {
