@@ -112,19 +112,24 @@ pub fn parse_definition(
           None => raise DecodeSkip("definitions is not an object")
         }
         allowed_keys(d, ["types", "templates"], "definitions")
-        let ts = match d.get("types") {
+        let (ts, hts) = match d.get("types") {
           Some(tj) => dec_types(tj)
-          None => Map([])
+          None => (Map([]), [])
         }
         match d.get("templates") {
           Some(tmplj) => dec_templates(tmplj, ts, templates, extensions)
           None => ()
         }
-        ts
+        (ts, hts)
       }
-      None => Map([])
+      None => (Map([]), [])
     }
-    let def = dec_definition(top, shadows~, extensions~)
+    let (shadows, help_types) = shadows
+    let def_raw = dec_definition(top, shadows~, extensions~)
+    // DR-113 §4.2: root Definition に共有 type map (help_types) を stamp — 子孫 Definition は
+    // 常に空 (dec_definition の default)。help_installer が root の help_types を読んで types
+    // 集約射影を行う。
+    let def = { ..def_raw, help_types, }
     match
       @builtins.lower_definition_snapshot(
         def,

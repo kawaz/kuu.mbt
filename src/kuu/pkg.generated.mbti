@@ -84,6 +84,7 @@ pub(all) struct HelpModel {
   description : String?
   description_long : String?
   epilog : String?
+  types : Array[HelpTypeEntry]
   commands : Array[HelpCommand]
   options : Array[HelpOptionEntry]
   positionals : Array[HelpPositional]
@@ -93,7 +94,7 @@ pub(all) struct HelpModel {
 pub(all) struct HelpOption {
   spellings : Array[String]
   alias_spellings : Array[String]
-  value_structure : HelpValueStructure?
+  value_structure : @engine.HelpValueStructure?
   display_name : String?
   help : String?
   help_long : String?
@@ -120,7 +121,7 @@ pub(all) enum HelpOrigin {
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpPositional {
-  value_structure : HelpValueStructure
+  value_structure : @engine.HelpValueStructure
   help : String?
   help_long : String?
   hidden : Bool
@@ -136,16 +137,11 @@ pub(all) enum HelpQueryError {
   HQAbsentCategory
 } derive(Eq, @debug.Debug)
 
-pub(all) struct HelpRepeatSpec {
-  min : Int?
-  max : Int?
-  node : HelpValueStructure
-} derive(Eq, @debug.Debug)
-
-pub(all) struct HelpSingleValue {
-  value_name : String?
-  type_ : String?
-  values_enum : Array[String]?
+pub(all) struct HelpTypeEntry {
+  id : String
+  value_structure : @engine.HelpValueStructure
+  help : String?
+  used_as : Array[String]
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpUsage {
@@ -156,15 +152,7 @@ pub(all) struct HelpUsage {
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpUsagePositional {
-  value_structure : HelpValueStructure
-} derive(Eq, @debug.Debug)
-
-pub(all) enum HelpValueStructure {
-  HVSingle(HelpSingleValue)
-  HVSeq(Array[HelpValueStructure])
-  HVOr(Array[HelpValueStructure])
-  HVRepeat(HelpRepeatSpec)
-  HVTypeRef(String, String?)
+  value_structure : @engine.HelpValueStructure
 } derive(Eq, @debug.Debug)
 
 pub struct OutputEffect {

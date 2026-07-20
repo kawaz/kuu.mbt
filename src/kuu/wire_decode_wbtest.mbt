@@ -20,6 +20,7 @@ test "dec_or_leaf: TypeShadow の全フィールド (int_round/allow_base_prefix
   }
   shadows.set("dialect", {
     base: @builtins.bool_type(),
+    is_tree_form: false,
     int_round: @engine.RFloor,
     allow_base_prefix: true,
     bool_config: custom_bool_config,

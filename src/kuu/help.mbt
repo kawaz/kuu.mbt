@@ -1,6 +1,9 @@
 // help.mbt — DR-113 §1/§4 の宣言層 help query と構造化 help model 実装。
 
 ///|
+using @engine { type HelpValueStructure }
+
+///|
 pub(all) enum HelpDepth {
   DScope
   DAll
@@ -59,30 +62,6 @@ pub(all) enum HelpOrigin {
   HOGlobal(Array[String])
   HOInheritable(Array[String])
   HOAlias(String)
-} derive(Eq, Debug)
-
-///|
-/// DR-113 §4.1 の value_structure tree。任意ネスト可 (single / seq / or / repeat / type_ref)。
-pub(all) enum HelpValueStructure {
-  HVSingle(HelpSingleValue)
-  HVSeq(Array[HelpValueStructure])
-  HVOr(Array[HelpValueStructure])
-  HVRepeat(HelpRepeatSpec)
-  HVTypeRef(String, String?)
-} derive(Eq, Debug)
-
-///|
-pub(all) struct HelpSingleValue {
-  value_name : String?
-  type_ : String?
-  values_enum : Array[String]?
-} derive(Eq, Debug)
-
-///|
-pub(all) struct HelpRepeatSpec {
-  min : Int?
-  max : Int?
-  node : HelpValueStructure
 } derive(Eq, Debug)
 
 ///|
@@ -152,12 +131,23 @@ pub(all) struct HelpCommand {
 } derive(Eq, Debug)
 
 ///|
+/// DR-113 §4.2 の types 集約 entry。engine 側の HelpTypeEntry (id/help/value_structure) に
+/// 加えて、参照側から逆収集した used_as (定義出現順の value_name 一覧) を保持する model 射影形。
+pub(all) struct HelpTypeEntry {
+  id : String
+  value_structure : HelpValueStructure
+  help : String?
+  used_as : Array[String]
+} derive(Eq, Debug)
+
+///|
 pub(all) struct HelpModel {
   command_path : Array[String]
   usage : HelpUsage
   description : String?
   description_long : String?
   epilog : String?
+  types : Array[HelpTypeEntry]
   commands : Array[HelpCommand]
   options : Array[HelpOptionEntry]
   positionals : Array[HelpPositional]
@@ -379,12 +369,27 @@ fn alias_command_names(definition : @engine.Definition) -> Array[String] {
 /// DR-113 §4.1 の value_structure `single{value_name, type, values_enum}` 素材を ElemDef から組む。
 /// `type_name` が None の要素 (flag / count / help preset / none / dd / config_file / tty / etc — value-less
 /// preset や structural node) は None を返す。help_category (preset_kind="help_category") のみ
-/// or[bool, string] 特殊展開。将来 seq/repeat 拡張ポイントは HVRepeat / HVSeq を追加すれば良い。
+/// or[bool, string] 特殊展開。将来 seq/repeat 拡張ポイントは @engine.HVRepeat / @engine.HVSeq を追加すれば良い。
 fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
   let meta = element.help_meta
+  // DR-113 §4.1/§4.2: wire_decode が完全 tree を組んで value_structure_hint に carry している
+  // ケース (or/seq/repeat 系 wire キー、あるいは tree-form shadow type 参照) を最優先。
+  match meta.value_structure_hint {
+    Some(hint) => return Some(hint)
+    None => ()
+  }
+  // type_ref (tree-form shadow を type: で単純参照した場合、or/seq/repeat は無いので hint 側では
+  // 拾わない) は type_ref を優先する — value_name は wire の value_name を上書き名として使う。
+  match meta.type_ref {
+    Some(id) =>
+      return Some(
+        @engine.HVTypeRef({ id, value_name: meta.value_name }),
+      )
+    None => ()
+  }
   // help_category 特殊: or[bool, string] を展開 (DR-113 §2.3)。value_name は string 側の枝に付く。
   if meta.preset_kind == Some("help_category") {
-    let bool_branch = HVSingle({
+    let bool_branch = @engine.HVSingle({
       value_name: None,
       type_: Some("bool"),
       values_enum: None,
@@ -396,12 +401,12 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
       Some(name) => Some(name)
       None => Some("CATEGORY")
     }
-    let str_branch = HVSingle({
+    let str_branch = @engine.HVSingle({
       value_name: str_value_name,
       type_: Some("string"),
       values_enum: None,
     })
-    return Some(HVOr([bool_branch, str_branch]))
+    return Some(@engine.HVOr([bool_branch, str_branch]))
   }
   match meta.type_name {
     None => None
@@ -412,7 +417,7 @@ fn value_structure_of(element : @engine.ElemDef) -> HelpValueStructure? {
         _ => None
       }
       Some(
-        HVSingle({ value_name: meta.value_name, type_: Some(t), values_enum }),
+        @engine.HVSingle({ value_name: meta.value_name, type_: Some(t), values_enum }),
       )
     }
   }
@@ -427,7 +432,7 @@ fn positional_value_structure_of(
   match value_structure_of(element) {
     Some(vs) => vs
     None =>
-      HVSingle({
+      @engine.HVSingle({
         value_name: element.help_meta.value_name,
         type_: None,
         values_enum: None,
@@ -792,6 +797,7 @@ fn ordered_commands(
   current_path : Array[String],
   depth : HelpDepth,
   index : ScopeIndex,
+  root : @engine.Definition,
 ) -> Array[HelpCommand] {
   let sorted : Array[SortableCommand] = []
   let alias_map = command_alias_map(definition)
@@ -811,7 +817,8 @@ fn ordered_commands(
     let child_path = copy_strings(current_path)
     child_path.push(command.name)
     let scope : HelpModel? = match depth {
-      DAll => Some(build_help_model(command.body, child_path, depth, index))
+      DAll =>
+        Some(build_help_model(command.body, child_path, depth, index, root))
       DScope => None
     }
     insert_command_sorted(sorted, {
@@ -966,22 +973,111 @@ fn filter_category(
 }
 
 ///|
+/// DR-113 §4.2 の types 集約射影: root Definition の help_types (定義出現順) に、
+/// 参照側から逆収集した used_as (定義出現順の value_name 一覧) を紐づける。
+/// 「参照側」= 現在の scope + 全 subtree の options / positionals の value_structure tree を
+/// 走査して HVTypeRef を拾う。walk 順は options → positionals、element 順、tree 内は
+/// or/seq/repeat の順序を保持 (fixture value-structure-and-types が期待する COLOR/INFO/WARN/
+/// DEBUG 順は options 順 fg → level-colors → 各 seq 要素)。
+fn help_types_projection(
+  root_types : Array[@engine.HelpTypeEntry],
+  root_def : @engine.Definition,
+) -> Array[HelpTypeEntry] {
+  let output : Array[HelpTypeEntry] = []
+  for type_entry in root_types {
+    let used_as : Array[String] = []
+    collect_used_as(root_def, type_entry.id, used_as)
+    output.push({
+      id: type_entry.id,
+      value_structure: type_entry.value_structure,
+      help: type_entry.help,
+      used_as,
+    })
+  }
+  output
+}
+
+///|
+/// value_structure tree 内の HVTypeRef で id が target の value_name を定義出現順で拾う。
+fn collect_used_as_from_vs(
+  vs : @engine.HelpValueStructure,
+  target : String,
+  out : Array[String],
+) -> Unit {
+  match vs {
+    @engine.HVTypeRef(ref_) =>
+      if ref_.id == target {
+        match ref_.value_name {
+          Some(v) => out.push(v)
+          None => ()
+        }
+      }
+    @engine.HVSeq(nodes) => for n in nodes { collect_used_as_from_vs(n, target, out) }
+    @engine.HVOr(nodes) => for n in nodes { collect_used_as_from_vs(n, target, out) }
+    @engine.HVRepeat(spec) => collect_used_as_from_vs(spec.node, target, out)
+    @engine.HVSingle(_) => ()
+  }
+}
+
+///|
+/// Definition の options / positionals を定義順で走査し、value_structure tree 内の
+/// HVTypeRef(target, ...) を拾って used_as を積む。subcommand の subtree は現状の fixture では
+/// 使わないが、DR-113 §4.2 「共有型は model トップの types に集約射影する」の意図から
+/// 再帰的に拾う (全 scope から集約)。
+fn collect_used_as(
+  definition : @engine.Definition,
+  target : String,
+  out : Array[String],
+) -> Unit {
+  for element in definition.options {
+    match value_structure_of(element) {
+      Some(vs) => collect_used_as_from_vs(vs, target, out)
+      None => ()
+    }
+  }
+  for positional in definition.positionals {
+    collect_used_as_from_vs(
+      positional_value_structure_of(positional),
+      target,
+      out,
+    )
+  }
+  for command in definition.commands {
+    collect_used_as(command.body, target, out)
+  }
+}
+
+///|
 /// path (current scope path) と depth を伝搬しつつ 1 scope 分の HelpModel を組む。depth=DAll では
-/// commands の scope フィールドへ子 HelpModel を再帰埋め込みする。
+/// commands の scope フィールドへ子 HelpModel を再帰埋め込みする。types は root Definition が
+/// 保持する help_types を全 scope から used_as 逆収集して projection する — 現在の scope より
+/// 深い層は含まれるが、root より浅い層への参照はそもそも fixture で想定されていない。
 fn build_help_model(
   selected : @engine.Definition,
   command_path : Array[String],
   depth : HelpDepth,
   index : ScopeIndex,
+  root : @engine.Definition,
 ) -> HelpModel {
   let options = ordered_options(selected, command_path, index)
+  let types = if selected.help_types.length() > 0 {
+    // 選択 scope 自身が help_types を持てば (root のみが典型) 集約射影
+    help_types_projection(selected.help_types, root)
+  } else {
+    // 選択 scope が持たない場合は root の help_types を projection (subcommand scope でも
+    // 共有型を表示できるようにする — HIP-META-Q13=a 的な全 entry 保持)。
+    // 現在の fixture は root scope のみで query するため、root と selected が一致するケース
+    // だけをテストするが、subcommand path=... query でも root の types が見える動作は自然。
+    help_types_projection(root.help_types, root)
+  }
   {
     command_path,
     usage: help_usage(selected),
     description: selected.scope.help_meta.help,
     description_long: selected.scope.help_meta.help_long,
     epilog: selected.scope.help_meta.help_epilog,
-    commands: ordered_commands(selected, command_path, depth, index),
+    types,
+    commands: ordered_commands(selected, command_path, depth, index, root),
     options,
     positionals: help_positionals(selected),
     help_entry: help_entry(selected),
@@ -1016,7 +1112,9 @@ pub fn help(
   for segment in path {
     command_path.push(segment)
   }
-  let mut model = build_help_model(selected, command_path, depth, index)
+  let mut model = build_help_model(
+    selected, command_path, depth, index, ast.declaration,
+  )
   match category_mode {
     HCMNamed(name) =>
       if category_exists(model.options, name) {

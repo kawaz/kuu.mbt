@@ -1,6 +1,49 @@
 // declaration.mbt — read/write declaration carriers crossing decode and installer residents.
 
 ///|
+/// DR-113 §4.1 の value_structure tree carrier。single / seq / or / repeat / type_ref を任意
+/// ネストで表す。wire_decode が option/positional の値形 (type/or/seq/repeat 系 wire キー) と
+/// definitions.types 内の共有型定義 tree を decode 時点で組み立て、HelpMetaDecl と Definition の
+/// 側テーブルへ carry する — help_installer は projection 時に読むだけ (計算しない)。
+pub(all) enum HelpValueStructure {
+  HVSingle(HelpSingleValue)
+  HVSeq(Array[HelpValueStructure])
+  HVOr(Array[HelpValueStructure])
+  HVRepeat(HelpRepeatSpec)
+  HVTypeRef(HelpTypeRef)
+} derive(Eq, Debug)
+
+///|
+pub(all) struct HelpSingleValue {
+  value_name : String?
+  type_ : String?
+  values_enum : Array[String]?
+} derive(Eq, Debug)
+
+///|
+pub(all) struct HelpRepeatSpec {
+  min : Int?
+  max : Int?
+  node : HelpValueStructure
+} derive(Eq, Debug)
+
+///|
+pub(all) struct HelpTypeRef {
+  id : String
+  value_name : String?
+} derive(Eq, Debug)
+
+///|
+/// DR-113 §4.2 共有型定義の carrier。Definition.help_types に定義出現順で並ぶ。
+/// used_as は wire 上の直接情報でなく参照側からの逆向き収集なので、ここでは carry しない
+/// (help_installer が projection 時に options/positionals を走査して補う)。
+pub(all) struct HelpTypeEntry {
+  id : String
+  help : String?
+  value_structure : HelpValueStructure
+} derive(Eq, Debug)
+
+///|
 /// help_meta installer が所有する宣言層の inert 表示属性。lowering 産物へは搬送せず、
 /// definition-time 検査と help query が宣言層から参照する。
 pub(all) struct HelpMetaDecl {
@@ -45,6 +88,18 @@ pub(all) struct HelpMetaDecl {
   // 検査 (help_on_failure の invalid-range 判定) が読む、preset_kind は help model 射影が
   // 読む — 別の関心事の carry。
   preset_kind : String?
+  // DR-113 §4.1 の value_structure 完全形 carrier。wire_decode 時点で option/positional の
+  // 値形 (type/or/seq/repeat 系 wire キー) を tree に組み立てて保持する。type_name は
+  // single leaf の simple 形 (`{"single":{"type":"..."}}`) のためのショートカットで維持され、
+  // value_structure_hint は seq/or/repeat/type_ref など任意 tree に対応する上位互換。
+  // help_installer は projection 時に hint を優先して読み、None 時は type_name の simple 形へ
+  // フォールバック。help_category preset の or[bool,string] 展開は現状 help.mbt 側で defaulting
+  // する — hint に立てる場合は preset_kind 由来なので特殊分岐は残る。
+  value_structure_hint : HelpValueStructure?
+  // DR-113 §4.2 型参照マーカー: wire の `type: "<shadow_name>"` が definitions.types の
+  // ユーザ定義型を指すとき、その shadow 名を保持する。None = builtin type 直接指定 or 参照なし。
+  // help_installer の value_structure 射影で type_ref (HVTypeRef) 素材を組む鍵になる。
+  type_ref : String?
 } derive(Eq, Debug)
 
 ///|
@@ -386,4 +441,10 @@ pub(all) struct Definition {
   positionals : Array[ElemDef]
   commands : Array[CommandDef]
   aliases : Array[AliasDef] // DR-057
+  // DR-113 §4.2 共有型定義。definitions.types に宣言された tree 形の型を定義出現順で保持する。
+  // 現在の Definition は 1 scope 分だが、共有型は root scope から子孫まで有効 (dec_types が
+  // 親子で shadows を継承しているため実装的にも root で完結)。help_installer は root Definition
+  // の help_types だけを読んで types 集約 (used_as 逆収集を含む) を組む。root 以外の scope で
+  // 追加宣言する用法は未サポート (fixture も root のみ)。
+  help_types : Array[HelpTypeEntry]
 } derive(Eq, Debug)

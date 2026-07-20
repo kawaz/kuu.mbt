@@ -1633,9 +1633,9 @@ fn help_default_json(value : @kuu.HelpDefault) -> Json {
 ///|
 /// DR-113 §4.1 helpValueStructure oneOf 直訳。single / seq / or / repeat / type_ref それぞれの
 /// object 形へ写す (schema $defs/helpValueStructure と対応)。
-fn help_value_structure_json(vs : @kuu.HelpValueStructure) -> Json {
+fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
   match vs {
-    @kuu.HVSingle(single) => {
+    @engine.HVSingle(single) => {
       let inner : Map[String, Json] = Map([])
       match single.value_name {
         Some(value) => inner.set("value_name", value.to_json())
@@ -1653,7 +1653,7 @@ fn help_value_structure_json(vs : @kuu.HelpValueStructure) -> Json {
       out.set("single", inner.to_json())
       out.to_json()
     }
-    @kuu.HVSeq(nodes) => {
+    @engine.HVSeq(nodes) => {
       let arr : Array[Json] = []
       for n in nodes {
         arr.push(help_value_structure_json(n))
@@ -1662,7 +1662,7 @@ fn help_value_structure_json(vs : @kuu.HelpValueStructure) -> Json {
       out.set("seq", arr.to_json())
       out.to_json()
     }
-    @kuu.HVOr(nodes) => {
+    @engine.HVOr(nodes) => {
       let arr : Array[Json] = []
       for n in nodes {
         arr.push(help_value_structure_json(n))
@@ -1671,7 +1671,7 @@ fn help_value_structure_json(vs : @kuu.HelpValueStructure) -> Json {
       out.set("or", arr.to_json())
       out.to_json()
     }
-    @kuu.HVRepeat(spec) => {
+    @engine.HVRepeat(spec) => {
       let inner : Map[String, Json] = Map([])
       match spec.min {
         Some(m) => inner.set("min", m.to_json())
@@ -1686,10 +1686,10 @@ fn help_value_structure_json(vs : @kuu.HelpValueStructure) -> Json {
       out.set("repeat", inner.to_json())
       out.to_json()
     }
-    @kuu.HVTypeRef(id, value_name) => {
+    @engine.HVTypeRef(ref_) => {
       let out : Map[String, Json] = Map([])
-      out.set("type_ref", id.to_json())
-      match value_name {
+      out.set("type_ref", ref_.id.to_json())
+      match ref_.value_name {
         Some(v) => out.set("value_name", v.to_json())
         None => ()
       }
@@ -1882,6 +1882,20 @@ fn help_positional_json(positional : @kuu.HelpPositional) -> Json {
 }
 
 ///|
+/// DR-113 §4.2 helpTypeEntry の serialize (id / value_structure / help / used_as)。
+fn help_type_entry_json(entry : @kuu.HelpTypeEntry) -> Json {
+  let out : Map[String, Json] = Map([])
+  out.set("id", entry.id.to_json())
+  out.set("value_structure", help_value_structure_json(entry.value_structure))
+  match entry.help {
+    Some(value) => out.set("help", value.to_json())
+    None => ()
+  }
+  out.set("used_as", entry.used_as.to_json())
+  out.to_json()
+}
+
+///|
 fn help_model_json(model : @kuu.HelpModel) -> Json {
   let object : Map[String, Json] = Map([])
   object.set("outcome", "help".to_json())
@@ -1898,6 +1912,13 @@ fn help_model_json(model : @kuu.HelpModel) -> Json {
   match model.epilog {
     Some(value) => object.set("epilog", value.to_json())
     None => ()
+  }
+  if model.types.length() > 0 {
+    let types : Array[Json] = []
+    for entry in model.types {
+      types.push(help_type_entry_json(entry))
+    }
+    object.set("types", types.to_json())
   }
   if model.commands.length() > 0 {
     let commands : Array[Json] = []
@@ -2379,16 +2400,10 @@ fn expected_skips() -> Array[(String, String)] {
   // M2 gap: help-category vocab / help annotation on value-structure are M3+ features. Fixtures
   // that carry these unsupported keys are skipped at decode time; entries pinned here so a decode
   // regression (unexpected new skip) or accidental fix (vanished skip) fails the run.
-  [
-    // M3a (DR-113 §2): 5 直交 help preset 名 (help_all_category / help_category /
-    // help_show_hidden / help_tree) は wire_decode で受理可能になった (help-types-
-    // and-default-fn.json は decode 成功、model diverge は下記 known_divergences へ
-    // 移動)。value-structure-and-types は type shadow に help annotation が乗る想定で
-    // 別軸 (M4 の model 側)、引き続き decode skip。
-    (
-      "help/value-structure-and-types.json", "type shadow has unsupported key 'help'",
-    ),
-  ]
+  // M5 (DR-113 §4.2): value-structure-and-types.json は dec_types tree-form + option
+  // seq wire キー + type_ref carry を M5 で全て実装済み、skip 解消。expected_skips は空
+  // (全 fixture 損失なく decode 可能)。
+  []
 }
 
 ///|

@@ -91,6 +91,8 @@ fn empty_help_meta() -> @engine.HelpMetaDecl {
     is_help_preset: false,
     type_name: None,
     preset_kind: None,
+  value_structure_hint: None,
+  type_ref: None,
   }
 }
 
@@ -126,6 +128,8 @@ fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDecl {
     // 段階では type は未読)。ここでは None を植える。
     type_name: None,
     preset_kind: None,
+  value_structure_hint: None,
+  type_ref: None,
   }
 }
 
@@ -976,6 +980,10 @@ fn dec_ty(
 /// `tty` factory のみ扱う)。
 priv struct TypeShadow {
   base : &@engine.TypeExt
+  // DR-113 §4.2 tree-form shadow のマーカー: true なら factory shadow ではなく共有型定義
+  // (help / or / seq / single 直書き)。dec_option / dec_positional の type 解決経路が
+  // このフラグを見て help_meta.type_ref を立てる (parse 相の base は string_type() の dummy)。
+  is_tree_form : Bool
   int_round : @engine.RoundMode
   // DR-074 §2 `number_allow_base_prefix` (`number_parser` factory config)。canonical default = false。
   // TypeShadow が担う base 側の flag は canonical default が false なので、int_round と直交な平坦キー。
@@ -1004,12 +1012,15 @@ priv struct TypeShadow {
 /// 2 形が同一実体に解決される。旧 ad-hoc prefix `kuu_<bare>` は fixture pin bump (37aa3b3d) 完了に
 /// 伴い移行期間を終え、unsupported factory として明示的に拒否される (unknown-vocab の一部、
 /// DR-054)。
-fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
+fn dec_types(
+  j : Json,
+) -> (Map[String, TypeShadow], Array[@engine.HelpTypeEntry]) raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("definitions.types is not an object")
   }
   let out : Map[String, TypeShadow] = Map([])
+  let help_types : Array[@engine.HelpTypeEntry] = []
   for name, tj in o {
     let to = match tj.j_obj() {
       Some(x) => x
@@ -1017,8 +1028,40 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
         raise DecodeSkip(
           "definitions.types[" +
           name +
-          "] is not an object (expected {name, config})",
+          "] is not an object (expected {name, config} or tree form)",
         )
+    }
+    // DR-113 §4.2 tree-form 判定: factory 形は `name` (factory 名) を持つ、tree 形は代わりに
+    // `help` / `or` / `seq` / `type` / `value_name` を持つ。両者は排他 (fixture の
+    // value-structure-and-types.json は tree 形のみ、他 fixture は factory 形のみ)。
+    let is_tree =
+      !has_key(to, "name") &&
+      (has_key(to, "help") ||
+      has_key(to, "or") ||
+      has_key(to, "seq") ||
+      has_key(to, "type") ||
+      has_key(to, "value_name") ||
+      has_key(to, "repeat"))
+    if is_tree {
+      allowed_keys(
+        to,
+        ["help", "or", "seq", "type", "value_name", "repeat"],
+        "type shadow (tree form)",
+      )
+      let help_text = jf_str(to, "help")
+      let value_structure = dec_help_value_structure(tj, out)
+      out.set(name, {
+        base: @builtins.string_type(), // dummy: parse 相は tree 型を実行しない (help query 専用素材)
+        is_tree_form: true,
+        int_round: @engine.RError,
+        allow_base_prefix: false,
+        bool_config: @builtins.bool_config_canonical(),
+        is_tty: false,
+        tty_stream: None,
+        tty_cygwin: true,
+      })
+      help_types.push({ id: name, help: help_text, value_structure })
+      continue
     }
     allowed_keys(to, ["name", "config"], "type shadow")
     let factory = match jf_str(to, "name") {
@@ -1090,6 +1133,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
         }
         out.set(name, {
           base: @builtins.int_type(),
+          is_tree_form: false,
           int_round: mode,
           allow_base_prefix: base_prefix,
           bool_config: @builtins.bool_config_canonical(),
@@ -1135,6 +1179,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
         }
         out.set(name, {
           base: @builtins.number_type(),
+          is_tree_form: false,
           int_round: @engine.RError,
           allow_base_prefix: base_prefix,
           bool_config: @builtins.bool_config_canonical(),
@@ -1195,6 +1240,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
         }
         out.set(name, {
           base: @builtins.bool_type(),
+          is_tree_form: false,
           int_round: @engine.RError,
           allow_base_prefix: false,
           bool_config: { true_values, false_values, case_insensitive },
@@ -1262,6 +1308,7 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
         }
         out.set(name, {
           base: @builtins.bool_type(),
+          is_tree_form: false,
           int_round: @engine.RError,
           allow_base_prefix: false,
           bool_config: @builtins.bool_config_canonical(),
@@ -1280,7 +1327,127 @@ fn dec_types(j : Json) -> Map[String, TypeShadow] raise DecodeSkip {
         )
     }
   }
-  out
+  (out, help_types)
+}
+
+///|
+/// DR-113 §4.1 の value_structure tree 構築: wire subtree を再帰的に読んで HelpValueStructure を
+/// 組む。option/positional root の値形 (type/or/seq/repeat) と、definitions.types の tree-form
+/// 型定義、および or/seq 内部の leaf の双方から呼ばれる — キー配置が同じなので同じ関数で扱う。
+/// - `type` (primitive) + optional `value_name` → HVSingle(type)
+/// - `type` (user shadow) + optional `value_name` → HVTypeRef(shadow_name, value_name)
+/// - `or` → HVOr (再帰)
+/// - `seq` → HVSeq (再帰)
+/// - `repeat: {min, max, ...}` → HVRepeat(HVSingle or 参照) — repeat 単独 wire form での使用
+///   (files positional: `{name: "files", type: "string", value_name: "FILE", repeat: {...}}`) を対応
+///
+/// shadows は type-ref 判定 (定義済みの shadow か否か) のためだけに参照 — tree-form/factory-form
+/// どちらの shadow でも「参照」扱いになる (factory shadow を type_ref 経由参照するのは未対応
+/// だが実 fixture では発生しない)。
+fn dec_help_value_structure(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+) -> @engine.HelpValueStructure raise DecodeSkip {
+  let o = match j.j_obj() {
+    Some(x) => x
+    None => raise DecodeSkip("value_structure node is not an object")
+  }
+  // repeat + inner type: files positional / repeat-only 形。inner は同じ object の残キー
+  // (type/value_name) を single としてラップする。
+  match o.get("repeat") {
+    Some(rj) => {
+      let ro = match rj.j_obj() {
+        Some(x) => x
+        None =>
+          raise DecodeSkip("value_structure repeat is not an object")
+      }
+      let min = match ro.get("min") {
+        Some(mj) =>
+          match mj.j_num() {
+            Some(n) => Some(n.to_int())
+            None => raise DecodeSkip("repeat.min is not a number")
+          }
+        None => None
+      }
+      let max = match ro.get("max") {
+        Some(mj) =>
+          match mj.j_num() {
+            Some(n) => Some(n.to_int())
+            None => raise DecodeSkip("repeat.max is not a number")
+          }
+        None => None
+      }
+      let node : @engine.HelpValueStructure = match ro.get("node") {
+        Some(nj) => dec_help_value_structure(nj, shadows)
+        None => {
+          // repeat wire に `node` が無ければ、外側 object の type/value_name から single leaf を組む
+          // (files positional の wire は `{type, value_name, repeat}` の平坦形)。
+          let single = dec_help_single_from_object(o, shadows)
+          single
+        }
+      }
+      return HVRepeat({ min, max, node })
+    }
+    None => ()
+  }
+  match o.get("or") {
+    Some(orj) => {
+      let arr = match orj.j_arr() {
+        Some(x) => x
+        None => raise DecodeSkip("value_structure or is not an array")
+      }
+      let branches : Array[@engine.HelpValueStructure] = []
+      for bj in arr {
+        branches.push(dec_help_value_structure(bj, shadows))
+      }
+      return HVOr(branches)
+    }
+    None => ()
+  }
+  match o.get("seq") {
+    Some(sj) => {
+      let arr = match sj.j_arr() {
+        Some(x) => x
+        None => raise DecodeSkip("value_structure seq is not an array")
+      }
+      let items : Array[@engine.HelpValueStructure] = []
+      for ij in arr {
+        items.push(dec_help_value_structure(ij, shadows))
+      }
+      return HVSeq(items)
+    }
+    None => ()
+  }
+  // 残るは single / type_ref (or type 省略 = string-of-none への default)。
+  dec_help_single_from_object(o, shadows)
+}
+
+///|
+/// wire object の `type` / `value_name` から HVSingle か HVTypeRef を組む (or/seq/repeat 外殻の
+/// 内側 leaf 用)。shadow に登録されている名前は type_ref、それ以外は primitive single。
+fn dec_help_single_from_object(
+  o : Map[String, Json],
+  shadows : Map[String, TypeShadow],
+) -> @engine.HelpValueStructure {
+  let value_name = jf_str(o, "value_name")
+  match jf_str(o, "type") {
+    Some(t) =>
+      match shadows.get(t) {
+        Some(sh) =>
+          if sh.is_tree_form {
+            HVTypeRef({ id: t, value_name })
+          } else {
+            // factory shadow: base name (int/number/string/bool) を single leaf として carry
+            let base_name = sh.base.name()
+            HVSingle({ value_name, type_: Some(base_name), values_enum: None })
+          }
+        None => {
+          // primitive: string/number/int/bool そのまま carry
+          HVSingle({ value_name, type_: Some(t), values_enum: None })
+        }
+      }
+    None => HVSingle({ value_name, type_: None, values_enum: None })
+  }
 }
 
 ///|
@@ -1571,12 +1738,18 @@ fn dec_or_leaf(
     Some(x) => x
     None => raise DecodeSkip("or branch leaf is not an object")
   }
-  allowed_keys(o, ["type", "name"], "or branch leaf")
+  // DR-113 §4.1 value_structure: or-branch leaf は anonymous でも合法 (`value_name` は
+  // 表示専用素材で consumption grammar には効かない — help_installer が model 射影で拾う)。
+  // 従来は `name` 必須だったが、value-structure-and-types.json のような help-only fixture では
+  // 各 leaf が anonymous なので、name 省略 + value_name のパターンを受理する。
+  allowed_keys(o, ["type", "name", "value_name"], "or branch leaf")
   let name = match jf_str(o, "name") {
-    Some(s) => s
-    None => raise DecodeSkip("or branch leaf missing 'name'")
+    Some(s) => {
+      check_reserved_name(s, "or branch leaf")
+      s
+    }
+    None => "" // anonymous or-branch leaf (help-only fixture 用)
   }
-  check_reserved_name(name, "or branch leaf")
   // DR-089 §2: type 省略 = none の糖衣 (or branch leaf も他の要素種と同じ規約)。
   // issue typeshadow-carry-gap-or-leaf-positional-group: TypeShadow の全フィールドを carry する
   // (dec_positional と同じ一般化パターン — base/int_round だけに絞る理由は無い、DESIGN §13.3
@@ -1684,6 +1857,10 @@ fn dec_option(
     "id", "name", "type", "default", "default_fn", "export_key", "deprecated", "hidden",
     "or", "values", "piece_filters", "value_filters", "final_filters", "accum_filters",
     "ref", "completer", "config",
+    // DR-113 §4.1 value_structure 素材: option root の seq / value_name wire キー
+    // (help-only fixture 用 — parse 相は seq を活用しないが、help_installer が hint 経由で
+    // model 射影する)。
+    "seq", "value_name",
   ]
   for key in owned.vocab {
     allowed.push(key)
@@ -1692,7 +1869,7 @@ fn dec_option(
   let tystr = match jf_str(o, "type") {
     Some(t) => t
     None =>
-      if has_key(o, "or") || has_key(o, "ref") || has_key(o, "values") {
+      if has_key(o, "or") || has_key(o, "ref") || has_key(o, "values") || has_key(o, "seq") {
         // DR-078 §1: a `ref` element's own consumption is replaced by the referenced template
         // (`@builtins.elem_head`'s `Ref(r)` head, ty unused there) — same "type is moot" reasoning `or`
         // already gets. `values` gets the same default (DR-028 追記: values を持つ node は type
@@ -1966,11 +2143,30 @@ fn dec_option(
   } else {
     None
   }
+  // DR-113 §4.1/§4.2: value_structure_hint (完全 tree) と type_ref (shadow 参照名) を
+  // wire キー配置から算出。優先順:
+  // - or/seq/repeat のいずれかがある: dec_help_value_structure で tree 全体を構築 → hint 立て
+  // - type がユーザ定義 tree-form shadow: HVTypeRef 素材 → type_ref に shadow 名を stamp
+  // - どちらもなければ hint は None (help.mbt が type_name の simple 形へフォールバック)
+  let has_shape_wire = has_key(o, "or") ||
+    has_key(o, "seq") ||
+    has_key(o, "repeat")
+  let value_structure_hint_field : @engine.HelpValueStructure? = if has_shape_wire {
+    Some(dec_help_value_structure(j, shadows))
+  } else {
+    None
+  }
+  let type_ref_field : String? = match shadows.get(tystr) {
+    Some(sh) => if sh.is_tree_form { Some(tystr) } else { None }
+    None => None
+  }
   let help_meta = {
     ..owned.help_meta,
     is_help_preset,
     type_name: type_name_field,
     preset_kind: preset_kind_field,
+    value_structure_hint: value_structure_hint_field,
+    type_ref: type_ref_field,
   }
   DOpt({
     ..opt(
@@ -2227,10 +2423,32 @@ fn dec_positional(
       }
     None => None
   }
+  // DR-113 §4.1: positional の value_structure_hint (repeat + inner type / or / seq)。
+  // fixture の `files` positional は `{type: string, value_name: FILE, repeat: {min:1, max:3}}` の
+  // 平坦形。dec_help_value_structure が repeat 分岐で外側 object の残キーから single leaf を
+  // 組み立てるため、この呼び出し 1 発で HVRepeat(HVSingle) が得られる。
+  let has_shape_pos = has_key(o, "or") ||
+    has_key(o, "seq") ||
+    has_key(o, "repeat")
+  let value_structure_hint_pos : @engine.HelpValueStructure? = if has_shape_pos {
+    Some(dec_help_value_structure(j, shadows))
+  } else {
+    None
+  }
+  let type_ref_pos : String? = match jf_str(o, "type") {
+    Some(t) =>
+      match shadows.get(t) {
+        Some(sh) => if sh.is_tree_form { Some(t) } else { None }
+        None => None
+      }
+    None => None
+  }
   let help_meta_with_type = {
     ..owned.help_meta,
     type_name: type_name_field,
     preset_kind: None,
+    value_structure_hint: value_structure_hint_pos,
+    type_ref: type_ref_pos,
   }
   pos(
     name,
@@ -2685,5 +2903,5 @@ fn dec_definition(
     }
     None => ()
   }
-  { scope, options, positionals, commands, aliases }
+  { scope, options, positionals, commands, aliases, help_types: [] }
 }

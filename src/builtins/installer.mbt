@@ -635,7 +635,14 @@ fn clone_def(d : @engine.Definition) -> @engine.Definition {
   for a in d.aliases {
     als.push(a) // @engine.AliasDef は immutable value data (nested mutable array を持たない)
   }
-  { scope: d.scope, options: os, positionals: ps, commands: cs, aliases: als }
+  {
+    scope: d.scope,
+    options: os,
+    positionals: ps,
+    commands: cs,
+    aliases: als,
+    help_types: d.help_types,
+  }
 }
 
 ///|
