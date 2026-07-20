@@ -7,6 +7,27 @@ pub(all) enum HelpDepth {
 } derive(Eq, Debug)
 
 ///|
+/// DR-113 §1 の category_mode 3 分岐 (HIP-META-Q13=a): default と all は model 素材 (entry 集合)
+/// が完全に同一で、値の差は renderer への表示 policy 指示にすぎない — model 側は entry を絞らない。
+/// named だけが `help_group_name` が name に一致する entry と当該グループ宣言 entry に model 素材を
+/// 絞る唯一の分岐。
+pub(all) enum HelpCategoryMode {
+  HCMDefault
+  HCMAll
+  HCMNamed(String)
+} derive(Eq, Debug)
+
+///|
+/// DR-113 §1/§9 の query-error envelope。合法な definition に対する呼び出し側入力の失敗を
+/// definition-error と別位相で返す (query-error は definition-error でなく、逆もまた然り)。
+/// - `HQAbsentPath`: help_query に不在の command path を渡した
+/// - `HQAbsentCategory`: help_query の category_mode `{"named": name}` に不在の名前を渡した
+pub(all) enum HelpQueryError {
+  HQAbsentPath
+  HQAbsentCategory
+} derive(Eq, Debug)
+
+///|
 pub(all) enum HelpDefault {
   HDefaultScalar(@engine.Value)
   HDefaultArray(Array[@engine.Value])
@@ -555,18 +576,6 @@ fn select_definition(
 }
 
 ///|
-fn help_absent(message : String) -> Array[@engine.DefError] {
-  [
-    {
-      element: "",
-      kind: @engine.DAbsentRef,
-      message,
-      hint: "choose a command path or help category declared by the definition",
-    },
-  ]
-}
-
-///|
 fn category_exists(options : Array[HelpOptionEntry], category : String) -> Bool {
   for entry in options {
     match entry {
@@ -596,27 +605,37 @@ fn filter_category(
 }
 
 ///|
-/// DR-112 の正面玄関。installer fixpoint 後の宣言層 snapshot だけを読み、パースは実行しない。
-/// DAll は再帰 scope の fixture が未固定なため、現段階では DScope と同じ 1 層 model を返す。
+/// DR-113 §1 の help_query 正面玄関。installer fixpoint 後の宣言層 snapshot だけを読み、パースは
+/// 実行しない。合法な definition に対する呼び出し側入力の失敗 (path / named category の不在) は
+/// query-error envelope で返す — definition-error とは別位相 (definition_error profile は installer
+/// が担う、DR-113 §1)。
+///
+/// - `path`: 選択スコープの root-first 相対 path。既定はルート
+/// - `depth`: `DScope` (既定、選択 scope の 1 層のみ) / `DAll` (再帰 scope 埋め込み)。M3c 時点では
+///   DAll の再帰埋め込みは未実装、fixture の subcommand-path.json::depth-all-embeds-recursive-scopes
+///   の diverge 継続 (M4 で model 側実装)
+/// - `category_mode`: DR-113 §1 の 3 分岐。default / all は model 素材を絞らず (renderer への
+///   policy 指示だけ、HIP-META-Q13=a)、named 分岐だけが素材を絞る
 pub fn help(
   ast : AtomicAST,
   path? : Array[String] = [],
   depth? : HelpDepth = DScope,
-  category? : String? = None,
-) -> Result[HelpModel, Array[@engine.DefError]] {
+  category_mode? : HelpCategoryMode = HCMDefault,
+) -> Result[HelpModel, HelpQueryError] {
   let selected = match select_definition(ast.declaration, path) {
     Some(definition) => definition
-    None => return Err(help_absent("help path does not exist"))
+    None => return Err(HQAbsentPath)
   }
   let mut options = ordered_options(selected)
-  match category {
-    Some(name) =>
+  match category_mode {
+    HCMNamed(name) =>
       if category_exists(options, name) {
         options = filter_category(options, name)
       } else {
-        return Err(help_absent("help category '" + name + "' does not exist"))
+        return Err(HQAbsentCategory)
       }
-    None => ()
+    // HCMDefault / HCMAll: model 素材は同一 (HIP-META-Q13=a)、絞りをかけない。
+    HCMDefault | HCMAll => ()
   }
   let command_path : Array[String] = []
   match ast.declaration.scope.name {

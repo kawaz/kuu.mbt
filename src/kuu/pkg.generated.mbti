@@ -11,7 +11,7 @@ pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[
 
 pub fn config_from_json(Json) -> @engine.ConfigVal
 
-pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category? : String?) -> Result[HelpModel, Array[@engine.DefError]]
+pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> Result[HelpModel, HelpQueryError]
 
 pub fn install(@engine.Registry) -> Unit
 
@@ -41,6 +41,12 @@ type AtomicAST
 pub(all) enum DefLoadError {
   Malformed(String)
   Rejected(Array[@engine.DefError])
+} derive(Eq, @debug.Debug)
+
+pub(all) enum HelpCategoryMode {
+  HCMDefault
+  HCMAll
+  HCMNamed(String)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpCommand {
@@ -107,6 +113,11 @@ pub(all) struct HelpPositional {
   repeat : @engine.RepeatSpec?
   hidden : Bool
   deprecated : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) enum HelpQueryError {
+  HQAbsentPath
+  HQAbsentCategory
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpUsage {

@@ -1512,7 +1512,7 @@ struct DHelpCase {
   id : String
   path : Array[String]
   depth : @kuu.HelpDepth
-  category : String?
+  category_mode : @kuu.HelpCategoryMode
   expect : Json
 }
 
@@ -1523,6 +1523,26 @@ struct DHelpFixture {
 }
 
 ///|
+/// DR-113 §1 の category_mode: string "default" / "all"、または object `{"named": name}`。
+/// 未指定は既定 `HCMDefault`。他の string / 形は decode skip。
+fn dec_category_mode(cmj : Json) -> @kuu.HelpCategoryMode raise DecodeSkip {
+  match cmj {
+    String("default") => @kuu.HCMDefault
+    String("all") => @kuu.HCMAll
+    String(other) =>
+      raise DecodeSkip("category_mode string '" + other + "' is not default/all")
+    Object(obj) =>
+      match obj.get("named") {
+        Some(String(name)) => @kuu.HCMNamed(name)
+        Some(_) =>
+          raise DecodeSkip("category_mode.named is not a string")
+        None => raise DecodeSkip("category_mode object missing 'named'")
+      }
+    _ => raise DecodeSkip("category_mode is not a string or object")
+  }
+}
+
+///|
 fn dec_help_case(cj : Json) -> DHelpCase raise DecodeSkip {
   let co = match cj.j_obj() {
     Some(value) => value
@@ -1530,7 +1550,7 @@ fn dec_help_case(cj : Json) -> DHelpCase raise DecodeSkip {
   }
   allowed_keys(
     co,
-    ["id", "why", "path", "depth", "category", "expect"],
+    ["id", "why", "path", "depth", "category_mode", "expect"],
     "help case",
   )
   let id = match jf_str(co, "id") {
@@ -1544,12 +1564,15 @@ fn dec_help_case(cj : Json) -> DHelpCase raise DecodeSkip {
     Some(value) =>
       raise DecodeSkip("help depth '" + value + "' is not scope/all")
   }
-  let category = jf_str(co, "category")
+  let category_mode = match co.get("category_mode") {
+    None => @kuu.HCMDefault
+    Some(cmj) => dec_category_mode(cmj)
+  }
   let expect = match co.get("expect") {
     Some(value) => value
     None => raise DecodeSkip("help case missing 'expect'")
   }
-  { id, path, depth, category, expect }
+  { id, path, depth, category_mode, expect }
 }
 
 ///|
@@ -1829,19 +1852,19 @@ fn help_model_json(model : @kuu.HelpModel) -> Json {
 }
 
 ///|
-fn help_errors_json(errors : Array[@engine.DefError]) -> Json {
-  let entries : Array[Json] = []
-  for error in errors {
-    let object : Map[String, Json] = Map([])
-    if error.element != "" {
-      object.set("element", error.element.to_json())
-    }
-    object.set("kind", render_def_kind(error.kind).to_json())
-    entries.push(object.to_json())
+/// DR-113 §1/§9 query-error envelope の serialize。help_query 固有の失敗 (合法な definition に対する
+/// 呼び出し側入力の失敗) を definition-error と別 outcome で pin する。fixture 期待は
+/// `{"outcome":"query-error","errors":[{"kind":"absent-path"}]}` の形式。
+fn help_query_error_json(err : @kuu.HelpQueryError) -> Json {
+  let kind = match err {
+    @kuu.HQAbsentPath => "absent-path"
+    @kuu.HQAbsentCategory => "absent-category"
   }
+  let entry : Map[String, Json] = Map([])
+  entry.set("kind", kind.to_json())
   let outcome : Map[String, Json] = Map([])
-  outcome.set("outcome", "definition-error".to_json())
-  outcome.set("errors", entries.to_json())
+  outcome.set("outcome", "query-error".to_json())
+  outcome.set("errors", [entry.to_json()].to_json())
   outcome.to_json()
 }
 
@@ -1852,10 +1875,10 @@ fn run_help(fixture : DHelpFixture, case : DHelpCase) -> String {
       fixture.ast,
       path=case.path,
       depth=case.depth,
-      category=case.category,
+      category_mode=case.category_mode,
     ) {
     Ok(model) => help_model_json(model)
-    Err(errors) => help_errors_json(errors)
+    Err(err) => help_query_error_json(err)
   }
   if actual == case.expect {
     "PASS"
@@ -2254,6 +2277,13 @@ fn known_divergences() -> Array[String] {
   // regression or accidental fix surfaces in the ledger delta. Remove entries when M3 wires
   // up the help model.
   [
+    // M3c-A (DR-113 §1): absent-category.json は decode 成功 (category_mode 3 分岐対応済) +
+    // absent-named-category-is-query-error は green 化。他 3 case は model 素材 (value_structure /
+    // origin / hidden / deprecated) が M4 未実装のため diverge 継続 (default/all は model 素材
+    // が同一で絞らない、named は素材を絞る挙動そのものは正しく動いているが model 側 field 展開が未)。
+    "help/absent-category.json::named-mode-filters-to-selected-group :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_name\":\"PORT\",\"help\":\"listen port\",\"help_group_name\":\"net\"}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_structure\":{\"single\":{\"value_name\":\"PORT\",\"type\":\"number\"}},\"help_group_name\":\"net\",\"help\":\"listen port\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}]}",
+    "help/absent-category.json::default-mode-keeps-all-model-material :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_name\":\"PORT\",\"help\":\"listen port\",\"help_group_name\":\"net\"},{\"spellings\":[\"--verbose\"],\"help\":\"verbose output\"},{\"spellings\":[\"--secret\"],\"help\":\"internal option\",\"hidden\":true}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_structure\":{\"single\":{\"value_name\":\"PORT\",\"type\":\"number\"}},\"help_group_name\":\"net\",\"help\":\"listen port\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--verbose\"],\"help\":\"verbose output\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--secret\"],\"help\":\"internal option\",\"hidden\":true,\"deprecated\":false,\"origin\":\"local\"}]}",
+    "help/absent-category.json::all-mode-keeps-same-model-material :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_name\":\"PORT\",\"help\":\"listen port\",\"help_group_name\":\"net\"},{\"spellings\":[\"--verbose\"],\"help\":\"verbose output\"},{\"spellings\":[\"--secret\"],\"help\":\"internal option\",\"hidden\":true}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"group\":{\"name\":\"net\",\"title\":\"Network options\"}},{\"spellings\":[\"--port\"],\"value_structure\":{\"single\":{\"value_name\":\"PORT\",\"type\":\"number\"}},\"help_group_name\":\"net\",\"help\":\"listen port\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--verbose\"],\"help\":\"verbose output\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--secret\"],\"help\":\"internal option\",\"hidden\":true,\"deprecated\":false,\"origin\":\"local\"}]}",
     "help/after-chain-and-multi.json::multiple-after-same-target-definition-order :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--a\"],\"help\":\"target\"},{\"spellings\":[\"--b\"],\"help\":\"first after\"},{\"spellings\":[\"--c\"],\"help\":\"second after\"},{\"spellings\":[\"--x\"],\"help\":\"unrelated tail\"}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--a\"],\"help\":\"target\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--b\"],\"help\":\"first after\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--c\"],\"help\":\"second after\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--x\"],\"help\":\"unrelated tail\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}]}",
     "help/after-chain.json::chain-resolves-and-absent-target-falls-back :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--c\"],\"help\":\"chain root\"},{\"spellings\":[\"--b\"],\"help\":\"after c\"},{\"spellings\":[\"--a\"],\"help\":\"after b\"},{\"spellings\":[\"--orphan\"],\"help\":\"missing target fallback\"},{\"spellings\":[\"--x\"],\"help\":\"bystander\"}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--c\"],\"help\":\"chain root\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--b\"],\"help\":\"after c\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--a\"],\"help\":\"after b\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--orphan\"],\"help\":\"missing target fallback\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--x\"],\"help\":\"bystander\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}]}",
     "help/alias-and-meta.json::alias-merged-hidden-deprecated-kept :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--port\",\"-p\"],\"alias_spellings\":[\"-n\"],\"value_name\":\"PORT\",\"help\":\"listen port\"},{\"spellings\":[\"--secret\"],\"help\":\"internal switch\",\"hidden\":true},{\"spellings\":[\"--legacy\"],\"help\":\"old switch\",\"deprecated\":true}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--port\",\"-p\"],\"alias_spellings\":[\"-n\"],\"value_structure\":{\"single\":{\"value_name\":\"PORT\",\"type\":\"number\"}},\"help\":\"listen port\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--secret\"],\"help\":\"internal switch\",\"hidden\":true,\"deprecated\":false,\"origin\":\"local\"},{\"spellings\":[\"--legacy\"],\"help\":\"old switch\",\"hidden\":false,\"deprecated\":true,\"origin\":\"local\"}]}",
@@ -2270,7 +2300,6 @@ fn known_divergences() -> Array[String] {
     "help/subcommand-path.json::root-lists-subcommands-one-layer :: help got={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"commands\":[{\"name\":\"remote\",\"help\":\"manage remotes\"},{\"name\":\"r\",\"help\":\"manage remotes\"}],\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\"}],\"help_entry\":\"--help\"} want={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"commands\":[{\"name\":\"remote\",\"aliases\":[\"r\"],\"help\":\"manage remotes\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}],\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}],\"help_entry\":\"--help\"}",
     "help/subcommand-path.json::nested-path-shows-global-copy-origin :: help got={\"outcome\":\"help\",\"command_path\":[\"prog\",\"remote\",\"add\"],\"usage\":{\"has_options\":true,\"positionals\":[{\"value_name\":\"URL\"}]},\"description\":\"add a remote\",\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\"}],\"positionals\":[{\"value_name\":\"URL\",\"help\":\"remote url\"}],\"help_entry\":\"--help\"} want={\"outcome\":\"help\",\"command_path\":[\"prog\",\"remote\",\"add\"],\"usage\":{\"has_options\":true,\"positionals\":[{\"value_structure\":{\"single\":{\"value_name\":\"URL\",\"type\":\"string\"}}}]},\"description\":\"add a remote\",\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":{\"kind\":\"global\",\"declared_at\":[\"prog\"]}}],\"positionals\":[{\"value_structure\":{\"single\":{\"value_name\":\"URL\",\"type\":\"string\"}},\"help\":\"remote url\",\"hidden\":false,\"deprecated\":false}],\"help_entry\":\"--help\"}",
     "help/subcommand-path.json::depth-all-embeds-recursive-scopes :: help got={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"commands\":[{\"name\":\"remote\",\"help\":\"manage remotes\"},{\"name\":\"r\",\"help\":\"manage remotes\"}],\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\"}],\"help_entry\":\"--help\"} want={\"outcome\":\"help\",\"command_path\":[\"prog\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"commands\":[{\"name\":\"remote\",\"aliases\":[\"r\"],\"help\":\"manage remotes\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\",\"scope\":{\"outcome\":\"help\",\"command_path\":[\"prog\",\"remote\"],\"usage\":{\"has_options\":true,\"has_subcommands\":true},\"description\":\"manage remotes\",\"commands\":[{\"name\":\"add\",\"help\":\"add a remote\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\",\"scope\":{\"outcome\":\"help\",\"command_path\":[\"prog\",\"remote\",\"add\"],\"usage\":{\"has_options\":true,\"positionals\":[{\"value_structure\":{\"single\":{\"value_name\":\"URL\",\"type\":\"string\"}}}]},\"description\":\"add a remote\",\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":{\"kind\":\"global\",\"declared_at\":[\"prog\"]}}],\"positionals\":[{\"value_structure\":{\"single\":{\"value_name\":\"URL\",\"type\":\"string\"}},\"help\":\"remote url\",\"hidden\":false,\"deprecated\":false}],\"help_entry\":\"--help\"}}],\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":{\"kind\":\"global\",\"declared_at\":[\"prog\"]}}],\"help_entry\":\"--help\"}}],\"options\":[{\"spellings\":[\"--help\"],\"help\":\"show help\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}],\"help_entry\":\"--help\"}",
-    "help/subcommand-path.json::absent-path-is-query-error :: help got={\"outcome\":\"definition-error\",\"errors\":[{\"kind\":\"absent-ref\"}]} want={\"outcome\":\"query-error\",\"errors\":[{\"kind\":\"absent-path\"}]}",
     "help/variant-spellings.json::variant-entries-and-short-listed-in-order :: help got={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--ssl\",\"--no-ssl\",\"-s\"],\"help\":\"enable TLS\"}]} want={\"outcome\":\"help\",\"command_path\":[],\"usage\":{\"has_options\":true},\"options\":[{\"spellings\":[\"--ssl\",\"--no-ssl\",\"-s\"],\"help\":\"enable TLS\",\"hidden\":false,\"deprecated\":false,\"origin\":\"local\"}]}",
   ]
 }
@@ -2289,9 +2318,6 @@ fn expected_skips() -> Array[(String, String)] {
   // that carry these unsupported keys are skipped at decode time; entries pinned here so a decode
   // regression (unexpected new skip) or accidental fix (vanished skip) fails the run.
   [
-    (
-      "help/absent-category.json", "help case has unsupported key 'category_mode'",
-    ),
     // M3a (DR-113 §2): 5 直交 help preset 名 (help_all_category / help_category /
     // help_show_hidden / help_tree) は wire_decode で受理可能になった (help-types-
     // and-default-fn.json は decode 成功、model diverge は下記 known_divergences へ
