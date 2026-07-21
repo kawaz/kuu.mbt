@@ -122,7 +122,6 @@ pub(all) enum HelpOrigin {
   Local
   Global(Array[String])
   Inheritable(Array[String])
-  Alias(String)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpPositional {

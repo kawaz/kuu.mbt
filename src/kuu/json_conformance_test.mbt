@@ -1702,8 +1702,7 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
 }
 
 ///|
-/// DR-113 §4.3 helpOrigin oneOf 直訳。Local は string "local"、Global/Inheritable は object、
-/// Alias は object。
+/// DR-113 §4.3 helpOrigin oneOf 直訳。Local は string "local"、Global/Inheritable は object。
 fn help_origin_json(origin : @kuu.HelpOrigin) -> Json {
   match origin {
     @kuu.Local => "local".to_json()
@@ -1717,12 +1716,6 @@ fn help_origin_json(origin : @kuu.HelpOrigin) -> Json {
       let out : Map[String, Json] = Map([])
       out.set("kind", "inheritable".to_json())
       out.set("declared_at", declared_at.to_json())
-      out.to_json()
-    }
-    @kuu.Alias(of) => {
-      let out : Map[String, Json] = Map([])
-      out.set("kind", "alias".to_json())
-      out.set("of", of.to_json())
       out.to_json()
     }
   }

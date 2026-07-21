@@ -90,15 +90,13 @@ pub(all) enum HelpDefault {
 } derive(Eq, Debug)
 
 ///|
-/// DR-113 §4.3 origin 4 形。model の options / commands entry の由来を表す — Local 以外は
-/// `declared_at` 相当情報を保持する。§4.4「alias は canonical entry の alias_spellings / aliases に
-/// 併記し、独立一覧しない」により、Alias は現状の fixture 走査経路では独立 entry としては現れない
-/// (spec 完備性のため carrier だけ持つ)。
+/// DR-113 §4.3 origin 3 形。model の options / commands entry の由来を表す — Local 以外は
+/// `declared_at` 相当情報を保持する。alias は canonical entry の alias_spellings / aliases に
+/// 併記して独立一覧しない (§4.4) ため、origin の alias 形は持たない。
 pub(all) enum HelpOrigin {
   Local
   Global(Array[String])
   Inheritable(Array[String])
-  Alias(String)
 } derive(Eq, Debug)
 
 ///|
