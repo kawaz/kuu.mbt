@@ -4072,7 +4072,16 @@ fn collect_unknown_accumulation_resident(
         }
         match e.collector {
           Some(collector) =>
-            if extensions.lookup_collector(collector.name) is None {
+            if collector.name == "from_entries" && collector.args is None {
+              out.push(
+                def_err(
+                  e.name,
+                  @engine.InvalidArgument,
+                  "collector 'from_entries' requires its canonical argument form",
+                  "use {\"from_entries\":\"entries\"}, {\"from_entries\":[\"key\",\"value\"]}, or {\"from_entries\":\"key\"}",
+                ),
+              )
+            } else if extensions.lookup_collector(collector.name) is None {
               out.push(
                 def_err(
                   e.name,

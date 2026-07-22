@@ -476,7 +476,7 @@ pub(all) enum FromEntriesSpec {
 } derive(Eq, Debug)
 
 ///|
-pub fn from_entries_spec_of(json : Json) -> FromEntriesSpec? {
+fn from_entries_spec_of(json : Json) -> FromEntriesSpec? {
   match json {
     String("entries") => Some(Entries)
     String(key) => Some(KeyPromote(key))
