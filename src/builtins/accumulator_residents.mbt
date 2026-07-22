@@ -476,10 +476,54 @@ pub(all) enum FromEntriesSpec {
 } derive(Eq, Debug)
 
 ///|
+pub fn from_entries_spec_of(json : Json) -> FromEntriesSpec? {
+  match json {
+    String("entries") => Some(Entries)
+    String(key) => Some(KeyPromote(key))
+    Array(items) =>
+      if items.length() == 2 {
+        match (items[0], items[1]) {
+          (String(key), String(value)) => Some(KeyValue(key, value))
+          _ => None
+        }
+      } else {
+        None
+      }
+    _ => None
+  }
+}
+
+///|
+fn result_value_json(value : @engine.ResultValue) -> Json {
+  match value {
+    @engine.Scalar(value) =>
+      match value {
+        @engine.String(value) => value.to_json()
+        @engine.Number(value) => value.to_json()
+        @engine.Bool(value) => value.to_json()
+      }
+    @engine.Array(values) => {
+      let out : Array[Json] = []
+      for value in values {
+        out.push(result_value_json(value))
+      }
+      out.to_json()
+    }
+    @engine.Object(fields) => {
+      let out : Map[String, Json] = Map([])
+      for field in fields {
+        out.set(field.0, result_value_json(field.1))
+      }
+      out.to_json()
+    }
+  }
+}
+
+///|
 fn result_key(value : @engine.ResultValue) -> String {
   match value {
     @engine.Scalar(value) => @engine.value_str(value)
-    _ => "?"
+    @engine.Array(_) | @engine.Object(_) => result_value_json(value).stringify()
   }
 }
 

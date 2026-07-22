@@ -139,6 +139,107 @@ test "from_entries collector resident converts entry pairs into an object" {
   )
 }
 
+///|
+test "from_entries collector encodes the three canonical argument forms" {
+  assert_eq(from_entries_collector(Entries).encode(), "entries".to_json())
+  assert_eq(
+    from_entries_collector(KeyValue("k", "v")).encode(),
+    ["k", "v"].to_json(),
+  )
+  assert_eq(
+    from_entries_collector(KeyPromote("path")).encode(),
+    "path".to_json(),
+  )
+}
+
+///|
+test "from_entries keeps nonconforming arrays and missing named fields" {
+  let one_item : @engine.ResultValue = @engine.Array([
+    @engine.Array([@engine.Scalar(@engine.String("a"))]),
+  ])
+  assert_eq(from_entries_collector(Entries).collect(one_item), one_item)
+  let missing_value : @engine.ResultValue = @engine.Array([
+    @engine.Object([("k", @engine.Scalar(@engine.String("a")))]),
+  ])
+  assert_eq(
+    from_entries_collector(KeyValue("k", "v")).collect(missing_value),
+    missing_value,
+  )
+  assert_eq(
+    from_entries_collector(Entries).collect(@engine.Array([])),
+    @engine.Array([]),
+  )
+}
+
+///|
+test "from_entries stringifies every representable non-string result key" {
+  let result = from_entries_collector(Entries).collect(
+    @engine.Array([
+      @engine.Array([
+        @engine.Scalar(@engine.Number(1.0)),
+        @engine.Scalar(@engine.String("number")),
+      ]),
+      @engine.Array([
+        @engine.Scalar(@engine.Bool(true)),
+        @engine.Scalar(@engine.String("bool")),
+      ]),
+      @engine.Array([
+        @engine.Array([
+          @engine.Scalar(@engine.Number(1.0)),
+          @engine.Scalar(@engine.Bool(false)),
+        ]),
+        @engine.Scalar(@engine.String("array")),
+      ]),
+      @engine.Array([
+        @engine.Object([
+          ("x", @engine.Scalar(@engine.Number(1.0))),
+          ("ok", @engine.Scalar(@engine.Bool(true))),
+        ]),
+        @engine.Scalar(@engine.String("object")),
+      ]),
+    ]),
+  )
+  assert_eq(
+    result,
+    @engine.Object([
+      ("1", @engine.Scalar(@engine.String("number"))),
+      ("true", @engine.Scalar(@engine.String("bool"))),
+      ("[1,false]", @engine.Scalar(@engine.String("array"))),
+      ("{\"x\":1,\"ok\":true}", @engine.Scalar(@engine.String("object"))),
+    ]),
+  )
+}
+
+///|
+test "from_entries preserves duplicate keys and key-promote empty objects" {
+  assert_eq(
+    from_entries_collector(Entries).collect(
+      @engine.Array([
+        @engine.Array([
+          @engine.Scalar(@engine.String("a")),
+          @engine.Scalar(@engine.Number(1.0)),
+        ]),
+        @engine.Array([
+          @engine.Scalar(@engine.String("a")),
+          @engine.Scalar(@engine.Number(2.0)),
+        ]),
+      ]),
+    ),
+    @engine.Object([
+      ("a", @engine.Scalar(@engine.Number(1.0))),
+      ("a", @engine.Scalar(@engine.Number(2.0))),
+    ]),
+  )
+  assert_eq(
+    from_entries_collector(KeyPromote("key")).collect(
+      @engine.Array([
+        @engine.Object([("key", @engine.Scalar(@engine.String("a")))]),
+      ]),
+    ),
+    @engine.Object([("a", @engine.Object([]))]),
+  )
+}
+
 // ── DR-080 merge accumulator: §4 の canonical 例 ────────────────────────────
 
 ///|

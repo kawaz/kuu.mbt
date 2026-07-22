@@ -174,7 +174,7 @@ pub(all) enum OwnedDeclaration {
   Global(Bool)
   Inherit(Bool)
   Repeat(RepeatSpec?, Bool)
-  Multiple(Bool, String?, String?, String?, Bool?)
+  Multiple(Bool, String?, CollectorDeclaration?, String?, Bool?)
   Config(Bool, Array[String]?)
   Constraint(Array[String], Array[String], Array[String], Array[String], Bool)
   Alias(AliasDef?)

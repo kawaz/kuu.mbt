@@ -217,7 +217,7 @@ fn opt(
   multiple? : Bool = false,
   accumulator? : String? = None,
   flatten? : Bool? = None,
-  collector? : String? = None,
+  collector? : @engine.CollectorDeclaration? = None,
   fail_action? : Bool = false,
   config_file? : Bool = false,
   config_key? : Array[String]? = None,
@@ -329,7 +329,7 @@ fn pos(
   accumulator? : String? = None,
   flatten? : Bool? = None,
   separator? : String? = None,
-  collector? : String? = None,
+  collector? : @engine.CollectorDeclaration? = None,
   config_key? : Array[String]? = None,
   export_? : @engine.ExportKey = @engine.ExportKey::unset(),
   ref_? : String? = None,
@@ -623,7 +623,7 @@ priv struct InstallerDecoded {
   optional : Bool
   multiple : Bool
   separator : String?
-  collector : String?
+  collector : @engine.CollectorDeclaration?
   accumulator : String?
   flatten : Bool?
   config_file : Bool
@@ -656,7 +656,7 @@ fn decode_installer_owned(
   let mut optional = false
   let mut multiple = false
   let mut separator : String? = None
-  let mut collector : String? = None
+  let mut collector : @engine.CollectorDeclaration? = None
   let mut accumulator : String? = None
   let mut flatten : Bool? = None
   let mut config_file = false

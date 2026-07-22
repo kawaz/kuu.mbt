@@ -1253,11 +1253,30 @@ fn ensure_entity(
   }
   let collector : &@engine.CollectorExt? = if accum is Some(_) {
     match e.collector {
-      Some(name) =>
-        match extensions.lookup_collector(name) {
-          Some(resident) => Some(resident)
+      Some(declaration) =>
+        match declaration.args {
           None =>
-            abort("registered collector disappeared during lowering: " + name)
+            match extensions.lookup_collector(declaration.name) {
+              Some(resident) => Some(resident)
+              None =>
+                abort(
+                  "registered collector disappeared during lowering: " +
+                  declaration.name,
+                )
+            }
+          Some(args) =>
+            if declaration.name == "from_entries" {
+              match from_entries_spec_of(args) {
+                Some(spec) => Some(from_entries_collector(spec))
+                None =>
+                  abort("validated from_entries collector args disappeared")
+              }
+            } else {
+              abort(
+                "configured collector disappeared during lowering: " +
+                declaration.name,
+              )
+            }
         }
       None => None
     }
@@ -4053,16 +4072,16 @@ fn collect_unknown_accumulation_resident(
         }
         match e.collector {
           Some(collector) =>
-            if extensions.lookup_collector(collector) is None {
+            if extensions.lookup_collector(collector.name) is None {
               out.push(
                 def_err(
                   e.name,
                   @engine.UnknownVocab,
                   "'\{e.name}' requires collector '" +
-                  collector +
+                  collector.name +
                   "' but no resident with that name is registered",
                   "register collector '" +
-                  collector +
+                  collector.name +
                   "' in the active assembly",
                 ),
               )

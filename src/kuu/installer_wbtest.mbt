@@ -84,7 +84,7 @@ fn el(
   multiple? : Bool = false,
   accumulator? : String? = None,
   flatten? : Bool? = None,
-  collector? : String? = None,
+  collector? : @engine.CollectorDeclaration? = None,
   ref_? : String? = None,
   piece_filters? : Array[String] = [],
   value_filters? : Array[String] = [],
@@ -831,7 +831,7 @@ test "multiple installer: a declared collector rides straight through to @engine
         @builtins.string_type(),
         long=List([":set"]),
         multiple=true,
-        collector=Some("unwrap_single"),
+        collector=Some(@engine.CollectorDeclaration::named("unwrap_single")),
       ),
     ],
   }
@@ -839,6 +839,31 @@ test "multiple installer: a declared collector rides straight through to @engine
   let ent = entity_of(sc, "tags").unwrap()
   assert_eq(ent.accum.unwrap().kind(), "append") // DR-034: multiple の値 fold は append
   assert_eq(ent.collector.unwrap().kind(), "unwrap_single")
+}
+
+///|
+test "multiple installer: configured from_entries collector reaches Entity" {
+  let def : @engine.Definition = {
+    ..empty_def(),
+    options: [
+      el(
+        "entries",
+        @builtins.string_type(),
+        long=List([":set"]),
+        multiple=true,
+        collector=Some(
+          @engine.CollectorDeclaration::configured(
+            "from_entries",
+            "entries".to_json(),
+          ),
+        ),
+      ),
+    ],
+  }
+  let sc = ok_scope(def, all_installers())
+  let ent = entity_of(sc, "entries").unwrap()
+  assert_eq(ent.collector.unwrap().kind(), "from_entries")
+  assert_eq(ent.collector.unwrap().encode(), "entries".to_json())
 }
 
 ///|
@@ -856,7 +881,7 @@ test "multiple installer: a collector declared without multiple/repeat is droppe
         "n",
         @builtins.number_type(),
         long=List([":set"]),
-        collector=Some("unwrap_single"),
+        collector=Some(@engine.CollectorDeclaration::named("unwrap_single")),
       ),
     ],
   }

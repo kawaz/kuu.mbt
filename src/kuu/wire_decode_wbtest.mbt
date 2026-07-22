@@ -1,4 +1,21 @@
 // wire_decode_wbtest.mbt — wire_decode.mbt の単体テスト (MDR-005)。
+
+///|
+test "dec_option carries configured from_entries collector" {
+  let src =
+    #|{"name":"entries","type":"string","long":true,"multiple":{"accumulator":"append","collector":{"from_entries":"key"}}}
+  match dec_option(@json.parse(src), Map([])) {
+    DOpt(element) =>
+      match element.collector {
+        Some(collector) => {
+          assert_eq(collector.name, "from_entries")
+          assert_eq(collector.args, Some("key".to_json()))
+        }
+        None => fail("configured collector was dropped during decode")
+      }
+    DAlias(_) => fail("decoded as alias")
+  }
+}
 // json_conformance_test.mbt から昇格した decode 関数のうち、fixture 経由でなく直接検証している
 // ケース (TypeShadow の carry 経路など) をここへ移す。
 

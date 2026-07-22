@@ -709,21 +709,30 @@ fn build_result(
           per_fire.push(@engine.Array(rows))
         }
       }
-      obj.push((seg, @engine.Array(per_fire)))
+      let accumulated : @engine.ResultValue = @engine.Array(per_fire)
+      let collected = match collector_here(cells, path, seg) {
+        Some(resident) => resident.collect(accumulated)
+        None => accumulated
+      }
+      obj.push((seg, collected))
     } else if !unfired_ref_accum_seg {
-      obj.push(
-        (
-          seg,
-          build_result(
-            sub_under(binds, seg),
-            cells,
-            defaults,
-            path_push(path, seg),
-            nones~,
-            extensions~,
-          ),
-        ),
+      let accumulated = build_result(
+        sub_under(binds, seg),
+        cells,
+        defaults,
+        path_push(path, seg),
+        nones~,
+        extensions~,
       )
+      let collected = if is_accum {
+        match collector_here(cells, path, seg) {
+          Some(resident) => resident.collect(accumulated)
+          None => accumulated
+        }
+      } else {
+        accumulated
+      }
+      obj.push((seg, collected))
     }
   }
   // UNIFORM ARRAY (DR-044 §1): an accumulate cell declared at THIS path that fired 0 times still

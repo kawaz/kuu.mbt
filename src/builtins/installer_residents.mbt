@@ -134,7 +134,10 @@ fn resident_repeat(json : Json) -> Result[@engine.RepeatSpec, String] {
 ///|
 fn resident_multiple(
   json : Json,
-) -> Result[(Bool, String?, String?, String?, Bool?), String] {
+) -> Result[
+  (Bool, String?, @engine.CollectorDeclaration?, String?, Bool?),
+  String,
+] {
   match json {
     True => return Ok((true, None, None, None, None))
     False => return Ok((false, None, None, None, None))
@@ -158,11 +161,37 @@ fn resident_multiple(
     Some("append") | None => None
     Some(value) => Some(value)
   }
-  let collector = match resident_string(object, "collector") {
+  let collector = match object.get("collector") {
     None => None
-    Some("unwrap_single") => Some("unwrap_single")
-    Some(value) =>
-      return Err("multiple.collector '" + value + "' has no wired runtime yet")
+    Some(String(name)) => Some(@engine.CollectorDeclaration::named(name))
+    Some(Object(call)) => {
+      let mut decoded : @engine.CollectorDeclaration? = None
+      for name, args in call {
+        if decoded is Some(_) {
+          return Err(
+            "multiple.collector argument form has more than one resident",
+          )
+        }
+        if name != "from_entries" {
+          return Err(
+            "multiple.collector argument form has unsupported resident '" +
+            name +
+            "'",
+          )
+        }
+        if from_entries_spec_of(args) is None {
+          return Err(
+            "multiple.collector.from_entries must be \"entries\", a key string, or [key, value]",
+          )
+        }
+        decoded = Some(@engine.CollectorDeclaration::configured(name, args))
+      }
+      match decoded {
+        Some(value) => Some(value)
+        None => return Err("multiple.collector argument form is empty")
+      }
+    }
+    Some(_) => return Err("multiple.collector is not a string/object")
   }
   let flatten = match object.get("flatten") {
     None => None

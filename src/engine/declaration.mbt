@@ -127,6 +127,28 @@ pub(all) struct HelpRenderDecl {
 } derive(Eq, Debug)
 
 ///|
+/// Collector declaration carried from wire decode to lowering. `args: None`
+/// names a static registry resident; `args: Some(json)` carries the configured
+/// argument payload whose shape is owned by that resident.
+pub(all) struct CollectorDeclaration {
+  name : String
+  args : Json?
+} derive(Eq, Debug)
+
+///|
+pub fn CollectorDeclaration::named(name : String) -> CollectorDeclaration {
+  { name, args: None }
+}
+
+///|
+pub fn CollectorDeclaration::configured(
+  name : String,
+  args : Json,
+) -> CollectorDeclaration {
+  { name, args: Some(args) }
+}
+
+///|
 /// UsefulAST element. Attribute arrays are READ-ONLY to installers (invariant ①': 宣言層 read-only).
 /// The declaration layer is never emptied — help / diagnose / 再シリアライズが元の宣言を保持し、後段
 /// installer (global 等) も引き続き参照できる。Idempotency は add-if-absent が担う。
@@ -201,11 +223,10 @@ pub(all) struct ElementDef {
   // 枝でのみ読み、repeat-cons 専用の枝は自前で true を立てる (Entity.flatten の doc comment 参照)。
   flatten : Bool?
 
-  // DR-036 collector: `multiple: {accumulator, collector}` の object 形が持つ collector 属性 (decode
-  // 層の multiple installer decode 所有)。`ensure_entity` がそのまま `Entity.collector`
-  // へ写す — 中間の installer 変換は無い (この属性を消費する唯一の installer は「宣言をそのまま Entity
-  // へ通す」ensure_entity 自身)。None = collector 未指定 (accumulator 連動デフォルト、DR-036)。
-  collector : String?
+  // DR-036/044 collector: named resident または resident 固有の引数 payload。decode 層の
+  // multiple installer が CollectorDeclaration へ正規化し、ensure_entity が lowering 時に resident
+  // を解決する。None = collector 未指定 (accumulator 連動デフォルト、DR-036)。
+  collector : CollectorDeclaration?
   fail_action : Bool // failure-action element (DR-048)
   is_config_file : Bool // type:"config_file" (DR-050)
   config_key : Array[String]? // 明示 config path (DR-050 §3); None = 同型
