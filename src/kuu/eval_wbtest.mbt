@@ -24,7 +24,7 @@ test "MDR-002 §1.5 acceptance: greedy repeat in a child command yields the pare
   // global end) and starved `tail` → "fail:missing operand for tail" (the
   // phase16 frozen fail). The CPS oracle instead runs the continuation: the
   // xs=[a,b] split's `stop` resumes R, consumes `c` into tail, and reaches
-  // KTop at the global end → @engine.Accept; the xs=[a,b,c] split's continuation
+  // KTop at the global end → @abi.Accept; the xs=[a,b,c] split's continuation
   // Helds on tail → pruned. Exactly one complete path remains.
   let defs : Map[String, @engine.Node] = Map([])
   reg_repeat(defs, "xs", @builtins.string_arg("xs", []))
@@ -62,7 +62,7 @@ test "MDR-002 §1.5 acceptance: greedy repeat in a child command yields the pare
         }
         if b.key == "tail" {
           match b.value {
-            @engine.String(s) =>
+            @abi.String(s) =>
               if s == "c" && b.scope.length() == 0 {
                 tail_ok = true
               }
@@ -128,7 +128,7 @@ test "DR-097 (先食い述語の精密化): a value-less trigger at the end of i
   // 照合を通ること") makes this reading NON-viable, so it counts as 読みゼロ
   // and the raw-eat is NOT suppressed: `files` consumes the literal string
   // "--port" and the parse succeeds. Supersedes the pre-DR-097 pin
-  // (MDR-002 §2.6's "@engine.Pending counts as reads" posture, which made a
+  // (MDR-002 §2.6's "@abi.Pending counts as reads" posture, which made a
   // value-less trigger suppress 先食い even when its own value slot could
   // never be filled) — DR-097 distinguishes "trigger fired but the reading
   // itself cannot succeed" (読みゼロ) from "trigger fired and the reading
@@ -148,7 +148,7 @@ test "DR-097 (先食い述語の精密化): a value-less trigger at the end of i
       for b in bs {
         if b.key == "files" {
           match b.value {
-            @engine.String(s) => if s == "--port" { files_raw = true }
+            @abi.String(s) => if s == "--port" { files_raw = true }
             _ => ()
           }
         }
@@ -167,7 +167,7 @@ test "positional spine + greedy interjection sanity (order-free trigger between 
   // prog a --v b : greedy flag --v interjects between two positionals.
   let root : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @abi.Bool(true))]),
     ],
     positional: [@builtins.string_arg("x", []), @builtins.string_arg("y", [])],
     entities: [],
@@ -189,13 +189,13 @@ test "positional spine + greedy interjection sanity (order-free trigger between 
         }
         if b.key == "x" {
           match b.value {
-            @engine.String(s) => if s == "a" { got_x = true }
+            @abi.String(s) => if s == "a" { got_x = true }
             _ => ()
           }
         }
         if b.key == "y" {
           match b.value {
-            @engine.String(s) => if s == "b" { got_y = true }
+            @abi.String(s) => if s == "b" { got_y = true }
             _ => ()
           }
         }
@@ -212,7 +212,7 @@ test "positional spine + greedy interjection sanity (order-free trigger between 
 test "dd sever: past `--`, a trigger-looking token falls raw into the positional" {
   let root : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("--v"), @engine.Bind("v", @abi.Bool(true))]),
       @engine.DdSatisfied("--"),
     ],
     positional: [@builtins.string_arg("x", [])],
@@ -230,7 +230,7 @@ test "dd sever: past `--`, a trigger-looking token falls raw into the positional
       for b in bs {
         if b.key == "x" {
           match b.value {
-            @engine.String(s) => if s == "--v" { x_is_trigger = true }
+            @abi.String(s) => if s == "--v" { x_is_trigger = true }
             _ => ()
           }
         }
@@ -350,9 +350,9 @@ test "DR-043 sequential repeats: xs ys over a b c d e — greedy xs takes the lo
 test "REVIEW-C1 fired_action survives a failing value slot in the same greedy entry" {
   // A failure-action entry that ALSO takes a value: @engine.Seq([--help, failure resident,
   // number resident]). When the value fails to parse, the failure resident marker bound
-  // earlier in the SAME @engine.Seq must still reach parse() on the @engine.Held's partial
+  // earlier in the SAME @engine.Seq must still reach parse() on the @abi.Held's partial
   // state — fired_action and the held error coexist (spec DR-048/DR-053 §4).
-  // The slice dropped the @engine.Seq-internal acc on @engine.Held, losing the action.
+  // The slice dropped the @engine.Seq-internal acc on @abi.Held, losing the action.
   let root : @engine.Scope = {
     greedy: [
       @engine.Seq([
@@ -420,8 +420,8 @@ test "REVIEW-C3 head_name knows filtered number resident: optional extra rep at 
 }
 
 ///|
-test "REVIEW-C4 non-scope root: residual of a partial @engine.Accept surfaces even when another branch held an error" {
-  // @engine.Or branch 1 accepts "a" leaving "xyz" residual (partial @engine.Accept);
+test "REVIEW-C4 non-scope root: residual of a partial @abi.Accept surfaces even when another branch held an error" {
+  // @engine.Or branch 1 accepts "a" leaving "xyz" residual (partial @abi.Accept);
   // branch 2 helds a not_a_number on "xyz". 0 complete paths -> failure.
   // Both failure reasons must be retained (DR-053 §2 全保持): gating the
   // residual synthesis on "errors empty" would mask the partial reading.
@@ -460,7 +460,7 @@ test "REGRESSION dd sever transparent to positional inline @engine.ScopeNode chi
   // "w" is a residual token → @engine.Failure.
   let child : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("-x"), @engine.Bind("x", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("-x"), @engine.Bind("x", @abi.Bool(true))]),
     ],
     positional: [@builtins.string_arg("a", [])],
     entities: [],
@@ -495,19 +495,19 @@ test "REGRESSION dd sever transparent to positional inline @engine.ScopeNode chi
 }
 
 ///|
-test "REGRESSION step_greedy @engine.Held carries acc so failure resident survives to DeepestOnly fired_action" {
+test "REGRESSION step_greedy @abi.Held carries acc so failure resident survives to DeepestOnly fired_action" {
   // deep-review "step_greedy acc": two greedy entries — a failure resident help
   // action, and a numeric option. Under faildef=DeepestOnly the ONLY
   // candidate path for fired_action collection is the deepest one:
   // consume --help (bind help + failure resident) → consume --num → @builtins.number_arg("xyz", [])
-  // parse fail @ args_pos 2. Without acc on the @engine.Held branch, the failure resident
-  // binding accumulated before the @engine.Held is dropped and fired_action
+  // parse fail @ args_pos 2. Without acc on the @abi.Held branch, the failure resident
+  // binding accumulated before the @abi.Held is dropped and fired_action
   // becomes None. With it, fired_action = Some("help").
   let root : @engine.Scope = {
     greedy: [
       @engine.Seq([
         @engine.Exact("--help"),
-        @engine.Bind("help", @engine.Bool(true)),
+        @engine.Bind("help", @abi.Bool(true)),
         @builtins.failure_mark("help"),
       ]),
       @engine.Seq([@engine.Exact("--num"), @builtins.number_arg("n", [])]),
@@ -541,7 +541,7 @@ test "REGRESSION consume_head @engine.RequiredArgument respects 先食い (raw-e
     greedy: [
       @engine.Seq([
         @engine.Exact("-v"),
-        @engine.Bind("verbose", @engine.Bool(true)),
+        @engine.Bind("verbose", @abi.Bool(true)),
       ]),
     ],
     positional: [Ref("fs")],
@@ -559,7 +559,7 @@ test "REGRESSION consume_head @engine.RequiredArgument respects 先食い (raw-e
         }
         if b.key == "verbose" {
           match b.value {
-            @engine.Bool(v) => if v { verbose_ok = true }
+            @abi.Bool(v) => if v { verbose_ok = true }
             _ => ()
           }
         }
@@ -650,7 +650,7 @@ test "DR-043: @engine.Many(lazy=true) prefers the shortest (0-rep) share, mirror
 test "REGRESSION scope-shaped Ref head: more-branch drops internal missing_operand only" {
   // deep-review LENS-T3: Ref("r")'s head is @engine.ScopeNode(inner) with a
   // single @builtins.string_arg("f", []) positional. Input ["a"] consumes 1 rep (f=a);
-  // the OPTIONAL "more" rep enters inner at EOF, producing @engine.Held(pe_missing
+  // the OPTIONAL "more" rep enters inner at EOF, producing @abi.Held(pe_missing
   // "f"). Before the fix, head_name(@engine.ScopeNode)="" left drop_optional_missing
   // inert, so "f missing" leaked into FailureData.errors alongside the
   // real downstream failure ("n missing"). With head_elem_names the
@@ -702,12 +702,12 @@ test "REGRESSION @engine.Or-wrapped greedy: @engine.find_help_entry / tried_trig
       @engine.Or([
         @engine.Seq([
           @engine.Exact("--help"),
-          @engine.Bind("help", @engine.Bool(true)),
+          @engine.Bind("help", @abi.Bool(true)),
           @builtins.failure_mark("help"),
         ]),
         @engine.Seq([
           @engine.Exact("--verbose"),
-          @engine.Bind("v", @engine.Bool(true)),
+          @engine.Bind("v", @abi.Bool(true)),
         ]),
       ]),
     ],
@@ -796,7 +796,7 @@ test "DR-053 §4: help_entry reflects the failure position's OWN scope, not root
     greedy: [
       @engine.Seq([
         @engine.Exact("--help"),
-        @engine.Bind("help", @engine.Bool(true)),
+        @engine.Bind("help", @abi.Bool(true)),
         @builtins.failure_mark("help"),
       ]),
       @engine.Seq([@engine.Exact("--port"), @builtins.number_arg("port", [])]),
@@ -832,7 +832,7 @@ test "DR-053 §4: help_entry is None when the failure-position scope has no help
     greedy: [
       @engine.Seq([
         @engine.Exact("--help"),
-        @engine.Bind("help", @engine.Bool(true)),
+        @engine.Bind("help", @abi.Bool(true)),
         @builtins.failure_mark("help"),
       ]),
     ],
@@ -865,7 +865,7 @@ test "REVIEW-D1 取り分選好オラクルは制約違反の全消費を「完�
   // 全て KTop からスキップされ `resolve.mbt` の `apply_requires_filter` (post-parse) へ委譲される
   // ようになった (DR-047 §4「遅延述語は値源ラダー充填後の最終状態で評価する」の実装形)。よって
   // has_full_k (選好オラクル) はもう Requires 違反を見分けられず、`parse()` 単体では stop/more
-  // 両方が @engine.Accept (= @engine.Ambiguous 2 本) になる — 「完全経路」の絞り込みは `apply_requires_filter` の
+  // 両方が @abi.Accept (= @engine.Ambiguous 2 本) になる — 「完全経路」の絞り込みは `apply_requires_filter` の
   // 候補 drop (DR-047 §6「制約が ambiguous の解消に参加する」の実現箇所が KTop → post-filter へ
   // 移った、観測同値) が担う。本 wbtest は `apply_requires_filter` を通した最終結果を確認する。
   // `apply_requires_filter` の目的語判定は `resolve_scope_tree` が実際に解決した値を読むので
@@ -946,10 +946,7 @@ test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコー�
   // `scope_path_eq` フィルタ) は変わらないので、`apply_requires_filter` を通した結果で確認する。
   let child : @engine.Scope = {
     greedy: [
-      @engine.Seq([
-        @engine.Exact("--out"),
-        @engine.Bind("out", @engine.Bool(true)),
-      ]),
+      @engine.Seq([@engine.Exact("--out"), @engine.Bind("out", @abi.Bool(true))]),
     ],
     positional: [],
     entities: [],
@@ -959,7 +956,7 @@ test "REVIEW-D3 誤充足も塞ぐ: requires のターゲットは子スコー�
     greedy: [
       @engine.Seq([
         @engine.Exact("--file"),
-        @engine.Bind("file", @engine.Bool(true)),
+        @engine.Bind("file", @abi.Bool(true)),
       ]),
       @engine.CommandSatisfied("sub", child),
     ],
@@ -995,8 +992,8 @@ test "REVIEW-D4 入れ子スコープの constraints も完全経路の成立条
   // 弾く。旧実装は root 直下の constraints しか評価していなかった。
   let child : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--x"), @engine.Bind("x", @engine.Bool(true))]),
-      @engine.Seq([@engine.Exact("--y"), @engine.Bind("y", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("--x"), @engine.Bind("x", @abi.Bool(true))]),
+      @engine.Seq([@engine.Exact("--y"), @engine.Bind("y", @abi.Bool(true))]),
     ],
     positional: [],
     entities: [],
@@ -1056,8 +1053,8 @@ test "DR-097 (先食い述語の精密化, supersedes REVIEW-D5): 値不正の -
       let mut g_raw = false
       for b in bs {
         match (b.key, b.value) {
-          ("f", @engine.String(s)) => if s == "--port" { f_raw = true }
-          ("g", @engine.String(s)) => if s == "xyz" { g_raw = true }
+          ("f", @abi.String(s)) => if s == "--port" { f_raw = true }
+          ("g", @abi.String(s)) => if s == "xyz" { g_raw = true }
           _ => ()
         }
       }
@@ -1087,8 +1084,8 @@ test "DR-097 述語 pin: 値スロットを持たない flag は常に成立し�
   // 唯一の pin (fixture と重複しない軸)。
   let root : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("-a"), @engine.Bind("a", @engine.Bool(true))]),
-      @engine.Seq([@engine.Exact("-b"), @engine.Bind("b", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("-a"), @engine.Bind("a", @abi.Bool(true))]),
+      @engine.Seq([@engine.Exact("-b"), @engine.Bind("b", @abi.Bool(true))]),
     ],
     positional: [@builtins.string_arg("x", [])],
     entities: [],
@@ -1111,7 +1108,7 @@ test "DR-097 述語 pin: 値スロットを持たない flag は常に成立し�
           // would only happen if -b were raw-eaten into x (it never is: x is
           // string-typed, so a raw-eat would silently SUCCEED as x="-b" —
           // this branch exists only to document the shape a regression
-          // would take, not because it is reachable via this @engine.Held path.
+          // would take, not because it is reachable via this @abi.Held path.
           b_raw_eaten = true
         }
       }
@@ -1239,7 +1236,7 @@ test "DR-074 §1: float resident accepts inf (ci, signed), number resident rejec
         for b in bs {
           if b.key == "t" {
             match b.value {
-              @engine.Number(_) => t_ok = true
+              @abi.Number(_) => t_ok = true
               _ => ()
             }
           }
@@ -1296,7 +1293,7 @@ test "REGRESSION scope_consume float resident respects 先食い (raw-eat suppre
     greedy: [
       @engine.Seq([
         @engine.Exact("inf"),
-        @engine.Bind("verbose", @engine.Bool(true)),
+        @engine.Bind("verbose", @abi.Bool(true)),
       ]),
     ],
     positional: [@builtins.float_arg("x", [])],
@@ -1335,7 +1332,7 @@ test "REGRESSION consume_head float resident respects 先食い (raw-eat suppres
     greedy: [
       @engine.Seq([
         @engine.Exact("inf"),
-        @engine.Bind("verbose", @engine.Bool(true)),
+        @engine.Bind("verbose", @abi.Bool(true)),
       ]),
     ],
     positional: [Ref("fs")],
@@ -1353,7 +1350,7 @@ test "REGRESSION consume_head float resident respects 先食い (raw-eat suppres
         }
         if b.key == "verbose" {
           match b.value {
-            @engine.Bool(v) => if v { verbose_ok = true }
+            @abi.Bool(v) => if v { verbose_ok = true }
             _ => ()
           }
         }
@@ -1381,7 +1378,7 @@ test "REGRESSION scope_consume_rep @engine.Many(float resident) respects 先食�
     greedy: [
       @engine.Seq([
         @engine.Exact("inf"),
-        @engine.Bind("verbose", @engine.Bool(true)),
+        @engine.Bind("verbose", @abi.Bool(true)),
       ]),
     ],
     positional: [@engine.Many(@builtins.float_arg("f", []), false)],
@@ -1403,7 +1400,7 @@ test "REGRESSION scope_consume_rep @engine.Many(float resident) respects 先食�
         }
         if b.key == "verbose" {
           match b.value {
-            @engine.Bool(v) => if v { verbose_ok = true }
+            @abi.Bool(v) => if v { verbose_ok = true }
             _ => ()
           }
         }
@@ -1437,13 +1434,13 @@ test "REGRESSION scope_consume_rep @engine.Many(compound ref-template head) resp
   // `{"name":"hlcolors","ref":"color","repeat":{"min":0}}` の lowering そのもの。
   let head = @engine.Scoped(
     "hlcolors",
-    @engine.Seq([@engine.Bind("#row", @engine.Bool(false)), Ref("color")]),
+    @engine.Seq([@engine.Bind("#row", @abi.Bool(false)), Ref("color")]),
   )
   let root : @engine.Scope = {
     greedy: [
       @engine.Seq([
         @engine.Exact("--verbose"),
-        @engine.Bind("verbose", @engine.Bool(true)),
+        @engine.Bind("verbose", @abi.Bool(true)),
       ]),
     ],
     positional: [@engine.Many(head, false)],
@@ -1468,7 +1465,7 @@ test "REGRESSION scope_consume_rep @engine.Many(compound ref-template head) resp
         }
         if b.key == "verbose" {
           match b.value {
-            @engine.Bool(v) => if v { verbose_ok = true }
+            @abi.Bool(v) => if v { verbose_ok = true }
             _ => ()
           }
         }
@@ -1556,7 +1553,7 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
 /// A held Error two @engine.CommandSatisfied levels deep carries `path: ["a", "b"]` (root-first,
 /// DR-066 §4): the error crosses TWO command boundaries on its way out — "b"
 /// prepends first (innermost, its own step_greedy loop), then "a" prepends in
-/// front of that (its parent's), landing root-first as the CPS @engine.Held bubbles
+/// front of that (its parent's), landing root-first as the CPS @abi.Held bubbles
 /// out through both KNest/@engine.CommandSatisfied crossings.
 test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (root-first)" {
   let grandchild : @engine.Scope = {
@@ -1609,7 +1606,7 @@ test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (r
 test "DR-066 §4: a constraint violation declared in a child scope carries the child's path" {
   let child : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--x"), @engine.Bind("x", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("--x"), @engine.Bind("x", @abi.Bool(true))]),
     ],
     positional: [],
     entities: [],
@@ -1678,14 +1675,14 @@ test "DR-066 §4: a residual-token Error carries path: []" {
 }
 
 ///|
-/// DR-066 §4 (issue 2026-07-08 pending-starvation-missing-operand-path): a @engine.Pending's
+/// DR-066 §4 (issue 2026-07-08 pending-starvation-missing-operand-path): a @abi.Pending's
 /// starved value slot converts to a `missing_operand` Error at parse()'s top level
 /// (MDR-002 §2.3). That conversion point sat OUTSIDE the CPS scope-boundary prepend
-/// (`nest_branches` / `step_greedy`'s @engine.CommandSatisfied case) that a @engine.Held's `@engine.ParseError.path`
+/// (`nest_branches` / `step_greedy`'s @engine.CommandSatisfied case) that a @abi.Held's `@abi.ParseError.path`
 /// already rode through, so nested-scope starvation always surfaced `path: []` no
 /// matter how deep the starved slot actually was. `sub --port` (no value token after
 /// `--port`) starves the value slot at input end one command-scope deep.
-test "DR-066 §4: a @engine.Pending-starvation missing_operand Error inside a nested command carries the ancestor path" {
+test "DR-066 §4: a @abi.Pending-starvation missing_operand Error inside a nested command carries the ancestor path" {
   let child : @engine.Scope = {
     greedy: [
       @engine.Seq([@engine.Exact("--port"), @builtins.number_arg("port", [])]),
@@ -1793,7 +1790,7 @@ test "@engine.IndexedRepeat budget=Some(0): stops after min reps, does not starv
           g_count = g_count + 1
         }
         if b.key == "tail" {
-          tail_val = Some(@engine.value_str(b.value))
+          tail_val = Some(@extension.value_str(b.value))
         }
       }
       // budget=0 → exactly 1 rep (min), NOT greedy-max over both tokens.
@@ -1836,7 +1833,7 @@ test "@engine.IndexedRepeat budget=Some(1): consumes up to min+budget=2 reps, le
           g_count = g_count + 1
         }
         if b.key == "tail" {
-          tail_val = Some(@engine.value_str(b.value))
+          tail_val = Some(@extension.value_str(b.value))
         }
       }
       assert_eq(g_count, 2)
@@ -1913,10 +1910,10 @@ test "DR-047 §2: a constraint filters one of two complete paths (@engine.Or-bra
     @engine.Or([
       @engine.Seq([
         @engine.Exact("x"),
-        @engine.Bind("foo", @engine.Bool(true)),
-        @engine.Bind("bar", @engine.Bool(true)),
+        @engine.Bind("foo", @abi.Bool(true)),
+        @engine.Bind("bar", @abi.Bool(true)),
       ]),
-      @engine.Seq([@engine.Exact("x"), @engine.Bind("foo", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("x"), @engine.Bind("foo", @abi.Bool(true))]),
     ]),
   ]
   let sc : @engine.Scope = {
@@ -1960,9 +1957,9 @@ test "DR-047 §2: a constraint filters one of two complete paths (sibling greedy
   // よる vacuous-satisfaction は混ぜない、上のコメント通り)。
   let sc : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--v"), @engine.Bind("a", @engine.Bool(true))]),
-      @engine.Seq([@engine.Exact("--v"), @engine.Bind("b", @engine.Bool(true))]),
-      @engine.Seq([@engine.Exact("--c"), @engine.Bind("c", @engine.Bool(true))]),
+      @engine.Seq([@engine.Exact("--v"), @engine.Bind("a", @abi.Bool(true))]),
+      @engine.Seq([@engine.Exact("--v"), @engine.Bind("b", @abi.Bool(true))]),
+      @engine.Seq([@engine.Exact("--c"), @engine.Bind("c", @abi.Bool(true))]),
     ],
     positional: [],
     entities: [ent("c", @builtins.string_type())],
@@ -1999,8 +1996,8 @@ test "DR-047 §2: a constraint filters one of two complete paths (sibling greedy
 // ── DR-091 §2: kv resident consume-time gate (kv_map accumulator) ─────────────────
 
 ///|
-/// Guarantees: a `kv resident` piece that DOES contain `=` is a plain @engine.Accept — same shape as `string resident`
-/// (1 token consumed, `@engine.String` binding of the WHOLE token, `=` split deferred to `resolve.mbt`'s
+/// Guarantees: a `kv resident` piece that DOES contain `=` is a plain @abi.Accept — same shape as `string resident`
+/// (1 token consumed, `@abi.String` binding of the WHOLE token, `=` split deferred to `resolve.mbt`'s
 /// `build_result` at fold time — this node only gates, it does not itself split).
 test "DR-091 §2: kv resident accepts a piece containing '=' (whole token becomes the binding value)" {
   let root : @engine.Scope = {
@@ -2018,7 +2015,7 @@ test "DR-091 §2: kv resident accepts a piece containing '=' (whole token become
     @engine.Success(bs) => {
       assert_eq(bs.length(), 1)
       assert_eq(bs[0].key, "kv")
-      assert_eq(bs[0].value, @engine.String("KEY=value"))
+      assert_eq(bs[0].value, @abi.String("KEY=value"))
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
   }
@@ -2026,11 +2023,11 @@ test "DR-091 §2: kv resident accepts a piece containing '=' (whole token become
 
 ///|
 /// Guarantees (DR-091 §2 "`=` を含まない piece は... reject"): a `kv resident` piece with NO `=` is a
-/// @engine.Held `kind: parse` Error (`reason: "not_a_kv_pair"`) — the same family as any
-/// other value primitive's type-parse failure, NOT a silent Reject and NOT a `@engine.Filter` reject.
+/// @abi.Held `kind: parse` Error (`reason: "not_a_kv_pair"`) — the same family as any
+/// other value primitive's type-parse failure, NOT a silent Reject and NOT a `@abi.Filter` reject.
 /// This is the structural precondition `resolve.mbt`'s `split_first_eq` relies on: every piece
-/// that ever becomes a @engine.Binding is guaranteed splittable.
-test "DR-091 §2: kv resident rejects a piece with no '=' as a @engine.Held kind:parse Error (対極 of the accept case above)" {
+/// that ever becomes a @abi.Binding is guaranteed splittable.
+test "DR-091 §2: kv resident rejects a piece with no '=' as a @abi.Held kind:parse Error (対極 of the accept case above)" {
   let root : @engine.Scope = {
     greedy: [],
     positional: [@builtins.kv_arg("kv", [])],

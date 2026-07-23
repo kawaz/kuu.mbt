@@ -1,9 +1,6 @@
 // help.mbt — DR-113 §1/§4 の宣言層 help query と構造化 help model 実装。
 
 ///|
-using @engine {type HelpValueStructure}
-
-///|
 pub(all) enum HelpDepth {
   Scope
   All
@@ -41,13 +38,13 @@ pub(all) enum HelpQueryError {
 pub struct HelpQueryCapability {}
 
 ///|
-pub impl @engine.CapabilityExt for HelpQueryCapability with fn name(_self) {
+pub impl @extension.CapabilityExt for HelpQueryCapability with fn name(_self) {
   "help_query"
 }
 
 ///|
-pub fn help_query_capability() -> &@engine.CapabilityExt {
-  HelpQueryCapability::{  } as &@engine.CapabilityExt
+pub fn help_query_capability() -> &@extension.CapabilityExt {
+  HelpQueryCapability::{  } as &@extension.CapabilityExt
 }
 
 ///|
@@ -67,7 +64,7 @@ pub(all) enum HelpQueryOutcome {
 /// DR-113 §1/§9 capability dispatch: registry で "help_query" capability の登録を確認し、
 /// 登録済みなら help singleton の invoke ABI を呼ぶ。未登録なら Unavailable を返す。
 pub fn dispatch_help_query(
-  registry : @engine.Registry,
+  registry : @node.Registry,
   ast : AtomicAST,
   path? : Array[String] = [],
   depth? : HelpDepth = Scope,
@@ -85,8 +82,8 @@ pub fn dispatch_help_query(
 
 ///|
 pub(all) enum HelpDefault {
-  Scalar(@engine.Value)
-  Array(Array[@engine.Value])
+  Scalar(@abi.Value)
+  Array(Array[@abi.Value])
 } derive(Eq, Debug)
 
 ///|
@@ -271,7 +268,7 @@ fn option_spellings(element : @engine.ElementDef) -> Array[String] {
 }
 
 ///|
-fn help_default(values : Array[@engine.Value]?) -> HelpDefault? {
+fn help_default(values : Array[@abi.Value]?) -> HelpDefault? {
   match values {
     None => None
     Some(items) =>
@@ -303,8 +300,8 @@ fn find_option(definition : @engine.Definition, name : String) -> Bool {
 ///|
 fn option_alias_pairs(
   definition : @engine.Definition,
-) -> Array[(@engine.AliasDef, @engine.ElementDef)] {
-  let aliases : Array[@engine.AliasDef] = []
+) -> Array[(@abi.AliasDef, @engine.ElementDef)] {
+  let aliases : Array[@abi.AliasDef] = []
   for alias_def in definition.aliases {
     if find_option(definition, alias_def.target) {
       aliases.push(alias_def)
@@ -316,7 +313,7 @@ fn option_alias_pairs(
       entries.push(element)
     }
   }
-  let output : Array[(@engine.AliasDef, @engine.ElementDef)] = []
+  let output : Array[(@abi.AliasDef, @engine.ElementDef)] = []
   let count = if aliases.length() < entries.length() {
     aliases.length()
   } else {
@@ -330,7 +327,7 @@ fn option_alias_pairs(
 
 ///|
 fn alias_spellings_for(
-  pairs : Array[(@engine.AliasDef, @engine.ElementDef)],
+  pairs : Array[(@abi.AliasDef, @engine.ElementDef)],
   target : String,
   canonical_spellings : Array[String],
 ) -> Array[String] {
@@ -427,7 +424,7 @@ fn alias_command_names(definition : @engine.Definition) -> Array[String] {
 /// DR-113 §4.1 の value_structure `single{value_name, type, values_enum}` 素材を ElementDef から組む。
 /// `type_name` が None の要素 (flag / count / help preset / none / dd / config_file / tty / etc — value-less
 /// preset や structural node) は None を返す。help_category (preset_kind="help_category") のみ
-/// or[bool, string] 特殊展開。将来 seq/repeat 拡張ポイントは @engine.Repeat / @engine.Seq を追加すれば良い。
+/// or[bool, string] 特殊展開。将来 seq/repeat 拡張ポイントは @abi.Repeat / @engine.Seq を追加すれば良い。
 fn value_structure_of(element : @engine.ElementDef) -> HelpValueStructure? {
   let meta = element.help_meta
   // DR-113 §4.1/§4.2: wire_decode が完全 tree を組んで value_structure_hint に carry している
@@ -439,13 +436,12 @@ fn value_structure_of(element : @engine.ElementDef) -> HelpValueStructure? {
   // type_ref (tree-form shadow を type: で単純参照した場合、or/seq/repeat は無いので hint 側では
   // 拾わない) は type_ref を優先する — value_name は wire の value_name を上書き名として使う。
   match meta.type_ref {
-    Some(id) =>
-      return Some(@engine.TypeRef({ id, value_name: meta.value_name }))
+    Some(id) => return Some(@abi.TypeRef({ id, value_name: meta.value_name }))
     None => ()
   }
   // help_category 特殊: or[bool, string] を展開 (DR-113 §2.3)。value_name は string 側の枝に付く。
   if meta.preset_kind == Some("help_category") {
-    let bool_branch = @engine.Single({
+    let bool_branch = @abi.Single({
       value_name: None,
       value_type: Some("bool"),
       values_enum: None,
@@ -457,12 +453,12 @@ fn value_structure_of(element : @engine.ElementDef) -> HelpValueStructure? {
       Some(name) => Some(name)
       None => Some("CATEGORY")
     }
-    let str_branch = @engine.Single({
+    let str_branch = @abi.Single({
       value_name: str_value_name,
       value_type: Some("string"),
       values_enum: None,
     })
-    return Some(@engine.Or([bool_branch, str_branch]))
+    return Some(@abi.Or([bool_branch, str_branch]))
   }
   match meta.type_name {
     None => None
@@ -473,7 +469,7 @@ fn value_structure_of(element : @engine.ElementDef) -> HelpValueStructure? {
         _ => None
       }
       Some(
-        @engine.Single({
+        @abi.Single({
           value_name: meta.value_name,
           value_type: Some(t),
           values_enum,
@@ -492,7 +488,7 @@ fn positional_value_structure_of(
   match value_structure_of(element) {
     Some(vs) => vs
     None =>
-      @engine.Single({
+      @abi.Single({
         value_name: element.help_meta.value_name,
         value_type: None,
         values_enum: None,
@@ -635,7 +631,7 @@ fn str_has_suffix(s : String, suffix : String) -> Bool {
 ///|
 fn help_option_from(
   element : @engine.ElementDef,
-  meta : @engine.HelpMetaDeclaration,
+  meta : @abi.HelpMetaDeclaration,
   alias_spellings : Array[String],
   origin : HelpOrigin,
 ) -> HelpOption {
@@ -1043,7 +1039,7 @@ fn filter_category(
 /// or/seq/repeat の順序を保持 (fixture value-structure-and-types が期待する COLOR/INFO/WARN/
 /// DEBUG 順は options 順 fg → level-colors → 各 seq 要素)。
 fn help_types_projection(
-  root_types : Array[@engine.HelpTypeDeclaration],
+  root_types : Array[@abi.HelpTypeDeclaration],
   root_def : @engine.Definition,
 ) -> Array[HelpTypeEntry] {
   let output : Array[HelpTypeEntry] = []
@@ -1063,28 +1059,28 @@ fn help_types_projection(
 ///|
 /// value_structure tree 内の TypeRef で id が target の value_name を定義出現順で拾う。
 fn collect_used_as_from_vs(
-  vs : @engine.HelpValueStructure,
+  vs : @abi.HelpValueStructure,
   target : String,
   out : Array[String],
 ) -> Unit {
   match vs {
-    @engine.TypeRef(ref_) =>
+    @abi.TypeRef(ref_) =>
       if ref_.id == target {
         match ref_.value_name {
           Some(v) => out.push(v)
           None => ()
         }
       }
-    @engine.Seq(nodes) =>
+    @abi.Seq(nodes) =>
       for n in nodes {
         collect_used_as_from_vs(n, target, out)
       }
-    @engine.Or(nodes) =>
+    @abi.Or(nodes) =>
       for n in nodes {
         collect_used_as_from_vs(n, target, out)
       }
-    @engine.Repeat(spec) => collect_used_as_from_vs(spec.node, target, out)
-    @engine.Single(_) => ()
+    @abi.Repeat(spec) => collect_used_as_from_vs(spec.node, target, out)
+    @abi.Single(_) => ()
   }
 }
 
@@ -1157,7 +1153,7 @@ fn build_help_model(
 ///|
 /// DR-115 §1.4: scope.help_meta.render_effective (declaration 層 carrier) を model の
 /// HelpRenderView へ写す。全キー None なら None を返す (model の `render` フィールドを省略)。
-fn help_render_view_of(render : @engine.HelpRenderDecl?) -> HelpRenderView? {
+fn help_render_view_of(render : @abi.HelpRenderDecl?) -> HelpRenderView? {
   match render {
     None => None
     Some(r) => {

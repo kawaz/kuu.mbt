@@ -1,0 +1,6 @@
+import {
+  "kawaz/kuu/abi",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/random",
+  "moonbitlang/core/string",
+}

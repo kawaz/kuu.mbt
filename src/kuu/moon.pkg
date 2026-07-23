@@ -1,5 +1,8 @@
 import {
-  "kawaz/kuu/engine",
+  "kawaz/kuu/abi",
+  "kawaz/kuu/extension",
+  "kawaz/kuu/internal/engine",
+  "kawaz/kuu/kuu-node" @node,
   "kawaz/kuu/builtins",
   "moonbitlang/core/string",
   "moonbitlang/core/debug",

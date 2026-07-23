@@ -179,7 +179,7 @@ fn resident_multiple(
             "'",
           )
         }
-        if from_entries_spec_of(args) is None {
+        if @extension.from_entries_spec_of(args) is None {
           return Err(
             "multiple.collector.from_entries must be \"entries\", a key string, or [key, value]",
           )
@@ -302,12 +302,12 @@ fn resident_alias(json : Json) -> Result[@engine.AliasDef?, String] {
 priv struct LongInstaller {}
 
 ///|
-impl @engine.InstallerExt for LongInstaller with fn vocab(_self) {
+impl @node.InstallerExt for LongInstaller with fn vocab(_self) {
   ["long"]
 }
 
 ///|
-impl @engine.InstallerExt for LongInstaller with fn decode(_self, json, ctx) {
+impl @node.InstallerExt for LongInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option => ["long"]
     _ => []
@@ -328,36 +328,33 @@ impl @engine.InstallerExt for LongInstaller with fn decode(_self, json, ctx) {
 }
 
 ///|
-impl @engine.InstallerExt for LongInstaller with fn apply(_self, builder) {
-  inst_long(builder.definition(), builder.output(), builder.templates())
+impl @node.InstallerExt for LongInstaller with fn apply(_self, builder) {
+  @node.builder_apply_builtin(builder, "long")
 }
 
 ///|
-impl @engine.InstallerExt for LongInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for LongInstaller with fn collect_defs_errors(
   _self,
   view,
 ) {
-  let errors = []
-  collect_invalid_long_dsl(view.source_definition(), errors, view.extensions())
-  collect_tty_stream_missing(view.definition(), errors)
-  errors
+  @node.defs_builtin_errors(view, "long")
 }
 
 ///|
-pub fn long_installer() -> &@engine.InstallerExt {
-  LongInstaller::{  } as &@engine.InstallerExt
+pub fn long_installer() -> &@node.InstallerExt {
+  LongInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct ShortInstaller {}
 
 ///|
-impl @engine.InstallerExt for ShortInstaller with fn vocab(_self) {
+impl @node.InstallerExt for ShortInstaller with fn vocab(_self) {
   ["short"]
 }
 
 ///|
-impl @engine.InstallerExt for ShortInstaller with fn decode(_self, json, ctx) {
+impl @node.InstallerExt for ShortInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option => ["short"]
     _ => []
@@ -380,12 +377,12 @@ impl @engine.InstallerExt for ShortInstaller with fn decode(_self, json, ctx) {
 }
 
 ///|
-impl @engine.InstallerExt for ShortInstaller with fn apply(_self, builder) {
-  inst_short(builder.definition(), builder.output())
+impl @node.InstallerExt for ShortInstaller with fn apply(_self, builder) {
+  @node.builder_apply_builtin(builder, "short")
 }
 
 ///|
-impl @engine.InstallerExt for ShortInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for ShortInstaller with fn collect_defs_errors(
   _self,
   _view,
 ) {
@@ -393,20 +390,20 @@ impl @engine.InstallerExt for ShortInstaller with fn collect_defs_errors(
 }
 
 ///|
-pub fn short_installer() -> &@engine.InstallerExt {
-  ShortInstaller::{  } as &@engine.InstallerExt
+pub fn short_installer() -> &@node.InstallerExt {
+  ShortInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct EnvInstaller {}
 
 ///|
-impl @engine.InstallerExt for EnvInstaller with fn vocab(_self) {
+impl @node.InstallerExt for EnvInstaller with fn vocab(_self) {
   ["env"]
 }
 
 ///|
-impl @engine.InstallerExt for EnvInstaller with fn decode(_self, json, ctx) {
+impl @node.InstallerExt for EnvInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option | Positional => ["env"]
     _ => []
@@ -422,35 +419,33 @@ impl @engine.InstallerExt for EnvInstaller with fn decode(_self, json, ctx) {
 }
 
 ///|
-impl @engine.InstallerExt for EnvInstaller with fn apply(_self, builder) {
-  inst_env(builder.definition(), builder.output())
+impl @node.InstallerExt for EnvInstaller with fn apply(_self, builder) {
+  @node.builder_apply_builtin(builder, "env")
 }
 
 ///|
-impl @engine.InstallerExt for EnvInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for EnvInstaller with fn collect_defs_errors(
   _self,
   view,
 ) {
-  let errors = []
-  collect_none_value_source_decl(view.definition(), errors)
-  errors
+  @node.defs_builtin_errors(view, "env")
 }
 
 ///|
-pub fn env_installer() -> &@engine.InstallerExt {
-  EnvInstaller::{  } as &@engine.InstallerExt
+pub fn env_installer() -> &@node.InstallerExt {
+  EnvInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct DdInstaller {}
 
 ///|
-impl @engine.InstallerExt for DdInstaller with fn vocab(_self) {
+impl @node.InstallerExt for DdInstaller with fn vocab(_self) {
   ["dd"]
 }
 
 ///|
-impl @engine.InstallerExt for DdInstaller with fn decode(_self, json, ctx) {
+impl @node.InstallerExt for DdInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option => ["match", "self"]
     _ => []
@@ -468,49 +463,40 @@ impl @engine.InstallerExt for DdInstaller with fn decode(_self, json, ctx) {
 }
 
 ///|
-impl @engine.InstallerExt for DdInstaller with fn apply(_self, builder) {
-  inst_dd(builder.definition(), builder.output())
+impl @node.InstallerExt for DdInstaller with fn apply(_self, builder) {
+  @node.builder_apply_builtin(builder, "dd")
 }
 
 ///|
-impl @engine.InstallerExt for DdInstaller with fn collect_defs_errors(
-  _self,
-  view,
-) {
-  let errors = []
-  collect_invalid_dd_pattern(view.definition(), errors)
-  errors
+impl @node.InstallerExt for DdInstaller with fn collect_defs_errors(_self, view) {
+  @node.defs_builtin_errors(view, "dd")
 }
 
 ///|
-pub fn dd_installer() -> &@engine.InstallerExt {
-  DdInstaller::{  } as &@engine.InstallerExt
+pub fn dd_installer() -> &@node.InstallerExt {
+  DdInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct CommandInstaller {}
 
 ///|
-impl @engine.InstallerExt for CommandInstaller with fn vocab(_self) {
+impl @node.InstallerExt for CommandInstaller with fn vocab(_self) {
   ["command"]
 }
 
 ///|
-impl @engine.InstallerExt for CommandInstaller with fn decode(
-  _self,
-  _json,
-  _ctx,
-) {
+impl @node.InstallerExt for CommandInstaller with fn decode(_self, _json, _ctx) {
   Ok({ vocab: [], declaration: Command })
 }
 
 ///|
-impl @engine.InstallerExt for CommandInstaller with fn apply(_self, _builder) {
+impl @node.InstallerExt for CommandInstaller with fn apply(_self, _builder) {
   ()
 }
 
 ///|
-impl @engine.InstallerExt for CommandInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for CommandInstaller with fn collect_defs_errors(
   _self,
   _view,
 ) {
@@ -518,20 +504,20 @@ impl @engine.InstallerExt for CommandInstaller with fn collect_defs_errors(
 }
 
 ///|
-pub fn command_installer() -> &@engine.InstallerExt {
-  CommandInstaller::{  } as &@engine.InstallerExt
+pub fn command_installer() -> &@node.InstallerExt {
+  CommandInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct GlobalInstaller {}
 
 ///|
-impl @engine.InstallerExt for GlobalInstaller with fn vocab(_self) {
+impl @node.InstallerExt for GlobalInstaller with fn vocab(_self) {
   ["global"]
 }
 
 ///|
-impl @engine.InstallerExt for GlobalInstaller with fn decode(_self, json, ctx) {
+impl @node.InstallerExt for GlobalInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option => ["global"]
     _ => []
@@ -547,12 +533,12 @@ impl @engine.InstallerExt for GlobalInstaller with fn decode(_self, json, ctx) {
 }
 
 ///|
-impl @engine.InstallerExt for GlobalInstaller with fn apply(_self, builder) {
-  inst_global(builder)
+impl @node.InstallerExt for GlobalInstaller with fn apply(_self, builder) {
+  @node.builder_apply_builtin(builder, "global")
 }
 
 ///|
-impl @engine.InstallerExt for GlobalInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for GlobalInstaller with fn collect_defs_errors(
   _self,
   _view,
 ) {
@@ -560,20 +546,20 @@ impl @engine.InstallerExt for GlobalInstaller with fn collect_defs_errors(
 }
 
 ///|
-pub fn global_installer() -> &@engine.InstallerExt {
-  GlobalInstaller::{  } as &@engine.InstallerExt
+pub fn global_installer() -> &@node.InstallerExt {
+  GlobalInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct InheritInstaller {}
 
 ///|
-impl @engine.InstallerExt for InheritInstaller with fn vocab(_self) {
+impl @node.InstallerExt for InheritInstaller with fn vocab(_self) {
   ["inherit"]
 }
 
 ///|
-impl @engine.InstallerExt for InheritInstaller with fn decode(_self, json, ctx) {
+impl @node.InstallerExt for InheritInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option | Positional => ["inherit"]
     _ => []
@@ -589,12 +575,12 @@ impl @engine.InstallerExt for InheritInstaller with fn decode(_self, json, ctx) 
 }
 
 ///|
-impl @engine.InstallerExt for InheritInstaller with fn apply(_self, builder) {
-  inst_inherit(builder.definition(), builder.output())
+impl @node.InstallerExt for InheritInstaller with fn apply(_self, builder) {
+  @node.builder_apply_builtin(builder, "inherit")
 }
 
 ///|
-impl @engine.InstallerExt for InheritInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for InheritInstaller with fn collect_defs_errors(
   _self,
   _view,
 ) {
@@ -602,20 +588,20 @@ impl @engine.InstallerExt for InheritInstaller with fn collect_defs_errors(
 }
 
 ///|
-pub fn inherit_installer() -> &@engine.InstallerExt {
-  InheritInstaller::{  } as &@engine.InstallerExt
+pub fn inherit_installer() -> &@node.InstallerExt {
+  InheritInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct RepeatInstaller {}
 
 ///|
-impl @engine.InstallerExt for RepeatInstaller with fn vocab(_self) {
+impl @node.InstallerExt for RepeatInstaller with fn vocab(_self) {
   ["repeat"]
 }
 
 ///|
-impl @engine.InstallerExt for RepeatInstaller with fn decode(_self, json, ctx) {
+impl @node.InstallerExt for RepeatInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option => ["repeat"]
     Positional => ["repeat", "optional"]
@@ -641,41 +627,33 @@ impl @engine.InstallerExt for RepeatInstaller with fn decode(_self, json, ctx) {
 }
 
 ///|
-impl @engine.InstallerExt for RepeatInstaller with fn apply(_self, _builder) {
+impl @node.InstallerExt for RepeatInstaller with fn apply(_self, _builder) {
   ()
 }
 
 ///|
-impl @engine.InstallerExt for RepeatInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for RepeatInstaller with fn collect_defs_errors(
   _self,
   view,
 ) {
-  let errors = []
-  let definition = view.definition()
-  let templates = view.templates()
-  collect_invalid_range(definition, errors)
-  collect_unsupported_option_ref_repeat(definition, errors)
-  collect_absent_ref(definition, templates, errors)
-  collect_circular_ref(templates, errors)
-  collect_zero_progress(definition, templates, errors)
-  errors
+  @node.defs_builtin_errors(view, "repeat")
 }
 
 ///|
-pub fn repeat_installer() -> &@engine.InstallerExt {
-  RepeatInstaller::{  } as &@engine.InstallerExt
+pub fn repeat_installer() -> &@node.InstallerExt {
+  RepeatInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct MultipleInstaller {}
 
 ///|
-impl @engine.InstallerExt for MultipleInstaller with fn vocab(_self) {
+impl @node.InstallerExt for MultipleInstaller with fn vocab(_self) {
   ["multiple"]
 }
 
 ///|
-impl @engine.InstallerExt for MultipleInstaller with fn decode(_self, json, ctx) {
+impl @node.InstallerExt for MultipleInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option | Positional => ["multiple"]
     _ => []
@@ -700,44 +678,33 @@ impl @engine.InstallerExt for MultipleInstaller with fn decode(_self, json, ctx)
 }
 
 ///|
-impl @engine.InstallerExt for MultipleInstaller with fn apply(_self, _builder) {
+impl @node.InstallerExt for MultipleInstaller with fn apply(_self, _builder) {
   ()
 }
 
 ///|
-impl @engine.InstallerExt for MultipleInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for MultipleInstaller with fn collect_defs_errors(
   _self,
   view,
 ) {
-  let errors = []
-  let definition = view.definition()
-  collect_unsupported_accum_update(definition, errors, view.extensions())
-  collect_unsupported_count_multiple(definition, errors)
-  collect_scalar_array_default(definition, errors)
-  collect_unknown_filter(definition, errors, view.extensions())
-  collect_invalid_filter_attribute_mismatch(definition, errors)
-  collect_invalid_regex_pattern(definition, errors)
-  collect_ref_merge_accum(definition, errors)
-  collect_flatten_non_append(definition, errors)
-  collect_invalid_numeric_filter_args(definition, errors)
-  errors
+  @node.defs_builtin_errors(view, "multiple")
 }
 
 ///|
-pub fn multiple_installer() -> &@engine.InstallerExt {
-  MultipleInstaller::{  } as &@engine.InstallerExt
+pub fn multiple_installer() -> &@node.InstallerExt {
+  MultipleInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct ConfigInstaller {}
 
 ///|
-impl @engine.InstallerExt for ConfigInstaller with fn vocab(_self) {
+impl @node.InstallerExt for ConfigInstaller with fn vocab(_self) {
   ["config"]
 }
 
 ///|
-impl @engine.InstallerExt for ConfigInstaller with fn decode(_self, json, ctx) {
+impl @node.InstallerExt for ConfigInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option | Positional => ["config_key"]
     _ => []
@@ -764,39 +731,33 @@ impl @engine.InstallerExt for ConfigInstaller with fn decode(_self, json, ctx) {
 }
 
 ///|
-impl @engine.InstallerExt for ConfigInstaller with fn apply(_self, _builder) {
+impl @node.InstallerExt for ConfigInstaller with fn apply(_self, _builder) {
   ()
 }
 
 ///|
-impl @engine.InstallerExt for ConfigInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for ConfigInstaller with fn collect_defs_errors(
   _self,
   view,
 ) {
-  let errors = []
-  collect_config_cycle(view.definition(), errors)
-  errors
+  @node.defs_builtin_errors(view, "config")
 }
 
 ///|
-pub fn config_installer() -> &@engine.InstallerExt {
-  ConfigInstaller::{  } as &@engine.InstallerExt
+pub fn config_installer() -> &@node.InstallerExt {
+  ConfigInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct ConstraintInstaller {}
 
 ///|
-impl @engine.InstallerExt for ConstraintInstaller with fn vocab(_self) {
+impl @node.InstallerExt for ConstraintInstaller with fn vocab(_self) {
   ["constraint"]
 }
 
 ///|
-impl @engine.InstallerExt for ConstraintInstaller with fn decode(
-  _self,
-  json,
-  ctx,
-) {
+impl @node.InstallerExt for ConstraintInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option =>
       [
@@ -847,12 +808,12 @@ impl @engine.InstallerExt for ConstraintInstaller with fn decode(
 }
 
 ///|
-impl @engine.InstallerExt for ConstraintInstaller with fn apply(_self, builder) {
-  inst_constraint(builder.definition(), builder.output(), builder.templates())
+impl @node.InstallerExt for ConstraintInstaller with fn apply(_self, builder) {
+  @node.builder_apply_builtin(builder, "constraint")
 }
 
 ///|
-impl @engine.InstallerExt for ConstraintInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for ConstraintInstaller with fn collect_defs_errors(
   _self,
   _view,
 ) {
@@ -860,20 +821,20 @@ impl @engine.InstallerExt for ConstraintInstaller with fn collect_defs_errors(
 }
 
 ///|
-pub fn constraint_installer() -> &@engine.InstallerExt {
-  ConstraintInstaller::{  } as &@engine.InstallerExt
+pub fn constraint_installer() -> &@node.InstallerExt {
+  ConstraintInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct AliasInstaller {}
 
 ///|
-impl @engine.InstallerExt for AliasInstaller with fn vocab(_self) {
+impl @node.InstallerExt for AliasInstaller with fn vocab(_self) {
   ["alias"]
 }
 
 ///|
-impl @engine.InstallerExt for AliasInstaller with fn decode(_self, json, ctx) {
+impl @node.InstallerExt for AliasInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option | Command => ["alias"]
     _ => []
@@ -885,39 +846,33 @@ impl @engine.InstallerExt for AliasInstaller with fn decode(_self, json, ctx) {
 }
 
 ///|
-impl @engine.InstallerExt for AliasInstaller with fn apply(_self, _builder) {
+impl @node.InstallerExt for AliasInstaller with fn apply(_self, _builder) {
   ()
 }
 
 ///|
-impl @engine.InstallerExt for AliasInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for AliasInstaller with fn collect_defs_errors(
   _self,
   view,
 ) {
-  let errors = []
-  collect_invalid_alias_long_override(
-    view.source_definition(),
-    errors,
-    view.extensions(),
-  )
-  errors
+  @node.defs_builtin_errors(view, "alias")
 }
 
 ///|
-pub fn alias_installer() -> &@engine.InstallerExt {
-  AliasInstaller::{  } as &@engine.InstallerExt
+pub fn alias_installer() -> &@node.InstallerExt {
+  AliasInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct InheritableInstaller {}
 
 ///|
-impl @engine.InstallerExt for InheritableInstaller with fn vocab(_self) {
+impl @node.InstallerExt for InheritableInstaller with fn vocab(_self) {
   ["inheritable"]
 }
 
 ///|
-impl @engine.InstallerExt for InheritableInstaller with fn decode(
+impl @node.InstallerExt for InheritableInstaller with fn decode(
   _self,
   json,
   ctx,
@@ -937,12 +892,12 @@ impl @engine.InstallerExt for InheritableInstaller with fn decode(
 }
 
 ///|
-impl @engine.InstallerExt for InheritableInstaller with fn apply(_self, builder) {
-  inst_inheritable(builder)
+impl @node.InstallerExt for InheritableInstaller with fn apply(_self, builder) {
+  @node.builder_apply_builtin(builder, "inheritable")
 }
 
 ///|
-impl @engine.InstallerExt for InheritableInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for InheritableInstaller with fn collect_defs_errors(
   _self,
   _view,
 ) {
@@ -950,15 +905,15 @@ impl @engine.InstallerExt for InheritableInstaller with fn collect_defs_errors(
 }
 
 ///|
-pub fn inheritable_installer() -> &@engine.InstallerExt {
-  InheritableInstaller::{  } as &@engine.InstallerExt
+pub fn inheritable_installer() -> &@node.InstallerExt {
+  InheritableInstaller::{  } as &@node.InstallerExt
 }
 
 ///|
 priv struct HelpMetaInstaller {}
 
 ///|
-impl @engine.InstallerExt for HelpMetaInstaller with fn vocab(_self) {
+impl @node.InstallerExt for HelpMetaInstaller with fn vocab(_self) {
   [
     "help", "help_long", "help_epilog", "display_name", "value_name", "help_group_name",
     "help_group_title", "help_group_description", "help_order", "help_group_order",
@@ -973,11 +928,7 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn vocab(_self) {
 }
 
 ///|
-impl @engine.InstallerExt for HelpMetaInstaller with fn decode(
-  _self,
-  json,
-  _ctx,
-) {
+impl @node.InstallerExt for HelpMetaInstaller with fn decode(_self, json, _ctx) {
   let object = match resident_object(json) {
     Ok(value) => value
     Err(reason) => return Err(reason)
@@ -1054,366 +1005,19 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn decode(
 }
 
 ///|
-impl @engine.InstallerExt for HelpMetaInstaller with fn apply(_self, _builder) {
+impl @node.InstallerExt for HelpMetaInstaller with fn apply(_self, _builder) {
   ()
 }
 
 ///|
-fn help_group_declaration(e : @engine.ElementDef) -> Bool {
-  e.name == "" && e.help_meta.help_group_name is Some(_)
-}
-
-///|
-fn help_find_after(def : @engine.Definition, name : String) -> String? {
-  for e in def.options {
-    if e.name == name {
-      return e.help_meta.help_after
-    }
-  }
-  for c in def.commands {
-    if c.name == name {
-      return None
-    }
-  }
-  None
-}
-
-///|
-fn help_name_seen(names : Array[String], name : String) -> Bool {
-  for item in names {
-    if item == name {
-      return true
-    }
-  }
-  false
-}
-
-///|
-fn help_after_returns_to(def : @engine.Definition, start : String) -> Bool {
-  let seen : Array[String] = []
-  let mut current = start
-  while true {
-    if help_name_seen(seen, current) {
-      return current == start
-    }
-    seen.push(current)
-    match help_find_after(def, current) {
-      Some(next) => current = next
-      None => return false
-    }
-  } nobreak {
-    false
-  }
-}
-
-///|
-/// DR-115 §5.1: `value_structure_style` の enum 値域。
-fn help_render_vss_ok(value : String) -> Bool {
-  value == "auto" || value == "inline" || value == "detail"
-}
-
-///|
-/// DR-115 §5.2: `types_style` の enum 値域。
-fn help_render_types_style_ok(value : String) -> Bool {
-  value == "auto" || value == "aggregate" || value == "inline"
-}
-
-///|
-/// DR-115 §5.3: `origin_style` の enum 値域。
-fn help_render_origin_style_ok(value : String) -> Bool {
-  value == "merge" ||
-  value == "separate_section" ||
-  value == "reference" ||
-  value == "omit"
-}
-
-///|
-/// DR-115 §2.4: template 文字列の well-formedness 検査。
-/// - 未閉の `{` (対応する `}` が無い)
-/// - 空 `{}`
-/// - 識別子規則違反: `[A-Za-z_][A-Za-z0-9_]*`
-/// - `{{` は literal `{` のエスケープ、`}}` は literal `}` のエスケープ (通過)
-/// 違反があれば true を返す (呼び出し側が invalid-range を emit)。
-fn help_render_template_invalid(template : String) -> Bool {
-  let chars = template.to_array()
-  let n = chars.length()
-  let mut i = 0
-  while i < n {
-    let c = chars[i]
-    if c == '{' {
-      // `{{` は literal `{` エスケープ
-      if i + 1 < n && chars[i + 1] == '{' {
-        i = i + 2
-        continue
-      }
-      // `{...}` プレースホルダ: 対応する `}` を探し、中身の識別子規則を検査
-      let start = i + 1
-      let mut end = -1
-      let mut j = start
-      while j < n {
-        if chars[j] == '}' {
-          end = j
-          break
-        }
-        j = j + 1
-      }
-      if end < 0 {
-        return true // 未閉の `{`
-      }
-      if end == start {
-        return true // 空 `{}`
-      }
-      // 識別子規則: 先頭は letter or '_'、以降は letter/digit/'_'
-      let head = chars[start]
-      if !ident_head_char(head) {
-        return true
-      }
-      let mut k = start + 1
-      while k < end {
-        if !ident_tail_char(chars[k]) {
-          return true
-        }
-        k = k + 1
-      }
-      i = end + 1
-      continue
-    }
-    if c == '}' {
-      // `}}` は literal `}` エスケープ (通過)。単独 `}` は他実装では error 扱いのケースもあるが、
-      // DR-115 §2.4 は「未閉 `{` / 空 `{}` / 識別子規則違反」の 3 項目のみ列挙するため、単独 `}`
-      // は本 DR の範囲外 (spec が emit を要求しない — 呼び出し側 fixture も対象にしていない)。
-      if i + 1 < n && chars[i + 1] == '}' {
-        i = i + 2
-        continue
-      }
-      i = i + 1
-      continue
-    }
-    i = i + 1
-  }
-  false
-}
-
-///|
-fn ident_head_char(c : Char) -> Bool {
-  (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
-}
-
-///|
-fn ident_tail_char(c : Char) -> Bool {
-  ident_head_char(c) || (c >= '0' && c <= '9')
-}
-
-///|
-/// DR-115 §1.1 / §2.4 / §5: scope 席 (root / command) の `help_render` を検査する。
-/// enum 値域外・template 構文不正のいずれも invalid-range として積む — element は
-/// element.name、scope 直付けは "" を使う (help group declaration 検査と同じ posture)。
-fn collect_help_render_scope_errors(
-  render : @engine.HelpRenderDecl,
-  element_name : String,
-  errors : Array[@engine.DefError],
-) -> Unit {
-  match render.value_structure_style {
-    Some(v) =>
-      if !help_render_vss_ok(v) {
-        errors.push({
-          element: element_name,
-          kind: @engine.InvalidRange,
-          message: "help_render.value_structure_style '" +
-          v +
-          "' is not one of auto/inline/detail",
-          hint: "use one of the DR-115 §5.1 enum values",
-        })
-      }
-    None => ()
-  }
-  match render.types_style {
-    Some(v) =>
-      if !help_render_types_style_ok(v) {
-        errors.push({
-          element: element_name,
-          kind: @engine.InvalidRange,
-          message: "help_render.types_style '" +
-          v +
-          "' is not one of auto/aggregate/inline",
-          hint: "use one of the DR-115 §5.2 enum values",
-        })
-      }
-    None => ()
-  }
-  match render.origin_style {
-    Some(v) =>
-      if !help_render_origin_style_ok(v) {
-        errors.push({
-          element: element_name,
-          kind: @engine.InvalidRange,
-          message: "help_render.origin_style '" +
-          v +
-          "' is not one of merge/separate_section/reference/omit",
-          hint: "use one of the DR-115 §5.3 enum values",
-        })
-      }
-    None => ()
-  }
-  match render.template {
-    Some(t) =>
-      if help_render_template_invalid(t) {
-        errors.push({
-          element: element_name,
-          kind: @engine.InvalidRange,
-          message: "help_render.template is not well-formed (unclosed '{' / empty '{}' / non-identifier body)",
-          hint: "DR-115 §2.4: templates are strict — literal braces need '{{' / '}}' escape",
-        })
-      }
-    None => ()
-  }
-}
-
-///|
-/// DR-115 §1.1 / §1.2: element 席の help_render / help_value_structure_style を検査する。
-/// - `help_render` の宣言そのものが席違い (§1.1、option/positional 上は不可) → invalid-range
-/// - `help_value_structure_style` の enum 値域外 (§1.2) → invalid-range
-/// 席違いは値によらず 1 element 1 error に集約する (§1.4 の集合比較、fixture
-/// help-render-invalid-range 期待どおり)。
-fn collect_help_render_element_errors(
-  element : @engine.ElementDef,
-  errors : Array[@engine.DefError],
-) -> Unit {
-  match element.help_meta.render_declared {
-    Some(_) =>
-      errors.push({
-        element: element.name,
-        kind: @engine.InvalidRange,
-        message: "help_render is not allowed on option/positional elements (scope-level seat only)",
-        hint: "DR-115 §1.1: declare help_render on the root definition or a command scope; use help_value_structure_style for entry-level style overrides",
-      })
-    None => ()
-  }
-  match element.help_meta.value_structure_style {
-    Some(v) =>
-      if !help_render_vss_ok(v) {
-        errors.push({
-          element: element.name,
-          kind: @engine.InvalidRange,
-          message: "help_value_structure_style '" +
-          v +
-          "' is not one of auto/inline/detail",
-          hint: "DR-115 §5.1 enum",
-        })
-      }
-    None => ()
-  }
-}
-
-///|
-fn collect_help_meta_errors(
-  def : @engine.Definition,
-  errors : Array[@engine.DefError],
-) -> Unit {
-  // DR-115 §1.1 / §2.4 / §5: scope 直付け help_render の宣言 (継承値ではない) を検査。
-  match def.scope.help_meta.render_declared {
-    Some(render) => collect_help_render_scope_errors(render, "", errors)
-    None => ()
-  }
-  let groups : Map[String, (String?, String?)] = Map([])
-  for e in def.options {
-    let meta = e.help_meta
-    // DR-113 §7.2: `help_on_failure` は 5 help preset (help / help_all_category /
-    // help_category / help_show_hidden / help_tree) が on_failure へ展開する糖衣であり、
-    // 非 help preset (flag / string / help group declaration / positional 等) 上に宣言
-    // した場合は definition-error `invalid-range`。help preset 上での糖衣展開
-    // (fail_action override) は M3c 以降で HelpMetaInstaller.apply へ移送する。
-    if meta.help_on_failure is Some(_) && !meta.is_help_preset {
-      errors.push({
-        element: e.name,
-        kind: @engine.InvalidRange,
-        message: "help_on_failure requires a help preset type",
-        hint: "declare help_on_failure only on help / help_all_category / help_category / help_show_hidden / help_tree",
-      })
-    }
-    if help_group_declaration(e) {
-      if meta.help_order is Some(_) {
-        errors.push({
-          element: "",
-          kind: @engine.InvalidRange,
-          message: "help group declaration cannot use help_order",
-          hint: "use help_group_order for a group declaration",
-        })
-      }
-      match meta.help_group_name {
-        Some(name) => {
-          let setting = (meta.help_group_title, meta.help_group_description)
-          // DR-113 §8.1: 同じ help_group_name の重複宣言は設定同一か否かを問わず
-          // 無条件で definition-error `invalid-range` (グループ宣言箇所を一意にする
-          // 先頭宣言スタイルを崩さない)。冪等受理しない存在ベース規則。
-          match groups.get(name) {
-            Some(_) =>
-              errors.push({
-                element: "",
-                kind: @engine.InvalidRange,
-                message: "help group '" + name + "' is declared more than once",
-                hint: "keep exactly one declaration per help_group_name",
-              })
-            None => groups.set(name, setting)
-          }
-        }
-        None => ()
-      }
-    } else if meta.help_group_order is Some(_) {
-      errors.push({
-        element: e.name,
-        kind: @engine.InvalidRange,
-        message: "normal help entry cannot use help_group_order",
-        hint: "use help_order for a normal entry",
-      })
-    }
-    if meta.help_after is Some(_) &&
-      (meta.help_order is Some(_) || meta.help_group_order is Some(_)) {
-      errors.push({
-        element: e.name,
-        kind: @engine.InvalidRange,
-        message: "help order and help_after cannot be declared together",
-        hint: "choose either absolute order or relative help_after placement",
-      })
-    }
-  }
-  for e in def.options {
-    if e.name != "" &&
-      e.help_meta.help_after is Some(_) &&
-      help_after_returns_to(def, e.name) {
-      errors.push({
-        element: e.name,
-        kind: @engine.CircularRef,
-        message: "help_after placement for '" + e.name + "' is circular",
-        hint: "break the help_after cycle",
-      })
-    }
-  }
-  // DR-115 §1.1 / §1.2: element 席の help_render / help_value_structure_style を検査。
-  // options / positionals の両方 (help group declaration entry は name=="" だが render_declared
-  // /value_structure_style を持ちうるので同じ検査を通す — 席違いは値によらず emit)。
-  for e in def.options {
-    collect_help_render_element_errors(e, errors)
-  }
-  for e in def.positionals {
-    collect_help_render_element_errors(e, errors)
-  }
-  for c in def.commands {
-    collect_help_meta_errors(c.body, errors)
-  }
-}
-
-///|
-impl @engine.InstallerExt for HelpMetaInstaller with fn collect_defs_errors(
+impl @node.InstallerExt for HelpMetaInstaller with fn collect_defs_errors(
   _self,
   view,
 ) {
-  let errors = []
-  collect_help_meta_errors(view.source_definition(), errors)
-  errors
+  @node.defs_builtin_errors(view, "help_meta")
 }
 
 ///|
-pub fn help_meta_installer() -> &@engine.InstallerExt {
-  HelpMetaInstaller::{  } as &@engine.InstallerExt
+pub fn help_meta_installer() -> &@node.InstallerExt {
+  HelpMetaInstaller::{  } as &@node.InstallerExt
 }

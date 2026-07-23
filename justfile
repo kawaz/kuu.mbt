@@ -33,9 +33,9 @@ fmt:
 check:
     moon check --deny-warn
 
-# regenerate committed public API interfaces for the three library packages
+# regenerate committed public API interfaces
 mbti:
-    moon info src/engine src/builtins src/kuu
+    moon info src/abi src/extension src/internal/engine src/kuu-node src/builtins src/kuu
 
 # ---------- completion templates (M2 — DR-117 §2.5 + findings §2 UXL-Q2=a) ----------
 

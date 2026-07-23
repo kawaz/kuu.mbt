@@ -1,0 +1,339 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/abi"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn attach_mode_of(String) -> AttachMode?
+
+pub fn config_from_json(Json) -> ConfigVal
+
+pub fn decode_fn_invocation_parts(FnInvocationForm) -> Result[Array[String], String]
+
+pub fn eq_sep_mode_of(String) -> EqSepMode?
+
+pub fn parse_fn_invocation(FnInvocationForm) -> Result[FnInvocation, String]
+
+pub fn value_str(Value) -> String
+
+pub fn value_to_configval(Value) -> ConfigVal
+
+// Errors
+
+// Types and methods
+pub(all) struct AliasDef {
+  target : String
+  name : String?
+  short : Array[Char]
+  long_override : LongDeclaration?
+  deprecated : Bool
+  help_meta : HelpMetaDeclaration
+} derive(Eq, @debug.Debug)
+
+pub(all) enum AttachMode {
+  Require
+  Allow
+  Deny
+  LastOnly
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Binding {
+  key : String
+  op : EffectOp
+  value : Value
+  source : Source
+  scope : Array[String]
+  link : Int
+  at_pos : Int?
+} derive(Eq, @debug.Debug)
+pub fn Binding::action_marker(String, Int) -> Self
+pub fn Binding::deprecation_mark(String) -> Self
+pub fn Binding::effect(String, EffectOp, Source) -> Self
+pub fn Binding::new(String, Value, Source, at_pos? : Int?) -> Self
+
+pub(all) struct BoolConfig {
+  true_values : Array[String]
+  false_values : Array[String]
+  case_insensitive : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) enum Branch {
+  Accept(Int, Array[Binding])
+  Held(ParseError, Array[Binding])
+  Pending(Array[Candidate], Array[Binding])
+} derive(@debug.Debug)
+
+pub(all) struct Candidate {
+  spelling : String
+  is_value : Bool
+  ty : String
+  origin : String
+  term : TermHint
+  is_alias : Bool
+  hidden : Bool
+  deprecated : Bool
+  path : Array[String]
+  link : Int
+  fire_path : Array[String]
+  completer : String?
+} derive(Eq, @debug.Debug)
+pub fn Candidate::pending_value(String, String) -> Self
+pub fn Candidate::trigger(String, String, String, TermHint, is_alias? : Bool, hidden? : Bool, deprecated? : Bool) -> Self
+
+pub(all) struct CollectorDeclaration {
+  name : String
+  args : Json?
+} derive(Eq, @debug.Debug)
+pub fn CollectorDeclaration::configured(String, Json) -> Self
+pub fn CollectorDeclaration::named(String) -> Self
+
+pub enum ConfigVal {
+  String(String)
+  Number(Double)
+  Bool(Bool)
+  Array(Array[ConfigVal])
+  Object(Array[(String, ConfigVal)])
+  Null
+} derive(Eq, @debug.Debug)
+
+pub(all) enum DecodeCtx {
+  Option
+  Positional
+  Command
+} derive(Eq, @debug.Debug)
+
+pub(all) struct DecodedOwnedDeclaration {
+  vocab : Array[String]
+  declaration : OwnedDeclaration
+}
+
+pub(all) struct DefError {
+  element : String
+  kind : DefErrorKind
+  message : String
+  hint : String
+} derive(Eq, @debug.Debug)
+
+pub(all) enum DefErrorKind {
+  VocabIntersection
+  UnknownVocab
+  InvalidRange
+  AbsentRef
+  CircularRef
+  ZeroProgress
+  ConfigCycle
+  InvalidArgument
+} derive(Eq, @debug.Debug)
+
+pub(all) enum DefaultFnCall {
+  Wire(FnInvocation)
+  Typed(FnCall)
+} derive(Eq, @debug.Debug)
+pub fn DefaultFnCall::to_call(Self) -> FnCall
+pub fn DefaultFnCall::wire_invocation(Self) -> FnInvocation?
+
+pub(all) enum EffectOp {
+  Set
+  Default
+  Unset
+  Empty
+  Invoke(FnInvocation)
+  Remove
+  Splice
+} derive(Eq, @debug.Debug)
+
+pub(all) enum EqSepMode {
+  Require
+  Allow
+  Deny
+} derive(Eq, @debug.Debug)
+
+pub(all) enum ErrorKind {
+  Parse
+  Filter
+  Constraint
+} derive(Eq, @debug.Debug)
+
+pub(all) enum FnArg {
+  String(String)
+  Value(Value)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct FnCall {
+  name : String
+  args : Array[FnArg]
+} derive(Eq, @debug.Debug)
+pub fn FnCall::typed(String, Array[Value]) -> Self
+
+pub(all) struct FnInvocation {
+  name : String
+  args : Array[String]
+} derive(Eq, @debug.Debug)
+pub fn FnInvocation::to_call(Self) -> FnCall
+
+pub(all) enum FnInvocationForm {
+  ColonString(String)
+  ArrayParts(Array[String])
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpMetaDeclaration {
+  help : String?
+  help_long : String?
+  help_epilog : String?
+  display_name : String?
+  value_name : String?
+  help_group_name : String?
+  help_group_title : String?
+  help_group_description : String?
+  help_order : Double?
+  help_group_order : Double?
+  help_after : String?
+  help_on_failure : Bool?
+  is_help_preset : Bool
+  type_name : String?
+  preset_kind : String?
+  value_structure_hint : HelpValueStructure?
+  type_ref : String?
+  render_declared : HelpRenderDecl?
+  render_effective : HelpRenderDecl?
+  value_structure_style : String?
+  completion_insert_form_declared : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpRenderDecl {
+  template : String?
+  value_structure_style : String?
+  types_style : String?
+  origin_style : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpRepeatSpec {
+  min : Int?
+  max : Int?
+  node : HelpValueStructure
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpSingleValue {
+  value_name : String?
+  value_type : String?
+  values_enum : Array[String]?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpTypeDeclaration {
+  id : String
+  help : String?
+  value_structure : HelpValueStructure
+} derive(Eq, @debug.Debug)
+
+pub(all) struct HelpTypeRef {
+  id : String
+  value_name : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) enum HelpValueStructure {
+  Single(HelpSingleValue)
+  Seq(Array[HelpValueStructure])
+  Or(Array[HelpValueStructure])
+  Repeat(HelpRepeatSpec)
+  TypeRef(HelpTypeRef)
+} derive(Eq, @debug.Debug)
+
+pub(all) enum LongDeclaration {
+  Bool(Bool)
+  List(Array[String])
+  Forms(Array[FnInvocationForm])
+} derive(Eq, @debug.Debug)
+
+pub(all) enum OwnedDeclaration {
+  Long(LongDeclaration)
+  Short(Array[Char])
+  Env(Array[String])
+  Dd(String?, Bool)
+  Global(Bool)
+  Inherit(Bool)
+  Repeat(RepeatSpec?, Bool)
+  Multiple(Bool, String?, CollectorDeclaration?, String?, Bool?)
+  Config(Bool, Array[String]?)
+  Constraint(Array[String], Array[String], Array[String], Array[String], Bool)
+  Alias(AliasDef?)
+  Inheritable(Bool)
+  HelpMeta(HelpMetaDeclaration)
+  Command
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ParseError {
+  element : String
+  args_pos : Int
+  kind : ErrorKind
+  reason : String
+  message : String
+  path : Array[String]
+} derive(Eq, @debug.Debug)
+pub fn ParseError::constraint(String, String, String, Int) -> Self
+pub fn ParseError::filter(String, Int, String, String) -> Self
+
+pub(all) struct RepeatSpec {
+  min : Int
+  max : Int?
+  is_lazy : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) enum ResultValue {
+  Scalar(Value)
+  Array(Array[ResultValue])
+  Object(Array[(String, ResultValue)])
+} derive(Eq, @debug.Debug)
+
+pub(all) enum RoundMode {
+  Floor
+  Ceil
+  Trunc
+  Away
+  HalfFloor
+  HalfCeil
+  HalfTrunc
+  HalfAway
+  HalfEven
+  Error
+} derive(Eq, @debug.Debug)
+
+pub(all) enum Source {
+  Cli
+  Env
+  Config
+  Inherit
+  Tty
+  Default
+} derive(Eq, @debug.Debug)
+
+pub(all) enum TermHint {
+  WordEnd
+  Continue
+} derive(Eq, @debug.Debug)
+
+pub(all) struct TypeParseFail {
+  reason : String
+  message : String
+} derive(Eq, @debug.Debug)
+
+pub(all) enum Value {
+  String(String)
+  Number(Double)
+  Bool(Bool)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Warning {
+  element : String
+  kind : WarningKind
+} derive(Eq, @debug.Debug)
+
+pub(all) enum WarningKind {
+  Deprecated
+} derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits
+

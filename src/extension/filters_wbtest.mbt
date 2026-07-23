@@ -1,0 +1,426 @@
+// filters_wbtest.mbt — executable spec for the filters registry (issue 2026-07-09
+// filters-registry-foundation, DR-009/010/036/040/061/077). Each case's comment states what it
+// guarantees + the spec basis, mirroring the "test = 動く仕様書" convention used across this repo.
+
+///|
+/// wbtest ergonomics only (issue filter-spelling-inband-encoding-retyping): `apply_filter_chain`
+/// takes `Array[@abi.FnInvocation]` in production, but every case below wants the colon-shorthand's
+/// terseness (`"in_range:1:10"`) rather than a hand-built `@abi.FnInvocation` struct literal per entry
+/// — this maps a plain string chain through `parse_filter_shorthand` (filters.mbt, the SAME parser
+/// the decode boundary uses).
+fn chain(strs : Array[String]) -> Array[@abi.FnInvocation] {
+  let out : Array[@abi.FnInvocation] = []
+  for s in strs {
+    out.push(parse_filter_shorthand(s))
+  }
+  out
+}
+
+///|
+fn test_filter_registry() -> Registry {
+  let registry = Registry::new()
+  guard registry.register_filter(trim_filter()) else { abort("duplicate trim") }
+  guard registry.register_filter(non_empty_filter()) else {
+    abort("duplicate non_empty")
+  }
+  guard registry.register_filter(in_range_filter()) else {
+    abort("duplicate in_range")
+  }
+  guard registry.register_filter(regex_match_filter()) else {
+    abort("duplicate regex_match")
+  }
+  guard registry.register_filter(increment_filter()) else {
+    abort("duplicate increment")
+  }
+  guard registry.register_array_filter(unique_array_filter()) else {
+    abort("duplicate unique")
+  }
+  guard registry.register_array_filter(length_range_array_filter()) else {
+    abort("duplicate length_range")
+  }
+  registry
+}
+
+///|
+/// 保証: DR-010 "フィールド名でレジストリが暗黙決定" — 名前で引くと正しい descriptor (signature 込み)
+/// が返る。`trim` は Transform (値を変える)、`in_range`/`non_empty` は Validate (値は変えない、
+/// 成否のみ) — DR-077 §2 "使えるのは transform シグネチャの filter のみ" が区別する軸そのもの。
+test "lookup_filter: built-in signatures match DR-077 §2's validate/transform split" {
+  assert_eq(
+    test_filter_registry().lookup_filter("trim").unwrap().signature(),
+    FilterSignature::Transform,
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("increment").unwrap().signature(),
+    FilterSignature::Transform,
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("non_empty").unwrap().signature(),
+    FilterSignature::Validate,
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("in_range").unwrap().signature(),
+    FilterSignature::Validate,
+  )
+  match test_filter_registry().lookup_filter("nonexistent") {
+    None => ()
+    Some(_) => fail("expected None")
+  }
+}
+
+///|
+/// 保証: `trim` は前後の空白を剥がす (DR-040 §piece_filters 例)。文字列以外の値は素通し (防御的 —
+/// piece_filters 相は本来 string→string でしか呼ばれない契約、値型混入時に落とすより無害な
+/// pass-through の方が診断しやすい)。
+test "filter_trim strips whitespace, passes non-strings through" {
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["trim"]),
+      @abi.String("  hi  "),
+    ) {
+    Ok(v) => assert_eq(v, @abi.String("hi"))
+    Err(_) => fail("expected Ok")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["trim"]),
+      @abi.Number(5.0),
+    ) {
+    Ok(v) => assert_eq(v, @abi.Number(5.0))
+    Err(_) => fail("expected Ok (non-string passthrough)")
+  }
+}
+
+///|
+/// 保証: `non_empty` は空文字列のみ Err、それ以外は値そのままの Ok (Validate、値を変えない)。
+/// reason は DR-095 §3 の宣言 `["empty_value"]` に細粒度化されている (filter_rejected 潰しの廃止)。
+test "filter_non_empty rejects only the empty string" {
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["non_empty"]),
+      @abi.String("x"),
+    ) {
+    Ok(v) => assert_eq(v, @abi.String("x"))
+    Err(_) => fail("expected Ok")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["non_empty"]),
+      @abi.String(""),
+    ) {
+    Err({ reason, message: _ }) => assert_eq(reason, "empty_value")
+    Ok(_) => fail("expected Err (empty string)")
+  }
+}
+
+///|
+/// 保証: `in_range:<min>:<max>` (DR-009 §DSL 文法 "args はすべて string、filter registry 側でキャスト")
+/// — 境界値は両方とも受理 (閉区間)、はみ出しは Err。reason は DR-095 §3 の宣言に細粒度化: 下限未満は
+/// `too_small`、上限超過は `too_large` (filter_rejected 潰しの廃止)。
+test "filter_in_range accepts a closed interval [min, max]" {
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @abi.Number(1.0),
+    ) {
+    Ok(v) => assert_eq(v, @abi.Number(1.0))
+    Err(_) => fail("expected Ok (lower bound inclusive)")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @abi.Number(10.0),
+    ) {
+    Ok(v) => assert_eq(v, @abi.Number(10.0))
+    Err(_) => fail("expected Ok (upper bound inclusive)")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @abi.Number(11.0),
+    ) {
+    Err({ reason, message: _ }) => assert_eq(reason, "too_large")
+    Ok(_) => fail("expected Err (over the upper bound)")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @abi.Number(0.0),
+    ) {
+    Err({ reason, message: _ }) => assert_eq(reason, "too_small")
+    Ok(_) => fail("expected Err (under the lower bound)")
+  }
+}
+
+///|
+/// 保証: `regex_match:<pattern>` の輪郭 (issue 2026-07-09-regex-match-filter §受け入れ条件、DR-085
+/// §1) — (a) 一致受理、(b) 不一致 reject、(c) 部分一致 (unanchored) と全体一致 (pattern 側 `^$`) の
+/// 区別、(d) メタ文字 escape (`\.` がリテラルドットにマッチし、無escape の `.` は任意1文字にマッチ)
+/// の4輪郭を1テストで網羅する。DR-085 §2: 方言は MoonBit core `string.Regex` に準拠 (host 実装準拠)。
+/// reason は DR-095 §3 の宣言 `["pattern_no_match"]` に細粒度化されている (filter_rejected 潰しの廃止、
+/// 全ての不一致 reject が対象 — compile 失敗は別テストが担う防御的パス)。
+test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar escape" {
+  // (a) 一致受理: literal 部分一致。
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:abc"]),
+      @abi.String("xxabcyy"),
+    ) {
+    Ok(v) => assert_eq(v, @abi.String("xxabcyy"))
+    Err(_) => fail("expected Ok (unanchored partial match finds 'abc' inside)")
+  }
+  // (b) 不一致 reject。
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:abc"]),
+      @abi.String("xyz"),
+    ) {
+    Err({ reason, message: _ }) => assert_eq(reason, "pattern_no_match")
+    Ok(_) => fail("expected Err (no 'abc' substring)")
+  }
+  // (c) 部分一致と全体一致の区別: unanchored pattern は末尾ゴミがあっても通る (DR-085 §1 "filter
+  // 側で暗黙アンカーを足さない")。同じ入力に `^...$` を足すと reject に転じる — アンカーは pattern
+  // 側の責務であることの直接証拠。
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:abc"]),
+      @abi.String("abcXYZ"),
+    ) {
+    Ok(_) => ()
+    Err(_) =>
+      fail("expected Ok (unanchored: trailing garbage after the match is fine)")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:^abc$"]),
+      @abi.String("abcXYZ"),
+    ) {
+    Err({ reason, message: _ }) => assert_eq(reason, "pattern_no_match")
+    Ok(_) => fail("expected Err (full-anchor pattern rejects trailing garbage)")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:^abc$"]),
+      @abi.String("abc"),
+    ) {
+    Ok(v) => assert_eq(v, @abi.String("abc"))
+    Err(_) => fail("expected Ok (full-anchor pattern matches the exact string)")
+  }
+  // (d) メタ文字 escape: `a.c` (無escape) は任意 1 文字を挟んだ "abc"/"axc" 双方にマッチするが、
+  // `a\.c` (escape 済み) はリテラル "." のみにマッチし "abc" にはマッチしない。
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:^a.c$"]),
+      @abi.String("abc"),
+    ) {
+    Ok(_) => ()
+    Err(_) =>
+      fail("expected Ok (unescaped '.' matches any single char, including 'b')")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:^a\\.c$"]),
+      @abi.String("abc"),
+    ) {
+    Err({ reason, message: _ }) => assert_eq(reason, "pattern_no_match")
+    Ok(_) =>
+      fail("expected Err (escaped '\\.' is a literal dot, does not match 'b')")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:^a\\.c$"]),
+      @abi.String("a.c"),
+    ) {
+    Ok(v) => assert_eq(v, @abi.String("a.c"))
+    Err(_) => fail("expected Ok (escaped '\\.' matches a literal dot)")
+  }
+}
+
+///|
+/// 保証: pattern の compile 失敗 (定義不良) と照合不一致 (入力拒否) は別の失敗という DR-085 §1 の
+/// 区別 — 不正な pattern (閉じ括弧なしの group) は compile 時点で Err になる。非 string 値は他の
+/// string-only filter (`non_empty` 等) と同じく `@abi.String` 以外専用の Err (このフィルタは string-only
+/// で non-string 素通しの `trim` とは違う挙動、args 個数も 1 固定)。この3ケースはいずれも
+/// filter-definition-bug 系の防御的パス (DR-095 §3 の宣言 reasons 外) なので `filter_rejected`
+/// フォールバックのまま — `pattern_no_match` (宣言済み reason) は照合不一致のみに使う。
+test "filter_regex_match: malformed pattern, arg count, non-string input all Err distinctly" {
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:(unclosed"]),
+      @abi.String("x"),
+    ) {
+    Err({ reason, message: msg }) => {
+      assert_eq(reason, "filter_rejected")
+      assert_true(msg.contains("compile"))
+    }
+    Ok(_) => fail("expected Err (malformed pattern fails to compile)")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match"]),
+      @abi.String("x"),
+    ) {
+    Err({ reason, message: _ }) => assert_eq(reason, "filter_rejected")
+    Ok(_) => fail("expected Err (regex_match requires exactly 1 arg)")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:x"]),
+      @abi.Number(1.0),
+    ) {
+    Err({ reason, message: _ }) => assert_eq(reason, "filter_rejected")
+    Ok(_) => fail("expected Err (regex_match requires a string value)")
+  }
+}
+
+///|
+/// 保証: `increment` は 0-arg number Transform、DR-077 §3 count の built-in transform そのもの
+/// (apply_transform が registry lookup 経由でこの同じ closure を呼ぶ)。
+test "filter_increment adds 1 to a number, rejects args and non-numbers" {
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["increment"]),
+      @abi.Number(4.0),
+    ) {
+    Ok(v) => assert_eq(v, @abi.Number(5.0))
+    Err(_) => fail("expected Ok")
+  }
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["increment:5"]),
+      @abi.Number(4.0),
+    ) {
+    Err({ reason, message: _ }) => assert_eq(reason, "filter_rejected")
+    Ok(_) => fail("expected Err (increment takes no args)")
+  }
+}
+
+///|
+/// 保証: chain は宣言順にそのまま流れる (DR-034 合成順「後ろほど優先」と同じく、chain 内は宣言順の
+/// 素通し — 上書きの概念はない)。trim → in_range で "  5  " → 5.0 の in_range 検証、という組合せは
+/// 現実には型が合わない (trim は文字列専用) ので、ここでは number 系だけを連結して合成順を固定する:
+/// increment を2回連結すると +2 になる。
+test "apply_filter_chain runs entries in declared order" {
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["increment", "increment"]),
+      @abi.Number(1.0),
+    ) {
+    Ok(v) => assert_eq(v, @abi.Number(3.0))
+    Err(_) => fail("expected Ok (1 -> 2 -> 3)")
+  }
+}
+
+///|
+/// 保証: 各組み込み filter の宣言 `reasons` (DR-095 §3, spec 正本 `schema/builtin-descriptors.json`)
+/// を registry から読み出すと、この issue が意図した集合そのものになっている — DR-066 §2 の完備
+/// チェック/typo検出が filter 領域でも機能するための宣言側の固定 (実際に emit された reason が
+/// この集合の要素であることは、各 filter の個別テストが reason を直接 assert_eq することで実質
+/// カバー済み。ここでは "宣言側が正しいか" を別テストとして固定する)。`trim`/`increment` は
+/// Transform で常に成功 (reasons: [])。
+test "built-in filter descriptors declare exactly the DR-095 §3 reason vocabulary" {
+  assert_eq(test_filter_registry().lookup_filter("trim").unwrap().reasons(), [])
+  assert_eq(
+    test_filter_registry().lookup_filter("non_empty").unwrap().reasons(),
+    ["empty_value"],
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("in_range").unwrap().reasons(),
+    ["too_small", "too_large"],
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("regex_match").unwrap().reasons(),
+    ["pattern_no_match"],
+  )
+  assert_eq(
+    test_filter_registry().lookup_filter("increment").unwrap().reasons(),
+    [],
+  )
+}
+
+///|
+/// 保証: 宣言済み failure mode (DR-095 §3) を実際に踏んだ時、emit される reason は必ずその
+/// descriptor の `reasons` に含まれる (DR-066 §2 の完備チェック/typo検出が実装 emit 側でも成立して
+/// いることの実行時固定) — filter-definition-bug 系の防御的 Err (arg 個数不一致・型不一致・regex
+/// compile 失敗) は対象外 (`filter_rejected` フォールバック、`FilterDescriptor` doc comment 参照、
+/// 個別テストが既に別途 assert 済み)。
+test "reasons emitted for declared failure modes are a subset of the descriptor's reasons" {
+  fn assert_declared(filter_name : String, got_reason : String) -> Unit raise {
+    let reasons = test_filter_registry()
+      .lookup_filter(filter_name)
+      .unwrap()
+      .reasons()
+    if !reasons.contains(got_reason) {
+      fail(
+        "filter '" +
+        filter_name +
+        "' emitted reason '" +
+        got_reason +
+        "' not in its declared reasons",
+      )
+    }
+  }
+
+  // non_empty: empty_value
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["non_empty"]),
+      @abi.String(""),
+    ) {
+    Err({ reason, message: _ }) => assert_declared("non_empty", reason)
+    Ok(_) => fail("expected Err")
+  }
+  // in_range: too_small
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @abi.Number(0.0),
+    ) {
+    Err({ reason, message: _ }) => assert_declared("in_range", reason)
+    Ok(_) => fail("expected Err")
+  }
+  // in_range: too_large
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["in_range:1:10"]),
+      @abi.Number(11.0),
+    ) {
+    Err({ reason, message: _ }) => assert_declared("in_range", reason)
+    Ok(_) => fail("expected Err")
+  }
+  // regex_match: pattern_no_match
+  match
+    apply_filter_chain(
+      test_filter_registry(),
+      chain(["regex_match:abc"]),
+      @abi.String("xyz"),
+    ) {
+    Err({ reason, message: _ }) => assert_declared("regex_match", reason)
+    Ok(_) => fail("expected Err")
+  }
+}

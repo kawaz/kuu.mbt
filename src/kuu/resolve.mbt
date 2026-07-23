@@ -1,23 +1,23 @@
 // resolve.mbt — the value-resolution layer (MDR-002 §3): the value-source ladder (env / config /
 // inherit / default seat fill, DR-031 / DR-049 / DR-050), the name-driven result builder (flat
-// bindings → nested @engine.ResultValue, DR-016 / DR-025 / DR-043), export-key application (DR-052), and
+// bindings → nested @abi.ResultValue, DR-016 / DR-025 / DR-043), export-key application (DR-052), and
 // export-key collision detection (DR-073). node/value 依存のみ; eval からは経路確定後の後処理
 // として呼ばれる (MDR-002 §3 table).
 //
 // Ported from slice `poc/result.mbt` (full file) and the value-ladder portion of slice
-// `poc/installer.mbt` (`resolve_scope` / `resolve_scope_config` / `@engine.value_str` — NOT the lowering,
+// `poc/installer.mbt` (`resolve_scope` / `resolve_scope_config` / `@extension.value_str` — NOT the lowering,
 // which stays installer.mbt's job). MDR-003: `e.inherit` → `e.is_inherit` (node.mbt already applies
 // the trailing-underscore convention).
 //
-// `@engine.value_str` used to live in eval.mbt for the RequiresIf constraint comparison — this is its
+// `@extension.value_str` used to live in eval.mbt for the RequiresIf constraint comparison — this is its
 // canonical home per the MDR-002 §3 module table; eval.mbt now calls this file's copy (single
 // package, no import needed across files).
 //
-// DR-074/075 update over the slice: env's string→@engine.Value conversion goes through the canonical
+// DR-074/075 update over the slice: env's string→@abi.Value conversion goes through the canonical
 // lexers (`@builtins.parse_number` / `parse_int_value` / `parse_bool`, value.mbt) instead of slice's
-// `env_value` which silently fell back to `@engine.String(s)` on a parse failure — a badly-typed env value
+// `env_value` which silently fell back to `@abi.String(s)` on a parse failure — a badly-typed env value
 // is now a DR-066 Error (reason `not_a_number` / `not_an_integer` / `not_a_bool`), never a
-// wrong-typed cell. `resolve_scope` / `resolve_scope_config` return `Result[.., @engine.ParseError]`
+// wrong-typed cell. `resolve_scope` / `resolve_scope_config` return `Result[.., @abi.ParseError]`
 // accordingly (slice's config-less `resolve_scope` could not error; it now can, from a bad env
 // value).
 
@@ -71,10 +71,10 @@ fn is_sentinel(k : String) -> Bool {
 /// 区別が必要でコストが大きい割に、呼び出し元 (`apply_requires_filter` は結果 binds を捨てる、
 /// runner は use_resolve gate で経路分岐する) 全体で見ると front_door の 1 段で足りる。
 fn merge_sentinels_from_origin(
-  orig : Array[@engine.Binding],
-  resolved : Array[@engine.Binding],
-) -> Array[@engine.Binding] {
-  let out : Array[@engine.Binding] = []
+  orig : Array[@abi.Binding],
+  resolved : Array[@abi.Binding],
+) -> Array[@abi.Binding] {
+  let out : Array[@abi.Binding] = []
   for b in resolved {
     out.push(b)
   }
@@ -97,7 +97,7 @@ fn merge_sentinels_from_origin(
 }
 
 ///|
-fn has_direct_key(binds : Array[@engine.Binding], key : String) -> Bool {
+fn has_direct_key(binds : Array[@abi.Binding], key : String) -> Bool {
   for b in binds {
     if b.scope.length() == 0 && b.key == key {
       return true
@@ -108,11 +108,8 @@ fn has_direct_key(binds : Array[@engine.Binding], key : String) -> Bool {
 
 ///|
 /// The bindings under a scope segment `seg`, with the first path element dropped.
-fn sub_under(
-  binds : Array[@engine.Binding],
-  seg : String,
-) -> Array[@engine.Binding] {
-  let out : Array[@engine.Binding] = []
+fn sub_under(binds : Array[@abi.Binding], seg : String) -> Array[@abi.Binding] {
+  let out : Array[@abi.Binding] = []
   for b in binds {
     if b.scope.length() > 0 && b.scope[0] == seg {
       let rest : Array[String] = []
@@ -132,7 +129,7 @@ fn sub_under(
 /// bindings after the LAST "#fire" marker (option refire discard, see `build_result`'s ROW-GROUP
 /// comment). "#row"/"#fire" sentinels themselves are dropped — each returned group is a row's own
 /// flat leaf bindings, ready for a recursive `build_result` call.
-fn row_groups(binds : Array[@engine.Binding]) -> Array[Array[@engine.Binding]] {
+fn row_groups(binds : Array[@abi.Binding]) -> Array[Array[@abi.Binding]] {
   let mut from = 0
   let mut i = 0
   for b in binds {
@@ -141,7 +138,7 @@ fn row_groups(binds : Array[@engine.Binding]) -> Array[Array[@engine.Binding]] {
     }
     i = i + 1
   }
-  let groups : Array[Array[@engine.Binding]] = []
+  let groups : Array[Array[@abi.Binding]] = []
   i = 0
   for b in binds {
     if i >= from {
@@ -168,8 +165,8 @@ fn row_groups(binds : Array[@engine.Binding]) -> Array[Array[@engine.Binding]] {
 /// chunk still carries its own "#row" sentinels untouched — the caller re-runs `row_groups` (which
 /// sees no "#fire" inside a single chunk, so its "keep from last #fire" cutoff is a no-op) on each
 /// chunk to get that firing's own row list.
-fn fire_groups(binds : Array[@engine.Binding]) -> Array[Array[@engine.Binding]] {
-  let groups : Array[Array[@engine.Binding]] = []
+fn fire_groups(binds : Array[@abi.Binding]) -> Array[Array[@abi.Binding]] {
+  let groups : Array[Array[@abi.Binding]] = []
   for b in binds {
     if b.scope.length() == 0 && b.key == "#fire" {
       groups.push([])
@@ -182,7 +179,7 @@ fn fire_groups(binds : Array[@engine.Binding]) -> Array[Array[@engine.Binding]] 
 
 ///|
 /// Index segments ("#k") among the direct children, ordered by k ascending.
-fn ordered_indices(binds : Array[@engine.Binding]) -> Array[String] {
+fn ordered_indices(binds : Array[@abi.Binding]) -> Array[String] {
   let idxs : Array[String] = []
   for b in binds {
     if b.scope.length() > 0 {
@@ -227,18 +224,18 @@ fn seg_num(seg : String) -> Int {
 ///|
 /// Apply the result-key axis (DR-052) to the winning bindings, BEFORE build_result. This is a
 /// pure result-shape remap — the AtomicAST / parse are untouched (export_key is orthogonal):
-///   - a value cell's key: @engine.Key(s) → s (override); @engine.Null → "" (nameless: kv 文脈で消え、seq/array
-///     文脈では値が nameless 要素として残る); @engine.Unset → the name (unchanged).
-///   - a scope label (command / name scope): @engine.Key(s) → s; @engine.Null → DROP the label (子が昇格露出);
-///     @engine.Unset → unchanged. A "{}" presence marker whose only label was dropped floats to the root
+///   - a value cell's key: @engine.Key(s) → s (override); @abi.Null → "" (nameless: kv 文脈で消え、seq/array
+///     文脈では値が nameless 要素として残る); @abi.Unset → the name (unchanged).
+///   - a scope label (command / name scope): @engine.Key(s) → s; @abi.Null → DROP the label (子が昇格露出);
+///     @abi.Unset → unchanged. A "{}" presence marker whose only label was dropped floats to the root
 ///     scope where it is a harmless sentinel (a nameless command has no key — 子が昇格).
 /// Sentinels ("[]" / "{}" / "" / "@act:" / "@depr:") and index segments ("#k") are not in the map
 /// → kept.
 fn apply_export_keys(
-  binds : Array[@engine.Binding],
+  binds : Array[@abi.Binding],
   ek : Map[String, @engine.ExportKey],
-) -> Array[@engine.Binding] {
-  let out : Array[@engine.Binding] = []
+) -> Array[@abi.Binding] {
+  let out : Array[@abi.Binding] = []
   for b in binds {
     let new_scope : Array[String] = []
     for seg in b.scope {
@@ -248,7 +245,7 @@ fn apply_export_keys(
         match ek.get(seg) {
           Some(@engine.Null) => () // drop the label → children promote to the parent (DR-052 §2)
           Some(@engine.Key(s)) => new_scope.push(s)
-          _ => new_scope.push(seg) // @engine.Unset or not a mapped name
+          _ => new_scope.push(seg) // @abi.Unset or not a mapped name
         }
       }
     }
@@ -264,7 +261,7 @@ fn apply_export_keys(
 
 ///|
 /// Apply the result-key axis (DR-052) to the injected default cells, mirroring apply_export_keys on
-/// bindings: an @engine.Null cell is 透過 (dropped from the kv result), an @engine.Key renames it, and path
+/// bindings: an @abi.Null cell is 透過 (dropped from the kv result), an @engine.Key renames it, and path
 /// segments (command scope names) are renamed / promoted the same way. Keeps a flag's preset default
 /// subject to the same export transform as its fired value (so `--verbose` with export null neither
 /// appears as a value nor re-appears as an injected `false`).
@@ -310,7 +307,7 @@ priv struct AccumCell {
   // DR-036 collector (@engine.Entity.collector's copy, threaded through so build_result — which only
   // sees AccumCell, never the @engine.Scope/@engine.Entity it came from — can apply it to the final accumulated
   // array without a second lookup pass). None = no collector (render the plain array).
-  collector : &@engine.CollectorExt?
+  collector : &@extension.CollectorExt?
   // DR-009 段 7 / DR-102 §1 accum_filters (@engine.Entity.accum_filters's copy, issue
   // accum-post-filters-stage7): an accum cell's accum_filters is Acc→Acc (the WHOLE accumulated
   // array, the engine `ArrayFilterDescriptor` registry — DIFFERENT signature from a scalar
@@ -319,7 +316,7 @@ priv struct AccumCell {
   // "accumulator 畳み → accum_filters" has no collector step in it; the collector/accum_filters
   // interaction — issue's "未裁定の論点1" — stays open for whenever a fixture actually exercises
   // both on the same cell).
-  accum_filters : Array[@engine.FnInvocation]
+  accum_filters : Array[@abi.FnInvocation]
   // DR-084 §2 (issue multiple-ref-accum-gap): the accumulator KIND (@engine.Entity.accum's copy — always
   // `Some(_)` for a cell that reaches `accum_cells` at all, so this is a plain `String` here, not
   // `String?`). Pre-DR-105 this alone told apart a ref+repeat cell's "flatten" (non-`multiple`,
@@ -327,7 +324,7 @@ priv struct AccumCell {
   // collapsed both onto the SAME name ("append"), so `is_multiple_decl` below (not this field) is
   // what `build_result`'s `segs` loop now reads for that distinction (both shapes still emit the
   // SAME "#fire"/"#row" sentinels, `inst_long`'s repeat-bearing ref branch is unchanged by DR-105).
-  accum : &@engine.AccumulatorExt
+  accum : &@extension.AccumulatorExt
   // DR-105 §1 flatten dial (@engine.Entity.flatten's copy): whether an array-shaped fire value expands by
   // one level into the accumulated array (`build_result`'s SEGS-loop per-fire builder, the one
   // reachable consumer — DR-084 §2's ref+repeat+multiple row array).
@@ -376,7 +373,7 @@ fn collector_here(
   cells : Array[AccumCell],
   path : Array[String],
   name : String,
-) -> &@engine.CollectorExt? {
+) -> &@extension.CollectorExt? {
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
       return c.collector
@@ -393,7 +390,7 @@ fn accum_filters_here(
   cells : Array[AccumCell],
   path : Array[String],
   name : String,
-) -> Array[@engine.FnInvocation] {
+) -> Array[@abi.FnInvocation] {
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
       return c.accum_filters
@@ -408,7 +405,7 @@ fn accumulator_here(
   cells : Array[AccumCell],
   path : Array[String],
   name : String,
-) -> &@engine.AccumulatorExt? {
+) -> &@extension.AccumulatorExt? {
   for c in cells {
     if c.name == name && path_eq(c.path, path) {
       return Some(c.accum)
@@ -467,17 +464,17 @@ fn path_push(path : Array[String], seg : String) -> Array[String] {
 /// accumulate cell by result path (so an empty cell still renders `[]`, DR-044 uniform array);
 /// `path` is the current result-scope path.
 fn build_result(
-  binds : Array[@engine.Binding],
+  binds : Array[@abi.Binding],
   cells : Array[AccumCell],
   defaults : Array[DefaultCell],
   path : Array[String],
   nones? : Array[@engine.NoneCell] = [],
-  extensions? : @engine.Registry = canonical_registry(),
-) -> @engine.ResultValue {
+  extensions? : @node.Registry = canonical_registry(),
+) -> @abi.ResultValue {
   // ARRAY: a "[]" sentinel at this level => build one element per "#k" child. Elements keep the
   // array's path (an indexed repeat element is not a named result-scope segment cells key on).
   if has_direct_key(binds, "[]") {
-    let elems : Array[@engine.ResultValue] = []
+    let elems : Array[@abi.ResultValue] = []
     for idx in ordered_indices(binds) {
       elems.push(
         build_result(
@@ -490,7 +487,7 @@ fn build_result(
         ),
       )
     }
-    return @engine.Array(elems)
+    return @abi.Array(elems)
   }
   // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
   // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
@@ -501,11 +498,11 @@ fn build_result(
   // AFTER THE LAST "#fire" survive — with no "#fire" at all (a positional fires its repeat
   // exactly once) the whole list is one firing.
   if has_direct_key(binds, "#row") {
-    let rows : Array[@engine.ResultValue] = []
+    let rows : Array[@abi.ResultValue] = []
     for row in row_groups(binds) {
       rows.push(build_result(row, cells, defaults, path, nones~, extensions~))
     }
-    return @engine.Array(rows)
+    return @abi.Array(rows)
   }
   // gather direct named keys (skip sentinels) and nested (named) scopes
   // DR-089 §3: a none-typed cell's value never appears in the result (値の結果には現れない) — same
@@ -562,16 +559,16 @@ fn build_result(
     named.length() == 0 &&
     segs.length() == 0 &&
     !has_object_cell_here {
-    let mut v = @engine.Value::Bool(false)
+    let mut v = @abi.Value::Bool(false)
     for b in binds {
       if b.scope.length() == 0 && b.key == "" {
         v = b.value
       }
     }
-    return @engine.Scalar(v)
+    return @abi.Scalar(v)
   }
   // OBJECT: named leaves (folding accum keys into a list) + nested scopes.
-  let obj : Array[(String, @engine.ResultValue)] = []
+  let obj : Array[(String, @abi.ResultValue)] = []
   for k in named {
     if cell_here(cells, path, k) {
       // ACCUMULATE (repeat-cons and multiple both use "append", DR-105 §3 / DR-043/034/036): fold same-key
@@ -587,17 +584,17 @@ fn build_result(
       // 2026-07-09-accum-fold-update-default-ops, team-lead 裁定 2026-07-10: accum の default 席は
       // DR-051 §2 の一様配列 `[]` — 宣言 default という概念自体を持たない) but stays committed=true
       // like `empty` (locks the ladder, `resolve_entity_raw`'s accum branch already rewrote this
-      // binding's `source` to `@engine.Default` before it reached here, so the tag comes out right without
+      // binding's `source` to `@abi.Default` before it reached here, so the tag comes out right without
       // a default-specific branch on the source side). `update` never reaches this match —
       // `installer.mbt`'s `collect_unsupported_accum_update` rejects a `multiple` element's
       // `update` variant at `parse_definition` time (static definition-error, not a runtime fold
       // check), so no @engine.Scope carrying this combination is ever built for `resolve`/`build_result`
       // to see.
-      let mut vals : Array[@engine.Value] = []
+      let mut vals : Array[@abi.Value] = []
       for b in binds {
         if b.scope.length() == 0 && b.key == k {
           match b.op {
-            @engine.Empty | @engine.Unset | @engine.Default => vals = []
+            @abi.Empty | @abi.Unset | @abi.Default => vals = []
             _ => vals.push(b.value)
           }
         }
@@ -605,7 +602,7 @@ fn build_result(
       // DR-009 段 7 / DR-102 §1 accum_filters (issue accum-post-filters-stage7): Acc→Acc self-map
       // over the WHOLE folded array, BEFORE the collector (DR-083 §2's order — see
       // AccumCell.accum_filters' doc comment for why collector comes after, not before).
-      // DR-105 §4: `@engine.apply_accum_filter_chain` returns Result (ARRAY filter registry can
+      // DR-105 §4: `@extension.apply_accum_filter_chain` returns Result (ARRAY filter registry can
       // reject, e.g. `length_range`) — the REJECT itself is surfaced earlier, at `resolve_entity`
       // time (`apply_entity_filters`'s own accum_filters gate, same `at_pos`/`epath` machinery
       // `final_filters` already uses), so a binding set that reaches `build_result` at all is
@@ -615,7 +612,12 @@ fn build_result(
       let filtered_vals = match accum_filters_here(cells, path, k) {
         [] => vals
         chain =>
-          match @engine.apply_accum_filter_chain(extensions, chain, vals) {
+          match
+            @extension.apply_accum_filter_chain(
+              extensions.extensions(),
+              chain,
+              vals,
+            ) {
             Ok(v) => v
             Err(_) => vals
           }
@@ -631,13 +633,13 @@ fn build_result(
       obj.push((k, collected))
     } else {
       // SCALAR last-wins (DR-015): the last value written to the cell.
-      let mut v = @engine.Value::Bool(false)
+      let mut v = @abi.Value::Bool(false)
       for b in binds {
         if b.scope.length() == 0 && b.key == k {
           v = b.value
         }
       }
-      obj.push((k, @engine.Scalar(v)))
+      obj.push((k, @abi.Scalar(v)))
     }
   }
   for seg in segs {
@@ -681,13 +683,13 @@ fn build_result(
       // expands each firing's rows directly into the outer array (T[]) instead of nesting them
       // one level (T[][], the flatten:false/default shape `ref-repeat-rows-nested.json` pins).
       // A 0-row firing contributes 0 elements either way ("空配列 → 0要素"); this is the only
-      // reachable manifestation of the dial in kuu.mbt today (`value.mbt`'s `@engine.Value` has no array
+      // reachable manifestation of the dial in kuu.mbt today (`value.mbt`'s `@abi.Value` has no array
       // variant, so a plain scalar multiple cell's fire is never array-shaped — the dial is
       // observationally inert there, DR-105 §1's "非配列 → 丸ごと1要素" holds vacuously).
       let flat = flatten_here(cells, path, seg)
-      let per_fire : Array[@engine.ResultValue] = []
+      let per_fire : Array[@abi.ResultValue] = []
       for chunk in fire_groups(seg_binds) {
-        let rows : Array[@engine.ResultValue] = []
+        let rows : Array[@abi.ResultValue] = []
         for row in row_groups(chunk) {
           rows.push(
             build_result(
@@ -705,10 +707,10 @@ fn build_result(
             per_fire.push(r)
           }
         } else {
-          per_fire.push(@engine.Array(rows))
+          per_fire.push(@abi.Array(rows))
         }
       }
-      let accumulated : @engine.ResultValue = @engine.Array(per_fire)
+      let accumulated : @abi.ResultValue = @abi.Array(per_fire)
       let collected = match collector_here(cells, path, seg) {
         Some(resident) => resident.collect(accumulated)
         None => accumulated
@@ -772,10 +774,10 @@ fn build_result(
   // here — an unfired flag shows `false`, never absent). Skip names already present as a bound leaf.
   for d in defaults {
     if path_eq(d.path, path) && !str_contains(named, d.name) {
-      obj.push((d.name, @engine.Scalar(d.value)))
+      obj.push((d.name, @abi.Scalar(d.value)))
     }
   }
-  @engine.Object(obj)
+  @abi.Object(obj)
 }
 
 ///|
@@ -791,9 +793,9 @@ fn build_result(
 /// mapped binding keys, an unmapped AccumCell for a renamed accum entity silently failed to
 /// match — the accumulate fold never fired (the entity's bindings fell through to plain last-wins
 /// scalar rendering under its OLD name instead of `[]`-folding under the renamed key). Same 3-way
-/// resolution `apply_export_to_defaults` uses: `@engine.Key(s)` → rename to `s`, `@engine.Null` → drop (透過,
+/// resolution `apply_export_to_defaults` uses: `@engine.Key(s)` → rename to `s`, `@abi.Null` → drop (透過,
 /// DR-052 §2 — an accum cell whose OWN key is nulled carries no result-key axis, same posture a
-/// scalar default's @engine.Null already gets), otherwise unchanged.
+/// scalar default's @abi.Null already gets), otherwise unchanged.
 fn accum_cells(
   sc : @engine.Scope,
   ek : Map[String, @engine.ExportKey],
@@ -859,7 +861,7 @@ fn collect_accum(
 priv struct DefaultCell {
   path : Array[String]
   name : String
-  value : @engine.Value
+  value : @abi.Value
 }
 
 ///|
@@ -875,7 +877,7 @@ fn default_cells(sc : @engine.Scope) -> Array[DefaultCell] {
 /// by `ensure_entity`'s only producer) wants just the one value. `resolve_ladder_below_cli`'s
 /// default seat is the ONE reader that legitimately iterates the whole array (an accum cell's
 /// default can carry N pieces) and does NOT use this helper.
-fn default_scalar(e : @engine.Entity) -> @engine.Value? {
+fn default_scalar(e : @engine.Entity) -> @abi.Value? {
   match e.default_values {
     Some(vs) => if vs.length() > 0 { Some(vs[0]) } else { None }
     None => None
@@ -920,16 +922,16 @@ fn collect_defaults(
 /// `proj_result_export` (json_conformance_test.mbt) と kuu-cli PoC の手組み `result_to_json`
 /// (wire.mbt) が同一の 5 行組み立てを重複実装していた — 両者ともこの関数を呼ぶ形に揃える。
 /// `binds` は `front_door.resolve()` の @engine.Success payload (解決済み binds、DR-109 §7「CLI は既定で
-/// resolve 適用」) を渡すのが前提だが、型としては素の `Array[@engine.Binding]` を受けるだけなので未解決の
+/// resolve 適用」) を渡すのが前提だが、型としては素の `Array[@abi.Binding]` を受けるだけなので未解決の
 /// CLI binds を渡しても動く (runner が「default ladder 不要な fixture は resolve をスキップする」
 /// 最適化で未解決 binds をそのまま渡す既存経路があり、それを壊さないための性質 — 呼び出し側の
 /// 資格を型で強制することはしない)。
 fn build_result_export(
   sc : @engine.Scope,
-  binds : Array[@engine.Binding],
+  binds : Array[@abi.Binding],
   ek : Map[String, @engine.ExportKey],
-  extensions? : @engine.Registry = canonical_registry(),
-) -> @engine.ResultValue {
+  extensions? : @node.Registry = canonical_registry(),
+) -> @abi.ResultValue {
   build_result(
     apply_export_keys(binds, ek),
     accum_cells(sc, ek),
@@ -961,14 +963,14 @@ priv struct ExportCollision {
 
 ///|
 /// The result-key axis (DR-052 §1) resolved to its ACTUAL exposed key string for `raw` (an entity
-/// name / binding key), or `None` when the axis carries no key at all (@engine.Null, DR-052 §2 透過).
+/// name / binding key), or `None` when the axis carries no key at all (@abi.Null, DR-052 §2 透過).
 /// Mirrors `apply_export_keys`'s own resolution exactly (same 3-way match, same `_` fallback to
-/// `raw` for @engine.Unset AND for an unmapped name — sentinels `"[]"`/`"{}"`/`""`/`"@act:"`/`"@depr:"`
+/// `raw` for @abi.Unset AND for an unmapped name — sentinels `"[]"`/`"{}"`/`""`/`"@act:"`/`"@depr:"`
 /// and `"#k"` index segments are never in `ek`, `apply_export_keys`'s doc comment) — this is the
 /// SAME "未指定 → name 由来のキーで露出" resolution DR-052 §1's table specifies, just queried
 /// instead of applied. issue export-key-collision-identity-exposure-gap: `find_export_collisions`
-/// used to skip this `_` (@engine.Unset / unmapped) case entirely, treating "no `ek` entry" as "not
-/// exposed" — but DR-052 §1 says @engine.Unset resolves to a REAL exposed key (the name), so an identity-
+/// used to skip this `_` (@abi.Unset / unmapped) case entirely, treating "no `ek` entry" as "not
+/// exposed" — but DR-052 §1 says @abi.Unset resolves to a REAL exposed key (the name), so an identity-
 /// exposed element competing with another element's `@engine.Key`-mapped key for the same result-scope
 /// key was invisible to collision detection. Spec precedent (DESIGN §15.5: "衝突の本質は結果キーの
 /// provenance の曖昧さ") talks about "同じ export_key へ解決する" — export_key's own value-domain
@@ -990,10 +992,10 @@ fn exposed_key_of(raw : String, ek : Map[String, @engine.ExportKey]) -> String? 
 /// compares the raw `scope` path directly (two bindings at the identical remaining nesting are
 /// candidates regardless of depth — no per-level recursion needed, mirroring the original
 /// `find_export_collision`'s flat O(n²) scan). Groups by `exposed_key_of` (mapped OR identity-
-/// exposed, @engine.Null excluded) — see that function's doc comment for why identity exposure is now
+/// exposed, @abi.Null excluded) — see that function's doc comment for why identity exposure is now
 /// included (issue export-key-collision-identity-exposure-gap).
 fn find_export_collisions(
-  binds : Array[@engine.Binding],
+  binds : Array[@abi.Binding],
   ek : Map[String, @engine.ExportKey],
 ) -> Array[ExportCollision] {
   // (path, exposed key) → claimants, built incrementally; a linear scan over few groups is fine at
@@ -1040,7 +1042,7 @@ fn find_export_collisions(
 /// pair comparison (CONFORMANCE §3, DR-073 §3).
 fn promote_collision_ambiguous_from(
   o : @engine.Outcome,
-  collision_binds : Array[@engine.Binding],
+  collision_binds : Array[@abi.Binding],
   ek : Map[String, @engine.ExportKey],
 ) -> @engine.Outcome {
   match o {
@@ -1054,7 +1056,7 @@ fn promote_collision_ambiguous_from(
       // entity name is the sole cross-view-stable identifier; value/source can coincide).
       let interps : Array[@engine.AmbiguousInterpretation] = []
       for combo in claimant_combinations(collisions) {
-        let filtered : Array[@engine.Binding] = []
+        let filtered : Array[@abi.Binding] = []
         for b in collision_binds {
           let mut drop = false
           let mut gi = 0
@@ -1127,8 +1129,8 @@ fn claimant_combinations(
 ///|
 /// 1 つの export 済み result-key の値源タグ (DR-031)。`path` は結果スコープ木を降りる scope
 /// segment 列 (root なら `[]`)、`key` は `apply_export_keys` と同じ resolve (DR-052 §1) を経た
-/// 露出キー、`source` は値源 — `@engine.Source::@engine.Default` は「未発火 (default 相当)」または「accum セルの
-/// `@engine.Unset` op で未触の default 状態へ再着席した」を表す (`collect_sources_flat` のコメント参照)。
+/// 露出キー、`source` は値源 — `@abi.Source::@abi.Default` は「未発火 (default 相当)」または「accum セルの
+/// `@abi.Unset` op で未触の default 状態へ再着席した」を表す (`collect_sources_flat` のコメント参照)。
 /// `pub(all)` (MDR-005 §3 の「正面玄関の 3 関数が直接運ぶ型は pub(all) を維持」原則に準拠) —
 /// 呼び出し側 (kuu-cli 等) が `.path`/`.key`/`.source` を読んで JSON を組み立てる、フィールド
 /// 読み取りが本体の型なので `AccumCell`/`DefaultCell`/`@engine.NoneCell` (組み立て素材を build_result に
@@ -1136,7 +1138,7 @@ fn claimant_combinations(
 pub(all) struct SourceEntry {
   path : Array[String]
   key : String
-  source : @engine.Source
+  source : @abi.Source
 } derive(Eq, Debug)
 
 ///|
@@ -1156,7 +1158,7 @@ fn has_commands(sc : @engine.Scope) -> Bool {
 
 ///|
 /// command 木を持たない単一 scope 向けの sources 収集 (旧 runner `proj_sources` の構造化版、
-/// String 直書きの `"default"` を `@engine.Source::@engine.Default` に置き換えた以外は元実装のロジックを不変に
+/// String 直書きの `"default"` を `@abi.Source::@abi.Default` に置き換えた以外は元実装のロジックを不変に
 /// 保つ)。`sc.entities` を直接走査するので **root scope 単体のみ** (子 command scope は見ない) —
 /// 単一 scope 前提だからこそ「未発火セルは default 相当を報告する」フォールバック (accum セルの
 /// `[]` 既定 / flag・bool の preset default、DR-044 の uniform array 既定 / LOWERING §A.5) を
@@ -1164,7 +1166,7 @@ fn has_commands(sc : @engine.Scope) -> Bool {
 /// source も持たない)。
 fn collect_sources_flat(
   sc : @engine.Scope,
-  resolved : Array[@engine.Binding],
+  resolved : Array[@abi.Binding],
   ek : Map[String, @engine.ExportKey],
 ) -> Array[SourceEntry] {
   let out : Array[SourceEntry] = []
@@ -1180,15 +1182,15 @@ fn collect_sources_flat(
       None => ()
       Some(exposed) =>
         if !str_contains(emitted, exposed) {
-          let mut src : @engine.Source? = None
+          let mut src : @abi.Source? = None
           for b in resolved {
             if !is_sentinel(b.key) && exposed_key_of(b.key, ek) == Some(exposed) {
               src = match b.op {
-                // issue 2026-07-09-accum-filters-non-set-op-semantics: `@engine.Unset` は CLI 発火済みだが
+                // issue 2026-07-09-accum-filters-non-set-op-semantics: `@abi.Unset` は CLI 発火済みだが
                 // 未確定 (committed=false、DR-045「default 値へ戻す... committed=false」) なので、
                 // 値源タグは発火トークン自身の `source` ではなくラダーの再着席結果
-                // ("as if untouched") を反映して `@engine.Default` を報告する。
-                @engine.Unset => Some(@engine.Default)
+                // ("as if untouched") を反映して `@abi.Default` を報告する。
+                @abi.Unset => Some(@abi.Default)
                 _ => Some(b.source)
               }
             }
@@ -1200,13 +1202,13 @@ fn collect_sources_flat(
             }
             None =>
               if e.accum is Some(_) {
-                out.push({ path: [], key: exposed, source: @engine.Default })
+                out.push({ path: [], key: exposed, source: @abi.Default })
                 emitted.push(exposed)
               } else if (e.ty.name() == "flag" || e.ty.name() == "bool") &&
                 e.accum is None {
                 match default_scalar(e) {
                   Some(_) => {
-                    out.push({ path: [], key: exposed, source: @engine.Default })
+                    out.push({ path: [], key: exposed, source: @abi.Default })
                     emitted.push(exposed)
                   }
                   None => ()
@@ -1226,9 +1228,7 @@ fn collect_sources_flat(
 /// 適用しない — `resolve_scope_tree` の出力は既に「実際に着席した binding」だけを運ぶため、この
 /// 経路では素の entity 名・生 scope path をそのまま使う (proj_sources_tree の元実装を踏襲、
 /// 意味論は無改変)。
-fn collect_sources_tree(
-  resolved : Array[@engine.Binding],
-) -> Array[SourceEntry] {
+fn collect_sources_tree(resolved : Array[@abi.Binding]) -> Array[SourceEntry] {
   let out : Array[SourceEntry] = []
   for b in resolved {
     if is_sentinel(b.key) {
@@ -1257,7 +1257,7 @@ fn collect_sources_tree(
 /// 重複だけを解消する。
 fn result_sources(
   sc : @engine.Scope,
-  resolved : Array[@engine.Binding],
+  resolved : Array[@abi.Binding],
   ek : Map[String, @engine.ExportKey],
 ) -> Array[SourceEntry] {
   if has_commands(sc) {
@@ -1324,8 +1324,8 @@ fn is_none_entity(entities : Array[@engine.Entity], name : String) -> Bool {
 fn candidate_satisfied(
   c : @engine.RequiredCandidate,
   entities : Array[@engine.Entity],
-  bindings : Array[@engine.Binding],
-  resolved : Array[@engine.Binding],
+  bindings : Array[@abi.Binding],
+  resolved : Array[@abi.Binding],
   path : Array[String],
 ) -> Bool {
   match c.wrapper {
@@ -1355,17 +1355,17 @@ fn candidate_satisfied(
 /// 2026-07-10 でこの読者化を非bool 目的語にも拡張した — bool は `@engine.element_value(resolved,...) ==
 /// Some("true")`、非bool は `@engine.element_value(resolved,...) != None` (値の有無) の 2 分岐。
 ///
-/// `@engine.constraint_err`'s `path` defaults to `[]` (KTop's contract: a @engine.Held rides the cont chain and
+/// `@engine.constraint_err`'s `path` defaults to `[]` (KTop's contract: a @abi.Held rides the cont chain and
 /// scope boundaries prepend the path on the way out) — that mechanism doesn't run here (the path
 /// is already fully resolved), so `sc.path` (DR-066 §4 result-nesting path) is threaded in
 /// directly via struct-update.
 fn eval_requires(
   sc : @engine.ScopedCons,
-  bindings : Array[@engine.Binding],
-  resolved : Array[@engine.Binding],
+  bindings : Array[@abi.Binding],
+  resolved : Array[@abi.Binding],
   pos : Int,
-) -> Array[@engine.ParseError] {
-  let out : Array[@engine.ParseError] = []
+) -> Array[@abi.ParseError] {
+  let out : Array[@abi.ParseError] = []
   let path = sc.path
   // DR-093 §1/§3: 目的語の充足判定は型 (値空間) への委譲 — 値空間なし (none) は発火 (committed)、
   // bool は解決後値が true、それ以外 (通常の値空間あり型) は値の有無。none 分岐が先 (bool/非bool の
@@ -1386,7 +1386,7 @@ fn eval_requires(
           for t in targets {
             if !satisfied(t) {
               out.push({
-                ..@engine.ParseError::constraint(
+                ..@abi.ParseError::constraint(
                   elem,
                   "requires_violated",
                   "'\{elem}' requires '\{t}'",
@@ -1407,7 +1407,7 @@ fn eval_requires(
           for t in targets {
             if !satisfied(t) {
               out.push({
-                ..@engine.ParseError::constraint(
+                ..@abi.ParseError::constraint(
                   branch_id,
                   "requires_violated",
                   "'\{entity}'=\{v} requires '\{t}'",
@@ -1442,7 +1442,7 @@ fn eval_requires(
         }
         if !ok {
           out.push({
-            ..@engine.ParseError::constraint(
+            ..@abi.ParseError::constraint(
               display,
               "required_violated",
               "required '\{display}' is missing",
@@ -1464,7 +1464,7 @@ fn eval_requires(
         }
         if !ok {
           out.push({
-            ..@engine.ParseError::constraint(
+            ..@abi.ParseError::constraint(
               group,
               "required_group_violated",
               "required group '\{group}' has no satisfied member",
@@ -1485,7 +1485,7 @@ fn eval_requires(
 /// `scope_entered` (production code can't reference a wbtest-only symbol; wbtest files aren't
 /// linked into non-test builds) for `resolve_scope_tree`'s own use.
 fn scope_entered_here(
-  binds : Array[@engine.Binding],
+  binds : Array[@abi.Binding],
   path : Array[String],
 ) -> Bool {
   for b in binds {
@@ -1518,11 +1518,11 @@ fn is_cmdsat_child(sc : @engine.Scope, name : String) -> Bool {
 /// binding may be produced while resolving a descendant command; when recursion reaches the owning
 /// scope, relocate the reserved key to that scope path.
 fn relocate_internal_bindings(
-  bindings : Array[@engine.Binding],
+  bindings : Array[@abi.Binding],
   entities : Array[@engine.Entity],
   path : Array[String],
-) -> Array[@engine.Binding] {
-  let out : Array[@engine.Binding] = []
+) -> Array[@abi.Binding] {
+  let out : Array[@abi.Binding] = []
   for binding in bindings {
     if binding.key.length() > 0 &&
       binding.key[0:1].to_owned() == "#" &&
@@ -1551,24 +1551,24 @@ fn relocate_internal_bindings(
 ///
 /// `binds` is the CLI-only raw bindings for ONE candidate path (`parse()`'s `@engine.Success`/`@engine.AmbiguousInterpretation`
 /// payload) — not yet split by scope; this function filters to `path`'s own direct bindings at
-/// each recursion level. The returned `Array[@engine.Binding]` is flat with every binding's `scope` tagged
+/// each recursion level. The returned `Array[@abi.Binding]` is flat with every binding's `scope` tagged
 /// to its owning path (the same shape `build_result`/`proj_sources_tree` already consume) — a
 /// caller wanting a value at a nested path uses the ordinary `@engine.element_value`/`@engine.is_committed` lookups
 /// with that path, no different from a single-scope `resolve_scope_config` caller.
 fn resolve_scope_tree_with_export(
   sc : @engine.Scope,
-  binds : Array[@engine.Binding],
-  env_map : Map[String, String],
-  provider : (String) -> @engine.ConfigVal?,
+  binds : Array[@abi.Binding],
+  env_map : (String) -> String?,
+  provider : (String) -> @abi.ConfigVal?,
   path : Array[String],
-  inherited : Map[String, @engine.Value],
+  inherited : Map[String, @abi.Value],
   at_pos : Int,
-  tty : Map[String, TtyObs],
+  tty : (String) -> TtyObs?,
   ek : Map[String, @engine.ExportKey],
-  extensions : @engine.Registry,
+  extensions : @node.Registry,
   include_default : Bool,
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
-  let here : Array[@engine.Binding] = []
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
+  let here : Array[@abi.Binding] = []
   for b in binds {
     if path_eq(b.scope, path) {
       here.push(b)
@@ -1582,7 +1582,7 @@ fn resolve_scope_tree_with_export(
     Ok(rb) => rb
     Err(pe) => return Err(pe)
   }
-  let out : Array[@engine.Binding] = []
+  let out : Array[@abi.Binding] = []
   for b in here {
     if is_sentinel(b.key) {
       out.push(b)
@@ -1624,7 +1624,7 @@ fn resolve_scope_tree_with_export(
       }
     }
   }
-  let child_inherited : Map[String, @engine.Value] = Map([])
+  let child_inherited : Map[String, @abi.Value] = Map([])
   for k, v in inherited {
     child_inherited.set(k, v)
   }
@@ -1670,10 +1670,10 @@ fn resolve_scope_tree_with_export(
 /// issue resolve-first-constraint-pipeline (Phase 1、audit issue lazy-default-resolution-audit の
 /// finding への根治): 候補ごとに `resolve_scope_tree` で実際に解決してから `@engine.element_value` を読むだけの
 /// 「読者」に再設計した (以前の `resolved_bool_value_ladder` 自前ミニラダー + `config_obj:
-/// @engine.ConfigVal?` 単一オブジェクト契約 + `collect_all_scopes` 祖先探索テーブルは全廃)。
-/// `provider~` は `resolve_scope_config` と同じ `(String) -> @engine.ConfigVal?` 契約 — スコープごとに
+/// @abi.ConfigVal?` 単一オブジェクト契約 + `collect_all_scopes` 祖先探索テーブルは全廃)。
+/// `provider~` は `resolve_scope_config` と同じ `(String) -> @abi.ConfigVal?` 契約 — スコープごとに
 /// 異なる config_file を動的に指す CfgFiles ケースも、呼び出し元が対応する provider を渡すだけで
-/// 均一に扱われる (単一 @engine.ConfigVal だった旧契約の既知の残存ギャップが解消)。省略時は常に `None` を
+/// 均一に扱われる (単一 @abi.ConfigVal だった旧契約の既知の残存ギャップが解消)。省略時は常に `None` を
 /// 返す no-op provider (config 未使用の既存呼び出し元は無改修)。
 ///
 /// `table.length() == 0` (このスコープ木に requires 制約が一つも無い) なら resolve を試みずに
@@ -1683,17 +1683,17 @@ fn apply_requires_filter_with_export(
   o : @engine.Outcome,
   root : @engine.Node,
   defs : Map[String, @engine.Node],
-  env : Map[String, String],
+  env : (String) -> String?,
   toks_len : Int,
-  provider : (String) -> @engine.ConfigVal?,
-  tty : Map[String, TtyObs],
+  provider : (String) -> @abi.ConfigVal?,
+  tty : (String) -> TtyObs?,
   ek : Map[String, @engine.ExportKey],
-  extensions : @engine.Registry,
+  extensions : @node.Registry,
 ) -> @engine.Outcome {
   let table = @engine.collect_scopes(root, defs)
   let violations_of = fn(
-    binds : Array[@engine.Binding],
-  ) -> Array[@engine.ParseError] {
+    binds : Array[@abi.Binding],
+  ) -> Array[@abi.ParseError] {
     if table.length() == 0 {
       return []
     }
@@ -1714,7 +1714,7 @@ fn apply_requires_filter_with_export(
             true,
           ) {
           Ok(resolved) => {
-            let out : Array[@engine.ParseError] = []
+            let out : Array[@abi.ParseError] = []
             for sc2 in table {
               // SCB-Q1=a (kawaz 裁定 2026-07-17、docs/QUESTIONS.md の SCB batch): 未選択 (= 当該実行で
               // 未入場) command scope に宣言された遅延述語は評価に参加しない。原理は「グローバルオプション
@@ -1745,8 +1745,8 @@ fn apply_requires_filter_with_export(
     }
   }
   let build_failure = fn(
-    binds_for_actions : Array[Array[@engine.Binding]],
-    errors : Array[@engine.ParseError],
+    binds_for_actions : Array[Array[@abi.Binding]],
+    errors : Array[@abi.ParseError],
   ) -> @engine.Outcome {
     @engine.Failure({
       errors,
@@ -1763,8 +1763,8 @@ fn apply_requires_filter_with_export(
       }
     @engine.Ambiguous(d) => {
       let survivors : Array[@engine.AmbiguousInterpretation] = []
-      let all_violations : Array[@engine.ParseError] = []
-      let all_binds : Array[Array[@engine.Binding]] = []
+      let all_violations : Array[@abi.ParseError] = []
+      let all_binds : Array[Array[@abi.Binding]] = []
       for interp in d.interpretations {
         all_binds.push(interp.binds) // DR-048: dead-end (違反除外) 経路も action 候補に数える
         match violations_of(interp.binds) {
@@ -1792,20 +1792,20 @@ fn apply_requires_filter_with_export(
 // ── value-source ladder (slice `poc/installer.mbt`'s resolve_scope / resolve_scope_config) ───
 
 ///|
-/// A @engine.Value rendered as its comparison string (constraint value matching: integers print without
+/// A @abi.Value rendered as its comparison string (constraint value matching: integers print without
 /// the trailing `.0`). The resolve layer owns the result-object rendering; this is also the
 /// RequiresIf comparison form (moved here from eval.mbt, MDR-002 §3 table — this is resolve.mbt's
 /// canonical home; eval.mbt's `@engine.element_value` calls this file's copy, same package).
 
 ///|
-/// A DR-066 ladder-fill Error: `element`/`args_pos` locate it like any @engine.ParseError; `at_pos` is the
+/// A DR-066 ladder-fill Error: `element`/`args_pos` locate it like any @abi.ParseError; `at_pos` is the
 /// caller-supplied final position (env/config seat errors are not read at a token position — they
 /// surface after the path completed, the same conceptual point `eval_constraints` evaluates at, so
-/// callers thread the same final `toks.length()`). kind is always `@engine.Parse` (a value-source failed
+/// callers thread the same final `toks.length()`). kind is always `@abi.Parse` (a value-source failed
 /// to parse into the entity's type — the same category as a bad CLI token, DR-053). `epath` is the
 /// DR-066 §4 ancestor path (root-first, [] = root 直下): this ladder walk resolves ONE scope's
 /// entities at a time and already carries the scope's own result-nesting path (the `resolve_tree`
-/// caller threads it in), so — unlike eval.mbt's CPS @engine.Held (which starts at [] and picks up ancestors
+/// caller threads it in), so — unlike eval.mbt's CPS @abi.Held (which starts at [] and picks up ancestors
 /// crossing scope boundaries on the way out) — the ladder path is known statically and passed in
 /// directly, no boundary-crossing accumulation needed.
 fn ladder_err(
@@ -1814,24 +1814,17 @@ fn ladder_err(
   reason : String,
   message : String,
   epath : Array[String],
-) -> @engine.ParseError {
-  {
-    element,
-    args_pos: at_pos,
-    kind: @engine.Parse,
-    reason,
-    message,
-    path: epath,
-  }
+) -> @abi.ParseError {
+  { element, args_pos: at_pos, kind: @abi.Parse, reason, message, path: epath }
 }
 
 ///|
 /// A DR-053 §2 filter-reject Error: `value_filters`/`final_filters`/`accum_filters` (DR-009 §7,
-/// DR-102 §1) rejected an already-resolved value. Distinct from `ladder_err` (`kind: @engine.Parse`, a
+/// DR-102 §1) rejected an already-resolved value. Distinct from `ladder_err` (`kind: @abi.Parse`, a
 /// value-source failed to parse) —
 /// a filter reject is a validation/transform rejection over a value that parsed fine, so it gets
-/// its own builder with `kind: @engine.Filter` (DR-053 §2's 3-way `parse` | `filter` | `constraint` split;
-/// `eval.mbt`'s `filter_arg_eval` already emits `@engine.Filter` for the same conceptual failure at the
+/// its own builder with `kind: @abi.Filter` (DR-053 §2's 3-way `parse` | `filter` | `constraint` split;
+/// `eval.mbt`'s `filter_arg_eval` already emits `@abi.Filter` for the same conceptual failure at the
 /// token-parsing layer, this is `apply_entity_filters`'s resolve-layer counterpart). Same
 /// `at_pos`/`epath` threading contract as `ladder_err`.
 fn filter_err(
@@ -1840,20 +1833,13 @@ fn filter_err(
   reason : String,
   message : String,
   epath : Array[String],
-) -> @engine.ParseError {
-  {
-    element,
-    args_pos: at_pos,
-    kind: @engine.Filter,
-    reason,
-    message,
-    path: epath,
-  }
+) -> @abi.ParseError {
+  { element, args_pos: at_pos, kind: @abi.Filter, reason, message, path: epath }
 }
 
 ///|
-/// Parse an env string into a @engine.Value per the entity's type (DR-049 §2: env goes through the same
-/// pipeline as CLI). Unlike slice's `env_value` (naive `@builtins.parse_number` with a silent `@engine.String` fallback
+/// Parse an env string into a @abi.Value per the entity's type (DR-049 §2: env goes through the same
+/// pipeline as CLI). Unlike slice's `env_value` (naive `@builtins.parse_number` with a silent `@abi.String` fallback
 /// on failure), this reuses the canonical lexers (DR-074/075) and surfaces a parse failure as a
 /// DR-066 Error — a badly-typed env value is never silently coerced to a wrong-typed string cell.
 /// `piece_filters` (DR-034/DR-062, issue 2026-07-09-pre-split-filters-execution-wiring): DR-049 §2
@@ -1864,14 +1850,15 @@ fn filter_err(
 /// reaches this @engine.Entity-based ladder).
 fn env_value(
   element : String,
-  ty : &@engine.TypeExt,
+  ty : &@extension.TypeExt,
   s : String,
-  piece_filters : Array[@engine.FnInvocation],
+  piece_filters : Array[@abi.FnInvocation],
   at_pos : Int,
   epath : Array[String],
-  extensions : @engine.Registry,
-) -> Result[@engine.Value, @engine.ParseError] {
-  let s = match @engine.apply_piece_filters(extensions, piece_filters, s) {
+  extensions : @node.Registry,
+) -> Result[@abi.Value, @abi.ParseError] {
+  let s = match
+    @extension.apply_piece_filters(extensions.extensions(), piece_filters, s) {
     Ok(v) => v
     Err({ reason, message: msg }) =>
       return Err(filter_err(element, at_pos, reason, msg, epath))
@@ -1886,17 +1873,14 @@ fn env_value(
 }
 
 ///|
-/// Navigate a config object by an absolute path (DR-050 §3). Each segment indexes into a @engine.Object;
+/// Navigate a config object by an absolute path (DR-050 §3). Each segment indexes into a @abi.Object;
 /// a missing key or a non-object mid-path yields None (this cell is not supplied by config).
-fn config_lookup(
-  obj : @engine.ConfigVal,
-  path : Array[String],
-) -> @engine.ConfigVal? {
+fn config_lookup(obj : @abi.ConfigVal, path : Array[String]) -> @abi.ConfigVal? {
   let mut cur = obj
   for seg in path {
     match cur {
-      @engine.Object(kvs) => {
-        let mut found : @engine.ConfigVal? = None
+      @abi.Object(kvs) => {
+        let mut found : @abi.ConfigVal? = None
         for kv in kvs {
           if kv.0 == seg {
             found = Some(kv.1)
@@ -1925,17 +1909,17 @@ fn config_lookup(
 /// leak an unrelated config-tree location into the error's ancestor scope list.
 fn resolve_entity(
   e : @engine.Entity,
-  cli : Array[@engine.Binding],
-  env_map : Map[String, String],
-  config_obj : @engine.ConfigVal?,
+  cli : Array[@abi.Binding],
+  env_map : (String) -> String?,
+  config_obj : @abi.ConfigVal?,
   config_path : Array[String],
-  inherited : Map[String, @engine.Value],
+  inherited : Map[String, @abi.Value],
   at_pos : Int,
   epath : Array[String],
-  tty_map : Map[String, TtyObs],
-  extensions : @engine.Registry,
+  tty_map : (String) -> TtyObs?,
+  extensions : @node.Registry,
   include_default : Bool,
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
   match
     resolve_entity_raw(
       e, cli, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
@@ -1958,35 +1942,40 @@ fn resolve_entity(
 /// every binding; `final_filters` (T→T、確定した最終値) applies ONLY to a scalar cell's (no accum)
 /// single binding — an accum cell's TRUE "post accumulation" gate is `accum_filters`, applied at
 /// build_result (resolve.mbt's caller) instead, which this function does not reach for that cell.
-/// `@engine.Empty`'s binding carries a PLACEHOLDER value (DR-045 — the real "clear the collection" effect
+/// `@abi.Empty`'s binding carries a PLACEHOLDER value (DR-045 — the real "clear the collection" effect
 /// has no value of its own), so it's exempt from both chains — running a number/string filter over
-/// a bogus `@engine.Bool(false)` placeholder would be nonsensical.
+/// a bogus `@abi.Bool(false)` placeholder would be nonsensical.
 fn apply_entity_filters(
   e : @engine.Entity,
-  bs : Array[@engine.Binding],
+  bs : Array[@abi.Binding],
   at_pos : Int,
   epath : Array[String],
-  extensions : @engine.Registry,
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
-  let out : Array[@engine.Binding] = []
+  extensions : @node.Registry,
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
+  let out : Array[@abi.Binding] = []
   for b in bs {
     // value_filters(each、段5) applies only to a binding carrying a REAL value (kawaz 裁定
-    // 2026-07-09、issue accum-filters-non-set-op-semantics): `@engine.Set` (a plain value bind) and
+    // 2026-07-09、issue accum-filters-non-set-op-semantics): `@abi.Set` (a plain value bind) and
     // `@engine.Update`'s applied result. The scalar CLI-seat fold (resolve_entity_raw's non-accum branch)
-    // already converts a committed `@engine.Update` to a `@engine.Set` binding via `@engine.mk_binding` before it ever reaches
-    // here, so this function never special-cases `@engine.Update` itself — checking `op == @engine.Set` alone
-    // covers both. `@engine.Unset`/`@engine.Default`/`@engine.Empty` are operations ON THE CELL, not a piece carrying a
+    // already converts a committed `@engine.Update` to a `@abi.Set` binding via `@engine.mk_binding` before it ever reaches
+    // here, so this function never special-cases `@engine.Update` itself — checking `op == @abi.Set` alone
+    // covers both. `@abi.Unset`/`@abi.Default`/`@abi.Empty` are operations ON THE CELL, not a piece carrying a
     // value — their bindings carry no meaningful operand (placeholder values, `mk_effect`'s doc
-    // comment) and must pass through untouched. This generalizes the old "only `@engine.Empty` is exempt"
-    // rule: for a SCALAR cell the fold above already collapses everything else to `@engine.Set`/`@engine.Empty`
+    // comment) and must pass through untouched. This generalizes the old "only `@abi.Empty` is exempt"
+    // rule: for a SCALAR cell the fold above already collapses everything else to `@abi.Set`/`@abi.Empty`
     // so the two rules were equivalent there, but an ACCUM cell's fold (resolve_entity_raw's
     // `e.accum is Some(_)` branch) preserves every op UNINTERPRETED — without this
-    // generalization, a `@engine.Default`/`@engine.Unset` binding's placeholder value would wrongly run through
+    // generalization, a `@abi.Default`/`@abi.Unset` binding's placeholder value would wrongly run through
     // `e.value_filters` (issue's `--ports 5 --reset-ports` repro).
-    if b.op != @engine.Set {
+    if b.op != @abi.Set {
       out.push(b)
     } else {
-      match @engine.apply_filter_chain(extensions, e.value_filters, b.value) {
+      match
+        @extension.apply_filter_chain(
+          extensions.extensions(),
+          e.value_filters,
+          b.value,
+        ) {
         Err({ reason, message: msg }) => {
           // value_filters(each、段5、DR-009): CONFORMANCE §3's piece-attribution rule — a reject here
           // is attributed to the SPECIFIC args token the rejected piece came from (`b.at_pos`,
@@ -2003,7 +1992,11 @@ fn apply_entity_filters(
           let b2 = { ..b, value: v }
           if e.accum is None {
             match
-              @engine.apply_filter_chain(extensions, e.final_filters, b2.value) {
+              @extension.apply_filter_chain(
+                extensions.extensions(),
+                e.final_filters,
+                b2.value,
+              ) {
               Err({ reason, message: msg }) =>
                 return Err(filter_err(e.name, at_pos, reason, msg, epath))
               Ok(v2) => out.push({ ..b2, value: v2 })
@@ -2021,19 +2014,24 @@ fn apply_entity_filters(
   // for every fixture regardless of whether the ladder/`use_resolve` path was taken). `out` at this
   // point is exactly this entity's own value_filters-applied binding list, ops preserved
   // (`resolve_entity_raw`'s accum branch never folds an accum cell's bindings to last-wins) — the
-  // SAME fold `build_result`'s ACCUMULATE branch performs (@engine.Empty/@engine.Unset/@engine.Default clears the running
+  // SAME fold `build_result`'s ACCUMULATE branch performs (@abi.Empty/@abi.Unset/@abi.Default clears the running
   // array, everything else appends its value) is replicated here so the two stay in lockstep.
   // `args.length()` attribution (DR-102 §4, effectuated by DR-105 §4): reuses `at_pos`, the same
   // "no specific token" position `final_filters`'s own reject above already reports at.
   if e.accum is Some(_) && e.accum_filters.length() > 0 {
-    let mut vals : Array[@engine.Value] = []
+    let mut vals : Array[@abi.Value] = []
     for b in out {
       match b.op {
-        @engine.Empty | @engine.Unset | @engine.Default => vals = []
+        @abi.Empty | @abi.Unset | @abi.Default => vals = []
         _ => vals.push(b.value)
       }
     }
-    match @engine.apply_accum_filter_chain(extensions, e.accum_filters, vals) {
+    match
+      @extension.apply_accum_filter_chain(
+        extensions.extensions(),
+        e.accum_filters,
+        vals,
+      ) {
       Ok(_) => ()
       Err({ reason, message: msg }) =>
         return Err(filter_err(e.name, at_pos, reason, msg, epath))
@@ -2048,17 +2046,17 @@ fn apply_entity_filters(
 /// application (`apply_entity_filters`) without duplicating the ladder logic.
 fn resolve_entity_raw(
   e : @engine.Entity,
-  cli : Array[@engine.Binding],
-  env_map : Map[String, String],
-  config_obj : @engine.ConfigVal?,
+  cli : Array[@abi.Binding],
+  env_map : (String) -> String?,
+  config_obj : @abi.ConfigVal?,
   config_path : Array[String],
-  inherited : Map[String, @engine.Value],
+  inherited : Map[String, @abi.Value],
   at_pos : Int,
   epath : Array[String],
-  tty_map : Map[String, TtyObs],
-  extensions : @engine.Registry,
+  tty_map : (String) -> TtyObs?,
+  extensions : @node.Registry,
   include_default : Bool,
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
   // cli seat (DR-015 last-wins + DR-077 §1 update fold): fold every same-name CLI effect in args
   // order, not just peek at the last one. `update`'s result is OLD-DEPENDENT — a single "read the
   // last binding" can no longer resolve the seat once update effects are mixed with
@@ -2067,15 +2065,15 @@ fn resolve_entity_raw(
   // committed op wins" read (each non-update op still just replaces `current` outright, same as
   // before) — DR-015's last-wins guarantee (fixture multiple-parse/last-wins-scalar.json) is a
   // special case of this fold, not a different algorithm.
-  // `current` holds the FULL binding (not just its value) — @engine.Set/@engine.Default/@engine.Empty must be returned
-  // VERBATIM downstream (@engine.Empty's `value` is a placeholder that a later result-builder interprets
-  // by `op`, not by `value`; @engine.Default's `source` must read `@engine.Default`, not `@engine.Cli`) exactly as the
-  // pre-fold code did (`return Ok([b])` / `return Ok([@engine.Binding::new(e.name, v, @engine.Default)])`). Only `update`
+  // `current` holds the FULL binding (not just its value) — @abi.Set/@abi.Default/@abi.Empty must be returned
+  // VERBATIM downstream (@abi.Empty's `value` is a placeholder that a later result-builder interprets
+  // by `op`, not by `value`; @abi.Default's `source` must read `@abi.Default`, not `@abi.Cli`) exactly as the
+  // pre-fold code did (`return Ok([b])` / `return Ok([@abi.Binding::new(e.name, v, @abi.Default)])`). Only `update`
   // needs the running VALUE (as `old`) — `.value` is read off `current` at that point, never
   // reconstructed from scratch.
-  // accum セル (multiple/repeat, DR-034/043): the CLI seat must preserve EVERY same-name @engine.Binding,
+  // accum セル (multiple/repeat, DR-034/043): the CLI seat must preserve EVERY same-name @abi.Binding,
   // not fold to "last wins" — build_result's ACCUMULATE branch (resolve.mbt's caller,
-  // `@engine.Empty`/`@engine.Unset`/`@engine.Default` = clear-point, else = append) is the layer that interprets the op
+  // `@abi.Empty`/`@abi.Unset`/`@abi.Default` = clear-point, else = append) is the layer that interprets the op
   // sequence, exactly as it already does for the raw-bind bypass path this issue is replacing.
   // apply_entity_filters (this function's caller) then runs value_filters(each) over each
   // preserved piece.
@@ -2091,15 +2089,15 @@ fn resolve_entity_raw(
   //   (T[]) while every filters-registry transform is T=>T (scalar) — a structural mismatch with
   //   no legal resolution, so closing it statically (rather than at fold time) matches how
   //   DR-077 §2 already closes "unknown transform name" / "validate-only signature" one layer
-  //   earlier (`@builtins.classify_long_spelling`'s `@builtins.Invalid`). The `@engine.Update` arm below is unreachable
+  //   earlier (`@engine.classify_long_spelling`'s `@engine.Invalid`). The `@engine.Update` arm below is unreachable
   //   defensive code, not a live path.
   // - `default`: resets to `[]` (DR-051 §2's uniform-array default — an accum cell carries no
   //   declared default BY DESIGN, `AccumCell` has no such field) with committed=true (locks the
   //   ladder, mirrors scalar's `unset-ladder.json` default-commits-locked precedent). The op itself
   //   carries no operand, so there's no piece for value_filters/accum_filters to act on (DESIGN
-  //   §8.3) — build_result's ACCUMULATE match folds `@engine.Default` exactly like `@engine.Empty`/`@engine.Unset` (a
-  //   clear-point), so only the SOURCE TAG differs here: rewriting `source` to `@engine.Default` (mirrors
-  //   scalar's `@engine.Binding::new(e.name, v, @engine.Default)`) keeps `proj_sources`/harness correct without a
+  //   §8.3) — build_result's ACCUMULATE match folds `@abi.Default` exactly like `@abi.Empty`/`@abi.Unset` (a
+  //   clear-point), so only the SOURCE TAG differs here: rewriting `source` to `@abi.Default` (mirrors
+  //   scalar's `@abi.Binding::new(e.name, v, @abi.Default)`) keeps `proj_sources`/harness correct without a
   //   default-specific branch there.
   // - `unset`: stays uncommitted (committed=false, unchanged from before) — if every same-name CLI
   //   effect in this seat ends up uncommitted, the CLI seat falls through to the lower ladder rungs
@@ -2107,14 +2105,14 @@ fn resolve_entity_raw(
   //   (`unset-ladder.json`'s `unset-opens-ladder`) — this is the new `committed_now` gate replacing
   //   the old unconditional `bs.length() > 0` return.
   // DR-080 波及節: a merge-accumulator cell's CLI seat is NOT a per-binding fold — a "発火" is a
-  // GROUP of same-`at_pos` @engine.Set/@engine.Remove/@engine.Splice pieces (one args token's separator-split), evaluated
+  // GROUP of same-`at_pos` @abi.Set/@abi.Remove/@abi.Splice pieces (one args token's separator-split), evaluated
   // together against the DR-080 §3 rule (old composition, remove/splice, implicit leading `@`).
   // That grouping cannot be expressed inside this function's per-binding `match b.op` loop (which
   // append/flatten's accumulators are correctly built around, one binding = one independent
   // effect) — factored into its own function.
   match e.accum {
     Some(resident) => {
-      let lower : @engine.LowerSeat = fn(include_default_) {
+      let lower : @extension.LowerSeat = fn(include_default_) {
         resolve_ladder_below_cli(
           e,
           env_map,
@@ -2132,23 +2130,23 @@ fn resolve_entity_raw(
     }
     None => ()
   }
-  let mut current : @engine.Binding? = None
+  let mut current : @abi.Binding? = None
   let mut committed_now = false
   for b in cli {
     if b.key == e.name {
       match b.op {
-        @engine.Set => {
+        @abi.Set => {
           current = Some(b)
           committed_now = true
         }
-        @engine.Default =>
+        @abi.Default =>
           // DR-081 §2: op=default sets the CURRENT (already-rewritten) default value — env/
           // config/inherit don't "win as a lower seat" here, they've already rewritten the
           // cell's default (§1's model) by the time this fires, so querying the SAME ladder
           // `resolve_ladder_below_cli` runs for a normal fall-through gets exactly that value.
-          // `source` is ALWAYS `@engine.Cli` now (DR-081 §2 "確定させた主体"重視 — the default's own
+          // `source` is ALWAYS `@abi.Cli` now (DR-081 §2 "確定させた主体"重視 — the default's own
           // provenance, even if it's env, doesn't change WHO committed it) — this is the one
-          // behavior change from the pre-DR-081 code, which tagged `source: @engine.Default` here.
+          // behavior change from the pre-DR-081 code, which tagged `source: @abi.Default` here.
           match
             resolve_ladder_below_cli(
               e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
@@ -2157,10 +2155,10 @@ fn resolve_entity_raw(
             Ok(bs2) => {
               current = if bs2.length() > 0 {
                 Some(
-                  @engine.Binding::new(
+                  @abi.Binding::new(
                     e.name,
                     bs2[bs2.length() - 1].value,
-                    @engine.Cli,
+                    @abi.Cli,
                   ),
                 )
               } else {
@@ -2173,22 +2171,22 @@ fn resolve_entity_raw(
             }
             Err(pe) => return Err(pe)
           }
-        @engine.Empty => {
+        @abi.Empty => {
           current = Some(b)
           committed_now = true
         }
         // NOT committed: resets the running value to default so a LATER update in the same
         // fold sees the right "old" — but this seat stays eligible to fall through to
         // env/config/inherit if nothing commits after it (unchanged pre-DR-077 contract).
-        @engine.Unset => {
+        @abi.Unset => {
           current = match default_scalar(e) {
-            Some(v) => Some(@engine.Binding::new(e.name, v, @engine.Default))
+            Some(v) => Some(@abi.Binding::new(e.name, v, @abi.Default))
             None => None
           }
           committed_now = false
         }
-        @engine.Invoke(invocation) => {
-          let old : @engine.Value? = match current {
+        @abi.Invoke(invocation) => {
+          let old : @abi.Value? = match current {
             Some(binding) => Some(binding.value)
             None => default_scalar(e)
           }
@@ -2210,20 +2208,20 @@ fn resolve_entity_raw(
             Err({ reason, message }) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
           }
-          let ctx = @engine.FnCtx::for_effect(e.name, e.name, old~, observes~)
+          let ctx = @extension.FnCtx::for_effect(
+            e.name,
+            e.name,
+            old~,
+            observes~,
+          )
           match descriptor.invoke(invocation.to_call(), ctx) {
             Err({ reason, message }) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
-            Ok(@engine.Value(value)) => {
-              current = Some({
-                ..b,
-                op: @engine.Set,
-                value,
-                source: @engine.Cli,
-              })
+            Ok(@extension.FnOutput::Value(value)) => {
+              current = Some({ ..b, op: @abi.Set, value, source: @abi.Cli })
               committed_now = true
             }
-            Ok(@engine.Sentinel(@engine.UseDefault)) =>
+            Ok(@extension.FnOutput::Sentinel(@extension.UseDefault)) =>
               match
                 resolve_ladder_below_cli(
                   e, env_map, config_obj, config_path, inherited, at_pos, epath,
@@ -2233,38 +2231,38 @@ fn resolve_entity_raw(
                   current = if defaults.length() > 0 {
                     Some({
                       ..b,
-                      op: @engine.Set,
+                      op: @abi.Set,
                       value: defaults[defaults.length() - 1].value,
-                      source: @engine.Cli,
+                      source: @abi.Cli,
                     })
                   } else {
-                    Some({ ..b, op: @engine.Default })
+                    Some({ ..b, op: @abi.Default })
                   }
                   committed_now = true
                 }
                 Err(error) => return Err(error)
               }
-            Ok(@engine.Sentinel(@engine.Unset)) => {
+            Ok(@extension.FnOutput::Sentinel(@extension.CellSentinel::Unset)) => {
               current = match default_scalar(e) {
                 Some(value) =>
-                  Some(@engine.Binding::new(e.name, value, @engine.Default))
+                  Some(@abi.Binding::new(e.name, value, @abi.Default))
                 None => None
               }
               committed_now = false
             }
-            Ok(@engine.Sentinel(@engine.Empty)) => {
-              current = Some({ ..b, op: @engine.Empty })
+            Ok(@extension.FnOutput::Sentinel(@extension.CellSentinel::Empty)) => {
+              current = Some({ ..b, op: @abi.Empty })
               committed_now = true
             }
           }
         }
-        @engine.Remove | @engine.Splice =>
-          // DR-080 §2: a `@engine.Remove`/`@engine.Splice` piece only ever fires for a `multiple` element whose
+        @abi.Remove | @abi.Splice =>
+          // DR-080 §2: a `@abi.Remove`/`@abi.Splice` piece only ever fires for a `multiple` element whose
           // `accumulator` is `"merge"` — a merge accumulator REQUIRES `multiple` (DR-080 §1), so
           // no scalar (non-multiple) entity's CLI seat can ever carry one. Unreachable in
           // practice; `abort` matches the sibling accum branch's own defensive arm.
           abort(
-            "unreachable: a @engine.Remove/@engine.Splice piece only fires for a multiple(merge) entity (DR-080 §1) — this is the scalar (non-multiple) fold",
+            "unreachable: a @abi.Remove/@abi.Splice piece only fires for a multiple(merge) entity (DR-080 §1) — this is the scalar (non-multiple) fold",
           )
       }
     }
@@ -2302,7 +2300,7 @@ pub struct TtyObs {
 ///|
 /// DR-081 §1 の「default 席書き換え」モデルの実装的正体: env/config/inherit/宣言 default という
 /// CLI 未満のラダー段。CLI seat がフォールスルーした場合の通常経路であると同時に、`resolve_entity_
-/// raw` の CLI seat 内で `@engine.Default` effect (`:default` variant) が発火した瞬間の **「その時点の
+/// raw` の CLI seat 内で `@abi.Default` effect (`:default` variant) が発火した瞬間の **「その時点の
 /// (書き換え済み) default 値」を問い合わせる関数としても再利用する** (DR-081 §2 "op=default は
 /// 現在の default をそのままセルへ書く")。CLI seat の外に切り出したのは、両方の呼び手が全く同じ
 /// 「env が勝てば env、なければ config、なければ inherit、なければ宣言 default (無ければ accum は
@@ -2310,22 +2308,22 @@ pub struct TtyObs {
 /// 「複数席が供給する場合は従来のラダー優先順」と明記する優先順位 (env が最終的に勝つ) を 2 箇所で
 /// 保守する羽目になる。
 ///
-/// 返り値は素の `resolve_entity_raw` の戻り値と同型 (Array[@engine.Binding], 0 件 = absent 相当 / 1 件以上)。
-/// `@engine.Default` effect の呼び手はこれをそのまま bindings として使う (scalar は高々 1 件、accum は
+/// 返り値は素の `resolve_entity_raw` の戻り値と同型 (Array[@abi.Binding], 0 件 = absent 相当 / 1 件以上)。
+/// `@abi.Default` effect の呼び手はこれをそのまま bindings として使う (scalar は高々 1 件、accum は
 /// env/config の複数 piece もそのまま乗る — DR-081 §2 の accum 節 "書き換え済み default があれば
 /// それ" が要求する挙動そのもの)。
 fn resolve_ladder_below_cli(
   e : @engine.Entity,
-  env_map : Map[String, String],
-  config_obj : @engine.ConfigVal?,
+  env_map : (String) -> String?,
+  config_obj : @abi.ConfigVal?,
   config_path : Array[String],
-  inherited : Map[String, @engine.Value],
+  inherited : Map[String, @abi.Value],
   at_pos : Int,
   epath : Array[String],
-  tty_map : Map[String, TtyObs],
-  extensions : @engine.Registry,
+  tty_map : (String) -> TtyObs?,
+  extensions : @node.Registry,
   include_default? : Bool = true,
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
   // env seat (DR-049 §2): the raw env string is ONE firing's argument (同 §2 「発火 1 回の 1 引数と
   // 同じ扱い」) — a `multiple` + `separator` cell splits it exactly like `eval.mbt`'s `sep_binds`
   // splits the CLI seat's own raw token (issue 2026-07-09-env-separator-split-gap): each piece
@@ -2334,11 +2332,11 @@ fn resolve_ladder_below_cli(
   // `separator` (the common case) stays exactly the prior single-binding behavior.
   match e.env_key {
     Some(k) =>
-      match env_map.get(k) {
+      match env_map(k) {
         Some(v) =>
           match e.separator {
             Some(sep) => {
-              let bs : Array[@engine.Binding] = []
+              let bs : Array[@abi.Binding] = []
               for part in split_on_sep(v, sep) {
                 match
                   env_value(
@@ -2351,7 +2349,7 @@ fn resolve_ladder_below_cli(
                     extensions,
                   ) {
                   Ok(parsed) =>
-                    bs.push(@engine.Binding::new(e.name, parsed, @engine.Env))
+                    bs.push(@abi.Binding::new(e.name, parsed, @abi.Env))
                   Err(pe) => return Err(pe)
                 }
               }
@@ -2369,7 +2367,7 @@ fn resolve_ladder_below_cli(
                   extensions,
                 ) {
                 Ok(parsed) =>
-                  return Ok([@engine.Binding::new(e.name, parsed, @engine.Env)])
+                  return Ok([@abi.Binding::new(e.name, parsed, @abi.Env)])
                 Err(pe) => return Err(pe)
               }
           }
@@ -2386,24 +2384,24 @@ fn resolve_ladder_below_cli(
             match cv {
               // JSON null = 供給なし (DR-050 §4 / DR-051): the config seat supplies nothing; fall
               // through to inherit / default (null is NOT a value in kuu's value space).
-              @engine.Null => ()
+              @abi.Null => ()
               // array → a multiple cell's pieces (DR-050 §4); each item typed per §4 — including
               // §4's string pipeline (issue 2026-07-09-config-string-pieceprocessor-gap), so a
               // string array item ALSO runs `e.piece_filters` before its type parse.
-              @engine.Array(items) =>
+              @abi.Array(items) =>
                 if e.accum is Some(_) {
-                  let bs : Array[@engine.Binding] = []
+                  let bs : Array[@abi.Binding] = []
                   for it in items {
                     match
                       @builtins.config_to_value(
                         it,
                         e.ty,
                         e.piece_filters,
-                        extensions,
+                        extensions.extensions(),
                       ) {
                       Ok(v) =>
-                        bs.push(@engine.Binding::new(e.name, v, @engine.Config))
-                      Err({ kind: @engine.Filter, reason, message: msg }) =>
+                        bs.push(@abi.Binding::new(e.name, v, @abi.Config))
+                      Err({ kind: @abi.Filter, reason, message: msg }) =>
                         return Err(
                           filter_err(e.name, at_pos, reason, msg, epath),
                         )
@@ -2434,11 +2432,11 @@ fn resolve_ladder_below_cli(
                     cv,
                     e.ty,
                     e.piece_filters,
-                    extensions,
+                    extensions.extensions(),
                   ) {
                   Ok(v) =>
-                    return Ok([@engine.Binding::new(e.name, v, @engine.Config)])
-                  Err({ kind: @engine.Filter, reason, message: msg }) =>
+                    return Ok([@abi.Binding::new(e.name, v, @abi.Config)])
+                  Err({ kind: @abi.Filter, reason, message: msg }) =>
                     return Err(filter_err(e.name, at_pos, reason, msg, epath))
                   Err({ reason, message: msg, .. }) =>
                     return Err(ladder_err(e.name, at_pos, reason, msg, epath)) // §4 型不一致 → DR-037/DR-066 Error
@@ -2452,7 +2450,7 @@ fn resolve_ladder_below_cli(
   // inherit seat (DR-031 / DR-013). MDR-003: `inherit` 予約語回避 → `is_inherit`.
   if e.is_inherit {
     match inherited.get(e.name) {
-      Some(v) => return Ok([@engine.Binding::new(e.name, v, @engine.Inherit)])
+      Some(v) => return Ok([@abi.Binding::new(e.name, v, @abi.Inherit)])
       None => ()
     }
   }
@@ -2469,12 +2467,12 @@ fn resolve_ladder_below_cli(
   // `terminal || (tty_cygwin && cygwin)` and the declared-default fallback.
   match e.ty.default_seat_observation_key() {
     Some(key) => {
-      let observed : Json? = match tty_map.get(key) {
+      let observed : Json? = match tty_map(key) {
         Some(obs) =>
           Some([obs.terminal.to_json(), obs.cygwin.to_json()].to_json())
         None => None
       }
-      let declared : @engine.Value? = if e.accum is None {
+      let declared : @abi.Value? = if e.accum is None {
         match e.default_values {
           Some([value]) => Some(value)
           _ => None
@@ -2483,28 +2481,28 @@ fn resolve_ladder_below_cli(
         None
       }
       match
-        e.ty.default_seat_resolver(@engine.SeatCtx::new(declared, observed~)) {
+        e.ty.default_seat_resolver(@extension.SeatCtx::new(declared, observed~)) {
         Some(value) =>
           match
             @builtins.config_to_value(
-              @engine.value_to_configval(value),
+              @extension.value_to_configval(value),
               e.ty,
               e.piece_filters,
-              extensions,
+              extensions.extensions(),
             ) {
             Ok(resolved) =>
               return Ok([
-                @engine.Binding::new(
+                @abi.Binding::new(
                   e.name,
                   resolved,
                   if observed is Some(_) {
-                    @engine.Tty
+                    @abi.Tty
                   } else {
-                    @engine.Default
+                    @abi.Default
                   },
                 ),
               ])
-            Err({ kind: @engine.Filter, reason, message: msg }) =>
+            Err({ kind: @abi.Filter, reason, message: msg }) =>
               return Err(filter_err(e.name, at_pos, reason, msg, epath))
             Err({ reason, message: msg, .. }) =>
               return Err(ladder_err(e.name, at_pos, reason, msg, epath))
@@ -2516,10 +2514,10 @@ fn resolve_ladder_below_cli(
   }
   // default seat (DR-083 §1/§2, DR-102 §5): an accum cell's declared default supplies its WHOLE
   // array as already-split pieces, config-array precedent (DR-050 §4) — each piece routed through
-  // `@builtins.config_to_value` (via `@engine.value_to_configval`) for the same T-domain / string-pipeline parse the
-  // @engine.Array config branch above uses. A scalar cell wants just the one value (`default_scalar`), but
+  // `@builtins.config_to_value` (via `@extension.value_to_configval`) for the same T-domain / string-pipeline parse the
+  // @abi.Array config branch above uses. A scalar cell wants just the one value (`default_scalar`), but
   // DR-102 §5 (DR-050 §4 / DR-083 §2 の対称性から導出) extends the SAME type-dependent pipeline to
-  // it — a JSON string default runs piece_filters → parse (`@builtins.config_to_value`'s `@engine.String` arm), a JSON
+  // it — a JSON string default runs piece_filters → parse (`@builtins.config_to_value`'s `@abi.String` arm), a JSON
   // native (number/bool) default matching the element's type skips piece_filters/parse entirely
   // (the type's own consequence, `@builtins.config_to_value`'s `other => other` passthrough before its
   // `(cv, ty)` match). This is NOT a special case for defaults — it's the same "値源の種別でなく
@@ -2529,17 +2527,17 @@ fn resolve_ladder_below_cli(
   if e.accum is Some(_) {
     match e.default_values {
       Some(vs) => {
-        let bs : Array[@engine.Binding] = []
+        let bs : Array[@abi.Binding] = []
         for v in vs {
           match
             @builtins.config_to_value(
-              @engine.value_to_configval(v),
+              @extension.value_to_configval(v),
               e.ty,
               e.piece_filters,
-              extensions,
+              extensions.extensions(),
             ) {
-            Ok(vv) => bs.push(@engine.Binding::new(e.name, vv, @engine.Default))
-            Err({ kind: @engine.Filter, reason, message: msg }) =>
+            Ok(vv) => bs.push(@abi.Binding::new(e.name, vv, @abi.Default))
+            Err({ kind: @abi.Filter, reason, message: msg }) =>
               return Err(filter_err(e.name, at_pos, reason, msg, epath))
             Err({ reason, message: msg, .. }) =>
               return Err(ladder_err(e.name, at_pos, reason, msg, epath))
@@ -2554,13 +2552,13 @@ fn resolve_ladder_below_cli(
       Some(v) =>
         match
           @builtins.config_to_value(
-            @engine.value_to_configval(v),
+            @extension.value_to_configval(v),
             e.ty,
             e.piece_filters,
-            extensions,
+            extensions.extensions(),
           ) {
-          Ok(vv) => Ok([@engine.Binding::new(e.name, vv, @engine.Default)])
-          Err({ kind: @engine.Filter, reason, message: msg }) =>
+          Ok(vv) => Ok([@abi.Binding::new(e.name, vv, @abi.Default)])
+          Err({ kind: @abi.Filter, reason, message: msg }) =>
             Err(filter_err(e.name, at_pos, reason, msg, epath))
           Err({ reason, message: msg, .. }) =>
             Err(ladder_err(e.name, at_pos, reason, msg, epath))
@@ -2586,7 +2584,7 @@ fn config_path_of(e : @engine.Entity, path : Array[String]) -> Array[String] {
 }
 
 ///|
-fn default_fills_cell(e : @engine.Entity, bs : Array[@engine.Binding]) -> Bool {
+fn default_fills_cell(e : @engine.Entity, bs : Array[@abi.Binding]) -> Bool {
   if bs.length() > 0 || e.accum is Some(_) {
     return true
   }
@@ -2596,7 +2594,7 @@ fn default_fills_cell(e : @engine.Entity, bs : Array[@engine.Binding]) -> Bool {
 ///|
 priv struct DefaultClaimGroup {
   key : String
-  claims : Array[Array[@engine.Binding]]
+  claims : Array[Array[@abi.Binding]]
 }
 
 ///|
@@ -2618,8 +2616,8 @@ fn entity_named(
 /// `#` namespace and is consumed by capability dispatch instead.
 fn apply_entity_links(
   entities : Array[@engine.Entity],
-  bindings : Array[@engine.Binding],
-) -> Array[@engine.Binding] {
+  bindings : Array[@abi.Binding],
+) -> Array[@abi.Binding] {
   let out = bindings.copy()
   for binding in bindings {
     match entity_named(entities, binding.key) {
@@ -2637,11 +2635,11 @@ fn apply_entity_links(
 ///|
 fn default_fn_option_edges(
   entity : @engine.Entity,
-  extensions : @engine.Registry,
+  extensions : @node.Registry,
 ) -> Array[String] {
   let edges : Array[String] = []
   match entity.default_fn {
-    Some(@engine.Wire(invocation)) =>
+    Some(@abi.Wire(invocation)) =>
       match extensions.lookup_cell_fn(invocation.name) {
         Some(descriptor) =>
           match descriptor.concrete_observes(invocation) {
@@ -2664,7 +2662,7 @@ fn default_fn_option_edges(
 fn append_default_order(
   entity : @engine.Entity,
   entities : Array[@engine.Entity],
-  extensions : @engine.Registry,
+  extensions : @node.Registry,
   visiting : Array[String],
   done : Array[String],
   ordered : Array[@engine.Entity],
@@ -2692,7 +2690,7 @@ fn append_default_order(
 ///|
 fn default_order(
   entities : Array[@engine.Entity],
-  extensions : @engine.Registry,
+  extensions : @node.Registry,
 ) -> Array[@engine.Entity] {
   let ordered : Array[@engine.Entity] = []
   let done : Array[String] = []
@@ -2705,13 +2703,13 @@ fn default_order(
 ///|
 fn resolve_default_fn(
   entity : @engine.Entity,
-  option_values : Map[String, @engine.Value],
-  inherited : Map[String, @engine.Value],
-  env_map : Map[String, String],
+  option_values : Map[String, @abi.Value],
+  inherited : Map[String, @abi.Value],
+  env_map : (String) -> String?,
   at_pos : Int,
   epath : Array[String],
-  extensions : @engine.Registry,
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
+  extensions : @node.Registry,
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
   let call = match entity.default_fn {
     Some(call) => call
     None => return Ok([])
@@ -2739,15 +2737,15 @@ fn resolve_default_fn(
       }
     None => []
   }
-  let ctx = @engine.FnCtx::for_default(
+  let ctx = @extension.FnCtx::for_default(
     entity.name,
     old=option_values.get(entity.name),
     observes~,
     option=fn(name) { inherited.get(name) },
     dependency=Some(fn(name) { option_values.get(name) }),
     env=fn(variable) {
-      match env_map.get(variable) {
-        Some(value) => Some(@engine.String(value))
+      match env_map(variable) {
+        Some(value) => Some(@abi.String(value))
         None => None
       }
     },
@@ -2756,7 +2754,7 @@ fn resolve_default_fn(
     Err({ reason: "absent-source", message: _ }) => Ok([])
     Err({ reason, message }) =>
       Err(ladder_err(entity.name, at_pos, reason, message, epath))
-    Ok(@engine.Sentinel(_)) =>
+    Ok(@extension.FnOutput::Sentinel(_)) =>
       Err(
         ladder_err(
           entity.name,
@@ -2766,23 +2764,23 @@ fn resolve_default_fn(
           epath,
         ),
       )
-    Ok(@engine.Value(value)) =>
+    Ok(@extension.FnOutput::Value(value)) =>
       match
         @builtins.config_to_value(
-          @engine.value_to_configval(value),
+          @extension.value_to_configval(value),
           entity.ty,
           entity.piece_filters,
-          extensions,
+          extensions.extensions(),
         ) {
         Ok(decoded) =>
           apply_entity_filters(
             entity,
-            [@engine.Binding::new(entity.name, decoded, @engine.Default)],
+            [@abi.Binding::new(entity.name, decoded, @abi.Default)],
             at_pos,
             epath,
             extensions,
           )
-        Err({ kind: @engine.Filter, reason, message }) =>
+        Err({ kind: @abi.Filter, reason, message }) =>
           Err(filter_err(entity.name, at_pos, reason, message, epath))
         Err({ reason, message, .. }) =>
           Err(ladder_err(entity.name, at_pos, reason, message, epath))
@@ -2792,8 +2790,8 @@ fn resolve_default_fn(
 
 ///|
 fn default_claim_values_equal(
-  left : Array[@engine.Binding],
-  right : Array[@engine.Binding],
+  left : Array[@abi.Binding],
+  right : Array[@abi.Binding],
 ) -> Bool {
   if left.length() != right.length() {
     return false
@@ -2820,17 +2818,17 @@ fn default_claim_values_equal(
 /// result path (for 同型 correspondence). `at_pos` is the position an Error is reported at.
 fn resolve_scope_config_with_export(
   sc : @engine.Scope,
-  cli : Array[@engine.Binding],
-  env_map : Map[String, String],
-  provider : (String) -> @engine.ConfigVal?,
+  cli : Array[@abi.Binding],
+  env_map : (String) -> String?,
+  provider : (String) -> @abi.ConfigVal?,
   path : Array[String],
-  inherited : Map[String, @engine.Value],
+  inherited : Map[String, @abi.Value],
   at_pos : Int,
-  tty : Map[String, TtyObs],
+  tty : (String) -> TtyObs?,
   ek : Map[String, @engine.ExportKey],
-  extensions : @engine.Registry,
+  extensions : @node.Registry,
   include_default : Bool,
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
   // Phase 1: resolve the config_file element's path (cli > env > default), track committed-ness.
   let mut cf_path : String? = None
   let mut cf_committed = false
@@ -2842,8 +2840,8 @@ fn resolve_scope_config_with_export(
       for b in cli {
         if b.key == e.name {
           match b.op {
-            @engine.Set => {
-              cf_path = Some(@engine.value_str(b.value))
+            @abi.Set => {
+              cf_path = Some(@extension.value_str(b.value))
               cf_committed = true
               done = true
             }
@@ -2854,7 +2852,7 @@ fn resolve_scope_config_with_export(
       if !done {
         match e.env_key {
           Some(k) =>
-            match env_map.get(k) {
+            match env_map(k) {
               Some(v) => {
                 cf_path = Some(v)
                 cf_committed = true
@@ -2867,14 +2865,14 @@ fn resolve_scope_config_with_export(
       }
       if !done {
         match default_scalar(e) {
-          Some(v) => cf_path = Some(@engine.value_str(v)) // committed stays false (default path)
+          Some(v) => cf_path = Some(@extension.value_str(v)) // committed stays false (default path)
           None => ()
         }
       }
     }
   }
   // Phase 2: read the provider. committed path + None = Error; default path + None = silent.
-  let config_obj : @engine.ConfigVal? = match cf_path {
+  let config_obj : @abi.ConfigVal? = match cf_path {
     Some(p) => provider(p)
     None => None
   }
@@ -2899,10 +2897,10 @@ fn resolve_scope_config_with_export(
   }
   // Phase 3a: resolve CLI/env/config/inherit for every entity before considering any default. These
   // seats are actual claims even when another entity already occupies the same exported result cell.
-  let out : Array[@engine.Binding] = []
+  let out : Array[@abi.Binding] = []
   let supplied : Array[String] = []
   let occupied : Array[String] = []
-  let option_values : Map[String, @engine.Value] = Map([])
+  let option_values : Map[String, @abi.Value] = Map([])
   for e in sc.entities {
     if !e.is_config_file {
       let cpath = config_path_of(e, path)
@@ -2916,7 +2914,7 @@ fn resolve_scope_config_with_export(
             supplied.push(e.name)
             for b in bs {
               out.push(b)
-              if b.op is @engine.Set {
+              if b.op is @abi.Set {
                 option_values.set(e.name, b.value)
               }
             }
@@ -3018,7 +3016,7 @@ fn resolve_scope_config_with_export(
           Ok(bs) => {
             for b in bs {
               out.push(b)
-              if b.op is @engine.Set {
+              if b.op is @abi.Set {
                 option_values.set(e.name, b.value)
               }
             }

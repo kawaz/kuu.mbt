@@ -83,11 +83,11 @@ fn str_has_prefix(value : String, prefix : String) -> Bool {
 }
 
 ///|
-fn render_val(value : @engine.Value) -> String {
+fn render_val(value : @abi.Value) -> String {
   match value {
-    @engine.String(text) => text
-    @engine.Bool(flag) => if flag { "true" } else { "false" }
-    @engine.Number(number) => {
+    @abi.String(text) => text
+    @abi.Bool(flag) => if flag { "true" } else { "false" }
+    @abi.Number(number) => {
       let integer = number.to_int()
       if integer.to_double() == number {
         integer.to_string()
@@ -107,7 +107,7 @@ struct LEnt {
   name : String
   typ : String
   link : String?
-  default : @engine.Value?
+  default : @abi.Value?
   env : String?
   is_inherit : Bool
   config_key : Array[String]?
@@ -121,8 +121,8 @@ struct LEnt {
 ///|
 enum GItem {
   GExact(String)
-  GSet(String, @engine.Value, String)
-  GEff(String, String, @engine.EffectOp)
+  GSet(String, @abi.Value, String)
+  GEff(String, String, @abi.EffectOp)
   GSeqSat(String, String)
   GMatch(String, Array[(String, String)])
   GCmd(String, LSec)
@@ -275,21 +275,21 @@ fn gmatch_entries_str(entries : Array[(String, String)]) -> String {
 }
 
 ///|
-fn lower_eff_op(op : @engine.EffectOp) -> String {
+fn lower_eff_op(op : @abi.EffectOp) -> String {
   match op {
-    @engine.Set => "set"
-    @engine.Default => "default"
-    @engine.Unset => "unset"
-    @engine.Empty => "empty"
-    @engine.Invoke(invocation) =>
+    @abi.Set => "set"
+    @abi.Default => "default"
+    @abi.Unset => "unset"
+    @abi.Empty => "empty"
+    @abi.Invoke(invocation) =>
       if invocation.args.length() == 0 {
         "fn:" + invocation.name
       } else {
         "fn:" + invocation.name + ":" + join_comma(invocation.args)
       }
     // DR-080 §2 merge accumulator piece markers (eff_op と同じ語彙、lower path 用の並行実装)。
-    @engine.Remove => "remove"
-    @engine.Splice => "splice"
+    @abi.Remove => "remove"
+    @abi.Splice => "splice"
   }
 }
 
@@ -376,7 +376,7 @@ fn lsec_str(s : LSec) -> String {
 
 ///|
 fn prim_name(node : @engine.Node) -> String? {
-  match @builtins.node_resident_name(node) {
+  match @engine.node_resident_name(node) {
     Some(name) => Some(name)
     None =>
       match node {
@@ -392,7 +392,7 @@ fn test_node_is_failure_mark(node : @engine.Node) -> Bool {
 }
 
 ///|
-fn test_node_effect_mark(node : @engine.Node) -> (String, @engine.EffectOp)? {
+fn test_node_effect_mark(node : @engine.Node) -> (String, @abi.EffectOp)? {
   guard node is @engine.Ext(extension) else { return None }
   extension.effect_mark()
 }
@@ -429,7 +429,7 @@ fn proj_seq_sat(xs : Array[@engine.Node]) -> GItem {
 
 ///|
 fn proj_matcher_entries(
-  matcher : &@engine.MatcherExt,
+  matcher : &@extension.MatcherExt,
 ) -> Array[(String, String)] {
   let entries : Array[(String, String)] = []
   guard matcher.encode() is Array(parts) && parts.length() >= 2 else {
@@ -648,17 +648,17 @@ fn proj_scope(sc : @engine.Scope, reg : Map[String, @engine.Node]) -> LSec {
 // ── lower runner (canon_of / pick3 / run_lower) ────────────────────────────────
 
 ///|
-fn canonical_registry_for_test() -> @engine.Registry {
-  let registry = @engine.Registry::new()
+fn canonical_registry_for_test() -> @node.Registry {
+  let registry = @node.Registry::new()
   install_canonical(registry)
   registry
 }
 
 ///|
 fn registry_with_installers(
-  installers : Array[&@engine.InstallerExt],
-) -> @engine.Registry {
-  let registry = @engine.Registry::new()
+  installers : Array[&@node.InstallerExt],
+) -> @node.Registry {
+  let registry = @node.Registry::new()
   for installer in installers {
     registry.register_installer(installer)
   }
@@ -670,16 +670,16 @@ fn registry_with_installers(
         "",
         None,
         @builtins.string_type(),
-        @engine.Error,
+        @abi.Error,
         @builtins.bool_config_canonical(),
         [],
       ),
       @builtins.number_arg("", []),
       @builtins.float_arg("", []),
-      @builtins.int_arg("", @engine.Error, []),
+      @builtins.int_arg("", @abi.Error, []),
       @builtins.bool_arg("", @builtins.bool_config_canonical(), []),
       @builtins.typed_arg("", @builtins.string_type(), []),
-      @builtins.effect_mark("", @engine.Set),
+      @builtins.effect_mark("", @abi.Set),
       @builtins.deprecation_mark(""),
       @builtins.failure_mark(""),
     ] {
@@ -710,7 +710,7 @@ fn registry_with_installers(
   ignore(registry.register_collector(@builtins.unwrap_single_collector()))
   ignore(
     registry.register_collector(
-      @builtins.from_entries_collector(@builtins.Entries),
+      @builtins.from_entries_collector(@extension.Entries),
     ),
   )
   for descriptor in @builtins.cell_fn_descriptors() {
@@ -720,7 +720,7 @@ fn registry_with_installers(
 }
 
 ///|
-fn canon_of(definition : Json, order : Array[&@engine.InstallerExt]) -> String {
+fn canon_of(definition : Json, order : Array[&@node.InstallerExt]) -> String {
   match
     parse_definition(definition, extensions=registry_with_installers(order)) {
     Ok(ast) => lsec_str(proj_scope(ast.root, ast.templates))
@@ -730,7 +730,7 @@ fn canon_of(definition : Json, order : Array[&@engine.InstallerExt]) -> String {
 }
 
 ///|
-fn order_sig(order : Array[&@engine.InstallerExt]) -> String {
+fn order_sig(order : Array[&@node.InstallerExt]) -> String {
   let buf = StringBuilder::new()
   for x in order {
     buf.write_string(@builtins.owned_vocab(x))
@@ -741,19 +741,19 @@ fn order_sig(order : Array[&@engine.InstallerExt]) -> String {
 
 ///|
 fn pick3(
-  order : Array[&@engine.InstallerExt],
-) -> Array[Array[&@engine.InstallerExt]] {
-  let ident : Array[&@engine.InstallerExt] = []
+  order : Array[&@node.InstallerExt],
+) -> Array[Array[&@node.InstallerExt]] {
+  let ident : Array[&@node.InstallerExt] = []
   for x in order {
     ident.push(x)
   }
-  let rev : Array[&@engine.InstallerExt] = []
+  let rev : Array[&@node.InstallerExt] = []
   let mut i = order.length() - 1
   while i >= 0 {
     rev.push(order[i])
     i = i - 1
   }
-  let rot : Array[&@engine.InstallerExt] = []
+  let rot : Array[&@node.InstallerExt] = []
   if order.length() > 0 {
     let mut j = 1
     while j < order.length() {
@@ -762,7 +762,7 @@ fn pick3(
     }
     rot.push(order[0])
   }
-  let out : Array[Array[&@engine.InstallerExt]] = []
+  let out : Array[Array[&@node.InstallerExt]] = []
   let sigs : Array[String] = []
   for cand in [ident, rev, rot] {
     let sig = order_sig(cand)
@@ -777,7 +777,7 @@ fn pick3(
 ///|
 fn run_lower(
   definition : Json,
-  order : Array[&@engine.InstallerExt],
+  order : Array[&@node.InstallerExt],
   want : LSec,
 ) -> String {
   let got = canon_of(definition, order)
@@ -802,12 +802,12 @@ fn run_lower(
 ///|
 struct DecodedLower {
   definition : Json
-  order : Array[&@engine.InstallerExt]
+  order : Array[&@node.InstallerExt]
   want : LSec
 }
 
 ///|
-fn dec_installer(name : String) -> &@engine.InstallerExt raise DecodeSkip {
+fn dec_installer(name : String) -> &@node.InstallerExt raise DecodeSkip {
   for i in canonical_registry_for_test().installers() {
     if @builtins.owned_vocab(i) == name {
       return i
@@ -819,14 +819,14 @@ fn dec_installer(name : String) -> &@engine.InstallerExt raise DecodeSkip {
 ///|
 fn dec_installers(
   top : Map[String, Json],
-) -> Array[&@engine.InstallerExt] raise DecodeSkip {
+) -> Array[&@node.InstallerExt] raise DecodeSkip {
   match top.get("installers") {
     None => canonical_registry_for_test().installers()
     Some(j) =>
       match j.j_arr() {
         None => canonical_registry_for_test().installers()
         Some(a) => {
-          let out : Array[&@engine.InstallerExt] = []
+          let out : Array[&@node.InstallerExt] = []
           for e in a {
             match e.j_str() {
               Some(s) => out.push(dec_installer(s))
@@ -933,10 +933,10 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
       req_field(o, "link"),
     )
   }
-  // DR-045 effect descriptor (`{exact, link, effect: {op, transform?, args?}}`) — the non-@engine.Set ops
+  // DR-045 effect descriptor (`{exact, link, effect: {op, transform?, args?}}`) — the non-@abi.Set ops
   // (default/unset/empty/update, DR-011/077) that lower to `@engine.Seq([@engine.Exact, effect resident])` (see the
   // `[@engine.Exact(t), effect resident] => GEff(t, n, op)` projection below). No `lower fixture` used this
-  // shape before DR-077 (every prior lowering fixture only exercised @engine.Set), so this decode path is
+  // shape before DR-077 (every prior lowering fixture only exercised @abi.Set), so this decode path is
   // new — added for count's `:update:increment` lowering fixtures, but generic over all 4 non-set
   // ops.
   if has_key(o, "effect") {
@@ -957,7 +957,7 @@ fn dec_gitem(j : Json) -> GItem raise DecodeSkip {
 /// DR-045 op vocab (`set`/`default`/`unset`/`empty`) + DR-077 §1's 5th op (`update`, which additionally
 /// carries a `transform` name + optional `args`). `set` is accepted for completeness even though
 /// GSet's dedicated `{value, link}` shorthand is the normal spelling for it in a fixture.
-fn dec_eff_op(o : Map[String, Json]) -> @engine.EffectOp raise DecodeSkip {
+fn dec_eff_op(o : Map[String, Json]) -> @abi.EffectOp raise DecodeSkip {
   match jf_str(o, "fn") {
     Some(name) => {
       allowed_keys(o, ["fn", "args"], "cell fn effect")
@@ -981,7 +981,7 @@ fn dec_eff_op(o : Map[String, Json]) -> @engine.EffectOp raise DecodeSkip {
           }
         None => []
       }
-      return @engine.Invoke({ name, args })
+      return @abi.Invoke({ name, args })
     }
     None => ()
   }
@@ -991,10 +991,10 @@ fn dec_eff_op(o : Map[String, Json]) -> @engine.EffectOp raise DecodeSkip {
   }
   allowed_keys(o, ["op"], "direct effect")
   match opstr {
-    "set" => @engine.Set
-    "default" => @engine.Default
-    "unset" => @engine.Unset
-    "empty" => @engine.Empty
+    "set" => @abi.Set
+    "default" => @abi.Default
+    "unset" => @abi.Unset
+    "empty" => @abi.Empty
     other => raise DecodeSkip("unrecognized effect op '" + other + "'")
   }
 }

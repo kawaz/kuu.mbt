@@ -15,8 +15,8 @@
 // match parse_definition(json) {
 //   Ok(ast) =>
 //     match parse(ast, ["--port", "8080"]) {
-//       @engine.Success(binds) => ... // binds : Array[@engine.Binding] (DR-045 の効果列)
-//       @engine.Failure(data) => ... // data.errors : Array[@engine.ParseError] (DR-053 §2)
+//       @engine.Success(binds) => ... // binds : Array[@abi.Binding] (DR-045 の効果列)
+//       @engine.Failure(data) => ... // data.errors : Array[@abi.ParseError] (DR-053 §2)
 //       @engine.Ambiguous(data) => ... // data.interpretations (DR-053 §3)
 //     }
 //   Err(Malformed(reason)) => ... // wire JSON 自体が構文として崩れている
@@ -40,7 +40,7 @@
 struct AtomicAST {
   root : @engine.Scope
   templates : Map[String, @engine.Node]
-  extensions : @engine.Registry
+  extensions : @node.Registry
   ekmap : Map[String, @engine.ExportKey]
   declaration : @engine.Definition
   // DR-117 §2.6: definition-wide reconciled `insert_form` (canonical "space" / "eq")。
@@ -56,21 +56,21 @@ struct AtomicAST {
 /// - `Malformed`: wire JSON が decode できない (未知キー・型不一致・必須キー欠如 — 旧 `DecodeSkip`
 ///   の写像。`schema/wire.schema.json` が additionalProperties を開けたまま残す語彙層の検査)
 /// - `Rejected`: wire 形として正しいが `parse_definition` (DR-054 §1-§3) が構成不能と判定した
-///   全 definition-error の列挙 (`Array[@engine.DefError]`)
+///   全 definition-error の列挙 (`Array[@abi.DefError]`)
 pub(all) enum DefLoadError {
   Malformed(String)
-  Rejected(Array[@engine.DefError])
+  Rejected(Array[@abi.DefError])
 } derive(Eq, Debug)
 
 ///|
-/// 利用者へ公開する 1 件の effect。`@engine.Binding` が持つ sentinel・内部 placeholder・
+/// 利用者へ公開する 1 件の effect。`@abi.Binding` が持つ sentinel・内部 placeholder・
 /// parser bookkeeping (`link` / `at_pos`) は玄関で吸収し、wire の effects 列に必要な語彙だけを運ぶ。
 /// `operand` は値を伴う `set` / `remove` のみ `Some`、それ以外の op は `None`。
 pub struct OutputEffect {
   entity : String
-  op : @engine.EffectOp
-  operand : @engine.Value?
-  source : @engine.Source
+  op : @abi.EffectOp
+  operand : @abi.Value?
+  source : @abi.Source
 } derive(Eq, Debug)
 
 ///|
@@ -78,7 +78,7 @@ pub struct OutputEffect {
 /// 境界を含む解決済み binds を既存 builder で集約し、`effects` は parse 相の発火列から sentinel と
 /// config_file / none / dd の内部セルを除外し、`sources` は解決済み値の値源を返す。
 pub struct OutputView {
-  result : @engine.ResultValue
+  result : @abi.ResultValue
   effects : Array[OutputEffect]
   sources : Array[SourceEntry]
 } derive(Eq, Debug)
@@ -92,9 +92,10 @@ pub struct OutputView {
 /// `canonical_registry()` を既定値として供給し、subset assembly も同じ玄関を利用できる。
 pub fn parse_definition(
   json : Json,
-  extensions? : @engine.Registry = canonical_registry(),
+  extensions? : @node.Registry = canonical_registry(),
 ) -> Result[AtomicAST, DefLoadError] {
   let outcome : Result[AtomicAST, DefLoadError] = try {
+    let engine_extensions = extensions.extensions()
     let top = match json.j_obj() {
       Some(o) => o
       None => raise DecodeSkip("definition is not an object")
@@ -140,10 +141,10 @@ pub fn parse_definition(
     // 集約射影を行う。
     let def = { ..def_raw, help_types, }
     match
-      @builtins.lower_definition_snapshot(
+      @node.lower_definition_snapshot(
         def,
         extensions.installers(),
-        extensions,
+        engine_extensions,
         registry=templates,
       ) {
       Ok(lowered) =>
@@ -151,7 +152,7 @@ pub fn parse_definition(
           root: lowered.scope,
           templates,
           extensions,
-          ekmap: @builtins.build_export_map(def, extensions),
+          ekmap: @engine.build_export_map(def, engine_extensions),
           completion_insert_form: lowered.completion_insert_form,
           declaration: lowered.declaration,
         })
@@ -164,7 +165,7 @@ pub fn parse_definition(
         Rejected([
           {
             element,
-            kind: @engine.UnknownVocab,
+            kind: @abi.UnknownVocab,
             message: "value type '" + type_name + "' is not registered",
             hint: "register a TypeExt resident named '" + type_name + "'",
           },
@@ -198,7 +199,7 @@ pub fn parse_definition(
 /// する **resolve 相** は本関数の射程外 — 別関数 `resolve()` (下記) に切り出す。理由: parse 相
 /// と resolve 相は spec の DR-104 §5 が「dead end 判定は parse 相、制約評価は resolve 相」で
 /// 明示的に相区分しており、玄関 API もこれに従う (kawaz 裁定「迷ったら 2 段案 (相区分に忠実)
-/// に倒す」)。したがって本関数の @engine.Success payload (`Array[@engine.Binding]`) は **CLI 由来の生 binds**
+/// に倒す」)。したがって本関数の @engine.Success payload (`Array[@abi.Binding]`) は **CLI 由来の生 binds**
 /// (`@engine.parse_tree` の直接出力、resolve 未適用) であり、`resolve()` に渡してから
 /// `build_result` / `apply_export_keys` で最終 wire 表現を組み立てるのが呼び出し側の責務。
 /// ただし collision により @engine.Ambiguous へ昇格する解釈は、共露出した env/config/inherit の
@@ -213,18 +214,18 @@ pub fn parse_definition(
 ///
 /// - `env`: DR-050 の env provider に相当する `Map[String, String]` (キー = env var name)。
 ///   `apply_requires_filter` 内で `resolve_scope_tree` に渡される。未指定 = 空 Map
-/// - `config`: DR-050 の config provider シグネチャ `(path: String) -> @engine.ConfigVal?`。scope ごとに
+/// - `config`: DR-050 の config provider シグネチャ `(path: String) -> @abi.ConfigVal?`。scope ごとに
 ///   異なる config_file を動的に指す `CfgFiles` ケースも呼び出し元が対応する closure を渡すだけで
-///   均一に扱われる (単一 @engine.ConfigVal だった旧契約の残存ギャップが解消)。未指定 = 常に `None`
+///   均一に扱われる (単一 @abi.ConfigVal だった旧契約の残存ギャップが解消)。未指定 = 常に `None`
 ///   を返す no-op provider
 /// - `tty`: DR-099 §4 の tty provider (stream 名 → 生観測 `TtyObs` の Map)。未指定 = 空 Map
 ///   (提供なし、CONFORMANCE §1)
-pub fn parse(
+fn parse_legacy(
   ast : AtomicAST,
   args : Array[String],
-  env? : Map[String, String] = Map([]),
-  config? : (String) -> @engine.ConfigVal? = fn(_p) { None },
-  tty? : Map[String, TtyObs] = Map([]),
+  env? : (String) -> String? = fn(_) { None },
+  config? : (String) -> @abi.ConfigVal? = fn(_) { None },
+  tty? : (String) -> TtyObs? = fn(_) { None },
 ) -> @engine.Outcome {
   let root = @engine.ScopeNode(ast.root)
   let checked = apply_requires_filter_with_export(
@@ -232,7 +233,7 @@ pub fn parse(
       root,
       args,
       defs=ast.templates,
-      extensions=ast.extensions,
+      extensions=ast.extensions.extensions(),
     ),
     root,
     ast.templates,
@@ -276,7 +277,7 @@ pub fn parse(
 ///
 /// **転落**: resolve 相の失敗 (DR-066 の env/config seat parse 失敗 / DR-009 §7 の
 /// value_filters/final_filters/accum_filters reject) は @engine.Outcome を `@engine.Failure` に転落させ、その
-/// `@engine.ParseError` を errors に載せる (spec DR-053 §2 の failure ブランチが resolve 層失敗も含めて
+/// `@abi.ParseError` を errors に載せる (spec DR-053 §2 の failure ブランチが resolve 層失敗も含めて
 /// 全保持、DR-047 §4「評価対象は値源ラダー充填後の最終状態」の直接の帰結)。`fired_action` /
 /// `help_entry` / `tried_triggers` は None / None / [] (parse 段では発火しておらず、resolve
 /// 相の failure でこれらを合成する材料は spec に規定がない — kawaz/kuu conformance の resolve
@@ -292,13 +293,13 @@ pub fn parse(
 ///
 /// 引数は `parse()` と同じ値源 (env/config/tty)。同じ値を 2 発の関数呼び出しで渡す冗長さは
 /// あるが、相区分の明示性を優先する。
-pub fn resolve(
+fn resolve_legacy(
   ast : AtomicAST,
   outcome : @engine.Outcome,
   args : Array[String],
-  env? : Map[String, String] = Map([]),
-  config? : (String) -> @engine.ConfigVal? = fn(_p) { None },
-  tty? : Map[String, TtyObs] = Map([]),
+  env? : (String) -> String? = fn(_) { None },
+  config? : (String) -> @abi.ConfigVal? = fn(_) { None },
+  tty? : (String) -> TtyObs? = fn(_) { None },
 ) -> @engine.Outcome {
   match outcome {
     @engine.Success(binds) =>
@@ -335,6 +336,69 @@ pub fn resolve(
 }
 
 ///|
+/// Parse CLI arguments without applying the value-source ladder.
+pub fn parse(
+  ast : AtomicAST,
+  args : Array[String],
+  sources? : ValueSources = value_sources(),
+) -> ParsedOutcome {
+  match
+    parse_legacy(
+      ast,
+      args,
+      env=sources.env_,
+      config=sources.config_,
+      tty=sources.tty_,
+    ) {
+    @engine.Success(bindings) => Success({ raw: bindings })
+    @engine.Failure(failure) => Failure(parse_failure(failure))
+    @engine.Ambiguous(ambiguity) => {
+      let interpretations : Array[Interpretation] = []
+      for interpretation in ambiguity.interpretations {
+        interpretations.push({ raw: interpretation })
+      }
+      Ambiguous({ interpretations, help_entry: ambiguity.help_entry })
+    }
+  }
+}
+
+///|
+/// Apply the value-source ladder to parse-phase bindings.
+pub fn resolve(
+  ast : AtomicAST,
+  bindings : ParsedBindings,
+  args : Array[String],
+  sources? : ValueSources = value_sources(),
+) -> ResolvedOutcome {
+  match
+    resolve_legacy(
+      ast,
+      @engine.Success(bindings.raw),
+      args,
+      env=sources.env_,
+      config=sources.config_,
+      tty=sources.tty_,
+    ) {
+    @engine.Success(resolved) =>
+      Success({ raw: resolved, effects_: bindings.raw })
+    @engine.Failure(failure) => Failure(parse_failure(failure))
+    @engine.Ambiguous(_) =>
+      abort("resolve of one parsed binding path cannot be ambiguous")
+  }
+}
+
+///|
+/// Resolve one interpretation selected from an ambiguous parse.
+pub fn resolve_interpretation(
+  ast : AtomicAST,
+  interpretation : Interpretation,
+  args : Array[String],
+  sources? : ValueSources = value_sources(),
+) -> ResolvedOutcome {
+  resolve(ast, { raw: interpretation.raw.binds }, args, sources~)
+}
+
+///|
 /// 正面玄関 3: `ast` に対し `args_before` (+ optional `args_after`) の補完候補集合を得る
 /// (DR-060 + DR-104)。低レベル `@engine.complete_tree` (@engine.Node 直渡し、outcome.mbt) への薄いラッパー。
 /// `word_before`/`word_after` は DR-104 §1 が v1 未実装のまま予約する語彙で、参照実装は
@@ -343,13 +407,13 @@ pub fn complete(
   ast : AtomicAST,
   args_before : Array[String],
   args_after? : Array[String] = [],
-) -> Array[@engine.Candidate] {
+) -> Array[@abi.Candidate] {
   @engine.complete_tree(
     @engine.ScopeNode(ast.root),
     args_before,
     defs=ast.templates,
     after=args_after,
-    extensions=ast.extensions,
+    extensions=ast.extensions.extensions(),
   )
 }
 
@@ -383,9 +447,7 @@ fn interpretation_has_source(
   key : String,
 ) -> Bool {
   for source in sources {
-    if source.key == key &&
-      source.path == path &&
-      source.source != @engine.Default {
+    if source.key == key && source.path == path && source.source != @abi.Default {
       return true
     }
   }
@@ -407,23 +469,23 @@ fn interpretation_has_claimant(
 
 ///|
 fn filter_interpretation_result(
-  result : @engine.ResultValue,
+  result : @abi.ResultValue,
   sources : Array[SourceEntry],
   claimants : Array[(String, String)],
   path : Array[String],
-) -> @engine.ResultValue {
+) -> @abi.ResultValue {
   match result {
-    @engine.Object(fields) => {
-      let kept : Array[(String, @engine.ResultValue)] = []
+    @abi.Object(fields) => {
+      let kept : Array[(String, @abi.ResultValue)] = []
       for field in fields {
         if interpretation_has_source(sources, path, field.0) ||
           interpretation_has_claimant(claimants, field.0) {
           kept.push(field)
         } else {
           match field.1 {
-            @engine.Scalar(_) => ()
-            @engine.Array(_) => kept.push(field)
-            @engine.Object(_) => {
+            @abi.Scalar(_) => ()
+            @abi.Array(_) => kept.push(field)
+            @abi.Object(_) => {
               let nested = filter_interpretation_result(
                 field.1,
                 sources,
@@ -431,7 +493,7 @@ fn filter_interpretation_result(
                 output_path_push(path, field.0),
               )
               match nested {
-                @engine.Object(items) =>
+                @abi.Object(items) =>
                   if items.length() > 0 {
                     kept.push((field.0, nested))
                   }
@@ -441,7 +503,7 @@ fn filter_interpretation_result(
           }
         }
       }
-      @engine.Object(kept)
+      @abi.Object(kept)
     }
     _ => result
   }
@@ -488,7 +550,7 @@ fn output_internal_cell(
 }
 
 ///|
-fn effect_cell_key(binding : @engine.Binding) -> String {
+fn effect_cell_key(binding : @abi.Binding) -> String {
   let out = StringBuilder::new()
   for segment in binding.scope {
     out.write_string(segment)
@@ -500,7 +562,7 @@ fn effect_cell_key(binding : @engine.Binding) -> String {
 }
 
 ///|
-fn root_entity(ast : AtomicAST, binding : @engine.Binding) -> @engine.Entity? {
+fn root_entity(ast : AtomicAST, binding : @abi.Binding) -> @engine.Entity? {
   if binding.scope.length() > 0 {
     return None
   }
@@ -515,12 +577,12 @@ fn root_entity(ast : AtomicAST, binding : @engine.Binding) -> @engine.Entity? {
 ///|
 fn projected_effect(
   ast : AtomicAST,
-  binding : @engine.Binding,
-  current : Map[String, @engine.Value],
+  binding : @abi.Binding,
+  current : Map[String, @abi.Value],
 ) -> OutputEffect {
   let key = effect_cell_key(binding)
   match binding.op {
-    @engine.Invoke(invocation) => {
+    @abi.Invoke(invocation) => {
       let old = match current.get(key) {
         Some(value) => Some(value)
         None =>
@@ -539,27 +601,27 @@ fn projected_effect(
             Ok(edges) => edges
             Err(_) => []
           }
-          let ctx = @engine.FnCtx::for_effect(
+          let ctx = @extension.FnCtx::for_effect(
             binding.key,
             binding.key,
             old~,
             observes~,
           )
           match descriptor.invoke(invocation.to_call(), ctx) {
-            Ok(@engine.Value(value)) => {
+            Ok(@extension.FnOutput::Value(value)) => {
               current.set(key, value)
               return {
                 entity: binding.key,
-                op: @engine.Set,
+                op: @abi.Set,
                 operand: Some(value),
                 source: binding.source,
               }
             }
-            Ok(@engine.Sentinel(sentinel)) => {
+            Ok(@extension.FnOutput::Sentinel(sentinel)) => {
               let op = match sentinel {
-                @engine.UseDefault => @engine.EffectOp::Default
-                @engine.CellSentinel::Unset => @engine.EffectOp::Unset
-                @engine.CellSentinel::Empty => @engine.EffectOp::Empty
+                @extension.CellSentinel::UseDefault => @abi.EffectOp::Default
+                @extension.CellSentinel::Unset => @abi.EffectOp::Unset
+                @extension.CellSentinel::Empty => @abi.EffectOp::Empty
               }
               return {
                 entity: binding.key,
@@ -580,7 +642,7 @@ fn projected_effect(
         source: binding.source,
       }
     }
-    @engine.Set | @engine.Remove => {
+    @abi.Set | @abi.Remove => {
       current.set(key, binding.value)
       {
         entity: binding.key,
@@ -602,13 +664,13 @@ fn projected_effect(
 ///|
 fn project_effects(
   ast : AtomicAST,
-  binds : Array[@engine.Binding],
+  binds : Array[@abi.Binding],
 ) -> Array[OutputEffect] {
   let none_cells = @engine.none_cells(ast.root)
   let config_file_cells : Array[ConfigFileCell] = []
   collect_config_file_cells(ast.root, [], config_file_cells)
   let effects : Array[OutputEffect] = []
-  let current : Map[String, @engine.Value] = Map([])
+  let current : Map[String, @abi.Value] = Map([])
   for binding in binds {
     if is_sentinel(binding.key) ||
       output_internal_cell(
@@ -627,7 +689,7 @@ fn project_effects(
 ///|
 fn project_sources(
   ast : AtomicAST,
-  resolved : Array[@engine.Binding],
+  resolved : Array[@abi.Binding],
 ) -> Array[SourceEntry] {
   let none_cells = @engine.none_cells(ast.root)
   let config_file_cells : Array[ConfigFileCell] = []
@@ -653,10 +715,10 @@ fn project_sources(
 /// 値源ラダーを要しない parse-only 利用も同じ OutputView 径路で表す。
 /// repeat row の境界は `resolve()` が復元した `#row`/`#fire` を `build_result_export` が読む既存経路へ
 /// そのまま渡し、本関数では sentinel の再 merge や row 集約を再実装しない。
-pub fn output(
+fn output_legacy(
   ast : AtomicAST,
-  effects~ : Array[@engine.Binding],
-  resolved? : Array[@engine.Binding] = effects,
+  effects~ : Array[@abi.Binding],
+  resolved? : Array[@abi.Binding] = effects,
 ) -> OutputView {
   {
     result: build_result_export(
@@ -676,27 +738,37 @@ pub fn output(
 /// DR-073 §1 の claimants に載る key の default は衝突 provenance を保つため残し、空 accumulator
 /// 配列は interpretation の構造として残す。この 3 規則により、呼び出し側は result と sources を
 /// 個別に組み合わせず、解釈 1 件の表示意味論を玄関から直接得られる。
+pub fn output(ast : AtomicAST, resolved : ResolvedBindings) -> OutputView {
+  output_legacy(ast, effects=resolved.effects_, resolved=resolved.raw)
+}
+
+///|
+pub fn ParsedBindings::effects(
+  self : ParsedBindings,
+  ast : AtomicAST,
+) -> Array[OutputEffect] {
+  project_effects(ast, self.raw)
+}
+
+///|
 pub fn output_of_interpretation(
   ast : AtomicAST,
-  interp : @engine.AmbiguousInterpretation,
-) -> @engine.ResultValue {
-  let view = output(ast, effects=interp.binds)
-  filter_interpretation_result(view.result, view.sources, interp.claimants, [])
+  interp : Interpretation,
+) -> @abi.ResultValue {
+  let view = output_legacy(ast, effects=interp.raw.binds)
+  filter_interpretation_result(
+    view.result,
+    view.sources,
+    interp.raw.claimants,
+    [],
+  )
 }
 
 ///|
-/// CONFORMANCE §2 / DR-058 §2 の warnings 面を返す。Success と Failure の双方で同じ玄関を
-/// 呼べるよう Outcome を受け、構造化 warning の組み立ては engine に委譲する。engine 直呼びを
-/// この関数で吸収し、warning 抽出実装の帰属変更 (TRI-Q9) が kuu package 内で閉じる境界を作る。
-pub fn warnings(outcome : @engine.Outcome) -> Array[@engine.Warning] {
-  @engine.warnings_of(outcome)
-}
-
-///|
-/// 正面玄関の補助 (issue 追加分「@engine.ConfigVal/TtyObs の入力構築 API」、統括裁定 (b)): `parse()`/
-/// `resolve()` の `config?` 引数 (`(path: String) -> @engine.ConfigVal?`) を組み立てたい利用者向けの JSON
-/// → `@engine.ConfigVal` 全域変換。`@engine.ConfigVal` は `pub` (フィールド/variant 非公開) のまま — `@engine.Object`/`@engine.Array`
-/// を含む全 variant を外部から直接構築する経路が無く (moonc [4036] で拒否される)、`@engine.value_to_configval`
+/// 正面玄関の補助 (issue 追加分「@abi.ConfigVal/TtyObs の入力構築 API」、統括裁定 (b)): `parse()`/
+/// `resolve()` の `config?` 引数 (`(path: String) -> @abi.ConfigVal?`) を組み立てたい利用者向けの JSON
+/// → `@abi.ConfigVal` 全域変換。`@abi.ConfigVal` は `pub` (フィールド/variant 非公開) のまま — `@abi.Object`/`@abi.Array`
+/// を含む全 variant を外部から直接構築する経路が無く (moonc [4036] で拒否される)、`@extension.value_to_configval`
 /// (value.mbt、既存 pub) はスカラ 3 種のみで木構造の config を組めなかった。DR-050 §2「kuu core は
 /// TOML/YAML を見ず、この JSON-同型 hierarchical 形だけを見る」の JSON 側の入口を production
 /// として塞ぐ。旧 conformance runner の `json_to_configval` (fixture `cases[].config`/
@@ -704,14 +776,14 @@ pub fn warnings(outcome : @engine.Outcome) -> Array[@engine.Warning] {
 /// 残す」と裁定されていた) と同一ロジック — 用途が「fixture 入力の decode」から「production
 /// 呼び出し側の入力構築」まで広がったため、こちらへ昇格し runner 側は本関数へ委譲する形にした
 /// (MDR-005 §2 の当該裁定を本関数の追加で上書き)。オブジェクト/配列は再帰的に変換、bool/string/
-/// number 以外 (JSON null 含む) は `@engine.Null` (DR-050 §4 / DR-051「config seat が供給なしとして扱う」)
+/// number 以外 (JSON null 含む) は `@abi.Null` (DR-050 §4 / DR-051「config seat が供給なしとして扱う」)
 /// に落ちる — decode 失敗という概念を持たない全域関数 (`Result`/`raise` を返さない)。
-pub fn config_from_json(j : Json) -> @engine.ConfigVal {
-  @engine.config_from_json(j)
+pub fn config_from_json(j : Json) -> @abi.ConfigVal {
+  @extension.config_from_json(j)
 }
 
 ///|
-/// 正面玄関の補助 (issue 追加分「@engine.ConfigVal/TtyObs の入力構築 API」、統括裁定 (b)): `parse()`/
+/// 正面玄関の補助 (issue 追加分「@abi.ConfigVal/TtyObs の入力構築 API」、統括裁定 (b)): `parse()`/
 /// `resolve()` の `tty?` 引数 (`Map[String, TtyObs]`、DR-099 §4 の stream 名 → 生観測) を組み立てたい
 /// 利用者向けの構築関数。`TtyObs` は `pub` (フィールド非公開) のまま — 呼び出し側は自身で
 /// `isatty(2)` 相当を観測して得た 2 つの bool (`terminal`: TTY か、`cygwin`: DR-099 §12b の

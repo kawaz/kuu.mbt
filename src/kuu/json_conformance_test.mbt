@@ -2,19 +2,19 @@
 //
 // PORTED FROM: kawaz/kuu.mbt slice/poc/{json_conformance_wbtest,lower_runner_wbtest,helpers_wbtest,
 // fixture_runner_wbtest}.mbt — verbatim structure with API adaptations for main src/kuu:
-//   - @engine.ParseError is a 6-tuple (element/args_pos/kind/reason/message/path, DR-066 §3/§4): proj_errors
+//   - @abi.ParseError is a 6-tuple (element/args_pos/kind/reason/message/path, DR-066 §3/§4): proj_errors
 //     and exp_errors_decode include `reason` when the fixture asserts it on ANY error in the set, and
 //     `path` likewise on its own independent opt-in (per-field, per-fixture-set — DR-066 §4/§5:
 //     message is never compared, reason/path are each optional and asserted independently).
-//   - resolve_scope / resolve_scope_config return `Result[Array[@engine.Binding], @engine.ParseError]` in main
-//     (slice returned Result[..., String] for the config variant and Array[@engine.Binding] for the flat
-//     variant). Both sites in resolve_tree/do_resolve wrap the @engine.ParseError message.
+//   - resolve_scope / resolve_scope_config return `Result[Array[@abi.Binding], @abi.ParseError]` in main
+//     (slice returned Result[..., String] for the config variant and Array[@abi.Binding] for the flat
+//     variant). Both sites in resolve_tree/do_resolve wrap the @abi.ParseError message.
 //   - env_value in main takes (element, ty, s, at_pos)->Result; the variant-DSL operand still needs
 //     the naive slice-form coercion → local `dsl_variant_value` helper.
 //
 // The two-ledger contract (expected_skips / known_divergences) starts EMPTY per MDR-001 §6: fixtures
 // are re-fed against the new implementation, and every observed skip / divergence is reported by the
-// test so we can classify them off-line. @engine.Empty ledger + failing test = the fixture-first mode.
+// test so we can classify them off-line. @abi.Empty ledger + failing test = the fixture-first mode.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 1 — Local helpers (mirror slice/poc/helpers_wbtest.mbt)
@@ -116,17 +116,17 @@ fn allowed_keys(
 }
 
 ///|
-fn json_to_value(json : Json) -> @engine.Value raise DecodeSkip {
+fn json_to_value(json : Json) -> @abi.Value raise DecodeSkip {
   match json.j_bool() {
-    Some(value) => return @engine.Bool(value)
+    Some(value) => return @abi.Bool(value)
     None => ()
   }
   match json.j_str() {
-    Some(value) => return @engine.String(value)
+    Some(value) => return @abi.String(value)
     None => ()
   }
   match json.j_num() {
-    Some(value) => return @engine.Number(value)
+    Some(value) => return @abi.Number(value)
     None => ()
   }
   raise DecodeSkip("non-scalar value in effects/result")
@@ -209,11 +209,11 @@ fn join_comma(items : Array[String]) -> String {
 }
 
 ///|
-fn render_val(v : @engine.Value) -> String {
+fn render_val(v : @abi.Value) -> String {
   match v {
-    @engine.String(s) => s
-    @engine.Bool(b) => if b { "true" } else { "false" }
-    @engine.Number(d) => {
+    @abi.String(s) => s
+    @abi.Bool(b) => if b { "true" } else { "false" }
+    @abi.Number(d) => {
       let i = d.to_int()
       if i.to_double() == d {
         i.to_string()
@@ -225,42 +225,42 @@ fn render_val(v : @engine.Value) -> String {
 }
 
 ///|
-fn render_src(s : @engine.Source) -> String {
+fn render_src(s : @abi.Source) -> String {
   match s {
-    @engine.Cli => "cli"
-    @engine.Env => "env"
-    @engine.Config => "config"
-    @engine.Inherit => "inherit"
-    @engine.Tty => "tty"
-    @engine.Default => "default"
+    @abi.Cli => "cli"
+    @abi.Env => "env"
+    @abi.Config => "config"
+    @abi.Inherit => "inherit"
+    @abi.Tty => "tty"
+    @abi.Default => "default"
   }
 }
 
 ///|
-fn render_kind(k : @engine.ErrorKind) -> String {
+fn render_kind(k : @abi.ErrorKind) -> String {
   match k {
-    @engine.Parse => "parse"
-    @engine.Filter => "filter"
-    @engine.Constraint => "constraint"
+    @abi.Parse => "parse"
+    @abi.Filter => "filter"
+    @abi.Constraint => "constraint"
   }
 }
 
 ///|
-fn render_def_kind(k : @engine.DefErrorKind) -> String {
+fn render_def_kind(k : @abi.DefErrorKind) -> String {
   match k {
-    @engine.VocabIntersection => "vocab-intersection"
-    @engine.UnknownVocab => "unknown-vocab"
-    @engine.InvalidRange => "invalid-range"
-    @engine.AbsentRef => "absent-ref"
-    @engine.CircularRef => "circular-ref"
-    @engine.ZeroProgress => "zero-progress"
-    @engine.ConfigCycle => "config-cycle"
-    @engine.InvalidArgument => "invalid-argument"
+    @abi.VocabIntersection => "vocab-intersection"
+    @abi.UnknownVocab => "unknown-vocab"
+    @abi.InvalidRange => "invalid-range"
+    @abi.AbsentRef => "absent-ref"
+    @abi.CircularRef => "circular-ref"
+    @abi.ZeroProgress => "zero-progress"
+    @abi.ConfigCycle => "config-cycle"
+    @abi.InvalidArgument => "invalid-argument"
   }
 }
 
 ///|
-fn deferrs_str(errs : Array[@engine.DefError]) -> String {
+fn deferrs_str(errs : Array[@abi.DefError]) -> String {
   let items : Array[String] = []
   for e in errs {
     items.push("\{e.element}/\{render_def_kind(e.kind)}")
@@ -271,10 +271,10 @@ fn deferrs_str(errs : Array[@engine.DefError]) -> String {
 
 ///|
 /// Compact one-line rendering of an @engine.Outcome for the runner's "EXPECTED-* got=" diagnostics.
-fn render_outcome(o : @engine.Outcome) -> String {
+fn render_outcome(o : @kuu.ParsedOutcome) -> String {
   match o {
-    @engine.Success(binds) => "ok{" + render_binds_result(binds) + "}"
-    @engine.Failure(d) =>
+    @kuu.Success(_) => "success"
+    @kuu.Failure(d) =>
       match d.fired_action {
         Some(n) => "action:" + n
         None =>
@@ -284,13 +284,12 @@ fn render_outcome(o : @engine.Outcome) -> String {
             "fail:no complete parse"
           }
       }
-    @engine.Ambiguous(d) =>
-      "ambiguous:" + d.interpretations.length().to_string()
+    @kuu.Ambiguous(d) => "ambiguous:" + d.interpretations.length().to_string()
   }
 }
 
 ///|
-fn primary_message(errors : Array[@engine.ParseError]) -> String {
+fn primary_message(errors : Array[@abi.ParseError]) -> String {
   let mut best = errors[0]
   for e in errors {
     if e.args_pos > best.args_pos {
@@ -300,40 +299,16 @@ fn primary_message(errors : Array[@engine.ParseError]) -> String {
   best.message
 }
 
-///|
-fn runner_sentinel(key : String) -> Bool {
-  key == "[]" ||
-  key == "{}" ||
-  key == "" ||
-  key == "#row" ||
-  key == "#fire" ||
-  (key.length() >= 5 && key[0:5].to_owned() == "@act:") ||
-  (key.length() >= 6 && key[0:6].to_owned() == "@depr:")
-}
+// ── @abi.EffectOp / @engine.ExportKey helpers ──────────────────────────────────────────────
 
 ///|
-/// Result-side binding renderer for render_outcome ("ok{k=v,…}"). Skips markers.
-fn render_binds_result(binds : Array[@engine.Binding]) -> String {
-  let items : Array[String] = []
-  for b in binds {
-    if !runner_sentinel(b.key) {
-      items.push("\{b.key}=\{render_val(b.value)}")
-    }
-  }
-  sort_items(items)
-  join_comma(items)
-}
-
-// ── @engine.EffectOp / @engine.ExportKey helpers ──────────────────────────────────────────────
-
-///|
-fn eff_op(op : @engine.EffectOp) -> String {
+fn eff_op(op : @abi.EffectOp) -> String {
   match op {
-    @engine.Set => "set"
-    @engine.Default => "default"
-    @engine.Unset => "unset"
-    @engine.Empty => "empty"
-    @engine.Invoke(invocation) =>
+    @abi.Set => "set"
+    @abi.Default => "default"
+    @abi.Unset => "unset"
+    @abi.Empty => "empty"
+    @abi.Invoke(invocation) =>
       if invocation.args.length() == 0 {
         "fn:" + invocation.name
       } else {
@@ -341,14 +316,14 @@ fn eff_op(op : @engine.EffectOp) -> String {
       }
     // DR-080 §2 merge accumulator piece markers — fixture (merge-basic.json 等) の effects oracle
     // が pin する op 名そのもの ("set" は既存の add piece 表示と同じ、remove/splice がこの2値)。
-    @engine.Remove => "remove"
-    @engine.Splice => "splice"
+    @abi.Remove => "remove"
+    @abi.Splice => "splice"
   }
 }
 
 ///|
-fn canonical_registry_for_test() -> @engine.Registry {
-  let registry = @engine.Registry::new()
+fn canonical_registry_for_test() -> @node.Registry {
+  let registry = @node.Registry::new()
   install_canonical(registry)
   registry
 }
@@ -360,17 +335,17 @@ fn canonical_registry_for_test() -> @engine.Registry {
 ///|
 /// Key-sorted rendering of the built result object (CONFORMANCE §3: result is structural, key order
 /// non-normative). Arrays keep order.
-fn render_rval_sorted(r : @engine.ResultValue) -> String {
+fn render_rval_sorted(r : @abi.ResultValue) -> String {
   match r {
-    @engine.Scalar(v) => render_val(v)
-    @engine.Array(vs) => {
+    @abi.Scalar(v) => render_val(v)
+    @abi.Array(vs) => {
       let items : Array[String] = []
       for v in vs {
         items.push(render_rval_sorted(v))
       }
       "[" + join_comma(items) + "]"
     }
-    @engine.Object(kvs) => {
+    @abi.Object(kvs) => {
       let items : Array[String] = []
       for kv in kvs {
         items.push(kv.0 + "=" + render_rval_sorted(kv.1))
@@ -378,6 +353,19 @@ fn render_rval_sorted(r : @engine.ResultValue) -> String {
       sort_items(items)
       "{" + join_comma(items) + "}"
     }
+  }
+}
+
+///|
+fn render_success(ast : @kuu.AtomicAST, args : Array[String]) -> String {
+  match @kuu.parse(ast, args) {
+    @kuu.Success(bindings) =>
+      match @kuu.resolve(ast, bindings, args) {
+        @kuu.Success(resolved) =>
+          "ok" + render_rval_sorted(@kuu.output(ast, resolved).result)
+        @kuu.Failure(failure) => "fail:" + primary_message(failure.errors)
+      }
+    other => render_outcome(other)
   }
 }
 
@@ -425,7 +413,7 @@ fn render_path(path : Array[String]) -> String {
 /// asserting only reason), `|path` appended after (a separate delimiter so "no reason, but path
 /// asserted" cannot collide with "reason asserted, no path"). sorted as a set.
 fn proj_errors(
-  errs : Array[@engine.ParseError],
+  errs : Array[@abi.ParseError],
   with_reason : Bool,
   with_path : Bool,
 ) -> String {
@@ -445,8 +433,8 @@ fn proj_errors(
 }
 
 ///|
-fn proj_warnings(o : @engine.Outcome) -> String {
-  let ws = @engine.warnings_of(o).map(w => w.element)
+fn proj_warnings(o : @kuu.ParsedOutcome) -> String {
+  let ws = o.warnings().map(w => w.element)
   sort_items(ws)
   join_comma(ws)
 }
@@ -490,8 +478,8 @@ fn render_sources(sources : Array[@kuu.SourceEntry]) -> String {
 ///|
 enum CfgInj {
   NoCfg
-  CfgObj(@engine.ConfigVal)
-  CfgFiles(Array[(String, @engine.ConfigVal)])
+  CfgObj(@abi.ConfigVal)
+  CfgFiles(Array[(String, @abi.ConfigVal)])
 }
 
 ///|
@@ -537,34 +525,34 @@ struct DecodedFixture {
 // ── expected-string builders ──────────────────────────────────────────────────
 
 ///|
-/// `@engine.ResultValue` の decode は definition の wire decode (`wire_decode.mbt`) ではなく、fixture の expect
+/// `@abi.ResultValue` の decode は definition の wire decode (`wire_decode.mbt`) ではなく、fixture の expect
 /// (`result`/`interpretations`) を読む側のヘルパー — そのためここに残す (MDR-005 §2 の境界判定)。
-/// `@engine.ConfigVal` 側の同種ヘルパー (旧 `json_to_configval`、`cases[].config`/`config_files` の decode)
-/// は front_door の `config_from_json` へ昇格済み (MDR-005 追記、「@engine.ConfigVal/TtyObs の入力構築
+/// `@abi.ConfigVal` 側の同種ヘルパー (旧 `json_to_configval`、`cases[].config`/`config_files` の decode)
+/// は front_door の `config_from_json` へ昇格済み (MDR-005 追記、「@abi.ConfigVal/TtyObs の入力構築
 /// API」issue) — 用途が「fixture 入力の decode」から「production 呼び出し側の入力構築」まで
 /// 広がったため、runner 側もそちらを直接呼ぶ (下記 `cfg` 組み立て箇所参照)。
-fn json_to_rval(j : Json) -> @engine.ResultValue raise DecodeSkip {
+fn json_to_rval(j : Json) -> @abi.ResultValue raise DecodeSkip {
   match j.j_obj() {
     Some(o) => {
-      let kvs : Array[(String, @engine.ResultValue)] = []
+      let kvs : Array[(String, @abi.ResultValue)] = []
       for k, v in o {
         kvs.push((k, json_to_rval(v)))
       }
-      return @engine.Object(kvs)
+      return @abi.Object(kvs)
     }
     None => ()
   }
   match j.j_arr() {
     Some(a) => {
-      let vs : Array[@engine.ResultValue] = []
+      let vs : Array[@abi.ResultValue] = []
       for v in a {
         vs.push(json_to_rval(v))
       }
-      return @engine.Array(vs)
+      return @abi.Array(vs)
     }
     None => ()
   }
-  @engine.Scalar(json_to_value(j))
+  @abi.Scalar(json_to_value(j))
 }
 
 ///|
@@ -902,7 +890,7 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
         Some(fj) =>
           match fj.j_obj() {
             Some(fo) => {
-              let files : Array[(String, @engine.ConfigVal)] = []
+              let files : Array[(String, @abi.ConfigVal)] = []
               for k, v in fo {
                 files.push((k, @kuu.config_from_json(v)))
               }
@@ -1117,7 +1105,7 @@ fn dec_definition_error_fixture(j : Json) -> DDefErrorFixture raise DecodeSkip {
 /// `render_outcome`-style "EXPECTED-*" convention mirrors the parse-path runner's diagnostics.
 fn expected_def_errors_match(
   expected : Array[DExpectedDefError],
-  actual : Array[@engine.DefError],
+  actual : Array[@abi.DefError],
 ) -> Bool {
   if expected.length() != actual.length() {
     return false
@@ -1181,7 +1169,7 @@ fn bool_str(b : Bool) -> String {
 }
 
 ///|
-/// The canonical single-candidate projection BOTH the live `@engine.Candidate` (`cand_str`) and the fixture's
+/// The canonical single-candidate projection BOTH the live `@abi.Candidate` (`cand_str`) and the fixture's
 /// decoded expectation (`exp_candidate_str`) reduce to — CONFORMANCE §3's 6-field structural
 /// equality (spelling/is_value/type/origin/term/meta) PLUS an OPT-IN 7th field, `completer` (DR-104
 /// §2/§3, CONFORMANCE §3 COMP-Q3): included in the string only when `with_completer` is true (a
@@ -1189,7 +1177,7 @@ fn bool_str(b : Bool) -> String {
 /// `with_reason`). Wire `type` maps to the live candidate's `Candidate.ty`; both `spelling` and `type` are
 /// normalized to `""` on their "doesn't apply" side (DR-104 §2: `spelling` is meaningless when
 /// `is_value:true`, `type` is meaningless when `is_value:false`) so a
-/// fixture that omits the moot field and a live `@engine.Candidate` that carries a leftover tag there (e.g.
+/// fixture that omits the moot field and a live `@abi.Candidate` that carries a leftover tag there (e.g.
 /// `trigger_candidate`'s placeholder `@builtins.flag_type()`) still compare equal.
 fn cand_fields_str(
   spelling : String,
@@ -1229,7 +1217,7 @@ fn cand_fields_str(
 /// when true, `c.completer` (`None` normalized to `""`, mirroring `errors[].reason`'s absent-on-a-
 /// specific-element convention) joins the 6-field identity string; the dedup identity itself
 /// (`@engine.complete_tree`'s dedup loop, outcome.mbt) never looks at this field regardless.
-fn cand_str(c : @engine.Candidate, with_completer : Bool) -> String {
+fn cand_str(c : @abi.Candidate, with_completer : Bool) -> String {
   let term_s = match c.term {
     WordEnd => "word_end"
     Continue => "cont"
@@ -1257,10 +1245,7 @@ fn cand_str(c : @engine.Candidate, with_completer : Bool) -> String {
 ///|
 /// `candidates` is a SET (CONFORMANCE §3/§4, DR-104 §4 — same treatment as `interpretations`):
 /// sort + join, mirroring `deferrs_str`'s pattern in this same file.
-fn cands_set_str(
-  cs : Array[@engine.Candidate],
-  with_completer : Bool,
-) -> String {
+fn cands_set_str(cs : Array[@abi.Candidate], with_completer : Bool) -> String {
   let items : Array[String] = []
   for c in cs {
     items.push(cand_str(c, with_completer))
@@ -1271,7 +1256,7 @@ fn cands_set_str(
 
 ///|
 /// Decode ONE `expect.candidates[]` entry (DR-104 §2, schema `$defs/candidate`) straight into the
-/// SAME canonical string `cand_str` produces from a live `@engine.Candidate` — `run_complete` then compares with
+/// SAME canonical string `cand_str` produces from a live `@abi.Candidate` — `run_complete` then compares with
 /// a plain `==`, matching `deferrs_str`/`exp_errors_decode`'s decode-to-comparable-string pattern.
 /// `with_completer` (COMP-Q3 opt-in, detected per-fixture-set by `dec_complete_case` — mirrors
 /// `exp_errors_decode`'s `with_reason`) decides whether `completer` joins the comparison string;
@@ -1618,11 +1603,11 @@ fn dec_help_fixture(j : Json) -> DHelpFixture raise DecodeSkip {
 }
 
 ///|
-fn help_value_json(value : @engine.Value) -> Json {
+fn help_value_json(value : @abi.Value) -> Json {
   match value {
-    @engine.String(text) => text.to_json()
-    @engine.Number(number) => number.to_json()
-    @engine.Bool(boolean) => boolean.to_json()
+    @abi.String(text) => text.to_json()
+    @abi.Number(number) => number.to_json()
+    @abi.Bool(boolean) => boolean.to_json()
   }
 }
 
@@ -1643,9 +1628,9 @@ fn help_default_json(value : @kuu.HelpDefault) -> Json {
 ///|
 /// DR-113 §4.1 helpValueStructure oneOf 直訳。single / seq / or / repeat / type_ref それぞれの
 /// object 形へ写す (schema $defs/helpValueStructure と対応)。
-fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
+fn help_value_structure_json(vs : @abi.HelpValueStructure) -> Json {
   match vs {
-    @engine.Single(single) => {
+    @abi.Single(single) => {
       let inner : Map[String, Json] = Map([])
       match single.value_name {
         Some(value) => inner.set("value_name", value.to_json())
@@ -1663,7 +1648,7 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
       out.set("single", inner.to_json())
       out.to_json()
     }
-    @engine.Seq(nodes) => {
+    @abi.Seq(nodes) => {
       let arr : Array[Json] = []
       for n in nodes {
         arr.push(help_value_structure_json(n))
@@ -1672,7 +1657,7 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
       out.set("seq", arr.to_json())
       out.to_json()
     }
-    @engine.Or(nodes) => {
+    @abi.Or(nodes) => {
       let arr : Array[Json] = []
       for n in nodes {
         arr.push(help_value_structure_json(n))
@@ -1681,7 +1666,7 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
       out.set("or", arr.to_json())
       out.to_json()
     }
-    @engine.Repeat(spec) => {
+    @abi.Repeat(spec) => {
       let inner : Map[String, Json] = Map([])
       match spec.min {
         Some(m) => inner.set("min", m.to_json())
@@ -1696,7 +1681,7 @@ fn help_value_structure_json(vs : @engine.HelpValueStructure) -> Json {
       out.set("repeat", inner.to_json())
       out.to_json()
     }
-    @engine.TypeRef(ref_) => {
+    @abi.TypeRef(ref_) => {
       let out : Map[String, Json] = Map([])
       out.set("type_ref", ref_.id.to_json())
       match ref_.value_name {
@@ -2143,9 +2128,9 @@ fn collect_rel(root : String, rel : String, out : Array[String]) -> Unit raise {
 
 ///|
 fn cfg_lookup(
-  files : Array[(String, @engine.ConfigVal)],
+  files : Array[(String, @abi.ConfigVal)],
   p : String,
-) -> @engine.ConfigVal? {
+) -> @abi.ConfigVal? {
   for kv in files {
     if kv.0 == p {
       return Some(kv.1)
@@ -2161,31 +2146,30 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
   // `promote_collision_ambiguous` (DR-021 → DR-073) を直列適用する。runner はこの 3 段を手組みで
   // 書かず、玄関経由で受ける (kuu-cli PoC が front_door.parse を薄い wrapper のまま使うと spec
   // 非準拠 outcome を返す実バグの根治 — 二重実装の解消)。`dc.cfg` (NoCfg/CfgObj/CfgFiles) →
-  // `provider: (String) -> @engine.ConfigVal?` の変換は runner 固有 (fixture の JSON 形の解釈) なのでここに
+  // `provider: (String) -> @abi.ConfigVal?` の変換は runner 固有 (fixture の JSON 形の解釈) なのでここに
   // 残す。
-  let config_provider : (String) -> @engine.ConfigVal? = match dc.cfg {
+  let config_provider : (String) -> @abi.ConfigVal? = match dc.cfg {
     NoCfg => fn(_p) { None }
     CfgObj(obj) => fn(_p) { Some(obj) }
     CfgFiles(files) => fn(p) { cfg_lookup(files, p) }
   }
   let ast = df.ast
-  let outcome = @kuu.parse(
-    ast,
-    dc.args,
-    env=dc.env,
+  let sources = @kuu.value_sources(
+    env=@kuu.env_from_map(dc.env),
     config=config_provider,
-    tty=dc.tty,
+    tty=fn(stream) { dc.tty.get(stream) },
   )
+  let outcome = @kuu.parse(ast, dc.args, sources~)
   let problems : Array[String] = []
   let use_resolve = dc.resolve
   match dc.outcome {
     "success" =>
       match outcome {
-        @engine.Success(binds) => {
-          let parse_view = @kuu.output(ast, effects=binds)
+        @kuu.Success(binds) => {
+          let parse_effects = binds.effects(ast)
           match dc.exp_effects {
             Some(ee) => {
-              let ae = render_effects(parse_view.effects)
+              let ae = render_effects(parse_effects)
               if ae != ee {
                 problems.push("effects got=\{ae} want=\{ee}")
               }
@@ -2195,17 +2179,9 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
           if use_resolve {
             // resolve は値源ラダーを充填し、parse 相が持つ repeat row sentinel を保存する。
             // OutputView は parse binds を effects、resolved binds を result/sources に使い分ける。
-            match
-              @kuu.resolve(
-                ast,
-                outcome,
-                dc.args,
-                env=dc.env,
-                config=config_provider,
-                tty=dc.tty,
-              ) {
-              @engine.Success(rb) => {
-                let view = @kuu.output(ast, effects=binds, resolved=rb)
+            match @kuu.resolve(ast, binds, dc.args, sources~) {
+              @kuu.Success(rb) => {
+                let view = @kuu.output(ast, rb)
                 match dc.exp_result {
                   Some(er) => {
                     let ar = render_rval_sorted(view.result)
@@ -2225,7 +2201,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                   None => ()
                 }
               }
-              @engine.Failure(d) =>
+              @kuu.Failure(d) =>
                 problems.push(
                   "resolve error: " +
                   (if d.errors.length() > 0 {
@@ -2234,12 +2210,11 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                     "(no message)"
                   }),
                 )
-              _ => problems.push("resolve returned unexpected outcome")
             }
           } else {
             match dc.exp_result {
               Some(er) => {
-                let ar = render_rval_sorted(parse_view.result)
+                let ar = "(parse-phase result unavailable)"
                 if ar != er {
                   problems.push("result got=\{ar} want=\{er}")
                 }
@@ -2261,7 +2236,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
       }
     "failure" =>
       match outcome {
-        @engine.Failure(d) => {
+        @kuu.Failure(d) => {
           match dc.exp_errors {
             Some(ex) => {
               let ae = proj_errors(
@@ -2321,17 +2296,9 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
         // invisible to `"failure"` fixtures entirely (this function's `match outcome` never
         // called resolve at all before) — `@engine.Success` fell straight to the `other` catch-all
         // below and got mis-reported as EXPECTED-FAILURE got=ok{...}.
-        @engine.Success(_) if use_resolve =>
-          match
-            @kuu.resolve(
-              ast,
-              outcome,
-              dc.args,
-              env=dc.env,
-              config=config_provider,
-              tty=dc.tty,
-            ) {
-            @engine.Failure(d) =>
+        @kuu.Success(binds) if use_resolve =>
+          match @kuu.resolve(ast, binds, dc.args, sources~) {
+            @kuu.Failure(d) =>
               match dc.exp_errors {
                 Some(ex) => {
                   let ae = proj_errors(
@@ -2345,15 +2312,14 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 }
                 None => ()
               }
-            @engine.Success(_) =>
+            @kuu.Success(_) =>
               problems.push("EXPECTED-FAILURE got=ok (resolve also succeeded)")
-            _ => ()
           }
         other => problems.push("EXPECTED-FAILURE got=" + render_outcome(other))
       }
     _ =>
       match outcome {
-        @engine.Ambiguous(d) => {
+        @kuu.Ambiguous(d) => {
           match dc.exp_interps {
             Some(ei) => {
               let got : Array[String] = []
@@ -2368,11 +2334,11 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 // renderer must not synthesize an empty `#claimants{}` for those (would fail the
                 // structural or-position/repeat/prefix-guard ambiguous fixtures whose expected
                 // form is view-only, not `view#claimants{}`).
-                if interp.claimants.length() == 0 {
+                if interp.claimants().length() == 0 {
                   got.push(view)
                 } else {
                   let items : Array[String] = []
-                  for kv in interp.claimants {
+                  for kv in interp.claimants() {
                     items.push(kv.0 + "=" + kv.1)
                   }
                   sort_items(items)
@@ -2431,7 +2397,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// a KNOWN gap either INHERITED from slice/poc (未実装が正本仕様に追従していない) or a suspected
 /// fixture-authoring issue frozen for later resolution. The runner asserts the observed divergence
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
-/// MDR-001 §6). @engine.Empty = full conformance (no known gaps against the fixture corpus).
+/// MDR-001 §6). @abi.Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
   // M4 (DR-113 §4): help model 構築を新 schema へ全面移行 (value_structure tree / origin 4 形 /
   // hidden・deprecated required emit / command aliases 併記 / depth=all 再帰 scope 埋め込み /
@@ -2843,7 +2809,7 @@ test "conformance: @engine.OrBranch auto id (#{seq}) は held-error / ambiguous 
   // failure (0 本成立): 非数値 1 token は両枝とも同位置で dead-end (same-depth 同型)。
   let fail_outcome = @kuu.parse(df.ast, ["x"])
   match fail_outcome {
-    @engine.Failure(d) => {
+    @kuu.Failure(d) => {
       let texts : Array[String] = []
       for e in d.errors {
         texts.push(e.element + ":" + e.message)
@@ -2859,11 +2825,11 @@ test "conformance: @engine.OrBranch auto id (#{seq}) は held-error / ambiguous 
   // ambiguous (2 本成立): 数値 1 token は両枝が同位置で成立 → 2 完全経路。
   let amb_outcome = @kuu.parse(df.ast, ["5"])
   match amb_outcome {
-    @engine.Ambiguous(d) => {
+    @kuu.Ambiguous(d) => {
       let views : Array[String] = []
       for interp in d.interpretations {
         views.push(
-          render_rval_sorted(@kuu.output(df.ast, effects=interp.binds).result),
+          render_rval_sorted(@kuu.output_of_interpretation(df.ast, interp)),
         )
       }
       let joined = join_comma(views)
@@ -2914,8 +2880,8 @@ test "DR-078: definitions.templates + ref — repeat over a shared or-template (
   // render_outcome は binding を flat key=value (sort 済み) で描画する (slice の ok{name=blue,name=red}
   // と同じ形、色テンプレの leaf 名は "colorname")。
   assert_eq(
-    render_outcome(@kuu.parse(df.ast, ["red", "blue"])),
-    "ok{colorname=blue,colorname=red}",
+    render_success(df.ast, ["red", "blue"]),
+    "ok{hlcolors=[{colorname=red},{colorname=blue}]}",
   )
   // rgb 枝 (1 回発火, 3 トークン) vs colorname 枝 (3 回発火, 1 トークンずつ) — 構造的に異なる完全経路
   // が両立し ambiguous:2 (DR-038)。
@@ -2952,8 +2918,8 @@ test "DR-078: preference does not erode or-branch ambiguity (share-dimension onl
     "ambiguous:2",
   )
   assert_eq(
-    render_outcome(@kuu.parse(df.ast, ["red", "green", "blue"])),
-    "ok{colorname=blue,colorname=green,colorname=red}",
+    render_success(df.ast, ["red", "green", "blue"]),
+    "ok{hlcolors=[{colorname=red},{colorname=green},{colorname=blue}]}",
   )
 }
 
@@ -2966,7 +2932,7 @@ test "DR-078: preference does not erode or-branch ambiguity (share-dimension onl
 /// positional の name / option の name / definitions.templates の template key の 3 カテゴリで
 /// decode が `DecodeSkip` (definition の decode error、既存語彙のまま) を投げることを確認する。
 test "decode: a `#` in name/id is rejected at every user-facing name surface (codex review #1)" {
-  // (1) positional の name。`@json.parse` (raise @engine.ParseError) を try の外で先に評価しておく —
+  // (1) positional の name。`@json.parse` (raise @abi.ParseError) を try の外で先に評価しておく —
   // `dec_fixture` 自身の `raise DecodeSkip` だけを catch で汲む。
   let pos_src =
     #|{"query":"parse","definition":{"positionals":[{"name":"src#cons","type":"string"}]},"cases":[]}
@@ -3031,7 +2997,7 @@ test "decode: an ordinary `#`-free name is unaffected by the reserved-name check
     #|  "cases": []
     #|}
   let df = dec_fixture(@json.parse(src))
-  assert_eq(render_outcome(@kuu.parse(df.ast, ["red"])), "ok{colorname=red}")
+  assert_eq(render_success(df.ast, ["red"]), "ok{hlcolors=[{colorname=red}]}")
 }
 
 ///|
@@ -3239,8 +3205,8 @@ test "DR-047 §5 end-to-end: fired_action (help) survives the post-filter @engin
 /// none として decode され、消費 0 の純トリガとして発火・resolve を通り、シンプルモードの結果には
 /// キーが一切現れない (`result: {}`) — DR-051 §1/§4 の「値の無さはフィールド不在」と同型。
 /// effects にも現れない (team-lead 裁定 2026-07-11: 観測は ParserContext/explains 層の管掌、値
-/// 空間なしの set エントリを発明しない — 内部表現は `flag_bare_true_variant` 再利用の @engine.Set +
-/// @engine.Bool(true) placeholder のままだが、`OutputView.effects` が none cell を除外する)。
+/// 空間なしの set エントリを発明しない — 内部表現は `flag_bare_true_variant` 再利用の @abi.Set +
+/// @abi.Bool(true) placeholder のままだが、`OutputView.effects` が none cell を除外する)。
 
 ///|
 test "DR-089 end-to-end: an omitted-type option decodes to none, fires as a pure trigger, absent from result" {
@@ -3309,8 +3275,8 @@ test "DR-089 end-to-end: an explicit type:none option behaves identically to omi
 /// 保証 (DR-092 §1/§2「inf は JSON string sentinel "Infinity"/"-Infinity" で表す」、実装調査
 /// 2026-07-11 の実機確認結果): fixture の `result` 位置に JSON 文字列 `"Infinity"` を書いた期待値
 /// (DR-092 §1 の wire 表現そのもの) が、実際の `--t inf` (float 型) 実行結果と一致する — 双方とも
-/// `render_val` を経由し、GOT 側は `@engine.Number(inf)` → MoonBit Ryu 実装の "Infinity" 特殊形、EXPECT 側は
-/// JSON string decode (`json_to_value` は文字列をそのまま `@engine.String` に写す) → `render_val(@engine.String(s)) =
+/// `render_val` を経由し、GOT 側は `@abi.Number(inf)` → MoonBit Ryu 実装の "Infinity" 特殊形、EXPECT 側は
+/// JSON string decode (`json_to_value` は文字列をそのまま `@abi.String` に写す) → `render_val(@abi.String(s)) =
 /// s` の素通し、で同じ文字列 "Infinity" に収束する。**production コード変更なしで DR-092 の wire
 /// 表現規約が conformance harness 上で既に成立する**ことを end-to-end で固定する
 /// (fixtures/value-typing/number-inf-nan.json への実 pin は main が別段で行う予定、本テストは
@@ -3358,7 +3324,7 @@ test "DR-092 end-to-end: --t inf round-trips through result as the JSON string s
 ///|
 /// 保証 (DR-092 §4「非整数 float の canonical serialize = shortest round-trip」、end-to-end):
 /// `--t 3.14159` の result が入力綴りそのまま (丸め/桁欠落なし) で戻る — shortest round-trip の
-/// 「入力と同じ最短表現に落ち着く」性質を CLI 入力からの往復で確認する (`@engine.value_str`/`render_val`
+/// 「入力と同じ最短表現に落ち着く」性質を CLI 入力からの往復で確認する (`@extension.value_str`/`render_val`
 /// 直接テストの resolve_wbtest.mbt 版と対で、こちらは実 args からの end-to-end)。
 test "DR-092 end-to-end: a non-integer float CLI value round-trips via shortest round-trip in result" {
   let src =
@@ -3792,7 +3758,7 @@ test "codex-20260712: differing dd placeholder keys do not split path dedup (DES
 
 ///|
 /// 配線の基本 + opt-in 比較 (CONFORMANCE §3 COMP-Q3): option の値位置候補に `completer:
-/// "<名前>"` (wire) → `@engine.Entity.completer` → `@engine.Candidate.completer` の carry が通ることを、同一
+/// "<名前>"` (wire) → `@engine.Entity.completer` → `@abi.Candidate.completer` の carry が通ることを、同一
 /// definition・同一 args_before に対して (a) completer を明記した case (opt-in 発火、値が
 /// 一致することを要求) と (b) completer を書かない case (opt-in 不発火、実装が completer を
 /// 持っていても比較対象外になり PASS する) の両方で pin する。
@@ -3899,8 +3865,8 @@ test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が一�
 ///|
 /// @engine.Rooted-escape (global option) の completer 解決 pin: global option の値スロットは
 /// command 子 scope 内で消費されるが、その @engine.Entity は宣言元 (root) scope にしか存在しない
-/// (issue 2026-07-14-cand-completer-followup、実装過程で発見した @engine.Candidate.link 機構 — `@engine.Binding.link`
-/// と同じ @engine.Rooted-escape カウンタが @engine.Candidate にも必要だった)。子 scope 内の値スロット候補が正しく
+/// (issue 2026-07-14-cand-completer-followup、実装過程で発見した @abi.Candidate.link 機構 — `@abi.Binding.link`
+/// と同じ @engine.Rooted-escape カウンタが @abi.Candidate にも必要だった)。子 scope 内の値スロット候補が正しく
 /// root 側の completer を引けることを固定する。
 test "DR-060 §4: global option の値スロット candidate は @engine.Rooted escape を跨いでも正しい completer を引く" {
   let src =

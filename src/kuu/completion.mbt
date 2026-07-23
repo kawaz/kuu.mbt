@@ -15,15 +15,15 @@
 pub struct CompletionScriptCapability {}
 
 ///|
-pub impl @engine.CapabilityExt for CompletionScriptCapability with fn name(
+pub impl @extension.CapabilityExt for CompletionScriptCapability with fn name(
   _self,
 ) {
   "completion_script"
 }
 
 ///|
-pub fn completion_script_capability() -> &@engine.CapabilityExt {
-  CompletionScriptCapability::{  } as &@engine.CapabilityExt
+pub fn completion_script_capability() -> &@extension.CapabilityExt {
+  CompletionScriptCapability::{  } as &@extension.CapabilityExt
 }
 
 ///|
@@ -40,13 +40,14 @@ pub(all) enum CompletionScriptRequest {
 /// orchestrating caller reads the requested shell out of this result and calls
 /// `generate_completion_script()` to obtain the emitted glue text.
 pub fn dispatch_completion_script(
-  registry : @engine.Registry,
-  outcome : @engine.Outcome,
+  registry : @node.Registry,
+  outcome : ResolvedOutcome,
 ) -> CompletionScriptRequest {
   if registry.lookup_capability("completion_script") is None {
     return Unavailable
   }
-  guard outcome is @engine.Success(bindings) else { return NotRequested }
+  guard outcome is Success(resolved) else { return NotRequested }
+  let bindings = resolved.raw
   // DR-117 §2.1: multiple public entries linking to `#completion_script` are last-wins on the
   // string cell. "last" is CLI reading order (DR-041 token reading semantics + DR-015 last-wins
   // inheritance via DR-113 §2.3). `apply_entity_links` emits linked copies in entity declaration
@@ -57,9 +58,9 @@ pub fn dispatch_completion_script(
   let mut requested : String? = None
   let mut best_pos : Int = -1
   for binding in bindings {
-    if binding.key == "#completion_script" && binding.op is @engine.Set {
+    if binding.key == "#completion_script" && binding.op is @abi.Set {
       match binding.value {
-        @engine.String(shell) => {
+        @abi.String(shell) => {
           let pos = match binding.at_pos {
             Some(i) => i
             None => -1
@@ -119,7 +120,7 @@ pub(all) enum CompletionEntryResult {
 ///   縮退時 stderr 警告は出さない (findings §7 リスク — library が stderr を持たない設計)
 pub fn completion_entry(
   ast : AtomicAST,
-  registry : @engine.Registry,
+  registry : @node.Registry,
   argv : Array[String],
   env : Map[String, String],
 ) -> CompletionEntryResult {

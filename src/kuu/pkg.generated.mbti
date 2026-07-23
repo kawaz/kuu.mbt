@@ -2,18 +2,20 @@
 package "kawaz/kuu/kuu"
 
 import {
-  "kawaz/kuu/engine",
+  "kawaz/kuu/abi",
+  "kawaz/kuu/extension",
+  "kawaz/kuu/kuu-node",
   "moonbitlang/core/debug",
 }
 
 // Values
-pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[@engine.Candidate]
+pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[@abi.Candidate]
 
-pub fn completion_entry(AtomicAST, @engine.Registry, Array[String], Map[String, String]) -> CompletionEntryResult
+pub fn completion_entry(AtomicAST, @kuu-node.Registry, Array[String], Map[String, String]) -> CompletionEntryResult
 
-pub fn completion_query(AtomicAST, @engine.Registry, Array[String], cword? : Int?) -> String
+pub fn completion_query(AtomicAST, @kuu-node.Registry, Array[String], cword? : Int?) -> String
 
-pub fn completion_script_capability() -> &@engine.CapabilityExt
+pub fn completion_script_capability() -> &@extension.CapabilityExt
 
 pub fn completion_template_bash() -> String
 
@@ -21,37 +23,41 @@ pub fn completion_template_fish() -> String
 
 pub fn completion_template_zsh() -> String
 
-pub fn config_from_json(Json) -> @engine.ConfigVal
+pub fn config_from_json(Json) -> @abi.ConfigVal
 
-pub fn dispatch_completion_script(@engine.Registry, @engine.Outcome) -> CompletionScriptRequest
+pub fn dispatch_completion_script(@kuu-node.Registry, ResolvedOutcome) -> CompletionScriptRequest
 
-pub fn dispatch_help_query(@engine.Registry, AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> HelpQueryOutcome
+pub fn dispatch_help_query(@kuu-node.Registry, AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> HelpQueryOutcome
+
+pub fn env_from_map(Map[String, String]) -> (String) -> String?
 
 pub fn generate_completion_script(String, String, String, String) -> Result[String, CompletionScriptError]
 
 pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> Result[HelpModel, HelpQueryError]
 
-pub fn help_query_capability() -> &@engine.CapabilityExt
+pub fn help_query_capability() -> &@extension.CapabilityExt
 
-pub fn install_canonical(@engine.Registry) -> Unit
+pub fn install_canonical(@kuu-node.Registry) -> Unit
 
-pub fn install_vocabulary(@engine.Registry) -> Unit
+pub fn install_vocabulary(@kuu-node.Registry) -> Unit
 
-pub fn output(AtomicAST, effects~ : Array[@engine.Binding], resolved? : Array[@engine.Binding]) -> OutputView
+pub fn output(AtomicAST, ResolvedBindings) -> OutputView
 
-pub fn output_of_interpretation(AtomicAST, @engine.AmbiguousInterpretation) -> @engine.ResultValue
+pub fn output_of_interpretation(AtomicAST, Interpretation) -> @abi.ResultValue
 
-pub fn parse(AtomicAST, Array[String], env? : Map[String, String], config? : (String) -> @engine.ConfigVal?, tty? : Map[String, TtyObs]) -> @engine.Outcome
+pub fn parse(AtomicAST, Array[String], sources? : ValueSources) -> ParsedOutcome
 
-pub fn parse_definition(Json, extensions? : @engine.Registry) -> Result[AtomicAST, DefLoadError]
+pub fn parse_definition(Json, extensions? : @kuu-node.Registry) -> Result[AtomicAST, DefLoadError]
 
-pub fn resolve(AtomicAST, @engine.Outcome, Array[String], env? : Map[String, String], config? : (String) -> @engine.ConfigVal?, tty? : Map[String, TtyObs]) -> @engine.Outcome
+pub fn resolve(AtomicAST, ParsedBindings, Array[String], sources? : ValueSources) -> ResolvedOutcome
+
+pub fn resolve_interpretation(AtomicAST, Interpretation, Array[String], sources? : ValueSources) -> ResolvedOutcome
 
 pub let spec_repo : String
 
 pub fn tty_obs(Bool, Bool) -> TtyObs
 
-pub fn warnings(@engine.Outcome) -> Array[@engine.Warning]
+pub fn value_sources(env? : (String) -> String?, config? : (String) -> @abi.ConfigVal?, tty? : (String) -> TtyObs?) -> ValueSources
 
 // Errors
 
@@ -65,7 +71,7 @@ pub(all) enum CompletionEntryResult {
 
 pub struct CompletionScriptCapability {
 }
-pub impl @engine.CapabilityExt for CompletionScriptCapability
+pub impl @extension.CapabilityExt for CompletionScriptCapability
 
 pub(all) enum CompletionScriptError {
   UnsupportedShell(String)
@@ -79,7 +85,7 @@ pub(all) enum CompletionScriptRequest {
 
 pub(all) enum DefLoadError {
   Malformed(String)
-  Rejected(Array[@engine.DefError])
+  Rejected(Array[@abi.DefError])
 } derive(Eq, @debug.Debug)
 
 pub(all) enum HelpCategoryMode {
@@ -100,8 +106,8 @@ pub(all) struct HelpCommand {
 } derive(Eq, @debug.Debug)
 
 pub(all) enum HelpDefault {
-  Scalar(@engine.Value)
-  Array(Array[@engine.Value])
+  Scalar(@abi.Value)
+  Array(Array[@abi.Value])
 } derive(Eq, @debug.Debug)
 
 pub(all) enum HelpDepth {
@@ -133,7 +139,7 @@ pub(all) struct HelpModel {
 pub(all) struct HelpOption {
   spellings : Array[String]
   alias_spellings : Array[String]
-  value_structure : @engine.HelpValueStructure?
+  value_structure : @abi.HelpValueStructure?
   display_name : String?
   help : String?
   help_long : String?
@@ -160,7 +166,7 @@ pub(all) enum HelpOrigin {
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpPositional {
-  value_structure : @engine.HelpValueStructure
+  value_structure : @abi.HelpValueStructure
   help : String?
   help_long : String?
   hidden : Bool
@@ -170,7 +176,7 @@ pub(all) struct HelpPositional {
 
 pub struct HelpQueryCapability {
 }
-pub impl @engine.CapabilityExt for HelpQueryCapability
+pub impl @extension.CapabilityExt for HelpQueryCapability
 
 pub(all) enum HelpQueryError {
   AbsentPath
@@ -192,7 +198,7 @@ pub(all) struct HelpRenderView {
 
 pub(all) struct HelpTypeEntry {
   id : String
-  value_structure : @engine.HelpValueStructure
+  value_structure : @abi.HelpValueStructure
   help : String?
   used_as : Array[String]
 } derive(Eq, @debug.Debug)
@@ -205,26 +211,65 @@ pub(all) struct HelpUsage {
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpUsagePositional {
-  value_structure : @engine.HelpValueStructure
+  value_structure : @abi.HelpValueStructure
 } derive(Eq, @debug.Debug)
+
+pub struct Interpretation {
+  // private fields
+}
+pub fn Interpretation::claimants(Self) -> Array[(String, String)]
 
 pub struct OutputEffect {
   entity : String
-  op : @engine.EffectOp
-  operand : @engine.Value?
-  source : @engine.Source
+  op : @abi.EffectOp
+  operand : @abi.Value?
+  source : @abi.Source
 } derive(Eq, @debug.Debug)
 
 pub struct OutputView {
-  result : @engine.ResultValue
+  result : @abi.ResultValue
   effects : Array[OutputEffect]
   sources : Array[SourceEntry]
 } derive(Eq, @debug.Debug)
 
+pub struct ParseFailure {
+  errors : Array[@abi.ParseError]
+  fired_action : String?
+  help_entry : String?
+  tried_triggers : Array[String]
+}
+
+pub struct ParsedAmbiguity {
+  interpretations : Array[Interpretation]
+  help_entry : String?
+}
+
+pub struct ParsedBindings {
+  // private fields
+}
+pub fn ParsedBindings::effects(Self, AtomicAST) -> Array[OutputEffect]
+
+pub(all) enum ParsedOutcome {
+  Success(ParsedBindings)
+  Failure(ParseFailure)
+  Ambiguous(ParsedAmbiguity)
+}
+pub fn ParsedOutcome::warnings(Self) -> Array[@abi.Warning]
+
+pub struct ResolvedBindings {
+  // private fields
+}
+
+pub(all) enum ResolvedOutcome {
+  Success(ResolvedBindings)
+  Failure(ParseFailure)
+}
+pub fn ResolvedOutcome::warnings(Self) -> Array[@abi.Warning]
+
 pub(all) struct SourceEntry {
   path : Array[String]
   key : String
-  source : @engine.Source
+  source : @abi.Source
 } derive(Eq, @debug.Debug)
 
 pub struct TtyObs {
@@ -232,7 +277,46 @@ pub struct TtyObs {
   cygwin : Bool
 } derive(Eq, @debug.Debug)
 
+pub struct ValueSources {
+  // private fields
+}
+
 // Type aliases
+pub using @abi {type Candidate}
+
+pub using @abi {type ConfigVal}
+
+pub using @abi {type DefError}
+
+pub using @abi {type DefErrorKind}
+
+pub using @abi {type EffectOp}
+
+pub using @abi {type ErrorKind}
+
+pub using @abi {type FnInvocation}
+
+pub using @abi {type HelpRepeatSpec}
+
+pub using @abi {type HelpSingleValue}
+
+pub using @abi {type HelpTypeRef}
+
+pub using @abi {type HelpValueStructure}
+
+pub using @abi {type ParseError}
+
+pub using @abi {type ResultValue}
+
+pub using @abi {type Source}
+
+pub using @abi {type TermHint}
+
+pub using @abi {type Value}
+
+pub using @abi {type Warning}
+
+pub using @abi {type WarningKind}
 
 // Traits
 

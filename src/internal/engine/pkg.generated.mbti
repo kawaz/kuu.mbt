@@ -1,0 +1,622 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/internal/engine"
+
+import {
+  "kawaz/kuu/abi",
+  "kawaz/kuu/extension",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn append_accumulator() -> &@extension.AccumulatorExt
+
+pub fn apply_accum_filter_chain(@extension.Registry, Array[@abi.FnInvocation], Array[@abi.Value]) -> Result[Array[@abi.Value], @extension.FnReason]
+
+pub fn apply_builtin_installer(String, InstallBuilder) -> Unit
+
+pub fn apply_filter_chain(@extension.Registry, Array[@abi.FnInvocation], @abi.Value) -> Result[@abi.Value, @extension.FnReason]
+
+pub fn apply_piece_filters(@extension.Registry, Array[@abi.FnInvocation], String) -> Result[String, @extension.FnReason]
+
+pub fn array_filter_descriptor(String, @extension.FilterSignature, Array[String], (Array[@abi.Value], Array[String]) -> Result[Array[@abi.Value], @extension.FnReason], observes? : Array[String]) -> @extension.ArrayFilterDescriptor
+
+pub fn attach_mode_of(String) -> @abi.AttachMode?
+
+pub fn bool_arg(String, @abi.BoolConfig, Array[@abi.FnInvocation]) -> Node
+
+pub fn bool_config_canonical() -> @abi.BoolConfig
+
+pub fn bool_type(config? : @abi.BoolConfig, value_slot? : Bool) -> &@extension.TypeExt
+
+pub fn build_export_map(Definition, @extension.Registry) -> Map[String, ExportKey]
+
+pub fn cell_fn_descriptor(String, Array[@extension.CellFnParameter], @extension.CellFnOutput, @extension.FnFallibility, observes? : Array[String], reasons? : Array[String], validate? : (@abi.FnCall) -> Result[Unit, @extension.FnReason], run? : (Array[@abi.FnArg], @extension.FnCtx) -> Result[@extension.FnOutput, @extension.FnReason]) -> @extension.CellFnDescriptor
+
+pub fn cell_fn_parameter(String, kind? : @extension.CellFnParameterKind, repetition? : @extension.CellFnRepetition) -> @extension.CellFnParameter
+
+pub fn chars_to_str(Array[Char], Int, Int) -> String
+
+pub fn classify_long_spelling(String, String, &@extension.TypeExt, @extension.Registry) -> LongSpelling
+
+pub fn classify_merge_piece(String) -> @extension.PieceMark
+
+pub fn collect_builtin_installer_errors(String, DefsView) -> Array[@abi.DefError]
+
+pub fn collect_installer_vocab_errors(Definition, Array[Array[String]]) -> Array[@abi.DefError]
+
+pub fn collect_scopes(Node, Map[String, Node]) -> Array[ScopedCons]
+
+pub fn complete_tree(Node, Array[String], defs? : Map[String, Node], after? : Array[String], extensions? : @extension.Registry) -> Array[@abi.Candidate]
+
+pub fn config_from_json(Json) -> @abi.ConfigVal
+
+pub fn configured_short_type(&@extension.TypeExt, @abi.RoundMode, Bool, @abi.BoolConfig) -> &@extension.TypeExt
+
+pub fn configured_type(&@extension.TypeExt, @abi.RoundMode, @abi.BoolConfig, allow_base_prefix? : Bool) -> &@extension.TypeExt
+
+pub fn continue_matcher(Array[@abi.Branch], Ctx, Array[@abi.Binding], (Ctx, Int, Array[@abi.Binding]) -> Array[@abi.Branch]) -> Array[@abi.Branch]
+
+pub fn count_type(allow_base_prefix? : Bool) -> &@extension.TypeExt
+
+pub fn decode_fn_invocation_parts(@abi.FnInvocationForm) -> Result[Array[String], String]
+
+pub fn deprecation_mark(String) -> Node
+
+pub fn effect_mark(String, @abi.EffectOp) -> Node
+
+pub fn element_head(ElementDef) -> Node
+
+pub fn element_value(Array[@abi.Binding], Array[String], String) -> String?
+
+pub fn element_value_in_subtree(Array[@abi.Binding], Array[String], String, String) -> String?
+
+pub fn entity_ext(hidden? : Bool, completer? : String?) -> &@extension.EntityExt
+
+pub fn enum_value_node(String, &@extension.TypeExt, Array[String]) -> Node
+
+pub fn eq_entry(String, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, merge? : Bool, deprecated? : Bool) -> @extension.EqEntry
+
+pub fn eq_sep_mode_of(String) -> @abi.EqSepMode?
+
+pub fn eq_split(String, Array[@extension.EqEntry]) -> &@extension.MatcherExt
+
+pub fn failure_mark(String) -> Node
+
+pub fn filter_descriptor(String, @extension.FilterSignature, Array[String], (@abi.Value, Array[String]) -> Result[@abi.Value, @extension.FnReason], observes? : Array[String]) -> @extension.FilterDescriptor
+
+pub fn filtered_number_arg(String, Int) -> Node
+
+pub fn find_help_entry(Node, Array[@abi.ParseError]) -> String?
+
+pub fn fired_action_of(Array[Array[@abi.Binding]]) -> String?
+
+pub fn flag_type(config? : @abi.BoolConfig) -> &@extension.TypeExt
+
+pub fn float_arg(String, Array[@abi.FnInvocation]) -> Node
+
+pub fn float_type() -> &@extension.TypeExt
+
+pub fn fn_ctx_filter(@extension.FilterInput, old? : @abi.Value?, observes? : Array[String], option? : (String) -> @abi.Value?, env? : (String) -> @abi.Value?, system? : (String) -> @abi.Value?) -> @extension.FnCtx
+
+pub fn from_entries_collector(@extension.FromEntriesSpec) -> &@extension.CollectorExt
+
+pub fn from_entries_spec_of(Json) -> @extension.FromEntriesSpec?
+
+pub fn int_arg(String, @abi.RoundMode, Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> Node
+
+pub fn int_type(round? : @abi.RoundMode, allow_base_prefix? : Bool) -> &@extension.TypeExt
+
+pub fn is_committed(Array[@abi.Binding], Array[String], String) -> Bool
+
+pub fn is_committed_in_subtree(Array[@abi.Binding], Array[String], String, String) -> Bool
+
+pub fn kv_arg(String, Array[@abi.FnInvocation]) -> Node
+
+pub fn kv_map_accumulator() -> &@extension.AccumulatorExt
+
+pub fn lower_definition(Definition, InstallerPlan, @extension.Registry, registry? : Map[String, Node]) -> Result[Scope, Array[@abi.DefError]]
+
+pub fn lower_definition_snapshot(Definition, InstallerPlan, @extension.Registry, registry? : Map[String, Node]) -> Result[LoweredDefinition, Array[@abi.DefError]]
+
+pub fn merge_accumulator() -> &@extension.AccumulatorExt
+
+pub fn node_resident_name(Node) -> String?
+
+pub fn none_cells(Scope) -> Array[NoneCell]
+
+pub fn none_type() -> &@extension.TypeExt
+
+pub fn number_arg(String, Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> Node
+
+pub fn number_type(allow_base_prefix? : Bool) -> &@extension.TypeExt
+
+pub fn or_branch_node(OrBranch) -> Node
+
+pub fn parse_bool(String, config? : @abi.BoolConfig) -> Bool?
+
+pub fn parse_error_not_a_bool(String, String, Int) -> @abi.ParseError
+
+pub fn parse_error_not_a_kv_pair(String, String, Int) -> @abi.ParseError
+
+pub fn parse_error_not_a_number(String, String, Int) -> @abi.ParseError
+
+pub fn parse_float(String) -> Double?
+
+pub fn parse_fn_invocation(@abi.FnInvocationForm) -> Result[@abi.FnInvocation, String]
+
+pub fn parse_int_value(String, @abi.RoundMode, allow_base_prefix? : Bool) -> Result[Int64, @abi.TypeParseFail]
+
+pub fn parse_number(String, allow_base_prefix? : Bool) -> Double?
+
+pub fn parse_tree(Node, Array[String], defs? : Map[String, Node], faildef? : FailDef, extensions? : @extension.Registry) -> Outcome
+
+pub fn round_mode_of(String) -> @abi.RoundMode?
+
+pub fn run_installer_fixpoint(InstallBuilder, Array[(InstallBuilder) -> Unit], (InstallBuilder) -> Unit) -> Result[Scope, Array[@abi.DefError]]
+
+pub fn scope_selected(Array[@abi.Binding], Array[String]) -> Bool
+
+pub fn sep_binds(String, String, String?, &@extension.TypeExt, Array[@abi.FnInvocation], Int, Bool, @extension.Registry) -> Result[Array[@abi.Binding], @abi.ParseError]
+
+pub fn separated_arg(String, String?, &@extension.TypeExt, @abi.RoundMode, @abi.BoolConfig, Array[@abi.FnInvocation], allow_base_prefix? : Bool, merge? : Bool) -> Node
+
+pub fn short_combine(String, Array[@extension.ShortEntry], combine? : Bool) -> &@extension.MatcherExt
+
+pub fn short_entry(Char, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, deprecated? : Bool, merge? : Bool, short_attached_value? : @abi.AttachMode, is_alias? : Bool) -> @extension.ShortEntry
+
+pub fn string_arg(String, Array[@abi.FnInvocation]) -> Node
+
+pub fn string_type() -> &@extension.TypeExt
+
+pub fn tried_triggers_of(Node, Array[@abi.ParseError]) -> Array[String]
+
+pub fn tty_type(String?, cygwin? : Bool) -> &@extension.TypeExt
+
+pub fn type_parse_error(String, Int, @abi.TypeParseFail) -> @abi.ParseError
+
+pub fn typed_arg(String, &@extension.TypeExt, Array[@abi.FnInvocation]) -> Node
+
+pub fn unwrap_single_collector() -> &@extension.CollectorExt
+
+pub fn value_str(@abi.Value) -> String
+
+pub fn value_to_configval(@abi.Value) -> @abi.ConfigVal
+
+pub fn warnings_of(Outcome) -> Array[@abi.Warning]
+
+// Errors
+
+// Types and methods
+pub(all) struct AmbiguousData {
+  interpretations : Array[AmbiguousInterpretation]
+  help_entry : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct AmbiguousInterpretation {
+  binds : Array[@abi.Binding]
+  claimants : Array[(String, String)]
+} derive(Eq, @debug.Debug)
+
+pub(all) struct CommandDef {
+  name : String
+  body : Definition
+  export_key : ExportKey
+} derive(Eq, @debug.Debug)
+
+pub(all) enum Constraint {
+  Requires(String, Array[String])
+  RequiresIf(String, String, String, Array[String])
+  Conflicts(String, Array[String])
+  Exclusive(String, Array[String])
+  Required(String, Array[RequiredCandidate])
+  RequiredGroup(String, Array[RequiredCandidate])
+} derive(Eq, @debug.Debug)
+
+pub struct Ctx {
+  // private fields
+}
+pub fn Ctx::extensions(Self) -> @extension.Registry
+pub fn Ctx::is_complete_mode(Self) -> Bool
+pub fn Ctx::token_at(Self, Int) -> String?
+
+pub(all) struct Definition {
+  scope : ScopeDeclaration
+  options : Array[ElementDef]
+  positionals : Array[ElementDef]
+  commands : Array[CommandDef]
+  aliases : Array[@abi.AliasDef]
+  help_types : Array[@abi.HelpTypeDeclaration]
+} derive(Eq, @debug.Debug)
+
+pub struct DefsView {
+  // private fields
+}
+pub fn DefsView::definition(Self) -> Definition
+pub fn DefsView::extensions(Self) -> @extension.Registry
+pub fn DefsView::new(Definition, Definition, Map[String, Node], @extension.Registry) -> Self
+pub fn DefsView::source_definition(Self) -> Definition
+pub fn DefsView::templates(Self) -> Map[String, Node]
+
+pub(all) enum ElementBody {
+  Cell
+  Or(Array[OrBranch])
+  Group(Array[ElementDef])
+  Enum(Array[String])
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ElementDef {
+  name : String
+  ty : &@extension.TypeExt
+  long : @abi.LongDeclaration
+  variants : Array[Variant]
+  short : Array[Char]
+  env : Array[String]
+  help_meta : @abi.HelpMetaDeclaration
+  is_tty : Bool
+  tty_stream : String?
+  tty_cygwin : Bool
+  is_dd : Bool
+  is_exact : Bool
+  dd_match : String?
+  dd_self_keep : Bool
+  is_global : Bool
+  is_inherit : Bool
+  is_inheritable : Bool
+  link_depth : Int
+  ref_target : String?
+  repeat : @abi.RepeatSpec?
+  optional : Bool
+  multiple : Bool
+  accumulator : String?
+  separator : String?
+  flatten : Bool?
+  collector : @abi.CollectorDeclaration?
+  fail_action : Bool
+  is_config_file : Bool
+  config_key : Array[String]?
+  export_key : ExportKey
+  requires : Array[String]
+  conflicts_with : Array[String]
+  exclusive_group : Array[String]
+  required_group : Array[String]
+  required : Bool
+  value_requires : Array[(String, String, Array[String])]
+  int_round : @abi.RoundMode
+  allow_base_prefix : Bool
+  bool_config : @abi.BoolConfig
+  deprecated : Bool
+  is_alias : Bool
+  hidden : Bool
+  completer : String?
+  default_values : Array[@abi.Value]?
+  default_fn : @abi.DefaultFnCall?
+  default_declared : Bool
+  piece_filters : Array[@abi.FnInvocation]
+  value_filters : Array[@abi.FnInvocation]
+  final_filters : Array[@abi.FnInvocation]
+  accum_filters : Array[@abi.FnInvocation]
+  long_prefix : String
+  short_prefix : String
+  env_prefix : String
+  auto_env : Bool
+  long_eq_sep : @abi.EqSepMode
+  short_combine : Bool
+  short_attached_value : @abi.AttachMode
+  body : ElementBody
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Entity {
+  name : String
+  link : String?
+  ty : &@extension.TypeExt
+  mut env_key : String?
+  config_seat : Bool
+  config_key : Array[String]?
+  is_config_file : Bool
+  mut is_inherit : Bool
+  accum : &@extension.AccumulatorExt?
+  flatten : Bool
+  is_multiple_decl : Bool
+  collector : &@extension.CollectorExt?
+  default_values : Array[@abi.Value]?
+  default_fn : @abi.DefaultFnCall?
+  separator : String?
+  piece_filters : Array[@abi.FnInvocation]
+  value_filters : Array[@abi.FnInvocation]
+  final_filters : Array[@abi.FnInvocation]
+  accum_filters : Array[@abi.FnInvocation]
+  extension : &@extension.EntityExt
+} derive(Eq, @debug.Debug)
+
+pub enum ExportKey {
+  Unset
+  Key(String)
+  Null
+} derive(Eq, @debug.Debug)
+pub fn ExportKey::key(String) -> Self
+pub fn ExportKey::null() -> Self
+pub fn ExportKey::unset() -> Self
+
+pub(all) enum FailDef {
+  AcceptsOnly
+  WithHeld
+  DeepestOnly
+} derive(Eq, @debug.Debug)
+
+pub(all) struct FailureData {
+  errors : Array[@abi.ParseError]
+  fired_action : String?
+  help_entry : String?
+  tried_triggers : Array[String]
+} derive(Eq, @debug.Debug)
+
+pub struct InstallBuilder {
+  // private fields
+}
+pub fn InstallBuilder::children(Self) -> Array[InstallChild]
+pub fn InstallBuilder::definition(Self) -> Definition
+pub fn InstallBuilder::extensions(Self) -> @extension.Registry
+pub fn InstallBuilder::new(Definition, InstallOutput, Array[InstallChild], Map[String, Node], @extension.Registry) -> Self
+pub fn InstallBuilder::output(Self) -> InstallOutput
+pub fn InstallBuilder::templates(Self) -> Map[String, Node]
+
+pub struct InstallChild {
+  // private fields
+}
+pub fn InstallChild::body(Self) -> InstallBuilder
+pub fn InstallChild::name(Self) -> String
+pub fn InstallChild::new(String, InstallBuilder) -> Self
+
+pub struct InstallOutput {
+  // private fields
+}
+pub fn InstallOutput::constraints(Self) -> Array[Constraint]
+pub fn InstallOutput::entities(Self) -> Array[Entity]
+pub fn InstallOutput::greedy(Self) -> Array[Node]
+pub fn InstallOutput::new(Array[Node]) -> Self
+pub fn InstallOutput::positional(Self) -> Array[Node]
+pub fn InstallOutput::push_constraint(Self, Constraint) -> Unit
+pub fn InstallOutput::push_entity(Self, Entity) -> Unit
+pub fn InstallOutput::push_greedy(Self, Node) -> Unit
+
+pub struct InstallerPlan {
+  // private fields
+}
+pub fn InstallerPlan::new(Array[Array[String]], Array[(InstallBuilder) -> Unit], Array[(DefsView) -> Array[@abi.DefError]]) -> Self
+
+pub(all) enum LongSpelling {
+  Main(String)
+  Variant(Variant)
+  Invalid(String, @abi.DefErrorKind)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct LoweredDefinition {
+  scope : Scope
+  declaration : Definition
+  completion_insert_form : String
+}
+
+pub(all) enum Node {
+  Exact(String)
+  RequiredArgument(String)
+  Bind(String, @abi.Value)
+  Or(Array[Node])
+  Seq(Array[Node])
+  Many(Node, Bool)
+  Scoped(String, Node)
+  ScopeNode(Scope)
+  NativeMatch(&@extension.MatcherExt)
+  Ext(&@extension.NodeExt)
+  Ref(String)
+  DdSatisfied(String)
+  DdMatchSatisfied(String, Bool, Bool, String)
+  CommandSatisfied(String, Scope)
+  Rooted(Node, Int)
+  BoundedTail(Node, Int, Bool)
+  IndexedRepeat(String, Node, Int, Int?)
+  GreedyRepeat(Node)
+}
+pub impl Eq for Node
+pub impl @debug.Debug for Node
+
+pub struct NoneCell {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn NoneCell::name(Self) -> String
+pub fn NoneCell::path(Self) -> Array[String]
+
+pub(all) struct OrBranch {
+  id : String
+  items : Array[ElementDef]
+} derive(Eq, @debug.Debug)
+
+pub(all) enum Outcome {
+  Success(Array[@abi.Binding])
+  Failure(FailureData)
+  Ambiguous(AmbiguousData)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct RequiredCandidate {
+  name : String
+  wrapper : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Scope {
+  greedy : Array[Node]
+  positional : Array[Node]
+  entities : Array[Entity]
+  constraints : Array[Constraint]
+} derive(@debug.Debug)
+pub impl Eq for Scope
+
+pub(all) struct ScopeDeclaration {
+  name : String?
+  help_meta : @abi.HelpMetaDeclaration
+} derive(Eq, @debug.Debug)
+
+pub struct ScopedCons {
+  path : Array[String]
+  constraints : Array[Constraint]
+  entities : Array[Entity]
+} derive(@debug.Debug)
+pub impl Eq for ScopedCons
+
+pub(all) struct Variant {
+  trigger : String
+  op : @abi.EffectOp
+  operand : @abi.Value?
+} derive(Eq, @debug.Debug)
+
+// Type aliases
+pub using @abi {type AliasDef}
+
+pub using @extension {type ArrayFilterDescriptor}
+
+pub using @abi {type AttachMode}
+
+pub using @abi {type Binding}
+
+pub using @abi {type BoolConfig}
+
+pub using @abi {type Branch}
+
+pub using @abi {type Candidate}
+
+pub type CellFn = (Array[@abi.FnArg], @extension.FnCtx) -> Result[@extension.FnOutput, @extension.FnReason]
+
+pub using @extension {type CellFnArity}
+
+pub using @extension {type CellFnDescriptor}
+
+pub using @extension {type CellFnOutput}
+
+pub using @extension {type CellFnParameter}
+
+pub using @extension {type CellFnParameterKind}
+
+pub using @extension {type CellFnRepetition}
+
+pub using @extension {type CellSentinel}
+
+pub using @abi {type CollectorDeclaration}
+
+pub using @abi {type ConfigVal}
+
+pub using @abi {type DecodeCtx}
+
+pub using @abi {type DecodedOwnedDeclaration}
+
+pub using @abi {type DefError}
+
+pub using @abi {type DefErrorKind}
+
+pub using @extension {type DefaultCtx}
+
+pub using @abi {type DefaultFnCall}
+
+pub using @extension {type EffectCtx}
+
+pub using @abi {type EffectOp}
+
+pub using @extension {type EqEntry}
+
+pub using @abi {type EqSepMode}
+
+pub using @abi {type ErrorKind}
+
+pub using @extension {type FilterCtx}
+
+pub using @extension {type FilterDescriptor}
+
+pub using @extension {type FilterInput}
+
+pub using @extension {type FilterSignature}
+
+pub using @abi {type FnArg}
+
+pub using @abi {type FnCall}
+
+pub using @extension {type FnCtx}
+
+pub using @extension {type FnFallibility}
+
+pub using @abi {type FnInvocation}
+
+pub using @abi {type FnInvocationForm}
+
+pub using @extension {type FnOutput}
+
+pub using @extension {type FnReason}
+
+pub type FnResult = Result[@extension.FnOutput, @extension.FnReason]
+
+pub using @extension {type FromEntriesSpec}
+
+pub using @abi {type HelpMetaDeclaration}
+
+pub using @abi {type HelpRenderDecl}
+
+pub using @abi {type HelpRepeatSpec}
+
+pub using @abi {type HelpSingleValue}
+
+pub using @abi {type HelpTypeDeclaration}
+
+pub using @abi {type HelpTypeRef}
+
+pub using @abi {type HelpValueStructure}
+
+pub using @abi {type LongDeclaration}
+
+pub type LowerSeat = (Bool) -> Result[Array[@abi.Binding], @abi.ParseError]
+
+pub using @abi {type OwnedDeclaration}
+
+pub using @abi {type ParseError}
+
+pub using @extension {type PieceMark}
+
+pub using @extension {type Registry}
+
+pub using @abi {type RepeatSpec}
+
+pub using @abi {type ResultValue}
+
+pub type Resume = (@extension.Ctx, Int, Array[@abi.Binding]) -> Array[@abi.Branch]
+
+pub using @abi {type RoundMode}
+
+pub using @extension {type SeatCtx}
+
+pub using @extension {type ShortEntry}
+
+pub using @abi {type Source}
+
+pub using @abi {type TermHint}
+
+pub using @abi {type TypeParseFail}
+
+pub using @abi {type Value}
+
+pub using @abi {type Warning}
+
+pub using @abi {type WarningKind}
+
+pub using @extension {trait AccumulatorExt}
+
+pub using @extension {trait CapabilityExt}
+
+pub using @extension {trait CollectorExt}
+
+pub using @extension {trait CompleterExt}
+
+pub using @extension {trait EntityExt}
+
+pub using @extension {trait MatcherExt}
+
+pub using @extension {trait NodeExt}
+
+pub using @extension {trait TypeExt}
+
+// Traits
+

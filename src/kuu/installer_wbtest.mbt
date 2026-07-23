@@ -20,7 +20,7 @@ fn empty_def() -> @engine.Definition {
 }
 
 ///|
-fn empty_help_meta_for_test() -> @engine.HelpMetaDeclaration {
+fn empty_help_meta_for_test() -> @abi.HelpMetaDeclaration {
   {
     help: None,
     help_long: None,
@@ -50,8 +50,7 @@ fn empty_help_meta_for_test() -> @engine.HelpMetaDeclaration {
 fn is_resident(node : @engine.Node, kind : String, name : String) -> Bool {
   match node {
     Ext(extension) =>
-      extension.kind() == kind &&
-      @builtins.node_resident_name(node) == Some(name)
+      extension.kind() == kind && @engine.node_resident_name(node) == Some(name)
     _ => false
   }
 }
@@ -61,11 +60,11 @@ fn is_resident(node : @engine.Node, kind : String, name : String) -> Bool {
 /// helpers_wbtest.mbt と同じ肥大化を招くため、ここでは lowering wbtest が触る軸だけ label に出す。
 fn el(
   name : String,
-  ty : &@engine.TypeExt,
-  // DR-071 §1 / kawaz 裁定 2026-07-08: `long` は wire 二形 (@engine.LongDeclaration) をそのまま受け取る — bool/array
+  ty : &@extension.TypeExt,
+  // DR-071 §1 / kawaz 裁定 2026-07-08: `long` は wire 二形 (@abi.LongDeclaration) をそのまま受け取る — bool/array
   // の区別が installer 層の resolve_long (糖衣展開・DR-076 §2 flag 差し替え/補完) に必要なため、
   // Array[String] へ潰さない。既定は `List([])` (= absent = 入口なし)。
-  long? : @engine.LongDeclaration = List([]),
+  long? : @abi.LongDeclaration = List([]),
   short? : Array[Char] = [],
   env? : Array[String] = [],
   is_tty? : Bool = false,
@@ -81,11 +80,11 @@ fn el(
   dd_self_keep? : Bool = false,
   is_global? : Bool = false,
   is_inherit? : Bool = false,
-  repeat? : @engine.RepeatSpec? = None,
+  repeat? : @abi.RepeatSpec? = None,
   multiple? : Bool = false,
   accumulator? : String? = None,
   flatten? : Bool? = None,
-  collector? : @engine.CollectorDeclaration? = None,
+  collector? : @abi.CollectorDeclaration? = None,
   ref_? : String? = None,
   piece_filters? : Array[String] = [],
   value_filters? : Array[String] = [],
@@ -95,12 +94,12 @@ fn el(
   // json_conformance_test.mbt) already carry these — added here so lowering wbtest cases can
   // exercise `long_eq_sep` without hand-writing a full @engine.ElementDef literal.
   long_prefix? : String = "--",
-  long_eq_sep? : @engine.EqSepMode = @engine.Allow,
+  long_eq_sep? : @abi.EqSepMode = @abi.Allow,
   // issue scope-config-object-gap: same rationale, for the DESIGN §7.2 fields `inst_short`/
   // `inst_long` now consume directly (`short_prefix`/`short_attached_value`).
   short_prefix? : String = "-",
   short_combine? : Bool = true,
-  short_attached_value? : @engine.AttachMode = @engine.Allow,
+  short_attached_value? : @abi.AttachMode = @abi.Allow,
 ) -> @engine.ElementDef {
   {
     name,
@@ -170,11 +169,11 @@ fn el(
     default_values: None,
     default_fn: None,
     default_declared: false,
-    int_round: @engine.Error,
+    int_round: @abi.Error,
     allow_base_prefix: false,
     bool_config: @builtins.bool_config_canonical(),
     // `chain` (filters_wbtest.mbt, same package): keeps this builder's colon-shorthand ergonomics
-    // (`piece_filters=["trim"]`) even though `@engine.ElementDef` fields are `Array[@engine.FnInvocation]` in
+    // (`piece_filters=["trim"]`) even though `@engine.ElementDef` fields are `Array[@abi.FnInvocation]` in
     // production (issue filter-spelling-inband-encoding-retyping).
     piece_filters: chain(piece_filters),
     value_filters: chain(value_filters),
@@ -193,7 +192,7 @@ fn el(
 
 ///|
 /// canonical な installer chain (13 全部)。順列耐性テスト以外はこれを使う。
-fn all_installers() -> Array[&@engine.InstallerExt] {
+fn all_installers() -> Array[&@node.InstallerExt] {
   [
     @builtins.long_installer(),
     @builtins.short_installer(),
@@ -216,7 +215,7 @@ fn all_installers() -> Array[&@engine.InstallerExt] {
 /// harness で扱うため、この層は「lowering が Ok を返した @engine.Scope の構造」を細かく検査する。
 fn ok_scope(
   def : @engine.Definition,
-  order : Array[&@engine.InstallerExt],
+  order : Array[&@node.InstallerExt],
 ) -> @engine.Scope {
   match test_lower_definition(def, order) {
     Ok(sc) => sc
@@ -315,7 +314,7 @@ test "long installer: a deprecated value option's main-entry satellite carries a
   )
   match o {
     @engine.Success(bs) => {
-      assert_eq(resolved_values(bs, "port"), [@engine.String("8080")])
+      assert_eq(resolved_values(bs, "port"), [@abi.String("8080")])
       assert_eq(@engine.warnings_of(o).map(w => w.element), ["port"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -323,16 +322,16 @@ test "long installer: a deprecated value option's main-entry satellite carries a
 }
 
 ///|
-/// 保証 (DR-058 §2): a deprecated FLAG's @engine.Set-variant satellite (`inst_long`'s "@engine.Variant entries"
+/// 保証 (DR-058 §2): a deprecated FLAG's @abi.Set-variant satellite (`inst_long`'s "@engine.Variant entries"
 /// loop — the `:set:true` bare-fire DR-076 §2 規則1 composes for a classic flag) ALSO carries a
 /// trailing `deprecation resident`, symmetric with the value main-entry case above. `inst_long` has 2 lowering
 /// sites for a long entry point (space-form main-entry vs the variant loop, since a bare flag fire
-/// is a @engine.Set variant, not a main entry — see the "long installer: a flag's `long:true`..." test
+/// is a @abi.Set variant, not a main entry — see the "long installer: a flag's `long:true`..." test
 /// above); `inst_short` has only 1 (a cluster char has no variant/main-entry split, `depr` rides
 /// the single `@builtins.ShortEntry`). Both `inst_long` sites need their own deprecation resident application for parity
 /// with the short side — this test locks the variant-loop site (the previous test locks the
 /// main-entry site). Firing `--verbose` both sets `verbose=true` AND records `@depr:verbose`.
-test "long installer: a deprecated flag's @engine.Set-variant satellite carries a deprecation resident warning marker (DR-058 §2)" {
+test "long installer: a deprecated flag's @abi.Set-variant satellite carries a deprecation resident warning marker (DR-058 §2)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
@@ -348,14 +347,14 @@ test "long installer: a deprecated flag's @engine.Set-variant satellite carries 
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--verbose"),
-      @engine.Bind("verbose", @engine.Bool(true)),
+      @engine.Bind("verbose", @abi.Bool(true)),
       @builtins.deprecation_mark("verbose"),
     ]),
   )
   let o = @engine.parse_tree(@engine.ScopeNode(sc), ["--verbose"], defs=Map([]))
   match o {
     @engine.Success(bs) => {
-      assert_eq(resolved_values(bs, "verbose"), [@engine.Bool(true)])
+      assert_eq(resolved_values(bs, "verbose"), [@abi.Bool(true)])
       assert_eq(@engine.warnings_of(o).map(w => w.element), ["verbose"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -399,7 +398,7 @@ test "long installer: a deprecated Enum (values-constrained) main entry carries 
   )
   match o {
     @engine.Success(bs) => {
-      assert_eq(resolved_values(bs, "color"), [@engine.String("red")])
+      assert_eq(resolved_values(bs, "color"), [@abi.String("red")])
       assert_eq(@engine.warnings_of(o).map(w => w.element), ["color"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -451,7 +450,7 @@ test "long installer: a deprecated Or (structural or) main entry carries a depre
   )
   match o {
     @engine.Success(bs) => {
-      assert_eq(resolved_values(bs, "num"), [@engine.Number(5.0)])
+      assert_eq(resolved_values(bs, "num"), [@abi.Number(5.0)])
       assert_eq(@engine.warnings_of(o).map(w => w.element), ["level"])
     }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -467,7 +466,7 @@ test "long installer: a deprecated Or (structural or) main entry carries a depre
 /// `normalize_option` (`resolve_long` 経由) がこれを解釈して `variants` を合成する — installer_wbtest
 /// が JSON decode を経由せず規則1 を直接検証できる (kawaz 裁定 2026-07-08「installer_wbtest からも
 /// 規則1/2 が検証可能になる」の実演)。値セルの型 @builtins.flag_type()→@builtins.bool_type() 差し替えも同じ normalize_option の仕事。
-/// flag の裸発火は合成された `:set:true` の @engine.Set variant が @engine.Variant entries loop 経由で @engine.Bind(name, true)
+/// flag の裸発火は合成された `:set:true` の @abi.Set variant が @engine.Variant entries loop 経由で @engine.Bind(name, true)
 /// 衛星を生む。eq-split matcher には登録されない (この要素は main entry `:set` を持たない = 値パイプ
 /// ライン自体が無い、古典 flag の糖衣 `long:true` → `[":set:true"]` のみのケース)。
 test "long installer: a flag's `long:true` composes a `:set:true` variant → bare @engine.Bind(true) satellite (no @builtins.eq_split entry), default:false preset (DR-076 §2 規則1)" {
@@ -476,20 +475,20 @@ test "long installer: a flag's `long:true` composes a `:set:true` variant → ba
     options: [el("verbose", @builtins.flag_type(), long=Bool(true))],
   }
   let sc = ok_scope(def, [@builtins.long_installer()])
-  // main entry 無し (long=[]) + @engine.Set variant 1 本 → eq-split entry は無い → greedy = @engine.Bind 衛星 1 本のみ。
+  // main entry 無し (long=[]) + @abi.Set variant 1 本 → eq-split entry は無い → greedy = @engine.Bind 衛星 1 本のみ。
   assert_eq(sc.greedy.length(), 1)
   assert_eq(
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--verbose"),
-      @engine.Bind("verbose", @engine.Bool(true)),
+      @engine.Bind("verbose", @abi.Bool(true)),
     ]),
   )
   // normalize_option の @builtins.flag_type()→@builtins.bool_type() 差し替えは値セルの型のみに効く。entity 自体は name=verbose のまま。
   let ent = entity_of(sc, "verbose").unwrap()
   assert_eq(ent.ty, @builtins.bool_type())
   // default:false preset (DR-051 §2), stored as the length-1-degenerate array (DR-083 §1)
-  assert_eq(ent.default_values, Some([@engine.Bool(false)]))
+  assert_eq(ent.default_values, Some([@abi.Bool(false)]))
 }
 
 ///|
@@ -513,10 +512,7 @@ test "long installer: a flag's explicit `long:[\":set\"]` composes `:set:true` A
           resident, "builtin/bool", "verbose",
         ) => has_value_slot = true
       @engine.Seq(
-        [
-          @engine.Exact("--verbose"),
-          @engine.Bind("verbose", @engine.Bool(true)),
-        ]
+        [@engine.Exact("--verbose"), @engine.Bind("verbose", @abi.Bool(true))]
       ) => has_bare_bind = true
       _ => ()
     }
@@ -547,17 +543,14 @@ test "long installer: a count's `long:true` composes an `:update:increment` vari
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--verbose"),
-      @builtins.effect_mark(
-        "verbose",
-        @engine.Invoke({ name: "incr", args: [] }),
-      ),
+      @builtins.effect_mark("verbose", @abi.Invoke({ name: "incr", args: [] })),
     ]),
   )
   let ent = entity_of(sc, "verbose").unwrap()
   // ensure_entity が @builtins.count_type()→@builtins.number_type() の型差し替えを担う (normalize_option ではない)。
   assert_eq(ent.ty, @builtins.number_type())
   // default:0 preset (DR-077 §3), stored as the length-1-degenerate array (DR-083 §1)
-  assert_eq(ent.default_values, Some([@engine.Number(0.0)]))
+  assert_eq(ent.default_values, Some([@abi.Number(0.0)]))
 }
 
 ///|
@@ -576,10 +569,7 @@ test "long installer: a count's explicit `long:[\":incr\"]` lowers to the same b
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--verbose"),
-      @builtins.effect_mark(
-        "verbose",
-        @engine.Invoke({ name: "incr", args: [] }),
-      ),
+      @builtins.effect_mark("verbose", @abi.Invoke({ name: "incr", args: [] })),
     ]),
   )
 }
@@ -833,7 +823,7 @@ test "multiple installer: a declared collector rides straight through to @engine
         @builtins.string_type(),
         long=List([":set"]),
         multiple=true,
-        collector=Some(@engine.CollectorDeclaration::named("unwrap_single")),
+        collector=Some(@abi.CollectorDeclaration::named("unwrap_single")),
       ),
     ],
   }
@@ -854,7 +844,7 @@ test "multiple installer: configured from_entries collector reaches Entity" {
         long=List([":set"]),
         multiple=true,
         collector=Some(
-          @engine.CollectorDeclaration::configured(
+          @abi.CollectorDeclaration::configured(
             "from_entries",
             "entries".to_json(),
           ),
@@ -883,7 +873,7 @@ test "multiple installer: a collector declared without multiple/repeat is droppe
         "n",
         @builtins.number_type(),
         long=List([":set"]),
-        collector=Some(@engine.CollectorDeclaration::named("unwrap_single")),
+        collector=Some(@abi.CollectorDeclaration::named("unwrap_single")),
       ),
     ],
   }
@@ -963,7 +953,7 @@ test "positional exact literal: matching token consumes 1 and succeeds with no b
 /// 完全経路が 1 本も残らない — held error も無い (実機確認: `d.errors.length() == 0`、
 /// `render_outcome` は "fail:no complete parse" — 他の long/short トリガ不一致と同じ「無音」standing
 /// であり、positional exact 専用の新規エラー経路は無い。node.mbt の bare `@engine.Exact` doc comment
-/// 「an unmatched trigger is a silent Reject, NOT a @engine.Pending: no part of the entry was consumed, so
+/// 「an unmatched trigger is a silent Reject, NOT a @abi.Pending: no part of the entry was consumed, so
 /// nothing is half-read」がそのままここでも成立する)。
 test "positional exact literal: non-matching token silently rejects (0 complete paths, 0 held errors, issue 2026-07-15-audit-node-nodashstr-deprmark-variants)" {
   let def : @engine.Definition = {
@@ -1026,7 +1016,7 @@ test "global + long + fixpoint: child scope receives @engine.Rooted satellite (l
   assert_eq(entity_of(child_sc, "verbose"), None)
   // root には verbose entity + default:false preset がある (DR-083 §1: 長さ 1 縮退配列)
   let root_ent = entity_of(sc, "verbose").unwrap()
-  assert_eq(root_ent.default_values, Some([@engine.Bool(false)]))
+  assert_eq(root_ent.default_values, Some([@abi.Bool(false)]))
 }
 
 // ── 順列耐性 (5 invariants + fixpoint): 順序が違っても同じ @engine.Scope に収束 ─────────
@@ -1064,7 +1054,7 @@ test "installer chain: order-independent thanks to 5 invariants + fixpoint" {
 /// 保証: parse_definition の static check は generic check と登録住人の check を全て走らせて 1 list に
 /// append し、first-error 打ち切りしない (DR-054 §4 「コンパイラの定石」)。ここでは (a) unknown vocab
 /// (chain に env installer が無い、env 属性を持つ要素あり) と (b) 登録済み repeat 住人の invalid range
-/// (repeat min>max) を同時に混ぜ、両方の @engine.DefError が enumerate されることを確認する。
+/// (repeat min>max) を同時に混ぜ、両方の @abi.DefError が enumerate されることを確認する。
 test "parse_definition enumerates all def-errors (no first-error 打ち切り, DR-054 §4)" {
   let def : @engine.Definition = {
     ..empty_def(),
@@ -1082,15 +1072,15 @@ test "parse_definition enumerates all def-errors (no first-error 打ち切り, D
   match test_lower_definition(def, [@builtins.repeat_installer()]) {
     Ok(_) => abort("expected Err")
     Err(errs) => {
-      // 少なくとも @engine.UnknownVocab (long / repeat) と @engine.InvalidRange の 3 種を含む — 打ち切っていれば
+      // 少なくとも @abi.UnknownVocab (long / repeat) と @abi.InvalidRange の 3 種を含む — 打ち切っていれば
       // 最初の 1 種で止まっていたはず。
       let mut has_unknown = false
       let mut has_range = false
       for e in errs {
-        if e.kind == @engine.UnknownVocab {
+        if e.kind == @abi.UnknownVocab {
           has_unknown = true
         }
-        if e.kind == @engine.InvalidRange {
+        if e.kind == @abi.InvalidRange {
           has_range = true
         }
       }
@@ -1105,11 +1095,11 @@ test "parse_definition enumerates all def-errors (no first-error 打ち切り, D
 ///|
 /// 保証 (DR-078 §1「解決順は DR-032 のまま: スコープ内 → definitions (templates)」/ DR-054
 /// absent-ref): `ref_target` の解決先が registry のどこにも無い場合、`parse_definition` は
-/// `@engine.AbsentRef` を definition-error として列挙する。ランタイム側の `check_elem_absent_ref`
+/// `@abi.AbsentRef` を definition-error として列挙する。ランタイム側の `check_elem_absent_ref`
 /// (installer.mbt) は本 issue 以前から実装済みだったが、decode 層 (`ref` キー) が無かったため
 /// この分岐は未踏だった — decode 配線後の疎通確認として、registry を意図的に空のまま
 /// (`Map::new()`) `parse_definition` へ渡し、absent-ref が正しく検出されることを固定する。
-test "parse_definition: a ref target absent from registry is @engine.AbsentRef (DR-078 §1 / DR-054)" {
+test "parse_definition: a ref target absent from registry is @abi.AbsentRef (DR-078 §1 / DR-054)" {
   let def : @engine.Definition = {
     ..empty_def(),
     positionals: [
@@ -1128,7 +1118,7 @@ test "parse_definition: a ref target absent from registry is @engine.AbsentRef (
     Err(errs) => {
       let mut has_absent_ref = false
       for e in errs {
-        if e.kind == @engine.AbsentRef {
+        if e.kind == @abi.AbsentRef {
           has_absent_ref = true
         }
       }
@@ -1144,12 +1134,12 @@ test "parse_definition: a ref target absent from registry is @engine.AbsentRef (
 /// same single slot, losing 先食い suppression / 取り分選好 for them while still parsing
 /// "successfully" (a mis-shaped-but-quiet result, the exact failure mode
 /// [[retreat-is-last-resort]]/契約 が禁じる). `parse_definition` must reject this at definition
-/// time (`@engine.InvalidRange`, mirrors the sibling positional `min > max` check just above) rather than
-/// let it run mis-wired. Registry left empty (color 未登録) — `@engine.AbsentRef` co-occurs, but this
-/// test only asserts `@engine.InvalidRange` is ALSO enumerated (DR-054 §4 no first-error 打ち切り)。
+/// time (`@abi.InvalidRange`, mirrors the sibling positional `min > max` check just above) rather than
+/// let it run mis-wired. Registry left empty (color 未登録) — `@abi.AbsentRef` co-occurs, but this
+/// test only asserts `@abi.InvalidRange` is ALSO enumerated (DR-054 §4 no first-error 打ち切り)。
 /// spec fixture 昇格済み (DR-082、fixtures/definition-error/option-ref-repeat-min-invalid-range.json)
 /// — 本 wbtest はそれに先行する unit 層の pin として残す。
-test "parse_definition: an option's ref+repeat with min > 1 is @engine.InvalidRange (codex review #4)" {
+test "parse_definition: an option's ref+repeat with min > 1 is @abi.InvalidRange (codex review #4)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
@@ -1171,7 +1161,7 @@ test "parse_definition: an option's ref+repeat with min > 1 is @engine.InvalidRa
     Err(errs) => {
       let mut has_range = false
       for e in errs {
-        if e.kind == @engine.InvalidRange && e.element == "hlcolors" {
+        if e.kind == @abi.InvalidRange && e.element == "hlcolors" {
           has_range = true
         }
       }
@@ -1209,9 +1199,9 @@ test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (co
       )
     Err(errs) =>
       for e in errs {
-        if e.kind == @engine.InvalidRange {
+        if e.kind == @abi.InvalidRange {
           abort(
-            "min:1 must not raise @engine.InvalidRange (only min>1 is unsupported)",
+            "min:1 must not raise @abi.InvalidRange (only min>1 is unsupported)",
           )
         }
       }
@@ -1221,20 +1211,20 @@ test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (co
 ///|
 /// 保証 (issue 2026-07-09-accum-fold-update-default-ops、team-lead 裁定 2026-07-10 最終版): a
 /// `multiple` element carrying an `update` variant (`:update:<transform>`, DR-077 §1) is
-/// @engine.InvalidRange — `collect_unsupported_option_ref_repeat` (上記) と同型の「構造的に宣言できるが
+/// @abi.InvalidRange — `collect_unsupported_option_ref_repeat` (上記) と同型の「構造的に宣言できるが
 /// 実装が対応できない組合せを definition-error で落とす」契約の3例目。DR-077 の `update` semantics
 /// は `cell = f(old)` で `old` はセルの現在値だが、accum セルではその値が累積状態 (T[]) であり、
-/// filters registry の transform は全て T=>T (scalar、`@engine.FilterSignature`、DR-077 §2
+/// filters registry の transform は全て T=>T (scalar、`@extension.FilterSignature`、DR-077 §2
 /// 「使えるのは transform シグネチャ T=>T の filter のみ」) — 構造的に型が噴合し、legal な解決が今の
 /// registry には存在しない。これを ACCUMULATE fold の実行時に検出するのではなく、DR-077 §2 が既に
 /// 「未登録の transform 名」「validate-only signature」を definition-error で閉じている
-/// (`@builtins.classify_long_spelling` の `@builtins.Invalid` 経路、両方とも `@engine.UnknownVocab`) のと同じ層で静的に閉じる
-/// (この3つ目は multiple 宣言との組合せなので `@builtins.classify_long_spelling` の DSL-parse 単体では判定でき
+/// (`@engine.classify_long_spelling` の `@engine.Invalid` 経路、両方とも `@abi.UnknownVocab`) のと同じ層で静的に閉じる
+/// (この3つ目は multiple 宣言との組合せなので `@engine.classify_long_spelling` の DSL-parse 単体では判定でき
 /// ず、`normalize_surface` が variants を確定させた後の別 pass になる)。
 ///
 /// spec fixture 昇格済み (DR-082、fixtures/definition-error/accum-update-invalid-range.json) —
 /// 本 wbtest はそれに先行する unit 層の pin として残す。
-test "parse_definition: an update variant on a multiple element is @engine.InvalidRange (accum-fold-update-default-ops)" {
+test "parse_definition: an update variant on a multiple element is @abi.InvalidRange (accum-fold-update-default-ops)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
@@ -1254,7 +1244,7 @@ test "parse_definition: an update variant on a multiple element is @engine.Inval
     Err(errs) => {
       let mut has_range = false
       for e in errs {
-        if e.kind == @engine.InvalidRange && e.element == "tags" {
+        if e.kind == @abi.InvalidRange && e.element == "tags" {
           has_range = true
         }
       }
@@ -1279,9 +1269,9 @@ test "parse_definition: an update variant on a scalar (non-multiple) element is 
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
-        if e.kind == @engine.InvalidRange {
+        if e.kind == @abi.InvalidRange {
           abort(
-            "a scalar (non-multiple) element with an update variant must not raise @engine.InvalidRange",
+            "a scalar (non-multiple) element with an update variant must not raise @abi.InvalidRange",
           )
         }
       }
@@ -1291,13 +1281,13 @@ test "parse_definition: an update variant on a scalar (non-multiple) element is 
 ///|
 /// 保証 (codex レビュー High 1、2026-07-10): alias の `long_override` (DR-057 §3 差分上書き) 経由の
 /// `:update:<transform>` も、canonical 要素本体の `variants` (上の2テストが固定する経路) と同じく
-/// @engine.InvalidRange で REJECT される — `collect_unsupported_accum_update` が canonical 側の variants
+/// @abi.InvalidRange で REJECT される — `collect_unsupported_accum_update` が canonical 側の variants
 /// しか見ないと、alias 経由の update variant が検査をすり抜けて `parse_definition` を通過し、発火時
 /// に canonical (multiple 要素) への @engine.Update binding が resolve.mbt の accum 分岐に届いて abort に
 /// 到達してしまう (修正前の実際の repro)。canonical `tags` (multiple:true) は自身は update variant
 /// を持たず、alias `t` の long_override だけが `bump:incr` を持つ形で、alias 経由の
 /// 検査が独立して機能することを固定する。
-test "parse_definition: an alias's long_override update variant on a multiple canonical is @engine.InvalidRange (codex High 1)" {
+test "parse_definition: an alias's long_override update variant on a multiple canonical is @abi.InvalidRange (codex High 1)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
@@ -1322,7 +1312,7 @@ test "parse_definition: an alias's long_override update variant on a multiple ca
     Err(errs) => {
       let mut has_range = false
       for e in errs {
-        if e.kind == @engine.InvalidRange && e.element == "tags" {
+        if e.kind == @abi.InvalidRange && e.element == "tags" {
           has_range = true
         }
       }
@@ -1354,9 +1344,9 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
-        if e.kind == @engine.InvalidRange {
+        if e.kind == @abi.InvalidRange {
           abort(
-            "an alias update variant on a scalar (non-multiple) canonical must not raise @engine.InvalidRange",
+            "an alias update variant on a scalar (non-multiple) canonical must not raise @abi.InvalidRange",
           )
         }
       }
@@ -1365,7 +1355,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
 
 ///|
 /// 保証 (codex レビュー High 2、2026-07-10): @builtins.count_type() の **short** 発火は variant を一切経由せず
-/// `builtins/matcher_residents.mbt`'s `walk_short` が直接 `Binding::effect(e.name, @engine.Invoke({ name: "incr", args: [] }), @engine.Cli)` を生成する
+/// `builtins/matcher_residents.mbt`'s `walk_short` が直接 `Binding::effect(e.name, @abi.Invoke({ name: "incr", args: [] }), @abi.Cli)` を生成する
 /// (`count_increment_variant` の `long:true` 糖衣経路とは別の生成源) — `collect_unsupported_accum_
 /// update` の variant 走査ではこの経路が最初から見えないため、@builtins.count_type()×multiple という組合せ自体を
 /// 要素レベルで閉じる (`collect_unsupported_count_multiple`)。修正前の実際の repro:
@@ -1373,7 +1363,7 @@ test "parse_definition: an alias's long_override update variant on a scalar cano
 /// args `["-n"]` の発火で resolve.mbt の accum 分岐の abort に到達していた。
 /// spec fixture 昇格済み (DR-082、fixtures/definition-error/count-multiple-invalid-range.json) —
 /// 本 wbtest はそれに先行する unit 層の pin として残す。
-test "parse_definition: a count element with multiple is @engine.InvalidRange (codex High 2, short-fired repro)" {
+test "parse_definition: a count element with multiple is @abi.InvalidRange (codex High 2, short-fired repro)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [el("n", @builtins.count_type(), short=['n'], multiple=true)],
@@ -1383,7 +1373,7 @@ test "parse_definition: a count element with multiple is @engine.InvalidRange (c
     Err(errs) => {
       let mut has_range = false
       for e in errs {
-        if e.kind == @engine.InvalidRange && e.element == "n" {
+        if e.kind == @abi.InvalidRange && e.element == "n" {
           has_range = true
         }
       }
@@ -1404,80 +1394,80 @@ test "parse_definition: a count element without multiple is NOT rejected (対極
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
-        if e.kind == @engine.InvalidRange {
+        if e.kind == @abi.InvalidRange {
           abort(
-            "a count element without multiple must not raise @engine.InvalidRange",
+            "a count element without multiple must not raise @abi.InvalidRange",
           )
         }
       }
   }
 }
 
-// ── long DSL 分類 (DR-011 / DR-071 / DR-076): @builtins.classify_long_spelling 輪郭 ───────
+// ── long DSL 分類 (DR-011 / DR-071 / DR-076): @engine.classify_long_spelling 輪郭 ───────
 
 ///|
-/// `@builtins.classify_long_spelling` is the SOLE interpreter of the colon DSL (DR-011/071/076), shared by
+/// `@engine.classify_long_spelling` is the SOLE interpreter of the colon DSL (DR-011/071/076), shared by
 /// the JSON-fixture decoder (`dec_variant`) and `desugar_aliases`'s alias `long_override` (issue
 /// 2026-07-08: aliases used to skip this classification entirely, misreading `":set:true"` as a
 /// literal `"--:set:true"` spelling). This pins all 4 classification outcomes on representative
 /// spellings, keyed on `own_name` (the caller's own resolved name — canonical OR alias, DR-057 §3).
-test "@builtins.classify_long_spelling: the 4 outcomes on representative spellings" {
-  // (1) @builtins.Main: the bare `:set` sentinel resolves to `own_name` verbatim, no operand.
+test "@engine.classify_long_spelling: the 4 outcomes on representative spellings" {
+  // (1) @engine.Main: the bare `:set` sentinel resolves to `own_name` verbatim, no operand.
   match
-    @builtins.classify_long_spelling(
+    @engine.classify_long_spelling(
       ":set",
       "ssl",
       @builtins.bool_type(),
-      canonical_registry(),
+      canonical_registry().extensions(),
     ) {
-    @builtins.Main(n) => assert_eq(n, "ssl")
-    _ => fail("expected @builtins.Main")
+    @engine.Main(n) => assert_eq(n, "ssl")
+    _ => fail("expected @engine.Main")
   }
-  // (2) @builtins.Variant with an EMPTY prefix (`:set:true`, DR-076 §4): the element's own bare-degenerate
+  // (2) @engine.Variant with an EMPTY prefix (`:set:true`, DR-076 §4): the element's own bare-degenerate
   // main entry — trigger is `own_name` verbatim (NOT "-"+own_name — that would be a bogus extra
   // spelling installer.mbt never intended, since it always does `"--" + v.trigger`).
   match
-    @builtins.classify_long_spelling(
+    @engine.classify_long_spelling(
       ":set:true",
       "ssl",
       @builtins.bool_type(),
-      canonical_registry(),
+      canonical_registry().extensions(),
     ) {
-    @builtins.Variant({ trigger, op, operand }) => {
+    @engine.Variant({ trigger, op, operand }) => {
       assert_eq(trigger, "ssl")
-      assert_eq(op, @engine.Set)
-      assert_eq(operand, Some(@engine.Bool(true)))
+      assert_eq(op, @abi.Set)
+      assert_eq(operand, Some(@abi.Bool(true)))
     }
-    _ => fail("expected @builtins.Variant")
+    _ => fail("expected @engine.Variant")
   }
-  // (3) @builtins.Variant with a NON-empty prefix (`no:set:false`, DR-011): a separately-triggered named
+  // (3) @engine.Variant with a NON-empty prefix (`no:set:false`, DR-011): a separately-triggered named
   // variant — trigger is `prefix + "-" + own_name`.
   match
-    @builtins.classify_long_spelling(
+    @engine.classify_long_spelling(
       "no:set:false",
       "ssl",
       @builtins.bool_type(),
-      canonical_registry(),
+      canonical_registry().extensions(),
     ) {
-    @builtins.Variant({ trigger, op, operand }) => {
+    @engine.Variant({ trigger, op, operand }) => {
       assert_eq(trigger, "no-ssl")
-      assert_eq(op, @engine.Set)
-      assert_eq(operand, Some(@engine.Bool(false)))
+      assert_eq(op, @abi.Set)
+      assert_eq(operand, Some(@abi.Bool(false)))
     }
-    _ => fail("expected @builtins.Variant")
+    _ => fail("expected @engine.Variant")
   }
-  // (4) @builtins.Invalid: no colon at all — DR-011 明確化 (kawaz 裁定 2026-07-08): a colon-less string is a
+  // (4) @engine.Invalid: no colon at all — DR-011 明確化 (kawaz 裁定 2026-07-08): a colon-less string is a
   // variant DSL syntax error, NOT a literal-spelling fallback. An explicit non-name-derived spelling
   // (e.g. an alias's "gzip") belongs to a DR-057 alias element, not to `long`'s DSL.
   match
-    @builtins.classify_long_spelling(
+    @engine.classify_long_spelling(
       "gzip",
       "compress",
       @builtins.string_type(),
-      canonical_registry(),
+      canonical_registry().extensions(),
     ) {
-    @builtins.Invalid(s, _) => assert_eq(s, "gzip")
-    _ => fail("expected @builtins.Invalid")
+    @engine.Invalid(s, _) => assert_eq(s, "gzip")
+    _ => fail("expected @engine.Invalid")
   }
   // (4b) DR-114 §5.1: `default` cell_fn descriptor は arity 0 (sentinel `UseDefault` を返す)、
   // よって `"default:default:5"` (args=["5"]) は `descriptor.validate_invocation` で reject され
@@ -1485,44 +1475,44 @@ test "@builtins.classify_long_spelling: the 4 outcomes on representative spellin
   // DR-114 で廃止 (default sentinel 化)。正例として裸の `":default"` (arity 0 充足) は operand を
   // 持たない `Variant(Default, operand=None)` に classify される。
   match
-    @builtins.classify_long_spelling(
+    @engine.classify_long_spelling(
       "default:default:5",
       "port",
       @builtins.number_type(),
-      canonical_registry(),
+      canonical_registry().extensions(),
     ) {
-    @builtins.Invalid(s, kind) => {
+    @engine.Invalid(s, kind) => {
       assert_eq(s, "default:default:5")
-      assert_eq(kind, @engine.InvalidArgument)
+      assert_eq(kind, @abi.InvalidArgument)
     }
-    _ => fail("expected @builtins.Invalid (default is arity-0 in DR-114)")
+    _ => fail("expected @engine.Invalid (default is arity-0 in DR-114)")
   }
   match
-    @builtins.classify_long_spelling(
+    @engine.classify_long_spelling(
       ":default",
       "port",
       @builtins.number_type(),
-      canonical_registry(),
+      canonical_registry().extensions(),
     ) {
-    @builtins.Variant({ trigger, op, operand }) => {
+    @engine.Variant({ trigger, op, operand }) => {
       assert_eq(trigger, "port")
-      assert_eq(op, @engine.Default)
+      assert_eq(op, @abi.Default)
       assert_eq(operand, None)
     }
     _ =>
-      fail("expected @builtins.Variant (bare `:default`, DR-114 §5.1 arity 0)")
+      fail("expected @engine.Variant (bare `:default`, DR-114 §5.1 arity 0)")
   }
-  // (5) @builtins.Invalid: an unrecognized effect word (colon present, but not set/unset/empty/default) is
+  // (5) @engine.Invalid: an unrecognized effect word (colon present, but not set/unset/empty/default) is
   // ALSO a syntax error (DR-011 明確化) — not a literal-spelling fallback either.
   match
-    @builtins.classify_long_spelling(
+    @engine.classify_long_spelling(
       "no:bogus:false",
       "ssl",
       @builtins.bool_type(),
-      canonical_registry(),
+      canonical_registry().extensions(),
     ) {
-    @builtins.Invalid(s, _) => assert_eq(s, "no:bogus:false")
-    _ => fail("expected @builtins.Invalid (unrecognized op word)")
+    @engine.Invalid(s, _) => assert_eq(s, "no:bogus:false")
+    _ => fail("expected @engine.Invalid (unrecognized op word)")
   }
 }
 
@@ -1542,7 +1532,7 @@ test "parse_definition: a colon-less long spelling is a DR-054 unknown-vocab def
     Err(errs) => {
       let mut found = false
       for e in errs {
-        if e.kind == @engine.UnknownVocab && e.element == "verbose" {
+        if e.kind == @abi.UnknownVocab && e.element == "verbose" {
           found = true
         }
       }
@@ -1565,7 +1555,7 @@ test "parse_definition: an unrecognized effect word in long is a DR-054 unknown-
     Err(errs) => {
       let mut found = false
       for e in errs {
-        if e.kind == @engine.UnknownVocab && e.element == "ssl" {
+        if e.kind == @abi.UnknownVocab && e.element == "ssl" {
           found = true
         }
       }
@@ -1576,7 +1566,7 @@ test "parse_definition: an unrecognized effect word in long is a DR-054 unknown-
 
 ///|
 /// DR-011 明確化 (kawaz 裁定 2026-07-08): alias `long_override` (DR-057 §3 差分上書き) is the SAME
-/// colon DSL canonical `long` uses (`@builtins.classify_long_spelling` shared, installer.mbt comment "二経路が
+/// colon DSL canonical `long` uses (`@engine.classify_long_spelling` shared, installer.mbt comment "二経路が
 /// drift しないよう分類器を共用") — the 明確化 applies wherever the DSL appears, not just canonical
 /// `long`. A colon-less `long_override` spelling must be an `unknown-vocab` definition-error too,
 /// caught by `collect_invalid_alias_long_override` BEFORE `desugar_aliases` ever runs (so the invalid
@@ -1604,7 +1594,7 @@ test "parse_definition: a colon-less alias long_override spelling is a DR-054 un
     Err(errs) => {
       let mut found = false
       for e in errs {
-        if e.kind == @engine.UnknownVocab && e.element == "chatty" {
+        if e.kind == @abi.UnknownVocab && e.element == "chatty" {
           found = true
         }
       }
@@ -1645,7 +1635,7 @@ test "desugar_aliases: alias long:true on a flag canonical composes :set:true (b
   for g in sc.greedy {
     match g {
       @engine.Seq(
-        [@engine.Exact("--v"), @engine.Bind("verbose", @engine.Bool(true))]
+        [@engine.Exact("--v"), @engine.Bind("verbose", @abi.Bool(true))]
       ) => has_bare_bind = true
       @engine.Seq([@engine.Exact("--v"), resident]) if is_resident(
           resident, "builtin/bool", "verbose",
@@ -1697,7 +1687,7 @@ test "desugar_aliases: alias long:true on a string canonical stays a value-slot 
 /// (sub) まで正しく伝播しなければならない — 「同名なら idempotent」という緩い判定だと、先に
 /// コピーされた方 (トリガ A) が後続の別トリガ (トリガ B) のコピーを誤って抑止してしまう。
 ///
-/// この regression は `parse()` 経由の end-to-end テストでは検出できなかった: DR-041 §4 の
+/// この regression は `parse_legacy()` 経由の end-to-end テストでは検出できなかった: DR-041 §4 の
 /// 早閉じ+porous によって、sub 自体にトリガが 1 本しか無くても祖先 (mid) の greedy 面がまだ読める
 /// ため、observable な parse 結果 (effects/result) が偶然「両方効いているように」見えてしまう。
 /// そのため `materialize` 後の `@engine.Scope` 構造 (sub 自身の greedy 面に積まれた `@engine.Rooted` 衛星の本数) を
@@ -1790,7 +1780,7 @@ test "add_inheritable_copy: an alias-provided (variants-side) trigger shadows th
             {
               ..el("ttl", @builtins.number_type()),
               is_inheritable: true,
-              default_values: Some([@engine.Number(60.0)]),
+              default_values: Some([@abi.Number(60.0)]),
             },
           ],
         },
@@ -1823,12 +1813,12 @@ test "add_inheritable_copy: an alias-provided (variants-side) trigger shadows th
 // ── DR-077: update 効果 + count (definition-error 系、installer 層) ──────────────
 
 ///|
-/// 保証 (codex 指摘 2、DR-077 §2 「不在 → unknown-vocab」): `@builtins.classify_long_spelling` は
+/// 保証 (codex 指摘 2、DR-077 §2 「不在 → unknown-vocab」): `@engine.classify_long_spelling` は
 /// `:update:<name>` の `<name>` を filters registry へ実際に `@engine.lookup_filter` する (旧実装は
 /// `parts[2] == "increment"` のハードコード allowlist だった — 節目レビューで指摘され registry
-/// lookup ベースへ置換)。registry に存在しない名前 (`bogus`) は `None` の分岐で `@builtins.Invalid` へ倒し
+/// lookup ベースへ置換)。registry に存在しない名前 (`bogus`) は `None` の分岐で `@engine.Invalid` へ倒し
 /// (installer.mbt コメント参照)、既存の push_invalid_long/collect_invalid_long_dsl 機構にそのまま
-/// 合流して DR-054 definition-error (`@engine.UnknownVocab`) になる。新しい definition-error チェックを
+/// 合流して DR-054 definition-error (`@abi.UnknownVocab`) になる。新しい definition-error チェックを
 /// 増やさず既存機構に相乗りする設計判断の固定。「不在」ケース (次の wbtest の「存在するが
 /// signature 不適合」ケースと対)。
 test "DR-077 §2: an unrecognized update transform name is a DR-054 unknown-vocab definition-error" {
@@ -1844,7 +1834,7 @@ test "DR-077 §2: an unrecognized update transform name is a DR-054 unknown-voca
     Err(errs) => {
       let mut found = false
       for e in errs {
-        if e.kind == @engine.UnknownVocab && e.element == "verbose" {
+        if e.kind == @abi.UnknownVocab && e.element == "verbose" {
           found = true
         }
       }
@@ -1858,8 +1848,8 @@ test "DR-077 §2: an unrecognized update transform name is a DR-054 unknown-voca
 /// registry に**実在する**が signature は `Validate` (`filters.mbt`) — `T→T` の transform ではなく
 /// `T→T raise` の validator なので `update` (DR-077 §1 `cell = f(old)`、旧値から新値を計算する
 /// transform を要求) には使えない。前の wbtest (`bogus` = 不在) と対で「存在するが signature 不適合」
-/// ケースを分離 pin する — どちらも現行 `@engine.DefErrorKind` (DR-054) に signature 専用の細分 kind が無い
-/// ため同じ `@engine.UnknownVocab` に倒れる (installer.mbt の `@builtins.classify_long_spelling` doc comment 参照、
+/// ケースを分離 pin する — どちらも現行 `@abi.DefErrorKind` (DR-054) に signature 専用の細分 kind が無い
+/// ため同じ `@abi.UnknownVocab` に倒れる (installer.mbt の `@engine.classify_long_spelling` doc comment 参照、
 /// 実装の裁量として報告済み)。
 test "DR-077 §2: a registered but Validate-signature filter is also a DR-054 unknown-vocab definition-error" {
   let def : @engine.Definition = {
@@ -1876,7 +1866,7 @@ test "DR-077 §2: a registered but Validate-signature filter is also a DR-054 un
     Err(errs) => {
       let mut found = false
       for e in errs {
-        if e.kind == @engine.UnknownVocab && e.element == "verbose" {
+        if e.kind == @abi.UnknownVocab && e.element == "verbose" {
           found = true
         }
       }
@@ -1904,7 +1894,7 @@ test "DR-114 §5.1: extra args to a registered cell_fn are a definition-time Inv
     Err(errs) => {
       let mut found = false
       for e in errs {
-        if e.kind == @engine.InvalidArgument && e.element == "verbose" {
+        if e.kind == @abi.InvalidArgument && e.element == "verbose" {
           found = true
         }
       }
@@ -1915,7 +1905,7 @@ test "DR-114 §5.1: extra args to a registered cell_fn are a definition-time Inv
 
 ///|
 /// End-to-end 保証: installer chain (`parse_definition`) が組んだ @engine.Scope に対する CLI 発火
-/// (`-vvv`) → `parse()` の生 binding 列 → `resolve_scope` の cli seat fold、という完全なパイプライン
+/// (`-vvv`) → `parse_legacy()` の生 binding 列 → `resolve_scope` の cli seat fold、という完全なパイプライン
 /// が DR-077 の実運用シナリオ (`-v -v -v` = verbose level 3) を一気通貫で満たすことを固定する
 /// (resolve_wbtest.mbt の低レベル `ceff` 直接構築テストと対をなす、installer 由来の @engine.Scope での確認)。
 test "DR-077 end-to-end: parse_definition → parse → resolve_scope ledgers -vvv to 3" {
@@ -1935,7 +1925,7 @@ test "DR-077 end-to-end: parse_definition → parse → resolve_scope ledgers -v
           for b in resolved {
             if b.key == "verbose" {
               found = true
-              assert_eq(b.value, @engine.Number(3.0))
+              assert_eq(b.value, @abi.Number(3.0))
             }
           }
           assert_true(found)
@@ -2051,12 +2041,12 @@ test "repeat installer: self-ref cons template key does not collide with a same-
 /// 保証 (issue 2026-07-09-constraint-path-filtering-gap、DR-047 §5 明確化 kawaz 裁定
 /// 2026-07-09 で期待値が反転した wbtest): `requires` の目的語が bool 型 (フラグ含む) の場合、
 /// 充足条件は「値の有無」ではなく「解決後の値が true であること」(値源不問)。判定は値源ラダーが
-/// 解ける後段でしか行えないため、**`parse()` 単体では bool target の requires を KTop が常に
+/// 解ける後段でしか行えないため、**`parse_legacy()` 単体では bool target の requires を KTop が常に
 /// スキップする** (常に pass 扱い、"c" を一切与えなくても @engine.Success のまま — これは vacuous
 /// satisfaction ではなく、後段フィルタを通す前の意図された中間状態)。`resolve.mbt` の
 /// `apply_requires_filter` (final_filters/accum_filters と同じ側の後段処理) を通して初めて、c が
 /// 未解決 (default:false のまま) なら requires 違反として @engine.Failure に確定する — vacuous
-/// satisfaction は後段フィルタ適用で解消されることを、この2段 (parse() 単体 / フィルタ後) で
+/// satisfaction は後段フィルタ適用で解消されることを、この2段 (parse_legacy() 単体 / フィルタ後) で
 /// 固定する。次の wbtest (target が非フラグ = KTop のまま従来通り) との対で挙動差を確認する。
 test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_requires_filter enforces it" {
   let a = {
@@ -2067,7 +2057,7 @@ test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_requires_fi
   let def : @engine.Definition = { ..empty_def(), options: [a, c] }
   let sc = ok_scope(def, all_installers())
   let root = @engine.ScopeNode(sc)
-  // parse() 単体: bool target なので KTop は常に pass 扱い (c を与えなくても @engine.Success)。
+  // parse_legacy() 単体: bool target なので KTop は常に pass 扱い (c を与えなくても @engine.Success)。
   match @engine.parse_tree(root, ["--a"], defs=Map([])) {
     @engine.Success(_) => ()
     other =>
@@ -2089,7 +2079,7 @@ test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_requires_fi
     @engine.Failure(d) => {
       let mut found = false
       for e in d.errors {
-        if e.kind == @engine.Constraint && e.reason == "requires_violated" {
+        if e.kind == @abi.Constraint && e.reason == "requires_violated" {
           found = true
         }
       }
@@ -2118,7 +2108,7 @@ test "DR-047 §5: requires targeting a FLAG — KTop skips it, apply_requires_fi
 ///|
 /// 保証 (DR-088 §2/§4): `requires` の目的語が非フラグ (env 宣言あり、CLI/default 無し) でも、
 /// KTop の探索中判定 (`value_declared`) は「env 宣言がある」ことだけで経路を完全と数える (値の実
-/// 解決はしない、bare `parse()` の時点で既に `@engine.Success`) — DR-088 §1「宣言された値源はデフォルトの
+/// 解決はしない、bare `parse_legacy()` の時点で既に `@engine.Success`) — DR-088 §1「宣言された値源はデフォルトの
 /// 存在」の帰結。最終的な充足判定 (真の値があるか) は `apply_requires_filter` (post-parse、解決済み
 /// bindings の読者) が担う: 実機再現の本体は次の wbtest ペア (env 実値あり/なし)。
 test "DR-088: requires targeting an env-declared non-flag is a complete path at KTop even before resolving" {
@@ -2195,7 +2185,7 @@ test "value-present-ladder-gap: requires targeting a non-flag with no env value 
     @engine.Failure(d) => {
       let mut found = false
       for e in d.errors {
-        if e.kind == @engine.Constraint && e.reason == "requires_violated" {
+        if e.kind == @abi.Constraint && e.reason == "requires_violated" {
           found = true
         }
       }
@@ -2227,7 +2217,7 @@ test "issue bool-requires-config-inherit-gap: requires targeting a config-source
   let cfg_file = {
     ..el("cfg", @builtins.string_type(), long=List([":set"])),
     is_config_file: true,
-    default_values: Some([@engine.String("/app.toml")]),
+    default_values: Some([@abi.String("/app.toml")]),
   }
   let a = {
     ..el("a", @builtins.flag_type(), long=List([":set"])),
@@ -2263,7 +2253,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
   let cfg_file = {
     ..el("cfg", @builtins.string_type(), long=List([":set"])),
     is_config_file: true,
-    default_values: Some([@engine.String("/app.toml")]),
+    default_values: Some([@abi.String("/app.toml")]),
   }
   let a = {
     ..el("a", @builtins.flag_type(), long=List([":set"])),
@@ -2278,7 +2268,7 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
       @engine.Failure(d) => {
         let mut found = false
         for e in d.errors {
-          if e.kind == @engine.Constraint && e.reason == "requires_violated" {
+          if e.kind == @abi.Constraint && e.reason == "requires_violated" {
             found = true
           }
         }
@@ -2404,7 +2394,7 @@ test "issue bool-requires-config-inherit-gap: inherit-sourced bool absent still 
     @engine.Failure(d) => {
       let mut found = false
       for e in d.errors {
-        if e.kind == @engine.Constraint && e.reason == "requires_violated" {
+        if e.kind == @abi.Constraint && e.reason == "requires_violated" {
           found = true
         }
       }
@@ -2446,16 +2436,13 @@ test "issue bool-requires-config-inherit-gap: existing CLI-committed bool target
 
 // ── codex Medium 追従 (issue merge-no-separator-marker-gap): separator 無し merge 宣言の
 // end-to-end 固定。resolve_wbtest.mbt の合成 @engine.Entity テストは eval.mbt/installer.mbt の value_prim
-// ルーティングを一切通らない (@engine.Binding を手組みするため) — この gap は「実 CLI args → parse() →
+// ルーティングを一切通らない (@abi.Binding を手組みするため) — この gap は「実 CLI args → parse_legacy() →
 // resolve_scope」の一気通貫でしか顕在化しなかった (`el()` の `separator: None` 固定と組み合わせて
 // merge 宣言だけ足すことで、正に「separator 未宣言」の形が作れる)。 ─────────────────────────
 
 ///|
-fn resolved_values(
-  bs : Array[@engine.Binding],
-  key : String,
-) -> Array[@engine.Value] {
-  let out : Array[@engine.Value] = []
+fn resolved_values(bs : Array[@abi.Binding], key : String) -> Array[@abi.Value] {
+  let out : Array[@abi.Value] = []
   for b in bs {
     if b.key == key {
       out.push(b.value)
@@ -2466,7 +2453,7 @@ fn resolved_values(
 
 ///|
 /// 保証 (上書き): separator 未宣言の merge 要素でも、マーカーを含まない単一発火は普通に add される
-/// (DR-034 §6.3 の縮退 — 1 piece = トークン全体、`@engine.classify_merge_piece` を通しても marker に一致
+/// (DR-034 §6.3 の縮退 — 1 piece = トークン全体、`@extension.classify_merge_piece` を通しても marker に一致
 /// しない文字列はそのまま literal)。
 test "codex Medium: merge without separator — no-marker single fire adds (overwrite degenerate)" {
   let def : @engine.Definition = {
@@ -2491,9 +2478,7 @@ test "codex Medium: merge without separator — no-marker single fire adds (over
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(resolved_values(resolved, "fields"), [
-            @engine.String("hello"),
-          ])
+          assert_eq(resolved_values(resolved, "fields"), [@abi.String("hello")])
         Err(_) => fail("expected Ok")
       }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -2502,7 +2487,7 @@ test "codex Medium: merge without separator — no-marker single fire adds (over
 
 ///|
 /// 保証 (remove 単独): 2 回目の発火 `-hello` は separator が無いので 1 piece のまま
-/// `@engine.classify_merge_piece` に渡り、`-` 始まりなので remove マーカーと判定される (旧実装では
+/// `@extension.classify_merge_piece` に渡り、`-` 始まりなので remove マーカーと判定される (旧実装では
 /// separator 無しだと separated resident に一切進まず、`-hello` はただの literal 文字列として上書きされ
 /// `["-hello"]` になっていた — このケースが退行検知の主眼)。暗黙先頭 `@` が補われ old=[hello] を
 /// splice、remove("hello") がそれを削って結果は空になる。
@@ -2561,9 +2546,7 @@ test "codex Medium: merge without separator — a lone splice-marker fire is ide
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(resolved_values(resolved, "fields"), [
-            @engine.String("hello"),
-          ])
+          assert_eq(resolved_values(resolved, "fields"), [@abi.String("hello")])
         Err(_) => fail("expected Ok")
       }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -2592,7 +2575,7 @@ test "codex Medium: merge without separator — an escaped piece is a literal ad
     @engine.Success(bs) =>
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
-          assert_eq(resolved_values(resolved, "fields"), [@engine.String("-x")])
+          assert_eq(resolved_values(resolved, "fields"), [@abi.String("-x")])
         Err(_) => fail("expected Ok")
       }
     other => fail("expected @engine.Success, got " + render_outcome(other))
@@ -2601,12 +2584,12 @@ test "codex Medium: merge without separator — an escaped piece is a literal ad
 
 ///|
 /// 保証 (DR-085 §1 訂正、kawaz 裁定 2026-07-10): a `regex_match` filter entry whose pattern fails to
-/// compile is a definition-error, kind=@engine.InvalidArgument (spec fixture 昇格済み: fixtures/definition-
+/// compile is a definition-error, kind=@abi.InvalidArgument (spec fixture 昇格済み: fixtures/definition-
 /// error/regex-match-compile-invalid-argument.json — 本 wbtest はそれに先行する unit 層の pin として
 /// 残す、`accum-update-invalid-range` の wbtest/fixture 対と同じ運用)。`[` は文字クラス開始のみで閉じ
 /// `]` を欠く未完成構文 — regex エンジンの compile 段で方言を問わず共通に構文エラーになる (DR-085 §1
 /// 波及節の「方言差の出ない共通パターン」条件を満たす不正 pattern)。
-test "parse_definition: a regex_match filter with an uncompilable pattern is @engine.InvalidArgument (DR-085 §1 訂正)" {
+test "parse_definition: a regex_match filter with an uncompilable pattern is @abi.InvalidArgument (DR-085 §1 訂正)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
@@ -2620,7 +2603,7 @@ test "parse_definition: a regex_match filter with an uncompilable pattern is @en
     Err(errs) => {
       let mut has_invalid_argument = false
       for e in errs {
-        if e.kind == @engine.InvalidArgument && e.element == "code" {
+        if e.kind == @abi.InvalidArgument && e.element == "code" {
           has_invalid_argument = true
         }
       }
@@ -2646,9 +2629,9 @@ test "parse_definition: a regex_match filter with a compilable pattern is NOT re
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
-        if e.kind == @engine.InvalidArgument {
+        if e.kind == @abi.InvalidArgument {
           abort(
-            "a regex_match entry with a compilable pattern must not raise @engine.InvalidArgument",
+            "a regex_match entry with a compilable pattern must not raise @abi.InvalidArgument",
           )
         }
       }
@@ -2677,7 +2660,7 @@ test "parse_definition: regex_match compile check also fires for value_filters a
     Err(errs) => {
       let mut found = false
       for e in errs {
-        if e.kind == @engine.InvalidArgument && e.element == "a" {
+        if e.kind == @abi.InvalidArgument && e.element == "a" {
           found = true
         }
       }
@@ -2697,7 +2680,7 @@ test "parse_definition: regex_match compile check also fires for value_filters a
     Err(errs) => {
       let mut found = false
       for e in errs {
-        if e.kind == @engine.InvalidArgument && e.element == "b" {
+        if e.kind == @abi.InvalidArgument && e.element == "b" {
           found = true
         }
       }
@@ -2712,7 +2695,7 @@ test "parse_definition: regex_match compile check also fires for value_filters a
 /// を書いた場合、pattern compile 検査 (`collect_invalid_regex_pattern`) は「その属性が要求する
 /// registry が regex_match を実際に所有する場合のみ」走る — ARRAY filter registry は regex_match を
 /// 所有しないため、accum_filters には compile 検査が一切走らず、`collect_unknown_filter` が単純な
-/// @engine.UnknownVocab (綴りが ARRAY registry の owns 集合に無い) のみを出す。旧テストは「両方出る」ことを
+/// @abi.UnknownVocab (綴りが ARRAY registry の owns 集合に無い) のみを出す。旧テストは「両方出る」ことを
 /// 固定していたが、これは DR-102 §2「自 registry のみを見る」単純化と矛盾する副次検査だった —
 /// 明確化 note を反映しこの契約 (unknown-vocab のみ、invalid-argument は出ない) に更新する。
 test "parse_definition: an accum element's accum_filters regex_match entry is unknown-vocab ONLY (registry ownership gate, DR-102 §2)" {
@@ -2733,10 +2716,10 @@ test "parse_definition: an accum element's accum_filters regex_match entry is un
       let mut has_invalid_argument = false
       let mut has_unknown_vocab = false
       for e in errs {
-        if e.element == "c" && e.kind == @engine.InvalidArgument {
+        if e.element == "c" && e.kind == @abi.InvalidArgument {
           has_invalid_argument = true
         }
-        if e.element == "c" && e.kind == @engine.UnknownVocab {
+        if e.element == "c" && e.kind == @abi.UnknownVocab {
           has_unknown_vocab = true
         }
       }
@@ -2949,7 +2932,7 @@ test "DR-093: a required:true option with a declared default is vacuously satisf
   let name = {
     ..el("name", @builtins.string_type(), long=Bool(true)),
     required: true,
-    default_values: Some([@engine.String("fallback")]),
+    default_values: Some([@abi.String("fallback")]),
   }
   let def : @engine.Definition = { ..empty_def(), options: [name] }
   let sc = ok_scope(def, all_installers())
@@ -3182,7 +3165,7 @@ test "DR-099 §3/§7: an option selecting builtin/tty without tty_stream is a de
     Err(errs) => {
       let mut flagged = false
       for e in errs {
-        if e.element == "use_color" && e.kind == @engine.InvalidRange {
+        if e.element == "use_color" && e.kind == @abi.InvalidRange {
           flagged = true
         }
       }
@@ -3212,7 +3195,7 @@ test "DR-099 §3/§7: a positional selecting builtin/tty without tty_stream is a
     Err(errs) => {
       let mut flagged = false
       for e in errs {
-        if e.element == "stdin_tty" && e.kind == @engine.InvalidRange {
+        if e.element == "stdin_tty" && e.kind == @abi.InvalidRange {
           flagged = true
         }
       }
@@ -3294,7 +3277,7 @@ test "DR-089 対極: a pre-existing explicit-type element is unaffected by none 
 test "DR-088: a plain scalar positional with a declared default is a complete path with 0 tokens" {
   let seconds = {
     ..pos("seconds", @builtins.int_type()),
-    default_values: Some([@engine.Number(10.0)]),
+    default_values: Some([@abi.Number(10.0)]),
   }
   let def : @engine.Definition = { ..empty_def(), positionals: [seconds] }
   let sc = ok_scope(def, all_installers())
@@ -3323,7 +3306,7 @@ test "DR-088: a plain scalar positional with a declared default is a complete pa
 test "DR-088: a plain scalar positional with a declared default still consumes a supplied token" {
   let seconds = {
     ..pos("seconds", @builtins.int_type()),
-    default_values: Some([@engine.Number(10.0)]),
+    default_values: Some([@abi.Number(10.0)]),
   }
   let def : @engine.Definition = { ..empty_def(), positionals: [seconds] }
   let sc = ok_scope(def, all_installers())
@@ -3402,11 +3385,11 @@ test "DR-088 対極2: an explicit optional:true positional is unaffected (still 
 // エスケープ済み pattern を使う。spec fixture 側にも報告済み (完了報告参照)。 ──────────────
 
 ///|
-fn dd_value_to_str(v : @engine.Value) -> String {
+fn dd_value_to_str(v : @abi.Value) -> String {
   match v {
-    @engine.String(s) => s
-    @engine.Number(d) => d.to_string()
-    @engine.Bool(b) => b.to_string()
+    @abi.String(s) => s
+    @abi.Number(d) => d.to_string()
+    @abi.Bool(b) => b.to_string()
   }
 }
 
@@ -3414,7 +3397,7 @@ fn dd_value_to_str(v : @engine.Value) -> String {
 /// 保証 (実機再現の pin、DR-090 §2/§3 の canonical 適用): `xargs -n 1 rm -f a` 型の輪郭。
 /// `-n` は known option として発火し値 `1` を消費 (値スロットは raw 消費、DR-041 §4 — dd pattern
 /// と形が交わらない)。`rm` (最初の非ハイフン operand) が pattern dd に一致して発火・自己保持
-/// (self:keep、消費0で @engine.Accept) — `rm` 自身を含め以降 (`-f`, `a`) が positional 域 + severed に
+/// (self:keep、消費0で @abi.Accept) — `rm` 自身を含め以降 (`-f`, `a`) が positional 域 + severed に
 /// 流れ、`-f` は既知 option の綴りでも severed により raw のまま (再発火しない、実 xargs と同じ)。
 test "DR-090: xargs-style pattern dd (self:keep) — option fires, value slot raw, pattern-dd self-keep, tail severed" {
   let n = { ..el("n", @builtins.int_type(), short=['n']) }
@@ -3455,7 +3438,7 @@ test "DR-090: xargs-style pattern dd (self:keep) — option fires, value slot ra
 }
 
 ///|
-fn elem_value_bs(bs : Array[@engine.Binding], key : String) -> String? {
+fn elem_value_bs(bs : Array[@abi.Binding], key : String) -> String? {
   let mut v : String? = None
   for b in bs {
     if b.key == key {
@@ -3500,7 +3483,7 @@ test "DR-090 対極: exact dd (no match/self declared) is unaffected — drop + 
 
 ///|
 /// 保証: dd の `match` 正規表現が host dialect で compile 不能な場合、definition-error になる
-/// (DR-090 §2、DR-085 §1 訂正の regex_match pattern compile 失敗と同じ kind=@engine.InvalidArgument)。
+/// (DR-090 §2、DR-085 §1 訂正の regex_match pattern compile 失敗と同じ kind=@abi.InvalidArgument)。
 test "DR-090: an uncompilable dd match pattern is a definition-error" {
   let dd = {
     ..el("dd", @builtins.string_type(), is_dd=true, dd_match=Some("["))
@@ -3511,7 +3494,7 @@ test "DR-090: an uncompilable dd match pattern is a definition-error" {
     Err(errs) => {
       let mut found = false
       for e in errs {
-        if e.element == "dd" && e.kind == @engine.InvalidArgument {
+        if e.element == "dd" && e.kind == @abi.InvalidArgument {
           found = true
         }
       }
@@ -3532,9 +3515,9 @@ test "DR-090 対極: a compilable dd match pattern is NOT rejected" {
     Ok(_) => ()
     Err(errs) =>
       for e in errs {
-        if e.kind == @engine.InvalidArgument {
+        if e.kind == @abi.InvalidArgument {
           abort(
-            "a dd with a compilable match pattern must not raise @engine.InvalidArgument",
+            "a dd with a compilable match pattern must not raise @abi.InvalidArgument",
           )
         }
       }
@@ -3545,16 +3528,16 @@ test "DR-090 対極: a compilable dd match pattern is NOT rejected" {
 
 ///|
 /// Guarantees (DR-091 §3 "if=(type: file) 級" motivating case): a `long_prefix:"" +
-/// long_eq_sep:@engine.Require` element parses its eq-split form (`if=abc`, one token) — this is
+/// long_eq_sep:@abi.Require` element parses its eq-split form (`if=abc`, one token) — this is
 /// the ONLY entry point left once the space-form main entry is withheld (below).
-test "DR-091 §3 / DR-096 §1 end-to-end: long_prefix:\"\" + long_eq_sep:@engine.Require accepts the eq form" {
+test "DR-091 §3 / DR-096 §1 end-to-end: long_prefix:\"\" + long_eq_sep:@abi.Require accepts the eq form" {
   let if_elem = {
     ..el(
       "if",
       @builtins.string_type(),
       long=Bool(true),
       long_prefix="",
-      long_eq_sep=@engine.Require,
+      long_eq_sep=@abi.Require,
     )
   }
   let def : @engine.Definition = { ..empty_def(), options: [if_elem] }
@@ -3566,7 +3549,7 @@ test "DR-091 §3 / DR-096 §1 end-to-end: long_prefix:\"\" + long_eq_sep:@engine
       for b in bs {
         if b.key == "if" {
           found = true
-          assert_eq(b.value, @engine.String("abc"))
+          assert_eq(b.value, @abi.String("abc"))
         }
       }
       assert_true(found)
@@ -3577,19 +3560,19 @@ test "DR-091 §3 / DR-096 §1 end-to-end: long_prefix:\"\" + long_eq_sep:@engine
 
 ///|
 /// Guarantees (DR-091 §3 "long の space-form main entry の登録をスキップ"): with
-/// `long_eq_sep:@engine.Require`, the SPACE form (`if abc`, 2 tokens, no `=`) has NO entry point
+/// `long_eq_sep:@abi.Require`, the SPACE form (`if abc`, 2 tokens, no `=`) has NO entry point
 /// at all — `inst_long` withheld the main entry, and `@builtins.eq_split` never fires on a token without `=`
 /// (`node.mbt`'s `@builtins.eq_split` doc comment: "Fires only on tokens containing `=`"). With no other
 /// element in this @engine.Definition able to consume either token, the parse must FAIL — this is the
 /// direct 対極 of the eq-form acceptance case above.
-test "DR-091 §3 / DR-096 §1 end-to-end: long_eq_sep:@engine.Require rejects the space form (対極 of eq-form acceptance)" {
+test "DR-091 §3 / DR-096 §1 end-to-end: long_eq_sep:@abi.Require rejects the space form (対極 of eq-form acceptance)" {
   let if_elem = {
     ..el(
       "if",
       @builtins.string_type(),
       long=Bool(true),
       long_prefix="",
-      long_eq_sep=@engine.Require,
+      long_eq_sep=@abi.Require,
     )
   }
   let def : @engine.Definition = { ..empty_def(), options: [if_elem] }
@@ -3606,21 +3589,21 @@ test "DR-091 §3 / DR-096 §1 end-to-end: long_eq_sep:@engine.Require rejects th
 }
 
 ///|
-/// Guarantees (DR-096 §3.3 — `long_eq_sep:@engine.Require` の opt-in 衝突排除手段の直接固定): a
-/// `long_prefix:""` + `long_eq_sep:@engine.Require` element coexisting with an UNRELATED plain positional
+/// Guarantees (DR-096 §3.3 — `long_eq_sep:@abi.Require` の opt-in 衝突排除手段の直接固定): a
+/// `long_prefix:""` + `long_eq_sep:@abi.Require` element coexisting with an UNRELATED plain positional
 /// in the SAME @engine.Definition does not swallow that positional's bare token — `foo` (no `=`) still
 /// binds to `target`, `if` stays unfired (absent from the bindings). This is the eq-gate mechanism
 /// an app can opt into to definitionally avoid the collision (空 prefix 単独では衝突は @engine.Ambiguous
 /// に落ちる、`fixtures/matcher-readings/long-empty-prefix-operand-collision.json` 参照 — この
-/// テストは @engine.Require 併用時の非衝突を固定するもので、空 prefix の合法条件ではない)。
-test "DR-096 §3.3 end-to-end: long_prefix:\"\" + long_eq_sep:@engine.Require does not collide with a sibling plain positional (opt-in 衝突排除)" {
+/// テストは @abi.Require 併用時の非衝突を固定するもので、空 prefix の合法条件ではない)。
+test "DR-096 §3.3 end-to-end: long_prefix:\"\" + long_eq_sep:@abi.Require does not collide with a sibling plain positional (opt-in 衝突排除)" {
   let if_elem = {
     ..el(
       "if",
       @builtins.string_type(),
       long=Bool(true),
       long_prefix="",
-      long_eq_sep=@engine.Require,
+      long_eq_sep=@abi.Require,
     )
   }
   let target = el("target", @builtins.string_type())
@@ -3638,7 +3621,7 @@ test "DR-096 §3.3 end-to-end: long_prefix:\"\" + long_eq_sep:@engine.Require do
       for b in bs {
         if b.key == "target" {
           target_found = true
-          assert_eq(b.value, @engine.String("foo"))
+          assert_eq(b.value, @abi.String("foo"))
         }
         if b.key == "if" {
           if_found = true
@@ -3840,11 +3823,11 @@ test "short installer end-to-end: short_combine:false rejects -ab but accepts -a
 
 ///|
 /// 保証 (DR-014「--name=value の許可」/ DESIGN §7.2 / DR-096 §1「config (long_eq_sep/long_prefix) から
-/// 規則を構成」): `long_eq_sep: @engine.Deny` の要素は `inst_long` が eq-split entry を一切登録
+/// 規則を構成」): `long_eq_sep: @abi.Deny` の要素は `inst_long` が eq-split entry を一切登録
 /// しない — space-form の greedy @engine.Seq 衛星のみが残る (`@builtins.eq_split` matcher 自体、要素が唯一なので、
-/// 生成されない)。既定 (`@engine.Allow`) の対極として既存 "value option gets 1 greedy @engine.Seq + 1 @builtins.eq_split"
+/// 生成されない)。既定 (`@abi.Allow`) の対極として既存 "value option gets 1 greedy @engine.Seq + 1 @builtins.eq_split"
 /// テストと対で読む。
-test "long installer: long_eq_sep:@engine.Deny withholds this element's eq-split entry (space form survives)" {
+test "long installer: long_eq_sep:@abi.Deny withholds this element's eq-split entry (space form survives)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
@@ -3852,7 +3835,7 @@ test "long installer: long_eq_sep:@engine.Deny withholds this element's eq-split
         "port",
         @builtins.string_type(),
         long=List([":set"]),
-        long_eq_sep=@engine.Deny,
+        long_eq_sep=@abi.Deny,
       ),
     ],
   }
@@ -3867,10 +3850,10 @@ test "long installer: long_eq_sep:@engine.Deny withholds this element's eq-split
 }
 
 ///|
-/// 保証 (同上、eq form の実行時失敗側): `long_eq_sep: @engine.Deny` の要素へ `--port=80` を渡すと
+/// 保証 (同上、eq form の実行時失敗側): `long_eq_sep: @abi.Deny` の要素へ `--port=80` を渡すと
 /// eq-split の読みが存在しないため、`=` を含むトークンは丸ごと unrecognized になり parse は失敗する
 /// (space form `--port 80` は引き続き成功する、対比として同テスト内で確認)。
-test "long installer: long_eq_sep:@engine.Deny end-to-end — eq form fails, space form succeeds" {
+test "long installer: long_eq_sep:@abi.Deny end-to-end — eq form fails, space form succeeds" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
@@ -3878,7 +3861,7 @@ test "long installer: long_eq_sep:@engine.Deny end-to-end — eq form fails, spa
         "port",
         @builtins.string_type(),
         long=List([":set"]),
-        long_eq_sep=@engine.Deny,
+        long_eq_sep=@abi.Deny,
       ),
     ],
   }
@@ -3898,7 +3881,7 @@ test "long installer: long_eq_sep:@engine.Deny end-to-end — eq form fails, spa
       for b in bs {
         if b.key == "port" {
           found = true
-          assert_eq(b.value, @engine.String("80"))
+          assert_eq(b.value, @abi.String("80"))
         }
       }
       assert_true(found)
@@ -3916,11 +3899,11 @@ test "long installer: long_eq_sep:@engine.Deny end-to-end — eq form fails, spa
 ///|
 /// 保証 (DR-092 実装調査 2026-07-11、fixtures/value-typing/number-inf-nan.json の
 /// `inf-on-float-accepted` 対の完全版): `--t inf` (float 型) が args → matcher → `@builtins.parse_float` →
-/// `@engine.Binding.value` の全経路を通っても `@engine.Number` の inf がそのまま (saturate/丸めなど一切なく) 届く
+/// `@abi.Binding.value` の全経路を通っても `@abi.Number` の inf がそのまま (saturate/丸めなど一切なく) 届く
 /// ことを end-to-end で固定する。fixture 側は「operand の JSON 表現が未確定」を理由に `result`
 /// pin を見送っている (main が本 DR 実装確定後に別段で追加) — この wbtest は fixture pin を待たず
 /// production コードパスの値保持を先に固定する。
-test "long installer end-to-end: --t inf reaches the binding as @engine.Number(Infinity) unaltered (DR-092)" {
+test "long installer end-to-end: --t inf reaches the binding as @abi.Number(Infinity) unaltered (DR-092)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [el("t", @builtins.float_type(), long=Bool(true))],
@@ -3934,7 +3917,7 @@ test "long installer end-to-end: --t inf reaches the binding as @engine.Number(I
       for b in bs {
         if b.key == "t" {
           found = true
-          assert_eq(b.value, @engine.Number(inf))
+          assert_eq(b.value, @abi.Number(inf))
         }
       }
       assert_true(found)
@@ -3953,7 +3936,7 @@ test "long installer end-to-end: --t inf reaches the binding as @engine.Number(I
       for b in bs {
         if b.key == "t" {
           found = true
-          assert_eq(b.value, @engine.Number(-inf))
+          assert_eq(b.value, @abi.Number(-inf))
         }
       }
       assert_true(found)
@@ -3982,7 +3965,7 @@ test "long installer: a variant trigger uses e.long_prefix, matching the main en
           long=List([":set", "no:set:false"]),
           long_prefix="+",
         ),
-        default_values: Some([@engine.Bool(true)]),
+        default_values: Some([@abi.Bool(true)]),
       },
     ],
   }
@@ -3996,7 +3979,7 @@ test "long installer: a variant trigger uses e.long_prefix, matching the main en
           resident, "builtin/bool", "ssl",
         ) => has_plus_main = true
       @engine.Seq(
-        [@engine.Exact("+no-ssl"), @engine.Bind("ssl", @engine.Bool(false))]
+        [@engine.Exact("+no-ssl"), @engine.Bind("ssl", @abi.Bool(false))]
       ) => has_plus_variant = true
       @engine.Seq([@engine.Exact("--no-ssl"), ..]) => has_dash_variant = true
       _ => ()
@@ -4016,7 +3999,7 @@ test "long installer: default long_prefix keeps variant trigger at \"--\" (対�
     options: [
       {
         ..el("ssl", @builtins.bool_type(), long=List([":set", "no:set:false"])),
-        default_values: Some([@engine.Bool(true)]),
+        default_values: Some([@abi.Bool(true)]),
       },
     ],
   }
@@ -4029,7 +4012,7 @@ test "long installer: default long_prefix keeps variant trigger at \"--\" (対�
           resident, "builtin/bool", "ssl",
         ) => has_main = true
       @engine.Seq(
-        [@engine.Exact("--no-ssl"), @engine.Bind("ssl", @engine.Bool(false))]
+        [@engine.Exact("--no-ssl"), @engine.Bind("ssl", @abi.Bool(false))]
       ) => has_variant = true
       _ => ()
     }
@@ -4125,7 +4108,7 @@ test "constraint installer: required on a plain Cell element keeps a single-name
 /// fixtures/definition-error/length-range-negative-argument-invalid-argument.json — 本 wbtest は
 /// それに先行する unit 層の pin として残す、regex_match compile 検査の wbtest/fixture 対と同じ運用)。
 /// `in_range` の canonical number (負数許容) とは異なる `length_range` 固有規則であることの片側。
-test "parse_definition: length_range with a negative min is @engine.InvalidArgument (DR-105 §5 note (a))" {
+test "parse_definition: length_range with a negative min is @abi.InvalidArgument (DR-105 §5 note (a))" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
@@ -4139,7 +4122,7 @@ test "parse_definition: length_range with a negative min is @engine.InvalidArgum
     Err(errs) => {
       let mut has_invalid_argument = false
       for e in errs {
-        if e.kind == @engine.InvalidArgument && e.element == "tags" {
+        if e.kind == @abi.InvalidArgument && e.element == "tags" {
           has_invalid_argument = true
         }
       }
@@ -4152,7 +4135,7 @@ test "parse_definition: length_range with a negative min is @engine.InvalidArgum
 /// 保証 (もう片側、上記の対): `length_range` の bound が小数 (`1.5`) の場合も同じ非負整数制約により
 /// kind=invalid-argument (spec fixture 昇格済み: fixtures/definition-error/
 /// length-range-non-integer-argument-invalid-argument.json)。
-test "parse_definition: length_range with a non-integer min is @engine.InvalidArgument (DR-105 §5 note (a))" {
+test "parse_definition: length_range with a non-integer min is @abi.InvalidArgument (DR-105 §5 note (a))" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
@@ -4166,7 +4149,7 @@ test "parse_definition: length_range with a non-integer min is @engine.InvalidAr
     Err(errs) => {
       let mut has_invalid_argument = false
       for e in errs {
-        if e.kind == @engine.InvalidArgument && e.element == "tags" {
+        if e.kind == @abi.InvalidArgument && e.element == "tags" {
           has_invalid_argument = true
         }
       }
@@ -4202,16 +4185,16 @@ test "parse_definition: in_range keeps canonical-number bounds, length_range acc
 
 ///|
 /// 保証 (統括裁定、実機実証済み): `global:true` の number option がサブコマンド内で値 starve
-/// (`["a", "--level"]`、"--level" の後に値が無い) したとき、`missing_operand` の @engine.ParseError は
+/// (`["a", "--level"]`、"--level" の後に値が無い) したとき、`missing_operand` の @abi.ParseError は
 /// **`path=["a"]` の 1 件だけ** になる — DR-066 §4「発火時の動的パス」の規範通り、実際に
 /// "--level" が読まれた scope (子 command "a" の中) を指す。
 ///
 /// 背景 (audit-held-path-rooted-escape 調査の副次発見、2026-07-15): global option は宣言元
 /// (root) の @engine.Entity に対する `@engine.Rooted(node, depth)` 衛星として子 scope へコピーされる
 /// (DR-042 global link-sync)。この衛星が値 starve すると、CPS の継続チェーンが同じ starve を
-/// 複数回 (root-copy 自身の読み取り + 早閉じ後の親 scope 再評価) 独立に @engine.Pending として観測し、
-/// 旧実装は各観測が `@engine.Candidate.path` (`link` による @engine.Rooted-escape 調整込み、`@engine.complete_tree` の
-/// completer lookup 専用) をそのまま `@engine.ParseError.path` にコピーしていたため、`path=[]` (escape
+/// 複数回 (root-copy 自身の読み取り + 早閉じ後の親 scope 再評価) 独立に @abi.Pending として観測し、
+/// 旧実装は各観測が `@abi.Candidate.path` (`link` による @engine.Rooted-escape 調整込み、`@engine.complete_tree` の
+/// completer lookup 専用) をそのまま `@abi.ParseError.path` にコピーしていたため、`path=[]` (escape
 /// で prepend がスキップされたまま) と `path=["a"]` (正しく prepend されたもの) の 2 件が
 /// 併存していた (depth 2 の nested command では 3 件併存することも実証済み)。
 ///
@@ -4222,8 +4205,8 @@ test "parse_definition: in_range keeps canonical-number bounds, length_range acc
 /// 全候補が既に `link=0` であることを確認済み — 「`link>0` を除外する」条件は何も除外しない
 /// no-op であり、`path=[]` の誤った候補は `link=0` のまま生き残ってしまう。
 ///
-/// 採用した修正 (案 B): `@engine.Candidate` に `fire_path` (`@engine.Candidate.fire_path` の doc comment 参照) を新設し、
-/// `nest_cands` で `link` の値に関わらず無条件に prepend する (@engine.Held の `@engine.ParseError.path` と同じ
+/// 採用した修正 (案 B): `@abi.Candidate` に `fire_path` (`@abi.Candidate.fire_path` の doc comment 参照) を新設し、
+/// `nest_cands` で `link` の値に関わらず無条件に prepend する (@abi.Held の `@abi.ParseError.path` と同じ
 /// 「発火時 walk 位置」の意味論)。`missing_operand` への変換 (eval.mbt KTop) は `c.path` ではなく
 /// `c.fire_path` を使う — 同じ starve を複数回観測した候補は全て同じ `fire_path` を持つため、
 /// `push_error` の (element, args_pos, kind, reason, path) dedup が自然に 1 件へ収束する。
@@ -4323,10 +4306,10 @@ test "front_door.output: export_key rename を result に適用する (DR-052 §
     Ok(a) => a
     Err(_) => fail("expected Ok(AtomicAST) for a well-formed definition")
   }
-  match parse(ast, ["--port", "80", "--verbose"]) {
+  match parse_legacy(ast, ["--port", "80", "--verbose"]) {
     @engine.Success(binds) =>
-      match output(ast, effects=binds).result {
-        @engine.Object(fields) => {
+      match output_legacy(ast, effects=binds).result {
+        @abi.Object(fields) => {
           let keys = fields.map(fn(field) { field.0 })
           assert_true(keys.contains("alias"))
           assert_true(keys.contains("verbose"))
@@ -4375,7 +4358,7 @@ test "ensure_entity: plain @builtins.bool_type() は @engine.Entity.default_valu
     }
     if ent.name == "flg" {
       flg_found = true
-      assert_eq(ent.default_values, Some([@engine.Bool(false)]))
+      assert_eq(ent.default_values, Some([@abi.Bool(false)]))
     }
   }
   if !plain_found {

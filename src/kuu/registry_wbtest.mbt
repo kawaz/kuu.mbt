@@ -76,34 +76,37 @@ test "canonical_registry installs every builtin node and type resident" {
 priv struct CustomTypeExt {}
 
 ///|
-impl @engine.TypeExt for CustomTypeExt with fn name(_self) {
+impl @extension.TypeExt for CustomTypeExt with fn name(_self) {
   "custom"
 }
 
 ///|
-impl @engine.TypeExt for CustomTypeExt with fn encode(_self) {
+impl @extension.TypeExt for CustomTypeExt with fn encode(_self) {
   "v1".to_json()
 }
 
 ///|
-impl @engine.TypeExt for CustomTypeExt with fn has_value_slot(_self) {
+impl @extension.TypeExt for CustomTypeExt with fn has_value_slot(_self) {
   true
 }
 
 ///|
-impl @engine.TypeExt for CustomTypeExt with fn parse_token(_self, token) {
+impl @extension.TypeExt for CustomTypeExt with fn parse_token(_self, token) {
   if token == "rejected" {
-    Err(@engine.TypeParseFail::{
+    Err(@abi.TypeParseFail::{
       reason: "custom_rejected",
       message: "custom parser rejected the token",
     })
   } else {
-    Ok(@engine.String("custom:" + token))
+    Ok(@abi.String("custom:" + token))
   }
 }
 
 ///|
-impl @engine.TypeExt for CustomTypeExt with fn default_seat_resolver(_self, ctx) {
+impl @extension.TypeExt for CustomTypeExt with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
   ctx.declared()
 }
 
@@ -112,16 +115,18 @@ test "parse_definition resolves a custom type through the supplied Registry" {
   // The registry is a live lowering input: a third-party TypeExt can be selected by wire name
   // without adding a builtin switch arm.
   let registry = canonical_registry()
-  assert_true(registry.register_type(CustomTypeExt::{  } as &@engine.TypeExt))
+  assert_true(
+    registry.register_type(CustomTypeExt::{  } as &@extension.TypeExt),
+  )
   let definition = @json.parse(
     "{\"options\":[{\"name\":\"value\",\"type\":\"custom\",\"long\":true}]}",
   )
   match parse_definition(definition, extensions=registry) {
     Ok(ast) =>
-      match parse(ast, ["--value", "x"]) {
+      match parse_legacy(ast, ["--value", "x"]) {
         @engine.Success(bindings) => {
           assert_eq(bindings.length(), 1)
-          assert_eq(bindings[0].value, @engine.String("custom:x"))
+          assert_eq(bindings[0].value, @abi.String("custom:x"))
         }
         _ => fail("custom type input must parse through its TypeExt")
       }
@@ -134,13 +139,15 @@ test "a third-party type controls its parse failure reason and message" {
   // The open engine contract transports resident-owned failure vocabulary unchanged. A custom type
   // can therefore add a reason without changing an engine enum or importing builtin failure names.
   let registry = canonical_registry()
-  assert_true(registry.register_type(CustomTypeExt::{  } as &@engine.TypeExt))
+  assert_true(
+    registry.register_type(CustomTypeExt::{  } as &@extension.TypeExt),
+  )
   let definition = @json.parse(
     "{\"options\":[{\"name\":\"value\",\"type\":\"custom\",\"long\":true}]}",
   )
   match parse_definition(definition, extensions=registry) {
     Ok(ast) =>
-      match parse(ast, ["--value", "rejected"]) {
+      match parse_legacy(ast, ["--value", "rejected"]) {
         @engine.Failure(data) => {
           assert_eq(data.errors.length(), 1)
           assert_eq(data.errors[0].reason, "custom_rejected")
@@ -153,13 +160,13 @@ test "a third-party type controls its parse failure reason and message" {
 }
 
 ///|
-fn third_party_prefix_filter() -> @engine.FilterDescriptor {
-  @engine.filter_descriptor("third_party_prefix", @engine.Transform, [], fn(
+fn third_party_prefix_filter() -> @extension.FilterDescriptor {
+  @extension.filter_descriptor("third_party_prefix", @extension.Transform, [], fn(
     value,
     _args,
   ) {
     match value {
-      @engine.String(text) => Ok(@engine.String("third-party:" + text))
+      @abi.String(text) => Ok(@abi.String("third-party:" + text))
       other => Ok(other)
     }
   })
@@ -177,10 +184,10 @@ test "a third-party filter parses through the engine contract without a builtin 
   )
   match parse_definition(definition, extensions=registry) {
     Ok(ast) => {
-      let parsed = parse(ast, ["--value", "x"])
-      match resolve(ast, parsed, ["--value", "x"]) {
+      let parsed = parse_legacy(ast, ["--value", "x"])
+      match resolve_legacy(ast, parsed, ["--value", "x"]) {
         @engine.Success([binding]) =>
-          assert_eq(binding.value, @engine.String("third-party:x"))
+          assert_eq(binding.value, @abi.String("third-party:x"))
         _ =>
           fail(
             "registered third-party filter must transform the resolved value",
@@ -202,7 +209,7 @@ test "parse_definition rejects an unregistered type as a definition error" {
   match parse_definition(definition) {
     Err(Rejected([error])) => {
       assert_eq(error.element, "value")
-      assert_eq(error.kind, @engine.UnknownVocab)
+      assert_eq(error.kind, @abi.UnknownVocab)
     }
     _ => fail("unregistered type must produce one definition error")
   }
@@ -212,7 +219,7 @@ test "parse_definition rejects an unregistered type as a definition error" {
 test "option and positional allowed keys exclude unregistered installer vocab" {
   // The wire key surface is assembled from the active installer residents. A type resident alone
   // does not authorize either long option spelling or repeat positional syntax.
-  let registry = @engine.Registry::new()
+  let registry = @node.Registry::new()
   assert_true(registry.register_type(@builtins.string_type()))
   let option = @json.parse(
     "{\"options\":[{\"name\":\"value\",\"type\":\"string\",\"long\":true}]}",
@@ -236,7 +243,7 @@ test "option and positional allowed keys exclude unregistered installer vocab" {
 test "repeat lowering rejects an assembly without its implicit append accumulator" {
   // repeat owns its wire vocabulary through the installer, but its value fold is a separate
   // descriptor dependency; an incomplete subset assembly returns a definition error, never aborts.
-  let registry = @engine.Registry::new()
+  let registry = @node.Registry::new()
   assert_true(registry.register_type(@builtins.string_type()))
   registry.register_installer(@builtins.repeat_installer())
   let definition = @json.parse(
@@ -244,7 +251,7 @@ test "repeat lowering rejects an assembly without its implicit append accumulato
   )
   match parse_definition(definition, extensions=registry) {
     Err(Rejected([error])) => {
-      assert_eq(error.kind, @engine.UnknownVocab)
+      assert_eq(error.kind, @abi.UnknownVocab)
       assert_true(error.message.contains("accumulator 'append'"))
     }
     _ => fail("missing implicit append resident must be a definition error")
@@ -255,7 +262,7 @@ test "repeat lowering rejects an assembly without its implicit append accumulato
 test "collector declarations reject an assembly without the named collector resident" {
   // The accumulator and multiple vocabulary are present, isolating the collector descriptor as the
   // only missing dependency; lookup failure is reported before lowering constructs the Entity.
-  let registry = @engine.Registry::new()
+  let registry = @node.Registry::new()
   assert_true(registry.register_type(@builtins.string_type()))
   assert_true(registry.register_accumulator(@builtins.append_accumulator()))
   registry.register_installer(@builtins.long_installer())
@@ -265,7 +272,7 @@ test "collector declarations reject an assembly without the named collector resi
   )
   match parse_definition(definition, extensions=registry) {
     Err(Rejected([error])) => {
-      assert_eq(error.kind, @engine.UnknownVocab)
+      assert_eq(error.kind, @abi.UnknownVocab)
       assert_true(error.message.contains("collector 'unwrap_single'"))
     }
     _ => fail("missing collector resident must be a definition error")
@@ -276,7 +283,7 @@ test "collector declarations reject an assembly without the named collector resi
 test "registered installer vocab extends option and positional allowed keys" {
   // Registering the corresponding residents makes the same keys decodable; the repeat declaration
   // also needs its append accumulator because lowering resolves every descriptor through the same registry.
-  let registry = @engine.Registry::new()
+  let registry = @node.Registry::new()
   assert_true(registry.register_type(@builtins.string_type()))
   assert_true(registry.register_accumulator(@builtins.append_accumulator()))
   registry.register_installer(@builtins.long_installer())

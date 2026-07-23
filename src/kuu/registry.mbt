@@ -1,7 +1,7 @@
 // registry.mbt — canonical kuu assembly of engine extension residents.
 
 ///|
-fn register_node(registry : @engine.Registry, node : @engine.Node) -> Unit {
+fn register_node(registry : @node.Registry, node : @node.Node) -> Unit {
   guard node is @engine.Ext(resident) else {
     abort("builtin node factory did not return an Ext resident")
   }
@@ -12,8 +12,8 @@ fn register_node(registry : @engine.Registry, node : @engine.Node) -> Unit {
 
 ///|
 fn register_type(
-  registry : @engine.Registry,
-  resident : &@engine.TypeExt,
+  registry : @node.Registry,
+  resident : &@extension.TypeExt,
 ) -> Unit {
   guard registry.register_type(resident) else {
     abort("duplicate builtin type resident name: " + resident.name())
@@ -22,8 +22,8 @@ fn register_type(
 
 ///|
 fn register_matcher(
-  registry : @engine.Registry,
-  resident : &@engine.MatcherExt,
+  registry : @node.Registry,
+  resident : &@extension.MatcherExt,
 ) -> Unit {
   guard registry.register_matcher(resident) else {
     abort("duplicate builtin matcher resident kind: " + resident.kind())
@@ -32,8 +32,8 @@ fn register_matcher(
 
 ///|
 fn register_accumulator(
-  registry : @engine.Registry,
-  resident : &@engine.AccumulatorExt,
+  registry : @node.Registry,
+  resident : &@extension.AccumulatorExt,
 ) -> Unit {
   guard registry.register_accumulator(resident) else {
     abort("duplicate builtin accumulator resident kind: " + resident.kind())
@@ -42,8 +42,8 @@ fn register_accumulator(
 
 ///|
 fn register_collector(
-  registry : @engine.Registry,
-  resident : &@engine.CollectorExt,
+  registry : @node.Registry,
+  resident : &@extension.CollectorExt,
 ) -> Unit {
   guard registry.register_collector(resident) else {
     abort("duplicate builtin collector resident kind: " + resident.kind())
@@ -52,8 +52,8 @@ fn register_collector(
 
 ///|
 fn register_filter(
-  registry : @engine.Registry,
-  resident : @engine.FilterDescriptor,
+  registry : @node.Registry,
+  resident : @extension.FilterDescriptor,
 ) -> Unit {
   guard registry.register_filter(resident) else {
     abort("duplicate builtin filter resident name: " + resident.name())
@@ -62,8 +62,8 @@ fn register_filter(
 
 ///|
 fn register_array_filter(
-  registry : @engine.Registry,
-  resident : @engine.ArrayFilterDescriptor,
+  registry : @node.Registry,
+  resident : @extension.ArrayFilterDescriptor,
 ) -> Unit {
   guard registry.register_array_filter(resident) else {
     abort("duplicate builtin array filter resident name: " + resident.name())
@@ -72,8 +72,8 @@ fn register_array_filter(
 
 ///|
 fn register_cell_fn(
-  registry : @engine.Registry,
-  resident : @engine.CellFnDescriptor,
+  registry : @node.Registry,
+  resident : @extension.CellFnDescriptor,
 ) -> Unit {
   guard registry.register_cell_fn(resident) else {
     abort("duplicate builtin cell fn resident name: " + resident.name())
@@ -82,8 +82,8 @@ fn register_cell_fn(
 
 ///|
 fn register_completer(
-  registry : @engine.Registry,
-  resident : &@engine.CompleterExt,
+  registry : @node.Registry,
+  resident : &@extension.CompleterExt,
 ) -> Unit {
   guard registry.register_completer(resident) else {
     abort("duplicate builtin completer resident name: " + resident.name())
@@ -94,7 +94,7 @@ fn register_completer(
 /// Register only the canonical installer vocabulary (long / short / env / dd / ... — the
 /// DR-042 table) into `registry`. A subset of `install_canonical`; call this directly when
 /// composing a custom assembly that swaps residents but keeps the standard vocabulary.
-pub fn install_vocabulary(registry : @engine.Registry) -> Unit {
+pub fn install_vocabulary(registry : @node.Registry) -> Unit {
   registry.register_installer(@builtins.long_installer())
   registry.register_installer(@builtins.short_installer())
   registry.register_installer(@builtins.env_installer())
@@ -116,7 +116,7 @@ pub fn install_vocabulary(registry : @engine.Registry) -> Unit {
 /// filter / accumulator / collector / cell-fn residents + the help_query capability).
 /// Builtins provides resident factories; the front-door package owns which residents
 /// form the default product. `install_vocabulary` is the installer-only subset.
-pub fn install_canonical(registry : @engine.Registry) -> Unit {
+pub fn install_canonical(registry : @node.Registry) -> Unit {
   install_vocabulary(registry)
 
   register_node(registry, @builtins.string_arg("", []))
@@ -127,20 +127,20 @@ pub fn install_canonical(registry : @engine.Registry) -> Unit {
       "",
       None,
       @builtins.string_type(),
-      @engine.Error,
+      @abi.Error,
       @builtins.bool_config_canonical(),
       [],
     ),
   )
   register_node(registry, @builtins.number_arg("", []))
   register_node(registry, @builtins.float_arg("", []))
-  register_node(registry, @builtins.int_arg("", @engine.Error, []))
+  register_node(registry, @builtins.int_arg("", @abi.Error, []))
   register_node(
     registry,
     @builtins.bool_arg("", @builtins.bool_config_canonical(), []),
   )
   register_node(registry, @builtins.typed_arg("", @builtins.string_type(), []))
-  register_node(registry, @builtins.effect_mark("", @engine.Set))
+  register_node(registry, @builtins.effect_mark("", @abi.Set))
   register_node(registry, @builtins.deprecation_mark(""))
   register_node(registry, @builtins.failure_mark(""))
 
@@ -164,7 +164,7 @@ pub fn install_canonical(registry : @engine.Registry) -> Unit {
   register_collector(registry, @builtins.unwrap_single_collector())
   register_collector(
     registry,
-    @builtins.from_entries_collector(@builtins.Entries),
+    @builtins.from_entries_collector(@extension.Entries),
   )
 
   register_filter(registry, @builtins.trim_filter())
@@ -190,8 +190,8 @@ pub fn install_canonical(registry : @engine.Registry) -> Unit {
 }
 
 ///|
-fn canonical_registry() -> @engine.Registry {
-  let registry = @engine.Registry::new()
+fn canonical_registry() -> @node.Registry {
+  let registry = @node.Registry::new()
   install_canonical(registry)
   registry
 }

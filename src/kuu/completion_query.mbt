@@ -35,7 +35,7 @@
 /// 戻り値: DR-117 §4 の行指向応答テキスト。候補ゼロは空文字列または directive 行のみ。
 pub fn completion_query(
   ast : AtomicAST,
-  registry : @engine.Registry,
+  registry : @node.Registry,
   words : Array[String],
   cword? : Int? = None,
 ) -> String {
@@ -161,7 +161,7 @@ priv struct QueryRow {
 /// 生き残った cont 候補も **元の spelling** ("--port") のまま突き合わせる (help model の綴りも
 /// eq を含まない) — 転写は emit 段でだけ行う。
 priv struct PolicyCandidate {
-  candidate : @engine.Candidate
+  candidate : @abi.Candidate
   eq_form : Bool
 }
 
@@ -173,13 +173,13 @@ priv struct PolicyCandidate {
 /// に使う definition-wide 静的属性 (§2.6、AtomicAST が carry)。値域は "space" (既定) / "eq" — invalid
 /// は parse_definition が弾き済みなので policy 段では self-defense しない。
 fn apply_policy(
-  raw : Array[@engine.Candidate],
+  raw : Array[@abi.Candidate],
   cursor_word : String,
   help_model : HelpModel?,
   insert_form : String,
 ) -> (Array[QueryRow], Array[String]) {
   // step 1: hidden 除外 (DR-116 §5) + 搬送不能除外 (DR-117 §4.3、spelling に tab/newline)
-  let visible : Array[@engine.Candidate] = []
+  let visible : Array[@abi.Candidate] = []
   for c in raw {
     if c.hidden {
       continue
@@ -191,7 +191,7 @@ fn apply_policy(
   }
   // step 2: cursor_word による prefix 絞り (DR-117 §5、DR-060 §3 が生成器側の選択とした絞り)。
   // 候補ゼロになっても空リストのまま返す (DR-117 §5 kawaz 裁定 2026-07-23)。
-  let prefixed : Array[@engine.Candidate] = []
+  let prefixed : Array[@abi.Candidate] = []
   for c in visible {
     if spelling_has_prefix(c.spelling, cursor_word) {
       prefixed.push(c)
@@ -202,7 +202,7 @@ fn apply_policy(
   // v1 で shell_action 対応語彙外なので通常候補として通す (glue の未知 directive 無視の
   // 前方互換規則と対称)。
   let shell_actions : Array[String] = []
-  let candidates : Array[@engine.Candidate] = []
+  let candidates : Array[@abi.Candidate] = []
   for c in prefixed {
     match c.completer {
       Some(name) =>
@@ -250,7 +250,7 @@ fn apply_policy(
 /// そのまま cont term で emit する `fixtures/complete/eq-split-cont.json` の `word-end-and-cont-
 /// coexist-same-origin` 案件と対称)。
 fn merge_insert_form(
-  candidates : Array[@engine.Candidate],
+  candidates : Array[@abi.Candidate],
   insert_form : String,
 ) -> Array[PolicyCandidate] {
   // まず spelling ごとに word_end / cont の bit を集計 (is_value=false の option 綴り候補のみ対象)
@@ -431,7 +431,7 @@ fn take_matching_policy_spellings(
 ///   継承 — DR-116 §4「alias 候補: canonical entry の `help` と alias であることを示す注記」)
 /// - command 名 / alias: candidate.spelling を commands entry の name / aliases に照合
 /// - 対応なし (value 候補 / 匿名 exact など): None を返す
-fn lookup_help(c : @engine.Candidate, help_model : HelpModel?) -> String? {
+fn lookup_help(c : @abi.Candidate, help_model : HelpModel?) -> String? {
   match help_model {
     None => None
     Some(model) => {

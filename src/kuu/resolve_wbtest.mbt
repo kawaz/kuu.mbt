@@ -3,15 +3,15 @@
 // value-source ladder (DR-031/049/050, with the DR-074/075 env-lexer update over the slice).
 
 ///|
-/// A scalar cli/env/config/… `@engine.Set` binding at the root scope (the common case in these tests;
-/// nested-scope cases build the `@engine.Binding` literal directly to show the scope path explicitly).
+/// A scalar cli/env/config/… `@abi.Set` binding at the root scope (the common case in these tests;
+/// nested-scope cases build the `@abi.Binding` literal directly to show the scope path explicitly).
 fn cb(
   key : String,
-  value : @engine.Value,
-  source : @engine.Source,
+  value : @abi.Value,
+  source : @abi.Source,
   at_pos? : Int? = None,
-) -> @engine.Binding {
-  { key, op: @engine.Set, value, source, scope: [], link: 0, at_pos }
+) -> @abi.Binding {
+  { key, op: @abi.Set, value, source, scope: [], link: 0, at_pos }
 }
 
 ///|
@@ -19,7 +19,7 @@ fn cb(
 /// `poc/helpers_wbtest.mbt`'s `opt()` — only the ladder seats a test actually exercises are named).
 fn ent(
   name : String,
-  ty : &@engine.TypeExt,
+  ty : &@extension.TypeExt,
   link? : String? = None,
   env_key? : String? = None,
   config_seat? : Bool = false,
@@ -33,7 +33,7 @@ fn ent(
   flatten? : Bool = false,
   is_multiple_decl? : Bool = false,
   collector? : String? = None,
-  default_value? : @engine.Value? = None,
+  default_value? : @abi.Value? = None,
   separator? : String? = None,
   piece_filters? : Array[String] = [],
   value_filters? : Array[String] = [],
@@ -44,7 +44,7 @@ fn ent(
   // keeps its OWN param scalar (every existing call site passes a single value, the common scalar-
   // entity case) and wraps it here, one place, instead of touching every `default_value=Some(v)`
   // call site across the file.
-  let default_values : Array[@engine.Value]? = match default_value {
+  let default_values : Array[@abi.Value]? = match default_value {
     Some(v) => Some([v])
     None => None
   }
@@ -73,12 +73,12 @@ fn ent(
     },
     default_values,
     default_fn: match default_values {
-      Some(values) => Some(@engine.Typed(@engine.FnCall::typed("set", values)))
+      Some(values) => Some(@abi.Typed(@abi.FnCall::typed("set", values)))
       None => None
     },
     separator,
     // `chain` (filters_wbtest.mbt, same package): colon-shorthand ergonomics over `@engine.Entity`'s
-    // production `Array[@engine.FnInvocation]` fields (issue filter-spelling-inband-encoding-retyping).
+    // production `Array[@abi.FnInvocation]` fields (issue filter-spelling-inband-encoding-retyping).
     piece_filters: chain(piece_filters),
     value_filters: chain(value_filters),
     final_filters: chain(final_filters),
@@ -111,11 +111,11 @@ test "Entity equality distinguishes same-name TypeExt residents with different c
 /// default seats when the cell has no winning binding at all (DR-031 default seat / DR-051 §2 flag
 /// は absent にならない) — three of the builder's structural cases in one pass over a flat scope.
 test "build_result folds scalar last-wins, accumulate array, and default seat" {
-  let binds : Array[@engine.Binding] = [
-    cb("port", @engine.Number(8080.0), @engine.Cli),
-    cb("port", @engine.Number(9090.0), @engine.Cli), // last-wins: 9090 should win over 8080
-    cb("tags", @engine.String("a"), @engine.Cli),
-    cb("tags", @engine.String("b"), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("port", @abi.Number(8080.0), @abi.Cli),
+    cb("port", @abi.Number(9090.0), @abi.Cli), // last-wins: 9090 should win over 8080
+    cb("tags", @abi.String("a"), @abi.Cli),
+    cb("tags", @abi.String("b"), @abi.Cli),
   ]
   let cells : Array[AccumCell] = [
     {
@@ -129,21 +129,21 @@ test "build_result folds scalar last-wins, accumulate array, and default seat" {
     },
   ]
   let defaults : Array[DefaultCell] = [
-    { path: [], name: "verbose", value: @engine.Bool(false) },
+    { path: [], name: "verbose", value: @abi.Bool(false) },
   ]
   let r = build_result(binds, cells, defaults, [])
   assert_eq(
     r,
-    @engine.Object([
-      ("port", @engine.Scalar(@engine.Number(9090.0))),
+    @abi.Object([
+      ("port", @abi.Scalar(@abi.Number(9090.0))),
       (
         "tags",
-        @engine.Array([
-          @engine.Scalar(@engine.String("a")),
-          @engine.Scalar(@engine.String("b")),
+        @abi.Array([
+          @abi.Scalar(@abi.String("a")),
+          @abi.Scalar(@abi.String("b")),
         ]),
       ),
-      ("verbose", @engine.Scalar(@engine.Bool(false))),
+      ("verbose", @abi.Scalar(@abi.Bool(false))),
     ]),
   )
 }
@@ -152,18 +152,18 @@ test "build_result folds scalar last-wins, accumulate array, and default seat" {
 /// Guarantees: an `empty` effect on an accumulate cell CLEARS everything accumulated before it
 /// (DR-045 empty op) — re-accumulation after `empty` starts fresh, not appended to the discard.
 test "build_result: an empty op on an accumulate cell clears prior items" {
-  let binds : Array[@engine.Binding] = [
-    cb("tags", @engine.String("a"), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("tags", @abi.String("a"), @abi.Cli),
     {
       key: "tags",
-      op: @engine.Empty,
-      value: @engine.Bool(false), // placeholder — empty carries no operand
-      source: @engine.Cli,
+      op: @abi.Empty,
+      value: @abi.Bool(false), // placeholder — empty carries no operand
+      source: @abi.Cli,
       scope: [],
       link: 0,
       at_pos: None,
     },
-    cb("tags", @engine.String("c"), @engine.Cli),
+    cb("tags", @abi.String("c"), @abi.Cli),
   ]
   let cells : Array[AccumCell] = [
     {
@@ -179,9 +179,7 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
   let r = build_result(binds, cells, [], [])
   assert_eq(
     r,
-    @engine.Object([
-      ("tags", @engine.Array([@engine.Scalar(@engine.String("c"))])),
-    ]),
+    @abi.Object([("tags", @abi.Array([@abi.Scalar(@abi.String("c"))]))]),
   )
 }
 
@@ -202,7 +200,7 @@ test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)
   ]
   assert_eq(
     build_result([], cells, [], []),
-    @engine.Object([("tags", @engine.Array([]))]),
+    @abi.Object([("tags", @abi.Array([]))]),
   )
 }
 
@@ -213,9 +211,7 @@ test "build_result: an unfired accumulate cell renders [] (DR-044 uniform array)
 /// a multiple/repeat cell without the uniform-array default folding it). Paired with the next case
 /// (2+ elements) to fix unwrap_single's actual boundary, not just "it does something".
 test "build_result: a collector (unwrap_single) collapses a length-1 accumulation to a scalar" {
-  let binds : Array[@engine.Binding] = [
-    cb("tag", @engine.String("solo"), @engine.Cli),
-  ]
+  let binds : Array[@abi.Binding] = [cb("tag", @abi.String("solo"), @abi.Cli)]
   let cells : Array[AccumCell] = [
     {
       path: [],
@@ -229,7 +225,7 @@ test "build_result: a collector (unwrap_single) collapses a length-1 accumulatio
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    @engine.Object([("tag", @engine.Scalar(@engine.String("solo")))]),
+    @abi.Object([("tag", @abi.Scalar(@abi.String("solo")))]),
   )
 }
 
@@ -238,9 +234,9 @@ test "build_result: a collector (unwrap_single) collapses a length-1 accumulatio
 /// ARRAY のまま残る (resolve.mbt `unwrap_single`'s doc comment: "Length 0 or >= 2 arrays are left
 /// unchanged")。前ケース (length-1 → scalar) と対で unwrap_single の輪郭を固定する。
 test "build_result: a collector (unwrap_single) leaves a 2+ element accumulation as an array" {
-  let binds : Array[@engine.Binding] = [
-    cb("tag", @engine.String("a"), @engine.Cli),
-    cb("tag", @engine.String("b"), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("tag", @abi.String("a"), @abi.Cli),
+    cb("tag", @abi.String("b"), @abi.Cli),
   ]
   let cells : Array[AccumCell] = [
     {
@@ -255,12 +251,12 @@ test "build_result: a collector (unwrap_single) leaves a 2+ element accumulation
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    @engine.Object([
+    @abi.Object([
       (
         "tag",
-        @engine.Array([
-          @engine.Scalar(@engine.String("a")),
-          @engine.Scalar(@engine.String("b")),
+        @abi.Array([
+          @abi.Scalar(@abi.String("a")),
+          @abi.Scalar(@abi.String("b")),
         ]),
       ),
     ]),
@@ -286,7 +282,7 @@ test "build_result: a collector on an unfired accum cell still renders [] (DR-04
   ]
   assert_eq(
     build_result([], cells, [], []),
-    @engine.Object([("tag", @engine.Array([]))]),
+    @abi.Object([("tag", @abi.Array([]))]),
   )
 }
 
@@ -296,30 +292,30 @@ test "build_result: a collector on an unfired accum cell still renders [] (DR-04
 /// nameless "" leaf at each index is the SCALAR case (a seq/array context nameless value, DR-052
 /// §2), not promoted into a kv object.
 test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
-  let binds : Array[@engine.Binding] = [
+  let binds : Array[@abi.Binding] = [
     {
       key: "[]",
-      op: @engine.Set,
-      value: @engine.Bool(true),
-      source: @engine.Cli,
+      op: @abi.Set,
+      value: @abi.Bool(true),
+      source: @abi.Cli,
       scope: ["xs"],
       link: 0,
       at_pos: None,
     },
     {
       key: "",
-      op: @engine.Set,
-      value: @engine.String("a"),
-      source: @engine.Cli,
+      op: @abi.Set,
+      value: @abi.String("a"),
+      source: @abi.Cli,
       scope: ["xs", "#0"],
       link: 0,
       at_pos: None,
     },
     {
       key: "",
-      op: @engine.Set,
-      value: @engine.String("b"),
-      source: @engine.Cli,
+      op: @abi.Set,
+      value: @abi.String("b"),
+      source: @abi.Cli,
       scope: ["xs", "#1"],
       link: 0,
       at_pos: None,
@@ -328,12 +324,12 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
   let r = build_result(binds, [], [], [])
   assert_eq(
     r,
-    @engine.Object([
+    @abi.Object([
       (
         "xs",
-        @engine.Array([
-          @engine.Scalar(@engine.String("a")),
-          @engine.Scalar(@engine.String("b")),
+        @abi.Array([
+          @abi.Scalar(@abi.String("a")),
+          @abi.Scalar(@abi.String("b")),
         ]),
       ),
     ]),
@@ -344,20 +340,20 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
 
 ///|
 /// Guarantees: `apply_export_keys` overrides a value cell's key (@engine.Key) and drops a scope label
-/// entirely (@engine.Null, DR-052 §2 透過 — children promote to the parent), leaving an unmapped
-/// (@engine.Unset) name unchanged.
+/// entirely (@abi.Null, DR-052 §2 透過 — children promote to the parent), leaving an unmapped
+/// (@abi.Unset) name unchanged.
 test "apply_export_keys renames a leaf key and drops a null-exported scope label" {
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
     ("port", @engine.ExportKey::key("p")),
     ("wrapper", @engine.ExportKey::null()),
   ])
-  let binds : Array[@engine.Binding] = [
-    cb("port", @engine.Number(80.0), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("port", @abi.Number(80.0), @abi.Cli),
     {
       key: "verbose",
-      op: @engine.Set,
-      value: @engine.Bool(true),
-      source: @engine.Cli,
+      op: @abi.Set,
+      value: @abi.Bool(true),
+      source: @abi.Cli,
       scope: ["wrapper"],
       link: 0,
       at_pos: None,
@@ -366,7 +362,7 @@ test "apply_export_keys renames a leaf key and drops a null-exported scope label
   let mapped = apply_export_keys(binds, ek)
   assert_eq(mapped[0].key, "p")
   assert_eq(mapped[1].scope, []) // "wrapper" label dropped → child promotes to root
-  assert_eq(mapped[1].key, "verbose") // unmapped name unchanged (@engine.Unset default)
+  assert_eq(mapped[1].key, "verbose") // unmapped name unchanged (@abi.Unset default)
 }
 
 ///|
@@ -392,19 +388,19 @@ test "accum_cells resolves export_key rename — the accumulate fold fires under
   let cells = accum_cells(sc, ek)
   assert_eq(cells.length(), 1)
   assert_eq(cells[0].name, "t")
-  let binds : Array[@engine.Binding] = [
-    cb("tags", @engine.String("a"), @engine.Cli),
-    cb("tags", @engine.String("b"), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("tags", @abi.String("a"), @abi.Cli),
+    cb("tags", @abi.String("b"), @abi.Cli),
   ]
   let r = build_result(apply_export_keys(binds, ek), cells, [], [])
   assert_eq(
     r,
-    @engine.Object([
+    @abi.Object([
       (
         "t",
-        @engine.Array([
-          @engine.Scalar(@engine.String("a")),
-          @engine.Scalar(@engine.String("b")),
+        @abi.Array([
+          @abi.Scalar(@abi.String("a")),
+          @abi.Scalar(@abi.String("b")),
         ]),
       ),
     ]),
@@ -413,9 +409,9 @@ test "accum_cells resolves export_key rename — the accumulate fold fires under
 
 ///|
 /// 保証 (対極、上のテストの境界、[[self-written-rule-blind-spots]] の対極確認): export_key: null
-/// を持つ accum セル自身は結果キー軸を失う (DR-052 §2 透過、スカラー default の @engine.Null と同じ posture)
+/// を持つ accum セル自身は結果キー軸を失う (DR-052 §2 透過、スカラー default の @abi.Null と同じ posture)
 /// — 変更が「常に何らかのキーで accum セルを出力してしまう」誤動作を生んでいないことを固定する。
-test "accum_cells 対極: an @engine.Null accum cell carries no result-key axis (dropped)" {
+test "accum_cells 対極: an @abi.Null accum cell carries no result-key axis (dropped)" {
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
     ("tags", @engine.ExportKey::null()),
   ])
@@ -476,7 +472,7 @@ test "accum_cells + build_result: a renamed accum cell with zero fires still ren
   }
   let cells = accum_cells(sc, ek)
   let r = build_result(apply_export_keys([], ek), cells, [], [])
-  assert_eq(r, @engine.Object([("t", @engine.Array([]))]))
+  assert_eq(r, @abi.Object([("t", @abi.Array([]))]))
 }
 
 // ── export-key collision (DR-073) ─────────────────────────────────────────────
@@ -500,9 +496,9 @@ fn collision_ek() -> Map[String, @engine.ExportKey] {
 /// (DR-073 §1/§2), exactly the fixture's expected shape.
 test "DR-073 co-exposure-collision: degenerate views distinguished by claimants" {
   let ek = collision_ek()
-  let binds : Array[@engine.Binding] = [
-    cb("a", @engine.Bool(true), @engine.Cli),
-    cb("b", @engine.Bool(true), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("a", @abi.Bool(true), @abi.Cli),
+    cb("b", @abi.Bool(true), @abi.Cli),
   ]
   let collisions = find_export_collisions(binds, ek)
   assert_eq(collisions.length(), 1)
@@ -513,12 +509,12 @@ test "DR-073 co-exposure-collision: degenerate views distinguished by claimants"
   assert_eq(interps.length(), 2)
   assert_eq(
     interps[0].result,
-    @engine.Object([("x", @engine.Scalar(@engine.Bool(true)))]),
+    @abi.Object([("x", @abi.Scalar(@abi.Bool(true)))]),
   )
   assert_eq(interps[0].claimants, [("x", "a")])
   assert_eq(
     interps[1].result,
-    @engine.Object([("x", @engine.Scalar(@engine.Bool(true)))]),
+    @abi.Object([("x", @abi.Scalar(@abi.Bool(true)))]),
   )
   assert_eq(interps[1].claimants, [("x", "b")])
 }
@@ -531,12 +527,10 @@ test "DR-073 co-exposure-collision: degenerate views distinguished by claimants"
 /// `build_result`'s default-seat injection skips it because `x` is already a bound leaf (from `a`).
 test "DR-073 single-exposure-ok: no collision, and the unfired co-exported default does not resurface" {
   let ek = collision_ek()
-  let binds : Array[@engine.Binding] = [
-    cb("a", @engine.Bool(true), @engine.Cli),
-  ]
+  let binds : Array[@abi.Binding] = [cb("a", @abi.Bool(true), @abi.Cli)]
   assert_true(find_export_collisions(binds, ek).is_empty())
   let defaults : Array[DefaultCell] = [
-    { path: [], name: "b", value: @engine.Bool(false) },
+    { path: [], name: "b", value: @abi.Bool(false) },
   ]
   let interps = build_interpretations(
     binds,
@@ -548,7 +542,7 @@ test "DR-073 single-exposure-ok: no collision, and the unfired co-exported defau
   assert_eq(interps[0].claimants, [])
   assert_eq(
     interps[0].result,
-    @engine.Object([("x", @engine.Scalar(@engine.Bool(true)))]),
+    @abi.Object([("x", @abi.Scalar(@abi.Bool(true)))]),
   )
 }
 
@@ -561,16 +555,16 @@ test "DR-073 single-exposure-ok: no collision, and the unfired co-exported defau
 /// identity-exposed ones (DR-052 §1's resolution table treats "未指定" as resolving to a real key,
 /// not a separate "no key" state — same posture `apply_export_keys` already takes for the SAME `_`
 /// fallback, this fix brings collision detection into parity with it).
-test "DR-073 identity-exposure collision: @engine.Unset element vs @engine.Key-mapped element sharing a key" {
+test "DR-073 identity-exposure collision: @abi.Unset element vs @engine.Key-mapped element sharing a key" {
   // `a` has no ek entry at all (map doesn't even mention it — the common "declared without
   // export_key" shape) — resolves to identity exposure under "a" itself. `b` explicitly maps to
   // the SAME key "a".
   let ek : Map[String, @engine.ExportKey] = Map::from_array([
     ("b", @engine.ExportKey::key("a")),
   ])
-  let binds : Array[@engine.Binding] = [
-    cb("a", @engine.Bool(true), @engine.Cli),
-    cb("b", @engine.Bool(true), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("a", @abi.Bool(true), @abi.Cli),
+    cb("b", @abi.Bool(true), @abi.Cli),
   ]
   let collisions = find_export_collisions(binds, ek)
   assert_eq(collisions.length(), 1)
@@ -583,12 +577,12 @@ test "DR-073 identity-exposure collision: @engine.Unset element vs @engine.Key-m
   assert_eq(interps.length(), 2)
   assert_eq(
     interps[0].result,
-    @engine.Object([("a", @engine.Scalar(@engine.Bool(true)))]),
+    @abi.Object([("a", @abi.Scalar(@abi.Bool(true)))]),
   )
   assert_eq(interps[0].claimants, [("a", "a")])
   assert_eq(
     interps[1].result,
-    @engine.Object([("a", @engine.Scalar(@engine.Bool(true)))]),
+    @abi.Object([("a", @abi.Scalar(@abi.Bool(true)))]),
   )
   assert_eq(interps[1].claimants, [("a", "b")])
 }
@@ -600,9 +594,9 @@ test "DR-073 identity-exposure collision: @engine.Unset element vs @engine.Key-m
 /// 固定する。
 test "DR-073 identity-exposure 対極: two distinctly-named identity-exposed elements never collide" {
   let ek : Map[String, @engine.ExportKey] = Map([])
-  let binds : Array[@engine.Binding] = [
-    cb("a", @engine.Bool(true), @engine.Cli),
-    cb("b", @engine.Bool(true), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("a", @abi.Bool(true), @abi.Cli),
+    cb("b", @abi.Bool(true), @abi.Cli),
   ]
   assert_true(find_export_collisions(binds, ek).is_empty())
 }
@@ -617,7 +611,7 @@ test "resolve_scope: cli wins over env, env wins over default" {
     "port",
     @builtins.number_type(),
     env_key=Some("PORT"),
-    default_value=Some(@engine.Number(1.0)),
+    default_value=Some(@abi.Number(1.0)),
   )
   let sc : @engine.Scope = {
     greedy: [],
@@ -628,33 +622,30 @@ test "resolve_scope: cli wins over env, env wins over default" {
   // cli present → cli wins regardless of env/default.
   let cli_bound = resolve_scope(
     sc,
-    [cb("port", @engine.Number(8080.0), @engine.Cli)],
+    [cb("port", @abi.Number(8080.0), @abi.Cli)],
     Map::from_array([("PORT", "9999")]),
   )
-  assert_eq(cli_bound, Ok([cb("port", @engine.Number(8080.0), @engine.Cli)]))
+  assert_eq(cli_bound, Ok([cb("port", @abi.Number(8080.0), @abi.Cli)]))
   // no cli → env wins over default.
   let env_bound = resolve_scope(sc, [], Map::from_array([("PORT", "9999")]))
-  assert_eq(
-    env_bound,
-    Ok([mkb_pub("port", @engine.Number(9999.0), @engine.Env)]),
-  )
+  assert_eq(env_bound, Ok([mkb_pub("port", @abi.Number(9999.0), @abi.Env)]))
   // neither cli nor env → default seats.
   let default_bound = resolve_scope(sc, [], Map([]))
   assert_eq(
     default_bound,
-    Ok([mkb_pub("port", @engine.Number(1.0), @engine.Default)]),
+    Ok([mkb_pub("port", @abi.Number(1.0), @abi.Default)]),
   )
 }
 
 ///|
-/// A `@engine.Set` binding builder exposed for assertions (mirrors `@engine.mk_binding`'s shape without re-exporting it).
+/// A `@abi.Set` binding builder exposed for assertions (mirrors `@engine.mk_binding`'s shape without re-exporting it).
 fn mkb_pub(
   key : String,
-  value : @engine.Value,
-  source : @engine.Source,
+  value : @abi.Value,
+  source : @abi.Source,
   at_pos? : Int? = None,
-) -> @engine.Binding {
-  { key, op: @engine.Set, value, source, scope: [], link: 0, at_pos }
+) -> @abi.Binding {
+  { key, op: @abi.Set, value, source, scope: [], link: 0, at_pos }
 }
 
 ///|
@@ -666,7 +657,7 @@ test "resolve_scope: inherit seat fills from the parent context map" {
     "ttl",
     @builtins.number_type(),
     is_inherit=true,
-    default_value=Some(@engine.Number(30.0)),
+    default_value=Some(@abi.Number(30.0)),
   )
   let sc : @engine.Scope = {
     greedy: [],
@@ -674,14 +665,14 @@ test "resolve_scope: inherit seat fills from the parent context map" {
     entities: [ttl],
     constraints: [],
   }
-  let inherited = Map::from_array([("ttl", @engine.Value::Number(60.0))])
+  let inherited = Map::from_array([("ttl", @abi.Value::Number(60.0))])
   let bound = resolve_scope(sc, [], Map([]), inherited~)
-  assert_eq(bound, Ok([mkb_pub("ttl", @engine.Number(60.0), @engine.Inherit)]))
+  assert_eq(bound, Ok([mkb_pub("ttl", @abi.Number(60.0), @abi.Inherit)]))
   // no inherited value present → falls through to default.
   let bound_no_parent = resolve_scope(sc, [], Map([]))
   assert_eq(
     bound_no_parent,
-    Ok([mkb_pub("ttl", @engine.Number(30.0), @engine.Default)]),
+    Ok([mkb_pub("ttl", @abi.Number(30.0), @abi.Default)]),
   )
 }
 
@@ -700,7 +691,7 @@ test "resolve_scope: tty 型 default 席は inherit 席の後で評価される 
     tty_stream=Some("stdout"),
     tty_cygwin=false, // cygwin 分岐を無効化し fold=terminal に単純化 (cygwin dial は別テストで検証)
     is_inherit=true,
-    default_value=Some(@engine.Bool(true)),
+    default_value=Some(@abi.Bool(true)),
   )
   let sc : @engine.Scope = {
     greedy: [],
@@ -709,7 +700,7 @@ test "resolve_scope: tty 型 default 席は inherit 席の後で評価される 
     constraints: [],
   }
   // inherit と tty 観測が両方あり、値が食い違う場合 → inherit が勝つ (継承は観測より強い、DR-099 §2)。
-  let inherited = Map::from_array([("use_color", @engine.Value::Bool(false))])
+  let inherited = Map::from_array([("use_color", @abi.Value::Bool(false))])
   let inherit_wins = resolve_scope(
     sc,
     [],
@@ -719,7 +710,7 @@ test "resolve_scope: tty 型 default 席は inherit 席の後で評価される 
   )
   assert_eq(
     inherit_wins,
-    Ok([mkb_pub("use_color", @engine.Bool(false), @engine.Inherit)]),
+    Ok([mkb_pub("use_color", @abi.Bool(false), @abi.Inherit)]),
   )
   // inherit 供給なし、tty 観測あり → fold が宣言 default より勝つ。
   let tty_wins = resolve_scope(
@@ -728,15 +719,12 @@ test "resolve_scope: tty 型 default 席は inherit 席の後で評価される 
     Map([]),
     tty=Map::from_array([("stdout", { terminal: false, cygwin: false })]),
   )
-  assert_eq(
-    tty_wins,
-    Ok([mkb_pub("use_color", @engine.Bool(false), @engine.Tty)]),
-  )
+  assert_eq(tty_wins, Ok([mkb_pub("use_color", @abi.Bool(false), @abi.Tty)]))
   // どちらも供給なし → 宣言 default (最終フォールバック)。
   let default_wins = resolve_scope(sc, [], Map([]))
   assert_eq(
     default_wins,
-    Ok([mkb_pub("use_color", @engine.Bool(true), @engine.Default)]),
+    Ok([mkb_pub("use_color", @abi.Bool(true), @abi.Default)]),
   )
 }
 
@@ -752,21 +740,21 @@ test "resolve_scope: tty 型 default 席の解決は stream ごとに独立 (複
     @builtins.bool_type(),
     is_tty=true,
     tty_stream=Some("stdin"),
-    default_value=Some(@engine.Bool(false)),
+    default_value=Some(@abi.Bool(false)),
   )
   let stdout_tty = ent(
     "stdout_tty",
     @builtins.bool_type(),
     is_tty=true,
     tty_stream=Some("stdout"),
-    default_value=Some(@engine.Bool(false)),
+    default_value=Some(@abi.Bool(false)),
   )
   let stderr_tty = ent(
     "stderr_tty",
     @builtins.bool_type(),
     is_tty=true,
     tty_stream=Some("stderr"),
-    default_value=Some(@engine.Bool(false)),
+    default_value=Some(@abi.Bool(false)),
   )
   let sc : @engine.Scope = {
     greedy: [],
@@ -785,9 +773,9 @@ test "resolve_scope: tty 型 default 席の解決は stream ごとに独立 (複
   assert_eq(
     bound,
     Ok([
-      mkb_pub("stdin_tty", @engine.Bool(false), @engine.Default),
-      mkb_pub("stdout_tty", @engine.Bool(true), @engine.Tty),
-      mkb_pub("stderr_tty", @engine.Bool(false), @engine.Default),
+      mkb_pub("stdin_tty", @abi.Bool(false), @abi.Default),
+      mkb_pub("stdout_tty", @abi.Bool(true), @abi.Tty),
+      mkb_pub("stderr_tty", @abi.Bool(false), @abi.Default),
     ]),
   )
 }
@@ -829,8 +817,8 @@ test "resolve_scope: tty fold formula — tty_cygwin dial flips the result from 
   assert_eq(
     bound,
     Ok([
-      mkb_pub("cygwin_on", @engine.Bool(true), @engine.Tty),
-      mkb_pub("cygwin_off", @engine.Bool(false), @engine.Tty),
+      mkb_pub("cygwin_on", @abi.Bool(true), @abi.Tty),
+      mkb_pub("cygwin_off", @abi.Bool(false), @abi.Tty),
     ]),
   )
 }
@@ -847,7 +835,7 @@ test "resolve_scope: tty 型要素は宣言 default と異なる観測値でも�
     is_tty=true,
     tty_stream=Some("stdout"),
     tty_cygwin=false,
-    default_value=Some(@engine.Bool(true)), // 宣言 default = true
+    default_value=Some(@abi.Bool(true)), // 宣言 default = true
   )
   let sc : @engine.Scope = {
     greedy: [],
@@ -862,7 +850,7 @@ test "resolve_scope: tty 型要素は宣言 default と異なる観測値でも�
     Map([]),
     tty=Map::from_array([("stdout", { terminal: false, cygwin: false })]),
   )
-  assert_eq(bound, Ok([mkb_pub("use_color", @engine.Bool(false), @engine.Tty)]))
+  assert_eq(bound, Ok([mkb_pub("use_color", @abi.Bool(false), @abi.Tty)]))
 }
 
 ///|
@@ -905,12 +893,12 @@ test "resolve_scope: a config_file element is never resolved (skipped even when 
     "config",
     @builtins.string_type(),
     is_config_file=true,
-    default_value=Some(@engine.String("/app.toml")),
+    default_value=Some(@abi.String("/app.toml")),
   )
   let port = ent(
     "port",
     @builtins.number_type(),
-    default_value=Some(@engine.Number(7.0)),
+    default_value=Some(@abi.Number(7.0)),
   )
   let sc : @engine.Scope = {
     greedy: [],
@@ -922,7 +910,7 @@ test "resolve_scope: a config_file element is never resolved (skipped even when 
   // default だけが seat する)。
   assert_eq(
     resolve_scope(sc, [], Map([])),
-    Ok([mkb_pub("port", @engine.Number(7.0), @engine.Default)]),
+    Ok([mkb_pub("port", @abi.Number(7.0), @abi.Default)]),
   )
   // CLI で config_file 要素へ明示的にパスを与えても (通常 entity なら committed で勝つ場面) 同じく
   // 無視される — config_file 要素は「値セル」ではなく「配線先パスの宣言」であるという性質そのものが
@@ -931,18 +919,18 @@ test "resolve_scope: a config_file element is never resolved (skipped even when 
   assert_eq(
     resolve_scope(
       sc,
-      [cb("config", @engine.String("/cli.toml"), @engine.Cli)],
+      [cb("config", @abi.String("/cli.toml"), @abi.Cli)],
       Map([]),
     ),
-    Ok([mkb_pub("port", @engine.Number(7.0), @engine.Default)]),
+    Ok([mkb_pub("port", @abi.Number(7.0), @abi.Default)]),
   )
 }
 
 ///|
 /// Guarantees (DR-074/075 update over slice `env_value`): a badly-typed env string is a DR-066
 /// Error with the canonical reason (`not_a_number` / `not_an_integer` / `not_a_bool`) — NOT a
-/// silent `@engine.String` fallback into a wrong-typed cell (the slice's behaviour this port fixes).
-test "resolve_scope: a badly-typed env value is a DR-066 Error, not a silent @engine.String fallback" {
+/// silent `@abi.String` fallback into a wrong-typed cell (the slice's behaviour this port fixes).
+test "resolve_scope: a badly-typed env value is a DR-066 Error, not a silent @abi.String fallback" {
   let num = ent("n", @builtins.number_type(), env_key=Some("N"))
   let sc_num : @engine.Scope = {
     greedy: [],
@@ -953,7 +941,7 @@ test "resolve_scope: a badly-typed env value is a DR-066 Error, not a silent @en
   match resolve_scope(sc_num, [], Map::from_array([("N", "abc")])) {
     Err(pe) => {
       assert_eq(pe.element, "n")
-      assert_eq(pe.kind, @engine.Parse)
+      assert_eq(pe.kind, @abi.Parse)
       assert_eq(pe.reason, "not_a_number")
     }
     Ok(_) => fail("expected an Err, env value \"abc\" is not a number")
@@ -978,7 +966,7 @@ test "resolve_scope: a badly-typed env value is a DR-066 Error, not a silent @en
   }
   assert_eq(
     resolve_scope(sc_int_ok, [], Map::from_array([("I", "3.0")])),
-    Ok([mkb_pub("i", @engine.Number(3.0), @engine.Env)]),
+    Ok([mkb_pub("i", @abi.Number(3.0), @abi.Env)]),
   )
   let flag = ent("f", @builtins.flag_type(), env_key=Some("F"))
   let sc_flag : @engine.Scope = {
@@ -1002,7 +990,7 @@ test "resolve_scope_config: the config seat fills below env, above inherit/defau
     "config",
     @builtins.string_type(),
     is_config_file=true,
-    default_value=Some(@engine.String("app.json")),
+    default_value=Some(@abi.String("app.json")),
   )
   let port = ent("port", @builtins.number_type(), config_seat=true)
   let sc : @engine.Scope = {
@@ -1012,7 +1000,7 @@ test "resolve_scope_config: the config seat fills below env, above inherit/defau
     constraints: [],
   }
   let config = config_from_json(@json.parse("{\"port\":4321}"))
-  let provider = fn(p : String) -> @engine.ConfigVal? {
+  let provider = fn(p : String) -> @abi.ConfigVal? {
     if p == "app.json" {
       Some(config)
     } else {
@@ -1020,10 +1008,7 @@ test "resolve_scope_config: the config seat fills below env, above inherit/defau
     }
   }
   let bound = resolve_scope_config(sc, [], Map([]), provider)
-  assert_eq(
-    bound,
-    Ok([mkb_pub("port", @engine.Number(4321.0), @engine.Config)]),
-  )
+  assert_eq(bound, Ok([mkb_pub("port", @abi.Number(4321.0), @abi.Config)]))
 }
 
 ///|
@@ -1031,7 +1016,7 @@ test "resolve_scope_config: the config seat fills below env, above inherit/defau
 /// DR-066 Error (指定したのに読めない); a DEFAULT-only path reading `None` is silently tolerated
 /// (the config seat stays empty and later seats/default apply) — DR-050 §2's asymmetry.
 test "resolve_scope_config: a committed unreadable config path errors, a default one does not" {
-  let never_reads = fn(_p : String) -> @engine.ConfigVal? { None }
+  let never_reads = fn(_p : String) -> @abi.ConfigVal? { None }
   let committed = ent("config", @builtins.string_type(), is_config_file=true)
   let sc_committed : @engine.Scope = {
     greedy: [],
@@ -1042,7 +1027,7 @@ test "resolve_scope_config: a committed unreadable config path errors, a default
   match
     resolve_scope_config(
       sc_committed,
-      [cb("config", @engine.String("missing.json"), @engine.Cli)],
+      [cb("config", @abi.String("missing.json"), @abi.Cli)],
       Map([]),
       never_reads,
     ) {
@@ -1059,13 +1044,13 @@ test "resolve_scope_config: a committed unreadable config path errors, a default
     "config",
     @builtins.string_type(),
     is_config_file=true,
-    default_value=Some(@engine.String("optional.json")),
+    default_value=Some(@abi.String("optional.json")),
   )
   let port = ent(
     "port",
     @builtins.number_type(),
     config_seat=true,
-    default_value=Some(@engine.Number(1.0)),
+    default_value=Some(@abi.Number(1.0)),
   )
   let sc_default : @engine.Scope = {
     greedy: [],
@@ -1075,7 +1060,7 @@ test "resolve_scope_config: a committed unreadable config path errors, a default
   }
   assert_eq(
     resolve_scope_config(sc_default, [], Map([]), never_reads),
-    Ok([mkb_pub("port", @engine.Number(1.0), @engine.Default)]),
+    Ok([mkb_pub("port", @abi.Number(1.0), @abi.Default)]),
   )
 }
 
@@ -1089,7 +1074,7 @@ test "resolve_scope_config: a structural config mismatch is an Error" {
     "config",
     @builtins.string_type(),
     is_config_file=true,
-    default_value=Some(@engine.String("app.json")),
+    default_value=Some(@abi.String("app.json")),
   )
   let sc : @engine.Scope = {
     greedy: [],
@@ -1098,7 +1083,7 @@ test "resolve_scope_config: a structural config mismatch is an Error" {
     constraints: [],
   }
   let config = config_from_json(@json.parse("{\"port\":[1,2]}"))
-  let provider = fn(_p : String) -> @engine.ConfigVal? { Some(config) }
+  let provider = fn(_p : String) -> @abi.ConfigVal? { Some(config) }
   match resolve_scope_config(sc, [], Map([]), provider) {
     Err(pe) => {
       assert_eq(pe.element, "port")
@@ -1129,8 +1114,8 @@ test "command_child fetches a subcommand scope; inherited_of builds the parent c
   }
   assert_eq(command_child(root, "serve"), Some(child))
   assert_eq(command_child(root, "missing"), None)
-  let ctx = inherited_of([cb("ttl", @engine.Number(60.0), @engine.Cli)])
-  assert_eq(ctx.get("ttl"), Some(@engine.Number(60.0)))
+  let ctx = inherited_of([cb("ttl", @abi.Number(60.0), @abi.Cli)])
+  assert_eq(ctx.get("ttl"), Some(@abi.Number(60.0)))
   assert_eq(ctx.get("absent"), None)
 }
 
@@ -1139,7 +1124,7 @@ test "command_child fetches a subcommand scope; inherited_of builds the parent c
 ///|
 /// Guarantees (DR-066 §4): `resolve_scope`'s `path?` argument is this scope's DR-066 §4
 /// result-nesting path, threaded straight into a ladder-fill Error's `path` field — no boundary
-/// crossing to accumulate (unlike eval.mbt's CPS @engine.Held), because resolving one scope's entities
+/// crossing to accumulate (unlike eval.mbt's CPS @abi.Held), because resolving one scope's entities
 /// already runs WITH that scope's own path known statically. Root (`path` omitted, default `[]`)
 /// carries an empty path; a scope one command deep (`path: ["sub"]`, as `resolve_tree` would thread
 /// for a `sub` command scope) carries that path unchanged.
@@ -1174,7 +1159,7 @@ test "resolve_scope_config: a ladder-fill Error's path is the caller-supplied sc
     "config",
     @builtins.string_type(),
     is_config_file=true,
-    default_value=Some(@engine.String("app.json")),
+    default_value=Some(@abi.String("app.json")),
   )
   // Phase 2: a committed config path that fails to read.
   let sc1 : @engine.Scope = {
@@ -1183,11 +1168,11 @@ test "resolve_scope_config: a ladder-fill Error's path is the caller-supplied sc
     entities: [cfg_path],
     constraints: [],
   }
-  let never_reads = fn(_p : String) -> @engine.ConfigVal? { None }
+  let never_reads = fn(_p : String) -> @abi.ConfigVal? { None }
   match
     resolve_scope_config(
       sc1,
-      [cb("config", @engine.String("missing.json"), @engine.Cli)],
+      [cb("config", @abi.String("missing.json"), @abi.Cli)],
       Map([]),
       never_reads,
       path=["sub"],
@@ -1216,7 +1201,7 @@ test "resolve_scope_config: a ladder-fill Error's path is the caller-supplied sc
   let config = config_from_json(
     @json.parse("{\"elsewhere\":{\"port\":\"not-a-number\"}}"),
   )
-  let provider = fn(_p : String) -> @engine.ConfigVal? { Some(config) }
+  let provider = fn(_p : String) -> @abi.ConfigVal? { Some(config) }
   match resolve_scope_config(sc2, [], Map([]), provider, path=["sub"]) {
     Err(pe) => {
       assert_eq(pe.element, "port")
@@ -1229,15 +1214,15 @@ test "resolve_scope_config: a ladder-fill Error's path is the caller-supplied sc
 // ── DR-077: update 効果 + count cli-seat fold ─────────────────────────────────
 
 ///|
-/// A 0-token `update` effect binding (DR-077 §1) — mirrors `cb`'s @engine.Set-only shape but for the
+/// A 0-token `update` effect binding (DR-077 §1) — mirrors `cb`'s @abi.Set-only shape but for the
 /// old-dependent op; `value` is a placeholder (never read — resolve_entity's fold reads `old` off
 /// the RUNNING state, not off this binding).
-fn ceff(key : String, transform : String) -> @engine.Binding {
+fn ceff(key : String, transform : String) -> @abi.Binding {
   {
     key,
-    op: @engine.Invoke({ name: transform, args: [] }),
-    value: @engine.Bool(false),
-    source: @engine.Cli,
+    op: @abi.Invoke({ name: transform, args: [] }),
+    value: @abi.Bool(false),
+    source: @abi.Cli,
     scope: [],
     link: 0,
     at_pos: None,
@@ -1253,7 +1238,7 @@ test "resolve_scope: 3 chained update(increment) effects ledger old=0→1→2→
   let verbose = ent(
     "verbose",
     @builtins.number_type(),
-    default_value=Some(@engine.Number(0.0)),
+    default_value=Some(@abi.Number(0.0)),
   )
   let sc : @engine.Scope = {
     greedy: [],
@@ -1268,7 +1253,7 @@ test "resolve_scope: 3 chained update(increment) effects ledger old=0→1→2→
   ]
   assert_eq(
     resolve_scope(sc, cli, Map([])),
-    Ok([mkb_pub("verbose", @engine.Number(3.0), @engine.Cli)]),
+    Ok([mkb_pub("verbose", @abi.Number(3.0), @abi.Cli)]),
   )
 }
 
@@ -1287,7 +1272,7 @@ test "resolve_scope: update(increment) with no declared default falls back to a 
   }
   assert_eq(
     resolve_scope(sc, [ceff("n", "incr")], Map([])),
-    Ok([mkb_pub("n", @engine.Number(1.0), @engine.Cli)]),
+    Ok([mkb_pub("n", @abi.Number(1.0), @abi.Cli)]),
   )
 }
 
@@ -1301,7 +1286,7 @@ test "resolve_scope: count falls back to default:0 when unfired, and env SETS a 
     "verbose",
     @builtins.number_type(),
     env_key=Some("VERBOSITY"),
-    default_value=Some(@engine.Number(0.0)),
+    default_value=Some(@abi.Number(0.0)),
   )
   let sc : @engine.Scope = {
     greedy: [],
@@ -1312,12 +1297,12 @@ test "resolve_scope: count falls back to default:0 when unfired, and env SETS a 
   // no cli fire at all → default seat (0).
   assert_eq(
     resolve_scope(sc, [], Map([])),
-    Ok([mkb_pub("verbose", @engine.Number(0.0), @engine.Default)]),
+    Ok([mkb_pub("verbose", @abi.Number(0.0), @abi.Default)]),
   )
   // env seat: a plain number set, never an increment (no `update` op anywhere in this path).
   assert_eq(
     resolve_scope(sc, [], Map::from_array([("VERBOSITY", "5")])),
-    Ok([mkb_pub("verbose", @engine.Number(5.0), @engine.Env)]),
+    Ok([mkb_pub("verbose", @abi.Number(5.0), @abi.Env)]),
   )
 }
 
@@ -1333,7 +1318,7 @@ test "resolve_scope: final_filters (in_range) rejects an update-folded count val
   let verbose = ent(
     "verbose",
     @builtins.number_type(),
-    default_value=Some(@engine.Number(0.0)),
+    default_value=Some(@abi.Number(0.0)),
     final_filters=["in_range:0:2"],
   )
   let sc : @engine.Scope = {
@@ -1356,7 +1341,7 @@ test "resolve_scope: final_filters (in_range) rejects an update-folded count val
   let cli2 = [ceff("verbose", "incr"), ceff("verbose", "incr")]
   assert_eq(
     resolve_scope(sc, cli2, Map([])),
-    Ok([mkb_pub("verbose", @engine.Number(2.0), @engine.Cli)]),
+    Ok([mkb_pub("verbose", @abi.Number(2.0), @abi.Cli)]),
   )
 }
 
@@ -1364,7 +1349,7 @@ test "resolve_scope: final_filters (in_range) rejects an update-folded count val
 /// 保証: final_filters は set 経路 (通常の value option) にも同じく効く — DR-077 §1 が強調するのは
 /// 「update の結果にも」という追加であって、set 経路の final_filters 適用は元々の DR-009/040 契約
 /// (update 導入前から成立すべき前提)。両経路が同じ apply_entity_filters を通ることを対で固定する。
-test "resolve_scope: final_filters (in_range) also rejects a plain @engine.Set value over the limit" {
+test "resolve_scope: final_filters (in_range) also rejects a plain @abi.Set value over the limit" {
   let n = ent("n", @builtins.number_type(), final_filters=["in_range:0:100"])
   let sc : @engine.Scope = {
     greedy: [],
@@ -1372,14 +1357,13 @@ test "resolve_scope: final_filters (in_range) also rejects a plain @engine.Set v
     entities: [n],
     constraints: [],
   }
-  match
-    resolve_scope(sc, [cb("n", @engine.Number(101.0), @engine.Cli)], Map([])) {
+  match resolve_scope(sc, [cb("n", @abi.Number(101.0), @abi.Cli)], Map([])) {
     Err(pe) => assert_eq(pe.reason, "too_large")
     Ok(_) => fail("expected Err (101 is out of range [0, 100])")
   }
   assert_eq(
-    resolve_scope(sc, [cb("n", @engine.Number(50.0), @engine.Cli)], Map([])),
-    Ok([cb("n", @engine.Number(50.0), @engine.Cli)]),
+    resolve_scope(sc, [cb("n", @abi.Number(50.0), @abi.Cli)], Map([])),
+    Ok([cb("n", @abi.Number(50.0), @abi.Cli)]),
   )
 }
 
@@ -1387,14 +1371,14 @@ test "resolve_scope: final_filters (in_range) also rejects a plain @engine.Set v
 
 ///|
 /// 保証 (regression 再現、issue 2026-07-09-accum-entity-filters-wiring の "根" そのもの):
-/// resolve_entity_raw の CLI 座席 fold は `e.accum is Some(_)` のとき同名 @engine.Binding を DR-015
+/// resolve_entity_raw の CLI 座席 fold は `e.accum is Some(_)` のとき同名 @abi.Binding を DR-015
 /// last-wins に潰さない — accum 無し (scalar) の fold が last-wins のままであることとの対比を同じ
-/// テストで固定する。修正前はこの assert が `Ok([cb("tags", @engine.String("b"), @engine.Cli)])` (最後の 1 個だけ) に
-/// 潰れて RED だった。本テストは @engine.Set 効果のみを使うため、issue accum-fold-update-default-ops
+/// テストで固定する。修正前はこの assert が `Ok([cb("tags", @abi.String("b"), @abi.Cli)])` (最後の 1 個だけ) に
+/// 潰れて RED だった。本テストは @abi.Set 効果のみを使うため、issue accum-fold-update-default-ops
 /// (team-lead 裁定 2026-07-10) 以降 `resolve_entity_raw` の accum 分岐が default/unset の committed
-/// 状態を追跡するようになった後も結果は変わらない (@engine.Set は常に `committed_now=true` で温存される) —
-/// 「op 解釈しない」という記述は現在の実装を正確に表さないため削除し、「@engine.Set のみなら常に全件温存」
-/// という不変条件として書き直した (op 解釈が入っても @engine.Set 効果自体の扱いは変わっていない、という
+/// 状態を追跡するようになった後も結果は変わらない (@abi.Set は常に `committed_now=true` で温存される) —
+/// 「op 解釈しない」という記述は現在の実装を正確に表さないため削除し、「@abi.Set のみなら常に全件温存」
+/// という不変条件として書き直した (op 解釈が入っても @abi.Set 効果自体の扱いは変わっていない、という
 /// 意図)。
 test "resolve_scope: an accum cell's CLI seat preserves EVERY same-name binding (not last-wins)" {
   let tags = ent("tags", @builtins.string_type(), accum=Some("append"))
@@ -1405,14 +1389,14 @@ test "resolve_scope: an accum cell's CLI seat preserves EVERY same-name binding 
     constraints: [],
   }
   let cli = [
-    cb("tags", @engine.String("a"), @engine.Cli),
-    cb("tags", @engine.String("b"), @engine.Cli),
+    cb("tags", @abi.String("a"), @abi.Cli),
+    cb("tags", @abi.String("b"), @abi.Cli),
   ]
   assert_eq(
     resolve_scope(sc, cli, Map([])),
     Ok([
-      cb("tags", @engine.String("a"), @engine.Cli),
-      cb("tags", @engine.String("b"), @engine.Cli),
+      cb("tags", @abi.String("a"), @abi.Cli),
+      cb("tags", @abi.String("b"), @abi.Cli),
     ]),
   )
 }
@@ -1430,12 +1414,12 @@ test "resolve_scope: a scalar (no accum) cell's CLI seat still folds to last-win
     constraints: [],
   }
   let cli = [
-    cb("port", @engine.String("a"), @engine.Cli),
-    cb("port", @engine.String("b"), @engine.Cli),
+    cb("port", @abi.String("a"), @abi.Cli),
+    cb("port", @abi.String("b"), @abi.Cli),
   ]
   assert_eq(
     resolve_scope(sc, cli, Map([])),
-    Ok([cb("port", @engine.String("b"), @engine.Cli)]),
+    Ok([cb("port", @abi.String("b"), @abi.Cli)]),
   )
 }
 
@@ -1454,14 +1438,14 @@ test "resolve_scope: accum × value_filters(each) — all pieces passing preserv
     constraints: [],
   }
   let cli = [
-    cb("ports", @engine.Number(5.0), @engine.Cli),
-    cb("ports", @engine.Number(7.0), @engine.Cli),
+    cb("ports", @abi.Number(5.0), @abi.Cli),
+    cb("ports", @abi.Number(7.0), @abi.Cli),
   ]
   assert_eq(
     resolve_scope(sc, cli, Map([])),
     Ok([
-      cb("ports", @engine.Number(5.0), @engine.Cli),
-      cb("ports", @engine.Number(7.0), @engine.Cli),
+      cb("ports", @abi.Number(5.0), @abi.Cli),
+      cb("ports", @abi.Number(7.0), @abi.Cli),
     ]),
   )
 }
@@ -1470,7 +1454,7 @@ test "resolve_scope: accum × value_filters(each) — all pieces passing preserv
 /// 保証 (issue 2026-07-09-accum-entity-filters-wiring 完了条件、CONFORMANCE §2/§3 の piece
 /// 帰属規約): accum × value_filters(each) で 1 piece が reject すると全体が failure になり (「不正 piece
 /// を静かに除外して残りを累積する」経路ではない)、その args_pos は reject した piece 自身が
-/// 由来する CLI トークン位置 (`@engine.Binding.at_pos`、issue のスコープで追加) — ladder 呼び出し側が
+/// 由来する CLI トークン位置 (`@abi.Binding.at_pos`、issue のスコープで追加) — ladder 呼び出し側が
 /// 一律で渡す `at_pos` (env/config 由来の「トークン非帰属」フォールバック) には落ちない。
 /// multiple-parse/filters-each.json::one-piece-rejects-whole-not-partial-accumulate の wbtest 版。
 test "resolve_scope: accum × value_filters(each) — one piece rejecting fails whole at ITS OWN token position" {
@@ -1487,12 +1471,12 @@ test "resolve_scope: accum × value_filters(each) — one piece rejecting fails 
   // ladder 呼び出し側の at_pos=4 (仮に args.length() 相当) を渡しても、reject は 500 自身の
   // 位置 (3) に帰属することを固定する — env/config seat の args.length フォールバックとの対比。
   let cli = [
-    cb("ports", @engine.Number(5.0), @engine.Cli, at_pos=Some(1)),
-    cb("ports", @engine.Number(500.0), @engine.Cli, at_pos=Some(3)),
+    cb("ports", @abi.Number(5.0), @abi.Cli, at_pos=Some(1)),
+    cb("ports", @abi.Number(500.0), @abi.Cli, at_pos=Some(3)),
   ]
   match resolve_scope(sc, cli, Map([]), at_pos=4) {
     Err(pe) => {
-      assert_eq(pe.kind, @engine.Filter)
+      assert_eq(pe.kind, @abi.Filter)
       assert_eq(pe.args_pos, 3)
       assert_eq(pe.reason, "too_large")
     }
@@ -1503,24 +1487,24 @@ test "resolve_scope: accum × value_filters(each) — one piece rejecting fails 
 ///|
 /// 保証 (issue 2026-07-09-accum-fold-update-default-ops、team-lead 裁定 2026-07-10 — 前サイクル
 /// (issue accum-filters-non-set-op-semantics) からの契約変更を明示する): このテストが検証する
-/// 「何を」は変わっていない (@engine.Unset の placeholder 値 (`mk_effect` の doc comment: "The operand is a
-/// placeholder — these ops carry no operand", ここでは @engine.Bool(false)) が number 用 `in_range`
+/// 「何を」は変わっていない (@abi.Unset の placeholder 値 (`mk_effect` の doc comment: "The operand is a
+/// placeholder — these ops carry no operand", ここでは @abi.Bool(false)) が number 用 `in_range`
 /// value_filters に渡って型不一致で誤 reject しないこと) — この spec 面の正本は conformance fixture
 /// `multiple-parse/filters-cell-ops.json` (unset-after-set-resets-to-empty-without-filter ケース、
 /// green 維持確認済み) であり、本 wbtest はそれが conformance fixture に到達する前に GREEN を固定
 /// する下働き。**変わったのは「どう検証するか」**: 旧契約 (accum-filters-non-set-op-semantics サイクル)
-/// では `resolve_entity_raw` の accum 分岐は CLI 座席の op を一切解釈せず同名 @engine.Binding を生のまま列で
-/// 温存していたため、本テストは「`resolve_scope` の戻り値が `[@engine.Set(5), @engine.Unset]` の2件そのまま」を
+/// では `resolve_entity_raw` の accum 分岐は CLI 座席の op を一切解釈せず同名 @abi.Binding を生のまま列で
+/// 温存していたため、本テストは「`resolve_scope` の戻り値が `[@abi.Set(5), @abi.Unset]` の2件そのまま」を
 /// 直接 assert していた。今サイクルの裁定で `resolve_entity_raw` の accum 分岐は op を解釈するように
 /// なった (default/unset の committed 状態を追跡し、CLI 座席全体が uncommitted なら下位ラダーへ
-/// フォールスルーする、Q5) — `ports` は env/config/宣言 default を一切持たないため、@engine.Unset
+/// フォールスルーする、Q5) — `ports` は env/config/宣言 default を一切持たないため、@abi.Unset
 /// (committed=false) 単独発火は CLI 座席全体を下位ラダーへ開放し、下位値源も無いので最終的に
 /// `Ok([])` に確定する (`unset-env-fallback.json` の下位値源ありケースとの対比: 本テストは下位値源
-/// なしの基準形、対になる下位値源ありケースは次のテストで押さえる)。@engine.Unset の placeholder が
+/// なしの基準形、対になる下位値源ありケースは次のテストで押さえる)。@abi.Unset の placeholder が
 /// `apply_entity_filters` の filter chain (in_range:1:100) を通っていたら型不一致で `Err` になるはず
 /// なので、`Ok([])` (Err でないこと) 自体が「placeholder が filter を経由していない」証拠になる —
 /// この検証ロジック自体 (Err にならないことで filter 非適用を証明する) は旧契約でも同じだった。
-test "resolve_scope: accum × value_filters(each) — @engine.Unset placeholder is exempt from filters (only @engine.Set carries a real value)" {
+test "resolve_scope: accum × value_filters(each) — @abi.Unset placeholder is exempt from filters (only @abi.Set carries a real value)" {
   let ports = ent("ports", @builtins.number_type(), accum=Some("append"), value_filters=[
     "in_range:1:100",
   ])
@@ -1530,14 +1514,14 @@ test "resolve_scope: accum × value_filters(each) — @engine.Unset placeholder 
     entities: [ports],
     constraints: [],
   }
-  // `--ports 5 --reset-ports` を模す: @engine.Set(5) の後に @engine.Unset (placeholder @engine.Bool(false)、値なし) が続く。
+  // `--ports 5 --reset-ports` を模す: @abi.Set(5) の後に @abi.Unset (placeholder @abi.Bool(false)、値なし) が続く。
   let cli = [
-    cb("ports", @engine.Number(5.0), @engine.Cli, at_pos=Some(1)),
+    cb("ports", @abi.Number(5.0), @abi.Cli, at_pos=Some(1)),
     {
       key: "ports",
-      op: @engine.Unset,
-      value: @engine.Bool(false), // placeholder — unset carries no operand
-      source: @engine.Cli,
+      op: @abi.Unset,
+      value: @abi.Bool(false), // placeholder — unset carries no operand
+      source: @abi.Cli,
       scope: [],
       link: 0,
       at_pos: None,
@@ -1545,27 +1529,27 @@ test "resolve_scope: accum × value_filters(each) — @engine.Unset placeholder 
   ]
   match resolve_scope(sc, cli, Map([])) {
     Ok(bs) =>
-      // @engine.Unset が CLI 座席をラダーへ開放し、下位値源 (env/config/宣言default) も無いので `[]` に確定
-      // する — @engine.Set(5) は @engine.Unset で累積列がクリアされた後の座席には残らない (build_result 側の
-      // ACCUMULATE fold が @engine.Set→@engine.Unset を「クリア点」として畳むのと同じ規約、`resolve_scope` 単体では
+      // @abi.Unset が CLI 座席をラダーへ開放し、下位値源 (env/config/宣言default) も無いので `[]` に確定
+      // する — @abi.Set(5) は @abi.Unset で累積列がクリアされた後の座席には残らない (build_result 側の
+      // ACCUMULATE fold が @abi.Set→@abi.Unset を「クリア点」として畳むのと同じ規約、`resolve_scope` 単体では
       // その畳みの手前の座席解決だけを見ている)。
       assert_eq(bs.length(), 0)
     Err(_) =>
       fail(
-        "expected Ok([]) — @engine.Unset's placeholder must not run through e.value_filters (in_range would wrongly reject a non-number placeholder if it did)",
+        "expected Ok([]) — @abi.Unset's placeholder must not run through e.value_filters (in_range would wrongly reject a non-number placeholder if it did)",
       )
   }
 }
 
 ///|
 /// 保証 (上記テストの対、下位値源ありケース — fall-through の両面を unit 層でも押さえる): `ports`
-/// が env 席を持つ場合、@engine.Unset (committed=false) は CLI 座席を下位ラダーへ開放し、env が供給する
+/// が env 席を持つ場合、@abi.Unset (committed=false) は CLI 座席を下位ラダーへ開放し、env が供給する
 /// 値がそのまま最終値になる (`unset-env-fallback.json` の `unset-opens-ladder-to-env-separator-list`
 /// と同型、本テストは separator 無しの単純形)。env から供給される値は `resolve_entity_raw` の
-/// 独立した座席解決 (env seat、`@engine.config_to_value`/`env_value` の pieceProcessor) を通るため
-/// value_filters も正しく適用される — @engine.Unset で CLI 座席の value_filters チェックを完全に迂回した
+/// 独立した座席解決 (env seat、`@extension.config_to_value`/`env_value` の pieceProcessor) を通るため
+/// value_filters も正しく適用される — @abi.Unset で CLI 座席の value_filters チェックを完全に迂回した
 /// 上記テストとの対比 (下位値源の有無だけで fall-through の着地点が変わることを固定する)。
-test "resolve_scope: accum × @engine.Unset opens the ladder to env when a lower source exists" {
+test "resolve_scope: accum × @abi.Unset opens the ladder to env when a lower source exists" {
   let ports = ent(
     "ports",
     @builtins.number_type(),
@@ -1579,14 +1563,14 @@ test "resolve_scope: accum × @engine.Unset opens the ladder to env when a lower
     entities: [ports],
     constraints: [],
   }
-  // `--reset-ports` のみ、env PORTS="42": CLI 座席は @engine.Unset 1 個のみ (committed=false) で下位の env
+  // `--reset-ports` のみ、env PORTS="42": CLI 座席は @abi.Unset 1 個のみ (committed=false) で下位の env
   // 席まで落ち、"42" が value_filters (in_range:1:100) を通って供給される。
-  let cli : Array[@engine.Binding] = [
+  let cli : Array[@abi.Binding] = [
     {
       key: "ports",
-      op: @engine.Unset,
-      value: @engine.Bool(false),
-      source: @engine.Cli,
+      op: @abi.Unset,
+      value: @abi.Bool(false),
+      source: @abi.Cli,
       scope: [],
       link: 0,
       at_pos: None,
@@ -1595,23 +1579,21 @@ test "resolve_scope: accum × @engine.Unset opens the ladder to env when a lower
   match resolve_scope(sc, cli, Map([("PORTS", "42")])) {
     Ok(bs) => {
       assert_eq(bs.length(), 1)
-      assert_eq(bs[0].value, @engine.Number(42.0))
-      assert_eq(bs[0].source, @engine.Env)
+      assert_eq(bs[0].value, @abi.Number(42.0))
+      assert_eq(bs[0].source, @abi.Env)
     }
     Err(_) =>
-      fail(
-        "expected Ok — env supplies 42 after @engine.Unset opens the ladder",
-      )
+      fail("expected Ok — env supplies 42 after @abi.Unset opens the ladder")
   }
 }
 
 ///|
-/// 保証 (対、上記テストの逆順): `--reset-ports --ports 7` を模す — @engine.Unset が先に発火しても、後続の
-/// @engine.Set(7) には filter が正常に効き続ける (「@engine.Unset が filter chain 自体を壊す」ことがない)。
-/// @engine.Set が filter を reject する場合も同様に機能することを固定 (@engine.Unset 混在下でも @engine.Set 側の
+/// 保証 (対、上記テストの逆順): `--reset-ports --ports 7` を模す — @abi.Unset が先に発火しても、後続の
+/// @abi.Set(7) には filter が正常に効き続ける (「@abi.Unset が filter chain 自体を壊す」ことがない)。
+/// @abi.Set が filter を reject する場合も同様に機能することを固定 (@abi.Unset 混在下でも @abi.Set 側の
 /// reject 輪郭 (既存の "one piece rejecting fails whole" テスト) が保たれることの対比)。
 /// multiple-parse/filters-cell-ops.json::unset-then-set-reaccumulates-with-filter-intact の wbtest 版。
-test "resolve_scope: accum × value_filters(each) — @engine.Unset does not disable filters for a LATER @engine.Set piece" {
+test "resolve_scope: accum × value_filters(each) — @abi.Unset does not disable filters for a LATER @abi.Set piece" {
   let ports = ent("ports", @builtins.number_type(), accum=Some("append"), value_filters=[
     "in_range:1:100",
   ])
@@ -1621,68 +1603,68 @@ test "resolve_scope: accum × value_filters(each) — @engine.Unset does not dis
     entities: [ports],
     constraints: [],
   }
-  // 通過ケース: @engine.Unset の後の @engine.Set(7) は in_range:1:100 を通過する。
-  let cli_pass : Array[@engine.Binding] = [
+  // 通過ケース: @abi.Unset の後の @abi.Set(7) は in_range:1:100 を通過する。
+  let cli_pass : Array[@abi.Binding] = [
     {
       key: "ports",
-      op: @engine.Unset,
-      value: @engine.Bool(false),
-      source: @engine.Cli,
+      op: @abi.Unset,
+      value: @abi.Bool(false),
+      source: @abi.Cli,
       scope: [],
       link: 0,
       at_pos: None,
     },
-    cb("ports", @engine.Number(7.0), @engine.Cli, at_pos=Some(2)),
+    cb("ports", @abi.Number(7.0), @abi.Cli, at_pos=Some(2)),
   ]
   match resolve_scope(sc, cli_pass, Map([])) {
     Ok(bs) => {
       assert_eq(bs.length(), 2)
-      assert_eq(bs[0].op, @engine.Unset)
-      assert_eq(bs[1].op, @engine.Set)
-      assert_eq(bs[1].value, @engine.Number(7.0))
+      assert_eq(bs[0].op, @abi.Unset)
+      assert_eq(bs[1].op, @abi.Set)
+      assert_eq(bs[1].value, @abi.Number(7.0))
     }
     Err(_) =>
       fail(
-        "expected Ok — @engine.Set(7) is within range and @engine.Unset must not block it",
+        "expected Ok — @abi.Set(7) is within range and @abi.Unset must not block it",
       )
   }
-  // reject ケース: @engine.Unset の後の @engine.Set(500) は in_range:1:100 を reject する (@engine.Unset 混在でも @engine.Set の
+  // reject ケース: @abi.Unset の後の @abi.Set(500) は in_range:1:100 を reject する (@abi.Unset 混在でも @abi.Set の
   // filter 適用が生きていることの直接証拠)。
-  let cli_reject : Array[@engine.Binding] = [
+  let cli_reject : Array[@abi.Binding] = [
     {
       key: "ports",
-      op: @engine.Unset,
-      value: @engine.Bool(false),
-      source: @engine.Cli,
+      op: @abi.Unset,
+      value: @abi.Bool(false),
+      source: @abi.Cli,
       scope: [],
       link: 0,
       at_pos: None,
     },
-    cb("ports", @engine.Number(500.0), @engine.Cli, at_pos=Some(2)),
+    cb("ports", @abi.Number(500.0), @abi.Cli, at_pos=Some(2)),
   ]
   match resolve_scope(sc, cli_reject, Map([])) {
     Err(pe) => {
-      assert_eq(pe.kind, @engine.Filter)
+      assert_eq(pe.kind, @abi.Filter)
       assert_eq(pe.reason, "too_large")
     }
     Ok(_) =>
       fail(
-        "expected Err — 500 is out of range [1, 100], @engine.Unset must not exempt it",
+        "expected Err — 500 is out of range [1, 100], @abi.Unset must not exempt it",
       )
   }
 }
 
 ///|
 /// 保証 (issue 2026-07-09-post-filter-error-attribution): `value_filters`/`final_filters` reject の
-/// Error は `kind: @engine.Filter` を持つ (DR-053 §2 の `parse` | `filter` | `constraint` 3 分類 — 値が
-/// パースできなかった `@engine.Parse` とは別カテゴリ、既にパース済みの値を validate/transform した結果の
+/// Error は `kind: @abi.Filter` を持つ (DR-053 §2 の `parse` | `filter` | `constraint` 3 分類 — 値が
+/// パースできなかった `@abi.Parse` とは別カテゴリ、既にパース済みの値を validate/transform した結果の
 /// reject なので `filter` 分類に属する)。`args_pos` は呼び出し側が渡した最終位置をそのまま持つ
 /// (env/config seat のエラーと同じ規約 — `ladder_err`/`filter_err` の doc comment 参照、値がどの
 /// token でも読まれていないので位置は「args 走査が完了した地点」= 呼び出し側の `toks.length()`
 /// 相当。本テストでは呼び出し側が明示的に `at_pos=3` を渡し、それがそのまま素通しされることを
 /// 固定する — 実際の conformance harness 側の配線 (`dc.args.length()`) は
 /// json_conformance_test.mbt の `do_resolve_pe`/`resolve_tree` が担う)。
-test "resolve_scope: a value_filters/final_filters reject carries kind=@engine.Filter and the caller's at_pos" {
+test "resolve_scope: a value_filters/final_filters reject carries kind=@abi.Filter and the caller's at_pos" {
   let n = ent("n", @builtins.number_type(), final_filters=["in_range:0:100"])
   let sc : @engine.Scope = {
     greedy: [],
@@ -1693,12 +1675,12 @@ test "resolve_scope: a value_filters/final_filters reject carries kind=@engine.F
   match
     resolve_scope(
       sc,
-      [cb("n", @engine.Number(101.0), @engine.Cli)],
+      [cb("n", @abi.Number(101.0), @abi.Cli)],
       Map([]),
       at_pos=3,
     ) {
     Err(pe) => {
-      assert_eq(pe.kind, @engine.Filter)
+      assert_eq(pe.kind, @abi.Filter)
       assert_eq(pe.args_pos, 3)
       assert_eq(pe.reason, "too_large")
     }
@@ -1712,9 +1694,9 @@ test "resolve_scope: a value_filters/final_filters reject carries kind=@engine.F
 /// `:update:increment:5` (0-arg 組み込み `increment` への余分な args) は definition-time では
 /// 通る (installer_wbtest.mbt の対テスト参照 — registry に存在し signature も Transform なので
 /// gate を通過する) が、**RUNTIME** で `apply_transform` が `(d.run)(old, args)` を呼んだ時点で
-/// `filter_increment` 自身が `args.length() != 0` を拒否し (`filters.mbt`)、`kind: @engine.Filter` の
-/// Error になることを固定する (codex 指摘 3: この Error の kind は `ladder_err` (@engine.Parse) から
-/// `filter_err` (@engine.Filter) へ置換済み — 値のパース失敗ではなく filter/transform 語彙の拒否なので
+/// `filter_increment` 自身が `args.length() != 0` を拒否し (`filters.mbt`)、`kind: @abi.Filter` の
+/// Error になることを固定する (codex 指摘 3: この Error の kind は `ladder_err` (@abi.Parse) から
+/// `filter_err` (@abi.Filter) へ置換済み — 値のパース失敗ではなく filter/transform 語彙の拒否なので
 /// DR-053 §2 の分類上こちらが正しい)。`reason` は `filter_rejected` — `increment` は DR-095 §3
 /// で `Transform` (失敗しない) と分類され `reasons: []`、かつこの arity 拒否は type-contract
 /// violation (filter-definition bug) であって DR-095 が正しい定義の failure mode として宣言する
@@ -1722,11 +1704,11 @@ test "resolve_scope: a value_filters/final_filters reject carries kind=@engine.F
 /// という subset invariant を守るため、宣言外の防御的失敗は全て DR-095 §5 の宣言済み fallback
 /// `filter_rejected` に畳む (旧 `update_transform_type_mismatch` は spec 全体 grep 0 hit の
 /// 実装発明だったため廃止)。
-test "resolve_scope: an update transform's own arity rejection surfaces at runtime as kind=@engine.Filter, reason=filter_rejected (DR-095 subset invariant — no declared reason for this defensive path)" {
+test "resolve_scope: an update transform's own arity rejection surfaces at runtime as kind=@abi.Filter, reason=filter_rejected (DR-095 subset invariant — no declared reason for this defensive path)" {
   let n = ent(
     "n",
     @builtins.number_type(),
-    default_value=Some(@engine.Number(0.0)),
+    default_value=Some(@abi.Number(0.0)),
   )
   let sc : @engine.Scope = {
     greedy: [],
@@ -1734,12 +1716,12 @@ test "resolve_scope: an update transform's own arity rejection surfaces at runti
     entities: [n],
     constraints: [],
   }
-  let cli : Array[@engine.Binding] = [
+  let cli : Array[@abi.Binding] = [
     {
       key: "n",
-      op: @engine.Invoke({ name: "incr", args: ["5"] }),
-      value: @engine.Bool(false),
-      source: @engine.Cli,
+      op: @abi.Invoke({ name: "incr", args: ["5"] }),
+      value: @abi.Bool(false),
+      source: @abi.Cli,
       scope: [],
       link: 0,
       at_pos: None,
@@ -1747,7 +1729,7 @@ test "resolve_scope: an update transform's own arity rejection surfaces at runti
   ]
   match resolve_scope(sc, cli, Map([])) {
     Err(pe) => {
-      assert_eq(pe.kind, @engine.Parse)
+      assert_eq(pe.kind, @abi.Parse)
       assert_eq(pe.reason, "invalid-argument")
     }
     Ok(_) => fail("expected Err (increment takes no args)")
@@ -1757,18 +1739,18 @@ test "resolve_scope: an update transform's own arity rejection surfaces at runti
 ///|
 /// 保証 (canonical 表 14行目、DR-080 §2 escape 規約): `+-a,+@,++` は piece 全体が `+` + (`-`|`@`|`+`)
 /// で始まるので escape (先頭 `+` を 1 個剥がした literal) — マーカーを一切含まないので cell 上書き
-/// になり、剥がした literal そのもの `["-a","@","+"]` が結果になる。`@engine.classify_merge_piece` の判定を
+/// になり、剥がした literal そのもの `["-a","@","+"]` が結果になる。`@extension.classify_merge_piece` の判定を
 /// 直接検証する (eval 層のマーカー判定関数、`eval_merge_pieces` の入力である `MergeMark` 列を作る
 /// 前段)。
 test "DR-080 merge: +-a,+@,++ escapes to literal -a,@,+ (canonical row 14)" {
-  assert_eq(@engine.classify_merge_piece("+-a"), Add("-a"))
-  assert_eq(@engine.classify_merge_piece("+@"), Add("@"))
-  assert_eq(@engine.classify_merge_piece("++"), Add("+"))
+  assert_eq(@extension.classify_merge_piece("+-a"), Add("-a"))
+  assert_eq(@extension.classify_merge_piece("+@"), Add("@"))
+  assert_eq(@extension.classify_merge_piece("++"), Add("+"))
   // 3 piece とも Add (escape 後は marker を持たない) なので、cell 上書き経路に落ちる。
   let marks = [
-    @engine.classify_merge_piece("+-a"),
-    @engine.classify_merge_piece("+@"),
-    @engine.classify_merge_piece("++"),
+    @extension.classify_merge_piece("+-a"),
+    @extension.classify_merge_piece("+@"),
+    @extension.classify_merge_piece("++"),
   ]
   for m in marks {
     match m {
@@ -1783,22 +1765,22 @@ test "DR-080 merge: +-a,+@,++ escapes to literal -a,@,+ (canonical row 14)" {
 /// 含むが piece 全体一致ではないので add。`+` 単独は 2 文字目が存在しないので escape にならず
 /// literal `"+"`。`-` 単独は remove("") (operand が空文字列)。
 test "DR-080 merge: partial matches and bare +/- are NOT markers (対極)" {
-  assert_eq(@engine.classify_merge_piece("a@b"), Add("a@b"))
-  assert_eq(@engine.classify_merge_piece("+"), Add("+"))
-  assert_eq(@engine.classify_merge_piece("-"), Remove(""))
-  assert_eq(@engine.classify_merge_piece("+x"), Add("+x")) // +x (x は -/@/+ 以外) は literal のまま
+  assert_eq(@extension.classify_merge_piece("a@b"), Add("a@b"))
+  assert_eq(@extension.classify_merge_piece("+"), Add("+"))
+  assert_eq(@extension.classify_merge_piece("-"), Remove(""))
+  assert_eq(@extension.classify_merge_piece("+x"), Add("+x")) // +x (x は -/@/+ 以外) は literal のまま
 }
 
 ///|
-/// A @engine.Binding literal carrying a non-@engine.Set op. The merge resident groups these
-/// @engine.Remove/@engine.Splice pieces by `at_pos`, matching `sep_binds`'s construction shape.
+/// A @abi.Binding literal carrying a non-@abi.Set op. The merge resident groups these
+/// @abi.Remove/@abi.Splice pieces by `at_pos`, matching `sep_binds`'s construction shape.
 fn merge_piece_bind(
   key : String,
-  op : @engine.EffectOp,
-  value : @engine.Value,
+  op : @abi.EffectOp,
+  value : @abi.Value,
   pos : Int,
-) -> @engine.Binding {
-  { key, op, value, source: @engine.Cli, scope: [], link: 0, at_pos: Some(pos) }
+) -> @abi.Binding {
+  { key, op, value, source: @abi.Cli, scope: [], link: 0, at_pos: Some(pos) }
 }
 
 ///|
@@ -1817,21 +1799,21 @@ test "DR-080 resolve wiring: second no-marker fire REPLACES (not appends) the fi
     entities: [fields],
     constraints: [],
   }
-  let cli : Array[@engine.Binding] = [
-    cb("fields", @engine.String("a"), @engine.Cli, at_pos=Some(1)),
-    cb("fields", @engine.String("a"), @engine.Cli, at_pos=Some(1)),
-    cb("fields", @engine.String("b"), @engine.Cli, at_pos=Some(1)),
-    cb("fields", @engine.String("a"), @engine.Cli, at_pos=Some(1)),
-    cb("fields", @engine.String("c"), @engine.Cli, at_pos=Some(1)),
-    cb("fields", @engine.String("d"), @engine.Cli, at_pos=Some(3)),
+  let cli : Array[@abi.Binding] = [
+    cb("fields", @abi.String("a"), @abi.Cli, at_pos=Some(1)),
+    cb("fields", @abi.String("a"), @abi.Cli, at_pos=Some(1)),
+    cb("fields", @abi.String("b"), @abi.Cli, at_pos=Some(1)),
+    cb("fields", @abi.String("a"), @abi.Cli, at_pos=Some(1)),
+    cb("fields", @abi.String("c"), @abi.Cli, at_pos=Some(1)),
+    cb("fields", @abi.String("d"), @abi.Cli, at_pos=Some(3)),
   ]
   match resolve_scope(sc, cli, Map([])) {
     Ok(bs) => {
-      let vals : Array[@engine.Value] = []
+      let vals : Array[@abi.Value] = []
       for b in bs {
         vals.push(b.value)
       }
-      assert_eq(vals, [@engine.String("d")])
+      assert_eq(vals, [@abi.String("d")])
     }
     Err(_) => fail("expected Ok")
   }
@@ -1839,10 +1821,10 @@ test "DR-080 resolve wiring: second no-marker fire REPLACES (not appends) the fi
 
 ///|
 /// ケース2 (merge-splice-remove.json::implicit-at-then-remove-only の cli 席を手組み): 1 回目は
-/// マーカーなし発火で `old` が確定 (`[a,a,b,a,c]`)、2 回目は同一 at_pos の `@engine.Remove(a)` 単独 piece —
+/// マーカーなし発火で `old` が確定 (`[a,a,b,a,c]`)、2 回目は同一 at_pos の `@abi.Remove(a)` 単独 piece —
 /// 暗黙先頭 `@` が補われ old を splice した後 remove が効き `[b,c]` になる。merge resident が
-/// @engine.Remove piece を同一発火へまとめ、前発火の結果を次発火の `old` として運ぶことを固定する。
-test "DR-080 resolve wiring: a lone @engine.Remove piece merges against the PRIOR firing's old, via resolve_scope" {
+/// @abi.Remove piece を同一発火へまとめ、前発火の結果を次発火の `old` として運ぶことを固定する。
+test "DR-080 resolve wiring: a lone @abi.Remove piece merges against the PRIOR firing's old, via resolve_scope" {
   let fields = ent("fields", @builtins.string_type(), accum=Some("merge"))
   let sc : @engine.Scope = {
     greedy: [],
@@ -1850,21 +1832,21 @@ test "DR-080 resolve wiring: a lone @engine.Remove piece merges against the PRIO
     entities: [fields],
     constraints: [],
   }
-  let cli : Array[@engine.Binding] = [
-    cb("fields", @engine.String("a"), @engine.Cli, at_pos=Some(1)),
-    cb("fields", @engine.String("a"), @engine.Cli, at_pos=Some(1)),
-    cb("fields", @engine.String("b"), @engine.Cli, at_pos=Some(1)),
-    cb("fields", @engine.String("a"), @engine.Cli, at_pos=Some(1)),
-    cb("fields", @engine.String("c"), @engine.Cli, at_pos=Some(1)),
-    merge_piece_bind("fields", @engine.Remove, @engine.String("a"), 3),
+  let cli : Array[@abi.Binding] = [
+    cb("fields", @abi.String("a"), @abi.Cli, at_pos=Some(1)),
+    cb("fields", @abi.String("a"), @abi.Cli, at_pos=Some(1)),
+    cb("fields", @abi.String("b"), @abi.Cli, at_pos=Some(1)),
+    cb("fields", @abi.String("a"), @abi.Cli, at_pos=Some(1)),
+    cb("fields", @abi.String("c"), @abi.Cli, at_pos=Some(1)),
+    merge_piece_bind("fields", @abi.Remove, @abi.String("a"), 3),
   ]
   match resolve_scope(sc, cli, Map([])) {
     Ok(bs) => {
-      let vals : Array[@engine.Value] = []
+      let vals : Array[@abi.Value] = []
       for b in bs {
         vals.push(b.value)
       }
-      assert_eq(vals, [@engine.String("b"), @engine.String("c")])
+      assert_eq(vals, [@abi.String("b"), @abi.String("c")])
     }
     Err(_) => fail("expected Ok")
   }
@@ -1874,14 +1856,14 @@ test "DR-080 resolve wiring: a lone @engine.Remove piece merges against the PRIO
 
 ///|
 /// Guarantees: a `kv_map` accum cell folds 2 fires (each already `=`-shaped, `KvArg`'s consume-
-/// time gate guarantees this — `split_first_eq` never sees a piece without `=`) into an @engine.Object, one
+/// time gate guarantees this — `split_first_eq` never sees a piece without `=`) into an @abi.Object, one
 /// entry per DISTINCT key, in first-fire order — DR-091 §2's "piece `k=v` を最初の `=` で分割し...
 /// Map (結果は kv オブジェクト) に畳む" core case, no repeated key involved yet (paired with the
 /// last-wins case below).
-test "build_result: kv_map folds 2 fires into an @engine.Object (distinct keys)" {
-  let binds : Array[@engine.Binding] = [
-    cb("assigns", @engine.String("A=1"), @engine.Cli),
-    cb("assigns", @engine.String("B=2"), @engine.Cli),
+test "build_result: kv_map folds 2 fires into an @abi.Object (distinct keys)" {
+  let binds : Array[@abi.Binding] = [
+    cb("assigns", @abi.String("A=1"), @abi.Cli),
+    cb("assigns", @abi.String("B=2"), @abi.Cli),
   ]
   let cells : Array[AccumCell] = [
     {
@@ -1896,12 +1878,12 @@ test "build_result: kv_map folds 2 fires into an @engine.Object (distinct keys)"
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    @engine.Object([
+    @abi.Object([
       (
         "assigns",
-        @engine.Object([
-          ("A", @engine.Scalar(@engine.String("1"))),
-          ("B", @engine.Scalar(@engine.String("2"))),
+        @abi.Object([
+          ("A", @abi.Scalar(@abi.String("1"))),
+          ("B", @abi.Scalar(@abi.String("2"))),
         ]),
       ),
     ]),
@@ -1915,10 +1897,10 @@ test "build_result: kv_map folds 2 fires into an @engine.Object (distinct keys)"
 /// FIRST-SEEN slot). 3 fires: A, B, A again — the fold must end up with `A` STILL FIRST (value 3),
 /// `B` second (value 2), not `[B, A]`.
 test "build_result: kv_map re-firing a key is last-wins on VALUE, first-seen on POSITION" {
-  let binds : Array[@engine.Binding] = [
-    cb("assigns", @engine.String("A=1"), @engine.Cli),
-    cb("assigns", @engine.String("B=2"), @engine.Cli),
-    cb("assigns", @engine.String("A=3"), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("assigns", @abi.String("A=1"), @abi.Cli),
+    cb("assigns", @abi.String("B=2"), @abi.Cli),
+    cb("assigns", @abi.String("A=3"), @abi.Cli),
   ]
   let cells : Array[AccumCell] = [
     {
@@ -1933,12 +1915,12 @@ test "build_result: kv_map re-firing a key is last-wins on VALUE, first-seen on 
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    @engine.Object([
+    @abi.Object([
       (
         "assigns",
-        @engine.Object([
-          ("A", @engine.Scalar(@engine.String("3"))),
-          ("B", @engine.Scalar(@engine.String("2"))),
+        @abi.Object([
+          ("A", @abi.Scalar(@abi.String("3"))),
+          ("B", @abi.Scalar(@abi.String("2"))),
         ]),
       ),
     ]),
@@ -1950,8 +1932,8 @@ test "build_result: kv_map re-firing a key is last-wins on VALUE, first-seen on 
 /// characters splits ONLY at the first one — `"KEY=a=b"` → `("KEY", "a=b")`, never `("KEY", "a")`
 /// with `=b` silently dropped or re-joined some other way.
 test "build_result: kv_map splits a piece at the FIRST '=' only (value may itself contain '=')" {
-  let binds : Array[@engine.Binding] = [
-    cb("assigns", @engine.String("KEY=a=b"), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("assigns", @abi.String("KEY=a=b"), @abi.Cli),
   ]
   let cells : Array[AccumCell] = [
     {
@@ -1966,11 +1948,8 @@ test "build_result: kv_map splits a piece at the FIRST '=' only (value may itsel
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    @engine.Object([
-      (
-        "assigns",
-        @engine.Object([("KEY", @engine.Scalar(@engine.String("a=b")))]),
-      ),
+    @abi.Object([
+      ("assigns", @abi.Object([("KEY", @abi.Scalar(@abi.String("a=b")))])),
     ]),
   )
 }
@@ -1981,10 +1960,10 @@ test "build_result: kv_map splits a piece at the FIRST '=' only (value may itsel
 /// the sibling append resident's fold. Same shape as this file's very first test
 /// ("build_result folds scalar last-wins, accumulate array...") but written standalone here so
 /// this file's kv_map section carries its own non-collision witness.
-test "build_result: kv_map's @engine.Object branch does not affect a sibling 'append' accum cell (対極)" {
-  let binds : Array[@engine.Binding] = [
-    cb("tags", @engine.String("a"), @engine.Cli),
-    cb("tags", @engine.String("b"), @engine.Cli),
+test "build_result: kv_map's @abi.Object branch does not affect a sibling 'append' accum cell (対極)" {
+  let binds : Array[@abi.Binding] = [
+    cb("tags", @abi.String("a"), @abi.Cli),
+    cb("tags", @abi.String("b"), @abi.Cli),
   ]
   let cells : Array[AccumCell] = [
     {
@@ -1999,24 +1978,24 @@ test "build_result: kv_map's @engine.Object branch does not affect a sibling 'ap
   ]
   assert_eq(
     build_result(binds, cells, [], []),
-    @engine.Object([
+    @abi.Object([
       (
         "tags",
-        @engine.Array([
-          @engine.Scalar(@engine.String("a")),
-          @engine.Scalar(@engine.String("b")),
+        @abi.Array([
+          @abi.Scalar(@abi.String("a")),
+          @abi.Scalar(@abi.String("b")),
         ]),
       ),
     ]),
   )
 }
 
-// ── DR-092: inf / 非整数 float の JSON serialize 規約 (@engine.value_str = "the resolve layer owns the
+// ── DR-092: inf / 非整数 float の JSON serialize 規約 (@extension.value_str = "the resolve layer owns the
 // result-object rendering") ─────────────────────────────────────────────────────
 
 ///|
 /// 保証 (DR-092 §2「canonical 語彙は "Infinity"/"-Infinity" (protobuf3 準拠スペル)、先頭 + 無し」):
-/// `@engine.value_str` の `@engine.Number(d)` 分岐 (`d.to_int()` で整数値判定 → 非整数/範囲外なら `d.to_string()` に
+/// `@extension.value_str` の `@abi.Number(d)` 分岐 (`d.to_int()` で整数値判定 → 非整数/範囲外なら `d.to_string()` に
 /// フォールバック) は inf に対して自明に真 — inf は `Double::to_int()` が Int32 範囲外として
 /// saturate する (`~/.moon/lib/core/builtin/double_to_int.mbt`) ため `i.to_double() != d` となり
 /// 必ずフォールバック分岐へ落ち、MoonBit stdlib の `Double::to_string` (Ryu 実装、
@@ -2024,11 +2003,11 @@ test "build_result: kv_map's @engine.Object branch does not affect a sibling 'ap
 /// 判定して "Infinity"/"-Infinity" を返す、先頭 `+` は付かない) がそのまま DR-092 §2 の canonical
 /// 語彙を生成する。**production コード変更なしで既に規約を満たしている**ことをここで固定する
 /// (issue scope-config-object-gap 後続サイクル、DR-092 実装調査 2026-07-11 の実機確認結果)。
-test "@engine.value_str: inf/-inf render as \"Infinity\"/\"-Infinity\" with no code change (DR-092 §2)" {
+test "@extension.value_str: inf/-inf render as \"Infinity\"/\"-Infinity\" with no code change (DR-092 §2)" {
   let inf : Double = 1.0 / 0.0
   let ninf : Double = -1.0 / 0.0
-  assert_eq(@engine.value_str(@engine.Number(inf)), "Infinity")
-  assert_eq(@engine.value_str(@engine.Number(ninf)), "-Infinity")
+  assert_eq(@extension.value_str(@abi.Number(inf)), "Infinity")
+  assert_eq(@extension.value_str(@abi.Number(ninf)), "-Infinity")
 }
 
 ///|
@@ -2037,34 +2016,34 @@ test "@engine.value_str: inf/-inf render as \"Infinity\"/\"-Infinity\" with no c
 /// (Ryu/Grisu 系) はこの誤差を正直に最短表現で表す (`"0.30000000000000004"`)。ナイーブな固定桁
 /// フォーマット (`%.17g` や `%.6f` 等) はこの丸めを再現しないため、この値は「shortest round-trip
 /// を実際に使っているか」の判別に有効な probe (DR-092 の実装調査で main から明示された確認事項)。
-test "@engine.value_str: a non-integer float renders via shortest round-trip, not naive fixed-precision (DR-092 §4)" {
-  assert_eq(@engine.value_str(@engine.Number(0.1 + 0.2)), "0.30000000000000004")
-  assert_eq(@engine.value_str(@engine.Number(3.14159)), "3.14159")
+test "@extension.value_str: a non-integer float renders via shortest round-trip, not naive fixed-precision (DR-092 §4)" {
+  assert_eq(@extension.value_str(@abi.Number(0.1 + 0.2)), "0.30000000000000004")
+  assert_eq(@extension.value_str(@abi.Number(3.14159)), "3.14159")
 }
 
 ///|
 /// 対極 (DR-092 §4「整数値の float は DR-050 §4 の最短表現規則 (1.0 → "1") と同じ扱い」):
-/// 非整数 float との対比を同テストで固定 — `@engine.value_str` の `i.to_double() == d` 分岐が整数値
+/// 非整数 float との対比を同テストで固定 — `@extension.value_str` の `i.to_double() == d` 分岐が整数値
 /// float を小数点なしの整数表記に倒す既存挙動 (DR-050 §4) は本 DR で変更しない。
-test "@engine.value_str: an integer-valued float keeps DR-050 §4's no-decimal-point rendering (対極, DR-092 §4)" {
-  assert_eq(@engine.value_str(@engine.Number(3.0)), "3")
-  assert_eq(@engine.value_str(@engine.Number(-0.0)), "0") // -0.0 は int 0 と等価判定 (DR-050 §4 の既存挙動、inf 非該当)
+test "@extension.value_str: an integer-valued float keeps DR-050 §4's no-decimal-point rendering (対極, DR-092 §4)" {
+  assert_eq(@extension.value_str(@abi.Number(3.0)), "3")
+  assert_eq(@extension.value_str(@abi.Number(-0.0)), "0") // -0.0 は int 0 と等価判定 (DR-050 §4 の既存挙動、inf 非該当)
 }
 
 ///|
 /// 保証 (DR-092 §3「適用範囲は一律 — result / effects / config 起因の値、いずれも同じ表現」):
-/// `build_result` (@engine.ResultValue 構築、report の値位置の 1 つ = result) は inf 値を型・値ともに一切変更
-/// せず通す — `@engine.Number` の Eq 比較は IEEE754 の `Infinity == Infinity` (true, NaN と違い比較可能)
+/// `build_result` (@abi.ResultValue 構築、report の値位置の 1 つ = result) は inf 値を型・値ともに一切変更
+/// せず通す — `@abi.Number` の Eq 比較は IEEE754 の `Infinity == Infinity` (true, NaN と違い比較可能)
 /// に従うため、`assert_eq` がそのまま構造等価を検証できる。value 位置の serialize 規約
-/// (`@engine.value_str`) とは独立に、値そのものが report の "result" 経路で失われない (clamp/丸め等が
+/// (`@extension.value_str`) とは独立に、値そのものが report の "result" 経路で失われない (clamp/丸め等が
 /// 起きない) ことを固定する。
 test "build_result: an inf-valued cell passes through the result builder unchanged (DR-092 §3 result 位置)" {
   let inf : Double = 1.0 / 0.0
-  let binds : Array[@engine.Binding] = [
-    cb("threshold", @engine.Number(inf), @engine.Cli),
+  let binds : Array[@abi.Binding] = [
+    cb("threshold", @abi.Number(inf), @abi.Cli),
   ]
   assert_eq(
     build_result(binds, [], [], []),
-    @engine.Object([("threshold", @engine.Scalar(@engine.Number(inf)))]),
+    @abi.Object([("threshold", @abi.Scalar(@abi.Number(inf)))]),
   )
 }

@@ -21,7 +21,7 @@ test "DR-117 §2.1: two root options — CLI-order last-wins (forward argv)" {
     Err(_) => fail("definition must lower")
   }
   let args = ["--a", "zsh", "--b", "bash"]
-  let outcome = resolve(ast, parse(ast, args), args)
+  let outcome = test_resolve(ast, args)
   assert_eq(
     dispatch_completion_script(canonical_registry(), outcome),
     Requested("bash"),
@@ -40,7 +40,7 @@ test "DR-117 §2.1: two root options — CLI-order wins over declaration order (
     Err(_) => fail("definition must lower")
   }
   let args = ["--b", "bash", "--a", "zsh"]
-  let outcome = resolve(ast, parse(ast, args), args)
+  let outcome = test_resolve(ast, args)
   assert_eq(
     dispatch_completion_script(canonical_registry(), outcome),
     Requested("zsh"),
@@ -59,7 +59,7 @@ test "DR-117 §2.1: declaration order does not affect winner (decl [b,a], argv -
     Err(_) => fail("definition must lower")
   }
   let args = ["--a", "zsh", "--b", "bash"]
-  let outcome = resolve(ast, parse(ast, args), args)
+  let outcome = test_resolve(ast, args)
   assert_eq(
     dispatch_completion_script(canonical_registry(), outcome),
     Requested("bash"),

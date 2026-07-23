@@ -1,0 +1,489 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "kawaz/kuu/extension"
+
+import {
+  "kawaz/kuu/abi",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn append_accumulator() -> &AccumulatorExt
+
+pub fn apply_accum_filter_chain(Registry, Array[@abi.FnInvocation], Array[@abi.Value]) -> Result[Array[@abi.Value], FnReason]
+
+pub fn apply_filter_chain(Registry, Array[@abi.FnInvocation], @abi.Value) -> Result[@abi.Value, FnReason]
+
+pub fn apply_piece_filters(Registry, Array[@abi.FnInvocation], String) -> Result[String, FnReason]
+
+pub fn array_filter_descriptor(String, FilterSignature, Array[String], (Array[@abi.Value], Array[String]) -> Result[Array[@abi.Value], FnReason], observes? : Array[String]) -> ArrayFilterDescriptor
+
+pub fn attach_mode_of(String) -> @abi.AttachMode?
+
+pub fn bool_config_canonical() -> @abi.BoolConfig
+
+pub fn bool_type(config? : @abi.BoolConfig, value_slot? : Bool) -> &TypeExt
+
+pub fn cell_fn_descriptor(String, Array[CellFnParameter], CellFnOutput, FnFallibility, observes? : Array[String], reasons? : Array[String], validate? : (@abi.FnCall) -> Result[Unit, FnReason], run? : (Array[@abi.FnArg], FnCtx) -> Result[FnOutput, FnReason]) -> CellFnDescriptor
+
+pub fn cell_fn_descriptors() -> Array[CellFnDescriptor]
+
+pub fn cell_fn_parameter(String, kind? : CellFnParameterKind, repetition? : CellFnRepetition) -> CellFnParameter
+
+pub fn chars_to_str(Array[Char], Int, Int) -> String
+
+pub fn classify_merge_piece(String) -> PieceMark
+
+pub fn completion_script_type() -> &TypeExt
+
+pub fn config_from_json(Json) -> @abi.ConfigVal
+
+pub fn config_to_value(@abi.ConfigVal, &TypeExt, Array[@abi.FnInvocation], Registry) -> Result[@abi.Value, ConfigValueError]
+
+pub fn configured_short_type(&TypeExt, @abi.RoundMode, Bool, @abi.BoolConfig) -> &TypeExt
+
+pub fn configured_type(&TypeExt, @abi.RoundMode, @abi.BoolConfig, allow_base_prefix? : Bool) -> &TypeExt
+
+pub fn continue_matcher(Array[@abi.Branch], Ctx, Array[@abi.Binding], (Ctx, Int, Array[@abi.Binding]) -> Array[@abi.Branch]) -> Array[@abi.Branch]
+
+pub fn count_type(allow_base_prefix? : Bool) -> &TypeExt
+
+pub fn decode_fn_invocation_parts(@abi.FnInvocationForm) -> Result[Array[String], String]
+
+pub fn dirs_completer() -> &CompleterExt
+
+pub fn entity_ext(hidden? : Bool, completer? : String?) -> &EntityExt
+
+pub fn eq_entry(String, String, &TypeExt, Array[@abi.FnInvocation], String?, merge? : Bool, deprecated? : Bool) -> EqEntry
+
+pub fn eq_sep_mode_of(String) -> @abi.EqSepMode?
+
+pub fn eq_split(String, Array[EqEntry]) -> &MatcherExt
+
+pub fn files_completer() -> &CompleterExt
+
+pub fn filter_descriptor(String, FilterSignature, Array[String], (@abi.Value, Array[String]) -> Result[@abi.Value, FnReason], observes? : Array[String]) -> FilterDescriptor
+
+pub fn flag_type(config? : @abi.BoolConfig) -> &TypeExt
+
+pub fn float_type() -> &TypeExt
+
+pub fn fn_ctx_filter(FilterInput, old? : @abi.Value?, observes? : Array[String], option? : (String) -> @abi.Value?, env? : (String) -> @abi.Value?, system? : (String) -> @abi.Value?) -> FnCtx
+
+pub fn from_entries_collector(FromEntriesSpec) -> &CollectorExt
+
+pub fn from_entries_spec_of(Json) -> FromEntriesSpec?
+
+pub fn in_range_filter() -> FilterDescriptor
+
+pub fn increment_filter() -> FilterDescriptor
+
+pub fn int_type(round? : @abi.RoundMode, allow_base_prefix? : Bool) -> &TypeExt
+
+pub fn kv_map_accumulator() -> &AccumulatorExt
+
+pub fn length_range_array_filter() -> ArrayFilterDescriptor
+
+pub fn merge_accumulator() -> &AccumulatorExt
+
+pub fn non_empty_filter() -> FilterDescriptor
+
+pub fn none_type() -> &TypeExt
+
+pub fn number_type(allow_base_prefix? : Bool) -> &TypeExt
+
+pub fn parse_bool(String, config? : @abi.BoolConfig) -> Bool?
+
+pub fn parse_error_not_a_bool(String, String, Int) -> @abi.ParseError
+
+pub fn parse_error_not_a_kv_pair(String, String, Int) -> @abi.ParseError
+
+pub fn parse_error_not_a_number(String, String, Int) -> @abi.ParseError
+
+pub fn parse_filter_shorthand(String) -> @abi.FnInvocation
+
+pub fn parse_float(String) -> Double?
+
+pub fn parse_fn_invocation(@abi.FnInvocationForm) -> Result[@abi.FnInvocation, String]
+
+pub fn parse_int_value(String, @abi.RoundMode, allow_base_prefix? : Bool) -> Result[Int64, @abi.TypeParseFail]
+
+pub fn parse_number(String, allow_base_prefix? : Bool) -> Double?
+
+pub fn regex_match_filter() -> FilterDescriptor
+
+pub fn round_mode_of(String) -> @abi.RoundMode?
+
+pub fn sep_binds(String, String, String?, &TypeExt, Array[@abi.FnInvocation], Int, Bool, Registry) -> Result[Array[@abi.Binding], @abi.ParseError]
+
+pub fn short_combine(String, Array[ShortEntry], combine? : Bool) -> &MatcherExt
+
+pub fn short_entry(Char, String, &TypeExt, Array[@abi.FnInvocation], String?, deprecated? : Bool, merge? : Bool, short_attached_value? : @abi.AttachMode, is_alias? : Bool) -> ShortEntry
+
+pub fn string_type() -> &TypeExt
+
+pub fn trim_filter() -> FilterDescriptor
+
+pub fn tty_type(String?, cygwin? : Bool) -> &TypeExt
+
+pub fn type_parse_error(String, Int, @abi.TypeParseFail) -> @abi.ParseError
+
+pub fn unique_array_filter() -> ArrayFilterDescriptor
+
+pub fn unwrap_single_collector() -> &CollectorExt
+
+pub fn value_str(@abi.Value) -> String
+
+pub fn value_to_configval(@abi.Value) -> @abi.ConfigVal
+
+// Errors
+
+// Types and methods
+pub struct ArrayFilterDescriptor {
+  // private fields
+}
+pub fn ArrayFilterDescriptor::invoke(Self, Array[String], FnCtx) -> Result[Array[@abi.Value], FnReason]
+pub fn ArrayFilterDescriptor::name(Self) -> String
+pub fn ArrayFilterDescriptor::observes(Self) -> Array[String]
+pub fn ArrayFilterDescriptor::reasons(Self) -> Array[String]
+pub fn ArrayFilterDescriptor::signature(Self) -> FilterSignature
+
+pub(all) enum CellFnArity {
+  Exact(Int)
+  Between(Int, Int)
+  AtLeast(Int)
+} derive(Eq, @debug.Debug)
+pub fn CellFnArity::accepts(Self, Int) -> Bool
+
+pub struct CellFnDescriptor {
+  // private fields
+}
+pub fn CellFnDescriptor::arity(Self) -> CellFnArity
+pub fn CellFnDescriptor::concrete_observes(Self, @abi.FnInvocation) -> Result[Array[String], FnReason]
+pub fn CellFnDescriptor::fallibility(Self) -> FnFallibility
+pub fn CellFnDescriptor::invoke(Self, @abi.FnCall, FnCtx) -> Result[FnOutput, FnReason]
+pub fn CellFnDescriptor::name(Self) -> String
+pub fn CellFnDescriptor::observes(Self) -> Array[String]
+pub fn CellFnDescriptor::output(Self) -> CellFnOutput
+pub fn CellFnDescriptor::parameters(Self) -> Array[CellFnParameter]
+pub fn CellFnDescriptor::reasons(Self) -> Array[String]
+pub fn CellFnDescriptor::validate_arity(Self, Int) -> Result[Unit, FnReason]
+pub fn CellFnDescriptor::validate_call(Self, @abi.FnCall) -> Result[Unit, FnReason]
+pub fn CellFnDescriptor::validate_invocation(Self, @abi.FnInvocation) -> Result[Unit, FnReason]
+
+pub(all) enum CellFnOutput {
+  Value
+  Number
+  String
+  Sentinel(CellSentinel)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct CellFnParameter {
+  name : String
+  kind : CellFnParameterKind
+  repetition : CellFnRepetition
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CellFnParameterKind {
+  String
+  Value
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CellFnRepetition {
+  Once
+  ZeroOrOne
+  OneOrMore
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CellSentinel {
+  UseDefault
+  Unset
+  Empty
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ConfigValueError {
+  kind : @abi.ErrorKind
+  reason : String
+  message : String
+} derive(Eq, @debug.Debug)
+
+pub struct Ctx {
+  // private fields
+}
+pub fn Ctx::extensions(Self) -> Registry
+pub fn Ctx::is_complete_mode(Self) -> Bool
+pub fn Ctx::new(Array[String], Registry, Bool) -> Self
+pub fn Ctx::token_at(Self, Int) -> String?
+
+pub struct DefaultCtx {
+  // private fields
+}
+pub fn DefaultCtx::dependency(Self, String) -> @abi.Value?
+pub fn DefaultCtx::target(Self) -> String
+
+pub struct EffectCtx {
+  // private fields
+}
+pub fn EffectCtx::target(Self) -> String
+pub fn EffectCtx::trigger(Self) -> String
+
+pub struct EqEntry {
+  // private fields
+}
+
+pub struct FilterCtx {
+  // private fields
+}
+pub fn FilterCtx::input(Self) -> FilterInput
+
+pub struct FilterDescriptor {
+  // private fields
+}
+pub fn FilterDescriptor::invoke(Self, Array[String], FnCtx) -> Result[@abi.Value, FnReason]
+pub fn FilterDescriptor::name(Self) -> String
+pub fn FilterDescriptor::observes(Self) -> Array[String]
+pub fn FilterDescriptor::reasons(Self) -> Array[String]
+pub fn FilterDescriptor::signature(Self) -> FilterSignature
+
+pub(all) enum FilterInput {
+  Scalar(@abi.Value)
+  Array(Array[@abi.Value])
+} derive(Eq, @debug.Debug)
+
+pub(all) enum FilterSignature {
+  Validate
+  Transform
+} derive(Eq, @debug.Debug)
+pub fn FilterSignature::is_transform(Self) -> Bool
+
+pub struct FnCtx {
+  // private fields
+}
+pub fn FnCtx::as_default(Self) -> DefaultCtx?
+pub fn FnCtx::as_effect(Self) -> EffectCtx?
+pub fn FnCtx::as_filter(Self) -> FilterCtx?
+pub fn FnCtx::env(Self, String) -> @abi.Value?
+pub fn FnCtx::for_default(String, old? : @abi.Value?, observes? : Array[String], option? : (String) -> @abi.Value?, dependency? : ((String) -> @abi.Value?)?, env? : (String) -> @abi.Value?, system? : (String) -> @abi.Value?) -> Self
+pub fn FnCtx::for_effect(String, String, old? : @abi.Value?, observes? : Array[String], option? : (String) -> @abi.Value?, env? : (String) -> @abi.Value?, system? : (String) -> @abi.Value?) -> Self
+pub fn FnCtx::observes(Self) -> Array[String]
+pub fn FnCtx::old(Self) -> @abi.Value?
+pub fn FnCtx::option(Self, String) -> @abi.Value?
+pub fn FnCtx::system(Self, String) -> @abi.Value?
+
+pub(all) enum FnFallibility {
+  Total
+  Reject
+} derive(Eq, @debug.Debug)
+
+pub(all) enum FnOutput {
+  Value(@abi.Value)
+  Sentinel(CellSentinel)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct FnReason {
+  reason : String
+  message : String
+} derive(Eq, @debug.Debug)
+
+pub(all) enum FromEntriesSpec {
+  Entries
+  KeyValue(String, String)
+  KeyPromote(String)
+} derive(Eq, @debug.Debug)
+
+pub(all) enum PieceMark {
+  Add(String)
+  Remove(String)
+  Splice
+} derive(Eq, @debug.Debug)
+
+pub struct Registry {
+  // private fields
+}
+pub fn Registry::lookup_accumulator(Self, String) -> &AccumulatorExt?
+pub fn Registry::lookup_array_filter(Self, String) -> ArrayFilterDescriptor?
+pub fn Registry::lookup_capability(Self, String) -> &CapabilityExt?
+pub fn Registry::lookup_cell_fn(Self, String) -> CellFnDescriptor?
+pub fn Registry::lookup_collector(Self, String) -> &CollectorExt?
+pub fn Registry::lookup_completer(Self, String) -> &CompleterExt?
+pub fn Registry::lookup_filter(Self, String) -> FilterDescriptor?
+pub fn Registry::lookup_matcher(Self, String) -> &MatcherExt?
+pub fn Registry::lookup_node(Self, String) -> &NodeExt?
+pub fn Registry::lookup_type(Self, String) -> &TypeExt?
+pub fn Registry::new() -> Self
+pub fn Registry::register_accumulator(Self, &AccumulatorExt) -> Bool
+pub fn Registry::register_array_filter(Self, ArrayFilterDescriptor) -> Bool
+pub fn Registry::register_capability(Self, &CapabilityExt) -> Bool
+pub fn Registry::register_cell_fn(Self, CellFnDescriptor) -> Bool
+pub fn Registry::register_collector(Self, &CollectorExt) -> Bool
+pub fn Registry::register_completer(Self, &CompleterExt) -> Bool
+pub fn Registry::register_filter(Self, FilterDescriptor) -> Bool
+pub fn Registry::register_matcher(Self, &MatcherExt) -> Bool
+pub fn Registry::register_node(Self, &NodeExt) -> Bool
+pub fn Registry::register_type(Self, &TypeExt) -> Bool
+
+pub struct SeatCtx {
+  // private fields
+}
+pub fn SeatCtx::declared(Self) -> @abi.Value?
+pub fn SeatCtx::new(@abi.Value?, observed? : Json?) -> Self
+pub fn SeatCtx::observed(Self) -> Json?
+
+pub struct ShortEntry {
+  // private fields
+}
+
+// Type aliases
+pub using @abi {type AliasDef}
+
+pub using @abi {type AttachMode}
+
+pub using @abi {type Binding}
+
+pub using @abi {type BoolConfig}
+
+pub using @abi {type Branch}
+
+pub using @abi {type Candidate}
+
+pub type CellFn = (Array[@abi.FnArg], FnCtx) -> Result[FnOutput, FnReason]
+
+pub using @abi {type CollectorDeclaration}
+
+pub using @abi {type ConfigVal}
+
+pub using @abi {type DecodeCtx}
+
+pub using @abi {type DecodedOwnedDeclaration}
+
+pub using @abi {type DefError}
+
+pub using @abi {type DefErrorKind}
+
+pub using @abi {type DefaultFnCall}
+
+pub using @abi {type EffectOp}
+
+pub using @abi {type EqSepMode}
+
+pub using @abi {type ErrorKind}
+
+pub using @abi {type FnArg}
+
+pub using @abi {type FnCall}
+
+pub using @abi {type FnInvocation}
+
+pub using @abi {type FnInvocationForm}
+
+pub type FnResult = Result[FnOutput, FnReason]
+
+pub using @abi {type HelpMetaDeclaration}
+
+pub using @abi {type HelpRenderDecl}
+
+pub using @abi {type HelpRepeatSpec}
+
+pub using @abi {type HelpSingleValue}
+
+pub using @abi {type HelpTypeDeclaration}
+
+pub using @abi {type HelpTypeRef}
+
+pub using @abi {type HelpValueStructure}
+
+pub using @abi {type LongDeclaration}
+
+pub type LowerSeat = (Bool) -> Result[Array[@abi.Binding], @abi.ParseError]
+
+pub using @abi {type OwnedDeclaration}
+
+pub using @abi {type ParseError}
+
+pub using @abi {type RepeatSpec}
+
+pub using @abi {type ResultValue}
+
+pub type Resume = (Ctx, Int, Array[@abi.Binding]) -> Array[@abi.Branch]
+
+pub using @abi {type RoundMode}
+
+pub using @abi {type Source}
+
+pub using @abi {type TermHint}
+
+pub using @abi {type TypeParseFail}
+
+pub using @abi {type Value}
+
+pub using @abi {type Warning}
+
+pub using @abi {type WarningKind}
+
+// Traits
+pub(open) trait AccumulatorExt {
+  fn kind(Self) -> String
+  fn encode(Self) -> Json
+  fn equal(Self, &AccumulatorExt) -> Bool = _
+  fn resolve_cli(Self, String, Array[@abi.Binding], Bool, (Bool) -> Result[Array[@abi.Binding], @abi.ParseError]) -> Result[Array[@abi.Binding], @abi.ParseError]
+  fn collect(Self, Array[@abi.Value]) -> @abi.ResultValue
+}
+pub impl Eq for &AccumulatorExt
+pub impl @debug.Debug for &AccumulatorExt
+
+pub(open) trait CapabilityExt {
+  fn name(Self) -> String
+}
+
+pub(open) trait CollectorExt {
+  fn kind(Self) -> String
+  fn encode(Self) -> Json
+  fn equal(Self, &CollectorExt) -> Bool = _
+  fn collect(Self, @abi.ResultValue) -> @abi.ResultValue
+}
+pub impl Eq for &CollectorExt
+pub impl @debug.Debug for &CollectorExt
+
+pub(open) trait CompleterExt {
+  fn name(Self) -> String
+}
+
+pub(open) trait EntityExt {
+  fn encode(Self) -> Json = _
+  fn complete_candidate(Self, @abi.Candidate) -> @abi.Candidate
+}
+pub impl Eq for &EntityExt
+pub impl @debug.Debug for &EntityExt
+
+pub(open) trait MatcherExt {
+  fn kind(Self) -> String
+  fn encode(Self) -> Json
+  fn equal(Self, &MatcherExt) -> Bool = _
+  fn candidates(Self) -> Array[@abi.Candidate]
+  fn interpret(Self, Ctx, Int, Array[@abi.Binding], (Ctx, Int, Array[@abi.Binding]) -> Array[@abi.Branch]) -> Array[@abi.Branch]
+}
+pub impl Eq for &MatcherExt
+pub impl @debug.Debug for &MatcherExt
+
+pub(open) trait NodeExt {
+  fn kind(Self) -> String
+  fn encode(Self) -> Json
+  fn equal(Self, &NodeExt) -> Bool = _
+  fn element_name(Self) -> String? = _
+  fn is_failure_action(Self) -> Bool = _
+  fn effect_mark(Self) -> (String, @abi.EffectOp)? = _
+  fn consumes_zero_tokens(Self) -> Bool
+  fn eval(Self, Ctx, Int, Array[@abi.Binding], (Ctx, Int, Array[@abi.Binding]) -> Array[@abi.Branch]) -> Array[@abi.Branch]
+}
+
+pub(open) trait TypeExt {
+  fn name(Self) -> String
+  fn encode(Self) -> Json = _
+  fn has_value_slot(Self) -> Bool
+  fn parse_token(Self, String) -> Result[@abi.Value, @abi.TypeParseFail]
+  fn completion_values(Self) -> Array[String] = _
+  fn default_seat_observation_key(Self) -> String? = _
+  fn default_seat_resolver(Self, SeatCtx) -> @abi.Value?
+}
+pub impl Eq for &TypeExt
+pub impl @debug.Debug for &TypeExt
+

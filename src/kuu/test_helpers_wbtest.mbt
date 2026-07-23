@@ -4,27 +4,29 @@
 /// Test-only node resident that captures a matcher's raw branch stream while `parse_tree`
 /// supplies the private engine context.
 priv struct TestMatcherProbeExt {
-  matcher : &@engine.MatcherExt
-  captured : Array[Array[@engine.Branch]]
+  matcher : &@extension.MatcherExt
+  captured : Array[Array[@abi.Branch]]
 }
 
 ///|
-impl @engine.NodeExt for TestMatcherProbeExt with fn kind(_self) {
+impl @extension.NodeExt for TestMatcherProbeExt with fn kind(_self) {
   "test/matcher-probe"
 }
 
 ///|
-impl @engine.NodeExt for TestMatcherProbeExt with fn encode(_self) {
+impl @extension.NodeExt for TestMatcherProbeExt with fn encode(_self) {
   ().to_json()
 }
 
 ///|
-impl @engine.NodeExt for TestMatcherProbeExt with fn consumes_zero_tokens(_self) {
+impl @extension.NodeExt for TestMatcherProbeExt with fn consumes_zero_tokens(
+  _self,
+) {
   false
 }
 
 ///|
-impl @engine.NodeExt for TestMatcherProbeExt with fn eval(
+impl @extension.NodeExt for TestMatcherProbeExt with fn eval(
   self,
   ctx,
   pos,
@@ -33,20 +35,33 @@ impl @engine.NodeExt for TestMatcherProbeExt with fn eval(
 ) {
   self.captured.push(
     self.matcher.interpret(ctx, pos, acc, (_ctx, next_pos, next_acc) => {
-      [@engine.Accept(next_pos, next_acc)]
+      [@abi.Accept(next_pos, next_acc)]
     }),
   )
   []
 }
 
 ///|
+fn test_resolve(
+  ast : AtomicAST,
+  args : Array[String],
+  sources? : ValueSources = value_sources(),
+) -> ResolvedOutcome {
+  match parse(ast, args, sources~) {
+    Success(bindings) => resolve(ast, bindings, args, sources~)
+    Failure(failure) => Failure(failure)
+    Ambiguous(_) => abort("test expected one complete parse path")
+  }
+}
+
+///|
 fn test_run_matcher(
-  matcher : &@engine.MatcherExt,
+  matcher : &@extension.MatcherExt,
   toks : Array[String],
-) -> Array[@engine.Branch] {
-  let captured : Array[Array[@engine.Branch]] = []
+) -> Array[@abi.Branch] {
+  let captured : Array[Array[@abi.Branch]] = []
   let probe = @engine.Ext(
-    TestMatcherProbeExt::{ matcher, captured } as &@engine.NodeExt,
+    TestMatcherProbeExt::{ matcher, captured } as &@extension.NodeExt,
   )
   ignore(@engine.parse_tree(probe, toks))
   guard captured.length() == 1 else { return [] }
@@ -54,10 +69,10 @@ fn test_run_matcher(
 }
 
 ///|
-fn chain(spellings : Array[String]) -> Array[@engine.FnInvocation] {
-  let out : Array[@engine.FnInvocation] = []
+fn chain(spellings : Array[String]) -> Array[@abi.FnInvocation] {
+  let out : Array[@abi.FnInvocation] = []
   for spelling in spellings {
-    out.push(@builtins.parse_filter_shorthand(spelling))
+    out.push(@extension.parse_filter_shorthand(spelling))
   }
   out
 }
@@ -67,11 +82,16 @@ fn chain(spellings : Array[String]) -> Array[@engine.FnInvocation] {
 /// explicitly supplies a custom registry. The production builtins API itself has no implicit set.
 fn test_lower_definition(
   definition : @engine.Definition,
-  installers : Array[&@engine.InstallerExt],
+  installers : Array[&@node.InstallerExt],
   registry? : Map[String, @engine.Node] = Map([], capacity=0),
-  extensions? : @engine.Registry = canonical_registry(),
-) -> Result[@engine.Scope, Array[@engine.DefError]] {
-  @builtins.lower_definition(definition, installers, extensions, registry~)
+  extensions? : @node.Registry = canonical_registry(),
+) -> Result[@engine.Scope, Array[@abi.DefError]] {
+  @node.lower_definition(
+    definition,
+    installers,
+    extensions.extensions(),
+    registry~,
+  )
 }
 
 ///|
@@ -130,11 +150,11 @@ fn test_join_comma(items : Array[String]) -> String {
 }
 
 ///|
-fn test_render_val(value : @engine.Value) -> String {
+fn test_render_val(value : @abi.Value) -> String {
   match value {
-    @engine.String(s) => s
-    @engine.Bool(b) => if b { "true" } else { "false" }
-    @engine.Number(d) => {
+    @abi.String(s) => s
+    @abi.Bool(b) => if b { "true" } else { "false" }
+    @abi.Number(d) => {
       let i = d.to_int()
       if i.to_double() == d {
         i.to_string()
@@ -146,30 +166,30 @@ fn test_render_val(value : @engine.Value) -> String {
 }
 
 ///|
-fn render_kind(kind : @engine.ErrorKind) -> String {
+fn render_kind(kind : @abi.ErrorKind) -> String {
   match kind {
-    @engine.Parse => "parse"
-    @engine.Filter => "filter"
-    @engine.Constraint => "constraint"
+    @abi.Parse => "parse"
+    @abi.Filter => "filter"
+    @abi.Constraint => "constraint"
   }
 }
 
 ///|
-fn test_render_def_kind(kind : @engine.DefErrorKind) -> String {
+fn test_render_def_kind(kind : @abi.DefErrorKind) -> String {
   match kind {
-    @engine.VocabIntersection => "vocab-intersection"
-    @engine.UnknownVocab => "unknown-vocab"
-    @engine.InvalidRange => "invalid-range"
-    @engine.AbsentRef => "absent-ref"
-    @engine.CircularRef => "circular-ref"
-    @engine.ZeroProgress => "zero-progress"
-    @engine.ConfigCycle => "config-cycle"
-    @engine.InvalidArgument => "invalid-argument"
+    @abi.VocabIntersection => "vocab-intersection"
+    @abi.UnknownVocab => "unknown-vocab"
+    @abi.InvalidRange => "invalid-range"
+    @abi.AbsentRef => "absent-ref"
+    @abi.CircularRef => "circular-ref"
+    @abi.ZeroProgress => "zero-progress"
+    @abi.ConfigCycle => "config-cycle"
+    @abi.InvalidArgument => "invalid-argument"
   }
 }
 
 ///|
-fn deferrs_str(errors : Array[@engine.DefError]) -> String {
+fn deferrs_str(errors : Array[@abi.DefError]) -> String {
   let items : Array[String] = []
   for error in errors {
     items.push("\{error.element}/\{test_render_def_kind(error.kind)}")
@@ -179,7 +199,7 @@ fn deferrs_str(errors : Array[@engine.DefError]) -> String {
 }
 
 ///|
-fn test_primary_message(errors : Array[@engine.ParseError]) -> String {
+fn test_primary_message(errors : Array[@abi.ParseError]) -> String {
   let mut best = errors[0]
   for error in errors {
     if error.args_pos > best.args_pos {
@@ -190,7 +210,7 @@ fn test_primary_message(errors : Array[@engine.ParseError]) -> String {
 }
 
 ///|
-fn test_render_binds_result(binds : Array[@engine.Binding]) -> String {
+fn test_render_binds_result(binds : Array[@abi.Binding]) -> String {
   let items : Array[String] = []
   for binding in binds {
     if !is_sentinel(binding.key) {
@@ -221,17 +241,17 @@ fn render_outcome(outcome : @engine.Outcome) -> String {
 }
 
 ///|
-fn render_rval_sorted(value : @engine.ResultValue) -> String {
+fn render_rval_sorted(value : @abi.ResultValue) -> String {
   match value {
-    @engine.Scalar(scalar) => test_render_val(scalar)
-    @engine.Array(values) => {
+    @abi.Scalar(scalar) => test_render_val(scalar)
+    @abi.Array(values) => {
       let items : Array[String] = []
       for item in values {
         items.push(render_rval_sorted(item))
       }
       "[" + test_join_comma(items) + "]"
     }
-    @engine.Object(fields) => {
+    @abi.Object(fields) => {
       let items : Array[String] = []
       for field in fields {
         items.push(field.0 + "=" + render_rval_sorted(field.1))
@@ -246,8 +266,8 @@ fn render_rval_sorted(value : @engine.ResultValue) -> String {
 
 ///|
 /// One built interpretation for whitebox collision projection checks.
-struct Interpretation {
-  result : @engine.ResultValue
+struct TestInterpretation {
+  result : @abi.ResultValue
   claimants : Array[(String, String)]
 } derive(Eq, Debug)
 
@@ -263,12 +283,12 @@ struct Interpretation {
 /// caller's `accum_cells(sc)` / `apply_export_to_defaults(default_cells(sc), ek)` convention — see
 /// slice `poc/helpers_wbtest.mbt`).
 fn build_interpretations(
-  binds : Array[@engine.Binding],
+  binds : Array[@abi.Binding],
   ek : Map[String, @engine.ExportKey],
   cells : Array[AccumCell],
   defaults : Array[DefaultCell],
   nones? : Array[@engine.NoneCell] = [],
-) -> Array[Interpretation] {
+) -> Array[TestInterpretation] {
   let collisions = find_export_collisions(binds, ek)
   if collisions.length() == 0 {
     let mapped = apply_export_keys(binds, ek)
@@ -279,9 +299,9 @@ fn build_interpretations(
       },
     ]
   }
-  let out : Array[Interpretation] = []
+  let out : Array[TestInterpretation] = []
   for combo in claimant_combinations(collisions) {
-    let filtered : Array[@engine.Binding] = []
+    let filtered : Array[@abi.Binding] = []
     for b in binds {
       let mut drop = false
       let mut gi = 0
@@ -322,17 +342,17 @@ fn apply_requires_filter(
   defs : Map[String, @engine.Node],
   env : Map[String, String],
   toks_len : Int,
-  provider? : (String) -> @engine.ConfigVal? = fn(_) { None },
+  provider? : (String) -> @abi.ConfigVal? = fn(_) { None },
   tty? : Map[String, TtyObs] = Map([]),
 ) -> @engine.Outcome {
   apply_requires_filter_with_export(
     o,
     root,
     defs,
-    env,
+    fn(key) { env.get(key) },
     toks_len,
     provider,
-    tty,
+    fn(key) { tty.get(key) },
     Map([]),
     canonical_registry(),
   )
@@ -356,27 +376,27 @@ fn apply_requires_filter(
 /// 自身だけがこの skip を必要とする)。
 fn resolve_scope(
   sc : @engine.Scope,
-  cli : Array[@engine.Binding],
+  cli : Array[@abi.Binding],
   env_map : Map[String, String],
-  inherited? : Map[String, @engine.Value] = Map([]),
+  inherited? : Map[String, @abi.Value] = Map([]),
   at_pos? : Int = -1,
   path? : Array[String] = [],
   tty? : Map[String, TtyObs] = Map([]),
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
-  let out : Array[@engine.Binding] = []
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
+  let out : Array[@abi.Binding] = []
   for e in sc.entities {
     if !e.is_config_file {
       match
         resolve_entity(
           e,
           cli,
-          env_map,
+          fn(key) { env_map.get(key) },
           None,
           [],
           inherited,
           at_pos,
           path,
-          tty,
+          fn(key) { tty.get(key) },
           canonical_registry(),
           true,
         ) {
@@ -396,23 +416,23 @@ fn resolve_scope(
 /// this public low-level API keeps its existing signature for callers that only have a @engine.Scope.
 fn resolve_scope_config(
   sc : @engine.Scope,
-  cli : Array[@engine.Binding],
+  cli : Array[@abi.Binding],
   env_map : Map[String, String],
-  provider : (String) -> @engine.ConfigVal?,
+  provider : (String) -> @abi.ConfigVal?,
   path? : Array[String] = [],
-  inherited? : Map[String, @engine.Value] = Map([]),
+  inherited? : Map[String, @abi.Value] = Map([]),
   at_pos? : Int = -1,
   tty? : Map[String, TtyObs] = Map([]),
-) -> Result[Array[@engine.Binding], @engine.ParseError] {
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
   resolve_scope_config_with_export(
     sc,
     cli,
-    env_map,
+    fn(key) { env_map.get(key) },
     provider,
     path,
     inherited,
     at_pos,
-    tty,
+    fn(key) { tty.get(key) },
     Map([]),
     canonical_registry(),
     true,
@@ -434,8 +454,8 @@ fn command_child(sc : @engine.Scope, name : String) -> @engine.Scope? {
 
 ///|
 /// Build an inherited-context map from a parent scope's resolved bindings.
-fn inherited_of(binds : Array[@engine.Binding]) -> Map[String, @engine.Value] {
-  let m : Map[String, @engine.Value] = Map([])
+fn inherited_of(binds : Array[@abi.Binding]) -> Map[String, @abi.Value] {
+  let m : Map[String, @abi.Value] = Map([])
   for b in binds {
     m.set(b.key, b.value)
   }

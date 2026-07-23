@@ -2,187 +2,151 @@
 package "kawaz/kuu/builtins"
 
 import {
-  "kawaz/kuu/engine",
-  "moonbitlang/core/debug",
+  "kawaz/kuu/abi",
+  "kawaz/kuu/extension",
+  "kawaz/kuu/internal/engine",
+  "kawaz/kuu/kuu-node",
 }
 
 // Values
-pub fn alias_installer() -> &@engine.InstallerExt
+pub fn alias_installer() -> &@kuu-node.InstallerExt
 
-pub fn append_accumulator() -> &@engine.AccumulatorExt
+pub fn append_accumulator() -> &@extension.AccumulatorExt
 
-pub fn bool_arg(String, @engine.BoolConfig, Array[@engine.FnInvocation]) -> @engine.Node
+pub fn bool_arg(String, @abi.BoolConfig, Array[@abi.FnInvocation]) -> @engine.Node
 
-pub fn bool_config_canonical() -> @engine.BoolConfig
+pub fn bool_config_canonical() -> @abi.BoolConfig
 
-pub fn bool_type(config? : @engine.BoolConfig, value_slot? : Bool) -> &@engine.TypeExt
+pub fn bool_type(config? : @abi.BoolConfig, value_slot? : Bool) -> &@extension.TypeExt
 
-pub fn build_export_map(@engine.Definition, @engine.Registry) -> Map[String, @engine.ExportKey]
+pub fn cell_fn_descriptors() -> Array[@extension.CellFnDescriptor]
 
-pub fn cell_fn_descriptors() -> Array[@engine.CellFnDescriptor]
+pub fn command_installer() -> &@kuu-node.InstallerExt
 
-pub fn classify_long_spelling(String, String, &@engine.TypeExt, @engine.Registry) -> LongSpelling
+pub fn completion_script_type() -> &@extension.TypeExt
 
-pub fn command_installer() -> &@engine.InstallerExt
+pub fn config_installer() -> &@kuu-node.InstallerExt
 
-pub fn completion_script_type() -> &@engine.TypeExt
+pub fn config_to_value(@abi.ConfigVal, &@extension.TypeExt, Array[@abi.FnInvocation], @extension.Registry) -> Result[@abi.Value, @extension.ConfigValueError]
 
-pub fn config_installer() -> &@engine.InstallerExt
+pub fn configured_type(&@extension.TypeExt, @abi.RoundMode, @abi.BoolConfig, allow_base_prefix? : Bool) -> &@extension.TypeExt
 
-pub fn config_to_value(@engine.ConfigVal, &@engine.TypeExt, Array[@engine.FnInvocation], @engine.Registry) -> Result[@engine.Value, ConfigValueError]
+pub fn constraint_installer() -> &@kuu-node.InstallerExt
 
-pub fn configured_type(&@engine.TypeExt, @engine.RoundMode, @engine.BoolConfig, allow_base_prefix? : Bool) -> &@engine.TypeExt
+pub fn count_type(allow_base_prefix? : Bool) -> &@extension.TypeExt
 
-pub fn constraint_installer() -> &@engine.InstallerExt
-
-pub fn count_type(allow_base_prefix? : Bool) -> &@engine.TypeExt
-
-pub fn dd_installer() -> &@engine.InstallerExt
+pub fn dd_installer() -> &@kuu-node.InstallerExt
 
 pub fn deprecation_mark(String) -> @engine.Node
 
-pub fn dirs_completer() -> &@engine.CompleterExt
+pub fn dirs_completer() -> &@extension.CompleterExt
 
-pub fn effect_mark(String, @engine.EffectOp) -> @engine.Node
+pub fn effect_mark(String, @abi.EffectOp) -> @engine.Node
 
-pub fn element_head(@engine.ElementDef) -> @engine.Node
+pub fn entity_ext(hidden? : Bool, completer? : String?) -> &@extension.EntityExt
 
-pub fn entity_ext(hidden? : Bool, completer? : String?) -> &@engine.EntityExt
+pub fn enum_value_node(String, &@extension.TypeExt, Array[String]) -> @engine.Node
 
-pub fn enum_value_node(String, &@engine.TypeExt, Array[String]) -> @engine.Node
+pub fn env_installer() -> &@kuu-node.InstallerExt
 
-pub fn env_installer() -> &@engine.InstallerExt
+pub fn eq_entry(String, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, merge? : Bool, deprecated? : Bool) -> @extension.EqEntry
 
-pub fn eq_entry(String, String, &@engine.TypeExt, Array[@engine.FnInvocation], String?, merge? : Bool, deprecated? : Bool) -> EqEntry
-
-pub fn eq_split(String, Array[EqEntry]) -> &@engine.MatcherExt
+pub fn eq_split(String, Array[@extension.EqEntry]) -> &@extension.MatcherExt
 
 pub fn failure_mark(String) -> @engine.Node
 
-pub fn files_completer() -> &@engine.CompleterExt
+pub fn files_completer() -> &@extension.CompleterExt
 
 pub fn filtered_number_arg(String, Int) -> @engine.Node
 
-pub fn flag_type(config? : @engine.BoolConfig) -> &@engine.TypeExt
+pub fn flag_type(config? : @abi.BoolConfig) -> &@extension.TypeExt
 
-pub fn float_arg(String, Array[@engine.FnInvocation]) -> @engine.Node
+pub fn float_arg(String, Array[@abi.FnInvocation]) -> @engine.Node
 
-pub fn float_type() -> &@engine.TypeExt
+pub fn float_type() -> &@extension.TypeExt
 
-pub fn from_entries_collector(FromEntriesSpec) -> &@engine.CollectorExt
+pub fn from_entries_collector(@extension.FromEntriesSpec) -> &@extension.CollectorExt
 
-pub fn global_installer() -> &@engine.InstallerExt
+pub fn global_installer() -> &@kuu-node.InstallerExt
 
-pub fn help_meta_installer() -> &@engine.InstallerExt
+pub fn help_meta_installer() -> &@kuu-node.InstallerExt
 
-pub fn in_range_filter() -> @engine.FilterDescriptor
+pub fn in_range_filter() -> @extension.FilterDescriptor
 
-pub fn increment_filter() -> @engine.FilterDescriptor
+pub fn increment_filter() -> @extension.FilterDescriptor
 
-pub fn inherit_installer() -> &@engine.InstallerExt
+pub fn inherit_installer() -> &@kuu-node.InstallerExt
 
-pub fn inheritable_installer() -> &@engine.InstallerExt
+pub fn inheritable_installer() -> &@kuu-node.InstallerExt
 
-pub fn int_arg(String, @engine.RoundMode, Array[@engine.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
+pub fn int_arg(String, @abi.RoundMode, Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
 
-pub fn int_type(round? : @engine.RoundMode, allow_base_prefix? : Bool) -> &@engine.TypeExt
+pub fn int_type(round? : @abi.RoundMode, allow_base_prefix? : Bool) -> &@extension.TypeExt
 
-pub fn kv_arg(String, Array[@engine.FnInvocation]) -> @engine.Node
+pub fn kv_arg(String, Array[@abi.FnInvocation]) -> @engine.Node
 
-pub fn kv_map_accumulator() -> &@engine.AccumulatorExt
+pub fn kv_map_accumulator() -> &@extension.AccumulatorExt
 
-pub fn length_range_array_filter() -> @engine.ArrayFilterDescriptor
+pub fn length_range_array_filter() -> @extension.ArrayFilterDescriptor
 
-pub fn long_installer() -> &@engine.InstallerExt
+pub fn long_installer() -> &@kuu-node.InstallerExt
 
-pub fn lower_definition(@engine.Definition, Array[&@engine.InstallerExt], @engine.Registry, registry? : Map[String, @engine.Node]) -> Result[@engine.Scope, Array[@engine.DefError]]
+pub fn merge_accumulator() -> &@extension.AccumulatorExt
 
-pub fn lower_definition_snapshot(@engine.Definition, Array[&@engine.InstallerExt], @engine.Registry, registry? : Map[String, @engine.Node]) -> Result[LoweredDefinition, Array[@engine.DefError]]
+pub fn multiple_installer() -> &@kuu-node.InstallerExt
 
-pub fn merge_accumulator() -> &@engine.AccumulatorExt
+pub fn non_empty_filter() -> @extension.FilterDescriptor
 
-pub fn multiple_installer() -> &@engine.InstallerExt
+pub fn none_type() -> &@extension.TypeExt
 
-pub fn node_resident_name(@engine.Node) -> String?
+pub fn number_arg(String, Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
 
-pub fn non_empty_filter() -> @engine.FilterDescriptor
+pub fn number_type(allow_base_prefix? : Bool) -> &@extension.TypeExt
 
-pub fn none_type() -> &@engine.TypeExt
+pub fn owned_vocab(&@kuu-node.InstallerExt) -> String
 
-pub fn number_arg(String, Array[@engine.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
+pub fn regex_match_filter() -> @extension.FilterDescriptor
 
-pub fn number_type(allow_base_prefix? : Bool) -> &@engine.TypeExt
+pub fn repeat_installer() -> &@kuu-node.InstallerExt
 
-pub fn or_branch_node(@engine.OrBranch) -> @engine.Node
+pub fn round_mode_of(String) -> @abi.RoundMode?
 
-pub fn owned_vocab(&@engine.InstallerExt) -> String
+pub fn separated_arg(String, String?, &@extension.TypeExt, @abi.RoundMode, @abi.BoolConfig, Array[@abi.FnInvocation], allow_base_prefix? : Bool, merge? : Bool) -> @engine.Node
 
-pub fn parse_filter_shorthand(String) -> @engine.FnInvocation
+pub fn short_combine(String, Array[@extension.ShortEntry], combine? : Bool) -> &@extension.MatcherExt
 
-pub fn regex_match_filter() -> @engine.FilterDescriptor
+pub fn short_entry(Char, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, deprecated? : Bool, merge? : Bool, short_attached_value? : @abi.AttachMode, is_alias? : Bool) -> @extension.ShortEntry
 
-pub fn repeat_installer() -> &@engine.InstallerExt
+pub fn short_installer() -> &@kuu-node.InstallerExt
 
-pub fn round_mode_of(String) -> @engine.RoundMode?
+pub fn string_arg(String, Array[@abi.FnInvocation]) -> @engine.Node
 
-pub fn separated_arg(String, String?, &@engine.TypeExt, @engine.RoundMode, @engine.BoolConfig, Array[@engine.FnInvocation], allow_base_prefix? : Bool, merge? : Bool) -> @engine.Node
+pub fn string_type() -> &@extension.TypeExt
 
-pub fn short_combine(String, Array[ShortEntry], combine? : Bool) -> &@engine.MatcherExt
+pub fn trim_filter() -> @extension.FilterDescriptor
 
-pub fn short_entry(Char, String, &@engine.TypeExt, Array[@engine.FnInvocation], String?, deprecated? : Bool, merge? : Bool, short_attached_value? : @engine.AttachMode, is_alias? : Bool) -> ShortEntry
+pub fn tty_type(String?, cygwin? : Bool) -> &@extension.TypeExt
 
-pub fn short_installer() -> &@engine.InstallerExt
+pub fn typed_arg(String, &@extension.TypeExt, Array[@abi.FnInvocation]) -> @engine.Node
 
-pub fn string_arg(String, Array[@engine.FnInvocation]) -> @engine.Node
+pub fn unique_array_filter() -> @extension.ArrayFilterDescriptor
 
-pub fn string_type() -> &@engine.TypeExt
-
-pub fn trim_filter() -> @engine.FilterDescriptor
-
-pub fn tty_type(String?, cygwin? : Bool) -> &@engine.TypeExt
-
-pub fn typed_arg(String, &@engine.TypeExt, Array[@engine.FnInvocation]) -> @engine.Node
-
-pub fn unique_array_filter() -> @engine.ArrayFilterDescriptor
-
-pub fn unwrap_single_collector() -> &@engine.CollectorExt
+pub fn unwrap_single_collector() -> &@extension.CollectorExt
 
 // Errors
 
 // Types and methods
-pub(all) struct ConfigValueError {
-  kind : @engine.ErrorKind
-  reason : String
-  message : String
-} derive(Eq, @debug.Debug)
-
-pub struct EqEntry {
-  // private fields
-}
-
-pub(all) enum FromEntriesSpec {
-  Entries
-  KeyValue(String, String)
-  KeyPromote(String)
-} derive(Eq, @debug.Debug)
-
-pub(all) enum LongSpelling {
-  Main(String)
-  Variant(@engine.Variant)
-  Invalid(String, @engine.DefErrorKind)
-} derive(Eq, @debug.Debug)
-
-pub(all) struct LoweredDefinition {
-  scope : @engine.Scope
-  declaration : @engine.Definition
-  completion_insert_form : String
-}
-
-pub struct ShortEntry {
-  // private fields
-}
 
 // Type aliases
+pub using @extension {type ConfigValueError}
+
+pub using @extension {type EqEntry}
+
+pub using @extension {type FromEntriesSpec}
+
+pub using @engine {type Node}
+
+pub using @extension {type ShortEntry}
 
 // Traits
 

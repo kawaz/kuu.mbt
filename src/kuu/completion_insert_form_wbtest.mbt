@@ -182,7 +182,7 @@ test "DR-117 §2.6: 未知 insert_form 値 (\"dash\") → invalid-range" {
   match parse_definition(json) {
     Err(Rejected(errors)) => {
       let kinds = def_error_kinds(errors)
-      assert_eq(kinds.get("completions-bad-form"), Some(@engine.InvalidRange))
+      assert_eq(kinds.get("completions-bad-form"), Some(@abi.InvalidRange))
     }
     _ =>
       fail(
@@ -212,8 +212,8 @@ test "DR-117 §2.6: 複数 completion_script 入口間の insert_form 明示食�
   match parse_definition(json) {
     Err(Rejected(errors)) => {
       let kinds = def_error_kinds(errors)
-      assert_eq(kinds.get("completions-long"), Some(@engine.InvalidRange))
-      assert_eq(kinds.get("completions-sub"), Some(@engine.InvalidRange))
+      assert_eq(kinds.get("completions-long"), Some(@abi.InvalidRange))
+      assert_eq(kinds.get("completions-sub"), Some(@abi.InvalidRange))
     }
     _ =>
       fail(
@@ -307,7 +307,7 @@ test "DR-117 §2.6: 非 completion_script type への insert_form 宣言 → inv
   match parse_definition(json) {
     Err(Rejected(errors)) => {
       let kinds = def_error_kinds(errors)
-      assert_eq(kinds.get("port"), Some(@engine.InvalidRange))
+      assert_eq(kinds.get("port"), Some(@abi.InvalidRange))
     }
     _ => fail("insert_form on non-completion_script type must be invalid-range")
   }
