@@ -1312,11 +1312,20 @@ fn ensure_entity(
         _ => None
       }
   }
-  let ty2 = if seat_ty.name() == "count" { number_type() } else { seat_ty }
+  let ty2 = match seat_ty.name() {
+    "count" => number_type()
+    "completion_script" => string_type()
+    _ => seat_ty
+  }
   build
   .entities()
   .push({
     name: e.name,
+    link: if seat_ty.name() == "completion_script" {
+      Some("#completion_script")
+    } else {
+      None
+    },
     ty: ty2,
     env_key: None,
     config_seat,
@@ -4338,6 +4347,83 @@ pub(all) struct LoweredDefinition {
 }
 
 ///|
+fn element_has_completion_script(element : @engine.ElementDef) -> Bool {
+  if element.ty.name() == "completion_script" {
+    return true
+  }
+  match element.body {
+    @engine.Cell | @engine.Enum(_) => false
+    @engine.Group(items) => {
+      for item in items {
+        if element_has_completion_script(item) {
+          return true
+        }
+      }
+      false
+    }
+    @engine.Or(branches) => {
+      for branch in branches {
+        for item in branch.items {
+          if element_has_completion_script(item) {
+            return true
+          }
+        }
+      }
+      false
+    }
+  }
+}
+
+///|
+fn definition_has_completion_script(definition : @engine.Definition) -> Bool {
+  for element in definition.options {
+    if element_has_completion_script(element) {
+      return true
+    }
+  }
+  for element in definition.positionals {
+    if element_has_completion_script(element) {
+      return true
+    }
+  }
+  for command in definition.commands {
+    if definition_has_completion_script(command.body) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// Definition-wide internal target for the completion_script preset. Public entities retain their
+/// own result-facing names and point here through Entity.link; the target is rooted once even when a
+/// preset entry lives under a command scope.
+fn completion_script_internal_entity() -> @engine.Entity {
+  {
+    name: "#completion_script",
+    link: None,
+    ty: string_type(),
+    env_key: None,
+    config_seat: false,
+    config_key: None,
+    is_config_file: false,
+    is_inherit: false,
+    accum: None,
+    flatten: false,
+    is_multiple_decl: false,
+    collector: None,
+    default_values: None,
+    default_fn: None,
+    separator: None,
+    piece_filters: [],
+    value_filters: [],
+    final_filters: [],
+    accum_filters: [],
+    extension: entity_ext(),
+  }
+}
+
+///|
 fn lower_definition_snapshot_impl(
   def0 : @engine.Definition,
   order : Array[&@engine.InstallerExt],
@@ -4376,6 +4462,9 @@ fn lower_definition_snapshot_impl(
   // command defs を追加 — fixpoint installer が展開する。
   desugar_aliases(def, orig, extensions)
   let sb = init_sb(def, registry, extensions) // desugar 済 def で scope tree 再構築
+  if definition_has_completion_script(def) {
+    sb.output().push_entity(completion_script_internal_entity())
+  }
   // 同型 default (DR-050 §3): config_file 要素があれば全 value cell に config seat を宣言。1 度計算、
   // ensure_entity に thread。
   let has_cf = has_config_file(def)

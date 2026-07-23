@@ -328,3 +328,23 @@ test "DR-060 §3: candidate dedup ignores path — same spelling from two differ
   }
   assert_eq(matches.length(), 1)
 }
+
+///|
+test "DR-117 §2.2: completion_script offers shell names without closing string acceptance" {
+  let definition = @json.parse(
+    "{\"options\":[{\"name\":\"completions\",\"type\":\"completion_script\",\"long\":true}]}",
+  )
+  let ast = match parse_definition(definition) {
+    Ok(ast) => ast
+    Err(_) => fail("completion_script definition must lower")
+  }
+  let candidates = complete(ast, ["--completions"])
+  assert_true(has_exact(candidates, "zsh"))
+  assert_true(has_exact(candidates, "bash"))
+  assert_true(has_exact(candidates, "fish"))
+  assert_false(has_value(candidates, "completions"))
+  match parse(ast, ["--completions", "nu"]) {
+    @engine.Success(_) => ()
+    _ => fail("shell suggestions must not become a closed values enum")
+  }
+}

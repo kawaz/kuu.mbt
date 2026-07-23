@@ -9,7 +9,11 @@ import {
 // Values
 pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[@engine.Candidate]
 
+pub fn completion_script_capability() -> &@engine.CapabilityExt
+
 pub fn config_from_json(Json) -> @engine.ConfigVal
+
+pub fn dispatch_completion_script(@engine.Registry, @engine.Outcome) -> CompletionScriptRequest
 
 pub fn dispatch_help_query(@engine.Registry, AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> HelpQueryOutcome
 
@@ -41,6 +45,16 @@ pub fn warnings(@engine.Outcome) -> Array[@engine.Warning]
 
 // Types and methods
 type AtomicAST
+
+pub struct CompletionScriptCapability {
+}
+pub impl @engine.CapabilityExt for CompletionScriptCapability
+
+pub(all) enum CompletionScriptRequest {
+  Requested(String)
+  NotRequested
+  Unavailable
+} derive(Eq, @debug.Debug)
 
 pub(all) enum DefLoadError {
   Malformed(String)

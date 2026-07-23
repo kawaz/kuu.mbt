@@ -12,6 +12,7 @@ pub struct Registry {
   priv filters : Map[String, FilterDescriptor]
   priv array_filters : Map[String, ArrayFilterDescriptor]
   priv cell_fns : Map[String, CellFnDescriptor]
+  priv completers : Map[String, &CompleterExt]
   priv installers : Array[&InstallerExt]
   // DR-113 §1: installer 3 役の「能力提供」面 (help_query に代表される、宣言層寄与適用後の
   // 断面から model / query 結果を組む機能) を、node / matcher / installer と同じ registry
@@ -31,6 +32,7 @@ pub fn Registry::new() -> Registry {
     filters: Map([]),
     array_filters: Map([]),
     cell_fns: Map([]),
+    completers: Map([]),
     installers: [],
     capabilities: Map([]),
   }
@@ -202,6 +204,30 @@ pub fn Registry::lookup_cell_fn(
   name : String,
 ) -> CellFnDescriptor? {
   self.cell_fns.get(name)
+}
+
+///|
+/// Register one named completer resident. DR-117 deliberately leaves the completer function ABI
+/// open; registration establishes the canonical files/dirs vocabulary and an extension seat.
+pub fn Registry::register_completer(
+  self : Registry,
+  resident : &CompleterExt,
+) -> Bool {
+  let name = resident.name()
+  if self.completers.get(name) is Some(_) {
+    false
+  } else {
+    self.completers.set(name, resident)
+    true
+  }
+}
+
+///|
+pub fn Registry::lookup_completer(
+  self : Registry,
+  name : String,
+) -> &CompleterExt? {
+  self.completers.get(name)
 }
 
 ///|

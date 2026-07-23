@@ -307,6 +307,38 @@ fn tried_triggers_in_greedy(g : Node, out : Array[String]) -> Unit {
 // ── complete (DR-060 / MDR-002 §2.4: the ONE Pending-collection function) ─────
 
 ///|
+/// Expand a value-position candidate with type-owned suggestions while leaving acceptance open.
+/// An empty resident list preserves the ordinary value-position marker. Non-empty suggestions are
+/// concrete insertions; `parse_token` remains the authority on accepted values, so this does not
+/// create an enum constraint.
+fn expand_type_completion_values(
+  candidate : Candidate,
+  extensions : Registry,
+) -> Array[Candidate] {
+  if !candidate.is_value {
+    return [candidate]
+  }
+  let values = match extensions.lookup_type(candidate.ty) {
+    Some(resident) => resident.completion_values()
+    None => []
+  }
+  if values.length() == 0 {
+    return [candidate]
+  }
+  let out : Array[Candidate] = []
+  for value in values {
+    out.push({
+      ..candidate,
+      spelling: value,
+      is_value: false,
+      term: WordEnd,
+      completer: None,
+    })
+  }
+  out
+}
+
+///|
 /// Complete = the union of everything readable at the next consumption point
 /// over every surviving partial path that consumed `before` (DR-060 §1). The
 /// walk itself is parse's walk in ModeComplete — boundary trigger sites and
@@ -371,40 +403,45 @@ pub fn complete_tree(
           } else {
             decorated.push(c0)
           }
-          for c in decorated {
-            let mut dup_idx = -1
-            for j = 0; j < cands.length(); j = j + 1 {
-              let e = cands[j]
-              // DR-060 §3's candidate structure is spelling/is_value/ty/origin/term/meta (wire
-              // shape; `meta` bundles is_alias/hidden/deprecated, carried flat on the in-memory
-              // Candidate) — `path` (DR-066 §4) is NOT part of it, so two candidates that differ
-              // only by which ancestor scope produced them are the same candidate here: the
-              // same spelling is readable either way, and DR-060 §1's "union of what's
-              // readable" is a union over SPELLINGS, not over the scopes that offer them.
-              // `completer` (DR-104 §3) is likewise NOT part of this identity.
-              if e.spelling == c.spelling &&
-                e.is_value == c.is_value &&
-                e.ty == c.ty &&
-                e.origin == c.origin &&
-                e.term == c.term &&
-                e.is_alias == c.is_alias &&
-                e.hidden == c.hidden &&
-                e.deprecated == c.deprecated {
-                dup_idx = j
-                break
+          for decorated_candidate in decorated {
+            for
+              c in expand_type_completion_values(
+                decorated_candidate, extensions,
+              ) {
+              let mut dup_idx = -1
+              for j = 0; j < cands.length(); j = j + 1 {
+                let e = cands[j]
+                // DR-060 §3's candidate structure is spelling/is_value/ty/origin/term/meta (wire
+                // shape; `meta` bundles is_alias/hidden/deprecated, carried flat on the in-memory
+                // Candidate) — `path` (DR-066 §4) is NOT part of it, so two candidates that differ
+                // only by which ancestor scope produced them are the same candidate here: the
+                // same spelling is readable either way, and DR-060 §1's "union of what's
+                // readable" is a union over SPELLINGS, not over the scopes that offer them.
+                // `completer` (DR-104 §3) is likewise NOT part of this identity.
+                if e.spelling == c.spelling &&
+                  e.is_value == c.is_value &&
+                  e.ty == c.ty &&
+                  e.origin == c.origin &&
+                  e.term == c.term &&
+                  e.is_alias == c.is_alias &&
+                  e.hidden == c.hidden &&
+                  e.deprecated == c.deprecated {
+                  dup_idx = j
+                  break
+                }
               }
-            }
-            if dup_idx < 0 {
-              cands.push(c)
-            } else if cands[dup_idx].completer != c.completer {
-              // DR-104 §3 明確化 note: two candidates that dedup-match on the 6-field identity
-              // but resolve to DIFFERENT completers (via their distinct `path`s, per the doc
-              // comment above) merge to "no completer" — neither producer's guess is privileged
-              // over the other's, so the honest wire projection is `completer` absent (COMP-Q3's
-              // opt-in convention already treats absence as "unknown/untested", which fits this
-              // case exactly: which app-specific dynamic completer applies is genuinely
-              // ambiguous when the 6 identity-bearing fields cannot tell the two scopes apart).
-              cands[dup_idx] = { ..cands[dup_idx], completer: None }
+              if dup_idx < 0 {
+                cands.push(c)
+              } else if cands[dup_idx].completer != c.completer {
+                // DR-104 §3 明確化 note: two candidates that dedup-match on the 6-field identity
+                // but resolve to DIFFERENT completers (via their distinct `path`s, per the doc
+                // comment above) merge to "no completer" — neither producer's guess is privileged
+                // over the other's, so the honest wire projection is `completer` absent (COMP-Q3's
+                // opt-in convention already treats absence as "unknown/untested", which fits this
+                // case exactly: which app-specific dynamic completer applies is genuinely
+                // ambiguous when the 6 identity-bearing fields cannot tell the two scopes apart).
+                cands[dup_idx] = { ..cands[dup_idx], completer: None }
+              }
             }
           }
         }

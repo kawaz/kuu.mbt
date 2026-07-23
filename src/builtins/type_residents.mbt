@@ -347,6 +347,54 @@ pub fn tty_type(stream : String?, cygwin? : Bool = true) -> &@engine.TypeExt {
 }
 
 ///|
+/// DR-117 §2 string preset. The resident stays distinct through node construction so completion can
+/// offer supported shell names, then lowering collapses the stored entity type to ordinary string.
+priv struct CompletionScriptTypeExt {}
+
+///|
+impl @engine.TypeExt for CompletionScriptTypeExt with fn name(_self) {
+  "completion_script"
+}
+
+///|
+impl @engine.TypeExt for CompletionScriptTypeExt with fn encode(_self) {
+  ().to_json()
+}
+
+///|
+impl @engine.TypeExt for CompletionScriptTypeExt with fn has_value_slot(_self) {
+  true
+}
+
+///|
+impl @engine.TypeExt for CompletionScriptTypeExt with fn parse_token(
+  _self,
+  token,
+) {
+  Ok(@engine.String(token))
+}
+
+///|
+impl @engine.TypeExt for CompletionScriptTypeExt with fn completion_values(
+  _self,
+) {
+  ["zsh", "bash", "fish"]
+}
+
+///|
+impl @engine.TypeExt for CompletionScriptTypeExt with fn default_seat_resolver(
+  _self,
+  ctx,
+) {
+  ctx.declared()
+}
+
+///|
+pub fn completion_script_type() -> &@engine.TypeExt {
+  CompletionScriptTypeExt::{  } as &@engine.TypeExt
+}
+
+///|
 priv struct NoneTypeExt {}
 
 ///|

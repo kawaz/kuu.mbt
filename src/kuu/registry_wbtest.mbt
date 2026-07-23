@@ -23,7 +23,8 @@ test "canonical_registry installs every builtin node and type resident" {
   }
   for
     name in [
-      "string", "number", "int", "float", "bool", "flag", "count", "none",
+      "string", "number", "int", "float", "bool", "flag", "count", "completion_script",
+      "none",
     ] {
     match registry.lookup_type(name) {
       Some(resident) => assert_eq(resident.name(), name)
@@ -52,10 +53,23 @@ test "canonical_registry installs every builtin node and type resident" {
       None => fail("canonical cell fn resident is missing: " + name)
     }
   }
+  for name in ["files", "dirs"] {
+    match registry.lookup_completer(name) {
+      Some(resident) => assert_eq(resident.name(), name)
+      None => fail("canonical completer resident is missing: " + name)
+    }
+  }
+  for name in ["help_query", "completion_script"] {
+    match registry.lookup_capability(name) {
+      Some(resident) => assert_eq(resident.name(), name)
+      None => fail("canonical capability is missing: " + name)
+    }
+  }
   // Unknown identities remain observable as absent rather than producing a placeholder resident.
   assert_true(registry.lookup_matcher("missing") is None)
   assert_true(registry.lookup_accumulator("missing") is None)
   assert_true(registry.lookup_collector("missing") is None)
+  assert_true(registry.lookup_completer("missing") is None)
 }
 
 ///|

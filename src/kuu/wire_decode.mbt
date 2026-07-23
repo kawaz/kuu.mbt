@@ -2213,6 +2213,7 @@ fn dec_option(
   // base 名 (string/number/int/bool) を保持。user 定義 shadow は base 名を代入。
   let type_name_field : String? = match tystr {
     "string" | "number" | "int" | "bool" => Some(tystr)
+    "completion_script" => Some("string")
     _ =>
       match shadows.get(tystr) {
         Some(sh) => {
@@ -2503,6 +2504,7 @@ fn dec_positional(
   let type_name_field : String? = match jf_str(o, "type") {
     Some("string") | Some("number") | Some("int") | Some("bool") =>
       Some(jf_str(o, "type").unwrap())
+    Some("completion_script") => Some("string")
     Some(t) =>
       match shadows.get(t) {
         Some(sh) => {

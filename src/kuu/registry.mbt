@@ -81,6 +81,16 @@ fn register_cell_fn(
 }
 
 ///|
+fn register_completer(
+  registry : @engine.Registry,
+  resident : &@engine.CompleterExt,
+) -> Unit {
+  guard registry.register_completer(resident) else {
+    abort("duplicate builtin completer resident name: " + resident.name())
+  }
+}
+
+///|
 /// Register only the canonical installer vocabulary (long / short / env / dd / ... — the
 /// DR-042 table) into `registry`. A subset of `install_canonical`; call this directly when
 /// composing a custom assembly that swaps residents but keeps the standard vocabulary.
@@ -144,6 +154,7 @@ pub fn install_canonical(registry : @engine.Registry) -> Unit {
   register_type(registry, @builtins.bool_type())
   register_type(registry, @builtins.flag_type())
   register_type(registry, @builtins.count_type())
+  register_type(registry, @builtins.completion_script_type())
   register_type(registry, @builtins.none_type())
 
   register_accumulator(registry, @builtins.append_accumulator())
@@ -168,10 +179,14 @@ pub fn install_canonical(registry : @engine.Registry) -> Unit {
     register_cell_fn(registry, descriptor)
   }
 
+  register_completer(registry, @builtins.files_completer())
+  register_completer(registry, @builtins.dirs_completer())
+
   // DR-113 §1: help_query capability の登録経路。M3c-B では器のみ (fixture runner の invoke
   // 経路への統合は M4 で切り替える)。重複名登録の戻り値は install_canonical() が単発呼びで無視して良い
   // (canonical assembly は 1 度だけ install される、cell_fn_descriptors 群と同じ扱い)。
   let _ = registry.register_capability(help_query_capability())
+  let _ = registry.register_capability(completion_script_capability())
 }
 
 ///|

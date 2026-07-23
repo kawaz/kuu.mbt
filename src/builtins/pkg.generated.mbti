@@ -25,6 +25,8 @@ pub fn classify_long_spelling(String, String, &@engine.TypeExt, @engine.Registry
 
 pub fn command_installer() -> &@engine.InstallerExt
 
+pub fn completion_script_type() -> &@engine.TypeExt
+
 pub fn config_installer() -> &@engine.InstallerExt
 
 pub fn config_to_value(@engine.ConfigVal, &@engine.TypeExt, Array[@engine.FnInvocation], @engine.Registry) -> Result[@engine.Value, ConfigValueError]
@@ -38,6 +40,8 @@ pub fn count_type(allow_base_prefix? : Bool) -> &@engine.TypeExt
 pub fn dd_installer() -> &@engine.InstallerExt
 
 pub fn deprecation_mark(String) -> @engine.Node
+
+pub fn dirs_completer() -> &@engine.CompleterExt
 
 pub fn effect_mark(String, @engine.EffectOp) -> @engine.Node
 
@@ -54,6 +58,8 @@ pub fn eq_entry(String, String, &@engine.TypeExt, Array[@engine.FnInvocation], S
 pub fn eq_split(String, Array[EqEntry]) -> &@engine.MatcherExt
 
 pub fn failure_mark(String) -> @engine.Node
+
+pub fn files_completer() -> &@engine.CompleterExt
 
 pub fn filtered_number_arg(String, Int) -> @engine.Node
 

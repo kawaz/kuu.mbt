@@ -20,6 +20,7 @@ fn cb(
 fn ent(
   name : String,
   ty : &@engine.TypeExt,
+  link? : String? = None,
   env_key? : String? = None,
   config_seat? : Bool = false,
   config_key? : Array[String]? = None,
@@ -49,6 +50,7 @@ fn ent(
   }
   {
     name,
+    link,
     ty: if is_tty {
       @builtins.tty_type(tty_stream, cygwin=tty_cygwin)
     } else {

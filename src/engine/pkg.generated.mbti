@@ -386,6 +386,7 @@ pub(all) struct ElementDef {
 
 pub(all) struct Entity {
   name : String
+  link : String?
   ty : &TypeExt
   mut env_key : String?
   config_seat : Bool
@@ -695,6 +696,7 @@ pub fn Registry::lookup_array_filter(Self, String) -> ArrayFilterDescriptor?
 pub fn Registry::lookup_capability(Self, String) -> &CapabilityExt?
 pub fn Registry::lookup_cell_fn(Self, String) -> CellFnDescriptor?
 pub fn Registry::lookup_collector(Self, String) -> &CollectorExt?
+pub fn Registry::lookup_completer(Self, String) -> &CompleterExt?
 pub fn Registry::lookup_filter(Self, String) -> FilterDescriptor?
 pub fn Registry::lookup_matcher(Self, String) -> &MatcherExt?
 pub fn Registry::lookup_node(Self, String) -> &NodeExt?
@@ -705,6 +707,7 @@ pub fn Registry::register_array_filter(Self, ArrayFilterDescriptor) -> Bool
 pub fn Registry::register_capability(Self, &CapabilityExt) -> Bool
 pub fn Registry::register_cell_fn(Self, CellFnDescriptor) -> Bool
 pub fn Registry::register_collector(Self, &CollectorExt) -> Bool
+pub fn Registry::register_completer(Self, &CompleterExt) -> Bool
 pub fn Registry::register_filter(Self, FilterDescriptor) -> Bool
 pub fn Registry::register_installer(Self, &InstallerExt) -> Unit
 pub fn Registry::register_matcher(Self, &MatcherExt) -> Bool
@@ -841,6 +844,10 @@ pub(open) trait CollectorExt {
 pub impl Eq for &CollectorExt
 pub impl @debug.Debug for &CollectorExt
 
+pub(open) trait CompleterExt {
+  fn name(Self) -> String
+}
+
 pub(open) trait EntityExt {
   fn encode(Self) -> Json = _
   fn complete_candidate(Self, Candidate) -> Candidate
@@ -881,6 +888,7 @@ pub(open) trait TypeExt {
   fn encode(Self) -> Json = _
   fn has_value_slot(Self) -> Bool
   fn parse_token(Self, String) -> Result[Value, TypeParseFail]
+  fn completion_values(Self) -> Array[String] = _
   fn default_seat_observation_key(Self) -> String? = _
   fn default_seat_resolver(Self, SeatCtx) -> Value?
 }

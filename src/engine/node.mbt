@@ -102,6 +102,7 @@ pub(open) trait TypeExt {
   fn encode(Self) -> Json = _
   fn has_value_slot(Self) -> Bool
   fn parse_token(Self, String) -> Result[Value, TypeParseFail]
+  fn completion_values(Self) -> Array[String] = _
   fn default_seat_observation_key(Self) -> String? = _
   fn default_seat_resolver(Self, SeatCtx) -> Value?
 }
@@ -109,6 +110,14 @@ pub(open) trait TypeExt {
 ///|
 impl TypeExt with fn encode(_self) {
   ().to_json()
+}
+
+///|
+/// Optional finite suggestions for a value position. The empty default keeps ordinary open value
+/// spaces unchanged; preset residents may offer candidates without changing `parse_token`'s accepted
+/// domain.
+impl TypeExt with fn completion_values(_self) {
+  []
 }
 
 ///|
@@ -535,6 +544,10 @@ pub(all) enum Constraint {
 /// entity value.
 pub(all) struct Entity {
   name : String
+  // A canonical value-synchronization target. `None` is an ordinary independent cell; `Some(name)`
+  // mirrors this entity's resolved value into the target internal cell while preserving this public
+  // entity for result exposure. DR-117 uses this for completion_script → #completion_script.
+  link : String?
   ty : &TypeExt
   mut env_key : String? // env seat lookup; None = no env seat declared (env installer sets it)
   // MDR-005 §3: `pub(all)` → `pub` (公開面キュレーション) でフィールドの外部書き込みが無くなり、

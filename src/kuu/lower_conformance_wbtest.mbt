@@ -106,6 +106,7 @@ fn render_val(value : @engine.Value) -> String {
 struct LEnt {
   name : String
   typ : String
+  link : String?
   default : @engine.Value?
   env : String?
   is_inherit : Bool
@@ -159,6 +160,10 @@ fn canon_tmpl(k : String) -> String {
 ///|
 fn lent_str(e : LEnt) -> String {
   let fs : Array[String] = ["type=" + e.typ]
+  match e.link {
+    Some(target) => fs.push("link=" + target)
+    None => ()
+  }
   match e.default {
     Some(v) => fs.push("default=" + render_val(v))
     None => ()
@@ -553,6 +558,7 @@ fn proj_entity(e : @engine.Entity) -> LEnt {
   {
     name: e.name,
     typ,
+    link: e.link,
     // DR-083 §1: LEnt is the golden-fixture "5-face" oracle format, which only knows a scalar
     // default (`dec_lent` below decodes `"default"` via a single `json_to_value`, no accum-array
     // shape) — project the scalar face of `@engine.Entity.default_values` for this cross-check.
@@ -693,6 +699,7 @@ fn registry_with_installers(
       @builtins.bool_type(),
       @builtins.flag_type(),
       @builtins.count_type(),
+      @builtins.completion_script_type(),
       @builtins.none_type(),
     ] {
     ignore(registry.register_type(resident))
@@ -1051,7 +1058,7 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
   allowed_keys(
     o,
     [
-      "type", "default", "env", "inherit", "config_key", "accumulator", "flatten",
+      "type", "link", "default", "env", "inherit", "config_key", "accumulator", "flatten",
     ],
     "golden entity",
   )
@@ -1067,6 +1074,7 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
   {
     name,
     typ,
+    link: jf_str(o, "link"),
     default,
     env: jf_str(o, "env"),
     is_inherit: bool_field(o, "inherit", false),

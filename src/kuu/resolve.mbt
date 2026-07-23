@@ -43,8 +43,7 @@ fn is_sentinel(k : String) -> Bool {
   k == "[]" ||
   k == "{}" ||
   k == "" ||
-  k == "#row" ||
-  k == "#fire" ||
+  (k.length() > 0 && k[0:1].to_owned() == "#") ||
   (k.length() >= 5 && k[0:5].to_owned() == "@act:") ||
   (k.length() >= 6 && k[0:6].to_owned() == "@depr:")
 }
@@ -1515,6 +1514,28 @@ fn is_cmdsat_child(sc : @engine.Scope, name : String) -> Bool {
 }
 
 ///|
+/// Internal cells are definition-wide and rooted at the scope that declares their Entity. A linked
+/// binding may be produced while resolving a descendant command; when recursion reaches the owning
+/// scope, relocate the reserved key to that scope path.
+fn relocate_internal_bindings(
+  bindings : Array[@engine.Binding],
+  entities : Array[@engine.Entity],
+  path : Array[String],
+) -> Array[@engine.Binding] {
+  let out : Array[@engine.Binding] = []
+  for binding in bindings {
+    if binding.key.length() > 0 &&
+      binding.key[0:1].to_owned() == "#" &&
+      entity_named(entities, binding.key) is Some(_) {
+      out.push({ ..binding, scope: path })
+    } else {
+      out.push(binding)
+    }
+  }
+  out
+}
+
+///|
 /// Resolve a WHOLE scope tree (root scope + every entered nested command scope) down the full
 /// value-source ladder (`resolve_scope_config`), threading `inherited` top-down so a child scope's
 /// inherit seat always sees its ANCESTOR's already-resolved values (DR-087 §3 dependency order —
@@ -1631,7 +1652,7 @@ fn resolve_scope_tree_with_export(
       _ => ()
     }
   }
-  Ok(out)
+  Ok(relocate_internal_bindings(out, sc.entities, path))
 }
 
 ///|
@@ -2592,6 +2613,28 @@ fn entity_named(
 }
 
 ///|
+/// Mirror each resolved public cell into its canonical internal target. The source binding remains
+/// present for ordinary result exposure; the copied key is filtered from OutputView by the reserved
+/// `#` namespace and is consumed by capability dispatch instead.
+fn apply_entity_links(
+  entities : Array[@engine.Entity],
+  bindings : Array[@engine.Binding],
+) -> Array[@engine.Binding] {
+  let out = bindings.copy()
+  for binding in bindings {
+    match entity_named(entities, binding.key) {
+      Some(entity) =>
+        match entity.link {
+          Some(target) => out.push({ ..binding, key: target })
+          None => ()
+        }
+      None => ()
+    }
+  }
+  out
+}
+
+///|
 fn default_fn_option_edges(
   entity : @engine.Entity,
   extensions : @engine.Registry,
@@ -2947,7 +2990,7 @@ fn resolve_scope_config_with_export(
         }
       }
     }
-    return Ok(out)
+    return Ok(apply_entity_links(sc.entities, out))
   }
   // Phase 3b: defaults are fallbacks for the export-key-resolved result cell, not per-entity claims.
   // Only the first default that can actually fill an empty cell is admitted; later co-exported
@@ -2994,7 +3037,7 @@ fn resolve_scope_config_with_export(
       }
     }
   }
-  Ok(out)
+  Ok(apply_entity_links(sc.entities, out))
 }
 
 ///|
