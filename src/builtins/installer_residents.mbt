@@ -233,6 +233,7 @@ fn resident_empty_help_meta() -> @engine.HelpMetaDeclaration {
     render_declared: None,
     render_effective: None,
     value_structure_style: None,
+    completion_insert_form_declared: None,
   }
 }
 
@@ -1047,6 +1048,7 @@ impl @engine.InstallerExt for HelpMetaInstaller with fn decode(
       render_declared,
       render_effective: None,
       value_structure_style,
+      completion_insert_form_declared: None,
     }),
   })
 }

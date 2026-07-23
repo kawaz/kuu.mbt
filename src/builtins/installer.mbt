@@ -4344,6 +4344,12 @@ fn collect_config_cycle(
 pub(all) struct LoweredDefinition {
   scope : @engine.Scope
   declaration : @engine.Definition
+  // DR-117 §2.6 の definition-wide reconciled `insert_form` (canonical "space" / "eq")。
+  // completion_script preset 入口が 1 つ以上ある場合は明示値のいずれか (省略と明示の混在は明示値
+  // が勝つ、DR §2.6)、全て省略 or 入口ゼロなら既定 "space"。lowering 段では `#completion_script`
+  // internal cell への集約 (link) しか要らないため搬送しないが、応答 policy 段 (completion_query)
+  // が declaration snapshot から読むため LoweredDefinition 経由で AtomicAST に運ぶ。
+  completion_insert_form : String
 }
 
 ///|
@@ -4424,6 +4430,185 @@ fn completion_script_internal_entity() -> @engine.Entity {
 }
 
 ///|
+/// DR-117 §2.6 / §8.1: `insert_form` 宣言の妥当性を definition 全体で判定して invalid-range を積む。
+///
+/// 3 種の失敗を同じ kind (`InvalidRange`) で一括収集する (DR §2.6「enum 逸脱・複数入口間の
+/// 明示値食い違い・他 type への宣言」は既存 kind 準用、新 kind は設けない):
+///
+/// 1. **enum 逸脱** — 値が `"space"` / `"eq"` 以外 (該当 element に error)
+/// 2. **非 completion_script type への宣言** — `type` が `completion_script` 以外の要素に
+///    `insert_form` を持たせている (該当 element に error)
+/// 3. **複数入口間の明示値食い違い** — completion_script 要素の valid な明示値が 2 種類以上に
+///    分かれている (食い違いに関与した全 element に error — DR §2.6 は挿入形を definition 全体で
+///    1 つと規定し「どちらの入口を訂正しても解消しうる」ため fixture の
+///    completion-script-insert-form-conflict.json は両入口へ error を積む形で pin)
+///
+/// 検査は options / positionals / commands をルートから再帰的に (完全経路の element 集合を
+/// 走査)。element_has_completion_script は Group / Or の内側も追いかけるので、宣言経路と一致する。
+fn collect_completion_script_errors(
+  def : @engine.Definition,
+  out : Array[@engine.DefError],
+) -> Unit {
+  // 明示 valid 値を持つ (element_name, "space"|"eq") のペア。食い違い判定と error 増幅の素材。
+  let explicit : Array[(String, String)] = []
+  collect_completion_script_errors_walk(def, out, explicit)
+  // 複数入口間の食い違い判定 — 明示値が 2 種類以上あるなら関与した全 element に error。
+  let mut has_space = false
+  let mut has_eq = false
+  for pair in explicit {
+    let (_, v) = pair
+    if v == "space" {
+      has_space = true
+    } else if v == "eq" {
+      has_eq = true
+    }
+  }
+  if has_space && has_eq {
+    for pair in explicit {
+      let (name, _) = pair
+      out.push(
+        def_err(
+          name,
+          @engine.InvalidRange,
+          "conflicting explicit 'insert_form' values across completion_script entries (DR-117 §2.6: one policy per definition)",
+          "align every completion_script entry to the same 'insert_form' value, or omit it on all but one entry",
+        ),
+      )
+    }
+  }
+}
+
+///|
+fn collect_completion_script_errors_walk(
+  def : @engine.Definition,
+  out : Array[@engine.DefError],
+  explicit : Array[(String, String)],
+) -> Unit {
+  for element in def.options {
+    collect_completion_script_errors_element(element, out, explicit)
+  }
+  for element in def.positionals {
+    collect_completion_script_errors_element(element, out, explicit)
+  }
+  for command in def.commands {
+    collect_completion_script_errors_walk(command.body, out, explicit)
+  }
+}
+
+///|
+fn collect_completion_script_errors_element(
+  element : @engine.ElementDef,
+  out : Array[@engine.DefError],
+  explicit : Array[(String, String)],
+) -> Unit {
+  let is_cs = element.ty.name() == "completion_script"
+  match element.help_meta.completion_insert_form_declared {
+    None => ()
+    Some(v) =>
+      if !is_cs {
+        // 非 completion_script type に `insert_form` を宣言 — schema description が pin する
+        // 「completion_script type 以外への宣言も同 kind」に対応する invalid-range。
+        out.push(
+          def_err(
+            element.name,
+            @engine.InvalidRange,
+            "'insert_form' is only valid on `type: completion_script` entries (DR-117 §2.6)",
+            "remove 'insert_form' or change the element's type to 'completion_script'",
+          ),
+        )
+      } else if v != "space" && v != "eq" {
+        // enum 逸脱 (DR-117 §2.6)。canonical 語彙は "space" / "eq" のみ。
+        out.push(
+          def_err(
+            element.name,
+            @engine.InvalidRange,
+            "'insert_form' value '" +
+            v +
+            "' is not in the canonical enum (\"space\" | \"eq\", DR-117 §2.6)",
+            "use \"space\" (default) or \"eq\"",
+          ),
+        )
+      } else {
+        // valid な明示値 — 食い違い判定用に集める (定義全体で reconcile された値との
+        // 突合は上位の walker で行う)。
+        explicit.push((element.name, v))
+      }
+  }
+  // Group / Or 内側の leaf を追いかける (element_has_completion_script と同じ辿り方)。
+  match element.body {
+    @engine.Cell | @engine.Enum(_) => ()
+    @engine.Group(items) =>
+      for item in items {
+        collect_completion_script_errors_element(item, out, explicit)
+      }
+    @engine.Or(branches) =>
+      for branch in branches {
+        for item in branch.items {
+          collect_completion_script_errors_element(item, out, explicit)
+        }
+      }
+  }
+}
+
+///|
+/// DR-117 §2.6: 全 completion_script element の `insert_form` 宣言を集めて definition-wide の
+/// 実効値を決める。呼び出し元は `collect_completion_script_errors` が invalid を弾き終えた
+/// 後の def に対して呼ぶ (= 明示値は全て "space" or "eq" に閉じている前提)。
+///
+/// 規則 (DR §2.6):
+/// - 全部 None (省略) → 既定 `"space"`
+/// - Some(v) を含む → v (明示が勝つ)。食い違いは既に error として弾かれているのでここには来ない
+/// - 入口ゼロ (completion_script 要素なし) でも `"space"` を返す (形態 B の def.json 直 query
+///   で「入口を持たない definition」も既定 `"space"` で動く、DR §2.6 の 3 番目の bullet)
+fn compute_completion_insert_form(def : @engine.Definition) -> String {
+  let mut result = "space"
+  compute_completion_insert_form_walk(def, fn(v) { result = v })
+  result
+}
+
+///|
+fn compute_completion_insert_form_walk(
+  def : @engine.Definition,
+  set_ : (String) -> Unit,
+) -> Unit {
+  for element in def.options {
+    compute_completion_insert_form_element(element, set_)
+  }
+  for element in def.positionals {
+    compute_completion_insert_form_element(element, set_)
+  }
+  for command in def.commands {
+    compute_completion_insert_form_walk(command.body, set_)
+  }
+}
+
+///|
+fn compute_completion_insert_form_element(
+  element : @engine.ElementDef,
+  set_ : (String) -> Unit,
+) -> Unit {
+  if element.ty.name() == "completion_script" {
+    match element.help_meta.completion_insert_form_declared {
+      Some(v) => if v == "space" || v == "eq" { set_(v) }
+      None => ()
+    }
+  }
+  match element.body {
+    @engine.Cell | @engine.Enum(_) => ()
+    @engine.Group(items) =>
+      for item in items {
+        compute_completion_insert_form_element(item, set_)
+      }
+    @engine.Or(branches) =>
+      for branch in branches {
+        for item in branch.items {
+          compute_completion_insert_form_element(item, set_)
+        }
+      }
+  }
+}
+
+///|
 fn lower_definition_snapshot_impl(
   def0 : @engine.Definition,
   order : Array[&@engine.InstallerExt],
@@ -4455,6 +4640,9 @@ fn lower_definition_snapshot_impl(
     }
   }
   collect_default_fn_errors(def, errs, extensions)
+  // DR-117 §2.6 / §8.1: `insert_form` の 3 種 invalid (enum 逸脱・非 completion_script への宣言・
+  // 複数入口間の食い違い) を invalid-range で一括収集する。
+  collect_completion_script_errors(def, errs)
   if errs.length() > 0 {
     return Err(errs) // ALL definition-error 列挙
   }
@@ -4472,7 +4660,12 @@ fn lower_definition_snapshot_impl(
     @engine.run_installer_fixpoint(sb, order, fn(builder) {
       ensure_entities(builder, has_cf)
     }) {
-    Ok(scope) => Ok({ scope, declaration: def })
+    Ok(scope) =>
+      Ok({
+        scope,
+        declaration: def,
+        completion_insert_form: compute_completion_insert_form(def),
+      })
     Err(errors) => Err(errors)
   }
 }

@@ -175,6 +175,7 @@ pub(all) enum LongSpelling {
 pub(all) struct LoweredDefinition {
   scope : @engine.Scope
   declaration : @engine.Definition
+  completion_insert_form : String
 }
 
 pub struct ShortEntry {

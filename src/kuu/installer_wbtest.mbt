@@ -42,6 +42,7 @@ fn empty_help_meta_for_test() -> @engine.HelpMetaDeclaration {
     render_declared: None,
     render_effective: None,
     value_structure_style: None,
+    completion_insert_form_declared: None,
   }
 }
 
@@ -129,6 +130,7 @@ fn el(
       render_declared: None,
       render_effective: None,
       value_structure_style: None,
+      completion_insert_form_declared: None,
     },
     is_tty,
     tty_stream,

@@ -43,6 +43,11 @@ struct AtomicAST {
   extensions : @engine.Registry
   ekmap : Map[String, @engine.ExportKey]
   declaration : @engine.Definition
+  // DR-117 §2.6: definition-wide reconciled `insert_form` (canonical "space" / "eq")。
+  // completion_script preset 入口の明示値が勝ち、全て省略 or 入口ゼロなら既定 `"space"`。
+  // 応答 policy 段 (`completion_query`) が §5 の merge 規則で読む唯一の carrier。lowering 産物
+  // (Scope / Entity) には搬送しない — declaration snapshot と対で運ぶ。
+  completion_insert_form : String
 }
 
 ///|
@@ -147,6 +152,7 @@ pub fn parse_definition(
           templates,
           extensions,
           ekmap: @builtins.build_export_map(def, extensions),
+          completion_insert_form: lowered.completion_insert_form,
           declaration: lowered.declaration,
         })
       Err(errs) => Err(Rejected(errs))

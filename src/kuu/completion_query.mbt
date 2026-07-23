@@ -64,7 +64,12 @@ pub fn completion_query(
     QueryError(_) | Unavailable => None
   }
   // policy 段
-  let (rows, shell_actions) = apply_policy(raw, cursor_word, help_model)
+  let (rows, shell_actions) = apply_policy(
+    raw,
+    cursor_word,
+    help_model,
+    ast.completion_insert_form,
+  )
   // §4 の行指向応答テキスト emit
   emit_response(rows, shell_actions)
 }
@@ -150,12 +155,28 @@ priv struct QueryRow {
 }
 
 ///|
+/// DR-117 §5 merge 規則の中間 carrier。candidate 実体をそのまま持ちつつ、`eq_form` = true の
+/// ものは emit 段で spelling に `"="` を付け + nospace を立てる (DR §2.6)。lookup_help /
+/// order_by_help_model は candidate.spelling をそのまま使うため、insert_form=="eq" の merge で
+/// 生き残った cont 候補も **元の spelling** ("--port") のまま突き合わせる (help model の綴りも
+/// eq を含まない) — 転写は emit 段でだけ行う。
+priv struct PolicyCandidate {
+  candidate : @engine.Candidate
+  eq_form : Bool
+}
+
+///|
 /// DR-116 / DR-117 §5 の policy 段全体。順序は emit 段の依存 (hidden 除外を先にすると
 /// prefix 絞りの負荷が減る / shell_action 分離は整列前に済ませる) を優先。
+///
+/// `insert_form` は DR-117 §5 の merge 規則 (同一 spelling の word_end / cont 併存ペアの畳み込み)
+/// に使う definition-wide 静的属性 (§2.6、AtomicAST が carry)。値域は "space" (既定) / "eq" — invalid
+/// は parse_definition が弾き済みなので policy 段では self-defense しない。
 fn apply_policy(
   raw : Array[@engine.Candidate],
   cursor_word : String,
   help_model : HelpModel?,
+  insert_form : String,
 ) -> (Array[QueryRow], Array[String]) {
   // step 1: hidden 除外 (DR-116 §5) + 搬送不能除外 (DR-117 §4.3、spelling に tab/newline)
   let visible : Array[@engine.Candidate] = []
@@ -193,18 +214,89 @@ fn apply_policy(
       None => candidates.push(c)
     }
   }
-  // step 4: help model 順で整列 (DR-116 §2)。
-  let ordered = order_by_help_model(candidates, help_model)
-  // step 5: 説明引き直し (DR-116 §4) + alias/deprecated 注記 (§5) + 説明の正規化 (§4.3) +
+  // step 4: insert_form merge (DR-117 §5 / COMPQ-Q1): 同一 spelling で word_end / cont の
+  // 併存ペアを 1 件に畳む。片側しか無い場合は素材のまま (§5 の「単独候補の形を書き換えない」)。
+  let merged = merge_insert_form(candidates, insert_form)
+  // step 5: help model 順で整列 (DR-116 §2)。PolicyCandidate.candidate.spelling を綴り突き合わせ
+  // の鍵にする — eq_form=true でも spelling 自体はまだ原綴り ("--port")。
+  let ordered = order_policy_candidates_by_help_model(merged, help_model)
+  // step 6: 説明引き直し (DR-116 §4) + alias/deprecated 注記 (§5) + 説明の正規化 (§4.3) +
   //         nospace flag 翻訳 (candidate.term == Continue → nospace)。
+  //         eq_form=true の PolicyCandidate は spelling に `"="` を付け nospace を強制立て。
   let rows : Array[QueryRow] = []
-  for c in ordered {
+  for pc in ordered {
+    let c = pc.candidate
     let base_help = lookup_help(c, help_model)
     let annotated = annotate_description(base_help, c.deprecated, c.is_alias)
     let description = normalize_description(annotated)
-    rows.push({ spelling: c.spelling, description, nospace: c.term == Continue })
+    let spelling = if pc.eq_form { c.spelling + "=" } else { c.spelling }
+    let nospace = if pc.eq_form { true } else { c.term == Continue }
+    rows.push({ spelling, description, nospace })
   }
   (rows, shell_actions)
+}
+
+///|
+/// DR-117 §5 merge 規則 (COMPQ-Q1 裁定 2026-07-23): 同一 spelling で term だけが異なる候補ペア
+/// (option の word_end + cont) を 1 行に統合する。ペア併存でないもの (単独 word_end、単独 cont、
+/// 綴り違い候補、値位置候補、値候補) は素材のまま流す。
+///
+/// - insert_form == "space" (既定): word_end 側を残す、cont 側を除外。spelling そのまま、nospace 無し
+/// - insert_form == "eq": cont 側を残す、word_end 側を除外。emit 段で `spelling + "="` + nospace 強制
+///
+/// アルゴリズム: candidates を素材出現順で走査しつつ「同一 spelling の別 term」を同時に持つか
+/// で判定する。DR-104 §3 の 6 フィールド identity で同一 spelling は必ず origin と是本 spelling が
+/// 一致するため、spelling 単独の突き合わせで正しい (原理: eq-split の cont は元の option 綴りを
+/// そのまま cont term で emit する `fixtures/complete/eq-split-cont.json` の `word-end-and-cont-
+/// coexist-same-origin` 案件と対称)。
+fn merge_insert_form(
+  candidates : Array[@engine.Candidate],
+  insert_form : String,
+) -> Array[PolicyCandidate] {
+  // まず spelling ごとに word_end / cont の bit を集計 (is_value=false の option 綴り候補のみ対象)
+  let has_word_end : Map[String, Bool] = Map([])
+  let has_cont : Map[String, Bool] = Map([])
+  for c in candidates {
+    if c.is_value {
+      continue
+    }
+    if c.term == WordEnd {
+      has_word_end[c.spelling] = true
+    } else {
+      has_cont[c.spelling] = true
+    }
+  }
+  let out : Array[PolicyCandidate] = []
+  for c in candidates {
+    // 値位置候補・値候補は merge 対象外 (§5 は long option の word_end/cont 併存が唯一の対象)
+    if c.is_value {
+      out.push({ candidate: c, eq_form: false })
+      continue
+    }
+    let pair_present = has_word_end.get(c.spelling) is Some(true) &&
+      has_cont.get(c.spelling) is Some(true)
+    if !pair_present {
+      // 単独候補 — §5「insert_form は『ペアが併存した時どちらへ畳むか』だけを定め、単独候補
+      // の形を書き換えない」
+      out.push({ candidate: c, eq_form: false })
+      continue
+    }
+    // ペア併存 — insert_form で残す side を決める
+    if insert_form == "eq" {
+      // cont を残す、word_end を落とす
+      if c.term == WordEnd {
+        continue
+      }
+      out.push({ candidate: c, eq_form: true })
+    } else {
+      // 既定 "space": word_end を残す、cont を落とす
+      if c.term == Continue {
+        continue
+      }
+      out.push({ candidate: c, eq_form: false })
+    }
+  }
+  out
 }
 
 ///|
@@ -245,30 +337,22 @@ fn push_unique_string(arr : Array[String], value : String) -> Unit {
 }
 
 ///|
-/// DR-116 §2 の突き合わせ規則: candidate の origin を help model の options / commands entry
-/// の name に突き合わせる。同一 entry 由来の複数候補 (canonical + alias 綴り) は素材配列の
-/// 出現順を保つ。値位置候補は由来 entry の順序に従属する — spellings/alias_spellings への
-/// 突き合わせは option/command 綴り候補 (is_value == false) のみを対象とし、値候補は末尾に
-/// 素材出現順で流す (M1 のスコープ簡素化 — HelpPositional に name フィールドが無いため
-/// positional 名突き合わせは M3 の完成度で回収)。
-///
-/// help_model が無い (dispatch_help_query が Unavailable / QueryError) 場合は素材順で素通し。
-fn order_by_help_model(
-  candidates : Array[@engine.Candidate],
+/// PolicyCandidate 版の順序整列。merge_insert_form が生成した wrapper 列を
+/// help model 順 (DR-116 §2) に並べる。突き合わせは wrapper 内 candidate.spelling を鍵にする。
+fn order_policy_candidates_by_help_model(
+  candidates : Array[PolicyCandidate],
   help_model : HelpModel?,
-) -> Array[@engine.Candidate] {
+) -> Array[PolicyCandidate] {
   match help_model {
     None => candidates
     Some(model) => {
-      let out : Array[@engine.Candidate] = []
+      let out : Array[PolicyCandidate] = []
       let used = Array::make(candidates.length(), false)
-      // options entry を宣言順で走査 (Group はスキップ — 綴りを持たない)。canonical と alias
-      // 綴りの両方について、素材出現順に candidates を走査して拾う。
       for entry in model.options {
         match entry {
           Group(_) => ()
           Option(opt) =>
-            take_matching_spellings(
+            take_matching_policy_spellings(
               candidates,
               used,
               opt.spellings,
@@ -277,11 +361,15 @@ fn order_by_help_model(
             )
         }
       }
-      // commands entry
       for cmd in model.commands {
-        take_matching_spellings(candidates, used, [cmd.name], cmd.aliases, out)
+        take_matching_policy_spellings(
+          candidates,
+          used,
+          [cmd.name],
+          cmd.aliases,
+          out,
+        )
       }
-      // help model に対応 entry を持たない候補 (値候補・匿名 exact 候補 等) は末尾に素材順で。
       for i = 0; i < candidates.length(); i = i + 1 {
         if !used[i] {
           out.push(candidates[i])
@@ -293,45 +381,42 @@ fn order_by_help_model(
 }
 
 ///|
-/// canonical + alias 綴り集合に一致する未消費 candidate を素材出現順で out に append。canonical
-/// を先、alias を後、と分けて 2 パス走査する (help_model の entry 順を尊重しつつ、同一 entry
-/// 内で canonical → alias の相対順を作る)。
-fn take_matching_spellings(
-  candidates : Array[@engine.Candidate],
+/// canonical + alias 綴り集合に一致する未消費 PolicyCandidate を素材出現順で out に append。
+/// 綴り突き合わせは wrapper 内 candidate.spelling を使う (原綴り、`take_matching_spellings` と対称)。
+fn take_matching_policy_spellings(
+  candidates : Array[PolicyCandidate],
   used : Array[Bool],
   canonical : Array[String],
   aliases : Array[String],
-  out : Array[@engine.Candidate],
+  out : Array[PolicyCandidate],
 ) -> Unit {
-  // canonical 綴り (素材出現順で走査)
   for i = 0; i < candidates.length(); i = i + 1 {
     if used[i] {
       continue
     }
-    let c = candidates[i]
+    let c = candidates[i].candidate
     if c.is_value {
       continue
     }
     for sp in canonical {
       if c.spelling == sp {
-        out.push(c)
+        out.push(candidates[i])
         used[i] = true
         break
       }
     }
   }
-  // alias 綴り
   for i = 0; i < candidates.length(); i = i + 1 {
     if used[i] {
       continue
     }
-    let c = candidates[i]
+    let c = candidates[i].candidate
     if c.is_value {
       continue
     }
     for sp in aliases {
       if c.spelling == sp {
-        out.push(c)
+        out.push(candidates[i])
         used[i] = true
         break
       }

@@ -96,6 +96,7 @@ fn empty_help_meta() -> @engine.HelpMetaDeclaration {
     render_declared: None,
     render_effective: None,
     value_structure_style: None,
+    completion_insert_form_declared: None,
   }
 }
 
@@ -139,6 +140,13 @@ fn help_meta_from_object(o : Map[String, Json]) -> @engine.HelpMetaDeclaration {
     render_declared: decode_help_render(o),
     render_effective: None,
     value_structure_style: jf_str(o, "help_value_structure_style"),
+    // DR-117 §2.6: `insert_form` の生値を carry — 検査 (enum / type / 食い違い) は
+    // `collect_completion_script_errors` (builtins/installer.mbt) が行う。ここは decode-time の
+    // 型不一致 (非 string) だけ弾き、それ以外は生文字列を通す (help_on_failure と同型)。
+    completion_insert_form_declared: match o.get("insert_form") {
+      Some(v) => v.j_str()
+      None => None
+    },
   }
 }
 
@@ -1945,6 +1953,11 @@ fn dec_option(
     // (help-only fixture 用 — parse 相は seq を活用しないが、help_installer が hint 経由で
     // model 射影する)。
      "seq", "value_name",
+    // DR-117 §2.6: `insert_form` は completion_script preset 要素の静的パラメータ (values 空間:
+    // "space" / "eq"、既定 "space")。非 completion_script type 上への宣言は definition-error
+    // (invalid-range) だが decode-time は allowed_keys で unknown-vocab として弾かず一旦受理し、
+    // `collect_completion_script_errors` が席違い含めて一括で判定する (help_on_failure と同型)。
+     "insert_form",
   ]
   for key in owned.vocab {
     allowed.push(key)
@@ -2251,6 +2264,15 @@ fn dec_option(
     Some(sh) => if sh.is_tree_form { Some(tystr) } else { None }
     None => None
   }
+  // DR-117 §2.6: `insert_form` の生値を carry (owned.help_meta には HelpMetaInstaller の decode
+  // 経路が読む語彙分しか入っていない — insert_form は completion_script 固有属性なので
+  // installer 語彙には積まず、dec_option がここで直接読む)。値の妥当性 (enum 逸脱・非
+  // completion_script 席への宣言・複数入口間の食い違い) は `collect_completion_script_errors`
+  // が invalid-range として一括判定する。
+  let insert_form_declared_field : String? = match o.get("insert_form") {
+    Some(v) => v.j_str()
+    None => None
+  }
   let help_meta = {
     ..owned.help_meta,
     is_help_preset,
@@ -2258,6 +2280,7 @@ fn dec_option(
     preset_kind: preset_kind_field,
     value_structure_hint: value_structure_hint_field,
     type_ref: type_ref_field,
+    completion_insert_form_declared: insert_form_declared_field,
   }
   DOpt({
     ..opt(
@@ -2330,6 +2353,11 @@ fn dec_positional(
     "id", "name", "type", "export_key", "default", "default_fn", "positionals", "or",
     "piece_filters", "value_filters", "final_filters", "accum_filters", "ref", "config",
     "completer", "exact",
+    // DR-117 §2.6: dec_option と対称 — insert_form は positional 席 (`type:
+    // "completion_script"`) でも合法 (DR-117 §2.3、positional 配置は全 preset で許可)。非
+    // completion_script type 上への宣言は `collect_completion_script_errors` が
+    // invalid-range で弾く (allowed_keys では受理)。
+     "insert_form",
   ]
   for key in owned.vocab {
     allowed.push(key)
@@ -2538,12 +2566,19 @@ fn dec_positional(
       }
     None => None
   }
+  // DR-117 §2.6: dec_option と対称の insert_form carry (positional 席の completion_script も
+  // 合法 — DR-117 §2.3)。妥当性は `collect_completion_script_errors` が一括判定。
+  let insert_form_declared_pos : String? = match o.get("insert_form") {
+    Some(v) => v.j_str()
+    None => None
+  }
   let help_meta_with_type = {
     ..owned.help_meta,
     type_name: type_name_field,
     preset_kind: None,
     value_structure_hint: value_structure_hint_pos,
     type_ref: type_ref_pos,
+    completion_insert_form_declared: insert_form_declared_pos,
   }
   pos(
     name,

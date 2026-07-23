@@ -113,6 +113,15 @@ pub(all) struct HelpMetaDeclaration {
   // 宣言しても vacuous、DR-115 は席違いにしない — 実装は installer が enum 検査だけ行い、
   // scope 位置の宣言は搬送しない扱い)。value 空間: §5.1 の enum ("auto" / "inline" / "detail")。
   value_structure_style : String?
+  // DR-117 §2.6 の `insert_form` 宣言 carry。preset_kind と同じく preset 固有の静的属性を
+  // 宣言層 inert として運ぶ。None = wire に宣言なし、Some(v) = wire 上の生値 (未検証)。
+  // enum 検査 (`"space"` / `"eq"` 以外は invalid-range)、非 completion_script type への宣言
+  // (invalid-range)、複数入口間の明示値食い違い (invalid-range) は `collect_completion_script_errors`
+  // (builtins/installer.mbt) が判定する — decode-time は生文字列を運ぶだけ。help_on_failure と
+  // 同型の「宣言そのものを保持して installer 検査に委ねる」pattern。lowering 産物 (Entity / Scope) には
+  // 搬送しない — 応答 policy 段 (completion_query) が declaration snapshot から `completion_insert_form`
+  // (definition-wide reconciled value、LoweredDefinition / AtomicAST に carry) を読む。
+  completion_insert_form_declared : String?
 } derive(Eq, Debug)
 
 ///|

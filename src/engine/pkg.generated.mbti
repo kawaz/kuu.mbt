@@ -538,6 +538,7 @@ pub(all) struct HelpMetaDeclaration {
   render_declared : HelpRenderDecl?
   render_effective : HelpRenderDecl?
   value_structure_style : String?
+  completion_insert_form_declared : String?
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpRenderDecl {
