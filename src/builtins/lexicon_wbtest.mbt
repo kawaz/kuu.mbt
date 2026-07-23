@@ -121,14 +121,13 @@ test "parse_int_value accepts integer VALUES regardless of syntax" {
 ///|
 /// REGRESSION (issue 2026-07-07-parse-int-value-huge-exponent-overflow): a huge exponent (`"1e300"`)
 /// used to silently WRAP through `digits_to_i64` instead of erroring — `Ok(0L)` rather than a range
-/// Error. This pins the exact repro plus the `"1e19"`/`"1e18"` decade boundary (20 vs 19 significant
-/// digits — Int64's max magnitude is 19 digits, so 20+ ALWAYS overflows regardless of digit values,
-/// while 19 needs the exact-boundary comparison covered by the next test).
+/// Error. This still pins that repro under the new (AP2-Q1=a) 2^53 semantic — any magnitude beyond
+/// 2^53 is out_of_range regardless of how it got there. The all-zero all-padding cases still land on 0.
 test "parse_int_value rejects huge-exponent overflow instead of silently wrapping" {
   assert_eq(ir("1e300", @engine.Error), Err("int_out_of_range")) // the exact repro from the issue (was Ok(0L))
   assert_eq(ir("-1e300", @engine.Error), Err("int_out_of_range"))
-  assert_eq(ir("1e19", @engine.Error), Err("int_out_of_range")) // 20 significant digits — always out of range
-  assert_eq(ir("1e18", @engine.Error), Ok(1000000000000000000L)) // 19 digits, well under max — in range
+  assert_eq(ir("1e17", @engine.Error), Err("int_out_of_range")) // 18 digits — beyond 2^53 (16-digit boundary)
+  assert_eq(ir("1e15", @engine.Error), Ok(1000000000000000L)) // 16 digits, comfortably within 2^53
   // a huge exponent whose combined digits are ALL zero is still exactly 0 (padding zeros stay zero,
   // not "significant" — `int_part_significant_len`'s all_zero short-circuit).
   assert_eq(ir("0e300", @engine.Error), Ok(0L))
@@ -136,54 +135,42 @@ test "parse_int_value rejects huge-exponent overflow instead of silently wrappin
 }
 
 ///|
-/// The exact Int64 boundary decade (both exactly 19 significant digits, so the digit-count shortcut
-/// alone can't decide — DR-075 range check needs the precise string comparison here): max
-/// (`9223372036854775807`) and one past it, min (`-9223372036854775808`, the two's-complement
-/// asymmetry — its magnitude 9223372036854775808 is one MORE than max's) and one past it, plus the
-/// adjacent in-range values (`±1` off each boundary) to pin the edge is exactly right, not off-by-one.
-test "parse_int_value pins the exact Int64 boundary decade" {
-  // positive max and its neighbors.
-  assert_eq(ir("9223372036854775807", @engine.Error), Ok(9223372036854775807L)) // Int64::max exactly
-  assert_eq(ir("9223372036854775806", @engine.Error), Ok(9223372036854775806L)) // max - 1, in range
-  assert_eq(ir("9223372036854775808", @engine.Error), Err("int_out_of_range")) // max + 1, out of range
-  // negative min and its neighbors — min's magnitude (9223372036854775808) is NOT representable as
-  // a positive Int64 at all, so this is the case `digits_to_i64` + negate could never produce.
-  assert_eq(
-    ir("-9223372036854775808", @engine.Error),
-    Ok(-9223372036854775808L),
-  ) // Int64::min exactly
-  assert_eq(
-    ir("-9223372036854775807", @engine.Error),
-    Ok(-9223372036854775807L),
-  ) // min + 1, in range
-  assert_eq(ir("-9223372036854775809", @engine.Error), Err("int_out_of_range")) // min - 1, out of range
+/// The exact 2^53 boundary decade (AP2-Q1=a, kawaz 裁定 2026-07-24, DESIGN §3.3): int の保証精度は
+/// binary64 の整数安全域 = 絶対値 2^53 (= 9007199254740992) inclusive。境界の両側と、負側の対称性を pin
+/// する。旧 DR-075 の Int64 実装値域は Superseded (spec commit 66f88200 参照)。
+test "parse_int_value pins the exact 2^53 precision boundary" {
+  // positive boundary and its neighbors.
+  assert_eq(ir("9007199254740992", @engine.Error), Ok(9007199254740992L)) // 2^53 exactly
+  assert_eq(ir("9007199254740991", @engine.Error), Ok(9007199254740991L)) // 2^53 - 1, in range
+  assert_eq(ir("9007199254740993", @engine.Error), Err("int_out_of_range")) // 2^53 + 1, out of range
+  // negative boundary (symmetric because binary64 の整数表現力は符号対称).
+  assert_eq(ir("-9007199254740992", @engine.Error), Ok(-9007199254740992L)) // -2^53 exactly
+  assert_eq(ir("-9007199254740991", @engine.Error), Ok(-9007199254740991L)) // -2^53 + 1, in range
+  assert_eq(ir("-9007199254740993", @engine.Error), Err("int_out_of_range")) // -2^53 - 1, out of range
   // a decimal form of the same boundary values (value空間判定, not just integer literal syntax).
-  assert_eq(
-    ir("9223372036854775807.0", @engine.Error),
-    Ok(9223372036854775807L),
-  )
-  assert_eq(ir("9223372036854775808.0", @engine.Error), Err("int_out_of_range"))
+  assert_eq(ir("9007199254740992.0", @engine.Error), Ok(9007199254740992L))
+  assert_eq(ir("9007199254740993.0", @engine.Error), Err("int_out_of_range"))
+  // any 17+ digit magnitude is out of range regardless of digit values (16-digit shortcut).
+  assert_eq(ir("9223372036854775807", @engine.Error), Err("int_out_of_range")) // (previously Int64::max)
+  assert_eq(ir("-9223372036854775808", @engine.Error), Err("int_out_of_range")) // (previously Int64::min)
 }
 
 ///|
 /// The `int_out_of_range` reason surfaces through the ROUNDING branches too (non-`@engine.Error` modes),
-/// not just the direct-integer-value path above — `magnitude_of`'s pre-rounding check uses the
-/// POSITIVE boundary unconditionally (round_magnitude needs an unsigned magnitude to add `+1`), and
-/// a SEPARATE post-rounding guard catches the narrower case where rounding pushes an in-range
-/// truncated magnitude (exactly Int64::max, non-tie-round-up) past the boundary.
+/// not just the direct-integer-value path above — rounding that pushes an in-range truncated
+/// magnitude past the 2^53 boundary must be caught by the final 2^53 gate.
 test "parse_int_value surfaces int_out_of_range through rounding modes too" {
-  // truncated magnitude alone already exceeds Int64 range (huge exponent, genuinely fractional
+  // truncated magnitude alone already exceeds 2^53 (huge exponent, genuinely fractional
   // literal digits so this exercises the rounding branch, not the direct-integer-value one).
   assert_eq(ir("1.5e300", @engine.Floor), Err("int_out_of_range"))
-  // truncated magnitude is exactly Int64::max and the fraction rounds UP past it (round_magnitude's
-  // `m + 1` would silently wrap to Int64::min without the post-rounding `mag < 0L` guard).
-  assert_eq(ir("9223372036854775807.5", @engine.Ceil), Err("int_out_of_range"))
-  assert_eq(
-    ir("9223372036854775807.5", @engine.HalfEven),
-    Err("int_out_of_range"),
-  ) // 807 is odd → banker's rounds up too
+  // truncated magnitude is exactly 2^53 and the fraction rounds UP past it — the final 2^53 gate
+  // catches this now.
+  assert_eq(ir("9007199254740992.5", @engine.Ceil), Err("int_out_of_range"))
+  // 2^53 is even, so half_even at exactly `.5` keeps m = 2^53 (in range). The odd neighbor pushes
+  // to 2^53 which is still in range, but 2^53 + `.5` half_even round → 2^53 (banker's).
+  assert_eq(ir("9007199254740992.5", @engine.HalfEven), Ok(9007199254740992L))
   // a rounding-mode value comfortably within range still rounds normally (no false-positive rejection).
-  assert_eq(ir("9223372036854775806.5", @engine.Ceil), Ok(9223372036854775807L))
+  assert_eq(ir("9007199254740991.5", @engine.Ceil), Ok(9007199254740992L))
 }
 
 ///|

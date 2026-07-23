@@ -502,45 +502,69 @@ fn parse_int_value(
   mode : @engine.RoundMode,
   allow_base_prefix? : Bool = false,
 ) -> Result[Int64, @engine.TypeParseFail] {
-  // 10 進経路を先に試す (canonical と opt-in で挙動同一)
-  match parse_decimal_int_value(s, mode) {
-    Ok(i) => return Ok(i)
-    Err(failure) => if failure.reason != "not_a_number" { return Err(failure) }
-  }
-  if !allow_base_prefix {
-    return Err(type_parse_not_a_number(s))
-  }
-  match parse_base_prefixed(s) {
-    None => Err(type_parse_not_a_number(s))
-    Some(d) =>
-      if is_integer(d) {
-        // 整数値: mode 問わず受理。Int64 域内チェックは境界のみ (fixture は 0xff=255 レベル)
-        let i = d.to_int64()
-        if i.to_double() == d {
-          Ok(i)
-        } else {
-          Err(type_parse_int_out_of_range(s))
-        }
+  let raw : Result[
+    Int64,
+    @engine.TypeParseFail, // 10 進経路を先に試す (canonical と opt-in で挙動同一)
+  ] = match parse_decimal_int_value(s, mode) {
+    Ok(i) => Ok(i)
+    Err(failure) =>
+      if failure.reason != "not_a_number" {
+        return Err(failure)
+      } else if !allow_base_prefix {
+        return Err(type_parse_not_a_number(s))
       } else {
-        // fractional hex float: mode に従う
-        match mode {
-          @engine.Error => Err(type_parse_not_an_integer(s))
-          _ => {
-            // 単純化: binary64 上で is_integer 判定 + 丸め。DR-075 §5 の厳密判定は 10 進 tie のための
-            // 規定 (findings 2026-07-06 の false-tie 域) で、hex float は base-2 aligned なので binary64
-            // 上の丸めは exact。round-mode を Double に適用する簡易実装:
-            let rounded = round_double_by_mode(d, mode)
-            let i = rounded.to_int64()
-            if i.to_double() == rounded {
-              Ok(i)
+        match parse_base_prefixed(s) {
+          None => return Err(type_parse_not_a_number(s))
+          Some(d) =>
+            if is_integer(d) {
+              // 整数値: mode 問わず受理。Int64 域内チェックは境界のみ (fixture は 0xff=255 レベル)
+              let i = d.to_int64()
+              if i.to_double() == d {
+                Ok(i)
+              } else {
+                return Err(type_parse_int_out_of_range(s))
+              }
             } else {
-              Err(type_parse_int_out_of_range(s))
+              // fractional hex float: mode に従う
+              match mode {
+                @engine.Error => return Err(type_parse_not_an_integer(s))
+                _ => {
+                  // 単純化: binary64 上で is_integer 判定 + 丸め。DR-075 §5 の厳密判定は 10 進 tie のための
+                  // 規定 (findings 2026-07-06 の false-tie 域) で、hex float は base-2 aligned なので binary64
+                  // 上の丸めは exact。round-mode を Double に適用する簡易実装:
+                  let rounded = round_double_by_mode(d, mode)
+                  let i = rounded.to_int64()
+                  if i.to_double() == rounded {
+                    Ok(i)
+                  } else {
+                    return Err(type_parse_int_out_of_range(s))
+                  }
+                }
+              }
             }
-          }
         }
       }
   }
+  // DR-075 § 値空間 (AP2-Q1=a、kawaz 2026-07-24 裁定): int の保証精度は binary64 の整数安全域
+  // (絶対値 2^53 = 9007199254740992 inclusive)。字句レベル判定は既に 10 進経路の桁列比較 +
+  // hex 経路の `i.to_double() == d` で兼ねている (Int64 → Double 変換で情報が落ちるのは 2^53 超
+  // の領域だが、ここは Int64 値そのものを直接比較する — 変換は関与しない)。int_round 経路で丸め
+  // が 2^53 境界を跨いだ場合もここが最後の網。
+  match raw {
+    Ok(v) =>
+      if v > int_precision_max_mag || v < -int_precision_max_mag {
+        Err(type_parse_int_out_of_range(s))
+      } else {
+        Ok(v)
+      }
+    Err(e) => Err(e)
+  }
 }
+
+///|
+/// int 型の保証精度上限 = 2^53 (binary64 の整数安全域, DESIGN §3.3 / AP2-Q1=a)。
+/// 符号対称なので `-int_precision_max_mag` を負側境界に使う。
+let int_precision_max_mag : Int64 = 9007199254740992L
 
 ///|
 /// DR-075 §2 の 10 モードを Double 上で適用 (hex float 用の簡易実装)。base-2 aligned な hex float は

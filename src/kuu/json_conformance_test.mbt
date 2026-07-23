@@ -60,8 +60,15 @@ fn Json::j_bool(self : Json) -> Bool? {
 
 ///|
 fn Json::j_num(self : Json) -> Double? {
-  if self is Number(value, ..) {
-    Some(value)
+  if self is Number(value, repr~) {
+    // MoonBit stdlib の JSON parser は整数リテラル > 2^53 - 1 を Infinity + repr に落とす
+    // (lex_integer_end の SAFE_INTEGER_LIMIT 早期打ち切り)。fixture の期待値に 2^53 前後の整数
+    // (AP2-Q1=a の境界) が現れうるので、repr が残っている場合はそちらから再パースして exact Double
+    // を得る (strconv.parse_double は Eisel-Lemire で 2^53 = 9007199254740992 も exact に返す)。
+    match repr {
+      Some(s) => Some(@string.parse_double(s.view()) catch { _ => value })
+      None => Some(value)
+    }
   } else {
     None
   }
