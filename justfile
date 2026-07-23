@@ -37,6 +37,30 @@ check:
 mbti:
     moon info src/engine src/builtins src/kuu
 
+# ---------- completion templates (M2 — DR-117 §2.5 + findings §2 UXL-Q2=a) ----------
+
+# transcribe spec templates/completion.{zsh,bash,fish} -> src/kuu/completion_templates.mbt
+gen-templates:
+    ./scripts/gen-completion-templates.sh
+
+# check that src/kuu/completion_templates.mbt is in sync with spec templates/
+# (regenerate into a tempfile, diff against committed file, restore on mismatch so
+# the check itself does not leave the working copy dirty)
+[script]
+check-templates:
+    target="src/kuu/completion_templates.mbt"
+    tmp="$(mktemp)"
+    trap 'rm -f "$tmp"' EXIT
+    cp "$target" "$tmp"
+    ./scripts/gen-completion-templates.sh >/dev/null
+    if ! diff -u "$tmp" "$target"; then
+        cp "$tmp" "$target"
+        printf >&2 "\n\033[31mcompletion_templates.mbt is out of sync with spec templates/\033[0m\n"
+        printf >&2 "  run 'just gen-templates' and commit the result.\n"
+        exit 1
+    fi
+    echo "OK: completion_templates.mbt is in sync with spec templates/"
+
 # ---------- test ----------
 
 # run native tests (conformance fixtures via $KUU_FIXTURES; fallback = 隣接 kawaz/kuu。runner は Phase B)

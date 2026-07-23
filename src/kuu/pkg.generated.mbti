@@ -13,6 +13,12 @@ pub fn completion_query(AtomicAST, @engine.Registry, Array[String], cword? : Int
 
 pub fn completion_script_capability() -> &@engine.CapabilityExt
 
+pub fn completion_template_bash() -> String
+
+pub fn completion_template_fish() -> String
+
+pub fn completion_template_zsh() -> String
+
 pub fn config_from_json(Json) -> @engine.ConfigVal
 
 pub fn dispatch_completion_script(@engine.Registry, @engine.Outcome) -> CompletionScriptRequest
