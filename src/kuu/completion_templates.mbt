@@ -109,7 +109,25 @@ pub fn completion_template_zsh() -> String {
     #|      _describe -V -t {{PROGRAM_NAME}}-candidates 'candidate' normal_pairs
     #|    fi
     #|    if (( ${#ns_pairs[@]} > 0 )); then
-    #|      compadd -V {{PROGRAM_NAME}}-nospace -S '' -d ns_pairs -- "${ns_pairs[@]%%:*}"
+    #|      # ns_pairs は insert:desc 形式。-d は display 用配列を求めるため、
+    #|      # `-- desc` 形の表示配列を別途組み立てて渡す (raw `insert:desc` を表示させない)。
+    #|      local -a ns_inserts ns_display
+    #|      # 注意: zsh の `local ins` は既に外側 for で ins が代入済みなので、値なし
+    #|      # 宣言だと `typeset` 互換で現在の binding (`ins=cherry` 等) を印字してしまう。
+    #|      # 初期値付きで宣言して回避。
+    #|      local p='' d=''
+    #|      ins=''
+    #|      for p in "${ns_pairs[@]}"; do
+    #|        ins=${p%%:*}
+    #|        d=${p#*:}
+    #|        ns_inserts+=("$ins")
+    #|        if [[ -n $d ]]; then
+    #|          ns_display+=("$ins  -- $d")
+    #|        else
+    #|          ns_display+=("$ins")
+    #|        fi
+    #|      done
+    #|      compadd -V {{PROGRAM_NAME}}-nospace -S '' -d ns_display -- "${ns_inserts[@]}"
     #|    fi
     #|  fi
     #|
