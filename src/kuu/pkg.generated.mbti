@@ -9,6 +9,8 @@ import {
 // Values
 pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[@engine.Candidate]
 
+pub fn completion_entry(AtomicAST, @engine.Registry, Array[String], Map[String, String]) -> CompletionEntryResult
+
 pub fn completion_query(AtomicAST, @engine.Registry, Array[String], cword? : Int?) -> String
 
 pub fn completion_script_capability() -> &@engine.CapabilityExt
@@ -24,6 +26,8 @@ pub fn config_from_json(Json) -> @engine.ConfigVal
 pub fn dispatch_completion_script(@engine.Registry, @engine.Outcome) -> CompletionScriptRequest
 
 pub fn dispatch_help_query(@engine.Registry, AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> HelpQueryOutcome
+
+pub fn generate_completion_script(String, String, String, String) -> Result[String, CompletionScriptError]
 
 pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> Result[HelpModel, HelpQueryError]
 
@@ -54,9 +58,18 @@ pub fn warnings(@engine.Outcome) -> Array[@engine.Warning]
 // Types and methods
 type AtomicAST
 
+pub(all) enum CompletionEntryResult {
+  NotCompletion
+  Respond(String)
+} derive(Eq, @debug.Debug)
+
 pub struct CompletionScriptCapability {
 }
 pub impl @engine.CapabilityExt for CompletionScriptCapability
+
+pub(all) enum CompletionScriptError {
+  UnsupportedShell(String)
+} derive(Eq, @debug.Debug)
 
 pub(all) enum CompletionScriptRequest {
   Requested(String)
