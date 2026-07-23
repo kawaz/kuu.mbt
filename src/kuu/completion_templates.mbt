@@ -294,13 +294,15 @@ pub fn completion_template_fish() -> String {
     #|  set -l uuid {{UUID}}
     #|  set -l binary {{BINARY}}
     #|
-    #|  # words / cword 素材 (TRANSLATION.md words/cword)
-    #|  # commandline -o は現在の token 列 (先頭 = コマンド名 = DR-117 §3.4 の全量形)。
-    #|  # cursor index は commandline -C からトークン位置へ写す必要がある。
-    #|  # TODO(M4): commandline -C からのトークン index 算出を実機検証。骨格は行末補完に倒す。
-    #|  set -l words (commandline -o)
-    #|  set -l cword (math (count $words) - 1)          # 行末補完 (骨格): カーソル = 最終トークン
-    #|                                                  # KUU_COMPLETE_INDEX 省略時と等価 (DR-117 §3.3)
+    #|  # words / cword 素材 (TRANSLATION.md words/cword, DR-117 §3.4)
+    #|  # commandline -oc は「カーソル位置より前の完了済みトークン列」、
+    #|  # commandline -ct は「カーソル位置の現在編集中トークン (末尾空白時は空文字)」。
+    #|  # words = cut_toks + cur_tok、cword = count(cut_toks) で末尾空白 / 中間トークン
+    #|  # 双方が正しくなる (実機検証 fish 4.8.1)。
+    #|  set -l cut_toks (commandline -oc)
+    #|  set -l cur_tok (commandline -ct)
+    #|  set -l words $cut_toks $cur_tok
+    #|  set -l cword (count $cut_toks)
     #|
     #|  # 形態 A: env プロトコル (DR-117 §3.1)
     #|  set -l response (
@@ -339,8 +341,10 @@ pub fn completion_template_fish() -> String {
     #|      set desc $parts[2]
     #|    end
     #|    # flags は現状 fish native 補完で表現手段が無いため落とす (縮退)。
-    #|    # nospace は fish の既定挙動 (`--flag=` 後ろに空白を入れない) で近似される
-    #|    # ため per-candidate 制御は行わない (TRANSLATION.md nospace / fish 行)。
+    #|    # nospace: 一般候補への per-candidate nospace は fish 4.8.1 実測で表現手段
+    #|    # 無し (unique match は必ず末尾に空白挿入)。ただし insert_form:"eq" (§2.6)
+    #|    # で `--flag=` 形の候補を返した場合は fish が `=` 直後の空白を native に
+    #|    # 抑制するため、eq 経路に限り縮退が実効的に働く (TRANSLATION.md nospace / fish 行)。
     #|
     #|    if test -n "$desc"
     #|      printf '%s\t%s\n' $insert $desc
