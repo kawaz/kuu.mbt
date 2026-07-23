@@ -47,11 +47,28 @@ pub fn dispatch_completion_script(
     return Unavailable
   }
   guard outcome is @engine.Success(bindings) else { return NotRequested }
+  // DR-117 §2.1: multiple public entries linking to `#completion_script` are last-wins on the
+  // string cell. "last" is CLI reading order (DR-041 token reading semantics + DR-015 last-wins
+  // inheritance via DR-113 §2.3). `apply_entity_links` emits linked copies in entity declaration
+  // order, so we cannot rely on array position — we must consult `at_pos` to recover the reading-
+  // order winner. `at_pos = None` (default_fn / no CLI source) sorts as earliest; the tie-break
+  // between two None-position entries stays array order (which is entity declaration order — a
+  // deterministic, non-conflicting fallback for cell-fn-only supplies).
   let mut requested : String? = None
+  let mut best_pos : Int = -1
   for binding in bindings {
     if binding.key == "#completion_script" && binding.op is @engine.Set {
       match binding.value {
-        @engine.String(shell) => requested = Some(shell)
+        @engine.String(shell) => {
+          let pos = match binding.at_pos {
+            Some(i) => i
+            None => -1
+          }
+          if pos >= best_pos {
+            requested = Some(shell)
+            best_pos = pos
+          }
+        }
         _ => ()
       }
     }
