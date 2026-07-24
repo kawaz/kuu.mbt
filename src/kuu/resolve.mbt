@@ -1085,7 +1085,11 @@ fn promote_collision_ambiguous_from(
         }
         interps.push({ binds: filtered, claimants })
       }
-      @engine.Ambiguous({ interpretations: interps, help_entry: None })
+      @engine.Ambiguous({
+        interpretations: interps,
+        help_entry: None,
+        warnings: @engine.warnings_of(o),
+      })
     }
     _ => o
   }
@@ -1748,11 +1752,20 @@ fn apply_requires_filter_with_export(
     binds_for_actions : Array[Array[@abi.Binding]],
     errors : Array[@abi.ParseError],
   ) -> @engine.Outcome {
+    let warnings : Array[@abi.Warning] = []
+    for binds in binds_for_actions {
+      for warning in @engine.warnings_of_bindings(binds) {
+        if !warnings.contains(warning) {
+          warnings.push(warning)
+        }
+      }
+    }
     @engine.Failure({
       errors,
       fired_action: @engine.fired_action_of(binds_for_actions),
       help_entry: @engine.find_help_entry(root, errors),
       tried_triggers: @engine.tried_triggers_of(root, errors),
+      warnings,
     })
   }
   match o {
@@ -1782,6 +1795,7 @@ fn apply_requires_filter_with_export(
           @engine.Ambiguous({
             interpretations: survivors,
             help_entry: d.help_entry,
+            warnings: d.warnings,
           })
       }
     }

@@ -626,3 +626,24 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
     ]),
   )
 }
+
+///|
+test "staged outcome retains deprecation warnings on parse failure" {
+  let definition = @json.parse(
+    (
+      #|{"options":[
+      #|  {"name":"port","type":"number","short":"p"},
+      #|  {"alias":"port","short":"o","deprecated":true}
+      #|]}
+    ),
+  )
+  let ast = match parse_definition(definition) {
+    Ok(ast) => ast
+    Err(_) => fail("deprecated alias definition must lower")
+  }
+  let outcome = parse(ast, ["-o", "80", "-z"])
+  guard outcome is Failure(_) else {
+    fail("parse must fail after deprecated entry")
+  }
+  assert_eq(outcome.warnings(), [{ element: "port", kind: @abi.Deprecated }])
+}

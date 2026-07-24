@@ -112,28 +112,50 @@ fn is_depr_key(k : String) -> Bool {
 ///|
 /// 構造化した warnings (spec CONFORMANCE §2 warnings 面素材)。現状 `@depr:` sentinel から
 /// `kind: "deprecated"` を組み立てて返す (spec DR-058)。element の重複は排除 (first-seen 順)。
-pub fn warnings_of(o : Outcome) -> Array[Warning] {
-  let out : Array[Warning] = []
-  match o {
-    Success(binds) =>
-      for b in binds {
-        if is_depr_key(b.key) {
-          let name = b.key[6:].to_owned()
-          let mut seen = false
-          for w in out {
-            if w.element == name && w.kind == Deprecated {
-              seen = true
-              break
-            }
-          }
-          if !seen {
-            out.push({ element: name, kind: Deprecated })
-          }
+fn collect_warnings(out : Array[Warning], binds : Array[Binding]) -> Unit {
+  for b in binds {
+    if is_depr_key(b.key) {
+      let name = b.key[6:].to_owned()
+      let mut seen = false
+      for w in out {
+        if w.element == name && w.kind == Deprecated {
+          seen = true
+          break
         }
       }
-    _ => ()
+      if !seen {
+        out.push({ element: name, kind: Deprecated })
+      }
+    }
+  }
+}
+
+///|
+fn warnings_from_branches(branches : Array[Branch]) -> Array[Warning] {
+  let out : Array[Warning] = []
+  for branch in branches {
+    match branch {
+      Accept(_, binds) | Held(_, binds) | Pending(_, binds) =>
+        collect_warnings(out, binds)
+    }
   }
   out
+}
+
+///|
+pub fn warnings_of_bindings(binds : Array[Binding]) -> Array[Warning] {
+  let out : Array[Warning] = []
+  collect_warnings(out, binds)
+  out
+}
+
+///|
+pub fn warnings_of(o : Outcome) -> Array[Warning] {
+  match o {
+    Success(binds) => warnings_of_bindings(binds)
+    Failure(data) => data.warnings.copy()
+    Ambiguous(data) => data.warnings.copy()
+  }
 }
 
 ///|
@@ -2882,6 +2904,7 @@ pub fn parse_tree(
         },
         help_entry: find_help_entry(root, errors),
         tried_triggers: tried_triggers_of(root, errors),
+        warnings: warnings_from_branches(branches),
       })
     1 => Success(full[0])
     _ =>
@@ -2901,6 +2924,7 @@ pub fn parse_tree(
           a
         },
         help_entry: find_help_entry(root, []),
+        warnings: warnings_from_branches(branches),
       })
   }
 }

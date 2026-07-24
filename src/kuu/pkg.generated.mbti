@@ -9,7 +9,7 @@ import {
 }
 
 // Values
-pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[@abi.Candidate]
+pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[Candidate]
 
 pub fn completion_entry(AtomicAST, @kuu-node.Registry, Array[String], Map[String, String]) -> CompletionEntryResult
 
@@ -63,6 +63,18 @@ pub fn value_sources(env? : (String) -> String?, config? : (String) -> @abi.Conf
 
 // Types and methods
 type AtomicAST
+
+pub struct Candidate {
+  spelling : String
+  is_value : Bool
+  ty : String
+  origin : String
+  term : @abi.TermHint
+  is_alias : Bool
+  hidden : Bool
+  deprecated : Bool
+  completer : String?
+} derive(Eq, @debug.Debug)
 
 pub(all) enum CompletionEntryResult {
   NotCompletion
@@ -237,11 +249,13 @@ pub struct ParseFailure {
   fired_action : String?
   help_entry : String?
   tried_triggers : Array[String]
+  // private fields
 }
 
 pub struct ParsedAmbiguity {
   interpretations : Array[Interpretation]
   help_entry : String?
+  // private fields
 }
 
 pub struct ParsedBindings {
@@ -282,8 +296,6 @@ pub struct ValueSources {
 }
 
 // Type aliases
-pub using @abi {type Candidate}
-
 pub using @abi {type ConfigVal}
 
 pub using @abi {type DefError}

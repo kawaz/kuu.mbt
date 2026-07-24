@@ -329,6 +329,7 @@ fn resolve_legacy(
             fired_action: None,
             help_entry: None,
             tried_triggers: [],
+            warnings: @engine.warnings_of_bindings(binds),
           })
       }
     _ => outcome
@@ -337,6 +338,7 @@ fn resolve_legacy(
 
 ///|
 /// Parse CLI arguments without applying the value-source ladder.
+/// Returned bindings and interpretations may only be combined with this `ast`; mixing another AST is undefined.
 pub fn parse(
   ast : AtomicAST,
   args : Array[String],
@@ -357,13 +359,18 @@ pub fn parse(
       for interpretation in ambiguity.interpretations {
         interpretations.push({ raw: interpretation })
       }
-      Ambiguous({ interpretations, help_entry: ambiguity.help_entry })
+      Ambiguous({
+        interpretations,
+        help_entry: ambiguity.help_entry,
+        warnings_: ambiguity.warnings,
+      })
     }
   }
 }
 
 ///|
 /// Apply the value-source ladder to parse-phase bindings.
+/// `bindings` may only be combined with the `ast` whose parse produced them; mixing another AST is undefined.
 pub fn resolve(
   ast : AtomicAST,
   bindings : ParsedBindings,
@@ -389,6 +396,7 @@ pub fn resolve(
 
 ///|
 /// Resolve one interpretation selected from an ambiguous parse.
+/// `interpretation` may only be combined with the `ast` whose parse produced it; mixing another AST is undefined.
 pub fn resolve_interpretation(
   ast : AtomicAST,
   interpretation : Interpretation,
@@ -407,14 +415,29 @@ pub fn complete(
   ast : AtomicAST,
   args_before : Array[String],
   args_after? : Array[String] = [],
-) -> Array[@abi.Candidate] {
-  @engine.complete_tree(
-    @engine.ScopeNode(ast.root),
-    args_before,
-    defs=ast.templates,
-    after=args_after,
-    extensions=ast.extensions.extensions(),
-  )
+) -> Array[Candidate] {
+  let out : Array[Candidate] = []
+  for
+    candidate in @engine.complete_tree(
+      @engine.ScopeNode(ast.root),
+      args_before,
+      defs=ast.templates,
+      after=args_after,
+      extensions=ast.extensions.extensions(),
+    ) {
+    out.push({
+      spelling: candidate.spelling,
+      is_value: candidate.is_value,
+      ty: candidate.ty,
+      origin: candidate.origin,
+      term: candidate.term,
+      is_alias: candidate.is_alias,
+      hidden: candidate.hidden,
+      deprecated: candidate.deprecated,
+      completer: candidate.completer,
+    })
+  }
+  out
 }
 
 ///|
@@ -738,6 +761,7 @@ fn output_legacy(
 /// DR-073 §1 の claimants に載る key の default は衝突 provenance を保つため残し、空 accumulator
 /// 配列は interpretation の構造として残す。この 3 規則により、呼び出し側は result と sources を
 /// 個別に組み合わせず、解釈 1 件の表示意味論を玄関から直接得られる。
+/// `resolved` may only be combined with the `ast` whose parse produced it; mixing another AST is undefined.
 pub fn output(ast : AtomicAST, resolved : ResolvedBindings) -> OutputView {
   output_legacy(ast, effects=resolved.effects_, resolved=resolved.raw)
 }
@@ -751,6 +775,7 @@ pub fn ParsedBindings::effects(
 }
 
 ///|
+/// `interp` may only be combined with the `ast` whose parse produced it; mixing another AST is undefined.
 pub fn output_of_interpretation(
   ast : AtomicAST,
   interp : Interpretation,

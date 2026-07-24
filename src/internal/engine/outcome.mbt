@@ -19,6 +19,7 @@ pub(all) struct FailureData {
   fired_action : String?
   help_entry : String?
   tried_triggers : Array[String]
+  warnings : Array[Warning]
 } derive(Eq, Debug)
 
 ///|
@@ -43,6 +44,7 @@ pub(all) struct AmbiguousInterpretation {
 pub(all) struct AmbiguousData {
   interpretations : Array[AmbiguousInterpretation]
   help_entry : String?
+  warnings : Array[Warning]
 } derive(Eq, Debug)
 
 ///|

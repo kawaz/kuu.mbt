@@ -184,12 +184,15 @@ pub fn value_to_configval(@abi.Value) -> @abi.ConfigVal
 
 pub fn warnings_of(Outcome) -> Array[@abi.Warning]
 
+pub fn warnings_of_bindings(Array[@abi.Binding]) -> Array[@abi.Warning]
+
 // Errors
 
 // Types and methods
 pub(all) struct AmbiguousData {
   interpretations : Array[AmbiguousInterpretation]
   help_entry : String?
+  warnings : Array[@abi.Warning]
 } derive(Eq, @debug.Debug)
 
 pub(all) struct AmbiguousInterpretation {
@@ -348,6 +351,7 @@ pub(all) struct FailureData {
   fired_action : String?
   help_entry : String?
   tried_triggers : Array[String]
+  warnings : Array[@abi.Warning]
 } derive(Eq, @debug.Debug)
 
 pub struct InstallBuilder {

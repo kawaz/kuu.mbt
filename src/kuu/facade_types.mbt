@@ -3,7 +3,6 @@
 ///|
 pub using @abi {
   type ParseError,
-  type Candidate,
   type Warning,
   type WarningKind,
   type Value,
@@ -21,6 +20,20 @@ pub using @abi {
   type HelpRepeatSpec,
   type HelpTypeRef,
 }
+
+///|
+/// A completion candidate projected to the nine wire fields from DR-104 §2.
+pub struct Candidate {
+  spelling : String
+  is_value : Bool
+  ty : String
+  origin : String
+  term : @abi.TermHint
+  is_alias : Bool
+  hidden : Bool
+  deprecated : Bool
+  completer : String?
+} derive(Eq, Debug)
 
 ///|
 /// CLI bindings produced by parse before value-source resolution.
@@ -53,6 +66,7 @@ pub fn Interpretation::claimants(
 pub struct ParsedAmbiguity {
   interpretations : Array[Interpretation]
   help_entry : String?
+  priv warnings_ : Array[@abi.Warning]
 }
 
 ///|
@@ -62,6 +76,7 @@ pub struct ParseFailure {
   fired_action : String?
   help_entry : String?
   tried_triggers : Array[String]
+  priv warnings_ : Array[@abi.Warning]
 }
 
 ///|
@@ -107,6 +122,7 @@ fn parse_failure(data : @engine.FailureData) -> ParseFailure {
     fired_action: data.fired_action,
     help_entry: data.help_entry,
     tried_triggers: data.tried_triggers,
+    warnings_: data.warnings,
   }
 }
 
@@ -121,7 +137,8 @@ fn warnings_from_bindings(
 pub fn ParsedOutcome::warnings(self : ParsedOutcome) -> Array[@abi.Warning] {
   match self {
     Success(bindings) => warnings_from_bindings(bindings.raw)
-    Failure(_) | Ambiguous(_) => []
+    Failure(failure) => failure.warnings_.copy()
+    Ambiguous(ambiguity) => ambiguity.warnings_.copy()
   }
 }
 
@@ -129,6 +146,6 @@ pub fn ParsedOutcome::warnings(self : ParsedOutcome) -> Array[@abi.Warning] {
 pub fn ResolvedOutcome::warnings(self : ResolvedOutcome) -> Array[@abi.Warning] {
   match self {
     Success(bindings) => warnings_from_bindings(bindings.raw)
-    Failure(_) => []
+    Failure(failure) => failure.warnings_.copy()
   }
 }
