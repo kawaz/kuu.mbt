@@ -76,18 +76,3 @@ test "REGRESSION head_elem_names_into collects a float resident head's name" {
   head_elem_names_into(test_value("f", "synthetic/float"), out)
   assert_eq(out, ["f"])
 }
-
-///|
-test "ambiguous outcome retains warnings from every complete path" {
-  let outcome = parse_tree(
-    Or([
-      Seq([Exact("x"), Bind("@depr:a", @abi.Bool(true))]),
-      Seq([Exact("x"), Bind("other", @abi.Bool(true))]),
-    ]),
-    ["x"],
-  )
-  guard outcome is Ambiguous(_) else {
-    fail("two distinct complete paths must be ambiguous")
-  }
-  assert_eq(warnings_of(outcome), [{ element: "a", kind: @abi.Deprecated }])
-}

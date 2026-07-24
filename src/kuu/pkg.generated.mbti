@@ -249,13 +249,11 @@ pub struct ParseFailure {
   fired_action : String?
   help_entry : String?
   tried_triggers : Array[String]
-  // private fields
 }
 
 pub struct ParsedAmbiguity {
   interpretations : Array[Interpretation]
   help_entry : String?
-  // private fields
 }
 
 pub struct ParsedBindings {

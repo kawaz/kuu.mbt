@@ -329,7 +329,6 @@ fn resolve_legacy(
             fired_action: None,
             help_entry: None,
             tried_triggers: [],
-            warnings: @engine.warnings_of_bindings(binds),
           })
       }
     _ => outcome
@@ -359,11 +358,7 @@ pub fn parse(
       for interpretation in ambiguity.interpretations {
         interpretations.push({ raw: interpretation })
       }
-      Ambiguous({
-        interpretations,
-        help_entry: ambiguity.help_entry,
-        warnings_: ambiguity.warnings,
-      })
+      Ambiguous({ interpretations, help_entry: ambiguity.help_entry })
     }
   }
 }
