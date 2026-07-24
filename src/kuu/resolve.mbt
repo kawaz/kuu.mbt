@@ -471,6 +471,21 @@ fn build_result(
   nones? : Array[@engine.NoneCell] = [],
   extensions? : @node.Registry = canonical_registry(),
 ) -> @abi.ResultValue {
+  // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
+  // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
+  // boundary for a ref-template repeat cell — build one row (recursive build_result over that
+  // row's own flat leaf bindings) per "#row"-delimited run。"#fire" (installer.mbt's `inst_long`,
+  // option repeat only) marks the start of ONE firing's contribution; multiple 無しの再発火は
+  // セル丸ごと上書きなので (DR-034 の axis 分離、last-wins-repeat-rows.json), only the bindings
+  // AFTER THE LAST "#fire" survive — with no "#fire" at all (a positional fires its repeat
+  // exactly once) the whole list is one firing.
+  if has_direct_key(binds, "#row") {
+    let rows : Array[@abi.ResultValue] = []
+    for row in row_groups(binds) {
+      rows.push(build_result(row, cells, defaults, path, nones~, extensions~))
+    }
+    return @abi.Array(rows)
+  }
   // ARRAY: a "[]" sentinel at this level => build one element per "#k" child. Elements keep the
   // array's path (an indexed repeat element is not a named result-scope segment cells key on).
   if has_direct_key(binds, "[]") {
@@ -488,21 +503,6 @@ fn build_result(
       )
     }
     return @abi.Array(elems)
-  }
-  // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
-  // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
-  // boundary for a ref-template repeat cell — build one row (recursive build_result over that
-  // row's own flat leaf bindings) per "#row"-delimited run。"#fire" (installer.mbt's `inst_long`,
-  // option repeat only) marks the start of ONE firing's contribution; multiple 無しの再発火は
-  // セル丸ごと上書きなので (DR-034 の axis 分離、last-wins-repeat-rows.json), only the bindings
-  // AFTER THE LAST "#fire" survive — with no "#fire" at all (a positional fires its repeat
-  // exactly once) the whole list is one firing.
-  if has_direct_key(binds, "#row") {
-    let rows : Array[@abi.ResultValue] = []
-    for row in row_groups(binds) {
-      rows.push(build_result(row, cells, defaults, path, nones~, extensions~))
-    }
-    return @abi.Array(rows)
   }
   // gather direct named keys (skip sentinels) and nested (named) scopes
   // DR-089 §3: a none-typed cell's value never appears in the result (値の結果には現れない) — same

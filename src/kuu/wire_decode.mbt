@@ -1744,6 +1744,24 @@ fn dec_str_array(
 /// branch has `"exact"`, handled by `dec_or` instead), `Some(branches)` if it's the STRUCTURAL
 /// consumption-grammar form (any branch has `"seq"`/`"type"` — a multi-cell `{"seq":[...]}` branch
 /// or a single-cell `{"type":..,"name":..}` branch, used verbatim as the branch object itself).
+fn dec_seq_structural(
+  j : Json,
+  shadows : Map[String, TypeShadow],
+  extensions : @node.Registry,
+) -> Array[@engine.ElementDef] raise DecodeSkip {
+  let values = match j.j_arr() {
+    Some(items) => items
+    None => raise DecodeSkip("seq is not an array")
+  }
+  let items : Array[@engine.ElementDef] = []
+  for value in values {
+    let item = dec_or_leaf(value, shadows, extensions~)
+    items.push({ ..item, export_key: @engine.ExportKey::null() })
+  }
+  items
+}
+
+///|
 fn dec_or_structural(
   j : Json,
   shadows : Map[String, TypeShadow],
@@ -2336,12 +2354,16 @@ fn dec_option(
       ref_~,
       hidden~,
       completer~,
-      body=match structural_or {
-        Some(branches) => Or(branches)
+      body=match o.get("seq") {
+        Some(seq) => Group(dec_seq_structural(seq, shadows, extensions))
         None =>
-          match value_enum {
-            Some(values) => Enum(values)
-            None => Cell
+          match structural_or {
+            Some(branches) => Or(branches)
+            None =>
+              match value_enum {
+                Some(values) => Enum(values)
+                None => Cell
+              }
           }
       },
     ),

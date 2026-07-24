@@ -781,6 +781,65 @@ pub fn or_branch_node(br : OrBranch) -> Node {
 }
 
 ///|
+fn seq_value_node(e : ElementDef, items : Array[ElementDef]) -> Node {
+  let nodes : Array[Node] = []
+  if e.multiple {
+    nodes.push(Bind("#row", Bool(false)))
+  }
+  nodes.push(Bind("[]", Bool(false)))
+  let mut index = 0
+  for item in items {
+    nodes.push(Scoped("#" + index.to_string(), element_head(item)))
+    index = index + 1
+  }
+  Scoped(e.name, Seq(nodes))
+}
+
+///|
+fn seq_eq_value_node(
+  e : ElementDef,
+  key : String,
+  items : Array[ElementDef],
+) -> Node? {
+  guard items.length() > 0 else { return None }
+  let nodes : Array[Node] = []
+  if e.multiple {
+    nodes.push(Bind("#row", Bool(false)))
+  }
+  nodes.push(Bind("[]", Bool(false)))
+  let first = items[0]
+  nodes.push(
+    Scoped(
+      "#0",
+      NativeMatch(
+        eq_split(e.long_prefix, [
+          eq_entry(
+            key,
+            first.name,
+            configured_type(
+              first.ty,
+              first.int_round,
+              first.bool_config,
+              allow_base_prefix=first.allow_base_prefix,
+            ),
+            first.piece_filters,
+            first.separator,
+            merge=first.accumulator == Some("merge"),
+            deprecated=e.deprecated,
+          ),
+        ]),
+      ),
+    ),
+  )
+  let mut index = 1
+  while index < items.length() {
+    nodes.push(Scoped("#" + index.to_string(), element_head(items[index])))
+    index = index + 1
+  }
+  Some(Scoped(e.name, Seq(nodes)))
+}
+
+///|
 /// 有効 repeat spec (DR-043)。`optional:true` は `{min:0,max:1}` の糖衣 (独立概念ではない)。
 fn elem_repeat(e : ElementDef) -> RepeatSpec? {
   match e.repeat {
@@ -1145,16 +1204,14 @@ fn ensure_entity_body(
           ensure_entity_body(build, it, has_cf, extensions)
         }
       }
-    Group(items) =>
-      // The wrapper (e.g. "xs") lowers to IndexedRepeat (MDR-004 §3): its array is built entirely by
-      // eval.mbt's array_marker/nest_index scope mechanism, never via the accum-entity ladder. If
-      // registered here, ensure_entity would set accum:flatten (elem_repeat(e) is Some for a
-      // repeat group), making accum_cells double-count "xs" and inject a spurious extra `[]`
-      // alongside the nested-scope array resolve.mbt already builds from the IndexedRepeat bindings.
-      // Only the inner leaf cells (value-source-ladder participants) need entities.
+    Group(items) => {
+      if e.multiple {
+        ensure_entity(build, e, has_cf, extensions)
+      }
       for it in items {
         ensure_entity_body(build, it, has_cf, extensions)
       }
+    }
     // Enum (issue values-decode-support): a single named cell like Cell (the enum's exact-value
     // branches all bind the SAME `e.name`, unlike Or's per-branch leaves) — never has a
     // `ref_target` (values/or on a `ref` element is not a decodable shape today), so this always
@@ -1426,6 +1483,16 @@ fn inst_long(
         // 構造 (ここで積む greedy 衛星の個数・形) を変えず eval.mbt 側で扱う (lowering query fixture
         // への影響回避、team-lead 裁定 2026-07-10) — ここでは通常の main entry と同じ形で単独登録
         // するだけでよい。
+        Group(items) =>
+          if e.long_eq_sep != Require {
+            add_greedy(
+              build,
+              maybe_root(
+                e.link_depth,
+                Seq(with_depr(e, [Exact(trigger), seq_value_node(e, items)])),
+              ),
+            )
+          }
         Enum(values) =>
           add_greedy(
             build,
@@ -1616,7 +1683,13 @@ fn inst_long(
               }
             }
           }
-        Group(_) => () // positional-only shape (MDR-004 §3 scope) — no long spelling applies
+        Group(items) =>
+          if e.long_eq_sep != Deny {
+            match seq_eq_value_node(e, l, items) {
+              Some(node) => add_greedy(build, maybe_root(e.link_depth, node))
+              None => ()
+            }
+          }
         Cell =>
           // DR-076 §2: no `e.ty.name() != "flag"` guard needed here anymore — a classic flag never reaches
           // this loop body at all (its `e.long` is empty, `long_of(e)` yields no `l` to iterate), so

@@ -626,3 +626,207 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
     ]),
   )
 }
+
+///|
+/// An option-level seq is one value slot whose children consume consecutive
+/// tokens and whose result is the array of child values (DESIGN §1.1/§5.1).
+test "option seq consumes every child token and returns their value array" {
+  let src =
+    #|{"options": [{
+    #|  "name": "config_file",
+    #|  "long": true,
+    #|  "seq": [
+    #|    {"name": "path", "type": "string"},
+    #|    {"name": "value", "type": "string"}
+    #|  ]
+    #|}]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition failed")
+      panic()
+    }
+  }
+  let parsed = parse_legacy(ast, ["--config-file", "p", "v"])
+  let resolved = resolve_legacy(ast, parsed, ["--config-file", "p", "v"])
+  let effects = match resolved {
+    @engine.Success(bindings) => bindings
+    other => {
+      fail(
+        "option seq should consume both operands, got " + render_outcome(other),
+      )
+      panic()
+    }
+  }
+  match output_legacy(ast, effects~).result {
+    @abi.Object(
+      [
+        (
+          "config_file",
+          @abi.Array(
+            [@abi.Scalar(@abi.String("p")), @abi.Scalar(@abi.String("v"))]
+          ),
+        ),
+      ]
+    ) => ()
+    other =>
+      fail(
+        "option seq should produce config_file=[p,v], got " +
+        render_rval_sorted(other),
+      )
+  }
+}
+
+///|
+test "option seq supports three children and equal-separated first child" {
+  let src =
+    #|{"options": [{
+    #|  "name": "triple",
+    #|  "long": true,
+    #|  "seq": [
+    #|    {"name": "a", "type": "string"},
+    #|    {"name": "b", "type": "string"},
+    #|    {"name": "c", "type": "string"}
+    #|  ]
+    #|}]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition failed")
+      panic()
+    }
+  }
+  fn result_of(args : Array[String]) -> @abi.ResultValue raise {
+    let parsed = parse_legacy(ast, args)
+    let resolved = resolve_legacy(ast, parsed, args)
+    let effects = match resolved {
+      @engine.Success(bindings) => bindings
+      other => {
+        fail("option seq should parse, got " + render_outcome(other))
+        panic()
+      }
+    }
+    output_legacy(ast, effects~).result
+  }
+  let expected : @abi.ResultValue = @abi.Object([
+    (
+      "triple",
+      @abi.Array([
+        @abi.Scalar(@abi.String("x")),
+        @abi.Scalar(@abi.String("y")),
+        @abi.Scalar(@abi.String("z")),
+      ]),
+    ),
+  ])
+  assert_eq(result_of(["--triple", "x", "y", "z"]), expected)
+  assert_eq(result_of(["--triple=x", "y", "z"]), expected)
+}
+
+///|
+test "option seq reports missing_operand when a child token is absent" {
+  let src =
+    #|{"options": [{
+    #|  "name": "pair",
+    #|  "long": true,
+    #|  "seq": [
+    #|    {"name": "left", "type": "string"},
+    #|    {"name": "right", "type": "string"}
+    #|  ]
+    #|}]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition failed")
+      panic()
+    }
+  }
+  match parse_legacy(ast, ["--pair", "x"]) {
+    @engine.Failure(detail) => {
+      let mut found = false
+      for error in detail.errors {
+        if error.element == "right" && error.reason == "missing_operand" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail("starved option seq should fail, got " + render_outcome(other))
+  }
+}
+
+///|
+test "option seq multiple appends one child-value array per firing" {
+  let src =
+    #|{"options": [{
+    #|  "name": "pair",
+    #|  "long": true,
+    #|  "seq": [
+    #|    {"name": "left", "type": "string"},
+    #|    {"name": "right", "type": "string"}
+    #|  ],
+    #|  "multiple": "append"
+    #|}]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition failed")
+      panic()
+    }
+  }
+  let args = ["--pair", "a", "b", "--pair=c", "d"]
+  let parsed = parse_legacy(ast, args)
+  let resolved = resolve_legacy(ast, parsed, args)
+  let effects = match resolved {
+    @engine.Success(bindings) => bindings
+    other => {
+      fail("multiple option seq should parse, got " + render_outcome(other))
+      panic()
+    }
+  }
+  assert_eq(
+    output_legacy(ast, effects~).result,
+    @abi.Object([
+      (
+        "pair",
+        @abi.Array([
+          @abi.Array([
+            @abi.Scalar(@abi.String("a")),
+            @abi.Scalar(@abi.String("b")),
+          ]),
+          @abi.Array([
+            @abi.Scalar(@abi.String("c")),
+            @abi.Scalar(@abi.String("d")),
+          ]),
+        ]),
+      ),
+    ]),
+  )
+}
+
+///|
+test "single-value option remains scalar after option seq support" {
+  let src =
+    #|{"options": [{"name": "port", "type": "string", "long": true}]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition failed")
+      panic()
+    }
+  }
+  let args = ["--port", "80"]
+  let parsed = parse_legacy(ast, args)
+  let resolved = resolve_legacy(ast, parsed, args)
+  let effects = match resolved {
+    @engine.Success(bindings) => bindings
+    other => {
+      fail("single-value option should parse, got " + render_outcome(other))
+      panic()
+    }
+  }
+  assert_eq(
+    output_legacy(ast, effects~).result,
+    @abi.Object([("port", @abi.Scalar(@abi.String("80")))]),
+  )
+}
