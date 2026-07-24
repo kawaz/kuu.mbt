@@ -373,6 +373,9 @@ fn pos(
   // much as options do.
   completer? : String? = None,
   body? : @engine.ElementBody = Cell,
+  // DR-113 §7.2 / DR-048 / DESIGN §15.10: 汎用 `on_failure` を positional でも carry する
+  // (dec_option の fail_action~ と対称)。
+  fail_action? : Bool = false,
 ) -> @engine.ElementDef {
   {
     name,
@@ -401,7 +404,7 @@ fn pos(
     flatten,
     separator,
     collector,
-    fail_action: false,
+    fail_action,
     is_config_file: false,
     config_key,
     export_key: export_,
@@ -1958,6 +1961,10 @@ fn dec_option(
     // (invalid-range) だが decode-time は allowed_keys で unknown-vocab として弾かず一旦受理し、
     // `collect_completion_script_errors` が席違い含めて一括で判定する (help_on_failure と同型)。
      "insert_form",
+    // DR-113 §7.2 / DR-048 / DESIGN §15.10: 汎用 `on_failure` (bool、既定 false) — 完全経路 0 本
+    // の失敗時に候補経路 selected なら自分を発火する。5 help preset (tystr match) が既定 true を
+    // 立てる糖衣と同じ最終形 (ElementDef.fail_action=true) を、素の宣言からも取れるようにする。
+     "on_failure",
   ]
   for key in owned.vocab {
     allowed.push(key)
@@ -2209,6 +2216,12 @@ fn dec_option(
   // real by the caller (`dec_definition`).
   let ref_ = jf_str(o, "ref")
   let repeat = owned.repeat
+  // DR-113 §7.2 / DR-048: 素の `on_failure: true` は 5 help preset の糖衣が生成する fail_action と
+  // 同じ最終形を直接立てる (糖衣展開先の canonical 形をユーザが素で書ける経路)。5 preset 由来の
+  // fail_action が既に true の場合も OR で不変 (再宣言は許容)。false 明示は既存 tystr 由来の
+  // true を打ち消さない (糖衣既定を素の false が消すのは help_on_failure の M3c 領分)。
+  let on_failure_wire = bool_field(o, "on_failure", false)
+  let fail_action = fail_action || on_failure_wire
   // DR-113 §7.2: HelpMetaInstaller.collect_defs_errors が非 help preset 上の
   // help_on_failure を invalid-range として弾くための構造情報 carry。help preset 判定は
   // wire 上の元 tystr で行う (M3b では 5 preset は wire_decode 側で flag_type + fail_action
@@ -2358,6 +2371,10 @@ fn dec_positional(
     // completion_script type 上への宣言は `collect_completion_script_errors` が
     // invalid-range で弾く (allowed_keys では受理)。
      "insert_form",
+    // DR-113 §7.2 / DR-048 / DESIGN §15.10: dec_option と対称 — 汎用 `on_failure` (bool、既定 false)
+    // を positional 席でも受理する (schema wire.schema.json は $defs/node 直下に置いており option/
+    // positional 双方で合法)。ElementDef.fail_action=true を素で立てる経路。
+     "on_failure",
   ]
   for key in owned.vocab {
     allowed.push(key)
@@ -2580,6 +2597,8 @@ fn dec_positional(
     type_ref: type_ref_pos,
     completion_insert_form_declared: insert_form_declared_pos,
   }
+  // DR-113 §7.2 / DR-048: 素の on_failure を positional でも受理 (dec_option と対称)。
+  let fail_action = bool_field(o, "on_failure", false)
   pos(
     name,
     ty,
@@ -2615,6 +2634,7 @@ fn dec_positional(
     required_group~,
     completer~,
     help_meta=help_meta_with_type,
+    fail_action~,
   )
 }
 

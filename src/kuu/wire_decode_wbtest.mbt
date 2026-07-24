@@ -582,3 +582,133 @@ test "dec_definition: an option's own config rejects an unknown key just like sc
   }
   fail("expected DecodeSkip (bogus_key is not a config vocabulary word)")
 }
+
+///|
+/// F8 修正 (DR-113 §7.2 / DR-048 / DESIGN §15.10): 汎用 `on_failure` を素の option / positional
+/// で受理し、5 help preset の糖衣が生成するのと同じ最終形 (ElementDef.fail_action=true) を
+/// 立てられることを固定する。糖衣 (type:"help") のみが fail_action を立てられた M3a 時点の
+/// 実装漏れ (dogfooding D1 F8) の再発防止。
+test "dec_option: 素の on_failure:true は非 help preset でも ElementDef.fail_action=true を立てる" {
+  let src =
+    #|{"name":"version","type":"flag","long":true,"on_failure":true}
+  match dec_option(@json.parse(src), Map([])) {
+    DOpt(element) => {
+      assert_eq(element.fail_action, true)
+      // 非 help preset なので HelpMeta の is_help_preset は false のまま
+      // (help_on_failure invalid-range 判定 collect_help_meta_errors が誤発火しないことも
+      // 併せて含意: help_on_failure 側は None、on_failure だけが立つ)。
+      assert_eq(element.help_meta.is_help_preset, false)
+      assert_eq(element.help_meta.help_on_failure, None)
+    }
+    DAlias(_) => fail("decoded as alias")
+  }
+}
+
+///|
+test "dec_option: on_failure 未宣言は fail_action=false (対極)" {
+  let src =
+    #|{"name":"version","type":"flag","long":true}
+  match dec_option(@json.parse(src), Map([])) {
+    DOpt(element) => assert_eq(element.fail_action, false)
+    DAlias(_) => fail("decoded as alias")
+  }
+}
+
+///|
+test "dec_option: 5 help preset は on_failure 未宣言でも fail_action=true (糖衣不変)" {
+  let src =
+    #|{"name":"help","type":"help","long":true}
+  match dec_option(@json.parse(src), Map([])) {
+    DOpt(element) => assert_eq(element.fail_action, true)
+    DAlias(_) => fail("decoded as alias")
+  }
+}
+
+///|
+test "dec_positional: 素の on_failure:true が positional 席でも ElementDef.fail_action=true を立てる" {
+  let src =
+    #|{"name":"tail","type":"string","on_failure":true}
+  let e = dec_positional(@json.parse(src), Map([]))
+  assert_eq(e.fail_action, true)
+}
+
+///|
+/// (a) 素の on_failure:true option を単独 (--version) 発火した時、要素は完全経路として success
+/// する (fail_action は失敗時発火経路 — 完全経路 0 本の失敗時のみ動く。完全経路として満たされる
+/// ケースでは通常の Success)。
+test "on_failure element: 単独引数で完全経路が閉じれば Success (fail_action は失敗時のみ動く)" {
+  let src =
+    #|{"options":[{"name":"version","type":"flag","long":true,"on_failure":true}]}
+  match parse_definition(@json.parse(src)) {
+    Ok(ast) =>
+      match parse(ast, ["--version"]) {
+        Success(bindings) => {
+          let mut saw = false
+          for b in bindings.raw {
+            if b.key == "version" {
+              saw = true
+            }
+          }
+          assert_true(saw)
+        }
+        Failure(f) =>
+          fail(
+            "expected Success, got Failure fired_action=" +
+            (match f.fired_action {
+              Some(n) => n
+              None => "<none>"
+            }),
+          )
+        Ambiguous(_) => fail("expected Success, got Ambiguous")
+      }
+    Err(_) => fail("definition should lower")
+  }
+}
+
+///|
+/// (b) 他 usage error との併存失敗時に fired_action = on_failure 要素名 になる (DR-048 §2:
+/// 完全経路 0 本の失敗時、候補経路で selected な失敗時アクション持ちが自分を発火)。
+test "on_failure element: 失敗時に候補経路で selected なら fired_action にその要素名が立つ" {
+  let src =
+    #|{"options":[{"name":"version","type":"flag","long":true,"on_failure":true}]}
+  match parse_definition(@json.parse(src)) {
+    Ok(ast) =>
+      match parse(ast, ["--version", "--typo"]) {
+        Failure(f) => assert_eq(f.fired_action, Some("version"))
+        other =>
+          fail(
+            "expected Failure with fired_action=version, got " +
+            (match other {
+              Success(_) => "Success"
+              Ambiguous(_) => "Ambiguous"
+              Failure(_) => "Failure"
+            }),
+          )
+      }
+    Err(_) => fail("definition should lower")
+  }
+}
+
+///|
+/// (c) on_failure 無しでは fired_action にならない (対極 — 失敗時アクション経路が立たないこと
+/// の確認)。同じ形の要素で on_failure 属性だけを外し、同じ引数で失敗させる。
+test "on_failure 無しの同型要素: 失敗時 fired_action は None (対極)" {
+  let src =
+    #|{"options":[{"name":"version","type":"flag","long":true}]}
+  match parse_definition(@json.parse(src)) {
+    Ok(ast) =>
+      match parse(ast, ["--version", "--typo"]) {
+        Failure(f) => assert_eq(f.fired_action, None)
+        other =>
+          fail(
+            "expected Failure with fired_action=None, got " +
+            (match other {
+              Success(_) => "Success"
+              Ambiguous(_) => "Ambiguous"
+              Failure(_) => "Failure"
+            }),
+          )
+      }
+    Err(_) => fail("definition should lower")
+  }
+}
