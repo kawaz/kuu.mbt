@@ -103,8 +103,8 @@ pub fn parse_definition(
     allowed_keys(
       top,
       [
-        "name", "options", "positionals", "commands", "definitions", "config", "help",
-        "help_long", "help_epilog", "display_name", "value_name", "help_group_name",
+        "$schema", "name", "options", "positionals", "commands", "definitions", "config",
+        "help", "help_long", "help_epilog", "display_name", "value_name", "help_group_name",
         "help_group_title", "help_group_description", "help_order", "help_group_order",
         "help_after",
         // DR-115 §1.1: 一括席 `help_render` (root scope) と参考として entry 個別席
@@ -114,6 +114,13 @@ pub fn parse_definition(
       ],
       "definition",
     )
+    match top.get("$schema") {
+      Some(schema) =>
+        if schema.j_str() is None {
+          raise DecodeSkip("definition '$schema' is not a string")
+        }
+      None => ()
+    }
     let templates : Map[String, @engine.Node] = Map([])
     let shadows = match top.get("definitions") {
       Some(dj) => {
