@@ -23,6 +23,7 @@ pub using @abi {
 
 ///|
 /// A completion candidate projected to the nine wire fields from DR-104 §2.
+/// `type_name` corresponds to the wire field `type`; the expanded identifier avoids MoonBit's `type` keyword.
 pub struct Candidate {
   spelling : String
   is_value : Bool
