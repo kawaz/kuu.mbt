@@ -100,6 +100,34 @@ impl Eq for Cont with fn equal(self, other) {
 }
 
 ///|
+/// Make every remaining spine in a continuation raw after dd fires.
+/// Command boundaries nest bindings but do not end dd's internal continuation;
+/// restoring a captured `severed=false` at a parent resume would resurrect its
+/// greedy face and reinterpret raw tail tokens.
+fn sever_cont(k : Cont) -> Cont {
+  match k {
+    KTop(_) | KDone => k
+    KResumeScope(sc, pidx, _, outer) =>
+      KResumeScope(sc, pidx, true, sever_cont(outer))
+    KNest(label, is_cmd, start, outer) =>
+      KNest(label, is_cmd, start, sever_cont(outer))
+    KRefChoice(sc, name, pidx, _, entry_pos, outer) =>
+      KRefChoice(sc, name, pidx, true, entry_pos, sever_cont(outer))
+    KTailChoice(sc, head, budget, is_lazy, pidx, _, entry_pos, outer) =>
+      KTailChoice(
+        sc,
+        head,
+        budget,
+        is_lazy,
+        pidx,
+        true,
+        entry_pos,
+        sever_cont(outer),
+      )
+  }
+}
+
+///|
 /// Run a continuation from (pos, acc). This is the oracle's engine: the
 /// caller inspects the resulting branches (has_full_k) to decide a repeat
 /// split, and the SAME call produces the real branches when chosen.

@@ -1350,7 +1350,7 @@ fn step_greedy(
         // `DdSatisfied(e.name)` を作る) なのでそのまま key に使える。
         let acc2 = acc +
           [Binding::new(trigger, Bool(true), Cli, at_pos=Some(pos))]
-        for r in scope_step(sc, ctx, pos + 1, pidx, acc2, true, k) {
+        for r in scope_step(sc, ctx, pos + 1, pidx, acc2, true, sever_cont(k)) {
           out.push(r)
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
@@ -1372,7 +1372,8 @@ fn step_greedy(
         // 同一性軸、DR-090 §2) — `spelling` は match 使用時トリガ綴りやパターンで要素名と一致しない。
         let acc2 = acc +
           [Binding::new(elem_name, Bool(true), Cli, at_pos=Some(pos))]
-        for r in scope_step(sc, ctx, resume_pos, pidx, acc2, true, k) {
+        for
+          r in scope_step(sc, ctx, resume_pos, pidx, acc2, true, sever_cont(k)) {
           out.push(r)
         }
       } else if pos >= ctx.toks.length() && in_complete(ctx) && !is_pattern {

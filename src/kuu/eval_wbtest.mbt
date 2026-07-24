@@ -245,6 +245,99 @@ test "dd sever: past `--`, a trigger-looking token falls raw into the positional
 }
 
 ///|
+test "REGRESSION dd continuation stays raw after returning from a command scope" {
+  let child : @engine.Scope = {
+    greedy: [@engine.DdSatisfied("--")],
+    positional: [
+      @builtins.string_arg("definition", []),
+      @engine.Many(@builtins.string_arg("args", []), false),
+    ],
+    entities: [],
+    constraints: [],
+  }
+  let root : @engine.Scope = {
+    greedy: [@engine.CommandSatisfied("run", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = @engine.parse_tree(
+    @engine.ScopeNode(root),
+    ["run", "FILE", "--", "run", "FILE2", "--", "z"],
+    defs=Map([]),
+  )
+  match o {
+    @engine.Success(bs) => {
+      let definitions : Array[String] = []
+      let args : Array[String] = []
+      for b in bs {
+        if b.scope == ["run"] {
+          match b.value {
+            @abi.String(s) =>
+              if b.key == "definition" {
+                definitions.push(s)
+              } else if b.key == "args" {
+                args.push(s)
+              }
+            _ => ()
+          }
+        }
+      }
+      assert_eq(definitions, ["FILE"])
+      assert_eq(args, ["run", "FILE2", "--", "z"])
+    }
+    other =>
+      fail(
+        "expected @engine.Success (dd tail must remain raw across the command continuation), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+test "REGRESSION pattern dd self-keep severs its command continuation" {
+  let child : @engine.Scope = {
+    greedy: [@engine.DdMatchSatisfied("^run$", true, true, "utility")],
+    positional: [
+      @builtins.string_arg("definition", []),
+      @engine.Many(@builtins.string_arg("args", []), false),
+    ],
+    entities: [],
+    constraints: [],
+  }
+  let root : @engine.Scope = {
+    greedy: [@engine.CommandSatisfied("run", child)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let o = @engine.parse_tree(
+    @engine.ScopeNode(root),
+    ["run", "FILE", "run", "FILE2"],
+    defs=Map([]),
+  )
+  match o {
+    @engine.Success(bs) => {
+      let args : Array[String] = []
+      for b in bs {
+        if b.scope == ["run"] && b.key == "args" {
+          match b.value {
+            @abi.String(s) => args.push(s)
+            _ => ()
+          }
+        }
+      }
+      assert_eq(args, ["run", "FILE2"])
+    }
+    other =>
+      fail(
+        "expected @engine.Success (pattern dd tail must remain raw across the command continuation), got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
 test "residual token failure: an unconsumable trailing token is a KTop held error" {
   // No positionals, no greedy match for "zzz" → every path stops short of
   // the global end. The KTop continuation surfaces the residual head as a

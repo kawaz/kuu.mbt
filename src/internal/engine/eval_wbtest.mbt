@@ -76,3 +76,46 @@ test "REGRESSION head_elem_names_into collects a float resident head's name" {
   head_elem_names_into(test_value("f", "synthetic/float"), out)
   assert_eq(out, ["f"])
 }
+
+///|
+test "sever_cont marks every resumable spine across nesting and repeat choices" {
+  let sc : Scope = { greedy: [], positional: [], entities: [], constraints: [] }
+  let original = KNest(
+    "cmd",
+    true,
+    0,
+    KResumeScope(
+      sc,
+      1,
+      false,
+      KRefChoice(
+        sc,
+        "row",
+        2,
+        false,
+        3,
+        KTailChoice(sc, Exact("x"), 4, false, 5, false, 6, KTop([])),
+      ),
+    ),
+  )
+  let expected = KNest(
+    "cmd",
+    true,
+    0,
+    KResumeScope(
+      sc,
+      1,
+      true,
+      KRefChoice(
+        sc,
+        "row",
+        2,
+        true,
+        3,
+        KTailChoice(sc, Exact("x"), 4, false, 5, true, 6, KTop([])),
+      ),
+    ),
+  )
+  assert_eq(sever_cont(original), expected)
+  assert_eq(sever_cont(KDone), KDone)
+}
