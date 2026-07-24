@@ -135,7 +135,10 @@ test "DR-097 (先食い述語の精密化): a value-less trigger at the end of i
   // holds" (先食い holds).
   let root : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--port"), @builtins.number_arg("port", [])]),
+      @engine.Seq([
+        @engine.Exact("--port"),
+        @builtins.number_arg("port", filters=[]),
+      ]),
     ],
     positional: [@builtins.string_arg("files", [])],
     entities: [],
@@ -358,7 +361,7 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
       @engine.Seq([
         @engine.Exact("--help"),
         @builtins.failure_mark("help"),
-        @builtins.number_arg("n", []),
+        @builtins.number_arg("n", filters=[]),
       ]),
     ],
     positional: [],
@@ -427,7 +430,7 @@ test "REVIEW-C4 non-scope root: residual of a partial @abi.Accept surfaces even 
   // residual synthesis on "errors empty" would mask the partial reading.
   let root = @engine.Node::Or([
     @engine.Exact("a"),
-    @engine.Seq([@engine.Exact("a"), @builtins.number_arg("n", [])]),
+    @engine.Seq([@engine.Exact("a"), @builtins.number_arg("n", filters=[])]),
   ])
   let o = @engine.parse_tree(root, ["a", "xyz"], defs=Map([]))
   match o {
@@ -499,7 +502,7 @@ test "REGRESSION step_greedy @abi.Held carries acc so failure resident survives 
   // deep-review "step_greedy acc": two greedy entries — a failure resident help
   // action, and a numeric option. Under faildef=DeepestOnly the ONLY
   // candidate path for fired_action collection is the deepest one:
-  // consume --help (bind help + failure resident) → consume --num → @builtins.number_arg("xyz", [])
+  // consume --help (bind help + failure resident) → consume --num → @builtins.number_arg("xyz", filters=[])
   // parse fail @ args_pos 2. Without acc on the @abi.Held branch, the failure resident
   // binding accumulated before the @abi.Held is dropped and fired_action
   // becomes None. With it, fired_action = Some("help").
@@ -510,7 +513,10 @@ test "REGRESSION step_greedy @abi.Held carries acc so failure resident survives 
         @engine.Bind("help", @abi.Bool(true)),
         @builtins.failure_mark("help"),
       ]),
-      @engine.Seq([@engine.Exact("--num"), @builtins.number_arg("n", [])]),
+      @engine.Seq([
+        @engine.Exact("--num"),
+        @builtins.number_arg("n", filters=[]),
+      ]),
     ],
     positional: [],
     entities: [],
@@ -665,7 +671,7 @@ test "REGRESSION scope-shaped Ref head: more-branch drops internal missing_opera
   defs.set("r", @engine.Seq([@engine.ScopeNode(inner)]))
   let root : @engine.Scope = {
     greedy: [],
-    positional: [Ref("r"), @builtins.number_arg("n", [])],
+    positional: [Ref("r"), @builtins.number_arg("n", filters=[])],
     entities: [],
     constraints: [],
   }
@@ -747,7 +753,10 @@ test "REGRESSION @engine.Or-wrapped greedy: @engine.find_help_entry / tried_trig
 test "DR-053 §4: tried_triggers reflects the failure position's OWN scope, not root's" {
   let child : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--port"), @builtins.number_arg("port", [])]),
+      @engine.Seq([
+        @engine.Exact("--port"),
+        @builtins.number_arg("port", filters=[]),
+      ]),
     ],
     positional: [],
     entities: [],
@@ -799,7 +808,10 @@ test "DR-053 §4: help_entry reflects the failure position's OWN scope, not root
         @engine.Bind("help", @abi.Bool(true)),
         @builtins.failure_mark("help"),
       ]),
-      @engine.Seq([@engine.Exact("--port"), @builtins.number_arg("port", [])]),
+      @engine.Seq([
+        @engine.Exact("--port"),
+        @builtins.number_arg("port", filters=[]),
+      ]),
     ],
     positional: [],
     entities: [],
@@ -1036,7 +1048,10 @@ test "DR-097 (先食い述語の精密化, supersedes REVIEW-D5): 値不正の -
   // 旧述語は DR-097 で置き換えられた (DR-041 §4 の Superseded 節)。
   let root : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--port"), @builtins.number_arg("port", [])]),
+      @engine.Seq([
+        @engine.Exact("--port"),
+        @builtins.number_arg("port", filters=[]),
+      ]),
     ],
     positional: [@builtins.string_arg("f", []), @builtins.string_arg("g", [])],
     entities: [],
@@ -1143,7 +1158,7 @@ test "DR-097 述語 pin: requires (遅延述語) 未充足は先食い判定に�
     greedy: [
       @engine.Seq([
         @engine.Exact("--height"),
-        @builtins.number_arg("height", []),
+        @builtins.number_arg("height", filters=[]),
       ]),
     ],
     positional: [@engine.Many(@builtins.string_arg("rest", []), false)],
@@ -1221,7 +1236,7 @@ test "DR-074 §1: float resident accepts inf (ci, signed), number resident rejec
   let root : @engine.Scope = {
     greedy: [
       @engine.Seq([@engine.Exact("--t"), @builtins.float_arg("t", [])]),
-      @engine.Seq([@engine.Exact("--n"), @builtins.number_arg("n", [])]),
+      @engine.Seq([@engine.Exact("--n"), @builtins.number_arg("n", filters=[])]),
     ],
     positional: [],
     entities: [],
@@ -1490,7 +1505,7 @@ test "REGRESSION scope_consume_rep @engine.Many(compound ref-template head) resp
 test "DR-066 §4: a root-level held Error carries path: []" {
   let root : @engine.Scope = {
     greedy: [],
-    positional: [@builtins.number_arg("n", [])],
+    positional: [@builtins.number_arg("n", filters=[])],
     entities: [],
     constraints: [],
   }
@@ -1519,7 +1534,7 @@ test "DR-066 §4: a root-level held Error carries path: []" {
 test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
   let child : @engine.Scope = {
     greedy: [],
-    positional: [@builtins.number_arg("n", [])],
+    positional: [@builtins.number_arg("n", filters=[])],
     entities: [],
     constraints: [],
   }
@@ -1558,7 +1573,7 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
 test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (root-first)" {
   let grandchild : @engine.Scope = {
     greedy: [],
-    positional: [@builtins.number_arg("n", [])],
+    positional: [@builtins.number_arg("n", filters=[])],
     entities: [],
     constraints: [],
   }
@@ -1685,7 +1700,10 @@ test "DR-066 §4: a residual-token Error carries path: []" {
 test "DR-066 §4: a @abi.Pending-starvation missing_operand Error inside a nested command carries the ancestor path" {
   let child : @engine.Scope = {
     greedy: [
-      @engine.Seq([@engine.Exact("--port"), @builtins.number_arg("port", [])]),
+      @engine.Seq([
+        @engine.Exact("--port"),
+        @builtins.number_arg("port", filters=[]),
+      ]),
     ],
     positional: [],
     entities: [],
@@ -1853,9 +1871,9 @@ test "@engine.IndexedRepeat budget=Some(1): consumes up to min+budget=2 reps, le
 test "DR-043 × DR-038: hand-built @engine.Many(@engine.Or(seq-rgb, string-name)) lets both or-branches repeat" {
   let head = @engine.Node::Or([
     @engine.Node::Seq([
-      @builtins.number_arg("r", []),
-      @builtins.number_arg("g", []),
-      @builtins.number_arg("b", []),
+      @builtins.number_arg("r", filters=[]),
+      @builtins.number_arg("g", filters=[]),
+      @builtins.number_arg("b", filters=[]),
     ]),
     @builtins.string_arg("name", []),
   ])

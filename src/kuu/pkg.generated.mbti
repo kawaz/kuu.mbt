@@ -11,11 +11,13 @@ import {
 // Values
 pub fn complete(AtomicAST, Array[String], args_after? : Array[String]) -> Array[Candidate]
 
-pub fn completion_entry(AtomicAST, @kuu-node.Registry, Array[String], Map[String, String]) -> CompletionEntryResult
+pub fn completion_entry(AtomicAST, Array[String], Map[String, String]) -> CompletionEntryResult
 
-pub fn completion_query(AtomicAST, @kuu-node.Registry, Array[String], cword? : Int?) -> String
+pub fn completion_query(AtomicAST, Array[String], cword? : Int?) -> String
 
 pub fn completion_script_capability() -> &@extension.CapabilityExt
+
+pub fn completion_script_request(AtomicAST, ResolvedOutcome) -> CompletionScriptRequest
 
 pub fn completion_template_bash() -> String
 
@@ -25,13 +27,11 @@ pub fn completion_template_zsh() -> String
 
 pub fn config_from_json(Json) -> @abi.ConfigVal
 
-pub fn dispatch_completion_script(@kuu-node.Registry, ResolvedOutcome) -> CompletionScriptRequest
-
-pub fn dispatch_help_query(@kuu-node.Registry, AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> HelpQueryOutcome
+pub fn dispatch_help_query(AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> HelpQueryOutcome
 
 pub fn env_from_map(Map[String, String]) -> (String) -> String?
 
-pub fn generate_completion_script(String, String, String, String) -> Result[String, CompletionScriptError]
+pub fn generate_completion_script(String, program_name~ : String, binary~ : String, uuid~ : String) -> Result[String, CompletionScriptError]
 
 pub fn help(AtomicAST, path? : Array[String], depth? : HelpDepth, category_mode? : HelpCategoryMode) -> Result[HelpModel, HelpQueryError]
 
@@ -67,7 +67,7 @@ type AtomicAST
 pub struct Candidate {
   spelling : String
   is_value : Bool
-  ty : String
+  type_name : String
   origin : String
   term : @abi.TermHint
   is_alias : Bool

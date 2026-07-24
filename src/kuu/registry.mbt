@@ -125,21 +125,24 @@ pub fn install_canonical(registry : @node.Registry) -> Unit {
     registry,
     @builtins.separated_arg(
       "",
-      None,
-      @builtins.string_type(),
-      @abi.Error,
-      @builtins.bool_config_canonical(),
-      [],
+      separator=None,
+      ty=@builtins.string_type(),
+      int_round=@abi.Error,
+      bool_config=@builtins.bool_config_canonical(),
+      filters=[],
     ),
   )
-  register_node(registry, @builtins.number_arg("", []))
+  register_node(registry, @builtins.number_arg("", filters=[]))
   register_node(registry, @builtins.float_arg("", []))
-  register_node(registry, @builtins.int_arg("", @abi.Error, []))
+  register_node(registry, @builtins.int_arg("", round=@abi.Error, filters=[]))
   register_node(
     registry,
-    @builtins.bool_arg("", @builtins.bool_config_canonical(), []),
+    @builtins.bool_arg("", config=@builtins.bool_config_canonical(), filters=[]),
   )
-  register_node(registry, @builtins.typed_arg("", @builtins.string_type(), []))
+  register_node(
+    registry,
+    @builtins.typed_arg("", ty=@builtins.string_type(), filters=[]),
+  )
   register_node(registry, @builtins.effect_mark("", @abi.Set))
   register_node(registry, @builtins.deprecation_mark(""))
   register_node(registry, @builtins.failure_mark(""))

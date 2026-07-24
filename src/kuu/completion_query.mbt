@@ -8,7 +8,7 @@
 //   words, cword
 //     → 分解 (args_before / cursor_word / args_after, §3.4)
 //     → complete(ast, args_before, args_after)  … 素材 (DR-104 candidates)
-//     → dispatch_help_query(registry, ast, path=active_scope)  … help model
+//     → dispatch_help_query(ast, path=active_scope)  … help model
 //     → policy 段:
 //         hidden 除外                                      (DR-116 §5)
 //         cursor_word による prefix 絞り                    (DR-060 §3, DR-117 §5)
@@ -35,7 +35,6 @@
 /// 戻り値: DR-117 §4 の行指向応答テキスト。候補ゼロは空文字列または directive 行のみ。
 pub fn completion_query(
   ast : AtomicAST,
-  registry : @node.Registry,
   words : Array[String],
   cword? : Int? = None,
 ) -> String {
@@ -59,7 +58,7 @@ pub fn completion_query(
   // dispatch_help_query で HelpModel を得る。help_query capability 未登録 or path 到達不能なら
   // None (説明引き直しと整列は素材順で縮退)。
   let active_path = active_scope_path(ast, args_before)
-  let help_model = match dispatch_help_query(registry, ast, path=active_path) {
+  let help_model = match dispatch_help_query(ast, path=active_path) {
     Model(model) => Some(model)
     QueryError(_) | Unavailable => None
   }

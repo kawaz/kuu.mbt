@@ -26,7 +26,7 @@ pub using @abi {
 pub struct Candidate {
   spelling : String
   is_value : Bool
-  ty : String
+  type_name : String
   origin : String
   term : @abi.TermHint
   is_alias : Bool

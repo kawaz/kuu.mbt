@@ -28,7 +28,7 @@
 //
 // ```
 // let cands = complete(ast, ["--po"]) // args_before のみ、行末補完
-// // cands[i].spelling / .is_value / .ty / .term / .is_alias / .hidden / .deprecated が候補の素材 (DR-060 §3)
+// // cands[i].spelling / .is_value / .type_name / .term / .is_alias / .hidden / .deprecated が候補の素材 (DR-060 §3)
 // ```
 
 ///|
@@ -423,7 +423,7 @@ pub fn complete(
     out.push({
       spelling: candidate.spelling,
       is_value: candidate.is_value,
-      ty: candidate.ty,
+      type_name: candidate.ty,
       origin: candidate.origin,
       term: candidate.term,
       is_alias: candidate.is_alias,

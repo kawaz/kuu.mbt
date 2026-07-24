@@ -385,7 +385,7 @@ test "long installer: a deprecated Enum (values-constrained) main entry carries 
     sc.greedy[0],
     @engine.Seq([
       @engine.Exact("--color"),
-      @builtins.enum_value_node("color", @builtins.string_type(), [
+      @builtins.enum_value_node("color", ty=@builtins.string_type(), values=[
         "red", "blue",
       ]),
       @builtins.deprecation_mark("color"),

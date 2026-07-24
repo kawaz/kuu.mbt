@@ -10,10 +10,7 @@ test "DR-117 §2.4: completion_script preset populates the internal capability c
     Err(_) => fail("completion_script definition must lower")
   }
   let outcome = test_resolve(ast, ["--completions", "zsh"])
-  assert_eq(
-    dispatch_completion_script(canonical_registry(), outcome),
-    Requested("zsh"),
-  )
+  assert_eq(completion_script_request(ast, outcome), Requested("zsh"))
 }
 
 ///|
@@ -27,10 +24,7 @@ test "DR-117 §2.3: a command positional entrance links to the definition-wide r
   }
   let args = ["completion", "fish"]
   let outcome = test_resolve(ast, args)
-  assert_eq(
-    dispatch_completion_script(canonical_registry(), outcome),
-    Requested("fish"),
-  )
+  assert_eq(completion_script_request(ast, outcome), Requested("fish"))
 }
 
 ///|
@@ -47,25 +41,30 @@ test "DR-117 §2.1: an env entrance populates the same internal capability cell"
     [],
     sources=value_sources(env=env_from_map(Map([("APP_COMPLETION", "bash")]))),
   )
-  assert_eq(
-    dispatch_completion_script(canonical_registry(), outcome),
-    Requested("bash"),
-  )
+  assert_eq(completion_script_request(ast, outcome), Requested("bash"))
 }
 
 ///|
 test "DR-117 capability dispatch distinguishes unavailable and unfired seats" {
-  let ast = match parse_definition(@json.parse("{}")) {
-    Ok(ast) => ast
-    Err(_) => fail("empty definition must lower")
-  }
   let empty_registry = @node.Registry::new()
+  let unavailable_ast = match
+    parse_definition(@json.parse("{}"), extensions=empty_registry) {
+    Ok(ast) => ast
+    Err(_) => fail("empty definition must lower with an empty registry")
+  }
   assert_eq(
-    dispatch_completion_script(empty_registry, test_resolve(ast, [])),
+    completion_script_request(
+      unavailable_ast,
+      test_resolve(unavailable_ast, []),
+    ),
     Unavailable,
   )
+  let canonical_ast = match parse_definition(@json.parse("{}")) {
+    Ok(ast) => ast
+    Err(_) => fail("empty definition must lower with the canonical registry")
+  }
   assert_eq(
-    dispatch_completion_script(canonical_registry(), test_resolve(ast, [])),
+    completion_script_request(canonical_ast, test_resolve(canonical_ast, [])),
     NotRequested,
   )
 }

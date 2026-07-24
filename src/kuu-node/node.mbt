@@ -40,11 +40,11 @@ pub fn kv_arg(name : String, filters : Array[@abi.FnInvocation]) -> Node {
 ///|
 pub fn separated_arg(
   name : String,
-  separator : String?,
-  ty : &@extension.TypeExt,
-  int_round : @abi.RoundMode,
-  bool_config : @abi.BoolConfig,
-  filters : Array[@abi.FnInvocation],
+  separator~ : String?,
+  ty~ : &@extension.TypeExt,
+  int_round~ : @abi.RoundMode,
+  bool_config~ : @abi.BoolConfig,
+  filters~ : Array[@abi.FnInvocation],
   allow_base_prefix? : Bool = false,
   merge? : Bool = false,
 ) -> Node {
@@ -63,7 +63,7 @@ pub fn separated_arg(
 ///|
 pub fn number_arg(
   name : String,
-  filters : Array[@abi.FnInvocation],
+  filters~ : Array[@abi.FnInvocation],
   allow_base_prefix? : Bool = false,
 ) -> Node {
   @engine.number_arg(name, filters, allow_base_prefix~)
@@ -82,8 +82,8 @@ pub fn float_arg(name : String, filters : Array[@abi.FnInvocation]) -> Node {
 ///|
 pub fn int_arg(
   name : String,
-  round : @abi.RoundMode,
-  filters : Array[@abi.FnInvocation],
+  round~ : @abi.RoundMode,
+  filters~ : Array[@abi.FnInvocation],
   allow_base_prefix? : Bool = false,
 ) -> Node {
   @engine.int_arg(name, round, filters, allow_base_prefix~)
@@ -92,8 +92,8 @@ pub fn int_arg(
 ///|
 pub fn bool_arg(
   name : String,
-  config : @abi.BoolConfig,
-  filters : Array[@abi.FnInvocation],
+  config~ : @abi.BoolConfig,
+  filters~ : Array[@abi.FnInvocation],
 ) -> Node {
   @engine.bool_arg(name, config, filters)
 }
@@ -101,8 +101,8 @@ pub fn bool_arg(
 ///|
 pub fn typed_arg(
   name : String,
-  ty : &@extension.TypeExt,
-  filters : Array[@abi.FnInvocation],
+  ty~ : &@extension.TypeExt,
+  filters~ : Array[@abi.FnInvocation],
 ) -> Node {
   @engine.typed_arg(name, ty, filters)
 }
@@ -125,8 +125,8 @@ pub fn failure_mark(name : String) -> Node {
 ///|
 pub fn enum_value_node(
   name : String,
-  ty : &@extension.TypeExt,
-  values : Array[String],
+  ty~ : &@extension.TypeExt,
+  values~ : Array[String],
 ) -> Node {
   @engine.enum_value_node(name, ty, values)
 }

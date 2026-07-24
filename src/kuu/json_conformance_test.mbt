@@ -1174,7 +1174,7 @@ fn bool_str(b : Bool) -> String {
 /// equality (spelling/is_value/type/origin/term/meta) PLUS an OPT-IN 7th field, `completer` (DR-104
 /// §2/§3, CONFORMANCE §3 COMP-Q3): included in the string only when `with_completer` is true (a
 /// per-fixture-set decision, mirroring `errors[].reason`'s own opt-in — see `exp_errors_decode`'s
-/// `with_reason`). Wire `type` maps to the live candidate's `Candidate.ty`; both `spelling` and `type` are
+/// `with_reason`). Wire `type` maps to the live candidate's `Candidate.type_name`; both `spelling` and `type` are
 /// normalized to `""` on their "doesn't apply" side (DR-104 §2: `spelling` is meaningless when
 /// `is_value:true`, `type` is meaningless when `is_value:false`) so a
 /// fixture that omits the moot field and a live `@kuu.Candidate` that carries a leftover tag there (e.g.
@@ -1222,7 +1222,7 @@ fn cand_str(c : @kuu.Candidate, with_completer : Bool) -> String {
     WordEnd => "word_end"
     Continue => "cont"
   }
-  let ty_s = if c.is_value { c.ty } else { "" }
+  let ty_s = if c.is_value { c.type_name } else { "" }
   let spelling_s = if c.is_value { "" } else { c.spelling }
   let completer_arg = if with_completer {
     Some(c.completer.unwrap_or(""))
@@ -2008,14 +2008,12 @@ fn help_query_error_json(err : @kuu.HelpQueryError) -> Json {
 
 ///|
 fn run_help(fixture : DHelpFixture, case : DHelpCase) -> String {
-  // DR-113 §1/§9 (M5-2): runner は @kuu.help を直呼びせず、canonical registry の
+  // DR-113 §1/§9 (M5-2): runner は @kuu.help を直呼びせず、AtomicAST に封入された
   // help_query capability を lookup 経由で dispatch する。未登録なら
   // "capability not registered" を surface (kuu の canonical registry は必ず含むので
   // 通常の fixture 経路では発生しない — 登録忘れの実装 regression を検知するガード)。
-  let registry = canonical_registry_for_test()
   let actual = match
     @kuu.dispatch_help_query(
-      registry,
       fixture.ast,
       path=case.path,
       depth=case.depth,

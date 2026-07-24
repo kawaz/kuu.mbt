@@ -10,7 +10,7 @@ import {
 // Values
 pub fn bind(String, @abi.Value) -> @engine.Node
 
-pub fn bool_arg(String, @abi.BoolConfig, Array[@abi.FnInvocation]) -> @engine.Node
+pub fn bool_arg(String, config~ : @abi.BoolConfig, filters~ : Array[@abi.FnInvocation]) -> @engine.Node
 
 pub fn builder_apply_builtin(@engine.InstallBuilder, String) -> Unit
 
@@ -24,7 +24,7 @@ pub fn deprecation_mark(String) -> @engine.Node
 
 pub fn effect_mark(String, @abi.EffectOp) -> @engine.Node
 
-pub fn enum_value_node(String, &@extension.TypeExt, Array[String]) -> @engine.Node
+pub fn enum_value_node(String, ty~ : &@extension.TypeExt, values~ : Array[String]) -> @engine.Node
 
 pub fn exact(String) -> @engine.Node
 
@@ -36,7 +36,7 @@ pub fn filtered_number_arg(String, Int) -> @engine.Node
 
 pub fn float_arg(String, Array[@abi.FnInvocation]) -> @engine.Node
 
-pub fn int_arg(String, @abi.RoundMode, Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
+pub fn int_arg(String, round~ : @abi.RoundMode, filters~ : Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
 
 pub fn kv_arg(String, Array[@abi.FnInvocation]) -> @engine.Node
 
@@ -44,7 +44,7 @@ pub fn lower_definition(@engine.Definition, Array[&InstallerExt], @extension.Reg
 
 pub fn lower_definition_snapshot(@engine.Definition, Array[&InstallerExt], @extension.Registry, registry? : Map[String, @engine.Node]) -> Result[@engine.LoweredDefinition, Array[@abi.DefError]]
 
-pub fn number_arg(String, Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
+pub fn number_arg(String, filters~ : Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
 
 pub fn or(Array[@engine.Node]) -> @engine.Node
 
@@ -52,13 +52,13 @@ pub fn output_new(Array[@engine.Node]) -> @engine.InstallOutput
 
 pub fn output_push_greedy(@engine.InstallOutput, @engine.Node) -> Unit
 
-pub fn separated_arg(String, String?, &@extension.TypeExt, @abi.RoundMode, @abi.BoolConfig, Array[@abi.FnInvocation], allow_base_prefix? : Bool, merge? : Bool) -> @engine.Node
+pub fn separated_arg(String, separator~ : String?, ty~ : &@extension.TypeExt, int_round~ : @abi.RoundMode, bool_config~ : @abi.BoolConfig, filters~ : Array[@abi.FnInvocation], allow_base_prefix? : Bool, merge? : Bool) -> @engine.Node
 
 pub fn seq(Array[@engine.Node]) -> @engine.Node
 
 pub fn string_arg(String, Array[@abi.FnInvocation]) -> @engine.Node
 
-pub fn typed_arg(String, &@extension.TypeExt, Array[@abi.FnInvocation]) -> @engine.Node
+pub fn typed_arg(String, ty~ : &@extension.TypeExt, filters~ : Array[@abi.FnInvocation]) -> @engine.Node
 
 // Errors
 

@@ -13,7 +13,7 @@ pub fn alias_installer() -> &@kuu-node.InstallerExt
 
 pub fn append_accumulator() -> &@extension.AccumulatorExt
 
-pub fn bool_arg(String, @abi.BoolConfig, Array[@abi.FnInvocation]) -> @engine.Node
+pub fn bool_arg(String, config~ : @abi.BoolConfig, filters~ : Array[@abi.FnInvocation]) -> @engine.Node
 
 pub fn bool_config_canonical() -> @abi.BoolConfig
 
@@ -45,7 +45,7 @@ pub fn effect_mark(String, @abi.EffectOp) -> @engine.Node
 
 pub fn entity_ext(hidden? : Bool, completer? : String?) -> &@extension.EntityExt
 
-pub fn enum_value_node(String, &@extension.TypeExt, Array[String]) -> @engine.Node
+pub fn enum_value_node(String, ty~ : &@extension.TypeExt, values~ : Array[String]) -> @engine.Node
 
 pub fn env_installer() -> &@kuu-node.InstallerExt
 
@@ -79,7 +79,7 @@ pub fn inherit_installer() -> &@kuu-node.InstallerExt
 
 pub fn inheritable_installer() -> &@kuu-node.InstallerExt
 
-pub fn int_arg(String, @abi.RoundMode, Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
+pub fn int_arg(String, round~ : @abi.RoundMode, filters~ : Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
 
 pub fn int_type(round? : @abi.RoundMode, allow_base_prefix? : Bool) -> &@extension.TypeExt
 
@@ -99,7 +99,7 @@ pub fn non_empty_filter() -> @extension.FilterDescriptor
 
 pub fn none_type() -> &@extension.TypeExt
 
-pub fn number_arg(String, Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
+pub fn number_arg(String, filters~ : Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
 
 pub fn number_type(allow_base_prefix? : Bool) -> &@extension.TypeExt
 
@@ -111,7 +111,7 @@ pub fn repeat_installer() -> &@kuu-node.InstallerExt
 
 pub fn round_mode_of(String) -> @abi.RoundMode?
 
-pub fn separated_arg(String, String?, &@extension.TypeExt, @abi.RoundMode, @abi.BoolConfig, Array[@abi.FnInvocation], allow_base_prefix? : Bool, merge? : Bool) -> @engine.Node
+pub fn separated_arg(String, separator~ : String?, ty~ : &@extension.TypeExt, int_round~ : @abi.RoundMode, bool_config~ : @abi.BoolConfig, filters~ : Array[@abi.FnInvocation], allow_base_prefix? : Bool, merge? : Bool) -> @engine.Node
 
 pub fn short_combine(String, Array[@extension.ShortEntry], combine? : Bool) -> &@extension.MatcherExt
 
@@ -127,7 +127,7 @@ pub fn trim_filter() -> @extension.FilterDescriptor
 
 pub fn tty_type(String?, cygwin? : Bool) -> &@extension.TypeExt
 
-pub fn typed_arg(String, &@extension.TypeExt, Array[@abi.FnInvocation]) -> @engine.Node
+pub fn typed_arg(String, ty~ : &@extension.TypeExt, filters~ : Array[@abi.FnInvocation]) -> @engine.Node
 
 pub fn unique_array_filter() -> @extension.ArrayFilterDescriptor
 

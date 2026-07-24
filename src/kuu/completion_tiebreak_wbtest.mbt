@@ -22,10 +22,7 @@ test "DR-117 §2.1: two root options — CLI-order last-wins (forward argv)" {
   }
   let args = ["--a", "zsh", "--b", "bash"]
   let outcome = test_resolve(ast, args)
-  assert_eq(
-    dispatch_completion_script(canonical_registry(), outcome),
-    Requested("bash"),
-  )
+  assert_eq(completion_script_request(ast, outcome), Requested("bash"))
 }
 
 ///|
@@ -41,10 +38,7 @@ test "DR-117 §2.1: two root options — CLI-order wins over declaration order (
   }
   let args = ["--b", "bash", "--a", "zsh"]
   let outcome = test_resolve(ast, args)
-  assert_eq(
-    dispatch_completion_script(canonical_registry(), outcome),
-    Requested("zsh"),
-  )
+  assert_eq(completion_script_request(ast, outcome), Requested("zsh"))
 }
 
 ///|
@@ -60,8 +54,5 @@ test "DR-117 §2.1: declaration order does not affect winner (decl [b,a], argv -
   }
   let args = ["--a", "zsh", "--b", "bash"]
   let outcome = test_resolve(ast, args)
-  assert_eq(
-    dispatch_completion_script(canonical_registry(), outcome),
-    Requested("bash"),
-  )
+  assert_eq(completion_script_request(ast, outcome), Requested("bash"))
 }

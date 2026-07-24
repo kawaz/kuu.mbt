@@ -7,6 +7,11 @@
 // は本ファイル (M3)。glue テンプレは spec `templates/` の正本を M2 転写機構
 // (scripts/gen-completion-templates.sh) が `completion_templates.mbt` の String 定数に
 // 落とし、`generate_completion_script()` が呼び出し時に literal 置換する (DR-117 §2.5)。
+//
+// Completion API layers:
+// - candidate computation: `complete`
+// - shell integration: `completion_entry`, `completion_query`, `completion_script_request`,
+//   `generate_completion_script`
 
 ///|
 /// Registry carrier for the `completion_script` capability. Script generation itself is provided
@@ -39,11 +44,11 @@ pub(all) enum CompletionScriptRequest {
 /// the completion_script preset. Script generation itself is intentionally not invoked here — the
 /// orchestrating caller reads the requested shell out of this result and calls
 /// `generate_completion_script()` to obtain the emitted glue text.
-pub fn dispatch_completion_script(
-  registry : @node.Registry,
+pub fn completion_script_request(
+  ast : AtomicAST,
   outcome : ResolvedOutcome,
 ) -> CompletionScriptRequest {
-  if registry.lookup_capability("completion_script") is None {
+  if ast.extensions.lookup_capability("completion_script") is None {
     return Unavailable
   }
   guard outcome is Success(resolved) else { return NotRequested }
@@ -101,8 +106,8 @@ pub(all) enum CompletionEntryResult {
 ///
 /// 引数 (`front_door.parse()` の env / config 注入と同じ流儀 — プロセス env / argv を読むのは
 /// 呼び出し側の責務):
-/// - `ast`: 補完対象アプリの definition (parse_definition で lower 済み)
-/// - `registry`: `canonical_registry()` (or 拡張 registry)。help_query capability の lookup 経路
+/// - `ast`: 補完対象アプリの definition (parse_definition で lower 済み)。補完と help の
+///   capability は `ast` に封入された registry から参照する
 /// - `argv`: プロセス argv 全量 (`argv[0]` = 自身、`argv[1]` = UUID、`argv[2]` = shell 名、
 ///   `argv[3..]` = words)。glue テンプレは形態 A (env プロトコル) でこの配列を組む
 /// - `env`: プロセス環境 map。少なくとも `KUU_COMPLETE` と `KUU_COMPLETE_INDEX` を参照する
@@ -120,7 +125,6 @@ pub(all) enum CompletionEntryResult {
 ///   縮退時 stderr 警告は出さない (findings §7 リスク — library が stderr を持たない設計)
 pub fn completion_entry(
   ast : AtomicAST,
-  registry : @node.Registry,
   argv : Array[String],
   env : Map[String, String],
 ) -> CompletionEntryResult {
@@ -146,7 +150,7 @@ pub fn completion_entry(
     Some(s) => parse_nonneg_int(s)
     None => None
   }
-  Respond(completion_query(ast, registry, words, cword~))
+  Respond(completion_query(ast, words, cword~))
 }
 
 ///|
@@ -204,9 +208,9 @@ pub(all) enum CompletionScriptError {
 ///   `{{...}}` と衝突しないため誤置換しない (findings §2 UXL-Q2=a、README 記法)
 pub fn generate_completion_script(
   shell : String,
-  program_name : String,
-  binary : String,
-  uuid : String,
+  program_name~ : String,
+  binary~ : String,
+  uuid~ : String,
 ) -> Result[String, CompletionScriptError] {
   let template = if shell == "zsh" {
     completion_template_zsh()

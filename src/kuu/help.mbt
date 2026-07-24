@@ -64,13 +64,12 @@ pub(all) enum HelpQueryOutcome {
 /// DR-113 §1/§9 capability dispatch: registry で "help_query" capability の登録を確認し、
 /// 登録済みなら help singleton の invoke ABI を呼ぶ。未登録なら Unavailable を返す。
 pub fn dispatch_help_query(
-  registry : @node.Registry,
   ast : AtomicAST,
   path? : Array[String] = [],
   depth? : HelpDepth = Scope,
   category_mode? : HelpCategoryMode = Default,
 ) -> HelpQueryOutcome {
-  match registry.lookup_capability("help_query") {
+  match ast.extensions.lookup_capability("help_query") {
     None => Unavailable
     Some(_) =>
       match help(ast, path~, depth~, category_mode~) {
