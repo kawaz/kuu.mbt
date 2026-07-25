@@ -4585,6 +4585,268 @@ fn compute_completion_insert_form_element(
   }
 }
 
+// ── DR-120: 露出キー衝突 (1 結果スコープ・1 露出キー・1 値セル) ──────────────────────────────
+
+///|
+/// DR-120 §1 の「値セル」1 個ぶんの席。1 つの結果スコープの中で 1 つの露出キーを占有する。
+/// `space` は hint の出し分け (§5) に使う値空間タグ。
+priv struct ExportSeat {
+  element : String
+  key : String
+  space : String
+}
+
+///|
+/// 構造を持つ席の値空間タグ。値プリミティブの型名とは決して一致しないよう `#` 予約 namespace
+/// (DESIGN §14.1、user name は `check_reserved_name` が弾く) の綴りを使う。command は子の kv
+/// object (DESIGN §2.6 の空 kv `{}`)、named group は行の配列 (DR-044) で、どちらも link で
+/// 合流させられる値空間ではない。
+fn scope_value_space() -> String {
+  "#scope"
+}
+
+///|
+fn group_value_space() -> String {
+  "#group"
+}
+
+///|
+/// 要素の値空間 (DR-120 §5): type 参照名の綴りではなく、type プリセット展開後 (LOWERING §A.5) の
+/// 値セルの型で見る。`flag` は `normalize_surface` が既に `bool` へ差し替え済みだが、宣言層には
+/// normalize を経ない経路 (`add_inheritable_copy` の write-target 等) もあるので明示に畳む。
+/// `count` は short / eq-split の非消費挙動を運ぶために `ensure_entity` まで `count` タグのまま
+/// 持ち回る (`normalize_option` の doc comment) ので、ここで `number` へ畳む — DR-029 が canonical な
+/// link 例に挙げた `-vvv` (count) と `--log-level N` (number) の組を「値空間一致」に落とすのが
+/// §5 の要求そのもの (綴りで判定すると本来 link が正解の組に or を勧めてしまう)。
+fn export_value_space(e : ElementDef) -> String {
+  match e.ty.name() {
+    "flag" => "bool"
+    "count" => "number"
+    other => other
+  }
+}
+
+///|
+/// 名前と結果キー軸から解決後の露出キーを引く (DR-052 §1 の 3 値軸)。`None` は「結果キー軸を
+/// 持たない」= 透過 (§4) — `export_key: null` (wire の `""` も decode 時に Null へ正規化される、
+/// `fixtures/export-key/empty-string-normalizes.json`) と name 無しの層が該当する。
+fn resolved_export_key(name : String, ek : ExportKey) -> String? {
+  match ek {
+    Null => None
+    Key(s) => if s == "" { None } else { Some(s) }
+    _ => if name == "" { None } else { Some(name) }
+  }
+}
+
+///|
+/// DR-120 §4「露出キーを占有する要素 / しない要素」の要素側判定。占有しないのは:
+///
+/// - `alias` 要素 — 値は canonical の実体セルへ流れ自前のセルを持たない (DR-057「結果キーは
+///   canonical のみ」)
+/// - `global` installer が子孫スコープへ置いた入口コピー (`link_depth > 0`) — 宣言スコープの
+///   セルへ合流する入口であり、コピー先スコープに新しいセルを作らない (DESIGN §11.3)
+/// - 値セルも子も持たない要素 — `dd` (DR-064 §5: name はトリガ綴り軸にのみ効き `export_key` を
+///   書いても結果に何も現れない)、裸 exact leaf (`is_exact`、DR-063 A.1 — name はトリガ綴り)、
+///   `type: "none"` (DR-089 の空値空間。`fixtures/value-typing/none-value-space.json` が
+///   「発火しても結果に痕跡を残さない」を pin 済み)、`config_file` の内部セル (DR-050 —
+///   `fixtures/value-sources/config/*` の result に現れない)
+/// - 結果キー軸を持たない要素 (`export_key: null` / name 無し) — 透過 (`resolved_export_key`)
+///
+/// 逆に `inheritable` が祖先スコープへ置く write-target は参加する (DR-059 §5 / DESIGN §11.3):
+/// `add_inheritable_copy` は `link_depth` を立てずに要素名共有の実エントリを積むので、この
+/// 判定を素通りして祖先スコープの席になる。
+fn export_seat_key(e : ElementDef) -> String? {
+  if e.is_alias || e.link_depth > 0 || e.is_dd || e.is_exact || e.is_config_file {
+    return None
+  }
+  if e.ty.name() == "none" {
+    return None
+  }
+  resolved_export_key(e.name, e.export_key)
+}
+
+///|
+/// `c` が alias 宣言由来の command copy か。alias command の結果キーは canonical へ寄せられる
+/// (DR-057 §2 — `desugar_aliases` が `export_key: Key(<target>)` で積む) ため、素朴に数えると
+/// canonical と必ず衝突する。ElementDef の `is_alias` に相当するマーカーが CommandDef には無いが、
+/// `desugar_aliases` は AliasDef を宣言層に残したまま copy を push する (宣言層は空にしない) ので、
+/// 同じ scope の `aliases` から「alias 名 + canonical への export_key」の組で復元できる。
+fn command_is_alias_copy(def : Definition, c : CommandDef) -> Bool {
+  for a in def.aliases {
+    let alias_name = match a.name {
+      Some(n) => n
+      None => a.target
+    }
+    if alias_name == c.name && c.export_key == Key(a.target) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// DR-120 §1/§5: 宣言層 (全 installer の宣言層寄与を適用し終えた面) を結果スコープ単位で歩き、
+/// 1 つの露出キーに 2 つ以上の値セルが着地する構成を definition-error として全列挙する。
+/// 検査は構造的で経路の到達可能性を見ない (§6) — `or` の別枝・`exclusive_group` の兄弟・排他の
+/// 別 command 配下から昇格露出する子も、同じスコープに同じキーで並べば対象になる。
+fn collect_export_key_collisions(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  let seats : Array[ExportSeat] = []
+  gather_export_seats(def, seats, out)
+  report_export_key_collisions(seats, out)
+}
+
+///|
+/// `def` が表す 1 結果スコープぶんの席を `seats` へ積む。入れ子の結果スコープ (通常 command /
+/// 名前を持つ group) は自前の席集合で再帰し、透過な層 (`export_key: null` の command / group) の
+/// 子は親スコープへ昇格する (DR-052 §2/§3、`fixtures/export-key/command-promote.json`)。
+fn gather_export_seats(
+  def : Definition,
+  seats : Array[ExportSeat],
+  out : Array[DefError],
+) -> Unit {
+  for e in def.options {
+    gather_element_seats(e, seats, out)
+  }
+  for e in def.positionals {
+    gather_element_seats(e, seats, out)
+  }
+  for c in def.commands {
+    if command_is_alias_copy(def, c) {
+      continue
+    }
+    match resolved_export_key(c.name, c.export_key) {
+      // スコープ生成要素は結果キーを占有する 1 セル (DR-120 §4 / DESIGN §2.6 — 選ばれたら子が
+      // 全部 absent でも空 kv `{}` を持つ)。子は 1 段ネストした別の結果スコープ。
+      Some(key) => {
+        seats.push({ element: c.name, key, space: scope_value_space() })
+        collect_export_key_collisions(c.body, out)
+      }
+      // 透過 command: スコープキーが落ち、子の結果キー持ちが親スコープへ昇格する。
+      None => gather_export_seats(c.body, seats, out)
+    }
+  }
+}
+
+///|
+/// 1 要素ぶんの席を積む。消費文法の軸 (`ElementBody`, MDR-004) ごとに辿り方が変わり、
+/// `build_export_map` の `collect_export_body` と同じ木を歩く:
+///
+/// - `Cell` / `Enum` — 単一の named cell。自分の席だけを積む
+/// - `Or` — 構造 or の wrapper は自前の結果キーを持たず、枝の leaf が親の結果スコープへ**平坦に**
+///   露出する (`fixtures/constraints-parse/required-structural-or-branch.json` の result が
+///   `{num:5}` / `{flag:true}` と平坦であることが観測面の裏)。枝を横断して leaf を親スコープへ積む
+/// - `Group` — named group は 1 段ネストした結果スコープ (`fixtures/export-key/transparent-seq.json`
+///   の `{xs:[...]}` / `fixtures/repeat-parse/group-trailing-positional.json` の
+///   `{grp:[{gflag:"a"}]}`)。wrapper が親スコープの席を取り、内側は別スコープとして検査する。
+///   wrapper が透過なら内側が親スコープへ昇格する
+fn gather_element_seats(
+  e : ElementDef,
+  seats : Array[ExportSeat],
+  out : Array[DefError],
+) -> Unit {
+  // 非参加要素は自分も内側も見ない — alias / global コピーは canonical 側と同じ構造の写しなので、
+  // 内側まで数えると canonical の席が二重に立つ。
+  if e.is_alias || e.link_depth > 0 {
+    return
+  }
+  match e.body {
+    Cell | Enum(_) =>
+      match export_seat_key(e) {
+        Some(key) =>
+          seats.push({ element: e.name, key, space: export_value_space(e) })
+        None => ()
+      }
+    Or(branches) =>
+      for br in branches {
+        for it in br.items {
+          gather_element_seats(it, seats, out)
+        }
+      }
+    Group(items) =>
+      match export_seat_key(e) {
+        Some(key) => {
+          seats.push({ element: e.name, key, space: group_value_space() })
+          let inner : Array[ExportSeat] = []
+          for it in items {
+            gather_element_seats(it, inner, out)
+          }
+          report_export_key_collisions(inner, out)
+        }
+        None =>
+          for it in items {
+            gather_element_seats(it, seats, out)
+          }
+      }
+  }
+}
+
+///|
+/// 1 結果スコープぶんの席集合から衝突を error として積む。粒度は DR-120 §5: 衝突に関与する要素
+/// ごとに 1 件 (`element` = 当該要素) を全列挙する (衝突グループ単位の代表 1 件にすると、比較単位が
+/// `(element, kind)` の集合である以上 (DR-082 §1) 衝突相手が expect から読めなくなる)。
+fn report_export_key_collisions(
+  seats : Array[ExportSeat],
+  out : Array[DefError],
+) -> Unit {
+  let reported : Array[String] = []
+  for seat in seats {
+    if str_in(reported, seat.key) {
+      continue
+    }
+    reported.push(seat.key)
+    let group : Array[ExportSeat] = []
+    for other in seats {
+      if other.key == seat.key {
+        group.push(other)
+      }
+    }
+    if group.length() < 2 {
+      continue
+    }
+    let message = "'" +
+      seat.key +
+      "' is produced as a result key by " +
+      group.length().to_string() +
+      " different entries in the same scope"
+    let hint = export_collision_hint(group)
+    for seat_in_group in group {
+      out.push(
+        def_err(seat_in_group.element, ExportKeyCollision, message, hint),
+      )
+    }
+  }
+}
+
+///|
+/// DR-120 §5: hint が提示する解決手段は衝突要素の**値空間**で決まる — 一致するなら「同じ値を複数の
+/// 入口から設定したい」と読んで `link` を、一致しないなら「1 つの結果キーに複数のタイプを相乗り
+/// させたい」と読んで `or` を提示する。3 要素以上の衝突では全要素の値空間が一致する場合にのみ
+/// link 側。どちらの場合も「そもそも別のキーにしたい」ための `export_key` 分離を副次の道として
+/// 添える (型からは判別できないので出し分けの条件には使わない)。
+///
+/// 文言そのものは規範ではない (DR-054 §射程外 / DR-082 §1 が message・hint を比較単位から外して
+/// いるため、規範化しても conformance で検証できない)。規範なのは「どの手段を提示するか」= 素材の
+/// 選択規則だけで、綴り方はレンダラ / 実装の関心。定義に書く語 (`link` / `or` / `export_key`) と
+/// 直し方を示し、内部語彙 (値セル / 実体 / 宣言層) は出さない。
+fn export_collision_hint(group : Array[ExportSeat]) -> String {
+  let mut same_space = true
+  for seat_in_group in group {
+    if seat_in_group.space != group[0].space {
+      same_space = false
+    }
+  }
+  if same_space {
+    "if these should all set the same value, keep one entry and point the others at it with `link: \"" +
+    group[0].element +
+    "\"`; otherwise give them different `export_key` values"
+  } else {
+    "if one result key should accept every form, write them as branches of a single entry's `or`; otherwise give them different `export_key` values"
+  }
+}
+
 ///|
 fn lower_definition_snapshot_impl(
   def0 : Definition,
@@ -4637,13 +4899,29 @@ fn lower_definition_snapshot_impl(
     run_installer_fixpoint(sb, plan.apply_steps, fn(builder) {
       ensure_entities(builder, has_cf)
     }) {
-    Ok(scope) =>
-      Ok({
-        scope,
-        declaration: def,
-        completion_insert_form: compute_completion_insert_form(def),
-      })
-    Err(errors) => Err(errors)
+    // DR-120 §5: 露出キー衝突の検査面は「全 installer の宣言層寄与を適用し終えた宣言層」
+    // (help_query capability が読む面と同じ、DESIGN §15.15) — `commands` / `global` /
+    // `inheritable` / `alias` の宣言的コピーを含み、lowered 産物は見ない。`def` は fixpoint が
+    // その寄与を書き込み終えた declaration snapshot そのものなので、fixpoint の後に検査する。
+    // 打ち切りはしない (DR-054 §4 の全列挙原則) ため、fixpoint 自身が error を返した場合も
+    // 同じ面で衝突を数えて 1 つの list に足す。
+    Ok(scope) => {
+      let collisions : Array[DefError] = []
+      collect_export_key_collisions(def, collisions)
+      if collisions.length() > 0 {
+        Err(collisions)
+      } else {
+        Ok({
+          scope,
+          declaration: def,
+          completion_insert_form: compute_completion_insert_form(def),
+        })
+      }
+    }
+    Err(errors) => {
+      collect_export_key_collisions(def, errors)
+      Err(errors)
+    }
   }
 }
 

@@ -4368,3 +4368,186 @@ test "ensure_entity: plain @builtins.bool_type() は @engine.Entity.default_valu
     abort("entity 'flg' not found in scope.entities")
   }
 }
+
+// ── DR-120: 露出キー衝突の hint 出し分けと参加/非参加軸 ────────────────────────────────
+//
+// fixture の比較単位は `(element, kind)` の集合で message / hint を比較しない (DR-082 §1) ため、
+// DR-120 §5 が規範化する「どの手段を提示するか」(値空間一致 → link / 不一致 → or) は fixture から
+// 見えない軸。§4 の参加/非参加のうち global コピー・inheritable 祖先 write-target も、fixture 表現
+// では衝突相手を作れないので同じくここで固定する。
+
+///|
+/// 衝突 error の hint を 1 本引く (element 名で特定)。見つからなければ abort。
+fn export_collision_hint_for(
+  errs : Array[@abi.DefError],
+  element : String,
+) -> String {
+  for e in errs {
+    if e.element == element && e.kind == @abi.ExportKeyCollision {
+      return e.hint
+    }
+  }
+  abort("no export-key-collision error for element '" + element + "'")
+}
+
+///|
+/// DR-120 §5: 衝突した値セルの値空間が一致するなら hint は `link` を提示する (「同じ値を複数の入口
+/// から設定したい」= 入口 N : セル 1)。`flag` と `bool` は type プリセット展開後 (LOWERING §A.5) に
+/// 同じ bool セルへ落ちるので一致側 — 綴り (`"flag"` vs `"bool"`) で判定する実装をここが落とす。
+test "DR-120 §5: colliding cells with the same value space get a link hint (flag vs bool)" {
+  let a = {
+    ..el("a", @builtins.flag_type()),
+    export_key: @engine.ExportKey::key("x"),
+  }
+  let b = {
+    ..el("b", @builtins.bool_type()),
+    export_key: @engine.ExportKey::key("x"),
+  }
+  let def : @engine.Definition = { ..empty_def(), options: [a, b] }
+  match test_lower_definition(def, all_installers()) {
+    Ok(_) => abort("expected Err (two cells claim result key 'x', DR-120 §1)")
+    Err(errs) => {
+      let hint = export_collision_hint_for(errs, "a")
+      assert_true(hint.contains("link"), msg="same value space must offer link")
+      assert_true(
+        !hint.contains("`or`"),
+        msg="same value space must not offer the or seat",
+      )
+    }
+  }
+}
+
+///|
+/// DR-120 §5: `count` と `number` も展開後は同じ number セルなので一致側 — これは DR-029 が
+/// canonical な link 例に挙げた `-vvv` (count) と `--log-level N` (number) そのものであり、綴りで
+/// 判定すると本来 link が正解の組に or を勧めることになる。
+test "DR-120 §5: count and number share a value space, so the hint offers link" {
+  let v = {
+    ..el("verbose", @builtins.count_type()),
+    export_key: @engine.ExportKey::key("level"),
+  }
+  let n = {
+    ..el("log_level", @builtins.number_type()),
+    export_key: @engine.ExportKey::key("level"),
+  }
+  let def : @engine.Definition = { ..empty_def(), options: [v, n] }
+  match test_lower_definition(def, all_installers()) {
+    Ok(_) =>
+      abort("expected Err (two cells claim result key 'level', DR-120 §1)")
+    Err(errs) => {
+      let hint = export_collision_hint_for(errs, "verbose")
+      assert_true(
+        hint.contains("link"),
+        msg="count/number collapse to one value space",
+      )
+    }
+  }
+}
+
+///|
+/// DR-120 §5: 値空間が一致しないなら hint は `or` 席を提示する (「1 つの結果キーに複数のタイプを
+/// 相乗りさせたい」= セル 1 : 枝 N)。
+test "DR-120 §5: colliding cells with different value spaces get an or hint" {
+  let s = {
+    ..el("name", @builtins.string_type()),
+    export_key: @engine.ExportKey::key("who"),
+  }
+  let n = {
+    ..el("id", @builtins.number_type()),
+    export_key: @engine.ExportKey::key("who"),
+  }
+  let def : @engine.Definition = { ..empty_def(), options: [s, n] }
+  match test_lower_definition(def, all_installers()) {
+    Ok(_) =>
+      abort("expected Err (two cells claim result key 'who', DR-120 §1)")
+    Err(errs) => {
+      let hint = export_collision_hint_for(errs, "name")
+      assert_true(hint.contains("`or`"), msg="split value spaces must offer or")
+      assert_true(
+        !hint.contains("link"),
+        msg="split value spaces must not offer link",
+      )
+    }
+  }
+}
+
+///|
+/// DR-120 §4: `global` installer が子孫スコープへ置く入口コピーは、宣言スコープのセルへ合流する
+/// 入口でありコピー先スコープに新しいセルを作らないので検査に参加しない (DESIGN §11.3)。fixture
+/// では表現できない軸 — コピーが参加すると、子スコープが同じ結果キーを名乗る自前セルを持つ構成で
+/// 偽陽性になる (`copy_global_into` はトリガが重ならなければ shadow せずコピーする)。
+test "DR-120 §4: a global entry copy in a child scope claims no result key" {
+  let shared = el(
+    "shared",
+    @builtins.string_type(),
+    long=List([":set"]),
+    is_global=true,
+  )
+  // 子スコープの自前セル: 別名・別トリガ (= global コピーは shadow されず実際に置かれる) だが、
+  // 結果キーはコピーと同じ `shared`。
+  let child_own = {
+    ..el("own", @builtins.string_type(), long=List([":set"])),
+    export_key: @engine.ExportKey::key("shared"),
+  }
+  let child : @engine.Definition = { ..empty_def(), options: [child_own] }
+  let def : @engine.Definition = {
+    ..empty_def(),
+    options: [shared],
+    commands: [
+      { name: "sub", body: child, export_key: @engine.ExportKey::unset() },
+    ],
+  }
+  match test_lower_definition(def, all_installers()) {
+    Ok(_) => ()
+    Err(errs) =>
+      abort(
+        "global entry copies must not claim a result key in the copy scope: " +
+        deferrs_str(errs),
+      )
+  }
+}
+
+///|
+/// DR-120 §4 の対極: `inheritable` が祖先スコープへ置く write-target は、その祖先スコープで実際に
+/// 結果キーを占有する (DESIGN §11.3 / DR-059 §5) ので**参加する**。祖先が同じ結果キーを自前で
+/// 名乗っていれば definition-error になる — 参加/非参加を一律「installer が置いたコピーは無視」で
+/// 実装するとここが落ちる (global との非対称が本質)。
+test "DR-120 §4: an inheritable ancestor write-target does claim its result key" {
+  // 祖先の自前セル: 名前は別 (`lifetime`) だが結果キーは `ttl`。
+  let ancestor_own = {
+    ..el("lifetime", @builtins.number_type(), long=List([":set"])),
+    export_key: @engine.ExportKey::key("ttl"),
+  }
+  // 子の inheritable `ttl` → 祖先へ `--socket-ttl` 綴りの write-target (要素名 `ttl` 共有) が置かれ、
+  // 祖先スコープで結果キー `ttl` を占有する。
+  let child_inheritable = {
+    ..el("ttl", @builtins.number_type(), long=List([":set"])),
+    is_inheritable: true,
+  }
+  let child : @engine.Definition = {
+    ..empty_def(),
+    options: [child_inheritable],
+  }
+  let def : @engine.Definition = {
+    ..empty_def(),
+    options: [ancestor_own],
+    commands: [
+      { name: "socket", body: child, export_key: @engine.ExportKey::unset() },
+    ],
+  }
+  match test_lower_definition(def, all_installers()) {
+    Ok(_) =>
+      abort(
+        "expected Err: the inheritable write-target claims result key 'ttl' in the ancestor scope alongside a same-keyed own cell (DR-120 §4)",
+      )
+    Err(errs) => {
+      let mut flagged = 0
+      for e in errs {
+        if e.kind == @abi.ExportKeyCollision {
+          flagged = flagged + 1
+        }
+      }
+      assert_eq(flagged, 2)
+    }
+  }
+}

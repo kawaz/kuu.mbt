@@ -125,6 +125,7 @@ pub(all) enum DefErrorKind {
   ZeroProgress
   ConfigCycle
   InvalidArgument
+  ExportKeyCollision
 } derive(Eq, @debug.Debug)
 
 pub(all) enum DefaultFnCall {

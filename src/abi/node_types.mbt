@@ -16,6 +16,11 @@ pub(all) enum DefErrorKind {
   // from InvalidRange (a COMBINATION of attributes is out of range, e.g. repeat min > max):
   // InvalidArgument is about a single value's own internal validity.
   InvalidArgument
+  // two or more DISTINCT value cells resolve to the SAME exposed key in the SAME result scope
+  // (DR-120 §1: 1 結果スコープ・1 露出キー・1 値セル). Structural — the check never asks whether the
+  // cells can co-expose at runtime (DR-120 §6), so `or` branches / `exclusive_group` siblings /
+  // mutually exclusive command subtrees are all caught.
+  ExportKeyCollision
 } derive(Eq, Debug)
 
 ///|
