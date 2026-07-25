@@ -162,19 +162,59 @@ pub fn completion_template_bash() -> String {
     #|# 実装リポは vendoring 時に literal 置換する。
     #|#
     #|# 対象 shell: bash 4.4+ (fully-featured) / bash 3.2 (macOS 同梱、縮退経路)
-    #|# 完成度: 骨格 (実機検証は M4。TRANSLATION.md status 参照)
+    #|# 完成度: 実機確認済 (bash 5.3.9 / 3.2.57 — TRANSLATION.md status 参照)
     #|
     #|_{{PROGRAM_NAME}}() {
     #|  local uuid={{UUID}}
     #|  local binary={{BINARY}}
     #|
     #|  # words / cword 素材 (TRANSLATION.md words/cword)
-    #|  # COMP_WORDS は COMP_WORDBREAKS で `--flag=value` 等が [--flag, =, value] へ割れる。
-    #|  # 応答契約 (DR-117 §3.4) は「shell が見ている行の全量トークン列」なので、
-    #|  # 割れたトークンは glue 側で再結合する (bash-completion 系の定石)。
-    #|  # TODO(M4): 再結合ロジックを実機検証 — 現状は素の COMP_WORDS を渡す骨格。
-    #|  local -a words=("${COMP_WORDS[@]}")
-    #|  local cword="${COMP_CWORD}"
+    #|  # COMP_WORDS は COMP_WORDBREAKS (default `" \t\n\"'@><=;|&(:"`) の各 char で
+    #|  # 分割される: `--flag=value` → [--flag, =, value] / `http://x` → [http, :, //x]。
+    #|  # DR-117 §3.4 末尾の words 契約は「shell が見ている行の全量トークン列」なので、
+    #|  # 割れた breakchar と隣接トークンを glue 側で再結合してから binary へ渡す
+    #|  # (bash-completion `_get_comp_words_by_ref` と同分担、clap / argcomplete と同型)。
+    #|  local -a words=()
+    #|  local cword=0
+    #|  {
+    #|    local __i __n=${#COMP_WORDS[@]} __j=-1 __in_break=0
+    #|    local __ccur=$COMP_CWORD
+    #|    # COMP_WORDBREAKS から空白系 (space/tab/newline) を除いた集合が実際の分割 char。
+    #|    local __excl="${COMP_WORDBREAKS//[[:space:]]/}"
+    #|    local __w
+    #|    for (( __i=0; __i<__n; __i++ )); do
+    #|      __w="${COMP_WORDS[$__i]}"
+    #|      if [[ ${#__w} -eq 0 ]]; then
+    #|        # 末尾空白由来の空 word: 新規 word として独立 (カーソルの「新しい位置」)
+    #|        words+=("$__w"); __j=$((__j+1))
+    #|        (( __i <= __ccur )) && cword=$__j
+    #|        __in_break=0
+    #|      elif [[ ${#__w} -eq 1 && "$__excl" == *"$__w"* ]]; then
+    #|        # 単一 break char: 直前 word に連結、以降 in_break=1 で次 word も継続連結
+    #|        if (( __j < 0 )); then
+    #|          words+=("$__w"); __j=0
+    #|        else
+    #|          words[$__j]="${words[$__j]}$__w"
+    #|        fi
+    #|        (( __i <= __ccur )) && cword=$__j
+    #|        __in_break=1
+    #|      else
+    #|        # 通常 word: in_break=1 なら直前と連結、そうでなければ独立
+    #|        if (( __in_break )); then
+    #|          if (( __j < 0 )); then
+    #|            words+=("$__w"); __j=0
+    #|          else
+    #|            words[$__j]="${words[$__j]}$__w"
+    #|          fi
+    #|          (( __i <= __ccur )) && cword=$__j
+    #|        else
+    #|          words+=("$__w"); __j=$((__j+1))
+    #|          (( __i <= __ccur )) && cword=$__j
+    #|        fi
+    #|        __in_break=0
+    #|      fi
+    #|    done
+    #|  }
     #|
     #|  # 形態 A: env プロトコル (DR-117 §3.1)
     #|  local response
@@ -227,7 +267,8 @@ pub fn completion_template_bash() -> String {
     #|
     #|  # 順序保持: bash 4.4+ は compopt -o nosort、3.2 は縮退 (sort されるが受容)。
     #|  # bash 3.2 は complete -F 内 compopt に nosort オプションが無いため、順序を諦める。
-    #|  # TODO(M4): compopt の可用性判定を bash version 直接判定でなく機能検出で書き直す。
+    #|  # 可用性判定は bash version 直接判定でなく `compopt +o filenames` の成否で行う
+    #|  # (機能検出、DR-117 §3.4 shell 差分の吸収と同思想)。
     #|  if compopt +o filenames >/dev/null 2>&1; then
     #|    compopt -o nosort 2>/dev/null || true          # 4.4+ で有効、3.2 は失敗して無視
     #|  fi
