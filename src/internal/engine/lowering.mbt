@@ -722,10 +722,33 @@ pub fn or_branch_node(br : OrBranch) -> Node {
 }
 
 ///|
-fn seq_value_node(e : ElementDef, items : Array[ElementDef]) -> Node {
-  let nodes : Array[Node] = []
-  if e.multiple {
-    nodes.push(Bind("#row", Bool(false)))
+/// DESIGN §2.4/§2.5: 結果キーを持つ子が 1 つでも並ぶ seq は、その seq 自身の結果スコープに子の
+/// キーが直接乗る (= 1 個の kv 行) — 「name を持つ子が並べば結果が自然に kv になる」。子が
+/// 1 つも結果キーを持たないときだけ §5.1 の「子の値の配列」= 添字要素の配列になる (DR-052 §2 の
+/// seq 文脈の透過、DR-044 §2 の from_entries entries 用法 `[[k,v],...]` が乗る座)。
+///
+/// `is_exact` の子 (裸リテラル = 照合消費のみ) は値セルを持たないので、name を持っていても
+/// 結果キーの数には入れない (`element_head` が `Exact` へ落とし何も bind しない)。
+fn seq_row_is_kv(items : Array[ElementDef]) -> Bool {
+  for item in items {
+    if !item.is_exact &&
+      resolved_export_key(item.name, item.export_key) is Some(_) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// 配列形 (`seq_row_is_kv` が false) のときだけ挟む添字スコープ + 配列マーカー。kv 形では子の
+/// binding が seq の結果スコープへ直接落ちる (ref テンプレ経由の同じ消費文法 —
+/// `or_branch_node` / `ref_row_head` — と同じ形、DR-078 §1)。
+fn seq_child_nodes(items : Array[ElementDef], nodes : Array[Node]) -> Unit {
+  if seq_row_is_kv(items) {
+    for item in items {
+      nodes.push(element_head(item))
+    }
+    return
   }
   nodes.push(Bind("[]", Bool(false)))
   let mut index = 0
@@ -733,6 +756,15 @@ fn seq_value_node(e : ElementDef, items : Array[ElementDef]) -> Node {
     nodes.push(Scoped("#" + index.to_string(), element_head(item)))
     index = index + 1
   }
+}
+
+///|
+fn seq_value_node(e : ElementDef, items : Array[ElementDef]) -> Node {
+  let nodes : Array[Node] = []
+  if e.multiple {
+    nodes.push(Bind("#row", Bool(false)))
+  }
+  seq_child_nodes(items, nodes)
   Scoped(e.name, Seq(nodes))
 }
 
@@ -743,38 +775,38 @@ fn seq_eq_value_node(
   items : Array[ElementDef],
 ) -> Node? {
   guard items.length() > 0 else { return None }
+  let is_kv = seq_row_is_kv(items)
   let nodes : Array[Node] = []
   if e.multiple {
     nodes.push(Bind("#row", Bool(false)))
   }
-  nodes.push(Bind("[]", Bool(false)))
+  if !is_kv {
+    nodes.push(Bind("[]", Bool(false)))
+  }
   let first = items[0]
-  nodes.push(
-    Scoped(
-      "#0",
-      NativeMatch(
-        eq_split(e.long_prefix, [
-          eq_entry(
-            key,
-            first.name,
-            configured_type(
-              first.ty,
-              first.int_round,
-              first.bool_config,
-              allow_base_prefix=first.allow_base_prefix,
-            ),
-            first.piece_filters,
-            first.separator,
-            merge=first.accumulator == Some("merge"),
-            deprecated=e.deprecated,
-          ),
-        ]),
+  let first_node : Node = NativeMatch(
+    eq_split(e.long_prefix, [
+      eq_entry(
+        key,
+        first.name,
+        configured_type(
+          first.ty,
+          first.int_round,
+          first.bool_config,
+          allow_base_prefix=first.allow_base_prefix,
+        ),
+        first.piece_filters,
+        first.separator,
+        merge=first.accumulator == Some("merge"),
+        deprecated=e.deprecated,
       ),
-    ),
+    ]),
   )
+  nodes.push(if is_kv { first_node } else { Scoped("#0", first_node) })
   let mut index = 1
   while index < items.length() {
-    nodes.push(Scoped("#" + index.to_string(), element_head(items[index])))
+    let head = element_head(items[index])
+    nodes.push(if is_kv { head } else { Scoped("#" + index.to_string(), head) })
     index = index + 1
   }
   Some(Scoped(e.name, Seq(nodes)))

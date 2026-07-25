@@ -623,17 +623,13 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
 
 ///|
 /// An option-level seq is one value slot whose children consume consecutive
-/// tokens (DESIGN §1.1/§5.1). 名前を持つ子は結果キーを保つ (DESIGN §2.5 / DR-052 §1) — 直上の
-/// ref-template 版 (`{r,g,b}` が 1 個の kv 行になる) と同じ規則で、`dec_seq_structural` が
-/// 子の `export_key` を null へ潰さないことの観測面。
-///
-/// **未決** (統括裁定待ち): 今の lowering は子ごとに `Scoped("#i")` を挟む (`seq_value_node`) ため
-/// 結果が「単一キー object の配列」`[{path:p},{value:v}]` になる。DESIGN §2.5 の例
-/// (`[{name:"r"},{name:"g"},{name:"b"}] → {r,g,b}`) と
-/// `fixtures/multiple-parse/ref-rows-append.json` が pin する ref-template 版は **1 個の kv**
-/// `{path:p, value:v}` なので、同じ wire 構文が経路で違う形を返している。ここでは現状の lowering の
-/// 形を素直に pin するに留め、どちらへ寄せるかは spec 側の裁定に委ねる。
-test "option seq consumes every child token and returns their value array" {
+/// tokens (DESIGN §1.1/§5.1). 結果キーを持つ子が並べば、その seq の値は**子ごとの object の配列では
+/// なく 1 個の kv** になる (DESIGN §2.5「name を持つ子が並べば結果が自然に kv になる」/ §2.4 の
+/// 露出規則 — 深い name 層は止めた層が作る子スコープに属する)。同じ規則を ref-template 経由で
+/// pin しているのが `fixtures/repeat-parse/ref-template-no-repeat-degenerate.json` の
+/// `single-rgb-degenerate-row` (`{hlcolor: {r,g,b}}`) — inline `seq` と `ref` は同じ消費文法の
+/// 別の書き口 (DR-078 §1) なので結果形も一致する。
+test "option seq folds its named children into one kv row" {
   let src =
     #|{"options": [{
     #|  "name": "config_file",
@@ -666,10 +662,10 @@ test "option seq consumes every child token and returns their value array" {
       [
         (
           "config_file",
-          @abi.Array(
+          @abi.Object(
             [
-              @abi.Object([("path", @abi.Scalar(@abi.String("p")))]),
-              @abi.Object([("value", @abi.Scalar(@abi.String("v")))]),
+              ("path", @abi.Scalar(@abi.String("p"))),
+              ("value", @abi.Scalar(@abi.String("v"))),
             ]
           ),
         ),
@@ -677,7 +673,7 @@ test "option seq consumes every child token and returns their value array" {
     ) => ()
     other =>
       fail(
-        "option seq should produce config_file=[{path:p},{value:v}], got " +
+        "option seq should produce config_file={path:p, value:v}, got " +
         render_rval_sorted(other),
       )
   }
@@ -717,10 +713,10 @@ test "option seq supports three children and equal-separated first child" {
   let expected : @abi.ResultValue = @abi.Object([
     (
       "triple",
-      @abi.Array([
-        @abi.Object([("a", @abi.Scalar(@abi.String("x")))]),
-        @abi.Object([("b", @abi.Scalar(@abi.String("y")))]),
-        @abi.Object([("c", @abi.Scalar(@abi.String("z")))]),
+      @abi.Object([
+        ("a", @abi.Scalar(@abi.String("x"))),
+        ("b", @abi.Scalar(@abi.String("y"))),
+        ("c", @abi.Scalar(@abi.String("z"))),
       ]),
     ),
   ])
@@ -762,7 +758,10 @@ test "option seq reports missing_operand when a child token is absent" {
 }
 
 ///|
-test "option seq multiple appends one child-value array per firing" {
+/// 保証 (DR-034 §6.2 / DR-044 §1): `multiple` が積む単位は**発火 1 回ぶんの値** = seq 1 行の kv で
+/// あり、発火ごとに余分な配列階層は付かない。`fixtures/multiple-parse/ref-rows-append.json` の
+/// `two-fires-branch-append` (`{hlcolors: [{colorname:"red"}, {r,g,b}]}`) の inline `seq` 版。
+test "option seq multiple appends one kv row per firing" {
   let src =
     #|{"options": [{
     #|  "name": "pair",
@@ -796,14 +795,76 @@ test "option seq multiple appends one child-value array per firing" {
       (
         "pair",
         @abi.Array([
-          @abi.Array([
-            @abi.Object([("left", @abi.Scalar(@abi.String("a")))]),
-            @abi.Object([("right", @abi.Scalar(@abi.String("b")))]),
+          @abi.Object([
+            ("left", @abi.Scalar(@abi.String("a"))),
+            ("right", @abi.Scalar(@abi.String("b"))),
           ]),
-          @abi.Array([
-            @abi.Object([("left", @abi.Scalar(@abi.String("c")))]),
-            @abi.Object([("right", @abi.Scalar(@abi.String("d")))]),
+          @abi.Object([
+            ("left", @abi.Scalar(@abi.String("c"))),
+            ("right", @abi.Scalar(@abi.String("d"))),
           ]),
+        ]),
+      ),
+    ]),
+  )
+}
+
+///|
+/// 保証 (対極、DESIGN §5.1 / DR-052 §2 / DR-044 §2): 結果キーを持つ子が 1 つも無い seq は
+/// **配列形のまま** — 直上 2 本が固定する kv 畳み込みは「結果キーを持つ子が並ぶとき」の規則で
+/// あって、seq という構造そのものが kv になるのではない。この配列形が from_entries の entries
+/// 用法 (`[[k,v],...]` → object) が乗る座であり (DR-044 §2 の第 1 用法)、畳み込みを無条件に
+/// 適用すると壊れる面。
+test "option seq keeps the array form when no child carries a result key" {
+  let anon =
+    #|{"options": [{"name": "pair", "long": true, "seq": [
+    #|  {"type": "string"}, {"type": "string"}
+    #|]}]}
+  let entries =
+    #|{"options": [{"name": "entries", "long": true,
+    #|  "multiple": {"accumulator": "append", "collector": {"from_entries": "entries"}},
+    #|  "seq": [{"type": "string"}, {"type": "string"}]
+    #|}]}
+  fn result_of(src : String, args : Array[String]) -> @abi.ResultValue raise {
+    let ast = match parse_definition(@json.parse(src)) {
+      Ok(value) => value
+      Err(_) => {
+        fail("parse_definition failed")
+        panic()
+      }
+    }
+    let parsed = parse_legacy(ast, args)
+    match resolve_legacy(ast, parsed, args) {
+      @engine.Success(bindings) => output_legacy(ast, effects=bindings).result
+      other => {
+        fail("anonymous option seq should parse, got " + render_outcome(other))
+        panic()
+      }
+    }
+  }
+
+  // 無名 2 子 = 子の値の配列 (DESIGN §5.1)。
+  assert_eq(
+    result_of(anon, ["--pair", "a", "1"]),
+    @abi.Object([
+      (
+        "pair",
+        @abi.Array([
+          @abi.Scalar(@abi.String("a")),
+          @abi.Scalar(@abi.String("1")),
+        ]),
+      ),
+    ]),
+  )
+  // その配列形の上に from_entries entries 用法が乗る (DR-044 §2)。
+  assert_eq(
+    result_of(entries, ["--entries", "a", "1", "--entries", "b", "2"]),
+    @abi.Object([
+      (
+        "entries",
+        @abi.Object([
+          ("a", @abi.Scalar(@abi.String("1"))),
+          ("b", @abi.Scalar(@abi.String("2"))),
         ]),
       ),
     ]),
