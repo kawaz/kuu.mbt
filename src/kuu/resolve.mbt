@@ -1031,6 +1031,59 @@ fn find_export_collisions(
 }
 
 ///|
+/// Every DR-073 view of `binds` under `collisions`: one entry per claimant combination
+/// (`claimant_combinations`), pairing THAT view's surviving bindings with its §1 claimants面
+/// (exposed key → occupying entity name, one pair per group in group order).
+///
+/// A view keeps every binding except the RIVALS at a group's (path, exposed key): a binding whose
+/// own exposed key — `exposed_key_of`, the DR-052 §1 3-way resolution, so identity exposure
+/// (export_key 未指定 → name 由来のキー) counts exactly as a `@engine.Key` mapping does — lands on
+/// that group's key at that path while its entity name is not the combo's chosen claimant (DR-073
+/// §2: the entity name is the sole cross-view-stable identifier, since value/source can coincide).
+/// Keeping a rival alive would let both claimants' bindings reach the same result key, where
+/// `build_result`'s last-wins (DR-015) collapses the views to one declaration-order-dependent value.
+///
+/// **Single source of truth**: the production promotion (`promote_collision_ambiguous_from`) and the
+/// whitebox `build_interpretations` must both project through here. A second copy of this judgement
+/// lets a whitebox test go green over a broken production path — the two only differ in what they do
+/// with a view (an `@engine.AmbiguousInterpretation` vs an `apply_export_keys` + `build_result`
+/// rendering), never in which bindings the view holds.
+fn claimant_views(
+  binds : Array[@abi.Binding],
+  collisions : Array[ExportCollision],
+  ek : Map[String, @engine.ExportKey],
+) -> Array[(Array[@abi.Binding], Array[(String, String)])] {
+  let views : Array[(Array[@abi.Binding], Array[(String, String)])] = []
+  for combo in claimant_combinations(collisions) {
+    let filtered : Array[@abi.Binding] = []
+    for b in binds {
+      let mut drop = false
+      let mut gi = 0
+      while gi < collisions.length() {
+        let c = collisions[gi]
+        if path_eq(c.path, b.scope) &&
+          exposed_key_of(b.key, ek) == Some(c.key) &&
+          b.key != combo[gi] {
+          drop = true
+        }
+        gi = gi + 1
+      }
+      if !drop {
+        filtered.push(b)
+      }
+    }
+    let claimants : Array[(String, String)] = []
+    let mut gi = 0
+    while gi < collisions.length() {
+      claimants.push((collisions[gi].key, combo[gi]))
+      gi = gi + 1
+    }
+    views.push((filtered, claimants))
+  }
+  views
+}
+
+///|
 /// Promote a `@engine.Success` outcome to `@engine.Ambiguous` when its bindings carry an export-key co-exposure
 /// collision (DR-021 → DR-073). The collision detection runs against the actual parse (§15.5
 /// runtime check), so a definition that DECLARES two elements with the same export_key is only
@@ -1055,35 +1108,8 @@ fn promote_collision_ambiguous_from(
       // group and drops the rivals' bindings at that (path, mapped-key) from THIS view (DR-073 §2:
       // entity name is the sole cross-view-stable identifier; value/source can coincide).
       let interps : Array[@engine.AmbiguousInterpretation] = []
-      for combo in claimant_combinations(collisions) {
-        let filtered : Array[@abi.Binding] = []
-        for b in collision_binds {
-          let mut drop = false
-          let mut gi = 0
-          while gi < collisions.length() {
-            let c = collisions[gi]
-            if path_eq(c.path, b.scope) &&
-              c.key ==
-              (match ek.get(b.key) {
-                Some(@engine.Key(s)) => s
-                _ => ""
-              }) &&
-              b.key != combo[gi] {
-              drop = true
-            }
-            gi = gi + 1
-          }
-          if !drop {
-            filtered.push(b)
-          }
-        }
-        let claimants : Array[(String, String)] = []
-        let mut gi = 0
-        while gi < collisions.length() {
-          claimants.push((collisions[gi].key, combo[gi]))
-          gi = gi + 1
-        }
-        interps.push({ binds: filtered, claimants })
+      for view in claimant_views(collision_binds, collisions, ek) {
+        interps.push({ binds: view.0, claimants: view.1 })
       }
       @engine.Ambiguous({ interpretations: interps, help_entry: None })
     }

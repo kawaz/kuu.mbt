@@ -273,12 +273,10 @@ struct TestInterpretation {
 
 ///|
 /// Build every DR-073 interpretation of `binds`. With no collision this is a single interpretation
-/// (empty claimants) — the ordinary export_result rendering. With N simultaneous collision groups,
-/// every combination of "which claimant occupies which key" (cross product across groups) is a
-/// distinct interpretation: each keeps only its chosen claimant's bindings for that (path, key)
-/// group (the other claimants' bindings at that group are dropped from THIS view — DR-073 §2, the
-/// entity name is the only cross-view-stable identifier since value/source can coincide) before
-/// applying export keys and building the result. `cells`/`defaults` are passed through to
+/// (empty claimants) — the ordinary export_result rendering. With collisions, the views come from
+/// the production `claimant_views` (the one place the rival-drop judgement lives — see its doc
+/// comment) and this helper only renders each one: apply export keys, build the result.
+/// `cells`/`defaults` are passed through to
 /// `build_result` unchanged (accum cells and defaults are keyed by raw entity name, matching the
 /// caller's `accum_cells(sc)` / `apply_export_to_defaults(default_cells(sc), ek)` convention — see
 /// slice `poc/helpers_wbtest.mbt`).
@@ -300,34 +298,11 @@ fn build_interpretations(
     ]
   }
   let out : Array[TestInterpretation] = []
-  for combo in claimant_combinations(collisions) {
-    let filtered : Array[@abi.Binding] = []
-    for b in binds {
-      let mut drop = false
-      let mut gi = 0
-      while gi < collisions.length() {
-        let c = collisions[gi]
-        if path_eq(c.path, b.scope) &&
-          exposed_key_of(b.key, ek) == Some(c.key) &&
-          b.key != combo[gi] {
-          drop = true
-        }
-        gi = gi + 1
-      }
-      if !drop {
-        filtered.push(b)
-      }
-    }
-    let mapped = apply_export_keys(filtered, ek)
-    let claimants : Array[(String, String)] = []
-    let mut gi = 0
-    while gi < collisions.length() {
-      claimants.push((collisions[gi].key, combo[gi]))
-      gi = gi + 1
-    }
+  for view in claimant_views(binds, collisions, ek) {
+    let mapped = apply_export_keys(view.0, ek)
     out.push({
       result: build_result(mapped, cells, defaults, [], nones~),
-      claimants,
+      claimants: view.1,
     })
   }
   out

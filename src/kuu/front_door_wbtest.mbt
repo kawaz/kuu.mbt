@@ -88,6 +88,78 @@ test "front_door.parse: export-key 共露出は @engine.Ambiguous + claimants �
 }
 
 ///|
+/// 保証 (DR-073 §2 / DR-052 §1, issue 2026-07-25-collision-drop-filter-identity-exposure-production-gap):
+/// 衝突解釈の drop 判定 (「自分の claimant 以外の binding をその (path, 露出キー) から落とす」)
+/// は **identity 露出** (export_key 未指定 → name 由来キー、DR-052 §1) の rival も落とす。落とせない
+/// と、両 claimant の binding が生き残ったまま同じ結果キーへ写り、`build_result` の last-wins
+/// (DR-015) で **宣言順に依存した片方の値** が両解釈に現れる — 2 解釈の view が同一に潰れ、
+/// 片方は「その claimant が占めた」と主張しながら別実体の値を見せる誤り view になる。
+///
+/// ここでは宣言順を入れ替えた 2 定義 (identity 先 / mapped 先) を同一 args で流し、どちらも
+/// `{a=v1}#claimants{a=a}` / `{a=v2}#claimants{a=b}` の同じ 2 解釈になることを固定する
+/// (= 宣言順の対称性)。last-wins の並びに救われる断面 (identity 先) だけを pin すると
+/// drop 判定の欠落を検出できないため、対称性そのものを保証面に置く。
+test "front_door.parse: identity 露出 rival の drop は宣言順に依存しない (DR-073 §2 / DR-052 §1)" {
+  fn interps_of(src : String) -> Array[String] raise {
+    let ast = match parse_definition(@json.parse(src)) {
+      Ok(a) => a
+      Err(_) => {
+        fail("parse_definition failed")
+        panic()
+      }
+    }
+    match parse_legacy(ast, ["--a", "v1", "--b", "v2"]) {
+      @engine.Ambiguous(d) => {
+        let got : Array[String] = []
+        for interp in d.interpretations {
+          let view = render_rval_sorted(
+            output_of_interpretation(ast, { raw: interp }),
+          )
+          let items : Array[String] = []
+          for kv in interp.claimants {
+            items.push(kv.0 + "=" + kv.1)
+          }
+          test_sort_items(items)
+          got.push(view + "#claimants{" + test_join_comma(items) + "}")
+        }
+        // 解釈は集合として比較する (順序非依存、DR-073 §3)。
+        test_sort_items(got)
+        got
+      }
+      other => {
+        fail(
+          "front_door.parse should promote to @engine.Ambiguous, got " +
+          render_outcome(other),
+        )
+        panic()
+      }
+    }
+  }
+
+  // identity 露出の `a` を先に宣言 (spec fixture export-key/collision-identity.json と同じ並び)。
+  let identity_first = interps_of(
+    (
+      #|{"options": [
+      #|  {"name": "a", "type": "string", "long": true},
+      #|  {"name": "b", "type": "string", "long": true, "export_key": "a"}
+      #|]}
+    ),
+  )
+  // mapped 側の `b` を先に宣言 (それ以外は同型 — issue の再現定義)。
+  let mapped_first = interps_of(
+    (
+      #|{"options": [
+      #|  {"name": "b", "type": "string", "long": true, "export_key": "a"},
+      #|  {"name": "a", "type": "string", "long": true}
+      #|]}
+    ),
+  )
+  let expected = ["{a=v1}#claimants{a=a}", "{a=v2}#claimants{a=b}"]
+  assert_eq(identity_first, expected)
+  assert_eq(mapped_first, expected)
+}
+
+///|
 /// 保証 (MDR-005 §1 / DR-059 §5 / DR-047 §4): front_door.resolve は値源ラダー
 /// (env/config/inherit/default) を子 scope まで再帰的に充填する。inheritable:true の子 scope
 /// entity は、祖先で書かれた write-target 値を **`@abi.Inherit` source** の binding として得る (spec
