@@ -41,7 +41,7 @@ struct AtomicAST {
   root : @engine.Scope
   templates : Map[String, @engine.Node]
   extensions : @node.Registry
-  ekmap : Map[String, @engine.ExportKey]
+  ekmap : @engine.ExportScopeMap
   declaration : @engine.Definition
   // DR-117 §2.6: definition-wide reconciled `insert_form` (canonical "space" / "eq")。
   // completion_script preset 入口の明示値が勝ち、全て省略 or 入口ゼロなら既定 `"space"`。
@@ -159,7 +159,7 @@ pub fn parse_definition(
           root: lowered.scope,
           templates,
           extensions,
-          ekmap: @engine.build_export_map(def, engine_extensions),
+          ekmap: lowered.export_scopes,
           completion_insert_form: lowered.completion_insert_form,
           declaration: lowered.declaration,
         })
@@ -416,7 +416,7 @@ pub fn complete(
 ///|
 /// package 内の white-box test が AtomicAST と result-key 軸の整合を検証するため、definition から
 /// 静的に決定される export_key 写像 (DR-052) を返す。production の結果射影は `output` が担う。
-fn export_map(ast : AtomicAST) -> Map[String, @engine.ExportKey] {
+fn export_map(ast : AtomicAST) -> @engine.ExportScopeMap {
   ast.ekmap
 }
 

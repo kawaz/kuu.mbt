@@ -41,6 +41,139 @@ pub fn ExportKey::null() -> ExportKey {
 }
 
 ///|
+/// `name` と結果キー軸から解決後の露出キーを引く (DR-052 §1 の 3 値軸)。`None` は「結果キー軸を
+/// 持たない」= 透過 — `export_key: null` (wire の `""` も decode 時に Null へ正規化される、
+/// `fixtures/export-key/empty-string-normalizes.json`) と name 無しの層が該当する。
+/// **露出キー解決の唯一の実装** — DR-120 の静的検査も result builder の remap もここを通る。
+fn resolved_export_key(name : String, key : ExportKey) -> String? {
+  match key {
+    Null => None
+    Key(s) => if s == "" { None } else { Some(s) }
+    _ => if name == "" { None } else { Some(name) }
+  }
+}
+
+///|
+/// 1 つの結果スコープ (DESIGN §2.3/§2.4) ぶんの結果キー軸と、その子スコープ。宣言層から 1 度だけ
+/// 組まれ (`build_export_scopes`)、DR-120 の静的検査と result builder の remap の**両方**がこの
+/// 同じ木を読む — 「検査は別キーと判定したのに result builder は同じキーを書く」食い違いが
+/// 構造的に起こらないようにするための単一の座。
+///
+/// 名前でキーするのは binding が運ぶ軸が名前だから (`@abi.Binding.key` / `.scope` はどちらも
+/// 宣言名の列)。名前は**結果スコープの中でしか**意味を持たないので、全スコープを 1 枚の
+/// `Map[String, ExportKey]` に混ぜると同名の別要素が 1 エントリを取り合って潰れる。同じ理由で
+/// 値セル軸 (`cells_`、binding の `key` として現れる) とスコープラベル軸 (`scopes_`、binding の
+/// `scope` segment として現れる) を分ける — 同一スコープに同名の option と command が並ぶのは
+/// 結果キーが別なら合法 (DR-120 §7: 綴り軸と結果キー軸は別) で、両者は binding の別の軸に現れる。
+pub struct ExportScopeMap {
+  priv cells_ : Map[String, ExportKey]
+  priv scopes_ : Map[String, ExportKey]
+  priv children_ : Map[String, ExportScopeMap]
+}
+
+///|
+/// 結果キー軸を 1 つも持たないスコープ。木に無い segment を降りたときの既定でもある — 未登録の
+/// 名前は identity (= remap しない) へ倒れるので、宣言に現れない内部セルや sentinel が
+/// 巻き添えで書き換わることがない。
+pub fn ExportScopeMap::empty() -> ExportScopeMap {
+  {
+    cells_: Map([], capacity=0),
+    scopes_: Map([], capacity=0),
+    children_: Map([], capacity=0),
+  }
+}
+
+///|
+/// option / positional 1 件の結果キー軸を積む。要素名は値セル (`{x: 1}` の `x`) としても
+/// スコープラベル (`{xs: [...]}` の `xs` — named group / ref 行) としても現れうるので両軸に積む。
+pub fn ExportScopeMap::declare_element(
+  self : ExportScopeMap,
+  name : String,
+  key : ExportKey,
+) -> Unit {
+  self.cells_.set(name, key)
+  self.scopes_.set(name, key)
+}
+
+///|
+/// command 1 件の結果キー軸を積み、その body のスコープノードを返す (同名で 2 度呼べば同じ
+/// ノードを返す)。command はスコープラベル軸にしか現れない (値セルは持たず、選ばれたときの空 kv
+/// `{}` は scope 側で表される、DESIGN §2.6)。
+pub fn ExportScopeMap::declare_scope(
+  self : ExportScopeMap,
+  name : String,
+  key : ExportKey,
+) -> ExportScopeMap {
+  self.scopes_.set(name, key)
+  self.child_node(name)
+}
+
+///|
+/// named group 1 件のスコープノード。group の wrapper 自身の軸は `declare_element` が積む
+/// (値セル軸にも現れるため) ので、ここでは内側を書くノードだけを取り出す。
+fn ExportScopeMap::element_scope(
+  self : ExportScopeMap,
+  name : String,
+) -> ExportScopeMap {
+  self.child_node(name)
+}
+
+///|
+fn ExportScopeMap::child_node(
+  self : ExportScopeMap,
+  name : String,
+) -> ExportScopeMap {
+  match self.children_.get(name) {
+    Some(node) => node
+    None => {
+      let node = ExportScopeMap::empty()
+      self.children_.set(name, node)
+      node
+    }
+  }
+}
+
+///|
+/// この結果スコープにおける値セル `name` の露出キー。`None` = 結果キー軸なし (透過)。
+/// 宣言に無い名前 (sentinel `"[]"`/`"{}"`/`"@act:"`、`"#row"` 等の内部セル) は identity。
+pub fn ExportScopeMap::exposed_cell(
+  self : ExportScopeMap,
+  name : String,
+) -> String? {
+  match self.cells_.get(name) {
+    Some(key) => resolved_export_key(name, key)
+    None => Some(name)
+  }
+}
+
+///|
+/// この結果スコープに置かれた 1 段下のスコープラベル `name` の露出キー。`None` = ラベルが落ちて
+/// 子が親スコープへ昇格する (DR-052 §2)。
+pub fn ExportScopeMap::exposed_scope(
+  self : ExportScopeMap,
+  name : String,
+) -> String? {
+  match self.scopes_.get(name) {
+    Some(key) => resolved_export_key(name, key)
+    None => Some(name)
+  }
+}
+
+///|
+/// `name` が作る 1 段下の結果スコープ。透過ラベル (`exposed_scope` が `None`) でも子ノードは
+/// 残る — 露出キーが落ちるのは**結果側の path** であって、binding が運ぶ宣言名の列は変わらない
+/// ので、lookup はラベルを辿り続ける必要がある。
+pub fn ExportScopeMap::child(
+  self : ExportScopeMap,
+  name : String,
+) -> ExportScopeMap {
+  match self.children_.get(name) {
+    Some(node) => node
+    None => ExportScopeMap::empty()
+  }
+}
+
+///|
 /// A node of the AtomicAST. Consumption is measured in whole args tokens.
 pub(all) enum Node {
   /// literal token match; binds nothing, consumes 1.

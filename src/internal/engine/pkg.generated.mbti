@@ -28,8 +28,6 @@ pub fn bool_config_canonical() -> @abi.BoolConfig
 
 pub fn bool_type(config? : @abi.BoolConfig, value_slot? : Bool) -> &@extension.TypeExt
 
-pub fn build_export_map(Definition, @extension.Registry) -> Map[String, ExportKey]
-
 pub fn cell_fn_descriptor(String, Array[@extension.CellFnParameter], @extension.CellFnOutput, @extension.FnFallibility, observes? : Array[String], reasons? : Array[String], validate? : (@abi.FnCall) -> Result[Unit, @extension.FnReason], run? : (Array[@abi.FnArg], @extension.FnCtx) -> Result[@extension.FnOutput, @extension.FnReason]) -> @extension.CellFnDescriptor
 
 pub fn cell_fn_parameter(String, kind? : @extension.CellFnParameterKind, repetition? : @extension.CellFnRepetition) -> @extension.CellFnParameter
@@ -336,6 +334,16 @@ pub fn ExportKey::key(String) -> Self
 pub fn ExportKey::null() -> Self
 pub fn ExportKey::unset() -> Self
 
+pub struct ExportScopeMap {
+  // private fields
+}
+pub fn ExportScopeMap::child(Self, String) -> Self
+pub fn ExportScopeMap::declare_element(Self, String, ExportKey) -> Unit
+pub fn ExportScopeMap::declare_scope(Self, String, ExportKey) -> Self
+pub fn ExportScopeMap::empty() -> Self
+pub fn ExportScopeMap::exposed_cell(Self, String) -> String?
+pub fn ExportScopeMap::exposed_scope(Self, String) -> String?
+
 pub(all) enum FailDef {
   AcceptsOnly
   WithHeld
@@ -392,6 +400,7 @@ pub(all) enum LongSpelling {
 pub(all) struct LoweredDefinition {
   scope : Scope
   declaration : Definition
+  export_scopes : ExportScopeMap
   completion_insert_form : String
 }
 

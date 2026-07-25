@@ -339,11 +339,29 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
 // ── export-key application (DR-052) ───────────────────────────────────────────
 
 ///|
+/// 結果キー軸の木をテスト用に組む — production の `build_export_scopes` と同じ構築 API
+/// (`declare_element` / `declare_scope`) を通す。`elements` は option / positional (値セル軸と
+/// スコープラベル軸の両方に載る)、`scopes` は command (ラベル軸のみ)。
+fn test_export_scopes(
+  elements? : Array[(String, @engine.ExportKey)] = [],
+  scopes? : Array[(String, @engine.ExportKey)] = [],
+) -> @engine.ExportScopeMap {
+  let node = @engine.ExportScopeMap::empty()
+  for it in elements {
+    node.declare_element(it.0, it.1)
+  }
+  for it in scopes {
+    let _ = node.declare_scope(it.0, it.1)
+  }
+  node
+}
+
+///|
 /// Guarantees: `apply_export_keys` overrides a value cell's key (@engine.Key) and drops a scope label
 /// entirely (@abi.Null, DR-052 §2 透過 — children promote to the parent), leaving an unmapped
 /// (@abi.Unset) name unchanged.
 test "apply_export_keys renames a leaf key and drops a null-exported scope label" {
-  let ek : Map[String, @engine.ExportKey] = Map::from_array([
+  let ek = test_export_scopes(elements=[
     ("port", @engine.ExportKey::key("p")),
     ("wrapper", @engine.ExportKey::null()),
   ])
@@ -376,9 +394,7 @@ test "apply_export_keys renames a leaf key and drops a null-exported scope label
 /// `export_key: "t"` — the accumulated array must render under "t", not "tags", and the fold must
 /// actually happen (2 elements, not a last-wins scalar).
 test "accum_cells resolves export_key rename — the accumulate fold fires under the renamed key" {
-  let ek : Map[String, @engine.ExportKey] = Map::from_array([
-    ("tags", @engine.ExportKey::key("t")),
-  ])
+  let ek = test_export_scopes(elements=[("tags", @engine.ExportKey::key("t"))])
   let sc : @engine.Scope = {
     greedy: [],
     positional: [],
@@ -412,9 +428,7 @@ test "accum_cells resolves export_key rename — the accumulate fold fires under
 /// を持つ accum セル自身は結果キー軸を失う (DR-052 §2 透過、スカラー default の @abi.Null と同じ posture)
 /// — 変更が「常に何らかのキーで accum セルを出力してしまう」誤動作を生んでいないことを固定する。
 test "accum_cells 対極: an @abi.Null accum cell carries no result-key axis (dropped)" {
-  let ek : Map[String, @engine.ExportKey] = Map::from_array([
-    ("tags", @engine.ExportKey::null()),
-  ])
+  let ek = test_export_scopes(elements=[("tags", @engine.ExportKey::null())])
   let sc : @engine.Scope = {
     greedy: [],
     positional: [],
@@ -429,9 +443,7 @@ test "accum_cells 対極: an @abi.Null accum cell carries no result-key axis (dr
 /// `apply_export_to_defaults` の scope-label 変換ロジック (233-243行) と同じ意味論を
 /// `collect_accum` の @engine.CommandSatisfied 再帰でも固定する。
 test "accum_cells resolves export_key rename on a command scope label (nested path)" {
-  let ek : Map[String, @engine.ExportKey] = Map::from_array([
-    ("sub", @engine.ExportKey::key("s")),
-  ])
+  let ek = test_export_scopes(scopes=[("sub", @engine.ExportKey::key("s"))])
   let child : @engine.Scope = {
     greedy: [],
     positional: [],
@@ -461,9 +473,7 @@ test "accum_cells resolves export_key rename on a command scope label (nested pa
 /// transparent-seq.json の zero-fire-empty-array と同型) と矛盾する — fixture 側の推定誤りと判断
 /// し、修正せず report した (team-lead 裁定待ち)。
 test "accum_cells + build_result: a renamed accum cell with zero fires still renders `[]` under the renamed key (DR-051 §2)" {
-  let ek : Map[String, @engine.ExportKey] = Map::from_array([
-    ("tags", @engine.ExportKey::key("t")),
-  ])
+  let ek = test_export_scopes(elements=[("tags", @engine.ExportKey::key("t"))])
   let sc : @engine.Scope = {
     greedy: [],
     positional: [],

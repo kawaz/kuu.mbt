@@ -638,65 +638,6 @@ fn clone_def(d : Definition) -> Definition {
 }
 
 ///|
-/// 結果キー map の構築 (DR-052)。要素/コマンド名 → export_key。post-parse の結果 remap 用。alias
-/// を desugar 済みの clone に対して収集する — command alias の export_key = Key(canonical) が
-/// 建った Scope の keying と一致するように。
-pub fn build_export_map(
-  def : Definition,
-  extensions : Registry,
-) -> Map[String, ExportKey] {
-  let d = clone_def(def)
-  // `d` は normalize_surface を経ていない生の (= pre-normalize) 複製なので、`orig` 引数にも
-  // 同じ `d` を渡してよい (flag_type() 等の元の型はまだ書き換わっていない)。
-  desugar_aliases(d, d, extensions)
-  let m : Map[String, ExportKey] = Map([], capacity=0)
-  collect_export(d, m)
-  m
-}
-
-///|
-fn collect_export(def : Definition, m : Map[String, ExportKey]) -> Unit {
-  for e in def.options {
-    collect_export_body(e, m)
-  }
-  for e in def.positionals {
-    collect_export_body(e, m)
-  }
-  for c in def.commands {
-    m.set(c.name, c.export_key)
-    collect_export(c.body, m)
-  }
-}
-
-///|
-/// MDR-004 §3b: `collect_export` needs to recurse into `ElementBody` — a `Group`/`Or` element's
-/// nested leaves (e.g. transparent-seq's `k`, export_key:null) each have their OWN export_key that
-/// must reach the map, or their `export_key:null` 裸値化 (DR-052 §2) never gets applied downstream
-/// (resolve's export-key remap only consults this map). `Group` registers BOTH the wrapper (the
-/// array cell itself) and its inner leaves; `Or`'s wrapper has no export_key of its own concern
-/// (structural dispatcher, no scalar/array value) — only its branch leaves register.
-fn collect_export_body(e : ElementDef, m : Map[String, ExportKey]) -> Unit {
-  match e.body {
-    Cell => m.set(e.name, e.export_key)
-    Or(branches) =>
-      for br in branches {
-        for it in br.items {
-          collect_export_body(it, m)
-        }
-      }
-    Group(items) => {
-      m.set(e.name, e.export_key)
-      for it in items {
-        collect_export_body(it, m)
-      }
-    }
-    // Enum (issue values-decode-support): same standing as Cell — a single named cell whose
-    // consumption structure happens to be an exact-value enum (no nested leaves to recurse into).
-    Enum(_) => m.set(e.name, e.export_key)
-  }
-}
-
-///|
 /// 要素の lowered head: 値プリミティブ / Ref (ref_target) / separated resident (separator, `value_prim` 側に集約
 /// 済み — このヘルパー自身の役目は ref_target の分岐のみ)。issue
 /// 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め: `is_exact` (positional-face
@@ -4321,6 +4262,9 @@ fn collect_config_cycle(def : Definition, out : Array[DefError]) -> Unit {
 pub(all) struct LoweredDefinition {
   scope : Scope
   declaration : Definition
+  // DR-052 §1 の結果キー軸を結果スコープ単位で持つ木 (`build_export_scopes`)。DR-120 §1 の静的
+  // 検査と同じ 1 本の走査から出るので、検査が数えたキーと result builder が書くキーは同一。
+  export_scopes : ExportScopeMap
   // DR-117 §2.6 の definition-wide reconciled `insert_form` (canonical "space" / "eq")。
   // completion_script preset 入口が 1 つ以上ある場合は明示値のいずれか (省略と明示の混在は明示値
   // が勝つ、DR §2.6)、全て省略 or 入口ゼロなら既定 "space"。lowering 段では `#completion_script`
@@ -4627,19 +4571,9 @@ fn export_value_space(e : ElementDef) -> String {
 }
 
 ///|
-/// 名前と結果キー軸から解決後の露出キーを引く (DR-052 §1 の 3 値軸)。`None` は「結果キー軸を
-/// 持たない」= 透過 (§4) — `export_key: null` (wire の `""` も decode 時に Null へ正規化される、
-/// `fixtures/export-key/empty-string-normalizes.json`) と name 無しの層が該当する。
-fn resolved_export_key(name : String, ek : ExportKey) -> String? {
-  match ek {
-    Null => None
-    Key(s) => if s == "" { None } else { Some(s) }
-    _ => if name == "" { None } else { Some(name) }
-  }
-}
-
-///|
-/// DR-120 §4「露出キーを占有する要素 / しない要素」の要素側判定。占有しないのは:
+/// DR-120 §4「露出キーを占有する要素 / しない要素」の要素側判定 (**キーの解決は含まない** —
+/// 席のキーは必ず `ExportScopeMap::exposed_cell` から引く、= result builder が実際に書くキーと
+/// 同じ経路)。占有しないのは:
 ///
 /// - `alias` 要素 — 値は canonical の実体セルへ流れ自前のセルを持たない (DR-057「結果キーは
 ///   canonical のみ」)
@@ -4650,19 +4584,15 @@ fn resolved_export_key(name : String, ek : ExportKey) -> String? {
 ///   `type: "none"` (DR-089 の空値空間。`fixtures/value-typing/none-value-space.json` が
 ///   「発火しても結果に痕跡を残さない」を pin 済み)、`config_file` の内部セル (DR-050 —
 ///   `fixtures/value-sources/config/*` の result に現れない)
-/// - 結果キー軸を持たない要素 (`export_key: null` / name 無し) — 透過 (`resolved_export_key`)
 ///
 /// 逆に `inheritable` が祖先スコープへ置く write-target は参加する (DR-059 §5 / DESIGN §11.3):
 /// `add_inheritable_copy` は `link_depth` を立てずに要素名共有の実エントリを積むので、この
 /// 判定を素通りして祖先スコープの席になる。
-fn export_seat_key(e : ElementDef) -> String? {
+fn element_occupies_seat(e : ElementDef) -> Bool {
   if e.is_alias || e.link_depth > 0 || e.is_dd || e.is_exact || e.is_config_file {
-    return None
+    return false
   }
-  if e.ty.name() == "none" {
-    return None
-  }
-  resolved_export_key(e.name, e.export_key)
+  e.ty.name() != "none"
 }
 
 ///|
@@ -4685,36 +4615,72 @@ fn command_is_alias_copy(def : Definition, c : CommandDef) -> Bool {
 }
 
 ///|
-/// DR-120 §1/§5: 宣言層 (全 installer の宣言層寄与を適用し終えた面) を結果スコープ単位で歩き、
-/// 1 つの露出キーに 2 つ以上の値セルが着地する構成を definition-error として全列挙する。
+/// 宣言層 (全 installer の宣言層寄与を適用し終えた面) から結果キー軸の木 (DR-052 §1) を組み、
+/// 同時に DR-120 §1 の衝突を definition-error として `out` へ全列挙する。
+///
+/// **1 本の走査で両方を出すのが本関数の要点**: 1 つの宣言を訪れたその場で、露出キーを
+/// `resolved_export_key` で 1 度だけ解決し、同じ値を「木への登録 (result builder の remap 入力)」と
+/// 「席の計上 (静的検査の入力)」の両方へ流す。2 つを別々に計算していた頃は、検査が結果スコープ
+/// 単位で正しく解決する一方 remap は全スコープ平坦・名前 1 軸で潰していて、同名の option と
+/// command が並ぶと `export_key` が実行時に無視されていた (検査は「別キー」と判定するのに
+/// result builder は identity のキーを書く、という食い違い)。
+///
 /// 検査は構造的で経路の到達可能性を見ない (§6) — `or` の別枝・`exclusive_group` の兄弟・排他の
 /// 別 command 配下から昇格露出する子も、同じスコープに同じキーで並べば対象になる。
-fn collect_export_key_collisions(
+///
+/// **表現の限界**: 木は名前でキーする (binding が運ぶ軸が名前だから) ので、同一スコープ・同一軸に
+/// **同名**の宣言が 2 つ並び互いに違う `export_key` を持つ場合、remap はどちらか一方しか採れない
+/// (宣言順で後勝ち)。DR-120 §7 が明示的に合法とする「相異なる `export_key` を割った同名 command
+/// 2 本」がこれに当たる — 検査は宣言ごとに数えるので衝突と誤判定しないが、選ばれた側の結果キーが
+/// もう一方の `export_key` になりうる。binding の scope segment が宣言の識別子を運ばない限り
+/// 解けない (lowered 側の表現の問題)。
+fn build_export_scopes(
   def : Definition,
+  out : Array[DefError],
+) -> ExportScopeMap {
+  let node = ExportScopeMap::empty()
+  gather_export_scope(def, node, out)
+  node
+}
+
+///|
+/// `def` が表す 1 結果スコープぶんを歩き、結果キー軸を `node` へ積みつつ席を数えて衝突を報告する。
+/// 入れ子の結果スコープ (通常 command / 名前を持つ group) は自前の席集合で再帰し、透過な層
+/// (`export_key: null` の command / group) の子は親スコープへ昇格する (DR-052 §2/§3、
+/// `fixtures/export-key/command-promote.json`)。
+fn gather_export_scope(
+  def : Definition,
+  node : ExportScopeMap,
   out : Array[DefError],
 ) -> Unit {
   let seats : Array[ExportSeat] = []
-  gather_export_seats(def, seats, out)
+  gather_export_seats(def, node, seats, out)
   report_export_key_collisions(seats, out)
 }
 
 ///|
-/// `def` が表す 1 結果スコープぶんの席を `seats` へ積む。入れ子の結果スコープ (通常 command /
-/// 名前を持つ group) は自前の席集合で再帰し、透過な層 (`export_key: null` の command / group) の
-/// 子は親スコープへ昇格する (DR-052 §2/§3、`fixtures/export-key/command-promote.json`)。
+/// 1 結果スコープぶんの席を `seats` へ積み、同じ走査で結果キー軸を `node` へ登録する。
 fn gather_export_seats(
   def : Definition,
+  node : ExportScopeMap,
   seats : Array[ExportSeat],
   out : Array[DefError],
 ) -> Unit {
   for e in def.options {
-    gather_element_seats(e, seats, out)
+    gather_element_seats(e, node, seats, out)
   }
   for e in def.positionals {
-    gather_element_seats(e, seats, out)
+    gather_element_seats(e, node, seats, out)
   }
   for c in def.commands {
+    // command はスコープラベル軸のみに載る。同名の option が同じスコープに居ても値セル軸は
+    // 奪わない (DR-120 §7: 綴り軸と結果キー軸は別の軸で、同名 option / command は結果キーが
+    // 違えば合法) — 両者は binding の別の軸 (`scope` segment と `key`) に現れる。
+    let child = node.declare_scope(c.name, c.export_key)
+    // alias 由来の command copy は canonical と同じ構造の写しなので、席も内側の検査も canonical
+    // 側に任せる (軸だけは remap のために登録済み — 結果キーは canonical へ寄る、DR-057 §2)。
     if command_is_alias_copy(def, c) {
+      register_export_axes(c.body, child)
       continue
     }
     match resolved_export_key(c.name, c.export_key) {
@@ -4722,64 +4688,115 @@ fn gather_export_seats(
       // 全部 absent でも空 kv `{}` を持つ)。子は 1 段ネストした別の結果スコープ。
       Some(key) => {
         seats.push({ element: c.name, key, space: scope_value_space() })
-        collect_export_key_collisions(c.body, out)
+        gather_export_scope(c.body, child, out)
       }
       // 透過 command: スコープキーが落ち、子の結果キー持ちが親スコープへ昇格する。
-      None => gather_export_seats(c.body, seats, out)
+      None => gather_export_seats(c.body, child, seats, out)
     }
   }
 }
 
 ///|
-/// 1 要素ぶんの席を積む。消費文法の軸 (`ElementBody`, MDR-004) ごとに辿り方が変わり、
-/// `build_export_map` の `collect_export_body` と同じ木を歩く:
+/// 1 要素ぶんの席を積み、同じ走査で結果キー軸を登録する。消費文法の軸 (`ElementBody`, MDR-004)
+/// ごとに辿り方が変わる:
 ///
-/// - `Cell` / `Enum` — 単一の named cell。自分の席だけを積む
+/// - `Cell` / `Enum` — 単一の named cell。自分の軸と席だけ
 /// - `Or` — 構造 or の wrapper は自前の結果キーを持たず、枝の leaf が親の結果スコープへ**平坦に**
 ///   露出する (`fixtures/constraints-parse/required-structural-or-branch.json` の result が
 ///   `{num:5}` / `{flag:true}` と平坦であることが観測面の裏)。枝を横断して leaf を親スコープへ積む
 /// - `Group` — named group は 1 段ネストした結果スコープ (`fixtures/export-key/transparent-seq.json`
 ///   の `{xs:[...]}` / `fixtures/repeat-parse/group-trailing-positional.json` の
-///   `{grp:[{gflag:"a"}]}`)。wrapper が親スコープの席を取り、内側は別スコープとして検査する。
+///   `{grp:[{gflag:"a"}]}`)。wrapper が親スコープの軸と席を取り、内側は子スコープとして検査する。
 ///   wrapper が透過なら内側が親スコープへ昇格する
 fn gather_element_seats(
   e : ElementDef,
+  node : ExportScopeMap,
   seats : Array[ExportSeat],
   out : Array[DefError],
 ) -> Unit {
-  // 非参加要素は自分も内側も見ない — alias / global コピーは canonical 側と同じ構造の写しなので、
-  // 内側まで数えると canonical の席が二重に立つ。
+  // 非参加要素の席は自分も内側も数えない — alias / global コピーは canonical 側と同じ構造の
+  // 写しなので、内側まで数えると canonical の席が二重に立つ。軸は remap のために登録する
+  // (alias entry-copy は自分の名前で binding を作り canonical のキーへ寄る、DR-057 §2)。
   if e.is_alias || e.link_depth > 0 {
+    register_element_axes(e, node)
     return
   }
   match e.body {
-    Cell | Enum(_) =>
-      match export_seat_key(e) {
-        Some(key) =>
-          seats.push({ element: e.name, key, space: export_value_space(e) })
-        None => ()
+    Cell | Enum(_) => {
+      node.declare_element(e.name, e.export_key)
+      if element_occupies_seat(e) {
+        match resolved_export_key(e.name, e.export_key) {
+          Some(key) =>
+            seats.push({ element: e.name, key, space: export_value_space(e) })
+          None => ()
+        }
       }
+    }
     Or(branches) =>
       for br in branches {
         for it in br.items {
-          gather_element_seats(it, seats, out)
+          gather_element_seats(it, node, seats, out)
         }
       }
-    Group(items) =>
-      match export_seat_key(e) {
+    Group(items) => {
+      node.declare_element(e.name, e.export_key)
+      let inner_node = node.element_scope(e.name)
+      let seat_key = if element_occupies_seat(e) {
+        resolved_export_key(e.name, e.export_key)
+      } else {
+        None
+      }
+      match seat_key {
         Some(key) => {
           seats.push({ element: e.name, key, space: group_value_space() })
           let inner : Array[ExportSeat] = []
           for it in items {
-            gather_element_seats(it, inner, out)
+            gather_element_seats(it, inner_node, inner, out)
           }
           report_export_key_collisions(inner, out)
         }
         None =>
           for it in items {
-            gather_element_seats(it, seats, out)
+            gather_element_seats(it, inner_node, seats, out)
           }
       }
+    }
+  }
+}
+
+///|
+/// 席を数えずに結果キー軸だけを積む (alias / global の入口コピー用)。remap は名前で引くので、
+/// コピー側の名前でも露出キーへ解決できないと canonical のキーへ寄せられない (DR-057 §2)。
+fn register_export_axes(def : Definition, node : ExportScopeMap) -> Unit {
+  for e in def.options {
+    register_element_axes(e, node)
+  }
+  for e in def.positionals {
+    register_element_axes(e, node)
+  }
+  for c in def.commands {
+    register_export_axes(c.body, node.declare_scope(c.name, c.export_key))
+  }
+}
+
+///|
+/// 1 要素ぶんの結果キー軸を積む (木の辿り方は `gather_element_seats` と同型)。
+fn register_element_axes(e : ElementDef, node : ExportScopeMap) -> Unit {
+  match e.body {
+    Cell | Enum(_) => node.declare_element(e.name, e.export_key)
+    Or(branches) =>
+      for br in branches {
+        for it in br.items {
+          register_element_axes(it, node)
+        }
+      }
+    Group(items) => {
+      node.declare_element(e.name, e.export_key)
+      let inner = node.element_scope(e.name)
+      for it in items {
+        register_element_axes(it, inner)
+      }
+    }
   }
 }
 
@@ -4907,19 +4924,20 @@ fn lower_definition_snapshot_impl(
     // 同じ面で衝突を数えて 1 つの list に足す。
     Ok(scope) => {
       let collisions : Array[DefError] = []
-      collect_export_key_collisions(def, collisions)
+      let export_scopes = build_export_scopes(def, collisions)
       if collisions.length() > 0 {
         Err(collisions)
       } else {
         Ok({
           scope,
           declaration: def,
+          export_scopes,
           completion_insert_form: compute_completion_insert_form(def),
         })
       }
     }
     Err(errors) => {
-      collect_export_key_collisions(def, errors)
+      let _ = build_export_scopes(def, errors)
       Err(errors)
     }
   }

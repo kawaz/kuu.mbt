@@ -233,30 +233,46 @@ fn seg_num(seg : String) -> Int {
 /// → kept.
 fn apply_export_keys(
   binds : Array[@abi.Binding],
-  ek : Map[String, @engine.ExportKey],
+  ek : @engine.ExportScopeMap,
 ) -> Array[@abi.Binding] {
   let out : Array[@abi.Binding] = []
   for b in binds {
-    let new_scope : Array[String] = []
-    for seg in b.scope {
-      if seg.length() >= 1 && seg[0:1].to_owned() == "#" {
-        new_scope.push(seg) // an array index segment — never a name
-      } else {
-        match ek.get(seg) {
-          Some(@engine.Null) => () // drop the label → children promote to the parent (DR-052 §2)
-          Some(@engine.Key(s)) => new_scope.push(s)
-          _ => new_scope.push(seg) // @abi.Unset or not a mapped name
-        }
-      }
-    }
-    let new_key = match ek.get(b.key) {
-      Some(@engine.Null) => "" // nameless value axis
-      Some(@engine.Key(s)) => s
-      _ => b.key
+    let (new_scope, node) = walk_export_path(b.scope, ek)
+    let new_key = match node.exposed_cell(b.key) {
+      Some(s) => s
+      None => "" // nameless value axis
     }
     out.push({ ..b, key: new_key, scope: new_scope })
   }
   out
+}
+
+///|
+/// 宣言名の path (binding の `scope` / DefaultCell・AccumCell の `path`) を露出キーの path へ写し、
+/// 同時に着地した結果スコープのノードを返す。名前は**そのスコープの中でしか**意味を持たないので、
+/// 末端の値セル名はここで返るノードから引く必要がある。
+///
+/// - ラベルが透過 (`export_key: null` / name 無し) なら segment を落とす — 子が親スコープへ昇格
+///   する (DR-052 §2)。落ちるのは結果側の path だけで、宣言名の列は変わらないのでノードは進む
+/// - `#k` index segment は結果スコープを作らない (配列添字) のでノードを進めずそのまま通す
+fn walk_export_path(
+  path : Array[String],
+  ek : @engine.ExportScopeMap,
+) -> (Array[String], @engine.ExportScopeMap) {
+  let out : Array[String] = []
+  let mut node = ek
+  for seg in path {
+    if seg.length() >= 1 && seg[0:1].to_owned() == "#" {
+      out.push(seg)
+    } else {
+      match node.exposed_scope(seg) {
+        Some(s) => out.push(s)
+        None => ()
+      }
+      node = node.child(seg)
+    }
+  }
+  (out, node)
 }
 
 ///|
@@ -267,31 +283,16 @@ fn apply_export_keys(
 /// appears as a value nor re-appears as an injected `false`).
 fn apply_export_to_defaults(
   defaults : Array[DefaultCell],
-  ek : Map[String, @engine.ExportKey],
+  ek : @engine.ExportScopeMap,
 ) -> Array[DefaultCell] {
   let out : Array[DefaultCell] = []
   for d in defaults {
-    match ek.get(d.name) {
-      Some(@engine.Null) => () // 透過: the value has no result key → not injected
-      _ => {
-        let new_path : Array[String] = []
-        for seg in d.path {
-          if seg.length() >= 1 && seg[0:1].to_owned() == "#" {
-            new_path.push(seg)
-          } else {
-            match ek.get(seg) {
-              Some(@engine.Null) => () // dropped scope label → children promote
-              Some(@engine.Key(s)) => new_path.push(s)
-              _ => new_path.push(seg)
-            }
-          }
-        }
-        let new_name = match ek.get(d.name) {
-          Some(@engine.Key(s)) => s
-          _ => d.name
-        }
+    let (new_path, node) = walk_export_path(d.path, ek)
+    match node.exposed_cell(d.name) {
+      // 透過: the value has no result key → not injected
+      None => ()
+      Some(new_name) =>
         out.push({ path: new_path, name: new_name, value: d.value })
-      }
     }
   }
   out
@@ -798,7 +799,7 @@ fn build_result(
 /// scalar default's @abi.Null already gets), otherwise unchanged.
 fn accum_cells(
   sc : @engine.Scope,
-  ek : Map[String, @engine.ExportKey],
+  ek : @engine.ExportScopeMap,
 ) -> Array[AccumCell] {
   let out : Array[AccumCell] = []
   collect_accum(sc, [], ek, out)
@@ -809,20 +810,16 @@ fn accum_cells(
 fn collect_accum(
   sc : @engine.Scope,
   path : Array[String],
-  ek : Map[String, @engine.ExportKey],
+  ek : @engine.ExportScopeMap,
   out : Array[AccumCell],
 ) -> Unit {
   for e in sc.entities {
     // any named accumulator (flatten / append / …) folds the cell into a list (DR-036).
     match e.accum {
       Some(a) =>
-        match ek.get(e.name) {
-          Some(@engine.Null) => () // 透過: this accum cell's own result-key axis is dropped
-          _ => {
-            let new_name = match ek.get(e.name) {
-              Some(@engine.Key(s)) => s
-              _ => e.name
-            }
+        match ek.exposed_cell(e.name) {
+          None => () // 透過: this accum cell's own result-key axis is dropped
+          Some(new_name) =>
             out.push({
               path,
               name: new_name,
@@ -832,20 +829,20 @@ fn collect_accum(
               flatten: e.flatten,
               is_multiple_decl: e.is_multiple_decl,
             })
-          }
         }
       None => ()
     }
   }
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(name, child) =>
-        match ek.get(name) {
-          Some(@engine.Null) => collect_accum(child, path, ek, out) // dropped label → children promote (DR-052 §2)
-          Some(@engine.Key(s)) =>
-            collect_accum(child, path_push(path, s), ek, out)
-          _ => collect_accum(child, path_push(path, name), ek, out)
+      @engine.CommandSatisfied(name, child) => {
+        let child_ek = ek.child(name)
+        match ek.exposed_scope(name) {
+          // dropped label → children promote (DR-052 §2)
+          None => collect_accum(child, path, child_ek, out)
+          Some(s) => collect_accum(child, path_push(path, s), child_ek, out)
         }
+      }
       _ => ()
     }
   }
@@ -929,7 +926,7 @@ fn collect_defaults(
 fn build_result_export(
   sc : @engine.Scope,
   binds : Array[@abi.Binding],
-  ek : Map[String, @engine.ExportKey],
+  ek : @engine.ExportScopeMap,
   extensions? : @node.Registry = canonical_registry(),
 ) -> @abi.ResultValue {
   build_result(
@@ -940,22 +937,6 @@ fn build_result_export(
     nones=@engine.none_cells(sc),
     extensions~,
   )
-}
-
-///|
-/// The result-key axis (DR-052 §1) resolved to its ACTUAL exposed key string for `raw` (an entity
-/// name / binding key), or `None` when the axis carries no key at all (@abi.Null, DR-052 §2 透過).
-/// Mirrors `apply_export_keys`'s own resolution exactly (same 3-way match, same `_` fallback to
-/// `raw` for @abi.Unset AND for an unmapped name — sentinels `"[]"`/`"{}"`/`""`/`"@act:"`/`"@depr:"`
-/// and `"#k"` index segments are never in `ek`, `apply_export_keys`'s doc comment) — this is the
-/// SAME "未指定 → name 由来のキーで露出" resolution DR-052 §1's table specifies, just queried
-/// instead of applied.
-fn exposed_key_of(raw : String, ek : Map[String, @engine.ExportKey]) -> String? {
-  match ek.get(raw) {
-    Some(@engine.Null) => None
-    Some(@engine.Key(s)) => Some(s)
-    _ => Some(raw)
-  }
 }
 
 // ── result/sources の production 射影 (DR-109 §3 sources 常時出力 / MDR-005「射程外」節の解消、
@@ -1002,7 +983,7 @@ fn has_commands(sc : @engine.Scope) -> Bool {
 fn collect_sources_flat(
   sc : @engine.Scope,
   resolved : Array[@abi.Binding],
-  ek : Map[String, @engine.ExportKey],
+  ek : @engine.ExportScopeMap,
 ) -> Array[SourceEntry] {
   let out : Array[SourceEntry] = []
   let emitted : Array[String] = []
@@ -1013,13 +994,13 @@ fn collect_sources_flat(
     if e.ty.name() == "none" {
       continue
     }
-    match exposed_key_of(e.name, ek) {
+    match ek.exposed_cell(e.name) {
       None => ()
       Some(exposed) =>
         if !str_contains(emitted, exposed) {
           let mut src : @abi.Source? = None
           for b in resolved {
-            if !is_sentinel(b.key) && exposed_key_of(b.key, ek) == Some(exposed) {
+            if !is_sentinel(b.key) && ek.exposed_cell(b.key) == Some(exposed) {
               src = match b.op {
                 // issue 2026-07-09-accum-filters-non-set-op-semantics: `@abi.Unset` は CLI 発火済みだが
                 // 未確定 (committed=false、DR-045「default 値へ戻す... committed=false」) なので、
@@ -1093,7 +1074,7 @@ fn collect_sources_tree(resolved : Array[@abi.Binding]) -> Array[SourceEntry] {
 fn result_sources(
   sc : @engine.Scope,
   resolved : Array[@abi.Binding],
-  ek : Map[String, @engine.ExportKey],
+  ek : @engine.ExportScopeMap,
 ) -> Array[SourceEntry] {
   if has_commands(sc) {
     collect_sources_tree(resolved)
@@ -1399,7 +1380,7 @@ fn resolve_scope_tree_with_export(
   inherited : Map[String, @abi.Value],
   at_pos : Int,
   tty : (String) -> TtyObs?,
-  ek : Map[String, @engine.ExportKey],
+  ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
   include_default : Bool,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
@@ -1473,8 +1454,17 @@ fn resolve_scope_tree_with_export(
         if scope_entered_here(binds, childpath) {
           match
             resolve_scope_tree_with_export(
-              child, binds, env_map, provider, childpath, child_inherited, at_pos,
-              tty, ek, extensions, include_default,
+              child,
+              binds,
+              env_map,
+              provider,
+              childpath,
+              child_inherited,
+              at_pos,
+              tty,
+              ek.child(name),
+              extensions,
+              include_default,
             ) {
             Ok(cb) =>
               for b in cb {
@@ -1522,7 +1512,7 @@ fn apply_requires_filter_with_export(
   toks_len : Int,
   provider : (String) -> @abi.ConfigVal?,
   tty : (String) -> TtyObs?,
-  ek : Map[String, @engine.ExportKey],
+  ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
 ) -> @engine.Outcome {
   let table = @engine.collect_scopes(root, defs)
@@ -2660,7 +2650,7 @@ fn resolve_scope_config_with_export(
   inherited : Map[String, @abi.Value],
   at_pos : Int,
   tty : (String) -> TtyObs?,
-  ek : Map[String, @engine.ExportKey],
+  ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
   include_default : Bool,
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
@@ -2753,7 +2743,7 @@ fn resolve_scope_config_with_export(
                 option_values.set(e.name, b.value)
               }
             }
-            match exposed_key_of(e.name, ek) {
+            match ek.exposed_cell(e.name) {
               Some(key) =>
                 if !str_contains(occupied, key) {
                   occupied.push(key)
@@ -2774,7 +2764,7 @@ fn resolve_scope_config_with_export(
     let groups : Array[DefaultClaimGroup] = []
     for e in sc.entities {
       if !e.is_config_file && !str_contains(supplied, e.name) {
-        match exposed_key_of(e.name, ek) {
+        match ek.exposed_cell(e.name) {
           Some(key) if !str_contains(occupied, key) => {
             let cpath = config_path_of(e, path)
             match
@@ -2830,7 +2820,7 @@ fn resolve_scope_config_with_export(
   // defaults see the occupied cell and do not run their value pipeline at all.
   for e in default_order(sc.entities, extensions) {
     if !e.is_config_file && !str_contains(supplied, e.name) {
-      let exposed = exposed_key_of(e.name, ek)
+      let exposed = ek.exposed_cell(e.name)
       let cell_empty = match exposed {
         Some(key) => !str_contains(occupied, key)
         None => true

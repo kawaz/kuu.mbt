@@ -285,7 +285,7 @@ fn apply_requires_filter(
     toks_len,
     provider,
     fn(key) { tty.get(key) },
-    Map([]),
+    @engine.ExportScopeMap::empty(),
     canonical_registry(),
   )
 }
@@ -365,7 +365,7 @@ fn resolve_scope_config(
     inherited,
     at_pos,
     fn(key) { tty.get(key) },
-    Map([]),
+    @engine.ExportScopeMap::empty(),
     canonical_registry(),
     true,
   )

@@ -2777,7 +2777,9 @@ test "DR-089: a fired none-typed pure trigger never appears in the result" {
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
           assert_eq(
-            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            render_rval_sorted(
+              build_result_export(sc, resolved, @engine.ExportScopeMap::empty()),
+            ),
             "{}",
           )
         Err(_) => fail("expected Ok resolve")
@@ -2942,7 +2944,9 @@ test "DR-093: a required:true option with a declared default is vacuously satisf
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
           assert_eq(
-            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            render_rval_sorted(
+              build_result_export(sc, resolved, @engine.ExportScopeMap::empty()),
+            ),
             "{name=fallback}",
           )
         Err(_) => fail("expected Ok resolve")
@@ -2976,7 +2980,9 @@ test "DR-093: a required:true dd element (@engine.DdSatisfied) is satisfied by f
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
           assert_eq(
-            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            render_rval_sorted(
+              build_result_export(sc, resolved, @engine.ExportScopeMap::empty()),
+            ),
             "{x=msg}",
           )
         Err(_) => fail("expected Ok resolve")
@@ -3254,7 +3260,9 @@ test "DR-089 対極: a pre-existing explicit-type element is unaffected by none 
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
           assert_eq(
-            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            render_rval_sorted(
+              build_result_export(sc, resolved, @engine.ExportScopeMap::empty()),
+            ),
             "{x=true}",
           )
         Err(_) => fail("expected Ok resolve")
@@ -3287,7 +3295,9 @@ test "DR-088: a plain scalar positional with a declared default is a complete pa
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
           assert_eq(
-            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            render_rval_sorted(
+              build_result_export(sc, resolved, @engine.ExportScopeMap::empty()),
+            ),
             "{seconds=10}",
           )
         Err(_) => fail("expected Ok resolve")
@@ -3316,7 +3326,9 @@ test "DR-088: a plain scalar positional with a declared default still consumes a
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
           assert_eq(
-            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            render_rval_sorted(
+              build_result_export(sc, resolved, @engine.ExportScopeMap::empty()),
+            ),
             "{seconds=5}",
           )
         Err(_) => fail("expected Ok resolve")
@@ -3367,7 +3379,9 @@ test "DR-088 対極2: an explicit optional:true positional is unaffected (still 
       match resolve_scope(sc, bs, Map([])) {
         Ok(resolved) =>
           assert_eq(
-            render_rval_sorted(build_result_export(sc, resolved, Map([]))),
+            render_rval_sorted(
+              build_result_export(sc, resolved, @engine.ExportScopeMap::empty()),
+            ),
             "{tag=[]}",
           )
         Err(_) => fail("expected Ok resolve")

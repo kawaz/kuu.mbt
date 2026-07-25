@@ -824,3 +824,61 @@ test "single-value option remains scalar after option seq support" {
     @abi.Object([("port", @abi.Scalar(@abi.String("80")))]),
   )
 }
+
+///|
+/// 保証 (DR-120 §3 / DR-052 §1、dogfooding D4 で発見した実バグの根治 pin): 露出キーの解決は
+/// **結果スコープ単位・軸単位**で行われる。静的検査 (`parse_definition` の
+/// export-key-collision) と result builder は同じ 1 本の走査から出た同じ木を読むので、
+/// 「検査は別キーと判定するのに result builder は identity のキーを書く」食い違いが起きない。
+///
+/// 落とす退行は 2 つとも「露出キーの解決を名前 1 枚の平坦な写像で持つ」実装が踏むもの:
+///
+/// 1. **同一スコープ・別軸の同名** — option `x` (`export_key: "ox"`) と command `x` が並ぶと、
+///    平坦写像では宣言順で後に来る command の軸 (未指定 = identity) が option の軸を上書きし、
+///    `--x` の結果キーが `ox` でなく `x` になる (= `export_key` が実行時に黙って無視される)。
+///    静的検査は露出キー `ox` と `x` を別物と正しく判定するので `validate` は ok を返し、
+///    食い違いだけが残る。同名 option / command の同居自体は合法 (DR-120 §7: 綴り軸と結果キー軸
+///    は別、`fixtures/export-key/collision-option-command.json` が衝突する側を pin)
+/// 2. **別スコープの同名** — root の `p` (identity) と子 command の `p` (`export_key: "sp"`)
+///    のように、スコープが違えば衝突しない (DR-021「スコープ階層が違えば対象外」) 同名要素が
+///    平坦写像では 1 エントリを取り合い、root の `--p` の結果キーが子の `export_key` になる
+test "front_door.output: 露出キーの解決は結果スコープ・軸ごと (DR-052 §1 / DR-120 §3)" {
+  fn result_of(src : String, args : Array[String]) -> String raise {
+    let ast = match parse_definition(@json.parse(src)) {
+      Ok(value) => value
+      Err(_) => {
+        fail("parse_definition should accept the definition")
+        panic()
+      }
+    }
+    let parsed = parse_legacy(ast, args)
+    let resolved = resolve_legacy(ast, parsed, args)
+    let effects = match resolved {
+      @engine.Success(bindings) => bindings
+      other => {
+        fail("should parse, got " + render_outcome(other))
+        panic()
+      }
+    }
+    render_rval_sorted(output_legacy(ast, effects~).result)
+  }
+
+  // 1. option `x` (export_key: "ox") と command `x` の同居。`--x` は option の結果キー `ox`。
+  let option_and_command =
+    #|{"options":[{"name":"x","type":"flag","long":true,"export_key":"ox"}],
+    #| "commands":[{"name":"x","type":"command","options":[{"name":"inner","type":"flag","long":true}]}]}
+  assert_eq(result_of(option_and_command, ["--x"]), "{ox=true}")
+  // 同じ定義で command 側を選ぶと scope label は identity の `x` (option の export_key に
+  // 引きずられない)。`inner` は未発火の flag なので preset default が入る。
+  assert_eq(result_of(option_and_command, ["x"]), "{ox=false,x={inner=false}}")
+  // 2. root の `p` と子 scope の `p` (export_key: "sp")。root の `--p` は identity の `p`。
+  let same_name_across_scopes =
+    #|{"options":[{"name":"p","type":"flag","long":true}],
+    #| "commands":[{"name":"sub","type":"command","options":[{"name":"p","type":"flag","long":true,"export_key":"sp"}]}]}
+  assert_eq(result_of(same_name_across_scopes, ["--p"]), "{p=true}")
+  // 子 scope 側の `--p` は子の export_key `sp` の下に入る (root の `p` は preset default)。
+  assert_eq(
+    result_of(same_name_across_scopes, ["sub", "--p"]),
+    "{p=false,sub={sp=true}}",
+  )
+}
