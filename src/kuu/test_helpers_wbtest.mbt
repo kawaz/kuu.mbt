@@ -266,50 +266,6 @@ fn render_rval_sorted(value : @abi.ResultValue) -> String {
 // ── whitebox-only wrappers removed from the production interface ──────────
 
 ///|
-/// One built interpretation for whitebox collision projection checks.
-struct TestInterpretation {
-  result : @abi.ResultValue
-  claimants : Array[(String, String)]
-} derive(Eq, Debug)
-
-///|
-/// Build every DR-073 interpretation of `binds`. With no collision this is a single interpretation
-/// (empty claimants) — the ordinary export_result rendering. With collisions, the views come from
-/// the production `claimant_views` (the one place the rival-drop judgement lives — see its doc
-/// comment) and this helper only renders each one: apply export keys, build the result.
-/// `cells`/`defaults` are passed through to
-/// `build_result` unchanged (accum cells and defaults are keyed by raw entity name, matching the
-/// caller's `accum_cells(sc)` / `apply_export_to_defaults(default_cells(sc), ek)` convention — see
-/// slice `poc/helpers_wbtest.mbt`).
-fn build_interpretations(
-  binds : Array[@abi.Binding],
-  ek : Map[String, @engine.ExportKey],
-  cells : Array[AccumCell],
-  defaults : Array[DefaultCell],
-  nones? : Array[@engine.NoneCell] = [],
-) -> Array[TestInterpretation] {
-  let collisions = find_export_collisions(binds, ek)
-  if collisions.length() == 0 {
-    let mapped = apply_export_keys(binds, ek)
-    return [
-      {
-        result: build_result(mapped, cells, defaults, [], nones~),
-        claimants: [],
-      },
-    ]
-  }
-  let out : Array[TestInterpretation] = []
-  for view in claimant_views(binds, collisions, ek) {
-    let mapped = apply_export_keys(view.0, ek)
-    out.push({
-      result: build_result(mapped, cells, defaults, [], nones~),
-      claimants: view.1,
-    })
-  }
-  out
-}
-
-///|
 /// Apply requires with identity result keys. Front-door parsing uses the export-aware internal
 /// variant so default filling and requires observe the same result-cell partition.
 fn apply_requires_filter(

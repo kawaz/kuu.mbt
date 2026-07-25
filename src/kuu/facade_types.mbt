@@ -56,13 +56,6 @@ pub struct Interpretation {
 }
 
 ///|
-pub fn Interpretation::claimants(
-  self : Interpretation,
-) -> Array[(String, String)] {
-  self.raw.claimants.copy()
-}
-
-///|
 /// An ambiguous parse and its parse-phase interpretations.
 pub struct ParsedAmbiguity {
   interpretations : Array[Interpretation]

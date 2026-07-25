@@ -229,7 +229,6 @@ pub(all) struct HelpUsagePositional {
 pub struct Interpretation {
   // private fields
 }
-pub fn Interpretation::claimants(Self) -> Array[(String, String)]
 
 pub struct OutputEffect {
   entity : String

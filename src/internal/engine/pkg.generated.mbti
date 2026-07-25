@@ -194,7 +194,6 @@ pub(all) struct AmbiguousData {
 
 pub(all) struct AmbiguousInterpretation {
   binds : Array[@abi.Binding]
-  claimants : Array[(String, String)]
 } derive(Eq, @debug.Debug)
 
 pub(all) struct CommandDef {

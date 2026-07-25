@@ -728,40 +728,10 @@ fn exp_sources_str(j : Json) -> String raise DecodeSkip {
 }
 
 ///|
-fn exp_claimants_str(j : Json) -> String raise DecodeSkip {
-  let o = match j.j_obj() {
-    Some(x) => x
-    None => raise DecodeSkip("claimants is not an object")
-  }
-  let items : Array[String] = []
-  for k, v in o {
-    let ent = match v.j_str() {
-      Some(s) => s
-      None =>
-        raise DecodeSkip("claimant value (occupying entity) is not a string")
-    }
-    items.push(k + "=" + ent)
-  }
-  sort_items(items)
-  "{" + join_comma(items) + "}"
-}
-
-///|
+/// `interpretations[]` の 1 要素は結果オブジェクト形のビュー直書き (DR-053 §3)。ambiguous は
+/// 構造的に複数の完全経路が立つ場合に限られる (DR-038) ので、ビューだけで解釈を区別できる。
 fn exp_interp_str(e : Json) -> String raise DecodeSkip {
-  match e.j_obj() {
-    Some(o) =>
-      if has_key(o, "claimants") {
-        allowed_keys(o, ["result", "claimants"], "interpretation wrapper")
-        let view = match o.get("result") {
-          Some(r) => render_rval_sorted(json_to_rval(r))
-          None => raise DecodeSkip("interpretation wrapper missing 'result'")
-        }
-        view + "#claimants" + exp_claimants_str(o.get("claimants").unwrap())
-      } else {
-        render_rval_sorted(json_to_rval(e))
-      }
-    None => render_rval_sorted(json_to_rval(e))
-  }
+  render_rval_sorted(json_to_rval(e))
 }
 
 ///|
@@ -2323,26 +2293,12 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             Some(ei) => {
               let got : Array[String] = []
               for interp in d.interpretations {
-                // Result-object view is always rendered (DR-053 §3 骨格温存)。
-                let view = render_rval_sorted(
-                  @kuu.output_of_interpretation(ast, interp),
+                // 解釈は結果オブジェクト形のビューとして描画する (DR-053 §3)。ambiguous は
+                // 構造的に複数の完全経路が立つ場合に限られる (DR-038) ので、ビュー自体が解釈を
+                // 区別する — 追加の provenance 面は要らない。
+                got.push(
+                  render_rval_sorted(@kuu.output_of_interpretation(ast, interp)),
                 )
-                // DR-073 §1: append `#claimants{...}` suffix only when the interpretation carries
-                // a non-empty claimants面 (matches exp_interp_str's `view + "#claimants" + ...`
-                // encoding at line 1500). Non-collision interpretations render as bare view — the
-                // renderer must not synthesize an empty `#claimants{}` for those (would fail the
-                // structural or-position/repeat/prefix-guard ambiguous fixtures whose expected
-                // form is view-only, not `view#claimants{}`).
-                if interp.claimants().length() == 0 {
-                  got.push(view)
-                } else {
-                  let items : Array[String] = []
-                  for kv in interp.claimants() {
-                    items.push(kv.0 + "=" + kv.1)
-                  }
-                  sort_items(items)
-                  got.push(view + "#claimants{" + join_comma(items) + "}")
-                }
               }
               sort_items(got)
               let ag = join_comma(got)

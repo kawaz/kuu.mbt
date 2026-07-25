@@ -2886,10 +2886,8 @@ pub fn parse_tree(
       })
     1 => Success(full[0])
     _ =>
-      // DR-073: structurally-distinct full paths have no export-key collision (they differ by
-      // parse structure, not by provenance for a shared exposed key), so claimants stays empty.
-      // Export-key co-exposure collisions are surfaced by a separate post-parse promotion step
-      // (resolve.mbt `promote_collision_ambiguous`) which fills in claimants per interpretation.
+      // DR-038: ambiguity is structural — 2 本以上の完全経路がそのまま解釈になる。各解釈は
+      // 経路構造 (= binds) で互いに区別できる。
       // help_entry: ambiguous には単一の「失敗位置」が無い (複数完全経路が成立している) ので、
       // `find_help_entry` へ空の errors を渡して root scope 全体を見る従来どおりの posture に
       // 留める (`find_help_entry`のフォールバック分岐、failure 側の失敗位置基準とは意図的に別)。
@@ -2897,7 +2895,7 @@ pub fn parse_tree(
         interpretations: {
           let a : Array[AmbiguousInterpretation] = []
           for f in full {
-            a.push({ binds: f, claimants: [] })
+            a.push({ binds: f })
           }
           a
         },

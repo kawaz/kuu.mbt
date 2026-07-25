@@ -197,11 +197,6 @@ pub fn parse_definition(
 ///    @engine.Ambiguous)。値源が空でも bool 目的語の充足条件 (「解決後値が true」) の判定は必要 —
 ///    `env` / `config` / `tty` が未指定なら default: false になり、requires が unfired を弾く
 ///    (仕様通り)
-/// 3. **export-key collision promotion** (DR-021 → DR-073 / UX-Q7R): 同一入力で export_key に
-///    共露出する発火 (cli/link) と default より上の席 (env/config/inherit) を解決して @engine.Success を
-///    @engine.Ambiguous に昇格し、claimants 面 (露出キー → その解釈で当該キーを占める実体 entity name) を
-///    添える。default 席は共露出 claim ではなく、射影後 result cell が空の時だけ注入される
-///
 /// **相区分 (DR-104 §5)**: 値源ラダー (env/config/inherit/default seat fill) を binds に反映
 /// する **resolve 相** は本関数の射程外 — 別関数 `resolve()` (下記) に切り出す。理由: parse 相
 /// と resolve 相は spec の DR-104 §5 が「dead end 判定は parse 相、制約評価は resolve 相」で
@@ -209,9 +204,6 @@ pub fn parse_definition(
 /// に倒す」)。したがって本関数の @engine.Success payload (`Array[@abi.Binding]`) は **CLI 由来の生 binds**
 /// (`@engine.parse_tree` の直接出力、resolve 未適用) であり、`resolve()` に渡してから
 /// `build_result` / `apply_export_keys` で最終 wire 表現を組み立てるのが呼び出し側の責務。
-/// ただし collision により @engine.Ambiguous へ昇格する解釈は、共露出した env/config/inherit の
-/// bindings も運ぶ。claimants と対になる結果ビューを構成するための解釈データである。
-///
 /// **なぜ 1 発 `parse_and_resolve` にしないか**: parse 相の outcome (@engine.Success/@engine.Failure/@engine.Ambiguous
 /// 骨格) だけ欲しい場面 (dogfooding 用の debug、部分的な取扱、fuzz 等) と、完全 wire を組み立て
 /// たい場面 (kuu-cli の JSON 出力) を型で区別する。呼び出し側便宜のラッパーが必要になれば別途足す
@@ -251,28 +243,7 @@ fn parse_legacy(
     ast.ekmap,
     ast.extensions,
   )
-  match checked {
-    @engine.Success(binds) =>
-      match
-        resolve_scope_tree_with_export(
-          ast.root,
-          binds,
-          env,
-          config,
-          [],
-          Map([]),
-          args.length(),
-          tty,
-          ast.ekmap,
-          ast.extensions,
-          false,
-        ) {
-        Ok(claims) =>
-          promote_collision_ambiguous_from(checked, claims, ast.ekmap)
-        Err(_) => promote_collision_ambiguous(checked, ast.ekmap)
-      }
-    _ => checked
-  }
+  checked
 }
 
 ///|
@@ -480,31 +451,16 @@ fn interpretation_has_source(
 }
 
 ///|
-fn interpretation_has_claimant(
-  claimants : Array[(String, String)],
-  key : String,
-) -> Bool {
-  for claimant in claimants {
-    if claimant.0 == key {
-      return true
-    }
-  }
-  false
-}
-
-///|
 fn filter_interpretation_result(
   result : @abi.ResultValue,
   sources : Array[SourceEntry],
-  claimants : Array[(String, String)],
   path : Array[String],
 ) -> @abi.ResultValue {
   match result {
     @abi.Object(fields) => {
       let kept : Array[(String, @abi.ResultValue)] = []
       for field in fields {
-        if interpretation_has_source(sources, path, field.0) ||
-          interpretation_has_claimant(claimants, field.0) {
+        if interpretation_has_source(sources, path, field.0) {
           kept.push(field)
         } else {
           match field.1 {
@@ -514,7 +470,6 @@ fn filter_interpretation_result(
               let nested = filter_interpretation_result(
                 field.1,
                 sources,
-                claimants,
                 output_path_push(path, field.0),
               )
               match nested {
@@ -759,10 +714,9 @@ fn output_legacy(
 
 ///|
 /// DR-053 §3 の ambiguous interpretation を、resolve 相を適用しない result-object view として
-/// 射影する。interpretation 自身の bindings が運ばない Default-source scalar は除外する一方、
-/// DR-073 §1 の claimants に載る key の default は衝突 provenance を保つため残し、空 accumulator
-/// 配列は interpretation の構造として残す。この 3 規則により、呼び出し側は result と sources を
-/// 個別に組み合わせず、解釈 1 件の表示意味論を玄関から直接得られる。
+/// 射影する。interpretation 自身の bindings が運ばない Default-source scalar は除外し、空
+/// accumulator 配列は interpretation の構造として残す。この 2 規則により、呼び出し側は result と
+/// sources を個別に組み合わせず、解釈 1 件の表示意味論を玄関から直接得られる。
 /// `resolved` may only be combined with the `ast` whose parse produced it; mixing another AST is undefined.
 pub fn output(ast : AtomicAST, resolved : ResolvedBindings) -> OutputView {
   output_legacy(ast, effects=resolved.effects_, resolved=resolved.raw)
@@ -783,12 +737,7 @@ pub fn output_of_interpretation(
   interp : Interpretation,
 ) -> @abi.ResultValue {
   let view = output_legacy(ast, effects=interp.raw.binds)
-  filter_interpretation_result(
-    view.result,
-    view.sources,
-    interp.raw.claimants,
-    [],
-  )
+  filter_interpretation_result(view.result, view.sources, [])
 }
 
 ///|

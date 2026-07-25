@@ -4,9 +4,8 @@
 // kuu-cli PoC dogfooding が発見した「front_door.parse が薄い @engine.parse_tree wrapper のまま spec 非
 // 準拠 outcome を返す」実バグの根治として、玄関 API のシグネチャに沿った 3 本の pin を残す:
 //
-// 1. export-key 衝突 (DR-021 → DR-073): 同一入力で 2 要素が同じ export_key に共露出したとき、
-//    front_door.parse は @engine.Success ではなく @engine.Ambiguous を返す (`promote_collision_ambiguous` の
-//    parse 内包)
+// 1. export-key 衝突 (DR-120): 2 要素が同じ露出キーへ解決する定義は front_door.parse_definition
+//    が definition-error (kind=export-key-collision) として弾く — parse まで到達しない
 // 2. inheritable resolve (DR-059 §5 / DR-047 §4): 祖先 write-target で書かれた値が子 scope の
 //    inherit 席に流下する。front_door.resolve が返す binds に子 scope 側の解決済み値 (source=
 //    @abi.Inherit) が現れる
@@ -15,148 +14,71 @@
 //    `@depr:...` は effects (非 sentinel binds) に混じらない (`is_sentinel` で除外可能)
 //
 // 期待値の根拠は kawaz/kuu の fixtures (`export-key/collision.json` /
+// `export-key/collision-identity.json` /
 // `inheritable-parse/basic.json` / `alias-parse/deprecated.json`) の該当 case と一致し、
 // conformance runner が実際にその期待を満たしていることは `[json-conformance] mismatches=0` が
 // 別途保証している — 本 wbtest は玄関 API の契約側からその 3 面を独立に固定する層。
 
 ///|
-/// 保証 (MDR-005 §1 / DR-021 → DR-073 / DR-053 §3): front_door.parse は `@engine.parse_tree` の直接
-/// 結果ではなく **`promote_collision_ambiguous` 込みの spec 準拠 @engine.Outcome** を返す。同一 args で
-/// 2 flag (a / b) が共に export_key "x" へ露出する場合、raw `@engine.parse_tree` は @engine.Success を返すが、
-/// 玄関 `parse` は @engine.Ambiguous に昇格し、各 interpretation が DR-073 §1 の claimants 面 (露出キー
-/// "x" → 占める実体 name) を持つ。fixture 期待は 2 解釈 `{claimants: {"x":"a"}}` と
-/// `{claimants: {"x":"b"}}` で、集合として比較する (順序非依存、DR-073 §3)。
-test "front_door.parse: export-key 共露出は @engine.Ambiguous + claimants に昇格 (DR-021 → DR-073, MDR-005 §1)" {
-  let src =
-    #|{"options": [
-    #|  {"name": "a", "type": "flag", "long": true, "export_key": "x"},
-    #|  {"name": "b", "type": "flag", "long": true, "export_key": "x"}
-    #|]}
-  let j = @json.parse(src)
-  let ast = match parse_definition(j) {
-    Ok(a) => a
-    Err(_) => {
-      fail("parse_definition failed")
-      panic()
-    }
-  }
-  // raw `@engine.parse_tree` は @engine.Success を返す (parse 段は共露出を検知しない)。この対比は「front_door.parse
-  // が薄い wrapper のままだった旧実装での不具合再現」の pin として、期待外れの @engine.Ambiguous 昇格が
-  // @engine.parse_tree 側で先に起きていないことも同時に確認する。
-  let raw = @engine.parse_tree(
-    @engine.ScopeNode(ast.root),
-    ["--a", "--b"],
-    defs=ast.templates,
-  )
-  match raw {
-    @engine.Success(_) => ()
-    other =>
-      fail(
-        "raw @engine.parse_tree should still succeed pre-promotion, got " +
-        render_outcome(other),
-      )
-  }
-  // 玄関 `parse` は promote_collision_ambiguous を内包するため @engine.Ambiguous を返す。
-  let o = parse_legacy(ast, ["--a", "--b"])
-  match o {
-    @engine.Ambiguous(d) => {
-      assert_eq(d.interpretations.length(), 2)
-      // 各 interpretation の claimants に露出キー "x" → 実体 name の写像が1件だけ載る (DR-073 §1)。
-      // 並び順は不定なので、a と b の 2 名がちょうど 1 度ずつ現れることをセットとして確認する。
-      let mut have_a = false
-      let mut have_b = false
-      for interp in d.interpretations {
-        assert_eq(interp.claimants.length(), 1)
-        let (key, holder) = interp.claimants[0]
-        assert_eq(key, "x")
-        if holder == "a" {
-          have_a = true
+/// 保証 (MDR-005 §1 / DR-120 §1/§3/§5): 2 つの値セルが同じ露出キーへ解決する定義は、玄関
+/// `parse_definition` が definition-error (kind=export-key-collision) として弾く — parse 相へ
+/// 到達しない。mapped 同士 (a/b とも `export_key: "x"`) と identity × mapped
+/// (a は未指定、b が `export_key: "a"`) の両方を確認する — §3 の「解決経路の種類を区別しない」を
+/// 玄関 API の側から独立に固定する層 (fixture 側は export-key/collision.json /
+/// collision-identity.json)。
+test "front_door.parse_definition: 露出キー衝突は definition-error (DR-120 §1/§3)" {
+  fn collision_kinds(src : String) -> Array[String] raise {
+    match parse_definition(@json.parse(src)) {
+      Ok(_) => []
+      Err(Malformed(reason)) => ["malformed:" + reason]
+      Err(Rejected(errors)) => {
+        let items : Array[String] = []
+        for error in errors {
+          items.push("\{error.element}/\{test_render_def_kind(error.kind)}")
         }
-        if holder == "b" {
-          have_b = true
-        }
-      }
-      assert_true(have_a)
-      assert_true(have_b)
-    }
-    other =>
-      fail(
-        "front_door.parse should promote to @engine.Ambiguous, got " +
-        render_outcome(other),
-      )
-  }
-}
-
-///|
-/// 保証 (DR-073 §2 / DR-052 §1, issue 2026-07-25-collision-drop-filter-identity-exposure-production-gap):
-/// 衝突解釈の drop 判定 (「自分の claimant 以外の binding をその (path, 露出キー) から落とす」)
-/// は **identity 露出** (export_key 未指定 → name 由来キー、DR-052 §1) の rival も落とす。落とせない
-/// と、両 claimant の binding が生き残ったまま同じ結果キーへ写り、`build_result` の last-wins
-/// (DR-015) で **宣言順に依存した片方の値** が両解釈に現れる — 2 解釈の view が同一に潰れ、
-/// 片方は「その claimant が占めた」と主張しながら別実体の値を見せる誤り view になる。
-///
-/// ここでは宣言順を入れ替えた 2 定義 (identity 先 / mapped 先) を同一 args で流し、どちらも
-/// `{a=v1}#claimants{a=a}` / `{a=v2}#claimants{a=b}` の同じ 2 解釈になることを固定する
-/// (= 宣言順の対称性)。last-wins の並びに救われる断面 (identity 先) だけを pin すると
-/// drop 判定の欠落を検出できないため、対称性そのものを保証面に置く。
-test "front_door.parse: identity 露出 rival の drop は宣言順に依存しない (DR-073 §2 / DR-052 §1)" {
-  fn interps_of(src : String) -> Array[String] raise {
-    let ast = match parse_definition(@json.parse(src)) {
-      Ok(a) => a
-      Err(_) => {
-        fail("parse_definition failed")
-        panic()
-      }
-    }
-    match parse_legacy(ast, ["--a", "v1", "--b", "v2"]) {
-      @engine.Ambiguous(d) => {
-        let got : Array[String] = []
-        for interp in d.interpretations {
-          let view = render_rval_sorted(
-            output_of_interpretation(ast, { raw: interp }),
-          )
-          let items : Array[String] = []
-          for kv in interp.claimants {
-            items.push(kv.0 + "=" + kv.1)
-          }
-          test_sort_items(items)
-          got.push(view + "#claimants{" + test_join_comma(items) + "}")
-        }
-        // 解釈は集合として比較する (順序非依存、DR-073 §3)。
-        test_sort_items(got)
-        got
-      }
-      other => {
-        fail(
-          "front_door.parse should promote to @engine.Ambiguous, got " +
-          render_outcome(other),
-        )
-        panic()
+        test_sort_items(items)
+        items
       }
     }
   }
 
-  // identity 露出の `a` を先に宣言 (spec fixture export-key/collision-identity.json と同じ並び)。
-  let identity_first = interps_of(
-    (
-      #|{"options": [
-      #|  {"name": "a", "type": "string", "long": true},
-      #|  {"name": "b", "type": "string", "long": true, "export_key": "a"}
-      #|]}
+  // mapped 同士 (fixtures/export-key/collision.json と同じ定義)。
+  assert_eq(
+    collision_kinds(
+      (
+        #|{"options": [
+        #|  {"name": "a", "type": "flag", "long": true, "export_key": "x"},
+        #|  {"name": "b", "type": "flag", "long": true, "export_key": "x"}
+        #|]}
+      ),
     ),
+    ["a/export-key-collision", "b/export-key-collision"],
   )
-  // mapped 側の `b` を先に宣言 (それ以外は同型 — issue の再現定義)。
-  let mapped_first = interps_of(
-    (
-      #|{"options": [
-      #|  {"name": "b", "type": "string", "long": true, "export_key": "a"},
-      #|  {"name": "a", "type": "string", "long": true}
-      #|]}
+  // identity × mapped (fixtures/export-key/collision-identity.json と同じ定義)。宣言順を
+  // 入れ替えても同じ 2 件が立つ (検査は宣言順に依存しない)。
+  let expected = ["a/export-key-collision", "b/export-key-collision"]
+  assert_eq(
+    collision_kinds(
+      (
+        #|{"options": [
+        #|  {"name": "a", "type": "string", "long": true},
+        #|  {"name": "b", "type": "string", "long": true, "export_key": "a"}
+        #|]}
+      ),
     ),
+    expected,
   )
-  let expected = ["{a=v1}#claimants{a=a}", "{a=v2}#claimants{a=b}"]
-  assert_eq(identity_first, expected)
-  assert_eq(mapped_first, expected)
+  assert_eq(
+    collision_kinds(
+      (
+        #|{"options": [
+        #|  {"name": "b", "type": "string", "long": true, "export_key": "a"},
+        #|  {"name": "a", "type": "string", "long": true}
+        #|]}
+      ),
+    ),
+    expected,
+  )
 }
 
 ///|
