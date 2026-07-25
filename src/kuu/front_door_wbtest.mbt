@@ -623,7 +623,16 @@ test "front_door.resolve+result: ref+repeat accum セルの row 集約が resolv
 
 ///|
 /// An option-level seq is one value slot whose children consume consecutive
-/// tokens and whose result is the array of child values (DESIGN §1.1/§5.1).
+/// tokens (DESIGN §1.1/§5.1). 名前を持つ子は結果キーを保つ (DESIGN §2.5 / DR-052 §1) — 直上の
+/// ref-template 版 (`{r,g,b}` が 1 個の kv 行になる) と同じ規則で、`dec_seq_structural` が
+/// 子の `export_key` を null へ潰さないことの観測面。
+///
+/// **未決** (統括裁定待ち): 今の lowering は子ごとに `Scoped("#i")` を挟む (`seq_value_node`) ため
+/// 結果が「単一キー object の配列」`[{path:p},{value:v}]` になる。DESIGN §2.5 の例
+/// (`[{name:"r"},{name:"g"},{name:"b"}] → {r,g,b}`) と
+/// `fixtures/multiple-parse/ref-rows-append.json` が pin する ref-template 版は **1 個の kv**
+/// `{path:p, value:v}` なので、同じ wire 構文が経路で違う形を返している。ここでは現状の lowering の
+/// 形を素直に pin するに留め、どちらへ寄せるかは spec 側の裁定に委ねる。
 test "option seq consumes every child token and returns their value array" {
   let src =
     #|{"options": [{
@@ -658,14 +667,17 @@ test "option seq consumes every child token and returns their value array" {
         (
           "config_file",
           @abi.Array(
-            [@abi.Scalar(@abi.String("p")), @abi.Scalar(@abi.String("v"))]
+            [
+              @abi.Object([("path", @abi.Scalar(@abi.String("p")))]),
+              @abi.Object([("value", @abi.Scalar(@abi.String("v")))]),
+            ]
           ),
         ),
       ]
     ) => ()
     other =>
       fail(
-        "option seq should produce config_file=[p,v], got " +
+        "option seq should produce config_file=[{path:p},{value:v}], got " +
         render_rval_sorted(other),
       )
   }
@@ -706,9 +718,9 @@ test "option seq supports three children and equal-separated first child" {
     (
       "triple",
       @abi.Array([
-        @abi.Scalar(@abi.String("x")),
-        @abi.Scalar(@abi.String("y")),
-        @abi.Scalar(@abi.String("z")),
+        @abi.Object([("a", @abi.Scalar(@abi.String("x")))]),
+        @abi.Object([("b", @abi.Scalar(@abi.String("y")))]),
+        @abi.Object([("c", @abi.Scalar(@abi.String("z")))]),
       ]),
     ),
   ])
@@ -785,12 +797,12 @@ test "option seq multiple appends one child-value array per firing" {
         "pair",
         @abi.Array([
           @abi.Array([
-            @abi.Scalar(@abi.String("a")),
-            @abi.Scalar(@abi.String("b")),
+            @abi.Object([("left", @abi.Scalar(@abi.String("a")))]),
+            @abi.Object([("right", @abi.Scalar(@abi.String("b")))]),
           ]),
           @abi.Array([
-            @abi.Scalar(@abi.String("c")),
-            @abi.Scalar(@abi.String("d")),
+            @abi.Object([("left", @abi.Scalar(@abi.String("c")))]),
+            @abi.Object([("right", @abi.Scalar(@abi.String("d")))]),
           ]),
         ]),
       ),

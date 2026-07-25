@@ -1744,6 +1744,13 @@ fn dec_str_array(
 /// branch has `"exact"`, handled by `dec_or` instead), `Some(branches)` if it's the STRUCTURAL
 /// consumption-grammar form (any branch has `"seq"`/`"type"` — a multi-cell `{"seq":[...]}` branch
 /// or a single-cell `{"type":..,"name":..}` branch, used verbatim as the branch object itself).
+/// 子の結果キー軸は宣言のまま通す (DESIGN §2.5「name を持つ子が並べば結果が自然に kv になる」/
+/// DR-052 §1)。name 無しの子は `resolved_export_key` が透過に倒すので、素の値が配列要素として
+/// 残る (DESIGN §5.1「子の値の配列」) — 名前の有無で kv / 配列が決まる 1 本の規則で足りる。
+/// ここで `export_key: null` を**強制**すると、同じ wire 構文 `seq` の他の 2 経路 (テンプレ本体の
+/// `dec_templates` / or 枝の `dec_or_structural`、どちらも `dec_or_leaf` の軸をそのまま使う) と
+/// 食い違い、`fixtures/multiple-parse/ref-rows-append.json` が pin する
+/// `{"hlcolors": [{"r":0,"g":128,"b":255}]}` のような kv 行を option 直下の `seq` では書けなくなる。
 fn dec_seq_structural(
   j : Json,
   shadows : Map[String, TypeShadow],
@@ -1755,8 +1762,7 @@ fn dec_seq_structural(
   }
   let items : Array[@engine.ElementDef] = []
   for value in values {
-    let item = dec_or_leaf(value, shadows, extensions~)
-    items.push({ ..item, export_key: @engine.ExportKey::null() })
+    items.push(dec_or_leaf(value, shadows, extensions~))
   }
   items
 }
