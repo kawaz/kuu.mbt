@@ -955,3 +955,128 @@ test "front_door.output: 露出キーの解決は結果スコープ・軸ごと 
     "{p=false,sub={sp=true}}",
   )
 }
+
+///|
+/// 保証 (DESIGN §2.3/§2.4/§5.1 / DR-025 の --color 4 パターン / DR-052 §3、issue
+/// option-or-result-key-vanishes): **name を持つ要素に `or` を直書きすると、その name が 1 段の
+/// 結果スコープを作る**。旧実装は or を「値を持たない構造ディスパッチャ」として扱い、枝の leaf を
+/// 親スコープへ平坦に落としていたため、宣言した結果キーが結果から丸ごと消えていた
+/// (`{"name":"color","or":[{"type":"string"}]}` + `--color red` → root が object ですらない素の
+/// `"red"`、他 option を併存させると `color` だけが消滅)。
+///
+/// 平坦モデルが spec と食い違う点は 3 つあり、どれも本 test が同時に固定する:
+///
+/// 1. **同じ body を `ref` で書くと結果形が違った** — `definitions.templates` 経由の or は
+///    以前からネストする (`{color:{cname:...}}`、`ref-rows-append.json` 系)。DR-007「ref は構造
+///    定義全てを引き継ぐ」に反して直書きと ref で結果が割れていた
+/// 2. **`or` と同居する通常フィールドが無言で死んでいた** — DESIGN §1.2 は「`or` / `seq` キーは
+///    name / multiple / value_name 等と同居可能」と規定するが、平坦モデルでは wrapper の
+///    `export_key` / `multiple` が着地するセルを持たず、宣言が黙って捨てられていた
+/// 3. **空間形と `=` 形で結果が割れていた** — `--color=red` は共有 eq_split matcher へ素の entry を
+///    積むため、匿名 leaf では値ごと消えていた
+test "front_door.output: name を持つ or は 1 段の結果スコープを作る (DESIGN §2.3/§5.1 / DR-025)" {
+  fn result_of(src : String, args : Array[String]) -> String raise {
+    let ast = match parse_definition(@json.parse(src)) {
+      Ok(value) => value
+      Err(_) => {
+        fail("parse_definition should accept the definition")
+        panic()
+      }
+    }
+    let parsed = parse_legacy(ast, args)
+    let resolved = resolve_legacy(ast, parsed, args)
+    let effects = match resolved {
+      @engine.Success(bindings) => bindings
+      other => {
+        fail("should parse, got " + render_outcome(other))
+        panic()
+      }
+    }
+    render_rval_sorted(output_legacy(ast, effects~).result)
+  }
+
+  // DR-025 パターン A (or に name / 子に name 無し): 選ばれた枝の値がそのまま `color` に乗る
+  // (§5.1「or の値 = 選ばれた子の値」)。枝が 1 本でも 2 本でも構造は変わらない。
+  let anon_two_branches =
+    #|{"options":[{"name":"color","long":true,"or":[{"type":"string"},{"type":"number"}]},
+    #|            {"name":"v","type":"flag","long":true}]}
+  assert_eq(
+    result_of(anon_two_branches, ["--color", "red"]),
+    "{color=red,v=false}",
+  )
+  let anon_one_branch =
+    #|{"options":[{"name":"color","long":true,"or":[{"type":"string"}]},
+    #|            {"name":"v","type":"flag","long":true}]}
+  assert_eq(
+    result_of(anon_one_branch, ["--color", "red", "--v"]),
+    "{color=red,v=true}",
+  )
+  // `=` 形も空間形と同じ結果形 (DR-014 / DESIGN §7.2)。
+  assert_eq(result_of(anon_one_branch, ["--color=red"]), "{color=red,v=false}")
+
+  // DR-025 パターン C (or に name / 枝ごとに name): 枝の leaf は `color` の子スコープ。
+  let named_leaf =
+    #|{"options":[{"name":"color","long":true,"or":[{"type":"string","name":"cname"}]},
+    #|            {"name":"v","type":"flag","long":true}]}
+  assert_eq(
+    result_of(named_leaf, ["--color", "red", "--v"]),
+    "{color={cname=red},v=true}",
+  )
+  // DR-007: 同じ or body を `ref` テンプレ経由で書いても同じ結果形 (直書きと ref が割れない)。
+  let named_leaf_via_ref =
+    #|{"definitions":{"templates":{"c":{"or":[{"type":"string","name":"cname"}]}}},
+    #| "options":[{"name":"color","long":true,"ref":"c"},
+    #|            {"name":"v","type":"flag","long":true}]}
+  assert_eq(
+    result_of(named_leaf_via_ref, ["--color", "red", "--v"]),
+    "{color={cname=red},v=true}",
+  )
+
+  // DR-025 パターン D (seq 枝の子に name): 枝は 1 個の kv (§2.5)、それが `color` の値になる。
+  let seq_branch_named =
+    #|{"options":[{"name":"color","long":true,"or":[
+    #|   {"seq":[{"type":"number","name":"r"},{"type":"number","name":"g"}]},
+    #|   {"type":"string","name":"cname"}]}]}
+  assert_eq(
+    result_of(seq_branch_named, ["--color", "1", "2"]),
+    "{color={g=2,r=1}}",
+  )
+  // 同じ seq 枝の子が匿名なら §5.1 の「子の値の配列」— option 直下の `seq` と同じ畳み方。
+  let seq_branch_anon =
+    #|{"options":[{"name":"color","long":true,"or":[
+    #|   {"seq":[{"type":"number"},{"type":"number"}]},
+    #|   {"type":"string"}]}]}
+  assert_eq(result_of(seq_branch_anon, ["--color", "1", "2"]), "{color=[1,2]}")
+
+  // DESIGN §1.2「`or` キーは name / multiple 等と同居可能」: wrapper の `multiple` / `export_key`
+  // が実際に効く (平坦モデルでは着地するセルが無く無言で捨てられていた)。
+  let multiple_or =
+    #|{"options":[{"name":"color","long":true,"multiple":"append",
+    #|             "or":[{"type":"string","name":"cname"}]}]}
+  assert_eq(
+    result_of(multiple_or, ["--color", "red", "--color", "blue"]),
+    "{color=[{cname=red},{cname=blue}]}",
+  )
+  let renamed_or =
+    #|{"options":[{"name":"color","long":true,"export_key":"COLOR","or":[{"type":"string"}]}]}
+  assert_eq(result_of(renamed_or, ["--color", "red"]), "{COLOR=red}")
+
+  // positional の or も同じ (name を持てば結果スコープ、name 無しは従来どおり透過)。
+  let positional_named_or =
+    #|{"positionals":[{"name":"color","or":[{"type":"string","name":"cname"}]}]}
+  assert_eq(result_of(positional_named_or, ["red"]), "{color={cname=red}}")
+  let positional_anon_or =
+    #|{"positionals":[{"or":[{"type":"string","name":"cname"}]}]}
+  assert_eq(result_of(positional_anon_or, ["red"]), "{cname=red}")
+
+  // 枝 leaf の name が root の兄弟と同名でも露出キー衝突にならない (別スコープ、DR-021
+  // 「スコープ階層が違えば対象外」/ DR-120 §3) — 平坦モデルでは同一スコープに並ぶ扱いで
+  // definition-error になっていた。ここは `parse_definition` の受理だけを固定する: 結果形は
+  // installer の entity 名前空間が平坦 (`ensure_entity` は name で add-if-absent) なため、
+  // 同名の root 兄弟が preset default を失う別のギャップに当たる (issue 起票対象、本 test の
+  // 射程外)。
+  let leaf_shares_sibling_name =
+    #|{"options":[{"name":"color","long":true,"or":[{"type":"string","name":"v"}]},
+    #|            {"name":"v","type":"flag","long":true}]}
+  assert_true(parse_definition(@json.parse(leaf_shares_sibling_name)) is Ok(_))
+}

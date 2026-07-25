@@ -709,14 +709,16 @@ fn ref_row_head(name : String, head : Node) -> Node {
 /// `Seq` of value primitives (consumed in order) for a multi-item branch. Each item's own `name`
 /// carries through `element_head` unchanged, so held-Error / binding attribution lands on the LEAF
 /// (e.g. `a`/`s`/`b`/`r`/`g`/`b`/`name`) with no extra provenance wiring needed (§4).
+/// 複数 item の枝 (= `{"seq":[...]}` 枝) の畳み方は seq そのもの (DESIGN §5.1「子の値の配列
+/// (要素数によらず常に配列)。結果キーを持つ子が 1 つでもあれば代わりに 1 個の kv」) — option/
+/// positional 直下の `seq` と同じ `seq_child_nodes` を通す。1 item の枝は退化 (DR-067 §2
+/// 「1 個は単体と等価」) で素のノード。
 pub fn or_branch_node(br : OrBranch) -> Node {
   if br.items.length() == 1 {
     element_head(br.items[0])
   } else {
     let nodes : Array[Node] = []
-    for it in br.items {
-      nodes.push(element_head(it))
-    }
+    seq_child_nodes(br.items, nodes)
     Seq(nodes)
   }
 }
@@ -953,7 +955,17 @@ fn lower_positional(
           for br in branches {
             nodes.push(or_branch_node(br))
           }
-          lower_repeat_head(e, Or(nodes), registry, out)
+          // DESIGN §2.3/§2.4 / DR-025: name を持つ or は 1 段の結果スコープを作る (option 側の
+          // `inst_long` Or 分岐と同形)。匿名 or (held-errors 2 fixture) は name が空なので
+          // `Scoped` を挟まず従来どおり親スコープへ透過する。
+          let head : Node = if e.name == "" {
+            Or(nodes)
+          } else if e.multiple {
+            ref_row_head(e.name, Or(nodes))
+          } else {
+            Scoped(e.name, Or(nodes))
+          }
+          lower_repeat_head(e, head, registry, out)
         }
         Group(items) => {
           // MDR-004 §3 "Group + repeat": IndexedRepeat(label=name, head=Seq(inner cells), min,
@@ -1171,12 +1183,18 @@ fn ensure_entity_body(
       } else if elem_repeat(e) is Some(_) || e.multiple {
         ensure_entity(build, e, has_cf, extensions)
       }
-    Or(branches) =>
+    Or(branches) => {
+      // Group と同じ: wrapper が結果スコープを作る (DESIGN §2.3) が値セルは持たない。`multiple`
+      // 宣言時だけ accumulator の畳み単位として wrapper 自身の entity が要る (DR-084 §1)。
+      if e.multiple {
+        ensure_entity(build, e, has_cf, extensions)
+      }
       for br in branches {
         for it in br.items {
           ensure_entity_body(build, it, has_cf, extensions)
         }
       }
+    }
     Group(items) => {
       if e.multiple {
         ensure_entity(build, e, has_cf, extensions)
@@ -1442,11 +1460,16 @@ fn inst_long(
           for br in branches {
             branch_nodes.push(or_branch_node(br))
           }
+          let or_node : Node = if e.multiple {
+            ref_row_head(e.name, Or(branch_nodes))
+          } else {
+            Scoped(e.name, Or(branch_nodes))
+          }
           add_greedy(
             build,
             maybe_root(
               e.link_depth,
-              Seq(with_depr(e, [Exact(trigger), Or(branch_nodes)])),
+              Seq(with_depr(e, [Exact(trigger), or_node])),
             ),
           )
         }
@@ -1632,27 +1655,40 @@ fn inst_long(
       // arm — `Deny` withholds the eq-split entry entirely, leaving only the space form registered
       // above.
       match e.body {
+        // `Group` の `seq_eq_value_node` と同形: or の値は要素自身の結果スコープ (DESIGN §2.3、
+        // 空間形と同じ `Scoped(e.name, ...)`) に落ちるので、共有 eq_split matcher へ素の entry を
+        // 積むのではなく、スコープを被せた専用の greedy 衛星として登録する。共有 matcher に積むと
+        // 枝 leaf の binding が親スコープ直下に出て、空間形 (`--color red`) と `=` 形
+        // (`--color=red`) で結果形が割れる (匿名 leaf なら `=` 形は値ごと消える)。
         Or(branches) =>
           for br in branches {
             if br.items.length() == 1 {
               let leaf = br.items[0]
               if e.long_eq_sep != Deny && leaf.accumulator != Some("kv_map") {
-                eq_group(eq_prefixes, eq_groups, e.long_prefix).push(
-                  eq_entry(
-                    l,
-                    leaf.name,
-                    configured_type(
-                      leaf.ty,
-                      leaf.int_round,
-                      leaf.bool_config,
-                      allow_base_prefix=leaf.allow_base_prefix,
+                let matcher : Node = NativeMatch(
+                  eq_split(e.long_prefix, [
+                    eq_entry(
+                      l,
+                      leaf.name,
+                      configured_type(
+                        leaf.ty,
+                        leaf.int_round,
+                        leaf.bool_config,
+                        allow_base_prefix=leaf.allow_base_prefix,
+                      ),
+                      leaf.piece_filters,
+                      leaf.separator,
+                      merge=leaf.accumulator == Some("merge"),
+                      deprecated=leaf.deprecated,
                     ),
-                    leaf.piece_filters,
-                    leaf.separator,
-                    merge=leaf.accumulator == Some("merge"),
-                    deprecated=leaf.deprecated,
-                  ),
+                  ]),
                 )
+                let node : Node = if e.multiple {
+                  ref_row_head(e.name, matcher)
+                } else {
+                  Scoped(e.name, matcher)
+                }
+                add_greedy(build, maybe_root(e.link_depth, node))
               }
             }
           }
@@ -2325,8 +2361,9 @@ fn collect_value_names(
 /// 部分木 (`Scoped(e.name, ...)`、`inst_long`/`lower_positional` の ref 分岐が作る) に着地するため、
 /// `wrapper: Some(e.name)` を付けて判定側 (`eval.mbt`/`resolve.mbt`) が「宣言元要素自身の部分木内」
 /// だけを探すようにする (DESIGN §2.4/2.5 の露出規則、無制限透過ではなく要素自身の部分木に限定 —
-/// `RequiredCandidate` の doc comment 参照)。直書き Or の場合、値は親 scope に直接 bind されるため
-/// `wrapper: None`。
+/// `RequiredCandidate` の doc comment 参照)。直書き Or も同じ — 値は宣言元 `e` 自身の Scoped
+/// 部分木 (`inst_long` / `lower_positional` の Or 分岐が作る結果スコープ) に着地するので
+/// `wrapper: Some(e.name)`。
 fn required_candidates(
   e : ElementDef,
   registry : Map[String, Node],
@@ -2351,7 +2388,7 @@ fn required_candidates(
           let out : Array[RequiredCandidate] = []
           for br in branches {
             for it in br.items {
-              out.push({ name: it.name, wrapper: None })
+              out.push({ name: it.name, wrapper: Some(e.name) })
             }
           }
           out
@@ -4733,9 +4770,10 @@ fn gather_export_seats(
 /// ごとに辿り方が変わる:
 ///
 /// - `Cell` / `Enum` — 単一の named cell。自分の軸と席だけ
-/// - `Or` — 構造 or の wrapper は自前の結果キーを持たず、枝の leaf が親の結果スコープへ**平坦に**
-///   露出する (`fixtures/constraints-parse/required-structural-or-branch.json` の result が
-///   `{num:5}` / `{flag:true}` と平坦であることが観測面の裏)。枝を横断して leaf を親スコープへ積む
+/// - `Or` — 構造 or の wrapper は `Group` と同じく 1 段ネストした結果スコープ (DESIGN §2.3「name が
+///   結果スコープを作る」/ §2.4 露出規則 / DR-025 の --color 4 パターン C・D)。枝は排他なので
+///   どの枝を通っても同じ子スコープに落ちる — 枝を横断して 1 つの内側席集合に積む (別枝の
+///   同名 leaf が同じキーへ解決すれば衝突、DR-120 §6「検査は構造的で経路の到達可能性を見ない」)
 /// - `Group` — named group は 1 段ネストした結果スコープ (`fixtures/export-key/transparent-seq.json`
 ///   の `{xs:[...]}` / `fixtures/repeat-parse/group-trailing-positional.json` の
 ///   `{grp:[{gflag:"a"}]}`)。wrapper が親スコープの軸と席を取り、内側は子スコープとして検査する。
@@ -4764,12 +4802,43 @@ fn gather_element_seats(
         }
       }
     }
-    Or(branches) =>
-      for br in branches {
-        for it in br.items {
-          gather_element_seats(it, node, seats, out)
+    Or(branches) => {
+      // 匿名 or (positional の `{"or":[...]}`, held-errors 2 fixture) は lowering 側でも `Scoped`
+      // を挟まないので、枝の leaf はそのまま親の結果スコープに属する。
+      if e.name == "" {
+        for br in branches {
+          for it in br.items {
+            gather_element_seats(it, node, seats, out)
+          }
         }
+        return
       }
+      node.declare_element(e.name, e.export_key)
+      let inner_node = node.element_scope(e.name)
+      let seat_key = if element_occupies_seat(e) {
+        resolved_export_key(e.name, e.export_key)
+      } else {
+        None
+      }
+      match seat_key {
+        Some(key) => {
+          seats.push({ element: e.name, key, space: group_value_space() })
+          let inner : Array[ExportSeat] = []
+          for br in branches {
+            for it in br.items {
+              gather_element_seats(it, inner_node, inner, out)
+            }
+          }
+          report_export_key_collisions(inner, out)
+        }
+        None =>
+          for br in branches {
+            for it in br.items {
+              gather_element_seats(it, inner_node, seats, out)
+            }
+          }
+      }
+    }
     Group(items) => {
       node.declare_element(e.name, e.export_key)
       let inner_node = node.element_scope(e.name)

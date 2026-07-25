@@ -434,13 +434,14 @@ test "long installer: a deprecated Or (structural or) main entry carries a depre
     ],
   }
   let sc = ok_scope(def, [@builtins.long_installer()])
+  // 値スロットは wrapper 自身の結果スコープ (`Scoped("level", Or(...))`、DESIGN §2.3 / DR-025)。
   match sc.greedy[0] {
-    @engine.Seq([@engine.Exact("--level"), @engine.Or(_), marker]) if node_is_deprecation_mark(
-        marker,
-      ) => ()
+    @engine.Seq(
+      [@engine.Exact("--level"), @engine.Scoped("level", @engine.Or(_)), marker]
+    ) if node_is_deprecation_mark(marker) => ()
     _ =>
       fail(
-        "expected sc.greedy[0] == @engine.Seq([@engine.Exact(\"--level\"), @engine.Or(_), @builtins.deprecation_mark(\"level\")])",
+        "expected sc.greedy[0] == @engine.Seq([@engine.Exact(\"--level\"), @engine.Scoped(\"level\", @engine.Or(_)), @builtins.deprecation_mark(\"level\")])",
       )
   }
   let o = @engine.parse_tree(
@@ -4077,8 +4078,9 @@ test "constraint installer: required on a Or element expands candidates to each 
       let names : Array[String] = []
       for c in cands {
         names.push(c.name)
-        // 直書き Or の leaf は親 scope に直接 bind される (wrapper なし、codex M-2 修正)。
-        assert_eq(c.wrapper, None)
+        // 直書き Or の leaf は wrapper 自身の結果スコープ (`Scoped("level", ...)`) に着地する
+        // (DESIGN §2.3 / DR-025) ので、判定は宣言元の部分木に限定する。
+        assert_eq(c.wrapper, Some("level"))
       }
       assert_true(names.contains("num"))
       assert_true(names.contains("flag"))

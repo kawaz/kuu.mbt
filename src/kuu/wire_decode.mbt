@@ -2450,8 +2450,27 @@ fn dec_positional(
   match o.get("or") {
     Some(orj) =>
       match dec_or_structural(orj, shadows, extensions) {
-        Some(branches) =>
-          return { ..pos("", @builtins.string_type()), body: Or(branches) }
+        Some(branches) => {
+          // DESIGN §2.3 / DR-025: `name` を持つ positional の or も 1 段の結果スコープを作る
+          // (option 直下の or と対称)。旧実装はここで無条件に `pos("")` へ潰しており、
+          // `{"name":"color","or":[...]}` の宣言名が decode 時点で消えていた。name 無しの
+          // 匿名 or (fixtures/path-search/held-errors-*.json) は従来どおり "" のまま透過する。
+          let or_name = match jf_str(o, "name") {
+            Some(s) => {
+              check_reserved_name(s, "positional")
+              s
+            }
+            None => ""
+          }
+          let or_export = match o.get("export_key") {
+            Some(ej) => dec_export(ej)
+            None => @engine.ExportKey::unset()
+          }
+          return {
+            ..pos(or_name, @builtins.string_type(), export_=or_export),
+            body: Or(branches),
+          }
+        }
         None =>
           raise DecodeSkip(
             "positional 'or' has no structural branches (all-exact value-enum form is option-only, DR-055 §1 / §5.3)",
