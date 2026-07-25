@@ -10,3 +10,4 @@
 | 2026-07-25 | bug | open | [sources-projection-skips-export-key-under-commands](./2026-07-25-sources-projection-skips-export-key-under-commands.md) | command 木がある定義で sources が export_key を適用しない (command を 1 つ足すだけでキー体系が変わる) |
 | 2026-07-25 | design | open | [static-lint-warn-and-diagnose-unimplemented](./2026-07-25-static-lint-warn-and-diagnose-unimplemented.md) | DESIGN §15.6 の静的 warn と §13.7 diagnose が未実装 — 露出キー衝突の潜在構造を誰も警告しない |
 | 2026-07-25 | bug | open | [option-seq-named-children-not-folded-into-kv](./2026-07-25-option-seq-named-children-not-folded-into-kv.md) | option 直下 seq の名前付き子要素が kv に畳まれず、子ごとに別オブジェクト + 余分な配列階層になる |
+| 2026-07-25 | bug | open | [ref-template-seq-collapses-lastwins](./2026-07-25-ref-template-seq-collapses-lastwins.md) | ref テンプレ経由の無名子 seq が配列形を失い last-wins で 1 個に潰れる (inline seq bug の鏡像) |
