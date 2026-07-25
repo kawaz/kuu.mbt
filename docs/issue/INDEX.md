@@ -9,3 +9,4 @@
 | 2026-07-25 | bug | open | [collision-drop-filter-identity-exposure-production-gap](./2026-07-25-collision-drop-filter-identity-exposure-production-gap.md) | 衝突解釈の drop 判定が identity 露出の rival を落とせない (production だけ未修正、wbtest は helper 経由で green) |
 | 2026-07-25 | bug | open | [sources-projection-skips-export-key-under-commands](./2026-07-25-sources-projection-skips-export-key-under-commands.md) | command 木がある定義で sources が export_key を適用しない (command を 1 つ足すだけでキー体系が変わる) |
 | 2026-07-25 | design | open | [static-lint-warn-and-diagnose-unimplemented](./2026-07-25-static-lint-warn-and-diagnose-unimplemented.md) | DESIGN §15.6 の静的 warn と §13.7 diagnose が未実装 — 露出キー衝突の潜在構造を誰も警告しない |
+| 2026-07-25 | bug | open | [option-seq-named-children-not-folded-into-kv](./2026-07-25-option-seq-named-children-not-folded-into-kv.md) | option 直下 seq の名前付き子要素が kv に畳まれず、子ごとに別オブジェクト + 余分な配列階層になる |
