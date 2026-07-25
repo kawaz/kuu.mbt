@@ -774,22 +774,208 @@ fn pick3(
   out
 }
 
+// ── 順列 property test (DR-042 §5 順序非依存 / DR-070 常時 = 決定的少数) ─────────
+//
+// DR-042 §5 の不変則は「installer の適用順が lowered 結果に影響しない」ことを契約にして
+// いる (根拠: ①宣言層は読み取り専用・寄与は add-if-absent で冪等 ②他 installer の
+// lowered 産物を読み書きしない → 合流性。見かけの依存は run_installer_fixpoint の不動点
+// 反復が吸収する)。PoC 期は 7 installer = 5040 順列を全数検査できたが、canonical chain は
+// 14 installer = 14! ≈ 871 億順列で全数検査は不可能。そこで DR-070 の「常時 = 決定的少数」
+// (= pick3) を回帰網として残したまま、決定的 PRNG によるランダム順列サンプリングを足し、
+// seed / サンプル数を環境変数で振れるようにする (実行のたびに別の順列を踏めるので、CI が
+// 回るほどカバレッジが累積する)。反例は fixture 名 / seed / 順列署名 / got vs want を全て
+// 出す — 再現できない property test には価値がないため。
+
+///|
+/// KUU_PERM_SEED 未指定時の seed。固定値なので既定実行 (開発者の手元 / CI) は常に同じ
+/// 順列集合を踏む = 決定的な回帰網として振る舞う。振りたいときだけ env で上書きする。
+fn perm_seed_default() -> UInt {
+  0x6B75755FU // "kuu_"
+}
+
+///|
+/// KUU_PERM_SAMPLES 未指定時の fixture あたりサンプル数。1 サンプルにつき fixture 1 件の
+/// parse_definition が 1 回増えるため、既定は小さく取り、掘りたいときに env で上げる。
+fn perm_samples_default() -> Int {
+  4
+}
+
+///|
+/// 10 進非負整数の最小 parser。環境変数由来の値だけを対象にし、不正入力は None を返して
+/// 既定値に落とす (env の typo でテスト全体が abort するのは本末転倒)。
+fn perm_parse_uint(raw : String) -> UInt? {
+  let chars = raw.to_array()
+  if chars.length() == 0 {
+    return None
+  }
+  let mut acc : UInt = 0
+  for c in chars {
+    let digit = c.to_int() - '0'.to_int()
+    if digit < 0 || digit > 9 {
+      return None
+    }
+    acc = acc * 10 + digit.reinterpret_as_uint()
+  }
+  Some(acc)
+}
+
+///|
+fn perm_env_uint(name : String, fallback : UInt) -> UInt {
+  match @env.get_env_var(name) {
+    Some(raw) =>
+      match perm_parse_uint(raw) {
+        Some(value) => value
+        None => fallback
+      }
+    None => fallback
+  }
+}
+
+///|
+/// xorshift32。stdlib の乱数に依存せず自前で持つことで、toolchain / 実行環境が変わっても
+/// 同じ seed から同じ順列列が再現できる (再現性が property test の生命線)。
+struct PermRng {
+  mut state : UInt
+}
+
+///|
+fn PermRng::new(seed : UInt) -> PermRng {
+  // 0 は xorshift の吸収状態 (以後ずっと 0) なので非零定数へ逃がす。
+  { state: if seed == 0 { 0x9E3779B9U } else { seed } }
+}
+
+///|
+fn PermRng::next(self : PermRng) -> UInt {
+  let mut x = self.state
+  x = x ^ (x << 13)
+  x = x ^ (x >> 17)
+  x = x ^ (x << 5)
+  self.state = x
+  x
+}
+
+///|
+fn PermRng::below(self : PermRng, bound : Int) -> Int {
+  if bound <= 1 {
+    0
+  } else {
+    (self.next() % bound.reinterpret_as_uint()).reinterpret_as_int()
+  }
+}
+
+///|
+/// fixture ごとに独立した乱数列を作る (base seed ⊕ FNV-1a(fixture 相対パス))。fixture 集合
+/// が増減しても各 fixture が踏む順列は変わらないので、失敗報告の seed と fixture 名だけで
+/// その 1 件を単独再現できる。
+fn perm_stream_seed(base : UInt, rel : String) -> UInt {
+  let mut hash : UInt = 2166136261U
+  for c in rel.to_array() {
+    hash = (hash ^ c.to_int().reinterpret_as_uint()) * 16777619U
+  }
+  hash ^ base
+}
+
+///|
+/// Fisher-Yates で一様ランダムな順列を作る (元 order は破壊しない)。
+fn perm_shuffled(
+  order : Array[&@node.InstallerExt],
+  rng : PermRng,
+) -> Array[&@node.InstallerExt] {
+  let out : Array[&@node.InstallerExt] = []
+  for x in order {
+    out.push(x)
+  }
+  let mut i = out.length() - 1
+  while i > 0 {
+    let j = rng.below(i + 1)
+    let tmp = out[i]
+    out[i] = out[j]
+    out[j] = tmp
+    i = i - 1
+  }
+  out
+}
+
+///|
+/// P1: ∀ ランダム順列 π. canon_of(definition, π) == baseline (= identity 順の結果)。
+/// 食い違った順列だけを説明文字列で返す (空 = そのサンプル群では不変則を満たした)。
+/// 説明には seed / サンプル番号 / 順列署名 / その順列の結果を載せる — 呼び出し側が fixture 名を
+/// 前置すれば、報告だけで当該 1 件を単独再現できる。
+fn perm_divergences(
+  definition : Json,
+  order : Array[&@node.InstallerExt],
+  baseline : String,
+  rel~ : String,
+  perm_seed~ : UInt,
+  perm_samples~ : Int,
+) -> Array[String] {
+  let diverged : Array[String] = []
+  // installer 1 個以下は順列が 1 通りしかないのでサンプリングの意味がない。
+  if order.length() < 2 || perm_samples <= 0 {
+    return diverged
+  }
+  let rng = PermRng::new(perm_stream_seed(perm_seed, rel))
+  let mut n = 0
+  while n < perm_samples {
+    let p = perm_shuffled(order, rng)
+    let permuted = canon_of(definition, p)
+    if permuted != baseline {
+      diverged.push(
+        "random|seed=" +
+        perm_seed.to_string() +
+        "|sample=" +
+        n.to_string() +
+        "|order=" +
+        order_sig(p) +
+        "|got=" +
+        permuted,
+      )
+    }
+    n = n + 1
+  }
+  diverged
+}
+
 ///|
 fn run_lower(
   definition : Json,
   order : Array[&@node.InstallerExt],
   want : LSec,
+  rel~ : String,
+  perm_seed~ : UInt,
+  perm_samples~ : Int,
 ) -> String {
   let got = canon_of(definition, order)
   let wantS = lsec_str(want)
-  let mut perm_ok = true
+  let diverged : Array[String] = []
+  // 決定的 3 順列 (identity / reverse / rotate-1): env に依存しない常時の回帰網。
   for p in pick3(order) {
-    if canon_of(definition, p) != got {
-      perm_ok = false
+    let permuted = canon_of(definition, p)
+    if permuted != got {
+      diverged.push("pick3|order=" + order_sig(p) + "|got=" + permuted)
     }
   }
-  if !perm_ok {
-    "PERM-DIVERGE|got=" + got + "|want=" + wantS
+  // ランダム順列サンプリング: 決定的 PRNG なので seed を報告すれば単独再現できる。
+  for
+    d in perm_divergences(
+      definition,
+      order,
+      got,
+      rel~,
+      perm_seed~,
+      perm_samples~,
+    ) {
+    diverged.push(d)
+  }
+  if diverged.length() > 0 {
+    // identity 順の結果 (base) が順列不変の基準。各順列の got は上の要素に載せている。
+    let buf = StringBuilder::new()
+    buf.write_string("PERM-DIVERGE")
+    for d in diverged {
+      buf.write_string(" [" + d + "]")
+    }
+    buf.write_string("|base=" + got + "|want=" + wantS)
+    buf.to_string()
   } else if got == wantS {
     "PASS"
   } else {
@@ -1281,11 +1467,18 @@ fn load_json(path : String) -> Json raise {
 }
 
 ///|
-/// lower query の fixture 全件を decode し、期待する 5 面断面と installer 順序 3 種の結果を比較する。
-/// decode skip・断面差分・順序差分はいずれも失敗として返し、blackbox conformance runner が
-/// result/outcome の公開面だけを扱っても lowering 内部構造の保証を失わないようにする。
+/// lower query の fixture 全件を decode し、期待する 5 面断面と installer 順序 (決定的 3 種 +
+/// ランダムサンプル) の結果を比較する。decode skip・断面差分・順序差分はいずれも失敗として返し、
+/// blackbox conformance runner が result/outcome の公開面だけを扱っても lowering 内部構造の
+/// 保証を失わないようにする。順列サンプリングは `KUU_PERM_SEED` / `KUU_PERM_SAMPLES` で振れる
+/// (DR-042 §5 の順序非依存を全数検査できない 14! 規模への対応、既定値は上の perm_*_default)。
 fn verify_lower_conformance_fixtures() -> Unit {
   let root = fixtures_root()
+  let perm_seed = perm_env_uint("KUU_PERM_SEED", perm_seed_default())
+  let perm_samples = perm_env_uint(
+    "KUU_PERM_SAMPLES",
+    perm_samples_default().reinterpret_as_uint(),
+  ).reinterpret_as_int()
   let rels : Array[String] = []
   collect_rel(root, "", rels) catch {
     _ => abort("fixtures walk failed under " + root)
@@ -1315,7 +1508,14 @@ fn verify_lower_conformance_fixtures() -> Unit {
       }
     }
     decoded = decoded + 1
-    let verdict = run_lower(fixture.definition, fixture.order, fixture.want)
+    let verdict = run_lower(
+      fixture.definition,
+      fixture.order,
+      fixture.want,
+      rel~,
+      perm_seed~,
+      perm_samples~,
+    )
     if verdict != "PASS" {
       mismatches.push(rel + "::lower :: " + verdict)
     }
@@ -1323,7 +1523,13 @@ fn verify_lower_conformance_fixtures() -> Unit {
   if decoded == 0 || skips.length() > 0 || mismatches.length() > 0 {
     let report = StringBuilder::new()
     report.write_string(
-      "lower conformance failed: decoded=" + decoded.to_string() + "\n",
+      "lower conformance failed: decoded=" +
+      decoded.to_string() +
+      " perm_seed=" +
+      perm_seed.to_string() +
+      " perm_samples=" +
+      perm_samples.to_string() +
+      "\n",
     )
     for skip in skips {
       report.write_string("  SKIP " + skip + "\n")
@@ -1333,4 +1539,88 @@ fn verify_lower_conformance_fixtures() -> Unit {
     }
     abort(report.to_string())
   }
+}
+
+///|
+/// 順列不変を fixture corpus 全体 (query 種別を問わず、`definition` を持つ全件) に対して
+/// canonical chain (installer 14 個) のランダム順列で検査する。
+///
+/// `verify_lower_conformance_fixtures` の順列検査は fixture が `installers` で pin した鎖を振るため、
+/// lower fixture 26 件のうち 14 個の完全鎖を踏むのは 1 件だけ (残りは 1〜3 個の subset) で、
+/// 14! ≈ 871 億の順列空間はほとんど掘れない。ここは逆に **鎖を canonical 固定して definition 側を
+/// corpus 全体に広げ**、identity 順の結果を基準に順列不変 (DR-042 §5) を確かめる。fixture の
+/// `want` とは比較しない — 完全鎖の lowered 結果は subset 鎖の期待値と一致しないため、ここでの
+/// 判定基準はあくまで「同じ definition・同じ鎖なら順序によらず同じ結果」の 1 点。
+/// definition-error fixture も対象に含む (Reject された error 集合の順序非依存も同じ契約のうち)。
+fn verify_installer_permutation_property() -> Unit {
+  let root = fixtures_root()
+  let perm_seed = perm_env_uint("KUU_PERM_SEED", perm_seed_default())
+  let perm_samples = perm_env_uint(
+    "KUU_PERM_SAMPLES",
+    perm_samples_default().reinterpret_as_uint(),
+  ).reinterpret_as_int()
+  let canonical = canonical_registry_for_test().installers()
+  let rels : Array[String] = []
+  collect_rel(root, "", rels) catch {
+    _ => abort("fixtures walk failed under " + root)
+  }
+  sort_items(rels)
+  let mismatches : Array[String] = []
+  let mut checked = 0
+  for rel in rels {
+    let json = load_json(root + "/" + rel) catch { _ => continue }
+    let fields = match json.j_obj() {
+      Some(o) => o
+      None => continue
+    }
+    let definition = match fields.get("definition") {
+      Some(d) => d
+      None => continue
+    }
+    if definition.j_obj() is None {
+      continue
+    }
+    checked = checked + 1
+    let baseline = canon_of(definition, canonical)
+    for
+      d in perm_divergences(
+        definition,
+        canonical,
+        baseline,
+        rel~,
+        perm_seed~,
+        perm_samples~,
+      ) {
+      mismatches.push(rel + " :: " + d + "|base=" + baseline)
+    }
+  }
+  if checked == 0 || mismatches.length() > 0 {
+    let report = StringBuilder::new()
+    report.write_string(
+      "installer permutation property failed: checked=" +
+      checked.to_string() +
+      " installers=" +
+      canonical.length().to_string() +
+      " perm_seed=" +
+      perm_seed.to_string() +
+      " perm_samples=" +
+      perm_samples.to_string() +
+      "\n",
+    )
+    for mismatch in mismatches {
+      report.write_string("  PERM-DIVERGE " + mismatch + "\n")
+    }
+    abort(report.to_string())
+  }
+}
+
+///|
+/// 保証: DR-042 §5 の順序非依存 (①宣言層は読み取り専用・寄与は add-if-absent ②他 installer の
+/// lowered 産物を読み書きしない → 合流性) が、fixture corpus 全件 × canonical 14 installer の
+/// ランダム順列で破れないこと。14! ≈ 871 億順列を全数検査できない以上、決定的 3 順列 (DR-070 の
+/// 「常時 = 決定的少数」) だけでは薄いので、seed を振れるサンプリングで CI 実行のたびに別の順列を
+/// 踏ませ、カバレッジを累積させる。
+/// 再現: `KUU_PERM_SEED=<失敗報告の seed> KUU_PERM_SAMPLES=<同 samples> moon test --target native`。
+test "installer order invariance over the fixture corpus (DR-042 §5)" {
+  verify_installer_permutation_property()
 }
