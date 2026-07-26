@@ -1,6 +1,6 @@
 ---
 title: or/seq の structural child が value/default 等を持てない (schema と DR-067 に未追随)
-status: open
+status: resolved
 category: bug
 created: 2026-07-26T14:35:34+09:00
 last_read: 2026-07-26T21:23:04+09:00
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-26T22:31:17+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented","issue/2026-07-26-dec-or-leaf-remaining-node-keys:default_fn は silent wrong answer 回避のため意図的スコープ外、残余キー同型化も同issueへ引き継ぎ","issue/2026-07-26-value-default-unimplemented-root-positions:value の root 位置対応は別issueへ分離"]
 blocked_by:
 origin: kuu (spec) プロジェクトからの起票
 ---
