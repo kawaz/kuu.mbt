@@ -76,6 +76,9 @@ fn el(
   // lowering wbtest cases can exercise it without hand-writing a full @engine.ElementDef literal, same
   // rationale as `is_dd` above.
   is_exact? : Bool = false,
+  // DESIGN §5.2 消費 0 literal marker (`@engine.ElementDef.is_literal`) — `is_exact` と同じ理由で
+  // 公開する (wbtest から full literal を手書きせずに構造子 literal を組めるように)。
+  is_literal? : Bool = false,
   dd_match? : String? = None,
   dd_self_keep? : Bool = false,
   is_global? : Bool = false,
@@ -136,6 +139,7 @@ fn el(
     tty_cygwin,
     is_dd,
     is_exact,
+    is_literal,
     dd_match,
     dd_self_keep,
     is_global,

@@ -1694,3 +1694,166 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
     "result={serve={t=[a,b]}} sources=[serve]/t=cli effects=t,t",
   )
 }
+
+///|
+/// 保証 (DESIGN §5.2 / LOWERING §A.3 / DR-015「消費しない literal」): 構造子 (`seq` / `or`) の子に
+/// `value:` / `default:` を書くと、その子は**トークンを照合せず 0 個消費で値を産出する**。
+/// 消費の有無と値の有無は独立した軸であり (DR-041 §3「消費数は Accept の報告値であり value の
+/// 有無から導出しない」)、cli 消費 leaf と消費 0 literal を同じ `seq` に並べられる。
+///
+/// `value:` と `default:` は同義 — DR-031 のラダー 5 段目に同席し source タグはどちらも `default`
+/// (source 語彙に `value` は無い) — なので両者で同じ result になることを対で固定する。
+///
+/// nameless の子は §5.1「子の値の配列」に畳まれる。sources は wrapper 単位のまま (要素ごとの
+/// addressing は DR-121 §3.2 が「配列要素 provenance の設計に従う」として裁定を保留しており、
+/// この test は**その未裁定部分に依存しない**形で literal の到達可能性だけを固定する)。
+test "front_door.output: seq の nameless 子に置いた消費 0 literal が配列要素として並ぶ (DESIGN §5.2 / DR-121 §3.2)" {
+  let value_form =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"type":"string"},{"type":"string","value":"fallback"}]}]}
+  let default_form =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"type":"string"},{"type":"string","default":"fallback"}]}]}
+  // cli 消費 leaf 1 個ぶんのトークンしか渡さないのに 2 要素になる = 2 個目が消費 0 である証拠。
+  assert_eq(
+    wbtest_result_of(value_form, ["--pair", "x"]),
+    "{pair=[x,fallback]}",
+  )
+  assert_eq(
+    wbtest_result_of(default_form, ["--pair", "x"]),
+    "{pair=[x,fallback]}",
+  )
+  // 対極: literal が消費していたら 2 トークン渡した時に `y` を食って `{pair=[x,y]}` になるが、
+  // 実際は `y` が余る (option は 1 トークンで満たされ、`y` は行き場が無い)。
+  match parse_legacy(load_definition(value_form), ["--pair", "x", "y"]) {
+    @engine.Success(_) =>
+      fail(
+        "消費 0 literal なら余剰トークン `y` を食えないはず",
+      )
+    _ => ()
+  }
+}
+
+///|
+/// 保証 (DESIGN §2.5 / DR-120 / DR-121 §2.2): 結果キーを持つ子 (`name` 付き) の消費 0 literal は
+/// kv 経路に乗り、**席を持つ**ので `sources` に `default` の entry が出る。DR-031 が cli 席と
+/// default 席を別席として固定しているとおり、同じ `seq` の中で 2 つの子が別の値源から値を得る。
+test "front_door.output: named seq 子の消費 0 literal は kv セルとして default 席を持つ (DR-031 / DR-121 §2.2)" {
+  let src =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"name":"path","type":"string"},
+    #|  {"name":"mode","type":"string","value":"fallback"}]}]}
+  assert_eq(
+    wbtest_view_of(src, ["--pair", "x"]),
+    "result={pair={mode=fallback,path=x}} sources=[pair]/mode=default,[pair]/path=cli effects=path",
+  )
+}
+
+///|
+/// 保証 (CONFORMANCE §2 の導出手順 / DR-052 §3): **選ばれなかった `or` 枝の literal は着席しない**。
+/// `sources` は `result` の射影であり、選ばれなかった枝は result に現れない以上 sources にも
+/// 現れない。消費 0 であることは「常に発火する」ことを意味しない — 枝の選択は or の構造が決める。
+test "front_door.output: 未選択の or 枝が持つ literal は result にも sources にも現れない (DR-052 §3)" {
+  let src =
+    #|{"options":[{"name":"mode","long":true,"or":[
+    #|  {"name":"fast","type":"string"},
+    #|  {"name":"slow","type":"string","default":"d"}]}]}
+  assert_eq(
+    wbtest_view_of(src, ["--mode", "x"]),
+    "result={mode={fast=x}} sources=[mode]/fast=cli effects=fast",
+  )
+}
+
+///|
+/// 保証 (対極、`dec_or_leaf` の allowed_keys): 構造子の子が受け付けるのは `value` / `default` まで。
+/// 未対応キーは黙って捨てず `malformed_definition` を返す — decode を通して lowering で無視すると
+/// 「書けたのに効かない」silent wrong answer になる。`default_fn:` を含むのは意図的で、遅延評価の
+/// invocation は lowering 時点で値が確定せず消費 0 literal に落とせないため (別 issue)。
+test "front_door: 構造子の子の未対応キーは malformed_definition のまま (value/default だけを開けた)" {
+  for key in ["env", "long", "default_fn", "multiple"] {
+    let src = "{\"options\":[{\"name\":\"pair\",\"long\":true,\"seq\":[" +
+      "{\"type\":\"string\"},{\"type\":\"string\",\"" +
+      key +
+      "\":\"x\"}]}]}"
+    match parse_definition(@json.parse(src)) {
+      Ok(_) =>
+        fail(
+          "構造子の子の未対応キー '" +
+          key +
+          "' は弾かれるべき",
+        )
+      Err(_) => ()
+    }
+  }
+  // 同義の二重宣言も弾く (どちらが勝つかを decode 層が黙って決めない)。
+  let both =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"type":"string"},{"type":"string","value":"a","default":"b"}]}]}
+  match parse_definition(@json.parse(both)) {
+    Ok(_) => fail("'value' と 'default' の同居は弾かれるべき")
+    Err(_) => ()
+  }
+}
+
+///|
+/// `wbtest_view_of` の result だけを見る版 (sources の要素ごと addressing が未裁定な形を
+/// 扱うため — DR-121 §3.2)。
+fn wbtest_result_of(src : String, args : Array[String]) -> String raise {
+  let ast = load_definition(src)
+  let parsed = parse_legacy(ast, args)
+  match resolve_legacy(ast, parsed, args) {
+    @engine.Success(bindings) =>
+      render_rval_sorted(output_legacy(ast, effects=bindings).result)
+    other => {
+      fail("should resolve, got " + render_outcome(other))
+      panic()
+    }
+  }
+}
+
+///|
+fn load_definition(src : String) -> AtomicAST raise {
+  match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition should accept the definition")
+      panic()
+    }
+  }
+}
+
+///|
+/// 保証 (DESIGN §5.2 × DR-096 §3.3 の `=` 形): `=` の右辺が渡る先は「最初に**消費する**子」で
+/// あって「最初の子」ではない。消費 0 literal が先頭に並んでいてもトークンを取らないので、
+/// eq entry はその次の消費する子が担う。**space 形と `=` 形で結果が割れない**ことが要点
+/// (両形が同じ消費文法の別の書き口である以上、literal の位置で結果形が変わってはいけない)。
+test "front_door: seq 先頭の消費 0 literal は `=` 形の値スロットを奪わない (DESIGN §5.2 / DR-096)" {
+  let named_first_literal =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"name":"mode","type":"string","value":"L"},
+    #|  {"name":"path","type":"string"}]}]}
+  let named_want = "{pair={mode=L,path=x}}"
+  assert_eq(wbtest_result_of(named_first_literal, ["--pair", "x"]), named_want)
+  assert_eq(wbtest_result_of(named_first_literal, ["--pair=x"]), named_want)
+  // nameless (配列形) でも同じ — 子の順序は宣言順のまま保たれる。
+  let anon_first_literal =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"type":"string","value":"L"},{"type":"string"}]}]}
+  assert_eq(
+    wbtest_result_of(anon_first_literal, ["--pair", "x"]),
+    "{pair=[L,x]}",
+  )
+  assert_eq(wbtest_result_of(anon_first_literal, ["--pair=x"]), "{pair=[L,x]}")
+  // 対極: 全ての子が消費 0 literal なら `=` 形は成立しない (右辺 `x` の行き場が無い)。
+  // space 形だけが配線され、宣言値がそのまま出る。
+  let all_literal =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"name":"a","type":"string","value":"A"},
+    #|  {"name":"b","type":"string","value":"B"}]}]}
+  assert_eq(wbtest_result_of(all_literal, ["--pair"]), "{pair={a=A,b=B}}")
+  match parse_legacy(load_definition(all_literal), ["--pair=x"]) {
+    @engine.Success(_) =>
+      fail("全子が消費 0 なら `=` 右辺を受け取る子が無い")
+    _ => ()
+  }
+}
