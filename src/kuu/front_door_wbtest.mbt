@@ -1905,17 +1905,65 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
 }
 
 ///|
+/// 保証 (DR-121 §3.2 / CONFORMANCE §2): nameless 子だけを持つ `seq` accumulator は、子の値を
+/// wrapper の tuple 席へ畳む。子に独立した結果アドレスが無くても、1 回以上発火した wrapper の
+/// source はその発火経路であり、未発火を表す `default` ではない。消費 0 literal は独立 source
+/// でなく発火が産出する tuple の一部なので、wrapper の source は cli のまま。
+///
+/// 0 / 1 / 2 fire と literal 混在を固定する。0 fire だけが DR-044 uniform array の default 席、
+/// 発火済みは wrapper address に 1 entry を持つ。
+test "front_door.output: nameless seq accumulator の wrapper source は発火経路になる (DR-121 §3.2)" {
+  let pair =
+    #|{"options":[{"name":"pair","long":true,"multiple":"append","seq":[
+    #|  {"type":"string"},{"type":"string"}]}]}
+  assert_eq(
+    wbtest_view_of(pair, []),
+    "result={pair=[]} sources=[]/pair=default effects=",
+  )
+  assert_eq(
+    wbtest_view_of(pair, ["--pair", "a", "b"]),
+    "result={pair=[[a,b]]} sources=[]/pair=cli effects=",
+  )
+  assert_eq(
+    wbtest_view_of(pair, ["--pair", "a", "b", "--pair", "c", "d"]),
+    "result={pair=[[a,b],[c,d]]} sources=[]/pair=cli effects=",
+  )
+  let with_literal =
+    #|{"options":[{"name":"pair","long":true,"multiple":"append","seq":[
+    #|  {"type":"string"},{"type":"string","value":"fallback"}]}]}
+  assert_eq(
+    wbtest_view_of(with_literal, ["--pair", "x"]),
+    "result={pair=[[x,fallback]]} sources=[]/pair=cli effects=",
+  )
+  // `#row` の宣言 scope は result と同じ export-key 軸へ写してから wrapper 席と照合する。
+  let renamed =
+    #|{"options":[{"name":"pair","export_key":"pr","long":true,"multiple":"append","seq":[
+    #|  {"type":"string"},{"type":"string"}]}]}
+  assert_eq(
+    wbtest_view_of(renamed, ["--pair", "a", "b"]),
+    "result={pr=[[a,b]]} sources=[]/pr=cli effects=",
+  )
+  // 外側 command と wrapper の両段を rename しても、source path は result の露出アドレスと一致する。
+  let nested =
+    #|{"commands":[{"type":"command","name":"serve","export_key":"sv","options":[
+    #|  {"name":"pair","export_key":"pr","long":true,"multiple":"append","seq":[
+    #|    {"type":"string"},{"type":"string"}]}]}]}
+  assert_eq(
+    wbtest_view_of(nested, ["serve", "--pair", "a", "b"]),
+    "result={sv={pr=[[a,b]]}} sources=[sv]/pr=cli effects=",
+  )
+}
+
+///|
 /// 保証 (DESIGN §5.2 / LOWERING §A.3 / DR-015「消費しない literal」): 構造子 (`seq` / `or`) の子に
 /// `value:` / `default:` を書くと、その子は**トークンを照合せず 0 個消費で値を産出する**。
 /// 消費の有無と値の有無は独立した軸であり (DR-041 §3「消費数は Accept の報告値であり value の
 /// 有無から導出しない」)、cli 消費 leaf と消費 0 literal を同じ `seq` に並べられる。
 ///
-/// `value:` と `default:` は同義 — DR-031 のラダー 5 段目に同席し source タグはどちらも `default`
-/// (source 語彙に `value` は無い) — なので両者で同じ result になることを対で固定する。
-///
-/// nameless の子は §5.1「子の値の配列」に畳まれる。sources は wrapper 単位のまま (要素ごとの
-/// addressing は DR-121 §3.2 が「配列要素 provenance の設計に従う」として裁定を保留しており、
-/// この test は**その未裁定部分に依存しない**形で literal の到達可能性だけを固定する)。
+/// `value:` と `default:` は消費 0 literal の同義な綴りなので、両者で同じ result になることを
+/// 対で固定する。named 子なら独立セルの source は `const`、nameless 子なら発火が産出する tuple の
+/// 一部として wrapper に畳まれ、wrapper の source は発火経路 (`cli` / `link`) になる (DR-121 §3.2)。
+/// この test は literal の到達可能性と消費数だけを検証するため result 面を比較する。
 test "front_door.output: seq の nameless 子に置いた消費 0 literal が配列要素として並ぶ (DESIGN §5.2 / DR-121 §3.2)" {
   let value_form =
     #|{"options":[{"name":"pair","long":true,"seq":[

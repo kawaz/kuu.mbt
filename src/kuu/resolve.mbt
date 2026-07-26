@@ -1215,11 +1215,11 @@ pub(all) struct SourceEntry {
 ///   どう addressing するかは spec 側の未裁定事項で、ここで決めない)
 /// - 同一 (path, key) は **last-wins** で 1 件に畳む。binding は同じセルに複数回着席しうる
 ///   (`--tags a --tags b`) ので、射影段階で畳む
-/// - **0 回発火の accum セル** は binding を 1 つも持たないが、result では `[]` を持つ
-///   (DR-044 uniform array: 未発火でも absent にならない) ので `@abi.Default` の席を足す。
-///   席の同定は result builder が使うのと同じ `accum_cells` (ek 適用・透過昇格込み) の
-///   `(path, name)` をそのまま使う。未発火 flag・default 付きスカラは値源ラダーが default 席を
-///   解いて binding を作るのでここでは扱わない
+/// - **accum セル** は result builder が使うのと同じ `accum_cells` (ek 適用・透過昇格込み) の
+///   `(path, name)` を席として扱う。0 回発火なら DR-044 uniform array の `[]` に対応する
+///   `@abi.Default`、nameless 子を wrapper へ畳む発火なら `#row` sentinel が運ぶ発火経路を載せる。
+///   named 子・スカラは通常の値 binding が source entry を作るので追加しない。未発火 flag・default
+///   付きスカラは値源ラダーが default 席を解いて binding を作るのでここでは扱わない
 fn result_sources(
   sc : @engine.Scope,
   resolved : Array[@abi.Binding],
@@ -1256,30 +1256,47 @@ fn result_sources(
   }
   for cell in accum_cells(sc, ek, resolved) {
     if !accum_cell_fired(out, cell) {
-      out.push({ path: cell.path, key: cell.name, source: @abi.Default })
+      let source = match accum_cell_fire_source(resolved, ek, cell) {
+        Some(source) => source
+        None => @abi.Source::Default
+      }
+      out.push({ path: cell.path, key: cell.name, source })
     }
   }
   out
 }
 
 ///|
-/// accum セルが 1 度でも発火したか — 発火済みなら `result_sources` は default 席を足さない。
+/// nameless 子を畳む wrapper accumulator の発火経路。`multiple` の 1 発火ごとに lowering が
+/// wrapper scope 直下へ置く `#row` sentinel は、子が結果キーを持つかに関係なく存在する。
+/// sentinel の scope を通常の binding と同じ export-key 軸へ写し、accum cell の wrapper address と
+/// 一致する最後の marker の source を返す。marker が無ければ 0 回発火。
+fn accum_cell_fire_source(
+  resolved : Array[@abi.Binding],
+  ek : @engine.ExportScopeMap,
+  cell : AccumCell,
+) -> @abi.Source? {
+  let wrapper = path_push(cell.path, cell.name)
+  let mut source : @abi.Source? = None
+  for binding in resolved {
+    if binding.key == "#row" {
+      let (path, _) = walk_export_path(binding.scope, ek)
+      if path_eq(path, wrapper) {
+        source = Some(binding.source)
+      }
+    }
+  }
+  source
+}
+
+///|
+/// accum セルの通常 source entry が既に存在するか。
 ///
-/// 値がどこに着席するかは cell の形で 2 通りに分かれる:
+/// - **スカラ accum** (`{"name":"t","type":"string","multiple":"append"}`): cell 自身の entry
+/// - **named 子を持つ wrapper accum**: wrapper address 配下の child entry
 ///
-/// - **スカラ accum** (`{"name":"t","type":"string","multiple":"append"}`): cell 自身が値セルなので
-///   binding は cell の address (`[], "t"`) に着く。射影後の entry がそのまま席に一致する
-/// - **name 付き `seq` / `or` の accum** (`{"name":"pair","multiple":"append","seq":[…]}`): cell は
-///   結果スコープを作る wrapper で、値は **child** (`["pair"], "path"` / `["pair"], "value"`) に
-///   着く。wrapper address には entry が一切現れない
-///
-/// 後者を「entry が無い = 0 回発火」と読むと、値が入っているのに `"pair": "default"` を報告する
-/// (DR-044 の「未発火でも `[]` を持つ」ための席が、発火済みの cell にも付いてしまう)。cell
-/// address 配下に entry が 1 つでもあれば発火済みと判定する。
-///
-/// 発火済み wrapper 自身に何を報告するかは **spec 側の未裁定事項** (`docs/QUESTIONS.md` の
-/// SRCADDR-Q2 と同じ論点 — wrapper は複数 child の由来を 1 タグに潰せない)。ここでは席を
-/// 足さない = child の entry だけが語る、に倒している。
+/// nameless 子だけを持つ wrapper は通常 entry を作らないため false になる。その場合は
+/// `accum_cell_fire_source` が `#row` から wrapper 自身の発火経路を復元する。
 fn accum_cell_fired(out : Array[SourceEntry], cell : AccumCell) -> Bool {
   let inner = path_push(cell.path, cell.name)
   for entry in out {
