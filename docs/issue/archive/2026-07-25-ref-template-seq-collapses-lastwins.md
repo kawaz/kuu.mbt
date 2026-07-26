@@ -1,6 +1,6 @@
 ---
 title: ref テンプレ経由の無名子 seq が配列形を失い last-wins で 1 個に潰れる
-status: open
+status: resolved
 category: bug
 created: 2026-07-25T22:56:26+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-26T11:57:30+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented: kuu.mbt commit 0ffc3a5c で seq_body_node を engine 側に切り出し、inline seq / or 枝 / templates の 3 経路で seq_child_nodes による同じ畳み方を共有させて解消。spec fixture 案 (seq-parse/ref-template-parity.json) は統括へ報告済みだが spec への書き込みは未実施。"]
 blocked_by:
 origin: 自リポ TODO
 ---
