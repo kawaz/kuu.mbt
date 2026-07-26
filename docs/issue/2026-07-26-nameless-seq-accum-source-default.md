@@ -3,7 +3,7 @@ title: nameless child を畳む accumulator が発火しても source が defaul
 status: open
 category: bug
 created: 2026-07-26T20:34:32+09:00
-last_read:
+last_read: 2026-07-26T21:28:15+09:00
 open_entered: 2026-07-26T20:34:32+09:00
 wip_entered:
 blocked_entered:
