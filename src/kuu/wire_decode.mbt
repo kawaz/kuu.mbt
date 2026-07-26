@@ -277,6 +277,7 @@ fn opt(
     tty_cygwin,
     is_dd: false,
     is_exact: false,
+    is_literal: false,
     dd_match: None,
     dd_self_keep: false,
     is_global: global,
@@ -376,6 +377,10 @@ fn pos(
   // DR-113 §7.2 / DR-048 / DESIGN §15.10: 汎用 `on_failure` を positional でも carry する
   // (dec_option の fail_action~ と対称)。
   fail_action? : Bool = false,
+  // DESIGN §5.2「消費しない literal」。`dec_or_leaf` (構造子 child の唯一の入口) だけが true を
+  // 渡す — 同じ `default:` でも root 要素ではラダー席のままなので、位置を知っている呼び出し側が
+  // 決める (`@engine.ElementDef.is_literal` の doc comment)。
+  is_literal? : Bool = false,
 ) -> @engine.ElementDef {
   {
     name,
@@ -390,6 +395,7 @@ fn pos(
     tty_cygwin,
     is_dd: false,
     is_exact: false,
+    is_literal,
     dd_match: None,
     dd_self_keep: false,
     is_global: false,
@@ -473,6 +479,7 @@ fn dd_marker(
     tty_cygwin: true,
     is_dd: true,
     is_exact: false,
+    is_literal: false,
     dd_match: match_,
     dd_self_keep: self_keep,
     is_global: false,
@@ -547,6 +554,7 @@ fn exact_marker(spelling : String) -> @engine.ElementDef {
     tty_cygwin: true,
     is_dd: false,
     is_exact: true,
+    is_literal: false,
     dd_match: None,
     dd_self_keep: false,
     is_global: false,
@@ -1830,10 +1838,21 @@ fn dec_or_structural(
 }
 
 ///|
-/// A leaf cell inside a structural `"or"` branch: `{"type":..,"name":..}`. Minimal — Cell only, no
+/// A leaf cell inside a structural `"or"` / `"seq"`: `{"type":..,"name":..}`. Minimal — Cell only, no
 /// long/short/env/etc (the shared trigger, if any, lives on the PARENT option's `long`, factored out
 /// per the `variable-arity-ambiguous.json` wire form; an anonymous positional or-branch leaf has no
 /// trigger at all).
+///
+/// `value:` / `default:` は消費 0 の literal を宣言する (DESIGN §5.2 / LOWERING §A.3 / DR-015)。
+/// 2 つは同義 — DR-031 のラダー 5 段目に同席し source タグはどちらも `default` (source 語彙に
+/// `value` は無い) — なので decode 先も同じ `default_values` で、区別を持ち回らない。値を持つ
+/// child は `is_literal` が立ち、`element_head` が値プリミティブでなく `literal_value` へ lower
+/// する (トークンを照合せず 0 個消費で値を産出、DR-041 §3「消費数は Accept の報告値」)。
+///
+/// `default_fn:` はここでは受理しない。遅延評価される invocation (resolve 相で registry を引く、
+/// `resolve_default_fn`) であり lowering 時点で値が確定しないので、消費 0 literal に落とせない。
+/// decode だけ通して lowering で黙って捨てると「書けたのに効かない」になるため、明示エラーの
+/// まま残す。
 fn dec_or_leaf(
   j : Json,
   shadows : Map[String, TypeShadow],
@@ -1847,7 +1866,11 @@ fn dec_or_leaf(
   // 表示専用素材で consumption grammar には効かない — help_installer が model 射影で拾う)。
   // 従来は `name` 必須だったが、value-structure-and-types.json のような help-only fixture では
   // 各 leaf が anonymous なので、name 省略 + value_name のパターンを受理する。
-  allowed_keys(o, ["type", "name", "value_name"], "or branch leaf")
+  allowed_keys(
+    o,
+    ["type", "name", "value_name", "value", "default"],
+    "or branch leaf",
+  )
   let name = match jf_str(o, "name") {
     Some(s) => {
       check_reserved_name(s, "or branch leaf")
@@ -1908,6 +1931,17 @@ fn dec_or_leaf(
     bool_config_from_shadow,
     allow_base_prefix=base_prefix_from_shadow,
   )
+  // `value` と `default` は同義なので同居させない — 同じ席への二重宣言で、値が食い違ったとき
+  // どちらが勝つかを decode 層が黙って決めることになる。
+  let literal = match (o.get("value"), o.get("default")) {
+    (Some(_), Some(_)) =>
+      raise DecodeSkip(
+        "or branch leaf declares both 'value' and 'default' (同義の二重宣言、DR-031 ラダー 5 段目の同席)",
+      )
+    (Some(v), None) => Some(json_to_default_values(v))
+    (None, Some(d)) => Some(json_to_default_values(d))
+    (None, None) => None
+  }
   pos(
     name,
     ty,
@@ -1917,6 +1951,9 @@ fn dec_or_leaf(
     is_tty=is_tty_from_shadow,
     tty_stream=tty_stream_from_shadow,
     tty_cygwin=tty_cygwin_from_shadow,
+    default=literal,
+    default_declared=literal is Some(_),
+    is_literal=literal is Some(_),
   )
 }
 
