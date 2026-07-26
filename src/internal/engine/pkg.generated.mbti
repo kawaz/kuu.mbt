@@ -314,6 +314,7 @@ pub(all) struct ElementDef {
 
 pub(all) struct Entity {
   name : String
+  declaring_path : Array[String]
   link : String?
   ty : &@extension.TypeExt
   mut env_key : String?
