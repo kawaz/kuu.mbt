@@ -302,6 +302,12 @@ fn apply_export_to_defaults(
 /// An accumulate cell located at a result-scope path (DR-044 uniform array). `path` is the
 /// command/name nesting where the cell lives; `name` is its key. The builder needs this so an
 /// accumulate cell that fired 0 times still renders `[]` at its home level (not absent).
+priv struct RepeatWrapperCell {
+  path : Array[String]
+  name : String
+}
+
+///|
 priv struct AccumCell {
   path : Array[String]
   name : String
@@ -795,6 +801,64 @@ fn build_result(
 /// `binds` は **未射影** の解決済み binding — 未選択 command scope を降りないための選択判定
 /// (`@engine.scope_selected`) に使う。`collect_defaults` と同じ gate (下記 `collect_accum` の
 /// コメント参照)。
+fn repeat_wrapper_cells(
+  sc : @engine.Scope,
+  ek : @engine.ExportScopeMap,
+  binds : Array[@abi.Binding],
+) -> Array[RepeatWrapperCell] {
+  let out : Array[RepeatWrapperCell] = []
+  collect_repeat_wrappers(sc, [], [], ek, binds, out)
+  out
+}
+
+///|
+fn collect_repeat_wrappers(
+  sc : @engine.Scope,
+  path : Array[String],
+  decl_path : Array[String],
+  ek : @engine.ExportScopeMap,
+  binds : Array[@abi.Binding],
+  out : Array[RepeatWrapperCell],
+) -> Unit {
+  for positional in sc.positional {
+    match positional {
+      @engine.IndexedRepeat(name, _, _, _) =>
+        match ek.exposed_cell(name) {
+          Some(exposed) => out.push({ path, name: exposed })
+          None => ()
+        }
+      _ => ()
+    }
+  }
+  for greedy in sc.greedy {
+    match greedy {
+      @engine.CommandSatisfied(name, child) => {
+        let child_decl = path_push(decl_path, name)
+        if @engine.scope_selected(binds, child_decl) {
+          let child_ek = ek.child(name)
+          match ek.exposed_scope(name) {
+            None =>
+              collect_repeat_wrappers(
+                child, path, child_decl, child_ek, binds, out,
+              )
+            Some(exposed) =>
+              collect_repeat_wrappers(
+                child,
+                path_push(path, exposed),
+                child_decl,
+                child_ek,
+                binds,
+                out,
+              )
+          }
+        }
+      }
+      _ => ()
+    }
+  }
+}
+
+///|
 fn accum_cells(
   sc : @engine.Scope,
   ek : @engine.ExportScopeMap,
@@ -1316,6 +1380,24 @@ fn result_sources(
         None => @abi.Source::Default
       }
       out.push({ path: cell.path, key: cell.name, source })
+    }
+  }
+  // IndexedRepeat is the structural carrier for a named positional group. Its wrapper renders the
+  // same uniform array as an accumulator cell, but it has no Entity of its own; project the 0-fire
+  // default seat directly from the structural wrapper. A fired row already contributes child entries
+  // below the wrapper address, so no wrapper-level default entry is added in that case.
+  for cell in repeat_wrapper_cells(sc, ek, resolved) {
+    let wrapper = path_push(cell.path, cell.name)
+    let mut covered = false
+    for entry in out {
+      if (entry.key == cell.name && path_eq(entry.path, cell.path)) ||
+        path_starts_with(entry.path, wrapper) {
+        covered = true
+        break
+      }
+    }
+    if !covered {
+      out.push({ path: cell.path, key: cell.name, source: @abi.Source::Default })
     }
   }
   out

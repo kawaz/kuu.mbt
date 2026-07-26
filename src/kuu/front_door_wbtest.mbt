@@ -1913,7 +1913,10 @@ test "front_door.output: named group child default は wrapper 外へ漏れな�
   let src =
     #|{"positionals":[{"name":"xs","repeat":{"min":0,"max":2},"positionals":[
     #|  {"name":"k","type":"string"},{"name":"v","type":"string","default":"D"}]}]}
-  assert_eq(wbtest_view_of(src, []), "result={xs=[]} sources= effects=")
+  assert_eq(
+    wbtest_view_of(src, []),
+    "result={xs=[]} sources=[]/xs=default effects=",
+  )
   assert_eq(
     wbtest_view_of(src, ["a", "b"]),
     "result={xs=[{k=a,v=b}]} sources=[xs #0]/k=cli,[xs #0]/v=cli effects=k,v",
@@ -1931,7 +1934,10 @@ test "front_door.output: named group child default は wrapper 外へ漏れな�
   let bool_child =
     #|{"positionals":[{"name":"xs","repeat":{"min":0,"max":1},"positionals":[
     #|  {"name":"k","type":"string"},{"name":"b","type":"bool","default":true}]}]}
-  assert_eq(wbtest_view_of(bool_child, []), "result={xs=[]} sources= effects=")
+  assert_eq(
+    wbtest_view_of(bool_child, []),
+    "result={xs=[]} sources=[]/xs=default effects=",
+  )
   assert_eq(
     wbtest_view_of(bool_child, ["a", "false"]),
     "result={xs=[{b=false,k=a}]} sources=[xs #0]/b=cli,[xs #0]/k=cli effects=b,k",
@@ -1945,7 +1951,7 @@ test "front_door.output: named group child default は wrapper 外へ漏れな�
     #|  {"name":"tail","type":"string"}]}
   assert_eq(
     wbtest_view_of(trailing, ["a"]),
-    "result={tail=a,xs=[]} sources=[]/tail=cli effects=tail",
+    "result={tail=a,xs=[]} sources=[]/tail=cli,[]/xs=default effects=tail",
   )
 }
 
