@@ -1,6 +1,6 @@
 ---
 title: nameless child を畳む accumulator が発火しても source が default のまま
-status: open
+status: resolved
 category: bug
 created: 2026-07-26T20:34:32+09:00
 last_read: 2026-07-27T00:23:45+09:00
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-27T01:21:41+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented (2026-07-27, commit f2326757 + e2f10e01): accum_cell_fire_source projects the wrapper-scope #row sentinel onto the export-key axis, carrying the last fire source onto the wrapper entry; 0-fire keeps default", "wbtest:matrix (0/1/2-fire, zero-consumption literal, wrapper-rename, command-nesting + double rename, ref+repeat #row false-positive boundary)", "spec-fixture:fixtures/multiple-parse/nameless-seq-sources.json", "handoff:link-path pin unreachable via structural body gate -> issue/2026-07-27-ref-link-structural-body-gate condition (c)"]
 blocked_by:
 origin: 自リポ TODO
 ---
