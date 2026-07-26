@@ -17,3 +17,4 @@
 | 2026-07-26 | bug | open | [env-cli-accumulator-source-mismatch](./2026-07-26-env-cli-accumulator-source-mismatch.md) | env と CLI が同一 accumulator に供給されると最終値は CLI でも sources が env のまま (DR-031 違反) |
 | 2026-07-26 | bug | open | [link-source-tag-cli-collapse](./2026-07-26-link-source-tag-cli-collapse.md) | link を独立した値源タグとして報告する (現状 cli に畳んでいる、DR-121 §4 未追随) |
 | 2026-07-26 | bug | open | [unselected-transparent-command-flag-leak](./2026-07-26-unselected-transparent-command-flag-leak.md) | 未選択の transparent command 配下の未発火 flag が root に昇格して result に現れる (DR-051 違反、result/sources 非対称) |
+| 2026-07-26 | design | open | [binding-link-name-collision](./2026-07-26-binding-link-name-collision.md) | Binding.link の名前が実体 (global escape 残段数) を表さず、spec の link (属性/source) と衝突している |
