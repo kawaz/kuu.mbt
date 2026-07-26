@@ -3,7 +3,7 @@ title: or/seq の structural child が value/default 等を持てない (schema 
 status: open
 category: bug
 created: 2026-07-26T14:35:34+09:00
-last_read:
+last_read: 2026-07-26T21:23:04+09:00
 open_entered: 2026-07-26T14:35:34+09:00
 wip_entered:
 blocked_entered:
