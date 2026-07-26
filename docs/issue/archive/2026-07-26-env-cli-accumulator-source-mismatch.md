@@ -1,6 +1,6 @@
 ---
 title: env と CLI が同一 accumulator に供給されると最終値が CLI でも sources が env のまま
-status: open
+status: discarded
 category: bug
 created: 2026-07-26T14:36:41+09:00
 last_read:
@@ -8,9 +8,9 @@ open_entered: 2026-07-26T14:36:41+09:00
 wip_entered:
 blocked_entered:
 pending_entered:
-discarded_entered:
+discarded_entered: 2026-07-26T20:35:46+09:00
 resolved_entered:
-discard_reason:
+discard_reason: ["duplicate:issue/2026-07-26-nameless-seq-accum-source-default.md"]
 pending_reason:
 close_reason:
 blocked_by:
@@ -18,6 +18,29 @@ origin: 自リポ TODO
 ---
 
 # env と CLI が同一 accumulator に供給されると最終値が CLI でも sources が env のまま
+
+## 訂正 (2026-07-26, discard 時)
+
+独立した bug ではなく、`docs/issue/2026-07-26-nameless-seq-accum-source-default.md`
+(nameless child を畳む accumulator の source 誤り) の一側面だった。
+
+起票時に使った定義が `seq` + nameless child を持っていたため、env×CLI 固有の問題に
+見えていたが、単純な accumulator (nameless child なし) で切り分けたところ、
+env×CLI の組み合わせ自体は正しく動くことを確認した:
+
+```
+定義 A (単純 accum): {"name":"tags","type":"string","long":true,"env":"TAGS",
+                      "multiple":{"accumulator":"append","separator":","}}
+
+env のみ (TAGS=x,y):     result={"tags":["x","y"]}  sources=[{"key":"tags","source":"env"}]   ← 正しい
+env + CLI (--tags a):    result={"tags":["a"]}      sources=[{"key":"tags","source":"cli"}]   ← 正しい
+CLI のみ:                result={"tags":["a"]}      sources=[{"key":"tags","source":"cli"}]   ← 正しい
+```
+
+対して定義 B (seq + nameless child) は env の有無に関わらず誤る (CLI のみでも
+`default` を報告する)。原因は nameless child を畳む accumulator の wrapper に
+実 binding が着席せず 0-fire と誤判定されること。追跡は
+`docs/issue/2026-07-26-nameless-seq-accum-source-default.md` で行う。
 
 ## 概要
 
