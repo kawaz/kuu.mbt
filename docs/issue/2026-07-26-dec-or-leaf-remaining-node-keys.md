@@ -38,6 +38,28 @@ value/default 実装後も約 49 キー残る。優先度階層に沿って段�
 
 実装前に各キーの child 位置での意味論を spec と突き合わせること。
 
+## 調査結果 (2026-07-27、survey-child-repeat)
+
+### 拒否面と受け皿の実測
+
+- 5 配置中 4 配置 (or 子 / seq 子 / option 直下 seq / ref template 内) は dec_or_leaf の allowed_keys で拒否。**positional Group 子だけ decode は通るが「通るが効かない」** — 消費構造に効かず (lower_positional の Group head が elem_repeat を通さない)、accum entity だけ root に作られて phantom `x:[]` が漏れる (lowering.mbt:1019-1062 / 1225-1290)
+- engine 受け皿は未完成: element_head は repeat/optional/multiple を見ない。off-spine repeat (Many/BoundedTail) は greedy/lazy 選好を適用しない縮退実装でコメント自身が「lowering never generates this shape today」と明記 — DR-043 の完全経路選好を満たさない
+- template は decode 時に ElementDef→Node 即変換で Map[String,Node] 格納、repeat/multiple の entity metadata が失われる
+- 内部生成 id `name#cons` は child scope で generated-generated collision の懸念 (scope-qualified 化が必要)
+
+### 結果形は spec から導出可能
+
+child repeat の結果は child cell が配列 (DESIGN §5.1 + §6.1/DR-044)、親 seq はそれを値として保持 (自動 flatten 規定なし)。repeat+multiple の T[][] は ref-repeat-rows-nested.json が pin 済み
+
+### 裁定事項
+
+- **CHILDDEF-Q1 (spec QUESTIONS.md に起票済み)**: child の default: 綴りは const 同義のままか、value:=const / default:=充填に位置非依存で分けるか。optional+default の fallback 表現の成立可否がこれで決まる
+- nested repeat の greedy/lazy CPS 設計、template metadata 表現は実装設計判断 (裁定不要だが規模大)
+
+### 規模見積り
+
+decode 開放だけは小だが silent wrong answer を増やすので単独 land 不可。end-to-end は中〜大 (wire decoder / installer ABI (DecodeCtx に StructuralChild 追加) / lowering / eval / result・entity path / template registry の 6 面、実装 300-600 行 + fixture/wbtest 15-30 case)。Phase 分割: 1) 裁定+fixture 先行 → 2) decode/installer ctx → 3) nested repeat lowering/eval → 4) nested accum/result address → 5) 回帰
+
 ## 受け入れ条件
 
 - [ ] repeat/optional/multiple が child 位置で decode を通過する (DR-067 §2 準拠)
