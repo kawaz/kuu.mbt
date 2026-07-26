@@ -1271,6 +1271,10 @@ fn result_sources(
 /// wrapper scope 直下へ置く `#row` sentinel は、子が結果キーを持つかに関係なく存在する。
 /// sentinel の scope を通常の binding と同じ export-key 軸へ写し、accum cell の wrapper address と
 /// 一致する最後の marker の source を返す。marker が無ければ 0 回発火。
+///
+/// structural body + link の gate を解除する際は composite link routing と同じ座で wrapper の発火
+/// carrier を `Link` 化する必要がある。`bindings_through_link` は internal marker を書き換えないため、
+/// gate を外すだけでは `#row.source` は `Cli` のまま誤報する (`ref-link-structural-body-gate` issue)。
 fn accum_cell_fire_source(
   resolved : Array[@abi.Binding],
   ek : @engine.ExportScopeMap,

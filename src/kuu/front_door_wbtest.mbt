@@ -1952,6 +1952,18 @@ test "front_door.output: nameless seq accumulator の wrapper source は発火�
     wbtest_view_of(nested, ["serve", "--pair", "a", "b"]),
     "result={sv={pr=[[a,b]]}} sources=[sv]/pr=cli effects=",
   )
+  // ref+repeat も行境界に `#row` を使う。別 wrapper の marker を誤って pair の発火と数えない。
+  let repeat_sibling =
+    #|{"definitions":{"templates":{"color":{"or":[
+    #|  {"type":"string","name":"colorname"}]}}},"options":[
+    #|  {"name":"pair","long":true,"multiple":"append","seq":[
+    #|    {"type":"string"},{"type":"string"}]},
+    #|  {"name":"hlcolors","ref":"color","repeat":{"min":0},"long":true}
+    #|]}
+  assert_eq(
+    wbtest_view_of(repeat_sibling, ["--hlcolors", "red", "blue"]),
+    "result={hlcolors=[{colorname=red},{colorname=blue}],pair=[]} sources=[]/pair=default,[hlcolors]/colorname=cli effects=colorname,colorname",
+  )
 }
 
 ///|
