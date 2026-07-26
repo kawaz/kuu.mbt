@@ -17,3 +17,4 @@
 | 2026-07-27 | design | open | [link-fixed-path-dsl-unimplemented](./2026-07-27-link-fixed-path-dsl-unimplemented.md) | link target の固定パス DSL (.field / [idx]) が未実装 (bare name のみ対応) |
 | 2026-07-27 | design | open | [ref-link-structural-body-gate](./2026-07-27-ref-link-structural-body-gate.md) | ref+link / structural body (or/seq/Group) + link が invalid-range で塞がれている (spec 上は合法、解除条件付き) |
 | 2026-07-27 | bug | open | [command-node-value-unimplemented](./2026-07-27-command-node-value-unimplemented.md) | command node の value: — carrier 不在 + 意味論未規定でスコープ外に切った分 |
+| 2026-07-27 | bug | open | [group-child-attrs-accepted-but-inert-phantom-entity](./2026-07-27-group-child-attrs-accepted-but-inert-phantom-entity.md) | positional Group 子の repeat/optional/multiple が「通るが効かない」+ phantom accum entity が root に漏れる |
