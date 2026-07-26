@@ -1121,18 +1121,57 @@ fn result_sources(
     }
   }
   for cell in accum_cells(sc, ek) {
-    let mut seen = false
-    for entry in out {
-      if entry.key == cell.name && path_eq(entry.path, cell.path) {
-        seen = true
-        break
-      }
-    }
-    if !seen {
+    if !accum_cell_fired(out, cell) {
       out.push({ path: cell.path, key: cell.name, source: @abi.Default })
     }
   }
   out
+}
+
+///|
+/// accum セルが 1 度でも発火したか — 発火済みなら `result_sources` は default 席を足さない。
+///
+/// 値がどこに着席するかは cell の形で 2 通りに分かれる:
+///
+/// - **スカラ accum** (`{"name":"t","type":"string","multiple":"append"}`): cell 自身が値セルなので
+///   binding は cell の address (`[], "t"`) に着く。射影後の entry がそのまま席に一致する
+/// - **name 付き `seq` / `or` の accum** (`{"name":"pair","multiple":"append","seq":[…]}`): cell は
+///   結果スコープを作る wrapper で、値は **child** (`["pair"], "path"` / `["pair"], "value"`) に
+///   着く。wrapper address には entry が一切現れない
+///
+/// 後者を「entry が無い = 0 回発火」と読むと、値が入っているのに `"pair": "default"` を報告する
+/// (DR-044 の「未発火でも `[]` を持つ」ための席が、発火済みの cell にも付いてしまう)。cell
+/// address 配下に entry が 1 つでもあれば発火済みと判定する。
+///
+/// 発火済み wrapper 自身に何を報告するかは **spec 側の未裁定事項** (`docs/QUESTIONS.md` の
+/// SRCADDR-Q2 と同じ論点 — wrapper は複数 child の由来を 1 タグに潰せない)。ここでは席を
+/// 足さない = child の entry だけが語る、に倒している。
+fn accum_cell_fired(out : Array[SourceEntry], cell : AccumCell) -> Bool {
+  let inner = path_push(cell.path, cell.name)
+  for entry in out {
+    if entry.key == cell.name && path_eq(entry.path, cell.path) {
+      return true // スカラ accum: cell 自身に着席
+    }
+    if path_starts_with(entry.path, inner) {
+      return true // wrapper accum: child に着席
+    }
+  }
+  false
+}
+
+///|
+/// `path` が `prefix` で始まるか (index segment `#k` も 1 段として数える — 発火の有無を見るだけ
+/// なので、何番目の発火かは問わない)。
+fn path_starts_with(path : Array[String], prefix : Array[String]) -> Bool {
+  if path.length() < prefix.length() {
+    return false
+  }
+  for i in 0..<prefix.length() {
+    if path[i] != prefix[i] {
+      return false
+    }
+  }
+  true
 }
 
 // ── DR-047 §4/§5 (issue value-present-ladder-gap 裁定 2026-07-10、bool target 分は元 issue

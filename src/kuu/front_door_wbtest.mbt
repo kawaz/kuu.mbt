@@ -1585,3 +1585,63 @@ test "front_door.output: named seq / or / repeat 配下の none も 3 面から�
     "result={grp=[{gflag=b}]} sources=grp.#0.gflag=cli effects=gflag",
   )
 }
+
+///|
+/// accum セルの default 席 (DR-044 uniform array: 未発火でも `[]` を持つので `sources` にも席が
+/// 要る) は、**0 回発火のときだけ**足す。判定は値がどこに着席するかで 2 通りに分かれる:
+/// スカラ accum は cell 自身、`name` 付き `seq` / `or` の accum は cell が作る結果スコープの
+/// **child** に着く。後者を「cell address に entry が無い = 0 fire」と読むと、値が入っていても
+/// `"pair": "default"` を報告してしまう (事実として誤り)。
+///
+/// 3 構造 (named seq / named or / nested command のスカラ) × 0 / 1 / 2 fire で pin する。
+/// 発火済み wrapper 自身に何を報告するかは spec 側の未裁定事項なので、ここでは席を足さない
+/// (child の entry だけが語る) 挙動を固定する。
+test "front_door.output: accum セルの default 席は 0 回発火のときだけ (DR-044)" {
+  let seq =
+    #|{"options":[{"name":"pair","long":true,"multiple":"append","seq":[
+    #|  {"name":"path","type":"string"},{"name":"value","type":"string"}]}]}
+  assert_eq(
+    wbtest_view_of(seq, []),
+    "result={pair=[]} sources=pair=default effects=",
+  )
+  assert_eq(
+    wbtest_view_of(seq, ["--pair", "x", "1"]),
+    "result={pair=[{path=x,value=1}]} sources=pair.path=cli,pair.value=cli effects=path,value",
+  )
+  assert_eq(
+    wbtest_view_of(seq, ["--pair", "x", "1", "--pair", "y", "2"]),
+    "result={pair=[{path=x,value=1},{path=y,value=2}]} sources=pair.path=cli,pair.value=cli effects=path,path,value,value",
+  )
+  // 枝は int/bool で値空間が排他 (完全経路ちょうど 1 本)。
+  let or_ =
+    #|{"options":[{"name":"color","long":true,"multiple":"append","or":[
+    #|  {"name":"num","type":"int"},{"name":"flag","type":"bool"}]}]}
+  assert_eq(
+    wbtest_view_of(or_, []),
+    "result={color=[]} sources=color=default effects=",
+  )
+  assert_eq(
+    wbtest_view_of(or_, ["--color", "7"]),
+    "result={color=[{num=7}]} sources=color.num=cli effects=num",
+  )
+  assert_eq(
+    wbtest_view_of(or_, ["--color", "7", "--color", "true"]),
+    "result={color=[{num=7},{flag=true}]} sources=color.flag=cli,color.num=cli effects=flag,num",
+  )
+  // 対照: スカラ accum は cell 自身に着席するので、従来どおり cell address の entry で判定できる。
+  let scalar =
+    #|{"commands":[{"type":"command","name":"serve","options":[
+    #|  {"name":"t","type":"string","long":true,"multiple":"append"}]}]}
+  assert_eq(
+    wbtest_view_of(scalar, ["serve"]),
+    "result={serve={t=[]}} sources=serve.t=default effects=",
+  )
+  assert_eq(
+    wbtest_view_of(scalar, ["serve", "--t", "a"]),
+    "result={serve={t=[a]}} sources=serve.t=cli effects=t",
+  )
+  assert_eq(
+    wbtest_view_of(scalar, ["serve", "--t", "a", "--t", "b"]),
+    "result={serve={t=[a,b]}} sources=serve.t=cli effects=t,t",
+  )
+}
