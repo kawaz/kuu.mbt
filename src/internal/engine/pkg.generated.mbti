@@ -158,6 +158,8 @@ pub fn sep_binds(String, String, String?, &@extension.TypeExt, Array[@abi.FnInvo
 
 pub fn separated_arg(String, String?, &@extension.TypeExt, @abi.RoundMode, @abi.BoolConfig, Array[@abi.FnInvocation], allow_base_prefix? : Bool, merge? : Bool) -> Node
 
+pub fn seq_body_node(Array[ElementDef]) -> Node
+
 pub fn short_combine(String, Array[@extension.ShortEntry], combine? : Bool) -> &@extension.MatcherExt
 
 pub fn short_entry(Char, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, deprecated? : Bool, merge? : Bool, short_attached_value? : @abi.AttachMode, is_alias? : Bool) -> @extension.ShortEntry

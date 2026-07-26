@@ -1595,13 +1595,17 @@ fn dec_template_body(
             Some(x) => x
             None => raise DecodeSkip("template body 'seq' is not an array")
           }
-          let nodes : Array[@engine.Node] = []
+          // 子 head を素で並べるのではなく `@engine.seq_body_node` を通す — 結果キーを持つ子が
+          // 1 つも無い seq は DESIGN §5.1 の「子の値の配列」であり、添字スコープ + 配列マーカー
+          // を挟むのはその畳み方 (`seq_child_nodes`) の役目。素で並べると無名の子が全員同じ
+          // 単一セルへ束ねられ last-wins で 1 個に潰れる。inline `seq` と `ref` は同じ構造の
+          // 別の書き口 (DR-078 §1) なので、この経路も option/positional 直下の inline `seq` と
+          // or の複数 item 枝 (`or_branch_node`) と同じ畳み方を共有する。
+          let items : Array[@engine.ElementDef] = []
           for e in sa {
-            nodes.push(
-              @engine.element_head(dec_or_leaf(e, shadows, extensions~)),
-            )
+            items.push(dec_or_leaf(e, shadows, extensions~))
           }
-          @engine.Seq(nodes)
+          @engine.seq_body_node(items)
         }
         None => @engine.element_head(dec_or_leaf(j, shadows, extensions~)) // bare leaf {"type":..,"name":..}
       }

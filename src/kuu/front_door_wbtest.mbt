@@ -872,6 +872,146 @@ test "option seq keeps the array form when no child carries a result key" {
 }
 
 ///|
+/// 保証 (DR-078 §1): 同じ消費文法を **どの書き口で書いても結果形は一致する**。inline `seq` /
+/// `definitions.templates` 経由の `ref` / 構造 `or` の複数 item 枝 — 3 つとも同じ畳み方
+/// (`@engine.seq_body_node`、結果キーを持つ子が 1 つでもあれば 1 個の kv、無ければ子の値の配列)
+/// を共有する。ここが割れると「テンプレに切り出したら結果形が変わった」が起きる (実際、
+/// templates の seq 本体だけが子 head を素で並べており、無名の子が全員同じ単一セルへ束ねられて
+/// last-wins で 1 個に潰れていた — `{pair: "1"}`)。option 面と positional 面の両方で見る。
+test "seq result shape is identical across inline / ref-template / or-branch" {
+  fn result_of(src : String, args : Array[String]) -> @abi.ResultValue raise {
+    let ast = match parse_definition(@json.parse(src)) {
+      Ok(value) => value
+      Err(_) => {
+        fail("parse_definition failed for " + src)
+        panic()
+      }
+    }
+    let parsed = parse_legacy(ast, args)
+    match resolve_legacy(ast, parsed, args) {
+      @engine.Success(bindings) => output_legacy(ast, effects=bindings).result
+      other => {
+        fail("seq definition should parse, got " + render_outcome(other))
+        panic()
+      }
+    }
+  }
+
+  // ── 無名の子 = 子の値の配列 (DESIGN §5.1)、3 経路とも同じ ────────────────
+  let anon_array : @abi.ResultValue = @abi.Object([
+    (
+      "pair",
+      @abi.Array([@abi.Scalar(@abi.String("a")), @abi.Scalar(@abi.String("1"))]),
+    ),
+  ])
+  let anon_inline =
+    #|{"options": [{"name": "pair", "long": true,
+    #|  "seq": [{"type": "string"}, {"type": "string"}]}]}
+  let anon_ref =
+    #|{"definitions": {"templates": {"p": {
+    #|  "seq": [{"type": "string"}, {"type": "string"}]}}},
+    #| "options": [{"name": "pair", "long": true, "ref": "p"}]}
+  let anon_or =
+    #|{"options": [{"name": "pair", "long": true, "or": [
+    #|  {"seq": [{"type": "string"}, {"type": "string"}]}]}]}
+  assert_eq(result_of(anon_inline, ["--pair", "a", "1"]), anon_array)
+  assert_eq(result_of(anon_ref, ["--pair", "a", "1"]), anon_array)
+  assert_eq(result_of(anon_or, ["--pair", "a", "1"]), anon_array)
+
+  // ── 結果キーを持つ子 = 1 個の kv (DESIGN §2.4/§2.5)、3 経路とも同じ ───────
+  let named_kv : @abi.ResultValue = @abi.Object([
+    (
+      "pair",
+      @abi.Object([
+        ("path", @abi.Scalar(@abi.String("a"))),
+        ("value", @abi.Scalar(@abi.String("1"))),
+      ]),
+    ),
+  ])
+  let named_inline =
+    #|{"options": [{"name": "pair", "long": true, "seq": [
+    #|  {"name": "path", "type": "string"}, {"name": "value", "type": "string"}]}]}
+  let named_ref =
+    #|{"definitions": {"templates": {"p": {"seq": [
+    #|  {"name": "path", "type": "string"}, {"name": "value", "type": "string"}]}}},
+    #| "options": [{"name": "pair", "long": true, "ref": "p"}]}
+  let named_or =
+    #|{"options": [{"name": "pair", "long": true, "or": [{"seq": [
+    #|  {"name": "path", "type": "string"}, {"name": "value", "type": "string"}]}]}]}
+  assert_eq(result_of(named_inline, ["--pair", "a", "1"]), named_kv)
+  assert_eq(result_of(named_ref, ["--pair", "a", "1"]), named_kv)
+  assert_eq(result_of(named_or, ["--pair", "a", "1"]), named_kv)
+
+  // ── positional 面: ref テンプレと構造 or (positional 直下に inline seq の書き口は無い) ──
+  let pos_anon_ref =
+    #|{"definitions": {"templates": {"p": {
+    #|  "seq": [{"type": "string"}, {"type": "string"}]}}},
+    #| "positionals": [{"name": "pair", "ref": "p"}]}
+  let pos_anon_or =
+    #|{"positionals": [{"name": "pair", "or": [
+    #|  {"seq": [{"type": "string"}, {"type": "string"}]}]}]}
+  assert_eq(result_of(pos_anon_ref, ["a", "1"]), anon_array)
+  assert_eq(result_of(pos_anon_or, ["a", "1"]), anon_array)
+
+  // ── multiple を被せても畳み単位は「発火 1 回ぶんの行」で一致 (DR-044 §1) ──
+  let two_rows : @abi.ResultValue = @abi.Object([
+    (
+      "pair",
+      @abi.Array([
+        @abi.Array([
+          @abi.Scalar(@abi.String("a")),
+          @abi.Scalar(@abi.String("1")),
+        ]),
+        @abi.Array([
+          @abi.Scalar(@abi.String("b")),
+          @abi.Scalar(@abi.String("2")),
+        ]),
+      ]),
+    ),
+  ])
+  let multi_args = ["--pair", "a", "1", "--pair", "b", "2"]
+  let multi_inline =
+    #|{"options": [{"name": "pair", "long": true, "multiple": "append",
+    #|  "seq": [{"type": "string"}, {"type": "string"}]}]}
+  let multi_ref =
+    #|{"definitions": {"templates": {"p": {
+    #|  "seq": [{"type": "string"}, {"type": "string"}]}}},
+    #| "options": [{"name": "pair", "long": true, "multiple": "append", "ref": "p"}]}
+  let multi_or =
+    #|{"options": [{"name": "pair", "long": true, "multiple": "append", "or": [
+    #|  {"seq": [{"type": "string"}, {"type": "string"}]}]}]}
+  assert_eq(result_of(multi_inline, multi_args), two_rows)
+  assert_eq(result_of(multi_ref, multi_args), two_rows)
+  assert_eq(result_of(multi_or, multi_args), two_rows)
+
+  // 無名 3 子 / 1 子でも配列の要素数は宣言した子の数に一致する (要素数で構造を変えない)。
+  let ref_three =
+    #|{"definitions": {"templates": {"p": {"seq": [
+    #|  {"type": "string"}, {"type": "string"}, {"type": "string"}]}}},
+    #| "options": [{"name": "pair", "long": true, "ref": "p"}]}
+  assert_eq(
+    result_of(ref_three, ["--pair", "a", "1", "z"]),
+    @abi.Object([
+      (
+        "pair",
+        @abi.Array([
+          @abi.Scalar(@abi.String("a")),
+          @abi.Scalar(@abi.String("1")),
+          @abi.Scalar(@abi.String("z")),
+        ]),
+      ),
+    ]),
+  )
+  let ref_one =
+    #|{"definitions": {"templates": {"p": {"seq": [{"type": "string"}]}}},
+    #| "options": [{"name": "pair", "long": true, "ref": "p"}]}
+  assert_eq(
+    result_of(ref_one, ["--pair", "a"]),
+    @abi.Object([("pair", @abi.Array([@abi.Scalar(@abi.String("a"))]))]),
+  )
+}
+
+///|
 test "single-value option remains scalar after option seq support" {
   let src =
     #|{"options": [{"name": "port", "type": "string", "long": true}]}

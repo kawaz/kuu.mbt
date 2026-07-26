@@ -717,10 +717,19 @@ pub fn or_branch_node(br : OrBranch) -> Node {
   if br.items.length() == 1 {
     element_head(br.items[0])
   } else {
-    let nodes : Array[Node] = []
-    seq_child_nodes(br.items, nodes)
-    Seq(nodes)
+    seq_body_node(br.items)
   }
+}
+
+///|
+/// `{"seq":[...]}` 本体の消費構造 (DESIGN §5.1)。option/positional 直下の inline `seq`
+/// (`seq_value_node`)・or の複数 item 枝 (`or_branch_node`)・`definitions.templates` の seq 本体
+/// (`dec_template_body`, wire_decode.mbt) が共有する — inline `seq` と `ref` は同じ構造の別の
+/// 書き口 (DR-078 §1) なので、結果形は書き口に依存しない。
+pub fn seq_body_node(items : Array[ElementDef]) -> Node {
+  let nodes : Array[Node] = []
+  seq_child_nodes(items, nodes)
+  Seq(nodes)
 }
 
 ///|
