@@ -18,3 +18,5 @@
 | 2026-07-26 | bug | open | [value-default-unimplemented-root-positions](./2026-07-26-value-default-unimplemented-root-positions.md) | value:/default_fn 以外の位置 — option root / positional / command node の value: が全面未実装 |
 | 2026-07-26 | design | open | [dec-or-leaf-remaining-node-keys](./2026-07-26-dec-or-leaf-remaining-node-keys.md) | dec_or_leaf の残余キー同型化の棚卸し (repeat/multiple/optional が最優先、DR-067 §2 直接規定) |
 | 2026-07-26 | bug | open | [named-group-child-default-leaks-to-root](./2026-07-26-named-group-child-default-leaks-to-root.md) | named group positional child の default 席が root scope に漏れる |
+| 2026-07-27 | design | open | [link-fixed-path-dsl-unimplemented](./2026-07-27-link-fixed-path-dsl-unimplemented.md) | link target の固定パス DSL (.field / [idx]) が未実装 (bare name のみ対応) |
+| 2026-07-27 | design | open | [ref-link-structural-body-gate](./2026-07-27-ref-link-structural-body-gate.md) | ref+link / structural body (or/seq/Group) + link が invalid-range で塞がれている (spec 上は合法、解除条件付き) |
