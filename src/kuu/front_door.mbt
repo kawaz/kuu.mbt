@@ -691,7 +691,7 @@ fn project_sources(
   ast : AtomicAST,
   resolved : Array[@abi.Binding],
 ) -> Array[SourceEntry] {
-  let internal = internal_cells(ast.root, ast.ekmap)
+  let internal = internal_cells(ast.root, ast.ekmap, resolved)
   let projected : Array[SourceEntry] = []
   for entry in result_sources(ast.root, resolved, ast.ekmap) {
     if !is_internal_cell(internal, entry.path, entry.key) {

@@ -401,7 +401,7 @@ test "accum_cells resolves export_key rename — the accumulate fold fires under
     entities: [ent("tags", @builtins.string_type(), accum=Some("append"))],
     constraints: [],
   }
-  let cells = accum_cells(sc, ek)
+  let cells = accum_cells(sc, ek, [])
   assert_eq(cells.length(), 1)
   assert_eq(cells[0].name, "t")
   let binds : Array[@abi.Binding] = [
@@ -435,7 +435,7 @@ test "accum_cells 対極: an @abi.Null accum cell carries no result-key axis (dr
     entities: [ent("tags", @builtins.string_type(), accum=Some("append"))],
     constraints: [],
   }
-  assert_eq(accum_cells(sc, ek).length(), 0)
+  assert_eq(accum_cells(sc, ek, []).length(), 0)
 }
 
 ///|
@@ -456,7 +456,10 @@ test "accum_cells resolves export_key rename on a command scope label (nested pa
     entities: [],
     constraints: [],
   }
-  let cells = accum_cells(root, ek)
+  // 選択判定 (issue unselected-transparent-command-flag-leak) の導入で、nested scope の
+  // AccumCell は `sub` に入場した実行でのみ収集される。marker は **宣言名軸** (`["sub"]`) —
+  // 露出キー軸 (`["s"]`) ではない。ここが逆だと rename のある scope で判定が外れる。
+  let cells = accum_cells(root, ek, [selected_marker(["sub"])])
   assert_eq(cells.length(), 1)
   assert_eq(cells[0].path, ["s"])
   assert_eq(cells[0].name, "tags")
@@ -480,7 +483,7 @@ test "accum_cells + build_result: a renamed accum cell with zero fires still ren
     entities: [ent("tags", @builtins.string_type(), accum=Some("append"))],
     constraints: [],
   }
-  let cells = accum_cells(sc, ek)
+  let cells = accum_cells(sc, ek, [])
   let r = build_result(apply_export_keys([], ek), cells, [], [])
   assert_eq(r, @abi.Object([("t", @abi.Array([]))]))
 }
@@ -1953,10 +1956,7 @@ fn selected_marker(scope : Array[String]) -> @abi.Binding {
 ///|
 /// 2 つの sibling command を持つ root scope — 片方が identity、もう片方が透過 (`export_key: null`)。
 /// どちらも配下に flag セル 1 つ (preset default:false) を持つ。
-fn two_command_scope(
-  a_flag : String,
-  c_flag : String,
-) -> @engine.Scope {
+fn two_command_scope(a_flag : String, c_flag : String) -> @engine.Scope {
   let a : @engine.Scope = {
     greedy: [],
     positional: [],
@@ -2097,14 +2097,22 @@ test "default_cells 対極: the root scope is always selected — its flag defau
         greedy: [],
         positional: [],
         entities: [
-          ent("hold", @builtins.flag_type(), default_value=Some(@abi.Bool(false))),
+          ent(
+            "hold",
+            @builtins.flag_type(),
+            default_value=Some(@abi.Bool(false)),
+          ),
         ],
         constraints: [],
       }),
     ],
     positional: [],
     entities: [
-      ent("verbose", @builtins.flag_type(), default_value=Some(@abi.Bool(false))),
+      ent(
+        "verbose",
+        @builtins.flag_type(),
+        default_value=Some(@abi.Bool(false)),
+      ),
     ],
     constraints: [],
   }
@@ -2112,4 +2120,199 @@ test "default_cells 対極: the root scope is always selected — its flag defau
   assert_eq(cells.length(), 1)
   assert_eq(cells[0].path, [])
   assert_eq(cells[0].name, "verbose")
+}
+
+// ── accum セル / 内部セルの席にも同じ選択判定 (issue unselected-transparent-command-flag-leak) ──
+
+///|
+/// 2 つの sibling command を持つ root scope — 片方が identity (`a`, flag `keep`)、もう片方が
+/// accum セル 1 つを持つ `c`。`c` の透過 / identity は呼び出し側が `ek` で切り替える。
+fn command_with_accum_scope() -> @engine.Scope {
+  let a : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [
+      ent("keep", @builtins.flag_type(), default_value=Some(@abi.Bool(false))),
+    ],
+    constraints: [],
+  }
+  let c : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("tags", @builtins.string_type(), accum=Some("append"))],
+    constraints: [],
+  }
+  {
+    greedy: [@engine.CommandSatisfied("a", a), @engine.CommandSatisfied("c", c)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+}
+
+///|
+/// 保証 (issue unselected-transparent-command-flag-leak の accum 断面、DR-121 §2):
+/// 未選択 command 配下の accum セルは席を作らない。DR-044 の「反復系は 0 回発火でも `[]`」は
+/// **その cell が結果に現れる場合** の形の規定であって、未選択 command 配下のセル (DR-051 absent)
+/// に `[]` を出す前提は成立しない。
+///
+/// **identity 側の方が症状が重い**: 透過なら `[]` が root に着地して result / sources の両方に出る
+/// (対称ではあるが値源を持たないセルの席なので absent 違反) のに対し、identity は result には
+/// 出ない一方 `result_sources` が `accum_cells` の席をそのまま `@abi.Default` entry にするので
+/// **sources にだけ `{"path":["c"],"key":"tags"}` が残る** — 消費者が result から引けない由来
+/// = DR-121 §2 の正面違反。ここは transparent / identity の両方を同じ gate で塞ぐ。
+test "accum_cells: an UNSELECTED transparent command's accum cell creates no seat" {
+  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+  let sc = command_with_accum_scope()
+  assert_eq(accum_cells(sc, ek, [selected_marker(["a"])]).length(), 0)
+}
+
+///|
+/// 保証 (同上、identity 側 — DR-121 §2 違反が直接見える断面)。
+test "accum_cells: an UNSELECTED identity command's accum cell creates no seat either" {
+  let ek = test_export_scopes()
+  let sc = command_with_accum_scope()
+  assert_eq(accum_cells(sc, ek, [selected_marker(["a"])]).length(), 0)
+}
+
+///|
+/// 保証 (対極、回帰防止): **選択された** command 配下の accum セルは 0 回発火でも席を持つ
+/// (DR-044 uniform array、`sources-under-command.json::unfired-cells-default-under-command`
+/// が pin する `[]` + `source: default`)。透過なら root へ、identity なら自名の下へ。
+test "accum_cells 対極: a SELECTED command's accum cell keeps its seat (透過 → root)" {
+  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+  let sc = command_with_accum_scope()
+  let cells = accum_cells(sc, ek, [selected_marker(["c"])])
+  assert_eq(cells.length(), 1)
+  assert_eq(cells[0].path, [])
+  assert_eq(cells[0].name, "tags")
+}
+
+///|
+/// 保証 (対極、identity 側)。
+test "accum_cells 対極: a SELECTED identity command's accum cell nests under its own name" {
+  let ek = test_export_scopes()
+  let sc = command_with_accum_scope()
+  let cells = accum_cells(sc, ek, [selected_marker(["c"])])
+  assert_eq(cells.length(), 1)
+  assert_eq(cells[0].path, ["c"])
+  assert_eq(cells[0].name, "tags")
+}
+
+///|
+/// 保証 (内部セルの席、issue の 3 断面目): 未選択の **透過** command 配下の `config_file` セルは
+/// 席を作らない。内部セルの席は「出力から落とす対象」を (path, key) で同定する **negative list**
+/// なので、除外側にも選択判定が要る — 未選択の透過 command 配下に `cfg` があると
+/// `walk_export_path` が透過ラベルを落として席が `([], "cfg")` に着地し、**root に実在する別の
+/// `cfg` 値セルを巻き添えで除外する** (実機実測: root の `--cfg hello` が result / sources の
+/// 両方から消えた)。identity なら席が `(["c"], "cfg")` なので衝突せず、症状は透過側だけに出る
+/// (`default_cells` の flag 漏れと同じ非対称の出方)。
+test "internal_cells: an UNSELECTED transparent command's config_file seat does not mask a real root cell" {
+  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+  let c : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("cfg", @builtins.string_type(), is_config_file=true)],
+    constraints: [],
+  }
+  let sc : @engine.Scope = {
+    greedy: [@engine.CommandSatisfied("c", c)],
+    positional: [],
+    entities: [ent("cfg", @builtins.string_type())], // root の実在する値セル (同名)
+    constraints: [],
+  }
+  // 未選択: 席が無い → root の cfg は除外されない
+  assert_eq(internal_cells(sc, ek, []).length(), 0)
+  assert_eq(is_internal_cell(internal_cells(sc, ek, []), [], "cfg"), false)
+}
+
+///|
+/// 保証 (対極、回帰防止): **選択された** 透過 command 配下の `config_file` セルは従来どおり席を
+/// 持ち、出力から除外される (DR-050: config_file の値は provider 解決用の PATH であって利用者
+/// 向けの結果ではない)。選択判定の導入が内部セルの除外そのものを殺していないことを固定する。
+test "internal_cells 対極: a SELECTED transparent command's config_file seat still excludes the cell" {
+  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+  let c : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("cfg", @builtins.string_type(), is_config_file=true)],
+    constraints: [],
+  }
+  let sc : @engine.Scope = {
+    greedy: [@engine.CommandSatisfied("c", c)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let cells = internal_cells(sc, ek, [selected_marker(["c"])])
+  assert_eq(cells.length(), 1)
+  assert_eq(is_internal_cell(cells, [], "cfg"), true) // 透過昇格で root に着地
+}
+
+///|
+/// 保証 (対極、identity 側): 選択された identity command 配下の `config_file` 席は自名の下に
+/// 立ち、root の同名セルとは衝突しない (透過との対比 — 上の 2 テストの症状が透過固有である
+/// ことの裏取り)。
+test "internal_cells 対極: a SELECTED identity command's config_file seat nests under its own name" {
+  let ek = test_export_scopes()
+  let c : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("cfg", @builtins.string_type(), is_config_file=true)],
+    constraints: [],
+  }
+  let sc : @engine.Scope = {
+    greedy: [@engine.CommandSatisfied("c", c)],
+    positional: [],
+    entities: [ent("cfg", @builtins.string_type())],
+    constraints: [],
+  }
+  let cells = internal_cells(sc, ek, [selected_marker(["c"])])
+  assert_eq(cells.length(), 1)
+  assert_eq(is_internal_cell(cells, ["c"], "cfg"), true)
+  assert_eq(is_internal_cell(cells, [], "cfg"), false) // root の同名セルは巻き込まない
+}
+
+///|
+/// 保証 (`none` セルも同型、DR-089 §3): 未選択の透過 command 配下の `none` セルの席も、root の
+/// 同名値セルをマスクしない。`none` の席は `@engine.none_cells` (engine 側、宣言名軸) 由来で
+/// `collect_config_file_seats` とは別経路なので、gate も別に要る — その path は command segment
+/// 以外 (name 付き seq/or、repeat) も積むため `scope_selected` を path 全体に掛けられず、
+/// **未選択 command path を prefix として持つか** で判定している。
+test "internal_cells: an UNSELECTED transparent command's none-cell seat does not mask a real root cell" {
+  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+  let c : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("x", @builtins.none_type())],
+    constraints: [],
+  }
+  let sc : @engine.Scope = {
+    greedy: [@engine.CommandSatisfied("c", c)],
+    positional: [],
+    entities: [ent("x", @builtins.string_type())], // root の実在する値セル (同名)
+    constraints: [],
+  }
+  assert_eq(internal_cells(sc, ek, []).length(), 0)
+}
+
+///|
+/// 保証 (対極): 選択された透過 command 配下の `none` セルは従来どおり席を持つ。
+test "internal_cells 対極: a SELECTED transparent command's none-cell seat still excludes the cell" {
+  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+  let c : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [ent("x", @builtins.none_type())],
+    constraints: [],
+  }
+  let sc : @engine.Scope = {
+    greedy: [@engine.CommandSatisfied("c", c)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let cells = internal_cells(sc, ek, [selected_marker(["c"])])
+  assert_eq(cells.length(), 1)
+  assert_eq(is_internal_cell(cells, [], "x"), true)
 }

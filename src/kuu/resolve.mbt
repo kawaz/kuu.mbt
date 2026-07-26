@@ -791,20 +791,32 @@ fn build_result(
 /// resolution `apply_export_to_defaults` uses: `@engine.Key(s)` → rename to `s`, `@abi.Null` → drop (透過,
 /// DR-052 §2 — an accum cell whose OWN key is nulled carries no result-key axis, same posture a
 /// scalar default's @abi.Null already gets), otherwise unchanged.
+///
+/// `binds` は **未射影** の解決済み binding — 未選択 command scope を降りないための選択判定
+/// (`@engine.scope_selected`) に使う。`collect_defaults` と同じ gate (下記 `collect_accum` の
+/// コメント参照)。
 fn accum_cells(
   sc : @engine.Scope,
   ek : @engine.ExportScopeMap,
+  binds : Array[@abi.Binding],
 ) -> Array[AccumCell] {
   let out : Array[AccumCell] = []
-  collect_accum(sc, [], ek, out)
+  collect_accum(sc, [], [], ek, binds, out)
   out
 }
 
 ///|
+/// `path` は **露出キー軸** (`exposed_scope` の rename / 透過昇格を適用済み) — AccumCell は
+/// `build_result` が射影済み binding key と直接突き合わせる素材なので、`collect_defaults` と違い
+/// ここで射影を済ませる。一方 `decl_path` は **宣言名軸** で、選択判定 (`@engine.scope_selected`)
+/// 専用に並走させる — 判定が見る `{}` scope_marker の scope は `cont.mbt` KNest が宣言ラベルで
+/// 積むので、露出キー軸の `path` で照会すると rename / 透過のある scope で判定が外れる。
 fn collect_accum(
   sc : @engine.Scope,
   path : Array[String],
+  decl_path : Array[String],
   ek : @engine.ExportScopeMap,
+  binds : Array[@abi.Binding],
   out : Array[AccumCell],
 ) -> Unit {
   for e in sc.entities {
@@ -830,11 +842,32 @@ fn collect_accum(
   for g in sc.greedy {
     match g {
       @engine.CommandSatisfied(name, child) => {
-        let child_ek = ek.child(name)
-        match ek.exposed_scope(name) {
-          // dropped label → children promote (DR-052 §2)
-          None => collect_accum(child, path, child_ek, out)
-          Some(s) => collect_accum(child, path_push(path, s), child_ek, out)
+        // 未選択 (当該実行で未入場) の command scope は降りない — `collect_defaults` と同一の
+        // gate (issue unselected-transparent-command-flag-leak)。DR-044 の「反復系は 0 回発火でも
+        // `[]`」は **その cell が結果に現れる場合** の形の規定で、未選択 command 配下のセルは
+        // そもそも結果に現れない (DR-051 absent) ので `[]` を出す前提が成立しない。
+        //
+        // 透過 (`export_key: null`) 側は `[]` が root に着地して result にも sources にも現れ
+        // (両方に出るので対称に見えるが、値源を持たないセルの席なので absent 違反)、identity 側は
+        // result には出ない一方 `result_sources` が `accum_cells` の席をそのまま `@abi.Default`
+        // entry にするので **sources にだけ残る** (`{"path":["c"],"key":"tags"}`) — result から
+        // 引けない由来 = DR-121 §2 違反。根は同じ「未選択スコープを無条件に降りる」。
+        let child_decl = path_push(decl_path, name)
+        if @engine.scope_selected(binds, child_decl) {
+          let child_ek = ek.child(name)
+          match ek.exposed_scope(name) {
+            // dropped label → children promote (DR-052 §2)
+            None => collect_accum(child, path, child_decl, child_ek, binds, out)
+            Some(s) =>
+              collect_accum(
+                child,
+                path_push(path, s),
+                child_decl,
+                child_ek,
+                binds,
+                out,
+              )
+          }
         }
       }
       _ => ()
@@ -865,29 +898,88 @@ priv struct InternalCell {
 /// `@engine.none_cells` が結果木全体分を返すので、それを `walk_export_path` + `exposed_cell`
 /// で写すだけ (binding / default / accum と同じ 3 値解決)。`config_file` は engine 側の
 /// 「値空間の無いセル」ではなく `Entity.is_config_file` フラグの別軸なので、ここで追加収集する。
+/// `binds` は未射影の解決済み binding — 未選択 command scope 配下の席を落とすのに使う。
+/// **除外側の席にも選択判定が要る** のは、内部セルの席が「出力から落とす対象」を (path, key) で
+/// 同定する negative list だから: 未選択の透過 command 配下に `cfg` (config_file) があると、
+/// `walk_export_path` が透過ラベルを落として席が `([], "cfg")` に着地し、**root に実在する別の
+/// `cfg` 値セルを巻き添えで除外**する (実測: root の `--cfg hello` が result / sources の
+/// 両方から消える。identity なら席が `(["c"], "cfg")` なので衝突せず無害)。`none` セルも同型。
 fn internal_cells(
   sc : @engine.Scope,
   ek : @engine.ExportScopeMap,
+  binds : Array[@abi.Binding],
 ) -> Array[InternalCell] {
   let out : Array[InternalCell] = []
+  let unselected = unselected_command_paths(sc, [], binds)
   for cell in @engine.none_cells(sc) {
+    // `NoneCell.path` は宣言名軸だが command segment 以外 (name 付き seq/or の `Scoped`、
+    // repeat の `IndexedRepeat`) も積まれるので、`scope_selected` を path 全体には掛けられない
+    // (非 command scope に `{}` marker は無く、全部「未選択」と誤判定する)。代わりに
+    // **未選択 command path を prefix として持つか** で判定する。
+    if under_unselected_command(unselected, cell.path()) {
+      continue
+    }
     let (path, node) = walk_export_path(cell.path(), ek)
     match node.exposed_cell(cell.name()) {
       None => () // 透過: 結果キー軸を持たないので射影側にも現れない
       Some(name) => out.push({ path, name })
     }
   }
-  collect_config_file_seats(sc, [], ek, out)
+  collect_config_file_seats(sc, [], [], ek, binds, out)
   out
+}
+
+///|
+/// 未選択 (当該実行で未入場) の command scope の path を **宣言名軸** で集める。子は辿らない
+/// (親が未選択なら子も未選択で、prefix 判定に親 1 段あれば足りる)。
+fn unselected_command_paths(
+  sc : @engine.Scope,
+  decl_path : Array[String],
+  binds : Array[@abi.Binding],
+) -> Array[Array[String]] {
+  let out : Array[Array[String]] = []
+  for g in sc.greedy {
+    match g {
+      @engine.CommandSatisfied(name, child) => {
+        let child_decl = path_push(decl_path, name)
+        if @engine.scope_selected(binds, child_decl) {
+          for p in unselected_command_paths(child, child_decl, binds) {
+            out.push(p)
+          }
+        } else {
+          out.push(child_decl)
+        }
+      }
+      _ => ()
+    }
+  }
+  out
+}
+
+///|
+/// セルの宣言名軸 path が、未選択 command scope のいずれかの配下にあるか。
+fn under_unselected_command(
+  unselected : Array[Array[String]],
+  path : Array[String],
+) -> Bool {
+  for u in unselected {
+    if path_starts_with(path, u) {
+      return true
+    }
+  }
+  false
 }
 
 ///|
 /// `type: "config_file"` セル (DR-050) の席。`none` と違い engine の `none_cells` には乗らない
 /// (値空間はあり、config provider の解決に使われる) ので、`collect_accum` と同じ walk で集める。
+/// `path` は露出キー軸 / `decl_path` は選択判定用の宣言名軸 (`collect_accum` と同じ並走)。
 fn collect_config_file_seats(
   sc : @engine.Scope,
   path : Array[String],
+  decl_path : Array[String],
   ek : @engine.ExportScopeMap,
+  binds : Array[@abi.Binding],
   out : Array[InternalCell],
 ) -> Unit {
   for e in sc.entities {
@@ -901,11 +993,24 @@ fn collect_config_file_seats(
   for g in sc.greedy {
     match g {
       @engine.CommandSatisfied(name, child) => {
-        let child_ek = ek.child(name)
-        match ek.exposed_scope(name) {
-          None => collect_config_file_seats(child, path, child_ek, out)
-          Some(s) =>
-            collect_config_file_seats(child, path_push(path, s), child_ek, out)
+        let child_decl = path_push(decl_path, name)
+        if @engine.scope_selected(binds, child_decl) {
+          let child_ek = ek.child(name)
+          match ek.exposed_scope(name) {
+            None =>
+              collect_config_file_seats(
+                child, path, child_decl, child_ek, binds, out,
+              )
+            Some(s) =>
+              collect_config_file_seats(
+                child,
+                path_push(path, s),
+                child_decl,
+                child_ek,
+                binds,
+                out,
+              )
+          }
         }
       }
       _ => ()
@@ -1060,10 +1165,10 @@ fn build_result_export(
 ) -> @abi.ResultValue {
   build_result(
     apply_export_keys(binds, ek),
-    accum_cells(sc, ek),
+    accum_cells(sc, ek, binds),
     apply_export_to_defaults(default_cells(sc, binds), ek),
     [],
-    nones=internal_cells(sc, ek),
+    nones=internal_cells(sc, ek, binds),
     extensions~,
   )
 }
@@ -1149,7 +1254,7 @@ fn result_sources(
       }
     }
   }
-  for cell in accum_cells(sc, ek) {
+  for cell in accum_cells(sc, ek, resolved) {
     if !accum_cell_fired(out, cell) {
       out.push({ path: cell.path, key: cell.name, source: @abi.Default })
     }
