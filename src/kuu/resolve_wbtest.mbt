@@ -47,6 +47,7 @@ fn ent(
   value_filters? : Array[String] = [],
   final_filters? : Array[String] = [],
   accum_filters? : Array[String] = [],
+  declaring_path? : Array[String] = [],
 ) -> @engine.Entity {
   // DR-083 §1: the field is the length-1-degenerate array (node.mbt's doc comment); this builder
   // keeps its OWN param scalar (every existing call site passes a single value, the common scalar-
@@ -58,6 +59,7 @@ fn ent(
   }
   {
     name,
+    declaring_path,
     link,
     ty: if is_tty {
       @builtins.tty_type(tty_stream, cygwin=tty_cygwin)

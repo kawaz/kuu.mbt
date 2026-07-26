@@ -1905,6 +1905,51 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
 }
 
 ///|
+/// named group の child default は、発火した row の wrapper 配下でだけ解決する。
+/// 0 fire では child の席自体が存在せず、DR-044 の wrapper accumulator 席だけが `[]` を供給する。
+/// この group head は k/v の 2 token を一体で消費するため、k だけの partial row は完全経路に
+/// ならない。default 席は row の消費 arity を変えず、発火した child cell の解決 scope だけを決める。
+test "front_door.output: named group child default は wrapper 外へ漏れない (DR-051 / DR-121 §3.2)" {
+  let src =
+    #|{"positionals":[{"name":"xs","repeat":{"min":0,"max":2},"positionals":[
+    #|  {"name":"k","type":"string"},{"name":"v","type":"string","default":"D"}]}]}
+  assert_eq(wbtest_view_of(src, []), "result={xs=[]} sources= effects=")
+  assert_eq(
+    wbtest_view_of(src, ["a", "b"]),
+    "result={xs=[{k=a,v=b}]} sources=[xs #0]/k=cli,[xs #0]/v=cli effects=k,v",
+  )
+  assert_eq(
+    wbtest_view_of(src, ["a", "b", "c", "d"]),
+    "result={xs=[{k=a,v=b},{k=c,v=d}]} sources=[xs #0]/k=cli,[xs #0]/v=cli,[xs #1]/k=cli,[xs #1]/v=cli effects=k,k,v,v",
+  )
+  match parse_legacy(load_definition(src), ["a"]) {
+    @engine.Success(_) => fail("partial row must not become a complete path")
+    _ => ()
+  }
+  // bool/flag defaults also feed build_result's default-cell projection; they must obey the same
+  // declaration scope gate instead of being injected at root when the group has no row.
+  let bool_child =
+    #|{"positionals":[{"name":"xs","repeat":{"min":0,"max":1},"positionals":[
+    #|  {"name":"k","type":"string"},{"name":"b","type":"bool","default":true}]}]}
+  assert_eq(wbtest_view_of(bool_child, []), "result={xs=[]} sources= effects=")
+  assert_eq(
+    wbtest_view_of(bool_child, ["a", "false"]),
+    "result={xs=[{b=false,k=a}]} sources=[xs #0]/b=cli,[xs #0]/k=cli effects=b,k",
+  )
+  // The child default does not make a partial row consumable; a trailing positional can still take
+  // the sole token instead of being starved by an optionalized repeat head.
+  let trailing =
+    #|{"positionals":[
+    #|  {"name":"xs","repeat":{"min":0,"max":2},"positionals":[
+    #|    {"name":"k","type":"string"},{"name":"v","type":"string","default":"D"}]},
+    #|  {"name":"tail","type":"string"}]}
+  assert_eq(
+    wbtest_view_of(trailing, ["a"]),
+    "result={tail=a,xs=[]} sources=[]/tail=cli effects=tail",
+  )
+}
+
+///|
 /// 保証 (DR-121 §3.2 / CONFORMANCE §2): nameless 子だけを持つ `seq` accumulator は、子の値を
 /// wrapper の tuple 席へ畳む。子に独立した結果アドレスが無くても、1 回以上発火した wrapper の
 /// source はその発火経路であり、未発火を表す `default` ではない。消費 0 literal は独立 source

@@ -1111,7 +1111,9 @@ fn collect_defaults(
     // config / inherit seats can override the default, e.g. an inheritable ttl resolves via its
     // inherit seat), which this projection does not run; injecting the raw default would surface a
     // wrong value. Those cells stay ladder-resolved.
-    if (e.ty.name() == "flag" || e.ty.name() == "bool") && e.accum is None {
+    if e.declaring_path.length() == 0 &&
+      (e.ty.name() == "flag" || e.ty.name() == "bool") &&
+      e.accum is None {
       match default_scalar(e) {
         Some(v) => out.push({ path, name: e.name, value: v })
         None => ()
@@ -1651,6 +1653,121 @@ fn relocate_internal_bindings(
 }
 
 ///|
+fn entities_at_declaring_path(
+  entities : Array[@engine.Entity],
+  declaring_path : Array[String],
+) -> Array[@engine.Entity] {
+  let out : Array[@engine.Entity] = []
+  for entity in entities {
+    if path_eq(entity.declaring_path, declaring_path) {
+      out.push(entity)
+    }
+  }
+  out
+}
+
+///|
+fn scope_with_entities(
+  scope : @engine.Scope,
+  entities : Array[@engine.Entity],
+) -> @engine.Scope {
+  { ..scope, entities, }
+}
+
+///|
+fn entities_contain_name(
+  entities : Array[@engine.Entity],
+  name : String,
+) -> Bool {
+  for entity in entities {
+    if entity.name == name {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn is_runtime_index_segment(segment : String) -> Bool {
+  if segment.length() < 2 || segment[0:1].to_owned() != "#" {
+    return false
+  }
+  let mut first = true
+  for char in segment {
+    if first {
+      first = false
+    } else if !(char >= '0' && char <= '9') {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// Convert a runtime structural path (`xs/#0`) to the declaration path carried by Entity (`xs`).
+/// Command scope segments are removed by the caller-provided base path; repeat indexes are runtime
+/// instances and therefore do not participate in declaration ownership.
+fn structural_declaring_path(
+  runtime_path : Array[String],
+  base_path : Array[String],
+) -> Array[String] {
+  let out : Array[String] = []
+  let mut i = base_path.length()
+  while i < runtime_path.length() {
+    if !is_runtime_index_segment(runtime_path[i]) {
+      out.push(runtime_path[i])
+    }
+    i = i + 1
+  }
+  out
+}
+
+///|
+fn export_map_at_structural_path(
+  root : @engine.ExportScopeMap,
+  runtime_path : Array[String],
+  base_path : Array[String],
+) -> @engine.ExportScopeMap {
+  let mut node = root
+  let mut i = base_path.length()
+  while i < runtime_path.length() {
+    if !is_runtime_index_segment(runtime_path[i]) {
+      node = node.child(runtime_path[i])
+    }
+    i = i + 1
+  }
+  node
+}
+
+///|
+fn runtime_path_has_index(
+  runtime_path : Array[String],
+  base_path : Array[String],
+) -> Bool {
+  let mut i = base_path.length()
+  while i < runtime_path.length() {
+    if is_runtime_index_segment(runtime_path[i]) {
+      return true
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
+fn contains_path(
+  paths : Array[Array[String]],
+  candidate : Array[String],
+) -> Bool {
+  for path in paths {
+    if path_eq(path, candidate) {
+      return true
+    }
+  }
+  false
+}
+
+///|
 /// Resolve a WHOLE scope tree (root scope + every entered nested command scope) down the full
 /// value-source ladder (`resolve_scope_config`), threading `inherited` top-down so a child scope's
 /// inherit seat always sees its ANCESTOR's already-resolved values (DR-087 §3 dependency order —
@@ -1689,9 +1806,19 @@ fn resolve_scope_tree_with_export(
       here.push(b)
     }
   }
+  let direct_entities = entities_at_declaring_path(sc.entities, [])
   let resolved = match
     resolve_scope_config_with_export(
-      sc, here, env_map, provider, path, inherited, at_pos, tty, ek, extensions,
+      scope_with_entities(sc, direct_entities),
+      here,
+      env_map,
+      provider,
+      path,
+      inherited,
+      at_pos,
+      tty,
+      ek,
+      extensions,
       include_default,
     ) {
     Ok(rb) => rb
@@ -1705,6 +1832,61 @@ fn resolve_scope_tree_with_export(
   }
   for b in resolved {
     out.push({ ..b, scope: path })
+  }
+  let child_inherited : Map[String, @abi.Value] = Map([])
+  for k, v in inherited {
+    child_inherited.set(k, v)
+  }
+  for b in resolved {
+    child_inherited.set(b.key, b.value)
+  }
+
+  // Structural result scopes are instantiated by Scoped/IndexedRepeat rather than CommandSatisfied,
+  // so they share the enclosing engine Scope while owning different ladder seats. Resolve each fired
+  // runtime path with only the entities declared at its normalized structural path. A 0-fire wrapper
+  // has no runtime path and therefore cannot materialize child defaults outside the wrapper.
+  let structural_paths : Array[Array[String]] = []
+  for b in binds {
+    if b.scope.length() > path.length() {
+      let declaring_path = structural_declaring_path(b.scope, path)
+      if declaring_path.length() > 0 &&
+        runtime_path_has_index(b.scope, path) &&
+        entities_at_declaring_path(sc.entities, declaring_path).length() > 0 &&
+        !contains_path(structural_paths, b.scope) {
+        structural_paths.push(b.scope)
+      }
+    }
+  }
+  for runtime_path in structural_paths {
+    let declaring_path = structural_declaring_path(runtime_path, path)
+    let nested_entities = entities_at_declaring_path(
+      sc.entities,
+      declaring_path,
+    )
+    let nested_here : Array[@abi.Binding] = []
+    for b in binds {
+      if path_eq(b.scope, runtime_path) {
+        nested_here.push(b)
+      }
+    }
+    let nested_scope = scope_with_entities(sc, nested_entities)
+    let nested_ek = export_map_at_structural_path(ek, runtime_path, path)
+    let nested_resolved = match
+      resolve_scope_config_with_export(
+        nested_scope, nested_here, env_map, provider, runtime_path, child_inherited,
+        at_pos, tty, nested_ek, extensions, include_default,
+      ) {
+      Ok(rb) => rb
+      Err(pe) => return Err(pe)
+    }
+    for b in nested_here {
+      if is_sentinel(b.key) || !entities_contain_name(nested_entities, b.key) {
+        out.push(b)
+      }
+    }
+    for b in nested_resolved {
+      out.push({ ..b, scope: runtime_path })
+    }
   }
   // DR-078 §1 pass-through (issue front-door-resolve-ref-repeat-row-drop, K カテゴリ: front_door
   // 経由の repeat rows 行集約欠落): a ref-template accum entity (e.g. an `or`/`seq` ref option
@@ -1733,18 +1915,12 @@ fn resolve_scope_tree_with_export(
       }
       if is_prefix {
         let next = b.scope[path.length()]
-        if !is_cmdsat_child(sc, next) {
+        if !is_cmdsat_child(sc, next) &&
+          !contains_path(structural_paths, b.scope) {
           out.push(b)
         }
       }
     }
-  }
-  let child_inherited : Map[String, @abi.Value] = Map([])
-  for k, v in inherited {
-    child_inherited.set(k, v)
-  }
-  for b in resolved {
-    child_inherited.set(b.key, b.value)
   }
   for g in sc.greedy {
     match g {

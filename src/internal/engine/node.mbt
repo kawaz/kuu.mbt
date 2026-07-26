@@ -497,6 +497,11 @@ pub(all) enum Constraint {
 /// entity value.
 pub(all) struct Entity {
   name : String
+  // Structural wrappers (`name` を持つ seq/or/repeat) are result scopes but not command scopes.
+  // Their child cells still own genuine source ladders, so carry the declaration path relative to
+  // this Scope instead of flattening those seats onto the command/root scope. Runtime repeat indexes
+  // are not part of this declaration path; resolve.mbt matches each fired indexed path separately.
+  declaring_path : Array[String]
   // A canonical value-synchronization target. `None` is an ordinary independent cell; `Some(name)`
   // mirrors this entity's resolved value into the target internal cell while preserving this public
   // entity for result exposure. DR-117 uses this for completion_script → #completion_script.

@@ -1166,12 +1166,12 @@ fn is_help_group_declaration(e : ElementDef) -> Bool {
 fn ensure_entities(sb : InstallBuilder, has_cf : Bool) -> Unit {
   for e in sb.definition().options {
     if not_dd(e) && !is_help_group_declaration(e) && e.link_depth == 0 {
-      ensure_entity_body(sb.output(), e, has_cf, sb.extensions())
+      ensure_entity_body(sb.output(), e, has_cf, sb.extensions(), [], false)
     }
   }
   for e in sb.definition().positionals {
     if not_dd(e) {
-      ensure_entity_body(sb.output(), e, has_cf, sb.extensions())
+      ensure_entity_body(sb.output(), e, has_cf, sb.extensions(), [], true)
     }
   }
 }
@@ -1202,6 +1202,8 @@ fn ensure_entity_body(
   e : ElementDef,
   has_cf : Bool,
   extensions : Registry,
+  declaring_path : Array[String],
+  positional_group_scope : Bool,
 ) -> Unit {
   // DR-029 / DR-120 §4: a link declaration is an entry into another element's cell, never a cell
   // of its own. Keep this at the recursive funnel so future body shapes cannot accidentally register
@@ -1219,6 +1221,10 @@ fn ensure_entity_body(
   // 「nameless seq の子は wrapper の結果アドレスに畳まれる」と規定する構造と食い違う。
   if e.is_literal {
     return
+  }
+  let child_path = declaring_path.copy()
+  if e.name != "" {
+    child_path.push(e.name)
   }
   match e.body {
     Cell =>
@@ -1250,35 +1256,44 @@ fn ensure_entity_body(
       // `inst_long`/`lower_positional` 側 (このファイル、`ref_row_head` 分岐の条件) が発火ごとに
       // "#row" を打つよう連動して変わる — 両者は同じ `e.multiple` ガードで揃える必要がある。
       if e.ref_target is None {
-        ensure_entity(build, e, has_cf, extensions)
+        ensure_entity(build, e, has_cf, extensions, declaring_path)
       } else if elem_repeat(e) is Some(_) || e.multiple {
-        ensure_entity(build, e, has_cf, extensions)
+        ensure_entity(build, e, has_cf, extensions, declaring_path)
       }
     Or(branches) => {
       // Group と同じ: wrapper が結果スコープを作る (DESIGN §2.3) が値セルは持たない。`multiple`
       // 宣言時だけ accumulator の畳み単位として wrapper 自身の entity が要る (DR-084 §1)。
       if e.multiple {
-        ensure_entity(build, e, has_cf, extensions)
+        ensure_entity(build, e, has_cf, extensions, declaring_path)
       }
       for br in branches {
         for it in br.items {
-          ensure_entity_body(build, it, has_cf, extensions)
+          ensure_entity_body(
+            build, it, has_cf, extensions, declaring_path, false,
+          )
         }
       }
     }
     Group(items) => {
       if e.multiple {
-        ensure_entity(build, e, has_cf, extensions)
+        ensure_entity(build, e, has_cf, extensions, declaring_path)
+      }
+      let item_path = if positional_group_scope {
+        child_path
+      } else {
+        declaring_path
       }
       for it in items {
-        ensure_entity_body(build, it, has_cf, extensions)
+        ensure_entity_body(
+          build, it, has_cf, extensions, item_path, positional_group_scope,
+        )
       }
     }
     // Enum (issue values-decode-support): a single named cell like Cell (the enum's exact-value
     // branches all bind the SAME `e.name`, unlike Or's per-branch leaves) — never has a
     // `ref_target` (values/or on a `ref` element is not a decodable shape today), so this always
     // registers unconditionally, simpler than Cell's ref_target-gated arm above.
-    Enum(_) => ensure_entity(build, e, has_cf, extensions)
+    Enum(_) => ensure_entity(build, e, has_cf, extensions, declaring_path)
   }
 }
 
@@ -1288,9 +1303,10 @@ fn ensure_entity(
   e : ElementDef,
   has_cf : Bool,
   extensions : Registry,
+  declaring_path : Array[String],
 ) -> Unit {
   for ent in build.entities() {
-    if ent.name == e.name {
+    if ent.name == e.name && ent.declaring_path == declaring_path {
       return
     }
   }
@@ -1409,6 +1425,7 @@ fn ensure_entity(
   .entities()
   .push({
     name: e.name,
+    declaring_path,
     link: if seat_ty.name() == "completion_script" {
       Some("#completion_script")
     } else {
@@ -4770,6 +4787,7 @@ fn definition_has_completion_script(definition : Definition) -> Bool {
 fn completion_script_internal_entity() -> Entity {
   {
     name: "#completion_script",
+    declaring_path: [],
     link: None,
     ty: string_type(),
     env_key: None,
