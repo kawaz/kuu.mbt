@@ -1038,19 +1038,52 @@ fn collect_sources_flat(
 }
 
 ///|
-/// command 木全体を持つ scope 向けの sources 収集 (旧 runner `proj_sources_tree` の構造化版)。
-/// `resolved` (resolve 済み全 binds、子 scope 含む) をそのまま走査すれば木全体を一度に拾えるが、
-/// `collect_sources_flat` が持つ「未発火セルの default フォールバック」と export_key rename は
-/// 適用しない — `resolve_scope_tree` の出力は既に「実際に着席した binding」だけを運ぶため、この
-/// 経路では素の entity 名・生 scope path をそのまま使う (proj_sources_tree の元実装を踏襲、
-/// 意味論は無改変)。
-fn collect_sources_tree(resolved : Array[@abi.Binding]) -> Array[SourceEntry] {
+/// command 木全体を持つ scope 向けの sources 収集。`resolved` (resolve 済み全 binds、子 scope
+/// 含む) をそのまま走査すれば木全体を一度に拾える。
+///
+/// キーは **結果と同じ露出キー軸** (DR-052 §1: 結果キー軸は export_key 1 本) に写す —
+/// `apply_export_keys` / `apply_export_to_defaults` が binding / default に対して使うのと同じ
+/// `walk_export_path` + `exposed_cell` を通すので、`sources` の (path, key) は `result` の
+/// キーと構造的に一致する。DR-109 §3 の「消費者が値の出所を機械判別できる」が成り立つのは
+/// 消費者が持つのが result のキーだからで、生の宣言名を返すとその突き合わせが壊れる。
+///
+/// - **透過セル** (`exposed_cell` が `None`) は落とす。`apply_export_keys` は `None` を `""` に
+///   して binding を残すが、これは seq/array 文脈の nameless 要素を保存するためで、`""` は
+///   `is_sentinel` が弾き `build_result` の kv 結果には現れない。`sources` は kv 側しか持たない
+///   ので落とすのが正 (`apply_export_to_defaults` の `None => ()` と同じ扱い)
+/// - **透過ラベル** (scope) は `walk_export_path` が segment を落として node だけ進める既存挙動
+///   に乗る (DR-052 §2: 子が親スコープへ昇格)
+/// - 同一 (path, key) は **last-wins** で 1 件に畳む。binding は同じセルに複数回着席しうる
+///   (`--tags a --tags b`) 上に、rename で別名だった 2 セルが同じ露出キーへ合流する経路も
+///   ありうるので、射影段階で畳む (`collect_sources_flat` の resolved ループと同じ last-wins)
+fn collect_sources_tree(
+  resolved : Array[@abi.Binding],
+  ek : @engine.ExportScopeMap,
+) -> Array[SourceEntry] {
   let out : Array[SourceEntry] = []
   for b in resolved {
     if is_sentinel(b.key) {
       continue
     }
-    out.push({ path: b.scope, key: b.key, source: b.source })
+    let (path, node) = walk_export_path(b.scope, ek)
+    match node.exposed_cell(b.key) {
+      // 透過: 結果キー軸を持たない値セルは kv 結果に現れない → 由来も報告しない。
+      None => ()
+      Some(key) => {
+        let entry : SourceEntry = { path, key, source: b.source }
+        let mut replaced = false
+        for i in 0..<out.length() {
+          if out[i].key == key && path_eq(out[i].path, path) {
+            out[i] = entry
+            replaced = true
+            break
+          }
+        }
+        if !replaced {
+          out.push(entry)
+        }
+      }
+    }
   }
   out
 }
@@ -1061,23 +1094,15 @@ fn collect_sources_tree(resolved : Array[@abi.Binding]) -> Array[SourceEntry] {
 /// 含める」) を組み立てる。command 木の有無 (`has_commands`) で内部実装が分かれる
 /// (`collect_sources_flat` / `collect_sources_tree`、直上 2 関数のコメント参照) が、**呼び出し側
 /// はその分岐を意識しない** — 1 本のシグネチャで両ケースを覆う (front_door 玄関の「利用者は内部
-/// 構造を意識しない」原則、MDR-005 冒頭)。
-///
-/// **runner はこの関数を直接は呼ばない**: conformance fixture は `resolve: <bool>` という
-/// production に存在しない対照実験用ノブを持ち (「常時 resolve」前提の production とは異なり、
-/// fixture は resolve 有無を明示的に選べる)、`proj_sources_tree`/`proj_sources` の使い分けは
-/// 現状 `dc.resolve && has_commands(sc)` という fixture 固有条件に従う (`has_commands(sc)`
-/// 単独ではない — この差は既存 conformance の観測済み挙動で、本 promotion は数字不変を条件と
-/// するため保持する)。runner 側は代わりに本関数が内部で使う `collect_sources_flat`/
-/// `collect_sources_tree` を自身の `dc.resolve && has_commands` 分岐から直接呼び、射影ロジックの
-/// 重複だけを解消する。
+/// 構造を意識しない」原則、MDR-005 冒頭)。どちらの経路も結果キー軸 (DR-052 §1) を適用するので、
+/// 返る (path, key) は `build_result` のキーと同じ体系にある。
 fn result_sources(
   sc : @engine.Scope,
   resolved : Array[@abi.Binding],
   ek : @engine.ExportScopeMap,
 ) -> Array[SourceEntry] {
   if has_commands(sc) {
-    collect_sources_tree(resolved)
+    collect_sources_tree(resolved, ek)
   } else {
     collect_sources_flat(sc, resolved, ek)
   }

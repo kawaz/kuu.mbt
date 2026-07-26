@@ -1220,3 +1220,89 @@ test "front_door.output: name を持つ or は 1 段の結果スコープを作�
     #|            {"name":"v","type":"flag","long":true}]}
   assert_true(parse_definition(@json.parse(leaf_shares_sibling_name)) is Ok(_))
 }
+
+///|
+/// sources 射影の共通ヘルパー (下記 export_key × command 木の pin 群が使う)。
+/// `render_sources` (conformance runner 側) と同じ `path.key=source` 形へ整形して比較する。
+fn wbtest_sources_of(src : String, args : Array[String]) -> String raise {
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition should accept the definition")
+      panic()
+    }
+  }
+  let parsed = parse_legacy(ast, args)
+  let resolved = resolve_legacy(ast, parsed, args)
+  let effects = match resolved {
+    @engine.Success(bindings) => bindings
+    other => {
+      fail("should resolve, got " + render_outcome(other))
+      panic()
+    }
+  }
+  let view = output_legacy(ast, effects~)
+  let items : Array[String] = []
+  for entry in view.sources {
+    let mut key = ""
+    for segment in entry.path {
+      key = key + segment + "."
+    }
+    key = key + entry.key
+    let label = match entry.source {
+      @abi.Cli => "cli"
+      @abi.Env => "env"
+      @abi.Config => "config"
+      @abi.Inherit => "inherit"
+      @abi.Tty => "tty"
+      @abi.Default => "default"
+    }
+    items.push(key + "=" + label)
+  }
+  test_sort_items(items)
+  test_join_comma(items)
+}
+
+///|
+/// 保証 (DR-052 §1 結果キー軸 / DR-109 §3 値の出所): `sources` のキーは **result と同じ露出キー
+/// 体系**で並ぶ — 定義が command を持つかどうかで軸が変わらない。`export-key/rename-flag-default.json`
+/// が射影後キーの直接 pin (cell name `verbose` に対し `sources: {"v": "cli"}`)、
+/// `export-key/rename-multiple.json` の why が「sources も同じ射影後キーの下で由来を示す」と
+/// 明言する。R1: 値セル rename × commands あり。
+test "front_door.output: command 木でも値セル rename が sources に効く (DR-052 §1)" {
+  let src =
+    #|{"options":[{"name":"verbose","type":"flag","long":true,"export_key":"v"}],
+    #| "commands":[{"type":"command","name":"serve"}]}
+  assert_eq(wbtest_sources_of(src, ["--verbose"]), "v=cli")
+}
+
+///|
+/// R2 (DR-052 §1): scope ラベル rename — command 自身の露出キーと配下セルの露出キーの両方が
+/// sources の path/key に載る。
+test "front_door.output: command 木の scope ラベル rename が sources に効く (DR-052 §1)" {
+  let src =
+    #|{"commands":[{"type":"command","name":"cmd","export_key":"sv","options":[
+    #|  {"name":"inner","type":"number","long":true,"export_key":"i"}]}]}
+  assert_eq(wbtest_sources_of(src, ["cmd", "--inner", "3"]), "sv.i=cli")
+}
+
+///|
+/// R3 (DR-052 §2): scope 透過 (`export_key: null`) — ラベル segment が落ち、子が親スコープへ
+/// 昇格する。sources の path も同じく 1 段浅くなる。
+test "front_door.output: command 木の scope 透過昇格が sources に効く (DR-052 §2)" {
+  let src =
+    #|{"commands":[{"type":"command","name":"serve","export_key":null,"options":[
+    #|  {"name":"port","type":"number","long":true}]}]}
+  assert_eq(wbtest_sources_of(src, ["serve", "--port", "80"]), "port=cli")
+}
+
+///|
+/// R4 (DR-052 §2): 値セル透過 (`export_key: null`) × commands あり — 結果キー軸を持たない値は
+/// result から消える (`export-key/transparent-kv.json`) ので sources からも消える。
+test "front_door.output: command 木でも透過値セルは sources に現れない (DR-052 §2)" {
+  let src =
+    #|{"options":[{"name":"opt","type":"number","long":true,"export_key":null},
+    #|            {"name":"keep","type":"number","long":true}],
+    #| "commands":[{"type":"command","name":"serve"}]}
+  assert_eq(wbtest_sources_of(src, ["--opt", "1", "--keep", "2"]), "keep=cli")
+}
