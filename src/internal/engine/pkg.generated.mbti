@@ -112,6 +112,8 @@ pub fn kv_arg(String, Array[@abi.FnInvocation]) -> Node
 
 pub fn kv_map_accumulator() -> &@extension.AccumulatorExt
 
+pub fn literal_value(String, @abi.Value) -> Node
+
 pub fn lower_definition(Definition, InstallerPlan, @extension.Registry, registry? : Map[String, Node]) -> Result[Scope, Array[@abi.DefError]]
 
 pub fn lower_definition_snapshot(Definition, InstallerPlan, @extension.Registry, registry? : Map[String, Node]) -> Result[LoweredDefinition, Array[@abi.DefError]]
@@ -256,6 +258,7 @@ pub(all) struct ElementDef {
   tty_cygwin : Bool
   is_dd : Bool
   is_exact : Bool
+  is_literal : Bool
   dd_match : String?
   dd_self_keep : Bool
   is_global : Bool

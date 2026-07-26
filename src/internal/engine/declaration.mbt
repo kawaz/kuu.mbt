@@ -42,6 +42,18 @@ pub(all) struct ElementDef {
   // `dd_marker`/`normalize_dd_name` 参照) — `element_head` が `Exact(e.name)` へ直接 lower し、
   // value_prim/entity 経路を一切通らない (`ensure_entities` が is_dd と同じガードでスキップする)。
   is_exact : Bool
+  // DESIGN §5.2 / LOWERING §A.3「消費しない literal」: `value:` / `default:` を宣言した構造子
+  // (`seq` / `or` の child leaf) であることを示すマーカー。`is_exact` と同じ carrier パターン —
+  // `element_head` が `literal_value(name, default_values[0])` へ直接 lower し、value_prim /
+  // ラダー席のどちらも通らない (`ensure_entity_body` が `is_exact` と同じガードで skip する)。
+  //
+  // 値そのものは `default_values` が運ぶ (`value:` と `default:` はラダー 5 段目の同席で、
+  // source タグはどちらも `default` — DR-031。したがって値の運搬先を分ける理由が無い)。この
+  // マーカーが要るのは「同じ `default:` でも option / positional の root では従来どおりラダー席、
+  // 構造子の中では消費 0 literal」という**位置で決まる違い**を、lowering が ElementDef 単体から
+  // 判定できるようにするため — decode 層 (`dec_or_leaf`、構造子 child の唯一の入口) だけが true を
+  // 立てる。
+  is_literal : Bool
   // DR-090 §2: dd installer 所有、is_dd 専用の軸拡張 — None/false なら従来の exact dd (§1「既存
   // dd」列) と完全に同じ。`dd_match` が Some のとき `name` はトリガ綴りに使われない (§2「match が
   // あるとき name はトリガ綴りに使われず、要素の同一性・表示軸のみに効く」)。

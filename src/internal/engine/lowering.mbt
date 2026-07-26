@@ -424,6 +424,7 @@ fn clone_elem(e : ElementDef) -> ElementDef {
     tty_cygwin: e.tty_cygwin,
     is_dd: e.is_dd,
     is_exact: e.is_exact,
+    is_literal: e.is_literal,
     dd_match: e.dd_match,
     dd_self_keep: e.dd_self_keep,
     is_global: e.is_global,
@@ -650,6 +651,19 @@ pub fn element_head(e : ElementDef) -> Node {
   if e.is_exact {
     return Exact(e.name)
   }
+  // DESIGN §5.2 / LOWERING §A.3: `value:` / `default:` を持つ構造子は消費 0 の literal
+  // (`ElementDef.is_literal`)。`is_exact` と対の位置に置く — どちらも「値プリミティブでない
+  // 構造子リーフ」で、exact が「照合するが値を持たない」、literal が「値を持つが照合しない」と
+  // 消費と値の 2 軸で対称をなす (DR-041 §3「消費数は Accept の報告値であり value の有無から
+  // 導出しない」がその直交性そのもの)。宣言値を欠く literal は decode が作らない
+  // (`dec_or_leaf` が `value:` / `default:` の存在を見て初めて立てる) が、型の上では
+  // `default_values` が空でありうるので、その場合は通常の値プリミティブに落ちる。
+  if e.is_literal {
+    match e.default_values {
+      Some(vs) if vs.length() > 0 => return literal_value(e.name, vs[0])
+      _ => ()
+    }
+  }
   match e.ref_target {
     Some(r) => Ref(r)
     None =>
@@ -794,7 +808,19 @@ fn seq_eq_value_node(
   if !is_kv {
     nodes.push(Bind("[]", Bool(false)))
   }
-  let first = items[0]
+  // `=` の右辺が渡る先は「最初に**消費する**子」— 消費 0 literal (DESIGN §5.2) は先頭に並んでいても
+  // トークンを取らないので eq entry を担えない。従来は先頭の子が必ず消費したため `items[0]` 固定で
+  // 済んでいたが、literal が先頭に来ると `--pair=x` の `x` を誰も受け取れず missing_operand になる。
+  // literal 自身は space 形と同じ `element_head` (= `literal_value`) で、eq entry の前に順序どおり
+  // 並べる — 結果の子順序は宣言順のまま保たれる。
+  let mut eq_index = 0
+  while eq_index < items.length() && items[eq_index].is_literal {
+    eq_index = eq_index + 1
+  }
+  // 全ての子が消費 0 literal なら `=` 形は成立しない (右辺の行き場が無い)。space 形
+  // (`seq_value_node`) だけが配線され、`--pair=x` は候補にならない。
+  guard eq_index < items.length() else { return None }
+  let first = items[eq_index]
   let first_node : Node = NativeMatch(
     eq_split(e.long_prefix, [
       eq_entry(
@@ -813,11 +839,14 @@ fn seq_eq_value_node(
       ),
     ]),
   )
-  nodes.push(if is_kv { first_node } else { Scoped("#0", first_node) })
-  let mut index = 1
+  let mut index = 0
   while index < items.length() {
-    let head = element_head(items[index])
-    nodes.push(if is_kv { head } else { Scoped("#" + index.to_string(), head) })
+    let node = if index == eq_index {
+      first_node
+    } else {
+      element_head(items[index])
+    }
+    nodes.push(if is_kv { node } else { Scoped("#" + index.to_string(), node) })
     index = index + 1
   }
   Some(Scoped(e.name, Seq(nodes)))
@@ -1156,6 +1185,14 @@ fn ensure_entity_body(
   extensions : Registry,
 ) -> Unit {
   if e.is_exact {
+    return
+  }
+  // 消費 0 literal (`ElementDef.is_literal`) も entity を持たない。値は node が直接 bind するので
+  // ラダー席は要らず、むしろ席を作ると **wrapper の外へ値が漏れる**: entity の default 席は
+  // 宣言スコープ (= option/positional を宣言した scope) の Phase 3b で解決されるため、`--pair` の
+  // 子として宣言した `mode` の default が root 直下の `mode` として binding を生む。DR-121 §3.2 が
+  // 「nameless seq の子は wrapper の結果アドレスに畳まれる」と規定する構造と食い違う。
+  if e.is_literal {
     return
   }
   match e.body {
@@ -2050,6 +2087,7 @@ fn copy_global_into(child : InstallBuilder, opt : ElementDef) -> Unit {
     tty_cygwin: copy.tty_cygwin,
     is_dd: copy.is_dd,
     is_exact: copy.is_exact,
+    is_literal: copy.is_literal,
     dd_match: copy.dd_match,
     dd_self_keep: copy.dd_self_keep,
     is_global: copy.is_global,
@@ -2239,6 +2277,7 @@ fn add_inheritable_copy(
       tty_cygwin: true,
       is_dd: false,
       is_exact: false,
+      is_literal: false,
       dd_match: None,
       dd_self_keep: false,
       is_global: false,
@@ -2615,6 +2654,7 @@ fn alias_entry(
     tty_cygwin: true,
     is_dd: false,
     is_exact: false,
+    is_literal: false,
     dd_match: None,
     dd_self_keep: false,
     is_global: false,

@@ -55,6 +55,18 @@ fn effect_op_json(op : @abi.EffectOp) -> Json {
 }
 
 ///|
+/// `@abi.Value` の直列形。型タグを前置するのは `NodeExt::equal` が kind + encode の一致で node 同一性を
+/// 判定するため — 素の JSON に落とすと `String("1")` と `Number(1)` が同じ綴りになり、別の literal が
+/// 同一 node として畳まれる。
+fn value_json(value : @abi.Value) -> Json {
+  match value {
+    @abi.String(text) => ["string".to_json(), text.to_json()].to_json()
+    @abi.Number(number) => ["number".to_json(), number.to_json()].to_json()
+    @abi.Bool(boolean) => ["bool".to_json(), boolean.to_json()].to_json()
+  }
+}
+
+///|
 priv struct StringArgExt {
   name : String
   piece_filters : Array[@abi.FnInvocation]
@@ -931,4 +943,50 @@ impl NodeExt for FailureMarkExt with fn eval(self, ctx, pos, acc, next) {
 ///|
 pub fn failure_mark(name : String) -> Node {
   Ext(FailureMarkExt::{ name, } as &NodeExt)
+}
+
+///|
+/// DESIGN §5.2 / LOWERING §A.3 の「消費しない literal」: `value:` / `default:` を持つ構造子ノードは
+/// トークンを一切照合せず 0 個消費で Accept し、宣言された値を産出する。消費数は Accept の報告値で
+/// あり値の有無から導出しない (DR-041 §3) — 値を持つことと消費することが独立した軸であることを、
+/// 「値を bind するが pos を進めない」この resident が体現する。
+///
+/// 値源タグは `@abi.Default` (DR-031: ラダー 5 段目に `value:` / `default:` が同席し、source 語彙に
+/// `value` は無い — 両者ともタグは `default`)。同じ 0 トークン resident でも `effect_mark` /
+/// `deprecation_mark` が「cell への操作 / 印」を bind するのに対し、こちらは値そのものを bind する。
+/// `at_pos` は付けない — 値はどのトークンからも読まれていないので、後段の value_filters 違反を
+/// 帰属させる位置が無い (ラダー席の binding と同じ扱い、`@abi.Binding` の `at_pos` doc comment)。
+priv struct LiteralValueExt {
+  name : String
+  value : @abi.Value
+}
+
+///|
+impl NodeExt for LiteralValueExt with fn kind(_self) {
+  "builtin/literal"
+}
+
+///|
+impl NodeExt for LiteralValueExt with fn element_name(self) {
+  Some(self.name)
+}
+
+///|
+impl NodeExt for LiteralValueExt with fn encode(self) {
+  [self.name.to_json(), value_json(self.value)].to_json()
+}
+
+///|
+impl NodeExt for LiteralValueExt with fn consumes_zero_tokens(_self) {
+  true
+}
+
+///|
+impl NodeExt for LiteralValueExt with fn eval(self, ctx, pos, acc, next) {
+  next(ctx, pos, acc + [@abi.Binding::new(self.name, self.value, @abi.Default)])
+}
+
+///|
+pub fn literal_value(name : String, value : @abi.Value) -> Node {
+  Ext(LiteralValueExt::{ name, value } as &NodeExt)
 }
