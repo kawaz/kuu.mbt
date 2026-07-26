@@ -1265,6 +1265,7 @@ fn wbtest_source_entry(entry : SourceEntry) -> String {
     @abi.Config => "config"
     @abi.Inherit => "inherit"
     @abi.Tty => "tty"
+    @abi.Const => "const"
     @abi.Default => "default"
   }
   "[" + test_join_space(segs) + "]/" + entry.key + "=" + label
@@ -1948,16 +1949,17 @@ test "front_door.output: seq の nameless 子に置いた消費 0 literal が配
 
 ///|
 /// 保証 (DESIGN §2.5 / DR-120 / DR-121 §2.2): 結果キーを持つ子 (`name` 付き) の消費 0 literal は
-/// kv 経路に乗り、**席を持つ**ので `sources` に `default` の entry が出る。DR-031 が cli 席と
-/// default 席を別席として固定しているとおり、同じ `seq` の中で 2 つの子が別の値源から値を得る。
-test "front_door.output: named seq 子の消費 0 literal は kv セルとして default 席を持つ (DR-031 / DR-121 §2.2)" {
+/// kv 経路に乗り、自分のセルを持つので `sources` に `const` の entry が出る (DR-031 の 8 語彙目 —
+/// 「const は値セルに最初からいる。default は無い時に埋める」。literal は充填でなく宣言定数)。
+/// 同じ `seq` の中で cli 消費の子と宣言定数の子が別タグで並ぶ。
+test "front_door.output: named seq 子の消費 0 literal は kv セルとして const の由来を持つ (DR-031 / DR-121 §3.2)" {
   let src =
     #|{"options":[{"name":"pair","long":true,"seq":[
     #|  {"name":"path","type":"string"},
     #|  {"name":"mode","type":"string","value":"fallback"}]}]}
   assert_eq(
     wbtest_view_of(src, ["--pair", "x"]),
-    "result={pair={mode=fallback,path=x}} sources=[pair]/mode=default,[pair]/path=cli effects=path",
+    "result={pair={mode=fallback,path=x}} sources=[pair]/mode=const,[pair]/path=cli effects=path",
   )
 }
 

@@ -233,6 +233,7 @@ fn render_src(s : @abi.Source) -> String {
     @abi.Config => "config"
     @abi.Inherit => "inherit"
     @abi.Tty => "tty"
+    @abi.Const => "const"
     @abi.Default => "default"
   }
 }

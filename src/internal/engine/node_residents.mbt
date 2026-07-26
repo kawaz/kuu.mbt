@@ -951,8 +951,9 @@ pub fn failure_mark(name : String) -> Node {
 /// あり値の有無から導出しない (DR-041 §3) — 値を持つことと消費することが独立した軸であることを、
 /// 「値を bind するが pos を進めない」この resident が体現する。
 ///
-/// 値源タグは `@abi.Default` (DR-031: ラダー 5 段目に `value:` / `default:` が同席し、source 語彙に
-/// `value` は無い — 両者ともタグは `default`)。同じ 0 トークン resident でも `effect_mark` /
+/// 値源タグは `@abi.Const` (DR-031 の 8 語彙目 — 「const は値セルに最初からいる。default は無い時に
+/// 埋める」。消費 0 literal は値源ラダーの充填ではなく、セル初期化位相の宣言定数。構造子位置では
+/// `value:` / `default:` どちらの綴りも同じ const)。同じ 0 トークン resident でも `effect_mark` /
 /// `deprecation_mark` が「cell への操作 / 印」を bind するのに対し、こちらは値そのものを bind する。
 /// `at_pos` は付けない — 値はどのトークンからも読まれていないので、後段の value_filters 違反を
 /// 帰属させる位置が無い (ラダー席の binding と同じ扱い、`@abi.Binding` の `at_pos` doc comment)。
@@ -983,7 +984,7 @@ impl NodeExt for LiteralValueExt with fn consumes_zero_tokens(_self) {
 
 ///|
 impl NodeExt for LiteralValueExt with fn eval(self, ctx, pos, acc, next) {
-  next(ctx, pos, acc + [@abi.Binding::new(self.name, self.value, @abi.Default)])
+  next(ctx, pos, acc + [@abi.Binding::new(self.name, self.value, @abi.Const)])
 }
 
 ///|

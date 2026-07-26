@@ -309,6 +309,7 @@ pub(all) enum Source {
   Config
   Inherit
   Tty
+  Const
   Default
 } derive(Eq, @debug.Debug)
 

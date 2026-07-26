@@ -50,6 +50,10 @@ pub(all) enum Source {
   // default 席の解決規則 (`fold(観測) ?? 宣言 default ?? absent`) が観測由来で確定したときのタグ。
   // 明示/継承より弱く宣言既定より強いという優先度は不変 (由来が独立席からこの型依存規則へ移っただけ)。
   Tty
+  // DR-031's eighth provenance word: a declaration constant placed by a zero-consumption literal.
+  // It is present from cell construction time, unlike Default which fills an otherwise empty seat
+  // (kawaz ruling 2026-07-26).
+  Const
   Default // fixed fallback (DR-031 #6)
 } derive(Eq, Debug)
 
