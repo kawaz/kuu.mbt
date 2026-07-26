@@ -1422,6 +1422,24 @@ test "front_door.output: global link entries keep target routing across command 
 }
 
 ///|
+/// DR-032 target identity is bound where a global link is declared. A descendant's same-named
+/// local cell must not capture the copied link by causing a second bare-name lookup.
+test "front_door.output: copied global link ignores descendant same-name target shadow" {
+  let src =
+    #|{"options":[{"name":"target","type":"string","global":true}],
+    #| "commands":[{"type":"command","name":"mid","options":[
+    #|   {"name":"legacy","type":"string","long":true,"global":true,"link":"target"}
+    #| ],"commands":[{"type":"command","name":"sub","options":[
+    #|   {"name":"target","type":"string","long":true},
+    #|   {"name":"quiet","type":"flag","long":true}
+    #| ]}]}]}
+  assert_eq(
+    wbtest_view_of(src, ["mid", "sub", "--legacy", "value", "--quiet"]),
+    "result={mid={sub={quiet=true}},target=value} sources=[]/target=link,[mid sub]/quiet=cli effects=quiet,target",
+  )
+}
+
+///|
 /// DR-121 §1: link は宣言名ではなく canonical cell の structured result address に provenance を
 /// 置く。canonical が `export_key` で rename されても、参照側の name は result/sources に現れない。
 test "front_door.output: link source follows the canonical export_key address (DR-121 §1/§4)" {

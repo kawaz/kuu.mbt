@@ -432,6 +432,7 @@ fn clone_elem(e : ElementDef) -> ElementDef {
     is_inheritable: e.is_inheritable,
     link_depth: e.link_depth,
     link_target: e.link_target,
+    link_additional_levels: e.link_additional_levels,
     ref_target: e.ref_target,
     repeat: e.repeat,
     optional: e.optional,
@@ -1897,22 +1898,26 @@ fn link_route_fields(def : Definition, e : ElementDef) -> (String?, Int)? {
   match e.link_target {
     None => Some((None, 0))
     Some(target) =>
-      match link_target_depth(def, target) {
-        Some(target_depth) => {
-          let additional_levels = if target_depth > e.link_depth {
-            target_depth - e.link_depth
-          } else {
-            0
-          }
-          Some((Some(target), additional_levels))
-        }
+      match e.link_additional_levels {
+        Some(bound_levels) => Some((Some(target), bound_levels))
         None =>
-          if e.link_depth > 0 {
-            // A global copy was already validated in its declaring scope. Its target may have no
-            // entry copy in this child; the copied route still escapes with the entry itself.
-            Some((Some(target), 0))
-          } else {
-            None
+          match link_target_depth(def, target) {
+            Some(target_depth) => {
+              let additional_levels = if target_depth > e.link_depth {
+                target_depth - e.link_depth
+              } else {
+                0
+              }
+              Some((Some(target), additional_levels))
+            }
+            None =>
+              if e.link_depth > 0 {
+                // Defensive fallback for a copied declaration produced outside the canonical global
+                // installer. Canonical copies always carry link_additional_levels and never reach here.
+                Some((Some(target), 0))
+              } else {
+                None
+              }
           }
       }
   }
@@ -2175,15 +2180,27 @@ fn seat_inherit(build : InstallOutput, name : String) -> Unit {
 fn inst_global(sb : InstallBuilder) -> Unit {
   for opt in sb.definition().options {
     if opt.is_global {
+      let bound_link_levels : Int? = match opt.link_target {
+        None => None
+        Some(_) =>
+          match link_route_fields(sb.definition(), opt) {
+            Some((Some(_), levels)) => Some(levels)
+            _ => opt.link_additional_levels
+          }
+      }
       for child in sb.children() {
-        copy_global_into(child.body(), opt)
+        copy_global_into(child.body(), opt, bound_link_levels)
       }
     }
   }
 }
 
 ///|
-fn copy_global_into(child : InstallBuilder, opt : ElementDef) -> Unit {
+fn copy_global_into(
+  child : InstallBuilder,
+  opt : ElementDef,
+  bound_link_levels : Int?,
+) -> Unit {
   for existing in child.definition().options {
     if triggers_overlap(existing, opt) {
       return // shadow または既に copy 済 (idempotent, トリガ基準)
@@ -2239,6 +2256,9 @@ fn copy_global_into(child : InstallBuilder, opt : ElementDef) -> Unit {
     is_inheritable: copy.is_inheritable,
     link_depth: copy.link_depth + 1,
     link_target: copy.link_target,
+    // DR-032: bind target identity/depth in the declaring scope; descendants must not re-resolve
+    // the bare name against a same-named local shadow.
+    link_additional_levels: bound_link_levels,
     ref_target: copy.ref_target,
     repeat: copy.repeat,
     optional: copy.optional,
@@ -2430,6 +2450,7 @@ fn add_inheritable_copy(
       is_inheritable: false, // copy 自体は plain entry (再伝播しない)
       link_depth: 0,
       link_target: None,
+      link_additional_levels: None,
       ref_target: None,
       repeat: None,
       optional: false,
@@ -2810,6 +2831,7 @@ fn alias_entry(
     is_inheritable: false,
     link_depth: 0,
     link_target: None,
+    link_additional_levels: None,
     ref_target: None,
     repeat: None,
     optional: false,

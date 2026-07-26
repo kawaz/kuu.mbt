@@ -67,6 +67,10 @@ pub(all) struct ElementDef {
   // entry only: it owns parsing shape and spellings but no Entity/result seat; every effect produced
   // for its own name is routed to this target and tagged Source::Link during evaluation.
   link_target : String?
+  // A global link copy must preserve the target identity resolved in its declaring scope (DR-032):
+  // Some(n) is the extra lexical escape beyond this entry's own link_depth. None means this is the
+  // original declaration and resolution still occurs against its current lexical declaration scope.
+  link_additional_levels : Int?
   ref_target : String? // DR-020: この要素は named template への ref
   repeat : RepeatSpec? // repeat installer 所有 (DR-043)
   optional : Bool // repeat:{min:0,max:1} の糖衣 (DR-043) — repeat 語彙が所有

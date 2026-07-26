@@ -268,6 +268,7 @@ pub(all) struct ElementDef {
   is_inheritable : Bool
   link_depth : Int
   link_target : String?
+  link_additional_levels : Int?
   ref_target : String?
   repeat : @abi.RepeatSpec?
   optional : Bool
