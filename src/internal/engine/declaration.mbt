@@ -47,12 +47,20 @@ pub(all) struct ElementDef {
   // `element_head` が `literal_value(name, default_values[0])` へ直接 lower し、value_prim /
   // ラダー席のどちらも通らない (`ensure_entity_body` が `is_exact` と同じガードで skip する)。
   //
-  // 値そのものは `default_values` が運ぶ (`value:` と `default:` はラダー 5 段目の同席で、
-  // source タグはどちらも `default` — DR-031。したがって値の運搬先を分ける理由が無い)。この
-  // マーカーが要るのは「同じ `default:` でも option / positional の root では従来どおりラダー席、
-  // 構造子の中では消費 0 literal」という**位置で決まる違い**を、lowering が ElementDef 単体から
-  // 判定できるようにするため — decode 層 (`dec_or_leaf`、構造子 child の唯一の入口) だけが true を
-  // 立てる。
+  // 値そのものは `default_values` が運ぶ。構造子位置では `value:` と `default:` が**同義**で、
+  // どちらの綴りも宣言定数 = source タグは `Const` (DR-031 の 8 語彙目、「const は値セルに最初から
+  // いる。default は無い時に埋める」) — 同義である以上、値の運搬先を分ける理由が無い
+  // (`literal_value` resident が bind 時に `Const` を立てる)。
+  //
+  // このマーカーが要るのは「同じ `default:` でも option / positional の root ではラダー席
+  // (source は `Default`)、構造子の中では消費 0 literal (source は `Const`)」という**位置で
+  // 決まる違い**を、lowering が ElementDef 単体から判定できるようにするため — decode 層
+  // (`dec_or_leaf`、構造子 child の唯一の入口) だけが true を立てる。
+  //
+  // root 位置の `value:` は本マーカーではなく `const_values` が運ぶ (下記)。source はどちらも
+  // `Const` で同じだが、child の literal が**消費文法上のノード**である (`element_head` が
+  // `literal_value` へ lower する) のに対し、root の const は消費文法に一切現れずセル初期化位相
+  // にだけ座るため、機構ごと別になる。
   is_literal : Bool
   // DR-090 §2: dd installer 所有、is_dd 専用の軸拡張 — None/false なら従来の exact dd (§1「既存
   // dd」列) と完全に同じ。`dd_match` が Some のとき `name` はトリガ綴りに使われない (§2「match が

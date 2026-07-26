@@ -1517,12 +1517,13 @@ fn inst_long(
   let eq_prefixes : Array[String] = []
   let eq_groups : Array[Array[EqEntry]] = []
   for e in def.options {
-    let (link_target, link_levels) = match link_route_fields(def, e) {
+    let (link_target, link_additional_levels) = match
+      link_route_fields(def, e) {
       Some(fields) => fields
       None => (None, 0)
     }
     let matcher_link_levels = if link_target is Some(_) {
-      link_levels + e.link_depth
+      link_additional_levels + e.link_depth
     } else {
       0
     }
@@ -1804,7 +1805,7 @@ fn inst_long(
                 merge=e.accumulator == Some("merge"),
                 deprecated=e.deprecated,
                 link_target~,
-                link_levels=matcher_link_levels,
+                link_additional_levels=matcher_link_levels,
                 extension=link_extension,
               ),
             )
@@ -2020,12 +2021,13 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
   let sh_combines : Array[Bool] = []
   let sh_groups : Array[Array[ShortEntry]] = []
   for e in def.options {
-    let (link_target, link_levels) = match link_route_fields(def, e) {
+    let (link_target, link_additional_levels) = match
+      link_route_fields(def, e) {
       Some(fields) => fields
       None => (None, 0)
     }
     let matcher_link_levels = if link_target is Some(_) {
-      link_levels + e.link_depth
+      link_additional_levels + e.link_depth
     } else {
       0
     }
@@ -2060,7 +2062,7 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
           short_attached_value=e.short_attached_value,
           is_alias=e.is_alias,
           link_target~,
-          link_levels=matcher_link_levels,
+          link_additional_levels=matcher_link_levels,
           extension=link_extension,
         ),
       )

@@ -50,7 +50,7 @@ pub struct EqEntry {
   priv merge : Bool
   priv deprecated : Bool
   priv link_target : String?
-  priv link_levels : Int
+  priv link_additional_levels : Int
   priv extension : &EntityExt
 }
 
@@ -64,7 +64,7 @@ pub fn eq_entry(
   merge? : Bool = false,
   deprecated? : Bool = false,
   link_target? : String? = None,
-  link_levels? : Int = 0,
+  link_additional_levels? : Int = 0,
   extension? : &EntityExt = entity_ext(),
 ) -> EqEntry {
   {
@@ -76,7 +76,7 @@ pub fn eq_entry(
     merge,
     deprecated,
     link_target,
-    link_levels,
+    link_additional_levels,
     extension,
   }
 }
@@ -94,7 +94,7 @@ pub struct ShortEntry {
   priv short_attached_value : @abi.AttachMode
   priv is_alias : Bool
   priv link_target : String?
-  priv link_levels : Int
+  priv link_additional_levels : Int
   priv extension : &EntityExt
 }
 
@@ -110,7 +110,7 @@ pub fn short_entry(
   short_attached_value? : @abi.AttachMode = @abi.Allow,
   is_alias? : Bool = false,
   link_target? : String? = None,
-  link_levels? : Int = 0,
+  link_additional_levels? : Int = 0,
   extension? : &EntityExt = entity_ext(),
 ) -> ShortEntry {
   {
@@ -124,7 +124,7 @@ pub fn short_entry(
     short_attached_value,
     is_alias,
     link_target,
-    link_levels,
+    link_additional_levels,
     extension,
   }
 }
@@ -207,7 +207,7 @@ fn eq_entry_json(entry : EqEntry) -> Json {
   match entry.link_target {
     Some(target) => {
       fields.push(target.to_json())
-      fields.push(entry.link_levels.to_json())
+      fields.push(entry.link_additional_levels.to_json())
       fields.push(entry.extension.encode())
     }
     None => ()
@@ -231,7 +231,7 @@ fn short_entry_json(entry : ShortEntry) -> Json {
   match entry.link_target {
     Some(target) => {
       fields.push(target.to_json())
-      fields.push(entry.link_levels.to_json())
+      fields.push(entry.link_additional_levels.to_json())
       fields.push(entry.extension.encode())
     }
     None => ()
@@ -393,7 +393,12 @@ fn run_eq_split(
             [
               @abi.Accept(
                 pos + 1,
-                route_entry_bindings(e.name, e.link_target, e.link_levels, bs) +
+                route_entry_bindings(
+                  e.name,
+                  e.link_target,
+                  e.link_additional_levels,
+                  bs,
+                ) +
                 dm,
               ),
             ]
@@ -416,9 +421,12 @@ fn run_eq_split(
           return [
             @abi.Accept(
               pos + 1,
-              route_entry_bindings(e.name, e.link_target, e.link_levels, [
-                @abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos)),
-              ]) +
+              route_entry_bindings(
+                e.name,
+                e.link_target,
+                e.link_additional_levels,
+                [@abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos))],
+              ) +
               dm,
             ),
           ]
@@ -514,7 +522,14 @@ fn short_val(
         ctx.extensions(),
       ) {
       Ok(bindings) =>
-        Ok(route_entry_bindings(e.name, e.link_target, e.link_levels, bindings))
+        Ok(
+          route_entry_bindings(
+            e.name,
+            e.link_target,
+            e.link_additional_levels,
+            bindings,
+          ),
+        )
       Err(error) => Err(error)
     }
   } else {
@@ -527,9 +542,12 @@ fn short_val(
     match e.kind.parse_token(filtered) {
       Ok(value) =>
         Ok(
-          route_entry_bindings(e.name, e.link_target, e.link_levels, [
-            @abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos)),
-          ]),
+          route_entry_bindings(
+            e.name,
+            e.link_target,
+            e.link_additional_levels,
+            [@abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos))],
+          ),
         )
       Err(fail) => Err(type_parse_error(e.name, pos, fail))
     }
@@ -596,7 +614,7 @@ fn walk_short(
         let routed_presence = route_entry_bindings(
             e.name,
             e.link_target,
-            e.link_levels,
+            e.link_additional_levels,
             [presence],
           )[0]
         if combine || i + 1 == body.length() {

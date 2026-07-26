@@ -1888,10 +1888,15 @@ fn dec_or_structural(
 /// trigger at all).
 ///
 /// `value:` / `default:` は消費 0 の literal を宣言する (DESIGN §5.2 / LOWERING §A.3 / DR-015)。
-/// 2 つは同義 — DR-031 のラダー 5 段目に同席し source タグはどちらも `default` (source 語彙に
-/// `value` は無い) — なので decode 先も同じ `default_values` で、区別を持ち回らない。値を持つ
-/// child は `is_literal` が立ち、`element_head` が値プリミティブでなく `literal_value` へ lower
-/// する (トークンを照合せず 0 個消費で値を産出、DR-041 §3「消費数は Accept の報告値」)。
+/// **構造子位置では 2 つは同義** — どちらの綴りも宣言定数で source タグは `Const` (DR-031 の
+/// 8 語彙目、「const は値セルに最初からいる。default は無い時に埋める」)。同義なので decode 先も
+/// 同じ `default_values` で、区別を持ち回らない。値を持つ child は `is_literal` が立ち、
+/// `element_head` が値プリミティブでなく `literal_value` へ lower する (トークンを照合せず
+/// 0 個消費で値を産出、DR-041 §3「消費数は Accept の報告値」)。
+///
+/// root 位置 (option / positional) では 2 つは同義では**ない** — `value:` はセル初期化位相の
+/// const、`default:` はラダー 5 段目の席という別位相なので、同居も合法 (CONST-Q1=a) で carrier も
+/// 別 (`const_values` / `default_values`)。下の同居 reject が構造子位置限定なのはこのため。
 ///
 /// `default_fn:` はここでは受理しない。遅延評価される invocation (resolve 相で registry を引く、
 /// `resolve_default_fn`) であり lowering 時点で値が確定しないので、消費 0 literal に落とせない。
@@ -1980,7 +1985,7 @@ fn dec_or_leaf(
   let literal = match (o.get("value"), o.get("default")) {
     (Some(_), Some(_)) =>
       raise DecodeSkip(
-        "or branch leaf declares both 'value' and 'default' (同義の二重宣言、DR-031 ラダー 5 段目の同席)",
+        "or branch leaf declares both 'value' and 'default' (構造子位置では 2 つは同義 — どちらも宣言定数 `const` (DESIGN §5.2 / DR-031) — なので同じ席への二重宣言になる)",
       )
     (Some(v), None) => Some(json_to_default_values(v))
     (None, Some(d)) => Some(json_to_default_values(d))
