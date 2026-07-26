@@ -946,7 +946,7 @@ fn build_result_export(
 /// 1 つの export 済み result-key の値源タグ (DR-031)。`path` は結果スコープ木を降りる scope
 /// segment 列 (root なら `[]`)、`key` は `apply_export_keys` と同じ resolve (DR-052 §1) を経た
 /// 露出キー、`source` は値源 — `@abi.Source::@abi.Default` は「未発火 (default 相当)」または「accum セルの
-/// `@abi.Unset` op で未触の default 状態へ再着席した」を表す (`collect_sources_flat` のコメント参照)。
+/// `@abi.Unset` op で未触の default 状態へ再着席した」を表す (`result_sources` のコメント参照)。
 /// `pub(all)` (MDR-005 §3 の「正面玄関の 3 関数が直接運ぶ型は pub(all) を維持」原則に準拠) —
 /// 呼び出し側 (kuu-cli 等) が `.path`/`.key`/`.source` を読んで JSON を組み立てる、フィールド
 /// 読み取りが本体の型なので `AccumCell`/`DefaultCell`/`@engine.NoneCell` (組み立て素材を build_result に
@@ -958,112 +958,35 @@ pub(all) struct SourceEntry {
 } derive(Eq, Debug)
 
 ///|
-/// `sc.greedy` に `@engine.CommandSatisfied` (サブコマンド確定ノード) が 1 つでもあるか — command 木を持つ scope か
-/// どうかの判定。runner (json_conformance_test.mbt) の同名ヘルパーと同一実装で、production 側の
-/// `result_sources` にも同じ分岐が要るためこちらへ昇格した (runner 側は重複定義を避けるため
-/// 削除しこの private fn を直接呼ぶ、同一パッケージ内アクセスなので `pub` 化は不要)。
-fn has_commands(sc : @engine.Scope) -> Bool {
-  for g in sc.greedy {
-    match g {
-      @engine.CommandSatisfied(_, _) => return true
-      _ => ()
-    }
-  }
-  false
-}
-
-///|
-/// command 木を持たない単一 scope 向けの sources 収集 (旧 runner `proj_sources` の構造化版、
-/// String 直書きの `"default"` を `@abi.Source::@abi.Default` に置き換えた以外は元実装のロジックを不変に
-/// 保つ)。`sc.entities` を直接走査するので **root scope 単体のみ** (子 command scope は見ない) —
-/// 単一 scope 前提だからこそ「未発火セルは default 相当を報告する」フォールバック (accum セルの
-/// `[]` 既定 / flag・bool の preset default、DR-044 の uniform array 既定 / LOWERING §A.5) を
-/// 安全に持てる。config_file / `@builtins.none_type()` 型のセルは除外 (DR-089 §3: none has no value なので
-/// source も持たない)。
-fn collect_sources_flat(
-  sc : @engine.Scope,
-  resolved : Array[@abi.Binding],
-  ek : @engine.ExportScopeMap,
-) -> Array[SourceEntry] {
-  let out : Array[SourceEntry] = []
-  let emitted : Array[String] = []
-  for e in sc.entities {
-    if e.is_config_file {
-      continue
-    }
-    if e.ty.name() == "none" {
-      continue
-    }
-    match ek.exposed_cell(e.name) {
-      None => ()
-      Some(exposed) =>
-        if !str_contains(emitted, exposed) {
-          let mut src : @abi.Source? = None
-          for b in resolved {
-            if !is_sentinel(b.key) && ek.exposed_cell(b.key) == Some(exposed) {
-              src = match b.op {
-                // issue 2026-07-09-accum-filters-non-set-op-semantics: `@abi.Unset` は CLI 発火済みだが
-                // 未確定 (committed=false、DR-045「default 値へ戻す... committed=false」) なので、
-                // 値源タグは発火トークン自身の `source` ではなくラダーの再着席結果
-                // ("as if untouched") を反映して `@abi.Default` を報告する。
-                @abi.Unset => Some(@abi.Default)
-                _ => Some(b.source)
-              }
-            }
-          }
-          match src {
-            Some(s) => {
-              out.push({ path: [], key: exposed, source: s })
-              emitted.push(exposed)
-            }
-            None =>
-              if e.accum is Some(_) {
-                out.push({ path: [], key: exposed, source: @abi.Default })
-                emitted.push(exposed)
-              } else if (e.ty.name() == "flag" || e.ty.name() == "bool") &&
-                e.accum is None {
-                match default_scalar(e) {
-                  Some(_) => {
-                    out.push({ path: [], key: exposed, source: @abi.Default })
-                    emitted.push(exposed)
-                  }
-                  None => ()
-                }
-              }
-          }
-        }
-    }
-  }
-  out
-}
-
-///|
-/// command 木全体を持つ scope 向けの sources 収集。`resolved` (resolve 済み全 binds、子 scope
-/// 含む) をそのまま走査すれば木全体を一度に拾える。
+/// front_door 昇格 (issue 2026-07-16-result-projection-production-promotion): `resolved`
+/// (resolve 済み全 binds、子 scope 含む) から DR-109 §3 の `sources` 射影 (「resolve 済み出力には
+/// 常に sources を含める」) を組み立てる。`resolved` は結果木全体の binds なので、scope の形
+/// (command 木を持つか、単一 scope か) に依らず 1 本の走査で拾える。
 ///
 /// キーは **結果と同じ露出キー軸** (DR-052 §1: 結果キー軸は export_key 1 本) に写す —
 /// `apply_export_keys` / `apply_export_to_defaults` が binding / default に対して使うのと同じ
 /// `walk_export_path` + `exposed_cell` を通すので、`sources` の (path, key) は `result` の
-/// キーと構造的に一致する。DR-109 §3 の「消費者が値の出所を機械判別できる」が成り立つのは
-/// 消費者が持つのが result のキーだからで、生の宣言名を返すとその突き合わせが壊れる。
+/// キーと構造的に一致する (CONFORMANCE.md §2「sources のキーは result と同一のキー体系」)。
+/// DR-109 §3 の「消費者が値の出所を機械判別できる」が成り立つのは消費者が持つのが result の
+/// キーだからで、生の宣言名を返すとその突き合わせが壊れる。
 ///
 /// - **透過セル** (`exposed_cell` が `None`) は落とす。`apply_export_keys` は `None` を `""` に
 ///   して binding を残すが、これは seq/array 文脈の nameless 要素を保存するためで、`""` は
 ///   `is_sentinel` が弾き `build_result` の kv 結果には現れない。`sources` は kv 側しか持たない
 ///   ので落とすのが正 (`apply_export_to_defaults` の `None => ()` と同じ扱い)
 /// - **透過ラベル** (scope) は `walk_export_path` が segment を落として node だけ進める既存挙動
-///   に乗る (DR-052 §2: 子が親スコープへ昇格)
+///   に乗る (DR-052 §2: 子が親スコープへ昇格)。`name` を持つ `seq` / `or` が作る 1 段の結果
+///   スコープ (DESIGN §2.3/§2.4) も、`repeat` の index segment (`#k`、結果スコープを作らない
+///   配列添字なので `walk_export_path` が素通しする) も同じ経路で path に載る — 後者は
+///   `{"grp":[{"gflag":..},..]}` の何番目の要素の席かを一意化する唯一の軸
 /// - 同一 (path, key) は **last-wins** で 1 件に畳む。binding は同じセルに複数回着席しうる
-///   (`--tags a --tags b`) 上に、rename で別名だった 2 セルが同じ露出キーへ合流する経路も
-///   ありうるので、射影段階で畳む (`collect_sources_flat` の resolved ループと同じ last-wins)
+///   (`--tags a --tags b`) ので、射影段階で畳む
 /// - **0 回発火の accum セル** は binding を 1 つも持たないが、result では `[]` を持つ
 ///   (DR-044 uniform array: 未発火でも absent にならない) ので `@abi.Default` の席を足す。
 ///   席の同定は result builder が使うのと同じ `accum_cells` (ek 適用・透過昇格込み) の
 ///   `(path, name)` をそのまま使う。未発火 flag・default 付きスカラは値源ラダーが default 席を
-///   解いて binding を作るのでここでは扱わない (`collect_sources_flat` が持つ flag/bool
-///   フォールバックは、ラダーを走らせない parse-only 経路のための保険で、ここへ移植すると
-///   ラダーが作る binding と二重になる)
-fn collect_sources_tree(
+///   解いて binding を作るのでここでは扱わない
+fn result_sources(
   sc : @engine.Scope,
   resolved : Array[@abi.Binding],
   ek : @engine.ExportScopeMap,
@@ -1078,7 +1001,11 @@ fn collect_sources_tree(
       // 透過: 結果キー軸を持たない値セルは kv 結果に現れない → 由来も報告しない。
       None => ()
       Some(key) => {
-        let entry : SourceEntry = { path, key, source: b.source }
+        let src = match b.op {
+          @abi.Unset => @abi.Source::Default
+          _ => b.source
+        }
+        let entry : SourceEntry = { path, key, source: src }
         let mut replaced = false
         for i in 0..<out.length() {
           if out[i].key == key && path_eq(out[i].path, path) {
@@ -1106,26 +1033,6 @@ fn collect_sources_tree(
     }
   }
   out
-}
-
-///|
-/// front_door 昇格 (issue 2026-07-16-result-projection-production-promotion): `resolved`
-/// (resolve 済み binds) から DR-109 §3 の `sources` 射影 (「resolve 済み出力には常に sources を
-/// 含める」) を組み立てる。command 木の有無 (`has_commands`) で内部実装が分かれる
-/// (`collect_sources_flat` / `collect_sources_tree`、直上 2 関数のコメント参照) が、**呼び出し側
-/// はその分岐を意識しない** — 1 本のシグネチャで両ケースを覆う (front_door 玄関の「利用者は内部
-/// 構造を意識しない」原則、MDR-005 冒頭)。どちらの経路も結果キー軸 (DR-052 §1) を適用するので、
-/// 返る (path, key) は `build_result` のキーと同じ体系にある。
-fn result_sources(
-  sc : @engine.Scope,
-  resolved : Array[@abi.Binding],
-  ek : @engine.ExportScopeMap,
-) -> Array[SourceEntry] {
-  if has_commands(sc) {
-    collect_sources_tree(sc, resolved, ek)
-  } else {
-    collect_sources_flat(sc, resolved, ek)
-  }
 }
 
 // ── DR-047 §4/§5 (issue value-present-ladder-gap 裁定 2026-07-10、bool target 分は元 issue

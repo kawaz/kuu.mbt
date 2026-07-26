@@ -363,8 +363,7 @@ test "front_door.output: 単一 scope で export_key rename + flag preset defaul
 ///|
 /// 保証 (issue 2026-07-16-result-projection-production-promotion、DR-109 §3): command 木を持つ
 /// scope でも `output` は同じ OutputView の `sources` として木全体の値源タグを返す — 呼び出し側は
-/// command 木の有無 (`has_commands`) を一切意識しない (resolve.mbt `result_sources` のコメント
-/// 参照)。子 scope "sub" で発火した ttl の値源タグが
+/// command 木の有無を一切意識しない (resolve.mbt `result_sources` のコメント参照)。子 scope "sub" で発火した ttl の値源タグが
 /// `path: ["sub"], key: "ttl", source: @abi.Cli` として現れることを固定する。
 test "front_door.output: command 木でも子 scope の値源を OutputView.sources に返す (DR-109 §3, MDR-005 射程外解消)" {
   let src =
@@ -1319,8 +1318,92 @@ test "front_door.output: command 木でも 0 回発火の accum セルが defaul
     #|            {"name":"ttl","type":"number","long":true,"default":30},
     #|            {"name":"tags","type":"string","long":true,"multiple":"append"}],
     #| "commands":[{"type":"command","name":"serve"}]}
-  assert_eq(
-    wbtest_sources_of(src, []),
-    "a=default,tags=default,ttl=default",
-  )
+  assert_eq(wbtest_sources_of(src, []), "a=default,tags=default,ttl=default")
+}
+
+///|
+/// U1/U2 (CONFORMANCE.md §2「sources のキーは result と同一のキー体系」): `name` 付き `seq` が
+/// 作る結果スコープ (DESIGN §2.3) の path は、**定義に command があるかどうかに依らず** sources
+/// に載る。`pr` は result で `{"pr":{"path":..,"value":..}}` なので sources も `pr.path`/`pr.value`。
+/// U1 (command 無し) と U2 (未発火 dummy command 1 本) を対にすることで「command の有無で
+/// sources の path 軸が変わらない」を直接 pin する。
+test "front_door.output: named seq の結果スコープ path は command 無しでも sources に載る" {
+  let body =
+    #|"options":[{"name":"pr","long":true,"seq":[
+    #|  {"name":"path","type":"string"},{"name":"value","type":"string"}]}]
+  let no_command = "{" + body + "}"
+  let with_command = "{" +
+    body +
+    ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
+  let want = "pr.path=cli,pr.value=cli"
+  assert_eq(wbtest_sources_of(no_command, ["--pr", "x", "y"]), want)
+  assert_eq(wbtest_sources_of(with_command, ["--pr", "x", "y"]), want)
+}
+
+///|
+/// U3 (DESIGN §2.4 / DR-025 C 型): `name` 付き `or` の枝 leaf も同じく 1 段の結果スコープに入る
+/// (`{"mode":{"num":7}}`) ので、sources のキーは `mode.num`。U1/U2 と同じく command の有無で
+/// 変わらない。枝は int/bool で値空間が排他 (完全経路ちょうど 1 本、`or-parse/
+/// option-named-branch-leaves-kv.json` と同じ型選定)。
+test "front_door.output: named or の結果スコープ path は command 無しでも sources に載る" {
+  let body =
+    #|"options":[{"name":"mode","long":true,"or":[
+    #|  {"name":"num","type":"int"},{"name":"flag","type":"bool"}]}]
+  let no_command = "{" + body + "}"
+  let with_command = "{" +
+    body +
+    ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
+  let want = "mode.num=cli"
+  assert_eq(wbtest_sources_of(no_command, ["--mode", "7"]), want)
+  assert_eq(wbtest_sources_of(with_command, ["--mode", "7"]), want)
+}
+
+///|
+/// U4 (DR-043 repeat × DR-025 name scope): `repeat` が運ぶ index segment (`#k`) は結果スコープを
+/// 作らない配列添字だが、`walk_export_path` が素通しするので sources の path には現れる
+/// (`grp.#0.gflag`)。result 側は `{"grp":[{"gflag":..},..]}` の配列なので、この `#k` は
+/// 「配列の何番目の要素の席か」を一意化する情報として意味を持つ (同じ `gflag` が 2 席あるのを
+/// 区別できる唯一の軸)。ここでも command の有無で変わらない。
+test "front_door.output: repeat の index segment が sources の path に載る (command 無しでも)" {
+  let body =
+    #|"positionals":[{"name":"grp","repeat":{"min":1,"max":2},
+    #|  "positionals":[{"name":"gflag","type":"string"}]}]
+  let no_command = "{" + body + "}"
+  let with_command = "{" +
+    body +
+    ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
+  let want = "grp.#0.gflag=cli,grp.#1.gflag=cli"
+  assert_eq(wbtest_sources_of(no_command, ["a", "b"]), want)
+  assert_eq(wbtest_sources_of(with_command, ["a", "b"]), want)
+}
+
+///|
+/// U5 (DR-045「default 値へ戻す... committed=false」): `unset` variant の発火は CLI 由来だが
+/// 値としては未確定 (ラダーの再着席結果は "as if untouched") なので、`sources` は発火トークン
+/// 自身の `cli` ではなく `default` を報告する。ラダーを走らせない parse-only 経路
+/// (`output_of_interpretation` / `output_legacy` に parse 相 binds を渡す形) でしか観測できない
+/// — resolve を通せばラダーが default 席を解いて binding を差し替えるため。
+/// 射影の統一 (`result_sources` 1 本化) でこの読み替えを落とさないことの pin。
+test "front_door.output: unset 発火の値源は default (parse-only 経路、DR-045)" {
+  let src =
+    #|{"options":[{"name":"color","type":"string",
+    #|  "long":[":set","no:unset","reset:default"],"default":"auto"}]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition should accept the definition")
+      panic()
+    }
+  }
+  let binds = match parse_legacy(ast, ["--no-color"]) {
+    @engine.Success(bindings) => bindings
+    other => {
+      fail("should parse, got " + render_outcome(other))
+      panic()
+    }
+  }
+  let view = output_legacy(ast, effects=binds)
+  assert_eq(view.sources.length(), 1)
+  assert_eq(view.sources[0].key, "color")
+  assert_eq(view.sources[0].source, @abi.Source::Default)
 }

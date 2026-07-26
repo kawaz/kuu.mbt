@@ -250,8 +250,8 @@ fn parse_legacy(
 /// 正面玄関 2 の続き: `parse()` が返した @engine.Outcome の @engine.Success payload (CLI 生 binds) に**値源
 /// ラダー**を適用し、解決済み binds に置き換えて @engine.Outcome を返す (spec DR-047 §4 / DR-104 §5 の
 /// resolve 相)。`resolve_scope_tree` を root scope (path = []) から呼ぶ — command 木を持つ
-/// scope でも単一 scope でも同一関数で扱える (`resolve_scope_tree` は has_commands が false なら
-/// 再帰しないだけ、単一 scope の `resolve_scope_config` 呼び出しと等価な結果を返す)。
+/// scope でも単一 scope でも同一関数で扱える (子 command scope が無ければ再帰しないだけで、
+/// 単一 scope の `resolve_scope_config` 呼び出しと等価な結果を返す)。
 ///
 /// **転落**: resolve 相の失敗 (DR-066 の env/config seat parse 失敗 / DR-009 §7 の
 /// value_filters/final_filters/accum_filters reject) は @engine.Outcome を `@engine.Failure` に転落させ、その
@@ -437,34 +437,19 @@ fn output_path_push(path : Array[String], segment : String) -> Array[String] {
 }
 
 ///|
-/// DR-118 §3 の「Default-source scalar 除外」判定で使う席の同定。`sources` の path 軸は射影経路で
-/// 意味が変わる: command 木を持つ scope は `collect_sources_tree` が binding の (露出キーへ写した)
-/// scope path を載せるが、command の無い scope は `collect_sources_flat` が **常に `path: []`** で
-/// 露出キーだけを載せる (resolve.mbt の当該関数)。後者では席は key 単独で同定されるので、結果側の
-/// ネスト (name を持つ `or` / `seq` が作る 1 段の結果スコープ、DESIGN §2.3) を降りても path で
-/// 突き合わせてはいけない — さもないと入れ子スコープ内の scalar が「source 無し」と誤判定され、
-/// ambiguous の interpretations ビューから丸ごと消える。
-///
-/// **`flat_projection` は経路そのものではなく「全 path が空か」で代理判定する近似**である点に
-/// 注意: command 木を持つ scope でも、その全 command ラベルが透過 (`export_key: null`) なら
-/// 露出 path が全部空になり flat と誤判定しうる (= path 突き合わせが外れ、別スコープの同名 key
-/// が source ありと見なされる)。現状の ambiguous 系 fixture はどれも command を持たないので
-/// 露見していないが、根治は `has_commands` 分岐そのものの廃止 (両経路の統一) にある。
+/// DR-118 §3 の「Default-source scalar 除外」判定で使う席の同定。`sources` の (path, key) は
+/// `result` と同一のキー体系にある (CONFORMANCE.md §2、`result_sources` が結果キー軸を 1 本の
+/// 射影で適用する) ので、結果を降りながら組み立てた `path` とそのまま突き合わせられる — name を
+/// 持つ `or` / `seq` が作る 1 段の結果スコープ (DESIGN §2.3/§2.4) も、同名 key が複数スコープに
+/// ある場合の一意化も、path 込みで正しく引ける。
 fn interpretation_has_source(
   sources : Array[SourceEntry],
   path : Array[String],
   key : String,
 ) -> Bool {
-  let mut flat_projection = true
-  for source in sources {
-    if source.path.length() > 0 {
-      flat_projection = false
-      break
-    }
-  }
   for source in sources {
     if source.key == key &&
-      (flat_projection || source.path == path) &&
+      path_eq(source.path, path) &&
       source.source != @abi.Default {
       return true
     }
