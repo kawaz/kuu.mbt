@@ -11,3 +11,4 @@
 | 2026-07-25 | bug | open | [option-seq-named-children-not-folded-into-kv](./2026-07-25-option-seq-named-children-not-folded-into-kv.md) | option 直下 seq の名前付き子要素が kv に畳まれず、子ごとに別オブジェクト + 余分な配列階層になる |
 | 2026-07-25 | bug | open | [config-file-multi-option-first-unresolved](./2026-07-25-config-file-multi-option-first-unresolved.md) | config_file option を 2 つ持つ定義で前段の config が解決されない (要調査、spec 規定有無から確認) |
 | 2026-07-26 | design | open | [unify-flat-tree-sources-projection](./2026-07-26-unify-flat-tree-sources-projection.md) | has_commands 分岐そのものを廃止し sources 射影を flat/tree で統一する (export_key 修正 issue からの切り出し) |
+| 2026-07-26 | design | open | [flat-tree-source-unset-default-mismatch](./2026-07-26-flat-tree-source-unset-default-mismatch.md) | flat 側の Unset=>Default 読み替えが tree 側に無い (sources 射影 export_key 修正 issue からの切り出し) |
