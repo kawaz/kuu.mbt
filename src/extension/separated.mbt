@@ -32,7 +32,7 @@ pub fn sep_binds(
           value: @abi.Bool(false),
           source: @abi.Cli,
           scope: [],
-          link: 0,
+          levels_to_declaring_scope: 0,
           at_pos: Some(pos),
         })
       PieceMark::Remove(payload) =>
@@ -45,7 +45,7 @@ pub fn sep_binds(
               value: v,
               source: @abi.Cli,
               scope: [],
-              link: 0,
+              levels_to_declaring_scope: 0,
               at_pos: Some(pos),
             })
           Err(pe) => return Err(pe)

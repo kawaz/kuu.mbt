@@ -75,15 +75,16 @@ pub(all) struct Candidate {
   hidden : Bool
   deprecated : Bool
   path : Array[String] // DR-066 §4: root-first ancestor scope names (snoc form, [] = root 直下)
-  // Rooted-escape counter for `path`, mirroring `Binding.link` (DR-042 global link-sync): a
-  // global option's satellite is copied into a descendant command scope wrapped in
+  // Rooted-escape counter for `path`, mirroring `Binding.levels_to_declaring_scope` (DR-042 global
+  // link-sync): a global option's satellite is copied into a descendant command scope wrapped in
   // `Rooted(node, depth)`, and its Entity lives ONLY at the declaring (shallower) scope — a
   // value-slot Pending produced from inside that copy must therefore have `depth` levels of
   // CommandSatisfied-boundary prepend SKIPPED, or its `path` ends up pointing at the wrong (copy-side)
   // scope while the Entity it names sits at the declaring scope. Bare `Array[String]` path alone
   // cannot express "skip N prepends" — `nest_cands` (eval.mbt) consumes this exactly like
-  // `nest`'s own `Binding.link` decrement, so the two stay in lockstep. `0` (the common case) =
-  // no pending escape, prepend normally. NOT part of the 6-field dedup identity or the wire
+  // `nest`'s own `Binding.levels_to_declaring_scope` decrement, so the two stay in lockstep. `0`
+  // (the common case) = no pending escape, prepend normally. NOT part of the 6-field dedup identity
+  // or the wire
   // projection (same posture as `path` itself, DR-104 §2/§3) — purely an implementation detail of
   // `complete_tree`'s completer lookup (outcome.mbt).
   link : Int

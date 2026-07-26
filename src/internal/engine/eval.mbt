@@ -165,14 +165,17 @@ fn is_action_key(k : String) -> Bool {
 
 ///|
 /// Nest a set of bindings one level deeper under `label` (spec DR-025). A
-/// LINK binding (spec DR-042 global link-sync) with `link > 0` ESCAPES this
+/// LINK binding (spec DR-042 global link-sync) with `levels_to_declaring_scope > 0` ESCAPES this
 /// level: it skips the prepend and decrements its counter, climbing out of
 /// the scopes BELOW its declaration.
 fn nest(label : String, binds : Array[Binding]) -> Array[Binding] {
   let out : Array[Binding] = []
   for b in binds {
-    if b.link > 0 {
-      out.push({ ..b, link: b.link - 1 })
+    if b.levels_to_declaring_scope > 0 {
+      out.push({
+        ..b,
+        levels_to_declaring_scope: b.levels_to_declaring_scope - 1,
+      })
     } else {
       let sc2 : Array[String] = [label]
       for s in b.scope {
@@ -205,7 +208,7 @@ fn nest_path(label : String, path : Array[String]) -> Array[String] {
 /// `missing_operand` ParseError at parse()'s top level, DR-053 §2.3), so it needs the same ancestor
 /// tracking Held already had, or the resulting Error's path is silently stuck at `[]`.
 ///
-/// Also mirrors `nest`'s `Binding.link` decrement (DR-060 §4 / issue
+/// Also mirrors `nest`'s `Binding.levels_to_declaring_scope` decrement (DR-060 §4 / issue
 /// 2026-07-14-cand-completer-followup): a candidate with `link > 0` (set by `Rooted`'s eval arm)
 /// is still escaping toward its declaring scope — this level's prepend is SKIPPED and the counter
 /// decremented instead, exactly like a linked Binding's `scope` field. Without this, a global
@@ -270,7 +273,7 @@ fn scope_marker(label : String) -> Binding {
     value: Bool(false),
     source: Cli,
     scope: [label],
-    link: 0,
+    levels_to_declaring_scope: 0,
     at_pos: None,
   }
 }
@@ -285,7 +288,7 @@ fn array_marker(label : String) -> Binding {
     value: Bool(false),
     source: Cli,
     scope: [label],
-    link: 0,
+    levels_to_declaring_scope: 0,
     at_pos: None,
   }
 }
@@ -512,7 +515,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           Accept(p, bs) => {
             let marked : Array[Binding] = []
             for x in bs {
-              marked.push({ ..x, link: depth })
+              marked.push({ ..x, levels_to_declaring_scope: depth })
             }
             out.push(Accept(p, marked))
           }
@@ -523,7 +526,8 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
             // lives `depth` scopes below its OWN declaring scope, and its Entity (the one
             // `complete_tree`'s completer lookup needs) sits at that declaring scope, not
             // here — `nest_cands` (below) consumes this exactly like `nest` consumes
-            // `Binding.link`, skipping `depth` CommandSatisfied-boundary prepends on the way out.
+            // `Binding.levels_to_declaring_scope`, skipping `depth` CommandSatisfied-boundary
+            // prepends on the way out.
             let marked : Array[Candidate] = []
             for c in cs {
               marked.push({ ..c, link: depth })
@@ -657,14 +661,17 @@ fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] 
   let seg = "#" + rep.to_string()
   let out : Array[Binding] = []
   for b in bs {
-    if b.link > 0 {
-      out.push({ ..b, link: b.link - 1 })
+    if b.levels_to_declaring_scope > 0 {
+      out.push({
+        ..b,
+        levels_to_declaring_scope: b.levels_to_declaring_scope - 1,
+      })
     } else {
       let sc2 : Array[String] = [label, seg]
       for s in b.scope {
         sc2.push(s)
       }
-      out.push({ ..b, scope: sc2, link: 0 })
+      out.push({ ..b, scope: sc2, levels_to_declaring_scope: 0 })
     }
   }
   out
@@ -2155,11 +2162,11 @@ fn scope_consume_rep(
 }
 
 ///|
-/// Drop the `link` nesting hint — it is resolved before path counting.
-fn strip_link(bs : Array[Binding]) -> Array[Binding] {
+/// Drop the `levels_to_declaring_scope` nesting hint — it is resolved before path counting.
+fn strip_levels_to_declaring_scope(bs : Array[Binding]) -> Array[Binding] {
   let out : Array[Binding] = []
   for b in bs {
-    out.push({ ..b, link: 0 })
+    out.push({ ..b, levels_to_declaring_scope: 0 })
   }
   out
 }
@@ -2738,7 +2745,7 @@ pub fn parse_tree(
         // full consumption arrives as Helds, never an Accept), so every
         // full-length Accept here IS a complete解決経路.
         if p == toks.length() {
-          let eff = strip_link(bs)
+          let eff = strip_levels_to_declaring_scope(bs)
           // codex 指摘 (2026-07-12, DESIGN §15.1「経路の同一性は実体への観測可能な効果列で判定
           // する」): dd/none 要素は entity (値セル) を持たない (DR-030) ため、そのプレースホルダ
           // binding は比較対象の「実体への効果」に含めない。`eff` 自体 (Success/Ambiguous が

@@ -64,7 +64,8 @@ pub(all) enum DefLoadError {
 
 ///|
 /// 利用者へ公開する 1 件の effect。`@abi.Binding` が持つ sentinel・内部 placeholder・
-/// parser bookkeeping (`link` / `at_pos`) は玄関で吸収し、wire の effects 列に必要な語彙だけを運ぶ。
+/// parser bookkeeping (`levels_to_declaring_scope` / `at_pos`) は玄関で吸収し、wire の effects 列に
+/// 必要な語彙だけを運ぶ。
 /// `operand` は値を伴う `set` / `remove` のみ `Some`、それ以外の op は `None`。
 pub struct OutputEffect {
   entity : String

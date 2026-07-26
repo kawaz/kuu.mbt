@@ -282,13 +282,13 @@ pub(all) struct Binding {
   value : Value // the operand (a placeholder for default/unset/empty, which carry none)
   source : Source
   scope : Array[String]
-  link : Int // a link/global-copy binding (DR-042/007): the number of result-nesting levels it
-  //           still ESCAPES before settling at its declaring scope. 0 = a normal binding (every
-  //           CommandSatisfied/Scoped level prepends its label). N>0 = a global copied N scopes BELOW its
-  //           declaration; the next N nest levels skip prepending (decrementing), then it nests
-  //           normally — so an intermediate-scope global (DR-042 shadow) lands at its declaring
+  levels_to_declaring_scope : Int // a global-copy binding (DR-042/007): the number of result-nesting
+  //           levels it still ESCAPES before settling at its declaring scope. 0 = a normal binding
+  //           (every CommandSatisfied/Scoped level prepends its label). N>0 = a global copied N scopes
+  //           BELOW its declaration; the next N nest levels skip prepending (decrementing), then it
+  //           nests normally — so an intermediate-scope global (DR-042 shadow) lands at its declaring
   //           scope, not the absolute root. A root global (declared at depth 0) has N = its firing
-  //           depth, which escapes all the way to the root (the original bool-`link` behaviour).
+  //           depth, which escapes all the way to the root.
   // DR-034/DR-062 piece_filters + issue 2026-07-09-accum-entity-filters-wiring: the args token
   // position this binding's VALUE was read from, when it has one. `Some(pos)` for a CLI-seat
   // binding built at token-consumption time (eval.mbt/builtins/matcher_residents.mbt's `mk_binding` call sites — a separator
@@ -313,7 +313,15 @@ pub fn Binding::new(
   source : Source,
   at_pos? : Int? = None,
 ) -> Binding {
-  { key, op: Set, value, source, scope: [], link: 0, at_pos }
+  {
+    key,
+    op: Set,
+    value,
+    source,
+    scope: [],
+    levels_to_declaring_scope: 0,
+    at_pos,
+  }
 }
 
 ///|
@@ -347,7 +355,7 @@ pub fn Binding::deprecation_mark(element : String) -> Binding {
     value: Bool(false),
     source: Cli,
     scope: [],
-    link: 0,
+    levels_to_declaring_scope: 0,
     at_pos: None,
   }
 }

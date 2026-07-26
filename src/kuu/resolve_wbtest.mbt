@@ -11,7 +11,15 @@ fn cb(
   source : @abi.Source,
   at_pos? : Int? = None,
 ) -> @abi.Binding {
-  { key, op: @abi.Set, value, source, scope: [], link: 0, at_pos }
+  {
+    key,
+    op: @abi.Set,
+    value,
+    source,
+    scope: [],
+    levels_to_declaring_scope: 0,
+    at_pos,
+  }
 }
 
 ///|
@@ -160,7 +168,7 @@ test "build_result: an empty op on an accumulate cell clears prior items" {
       value: @abi.Bool(false), // placeholder — empty carries no operand
       source: @abi.Cli,
       scope: [],
-      link: 0,
+      levels_to_declaring_scope: 0,
       at_pos: None,
     },
     cb("tags", @abi.String("c"), @abi.Cli),
@@ -299,7 +307,7 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
       value: @abi.Bool(true),
       source: @abi.Cli,
       scope: ["xs"],
-      link: 0,
+      levels_to_declaring_scope: 0,
       at_pos: None,
     },
     {
@@ -308,7 +316,7 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
       value: @abi.String("a"),
       source: @abi.Cli,
       scope: ["xs", "#0"],
-      link: 0,
+      levels_to_declaring_scope: 0,
       at_pos: None,
     },
     {
@@ -317,7 +325,7 @@ test "build_result: [] + #k sentinels fold an indexed repeat into an array" {
       value: @abi.String("b"),
       source: @abi.Cli,
       scope: ["xs", "#1"],
-      link: 0,
+      levels_to_declaring_scope: 0,
       at_pos: None,
     },
   ]
@@ -373,7 +381,7 @@ test "apply_export_keys renames a leaf key and drops a null-exported scope label
       value: @abi.Bool(true),
       source: @abi.Cli,
       scope: ["wrapper"],
-      link: 0,
+      levels_to_declaring_scope: 0,
       at_pos: None,
     },
   ]
@@ -532,7 +540,15 @@ fn mkb_pub(
   source : @abi.Source,
   at_pos? : Int? = None,
 ) -> @abi.Binding {
-  { key, op: @abi.Set, value, source, scope: [], link: 0, at_pos }
+  {
+    key,
+    op: @abi.Set,
+    value,
+    source,
+    scope: [],
+    levels_to_declaring_scope: 0,
+    at_pos,
+  }
 }
 
 ///|
@@ -1111,7 +1127,7 @@ fn ceff(key : String, transform : String) -> @abi.Binding {
     value: @abi.Bool(false),
     source: @abi.Cli,
     scope: [],
-    link: 0,
+    levels_to_declaring_scope: 0,
     at_pos: None,
   }
 }
@@ -1410,7 +1426,7 @@ test "resolve_scope: accum × value_filters(each) — @abi.Unset placeholder is 
       value: @abi.Bool(false), // placeholder — unset carries no operand
       source: @abi.Cli,
       scope: [],
-      link: 0,
+      levels_to_declaring_scope: 0,
       at_pos: None,
     },
   ]
@@ -1459,7 +1475,7 @@ test "resolve_scope: accum × @abi.Unset opens the ladder to env when a lower so
       value: @abi.Bool(false),
       source: @abi.Cli,
       scope: [],
-      link: 0,
+      levels_to_declaring_scope: 0,
       at_pos: None,
     },
   ]
@@ -1498,7 +1514,7 @@ test "resolve_scope: accum × value_filters(each) — @abi.Unset does not disabl
       value: @abi.Bool(false),
       source: @abi.Cli,
       scope: [],
-      link: 0,
+      levels_to_declaring_scope: 0,
       at_pos: None,
     },
     cb("ports", @abi.Number(7.0), @abi.Cli, at_pos=Some(2)),
@@ -1524,7 +1540,7 @@ test "resolve_scope: accum × value_filters(each) — @abi.Unset does not disabl
       value: @abi.Bool(false),
       source: @abi.Cli,
       scope: [],
-      link: 0,
+      levels_to_declaring_scope: 0,
       at_pos: None,
     },
     cb("ports", @abi.Number(500.0), @abi.Cli, at_pos=Some(2)),
@@ -1610,7 +1626,7 @@ test "resolve_scope: an update transform's own arity rejection surfaces at runti
       value: @abi.Bool(false),
       source: @abi.Cli,
       scope: [],
-      link: 0,
+      levels_to_declaring_scope: 0,
       at_pos: None,
     },
   ]
@@ -1667,7 +1683,15 @@ fn merge_piece_bind(
   value : @abi.Value,
   pos : Int,
 ) -> @abi.Binding {
-  { key, op, value, source: @abi.Cli, scope: [], link: 0, at_pos: Some(pos) }
+  {
+    key,
+    op,
+    value,
+    source: @abi.Cli,
+    scope: [],
+    levels_to_declaring_scope: 0,
+    at_pos: Some(pos),
+  }
 }
 
 ///|
@@ -1948,7 +1972,7 @@ fn selected_marker(scope : Array[String]) -> @abi.Binding {
     value: @abi.Bool(false),
     source: @abi.Cli,
     scope,
-    link: 0,
+    levels_to_declaring_scope: 0,
     at_pos: None,
   }
 }

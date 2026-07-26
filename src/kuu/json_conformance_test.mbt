@@ -3780,7 +3780,7 @@ test "issue bool-parser-factory-unimplemented: bool_parser config の未知キ�
 /// 効果列で判定する」/ DR-030「実体 = 値セル」/ DR-093 §6「none の発火事実は ParserContext 層」)。
 /// 同一 pattern の 2 つの dd 要素 (trig_a / trig_b) が同じトークンに発火しうる 2 枝は、
 /// observable な result/effects が同一 ({rest: ["x"]}) なので 1 経路に dedup され @engine.Success になる。
-/// 修正前は placeholder の key 差 (trig_a vs trig_b) が strip_link 後の binding 配列比較に
+/// 修正前は placeholder の key 差 (trig_a vs trig_b) が strip_levels_to_declaring_scope 後の binding 配列比較に
 /// 混入して偽 @engine.Ambiguous になっていた (eval.mbt の dedup キー側だけ strip_none_placeholders を
 /// 通す修正で解消 — `eff` 本体は保持するので build_result / ParserContext 側は不変)。
 /// 標準 comparator (run_case) を通すことで「result に dd 名が漏れない」も同時に固定する。
@@ -3929,8 +3929,9 @@ test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が一�
 ///|
 /// @engine.Rooted-escape (global option) の completer 解決 pin: global option の値スロットは
 /// command 子 scope 内で消費されるが、その @engine.Entity は宣言元 (root) scope にしか存在しない
-/// (issue 2026-07-14-cand-completer-followup、実装過程で発見した @kuu.Candidate.link 機構 — `@abi.Binding.link`
-/// と同じ @engine.Rooted-escape カウンタが @kuu.Candidate にも必要だった)。子 scope 内の値スロット候補が正しく
+/// (issue 2026-07-14-cand-completer-followup、実装過程で発見した @kuu.Candidate.link 機構 —
+/// `@abi.Binding.levels_to_declaring_scope` と同じ @engine.Rooted-escape カウンタが @kuu.Candidate にも
+/// 必要だった)。子 scope 内の値スロット候補が正しく
 /// root 側の completer を引けることを固定する。
 test "DR-060 §4: global option の値スロット candidate は @engine.Rooted escape を跨いでも正しい completer を引く" {
   let src =

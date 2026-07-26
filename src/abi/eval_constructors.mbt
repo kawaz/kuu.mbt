@@ -35,7 +35,15 @@ pub fn Candidate::trigger(
 /// A non-set effect binding (default / unset / empty). The operand is a
 /// placeholder — these ops carry no operand (spec DR-045 table).
 pub fn Binding::effect(key : String, op : EffectOp, source : Source) -> Binding {
-  { key, op, value: Bool(false), source, scope: [], link: 0, at_pos: None }
+  {
+    key,
+    op,
+    value: Bool(false),
+    source,
+    scope: [],
+    levels_to_declaring_scope: 0,
+    at_pos: None,
+  }
 }
 
 ///|
@@ -48,7 +56,7 @@ pub fn Binding::action_marker(name : String, pos : Int) -> Binding {
     value: Number(pos.to_double()),
     source: Cli,
     scope: [],
-    link: 0,
+    levels_to_declaring_scope: 0,
     at_pos: None,
   }
 }

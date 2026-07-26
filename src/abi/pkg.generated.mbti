@@ -45,7 +45,7 @@ pub(all) struct Binding {
   value : Value
   source : Source
   scope : Array[String]
-  link : Int
+  levels_to_declaring_scope : Int
   at_pos : Int?
 } derive(Eq, @debug.Debug)
 pub fn Binding::action_marker(String, Int) -> Self

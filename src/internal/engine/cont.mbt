@@ -175,8 +175,9 @@ fn run_cont(
     KResumeScope(sc, pidx, severed, outer) =>
       scope_step(sc, ctx, pos, pidx, acc, severed, outer)
     KNest(label, is_cmd, start, outer) => {
-      // nest acc[start..] one level under `label` (link bindings escape,
-      // DR-042); acc[..start] predates the scope and passes through.
+      // nest acc[start..] one level under `label` (bindings with
+      // levels_to_declaring_scope > 0 escape, DR-042); acc[..start] predates the scope and passes
+      // through.
       let before : Array[Binding] = []
       let inside : Array[Binding] = []
       let mut i = 0

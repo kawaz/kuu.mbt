@@ -3,7 +3,7 @@ title: Binding.link の名前が実体を表しておらず、spec の link と�
 status: open
 category: design
 created: 2026-07-26T20:01:40+09:00
-last_read:
+last_read: 2026-07-26T22:48:57+09:00
 open_entered: 2026-07-26T20:01:40+09:00
 wip_entered:
 blocked_entered:
