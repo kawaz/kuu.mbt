@@ -75,7 +75,7 @@ pub(all) struct Candidate {
   hidden : Bool
   deprecated : Bool
   path : Array[String]
-  link : Int
+  levels_to_declaring_scope : Int
   fire_path : Array[String]
   completer : String?
 } derive(Eq, @debug.Debug)

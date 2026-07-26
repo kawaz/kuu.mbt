@@ -3929,9 +3929,9 @@ test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が一�
 ///|
 /// @engine.Rooted-escape (global option) の completer 解決 pin: global option の値スロットは
 /// command 子 scope 内で消費されるが、その @engine.Entity は宣言元 (root) scope にしか存在しない
-/// (issue 2026-07-14-cand-completer-followup、実装過程で発見した @kuu.Candidate.link 機構 —
-/// `@abi.Binding.levels_to_declaring_scope` と同じ @engine.Rooted-escape カウンタが @kuu.Candidate にも
-/// 必要だった)。子 scope 内の値スロット候補が正しく
+/// (issue 2026-07-14-cand-completer-followup、実装過程で発見した @kuu.Candidate.levels_to_declaring_scope
+/// 機構 — `@abi.Binding.levels_to_declaring_scope` と同じ @engine.Rooted-escape カウンタが
+/// @kuu.Candidate にも必要だった)。子 scope 内の値スロット候補が正しく
 /// root 側の completer を引けることを固定する。
 test "DR-060 §4: global option の値スロット candidate は @engine.Rooted escape を跨いでも正しい completer を引く" {
   let src =

@@ -209,26 +209,27 @@ fn nest_path(label : String, path : Array[String]) -> Array[String] {
 /// tracking Held already had, or the resulting Error's path is silently stuck at `[]`.
 ///
 /// Also mirrors `nest`'s `Binding.levels_to_declaring_scope` decrement (DR-060 §4 / issue
-/// 2026-07-14-cand-completer-followup): a candidate with `link > 0` (set by `Rooted`'s eval arm)
-/// is still escaping toward its declaring scope — this level's prepend is SKIPPED and the counter
-/// decremented instead, exactly like a linked Binding's `scope` field. Without this, a global
-/// option's value-slot candidate would accumulate the COPY-side scope path instead of the
-/// DECLARING scope's, and `complete_tree`'s `(path, origin)`-keyed completer lookup would miss
-/// the Entity (which lives only at the declaring scope).
+/// 2026-07-14-cand-completer-followup): a candidate with `levels_to_declaring_scope > 0` (set by
+/// `Rooted`'s eval arm) is still escaping toward its declaring scope — this level's prepend is
+/// SKIPPED and the counter decremented instead, exactly like a linked Binding's `scope` field.
+/// Without this, a global option's value-slot candidate would accumulate the COPY-side scope path
+/// instead of the DECLARING scope's, and `complete_tree`'s `(path, origin)`-keyed completer lookup
+/// would miss the Entity (which lives only at the declaring scope).
 ///
 /// `fire_path` (issue 2026-07-15-pending-parseerror-path-asymmetry) is prepended UNCONDITIONALLY,
-/// every call, regardless of `link` — it tracks the actual walk position (same rule `nest_path`
-/// applies to a Held's `ParseError.path`), never the Rooted-escape-adjusted `path`. This is what lets
-/// `missing_operand`'s KTop conversion (below) read a path that matches across every duplicate
-/// reading of the same starved slot (see `Candidate.fire_path`'s doc comment for why `link`-gating the
-/// KTop conversion instead doesn't work — `link` is always 0 by the time a candidate reaches KTop).
+/// every call, regardless of `levels_to_declaring_scope` — it tracks the actual walk position (same
+/// rule `nest_path` applies to a Held's `ParseError.path`), never the Rooted-escape-adjusted `path`.
+/// This is what lets `missing_operand`'s KTop conversion (below) read a path that matches across
+/// every duplicate reading of the same starved slot (see `Candidate.fire_path`'s doc comment for why
+/// `levels_to_declaring_scope`-gating the KTop conversion instead doesn't work —
+/// `levels_to_declaring_scope` is always 0 by the time a candidate reaches KTop).
 fn nest_cands(label : String, cs : Array[Candidate]) -> Array[Candidate] {
   let out : Array[Candidate] = []
   for c in cs {
-    if c.link > 0 {
+    if c.levels_to_declaring_scope > 0 {
       out.push({
         ..c,
-        link: c.link - 1,
+        levels_to_declaring_scope: c.levels_to_declaring_scope - 1,
         fire_path: nest_path(label, c.fire_path),
       })
     } else {
@@ -521,8 +522,9 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
           }
           Held(pe, bs) => out.push(Held(pe, bs))
           Pending(cs, bs) => {
-            // Mirror the Accept arm's `link: depth` marking, but on Candidate.link (DR-060 §4 /
-            // issue 2026-07-14-cand-completer-followup): a global option's copied satellite
+            // Mirror the Accept arm's `levels_to_declaring_scope: depth` marking, but on
+            // `Candidate.levels_to_declaring_scope` (DR-060 §4 / issue
+            // 2026-07-14-cand-completer-followup): a global option's copied satellite
             // lives `depth` scopes below its OWN declaring scope, and its Entity (the one
             // `complete_tree`'s completer lookup needs) sits at that declaring scope, not
             // here — `nest_cands` (below) consumes this exactly like `nest` consumes
@@ -530,7 +532,7 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
             // prepends on the way out.
             let marked : Array[Candidate] = []
             for c in cs {
-              marked.push({ ..c, link: depth })
+              marked.push({ ..c, levels_to_declaring_scope: depth })
             }
             out.push(Pending(marked, bs))
           }
@@ -2796,16 +2798,17 @@ pub fn parse_tree(
         // it is also the one place that needs to carry the path across.
         //
         // issue 2026-07-15-pending-parseerror-path-asymmetry: uses `c.fire_path`, NOT `c.path`.
-        // `path` carries the Rooted-escape adjustment (`link`) `complete_tree`'s completer lookup
-        // needs, which is the WRONG path for this conversion — a global option's value-slot
-        // candidate copied into a descendant command scope reports the DECLARING scope's path via
-        // `path` (by design, for completion), but `missing_operand` needs the scope it was actually
-        // READ under (DR-066 §4's "発火時の動的パス"). Using `path` here produced 2-3 duplicate
-        // errors for the SAME starved slot (one per re-evaluation the CPS walk performs — root-copy,
-        // any mid-nesting re-entry, and the innermost read), each with a DIFFERENT (and mostly wrong)
-        // path, because `link`'s escape bookkeeping diverges per candidate while `fire_path` does
-        // not. `fire_path` (`Candidate.fire_path` doc comment) is prepended unconditionally by every scope
-        // boundary regardless of `link`, so every duplicate reading of the SAME starved slot carries
+        // `path` carries the Rooted-escape adjustment (`levels_to_declaring_scope`)
+        // `complete_tree`'s completer lookup needs, which is the WRONG path for this conversion — a
+        // global option's value-slot candidate copied into a descendant command scope reports the
+        // DECLARING scope's path via `path` (by design, for completion), but `missing_operand` needs
+        // the scope it was actually READ under (DR-066 §4's "発火時の動的パス"). Using `path` here
+        // produced 2-3 duplicate errors for the SAME starved slot (one per re-evaluation the CPS walk
+        // performs — root-copy, any mid-nesting re-entry, and the innermost read), each with a
+        // DIFFERENT (and mostly wrong) path, because `levels_to_declaring_scope`'s escape bookkeeping
+        // diverges per candidate while `fire_path` does not. `fire_path` (`Candidate.fire_path` doc
+        // comment) is prepended unconditionally by every scope boundary regardless of
+        // `levels_to_declaring_scope`, so every duplicate reading of the SAME starved slot carries
         // the SAME `fire_path` — `push_error`'s dedup (element, args_pos, kind, reason, path) then
         // collapses them to the single correct entry instead of leaving path-mismatched duplicates.
         for c in cands {

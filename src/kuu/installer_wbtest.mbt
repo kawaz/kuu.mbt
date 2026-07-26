@@ -4219,14 +4219,16 @@ test "parse_definition: in_range keeps canonical-number bounds, length_range acc
 /// 併存していた (depth 2 の nested command では 3 件併存することも実証済み)。
 ///
 /// 検証で判明した重要事実 (adversarial マトリクス、この wbtest 追加前に実施): 提案されていた
-/// 修正案 A (KTop 変換で `c.link > 0` の候補を除外) は **前提が成立しない** — `nest_cands`
-/// (eval.mbt) は @engine.CommandSatisfied 境界を 1 回跨ぐごとに `link` を必ず 1 減算するため、`depth` 段の境界を
-/// 全て通過した時点で `link` は必ず 0 になる。実機確認 (`c.link` を dump) で、KTop に届く
-/// 全候補が既に `link=0` であることを確認済み — 「`link>0` を除外する」条件は何も除外しない
-/// no-op であり、`path=[]` の誤った候補は `link=0` のまま生き残ってしまう。
+/// 修正案 A (KTop 変換で `c.levels_to_declaring_scope > 0` の候補を除外) は **前提が成立しない** —
+/// `nest_cands` (eval.mbt) は @engine.CommandSatisfied 境界を 1 回跨ぐごとに `levels_to_declaring_scope`
+/// を必ず 1 減算するため、`depth` 段の境界を全て通過した時点で `levels_to_declaring_scope` は必ず 0
+/// になる。実機確認 (`c.levels_to_declaring_scope` を dump) で、KTop に届く全候補が既に
+/// `levels_to_declaring_scope=0` であることを確認済み —
+/// 「`levels_to_declaring_scope>0` を除外する」条件は何も除外しない no-op であり、`path=[]` の誤った
+/// 候補は `levels_to_declaring_scope=0` のまま生き残ってしまう。
 ///
 /// 採用した修正 (案 B): `@abi.Candidate` に `fire_path` (`@abi.Candidate.fire_path` の doc comment 参照) を新設し、
-/// `nest_cands` で `link` の値に関わらず無条件に prepend する (@abi.Held の `@abi.ParseError.path` と同じ
+/// `nest_cands` で `levels_to_declaring_scope` の値に関わらず無条件に prepend する (@abi.Held の `@abi.ParseError.path` と同じ
 /// 「発火時 walk 位置」の意味論)。`missing_operand` への変換 (eval.mbt KTop) は `c.path` ではなく
 /// `c.fire_path` を使う — 同じ starve を複数回観測した候補は全て同じ `fire_path` を持つため、
 /// `push_error` の (element, args_pos, kind, reason, path) dedup が自然に 1 件へ収束する。

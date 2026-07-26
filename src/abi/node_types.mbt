@@ -84,28 +84,29 @@ pub(all) struct Candidate {
   // cannot express "skip N prepends" — `nest_cands` (eval.mbt) consumes this exactly like
   // `nest`'s own `Binding.levels_to_declaring_scope` decrement, so the two stay in lockstep. `0`
   // (the common case) = no pending escape, prepend normally. NOT part of the 6-field dedup identity
-  // or the wire
-  // projection (same posture as `path` itself, DR-104 §2/§3) — purely an implementation detail of
-  // `complete_tree`'s completer lookup (outcome.mbt).
-  link : Int
+  // or the wire projection (same posture as `path` itself, DR-104 §2/§3) — purely an implementation
+  // detail of `complete_tree`'s completer lookup (outcome.mbt).
+  levels_to_declaring_scope : Int
   // issue 2026-07-15-pending-parseerror-path-asymmetry (DR-066 §4): the FIRE-TIME walk-position
   // path — root-first ancestor scope names, prepended UNCONDITIONALLY as the branch rides out
   // through each CommandSatisfied boundary (`nest_path`, the SAME no-exception rule a Held's `ParseError.path`
   // already follows). Deliberately a SEPARATE field from `path` above: `path`'s Rooted-escape skip
-  // (`link`) answers "where does complete_tree's completer lookup find this candidate's declaring
-  // Entity" (a completion-only question), while `fire_path` answers "which scope was this candidate
-  // actually read under" (the question `missing_operand`'s `ParseError.path` needs, DR-066 §4's own
-  // "発火時の動的パス" wording). Adversarial verification (installer_wbtest.mbt debug probes, this
-  // issue) found `link` is ALWAYS 0 by the time a Pending reaches KTop — a Rooted candidate's escape
-  // counter is fully consumed by the SAME CommandSatisfied boundaries `path` needs prepended, so gating KTop's
-  // conversion on `c.link > 0` (the originally proposed fix) is a no-op: nothing is ever excluded,
-  // and the wrong-path duplicate survives with `link` already 0. `fire_path` sidesteps the escape
-  // bookkeeping entirely by tracking the walk position directly, so KTop's missing_operand conversion
-  // reads THIS field instead of `path` — every duplicate reading of the same starved slot (root-copy,
-  // mid-scope re-evaluation, or the correct innermost one) ends up with the SAME `fire_path` (they
-  // all fired at the same token position under the same walk), so `push_error`'s 5-field dedup
-  // collapses them to one instead of leaving path-mismatched duplicates. NOT part of the 6-field dedup
-  // identity or the wire projection (same posture as `path`/`link` — purely an internal routing aid).
+  // (`levels_to_declaring_scope`) answers "where does complete_tree's completer lookup find this
+  // candidate's declaring Entity" (a completion-only question), while `fire_path` answers "which
+  // scope was this candidate actually read under" (the question `missing_operand`'s
+  // `ParseError.path` needs, DR-066 §4's own "発火時の動的パス" wording). Adversarial verification
+  // (installer_wbtest.mbt debug probes, this issue) found `levels_to_declaring_scope` is ALWAYS 0 by
+  // the time a Pending reaches KTop — a Rooted candidate's escape counter is fully consumed by the
+  // SAME CommandSatisfied boundaries `path` needs prepended, so gating KTop's conversion on
+  // `c.levels_to_declaring_scope > 0` (the originally proposed fix) is a no-op: nothing is ever
+  // excluded, and the wrong-path duplicate survives with `levels_to_declaring_scope` already 0.
+  // `fire_path` sidesteps the escape bookkeeping entirely by tracking the walk position directly, so
+  // KTop's missing_operand conversion reads THIS field instead of `path` — every duplicate reading of
+  // the same starved slot (root-copy, mid-scope re-evaluation, or the correct innermost one) ends up
+  // with the SAME `fire_path` (they all fired at the same token position under the same walk), so
+  // `push_error`'s 5-field dedup collapses them to one instead of leaving path-mismatched duplicates.
+  // NOT part of the 6-field dedup identity or the wire projection (same posture as
+  // `path`/`levels_to_declaring_scope` — purely an internal routing aid).
   fire_path : Array[String]
   // DR-060 §3 "値位置: 型情報 + completer 名" / DR-104 §2/§3: the dynamic completer name for a
   // VALUE-position candidate (`is_value:true`); always `None` on an exact-trigger candidate (DR-060

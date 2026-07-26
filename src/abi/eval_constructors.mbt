@@ -23,7 +23,7 @@ pub fn Candidate::trigger(
     hidden,
     deprecated,
     path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CommandSatisfied)
-    link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
+    levels_to_declaring_scope: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
     fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: same "starts empty, scope
     // boundaries prepend unconditionally" posture as `path`/Held's own `ParseError.path` (`nest_path`
     // in `nest_cands`) — this is the exact-trigger sibling of `pending_value_candidate`'s same field, kept in sync.
@@ -75,7 +75,7 @@ pub fn Candidate::pending_value(ty : String, origin : String) -> Candidate {
     hidden: false,
     deprecated: false,
     path: [], // DR-066 §4: prepended by scope boundaries on the way out (nest_branches / CommandSatisfied)
-    link: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
+    levels_to_declaring_scope: 0, // no pending Rooted-escape at construction (Rooted's own eval arm sets this)
     fire_path: [], // issue 2026-07-15-pending-parseerror-path-asymmetry: `Candidate.fire_path`'s doc
     // comment — the fire-time walk-position path a `missing_operand` ParseError conversion needs,
     // tracked independently of `path`'s Rooted-escape (`link`) bookkeeping.
