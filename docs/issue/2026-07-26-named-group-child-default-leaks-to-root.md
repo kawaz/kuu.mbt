@@ -1,11 +1,11 @@
 ---
 title: named group positional child の default 席が root scope に漏れる
-status: open
+status: wip
 category: bug
 created: 2026-07-26T22:23:57+09:00
 last_read: 2026-07-27T02:26:41+09:00
 open_entered: 2026-07-26T22:23:57+09:00
-wip_entered:
+wip_entered: 2026-07-27T02:29:35+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
@@ -43,3 +43,5 @@ or/seq child の literal 実装 (2026-07-26) では `ensure_entity_body` を ski
 ## TODO
 
 <!-- wip 時のみ -->
+
+調査方針: DR-051/DR-121 に従い、0 fire は xs=[] の accumulator default 席のみ、1+ fire は named child を wrapper 配下で解決する。root scope への child default 解決を止め、wbtest + spec fixture で 0/1/2 row と partial row を固定する。
