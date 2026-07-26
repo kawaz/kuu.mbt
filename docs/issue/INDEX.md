@@ -17,3 +17,6 @@
 | 2026-07-26 | bug | open | [link-source-tag-cli-collapse](./2026-07-26-link-source-tag-cli-collapse.md) | link を独立した値源タグとして報告する (現状 cli に畳んでいる、DR-121 §4 未追随) |
 | 2026-07-26 | design | open | [binding-link-name-collision](./2026-07-26-binding-link-name-collision.md) | Binding.link の名前が実体 (global escape 残段数) を表さず、spec の link (属性/source) と衝突している |
 | 2026-07-26 | bug | open | [nameless-seq-accum-source-default](./2026-07-26-nameless-seq-accum-source-default.md) | nameless child を畳む accumulator が発火しても sources が default のまま |
+| 2026-07-26 | bug | open | [value-default-unimplemented-root-positions](./2026-07-26-value-default-unimplemented-root-positions.md) | value:/default_fn 以外の位置 — option root / positional / command node の value: が全面未実装 |
+| 2026-07-26 | design | open | [dec-or-leaf-remaining-node-keys](./2026-07-26-dec-or-leaf-remaining-node-keys.md) | dec_or_leaf の残余キー同型化の棚卸し (repeat/multiple/optional が最優先、DR-067 §2 直接規定) |
+| 2026-07-26 | bug | open | [named-group-child-default-leaks-to-root](./2026-07-26-named-group-child-default-leaks-to-root.md) | named group positional child の default 席が root scope に漏れる |
