@@ -1443,6 +1443,50 @@ test "front_door.output: unset 発火の値源は default (parse-only 経路、D
 }
 
 ///|
+/// `wbtest_view_of` の変種: `sources` は **どの結果キーが席を持つか** の集合だけを見る (値源
+/// タグも path も落とす)。`repeat` 配下の断面は sources の path に index segment (`#k`) が
+/// 現れるが、配列要素の provenance addressing は spec 側の未裁定事項なので、内部セルの除外を
+/// 見るだけの pin がその綴りに依存しないようにする。
+///
+/// キーは「席の葉」だけを取る — `grp.#0.gflag` なら `gflag`。除外を見るには「その名前の席が
+/// 在るか / 無いか」で足り、どこに在るかは `result` 側 (同じ関数が返す) が語る。
+fn wbtest_view_keys_of(src : String, args : Array[String]) -> String raise {
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition should accept the definition")
+      panic()
+    }
+  }
+  let parsed = parse_legacy(ast, args)
+  let resolved = resolve_legacy(ast, parsed, args)
+  let effects = match resolved {
+    @engine.Success(bindings) => bindings
+    other => {
+      fail("should resolve, got " + render_outcome(other))
+      panic()
+    }
+  }
+  let view = output_legacy(ast, effects~)
+  let src_items : Array[String] = []
+  for entry in view.sources {
+    src_items.push(entry.key)
+  }
+  test_sort_items(src_items)
+  let eff_items : Array[String] = []
+  for effect in view.effects {
+    eff_items.push(effect.entity)
+  }
+  test_sort_items(eff_items)
+  "result=" +
+  render_rval_sorted(view.result) +
+  " source-keys=" +
+  test_join_comma(src_items) +
+  " effects=" +
+  test_join_comma(eff_items)
+}
+
+///|
 /// `body` (options/positionals の JSON 断片) を 1 段の command scope で包む。`export_key` は
 /// `None` = 指定なし (identity) / `Some("\"sv\"")` = rename / `Some("null")` = 透過。
 fn wbtest_under_command(body : String, export_key : String?) -> String {
@@ -1552,7 +1596,10 @@ test "front_door.output: 値セル自身が rename された none も 3 面か�
 /// いなかった頃は `pr.touch` / `grp.#0.touch` が 3 面すべてに漏れていた)。
 ///
 /// `repeat` 配下は発火ごとに `grp/#0`, `grp/#1` … と別 path になるが、席は `grp` の 1 つ —
-/// 照合前に index segment を落とすことで、どの発火でも同じ席に当たる。
+/// 照合前に index segment を落とすことで、どの発火でも同じ席に当たる。ただし **index segment
+/// が結果面にどう出るか (出るか否かを含む) は spec 側の未裁定事項** (配列要素の provenance
+/// addressing、`docs/issue/2026-07-26-array-element-provenance-sources-addressing.md`) なので、
+/// この pin は `wbtest_view_keys_of` で席の集合だけを見て綴りに依存しない。
 test "front_door.output: named seq / or / repeat 配下の none も 3 面から消える (DESIGN §2.3/§2.4, DR-043)" {
   let seq_renamed =
     #|{"options":[{"name":"pair","export_key":"pr","long":true,"seq":[
@@ -1577,12 +1624,14 @@ test "front_door.output: named seq / or / repeat 配下の none も 3 面から�
     wbtest_view_of(or_seq, ["--mode", "a", "b"]),
     "result={mode={keep=b}} sources=mode.keep=cli effects=keep",
   )
+  // `repeat` 配下は sources の path に index segment が現れるが、その綴りは未裁定 (下記) なので
+  // 席の集合だけを見る。
   let repeat =
     #|{"positionals":[{"name":"grp","repeat":{"min":1,"max":2},"positionals":[
     #|  {"name":"touch","type":"none"},{"name":"gflag","type":"string"}]}]}
   assert_eq(
-    wbtest_view_of(repeat, ["a", "b"]),
-    "result={grp=[{gflag=b}]} sources=grp.#0.gflag=cli effects=gflag",
+    wbtest_view_keys_of(repeat, ["a", "b"]),
+    "result={grp=[{gflag=b}]} source-keys=gflag effects=gflag",
   )
 }
 
