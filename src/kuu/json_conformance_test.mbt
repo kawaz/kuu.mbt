@@ -2367,35 +2367,7 @@ fn known_divergences() -> Array[String] {
   //   - help_query capability の runner dispatch 化 (現在 @kuu.help 直呼び)。
   //   - types 集約射影 + type_ref + used_as (value-structure-and-types.json は decode skip 継続)。
   //   - fixed default_fn の default 席射影 (P2H-Q3 裁定に沿った dynamic default_fn は model 非搭載)。
-  [
-    // ── 構造 or の結果スコープ (fixture-authoring issue、裁定待ち) ───────────────────────
-    // 下記 4 fixture は「name を持つ option/positional に `or` を直書きすると、枝の leaf が
-    // **親の結果スコープへ平坦に**露出する」を pin している (MDR-004 §3 がその実装挙動を
-    // 追認して書かれた)。しかし spec 側の規定はいずれも「name が 1 段の結果スコープを作る」で、
-    // 平坦露出を支持する規定は存在しない:
-    //   - DESIGN §2.3 / DR-025「name を持つノード = 結果スコープを作る」
-    //   - DR-025 の --color 4 パターン表 A/C/D (`color: [n,n,n]|string` / `color: {rgb}|{name}`)
-    //   - DESIGN §1.2「`or` / `seq` キーは name / multiple / value_name 等と同居可能」
-    //     (平坦モデルでは or 親の `multiple` / `default` / `export_key` が全て無言で死ぬ)
-    //   - DR-052 §3 スコープ生成要素の presence marker
-    //   - DR-007 / DR-078: 同じ or body を `ref` テンプレ経由で書くと現状でも `{color:{cname:…}}`
-    //     と 1 段ネストする — 直書きと ref で結果形が割れている
-    //   - DR-070 §1b「golden fixture は仕様の正本であり、参照実装の現状挙動の写しではない」
-    // required-structural-or-branch.json の `why` 自身が「DR-025 の C 型と字面上食い違って
-    // 見えるが既存 fixture が pin している実装挙動」「必要なら別途整合を issue 化する」と
-    // 未解決を明記している。実装を spec (ネスト) 側へ寄せ、4 fixture の期待値更新を
-    // 裁定待ちとして凍結する。
-    "constraints-parse/required-group-structural-or-branch.json::int-branch-satisfies-group :: result got={level={num=5}} want={num=5}",
-    "constraints-parse/required-group-structural-or-branch.json::bool-branch-satisfies-group :: result got={level={flag=true}} want={flag=true}",
-    "constraints-parse/required-structural-or-branch.json::int-branch-supplied :: result got={level={num=5}} want={num=5}",
-    "constraints-parse/required-structural-or-branch.json::bool-branch-supplied :: result got={level={flag=true}} want={flag=true}",
-    "path-search/variable-arity-ambiguous.json::color-arity-vs-name-receptacle :: interpretations got=[{color={b=0,g=0,r=255},rest=[]},{color={name=255},rest=[0,0]}] want=[{b=0,g=0,r=255,rest=[]},{name=255,rest=[0,0]}]",
-    "path-search/variable-arity-ambiguous.json::non-number-collapses-to-name :: result got={color={name=red},rest=[]} want={name=red,rest=[]}",
-    "value-typing/or-leaf-factory-config.json::bool-dialect-or-leaf-carries-true :: result got={switch={switch_bool=true}} want={switch_bool=true}",
-    "value-typing/or-leaf-factory-config.json::bool-dialect-or-leaf-carries-false :: result got={switch={switch_bool=false}} want={switch_bool=false}",
-    "value-typing/or-leaf-factory-config.json::bool-dialect-or-leaf-fallback-to-int-branch :: result got={switch={switch_n=5}} want={switch_n=5}",
-    "value-typing/or-leaf-factory-config.json::base-prefix-or-leaf-carries :: result got={addr={addr_hex=16}} want={addr_hex=16}",
-  ]
+  []
 }
 
 ///|
