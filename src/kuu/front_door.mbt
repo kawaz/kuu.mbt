@@ -676,6 +676,17 @@ fn project_effects(
       ) {
       continue
     }
+    // CONFORMANCE §2「effects に載るのは cli / link 由来のパース時効果のみ」(DR-065): 値源ラダー
+    // 充填 (env / config / inherit / default) は完走後の値確定で args 順の全順序を持たないため
+    // effects には載せず、値は `result`、由来は `sources` が担う。パース相の binding は従来すべて
+    // cli 由来だったのでこの gate は不要だったが、消費 0 literal (DESIGN §5.2、`literal_value`) が
+    // **パース相に現れる default 由来の binding** という初のケースになった — 宣言された固定値で
+    // あってユーザ操作ではないので、他のラダー充填と同じくここで落とす。
+    // (`unset` variant の効果はこの gate を通る: パース相での source は発火した入口の `cli` で、
+    // `default` への読み替えは `result_sources` の射影が行う。)
+    if binding.source is @abi.Default {
+      continue
+    }
     effects.push(projected_effect(ast, binding, current))
   }
   effects
