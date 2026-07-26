@@ -1,6 +1,6 @@
 ---
 title: link を独立した値源タグとして報告する (現状 cli に畳んでいる、DR-121 §4 未追随)
-status: open
+status: resolved
 category: bug
 created: 2026-07-26T18:30:24+09:00
 last_read: 2026-07-26T23:17:25+09:00
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-27T00:38:48+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented","done:commit 4f5663fa/59606d03/9feed9fa (+ Const 079a1ee8)","done:受け入れ条件3件 (canonical=cli / link入口=link / あと勝ち両順) + export_key アドレスを wbtest + spec fixtures/link-parse (3本) で pin, kuu-cli 656/656 green","split:issue/2026-07-27-link-fixed-path-dsl-unimplemented","split:issue/2026-07-27-ref-link-structural-body-gate"]
 blocked_by:
 origin: 自リポ TODO
 ---
