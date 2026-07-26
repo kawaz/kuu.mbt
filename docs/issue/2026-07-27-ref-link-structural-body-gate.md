@@ -36,6 +36,13 @@ key==entry name 一致で target へ写せない。
 - (a) 単一 leaf の参照側 wrapper scope 除去 + leaf identity から target への route
 - (b) 複合 ref/or/seq 用に複数 child Binding を 1 つの target 値として運ぶ
   aggregate carrier 設計 (単純な全 Binding rename は操作列/結果型を壊す)
+- (c) nameless wrapper accumulator の source 射影では、composite link
+  routing と同じ座で wrapper の発火 carrier を Link 化する。
+  `resolve.mbt` の `accum_cell_fire_source` は現在 `#row` source を採るが、
+  `bindings_through_link` は internal marker を Link 化しないため、gate を
+  解除するだけでは cli 誤報になる。canonical/link の混在順序 (canonical の
+  後に link なら link、link の後に canonical なら cli) を、1 fire/複数 fire
+  でテストする。
 
 両系統の実装後、ref+link invalid-range wbtest を合法成功テストへ置換する。
 
@@ -45,6 +52,9 @@ key==entry name 一致で target へ写せない。
 
 - [ ] 単一 leaf 参照側の wrapper scope 除去 + leaf identity → target route が実装されている (解除条件 a)
 - [ ] 複合 ref/or/seq 用の aggregate carrier 設計が実装されている (解除条件 b)
+- [ ] nameless wrapper accumulator の発火 carrier Link 化 (`accum_cell_fire_source` /
+  `bindings_through_link`) が実装され、canonical/link 混在順序・1 fire/複数 fire で
+  テストされている (解除条件 c)
 - [ ] ref+link の invalid-range wbtest が合法成功テストへ置換されている
 
 ## TODO
