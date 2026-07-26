@@ -521,19 +521,23 @@ fn collect_config_file_cells(
 /// 値セルであって露出パスではない) なので、席も宣言名のまま持つ engine の `@engine.NoneCell` /
 /// `ConfigFileCell` と照合する。露出キー軸で除外する `result` / `sources` 側
 /// (`internal_cells`) とは軸が違うので、両者を混ぜてはいけない。
+///
+/// 席の path に index segment (`#k`) が入らないのは `is_internal_cell` と同じ理由 (席は
+/// 「どのセルか」であって「何番目の発火か」ではない) なので、照合前に落とす。
 fn output_internal_cell(
   path : Array[String],
   name : String,
   none_cells : Array[@engine.NoneCell],
   config_file_cells : Array[ConfigFileCell],
 ) -> Bool {
+  let seat = drop_index_segments(path)
   for cell in none_cells {
-    if cell.name() == name && path_eq(cell.path(), path) {
+    if cell.name() == name && path_eq(cell.path(), seat) {
       return true
     }
   }
   for cell in config_file_cells {
-    if cell.name == name && path_eq(cell.path, path) {
+    if cell.name == name && path_eq(cell.path, seat) {
       return true
     }
   }

@@ -1263,6 +1263,59 @@ fn wbtest_sources_of(src : String, args : Array[String]) -> String raise {
 }
 
 ///|
+/// OutputView の 3 面 (`result` / `sources` / `effects`) を 1 本の文字列へ整形する。内部セル
+/// (none / config_file / dd trigger) の除外は 3 面すべてに掛かるので、1 面だけ見る
+/// `wbtest_sources_of` では片面の regression を取り逃がす — 除外系の pin はこちらを使う。
+fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition should accept the definition")
+      panic()
+    }
+  }
+  let parsed = parse_legacy(ast, args)
+  let resolved = resolve_legacy(ast, parsed, args)
+  let effects = match resolved {
+    @engine.Success(bindings) => bindings
+    other => {
+      fail("should resolve, got " + render_outcome(other))
+      panic()
+    }
+  }
+  let view = output_legacy(ast, effects~)
+  let src_items : Array[String] = []
+  for entry in view.sources {
+    let mut key = ""
+    for segment in entry.path {
+      key = key + segment + "."
+    }
+    key = key + entry.key
+    let label = match entry.source {
+      @abi.Cli => "cli"
+      @abi.Env => "env"
+      @abi.Config => "config"
+      @abi.Inherit => "inherit"
+      @abi.Tty => "tty"
+      @abi.Default => "default"
+    }
+    src_items.push(key + "=" + label)
+  }
+  test_sort_items(src_items)
+  let eff_items : Array[String] = []
+  for effect in view.effects {
+    eff_items.push(effect.entity)
+  }
+  test_sort_items(eff_items)
+  "result=" +
+  render_rval_sorted(view.result) +
+  " sources=" +
+  test_join_comma(src_items) +
+  " effects=" +
+  test_join_comma(eff_items)
+}
+
+///|
 /// 保証 (DR-052 §1 結果キー軸 / DR-109 §3 値の出所): `sources` のキーは **result と同じ露出キー
 /// 体系**で並ぶ — 定義が command を持つかどうかで軸が変わらない。`export-key/rename-flag-default.json`
 /// が射影後キーの直接 pin (cell name `verbose` に対し `sources: {"v": "cli"}`)、
@@ -1359,25 +1412,6 @@ test "front_door.output: named or の結果スコープ path は command 無し�
 }
 
 ///|
-/// U4 (DR-043 repeat × DR-025 name scope): `repeat` が運ぶ index segment (`#k`) は結果スコープを
-/// 作らない配列添字だが、`walk_export_path` が素通しするので sources の path には現れる
-/// (`grp.#0.gflag`)。result 側は `{"grp":[{"gflag":..},..]}` の配列なので、この `#k` は
-/// 「配列の何番目の要素の席か」を一意化する情報として意味を持つ (同じ `gflag` が 2 席あるのを
-/// 区別できる唯一の軸)。ここでも command の有無で変わらない。
-test "front_door.output: repeat の index segment が sources の path に載る (command 無しでも)" {
-  let body =
-    #|"positionals":[{"name":"grp","repeat":{"min":1,"max":2},
-    #|  "positionals":[{"name":"gflag","type":"string"}]}]
-  let no_command = "{" + body + "}"
-  let with_command = "{" +
-    body +
-    ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
-  let want = "grp.#0.gflag=cli,grp.#1.gflag=cli"
-  assert_eq(wbtest_sources_of(no_command, ["a", "b"]), want)
-  assert_eq(wbtest_sources_of(with_command, ["a", "b"]), want)
-}
-
-///|
 /// U5 (DR-045「default 値へ戻す... committed=false」): `unset` variant の発火は CLI 由来だが
 /// 値としては未確定 (ラダーの再着席結果は "as if untouched") なので、`sources` は発火トークン
 /// 自身の `cli` ではなく `default` を報告する。ラダーを走らせない parse-only 経路
@@ -1409,83 +1443,145 @@ test "front_door.output: unset 発火の値源は default (parse-only 経路、D
 }
 
 ///|
+/// `body` (options/positionals の JSON 断片) を 1 段の command scope で包む。`export_key` は
+/// `None` = 指定なし (identity) / `Some("\"sv\"")` = rename / `Some("null")` = 透過。
+fn wbtest_under_command(body : String, export_key : String?) -> String {
+  let label = match export_key {
+    None => ""
+    Some(v) => ",\"export_key\":" + v
+  }
+  "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\"" +
+  label +
+  "," +
+  body +
+  "}]}"
+}
+
+///|
 /// 内部セル (DR-089 §3 `type: "none"` / DR-050 `type: "config_file"` / DR-093 §2 dd trigger) は
-/// 結果にも由来にも現れない。除外の席は `result` / `sources` とも **露出キー軸** で同定するので、
-/// scope ラベルの export_key に依らず効く — identity (`name` のみ) / renamed (`export_key: "sv"`)
-/// / transparent (`export_key: null`) の 3 境界を対にして pin する。
-/// 席を宣言名のまま持っていた頃は renamed / transparent で除外が外れ、`sv.touch` が result にも
-/// sources にも漏れていた (identity だけ偶然一致していた)。
-test "front_door.output: none セルは scope rename の 3 境界すべてで result/sources に出ない (DR-089 §3)" {
+/// **結果 / 由来 / 効果のどれにも現れない**。除外は `result` / `sources` が露出キー軸
+/// (`internal_cells`)、`effects` が宣言名軸 (`output_internal_cell`) と別々の席で行うので、
+/// 3 面すべてを 1 本の pin で見る (1 面だけ見ると片面の regression を取り逃がす)。
+///
+/// scope ラベルの export_key 3 境界 — identity (`name` のみ) / renamed (`export_key: "sv"`) /
+/// transparent (`export_key: null`) — で不変。席を宣言名のまま持っていた頃は renamed /
+/// transparent で除外が外れ、`sv.touch` が result にも sources にも漏れていた。
+test "front_door.output: none セルは scope rename の 3 境界すべてで 3 面から消える (DR-089 §3)" {
   let body =
     #|"options":[{"name":"touch","type":"none","long":true},
     #|           {"name":"keep","type":"flag","long":true,"export_key":"k"}]
-  let identity = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\"," +
-    body +
-    "}]}"
-  let renamed = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":\"sv\"," +
-    body +
-    "}]}"
-  let transparent = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":null," +
-    body +
-    "}]}"
   let args = ["serve", "--touch", "--keep"]
-  assert_eq(wbtest_sources_of(identity, args), "serve.k=cli")
-  assert_eq(wbtest_sources_of(renamed, args), "sv.k=cli")
-  assert_eq(wbtest_sources_of(transparent, args), "k=cli")
+  assert_eq(
+    wbtest_view_of(wbtest_under_command(body, None), args),
+    "result={serve={k=true}} sources=serve.k=cli effects=keep",
+  )
+  assert_eq(
+    wbtest_view_of(wbtest_under_command(body, Some("\"sv\"")), args),
+    "result={sv={k=true}} sources=sv.k=cli effects=keep",
+  )
+  assert_eq(
+    wbtest_view_of(wbtest_under_command(body, Some("null")), args),
+    "result={k=true} sources=k=cli effects=keep",
+  )
 }
 
 ///|
 /// 同上の `config_file` 版 (DR-050: 値は config provider を解決する PATH であって利用者向けの
-/// 結果ではない)。`none` と同じ席 (`internal_cells`) で除外されることを 3 境界で pin する。
-test "front_door.output: config_file セルは scope rename の 3 境界すべてで sources に出ない (DR-050)" {
+/// 結果ではない)。`none` と違い engine の値空間なしセルではない (`Entity.is_config_file` の別軸)
+/// ので、席の収集経路も別。
+test "front_door.output: config_file セルは scope rename の 3 境界すべてで 3 面から消える (DR-050)" {
   let body =
     #|"options":[{"name":"cfg","type":"config_file","long":true,"default":"/app.toml"},
     #|           {"name":"keep","type":"flag","long":true}]
-  let identity = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\"," +
-    body +
-    "}]}"
-  let renamed = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":\"sv\"," +
-    body +
-    "}]}"
-  let transparent = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":null," +
-    body +
-    "}]}"
   let args = ["serve", "--keep"]
-  assert_eq(wbtest_sources_of(identity, args), "serve.keep=cli")
-  assert_eq(wbtest_sources_of(renamed, args), "sv.keep=cli")
-  assert_eq(wbtest_sources_of(transparent, args), "keep=cli")
+  assert_eq(
+    wbtest_view_of(wbtest_under_command(body, None), args),
+    "result={serve={keep=true}} sources=serve.keep=cli effects=keep",
+  )
+  assert_eq(
+    wbtest_view_of(wbtest_under_command(body, Some("\"sv\"")), args),
+    "result={sv={keep=true}} sources=sv.keep=cli effects=keep",
+  )
+  assert_eq(
+    wbtest_view_of(wbtest_under_command(body, Some("null")), args),
+    "result={keep=true} sources=keep=cli effects=keep",
+  )
 }
 
 ///|
 /// 同上の dd trigger 版 (DR-093 §2/§7: `--` の trigger element は値空間を持たない)。dd trigger は
-/// entity ではなく greedy 側のノードが運ぶので、`Scope.entities` を見るだけでは席が拾えない
-/// (`@engine.dd_element_names` が直下分を返す)。
-test "front_door.output: dd trigger は scope rename の 3 境界すべてで sources に出ない (DR-093 §2)" {
+/// entity ではなく `greedy` 側のノードが運ぶので、`Scope.entities` の走査では席が拾えない。
+test "front_door.output: dd trigger は scope rename の 3 境界すべてで 3 面から消える (DR-093 §2)" {
   let body =
     #|"options":[{"name":"--","type":"dd","export_key":"marker"}],
     #|"positionals":[{"name":"x","type":"string"}]
-  let identity = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\"," +
-    body +
-    "}]}"
-  let renamed = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":\"sv\"," +
-    body +
-    "}]}"
-  let transparent = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":null," +
-    body +
-    "}]}"
   let args = ["serve", "--", "-v"]
-  assert_eq(wbtest_sources_of(identity, args), "serve.x=cli")
-  assert_eq(wbtest_sources_of(renamed, args), "sv.x=cli")
-  assert_eq(wbtest_sources_of(transparent, args), "x=cli")
+  assert_eq(
+    wbtest_view_of(wbtest_under_command(body, None), args),
+    "result={serve={x=-v}} sources=serve.x=cli effects=x",
+  )
+  assert_eq(
+    wbtest_view_of(wbtest_under_command(body, Some("\"sv\"")), args),
+    "result={sv={x=-v}} sources=sv.x=cli effects=x",
+  )
+  assert_eq(
+    wbtest_view_of(wbtest_under_command(body, Some("null")), args),
+    "result={x=-v} sources=x=cli effects=x",
+  )
 }
 
 ///|
 /// 内部セル除外の **値セル名軸** (上 3 本は scope ラベル軸)。`none` セル自身が `export_key` で
-/// rename されている場合も、席は露出キー側で持つので除外が効く — 席を宣言名 (`touch`) のまま
-/// 持つと露出キー (`t`) と食い違い、`t` が result / sources に漏れる。
-test "front_door.output: 値セル自身が rename された none も除外される (DR-089 §3 × DR-052 §1)" {
+/// rename されている場合も除外が効く — `result` / `sources` 側の席を宣言名 (`touch`) のまま
+/// 持つと露出キー (`t`) と食い違い、`t` が漏れる。
+test "front_door.output: 値セル自身が rename された none も 3 面から消える (DR-089 §3 × DR-052 §1)" {
   let src =
     #|{"options":[{"name":"touch","type":"none","long":true,"export_key":"t"},
     #|            {"name":"keep","type":"flag","long":true}]}
-  assert_eq(wbtest_sources_of(src, ["--touch", "--keep"]), "keep=cli")
+  assert_eq(
+    wbtest_view_of(src, ["--touch", "--keep"]),
+    "result={keep=true} sources=keep=cli effects=keep",
+  )
+}
+
+///|
+/// 内部セル除外の **非-command 結果スコープ軸**。`name` を持つ `seq` / `or` (DESIGN §2.3/§2.4) や
+/// `repeat` (DR-043) が作る結果スコープの配下でも除外が効く。これらの値セルは `Scope.entities`
+/// には**親スコープに平坦に**住み、結果スコープの段は Node 木の `Scoped` / `IndexedRepeat` だけが
+/// 持つので、entity 走査だけでは席の path が付かず除外が外れていた (`command` 木しか降りて
+/// いなかった頃は `pr.touch` / `grp.#0.touch` が 3 面すべてに漏れていた)。
+///
+/// `repeat` 配下は発火ごとに `grp/#0`, `grp/#1` … と別 path になるが、席は `grp` の 1 つ —
+/// 照合前に index segment を落とすことで、どの発火でも同じ席に当たる。
+test "front_door.output: named seq / or / repeat 配下の none も 3 面から消える (DESIGN §2.3/§2.4, DR-043)" {
+  let seq_renamed =
+    #|{"options":[{"name":"pair","export_key":"pr","long":true,"seq":[
+    #|  {"name":"touch","type":"none"},{"name":"keep","type":"string"}]}]}
+  assert_eq(
+    wbtest_view_of(seq_renamed, ["--pair", "x", "y"]),
+    "result={pr={keep=y}} sources=pr.keep=cli effects=keep",
+  )
+  let seq_identity =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"name":"touch","type":"none"},{"name":"keep","type":"string"}]}]}
+  assert_eq(
+    wbtest_view_of(seq_identity, ["--pair", "x", "y"]),
+    "result={pair={keep=y}} sources=pair.keep=cli effects=keep",
+  )
+  // or の枝が seq を持つ形 (枝 leaf は nameless 同化で `mode` 直下へ昇格、DR-052 §2)。
+  let or_seq =
+    #|{"options":[{"name":"mode","long":true,"or":[
+    #|  {"name":"pair","seq":[{"name":"touch","type":"none"},{"name":"keep","type":"string"}]},
+    #|  {"name":"num","type":"int"}]}]}
+  assert_eq(
+    wbtest_view_of(or_seq, ["--mode", "a", "b"]),
+    "result={mode={keep=b}} sources=mode.keep=cli effects=keep",
+  )
+  let repeat =
+    #|{"positionals":[{"name":"grp","repeat":{"min":1,"max":2},"positionals":[
+    #|  {"name":"touch","type":"none"},{"name":"gflag","type":"string"}]}]}
+  assert_eq(
+    wbtest_view_of(repeat, ["a", "b"]),
+    "result={grp=[{gflag=b}]} sources=grp.#0.gflag=cli effects=gflag",
+  )
 }

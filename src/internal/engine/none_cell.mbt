@@ -22,6 +22,22 @@ pub fn NoneCell::name(self : NoneCell) -> String {
 }
 
 ///|
+/// 値空間を持たないセル (`type: "none"` / dd trigger、DR-089 §3 / DR-093 §2) の席を
+/// **結果スコープ path 込み** で全て集める。結果 (`result`) / 由来 (`sources`) / 効果
+/// (`effects`) の各射影が、これらを出力から落とすのに使う。
+///
+/// path は binding の `scope` と同じ体系 (宣言名の列)。結果スコープを作る 3 経路すべてを降りる:
+///
+/// - **command scope** (`CommandSatisfied`): 子 `Scope` を再帰
+/// - **name 付き `seq` / `or`** (`Scoped`、DESIGN §2.3/§2.4): Node 木の中でラベルを積む。
+///   これらの値セルは `Scope.entities` には**親スコープに平坦に**住み、結果スコープの段は
+///   Node 木の `Scoped` だけが持つ — entity 走査だけでは path が付かない
+/// - **`repeat`** (`IndexedRepeat`): ラベル段を積む。eval が更に `#k` の添字段を挟むが、
+///   添字は席の同定に使わない (どの回の発火でも同じセルなので、ラベルまでで一意)
+///
+/// 同じセルが entity 走査と Node walk の両方から挙がる場合は 1 件に畳む (root 直下に住む
+/// `none` は entity 側だけ、`Scoped` 配下のものは Node 側だけが拾うが、将来の lowering 変更で
+/// 両方に現れても呼び出し側の照合は (path, name) の一致だけを見るので実害はない)。
 pub fn none_cells(scope : Scope) -> Array[NoneCell] {
   let out : Array[NoneCell] = []
   collect_nones(scope, [], out)
@@ -29,29 +45,75 @@ pub fn none_cells(scope : Scope) -> Array[NoneCell] {
 }
 
 ///|
-/// 1 スコープが直に持つ dd trigger の element 名 (`DdSatisfied` の trigger /
-/// `DdMatchSatisfied` の element、DR-093 §2/§7)。値空間を持たない点で `type: "none"` と同じ
-/// 扱いを受けるが、entity ではなく `greedy` 側のノードが運ぶので `Scope.entities` を見るだけ
-/// では拾えない。呼び出し側 (kuu の内部セル収集) が自前で木を降りるため、`none_cells` の
-/// ような再帰ではなく **この scope の直下だけ** を返す。
-pub fn dd_element_names(scope : Scope) -> Array[String] {
-  let out : Array[String] = []
-  for node in scope.greedy {
-    collect_dd_names(node, out)
+fn push_none_cell(
+  out : Array[NoneCell],
+  path : Array[String],
+  name : String,
+) -> Unit {
+  for existing in out {
+    if existing.name_ == name && path_equal(existing.path_, path) {
+      return
+    }
   }
-  out
+  out.push(none_cell(path, name))
 }
 
 ///|
-fn collect_dd_names(node : Node, out : Array[String]) -> Unit {
+fn path_equal(a : Array[String], b : Array[String]) -> Bool {
+  if a.length() != b.length() {
+    return false
+  }
+  for i in 0..<a.length() {
+    if a[i] != b[i] {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// Node 木を降りて、結果スコープラベル (`Scoped` / `IndexedRepeat`) を path に積みながら
+/// 値空間の無いセルを拾う。`names` は現在の `Scope` が宣言する `none` 型 entity 名 — `Ext`
+/// 住人は自分が none 型かを知らない (型は `Entity` 側が持つ) ので、名前で突き合わせる。
+fn collect_nones_in_node(
+  node : Node,
+  path : Array[String],
+  names : Array[String],
+  out : Array[NoneCell],
+) -> Unit {
   match node {
-    DdSatisfied(trigger) => out.push(trigger)
-    DdMatchSatisfied(_, _, _, element) => out.push(element)
-    Or(alternatives) =>
-      for alternative in alternatives {
-        collect_dd_names(alternative, out)
+    Scoped(label, body) =>
+      collect_nones_in_node(body, append_path(path, label), names, out)
+    IndexedRepeat(label, body, _, _) =>
+      collect_nones_in_node(body, append_path(path, label), names, out)
+    Seq(children) =>
+      for child in children {
+        collect_nones_in_node(child, path, names, out)
       }
-    Rooted(inner, _) => collect_dd_names(inner, out)
+    Or(children) =>
+      for child in children {
+        collect_nones_in_node(child, path, names, out)
+      }
+    Many(inner, _) => collect_nones_in_node(inner, path, names, out)
+    GreedyRepeat(inner) => collect_nones_in_node(inner, path, names, out)
+    Rooted(inner, _) => collect_nones_in_node(inner, path, names, out)
+    BoundedTail(inner, _, _) => collect_nones_in_node(inner, path, names, out)
+    DdSatisfied(trigger) => push_none_cell(out, path, trigger)
+    DdMatchSatisfied(_, _, _, element) => push_none_cell(out, path, element)
+    Ext(resident) =>
+      match resident.element_name() {
+        Some(name) =>
+          for declared in names {
+            if declared == name {
+              push_none_cell(out, path, name)
+              break
+            }
+          }
+        None => ()
+      }
+    CommandSatisfied(name, child) =>
+      collect_nones(child, append_path(path, name), out)
+    ScopeNode(inner) => collect_nones(inner, path, out)
     _ => ()
   }
 }
@@ -62,24 +124,20 @@ fn collect_nones(
   path : Array[String],
   out : Array[NoneCell],
 ) -> Unit {
+  let names : Array[String] = []
   for entity in scope.entities {
     if entity.ty.name() == "none" {
-      out.push(none_cell(path, entity.name))
+      names.push(entity.name)
+      // root 直下に住むセル (結果スコープを跨がない) はここで席が確定する。`Scoped` 配下に
+      // 実体を持つものは Node walk 側が本来の path 付きで拾う。
+      push_none_cell(out, path, entity.name)
     }
   }
-  let dd_names : Array[String] = []
   for node in scope.greedy {
-    collect_dd_names(node, dd_names)
+    collect_nones_in_node(node, path, names, out)
   }
-  for name in dd_names {
-    out.push(none_cell(path, name))
-  }
-  for node in scope.greedy {
-    match node {
-      CommandSatisfied(name, child) =>
-        collect_nones(child, append_path(path, name), out)
-      _ => ()
-    }
+  for node in scope.positional {
+    collect_nones_in_node(node, path, names, out)
   }
 }
 

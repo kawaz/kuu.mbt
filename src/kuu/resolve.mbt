@@ -861,37 +861,41 @@ priv struct InternalCell {
 }
 
 ///|
-/// 内部セル (`InternalCell`) を結果木全体から集める。`collect_accum` と同じ walk
-/// (透過ラベルは segment を落として子が昇格、DR-052 §2)。
+/// 内部セルの席を **露出キー軸** で集める。`none` / dd trigger の宣言名軸の席は
+/// `@engine.none_cells` が結果木全体分を返すので、それを `walk_export_path` + `exposed_cell`
+/// で写すだけ (binding / default / accum と同じ 3 値解決)。`config_file` は engine 側の
+/// 「値空間の無いセル」ではなく `Entity.is_config_file` フラグの別軸なので、ここで追加収集する。
 fn internal_cells(
   sc : @engine.Scope,
   ek : @engine.ExportScopeMap,
 ) -> Array[InternalCell] {
   let out : Array[InternalCell] = []
-  collect_internal(sc, [], ek, out)
+  for cell in @engine.none_cells(sc) {
+    let (path, node) = walk_export_path(cell.path(), ek)
+    match node.exposed_cell(cell.name()) {
+      None => () // 透過: 結果キー軸を持たないので射影側にも現れない
+      Some(name) => out.push({ path, name })
+    }
+  }
+  collect_config_file_seats(sc, [], ek, out)
   out
 }
 
 ///|
-fn collect_internal(
+/// `type: "config_file"` セル (DR-050) の席。`none` と違い engine の `none_cells` には乗らない
+/// (値空間はあり、config provider の解決に使われる) ので、`collect_accum` と同じ walk で集める。
+fn collect_config_file_seats(
   sc : @engine.Scope,
   path : Array[String],
   ek : @engine.ExportScopeMap,
   out : Array[InternalCell],
 ) -> Unit {
   for e in sc.entities {
-    if e.ty.name() == "none" || e.is_config_file {
+    if e.is_config_file {
       match ek.exposed_cell(e.name) {
-        None => () // 透過: 結果キー軸を持たないので射影側にも現れない
-        Some(new_name) => out.push({ path, name: new_name })
+        None => ()
+        Some(name) => out.push({ path, name })
       }
-    }
-  }
-  // dd trigger は entity ではなく greedy 側のノードが運ぶ (`@engine.dd_element_names`)。
-  for name in @engine.dd_element_names(sc) {
-    match ek.exposed_cell(name) {
-      None => ()
-      Some(new_name) => out.push({ path, name: new_name })
     }
   }
   for g in sc.greedy {
@@ -899,8 +903,9 @@ fn collect_internal(
       @engine.CommandSatisfied(name, child) => {
         let child_ek = ek.child(name)
         match ek.exposed_scope(name) {
-          None => collect_internal(child, path, child_ek, out)
-          Some(s) => collect_internal(child, path_push(path, s), child_ek, out)
+          None => collect_config_file_seats(child, path, child_ek, out)
+          Some(s) =>
+            collect_config_file_seats(child, path_push(path, s), child_ek, out)
         }
       }
       _ => ()
@@ -909,19 +914,38 @@ fn collect_internal(
 }
 
 ///|
-/// `internal_cells` の席と (path, key) が一致するか — result / sources / effects の各射影が
-/// 内部セルを落とすのに使う共通判定。
+/// `internal_cells` の席と (path, key) が一致するか — `result` / `sources` の射影が内部セルを
+/// 落とすのに使う (`effects` は宣言名軸なので `front_door.output_internal_cell` が別に持つ)。
+///
+/// 照合前に **index segment (`#k`) を落とす**。セルの席は「どのセルか」であって「配列の何番目の
+/// 発火か」ではない — `repeat` 配下の同じセルは発火ごとに `grp/#0`, `grp/#1` … と別 path を
+/// 持つが、席は `grp` の 1 つしかない (`@engine.none_cells` も `IndexedRepeat` のラベル段までしか
+/// 積まない)。添字込みで比べると repeat 配下の内部セルが毎回除外を外れる。
 fn is_internal_cell(
   cells : Array[InternalCell],
   path : Array[String],
   name : String,
 ) -> Bool {
+  let seat = drop_index_segments(path)
   for c in cells {
-    if c.name == name && path_eq(c.path, path) {
+    if c.name == name && path_eq(c.path, seat) {
       return true
     }
   }
   false
+}
+
+///|
+/// 結果 path から index segment (`#k`、`walk_export_path` が結果スコープを作らないものとして
+/// 素通しする配列添字) を除いた「席の path」。
+fn drop_index_segments(path : Array[String]) -> Array[String] {
+  let out : Array[String] = []
+  for seg in path {
+    if !(seg.length() >= 1 && seg[0:1].to_owned() == "#") {
+      out.push(seg)
+    }
+  }
+  out
 }
 
 ///|
@@ -1052,9 +1076,9 @@ pub(all) struct SourceEntry {
 ///   ので落とすのが正 (`apply_export_to_defaults` の `None => ()` と同じ扱い)
 /// - **透過ラベル** (scope) は `walk_export_path` が segment を落として node だけ進める既存挙動
 ///   に乗る (DR-052 §2: 子が親スコープへ昇格)。`name` を持つ `seq` / `or` が作る 1 段の結果
-///   スコープ (DESIGN §2.3/§2.4) も、`repeat` の index segment (`#k`、結果スコープを作らない
-///   配列添字なので `walk_export_path` が素通しする) も同じ経路で path に載る — 後者は
-///   `{"grp":[{"gflag":..},..]}` の何番目の要素の席かを一意化する唯一の軸
+///   スコープ (DESIGN §2.3/§2.4) も同じ経路で path に載る。`repeat` の index segment (`#k`) は
+///   `walk_export_path` が素通しするのでそのまま path に残る (配列要素の provenance を
+///   どう addressing するかは spec 側の未裁定事項で、ここで決めない)
 /// - 同一 (path, key) は **last-wins** で 1 件に畳む。binding は同じセルに複数回着席しうる
 ///   (`--tags a --tags b`) ので、射影段階で畳む
 /// - **0 回発火の accum セル** は binding を 1 つも持たないが、result では `[]` を持つ
