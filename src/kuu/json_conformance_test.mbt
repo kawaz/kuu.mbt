@@ -4034,3 +4034,196 @@ test "conformance runner: sources の (path, key) 重複を decode 時に弾く 
     abort("expected a duplicate-address rejection, got: " + outcome)
   }
 }
+
+///|
+/// DESIGN §2.3 / DR-031 (CONST-Q1=a): 構造子 wrapper (`or`/`seq`) は結果スコープを作るが値セルを
+/// 持たないので、そこへ root の `value:` を書くと宣言定数の置き場が無い —
+/// `collect_const_on_valueless_wrapper` が definition-error (invalid-range) で弾く。fixture 化
+/// しないのは、これが「spec が規定する挙動」ではなく「spec の外にある形を黙って捨てない」ための
+/// 実装側 gate だから (spec 側は wrapper の value に意味を与えていない)。
+test "CONST-Q1: `value` on a structural wrapper (or/seq) is a definition-error, not silently dropped" {
+  let src =
+    #|{
+    #|  "options": [
+    #|    {"name": "mode", "value": "x", "or": [
+    #|      {"type": "string", "name": "a"},
+    #|      {"type": "string", "name": "b"}
+    #|    ]}
+    #|  ]
+    #|}
+  let outcome = match @kuu.parse_definition(@json.parse(src)) {
+    Ok(_) => "accepted"
+    Err(@kuu.Malformed(reason)) => "malformed: " + reason
+    Err(@kuu.Rejected(errors)) => deferrs_str(errors)
+  }
+  if !outcome.contains("invalid-range") {
+    abort("expected an invalid-range definition-error, got: " + outcome)
+  }
+}
+
+///|
+/// 対極 (`self-written-rule-blind-spots`): 値セルを持つ leaf (`Cell`) の `value:` は上の gate に
+/// 掛からず通る — gate が「wrapper だけ」を狙えていることの確認。値セルを持つ限り const の置き場は
+/// あるので、入口 (long) との同居も含めて合法 (DESIGN §11.4)。
+test "CONST-Q1 対極: `value` on a value-owning leaf passes the wrapper gate" {
+  let src =
+    #|{
+    #|  "options": [
+    #|    {"name": "timeout", "type": "number", "value": 30},
+    #|    {"name": "port", "type": "number", "long": true, "value": 8080}
+    #|  ]
+    #|}
+  match @kuu.parse_definition(@json.parse(src)) {
+    Ok(_) => ()
+    Err(@kuu.Malformed(reason)) => abort("unexpected malformed: " + reason)
+    Err(@kuu.Rejected(errors)) =>
+      abort("unexpected rejection: " + deferrs_str(errors))
+  }
+}
+
+///|
+/// DR-083 §1/§5 の形検査を const にも掛ける (`collect_scalar_array_default` の const 枝): scalar
+/// セルへの配列 literal は「静的に既知の不成立構成」。`default` 側と同じ理由・同じ kind で弾く。
+test "CONST-Q1: an array-shaped `value` on a scalar cell is a definition-error (DR-083 §1/§5)" {
+  let src =
+    #|{
+    #|  "options": [
+    #|    {"name": "ports", "type": "number", "value": [1, 2]}
+    #|  ]
+    #|}
+  let outcome = match @kuu.parse_definition(@json.parse(src)) {
+    Ok(_) => "accepted"
+    Err(@kuu.Malformed(reason)) => "malformed: " + reason
+    Err(@kuu.Rejected(errors)) => deferrs_str(errors)
+  }
+  if !outcome.contains("invalid-range") {
+    abort("expected an invalid-range definition-error, got: " + outcome)
+  }
+}
+
+///|
+/// schema (`$defs.node` の `value`) は任意 JSON を許すが `@abi.Value` は scalar しか持たない
+/// (`json_to_value`)。object / array-of-object literal は**明示エラー**で弾く — 黙って捨てるのが
+/// 最悪なので、対応できない形はそう言う。全 JSON 対応 (Value への複合型追加) は別課題。
+test "CONST-Q1: a non-scalar `value` (object literal) is rejected with an explicit error" {
+  let src =
+    #|{
+    #|  "options": [
+    #|    {"name": "cfg", "type": "string", "value": {"a": 1}}
+    #|  ]
+    #|}
+  let outcome = match @kuu.parse_definition(@json.parse(src)) {
+    Ok(_) => "accepted"
+    Err(@kuu.Malformed(reason)) => "malformed: " + reason
+    Err(@kuu.Rejected(errors)) => deferrs_str(errors)
+  }
+  if !outcome.contains("non-scalar") {
+    abort("expected an explicit non-scalar rejection, got: " + outcome)
+  }
+}
+
+///|
+/// DESIGN §11.4 の「const が居るセルに default 席は到達しない」を、`default_fn` 綴りでも固定する
+/// (fixture 側 const-root-upper-seat-override.json は `default:` 綴りを固定している)。`default_fn`
+/// は resolve 相の別分岐 (`resolve_default_fn`) を通るので、`resolve_ladder_below_cli` の const 枝
+/// だけでは塞げない — Phase 3b の分岐条件に const の有無が入っていることの pin。
+test "CONST-Q1: const wins over a default_fn seat (the default_fn branch must not bypass const)" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "timeout", "type": "number", "value": 30, "default_fn": "set:99"}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "const-beats-default-fn",
+    #|      "args": [],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "effects": [],
+    #|        "result": {"timeout": 30},
+    #|        "sources": [{"path": [], "key": "timeout", "source": "const"}]
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// 受け入れ条件の対極: const は「値セルに最初からいる」が、**未選択 scope 配下は従来どおり absent**
+/// (DR-051 / `export-key/unselected-scope-no-default-leak.json` が default について固定している
+/// gate と同じ)。const がこの gate をすり抜けて未選択 command の値を root へ漏らさないことを固定する
+/// — 「セルに最初からいる」のは*そのセルが存在する場合*の話であって、未選択 scope のセルは
+/// そもそも結果に現れない。
+test "CONST-Q1: a const under an UNSELECTED command scope stays absent (no leak past the scope gate)" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "commands": [
+    #|      {"name": "build", "options": [{"name": "jobs", "type": "number", "value": 4}]},
+    #|      {"name": "test", "options": [{"name": "seed", "type": "number", "value": 7}]}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "unselected-scope-const-absent",
+    #|      "args": ["build"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "result": {"build": {"jobs": 4}},
+    #|        "sources": [{"path": ["build"], "key": "jobs", "source": "const"}]
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// 受け入れ条件「env/config が value 持ちセルを上書きできる」の config 側 (env 側は fixture
+/// const-root-upper-seat-override.json が固定済み)。config 席は const より上位の**供給**なので
+/// 初期値を上書きし、source は `config` になる (DESIGN §11.4)。fixture でなく wbtest なのは、
+/// config 席が config_file 要素 + provider の足場を要求して fixture が重くなる一方、確認したい
+/// 論点 (「上位席のうち config も const を上書きするか」) は env と完全に同型だから。
+test "CONST-Q1: the config seat overrides a const (upper seats supply, const is not privileged)" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "config", "type": "config_file", "long": true, "default": "/app.toml"},
+    #|      {"name": "port", "type": "number", "config_key": ["port"], "value": 30}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "config-over-const",
+    #|      "args": [],
+    #|      "config": {"port": 3000},
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "effects": [],
+    #|        "result": {"port": 3000},
+    #|        "sources": [{"path": [], "key": "port", "source": "config"}]
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}

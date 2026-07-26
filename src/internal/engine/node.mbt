@@ -554,6 +554,12 @@ pub(all) struct Entity {
   // whole array — this single field replaces the pre-DR-083 `default_value : Value?` (a design
   // taken up again after being shelved mid accum-fold-update-default-ops, now justified by DR-083).
   default_values : Array[Value]?
+  // DESIGN §11.4 / DR-031 (CONST-Q1=a): root 位置の `value:` が置いた宣言定数 (セル初期化位相)。
+  // 形は `default_values` と同じ「長さ1へ持ち上げた一様配列」(scalar は長さ1、accum は piece 列) で、
+  // `ElementDef.const_values` をそのまま写す。`resolve_ladder_below_cli` が default 席の**直前**で
+  // 読み、binding の source を `Const` にする — 上位席 (env/config/inherit) は素通りして const に
+  // 到達するので通常規則どおり const を上書きし、const が値を出せば default 席には到達しない。
+  const_values : Array[Value]?
   // Canonical lazy default-seat cell-fn placeholder. Scalar fixed defaults carry typed set(value);
   // explicit default_fn declarations carry their wire invocation for observes binding.
   default_fn : DefaultFnCall?

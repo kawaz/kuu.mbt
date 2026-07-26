@@ -158,6 +158,19 @@ pub(all) struct ElementDef {
   // `Entity.default_values` へ写す (§1 の decode-time 持ち上げに加え、FLAG/BOOL/COUNT の暗黙 preset
   // も同じ長さ1形へ揃える)。node.mbt の `Entity.default_values` の doc comment 参照。
   default_values : Array[Value]?
+  // DESIGN §11.4 / DR-031 (CONST-Q1=a): root 位置 (option / positional) の `value:` — 消費 0 literal
+  // の**セル初期化位相**版。`default_values` (ラダー 5 段目の席) とは別フィールドで持つ: root では
+  // 両者は同義でなく、const は「値セルに最初からいる」初期値、default は「無い時に埋める」充填
+  // という別位相だから (構造子 child 位置の `value:` / `default:` は同じ const 綴りの同義なので
+  // `is_literal` + `default_values` の 1 本で足りる — 位置で意味が割れるのは DR-018 配置原理)。
+  //
+  // root の const は消費文法に一切現れない (`element_head` は見ない — `is_literal` と違う点)。
+  // 入口 (long/short/positional 位置) があればその構造はそのまま残り、const は入口が発火しな
+  // かった場合の初期値としてセル側にだけ座る。値源ラダー上の実効位置は
+  // `cli > env > config > inherit > const > default` — 上位 4 席は「供給」なので const を上書きし
+  // (DESIGN §11.4「上位席の供給や cli 効果は初期値を通常規則どおり上書きする」)、`default` は
+  // 「空なら埋める」充填なので const が居るセルでは発火しない。序列に参加しないまま挟まる。
+  const_values : Array[Value]?
   // Canonical default-seat invocation. `default:` decodes to Typed(set(values)); explicit
   // `default_fn:` decodes to Wire and stays lazy until dependency-ordered resolution.
   default_fn : DefaultFnCall?

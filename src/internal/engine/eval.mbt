@@ -2359,6 +2359,9 @@ fn value_declared(
   for e in entities {
     if e.name == name {
       return e.default_values is Some(_) ||
+        // const (root `value:`) も宣言された値 — `has_declared_value_source` (lowering 側の同判定)
+        // と揃える。
+        e.const_values is Some(_) ||
         e.env_key is Some(_) ||
         e.config_seat ||
         e.is_inherit

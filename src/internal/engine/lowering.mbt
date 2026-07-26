@@ -456,6 +456,7 @@ fn clone_elem(e : ElementDef) -> ElementDef {
     hidden: e.hidden,
     completer: e.completer,
     default_values: e.default_values,
+    const_values: e.const_values,
     default_fn: e.default_fn,
     default_declared: e.default_declared,
     int_round: e.int_round,
@@ -881,6 +882,9 @@ fn opt_node(x : Node) -> Node {
 /// 静的宣言述語) と同じ4要素判定を、installer 層 (lowering 時点、ElementDef ベース) で行う版。
 fn has_declared_value_source(e : ElementDef) -> Bool {
   e.default_values is Some(_) ||
+  // const (root `value:`) は席ではないが、「値が宣言されている」ことに変わりはない (DR-088 §1 の
+  // 主語は席の種別ではなく値の存在) — required 等の値述語から見て default 宣言と同じ扱い。
+  e.const_values is Some(_) ||
   e.env.length() > 0 ||
   e.config_key is Some(_) ||
   e.is_inherit
@@ -1427,6 +1431,7 @@ fn ensure_entity(
     // is resolved during lowering so runtime dispatch never branches on a collector name.
     collector,
     default_values,
+    const_values: e.const_values,
     default_fn,
     separator: e.separator,
     piece_filters: e.piece_filters,
@@ -2282,6 +2287,7 @@ fn copy_global_into(
     hidden: copy.hidden,
     completer: copy.completer,
     default_values: copy.default_values,
+    const_values: copy.const_values,
     default_fn: copy.default_fn,
     default_declared: copy.default_declared,
     int_round: copy.int_round,
@@ -2474,6 +2480,8 @@ fn add_inheritable_copy(
       hidden: false,
       completer: None, // write-target copy は completer 宣言経路を持たない (hidden と同じ理由)
       default_values: None,
+      // write-target copy は const も持たない (default_declared と同じ理由 — 実書き込みだけが伝播する)
+      const_values: None,
       default_fn: None,
       default_declared: false, // write-target に default を置かない (§3): 実書き込みのみが伝播する
       int_round: Error,
@@ -2858,6 +2866,7 @@ fn alias_entry(
     hidden: false,
     completer: None,
     default_values: None,
+    const_values: None,
     default_fn: None,
     default_declared: false,
     int_round: Error,
@@ -3916,6 +3925,22 @@ fn collect_scalar_array_default(
           }
         None => ()
       }
+      // root 位置の `value:` (const、DR-031 CONST-Q1=a) にも同じ形の検査を掛ける — 値の形の話
+      // なので、初期値 (const) か充填席 (default) かという位相の違いには依らない。
+      match e.const_values {
+        Some(vs) =>
+          if vs.length() != 1 {
+            out.push(
+              def_err(
+                e.name,
+                InvalidRange,
+                "a non-multiple (scalar) element's declared `value` must be exactly ONE piece, got \{vs.length()} — an array-shaped literal is only legal for a multiple/repeat/separator (accum) element (DR-083 §1/§5)",
+                "wrap this element in `multiple`/`repeat` if it should accumulate, or write a single scalar value",
+              ),
+            )
+          }
+        None => ()
+      }
     }
   }
 
@@ -3927,6 +3952,47 @@ fn collect_scalar_array_default(
   }
   for c in def.commands {
     collect_scalar_array_default(c.body, out)
+  }
+}
+
+///|
+/// DESIGN §2.3 / DR-031 (CONST-Q1=a): 構造子 wrapper (`or` / `seq` を持つノード) は結果スコープを
+/// 作るが**値セルを持たない** (`ensure_entity_body` の Or/Group 分岐が `multiple` 無しでは entity を
+/// 登録しないのがその実装)。そこへ root の `value:` を書くと宣言定数の置き場が無く、黙って捨てる
+/// ことになる — 「静的に既知の不成立構成は定義時に倒す」(DR-083 §5) の筋で definition-error にする。
+///
+/// 値セルを持つ枝 (`Cell` / `Enum`) は対象外。const と `default` の同居も対象外 (root では別位相 =
+/// 初期値 vs 充填席なので、default が死に宣言になるだけの合法な組み合わせ — DR-114 §4 が
+/// invalid-range にする `default` + `default_fn` は**同一席への二重供給**で事象が違う)。
+fn collect_const_on_valueless_wrapper(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  fn check(e : ElementDef) -> Unit {
+    if e.const_values is Some(_) {
+      match e.body {
+        Or(_) | Group(_) =>
+          out.push(
+            def_err(
+              e.name,
+              InvalidRange,
+              "'\{e.name}' declares `value` on a structural wrapper (`or`/`seq`), which owns a result scope but no value cell of its own (DESIGN §2.3) — the declaration constant has nowhere to sit",
+              "move `value` onto a leaf inside the `or`/`seq`, or drop the `or`/`seq` if this element should own a value cell",
+            ),
+          )
+        Cell | Enum(_) => ()
+      }
+    }
+  }
+
+  for e in def.options {
+    check(e)
+  }
+  for e in def.positionals {
+    check(e)
+  }
+  for c in def.commands {
+    collect_const_on_valueless_wrapper(c.body, out)
   }
 }
 
@@ -4714,6 +4780,7 @@ fn completion_script_internal_entity() -> Entity {
     is_multiple_decl: false,
     collector: None,
     default_values: None,
+    const_values: None,
     default_fn: None,
     separator: None,
     piece_filters: [],
@@ -5436,6 +5503,7 @@ pub fn collect_builtin_installer_errors(
       collect_unsupported_accum_update(definition, errors, view.extensions())
       collect_unsupported_count_multiple(definition, errors)
       collect_scalar_array_default(definition, errors)
+      collect_const_on_valueless_wrapper(definition, errors)
       collect_unknown_filter(definition, errors, view.extensions())
       collect_invalid_filter_attribute_mismatch(definition, errors)
       collect_invalid_regex_pattern(definition, errors)

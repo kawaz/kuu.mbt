@@ -80,6 +80,7 @@ fn ent(
       None => None
     },
     default_values,
+    const_values: None,
     default_fn: match default_values {
       Some(values) => Some(@abi.Typed(@abi.FnCall::typed("set", values)))
       None => None

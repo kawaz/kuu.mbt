@@ -295,6 +295,7 @@ pub(all) struct ElementDef {
   hidden : Bool
   completer : String?
   default_values : Array[@abi.Value]?
+  const_values : Array[@abi.Value]?
   default_fn : @abi.DefaultFnCall?
   default_declared : Bool
   piece_filters : Array[@abi.FnInvocation]
@@ -325,6 +326,7 @@ pub(all) struct Entity {
   is_multiple_decl : Bool
   collector : &@extension.CollectorExt?
   default_values : Array[@abi.Value]?
+  const_values : Array[@abi.Value]?
   default_fn : @abi.DefaultFnCall?
   separator : String?
   piece_filters : Array[@abi.FnInvocation]

@@ -237,6 +237,10 @@ fn opt(
   required? : Bool = false,
   value_requires? : Array[(String, String, Array[String])] = [],
   default? : Array[@abi.Value]? = None,
+  // DESIGN §11.4 / DR-031 (CONST-Q1=a): root 位置の `value:`。`default~` とは別引数 — root では
+  // 初期値 (const) と充填席 (default) が別位相なので同じ carrier に潰せない
+  // (`@engine.ElementDef.const_values` の doc comment)。
+  const_? : Array[@abi.Value]? = None,
   default_fn? : @abi.DefaultFnCall? = None,
   default_declared? : Bool = false,
   int_round? : @abi.RoundMode = @abi.Error,
@@ -310,6 +314,7 @@ fn opt(
     hidden,
     completer,
     default_values: default,
+    const_values: const_,
     default_fn,
     default_declared,
     int_round,
@@ -347,6 +352,9 @@ fn pos(
   link_? : String? = None,
   ref_? : String? = None,
   default? : Array[@abi.Value]? = None,
+  // DESIGN §11.4 / DR-031 (CONST-Q1=a): root 位置の `value:` — `opt()` の同名引数と対称
+  // (`@engine.ElementDef.const_values` の doc comment)。
+  const_? : Array[@abi.Value]? = None,
   default_fn? : @abi.DefaultFnCall? = None,
   default_declared? : Bool = false,
   int_round? : @abi.RoundMode = @abi.Error,
@@ -437,6 +445,7 @@ fn pos(
     hidden: false,
     completer,
     default_values: default,
+    const_values: const_,
     default_fn,
     default_declared,
     int_round,
@@ -517,6 +526,7 @@ fn dd_marker(
     hidden: false,
     completer: None, // dd は値空間を持たない (DR-089) — completer が意味を持つ値位置スロットが無い
     default_values: None,
+    const_values: None,
     default_fn: None,
     default_declared: false,
     int_round: @abi.Error,
@@ -594,6 +604,7 @@ fn exact_marker(spelling : String) -> @engine.ElementDef {
     hidden: false,
     completer: None, // exact literal は値空間を持たない — dd_marker と同じ理由
     default_values: None,
+    const_values: None,
     default_fn: None,
     default_declared: false,
     int_round: @abi.Error,
@@ -894,6 +905,29 @@ fn json_to_default_values(j : Json) -> Array[@abi.Value] raise DecodeSkip {
       vs
     }
     None => [json_to_value(j)]
+  }
+}
+
+///|
+/// root 位置 (option / positional) の `value:` — 消費 0 literal のセル初期化位相版 (DESIGN §5.2 /
+/// §11.4、DR-030 実体だけノード、DR-031 CONST-Q1=a)。`{"name":"timeout","type":"number","value":30}`
+/// のような入口なしノードが本命だが、入口 (long/short/positional 位置) との同居も合法 — const は
+/// 席ではなく初期値なので、入口が発火すれば通常の あと勝ち規則でそのまま上書きされる (DESIGN §11.4)。
+///
+/// 形は `default:` と同じ「長さ1へ持ち上げた一様配列」(`json_to_default_values`) を共有する —
+/// scalar は `[v]`、accum セルは piece 列。**運び先だけが別** (`const_values` vs `default_values`)
+/// で、root では両者が別位相 (初期値 vs 充填席) だから同居も合法。構造子 child 位置では逆に
+/// 両者が同義なので `dec_or_leaf` が同居を拒否する — 位置で意味が割れるのは DR-018 配置原理。
+///
+/// **scalar のみ**: schema (`$defs.node` の `value`) は任意 JSON を許すが `json_to_value` は
+/// scalar (string/number/bool) しか持たない。object / array literal は明示エラーで弾く
+/// (黙って捨てない) — 全 JSON 対応は `@abi.Value` に複合型を足す別課題。
+fn dec_const_value(
+  o : Map[String, Json],
+) -> Array[@abi.Value]? raise DecodeSkip {
+  match o.get("value") {
+    Some(v) => Some(json_to_default_values(v))
+    None => None
   }
 }
 
@@ -2024,9 +2058,11 @@ fn dec_option(
     )
   }
   let allowed = [
-    "id", "name", "type", "default", "default_fn", "export_key", "deprecated", "hidden",
-    "or", "values", "piece_filters", "value_filters", "final_filters", "accum_filters",
-    "ref", "link", "completer", "config",
+    // DESIGN §5.2 / §11.4 (DR-030 実体だけノード、DR-031 CONST-Q1=a): root 位置の `value:` =
+    // セル初期化位相の宣言定数 (`dec_const_value`)。`default` と同居できる — root では別位相。
+    "value", "id", "name", "type", "default", "default_fn", "export_key", "deprecated",
+    "hidden", "or", "values", "piece_filters", "value_filters", "final_filters",
+    "accum_filters", "ref", "link", "completer", "config",
     // DR-113 §4.1 value_structure 素材: option root の seq / value_name wire キー
     // (help-only fixture 用 — parse 相は seq を活用しないが、help_installer が hint 経由で
     // model 射影する)。
@@ -2249,6 +2285,7 @@ fn dec_option(
     Some(d) => Some(json_to_default_values(d))
     None => None
   }
+  let const_ = dec_const_value(o)
   let default_fn : @abi.DefaultFnCall? = match o.get("default_fn") {
     Some(invocation) => Some(dec_default_fn(invocation))
     None => None
@@ -2400,6 +2437,7 @@ fn dec_option(
       required~,
       value_requires~,
       default~,
+      const_~,
       default_fn~,
       default_declared=has_key(o, "default"),
       int_round=int_round_from_shadow,
@@ -2444,9 +2482,11 @@ fn dec_positional(
   }
   let owned = decode_installer_owned(j, Positional, extensions)
   let allowed = [
-    "id", "name", "type", "export_key", "default", "default_fn", "positionals", "or",
-    "piece_filters", "value_filters", "final_filters", "accum_filters", "ref", "link",
-    "config", "completer", "exact",
+    // DESIGN §5.2 / §11.4: dec_option と対称 — root 位置の `value:` は positional 席でも合法
+    // (schema `$defs.node` は同型、DR-018 の配置原理は「値属性は両配置が持てる」側)。
+    "value", "id", "name", "type", "export_key", "default", "default_fn", "positionals",
+    "or", "piece_filters", "value_filters", "final_filters", "accum_filters", "ref",
+    "link", "config", "completer", "exact",
     // DR-117 §2.6: dec_option と対称 — insert_form は positional 席 (`type:
     // "completion_script"`) でも合法 (DR-117 §2.3、positional 配置は全 preset で許可)。非
     // completion_script type 上への宣言は `collect_completion_script_errors` が
@@ -2618,6 +2658,7 @@ fn dec_positional(
     Some(d) => Some(json_to_default_values(d))
     None => None
   }
+  let const_ = dec_const_value(o)
   let default_fn : @abi.DefaultFnCall? = match o.get("default_fn") {
     Some(invocation) => Some(dec_default_fn(invocation))
     None => None
@@ -2716,6 +2757,7 @@ fn dec_positional(
     link_~,
     ref_~,
     default~,
+    const_~,
     default_fn~,
     default_declared=has_key(o, "default"),
     int_round=int_round_from_shadow,

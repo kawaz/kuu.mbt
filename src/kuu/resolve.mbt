@@ -2582,6 +2582,35 @@ fn resolve_ladder_below_cli(
     }
     None => ()
   }
+  // const 初期値 (DESIGN §11.4 / DR-031 CONST-Q1=a): root 位置の `value:` はラダーの**席ではない**が、
+  // 実効的にはここ — 上位席 (env / config / inherit) の供給は上の分岐で既に return 済みなので通常規則
+  // どおり const を上書きし、const が値を出せば「無い時に埋める」default 席には到達しない。序列に
+  // 参加しないまま cli > env > config > inherit > const > default の位置に挟まる形。
+  // 値の型付けは default 席と同じパイプライン (`@builtins.config_to_value`) を通す — DR-102 §5 の
+  // 「値源の種別でなく値の型が決める」がそのまま適用される (const 専用の型規則は作らない)。
+  match e.const_values {
+    Some(vs) if vs.length() > 0 => {
+      let bs : Array[@abi.Binding] = []
+      for v in vs {
+        match
+          @builtins.config_to_value(
+            @extension.value_to_configval(v),
+            e.ty,
+            e.piece_filters,
+            extensions.extensions(),
+          ) {
+          Ok(vv) => bs.push(@abi.Binding::new(e.name, vv, @abi.Const))
+          Err({ kind: @abi.Filter, reason, message: msg }) =>
+            return Err(filter_err(e.name, at_pos, reason, msg, epath))
+          Err({ reason, message: msg, .. }) =>
+            return Err(ladder_err(e.name, at_pos, reason, msg, epath))
+        }
+      }
+      // scalar セルは高々 1 値 (`collect_scalar_array_const` が >1 を definition-error で弾く)。
+      return Ok(bs)
+    }
+    _ => ()
+  }
   // default seat (DR-083 §1/§2, DR-102 §5): an accum cell's declared default supplies its WHOLE
   // array as already-split pieces, config-array precedent (DR-050 §4) — each piece routed through
   // `@builtins.config_to_value` (via `@extension.value_to_configval`) for the same T-domain / string-pipeline parse the
@@ -2658,7 +2687,8 @@ fn default_fills_cell(e : @engine.Entity, bs : Array[@abi.Binding]) -> Bool {
   if bs.length() > 0 || e.accum is Some(_) {
     return true
   }
-  default_scalar(e) is Some(_)
+  // const (root `value:`) を持つセルも「埋まる」— 席ではないが値はセルに最初からいる (DR-031)。
+  e.const_values is Some(_) || default_scalar(e) is Some(_)
 }
 
 ///|
@@ -3071,7 +3101,13 @@ fn resolve_scope_config_with_export(
         None => true
       }
       if cell_empty {
-        let resolved = if e.default_fn is Some(_) {
+        // DESIGN §11.4 / DR-031 (CONST-Q1=a): const (root `value:`) を宣言したセルは default 席へ
+        // 行かせない — const は「値セルに最初からいる」初期値なので、`default` / `default_fn`
+        // どちらの綴りで default 席が供給されようとセルは既に空でなく、充填は発火しない。
+        // `default_fn` 分岐を先に取ると `resolve_ladder_below_cli` を丸ごと迂回して const を
+        // 素通りするので、const の有無をこの分岐の条件に含める (両者を宣言できるのは合法 —
+        // default 側が死に宣言になるだけ、`required` の vacuous 充足と同じ lint 領分)。
+        let resolved = if e.default_fn is Some(_) && e.const_values is None {
           resolve_default_fn(
             e, option_values, inherited, env_map, at_pos, path, extensions,
           )

@@ -173,6 +173,7 @@ fn el(
     hidden: false,
     completer: None,
     default_values: None,
+    const_values: None,
     default_fn: None,
     default_declared: false,
     int_round: @abi.Error,
