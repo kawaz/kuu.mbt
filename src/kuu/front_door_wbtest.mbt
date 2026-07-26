@@ -1459,6 +1459,32 @@ test "front_door.parse_definition: an absent bare link target is @abi.AbsentRef 
 }
 
 ///|
+/// DR-029 では ref/type と link は直交するが、現実装は ref leaf の wrapper scope 除去と複合値 carrier
+/// をまだ持たない。silent wrong answer を避け、解除条件が実装されるまで invalid-range で明示的に塞ぐ。
+test "front_door.parse_definition: ref plus link is explicitly rejected until structured routing exists" {
+  let src =
+    #|{"definitions":{"templates":{"payload":{"type":"string","name":"value"}}},
+    #| "options":[
+    #|  {"name":"target","type":"string"},
+    #|  {"name":"legacy","long":true,"ref":"payload","link":"target"}
+    #| ]}
+  match parse_definition(@json.parse(src)) {
+    Err(Rejected(errors)) => {
+      let mut found = false
+      for error in errors {
+        if error.element == "legacy" && error.kind == @abi.InvalidRange {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    Err(Malformed(message)) =>
+      fail("expected invalid-range, got malformed: " + message)
+    Ok(_) => fail("ref+link must not silently keep the reference-side result")
+  }
+}
+
+///|
 /// DR-029 の操作列例: count 入口の increment と canonical number 入口の set は同じ target cell の
 /// mutation 列へ args 順で合流する。最後の `-v` は link 経路なので最終 source も `link` になる。
 test "front_door.output: link preserves mixed count increment and set operation order (DR-029)" {

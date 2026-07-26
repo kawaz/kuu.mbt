@@ -362,6 +362,50 @@ test "DR-060 §3: candidate dedup ignores path — same spelling from two differ
 }
 
 ///|
+/// A link declaration has no value Entity of its own (DR-029 / DR-120 §4), but its entry metadata
+/// still belongs to the entry: trigger candidates keep hidden and value candidates keep completer.
+/// The metadata rides the LinkTarget / matcher entry rather than creating a phantom ladder cell.
+test "link entry keeps hidden and completer metadata without owning an Entity" {
+  let source =
+    #|{"options":[
+    #|  {"name":"target","type":"string"},
+    #|  {"name":"legacy","type":"string","long":true,"short":"l",
+    #|   "hidden":true,"completer":"files","link":"target"}
+    #|]}
+  let definition = @json.parse(source)
+  let ast = match parse_definition(definition) {
+    Ok(ast) => ast
+    Err(_) => fail("link completion definition must lower")
+  }
+  let triggers = complete(ast, [])
+  let mut long_hidden = false
+  let mut short_hidden = false
+  for candidate in triggers {
+    if !candidate.is_value && candidate.origin == "legacy" && candidate.hidden {
+      if candidate.spelling == "--legacy" {
+        long_hidden = true
+      }
+      if candidate.spelling == "-l" {
+        short_hidden = true
+      }
+    }
+  }
+  assert_true(long_hidden)
+  assert_true(short_hidden)
+  for before in [["--legacy"], ["-l"]] {
+    let mut found = false
+    for candidate in complete(ast, before) {
+      if candidate.is_value &&
+        candidate.origin == "legacy" &&
+        candidate.completer == Some("files") {
+        found = true
+      }
+    }
+    assert_true(found)
+  }
+}
+
+///|
 test "DR-117 §2.2: completion_script offers shell names without closing string acceptance" {
   let definition = @json.parse(
     "{\"options\":[{\"name\":\"completions\",\"type\":\"completion_script\",\"long\":true}]}",

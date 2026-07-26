@@ -74,7 +74,7 @@ pub fn entity_ext(hidden? : Bool, completer? : String?) -> &@extension.EntityExt
 
 pub fn enum_value_node(String, &@extension.TypeExt, Array[String]) -> Node
 
-pub fn eq_entry(String, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, merge? : Bool, deprecated? : Bool, link_target? : String?, link_levels? : Int) -> @extension.EqEntry
+pub fn eq_entry(String, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, merge? : Bool, deprecated? : Bool, link_target? : String?, link_levels? : Int, extension? : &@extension.EntityExt) -> @extension.EqEntry
 
 pub fn eq_sep_mode_of(String) -> @abi.EqSepMode?
 
@@ -166,7 +166,7 @@ pub fn seq_body_node(Array[ElementDef]) -> Node
 
 pub fn short_combine(String, Array[@extension.ShortEntry], combine? : Bool) -> &@extension.MatcherExt
 
-pub fn short_entry(Char, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, deprecated? : Bool, merge? : Bool, short_attached_value? : @abi.AttachMode, is_alias? : Bool, link_target? : String?, link_levels? : Int) -> @extension.ShortEntry
+pub fn short_entry(Char, String, &@extension.TypeExt, Array[@abi.FnInvocation], String?, deprecated? : Bool, merge? : Bool, short_attached_value? : @abi.AttachMode, is_alias? : Bool, link_target? : String?, link_levels? : Int, extension? : &@extension.EntityExt) -> @extension.ShortEntry
 
 pub fn string_arg(String, Array[@abi.FnInvocation]) -> Node
 
@@ -427,7 +427,7 @@ pub(all) enum Node {
   DdSatisfied(String)
   DdMatchSatisfied(String, Bool, Bool, String)
   CommandSatisfied(String, Scope)
-  LinkTarget(String, String, Int, Node)
+  LinkTarget(String, String, Int, &@extension.EntityExt, Node)
   Rooted(Node, Int)
   BoundedTail(Node, Int, Bool)
   IndexedRepeat(String, Node, Int, Int?)

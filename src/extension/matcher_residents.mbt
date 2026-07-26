@@ -51,6 +51,7 @@ pub struct EqEntry {
   priv deprecated : Bool
   priv link_target : String?
   priv link_levels : Int
+  priv extension : &EntityExt
 }
 
 ///|
@@ -64,6 +65,7 @@ pub fn eq_entry(
   deprecated? : Bool = false,
   link_target? : String? = None,
   link_levels? : Int = 0,
+  extension? : &EntityExt = entity_ext(),
 ) -> EqEntry {
   {
     key,
@@ -75,6 +77,7 @@ pub fn eq_entry(
     deprecated,
     link_target,
     link_levels,
+    extension,
   }
 }
 
@@ -92,6 +95,7 @@ pub struct ShortEntry {
   priv is_alias : Bool
   priv link_target : String?
   priv link_levels : Int
+  priv extension : &EntityExt
 }
 
 ///|
@@ -107,6 +111,7 @@ pub fn short_entry(
   is_alias? : Bool = false,
   link_target? : String? = None,
   link_levels? : Int = 0,
+  extension? : &EntityExt = entity_ext(),
 ) -> ShortEntry {
   {
     ch,
@@ -120,6 +125,7 @@ pub fn short_entry(
     is_alias,
     link_target,
     link_levels,
+    extension,
   }
 }
 
@@ -132,11 +138,13 @@ fn eq_candidates(
   for entry in entries {
     if entry.kind.has_value_slot() {
       out.push(
-        @abi.Candidate::trigger(
-          prefix + entry.key,
-          entry.name,
-          entry.kind.name(),
-          @abi.Continue,
+        entry.extension.complete_candidate(
+          @abi.Candidate::trigger(
+            prefix + entry.key,
+            entry.name,
+            entry.kind.name(),
+            @abi.Continue,
+          ),
         ),
       )
     }
@@ -155,13 +163,15 @@ fn short_candidates(
     spelling.write_string(prefix)
     spelling.write_char(entry.ch)
     out.push(
-      @abi.Candidate::trigger(
-        spelling.to_string(),
-        entry.name,
-        entry.kind.name(),
-        @abi.WordEnd,
-        is_alias=entry.is_alias,
-        deprecated=entry.deprecated,
+      entry.extension.complete_candidate(
+        @abi.Candidate::trigger(
+          spelling.to_string(),
+          entry.name,
+          entry.kind.name(),
+          @abi.WordEnd,
+          is_alias=entry.is_alias,
+          deprecated=entry.deprecated,
+        ),
       ),
     )
   }
@@ -198,6 +208,7 @@ fn eq_entry_json(entry : EqEntry) -> Json {
     Some(target) => {
       fields.push(target.to_json())
       fields.push(entry.link_levels.to_json())
+      fields.push(entry.extension.encode())
     }
     None => ()
   }
@@ -221,6 +232,7 @@ fn short_entry_json(entry : ShortEntry) -> Json {
     Some(target) => {
       fields.push(target.to_json())
       fields.push(entry.link_levels.to_json())
+      fields.push(entry.extension.encode())
     }
     None => ()
   }
@@ -673,7 +685,11 @@ fn walk_short(
           // (DR-060 §1). The flags already read stay as partial state.
           out.push(
             @abi.Pending(
-              [@abi.Candidate::pending_value(e.kind.name(), e.name)],
+              [
+                e.extension.complete_candidate(
+                  @abi.Candidate::pending_value(e.kind.name(), e.name),
+                ),
+              ],
               acc + dm,
             ),
           )

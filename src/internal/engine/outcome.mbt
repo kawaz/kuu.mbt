@@ -571,6 +571,8 @@ fn collect_entities_greedy(
       for a in alts {
         collect_entities_greedy(a, path, defs, out, seen_refs)
       }
+    LinkTarget(_, _, _, _, inner) =>
+      collect_entities_greedy(inner, path, defs, out, seen_refs)
     Rooted(inner, _) =>
       collect_entities_greedy(inner, path, defs, out, seen_refs)
     _ => ()

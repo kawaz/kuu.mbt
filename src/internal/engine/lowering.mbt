@@ -1520,6 +1520,11 @@ fn inst_long(
     } else {
       0
     }
+    let link_extension = if link_target is Some(_) {
+      entity_ext(hidden=e.hidden, completer=e.completer)
+    } else {
+      entity_ext()
+    }
     for l in long_of(e) {
       // DR-091 §3: `e.long_prefix` replaces the old hardcoded `"--"` (既定値は `"--"` そのものなので
       // this element's own trigger is unchanged unless it explicitly overrides).
@@ -1794,6 +1799,7 @@ fn inst_long(
                 deprecated=e.deprecated,
                 link_target~,
                 link_levels=matcher_link_levels,
+                extension=link_extension,
               ),
             )
           }
@@ -1919,7 +1925,15 @@ fn link_route_fields(def : Definition, e : ElementDef) -> (String?, Int)? {
 fn route_link_entry(def : Definition, e : ElementDef, node : Node) -> Node? {
   match link_route_fields(def, e) {
     Some((Some(target), levels)) =>
-      Some(LinkTarget(e.name, target, levels, node))
+      Some(
+        LinkTarget(
+          e.name,
+          target,
+          levels,
+          entity_ext(hidden=e.hidden, completer=e.completer),
+          node,
+        ),
+      )
     Some((None, _)) => Some(node)
     None => None
   }
@@ -2005,6 +2019,11 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
     } else {
       0
     }
+    let link_extension = if link_target is Some(_) {
+      entity_ext(hidden=e.hidden, completer=e.completer)
+    } else {
+      entity_ext()
+    }
     for c in e.short {
       // DR-058: deprecated alias entry-copy は cluster entry でも警告する
       // DR-075 §2: short cluster / space-tail 経路の int_type() (`-n1.5` / `-n 1.5`) も factory config を反映
@@ -2032,6 +2051,7 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
           is_alias=e.is_alias,
           link_target~,
           link_levels=matcher_link_levels,
+          extension=link_extension,
         ),
       )
     }
@@ -2488,7 +2508,7 @@ fn collect_value_names(
     Many(inner, _) => collect_value_names(inner, registry, visiting, out)
     BoundedTail(inner, _, _) =>
       collect_value_names(inner, registry, visiting, out)
-    LinkTarget(_, _, _, inner) =>
+    LinkTarget(_, _, _, _, inner) =>
       collect_value_names(inner, registry, visiting, out)
     Rooted(inner, _) => collect_value_names(inner, registry, visiting, out)
     Scoped(_, inner) => collect_value_names(inner, registry, visiting, out)
@@ -3295,7 +3315,7 @@ fn head_progresses(
     Ext(extension) => !extension.consumes_zero_tokens()
     IndexedRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
-    LinkTarget(_, _, _, inner) => head_progresses(inner, registry, visiting)
+    LinkTarget(_, _, _, _, inner) => head_progresses(inner, registry, visiting)
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
     Bind(_, _) => false // 0-token
     Ref(r) => {
@@ -3490,6 +3510,48 @@ fn check_elem_absent_ref(
           )
       }
     None => ()
+  }
+}
+
+///|
+/// Temporary implementation gate for DR-029-legal combinations whose result carrier is not yet
+/// representable by the bare-cell link route. A `ref` produces template leaf bindings under the
+/// reference-side scope, while structural Or/Group bodies can produce multiple child bindings;
+/// blindly rewriting only the wrapper name would silently return the reference-side result as CLI.
+/// Remove this InvalidRange gate when link routing can (a) strip a single ref leaf's wrapper scope
+/// and (b) carry a composite value without collapsing its child effects. Fixed-path `.field/[idx]`
+/// routing is tracked separately and is not implemented here.
+fn collect_unsupported_link_shape(
+  def : Definition,
+  out : Array[DefError],
+) -> Unit {
+  fn check(element : ElementDef, out : Array[DefError]) -> Unit {
+    if element.link_target is Some(_) {
+      let structural = match element.body {
+        Or(_) | Group(_) => true
+        Cell | Enum(_) => false
+      }
+      let unsupported = element.ref_target is Some(_) || structural
+      if unsupported {
+        out.push(
+          def_err(
+            element.name,
+            InvalidRange,
+            "link with ref/or/seq is not supported by this implementation",
+            "use a direct cell entry for link until structured link routing is implemented",
+          ),
+        )
+      }
+    }
+  }
+  for element in def.options {
+    check(element, out)
+  }
+  for element in def.positionals {
+    check(element, out)
+  }
+  for command in def.commands {
+    collect_unsupported_link_shape(command.body, out)
   }
 }
 
@@ -5226,6 +5288,7 @@ fn lower_definition_snapshot_impl(
   // DR-117 §2.6 / §8.1: `insert_form` の 3 種 invalid (enum 逸脱・非 completion_script への宣言・
   // 複数入口間の食い違い) を invalid-range で一括収集する。
   collect_completion_script_errors(def, errs)
+  collect_unsupported_link_shape(def, errs)
   if errs.length() > 0 {
     return Err(errs) // ALL definition-error 列挙
   }
