@@ -87,6 +87,15 @@ impl AccumulatorExt for AppendAccumulator with fn collect(_self, values) {
 }
 
 ///|
+impl AccumulatorExt for AppendAccumulator with fn collect_sources(_self, values) {
+  let out : Array[@abi.ResultValue] = []
+  for value in values {
+    out.push(source_result(value.1))
+  }
+  @abi.Array(out)
+}
+
+///|
 pub fn append_accumulator() -> &AccumulatorExt {
   AppendAccumulator::{  } as &AccumulatorExt
 }
@@ -98,10 +107,10 @@ priv enum MergeGroup {
 }
 
 ///|
-priv enum MergeMark {
-  MAdd(@abi.Value)
-  MRemove(@abi.Value)
-  MSplice
+priv enum MergeBindingMark {
+  BAdd(@abi.Binding)
+  BRemove(@abi.Value)
+  BSplice
 }
 
 ///|
@@ -115,10 +124,10 @@ fn value_contains(values : Array[@abi.Value], target : @abi.Value) -> Bool {
 }
 
 ///|
-fn merge_pieces_has_no_marker(marks : Array[MergeMark]) -> Bool {
-  for mark in marks {
-    match mark {
-      MAdd(_) => ()
+fn merge_bindings_have_no_marker(pieces : Array[@abi.Binding]) -> Bool {
+  for piece in pieces {
+    match piece.op {
+      @abi.Set => ()
       _ => return false
     }
   }
@@ -126,38 +135,22 @@ fn merge_pieces_has_no_marker(marks : Array[MergeMark]) -> Bool {
 }
 
 ///|
-fn merge_pieces_with_implicit_splice(
-  marks : Array[MergeMark],
-) -> Array[MergeMark] {
-  for mark in marks {
-    if mark is MSplice {
-      return marks
-    }
-  }
-  let out : Array[MergeMark] = [MSplice]
-  for mark in marks {
-    out.push(mark)
-  }
-  out
-}
-
-///|
-fn eval_merge_pieces(
-  marks : Array[MergeMark],
-  old : Array[@abi.Value],
-) -> Array[@abi.Value] {
-  let values : Array[@abi.Value] = []
+fn eval_merge_bindings(
+  marks : Array[MergeBindingMark],
+  old : Array[@abi.Binding],
+) -> Array[@abi.Binding] {
+  let values : Array[@abi.Binding] = []
   let removed : Array[@abi.Value] = []
   for mark in marks {
     match mark {
-      MAdd(value) => values.push(value)
-      MRemove(value) => {
+      BAdd(binding) => values.push({ ..binding, op: @abi.Set })
+      BRemove(value) => {
         if !value_contains(removed, value) {
           removed.push(value)
         }
-        let kept : Array[@abi.Value] = []
+        let kept : Array[@abi.Binding] = []
         for current in values {
-          if current != value {
+          if current.value != value {
             kept.push(current)
           }
         }
@@ -166,10 +159,10 @@ fn eval_merge_pieces(
           values.push(current)
         }
       }
-      MSplice =>
-        for value in old {
-          if !value_contains(removed, value) {
-            values.push(value)
+      BSplice =>
+        for binding in old {
+          if !value_contains(removed, binding.value) {
+            values.push(binding)
           }
         }
     }
@@ -215,7 +208,7 @@ fn merge_resolve_cli(
 
   let mut result : Array[@abi.Binding] = []
   let mut committed = false
-  let mut old_values : Array[@abi.Value]? = None
+  let mut old_bindings : Array[@abi.Binding]? = None
   for group in groups {
     match group {
       Cell(binding) =>
@@ -228,78 +221,73 @@ fn merge_resolve_cli(
             match lower(true) {
               Ok(defaults) => {
                 let next : Array[@abi.Binding] = [binding]
-                let values : Array[@abi.Value] = []
                 for default in defaults {
                   next.push({ ..default, op: @abi.Set, source: binding.source })
-                  values.push(default.value)
                 }
                 result = next
-                old_values = Some(values)
+                old_bindings = Some(next)
                 committed = true
               }
               Err(error) => return Err(error)
             }
           @abi.Unset => {
             result = [binding]
-            old_values = None
+            old_bindings = None
             committed = false
           }
           @abi.Empty => {
             result = [binding]
-            old_values = Some([])
+            old_bindings = Some([])
             committed = true
           }
           @abi.Set | @abi.Remove | @abi.Splice =>
             abort("unreachable: merge cell operations are grouped as a firing")
         }
-      Fire(pieces) => {
-        let marks : Array[MergeMark] = []
-        for piece in pieces {
-          match piece.op {
-            @abi.Set => marks.push(MAdd(piece.value))
-            @abi.Remove => marks.push(MRemove(piece.value))
-            @abi.Splice => marks.push(MSplice)
-            _ =>
-              abort("unreachable: merge firing contains only set/remove/splice")
-          }
-        }
-        if merge_pieces_has_no_marker(marks) {
-          let values : Array[@abi.Value] = []
-          for piece in pieces {
-            values.push(piece.value)
-          }
+      Fire(pieces) =>
+        if merge_bindings_have_no_marker(pieces) {
           result = pieces
-          old_values = Some(values)
+          old_bindings = Some(pieces)
           committed = true
         } else {
-          let old = match old_values {
-            Some(values) => values
+          let old = match old_bindings {
+            Some(bindings) => bindings
             None =>
               match lower(true) {
-                Ok(bindings) => {
-                  let values : Array[@abi.Value] = []
-                  for binding in bindings {
-                    values.push(binding.value)
-                  }
-                  values
-                }
+                Ok(bindings) => bindings
                 Err(error) => return Err(error)
               }
           }
-          let values = eval_merge_pieces(
-            merge_pieces_with_implicit_splice(marks),
-            old,
-          )
-          let next : Array[@abi.Binding] = []
-          let firing_source = pieces[pieces.length() - 1].source
-          for value in values {
-            next.push(@abi.Binding::new(name, value, firing_source))
+          let binding_marks : Array[MergeBindingMark] = []
+          let mut has_splice = false
+          for piece in pieces {
+            match piece.op {
+              @abi.Set => binding_marks.push(BAdd(piece))
+              @abi.Remove => binding_marks.push(BRemove(piece.value))
+              @abi.Splice => {
+                binding_marks.push(BSplice)
+                has_splice = true
+              }
+              _ =>
+                abort(
+                  "unreachable: merge firing contains only set/remove/splice",
+                )
+            }
           }
+          if !has_splice {
+            let with_implicit : Array[MergeBindingMark] = [BSplice]
+            for mark in binding_marks {
+              with_implicit.push(mark)
+            }
+            binding_marks.clear()
+            for mark in with_implicit {
+              binding_marks.push(mark)
+            }
+          }
+          let next = eval_merge_bindings(binding_marks, old)
           result = next
-          old_values = Some(values)
+          old_bindings = Some(next)
           committed = true
         }
-      }
     }
   }
   if committed {
@@ -338,6 +326,15 @@ impl AccumulatorExt for MergeAccumulator with fn collect(_self, values) {
   let out : Array[@abi.ResultValue] = []
   for value in values {
     out.push(@abi.Scalar(value))
+  }
+  @abi.Array(out)
+}
+
+///|
+impl AccumulatorExt for MergeAccumulator with fn collect_sources(_self, values) {
+  let out : Array[@abi.ResultValue] = []
+  for value in values {
+    out.push(source_result(value.1))
   }
   @abi.Array(out)
 }
@@ -410,6 +407,28 @@ impl AccumulatorExt for KvMapAccumulator with fn collect(_self, values) {
 }
 
 ///|
+impl AccumulatorExt for KvMapAccumulator with fn collect_sources(_self, values) {
+  let fields : Array[(String, @abi.ResultValue)] = []
+  let seen : Map[String, Int] = Map([])
+  for item in values {
+    let raw = match item.0 {
+      @abi.String(text) => text
+      _ => ""
+    }
+    let (key, _) = split_first_eq(raw)
+    let tagged = source_result(item.1)
+    match seen.get(key) {
+      Some(index) => fields[index] = (key, tagged)
+      None => {
+        seen.set(key, fields.length())
+        fields.push((key, tagged))
+      }
+    }
+  }
+  @abi.Object(fields)
+}
+
+///|
 pub fn kv_map_accumulator() -> &AccumulatorExt {
   KvMapAccumulator::{  } as &AccumulatorExt
 }
@@ -454,6 +473,15 @@ impl CollectorExt for UnwrapSingleCollector with fn encode(_self) {
 ///|
 impl CollectorExt for UnwrapSingleCollector with fn collect(_self, value) {
   unwrap_single(value)
+}
+
+///|
+impl CollectorExt for UnwrapSingleCollector with fn collect_sources(
+  _self,
+  _value,
+  sources,
+) {
+  unwrap_single(sources)
 }
 
 ///|
@@ -658,6 +686,113 @@ fn from_entries(
 }
 
 ///|
+fn from_entries_sources(
+  value : @abi.ResultValue,
+  sources : @abi.ResultValue,
+  spec : FromEntriesSpec,
+) -> @abi.ResultValue {
+  match (value, sources) {
+    (@abi.Scalar(_), source) => source
+    (@abi.Object(values), @abi.Object(source_fields)) => {
+      let out : Array[(String, @abi.ResultValue)] = []
+      for field in values {
+        let source = result_field(@abi.Object(source_fields), field.0).unwrap_or(
+          @abi.Object([]),
+        )
+        out.push((field.0, from_entries_sources(field.1, source, spec)))
+      }
+      @abi.Object(out)
+    }
+    (@abi.Array(values), @abi.Array(source_values)) =>
+      match spec {
+        Entries if all_pairs(values) => {
+          let fields : Array[(String, @abi.ResultValue)] = []
+          for i, value in values {
+            match value {
+              @abi.Array(items) => {
+                let item_sources = match source_values[i] {
+                  @abi.Array(parts) => parts
+                  _ => []
+                }
+                let source = if item_sources.length() > 1 {
+                  item_sources[1]
+                } else {
+                  @abi.Object([])
+                }
+                fields.push(
+                  (
+                    result_key(items[0]),
+                    from_entries_sources(items[1], source, spec),
+                  ),
+                )
+              }
+              _ => ()
+            }
+          }
+          @abi.Object(fields)
+        }
+        KeyValue(key_field, value_field) if all_have_fields(values, [
+            key_field, value_field,
+          ]) => {
+          let fields : Array[(String, @abi.ResultValue)] = []
+          for i, value in values {
+            let key = result_field(value, key_field)
+              .map(result_key)
+              .unwrap_or("?")
+            let item = result_field(value, value_field).unwrap_or(
+              @abi.Scalar(@abi.Bool(false)),
+            )
+            let source = result_field(source_values[i], value_field).unwrap_or(
+              @abi.Object([]),
+            )
+            fields.push((key, from_entries_sources(item, source, spec)))
+          }
+          @abi.Object(fields)
+        }
+        KeyPromote(key_field) if all_have_fields(values, [key_field]) => {
+          let fields : Array[(String, @abi.ResultValue)] = []
+          for i, value in values {
+            match value {
+              @abi.Object(items) => {
+                let mut key = ""
+                let rest : Array[(String, @abi.ResultValue)] = []
+                for item in items {
+                  if item.0 == key_field {
+                    key = result_key(item.1)
+                  } else {
+                    let source = result_field(source_values[i], item.0).unwrap_or(
+                      @abi.Object([]),
+                    )
+                    rest.push(
+                      (item.0, from_entries_sources(item.1, source, spec)),
+                    )
+                  }
+                }
+                fields.push((key, @abi.Object(rest)))
+              }
+              _ => ()
+            }
+          }
+          @abi.Object(fields)
+        }
+        _ => {
+          let out : Array[@abi.ResultValue] = []
+          for i, item in values {
+            let source = if i < source_values.length() {
+              source_values[i]
+            } else {
+              @abi.Object([])
+            }
+            out.push(from_entries_sources(item, source, spec))
+          }
+          @abi.Array(out)
+        }
+      }
+    (_, source) => source
+  }
+}
+
+///|
 priv struct FromEntriesCollector {
   spec : FromEntriesSpec
 }
@@ -679,6 +814,15 @@ impl CollectorExt for FromEntriesCollector with fn encode(self) {
 ///|
 impl CollectorExt for FromEntriesCollector with fn collect(self, value) {
   from_entries(value, self.spec)
+}
+
+///|
+impl CollectorExt for FromEntriesCollector with fn collect_sources(
+  self,
+  value,
+  sources,
+) {
+  from_entries_sources(value, sources, self.spec)
 }
 
 ///|

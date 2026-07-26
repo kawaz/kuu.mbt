@@ -345,19 +345,7 @@ test "front_door.output: 単一 scope で export_key rename + flag preset defaul
     }
     _ => fail("output.result should be @abi.Object at root scope")
   }
-  let ses = view.sources
-  let mut p_src : @abi.Source? = None
-  let mut verbose_src : @abi.Source? = None
-  for se in ses {
-    if se.key == "p" {
-      p_src = Some(se.source)
-    }
-    if se.key == "verbose" {
-      verbose_src = Some(se.source)
-    }
-  }
-  assert_eq(p_src, Some(@abi.Cli))
-  assert_eq(verbose_src, Some(@abi.Default))
+  assert_eq(render_rval_sorted(view.sources), "{p=cli,verbose=default}")
 }
 
 ///|
@@ -390,17 +378,10 @@ test "front_door.output: command 木でも子 scope の値源を OutputView.sour
       panic()
     }
   }
-  let ses = output_legacy(ast, effects=rb).sources
-  let mut found : SourceEntry? = None
-  for se in ses {
-    if se.key == "ttl" && se.path.length() == 1 && se.path[0] == "sub" {
-      found = Some(se)
-    }
-  }
-  match found {
-    Some(se) => assert_eq(se.source, @abi.Cli)
-    None => fail("expected a sub.ttl SourceEntry with path=[\"sub\"]")
-  }
+  assert_eq(
+    render_rval_sorted(output_legacy(ast, effects=rb).sources),
+    "{sub={ttl=cli}}",
+  )
 }
 
 ///|
@@ -462,14 +443,10 @@ test "front_door.config_from_json: JSON から組んだ @abi.ConfigVal が confi
     }
     _ => fail("output.result should be @abi.Object")
   }
-  let ses = output_legacy(ast, effects=rb).sources
-  let mut port_src : @abi.Source? = None
-  for se in ses {
-    if se.key == "port" {
-      port_src = Some(se.source)
-    }
-  }
-  assert_eq(port_src, Some(@abi.Config))
+  assert_eq(
+    render_rval_sorted(output_legacy(ast, effects=rb).sources),
+    "{port=config}",
+  )
 }
 
 ///|
@@ -521,14 +498,10 @@ test "front_door.tty_obs: 構築した TtyObs が tty 席経由で builtin/tty �
     }
     _ => fail("output.result should be @abi.Object")
   }
-  let ses = output_legacy(ast, effects=rb).sources
-  let mut use_color_src : @abi.Source? = None
-  for se in ses {
-    if se.key == "use_color" {
-      use_color_src = Some(se.source)
-    }
-  }
-  assert_eq(use_color_src, Some(@abi.Tty))
+  assert_eq(
+    render_rval_sorted(output_legacy(ast, effects=rb).sources),
+    "{use_color=tty}",
+  )
 }
 
 ///|
@@ -1221,8 +1194,7 @@ test "front_door.output: name を持つ or は 1 段の結果スコープを作�
 }
 
 ///|
-/// sources 射影の共通ヘルパー (下記 export_key × command 木の pin 群が使う)。
-/// `render_sources` (conformance runner 側) と同じ `path.key=source` 形へ整形して比較する。
+/// Render the complete DR-122 shadow tree with deterministic object-key ordering.
 fn wbtest_sources_of(src : String, args : Array[String]) -> String raise {
   let ast = match parse_definition(@json.parse(src)) {
     Ok(value) => value
@@ -1240,41 +1212,11 @@ fn wbtest_sources_of(src : String, args : Array[String]) -> String raise {
       panic()
     }
   }
-  let view = output_legacy(ast, effects~)
-  let items : Array[String] = []
-  for entry in view.sources {
-    items.push(wbtest_source_entry(entry))
-  }
-  test_sort_items(items)
-  test_join_comma(items)
+  render_rval_sorted(output_legacy(ast, effects~).sources)
 }
 
 ///|
-/// `SourceEntry` 1 件を比較用の 1 行へ整形する。**`path` と `key` を連結した文字列を作らない**
-/// (DR-121 §1.1) — 連結形は非単射で、区別すべき 2 つの結果アドレスが同じ綴りへ潰れる。
-/// `[a b]/key=source` の形で path を構造のまま見せる (root 直下は `[]/key=source`)。
-fn wbtest_source_entry(entry : SourceEntry) -> String {
-  let segs : Array[String] = []
-  for segment in entry.path {
-    segs.push(segment)
-  }
-  let label = match entry.source {
-    @abi.Cli => "cli"
-    @abi.Link => "link"
-    @abi.Env => "env"
-    @abi.Config => "config"
-    @abi.Inherit => "inherit"
-    @abi.Tty => "tty"
-    @abi.Const => "const"
-    @abi.Default => "default"
-  }
-  "[" + test_join_space(segs) + "]/" + entry.key + "=" + label
-}
-
-///|
-/// OutputView の 3 面 (`result` / `sources` / `effects`) を 1 本の文字列へ整形する。内部セル
-/// (none / config_file / dd trigger) の除外は 3 面すべてに掛かるので、1 面だけ見る
-/// `wbtest_sources_of` では片面の regression を取り逃がす — 除外系の pin はこちらを使う。
+/// OutputView の 3 面 (`result` / `sources` / `effects`) を 1 本の文字列へ整形する。
 fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
   let ast = match parse_definition(@json.parse(src)) {
     Ok(value) => value
@@ -1293,11 +1235,6 @@ fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
     }
   }
   let view = output_legacy(ast, effects~)
-  let src_items : Array[String] = []
-  for entry in view.sources {
-    src_items.push(wbtest_source_entry(entry))
-  }
-  test_sort_items(src_items)
   let eff_items : Array[String] = []
   for effect in view.effects {
     eff_items.push(effect.entity)
@@ -1306,7 +1243,7 @@ fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
   "result=" +
   render_rval_sorted(view.result) +
   " sources=" +
-  test_join_comma(src_items) +
+  render_rval_sorted(view.sources) +
   " effects=" +
   test_join_comma(eff_items)
 }
@@ -1324,19 +1261,19 @@ test "front_door.output: link entry routes into the canonical cell with source=l
     #|]}
   assert_eq(
     wbtest_view_of(src, ["--target", "canonical"]),
-    "result={target=canonical} sources=[]/target=cli effects=target",
+    "result={target=canonical} sources={target=cli} effects=target",
   )
   assert_eq(
     wbtest_view_of(src, ["--legacy"]),
-    "result={target=linked} sources=[]/target=link effects=target",
+    "result={target=linked} sources={target=link} effects=target",
   )
   assert_eq(
     wbtest_view_of(src, ["--target", "first", "--legacy"]),
-    "result={target=linked} sources=[]/target=link effects=target",
+    "result={target=linked} sources={target=link} effects=target",
   )
   assert_eq(
     wbtest_view_of(src, ["--legacy", "--target", "last"]),
-    "result={target=last} sources=[]/target=cli effects=target",
+    "result={target=last} sources={target=cli} effects=target",
   )
 }
 
@@ -1351,18 +1288,18 @@ test "front_door.output: link routes long space, eq-split, and positional entry 
     #|]}
   assert_eq(
     wbtest_view_of(option_src, ["--legacy", "space"]),
-    "result={target=space} sources=[]/target=link effects=target",
+    "result={target=space} sources={target=link} effects=target",
   )
   assert_eq(
     wbtest_view_of(option_src, ["--legacy=equal"]),
-    "result={target=equal} sources=[]/target=link effects=target",
+    "result={target=equal} sources={target=link} effects=target",
   )
   let positional_src =
     #|{"options":[{"name":"target","type":"string"}],
     #| "positionals":[{"name":"legacy","type":"string","link":"target"}]}
   assert_eq(
     wbtest_view_of(positional_src, ["operand"]),
-    "result={target=operand} sources=[]/target=link effects=target",
+    "result={target=operand} sources={target=link} effects=target",
   )
 }
 
@@ -1413,7 +1350,7 @@ test "front_door.output: global link entries keep target routing across command 
     #|],"commands":[{"type":"command","name":"sub","options":[
     #|  {"name":"quiet","type":"flag","long":true}
     #|]}]}
-  let expected = "result={sub={quiet=true},target=value} sources=[]/target=link,[sub]/quiet=cli effects=quiet,target"
+  let expected = "result={sub={quiet=true},target=value} sources={sub={quiet=cli},target=link} effects=quiet,target"
   assert_eq(
     wbtest_view_of(src, ["sub", "--legacy", "value", "--quiet"]),
     expected,
@@ -1436,14 +1373,14 @@ test "front_door.output: copied global link ignores descendant same-name target 
     #| ]}]}]}
   assert_eq(
     wbtest_view_of(src, ["mid", "sub", "--legacy", "value", "--quiet"]),
-    "result={mid={sub={quiet=true}},target=value} sources=[]/target=link,[mid sub]/quiet=cli effects=quiet,target",
+    "result={mid={sub={quiet=true}},target=value} sources={mid={sub={quiet=cli}},target=link} effects=quiet,target",
   )
 }
 
 ///|
-/// DR-121 §1: link は宣言名ではなく canonical cell の structured result address に provenance を
-/// 置く。canonical が `export_key` で rename されても、参照側の name は result/sources に現れない。
-test "front_door.output: link source follows the canonical export_key address (DR-121 §1/§4)" {
+/// link は canonical cell の露出キー位置へ provenance を置く。canonical が `export_key` で
+/// rename されても、参照側の name は result/sources に現れない。
+test "front_door.output: link source follows the canonical export_key position (DR-122 §2 / DR-121 §4)" {
   let src =
     #|{"options":[
     #|  {"name":"target","type":"string","export_key":"published"},
@@ -1451,7 +1388,7 @@ test "front_door.output: link source follows the canonical export_key address (D
     #|]}
   assert_eq(
     wbtest_view_of(src, ["--legacy"]),
-    "result={published=linked} sources=[]/published=link effects=target",
+    "result={published=linked} sources={published=link} effects=target",
   )
 }
 
@@ -1514,7 +1451,7 @@ test "front_door.output: link preserves mixed count increment and set operation 
     #|]}
   assert_eq(
     wbtest_view_of(src, ["-vv", "--log-level", "5", "-v"]),
-    "result={log_level=6} sources=[]/log_level=link effects=log_level",
+    "result={log_level=6} sources={log_level=link} effects=log_level",
   )
 }
 
@@ -1528,7 +1465,7 @@ test "front_door.output: command 木でも値セル rename が sources に効く
   let src =
     #|{"options":[{"name":"verbose","type":"flag","long":true,"export_key":"v"}],
     #| "commands":[{"type":"command","name":"serve"}]}
-  assert_eq(wbtest_sources_of(src, ["--verbose"]), "[]/v=cli")
+  assert_eq(wbtest_sources_of(src, ["--verbose"]), "{v=cli}")
 }
 
 ///|
@@ -1538,7 +1475,7 @@ test "front_door.output: command 木の scope ラベル rename が sources に�
   let src =
     #|{"commands":[{"type":"command","name":"cmd","export_key":"sv","options":[
     #|  {"name":"inner","type":"number","long":true,"export_key":"i"}]}]}
-  assert_eq(wbtest_sources_of(src, ["cmd", "--inner", "3"]), "[sv]/i=cli")
+  assert_eq(wbtest_sources_of(src, ["cmd", "--inner", "3"]), "{sv={i=cli}}")
 }
 
 ///|
@@ -1548,7 +1485,7 @@ test "front_door.output: command 木の scope 透過昇格が sources に効く 
   let src =
     #|{"commands":[{"type":"command","name":"serve","export_key":null,"options":[
     #|  {"name":"port","type":"number","long":true}]}]}
-  assert_eq(wbtest_sources_of(src, ["serve", "--port", "80"]), "[]/port=cli")
+  assert_eq(wbtest_sources_of(src, ["serve", "--port", "80"]), "{port=cli}")
 }
 
 ///|
@@ -1559,10 +1496,7 @@ test "front_door.output: command 木でも透過値セルは sources に現れ�
     #|{"options":[{"name":"opt","type":"number","long":true,"export_key":null},
     #|            {"name":"keep","type":"number","long":true}],
     #| "commands":[{"type":"command","name":"serve"}]}
-  assert_eq(
-    wbtest_sources_of(src, ["--opt", "1", "--keep", "2"]),
-    "[]/keep=cli",
-  )
+  assert_eq(wbtest_sources_of(src, ["--opt", "1", "--keep", "2"]), "{keep=cli}")
 }
 
 ///|
@@ -1577,10 +1511,7 @@ test "front_door.output: command 木でも 0 回発火の accum セルが defaul
     #|            {"name":"ttl","type":"number","long":true,"default":30},
     #|            {"name":"tags","type":"string","long":true,"multiple":"append"}],
     #| "commands":[{"type":"command","name":"serve"}]}
-  assert_eq(
-    wbtest_sources_of(src, []),
-    "[]/a=default,[]/tags=default,[]/ttl=default",
-  )
+  assert_eq(wbtest_sources_of(src, []), "{a=default,tags=[],ttl=default}")
 }
 
 ///|
@@ -1597,7 +1528,7 @@ test "front_door.output: named seq の結果スコープ path は command 無し
   let with_command = "{" +
     body +
     ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
-  let want = "[pr]/path=cli,[pr]/value=cli"
+  let want = "{pr={path=cli,value=cli}}"
   assert_eq(wbtest_sources_of(no_command, ["--pr", "x", "y"]), want)
   assert_eq(wbtest_sources_of(with_command, ["--pr", "x", "y"]), want)
 }
@@ -1615,7 +1546,7 @@ test "front_door.output: named or の結果スコープ path は command 無し�
   let with_command = "{" +
     body +
     ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
-  let want = "[mode]/num=cli"
+  let want = "{mode={num=cli}}"
   assert_eq(wbtest_sources_of(no_command, ["--mode", "7"]), want)
   assert_eq(wbtest_sources_of(with_command, ["--mode", "7"]), want)
 }
@@ -1646,9 +1577,7 @@ test "front_door.output: unset 発火の値源は default (parse-only 経路、D
     }
   }
   let view = output_legacy(ast, effects=binds)
-  assert_eq(view.sources.length(), 1)
-  assert_eq(view.sources[0].key, "color")
-  assert_eq(view.sources[0].source, @abi.Source::Default)
+  assert_eq(render_rval_sorted(view.sources), "{color=default}")
 }
 
 ///|
@@ -1659,6 +1588,27 @@ test "front_door.output: unset 発火の値源は default (parse-only 経路、D
 ///
 /// キーは「席の葉」だけを取る — `grp.#0.gflag` なら `gflag`。除外を見るには「その名前の席が
 /// 在るか / 無いか」で足り、どこに在るかは `result` 側 (同じ関数が返す) が語る。
+fn wbtest_collect_source_keys(
+  source : @abi.ResultValue,
+  out : Array[String],
+) -> Unit {
+  match source {
+    @abi.Object(fields) =>
+      for field in fields {
+        match field.1 {
+          @abi.Scalar(_) => out.push(field.0)
+          nested => wbtest_collect_source_keys(nested, out)
+        }
+      }
+    @abi.Array(values) =>
+      for value in values {
+        wbtest_collect_source_keys(value, out)
+      }
+    @abi.Scalar(_) => ()
+  }
+}
+
+///|
 fn wbtest_view_keys_of(src : String, args : Array[String]) -> String raise {
   let ast = match parse_definition(@json.parse(src)) {
     Ok(value) => value
@@ -1678,9 +1628,7 @@ fn wbtest_view_keys_of(src : String, args : Array[String]) -> String raise {
   }
   let view = output_legacy(ast, effects~)
   let src_items : Array[String] = []
-  for entry in view.sources {
-    src_items.push(entry.key)
-  }
+  wbtest_collect_source_keys(view.sources, src_items)
   test_sort_items(src_items)
   let eff_items : Array[String] = []
   for effect in view.effects {
@@ -1726,15 +1674,15 @@ test "front_door.output: none セルは scope rename の 3 境界すべてで 3 
   let args = ["serve", "--touch", "--keep"]
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, None), args),
-    "result={serve={k=true}} sources=[serve]/k=cli effects=keep",
+    "result={serve={k=true}} sources={serve={k=cli}} effects=keep",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("\"sv\"")), args),
-    "result={sv={k=true}} sources=[sv]/k=cli effects=keep",
+    "result={sv={k=true}} sources={sv={k=cli}} effects=keep",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("null")), args),
-    "result={k=true} sources=[]/k=cli effects=keep",
+    "result={k=true} sources={k=cli} effects=keep",
   )
 }
 
@@ -1749,15 +1697,15 @@ test "front_door.output: config_file セルは scope rename の 3 境界すべ�
   let args = ["serve", "--keep"]
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, None), args),
-    "result={serve={keep=true}} sources=[serve]/keep=cli effects=keep",
+    "result={serve={keep=true}} sources={serve={keep=cli}} effects=keep",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("\"sv\"")), args),
-    "result={sv={keep=true}} sources=[sv]/keep=cli effects=keep",
+    "result={sv={keep=true}} sources={sv={keep=cli}} effects=keep",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("null")), args),
-    "result={keep=true} sources=[]/keep=cli effects=keep",
+    "result={keep=true} sources={keep=cli} effects=keep",
   )
 }
 
@@ -1771,15 +1719,15 @@ test "front_door.output: dd trigger は scope rename の 3 境界すべてで 3 
   let args = ["serve", "--", "-v"]
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, None), args),
-    "result={serve={x=-v}} sources=[serve]/x=cli effects=x",
+    "result={serve={x=-v}} sources={serve={x=cli}} effects=x",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("\"sv\"")), args),
-    "result={sv={x=-v}} sources=[sv]/x=cli effects=x",
+    "result={sv={x=-v}} sources={sv={x=cli}} effects=x",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("null")), args),
-    "result={x=-v} sources=[]/x=cli effects=x",
+    "result={x=-v} sources={x=cli} effects=x",
   )
 }
 
@@ -1793,7 +1741,7 @@ test "front_door.output: 値セル自身が rename された none も 3 面か�
     #|            {"name":"keep","type":"flag","long":true}]}
   assert_eq(
     wbtest_view_of(src, ["--touch", "--keep"]),
-    "result={keep=true} sources=[]/keep=cli effects=keep",
+    "result={keep=true} sources={keep=cli} effects=keep",
   )
 }
 
@@ -1815,14 +1763,14 @@ test "front_door.output: named seq / or / repeat 配下の none も 3 面から�
     #|  {"name":"touch","type":"none"},{"name":"keep","type":"string"}]}]}
   assert_eq(
     wbtest_view_of(seq_renamed, ["--pair", "x", "y"]),
-    "result={pr={keep=y}} sources=[pr]/keep=cli effects=keep",
+    "result={pr={keep=y}} sources={pr={keep=cli}} effects=keep",
   )
   let seq_identity =
     #|{"options":[{"name":"pair","long":true,"seq":[
     #|  {"name":"touch","type":"none"},{"name":"keep","type":"string"}]}]}
   assert_eq(
     wbtest_view_of(seq_identity, ["--pair", "x", "y"]),
-    "result={pair={keep=y}} sources=[pair]/keep=cli effects=keep",
+    "result={pair={keep=y}} sources={pair={keep=cli}} effects=keep",
   )
   // or の枝が seq を持つ形 (枝 leaf は nameless 同化で `mode` 直下へ昇格、DR-052 §2)。
   let or_seq =
@@ -1831,7 +1779,7 @@ test "front_door.output: named seq / or / repeat 配下の none も 3 面から�
     #|  {"name":"num","type":"int"}]}]}
   assert_eq(
     wbtest_view_of(or_seq, ["--mode", "a", "b"]),
-    "result={mode={keep=b}} sources=[mode]/keep=cli effects=keep",
+    "result={mode={keep=b}} sources={mode={keep=cli}} effects=keep",
   )
   // `repeat` 配下は sources の path に index segment が現れるが、その綴りは未裁定 (下記) なので
   // 席の集合だけを見る。
@@ -1860,15 +1808,15 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
     #|  {"name":"path","type":"string"},{"name":"value","type":"string"}]}]}
   assert_eq(
     wbtest_view_of(seq, []),
-    "result={pair=[]} sources=[]/pair=default effects=",
+    "result={pair=[]} sources={pair=[]} effects=",
   )
   assert_eq(
     wbtest_view_of(seq, ["--pair", "x", "1"]),
-    "result={pair=[{path=x,value=1}]} sources=[pair]/path=cli,[pair]/value=cli effects=path,value",
+    "result={pair=[{path=x,value=1}]} sources={pair=[{path=cli,value=cli}]} effects=path,value",
   )
   assert_eq(
     wbtest_view_of(seq, ["--pair", "x", "1", "--pair", "y", "2"]),
-    "result={pair=[{path=x,value=1},{path=y,value=2}]} sources=[pair]/path=cli,[pair]/value=cli effects=path,path,value,value",
+    "result={pair=[{path=x,value=1},{path=y,value=2}]} sources={pair=[{path=cli,value=cli},{path=cli,value=cli}]} effects=path,path,value,value",
   )
   // 枝は int/bool で値空間が排他 (完全経路ちょうど 1 本)。
   let or_ =
@@ -1876,15 +1824,15 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
     #|  {"name":"num","type":"int"},{"name":"flag","type":"bool"}]}]}
   assert_eq(
     wbtest_view_of(or_, []),
-    "result={color=[]} sources=[]/color=default effects=",
+    "result={color=[]} sources={color=[]} effects=",
   )
   assert_eq(
     wbtest_view_of(or_, ["--color", "7"]),
-    "result={color=[{num=7}]} sources=[color]/num=cli effects=num",
+    "result={color=[{num=7}]} sources={color=[{num=cli}]} effects=num",
   )
   assert_eq(
     wbtest_view_of(or_, ["--color", "7", "--color", "true"]),
-    "result={color=[{num=7},{flag=true}]} sources=[color]/flag=cli,[color]/num=cli effects=flag,num",
+    "result={color=[{num=7},{flag=true}]} sources={color=[{num=cli},{flag=cli}]} effects=flag,num",
   )
   // 対照: スカラ accum は cell 自身に着席するので、従来どおり cell address の entry で判定できる。
   let scalar =
@@ -1892,15 +1840,15 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
     #|  {"name":"t","type":"string","long":true,"multiple":"append"}]}]}
   assert_eq(
     wbtest_view_of(scalar, ["serve"]),
-    "result={serve={t=[]}} sources=[serve]/t=default effects=",
+    "result={serve={t=[]}} sources={serve={t=[]}} effects=",
   )
   assert_eq(
     wbtest_view_of(scalar, ["serve", "--t", "a"]),
-    "result={serve={t=[a]}} sources=[serve]/t=cli effects=t",
+    "result={serve={t=[a]}} sources={serve={t=[cli]}} effects=t",
   )
   assert_eq(
     wbtest_view_of(scalar, ["serve", "--t", "a", "--t", "b"]),
-    "result={serve={t=[a,b]}} sources=[serve]/t=cli effects=t,t",
+    "result={serve={t=[a,b]}} sources={serve={t=[cli,cli]}} effects=t,t",
   )
 }
 
@@ -1909,21 +1857,18 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
 /// 0 fire では child の席自体が存在せず、DR-044 の wrapper accumulator 席だけが `[]` を供給する。
 /// この group head は k/v の 2 token を一体で消費するため、k だけの partial row は完全経路に
 /// ならない。default 席は row の消費 arity を変えず、発火した child cell の解決 scope だけを決める。
-test "front_door.output: named group child default は wrapper 外へ漏れない (DR-051 / DR-121 §3.2)" {
+test "front_door.output: named group child default は wrapper 外へ漏れない (DR-051 / DR-122 §3)" {
   let src =
     #|{"positionals":[{"name":"xs","repeat":{"min":0,"max":2},"positionals":[
     #|  {"name":"k","type":"string"},{"name":"v","type":"string","default":"D"}]}]}
-  assert_eq(
-    wbtest_view_of(src, []),
-    "result={xs=[]} sources=[]/xs=default effects=",
-  )
+  assert_eq(wbtest_view_of(src, []), "result={xs=[]} sources={xs=[]} effects=")
   assert_eq(
     wbtest_view_of(src, ["a", "b"]),
-    "result={xs=[{k=a,v=b}]} sources=[xs #0]/k=cli,[xs #0]/v=cli effects=k,v",
+    "result={xs=[{k=a,v=b}]} sources={xs=[{k=cli,v=cli}]} effects=k,v",
   )
   assert_eq(
     wbtest_view_of(src, ["a", "b", "c", "d"]),
-    "result={xs=[{k=a,v=b},{k=c,v=d}]} sources=[xs #0]/k=cli,[xs #0]/v=cli,[xs #1]/k=cli,[xs #1]/v=cli effects=k,k,v,v",
+    "result={xs=[{k=a,v=b},{k=c,v=d}]} sources={xs=[{k=cli,v=cli},{k=cli,v=cli}]} effects=k,k,v,v",
   )
   match parse_legacy(load_definition(src), ["a"]) {
     @engine.Success(_) => fail("partial row must not become a complete path")
@@ -1936,11 +1881,11 @@ test "front_door.output: named group child default は wrapper 外へ漏れな�
     #|  {"name":"k","type":"string"},{"name":"b","type":"bool","default":true}]}]}
   assert_eq(
     wbtest_view_of(bool_child, []),
-    "result={xs=[]} sources=[]/xs=default effects=",
+    "result={xs=[]} sources={xs=[]} effects=",
   )
   assert_eq(
     wbtest_view_of(bool_child, ["a", "false"]),
-    "result={xs=[{b=false,k=a}]} sources=[xs #0]/b=cli,[xs #0]/k=cli effects=b,k",
+    "result={xs=[{b=false,k=a}]} sources={xs=[{b=cli,k=cli}]} effects=b,k",
   )
   // The child default does not make a partial row consumable; a trailing positional can still take
   // the sole token instead of being starved by an optionalized repeat head.
@@ -1951,40 +1896,36 @@ test "front_door.output: named group child default は wrapper 外へ漏れな�
     #|  {"name":"tail","type":"string"}]}
   assert_eq(
     wbtest_view_of(trailing, ["a"]),
-    "result={tail=a,xs=[]} sources=[]/tail=cli,[]/xs=default effects=tail",
+    "result={tail=a,xs=[]} sources={tail=cli,xs=[]} effects=tail",
   )
 }
 
 ///|
-/// 保証 (DR-121 §3.2 / CONFORMANCE §2): nameless 子だけを持つ `seq` accumulator は、子の値を
-/// wrapper の tuple 席へ畳む。子に独立した結果アドレスが無くても、1 回以上発火した wrapper の
-/// source はその発火経路であり、未発火を表す `default` ではない。消費 0 literal は独立 source
-/// でなく発火が産出する tuple の一部なので、wrapper の source は cli のまま。
-///
-/// 0 / 1 / 2 fire と literal 混在を固定する。0 fire だけが DR-044 uniform array の default 席、
-/// 発火済みは wrapper address に 1 entry を持つ。
-test "front_door.output: nameless seq accumulator の wrapper source は発火経路になる (DR-121 §3.2)" {
+/// 保証 (DR-122 §3 / CONFORMANCE §2): nameless 子だけを持つ `seq` accumulator は、result の
+/// row/tuple 配列と同じ位置に各要素の source を置く。0 fire は空配列、CLI 値は `cli`、消費 0
+/// literal は `const` になる。0 / 1 / 2 fire、rename、別 wrapper との同居を固定する。
+test "front_door.output: nameless seq accumulator reports each row element source (DR-122 §3)" {
   let pair =
     #|{"options":[{"name":"pair","long":true,"multiple":"append","seq":[
     #|  {"type":"string"},{"type":"string"}]}]}
   assert_eq(
     wbtest_view_of(pair, []),
-    "result={pair=[]} sources=[]/pair=default effects=",
+    "result={pair=[]} sources={pair=[]} effects=",
   )
   assert_eq(
     wbtest_view_of(pair, ["--pair", "a", "b"]),
-    "result={pair=[[a,b]]} sources=[]/pair=cli effects=",
+    "result={pair=[[a,b]]} sources={pair=[[cli,cli]]} effects=",
   )
   assert_eq(
     wbtest_view_of(pair, ["--pair", "a", "b", "--pair", "c", "d"]),
-    "result={pair=[[a,b],[c,d]]} sources=[]/pair=cli effects=",
+    "result={pair=[[a,b],[c,d]]} sources={pair=[[cli,cli],[cli,cli]]} effects=",
   )
   let with_literal =
     #|{"options":[{"name":"pair","long":true,"multiple":"append","seq":[
     #|  {"type":"string"},{"type":"string","value":"fallback"}]}]}
   assert_eq(
     wbtest_view_of(with_literal, ["--pair", "x"]),
-    "result={pair=[[x,fallback]]} sources=[]/pair=cli effects=",
+    "result={pair=[[x,fallback]]} sources={pair=[[cli,const]]} effects=",
   )
   // `#row` の宣言 scope は result と同じ export-key 軸へ写してから wrapper 席と照合する。
   let renamed =
@@ -1992,7 +1933,7 @@ test "front_door.output: nameless seq accumulator の wrapper source は発火�
     #|  {"type":"string"},{"type":"string"}]}]}
   assert_eq(
     wbtest_view_of(renamed, ["--pair", "a", "b"]),
-    "result={pr=[[a,b]]} sources=[]/pr=cli effects=",
+    "result={pr=[[a,b]]} sources={pr=[[cli,cli]]} effects=",
   )
   // 外側 command と wrapper の両段を rename しても、source path は result の露出アドレスと一致する。
   let nested =
@@ -2001,7 +1942,7 @@ test "front_door.output: nameless seq accumulator の wrapper source は発火�
     #|    {"type":"string"},{"type":"string"}]}]}]}
   assert_eq(
     wbtest_view_of(nested, ["serve", "--pair", "a", "b"]),
-    "result={sv={pr=[[a,b]]}} sources=[sv]/pr=cli effects=",
+    "result={sv={pr=[[a,b]]}} sources={sv={pr=[[cli,cli]]}} effects=",
   )
   // ref+repeat も行境界に `#row` を使う。別 wrapper の marker を誤って pair の発火と数えない。
   let repeat_sibling =
@@ -2013,7 +1954,7 @@ test "front_door.output: nameless seq accumulator の wrapper source は発火�
     #|]}
   assert_eq(
     wbtest_view_of(repeat_sibling, ["--hlcolors", "red", "blue"]),
-    "result={hlcolors=[{colorname=red},{colorname=blue}],pair=[]} sources=[]/pair=default,[hlcolors]/colorname=cli effects=colorname,colorname",
+    "result={hlcolors=[{colorname=red},{colorname=blue}],pair=[]} sources={hlcolors=[{colorname=cli},{colorname=cli}],pair=[]} effects=colorname,colorname",
   )
 }
 
@@ -2024,10 +1965,9 @@ test "front_door.output: nameless seq accumulator の wrapper source は発火�
 /// 有無から導出しない」)、cli 消費 leaf と消費 0 literal を同じ `seq` に並べられる。
 ///
 /// `value:` と `default:` は消費 0 literal の同義な綴りなので、両者で同じ result になることを
-/// 対で固定する。named 子なら独立セルの source は `const`、nameless 子なら発火が産出する tuple の
-/// 一部として wrapper に畳まれ、wrapper の source は発火経路 (`cli` / `link`) になる (DR-121 §3.2)。
+/// 対で固定する。source 面では nameless tuple の各要素が `cli` / `const` に分かれる (DR-122 §3)。
 /// この test は literal の到達可能性と消費数だけを検証するため result 面を比較する。
-test "front_door.output: seq の nameless 子に置いた消費 0 literal が配列要素として並ぶ (DESIGN §5.2 / DR-121 §3.2)" {
+test "front_door.output: seq の nameless 子に置いた消費 0 literal が配列要素として並ぶ (DESIGN §5.2 / DR-122 §3)" {
   let value_form =
     #|{"options":[{"name":"pair","long":true,"seq":[
     #|  {"type":"string"},{"type":"string","value":"fallback"}]}]}
@@ -2059,18 +1999,18 @@ test "front_door.output: seq の nameless 子に置いた消費 0 literal が配
 }
 
 ///|
-/// 保証 (DESIGN §2.5 / DR-120 / DR-121 §2.2): 結果キーを持つ子 (`name` 付き) の消費 0 literal は
+/// 保証 (DESIGN §2.5 / DR-120 / DR-122 §2): 結果キーを持つ子 (`name` 付き) の消費 0 literal は
 /// kv 経路に乗り、自分のセルを持つので `sources` に `const` の entry が出る (DR-031 の 8 語彙目 —
 /// 「const は値セルに最初からいる。default は無い時に埋める」。literal は充填でなく宣言定数)。
 /// 同じ `seq` の中で cli 消費の子と宣言定数の子が別タグで並ぶ。
-test "front_door.output: named seq 子の消費 0 literal は kv セルとして const の由来を持つ (DR-031 / DR-121 §3.2)" {
+test "front_door.output: named seq 子の消費 0 literal は kv セルとして const の由来を持つ (DR-031 / DR-122 §3)" {
   let src =
     #|{"options":[{"name":"pair","long":true,"seq":[
     #|  {"name":"path","type":"string"},
     #|  {"name":"mode","type":"string","value":"fallback"}]}]}
   assert_eq(
     wbtest_view_of(src, ["--pair", "x"]),
-    "result={pair={mode=fallback,path=x}} sources=[pair]/mode=const,[pair]/path=cli effects=path",
+    "result={pair={mode=fallback,path=x}} sources={pair={mode=const,path=cli}} effects=path",
   )
 }
 
@@ -2078,6 +2018,46 @@ test "front_door.output: named seq 子の消費 0 literal は kv セルとして
 /// 保証 (CONFORMANCE §2 の導出手順 / DR-052 §3): **選ばれなかった `or` 枝の literal は着席しない**。
 /// `sources` は `result` の射影であり、選ばれなかった枝は result に現れない以上 sources にも
 /// 現れない。消費 0 であることは「常に発火する」ことを意味しない — 枝の選択は or の構造が決める。
+test "front_door.output: from_entries carries each surviving value source through key promotion" {
+  let src =
+    #|{"options":[{"name":"entries","long":true,
+    #| "multiple":{"accumulator":"append","collector":{"from_entries":"entries"}},
+    #| "seq":[{"type":"string"},{"type":"string"}]}]}
+  assert_eq(
+    wbtest_view_of(src, ["--entries", "a", "1", "--entries", "b", "2"]),
+    "result={entries={a=1,b=2}} sources={entries={a=cli,b=cli}} effects=",
+  )
+}
+
+///|
+test "front_door.output: kv_map last-wins keeps the winning entry source" {
+  let src =
+    #|{"options":[
+    #| {"name":"define","type":"string","long":true,
+    #|  "multiple":{"accumulator":"kv_map"}},
+    #| {"name":"legacy","type":"string","long":true,"link":"define"}]}
+  assert_eq(
+    wbtest_view_of(src, [
+      "--define", "A=first", "--define", "B=second", "--legacy", "A=linked",
+    ]),
+    "result={define={A=linked,B=second}} sources={define={A=link,B=cli}} effects=define,define,define",
+  )
+}
+
+///|
+test "front_door.output: unique removes the duplicate value and its source together" {
+  let src =
+    #|{"options":[
+    #| {"name":"tag","type":"string","long":true,"multiple":"append",
+    #|  "accum_filters":["unique"]},
+    #| {"name":"legacy","type":"string","long":true,"link":"tag"}]}
+  assert_eq(
+    wbtest_view_of(src, ["--legacy", "a", "--tag", "a", "--legacy", "b"]),
+    "result={tag=[a,b]} sources={tag=[link,link]} effects=tag,tag,tag",
+  )
+}
+
+///|
 test "front_door.output: 未選択の or 枝が持つ literal は result にも sources にも現れない (DR-052 §3)" {
   let src =
     #|{"options":[{"name":"mode","long":true,"or":[
@@ -2085,7 +2065,7 @@ test "front_door.output: 未選択の or 枝が持つ literal は result にも 
     #|  {"name":"slow","type":"string","default":"d"}]}]}
   assert_eq(
     wbtest_view_of(src, ["--mode", "x"]),
-    "result={mode={fast=x}} sources=[mode]/fast=cli effects=fast",
+    "result={mode={fast=x}} sources={mode={fast=cli}} effects=fast",
   )
 }
 
@@ -2122,7 +2102,7 @@ test "front_door: 構造子の子の未対応キーは malformed_definition の�
 
 ///|
 /// `wbtest_view_of` の result だけを見る版 (sources の要素ごと addressing が未裁定な形を
-/// 扱うため — DR-121 §3.2)。
+/// 扱うため — DR-122 §3)。
 fn wbtest_result_of(src : String, args : Array[String]) -> String raise {
   let ast = load_definition(src)
   let parsed = parse_legacy(ast, args)

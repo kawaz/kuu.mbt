@@ -11,6 +11,8 @@ pub fn append_accumulator() -> &AccumulatorExt
 
 pub fn apply_accum_filter_chain(Registry, Array[@abi.FnInvocation], Array[@abi.Value]) -> Result[Array[@abi.Value], FnReason]
 
+pub fn apply_accum_filter_chain_with_sources(Registry, Array[@abi.FnInvocation], Array[@abi.Binding]) -> Result[Array[@abi.Binding], FnReason]
+
 pub fn apply_filter_chain(Registry, Array[@abi.FnInvocation], @abi.Value) -> Result[@abi.Value, FnReason]
 
 pub fn apply_piece_filters(Registry, Array[@abi.FnInvocation], String) -> Result[String, FnReason]
@@ -426,6 +428,7 @@ pub(open) trait AccumulatorExt {
   fn equal(Self, &AccumulatorExt) -> Bool = _
   fn resolve_cli(Self, String, Array[@abi.Binding], Bool, (Bool) -> Result[Array[@abi.Binding], @abi.ParseError]) -> Result[Array[@abi.Binding], @abi.ParseError]
   fn collect(Self, Array[@abi.Value]) -> @abi.ResultValue
+  fn collect_sources(Self, Array[(@abi.Value, @abi.Source)]) -> @abi.ResultValue
 }
 pub impl Eq for &AccumulatorExt
 pub impl @debug.Debug for &AccumulatorExt
@@ -439,6 +442,7 @@ pub(open) trait CollectorExt {
   fn encode(Self) -> Json
   fn equal(Self, &CollectorExt) -> Bool = _
   fn collect(Self, @abi.ResultValue) -> @abi.ResultValue
+  fn collect_sources(Self, @abi.ResultValue, @abi.ResultValue) -> @abi.ResultValue
 }
 pub impl Eq for &CollectorExt
 pub impl @debug.Debug for &CollectorExt

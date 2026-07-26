@@ -81,7 +81,7 @@ pub struct OutputEffect {
 pub struct OutputView {
   result : @abi.ResultValue
   effects : Array[OutputEffect]
-  sources : Array[SourceEntry]
+  sources : @abi.ResultValue
 } derive(Eq, Debug)
 
 ///|
@@ -438,55 +438,55 @@ fn output_path_push(path : Array[String], segment : String) -> Array[String] {
 }
 
 ///|
-/// DR-118 §3 の「Default-source scalar 除外」判定で使う席の同定。`sources` の (path, key) は
-/// `result` と同一のキー体系にある (CONFORMANCE.md §2、`result_sources` が結果キー軸を 1 本の
-/// 射影で適用する) ので、結果を降りながら組み立てた `path` とそのまま突き合わせられる — name を
-/// 持つ `or` / `seq` が作る 1 段の結果スコープ (DESIGN §2.3/§2.4) も、同名 key が複数スコープに
-/// ある場合の一意化も、path 込みで正しく引ける。
-fn interpretation_has_source(
-  sources : Array[SourceEntry],
-  path : Array[String],
-  key : String,
-) -> Bool {
-  for source in sources {
-    if source.key == key &&
-      path_eq(source.path, path) &&
-      source.source != @abi.Default {
-      return true
+/// DR-118 §3 の「Default-source scalar 除外」で、result の field に対応する shadow tree 側の
+/// field を引く。DR-122 により両者の object 構造とキー集合は一致する。
+fn source_field(sources : @abi.ResultValue, key : String) -> @abi.ResultValue? {
+  match sources {
+    @abi.Object(fields) => {
+      for field in fields {
+        if field.0 == key {
+          return Some(field.1)
+        }
+      }
+      None
     }
+    _ => None
   }
-  false
+}
+
+///|
+fn source_is_default(source : @abi.ResultValue) -> Bool {
+  source == @abi.Scalar(@abi.String("default"))
 }
 
 ///|
 fn filter_interpretation_result(
   result : @abi.ResultValue,
-  sources : Array[SourceEntry],
-  path : Array[String],
+  sources : @abi.ResultValue,
 ) -> @abi.ResultValue {
   match result {
     @abi.Object(fields) => {
       let kept : Array[(String, @abi.ResultValue)] = []
       for field in fields {
-        if interpretation_has_source(sources, path, field.0) {
-          kept.push(field)
-        } else {
-          match field.1 {
-            @abi.Scalar(_) => ()
-            @abi.Array(_) => kept.push(field)
-            @abi.Object(_) => {
-              let nested = filter_interpretation_result(
-                field.1,
-                sources,
-                output_path_push(path, field.0),
-              )
-              match nested {
-                @abi.Object(items) =>
-                  if items.length() > 0 {
-                    kept.push((field.0, nested))
-                  }
-                _ => kept.push((field.0, nested))
-              }
+        let source = source_field(sources, field.0)
+        match field.1 {
+          @abi.Scalar(_) =>
+            match source {
+              Some(value) if !source_is_default(value) => kept.push(field)
+              _ => ()
+            }
+          @abi.Array(_) => kept.push(field)
+          @abi.Object(_) => {
+            let nested = filter_interpretation_result(
+              field.1,
+              source.unwrap_or(@abi.Object([])),
+            )
+            match nested {
+              @abi.Object(items) =>
+                if items.length() > 0 {
+                  kept.push((field.0, nested))
+                }
+              _ => kept.push((field.0, nested))
             }
           }
         }
@@ -702,15 +702,9 @@ fn project_effects(
 fn project_sources(
   ast : AtomicAST,
   resolved : Array[@abi.Binding],
-) -> Array[SourceEntry] {
-  let internal = internal_cells(ast.root, ast.ekmap, resolved)
-  let projected : Array[SourceEntry] = []
-  for entry in result_sources(ast.root, resolved, ast.ekmap) {
-    if !is_internal_cell(internal, entry.path, entry.key) {
-      projected.push(entry)
-    }
-  }
-  projected
+  result : @abi.ResultValue,
+) -> @abi.ResultValue {
+  result_sources(ast.root, resolved, ast.ekmap, result, ast.extensions)
 }
 
 ///|
@@ -725,15 +719,16 @@ fn output_legacy(
   effects~ : Array[@abi.Binding],
   resolved? : Array[@abi.Binding] = effects,
 ) -> OutputView {
+  let result = build_result_export(
+    ast.root,
+    resolved,
+    export_map(ast),
+    extensions=ast.extensions,
+  )
   {
-    result: build_result_export(
-      ast.root,
-      resolved,
-      export_map(ast),
-      extensions=ast.extensions,
-    ),
+    result,
     effects: project_effects(ast, effects),
-    sources: project_sources(ast, resolved),
+    sources: project_sources(ast, resolved, result),
   }
 }
 
@@ -762,7 +757,7 @@ pub fn output_of_interpretation(
   interp : Interpretation,
 ) -> @abi.ResultValue {
   let view = output_legacy(ast, effects=interp.raw.binds)
-  filter_interpretation_result(view.result, view.sources, [])
+  filter_interpretation_result(view.result, view.sources)
 }
 
 ///|

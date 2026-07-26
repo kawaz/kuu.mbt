@@ -240,7 +240,7 @@ pub struct OutputEffect {
 pub struct OutputView {
   result : @abi.ResultValue
   effects : Array[OutputEffect]
-  sources : Array[SourceEntry]
+  sources : @abi.ResultValue
 } derive(Eq, @debug.Debug)
 
 pub struct ParseFailure {
@@ -276,12 +276,6 @@ pub(all) enum ResolvedOutcome {
   Failure(ParseFailure)
 }
 pub fn ResolvedOutcome::warnings(Self) -> Array[@abi.Warning]
-
-pub(all) struct SourceEntry {
-  path : Array[String]
-  key : String
-  source : @abi.Source
-} derive(Eq, @debug.Debug)
 
 pub struct TtyObs {
   terminal : Bool

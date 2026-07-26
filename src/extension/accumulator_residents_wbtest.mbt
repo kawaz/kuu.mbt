@@ -70,9 +70,9 @@ test "merge accumulator resident owns grouped remove splice add semantics" {
 }
 
 ///|
-/// DR-031 / DR-121 §4: accumulator が default 値や marker fold 後の Binding を再構築しても、
-/// その firing が link 経路なら source を Cli へ潰さず Link のまま保つ。
-test "append and merge accumulator reconstruction preserves link source" {
+/// DR-031 / DR-122 §3: append の default 書き込みは発火経路を保ち、merge の splice は
+/// 既存要素の source を保ったまま新規 piece だけを発火経路の source にする。
+test "append and merge accumulator reconstruction preserves each value source" {
   let lower : LowerSeat = fn(_include_default) {
     Ok([@abi.Binding::new("x", @abi.String("base"), @abi.Default)])
   }
@@ -102,10 +102,56 @@ test "append and merge accumulator reconstruction preserves link source" {
   match merge {
     Ok(bindings) => {
       assert_eq(bindings.length(), 2)
-      assert_eq(bindings[0].source, @abi.Link)
+      assert_eq(bindings[0].source, @abi.Default)
       assert_eq(bindings[1].source, @abi.Link)
     }
     Err(_) => fail("merge marker fold must succeed")
+  }
+}
+
+///|
+/// Merge markers operate on bindings rather than values alone: splice preserves lower-seat sources,
+/// remove drops the matching values and their tags, and newly added pieces keep their own source.
+test "merge accumulator marker folds preserve sources of every surviving binding" {
+  let lower : LowerSeat = fn(_include_default) {
+    Ok([
+      @abi.Binding::new("x", @abi.String("a"), @abi.Env),
+      @abi.Binding::new("x", @abi.String("b"), @abi.Config),
+      @abi.Binding::new("x", @abi.String("a"), @abi.Env),
+    ])
+  }
+  let removed = merge_accumulator().resolve_cli(
+    "x",
+    [binding("x", @abi.Remove, @abi.String("a"), source=@abi.Link)],
+    true,
+    lower,
+  )
+  match removed {
+    Ok(bindings) => {
+      assert_eq(bindings.length(), 1)
+      assert_eq(bindings[0].value, @abi.String("b"))
+      assert_eq(bindings[0].source, @abi.Config)
+    }
+    Err(_) => fail("implicit splice + remove must succeed")
+  }
+  let explicit = merge_accumulator().resolve_cli(
+    "x",
+    [
+      binding("x", @abi.Set, @abi.String("new"), source=@abi.Link),
+      binding("x", @abi.Splice, @abi.Bool(false), source=@abi.Cli),
+    ],
+    true,
+    lower,
+  )
+  match explicit {
+    Ok(bindings) => {
+      assert_eq(bindings.length(), 4)
+      assert_eq(bindings[0].source, @abi.Link)
+      assert_eq(bindings[1].source, @abi.Env)
+      assert_eq(bindings[2].source, @abi.Config)
+      assert_eq(bindings[3].source, @abi.Env)
+    }
+    Err(_) => fail("explicit splice must succeed")
   }
 }
 
@@ -276,6 +322,76 @@ test "from_entries preserves duplicate keys and key-promote empty objects" {
 // ── DR-080 merge accumulator: §4 の canonical 例 ────────────────────────────
 
 ///|
+priv enum MergeMark {
+  MAdd(@abi.Value)
+  MRemove(@abi.Value)
+  MSplice
+}
+
+///|
+fn merge_pieces_has_no_marker(pieces : Array[MergeMark]) -> Bool {
+  for piece in pieces {
+    match piece {
+      MAdd(_) => ()
+      _ => return false
+    }
+  }
+  true
+}
+
+///|
+fn merge_pieces_with_implicit_splice_for_test(
+  marks : Array[MergeMark],
+) -> Array[MergeMark] {
+  for mark in marks {
+    if mark is MSplice {
+      return marks
+    }
+  }
+  let out : Array[MergeMark] = [MSplice]
+  for mark in marks {
+    out.push(mark)
+  }
+  out
+}
+
+///|
+fn eval_merge_pieces_for_test(
+  marks : Array[MergeMark],
+  old : Array[@abi.Value],
+) -> Array[@abi.Value] {
+  let values : Array[@abi.Value] = []
+  let removed : Array[@abi.Value] = []
+  for mark in marks {
+    match mark {
+      MAdd(value) => values.push(value)
+      MRemove(value) => {
+        if !value_contains(removed, value) {
+          removed.push(value)
+        }
+        let kept : Array[@abi.Value] = []
+        for current in values {
+          if current != value {
+            kept.push(current)
+          }
+        }
+        values.clear()
+        for current in kept {
+          values.push(current)
+        }
+      }
+      MSplice =>
+        for value in old {
+          if !value_contains(removed, value) {
+            values.push(value)
+          }
+        }
+    }
+  }
+  values
+}
+
+///|
 /// DR-080 §4 の canonical 表を検証する共通ヘルパー。マーカーなしの発火は piece 列で
 /// cell を上書きし、マーカーを含む発火は暗黙先頭 `@` を補って old と合成する。
 fn merge_fire(
@@ -295,7 +411,10 @@ fn merge_fire(
     }
     out
   } else {
-    eval_merge_pieces(merge_pieces_with_implicit_splice(pieces), old)
+    eval_merge_pieces_for_test(
+      merge_pieces_with_implicit_splice_for_test(pieces),
+      old,
+    )
   }
 }
 

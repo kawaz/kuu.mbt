@@ -216,6 +216,56 @@ pub fn apply_accum_filter_chain(
 }
 
 ///|
+/// Apply an accumulated-array filter chain while retaining the source of every surviving value.
+/// Each output value is matched to the first unused equal input value, which preserves stable
+/// duplicate elimination and arbitrary reordering. A filter that synthesizes a value has no source
+/// seat in its input and is rejected instead of fabricating provenance.
+pub fn apply_accum_filter_chain_with_sources(
+  registry : Registry,
+  chain : Array[FnInvocation],
+  bindings : Array[Binding],
+) -> Result[Array[Binding], FnReason] {
+  let mut current = bindings
+  for spelling in chain {
+    let values : Array[Value] = []
+    for binding in current {
+      values.push(binding.value)
+    }
+    match registry.lookup_array_filter(spelling.name) {
+      None => ()
+      Some(descriptor) => {
+        let ctx = fn_ctx_filter(Array(values), observes=descriptor.observes())
+        let next_values = match descriptor.invoke(spelling.args, ctx) {
+          Ok(next) => next
+          Err(error) => return Err(error)
+        }
+        let used = Array::make(current.length(), false)
+        let next : Array[Binding] = []
+        for value in next_values {
+          let mut found = -1
+          for i in 0..<current.length() {
+            if !used[i] && current[i].value == value {
+              found = i
+              break
+            }
+          }
+          if found < 0 {
+            return Err({
+              reason: "filter_rejected",
+              message: "array filter synthesized a value without an input source seat",
+            })
+          }
+          used[found] = true
+          next.push(current[found])
+        }
+        current = next
+      }
+    }
+  }
+  Ok(current)
+}
+
+///|
 /// Run the String-to-String piece phase through the scalar registry.
 pub fn apply_piece_filters(
   registry : Registry,

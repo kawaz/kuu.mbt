@@ -456,82 +456,10 @@ fn proj_tried_triggers(triggers : Array[String]) -> String {
 }
 
 ///|
-/// JSON 文字列リテラル 1 個 (前後の `"` とエスケープ込み) を作る。
-fn json_quoted(text : String) -> String {
-  text.to_json().stringify()
-}
-
-///|
-/// `sources` の 1 entry を canonical JSON 1 行へ整形する (DR-121 §1)。**`path` と `key` を
-/// 結合した文字列を作らない** — 連結形は非単射で、区別すべき 2 つの結果アドレスが同じ綴りへ
-/// 潰れる (DR-121 §1.2)。比較層で連結すると、実装が正しく区別していても test が見逃す。
-///
-/// 期待側 (fixture の JSON) と実測側 (`@kuu.SourceEntry`) の両方をこの 1 つの形へ通し、
-/// 集合として比較する (entry 配列の順序は非規範、DR-121 §1.1)。
-fn source_entry_line(
-  path : Array[String],
-  key : String,
-  source : String,
-) -> SourceLine {
-  let segs : Array[String] = []
-  for segment in path {
-    segs.push(json_quoted(segment))
-  }
-  let address = "{\"path\":[" +
-    join_comma(segs) +
-    "],\"key\":" +
-    json_quoted(key)
-  { address, line: address + ",\"source\":" + json_quoted(source) + "}" }
-}
-
-///|
-/// `sources` の 1 entry を「結果アドレス部」と「canonical 行」の対にしたもの。DR-121 §1.1 の
-/// 一意性検査 (`(path, key)` の重複は不適合) と集合比較を、どちらも連結形を経由せずに行うための
-/// 中間表現 — アドレスは `path` / `key` を構造のまま JSON 化した文字列で、`.` join ではない。
-struct SourceLine {
-  address : String
-  line : String
-}
-
-///|
-/// `(path, key)` が重複する entry を検出して問題文字列を返す (無ければ `None`)。DR-121 §1.1 の
-/// 「`(path, key)` は一意、重複 entry は不適合」の検査。`(path, key, source)` の tuple 集合を
-/// 単純比較するだけだと、同一アドレスに異なる source が 2 件ある不正形を通してしまう。
-fn duplicate_source_address(entries : Array[SourceLine]) -> String? {
-  let seen : Array[String] = []
-  for entry in entries {
-    for existing in seen {
-      if existing == entry.address {
-        return Some("duplicate source address " + entry.address)
-      }
-    }
-    seen.push(entry.address)
-  }
-  None
-}
-
-///|
-/// canonical 行を sort して比較文字列にまとめる (entry 配列の順序は非規範、DR-121 §1.1)。
-fn joined_source_lines(entries : Array[SourceLine]) -> String {
-  let items : Array[String] = []
-  for entry in entries {
-    items.push(entry.line)
-  }
-  sort_items(items)
-  join_comma(items)
-}
-
-///|
-/// `OutputView.sources` の構造化射影を canonical 行の配列へ変換する (DR-121 §1)。行自体が
-/// `,` を含むので、比較文字列にまとめる前の配列を返す (重複検査が行単位で走れるように)。
-fn render_source_lines(sources : Array[@kuu.SourceEntry]) -> Array[SourceLine] {
-  let items : Array[SourceLine] = []
-  for entry in sources {
-    items.push(
-      source_entry_line(entry.path, entry.key, render_src(entry.source)),
-    )
-  }
-  items
+/// DR-122 sources are compared as a recursive value tree. Object key order is non-normative and
+/// arrays retain order, exactly like result comparison.
+fn render_sources(sources : @abi.ResultValue) -> String {
+  render_rval_sorted(sources)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -774,59 +702,9 @@ fn exp_warnings_str(j : Json) -> String raise DecodeSkip {
 }
 
 ///|
-/// fixture の `expect.sources` (DR-121 §1 の entry 配列) を `render_sources` と同じ canonical
-/// 形へ通す。`(path, key)` の重複はここで弾く — 期待側が不正形なら fixture のバグなので、
-/// 実測と突き合わせる前に落とす。
+/// Decode the fixture's DR-122 shadow tree through the same structural representation as `result`.
 fn exp_sources_str(j : Json) -> String raise DecodeSkip {
-  let entries = match j.j_arr() {
-    Some(x) => x
-    None => raise DecodeSkip("sources is not an array")
-  }
-  let items : Array[SourceLine] = []
-  for entry in entries {
-    let o = match entry.j_obj() {
-      Some(x) => x
-      None => raise DecodeSkip("sources entry is not an object")
-    }
-    let path : Array[String] = []
-    match o.get("path") {
-      Some(pj) =>
-        match pj.j_arr() {
-          Some(segs) =>
-            for seg in segs {
-              match seg.j_str() {
-                Some(s) => path.push(s)
-                None =>
-                  raise DecodeSkip("sources entry path segment is not a string")
-              }
-            }
-          None => raise DecodeSkip("sources entry 'path' is not an array")
-        }
-      None => raise DecodeSkip("sources entry missing 'path'")
-    }
-    let key = match o.get("key") {
-      Some(kj) =>
-        match kj.j_str() {
-          Some(s) => s
-          None => raise DecodeSkip("sources entry 'key' is not a string")
-        }
-      None => raise DecodeSkip("sources entry missing 'key'")
-    }
-    let source = match o.get("source") {
-      Some(sj) =>
-        match sj.j_str() {
-          Some(s) => s
-          None => raise DecodeSkip("sources entry 'source' is not a string")
-        }
-      None => raise DecodeSkip("sources entry missing 'source'")
-    }
-    items.push(source_entry_line(path, key, source))
-  }
-  match duplicate_source_address(items) {
-    Some(problem) => raise DecodeSkip("sources has " + problem)
-    None => ()
-  }
-  joined_source_lines(items)
+  render_rval_sorted(json_to_rval(j))
 }
 
 ///|
@@ -2264,14 +2142,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 }
                 match dc.exp_sources {
                   Some(es) => {
-                    let lines = render_source_lines(view.sources)
-                    // DR-121 §1.1: 実測側の `(path, key)` 一意性も検査する。集合比較だけだと
-                    // 同一アドレスに異なる source が 2 件ある不正形を通してしまう。
-                    match duplicate_source_address(lines) {
-                      Some(problem) => problems.push("sources " + problem)
-                      None => ()
-                    }
-                    let asr = joined_source_lines(lines)
+                    let asr = render_sources(view.sources)
                     if asr != es {
                       problems.push("sources got=\{asr} want=\{es}")
                     }
@@ -3442,8 +3313,7 @@ test "DR-049 §4 end-to-end: an element's env_prefix:\"\" opt-out reads the raw 
     #|      "env": {"MYAPP_PORT": "8080", "HOME": "/home/kawaz"},
     #|      "expect": {
     #|        "outcome": "success",
-    #|        "sources": [{"path": [], "key": "port", "source": "env"},
-    #|                    {"path": [], "key": "home_dir", "source": "env"}]
+    #|        "sources": {"port": "env", "home_dir": "env"}
     #|      }
     #|    }
     #|  ]
@@ -3486,7 +3356,7 @@ test "DR-092 §5 end-to-end: config-origin \"Infinity\" reaches a float element 
     #|        "outcome": "success",
     #|        "effects": [],
     #|        "result": {"t": "Infinity"},
-    #|        "sources": [{"path": [], "key": "t", "source": "config"}]
+    #|        "sources": {"t": "config"}
     #|      }
     #|    },
     #|    {
@@ -3497,7 +3367,7 @@ test "DR-092 §5 end-to-end: config-origin \"Infinity\" reaches a float element 
     #|        "outcome": "success",
     #|        "effects": [],
     #|        "result": {"t": "-Infinity"},
-    #|        "sources": [{"path": [], "key": "t", "source": "config"}]
+    #|        "sources": {"t": "config"}
     #|      }
     #|    }
     #|  ]
@@ -4007,35 +3877,6 @@ test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が食�
 }
 
 ///|
-/// 保証 (DR-121 §1.1「`(path, key)` は一意、重複 entry は不適合」): runner は同一結果アドレスの
-/// entry が 2 件ある fixture を受理しない。`(path, key, source)` の tuple 集合を単純比較するだけ
-/// だと、同一アドレスに異なる source が 2 件ある不正形が「集合として一致すれば PASS」で通って
-/// しまう — 期待側を decode する時点で弾く。
-test "conformance runner: sources の (path, key) 重複を decode 時に弾く (DR-121 §1.1)" {
-  let src =
-    #|{
-    #|  "query": "parse",
-    #|  "definition": {"options": [{"name": "v", "type": "flag", "long": true}]},
-    #|  "cases": [
-    #|    {"id": "dup", "args": ["--v"],
-    #|     "expect": {"outcome": "success",
-    #|       "sources": [{"path": [], "key": "v", "source": "cli"},
-    #|                   {"path": [], "key": "v", "source": "default"}]}}
-    #|  ]
-    #|}
-  let outcome = try {
-    let _ = dec_fixture(@json.parse(src))
-    "accepted"
-  } catch {
-    DecodeSkip(reason) => reason
-    _ => "unexpected error"
-  }
-  if !outcome.contains("duplicate source address") {
-    abort("expected a duplicate-address rejection, got: " + outcome)
-  }
-}
-
-///|
 /// DESIGN §2.3 / DR-031 (CONST-Q1=a): 構造子 wrapper (`or`/`seq`) は結果スコープを作るが値セルを
 /// 持たないので、そこへ root の `value:` を書くと宣言定数の置き場が無い —
 /// `collect_const_on_valueless_wrapper` が definition-error (invalid-range) で弾く。fixture 化
@@ -4144,7 +3985,7 @@ test "CONST-Q1: const wins over a default_fn seat (the default_fn branch must no
     #|        "outcome": "success",
     #|        "effects": [],
     #|        "result": {"timeout": 30},
-    #|        "sources": [{"path": [], "key": "timeout", "source": "const"}]
+    #|        "sources": {"timeout": "const"}
     #|      }
     #|    }
     #|  ]
@@ -4179,7 +4020,7 @@ test "CONST-Q1: a const under an UNSELECTED command scope stays absent (no leak 
     #|      "expect": {
     #|        "outcome": "success",
     #|        "result": {"build": {"jobs": 4}},
-    #|        "sources": [{"path": ["build"], "key": "jobs", "source": "const"}]
+    #|        "sources": {"build": {"jobs": "const"}}
     #|      }
     #|    }
     #|  ]
@@ -4216,7 +4057,7 @@ test "CONST-Q1: the config seat overrides a const (upper seats supply, const is 
     #|        "outcome": "success",
     #|        "effects": [],
     #|        "result": {"port": 3000},
-    #|        "sources": [{"path": [], "key": "port", "source": "config"}]
+    #|        "sources": {"port": "config"}
     #|      }
     #|    }
     #|  ]
@@ -4229,12 +4070,9 @@ test "CONST-Q1: the config seat overrides a const (upper seats supply, const is 
 }
 
 ///|
-/// DR-121 §3.2 (nameless tuple): 非 accum の nameless seq wrapper にも entry 1 件を出す。子が
-/// nameless なので子側の entry は全部落ち (`exposed_cell` が None)、wrapper 自身は値セルを
-/// 持たない — 素直に書くと result に `pair` が出るのに sources が空になる。§3.2 の中核例
-/// そのままを pin する。fixture 側 (seq-parse/literal-child-zero-consumption.json) と重複するが、
-/// こちらは「§3.2 の JSON 例を逐語で」固定する回帰テストとして残す。
-test "DR-121 §3.2: a plain (non-accum) nameless seq wrapper gets one source entry (the firing path)" {
+/// DR-122 §3 (nameless tuple): 非 accum の nameless seq は result の各配列要素と同じ位置に
+/// source タグを置く。CLI で得た第 1 要素と宣言 literal の第 2 要素が `cli` / `const` に分かれる。
+test "DR-122 §3: a plain nameless seq reports each array element source" {
   let src =
     #|{
     #|  "query": "parse",
@@ -4250,7 +4088,7 @@ test "DR-121 §3.2: a plain (non-accum) nameless seq wrapper gets one source ent
     #|      "expect": {
     #|        "outcome": "success",
     #|        "result": {"pair": ["x", "fallback"]},
-    #|        "sources": [{"path": [], "key": "pair", "source": "cli"}]
+    #|        "sources": {"pair": ["cli", "const"]}
     #|      }
     #|    }
     #|  ]
@@ -4263,11 +4101,9 @@ test "DR-121 §3.2: a plain (non-accum) nameless seq wrapper gets one source ent
 }
 
 ///|
-/// 対極 (`self-written-rule-blind-spots`): **named** 子を持つ wrapper では上の射影を働かせない。
-/// named 子は各自が結果キーを持ち通常の cell provenance で書けるので (DR-121 §3.2「席が N 個」の
-/// 原理が効く側)、wrapper 自身の entry を足すと `(path, key)` 一意性 (§1.1) を保ったまま
-/// 「子の entry + wrapper の entry」の二重計上になる。子の entry だけが出ることを固定する。
-test "DR-121 §3.2 対極: a NAMED-children wrapper keeps per-child entries, no wrapper entry" {
+/// **named** 子を持つ seq は result の object 構造をそのまま写し、各 field の値位置に
+/// `cli` / `const` を置く。wrapper 自体には値の座がないためタグを追加しない。
+test "DR-122 §3: a named-children seq reports each object field source" {
   let src =
     #|{
     #|  "query": "parse",
@@ -4286,10 +4122,7 @@ test "DR-121 §3.2 対極: a NAMED-children wrapper keeps per-child entries, no 
     #|      "expect": {
     #|        "outcome": "success",
     #|        "result": {"pair": {"path": "x", "mode": "fallback"}},
-    #|        "sources": [
-    #|          {"path": ["pair"], "key": "path", "source": "cli"},
-    #|          {"path": ["pair"], "key": "mode", "source": "const"}
-    #|        ]
+    #|        "sources": {"pair": {"path": "cli", "mode": "const"}}
     #|      }
     #|    }
     #|  ]

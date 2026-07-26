@@ -299,15 +299,6 @@ fn apply_export_to_defaults(
 }
 
 ///|
-/// An accumulate cell located at a result-scope path (DR-044 uniform array). `path` is the
-/// command/name nesting where the cell lives; `name` is its key. The builder needs this so an
-/// accumulate cell that fired 0 times still renders `[]` at its home level (not absent).
-priv struct RepeatWrapperCell {
-  path : Array[String]
-  name : String
-}
-
-///|
 priv struct AccumCell {
   path : Array[String]
   name : String
@@ -782,83 +773,6 @@ fn build_result(
 }
 
 ///|
-/// Locate every accumulate cell (repeat / multiple / separator) by its result-scope path, so
-/// the builder can render an empty cell as `[]` (DR-044 uniform array). A command scope nests
-/// its cells under the command name; the root scope is path `[]`.
-///
-/// `ek` (DR-052 §1 result-key axis) is applied here — issue accum-export-key-rename-asymmetry:
-/// this used to omit `ek` entirely and return raw entity names / scope-label paths, while its
-/// sibling `default_cells` (via `apply_export_to_defaults`) and the winning `binds` (via
-/// `apply_export_keys`) both already resolve through `ek` before reaching `build_result`. Since
-/// `build_result`'s `cell_here` match compares an AccumCell's `(path, name)` against the ALREADY-
-/// mapped binding keys, an unmapped AccumCell for a renamed accum entity silently failed to
-/// match — the accumulate fold never fired (the entity's bindings fell through to plain last-wins
-/// scalar rendering under its OLD name instead of `[]`-folding under the renamed key). Same 3-way
-/// resolution `apply_export_to_defaults` uses: `@engine.Key(s)` → rename to `s`, `@abi.Null` → drop (透過,
-/// DR-052 §2 — an accum cell whose OWN key is nulled carries no result-key axis, same posture a
-/// scalar default's @abi.Null already gets), otherwise unchanged.
-///
-/// `binds` は **未射影** の解決済み binding — 未選択 command scope を降りないための選択判定
-/// (`@engine.scope_selected`) に使う。`collect_defaults` と同じ gate (下記 `collect_accum` の
-/// コメント参照)。
-fn repeat_wrapper_cells(
-  sc : @engine.Scope,
-  ek : @engine.ExportScopeMap,
-  binds : Array[@abi.Binding],
-) -> Array[RepeatWrapperCell] {
-  let out : Array[RepeatWrapperCell] = []
-  collect_repeat_wrappers(sc, [], [], ek, binds, out)
-  out
-}
-
-///|
-fn collect_repeat_wrappers(
-  sc : @engine.Scope,
-  path : Array[String],
-  decl_path : Array[String],
-  ek : @engine.ExportScopeMap,
-  binds : Array[@abi.Binding],
-  out : Array[RepeatWrapperCell],
-) -> Unit {
-  for positional in sc.positional {
-    match positional {
-      @engine.IndexedRepeat(name, _, _, _) =>
-        match ek.exposed_cell(name) {
-          Some(exposed) => out.push({ path, name: exposed })
-          None => ()
-        }
-      _ => ()
-    }
-  }
-  for greedy in sc.greedy {
-    match greedy {
-      @engine.CommandSatisfied(name, child) => {
-        let child_decl = path_push(decl_path, name)
-        if @engine.scope_selected(binds, child_decl) {
-          let child_ek = ek.child(name)
-          match ek.exposed_scope(name) {
-            None =>
-              collect_repeat_wrappers(
-                child, path, child_decl, child_ek, binds, out,
-              )
-            Some(exposed) =>
-              collect_repeat_wrappers(
-                child,
-                path_push(path, exposed),
-                child_decl,
-                child_ek,
-                binds,
-                out,
-              )
-          }
-        }
-      }
-      _ => ()
-    }
-  }
-}
-
-///|
 fn accum_cells(
   sc : @engine.Scope,
   ek : @engine.ExportScopeMap,
@@ -1239,221 +1153,388 @@ fn build_result_export(
   )
 }
 
-// ── result/sources の production 射影 (DR-109 §3 sources 常時出力 / MDR-005「射程外」節の解消、
-// issue 2026-07-16-result-projection-production-promotion) ───────────────────────────────────
+// ── result/sources の production 射影 ────────────────────────────────────────────────
 
 ///|
-/// 1 つの export 済み result-key の値源タグ (DR-031)。`path` は結果スコープ木を降りる scope
-/// segment 列 (root なら `[]`)、`key` は `apply_export_keys` と同じ resolve (DR-052 §1) を経た
-/// 露出キー、`source` は値源 — `@abi.Source::@abi.Default` は「未発火 (default 相当)」または「accum セルの
-/// `@abi.Unset` op で未触の default 状態へ再着席した」を表す (`result_sources` のコメント参照)。
-/// `pub(all)` (MDR-005 §3 の「正面玄関の 3 関数が直接運ぶ型は pub(all) を維持」原則に準拠) —
-/// 呼び出し側 (kuu-cli 等) が `.path`/`.key`/`.source` を読んで JSON を組み立てる、フィールド
-/// 読み取りが本体の型なので `AccumCell`/`DefaultCell`/`InternalCell` (組み立て素材を build_result に
-/// 素通しするだけの不透明トークン、pub 止まり) とは扱いが異なる。
-pub(all) struct SourceEntry {
+/// One exposed result seat and the bindings that survive the cell fold. The final `shadow` is built
+/// through the accumulator/filter/collector provenance transformations before public projection.
+priv struct SourceSeat {
   path : Array[String]
   key : String
-  source : @abi.Source
-} derive(Eq, Debug)
+  bindings : Array[@abi.Binding]
+  mut shadow : @abi.ResultValue?
+} derive(Debug)
 
 ///|
-/// front_door 昇格 (issue 2026-07-16-result-projection-production-promotion): `resolved`
-/// (resolve 済み全 binds、子 scope 含む) から DR-109 §3 の `sources` 射影 (「resolve 済み出力には
-/// 常に sources を含める」) を組み立てる。`resolved` は結果木全体の binds なので、scope の形
-/// (command 木を持つか、単一 scope か) に依らず 1 本の走査で拾える。
-///
-/// キーは **結果と同じ露出キー軸** (DR-052 §1: 結果キー軸は export_key 1 本) に写す —
-/// `apply_export_keys` / `apply_export_to_defaults` が binding / default に対して使うのと同じ
-/// `walk_export_path` + `exposed_cell` を通すので、`sources` の (path, key) は `result` の
-/// キーと構造的に一致する (CONFORMANCE.md §2「sources のキーは result と同一のキー体系」)。
-/// DR-109 §3 の「消費者が値の出所を機械判別できる」が成り立つのは消費者が持つのが result の
-/// キーだからで、生の宣言名を返すとその突き合わせが壊れる。
-///
-/// - **透過セル** (`exposed_cell` が `None`) は落とす。`apply_export_keys` は `None` を `""` に
-///   して binding を残すが、これは seq/array 文脈の nameless 要素を保存するためで、`""` は
-///   `is_sentinel` が弾き `build_result` の kv 結果には現れない。`sources` は kv 側しか持たない
-///   ので落とすのが正 (`apply_export_to_defaults` の `None => ()` と同じ扱い)
-/// - **透過ラベル** (scope) は `walk_export_path` が segment を落として node だけ進める既存挙動
-///   に乗る (DR-052 §2: 子が親スコープへ昇格)。`name` を持つ `seq` / `or` が作る 1 段の結果
-///   スコープ (DESIGN §2.3/§2.4) も同じ経路で path に載る。`repeat` の index segment (`#k`) は
-///   `walk_export_path` が素通しするのでそのまま path に残る (配列要素の provenance を
-///   どう addressing するかは spec 側の未裁定事項で、ここで決めない)
-/// - 同一 (path, key) は **last-wins** で 1 件に畳む。binding は同じセルに複数回着席しうる
-///   (`--tags a --tags b`) ので、射影段階で畳む
-/// - **accum セル** は result builder が使うのと同じ `accum_cells` (ek 適用・透過昇格込み) の
-///   `(path, name)` を席として扱う。0 回発火なら DR-044 uniform array の `[]` に対応する
-///   `@abi.Default`、nameless 子を wrapper へ畳む発火なら `#row` sentinel が運ぶ発火経路を載せる。
-///   named 子・スカラは通常の値 binding が source entry を作るので追加しない。未発火 flag・default
-///   付きスカラは値源ラダーが default 席を解いて binding を作るのでここでは扱わない
-fn result_sources(
-  sc : @engine.Scope,
-  resolved : Array[@abi.Binding],
-  ek : @engine.ExportScopeMap,
-) -> Array[SourceEntry] {
-  let out : Array[SourceEntry] = []
-  for b in resolved {
-    if is_sentinel(b.key) {
-      continue
-    }
-    let (path, node) = walk_export_path(b.scope, ek)
-    match node.exposed_cell(b.key) {
-      // 透過: 結果キー軸を持たない値セルは kv 結果に現れない → 由来も報告しない。
-      None => ()
-      Some(key) => {
-        let src = match b.op {
-          @abi.Unset => @abi.Source::Default
-          _ => b.source
-        }
-        let entry : SourceEntry = { path, key, source: src }
-        let mut replaced = false
-        for i in 0..<out.length() {
-          if out[i].key == key && path_eq(out[i].path, path) {
-            out[i] = entry
-            replaced = true
-            break
-          }
-        }
-        if !replaced {
-          out.push(entry)
-        }
-      }
-    }
+fn source_tag(source : @abi.Source) -> @abi.ResultValue {
+  let tag = match source {
+    @abi.Cli => "cli"
+    @abi.Link => "link"
+    @abi.Env => "env"
+    @abi.Config => "config"
+    @abi.Inherit => "inherit"
+    @abi.Tty => "tty"
+    @abi.Const => "const"
+    @abi.Default => "default"
   }
-  // DR-121 §3.2 (nameless tuple): 非 accum の nameless seq/or wrapper。子が nameless なので上の
-  // ループでは `exposed_cell` が None になって全部落ち、wrapper 自身は値セルを持たない (entity が
-  // 無い) ので entry が 1 件も出ない — しかし result には `pair: ["x","fallback"]` が出る。
-  // §3.2 は「nameless tuple の wrapper セルは entry 1 件で、source は発火経路」と規定するので、
-  // wrapper アドレスへ 1 件射影する (accum 版が `#row` sentinel からやっているのと同じ考え方を、
-  // sentinel を持たない非 accum 経路へ広げたもの)。
-  //
-  // literal 成分が混ざっていても source は発火経路のまま — 「literal 成分は形の一部であり独立の
-  // 由来を主張しない」(DR-121 §3.2 / DR-031)。つまり子の binding の source をそのまま採ると
-  // const が漏れるので、**発火経路を運ぶ子** (const 以外) を優先して採る。
-  for b in resolved {
-    // 対象は nameless な値セル (`key` が空 = `apply_export_keys` の「nameless value axis」)。
-    // named 子は上のループで自分の entry を作るのでここでは扱わない。
-    if b.key != "" {
-      continue
-    }
-    // const は「形の一部」であり独立の由来を主張しない (DR-121 §3.2 / DR-031)。wrapper の
-    // source は発火経路を運ぶ兄弟が決める — const しか居ない wrapper は発火自体が無く
-    // (未発火なら wrapper ごと absent)、ここへ来るのは発火経路の子が必ず居る場合。
-    if b.source is @abi.Const {
-      continue
-    }
-    let (path, _) = walk_export_path(b.scope, ek)
-    // wrapper アドレスを取り出す。nameless 子の scope は `pair/#k` (index segment 付き) なので、
-    // 末尾の index segment (`#k`) を落とした先が wrapper。root 直下の nameless 値は wrapper を
-    // 持たないので対象外。
-    let addr : Array[String] = []
-    for seg in path {
-      if !is_sentinel(seg) {
-        addr.push(seg)
-      }
-    }
-    if addr.length() == 0 {
-      continue
-    }
-    let key = addr[addr.length() - 1]
-    let parent = addr[0:addr.length() - 1].to_owned()
-    // 既に wrapper 自身か wrapper 配下 (named 子) に entry があるなら何もしない。named 子が
-    // 1 つでもあれば結果は kv になり (DESIGN §2.5)、wrapper 自身は値セルにならない。accum
-    // wrapper も下のループが `#row` 経由で自分の entry を作るので二重にしない。
-    let mut covered = false
-    for entry in out {
-      if (entry.key == key && path_eq(entry.path, parent)) ||
-        path_starts_with(entry.path, addr) {
-        covered = true
-        break
-      }
-    }
-    if covered {
-      continue
-    }
-    out.push({ path: parent, key, source: b.source })
-  }
-  for cell in accum_cells(sc, ek, resolved) {
-    if !accum_cell_fired(out, cell) {
-      let source = match accum_cell_fire_source(resolved, ek, cell) {
-        Some(source) => source
-        None => @abi.Source::Default
-      }
-      out.push({ path: cell.path, key: cell.name, source })
-    }
-  }
-  // IndexedRepeat is the structural carrier for a named positional group. Its wrapper renders the
-  // same uniform array as an accumulator cell, but it has no Entity of its own; project the 0-fire
-  // default seat directly from the structural wrapper. A fired row already contributes child entries
-  // below the wrapper address, so no wrapper-level default entry is added in that case.
-  for cell in repeat_wrapper_cells(sc, ek, resolved) {
-    let wrapper = path_push(cell.path, cell.name)
-    let mut covered = false
-    for entry in out {
-      if (entry.key == cell.name && path_eq(entry.path, cell.path)) ||
-        path_starts_with(entry.path, wrapper) {
-        covered = true
-        break
-      }
-    }
-    if !covered {
-      out.push({ path: cell.path, key: cell.name, source: @abi.Source::Default })
-    }
-  }
-  out
+  @abi.Scalar(@abi.String(tag))
 }
 
 ///|
-/// nameless 子を畳む wrapper accumulator の発火経路。`multiple` の 1 発火ごとに lowering が
-/// wrapper scope 直下へ置く `#row` sentinel は、子が結果キーを持つかに関係なく存在する。
-/// sentinel の scope を通常の binding と同じ export-key 軸へ写し、accum cell の wrapper address と
-/// 一致する最後の marker の source を返す。marker が無ければ 0 回発火。
-///
-/// structural body + link の gate を解除する際は composite link routing と同じ座で wrapper の発火
-/// carrier を `Link` 化する必要がある。`bindings_through_link` は internal marker を書き換えないため、
-/// gate を外すだけでは `#row.source` は `Cli` のまま誤報する (`ref-link-structural-body-gate` issue)。
-fn accum_cell_fire_source(
-  resolved : Array[@abi.Binding],
-  ek : @engine.ExportScopeMap,
-  cell : AccumCell,
+fn source_seat(
+  seats : Array[SourceSeat],
+  path : Array[String],
+  key : String,
+) -> SourceSeat? {
+  for seat in seats {
+    if seat.key == key && path_eq(seat.path, path) {
+      return Some(seat)
+    }
+  }
+  None
+}
+
+///|
+fn accum_cell_at(
+  cells : Array[AccumCell],
+  path : Array[String],
+  key : String,
+) -> AccumCell? {
+  for cell in cells {
+    if cell.name == key && path_eq(cell.path, path) {
+      return Some(cell)
+    }
+  }
+  None
+}
+
+///|
+fn source_index(path : Array[String]) -> Int? {
+  for i = path.length() - 1; i >= 0; i = i - 1 {
+    let segment = path[i]
+    if segment.length() > 1 && segment[0:1].to_owned() == "#" {
+      return Some(seg_num(segment))
+    }
+  }
+  None
+}
+
+///|
+fn indexed_source(
+  seats : Array[SourceSeat],
+  path : Array[String],
+  key : String,
 ) -> @abi.Source? {
-  let wrapper = path_push(cell.path, cell.name)
-  let mut source : @abi.Source? = None
-  for binding in resolved {
-    if binding.key == "#row" {
-      let (path, _) = walk_export_path(binding.scope, ek)
-      if path_eq(path, wrapper) {
-        source = Some(binding.source)
-      }
-    }
+  let index = match source_index(path) {
+    Some(value) => value
+    None => return None
   }
-  source
+  match source_seat(seats, drop_index_segments(path), key) {
+    Some(seat) if index < seat.bindings.length() =>
+      Some(seat.bindings[index].source)
+    _ => None
+  }
 }
 
 ///|
-/// accum セルの通常 source entry が既に存在するか。
-///
-/// - **スカラ accum** (`{"name":"t","type":"string","multiple":"append"}`): cell 自身の entry
-/// - **named 子を持つ wrapper accum**: wrapper address 配下の child entry
-///
-/// nameless 子だけを持つ wrapper は通常 entry を作らないため false になる。その場合は
-/// `accum_cell_fire_source` が `#row` から wrapper 自身の発火経路を復元する。
-fn accum_cell_fired(out : Array[SourceEntry], cell : AccumCell) -> Bool {
-  let inner = path_push(cell.path, cell.name)
-  for entry in out {
-    if entry.key == cell.name && path_eq(entry.path, cell.path) {
-      return true // スカラ accum: cell 自身に着席
-    }
-    if path_starts_with(entry.path, inner) {
-      return true // wrapper accum: child に着席
+fn source_default_here(
+  defaults : Array[DefaultCell],
+  path : Array[String],
+  key : String,
+) -> Bool {
+  for cell in defaults {
+    if cell.name == key && path_eq(cell.path, path) {
+      return true
     }
   }
   false
 }
 
 ///|
-/// `path` が `prefix` で始まるか (index segment `#k` も 1 段として数える — 発火の有無を見るだけ
-/// なので、何番目の発火かは問わない)。
+fn source_seats(
+  sc : @engine.Scope,
+  resolved : Array[@abi.Binding],
+  ek : @engine.ExportScopeMap,
+  extensions : @node.Registry,
+) -> (
+  Array[SourceSeat],
+  Array[AccumCell],
+  Array[DefaultCell],
+  Array[InternalCell],
+) {
+  let seats : Array[SourceSeat] = []
+  let cells = accum_cells(sc, ek, resolved)
+  let internal = internal_cells(sc, ek, resolved)
+  let defaults = apply_export_to_defaults(default_cells(sc, resolved), ek)
+  for binding in apply_export_keys(resolved, ek) {
+    if (binding.key != "" && is_sentinel(binding.key)) ||
+      is_internal_cell(internal, binding.scope, binding.key) {
+      continue
+    }
+    let binding = match binding.op {
+      @abi.Unset => { ..binding, source: @abi.Source::Default }
+      _ => binding
+    }
+    let mut index = -1
+    for i in 0..<seats.length() {
+      if seats[i].key == binding.key && path_eq(seats[i].path, binding.scope) {
+        index = i
+        break
+      }
+    }
+    let accumulated = cell_here(cells, binding.scope, binding.key)
+    if index < 0 {
+      let bindings : Array[@abi.Binding] = []
+      if !(accumulated && binding.op is (@abi.Empty | @abi.Unset | @abi.Default)) {
+        bindings.push(binding)
+      }
+      seats.push({
+        path: binding.scope,
+        key: binding.key,
+        bindings,
+        shadow: None,
+      })
+    } else if accumulated {
+      match binding.op {
+        @abi.Empty | @abi.Unset | @abi.Default => seats[index].bindings.clear()
+        _ => seats[index].bindings.push(binding)
+      }
+    } else {
+      seats[index].bindings.push(binding)
+    }
+  }
+  for i in 0..<seats.length() {
+    match accum_cell_at(cells, seats[i].path, seats[i].key) {
+      Some(cell) => {
+        let filtered = match
+          @extension.apply_accum_filter_chain_with_sources(
+            extensions.extensions(),
+            cell.accum_filters,
+            seats[i].bindings,
+          ) {
+          Ok(bindings) => bindings
+          Err(error) => abort("source projection failed: " + error.message)
+        }
+        let values : Array[@abi.Value] = []
+        let sourced : Array[(@abi.Value, @abi.Source)] = []
+        for binding in filtered {
+          values.push(binding.value)
+          sourced.push((binding.value, binding.source))
+        }
+        let accumulated = cell.accum.collect(values)
+        let accumulated_sources = cell.accum.collect_sources(sourced)
+        seats[i].shadow = Some(
+          match cell.collector {
+            Some(collector) =>
+              collector.collect_sources(accumulated, accumulated_sources)
+            None => accumulated_sources
+          },
+        )
+      }
+      None => {
+        guard seats[i].bindings.length() > 0 else {
+          abort("source projection failed: scalar seat has no binding")
+        }
+        seats[i].shadow = Some(
+          source_tag(seats[i].bindings[seats[i].bindings.length() - 1].source),
+        )
+      }
+    }
+  }
+  (seats, cells, defaults, internal)
+}
+
+///|
+/// Build DR-122's shadow tree by walking the completed result structure. Structural arrays and
+/// scopes recurse through the same row/index grouping as `build_result`. Shape-changing collectors
+/// receive the pre-collector value and source trees together so key promotion and tuple conversion
+/// retain the provenance of the value seat that survives.
+fn source_shadow(
+  result : @abi.ResultValue,
+  binds : Array[@abi.Binding],
+  seats : Array[SourceSeat],
+  cells : Array[AccumCell],
+  defaults : Array[DefaultCell],
+  internal : Array[InternalCell],
+  extensions : @node.Registry,
+  path : Array[String],
+) -> @abi.ResultValue {
+  match result {
+    @abi.Object(fields) => {
+      let out : Array[(String, @abi.ResultValue)] = []
+      for field in fields {
+        match source_seat(seats, path, field.0) {
+          Some(seat) => {
+            let shadow = seat.shadow.unwrap_or_else(() => {
+              abort("source projection failed: unfinished seat")
+            })
+            out.push((field.0, shadow))
+          }
+          None => {
+            let child_binds = sub_under(binds, field.0)
+            match accum_cell_at(cells, path, field.0) {
+              Some(cell) if cell.collector is Some(_) => {
+                let child_path = path_push(path, field.0)
+                let accumulated = build_result(
+                  child_binds,
+                  cells,
+                  defaults,
+                  child_path,
+                  nones=internal,
+                  extensions~,
+                )
+                let accumulated_sources = source_shadow(
+                  accumulated, child_binds, seats, cells, defaults, internal, extensions,
+                  child_path,
+                )
+                let collector = cell.collector.unwrap()
+                out.push(
+                  (
+                    field.0,
+                    collector.collect_sources(accumulated, accumulated_sources),
+                  ),
+                )
+              }
+              _ => {
+                let mut direct : @abi.Source? = None
+                for binding in binds {
+                  if binding.scope.length() == 0 && binding.key == field.0 {
+                    direct = Some(
+                      match binding.op {
+                        @abi.Unset => @abi.Source::Default
+                        _ => binding.source
+                      },
+                    )
+                  }
+                }
+                let source = match direct {
+                  Some(value) => Some(value)
+                  None => indexed_source(seats, path, field.0)
+                }
+                match source {
+                  Some(value) => out.push((field.0, source_tag(value)))
+                  None if source_default_here(defaults, path, field.0) =>
+                    out.push((field.0, source_tag(@abi.Default)))
+                  None => {
+                    let nested = source_shadow(
+                      field.1,
+                      child_binds,
+                      seats,
+                      cells,
+                      defaults,
+                      internal,
+                      extensions,
+                      path_push(path, field.0),
+                    )
+                    out.push((field.0, nested))
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      @abi.Object(out)
+    }
+    @abi.Array(values) => {
+      let out : Array[@abi.ResultValue] = []
+      if has_direct_key(binds, "#row") {
+        let rows = row_groups(binds)
+        for i, value in values {
+          let row = if i < rows.length() { rows[i] } else { [] }
+          out.push(
+            source_shadow(
+              value, row, seats, cells, defaults, internal, extensions, path,
+            ),
+          )
+        }
+      } else if has_direct_key(binds, "[]") {
+        let indices = ordered_indices(binds)
+        for i, value in values {
+          let child = if i < indices.length() {
+            sub_under(binds, indices[i])
+          } else {
+            []
+          }
+          out.push(
+            source_shadow(
+              value, child, seats, cells, defaults, internal, extensions, path,
+            ),
+          )
+        }
+      } else {
+        for i, value in values {
+          let index = "#" + i.to_string()
+          out.push(
+            source_shadow(
+              value,
+              sub_under(binds, index),
+              seats,
+              cells,
+              defaults,
+              internal,
+              extensions,
+              path_push(path, index),
+            ),
+          )
+        }
+      }
+      @abi.Array(out)
+    }
+    @abi.Scalar(_) =>
+      match source_seat(seats, path, "") {
+        Some(seat) =>
+          seat.shadow.unwrap_or_else(() => {
+            abort("source projection failed: unfinished nameless seat")
+          })
+        None => {
+          let mut source : @abi.Source? = None
+          for binding in binds {
+            if binding.scope.length() == 0 && binding.key == "" {
+              source = Some(binding.source)
+            }
+          }
+          match source {
+            Some(value) => source_tag(value)
+            None =>
+              abort(
+                "source projection failed: scalar result has no source seat at " +
+                Debug::to_repr((path, binds, seats)).to_string(),
+              )
+          }
+        }
+      }
+  }
+}
+
+///|
+/// `sources` is the `result` shadow tree (DR-122): identical objects/arrays, with every scalar value
+/// replaced by its final source tag. Empty arrays and objects remain empty because they have no value
+/// seats to label.
+fn result_sources(
+  sc : @engine.Scope,
+  resolved : Array[@abi.Binding],
+  ek : @engine.ExportScopeMap,
+  result : @abi.ResultValue,
+  extensions : @node.Registry,
+) -> @abi.ResultValue {
+  let projected = apply_export_keys(resolved, ek)
+  let (seats, cells, defaults, internal) = source_seats(
+    sc, resolved, ek, extensions,
+  )
+  source_shadow(
+    result,
+    projected,
+    seats,
+    cells,
+    defaults,
+    internal,
+    extensions,
+    [],
+  )
+}
+
+///|
 fn path_starts_with(path : Array[String], prefix : Array[String]) -> Bool {
   if path.length() < prefix.length() {
     return false

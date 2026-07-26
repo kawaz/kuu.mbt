@@ -113,6 +113,14 @@ impl AccumulatorExt for RegistryAccumulatorExt with fn collect(_self, values) {
 }
 
 ///|
+impl AccumulatorExt for RegistryAccumulatorExt with fn collect_sources(
+  _self,
+  _values,
+) {
+  Array([])
+}
+
+///|
 priv struct RegistryCollectorExt {
   encoded : String
 }
@@ -130,6 +138,15 @@ impl CollectorExt for RegistryCollectorExt with fn encode(self) {
 ///|
 impl CollectorExt for RegistryCollectorExt with fn collect(_self, value) {
   value
+}
+
+///|
+impl CollectorExt for RegistryCollectorExt with fn collect_sources(
+  _self,
+  _value,
+  sources,
+) {
+  sources
 }
 
 ///|

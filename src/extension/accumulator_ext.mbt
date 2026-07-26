@@ -7,9 +7,25 @@
 pub type LowerSeat = (Bool) -> Result[Array[Binding], ParseError]
 
 ///|
-/// Open accumulator contract. `resolve_cli` owns the accumulator-specific CLI
-/// fold, while `collect` projects the resulting value sequence into the recursive
-/// result shape. `kind + encode` is the resident's structural identity.
+fn source_result(source : Source) -> ResultValue {
+  let tag = match source {
+    Cli => "cli"
+    Link => "link"
+    Env => "env"
+    Config => "config"
+    Inherit => "inherit"
+    Tty => "tty"
+    Const => "const"
+    Default => "default"
+  }
+  Scalar(String(tag))
+}
+
+///|
+/// Open accumulator contract. `resolve_cli` owns the accumulator-specific CLI fold. `collect` and
+/// `collect_sources` must perform the same structural transformation for values and their paired
+/// provenance; shape-changing residents cannot derive one independently from the other.
+/// `kind + encode` is the resident's structural identity.
 pub(open) trait AccumulatorExt {
   fn kind(Self) -> String
   fn encode(Self) -> Json
@@ -19,6 +35,7 @@ pub(open) trait AccumulatorExt {
     ParseError,
   ]
   fn collect(Self, Array[Value]) -> ResultValue
+  fn collect_sources(Self, Array[(Value, Source)]) -> ResultValue
 }
 
 ///|
@@ -37,13 +54,16 @@ pub impl Debug for &AccumulatorExt with fn to_repr(self) {
 }
 
 ///|
-/// Open collector contract applied after an accumulator has produced its result
-/// value. Configured collectors include their configuration in `encode`.
+/// Open collector contract applied after an accumulator has produced its result value.
+/// `collect_sources` receives both the pre-collector value and source trees so key promotion and
+/// shape changes can preserve the source of each surviving value seat. Configured collectors include
+/// their configuration in `encode`.
 pub(open) trait CollectorExt {
   fn kind(Self) -> String
   fn encode(Self) -> Json
   fn equal(Self, &CollectorExt) -> Bool = _
   fn collect(Self, ResultValue) -> ResultValue
+  fn collect_sources(Self, ResultValue, ResultValue) -> ResultValue
 }
 
 ///|

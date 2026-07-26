@@ -150,20 +150,6 @@ fn test_join_comma(items : Array[String]) -> String {
 }
 
 ///|
-fn test_join_space(items : Array[String]) -> String {
-  let buf = StringBuilder::new()
-  let mut first = true
-  for item in items {
-    if !first {
-      buf.write_string(" ")
-    }
-    buf.write_string(item)
-    first = false
-  }
-  buf.to_string()
-}
-
-///|
 fn test_render_val(value : @abi.Value) -> String {
   match value {
     @abi.String(s) => s
