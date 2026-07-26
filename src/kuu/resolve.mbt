@@ -1254,6 +1254,59 @@ fn result_sources(
       }
     }
   }
+  // DR-121 §3.2 (nameless tuple): 非 accum の nameless seq/or wrapper。子が nameless なので上の
+  // ループでは `exposed_cell` が None になって全部落ち、wrapper 自身は値セルを持たない (entity が
+  // 無い) ので entry が 1 件も出ない — しかし result には `pair: ["x","fallback"]` が出る。
+  // §3.2 は「nameless tuple の wrapper セルは entry 1 件で、source は発火経路」と規定するので、
+  // wrapper アドレスへ 1 件射影する (accum 版が `#row` sentinel からやっているのと同じ考え方を、
+  // sentinel を持たない非 accum 経路へ広げたもの)。
+  //
+  // literal 成分が混ざっていても source は発火経路のまま — 「literal 成分は形の一部であり独立の
+  // 由来を主張しない」(DR-121 §3.2 / DR-031)。つまり子の binding の source をそのまま採ると
+  // const が漏れるので、**発火経路を運ぶ子** (const 以外) を優先して採る。
+  for b in resolved {
+    // 対象は nameless な値セル (`key` が空 = `apply_export_keys` の「nameless value axis」)。
+    // named 子は上のループで自分の entry を作るのでここでは扱わない。
+    if b.key != "" {
+      continue
+    }
+    // const は「形の一部」であり独立の由来を主張しない (DR-121 §3.2 / DR-031)。wrapper の
+    // source は発火経路を運ぶ兄弟が決める — const しか居ない wrapper は発火自体が無く
+    // (未発火なら wrapper ごと absent)、ここへ来るのは発火経路の子が必ず居る場合。
+    if b.source is @abi.Const {
+      continue
+    }
+    let (path, _) = walk_export_path(b.scope, ek)
+    // wrapper アドレスを取り出す。nameless 子の scope は `pair/#k` (index segment 付き) なので、
+    // 末尾の index segment (`#k`) を落とした先が wrapper。root 直下の nameless 値は wrapper を
+    // 持たないので対象外。
+    let addr : Array[String] = []
+    for seg in path {
+      if !is_sentinel(seg) {
+        addr.push(seg)
+      }
+    }
+    if addr.length() == 0 {
+      continue
+    }
+    let key = addr[addr.length() - 1]
+    let parent = addr[0:addr.length() - 1].to_owned()
+    // 既に wrapper 自身か wrapper 配下 (named 子) に entry があるなら何もしない。named 子が
+    // 1 つでもあれば結果は kv になり (DESIGN §2.5)、wrapper 自身は値セルにならない。accum
+    // wrapper も下のループが `#row` 経由で自分の entry を作るので二重にしない。
+    let mut covered = false
+    for entry in out {
+      if (entry.key == key && path_eq(entry.path, parent)) ||
+        path_starts_with(entry.path, addr) {
+        covered = true
+        break
+      }
+    }
+    if covered {
+      continue
+    }
+    out.push({ path: parent, key, source: b.source })
+  }
   for cell in accum_cells(sc, ek, resolved) {
     if !accum_cell_fired(out, cell) {
       let source = match accum_cell_fire_source(resolved, ek, cell) {

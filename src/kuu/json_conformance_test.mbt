@@ -4227,3 +4227,76 @@ test "CONST-Q1: the config seat overrides a const (upper seats supply, const is 
     abort("expected PASS, got: " + verdict)
   }
 }
+
+///|
+/// DR-121 §3.2 (nameless tuple): 非 accum の nameless seq wrapper にも entry 1 件を出す。子が
+/// nameless なので子側の entry は全部落ち (`exposed_cell` が None)、wrapper 自身は値セルを
+/// 持たない — 素直に書くと result に `pair` が出るのに sources が空になる。§3.2 の中核例
+/// そのままを pin する。fixture 側 (seq-parse/literal-child-zero-consumption.json) と重複するが、
+/// こちらは「§3.2 の JSON 例を逐語で」固定する回帰テストとして残す。
+test "DR-121 §3.2: a plain (non-accum) nameless seq wrapper gets one source entry (the firing path)" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "pair", "long": true, "seq": [{"type": "string"}, {"type": "string", "value": "fallback"}]}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "nameless-tuple-wrapper-one-entry",
+    #|      "args": ["--pair", "x"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "result": {"pair": ["x", "fallback"]},
+    #|        "sources": [{"path": [], "key": "pair", "source": "cli"}]
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// 対極 (`self-written-rule-blind-spots`): **named** 子を持つ wrapper では上の射影を働かせない。
+/// named 子は各自が結果キーを持ち通常の cell provenance で書けるので (DR-121 §3.2「席が N 個」の
+/// 原理が効く側)、wrapper 自身の entry を足すと `(path, key)` 一意性 (§1.1) を保ったまま
+/// 「子の entry + wrapper の entry」の二重計上になる。子の entry だけが出ることを固定する。
+test "DR-121 §3.2 対極: a NAMED-children wrapper keeps per-child entries, no wrapper entry" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {
+    #|    "options": [
+    #|      {"name": "pair", "long": true, "seq": [
+    #|        {"name": "path", "type": "string"},
+    #|        {"name": "mode", "type": "string", "value": "fallback"}
+    #|      ]}
+    #|    ]
+    #|  },
+    #|  "cases": [
+    #|    {
+    #|      "id": "named-children-keep-cell-provenance",
+    #|      "args": ["--pair", "x"],
+    #|      "expect": {
+    #|        "outcome": "success",
+    #|        "result": {"pair": {"path": "x", "mode": "fallback"}},
+    #|        "sources": [
+    #|          {"path": ["pair"], "key": "path", "source": "cli"},
+    #|          {"path": ["pair"], "key": "mode", "source": "const"}
+    #|        ]
+    #|      }
+    #|    }
+    #|  ]
+    #|}
+  let df = dec_fixture(@json.parse(src))
+  let verdict = run_case(df, df.cases[0])
+  if verdict != "PASS" {
+    abort("expected PASS, got: " + verdict)
+  }
+}
