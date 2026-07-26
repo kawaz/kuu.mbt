@@ -48,8 +48,8 @@ link : Int // a link/global-copy binding (DR-042/007): the number of result-nest
 
 | 語 | 意味 | 出典 |
 |---|---|---|
-| `link:` 属性 | 他要素の入口から効果を飛ばす参照 (ref / link / alias の参照ファミリー) | DESIGN の共通ノード形、DR-057 |
-| `link` source | link 越しに確定した値の由来タグ | DR-031 / DR-098 §6 / DR-121 §4 |
+| `link:` 属性 | **値セルへの参照** — その入口は自前のセルを持たず、指定した名前の値セルに束ねられる (DR-029「1 実体 : N 参照」、参照ファミリー ref / link / alias) | DESIGN の共通ノード形、DR-057 |
+| `link` source | **同じ値セルに複数の入口があるとき、どの入口から書かれたか** — 自分の入口なら `cli`、参照経由なら `link`。同じセルへの書き込みなので席は変わらず、ラダー同順位 | DR-031 / DR-098 §6 / DR-121 §4 |
 | **`Binding.link`** | **global copy の escape 残段数** | DR-042/007 (実装内部) |
 
 3 つ目だけが実装の内部フィールドで、他 2 つと無関係。
@@ -65,6 +65,9 @@ link : Int       // global escape の残段数 (無関係)
 
 が並ぶ。実際、2026-07-26 に統括が `Binding.link` を見て「DR-031 の link は実装済みか」と
 一瞬誤読した。第三者が読めば同じ誤読をする。
+
+`link` 属性と `link` source は「値セルへの参照」という 1 つの概念の宣言面と観測面であって
+互いに整合している。無関係なのは `Binding.link` (global escape の残段数) だけ。
 
 ### 提案 (実体に沿った名前)
 
