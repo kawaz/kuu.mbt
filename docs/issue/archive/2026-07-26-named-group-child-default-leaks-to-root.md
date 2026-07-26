@@ -12,7 +12,7 @@ discarded_entered:
 resolved_entered: 2026-07-27T03:17:42+09:00
 discard_reason:
 pending_reason:
-close_reason: ["implemented: Entity が named positional group の declaring_path を保持し、発火した indexed row scope ごとに child ladder を解決。0 row で root child default を生成しない。string/bool 対偶・trailing positional・spec fixture を追加。commit 99ed766d、spec fixture a6a2dbe5。KUU_FIXTURES 付き 542/542、conformance 362 files/820 cases/mismatches=0、just lint green。"]
+close_reason: ["implemented: Entity が named positional group の declaring_path を保持し、発火した indexed row scope ごとに child ladder を解決。0 row で root child default を生成しない。string/bool 対偶・trailing positional・spec fixture を追加。commit 99ed766d、spec fixture a6a2dbe5。KUU_FIXTURES 付き 542/542、conformance 362 files/820 cases/mismatches=0、just lint green。", "implemented: DR-051 §2 / DR-121 §2.2 に従い、IndexedRepeat の 0 fire wrapper source `[]/xs=default` を structural projection として追加。実装 e92f6548、fixture de7cd1db。KUU_FIXTURES 付き 542/542、conformance 362 files/820 cases/mismatches=0、just lint green。"]
 blocked_by:
 origin: 自リポ TODO
 ---
@@ -37,8 +37,15 @@ or/seq child の literal 実装 (2026-07-26) では `ensure_entity_body` を ski
 
 ## 受け入れ条件
 
-- [ ] named group (`xs`) 配下の positional child (`v`) の default 席が wrapper 配下のアドレスに着席する (root 直下に漏れない)
-- [ ] DR-121 §3.2 の wrapper 結果アドレス畳み込み規定と整合する
+- [x] named group (`xs`) 配下の positional child (`v`) の default 席が wrapper 配下のアドレスに着席する (root 直下に漏れない)
+- [x] DR-121 §3.2 の wrapper 結果アドレス畳み込み規定と整合する
+
+## Follow-up (2026-07-27)
+
+DR-051 §2 / DR-121 §2.2 に従い、IndexedRepeat の 0 fire wrapper source
+`[]/xs=default` を structural projection として追加。実装 e92f6548、
+fixture de7cd1db。KUU_FIXTURES 付き 542/542、conformance 362 files/820
+cases/mismatches=0、just lint green。
 
 ## TODO
 
