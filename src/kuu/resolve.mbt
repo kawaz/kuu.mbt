@@ -962,9 +962,15 @@ priv struct DefaultCell {
 }
 
 ///|
-fn default_cells(sc : @engine.Scope) -> Array[DefaultCell] {
+/// `binds` は **未射影** (`apply_export_keys` 前) の解決済み binding — `collect_defaults` の
+/// 選択判定が `@engine.scope_selected` を使う以上、判定軸は engine と同じ **宣言名軸** で
+/// なければならない (下記 `collect_defaults` のコメント参照)。
+fn default_cells(
+  sc : @engine.Scope,
+  binds : Array[@abi.Binding],
+) -> Array[DefaultCell] {
   let out : Array[DefaultCell] = []
-  collect_defaults(sc, [], out)
+  collect_defaults(sc, [], binds, out)
   out
 }
 
@@ -982,9 +988,14 @@ fn default_scalar(e : @engine.Entity) -> @abi.Value? {
 }
 
 ///|
+/// `path` は **宣言名軸** (`export_key` 適用前) で積む — 射影は呼び出し側の
+/// `apply_export_to_defaults` が `walk_export_path` で後から行う。選択判定 (`scope_selected`) が
+/// 見る `{}` scope_marker の scope も宣言名軸 (`cont.mbt` KNest が宣言ラベルで prepend する) なので、
+/// 両者の軸が揃う。
 fn collect_defaults(
   sc : @engine.Scope,
   path : Array[String],
+  binds : Array[@abi.Binding],
   out : Array[DefaultCell],
 ) -> Unit {
   for e in sc.entities {
@@ -1004,8 +1015,26 @@ fn collect_defaults(
   }
   for g in sc.greedy {
     match g {
-      @engine.CommandSatisfied(name, child) =>
-        collect_defaults(child, path_push(path, name), out)
+      @engine.CommandSatisfied(name, child) => {
+        // 未選択 (当該実行で未入場) の command scope は降りない (issue
+        // unselected-transparent-command-flag-leak)。上の「flag は絶対 absent にならない」は
+        // **選ばれた** scope の中の話 (DR-051 §2) で、選ばれなかった sibling command の配下は
+        // 値源を一切持たないので absent が正。identity command なら path が `["c"]` に育って
+        // 未選択スコープごと result から消えるため漏れは見えないが、透過 command (`export_key:
+        // null`, DR-052 §2) は `apply_export_to_defaults` の `walk_export_path` が segment を
+        // 落とすので **root に着地して露出**していた (`sources` は resolve 済み binding だけを
+        // 見るので席を作らず、result と sources が非対称になる — DR-121 §2 違反)。
+        //
+        // 判定は engine の遅延述語 gate (`eval_all_constraints` / `violations_of`) と同じ
+        // `@engine.scope_selected` を共用する (SCB-Q1=a と同じ「選択」の定義: `{}` scope_marker
+        // の存在)。marker は `cont.mbt` KNest の `is_cmd=true` 分岐が **export_key に関係なく**
+        // 宣言ラベルで prepend するので、透過 command でも選ばれていれば判定が通る (透過が
+        // 落とすのは結果キー軸だけ、DR-052 §2)。
+        let child_path = path_push(path, name)
+        if @engine.scope_selected(binds, child_path) {
+          collect_defaults(child, child_path, binds, out)
+        }
+      }
       _ => ()
     }
   }
@@ -1032,7 +1061,7 @@ fn build_result_export(
   build_result(
     apply_export_keys(binds, ek),
     accum_cells(sc, ek),
-    apply_export_to_defaults(default_cells(sc), ek),
+    apply_export_to_defaults(default_cells(sc, binds), ek),
     [],
     nones=internal_cells(sc, ek),
     extensions~,

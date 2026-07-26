@@ -1931,3 +1931,185 @@ test "build_result: an inf-valued cell passes through the result builder unchang
     @abi.Object([("threshold", @abi.Scalar(@abi.Number(inf)))]),
   )
 }
+
+// ── default_cells の選択判定 (issue unselected-transparent-command-flag-leak) ──────────────────
+
+///|
+/// 未選択 command scope を表す binding 集合を作るヘルパ。`@engine.scope_selected` は
+/// `{}` scope_marker (`cont.mbt` KNest が CommandSatisfied 入場時に prepend する) の有無だけを
+/// 見るので、テストからは同じ形の binding を直接置けば「その scope に入場した」を再現できる。
+fn selected_marker(scope : Array[String]) -> @abi.Binding {
+  {
+    key: "{}",
+    op: @abi.Set,
+    value: @abi.Bool(false),
+    source: @abi.Cli,
+    scope,
+    link: 0,
+    at_pos: None,
+  }
+}
+
+///|
+/// 2 つの sibling command を持つ root scope — 片方が identity、もう片方が透過 (`export_key: null`)。
+/// どちらも配下に flag セル 1 つ (preset default:false) を持つ。
+fn two_command_scope(
+  a_flag : String,
+  c_flag : String,
+) -> @engine.Scope {
+  let a : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [
+      ent(a_flag, @builtins.flag_type(), default_value=Some(@abi.Bool(false))),
+    ],
+    constraints: [],
+  }
+  let c : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [
+      ent(c_flag, @builtins.flag_type(), default_value=Some(@abi.Bool(false))),
+    ],
+    constraints: [],
+  }
+  {
+    greedy: [@engine.CommandSatisfied("a", a), @engine.CommandSatisfied("c", c)],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+}
+
+///|
+/// 保証 (issue unselected-transparent-command-flag-leak, DR-051 §2 / DR-052 §2 / DR-121 §2):
+/// **未選択の透過 command** (`export_key: null`) 配下の未発火 flag は result に現れない。
+/// 「flag は絶対 absent にならない」(DR-051 §2) は **選ばれた** scope の中の規則で、選ばれなかった
+/// sibling command の配下は値源を一切持たない。透過だと `apply_export_to_defaults` の
+/// `walk_export_path` が scope segment を落とすため、この漏れは **root に着地して露出** していた
+/// (`sources` 側は resolve 済み binding しか見ないので席を作らず、result と sources が非対称になる
+/// = DR-121 §2 違反)。`a` だけを選択した状態で `c` 配下の `keep` が消えることを固定する。
+test "default_cells: an UNSELECTED transparent command's unfired flag does not promote to root" {
+  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+  let sc = two_command_scope("keep", "keep")
+  let binds : Array[@abi.Binding] = [selected_marker(["a"])]
+  let cells = apply_export_to_defaults(default_cells(sc, binds), ek)
+  assert_eq(cells.length(), 1)
+  assert_eq(cells[0].path, ["a"])
+  assert_eq(cells[0].name, "keep")
+}
+
+///|
+/// 保証 (対極、回帰防止): **選択された** 透過 command 配下の flag は従来どおり root へ昇格する
+/// (DR-052 §2、`fixtures/export-key/command-promote.json` が pin する昇格意味論)。選択判定の
+/// 導入が「透過 command の昇格そのもの」を殺していないことを固定する — `scope_selected` は
+/// **宣言名軸** の path (`["c"]`) で判定し、`{}` scope_marker は export_key に関係なく宣言ラベルで
+/// 積まれるので、透過 command でも選択が検出できる (これが崩れると本 fixture が落ちる)。
+test "default_cells 対極: a SELECTED transparent command's flag still promotes to root" {
+  let ek = test_export_scopes(scopes=[("c", @engine.ExportKey::null())])
+  let sc = two_command_scope("keep", "keep")
+  let binds : Array[@abi.Binding] = [selected_marker(["c"])]
+  let cells = apply_export_to_defaults(default_cells(sc, binds), ek)
+  assert_eq(cells.length(), 1)
+  assert_eq(cells[0].path, []) // 透過ラベルが落ちて root へ昇格
+  assert_eq(cells[0].name, "keep")
+}
+
+///|
+/// 保証 (回帰防止、identity 側): **未選択の identity command** 配下も従来どおり result に現れない。
+/// 修正前もこの断面だけは正しく見えていた (path が `["c"]` に育って未選択スコープごと消えるため)
+/// が、それは「収集していないから」ではなく「露出先が未選択スコープ配下だから」であり、選択判定の
+/// 導入後は **収集段で落ちる** ことを固定する (DefaultCell が 1 件しか出ない = `c` 配下は不在)。
+test "default_cells: an UNSELECTED identity command's unfired flag is not collected either" {
+  let ek = test_export_scopes()
+  let sc = two_command_scope("keep", "hold")
+  let binds : Array[@abi.Binding] = [selected_marker(["a"])]
+  let cells = apply_export_to_defaults(default_cells(sc, binds), ek)
+  assert_eq(cells.length(), 1)
+  assert_eq(cells[0].path, ["a"])
+  assert_eq(cells[0].name, "keep")
+}
+
+///|
+/// 保証 (対極、identity 側): **選択された** identity command 配下の flag は自名の下に現れる
+/// (DR-051 §2 の「未発火 flag は false を出す」が選択済み scope では生きている)。
+test "default_cells 対極: a SELECTED identity command's unfired flag renders under its own key" {
+  let ek = test_export_scopes()
+  let sc = two_command_scope("keep", "hold")
+  let binds : Array[@abi.Binding] = [selected_marker(["c"])]
+  let cells = apply_export_to_defaults(default_cells(sc, binds), ek)
+  assert_eq(cells.length(), 1)
+  assert_eq(cells[0].path, ["c"])
+  assert_eq(cells[0].name, "hold")
+}
+
+///|
+/// 保証 (受け入れ条件「透過 command が複数あり片方だけ選ばれた場合、選ばれた側だけが昇格する」):
+/// 2 つの透過 command が同じ root へ昇格しうる配置で、選ばれた `c2` 側の `two` だけが root に出て、
+/// 未選択 `c1` 側の `one` は出ない。選択判定が **scope ごと** に効いている (「1 つでも選ばれたら
+/// 全部降りる」等の粗い実装になっていない) ことを固定する。
+test "default_cells: with two transparent commands, only the SELECTED one's flag promotes" {
+  let ek = test_export_scopes(scopes=[
+    ("c1", @engine.ExportKey::null()),
+    ("c2", @engine.ExportKey::null()),
+  ])
+  let c1 : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [
+      ent("one", @builtins.flag_type(), default_value=Some(@abi.Bool(false))),
+    ],
+    constraints: [],
+  }
+  let c2 : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [
+      ent("two", @builtins.flag_type(), default_value=Some(@abi.Bool(false))),
+    ],
+    constraints: [],
+  }
+  let sc : @engine.Scope = {
+    greedy: [
+      @engine.CommandSatisfied("c1", c1),
+      @engine.CommandSatisfied("c2", c2),
+    ],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let binds : Array[@abi.Binding] = [selected_marker(["c2"])]
+  let cells = apply_export_to_defaults(default_cells(sc, binds), ek)
+  assert_eq(cells.length(), 1)
+  assert_eq(cells[0].path, [])
+  assert_eq(cells[0].name, "two")
+}
+
+///|
+/// 保証 (対極、root scope): root scope (path=[]) は常に選択済み (`scope_selected` の
+/// `path.length() == 0 => true`)。command を 1 つも選ばなくても root 直下の flag は default を出す
+/// — 選択判定の導入が root まで巻き込んで default を殺していないことを固定する。
+test "default_cells 対極: the root scope is always selected — its flag default survives" {
+  let ek = test_export_scopes()
+  let sc : @engine.Scope = {
+    greedy: [
+      @engine.CommandSatisfied("c", {
+        greedy: [],
+        positional: [],
+        entities: [
+          ent("hold", @builtins.flag_type(), default_value=Some(@abi.Bool(false))),
+        ],
+        constraints: [],
+      }),
+    ],
+    positional: [],
+    entities: [
+      ent("verbose", @builtins.flag_type(), default_value=Some(@abi.Bool(false))),
+    ],
+    constraints: [],
+  }
+  let cells = apply_export_to_defaults(default_cells(sc, []), ek)
+  assert_eq(cells.length(), 1)
+  assert_eq(cells[0].path, [])
+  assert_eq(cells[0].name, "verbose")
+}
