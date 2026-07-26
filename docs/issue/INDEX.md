@@ -14,3 +14,4 @@
 | 2026-07-26 | design | open | [flat-tree-source-unset-default-mismatch](./2026-07-26-flat-tree-source-unset-default-mismatch.md) | flat 側の Unset=>Default 読み替えが tree 側に無い (sources 射影 export_key 修正 issue からの切り出し) |
 | 2026-07-26 | bug | open | [command-scope-export-key-none-cell-leak](./2026-07-26-command-scope-export-key-none-cell-leak.md) | command scope の export_key rename があると type:none セルが result / sources に漏れる (DR-089 違反) |
 | 2026-07-26 | bug | open | [or-seq-child-value-default-unsupported](./2026-07-26-or-seq-child-value-default-unsupported.md) | or/seq の structural child が value/default 等を持てない (schema と DR-067 に未追随) |
+| 2026-07-26 | bug | open | [env-cli-accumulator-source-mismatch](./2026-07-26-env-cli-accumulator-source-mismatch.md) | env と CLI が同一 accumulator に供給されると最終値は CLI でも sources が env のまま (DR-031 違反) |
