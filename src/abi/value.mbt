@@ -41,7 +41,8 @@ pub fn value_str(value : Value) -> String {
 /// The evaluator preserves this so an appconfig store (DR-030) can ask
 /// "where did this value come from" without the ladder order being movable.
 pub(all) enum Source {
-  Cli // CLI explicit / link — highest seat (DR-031 #1)
+  Cli // own CLI entry — highest seat (DR-031 / DR-121 §4)
+  Link // effect routed through another element's link entry (DR-031 / DR-121 §4)
   Env // environment variable seat (DR-031 #2)
   Config // config-file seat (DR-050 #3) — below env, above inherit
   Inherit // nearest ancestor scope's same-named value (DR-031 #4 / DR-013)
@@ -322,6 +323,34 @@ pub fn Binding::new(
     levels_to_declaring_scope: 0,
     at_pos,
   }
+}
+
+///|
+/// Route one entry's effects into its canonical link target (DR-029 / DR-031 / DR-121 §4).
+/// Only bindings for the entry's own cell are rewritten; warning/internal marker bindings keep
+/// their keys and provenance. `levels_to_target` carries lexical/global routing when the visible
+/// target is a copied entry whose Entity lives in an ancestor scope.
+pub fn bindings_through_link(
+  bindings : Array[Binding],
+  from : String,
+  target : String,
+  levels_to_target : Int,
+) -> Array[Binding] {
+  let routed : Array[Binding] = []
+  for binding in bindings {
+    if binding.key == from {
+      routed.push({
+        ..binding,
+        key: target,
+        source: Link,
+        levels_to_declaring_scope: binding.levels_to_declaring_scope +
+        levels_to_target,
+      })
+    } else {
+      routed.push(binding)
+    }
+  }
+  routed
 }
 
 ///|

@@ -246,6 +246,7 @@ fn opt(
   value_filters? : Array[@abi.FnInvocation] = [],
   final_filters? : Array[@abi.FnInvocation] = [],
   accum_filters? : Array[@abi.FnInvocation] = [],
+  link_? : String? = None,
   ref_? : String? = None,
   long_prefix? : String = "--",
   short_prefix? : String = "-",
@@ -284,6 +285,7 @@ fn opt(
     is_inherit,
     is_inheritable: inheritable,
     link_depth: 0,
+    link_target: link_,
     ref_target: ref_,
     repeat,
     optional: false,
@@ -341,6 +343,7 @@ fn pos(
   collector? : @abi.CollectorDeclaration? = None,
   config_key? : Array[String]? = None,
   export_? : @engine.ExportKey = @engine.ExportKey::unset(),
+  link_? : String? = None,
   ref_? : String? = None,
   default? : Array[@abi.Value]? = None,
   default_fn? : @abi.DefaultFnCall? = None,
@@ -402,6 +405,7 @@ fn pos(
     is_inherit,
     is_inheritable: false,
     link_depth: 0,
+    link_target: link_,
     ref_target: ref_,
     repeat,
     optional,
@@ -486,6 +490,7 @@ fn dd_marker(
     is_inherit: false,
     is_inheritable: false,
     link_depth: 0,
+    link_target: None,
     ref_target: None,
     repeat: None,
     optional: false,
@@ -561,6 +566,7 @@ fn exact_marker(spelling : String) -> @engine.ElementDef {
     is_inherit: false,
     is_inheritable: false,
     link_depth: 0,
+    link_target: None,
     ref_target: None,
     repeat: None,
     optional: false,
@@ -2016,7 +2022,7 @@ fn dec_option(
   let allowed = [
     "id", "name", "type", "default", "default_fn", "export_key", "deprecated", "hidden",
     "or", "values", "piece_filters", "value_filters", "final_filters", "accum_filters",
-    "ref", "completer", "config",
+    "ref", "link", "completer", "config",
     // DR-113 §4.1 value_structure 素材: option root の seq / value_name wire キー
     // (help-only fixture 用 — parse 相は seq を活用しないが、help_installer が hint 経由で
     // model 射影する)。
@@ -2279,6 +2285,7 @@ fn dec_option(
   // per-element `config` object, a DIFFERENT key, IS the sanctioned override channel, DR-049 §4).
   // `opt(...)` below omits both — they keep `opt`'s defaults (`"--"`/`@abi.Allow`) here and get set for
   // real by the caller (`dec_definition`).
+  let link_ = jf_str(o, "link")
   let ref_ = jf_str(o, "ref")
   let repeat = owned.repeat
   // DR-113 §7.2 / DR-048: 素の `on_failure: true` は 5 help preset の糖衣が生成する fail_action と
@@ -2398,6 +2405,7 @@ fn dec_option(
       value_filters~,
       final_filters~,
       accum_filters~,
+      link_~,
       ref_~,
       hidden~,
       completer~,
@@ -2433,8 +2441,8 @@ fn dec_positional(
   let owned = decode_installer_owned(j, Positional, extensions)
   let allowed = [
     "id", "name", "type", "export_key", "default", "default_fn", "positionals", "or",
-    "piece_filters", "value_filters", "final_filters", "accum_filters", "ref", "config",
-    "completer", "exact",
+    "piece_filters", "value_filters", "final_filters", "accum_filters", "ref", "link",
+    "config", "completer", "exact",
     // DR-117 §2.6: dec_option と対称 — insert_form は positional 席 (`type:
     // "completion_script"`) でも合法 (DR-117 §2.3、positional 配置は全 preset で許可)。非
     // completion_script type 上への宣言は `collect_completion_script_errors` が
@@ -2614,6 +2622,7 @@ fn dec_positional(
   let value_filters = dec_filter_chain(o.get("value_filters"))
   let final_filters = dec_filter_chain(o.get("final_filters"))
   let accum_filters = dec_filter_chain(o.get("accum_filters"))
+  let link_ = jf_str(o, "link")
   let ref_ = jf_str(o, "ref")
   // DR-088 (issue dr-088-positional-default-verification): positionals can declare `env` too
   // (@engine.Entity.env_key applies uniformly across options/positionals, `dec_option`'s same-named
@@ -2700,6 +2709,7 @@ fn dec_positional(
     collector=coll,
     config_key~,
     export_~,
+    link_~,
     ref_~,
     default~,
     default_fn~,

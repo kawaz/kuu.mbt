@@ -44,6 +44,7 @@ pub using @abi {
   value_str,
   config_from_json,
   value_to_configval,
+  bindings_through_link,
   eq_sep_mode_of,
   attach_mode_of,
   decode_fn_invocation_parts,

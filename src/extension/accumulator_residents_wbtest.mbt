@@ -6,8 +6,9 @@ fn binding(
   op : @abi.EffectOp,
   value : @abi.Value,
   pos? : Int = 0,
+  source? : @abi.Source = @abi.Cli,
 ) -> @abi.Binding {
-  { ..@abi.Binding::new(name, value, @abi.Cli), op, at_pos: Some(pos) }
+  { ..@abi.Binding::new(name, value, source), op, at_pos: Some(pos) }
 }
 
 ///|
@@ -65,6 +66,46 @@ test "merge accumulator resident owns grouped remove splice add semantics" {
       assert_eq(bindings[1].value, @abi.String("c"))
     }
     Err(_) => fail("merge fold must succeed")
+  }
+}
+
+///|
+/// DR-031 / DR-121 §4: accumulator が default 値や marker fold 後の Binding を再構築しても、
+/// その firing が link 経路なら source を Cli へ潰さず Link のまま保つ。
+test "append and merge accumulator reconstruction preserves link source" {
+  let lower : LowerSeat = fn(_include_default) {
+    Ok([@abi.Binding::new("x", @abi.String("base"), @abi.Default)])
+  }
+  let append = append_accumulator().resolve_cli(
+    "x",
+    [binding("x", @abi.Default, @abi.Bool(false), source=@abi.Link)],
+    true,
+    lower,
+  )
+  match append {
+    Ok(bindings) => {
+      assert_eq(bindings.length(), 2)
+      assert_eq(bindings[0].source, @abi.Link)
+      assert_eq(bindings[1].source, @abi.Link)
+    }
+    Err(_) => fail("append default fold must succeed")
+  }
+  let merge = merge_accumulator().resolve_cli(
+    "x",
+    [
+      binding("x", @abi.Splice, @abi.Bool(false), source=@abi.Link),
+      binding("x", @abi.Set, @abi.String("linked"), source=@abi.Link),
+    ],
+    true,
+    lower,
+  )
+  match merge {
+    Ok(bindings) => {
+      assert_eq(bindings.length(), 2)
+      assert_eq(bindings[0].source, @abi.Link)
+      assert_eq(bindings[1].source, @abi.Link)
+    }
+    Err(_) => fail("merge marker fold must succeed")
   }
 }
 

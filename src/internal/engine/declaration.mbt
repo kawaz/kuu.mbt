@@ -63,6 +63,10 @@ pub(all) struct ElementDef {
   is_inherit : Bool // inherit installer 所有 (inherit seat 宣言)
   is_inheritable : Bool // inheritable installer 所有 (DR-059)
   link_depth : Int // >0 なら global COPY が declaring scope 何段下に置かれたか (satellite が Rooted で escape する段数)
+  // DR-029 / DR-031 / DR-121 §4: bare-name value-synchronization target. A linked element is an
+  // entry only: it owns parsing shape and spellings but no Entity/result seat; every effect produced
+  // for its own name is routed to this target and tagged Source::Link during evaluation.
+  link_target : String?
   ref_target : String? // DR-020: この要素は named template への ref
   repeat : RepeatSpec? // repeat installer 所有 (DR-043)
   optional : Bool // repeat:{min:0,max:1} の糖衣 (DR-043) — repeat 語彙が所有

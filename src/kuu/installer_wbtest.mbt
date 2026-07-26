@@ -146,6 +146,7 @@ fn el(
     is_inherit,
     is_inheritable: false,
     link_depth: 0,
+    link_target: None,
     ref_target: ref_,
     repeat,
     optional: false,

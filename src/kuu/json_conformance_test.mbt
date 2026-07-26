@@ -228,6 +228,7 @@ fn render_val(v : @abi.Value) -> String {
 fn render_src(s : @abi.Source) -> String {
   match s {
     @abi.Cli => "cli"
+    @abi.Link => "link"
     @abi.Env => "env"
     @abi.Config => "config"
     @abi.Inherit => "inherit"

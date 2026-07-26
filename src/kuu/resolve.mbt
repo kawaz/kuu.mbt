@@ -2194,9 +2194,9 @@ fn resolve_entity_raw(
           // config/inherit don't "win as a lower seat" here, they've already rewritten the
           // cell's default (§1's model) by the time this fires, so querying the SAME ladder
           // `resolve_ladder_below_cli` runs for a normal fall-through gets exactly that value.
-          // `source` is ALWAYS `@abi.Cli` now (DR-081 §2 "確定させた主体"重視 — the default's own
-          // provenance, even if it's env, doesn't change WHO committed it) — this is the one
-          // behavior change from the pre-DR-081 code, which tagged `source: @abi.Default` here.
+          // `source` stays on the firing binding (`cli` for the element's own entry, `link` for a
+          // routed entry): DR-081 §2 records WHO committed the default, while DR-121 §4 preserves
+          // which explicit path reached that same top ladder seat.
           match
             resolve_ladder_below_cli(
               e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
@@ -2208,7 +2208,7 @@ fn resolve_entity_raw(
                   @abi.Binding::new(
                     e.name,
                     bs2[bs2.length() - 1].value,
-                    @abi.Cli,
+                    b.source,
                   ),
                 )
               } else {
@@ -2268,7 +2268,7 @@ fn resolve_entity_raw(
             Err({ reason, message }) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
             Ok(@extension.FnOutput::Value(value)) => {
-              current = Some({ ..b, op: @abi.Set, value, source: @abi.Cli })
+              current = Some({ ..b, op: @abi.Set, value })
               committed_now = true
             }
             Ok(@extension.FnOutput::Sentinel(@extension.UseDefault)) =>
@@ -2283,7 +2283,6 @@ fn resolve_entity_raw(
                       ..b,
                       op: @abi.Set,
                       value: defaults[defaults.length() - 1].value,
-                      source: @abi.Cli,
                     })
                   } else {
                     Some({ ..b, op: @abi.Default })

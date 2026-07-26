@@ -23,9 +23,13 @@ fn append_resolve_cli(
         @abi.Default =>
           match lower(true) {
             Ok(defaults) => {
-              resolved.push({ ..binding, source: @abi.Cli })
+              resolved.push(binding)
               for default in defaults {
-                resolved.push({ ..default, op: @abi.Set, source: @abi.Cli })
+                resolved.push({
+                  ..default,
+                  op: @abi.Set,
+                  source: binding.source,
+                })
               }
               committed = true
             }
@@ -223,12 +227,10 @@ fn merge_resolve_cli(
           @abi.Default =>
             match lower(true) {
               Ok(defaults) => {
-                let next : Array[@abi.Binding] = [
-                  { ..binding, source: @abi.Cli },
-                ]
+                let next : Array[@abi.Binding] = [binding]
                 let values : Array[@abi.Value] = []
                 for default in defaults {
-                  next.push({ ..default, op: @abi.Set, source: @abi.Cli })
+                  next.push({ ..default, op: @abi.Set, source: binding.source })
                   values.push(default.value)
                 }
                 result = next
@@ -289,8 +291,9 @@ fn merge_resolve_cli(
             old,
           )
           let next : Array[@abi.Binding] = []
+          let firing_source = pieces[pieces.length() - 1].source
           for value in values {
-            next.push(@abi.Binding::new(name, value, @abi.Cli))
+            next.push(@abi.Binding::new(name, value, firing_source))
           }
           result = next
           old_values = Some(values)

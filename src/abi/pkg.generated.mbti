@@ -8,6 +8,8 @@ import {
 // Values
 pub fn attach_mode_of(String) -> AttachMode?
 
+pub fn bindings_through_link(Array[Binding], String, String, Int) -> Array[Binding]
+
 pub fn config_from_json(Json) -> ConfigVal
 
 pub fn decode_fn_invocation_parts(FnInvocationForm) -> Result[Array[String], String]
@@ -302,6 +304,7 @@ pub(all) enum RoundMode {
 
 pub(all) enum Source {
   Cli
+  Link
   Env
   Config
   Inherit

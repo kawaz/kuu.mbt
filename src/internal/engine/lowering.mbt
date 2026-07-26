@@ -431,6 +431,7 @@ fn clone_elem(e : ElementDef) -> ElementDef {
     is_inherit: e.is_inherit,
     is_inheritable: e.is_inheritable,
     link_depth: e.link_depth,
+    link_target: e.link_target,
     ref_target: e.ref_target,
     repeat: e.repeat,
     optional: e.optional,
@@ -911,11 +912,16 @@ fn has_declared_value_source(e : ElementDef) -> Bool {
 /// existing multi-branch semantics (DR-038); `elem_repeat` only ever governs REPETITION count,
 /// never branch structure.
 fn lower_repeat_head(
+  def : Definition,
   e : ElementDef,
   head : Node,
   registry : Map[String, Node],
   out : Array[Node],
 ) -> Unit {
+  let head = match route_link_entry(def, e, head) {
+    Some(node) => node
+    None => return
+  }
   match elem_repeat(e) {
     None => out.push(head)
     Some(spec) =>
@@ -1003,7 +1009,7 @@ fn lower_positional(
           } else {
             Scoped(e.name, Or(nodes))
           }
-          lower_repeat_head(e, head, registry, out)
+          lower_repeat_head(def, e, head, registry, out)
         }
         Group(items) => {
           // MDR-004 §3 "Group + repeat": IndexedRepeat(label=name, head=Seq(inner cells), min,
@@ -1064,6 +1070,7 @@ fn lower_positional(
                 None => out.push(Scoped(e.name, element_head(e)))
                 Some(_) =>
                   lower_repeat_head(
+                    def,
                     e,
                     ref_row_head(e.name, element_head(e)),
                     registry,
@@ -1086,9 +1093,15 @@ fn lower_positional(
               // the scalar's OWN default_values / lower ladder rungs as usual — this only fixes
               // the STRUCTURAL completeness gate, not the value resolution itself.
               if elem_repeat(e) is None && has_declared_value_source(e) {
-                lower_repeat_head(e, opt_node(element_head(e)), registry, out)
+                lower_repeat_head(
+                  def,
+                  e,
+                  opt_node(element_head(e)),
+                  registry,
+                  out,
+                )
               } else {
-                lower_repeat_head(e, element_head(e), registry, out)
+                lower_repeat_head(def, e, element_head(e), registry, out)
               }
           }
         // Enum (issue values-decode-support): `dec_positional` never produces this shape today
@@ -1098,6 +1111,7 @@ fn lower_positional(
         // `enum_value_node` consumption structure the option side (`inst_long`) uses.
         Enum(values) =>
           lower_repeat_head(
+            def,
             e,
             enum_value_node(e.name, e.ty, values),
             registry,
@@ -1184,6 +1198,12 @@ fn ensure_entity_body(
   has_cf : Bool,
   extensions : Registry,
 ) -> Unit {
+  // DR-029 / DR-120 §4: a link declaration is an entry into another element's cell, never a cell
+  // of its own. Keep this at the recursive funnel so future body shapes cannot accidentally register
+  // a phantom Entity for the reference-side name.
+  if e.link_target is Some(_) {
+    return
+  }
   if e.is_exact {
     return
   }
@@ -1491,6 +1511,15 @@ fn inst_long(
   let eq_prefixes : Array[String] = []
   let eq_groups : Array[Array[EqEntry]] = []
   for e in def.options {
+    let (link_target, link_levels) = match link_route_fields(def, e) {
+      Some(fields) => fields
+      None => (None, 0)
+    }
+    let matcher_link_levels = if link_target is Some(_) {
+      link_levels + e.link_depth
+    } else {
+      0
+    }
     for l in long_of(e) {
       // DR-091 §3: `e.long_prefix` replaces the old hardcoded `"--"` (既定値は `"--"` そのものなので
       // this element's own trigger is unchanged unless it explicitly overrides).
@@ -1511,12 +1540,11 @@ fn inst_long(
           } else {
             Scoped(e.name, Or(branch_nodes))
           }
-          add_greedy(
+          add_entry_greedy(
+            def,
+            e,
             build,
-            maybe_root(
-              e.link_depth,
-              Seq(with_depr(e, [Exact(trigger), or_node])),
-            ),
+            Seq(with_depr(e, [Exact(trigger), or_node])),
           )
         }
         // Enum (issue values-decode-support, DESIGN §5.3 / DR-028 追記): main entry の値スロット
@@ -1527,25 +1555,23 @@ fn inst_long(
         // するだけでよい。
         Group(items) =>
           if e.long_eq_sep != Require {
-            add_greedy(
+            add_entry_greedy(
+              def,
+              e,
               build,
-              maybe_root(
-                e.link_depth,
-                Seq(with_depr(e, [Exact(trigger), seq_value_node(e, items)])),
-              ),
+              Seq(with_depr(e, [Exact(trigger), seq_value_node(e, items)])),
             )
           }
         Enum(values) =>
-          add_greedy(
+          add_entry_greedy(
+            def,
+            e,
             build,
-            maybe_root(
-              e.link_depth,
-              Seq(
-                with_depr(e, [
-                  Exact(trigger),
-                  enum_value_node(e.name, e.ty, values),
-                ]),
-              ),
+            Seq(
+              with_depr(e, [
+                Exact(trigger),
+                enum_value_node(e.name, e.ty, values),
+              ]),
             ),
           )
         _ =>
@@ -1591,6 +1617,7 @@ fn inst_long(
                   // `sc'.positional` slots (eval.mbt's `step_greedy_repeat`), not yet wired.
                   let spine : Array[Node] = []
                   lower_repeat_head(
+                    def,
                     e,
                     ref_row_head(e.name, element_head(e)),
                     registry,
@@ -1649,26 +1676,25 @@ fn inst_long(
                 // the time lowering runs, so no alias-specific branch is needed here). Routed
                 // through `with_depr` (codex レビュー Major 2) so this arm shares the SAME funnel
                 // as Or/Enum/ref±repeat above.
-                add_greedy(
+                add_entry_greedy(
+                  def,
+                  e,
                   build,
-                  maybe_root(
-                    e.link_depth,
-                    Seq(
-                      with_depr(e, [
-                        Exact(trigger),
-                        value_prim(
-                          e.ty,
-                          e.name,
-                          e.int_round,
-                          e.allow_base_prefix,
-                          e.bool_config,
-                          e.piece_filters,
-                          separator=e.separator,
-                          merge=e.accumulator == Some("merge"),
-                          kv_map=e.accumulator == Some("kv_map"),
-                        ),
-                      ]),
-                    ),
+                  Seq(
+                    with_depr(e, [
+                      Exact(trigger),
+                      value_prim(
+                        e.ty,
+                        e.name,
+                        e.int_round,
+                        e.allow_base_prefix,
+                        e.bool_config,
+                        e.piece_filters,
+                        separator=e.separator,
+                        merge=e.accumulator == Some("merge"),
+                        kv_map=e.accumulator == Some("kv_map"),
+                      ),
+                    ]),
                   ),
                 )
               }
@@ -1766,6 +1792,8 @@ fn inst_long(
                 e.separator,
                 merge=e.accumulator == Some("merge"),
                 deprecated=e.deprecated,
+                link_target~,
+                link_levels=matcher_link_levels,
               ),
             )
           }
@@ -1820,8 +1848,93 @@ fn inst_long(
         }
         _ => [Exact(trigger), effect_mark(e.name, v.op)]
       }
-      add_greedy(build, maybe_root(e.link_depth, Seq(with_depr(e, nodes))))
+      add_entry_greedy(def, e, build, Seq(with_depr(e, nodes)))
     }
+  }
+}
+
+///|
+/// Whether this declaration contributes or denotes a reachable Entity in its lexical scope.
+/// `link_depth > 0` is a global entry copy: its Entity lives in an ancestor, but a local link may
+/// still resolve to it and must inherit that escape depth.
+fn element_is_link_target(e : ElementDef) -> Bool {
+  if e.link_target is Some(_) || e.is_dd || e.is_exact || e.is_literal {
+    return false
+  }
+  match e.body {
+    Cell => e.ref_target is None || elem_repeat(e) is Some(_) || e.multiple
+    Enum(_) => true
+    Or(_) | Group(_) => e.multiple
+  }
+}
+
+///|
+/// Resolve a bare link target in the declaration's current lexical scope. The declaration snapshot
+/// gains global/inheritable copies during the installer fixpoint; using their `link_depth` preserves
+/// the existing lexical routing instead of inventing a second scope-resolution model.
+fn link_target_depth(def : Definition, target : String) -> Int? {
+  for element in def.options {
+    if element.name == target && element_is_link_target(element) {
+      return Some(element.link_depth)
+    }
+  }
+  for element in def.positionals {
+    if element.name == target && element_is_link_target(element) {
+      return Some(element.link_depth)
+    }
+  }
+  None
+}
+
+///|
+fn link_route_fields(def : Definition, e : ElementDef) -> (String?, Int)? {
+  match e.link_target {
+    None => Some((None, 0))
+    Some(target) =>
+      match link_target_depth(def, target) {
+        Some(target_depth) => {
+          let additional_levels = if target_depth > e.link_depth {
+            target_depth - e.link_depth
+          } else {
+            0
+          }
+          Some((Some(target), additional_levels))
+        }
+        None =>
+          if e.link_depth > 0 {
+            // A global copy was already validated in its declaring scope. Its target may have no
+            // entry copy in this child; the copied route still escapes with the entry itself.
+            Some((Some(target), 0))
+          } else {
+            None
+          }
+      }
+  }
+}
+
+///|
+/// Single lowering funnel for ordinary entry nodes. Native short/eq matchers cannot be wrapped as a
+/// whole because one matcher contains entries from multiple elements; their per-entry route calls
+/// the same `bindings_through_link` ABI helper used by this wrapper.
+fn route_link_entry(def : Definition, e : ElementDef, node : Node) -> Node? {
+  match link_route_fields(def, e) {
+    Some((Some(target), levels)) =>
+      Some(LinkTarget(e.name, target, levels, node))
+    Some((None, _)) => Some(node)
+    None => None
+  }
+}
+
+///|
+fn add_entry_greedy(
+  def : Definition,
+  e : ElementDef,
+  build : InstallOutput,
+  node : Node,
+) -> Unit {
+  match route_link_entry(def, e, node) {
+    Some(routed) => add_greedy(build, maybe_root(e.link_depth, routed))
+    None => () // post-fixpoint absent-ref validation reports the unresolved declaration
   }
 }
 
@@ -1883,6 +1996,15 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
   let sh_combines : Array[Bool] = []
   let sh_groups : Array[Array[ShortEntry]] = []
   for e in def.options {
+    let (link_target, link_levels) = match link_route_fields(def, e) {
+      Some(fields) => fields
+      None => (None, 0)
+    }
+    let matcher_link_levels = if link_target is Some(_) {
+      link_levels + e.link_depth
+    } else {
+      0
+    }
     for c in e.short {
       // DR-058: deprecated alias entry-copy は cluster entry でも警告する
       // DR-075 §2: short cluster / space-tail 経路の int_type() (`-n1.5` / `-n 1.5`) も factory config を反映
@@ -1908,6 +2030,8 @@ fn inst_short(def : Definition, build : InstallOutput) -> Unit {
           merge=e.accumulator == Some("merge"),
           short_attached_value=e.short_attached_value,
           is_alias=e.is_alias,
+          link_target~,
+          link_levels=matcher_link_levels,
         ),
       )
     }
@@ -2094,6 +2218,7 @@ fn copy_global_into(child : InstallBuilder, opt : ElementDef) -> Unit {
     is_inherit: copy.is_inherit,
     is_inheritable: copy.is_inheritable,
     link_depth: copy.link_depth + 1,
+    link_target: copy.link_target,
     ref_target: copy.ref_target,
     repeat: copy.repeat,
     optional: copy.optional,
@@ -2284,6 +2409,7 @@ fn add_inheritable_copy(
       is_inherit: false, // inherit seat は inst_inheritable step(2) が立てる
       is_inheritable: false, // copy 自体は plain entry (再伝播しない)
       link_depth: 0,
+      link_target: None,
       ref_target: None,
       repeat: None,
       optional: false,
@@ -2361,6 +2487,8 @@ fn collect_value_names(
       }
     Many(inner, _) => collect_value_names(inner, registry, visiting, out)
     BoundedTail(inner, _, _) =>
+      collect_value_names(inner, registry, visiting, out)
+    LinkTarget(_, _, _, inner) =>
       collect_value_names(inner, registry, visiting, out)
     Rooted(inner, _) => collect_value_names(inner, registry, visiting, out)
     Scoped(_, inner) => collect_value_names(inner, registry, visiting, out)
@@ -2661,6 +2789,7 @@ fn alias_entry(
     is_inherit: false,
     is_inheritable: false,
     link_depth: 0,
+    link_target: None,
     ref_target: None,
     repeat: None,
     optional: false,
@@ -3166,6 +3295,7 @@ fn head_progresses(
     Ext(extension) => !extension.consumes_zero_tokens()
     IndexedRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
     BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
+    LinkTarget(_, _, _, inner) => head_progresses(inner, registry, visiting)
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
     Bind(_, _) => false // 0-token
     Ref(r) => {
@@ -3358,6 +3488,48 @@ fn check_elem_absent_ref(
               "define '\{r}' as a template (definitions) or in the scope",
             ),
           )
+      }
+    None => ()
+  }
+}
+
+///|
+/// DR-067 §1 reference-layer validation for bare-name value links. The fixpoint declaration
+/// snapshot already contains global/inheritable contributions, so `link_target_depth` is the same
+/// lexical view lowering uses. Global link entry copies are skipped: their declaring entry is
+/// validated once in its own scope and the copy only transports that already-valid route.
+fn collect_absent_link(def : Definition, out : Array[DefError]) -> Unit {
+  for element in def.options {
+    check_element_absent_link(def, element, out)
+  }
+  for element in def.positionals {
+    check_element_absent_link(def, element, out)
+  }
+  for command in def.commands {
+    collect_absent_link(command.body, out)
+  }
+}
+
+///|
+fn check_element_absent_link(
+  def : Definition,
+  element : ElementDef,
+  out : Array[DefError],
+) -> Unit {
+  if element.link_depth > 0 {
+    return
+  }
+  match element.link_target {
+    Some(target) =>
+      if link_target_depth(def, target) is None {
+        out.push(
+          def_err(
+            element.name,
+            AbsentRef,
+            "link target '\{target}' is not defined as a value cell in this scope",
+            "define '\{target}' as a value element in the same scope",
+          ),
+        )
       }
     None => ()
   }
@@ -4707,7 +4879,12 @@ fn export_value_space(e : ElementDef) -> String {
 /// `add_inheritable_copy` は `link_depth` を立てずに要素名共有の実エントリを積むので、この
 /// 判定を素通りして祖先スコープの席になる。
 fn element_occupies_seat(e : ElementDef) -> Bool {
-  if e.is_alias || e.link_depth > 0 || e.is_dd || e.is_exact || e.is_config_file {
+  if e.link_target is Some(_) ||
+    e.is_alias ||
+    e.link_depth > 0 ||
+    e.is_dd ||
+    e.is_exact ||
+    e.is_config_file {
     return false
   }
   e.ty.name() != "none"
@@ -5073,10 +5250,11 @@ fn lower_definition_snapshot_impl(
     // 打ち切りはしない (DR-054 §4 の全列挙原則) ため、fixpoint 自身が error を返した場合も
     // 同じ面で衝突を数えて 1 つの list に足す。
     Ok(scope) => {
-      let collisions : Array[DefError] = []
-      let export_scopes = build_export_scopes(def, collisions)
-      if collisions.length() > 0 {
-        Err(collisions)
+      let validation_errors : Array[DefError] = []
+      collect_absent_link(def, validation_errors)
+      let export_scopes = build_export_scopes(def, validation_errors)
+      if validation_errors.length() > 0 {
+        Err(validation_errors)
       } else {
         Ok({
           scope,
@@ -5087,6 +5265,7 @@ fn lower_definition_snapshot_impl(
       }
     }
     Err(errors) => {
+      collect_absent_link(def, errors)
       let _ = build_export_scopes(def, errors)
       Err(errors)
     }

@@ -49,6 +49,8 @@ pub struct EqEntry {
   priv separator : String?
   priv merge : Bool
   priv deprecated : Bool
+  priv link_target : String?
+  priv link_levels : Int
 }
 
 ///|
@@ -60,8 +62,20 @@ pub fn eq_entry(
   separator : String?,
   merge? : Bool = false,
   deprecated? : Bool = false,
+  link_target? : String? = None,
+  link_levels? : Int = 0,
 ) -> EqEntry {
-  { key, name, kind, piece_filters, separator, merge, deprecated }
+  {
+    key,
+    name,
+    kind,
+    piece_filters,
+    separator,
+    merge,
+    deprecated,
+    link_target,
+    link_levels,
+  }
 }
 
 ///|
@@ -76,6 +90,8 @@ pub struct ShortEntry {
   priv merge : Bool
   priv short_attached_value : @abi.AttachMode
   priv is_alias : Bool
+  priv link_target : String?
+  priv link_levels : Int
 }
 
 ///|
@@ -89,6 +105,8 @@ pub fn short_entry(
   merge? : Bool = false,
   short_attached_value? : @abi.AttachMode = @abi.Allow,
   is_alias? : Bool = false,
+  link_target? : String? = None,
+  link_levels? : Int = 0,
 ) -> ShortEntry {
   {
     ch,
@@ -100,6 +118,8 @@ pub fn short_entry(
     merge,
     short_attached_value,
     is_alias,
+    link_target,
+    link_levels,
   }
 }
 
@@ -165,7 +185,7 @@ fn attach_mode_json(mode : @abi.AttachMode) -> Json {
 
 ///|
 fn eq_entry_json(entry : EqEntry) -> Json {
-  [
+  let fields : Array[Json] = [
     entry.key.to_json(),
     entry.name.to_json(),
     type_json(entry.kind),
@@ -173,12 +193,20 @@ fn eq_entry_json(entry : EqEntry) -> Json {
     entry.separator.to_json(),
     entry.merge.to_json(),
     entry.deprecated.to_json(),
-  ].to_json()
+  ]
+  match entry.link_target {
+    Some(target) => {
+      fields.push(target.to_json())
+      fields.push(entry.link_levels.to_json())
+    }
+    None => ()
+  }
+  fields.to_json()
 }
 
 ///|
 fn short_entry_json(entry : ShortEntry) -> Json {
-  [
+  let fields : Array[Json] = [
     "\{entry.ch}".to_json(),
     entry.name.to_json(),
     type_json(entry.kind),
@@ -188,7 +216,15 @@ fn short_entry_json(entry : ShortEntry) -> Json {
     entry.merge.to_json(),
     attach_mode_json(entry.short_attached_value),
     entry.is_alias.to_json(),
-  ].to_json()
+  ]
+  match entry.link_target {
+    Some(target) => {
+      fields.push(target.to_json())
+      fields.push(entry.link_levels.to_json())
+    }
+    None => ()
+  }
+  fields.to_json()
 }
 
 ///|
@@ -269,6 +305,20 @@ pub fn short_combine(
 }
 
 ///|
+fn route_entry_bindings(
+  name : String,
+  target : String?,
+  levels : Int,
+  bindings : Array[@abi.Binding],
+) -> Array[@abi.Binding] {
+  match target {
+    Some(target_name) =>
+      @abi.bindings_through_link(bindings, name, target_name, levels)
+    None => bindings
+  }
+}
+
+///|
 /// `--key=value` (DR-041 §「equal separator」). Fires only when the token has `=`.
 /// Undefined key => no reading (素通し to positional). Space form is the satellite's job.
 fn run_eq_split(
@@ -327,7 +377,14 @@ fn run_eq_split(
             e.merge,
             ctx.extensions(),
           ) {
-          Ok(bs) => [@abi.Accept(pos + 1, bs + dm)]
+          Ok(bs) =>
+            [
+              @abi.Accept(
+                pos + 1,
+                route_entry_bindings(e.name, e.link_target, e.link_levels, bs) +
+                dm,
+              ),
+            ]
           Err(pe) => [@abi.Held(pe, [])]
         }
       }
@@ -347,7 +404,9 @@ fn run_eq_split(
           return [
             @abi.Accept(
               pos + 1,
-              [@abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos))] +
+              route_entry_bindings(e.name, e.link_target, e.link_levels, [
+                @abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos)),
+              ]) +
               dm,
             ),
           ]
@@ -431,16 +490,21 @@ fn short_val(
     // `ShortEntry.piece_filters` doc comment: "Ignored for flag_type()/bool_type()/count_type(), no in-cluster/
     // space-form VALUE attachment for those"), so `sep_binds`'s bool arm is structurally dead here;
     // pass the canonical default purely to satisfy the shared signature.
-    sep_binds(
-      e.name,
-      s,
-      e.separator,
-      e.kind,
-      e.piece_filters,
-      pos,
-      e.merge,
-      ctx.extensions(),
-    )
+    match
+      sep_binds(
+        e.name,
+        s,
+        e.separator,
+        e.kind,
+        e.piece_filters,
+        pos,
+        e.merge,
+        ctx.extensions(),
+      ) {
+      Ok(bindings) =>
+        Ok(route_entry_bindings(e.name, e.link_target, e.link_levels, bindings))
+      Err(error) => Err(error)
+    }
   } else {
     let filtered = match
       apply_piece_filters(ctx.extensions(), e.piece_filters, s) {
@@ -450,7 +514,11 @@ fn short_val(
     }
     match e.kind.parse_token(filtered) {
       Ok(value) =>
-        Ok([@abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos))])
+        Ok(
+          route_entry_bindings(e.name, e.link_target, e.link_levels, [
+            @abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos)),
+          ]),
+        )
       Err(fail) => Err(type_parse_error(e.name, pos, fail))
     }
   }
@@ -513,13 +581,19 @@ fn walk_short(
         } else {
           @abi.Binding::new(e.name, @abi.Bool(true), @abi.Cli)
         }
+        let routed_presence = route_entry_bindings(
+            e.name,
+            e.link_target,
+            e.link_levels,
+            [presence],
+          )[0]
         if combine || i + 1 == body.length() {
           walk_short(
             entries,
             combine,
             body,
             i + 1,
-            acc + ([presence] + dm),
+            acc + ([routed_presence] + dm),
             ctx,
             pos,
           )

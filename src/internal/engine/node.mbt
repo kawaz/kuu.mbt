@@ -240,8 +240,13 @@ pub(all) enum Node {
   /// backbone (the parent greedy face does not interject inside it). 先食い protects the
   /// command name from a positional raw-eat, which is the DR-018 "commands が先" priority.
   CommandSatisfied(String, Scope)
-  /// link/scope-targeted wrapper (DR-042 global link-sync / DR-007 link). Evaluates its inner
-  /// node but marks every binding it produces as a link that escapes `Int` result-nesting levels
+  /// DR-029 / DR-031 / DR-121 §4 value-link route. Evaluates `inner`, then rewrites effects whose
+  /// key equals `from` to `target`, tags them Source::Link, and makes them escape
+  /// `levels_to_target` lexical levels. This is the single evaluator funnel shared by every
+  /// ordinary long/positional entry shape; native short/eq matchers call the same ABI binding helper.
+  LinkTarget(String, String, Int, Node)
+  /// link/scope-targeted wrapper (DR-042 global link-sync). Evaluates its inner
+  /// node but marks every binding it produces as a global copy that escapes `Int` result-nesting levels
   /// (= the scopes this copied satellite sits BELOW its declaration). Those bindings climb out of
   /// the sub-scopes and land on the DECLARING scope's entity. The global installer copies an
   /// option's satellite into a descendant scope wrapped in `Rooted(node, depth)`, so the value
@@ -304,6 +309,8 @@ pub impl Eq for Node with fn equal(self, other) {
     (DdMatchSatisfied(as_, ap, ak, an), DdMatchSatisfied(bs, bp, bk, bn)) =>
       as_ == bs && ap == bp && ak == bk && an == bn
     (CommandSatisfied(an, ac), CommandSatisfied(bn, bc)) => an == bn && ac == bc
+    (LinkTarget(af, at, al, an), LinkTarget(bf, bt, bl, bn)) =>
+      af == bf && at == bt && al == bl && an == bn
     (Rooted(an, ad), Rooted(bn, bd)) => an == bn && ad == bd
     (BoundedTail(an, ab, al), BoundedTail(bn, bb, bl)) =>
       an == bn && ab == bb && al == bl
@@ -359,6 +366,13 @@ pub impl Debug for Node with fn to_repr(self) {
       @debug.Repr::ctor("CommandSatisfied", [
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
+      ])
+    LinkTarget(a, b, c, d) =>
+      @debug.Repr::ctor("LinkTarget", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+        (None, Debug::to_repr(c)),
+        (None, Debug::to_repr(d)),
       ])
     Rooted(a, b) =>
       @debug.Repr::ctor("Rooted", [

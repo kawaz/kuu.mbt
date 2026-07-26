@@ -1260,6 +1260,7 @@ fn wbtest_source_entry(entry : SourceEntry) -> String {
   }
   let label = match entry.source {
     @abi.Cli => "cli"
+    @abi.Link => "link"
     @abi.Env => "env"
     @abi.Config => "config"
     @abi.Inherit => "inherit"
@@ -1307,6 +1308,169 @@ fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
   test_join_comma(src_items) +
   " effects=" +
   test_join_comma(eff_items)
+}
+
+///|
+/// DR-029 の値同期と DR-031 / DR-121 §4 の経路 provenance を一組で固定する。
+/// canonical 自身の入口は `cli`、別要素の `link` 入口は同じ canonical cell に `link` として
+/// 着地し、参照側は自前の結果キーを持たない。両入口を使った場合は args 順で最後に値を確定した
+/// 効果の source が残る。
+test "front_door.output: link entry routes into the canonical cell with source=link (DR-029 / DR-031 / DR-121 §4)" {
+  let src =
+    #|{"options":[
+    #|  {"name":"target","type":"string","long":true},
+    #|  {"name":"legacy","type":"string","long":[":set:linked"],"link":"target"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["--target", "canonical"]),
+    "result={target=canonical} sources=[]/target=cli effects=target",
+  )
+  assert_eq(
+    wbtest_view_of(src, ["--legacy"]),
+    "result={target=linked} sources=[]/target=link effects=target",
+  )
+  assert_eq(
+    wbtest_view_of(src, ["--target", "first", "--legacy"]),
+    "result={target=linked} sources=[]/target=link effects=target",
+  )
+  assert_eq(
+    wbtest_view_of(src, ["--legacy", "--target", "last"]),
+    "result={target=last} sources=[]/target=cli effects=target",
+  )
+}
+
+///|
+/// Root link routing is independent of entry spelling: long space form, eq-split form, and positional
+/// consumption all use the linked element's own parser but land in the same canonical cell.
+test "front_door.output: link routes long space, eq-split, and positional entry forms through one target" {
+  let option_src =
+    #|{"options":[
+    #|  {"name":"target","type":"string"},
+    #|  {"name":"legacy","type":"string","long":true,"link":"target"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(option_src, ["--legacy", "space"]),
+    "result={target=space} sources=[]/target=link effects=target",
+  )
+  assert_eq(
+    wbtest_view_of(option_src, ["--legacy=equal"]),
+    "result={target=equal} sources=[]/target=link effects=target",
+  )
+  let positional_src =
+    #|{"options":[{"name":"target","type":"string"}],
+    #| "positionals":[{"name":"legacy","type":"string","link":"target"}]}
+  assert_eq(
+    wbtest_view_of(positional_src, ["operand"]),
+    "result={target=operand} sources=[]/target=link effects=target",
+  )
+}
+
+///|
+/// DR-086 cut classifies the entry's consumption shape through transparent link/global wrappers.
+/// A value-taking main entry that can consume `always` must suppress the same-trigger zero-argument
+/// variant, leaving the required positional unsatisfied rather than reinterpreting that token.
+test "front_door.parse: link wrapper preserves value-slot cut against zero-argument variant (DR-086)" {
+  let src =
+    #|{"options":[
+    #|  {"name":"target","type":"string"},
+    #|  {"name":"color","type":"string","long":[":set",":set:always"],
+    #|   "values":["always","none"],"link":"target"}
+    #|],"positionals":[{"name":"extra","type":"string","required":true}]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => {
+      fail("parse_definition failed")
+      panic()
+    }
+  }
+  match parse_legacy(ast, ["--color", "always"]) {
+    @engine.Failure(detail) => {
+      let mut found = false
+      for error in detail.errors {
+        if error.element == "extra" && error.reason == "missing_operand" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    other =>
+      fail(
+        "value-slot cut should preserve the missing operand, got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
+/// A global link entry keeps the declaring target cell when copied into a command scope. Long space,
+/// eq-split, and short matcher entries all carry the full lexical escape depth.
+test "front_door.output: global link entries keep target routing across command scopes" {
+  let src =
+    #|{"options":[
+    #|  {"name":"target","type":"string"},
+    #|  {"name":"legacy","type":"string","long":true,"short":"l","global":true,"link":"target"}
+    #|],"commands":[{"type":"command","name":"sub","options":[
+    #|  {"name":"quiet","type":"flag","long":true}
+    #|]}]}
+  let expected = "result={sub={quiet=true},target=value} sources=[]/target=link,[sub]/quiet=cli effects=quiet,target"
+  assert_eq(
+    wbtest_view_of(src, ["sub", "--legacy", "value", "--quiet"]),
+    expected,
+  )
+  assert_eq(wbtest_view_of(src, ["sub", "--legacy=value", "--quiet"]), expected)
+  assert_eq(wbtest_view_of(src, ["sub", "-l", "value", "--quiet"]), expected)
+}
+
+///|
+/// DR-121 §1: link は宣言名ではなく canonical cell の structured result address に provenance を
+/// 置く。canonical が `export_key` で rename されても、参照側の name は result/sources に現れない。
+test "front_door.output: link source follows the canonical export_key address (DR-121 §1/§4)" {
+  let src =
+    #|{"options":[
+    #|  {"name":"target","type":"string","export_key":"published"},
+    #|  {"name":"legacy","type":"string","long":[":set:linked"],"link":"target"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["--legacy"]),
+    "result={published=linked} sources=[]/published=link effects=target",
+  )
+}
+
+///|
+/// DR-067 §1 の参照層: bare-name link target は定義時に同一 lexical scope で解決し、存在しない
+/// target は実行時の Reject へ遅延せず `absent-ref` definition-error にする。
+test "front_door.parse_definition: an absent bare link target is @abi.AbsentRef (DR-067 §1)" {
+  let src =
+    #|{"options":[{"name":"legacy","type":"string","long":true,"link":"missing"}]}
+  match parse_definition(@json.parse(src)) {
+    Ok(_) => fail("expected absent-ref definition error")
+    Err(Rejected(errors)) => {
+      let mut found = false
+      for error in errors {
+        if error.element == "legacy" && error.kind == @abi.AbsentRef {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    Err(Malformed(message)) =>
+      fail("expected absent-ref, got malformed: " + message)
+  }
+}
+
+///|
+/// DR-029 の操作列例: count 入口の increment と canonical number 入口の set は同じ target cell の
+/// mutation 列へ args 順で合流する。最後の `-v` は link 経路なので最終 source も `link` になる。
+test "front_door.output: link preserves mixed count increment and set operation order (DR-029)" {
+  let src =
+    #|{"options":[
+    #|  {"name":"log_level","type":"number","long":true,"default":0},
+    #|  {"name":"verbose","type":"count","short":"v","link":"log_level"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(src, ["-vv", "--log-level", "5", "-v"]),
+    "result={log_level=6} sources=[]/log_level=link effects=log_level",
+  )
 }
 
 ///|
