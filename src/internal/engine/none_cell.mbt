@@ -29,6 +29,20 @@ pub fn none_cells(scope : Scope) -> Array[NoneCell] {
 }
 
 ///|
+/// 1 スコープが直に持つ dd trigger の element 名 (`DdSatisfied` の trigger /
+/// `DdMatchSatisfied` の element、DR-093 §2/§7)。値空間を持たない点で `type: "none"` と同じ
+/// 扱いを受けるが、entity ではなく `greedy` 側のノードが運ぶので `Scope.entities` を見るだけ
+/// では拾えない。呼び出し側 (kuu の内部セル収集) が自前で木を降りるため、`none_cells` の
+/// ような再帰ではなく **この scope の直下だけ** を返す。
+pub fn dd_element_names(scope : Scope) -> Array[String] {
+  let out : Array[String] = []
+  for node in scope.greedy {
+    collect_dd_names(node, out)
+  }
+  out
+}
+
+///|
 fn collect_dd_names(node : Node, out : Array[String]) -> Unit {
   match node {
     DdSatisfied(trigger) => out.push(trigger)

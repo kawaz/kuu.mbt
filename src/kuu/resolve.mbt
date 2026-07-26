@@ -469,7 +469,7 @@ fn build_result(
   cells : Array[AccumCell],
   defaults : Array[DefaultCell],
   path : Array[String],
-  nones? : Array[@engine.NoneCell] = [],
+  nones? : Array[InternalCell] = [],
   extensions? : @node.Registry = canonical_registry(),
 ) -> @abi.ResultValue {
   // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
@@ -506,21 +506,15 @@ fn build_result(
     return @abi.Array(elems)
   }
   // gather direct named keys (skip sentinels) and nested (named) scopes
-  // DR-089 §3: a none-typed cell's value never appears in the result (値の結果には現れない) — same
-  // exclusion mechanism as sentinel keys, keyed on (path, name) since `@engine.NoneCell` carries the same
-  // per-scope shape `AccumCell`/`DefaultCell` do.
+  // DR-089 §3 / DR-050: 内部セル (none / config_file) の値は result に現れない — sentinel key と
+  // 同じ除外機構で、席は `InternalCell` が `AccumCell`/`DefaultCell` と同じ per-scope の
+  // (露出 path, 露出 key) 形で持つ。
   let named : Array[String] = []
   for b in binds {
     if b.scope.length() == 0 &&
       !is_sentinel(b.key) &&
       !str_contains(named, b.key) {
-      let mut excluded = false
-      for nc in nones {
-        if path_eq(nc.path(), path) && nc.name() == b.key {
-          excluded = true
-        }
-      }
-      if !excluded {
+      if !is_internal_cell(nones, path, b.key) {
         named.push(b.key)
       }
     }
@@ -849,6 +843,88 @@ fn collect_accum(
 }
 
 ///|
+/// 結果にも由来にも現れない **内部セル** の席 (露出キー軸で同定したもの)。2 種を同じ形で運ぶ:
+/// `type: "none"` (DR-089 §3「none has no value」— 値空間が無いので result にも sources にも
+/// 出ない) と `type: "config_file"` (DR-050、値は config provider を解決するための PATH であって
+/// 利用者向けの結果ではない)。dd trigger (`DdSatisfied` / `DdMatchSatisfied` の element、
+/// DR-093 §2/§7) も engine 側で none 扱いなので同じ席に入る。
+///
+/// **キー軸**: `path` / `name` とも `walk_export_path` + `exposed_cell` を通した **露出キー**
+/// (binding / default / accum と同一の DR-052 §1 軸)。engine の `@engine.NoneCell` は宣言名の
+/// ままなので、射影後の (path, key) と突き合わせるには写し直しが要る — 生のまま比べると
+/// `export_key` で rename された scope 配下 (`serve` → `sv`) で除外が外れ、内部セルが result /
+/// sources に漏れる。透過セル (`exposed_cell` が `None`) は結果キー軸を持たず射影側にも
+/// 現れないので席を作らない。
+priv struct InternalCell {
+  path : Array[String]
+  name : String
+}
+
+///|
+/// 内部セル (`InternalCell`) を結果木全体から集める。`collect_accum` と同じ walk
+/// (透過ラベルは segment を落として子が昇格、DR-052 §2)。
+fn internal_cells(
+  sc : @engine.Scope,
+  ek : @engine.ExportScopeMap,
+) -> Array[InternalCell] {
+  let out : Array[InternalCell] = []
+  collect_internal(sc, [], ek, out)
+  out
+}
+
+///|
+fn collect_internal(
+  sc : @engine.Scope,
+  path : Array[String],
+  ek : @engine.ExportScopeMap,
+  out : Array[InternalCell],
+) -> Unit {
+  for e in sc.entities {
+    if e.ty.name() == "none" || e.is_config_file {
+      match ek.exposed_cell(e.name) {
+        None => () // 透過: 結果キー軸を持たないので射影側にも現れない
+        Some(new_name) => out.push({ path, name: new_name })
+      }
+    }
+  }
+  // dd trigger は entity ではなく greedy 側のノードが運ぶ (`@engine.dd_element_names`)。
+  for name in @engine.dd_element_names(sc) {
+    match ek.exposed_cell(name) {
+      None => ()
+      Some(new_name) => out.push({ path, name: new_name })
+    }
+  }
+  for g in sc.greedy {
+    match g {
+      @engine.CommandSatisfied(name, child) => {
+        let child_ek = ek.child(name)
+        match ek.exposed_scope(name) {
+          None => collect_internal(child, path, child_ek, out)
+          Some(s) => collect_internal(child, path_push(path, s), child_ek, out)
+        }
+      }
+      _ => ()
+    }
+  }
+}
+
+///|
+/// `internal_cells` の席と (path, key) が一致するか — result / sources / effects の各射影が
+/// 内部セルを落とすのに使う共通判定。
+fn is_internal_cell(
+  cells : Array[InternalCell],
+  path : Array[String],
+  name : String,
+) -> Bool {
+  for c in cells {
+    if c.name == name && path_eq(c.path, path) {
+      return true
+    }
+  }
+  false
+}
+
+///|
 /// A scalar cell carrying a default value, located by its result-scope path. The result builder
 /// renders this default when the cell is otherwise absent from the winning bindings — realizing the
 /// value-source ladder's default seat in the result-object projection (DR-031 default seat). The
@@ -915,7 +991,7 @@ fn collect_defaults(
 /// front_door 昇格 (issue 2026-07-16-result-projection-production-promotion、MDR-005「射程外」節
 /// の解消、DR-109 §5 UX-Q5=a): `binds` → `result` オブジェクト (CONFORMANCE.md §2 の
 /// `result: {...}`) を組み立てる 4 素材 (`apply_export_keys`/`accum_cells`/
-/// `apply_export_to_defaults`/`@engine.none_cells`) の合成をここに一本化する。runner の
+/// `apply_export_to_defaults`/`internal_cells`) の合成をここに一本化する。runner の
 /// `proj_result_export` (json_conformance_test.mbt) と kuu-cli PoC の手組み `result_to_json`
 /// (wire.mbt) が同一の 5 行組み立てを重複実装していた — 両者ともこの関数を呼ぶ形に揃える。
 /// `binds` は `front_door.resolve()` の @engine.Success payload (解決済み binds、DR-109 §7「CLI は既定で
@@ -934,7 +1010,7 @@ fn build_result_export(
     accum_cells(sc, ek),
     apply_export_to_defaults(default_cells(sc), ek),
     [],
-    nones=@engine.none_cells(sc),
+    nones=internal_cells(sc, ek),
     extensions~,
   )
 }
@@ -949,7 +1025,7 @@ fn build_result_export(
 /// `@abi.Unset` op で未触の default 状態へ再着席した」を表す (`result_sources` のコメント参照)。
 /// `pub(all)` (MDR-005 §3 の「正面玄関の 3 関数が直接運ぶ型は pub(all) を維持」原則に準拠) —
 /// 呼び出し側 (kuu-cli 等) が `.path`/`.key`/`.source` を読んで JSON を組み立てる、フィールド
-/// 読み取りが本体の型なので `AccumCell`/`DefaultCell`/`@engine.NoneCell` (組み立て素材を build_result に
+/// 読み取りが本体の型なので `AccumCell`/`DefaultCell`/`InternalCell` (組み立て素材を build_result に
 /// 素通しするだけの不透明トークン、pub 止まり) とは扱いが異なる。
 pub(all) struct SourceEntry {
   path : Array[String]

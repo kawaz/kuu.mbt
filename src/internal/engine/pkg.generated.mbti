@@ -56,6 +56,8 @@ pub fn continue_matcher(Array[@abi.Branch], Ctx, Array[@abi.Binding], (Ctx, Int,
 
 pub fn count_type(allow_base_prefix? : Bool) -> &@extension.TypeExt
 
+pub fn dd_element_names(Scope) -> Array[String]
+
 pub fn decode_fn_invocation_parts(@abi.FnInvocationForm) -> Result[Array[String], String]
 
 pub fn deprecation_mark(String) -> Node

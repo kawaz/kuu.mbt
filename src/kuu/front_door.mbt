@@ -517,6 +517,10 @@ fn collect_config_file_cells(
 }
 
 ///|
+/// `effects` 側の内部セル除外。effects は **宣言名軸** (DR-045: 効果は entity 単位 — entity は
+/// 値セルであって露出パスではない) なので、席も宣言名のまま持つ engine の `@engine.NoneCell` /
+/// `ConfigFileCell` と照合する。露出キー軸で除外する `result` / `sources` 側
+/// (`internal_cells`) とは軸が違うので、両者を混ぜてはいけない。
 fn output_internal_cell(
   path : Array[String],
   name : String,
@@ -674,21 +678,19 @@ fn project_effects(
 }
 
 ///|
+/// `sources` は `result` と同一のキー体系 (CONFORMANCE.md §2) にあるので、内部セル (none /
+/// config_file / dd trigger) の除外も **露出キー軸** の席 (`internal_cells`) で行う — `result`
+/// 側 (`build_result_export`) が使うのと同じ席。`project_effects` が使う raw な
+/// `@engine.none_cells` と照合してはいけない: `export_key` で rename された scope 配下では
+/// 宣言名 path と露出 path が食い違い、除外が外れて内部セルが sources に漏れる。
 fn project_sources(
   ast : AtomicAST,
   resolved : Array[@abi.Binding],
 ) -> Array[SourceEntry] {
-  let none_cells = @engine.none_cells(ast.root)
-  let config_file_cells : Array[ConfigFileCell] = []
-  collect_config_file_cells(ast.root, [], config_file_cells)
+  let internal = internal_cells(ast.root, ast.ekmap)
   let projected : Array[SourceEntry] = []
   for entry in result_sources(ast.root, resolved, ast.ekmap) {
-    if !output_internal_cell(
-        entry.path,
-        entry.key,
-        none_cells,
-        config_file_cells,
-      ) {
+    if !is_internal_cell(internal, entry.path, entry.key) {
       projected.push(entry)
     }
   }

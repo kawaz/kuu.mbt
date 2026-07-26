@@ -1407,3 +1407,85 @@ test "front_door.output: unset 発火の値源は default (parse-only 経路、D
   assert_eq(view.sources[0].key, "color")
   assert_eq(view.sources[0].source, @abi.Source::Default)
 }
+
+///|
+/// 内部セル (DR-089 §3 `type: "none"` / DR-050 `type: "config_file"` / DR-093 §2 dd trigger) は
+/// 結果にも由来にも現れない。除外の席は `result` / `sources` とも **露出キー軸** で同定するので、
+/// scope ラベルの export_key に依らず効く — identity (`name` のみ) / renamed (`export_key: "sv"`)
+/// / transparent (`export_key: null`) の 3 境界を対にして pin する。
+/// 席を宣言名のまま持っていた頃は renamed / transparent で除外が外れ、`sv.touch` が result にも
+/// sources にも漏れていた (identity だけ偶然一致していた)。
+test "front_door.output: none セルは scope rename の 3 境界すべてで result/sources に出ない (DR-089 §3)" {
+  let body =
+    #|"options":[{"name":"touch","type":"none","long":true},
+    #|           {"name":"keep","type":"flag","long":true,"export_key":"k"}]
+  let identity = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\"," +
+    body +
+    "}]}"
+  let renamed = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":\"sv\"," +
+    body +
+    "}]}"
+  let transparent = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":null," +
+    body +
+    "}]}"
+  let args = ["serve", "--touch", "--keep"]
+  assert_eq(wbtest_sources_of(identity, args), "serve.k=cli")
+  assert_eq(wbtest_sources_of(renamed, args), "sv.k=cli")
+  assert_eq(wbtest_sources_of(transparent, args), "k=cli")
+}
+
+///|
+/// 同上の `config_file` 版 (DR-050: 値は config provider を解決する PATH であって利用者向けの
+/// 結果ではない)。`none` と同じ席 (`internal_cells`) で除外されることを 3 境界で pin する。
+test "front_door.output: config_file セルは scope rename の 3 境界すべてで sources に出ない (DR-050)" {
+  let body =
+    #|"options":[{"name":"cfg","type":"config_file","long":true,"default":"/app.toml"},
+    #|           {"name":"keep","type":"flag","long":true}]
+  let identity = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\"," +
+    body +
+    "}]}"
+  let renamed = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":\"sv\"," +
+    body +
+    "}]}"
+  let transparent = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":null," +
+    body +
+    "}]}"
+  let args = ["serve", "--keep"]
+  assert_eq(wbtest_sources_of(identity, args), "serve.keep=cli")
+  assert_eq(wbtest_sources_of(renamed, args), "sv.keep=cli")
+  assert_eq(wbtest_sources_of(transparent, args), "keep=cli")
+}
+
+///|
+/// 同上の dd trigger 版 (DR-093 §2/§7: `--` の trigger element は値空間を持たない)。dd trigger は
+/// entity ではなく greedy 側のノードが運ぶので、`Scope.entities` を見るだけでは席が拾えない
+/// (`@engine.dd_element_names` が直下分を返す)。
+test "front_door.output: dd trigger は scope rename の 3 境界すべてで sources に出ない (DR-093 §2)" {
+  let body =
+    #|"options":[{"name":"--","type":"dd","export_key":"marker"}],
+    #|"positionals":[{"name":"x","type":"string"}]
+  let identity = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\"," +
+    body +
+    "}]}"
+  let renamed = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":\"sv\"," +
+    body +
+    "}]}"
+  let transparent = "{\"commands\":[{\"type\":\"command\",\"name\":\"serve\",\"export_key\":null," +
+    body +
+    "}]}"
+  let args = ["serve", "--", "-v"]
+  assert_eq(wbtest_sources_of(identity, args), "serve.x=cli")
+  assert_eq(wbtest_sources_of(renamed, args), "sv.x=cli")
+  assert_eq(wbtest_sources_of(transparent, args), "x=cli")
+}
+
+///|
+/// 内部セル除外の **値セル名軸** (上 3 本は scope ラベル軸)。`none` セル自身が `export_key` で
+/// rename されている場合も、席は露出キー側で持つので除外が効く — 席を宣言名 (`touch`) のまま
+/// 持つと露出キー (`t`) と食い違い、`t` が result / sources に漏れる。
+test "front_door.output: 値セル自身が rename された none も除外される (DR-089 §3 × DR-052 §1)" {
+  let src =
+    #|{"options":[{"name":"touch","type":"none","long":true,"export_key":"t"},
+    #|            {"name":"keep","type":"flag","long":true}]}
+  assert_eq(wbtest_sources_of(src, ["--touch", "--keep"]), "keep=cli")
+}
