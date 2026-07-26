@@ -438,12 +438,18 @@ fn output_path_push(path : Array[String], segment : String) -> Array[String] {
 
 ///|
 /// DR-118 §3 の「Default-source scalar 除外」判定で使う席の同定。`sources` の path 軸は射影経路で
-/// 意味が変わる: command 木を持つ scope は `collect_sources_tree` が binding の実 scope path を
-/// 載せるが、command の無い scope は `collect_sources_flat` が **常に `path: []`** で entity 名
-/// だけを載せる (resolve.mbt の当該関数)。後者では席は key 単独で同定されるので、結果側の
+/// 意味が変わる: command 木を持つ scope は `collect_sources_tree` が binding の (露出キーへ写した)
+/// scope path を載せるが、command の無い scope は `collect_sources_flat` が **常に `path: []`** で
+/// 露出キーだけを載せる (resolve.mbt の当該関数)。後者では席は key 単独で同定されるので、結果側の
 /// ネスト (name を持つ `or` / `seq` が作る 1 段の結果スコープ、DESIGN §2.3) を降りても path で
 /// 突き合わせてはいけない — さもないと入れ子スコープ内の scalar が「source 無し」と誤判定され、
 /// ambiguous の interpretations ビューから丸ごと消える。
+///
+/// **`flat_projection` は経路そのものではなく「全 path が空か」で代理判定する近似**である点に
+/// 注意: command 木を持つ scope でも、その全 command ラベルが透過 (`export_key: null`) なら
+/// 露出 path が全部空になり flat と誤判定しうる (= path 突き合わせが外れ、別スコープの同名 key
+/// が source ありと見なされる)。現状の ambiguous 系 fixture はどれも command を持たないので
+/// 露見していないが、根治は `has_commands` 分岐そのものの廃止 (両経路の統一) にある。
 fn interpretation_has_source(
   sources : Array[SourceEntry],
   path : Array[String],

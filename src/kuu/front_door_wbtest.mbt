@@ -1306,3 +1306,21 @@ test "front_door.output: command 木でも透過値セルは sources に現れ�
     #| "commands":[{"type":"command","name":"serve"}]}
   assert_eq(wbtest_sources_of(src, ["--opt", "1", "--keep", "2"]), "keep=cli")
 }
+
+///|
+/// 保証 (DR-044 uniform array / DR-109 §3): 0 回発火の accum セルは result で `[]` を持つ
+/// (未発火でも absent にならない) ので、`sources` にも `default` の席がある — command 木の
+/// 有無で非対称にならない。未発火 flag・default 付きスカラは値源ラダーが default 席を解いて
+/// binding を作るので両経路とも既に `default` を出すが、0 回発火の accum セルだけは binding が
+/// 作られないため木経路で欠けていた。
+test "front_door.output: command 木でも 0 回発火の accum セルが default 由来を持つ (DR-044, DR-109 §3)" {
+  let src =
+    #|{"options":[{"name":"a","type":"flag","long":true},
+    #|            {"name":"ttl","type":"number","long":true,"default":30},
+    #|            {"name":"tags","type":"string","long":true,"multiple":"append"}],
+    #| "commands":[{"type":"command","name":"serve"}]}
+  assert_eq(
+    wbtest_sources_of(src, []),
+    "a=default,tags=default,ttl=default",
+  )
+}

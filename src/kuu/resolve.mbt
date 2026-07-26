@@ -1056,7 +1056,15 @@ fn collect_sources_flat(
 /// - 同一 (path, key) は **last-wins** で 1 件に畳む。binding は同じセルに複数回着席しうる
 ///   (`--tags a --tags b`) 上に、rename で別名だった 2 セルが同じ露出キーへ合流する経路も
 ///   ありうるので、射影段階で畳む (`collect_sources_flat` の resolved ループと同じ last-wins)
+/// - **0 回発火の accum セル** は binding を 1 つも持たないが、result では `[]` を持つ
+///   (DR-044 uniform array: 未発火でも absent にならない) ので `@abi.Default` の席を足す。
+///   席の同定は result builder が使うのと同じ `accum_cells` (ek 適用・透過昇格込み) の
+///   `(path, name)` をそのまま使う。未発火 flag・default 付きスカラは値源ラダーが default 席を
+///   解いて binding を作るのでここでは扱わない (`collect_sources_flat` が持つ flag/bool
+///   フォールバックは、ラダーを走らせない parse-only 経路のための保険で、ここへ移植すると
+///   ラダーが作る binding と二重になる)
 fn collect_sources_tree(
+  sc : @engine.Scope,
   resolved : Array[@abi.Binding],
   ek : @engine.ExportScopeMap,
 ) -> Array[SourceEntry] {
@@ -1085,6 +1093,18 @@ fn collect_sources_tree(
       }
     }
   }
+  for cell in accum_cells(sc, ek) {
+    let mut seen = false
+    for entry in out {
+      if entry.key == cell.name && path_eq(entry.path, cell.path) {
+        seen = true
+        break
+      }
+    }
+    if !seen {
+      out.push({ path: cell.path, key: cell.name, source: @abi.Default })
+    }
+  }
   out
 }
 
@@ -1102,7 +1122,7 @@ fn result_sources(
   ek : @engine.ExportScopeMap,
 ) -> Array[SourceEntry] {
   if has_commands(sc) {
-    collect_sources_tree(resolved, ek)
+    collect_sources_tree(sc, resolved, ek)
   } else {
     collect_sources_flat(sc, resolved, ek)
   }
