@@ -1,6 +1,6 @@
 ---
 title: command 木がある定義で sources が export_key を適用しない (command を 1 つ足すだけでキー体系が変わる)
-status: open
+status: resolved
 category: bug
 created: 2026-07-25T17:15:58+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-26T13:20:50+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented","done: kuu.mbt 2 commits (collect_sources_tree に export_key 適用 + 0回発火accumセルのdefault報告), spec 2 commits (CONFORMANCE §2 に射影後キーと明記 + export-key×sources×command 交差fixture追加), wbtest 5本追加, conformance decoded 341→342 mismatches=0 (未push)"]
 blocked_by:
 origin: 自リポ TODO
 ---
@@ -82,22 +82,21 @@ $bin parse def.json --no-env --no-config -- --opt cmd
 ### ケース 2: command の export_key が sources の path に反映されない
 
 ```json
-{"options":[{"name":"x","type":"flag","long":true}],
- "commands":[{"name":"cmd","type":"command","export_key":"x",
-              "options":[{"name":"inner","type":"flag","long":true}]}]}
+{"commands":[{"type":"command","name":"cmd","export_key":"sv",
+              "options":[{"name":"inner","type":"number","long":true,"export_key":"i"}]}]}
 ```
 
 ```
-$bin parse def.json --no-env --no-config -- --x cmd
+$bin parse def.json --no-env --no-config -- cmd --inner 3
 ```
 
 ```json
-{"result":  {"x": {"inner": false}},
- "sources": {"x": "cli", "cmd.inner": "default"}}
+{"result":  {"sv": {"i": 3}},
+ "sources": {"cmd.inner": "cli"}}
 ```
 
-command の scope が `result` では `x` へ rename されているのに、`sources` の path は
-`cmd.inner` のまま。
+command の scope が `result` では `sv` へ rename され、配下セルも `i` へ rename
+されているのに、`sources` の path は rename 前の `cmd.inner` のまま。
 
 ### 対照: command が無ければ正しく rename される
 
@@ -127,16 +126,22 @@ command の scope が `result` では `x` へ rename されているのに、`so
 1. `sources` のキーは export_key 適用**後**で確定してよいか (= `result` と 1:1 対応させる)。
    本 issue はこれを前提に「bug」として起票しているが、spec が明示していない以上
    spec 側に 1 行足す価値がある
-2. `collect_sources_tree` が同時に落としている「未発火セルの default フォールバック」も
-   command の有無で挙動が変わる (command 無しなら未発火 flag に `default` が出る、
-   command 有りなら出ない)。これも同じ分岐由来の非対称で、本 issue に含めるか別立てにするか
+2. 0 回発火の accum セルが command 木経路では `sources` に現れない。実測 (args 空、
+   定義: `a`(flag) / `ttl`(number default 30) / `tags`(string multiple)):
+   commands あり → `sources {"a":"default","ttl":"default"}`(`tags` 欠落)、
+   commands なし → `sources {"a":"default","ttl":"default","tags":"default"}`。
+   未発火 flag/scalar の `default` 表示自体は両経路とも一致する
+   (値源ラダー Phase 3b が default 席を解決して binding を作るため、tree 経路でも
+   `resolved` に載る) — 非対称なのは AccumCell 経由でレンダされる 0 回発火 accum
+   セルのみ。`collect_sources_flat` にはこの経路用フォールバックがあるが
+   `collect_sources_tree` には無い。これも同じ分岐由来の非対称で、本 issue に含めるか別立てにするか
 
 ## 受け入れ条件
 
 - [ ] `collect_sources_tree` が `ek` を受け取り、キー・path とも `apply_export_keys` と同じ 3 値解決を通る
 - [ ] 上記ケース 1 / 2 で `result` と `sources` のキーが一致する
 - [ ] 「command の有無で sources のキー体系が変わらない」ことを固定する fixture / wbtest が入る
-- [ ] 論点 2 (default フォールバックの非対称) の扱いが決まる (本 issue で直す / 別 issue へ切る)
+- [ ] 論点 2 (0 回発火 accum セルの非対称) の扱いが決まる (本 issue で直す / 別 issue へ切る)
 
 ## 他 issue との独立性
 
