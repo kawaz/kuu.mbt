@@ -1723,14 +1723,18 @@ test "front_door.output: seq の nameless 子に置いた消費 0 literal が配
     wbtest_result_of(default_form, ["--pair", "x"]),
     "{pair=[x,fallback]}",
   )
-  // 対極: literal が消費していたら 2 トークン渡した時に `y` を食って `{pair=[x,y]}` になるが、
-  // 実際は `y` が余る (option は 1 トークンで満たされ、`y` は行き場が無い)。
-  match parse_legacy(load_definition(value_form), ["--pair", "x", "y"]) {
-    @engine.Success(_) =>
-      fail(
-        "消費 0 literal なら余剰トークン `y` を食えないはず",
-      )
-    _ => ()
+  // 対偶 (消費 0 意味論の要): literal が 1 トークンでも消費していたら `--pair x y` は
+  // `{pair=[x,y]}` として成立するはず。実際は `y` の行き場が無く**完全経路 0 本**になる。
+  // `value:` / `default:` の両形で見るのは、2 つが同義である (DR-015 決定表「value / default を
+  // 持つ literal は消費 0 が既定」) 以上、消費側でも割れてはいけないため。
+  for src in [value_form, default_form] {
+    match parse_legacy(load_definition(src), ["--pair", "x", "y"]) {
+      @engine.Success(_) =>
+        fail(
+          "消費 0 literal なら余剰トークン `y` を食えないはず",
+        )
+      _ => ()
+    }
   }
 }
 
