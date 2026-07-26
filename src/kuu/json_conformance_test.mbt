@@ -454,20 +454,82 @@ fn proj_tried_triggers(triggers : Array[String]) -> String {
 }
 
 ///|
-/// `OutputView.sources` の構造化射影を fixture 比較文字列へ変換する。path が空なら root key、
-/// command 木では `sub.key` の形にする。内部セル除外と tree/flat の分岐は玄関が完了済み。
-fn render_sources(sources : Array[@kuu.SourceEntry]) -> String {
-  let items : Array[String] = []
-  for entry in sources {
-    let mut key = ""
-    for segment in entry.path {
-      key = key + segment + "."
+/// JSON 文字列リテラル 1 個 (前後の `"` とエスケープ込み) を作る。
+fn json_quoted(text : String) -> String {
+  text.to_json().stringify()
+}
+
+///|
+/// `sources` の 1 entry を canonical JSON 1 行へ整形する (DR-121 §1)。**`path` と `key` を
+/// 結合した文字列を作らない** — 連結形は非単射で、区別すべき 2 つの結果アドレスが同じ綴りへ
+/// 潰れる (DR-121 §1.2)。比較層で連結すると、実装が正しく区別していても test が見逃す。
+///
+/// 期待側 (fixture の JSON) と実測側 (`@kuu.SourceEntry`) の両方をこの 1 つの形へ通し、
+/// 集合として比較する (entry 配列の順序は非規範、DR-121 §1.1)。
+fn source_entry_line(
+  path : Array[String],
+  key : String,
+  source : String,
+) -> SourceLine {
+  let segs : Array[String] = []
+  for segment in path {
+    segs.push(json_quoted(segment))
+  }
+  let address = "{\"path\":[" +
+    join_comma(segs) +
+    "],\"key\":" +
+    json_quoted(key)
+  { address, line: address + ",\"source\":" + json_quoted(source) + "}" }
+}
+
+///|
+/// `sources` の 1 entry を「結果アドレス部」と「canonical 行」の対にしたもの。DR-121 §1.1 の
+/// 一意性検査 (`(path, key)` の重複は不適合) と集合比較を、どちらも連結形を経由せずに行うための
+/// 中間表現 — アドレスは `path` / `key` を構造のまま JSON 化した文字列で、`.` join ではない。
+struct SourceLine {
+  address : String
+  line : String
+}
+
+///|
+/// `(path, key)` が重複する entry を検出して問題文字列を返す (無ければ `None`)。DR-121 §1.1 の
+/// 「`(path, key)` は一意、重複 entry は不適合」の検査。`(path, key, source)` の tuple 集合を
+/// 単純比較するだけだと、同一アドレスに異なる source が 2 件ある不正形を通してしまう。
+fn duplicate_source_address(entries : Array[SourceLine]) -> String? {
+  let seen : Array[String] = []
+  for entry in entries {
+    for existing in seen {
+      if existing == entry.address {
+        return Some("duplicate source address " + entry.address)
+      }
     }
-    key = key + entry.key
-    items.push(key + "=" + render_src(entry.source))
+    seen.push(entry.address)
+  }
+  None
+}
+
+///|
+/// canonical 行を sort して比較文字列にまとめる (entry 配列の順序は非規範、DR-121 §1.1)。
+fn joined_source_lines(entries : Array[SourceLine]) -> String {
+  let items : Array[String] = []
+  for entry in entries {
+    items.push(entry.line)
   }
   sort_items(items)
   join_comma(items)
+}
+
+///|
+/// `OutputView.sources` の構造化射影を canonical 行の配列へ変換する (DR-121 §1)。行自体が
+/// `,` を含むので、比較文字列にまとめる前の配列を返す (重複検査が行単位で走れるように)。
+fn render_source_lines(sources : Array[@kuu.SourceEntry]) -> Array[SourceLine] {
+  let items : Array[SourceLine] = []
+  for entry in sources {
+    items.push(
+      source_entry_line(entry.path, entry.key, render_src(entry.source)),
+    )
+  }
+  items
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -710,21 +772,59 @@ fn exp_warnings_str(j : Json) -> String raise DecodeSkip {
 }
 
 ///|
+/// fixture の `expect.sources` (DR-121 §1 の entry 配列) を `render_sources` と同じ canonical
+/// 形へ通す。`(path, key)` の重複はここで弾く — 期待側が不正形なら fixture のバグなので、
+/// 実測と突き合わせる前に落とす。
 fn exp_sources_str(j : Json) -> String raise DecodeSkip {
-  let o = match j.j_obj() {
+  let entries = match j.j_arr() {
     Some(x) => x
-    None => raise DecodeSkip("sources is not an object")
+    None => raise DecodeSkip("sources is not an array")
   }
-  let items : Array[String] = []
-  for k, v in o {
-    let src = match v.j_str() {
-      Some(s) => s
-      None => raise DecodeSkip("source value is not a string")
+  let items : Array[SourceLine] = []
+  for entry in entries {
+    let o = match entry.j_obj() {
+      Some(x) => x
+      None => raise DecodeSkip("sources entry is not an object")
     }
-    items.push(k + "=" + src)
+    let path : Array[String] = []
+    match o.get("path") {
+      Some(pj) =>
+        match pj.j_arr() {
+          Some(segs) =>
+            for seg in segs {
+              match seg.j_str() {
+                Some(s) => path.push(s)
+                None =>
+                  raise DecodeSkip("sources entry path segment is not a string")
+              }
+            }
+          None => raise DecodeSkip("sources entry 'path' is not an array")
+        }
+      None => raise DecodeSkip("sources entry missing 'path'")
+    }
+    let key = match o.get("key") {
+      Some(kj) =>
+        match kj.j_str() {
+          Some(s) => s
+          None => raise DecodeSkip("sources entry 'key' is not a string")
+        }
+      None => raise DecodeSkip("sources entry missing 'key'")
+    }
+    let source = match o.get("source") {
+      Some(sj) =>
+        match sj.j_str() {
+          Some(s) => s
+          None => raise DecodeSkip("sources entry 'source' is not a string")
+        }
+      None => raise DecodeSkip("sources entry missing 'source'")
+    }
+    items.push(source_entry_line(path, key, source))
   }
-  sort_items(items)
-  join_comma(items)
+  match duplicate_source_address(items) {
+    Some(problem) => raise DecodeSkip("sources has " + problem)
+    None => ()
+  }
+  joined_source_lines(items)
 }
 
 ///|
@@ -2162,7 +2262,14 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
                 }
                 match dc.exp_sources {
                   Some(es) => {
-                    let asr = render_sources(view.sources)
+                    let lines = render_source_lines(view.sources)
+                    // DR-121 §1.1: 実測側の `(path, key)` 一意性も検査する。集合比較だけだと
+                    // 同一アドレスに異なる source が 2 件ある不正形を通してしまう。
+                    match duplicate_source_address(lines) {
+                      Some(problem) => problems.push("sources " + problem)
+                      None => ()
+                    }
+                    let asr = joined_source_lines(lines)
                     if asr != es {
                       problems.push("sources got=\{asr} want=\{es}")
                     }
@@ -3333,7 +3440,8 @@ test "DR-049 §4 end-to-end: an element's env_prefix:\"\" opt-out reads the raw 
     #|      "env": {"MYAPP_PORT": "8080", "HOME": "/home/kawaz"},
     #|      "expect": {
     #|        "outcome": "success",
-    #|        "sources": {"port": "env", "home_dir": "env"}
+    #|        "sources": [{"path": [], "key": "port", "source": "env"},
+    #|                    {"path": [], "key": "home_dir", "source": "env"}]
     #|      }
     #|    }
     #|  ]
@@ -3376,7 +3484,7 @@ test "DR-092 §5 end-to-end: config-origin \"Infinity\" reaches a float element 
     #|        "outcome": "success",
     #|        "effects": [],
     #|        "result": {"t": "Infinity"},
-    #|        "sources": {"t": "config"}
+    #|        "sources": [{"path": [], "key": "t", "source": "config"}]
     #|      }
     #|    },
     #|    {
@@ -3387,7 +3495,7 @@ test "DR-092 §5 end-to-end: config-origin \"Infinity\" reaches a float element 
     #|        "outcome": "success",
     #|        "effects": [],
     #|        "result": {"t": "-Infinity"},
-    #|        "sources": {"t": "config"}
+    #|        "sources": [{"path": [], "key": "t", "source": "config"}]
     #|      }
     #|    }
     #|  ]
@@ -3892,5 +4000,34 @@ test "DR-104 §3 明確化: 6 フィールド一致 dedup で completer が食�
   let verdict = run_complete(fx, fx.cases[0])
   if verdict != "PASS" {
     abort("expected PASS, got: " + verdict)
+  }
+}
+
+///|
+/// 保証 (DR-121 §1.1「`(path, key)` は一意、重複 entry は不適合」): runner は同一結果アドレスの
+/// entry が 2 件ある fixture を受理しない。`(path, key, source)` の tuple 集合を単純比較するだけ
+/// だと、同一アドレスに異なる source が 2 件ある不正形が「集合として一致すれば PASS」で通って
+/// しまう — 期待側を decode する時点で弾く。
+test "conformance runner: sources の (path, key) 重複を decode 時に弾く (DR-121 §1.1)" {
+  let src =
+    #|{
+    #|  "query": "parse",
+    #|  "definition": {"options": [{"name": "v", "type": "flag", "long": true}]},
+    #|  "cases": [
+    #|    {"id": "dup", "args": ["--v"],
+    #|     "expect": {"outcome": "success",
+    #|       "sources": [{"path": [], "key": "v", "source": "cli"},
+    #|                   {"path": [], "key": "v", "source": "default"}]}}
+    #|  ]
+    #|}
+  let outcome = try {
+    let _ = dec_fixture(@json.parse(src))
+    "accepted"
+  } catch {
+    DecodeSkip(reason) => reason
+    _ => "unexpected error"
+  }
+  if !outcome.contains("duplicate source address") {
+    abort("expected a duplicate-address rejection, got: " + outcome)
   }
 }

@@ -1243,23 +1243,30 @@ fn wbtest_sources_of(src : String, args : Array[String]) -> String raise {
   let view = output_legacy(ast, effects~)
   let items : Array[String] = []
   for entry in view.sources {
-    let mut key = ""
-    for segment in entry.path {
-      key = key + segment + "."
-    }
-    key = key + entry.key
-    let label = match entry.source {
-      @abi.Cli => "cli"
-      @abi.Env => "env"
-      @abi.Config => "config"
-      @abi.Inherit => "inherit"
-      @abi.Tty => "tty"
-      @abi.Default => "default"
-    }
-    items.push(key + "=" + label)
+    items.push(wbtest_source_entry(entry))
   }
   test_sort_items(items)
   test_join_comma(items)
+}
+
+///|
+/// `SourceEntry` 1 件を比較用の 1 行へ整形する。**`path` と `key` を連結した文字列を作らない**
+/// (DR-121 §1.1) — 連結形は非単射で、区別すべき 2 つの結果アドレスが同じ綴りへ潰れる。
+/// `[a b]/key=source` の形で path を構造のまま見せる (root 直下は `[]/key=source`)。
+fn wbtest_source_entry(entry : SourceEntry) -> String {
+  let segs : Array[String] = []
+  for segment in entry.path {
+    segs.push(segment)
+  }
+  let label = match entry.source {
+    @abi.Cli => "cli"
+    @abi.Env => "env"
+    @abi.Config => "config"
+    @abi.Inherit => "inherit"
+    @abi.Tty => "tty"
+    @abi.Default => "default"
+  }
+  "[" + test_join_space(segs) + "]/" + entry.key + "=" + label
 }
 
 ///|
@@ -1286,20 +1293,7 @@ fn wbtest_view_of(src : String, args : Array[String]) -> String raise {
   let view = output_legacy(ast, effects~)
   let src_items : Array[String] = []
   for entry in view.sources {
-    let mut key = ""
-    for segment in entry.path {
-      key = key + segment + "."
-    }
-    key = key + entry.key
-    let label = match entry.source {
-      @abi.Cli => "cli"
-      @abi.Env => "env"
-      @abi.Config => "config"
-      @abi.Inherit => "inherit"
-      @abi.Tty => "tty"
-      @abi.Default => "default"
-    }
-    src_items.push(key + "=" + label)
+    src_items.push(wbtest_source_entry(entry))
   }
   test_sort_items(src_items)
   let eff_items : Array[String] = []
@@ -1325,7 +1319,7 @@ test "front_door.output: command 木でも値セル rename が sources に効く
   let src =
     #|{"options":[{"name":"verbose","type":"flag","long":true,"export_key":"v"}],
     #| "commands":[{"type":"command","name":"serve"}]}
-  assert_eq(wbtest_sources_of(src, ["--verbose"]), "v=cli")
+  assert_eq(wbtest_sources_of(src, ["--verbose"]), "[]/v=cli")
 }
 
 ///|
@@ -1335,7 +1329,7 @@ test "front_door.output: command 木の scope ラベル rename が sources に�
   let src =
     #|{"commands":[{"type":"command","name":"cmd","export_key":"sv","options":[
     #|  {"name":"inner","type":"number","long":true,"export_key":"i"}]}]}
-  assert_eq(wbtest_sources_of(src, ["cmd", "--inner", "3"]), "sv.i=cli")
+  assert_eq(wbtest_sources_of(src, ["cmd", "--inner", "3"]), "[sv]/i=cli")
 }
 
 ///|
@@ -1345,7 +1339,7 @@ test "front_door.output: command 木の scope 透過昇格が sources に効く 
   let src =
     #|{"commands":[{"type":"command","name":"serve","export_key":null,"options":[
     #|  {"name":"port","type":"number","long":true}]}]}
-  assert_eq(wbtest_sources_of(src, ["serve", "--port", "80"]), "port=cli")
+  assert_eq(wbtest_sources_of(src, ["serve", "--port", "80"]), "[]/port=cli")
 }
 
 ///|
@@ -1356,7 +1350,10 @@ test "front_door.output: command 木でも透過値セルは sources に現れ�
     #|{"options":[{"name":"opt","type":"number","long":true,"export_key":null},
     #|            {"name":"keep","type":"number","long":true}],
     #| "commands":[{"type":"command","name":"serve"}]}
-  assert_eq(wbtest_sources_of(src, ["--opt", "1", "--keep", "2"]), "keep=cli")
+  assert_eq(
+    wbtest_sources_of(src, ["--opt", "1", "--keep", "2"]),
+    "[]/keep=cli",
+  )
 }
 
 ///|
@@ -1371,7 +1368,10 @@ test "front_door.output: command 木でも 0 回発火の accum セルが defaul
     #|            {"name":"ttl","type":"number","long":true,"default":30},
     #|            {"name":"tags","type":"string","long":true,"multiple":"append"}],
     #| "commands":[{"type":"command","name":"serve"}]}
-  assert_eq(wbtest_sources_of(src, []), "a=default,tags=default,ttl=default")
+  assert_eq(
+    wbtest_sources_of(src, []),
+    "[]/a=default,[]/tags=default,[]/ttl=default",
+  )
 }
 
 ///|
@@ -1388,7 +1388,7 @@ test "front_door.output: named seq の結果スコープ path は command 無し
   let with_command = "{" +
     body +
     ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
-  let want = "pr.path=cli,pr.value=cli"
+  let want = "[pr]/path=cli,[pr]/value=cli"
   assert_eq(wbtest_sources_of(no_command, ["--pr", "x", "y"]), want)
   assert_eq(wbtest_sources_of(with_command, ["--pr", "x", "y"]), want)
 }
@@ -1406,7 +1406,7 @@ test "front_door.output: named or の結果スコープ path は command 無し�
   let with_command = "{" +
     body +
     ",\"commands\":[{\"type\":\"command\",\"name\":\"dummy\"}]}"
-  let want = "mode.num=cli"
+  let want = "[mode]/num=cli"
   assert_eq(wbtest_sources_of(no_command, ["--mode", "7"]), want)
   assert_eq(wbtest_sources_of(with_command, ["--mode", "7"]), want)
 }
@@ -1517,15 +1517,15 @@ test "front_door.output: none セルは scope rename の 3 境界すべてで 3 
   let args = ["serve", "--touch", "--keep"]
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, None), args),
-    "result={serve={k=true}} sources=serve.k=cli effects=keep",
+    "result={serve={k=true}} sources=[serve]/k=cli effects=keep",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("\"sv\"")), args),
-    "result={sv={k=true}} sources=sv.k=cli effects=keep",
+    "result={sv={k=true}} sources=[sv]/k=cli effects=keep",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("null")), args),
-    "result={k=true} sources=k=cli effects=keep",
+    "result={k=true} sources=[]/k=cli effects=keep",
   )
 }
 
@@ -1540,15 +1540,15 @@ test "front_door.output: config_file セルは scope rename の 3 境界すべ�
   let args = ["serve", "--keep"]
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, None), args),
-    "result={serve={keep=true}} sources=serve.keep=cli effects=keep",
+    "result={serve={keep=true}} sources=[serve]/keep=cli effects=keep",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("\"sv\"")), args),
-    "result={sv={keep=true}} sources=sv.keep=cli effects=keep",
+    "result={sv={keep=true}} sources=[sv]/keep=cli effects=keep",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("null")), args),
-    "result={keep=true} sources=keep=cli effects=keep",
+    "result={keep=true} sources=[]/keep=cli effects=keep",
   )
 }
 
@@ -1562,15 +1562,15 @@ test "front_door.output: dd trigger は scope rename の 3 境界すべてで 3 
   let args = ["serve", "--", "-v"]
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, None), args),
-    "result={serve={x=-v}} sources=serve.x=cli effects=x",
+    "result={serve={x=-v}} sources=[serve]/x=cli effects=x",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("\"sv\"")), args),
-    "result={sv={x=-v}} sources=sv.x=cli effects=x",
+    "result={sv={x=-v}} sources=[sv]/x=cli effects=x",
   )
   assert_eq(
     wbtest_view_of(wbtest_under_command(body, Some("null")), args),
-    "result={x=-v} sources=x=cli effects=x",
+    "result={x=-v} sources=[]/x=cli effects=x",
   )
 }
 
@@ -1584,7 +1584,7 @@ test "front_door.output: 値セル自身が rename された none も 3 面か�
     #|            {"name":"keep","type":"flag","long":true}]}
   assert_eq(
     wbtest_view_of(src, ["--touch", "--keep"]),
-    "result={keep=true} sources=keep=cli effects=keep",
+    "result={keep=true} sources=[]/keep=cli effects=keep",
   )
 }
 
@@ -1606,14 +1606,14 @@ test "front_door.output: named seq / or / repeat 配下の none も 3 面から�
     #|  {"name":"touch","type":"none"},{"name":"keep","type":"string"}]}]}
   assert_eq(
     wbtest_view_of(seq_renamed, ["--pair", "x", "y"]),
-    "result={pr={keep=y}} sources=pr.keep=cli effects=keep",
+    "result={pr={keep=y}} sources=[pr]/keep=cli effects=keep",
   )
   let seq_identity =
     #|{"options":[{"name":"pair","long":true,"seq":[
     #|  {"name":"touch","type":"none"},{"name":"keep","type":"string"}]}]}
   assert_eq(
     wbtest_view_of(seq_identity, ["--pair", "x", "y"]),
-    "result={pair={keep=y}} sources=pair.keep=cli effects=keep",
+    "result={pair={keep=y}} sources=[pair]/keep=cli effects=keep",
   )
   // or の枝が seq を持つ形 (枝 leaf は nameless 同化で `mode` 直下へ昇格、DR-052 §2)。
   let or_seq =
@@ -1622,7 +1622,7 @@ test "front_door.output: named seq / or / repeat 配下の none も 3 面から�
     #|  {"name":"num","type":"int"}]}]}
   assert_eq(
     wbtest_view_of(or_seq, ["--mode", "a", "b"]),
-    "result={mode={keep=b}} sources=mode.keep=cli effects=keep",
+    "result={mode={keep=b}} sources=[mode]/keep=cli effects=keep",
   )
   // `repeat` 配下は sources の path に index segment が現れるが、その綴りは未裁定 (下記) なので
   // 席の集合だけを見る。
@@ -1651,15 +1651,15 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
     #|  {"name":"path","type":"string"},{"name":"value","type":"string"}]}]}
   assert_eq(
     wbtest_view_of(seq, []),
-    "result={pair=[]} sources=pair=default effects=",
+    "result={pair=[]} sources=[]/pair=default effects=",
   )
   assert_eq(
     wbtest_view_of(seq, ["--pair", "x", "1"]),
-    "result={pair=[{path=x,value=1}]} sources=pair.path=cli,pair.value=cli effects=path,value",
+    "result={pair=[{path=x,value=1}]} sources=[pair]/path=cli,[pair]/value=cli effects=path,value",
   )
   assert_eq(
     wbtest_view_of(seq, ["--pair", "x", "1", "--pair", "y", "2"]),
-    "result={pair=[{path=x,value=1},{path=y,value=2}]} sources=pair.path=cli,pair.value=cli effects=path,path,value,value",
+    "result={pair=[{path=x,value=1},{path=y,value=2}]} sources=[pair]/path=cli,[pair]/value=cli effects=path,path,value,value",
   )
   // 枝は int/bool で値空間が排他 (完全経路ちょうど 1 本)。
   let or_ =
@@ -1667,15 +1667,15 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
     #|  {"name":"num","type":"int"},{"name":"flag","type":"bool"}]}]}
   assert_eq(
     wbtest_view_of(or_, []),
-    "result={color=[]} sources=color=default effects=",
+    "result={color=[]} sources=[]/color=default effects=",
   )
   assert_eq(
     wbtest_view_of(or_, ["--color", "7"]),
-    "result={color=[{num=7}]} sources=color.num=cli effects=num",
+    "result={color=[{num=7}]} sources=[color]/num=cli effects=num",
   )
   assert_eq(
     wbtest_view_of(or_, ["--color", "7", "--color", "true"]),
-    "result={color=[{num=7},{flag=true}]} sources=color.flag=cli,color.num=cli effects=flag,num",
+    "result={color=[{num=7},{flag=true}]} sources=[color]/flag=cli,[color]/num=cli effects=flag,num",
   )
   // 対照: スカラ accum は cell 自身に着席するので、従来どおり cell address の entry で判定できる。
   let scalar =
@@ -1683,14 +1683,14 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
     #|  {"name":"t","type":"string","long":true,"multiple":"append"}]}]}
   assert_eq(
     wbtest_view_of(scalar, ["serve"]),
-    "result={serve={t=[]}} sources=serve.t=default effects=",
+    "result={serve={t=[]}} sources=[serve]/t=default effects=",
   )
   assert_eq(
     wbtest_view_of(scalar, ["serve", "--t", "a"]),
-    "result={serve={t=[a]}} sources=serve.t=cli effects=t",
+    "result={serve={t=[a]}} sources=[serve]/t=cli effects=t",
   )
   assert_eq(
     wbtest_view_of(scalar, ["serve", "--t", "a", "--t", "b"]),
-    "result={serve={t=[a,b]}} sources=serve.t=cli effects=t,t",
+    "result={serve={t=[a,b]}} sources=[serve]/t=cli effects=t,t",
   )
 }
