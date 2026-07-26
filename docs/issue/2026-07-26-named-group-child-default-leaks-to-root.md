@@ -3,7 +3,7 @@ title: named group positional child の default 席が root scope に漏れる
 status: open
 category: bug
 created: 2026-07-26T22:23:57+09:00
-last_read:
+last_read: 2026-07-27T02:26:41+09:00
 open_entered: 2026-07-26T22:23:57+09:00
 wip_entered:
 blocked_entered:
