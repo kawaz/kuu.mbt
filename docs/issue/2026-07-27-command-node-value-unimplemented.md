@@ -21,7 +21,7 @@ origin: 自リポ TODO
 
 ## 概要
 
-issue 2026-07-26-value-default-unimplemented-root-positions の残り 1 配置。option root / positional root の `value:` は実装済み (commit a182485a、`const_values` carrier + DR-031 CONST-Q1=a の const 意味論)。**command node の `value:` だけ未対応**のまま残った。
+issue 2026-07-26-value-default-unimplemented-root-positions の残り 1 配置。option root / positional root の `value:` は実装済み (commit 4da51dd6、`const_values` carrier + DR-031 CONST-Q1=a の const 意味論)。**command node の `value:` だけ未対応**のまま残った。
 
 ## 背景 (なぜスコープ外にしたか — 調査結果)
 

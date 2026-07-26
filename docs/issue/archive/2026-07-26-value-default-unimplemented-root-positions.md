@@ -12,7 +12,7 @@ discarded_entered:
 resolved_entered: 2026-07-27T02:03:49+09:00
 discard_reason:
 pending_reason:
-close_reason: ["implemented:option root / positional root の value: を実装 (commit a182485a)、child value: とは別機構 (const_values carrier)", "spun-off:command node の value: は carrier 不在 + 意味論未規定のため別 issue へ分離 (統括承認待ちで起票済み)"]
+close_reason: ["implemented:option root / positional root の value: を実装 (commit 4da51dd6)、child value: とは別機構 (const_values carrier)", "spun-off:command node の value: は carrier 不在 + 意味論未規定のため別 issue へ分離 (統括承認待ちで起票済み)"]
 blocked_by:
 origin: 自リポ TODO
 ---
