@@ -389,9 +389,8 @@ fn pos(
   // DR-113 §7.2 / DR-048 / DESIGN §15.10: 汎用 `on_failure` を positional でも carry する
   // (dec_option の fail_action~ と対称)。
   fail_action? : Bool = false,
-  // DESIGN §5.2「消費しない literal」。`dec_or_leaf` (構造子 child の唯一の入口) だけが true を
-  // 渡す — 同じ `default:` でも root 要素ではラダー席のままなので、位置を知っている呼び出し側が
-  // 決める (`@engine.ElementDef.is_literal` の doc comment)。
+  // DESIGN §5.2「消費しない literal」。structural child の `value:` を decode する `dec_or_leaf`
+  // だけが true を渡す。`default:` は位置によらず ladder seat なのでこの marker を立てない。
   is_literal? : Bool = false,
 ) -> @engine.ElementDef {
   {
@@ -916,8 +915,8 @@ fn json_to_default_values(j : Json) -> Array[@abi.Value] raise DecodeSkip {
 ///
 /// 形は `default:` と同じ「長さ1へ持ち上げた一様配列」(`json_to_default_values`) を共有する —
 /// scalar は `[v]`、accum セルは piece 列。**運び先だけが別** (`const_values` vs `default_values`)
-/// で、root では両者が別位相 (初期値 vs 充填席) だから同居も合法。構造子 child 位置では逆に
-/// 両者が同義なので `dec_or_leaf` が同居を拒否する — 位置で意味が割れるのは DR-018 配置原理。
+/// で、両者は全位置で別位相 (初期値 vs 充填席) だから同居も合法。structural child でも
+/// `dec_or_leaf` がそれぞれ `const_values` / `default_values` へ分けて運ぶ。
 ///
 /// **scalar のみ**: schema (`$defs.node` の `value`) は任意 JSON を許すが `json_to_value` は
 /// scalar (string/number/bool) しか持たない。object / array literal は明示エラーで弾く
@@ -1887,21 +1886,13 @@ fn dec_or_structural(
 /// per the `variable-arity-ambiguous.json` wire form; an anonymous positional or-branch leaf has no
 /// trigger at all).
 ///
-/// `value:` / `default:` は消費 0 の literal を宣言する (DESIGN §5.2 / LOWERING §A.3 / DR-015)。
-/// **構造子位置では 2 つは同義** — どちらの綴りも宣言定数で source タグは `Const` (DR-031 の
-/// 8 語彙目、「const は値セルに最初からいる。default は無い時に埋める」)。同義なので decode 先も
-/// 同じ `default_values` で、区別を持ち回らない。値を持つ child は `is_literal` が立ち、
-/// `element_head` が値プリミティブでなく `literal_value` へ lower する (トークンを照合せず
-/// 0 個消費で値を産出、DR-041 §3「消費数は Accept の報告値」)。
+/// `value:` と `default:` は位置に依らず別位相 (DESIGN §5.2)。`value:` は消費 0 の宣言定数で、
+/// `const_values` と `is_literal` に写す。`default:` は通常の値プリミティブを保ったまま
+/// `default_values` のラダー席へ写し、lowering が空席でも完全経路に含められる形へする。
+/// 両者の同居は合法で、const が常にセルを埋めるため default は影になる。
 ///
-/// root 位置 (option / positional) では 2 つは同義では**ない** — `value:` はセル初期化位相の
-/// const、`default:` はラダー 5 段目の席という別位相なので、同居も合法 (CONST-Q1=a) で carrier も
-/// 別 (`const_values` / `default_values`)。下の同居 reject が構造子位置限定なのはこのため。
-///
-/// `default_fn:` はここでは受理しない。遅延評価される invocation (resolve 相で registry を引く、
-/// `resolve_default_fn`) であり lowering 時点で値が確定しないので、消費 0 literal に落とせない。
-/// decode だけ通して lowering で黙って捨てると「書けたのに効かない」になるため、明示エラーの
-/// まま残す。
+/// `default_fn:` は child wire 語彙に含まれない。遅延 invocation を子へ追加する判断は別途必要で、
+/// decode だけ通して黙って捨てない。
 fn dec_or_leaf(
   j : Json,
   shadows : Map[String, TypeShadow],
@@ -1980,16 +1971,13 @@ fn dec_or_leaf(
     bool_config_from_shadow,
     allow_base_prefix=base_prefix_from_shadow,
   )
-  // `value` と `default` は同義なので同居させない — 同じ席への二重宣言で、値が食い違ったとき
-  // どちらが勝つかを decode 層が黙って決めることになる。
-  let literal = match (o.get("value"), o.get("default")) {
-    (Some(_), Some(_)) =>
-      raise DecodeSkip(
-        "or branch leaf declares both 'value' and 'default' (構造子位置では 2 つは同義 — どちらも宣言定数 `const` (DESIGN §5.2 / DR-031) — なので同じ席への二重宣言になる)",
-      )
-    (Some(v), None) => Some(json_to_default_values(v))
-    (None, Some(d)) => Some(json_to_default_values(d))
-    (None, None) => None
+  let const_values = match o.get("value") {
+    Some(v) => Some(json_to_default_values(v))
+    None => None
+  }
+  let default_values = match o.get("default") {
+    Some(d) => Some(json_to_default_values(d))
+    None => None
   }
   pos(
     name,
@@ -2000,9 +1988,10 @@ fn dec_or_leaf(
     is_tty=is_tty_from_shadow,
     tty_stream=tty_stream_from_shadow,
     tty_cygwin=tty_cygwin_from_shadow,
-    default=literal,
-    default_declared=literal is Some(_),
-    is_literal=literal is Some(_),
+    default=default_values,
+    const_=const_values,
+    default_declared=default_values is Some(_),
+    is_literal=const_values is Some(_),
   )
 }
 
@@ -2565,7 +2554,13 @@ fn dec_positional(
             None => @engine.ExportKey::unset()
           }
           return {
-            ..pos(or_name, @builtins.string_type(), export_=or_export),
+            ..pos(
+              or_name,
+              @builtins.string_type(),
+              export_=or_export,
+              repeat=owned.repeat,
+              optional=owned.optional,
+            ),
             body: Or(branches),
           }
         }

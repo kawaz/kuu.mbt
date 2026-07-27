@@ -1886,6 +1886,21 @@ fn structural_declaring_path(
 }
 
 ///|
+fn runtime_path_has_index(
+  runtime_path : Array[String],
+  base_path : Array[String],
+) -> Bool {
+  let mut i = base_path.length()
+  while i < runtime_path.length() {
+    if is_runtime_index_segment(runtime_path[i]) {
+      return true
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
 fn export_map_at_structural_path(
   root : @engine.ExportScopeMap,
   runtime_path : Array[String],
@@ -1900,21 +1915,6 @@ fn export_map_at_structural_path(
     i = i + 1
   }
   node
-}
-
-///|
-fn runtime_path_has_index(
-  runtime_path : Array[String],
-  base_path : Array[String],
-) -> Bool {
-  let mut i = base_path.length()
-  while i < runtime_path.length() {
-    if is_runtime_index_segment(runtime_path[i]) {
-      return true
-    }
-    i = i + 1
-  }
-  false
 }
 
 ///|
@@ -1950,7 +1950,7 @@ fn contains_path(
 /// to its owning path (the same shape `build_result`/`proj_sources_tree` already consume) — a
 /// caller wanting a value at a nested path uses the ordinary `@engine.element_value`/`@engine.is_committed` lookups
 /// with that path, no different from a single-scope `resolve_scope_config` caller.
-fn resolve_scope_tree_with_export(
+fn resolve_scope_tree_with_export_impl(
   sc : @engine.Scope,
   binds : Array[@abi.Binding],
   env_map : (String) -> String?,
@@ -2116,6 +2116,96 @@ fn resolve_scope_tree_with_export(
     }
   }
   Ok(relocate_internal_bindings(out, sc.entities, path))
+}
+
+///|
+/// Structural child defaults are emitted by evaluation as sentinel bindings at the selected seat
+/// occurrence. Resolve turns each occurrence into a real default binding in place, preserving or-branch
+/// selection and repeated-row order without materializing seats from unselected declarations.
+fn resolve_child_default_seats(
+  sc : @engine.Scope,
+  bindings : Array[@abi.Binding],
+  env_map : (String) -> String?,
+  provider : (String) -> @abi.ConfigVal?,
+  inherited : Map[String, @abi.Value],
+  at_pos : Int,
+  tty : (String) -> TtyObs?,
+  ek : @engine.ExportScopeMap,
+  extensions : @node.Registry,
+  include_default : Bool,
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
+  let prefix = "#seat:"
+  let out : Array[@abi.Binding] = []
+  for binding in bindings {
+    if binding.key.length() >= prefix.length() &&
+      binding.key[0:prefix.length()].to_owned() == prefix {
+      let entities : Array[@engine.Entity] = []
+      for entity in sc.entities {
+        if entity.name == binding.key &&
+          path_eq(entity.declaring_path, [binding.key]) {
+          entities.push(entity)
+        }
+      }
+      if entities.length() == 0 {
+        out.push(binding)
+        continue
+      }
+      let target = match binding.value {
+        @abi.String(name) => name
+        _ => ""
+      }
+      let resolved = match
+        resolve_scope_config_with_export(
+          scope_with_entities(sc, entities),
+          [],
+          env_map,
+          provider,
+          binding.scope,
+          inherited,
+          at_pos,
+          tty,
+          ek,
+          extensions,
+          include_default,
+        ) {
+        Ok(values) => values
+        Err(error) => return Err(error)
+      }
+      for value in resolved {
+        out.push({ ..value, key: target, scope: binding.scope })
+      }
+    } else {
+      out.push(binding)
+    }
+  }
+  Ok(out)
+}
+
+///|
+fn resolve_scope_tree_with_export(
+  sc : @engine.Scope,
+  binds : Array[@abi.Binding],
+  env_map : (String) -> String?,
+  provider : (String) -> @abi.ConfigVal?,
+  path : Array[String],
+  inherited : Map[String, @abi.Value],
+  at_pos : Int,
+  tty : (String) -> TtyObs?,
+  ek : @engine.ExportScopeMap,
+  extensions : @node.Registry,
+  include_default : Bool,
+) -> Result[Array[@abi.Binding], @abi.ParseError] {
+  let bindings = match
+    resolve_child_default_seats(
+      sc, binds, env_map, provider, inherited, at_pos, tty, ek, extensions, include_default,
+    ) {
+    Ok(values) => values
+    Err(error) => return Err(error)
+  }
+  resolve_scope_tree_with_export_impl(
+    sc, bindings, env_map, provider, path, inherited, at_pos, tty, ek, extensions,
+    include_default,
+  )
 }
 
 ///|

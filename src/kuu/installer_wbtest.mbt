@@ -1142,12 +1142,10 @@ test "parse_definition: a ref target absent from registry is @abi.AbsentRef (DR-
 /// same single slot, losing 先食い suppression / 取り分選好 for them while still parsing
 /// "successfully" (a mis-shaped-but-quiet result, the exact failure mode
 /// [[retreat-is-last-resort]]/契約 が禁じる). `parse_definition` must reject this at definition
-/// time (`@abi.InvalidRange`, mirrors the sibling positional `min > max` check just above) rather than
-/// let it run mis-wired. Registry left empty (color 未登録) — `@abi.AbsentRef` co-occurs, but this
-/// test only asserts `@abi.InvalidRange` is ALSO enumerated (DR-054 §4 no first-error 打ち切り)。
-/// spec fixture 昇格済み (DR-082、fixtures/definition-error/option-ref-repeat-min-invalid-range.json)
-/// — 本 wbtest はそれに先行する unit 層の pin として残す。
-test "parse_definition: an option's ref+repeat with min > 1 is @abi.InvalidRange (codex review #4)" {
+/// time as `@abi.Unsupported` rather than let it run mis-wired. The definition is spec-legal; this
+/// implementation only lacks a multi-slot GreedyRepeat carrier. Registry left empty (color 未登録) —
+/// `@abi.AbsentRef` co-occurs, and DR-054 §4 requires both errors to be enumerated.
+test "parse_definition: an option's ref+repeat with min > 1 is @abi.Unsupported (codex review #4)" {
   let def : @engine.Definition = {
     ..empty_def(),
     options: [
@@ -1167,13 +1165,13 @@ test "parse_definition: an option's ref+repeat with min > 1 is @abi.InvalidRange
     ]) {
     Ok(_) => abort("expected Err (unsupported option ref+repeat min>1)")
     Err(errs) => {
-      let mut has_range = false
+      let mut has_unsupported = false
       for e in errs {
-        if e.kind == @abi.InvalidRange && e.element == "hlcolors" {
-          has_range = true
+        if e.kind == @abi.Unsupported && e.element == "hlcolors" {
+          has_unsupported = true
         }
       }
-      assert_true(has_range)
+      assert_true(has_unsupported)
     }
   }
 }
@@ -1207,10 +1205,8 @@ test "parse_definition: an option's ref+repeat with min <= 1 is NOT rejected (co
       )
     Err(errs) =>
       for e in errs {
-        if e.kind == @abi.InvalidRange {
-          abort(
-            "min:1 must not raise @abi.InvalidRange (only min>1 is unsupported)",
-          )
+        if e.kind == @abi.Unsupported {
+          abort("min:1 must not raise @abi.Unsupported")
         }
       }
   }

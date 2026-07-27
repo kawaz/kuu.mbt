@@ -260,21 +260,12 @@ pub(all) enum Node {
   /// recursion (the bound is the recursion depth of the tail, not an unbounded self-ref).
   /// `optional: true` = `repeat: {min:0, max:1}` reduces to a lone `BoundedTail(head, 1, _)`.
   BoundedTail(Node, Int, Bool)
-  /// a named indexed-array repeat (DR-043 repeat × DR-025 name scope). Consumes its head
-  /// GREEDILY (as many reps as the head allows), tagging rep k under `[label, "#k"]` so
-  /// the result builder yields an ARRAY of one element per firing (multiple:"append").
-  /// `min` is the required rep count (0 = may be empty). Greedy-max is the 取り分選好
-  /// default; for this raw pattern the split is bounded by the head's Reject / exact, so
-  /// no downstream backtrack is needed (DR-043 §取り分の選好, 大域完全経路) for the
-  /// UNBOUNDED case. The 4th field `budget` (issue
-  /// 2026-07-13-positional-group-trailing-missing-operand) caps the ADDITIONAL reps beyond
-  /// `min` (same seat as `BoundedTail`'s 2nd field, `max - min`): `None` = unbounded (the
-  /// original greedy-max-forever behavior, unchanged), `Some(b)` = stop once `rep >= min +
-  /// b`, matching a bounded `repeat: {min, max}` spec exactly instead of silently degrading
-  /// every Group repeat to unbounded regardless of a declared `max`. This does NOT add
-  /// backtrack (the KNOWN GAP in `eval_wbtest.mbt`'s "IndexedRepeat greedy-max has no downstream
-  /// backtrack" test is still open for the unbounded case) — a bounded head simply never
-  /// over-consumes in the first place, so no backtrack is needed to correct it.
+  /// a named indexed-array repeat (DR-043 repeat × DR-025 name scope). Each rep is tagged under
+  /// `[label, "#k"]`, so the result builder yields an array with independent row seats. The spine
+  /// evaluator uses CPS stop/more selection: greedy chooses the longest prefix whose complete
+  /// downstream continuation succeeds, backing off when a following positional would be starved.
+  /// `min` is the required rep count. `budget` caps additional reps beyond min (`max - min`);
+  /// `None` is unbounded.
   IndexedRepeat(String, Node, Int, Int?)
   /// an OPTION's repeat value slot (DR-078 §1 option-level repeat, new capability): wraps ONLY
   /// the repeat TAIL (`Ref`/`Many`/`BoundedTail`, the same node `lower_repeat_head` builds for a

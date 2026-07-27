@@ -1416,8 +1416,8 @@ test "front_door.parse_definition: an absent bare link target is @abi.AbsentRef 
 
 ///|
 /// DR-029 では ref/type と link は直交するが、現実装は ref leaf の wrapper scope 除去と複合値 carrier
-/// をまだ持たない。silent wrong answer を避け、解除条件が実装されるまで invalid-range で明示的に塞ぐ。
-test "front_door.parse_definition: ref plus link is explicitly rejected until structured routing exists" {
+/// をまだ持たない。silent wrong answer を避け、解除条件が実装されるまで unsupported で明示的に塞ぐ。
+test "front_door.parse_definition: ref plus link is explicitly unsupported until structured routing exists" {
   let src =
     #|{"definitions":{"templates":{"payload":{"type":"string","name":"value"}}},
     #| "options":[
@@ -1428,14 +1428,14 @@ test "front_door.parse_definition: ref plus link is explicitly rejected until st
     Err(Rejected(errors)) => {
       let mut found = false
       for error in errors {
-        if error.element == "legacy" && error.kind == @abi.InvalidRange {
+        if error.element == "legacy" && error.kind == @abi.Unsupported {
           found = true
         }
       }
       assert_true(found)
     }
     Err(Malformed(message)) =>
-      fail("expected invalid-range, got malformed: " + message)
+      fail("expected unsupported, got malformed: " + message)
     Ok(_) => fail("ref+link must not silently keep the reference-side result")
   }
 }
@@ -1855,8 +1855,7 @@ test "front_door.output: accum セルの default 席は 0 回発火のときだ�
 ///|
 /// named group の child default は、発火した row の wrapper 配下でだけ解決する。
 /// 0 fire では child の席自体が存在せず、DR-044 の wrapper accumulator 席だけが `[]` を供給する。
-/// この group head は k/v の 2 token を一体で消費するため、k だけの partial row は完全経路に
-/// ならない。default 席は row の消費 arity を変えず、発火した child cell の解決 scope だけを決める。
+/// row が発火した後は default 宣言を持つ child を空席のまま完全経路へ含め、resolve 相で充填する。
 test "front_door.output: named group child default は wrapper 外へ漏れない (DR-051 / DR-122 §3)" {
   let src =
     #|{"positionals":[{"name":"xs","repeat":{"min":0,"max":2},"positionals":[
@@ -1870,10 +1869,10 @@ test "front_door.output: named group child default は wrapper 外へ漏れな�
     wbtest_view_of(src, ["a", "b", "c", "d"]),
     "result={xs=[{k=a,v=b},{k=c,v=d}]} sources={xs=[{k=cli,v=cli},{k=cli,v=cli}]} effects=k,k,v,v",
   )
-  match parse_legacy(load_definition(src), ["a"]) {
-    @engine.Success(_) => fail("partial row must not become a complete path")
-    _ => ()
-  }
+  assert_eq(
+    wbtest_view_of(src, ["a"]),
+    "result={xs=[{k=a,v=D}]} sources={xs=[{k=cli,v=default}]} effects=k",
+  )
   // bool/flag defaults also feed build_result's default-cell projection; they must obey the same
   // declaration scope gate instead of being injected at root when the group has no row.
   let bool_child =
@@ -1887,8 +1886,8 @@ test "front_door.output: named group child default は wrapper 外へ漏れな�
     wbtest_view_of(bool_child, ["a", "false"]),
     "result={xs=[{b=false,k=a}]} sources={xs=[{b=cli,k=cli}]} effects=b,k",
   )
-  // The child default does not make a partial row consumable; a trailing positional can still take
-  // the sole token instead of being starved by an optionalized repeat head.
+  // The row path can use the child default, but it is incomplete when the required trailing positional
+  // is left empty; the competing zero-row path therefore leaves the token for `tail`.
   let trailing =
     #|{"positionals":[
     #|  {"name":"xs","repeat":{"min":0,"max":2},"positionals":[
@@ -1898,6 +1897,52 @@ test "front_door.output: named group child default は wrapper 外へ漏れな�
     wbtest_view_of(trailing, ["a"]),
     "result={tail=a,xs=[]} sources={tail=cli,xs=[]} effects=tail",
   )
+}
+
+///|
+/// Each structural option firing owns an independent child default seat; resolving one occurrence must
+/// not deduplicate another row at the same wrapper scope.
+test "front_door.output: multiple seq rows resolve child defaults independently" {
+  let src =
+    #|{"options":[{"name":"pair","long":true,"multiple":"append","seq":[
+    #|  {"name":"k","type":"string"},{"name":"v","type":"string","default":"D"}]}]}
+  assert_eq(
+    wbtest_view_of(src, ["--pair", "a", "--pair", "b"]),
+    "result={pair=[{k=a,v=D},{k=b,v=D}]} sources={pair=[{k=cli,v=default},{k=cli,v=default}]} effects=k,k",
+  )
+}
+
+///|
+/// DR-043 zero-progress is checked against the actual structural child head, including the empty seat
+/// path introduced by a default-bearing child.
+test "front_door.parse_definition: repeat with a default-only structural head is ZeroProgress" {
+  let src =
+    #|{"positionals":[{"name":"xs","repeat":{"min":0,"max":2},"or":[
+    #|  {"name":"v","type":"string","default":"D"}]}]}
+  match parse_definition(@json.parse(src)) {
+    Err(Rejected(errors)) => {
+      let mut found = false
+      for error in errors {
+        if error.element == "xs" && error.kind == @abi.ZeroProgress {
+          found = true
+        }
+      }
+      if !found {
+        fail("expected ZeroProgress, got: " + deferrs_str(errors))
+      }
+    }
+    Ok(_) => fail("default-only repeated structural head was accepted")
+    Err(Malformed(message)) =>
+      fail("unexpected malformed definition: " + message)
+  }
+  let progresses =
+    #|{"positionals":[{"name":"xs","repeat":{"min":0,"max":2},"positionals":[
+    #|  {"name":"a","type":"string","default":"A"},
+    #|  {"name":"b","type":"string"}]}]}
+  match parse_definition(@json.parse(progresses)) {
+    Ok(_) => ()
+    Err(_) => fail("a required sibling makes every repeated row progress")
+  }
 }
 
 ///|
@@ -1959,42 +2004,61 @@ test "front_door.output: nameless seq accumulator reports each row element sourc
 }
 
 ///|
-/// 保証 (DESIGN §5.2 / LOWERING §A.3 / DR-015「消費しない literal」): 構造子 (`seq` / `or`) の子に
-/// `value:` / `default:` を書くと、その子は**トークンを照合せず 0 個消費で値を産出する**。
-/// 消費の有無と値の有無は独立した軸であり (DR-041 §3「消費数は Accept の報告値であり value の
-/// 有無から導出しない」)、cli 消費 leaf と消費 0 literal を同じ `seq` に並べられる。
-///
-/// `value:` と `default:` は消費 0 literal の同義な綴りなので、両者で同じ result になることを
-/// 対で固定する。source 面では nameless tuple の各要素が `cli` / `const` に分かれる (DR-122 §3)。
-/// この test は literal の到達可能性と消費数だけを検証するため result 面を比較する。
-test "front_door.output: seq の nameless 子に置いた消費 0 literal が配列要素として並ぶ (DESIGN §5.2 / DR-122 §3)" {
+/// DESIGN §5.2: child `value:` は消費 0 const、child `default:` は通常消費を保つ ladder seat。
+/// 1 token のとき result は同形でも、余剰 token を引き取れるのは default 形だけである。
+test "front_door.output: seq child value const と default ladder は消費位相が異なる (DESIGN §5.2)" {
   let value_form =
     #|{"options":[{"name":"pair","long":true,"seq":[
     #|  {"type":"string"},{"type":"string","value":"fallback"}]}]}
   let default_form =
     #|{"options":[{"name":"pair","long":true,"seq":[
     #|  {"type":"string"},{"type":"string","default":"fallback"}]}]}
-  // cli 消費 leaf 1 個ぶんのトークンしか渡さないのに 2 要素になる = 2 個目が消費 0 である証拠。
   assert_eq(
     wbtest_result_of(value_form, ["--pair", "x"]),
     "{pair=[x,fallback]}",
   )
   assert_eq(
-    wbtest_result_of(default_form, ["--pair", "x"]),
-    "{pair=[x,fallback]}",
+    wbtest_view_of(default_form, ["--pair", "x"]),
+    "result={pair=[x,fallback]} sources={pair=[cli,default]} effects=",
   )
-  // 対偶 (消費 0 意味論の要): literal が 1 トークンでも消費していたら `--pair x y` は
-  // `{pair=[x,y]}` として成立するはず。実際は `y` の行き場が無く**完全経路 0 本**になる。
-  // `value:` / `default:` の両形で見るのは、2 つが同義である (DR-015 決定表「value / default を
-  // 持つ literal は消費 0 が既定」) 以上、消費側でも割れてはいけないため。
-  for src in [value_form, default_form] {
-    match parse_legacy(load_definition(src), ["--pair", "x", "y"]) {
-      @engine.Success(_) =>
-        fail(
-          "消費 0 literal なら余剰トークン `y` を食えないはず",
-        )
-      _ => ()
+  match parse_legacy(load_definition(value_form), ["--pair", "x", "y"]) {
+    @engine.Success(_) =>
+      fail("value const must not consume the trailing token")
+    _ => ()
+  }
+  assert_eq(
+    wbtest_view_of(default_form, ["--pair", "x", "y"]),
+    "result={pair=[x,y]} sources={pair=[cli,cli]} effects=",
+  )
+}
+
+///|
+/// Child defaults use the same typed default pipeline as root cells, including parse failures and
+/// scalar-array shape validation.
+test "front_door.output: structural child defaults preserve type and shape validation" {
+  let invalid_value =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"type":"string"},{"name":"n","type":"int","default":"bad"}]}]}
+  let ast = load_definition(invalid_value)
+  let args = ["--pair", "x"]
+  match resolve_legacy(ast, parse_legacy(ast, args), args) {
+    @engine.Failure(_) => ()
+    _ => fail("an invalid int child default must fail during resolve")
+  }
+  let invalid_shape =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"type":"string"},{"name":"n","type":"int","default":[1,2]}]}]}
+  match parse_definition(@json.parse(invalid_shape)) {
+    Err(Rejected(errors)) => {
+      let mut found = false
+      for error in errors {
+        if error.element == "n" && error.kind == @abi.InvalidRange {
+          found = true
+        }
+      }
+      assert_true(found)
     }
+    _ => fail("an array default on a scalar child must be InvalidRange")
   }
 }
 
@@ -2058,15 +2122,37 @@ test "front_door.output: unique removes the duplicate value and its source toget
 }
 
 ///|
-test "front_door.output: 未選択の or 枝が持つ literal は result にも sources にも現れない (DR-052 §3)" {
+test "front_door.output: 未選択の or 枝が持つ default seat は result にも sources にも現れない (DR-052 §3)" {
   let src =
     #|{"options":[{"name":"mode","long":true,"or":[
     #|  {"name":"fast","type":"string"},
-    #|  {"name":"slow","type":"string","default":"d"}]}]}
+    #|  {"name":"slow","type":"int","default":7}]}]}
   assert_eq(
     wbtest_view_of(src, ["--mode", "x"]),
     "result={mode={fast=x}} sources={mode={fast=cli}} effects=fast",
   )
+  let anonymous =
+    #|{"positionals":[{"or":[
+    #|  {"name":"fast","type":"bool"},
+    #|  {"name":"slow","type":"int","default":7}]}]}
+  assert_eq(
+    wbtest_view_of(anonymous, ["true"]),
+    "result={fast=true} sources={fast=cli} effects=fast",
+  )
+}
+
+///|
+/// Two default-only or branches produce distinct observable seat effects, so DR-038 keeps both complete
+/// paths and reports ambiguity rather than merging their defaults into one result.
+test "front_door.output: default-only or branches remain ambiguous" {
+  let src =
+    #|{"options":[{"name":"mode","long":true,"or":[
+    #|  {"name":"a","type":"int","default":1},
+    #|  {"name":"b","type":"int","default":2}]}]}
+  match parse_legacy(load_definition(src), ["--mode"]) {
+    @engine.Ambiguous(data) => assert_eq(data.interpretations.length(), 2)
+    _ => fail("two default-only branches must remain ambiguous")
+  }
 }
 
 ///|
@@ -2090,14 +2176,14 @@ test "front_door: 構造子の子の未対応キーは malformed_definition の�
       Err(_) => ()
     }
   }
-  // 同義の二重宣言も弾く (どちらが勝つかを decode 層が黙って決めない)。
+  // `value:` と `default:` は別位相なので同居でき、const が常に default を影にする。
   let both =
     #|{"options":[{"name":"pair","long":true,"seq":[
     #|  {"type":"string"},{"type":"string","value":"a","default":"b"}]}]}
-  match parse_definition(@json.parse(both)) {
-    Ok(_) => fail("'value' と 'default' の同居は弾かれるべき")
-    Err(_) => ()
-  }
+  assert_eq(
+    wbtest_view_of(both, ["--pair", "x"]),
+    "result={pair=[x,a]} sources={pair=[cli,const]} effects=",
+  )
 }
 
 ///|

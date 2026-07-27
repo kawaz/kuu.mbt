@@ -259,6 +259,7 @@ fn render_def_kind(k : @abi.DefErrorKind) -> String {
     @abi.ConfigCycle => "config-cycle"
     @abi.InvalidArgument => "invalid-argument"
     @abi.ExportKeyCollision => "export-key-collision"
+    @abi.Unsupported => "unsupported"
   }
 }
 

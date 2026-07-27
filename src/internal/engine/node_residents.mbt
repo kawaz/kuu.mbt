@@ -946,14 +946,12 @@ pub fn failure_mark(name : String) -> Node {
 }
 
 ///|
-/// DESIGN §5.2 / LOWERING §A.3 の「消費しない literal」: `value:` / `default:` を持つ構造子ノードは
-/// トークンを一切照合せず 0 個消費で Accept し、宣言された値を産出する。消費数は Accept の報告値で
-/// あり値の有無から導出しない (DR-041 §3) — 値を持つことと消費することが独立した軸であることを、
-/// 「値を bind するが pos を進めない」この resident が体現する。
+/// DESIGN §5.2 の child `value:`: トークンを照合せず 0 個消費で Accept し、宣言された const を
+/// 産出する。消費数は Accept の報告値であり値の有無から導出しない (DR-041 §3)。child `default:`
+/// はこの resident を使わず、通常の consuming primitive と resolve 相の ladder seat を通る。
 ///
-/// 値源タグは `@abi.Const` (DR-031 の 8 語彙目 — 「const は値セルに最初からいる。default は無い時に
-/// 埋める」。消費 0 literal は値源ラダーの充填ではなく、セル初期化位相の宣言定数。構造子位置では
-/// `value:` / `default:` どちらの綴りも同じ const)。同じ 0 トークン resident でも `effect_mark` /
+/// 値源タグは `@abi.Const` (DR-031 — 「const は値セルに最初からいる。default は無い時に埋める」)。
+/// 同じ 0 トークン resident でも `effect_mark` /
 /// `deprecation_mark` が「cell への操作 / 印」を bind するのに対し、こちらは値そのものを bind する。
 /// `at_pos` は付けない — 値はどのトークンからも読まれていないので、後段の value_filters 違反を
 /// 帰属させる位置が無い (ラダー席の binding と同じ扱い、`@abi.Binding` の `at_pos` doc comment)。

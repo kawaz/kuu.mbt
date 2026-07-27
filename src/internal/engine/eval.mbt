@@ -722,9 +722,8 @@ fn nest_index(label : String, rep : Int, bs : Array[Binding]) -> Array[Binding] 
 }
 
 ///|
-/// Named indexed-array repeat (spec DR-043): consumes reps deterministically (the split is
-/// bounded by the head's Reject / exact mismatch, no downstream backtrack — see node.mbt's
-/// `IndexedRepeat` doc comment for the still-open unbounded-case GAP).
+/// Off-spine fallback for a named indexed-array repeat. The positional spine uses
+/// `indexed_repeat_step` below so stop/more preference sees the full continuation.
 ///
 /// `budget` (issue 2026-07-13-positional-group-trailing-missing-operand) caps reps beyond
 /// `min`: `None` = unbounded greedy-max (consumes as many reps as the head allows, the
@@ -1681,6 +1680,10 @@ fn scope_consume(
           out
         }
       }
+    IndexedRepeat(label, head, min, budget) =>
+      indexed_repeat_step(
+        sc, label, head, min, budget, ctx, pos, pidx, acc, severed, k, 0,
+      )
     BoundedTail(head, budget, is_lazy) =>
       bounded_tail_step(
         sc, head, budget, is_lazy, ctx, pos, pidx, acc, severed, k,
@@ -1753,6 +1756,92 @@ fn scope_consume(
       }
       out
     }
+  }
+}
+
+///|
+/// CPS-aware indexed repeat. Each accepted prefix is tested against the full downstream continuation;
+/// greedy preference selects the longest prefix that reaches a complete path, while `nest_index` keeps
+/// every firing's child seats under an independent runtime row.
+fn indexed_repeat_step(
+  sc : Scope,
+  label : String,
+  head : Node,
+  min : Int,
+  budget : Int?,
+  ctx : Ctx,
+  pos : Int,
+  pidx : Int,
+  acc : Array[Binding],
+  severed : Bool,
+  k : Cont,
+  rep : Int,
+) -> Array[Branch] {
+  let acc2 = if rep == 0 { acc + [array_marker(label)] } else { acc }
+  let stop = if rep >= min {
+    scope_step(sc, ctx, pos, pidx + 1, acc2, severed, k)
+  } else {
+    []
+  }
+  let at_budget = match budget {
+    Some(extra) => rep >= min + extra
+    None => false
+  }
+  let more : Array[Branch] = []
+  let mut preferred_head_found = false
+  if !at_budget {
+    for branch in consume_compound(sc, head, ctx, pos, severed) {
+      if preferred_head_found && !in_complete(ctx) {
+        continue
+      }
+      match branch {
+        Accept(next_pos, bindings) =>
+          if next_pos > pos {
+            let candidate = indexed_repeat_step(
+              sc,
+              label,
+              head,
+              min,
+              budget,
+              ctx,
+              next_pos,
+              pidx,
+              acc2 + nest_index(label, rep, bindings),
+              severed,
+              k,
+              rep + 1,
+            )
+            if !in_complete(ctx) && has_full_k(candidate) {
+              more.clear()
+              for result in candidate {
+                more.push(result)
+              }
+              preferred_head_found = true
+            } else if !preferred_head_found {
+              for result in candidate {
+                more.push(result)
+              }
+            }
+          }
+        Held(error, bindings) =>
+          if rep < min && !preferred_head_found {
+            more.push(Held(error, acc2 + bindings))
+          }
+        Pending(candidates, bindings) =>
+          if !preferred_head_found {
+            more.push(Pending(candidates, acc2 + bindings))
+          }
+      }
+    }
+  }
+  if in_complete(ctx) {
+    cat_branches(stop, more)
+  } else if has_full_k(more) {
+    more
+  } else if has_full_k(stop) {
+    stop
+  } else {
+    cat_branches(stop, more)
   }
 }
 

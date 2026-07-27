@@ -42,25 +42,10 @@ pub(all) struct ElementDef {
   // `dd_marker`/`normalize_dd_name` 参照) — `element_head` が `Exact(e.name)` へ直接 lower し、
   // value_prim/entity 経路を一切通らない (`ensure_entities` が is_dd と同じガードでスキップする)。
   is_exact : Bool
-  // DESIGN §5.2 / LOWERING §A.3「消費しない literal」: `value:` / `default:` を宣言した構造子
-  // (`seq` / `or` の child leaf) であることを示すマーカー。`is_exact` と同じ carrier パターン —
-  // `element_head` が `literal_value(name, default_values[0])` へ直接 lower し、value_prim /
-  // ラダー席のどちらも通らない (`ensure_entity_body` が `is_exact` と同じガードで skip する)。
-  //
-  // 値そのものは `default_values` が運ぶ。構造子位置では `value:` と `default:` が**同義**で、
-  // どちらの綴りも宣言定数 = source タグは `Const` (DR-031 の 8 語彙目、「const は値セルに最初から
-  // いる。default は無い時に埋める」) — 同義である以上、値の運搬先を分ける理由が無い
-  // (`literal_value` resident が bind 時に `Const` を立てる)。
-  //
-  // このマーカーが要るのは「同じ `default:` でも option / positional の root ではラダー席
-  // (source は `Default`)、構造子の中では消費 0 literal (source は `Const`)」という**位置で
-  // 決まる違い**を、lowering が ElementDef 単体から判定できるようにするため — decode 層
-  // (`dec_or_leaf`、構造子 child の唯一の入口) だけが true を立てる。
-  //
-  // root 位置の `value:` は本マーカーではなく `const_values` が運ぶ (下記)。source はどちらも
-  // `Const` で同じだが、child の literal が**消費文法上のノード**である (`element_head` が
-  // `literal_value` へ lower する) のに対し、root の const は消費文法に一切現れずセル初期化位相
-  // にだけ座るため、機構ごと別になる。
+  // DESIGN §5.2「消費しない literal」: structural child の `value:` を示すマーカー。
+  // 値は `const_values` が運び、`element_head` が `literal_value` へ lower する。`default:` はこの
+  // marker を立てず、通常の consuming primitive と `default_values` の ladder seat を使う。
+  // root `value:` は消費文法に現れないため同じ `const_values` でも marker は false のまま。
   is_literal : Bool
   // DR-090 §2: dd installer 所有、is_dd 専用の軸拡張 — None/false なら従来の exact dd (§1「既存
   // dd」列) と完全に同じ。`dd_match` が Some のとき `name` はトリガ綴りに使われない (§2「match が
@@ -169,8 +154,7 @@ pub(all) struct ElementDef {
   // DESIGN §11.4 / DR-031 (CONST-Q1=a): root 位置 (option / positional) の `value:` — 消費 0 literal
   // の**セル初期化位相**版。`default_values` (ラダー 5 段目の席) とは別フィールドで持つ: root では
   // 両者は同義でなく、const は「値セルに最初からいる」初期値、default は「無い時に埋める」充填
-  // という別位相だから (構造子 child 位置の `value:` / `default:` は同じ const 綴りの同義なので
-  // `is_literal` + `default_values` の 1 本で足りる — 位置で意味が割れるのは DR-018 配置原理)。
+  // という別位相だから。この位相分離は structural child でも同じ。
   //
   // root の const は消費文法に一切現れない (`element_head` は見ない — `is_literal` と違う点)。
   // 入口 (long/short/positional 位置) があればその構造はそのまま残り、const は入口が発火しな

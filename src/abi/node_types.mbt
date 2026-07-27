@@ -21,6 +21,8 @@ pub(all) enum DefErrorKind {
   // cells can co-expose at runtime (DR-120 §6), so `or` branches / `exclusive_group` siblings /
   // mutually exclusive command subtrees are all caught.
   ExportKeyCollision
+  // The definition is legal in the specification, but this implementation cannot lower it yet.
+  Unsupported
 } derive(Eq, Debug)
 
 ///|

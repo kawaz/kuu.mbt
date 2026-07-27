@@ -1829,18 +1829,10 @@ test "DR-066 §4: a @abi.Pending-starvation missing_operand Error inside a neste
 }
 
 ///|
-/// KNOWN GAP (issue 2026-07-08 greedy-once-and-idxrepeat-premises §2, kawaz 裁定待ち):
-/// `idx_repeat_eval`'s greedy-max is deterministic with NO downstream backtrack (see its doc
-/// comment) — unlike the normal Ref-repeat path, which `ref_choice` backs off one rep at a time on
-/// downstream failure (fixture repeat-parse/backtrack.json fixes this for the common case). A
-/// permissive head (bare `string resident`, matches any token) followed by a mandatory positional starves
-/// that positional: greedy-max consumes ALL 3 tokens into the repeat, leaving nothing for `tail`,
-/// and there is no backtrack to try `g=[a,b], tail=c` instead. This test PINS the current (gap)
-/// behavior so a future backtrack fix flips it to @engine.Success and this assertion catches the flip —
-/// do NOT "fix" this test to make it pass differently without updating the issue. installer.mbt's
-/// Group lowering comment documents the "bounded-head" workaround (give the head an explicit
-/// leading trigger) until this is resolved one way or the other.
-test "KNOWN GAP: @engine.IndexedRepeat greedy-max has no downstream backtrack for a following mandatory positional" {
+/// IndexedRepeat uses the same CPS stop/more decision as other repeats: greedy takes the longest prefix
+/// whose full downstream continuation succeeds, then backs off when a following mandatory positional
+/// would otherwise be starved.
+test "@engine.IndexedRepeat greedy-max backtracks for a following mandatory positional" {
   let root : @engine.Scope = {
     greedy: [],
     positional: [
@@ -1856,27 +1848,18 @@ test "KNOWN GAP: @engine.IndexedRepeat greedy-max has no downstream backtrack fo
     defs=Map([]),
   )
   match o {
-    @engine.Failure(fd) => {
-      let mut tail_missing = false
-      for e in fd.errors {
-        if e.element == "tail" && e.reason == "missing_operand" {
-          tail_missing = true
-        }
-      }
-      assert_true(tail_missing)
+    @engine.Success(bindings) => {
+      assert_eq(@engine.element_value(bindings, [], "tail"), Some("c"))
+      assert_eq(bindings.length(), 4)
     }
-    _ =>
-      fail(
-        "gap behavior changed: expected @engine.Failure (tail starved, no backtrack) — if this now succeeds, the backtrack gap is fixed; update this test and the issue accordingly",
-      )
+    _ => fail("IndexedRepeat must leave the final token for tail")
   }
 }
 
 ///|
 /// 保証 (issue 2026-07-13-positional-group-trailing-missing-operand): `budget=Some(0)` (a bounded
-/// `repeat:{min:1,max:1}` spec lowers to this, installer.mbt's Group case) does NOT hit the
-/// KNOWN GAP above — it never over-consumes in the first place, so no backtrack is needed to
-/// correct it. Same shape as the KNOWN GAP test (permissive head `@builtins.string_arg("x")` immediately
+/// `repeat:{min:1,max:1}` spec lowers to this, installer.mbt's Group case) never over-consumes,
+/// so the backtrack path is not needed. Same shape as the unbounded test (permissive head `@builtins.string_arg("x")` immediately
 /// followed by a mandatory `tail`) but with the budget field set and an args sized to exactly
 /// `min + tail's own 1 token = 2`: exactly 1 rep is taken (not greedy-max over everything), so
 /// `tail` gets the 2nd token instead of starving — mirrors the fixture's `["a","b"]` shape

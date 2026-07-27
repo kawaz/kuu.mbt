@@ -654,15 +654,10 @@ pub fn element_head(e : ElementDef) -> Node {
   if e.is_exact {
     return Exact(e.name)
   }
-  // DESIGN §5.2 / LOWERING §A.3: `value:` / `default:` を持つ構造子は消費 0 の literal
-  // (`ElementDef.is_literal`)。`is_exact` と対の位置に置く — どちらも「値プリミティブでない
-  // 構造子リーフ」で、exact が「照合するが値を持たない」、literal が「値を持つが照合しない」と
-  // 消費と値の 2 軸で対称をなす (DR-041 §3「消費数は Accept の報告値であり value の有無から
-  // 導出しない」がその直交性そのもの)。宣言値を欠く literal は decode が作らない
-  // (`dec_or_leaf` が `value:` / `default:` の存在を見て初めて立てる) が、型の上では
-  // `default_values` が空でありうるので、その場合は通常の値プリミティブに落ちる。
+  // DESIGN §5.2: child `value:` is a zero-token const. `default:` does not set this marker and
+  // therefore remains an ordinary consuming primitive whose empty seat is handled by child_head.
   if e.is_literal {
-    match e.default_values {
+    match e.const_values {
       Some(vs) if vs.length() > 0 => return literal_value(e.name, vs[0])
       _ => ()
     }
@@ -732,7 +727,7 @@ fn ref_row_head(name : String, head : Node) -> Node {
 /// 「1 個は単体と等価」) で素のノード。
 pub fn or_branch_node(br : OrBranch) -> Node {
   if br.items.length() == 1 {
-    element_head(br.items[0])
+    child_head(br.items[0])
   } else {
     seq_body_node(br.items)
   }
@@ -774,14 +769,14 @@ fn seq_row_is_kv(items : Array[ElementDef]) -> Bool {
 fn seq_child_nodes(items : Array[ElementDef], nodes : Array[Node]) -> Unit {
   if seq_row_is_kv(items) {
     for item in items {
-      nodes.push(element_head(item))
+      nodes.push(child_head(item))
     }
     return
   }
   nodes.push(Bind("[]", Bool(false)))
   let mut index = 0
   for item in items {
-    nodes.push(Scoped("#" + index.to_string(), element_head(item)))
+    nodes.push(Scoped("#" + index.to_string(), child_head(item)))
     index = index + 1
   }
 }
@@ -847,7 +842,7 @@ fn seq_eq_value_node(
     let node = if index == eq_index {
       first_node
     } else {
-      element_head(items[index])
+      child_head(items[index])
     }
     nodes.push(if is_kv { node } else { Scoped("#" + index.to_string(), node) })
     index = index + 1
@@ -873,6 +868,39 @@ fn elem_repeat(e : ElementDef) -> RepeatSpec? {
 /// `Opt(X)` = `Or([X, Seq([])])`。空 Seq が 0 トークン一致。
 fn opt_node(x : Node) -> Node {
   Or([x, Seq([])])
+}
+
+///|
+/// A structural or/seq child with a declared default remains a normal consuming primitive, but its
+/// seat may participate in a complete path without consuming a token (DESIGN §5.2 / DR-088).
+fn child_default_seat_key(e : ElementDef) -> String {
+  let mut defaults = ""
+  match e.default_values {
+    Some(values) =>
+      for value in values {
+        let rendered = value_str(value)
+        defaults = defaults + rendered.length().to_string() + ":" + rendered
+      }
+    None => ()
+  }
+  "#seat:" +
+  e.name +
+  ":" +
+  e.ty.name() +
+  ":" +
+  e.ty.encode().stringify() +
+  ":" +
+  defaults
+}
+
+///|
+fn child_head(e : ElementDef) -> Node {
+  let head = element_head(e)
+  if !e.is_literal && e.default_values is Some(_) {
+    Or([head, Bind(child_default_seat_key(e), String(e.name))])
+  } else {
+    head
+  }
 }
 
 ///|
@@ -1018,31 +1046,15 @@ fn lower_positional(
         }
         Group(items) => {
           // MDR-004 §3 "Group + repeat": IndexedRepeat(label=name, head=Seq(inner cells), min,
-          // budget) に lower。budget (issue
-          // 2026-07-13-positional-group-trailing-missing-operand) = `max - min` (bounded の
-          // とき) / `None` (max:null の UNBOUNDED、または repeat 属性自体が無い場合 —
-          // どちらも従来どおり greedy-max-forever)。以前は `elem_repeat(e).max` を丸ごと無視
-          // しており、`repeat:{min:1,max:1}` のような bounded named-group でも常に unbounded
-          // として評価されてトークンを over-consume していた (`fixtures/repeat-parse/group-
-          // trailing-positional.json` が pin する — group の直後に別 positional が続く形だけ
-          // で顕在化する)。
-          //
-          // bounded-head 前提 (issue 2026-07-08 greedy-once-and-idxrepeat-premises §2, kawaz 裁定
-          // 待ち — installer 規約としての明文化を選択、eval 側への backtrack 追加は見送り): `idx_repeat_eval`
-          // (eval.mbt) は宣言上 deterministic な greedy-max で、下流失敗時の後退 (regex backtracking,
-          // DR-043 の通常 repeat が `ref_choice` で持つ機構) を持たない。head が permissive (bare string
-          // primitive 等、無制限にどんなトークンでも消費できる) だと、budget が None (UNBOUNDED) の
-          // ときは後続の必須 positional のぶんまで greedy-max に食われて starve しうる (backtrack が
-          // 無いので回復しない) — 通常 repeat の backtrack.json fixture が固定する「縮小再分割」の
-          // 保証は IndexedRepeat には及ばない。budget が Some (bounded) のときは over-consume 自体が
-          // 起きないためこの GAP を踏まない。UNBOUNDED のまま末尾に必須 positional を続ける設計を
-          // 書く際は head の先頭に明示的な trigger (Exact 等) を持たせること。
+          // budget) に lower。budget は bounded repeat の `max - min`、None は unbounded。
+          // evaluator は通常 repeat と同じ CPS stop/more 選好で、完全な downstream path に届く最長の
+          // row prefix を選ぶ。各 row は `#index` scope で独立する。
           let head = if items.length() == 1 {
-            element_head(items[0])
+            child_head(items[0])
           } else {
             let nodes : Array[Node] = []
             for it in items {
-              nodes.push(element_head(it))
+              nodes.push(child_head(it))
             }
             Seq(nodes)
           }
@@ -1268,9 +1280,22 @@ fn ensure_entity_body(
       }
       for br in branches {
         for it in br.items {
-          ensure_entity_body(
-            build, it, has_cf, extensions, declaring_path, false,
-          )
+          match it.default_values {
+            Some(_) if !it.is_literal => {
+              let seat_key = child_default_seat_key(it)
+              ensure_entity(
+                build,
+                { ..it, name: seat_key },
+                false,
+                extensions,
+                [seat_key],
+              )
+            }
+            _ =>
+              ensure_entity_body(
+                build, it, has_cf, extensions, declaring_path, false,
+              )
+          }
         }
       }
     }
@@ -1284,9 +1309,18 @@ fn ensure_entity_body(
         declaring_path
       }
       for it in items {
-        ensure_entity_body(
-          build, it, has_cf, extensions, item_path, positional_group_scope,
-        )
+        match it.default_values {
+          Some(_) if !it.is_literal => {
+            let seat_key = child_default_seat_key(it)
+            ensure_entity(build, { ..it, name: seat_key }, false, extensions, [
+              seat_key,
+            ])
+          }
+          _ =>
+            ensure_entity_body(
+              build, it, has_cf, extensions, item_path, positional_group_scope,
+            )
+        }
       }
     }
     // Enum (issue values-decode-support): a single named cell like Cell (the enum's exact-value
@@ -3392,12 +3426,14 @@ fn head_progresses(
       }
       alts.length() > 0
     }
-    Seq(items) =>
-      if items.length() >= 1 {
-        head_progresses(items[0], registry, visiting)
-      } else {
-        false
+    Seq(items) => {
+      for item in items {
+        if head_progresses(item, registry, visiting) {
+          return true
+        }
       }
+      false
+    }
     Many(_) | Scoped(_, _) | ScopeNode(_) => true
     GreedyRepeat(inner) => head_progresses(inner, registry, visiting)
   }
@@ -3463,6 +3499,33 @@ fn head_node_cycles(node : Node, registry : Map[String, Node]) -> Bool {
 }
 
 ///|
+/// The actual one-occurrence head used by positional structural lowering, without outer result scopes.
+/// Zero-progress analysis must inspect this shape rather than the wrapper ElementDef's placeholder head.
+fn positional_structural_head(e : ElementDef) -> Node {
+  match e.body {
+    Or(branches) => {
+      let nodes : Array[Node] = []
+      for branch in branches {
+        nodes.push(or_branch_node(branch))
+      }
+      Or(nodes)
+    }
+    Group(items) =>
+      if items.length() == 1 {
+        child_head(items[0])
+      } else {
+        let nodes : Array[Node] = []
+        for item in items {
+          nodes.push(child_head(item))
+        }
+        Seq(nodes)
+      }
+    Cell => element_head(e)
+    Enum(values) => enum_value_node(e.name, e.ty, values)
+  }
+}
+
+///|
 /// zero-progress guard (DR-043 / DR-054): repeat head は >= 1 消費が必要。全件収集 — ただし ref
 /// cycle による 非 progress は circular ref (collect_circular_ref) 側で報告するので、ここでは除外する
 /// (kind を distinct に保つ)。
@@ -3474,7 +3537,7 @@ fn collect_zero_progress(
   for e in def.positionals {
     match elem_repeat(e) {
       Some(_) => {
-        let head = element_head(e)
+        let head = positional_structural_head(e)
         if !head_progresses(head, registry, []) &&
           !head_node_cycles(head, registry) {
           out.push(
@@ -3568,7 +3631,7 @@ fn check_elem_absent_ref(
 /// representable by the bare-cell link route. A `ref` produces template leaf bindings under the
 /// reference-side scope, while structural Or/Group bodies can produce multiple child bindings;
 /// blindly rewriting only the wrapper name would silently return the reference-side result as CLI.
-/// Remove this InvalidRange gate when link routing can (a) strip a single ref leaf's wrapper scope
+/// Remove this Unsupported gate when link routing can (a) strip a single ref leaf's wrapper scope
 /// and (b) carry a composite value without collapsing its child effects. Fixed-path `.field/[idx]`
 /// routing is tracked separately and is not implemented here.
 fn collect_unsupported_link_shape(
@@ -3586,7 +3649,7 @@ fn collect_unsupported_link_shape(
         out.push(
           def_err(
             element.name,
-            InvalidRange,
+            Unsupported,
             "link with ref/or/seq is not supported by this implementation",
             "use a direct cell entry for link until structured link routing is implemented",
           ),
@@ -3697,7 +3760,7 @@ fn collect_unsupported_option_ref_repeat(
             out.push(
               def_err(
                 e.name,
-                InvalidRange,
+                Unsupported,
                 "option repeat min \{spec.min} > 1 is not supported for a `ref` element (GreedyRepeat wires a single spine slot only)",
                 "use repeat: {\"min\": 0} or {\"min\": 1} on this option, or move the mandatory reps to a positional",
               ),
@@ -3960,6 +4023,19 @@ fn collect_scalar_array_default(
           }
         None => ()
       }
+    }
+    match e.body {
+      Or(branches) =>
+        for branch in branches {
+          for item in branch.items {
+            check(item)
+          }
+        }
+      Group(items) =>
+        for item in items {
+          check(item)
+        }
+      Cell | Enum(_) => ()
     }
   }
 
