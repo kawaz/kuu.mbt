@@ -420,6 +420,7 @@ pub(all) enum Node {
   Exact(String)
   RequiredArgument(String)
   Bind(String, @abi.Value)
+  ChildDefault(Node, String, String)
   Or(Array[Node])
   Seq(Array[Node])
   Many(Node, Bool)

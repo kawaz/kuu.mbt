@@ -2033,6 +2033,49 @@ test "front_door.output: seq child value const と default ladder は消費位�
 }
 
 ///|
+/// 複数の child default seat は完全経路集合の事後比較ではなく、背骨順に消費か fallback かを確定する。
+test "front_door.output: child default の先食いは背骨順に逐次確定する" {
+  // 先の seat a は x を消費して downstream 完全経路へ届くため cli で確定する。次の seat b は
+  // y を消費すると必須 tail を飢えさせるため空席へ fallback し、tail が y を消費する。
+  let sequential =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"name":"a","type":"string","default":"A"},
+    #|  {"name":"b","type":"string","default":"B"}]}],
+    #|"positionals":[{"name":"tail","type":"string"}]}
+  assert_eq(
+    wbtest_view_of(sequential, ["--pair", "x", "y"]),
+    "result={pair={a=x,b=B},tail=y} sources={pair={a=cli,b=default},tail=cli} effects=a,tail",
+  )
+}
+
+///|
+/// 型がトークンを認識した後の値不正は Held Error のまま残り、default fallback を生成しない。
+test "front_door.parse: child default の消費 Held は fallback で握り潰さない" {
+  // int seat が number として認識した非整数 2.5 は Held Error であり、n=0 の空席枝を立てて
+  // 2.5 を rest へ送る Reject/fallback 経路には読み替えない。
+  let src =
+    #|{"options":[{"name":"pair","long":true,"seq":[
+    #|  {"name":"k","type":"string"},
+    #|  {"name":"n","type":"int","default":0}]}],
+    #|"positionals":[{"name":"rest","type":"string","repeat":{"min":0}}]}
+  let ast = load_definition(src)
+  match parse_legacy(ast, ["--pair", "x", "2.5"]) {
+    @engine.Failure(failure) => {
+      let mut found = false
+      for error in failure.errors {
+        if error.element == "n" &&
+          error.args_pos == 2 &&
+          error.reason == "not_an_integer" {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    _ => fail("a held int error must not fall back to the child default seat")
+  }
+}
+
+///|
 /// Child defaults use the same typed default pipeline as root cells, including parse failures and
 /// scalar-array shape validation.
 test "front_door.output: structural child defaults preserve type and shape validation" {

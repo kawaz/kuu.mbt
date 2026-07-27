@@ -90,7 +90,7 @@ test "kv resident keeps the contains-equals gate" {
 ///|
 fn test_node_consumes_zero_tokens(node : Node) -> Bool {
   match node {
-    Bind(_, _) => true
+    Bind(_, _) | ChildDefault(_, _, _) => true
     Ext(extension) => extension.consumes_zero_tokens()
     _ => false
   }

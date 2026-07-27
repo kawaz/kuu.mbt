@@ -185,6 +185,10 @@ pub(all) enum Node {
   /// 0-token binder: bind name=value. Used to set a flag after its Exact trigger fired.
   /// This is the SET degenerate form of an effect (DR-045 §1).
   Bind(String, Value)
+  /// A structural child with a default ladder seat. `head` remains a normal consuming reading;
+  /// `seat_key`/`element_name` identify the zero-token fallback marker. Unlike a plain Or, evaluation
+  /// chooses consume-or-fallback sequentially against the full downstream continuation.
+  ChildDefault(Node, String, String)
   /// choice — every alternative's readings become branches (DR-037 / DR-041 §3).
   Or(Array[Node])
   /// ordered consumption; bindings accumulate across the sequence.
@@ -288,6 +292,8 @@ pub impl Eq for Node with fn equal(self, other) {
     (Exact(a), Exact(b)) => a == b
     (RequiredArgument(a), RequiredArgument(b)) => a == b
     (Bind(an, av), Bind(bn, bv)) => an == bn && av == bv
+    (ChildDefault(ah, ak, an), ChildDefault(bh, bk, bn)) =>
+      ah == bh && ak == bk && an == bn
     (Or(a), Or(b)) => a == b
     (Seq(a), Seq(b)) => a == b
     (Many(an, al), Many(bn, bl)) => an == bn && al == bl
@@ -322,6 +328,12 @@ pub impl Debug for Node with fn to_repr(self) {
       @debug.Repr::ctor("Bind", [
         (None, Debug::to_repr(a)),
         (None, Debug::to_repr(b)),
+      ])
+    ChildDefault(a, b, c) =>
+      @debug.Repr::ctor("ChildDefault", [
+        (None, Debug::to_repr(a)),
+        (None, Debug::to_repr(b)),
+        (None, Debug::to_repr(c)),
       ])
     Or(a) => @debug.Repr::ctor("Or", [(None, Debug::to_repr(a))])
     Seq(a) => @debug.Repr::ctor("Seq", [(None, Debug::to_repr(a))])

@@ -65,6 +65,14 @@ fn Ctx::extension_context(self : Ctx) -> @extension.Ctx {
 type InternalResume = (Ctx, Int, Array[Binding]) -> Array[Branch]
 
 ///|
+type InternalHeldResume = (Ctx, ParseError, Array[Binding]) -> Array[Branch]
+
+///|
+type InternalPendingResume = (Ctx, Array[Candidate], Array[Binding]) -> Array[
+  Branch,
+]
+
+///|
 /// parse counts complete paths (DR-038); complete collects expectations
 /// (DR-060). The walk is ONE implementation — mode switches the
 /// collection-policy points below (MDR-002 §2.4):
@@ -425,6 +433,13 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       }
     RequiredArgument(name) => req_arg_eval(name, ctx, pos, [])
     Bind(name, v) => [Accept(pos, [Binding::new(name, v, Cli)])]
+    // Direct probes have no downstream continuation, so expose both local readings. Real parse
+    // selection runs through `eval_with_downstream` or `scope_consume` below.
+    ChildDefault(head, seat_key, element_name) => {
+      let out = eval(head, ctx, pos)
+      out.push(Accept(pos, [Binding::new(seat_key, String(element_name), Cli)]))
+      out
+    }
     Or(alts) => {
       let out : Array[Branch] = []
       for a in alts {
@@ -592,6 +607,233 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
       // plainly (loses 先食い, acceptable off-spine — see node.mbt's doc comment).
       eval(tail, ctx, pos)
   }
+}
+
+///|
+/// A type-space miss behaves like Reject for a child default seat: another consumer may own the
+/// token. Errors after the type has recognized the token (for example `not_an_integer`) stay Held.
+fn child_default_holds_error(error : ParseError) -> Bool {
+  error.reason != "missing_operand" &&
+  error.reason != "not_a_number" &&
+  error.reason != "not_a_bool" &&
+  error.reason != "not_a_kv_pair"
+}
+
+///|
+/// Evaluate the structural wrappers that may contain `ChildDefault` while threading the real
+/// downstream continuation. Ordinary leaves retain `eval` semantics; only the default-seat choice
+/// needs to inspect whether its consuming reading reaches a complete path.
+fn eval_with_downstream(
+  node : Node,
+  ctx : Ctx,
+  pos : Int,
+  on_accept : InternalResume,
+  on_held : InternalHeldResume,
+  on_pending : InternalPendingResume,
+  consume_scope? : Scope? = None,
+  severed? : Bool = false,
+) -> Array[Branch] {
+  match node {
+    ChildDefault(head, seat_key, element_name) => {
+      let direct_held : Array[(ParseError, Array[Binding])] = []
+      let consuming = eval_with_downstream(
+        head,
+        ctx,
+        pos,
+        on_accept,
+        (_ctx, error, bindings) => {
+          if child_default_holds_error(error) {
+            direct_held.push((error, bindings))
+          }
+          []
+        },
+        (_ctx, _candidates, _bindings) => [],
+        consume_scope~,
+        severed~,
+      )
+      if direct_held.length() > 0 {
+        let out : Array[Branch] = []
+        for item in direct_held {
+          for branch in on_held(ctx, item.0, item.1) {
+            out.push(branch)
+          }
+        }
+        out
+      } else if has_full_k(consuming) {
+        consuming
+      } else {
+        on_accept(ctx, pos, [Binding::new(seat_key, String(element_name), Cli)])
+      }
+    }
+    Seq(items) =>
+      eval_seq_with_downstream(
+        items,
+        0,
+        ctx,
+        pos,
+        [],
+        on_accept,
+        on_held,
+        on_pending,
+        consume_scope,
+        severed,
+      )
+    Or(alternatives) => {
+      let out : Array[Branch] = []
+      for alternative in alternatives {
+        for
+          branch in eval_with_downstream(
+            alternative,
+            ctx,
+            pos,
+            on_accept,
+            on_held,
+            on_pending,
+            consume_scope~,
+            severed~,
+          ) {
+          out.push(branch)
+        }
+      }
+      out
+    }
+    Scoped(label, body) =>
+      eval_with_downstream(
+        body,
+        ctx,
+        pos,
+        (ctx2, next_pos, bindings) => {
+          on_accept(ctx2, next_pos, nest(label, bindings))
+        },
+        (ctx2, error, bindings) => {
+          on_held(
+            ctx2,
+            { ..error, path: nest_path(label, error.path) },
+            bindings,
+          )
+        },
+        (ctx2, candidates, bindings) => {
+          on_pending(ctx2, nest_cands(label, candidates), bindings)
+        },
+        consume_scope~,
+        severed~,
+      )
+    LinkTarget(from, target, levels, extension, inner) =>
+      eval_with_downstream(
+        inner,
+        ctx,
+        pos,
+        (ctx2, next_pos, bindings) => {
+          on_accept(
+            ctx2,
+            next_pos,
+            bindings_through_link(bindings, from, target, levels),
+          )
+        },
+        (ctx2, error, bindings) => {
+          on_held(
+            ctx2,
+            error,
+            bindings_through_link(bindings, from, target, levels),
+          )
+        },
+        (ctx2, candidates, bindings) => {
+          on_pending(
+            ctx2,
+            decorate_link_candidates(candidates, from, extension),
+            bindings_through_link(bindings, from, target, levels),
+          )
+        },
+        consume_scope~,
+        severed~,
+      )
+    Rooted(inner, depth) =>
+      eval_with_downstream(
+        inner,
+        ctx,
+        pos,
+        (ctx2, next_pos, bindings) => {
+          let marked : Array[Binding] = []
+          for binding in bindings {
+            marked.push({
+              ..binding,
+              levels_to_declaring_scope: binding.levels_to_declaring_scope +
+              depth,
+            })
+          }
+          on_accept(ctx2, next_pos, marked)
+        },
+        on_held,
+        (ctx2, candidates, bindings) => {
+          let marked : Array[Candidate] = []
+          for candidate in candidates {
+            marked.push({ ..candidate, levels_to_declaring_scope: depth })
+          }
+          on_pending(ctx2, marked, bindings)
+        },
+        consume_scope~,
+        severed~,
+      )
+    other => {
+      let out : Array[Branch] = []
+      let branches = match consume_scope {
+        Some(scope) => consume_compound(scope, other, ctx, pos, severed)
+        None => eval(other, ctx, pos)
+      }
+      for branch in branches {
+        let resumed = match branch {
+          Accept(next_pos, bindings) => on_accept(ctx, next_pos, bindings)
+          Held(error, bindings) => on_held(ctx, error, bindings)
+          Pending(candidates, bindings) => on_pending(ctx, candidates, bindings)
+        }
+        for result in resumed {
+          out.push(result)
+        }
+      }
+      out
+    }
+  }
+}
+
+///|
+fn eval_seq_with_downstream(
+  items : Array[Node],
+  index : Int,
+  ctx : Ctx,
+  pos : Int,
+  acc : Array[Binding],
+  on_accept : InternalResume,
+  on_held : InternalHeldResume,
+  on_pending : InternalPendingResume,
+  consume_scope : Scope?,
+  severed : Bool,
+) -> Array[Branch] {
+  if index >= items.length() {
+    return on_accept(ctx, pos, acc)
+  }
+  eval_with_downstream(
+    items[index],
+    ctx,
+    pos,
+    (ctx2, next_pos, bindings) => {
+      eval_seq_with_downstream(
+        items,
+        index + 1,
+        ctx2,
+        next_pos,
+        acc + bindings,
+        on_accept,
+        on_held,
+        on_pending,
+        consume_scope,
+        severed,
+      )
+    },
+    (ctx2, error, bindings) => on_held(ctx2, error, acc + bindings),
+    (ctx2, candidates, bindings) => on_pending(ctx2, candidates, acc + bindings),
+    consume_scope~,
+    severed~,
+  )
 }
 
 ///|
@@ -1455,20 +1697,37 @@ fn step_greedy(
             prefix, tail, sc, ctx, pos, pidx, acc, severed, k, out,
           )
         None =>
-          for b in eval(g, ctx, pos) {
-            match b {
-              Accept(p2, bs) =>
-                if p2 > pos {
-                  for r in scope_step(sc, ctx, p2, pidx, acc + bs, severed, k) {
-                    out.push(r)
-                  }
+          for
+            branch in eval_with_downstream(
+              g,
+              ctx,
+              pos,
+              (ctx2, next_pos, bindings) => {
+                if next_pos > pos {
+                  scope_step(
+                    sc,
+                    ctx2,
+                    next_pos,
+                    pidx,
+                    acc + bindings,
+                    severed,
+                    k,
+                  )
+                } else {
+                  []
                 }
-              // acc must be carried on Held so an earlier failure resident (fired_action
-              // material, eval_seq comment DR-048/DR-053 §4) survives to parse().
-              Held(pe, bs) => out.push(Held(pe, acc + bs))
-              Pending(cs, bs) =>
-                out.push(Pending(fixup_boundary_cands(g, sc, cs), acc + bs))
-            }
+              },
+              (_ctx, error, bindings) => [Held(error, acc + bindings)],
+              (_ctx, candidates, bindings) => {
+                [
+                  Pending(
+                    fixup_boundary_cands(g, sc, candidates),
+                    acc + bindings,
+                  ),
+                ]
+              },
+            ) {
+            out.push(branch)
           }
       }
   }
@@ -1568,6 +1827,51 @@ fn scope_consume(
   k : Cont,
 ) -> Array[Branch] {
   match item {
+    ChildDefault(head, seat_key, element_name) => {
+      let direct_held : Array[(ParseError, Array[Binding])] = []
+      let consuming : Array[Branch] = []
+      for branch in consume_compound(sc, head, ctx, pos, severed) {
+        match branch {
+          Accept(next_pos, bindings) =>
+            for
+              result in scope_step(
+                sc,
+                ctx,
+                next_pos,
+                pidx + 1,
+                acc + bindings,
+                severed,
+                k,
+              ) {
+              consuming.push(result)
+            }
+          Held(error, bindings) =>
+            if child_default_holds_error(error) {
+              direct_held.push((error, bindings))
+            }
+          Pending(_, _) => ()
+        }
+      }
+      if direct_held.length() > 0 {
+        let held : Array[Branch] = []
+        for item in direct_held {
+          held.push(Held(item.0, acc + item.1))
+        }
+        held
+      } else if has_full_k(consuming) {
+        consuming
+      } else {
+        scope_step(
+          sc,
+          ctx,
+          pos,
+          pidx + 1,
+          acc + [Binding::new(seat_key, String(element_name), Cli)],
+          severed,
+          k,
+        )
+      }
+    }
     Ext(extension) =>
       if extension.consumes_zero_tokens() ||
         pos >= ctx.toks.length() ||
@@ -1789,35 +2093,43 @@ fn indexed_repeat_step(
   }
   let more : Array[Branch] = []
   if !at_budget {
-    for branch in consume_compound(sc, head, ctx, pos, severed) {
-      match branch {
-        Accept(next_pos, bindings) =>
+    for
+      branch in eval_with_downstream(
+        head,
+        ctx,
+        pos,
+        (ctx2, next_pos, bindings) => {
           if next_pos > pos {
-            for
-              result in indexed_repeat_step(
-                sc,
-                label,
-                head,
-                min,
-                budget,
-                ctx,
-                next_pos,
-                pidx,
-                acc2 + nest_index(label, rep, bindings),
-                severed,
-                k,
-                rep + 1,
-              ) {
-              more.push(result)
-            }
+            indexed_repeat_step(
+              sc,
+              label,
+              head,
+              min,
+              budget,
+              ctx2,
+              next_pos,
+              pidx,
+              acc2 + nest_index(label, rep, bindings),
+              severed,
+              k,
+              rep + 1,
+            )
+          } else {
+            []
           }
-        Held(error, bindings) =>
+        },
+        (_ctx, error, bindings) => {
           if rep < min {
-            more.push(Held(error, acc2 + bindings))
+            [Held(error, acc2 + bindings)]
+          } else {
+            []
           }
-        Pending(candidates, bindings) =>
-          more.push(Pending(candidates, acc2 + bindings))
-      }
+        },
+        (_ctx, candidates, bindings) => [Pending(candidates, acc2 + bindings)],
+        consume_scope=Some(sc),
+        severed~,
+      ) {
+      more.push(branch)
     }
   }
   if in_complete(ctx) {
@@ -2093,6 +2405,25 @@ fn consume_compound(
         None => []
       }
     Bind(name, v) => [Accept(pos, [Binding::new(name, v, Cli)])]
+    ChildDefault(head, seat_key, element_name) => {
+      let consuming = consume_compound(sc, head, ctx, pos, severed)
+      let mut held = false
+      for branch in consuming {
+        match branch {
+          Held(error, _) => if child_default_holds_error(error) { held = true }
+          _ => ()
+        }
+      }
+      if held {
+        consuming
+      } else {
+        let out = consuming
+        out.push(
+          Accept(pos, [Binding::new(seat_key, String(element_name), Cli)]),
+        )
+        out
+      }
+    }
     _ => eval(node, ctx, pos)
   }
 }
@@ -2847,75 +3178,6 @@ fn collect_pos_scopes(
 // ── top level (spec DR-038 path counting) ────────────────────────────────────
 
 ///|
-fn is_child_default_seat(binding : Binding) -> Bool {
-  let prefix = "#seat:"
-  binding.key.length() >= prefix.length() &&
-  binding.key[0:prefix.length()].to_owned() == prefix
-}
-
-///|
-/// DR-041 §4 / DR-097 applied to one child seat: if another complete path consumes a token into the
-/// same runtime seat, the default-empty path was never generated. This is a path-generation guard,
-/// not a priority between surviving complete paths.
-fn child_default_path_preempted(
-  candidate : Array[Binding],
-  complete_paths : Array[Array[Binding]],
-) -> Bool {
-  for marker in candidate {
-    if !is_child_default_seat(marker) {
-      continue
-    }
-    let target = match marker.value {
-      String(name) => name
-      _ => ""
-    }
-    for other in complete_paths {
-      if other == candidate {
-        continue
-      }
-      let mut consuming_pos : Int? = None
-      for binding in other {
-        if binding.key == target &&
-          binding.source == Cli &&
-          scope_path_eq(binding.scope, marker.scope) {
-          consuming_pos = binding.at_pos
-        }
-      }
-      match consuming_pos {
-        Some(pos) => {
-          let mut other_loses_earlier = false
-          for other_marker in other {
-            if !is_child_default_seat(other_marker) {
-              continue
-            }
-            let other_target = match other_marker.value {
-              String(name) => name
-              _ => ""
-            }
-            for binding in candidate {
-              if binding.key == other_target &&
-                binding.source == Cli &&
-                scope_path_eq(binding.scope, other_marker.scope) {
-                match binding.at_pos {
-                  Some(candidate_pos) if candidate_pos < pos =>
-                    other_loses_earlier = true
-                  _ => ()
-                }
-              }
-            }
-          }
-          if !other_loses_earlier {
-            return true
-          }
-        }
-        None => ()
-      }
-    }
-  }
-  false
-}
-
-///|
 /// Parse `toks` against `root`, counting DISTINCT complete paths.
 ///
 /// Path identity is the observable effect sequence on entities (spec DR-038),
@@ -3054,13 +3316,6 @@ pub fn parse_tree(
       }
     }
   }
-  let preferred_full : Array[Array[Binding]] = []
-  for candidate in full {
-    if !child_default_path_preempted(candidate, full) {
-      preferred_full.push(candidate)
-    }
-  }
-  let full = preferred_full
   // Residual-token synthesis for NON-scope roots (a ScopeNode root surfaces
   // residual tokens as KTop Helds already): a partial Accept (p < length)
   // on a 0-complete-path parse is a residual failure in its own right, and

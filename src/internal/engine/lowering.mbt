@@ -897,7 +897,7 @@ fn child_default_seat_key(e : ElementDef) -> String {
 fn child_head(e : ElementDef) -> Node {
   let head = element_head(e)
   if !e.is_literal && e.default_values is Some(_) {
-    Or([head, Bind(child_default_seat_key(e), String(e.name))])
+    ChildDefault(head, child_default_seat_key(e), e.name)
   } else {
     head
   }
@@ -3401,7 +3401,7 @@ fn head_progresses(
     BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
     LinkTarget(_, _, _, _, inner) => head_progresses(inner, registry, visiting)
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
-    Bind(_, _) => false // 0-token
+    Bind(_, _) | ChildDefault(_, _, _) => false // a child-default fallback may consume 0 tokens
     Ref(r) => {
       for v in visiting {
         if v == r {
