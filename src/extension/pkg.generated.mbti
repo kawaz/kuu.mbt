@@ -115,7 +115,7 @@ pub fn regex_match_filter() -> FilterDescriptor
 
 pub fn round_mode_of(String) -> @abi.RoundMode?
 
-pub fn sep_binds(String, String, String?, &TypeExt, Array[@abi.FnInvocation], Int, Bool, Registry) -> Result[Array[@abi.Binding], @abi.ParseError]
+pub fn sep_binds(String, String, String?, &TypeExt, Array[@abi.FnInvocation], Int, Bool, Registry) -> Result[Array[@abi.Binding], ReadingFail]
 
 pub fn short_combine(String, Array[ShortEntry], combine? : Bool) -> &MatcherExt
 
@@ -126,6 +126,8 @@ pub fn string_type() -> &TypeExt
 pub fn trim_filter() -> FilterDescriptor
 
 pub fn tty_type(String?, cygwin? : Bool) -> &TypeExt
+
+pub fn type_parse_branch(String, Int, @abi.TypeParseFail, Array[@abi.Binding]) -> @abi.Branch
 
 pub fn type_parse_error(String, Int, @abi.TypeParseFail) -> @abi.ParseError
 
@@ -282,6 +284,7 @@ pub(all) enum FnOutput {
 } derive(Eq, @debug.Debug)
 
 pub(all) struct FnReason {
+  disposition : @abi.TypeParseDisposition
   reason : String
   message : String
 } derive(Eq, @debug.Debug)
@@ -297,6 +300,12 @@ pub(all) enum PieceMark {
   Remove(String)
   Splice
 } derive(Eq, @debug.Debug)
+
+pub struct ReadingFail {
+  disposition : @abi.TypeParseDisposition
+  error : @abi.ParseError
+}
+pub fn ReadingFail::branch(Self, Array[@abi.Binding]) -> @abi.Branch
 
 pub struct Registry {
   // private fields

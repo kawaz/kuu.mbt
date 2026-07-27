@@ -445,7 +445,7 @@ test "DR-043 sequential repeats: xs ys over a b c d e — greedy xs takes the lo
 ///|
 test "REVIEW-C1 fired_action survives a failing value slot in the same greedy entry" {
   // A failure-action entry that ALSO takes a value: @engine.Seq([--help, failure resident,
-  // number resident]). When the value fails to parse, the failure resident marker bound
+  // int resident]). When a recognized fractional value is invalid, the failure resident marker bound
   // earlier in the SAME @engine.Seq must still reach parse() on the @abi.Held's partial
   // state — fired_action and the held error coexist (spec DR-048/DR-053 §4).
   // The slice dropped the @engine.Seq-internal acc on @abi.Held, losing the action.
@@ -454,7 +454,7 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
       @engine.Seq([
         @engine.Exact("--help"),
         @builtins.failure_mark("help"),
-        @builtins.number_arg("n", filters=[]),
+        @builtins.int_arg("n", round=@abi.Error, filters=[]),
       ]),
     ],
     positional: [],
@@ -463,7 +463,7 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
   }
   let o = @engine.parse_tree(
     @engine.ScopeNode(root),
-    ["--help", "abc"],
+    ["--help", "1.5"],
     defs=Map([]),
   )
   match o {
@@ -471,7 +471,7 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
       assert_eq(fd.fired_action, Some("help"))
       let mut saw_parse_err = false
       for e in fd.errors {
-        if e.element == "n" && e.reason == "not_a_number" {
+        if e.element == "n" && e.reason == "not_an_integer" {
           saw_parse_err = true
         }
       }
@@ -517,15 +517,18 @@ test "REVIEW-C3 head_name knows filtered number resident: optional extra rep at 
 
 ///|
 test "REVIEW-C4 non-scope root: residual of a partial @abi.Accept surfaces even when another branch held an error" {
-  // @engine.Or branch 1 accepts "a" leaving "xyz" residual (partial @abi.Accept);
-  // branch 2 helds a not_a_number on "xyz". 0 complete paths -> failure.
+  // @engine.Or branch 1 accepts "a" leaving "1.5" residual (partial @abi.Accept);
+  // branch 2 holds a recognized-invalid not_an_integer on "1.5". 0 complete paths -> failure.
   // Both failure reasons must be retained (DR-053 §2 全保持): gating the
   // residual synthesis on "errors empty" would mask the partial reading.
   let root = @engine.Node::Or([
     @engine.Exact("a"),
-    @engine.Seq([@engine.Exact("a"), @builtins.number_arg("n", filters=[])]),
+    @engine.Seq([
+      @engine.Exact("a"),
+      @builtins.int_arg("n", round=@abi.Error, filters=[]),
+    ]),
   ])
-  let o = @engine.parse_tree(root, ["a", "xyz"], defs=Map([]))
+  let o = @engine.parse_tree(root, ["a", "1.5"], defs=Map([]))
   match o {
     @engine.Failure(fd) => {
       let mut saw_residual = false
@@ -534,7 +537,7 @@ test "REVIEW-C4 non-scope root: residual of a partial @abi.Accept surfaces even 
         if e.reason == "unexpected_token" && e.args_pos == 1 {
           saw_residual = true
         }
-        if e.reason == "not_a_number" {
+        if e.reason == "not_an_integer" {
           saw_parse = true
         }
       }
@@ -593,10 +596,10 @@ test "REGRESSION dd sever transparent to positional inline @engine.ScopeNode chi
 ///|
 test "REGRESSION step_greedy @abi.Held carries acc so failure resident survives to DeepestOnly fired_action" {
   // deep-review "step_greedy acc": two greedy entries — a failure resident help
-  // action, and a numeric option. Under faildef=DeepestOnly the ONLY
+  // action, and an int option. Under faildef=DeepestOnly the ONLY
   // candidate path for fired_action collection is the deepest one:
-  // consume --help (bind help + failure resident) → consume --num → @builtins.number_arg("xyz", filters=[])
-  // parse fail @ args_pos 2. Without acc on the @abi.Held branch, the failure resident
+  // consume --help (bind help + failure resident) → consume --num → int resident recognizes 1.5
+  // as an invalid integer @ args_pos 2. Without acc on the @abi.Held branch, the failure resident
   // binding accumulated before the @abi.Held is dropped and fired_action
   // becomes None. With it, fired_action = Some("help").
   let root : @engine.Scope = {
@@ -608,7 +611,7 @@ test "REGRESSION step_greedy @abi.Held carries acc so failure resident survives 
       ]),
       @engine.Seq([
         @engine.Exact("--num"),
-        @builtins.number_arg("n", filters=[]),
+        @builtins.int_arg("n", round=@abi.Error, filters=[]),
       ]),
     ],
     positional: [],
@@ -617,7 +620,7 @@ test "REGRESSION step_greedy @abi.Held carries acc so failure resident survives 
   }
   let o = @engine.parse_tree(
     @engine.ScopeNode(root),
-    ["--help", "--num", "xyz"],
+    ["--help", "--num", "1.5"],
     defs=Map([]),
     faildef=DeepestOnly,
   )
@@ -1354,32 +1357,16 @@ test "DR-074 §1: float resident accepts inf (ci, signed), number resident rejec
       _ => fail("expected @engine.Success for --t \{tok}")
     }
   }
-  // number rejects inf (type-dependent accept-域 boundary, DR-074 §1) — the SAME lexeme fails here.
+  // number の値空間外である inf は ValueSpaceMiss として静かに Reject される。
   match
     @engine.parse_tree(@engine.ScopeNode(root), ["--n", "inf"], defs=Map([])) {
-    @engine.Failure(fd) => {
-      let mut n_not_a_number = false
-      for e in fd.errors {
-        if e.element == "n" && e.reason == "not_a_number" {
-          n_not_a_number = true
-        }
-      }
-      assert_true(n_not_a_number)
-    }
+    @engine.Failure(fd) => assert_eq(fd.errors.length(), 0)
     _ => fail("expected @engine.Failure for --n inf")
   }
-  // nan is Error for BOTH types (§1: no lexeme, no opt-in) — float does not treat nan as an inf variant.
+  // nan も両型の値空間外であり、float の inf 語彙には含まれない。
   match
     @engine.parse_tree(@engine.ScopeNode(root), ["--t", "nan"], defs=Map([])) {
-    @engine.Failure(fd) => {
-      let mut t_not_a_number = false
-      for e in fd.errors {
-        if e.element == "t" && e.reason == "not_a_number" {
-          t_not_a_number = true
-        }
-      }
-      assert_true(t_not_a_number)
-    }
+    @engine.Failure(fd) => assert_eq(fd.errors.length(), 0)
     _ => fail("expected @engine.Failure for --t nan")
   }
 }
@@ -1598,36 +1585,36 @@ test "REGRESSION scope_consume_rep @engine.Many(compound ref-template head) resp
 test "DR-066 §4: a root-level held Error carries path: []" {
   let root : @engine.Scope = {
     greedy: [],
-    positional: [@builtins.number_arg("n", filters=[])],
+    positional: [@builtins.int_arg("n", round=@abi.Error, filters=[])],
     entities: [],
     constraints: [],
   }
-  let o = @engine.parse_tree(@engine.ScopeNode(root), ["abc"], defs=Map([]))
+  let o = @engine.parse_tree(@engine.ScopeNode(root), ["1.5"], defs=Map([]))
   match o {
     @engine.Failure(fd) => {
       let mut found = false
       for e in fd.errors {
-        if e.element == "n" && e.reason == "not_a_number" {
+        if e.element == "n" && e.reason == "not_an_integer" {
           found = true
           assert_eq(e.path, [])
         }
       }
       assert_true(found)
     }
-    _ => fail("expected @engine.Failure (\"abc\" is not a number)")
+    _ => fail("expected @engine.Failure (\"1.5\" is not an integer)")
   }
 }
 
 ///|
 /// A held Error one @engine.CommandSatisfied deep carries `path: [<command name>]` (DR-066 §4
 /// snoc form: `path` = ancestors, `element` = self). The error fires INSIDE
-/// the child scope (a bare `number resident` parse failure straight from `eval`,
+/// the child scope (a bare int resident recognized-invalid failure straight from `eval`,
 /// `path: []` at construction) and crosses exactly one command boundary on
 /// its way out through `step_greedy`'s @engine.CommandSatisfied arm.
 test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
   let child : @engine.Scope = {
     greedy: [],
-    positional: [@builtins.number_arg("n", filters=[])],
+    positional: [@builtins.int_arg("n", round=@abi.Error, filters=[])],
     entities: [],
     constraints: [],
   }
@@ -1639,21 +1626,21 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
   }
   let o = @engine.parse_tree(
     @engine.ScopeNode(root),
-    ["sub", "abc"],
+    ["sub", "1.5"],
     defs=Map([]),
   )
   match o {
     @engine.Failure(fd) => {
       let mut found = false
       for e in fd.errors {
-        if e.element == "n" && e.reason == "not_a_number" {
+        if e.element == "n" && e.reason == "not_an_integer" {
           found = true
           assert_eq(e.path, ["sub"])
         }
       }
       assert_true(found)
     }
-    _ => fail("expected @engine.Failure (\"abc\" is not a number)")
+    _ => fail("expected @engine.Failure (\"1.5\" is not an integer)")
   }
 }
 
@@ -1666,7 +1653,7 @@ test "DR-066 §4: a held Error one command deep carries path: [\"sub\"]" {
 test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (root-first)" {
   let grandchild : @engine.Scope = {
     greedy: [],
-    positional: [@builtins.number_arg("n", filters=[])],
+    positional: [@builtins.int_arg("n", round=@abi.Error, filters=[])],
     entities: [],
     constraints: [],
   }
@@ -1684,21 +1671,21 @@ test "DR-066 §4: a held Error two commands deep carries path: [\"a\", \"b\"] (r
   }
   let o = @engine.parse_tree(
     @engine.ScopeNode(root),
-    ["a", "b", "abc"],
+    ["a", "b", "1.5"],
     defs=Map([]),
   )
   match o {
     @engine.Failure(fd) => {
       let mut found = false
       for e in fd.errors {
-        if e.element == "n" && e.reason == "not_a_number" {
+        if e.element == "n" && e.reason == "not_an_integer" {
           found = true
           assert_eq(e.path, ["a", "b"])
         }
       }
       assert_true(found)
     }
-    _ => fail("expected @engine.Failure (\"abc\" is not a number)")
+    _ => fail("expected @engine.Failure (\"1.5\" is not an integer)")
   }
 }
 
@@ -2117,11 +2104,9 @@ test "DR-091 §2: kv resident accepts a piece containing '=' (whole token become
 
 ///|
 /// Guarantees (DR-091 §2 "`=` を含まない piece は... reject"): a `kv resident` piece with NO `=` is a
-/// @abi.Held `kind: parse` Error (`reason: "not_a_kv_pair"`) — the same family as any
-/// other value primitive's type-parse failure, NOT a silent Reject and NOT a `@abi.Filter` reject.
-/// This is the structural precondition `resolve.mbt`'s `split_first_eq` relies on: every piece
-/// that ever becomes a @abi.Binding is guaranteed splittable.
-test "DR-091 §2: kv resident rejects a piece with no '=' as a @abi.Held kind:parse Error (対極 of the accept case above)" {
+/// DR-037 ValueSpaceMiss and silently leaves the reading set. No binding reaches resolve, so
+/// `split_first_eq` only sees pieces that contain `=`.
+test "DR-091 §2: kv resident silently Rejects a piece with no '='" {
   let root : @engine.Scope = {
     greedy: [],
     positional: [@builtins.kv_arg("kv", [])],
@@ -2134,16 +2119,107 @@ test "DR-091 §2: kv resident rejects a piece with no '=' as a @abi.Held kind:pa
     defs=Map([]),
   )
   match o {
-    @engine.Failure(fd) => {
-      let mut found = false
-      for e in fd.errors {
-        if e.element == "kv" && e.reason == "not_a_kv_pair" {
-          found = true
-          assert_eq(render_kind(e.kind), "parse")
+    @engine.Failure(fd) =>
+      for error in fd.errors {
+        assert_false(error.reason == "not_a_kv_pair")
+      }
+    other => fail("expected @engine.Failure, got " + render_outcome(other))
+  }
+}
+
+///|
+/// A piece-filter rejection is a DR-037 Reject: a child default seat falls back and leaves the token
+/// for the next positional consumer instead of treating the open filter reason as a Held allowlist.
+test "child default: piece filter Reject falls back without reason-string classification" {
+  let registry = @extension.Registry::new()
+  assert_true(registry.register_filter(@extension.non_empty_filter()))
+  let root : @engine.Scope = {
+    greedy: [],
+    positional: [
+      @engine.ChildDefault(
+        @builtins.string_arg("v", [{ name: "non_empty", args: [] }]),
+        "#seat:v",
+        "v",
+      ),
+      @builtins.string_arg("rest", []),
+    ],
+    entities: [],
+    constraints: [],
+  }
+  match
+    @engine.parse_tree(
+      @engine.ScopeNode(root),
+      [""],
+      defs=Map([]),
+      extensions=registry,
+    ) {
+    @engine.Success(bindings) => {
+      let mut fallback = false
+      let mut rest = false
+      let mut consumed_by_v = false
+      for binding in bindings {
+        if binding.key == "#seat:v" {
+          fallback = true
+        } else if binding.key == "rest" && binding.value == @abi.String("") {
+          rest = true
+        } else if binding.key == "v" {
+          consumed_by_v = true
         }
       }
-      assert_true(found)
+      assert_true(fallback)
+      assert_true(rest)
+      assert_false(consumed_by_v)
     }
-    other => fail("expected @engine.Failure, got " + render_outcome(other))
+    other => fail("filter Reject must fall back, got " + render_outcome(other))
+  }
+}
+
+///|
+/// A filter that recognizes the value and rejects its range is a DR-037 Error. The child default
+/// seat must retain the Held diagnostic instead of reassigning the token to the next positional.
+test "child default: recognized-invalid filter suppresses fallback" {
+  let registry = @extension.Registry::new()
+  assert_true(
+    registry.register_filter(
+      @extension.filter_descriptor(
+        "recognized_invalid",
+        @extension.Validate,
+        ["custom_invalid"],
+        fn(_, _) {
+          Err({
+            disposition: @abi.RecognizedButInvalid,
+            reason: "custom_invalid",
+            message: "the custom filter recognized an invalid value",
+          })
+        },
+      ),
+    ),
+  )
+  let root : @engine.Scope = {
+    greedy: [],
+    positional: [
+      @engine.ChildDefault(
+        @builtins.string_arg("v", [{ name: "recognized_invalid", args: [] }]),
+        "#seat:v",
+        "v",
+      ),
+      @builtins.string_arg("rest", []),
+    ],
+    entities: [],
+    constraints: [],
+  }
+  match
+    @engine.parse_tree(
+      @engine.ScopeNode(root),
+      ["11"],
+      defs=Map([]),
+      extensions=registry,
+    ) {
+    @engine.Failure(failure) => {
+      assert_eq(failure.errors.length(), 1)
+      assert_eq(failure.errors[0].element, "v")
+      assert_eq(failure.errors[0].reason, "custom_invalid")
+    }
+    other => fail("filter Error must stay Held, got " + render_outcome(other))
   }
 }

@@ -54,6 +54,8 @@ pub fn continue_matcher(
         for branch in next(ctx, next_position, accumulated + bindings) {
           output.push(branch)
         }
+      Rejected(error, bindings) =>
+        output.push(Rejected(error, accumulated + bindings))
       Held(error, bindings) => output.push(Held(error, accumulated + bindings))
       Pending(candidates, bindings) =>
         output.push(Pending(candidates, accumulated + bindings))

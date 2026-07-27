@@ -104,6 +104,7 @@ pub using @extension {
   parse_error_not_a_number,
   parse_error_not_a_bool,
   parse_error_not_a_kv_pair,
+  type_parse_branch,
   configured_short_type,
   classify_merge_piece,
   fn_ctx_filter,

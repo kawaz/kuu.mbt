@@ -222,13 +222,15 @@ DR-060 は complete と parse の分離を「正しい形」として追認し�
 
 ## 実装で確定した細部 (初期実装 + 設計レビューの反映)
 
-§1.5 の受け入れ条件と §2.6 の fixture 化はいずれも `src/core/eval_wbtest.mbt` で実証済み (phase16 相当 / 先食い穴 / DR-043 逐次 2 repeat / REVIEW-H1)。実装が本文のスケッチへ加えた確定事項:
+§1.5 の受け入れ条件と §2.6 の fixture 化は `src/internal/engine/eval_wbtest.mbt` で実証する (phase16 相当 / 先食い / DR-043 逐次 repeat / scope・repeat 内 ChildDefault)。実装が本文のスケッチへ加える確定事項:
 
-### CPS の射程: スパイン + 継続フレーム化した選好判断点
+### CPS の射程: スパイン + downstream-aware structural walk
 
-継続 `k` が通るのは **scope walk (scope_step / scope_consume) と、そこから構造的にディスパッチされる子スコープ入口** (CmdSat greedy = `KNest`、positional の ScopeNode = `KResumeScope`、**scope 形 head を持つ repeat = `KRefChoice` / `KTailChoice`**)。最後の 1 つは設計レビューの指摘 (repeat head が ScopeNode の場合、素の `eval` = `KDone` 経由では head 内部の repeat が外側の残余消費を見られず破れ 1 が 1 段深い所で再発する) を実機で fail 再現して塞いだもの。
+通常の scope walk は defunctionalized `Cont` を通し、CmdSat greedy = `KNest`、positional ScopeNode = `KResumeScope`、scope 形 repeat head = `KRefChoice` / `KTailChoice` として継続形を `Eq` / `Debug` 可能なデータに保つ。
 
-**残る制限**: `Or` / `Seq` / `Rooted` の内部など、plain `eval` 経由でしか到達できない位置に埋め込まれた ScopeNode は `KDone` (scope 端で無条件 Accept) で評価され、その内部の取り分選好は局所化される。この経路に repeat を埋め込む lowering を installer が生成しないこと (repeat はスパイン形 = positional の `Ref`/`BoundedTail`/`ScopeNode` に正規化して埋める) を installer 移植時の規約とする。
+`ChildDefault` の消費/fallback 判断は `eval_with_downstream` の 1 箇所で行う。`Seq` / `Or` / `Ref` / `Scoped` / `LinkTarget` / `Rooted` に加え、`ScopeNode` / `Many` / `IndexedRepeat` / `BoundedTail` も downstream-aware companion walk を通る。child scope の内側にある repeat も、外側 scope の残余・親 continuation・最終全消費までを含む経路に対して stop/more と ChildDefault を判断する。companion scope は dd の sever 状態を scope 終端まで運び、通常 scope へ戻る境界では `sever_cont` と同じ raw continuation を再開する。
+
+plain `eval` の `KDone` は probe / off-spine direct evaluation の終端としてのみ使う。完全経路を参照して選好する構造は `eval_with_downstream` から plain `eval` へ退化させない。
 
 ### KTop = 「完全解決経路」の単一定義点 (residual + 制約)
 
@@ -238,9 +240,9 @@ DR-060 は complete と parse の分離を「正しい形」として追認し�
 - **制限**: repeat 透過スコープの制約は全 rep マージ後の最終状態で評価 (per-rep 述語は spec 未規定)。IdxRepeat の "#k" 付き path は対象外
 - 異なる argv_pos の unexpected_token が複数 errors に乗りうる (DR-053 §2 全保持)。conformance fixture が「1 個の合成エラー」前提なら実食時に突き合わせ
 
-### 先食いはトリガ一致意味論 (greedy_engages)
+### 先食いは読み自身の成立で判定する (greedy_engages)
 
-DR-041 §4「素通しはトリガ不一致 (読みゼロ) の時のみ」に合わせ、greedy_reads は entry の消費完走でなく**構造的トリガ一致** (Exact/CmdSat/DdSat の綴り、matcher は run_matcher 非空) で判定する。トリガが一致した token は「ここで読まれる」— 値不正・値飢餓・子スコープ不成立はその entry の Held/Pending が結末になり、positional への silent raw 落ちは起きない (§2.6 の Pending 形と合わせて Held 形も封鎖)。トリガレスな縮退形 (裸の値プリミティブ greedy) は消費ベース fallback で過剰 suppress を避ける。
+DR-097 に従い、greedy_reads は entry の下流完走ではなく**読み自身の成立**を判定する。値スロットを持たない Exact/CmdSat/DdSat は構造的トリガ一致で成立する。値スロットを持つ entry は shallow probe を使い、進む Accept と、既存 token を認識した Held を viable とする。ValueSpaceMiss の Rejected と入力枯渇位置の Held は読みゼロであり、positional raw 消費を抑制しない。Pending は complete mode の候補担体としてのみ viable とする。制約違反や後続要素の不足はこの判定へ逆流せず、生成された各枝の完全経路判定が扱う。
 
 ### errors は DR-066 の reason を全構築サイトで emit
 

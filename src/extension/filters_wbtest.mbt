@@ -112,7 +112,10 @@ test "filter_non_empty rejects only the empty string" {
       chain(["non_empty"]),
       @abi.String(""),
     ) {
-    Err({ reason, message: _ }) => assert_eq(reason, "empty_value")
+    Err({ disposition, reason, message: _ }) => {
+      assert_eq(disposition, @abi.ValueSpaceMiss)
+      assert_eq(reason, "empty_value")
+    }
     Ok(_) => fail("expected Err (empty string)")
   }
 }
@@ -146,7 +149,10 @@ test "filter_in_range accepts a closed interval [min, max]" {
       chain(["in_range:1:10"]),
       @abi.Number(11.0),
     ) {
-    Err({ reason, message: _ }) => assert_eq(reason, "too_large")
+    Err({ disposition, reason, message: _ }) => {
+      assert_eq(disposition, @abi.RecognizedButInvalid)
+      assert_eq(reason, "too_large")
+    }
     Ok(_) => fail("expected Err (over the upper bound)")
   }
   match
@@ -155,7 +161,10 @@ test "filter_in_range accepts a closed interval [min, max]" {
       chain(["in_range:1:10"]),
       @abi.Number(0.0),
     ) {
-    Err({ reason, message: _ }) => assert_eq(reason, "too_small")
+    Err({ disposition, reason, message: _ }) => {
+      assert_eq(disposition, @abi.RecognizedButInvalid)
+      assert_eq(reason, "too_small")
+    }
     Ok(_) => fail("expected Err (under the lower bound)")
   }
 }
@@ -185,7 +194,10 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
       chain(["regex_match:abc"]),
       @abi.String("xyz"),
     ) {
-    Err({ reason, message: _ }) => assert_eq(reason, "pattern_no_match")
+    Err({ disposition, reason, message: _ }) => {
+      assert_eq(disposition, @abi.ValueSpaceMiss)
+      assert_eq(reason, "pattern_no_match")
+    }
     Ok(_) => fail("expected Err (no 'abc' substring)")
   }
   // (c) 部分一致と全体一致の区別: unanchored pattern は末尾ゴミがあっても通る (DR-085 §1 "filter
@@ -207,7 +219,10 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
       chain(["regex_match:^abc$"]),
       @abi.String("abcXYZ"),
     ) {
-    Err({ reason, message: _ }) => assert_eq(reason, "pattern_no_match")
+    Err({ disposition, reason, message: _ }) => {
+      assert_eq(disposition, @abi.ValueSpaceMiss)
+      assert_eq(reason, "pattern_no_match")
+    }
     Ok(_) => fail("expected Err (full-anchor pattern rejects trailing garbage)")
   }
   match
@@ -237,7 +252,10 @@ test "filter_regex_match: match / reject / partial-vs-full-anchor / metachar esc
       chain(["regex_match:^a\\.c$"]),
       @abi.String("abc"),
     ) {
-    Err({ reason, message: _ }) => assert_eq(reason, "pattern_no_match")
+    Err({ disposition, reason, message: _ }) => {
+      assert_eq(disposition, @abi.ValueSpaceMiss)
+      assert_eq(reason, "pattern_no_match")
+    }
     Ok(_) =>
       fail("expected Err (escaped '\\.' is a literal dot, does not match 'b')")
   }
@@ -266,7 +284,7 @@ test "filter_regex_match: malformed pattern, arg count, non-string input all Err
       chain(["regex_match:(unclosed"]),
       @abi.String("x"),
     ) {
-    Err({ reason, message: msg }) => {
+    Err({ reason, message: msg, .. }) => {
       assert_eq(reason, "filter_rejected")
       assert_true(msg.contains("compile"))
     }
@@ -278,7 +296,7 @@ test "filter_regex_match: malformed pattern, arg count, non-string input all Err
       chain(["regex_match"]),
       @abi.String("x"),
     ) {
-    Err({ reason, message: _ }) => assert_eq(reason, "filter_rejected")
+    Err({ reason, message: _, .. }) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (regex_match requires exactly 1 arg)")
   }
   match
@@ -287,7 +305,7 @@ test "filter_regex_match: malformed pattern, arg count, non-string input all Err
       chain(["regex_match:x"]),
       @abi.Number(1.0),
     ) {
-    Err({ reason, message: _ }) => assert_eq(reason, "filter_rejected")
+    Err({ reason, message: _, .. }) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (regex_match requires a string value)")
   }
 }
@@ -311,7 +329,7 @@ test "filter_increment adds 1 to a number, rejects args and non-numbers" {
       chain(["increment:5"]),
       @abi.Number(4.0),
     ) {
-    Err({ reason, message: _ }) => assert_eq(reason, "filter_rejected")
+    Err({ reason, message: _, .. }) => assert_eq(reason, "filter_rejected")
     Ok(_) => fail("expected Err (increment takes no args)")
   }
 }
@@ -390,7 +408,7 @@ test "reasons emitted for declared failure modes are a subset of the descriptor'
       chain(["non_empty"]),
       @abi.String(""),
     ) {
-    Err({ reason, message: _ }) => assert_declared("non_empty", reason)
+    Err({ reason, message: _, .. }) => assert_declared("non_empty", reason)
     Ok(_) => fail("expected Err")
   }
   // in_range: too_small
@@ -400,7 +418,7 @@ test "reasons emitted for declared failure modes are a subset of the descriptor'
       chain(["in_range:1:10"]),
       @abi.Number(0.0),
     ) {
-    Err({ reason, message: _ }) => assert_declared("in_range", reason)
+    Err({ reason, message: _, .. }) => assert_declared("in_range", reason)
     Ok(_) => fail("expected Err")
   }
   // in_range: too_large
@@ -410,7 +428,7 @@ test "reasons emitted for declared failure modes are a subset of the descriptor'
       chain(["in_range:1:10"]),
       @abi.Number(11.0),
     ) {
-    Err({ reason, message: _ }) => assert_declared("in_range", reason)
+    Err({ reason, message: _, .. }) => assert_declared("in_range", reason)
     Ok(_) => fail("expected Err")
   }
   // regex_match: pattern_no_match
@@ -420,7 +438,7 @@ test "reasons emitted for declared failure modes are a subset of the descriptor'
       chain(["regex_match:abc"]),
       @abi.String("xyz"),
     ) {
-    Err({ reason, message: _ }) => assert_declared("regex_match", reason)
+    Err({ reason, message: _, .. }) => assert_declared("regex_match", reason)
     Ok(_) => fail("expected Err")
   }
 }

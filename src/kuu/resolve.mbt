@@ -2413,7 +2413,7 @@ fn env_value(
   let s = match
     @extension.apply_piece_filters(extensions.extensions(), piece_filters, s) {
     Ok(v) => v
-    Err({ reason, message: msg }) =>
+    Err({ reason, message: msg, .. }) =>
       return Err(filter_err(element, at_pos, reason, msg, epath))
   }
   match ty.parse_token(s) {
@@ -2529,7 +2529,7 @@ fn apply_entity_filters(
           e.value_filters,
           b.value,
         ) {
-        Err({ reason, message: msg }) => {
+        Err({ reason, message: msg, .. }) => {
           // value_filters(each、段5、DR-009): CONFORMANCE §3's piece-attribution rule — a reject here
           // is attributed to the SPECIFIC args token the rejected piece came from (`b.at_pos`,
           // issue 2026-07-09-accum-entity-filters-wiring), not the ladder's own `at_pos` (which
@@ -2550,7 +2550,7 @@ fn apply_entity_filters(
                 e.final_filters,
                 b2.value,
               ) {
-              Err({ reason, message: msg }) =>
+              Err({ reason, message: msg, .. }) =>
                 return Err(filter_err(e.name, at_pos, reason, msg, epath))
               Ok(v2) => out.push({ ..b2, value: v2 })
             }
@@ -2586,7 +2586,7 @@ fn apply_entity_filters(
         vals,
       ) {
       Ok(_) => ()
-      Err({ reason, message: msg }) =>
+      Err({ reason, message: msg, .. }) =>
         return Err(filter_err(e.name, at_pos, reason, msg, epath))
     }
   }
@@ -2758,7 +2758,7 @@ fn resolve_entity_raw(
           }
           let observes = match descriptor.concrete_observes(invocation) {
             Ok(observes) => observes
-            Err({ reason, message }) =>
+            Err({ reason, message, .. }) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
           }
           let ctx = @extension.FnCtx::for_effect(
@@ -2768,7 +2768,7 @@ fn resolve_entity_raw(
             observes~,
           )
           match descriptor.invoke(invocation.to_call(), ctx) {
-            Err({ reason, message }) =>
+            Err({ reason, message, .. }) =>
               return Err(ladder_err(e.name, at_pos, reason, message, epath))
             Ok(@extension.FnOutput::Value(value)) => {
               current = Some({ ..b, op: @abi.Set, value })
@@ -3314,7 +3314,7 @@ fn resolve_default_fn(
     Some(invocation) =>
       match descriptor.concrete_observes(invocation) {
         Ok(observes) => observes
-        Err({ reason, message }) =>
+        Err({ reason, message, .. }) =>
           return Err(ladder_err(entity.name, at_pos, reason, message, epath))
       }
     None => []
@@ -3333,8 +3333,8 @@ fn resolve_default_fn(
     },
   )
   match descriptor.invoke(fn_call, ctx) {
-    Err({ reason: "absent-source", message: _ }) => Ok([])
-    Err({ reason, message }) =>
+    Err({ reason: "absent-source", message: _, .. }) => Ok([])
+    Err({ reason, message, .. }) =>
       Err(ladder_err(entity.name, at_pos, reason, message, epath))
     Ok(@extension.FnOutput::Sentinel(_)) =>
       Err(

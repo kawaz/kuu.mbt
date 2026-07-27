@@ -402,7 +402,7 @@ fn run_eq_split(
                 dm,
               ),
             ]
-          Err(pe) => [@abi.Held(pe, [])]
+          Err(failure) => [failure.branch([])]
         }
       }
       // DR-034/DR-062 piece_filters: run BEFORE the kind-specific parse, same timing eval.mbt's
@@ -411,9 +411,17 @@ fn run_eq_split(
       let filtered = match
         apply_piece_filters(ctx.extensions(), e.piece_filters, valstr) {
         Ok(s) => s
-        Err({ reason, message: msg }) =>
+        Err(failure) =>
           return [
-            @abi.Held(@abi.ParseError::filter(e.name, pos, reason, msg), []),
+            ReadingFail::{
+              disposition: failure.disposition,
+              error: @abi.ParseError::filter(
+                e.name,
+                pos,
+                failure.reason,
+                failure.message,
+              ),
+            }.branch([]),
           ]
       }
       match e.kind.parse_token(filtered) {
@@ -430,7 +438,7 @@ fn run_eq_split(
               dm,
             ),
           ]
-        Err(fail) => return [@abi.Held(type_parse_error(e.name, pos, fail), [])]
+        Err(fail) => return [type_parse_branch(e.name, pos, fail, [])]
       }
     }
   }
@@ -501,7 +509,7 @@ fn short_val(
   e : ShortEntry,
   s : String,
   pos : Int,
-) -> Result[Array[@abi.Binding], @abi.ParseError] {
+) -> Result[Array[@abi.Binding], ReadingFail] {
   // codex Medium 追従 (issue merge-no-separator-marker-gap): `run_eq_split` と同じ gate 拡張
   // (`separator is Some(_) || e.merge`) — `-f-a` (in-cluster attach) / `-f -a` (space-form) いずれ
   // も merge 宣言なら separator 未宣言でも `sep_binds` 経由でマーカー認識させる。
@@ -536,8 +544,16 @@ fn short_val(
     let filtered = match
       apply_piece_filters(ctx.extensions(), e.piece_filters, s) {
       Ok(v) => v
-      Err({ reason, message: msg }) =>
-        return Err(@abi.ParseError::filter(e.name, pos, reason, msg))
+      Err(failure) =>
+        return Err({
+          disposition: failure.disposition,
+          error: @abi.ParseError::filter(
+            e.name,
+            pos,
+            failure.reason,
+            failure.message,
+          ),
+        })
     }
     match e.kind.parse_token(filtered) {
       Ok(value) =>
@@ -549,7 +565,11 @@ fn short_val(
             [@abi.Binding::new(e.name, value, @abi.Cli, at_pos=Some(pos))],
           ),
         )
-      Err(fail) => Err(type_parse_error(e.name, pos, fail))
+      Err(fail) =>
+        Err({
+          disposition: fail.disposition,
+          error: type_parse_error(e.name, pos, fail),
+        })
     }
   }
 }
@@ -665,7 +685,7 @@ fn walk_short(
                   ) {
                   out.push(r)
                 }
-              Err(pe) =>
+              Err(failure) =>
                 // A mid-token split's failure (piece_filters reject OR type-parse failure) is a
                 // silent non-reading (its remainder would need OTHER defined chars to progress,
                 // DR-041 §3); only the FULL-TAIL attach — the「値 char が残余全体を値として取る」
@@ -674,7 +694,7 @@ fn walk_short(
                 // piece-filters/reject.json が輪郭を固定する。string_type() が構造的に型 parse エラーを
                 // 起こさない (short_val の doc comment) ので、kind によるガードは不要。
                 if j == body.length() {
-                  out.push(@abi.Held(pe, acc))
+                  out.push(failure.branch(acc))
                 }
             }
           }
@@ -693,7 +713,7 @@ fn walk_short(
           ctx.token_at(pos + 1) is Some(next_token) {
           match short_val(ctx, e, next_token, pos + 1) {
             Ok(bs) => out.push(@abi.Accept(pos + 2, acc + (bs + dm)))
-            Err(pe) => out.push(@abi.Held(pe, []))
+            Err(failure) => out.push(failure.branch([]))
           }
         } else if e.short_attached_value != @abi.Require &&
           vstart == body.length() &&

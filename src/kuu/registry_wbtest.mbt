@@ -94,8 +94,15 @@ impl @extension.TypeExt for CustomTypeExt with fn has_value_slot(_self) {
 impl @extension.TypeExt for CustomTypeExt with fn parse_token(_self, token) {
   if token == "rejected" {
     Err(@abi.TypeParseFail::{
+      disposition: @abi.ValueSpaceMiss,
       reason: "custom_rejected",
       message: "custom parser rejected the token",
+    })
+  } else if token == "invalid" {
+    Err(@abi.TypeParseFail::{
+      disposition: @abi.RecognizedButInvalid,
+      reason: "custom_invalid",
+      message: "custom parser recognized an invalid value",
     })
   } else {
     Ok(@abi.String("custom:" + token))
@@ -135,9 +142,9 @@ test "parse_definition resolves a custom type through the supplied Registry" {
 }
 
 ///|
-test "a third-party type controls its parse failure reason and message" {
-  // The open engine contract transports resident-owned failure vocabulary unchanged. A custom type
-  // can therefore add a reason without changing an engine enum or importing builtin failure names.
+test "a third-party type controls its Reject/Error phase and diagnostic vocabulary" {
+  // The resident declares both phase and open vocabulary. Reject stays silent even when no complete
+  // reading survives; Error transports the resident-owned diagnostic as Held.
   let registry = canonical_registry()
   assert_true(
     registry.register_type(CustomTypeExt::{  } as &@extension.TypeExt),
@@ -146,15 +153,26 @@ test "a third-party type controls its parse failure reason and message" {
     "{\"options\":[{\"name\":\"value\",\"type\":\"custom\",\"long\":true}]}",
   )
   match parse_definition(definition, extensions=registry) {
-    Ok(ast) =>
+    Ok(ast) => {
       match parse_legacy(ast, ["--value", "rejected"]) {
+        @engine.Failure(data) =>
+          for error in data.errors {
+            assert_false(error.reason == "custom_rejected")
+          }
+        _ => fail("a value-space miss must not produce a complete reading")
+      }
+      match parse_legacy(ast, ["--value", "invalid"]) {
         @engine.Failure(data) => {
           assert_eq(data.errors.length(), 1)
-          assert_eq(data.errors[0].reason, "custom_rejected")
-          assert_eq(data.errors[0].message, "custom parser rejected the token")
+          assert_eq(data.errors[0].reason, "custom_invalid")
+          assert_eq(
+            data.errors[0].message,
+            "custom parser recognized an invalid value",
+          )
         }
-        _ => fail("custom parse rejection must become a parse failure")
+        _ => fail("a recognized-invalid value must remain a visible Error")
       }
+    }
     Err(_) => fail("registered custom type must lower")
   }
 }
@@ -276,6 +294,66 @@ test "collector declarations reject an assembly without the named collector resi
       assert_true(error.message.contains("collector 'unwrap_single'"))
     }
     _ => fail("missing collector resident must be a definition error")
+  }
+}
+
+///|
+test "custom type controls child-default Reject/Error phase without reason matching" {
+  let custom = CustomTypeExt::{  } as &@extension.TypeExt
+  let registry = @extension.Registry::new()
+  let root : @engine.Scope = {
+    greedy: [],
+    positional: [
+      @engine.ChildDefault(
+        @builtins.typed_arg("value", ty=custom, filters=[]),
+        "#seat:value",
+        "value",
+      ),
+      @builtins.string_arg("rest", []),
+    ],
+    entities: [],
+    constraints: [],
+  }
+  match
+    @engine.parse_tree(
+      @engine.ScopeNode(root),
+      ["rejected"],
+      defs=Map([]),
+      extensions=registry,
+    ) {
+    @engine.Success(bindings) => {
+      let mut fallback = false
+      let mut rest = false
+      for binding in bindings {
+        if binding.key == "#seat:value" {
+          fallback = true
+        } else if binding.key == "rest" &&
+          binding.value == @abi.String("rejected") {
+          rest = true
+        }
+      }
+      assert_true(fallback)
+      assert_true(rest)
+    }
+    _ => fail("ValueSpaceMiss must fall back to the child default seat")
+  }
+  match
+    @engine.parse_tree(
+      @engine.ScopeNode(root),
+      ["invalid"],
+      defs=Map([]),
+      extensions=registry,
+    ) {
+    @engine.Failure(failure) => {
+      let mut held = false
+      for error in failure.errors {
+        if error.reason == "custom_invalid" {
+          held = true
+        }
+      }
+      assert_true(held)
+    }
+    _ => fail("RecognizedButInvalid must stay Held and suppress fallback")
   }
 }
 

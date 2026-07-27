@@ -45,6 +45,14 @@ test "TypeExt parse_token delegates to each resident lexicon and config" {
   )
   assert_eq(int_type(round=@abi.Floor).parse_token("2.9"), Ok(@abi.Number(2.0)))
   assert_eq(
+    int_type().parse_token("2.5").unwrap_err().disposition,
+    @abi.RecognizedButInvalid,
+  )
+  assert_eq(
+    int_type().parse_token("not-a-number").unwrap_err().disposition,
+    @abi.ValueSpaceMiss,
+  )
+  assert_eq(
     bool_type(config={
       true_values: ["yes"],
       false_values: ["no"],

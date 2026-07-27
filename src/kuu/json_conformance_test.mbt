@@ -2728,7 +2728,7 @@ test "conformance: @engine.OrBranch auto id (#{seq}) は held-error / ambiguous 
     #|  "query": "parse",
     #|  "definition": {
     #|    "positionals": [
-    #|      {"or": [{"type": "number", "name": "a"}, {"type": "number", "name": "b"}]}
+    #|      {"or": [{"type": "int", "name": "a"}, {"type": "int", "name": "b"}]}
     #|    ]
     #|  },
     #|  "cases": []
@@ -2740,8 +2740,8 @@ test "conformance: @engine.OrBranch auto id (#{seq}) は held-error / ambiguous 
       abort("auto branch id leaked into observable text: \{s}")
     }
   }
-  // failure (0 本成立): 非数値 1 token は両枝とも同位置で dead-end (same-depth 同型)。
-  let fail_outcome = @kuu.parse(df.ast, ["x"])
+  // failure (0 本成立): 非整数値 1 token は両枝とも同位置で Held (same-depth 同型)。
+  let fail_outcome = @kuu.parse(df.ast, ["1.5"])
   match fail_outcome {
     @kuu.Failure(d) => {
       let texts : Array[String] = []
@@ -2936,8 +2936,8 @@ test "decode: an ordinary `#`-free name is unaffected by the reserved-name check
 
 ///|
 /// DR-066 §4 harness smoke test: `errors[].path` opt-in actually drives `run_case`'s comparison,
-/// not just decodes without effect. A `--n` (number) value slot inside a `sub` command scope fails
-/// to parse ("abc" is not a number) one command deep. The CORRECT-path case (`path: ["sub"]`) must
+/// not just decodes without effect. A `--n` (int) value slot inside a `sub` command scope recognizes
+/// `1.5` as an invalid integer one command deep. The CORRECT-path case (`path: ["sub"]`) must
 /// PASS; the WRONG-path case (`path: ["not-sub"]`, everything else identical) must FAIL — proving
 /// `proj_errors`/`exp_errors_decode` round-trip the path into the comparison, mirroring how the
 /// existing `reason` opt-in is exercised end-to-end by the real fixture corpus.
@@ -2952,7 +2952,7 @@ test "conformance harness: errors[].path opt-in is compared, not merely decoded 
     #|        "type": "command",
     #|        "name": "sub",
     #|        "options": [
-    #|          {"name": "n", "type": "number", "long": true}
+    #|          {"name": "n", "type": "int", "long": true}
     #|        ]
     #|      }
     #|    ]
@@ -2961,22 +2961,22 @@ test "conformance harness: errors[].path opt-in is compared, not merely decoded 
     #|    {
     #|      "id": "correct-path",
     #|      "why": "path: [\"sub\"] matches the actual ancestor (n fails inside the sub command scope)",
-    #|      "args": ["sub", "--n", "abc"],
+    #|      "args": ["sub", "--n", "1.5"],
     #|      "expect": {
     #|        "outcome": "failure",
     #|        "errors": [
-    #|          {"element": "n", "args_pos": 2, "kind": "parse", "reason": "not_a_number", "path": ["sub"]}
+    #|          {"element": "n", "args_pos": 2, "kind": "parse", "reason": "not_an_integer", "path": ["sub"]}
     #|        ]
     #|      }
     #|    },
     #|    {
     #|      "id": "wrong-path",
     #|      "why": "path: [\"not-sub\"] is deliberately wrong — must be caught as a mismatch",
-    #|      "args": ["sub", "--n", "abc"],
+    #|      "args": ["sub", "--n", "1.5"],
     #|      "expect": {
     #|        "outcome": "failure",
     #|        "errors": [
-    #|          {"element": "n", "args_pos": 2, "kind": "parse", "reason": "not_a_number", "path": ["not-sub"]}
+    #|          {"element": "n", "args_pos": 2, "kind": "parse", "reason": "not_an_integer", "path": ["not-sub"]}
     #|        ]
     #|      }
     #|    }
@@ -3586,7 +3586,7 @@ test "issue bool-parser-factory-unimplemented: bool_parser canonical default (co
     #|    {"id": "false-word", "args": ["--v", "FALSE"], "expect": {"outcome": "success", "result": {"v": false}}},
     #|    {"id": "zero", "args": ["--v", "0"], "expect": {"outcome": "success", "result": {"v": false}}},
     #|    {"id": "empty", "args": ["--v", ""], "expect": {"outcome": "success", "result": {"v": false}}},
-    #|    {"id": "yes-still-rejected", "args": ["--v", "yes"], "expect": {"outcome": "failure", "errors": [{"element": "v", "args_pos": 1, "kind": "parse", "reason": "not_a_bool"}]}}
+    #|    {"id": "yes-still-rejected", "args": ["--v", "yes"], "expect": {"outcome": "failure"}}
     #|  ]
     #|}
   let df = dec_fixture(@json.parse(src))
@@ -3602,8 +3602,8 @@ test "issue bool-parser-factory-unimplemented: bool_parser canonical default (co
 ///|
 /// 保証 (DR-074 §4 `case_insensitive` config キー): `case_insensitive: false` の opt-in 方言
 /// (JSON/TOML 準拠) では canonical で通っていた大小混在の綴り (`"TRUE"` 等、`true_values` の
-/// 完全一致文字列以外) が `not_a_bool` に落ちる — case_insensitive の既定 `true` から明示的に
-/// 外れたときだけ厳密照合になることの pin。
+/// 完全一致文字列以外) が ValueSpaceMiss で静かに Reject される — case_insensitive の既定
+/// `true` から明示的に外れたときだけ厳密照合になることの pin。
 test "issue bool-parser-factory-unimplemented: case_insensitive:false で大小厳密照合になる" {
   let src =
     #|{
@@ -3614,7 +3614,7 @@ test "issue bool-parser-factory-unimplemented: case_insensitive:false で大小�
     #|  },
     #|  "cases": [
     #|    {"id": "exact-true-still-ok", "args": ["--v", "true"], "expect": {"outcome": "success", "result": {"v": true}}},
-    #|    {"id": "mixed-case-rejected", "args": ["--v", "TRUE"], "expect": {"outcome": "failure", "errors": [{"element": "v", "args_pos": 1, "kind": "parse", "reason": "not_a_bool"}]}}
+    #|    {"id": "mixed-case-rejected", "args": ["--v", "TRUE"], "expect": {"outcome": "failure"}}
     #|  ]
     #|}
   let df = dec_fixture(@json.parse(src))

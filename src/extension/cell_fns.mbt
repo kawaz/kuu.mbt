@@ -32,6 +32,7 @@ fn fn_string_arg(args : Array[@abi.FnArg], name : String) -> String {
 ///|
 fn absent_source(kind : String, key : String) -> FnResult {
   Err({
+    disposition: @abi.RecognizedButInvalid,
     reason: "absent-source",
     message: kind + " source '" + key + "' is absent",
   })
@@ -46,6 +47,7 @@ fn set_fn(args : Array[@abi.FnArg], _ctx : FnCtx) -> FnResult {
     [arg] => Ok(FnOutput::Value(fn_arg_value(arg)))
     _ =>
       Err({
+        disposition: @abi.RecognizedButInvalid,
         reason: "invalid-argument",
         message: "set on a scalar target requires exactly one value",
       })
@@ -64,6 +66,7 @@ fn incr_fn(_args : Array[@abi.FnArg], ctx : FnCtx) -> FnResult {
     Some(@abi.Value::Number(value)) => value
     Some(_) =>
       return Err({
+        disposition: @abi.RecognizedButInvalid,
         reason: "invalid-range",
         message: "incr requires a number target",
       })
@@ -133,11 +136,13 @@ fn validate_uuid(call : @abi.FnCall) -> Result[Unit, FnReason] {
     [] | [@abi.FnArg::String("4")] => Ok(())
     [@abi.FnArg::String(_)] =>
       Err({
+        disposition: @abi.RecognizedButInvalid,
         reason: "invalid-argument",
         message: "cell fn 'uuid' version must be '4'",
       })
     _ =>
       Err({
+        disposition: @abi.RecognizedButInvalid,
         reason: "invalid-argument",
         message: "cell fn 'uuid' has an invalid version carrier",
       })
@@ -155,7 +160,11 @@ fn uuid_fn(args : Array[@abi.FnArg], _ctx : FnCtx) -> FnResult {
       )
   }
   if version != "4" {
-    Err({ reason: "invalid-argument", message: "uuid version must be '4'" })
+    Err({
+      disposition: @abi.RecognizedButInvalid,
+      reason: "invalid-argument",
+      message: "uuid version must be '4'",
+    })
   } else {
     Ok(FnOutput::Value(@abi.Value::String(uuid_v4())))
   }

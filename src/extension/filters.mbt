@@ -28,7 +28,11 @@ fn filter_non_empty(
   match v {
     @abi.String(s) =>
       if s == "" {
-        Err({ reason: "empty_value", message: "value is empty" })
+        Err({
+          disposition: @abi.ValueSpaceMiss,
+          reason: "empty_value",
+          message: "value is empty",
+        })
       } else {
         Ok(v)
       }
@@ -56,6 +60,7 @@ fn filter_in_range(
     @abi.Number(n) => {
       if args.length() != 2 {
         return Err({
+          disposition: @abi.RecognizedButInvalid,
           reason: "filter_rejected",
           message: "in_range requires exactly 2 args (min, max)",
         })
@@ -64,6 +69,7 @@ fn filter_in_range(
         Some(d) => d
         None =>
           return Err({
+            disposition: @abi.RecognizedButInvalid,
             reason: "filter_rejected",
             message: "in_range min '" + args[0] + "' is not a number",
           })
@@ -72,17 +78,20 @@ fn filter_in_range(
         Some(d) => d
         None =>
           return Err({
+            disposition: @abi.RecognizedButInvalid,
             reason: "filter_rejected",
             message: "in_range max '" + args[1] + "' is not a number",
           })
       }
       if n < min {
         Err({
+          disposition: @abi.RecognizedButInvalid,
           reason: "too_small",
           message: "value \{n} is less than min \{min}",
         })
       } else if n > max {
         Err({
+          disposition: @abi.RecognizedButInvalid,
           reason: "too_large",
           message: "value \{n} is greater than max \{max}",
         })
@@ -92,6 +101,7 @@ fn filter_in_range(
     }
     _ =>
       Err({
+        disposition: @abi.RecognizedButInvalid,
         reason: "filter_rejected",
         message: "in_range requires a number value",
       })
@@ -110,12 +120,17 @@ fn filter_increment(
   args : Array[String],
 ) -> Result[@abi.Value, FnReason] {
   if args.length() != 0 {
-    return Err({ reason: "filter_rejected", message: "increment takes no args" })
+    return Err({
+      disposition: @abi.RecognizedButInvalid,
+      reason: "filter_rejected",
+      message: "increment takes no args",
+    })
   }
   match v {
     @abi.Number(n) => Ok(@abi.Number(n + 1.0))
     _ =>
       Err({
+        disposition: @abi.RecognizedButInvalid,
         reason: "filter_rejected",
         message: "increment requires a number value",
       })
@@ -146,6 +161,7 @@ fn filter_regex_match(
     @abi.String(s) => {
       if args.length() != 1 {
         return Err({
+          disposition: @abi.RecognizedButInvalid,
           reason: "filter_rejected",
           message: "regex_match requires exactly 1 arg (pattern)",
         })
@@ -154,6 +170,7 @@ fn filter_regex_match(
       match compile_regex(pattern) {
         None =>
           Err({
+            disposition: @abi.RecognizedButInvalid,
             reason: "filter_rejected",
             message: "regex_match pattern '" + pattern + "' failed to compile",
           })
@@ -162,6 +179,7 @@ fn filter_regex_match(
             Some(_) => Ok(v)
             None =>
               Err({
+                disposition: @abi.ValueSpaceMiss,
                 reason: "pattern_no_match",
                 message: "value '" +
                 s +
@@ -174,6 +192,7 @@ fn filter_regex_match(
     }
     _ =>
       Err({
+        disposition: @abi.RecognizedButInvalid,
         reason: "filter_rejected",
         message: "regex_match requires a string value",
       })
@@ -276,6 +295,7 @@ fn array_filter_length_range(
 ) -> Result[Array[@abi.Value], FnReason] {
   if args.length() != 2 {
     return Err({
+      disposition: @abi.RecognizedButInvalid,
       reason: "filter_rejected",
       message: "length_range requires exactly 2 args (min, max)",
     })
@@ -284,6 +304,7 @@ fn array_filter_length_range(
     Some(d) => d
     None =>
       return Err({
+        disposition: @abi.RecognizedButInvalid,
         reason: "filter_rejected",
         message: "length_range min '" + args[0] + "' is not a number",
       })
@@ -292,6 +313,7 @@ fn array_filter_length_range(
     Some(d) => d
     None =>
       return Err({
+        disposition: @abi.RecognizedButInvalid,
         reason: "filter_rejected",
         message: "length_range max '" + args[1] + "' is not a number",
       })
@@ -299,11 +321,13 @@ fn array_filter_length_range(
   let n = vs.length().to_double()
   if n < min {
     Err({
+      disposition: @abi.RecognizedButInvalid,
       reason: "too_short",
       message: "array length \{vs.length()} is less than min \{min}",
     })
   } else if n > max {
     Err({
+      disposition: @abi.RecognizedButInvalid,
       reason: "too_long",
       message: "array length \{vs.length()} is greater than max \{max}",
     })

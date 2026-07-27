@@ -508,7 +508,7 @@ pub fn parse_int_value(
   ] = match parse_decimal_int_value(s, mode) {
     Ok(i) => Ok(i)
     Err(failure) =>
-      if failure.reason != "not_a_number" {
+      if failure.disposition == @abi.RecognizedButInvalid {
         return Err(failure)
       } else if !allow_base_prefix {
         return Err(type_parse_not_a_number(s))

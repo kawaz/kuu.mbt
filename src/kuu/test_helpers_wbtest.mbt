@@ -166,15 +166,6 @@ fn test_render_val(value : @abi.Value) -> String {
 }
 
 ///|
-fn render_kind(kind : @abi.ErrorKind) -> String {
-  match kind {
-    @abi.Parse => "parse"
-    @abi.Filter => "filter"
-    @abi.Constraint => "constraint"
-  }
-}
-
-///|
 fn test_render_def_kind(kind : @abi.DefErrorKind) -> String {
   match kind {
     @abi.VocabIntersection => "vocab-intersection"

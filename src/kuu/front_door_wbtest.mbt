@@ -2049,6 +2049,44 @@ test "front_door.output: child default の先食いは背骨順に逐次確定�
 }
 
 ///|
+test "front_door.output: option ref repeat child default sees trailing positional" {
+  // GreedyRepeat's option satellite must not close its throwaway repeat scope before the referenced
+  // row's child default consults the real outer tail. The row takes k=a, v defaults, and tail takes b.
+  let src =
+    #|{"definitions":{"templates":{"row":{"seq":[
+    #|  {"name":"k","type":"string"},
+    #|  {"name":"v","type":"string","default":"D"}]}}},
+    #|"options":[{"name":"rows","long":true,"ref":"row","repeat":{"min":0}}],
+    #|"positionals":[{"name":"tail","type":"string"}]}
+  match parse_legacy(load_definition(src), ["--rows", "a", "b"]) {
+    @engine.Success(bindings) => {
+      let mut defaulted = false
+      let mut tail_kept = false
+      let mut child_consumed_tail = false
+      for binding in bindings {
+        if binding.key.length() >= 6 && binding.key[0:6].to_owned() == "#seat:" {
+          defaulted = true
+        }
+        if binding.key == "tail" && binding.value == @abi.String("b") {
+          tail_kept = true
+        }
+        if binding.key == "v" && binding.value == @abi.String("b") {
+          child_consumed_tail = true
+        }
+      }
+      assert_true(defaulted)
+      assert_true(tail_kept)
+      assert_false(child_consumed_tail)
+    }
+    other =>
+      fail(
+        "option ref repeat must default its child before the outer tail: " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
 /// 型がトークンを認識した後の値不正は Held Error のまま残り、default fallback を生成しない。
 test "front_door.parse: child default の消費 Held は fallback で握り潰さない" {
   // int seat が number として認識した非整数 2.5 は Held Error であり、n=0 の空席枝を立てて
@@ -2071,7 +2109,11 @@ test "front_door.parse: child default の消費 Held は fallback で握り潰�
       }
       assert_true(found)
     }
-    _ => fail("a held int error must not fall back to the child default seat")
+    other =>
+      fail(
+        "a held int error must not fall back to the child default seat: " +
+        render_outcome(other),
+      )
   }
 }
 

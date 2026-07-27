@@ -53,7 +53,7 @@ fn probe_matcher(
 fn acc_pos(b : @abi.Branch) -> Int {
   match b {
     @abi.Accept(p, _) => p
-    @abi.Held(_, _) => -1
+    @abi.Rejected(_, _) | @abi.Held(_, _) => -1
     @abi.Pending(_, _) => -1 // the matcher never produces @abi.Pending; guarded for exhaustiveness
   }
 }
@@ -62,17 +62,16 @@ fn acc_pos(b : @abi.Branch) -> Int {
 fn acc_binds(b : @abi.Branch) -> Array[@abi.Binding] {
   match b {
     @abi.Accept(_, bs) => bs
-    @abi.Held(_, _) => []
+    @abi.Rejected(_, _) | @abi.Held(_, _) => []
     @abi.Pending(_, _) => []
   }
 }
 
 ///|
-fn is_held(b : @abi.Branch) -> Bool {
+fn is_rejected(b : @abi.Branch) -> Bool {
   match b {
-    @abi.Held(_, _) => true
-    @abi.Accept(_, _) => false
-    @abi.Pending(_, _) => false
+    @abi.Rejected(_, _) => true
+    @abi.Held(_, _) | @abi.Accept(_, _) | @abi.Pending(_, _) => false
   }
 }
 
@@ -81,7 +80,7 @@ fn is_held(b : @abi.Branch) -> Bool {
 ///|
 /// The eq-split matcher fires only on a token with `=` after the prefix, resolving the key to its
 /// entry and parsing the value by the entry's type (DR-041 §equal separator). A defined key with a
-/// bad number value is a held Error (not 素通し, DR-037); an undefined key produces no reading and
+/// bad number value is a diagnostic Reject (not 素通し, DR-037); an undefined key produces no reading and
 /// falls through to the positional face (素通し). A token without the prefix/`=` does not fire.
 test "eq-split long option resolves, errors, and 素通し" {
   let long = eq_split("--", [
@@ -104,10 +103,10 @@ test "eq-split long option resolves, errors, and 素通し" {
   assert_eq(b1[0].key, "port")
   assert_eq(b1[0].value, @abi.Number(8080.0))
   assert_eq(b1[0].source, @abi.Cli)
-  // a defined key with a non-number value is a held Error (DR-037), NOT a silent 素通し.
+  // a defined key with a non-number value is a diagnostic Reject (DR-037), NOT a silent 素通し.
   let r2 = probe_matcher(long, ["--port=abc"])
   assert_eq(r2.length(), 1)
-  assert_eq(is_held(r2[0]), true)
+  assert_eq(is_rejected(r2[0]), true)
   // an undefined key produces no reading (素通し to positional).
   assert_eq(probe_matcher(long, ["--host=x"]).length(), 0)
   // a token without `=` (or without the prefix) does not fire this matcher.
@@ -118,7 +117,7 @@ test "eq-split long option resolves, errors, and 素通し" {
 ///|
 /// A `bool_type()` eq-split entry (DR-074 §3, value-typed canonical bool): `--enabled=true` parses the
 /// value through the canonical bool vocab (true/false/1/0/""，case-insensitive). An unrecognized
-/// token (`yes` etc., canonical-外) is a held Error with reason `not_a_bool` (DR-066 v1 has no bool
+/// token (`yes` etc., canonical-外) is a diagnostic Reject with reason `not_a_bool` (DR-066 v1 has no bool
 /// reason yet, docs/issue/2026-07-07-bool-invalid-reason-vocab-gap.md) — not a silent 素通し. A
 /// PRESENCE-only `flag_type()` entry never fires here at all (no eq-split registration, installer.mbt
 /// `inst_long`; `flag_type()`'s own arm in `run_eq_split` returns `[]` unconditionally).
@@ -154,25 +153,25 @@ test "eq-split long option: bool canonical vocab, ci, and unrecognized-token Err
     assert_eq(b.length(), 1)
     assert_eq(b[0].value, @abi.Bool(false))
   }
-  // `yes` is canonical-外 (Norway problem 回避, DR-074 §3): a held Error, not a silent 素通し.
+  // `yes` is canonical-外 (Norway problem 回避, DR-074 §3): a diagnostic Reject, not a silent 素通し.
   let ry = probe_matcher(long, ["--enabled=yes"])
   assert_eq(ry.length(), 1)
-  assert_eq(is_held(ry[0]), true)
+  assert_eq(is_rejected(ry[0]), true)
   match ry[0] {
-    @abi.Held(pe, _) => {
+    @abi.Rejected(pe, _) => {
       assert_eq(pe.element, "enabled")
       assert_eq(pe.args_pos, 0)
       assert_eq(pe.kind, @abi.Parse)
       assert_eq(pe.reason, "not_a_bool")
     }
-    _ => fail("expected @abi.Held")
+    _ => fail("expected @abi.Rejected")
   }
 }
 
 ///|
 /// A presence-only `flag_type()` entry (e.g. `--help`/`--verbose`) has NO eq-split value pipeline at all
 /// (DR-074 §3 only applies to `bool_type()`): `--verbose=true` finds the key defined but the type has no
-/// value arm, so `run_eq_split` returns `[]` (素通し to positional), not a held Error.
+/// value arm, so `run_eq_split` returns `[]` (素通し to positional), not a diagnostic Reject.
 test "eq-split long option: a flag_type() entry never fires on =value" {
   let long = eq_split("--", [
     eq_entry(
@@ -458,28 +457,28 @@ test "short cluster: combine:false still fires a FULL-TAIL value-attach (-n1.0)"
 /// attach 読み (n が "1" だけ値に取り、残った "a" を後続 flag として結合する読み) は禁止される —
 /// `j != body.length()` の場合 `combine:false` はそもそも `short_val` を試さない。残るのは
 /// FULL-TAIL attach 読み (n が "1a" を丸ごと値に取ろうとする、number_type() parse が失敗して @abi.Held) だけ 1 本
-/// — full-tail 読みは combine の管轄外 (単一 entry) なので禁止されない。合計 1 本、かつ @abi.Held。
-test "short cluster: combine:false rejects the PARTIAL value-attach reading, keeps the FULL-TAIL @abi.Held (-n1a)" {
+/// — full-tail 読みは combine の管轄外 (単一 entry) なので禁止されない。合計 1 本、かつ @abi.Rejected。
+test "short cluster: combine:false rejects the PARTIAL value-attach reading, keeps the FULL-TAIL @abi.Rejected (-n1a)" {
   let short = short_combine("-", combine_entries(), combine=false)
   let r = probe_matcher(short, ["-n1a"])
   assert_eq(r.length(), 1)
-  assert_true(is_held(r[0])) // full-tail "1a" は number_type() として parse 失敗 → @abi.Held (DR-037)
+  assert_true(is_rejected(r[0])) // full-tail "1a" は number value space 外 → DR-037 Reject
 }
 
 ///|
 /// 対極 (同上、combine:true なら部分長 + 結合の読みも追加で生きる): 同じ `-n1a` を `combine:true` の
-/// matcher に渡すと、上記の FULL-TAIL @abi.Held に加え、PARTIAL attach (n="1"消費 + 残り "a" を flag と
+/// matcher に渡すと、上記の FULL-TAIL @abi.Rejected に加え、PARTIAL attach (n="1"消費 + 残り "a" を flag と
 /// して結合、n=1.0/a=true) の読みも生成され、計 2 本になる — `combine:false` テストとの対比で「何が
 /// 追加で許可されるか」を固定する。
-test "short cluster: combine:true adds the PARTIAL-attach-then-combine reading on top of the FULL-TAIL @abi.Held (対極, -n1a)" {
+test "short cluster: combine:true adds the PARTIAL-attach-then-combine reading on top of the FULL-TAIL @abi.Rejected (対極, -n1a)" {
   let short = short_combine("-", combine_entries())
   let r = probe_matcher(short, ["-n1a"])
   assert_eq(r.length(), 2)
   let mut accept_found = false
-  let mut held_found = false
+  let mut rejected_found = false
   for br in r {
-    if is_held(br) {
-      held_found = true
+    if is_rejected(br) {
+      rejected_found = true
     } else {
       accept_found = true
       assert_eq(acc_pos(br), 1)
@@ -492,7 +491,7 @@ test "short cluster: combine:true adds the PARTIAL-attach-then-combine reading o
     }
   }
   assert_true(accept_found)
-  assert_true(held_found)
+  assert_true(rejected_found)
 }
 
 ///|

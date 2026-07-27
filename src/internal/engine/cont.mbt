@@ -226,7 +226,7 @@ fn has_full_k(brs : Array[Branch]) -> Bool {
   for b in brs {
     match b {
       Accept(_, _) => return true
-      Held(_, _) => ()
+      Rejected(_, _) | Held(_, _) => ()
       Pending(_, _) => ()
     }
   }

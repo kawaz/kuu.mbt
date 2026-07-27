@@ -15,8 +15,10 @@ pub fn FilterSignature::is_transform(self : FilterSignature) -> Bool {
 ///|
 /// One scalar filter resident. Constructed exclusively through `filter_descriptor`,
 /// which adapts a plain (Value, args) transformer to the universal args-plus-FnCtx
-/// invocation ABI (`FilterCtx.input()` supplies the scalar value) — private fields
-/// keep the two shapes from diverging (same posture as CellFnDescriptor).
+/// invocation ABI (`FilterCtx.input()` supplies the scalar value). Every failed invocation returns
+/// `FnReason` with its DR-037 phase; piece-filter callers use that phase to choose Rejected or Held
+/// without inspecting the open reason vocabulary. Private fields keep the two invocation shapes from
+/// diverging (same posture as CellFnDescriptor).
 pub struct FilterDescriptor {
   priv name_ : String
   priv signature_ : FilterSignature
@@ -73,6 +75,7 @@ pub fn filter_descriptor(
       match ctx.as_filter() {
         None =>
           Err({
+            disposition: @abi.RecognizedButInvalid,
             reason: "filter_rejected",
             message: "filter invoked outside filter mode",
           })
@@ -81,6 +84,7 @@ pub fn filter_descriptor(
             Scalar(value) => run(value, args)
             Array(_) =>
               Err({
+                disposition: @abi.RecognizedButInvalid,
                 reason: "filter_rejected",
                 message: "scalar filter received an array input",
               })
@@ -151,6 +155,7 @@ pub fn array_filter_descriptor(
       match ctx.as_filter() {
         None =>
           Err({
+            disposition: @abi.RecognizedButInvalid,
             reason: "filter_rejected",
             message: "filter invoked outside filter mode",
           })
@@ -159,6 +164,7 @@ pub fn array_filter_descriptor(
             Array(values) => run(values, args)
             Scalar(_) =>
               Err({
+                disposition: @abi.RecognizedButInvalid,
                 reason: "filter_rejected",
                 message: "array filter received a scalar input",
               })
@@ -251,6 +257,7 @@ pub fn apply_accum_filter_chain_with_sources(
           }
           if found < 0 {
             return Err({
+              disposition: @abi.RecognizedButInvalid,
               reason: "filter_rejected",
               message: "array filter synthesized a value without an input source seat",
             })
@@ -276,6 +283,7 @@ pub fn apply_piece_filters(
     Ok(String(value)) => Ok(value)
     Ok(_) =>
       Err({
+        disposition: @abi.RecognizedButInvalid,
         reason: "filter_rejected",
         message: "piece_filters chain returned a non-string value (String→String contract violation, filter-definition bug)",
       })

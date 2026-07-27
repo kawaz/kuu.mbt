@@ -3161,7 +3161,7 @@ fn collect_default_fn_errors(
             )
           Some(descriptor) => {
             match descriptor.validate_call(fn_call) {
-              Err({ reason: _, message }) =>
+              Err({ reason: _, message, .. }) =>
                 out.push(
                   def_err(
                     element.name,

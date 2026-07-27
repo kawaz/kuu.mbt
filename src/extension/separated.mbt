@@ -1,6 +1,24 @@
 // separated.mbt — builtin separator/filter/type pipeline.
 
 ///|
+/// A separated piece failure keeps the parser/filter's DR-037 phase next to its wire-facing error.
+pub struct ReadingFail {
+  disposition : @abi.TypeParseDisposition
+  error : @abi.ParseError
+}
+
+///|
+pub fn ReadingFail::branch(
+  self : ReadingFail,
+  bindings : Array[@abi.Binding],
+) -> @abi.Branch {
+  match self.disposition {
+    @abi.ValueSpaceMiss => @abi.Rejected(self.error, bindings)
+    @abi.RecognizedButInvalid => @abi.Held(self.error, bindings)
+  }
+}
+
+///|
 pub fn sep_binds(
   name : String,
   tok : String,
@@ -10,7 +28,7 @@ pub fn sep_binds(
   pos : Int,
   merge : Bool,
   extensions : Registry,
-) -> Result[Array[@abi.Binding], @abi.ParseError] {
+) -> Result[Array[@abi.Binding], ReadingFail] {
   let out : Array[@abi.Binding] = []
   let parts = match sep {
     Some(s) => split_on_sep(tok, s)
@@ -75,14 +93,21 @@ fn sep_piece_value(
   piece_filters : Array[@abi.FnInvocation],
   pos : Int,
   extensions : Registry,
-) -> Result[@abi.Value, @abi.ParseError] {
+) -> Result[@abi.Value, ReadingFail] {
   match apply_piece_filters(extensions, piece_filters, part) {
-    Err({ reason, message: msg }) =>
-      Err(@abi.ParseError::filter(name, pos, reason, msg))
+    Err({ disposition, reason, message: msg }) =>
+      Err({
+        disposition,
+        error: @abi.ParseError::filter(name, pos, reason, msg),
+      })
     Ok(s) =>
       match ty.parse_token(s) {
         Ok(value) => Ok(value)
-        Err(fail) => Err(type_parse_error(name, pos, fail))
+        Err(fail) =>
+          Err({
+            disposition: fail.disposition,
+            error: type_parse_error(name, pos, fail),
+          })
       }
   }
 }

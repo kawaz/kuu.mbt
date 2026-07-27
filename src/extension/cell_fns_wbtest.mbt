@@ -121,6 +121,7 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
   assert_eq(
     set.validate_arity(0),
     Err({
+      disposition: @abi.RecognizedButInvalid,
       reason: "invalid-argument",
       message: "cell fn 'set' does not accept 0 args",
     }),
@@ -148,6 +149,7 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
       @abi.FnCall::typed("borrow", [@abi.String("help-full")]),
     ),
     Err({
+      disposition: @abi.RecognizedButInvalid,
       reason: "invalid-argument",
       message: "cell fn 'borrow' argument 0 for parameter 'source' has an incompatible carrier",
     }),
@@ -155,6 +157,7 @@ test "cell fn parameter contracts validate arity and bind concrete observes" {
   assert_eq(
     borrow.validate_arity(0),
     Err({
+      disposition: @abi.RecognizedButInvalid,
       reason: "invalid-argument",
       message: "cell fn 'borrow' does not accept 0 args",
     }),
@@ -244,6 +247,10 @@ test "builtin cell fn residents execute through their registered descriptors" {
   )
   assert_eq(
     env.invoke(env_invocation.to_call(), env_ctx),
-    Err({ reason: "absent-source", message: "env source 'MISSING' is absent" }),
+    Err({
+      disposition: @abi.RecognizedButInvalid,
+      reason: "absent-source",
+      message: "env source 'MISSING' is absent",
+    }),
   )
 }

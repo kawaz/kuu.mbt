@@ -78,7 +78,11 @@ pub(all) enum FnOutput {
 } derive(Eq, Debug)
 
 ///|
+/// A resident failure with its DR-037 phase. Filters use `ValueSpaceMiss` when another reading may
+/// own the input and `RecognizedButInvalid` when this reading owns an invalid value. Other function
+/// residents use `RecognizedButInvalid` because invocation has already selected the resident.
 pub(all) struct FnReason {
+  disposition : @abi.TypeParseDisposition
   reason : String
   message : String
 } derive(Eq, Debug)
@@ -115,6 +119,7 @@ pub fn cell_fn_descriptor(
   validate? : (FnCall) -> Result[Unit, FnReason] = fn(_) { Ok(()) },
   run? : CellFn = fn(_, _) {
     Err({
+      disposition: @abi.RecognizedButInvalid,
       reason: "absent-source",
       message: "cell fn implementation is not registered",
     })
@@ -212,6 +217,7 @@ fn CellFnDescriptor::invalid_argument(
   message : String,
 ) -> FnReason {
   {
+    disposition: @abi.RecognizedButInvalid,
     reason: "invalid-argument",
     message: "cell fn '" + self.name_ + "' " + message,
   }

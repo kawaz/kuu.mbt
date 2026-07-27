@@ -186,9 +186,20 @@ pub(all) struct BoolConfig {
 } derive(Eq, Debug)
 
 ///|
-/// A type resident's parse rejection. The resident owns both the machine-readable reason and
-/// caller-facing message; engine transports them without closing the vocabulary over builtin cases.
+/// DR-037 phase of a type parser failure. `Reject` means the token is outside this type's value
+/// space, so another reading may own it. `Error` means the token was recognized as this type's
+/// reading but its value is invalid, so the evaluator retains it as a Held failure.
+pub(all) enum TypeParseDisposition {
+  ValueSpaceMiss
+  RecognizedButInvalid
+} derive(Eq, Debug)
+
+///|
+/// A type resident's failed reading. The resident owns both the DR-037 Reject/Error phase and the
+/// open machine-readable reason/message vocabulary; the engine transports all three without
+/// inspecting builtin reason spellings.
 pub(all) struct TypeParseFail {
+  disposition : TypeParseDisposition
   reason : String
   message : String
 } derive(Eq, Debug)
@@ -358,12 +369,11 @@ pub fn bindings_through_link(
 }
 
 ///|
-/// A `kind: filter` held Error for a piece_filters chain that rejected a raw token/piece before it
-/// ever reached its type parser (DR-034/DR-062, DR-037's Reject/Error distinction — see
-/// `apply_piece_filters`'s doc comment for why a filter chain's `Err` always becomes a `Held`, never
-/// a silent `[]`: the Or/path-search machinery already discards a `Held` branch whenever a sibling
-/// branch `Accept`s, so a single `Held(kind: Filter, ...)` return realizes BOTH DR-037 outcomes —
-/// no separate silent-Reject channel is needed). Token-consumption callers (eval.mbt's value-
+/// A `kind: filter` diagnostic for a piece_filters chain that rejected a raw token/piece before it
+/// ever reached its type parser (DR-034/DR-062). Token-consumption residents carry this as
+/// `Branch::Rejected`: the branch may yield to a sibling/default reading and remains silent even if
+/// no complete reading survives. This is distinct from `Held`, which means a recognized reading
+/// produced an invalid value (DR-037). Token-consumption callers (eval.mbt's value-
 /// primitive arms, builtins/matcher_residents.mbt's `run_eq_split`) pass `reason`/`message` straight from
 /// `apply_piece_filters`'s `Err` tuple. Mirrors `resolve.mbt`'s `filter_err` (the ladder-layer
 /// counterpart, used by `env_value`) — kept as a separate builder here because eval.mbt/value.mbt

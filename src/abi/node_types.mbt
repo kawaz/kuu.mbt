@@ -126,13 +126,14 @@ pub(all) struct Candidate {
 } derive(Eq, Debug)
 
 ///|
-/// The outcome of trying a node against a token prefix (MDR-002 §2.1). A missing branch == Reject
-/// (silently dropped, DR-037); `Held` == Error (retained for failure display); `Accept(pos, binds)`
-/// == a reading; `Pending(cands, binds)` == トリガ消費・値 pending (parse では Held 相当、complete では
-/// 補完候補の源, MDR-002 §2 案B). The matcher only CONSTRUCTS Accept/Held; the evaluator produces and
-/// consumes Pending. (Kept in node.mbt so both matcher and eval can return it; single package.)
+/// The outcome of trying a node against a token prefix (MDR-002 §2.1). A missing branch is a silent
+/// structural Reject. `Rejected` carries position/state through path search while allowing a
+/// sibling/default reading to own the token, but never enters the final error or failure-action set.
+/// `Held` is a DR-037 Error: this was the intended reading but its value is invalid. `Accept` is a
+/// reading and `Pending` carries an absent value slot into parse failure or completion collection.
 pub(all) enum Branch {
   Accept(Int, Array[Binding]) // (new position, accumulated bindings)
-  Held(ParseError, Array[Binding]) // a DR-037 Error + the partial state (acc) at the error point
+  Rejected(ParseError, Array[Binding]) // DR-037 Reject with diagnostic material
+  Held(ParseError, Array[Binding]) // DR-037 Error + the partial state (acc) at the error point
   Pending(Array[Candidate], Array[Binding]) // trigger consumed, value slot's input absent
 } derive(Debug)

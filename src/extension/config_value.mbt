@@ -55,7 +55,7 @@ pub fn config_to_value(
     // configuration is therefore resident-owned for CLI, env, and config alike.
     @abi.String(raw) =>
       match apply_piece_filters(extensions, piece_filters, raw) {
-        Err({ reason, message: msg }) =>
+        Err({ reason, message: msg, .. }) =>
           Err({ kind: @abi.Filter, reason, message: msg })
         Ok(s) =>
           match ty.parse_token(s) {

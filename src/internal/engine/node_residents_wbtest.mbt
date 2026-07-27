@@ -30,21 +30,22 @@ fn stuck_node() -> Node {
 
 ///|
 fn resident_failure_reason(node : Node, token : String) -> String {
-  match parse_tree(node, [token]) {
-    Failure(data) =>
-      if data.errors.length() == 1 {
-        data.errors[0].reason
-      } else {
-        "unexpected-error-count"
-      }
-    _ => "not-a-failure"
+  let ctx : Ctx = {
+    toks: [token],
+    defs: Map([]),
+    extensions_: Registry::new(),
+    mode: ModeParse,
+  }
+  match eval(node, ctx, 0) {
+    [Rejected(error, _)] | [Held(error, _)] => error.reason
+    _ => "unexpected-branch-count"
   }
 }
 
 ///|
 test "number resident preserves not_a_number" {
-  // Every token outside the number lexicon maps to the resident-owned parse failure's exact @abi.Held
-  // reason through the NodeExt resident.
+  // Every token outside the number lexicon maps to the resident-owned ValueSpaceMiss Rejected reason
+  // through the NodeExt resident.
   assert_eq(
     resident_failure_reason(number_arg("n", []), "nope"),
     "not_a_number",
@@ -80,7 +81,7 @@ test "bool resident preserves not_a_bool" {
 ///|
 test "kv resident keeps the contains-equals gate" {
   // DR-091 §2 requires a filtered kv_map token to contain '=' before it can be
-  // committed; the resident retains the dedicated not_a_kv_pair @abi.Held reason.
+  // committed; the resident returns the dedicated not_a_kv_pair Rejected reason.
   assert_eq(
     resident_failure_reason(kv_arg("entry", []), "missing-separator"),
     "not_a_kv_pair",

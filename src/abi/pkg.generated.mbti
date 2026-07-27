@@ -63,6 +63,7 @@ pub(all) struct BoolConfig {
 
 pub(all) enum Branch {
   Accept(Int, Array[Binding])
+  Rejected(ParseError, Array[Binding])
   Held(ParseError, Array[Binding])
   Pending(Array[Candidate], Array[Binding])
 } derive(@debug.Debug)
@@ -319,7 +320,13 @@ pub(all) enum TermHint {
   Continue
 } derive(Eq, @debug.Debug)
 
+pub(all) enum TypeParseDisposition {
+  ValueSpaceMiss
+  RecognizedButInvalid
+} derive(Eq, @debug.Debug)
+
 pub(all) struct TypeParseFail {
+  disposition : TypeParseDisposition
   reason : String
   message : String
 } derive(Eq, @debug.Debug)

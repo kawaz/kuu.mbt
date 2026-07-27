@@ -10,6 +10,25 @@ fn filter_spellings_json(filters : Array[@abi.FnInvocation]) -> Json {
 }
 
 ///|
+fn filter_reason_branch(
+  name : String,
+  pos : Int,
+  failure : @extension.FnReason,
+  bindings : Array[@abi.Binding],
+) -> @abi.Branch {
+  let error = @abi.ParseError::filter(
+    name,
+    pos,
+    failure.reason,
+    failure.message,
+  )
+  match failure.disposition {
+    @abi.ValueSpaceMiss => @abi.Rejected(error, bindings)
+    @abi.RecognizedButInvalid => @abi.Held(error, bindings)
+  }
+}
+
+///|
 fn ty_json(ty : &@extension.TypeExt) -> Json {
   ty.name().to_json()
 }
@@ -116,13 +135,7 @@ impl NodeExt for StringArgExt with fn eval(self, ctx, pos, acc, next) {
               ),
             ],
           )
-        Err({ reason, message }) =>
-          [
-            @abi.Held(
-              @abi.ParseError::filter(self.name, pos, reason, message),
-              acc,
-            ),
-          ]
+        Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }
     None =>
       [
@@ -196,15 +209,14 @@ impl NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
               ],
             )
           } else {
-            [@abi.Held(parse_error_not_a_kv_pair(self.name, value, pos), acc)]
+            [
+              @abi.Rejected(
+                parse_error_not_a_kv_pair(self.name, value, pos),
+                acc,
+              ),
+            ]
           }
-        Err({ reason, message }) =>
-          [
-            @abi.Held(
-              @abi.ParseError::filter(self.name, pos, reason, message),
-              acc,
-            ),
-          ]
+        Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }
     None =>
       [
@@ -278,7 +290,7 @@ impl NodeExt for SeparatedNodeExt with fn eval(self, ctx, pos, acc, next) {
           ctx.extensions(),
         ) {
         Ok(bindings) => next(ctx, pos + 1, acc + bindings)
-        Err(error) => [@abi.Held(error, acc)]
+        Err(failure) => [failure.branch(acc)]
       }
     None =>
       [
@@ -375,15 +387,14 @@ impl NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
                 ],
               )
             None =>
-              [@abi.Held(parse_error_not_a_number(self.name, value, pos), acc)]
+              [
+                @abi.Rejected(
+                  parse_error_not_a_number(self.name, value, pos),
+                  acc,
+                ),
+              ]
           }
-        Err({ reason, message }) =>
-          [
-            @abi.Held(
-              @abi.ParseError::filter(self.name, pos, reason, message),
-              acc,
-            ),
-          ]
+        Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }
     None =>
       [
@@ -439,7 +450,7 @@ impl NodeExt for FilteredNumberArgExt with fn eval(self, ctx, pos, acc, next) {
     Some(token) =>
       match parse_number(token) {
         None =>
-          [@abi.Held(parse_error_not_a_number(self.name, token, pos), acc)]
+          [@abi.Rejected(parse_error_not_a_number(self.name, token, pos), acc)]
         Some(number) =>
           if number > self.max.to_double() {
             [
@@ -540,15 +551,14 @@ impl NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ],
               )
             None =>
-              [@abi.Held(parse_error_not_a_number(self.name, value, pos), acc)]
+              [
+                @abi.Rejected(
+                  parse_error_not_a_number(self.name, value, pos),
+                  acc,
+                ),
+              ]
           }
-        Err({ reason, message }) =>
-          [
-            @abi.Held(
-              @abi.ParseError::filter(self.name, pos, reason, message),
-              acc,
-            ),
-          ]
+        Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }
     None =>
       [
@@ -634,16 +644,9 @@ impl NodeExt for IntNodeExt with fn eval(self, ctx, pos, acc, next) {
                   ),
                 ],
               )
-            Err(failure) =>
-              [@abi.Held(type_parse_error(self.name, pos, failure), acc)]
+            Err(failure) => [type_parse_branch(self.name, pos, failure, acc)]
           }
-        Err({ reason, message }) =>
-          [
-            @abi.Held(
-              @abi.ParseError::filter(self.name, pos, reason, message),
-              acc,
-            ),
-          ]
+        Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }
     None =>
       [
@@ -727,15 +730,14 @@ impl NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ],
               )
             None =>
-              [@abi.Held(parse_error_not_a_bool(self.name, value, pos), acc)]
+              [
+                @abi.Rejected(
+                  parse_error_not_a_bool(self.name, value, pos),
+                  acc,
+                ),
+              ]
           }
-        Err({ reason, message }) =>
-          [
-            @abi.Held(
-              @abi.ParseError::filter(self.name, pos, reason, message),
-              acc,
-            ),
-          ]
+        Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }
     None =>
       [
@@ -814,16 +816,9 @@ impl NodeExt for TypedNodeExt with fn eval(self, ctx, pos, acc, next) {
                   ),
                 ],
               )
-            Err(failure) =>
-              [@abi.Held(type_parse_error(self.name, pos, failure), acc)]
+            Err(failure) => [type_parse_branch(self.name, pos, failure, acc)]
           }
-        Err({ reason, message }) =>
-          [
-            @abi.Held(
-              @abi.ParseError::filter(self.name, pos, reason, message),
-              acc,
-            ),
-          ]
+        Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }
     None =>
       [
