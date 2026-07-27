@@ -482,6 +482,36 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
 }
 
 ///|
+test "DeepestOnly ignores deeper Rejected when selecting a Held failure action" {
+  let root = @engine.Node::Or([
+    @engine.Seq([
+      @engine.Exact("--help"),
+      @builtins.failure_mark("help"),
+      @builtins.int_arg("n", round=@abi.Error, filters=[]),
+    ]),
+    @engine.Seq([
+      @builtins.string_arg("x", []),
+      @builtins.string_arg("y", []),
+      @builtins.number_arg("z", filters=[]),
+    ]),
+  ])
+  match
+    @engine.parse_tree(
+      root,
+      ["--help", "1.5", "no-number"],
+      defs=Map([]),
+      faildef=DeepestOnly,
+    ) {
+    @engine.Failure(failure) => {
+      assert_eq(failure.fired_action, Some("help"))
+      assert_eq(failure.errors.length(), 1)
+      assert_eq(failure.errors[0].reason, "not_an_integer")
+    }
+    _ => fail("the Held branch must own DeepestOnly failure selection")
+  }
+}
+
+///|
 test "REVIEW-C3 head_name knows filtered number resident: optional extra rep at EOF is a stop, not an error" {
   // Repeat of a filtered number resident head followed by a mandatory positional z, input
   // exhausts after one rep. The genuine failure is "z missing"; the "one

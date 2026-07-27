@@ -4526,10 +4526,8 @@ pub fn parse_tree(
   for b in branches {
     match b {
       Accept(p, _) => if p > max_reach { max_reach = p }
-      Rejected(pe, _) | Held(pe, _) =>
-        if pe.args_pos > max_reach {
-          max_reach = pe.args_pos
-        }
+      Rejected(_, _) => ()
+      Held(pe, _) => if pe.args_pos > max_reach { max_reach = pe.args_pos }
       Pending(_, _) =>
         // a Pending consumed every token it saw (input exhausted).
         if toks.length() > max_reach {
