@@ -1788,49 +1788,35 @@ fn indexed_repeat_step(
     None => false
   }
   let more : Array[Branch] = []
-  let mut preferred_head_found = false
   if !at_budget {
     for branch in consume_compound(sc, head, ctx, pos, severed) {
-      if preferred_head_found && !in_complete(ctx) {
-        continue
-      }
       match branch {
         Accept(next_pos, bindings) =>
           if next_pos > pos {
-            let candidate = indexed_repeat_step(
-              sc,
-              label,
-              head,
-              min,
-              budget,
-              ctx,
-              next_pos,
-              pidx,
-              acc2 + nest_index(label, rep, bindings),
-              severed,
-              k,
-              rep + 1,
-            )
-            if !in_complete(ctx) && has_full_k(candidate) {
-              more.clear()
-              for result in candidate {
-                more.push(result)
-              }
-              preferred_head_found = true
-            } else if !preferred_head_found {
-              for result in candidate {
-                more.push(result)
-              }
+            for
+              result in indexed_repeat_step(
+                sc,
+                label,
+                head,
+                min,
+                budget,
+                ctx,
+                next_pos,
+                pidx,
+                acc2 + nest_index(label, rep, bindings),
+                severed,
+                k,
+                rep + 1,
+              ) {
+              more.push(result)
             }
           }
         Held(error, bindings) =>
-          if rep < min && !preferred_head_found {
+          if rep < min {
             more.push(Held(error, acc2 + bindings))
           }
         Pending(candidates, bindings) =>
-          if !preferred_head_found {
-            more.push(Pending(candidates, acc2 + bindings))
-          }
+          more.push(Pending(candidates, acc2 + bindings))
       }
     }
   }
@@ -2861,6 +2847,75 @@ fn collect_pos_scopes(
 // ── top level (spec DR-038 path counting) ────────────────────────────────────
 
 ///|
+fn is_child_default_seat(binding : Binding) -> Bool {
+  let prefix = "#seat:"
+  binding.key.length() >= prefix.length() &&
+  binding.key[0:prefix.length()].to_owned() == prefix
+}
+
+///|
+/// DR-041 §4 / DR-097 applied to one child seat: if another complete path consumes a token into the
+/// same runtime seat, the default-empty path was never generated. This is a path-generation guard,
+/// not a priority between surviving complete paths.
+fn child_default_path_preempted(
+  candidate : Array[Binding],
+  complete_paths : Array[Array[Binding]],
+) -> Bool {
+  for marker in candidate {
+    if !is_child_default_seat(marker) {
+      continue
+    }
+    let target = match marker.value {
+      String(name) => name
+      _ => ""
+    }
+    for other in complete_paths {
+      if other == candidate {
+        continue
+      }
+      let mut consuming_pos : Int? = None
+      for binding in other {
+        if binding.key == target &&
+          binding.source == Cli &&
+          scope_path_eq(binding.scope, marker.scope) {
+          consuming_pos = binding.at_pos
+        }
+      }
+      match consuming_pos {
+        Some(pos) => {
+          let mut other_loses_earlier = false
+          for other_marker in other {
+            if !is_child_default_seat(other_marker) {
+              continue
+            }
+            let other_target = match other_marker.value {
+              String(name) => name
+              _ => ""
+            }
+            for binding in candidate {
+              if binding.key == other_target &&
+                binding.source == Cli &&
+                scope_path_eq(binding.scope, other_marker.scope) {
+                match binding.at_pos {
+                  Some(candidate_pos) if candidate_pos < pos =>
+                    other_loses_earlier = true
+                  _ => ()
+                }
+              }
+            }
+          }
+          if !other_loses_earlier {
+            return true
+          }
+        }
+        None => ()
+      }
+    }
+  }
+  false
+}
+
+///|
 /// Parse `toks` against `root`, counting DISTINCT complete paths.
 ///
 /// Path identity is the observable effect sequence on entities (spec DR-038),
@@ -2999,6 +3054,13 @@ pub fn parse_tree(
       }
     }
   }
+  let preferred_full : Array[Array[Binding]] = []
+  for candidate in full {
+    if !child_default_path_preempted(candidate, full) {
+      preferred_full.push(candidate)
+    }
+  }
+  let full = preferred_full
   // Residual-token synthesis for NON-scope roots (a ScopeNode root surfaces
   // residual tokens as KTop Helds already): a partial Accept (p < length)
   // on a 0-complete-path parse is a residual failure in its own right, and

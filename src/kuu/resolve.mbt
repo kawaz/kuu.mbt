@@ -2169,7 +2169,7 @@ fn resolve_child_default_seats(
           include_default,
         ) {
         Ok(values) => values
-        Err(error) => return Err(error)
+        Err(error) => return Err({ ..error, element: target })
       }
       for value in resolved {
         out.push({ ..value, key: target, scope: binding.scope })
