@@ -322,6 +322,57 @@ fn invalid_value(name : String) -> Node {
 }
 
 ///|
+priv struct MissingSpellingHeldExt {
+  name : String
+}
+
+///|
+impl NodeExt for MissingSpellingHeldExt with fn kind(_self) {
+  "synthetic/missing-spelling-held"
+}
+
+///|
+impl NodeExt for MissingSpellingHeldExt with fn element_name(self) {
+  Some(self.name)
+}
+
+///|
+impl NodeExt for MissingSpellingHeldExt with fn encode(self) {
+  [self.name.to_json()].to_json()
+}
+
+///|
+impl NodeExt for MissingSpellingHeldExt with fn consumes_zero_tokens(_self) {
+  false
+}
+
+///|
+impl NodeExt for MissingSpellingHeldExt with fn eval(self, ctx, pos, acc, _next) {
+  match ctx.token_at(pos) {
+    Some(_) =>
+      [
+        Held(
+          {
+            element: self.name,
+            args_pos: pos,
+            kind: Parse,
+            reason: "missing_operand",
+            message: "synthetic diagnosed failure with a colliding reason",
+            path: [],
+          },
+          acc,
+        ),
+      ]
+    None => [Pending([Candidate::pending_value("string", self.name)], acc)]
+  }
+}
+
+///|
+fn missing_spelling_held(name : String) -> Node {
+  Ext(MissingSpellingHeldExt::{ name, } as &NodeExt)
+}
+
+///|
 priv struct RejectingValueExt {
   name : String
 }
@@ -757,4 +808,66 @@ test "eval_many failures preserve bindings from completed repetitions" {
   assert_true(
     error_has_binding(branches, "synthetic_rejected", "prior", String("kept")),
   )
+}
+
+///|
+test "companion greedy value slot raw-consumes a sibling trigger spelling" {
+  let scope : Scope = {
+    greedy: [
+      Seq([Exact("--color"), test_value("color", "synthetic/string")]),
+      Seq([Exact("-v"), Bind("verbose", Bool(true))]),
+    ],
+    positional: [],
+    entities: [],
+    constraints: [],
+  }
+  let ctx = downstream_test_ctx(["--color", "-v"], ModeParse)
+  let branches = eval_with_downstream(
+    ScopeNode(scope),
+    ctx,
+    0,
+    (_ctx, pos, bindings) => run_cont(KTop([]), ctx, pos, bindings),
+    (_ctx, error, bindings) => [Rejected(error, bindings)],
+    (_ctx, error, bindings) => [Held(error, bindings)],
+    (_ctx, candidates, bindings) => [Pending(candidates, bindings)],
+  )
+  assert_true(branch_has_binding(branches, "color", String("-v")))
+  assert_false(branch_has_binding(branches, "verbose", Bool(true)))
+}
+
+///|
+test "ChildDefault classifies absence structurally, not by Held reason spelling" {
+  let ctx = downstream_test_ctx(["bad"], ModeParse)
+  let branches = eval_with_downstream(
+    ChildDefault(missing_spelling_held("v"), "#seat:v", "v"),
+    ctx,
+    0,
+    (_ctx, pos, bindings) => run_cont(KTop([]), ctx, pos, bindings),
+    (_ctx, error, bindings) => [Rejected(error, bindings)],
+    (_ctx, error, bindings) => [Held(error, bindings)],
+    (_ctx, candidates, bindings) => [Pending(candidates, bindings)],
+  )
+  assert_true(branches_have_error_reason(branches, "missing_operand"))
+  assert_false(branch_has_binding(branches, "#seat:v", String("v")))
+}
+
+///|
+test "optional repeat drops structural Pending but keeps Held with colliding reason" {
+  let ctx = downstream_test_ctx(["bad"], ModeParse)
+  let branches = eval_bounded_with_downstream(
+    missing_spelling_held("v"),
+    1,
+    false,
+    ctx,
+    0,
+    [],
+    (_ctx, pos, bindings) => run_cont(KTop([]), ctx, pos, bindings),
+    (_ctx, error, bindings) => [Rejected(error, bindings)],
+    (_ctx, error, bindings) => [Held(error, bindings)],
+    (_ctx, candidates, bindings) => [Pending(candidates, bindings)],
+    (_ctx, pos, bindings) => run_cont(KTop([]), ctx, pos, bindings),
+    None,
+    false,
+  )
+  assert_true(branches_have_error_reason(branches, "missing_operand"))
 }

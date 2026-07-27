@@ -402,7 +402,7 @@ fn run_eq_split(
                 dm,
               ),
             ]
-          Err(failure) => [failure.branch([])]
+          Err(failure) => [failure.committed_branch([])]
         }
       }
       // DR-034/DR-062 piece_filters: run BEFORE the kind-specific parse, same timing eval.mbt's
@@ -438,7 +438,7 @@ fn run_eq_split(
               dm,
             ),
           ]
-        Err(fail) => return [type_parse_branch(e.name, pos, fail, [])]
+        Err(fail) => return [type_parse_committed_branch(e.name, pos, fail, [])]
       }
     }
   }
@@ -694,7 +694,7 @@ fn walk_short(
                 // piece-filters/reject.json が輪郭を固定する。string_type() が構造的に型 parse エラーを
                 // 起こさない (short_val の doc comment) ので、kind によるガードは不要。
                 if j == body.length() {
-                  out.push(failure.branch(acc))
+                  out.push(failure.committed_branch(acc))
                 }
             }
           }
@@ -713,7 +713,7 @@ fn walk_short(
           ctx.token_at(pos + 1) is Some(next_token) {
           match short_val(ctx, e, next_token, pos + 1) {
             Ok(bs) => out.push(@abi.Accept(pos + 2, acc + (bs + dm)))
-            Err(failure) => out.push(failure.branch([]))
+            Err(failure) => out.push(failure.committed_branch([]))
           }
         } else if e.short_attached_value != @abi.Require &&
           vstart == body.length() &&

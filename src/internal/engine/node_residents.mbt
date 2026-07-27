@@ -209,12 +209,7 @@ impl NodeExt for KvNodeExt with fn eval(self, ctx, pos, acc, next) {
               ],
             )
           } else {
-            [
-              @abi.Rejected(
-                parse_error_not_a_kv_pair(self.name, value, pos),
-                acc,
-              ),
-            ]
+            [@abi.Held(parse_error_not_a_kv_pair(self.name, value, pos), acc)]
           }
         Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }
@@ -290,7 +285,7 @@ impl NodeExt for SeparatedNodeExt with fn eval(self, ctx, pos, acc, next) {
           ctx.extensions(),
         ) {
         Ok(bindings) => next(ctx, pos + 1, acc + bindings)
-        Err(failure) => [failure.branch(acc)]
+        Err(failure) => [failure.committed_branch(acc)]
       }
     None =>
       [
@@ -387,12 +382,7 @@ impl NodeExt for NumberArgExt with fn eval(self, ctx, pos, acc, next) {
                 ],
               )
             None =>
-              [
-                @abi.Rejected(
-                  parse_error_not_a_number(self.name, value, pos),
-                  acc,
-                ),
-              ]
+              [@abi.Held(parse_error_not_a_number(self.name, value, pos), acc)]
           }
         Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }
@@ -450,7 +440,7 @@ impl NodeExt for FilteredNumberArgExt with fn eval(self, ctx, pos, acc, next) {
     Some(token) =>
       match parse_number(token) {
         None =>
-          [@abi.Rejected(parse_error_not_a_number(self.name, token, pos), acc)]
+          [@abi.Held(parse_error_not_a_number(self.name, token, pos), acc)]
         Some(number) =>
           if number > self.max.to_double() {
             [
@@ -551,12 +541,7 @@ impl NodeExt for FloatNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ],
               )
             None =>
-              [
-                @abi.Rejected(
-                  parse_error_not_a_number(self.name, value, pos),
-                  acc,
-                ),
-              ]
+              [@abi.Held(parse_error_not_a_number(self.name, value, pos), acc)]
           }
         Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }
@@ -730,12 +715,7 @@ impl NodeExt for BoolNodeExt with fn eval(self, ctx, pos, acc, next) {
                 ],
               )
             None =>
-              [
-                @abi.Rejected(
-                  parse_error_not_a_bool(self.name, value, pos),
-                  acc,
-                ),
-              ]
+              [@abi.Held(parse_error_not_a_bool(self.name, value, pos), acc)]
           }
         Err(failure) => [filter_reason_branch(self.name, pos, failure, acc)]
       }

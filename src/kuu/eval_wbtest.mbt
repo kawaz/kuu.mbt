@@ -483,6 +483,8 @@ test "REVIEW-C1 fired_action survives a failing value slot in the same greedy en
 
 ///|
 test "DeepestOnly ignores deeper Rejected when selecting a Held failure action" {
+  let registry = @extension.Registry::new()
+  assert_true(registry.register_filter(@extension.non_empty_filter()))
   let root = @engine.Node::Or([
     @engine.Seq([
       @engine.Exact("--help"),
@@ -492,15 +494,16 @@ test "DeepestOnly ignores deeper Rejected when selecting a Held failure action" 
     @engine.Seq([
       @builtins.string_arg("x", []),
       @builtins.string_arg("y", []),
-      @builtins.number_arg("z", filters=[]),
+      @builtins.string_arg("z", [{ name: "non_empty", args: [] }]),
     ]),
   ])
   match
     @engine.parse_tree(
       root,
-      ["--help", "1.5", "no-number"],
+      ["--help", "1.5", ""],
       defs=Map([]),
       faildef=DeepestOnly,
+      extensions=registry,
     ) {
     @engine.Failure(failure) => {
       assert_eq(failure.fired_action, Some("help"))
@@ -1387,16 +1390,22 @@ test "DR-074 §1: float resident accepts inf (ci, signed), number resident rejec
       _ => fail("expected @engine.Success for --t \{tok}")
     }
   }
-  // number の値空間外である inf は ValueSpaceMiss として静かに Reject される。
+  // number parser claims inf as an invalid value and retains not_a_number as Held.
   match
     @engine.parse_tree(@engine.ScopeNode(root), ["--n", "inf"], defs=Map([])) {
-    @engine.Failure(fd) => assert_eq(fd.errors.length(), 0)
+    @engine.Failure(fd) => {
+      assert_eq(fd.errors.length(), 1)
+      assert_eq(fd.errors[0].reason, "not_a_number")
+    }
     _ => fail("expected @engine.Failure for --n inf")
   }
-  // nan も両型の値空間外であり、float の inf 語彙には含まれない。
+  // nan is likewise recognized as invalid by the float parser rather than silently dropped.
   match
     @engine.parse_tree(@engine.ScopeNode(root), ["--t", "nan"], defs=Map([])) {
-    @engine.Failure(fd) => assert_eq(fd.errors.length(), 0)
+    @engine.Failure(fd) => {
+      assert_eq(fd.errors.length(), 1)
+      assert_eq(fd.errors[0].reason, "not_a_number")
+    }
     _ => fail("expected @engine.Failure for --t nan")
   }
 }
@@ -2133,10 +2142,9 @@ test "DR-091 §2: kv resident accepts a piece containing '=' (whole token become
 }
 
 ///|
-/// Guarantees (DR-091 §2 "`=` を含まない piece は... reject"): a `kv resident` piece with NO `=` is a
-/// DR-037 ValueSpaceMiss and silently leaves the reading set. No binding reaches resolve, so
-/// `split_first_eq` only sees pieces that contain `=`.
-test "DR-091 §2: kv resident silently Rejects a piece with no '='" {
+/// A kv resident claims its value slot and reports a missing `=` as recognized-invalid
+/// `not_a_kv_pair`; no malformed binding reaches resolve.
+test "DR-091 §2: kv resident keeps a missing '=' as Held" {
   let root : @engine.Scope = {
     greedy: [],
     positional: [@builtins.kv_arg("kv", [])],
@@ -2149,10 +2157,11 @@ test "DR-091 §2: kv resident silently Rejects a piece with no '='" {
     defs=Map([]),
   )
   match o {
-    @engine.Failure(fd) =>
-      for error in fd.errors {
-        assert_false(error.reason == "not_a_kv_pair")
-      }
+    @engine.Failure(fd) => {
+      assert_eq(fd.errors.length(), 1)
+      assert_eq(fd.errors[0].element, "kv")
+      assert_eq(fd.errors[0].reason, "not_a_kv_pair")
+    }
     other => fail("expected @engine.Failure, got " + render_outcome(other))
   }
 }

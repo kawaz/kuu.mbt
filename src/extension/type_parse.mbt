@@ -87,6 +87,18 @@ pub fn type_parse_branch(
 }
 
 ///|
+/// A committed value slot has no sibling value-space branch to select, so every parser failure is a
+/// held diagnostic. Choice contexts use `type_parse_branch` and retain the disposition distinction.
+pub fn type_parse_committed_branch(
+  element : String,
+  pos : Int,
+  failure : @abi.TypeParseFail,
+  bindings : Array[@abi.Binding],
+) -> @abi.Branch {
+  @abi.Held(type_parse_error(element, pos, failure), bindings)
+}
+
+///|
 pub fn parse_error_not_a_number(
   element : String,
   token : String,

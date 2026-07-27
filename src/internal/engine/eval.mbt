@@ -312,10 +312,9 @@ fn array_marker(label : String) -> Binding {
 }
 
 ///|
-/// A mandatory spine slot maps a resident's value `Pending` to the same
-/// missing-operand Held the closed primitive arms used in parse mode. Complete
-/// mode preserves Pending as candidate material; off-spine eval bypasses this
-/// helper and therefore preserves its existing Pending representation.
+/// Evaluate a mandatory resident while preserving value starvation as structural `Pending`.
+/// `parse_tree` is the single boundary that converts remaining value candidates to missing-operand
+/// diagnostics; intermediate evaluators can therefore distinguish absence from an invalid Held.
 fn eval_required_ext(
   extension : &NodeExt,
   ctx : Ctx,
@@ -330,34 +329,14 @@ fn eval_required_ext(
   ) {
     next(ctx, next_pos, next_acc)
   })
-  // Only a non-zero-token resident invoked directly at EOF can have produced
-  // its own local value Pending. If a token existed, any Pending in the return
-  // may come from `next`; rewriting it here would move the downstream error to
-  // this resident's start position and discard its fire_path.
-  if in_complete(ctx) ||
-    extension.consumes_zero_tokens() ||
-    ctx.token_at(pos) is Some(_) {
-    return branches
-  }
-  let out : Array[Branch] = []
+  let committed : Array[Branch] = []
   for branch in branches {
     match branch {
-      Pending(cands, bs) => {
-        let mut converted = false
-        for cand in cands {
-          if cand.is_value {
-            out.push(Held(pe_missing(cand.origin, pos), bs))
-            converted = true
-          }
-        }
-        if !converted {
-          out.push(Pending(cands, bs))
-        }
-      }
-      other => out.push(other)
+      Rejected(error, bindings) => committed.push(Held(error, bindings))
+      _ => committed.push(branch)
     }
   }
-  out
+  committed
 }
 
 ///|
@@ -631,6 +610,16 @@ fn eval(node : Node, ctx : Ctx, pos : Int) -> Array[Branch] {
 }
 
 ///|
+fn has_rejected(branches : Array[Branch]) -> Bool {
+  for branch in branches {
+    if branch is Rejected(_, _) {
+      return true
+    }
+  }
+  false
+}
+
+///|
 /// Evaluate the structural wrappers that may contain `ChildDefault` while threading the real
 /// downstream continuation. Ordinary leaves retain `eval` semantics; only the default-seat choice
 /// needs to inspect whether its consuming reading reaches a complete path.
@@ -660,11 +649,7 @@ fn eval_with_downstream(
         on_accept,
         on_rejected,
         (_ctx, error, bindings) => {
-          // A mandatory primitive reports token exhaustion as Held; for a child default seat that
-          // exact structural absence is the fallback condition, not a recognized-invalid value.
-          if error.reason != "missing_operand" {
-            direct_held.push((error, bindings))
-          }
+          direct_held.push((error, bindings))
           []
         },
         (ctx2, candidates, bindings) => {
@@ -678,16 +663,25 @@ fn eval_with_downstream(
         consume_scope~,
         severed~,
       )
-      if direct_held.length() > 0 {
-        let out : Array[Branch] = []
+      if has_full_k(consuming) {
+        consuming
+      } else if direct_held.length() > 0 {
+        let held : Array[Branch] = []
         for item in direct_held {
           for branch in on_held(ctx, item.0, item.1) {
-            out.push(branch)
+            held.push(branch)
           }
         }
-        out
-      } else if has_full_k(consuming) {
-        consuming
+        if has_rejected(eval(head, ctx, pos)) {
+          cat_branches(
+            on_accept(ctx, pos, [
+              Binding::new(seat_key, String(element_name), Cli),
+            ]),
+            held,
+          )
+        } else {
+          held
+        }
       } else {
         cat_branches(
           on_accept(ctx, pos, [
@@ -1205,7 +1199,7 @@ fn eval_bounded_with_downstream(
   } else {
     []
   }
-  let more = drop_optional_missing(more_raw, head_elem_names(head))
+  let more = drop_optional_missing(ctx, more_raw, head_elem_names(head))
   choose_repeat_share(ctx, stop, more, is_lazy)
 }
 
@@ -1423,8 +1417,7 @@ fn eval_scope_with_downstream(
         match branch {
           Held(error, _) =>
             if drop_redundant_residual &&
-              error.element == "" &&
-              error.reason == "unexpected_token" &&
+              is_scope_residual(error) &&
               error.args_pos == pos {
               ()
             } else {
@@ -1634,7 +1627,6 @@ fn eval_greedy_with_downstream(
                   []
                 }
               }),
-              consume_scope=Some(sc),
               severed~,
             ) {
             out.push(branch)
@@ -2096,6 +2088,7 @@ fn eval_ref_choice_with_downstream(
     on_pending,
   )
   let more = drop_optional_missing(
+    ctx,
     eval_scope_with_downstream(
       sc, ctx, pos, pidx, acc, severed, on_accept, on_rejected, on_held, on_pending,
     ),
@@ -2127,6 +2120,13 @@ fn pe_missing(element : String, pos : Int) -> ParseError {
     message: "missing operand for \{element}",
     path: [],
   }
+}
+
+///|
+/// A scope-level residual has no element owner. This structural sentinel is distinct from every
+/// resident error and lets evaluator control flow avoid inspecting the open reason vocabulary.
+fn is_scope_residual(error : ParseError) -> Bool {
+  error.element == "" && error.kind is Parse
 }
 
 ///|
@@ -2410,10 +2410,10 @@ fn eval_many(
 
 ///|
 /// DR-097: whether a SHALLOW (no-continuation) probe of `g` at `pos` yields a
-/// VIABLE reading. An advancing Accept is viable. A DR-037 Rejected branch is outside the value
-/// space and is not viable. A Held at an existing token position is a recognized reading whose
-/// value is invalid and therefore remains engaged; a Held at input exhaustion is structural
-/// absence and is not viable. Pending is mode-dependent: `eval`'s value-primitive arms
+/// VIABLE reading. An advancing Accept is viable. Rejected is never viable. A Held on the first
+/// value slot after a trigger has not established the reading, while a later Held means an earlier
+/// slot already consumed input and the compound reading remains engaged. Pending is mode-dependent:
+/// `eval`'s value-primitive arms
 /// (string resident/number resident/etc.) return an EXPLICIT Pending at
 /// args end REGARDLESS of mode (their own doc comment: "the end of input at
 /// a value slot is an explicit Pending, not a silent []" — an off-spine/
@@ -2431,7 +2431,7 @@ fn has_viable(brs : Array[Branch], pos : Int, ctx : Ctx) -> Bool {
     match b {
       Accept(p2, _) => if p2 > pos { return true }
       Rejected(_, _) => ()
-      Held(error, _) => if error.args_pos < ctx.toks.length() { return true }
+      Held(error, _) => if error.args_pos > pos + 1 { return true }
       Pending(_, _) => if in_complete(ctx) { return true }
     }
   }
@@ -2749,8 +2749,7 @@ fn scope_step(
         match r {
           Held(pe, _) =>
             if drop_redundant_residual &&
-              pe.element == "" &&
-              pe.reason == "unexpected_token" &&
+              is_scope_residual(pe) &&
               pe.args_pos == pos {
               ()
             } else {
@@ -3476,6 +3475,7 @@ fn ref_choice(
   // legitimate stop, not a failure. head-external missing (a downstream
   // primitive fed by the parent continuation) stays.
   let more = drop_optional_missing(
+    ctx,
     scope_step(sc, ctx, p2, pidx, acc2, severed, k),
     head_elem_names(head),
   )
@@ -3568,7 +3568,7 @@ fn bounded_tail_step(
   // primitive reachable in the head (scope-shaped heads included, spec
   // DR-065 §3 held-error parity). head-external missing from the parent's
   // continuation is preserved.
-  let more = drop_optional_missing(more_raw, head_elem_names(head))
+  let more = drop_optional_missing(ctx, more_raw, head_elem_names(head))
   choose_repeat_share(ctx, stop, more, is_lazy)
 }
 
@@ -3793,29 +3793,32 @@ fn head_elem_names_into(node : Node, out : Array[String]) -> Unit {
 }
 
 ///|
-/// Drop `missing_operand` Held Errors whose element is in `names` from an
-/// OPTIONAL repeat-continuation ("more") branch set: reaching "more" means a
-/// rep of one of these primitives already succeeded, so "one more optional
-/// rep found no token" is a legitimate STOP, not a structural failure. Only
-/// the exact missing-operand-for-name shape is dropped; head-external missing
-/// (a downstream primitive fed by the parent's continuation) stays.
+/// Drop value-starvation candidates belonging to an OPTIONAL repeat head in parse mode. Reaching
+/// "more" means a prior rep succeeded, so an absent value for one more head is a legitimate stop.
+/// Candidates from the outer continuation remain, and complete mode keeps every candidate.
 fn drop_optional_missing(
+  ctx : Ctx,
   brs : Array[Branch],
   names : Array[String],
 ) -> Array[Branch] {
-  if names.length() == 0 {
+  if in_complete(ctx) || names.length() == 0 {
     return brs
   }
   let out : Array[Branch] = []
-  for b in brs {
-    match b {
-      Held(pe, _) =>
-        if pe.reason == "missing_operand" && str_mem(names, pe.element) {
-          () // dropped: internal "one more rep" EOF signal
-        } else {
-          out.push(b)
+  for branch in brs {
+    match branch {
+      Pending(candidates, bindings) => {
+        let remaining : Array[Candidate] = []
+        for candidate in candidates {
+          if !(candidate.is_value && str_mem(names, candidate.origin)) {
+            remaining.push(candidate)
+          }
         }
-      _ => out.push(b)
+        if remaining.length() > 0 {
+          out.push(Pending(remaining, bindings))
+        }
+      }
+      _ => out.push(branch)
     }
   }
   out
@@ -3878,11 +3881,7 @@ fn scope_consume_rep(
     Ext(extension) =>
       if extension.consumes_zero_tokens() ||
         (pos < ctx.toks.length() && !suppressed(sc, ctx, pos, severed)) {
-        extension.eval(ctx.extension_context(), pos, acc, (
-          _ctx2,
-          next_pos,
-          next_acc,
-        ) => {
+        eval_required_ext(extension, ctx, pos, acc, (_ctx2, next_pos, next_acc) => {
           if next_pos > pos {
             scope_step(sc, ctx, next_pos, pidx, next_acc, severed, k)
           } else {
@@ -3890,11 +3889,9 @@ fn scope_consume_rep(
           }
         })
       } else if pos >= ctx.toks.length() && in_complete(ctx) {
-        extension.eval(ctx.extension_context(), pos, acc, (
-          _ctx,
-          next_pos,
-          next_acc,
-        ) => [Accept(next_pos, next_acc)])
+        eval_required_ext(extension, ctx, pos, acc, (_ctx, next_pos, next_acc) => {
+          [Accept(next_pos, next_acc)]
+        })
       } else {
         []
       }
@@ -4663,17 +4660,13 @@ pub fn parse_tree(
   // errors are untouched, DR-053 §2 全保持 is about DISTINCT errors).
   let mut deepest_resid = -1
   for e in errors {
-    if e.element == "" &&
-      e.reason == "unexpected_token" &&
-      e.args_pos > deepest_resid {
+    if is_scope_residual(e) && e.args_pos > deepest_resid {
       deepest_resid = e.args_pos
     }
   }
   let errors2 : Array[ParseError] = []
   for e in errors {
-    if e.element == "" &&
-      e.reason == "unexpected_token" &&
-      e.args_pos < deepest_resid {
+    if is_scope_residual(e) && e.args_pos < deepest_resid {
       continue
     }
     errors2.push(e)

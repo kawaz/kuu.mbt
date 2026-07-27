@@ -44,7 +44,7 @@ fn resident_failure_reason(node : Node, token : String) -> String {
 
 ///|
 test "number resident preserves not_a_number" {
-  // Every token outside the number lexicon maps to the resident-owned ValueSpaceMiss Rejected reason
+  // Every token outside the number lexicon maps to the resident-owned recognized-invalid Held reason
   // through the NodeExt resident.
   assert_eq(
     resident_failure_reason(number_arg("n", []), "nope"),
@@ -81,7 +81,7 @@ test "bool resident preserves not_a_bool" {
 ///|
 test "kv resident keeps the contains-equals gate" {
   // DR-091 §2 requires a filtered kv_map token to contain '=' before it can be
-  // committed; the resident returns the dedicated not_a_kv_pair Rejected reason.
+  // committed; the resident returns the dedicated not_a_kv_pair Held reason.
   assert_eq(
     resident_failure_reason(kv_arg("entry", []), "missing-separator"),
     "not_a_kv_pair",

@@ -19,6 +19,16 @@ pub fn ReadingFail::branch(
 }
 
 ///|
+/// A committed reading has no sibling branch for `ValueSpaceMiss` to select, so every failure is a
+/// held diagnostic. Choice contexts use `branch` and retain the disposition distinction.
+pub fn ReadingFail::committed_branch(
+  self : ReadingFail,
+  bindings : Array[@abi.Binding],
+) -> @abi.Branch {
+  @abi.Held(self.error, bindings)
+}
+
+///|
 pub fn sep_binds(
   name : String,
   tok : String,

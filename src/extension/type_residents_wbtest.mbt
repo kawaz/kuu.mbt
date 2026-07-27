@@ -53,6 +53,10 @@ test "TypeExt parse_token delegates to each resident lexicon and config" {
     @abi.ValueSpaceMiss,
   )
   assert_eq(
+    bool_type().parse_token("yes").unwrap_err().disposition,
+    @abi.ValueSpaceMiss,
+  )
+  assert_eq(
     bool_type(config={
       true_values: ["yes"],
       false_values: ["no"],

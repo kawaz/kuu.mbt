@@ -129,6 +129,8 @@ pub fn tty_type(String?, cygwin? : Bool) -> &TypeExt
 
 pub fn type_parse_branch(String, Int, @abi.TypeParseFail, Array[@abi.Binding]) -> @abi.Branch
 
+pub fn type_parse_committed_branch(String, Int, @abi.TypeParseFail, Array[@abi.Binding]) -> @abi.Branch
+
 pub fn type_parse_error(String, Int, @abi.TypeParseFail) -> @abi.ParseError
 
 pub fn unique_array_filter() -> ArrayFilterDescriptor
@@ -306,6 +308,7 @@ pub struct ReadingFail {
   error : @abi.ParseError
 }
 pub fn ReadingFail::branch(Self, Array[@abi.Binding]) -> @abi.Branch
+pub fn ReadingFail::committed_branch(Self, Array[@abi.Binding]) -> @abi.Branch
 
 pub struct Registry {
   // private fields
