@@ -4570,3 +4570,76 @@ test "DR-120 §4: an inheritable ancestor write-target does claim its result key
     }
   }
 }
+
+///|
+/// structural child repeat は off-spine 形へ正規化し、min/max/lazy と seat marker を失わない。
+test "structural child repeat lowers to Many and BoundedTail shapes" {
+  let head = @builtins.string_arg("xs", [])
+  let child = fn(repeat : @abi.RepeatSpec) -> @engine.ElementDef {
+    { ..el("xs", @builtins.string_type()), repeat: Some(repeat) }
+  }
+  assert_eq(
+    @engine.seq_body_node([child({ min: 0, max: None, is_lazy: false })]),
+    @engine.Seq([
+      @engine.Seq([
+        @engine.Bind("#accum:xs", @abi.Bool(false)),
+        @engine.Many(head, false),
+      ]),
+    ]),
+  )
+  assert_eq(
+    @engine.seq_body_node([child({ min: 2, max: None, is_lazy: false })]),
+    @engine.Seq([
+      @engine.Seq([
+        @engine.Bind("#accum:xs", @abi.Bool(false)),
+        @engine.Seq([head, head, @engine.Many(head, false)]),
+      ]),
+    ]),
+  )
+  assert_eq(
+    @engine.seq_body_node([child({ min: 1, max: Some(3), is_lazy: true })]),
+    @engine.Seq([
+      @engine.Seq([
+        @engine.Bind("#accum:xs", @abi.Bool(false)),
+        @engine.Seq([head, @engine.BoundedTail(head, 2, true)]),
+      ]),
+    ]),
+  )
+}
+
+///|
+/// option structural wrapper の repeat は trigger を再消費せず、body だけを複数回消費する。
+test "option structural outer repeat consumes one trigger and multiple body rows" {
+  let option : @engine.ElementDef = {
+    ..el("span", @builtins.string_type(), long=Bool(true)),
+    repeat: Some({ min: 1, max: None, is_lazy: false }),
+    body: Group([el("x", @builtins.string_type())]),
+  }
+  let def : @engine.Definition = { ..empty_def(), options: [option] }
+  let registry : Map[String, @engine.Node] = Map([])
+  let sc = match test_lower_definition(def, all_installers(), registry~) {
+    Ok(scope) => scope
+    Err(_) => abort("expected structural option repeat definition to lower")
+  }
+  match
+    @engine.parse_tree(
+      @engine.ScopeNode(sc),
+      ["--span", "a", "b"],
+      defs=registry,
+    ) {
+    @engine.Success(bindings) => {
+      let mut count = 0
+      for binding in bindings {
+        if binding.key == "x" {
+          count = count + 1
+        }
+      }
+      assert_eq(count, 2)
+    }
+    other =>
+      fail(
+        "expected structural option repeat success, got " +
+        render_outcome(other),
+      )
+  }
+}
