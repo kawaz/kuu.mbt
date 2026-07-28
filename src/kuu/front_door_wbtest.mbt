@@ -2333,3 +2333,39 @@ test "front_door: seq 先頭の消費 0 literal は `=` 形の値スロットを
     _ => ()
   }
 }
+
+///|
+/// ref template 内で隣接する child repeat も、大域の後続 positional を含む完全経路で
+/// greedy share を確定し、複数の完全経路を ambiguous として残さない。
+test "ref-template child repeats honor global greedy share under an outer repeat" {
+  let src =
+    #|{"definitions":{"templates":{"pair":{"seq":[
+    #|  {"name":"xs","type":"string","repeat":{"min":1}},
+    #|  {"name":"ys","type":"string","repeat":{"min":1}}
+    #|]}}},"positionals":[
+    #|  {"name":"rows","ref":"pair","repeat":{"min":1}},
+    #|  {"exact":"END"}
+    #|]}
+  let ast = match parse_definition(@json.parse(src)) {
+    Ok(value) => value
+    Err(_) => abort("expected ref-template repeat definition to lower")
+  }
+  match parse_legacy(ast, ["a", "b", "c", "END"]) {
+    @engine.Success(bindings) => {
+      let mut xs = 0
+      let mut ys = 0
+      for binding in bindings {
+        if binding.key == "xs" {
+          xs = xs + 1
+        }
+        if binding.key == "ys" {
+          ys = ys + 1
+        }
+      }
+      assert_eq(xs, 2)
+      assert_eq(ys, 1)
+    }
+    other =>
+      fail("expected one preferred complete path, got " + render_outcome(other))
+  }
+}

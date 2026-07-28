@@ -1444,6 +1444,10 @@ fn source_shadow(
     @abi.Object(fields) => {
       let out : Array[(String, @abi.ResultValue)] = []
       for field in fields {
+        // Accum source projection must use this recursive row's bindings before the global SourceSeat:
+        // nested structural rows share one declaration path, while each row owns a different binding
+        // slice. Root cells are equivalent here; if no direct slice exists, fall back to SourceSeat or
+        // the collector-aware structural recursion below.
         let direct_accum = match accum_cell_at(cells, path, field.0) {
           Some(cell) =>
             direct_accum_source_shadow(
