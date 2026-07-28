@@ -43,6 +43,10 @@ missing_operand 位相化の実装監査で見つかった、定義は受理さ�
 - [ ] option outer repeat も `collect_zero_progress` 相当の検査対象になる。
 - [ ] Or と Group の単発 baseline、bounded/unbounded、zero-progress を fixture/wbtest で固定する。
 
+## 進捗
+
+実装完了 (2026-07-29、Phase 2-5 内 D-4 として、main commit 65101377 で `inst_long` の `Or`/`Group` アームを `lower_positional` と同形に配線 + `collect_zero_progress` の `def.options` 走査追加)。受け入れ条件 1-3 は充足、`installer_wbtest.mbt` に trigger 1 回 / body 複数回消費の wbtest あり。残: 受け入れ条件 4 の spec fixture 化 (統括裁定 D-4 で別 lockstep land、単発 baseline / bounded / zero-progress の fixture を spec 側 `fixtures/or-parse`・`repeat-parse` に追加)。
+
 ## 関連
 
 - `docs/issue/2026-07-26-dec-or-leaf-remaining-node-keys.md`
