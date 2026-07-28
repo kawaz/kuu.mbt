@@ -760,10 +760,8 @@ test "Group installer: bounded max (min:1,max:3) lowers @engine.IndexedRepeat's 
 }
 
 ///|
-/// 保証: repeat 属性を持たない Group (`elem_repeat(e) is None`) は従来どおり budget=None
-/// (min=0 の UNBOUNDED) — 本修正が「repeat 無指定 Group」の既存挙動を変えないことを固定する
-/// (対極確認、self-written-rule-blind-spots の「新規追加時は既存の無変更ケースも確認する」線)。
-test "Group installer: no repeat spec keeps @engine.IndexedRepeat unbounded (min:0, budget:None)" {
+/// repeat 属性を持たない Group は 1 回だけ消費する結果 scope であり、0 回以上の反復にはならない。
+test "Group installer: no repeat spec lowers to one scoped occurrence" {
   let grp : @engine.ElementDef = {
     ..el("grp", @builtins.string_type()),
     body: Group([el("gflag", @builtins.string_type())]),
@@ -773,7 +771,7 @@ test "Group installer: no repeat spec keeps @engine.IndexedRepeat unbounded (min
   assert_eq(sc.positional.length(), 1)
   assert_eq(
     sc.positional[0],
-    @engine.IndexedRepeat("grp", @builtins.string_arg("gflag", []), 0, None),
+    @engine.Scoped("grp", @builtins.string_arg("gflag", [])),
   )
 }
 

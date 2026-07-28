@@ -1902,15 +1902,16 @@ fn dec_or_leaf(
     Some(x) => x
     None => raise DecodeSkip("or branch leaf is not an object")
   }
+  let owned = decode_installer_owned(j, StructuralChild, extensions)
   // DR-113 §4.1 value_structure: or-branch leaf は anonymous でも合法 (`value_name` は
   // 表示専用素材で consumption grammar には効かない — help_installer が model 射影で拾う)。
   // 従来は `name` 必須だったが、value-structure-and-types.json のような help-only fixture では
   // 各 leaf が anonymous なので、name 省略 + value_name のパターンを受理する。
-  allowed_keys(
-    o,
-    ["type", "name", "value_name", "value", "default"],
-    "or branch leaf",
-  )
+  let allowed = ["type", "name", "value_name", "value", "default"]
+  for key in owned.vocab {
+    allowed.push(key)
+  }
+  allowed_keys(o, allowed, "or branch leaf")
   let name = match jf_str(o, "name") {
     Some(s) => {
       check_reserved_name(s, "or branch leaf")
@@ -1988,6 +1989,13 @@ fn dec_or_leaf(
     is_tty=is_tty_from_shadow,
     tty_stream=tty_stream_from_shadow,
     tty_cygwin=tty_cygwin_from_shadow,
+    repeat=owned.repeat,
+    optional=owned.optional,
+    multiple=owned.multiple,
+    accumulator=owned.accumulator,
+    flatten=owned.flatten,
+    separator=owned.separator,
+    collector=owned.collector,
     default=default_values,
     const_=const_values,
     default_declared=default_values is Some(_),
@@ -2479,8 +2487,8 @@ fn dec_positional(
     // DESIGN §5.2 / §11.4: dec_option と対称 — root 位置の `value:` は positional 席でも合法
     // (schema `$defs.node` は同型、DR-018 の配置原理は「値属性は両配置が持てる」側)。
     "value", "id", "name", "type", "export_key", "default", "default_fn", "positionals",
-    "or", "piece_filters", "value_filters", "final_filters", "accum_filters", "ref",
-    "link", "config", "completer", "exact",
+    "seq", "or", "piece_filters", "value_filters", "final_filters", "accum_filters",
+    "ref", "link", "config", "completer", "exact",
     // DR-117 §2.6: dec_option と対称 — insert_form は positional 席 (`type:
     // "completion_script"`) でも合法 (DR-117 §2.3、positional 配置は全 preset で許可)。非
     // completion_script type 上への宣言は `collect_completion_script_errors` が
@@ -2502,6 +2510,37 @@ fn dec_positional(
   match o.get("positionals") {
     Some(pj) =>
       return dec_positional_group(o, pj, shadows, extensions, owned.repeat)
+    None => ()
+  }
+  match o.get("seq") {
+    Some(sj) => {
+      let name = match jf_str(o, "name") {
+        Some(s) => {
+          check_reserved_name(s, "positional (seq)")
+          s
+        }
+        None => ""
+      }
+      let export_ = match o.get("export_key") {
+        Some(ej) => dec_export(ej)
+        None => @engine.ExportKey::unset()
+      }
+      return {
+        ..pos(
+          name,
+          @builtins.string_type(),
+          repeat=owned.repeat,
+          optional=owned.optional,
+          multiple=owned.multiple,
+          accumulator=owned.accumulator,
+          flatten=owned.flatten,
+          separator=owned.separator,
+          collector=owned.collector,
+          export_~,
+        ),
+        body: Group(dec_seq_structural(sj, shadows, extensions)),
+      }
+    }
     None => ()
   }
   // issue 2026-07-15-audit-node-nodashstr-deprmark-variants 副次発見の穴埋め (DR-063 A.1 / DR-018 配置

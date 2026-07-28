@@ -712,3 +712,43 @@ test "on_failure 無しの同型要素: 失敗時 fired_action は None (対極)
     Err(_) => fail("definition should lower")
   }
 }
+
+///|
+/// structural child 位置では repeat/optional/multiple とその fold 設定を installer 所有語彙として受理する。
+test "dec_or_leaf carries structural child repeat and multiple declarations" {
+  let leaf = dec_or_leaf(
+    @json.parse(
+      (
+        #|{"name":"items","type":"string","repeat":{"min":1},"multiple":{"separator":",","accumulator":"merge","flatten":false}}
+      ),
+    ),
+    Map([]),
+  )
+  assert_eq(leaf.repeat, Some({ min: 1, max: None, is_lazy: false }))
+  assert_eq(leaf.multiple, true)
+  assert_eq(leaf.separator, Some(","))
+  assert_eq(leaf.accumulator, Some("merge"))
+  assert_eq(leaf.flatten, Some(false))
+}
+
+///|
+/// structural child に開放していない値源語彙は引き続き decode で拒否し、受理後の黙殺を許さない。
+test "dec_or_leaf rejects unopened structural child value-source keys" {
+  for
+    src in [
+      (
+        #|{"name":"x","type":"string","default_fn":"set:x"}
+      ),
+      (
+        #|{"name":"x","type":"string","env":"X"}
+      ),
+    ] {
+    let _ = dec_or_leaf(@json.parse(src), Map([])) catch {
+      DecodeSkip(_) => continue
+      UnknownType(element, type_name) =>
+        abort("unexpected UnknownType for " + element + ": " + type_name)
+      _ => abort("unexpected decode error for: " + src)
+    }
+    fail("expected DecodeSkip for: " + src)
+  }
+}

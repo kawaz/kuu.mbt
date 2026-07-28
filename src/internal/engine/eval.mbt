@@ -1073,7 +1073,7 @@ fn eval_many_with_downstream(
   } else {
     on_accept(ctx, pos, acc)
   }
-  let more = eval_with_downstream(
+  let more_raw = eval_with_downstream(
     inner,
     ctx,
     pos,
@@ -1119,6 +1119,7 @@ fn eval_many_with_downstream(
     consume_scope~,
     severed~,
   )
+  let more = drop_optional_missing(ctx, more_raw, head_elem_names(inner))
   choose_repeat_share(ctx, stop, more, is_lazy)
 }
 
@@ -3664,6 +3665,23 @@ fn consume_compound(
       out
     }
     Seq(items) => consume_compound_seq(sc, items, 0, ctx, pos, [], severed)
+    Many(inner, is_lazy) =>
+      consume_compound_many(sc, inner, is_lazy, ctx, pos, [], severed)
+    BoundedTail(head, budget, is_lazy) =>
+      consume_compound_bounded(sc, head, budget, is_lazy, ctx, pos, [], severed)
+    IndexedRepeat(label, head, min, budget) =>
+      consume_compound_indexed(
+        sc,
+        label,
+        head,
+        min,
+        budget,
+        ctx,
+        pos,
+        [],
+        severed,
+        0,
+      )
     Scoped(label, body) =>
       nest_branches(label, consume_compound(sc, body, ctx, pos, severed))
     LinkTarget(from, target, levels, extension, inner) => {
@@ -3707,6 +3725,157 @@ fn consume_compound(
     Bind(name, v) => [Accept(pos, [Binding::new(name, v, Cli)])]
     _ => eval(node, ctx, pos)
   }
+}
+
+///|
+fn consume_compound_many(
+  sc : Scope,
+  inner : Node,
+  is_lazy : Bool,
+  ctx : Ctx,
+  pos : Int,
+  acc : Array[Binding],
+  severed : Bool,
+) -> Array[Branch] {
+  let stop : Array[Branch] = [Accept(pos, acc)]
+  let more_raw : Array[Branch] = []
+  for branch in consume_compound(sc, inner, ctx, pos, severed) {
+    match branch {
+      Accept(next_pos, bindings) =>
+        if next_pos > pos {
+          for
+            result in consume_compound_many(
+              sc,
+              inner,
+              is_lazy,
+              ctx,
+              next_pos,
+              acc + bindings,
+              severed,
+            ) {
+            more_raw.push(result)
+          }
+        }
+      Rejected(error, bindings) =>
+        more_raw.push(Rejected(error, acc + bindings))
+      Held(error, bindings) => more_raw.push(Held(error, acc + bindings))
+      Pending(candidates, bindings) =>
+        more_raw.push(Pending(candidates, acc + bindings))
+    }
+  }
+  let more = drop_optional_missing(ctx, more_raw, head_elem_names(inner))
+  if is_lazy {
+    cat_branches(stop, more)
+  } else {
+    cat_branches(more, stop)
+  }
+}
+
+///|
+fn consume_compound_bounded(
+  sc : Scope,
+  head : Node,
+  budget : Int,
+  is_lazy : Bool,
+  ctx : Ctx,
+  pos : Int,
+  acc : Array[Binding],
+  severed : Bool,
+) -> Array[Branch] {
+  let stop : Array[Branch] = [Accept(pos, acc)]
+  if budget <= 0 {
+    return stop
+  }
+  let more_raw : Array[Branch] = []
+  for branch in consume_compound(sc, head, ctx, pos, severed) {
+    match branch {
+      Accept(next_pos, bindings) =>
+        if next_pos > pos {
+          for
+            result in consume_compound_bounded(
+              sc,
+              head,
+              budget - 1,
+              is_lazy,
+              ctx,
+              next_pos,
+              acc + bindings,
+              severed,
+            ) {
+            more_raw.push(result)
+          }
+        }
+      Rejected(error, bindings) =>
+        more_raw.push(Rejected(error, acc + bindings))
+      Held(error, bindings) => more_raw.push(Held(error, acc + bindings))
+      Pending(candidates, bindings) =>
+        more_raw.push(Pending(candidates, acc + bindings))
+    }
+  }
+  let more = drop_optional_missing(ctx, more_raw, head_elem_names(head))
+  if is_lazy {
+    cat_branches(stop, more)
+  } else {
+    cat_branches(more, stop)
+  }
+}
+
+///|
+fn consume_compound_indexed(
+  sc : Scope,
+  label : String,
+  head : Node,
+  min : Int,
+  budget : Int?,
+  ctx : Ctx,
+  pos : Int,
+  acc : Array[Binding],
+  severed : Bool,
+  rep : Int,
+) -> Array[Branch] {
+  let acc2 = if rep == 0 { acc + [array_marker(label)] } else { acc }
+  let stop : Array[Branch] = if rep >= min { [Accept(pos, acc2)] } else { [] }
+  let at_budget = match budget {
+    Some(extra) => rep >= min + extra
+    None => false
+  }
+  if at_budget {
+    return stop
+  }
+  let more_raw : Array[Branch] = []
+  for branch in consume_compound(sc, head, ctx, pos, severed) {
+    match branch {
+      Accept(next_pos, bindings) =>
+        if next_pos > pos {
+          for
+            result in consume_compound_indexed(
+              sc,
+              label,
+              head,
+              min,
+              budget,
+              ctx,
+              next_pos,
+              acc2 + nest_index(label, rep, bindings),
+              severed,
+              rep + 1,
+            ) {
+            more_raw.push(result)
+          }
+        }
+      Rejected(error, bindings) =>
+        more_raw.push(Rejected(error, acc2 + bindings))
+      Held(error, bindings) => more_raw.push(Held(error, acc2 + bindings))
+      Pending(candidates, bindings) =>
+        more_raw.push(Pending(candidates, acc2 + bindings))
+    }
+  }
+  let more = if rep >= min {
+    drop_optional_missing(ctx, more_raw, head_elem_names(head))
+  } else {
+    more_raw
+  }
+  cat_branches(more, stop)
 }
 
 ///|

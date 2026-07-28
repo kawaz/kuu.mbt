@@ -894,13 +894,49 @@ fn child_default_seat_key(e : ElementDef) -> String {
 }
 
 ///|
-fn child_head(e : ElementDef) -> Node {
-  let head = element_head(e)
-  if !e.is_literal && e.default_values is Some(_) {
-    ChildDefault(head, child_default_seat_key(e), e.name)
-  } else {
-    head
+fn child_repeat_head(e : ElementDef, head : Node) -> Node {
+  match elem_repeat(e) {
+    None => head
+    Some(spec) =>
+      match spec.max {
+        None =>
+          if spec.min == 0 {
+            Many(head, spec.is_lazy)
+          } else {
+            let nodes : Array[Node] = []
+            let mut count = 0
+            while count < spec.min {
+              nodes.push(head)
+              count = count + 1
+            }
+            nodes.push(Many(head, spec.is_lazy))
+            Seq(nodes)
+          }
+        Some(max) => {
+          let nodes : Array[Node] = []
+          let min = if spec.min < 0 { 0 } else { spec.min }
+          let mut count = 0
+          while count < min {
+            nodes.push(head)
+            count = count + 1
+          }
+          let budget = if max - min < 0 { 0 } else { max - min }
+          nodes.push(BoundedTail(head, budget, spec.is_lazy))
+          Seq(nodes)
+        }
+      }
   }
+}
+
+///|
+fn child_head(e : ElementDef) -> Node {
+  let raw = element_head(e)
+  let head = if !e.is_literal && e.default_values is Some(_) {
+    ChildDefault(raw, child_default_seat_key(e), e.name)
+  } else {
+    raw
+  }
+  child_repeat_head(e, head)
 }
 
 ///|
@@ -1058,19 +1094,17 @@ fn lower_positional(
             }
             Seq(nodes)
           }
-          let (min, budget) = match elem_repeat(e) {
-            Some(spec) =>
-              (
-                spec.min,
-                match spec.max {
-                  Some(mx) =>
-                    Some(if mx - spec.min < 0 { 0 } else { mx - spec.min })
-                  None => None
-                },
-              )
-            None => (0, None)
+          match elem_repeat(e) {
+            Some(spec) => {
+              let budget = match spec.max {
+                Some(mx) =>
+                  Some(if mx - spec.min < 0 { 0 } else { mx - spec.min })
+                None => None
+              }
+              out.push(IndexedRepeat(e.name, head, spec.min, budget))
+            }
+            None => out.push(Scoped(e.name, head))
           }
-          out.push(IndexedRepeat(e.name, head, min, budget))
         }
         Cell =>
           match e.ref_target {
@@ -1603,12 +1637,26 @@ fn inst_long(
           } else {
             Scoped(e.name, Or(branch_nodes))
           }
-          add_entry_greedy(
-            def,
-            e,
-            build,
-            Seq(with_depr(e, [Exact(trigger), or_node])),
-          )
+          match elem_repeat(e) {
+            None =>
+              add_entry_greedy(
+                def,
+                e,
+                build,
+                Seq(with_depr(e, [Exact(trigger), or_node])),
+              )
+            Some(_) => {
+              let spine : Array[Node] = []
+              lower_repeat_head(def, e, or_node, registry, spine)
+              let tail = if spine.length() == 1 { spine[0] } else { Seq(spine) }
+              add_entry_greedy(
+                def,
+                e,
+                build,
+                Seq(with_depr(e, [Exact(trigger), GreedyRepeat(tail)])),
+              )
+            }
+          }
         }
         // Enum (issue values-decode-support, DESIGN §5.3 / DR-028 追記): main entry の値スロット
         // 消費構造が `enum_value_node` (exact 値の or 展開) になる — Cell の `value_prim` に相当する
@@ -1618,12 +1666,31 @@ fn inst_long(
         // するだけでよい。
         Group(items) =>
           if e.long_eq_sep != Require {
-            add_entry_greedy(
-              def,
-              e,
-              build,
-              Seq(with_depr(e, [Exact(trigger), seq_value_node(e, items)])),
-            )
+            let body = seq_value_node(e, items)
+            match elem_repeat(e) {
+              None =>
+                add_entry_greedy(
+                  def,
+                  e,
+                  build,
+                  Seq(with_depr(e, [Exact(trigger), body])),
+                )
+              Some(_) => {
+                let spine : Array[Node] = []
+                lower_repeat_head(def, e, body, registry, spine)
+                let tail = if spine.length() == 1 {
+                  spine[0]
+                } else {
+                  Seq(spine)
+                }
+                add_entry_greedy(
+                  def,
+                  e,
+                  build,
+                  Seq(with_depr(e, [Exact(trigger), GreedyRepeat(tail)])),
+                )
+              }
+            }
           }
         Enum(values) =>
           add_entry_greedy(
@@ -3526,6 +3593,44 @@ fn positional_structural_head(e : ElementDef) -> Node {
 }
 
 ///|
+fn collect_element_zero_progress(
+  e : ElementDef,
+  registry : Map[String, Node],
+  out : Array[DefError],
+) -> Unit {
+  match elem_repeat(e) {
+    Some(_) => {
+      let head = positional_structural_head(e)
+      if !head_progresses(head, registry, []) &&
+        !head_node_cycles(head, registry) {
+        out.push(
+          def_err(
+            e.name,
+            ZeroProgress,
+            "repeat element '\{e.name}' has a zero-progress head",
+            "give the repeat head a token-consuming element",
+          ),
+        )
+      }
+    }
+    None => ()
+  }
+  match e.body {
+    Or(branches) =>
+      for branch in branches {
+        for child in branch.items {
+          collect_element_zero_progress(child, registry, out)
+        }
+      }
+    Group(items) =>
+      for child in items {
+        collect_element_zero_progress(child, registry, out)
+      }
+    Cell | Enum(_) => ()
+  }
+}
+
+///|
 /// zero-progress guard (DR-043 / DR-054): repeat head は >= 1 消費が必要。全件収集 — ただし ref
 /// cycle による 非 progress は circular ref (collect_circular_ref) 側で報告するので、ここでは除外する
 /// (kind を distinct に保つ)。
@@ -3534,24 +3639,11 @@ fn collect_zero_progress(
   registry : Map[String, Node],
   out : Array[DefError],
 ) -> Unit {
+  for e in def.options {
+    collect_element_zero_progress(e, registry, out)
+  }
   for e in def.positionals {
-    match elem_repeat(e) {
-      Some(_) => {
-        let head = positional_structural_head(e)
-        if !head_progresses(head, registry, []) &&
-          !head_node_cycles(head, registry) {
-          out.push(
-            def_err(
-              e.name,
-              ZeroProgress,
-              "repeat element '\{e.name}' has a zero-progress head",
-              "give the repeat head a token-consuming element",
-            ),
-          )
-        }
-      }
-      None => ()
-    }
+    collect_element_zero_progress(e, registry, out)
   }
   for c in def.commands {
     collect_zero_progress(c.body, registry, out)
