@@ -2348,7 +2348,19 @@ fn known_divergences() -> Array[String] {
   //   - help_query capability の runner dispatch 化 (現在 @kuu.help 直呼び)。
   //   - types 集約射影 + type_ref + used_as (value-structure-and-types.json は decode skip 継続)。
   //   - fixed default_fn の default 席射影 (P2H-Q3 裁定に沿った dynamic default_fn は model 非搭載)。
-  []
+  //
+  // child repeat/multiple Phase 1 (spec 先行 pin、issue 2026-07-26-dec-or-leaf-remaining-node-keys):
+  // positional Group 子の repeat は decode を通るが消費構造に効かず、phantom accum entity が
+  // root へ漏れる (issue 2026-07-27-group-child-attrs-accepted-but-inert-phantom-entity)。
+  // Phase 2-4 (decode/installer ctx → lowering/eval → accum/result address) の実装で解消し、
+  // 解消時は VANISHED が本 ledger の掃除を強制する。
+  [
+    "definition-error/child-repeat-zero-progress.json::zero-consumption-children-under-unbounded-repeat :: EXPECTED-DEFINITION-ERROR got=malformed:positional has unsupported key 'seq'",
+    "repeat-parse/child-repeat-group-nested.json::two-rows-each-with-inner-array :: EXPECTED-SUCCESS got=fail:value \"y\" is not a number",
+    "repeat-parse/child-repeat-group-nested.json::single-row-keeps-both-array-levels :: result got={nums=[],rows=[{nums=1,tag=x}]} want={rows=[{nums=[1],tag=x}]} | sources got={nums=[],rows=[{nums=cli,tag=cli}]} want={rows=[{nums=[cli],tag=cli}]}",
+    "repeat-parse/child-repeat-group.json::child-cell-stays-inside-group-scope :: result got={ctrl=c,grp=[{xs=a},{xs=b}],xs=[]} want={ctrl=c,grp={xs=[a,b]}} | sources got={ctrl=cli,grp=[{xs=cli},{xs=cli}],xs=[]} want={ctrl=cli,grp={xs=[cli,cli]}}",
+    "repeat-parse/child-repeat-group.json::group-child-min-and-sibling-exceed-tokens :: EXPECTED-FAILURE got=ok (resolve also succeeded)",
+  ]
 }
 
 ///|
@@ -2365,9 +2377,38 @@ fn expected_skips() -> Array[(String, String)] {
   // that carry these unsupported keys are skipped at decode time; entries pinned here so a decode
   // regression (unexpected new skip) or accidental fix (vanished skip) fails the run.
   // M5 (DR-113 §4.2): value-structure-and-types.json は dec_types tree-form + option
-  // seq wire キー + type_ref carry を M5 で全て実装済み、skip 解消。expected_skips は空
-  // (全 fixture 損失なく decode 可能)。
-  []
+  // seq wire キー + type_ref carry を M5 で全て実装済み、skip 解消。
+  //
+  // child repeat/multiple Phase 1 (spec 先行 pin、issue 2026-07-26-dec-or-leaf-remaining-node-keys):
+  // dec_or_leaf は child 位置の repeat/optional/multiple を未対応キーとして拒否する
+  // (DR-067 §2 は合法と規定 — 実装 gap)。Phase 2 (decode/installer ctx) で解消し、
+  // 解消時は VANISHED SKIP が本 ledger の掃除を強制する。
+  [
+    (
+      "multiple-parse/child-multiple-separator.json", "or branch leaf has unsupported key 'multiple'",
+    ),
+    (
+      "multiple-parse/child-repeat-parent-multiple.json", "or branch leaf has unsupported key 'repeat'",
+    ),
+    (
+      "or-parse/child-repeat-branch.json", "or branch leaf has unsupported key 'repeat'",
+    ),
+    (
+      "repeat-parse/child-repeat-ref-template.json", "or branch leaf has unsupported key 'repeat'",
+    ),
+    (
+      "seq-parse/child-optional-array-shape.json", "positional has unsupported key 'seq'",
+    ),
+    (
+      "seq-parse/child-repeat-basic.json", "positional has unsupported key 'seq'",
+    ),
+    (
+      "seq-parse/child-repeat-option-seq.json", "or branch leaf has unsupported key 'repeat'",
+    ),
+    (
+      "seq-parse/child-repeat-preference.json", "or branch leaf has unsupported key 'repeat'",
+    ),
+  ]
 }
 
 ///|
