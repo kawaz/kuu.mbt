@@ -2371,7 +2371,12 @@ test "nested accum cell stays under its declaring wrapper and renders zero-fire 
   ]
   let ek = test_export_scopes()
   let result = build_result_export(sc, binds, ek)
-  let expected = @abi.Object([("pair", @abi.Object([("xs", @abi.Array([]))]))])
+  // ResultValue:: 明示修飾 — moon 0.1.20260713 (kuu-cli 側 toolchain) は ConfigVal の
+  // 同名コンストラクタと曖昧判定する (0.1.20260727 は解決できる)。deps 経由で両 toolchain
+  // から check される test なので旧側に合わせる。
+  let expected = @abi.ResultValue::Object([
+    ("pair", @abi.ResultValue::Object([("xs", @abi.ResultValue::Array([]))])),
+  ])
   assert_eq(result, expected)
   assert_eq(
     result_sources(sc, binds, ek, result, canonical_registry()),
