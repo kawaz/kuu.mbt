@@ -897,8 +897,8 @@ fn child_default_seat_key(e : ElementDef) -> String {
 fn child_repeat_head(e : ElementDef, head : Node) -> Node {
   match elem_repeat(e) {
     None => head
-    Some(spec) =>
-      match spec.max {
+    Some(spec) => {
+      let repeated = match spec.max {
         None =>
           if spec.min == 0 {
             Many(head, spec.is_lazy)
@@ -925,6 +925,12 @@ fn child_repeat_head(e : ElementDef, head : Node) -> Node {
           Seq(nodes)
         }
       }
+      if e.name == "" {
+        repeated
+      } else {
+        Seq([Bind("#accum:" + e.name, Bool(false)), repeated])
+      }
+    }
   }
 }
 
@@ -1209,15 +1215,39 @@ fn is_help_group_declaration(e : ElementDef) -> Bool {
 }
 
 ///|
-fn ensure_entities(sb : InstallBuilder, has_cf : Bool) -> Unit {
+fn ensure_entities(
+  sb : InstallBuilder,
+  has_cf : Bool,
+  template_declarations : Map[String, ElementDef],
+) -> Unit {
   for e in sb.definition().options {
     if not_dd(e) && !is_help_group_declaration(e) && e.link_depth == 0 {
-      ensure_entity_body(sb.output(), e, has_cf, sb.extensions(), [], false)
+      ensure_entity_body(
+        sb.output(),
+        e,
+        has_cf,
+        sb.extensions(),
+        [],
+        false,
+        false,
+        template_declarations,
+        [],
+      )
     }
   }
   for e in sb.definition().positionals {
     if not_dd(e) {
-      ensure_entity_body(sb.output(), e, has_cf, sb.extensions(), [], true)
+      ensure_entity_body(
+        sb.output(),
+        e,
+        has_cf,
+        sb.extensions(),
+        [],
+        true,
+        false,
+        template_declarations,
+        [],
+      )
     }
   }
 }
@@ -1250,6 +1280,9 @@ fn ensure_entity_body(
   extensions : Registry,
   declaring_path : Array[String],
   positional_group_scope : Bool,
+  template_entities_only_accum : Bool,
+  template_declarations : Map[String, ElementDef],
+  visiting_templates : Array[String],
 ) -> Unit {
   // DR-029 / DR-120 §4: a link declaration is an entry into another element's cell, never a cell
   // of its own. Keep this at the recursive funnel so future body shapes cannot accidentally register
@@ -1273,7 +1306,7 @@ fn ensure_entity_body(
     child_path.push(e.name)
   }
   match e.body {
-    Cell =>
+    Cell => {
       // DR-078 §1 result 写像 (issue 2026-07-09-ref-template-result-shape): a `ref` element is
       // ALSO a structural dispatcher with no scalar/array value of its own — its "value" is a
       // name-scoped projection of the REFERENCED template's own leaves (installer.mbt's
@@ -1302,10 +1335,40 @@ fn ensure_entity_body(
       // `inst_long`/`lower_positional` 側 (このファイル、`ref_row_head` 分岐の条件) が発火ごとに
       // "#row" を打つよう連動して変わる — 両者は同じ `e.multiple` ガードで揃える必要がある。
       if e.ref_target is None {
-        ensure_entity(build, e, has_cf, extensions, declaring_path)
+        if !template_entities_only_accum ||
+          elem_repeat(e) is Some(_) ||
+          e.multiple {
+          ensure_entity(build, e, has_cf, extensions, declaring_path)
+        }
       } else if elem_repeat(e) is Some(_) || e.multiple {
         ensure_entity(build, e, has_cf, extensions, declaring_path)
       }
+      match e.ref_target {
+        Some(target) => {
+          let mut seen = false
+          for name in visiting_templates {
+            if name == target {
+              seen = true
+              break
+            }
+          }
+          if !seen {
+            match template_declarations.get(target) {
+              Some(declaration) => {
+                visiting_templates.push(target)
+                ensure_entity_body(
+                  build, declaration, has_cf, extensions, child_path, false, true,
+                  template_declarations, visiting_templates,
+                )
+                let _ = visiting_templates.pop()
+              }
+              None => ()
+            }
+          }
+        }
+        None => ()
+      }
+    }
     Or(branches) => {
       // Group と同じ: wrapper が結果スコープを作る (DESIGN §2.3) が値セルは持たない。`multiple`
       // 宣言時だけ accumulator の畳み単位として wrapper 自身の entity が要る (DR-084 §1)。
@@ -1314,6 +1377,11 @@ fn ensure_entity_body(
       }
       for br in branches {
         for it in br.items {
+          let item_path = if elem_repeat(it) is Some(_) || it.multiple {
+            child_path
+          } else {
+            declaring_path
+          }
           match it.default_values {
             Some(_) if !it.is_literal => {
               let seat_key = child_default_seat_key(it)
@@ -1327,7 +1395,8 @@ fn ensure_entity_body(
             }
             _ =>
               ensure_entity_body(
-                build, it, has_cf, extensions, declaring_path, false,
+                build, it, has_cf, extensions, item_path, positional_group_scope,
+                template_entities_only_accum, template_declarations, visiting_templates,
               )
           }
         }
@@ -1337,12 +1406,14 @@ fn ensure_entity_body(
       if e.multiple {
         ensure_entity(build, e, has_cf, extensions, declaring_path)
       }
-      let item_path = if positional_group_scope {
-        child_path
-      } else {
-        declaring_path
-      }
       for it in items {
+        let item_path = if positional_group_scope ||
+          elem_repeat(it) is Some(_) ||
+          it.multiple {
+          child_path
+        } else {
+          declaring_path
+        }
         match it.default_values {
           Some(_) if !it.is_literal => {
             let seat_key = child_default_seat_key(it)
@@ -1352,7 +1423,8 @@ fn ensure_entity_body(
           }
           _ =>
             ensure_entity_body(
-              build, it, has_cf, extensions, item_path, positional_group_scope,
+              build, it, has_cf, extensions, item_path, positional_group_scope, template_entities_only_accum,
+              template_declarations, visiting_templates,
             )
         }
       }
@@ -1361,7 +1433,12 @@ fn ensure_entity_body(
     // branches all bind the SAME `e.name`, unlike Or's per-branch leaves) — never has a
     // `ref_target` (values/or on a `ref` element is not a decodable shape today), so this always
     // registers unconditionally, simpler than Cell's ref_target-gated arm above.
-    Enum(_) => ensure_entity(build, e, has_cf, extensions, declaring_path)
+    Enum(_) =>
+      if !template_entities_only_accum ||
+        elem_repeat(e) is Some(_) ||
+        e.multiple {
+        ensure_entity(build, e, has_cf, extensions, declaring_path)
+      }
   }
 }
 
@@ -3465,7 +3542,8 @@ fn head_progresses(
     DdMatchSatisfied(_, _, self_keep, _) => !self_keep
     Ext(extension) => !extension.consumes_zero_tokens()
     IndexedRepeat(_, _, _, _) => true // 名前付き indexed repeat は head を消費
-    BoundedTail(_, budget, _) => budget >= 1 // >= 1 head 取れる時のみ消費
+    BoundedTail(head, budget, _) =>
+      budget >= 1 && head_progresses(head, registry, visiting)
     LinkTarget(_, _, _, _, inner) => head_progresses(inner, registry, visiting)
     Rooted(inner, _) => head_progresses(inner, registry, visiting)
     Bind(_, _) | ChildDefault(_, _, _) => false // a child-default fallback may consume 0 tokens
@@ -3501,7 +3579,8 @@ fn head_progresses(
       }
       false
     }
-    Many(_) | Scoped(_, _) | ScopeNode(_) => true
+    Many(inner, _) => head_progresses(inner, registry, visiting)
+    Scoped(_, _) | ScopeNode(_) => true
     GreedyRepeat(inner) => head_progresses(inner, registry, visiting)
   }
 }
@@ -5536,6 +5615,7 @@ fn lower_definition_snapshot_impl(
   plan : InstallerPlan,
   extensions : Registry,
   registry : Map[String, Node],
+  template_declarations : Map[String, ElementDef],
 ) -> Result[LoweredDefinition, Array[DefError]] {
   let def = clone_def(def0)
   // DR-076 §2 flag 差し替え/補完の alias 側適用 (issue 2026-07-08 dec-alias-long-override-flag-sugar-
@@ -5581,7 +5661,7 @@ fn lower_definition_snapshot_impl(
   let has_cf = has_config_file(def)
   match
     run_installer_fixpoint(sb, plan.apply_steps, fn(builder) {
-      ensure_entities(builder, has_cf)
+      ensure_entities(builder, has_cf, template_declarations)
     }) {
     // DR-120 §5: 露出キー衝突の検査面は「全 installer の宣言層寄与を適用し終えた宣言層」
     // (help_query capability が読む面と同じ、DESIGN §15.15) — `commands` / `global` /
@@ -5618,8 +5698,12 @@ pub fn lower_definition(
   plan : InstallerPlan,
   extensions : Registry,
   registry? : Map[String, Node] = Map([], capacity=0),
+  template_declarations? : Map[String, ElementDef] = Map([], capacity=0),
 ) -> Result[Scope, Array[DefError]] {
-  match lower_definition_snapshot_impl(def0, plan, extensions, registry) {
+  match
+    lower_definition_snapshot_impl(
+      def0, plan, extensions, registry, template_declarations,
+    ) {
     Ok(lowered) => Ok(lowered.scope)
     Err(errors) => Err(errors)
   }
@@ -5633,8 +5717,11 @@ pub fn lower_definition_snapshot(
   plan : InstallerPlan,
   extensions : Registry,
   registry? : Map[String, Node] = Map([], capacity=0),
+  template_declarations? : Map[String, ElementDef] = Map([], capacity=0),
 ) -> Result[LoweredDefinition, Array[DefError]] {
-  lower_definition_snapshot_impl(def0, plan, extensions, registry)
+  lower_definition_snapshot_impl(
+    def0, plan, extensions, registry, template_declarations,
+  )
 }
 
 ///|

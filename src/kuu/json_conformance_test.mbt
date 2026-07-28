@@ -2354,29 +2354,7 @@ fn known_divergences() -> Array[String] {
   // root へ漏れる (issue 2026-07-27-group-child-attrs-accepted-but-inert-phantom-entity)。
   // Phase 2-4 (decode/installer ctx → lowering/eval → accum/result address) の実装で解消し、
   // 解消時は VANISHED が本 ledger の掃除を強制する。
-  [
-    "multiple-parse/child-multiple-separator.json::child-separator-splits-single-token :: result got={cells=[],pair={key=k,vals=c},vals=[]} want={pair={key=k,vals=[a,b,c]}} | sources got={cells=[],pair={key=cli,vals=cli},vals=[]} want={pair={key=cli,vals=[cli,cli,cli]}}",
-    "multiple-parse/child-multiple-separator.json::child-repeat-times-separator-stays-flat :: result got={cells=[],rowsep={cells=d,label=L},vals=[]} want={rowsep={cells=[a,b,c,d],label=L}} | sources got={cells=[],rowsep={cells=cli,label=cli},vals=[]} want={rowsep={cells=[cli,cli,cli,cli],label=cli}}",
-    "multiple-parse/child-repeat-parent-multiple.json::two-fires-each-kv-keeps-inner-array :: result got={rows=[{k=a,vs=2},{k=b,vs=3}],vs=[]} want={rows=[{k=a,vs=[1,2]},{k=b,vs=[3]}]} | sources got={rows=[{k=cli,vs=cli},{k=cli,vs=cli}],vs=[]} want={rows=[{k=cli,vs=[cli,cli]},{k=cli,vs=[cli]}]}",
-    "multiple-parse/child-repeat-parent-multiple.json::single-fire-still-wrapped :: result got={rows=[{k=a,vs=2}],vs=[]} want={rows=[{k=a,vs=[1,2]}]} | sources got={rows=[{k=cli,vs=cli}],vs=[]} want={rows=[{k=cli,vs=[cli,cli]}]}",
-    "or-parse/child-repeat-branch.json::numeric-branch-repeats-uniquely :: result got={nums=[],sel={nums=2}} want={sel={nums=[1,2]}} | sources got={nums=[],sel={nums=cli}} want={sel={nums=[cli,cli]}}",
-    "or-parse/child-repeat-branch.json::string-branch-excludes-numeric-branch :: result got={nums=[],sel={word=foo}} want={sel={word=foo}} | sources got={nums=[],sel={word=cli}} want={sel={word=cli}}",
-    "or-parse/child-repeat-branch.json::single-numeric-token-overlaps-both-branches :: interpretations got=[{nums=[],sel={nums=5}},{nums=[],sel={word=5}}] want=[{sel={nums=[5]}},{sel={word=5}}]",
-    "repeat-parse/child-repeat-group-nested.json::two-rows-each-with-inner-array :: result got={nums=[],rows=[{nums=2,tag=x},{nums=3,tag=y}]} want={rows=[{nums=[1,2],tag=x},{nums=[3],tag=y}]} | sources got={nums=[],rows=[{nums=cli,tag=cli},{nums=cli,tag=cli}]} want={rows=[{nums=[cli,cli],tag=cli},{nums=[cli],tag=cli}]}",
-    "repeat-parse/child-repeat-group-nested.json::single-row-keeps-both-array-levels :: result got={nums=[],rows=[{nums=1,tag=x}]} want={rows=[{nums=[1],tag=x}]} | sources got={nums=[],rows=[{nums=cli,tag=cli}]} want={rows=[{nums=[cli],tag=cli}]}",
-    "repeat-parse/child-repeat-group.json::child-cell-stays-inside-group-scope :: result got={ctrl=c,grp={xs=b},xs=[]} want={ctrl=c,grp={xs=[a,b]}} | sources got={ctrl=cli,grp={xs=cli},xs=[]} want={ctrl=cli,grp={xs=[cli,cli]}}",
-    "repeat-parse/child-repeat-ref-template.json::two-ref-sites-repeat-independently :: result got={from={key=a,vals=2},to={key=b,vals=3}} want={from={key=a,vals=[1,2]},to={key=b,vals=[3]}} | sources got={from={key=cli,vals=cli},to={key=cli,vals=cli}} want={from={key=cli,vals=[cli,cli]},to={key=cli,vals=[cli]}}",
-    "repeat-parse/child-repeat-ref-template.json::single-ref-site-fires :: result got={to={key=b,vals=4}} want={to={key=b,vals=[3,4]}} | sources got={to={key=cli,vals=cli}} want={to={key=cli,vals=[cli,cli]}}",
-    "seq-parse/child-optional-array-shape.json::zero-fire-is-empty-array-not-absent :: result got={pair={head=a},tail=[]} want={pair={head=a,tail=[]}} | sources got={pair={head=cli},tail=[]} want={pair={head=cli,tail=[]}}",
-    "seq-parse/child-optional-array-shape.json::one-fire-is-single-element-array :: result got={pair={head=a,tail=b},tail=[]} want={pair={head=a,tail=[b]}} | sources got={pair={head=cli,tail=cli},tail=[]} want={pair={head=cli,tail=[cli]}}",
-    "seq-parse/child-optional-array-shape.json::beyond-max-one-has-no-consumer :: errors got={@2/parse/unexpected_token} want={@1/parse/unexpected_token,@2/parse/unexpected_token}",
-    "seq-parse/child-repeat-basic.json::greedy-child-yields-tail-to-sibling :: result got={pair={xs=b,y=c},xs=[]} want={pair={xs=[a,b],y=c}} | sources got={pair={xs=cli,y=cli},xs=[]} want={pair={xs=[cli,cli],y=cli}}",
-    "seq-parse/child-repeat-option-seq.json::child-repeat-yields-token-to-root-positional :: result got={dest=c,span={head=a,tail=b},tail=[]} want={dest=c,span={head=a,tail=[b]}} | sources got={dest=cli,span={head=cli,tail=cli},tail=[]} want={dest=cli,span={head=cli,tail=[cli]}}",
-    "seq-parse/child-repeat-option-seq.json::child-repeat-zero-fire-empty-array :: result got={dest=b,span={head=a},tail=[]} want={dest=b,span={head=a,tail=[]}} | sources got={dest=cli,span={head=cli},tail=[]} want={dest=cli,span={head=cli,tail=[]}}",
-    "seq-parse/child-repeat-option-seq.json::root-positional-consumed-before-option-fires :: result got={dest=x,span={head=a,tail=b},tail=[]} want={dest=x,span={head=a,tail=[b]}} | sources got={dest=cli,span={head=cli,tail=cli},tail=[]} want={dest=cli,span={head=cli,tail=[cli]}}",
-    "seq-parse/child-repeat-preference.json::greedy-left-takes-longest :: result got={greedypair={gxs=b,gys=c},gxs=[],gys=[],lxs=[],lys=[]} want={greedypair={gxs=[a,b],gys=[c]}} | sources got={greedypair={gxs=cli,gys=cli},gxs=[],gys=[],lxs=[],lys=[]} want={greedypair={gxs=[cli,cli],gys=[cli]}}",
-    "seq-parse/child-repeat-preference.json::lazy-left-takes-shortest :: result got={gxs=[],gys=[],lazypair={lxs=a,lys=c},lxs=[],lys=[]} want={lazypair={lxs=[a],lys=[b,c]}} | sources got={gxs=[],gys=[],lazypair={lxs=cli,lys=cli},lxs=[],lys=[]} want={lazypair={lxs=[cli],lys=[cli,cli]}}",
-  ]
+  []
 }
 
 ///|

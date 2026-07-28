@@ -784,6 +784,32 @@ fn accum_cells(
 }
 
 ///|
+fn push_accum_cell(
+  entity : @engine.Entity,
+  path : Array[String],
+  ek : @engine.ExportScopeMap,
+  out : Array[AccumCell],
+) -> Unit {
+  match entity.accum {
+    Some(accum) =>
+      match ek.exposed_cell(entity.name) {
+        None => ()
+        Some(name) =>
+          out.push({
+            path,
+            name,
+            collector: entity.collector,
+            accum_filters: entity.accum_filters,
+            accum,
+            flatten: entity.flatten,
+            is_multiple_decl: entity.is_multiple_decl,
+          })
+      }
+    None => ()
+  }
+}
+
+///|
 /// `path` は **露出キー軸** (`exposed_scope` の rename / 透過昇格を適用済み) — AccumCell は
 /// `build_result` が射影済み binding key と直接突き合わせる素材なので、`collect_defaults` と違い
 /// ここで射影を済ませる。一方 `decl_path` は **宣言名軸** で、選択判定 (`@engine.scope_selected`)
@@ -798,23 +824,33 @@ fn collect_accum(
   out : Array[AccumCell],
 ) -> Unit {
   for e in sc.entities {
-    // any named accumulator (flatten / append / …) folds the cell into a list (DR-036).
-    match e.accum {
-      Some(a) =>
-        match ek.exposed_cell(e.name) {
-          None => () // 透過: this accum cell's own result-key axis is dropped
-          Some(new_name) =>
-            out.push({
-              path,
-              name: new_name,
-              collector: e.collector,
-              accum_filters: e.accum_filters,
-              accum: a,
-              flatten: e.flatten,
-              is_multiple_decl: e.is_multiple_decl,
-            })
+    // Root cells are collected only at the root declaration path. Structural children are materialized
+    // at each runtime wrapper/index path below, never promoted to this scope merely because Entity is
+    // stored in the enclosing engine Scope.
+    if e.declaring_path.length() == 0 {
+      push_accum_cell(e, path, ek, out)
+    } else {
+      let runtime_paths : Array[Array[String]] = []
+      for binding in binds {
+        if binding.scope.length() >= decl_path.length() &&
+          path_eq(
+            structural_declaring_path(binding.scope, decl_path),
+            e.declaring_path,
+          ) &&
+          (binding.key == e.name || binding.key == "#accum:" + e.name) &&
+          !contains_path(runtime_paths, binding.scope) {
+          runtime_paths.push(binding.scope)
         }
-      None => ()
+      }
+      for runtime_path in runtime_paths {
+        let nested_ek = export_map_at_structural_path(
+          ek, runtime_path, decl_path,
+        )
+        let exposed_path = exposed_structural_path(
+          ek, runtime_path, decl_path, path,
+        )
+        push_accum_cell(e, exposed_path, nested_ek, out)
+      }
     }
   }
   for g in sc.greedy {
@@ -1345,6 +1381,51 @@ fn source_seats(
 }
 
 ///|
+fn direct_accum_source_shadow(
+  cell : AccumCell,
+  binds : Array[@abi.Binding],
+  key : String,
+  allow_empty : Bool,
+  extensions : @node.Registry,
+) -> @abi.ResultValue? {
+  let direct : Array[@abi.Binding] = []
+  for binding in binds {
+    if binding.scope.length() == 0 && binding.key == key {
+      match binding.op {
+        @abi.Empty | @abi.Unset | @abi.Default => direct.clear()
+        _ => direct.push(binding)
+      }
+    }
+  }
+  if direct.length() == 0 && !allow_empty {
+    return None
+  }
+  let filtered = match
+    @extension.apply_accum_filter_chain_with_sources(
+      extensions.extensions(),
+      cell.accum_filters,
+      direct,
+    ) {
+    Ok(bindings) => bindings
+    Err(error) => abort("source projection failed: " + error.message)
+  }
+  let values : Array[@abi.Value] = []
+  let sourced : Array[(@abi.Value, @abi.Source)] = []
+  for binding in filtered {
+    values.push(binding.value)
+    sourced.push((binding.value, binding.source))
+  }
+  let accumulated = cell.accum.collect(values)
+  let shadow = cell.accum.collect_sources(sourced)
+  Some(
+    match cell.collector {
+      Some(collector) => collector.collect_sources(accumulated, shadow)
+      None => shadow
+    },
+  )
+}
+
+///|
 /// Build DR-122's shadow tree by walking the completed result structure. Structural arrays and
 /// scopes recurse through the same row/index grouping as `build_result`. Shape-changing collectors
 /// receive the pre-collector value and source trees together so key promotion and tuple conversion
@@ -1363,75 +1444,95 @@ fn source_shadow(
     @abi.Object(fields) => {
       let out : Array[(String, @abi.ResultValue)] = []
       for field in fields {
-        match source_seat(seats, path, field.0) {
-          Some(seat) => {
-            let shadow = seat.shadow.unwrap_or_else(() => {
-              abort("source projection failed: unfinished seat")
-            })
-            out.push((field.0, shadow))
-          }
-          None => {
-            let child_binds = sub_under(binds, field.0)
-            match accum_cell_at(cells, path, field.0) {
-              Some(cell) if cell.collector is Some(_) => {
-                let child_path = path_push(path, field.0)
-                let accumulated = build_result(
-                  child_binds,
-                  cells,
-                  defaults,
-                  child_path,
-                  nones=internal,
-                  extensions~,
-                )
-                let accumulated_sources = source_shadow(
-                  accumulated, child_binds, seats, cells, defaults, internal, extensions,
-                  child_path,
-                )
-                let collector = cell.collector.unwrap()
-                out.push(
-                  (
-                    field.0,
-                    collector.collect_sources(accumulated, accumulated_sources),
-                  ),
-                )
+        let direct_accum = match accum_cell_at(cells, path, field.0) {
+          Some(cell) =>
+            direct_accum_source_shadow(
+              cell,
+              binds,
+              field.0,
+              match field.1 {
+                @abi.Array([]) => true
+                _ => false
+              },
+              extensions,
+            )
+          None => None
+        }
+        match direct_accum {
+          Some(shadow) => out.push((field.0, shadow))
+          None =>
+            match source_seat(seats, path, field.0) {
+              Some(seat) => {
+                let shadow = seat.shadow.unwrap_or_else(() => {
+                  abort("source projection failed: unfinished seat")
+                })
+                out.push((field.0, shadow))
               }
-              _ => {
-                let mut direct : @abi.Source? = None
-                for binding in binds {
-                  if binding.scope.length() == 0 && binding.key == field.0 {
-                    direct = Some(
-                      match binding.op {
-                        @abi.Unset => @abi.Source::Default
-                        _ => binding.source
-                      },
-                    )
-                  }
-                }
-                let source = match direct {
-                  Some(value) => Some(value)
-                  None => indexed_source(seats, path, field.0)
-                }
-                match source {
-                  Some(value) => out.push((field.0, source_tag(value)))
-                  None if source_default_here(defaults, path, field.0) =>
-                    out.push((field.0, source_tag(@abi.Default)))
-                  None => {
-                    let nested = source_shadow(
-                      field.1,
+              None => {
+                let child_binds = sub_under(binds, field.0)
+                match accum_cell_at(cells, path, field.0) {
+                  Some(cell) if cell.collector is Some(_) => {
+                    let child_path = path_push(path, field.0)
+                    let accumulated = build_result(
                       child_binds,
-                      seats,
                       cells,
                       defaults,
-                      internal,
-                      extensions,
-                      path_push(path, field.0),
+                      child_path,
+                      nones=internal,
+                      extensions~,
                     )
-                    out.push((field.0, nested))
+                    let accumulated_sources = source_shadow(
+                      accumulated, child_binds, seats, cells, defaults, internal,
+                      extensions, child_path,
+                    )
+                    let collector = cell.collector.unwrap()
+                    out.push(
+                      (
+                        field.0,
+                        collector.collect_sources(
+                          accumulated, accumulated_sources,
+                        ),
+                      ),
+                    )
+                  }
+                  _ => {
+                    let mut direct : @abi.Source? = None
+                    for binding in binds {
+                      if binding.scope.length() == 0 && binding.key == field.0 {
+                        direct = Some(
+                          match binding.op {
+                            @abi.Unset => @abi.Source::Default
+                            _ => binding.source
+                          },
+                        )
+                      }
+                    }
+                    let source = match direct {
+                      Some(value) => Some(value)
+                      None => indexed_source(seats, path, field.0)
+                    }
+                    match source {
+                      Some(value) => out.push((field.0, source_tag(value)))
+                      None if source_default_here(defaults, path, field.0) =>
+                        out.push((field.0, source_tag(@abi.Default)))
+                      None => {
+                        let nested = source_shadow(
+                          field.1,
+                          child_binds,
+                          seats,
+                          cells,
+                          defaults,
+                          internal,
+                          extensions,
+                          path_push(path, field.0),
+                        )
+                        out.push((field.0, nested))
+                      }
+                    }
                   }
                 }
               }
             }
-          }
         }
       }
       @abi.Object(out)
@@ -1898,6 +1999,32 @@ fn runtime_path_has_index(
     i = i + 1
   }
   false
+}
+
+///|
+fn exposed_structural_path(
+  root : @engine.ExportScopeMap,
+  runtime_path : Array[String],
+  base_path : Array[String],
+  exposed_base : Array[String],
+) -> Array[String] {
+  let out = exposed_base.copy()
+  let mut node = root
+  let mut i = base_path.length()
+  while i < runtime_path.length() {
+    let segment = runtime_path[i]
+    if is_runtime_index_segment(segment) {
+      ()
+    } else {
+      match node.exposed_scope(segment) {
+        Some(name) => out.push(name)
+        None => ()
+      }
+      node = node.child(segment)
+    }
+    i = i + 1
+  }
+  out
 }
 
 ///|

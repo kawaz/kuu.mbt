@@ -2343,3 +2343,38 @@ test "internal_cells 対極: a SELECTED transparent command's none-cell seat sti
   assert_eq(cells.length(), 1)
   assert_eq(is_internal_cell(cells, [], "x"), true)
 }
+
+///|
+/// structural child の accumulator は宣言 wrapper 内にだけ着席し、0 発火でも wrapper が選択
+/// された実行では result/sources 双方に空配列を作る。root への同名セル漏出は許さない。
+test "nested accum cell stays under its declaring wrapper and renders zero-fire []" {
+  let sc : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [
+      ent("xs", @builtins.string_type(), accum=Some("append"), flatten=true, declaring_path=[
+        "pair",
+      ]),
+    ],
+    constraints: [],
+  }
+  let binds : Array[@abi.Binding] = [
+    {
+      key: "#accum:xs",
+      op: @abi.Set,
+      value: @abi.Bool(false),
+      source: @abi.Cli,
+      scope: ["pair"],
+      levels_to_declaring_scope: 0,
+      at_pos: None,
+    },
+  ]
+  let ek = test_export_scopes()
+  let result = build_result_export(sc, binds, ek)
+  let expected = @abi.Object([("pair", @abi.Object([("xs", @abi.Array([]))]))])
+  assert_eq(result, expected)
+  assert_eq(
+    result_sources(sc, binds, ek, result, canonical_registry()),
+    expected,
+  )
+}

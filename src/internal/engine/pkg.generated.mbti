@@ -116,9 +116,9 @@ pub fn kv_map_accumulator() -> &@extension.AccumulatorExt
 
 pub fn literal_value(String, @abi.Value) -> Node
 
-pub fn lower_definition(Definition, InstallerPlan, @extension.Registry, registry? : Map[String, Node]) -> Result[Scope, Array[@abi.DefError]]
+pub fn lower_definition(Definition, InstallerPlan, @extension.Registry, registry? : Map[String, Node], template_declarations? : Map[String, ElementDef]) -> Result[Scope, Array[@abi.DefError]]
 
-pub fn lower_definition_snapshot(Definition, InstallerPlan, @extension.Registry, registry? : Map[String, Node]) -> Result[LoweredDefinition, Array[@abi.DefError]]
+pub fn lower_definition_snapshot(Definition, InstallerPlan, @extension.Registry, registry? : Map[String, Node], template_declarations? : Map[String, ElementDef]) -> Result[LoweredDefinition, Array[@abi.DefError]]
 
 pub fn merge_accumulator() -> &@extension.AccumulatorExt
 

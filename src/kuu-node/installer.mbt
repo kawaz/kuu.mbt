@@ -270,12 +270,14 @@ pub fn lower_definition(
   installers : Array[&InstallerExt],
   extensions : @extension.Registry,
   registry? : Map[String, Node] = Map([]),
+  template_declarations? : Map[String, @engine.ElementDef] = Map([]),
 ) -> Result[Scope, Array[@abi.DefError]] {
   @engine.lower_definition(
     definition,
     installer_plan(installers),
     extensions,
     registry~,
+    template_declarations~,
   )
 }
 
@@ -285,11 +287,13 @@ pub fn lower_definition_snapshot(
   installers : Array[&InstallerExt],
   extensions : @extension.Registry,
   registry? : Map[String, Node] = Map([]),
+  template_declarations? : Map[String, @engine.ElementDef] = Map([]),
 ) -> Result[LoweredDefinition, Array[@abi.DefError]] {
   @engine.lower_definition_snapshot(
     definition,
     installer_plan(installers),
     extensions,
     registry~,
+    template_declarations~,
   )
 }

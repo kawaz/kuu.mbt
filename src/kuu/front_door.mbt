@@ -123,6 +123,12 @@ pub fn parse_definition(
       None => ()
     }
     let templates : Map[String, @engine.Node] = Map([])
+    // Design rationale: runtime parsing, completion, installer views, and AtomicAST all consume the
+    // Node registry directly. Replacing that public/runtime registry with declaration nodes would
+    // spread a phase conversion across those independent consumers. Keep the runtime registry and
+    // carry the same decoded ElementDef tree alongside it only until lowering registers template
+    // child entities; both maps are populated by the single dec_template_body traversal below.
+    let template_declarations : Map[String, @engine.ElementDef] = Map([])
     let shadows = match top.get("definitions") {
       Some(dj) => {
         let d = match dj.j_obj() {
@@ -135,7 +141,10 @@ pub fn parse_definition(
           None => (Map([]), [])
         }
         match d.get("templates") {
-          Some(tmplj) => dec_templates(tmplj, ts, templates, extensions)
+          Some(tmplj) =>
+            dec_templates(
+              tmplj, ts, templates, template_declarations, extensions,
+            )
           None => ()
         }
         (ts, hts)
@@ -154,6 +163,7 @@ pub fn parse_definition(
         extensions.installers(),
         engine_extensions,
         registry=templates,
+        template_declarations~,
       ) {
       Ok(lowered) =>
         Ok({

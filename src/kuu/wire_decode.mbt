@@ -1590,6 +1590,7 @@ fn dec_templates(
   j : Json,
   shadows : Map[String, TypeShadow],
   template_registry : Map[String, @engine.Node],
+  template_declarations : Map[String, @engine.ElementDef],
   extensions : @node.Registry,
 ) -> Unit raise DecodeSkip {
   let o = match j.j_obj() {
@@ -1598,7 +1599,9 @@ fn dec_templates(
   }
   for name, tj in o {
     check_reserved_name(name, "definitions.templates")
-    template_registry.set(name, dec_template_body(tj, shadows, extensions))
+    let (node, declaration) = dec_template_body(tj, shadows, extensions)
+    template_registry.set(name, node)
+    template_declarations.set(name, declaration)
   }
 }
 
@@ -1616,7 +1619,7 @@ fn dec_template_body(
   j : Json,
   shadows : Map[String, TypeShadow],
   extensions : @node.Registry,
-) -> @engine.Node raise DecodeSkip {
+) -> (@engine.Node, @engine.ElementDef) raise DecodeSkip {
   let o = match j.j_obj() {
     Some(x) => x
     None => raise DecodeSkip("definitions.templates entry is not an object")
@@ -1630,7 +1633,10 @@ fn dec_template_body(
           for br in branches {
             nodes.push(@engine.or_branch_node(br))
           }
-          @engine.Or(nodes)
+          (
+            @engine.Or(nodes),
+            { ..pos("", @builtins.string_type()), body: Or(branches) },
+          )
         }
         None =>
           raise DecodeSkip(
@@ -1656,9 +1662,15 @@ fn dec_template_body(
           for e in sa {
             items.push(dec_or_leaf(e, shadows, extensions~))
           }
-          @engine.seq_body_node(items)
+          (
+            @engine.seq_body_node(items),
+            { ..pos("", @builtins.string_type()), body: Group(items) },
+          )
         }
-        None => @engine.element_head(dec_or_leaf(j, shadows, extensions~)) // bare leaf {"type":..,"name":..}
+        None => {
+          let leaf = dec_or_leaf(j, shadows, extensions~)
+          (@engine.element_head(leaf), leaf)
+        } // bare leaf {"type":..,"name":..}
       }
   }
 }

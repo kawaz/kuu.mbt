@@ -40,9 +40,9 @@ pub fn int_arg(String, round~ : @abi.RoundMode, filters~ : Array[@abi.FnInvocati
 
 pub fn kv_arg(String, Array[@abi.FnInvocation]) -> @engine.Node
 
-pub fn lower_definition(@engine.Definition, Array[&InstallerExt], @extension.Registry, registry? : Map[String, @engine.Node]) -> Result[@engine.Scope, Array[@abi.DefError]]
+pub fn lower_definition(@engine.Definition, Array[&InstallerExt], @extension.Registry, registry? : Map[String, @engine.Node], template_declarations? : Map[String, @engine.ElementDef]) -> Result[@engine.Scope, Array[@abi.DefError]]
 
-pub fn lower_definition_snapshot(@engine.Definition, Array[&InstallerExt], @extension.Registry, registry? : Map[String, @engine.Node]) -> Result[@engine.LoweredDefinition, Array[@abi.DefError]]
+pub fn lower_definition_snapshot(@engine.Definition, Array[&InstallerExt], @extension.Registry, registry? : Map[String, @engine.Node], template_declarations? : Map[String, @engine.ElementDef]) -> Result[@engine.LoweredDefinition, Array[@abi.DefError]]
 
 pub fn number_arg(String, filters~ : Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
 

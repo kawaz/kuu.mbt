@@ -4642,6 +4642,16 @@ fn collect_pos_scopes(
 // ── top level (spec DR-038 path counting) ────────────────────────────────────
 
 ///|
+fn int_contains(values : Array[Int], target : Int) -> Bool {
+  for value in values {
+    if value == target {
+      return true
+    }
+  }
+  false
+}
+
+///|
 /// Parse `toks` against `root`, counting DISTINCT complete paths.
 ///
 /// Path identity is the observable effect sequence on entities (spec DR-038),
@@ -4687,6 +4697,7 @@ pub fn parse_tree(
   }
   let full : Array[Array[Binding]] = []
   let errors : Array[ParseError] = []
+  let structural_repeat_residuals : Array[Int] = []
   // the deepest args position any branch reached (DeepestOnly candidate set).
   let mut max_reach = -1
   for b in branches {
@@ -4740,6 +4751,23 @@ pub fn parse_tree(
       }
       Rejected(_, _) => ()
       Held(pe, bs) => {
+        if is_scope_residual(pe) {
+          for binding in bs {
+            if binding.key.length() >= 7 && binding.key[0:7] == "#accum:" {
+              let mut seen = false
+              for pos in structural_repeat_residuals {
+                if pos == pe.args_pos {
+                  seen = true
+                  break
+                }
+              }
+              if !seen {
+                structural_repeat_residuals.push(pe.args_pos)
+              }
+              break
+            }
+          }
+        }
         push_error(errors, pe)
         let counts = match faildef {
           AcceptsOnly => false
@@ -4835,7 +4863,9 @@ pub fn parse_tree(
   }
   let errors2 : Array[ParseError] = []
   for e in errors {
-    if is_scope_residual(e) && e.args_pos < deepest_resid {
+    if is_scope_residual(e) &&
+      e.args_pos < deepest_resid &&
+      !int_contains(structural_repeat_residuals, e.args_pos) {
       continue
     }
     errors2.push(e)
