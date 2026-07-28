@@ -1,6 +1,6 @@
 ---
 title: positional Group 子の repeat/optional/multiple が「通るが効かない」+ phantom accum entity が root に漏れる
-status: blocked
+status: resolved
 category: bug
 created: 2026-07-27T03:44:09+09:00
 last_read: 2026-07-28T20:58:57+09:00
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered: 2026-07-28T22:15:48+09:00
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-29T04:16:34+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented","done:選択方向(b)のend-to-end実装(Phase 2-4、main commit b0ff53ad〜e159922c)で解消","done:child_headのoff-spine repeat loweringとlower_positionalのGroup→Scoped修正で消費構造を配線","done:collect_accumのdeclaring_pathゲートとresolve.mbtのnested AccumCellでphantom accum entityのroot漏れを恒久修正","done:spec fixture repeat-parse/child-repeat-group.json (child-cell-stays-inside-group-scope) がroot非漏出をpin、conformance 383 file/857 case全pass","done:resolve_wbtestにroot非漏出のwbtestあり"]
 blocked_by: 2026-07-26-dec-or-leaf-remaining-node-keys
 origin: 自リポ TODO
 ---
@@ -68,8 +68,8 @@ root の `x:[]` は仕様上存在しないはずのセル。「decode を通す
 
 ## 受け入れ条件
 
-- [ ] (a) か (b) のどちらを先に入れるか裁定
-- [ ] 選択した対処方向を実装し、上記の phantom セル漏れ・消費構造不整合が
+- [x] (a) か (b) のどちらを先に入れるか裁定
+- [x] 選択した対処方向を実装し、上記の phantom セル漏れ・消費構造不整合が
       再現しないことをテストで確認
 
 ## 関連
