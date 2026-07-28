@@ -13,7 +13,7 @@
 | 2026-07-26 | design | open | [unify-flat-tree-sources-projection](./2026-07-26-unify-flat-tree-sources-projection.md) | has_commands 分岐そのものを廃止し sources 射影を flat/tree で統一する (export_key 修正 issue からの切り出し) |
 | 2026-07-26 | design | open | [flat-tree-source-unset-default-mismatch](./2026-07-26-flat-tree-source-unset-default-mismatch.md) | flat 側の Unset=>Default 読み替えが tree 側に無い (sources 射影 export_key 修正 issue からの切り出し) |
 | 2026-07-26 | bug | open | [command-scope-export-key-none-cell-leak](./2026-07-26-command-scope-export-key-none-cell-leak.md) | command scope の export_key rename があると type:none セルが result / sources に漏れる (DR-089 違反) |
-| 2026-07-26 | design | open | [dec-or-leaf-remaining-node-keys](./2026-07-26-dec-or-leaf-remaining-node-keys.md) | dec_or_leaf の残余キー同型化の棚卸し (repeat/multiple/optional が最優先、DR-067 §2 直接規定) |
+| 2026-07-26 | design | wip | [dec-or-leaf-remaining-node-keys](./2026-07-26-dec-or-leaf-remaining-node-keys.md) | dec_or_leaf の残余キー同型化の棚卸し (repeat/multiple/optional が最優先、DR-067 §2 直接規定) |
 | 2026-07-27 | design | open | [link-fixed-path-dsl-unimplemented](./2026-07-27-link-fixed-path-dsl-unimplemented.md) | link target の固定パス DSL (.field / [idx]) が未実装 (bare name のみ対応) |
 | 2026-07-27 | design | open | [ref-link-structural-body-gate](./2026-07-27-ref-link-structural-body-gate.md) | ref+link / structural body (or/seq/Group) + link が invalid-range で塞がれている (spec 上は合法、解除条件付き) |
 | 2026-07-27 | bug | open | [command-node-value-unimplemented](./2026-07-27-command-node-value-unimplemented.md) | command node の value: — carrier 不在 + 意味論未規定でスコープ外に切った分 |

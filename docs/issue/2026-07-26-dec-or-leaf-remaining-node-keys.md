@@ -1,11 +1,11 @@
 ---
 title: dec_or_leaf の残余キー同型化の棚卸し (repeat/multiple/optional が最優先、DR-067 §2 直接規定)
-status: open
+status: wip
 category: design
 created: 2026-07-26T22:23:57+09:00
 last_read: 2026-07-28T20:58:00+09:00
 open_entered: 2026-07-26T22:23:57+09:00
-wip_entered:
+wip_entered: 2026-07-28T22:12:55+09:00
 blocked_entered:
 pending_entered:
 discarded_entered:
@@ -68,4 +68,9 @@ decode 開放だけは小だが silent wrong answer を増やすので単独 lan
 
 ## TODO
 
-<!-- wip 時のみ -->
+Phase 1 (裁定 + fixture 先行) 完了 (2026-07-28)。spec 側に child repeat/optional/multiple の
+fixture 11 file / 25 case を land (spec main=198bce86)、kuu.mbt は expected_skips 8 +
+known_divergences 5 で凍結 (main=650f2875)、kuu-cli は conformance 凍結 fail 台帳 23 entry で
+凍結 (main=d821936c)。repeat×default の相互作用は spec 側 QUESTIONS.md REPDEF-Q1 として
+裁定待ち (Phase 2 をブロックしない)。残: Phase 2 (decode/installer ctx) → 3 (nested repeat
+lowering/eval) → 4 (nested accum/result address) → 5 (回帰・台帳掃除)。
