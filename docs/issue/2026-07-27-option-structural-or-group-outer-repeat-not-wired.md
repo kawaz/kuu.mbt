@@ -3,7 +3,7 @@ title: option structural Or/Group の outer repeat が受理されるが消費�
 status: open
 category: bug
 created: 2026-07-27T21:01:30+09:00
-last_read:
+last_read: 2026-07-28T20:58:17+09:00
 open_entered: 2026-07-27T21:01:30+09:00
 wip_entered:
 blocked_entered:
