@@ -16,7 +16,7 @@ jobs:
       # 1 日遅延することがあり、toolchain 移行日 (例: assert_eq の Show→Debug) に
       # ローカルと CI で版が割れるため。CDN の binaries/nightly は当日更新される)
       - run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s nightly
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
       - run: moon version --all
       - run: moon update
@@ -50,7 +50,7 @@ jobs:
       # 1 日遅延することがあり、toolchain 移行日 (例: assert_eq の Show→Debug) に
       # ローカルと CI で版が割れるため。CDN の binaries/nightly は当日更新される)
       - run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s nightly
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
       - run: moon update
 
