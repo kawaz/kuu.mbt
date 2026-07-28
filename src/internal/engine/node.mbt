@@ -617,3 +617,14 @@ pub(all) struct Entity {
   // Engine carries and dispatches this slot but does not inspect hidden/completer fields.
   extension : &EntityExt
 } derive(Eq, Debug)
+
+///|
+/// DR-088 §1 の Entity 側静的 presence。値源の実解決前に完全経路の候補を判定する。
+fn Entity::has_declared_value_source(self : Entity) -> Bool {
+  self.default_values is Some(_) ||
+  self.default_fn is Some(_) ||
+  self.const_values is Some(_) ||
+  self.env_key is Some(_) ||
+  self.config_seat ||
+  self.is_inherit
+}

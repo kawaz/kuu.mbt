@@ -2369,3 +2369,32 @@ test "ref-template child repeats honor global greedy share under an outer repeat
       fail("expected one preferred complete path, got " + render_outcome(other))
   }
 }
+
+///|
+/// An explicitly empty default still selects the repeated child cell; zero pieces is an array value,
+/// not absence of the selected seat.
+test "DR-123: selected child repeat preserves an explicitly empty default" {
+  let src =
+    #|{"positionals":[{"name":"pair","seq":[
+    #|  {"name":"head","type":"string"},
+    #|  {"name":"tags","type":"string","repeat":{"min":0},"default":[]}
+    #|]}]}
+  assert_eq(
+    wbtest_view_of(src, ["a"]),
+    "result={pair={head=a,tags=[]}} sources={pair={head=cli,tags=[]}} effects=head",
+  )
+}
+
+///|
+/// A repeat default belongs only to a selected structural branch. Rejecting that branch must not
+/// materialize either its declared default or the repeat cell's implicit empty array.
+test "DR-123: an unselected or branch repeat default remains absent" {
+  let src =
+    #|{"positionals":[{"or":[
+    #|  {"name":"fast","type":"string"},
+    #|  {"name":"tags","type":"int","repeat":{"min":0},"default":[1]}
+    #|]}]}
+  let view = wbtest_view_of(src, ["x"])
+  assert_false(view.contains("tags"))
+  assert_true(view.contains("fast"))
+}

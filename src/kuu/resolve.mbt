@@ -2305,6 +2305,15 @@ fn resolve_child_default_seats(
       for value in resolved {
         out.push({ ..value, key: target, scope: binding.scope })
       }
+      let mut repeated = false
+      for entity in entities {
+        if entity.accum is Some(_) {
+          repeated = true
+        }
+      }
+      if repeated {
+        out.push({ ..binding, key: "#accum:" + target, value: @abi.Bool(false) })
+      }
     } else {
       out.push(binding)
     }

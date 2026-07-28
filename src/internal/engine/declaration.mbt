@@ -250,6 +250,17 @@ pub(all) struct ElementDef {
 } derive(Eq, Debug)
 
 ///|
+/// DR-088 §1 の静的 presence。実際の値が供給可能かは探索時に評価せず、値源宣言の有無だけを見る。
+fn ElementDef::has_declared_value_source(self : ElementDef) -> Bool {
+  self.default_values is Some(_) ||
+  self.default_fn is Some(_) ||
+  self.const_values is Some(_) ||
+  self.env.length() > 0 ||
+  self.config_key is Some(_) ||
+  self.is_inherit
+}
+
+///|
 /// MDR-004: ElementDef の消費文法軸。`Cell` (単一値セル) 以外の3つは構造化された消費文法:
 /// - `Or`: 構造 or (DR-038 / DESIGN §15.4) — 枝ごとに別の named cell を束縛する「消費文法の枝」。
 ///   DR-055 の値 enum 枝 (exact 照合、RequiresIf の素材) とは別物 — `Enum` (下記) と対になり、

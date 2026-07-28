@@ -4228,13 +4228,9 @@ fn value_declared(
   }
   for e in entities {
     if e.name == name {
-      return e.default_values is Some(_) ||
-        // const (root `value:`) も宣言された値 — `has_declared_value_source` (lowering 側の同判定)
-        // と揃える。
-        e.const_values is Some(_) ||
-        e.env_key is Some(_) ||
-        e.config_seat ||
-        e.is_inherit
+      // DR-088 §1 の統一述語 (default_fn を含む全値源)。lowering 側の
+      // ElementDef::has_declared_value_source と対で、判定のズレを作らない。
+      return e.has_declared_value_source()
     }
   }
   false

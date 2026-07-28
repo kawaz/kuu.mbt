@@ -3340,6 +3340,39 @@ test "DR-088: a plain scalar positional with a declared default still consumes a
 }
 
 ///|
+/// A declared default makes an unfired repeat closure complete as a whole; the repeat's `min`
+/// remains an internal constraint of the consuming reading rather than a structural requirement.
+test "DR-123: repeat min one with a declared default is complete without firing" {
+  // `min` constrains only the consuming reading. With no token, the repeat cell stays unseated and
+  // the declared default fills the whole array cell instead of producing missing_operand.
+  let tags = {
+    ..pos("tags", @builtins.string_type()),
+    repeat: Some({ min: 1, max: None, is_lazy: false }),
+    default_values: Some([@abi.String("builtin"), @abi.String("fallback")]),
+  }
+  let def : @engine.Definition = { ..empty_def(), positionals: [tags] }
+  let sc = ok_scope(def, all_installers())
+  match @engine.parse_tree(@engine.ScopeNode(sc), [], defs=Map([])) {
+    @engine.Success(bs) =>
+      match resolve_scope(sc, bs, Map([])) {
+        Ok(resolved) =>
+          assert_eq(
+            render_rval_sorted(
+              build_result_export(sc, resolved, @engine.ExportScopeMap::empty()),
+            ),
+            "{tags=[builtin,fallback]}",
+          )
+        Err(_) => fail("expected declared repeat default to resolve")
+      }
+    other =>
+      fail(
+        "expected repeat default to make the path complete, got " +
+        render_outcome(other),
+      )
+  }
+}
+
+///|
 /// 対極: default 宣言の無い素の positional は、この変更後も従来どおりトークン 0 個で
 /// missing_operand の @engine.Failure になる — `fixtures/absent/required-positional.json` が pin する
 /// 「必須 positional は absent にならない (present か parse failure の二択)」の輪郭を、この
@@ -4605,6 +4638,39 @@ test "structural child repeat lowers to Many and BoundedTail shapes" {
       ]),
     ]),
   )
+}
+
+///|
+/// A child repeat's default seat wraps the whole one-or-more consuming closure. Keeping
+/// `ChildDefault` inside `Many` would default each firing independently and collapse the array cell
+/// to last-wins scalar values.
+test "DR-123: structural child default wraps the complete repeat closure" {
+  let child : @engine.ElementDef = {
+    ..el("tags", @builtins.string_type()),
+    repeat: Some({ min: 0, max: None, is_lazy: false }),
+    default_values: Some([@abi.String("fallback")]),
+  }
+  let head = @builtins.string_arg("tags", [])
+  match @engine.seq_body_node([child]) {
+    @engine.Seq(
+      [
+        @engine.ChildDefault(
+          @engine.Seq(
+            [
+              @engine.Bind("#accum:tags", @abi.Bool(false)),
+              @engine.Seq([first, @engine.Many(rest, false)]),
+            ]
+          ),
+          _,
+          "tags"
+        ),
+      ]
+    ) => {
+      assert_eq(first, head)
+      assert_eq(rest, head)
+    }
+    _ => fail("expected ChildDefault outside the one-or-more repeat closure")
+  }
 }
 
 ///|

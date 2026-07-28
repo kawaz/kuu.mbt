@@ -871,6 +871,33 @@ fn opt_node(x : Node) -> Node {
 }
 
 ///|
+/// A default-bearing repeat separates the unfired empty seat from its consuming closure. The
+/// consuming side must fire at least once even when the declaration permits zero repetitions;
+/// `ChildDefault` represents the zero-fire path outside that closure.
+fn repeat_consuming_element(e : ElementDef) -> ElementDef? {
+  match elem_repeat(e) {
+    None => None
+    Some(spec) =>
+      match spec.max {
+        Some(max) if max < 1 => None
+        _ =>
+          Some({
+            ..e,
+            repeat: Some({
+              ..spec,
+              min: if spec.min < 1 {
+                1
+              } else {
+                spec.min
+              },
+            }),
+            optional: false,
+          })
+      }
+  }
+}
+
+///|
 /// A structural or/seq child with a declared default remains a normal consuming primitive, but its
 /// seat may participate in a complete path without consuming a token (DESIGN §5.2 / DR-088).
 fn child_default_seat_key(e : ElementDef) -> String {
@@ -937,27 +964,23 @@ fn child_repeat_head(e : ElementDef, head : Node) -> Node {
 ///|
 fn child_head(e : ElementDef) -> Node {
   let raw = element_head(e)
-  let head = if !e.is_literal && e.default_values is Some(_) {
-    ChildDefault(raw, child_default_seat_key(e), e.name)
+  if !e.is_literal && e.has_declared_value_source() {
+    match elem_repeat(e) {
+      None => ChildDefault(raw, child_default_seat_key(e), e.name)
+      Some(_) =>
+        match repeat_consuming_element(e) {
+          Some(consuming) =>
+            ChildDefault(
+              child_repeat_head(consuming, raw),
+              child_default_seat_key(e),
+              e.name,
+            )
+          None => Bind(child_default_seat_key(e), String(e.name))
+        }
+    }
   } else {
-    raw
+    child_repeat_head(e, raw)
   }
-  child_repeat_head(e, head)
-}
-
-///|
-/// DR-088 §1: 「宣言された値源はデフォルトの存在」— `default_values` (明示 default) だけでなく
-/// `env`/`config_key`/`inherit` の宣言も「遅延解決する default_fn が設定されているのと同型」。
-/// `eval.mbt`'s `value_declared` (resolve-first-constraint-pipeline / value-present-ladder-gap の
-/// 静的宣言述語) と同じ4要素判定を、installer 層 (lowering 時点、ElementDef ベース) で行う版。
-fn has_declared_value_source(e : ElementDef) -> Bool {
-  e.default_values is Some(_) ||
-  // const (root `value:`) は席ではないが、「値が宣言されている」ことに変わりはない (DR-088 §1 の
-  // 主語は席の種別ではなく値の存在) — required 等の値述語から見て default 宣言と同じ扱い。
-  e.const_values is Some(_) ||
-  e.env.length() > 0 ||
-  e.config_key is Some(_) ||
-  e.is_inherit
 }
 
 ///|
@@ -986,17 +1009,12 @@ fn has_declared_value_source(e : ElementDef) -> Bool {
 /// is pushed unchanged — the branches inside an `Or` head still each read one head via `Or`'s
 /// existing multi-branch semantics (DR-038); `elem_repeat` only ever governs REPETITION count,
 /// never branch structure.
-fn lower_repeat_head(
-  def : Definition,
+fn lower_repeat_shape(
   e : ElementDef,
   head : Node,
   registry : Map[String, Node],
   out : Array[Node],
 ) -> Unit {
-  let head = match route_link_entry(def, e, head) {
-    Some(node) => node
-    None => return
-  }
   match elem_repeat(e) {
     None => out.push(head)
     Some(spec) =>
@@ -1051,6 +1069,21 @@ fn lower_repeat_head(
         }
       }
   }
+}
+
+///|
+fn lower_repeat_head(
+  def : Definition,
+  e : ElementDef,
+  head : Node,
+  registry : Map[String, Node],
+  out : Array[Node],
+) -> Unit {
+  let head = match route_link_entry(def, e, head) {
+    Some(node) => node
+    None => return
+  }
+  lower_repeat_shape(e, head, registry, out)
 }
 
 ///|
@@ -1149,14 +1182,40 @@ fn lower_positional(
               // Declared-but-unresolved-at-runtime (e.g. env var absent) still falls through to
               // the scalar's OWN default_values / lower ladder rungs as usual — this only fixes
               // the STRUCTURAL completeness gate, not the value resolution itself.
-              if elem_repeat(e) is None && has_declared_value_source(e) {
-                lower_repeat_head(
-                  def,
-                  e,
-                  opt_node(element_head(e)),
-                  registry,
-                  out,
-                )
+              if e.has_declared_value_source() {
+                match elem_repeat(e) {
+                  None =>
+                    lower_repeat_head(
+                      def,
+                      e,
+                      opt_node(element_head(e)),
+                      registry,
+                      out,
+                    )
+                  Some(_) => {
+                    let presence = match repeat_consuming_element(e) {
+                      Some(consuming) => {
+                        let consuming_nodes : Array[Node] = []
+                        lower_repeat_shape(
+                          consuming,
+                          element_head(e),
+                          registry,
+                          consuming_nodes,
+                        )
+                        ChildDefault(
+                          Seq(consuming_nodes),
+                          child_default_seat_key(e),
+                          e.name,
+                        )
+                      }
+                      None => Bind(child_default_seat_key(e), String(e.name))
+                    }
+                    match route_link_entry(def, e, presence) {
+                      Some(node) => out.push(node)
+                      None => ()
+                    }
+                  }
+                }
               } else {
                 lower_repeat_head(def, e, element_head(e), registry, out)
               }
@@ -1385,13 +1444,26 @@ fn ensure_entity_body(
           match it.default_values {
             Some(_) if !it.is_literal => {
               let seat_key = child_default_seat_key(it)
+              let occurrence_owned = e.name == "" &&
+                (elem_repeat(it) is Some(_) || it.multiple)
               ensure_entity(
                 build,
-                { ..it, name: seat_key },
+                if occurrence_owned {
+                  it
+                } else {
+                  { ..it, name: seat_key }
+                },
                 false,
                 extensions,
                 [seat_key],
               )
+              if !occurrence_owned &&
+                (elem_repeat(it) is Some(_) || it.multiple) {
+                ensure_entity_body(
+                  build, it, has_cf, extensions, item_path, positional_group_scope,
+                  template_entities_only_accum, template_declarations, visiting_templates,
+                )
+              }
             }
             _ =>
               ensure_entity_body(
@@ -1420,6 +1492,12 @@ fn ensure_entity_body(
             ensure_entity(build, { ..it, name: seat_key }, false, extensions, [
               seat_key,
             ])
+            if elem_repeat(it) is Some(_) || it.multiple {
+              ensure_entity_body(
+                build, it, has_cf, extensions, item_path, positional_group_scope,
+                template_entities_only_accum, template_declarations, visiting_templates,
+              )
+            }
           }
           _ =>
             ensure_entity_body(
