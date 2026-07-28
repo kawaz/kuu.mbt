@@ -1,19 +1,19 @@
 ---
 title: positional Group 子の repeat/optional/multiple が「通るが効かない」+ phantom accum entity が root に漏れる
-status: open
+status: blocked
 category: bug
 created: 2026-07-27T03:44:09+09:00
 last_read: 2026-07-28T20:58:57+09:00
 open_entered: 2026-07-27T03:44:09+09:00
 wip_entered:
-blocked_entered:
+blocked_entered: 2026-07-28T22:15:48+09:00
 pending_entered:
 discarded_entered:
 resolved_entered:
 discard_reason:
 pending_reason:
 close_reason:
-blocked_by:
+blocked_by: 2026-07-26-dec-or-leaf-remaining-node-keys
 origin: 自リポ TODO
 ---
 
@@ -59,6 +59,12 @@ root の `x:[]` は仕様上存在しないはずのセル。「decode を通す
   (等価な definition-error)
 - (b) 本命: child repeat/multiple の end-to-end 実装
   (issue `2026-07-26-dec-or-leaf-remaining-node-keys` の Phase 2-4 の一部として解消)
+- (b) 本命で確定 (2026-07-28、統括判断 — v1 完備主義に沿い、Phase 1 で
+  spec fixture が end-to-end の期待値を pin 済みのため短期 reject (a) は
+  経由しない)。`fixtures/repeat-parse/child-repeat-group.json` が phantom
+  セル否定を pin し、現挙動は kuu.mbt `json_conformance_test.mbt` の
+  `known_divergences` に凍結済み。本 issue は親 issue の Phase 2-4 実装で
+  解消する。
 
 ## 受け入れ条件
 
