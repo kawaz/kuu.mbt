@@ -3,7 +3,7 @@ title: dec_or_leaf の残余キー同型化の棚卸し (repeat/multiple/optiona
 status: open
 category: design
 created: 2026-07-26T22:23:57+09:00
-last_read: 2026-07-27T03:39:11+09:00
+last_read: 2026-07-28T20:58:00+09:00
 open_entered: 2026-07-26T22:23:57+09:00
 wip_entered:
 blocked_entered:
