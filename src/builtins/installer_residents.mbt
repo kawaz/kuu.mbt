@@ -604,7 +604,7 @@ impl @node.InstallerExt for RepeatInstaller with fn vocab(_self) {
 impl @node.InstallerExt for RepeatInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
     Option => ["repeat"]
-    Positional => ["repeat", "optional"]
+    Positional | StructuralChild => ["repeat", "optional"]
     _ => []
   }
   let object = match resident_object(json) {
@@ -655,7 +655,7 @@ impl @node.InstallerExt for MultipleInstaller with fn vocab(_self) {
 ///|
 impl @node.InstallerExt for MultipleInstaller with fn decode(_self, json, ctx) {
   let vocab = match ctx {
-    Option | Positional => ["multiple"]
+    Option | Positional | StructuralChild => ["multiple"]
     _ => []
   }
   let object = match resident_object(json) {

@@ -4,6 +4,7 @@
 pub(all) enum DecodeCtx {
   Option
   Positional
+  StructuralChild
   Command
 } derive(Eq, Debug)
 

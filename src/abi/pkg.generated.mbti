@@ -104,6 +104,7 @@ pub enum ConfigVal {
 pub(all) enum DecodeCtx {
   Option
   Positional
+  StructuralChild
   Command
 } derive(Eq, @debug.Debug)
 
