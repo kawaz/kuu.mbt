@@ -74,3 +74,12 @@ known_divergences 5 で凍結 (main=650f2875)、kuu-cli は conformance 凍結 f
 凍結 (main=d821936c)。repeat×default の相互作用は spec 側 QUESTIONS.md REPDEF-Q1 として
 裁定待ち (Phase 2 をブロックしない)。残: Phase 2 (decode/installer ctx) → 3 (nested repeat
 lowering/eval) → 4 (nested accum/result address) → 5 (回帰・台帳掃除)。
+
+Phase 2-5 完了 (2026-07-29、main b0ff53ad〜e159922c の 6 commit)。受け入れ条件 1
+(repeat/optional/multiple の child decode 通過) 充足 — decode/lowering/eval/resolve の
+end-to-end 実装、conformance 383 file / 857 case 全 pass・skip/divergence 台帳空、kuu-cli も
+708/708 で追随済み (lockstep: spec 117b24df / kuu.mbt e159922c / kuu-cli 05660182、3 リポ CI
+green)。残: 受け入れ条件 2 (中優先度キー default_fn / export_key / filters / env の child 位置
+意味論の spec 突き合わせ) と 3 (低優先度キーの要否判断)。中優先度キーは decode を意図的に
+開けていない (dec_or_leaf は installer 語彙駆動化済みなので、意味論確定後は各 installer の
+StructuralChild アーム追加で開けられる)。
