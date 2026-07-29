@@ -1919,11 +1919,18 @@ fn dec_or_leaf(
   // 表示専用素材で consumption grammar には効かない — help_installer が model 射影で拾う)。
   // 従来は `name` 必須だったが、value-structure-and-types.json のような help-only fixture では
   // 各 leaf が anonymous なので、name 省略 + value_name のパターンを受理する。
-  let allowed = ["type", "name", "value_name", "value", "default"]
+  // DR-052 §1: `export_key` は結果キー軸の唯一の指定で、name を持つ要素一般に付く — seq / or の
+  // 構造子も例外ではない (`dec_positional` の seq / or 枝は既に受理する)。installer 語彙ではなく
+  // 基本属性なので `owned.vocab` には乗らず、ここで明示的に受理列へ入れる。
+  let allowed = ["type", "name", "value_name", "value", "default", "export_key"]
   for key in owned.vocab {
     allowed.push(key)
   }
   allowed_keys(o, allowed, "or branch leaf")
+  let export_ = match o.get("export_key") {
+    Some(ej) => dec_export(ej)
+    None => @engine.ExportKey::unset()
+  }
   let name = match jf_str(o, "name") {
     Some(s) => {
       check_reserved_name(s, "or branch leaf")
@@ -2010,6 +2017,7 @@ fn dec_or_leaf(
     collector=owned.collector,
     default=default_values,
     const_=const_values,
+    export_~,
     default_declared=default_values is Some(_),
     is_literal=const_values is Some(_),
   )

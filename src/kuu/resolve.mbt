@@ -351,6 +351,48 @@ fn path_eq(a : Array[String], b : Array[String]) -> Bool {
 
 ///|
 /// Whether `name` is an accumulate cell declared at result path `path`.
+/// 1 行 (`#row` 区切りの binding 群) の中で **席を持つ** accum セルだけに絞る。
+///
+/// `collect_accum` の structural-child 分岐は席を「その名前の binding が実在する runtime scope
+/// path」から起こすが、粒度は scope path までで **行より粗い**。`multiple` wrapper の下の `or` では
+/// 全ての行が同じ scope path を共有するので、ある行で選ばれた枝の binding が wrapper 全体に席を作り、
+/// 別の枝を選んだ行にも UNIFORM ARRAY 注入で `[]` が生える (DR-051 / DR-122 §2: 未選択枝は成立
+/// しなかった構造なので result にも sources にも席が無い)。行の binding 集合で席を起こし直すことで、
+/// scope 粒度で既に成立している「席は binding の実在から起こす」原則を行粒度へそのまま延長する。
+///
+/// 絞るのは **この行の直下に住むセル** (`c.path == path`) だけ — より深い path のセルは行内の
+/// 入れ子スコープを組み立てる再帰が自分の粒度で判断する。
+fn row_seated_cells(
+  cells : Array[AccumCell],
+  path : Array[String],
+  row : Array[@abi.Binding],
+) -> Array[AccumCell] {
+  let out : Array[AccumCell] = []
+  for c in cells {
+    if !path_eq(c.path, path) || row_seats_cell(row, c.name) {
+      out.push(c)
+    }
+  }
+  out
+}
+
+///|
+/// 行の中にこのセルの席がある証拠 — 値 binding (`name`)、accum セルの席 marker
+/// (`#accum:name`、`lowering.child_head` が反復子に打つ)、または入れ子スコープの segment。
+fn row_seats_cell(row : Array[@abi.Binding], name : String) -> Bool {
+  for b in row {
+    if b.scope.length() == 0 {
+      if b.key == name || b.key == "#accum:" + name {
+        return true
+      }
+    } else if b.scope[0] == name {
+      return true
+    }
+  }
+  false
+}
+
+///|
 fn cell_here(
   cells : Array[AccumCell],
   path : Array[String],
@@ -480,7 +522,16 @@ fn build_result(
   if has_direct_key(binds, "#row") {
     let rows : Array[@abi.ResultValue] = []
     for row in row_groups(binds) {
-      rows.push(build_result(row, cells, defaults, path, nones~, extensions~))
+      rows.push(
+        build_result(
+          row,
+          row_seated_cells(cells, path, row),
+          defaults,
+          path,
+          nones~,
+          extensions~,
+        ),
+      )
     }
     return @abi.Array(rows)
   }
@@ -922,10 +973,11 @@ fn internal_cells(
   sc : @engine.Scope,
   ek : @engine.ExportScopeMap,
   binds : Array[@abi.Binding],
+  templates? : Map[String, @engine.Node] = Map([]),
 ) -> Array[InternalCell] {
   let out : Array[InternalCell] = []
   let unselected = unselected_command_paths(sc, [], binds)
-  for cell in @engine.none_cells(sc) {
+  for cell in @engine.none_cells(sc, templates) {
     // `NoneCell.path` は宣言名軸だが command segment 以外 (name 付き seq/or の `Scoped`、
     // repeat の `IndexedRepeat`) も積まれるので、`scope_selected` を path 全体には掛けられない
     // (非 command scope に `{}` marker は無く、全部「未選択」と誤判定する)。代わりに
@@ -1178,13 +1230,14 @@ fn build_result_export(
   binds : Array[@abi.Binding],
   ek : @engine.ExportScopeMap,
   extensions? : @node.Registry = canonical_registry(),
+  templates? : Map[String, @engine.Node] = Map([]),
 ) -> @abi.ResultValue {
   build_result(
     apply_export_keys(binds, ek),
     accum_cells(sc, ek, binds),
     apply_export_to_defaults(default_cells(sc, binds), ek),
     [],
-    nones=internal_cells(sc, ek, binds),
+    nones=internal_cells(sc, ek, binds, templates~),
     extensions~,
   )
 }
@@ -1292,6 +1345,7 @@ fn source_seats(
   resolved : Array[@abi.Binding],
   ek : @engine.ExportScopeMap,
   extensions : @node.Registry,
+  templates : Map[String, @engine.Node],
 ) -> (
   Array[SourceSeat],
   Array[AccumCell],
@@ -1300,7 +1354,7 @@ fn source_seats(
 ) {
   let seats : Array[SourceSeat] = []
   let cells = accum_cells(sc, ek, resolved)
-  let internal = internal_cells(sc, ek, resolved)
+  let internal = internal_cells(sc, ek, resolved, templates~)
   let defaults = apply_export_to_defaults(default_cells(sc, resolved), ek)
   for binding in apply_export_keys(resolved, ek) {
     if (binding.key != "" && is_sentinel(binding.key)) ||
@@ -1622,10 +1676,11 @@ fn result_sources(
   ek : @engine.ExportScopeMap,
   result : @abi.ResultValue,
   extensions : @node.Registry,
+  templates? : Map[String, @engine.Node] = Map([]),
 ) -> @abi.ResultValue {
   let projected = apply_export_keys(resolved, ek)
   let (seats, cells, defaults, internal) = source_seats(
-    sc, resolved, ek, extensions,
+    sc, resolved, ek, extensions, templates,
   )
   source_shadow(
     result,

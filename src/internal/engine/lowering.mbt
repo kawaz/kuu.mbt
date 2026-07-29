@@ -782,9 +782,21 @@ fn seq_child_nodes(items : Array[ElementDef], nodes : Array[Node]) -> Unit {
 }
 
 ///|
+/// DR-044 / DR-078 §1: 行の境界標識 `#row` は「反復宣言子が配列を作る」経路すべてに要る —
+/// `multiple` (1 発火が畳み単位) と `repeat` (1 反復が行) の両方。option の inline `seq` と `ref` は
+/// 同じ構造の別の書き口なので、repeat 付き ref が `ref_row_head` で打つのと同じ標識をここでも打つ
+/// (無いと各反復の kv が同じ結果スコープへ平坦に積まれ、last-wins で 1 行に潰れる)。
+///
+/// positional の Group+repeat は `IndexedRepeat` の `#k` 添字段が行を作るので対象外 — この関数は
+/// option の inline seq (`inst_long`/`inst_short` の Group 分岐) からしか呼ばれない。
+fn seq_row_bearing(e : ElementDef) -> Bool {
+  e.multiple || elem_repeat(e) is Some(_)
+}
+
+///|
 fn seq_value_node(e : ElementDef, items : Array[ElementDef]) -> Node {
   let nodes : Array[Node] = []
-  if e.multiple {
+  if seq_row_bearing(e) {
     nodes.push(Bind("#row", Bool(false)))
   }
   seq_child_nodes(items, nodes)
@@ -800,7 +812,7 @@ fn seq_eq_value_node(
   guard items.length() > 0 else { return None }
   let is_kv = seq_row_is_kv(items)
   let nodes : Array[Node] = []
-  if e.multiple {
+  if seq_row_bearing(e) {
     nodes.push(Bind("#row", Bool(false)))
   }
   if !is_kv {

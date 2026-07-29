@@ -732,6 +732,21 @@ test "dec_or_leaf carries structural child repeat and multiple declarations" {
 }
 
 ///|
+/// name を持つ structural child の export_key は結果キー軸として保持する。
+/// seq/or 子も通常の named element と同じ rename 規約に従い、decode で拒否または黙殺しない。
+test "dec_or_leaf carries export_key for named structural children" {
+  let leaf = dec_or_leaf(
+    @json.parse(
+      (
+        #|{"name":"keep","type":"string","export_key":"k"}
+      ),
+    ),
+    Map([]),
+  )
+  assert_eq(leaf.export_key, @engine.ExportKey::key("k"))
+}
+
+///|
 /// structural child に開放していない値源語彙は引き続き decode で拒否し、受理後の黙殺を許さない。
 test "dec_or_leaf rejects unopened structural child value-source keys" {
   for

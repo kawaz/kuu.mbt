@@ -4672,7 +4672,7 @@ pub fn parse_tree(
   // build_result が NoneCell として結果から除外する既存機構をそのまま再利用)。root が
   // `ScopeNode` でない場合 (dd/none は Scope 経由でのみ意味を持つ構造) は空集合のまま。
   let nones = match root {
-    ScopeNode(sc) => none_cells(sc)
+    ScopeNode(sc) => none_cells(sc, defs)
     _ => []
   }
   let branches = match root {

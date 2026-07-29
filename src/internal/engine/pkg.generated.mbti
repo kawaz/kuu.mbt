@@ -124,7 +124,7 @@ pub fn merge_accumulator() -> &@extension.AccumulatorExt
 
 pub fn node_resident_name(Node) -> String?
 
-pub fn none_cells(Scope) -> Array[NoneCell]
+pub fn none_cells(Scope, Map[String, Node]) -> Array[NoneCell]
 
 pub fn none_type() -> &@extension.TypeExt
 

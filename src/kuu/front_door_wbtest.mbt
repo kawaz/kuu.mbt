@@ -1793,6 +1793,38 @@ test "front_door.output: named seq / or / repeat 配下の none も 3 面から�
 }
 
 ///|
+/// accumulator の各 row は、その発火で選ばれた or 枝だけを持つ。別枝の repeat セルは
+/// 宣言上 accumulator でも、成立しなかった row へ暗黙の空配列席を作らない。
+test "front_door.output: accumulator の or row は選択枝だけを持つ (DR-051 / DR-122 §2)" {
+  let src =
+    #|{"options":[{"name":"sel","long":true,"multiple":"append","or":[
+    #|  {"name":"nums","type":"number","repeat":{"min":1}},
+    #|  {"name":"word","type":"string"}]}]}
+  assert_eq(
+    wbtest_view_of(src, ["--sel", "1", "2", "--sel", "foo"]),
+    "result={sel=[{nums=[1,2]},{word=foo}]} sources={sel=[{nums=[cli,cli]},{word=cli}]} effects=nums,nums,word",
+  )
+}
+
+///|
+/// inline seq と ref は同じ構造の別表記であり、repeat 宣言子は発火回数にかかわらず行配列を作る。
+/// none 子は照合消費だけを担い、各 row の effects / result / sources には席を持たない。
+test "front_door.output: repeat inline seq builds rows and excludes none cells" {
+  let src =
+    #|{"commands":[{"type":"command","name":"rows","options":[
+    #|  {"name":"pair","long":true,"repeat":{"min":1},"seq":[
+    #|    {"name":"touch","type":"none"},{"name":"keep","type":"string"}]}]}]}
+  assert_eq(
+    wbtest_view_of(src, ["rows", "--pair", "x", "a", "y", "b"]),
+    "result={rows={pair=[{keep=a},{keep=b}]}} sources={rows={pair=[{keep=cli},{keep=cli}]}} effects=keep,keep",
+  )
+  assert_eq(
+    wbtest_view_of(src, ["rows", "--pair", "x", "a"]),
+    "result={rows={pair=[{keep=a}]}} sources={rows={pair=[{keep=cli}]}} effects=keep",
+  )
+}
+
+///|
 /// accum セルの default 席 (DR-044 uniform array: 未発火でも `[]` を持つので `sources` にも席が
 /// 要る) は、**0 回発火のときだけ**足す。判定は値がどこに着席するかで 2 通りに分かれる:
 /// スカラ accum は cell 自身、`name` 付き `seq` / `or` の accum は cell が作る結果スコープの

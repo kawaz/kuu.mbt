@@ -672,7 +672,7 @@ fn project_effects(
   ast : AtomicAST,
   binds : Array[@abi.Binding],
 ) -> Array[OutputEffect] {
-  let none_cells = @engine.none_cells(ast.root)
+  let none_cells = @engine.none_cells(ast.root, ast.templates)
   let config_file_cells : Array[ConfigFileCell] = []
   collect_config_file_cells(ast.root, [], config_file_cells)
   let effects : Array[OutputEffect] = []
@@ -714,7 +714,14 @@ fn project_sources(
   resolved : Array[@abi.Binding],
   result : @abi.ResultValue,
 ) -> @abi.ResultValue {
-  result_sources(ast.root, resolved, ast.ekmap, result, ast.extensions)
+  result_sources(
+    ast.root,
+    resolved,
+    ast.ekmap,
+    result,
+    ast.extensions,
+    templates=ast.templates,
+  )
 }
 
 ///|
@@ -734,6 +741,7 @@ fn output_legacy(
     resolved,
     export_map(ast),
     extensions=ast.extensions,
+    templates=ast.templates,
   )
   {
     result,
