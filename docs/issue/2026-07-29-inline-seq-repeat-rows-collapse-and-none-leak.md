@@ -3,7 +3,7 @@ title: repeat 付き positional の inline seq 子が行配列にならず last-
 status: open
 category: bug
 created: 2026-07-29T09:26:29+09:00
-last_read:
+last_read: 2026-07-29T17:33:44+09:00
 open_entered: 2026-07-29T09:26:29+09:00
 wip_entered:
 blocked_entered:
