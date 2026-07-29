@@ -2349,12 +2349,17 @@ fn known_divergences() -> Array[String] {
   //   - types 集約射影 + type_ref + used_as (value-structure-and-types.json は decode skip 継続)。
   //   - fixed default_fn の default 席射影 (P2H-Q3 裁定に沿った dynamic default_fn は model 非搭載)。
   //
-  // child repeat/multiple Phase 1 (spec 先行 pin、issue 2026-07-26-dec-or-leaf-remaining-node-keys):
-  // positional Group 子の repeat は decode を通るが消費構造に効かず、phantom accum entity が
-  // root へ漏れる (issue 2026-07-27-group-child-attrs-accepted-but-inert-phantom-entity)。
-  // Phase 2-4 (decode/installer ctx → lowering/eval → accum/result address) の実装で解消し、
+  // projection gaps batch (spec 先行 pin、2026-07-29):
+  //   - or-parse/accum-branch-rows-sources: accumulator の row 構築が未選択 or 枝の空配列セルを
+  //     除外しない (issue 2026-07-29-or-accum-rows-leak-unselected-branch-empty-array)
+  //   - value-typing/none-exclusion-in-repeat-rows: repeat + inline seq が行配列にならず
+  //     type:none 内部セルも 3 面に漏れる (issue 2026-07-29-inline-seq-repeat-rows-collapse-and-none-leak)
   // 解消時は VANISHED が本 ledger の掃除を強制する。
-  []
+  [
+    "or-parse/accum-branch-rows-sources.json::two-fires-different-branches-elementwise-shadow :: result got={sel=[{nums=[1,2]},{nums=[],word=foo}]} want={sel=[{nums=[1,2]},{word=foo}]} | sources got={sel=[{nums=[cli,cli]},{nums=[],word=cli}]} want={sel=[{nums=[cli,cli]},{word=cli}]}",
+    "value-typing/none-exclusion-in-repeat-rows.json::none-cell-absent-from-every-repeat-row :: effects got=touch:set(x)@cli,keep:set(a)@cli,touch:set(y)@cli,keep:set(b)@cli want=keep:set(a)@cli,keep:set(b)@cli | result got={rows={pair={keep=b,touch=y}}} want={rows={pair=[{keep=a},{keep=b}]}} | sources got={rows={pair={keep=cli,touch=cli}}} want={rows={pair=[{keep=cli},{keep=cli}]}}",
+    "value-typing/none-exclusion-in-repeat-rows.json::single-row-baseline :: effects got=touch:set(x)@cli,keep:set(a)@cli want=keep:set(a)@cli | result got={rows={pair={keep=a,touch=x}}} want={rows={pair=[{keep=a}]}} | sources got={rows={pair={keep=cli,touch=cli}}} want={rows={pair=[{keep=cli}]}}",
+  ]
 }
 
 ///|
@@ -2373,11 +2378,14 @@ fn expected_skips() -> Array[(String, String)] {
   // M5 (DR-113 §4.2): value-structure-and-types.json は dec_types tree-form + option
   // seq wire キー + type_ref carry を M5 で全て実装済み、skip 解消。
   //
-  // child repeat/multiple Phase 1 (spec 先行 pin、issue 2026-07-26-dec-or-leaf-remaining-node-keys):
-  // dec_or_leaf は child 位置の repeat/optional/multiple を未対応キーとして拒否する
-  // (DR-067 §2 は合法と規定 — 実装 gap)。Phase 2 (decode/installer ctx) で解消し、
-  // 解消時は VANISHED SKIP が本 ledger の掃除を強制する。
-  []
+  // projection gaps batch (spec 先行 pin、2026-07-29): dec_or_leaf が seq/or 子の export_key を
+  // 未対応キーとして拒否する (DR-052 §1 は合法 — 実装 gap、issue
+  // 2026-07-29-seq-or-child-export-key-decode-unsupported)。解消時は VANISHED SKIP が掃除を強制。
+  [
+    (
+      "value-typing/none-exclusion-in-renamed-repeat-rows.json", "or branch leaf has unsupported key 'export_key'",
+    ),
+  ]
 }
 
 ///|
