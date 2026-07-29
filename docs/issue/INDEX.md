@@ -21,3 +21,4 @@
 | 2026-07-27 | design | open | [array-filter-provenance-contract-gap](./2026-07-27-array-filter-provenance-contract-gap.md) | array filter の公開契約に provenance が無く、同値 duplicate 並べ替え・値合成で source 復元が破綻する |
 | 2026-07-29 | bug | open | [head-progresses-scoped-indexed-unconditional-true](./2026-07-29-head-progresses-scoped-indexed-unconditional-true.md) | zero-progress 静的検査の head_progresses が Scoped/ScopeNode/IndexedRepeat を無条件 true にしており消費0 head + 無制限 repeat をすり抜けうる |
 | 2026-07-29 | bug | open | [or-accum-rows-leak-unselected-branch-empty-array](./2026-07-29-or-accum-rows-leak-unselected-branch-empty-array.md) | named or wrapper に multiple (accumulator) を付けると発火 row に未選択枝の空配列セルが混入する |
+| 2026-07-29 | bug | open | [inline-seq-repeat-rows-collapse-and-none-leak](./2026-07-29-inline-seq-repeat-rows-collapse-and-none-leak.md) | repeat 付き positional の inline seq 子が行配列にならず last-wins で潰れる + none セルが effects/result/sources に漏れる |
