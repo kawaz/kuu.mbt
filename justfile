@@ -71,6 +71,35 @@ test:
 test-all:
     fx="${KUU_FIXTURES:-{{justfile_directory()}}/../../kuu/main/fixtures}"; if [ -d "$fx" ]; then export KUU_FIXTURES="$(cd "$fx" && pwd)"; fi; moon test --target all
 
+# ---------- coverage ----------
+#
+# on-demand 計測。push / ci gate には入れない (CI 化の要否は未設計 — 必要になった
+# 時点で kawaz と決める)。計測対象は src/ 配下のみで、moonbitlang/core など
+# .mooncakes の依存は moon 側が自動で除外する。
+
+# native テストを instrumentation 付きで実行し、ファイル別の行カバレッジを表示
+[script]
+coverage:
+    fx="${KUU_FIXTURES:-{{justfile_directory()}}/../../kuu/main/fixtures}"
+    if [ -d "$fx" ]; then export KUU_FIXTURES="$(cd "$fx" && pwd)"; fi
+    # 前回の trace が残っていると集計に混ざるので必ず落とす
+    moon coverage clean
+    # conformance runner の decoded 一覧が数十 KB あるため成功時は最終行だけ出す
+    # (失敗時は全文を stderr へ流してから中断)
+    log="$(mktemp)"
+    trap 'rm -f "$log"' EXIT
+    if ! moon test --target native --enable-coverage >"$log" 2>&1; then
+        cat >&2 "$log"
+        exit 1
+    fi
+    tail -1 "$log"
+    moon coverage report -f summary
+
+# 行単位で未到達箇所を色分けした HTML レポートを _coverage/index.html に出力
+coverage-html: coverage
+    moon coverage report -f html
+    @echo "open _coverage/index.html"
+
 # ---------- CI ----------
 
 # full local CI pipeline
