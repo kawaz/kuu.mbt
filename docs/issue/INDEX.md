@@ -20,4 +20,3 @@
 | 2026-07-27 | bug | open | [option-structural-or-group-outer-repeat-not-wired](./2026-07-27-option-structural-or-group-outer-repeat-not-wired.md) | option structural Or/Group の outer repeat が受理されるが消費構造へ配線されない (missing_operand 位相化の実装監査) |
 | 2026-07-27 | design | open | [array-filter-provenance-contract-gap](./2026-07-27-array-filter-provenance-contract-gap.md) | array filter の公開契約に provenance が無く、同値 duplicate 並べ替え・値合成で source 復元が破綻する |
 | 2026-07-29 | bug | open | [head-progresses-scoped-indexed-unconditional-true](./2026-07-29-head-progresses-scoped-indexed-unconditional-true.md) | zero-progress 静的検査の head_progresses が Scoped/ScopeNode/IndexedRepeat を無条件 true にしており消費0 head + 無制限 repeat をすり抜けうる |
-| 2026-07-29 | bug | open | [seq-or-child-export-key-decode-unsupported](./2026-07-29-seq-or-child-export-key-decode-unsupported.md) | seq/or の子要素に付いた export_key を dec_or_leaf が未対応キーとして拒否し、fixture が decode skip になる |

@@ -1,6 +1,6 @@
 ---
 title: seq/or の子要素 export_key を dec_or_leaf が未対応キーとして拒否する
-status: open
+status: resolved
 category: bug
 created: 2026-07-29T09:27:29+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-29T11:44:42+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["dr/DR-052 (kuu spec repo, §1)","implemented","done:commit 5805bb58, dec_or_leaf の受理列に export_key を追加し ElementDef.export_ へ運ぶようにした。fixture value-typing/none-exclusion-in-renamed-repeat-rows.json は decode skip 解消 (decoded=387->388) の上で rename (rn/p/k) が result/sources に正しく効くことを確認、expected_skips の当該 entry も除去"]
 blocked_by:
 origin: 自リポ TODO
 ---
