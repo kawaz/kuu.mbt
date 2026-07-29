@@ -1,6 +1,6 @@
 ---
 title: named or wrapper に multiple (accumulator) を付けると発火 row に未選択枝の空配列セルが混入する
-status: open
+status: resolved
 category: bug
 created: 2026-07-29T09:24:59+09:00
 last_read: 2026-07-29T09:50:23+09:00
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-29T11:41:30+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done: resolve.mbt の row_seated_cells で行の binding 集合から accum セルの席を起こし直し、未選択 or 枝の空配列セル注入を止めた。commit 5805bb58。fixture or-parse/accum-branch-rows-sources.json 全 case pass、conformance mismatches=0"]
 blocked_by:
 origin: 自リポ TODO
 ---
