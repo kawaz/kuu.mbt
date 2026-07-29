@@ -3,7 +3,7 @@ title: named or wrapper に multiple (accumulator) を付けると発火 row に
 status: open
 category: bug
 created: 2026-07-29T09:24:59+09:00
-last_read:
+last_read: 2026-07-29T09:50:23+09:00
 open_entered: 2026-07-29T09:24:59+09:00
 wip_entered:
 blocked_entered:
