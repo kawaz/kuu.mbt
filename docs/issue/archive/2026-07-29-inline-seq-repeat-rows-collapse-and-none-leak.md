@@ -1,6 +1,6 @@
 ---
 title: repeat 付き positional の inline seq 子が行配列にならず last-wins で潰れる + none セルが 3 面へ漏れる
-status: open
+status: resolved
 category: bug
 created: 2026-07-29T09:26:29+09:00
 last_read: 2026-07-29T17:33:44+09:00
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-29T11:43:16+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done: lowering の seq_row_bearing で inline seq の #row 標識を repeat にも打ち行配列を復元、none_cells にテンプレ解決空間を渡して反復配下 (name#cons テンプレ) の type:none を拾えるようにして3面漏れを解消。commit 5805bb58","done: fixture value-typing/none-exclusion-in-repeat-rows.json 全 case pass","done: 姉妹 file none-exclusion-in-renamed-repeat-rows.json 全 case pass"]
 blocked_by:
 origin: 自リポ TODO
 ---
