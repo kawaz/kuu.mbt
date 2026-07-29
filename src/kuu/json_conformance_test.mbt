@@ -2381,10 +2381,13 @@ fn expected_skips() -> Array[(String, String)] {
   // projection gaps batch (spec 先行 pin、2026-07-29): dec_or_leaf が seq/or 子の export_key を
   // 未対応キーとして拒否する (DR-052 §1 は合法 — 実装 gap、issue
   // 2026-07-29-seq-or-child-export-key-decode-unsupported)。解消時は VANISHED SKIP が掃除を強制。
+  // inheritable 削除サイクル (DR-124、2026-07-29): inherit の object 形 ({"from": ...}, DESIGN §11.2)
+  // を decoder が bool 決め打ちで読めない。inherit:{from} 実装で解消 → VANISHED が掃除を強制。
   [
     (
       "value-typing/none-exclusion-in-renamed-repeat-rows.json", "or branch leaf has unsupported key 'export_key'",
     ),
+    ("value-sources/inherit-from-ladder.json", "inherit is not a bool"),
   ]
 }
 
