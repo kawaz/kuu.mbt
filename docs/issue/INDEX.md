@@ -22,3 +22,4 @@
 | 2026-07-29 | bug | open | [head-progresses-scoped-indexed-unconditional-true](./2026-07-29-head-progresses-scoped-indexed-unconditional-true.md) | zero-progress 静的検査の head_progresses が Scoped/ScopeNode/IndexedRepeat を無条件 true にしており消費0 head + 無制限 repeat をすり抜けうる |
 | 2026-07-29 | bug | open | [or-accum-rows-leak-unselected-branch-empty-array](./2026-07-29-or-accum-rows-leak-unselected-branch-empty-array.md) | named or wrapper に multiple (accumulator) を付けると発火 row に未選択枝の空配列セルが混入する |
 | 2026-07-29 | bug | open | [inline-seq-repeat-rows-collapse-and-none-leak](./2026-07-29-inline-seq-repeat-rows-collapse-and-none-leak.md) | repeat 付き positional の inline seq 子が行配列にならず last-wins で潰れる + none セルが effects/result/sources に漏れる |
+| 2026-07-29 | bug | open | [seq-or-child-export-key-decode-unsupported](./2026-07-29-seq-or-child-export-key-decode-unsupported.md) | seq/or の子要素に付いた export_key を dec_or_leaf が未対応キーとして拒否し、fixture が decode skip になる |
