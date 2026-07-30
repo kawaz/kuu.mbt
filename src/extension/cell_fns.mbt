@@ -97,15 +97,6 @@ fn env_fn(args : Array[@abi.FnArg], ctx : FnCtx) -> FnResult {
 }
 
 ///|
-fn inherit_fn(args : Array[@abi.FnArg], ctx : FnCtx) -> FnResult {
-  let source = fn_string_arg(args, "inherit")
-  match ctx.option(source) {
-    Some(value) => Ok(FnOutput::Value(value))
-    None => absent_source("ancestor option", source)
-  }
-}
-
-///|
 let cell_fn_rng : @random.Rand = @random.Rand::new()
 
 ///|
@@ -242,15 +233,6 @@ pub fn cell_fn_descriptors() -> Array[CellFnDescriptor] {
       observes=["env:<var>"],
       reasons=["absent-source"],
       run=env_fn,
-    ),
-    cell_fn_descriptor(
-      "inherit",
-      [cell_fn_parameter("source")],
-      CellFnOutput::Value,
-      FnFallibility::Reject,
-      observes=["option:<source>"],
-      reasons=["absent-source"],
-      run=inherit_fn,
     ),
     cell_fn_descriptor(
       "uuid",

@@ -82,7 +82,6 @@ fn el(
   dd_match? : String? = None,
   dd_self_keep? : Bool = false,
   is_global? : Bool = false,
-  is_inherit? : Bool = false,
   repeat? : @abi.RepeatSpec? = None,
   multiple? : Bool = false,
   accumulator? : String? = None,
@@ -143,7 +142,6 @@ fn el(
     dd_match,
     dd_self_keep,
     is_global,
-    is_inherit,
     link_depth: 0,
     link_target: None,
     link_additional_levels: None,
@@ -206,7 +204,6 @@ fn all_installers() -> Array[&@node.InstallerExt] {
     @builtins.dd_installer(),
     @builtins.command_installer(),
     @builtins.global_installer(),
-    @builtins.inherit_installer(),
     @builtins.repeat_installer(),
     @builtins.multiple_installer(),
     @builtins.config_installer(),
@@ -272,7 +269,7 @@ test "long installer: value option gets 1 greedy @engine.Seq satellite + 1 @buil
     }
     _ => abort("expected @engine.NativeMatch")
   }
-  // entity は name=port で 1 個、@builtins.flag_type() ではないので default_values は None。is_inherit / env_key
+  // entity は name=port で 1 個、@builtins.flag_type() ではないので default_values は None。env_key
   // / config_seat / accum は installer が触っていないので初期値のまま。
   assert_eq(sc.entities.length(), 1)
   let ent = entity_of(sc, "port").unwrap()
@@ -604,7 +601,7 @@ test "long installer: a count with long:false has no long entry point (DR-071 §
 
 ///|
 /// 保証: env installer は entity の env seat (env_key field) に env 変数名を書き込むだけで、greedy に
-/// 衛星を追加しない (席宣言型)。ladder 順序 (cli > env > inherit > default, DR-031) は engine 所有で、
+/// 衛星を追加しない (席宣言型)。ladder 順序 (cli > env > config > default, DR-031) は engine 所有で、
 /// default_fn を wrap しない。同 pass で ensure_entities → inst_env の順に走るので、entity 未生成の
 /// タイミングで inst_env が走っても次 pass で拾える (fixpoint 収束)。
 test "env installer: seat env_key on entity, no greedy contribution" {
@@ -2109,7 +2106,7 @@ test "value-present-ladder-gap: requires targeting an env-only-sourced non-flag 
 
 ///|
 /// 対極: env が実際に未設定なら (CLI/default も無し) 従来どおり違反のまま @engine.Failure — env が
-/// 「無条件に救済する」わけではないことの固定 (config/inherit 対極テストと対称)。
+/// 「無条件に救済する」わけではないことの固定 (config 対極テストと対称)。
 test "value-present-ladder-gap: requires targeting a non-flag with no env value still violates requires" {
   let a = {
     ..el("a", @builtins.flag_type(), long=List([":set"])),
@@ -2144,10 +2141,10 @@ test "value-present-ladder-gap: requires targeting a non-flag with no env value 
   }
 }
 
-// ── issue bool-requires-config-inherit-gap (kawaz 裁定 2026-07-10): DR-047 §5 明確化「値源
-// 不問」を config / inherit にも拡張する。上の CLI/env 対の続きとして、config seat / inherit
-// seat 経由でのみ true になる bool target が `apply_requires_filter` で正しく生存する
-// ことと、その対極 (config/inherit 側が false・不在のときは従来通り違反のまま) を固定する。 ──
+// ── DR-047 §5 明確化「値源不問」を config / borrow 経由の default 席にも拡張する。上の CLI/env
+// 対の続きとして、config seat / borrow default_fn 経由でのみ true になる bool target が
+// `apply_requires_filter` で正しく生存することと、その対極 (供給側が false・不在のときは従来通り
+// 違反のまま) を固定する。 ──
 
 ///|
 /// 保証: bool target `c` が config seat 経由でのみ true になる場合、`apply_requires_filter`
@@ -2158,7 +2155,7 @@ test "value-present-ladder-gap: requires targeting a non-flag with no env value 
 /// `{c: true}` を返す。config seat は `installer.mbt` の `has_cf` 規約通り、scope に
 /// `is_config_file` 要素が 1 つでもあれば (自身が config_file の要素を除く) 全 value cell に同型で
 /// 付与される (DR-050 §3)。
-test "issue bool-requires-config-inherit-gap: requires targeting a config-sourced bool survives the filter" {
+test "requires targeting a config-sourced bool survives the filter" {
   let cfg_file = {
     ..el("cfg", @builtins.string_type(), long=List([":set"])),
     is_config_file: true,
@@ -2194,7 +2191,7 @@ test "issue bool-requires-config-inherit-gap: requires targeting a config-source
 ///|
 /// 対極: config オブジェクトに `c` が無い / `false` の場合は従来どおり未充足のまま @engine.Failure
 /// (config が「無条件に救済する」わけではないことの固定)。
-test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false still violates requires" {
+test "config-sourced bool absent/false still violates requires" {
   let cfg_file = {
     ..el("cfg", @builtins.string_type(), long=List([":set"])),
     is_config_file: true,
@@ -2253,23 +2250,20 @@ test "issue bool-requires-config-inherit-gap: config-sourced bool absent/false s
 }
 
 ///|
-/// 保証: bool target `c` が祖先 scope の inherit 経由でのみ true になる場合、
-/// `apply_requires_filter` は祖先 scope chain (`table` = `@engine.collect_scopes` 全体) を辿って
-/// 充足と判定する (DESIGN §11.2)。root で `c` を CLI 指定し (`--c`)、`sub` サブコマンド内で
-/// `a requires c` を宣言、`sub` 自身の `c` は `is_inherit:true` で自前の値を持たない — 祖先
-/// (root) の解決済み値 (CLI committed) を見つけて生存する。
-test "issue bool-requires-config-inherit-gap: requires targeting an inherit-sourced bool survives the filter" {
-  let root_c = el("c", @builtins.flag_type(), long=List([":set"]))
+/// 保証: bool target `c` が外側スコープの値を `default_fn: "borrow:<source>"` で引くときも
+/// (DR-125 §3)、`apply_requires_filter` は解決後の値を見て充足と判定する。root で `outer_c` を
+/// CLI 指定し (`--outer-c`)、`sub` サブコマンド内で `a requires c` を宣言、`sub` 自身の `c` は
+/// 自前の入口を持たず borrow で root の解決値を引く — default 席が true を運ぶので生存する。
+test "requires targeting a bool filled by a borrow default_fn survives the filter" {
+  let root_c = el("outer_c", @builtins.flag_type(), long=List([":set"]))
   let child_a = {
     ..el("a", @builtins.flag_type(), long=List([":set"])),
     requires: ["c"],
   }
-  let child_c = el(
-    "c",
-    @builtins.flag_type(),
-    long=List([":set"]),
-    is_inherit=true,
-  )
+  let child_c = {
+    ..el("c", @builtins.flag_type(), long=List([":set"])),
+    default_fn: Some(@abi.Wire({ name: "borrow", args: ["outer_c"] })),
+  }
   let child : @engine.Definition = {
     ..empty_def(),
     options: [child_a, child_c],
@@ -2285,7 +2279,7 @@ test "issue bool-requires-config-inherit-gap: requires targeting an inherit-sour
   let root = @engine.ScopeNode(sc)
   match
     apply_requires_filter(
-      @engine.parse_tree(root, ["--c", "sub", "--a"], defs=Map([])),
+      @engine.parse_tree(root, ["--outer-c", "sub", "--a"], defs=Map([])),
       root,
       Map([]),
       Map([]),
@@ -2294,27 +2288,26 @@ test "issue bool-requires-config-inherit-gap: requires targeting an inherit-sour
     @engine.Success(_) => ()
     other =>
       fail(
-        "expected @engine.Success (root's committed c=true reaches sub via inherit), got " +
+        "expected @engine.Success (root's committed outer_c=true reaches sub via borrow), got " +
         render_outcome(other),
       )
   }
 }
 
 ///|
-/// 対極: root で `--c` を指定しなければ (祖先も未解決、暗黙 default:false) 従来どおり @engine.Failure
-/// (inherit が「無条件に救済する」わけではないことの固定 — 上の config 対極テストと対称)。
-test "issue bool-requires-config-inherit-gap: inherit-sourced bool absent still violates requires" {
-  let root_c = el("c", @builtins.flag_type(), long=List([":set"]))
+/// 対極: root で `--outer-c` を指定しなければ borrow が引く値も false のまま (flag の暗黙既定) で
+/// 従来どおり @engine.Failure — borrow が「無条件に救済する」わけではないことの固定 (上の config
+/// 対極テストと対称)。
+test "a bool filled by a borrow default_fn that resolves false still violates requires" {
+  let root_c = el("outer_c", @builtins.flag_type(), long=List([":set"]))
   let child_a = {
     ..el("a", @builtins.flag_type(), long=List([":set"])),
     requires: ["c"],
   }
-  let child_c = el(
-    "c",
-    @builtins.flag_type(),
-    long=List([":set"]),
-    is_inherit=true,
-  )
+  let child_c = {
+    ..el("c", @builtins.flag_type(), long=List([":set"])),
+    default_fn: Some(@abi.Wire({ name: "borrow", args: ["outer_c"] })),
+  }
   let child : @engine.Definition = {
     ..empty_def(),
     options: [child_a, child_c],
@@ -2355,9 +2348,9 @@ test "issue bool-requires-config-inherit-gap: inherit-sourced bool absent still 
 
 ///|
 /// 保証 (回帰確認): 既存 CLI/env 経由テスト (上の DR-047 §5 対) が config_obj~ 未指定でも
-/// 従来どおり動くこと — 新規 config/inherit 経路の追加が既存呼び出しシグネチャを壊していない
+/// 従来どおり動くこと — config / borrow 経路の追加が既存呼び出しシグネチャを壊していない
 /// ことの固定 (`apply_requires_filter` の `config_obj~` 省略時デフォルト `None`)。
-test "issue bool-requires-config-inherit-gap: existing CLI-committed bool target still survives without config_obj" {
+test "existing CLI-committed bool target still survives without config_obj" {
   let a = {
     ..el("a", @builtins.flag_type(), long=List([":set"])),
     requires: ["c"],
@@ -2843,7 +2836,7 @@ test "DR-093: a required:true option (value-space) is satisfied by CLI value, un
   let def : @engine.Definition = { ..empty_def(), options: [name] }
   let sc = ok_scope(def, all_installers())
   let root = @engine.ScopeNode(sc)
-  // 未指定: 値源 (default/env/config/inherit) が無いので required 未充足、@engine.Failure。
+  // 未指定: 値源 (default/env/config) が無いので required 未充足、@engine.Failure。
   match @engine.parse_tree(root, [], defs=Map([])) {
     @engine.Failure(d) => {
       let mut found = false
@@ -3051,31 +3044,26 @@ test "DR-093: a positional's requires (trigger side) reaches constraint registra
 
 ///|
 /// 保証 (team-lead 監査 2026-07-11): none には値空間が無いので、値源を宣言する
-/// `env`/`config_key`/`inherit` は静的に既知の不成立構成であり definition-error になる (DR-089
-/// §4、DR-083 §5 と同型)。3 種の値源宣言をそれぞれ個別の none 要素に付けて固定する。
-test "DR-089: a none-typed element declaring env/config_key/inherit is a definition-error" {
+/// `env`/`config_key` は静的に既知の不成立構成であり definition-error になる (DR-089
+/// §4、DR-083 §5 と同型)。2 種の値源宣言をそれぞれ個別の none 要素に付けて固定する。
+test "DR-089: a none-typed element declaring env/config_key is a definition-error" {
   let with_env = el("has_env", @builtins.none_type(), long=Bool(true), env=["X"])
   let with_config_key = {
     ..el("has_config_key", @builtins.none_type(), long=Bool(true)),
     config_key: Some(["k"]),
   }
-  let with_inherit = {
-    ..el("has_inherit", @builtins.none_type(), long=Bool(true)),
-    is_inherit: true,
-  }
   let def : @engine.Definition = {
     ..empty_def(),
-    options: [with_env, with_config_key, with_inherit],
+    options: [with_env, with_config_key],
   }
   match test_lower_definition(def, all_installers()) {
     Ok(_) =>
       abort(
-        "expected Err (none element with env/config_key/inherit is a definition-error)",
+        "expected Err (none element with env/config_key is a definition-error)",
       )
     Err(errs) => {
       let mut has_env_flagged = false
       let mut has_config_key_flagged = false
-      let mut has_inherit_flagged = false
       for e in errs {
         if e.element == "has_env" {
           has_env_flagged = true
@@ -3083,13 +3071,9 @@ test "DR-089: a none-typed element declaring env/config_key/inherit is a definit
         if e.element == "has_config_key" {
           has_config_key_flagged = true
         }
-        if e.element == "has_inherit" {
-          has_inherit_flagged = true
-        }
       }
       assert_true(has_env_flagged)
       assert_true(has_config_key_flagged)
-      assert_true(has_inherit_flagged)
     }
   }
 }

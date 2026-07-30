@@ -33,7 +33,6 @@ fn ent(
   config_seat? : Bool = false,
   config_key? : Array[String]? = None,
   is_config_file? : Bool = false,
-  is_inherit? : Bool = false,
   is_tty? : Bool = false,
   tty_stream? : String? = None,
   tty_cygwin? : Bool = true,
@@ -70,7 +69,6 @@ fn ent(
     config_seat,
     config_key,
     is_config_file,
-    is_inherit,
     accum: match accum {
       Some(kind) => canonical_registry().lookup_accumulator(kind)
       None => None
@@ -555,48 +553,18 @@ fn mkb_pub(
 }
 
 ///|
-/// Guarantees: the inherit seat (DR-031 #4 / DR-013) supplies the nearest ancestor scope's
-/// same-named value when no cli/env/config seat wins, and is itself out-ranked by a default seat
-/// that would only apply when inherit has nothing (both absent here → default).
-test "resolve_scope: inherit seat fills from the parent context map" {
-  let ttl = ent(
-    "ttl",
-    @builtins.number_type(),
-    is_inherit=true,
-    default_value=Some(@abi.Number(30.0)),
-  )
-  let sc : @engine.Scope = {
-    greedy: [],
-    positional: [],
-    entities: [ttl],
-    constraints: [],
-  }
-  let inherited = Map::from_array([("ttl", @abi.Value::Number(60.0))])
-  let bound = resolve_scope(sc, [], Map([]), inherited~)
-  assert_eq(bound, Ok([mkb_pub("ttl", @abi.Number(60.0), @abi.Inherit)]))
-  // no inherited value present → falls through to default.
-  let bound_no_parent = resolve_scope(sc, [], Map([]))
-  assert_eq(
-    bound_no_parent,
-    Ok([mkb_pub("ttl", @abi.Number(30.0), @abi.Default)]),
-  )
-}
-
-///|
-/// DR-099 §2: tty preset 型要素の default 席解決規則は inherit 席より後に評価される — 「明示
-/// (CLI/env/config) > 継承 (inherit) > 観測 (tty) > 宣言既定 (default)」の序列そのものを固定する
-/// (DR-098 §5 が確立した優先順位は、独立ラダー席からこの型の default 解決ロジックへ実装位置が
-/// 移っただけで完全に維持される)。fixture 側 (`value-sources/tty-ladder.json`) は cli/env/tty/default
-/// の 4 値源の相互比較を固定するが、inherit との直接対決は fixture に無い軸 (fixture の definition
-/// は inherit を持たない) — ここで補う。
-test "resolve_scope: tty 型 default 席は inherit 席の後で評価される (DR-099 §2)" {
+/// DR-099 §2: tty preset 型要素の default 席解決規則は「明示 (CLI/env/config) > 観測 (tty) >
+/// 宣言既定 (default)」の序列に載る (DR-098 §5 が確立した優先順位は、独立ラダー席からこの型の
+/// default 解決ロジックへ実装位置が移っただけで維持される)。fixture 側
+/// (`value-sources/tty-ladder.json`) は cli/env/tty/default の 4 値源の相互比較を固定するが、
+/// 観測なしで宣言既定へ落ちる分岐は単独では現れないのでここで補う。
+test "resolve_scope: tty 型 default 席は観測 > 宣言既定の順で解決する (DR-099 §2)" {
   let use_color = ent(
     "use_color",
     @builtins.bool_type(),
     is_tty=true,
     tty_stream=Some("stdout"),
     tty_cygwin=false, // cygwin 分岐を無効化し fold=terminal に単純化 (cygwin dial は別テストで検証)
-    is_inherit=true,
     default_value=Some(@abi.Bool(true)),
   )
   let sc : @engine.Scope = {
@@ -605,20 +573,7 @@ test "resolve_scope: tty 型 default 席は inherit 席の後で評価される 
     entities: [use_color],
     constraints: [],
   }
-  // inherit と tty 観測が両方あり、値が食い違う場合 → inherit が勝つ (継承は観測より強い、DR-099 §2)。
-  let inherited = Map::from_array([("use_color", @abi.Value::Bool(false))])
-  let inherit_wins = resolve_scope(
-    sc,
-    [],
-    Map([]),
-    inherited~,
-    tty=Map::from_array([("stdout", { terminal: true, cygwin: false })]),
-  )
-  assert_eq(
-    inherit_wins,
-    Ok([mkb_pub("use_color", @abi.Bool(false), @abi.Inherit)]),
-  )
-  // inherit 供給なし、tty 観測あり → fold が宣言 default より勝つ。
+  // tty 観測あり → fold が宣言 default より勝つ。
   let tty_wins = resolve_scope(
     sc,
     [],
@@ -626,7 +581,7 @@ test "resolve_scope: tty 型 default 席は inherit 席の後で評価される 
     tty=Map::from_array([("stdout", { terminal: false, cygwin: false })]),
   )
   assert_eq(tty_wins, Ok([mkb_pub("use_color", @abi.Bool(false), @abi.Tty)]))
-  // どちらも供給なし → 宣言 default (最終フォールバック)。
+  // 観測なし → 宣言 default (最終フォールバック)。
   let default_wins = resolve_scope(sc, [], Map([]))
   assert_eq(
     default_wins,
@@ -786,13 +741,10 @@ test "resolve_scope: tty 型要素は観測も宣言 default も無ければ abs
 }
 
 ///|
-/// issue bool-requires-config-inherit-gap の diverge 調査で発見した非対称バグの固定:
-/// `resolve_scope_config` の Phase 3 (`if !e.is_config_file`) は「config_file 要素は配線宣言で
-/// あって結果 entity ではない」規則を守るが、config データを供給しない呼び出し (`resolve_scope`
-/// 経由、config_obj=None) は元々このガードを持たず、config_file 要素の宣言 default がそのまま
-/// 通常ラダーで解決されて result に漏れていた (`requires-bool-target-config-inherit.json` の
-/// `inherit-true-satisfies-requires` case が config を一切供給しない中で config_file 要素を
-/// 定義に持つ、という組合せで顕在化)。スコープが `config_file` 要素を宣言していても、config
+/// 非対称バグの固定: `resolve_scope_config` の Phase 3 (`if !e.is_config_file`) は「config_file
+/// 要素は配線宣言であって結果 entity ではない」規則を守るが、config データを供給しない呼び出し
+/// (`resolve_scope` 経由、config_obj=None) は元々このガードを持たず、config_file 要素の宣言
+/// default がそのまま通常ラダーで解決されて result に漏れていた。スコープが `config_file` 要素を宣言していても、config
 /// オブジェクトを供給しない呼び出しでは無視 (bindings を生成しない) することを固定する。
 test "resolve_scope: a config_file element is never resolved (skipped even when the caller supplies no config object)" {
   let cfg = ent(
@@ -890,8 +842,8 @@ test "resolve_scope: a badly-typed env value is a DR-066 Error, not a silent @ab
 ///|
 /// Guarantees (DR-050 §5 dependency order): the config_file element's OWN path resolves cli >
 /// env > default first (no config seat, 循環禁止); the provider is then read with that path, and
-/// every other entity resolves down cli > env > config > inherit > default using it.
-test "resolve_scope_config: the config seat fills below env, above inherit/default" {
+/// every other entity resolves down cli > env > config > default using it.
+test "resolve_scope_config: the config seat fills below env, above default" {
   let cfg_path = ent(
     "config",
     @builtins.string_type(),
@@ -945,7 +897,7 @@ test "resolve_scope_config: a committed unreadable config path errors, a default
       fail("expected an Err, the committed config path could not be read")
   }
   // a default-only path (no cli/env) reading None is silently tolerated: no Error, the config seat
-  // just supplies nothing (later entities fall through to inherit/default).
+  // just supplies nothing (later entities fall through to the default seat).
   let by_default = ent(
     "config",
     @builtins.string_type(),
@@ -999,13 +951,14 @@ test "resolve_scope_config: a structural config mismatch is an Error" {
   }
 }
 
-// ── command_child / inherited_of ──────────────────────────────────────────────
+// ── command_child / outer_values_of ──────────────────────────────────────────
 
 ///|
 /// Guarantees: `command_child` fetches a subcommand's built @engine.Scope by name from its parent's
-/// `@engine.CommandSatisfied` greedy entries; `inherited_of` turns a resolved-bindings array into the name→value
-/// map the next scope's inherit seat reads (`resolve_scope`'s `inherited?` parameter).
-test "command_child fetches a subcommand scope; inherited_of builds the parent context map" {
+/// `@engine.CommandSatisfied` greedy entries; `outer_values_of` turns a resolved-bindings array into
+/// the name→value map a child scope's `borrow` default_fn resolves against (DR-125 §4,
+/// `resolve_scope_config`'s `outer_values?` parameter).
+test "command_child fetches a subcommand scope; outer_values_of builds the parent context map" {
   let child : @engine.Scope = {
     greedy: [],
     positional: [],
@@ -1020,7 +973,7 @@ test "command_child fetches a subcommand scope; inherited_of builds the parent c
   }
   assert_eq(command_child(root, "serve"), Some(child))
   assert_eq(command_child(root, "missing"), None)
-  let ctx = inherited_of([cb("ttl", @abi.Number(60.0), @abi.Cli)])
+  let ctx = outer_values_of([cb("ttl", @abi.Number(60.0), @abi.Cli)])
   assert_eq(ctx.get("ttl"), Some(@abi.Number(60.0)))
   assert_eq(ctx.get("absent"), None)
 }

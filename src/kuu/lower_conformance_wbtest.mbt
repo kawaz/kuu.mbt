@@ -109,7 +109,6 @@ struct LEnt {
   link : String?
   default : @abi.Value?
   env : String?
-  is_inherit : Bool
   config_key : Array[String]?
   accum : String?
   // DR-105 §1/§3: the append-only flatten dial — carried alongside `accum` so a "lower" fixture can
@@ -172,9 +171,6 @@ fn lent_str(e : LEnt) -> String {
     Some(k) => fs.push("env=" + k)
     None => ()
   }
-  if e.is_inherit {
-    fs.push("is_inherit=true")
-  }
   match e.config_key {
     Some(p) => fs.push("config_key=[" + join_comma(p) + "]")
     None => ()
@@ -183,8 +179,8 @@ fn lent_str(e : LEnt) -> String {
     Some(a) => fs.push("accumulator=" + a)
     None => ()
   }
-  // DR-105 §1: omit-if-false, mirrors `is_inherit=true` above — the common (undeclared) case renders
-  // no `flatten` field at all so pre-DR-105 "lower" fixtures without the key still compare equal.
+  // DR-105 §1: omit-if-false — the common (undeclared) case renders no `flatten` field at all so
+  // "lower" fixtures without the key still compare equal.
   if e.flatten {
     fs.push("flatten=true")
   }
@@ -564,7 +560,6 @@ fn proj_entity(e : @engine.Entity) -> LEnt {
     // shape) — project the scalar face of `@engine.Entity.default_values` for this cross-check.
     default: default_scalar(e),
     env: e.env_key,
-    is_inherit: e.is_inherit,
     config_key: e.config_key,
     accum: match e.accum {
       Some(resident) => Some(resident.kind())
@@ -1244,7 +1239,7 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
   allowed_keys(
     o,
     [
-      "type", "link", "default", "env", "inherit", "config_key", "accumulator", "flatten",
+      "type", "link", "default", "env", "config_key", "accumulator", "flatten",
     ],
     "golden entity",
   )
@@ -1263,7 +1258,6 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
     link: jf_str(o, "link"),
     default,
     env: jf_str(o, "env"),
-    is_inherit: bool_field(o, "inherit", false),
     config_key,
     accum: jf_str(o, "accumulator"),
     flatten: bool_field(o, "flatten", false),

@@ -13,7 +13,6 @@ fn source_result(source : Source) -> ResultValue {
     Link => "link"
     Env => "env"
     Config => "config"
-    Inherit => "inherit"
     Tty => "tty"
     Const => "const"
     Default => "default"

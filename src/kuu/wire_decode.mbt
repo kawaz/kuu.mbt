@@ -219,7 +219,6 @@ fn opt(
   tty_stream? : String? = None,
   tty_cygwin? : Bool = true,
   global? : Bool = false,
-  is_inherit? : Bool = false,
   repeat? : @abi.RepeatSpec? = None,
   multiple? : Bool = false,
   accumulator? : String? = None,
@@ -285,7 +284,6 @@ fn opt(
     dd_match: None,
     dd_self_keep: false,
     is_global: global,
-    is_inherit,
     link_depth: 0,
     link_target: link_,
     link_additional_levels: None,
@@ -337,7 +335,6 @@ fn opt(
 fn pos(
   name : String,
   ty : &@extension.TypeExt,
-  is_inherit? : Bool = false,
   repeat? : @abi.RepeatSpec? = None,
   optional? : Bool = false,
   multiple? : Bool = false,
@@ -408,7 +405,6 @@ fn pos(
     dd_match: None,
     dd_self_keep: false,
     is_global: false,
-    is_inherit,
     link_depth: 0,
     link_target: link_,
     link_additional_levels: None,
@@ -494,7 +490,6 @@ fn dd_marker(
     dd_match: match_,
     dd_self_keep: self_keep,
     is_global: false,
-    is_inherit: false,
     link_depth: 0,
     link_target: None,
     link_additional_levels: None,
@@ -571,7 +566,6 @@ fn exact_marker(spelling : String) -> @engine.ElementDef {
     dd_match: None,
     dd_self_keep: false,
     is_global: false,
-    is_inherit: false,
     link_depth: 0,
     link_target: None,
     link_additional_levels: None,
@@ -652,7 +646,6 @@ priv struct InstallerDecoded {
   dd_match : String?
   dd_self_keep : Bool
   global_ : Bool
-  is_inherit : Bool
   repeat : @abi.RepeatSpec?
   optional : Bool
   multiple : Bool
@@ -684,7 +677,6 @@ fn decode_installer_owned(
   let mut dd_match : String? = None
   let mut dd_self_keep = false
   let mut global_ = false
-  let mut is_inherit = false
   let mut repeat : @abi.RepeatSpec? = None
   let mut optional = false
   let mut multiple = false
@@ -720,7 +712,6 @@ fn decode_installer_owned(
         dd_self_keep = self_keep
       }
       Global(value) => global_ = value
-      Inherit(value) => is_inherit = value
       Repeat(spec, option) => {
         repeat = spec
         optional = option
@@ -756,7 +747,6 @@ fn decode_installer_owned(
     dd_match,
     dd_self_keep,
     global_,
-    is_inherit,
     repeat,
     optional,
     multiple,
@@ -2304,7 +2294,6 @@ fn dec_option(
     None => None
   }
   let global = owned.global_
-  let inherit_flag = owned.is_inherit
   let multiple = owned.multiple
   let sep = owned.separator
   let coll = owned.collector
@@ -2433,7 +2422,6 @@ fn dec_option(
       tty_stream=tty_stream_from_shadow,
       tty_cygwin=tty_cygwin_from_shadow,
       global~,
-      is_inherit=inherit_flag,
       multiple~,
       accumulator=acc,
       flatten=flat,
@@ -2792,7 +2780,6 @@ fn dec_positional(
   pos(
     name,
     ty,
-    is_inherit=owned.is_inherit,
     repeat~,
     optional~,
     multiple~,
@@ -2858,7 +2845,7 @@ fn dec_positional_group(
 }
 
 ///|
-/// DR-014 / DESIGN §7.2 (issue scope-config-object-gap): the resolved (post-inheritance) value of
+/// DR-014 / DESIGN §7.2 (issue scope-config-object-gap): the resolved (親から引き継ぎ済みの) value of
 /// every scope `config` key, threaded top-down through `dec_definition`/`dec_command`'s recursion —
 /// this IS the "子要素は親の config を継承、上書き可能" hierarchy (DESIGN §7.2), realized as
 /// "each scope merges its own `config` object over the value it received from its parent" rather
@@ -2893,7 +2880,7 @@ fn default_scope_config() -> ScopeConfig {
 
 ///|
 /// Merges THIS scope's own `config` object (JSON, may be partly or fully absent) over `parent`
-/// (the already-resolved config the enclosing scope handed down) — a key ABSENT from `co` inherits
+/// (the already-resolved config the enclosing scope handed down) — a key ABSENT from `co` keeps
 /// `parent`'s resolved value; a key PRESENT overrides it. This single merge step, applied once per
 /// scope in the top-down recursion, is the entire "階層継承可能" mechanism DR-014 specifies — no
 /// separate reconciliation pass is needed because each scope only ever sees its own JSON object and
@@ -3125,7 +3112,7 @@ fn dec_definition(
     help_meta: { ..base_help_meta, render_effective, },
   }
   // DR-014 / DESIGN §7.2 (issue scope-config-object-gap; supersedes DR-091 §3's original 2-field-
-  // only, non-inheriting scope config): この呼び出しの `o` (root definition object、または 1つの
+  // only, 親から引き継がないスコープ config): この呼び出しの `o` (root definition object、または 1つの
   // command の own definition object — `dec_command` が自分の `o` をそのまま渡す) が持つ
   // `config: {long_prefix, long_eq_sep, short_prefix, short_attached_value, short_combine,
   // env_prefix, auto_env}` (DESIGN §7.2 の wire 形そのもの、DR-096 §1/§2 軸別再編後) を

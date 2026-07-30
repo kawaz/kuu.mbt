@@ -1,13 +1,12 @@
 // resolve.mbt — the value-resolution layer (MDR-002 §3): the value-source ladder (env / config /
-// inherit / default seat fill, DR-031 / DR-049 / DR-050), the name-driven result builder (flat
+// default seat fill, DR-031 / DR-049 / DR-050), the name-driven result builder (flat
 // bindings → nested @abi.ResultValue, DR-016 / DR-025 / DR-043), export-key application (DR-052), and
 // export-key collision detection (DR-073). node/value 依存のみ; eval からは経路確定後の後処理
 // として呼ばれる (MDR-002 §3 table).
 //
 // Ported from slice `poc/result.mbt` (full file) and the value-ladder portion of slice
 // `poc/installer.mbt` (`resolve_scope` / `resolve_scope_config` / `@extension.value_str` — NOT the lowering,
-// which stays installer.mbt's job). MDR-003: `e.inherit` → `e.is_inherit` (node.mbt already applies
-// the trailing-underscore convention).
+// which stays installer.mbt's job).
 //
 // `@extension.value_str` used to live in eval.mbt for the RequiresIf constraint comparison — this is its
 // canonical home per the MDR-002 §3 module table; eval.mbt now calls this file's copy (single
@@ -1174,8 +1173,8 @@ fn collect_defaults(
     // the preset default:false (or an explicit bool default) and is never absent, so it renders in
     // the result-object projection even where the value-source ladder is not run. A NON-flag cell's
     // default is deliberately NOT injected here — its true value depends on the full ladder (env /
-    // config / inherit seats can override the default), which this projection does not run;
-    // injecting the raw default would surface a
+    // config seats can override the default, and a `borrow` default_fn resolves against another
+    // cell), which this projection does not run; injecting the raw default would surface a
     // wrong value. Those cells stay ladder-resolved.
     if e.declaring_path.length() == 0 &&
       (e.ty.name() == "flag" || e.ty.name() == "bool") &&
@@ -1261,7 +1260,6 @@ fn source_tag(source : @abi.Source) -> @abi.ResultValue {
     @abi.Link => "link"
     @abi.Env => "env"
     @abi.Config => "config"
-    @abi.Inherit => "inherit"
     @abi.Tty => "tty"
     @abi.Const => "const"
     @abi.Default => "default"
@@ -1707,11 +1705,11 @@ fn path_starts_with(path : Array[String], prefix : Array[String]) -> Bool {
   true
 }
 
-// ── DR-047 §4/§5 (issue value-present-ladder-gap 裁定 2026-07-10、bool target 分は元 issue
-// bool-requires-config-inherit-gap 裁定 2026-07-09): requires の後段 path filter ───────────────
+// ── DR-047 §4/§5 (issue value-present-ladder-gap 裁定 2026-07-10、bool target 分は
+// 2026-07-09 裁定): requires の後段 path filter ───────────────
 //
 // requires (Requires) / value 依存 requires (RequiresIf) の目的語の充足条件は「値源ラダー
-// (env/config/inherit/default) 充填後の最終状態」で決まる — bool 型 (@builtins.flag_type()/@builtins.bool_type()) なら「解決後の
+// (env/config/default) 充填後の最終状態」で決まる — bool 型 (@builtins.flag_type()/@builtins.bool_type()) なら「解決後の
 // 値が true であること」(値源不問)、非 bool なら「値の有無 (default 込み)」(DR-047 §5 表)。この
 // 判定は値源ラダーが解ける後段でしか行えないため、KTop (eval.mbt, CLI 面のみで完結する完全経路
 // 判定) では両方とも常に pass 扱いとしてスキップし (`is_bool_entity` が bool/非bool の分岐ゲート)、
@@ -1719,7 +1717,7 @@ fn path_starts_with(path : Array[String], prefix : Array[String]) -> Bool {
 // (DR-073, 直上) と同じ「@engine.Outcome を受け取り @engine.Outcome を返す後処理」パターン。
 //
 // 非bool 分は元々 `value_present` (= committed OR has_default) として KTop で即時評価していたが、
-// これは env/config/inherit 経由の供給を無視する実装ショートカットだった (DR-047 §4 の「値源ラダー
+// これは env/config 経由の供給を無視する実装ショートカットだった (DR-047 §4 の「値源ラダー
 // 充填後の最終状態で評価する」規定と乖離、issue value-present-ladder-gap で発見・実機再現)。
 
 ///|
@@ -1789,7 +1787,7 @@ fn candidate_satisfied(
 /// CLI-only bindings (trigger 判定、DR-047 §5 表「トリガ側 = committed」) AND the SAME candidate's
 /// fully resolved bindings (目的語判定、「目的語側 = 値の有無/真理値」) — issue
 /// resolve-first-constraint-pipeline (Phase 1) 裁定 2026-07-10: 目的語の充足判定は、もはやこの関数が
-/// 自前のラダー (env/config/inherit) を再演するのではなく、呼び出し元が既に `resolve_scope_tree` で
+/// 自前のラダー (env/config) を再演するのではなく、呼び出し元が既に `resolve_scope_tree` で
 /// 解決済みの `resolved` を渡してくるので `@engine.element_value` の単純参照で済む (値源不問は「resolve 済み
 /// なら値源を意識する必要がない」という形で自然に成立する)。issue value-present-ladder-gap 裁定
 /// 2026-07-10 でこの読者化を非bool 目的語にも拡張した — bool は `@engine.element_value(resolved,...) ==
@@ -2118,9 +2116,10 @@ fn contains_path(
 
 ///|
 /// Resolve a WHOLE scope tree (root scope + every entered nested command scope) down the full
-/// value-source ladder (`resolve_scope_config`), threading `inherited` top-down so a child scope's
-/// inherit seat always sees its ANCESTOR's already-resolved values (DR-087 §3 dependency order —
-/// the parent must be fully resolved before the child's inherit lookup runs, never reversed).
+/// value-source ladder (`resolve_scope_config`), threading `outer_values` top-down so a child scope's
+/// `borrow` default_fn always sees its ANCESTOR's already-resolved values (DR-087 §3 dependency
+/// order — the parent must be fully resolved before the child's borrow lookup runs, never
+/// reversed; DR-125 §4's lexical scope chain walks this map outward).
 ///
 /// This is the production promotion of `json_conformance_test.mbt`'s `resolve_tree` (issue
 /// resolve-first-constraint-pipeline, Phase 1): same recursive shape, generalized from the test
@@ -2142,7 +2141,7 @@ fn resolve_scope_tree_with_export_impl(
   env_map : (String) -> String?,
   provider : (String) -> @abi.ConfigVal?,
   path : Array[String],
-  inherited : Map[String, @abi.Value],
+  outer_values : Map[String, @abi.Value],
   at_pos : Int,
   tty : (String) -> TtyObs?,
   ek : @engine.ExportScopeMap,
@@ -2163,7 +2162,7 @@ fn resolve_scope_tree_with_export_impl(
       env_map,
       provider,
       path,
-      inherited,
+      outer_values,
       at_pos,
       tty,
       ek,
@@ -2182,12 +2181,12 @@ fn resolve_scope_tree_with_export_impl(
   for b in resolved {
     out.push({ ..b, scope: path })
   }
-  let child_inherited : Map[String, @abi.Value] = Map([])
-  for k, v in inherited {
-    child_inherited.set(k, v)
+  let child_outer_values : Map[String, @abi.Value] = Map([])
+  for k, v in outer_values {
+    child_outer_values.set(k, v)
   }
   for b in resolved {
-    child_inherited.set(b.key, b.value)
+    child_outer_values.set(b.key, b.value)
   }
 
   // Structural result scopes are instantiated by Scoped/IndexedRepeat rather than CommandSatisfied,
@@ -2222,7 +2221,7 @@ fn resolve_scope_tree_with_export_impl(
     let nested_ek = export_map_at_structural_path(ek, runtime_path, path)
     let nested_resolved = match
       resolve_scope_config_with_export(
-        nested_scope, nested_here, env_map, provider, runtime_path, child_inherited,
+        nested_scope, nested_here, env_map, provider, runtime_path, child_outer_values,
         at_pos, tty, nested_ek, extensions, include_default,
       ) {
       Ok(rb) => rb
@@ -2248,7 +2247,7 @@ fn resolve_scope_tree_with_export_impl(
   // always resolves; the conformance runner only did for fixtures needing the default ladder,
   // which is why `moon test` stayed green while kuu-cli lost the row array entirely, rendering
   // `[]` instead of the fired rows). These bindings carry no ladder seat of their own (a ref
-  // template field has no individual env/config/inherit/default seat, DR-078 §1) — they are pure
+  // template field has no individual env/config/default seat, DR-078 §1) — they are pure
   // CLI-origin material `build_result`'s ROW-GROUP/SEGS branches (resolve.mbt) already know how to
   // fold via `sub_under`, so forwarding them unchanged (not through `resolve_scope_config`) is the
   // correct treatment, mirroring the sentinel-preservation loop just above.
@@ -2283,7 +2282,7 @@ fn resolve_scope_tree_with_export_impl(
               env_map,
               provider,
               childpath,
-              child_inherited,
+              child_outer_values,
               at_pos,
               tty,
               ek.child(name),
@@ -2313,7 +2312,7 @@ fn resolve_child_default_seats(
   bindings : Array[@abi.Binding],
   env_map : (String) -> String?,
   provider : (String) -> @abi.ConfigVal?,
-  inherited : Map[String, @abi.Value],
+  outer_values : Map[String, @abi.Value],
   at_pos : Int,
   tty : (String) -> TtyObs?,
   ek : @engine.ExportScopeMap,
@@ -2347,7 +2346,7 @@ fn resolve_child_default_seats(
           env_map,
           provider,
           binding.scope,
-          inherited,
+          outer_values,
           at_pos,
           tty,
           ek,
@@ -2383,7 +2382,7 @@ fn resolve_scope_tree_with_export(
   env_map : (String) -> String?,
   provider : (String) -> @abi.ConfigVal?,
   path : Array[String],
-  inherited : Map[String, @abi.Value],
+  outer_values : Map[String, @abi.Value],
   at_pos : Int,
   tty : (String) -> TtyObs?,
   ek : @engine.ExportScopeMap,
@@ -2392,13 +2391,13 @@ fn resolve_scope_tree_with_export(
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
   let bindings = match
     resolve_child_default_seats(
-      sc, binds, env_map, provider, inherited, at_pos, tty, ek, extensions, include_default,
+      sc, binds, env_map, provider, outer_values, at_pos, tty, ek, extensions, include_default,
     ) {
     Ok(values) => values
     Err(error) => return Err(error)
   }
   resolve_scope_tree_with_export_impl(
-    sc, bindings, env_map, provider, path, inherited, at_pos, tty, ek, extensions,
+    sc, bindings, env_map, provider, path, outer_values, at_pos, tty, ek, extensions,
     include_default,
   )
 }
@@ -2406,7 +2405,7 @@ fn resolve_scope_tree_with_export(
 ///|
 /// Apply the DR-047 §4/§5 requires path filter to a `parse()` @engine.Outcome (final_filters/accum_filters
 /// と同じ側の後段処理、`promote_collision_ambiguous` と同型パターン — `parse()` 自体のシグネチャ・eval 層の
-/// @engine.Ctx は無改修のまま、値源 (env/config/inherit) を後から与える)。bool 目的語 (真理値判定) と非bool
+/// @engine.Ctx は無改修のまま、値源 (env/config) を後から与える)。bool 目的語 (真理値判定) と非bool
 /// 目的語 (値の有無判定) の両方をここで扱う (issue value-present-ladder-gap 裁定 2026-07-10 で対象
 /// 拡張、旧名 `apply_requires_filter` から改名)。生存経路数で outcome を再構成する: 0 →
 /// `@engine.Failure` (violation を DR-053 §2 全保持で errors に、`fired_action`/`help_entry`/
@@ -2646,7 +2645,7 @@ fn config_lookup(obj : @abi.ConfigVal, path : Array[String]) -> @abi.ConfigVal? 
 }
 
 ///|
-/// Resolve one entity down the fixed ladder: cli > env > config > inherit > default (DR-031 /
+/// Resolve one entity down the fixed ladder: cli > env > config > default (DR-031 /
 /// DR-050 #3). Returns the effect bindings (0/1, or many when a config array fills a `multiple`
 /// cell) or an Err (a value-source type mismatch is a DR-037/DR-066 Error). `config_obj` is the
 /// read config object (None = no config); `config_path` is this entity's absolute lookup path
@@ -2661,7 +2660,6 @@ fn resolve_entity(
   env_map : (String) -> String?,
   config_obj : @abi.ConfigVal?,
   config_path : Array[String],
-  inherited : Map[String, @abi.Value],
   at_pos : Int,
   epath : Array[String],
   tty_map : (String) -> TtyObs?,
@@ -2670,8 +2668,8 @@ fn resolve_entity(
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
   match
     resolve_entity_raw(
-      e, cli, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
-      extensions, include_default,
+      e, cli, env_map, config_obj, config_path, at_pos, epath, tty_map, extensions,
+      include_default,
     ) {
     Ok(bs) =>
       if !include_default && bs.length() == 0 {
@@ -2685,7 +2683,7 @@ fn resolve_entity(
 
 ///|
 /// DR-009 §value_filters/final_filters (DR-102 §1 属性分割) applied to whatever `resolve_entity_raw`
-/// resolved (any ladder seat: cli/env/config/inherit/default — DR-077 §1's whole point is that
+/// resolved (any ladder seat: cli/env/config/default — DR-077 §1's whole point is that
 /// `set` and `update` effects converge here indistinguishably). `value_filters` (each) applies to
 /// every binding; `final_filters` (T→T、確定した最終値) applies ONLY to a scalar cell's (no accum)
 /// single binding — an accum cell's TRUE "post accumulation" gate is `accum_filters`, applied at
@@ -2728,7 +2726,7 @@ fn apply_entity_filters(
           // value_filters(each、段5、DR-009): CONFORMANCE §3's piece-attribution rule — a reject here
           // is attributed to the SPECIFIC args token the rejected piece came from (`b.at_pos`,
           // issue 2026-07-09-accum-entity-filters-wiring), not the ladder's own `at_pos` (which
-          // stays args.length — the "no specific token" fallback for env/config/inherit/default-
+          // stays args.length — the "no specific token" fallback for env/config/default-
           // sourced bindings, where `b.at_pos` is always `None`).
           let pos = match b.at_pos {
             Some(p) => p
@@ -2789,7 +2787,7 @@ fn apply_entity_filters(
 }
 
 ///|
-/// The pre-DR-009-filters ladder resolution (cli > env > config > inherit > default) — unchanged
+/// The pre-DR-009-filters ladder resolution (cli > env > config > default) — unchanged
 /// behavior from before this issue, just renamed so `resolve_entity` can wrap it with filter chain
 /// application (`apply_entity_filters`) without duplicating the ladder logic.
 fn resolve_entity_raw(
@@ -2798,7 +2796,6 @@ fn resolve_entity_raw(
   env_map : (String) -> String?,
   config_obj : @abi.ConfigVal?,
   config_path : Array[String],
-  inherited : Map[String, @abi.Value],
   at_pos : Int,
   epath : Array[String],
   tty_map : (String) -> TtyObs?,
@@ -2849,7 +2846,7 @@ fn resolve_entity_raw(
   //   default-specific branch there.
   // - `unset`: stays uncommitted (committed=false, unchanged from before) — if every same-name CLI
   //   effect in this seat ends up uncommitted, the CLI seat falls through to the lower ladder rungs
-  //   (env/config/inherit/default) below, exactly like the scalar branch already does
+  //   (env/config/default) below, exactly like the scalar branch already does
   //   (`unset-ladder.json`'s `unset-opens-ladder`) — this is the new `committed_now` gate replacing
   //   the old unconditional `bs.length() > 0` return.
   // DR-080 波及節: a merge-accumulator cell's CLI seat is NOT a per-binding fold — a "発火" is a
@@ -2866,7 +2863,6 @@ fn resolve_entity_raw(
           env_map,
           config_obj,
           config_path,
-          inherited,
           at_pos,
           epath,
           tty_map,
@@ -2889,7 +2885,7 @@ fn resolve_entity_raw(
         }
         @abi.Default =>
           // DR-081 §2: op=default sets the CURRENT (already-rewritten) default value — env/
-          // config/inherit don't "win as a lower seat" here, they've already rewritten the
+          // config doesn't "win as a lower seat" here, it has already rewritten the
           // cell's default (§1's model) by the time this fires, so querying the SAME ladder
           // `resolve_ladder_below_cli` runs for a normal fall-through gets exactly that value.
           // `source` stays on the firing binding (`cli` for the element's own entry, `link` for a
@@ -2897,8 +2893,7 @@ fn resolve_entity_raw(
           // which explicit path reached that same top ladder seat.
           match
             resolve_ladder_below_cli(
-              e, env_map, config_obj, config_path, inherited, at_pos, epath, tty_map,
-              extensions,
+              e, env_map, config_obj, config_path, at_pos, epath, tty_map, extensions,
             ) {
             Ok(bs2) => {
               current = if bs2.length() > 0 {
@@ -2910,7 +2905,7 @@ fn resolve_entity_raw(
                   ),
                 )
               } else {
-                // no declared default AND no env/config/inherit supply — nothing to rewrite to,
+                // no declared default AND no env/config supply — nothing to rewrite to,
                 // same degenerate fallback the pre-DR-081 code used (the placeholder binding
                 // itself, committed as-is; this element simply has no meaningful default here).
                 Some(b)
@@ -2925,7 +2920,7 @@ fn resolve_entity_raw(
         }
         // NOT committed: resets the running value to default so a LATER update in the same
         // fold sees the right "old" — but this seat stays eligible to fall through to
-        // env/config/inherit if nothing commits after it (unchanged pre-DR-077 contract).
+        // env/config if nothing commits after it (unchanged pre-DR-077 contract).
         @abi.Unset => {
           current = match default_scalar(e) {
             Some(v) => Some(@abi.Binding::new(e.name, v, @abi.Default))
@@ -2972,8 +2967,8 @@ fn resolve_entity_raw(
             Ok(@extension.FnOutput::Sentinel(@extension.UseDefault)) =>
               match
                 resolve_ladder_below_cli(
-                  e, env_map, config_obj, config_path, inherited, at_pos, epath,
-                  tty_map, extensions,
+                  e, env_map, config_obj, config_path, at_pos, epath, tty_map,
+                  extensions,
                 ) {
                 Ok(defaults) => {
                   current = if defaults.length() > 0 {
@@ -3025,7 +3020,6 @@ fn resolve_entity_raw(
     env_map,
     config_obj,
     config_path,
-    inherited,
     at_pos,
     epath,
     tty_map,
@@ -3045,12 +3039,12 @@ pub struct TtyObs {
 } derive(Eq, Debug)
 
 ///|
-/// DR-081 §1 の「default 席書き換え」モデルの実装的正体: env/config/inherit/宣言 default という
+/// DR-081 §1 の「default 席書き換え」モデルの実装的正体: env/config/宣言 default という
 /// CLI 未満のラダー段。CLI seat がフォールスルーした場合の通常経路であると同時に、`resolve_entity_
 /// raw` の CLI seat 内で `@abi.Default` effect (`:default` variant) が発火した瞬間の **「その時点の
 /// (書き換え済み) default 値」を問い合わせる関数としても再利用する** (DR-081 §2 "op=default は
 /// 現在の default をそのままセルへ書く")。CLI seat の外に切り出したのは、両方の呼び手が全く同じ
-/// 「env が勝てば env、なければ config、なければ inherit、なければ宣言 default (無ければ accum は
+/// 「env が勝てば env、なければ config、なければ宣言 default (無ければ accum は
 /// `[]` / scalar は absent)」という 1 本のラダーを必要とするため — 重複実装すると DR-081 が
 /// 「複数席が供給する場合は従来のラダー優先順」と明記する優先順位 (env が最終的に勝つ) を 2 箇所で
 /// 保守する羽目になる。
@@ -3064,7 +3058,6 @@ fn resolve_ladder_below_cli(
   env_map : (String) -> String?,
   config_obj : @abi.ConfigVal?,
   config_path : Array[String],
-  inherited : Map[String, @abi.Value],
   at_pos : Int,
   epath : Array[String],
   tty_map : (String) -> TtyObs?,
@@ -3130,7 +3123,7 @@ fn resolve_ladder_below_cli(
           Some(cv) =>
             match cv {
               // JSON null = 供給なし (DR-050 §4 / DR-051): the config seat supplies nothing; fall
-              // through to inherit / default (null is NOT a value in kuu's value space).
+              // through to the default seat (null is NOT a value in kuu's value space).
               @abi.Null => ()
               // array → a multiple cell's pieces (DR-050 §4); each item typed per §4 — including
               // §4's string pipeline (issue 2026-07-09-config-string-pieceprocessor-gap), so a
@@ -3194,13 +3187,6 @@ fn resolve_ladder_below_cli(
       None => () // no config object (no config_file, or default-path read failure) → fall through
     }
   }
-  // inherit seat (DR-031 / DR-013). MDR-003: `inherit` 予約語回避 → `is_inherit`.
-  if e.is_inherit {
-    match inherited.get(e.name) {
-      Some(v) => return Ok([@abi.Binding::new(e.name, v, @abi.Inherit)])
-      None => ()
-    }
-  }
   // UX-Q7R: the caller first resolves only seats above default for every entity in the scope. A
   // second pass enables this tail only for the first entity whose export-key-resolved result cell is
   // still empty. CLI `:default` effects call this helper with the default enabled because the CLI
@@ -3260,9 +3246,9 @@ fn resolve_ladder_below_cli(
     None => ()
   }
   // const 初期値 (DESIGN §11.4 / DR-031 CONST-Q1=a): root 位置の `value:` はラダーの**席ではない**が、
-  // 実効的にはここ — 上位席 (env / config / inherit) の供給は上の分岐で既に return 済みなので通常規則
+  // 実効的にはここ — 上位席 (env / config) の供給は上の分岐で既に return 済みなので通常規則
   // どおり const を上書きし、const が値を出せば「無い時に埋める」default 席には到達しない。序列に
-  // 参加しないまま cli > env > config > inherit > const > default の位置に挟まる形。
+  // 参加しないまま cli > env > config > const > default の位置に挟まる形。
   // 値の型付けは default 席と同じパイプライン (`@builtins.config_to_value`) を通す — DR-102 §5 の
   // 「値源の種別でなく値の型が決める」がそのまま適用される (const 専用の型規則は作らない)。
   match e.const_values {
@@ -3606,7 +3592,7 @@ fn default_claim_values_equal(
 ///   2. read the provider with that path → a config object (or None). A committed path (cli/env)
 ///      that reads None is a DR-037/DR-066 Error (指定したのに読めない); a default path reading
 ///      None is silently tolerated (config seat stays empty)
-///   3. resolve every (non config_file) entity down cli > env > config > inherit > default, using
+///   3. resolve every (non config_file) entity down cli > env > config > default, using
 ///      the config object and each entity's absolute config path (config_key, else 同型 = scope path + name)
 /// `provider` is the config_provider stub (path → config object | None). `path` is this scope's
 /// result path (for 同型 correspondence). `at_pos` is the position an Error is reported at.
@@ -3616,7 +3602,7 @@ fn resolve_scope_config_with_export(
   env_map : (String) -> String?,
   provider : (String) -> @abi.ConfigVal?,
   path : Array[String],
-  inherited : Map[String, @abi.Value],
+  outer_values : Map[String, @abi.Value],
   at_pos : Int,
   tty : (String) -> TtyObs?,
   ek : @engine.ExportScopeMap,
@@ -3689,7 +3675,7 @@ fn resolve_scope_config_with_export(
       }
     None => ()
   }
-  // Phase 3a: resolve CLI/env/config/inherit for every entity before considering any default. These
+  // Phase 3a: resolve CLI/env/config for every entity before considering any default. These
   // seats are actual claims even when another entity already occupies the same exported result cell.
   let out : Array[@abi.Binding] = []
   let supplied : Array[String] = []
@@ -3700,8 +3686,7 @@ fn resolve_scope_config_with_export(
       let cpath = config_path_of(e, path)
       match
         resolve_entity(
-          e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty, extensions,
-          false,
+          e, cli, env_map, config_obj, cpath, at_pos, path, tty, extensions, false,
         ) {
         Ok(bs) =>
           if bs.length() > 0 {
@@ -3738,8 +3723,8 @@ fn resolve_scope_config_with_export(
             let cpath = config_path_of(e, path)
             match
               resolve_entity(
-                e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty,
-                extensions, true,
+                e, cli, env_map, config_obj, cpath, at_pos, path, tty, extensions,
+                true,
               ) {
               Ok(bs) =>
                 if default_fills_cell(e, bs) && bs.length() > 0 {
@@ -3803,14 +3788,13 @@ fn resolve_scope_config_with_export(
         // default 側が死に宣言になるだけ、`required` の vacuous 充足と同じ lint 領分)。
         let resolved = if e.default_fn is Some(_) && e.const_values is None {
           resolve_default_fn(
-            e, sc.entities, option_values, inherited, env_map, at_pos, path,
+            e, sc.entities, option_values, outer_values, env_map, at_pos, path,
             extensions,
           )
         } else {
           let cpath = config_path_of(e, path)
           resolve_entity(
-            e, cli, env_map, config_obj, cpath, inherited, at_pos, path, tty, extensions,
-            true,
+            e, cli, env_map, config_obj, cpath, at_pos, path, tty, extensions, true,
           )
         }
         match resolved {

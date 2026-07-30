@@ -235,9 +235,9 @@ test "dec_option: long_prefix at the OPTION level is an unknown-key decode rejec
 ///|
 /// 保証 (DESIGN §7.2「子要素は親の config を継承、上書き可能」): a root scope declares
 /// `long_prefix: "+"`; a nested `commands[0]` declares NO `config` at all — its options must still
-/// resolve `long_prefix` to the INHERITED `"+"` (not the pre-issue root default `"--"`), proving
+/// resolve `long_prefix` to the parent's `"+"` (not the root default `"--"`), proving
 /// the parent→child propagation `dec_command`/`dec_definition` now carry.
-test "dec_definition: a child command with no own config inherits every key from the parent scope" {
+test "dec_definition: a child command with no own config takes every key from the parent scope" {
   let src =
     #|{
     #|  "options": [{"name": "root_opt", "type": "string", "long": true}],
@@ -264,7 +264,7 @@ test "dec_definition: a child command with no own config inherits every key from
 /// 保証 (同上、上書き側): a child command declaring its OWN `config` with only `short_prefix`
 /// overrides ONLY that key — `long_prefix` still resolves to the parent's `"+"` (merge is
 /// per-key, not whole-object replacement, `dec_scope_config`'s doc comment).
-test "dec_definition: a child command's own config overrides ONLY the keys it declares, inherits the rest" {
+test "dec_definition: a child command's own config overrides ONLY the keys it declares, keeps the rest" {
   let src =
     #|{
     #|  "options": [],
@@ -295,7 +295,7 @@ test "dec_definition: a child command's own config overrides ONLY the keys it de
 /// 保証 (孫スコープまでの多段継承): a grandchild command (root → mid → leaf, neither `mid` nor
 /// `leaf` declaring their own `config`) still resolves the root's `long_prefix` — hierarchical
 /// merge threads through every recursion level, not just 1 hop.
-test "dec_definition: config inheritance threads through MULTIPLE nesting levels (grandchild)" {
+test "dec_definition: scope config threads through MULTIPLE nesting levels (grandchild)" {
   let src =
     #|{
     #|  "options": [],

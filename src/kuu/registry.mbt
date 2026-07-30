@@ -100,7 +100,6 @@ pub fn install_vocabulary(registry : @node.Registry) -> Unit {
   registry.register_installer(@builtins.env_installer())
   registry.register_installer(@builtins.dd_installer())
   registry.register_installer(@builtins.global_installer())
-  registry.register_installer(@builtins.inherit_installer())
   registry.register_installer(@builtins.repeat_installer())
   registry.register_installer(@builtins.multiple_installer())
   registry.register_installer(@builtins.config_installer())

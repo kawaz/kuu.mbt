@@ -284,15 +284,14 @@ fn apply_requires_filter(
 
 ///|
 /// Resolve every entity in a built scope against CLI bindings + an env map (no config seat). For
-/// the env / inherit ladder path. Unlike slice (whose config-less path "never errors"), a
+/// the env ladder path. Unlike slice (whose config-less path "never errors"), a
 /// badly-typed env value now surfaces as an Err (DR-074/075 update above).
 /// `path` is this scope's DR-066 §4 result-nesting path (root-first, [] = root 直下), threaded into
 /// any ladder-fill Error the same way `resolve_scope_config`'s `path` is.
 ///
 /// A scope MAY still declare a `config_file` element even on this no-config-object call path (a
-/// caller can choose not to supply config data for a particular case/run — issue
-/// bool-requires-config-inherit-gap の diverge 調査で顕在化: 元のドキュメント想定「no config_file
-/// element in scope」は呼び出し元の都合を entity 宣言の事実と混同していた)。`resolve_scope_config`
+/// caller can choose not to supply config data for a particular case/run — 「no config_file element
+/// in scope」という想定は呼び出し元の都合を entity 宣言の事実と混同していた)。`resolve_scope_config`
 /// の Phase 3 (`if !e.is_config_file`) と同じ規則 — config_file 要素は配線宣言であって結果 entity
 /// ではない — をここでも守る。守らないと、config データを供給しない呼び出しのときだけ config_file
 /// 要素の宣言 default が漏れて result に出現する非対称が起きる (config_seat を持つ通常 entity は
@@ -302,7 +301,6 @@ fn resolve_scope(
   sc : @engine.Scope,
   cli : Array[@abi.Binding],
   env_map : Map[String, String],
-  inherited? : Map[String, @abi.Value] = Map([]),
   at_pos? : Int = -1,
   path? : Array[String] = [],
   tty? : Map[String, TtyObs] = Map([]),
@@ -317,7 +315,6 @@ fn resolve_scope(
           fn(key) { env_map.get(key) },
           None,
           [],
-          inherited,
           at_pos,
           path,
           fn(key) { tty.get(key) },
@@ -344,7 +341,7 @@ fn resolve_scope_config(
   env_map : Map[String, String],
   provider : (String) -> @abi.ConfigVal?,
   path? : Array[String] = [],
-  inherited? : Map[String, @abi.Value] = Map([]),
+  outer_values? : Map[String, @abi.Value] = Map([]),
   at_pos? : Int = -1,
   tty? : Map[String, TtyObs] = Map([]),
 ) -> Result[Array[@abi.Binding], @abi.ParseError] {
@@ -354,7 +351,7 @@ fn resolve_scope_config(
     fn(key) { env_map.get(key) },
     provider,
     path,
-    inherited,
+    outer_values,
     at_pos,
     fn(key) { tty.get(key) },
     @engine.ExportScopeMap::empty(),
@@ -377,8 +374,9 @@ fn command_child(sc : @engine.Scope, name : String) -> @engine.Scope? {
 }
 
 ///|
-/// Build an inherited-context map from a parent scope's resolved bindings.
-fn inherited_of(binds : Array[@abi.Binding]) -> Map[String, @abi.Value] {
+/// Build the outer-scope value map a `borrow` default_fn resolves against, from a parent scope's
+/// resolved bindings (DR-125 §4).
+fn outer_values_of(binds : Array[@abi.Binding]) -> Map[String, @abi.Value] {
   let m : Map[String, @abi.Value] = Map([])
   for b in binds {
     m.set(b.key, b.value)

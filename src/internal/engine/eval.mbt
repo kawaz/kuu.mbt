@@ -3233,7 +3233,7 @@ fn scope_consume(
         ScopeNode(child) =>
           // DR-041 dashdash: dd severs the greedy face for the REST of the
           // spine, including any child scope reached through the porous
-          // unfold. The child's own walk inherits `severed` so a dd-continued
+          // unfold. The child's own walk carries `severed` so a dd-continued
           // token cannot re-fire a greedy in the child scope.
           scope_step(
             child,
@@ -4213,7 +4213,7 @@ pub fn element_value(
 /// DR-088 §1/§2: 「値源が宣言されている」= 「その値源から遅延解決する default_fn が設定されている
 /// のと同型」= デフォルトの存在。経路探索 (選好・完全性) に参加する遅延述語の充足判定は、値の実解決
 /// をせず**この静的宣言の有無だけ**を見る — committed か、または (default 属性 ∨ env 宣言 ∨
-/// config 席 ∨ inherit 宣言) のいずれかがあれば「充足しうる」とみなす。bool/非bool を問わない
+/// config 席) のいずれかがあれば「充足しうる」とみなす。bool/非bool を問わない
 /// (真理値判定は最終判定 `resolve.mbt` の `apply_requires_filter` だけの仕事、探索中は「値が来る
 /// 可能性があるか」だけを見る)。判定材料が定義の静的構造だけなので、経路選択は実行時の env/config
 /// の中身に依存せず決定的になる (§2 の要求)。
@@ -4311,7 +4311,7 @@ pub fn element_value_in_subtree(
 /// `Some(w)` なら宣言元要素 `w` 自身の Scoped 部分木内を `is_committed_in_subtree` で探す — ref
 /// 経由の candidate (num/flag 等) は `Scope.entities` に登録されない (repeat/multiple 無しの ref
 /// 要素、`ensure_entity_body` の Cell コメント参照) ため、`value_declared` の entities フォール
-/// バック検索 (default/env/config/inherit の宣言有無) は wrapper 付き candidate には意味を持たず、
+/// バック検索 (default/env/config の宣言有無) は wrapper 付き candidate には意味を持たず、
 /// committed 判定のみで足りる。
 fn candidate_declared(
   c : RequiredCandidate,
@@ -4414,7 +4414,7 @@ fn eval_constraints(
         // DR-093 §1/§2: KTop の粗判定 (完全経路の成立条件、DR-047 §2) — `candidate_declared`
         // (`value_declared` の RequiredCandidate 対応版、codex M-2 修正) をそのまま再利用する
         // (Requires 目的語と同じゲート)。値空間なし (none) の要素は default_values/env_key/
-        // config_seat/is_inherit をそもそも持てない (DR-089 §7) ため、`value_declared` は committed
+        // config_seat をそもそも持てない (DR-089 §7) ため、`value_declared` は committed
         // のみで判定される形に自動的に縮退する — 型分岐を新設する必要はない。最終判定 (bool 特例
         // なしの型委譲) は resolve.mbt の後段フィルタが行う。
         //

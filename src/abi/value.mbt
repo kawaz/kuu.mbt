@@ -44,8 +44,7 @@ pub(all) enum Source {
   Cli // own CLI entry — highest seat (DR-031 / DR-121 §4)
   Link // effect routed through another element's link entry (DR-031 / DR-121 §4)
   Env // environment variable seat (DR-031 #2)
-  Config // config-file seat (DR-050 #3) — below env, above inherit
-  Inherit // nearest ancestor scope's same-named value (DR-031 #4 / DR-013)
+  Config // config-file seat (DR-050 #3) — the lowest supply seat, above default
   // tty-判定注入値 (DR-099 §2/§12b)。専用ラダー席は持たない — `builtin/tty` preset 型要素の
   // default 席の解決規則 (`fold(観測) ?? 宣言 default ?? absent`) が観測由来で確定したときのタグ。
   // 明示/継承より弱く宣言既定より強いという優先度は不変 (由来が独立席からこの型依存規則へ移っただけ)。
@@ -259,7 +258,7 @@ pub fn value_to_configval(v : Value) -> ConfigVal {
 pub(all) enum EffectOp {
   Set // write the operand; committed (the degenerate form of a plain value bind)
   Default // reset to the default value; committed (the user explicitly wants default)
-  Unset // reset to the default; NOT committed — later ladder seats (env/config/inherit) may override
+  Unset // reset to the default; NOT committed — later ladder seats (env/config) may override
   Empty // clear a collection (array / map) to empty; committed
   // DR-114 §6.1: a lowered cell-fn invocation. The name and string args remain pure data until
   // the CLI-seat fold invokes the registered resident with an effect-mode FnCtx and the current
@@ -309,8 +308,8 @@ pub(all) struct Binding {
   // position this binding's VALUE was read from, when it has one. `Some(pos)` for a CLI-seat
   // binding built at token-consumption time (eval.mbt/builtins/matcher_residents.mbt's `mk_binding` call sites — a separator
   // piece carries the position of the WHOLE token it split from, not a per-piece offset, since a
-  // piece is not itself a token). `None` for every non-token-consumption source (env/config/
-  // inherit/default seats, resolve.mbt) — those values were never read off an args token, so there
+  // piece is not itself a token). `None` for every non-token-consumption source (env / config /
+  // default seats, resolve.mbt) — those values were never read off an args token, so there
   // is no position to attribute a later value_filters(each) reject to (`apply_entity_filters`'s
   // `filter_err` falls back to the ladder's own `at_pos`, unchanged behavior, when this is `None`).
   at_pos : Int?
@@ -322,7 +321,7 @@ pub(all) struct Binding {
 /// A plain value bind = the SET degenerate form of an effect (DR-045 §1). `at_pos` (issue
 /// 2026-07-09-accum-entity-filters-wiring): the CLI-seat call sites (eval.mbt/builtins/matcher_residents.mbt) pass
 /// `Some(pos)` — the token this binding's value was read from; every other caller (resolve.mbt's
-/// env/config/inherit/default seats) omits it, defaulting to `None`.
+/// env/config/default seats) omits it, defaulting to `None`.
 pub fn Binding::new(
   key : String,
   value : Value,

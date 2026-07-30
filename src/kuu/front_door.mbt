@@ -202,13 +202,13 @@ pub fn parse_definition(
 ///
 /// 1. **`@engine.parse_tree`** (eval.mbt): argv 消費 + eval 層の dead-end 判定 + 完全経路収集
 /// 2. **`apply_requires_filter`** (DR-047 §5 明確化 = kawaz 裁定 2026-07-09): bool-target
-///    requires / RequiresIf は KTop (CLI 面のみ) では常に skip され、値源 (env/config/inherit)
+///    requires / RequiresIf は KTop (CLI 面のみ) では常に skip され、値源 (env/config)
 ///    が解ける後段でしか判定できない。ここで候補ごとに `resolve_scope_tree` を実際に呼んで
 ///    充足を確定し、生存経路数で outcome を再構成する (0 → @engine.Failure / 1 → @engine.Success / 2+ →
 ///    @engine.Ambiguous)。値源が空でも bool 目的語の充足条件 (「解決後値が true」) の判定は必要 —
 ///    `env` / `config` / `tty` が未指定なら default: false になり、requires が unfired を弾く
 ///    (仕様通り)
-/// **相区分 (DR-104 §5)**: 値源ラダー (env/config/inherit/default seat fill) を binds に反映
+/// **相区分 (DR-104 §5)**: 値源ラダー (env/config/default seat fill) を binds に反映
 /// する **resolve 相** は本関数の射程外 — 別関数 `resolve()` (下記) に切り出す。理由: parse 相
 /// と resolve 相は spec の DR-104 §5 が「dead end 判定は parse 相、制約評価は resolve 相」で
 /// 明示的に相区分しており、玄関 API もこれに従う (kawaz 裁定「迷ったら 2 段案 (相区分に忠実)
@@ -688,7 +688,7 @@ fn project_effects(
       continue
     }
     // CONFORMANCE §2「effects に載るのは cli / link 由来のパース時効果のみ」(DR-065): 値源ラダー
-    // 充填 (env / config / inherit / default) は完走後の値確定で args 順の全順序を持たないため
+    // 充填 (env / config / default) は完走後の値確定で args 順の全順序を持たないため
     // effects には載せず、値は `result`、由来は `sources` が担う。パース相の binding は従来すべて
     // cli 由来だったのでこの gate は不要だったが、消費 0 literal (DESIGN §5.2、`literal_value`) が
     // **パース相に現れる非 cli 由来の binding** という初のケースになった — 宣言定数 (`@abi.Const`、

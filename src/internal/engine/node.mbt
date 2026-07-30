@@ -7,9 +7,9 @@
 // `kind + encode` identity keeps the whole AST structurally comparable.
 //
 // MDR-002 §3: this file is the dependency-free leaf (behaviour-free ADTs only).
-// MDR-003: reserved-word collisions (`alias` / `export` / `inherit` 単独) take a
-// trailing underscore. Here only `Entity.inherit` collides → `is_inherit`; compound
-// spellings (`export_key`, `ExportKey`, `is_config_file`) are already safe.
+// MDR-003: reserved-word collisions (`alias` / `export` 単独) take a trailing
+// underscore. Compound spellings (`export_key`, `ExportKey`, `is_config_file`) are
+// already safe.
 
 ///|
 /// The result-key axis of an element (DR-052). `export_key: string | null` unified: unspecified =
@@ -493,11 +493,10 @@ pub(all) enum Constraint {
 ///|
 /// A value cell (DR-030 "entity-only node"). Satellites/matchers with the same
 /// `name` all write here = link 合流. Carries the reduced value-source ladder:
-/// env seat (declared by the env installer), inherit seat (declared by the inherit
-/// installer), and default seat. Ladder order is engine-owned (DR-031, invariant ④):
-/// cli > env > config > inherit > default (5 段固定、DR-099 が DR-098 の tty 専用席
-/// 挿入を撤回)。The inherit seat looks up the nearest ancestor scope's same-named
-/// entity value.
+/// env seat (declared by the env installer), config seat, and default seat. Ladder
+/// order is engine-owned (DR-031, invariant ④): cli > env > config > default (4 段固定、
+/// DR-125)。An ancestor scope's value is reached from the default seat via
+/// `default_fn: "borrow:<source>"` (DR-125 §3), not by a ladder seat of its own.
 pub(all) struct Entity {
   name : String
   // Structural wrappers (`name` を持つ seq/or/repeat) are result scopes but not command scopes.
@@ -517,7 +516,6 @@ pub(all) struct Entity {
   config_seat : Bool // config seat declared (DR-050): fill from the config object by path
   config_key : Array[String]? // explicit absolute config path (DR-050 §3); None = 同型 (scope path + name)
   is_config_file : Bool // this cell's value is the config-file PATH (DR-050): resolves the provider, no config seat
-  mut is_inherit : Bool // inherit seat declared (inherit installer sets it, DR-031 / DR-013). MDR-003: `inherit` 予約語回避
   // The registered accumulator resident that folds this cell's effect list, or None for a scalar
   // cell. Built-ins are append (multiple/repeat), merge, and kv_map; each resident owns both its
   // CLI-seat fold and final result projection, so the resolver dispatches without inspecting a name.
@@ -565,7 +563,7 @@ pub(all) struct Entity {
   // DESIGN §11.4 / DR-031 (CONST-Q1=a): root 位置の `value:` が置いた宣言定数 (セル初期化位相)。
   // 形は `default_values` と同じ「長さ1へ持ち上げた一様配列」(scalar は長さ1、accum は piece 列) で、
   // `ElementDef.const_values` をそのまま写す。`resolve_ladder_below_cli` が default 席の**直前**で
-  // 読み、binding の source を `Const` にする — 上位席 (env/config/inherit) は素通りして const に
+  // 読み、binding の source を `Const` にする — 上位席 (env/config) は素通りして const に
   // 到達するので通常規則どおり const を上書きし、const が値を出せば default 席には到達しない。
   const_values : Array[Value]?
   // Canonical lazy default-seat cell-fn placeholder. Scalar fixed defaults carry typed set(value);
@@ -589,13 +587,13 @@ pub(all) struct Entity {
   // application happens upstream in eval.mbt/builtins/matcher_residents.mbt (token consumption, before the value ever
   // reaches this Entity) — this copy exists so the ladder's OTHER string-sourced seats (env: DR-049
   // §2 "env 値も pieceProcessor を通る") can run the SAME chain via `resolve.mbt`'s `env_value`. A
-  // non-string ladder source (config number/bool matching the type, default, inherit) has no parse
+  // non-string ladder source (config number/bool matching the type, default) has no parse
   // step to gate, so this field is simply unused there (DR-050 §4's "型一致なら value_filters のみ"
   // — piece_filters/parse は元々 String→T の関数なので、型一致で供給された非 string 値には適用対象
   // が無いという型の帰結、特別規則ではない).
   piece_filters : Array[FnInvocation]
   // DR-009 value_filters (each, T→T): applied to EVERY value this cell resolves from ANY ladder seat
-  // (cli/env/config/inherit/default) right after that seat's own value is determined — same timing
+  // (cli/env/config/default) right after that seat's own value is determined — same timing
   // "type.parse の後、accumulator の前" DR-009's [4]→[5] describes. For a scalar cell (no accum)
   // this collapses to "applied once, right before final_filters" since only one seat ever wins.
   value_filters : Array[FnInvocation]
@@ -625,6 +623,5 @@ fn Entity::has_declared_value_source(self : Entity) -> Bool {
   self.default_fn is Some(_) ||
   self.const_values is Some(_) ||
   self.env_key is Some(_) ||
-  self.config_seat ||
-  self.is_inherit
+  self.config_seat
 }

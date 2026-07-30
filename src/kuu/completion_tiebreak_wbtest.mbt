@@ -3,7 +3,7 @@
 // When several public entries link to the internal `#completion_script` cell (option + option,
 // option + positional, etc.), the winning shell string must be the CLI-order last-fire
 // (DR-117 §2.1 "複数指定は string 全体セルの last-wins"; the `last` derives from DR-041 token
-// reading semantics + DR-015 last-wins inheritance via DR-113 §2.3).
+// reading semantics + DR-015 last-wins via DR-113 §2.3).
 //
 // Pre-fix (before dispatch consulted `at_pos`), `apply_entity_links` emitted linked copies in
 // entity declaration order, so dispatch's forward-iterate-with-overwrite resolved to the last-

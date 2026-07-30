@@ -551,48 +551,6 @@ pub fn global_installer() -> &@node.InstallerExt {
 }
 
 ///|
-priv struct InheritInstaller {}
-
-///|
-impl @node.InstallerExt for InheritInstaller with fn vocab(_self) {
-  ["inherit"]
-}
-
-///|
-impl @node.InstallerExt for InheritInstaller with fn decode(_self, json, ctx) {
-  let vocab = match ctx {
-    Option | Positional => ["inherit"]
-    _ => []
-  }
-  let object = match resident_object(json) {
-    Ok(value) => value
-    Err(reason) => return Err(reason)
-  }
-  match resident_bool(object, "inherit", false) {
-    Ok(value) => Ok({ vocab, declaration: Inherit(value) })
-    Err(reason) => Err(reason)
-  }
-}
-
-///|
-impl @node.InstallerExt for InheritInstaller with fn apply(_self, builder) {
-  @node.builder_apply_builtin(builder, "inherit")
-}
-
-///|
-impl @node.InstallerExt for InheritInstaller with fn collect_defs_errors(
-  _self,
-  _view,
-) {
-  []
-}
-
-///|
-pub fn inherit_installer() -> &@node.InstallerExt {
-  InheritInstaller::{  } as &@node.InstallerExt
-}
-
-///|
 priv struct RepeatInstaller {}
 
 ///|

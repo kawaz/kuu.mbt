@@ -6,16 +6,16 @@
 //
 // 1. export-key 衝突 (DR-120): 2 要素が同じ露出キーへ解決する定義は front_door.parse_definition
 //    が definition-error (kind=export-key-collision) として弾く — parse まで到達しない
-// 2. inherit resolve (DR-031 #4 / DR-047 §4): 祖先 scope で書かれた値が子 scope の inherit 席へ
-//    流下する。front_door.resolve が返す binds に子 scope 側の解決済み値 (source=@abi.Inherit)
-//    が現れる
+// 2. borrow resolve (DR-125 §3 / DR-047 §4): 外側スコープの解決値を子 scope の default 席が
+//    `borrow` で引く。front_door.resolve が返す binds に子 scope 側の解決済み値 (source=
+//    @abi.Default) が現れる
 // 3. deprecated warnings (DR-058 §2): deprecated:true の alias 入口を発火した @engine.Success outcome
 //    から `@engine.warnings_of` が `{element, kind}` の構造化 warning を返す。sentinel
 //    `@depr:...` は effects (非 sentinel binds) に混じらない (`is_sentinel` で除外可能)
 //
 // 期待値の根拠は kawaz/kuu の fixtures (`export-key/collision.json` /
 // `export-key/collision-identity.json` /
-// `value-sources/inherit-ladder.json` / `alias-parse/deprecated.json`) の該当 case と一致し、
+// `value-sources/default-fn-borrow-ladder.json` / `alias-parse/deprecated.json`) の該当 case と一致し、
 // conformance runner が実際にその期待を満たしていることは `[json-conformance] mismatches=0` が
 // 別途保証している — 本 wbtest は玄関 API の契約側からその 3 面を独立に固定する層。
 
@@ -82,23 +82,25 @@ test "front_door.parse_definition: 露出キー衝突は definition-error (DR-12
 }
 
 ///|
-/// 保証 (MDR-005 §1 / DR-031 #4 / DR-047 §4): front_door.resolve は値源ラダー
-/// (env/config/inherit/default) を子 scope まで再帰的に充填する。inherit:true の子 scope entity は、
-/// 祖先 scope で解決済みの同名値を **`@abi.Inherit` source** の binding として得る (`--ttl 30 sub`
-/// で `sub.ttl = 30`, source=inherit)。ここでは玄関 API のみを叩き、結果 binds に:
-///   - root path=[] に ttl 値 30 with source=@abi.Cli (`--ttl` 発火)
-///   - 子 path=["sub"] に ttl 値 30 with source=@abi.Inherit (親から流下した inherit 席)
+/// 保証 (MDR-005 §1 / DR-125 §3 / DR-047 §4): front_door.resolve は値源ラダー
+/// (env/config/default) を子 scope まで再帰的に充填する。子 scope entity の default 席が
+/// `default_fn: "borrow:<source>"` を持つとき、外側スコープの解決値を **`@abi.Default` source**
+/// の binding として得る (spec fixture `value-sources/default-fn-borrow-ladder.json` の
+/// `outer-cli-borrowed` case と同型: `--sub-ttl 30 sub` で `sub.ttl = 30`, source=default)。
+/// ここでは玄関 API のみを叩き、結果 binds に:
+///   - root path=[] に sub_ttl 値 30 with source=@abi.Cli (`--sub-ttl` 発火)
+///   - 子 path=["sub"] に ttl 値 30 with source=@abi.Default (borrow が引いた外側の解決値)
 /// の 2 面が現れることを固定する。front_door.parse (単独) では resolve 相未実行なので子 scope の
 /// ttl は binds に現れず、玄関 `resolve` が明示的に必要になる = 相区分の 2 段構成 (MDR-005 §1)
 /// が意味を持つ最小の証拠でもある。
-test "front_door.resolve: 祖先の解決値が子 scope の inherit 席へ流下 (DR-031 #4 / DR-047 §4, MDR-005 §1)" {
+test "front_door.resolve: borrow default_fn が外側の解決値を子 scope へ引く (DR-125 §3 / DR-047 §4, MDR-005 §1)" {
   let src =
     #|{"options": [
-    #|  {"name": "ttl", "type": "number", "long": true, "default": 60}
+    #|  {"name": "sub_ttl", "type": "number", "long": true, "default": 60}
     #|],
     #|"commands": [
     #|  {"type": "command", "name": "sub", "options": [
-    #|    {"name": "ttl", "type": "number", "long": true, "inherit": true}
+    #|    {"name": "ttl", "type": "number", "long": true, "default_fn": "borrow:sub_ttl"}
     #|  ]}
     #|]}
   let j = @json.parse(src)
@@ -109,14 +111,14 @@ test "front_door.resolve: 祖先の解決値が子 scope の inherit 席へ流�
       panic()
     }
   }
-  let args = ["--ttl", "30", "sub"]
+  let args = ["--sub-ttl", "30", "sub"]
   let po = parse_legacy(ast, args)
   match po {
     @engine.Success(_) => ()
     other =>
       fail("front_door.parse should succeed, got " + render_outcome(other))
   }
-  // resolve なしの @engine.Success binds には子 scope 側の ttl (inherit 経由の値) は入らない —
+  // resolve なしの @engine.Success binds には子 scope 側の ttl (borrow 経由の値) は入らない —
   // 「玄関 `resolve` を明示的に呼ばないと DR-047 §4 の最終状態は得られない」ことの反証面。
   match po {
     @engine.Success(pre) => {
@@ -136,30 +138,29 @@ test "front_door.resolve: 祖先の解決値が子 scope の inherit 席へ流�
   let ro = resolve_legacy(ast, po, args)
   match ro {
     @engine.Success(rb) => {
-      // root path=[] の ttl (cli 発火)。
+      // root path=[] の sub_ttl (cli 発火)。
       let mut root_ttl : @abi.Value? = None
       let mut root_src : @abi.Source? = None
-      // 子 path=["sub"] の ttl (親から流下した inherit 値)。
+      // 子 path=["sub"] の ttl (borrow が引いた外側の解決値)。
       let mut sub_ttl : @abi.Value? = None
       let mut sub_src : @abi.Source? = None
       for b in rb {
         if is_sentinel(b.key) {
           continue
         }
-        if b.key == "ttl" {
-          if b.scope.length() == 0 {
-            root_ttl = Some(b.value)
-            root_src = Some(b.source)
-          } else if b.scope.length() == 1 && b.scope[0] == "sub" {
-            sub_ttl = Some(b.value)
-            sub_src = Some(b.source)
-          }
+        if b.key == "sub_ttl" && b.scope.length() == 0 {
+          root_ttl = Some(b.value)
+          root_src = Some(b.source)
+        }
+        if b.key == "ttl" && b.scope.length() == 1 && b.scope[0] == "sub" {
+          sub_ttl = Some(b.value)
+          sub_src = Some(b.source)
         }
       }
       assert_eq(root_ttl, Some(@abi.Number(30.0)))
       assert_eq(root_src, Some(@abi.Cli))
       assert_eq(sub_ttl, Some(@abi.Number(30.0)))
-      assert_eq(sub_src, Some(@abi.Inherit))
+      assert_eq(sub_src, Some(@abi.Default))
     }
     other =>
       fail("front_door.resolve should succeed, got " + render_outcome(other))

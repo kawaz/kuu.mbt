@@ -3,14 +3,13 @@
 // UsefulAST (ElementDef / Definition / …) → AtomicAST (Scope / Node / Entity / …) を組み立てる lowering 層。
 // 各 installer は special vocab (long / short / env / dd / ...) を所有し、apply 時に (1) その vocab を
 // READ (削除しない — 宣言層は read-only, invariant ①'), (2) greedy 衛星 / matcher / re-scoping を
-// add-if-absent で implant する, (3) 実体 (Entity) の seat (env / inherit) を宣言する。5 invariants により
+// add-if-absent で implant する, (3) 実体 (Entity) の seat (env / config) を宣言する。5 invariants により
 // chain の順序に依存せず、idempotent。完全性は「chain のどの installer にも所有されない special vocab」の検査。
 //
 // MDR-002 §3 準拠: installer は node / value / matcher / resolve に依存し、評価器 (eval) には依存しない。
 // MDR-002 追記「CPS の射程」の installer 規約: repeat はスパイン形 (positional の Ref / BoundedTail /
 // ScopeNode) にのみ正規化し、Or / Seq / Rooted 内部への埋め込みは生成しない (取り分選好の局所化を避けるため)。
 // MDR-003 命名規約: bare 予約語は末尾 `_` 化 — RepeatSpec の bare `lazy` は `is_lazy` に rename。
-// Entity 側の `is_inherit` は node.mbt が rename 済み。
 
 ///|
 /// One `long` DSL string (DR-011/071/076), classified. `":set"` (bare sentinel) is `Main`; any
@@ -428,7 +427,6 @@ fn clone_elem(e : ElementDef) -> ElementDef {
     dd_match: e.dd_match,
     dd_self_keep: e.dd_self_keep,
     is_global: e.is_global,
-    is_inherit: e.is_inherit,
     link_depth: e.link_depth,
     link_target: e.link_target,
     link_additional_levels: e.link_additional_levels,
@@ -1181,7 +1179,7 @@ fn lower_positional(
             None =>
               // DR-088 §2 (issue dr-088-positional-default-verification): a plain (no
               // repeat/optional) positional that declares a value source (default/env/
-              // config_key/inherit) is structurally COMPLETE with 0 tokens too — the declared
+              // config_key) is structurally COMPLETE with 0 tokens too — the declared
               // source is "a default_fn scheduled to resolve later" (DR-088 §1), so the path
               // must not starve into `missing_operand` just because no token showed up here.
               // `opt_node` (`Or([head, Seq([])])`, already used by `elem_repeat`'s min:0 paths)
@@ -1341,7 +1339,7 @@ fn ensure_entities(
 /// entity's `ensure_entity` (add-if-absent already returns early once ANY entity with that name
 /// exists). Guarding HERE (single entry point every recursive path funnels through) closes both the
 /// top-level and the nested cases with one check, and any future `ElementBody` arm added to this match
-/// inherits the guard automatically (installer.mbt's `ElementDef.is_exact` doc comment: "value_prim/
+/// picks up the guard automatically (installer.mbt's `ElementDef.is_exact` doc comment: "value_prim/
 /// entity 経路を一切通らない" is the invariant this enforces).
 fn ensure_entity_body(
   build : InstallOutput,
@@ -1670,7 +1668,6 @@ fn ensure_entity(
     config_seat,
     config_key: e.config_key,
     is_config_file: e.is_config_file,
-    is_inherit: false, // MDR-003: node.mbt 側 Entity.is_inherit
     accum,
     // DR-105 §1/§3: flatten (append-only dial) and is_multiple_decl (DR-084 §2 origin marker) —
     // both already false-by-construction whenever `accum` is None (the tuple above only ever
@@ -1747,7 +1744,7 @@ fn eq_group(
 /// deprecated element warns regardless of its value structure (DR-058 §2's contract is 値構造非依存;
 /// the previous fix only wired the Cell arm, missing the other 4). Centralizing the append here (one
 /// call site per arm, right before `Seq(...)`) means a FUTURE `e.body`/`ref_target` arm added to
-/// `inst_long` inherits the warning automatically as long as it routes its satellite nodes through
+/// `inst_long` picks up the warning automatically as long as it routes its satellite nodes through
 /// this helper — the same "single funnel, no per-arm opt-in to forget" shape `ensure_entity_body`'s
 /// `is_exact` guard (Major 4 fix) uses.
 fn with_depr(e : ElementDef, nodes : Array[Node]) -> Array[Node] {
@@ -2153,7 +2150,7 @@ fn inst_long(
 ///|
 /// Whether this declaration contributes or denotes a reachable Entity in its lexical scope.
 /// `link_depth > 0` is a global entry copy: its Entity lives in an ancestor, but a local link may
-/// still resolve to it and must inherit that escape depth.
+/// still resolve to it and must carry that escape depth.
 fn element_is_link_target(e : ElementDef) -> Bool {
   if e.link_target is Some(_) || e.is_dd || e.is_exact || e.is_literal {
     return false
@@ -2396,7 +2393,7 @@ fn seat_env(build : InstallOutput, name : String, key : String) -> Unit {
 /// walk が「severed」モードに切り替わり以降 greedy off — greedy internal consumption 一体化ルール。
 ///
 /// DR-064 §2 配置不問回収: dd は canonical には options[] だが positionals[] に置いても回収する
-/// (env / inherit と同じく両 face を walk する対称形)。add-if-absent (add_greedy) が重複宣言を collapse。
+/// (env と同じく両 face を walk する対称形)。add-if-absent (add_greedy) が重複宣言を collapse。
 fn inst_dd(def : Definition, build : InstallOutput) -> Unit {
   // DR-064 §5: dd の name は trigger 綴りに効く (normalize_surface が既定 "--" を供給、明示は上書き)。
   // DR-090 §2: `dd_match` が None かつ `dd_self_keep` が false (両軸とも既定) の要素だけ、既存
@@ -2437,31 +2434,6 @@ fn add_greedy(build : InstallOutput, g : Node) -> Unit {
     }
   }
   build.greedy().push(g)
-}
-
-///|
-/// inherit: `inherit` を READ、entity に inherit seat を宣言 (invariant ④, DR-031 cli>env>inherit>default)。
-/// seat の実 lookup 「最近祖先の同名 entity 値」は runtime (resolve_scope) で解く。env と対称の seat 宣言型。
-fn inst_inherit(def : Definition, build : InstallOutput) -> Unit {
-  for e in def.options {
-    if e.is_inherit {
-      seat_inherit(build, e.name)
-    }
-  }
-  for e in def.positionals {
-    if e.is_inherit {
-      seat_inherit(build, e.name)
-    }
-  }
-}
-
-///|
-fn seat_inherit(build : InstallOutput, name : String) -> Unit {
-  for ent in build.entities() {
-    if ent.name == name {
-      ent.is_inherit = true // MDR-003
-    }
-  }
 }
 
 ///|
@@ -2543,7 +2515,6 @@ fn copy_global_into(
     dd_match: copy.dd_match,
     dd_self_keep: copy.dd_self_keep,
     is_global: copy.is_global,
-    is_inherit: copy.is_inherit,
     link_depth: copy.link_depth + 1,
     link_target: copy.link_target,
     // DR-032: bind target identity/depth in the declaring scope; descendants must not re-resolve
@@ -2984,7 +2955,6 @@ fn alias_entry(
     dd_match: None,
     dd_self_keep: false,
     is_global: false,
-    is_inherit: false,
     link_depth: 0,
     link_target: None,
     link_additional_levels: None,
@@ -4214,7 +4184,7 @@ fn collect_const_on_valueless_wrapper(
 }
 
 ///|
-/// DR-089 §4: none には値空間が無いので、値源を宣言する `env`/`config_key`/`inherit` は静的に既知の不成立構成
+/// DR-089 §4: none には値空間が無いので、値源を宣言する `env`/`config_key` は静的に既知の不成立構成
 /// — 「静的に既知は定義時に倒す」(DR-083 §5) の筋で definition-error にする。実行時側
 /// (`env_value`/`config_to_value` の none_type() arm、resolve.mbt/value.mbt) は防御 (このチェックが
 /// 先に落とすので unreachable 想定) として残す。config_key の明示宣言のみを対象とし、
@@ -4244,16 +4214,6 @@ fn collect_none_value_source_decl(
             InvalidRange,
             "'\{e.name}' is type none (no value space) but declares config_key — a none element cannot have a value source (DR-089 §4)",
             "remove 'config_key' from '\{e.name}', or give it a real value type",
-          ),
-        )
-      }
-      if e.is_inherit {
-        out.push(
-          def_err(
-            e.name,
-            InvalidRange,
-            "'\{e.name}' is type none (no value space) but declares inherit — a none element cannot have a value source (DR-089 §4)",
-            "remove 'inherit' from '\{e.name}', or give it a real value type",
           ),
         )
       }
@@ -4992,7 +4952,6 @@ fn completion_script_internal_entity() -> Entity {
     config_seat: false,
     config_key: None,
     is_config_file: false,
-    is_inherit: false,
     accum: None,
     flatten: false,
     is_multiple_decl: false,
@@ -5682,7 +5641,6 @@ pub fn apply_builtin_installer(kind : String, builder : InstallBuilder) -> Unit 
     "env" => inst_env(builder.definition(), builder.output())
     "dd" => inst_dd(builder.definition(), builder.output())
     "global" => inst_global(builder)
-    "inherit" => inst_inherit(builder.definition(), builder.output())
     "constraint" =>
       inst_constraint(
         builder.definition(),

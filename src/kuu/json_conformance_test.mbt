@@ -231,7 +231,6 @@ fn render_src(s : @abi.Source) -> String {
     @abi.Link => "link"
     @abi.Env => "env"
     @abi.Config => "config"
-    @abi.Inherit => "inherit"
     @abi.Tty => "tty"
     @abi.Const => "const"
     @abi.Default => "default"
@@ -1873,7 +1872,7 @@ fn help_model_json(model : @kuu.HelpModel) -> Json {
   let object : Map[String, Json] = Map([])
   object.set("outcome", "help".to_json())
   object.set("command_path", model.command_path.to_json())
-  // DR-115 §1.4 fixture help-render-inheritance の child scope は usage 4 軸全て空 (options/
+  // DR-115 §1.4 fixture help-render-inheritance (親からの設定引き継ぎ) の child scope は usage 4 軸全て空 (options/
   // positionals/subcommands/dd いずれも無し) — expected JSON は `usage` フィールドを持たない。
   // usage が空オブジェクトになる場合は emit を省く (schema optional の運用に揃える)。
   if model.usage.has_options ||
@@ -2233,7 +2232,7 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
         }
         // DR-009 §7 final_filters/accum_filters (and any other resolve-layer check, e.g. a future
         // constraint that only resolve sees): `parse()` itself can succeed while the VALUE
-        // resolution layer (env/config/inherit/default ladder fill + filter chains,
+        // resolution layer (env/config/default ladder fill + filter chains,
         // resolve.mbt) still rejects — a "failure" fixture case exercising THAT path needs
         // the resolve check run here too, mirroring the "success" branch's
         // `use_resolve`-gated `do_resolve` call. Without this, a resolve-layer Err was
@@ -2324,19 +2323,12 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
 /// The FROZEN divergence ledger (fixture = 正本, main src/kuu = 被検体).
 ///
 /// Each entry is the FULL `rel::slug :: verdict` string of a comparison that currently diverges —
-/// a KNOWN gap either INHERITED from slice/poc (未実装が正本仕様に追従していない) or a suspected
+/// a KNOWN gap either CARRIED OVER from slice/poc (未実装が正本仕様に追従していない) or a suspected
 /// fixture-authoring issue frozen for later resolution. The runner asserts the observed divergence
 /// SET equals this ledger: UNEXPECTED and VANISHED entries both fail (verdict-granularity freeze,
 /// MDR-001 §6). @abi.Empty = full conformance (no known gaps against the fixture corpus).
 fn known_divergences() -> Array[String] {
-  // M4 (DR-113 §4): help model 構築を新 schema へ全面移行 (value_structure tree / origin 4 形 /
-  // hidden・deprecated required emit / command aliases 併記 / depth=all 再帰 scope 埋め込み /
-  // help_category の or[bool,string] 展開)。origin 逆推定 (link_depth → global declared_at /
-  // declared_at) は help.mbt 側で
-  // scope 側テーブルを組んで解決する — installer は変更していない (5 preset canonical 展開の
-  // HelpMetaInstaller.apply 移送と capability dispatch は次 milestone、以下 「M5 残」)。
-  //
-  // M5 残 (本 milestone 未実装 — help.mbt 単独では埋められない箇所):
+  // 未実装 (help.mbt 単独では埋められない箇所):
   //   - 5 preset canonical 展開の HelpMetaInstaller.apply 移送 (現在 wire_decode 暫定)。
   //     help_category の value_name "CATEGORY" default は現在 help.mbt 側で defaulting。
   //   - help_query capability の runner dispatch 化 (現在 @kuu.help 直呼び)。

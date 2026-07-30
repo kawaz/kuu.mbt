@@ -15,7 +15,6 @@ pub(all) enum OwnedDeclaration {
   Env(Array[String])
   Dd(String?, Bool)
   Global(Bool)
-  Inherit(Bool)
   Repeat(RepeatSpec?, Bool)
   Multiple(Bool, String?, CollectorDeclaration?, String?, Bool?)
   Config(Bool, Array[String]?)

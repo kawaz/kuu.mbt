@@ -248,7 +248,7 @@ test "DR-116 §5: alias 候補は表示される" {
     Some(line) => {
       assert_true(
         string_contains(line, "listen port"),
-        msg="alias inherits canonical help, got: " + line,
+        msg="alias reuses canonical help, got: " + line,
       )
       assert_true(
         string_contains(line, "(alias)"),

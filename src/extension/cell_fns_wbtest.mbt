@@ -15,8 +15,7 @@ fn builtin_cell_fn_registry() -> Registry {
 test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   let registry = builtin_cell_fn_registry()
   let names = [
-    "set", "default", "unset", "empty", "incr", "borrow", "env", "inherit", "uuid",
-    "computed",
+    "set", "default", "unset", "empty", "incr", "borrow", "env", "uuid", "computed",
   ]
   for name in names {
     assert_true(registry.lookup_cell_fn(name) is Some(_))
@@ -79,13 +78,6 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(env.observes(), ["env:<var>"])
   assert_eq(env.reasons(), ["absent-source"])
 
-  let inherit_descriptor = registry.lookup_cell_fn("inherit").unwrap()
-  assert_eq(inherit_descriptor.parameters(), [cell_fn_parameter("source")])
-  assert_eq(inherit_descriptor.arity(), CellFnArity::Exact(1))
-  assert_eq(inherit_descriptor.output(), CellFnOutput::Value)
-  assert_eq(inherit_descriptor.fallibility(), FnFallibility::Reject)
-  assert_eq(inherit_descriptor.observes(), ["option:<source>"])
-  assert_eq(inherit_descriptor.reasons(), ["absent-source"])
 
   let uuid = registry.lookup_cell_fn("uuid").unwrap()
   assert_eq(uuid.parameters(), [

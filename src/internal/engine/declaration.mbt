@@ -53,7 +53,6 @@ pub(all) struct ElementDef {
   dd_match : String? // regex パターン (host = MoonBit core Regex 準拠、DR-085 §2 と同じ dialect)
   dd_self_keep : Bool // false=drop (既定、消費1・捨てる) | true=keep (消費0・自身含め以降 raw)
   is_global : Bool // global installer 所有 (子孫 command scope へコピー伝播)
-  is_inherit : Bool // inherit installer 所有 (inherit seat 宣言)
   link_depth : Int // >0 なら global COPY が declaring scope 何段下に置かれたか (satellite が Rooted で escape する段数)
   // DR-029 / DR-031 / DR-121 §4: bare-name value-synchronization target. A linked element is an
   // entry only: it owns parsing shape and spellings but no Entity/result seat; every effect produced
@@ -158,7 +157,7 @@ pub(all) struct ElementDef {
   // root の const は消費文法に一切現れない (`element_head` は見ない — `is_literal` と違う点)。
   // 入口 (long/short/positional 位置) があればその構造はそのまま残り、const は入口が発火しな
   // かった場合の初期値としてセル側にだけ座る。値源ラダー上の実効位置は
-  // `cli > env > config > inherit > const > default` — 上位 4 席は「供給」なので const を上書きし
+  // `cli > env > config > const > default` — 上位 3 席は「供給」なので const を上書きし
   // (DESIGN §11.4「上位席の供給や cli 効果は初期値を通常規則どおり上書きする」)、`default` は
   // 「空なら埋める」充填なので const が居るセルでは発火しない。序列に参加しないまま挟まる。
   const_values : Array[Value]?
@@ -166,7 +165,7 @@ pub(all) struct ElementDef {
   // `default_fn:` decodes to Wire and stays lazy until dependency-ordered resolution.
   default_fn : DefaultFnCall?
   default_declared : Bool // wire に default キーが明示されたか (help 素材と preset 暗黙値を区別)
-  // DR-034 pieceProcessor の filter chain (DR-062: inheritance object 形は未実装 — filters.mbt
+  // DR-034 pieceProcessor の filter chain (DR-062: object 形は未実装 — filters.mbt
   // ヘッダ注記参照)。piece_filters: separator 分割後の各 piece 単位 (multiple 無しは長さ 1 に縮退、
   // 同じ管を通る) で type.parse の直前に適用 (String→String)。value_filters: 分割後の要素単位 (each
   // 暗黙、DR-009)。final_filters (DR-102 §1、T→T、scalar filter registry): non-accum 要素専用の
@@ -183,7 +182,7 @@ pub(all) struct ElementDef {
   // hierarchical scope `config` object (long_prefix/long_eq_sep/short_prefix/short_attached_value/
   // short_combine/env_prefix/auto_env). Decode (`dec_definition`, json_conformance_test.mbt)
   // reads `config` at EACH Definition/command scope, merges it with the parent scope's resolved
-  // config (child key present → override, absent → inherit — DESIGN §7.2「子要素は親の config を
+  // config (child key present → override, absent → 親の値を引き継ぐ — DESIGN §7.2「子要素は親の config を
   // 継承、上書き可能」), and bakes the resolved 7-key tuple onto every option/positional ElementDef
   // that scope owns (same "decode-time bake, no Definition-level config carrier" pattern DR-091 §3
   // established for the original 2-field minimal implementation — installer.mbt itself never reads
@@ -255,8 +254,7 @@ fn ElementDef::has_declared_value_source(self : ElementDef) -> Bool {
   self.default_fn is Some(_) ||
   self.const_values is Some(_) ||
   self.env.length() > 0 ||
-  self.config_key is Some(_) ||
-  self.is_inherit
+  self.config_key is Some(_)
 }
 
 ///|
