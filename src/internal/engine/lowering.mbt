@@ -429,7 +429,6 @@ fn clone_elem(e : ElementDef) -> ElementDef {
     dd_self_keep: e.dd_self_keep,
     is_global: e.is_global,
     is_inherit: e.is_inherit,
-    is_inheritable: e.is_inheritable,
     link_depth: e.link_depth,
     link_target: e.link_target,
     link_additional_levels: e.link_additional_levels,
@@ -2168,7 +2167,7 @@ fn element_is_link_target(e : ElementDef) -> Bool {
 
 ///|
 /// Resolve a bare link target in the declaration's current lexical scope. The declaration snapshot
-/// gains global/inheritable copies during the installer fixpoint; using their `link_depth` preserves
+/// gains global copies during the installer fixpoint; using their `link_depth` preserves
 /// the existing lexical routing instead of inventing a second scope-resolution model.
 fn link_target_depth(def : Definition, target : String) -> Int? {
   for element in def.options {
@@ -2265,7 +2264,7 @@ fn maybe_root(link_depth : Int, node : Node) -> Node {
 /// instance. Keying on the pair (not `short_prefix` alone) matters because a `Definition`'s
 /// `def.options` can mix elements from 2 sources with different defaults: elements decoded in THIS
 /// scope (uniform `short_prefix`/`short_combine`, both baked from the SAME resolved `ScopeConfig`
-/// by `dec_definition`) and elements COPIED in from elsewhere (`add_inheritable_copy`/`alias_entry`,
+/// by `dec_definition`) and elements COPIED in from elsewhere (`alias_entry`,
 /// which hardcode the canonical defaults `"-"`/`true` regardless of the current scope's config,
 /// mirroring `long_prefix`'s existing "--" hardcode at those same call sites). If 2 elements
 /// disagreed on `short_combine` while sharing `short_prefix`, merging them into ONE matcher would
@@ -2545,7 +2544,6 @@ fn copy_global_into(
     dd_self_keep: copy.dd_self_keep,
     is_global: copy.is_global,
     is_inherit: copy.is_inherit,
-    is_inheritable: copy.is_inheritable,
     link_depth: copy.link_depth + 1,
     link_target: copy.link_target,
     // DR-032: bind target identity/depth in the declaring scope; descendants must not re-resolve
@@ -2656,142 +2654,6 @@ fn triggers_overlap(a : ElementDef, b : ElementDef) -> Bool {
 }
 
 // ── driver + completeness ────────────────────────────────────────────────────
-
-///|
-/// inheritable installer (DR-059): global の REVERSE 方向。子孫の inheritable 要素を全祖先 scope に
-/// `<定義スコープ名>-<name>` 綴りでコピー (§1)。祖先の `--socket-ttl` が祖先 `ttl` cell に bind。
-/// 全 `ttl` cell (定義 + 祖先コピー) に inherit seat が立つので、任意層の値が子孫の default として流れ下る
-/// (§3 値意味論 — inherit seat の対 DR-031)。祖先が同トリガを自宣言なら shadow で copy しない (global 対称)。
-fn inst_inheritable(sb : InstallBuilder) -> Unit {
-  // (1) 子孫の inheritable → THIS (祖先) scope の宣言層に prefixed write-entry を追加
-  let entries : Array[(String, ElementDef)] = []
-  gather_inheritable(sb.children(), entries)
-  for de in entries {
-    let defining_name = de.0
-    let e = de.1
-    let trigger = defining_name + "-" + e.name // 全祖先同綴り (§1)
-    add_inheritable_copy(sb, e, trigger)
-  }
-  // (2) subtree の inheritable 対象名 (自宣言 + 祖先コピー) 全てに inherit seat を打つ (§3)
-  let names : Array[String] = []
-  for e in sb.definition().options {
-    if e.is_inheritable && !str_in(names, e.name) {
-      names.push(e.name)
-    }
-  }
-  for de in entries {
-    if !str_in(names, de.1.name) {
-      names.push(de.1.name)
-    }
-  }
-  for name in names {
-    seat_inherit(sb.output(), name)
-  }
-}
-
-///|
-/// 子孫 scope の inheritable 要素を全て回収 (定義スコープ名で tag — §1 の prefix)。全 subtree を再帰。
-fn gather_inheritable(
-  children : Array[InstallChild],
-  out : Array[(String, ElementDef)],
-) -> Unit {
-  for ch in children {
-    for e in ch.body().definition().options {
-      if e.is_inheritable {
-        out.push((ch.name(), e))
-      }
-    }
-    gather_inheritable(ch.body().children(), out)
-  }
-}
-
-///|
-/// 祖先 scope の宣言層に prefixed write-entry を追加 (add-if-absent, shadow-aware)。祖先が同トリガを
-/// 既に宣言 (§3 global 対称 shadow) なら copy しない。DR-076 後は裸発火トリガが `variants` 側に入る
-/// (例: alias `[":set:true"]` 由来) ため、`long_of` (main long のみ) ではなく `all_long_triggers`
-/// (long + variants 横断) で判定する必要がある — codex 指摘、実機確認済み regression: alias が
-/// variants 側で提供するトリガを `long_of` だけでは見落とし、同じ綴りの inheritable コピーを重複
-/// 追加してしまう (materialize 後の Scope に同一トリガの greedy 衛星が 2 本立つ)。
-fn add_inheritable_copy(
-  sb : InstallBuilder,
-  e : ElementDef,
-  trigger : String,
-) -> Unit {
-  for existing in sb.definition().options {
-    if str_in(all_long_triggers(existing), trigger) {
-      return // 自前優先 (shadow) / 既 copy (idempotent)
-    }
-  }
-  sb.definition().options.push({
-      name: e.name, // 祖先 write-target cell は要素名共有 (inherit-by-name)
-      ty: e.ty,
-      long: List([trigger]), // prefixed inheritable trigger (post-normalize 相当の確定形、resolve_long を経由しない)
-      variants: [],
-      short: [],
-      env: [],
-      help_meta: e.help_meta,
-      is_tty: false, // write-target copy は tty preset を持たない (env_prefix と同じ「canonical default 相当」)
-      tty_stream: None,
-      tty_cygwin: true,
-      is_dd: false,
-      is_exact: false,
-      is_literal: false,
-      dd_match: None,
-      dd_self_keep: false,
-      is_global: false,
-      is_inherit: false, // inherit seat は inst_inheritable step(2) が立てる
-      is_inheritable: false, // copy 自体は plain entry (再伝播しない)
-      link_depth: 0,
-      link_target: None,
-      link_additional_levels: None,
-      ref_target: None,
-      repeat: None,
-      optional: false,
-      multiple: false,
-      accumulator: None,
-      flatten: None,
-      separator: None,
-      collector: None,
-      fail_action: false,
-      is_config_file: false,
-      config_key: None,
-      export_key: ExportKey::unset(),
-      requires: [],
-      conflicts_with: [],
-      exclusive_group: [],
-      required_group: [],
-      required: false, // write-target copy は required 制約を持たない (requires/exclusive_group と同じ理由)
-      value_requires: [],
-      deprecated: false,
-      is_alias: false, // write-target copy は alias/hidden 宣言経路を持たない (canonical default 相当)
-      hidden: false,
-      completer: None, // write-target copy は completer 宣言経路を持たない (hidden と同じ理由)
-      default_values: None,
-      // write-target copy は const も持たない (default_declared と同じ理由 — 実書き込みだけが伝播する)
-      const_values: None,
-      default_fn: None,
-      default_declared: false, // write-target に default を置かない (§3): 実書き込みのみが伝播する
-      int_round: Error,
-      allow_base_prefix: false, // canonical default (DR-075 §2): write-target は int_round を持たない
-      // canonical default (DR-074 §2): write-target は base prefix opt-in を持たない
-      bool_config: bool_config_canonical(), // canonical default (DR-074 §4): write-target は bool_parser opt-in を持たない
-      piece_filters: [], // write-target は filter chain を持たない (源 e の value_filters は source 側で既に適用済み)
-      value_filters: [],
-      final_filters: [],
-      accum_filters: [],
-      long_prefix: "--", // 通常の long 綴り (kebab, 未 prefix) — inst_long が既定 "--" を前置する
-      short_prefix: "-", // write-target copy は short spelling を持たない (canonical default 相当)
-      env_prefix: "", // write-target copy は env 席を持たない (canonical default 相当)
-      auto_env: false,
-      long_eq_sep: Allow,
-      short_combine: true,
-      short_attached_value: Allow,
-      body: Cell,
-    }, // canonical default (§3 と同じ「通常挙動」)
-    // canonical default
-    // canonical default
-  )
-}
 
 ///|
 /// `node` が値を束縛する全ての leaf name を再帰的に集める (DR-093 の or/ref 親充足判定の実体解決 —
@@ -3123,7 +2985,6 @@ fn alias_entry(
     dd_self_keep: false,
     is_global: false,
     is_inherit: false,
-    is_inheritable: false,
     link_depth: 0,
     link_target: None,
     link_additional_levels: None,
@@ -3931,7 +3792,7 @@ fn collect_unsupported_link_shape(
 
 ///|
 /// DR-067 §1 reference-layer validation for bare-name value links. The fixpoint declaration
-/// snapshot already contains global/inheritable contributions, so `link_target_depth` is the same
+/// snapshot already contains global contributions, so `link_target_depth` is the same
 /// lexical view lowering uses. Global link entry copies are skipped: their declaring entry is
 /// validated once in its own scope and the copy only transports that already-valid route.
 fn collect_absent_link(def : Definition, out : Array[DefError]) -> Unit {
@@ -5355,7 +5216,7 @@ fn group_value_space() -> String {
 ///|
 /// 要素の値空間 (DR-120 §5): type 参照名の綴りではなく、type プリセット展開後 (LOWERING §A.5) の
 /// 値セルの型で見る。`flag` は `normalize_surface` が既に `bool` へ差し替え済みだが、宣言層には
-/// normalize を経ない経路 (`add_inheritable_copy` の write-target 等) もあるので明示に畳む。
+/// normalize を経ない経路もあるので明示に畳む。
 /// `count` は short / eq-split の非消費挙動を運ぶために `ensure_entity` まで `count` タグのまま
 /// 持ち回る (`normalize_option` の doc comment) ので、ここで `number` へ畳む — DR-029 が canonical な
 /// link 例に挙げた `-vvv` (count) と `--log-level N` (number) の組を「値空間一致」に落とすのが
@@ -5382,10 +5243,7 @@ fn export_value_space(e : ElementDef) -> String {
 ///   `type: "none"` (DR-089 の空値空間。`fixtures/value-typing/none-value-space.json` が
 ///   「発火しても結果に痕跡を残さない」を pin 済み)、`config_file` の内部セル (DR-050 —
 ///   `fixtures/value-sources/config/*` の result に現れない)
-///
-/// 逆に `inheritable` が祖先スコープへ置く write-target は参加する (DR-059 §5 / DESIGN §11.3):
-/// `add_inheritable_copy` は `link_depth` を立てずに要素名共有の実エントリを積むので、この
-/// 判定を素通りして祖先スコープの席になる。
+
 fn element_occupies_seat(e : ElementDef) -> Bool {
   if e.link_target is Some(_) ||
     e.is_alias ||
@@ -5755,7 +5613,7 @@ fn lower_definition_snapshot_impl(
     }) {
     // DR-120 §5: 露出キー衝突の検査面は「全 installer の宣言層寄与を適用し終えた宣言層」
     // (help_query capability が読む面と同じ、DESIGN §15.15) — `commands` / `global` /
-    // `inheritable` / `alias` の宣言的コピーを含み、lowered 産物は見ない。`def` は fixpoint が
+    // `alias` の宣言的コピーを含み、lowered 産物は見ない。`def` は fixpoint が
     // その寄与を書き込み終えた declaration snapshot そのものなので、fixpoint の後に検査する。
     // 打ち切りはしない (DR-054 §4 の全列挙原則) ため、fixpoint 自身が error を返した場合も
     // 同じ面で衝突を数えて 1 つの list に足す。
@@ -5800,7 +5658,7 @@ pub fn lower_definition(
 }
 
 ///|
-/// installer fixpoint 後の lowered scope と、global / alias / inheritable の宣言層寄与を
+/// installer fixpoint 後の lowered scope と、global / alias の宣言層寄与を
 /// 適用し終えた declaration snapshot を同時に返す。
 pub fn lower_definition_snapshot(
   def0 : Definition,
@@ -5825,7 +5683,6 @@ pub fn apply_builtin_installer(kind : String, builder : InstallBuilder) -> Unit 
     "dd" => inst_dd(builder.definition(), builder.output())
     "global" => inst_global(builder)
     "inherit" => inst_inherit(builder.definition(), builder.output())
-    "inheritable" => inst_inheritable(builder)
     "constraint" =>
       inst_constraint(
         builder.definition(),

@@ -144,7 +144,6 @@ fn el(
     dd_self_keep,
     is_global,
     is_inherit,
-    is_inheritable: false,
     link_depth: 0,
     link_target: None,
     link_additional_levels: None,
@@ -213,7 +212,6 @@ fn all_installers() -> Array[&@node.InstallerExt] {
     @builtins.config_installer(),
     @builtins.constraint_installer(),
     @builtins.alias_installer(),
-    @builtins.inheritable_installer(),
   ]
 }
 
@@ -1755,61 +1753,6 @@ test "copy_global_into: two same-name different-trigger globals (declared indepe
     }
   }
   assert_eq(rooted_count, 2)
-}
-
-// ── add_inheritable_copy の shadow 判定はトリガ集合まで見る (codex 指摘、regression 修正) ──
-
-///|
-/// 保証 (codex 指摘の regression 修正): `add_inheritable_copy` の自前優先 shadow 判定は、DR-076 後に
-/// 裸発火トリガが `variants` 側に入るケース (例: alias `[":set:true"]` 由来) も見なければならない。
-/// root の canonical `other` (flag, トリガなし) + alias `{alias:"other", name:"sub-ttl",
-/// long:[":set:true"]}` で `--sub-ttl` を裸発火として与えておき、子 `sub` の inheritable `ttl` が
-/// 同じ綴り `sub-ttl` (defining scope 名 "sub" + name "ttl" の prefix 導出) で祖先へ逆コピーされよう
-/// とするケース。`long_of` (main long のみ) で shadow 判定すると alias 由来のトリガ (variants 側) を
-/// 見落とし、`--sub-ttl` の入口が重複してしまう (root の greedy 面に同一 @engine.Exact トリガの衛星が 2 本
-/// 立つ)。`all_long_triggers` (long + variants 横断) で判定すれば、既存の alias トリガを検出して
-/// inheritable コピーが正しく shadow (抑止) される。
-test "add_inheritable_copy: an alias-provided (variants-side) trigger shadows the inheritable reverse-copy" {
-  let def : @engine.Definition = {
-    ..empty_def(),
-    options: [el("other", @builtins.flag_type())],
-    commands: [
-      {
-        name: "sub",
-        body: {
-          ..empty_def(),
-          options: [
-            {
-              ..el("ttl", @builtins.number_type()),
-              is_inheritable: true,
-              default_values: Some([@abi.Number(60.0)]),
-            },
-          ],
-        },
-        export_key: @engine.ExportKey::unset(),
-      },
-    ],
-    aliases: [
-      {
-        target: "other",
-        name: Some("sub-ttl"),
-        short: [],
-        long_override: Some(List([":set:true"])),
-        deprecated: false,
-        help_meta: empty_help_meta_for_test(),
-      },
-    ],
-  }
-  let sc = ok_scope(def, all_installers())
-  let mut count = 0
-  for g in sc.greedy {
-    match g {
-      @engine.Seq([@engine.Exact("--sub-ttl"), ..]) => count = count + 1
-      _ => ()
-    }
-  }
-  // shadow が正しく効けば alias 由来の 1 本のみ (inheritable コピーは重複追加されない)。
-  assert_eq(count, 1)
 }
 
 // ── DR-077: update 効果 + count (definition-error 系、installer 層) ──────────────
@@ -4425,8 +4368,8 @@ test "ensure_entity: plain @builtins.bool_type() は @engine.Entity.default_valu
 //
 // fixture の比較単位は `(element, kind)` の集合で message / hint を比較しない (DR-082 §1) ため、
 // DR-120 §5 が規範化する「どの手段を提示するか」(値空間一致 → link / 不一致 → or) は fixture から
-// 見えない軸。§4 の参加/非参加のうち global コピー・inheritable 祖先 write-target も、fixture 表現
-// では衝突相手を作れないので同じくここで固定する。
+// 見えない軸。§4 の参加/非参加のうち global コピーも、fixture 表現では衝突相手を作れないので
+// 同じくここで固定する。
 
 ///|
 /// 衝突 error の hint を 1 本引く (element 名で特定)。見つからなければ abort。
@@ -4556,51 +4499,6 @@ test "DR-120 §4: a global entry copy in a child scope claims no result key" {
         "global entry copies must not claim a result key in the copy scope: " +
         deferrs_str(errs),
       )
-  }
-}
-
-///|
-/// DR-120 §4 の対極: `inheritable` が祖先スコープへ置く write-target は、その祖先スコープで実際に
-/// 結果キーを占有する (DESIGN §11.3 / DR-059 §5) ので**参加する**。祖先が同じ結果キーを自前で
-/// 名乗っていれば definition-error になる — 参加/非参加を一律「installer が置いたコピーは無視」で
-/// 実装するとここが落ちる (global との非対称が本質)。
-test "DR-120 §4: an inheritable ancestor write-target does claim its result key" {
-  // 祖先の自前セル: 名前は別 (`lifetime`) だが結果キーは `ttl`。
-  let ancestor_own = {
-    ..el("lifetime", @builtins.number_type(), long=List([":set"])),
-    export_key: @engine.ExportKey::key("ttl"),
-  }
-  // 子の inheritable `ttl` → 祖先へ `--socket-ttl` 綴りの write-target (要素名 `ttl` 共有) が置かれ、
-  // 祖先スコープで結果キー `ttl` を占有する。
-  let child_inheritable = {
-    ..el("ttl", @builtins.number_type(), long=List([":set"])),
-    is_inheritable: true,
-  }
-  let child : @engine.Definition = {
-    ..empty_def(),
-    options: [child_inheritable],
-  }
-  let def : @engine.Definition = {
-    ..empty_def(),
-    options: [ancestor_own],
-    commands: [
-      { name: "socket", body: child, export_key: @engine.ExportKey::unset() },
-    ],
-  }
-  match test_lower_definition(def, all_installers()) {
-    Ok(_) =>
-      abort(
-        "expected Err: the inheritable write-target claims result key 'ttl' in the ancestor scope alongside a same-keyed own cell (DR-120 §4)",
-      )
-    Err(errs) => {
-      let mut flagged = 0
-      for e in errs {
-        if e.kind == @abi.ExportKeyCollision {
-          flagged = flagged + 1
-        }
-      }
-      assert_eq(flagged, 2)
-    }
   }
 }
 

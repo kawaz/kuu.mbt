@@ -86,13 +86,12 @@ pub(all) enum HelpDefault {
 } derive(Eq, Debug)
 
 ///|
-/// DR-113 §4.3 origin 3 形。model の options / commands entry の由来を表す — Local 以外は
+/// DR-113 §4.3 origin。model の options / commands entry の由来を表す — Local 以外は
 /// `declared_at` 相当情報を保持する。alias は canonical entry の alias_spellings / aliases に
 /// 併記して独立一覧しない (§4.4) ため、origin の alias 形は持たない。
 pub(all) enum HelpOrigin {
   Local
   Global(Array[String])
-  Inheritable(Array[String])
 } derive(Eq, Debug)
 
 ///|
@@ -498,54 +497,13 @@ fn positional_value_structure_of(
 // ── origin resolution (DR-113 §4.3) ──────────────────────────────────────────
 
 ///|
-/// help.mbt が保持する scope tree の側テーブル: 各 scope の root-first path と Definition
-/// への参照。origin (global copy / inheritable copy) の declared_at 逆引きに使う。
-priv struct ScopeIndex {
-  entries : Array[ScopeEntry]
-}
-
-///|
-priv struct ScopeEntry {
-  path : Array[String]
-  definition : @engine.Definition
-}
-
-///|
-fn build_scope_index(root : @engine.Definition) -> ScopeIndex {
-  let entries : Array[ScopeEntry] = []
-  let base_path : Array[String] = []
-  match root.scope.name {
-    Some(name) => base_path.push(name)
-    None => ()
-  }
-  collect_scope_entries(root, base_path, entries)
-  { entries, }
-}
-
-///|
-fn collect_scope_entries(
-  definition : @engine.Definition,
-  path : Array[String],
-  out : Array[ScopeEntry],
-) -> Unit {
-  out.push({ path: copy_strings(path), definition })
-  for command in definition.commands {
-    let child_path = copy_strings(path)
-    child_path.push(command.name)
-    collect_scope_entries(command.body, child_path, out)
-  }
-}
-
-///|
 /// current_path にある element の origin を逆推定。
 /// - link_depth > 0 → global 由来。宣言 scope は現在から link_depth 段 (root 側へ) 遡った祖先。
 ///   ただし root scope の name は path[0] にあるので、declared_at は path[:len - link_depth] (先頭は保持)。
-/// - name-derived prefix pattern + descendant scope に is_inheritable=true 同名要素 → inheritable 由来。
-/// - 上記いずれでもなければ Local。
+/// - 上記でなければ Local。
 fn resolve_origin(
   element : @engine.ElementDef,
   current_path : Array[String],
-  index : ScopeIndex,
 ) -> HelpOrigin {
   if element.link_depth > 0 {
     let len = current_path.length()
@@ -562,67 +520,7 @@ fn resolve_origin(
     }
     return Global(declared_at)
   }
-  // inheritable 逆推定: 名前が prefix 付きなら (`<child>-<name>` トリガ) descendant scope に
-  // is_inheritable=true 同 element 名の option があるはず。Fixture: `--socket-timeout` の name は
-  // "timeout" (add_inheritable_copy が e.name をそのまま name として set)、trigger は "socket-timeout"。
-  // 検索方針: current_path 配下の全 scope を走査し、`is_inheritable=true` かつ name が element.name と
-  // 一致し、かつ trigger 綴りが `<childname>-<element.name>` のパターンにマッチするものを探す。
-  let triggers = option_spellings(element)
-  for entry in index.entries {
-    if !path_prefix(current_path, entry.path) ||
-      entry.path.length() <= current_path.length() {
-      continue
-    }
-    for opt in entry.definition.options {
-      if !opt.is_inheritable || opt.name != element.name {
-        continue
-      }
-      // 綴りマッチ検証: 現在 element の trigger のいずれかが child scope 名 + "-" + name を含む形。
-      let child_name = entry.path[entry.path.length() - 1]
-      let expected_trigger = child_name + "-" + element.name
-      let mut matched = false
-      for t in triggers {
-        // t は long_prefix 付き (`--socket-timeout`)。expected_trigger は無し (`socket-timeout`)。
-        if str_has_suffix(t, expected_trigger) {
-          matched = true
-          break
-        }
-      }
-      if matched {
-        return Inheritable(copy_strings(entry.path))
-      }
-    }
-  }
   Local
-}
-
-///|
-fn path_prefix(prefix : Array[String], full : Array[String]) -> Bool {
-  if prefix.length() > full.length() {
-    return false
-  }
-  for i = 0; i < prefix.length(); i = i + 1 {
-    if prefix[i] != full[i] {
-      return false
-    }
-  }
-  true
-}
-
-///|
-fn str_has_suffix(s : String, suffix : String) -> Bool {
-  let sc = s.to_array()
-  let sfc = suffix.to_array()
-  if sfc.length() > sc.length() {
-    return false
-  }
-  let off = sc.length() - sfc.length()
-  for i = 0; i < sfc.length(); i = i + 1 {
-    if sc[off + i] != sfc[i] {
-      return false
-    }
-  }
-  true
 }
 
 // ── option / command / positional projection ─────────────────────────────────
@@ -720,7 +618,6 @@ fn emit_option_after_tree(
 fn ordered_options(
   definition : @engine.Definition,
   current_path : Array[String],
-  index : ScopeIndex,
 ) -> Array[HelpOptionEntry] {
   let pairs = option_alias_pairs(definition)
   let sorted : Array[SortableOption] = []
@@ -740,7 +637,7 @@ fn ordered_options(
       })
     } else {
       let canonical_spellings = option_spellings(element)
-      let origin = resolve_origin(element, current_path, index)
+      let origin = resolve_origin(element, current_path)
       Option(
         help_option_from(
           element,
@@ -775,7 +672,7 @@ fn ordered_options(
     match pair.0.name {
       Some(name) => {
         let meta = pair.0.help_meta
-        let origin = resolve_origin(pair.1, current_path, index)
+        let origin = resolve_origin(pair.1, current_path)
         insert_option_sorted(sorted, {
           entry: Option(help_option_from(pair.1, meta, [], origin)),
           identity: Some(name),
@@ -853,7 +750,6 @@ fn ordered_commands(
   definition : @engine.Definition,
   current_path : Array[String],
   depth : HelpDepth,
-  index : ScopeIndex,
   root : @engine.Definition,
 ) -> Array[HelpCommand] {
   let sorted : Array[SortableCommand] = []
@@ -875,7 +771,7 @@ fn ordered_commands(
     child_path.push(command.name)
     let scope : HelpModel? = match depth {
       All =>
-        Some(build_help_model(command.body, child_path, depth, index, root))
+        Some(build_help_model(command.body, child_path, depth, root))
       Scope => None
     }
     insert_command_sorted(sorted, {
@@ -1120,10 +1016,9 @@ fn build_help_model(
   selected : @engine.Definition,
   command_path : Array[String],
   depth : HelpDepth,
-  index : ScopeIndex,
   root : @engine.Definition,
 ) -> HelpModel {
-  let options = ordered_options(selected, command_path, index)
+  let options = ordered_options(selected, command_path)
   let types = if selected.help_types.length() > 0 {
     // 選択 scope 自身が help_types を持てば (root のみが典型) 集約射影
     help_types_projection(selected.help_types, root)
@@ -1141,7 +1036,7 @@ fn build_help_model(
     description_long: selected.scope.help_meta.help_long,
     epilog: selected.scope.help_meta.help_epilog,
     types,
-    commands: ordered_commands(selected, command_path, depth, index, root),
+    commands: ordered_commands(selected, command_path, depth, root),
     options,
     positionals: help_positionals(selected),
     help_entry: help_entry(selected),
@@ -1191,7 +1086,6 @@ pub fn help(
     Some(definition) => definition
     None => return Err(AbsentPath)
   }
-  let index = build_scope_index(ast.declaration)
   let command_path : Array[String] = []
   match ast.declaration.scope.name {
     Some(name) => command_path.push(name)
@@ -1200,13 +1094,7 @@ pub fn help(
   for segment in path {
     command_path.push(segment)
   }
-  let mut model = build_help_model(
-    selected,
-    command_path,
-    depth,
-    index,
-    ast.declaration,
-  )
+  let mut model = build_help_model(selected, command_path, depth, ast.declaration)
   match category_mode {
     Named(name) =>
       if category_exists(model.options, name) {

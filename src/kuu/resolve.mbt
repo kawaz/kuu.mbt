@@ -1174,8 +1174,8 @@ fn collect_defaults(
     // the preset default:false (or an explicit bool default) and is never absent, so it renders in
     // the result-object projection even where the value-source ladder is not run. A NON-flag cell's
     // default is deliberately NOT injected here — its true value depends on the full ladder (env /
-    // config / inherit seats can override the default, e.g. an inheritable ttl resolves via its
-    // inherit seat), which this projection does not run; injecting the raw default would surface a
+    // config / inherit seats can override the default), which this projection does not run;
+    // injecting the raw default would surface a
     // wrong value. Those cells stay ladder-resolved.
     if e.declaring_path.length() == 0 &&
       (e.ty.name() == "flag" || e.ty.name() == "bool") &&

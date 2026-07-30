@@ -864,52 +864,6 @@ pub fn alias_installer() -> &@node.InstallerExt {
 }
 
 ///|
-priv struct InheritableInstaller {}
-
-///|
-impl @node.InstallerExt for InheritableInstaller with fn vocab(_self) {
-  ["inheritable"]
-}
-
-///|
-impl @node.InstallerExt for InheritableInstaller with fn decode(
-  _self,
-  json,
-  ctx,
-) {
-  let vocab = match ctx {
-    Option => ["inheritable"]
-    _ => []
-  }
-  let object = match resident_object(json) {
-    Ok(value) => value
-    Err(reason) => return Err(reason)
-  }
-  match resident_bool(object, "inheritable", false) {
-    Ok(value) => Ok({ vocab, declaration: Inheritable(value) })
-    Err(reason) => Err(reason)
-  }
-}
-
-///|
-impl @node.InstallerExt for InheritableInstaller with fn apply(_self, builder) {
-  @node.builder_apply_builtin(builder, "inheritable")
-}
-
-///|
-impl @node.InstallerExt for InheritableInstaller with fn collect_defs_errors(
-  _self,
-  _view,
-) {
-  []
-}
-
-///|
-pub fn inheritable_installer() -> &@node.InstallerExt {
-  InheritableInstaller::{  } as &@node.InstallerExt
-}
-
-///|
 priv struct HelpMetaInstaller {}
 
 ///|

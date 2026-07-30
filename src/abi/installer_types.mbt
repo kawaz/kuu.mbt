@@ -21,7 +21,6 @@ pub(all) enum OwnedDeclaration {
   Config(Bool, Array[String]?)
   Constraint(Array[String], Array[String], Array[String], Array[String], Bool)
   Alias(AliasDef?)
-  Inheritable(Bool)
   HelpMeta(HelpMetaDeclaration)
   Command
 } derive(Eq, Debug)

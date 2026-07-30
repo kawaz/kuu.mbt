@@ -1646,19 +1646,13 @@ fn help_value_structure_json(vs : @abi.HelpValueStructure) -> Json {
 }
 
 ///|
-/// DR-113 §4.3 helpOrigin oneOf 直訳。Local は string "local"、Global/Inheritable は object。
+/// DR-113 §4.3 helpOrigin oneOf 直訳。Local は string "local"、Global は object。
 fn help_origin_json(origin : @kuu.HelpOrigin) -> Json {
   match origin {
     @kuu.Local => "local".to_json()
     @kuu.Global(declared_at) => {
       let out : Map[String, Json] = Map([])
       out.set("kind", "global".to_json())
-      out.set("declared_at", declared_at.to_json())
-      out.to_json()
-    }
-    @kuu.Inheritable(declared_at) => {
-      let out : Map[String, Json] = Map([])
-      out.set("kind", "inheritable".to_json())
       out.set("declared_at", declared_at.to_json())
       out.to_json()
     }
@@ -2338,7 +2332,7 @@ fn known_divergences() -> Array[String] {
   // M4 (DR-113 §4): help model 構築を新 schema へ全面移行 (value_structure tree / origin 4 形 /
   // hidden・deprecated required emit / command aliases 併記 / depth=all 再帰 scope 埋め込み /
   // help_category の or[bool,string] 展開)。origin 逆推定 (link_depth → global declared_at /
-  // 名前 prefix + descendant inheritable 検索 → inheritable declared_at) は help.mbt 側で
+  // declared_at) は help.mbt 側で
   // scope 側テーブルを組んで解決する — installer は変更していない (5 preset canonical 展開の
   // HelpMetaInstaller.apply 移送と capability dispatch は次 milestone、以下 「M5 残」)。
   //

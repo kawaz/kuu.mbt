@@ -220,7 +220,6 @@ fn opt(
   tty_cygwin? : Bool = true,
   global? : Bool = false,
   is_inherit? : Bool = false,
-  inheritable? : Bool = false,
   repeat? : @abi.RepeatSpec? = None,
   multiple? : Bool = false,
   accumulator? : String? = None,
@@ -287,7 +286,6 @@ fn opt(
     dd_self_keep: false,
     is_global: global,
     is_inherit,
-    is_inheritable: inheritable,
     link_depth: 0,
     link_target: link_,
     link_additional_levels: None,
@@ -411,7 +409,6 @@ fn pos(
     dd_self_keep: false,
     is_global: false,
     is_inherit,
-    is_inheritable: false,
     link_depth: 0,
     link_target: link_,
     link_additional_levels: None,
@@ -498,7 +495,6 @@ fn dd_marker(
     dd_self_keep: self_keep,
     is_global: false,
     is_inherit: false,
-    is_inheritable: false,
     link_depth: 0,
     link_target: None,
     link_additional_levels: None,
@@ -576,7 +572,6 @@ fn exact_marker(spelling : String) -> @engine.ElementDef {
     dd_self_keep: false,
     is_global: false,
     is_inherit: false,
-    is_inheritable: false,
     link_depth: 0,
     link_target: None,
     link_additional_levels: None,
@@ -673,7 +668,6 @@ priv struct InstallerDecoded {
   required_group : Array[String]
   required : Bool
   alias_decl : @abi.AliasDef?
-  inheritable : Bool
   help_meta : @abi.HelpMetaDeclaration
 }
 
@@ -706,7 +700,6 @@ fn decode_installer_owned(
   let mut required_group : Array[String] = []
   let mut required = false
   let mut alias_decl : @abi.AliasDef? = None
-  let mut inheritable = false
   let mut help_meta = empty_help_meta()
   for installer in extensions.installers() {
     let decoded = match installer.decode(json, context) {
@@ -751,7 +744,6 @@ fn decode_installer_owned(
         required = is_required
       }
       Alias(value) => alias_decl = value
-      Inheritable(value) => inheritable = value
       HelpMeta(value) => help_meta = value
       Command => ()
     }
@@ -780,7 +772,6 @@ fn decode_installer_owned(
     required_group,
     required,
     alias_decl,
-    inheritable,
     help_meta,
   }
 }
@@ -2314,7 +2305,6 @@ fn dec_option(
   }
   let global = owned.global_
   let inherit_flag = owned.is_inherit
-  let inheritable = owned.inheritable
   let multiple = owned.multiple
   let sep = owned.separator
   let coll = owned.collector
@@ -2444,7 +2434,6 @@ fn dec_option(
       tty_cygwin=tty_cygwin_from_shadow,
       global~,
       is_inherit=inherit_flag,
-      inheritable~,
       multiple~,
       accumulator=acc,
       flatten=flat,

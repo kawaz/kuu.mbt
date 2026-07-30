@@ -275,9 +275,6 @@ fn first_unknown_vocab(element : ElementDef, owned : Array[String]) -> String? {
   if element.is_inherit && !vocab_owned(owned, "inherit") {
     return Some("inherit")
   }
-  if element.is_inheritable && !vocab_owned(owned, "inheritable") {
-    return Some("inheritable")
-  }
   if effective_repeat(element) is Some(_) && !vocab_owned(owned, "repeat") {
     return Some("repeat")
   }

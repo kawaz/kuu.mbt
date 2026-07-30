@@ -6,16 +6,16 @@
 //
 // 1. export-key 衝突 (DR-120): 2 要素が同じ露出キーへ解決する定義は front_door.parse_definition
 //    が definition-error (kind=export-key-collision) として弾く — parse まで到達しない
-// 2. inheritable resolve (DR-059 §5 / DR-047 §4): 祖先 write-target で書かれた値が子 scope の
-//    inherit 席に流下する。front_door.resolve が返す binds に子 scope 側の解決済み値 (source=
-//    @abi.Inherit) が現れる
+// 2. inherit resolve (DR-031 #4 / DR-047 §4): 祖先 scope で書かれた値が子 scope の inherit 席へ
+//    流下する。front_door.resolve が返す binds に子 scope 側の解決済み値 (source=@abi.Inherit)
+//    が現れる
 // 3. deprecated warnings (DR-058 §2): deprecated:true の alias 入口を発火した @engine.Success outcome
 //    から `@engine.warnings_of` が `{element, kind}` の構造化 warning を返す。sentinel
 //    `@depr:...` は effects (非 sentinel binds) に混じらない (`is_sentinel` で除外可能)
 //
 // 期待値の根拠は kawaz/kuu の fixtures (`export-key/collision.json` /
 // `export-key/collision-identity.json` /
-// `inheritable-parse/basic.json` / `alias-parse/deprecated.json`) の該当 case と一致し、
+// `value-sources/inherit-ladder.json` / `alias-parse/deprecated.json`) の該当 case と一致し、
 // conformance runner が実際にその期待を満たしていることは `[json-conformance] mismatches=0` が
 // 別途保証している — 本 wbtest は玄関 API の契約側からその 3 面を独立に固定する層。
 
@@ -82,21 +82,23 @@ test "front_door.parse_definition: 露出キー衝突は definition-error (DR-12
 }
 
 ///|
-/// 保証 (MDR-005 §1 / DR-059 §5 / DR-047 §4): front_door.resolve は値源ラダー
-/// (env/config/inherit/default) を子 scope まで再帰的に充填する。inheritable:true の子 scope
-/// entity は、祖先で書かれた write-target 値を **`@abi.Inherit` source** の binding として得る (spec
-/// fixture `inheritable-parse/basic.json` の `ancestor-inherit-flowdown` case: `--sub-ttl 30 sub`
+/// 保証 (MDR-005 §1 / DR-031 #4 / DR-047 §4): front_door.resolve は値源ラダー
+/// (env/config/inherit/default) を子 scope まで再帰的に充填する。inherit:true の子 scope entity は、
+/// 祖先 scope で解決済みの同名値を **`@abi.Inherit` source** の binding として得る (`--ttl 30 sub`
 /// で `sub.ttl = 30`, source=inherit)。ここでは玄関 API のみを叩き、結果 binds に:
-///   - root path=[] に ttl 値 30 with source=@abi.Cli (`--sub-ttl` 発火の write-target)
+///   - root path=[] に ttl 値 30 with source=@abi.Cli (`--ttl` 発火)
 ///   - 子 path=["sub"] に ttl 値 30 with source=@abi.Inherit (親から流下した inherit 席)
 /// の 2 面が現れることを固定する。front_door.parse (単独) では resolve 相未実行なので子 scope の
 /// ttl は binds に現れず、玄関 `resolve` が明示的に必要になる = 相区分の 2 段構成 (MDR-005 §1)
 /// が意味を持つ最小の証拠でもある。
-test "front_door.resolve: inheritable が親 write-target → 子 scope の inherit 席へ流下 (DR-059 §5 / DR-047 §4, MDR-005 §1)" {
+test "front_door.resolve: 祖先の解決値が子 scope の inherit 席へ流下 (DR-031 #4 / DR-047 §4, MDR-005 §1)" {
   let src =
-    #|{"commands": [
+    #|{"options": [
+    #|  {"name": "ttl", "type": "number", "long": true, "default": 60}
+    #|],
+    #|"commands": [
     #|  {"type": "command", "name": "sub", "options": [
-    #|    {"name": "ttl", "type": "number", "long": true, "inheritable": true, "default": 60}
+    #|    {"name": "ttl", "type": "number", "long": true, "inherit": true}
     #|  ]}
     #|]}
   let j = @json.parse(src)
@@ -107,7 +109,7 @@ test "front_door.resolve: inheritable が親 write-target → 子 scope の inhe
       panic()
     }
   }
-  let args = ["--sub-ttl", "30", "sub"]
+  let args = ["--ttl", "30", "sub"]
   let po = parse_legacy(ast, args)
   match po {
     @engine.Success(_) => ()
@@ -134,7 +136,7 @@ test "front_door.resolve: inheritable が親 write-target → 子 scope の inhe
   let ro = resolve_legacy(ast, po, args)
   match ro {
     @engine.Success(rb) => {
-      // root path=[] の ttl (write-target への cli 発火)。
+      // root path=[] の ttl (cli 発火)。
       let mut root_ttl : @abi.Value? = None
       let mut root_src : @abi.Source? = None
       // 子 path=["sub"] の ttl (親から流下した inherit 値)。

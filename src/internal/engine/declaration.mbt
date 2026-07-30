@@ -54,7 +54,6 @@ pub(all) struct ElementDef {
   dd_self_keep : Bool // false=drop (既定、消費1・捨てる) | true=keep (消費0・自身含め以降 raw)
   is_global : Bool // global installer 所有 (子孫 command scope へコピー伝播)
   is_inherit : Bool // inherit installer 所有 (inherit seat 宣言)
-  is_inheritable : Bool // inheritable installer 所有 (DR-059)
   link_depth : Int // >0 なら global COPY が declaring scope 何段下に置かれたか (satellite が Rooted で escape する段数)
   // DR-029 / DR-031 / DR-121 §4: bare-name value-synchronization target. A linked element is an
   // entry only: it owns parsing shape and spellings but no Entity/result seat; every effect produced
