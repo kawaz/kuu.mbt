@@ -2361,15 +2361,7 @@ fn known_divergences() -> Array[String] {
 /// both `dec_types`/`dec_case` above) decodes and runs losslessly — full conformance, no known skip
 /// gaps.
 fn expected_skips() -> Array[(String, String)] {
-  // M2 gap: help-category vocab / help annotation on value-structure are M3+ features. Fixtures
-  // that carry these unsupported keys are skipped at decode time; entries pinned here so a decode
-  // regression (unexpected new skip) or accidental fix (vanished skip) fails the run.
-  // M5 (DR-113 §4.2): value-structure-and-types.json は dec_types tree-form + option
-  // seq wire キー + type_ref carry を M5 で全て実装済み、skip 解消。
-  //
-  // inheritable 削除サイクル (DR-124、2026-07-29): inherit の object 形 ({"from": ...}, DESIGN §11.2)
-  // を decoder が bool 決め打ちで読めない。inherit:{from} 実装で解消 → VANISHED が掃除を強制。
-  [("value-sources/inherit-from-ladder.json", "inherit is not a bool")]
+  []
 }
 
 ///|
