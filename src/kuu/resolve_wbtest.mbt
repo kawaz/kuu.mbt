@@ -978,6 +978,51 @@ test "command_child fetches a subcommand scope; outer_values_of builds the paren
   assert_eq(ctx.get("absent"), None)
 }
 
+///|
+/// Guarantees (DR-125 §4 / DESIGN §2.7): `borrow` の名前解決は lexical scope chain の最近傍で
+/// 止まる。現在スコープが borrow 先と同名の entity を宣言していれば、その宣言が値を持つか否かに
+/// 関わらず解決先はそこで確定し、外側の同名値へは抜けない (`resolve_default_fn` の `dependency`
+/// closure が `entities_contain_name(siblings, name)` で None を返す分岐)。遮蔽先が値を持たなければ
+/// borrow は `absent-source` となり、借り手も unset のまま落ちる (DR-113 §5.4 / DR-051 §1)。
+/// fixture `value-sources/default-fn-borrow-shadowing.json` の
+/// `inner-valueless-shadows-outer-default` の unit 版。対極 (同名宣言が無ければ外側へ届く、
+/// `default-fn-borrow-ladder.json` が固定する面) を同じ `outer_values` で並置し、結果の差が
+/// 同名宣言の有無だけから出ることを固定する。
+test "resolve_scope_config: a valueless same-name sibling shadows the outer value a borrow default_fn would reach (DR-125 §4)" {
+  let borrower : @engine.Entity = {
+    ..ent("ttl", @builtins.number_type()),
+    default_fn: Some(@abi.Wire({ name: "borrow", args: ["socket_ttl"] })),
+  }
+  // 遮蔽する宣言。default も env/config 席も持たないので自身は absent のまま。
+  let shadow = ent("socket_ttl", @builtins.number_type())
+  let no_config = fn(_p : String) -> @abi.ConfigVal? { None }
+  let outer = outer_values_of([
+    cb("socket_ttl", @abi.Number(60.0), @abi.Default),
+  ])
+  // 遮蔽あり: chain 1 段目の同名宣言で止まり、そこは値なし → 借り手も absent (外側の 60 は届かない)。
+  let shadowed : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [shadow, borrower],
+    constraints: [],
+  }
+  assert_eq(
+    resolve_scope_config(shadowed, [], Map([]), no_config, outer_values=outer),
+    Ok([]),
+  )
+  // 対極: 同名宣言が無ければ chain は外側へ抜け、outer の 60 が借り手の default 席に座る。
+  let unshadowed : @engine.Scope = {
+    greedy: [],
+    positional: [],
+    entities: [borrower],
+    constraints: [],
+  }
+  assert_eq(
+    resolve_scope_config(unshadowed, [], Map([]), no_config, outer_values=outer),
+    Ok([mkb_pub("ttl", @abi.Number(60.0), @abi.Default)]),
+  )
+}
+
 // ── DR-066 §4: path/provenance on ladder-fill Errors ──────────────────────────
 
 ///|
