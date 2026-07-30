@@ -1,6 +1,6 @@
 ---
 title: command scope の export_key rename があると type:none セルが result / sources に漏れる
-status: open
+status: resolved
 category: bug
 created: 2026-07-26T13:35:43+09:00
 last_read: 2026-07-30T23:18:54+09:00
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-07-30T23:21:19+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["implemented: resolve.mbt の none 除外を export map 適用後の結果アドレス軸で照合 / front_door.mbt sources 側も同修正","fixture: value-typing/none-exclusion-under-scopes.json::none-under-renamed-command-scope (identity/renamed 境界, pin, green)","fixture: export-key/unselected-scope-internal-cell-mask.json::selected-transparent-internal-cells-still-excluded (transparent 境界)","統括が実機確認 (2026-07-30): moon test 全 pass, conformance mismatches=0"]
 blocked_by:
 origin: 自リポ TODO
 ---
