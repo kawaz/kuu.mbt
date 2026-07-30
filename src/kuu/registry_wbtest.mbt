@@ -45,8 +45,7 @@ test "canonical_registry installs every builtin node and type resident" {
   }
   for
     name in [
-      "set", "default", "unset", "empty", "incr", "borrow", "env", "uuid",
-      "computed",
+      "set", "default", "unset", "empty", "incr", "borrow", "env", "uuid", "computed",
     ] {
     match registry.lookup_cell_fn(name) {
       Some(resident) => assert_eq(resident.name(), name)

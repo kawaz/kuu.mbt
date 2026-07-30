@@ -1238,9 +1238,7 @@ fn dec_lent(name : String, j : Json) -> LEnt raise DecodeSkip {
   }
   allowed_keys(
     o,
-    [
-      "type", "link", "default", "env", "config_key", "accumulator", "flatten",
-    ],
+    ["type", "link", "default", "env", "config_key", "accumulator", "flatten"],
     "golden entity",
   )
   let typ = req_field(o, "type")

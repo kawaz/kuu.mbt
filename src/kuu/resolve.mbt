@@ -2967,8 +2967,7 @@ fn resolve_entity_raw(
             Ok(@extension.FnOutput::Sentinel(@extension.UseDefault)) =>
               match
                 resolve_ladder_below_cli(
-                  e, env_map, config_obj, config_path, at_pos, epath, tty_map,
-                  extensions,
+                  e, env_map, config_obj, config_path, at_pos, epath, tty_map, extensions,
                 ) {
                 Ok(defaults) => {
                   current = if defaults.length() > 0 {
@@ -3507,6 +3506,10 @@ fn resolve_default_fn(
     entity.name,
     old=option_values.get(entity.name),
     observes~,
+    // Design rationale: `option=` は外側スコープの解決値のみ (DR-125 前からの視野)、
+    // `dependency=` は lexical scope chain (現在スコープ → 外側)。今日の唯一の消費者
+    // borrow_fn は default 相で dependency を通るため挙動差は無いが、default 相で
+    // ctx.option を読む fn を足すときは視野差に注意 (統一するなら dependency 側へ)。
     option=fn(name) { outer_values.get(name) },
     // Lexical scope chain (DR-125 §4 / DESIGN §2.7): this scope first, then outward. A name the
     // scope declares itself shadows every outer binding, so an entity that is declared here but
@@ -3788,7 +3791,13 @@ fn resolve_scope_config_with_export(
         // default 側が死に宣言になるだけ、`required` の vacuous 充足と同じ lint 領分)。
         let resolved = if e.default_fn is Some(_) && e.const_values is None {
           resolve_default_fn(
-            e, sc.entities, option_values, outer_values, env_map, at_pos, path,
+            e,
+            sc.entities,
+            option_values,
+            outer_values,
+            env_map,
+            at_pos,
+            path,
             extensions,
           )
         } else {

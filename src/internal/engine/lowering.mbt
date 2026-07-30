@@ -5196,13 +5196,12 @@ fn export_value_space(e : ElementDef) -> String {
 /// - `alias` 要素 — 値は canonical の実体セルへ流れ自前のセルを持たない (DR-057「結果キーは
 ///   canonical のみ」)
 /// - `global` installer が子孫スコープへ置いた入口コピー (`link_depth > 0`) — 宣言スコープの
-///   セルへ合流する入口であり、コピー先スコープに新しいセルを作らない (DESIGN §11.3)
+///   セルへ合流する入口であり、コピー先スコープに新しいセルを作らない (DR-120 §4)
 /// - 値セルも子も持たない要素 — `dd` (DR-064 §5: name はトリガ綴り軸にのみ効き `export_key` を
 ///   書いても結果に何も現れない)、裸 exact leaf (`is_exact`、DR-063 A.1 — name はトリガ綴り)、
 ///   `type: "none"` (DR-089 の空値空間。`fixtures/value-typing/none-value-space.json` が
 ///   「発火しても結果に痕跡を残さない」を pin 済み)、`config_file` の内部セル (DR-050 —
 ///   `fixtures/value-sources/config/*` の result に現れない)
-
 fn element_occupies_seat(e : ElementDef) -> Bool {
   if e.link_target is Some(_) ||
     e.is_alias ||

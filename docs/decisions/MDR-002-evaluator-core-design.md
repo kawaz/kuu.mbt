@@ -180,7 +180,7 @@ MDR-001 §4 は `src/core` 単一パッケージから開始し公開 API が固
 | `matcher.mbt` | short/long matcher ランタイム (`EqSplit`/`ShortCombine` の解釈) | `matcher.mbt` (234行) をほぼ踏襲 | node, value に依存 |
 | `cont.mbt` (新設) | §1 の `Cont` ADT と `run_cont` / メモ化テーブル。評価器コアが依存する「継続」の基盤部品として独立させる (eval.mbt に埋め込むと巨大化するため) | 対応なし (新設) | node に依存 (Scope を継続に含むため) |
 | `eval.mbt` | path-search 評価器本体: `eval`/`scope_step`/`scope_consume`、背骨・先食い・早閉じ抑制・取り分選好 (§1 の CPS 化を適用)、`parse()` トップレベル。制約の**成立判定** (経路のフィルタリング) はここに残す | `eval.mbt` (1778行) から CPS 化 + Pending 統一で書き直し | node, value, matcher, cont に依存 |
-| `resolve.mbt` (新設) | 値確定層: 値源ラダー (env/inherit/default セル充填)、config 2相解決、遅延述語 (制約) の最終評価、結果ビルダー (`build_result`/export-key 適用/衝突検出) | `result.mbt` (668行) + `installer.mbt` 内の `resolve_scope`/`resolve_scope_config` (値源ラダー部分) を統合 | node, value に依存。eval からは経路確定後の後処理として呼ばれる |
+| `resolve.mbt` (新設) | 値確定層: 値源ラダー (env/config/default セル充填)、config 2相解決、遅延述語 (制約) の最終評価、結果ビルダー (`build_result`/export-key 適用/衝突検出) | `result.mbt` (668行) + `installer.mbt` 内の `resolve_scope`/`resolve_scope_config` (値源ラダー部分) を統合 | node, value に依存。eval からは経路確定後の後処理として呼ばれる |
 | `outcome.mbt` (新設) | 出口層: `Outcome`/`FailureData`/`AmbiguousData` の型定義、失敗時アクション選択 (`FailDef`/`argmin_action`)、help_entry/tried_triggers 材料の構築、complete (`Pending` 収集) | `eval.mbt` 末尾の top level (DR-038 path counting) 節 + slice `complete.mbt` の意味論を Pending 収集として統合 | eval, resolve に依存 |
 | `installer.mbt` | lowering 本体 (UsefulAST → AtomicAST)。12 installer、`parse_definition`、def-error 列挙 | `installer.mbt` (2153行) を参照移植 | node, value, matcher, resolve (値源ラダーの宣言構造) に依存。**評価器 (eval) には依存しない** |
 

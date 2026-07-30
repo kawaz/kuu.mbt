@@ -258,13 +258,11 @@ pub(all) enum OwnedDeclaration {
   Env(Array[String])
   Dd(String?, Bool)
   Global(Bool)
-  Inherit(Bool)
   Repeat(RepeatSpec?, Bool)
   Multiple(Bool, String?, CollectorDeclaration?, String?, Bool?)
   Config(Bool, Array[String]?)
   Constraint(Array[String], Array[String], Array[String], Array[String], Bool)
   Alias(AliasDef?)
-  Inheritable(Bool)
   HelpMeta(HelpMetaDeclaration)
   Command
 } derive(Eq, @debug.Debug)
@@ -310,7 +308,6 @@ pub(all) enum Source {
   Link
   Env
   Config
-  Inherit
   Tty
   Const
   Default

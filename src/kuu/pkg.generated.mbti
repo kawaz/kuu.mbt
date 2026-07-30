@@ -174,7 +174,6 @@ pub(all) enum HelpOptionEntry {
 pub(all) enum HelpOrigin {
   Local
   Global(Array[String])
-  Inheritable(Array[String])
 } derive(Eq, @debug.Debug)
 
 pub(all) struct HelpPositional {

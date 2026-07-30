@@ -770,8 +770,7 @@ fn ordered_commands(
     let child_path = copy_strings(current_path)
     child_path.push(command.name)
     let scope : HelpModel? = match depth {
-      All =>
-        Some(build_help_model(command.body, child_path, depth, root))
+      All => Some(build_help_model(command.body, child_path, depth, root))
       Scope => None
     }
     insert_command_sorted(sorted, {
@@ -1094,7 +1093,12 @@ pub fn help(
   for segment in path {
     command_path.push(segment)
   }
-  let mut model = build_help_model(selected, command_path, depth, ast.declaration)
+  let mut model = build_help_model(
+    selected,
+    command_path,
+    depth,
+    ast.declaration,
+  )
   match category_mode {
     Named(name) =>
       if category_exists(model.options, name) {

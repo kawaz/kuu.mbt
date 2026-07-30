@@ -4452,7 +4452,7 @@ test "DR-120 §5: colliding cells with different value spaces get an or hint" {
 
 ///|
 /// DR-120 §4: `global` installer が子孫スコープへ置く入口コピーは、宣言スコープのセルへ合流する
-/// 入口でありコピー先スコープに新しいセルを作らないので検査に参加しない (DESIGN §11.3)。fixture
+/// 入口でありコピー先スコープに新しいセルを作らないので検査に参加しない (DR-120 §4)。fixture
 /// では表現できない軸 — コピーが参加すると、子スコープが同じ結果キーを名乗る自前セルを持つ構成で
 /// 偽陽性になる (`copy_global_into` はトリガが重ならなければ shadow せずコピーする)。
 test "DR-120 §4: a global entry copy in a child scope claims no result key" {

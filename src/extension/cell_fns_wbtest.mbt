@@ -78,7 +78,6 @@ test "builtin cell_fns inventory matches DR-114 descriptor contracts" {
   assert_eq(env.observes(), ["env:<var>"])
   assert_eq(env.reasons(), ["absent-source"])
 
-
   let uuid = registry.lookup_cell_fn("uuid").unwrap()
   assert_eq(uuid.parameters(), [
     cell_fn_parameter("version", repetition=CellFnRepetition::ZeroOrOne),

@@ -266,8 +266,6 @@ pub(all) struct ElementDef {
   dd_match : String?
   dd_self_keep : Bool
   is_global : Bool
-  is_inherit : Bool
-  is_inheritable : Bool
   link_depth : Int
   link_target : String?
   link_additional_levels : Int?
@@ -323,7 +321,6 @@ pub(all) struct Entity {
   config_seat : Bool
   config_key : Array[String]?
   is_config_file : Bool
-  mut is_inherit : Bool
   accum : &@extension.AccumulatorExt?
   flatten : Bool
   is_multiple_decl : Bool

@@ -75,10 +75,6 @@ pub fn in_range_filter() -> @extension.FilterDescriptor
 
 pub fn increment_filter() -> @extension.FilterDescriptor
 
-pub fn inherit_installer() -> &@kuu-node.InstallerExt
-
-pub fn inheritable_installer() -> &@kuu-node.InstallerExt
-
 pub fn int_arg(String, round~ : @abi.RoundMode, filters~ : Array[@abi.FnInvocation], allow_base_prefix? : Bool) -> @engine.Node
 
 pub fn int_type(round? : @abi.RoundMode, allow_base_prefix? : Bool) -> &@extension.TypeExt

@@ -47,9 +47,9 @@ pub(all) enum Source {
   Config // config-file seat (DR-050 #3) — the lowest supply seat, above default
   // tty-判定注入値 (DR-099 §2/§12b)。専用ラダー席は持たない — `builtin/tty` preset 型要素の
   // default 席の解決規則 (`fold(観測) ?? 宣言 default ?? absent`) が観測由来で確定したときのタグ。
-  // 明示/継承より弱く宣言既定より強いという優先度は不変 (由来が独立席からこの型依存規則へ移っただけ)。
+  // 明示 (CLI/env/config) より弱く宣言既定より強いという優先度は不変 (DR-098 §5 / DR-125、由来が独立席からこの型依存規則へ移っただけ)。
   Tty
-  // DR-031's eighth provenance word: a declaration constant placed by a zero-consumption literal.
+  // DR-031's seventh provenance word: a declaration constant placed by a zero-consumption literal.
   // It is present from cell construction time, unlike Default which fills an otherwise empty seat
   // (kawaz ruling 2026-07-26).
   Const
