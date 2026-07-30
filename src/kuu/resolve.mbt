@@ -3478,10 +3478,13 @@ fn default_order(
 }
 
 ///|
+/// `siblings` is this scope's own directly-declared entities — the innermost link of the lexical
+/// scope chain the `dependency` closure below walks (DR-125 §4, DESIGN §2.7).
 fn resolve_default_fn(
   entity : @engine.Entity,
+  siblings : Array[@engine.Entity],
   option_values : Map[String, @abi.Value],
-  inherited : Map[String, @abi.Value],
+  outer_values : Map[String, @abi.Value],
   env_map : (String) -> String?,
   at_pos : Int,
   epath : Array[String],
@@ -3518,8 +3521,22 @@ fn resolve_default_fn(
     entity.name,
     old=option_values.get(entity.name),
     observes~,
-    option=fn(name) { inherited.get(name) },
-    dependency=Some(fn(name) { option_values.get(name) }),
+    option=fn(name) { outer_values.get(name) },
+    // Lexical scope chain (DR-125 §4 / DESIGN §2.7): this scope first, then outward. A name the
+    // scope declares itself shadows every outer binding, so an entity that is declared here but
+    // resolved to nothing yields None rather than reaching past its own shadow — the borrow then
+    // reports `absent-source` (DR-113 §5.4) instead of silently picking up the ancestor's value.
+    dependency=Some(fn(name) {
+      match option_values.get(name) {
+        Some(value) => Some(value)
+        None =>
+          if entities_contain_name(siblings, name) {
+            None
+          } else {
+            outer_values.get(name)
+          }
+      }
+    }),
     env=fn(variable) {
       match env_map(variable) {
         Some(value) => Some(@abi.String(value))
@@ -3786,7 +3803,8 @@ fn resolve_scope_config_with_export(
         // default 側が死に宣言になるだけ、`required` の vacuous 充足と同じ lint 領分)。
         let resolved = if e.default_fn is Some(_) && e.const_values is None {
           resolve_default_fn(
-            e, option_values, inherited, env_map, at_pos, path, extensions,
+            e, sc.entities, option_values, inherited, env_map, at_pos, path,
+            extensions,
           )
         } else {
           let cpath = config_path_of(e, path)
