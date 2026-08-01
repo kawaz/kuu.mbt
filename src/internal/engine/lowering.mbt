@@ -713,20 +713,23 @@ fn ref_row_head(name : String, head : Node) -> Node {
 }
 
 ///|
-/// MDR-004 §3: one `OrBranch`'s consumption grammar node — a single node for a 1-item branch, a
-/// `Seq` of value primitives (consumed in order) for a multi-item branch. Each item's own `name`
-/// carries through `element_head` unchanged, so held-Error / binding attribution lands on the LEAF
-/// (e.g. `a`/`s`/`b`/`r`/`g`/`b`/`name`) with no extra provenance wiring needed (§4).
+/// MDR-004 §3: one `OrBranch`'s consumption grammar node. Every branch is a `Seq` whose leading
+/// `#branch:<id>` marker records that this branch's own grammar was selected; the body is one leaf for
+/// a 1-item branch or the ordinary seq body for a multi-item branch. Each item's own `name` carries
+/// through `element_head` unchanged, so held-Error / binding attribution lands on the leaf without
+/// extra provenance wiring.
 /// 複数 item の枝 (= `{"seq":[...]}` 枝) の畳み方は seq そのもの (DESIGN §5.1「子の値の配列
 /// (要素数によらず常に配列)。結果キーを持つ子が 1 つでもあれば代わりに 1 個の kv」) — option/
-/// positional 直下の `seq` と同じ `seq_child_nodes` を通す。1 item の枝は退化 (DR-067 §2
-/// 「1 個は単体と等価」) で素のノード。
+/// positional 直下の `seq` と同じ `seq_child_nodes` を通す。1 item の枝も marker と同じ `Seq`
+/// に包むが、body 自体は DR-067 §2「1 個は単体と等価」のまま退化する。
 pub fn or_branch_node(br : OrBranch) -> Node {
   let body = if br.items.length() == 1 {
     child_head(br.items[0])
   } else {
     seq_body_node(br.items)
   }
+  // Design rationale: the zero-token marker keeps branch selection observable without changing the
+  // branch's consumption grammar or making a link write select an otherwise unconsumed branch.
   Seq([Bind("#branch:" + br.id, Bool(false)), body])
 }
 
@@ -2234,6 +2237,51 @@ fn indexed_structural_child(
     }
     Cell | Enum(_) | Or(_) => None
   }
+}
+
+///|
+fn link_path_crosses_multiple(def : Definition, path : LinkPath) -> Bool {
+  let mut root : ElementDef? = None
+  for element in def.options {
+    if element.name == path.root {
+      root = Some(element)
+      break
+    }
+  }
+  if root is None {
+    for element in def.positionals {
+      if element.name == path.root {
+        root = Some(element)
+        break
+      }
+    }
+  }
+  guard root is Some(root_element) else { return false }
+  let mut current = root_element
+  for segment in path.segments {
+    let child = match segment {
+      Name(name) =>
+        match named_structural_child(current, name) {
+          Some((element, _)) => Some(element)
+          None => None
+        }
+      Index(index) =>
+        match indexed_structural_child(current, index) {
+          Some((element, _)) => Some(element)
+          None => None
+        }
+    }
+    match child {
+      Some(element) => {
+        if current.multiple {
+          return true
+        }
+        current = element
+      }
+      None => return false
+    }
+  }
+  false
 }
 
 ///|
@@ -3935,17 +3983,39 @@ fn collect_link_path_errors(def : Definition, out : Array[DefError]) -> Unit {
           ),
         )
       Some(Valid(path)) =>
-        match resolve_link_path(def, path) {
-          Residual(Opaque) =>
-            out.push(
-              def_err(
-                element.name,
-                Unsupported,
-                "this link path reaches an opaque value structure",
-                "declare a structural output shape before linking into the value",
-              ),
-            )
-          Resolved(_, _, _, _, _) | Residual(Primitive) | Missing => ()
+        if element.link_depth == 0 &&
+          element.is_global &&
+          path.segments.length() > 0 {
+          out.push(
+            def_err(
+              element.name,
+              Unsupported,
+              "global link paths are not supported by this implementation",
+              "use a bare global link until copied fixed-path routing is implemented",
+            ),
+          )
+        } else if link_path_crosses_multiple(def, path) {
+          out.push(
+            def_err(
+              element.name,
+              Unsupported,
+              "link paths through multiple structural wrappers are not supported",
+              "use a non-multiple structural target until row-addressed routing is implemented",
+            ),
+          )
+        } else {
+          match resolve_link_path(def, path) {
+            Residual(Opaque) =>
+              out.push(
+                def_err(
+                  element.name,
+                  Unsupported,
+                  "this link path reaches an opaque value structure",
+                  "declare a structural output shape before linking into the value",
+                ),
+              )
+            Resolved(_, _, _, _, _) | Residual(Primitive) | Missing => ()
+          }
         }
       None => ()
     }

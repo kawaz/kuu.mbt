@@ -27,6 +27,17 @@ fn parse_link_index(chars : Array[Char], start : Int) -> (Int, Int)? {
   if cursor >= chars.length() || chars[cursor] < '0' || chars[cursor] > '9' {
     return None
   }
+  if chars[cursor] == '0' &&
+    (
+      negative ||
+      (
+        cursor + 1 < chars.length() &&
+        chars[cursor + 1] >= '0' &&
+        chars[cursor + 1] <= '9'
+      )
+    ) {
+    return None
+  }
   let mut value = 0
   while cursor < chars.length() && chars[cursor] >= '0' && chars[cursor] <= '9' {
     let digit = chars[cursor].to_int() - '0'.to_int()

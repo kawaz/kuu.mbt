@@ -51,7 +51,9 @@ test "dec_option decodes link fixed-path syntax into LinkPath" {
 /// DR-127 §1: empty names, unmatched delimiters, non-integer indices, and delimiter characters in
 /// a name are malformed syntax. Decode records the malformed spelling for definition-time reporting.
 test "dec_option retains malformed link paths for invalid-argument validation" {
-  let invalid = ["a..b", "a[", "a]", ".b", "", "a[x]", "a.b].c"]
+  let invalid = [
+    "a..b", "a[", "a]", ".b", "", "a[x]", "a.b].c", "a[00]", "a[+1]", "a[-0]",
+  ]
   for raw in invalid {
     let src = "{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"" +
       raw +

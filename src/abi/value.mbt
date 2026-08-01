@@ -394,7 +394,8 @@ pub fn bindings_through_link(
               scope: prefix.copy(),
               link_selections: target_selections.copy(),
               observation: None,
-              levels_to_declaring_scope: levels_to_target,
+              levels_to_declaring_scope: binding.levels_to_declaring_scope +
+              levels_to_target,
               at_pos: None,
             })
           }

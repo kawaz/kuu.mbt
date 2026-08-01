@@ -25,6 +25,36 @@ fn cb(
 }
 
 ///|
+/// Indexed target scope seeds and the routed value share the same lexical escape distance. The
+/// source binding's pending escape is additive to the route's own distance for both binding kinds.
+test "bindings_through_link: indexed shape seed preserves source escape levels" {
+  let source = {
+    ..cb("legacy", @abi.String("x"), @abi.Cli),
+    levels_to_declaring_scope: 2,
+  }
+  let routed = @abi.bindings_through_link(
+    [source],
+    "legacy",
+    "value",
+    ["pair", "#0"],
+    [],
+    None,
+    3,
+  )
+  let mut seed_levels : Int? = None
+  let mut value_levels : Int? = None
+  for binding in routed {
+    if binding.key == "[]" {
+      seed_levels = Some(binding.levels_to_declaring_scope)
+    } else if binding.key == "value" {
+      value_levels = Some(binding.levels_to_declaring_scope)
+    }
+  }
+  assert_eq(seed_levels, Some(5))
+  assert_eq(value_levels, Some(5))
+}
+
+///|
 /// An @engine.Entity builder with every ladder seat off by default (labeled optional args mirror slice
 /// `poc/helpers_wbtest.mbt`'s `opt()` — only the ladder seats a test actually exercises are named).
 fn ent(

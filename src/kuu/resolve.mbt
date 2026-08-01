@@ -499,6 +499,22 @@ fn path_push(path : Array[String], seg : String) -> Array[String] {
 }
 
 ///|
+fn path_ends_with(path : Array[String], suffix : Array[String]) -> Bool {
+  if suffix.length() > path.length() {
+    return false
+  }
+  let offset = path.length() - suffix.length()
+  let mut index = 0
+  while index < suffix.length() {
+    if path[offset + index] != suffix[index] {
+      return false
+    }
+    index += 1
+  }
+  true
+}
+
+///|
 fn link_binding_active(
   all : Array[@abi.Binding],
   binding : @abi.Binding,
@@ -507,7 +523,8 @@ fn link_binding_active(
     let mut selected = false
     for candidate in all {
       if candidate.key == selection.marker &&
-        path_eq(candidate.scope, selection.scope) {
+        path_ends_with(candidate.scope, selection.scope) &&
+        path_starts_with(binding.scope, candidate.scope) {
         selected = true
         break
       }
@@ -542,7 +559,6 @@ fn build_result(
   nones? : Array[InternalCell] = [],
   extensions? : @node.Registry = canonical_registry(),
 ) -> @abi.ResultValue {
-  let binds = active_link_bindings(binds)
   // ROW-GROUP (DR-078 §1 ref テンプレ result 写像, issue 2026-07-09-ref-template-result-shape):
   // a "#row" sentinel at this level (installer.mbt's `ref_row_head`) marks one repetition's row
   // boundary for a ref-template repeat cell — build one row (recursive build_result over that
@@ -1265,7 +1281,7 @@ fn build_result_export(
   templates? : Map[String, @engine.Node] = Map([]),
 ) -> @abi.ResultValue {
   build_result(
-    apply_export_keys(binds, ek),
+    apply_export_keys(active_link_bindings(binds), ek),
     accum_cells(sc, ek, binds),
     apply_export_to_defaults(default_cells(sc, binds), ek),
     [],

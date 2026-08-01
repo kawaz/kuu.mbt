@@ -1514,26 +1514,6 @@ test "front_door.output: named link path descends into a sibling scope child" {
 }
 
 ///|
-/// A copied global link preserves both axes of its declaring route: lexical escape returns to the
-/// root declaration and the pre-seeded named path still descends into that root scope's child.
-test "front_door.output: global named link path keeps target scope across a command" {
-  let src =
-    #|{"options":[
-    #|  {"name":"timerange","long":true,"global":true,"seq":[
-    #|    {"name":"since","type":"string"},
-    #|    {"name":"until","type":"string"}
-    #|  ]},
-    #|  {"name":"legacy","type":"string","long":true,"short":"l","global":true,"link":"timerange.since"}
-    #|],"commands":[{"type":"command","name":"sub","options":[
-    #|  {"name":"quiet","type":"flag","long":true}
-    #|]}]}
-  let expected = "result={sub={quiet=true},timerange={since=x}} sources={sub={quiet=cli},timerange={since=link}} effects=quiet,since"
-  assert_eq(wbtest_view_of(src, ["sub", "--legacy", "x", "--quiet"]), expected)
-  assert_eq(wbtest_view_of(src, ["sub", "--legacy=x", "--quiet"]), expected)
-  assert_eq(wbtest_view_of(src, ["sub", "-l", "x", "--quiet"]), expected)
-}
-
-///|
 /// Link path lookup stays on declaration names while result/source projection independently applies
 /// each target declaration's export_key. Effects therefore retain the leaf declaration name.
 test "front_door.output: named link path crosses export_key projection without changing lookup" {
@@ -1566,6 +1546,37 @@ test "front_door.output: named link path does not select the target structural b
   assert_eq(
     wbtest_view_of(src, ["--legacy", "x"]),
     "result={} sources={} effects=right",
+  )
+}
+
+///|
+/// Once the target or branch has been selected by its own consuming grammar, a later link write to
+/// that branch remains visible while result/source recursion strips declaration-scope prefixes. The
+/// root and command-local forms pin the same suffix-relative selection lookup.
+test "front_door.output: selected structural branch keeps a later named link write" {
+  let root_src =
+    #|{"options":[
+    #|  {"name":"choice","long":true,"or":[
+    #|    {"name":"left","type":"bool"},
+    #|    {"name":"right","type":"number"}
+    #|  ]},
+    #|  {"name":"legacy","type":"string","long":true,"link":"choice.right"}
+    #|]}
+  assert_eq(
+    wbtest_view_of(root_src, ["--choice", "7", "--legacy", "x"]),
+    "result={choice={right=x}} sources={choice={right=link}} effects=right,right",
+  )
+  let command_src =
+    #|{"commands":[{"name":"sub","type":"command","options":[
+    #|  {"name":"choice","long":true,"or":[
+    #|    {"name":"left","type":"bool"},
+    #|    {"name":"right","type":"number"}
+    #|  ]},
+    #|  {"name":"legacy","type":"string","long":true,"link":"choice.right"}
+    #|]}]}
+  assert_eq(
+    wbtest_view_of(command_src, ["sub", "--choice", "7", "--legacy", "x"]),
+    "result={sub={choice={right=x}}} sources={sub={choice={right=link}}} effects=right,right",
   )
 }
 
@@ -1635,21 +1646,76 @@ test "front_door.parse_definition: invalid cell-space link indices are absent-re
 /// DR-127 §1 classifies malformed fixed-path syntax as invalid-argument rather than absent-ref: the
 /// spelling itself is invalid before any target lookup can occur.
 test "front_door.parse_definition: malformed link path is invalid-argument" {
+  for link in ["target..child", "target[00]", "target[+1]"] {
+    let src = "{\"options\":[{\"name\":\"target\",\"type\":\"string\"},{\"name\":\"entry\",\"type\":\"string\",\"long\":true,\"link\":\"" +
+      link +
+      "\"}]}"
+    match parse_definition(@json.parse(src)) {
+      Err(Rejected(errors)) => {
+        let mut found = false
+        for error in errors {
+          if error.element == "entry" && error.kind == @abi.InvalidArgument {
+            found = true
+          }
+        }
+        assert_true(found)
+      }
+      Err(Malformed(message)) =>
+        fail("expected invalid-argument, got malformed: " + message)
+      Ok(_) => fail("malformed path must not lower")
+    }
+  }
+}
+
+///|
+/// A global link with a structural path is held behind the first-wave Unsupported gate. Global
+/// copying currently preserves only a bound bare target identity; allowing a path would silently
+/// diverge between the declaring scope and copied command scopes.
+test "front_door.parse_definition: global link with a non-empty path is unsupported" {
   let src =
-    #|{"options":[{"name":"target","type":"string"},{"name":"entry","type":"string","long":true,"link":"target..child"}]}
+    #|{"options":[
+    #|  {"name":"target","global":true,"seq":[{"name":"value","type":"string"}]},
+    #|  {"name":"legacy","type":"string","long":true,"global":true,"link":"target.value"}
+    #|],"commands":[{"name":"sub","type":"command"}]}
   match parse_definition(@json.parse(src)) {
     Err(Rejected(errors)) => {
       let mut found = false
       for error in errors {
-        if error.element == "entry" && error.kind == @abi.InvalidArgument {
+        if error.element == "legacy" && error.kind == @abi.Unsupported {
           found = true
         }
       }
       assert_true(found)
     }
     Err(Malformed(message)) =>
-      fail("expected invalid-argument, got malformed: " + message)
-    Ok(_) => fail("malformed path must not lower")
+      fail("expected unsupported, got malformed: " + message)
+    Ok(_) =>
+      fail("global fixed-path routing must remain gated in the first wave")
+  }
+}
+
+///|
+/// A path through a multiple structural wrapper needs a row segment meaning before it can be routed.
+/// The first wave rejects this combination instead of silently writing into a wrapper-wide seat.
+test "front_door.parse_definition: link through a multiple structural wrapper is unsupported" {
+  let src =
+    #|{"options":[
+    #|  {"name":"pair","long":true,"multiple":true,"seq":[{"name":"value","type":"string"}]},
+    #|  {"name":"legacy","type":"string","long":true,"link":"pair.value"}
+    #|]}
+  match parse_definition(@json.parse(src)) {
+    Err(Rejected(errors)) => {
+      let mut found = false
+      for error in errors {
+        if error.element == "legacy" && error.kind == @abi.Unsupported {
+          found = true
+        }
+      }
+      assert_true(found)
+    }
+    Err(Malformed(message)) =>
+      fail("expected unsupported, got malformed: " + message)
+    Ok(_) => fail("multiple-wrapper path routing must remain gated")
   }
 }
 

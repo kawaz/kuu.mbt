@@ -373,43 +373,29 @@ fn render_success(ast : @kuu.AtomicAST, args : Array[String]) -> String {
 }
 
 ///|
-fn render_effect_address(effect : @kuu.OutputEffect) -> String {
-  let out = StringBuilder::new()
-  out.write_string(effect.entity)
-  for segment in effect.path {
-    match segment {
-      @abi.ObservationName(name) => {
-        out.write_char('.')
-        out.write_string(name)
-      }
-      @abi.ObservationIndex(index) => {
-        out.write_char('[')
-        out.write_string(index.to_string())
-        out.write_char(']')
-      }
-    }
-  }
-  out.to_string()
-}
+struct ComparableEffect {
+  entity : String
+  path : Array[@abi.ObservationSegment]
+  payload : String
+} derive(Eq, Debug)
 
 ///|
-/// `OutputView.effects` の構造化射影を fixture 比較文字列へ変換する。sentinel・config_file・
-/// none・dd の除外は玄関が完了済みであり、runner は内部 Scope/Node を走査しない。
-fn render_effects(effects : Array[@kuu.OutputEffect]) -> String {
-  let items : Array[String] = []
+/// `OutputView.effects` の構造化射影を fixture 比較値へ変換する。アドレスは `(entity, path)` の
+/// 直積のまま保持し、合法な `.` を含む entity と name path segment を文字列連結で潰さない。
+/// sentinel・config_file・none・dd の除外は玄関が完了済みであり、runner は内部 Scope/Node を走査しない。
+fn render_effects(
+  effects : Array[@kuu.OutputEffect],
+) -> Array[ComparableEffect] {
+  let items : Array[ComparableEffect] = []
   for effect in effects {
-    match effect.operand {
+    let payload = match effect.operand {
       Some(operand) =>
-        items.push(
-          "\{render_effect_address(effect)}:\{eff_op(effect.op)}(\{render_val(operand)})@\{render_src(effect.source)}",
-        )
-      None =>
-        items.push(
-          "\{render_effect_address(effect)}:\{eff_op(effect.op)}@\{render_src(effect.source)}",
-        )
+        "\{eff_op(effect.op)}(\{render_val(operand)})@\{render_src(effect.source)}"
+      None => "\{eff_op(effect.op)}@\{render_src(effect.source)}"
     }
+    items.push({ entity: effect.entity, path: effect.path.copy(), payload })
   }
-  join_comma(items)
+  items
 }
 
 ///|
@@ -500,7 +486,7 @@ struct DCase {
   args : Array[String]
   id : String
   outcome : String
-  exp_effects : String?
+  exp_effects : Array[ComparableEffect]?
   exp_result : String?
   // errors face: (asserted-set-string, whether fixture provided reason/path on any error, DR-066 §4/§5)
   exp_errors : String?
@@ -568,29 +554,20 @@ fn json_to_rval(j : Json) -> @abi.ResultValue raise DecodeSkip {
 }
 
 ///|
-fn exp_effect_address(
-  entity : String,
+fn exp_effect_path(
   object : Map[String, Json],
-) -> String raise DecodeSkip {
-  let out = StringBuilder::new()
-  out.write_string(entity)
+) -> Array[@abi.ObservationSegment] raise DecodeSkip {
+  let out : Array[@abi.ObservationSegment] = []
   match object.get("path") {
     Some(value) =>
       match value.j_arr() {
         Some(path) =>
           for segment in path {
             match segment.j_str() {
-              Some(name) => {
-                out.write_char('.')
-                out.write_string(name)
-              }
+              Some(name) => out.push(@abi.ObservationName(name))
               None =>
                 match segment.j_num() {
-                  Some(index) => {
-                    out.write_char('[')
-                    out.write_string(index.to_int().to_string())
-                    out.write_char(']')
-                  }
+                  Some(index) => out.push(@abi.ObservationIndex(index.to_int()))
                   None =>
                     raise DecodeSkip(
                       "effect path segment is not string or integer",
@@ -602,16 +579,16 @@ fn exp_effect_address(
       }
     None => ()
   }
-  out.to_string()
+  out
 }
 
 ///|
-fn exp_effects_str(eff : Json) -> String raise DecodeSkip {
+fn exp_effects(eff : Json) -> Array[ComparableEffect] raise DecodeSkip {
   let a = match eff.j_arr() {
     Some(x) => x
     None => raise DecodeSkip("effects is not an array")
   }
-  let items : Array[String] = []
+  let items : Array[ComparableEffect] = []
   for e in a {
     let eo = match e.j_obj() {
       Some(x) => x
@@ -621,7 +598,7 @@ fn exp_effects_str(eff : Json) -> String raise DecodeSkip {
       Some(s) => s
       None => raise DecodeSkip("effect missing 'entity'")
     }
-    let address = exp_effect_address(entity, eo)
+    let path = exp_effect_path(eo)
     let op = match jf_str(eo, "op") {
       Some(s) => s
       None => raise DecodeSkip("effect missing 'op'")
@@ -638,15 +615,27 @@ fn exp_effects_str(eff : Json) -> String raise DecodeSkip {
       Some(t) => op + ":" + t
       None => op
     }
-    match eo.get("operand") {
-      Some(j) =>
-        items.push(
-          "\{address}:\{op_str}(\{render_val(json_to_value(j))})@\{source}",
-        )
-      None => items.push("\{address}:\{op_str}@\{source}")
+    let payload = match eo.get("operand") {
+      Some(j) => "\{op_str}(\{render_val(json_to_value(j))})@\{source}"
+      None => "\{op_str}@\{source}"
     }
+    items.push({ entity, path, payload })
   }
-  join_comma(items)
+  items
+}
+
+///|
+/// Effect addresses are the structured pair `(entity, path)`: a legal dot in an entity name must not
+/// collide with a name segment in `path`, even when every other effect field is identical.
+test "conformance effects keep entity and path as a non-colliding structured address" {
+  let entity_dot =
+    #|[{"entity":"a.b","op":"set","operand":"x","source":"cli"}]
+  let path_name =
+    #|[{"entity":"a","path":["b"],"op":"set","operand":"x","source":"cli"}]
+  assert_not_eq(
+    exp_effects(@json.parse(entity_dot)),
+    exp_effects(@json.parse(path_name)),
+  )
 }
 
 ///|
@@ -900,7 +889,7 @@ fn dec_case(cj : Json) -> DCase raise DecodeSkip {
       _ => true
     })
   let exp_effects = match eo.get("effects") {
-    Some(x) => Some(exp_effects_str(x))
+    Some(x) => Some(exp_effects(x))
     None => None
   }
   let exp_result = match eo.get("result") {
@@ -2151,7 +2140,12 @@ fn run_case(df : DecodedFixture, dc : DCase) -> String {
             Some(ee) => {
               let ae = render_effects(parse_effects)
               if ae != ee {
-                problems.push("effects got=\{ae} want=\{ee}")
+                problems.push(
+                  "effects got=" +
+                  Debug::to_repr(ae).to_string() +
+                  " want=" +
+                  Debug::to_repr(ee).to_string(),
+                )
               }
             }
             None => ()
